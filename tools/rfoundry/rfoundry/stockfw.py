@@ -38,8 +38,10 @@ MD380_KEY_SHA256 = "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879
 # MD-UV380 / MD-UV390 / RT3S (docs/spec/hardware-mduv380.md 11, as tools/stm32_dfu.py's mduv380 model)
 MDUV380_KEY_SHA256 = "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991"
 # The id the firmware reports for a placed codec, one per radio: every build the radio's firmware accepts (each by its
-# descriptor tag) reports it, so a radio keeps its codec across updates whichever build it came from. Each is named
-# after the first build supported; boards.py requires one id per board, and the site and release manifests compare it
+# descriptor tag) reports it, so a radio keeps its codec across updates whichever build it came from. That holds going
+# forward only: a release older than the one that added a build's profile doesn't know its tag and finds no codec, so
+# going back to it needs the codec merged again from a file it supports. Each is named after the first build
+# supported; boards.py requires one id per board, and the site and release manifests compare it
 MDUV380_CODEC = "mduv380-1926-s11"
 MD380_CODEC = "md380-d2032-s11"
 # The count word of the single-segment container form (the MD-380 D002.032 file: one segment, count 0xFFFFFFFF)
@@ -404,7 +406,7 @@ PROFILES = {
     },
     "447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee": {
         "name": "RT3S-Firmware-AES255(CSV)-V219.60.bin",
-        "version": "V219.60 CSV AES255",
+        "version": "V219.60 CSV AES 255",
         "board": "mduv380",
         "key_sha256": MDUV380_KEY_SHA256,
         "codec_profile": MDUV380_CODEC,
@@ -419,7 +421,7 @@ PROFILES = {
     },
     "a7b277137c32ac3583083d8a650488415f62360b7f38a6d903fc732b858dd502": {
         "name": "RT3S-Firmware-AES255(CSV-GPS)-P219.60.bin",
-        "version": "P219.60 CSV-GPS AES255",
+        "version": "P219.60 CSV-GPS AES 255",
         "board": "mduv380",
         "key_sha256": MDUV380_KEY_SHA256,
         "codec_profile": MDUV380_CODEC,
@@ -434,7 +436,7 @@ PROFILES = {
     },
     "a8a5265d29f8f69ee050a0a47052a8925a3c403ac270d8e5fda324a4a697b220": {
         "name": "MD-UV380-AES255(CSV)-V219.74.bin",
-        "version": "V219.74 CSV AES255",
+        "version": "V219.74 CSV AES 255",
         "board": "mduv380",
         "key_sha256": MDUV380_KEY_SHA256,
         "codec_profile": MDUV380_CODEC,
@@ -449,7 +451,7 @@ PROFILES = {
     },
     "3d1b9ed4a2293981d0915d0655172e7a4d9bc702fe493328be37901427d51108": {
         "name": "MD-UV380-AES255(REC)-D219.74.bin",
-        "version": "D219.74 REC AES255",
+        "version": "D219.74 REC AES 255",
         "board": "mduv380",
         "key_sha256": MDUV380_KEY_SHA256,
         "codec_profile": MDUV380_CODEC,
@@ -464,7 +466,7 @@ PROFILES = {
     },
     "70a44a4a77d6ffb4b0b6b9b4a8f26afb9607d65875d2ba1094baf6c8e6a46c9a": {
         "name": "MD-UV390-AES255(CSV-GPS)-P219.74.bin",
-        "version": "P219.74 CSV-GPS AES255",
+        "version": "P219.74 CSV-GPS AES 255",
         "board": "mduv380",
         "key_sha256": MDUV380_KEY_SHA256,
         "codec_profile": MDUV380_CODEC,
@@ -479,7 +481,7 @@ PROFILES = {
     },
     "bf58116bcd695d8b14634fbffab7cd33ba9bcd1325b92179ef6bf94d380d2151": {
         "name": "MD-UV390-AES255(GPS-REC)-S219.74.bin",
-        "version": "S219.74 GPS-REC AES255",
+        "version": "S219.74 GPS-REC AES 255",
         "board": "mduv380",
         "key_sha256": MDUV380_KEY_SHA256,
         "codec_profile": MDUV380_CODEC,
@@ -494,7 +496,7 @@ PROFILES = {
     },
     "531947c0d4d7d3ae0c5a3f94d81fbf3a04259488a9af09f9a3a8b57cabf135ed": {
         "name": "MD-UV380-10W-AES255(CSV)-V219.74.bin",
-        "version": "10W V219.74 CSV AES255",
+        "version": "10W V219.74 CSV AES 255",
         "board": "mduv380",
         "key_sha256": MDUV380_KEY_SHA256,
         "codec_profile": MDUV380_CODEC,
@@ -509,7 +511,7 @@ PROFILES = {
     },
     "7b7ed3075a7735cde969402eda163f96bf2931ae55cbcc4fbf62625bdaf04855": {
         "name": "MD-UV380-10W-AES255(REC)-D219.74.bin",
-        "version": "10W D219.74 REC AES255",
+        "version": "10W D219.74 REC AES 255",
         "board": "mduv380",
         "key_sha256": MDUV380_KEY_SHA256,
         "codec_profile": MDUV380_CODEC,
@@ -524,7 +526,7 @@ PROFILES = {
     },
     "bf98dc6ca9d888712924af75dd5eff7495de4ab82848f0701616e29eb9d5e5a2": {
         "name": "MD-UV390-10W-AES255(CSV-GPS)-P219.74.bin",
-        "version": "10W P219.74 CSV-GPS AES255",
+        "version": "10W P219.74 CSV-GPS AES 255",
         "board": "mduv380",
         "key_sha256": MDUV380_KEY_SHA256,
         "codec_profile": MDUV380_CODEC,
@@ -539,7 +541,7 @@ PROFILES = {
     },
     "e6c696a3f1a6ac3d622559d7422efc97399b748aac8923a7440239b28c03a5c1": {
         "name": "MD-UV390-10W-AES255(GPS-REC)-S219.74.bin",
-        "version": "10W S219.74 GPS-REC AES255",
+        "version": "10W S219.74 GPS-REC AES 255",
         "board": "mduv380",
         "key_sha256": MDUV380_KEY_SHA256,
         "codec_profile": MDUV380_CODEC,

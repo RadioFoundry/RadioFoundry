@@ -22,8 +22,8 @@ change when one fails.
 
 ## Status
 
-Not run on a radio. The codec builds were checked on a host only (untested on the radio): every TYT 19.26 and 19.74
-build (5 W and 10 W), TYT and Retevis 18.11 and 18.16, Retevis RT3S 19.06 and 219.60, TYT 219.74. A first DMR test
+Not run on a radio. The codec builds were checked on a host only (untested on the radio): TYT 19.26; TYT 19.74 and
+219.74, 5 W and 10 W; TYT and Retevis 18.11 and 18.16; Retevis RT3S 19.06 and 219.60. A first DMR test
 should use a 19.26 file and one whose code goes to the start of sector 10 (RT3S 219.60, any 219.74, S19.74).
 
 ## 0. Before anything

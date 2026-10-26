@@ -10,8 +10,9 @@
 // merge rewrites what does: two address pairs in the code that point into the code, and the 12 calls from the code
 // that stock keeps in the table window back into the code (the codec map). None of it is part of this repository or a
 // release. The 35.14 builds (MD-380 D35.14, MD-390 S35.14) carry the UV380 family's codec instead, with three table
-// windows: the main one in sector 9 stays there, the code goes right after it, the two small ones stay in sector 11. The calls and the checks are the shared ones (platform/stm32f4/hrc/vocoder.c); this file says which build and
-// where. Without a valid descriptor and codec, present() is false and the radio is FM only.
+// windows: the main one, from sector 9 into sector 10, stays there, the code goes right after it, the two small ones
+// stay in sector 11. The calls and the checks are the shared ones (platform/stm32f4/hrc/vocoder.c); this file says
+// which build and where. Without a valid descriptor and codec, present() is false and the radio is FM only.
 #include "md380.h"
 #include "config.h"
 
@@ -38,21 +39,24 @@ static const codec_desc_window_t tables[CODEC_WINDOWS] = {
 };
 
 // The id tools/rfoundry and the release manifests use for a codec placed as these profiles say (the descriptor and
-// every CRC matched; stockfw.py MD380_CODEC), whichever build it came from: named after D002.032, the first. A build
-// from before the move reports "md380-d2032", which tells rfoundry that the codec isn't where this layout keeps it
+// every CRC matched; stockfw.py MD380_CODEC): one for every build, named after D002.032, the first. The radio keeps
+// its codec across updates going forward only: a release older than the one that added a build's profile doesn't
+// know its tag and finds no codec. A build from before the move reports "md380-d2032", which tells rfoundry that the
+// codec isn't where this layout keeps it
 #define CODEC_ID		"md380-d2032-s11"
 
 static const stm32_codec_profile_t d2032 = {
 	.tag = CODEC_TAG, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
 	.code = CODEC_CODE, .code_len = CODEC_CODE_LEN, .code_crc = CODEC_CRC, .tables = tables, .windows = CODEC_WINDOWS,
-	// Not used: encode ECC +0x514 and FEC decode +0xAC8. The air frame FEC is ours (core/dmr/ambe) and matches stock's
+	// Not used: encode ECC +0x514, FEC decode +0xAC8. Our air frame FEC (core/dmr/ambe) matches stock's
 	.at = { .encode = 0x14C, .decode = 0x604, .enc_init = 0x294, .fec_init = 0x4FC, .dec_init = 0x6F0,
 		.enc_params = 0x854, .enc_set = 0x1E0, .dec_set = 0x6AC },
 };
 
 // The 35.14 builds as the merge places them (stockfw.py, "placed"); the entry offsets are the UV380 family's
 // (codec-mduv380.md). Not used: encode ECC +0x4E8 and FEC decode +0xB78
-#define UV_ENTRIES { .encode = 0x130, .decode = 0x5D8, .enc_init = 0x284, .fec_init = 0x4CC, .dec_init = 0x6D0, 		.enc_params = 0x848, .enc_set = 0x1C0, .dec_set = 0x688 }
+#define UV_ENTRIES { .encode = 0x130, .decode = 0x5D8, .enc_init = 0x284, .fec_init = 0x4CC, .dec_init = 0x6D0, \
+		.enc_params = 0x848, .enc_set = 0x1C0, .dec_set = 0x688 }
 
 // MD-380 D35.14
 static const codec_desc_window_t d3514_tables[] = {

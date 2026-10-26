@@ -49,7 +49,38 @@ values = [
 family = "usb-dfu"
 keep_codec = true
 stock_download = "https://passion-radio.com/dmr-equipment/tyt-md380-321.html"
-stock_versions = ["V19.26 CSV", "D19.26 REC", "P19.26 CSV-GPS", "S19.26 GPS-REC"]
+stock_versions = [
+	"V19.26 CSV",
+	"D19.26 REC",
+	"P19.26 CSV-GPS",
+	"S19.26 GPS-REC",
+	"V18.11 CSV",
+	"D18.11 REC",
+	"P18.11 CSV-GPS",
+	"S18.11 GPS-REC",
+	"P18.16 CSV-GPS",
+	"S18.16 GPS-REC",
+	"V19.06 CSV",
+	"P19.06 CSV-GPS",
+	"V19.74 CSV",
+	"D19.74 REC",
+	"P19.74 CSV-GPS",
+	"S19.74 GPS-REC",
+	"10W V19.74 CSV",
+	"10W D19.74 REC",
+	"10W P19.74 CSV-GPS",
+	"10W S19.74 GPS-REC",
+	"V219.60 CSV AES 255",
+	"P219.60 CSV-GPS AES 255",
+	"V219.74 CSV AES 255",
+	"D219.74 REC AES 255",
+	"P219.74 CSV-GPS AES 255",
+	"S219.74 GPS-REC AES 255",
+	"10W V219.74 CSV AES 255",
+	"10W D219.74 REC AES 255",
+	"10W P219.74 CSV-GPS AES 255",
+	"10W S219.74 GPS-REC AES 255",
+]
 backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 notice = "MD-UV390 Plus 10 W owners: choose the 10 W image, and everyone else the 5 W one. The two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart, so a wrong choice isn't caught: it drives the wrong pins. Check the label on the radio or its box."
 

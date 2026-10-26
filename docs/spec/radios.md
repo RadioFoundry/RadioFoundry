@@ -134,8 +134,8 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   `platform/stm32f4`, `drivers/flash/spi_nor` and `drivers/display/st7735` (HX8302A assumed compatible, ?). The
   HR_C5000 is a variant of `drivers/modem/hrc6000` (a chip flag selects the register differences). New:
   `drivers/rf/sky72310` (shared with the MD-9600 later), `drivers/gps/nmea_line`, run-time GPS detection
-  (`board.gps_present`). DMR voice uses the codec of the vendor D002.032 file, merged at build time and run in place
-  ([codec-md380.md](codec-md380.md)); untested on a radio.
+  (`board.gps_present`). DMR voice uses the codec of the vendor D002.032, D35.14 or S35.14 file, merged at build time
+  and run in place ([codec-md380.md](codec-md380.md)); untested on a radio.
 
 ### Radioddity GD-77 family
 
@@ -390,7 +390,7 @@ By effort, then by how many radios a port unlocks and how popular they are:
 3. **TYT MD-9600 / RT90.** STM32 + HR_C6000 again. New are the SKY72310 driver, the ST7567 display (shared work with
    the GD-77's mono driver) and the board-version problem. Effort: weeks, and the V4/V5 PLL needs identifying first.
 4. **TYT MD-380 / MD-390 / RT3.** Builds now, with the SKY72310 driver the MD-9600 can reuse, and runs the vendor
-   D002.032 codec in place for DMR voice ([codec-md380.md](codec-md380.md)); it needs a radio for bring-up.
+   D002.032 or 35.14 codec in place for DMR voice ([codec-md380.md](codec-md380.md)); it needs a radio for bring-up.
 5. **HR_C7000 family after the DM-32UV is on air**: the DM-1801 Pro (air band and broadcast like the DM-32UV, chip
    list still open), then the DB25-D (one HR_C7000, but a new RF
    chip and SPI NAND), then the GD-88, then the DB40-D (two SoCs, reusing the GD-88's A/B work). All four are wish

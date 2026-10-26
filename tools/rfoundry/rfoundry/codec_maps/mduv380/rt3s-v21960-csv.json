@@ -5,7 +5,7 @@
  "isa": "thumb2",
  "stock": {
   "name": "RT3S-Firmware-AES255(CSV)-V219.60.bin",
-  "version": "V219.60 CSV AES255",
+  "version": "V219.60 CSV AES 255",
   "sha256": "447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee"
  },
  "code": {

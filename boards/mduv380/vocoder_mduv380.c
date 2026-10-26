@@ -19,7 +19,8 @@
 #define CODEC_FLASH_LO		0x080C0000u	// sectors 10 and 11: the flash boards/mduv380/memory.ld leaves to the codec
 
 // The id tools/rfoundry and the release manifests use for the codec (stockfw.py MDUV380_CODEC): one for every build,
-// since it is the same codec, named after the first build supported
+// since it is the same codec, named after the first build supported. The radio keeps its codec across updates going
+// forward only: a release older than the one that added a build's profile doesn't know its tag and finds no codec
 #define CODEC_ID		"mduv380-1926-s11"
 
 // Entry offsets from the code start: the UV380 family's codec, the same in every build (codec-mduv380.md). Not used:

@@ -16,8 +16,8 @@ file the user supplies. No codec bytes go in this repository or in released bina
 | S35.14 | `TYT-72310-11-MD390-S35.14.bin` (MD-390, GPS) | 951808 (0xE8400) | `167e79f18e78d7d31460dc577c4efd0cb881344f5ee44a4c9a30798ead0fb79d` | 0x08088AC4 |
 
 Both 35.14 files use the MD-380 key and the single-segment container. They carry a different codec build from
-D002.032's: the MD-UV380 family's, with its entry offsets ([codec-mduv380.md](codec-mduv380.md), "Entry points"; FEC
-decode +0xB78), behaving bit-identically to it, and three table windows (35.14, below). Other versions (for example the
+D002.032's: the MD-UV380 family's, with its entry offsets ([Entry points](#entry-points-and-calling-convention), the
+35.14 column), behaving bit-identically to it, and three table windows (35.14, below). Other versions (for example the
 D13.20 / S13.20 family) sit at other addresses and need their own profile.
 
 ## Container and encryption
@@ -80,18 +80,18 @@ What the windows hold:
 All AAPCS, Thumb, arguments beyond four on the stack in order, results in r0. Same library as the DM-1701's: the
 prologues, argument lists and stack argument offsets match; only the addresses differ.
 
-| call | address | offset from 0x08050C44 | DM-1701 offset | arguments |
-|---|---|---|---|---|
-| encode | 0x08050D90 | +0x14C | +0x130 | (bits out, 0, PCM in, 80, stack: flags, half, 0x2000, E) |
-| encoder set | 0x08050E24 | +0x1E0 | +0x1C0 | (E, 128, -20) |
-| encoder init | 0x08050ED8 | +0x294 | +0x284 | (E, 1, 1) |
-| FEC init | 0x08051140 | +0x4FC | +0x4CC | (F, 1) |
-| encode ECC | 0x08051158 | +0x514 | +0x4E8 | (bit buffer, same buffer, 0, F_enc): 49 bits in, 72 air bits out |
-| decode | 0x08051248 | +0x604 | +0x5D8 | (PCM out, 80, bits in, 0, stack: flags, half, D) |
-| decoder set | 0x080512F0 | +0x6AC | +0x688 | (D, 128, -20) |
-| decoder init | 0x08051334 | +0x6F0 | +0x6D0 | (D, 1) |
-| encoder parameters | 0x08051498 | +0x854 | +0x848 | (E, -22, 20, -10, stack: -40, 0x4000, 3276, 3276, 1310, 10, 20) |
-| FEC decode | 0x0805170C | +0xAC8 | +0xB54 | (49 bits out, 0, 72 bits in, 1, stack: flags, F_dec): returns 0 good, 4 C0 uncorrectable |
+| call | address | offset from 0x08050C44 | DM-1701 offset | 35.14 offset | arguments |
+|---|---|---|---|---|---|
+| encode | 0x08050D90 | +0x14C | +0x130 | +0x130 | (bits out, 0, PCM in, 80, stack: flags, half, 0x2000, E) |
+| encoder set | 0x08050E24 | +0x1E0 | +0x1C0 | +0x1C0 | (E, 128, -20) |
+| encoder init | 0x08050ED8 | +0x294 | +0x284 | +0x284 | (E, 1, 1) |
+| FEC init | 0x08051140 | +0x4FC | +0x4CC | +0x4CC | (F, 1) |
+| encode ECC | 0x08051158 | +0x514 | +0x4E8 | +0x4E8 | (bit buffer, same buffer, 0, F_enc): 49 bits in, 72 air bits out |
+| decode | 0x08051248 | +0x604 | +0x5D8 | +0x5D8 | (PCM out, 80, bits in, 0, stack: flags, half, D) |
+| decoder set | 0x080512F0 | +0x6AC | +0x688 | +0x688 | (D, 128, -20) |
+| decoder init | 0x08051334 | +0x6F0 | +0x6D0 | +0x6D0 | (D, 1) |
+| encoder parameters | 0x08051498 | +0x854 | +0x848 | +0x848 | (E, -22, 20, -10, stack: -40, 0x4000, 3276, 3276, 1310, 10, 20) |
+| FEC decode | 0x0805170C | +0xAC8 | +0xB54 | +0xB78 | (49 bits out, 0, 72 bits in, 1, stack: flags, F_dec): returns 0 good, 4 C0 uncorrectable |
 
 Bits are one per halfword in all buffers, the frame is two calls of 80 samples (half 0, then half 1). Flags: encode
 see [Encode flags](#encode-flags); decode 0 for a good frame, 4 (repeat the previous frame) or 8. These are the
@@ -173,7 +173,7 @@ its original address ([codec-placement.md](codec-placement.md), "STM32 radios").
 | small tables 1-4 | original addresses (sectors 10 and 11) | as above | unchanged (0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF) |
 | descriptor | 0x080FFF80 (end of sector 11) | 128 | its own (`platform/stm32f4/codec_desc.h`), tag 0x2032 |
 
-* **Flash map.** The application gets sectors 3-7, 0x0800C000..0x0807FFFF, 464 KB in one piece, and
+* **Flash map (D002.032).** The application gets sectors 3-7, 0x0800C000..0x0807FFFF, 464 KB in one piece, and
   `boards/md380/memory.ld` asserts that the image ends before 0x08080000. The codec uses sectors 8, 10 and 11. Sector
   9 (0x080A0000..0x080BFFFF) holds nothing. The firmware file keeps the code at 0x08050C44, inside sectors 6 and 7, so
   that layout leaves the application only 275 KB (it stops inside sector 6, where the code starts).
@@ -184,18 +184,26 @@ its original address ([codec-placement.md](codec-placement.md), "STM32 radios").
   debug link (READ_MEM), in the original or the placed layout, check it against the profile hashes and save it on the
   computer (rfoundry's config directory, the browser's IndexedDB; `rfoundry/codecsave.py`,
   `site/static/js/flasher/codecsave.js`).
-* **Boot check (`platform/stm32f4/hrc/vocoder.c`, this build's profile in `boards/md380/vocoder_md380.c`).** Once,
+* **Boot check, D002.032 (`platform/stm32f4/hrc/vocoder.c`, the profiles in `boards/md380/vocoder_md380.c`).** Once,
   before the first call: the descriptor (its own CRC, tag 0x2032, the code and every table window at the addresses
   and with the CRCs above), then the signature word 0x4FF0E92D at 0x080E0000, then the CRC-32 of every window (about
-  112 KB). Otherwise the vocoder reports no codec and the radio is FM only. Entry points are offsets from the code start (encode +0x14C, decode +0x604, the rest in
-  `vocoder_md380.c`), the same offsets as in the original layout.
+  112 KB). Otherwise the vocoder reports no codec and the radio is FM only. Entry points are offsets from the code
+  start (encode +0x14C, decode +0x604, the rest in `vocoder_md380.c`), the same offsets as in the original layout. The
+  35.14 builds' tags, code addresses and entry offsets are in [35.14](#3514).
 * **Profile id.** `md380-d2032-s11` (debug link VERSION `codec=`), for a codec from any supported file: the descriptor's
   tag tells the builds apart. A build from before the move reports `md380-d2032`, so the tools know the codec isn't
   where the new layout keeps it and ask for the firmware file.
+* **Older releases.** The id is the same for every build, but a release only accepts the tags it was built with.
+  Releases before the one that added the 35.14 maps accept D002.032's tag only. A radio whose codec came from a 35.14
+  file and is flashed with such a release, keeping the codec, finds no codec and is FM only. Going back to it needs the
+  codec merged again from D002.032's file.
+* **Calls.** Through the generic veneer `platform/stm32f4/codec_call.c`, as on the DM-1701, with the init sequence and
+  per-frame calls above. The state blocks live in CCM.
 
 ### 35.14
 
-The main table window stays at its original address in sector 9, the code goes right after it, the two small windows
+The main table window stays at its original address: it starts in sector 9 and runs into sector 10 (D35.14
+0x080B7868..0x080C45D0, S35.14 0x080B8928..0x080C5710). The code goes right after it, the two small windows
 stay at their original addresses in sector 11 (`stockfw.py` PROFILES, `boards/md380/vocoder_md380.c`):
 
 | build | tag | code (address, length, CRC-32) | tables (address, length, CRC-32) | small tables (address, length, CRC-32) |
@@ -207,8 +215,6 @@ stay at their original addresses in sector 11 (`stockfw.py` PROFILES, `boards/md
   An update keeps sectors 8-11 whichever build the codec came from.
 * Code and tables as placed were checked on a host over a 300 frame stress run: the same hash as D002.032's and the
   DM-1701's codec, from the whole image, from the windows only and from the placed layout.
-* **Calls.** Through the generic veneer `platform/stm32f4/codec_call.c`, as on the DM-1701, with the init sequence and
-  per-frame calls above. The state blocks live in CCM.
 
 ## Extraction recipe (D002.032)
 

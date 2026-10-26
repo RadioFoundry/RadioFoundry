@@ -5,7 +5,7 @@
  "isa": "thumb2",
  "stock": {
   "name": "RT3S-Firmware-AES255(CSV-GPS)-P219.60.bin",
-  "version": "P219.60 CSV-GPS AES255",
+  "version": "P219.60 CSV-GPS AES 255",
   "sha256": "a7b277137c32ac3583083d8a650488415f62360b7f38a6d903fc732b858dd502"
  },
  "code": {

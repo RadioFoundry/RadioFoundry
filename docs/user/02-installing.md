@@ -173,12 +173,12 @@ If a firmware file can't be used, the installer says what it found and what to d
 
 | It says | Do this |
 |---|---|
-| The file is for another radio | Pick your radio's file, or open the installer for the radio the file is for |
-| The file isn't the manufacturer's firmware | Pick the manufacturer's original file. Another open firmware project's build doesn't serve |
-| Your radio's bootloader key doesn't open it | It is for another model, or a modified build. Pick the manufacturer's file for your radio |
-| No recipe for this version yet | Pick one of the versions listed, or send the file so it can be added |
-| The file is damaged | Download it again |
-| A fault in the installer | Nothing is wrong with the file. The installer reports the fault, or shows how to report it; you can send the file to help |
+| This File Is for Another Radio | Pick your radio's file, or open the installer for the radio the file is for |
+| This Is Not the Manufacturer's Firmware File | Pick the manufacturer's original file. Another open firmware project's build can't be used |
+| This File Is Not for the (your radio) | It is for another model, or a modified build. Pick the manufacturer's file for your radio |
+| The Codec Cannot Be Taken from This Build Yet | Pick one of the versions listed, or send the file so it can be added |
+| The File Is Damaged or Incomplete | Download it again |
+| The Radio Programming Utility Could Not Use This File | Nothing is wrong with the file. The installer reports the fault, or shows how to report it; you can send the file to help |
 
 **Technical details** shows the exact message. Sending the file is offered only for the manufacturer's firmware file,
 and only when you click. An automatic error report names the file (name, size and checksum), never its contents.
@@ -193,8 +193,8 @@ page walks through the update mode. See also [Troubleshooting](20-troubleshootin
 
 1. Put the radio in its bootloader.
 2. In the web installer choose **Restore**, load your backup and pick the original firmware, with your stock firmware
-   file (any version for your radio). On a radio whose original firmware is backed up before the first installation,
-   load that backup, or the manufacturer's firmware file if you don't have it. Or run the manufacturer's firmware
+   file (any version for your radio). If the installer backed up the original firmware before the first installation
+   (see your radio's section), load that backup; without one, load the manufacturer's firmware file. Or run the manufacturer's firmware
    upgrade tool and load the stock file.
 3. Write your codeplug backup with the manufacturer's CPS. The stock firmware can't read the codeplug RadioFoundry used.
 

@@ -257,6 +257,11 @@ pointer into the code and the 12 calls from the code kept in the table window ba
 * The CRCs are CRC-32 (IEEE 802.3) of each part after the rewrites. The descriptor must carry exactly these.
 * Every build holds the same codec, bit-identical in behavior to the DM-1701 V02.06's (above).
 * Boot check: the descriptor, then the CRC of both parts; otherwise FM only.
+* Older releases: the id is the same for every build, but a release accepts only the tags it was built with.
+  Releases before the one that added the other builds' maps accept the four 19.26 tags only. A radio whose codec came
+  from any other build and is flashed with such a release, keeping the codec, finds no codec and is FM only. Going
+  back to it needs the codec merged again from a 19.26 file ([codec-placement.md](codec-placement.md), "One id, many
+  builds").
 * Identifying a radio still on TYT firmware: a program flash readout (rfoundry, `codec_extract`, the web flasher
   library) hashes the code window with SHA-256 and so knows the build. The application is plain in flash from
   0x0800C000, so a readout equals the decrypted application by address.

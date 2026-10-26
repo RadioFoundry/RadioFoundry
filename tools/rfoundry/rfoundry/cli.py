@@ -312,6 +312,12 @@ def get_key(args, board, stock, sim_key=None):
     if args.key:
         return dfumod.load_key(args.key, board)
     if isinstance(stock, bytes) and stockfw.is_container(stock):
+        # another radio's file is refused by name: deriving this radio's key from it could only fail as "could not
+        # derive the key"
+        prof = stockfw.PROFILES.get(stockfw.sha256(stock))
+        if prof is not None and prof["board"] != board.id:
+            raise UsageError("%s is a firmware file for the %s, not the %s"
+                             % (prof["name"], boards.get(prof["board"]).name, board.name))
         say("key      deriving the %s bootloader key from the stock file" % board.name)
         try:
             return dfumod.check_key(stockfw.derive_key(stock, board.key_sha256), board)

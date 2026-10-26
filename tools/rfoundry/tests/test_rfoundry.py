@@ -593,6 +593,31 @@ class SingleImage(unittest.TestCase):
         self.assertNotEqual(rc, 0)
 
 
+class OtherRadioStock(unittest.TestCase):
+    def test_flash_refuses_another_radios_file_by_name_before_the_key(self):
+        """rfoundry flash --stock with another radio's file and no --key: named as such, not "could not derive the
+        bootloader key" (the key is derived before the codec is extracted)."""
+        stock, profiles, _, _ = synthetic_stock()
+        digest, prof = next(iter(profiles.items()))
+        img = app_image(220780)
+        with tempfile.TemporaryDirectory() as d:
+            bp = os.path.join(d, "rfoundry-dm1701-v0.0.1.bin")
+            open(bp, "wb").write(img)
+            open(os.path.join(d, "rfoundry-dm1701-v0.0.1.json"), "w").write(
+                mf.dumps(mf.generate(DM1701, img, "v0.0.1", "e" * 40)))
+            sp = os.path.join(d, "other.bin")
+            open(sp, "wb").write(stock)
+            for codec in ("merge", "keep"):
+                with mock.patch.dict(stockfw.PROFILES, {digest: dict(prof, board="md380")}), \
+                     mock.patch.object(cli, "get_probe", return_value=None), \
+                     mock.patch.object(state, "key_path", return_value=os.path.join(d, "no.key")):
+                    rc, out, err = run_cli(["flash", bp, "--stock", sp, "--codec", codec, "--yes"])
+                self.assertEqual(rc, 2, out + err)
+                self.assertIn("is a firmware file for the %s, not the %s" % (boards.get("md380").name, DM1701.name),
+                              err, codec)
+                self.assertNotIn("derive", err, codec)
+
+
 class WaitForDfu(unittest.TestCase):
     def test_no_bootloader_raises_the_hint_not_a_format_error(self):
         with mock.patch.object(dfumod, "find", return_value=[]):
@@ -860,14 +885,21 @@ class FirmwareProfiles(unittest.TestCase):
         defs = dict(re.findall(r"#define (\w+)\s+(\w+)u\b", src))
         tables = {m.group(1): [tuple(int(x, 16) for x in w) for w in self.WIN.findall(m.group(2))]
                   for m in re.finditer(r"codec_desc_window_t (\w+)\[\w*\] = \{(.*?)\};", src, re.S)}
-        out = set()
-        for m in re.finditer(r"stm32_codec_profile_t \w+ = \{(.*?)\n\};", src, re.S):
-            f = dict(re.findall(r"\.(\w+) = (\w+)", m.group(1)))
+        structs = {}
+        for m in re.finditer(r"stm32_codec_profile_t (\w+) = \{(.*?)\n\};", src, re.S):
+            f = dict(re.findall(r"\.(\w+) = (\w+)", m.group(2)))
             num = lambda v: int(defs.get(v, v).rstrip("u"), 0)
             wins = tables[f["tables"]]
             self.assertEqual(len(wins), num(f["windows"]))
-            out.add((num(f["tag"]), num(f["code"]), num(f["code_len"]), num(f["code_crc"]), tuple(wins)))
-        return out
+            structs[m.group(1)] = (num(f["tag"]), num(f["code"]), num(f["code_len"]), num(f["code_crc"]), tuple(wins))
+        # only what the profiles[] array lists is accepted: a profile defined but not listed is not
+        m = re.search(r"stm32_codec_profile_t \*const profiles\[\] = \{(.*?)\};", src, re.S)
+        listed = re.findall(r"&(\w+)", m.group(1))
+        self.assertEqual(len(listed), len(set(listed)), board)
+        count = re.search(r"stm32_codec_profiles_t stm32_codec_profiles = \{ profiles, (\d+) \}", src)
+        if count:
+            self.assertEqual(int(count.group(1)), len(listed), board)
+        return {structs[n] for n in listed}
 
     def test_every_profile_in_the_firmware(self):
         for board in ("mduv380", "md380"):

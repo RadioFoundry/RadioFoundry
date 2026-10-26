@@ -355,7 +355,7 @@ there.
 | 9 | AT1846S DMR AF gain | open | BER against a hotspot at 0x07FF and lower |
 | 10 | Power fractions and k factors | open; the images' power rows are averaged between points (section 8) | power meter at each level, band edges |
 | 11 | Bootloader entry check and stack rule | open; the application has no entry code | dump the loader (RDP 1 allows the application to read it) |
-| 12 | Codec voice on air | open: bit-identical in the emulator for all four builds | DMR TX and RX through the placed codec |
+| 12 | Codec voice on air | open: bit-identical in the emulator for every build ([codec-mduv380.md](codec-mduv380.md)) | DMR TX and RX through the placed codec |
 | 13 | PB1 / PB2 (AT1846S GPIO0 / GPIO6) | open; not needed for a port | scope while the squelch opens |
 | 14 | HR_C6000 differences (section 2) and AT1846S reg 0x05 cases | images only | DMR and FM TX / RX at the band edges |
 | 15 | USB VID / PID of the application | not in the images | enumerate on a radio |

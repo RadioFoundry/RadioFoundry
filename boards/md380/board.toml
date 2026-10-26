@@ -48,7 +48,7 @@ values = [
 family = "usb-dfu"
 keep_codec = true
 stock_download = "https://md380.org/firmware/orig/"
-stock_versions = ["D002.032"]
+stock_versions = ["D002.032", "D35.14", "S35.14"]
 backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 
 [flash.bootloader]

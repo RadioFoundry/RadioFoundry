@@ -127,9 +127,9 @@ again after any redraw, so the tags follow the new shapes.
 6. DMR modem and the codec: receive, then transmit, checked on the SDR bench.
 7. CPS, so qdmr can program it.
 8. Flashing from where an owner starts:
-   - Determine likely codec offsets radios may have before being reprogrammed. Cover every firmware version the
-     vendor and its rebadgers have shipped, and every model the board is sold as (`also`, `looks`). Give each a codec
-     map and a `[codec] stock` entry, so the web flasher and rfoundry find the codec in whatever file or readout the
+   - Find every stock build an owner's radio may run before RadioFoundry: every firmware version the vendor and its
+     rebadgers have shipped, for every model the board is sold as (`also`, `looks`). Give each a codec map and a
+     `[codec] stock` entry, so the web flasher and rfoundry find the codec in whatever file or readout the
      owner has.
    - For each of those models, check the bootloader's USB identity, entry keys and key against `[flash]`.
    - Walk the web flasher through each starting point:

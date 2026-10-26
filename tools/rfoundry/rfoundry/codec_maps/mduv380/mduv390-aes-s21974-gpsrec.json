@@ -5,7 +5,7 @@
  "isa": "thumb2",
  "stock": {
   "name": "MD-UV390-AES255(GPS-REC)-S219.74.bin",
-  "version": "S219.74 GPS-REC AES255",
+  "version": "S219.74 GPS-REC AES 255",
   "sha256": "bf58116bcd695d8b14634fbffab7cd33ba9bcd1325b92179ef6bf94d380d2151"
  },
  "code": {
