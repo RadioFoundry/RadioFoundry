@@ -20,6 +20,41 @@ D002.032's: the MD-UV380 family's, with its entry offsets ([Entry points](#entry
 35.14 column), behaving bit-identically to it, and three table windows (35.14, below). Other versions (for example the
 D13.20 / S13.20 family) sit at other addresses and need their own profile.
 
+### More MD-380 family files
+
+Stock files from TYT and its dealers whose codec is one of the two builds above. Each has its own map in
+`tools/rfoundry/rfoundry/codec_maps/md380/`, found by the code window's SHA-256, and a profile in
+`tools/rfoundry/rfoundry/stockfw.py` (file SHA-256, windows, placed CRC-32s) and `boards/md380/vocoder_md380.c`. The
+"D2 build" files have D002.032's entry offsets and are placed like it (code at 0x080E0000, five table windows). The "UV
+build" files have the 35.14 entry offsets and are placed next to their main table window. Every map was checked as the
+35.14 and D002.032 maps were (the same 30 frame hash from the whole image, from the windows alone and as placed). The
+D3.32 (TYT-TFT-MD380) and S14.04 (Retevis RT3) files were uploaded by users; their provenance rests on the file name and
+the vendor's release date, not on a hash match with a vendor download. The tags follow the existing scheme (0x04 in the
+top byte for the MD-446).
+
+| version | file | codec build | code window | tag |
+|---|---|---|---|---|
+| D3.32 | `TYT-TFT-MD380-D3.32.bin` | D2 build | 0x080532CC | 0x00440332 |
+| S14.04 | `RETEVIS-Vocoder-RT3-with GPS-S14.04.bin` | UV build | 0x080541F4 | 0x00531404 |
+| D13.034 | `D013.034.bin` | UV build | 0x080533A0 | 0x00441334 |
+| D13.14 | `TYT-Vocoder-MD380-D13.14.bin` | UV build | 0x08053014 | 0x00441314 |
+| D13.20 | `TYT-Vocoder-MD380-D13.20.bin` | UV build | 0x080530A8 | 0x00441320 |
+| D14.07 | `TYT-Vocoder-MD380-D14.07.bin` | UV build | 0x080535D0 | 0x00441407 |
+| D2.24 (upgrade pack) | `Upgraded software for newest version.bin` | D2 build | 0x08051FE8 | 0x00440224 |
+| D2.25 | `MD-380-D2.25.bin` | D2 build | 0x08050A4C | 0x00440225 |
+| D2.26 | `MD-380-D2.26.bin` | D2 build | 0x080509E0 | 0x00440226 |
+| D2.27 | `MD-380-D2.27.bin` | D2 build | 0x080509E0 | 0x00440227 |
+| D2.30 | `MD-380-D2.30.bin` | D2 build | 0x08050C1C | 0x00440230 |
+| D2.34 | `MD-380-D2.34.bin` | D2 build | 0x08050D74 | 0x00440234 |
+| D3.008 | `D003.008.bin` | D2 build | 0x08052D30 | 0x00440308 |
+| D3.20 | `TYT-TFT-MD380-D3.20.bin` | D2 build | 0x08053044 | 0x00440320 |
+| S13.12 | `TYT-Vocoder-MD390-S13.12.bin` | UV build | 0x08053CB0 | 0x00531312 |
+| S13.20 | `TYT-Vocoder-MD390-S13.20.bin` | UV build | 0x08053EE8 | 0x00531320 |
+| S14.07 | `TYT-Vocoder-MD390-S14.07.bin` | UV build | 0x08054238 | 0x00531407 |
+| S3.012 | `TYT-GPS-MD390-MD380-S003.012.bin` | D2 build | 0x08053C4C | 0x00530312 |
+| D13.20 | `TYT-Vocoder-MD446-D13.20.bin` | UV build | 0x080530C4 | 0x04441320 |
+| D3.20 | `TYT-TFT-MD446-D3.20.bin` | D2 build | 0x08053060 | 0x04440320 |
+
 ## Container and encryption
 
 The file is a TYT "OutSecurityBin" container in its single-segment form ([hardware-md380.md](hardware-md380.md) 14.1):
@@ -260,7 +295,7 @@ other access faults.
   1 kHz tone and a DTMF key into the mic, received on a second radio or the SDR bench. AGC (0x3840): a quiet and a
   loud talker, levels and pumping between words; whether the parameter block's values after init are usable.
 
-* Other firmware versions (D13.20 and similar) need their own profile; D002.032, D35.14 and S35.14 are supported.
+* Other firmware versions (D13.20 and similar) need their own profile; D002.032, D35.14, S35.14 and the files in [More MD-380 family files](#more-md-380-family-files) are supported.
 * On a radio: voice through a 35.14 codec as placed (untested on the radio).
 * Moving the table windows too (rewriting the `table_refs`) would free sector 8 and pack the codec into sector 11
   ([codec-placement.md](codec-placement.md)). The application has 464 KB and doesn't need it yet.

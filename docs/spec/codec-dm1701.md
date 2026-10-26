@@ -52,7 +52,7 @@ the codec it calls at 0x0807537C is that firmware's. A DM-1701 that ran it carri
 DM-1701's. It is the same codec in function: the same entry offsets, state sizes and calls (the FEC decode offset
 differs and is not used), bit-identical in a host emulator ([codec-md9600.md](codec-md9600.md) "Verification").
 
-So the eight MD-9600 files are DM-1701 codec sources too, each with its own map
+So the MD-9600 files (21, V06.09, V06.24, V16.24, V16.45, V26.45 and D26.57, below) are DM-1701 codec sources too, each with its own map
 (`tools/rfoundry/rfoundry/codec_maps/md9600/`) and profile (`stockfw.py`, `"file_radio": "MD-9600"`):
 
 * **The codec only.** They are encrypted with the MD-9600's key, which the tools derive from the file itself. They never
@@ -79,6 +79,19 @@ Placements (tag 0x96VVxxxx: VV the variant, 0 CSV, 1 CSV-GPS, 2 REC, 3 GPS-REC; 
 | P06.09 CSV-GPS | `MD9600-CSV-GPS-P06.09.bin` | 0x96010609 | 0x080D06FC, 0x11066, 0x9E0642E5 | 0x080E20B8, 0xF234, 0x7C7A0876 |
 | D06.09 REC | `MD9600-REC-D06.09.bin` | 0x96020609 | 0x080D0660, 0x10FF6, 0x8EFB3BDF | 0x080E2C9C, 0xF210, 0x53A7AF3B |
 | S06.09 GPS-REC | `MD9600-GPS-REC-S06.09.bin` | 0x96030609 | 0x080D0C60, 0x11076, 0x4758C9EE | 0x080E2280, 0xF22C, 0xB54871EE |
+| V06.24 CSV | `MD9600-CSV-V06.24.bin` | 0x96000624 | 0x080D02BC, 0x10FE6, 0x337667F2 | 0x080E2C78, 0xF232, 0xF977B4D6 |
+| P06.24 CSV-GPS | `MD9600-CSV-GPS-P06.24.bin` | 0x96010624 | 0x080D09FC, 0x11066, 0x2D8040A6 | 0x080E23CC, 0xF21E, 0x25094D99 |
+| S06.24 GPS-REC | `MD9600-GPS-REC-S06.24.bin` | 0x96030624 | 0x080D0F60, 0x11076, 0x49D18C19 | 0x080E2594, 0xF216, 0x69B987A1 |
+| D06.24 REC | `MD9600-REC-D06.24.bin` | 0x96020624 | 0x080D07E0, 0x10FF6, 0xDDBD5036 | 0x080E2DFC, 0xF22E, 0x05F34587 |
+| V16.24 CSV | `MD9600-CSV(V4)-V16.24.bin` | 0x96001624 | 0x080D05FC, 0x10FE6, 0x8C4CD107 | 0x080E2FB0, 0xF23A, 0xE413CEF1 |
+| P16.24 CSV-GPS | `MD9600-CSV-GPS(V4)-P16.24.bin` | 0x96011624 | 0x080D0D3C, 0x11066, 0x1BA5D665 | 0x080E2704, 0xF226, 0xB2F7AB22 |
+| S16.24 GPS-REC | `MD9600-GPS-REC(V4)-S16.24.bin` | 0x96031624 | 0x080D02A0, 0x11076, 0xFC643CC9 | 0x080E28CC, 0xF21E, 0x111C3DB7 |
+| D16.24 REC | `MD9600-REC(V4)-D16.24.bin` | 0x96021624 | 0x080D0B20, 0x10FF6, 0x82E6D100 | 0x080E2134, 0xF236, 0x4FD7EB93 |
+| P26.45 CSV-GPS | `MD9600-CSV-GPS(2571V5)-P26.45.bin` | 0x96012645 | 0x080D013C, 0x110B6, 0x230044AB | 0x080E2B18, 0xF212, 0x757367A4 |
+| S26.45 GPS-REC | `MD9600-GPS-REC(2571V5)-S26.45.bin` | 0x96032645 | 0x080D06E0, 0x110C6, 0x960E46C6 | 0x080E2D14, 0xF216, 0xD772D25B |
+| D26.45 REC | `MD9600-REC(2571V5)-D26.45.bin` | 0x96022645 | 0x080D0EE0, 0x11046, 0x5D4334F8 | 0x080E251C, 0xF20E, 0x3CE9E9D7 |
+| D26.57 REC | `MD9600-REC(2571V4)-D26.57.bin` | 0x96022657 | 0x080D05E0, 0x11032, 0x782C12BE | 0x080E2C3C, 0xF1EE, 0x24D32768 |
+| V26.45 CSV | `MD9600-CSV(2571V5)-V26.45.bin` | 0x96002645 | 0x080D09BC, 0x11036, 0xDA6E4D8D | 0x080E237C, 0xF22E, 0x0095F077 |
 
 ### Finding the codec in a flash read
 

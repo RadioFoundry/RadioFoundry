@@ -136,10 +136,142 @@ static const stm32_codec_profile_t md0609s = {
 	.at = ENTRIES,
 };
 
+// MD9600-CSV(2571V5)-V26.45.bin V26.45 CSV
+static const codec_desc_window_t xmd9600v2645csv_tables[] = {
+	{ 0x080D09BCu, 0x11036u, 0xDA6E4D8Du },
+};
+static const stm32_codec_profile_t xmd9600v2645csv = {
+	.tag = 0x96002645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E237Cu, .code_len = 0xF22Eu, .code_crc = 0x0095F077u, .tables = xmd9600v2645csv_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-CSV-V06.24.bin V06.24 CSV
+static const codec_desc_window_t xmd9600v0624csv_tables[] = {
+	{ 0x080D02BCu, 0x10FE6u, 0x337667F2u },
+};
+static const stm32_codec_profile_t xmd9600v0624csv = {
+	.tag = 0x96000624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2C78u, .code_len = 0xF232u, .code_crc = 0xF977B4D6u, .tables = xmd9600v0624csv_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-CSV-GPS-P06.24.bin P06.24 CSV-GPS
+static const codec_desc_window_t xmd9600v0624gpscsv_tables[] = {
+	{ 0x080D09FCu, 0x11066u, 0x2D8040A6u },
+};
+static const stm32_codec_profile_t xmd9600v0624gpscsv = {
+	.tag = 0x96010624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E23CCu, .code_len = 0xF21Eu, .code_crc = 0x25094D99u, .tables = xmd9600v0624gpscsv_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-GPS-REC-S06.24.bin S06.24 GPS-REC
+static const codec_desc_window_t xmd9600v0624gpsrec_tables[] = {
+	{ 0x080D0F60u, 0x11076u, 0x49D18C19u },
+};
+static const stm32_codec_profile_t xmd9600v0624gpsrec = {
+	.tag = 0x96030624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2594u, .code_len = 0xF216u, .code_crc = 0x69B987A1u, .tables = xmd9600v0624gpsrec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-REC-D06.24.bin D06.24 REC
+static const codec_desc_window_t xmd9600v0624rec_tables[] = {
+	{ 0x080D07E0u, 0x10FF6u, 0xDDBD5036u },
+};
+static const stm32_codec_profile_t xmd9600v0624rec = {
+	.tag = 0x96020624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2DFCu, .code_len = 0xF22Eu, .code_crc = 0x05F34587u, .tables = xmd9600v0624rec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-CSV(V4)-V16.24.bin V16.24 CSV
+static const codec_desc_window_t xmd9600v1624csv_tables[] = {
+	{ 0x080D05FCu, 0x10FE6u, 0x8C4CD107u },
+};
+static const stm32_codec_profile_t xmd9600v1624csv = {
+	.tag = 0x96001624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2FB0u, .code_len = 0xF23Au, .code_crc = 0xE413CEF1u, .tables = xmd9600v1624csv_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-CSV-GPS(V4)-P16.24.bin P16.24 CSV-GPS
+static const codec_desc_window_t xmd9600v1624gpscsv_tables[] = {
+	{ 0x080D0D3Cu, 0x11066u, 0x1BA5D665u },
+};
+static const stm32_codec_profile_t xmd9600v1624gpscsv = {
+	.tag = 0x96011624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2704u, .code_len = 0xF226u, .code_crc = 0xB2F7AB22u, .tables = xmd9600v1624gpscsv_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-GPS-REC(V4)-S16.24.bin S16.24 GPS-REC
+static const codec_desc_window_t xmd9600v1624gpsrec_tables[] = {
+	{ 0x080D02A0u, 0x11076u, 0xFC643CC9u },
+};
+static const stm32_codec_profile_t xmd9600v1624gpsrec = {
+	.tag = 0x96031624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E28CCu, .code_len = 0xF21Eu, .code_crc = 0x111C3DB7u, .tables = xmd9600v1624gpsrec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-REC(V4)-D16.24.bin D16.24 REC
+static const codec_desc_window_t xmd9600v1624rec_tables[] = {
+	{ 0x080D0B20u, 0x10FF6u, 0x82E6D100u },
+};
+static const stm32_codec_profile_t xmd9600v1624rec = {
+	.tag = 0x96021624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2134u, .code_len = 0xF236u, .code_crc = 0x4FD7EB93u, .tables = xmd9600v1624rec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-CSV-GPS(2571V5)-P26.45.bin P26.45 CSV-GPS
+static const codec_desc_window_t xmd9600v2645gpscsv_tables[] = {
+	{ 0x080D013Cu, 0x110B6u, 0x230044ABu },
+};
+static const stm32_codec_profile_t xmd9600v2645gpscsv = {
+	.tag = 0x96012645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2B18u, .code_len = 0xF212u, .code_crc = 0x757367A4u, .tables = xmd9600v2645gpscsv_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-GPS-REC(2571V5)-S26.45.bin S26.45 GPS-REC
+static const codec_desc_window_t xmd9600v2645gpsrec_tables[] = {
+	{ 0x080D06E0u, 0x110C6u, 0x960E46C6u },
+};
+static const stm32_codec_profile_t xmd9600v2645gpsrec = {
+	.tag = 0x96032645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2D14u, .code_len = 0xF216u, .code_crc = 0xD772D25Bu, .tables = xmd9600v2645gpsrec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-REC(2571V5)-D26.45.bin D26.45 REC
+static const codec_desc_window_t xmd9600v2645rec_tables[] = {
+	{ 0x080D0EE0u, 0x11046u, 0x5D4334F8u },
+};
+static const stm32_codec_profile_t xmd9600v2645rec = {
+	.tag = 0x96022645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E251Cu, .code_len = 0xF20Eu, .code_crc = 0x3CE9E9D7u, .tables = xmd9600v2645rec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-REC(2571V4)-D26.57.bin D26.57 REC
+static const codec_desc_window_t xmd9600v2657rec_tables[] = {
+	{ 0x080D05E0u, 0x11032u, 0x782C12BEu },
+};
+static const stm32_codec_profile_t xmd9600v2657rec = {
+	.tag = 0x96022657u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2C3Cu, .code_len = 0xF1EEu, .code_crc = 0x24D32768u, .tables = xmd9600v2657rec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
 static const stm32_codec_profile_t *const profiles[] = {
 	&v0206, &v0203, &v0206n, &v0203n,
 	&md1645, &md1645p, &md1645d, &md1645s, &md0609, &md0609p, &md0609d, &md0609s,
+	&xmd9600v2645csv,
+	&xmd9600v0624csv, &xmd9600v0624gpscsv, &xmd9600v0624gpsrec, &xmd9600v0624rec, &xmd9600v1624csv, &xmd9600v1624gpscsv, &xmd9600v1624gpsrec, &xmd9600v1624rec, &xmd9600v2645gpscsv, &xmd9600v2645gpsrec, &xmd9600v2645rec, &xmd9600v2657rec,
 };
-const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 12 };
+const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 25 };
 
 #endif	// CONFIG_DMR

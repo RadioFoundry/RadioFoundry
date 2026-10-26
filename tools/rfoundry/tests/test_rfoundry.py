@@ -837,7 +837,10 @@ class StockLibrary(unittest.TestCase):
         self.assertEqual(b.app_region, (0x0800C000, 0x08080000))
         self.assertEqual(b.codec.windows[0][0], 0x080E0000)
         self.assertIn((stockfw.DESC_ADDR, stockfw.DESC_LEN), b.codec.windows)
-        self.assertEqual(b.codec_codes, [0x080E0000, 0x080C45D0, 0x080C5710])	# D002.032, D35.14, S35.14
+        # one entry per stock file: D002.032, D35.14, S35.14 first, then every other build's code address
+        self.assertEqual(b.codec_codes[:3], [0x080E0000, 0x080C45D0, 0x080C5710])
+        self.assertEqual(b.codec_codes, [stockfw.placed_windows(stockfw.PROFILES[h])[0][0] for h in b.codec_stock])
+        self.assertIn(0x0809A8DC, b.codec_codes)	# RT3 S14.04
         self.assertIs(boards.from_debuglink_name("MD-380 VHF"), b)
 
     def test_md380_profile(self):
@@ -926,7 +929,7 @@ class StockLibrary(unittest.TestCase):
         # V02.06 noCSV's and V02.03 noCSV's, then the MD-9600 files' (code and tables moved)
         md = [w for h in DM1701.codec_stock if stockfw.codec_only(stockfw.PROFILES[h])
               for w in DM1701.merge_windows(stockfw.PROFILES[h])[:2]]
-        self.assertEqual(len(md), 16)
+        self.assertEqual(len(md), 42)
         self.assertEqual(DM1701.codec.windows, [(0x080E3A74, 0x1021C), (0x080D19F0, 0x12082), (0x080FFF80, 0x80),
                                                 (0x080E3A34, 0x1021C), (0x080D19B0, 0x12082),
                                                 (0x080E6828, 0x10200), (0x080D4794, 0x12092),
@@ -1189,6 +1192,19 @@ class Md9600Files(unittest.TestCase):
         "9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5": 0x96010609,	# MD-9600 P06.09 CSV-GPS
         "7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f": 0x96020609,	# MD-9600 D06.09 REC
         "4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7": 0x96030609,	# MD-9600 S06.09 GPS-REC
+        "194526d60f796cc0f7339d14c1efeedc267731d108fd66a96876b459408de0ba": 0x96000624,	# MD-9600 V06.24 CSV
+        "1eafdb774fd71cb7bc3334d06617ed42264ee25df1c73f61744f6b21742bbd20": 0x96010624,	# MD-9600 P06.24 CSV-GPS
+        "ec44929e855442ad248f1a5c171a467922d6cb5742fc35f759db269c645e22ab": 0x96030624,	# MD-9600 S06.24 GPS-REC
+        "6643261e62b9778a5df43b1e5c3428d6d308bf54b34478513df3e08f6f4dbb63": 0x96020624,	# MD-9600 D06.24 REC
+        "98302fbc26fa0db93bd7ecbd29a410ac9fbb42cbd7d6ce15d54ce085fefff329": 0x96001624,	# MD-9600 V16.24 CSV
+        "e86b9e9775758548dd2d01334cfacc96c640fbf843aa6c5fa009b4bc7598e98d": 0x96011624,	# MD-9600 P16.24 CSV-GPS
+        "4e1c5c081d5bdf4bef8f205668fd7381391187d8b07150df7e99275b030b811b": 0x96031624,	# MD-9600 S16.24 GPS-REC
+        "e21c72e30716fb43e4d15798012aec15e964b9ec8c1a534ede5d0b0fe73f3acb": 0x96021624,	# MD-9600 D16.24 REC
+        "02e366687f122ed752581344db8316666d21782d9353334518b69237a81e74dc": 0x96012645,	# MD-9600 P26.45 CSV-GPS
+        "6df34152e9786530d61032ab71f1962cf194aca0b99cf0a54e3802fd2cd4ac72": 0x96032645,	# MD-9600 S26.45 GPS-REC
+        "baee36b0fd852dfc1fb14952242a1231dbfa4fabc37cba57c61f1b8d3e0d830d": 0x96022645,	# MD-9600 D26.45 REC
+        "2522008737d7845e43ab47a307d38498ee783c788a377fac855dff94dea53af0": 0x96022657,	# MD-9600 D26.57 REC
+        "d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f": 0x96002645,	# MD-9600 V26.45 CSV
     }
 
     def test_profiles(self):
@@ -1288,7 +1304,7 @@ class Md9600Files(unittest.TestCase):
         prof = stockfw.PROFILES[next(iter(self.FILES))]
         self.assertIn("MD-9600", stockfw.codec_only(prof))
         hint = cli.stock_hint(DM1701)
-        self.assertIn("for the codec only, one of 8 MD-9600 firmware files", hint)
+        self.assertIn("for the codec only, one of 21 MD-9600 firmware files", hint)
         self.assertNotIn(prof["name"], hint)
         self.assertNotIn("MD-9600", cli.stock_hint(DM1701, key=True), "the key's hint names only files that give it")
 
