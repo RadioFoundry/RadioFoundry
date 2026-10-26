@@ -45,6 +45,7 @@ DM1701_V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d
 MD380_D2032 = "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
 MDUV380_V1926 = "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e"
 RT3S_V21960 = "447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee"
+DM1701_V0201 = "cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713"
 
 EPILOG = """\
 examples:
@@ -218,6 +219,14 @@ def self_test():
           "RT3S 219.60: code at the start of sector 10, below the tables")
     rmerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), rp, rwins)
     check(not stm32_dfu.check_image(rmerged, "mduv380"), "stm32_dfu accepts the RT3S 219.60 merged image")
+    # DM-1701 V02.01 CSV (V02.02 and V02.03 alike): the V02.06 placement 0x40 lower, its own tag
+    ostock, oprofiles, ocode, _ = build_synthetic_stock(key, rng, DM1701_V0201)
+    op, owins = extract(ostock, key, oprofiles)
+    check([(a, len(d)) for a, d in owins] == [(0x080E3A34, len(ocode)), (0x080D19B0, 0x12082), (DESC_ADDR, 0x80)],
+          "DM-1701 V02.01: code at 0x080E3A34 after the tables cut at 0x080E3A32, then the descriptor")
+    check(struct.unpack_from("<I", owins[2][1], 8)[0] == 0x0203, "DM-1701 V02.01 descriptor tag")
+    omerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), op, owins)
+    check(not stm32_dfu.check_image(omerged, "dm1701"), "stm32_dfu accepts the DM-1701 V02.01 merged image")
 
     # main() end to end on the synthetic file
     import contextlib

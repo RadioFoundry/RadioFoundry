@@ -7,7 +7,8 @@ codec and which words and instructions in it hold addresses. Format and use:
 `tools/hrc7000_codec.py` and the web flasher (`data/flash-boards.json`).
 
 A map is found by the SHA-256 of the stock code window, so one map serves every stock build whose code window is
-byte-identical: `dm32-049` also covers DM32.01.01.047, `dm32-037` covers 039 and 040, `dm32-046` covers 01.02.046.
+byte-identical: `dm32-049` also covers DM32.01.01.047, `dm32-037` covers 039 and 040, `dm32-046` covers 01.02.046,
+`dm1701-v0203-csv` covers DM-1701 V02.01 and V02.02 CSV.
 
 The maps hold addresses, lengths, offsets and hashes only, never codec bytes. They come from static analysis of the
 stock builds, which is kept outside this repository.

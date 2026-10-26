@@ -73,10 +73,16 @@ spi = { bus = 1, mode = 0, hz = 4500000 }
 # The codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after them
 # and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file rfoundry merges the codec
 # from (tools/rfoundry/rfoundry/stockfw.py PROFILES); stock firmware keeps its code in sectors 7 and 8, which are the
-# application's now, so no stock version leaves it in place and rfoundry merges it from the stock file
+# application's now, so no stock version leaves it in place and rfoundry merges it from the stock file. V02.01 to V02.03
+# CSV hold the same codec 0x40 lower, so their tables and code sit 0x40 lower in the same sectors
 [codec]
 tool = "codec_extract"
-stock = ["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
+stock = [
+	"0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d",	# V02.06 CSV
+	"cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713",	# V02.01 CSV
+	"643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7",	# V02.02 CSV
+	"35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948",	# V02.03 CSV
+]
 
 # How the site draws the radio
 [frame]

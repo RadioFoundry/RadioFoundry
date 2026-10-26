@@ -68,7 +68,8 @@ back to the PLL.
 STM32F405, 1 MB: sectors 0-3 are 16 KB, sector 4 is 64 KB, sectors 5-11 are 128 KB. The V02.06 CSV codec runs
 in place from sectors 10 and 11, where the merge puts it ([codec-placement.md](codec-placement.md), "STM32 radios";
 [codec-dm1701.md](codec-dm1701.md)): tables at their original address 0x080D19F0..0x080E3A72, code moved from its original
-address 0x08074714 to 0x080E3A74..0x080F3C90, and the descriptor at 0x080FFF80.
+address 0x08074714 to 0x080E3A74..0x080F3C90, and the descriptor at 0x080FFF80. The codec from a V02.01, V02.02 or
+V02.03 CSV file sits 0x40 lower in the same sectors: tables 0x080D19B0..0x080E3A32, code 0x080E3A34..0x080F3C50.
 
 | Sector | Address | Size | Holds |
 |---|---|---|---|
@@ -76,8 +77,8 @@ address 0x08074714 to 0x080E3A74..0x080F3C90, and the descriptor at 0x080FFF80.
 | 3 | 0x0800C000..0x0800FFFF | 16 KB | RadioFoundry (vector table first) |
 | 4 | 0x08010000..0x0801FFFF | 64 KB | RadioFoundry |
 | 5-9 | 0x08020000..0x080BFFFF | 5 x 128 KB | RadioFoundry |
-| 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0) |
-| 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E3A71), codec code (0x080E3A74..0x080F3C8F), descriptor (0x080FFF80..0x080FFFFF) |
+| 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0; V02.01 to V02.03: 0x080D19B0) |
+| 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E3A71), codec code (0x080E3A74..0x080F3C8F), descriptor (0x080FFF80..0x080FFFFF); V02.01 to V02.03: tables to 0x080E3A31, code 0x080E3A34..0x080F3C4F |
 
 A flash sector can only be erased whole, so `boards/dm1701/memory.ld` gives the application sectors 3-9
 (0x0800C000..0x080BFFFF, 720 KB in one piece) and asserts that everything it loads into flash ends before 0x080C0000.

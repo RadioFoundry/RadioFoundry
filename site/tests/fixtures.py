@@ -169,7 +169,8 @@ def main(out):
 	image = bytes(rng.getrandbits(8) for _ in range(150 * 1024 + 123))
 	_, codec = stockfw.extract(stock, key, profiles)
 	keep = plan.make_plan(board, [(board.app_base, image)], plan.KEEP)
-	merge = plan.make_plan(board, [(board.app_base, image)], plan.MERGE, stockfw.codec_segments(prof, codec))
+	merge = plan.make_plan(board, [(board.app_base, image)], plan.MERGE, stockfw.codec_segments(prof, codec),
+			       board.merge_windows(prof))
 	m = manifest.generate(board, image, "v0.0.0-test", "ab" * 20, features="FM,DMR")
 	with open(os.path.join(out, "stock.bin"), "wb") as f:
 		f.write(stock)

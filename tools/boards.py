@@ -1608,13 +1608,17 @@ def self_test():
         if st:
             sp = os.path.join(tmp, "boards", st, "board.toml")
             st_good = open(sp, encoding="utf-8").read()
-            for text, what, want in ((re.sub(r'(?m)^stock = \["(\w+)"\]', r'stock = "\1"', st_good),
+            # the stock array, on one line or several (one digest a line, each with its comment)
+            arr = re.search(r"(?ms)^stock = \[.*?\]$", st_good)
+            first = re.search(r"[0-9a-f]{64}", arr.group(0)).group(0)
+            put = lambda new: st_good[:arr.start()] + new + st_good[arr.end():]
+            for text, what, want in ((put('stock = "%s"' % first),
                                       "a codec.stock that isn't a list", "a list expected"),
-                                     (re.sub(r'(?m)^stock = \["(\w+)"\]', r'stock = ["\1", "\1"]', st_good),
+                                     (put('stock = ["%s", "%s"]' % (first, first)),
                                       "a stock file listed twice", "once"),
                                      (re.sub(r'(?m)^stock = \[', 'stock = ["abc", ', st_good),
                                       "a codec.stock entry that isn't a SHA-256", "SHA-256"),
-                                     (re.sub(r"(?m)^(stock = .*)$", r'\1\nsources = ["x"]', st_good),
+                                     (put(arr.group(0) + '\nsources = ["x"]'),
                                       "codec.sources beside codec.stock", "comes from the stock files")):
                 with open(sp, "w", encoding="utf-8") as f:
                     f.write(text)

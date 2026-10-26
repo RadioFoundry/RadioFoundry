@@ -334,7 +334,7 @@ class Planning(unittest.TestCase):
         prof, segs = placed()
         (ca, mc), (ta, mt), (da, desc) = segs
         img = app_image(100000)
-        p = plan.make_plan(DM1701, [(DM1701.app_base, img)], plan.MERGE, segs)
+        p = plan.make_plan(DM1701, [(DM1701.app_base, img)], plan.MERGE, segs, DM1701.merge_windows(prof))
         self.assertEqual([s.index for s in p.erase], [3, 4, 5, 10, 11])
         self.assertEqual(p.kept, [])
         s11 = [st for st in p.writes if st.sector.index == 11][0]
@@ -349,9 +349,10 @@ class Planning(unittest.TestCase):
         self.assertEqual(flat[at + len(mc):0x1FF80], b"\xFF" * (0x1FF80 - at - len(mc)))
 
     def test_merge_needs_whole_codec(self):
-        segs = placed()[1][:2]
+        prof, segs = placed()
         with self.assertRaises(plan.PlanError):
-            plan.make_plan(DM1701, [(DM1701.app_base, app_image(1000))], plan.MERGE, segs)
+            plan.make_plan(DM1701, [(DM1701.app_base, app_image(1000))], plan.MERGE, segs[:2],
+                           DM1701.merge_windows(prof))
 
     def test_keep_rejects_codec_data(self):
         with self.assertRaises(plan.PlanError):
@@ -906,7 +907,10 @@ class StockLibrary(unittest.TestCase):
     def test_real_profile_table(self):
         p = stockfw.PROFILES["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
         self.assertEqual(p["codec_profile"], DM1701.codec.id)
-        self.assertEqual(DM1701.codec.windows, [(0x080E3A74, 0x1021C), (0x080D19F0, 0x12082), (0x080FFF80, 0x80)])
+        # the board's windows: V02.06's layout, then V02.01 to V02.03's (one layout for the three), 0x40 lower
+        self.assertEqual(DM1701.codec.windows, [(0x080E3A74, 0x1021C), (0x080D19F0, 0x12082), (0x080FFF80, 0x80),
+                                                (0x080E3A34, 0x1021C), (0x080D19B0, 0x12082)])
+        self.assertEqual(DM1701.merge_windows(p), [(0x080E3A74, 0x1021C), (0x080D19F0, 0x12082), (0x080FFF80, 0x80)])
         # the real map covers the real code, and the placement keeps the move whole words
         m = stockfw.code_map(p)
         self.assertEqual(m["profile"], "dm1701-v0206-csv")
@@ -936,17 +940,17 @@ class FirmwareProfiles(unittest.TestCase):
     """Every placed stock profile is one the radio's firmware accepts: boards/<radio>/vocoder_<radio>.c lists its tag,
     code window and table windows with the CRC-32s the merge's descriptor carries, and nothing else."""
 
-    WIN = re.compile(r"\{ (0x[0-9A-F]+)u, (0x[0-9A-F]+)u, (0x[0-9A-F]+)u \}")
+    WIN = re.compile(r"\{ (\w+), (\w+), (\w+) \}")
 
     def firmware(self, board):
         src = open(os.path.join(HERE, "..", "..", "..", "boards", board, "vocoder_%s.c" % board)).read()
         defs = dict(re.findall(r"#define (\w+)\s+(\w+)u\b", src))
-        tables = {m.group(1): [tuple(int(x, 16) for x in w) for w in self.WIN.findall(m.group(2))]
+        num = lambda v: int(defs.get(v, v).rstrip("u"), 0)	# a number, or a #define of one
+        tables = {m.group(1): [tuple(num(x) for x in w) for w in self.WIN.findall(m.group(2))]
                   for m in re.finditer(r"codec_desc_window_t (\w+)\[\w*\] = \{(.*?)\};", src, re.S)}
         structs = {}
         for m in re.finditer(r"stm32_codec_profile_t (\w+) = \{(.*?)\n\};", src, re.S):
             f = dict(re.findall(r"\.(\w+) = (\w+)", m.group(2)))
-            num = lambda v: int(defs.get(v, v).rstrip("u"), 0)
             wins = tables[f["tables"]]
             self.assertEqual(len(wins), num(f["windows"]))
             structs[m.group(1)] = (num(f["tag"]), num(f["code"]), num(f["code_len"]), num(f["code_crc"]), tuple(wins))
@@ -960,7 +964,7 @@ class FirmwareProfiles(unittest.TestCase):
         return {structs[n] for n in listed}
 
     def test_every_profile_in_the_firmware(self):
-        for board in ("mduv380", "md380"):
+        for board in ("mduv380", "md380", "dm1701"):
             want = set()
             for prof in stockfw.PROFILES.values():
                 if prof["board"] != board:
@@ -969,6 +973,105 @@ class FirmwareProfiles(unittest.TestCase):
                 w = struct.unpack_from("<%dI" % (7 + 3 * stockfw.DESC_WINDOWS), d)
                 want.add((w[2], w[3], w[4], w[5], tuple(tuple(w[7 + 3 * i:10 + 3 * i]) for i in range(w[6]))))
             self.assertEqual(self.firmware(board), want, board)
+
+
+class Dm1701Builds(unittest.TestCase):
+    """The DM-1701's stock files: V02.06 CSV, and V02.01, V02.02 and V02.03 CSV, which hold one codec 0x40 below
+    V02.06's (codec-dm1701.md "Firmware files"): one map and one placement for the three."""
+
+    V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
+    V0201 = "cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713"
+    V0202 = "643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7"
+    V0203 = "35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948"
+
+    def test_board(self):
+        self.assertEqual(DM1701.codec_stock, [self.V0206, self.V0201, self.V0202, self.V0203])
+        self.assertEqual(DM1701.codec.id, "dm1701-v0206-csv-s11")
+        self.assertEqual([s.index for s in DM1701.codec_sectors()], [10, 11])
+        for h in DM1701.codec_stock:
+            self.assertRegex(stockfw.KNOWN_FILES[h], r"^DM-1701 V02\.0[1236] CSV$")
+            self.assertIn(stockfw.PROFILES[h]["name"], DM1701.codec.sources)
+
+    def test_one_map_for_three_files(self):
+        """The three older files: one code window (by its hash), the dm1701-v0203-csv map, one placement and tag."""
+        maps = codecmap.load_maps()
+        profs = [stockfw.PROFILES[h] for h in (self.V0201, self.V0202, self.V0203)]
+        for p in profs:
+            self.assertEqual({k: p[k] for k in ("code", "tables", "placement", "placed", "segments", "size")},
+                             {k: profs[0][k] for k in ("code", "tables", "placement", "placed", "segments", "size")})
+            m = codecmap.by_code_sha(maps, p["code"][2])
+            self.assertEqual([x["profile"] for x in m], ["dm1701-v0203-csv"], p["name"])
+            m = m[0]
+            self.assertEqual(m["stock"]["sha256"], self.V0203)
+            self.assertEqual((m["code"]["flash"], m["code"]["len"]), p["code"][:2])
+            tw = m["table_windows"][0]
+            self.assertEqual((tw["flash"], tw["len"], tw["sha256"]), p["tables"])
+            self.assertEqual((tw["min_start"], tw["min_len"]), (p["tables"][0], p["placement"]["tables_len"]))
+            # the tables cut to the codec's data, the code right after them, word aligned, below the descriptor
+            self.assertEqual(p["placement"]["code"], (p["tables"][0] + p["placement"]["tables_len"] + 3) & ~3)
+            self.assertLessEqual(p["placement"]["code"] + p["code"][1], stockfw.DESC_ADDR)
+            self.assertEqual(codecmap.branches_in(m, p["tables"][0], p["placement"]["tables_len"]), len(m["branches"]))
+            self.assertEqual(p["placement"]["tag"], 0x0203)
+        self.assertNotEqual(profs[0]["placement"]["tag"], stockfw.PROFILES[self.V0206]["placement"]["tag"])
+
+    def test_map_is_v0206_relinked(self):
+        """The V02.03 map is the V02.06 one with every address 0x40 lower: the same entries, the same sites in the code
+        and in the islands, every target and value shifted, the same object lengths except where a bound depends on
+        the stock code around it. A map that disagrees with the V02.06 one anywhere else is wrong."""
+        maps = codecmap.load_maps()
+        a, b, d = maps["dm1701-v0203-csv"], maps["dm1701-v0206-csv"], -0x40
+        self.assertEqual(a["entries"], b["entries"])
+        self.assertEqual((a["code"]["flash"] - b["code"]["flash"], a["code"]["len"], a["code"]["reachable_len"]),
+                         (d, b["code"]["len"], b["code"]["reachable_len"]))
+        for k in ("self_refs", "island_ptrs", "table_refs", "island_refs", "branches"):
+            self.assertEqual(len(a[k]), len(b[k]), k)
+            for x, y in zip(a[k], b[k]):
+                self.assertEqual(set(x), set(y), k)
+                for f in x:
+                    if f in ("kind", "off", "off2", "reachable"):
+                        self.assertEqual(x[f], y[f], (k, f))
+                    else:
+                        self.assertEqual(x[f] - y[f], d, (k, f, x))
+        self.assertEqual([(i["start"] - d, i["len"]) for i in a["islands"]],
+                         [(i["start"], i["len"]) for i in b["islands"]])
+        self.assertEqual([o["start"] - d for o in a["objects"]], [o["start"] for o in b["objects"]])
+        self.assertEqual([[v - d for v in g] for g in a["groups"]], b["groups"])
+        ta, tb = a["table_windows"][0], b["table_windows"][0]
+        self.assertEqual((ta["min_start"] - d, ta["min_len"], ta["len"]), (tb["min_start"], tb["min_len"], tb["len"]))
+        self.assertEqual(a["outside_refs"], [])
+
+    def test_synthetic_merge(self):
+        """A V02.01 file merges, splits and reads back from a readout like V02.06; its descriptor carries tag 0x0203."""
+        stock, profiles, _, _ = stockfw.build_synthetic_stock(KEY, random.Random(201), self.V0201)
+        prof, segs = stockfw.extract(stock, KEY, profiles)
+        self.assertEqual([(a, len(d)) for a, d in segs], [(0x080E3A34, 0x1021C), (0x080D19B0, 0x12082),
+                                                         (stockfw.DESC_ADDR, stockfw.DESC_LEN)])
+        self.assertEqual(struct.unpack_from("<4I", segs[-1][1], 8), (0x0203, 0x080E3A34, 0x1021C,
+                                                                      prof["placed"]["code"][0]))
+        img = app_image(0x080C0000 - 0x0800C000)
+        merged = stockfw.merge(img, prof, segs)
+        self.assertEqual(stockfw.split_merged(merged, profiles)[1], prof)
+        self.assertEqual(stockfw.from_flash(flash_readout(stock, KEY, profiles), profiles=profiles), (prof, segs))
+        p = plan.make_plan(DM1701, [(DM1701.app_base, img)], plan.MERGE, segs, DM1701.merge_windows(prof))
+        self.assertEqual([s.index for s in p.erase if s.index >= 10], [10, 11])
+
+    @unittest.skipUnless(os.path.isdir(os.environ.get("RFOUNDRY_DM1701_STOCK_DIR", "")),
+                         "set RFOUNDRY_DM1701_STOCK_DIR (a folder with the DM-1701 stock files)")
+    def test_real_files(self):
+        """Every supported DM-1701 stock file in the folder: the key derived from it, every window decrypted, the codec
+        placed by its map and checked against the profile's hashes (extract() raises on any mismatch)."""
+        found = set()
+        for root, _, files in os.walk(os.environ["RFOUNDRY_DM1701_STOCK_DIR"]):
+            for n in files:
+                data = open(os.path.join(root, n), "rb").read()
+                h = stockfw.sha256(data)
+                if h not in DM1701.codec_stock:
+                    continue
+                key = stockfw.derive_key(data)
+                prof, segs = stockfw.extract(data, key, board="dm1701")
+                self.assertEqual([a for a, _ in segs], [a for a, _ in DM1701.merge_windows(prof)])
+                found.add(h)
+        self.assertEqual(found, set(DM1701.codec_stock))
 
 
 class MdUv380(unittest.TestCase):
@@ -1216,10 +1319,11 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
         dev = fakedfu.FakeAnyRoad(DM1701, KEY, flash)
         before = bytes(dev.flash)
         img = app_image(150000)
-        segs = []
+        segs, wins = [], None
         if mode == plan.MERGE:
-            segs = placed()[1]
-        p = plan.make_plan(DM1701, [(DM1701.app_base, img)], mode, segs)
+            prof, segs = placed()
+            wins = DM1701.merge_windows(prof)
+        p = plan.make_plan(DM1701, [(DM1701.app_base, img)], mode, segs, wins)
         dfumod.Dfu(dev, 0, log=lambda *a: None, sleep=lambda s: None).run(p, KEY)
         return dev, before, img, p, segs
 

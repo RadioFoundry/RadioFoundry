@@ -42,6 +42,7 @@ MDUV380_KEY_SHA256 = "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf
 # forward only: a release older than the one that added a build's profile doesn't know its tag and finds no codec, so
 # going back to it needs the codec merged again from a file it supports. Each is named after the first build
 # supported; boards.py requires one id per board, and the site and release manifests compare it
+DM1701_CODEC = "dm1701-v0206-csv-s11"
 MDUV380_CODEC = "mduv380-1926-s11"
 MD380_CODEC = "md380-d2032-s11"
 # The count word of the single-segment container form (the MD-380 D002.032 file: one segment, count 0xFFFFFFFF)
@@ -62,7 +63,7 @@ PROFILES = {
         "version": "V02.06 CSV",
         "board": "dm1701",
         "key_sha256": DM1701_KEY_SHA256,
-        "codec_profile": "dm1701-v0206-csv-s11",
+        "codec_profile": DM1701_CODEC,
         "size": 1272320,
         "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xD9400)],
         "code": (0x08074714, 0x1021C, "1d8d04603b288e102f70252c1dd489600dfde656eccea6264e7bf4fac413f0cd"),
@@ -72,6 +73,52 @@ PROFILES = {
         "placement": {"code": 0x080E3A74, "tables_len": 0x12082, "tag": 0x0206},
         "placed": {"code": (0x485BFC13, "d88c93ba5c3eac043558d05b182fe824a25aa373f84c48a341b369c0cc942e8c"),
                    "tables": (0xC1EEFA8B, "9ed939d23dd7b20f633d084f4713c35277d0227821070c551990caf8df409215")},
+    },
+    # DM-1701 V02.01, V02.02 and V02.03 CSV: byte-identical code and table windows, 0x40 below V02.06's (codec-dm1701.md
+    # "Firmware files"), so one codec map (dm1701-v0203-csv) and one placement: the tables at their stock address cut
+    # to the codec's data (which ends at 0x080E3A32), the code right after them, word aligned. The three files put the
+    # same bytes at the same addresses, so they share one descriptor tag
+    "cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713": {
+        "name": "Firmware-DM-1701(CSV)-V02.01.bin",
+        "version": "V02.01 CSV",
+        "board": "dm1701",
+        "key_sha256": DM1701_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1272320,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xD9400)],
+        "code": (0x080746D4, 0x1021C, "2ff7b7a886b26c182d8dd883c09b8b7e5c8d5bd7331a5f8f482ecd65a86a4cc9"),
+        "tables": (0x080D19B0, 0x12850, "ab3cfb492b9740ab9edbaf3505674ee390f21d7539c746dcf910c03854f1379b"),
+        "placement": {"code": 0x080E3A34, "tables_len": 0x12082, "tag": 0x0203},
+        "placed": {"code": (0x99B02204, "a24f6b793b2d725401cdeaad7bba728f0ed01e45a6f2cc89e5fe726757ce1531"),
+                   "tables": (0x811EC3C0, "a6045020e11c0d2c9cccff08074d5b259c6023dc9d3e968da13e3a91f813fe35")},
+    },
+    "643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7": {
+        "name": "DM-1701(CSV)-V02.02.bin",
+        "version": "V02.02 CSV",
+        "board": "dm1701",
+        "key_sha256": DM1701_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1272320,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xD9400)],
+        "code": (0x080746D4, 0x1021C, "2ff7b7a886b26c182d8dd883c09b8b7e5c8d5bd7331a5f8f482ecd65a86a4cc9"),
+        "tables": (0x080D19B0, 0x12850, "ab3cfb492b9740ab9edbaf3505674ee390f21d7539c746dcf910c03854f1379b"),
+        "placement": {"code": 0x080E3A34, "tables_len": 0x12082, "tag": 0x0203},
+        "placed": {"code": (0x99B02204, "a24f6b793b2d725401cdeaad7bba728f0ed01e45a6f2cc89e5fe726757ce1531"),
+                   "tables": (0x811EC3C0, "a6045020e11c0d2c9cccff08074d5b259c6023dc9d3e968da13e3a91f813fe35")},
+    },
+    "35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948": {
+        "name": "DM-1701(CSV)-V02.03 Only for Radioddity.bin",
+        "version": "V02.03 CSV",
+        "board": "dm1701",
+        "key_sha256": DM1701_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1272320,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xD9400)],
+        "code": (0x080746D4, 0x1021C, "2ff7b7a886b26c182d8dd883c09b8b7e5c8d5bd7331a5f8f482ecd65a86a4cc9"),
+        "tables": (0x080D19B0, 0x12850, "ab3cfb492b9740ab9edbaf3505674ee390f21d7539c746dcf910c03854f1379b"),
+        "placement": {"code": 0x080E3A34, "tables_len": 0x12082, "tag": 0x0203},
+        "placed": {"code": (0x99B02204, "a24f6b793b2d725401cdeaad7bba728f0ed01e45a6f2cc89e5fe726757ce1531"),
+                   "tables": (0x811EC3C0, "a6045020e11c0d2c9cccff08074d5b259c6023dc9d3e968da13e3a91f813fe35")},
     },
     # TYT MD-380 "Firmware 2.32" (D002.032), single-segment container. Stock keeps the code in sectors 6 and 7
     "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43": {
