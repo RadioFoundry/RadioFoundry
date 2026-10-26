@@ -202,6 +202,22 @@ A typical session, as qdmr does it:
 | 9 | Radio info | ignored | Section 4 |
 | 10 | Flash security registers | Register address in the SPI flash's OTP security register space | Not on the MK22. Used by the CPS for identification. The shim may answer `-` or return the chip's registers |
 
+A client that reads a radio running the original firmware (the web flasher's backup before an install,
+[web-flasher.md](../dev/web-flasher.md)) keeps to what that firmware is known to take:
+
+- Ask at most 2045 bytes per `R`. The reply buffer holds no more.
+- Area 5 has no bounds check on the STM32 builds. A read past the end of the MCU flash can fault the radio. Read
+  exactly the MCU flash, from its base to its end, as the board data gives them.
+- Area 10 may not be answered at all: one STM32 build sent nothing, not even `-`. Don't ask it, or don't wait on it.
+- Area 1 at 0x7590-0x75FF is the live VFO overlay (2.2). Read that range in 32-byte requests to get the flash's own
+  bytes.
+- Send no `C` command when only reading. `C` 6 2 saves settings, and once left a radio's USB hung.
+- Long runs of reads hung one radio once. Reads change nothing, so a read that goes unanswered can be asked again, and
+  a backup can stop and continue later.
+
+These points come from one radio and this spec, not from the original firmware's source. Not all are confirmed on
+every build.
+
 ## 4. Radio info (area 9)
 
 The structure is little endian, packed, 46 bytes in struct version 3.

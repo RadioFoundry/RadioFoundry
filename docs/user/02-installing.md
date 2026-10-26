@@ -64,6 +64,29 @@ On Windows the bootloader needs a driver once ([Windows: the bootloader driver](
 
 Then continue with [First boot](03-first-boot.md).
 
+### Coming from another open firmware
+
+On a radio that runs an OpenGD77-family firmware, the installer can back up the whole radio through that firmware
+before installing, and take the update key and the voice codec from the backup. You then need no stock firmware file.
+The installer offers this only on radios where it works. On others it suggests **Other / Not sure**, and the stock
+firmware file is needed as usual.
+
+1. On **Current firmware**, choose **RadioFoundry**, or choose **Other / Not sure** and then **Check the Radio**, with
+   the radio connected and on. The installer reports the other firmware.
+2. Choose **Back Up and Read**. The backup takes about a minute and a half. It only reads; nothing on the radio
+   changes. Keep the file it saves.
+3. The installer says whether it found the update key and the codec. If it found both, continue: the codec step uses
+   the codec from your radio. If it found neither or only one, select your stock firmware file on the codec step.
+4. Install as usual through the bootloader.
+
+If the radio stops responding during the backup, turn it off and on, then choose **Continue Reading**: the backup
+continues where it stopped. **Save What Was Read** keeps what was read so far.
+
+To go back, choose **Restore** with that backup and **Previous open firmware**. The firmware is written back; the
+channels and settings are not. Write them with that firmware's own programming software if they are missing.
+
+This path has not been tested on a real radio yet. Keep your stock firmware file at hand.
+
 ### Updating RadioFoundry
 
 Start the radio normally with RadioFoundry running, connect it and run **Install** again. The installer asks the radio

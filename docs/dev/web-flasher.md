@@ -230,7 +230,29 @@ What can be read depends on the firmware running:
 |---|---|
 | RadioFoundry | Everything, through the CPS reads (areas 1, 5, 9 and 10): the whole SPI flash, the internal flash, the security registers |
 | RadioFoundry with stub entry (STM32F4) | The same. The radio info and security registers come over the debug link; the internal flash and the SPI flash come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into RadioFoundry. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves RadioFoundry running, and the debug link reads everything |
+| Another open firmware (OpenGD77 family) | Everything but the security registers, over that firmware's CPS (`openfw.js`, below) |
 | Stock (STM32F4) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing RadioFoundry: flashing never touches the SPI flash, and RadioFoundry doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
+
+## Another open firmware (`openfw.js`)
+
+A radio whose port answers the debug link probe with `-` and gives a valid radio info is on another open firmware
+(`link.js` `whyNoAnswer()`, kind `openfw`). Where the board supports it, the current-firmware step offers a full backup
+before the install, and the install then needs no stock file.
+
+| | |
+|---|---|
+| Which boards | `openfw.supported()`: CPS radio types (`board.toml` `[cps]`, `cps_radio_types` in `flash-boards.json`), the `usb-dfu` family and a `key_sha256`. All from board data; HR_C7000 boards are left out (other install route, area 1 offset) |
+| Radio type | The radio info's type must be one of the board's, or nothing is read (a wrong radio picked) |
+| Requests | `R` only: area 9, then area 5 over exactly [`rom_base`, `flash_end`) (bootloader included, for the key), then area 1 over the whole SPI flash. Never `C` (a `C` 6 2 saves settings and once hung a radio's USB), never area 10 (some builds don't answer), never more than 2045 bytes per request. 0x7590-0x75FF of area 1 is read in 32-byte requests, so the VFO overlay never applies |
+| A radio that stops answering | Each request is asked three times (a read changes nothing). Then the backup stops and keeps what it read (`state.stopped`); after a power cycle the same state continues (`readBackup({state})`) where it stopped. What was read can be saved as an incomplete bundle |
+| Speed | About 190 KB/s (2045-byte requests): 1 MB of MCU flash and 16 MB of SPI flash take about 1.5 minutes |
+| The key | `keyFromImage()`: the 1024-byte block of the bootloader region whose SHA-256 is the board's `key_sha256`, searched (`bootkey.js`), no offset assumed. Stored as a key read from a RadioFoundry radio (`S.key`, local storage) |
+| The codec | `codecFromImage()`: first the forms `stockfw.fromFlash()` knows (stock addresses, RadioFoundry's placement); then a copy moved anywhere: the codec's first word at each word boundary, the move undone with the codec map (`codecmap.js` `unmoveCode()`, `unmoveBranches()` for tables whose islands call the moved copy or still the stock address), the stock SHA-256s checked (for a profile whose merge cuts the tables, the codec's own data at their start), then placed and checked as a merge from the stock file. Kept as the saved codec (`codecsave.js`), so `decideCodec()` merges from the saved copy. Not found: the codec step asks for the stock file as before |
+| Bundle | `firmware_now` `{kind: "openfw", radio_type, git, built, flash_id}`; `radio-info.bin`, `internal-flash.bin` from the application base, `spi-flash.bin`. No security registers; the bootloader (and the key in it) is read but not stored |
+| After the install | The settings area is claimed (`prepareStorage()`), as after any full backup |
+| Practice mode | `#sim=<board>-openfw`: `fake.js` state `openfw` (2045-byte clip, VFO overlay, unbounded area 5, silent area 10, hangs) |
+
+Not yet tested on a real radio.
 
 ## Restore
 
@@ -238,6 +260,7 @@ What can be read depends on the firmware running:
 |---|---|---|
 | Exactly as backed up (backup taken on RadioFoundry) | The internal flash image through the bootloader (every sector erased and rewritten), then the codeplug areas that differ through CPS writes | The CPS refuses RadioFoundry's own areas and the calibration window |
 | Codeplug only (any backup that holds the codeplug span) | The codeplug areas that differ, through CPS writes; the firmware is not touched | As above |
+| Previous open firmware (backup taken on another open firmware) | That firmware's internal flash image through the bootloader (`planInternal`) | The SPI flash is not written back, as for stock: that firmware's own CPS writes its codeplug from `spi-flash.bin` |
 | Back to stock | The stock application from the user's stock file, codec included, through the bootloader. Any file for this radio that its key opens can be used, mapped or not: no codec is taken from it | The SPI flash stays as it is: writing it back whole needs a firmware command that doesn't exist yet (a gated STORAGE write, like CLAIM). Until then the flasher says so, and the stock codeplug goes back with the vendor CPS |
 
 The stock file's resource segment (SPI flash 0x60000) is not written back: how the vendor updater writes it is not
