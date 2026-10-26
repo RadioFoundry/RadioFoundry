@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// A problem report to the project's backend (POST /v1/reports, then each file the user left ticked to
+// A problem report to the project's backend (POST /v1/reports, then each file the user left checked to
 // /v1/reports/{id}/files): only when the user presses Send in Report a Problem (report.js). A file the backend refuses
 // (too large, too many, too late, rate limited) is listed with the reason and the report still counts. No DOM here, so
 // the Node tests can use it.
@@ -43,7 +43,12 @@ async function detail(r) {
 export async function sendProblemReport({ api, body, files = [], fetchFn = globalThis.fetch }) {
 	const r = await fetchFn(new URL("reports", api), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 	if (r.status !== 201 && r.status !== 200) throw new Error(await detail(r));
-	const j = await r.json();
+	// a report the backend took but whose answer can't be read: said as such, never an "undefined" id
+	let j = null;
+	try {
+		j = await r.json();
+	} catch (e) { /* below */ }
+	if (!j?.id || !j.token) throw new Error(`the report was sent but the answer had no report ID (HTTP ${r.status})`);
 	const out = { id: j.id, sent: [], refused: [] };
 	for (const f of files) {
 		if (!KINDS.has(f.kind)) {

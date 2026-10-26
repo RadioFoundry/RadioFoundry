@@ -236,7 +236,7 @@ page walks through the update mode. See also [Troubleshooting](20-troubleshootin
 
 **Report a Problem** sits under every failure and on the Verify step. It sends what the installer decided and its last
 steps. You can add a message, an email address for a reply and the files it lists (the stock firmware file, a backup,
-the firmware read from the radio). A backup holds your channels, contacts and the radio's calibration: untick it to
+the firmware read from the radio). A backup holds your channels, contacts and the radio's calibration: uncheck it to
 leave it out. Attached files and your email address are deleted within 90 days.
 
 **Programming cables:** cables with a CH340 chip can be unreliable for backups and installs. If one fails, try a cable

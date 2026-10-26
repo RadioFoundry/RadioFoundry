@@ -38,7 +38,7 @@ function push(e) {
 
 // A step worth seeing in a report
 export function note(text, data) {
-	push({ t: since(), kind: "note", text, ...(data !== undefined ? { data: plain(data) } : {}) });
+	push({ t: since(), kind: "note", text: String(text).slice(0, 300), ...(data !== undefined ? { data: plain(data) } : {}) });
 	if (globalThis.console?.debug) console.debug("[rfoundry]", text, ...(data !== undefined ? [data] : []));
 }
 

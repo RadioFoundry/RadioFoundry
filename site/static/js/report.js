@@ -27,7 +27,7 @@ let adapterNow = null;		// the USB device in use (flasher/adapter.js), as a tag 
 
 // tool: "editor" or "flasher". context: () => the tool's state for a report (no personal data: it is also sent
 // with automatic error reports). attachments: () => [{name, label, data: () => Uint8Array, kind?, checked?}],
-// offered unticked unless checked. backend: {api, meta: () => reportBody's meta}: Send posts the report and the ticked
+// offered unchecked unless checked. backend: {api, meta: () => reportBody's meta}: Send posts the report and the checked
 // files there (with an email field), even with ?reporting=0, since the user asks for it; practice() true: answered
 // by practiceFetch, nothing sent
 export async function initReporting({ tool, context, attachments, backend: be }) {
@@ -200,7 +200,7 @@ export function reportDialog() {
 		download(`rfoundry-bug-report-${diag.report().tool || "web"}-${stamp()}.zip`, await zip(files), "application/zip");
 		result.replaceChildren(h("p", { class: "notice ok" }, t("report.downloaded")));
 	}, { primary: !sentry && !backend });
-	// the project's backend: the report and the ticked files, the user's message and address if given
+	// the project's backend: the report and the checked files, the user's message and address if given
 	const toBackend = async () => {
 		if (!contactOk(email.value)) {
 			result.replaceChildren(h("p", { class: "notice bad" }, t("report.email_bad")));

@@ -157,12 +157,17 @@ test("sending: the report first, then each file with its kind, name and token; a
 	assert.deepEqual([...f.init.body], [1, 2, 3]);
 	// the report itself refused: that is an error
 	await assert.rejects(sendProblemReport({ api: "https://api.radiofoundry.org/v1/", body: reportBody(META), fetchFn: backend({ report: 429 }).fetchFn }), /rate limited/);
+	// a 201 whose answer has no report ID: an error that says so, never "Report sent: undefined"
+	const noId = async () => ({ status: 201, ok: true, json: async () => ({}) });
+	await assert.rejects(sendProblemReport({ api: "https://api.radiofoundry.org/v1/", body: reportBody(META), fetchFn: noId }), /no report ID/);
+	const badJson = async () => ({ status: 201, ok: true, json: async () => { throw new SyntaxError("bad json"); } });
+	await assert.rejects(sendProblemReport({ api: "https://api.radiofoundry.org/v1/", body: reportBody(META), fetchFn: badJson }), /no report ID/);
 	// practice mode answers here
 	const p = await sendProblemReport({ api: "https://api.radiofoundry.org/v1/", body: reportBody(META), files: files.slice(0, 1), fetchFn: practiceFetch });
 	assert.deepEqual([p.id, p.sent], ["practice", ["stock.bin"]]);
 });
 
-test("Report a Problem: what is sent, the files ticked by default, both fields optional, the 90 days; Send posts it all", async () => {
+test("Report a Problem: what is sent, the files checked by default, both fields optional, the 90 days; Send posts it all", async () => {
 	const be = backend({ files: { "internal-flash.bin": 413 } });
 	globalThis.fetch = be.fetchFn;
 	diag.reset();
@@ -184,7 +189,7 @@ test("Report a Problem: what is sent, the files ticked by default, both fields o
 	assert.ok(text.includes("A backup holds your channels, contacts and the radio's calibration."));
 	const boxes = find(d, (e) => e.tagName === "INPUT" && e.type === "checkbox");
 	assert.equal(boxes.length, 3);
-	assert.ok(boxes.every((b) => b.checked), "every file ticked by default");
+	assert.ok(boxes.every((b) => b.checked), "every file checked by default");
 	for (const [label, size] of [["stock.bin", "1 KB"], ["The firmware read from the radio", "2 KB"], ["radio.zip", "4 KB"]]) {
 		assert.ok(text.includes(label) && text.includes(size), `${label} with its size`);
 	}
@@ -196,7 +201,7 @@ test("Report a Problem: what is sent, the files ticked by default, both fields o
 	const send = find(d, (e) => e.tagName === "BUTTON" && e.textContent === en["report.send"])[0];
 	await press(send);
 	const posts = be.calls.filter((c) => c.url.pathname.startsWith("/v1/reports"));
-	assert.equal(posts.length, 3, "the report and the two ticked files");
+	assert.equal(posts.length, 3, "the report and the two checked files");
 	const body = JSON.parse(posts[0].init.body);
 	assert.equal(body.result, "failed");
 	assert.equal(body.tool, "web");
