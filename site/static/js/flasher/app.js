@@ -1104,15 +1104,17 @@ function codecView() {
 		// a known file without a codec profile (MD-380 D2.30) gives the bootloader key, not the codec: say what it's good for
 		const keyOnly = S.stock?.info.known && !fb().profiles[S.stock.info.sha];
 		// a build with the codec but no map yet, or a file for another radio: what each file in the pick is
-		const unmapped = S.stock?.match?.kind === "codec-unmapped" && t("flash.codec.stock_unmapped", { files: S.board.codec.sources.join(", ") });
+		const unmapped = S.stock?.match?.kind === "codec-unmapped" && t("flash.codec.stock_unmapped", { files: stockFiles() });
 		const report = S.stock?.report?.length > 1 || (S.stock && !S.stock.info.profile)
 			? h("details", { class: "small", open: !S.stock.info.known }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, S.stock.report.map((l) => h("li", {}, l)))) : null;
-		const loaded = !S.stock ? null : [keyOnly ? notice(`${loadedText}. ${t("flash.codec.stock_key_only", { files: S.board.codec.sources.join(", ") })}`, "action")
+		const loaded = !S.stock ? null : [keyOnly ? notice(`${loadedText}. ${t("flash.codec.stock_key_only", { files: stockFiles() })}`, "action")
 			: unmapped ? notice(`${loadedText}. ${unmapped}`, "action")
 			: S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad"), report, analysisOffer(S.stock.analysis, S.board.id)];
 		// a download link only where there is a known one; no vague pointers
-		const where = h("p", {}, t("flash.codec.stock_files", { files: S.board.codec.sources.join(", ") }),
-			S.radio.flash.stock_download ? [" ", h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download"))] : null);
+		const where = [h("p", {}, t("flash.codec.stock_files", { files: stockFiles() }),
+			S.radio.flash.stock_download ? [" ", h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download"))] : null),
+			S.board.codec.sources.length > STOCK_NAMES_MAX ? h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_all")),
+				h("ul", {}, S.board.codec.sources.map((n) => h("li", {}, n)))) : null];
 		const parts = [h("p", {}, t("flash.codec.lead"))];
 		const viaStub = stubRoute();
 		if (viaStub) {
@@ -1683,12 +1685,23 @@ function stuckInUpdateMode() {
 }
 
 // STM32 radios back on their original firmware, from the stock file, through update mode (no backup needed)
+// The board's supported stock files as a short text: their names when there are a few, else how many there are and
+// their versions (the codec page lists every name under it)
+const STOCK_NAMES_MAX = 6;
+function stockFiles() {
+	const names = S.board.codec.sources;
+	if (names.length <= STOCK_NAMES_MAX) return names.join(", ");
+	const versions = [...new Set(Object.values(fb().profiles).filter((p) => p.board === S.board.id)
+		.map((p) => p.version.match(/\d+\.\d+/)?.[0]).filter(Boolean))].sort((a, b) => parseFloat(a) - parseFloat(b));
+	return t("flash.codec.stock_versions", { n: names.length, versions: versions.join(", ") });
+}
+
 function stockRecovery(go) {
 	if (!S.stock?.info?.known) {
 		const picker = S.sim ? button(t("flash.sim.use_stock"), async () => { S.stock = { name: "simulated-stock.bin", data: S.sim.stock, info: await stockfw.identify(S.sim.stock, fb()) }; render(); })
 			: filePicker(t("flash.codec.stock_pick"), ".bin,.zip", async (f) => { S.stock = await pickedStock(f); render(); });
 		const where = S.radio.flash.stock_download ? h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download")) : null;
-		return panel(t("flash.help.stock_title"), h("p", {}, t("flash.help.stock_need", { files: S.board.codec.sources.join(", ") }), " ", where),
+		return panel(t("flash.help.stock_title"), h("p", {}, t("flash.help.stock_need", { files: stockFiles() }), " ", where),
 			S.stock ? notice(t("flash.codec.stock_loaded", { name: S.stock.name, what: t("flash.codec.stock_unknown") }), "bad") : null, picker);
 	}
 	return bootloaderPanel(t("flash.help.stock_title"), async (key) => planStock(S.stock.data, key, S.board, fb()), () => {

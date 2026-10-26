@@ -639,6 +639,8 @@
  "flash.codec.need_codec": "The codec is taken from your stock firmware file.",
  "flash.codec.key_saved": "This browser remembers the radio's update key.",
  "flash.codec.stock_files": "Supported files: {files}.",
+ "flash.codec.stock_versions": "any of {n} files, versions {versions}",
+ "flash.codec.stock_all": "Every supported file",
  "flash.codec.codec_from_radio": "The codec was read from the radio and verified. This browser keeps a copy, so an interrupted installation can still be completed.",
  "flash.codec.codec_from_radio_unsaved": "The codec was read from the radio and verified. This browser cannot keep a copy (for example in a private window), so an interrupted installation requires the stock firmware file.",
  "flash.codec.codec_saved": "The codec this browser saved from your radio earlier is written back.",
