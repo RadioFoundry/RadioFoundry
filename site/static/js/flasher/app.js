@@ -1410,8 +1410,14 @@ function codecView() {
 		// else. Whatever the case, the page says what happens and what the user has to do.
 		const needs = [];
 		if (!S.decision && !haveStock) needs.push(`${err} ${t("flash.codec.need_codec")}`);
-		if (S.decision && !keyKnown && !haveStock) needs.push(t("flash.codec.need_key"));
-		const ready = S.decision && (keyKnown || haveStock);
+		// a file for another radio that gives this one's codec (file_radio) never gives the key: getKey refuses it
+		const codecOnly = haveStock ? fb().profiles[S.stock.info.sha].file_radio : null;
+		const stockKey = haveStock && !codecOnly;
+		if (S.decision && !keyKnown && codecOnly) {
+			const prof = fb().profiles[S.stock.info.sha];
+			needs.push(t("flash.err.codec_only_key", { file: prof.name, radio: codecOnly, board: S.board.name }));
+		} else if (S.decision && !keyKnown && !stockKey) needs.push(t("flash.codec.need_key"));
+		const ready = S.decision && (keyKnown || stockKey);
 		// a merge from the copy saved from the radio isn't one from the stock file: its own label
 		const modeKey = S.decision?.mode === MERGE && S.decision.source === "saved" ? "merge_saved" : S.decision?.mode;
 		const plan = S.decision ? `${t(`flash.codec.mode.${modeKey}`)}: ${S.decision.why}.` : null;
