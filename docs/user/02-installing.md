@@ -142,7 +142,7 @@ there.
 |---|---|
 | The browser has no WebUSB or Web Serial (Safari, Firefox) | The start page says so. The step that needs the radio shows the kit instead, with a picker for the stock firmware file |
 | The bootloader connect or the write fails | A line under the error |
-| The radio doesn't answer the cable within three minutes | A line under the error |
+| The radio doesn't answer the cable within three minutes, or preparing it fails | A line under the error |
 
 | In the kit | What |
 |---|---|
@@ -151,9 +151,11 @@ there.
 | `stock/` | Your stock firmware file, if you gave one. Otherwise the README says which file to put there |
 | `rfoundry.py`, `tools/`, `stub/`, `requirements.txt` | rfoundry from the same version as the web installer. It runs from the folder; `pip` installs its packages in a virtual environment |
 
-It needs Python 3. The kit is put together in the browser; nothing is uploaded. A radio that rfoundry can't install
-gets no kit: use Chrome or Edge on a computer. The [feature matrix](../feature-matrix.md) and your radio's section of
-the [Radio reference](23-radios.md) say how each radio installs.
+It needs Python 3.8 or later. The README says how to install Python and rfoundry's packages on each system, and the
+driver a USB bootloader needs on Windows and Linux. The kit is put together in the browser; nothing is uploaded. A
+radio that rfoundry can't install gets no kit: use Chrome or Edge on a computer. The [feature
+matrix](../feature-matrix.md) and your radio's section of the [Radio reference](23-radios.md) say how each radio
+installs.
 
 ## Advanced: rfoundry on the command line
 

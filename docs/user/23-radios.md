@@ -380,7 +380,7 @@ Follow [Installing](02-installing.md) with these values. To keep the stock codep
 | Stock firmware file | The manufacturer's `DM32.01.01.049.bin` |
 | Cable | The USB-serial programming cable. The radio has no USB of its own |
 | Update mode | Hold **PTT** and **SK1** while you switch the radio on. The green LED lights |
-| If the cable can't prepare the radio | **Use Factory Update Mode**: the update mode above, with the stock firmware file for the codec. Not yet tried on a DM-32UV from the web installer |
+| If the cable can't prepare the radio | **Use Factory Update Mode**: the update mode above, with the stock firmware file for the codec. Untested on a DM-32UV from the web installer |
 | Board name | `dm32` |
 
 ### DM-32UV keys
@@ -577,7 +577,7 @@ rfoundry has flashed a radio yet; `tools/serial_loader.py` and `stub/stubtool.py
 In the web installer, when the cable can't prepare the radio, **Use Factory Update Mode** installs through the same
 update mode (PTT and SK1 at power-on). There is no stock firmware file for this radio, so the codec comes from a
 program memory backup of it (`program-memory.bin`, or the backup .zip the installer saved before the first
-installation) or from a codec the browser kept. Not yet tried on a DM-1801 Pro from the web installer.
+installation) or from a codec the browser kept. Untested on a DM-1801 Pro from the web installer.
 
 ### DM-1801 Pro keys
 

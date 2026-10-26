@@ -360,7 +360,9 @@ Nothing is read from the radio this way, so the check step takes the codec from 
 `c7000ui.js`): the stock firmware file where a profile of the board names one, else a program memory backup (or a slot
 this browser kept). The decision is never "keep": the image is `c7.target()` with the slot, without the 0xFF tail
 (`factoryInstallImage()` in `iapui.js`). Restore writes a backup's application area and slot, or the original firmware
-from its file, the same way. The Baofeng route has not been run from the web page on a radio.
+from its file, the same way. A step the user leaves (Back, Start over) while the page listens for update mode stops
+listening, so a radio switched on with its keys later is not written (`site/tests/iapui.test.mjs`). The Baofeng route is
+untested on a radio from the web page.
 
 ### A board with a first stage
 
@@ -541,8 +543,12 @@ launcher, `requirements.txt` and the license. The zip is reproducible: sorted en
 
 The stock file is `S.stock` (the inner file of a vendor zip), else the file the C7000 codec step took
 (`S.vendorPick`); a file with a problem is left out. The line sits under a failed bootloader connect (not a cancelled
-chooser) or write, and under the C7000 connect's boot ROM timeout (`ctx.manualKitLine` in `c7000ui.js`). Practice
-mode never offers a kit: its image is random bytes. Tests: `site/tests/manual.test.mjs`.
+chooser) or write, and under the C7000 connect's failed boot ROM wait or load (`ctx.manualKitLine` in `c7000ui.js`). Practice
+mode never offers a kit: its image is random bytes. Tests: `site/tests/manual.test.mjs`. Untested with a radio.
+
+The README's setup (`kitSetup()`) names Python `PYTHON_MIN` and each package of `PACKAGES`; the test checks both
+against `tools/rfoundry/pyproject.toml` and the zip's `requirements.txt`. The packages are not bundled: pip picks the
+`libusb-package` build for the user's system, which a kit made in the browser can't know.
 
 ## Browser support
 

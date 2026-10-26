@@ -405,7 +405,7 @@ area, so the slot is rewritten from a program flash read of this radio (`--stock
 needs that read once. A whole `rfoundry` run on either route has not been done on a radio. The web flasher writes
 through this loader as its factory update mode when the boot ROM load fails (`site/static/js/flasher/bfloader.js`,
 the steps from `boards/dm1801pro/board.toml`). With no vendor file for this radio, the codec slot comes from a program
-flash backup of this radio or a slot the browser kept. Not yet run from the web page on a radio.
+flash backup of this radio or a slot the browser kept. Untested from the web page on a radio.
 
 ### 6.3 Identity read
 
