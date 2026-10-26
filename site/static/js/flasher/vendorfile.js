@@ -3,7 +3,8 @@
 // Whatever vendor file a user picks, opened the same way for every radio: a firmware .bin, a program flash readout, or
 // a vendor's zip (nested zips too) with updaters, manuals and several builds inside. Every file is identified against
 // every radio the flasher knows, the most certain way first:
-//   1. its SHA-256 in a codec profile or the known files (stockfw PROFILES / KNOWN_FILES, the C-SKY profiles);
+//   1. its SHA-256 in a codec profile or the known files (stockfw PROFILES / KNOWN_FILES / NO_CODEC_FILES, the C-SKY
+//      profiles);
 //   2. an unknown TYT/Baofeng container (the "OutSecurityBin" header): every known bootloader key is tried on it, which
 //      tells which radio it is for, and the decrypted application is searched for the codec's signature word;
 //   3. a C-SKY radio's stock file or readout, by the codec's own hashes wherever the file holds it (c7000.js);
@@ -75,6 +76,9 @@ export async function identifyFile(data, fb, boardId = null) {
 	const sha = await sha256(data);
 	const prof = fb.profiles[sha];
 	if (prof) return { sha, board: prof.board, kind: "codec", how: "sha256", profile: prof, known: fb.known_files[sha] || prof.name };
+	// a file known to hold no codec (stockfw NO_CODEC_FILES): named, and like any other non-vendor file, never a source
+	const bare = fb.no_codec_files?.[sha];
+	if (bare) return { sha, board: null, known: bare.name, how: "sha256", problem: "not-vendor", why: stockfw.noCodec(bare) };
 	const c = fb.c7000;
 	const cprof = c?.profiles.find((p) => p.stock_file?.sha256 === sha);
 	if (cprof) {

@@ -618,6 +618,64 @@ class OtherRadioStock(unittest.TestCase):
                 self.assertNotIn("derive", err, codec)
 
 
+class NoCodecFile(unittest.TestCase):
+    """A file known to hold no codec (stockfw.NO_CODEC_FILES) is named and refused, as the flasher does
+    (site/tests/flasher.test.mjs). The real file is never in the repository: a stand-in registered under its hash."""
+    REAL = "a09ab4d364d199853204ebdf068ba0886d7e7bb99689f08437aae52104474a7e"
+
+    def stand_in(self):
+        data = app_image(96 * 1024, seed=1702)
+        entry = {stockfw.sha256(data): stockfw.NO_CODEC_FILES[self.REAL]}
+        return data, mock.patch.dict(stockfw.NO_CODEC_FILES, entry)
+
+    def test_entry(self):
+        self.assertEqual(stockfw.NO_CODEC_FILES[self.REAL]["board"], "dm1701")
+        for h in stockfw.NO_CODEC_FILES:		# never also a source or a stock file
+            self.assertNotIn(h, stockfw.PROFILES)
+            self.assertNotIn(h, stockfw.KNOWN_FILES)
+
+    def test_refused_by_name(self):
+        data, patch = self.stand_in()
+        self.assertIsNone(stockfw.no_codec(data))
+        with patch:
+            msg = stockfw.no_codec(data)
+            self.assertIn(stockfw.NO_CODEC_FILES[self.REAL]["name"], msg)
+            with self.assertRaises(stockfw.StockError) as e:
+                stockfw.find_profile(data)
+            self.assertEqual(str(e.exception), msg)
+            with self.assertRaises(cli.UsageError) as e:
+                cli.stock_codec(data, None, "dm1701")
+            self.assertEqual(str(e.exception), msg)
+
+    def test_flash_with_it_as_the_stock_file(self):
+        data, patch = self.stand_in()
+        img = app_image(220780)
+        with tempfile.TemporaryDirectory() as d:
+            bp = os.path.join(d, "rfoundry-dm1701-v0.0.1.bin")
+            open(bp, "wb").write(img)
+            open(os.path.join(d, "rfoundry-dm1701-v0.0.1.json"), "w").write(
+                mf.dumps(mf.generate(DM1701, img, "v0.0.1", "e" * 40)))
+            sp = os.path.join(d, "open.bin")
+            open(sp, "wb").write(data)
+            with patch, mock.patch.object(cli, "get_probe", return_value=None), \
+                    mock.patch.object(state, "key_path", return_value=os.path.join(d, "no.key")):
+                rc, out, err = run_cli(["flash", bp, "--stock", sp, "--codec", "merge", "--yes"])
+            self.assertEqual(rc, 2, out + err)
+            self.assertIn(stockfw.NO_CODEC_FILES[self.REAL]["name"], err)
+
+    @unittest.skipUnless(os.environ.get("RFOUNDRY_NOCODEC_FILE", "").endswith(".bin"), "set RFOUNDRY_NOCODEC_FILE (the .bin)")
+    def test_real_file(self):
+        """The file holds neither the codec's code nor its tables (docs/spec/codec-dm1701.md "Files without the
+        codec"): where it expects the code, a code window's length is blank, and it ends before the stock tables"""
+        data = open(os.environ["RFOUNDRY_NOCODEC_FILE"], "rb").read()
+        self.assertEqual(stockfw.sha256(data), self.REAL)
+        self.assertIsNotNone(stockfw.no_codec(data))
+        self.assertIsNone(stockfw.from_flash(data, base=stockfw.APP_BASE))
+        code = 0x0807537C - stockfw.APP_BASE
+        self.assertEqual(data[code:code + 0x1021C], b"\xFF" * 0x1021C)
+        self.assertLess(stockfw.APP_BASE + len(data), 0x080D19F0)
+
+
 class WaitForDfu(unittest.TestCase):
     def test_no_bootloader_raises_the_hint_not_a_format_error(self):
         with mock.patch.object(dfumod, "find", return_value=[]):

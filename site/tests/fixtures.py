@@ -5,6 +5,7 @@
 Python it was ported from (site/tests/flasher.test.mjs):
 
   - a synthetic DM-1701 stock file and its key (rfoundry's stockfw.build_synthetic_stock), with its profile
+  - a plain image standing in for a file known to hold no codec, and rfoundry's message for it
   - a synthetic MD-UV380 stock file and a read of the internal flash of a radio running it, with the codec rfoundry's
     stockfw.from_flash finds in the read
   - plans for a synthetic image in keep and merge mode, as plan.describe() prints them
@@ -135,6 +136,27 @@ def flash_readout(out, rng, sha=None, name="mduv380"):
 		"placed": [[a, stockfw.sha256(d), len(d)] for a, d in codec]}
 
 
+def no_codec(out, rng):
+	"""A plain application image standing in for a file known to hold no codec (stockfw.NO_CODEC_FILES; the real one
+	is never in the repository): registered under its own SHA-256 with the first entry's text, and the message
+	rfoundry gives for it, which the flasher must give too. Returns the fixture entry."""
+	from unittest import mock
+	data = bytes(rng.getrandbits(8) for _ in range(96 * 1024))
+	sha = stockfw.sha256(data)
+	real = next(iter(stockfw.NO_CODEC_FILES))
+	with mock.patch.dict(stockfw.NO_CODEC_FILES, {sha: stockfw.NO_CODEC_FILES[real]}):
+		msg = stockfw.no_codec(data)
+		try:
+			stockfw.find_profile(data)
+			raise AssertionError("a file without a codec was taken")
+		except stockfw.StockError as e:
+			assert str(e) == msg
+	assert stockfw.from_flash(data) is None
+	with open(os.path.join(out, "nocodec.bin"), "wb") as f:
+		f.write(data)
+	return {"sha256": sha, "real_sha256": real, "message": msg}
+
+
 def main(out):
 	os.makedirs(out, exist_ok=True)
 	codec_map_vectors(out)
@@ -169,6 +191,7 @@ def main(out):
 		# RT3S V219.60: the code doesn't fit after its tables, so it goes to the start of sector 10, below them
 		"readout_v21960": flash_readout(out, random.Random(21960),
 						"447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee", "rt3s-v21960"),
+		"no_codec": no_codec(out, random.Random(1702)),
 	}
 	for k in ("code", "tables", "extra"):
 		doc["profile"].pop(k, None)

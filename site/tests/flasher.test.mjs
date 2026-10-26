@@ -272,6 +272,39 @@ test("a file that can't be used is explained: another radio, not a vendor file, 
 	assert.equal(explain.errorProblem(new stockfw.StockError("x", "internal")).problem, "internal");
 });
 
+// A file known to hold no codec (stockfw.NO_CODEC_FILES), bare or zipped with small language files: named by its
+// SHA-256 with rfoundry's words, never a codec source, a key or a restore. The real file stays out of the repository:
+// a stand-in registered under its own hash (fixtures.py no_codec)
+test("a file known to hold no codec is named and refused as rfoundry refuses it", async () => {
+	const nc = fx.no_codec;
+	assert.equal(fb.no_codec_files[nc.real_sha256].board, "dm1701");
+	const data = bin("nocodec.bin");
+	const f = { ...fb, no_codec_files: { ...fb.no_codec_files, [nc.sha256]: fb.no_codec_files[nc.real_sha256] } };
+	const m = await vendorfile.identifyFile(data, f, "dm1701");
+	assert.deepEqual([m.board, m.problem, m.how, m.why], [null, "not-vendor", "sha256", nc.message]);
+	await assert.rejects(stockfw.extract(data, null, f), (e) => e.message === nc.message && e.code === "not-vendor");
+	const gla = new Uint8Array(4772).fill(0x41);
+	const z = await zip([{ name: "fw.bin", data }, { name: "German.gla", data: gla }, { name: "French.gla", data: gla }]);
+	for (const [name, d] of [["fw.bin", data], ["fw.zip", z]]) {
+		const opened = await vendorfile.openVendorFile(name, d, f, "dm1701");
+		assert.equal(opened.best, null, name);
+		for (const need of ["codec", "key"]) assert.equal(explain.pickProblem(opened, "dm1701", { need }).problem, "not-vendor", name);
+		assert.equal(vendorfile.analysisCandidate(opened, f, "dm1701"), null, name);
+		assert.ok(vendorfile.describe(opened, f, "dm1701")[0].includes(nc.message), name);
+	}
+	// without the entry it is still refused, only not named
+	assert.equal((await vendorfile.identifyFile(data, fb, "dm1701")).problem, "not-vendor");
+});
+
+test("the known file without a codec, the real one", { skip: !process.env.RFOUNDRY_NOCODEC_FILE && "set RFOUNDRY_NOCODEC_FILE (the .bin or its .zip)" }, async () => {
+	const d = new Uint8Array(readFileSync(process.env.RFOUNDRY_NOCODEC_FILE));
+	const opened = await vendorfile.openVendorFile("picked", d, fb, "dm1701");
+	const f = opened.files.find((x) => fb.no_codec_files[x.match.sha]);
+	assert.ok(f, "no file in the pick has a NO_CODEC_FILES hash");
+	assert.equal(f.match.problem, "not-vendor");
+	assert.equal(explain.pickProblem(opened, "dm1701").problem, "not-vendor");
+});
+
 test("an error report names the picked file and what was found, never its bytes", async () => {
 	const fbX = await radioX();
 	const opened = await vendorfile.openVendorFile("fw.zip", await zip([{ name: "a/new.bin", data: stock }, { name: "a/setup.exe", data: (() => { const d = new Uint8Array(70000); d.set([0x4D, 0x5A]); return d; })() }]), fbX, "x");

@@ -642,6 +642,14 @@ KNOWN_FILES = {
     "167e79f18e78d7d31460dc577c4efd0cb881344f5ee44a4c9a30798ead0fb79d": "MD-390 S35.14",
 }
 
+# Files known to hold no codec at all, by SHA-256: named so the user is told why, never taken as a codec source or a
+# stock file (no key, no restore). Not listed as supported anywhere. codec-dm1701.md "Files without the codec"
+NO_CODEC_FILES = {
+    "a09ab4d364d199853204ebdf068ba0886d7e7bb99689f08437aae52104474a7e": {
+        "board": "dm1701", "name": "a DM-1701 open-firmware build",
+        "why": "a plain application image without the codec (neither its code nor its tables)"},
+}
+
 
 class StockError(Exception):
     pass
@@ -687,6 +695,15 @@ def decrypt(data, off, length, key):
 def identify(stock):
     """A short description of a stock file ("DM-1701 V02.06 CSV"), or None when unknown."""
     return KNOWN_FILES.get(sha256(stock))
+
+
+def no_codec(data):
+    """Why a file known to hold no codec (NO_CODEC_FILES) can't be used, or None for any other file"""
+    f = NO_CODEC_FILES.get(sha256(data))
+    if f is None:
+        return None
+    return ("this file is %s: %s. The codec comes from the manufacturer's firmware file or a readout of a radio that "
+            "holds it" % (f["name"], f["why"]))
 
 
 def windows(prof):
@@ -775,6 +792,8 @@ def find_profile(stock, profiles=None):
     digest = sha256(stock)
     prof = profiles.get(digest)
     if prof is None:
+        if no_codec(stock):
+            raise StockError(no_codec(stock))
         known = KNOWN_FILES.get(digest)
         raise StockError("%s (sha256 %s...), not a supported codec source. Supported: %s"
                          % ("this file is " + known if known else "unknown stock file", digest[:16],

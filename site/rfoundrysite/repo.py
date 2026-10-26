@@ -262,7 +262,8 @@ def flash_boards():
 	finally:
 		sys.path.pop(0)
 	out = {"format": "rfoundry-flash-boards/1", "manifest_format": manifest.FORMAT, "boards": {}, "profiles": {},
-	       "known_files": dict(stockfw.KNOWN_FILES), "magic": stockfw.MAGIC.decode(), "header_len": stockfw.HEADER_LEN,
+	       "known_files": dict(stockfw.KNOWN_FILES), "no_codec_files": dict(stockfw.NO_CODEC_FILES),
+	       "magic": stockfw.MAGIC.decode(), "header_len": stockfw.HEADER_LEN,
 	       "key_len": stockfw.KEY_LEN, "codec_sig": stockfw.CODEC_SIG, "single_segment": stockfw.SINGLE_SEGMENT,
 	       "descriptor": {"addr": stockfw.DESC_ADDR, "len": stockfw.DESC_LEN, "magic": stockfw.DESC_MAGIC,
 			      "version": stockfw.DESC_VERSION, "windows": stockfw.DESC_WINDOWS}}

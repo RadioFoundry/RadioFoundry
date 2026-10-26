@@ -58,7 +58,7 @@ under 64 KB. Each remaining file is identified against every radio the flasher k
 
 | Step | How | Result |
 |---|---|---|
-| 1 | SHA-256 in a codec profile or a C-SKY profile. A file in the known files without a profile goes on to step 2 | the codec (and the key); the key only for a known file without a profile |
+| 1 | SHA-256 in a codec profile or a C-SKY profile. A file in the known files without a profile goes on to step 2. A file known to hold no codec (`stockfw.py` `NO_CODEC_FILES`, such as another firmware project's build) is named and stops here | the codec (and the key); the key only for a known file without a profile; `not-vendor` for a file without a codec, with rfoundry's message |
 | 2 | A TYT/Baofeng container (`OutSecurityBin`) no profile knows: every known bootloader key is tried, the chosen radio's first. A key that decrypts it names the radio, and the decrypted application is searched for the codec's signature word | the key; "the codec, no recipe for this build" |
 | 3 | The C-SKY codec search: the codec's own hashes wherever the file or readout holds it (`c7000.js`) | the codec; "no recipe" when only the signature matches. The signature is the same on every C-SKY radio, so such a file is credited to no radio and never written back as original firmware |
 | 4 | An STM32 readout, by the codec windows' hashes (`stockfw.fromFlash`) | named, not used: the page asks for the manufacturer's file instead |

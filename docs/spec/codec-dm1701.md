@@ -25,6 +25,23 @@ The V02.01 to V02.03 files are downloadable from Radioddity's bucket `dm-1701.s3
 
 V02.01, V02.02 and V02.03 CSV have byte-identical codec code and table windows.
 
+### Files without the codec
+
+rfoundry and the web flasher name these by SHA-256 (`stockfw.py` `NO_CODEC_FILES`) and refuse them as a codec source,
+a key source or original firmware, as for any file that is not the manufacturer's.
+
+| file | size | sha256 | codec |
+|---|---|---|---|
+| an open-firmware build | 804256 | `a09ab4d364d199853204ebdf068ba0886d7e7bb99689f08437aae52104474a7e` | none |
+
+* A plain application image (no container) linked at 0x0800C000, ending at 0x080D05A0. It may come zipped with small
+  `.gla` language files, which the opener sets aside.
+* It holds neither part of the codec: no 64-byte block of the V02.06 CSV code or table window is in it. The file ends
+  below the stock table window (0x080D19F0).
+* It expects the code at 0x0807537C, which it leaves blank (0xFF from there to 0x080BDF2C). It checks the codec's first
+  word there and calls encode (+0x130) and decode (+0x5D8), the V02.06 CSV entry offsets. What puts the codec there is
+  outside the file.
+
 ## Container and encryption
 
 The files are "OutSecurityBin" upgrade files:

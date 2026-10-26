@@ -288,6 +288,8 @@ def stock_codec(stock, key, board=None):
             return stockfw.extract(stock, key, board=board)
         except stockfw.StockError as e:
             raise UsageError(str(e))
+    if stockfw.no_codec(stock):
+        raise UsageError(stockfw.no_codec(stock))
     got = stockfw.from_flash(stock)
     if got is None:
         raise UsageError("neither a supported stock firmware file nor a flash readout (from 0x%08X) that holds a "

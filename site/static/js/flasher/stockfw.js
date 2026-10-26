@@ -50,6 +50,9 @@ export function decrypt(data, off, length, key, fb) {
 	return out;
 }
 
+// Why a file known to hold no codec (an entry of fb.no_codec_files) can't be used: stockfw.no_codec's words
+export const noCodec = (f) => `this file is ${f.name}: ${f.why}. The codec comes from the manufacturer's firmware file or a readout of a radio that holds it`;
+
 // What a file is: {sha, known: "DM-1701 V02.06 CSV" | null, profile | null}
 export async function identify(data, fb) {
 	const sha = await sha256(data);
@@ -120,6 +123,8 @@ export async function extract(data, key, fb, profiles = fb.profiles, boardId = n
 	const sha = await sha256(data);
 	const prof = profiles[sha];
 	if (!prof) {
+		const bare = fb.no_codec_files?.[sha];
+		if (bare) throw new StockError(noCodec(bare), "not-vendor", { known: bare.name });
 		const known = fb.known_files[sha];
 		const names = Object.values(profiles).filter((p) => !boardId || p.board === boardId).map((p) => p.name).join(", ");
 		throw new StockError(`${known ? "this file is " + known : "unknown stock file"}, not a supported codec source. Supported: ${names}`, "unmapped", { known: known || null });
