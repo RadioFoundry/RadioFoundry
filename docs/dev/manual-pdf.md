@@ -7,7 +7,7 @@ How the user manual becomes the PDF a release carries. The manual is the Markdow
 
 ```
 tools/build_manual.sh                         # build/manual/RadioFoundry-manual-<git describe>.pdf
-tools/build_manual.sh --version v0.1.0        # the version on the title page and in the file name
+tools/build_manual.sh --version v26.11        # the version on the title page and in the file name
 tools/build_manual.sh --out manual.pdf
 tools/build_manual.sh --typ-only              # stop after the typst source, for debugging the template
 ```
@@ -23,7 +23,7 @@ Chapter files are numbered (`01-introduction.md`, ...); a new chapter is a new n
 which GitHub and the PDF both show. A missing image is left out of the PDF with a warning. The PDF goes to `build/`,
 which git ignores: never commit it.
 
-Set `RFOUNDRY_REPO_URL` (for example `https://github.com/OWNER/RadioFoundry/blob/v0.1.0`) to make links to files
+Set `RFOUNDRY_REPO_URL` (for example `https://github.com/OWNER/RadioFoundry/blob/v26.11`) to make links to files
 outside the manual into web links. `$PANDOC` and `$TYPST` choose the binaries.
 
 ## Toolchain: pandoc and typst
@@ -55,5 +55,5 @@ pandoc 3.6.4 and typst 0.13.1 in CI (`.github/workflows/manual.yml`); `tools/bui
 | Manual run (`workflow_dispatch`) | On a `v*` tag, the same as a tag push; on a branch, the same as a pull request |
 
 It downloads fixed versions of pandoc and typst, so the PDF doesn't change with the runner image. To rebuild the PDF
-for an existing tag, run the workflow by hand on the tag (`gh workflow run manual.yml --ref v0.1.0`); the upload
+for an existing tag, run the workflow by hand on the tag (`gh workflow run manual.yml --ref v26.11`); the upload
 replaces the asset.

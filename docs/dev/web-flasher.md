@@ -497,7 +497,7 @@ To have someone install a version that isn't a release (a commit to try out), se
 ```
 https://<site>/flash/?version=<full 40-character commit hash>
 https://<site>/flash/?version=<full commit hash>#radio=<id>
-https://<site>/flash/?version=v0.3.0
+https://<site>/flash/?version=v26.11
 https://<site>/flash/?version=feature/my_radio
 ```
 
@@ -508,6 +508,7 @@ https://<site>/flash/?version=feature/my_radio
 | On every step | A banner names the version and has "Install the latest release instead", which drops it. |
 | Before the build | The build step's button says "Get version <hash>", and a dialog asks for confirmation. The dialog can also switch to the latest release and continue with it. |
 | `#radio=` | Picks the radio, as on any flasher link. |
+| A beta | When the site offers a newer pre-release (`site.json` `beta`), the start page and the first install step link to `?version=<beta tag>` ([release.md](release.md#release-names)). The beta is never installed without that link. |
 
 Without a link, a radio with no release is built from `main`. On a preview of another branch (`data/site.json` `branch`, from `CF_PAGES_BRANCH` or the checked-out branch), it is built from that branch instead, so a radio that exists only there can be tried.
 

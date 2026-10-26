@@ -75,7 +75,10 @@ Each variant file starts with `## title:` and `## summary:` lines, and the comme
 left out; the site shows both. The lists are a draft for the project lead to settle.
 
 The firmware version (`RFOUNDRY_GIT`) is the commit plus `-dirty` when the tree differs from it (tracked changes, or
-untracked sources in the built directories); only the few files that use it are rebuilt when it changes.
+untracked sources in the built directories). The release name (`RFOUNDRY_RELEASE`, for example `v26.11`) is the
+release tag on that commit, empty for a dirty tree or an untagged commit; `make RELEASE=<tag>` sets it and `RELEASE=`
+leaves it out ([dev/release.md](dev/release.md#release-names)). Only the few files that use either are rebuilt when it
+changes.
 
 ## Switches
 
