@@ -84,6 +84,8 @@ The installer offers this only on radios where it works. On others the stock fir
 3. The installer says whether it found the update key and the codec. If it found both, continue: the codec step uses
    the codec from your radio. If it found neither or only one, select your stock firmware file on the codec step. The
    same holds when you skip the backup or the radio reports another model: the codec step asks for the stock file.
+   The open firmware's installer may have put a codec from another radio's firmware there, wherever it chose; the
+   backup finds it, and your radio's section in [Radio Reference](23-radios.md) says which files count.
 4. Install as usual through the bootloader.
 
 If the radio stops responding during the backup, turn it off and on, then choose **Continue Reading**: the backup

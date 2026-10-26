@@ -8,6 +8,11 @@ Rule: the radio runs exactly the codec its own TYT firmware shipped. The user's 
 file the user supplies. No codec bytes go in this repository or in released binaries. Any MD-9600 firmware version is the
 MD-9600's own donor; the codec is board-independent code, so a file for one board revision serves every revision.
 
+These files are also a codec source for another radio: an open-firmware install made from this firmware leaves this
+codec on that radio. Its tables then move with the code (`codecmap.move_window`), and the open-firmware backup finds it
+wherever the install put it (`stockfw.from_moved`). The radio's own codec page lists the files and placements;
+[codec-placement.md](codec-placement.md) has the shared format.
+
 ## Stock files
 
 | version | boards | file | size | sha256 |

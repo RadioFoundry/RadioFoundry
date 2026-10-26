@@ -140,6 +140,7 @@ Follow [Installing](02-installing.md) with these values:
 | Item | DM-1701 |
 |---|---|
 | Stock firmware file | Baofeng's `DM-1701(CSV)-V02.06.bin` or `DM-1701(noCSV)-V02.06.bin` (V02.06), or Radioddity's V02.01, V02.02 or V02.03 file (`Firmware-DM-1701(CSV)-V02.01.bin`, `DM-1701(CSV)-V02.02.bin`, `DM-1701(CSV)-V02.03 Only for Radioddity.bin`, `DM-1701-V02.03 Only for Radioddity.bin`). Each gives the bootloader key and the voice codec. An archive of V02.06 is at github.com/daniel5600/BAOFENG-DM1701-Original-Firmware ([the list](../spec/codec-dm1701.md#firmware-files)) |
+| MD-9600 files | Any TYT MD-9600 V16.45 or V06.09 file (`MD9600-CSV(V4)-V16.45.bin` and the rest) gives the voice codec, the one an OpenGD77-family install leaves on the radio. It does not give the bootloader key and is never written back as the radio's firmware: also select a DM-1701 file, or read the radio first (**Another open firmware**, which finds this codec in the radio). [Details](../spec/codec-dm1701.md#md-9600-files) |
 | `--stock-installed` | The version the radio runs, e.g. `"V02.06 CSV"` |
 | Bootloader keys | Hold **PTT** and **SK1** together while you turn the radio on with the volume knob |
 | Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) |
