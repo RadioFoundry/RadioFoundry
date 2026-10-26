@@ -13,9 +13,9 @@ Recipes from each radio's codec page (docs/spec/codec-<radio>.md, "Extraction re
      way);
   3. check each window's SHA-256 and the code's first word 0x4FF0E92D;
   4. write a new image: the built application from 0x0800C000, then the codec where its profile places it, 0xFF between
-     (docs/spec/codec-placement.md): the tables at their stock address, the code moved as one block into sector 11
-     (right after the tables, or at the start of the sector), with the addresses the build's codec map lists
-     rewritten, and the descriptor at 0x080FFF80 that tells the firmware where the code is.
+     (docs/spec/codec-placement.md): the tables at their stock address, the code moved as one block (right after
+     the tables, or at the start of sector 10 or 11 as the build's profile says), with the addresses the build's
+     codec map lists rewritten, and the descriptor at 0x080FFF80 that tells the firmware where the code is.
 
 The codec is DVSI's and the radio maker's, not ours: it is never stored in this repository or in a release. This tool
 reads your stock file and your key file and writes the merged image to a file you choose (by default next to the
@@ -43,6 +43,7 @@ import zlib  # noqa: E402
 DM1701_V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
 MD380_D2032 = "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
 MDUV380_V1926 = "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e"
+RT3S_V21960 = "447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee"
 
 EPILOG = """\
 examples:
@@ -209,6 +210,13 @@ def self_test():
     check(from_flash(bytes(flash), profiles=uprofiles) is None, "a readout with a changed code byte gives nothing")
     umerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), up, uwins)
     check(not stm32_dfu.check_image(umerged, "mduv380"), "stm32_dfu accepts the MD-UV380 merged image")
+    # RT3S V219.60: the code doesn't fit after the tables, so it goes to the start of sector 10, below them
+    rstock, rprofiles, rcode, _ = build_synthetic_stock(key, rng, RT3S_V21960)
+    rp, rwins = extract(rstock, key, rprofiles)
+    check([a for a, _ in rwins] == [0x080C0000, 0x080E322C, DESC_ADDR] and 0x080C0000 + len(rcode) <= 0x080E322C,
+          "RT3S 219.60: code at the start of sector 10, below the tables")
+    rmerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), rp, rwins)
+    check(not stm32_dfu.check_image(rmerged, "mduv380"), "stm32_dfu accepts the RT3S 219.60 merged image")
 
     # main() end to end on the synthetic file
     import contextlib

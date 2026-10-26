@@ -14,10 +14,18 @@
 //
 // The codec is DVSI's and Baofeng's. It only ever moves between the user's radio, files and this browser.
 
-import { concat, crc32, sha256, u32le, le32 } from "./bytes.js";
+import { concat, crc32, sha256, u32le, le32, startsWith } from "./bytes.js";
 import { byCodeSha, checkWords } from "./codecmap.js";
 
-export class CodecError extends Error {}
+// code: as stockfw.js StockError's, for the page's explanation (explain.js) and the error report; "image" is a
+// RadioFoundry image the codec slot can't take (the user's own build), not a vendor file
+export class CodecError extends Error {
+	constructor(message, code = "internal") {
+		super(message);
+		this.name = "CodecError";
+		this.code = code;
+	}
+}
 
 const HEAD = 64;	// the tables are found by the CRC-32 of their first 64 bytes, then checked by SHA-256
 const ENTRIES = 7;
@@ -109,18 +117,21 @@ export async function codecFromFile(data, c, boardId) {
 		const low = lowPart(c, data);
 		const got = await locateCodec(low, c, boardId);
 		if (got) return got;
-		throw new CodecError(codecSignature(low, c, c.app_start, c.boards[boardId].slot[0]) >= 0
+		// a backup without a codec known for this radio: one of a build without a recipe, or another radio's backup
+		const hasCodec = codecSignature(low, c, c.app_start, c.boards[boardId].slot[0]) >= 0;
+		throw new CodecError(hasCodec
 			? `this program memory backup holds a stock codec build RadioFoundry has no recipe for; take the codec from a stock firmware file${supported(c, boardId)}`
-			: "this program memory backup contains no codec recognized for this radio");
+			: "this program memory backup contains no codec recognized for this radio", hasCodec ? "unmapped" : "not-vendor");
 	}
 	const sha = await sha256(data);
 	const p = profilesFor(c, boardId).find((x) => x.stock_file?.sha256 === sha);
 	if (!p) {
 		const got = await locateInFile(data, c, boardId);
 		if (got) return got;
-		throw new CodecError(codecSignature(data, c) >= 0
+		const hasCodec = codecSignature(data, c) >= 0;
+		throw new CodecError(hasCodec
 			? `this file holds a codec build RadioFoundry has no recipe for${supported(c, boardId)}`
-			: `not a stock firmware file the codec can be taken from${supported(c, boardId)}`);
+			: `not a stock firmware file the codec can be taken from${supported(c, boardId)}`, hasCodec ? "unmapped" : "not-vendor");
 	}
 	// the whole file is identified by its SHA-256 above; the codec hashes, where the profile has them, check the carve too
 	const hdr = p.stock_header ?? c.stock_header;
@@ -149,7 +160,7 @@ export function slotBytes(c, boardId, got) {
 	const tabOff = codeOff + align4(code.length);
 	if (!(lay.tables[0] <= p.tables_ram && p.tables_ram + tables.length <= lay.tables[1])) throw new CodecError("table address outside the reserved modem SRAM window");
 	const m = codecMap(c, got);
-	if (!m) throw new CodecError("no codec map for this build: its code can't be moved to the board's codec window");
+	if (!m) throw new CodecError("no codec map for this build: its code can't be moved to the board's codec window", "unmapped");
 	if (m.code.run !== p.run || m.code.len !== code.length) throw new CodecError(`the codec map of ${p.name} doesn't match its profile`);
 	if (!fitsRun(lay, code.length)) throw new CodecError("the codec is bigger than the board's codec window");
 	if ((lay.run[0] - p.run) % 4) throw new CodecError("the codec window would change the code's word alignment");
@@ -237,8 +248,8 @@ export async function decide(c, boardId, { slotInFlash = null, movedSlot = null,
 export function target(c, boardId, image, slot = null) {
 	const lay = c.boards[boardId];
 	const room = lay.slot[0] - c.app_start;
-	if (image.length > room) throw new CodecError(`the image (${image.length} bytes) runs into the codec slot (${room} bytes free)`);
-	if (u32le(image, 0) === 0 || new Set(image.subarray(0, 64)).size < 2) throw new CodecError("this file is not a firmware image");
+	if (image.length > room) throw new CodecError(`the image (${image.length} bytes) runs into the codec slot (${room} bytes free)`, "image");
+	if (u32le(image, 0) === 0 || new Set(image.subarray(0, 64)).size < 2) throw new CodecError("this file is not a firmware image", "image");
 	const end = slot ? c.app_end : c.app_start + Math.ceil(image.length / c.sector) * c.sector;
 	const out = new Uint8Array(end - c.app_start).fill(0xFF);
 	out.set(image, 0);
@@ -246,9 +257,25 @@ export function target(c, boardId, image, slot = null) {
 	return [c.app_start, out];
 }
 
+// The program memory of a radio on its original firmware, from that firmware's file (one the page identified for this
+// radio: vendorfile.js kind "codec"), as restoreTarget takes it: the application after the file's header (a
+// "BFUV32-V2" file's 256 bytes; the DB25-D's are plain) at the application start, everything else erased. The codec
+// slot goes with it, which the original firmware never reads. A program memory backup is taken as it is. So a radio
+// goes back to its original firmware from its vendor file, without a backup from before the first installation.
+// header: the matched profile's stock_header, where it has its own
+export function progmemFromFile(c, boardId, data, header = undefined) {
+	if (data.length === c.progmem_size || data.length === totalSize(c, boardId)) return lowPart(c, data);
+	const body = data.subarray(header ?? (startsWith(data, c.stock_magic) ? c.stock_header : 0));
+	const room = c.app_end - c.app_start;
+	if (body.length > room) throw new CodecError(`the firmware (${body.length} bytes) is larger than the application area (${room} bytes)`, "internal");
+	const progmem = new Uint8Array(c.progmem_size).fill(0xFF);
+	progmem.set(body, c.app_start);
+	return progmem;
+}
+
 // A program flash backup put back: the application area and the slot, exactly (the bootloader isn't written)
 export function restoreTarget(c, progmem) {
-	if (progmem.length < c.progmem_size) throw new CodecError("not a whole program memory backup");
+	if (progmem.length < c.progmem_size) throw new CodecError("not a whole program memory backup", "damaged");
 	return [c.app_start, progmem.slice(c.app_start, c.app_end)];
 }
 

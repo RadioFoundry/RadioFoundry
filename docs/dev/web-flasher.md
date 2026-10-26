@@ -11,6 +11,8 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | Module | Does | Ported from |
 |---|---|---|
 | `stockfw.js` | Stock file container, decryption, codec extraction, key derivation (column vote and runner-up search; the byte-pair refinement some keys need isn't ported) | `rfoundry/stockfw.py` |
+| `vendorfile.js` | Every vendor file a user picks, on every radio's page (below) | |
+| `explain.js` | Why a vendor file can't be used, as one of six problems, and what an error report says about the file (below) | |
 | `bytes.js` | Byte helpers (hex, CRC, concatenation) shared by the modules | |
 | `codecmap.js` | Codec maps: which words a relocated codec rewrites ([codec-placement.md](../spec/codec-placement.md)) | `rfoundry/codecmap.py` |
 | `plan.js` | Sector plans: keep, merge, and restore (a whole image put back exactly) | `rfoundry/plan.py` |
@@ -43,6 +45,91 @@ through the loader hand-over). `#sim` alone is the first radio on stock firmware
 (`fakeC7000Options()` and `c7000Simulation()` in `fakec7000.js`, `simulation()` in `fake.js`): a radio with a stock
 console gets one, with its first stock version.
 
+## Vendor files
+
+`vendorfile.js` opens whatever the user picks, the same way on every radio's page. The input can be:
+
+- a firmware `.bin`;
+- a program flash readout;
+- a vendor's zip with updaters, manuals and several builds inside, or a zip inside a zip (three levels at most).
+
+Files are set aside by their content, never their extension: Windows programs, Office documents, PDFs, text and anything
+under 64 KB. Each remaining file is identified against every radio the flasher knows, the most certain way first:
+
+| Step | How | Result |
+|---|---|---|
+| 1 | SHA-256 in a codec profile or a C-SKY profile. A file in the known files without a profile goes on to step 2 | the codec (and the key); the key only for a known file without a profile |
+| 2 | A TYT/Baofeng container (`OutSecurityBin`) no profile knows: every known bootloader key is tried, the chosen radio's first. A key that decrypts it names the radio, and the decrypted application is searched for the codec's signature word | the key; "the codec, no recipe for this build" |
+| 3 | The C-SKY codec search: the codec's own hashes wherever the file or readout holds it (`c7000.js`) | the codec; "no recipe" when only the signature matches. The signature is the same on every C-SKY radio, so such a file is credited to no radio and never written back as original firmware |
+| 4 | An STM32 readout, by the codec windows' hashes (`stockfw.fromFlash`) | named, not used: the page asks for the manufacturer's file instead |
+
+The best file for the chosen radio is used:
+
+1. one with the codec;
+2. then one that gives the key;
+3. then the first by name.
+
+The page lists what each file is: used, for another radio, set aside and why. A codec found by its signature alone is
+never taken. Moving the codec needs that build's map, because its calls into the rest of the vendor firmware differ
+per build ([codec-placement.md](../spec/codec-placement.md)).
+
+### When a file can't be used
+
+`explain.js` sorts every failure with a vendor file into one problem. `stockfw.js` `StockError` and `c7000.js`
+`CodecError` carry its code; `vendorfile.js` marks each file it opened (`problem` on a file no radio claims, on
+anything set aside).
+
+| Problem | When | The page says to |
+|---|---|---|
+| `other-radio` | The file is identified for another radio the flasher knows (its SHA-256, a key that opens it, the codec's hashes). `extract()` refuses it by name before decrypting it, here and in rfoundry | pick this radio's file, or open the other radio's page |
+| `wrong-key` | A vendor container no known bootloader key opens: another model, or a modified build | pick the manufacturer's file for this radio |
+| `not-vendor` | No vendor container: a plain image, another firmware project's build, a zip without a firmware file | pick the manufacturer's file, not another project's |
+| `unmapped` | This radio's build, but no codec map for it yet | pick a listed version, or send the file |
+| `damaged` | A cut-short file or a damaged zip | download it again |
+| `internal` | A check that fails after the file was identified: a fault in the page or its data, not the file | nothing: it has been reported (or report it, without error reports) |
+
+Each notice gives what happened, why and what to do. The exact message is under **Technical details** and in the error
+report. The same notices come on the HR_C7000 pages (`c7000ui.js` gets `problemNotice` and `failureNotice`).
+
+The browser's own USB and serial errors (`NetworkError`, `InvalidStateError`, a failed `fetch`) say little. `errorText()`
+puts what to do in front of them: close the program that holds the port, check the cable, the Windows driver or the
+Linux device permission, reload the page.
+
+### Sending a file
+
+The page offers **Send this file for further analysis** for `unmapped`, `wrong-key` and `internal`, when what was
+picked holds a vendor firmware container: a file with the `OutSecurityBin` or the C-SKY stock header, 4 MB at most. It
+comes both when the codec can't be taken from the file and when a later step fails on a file identified for this radio
+(placing the codec, restoring). Readouts, other files and a file identified as another radio's are never offered. The
+text asks for the manufacturer's original file only. The file goes to the backend only on the user's click, with:
+
+- its name;
+- the radio being flashed;
+- what the page found (`codec-unmapped`, `key`, `key-unknown`, `unknown-container`, or the problem);
+- the site version;
+- an optional note (it asks where the file came from). For `internal`, the page's message is added to it.
+
+The backend (`POST /v1/samples`, raw body, the rest as query parameters) checks the header and the size itself. It
+rate-limits per address and per day, caps the total storage, keeps one copy per SHA-256 and never serves a file back.
+Simulations don't offer it.
+
+### What an error report says about the file
+
+Every error report carries `vendor_file` (`vendorContext()`) once a vendor file was picked. It never holds the file's
+bytes:
+
+| Field | Content |
+|---|---|
+| `board` | The radio being flashed |
+| `picked` | What the user chose: name (80 characters at most), size, SHA-256 |
+| `files`, `skipped` | Each file opened: path, size, SHA-256, the radio it is for, how it was identified, the known name, its problem; each file set aside and why |
+| `used`, `profile` | The file the page took, and its codec profile with that profile's radio |
+| `key` | Where the bootloader key came from: `sim`, `saved`, `file` or `radio` |
+| `decision` | The codec decision (mode, source) or the task (`restore`) |
+| `problem` | The problem, the other radio, the exact message (300 characters at most) |
+
+The start page's privacy text says that a report names the stock firmware file, never its contents.
+
 ## Radio access backends
 
 A radio's `flash.backend` in `data/radios.json` names how the page reaches it (from the board.toml `[flash] family`,
@@ -60,6 +147,7 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 | `stepLabel(step, task)` | Optional: the `flash.step.*` key of a step's name |
 | `recovery` | The help task: `first` (`updatemode` checks the bootloader first, `fix` goes to the choices), `stock` (`file`: stock firmware from the user's stock file; `restore`: from a backup), `reach` and `stockText` (string keys), and optionally `extra(radio, fb)`: more reinstall choices, each `{id, title, text, prepare()}` (string keys; `prepare` runs once the install task is set up) |
 | `ownsBundle(bundle)` | Optional: a backup bundle this backend restores with its own view |
+| `vendorRestore(radio, file, fb)` | Optional: a restore bundle from the radio's original firmware file, so the restore task takes that file too |
 | `ownImage(fb, board, data)` | Optional: a user's own image file, split into the image and anything the backend keeps (a merged codec slot) |
 | `release()` | Optional: let go of a port or loader still held (Start Over, another radio) |
 
@@ -111,7 +199,7 @@ What can be read depends on the firmware running:
 |---|---|---|
 | Exactly as backed up (backup taken on RadioFoundry) | The internal flash image through the bootloader (every sector erased and rewritten), then the codeplug areas that differ through CPS writes | The CPS refuses RadioFoundry's own areas and the calibration window |
 | Codeplug only (any backup that holds the codeplug span) | The codeplug areas that differ, through CPS writes; the firmware is not touched | As above |
-| Back to stock | The stock application from the user's stock file, codec included, through the bootloader | The SPI flash stays as it is: writing it back whole needs a firmware command that doesn't exist yet (a gated STORAGE write, like CLAIM). Until then the flasher says so, and the stock codeplug goes back with the vendor CPS |
+| Back to stock | The stock application from the user's stock file, codec included, through the bootloader. Any file for this radio that its key opens can be used, mapped or not: no codec is taken from it | The SPI flash stays as it is: writing it back whole needs a firmware command that doesn't exist yet (a gated STORAGE write, like CLAIM). Until then the flasher says so, and the stock codeplug goes back with the vendor CPS |
 
 The stock file's resource segment (SPI flash 0x60000) is not written back: how the vendor updater writes it is not
 documented, and RadioFoundry doesn't overwrite it unless an ID database is uploaded.
@@ -146,7 +234,7 @@ route knows, `update_mode` (the `serial-iap` family), `read_rate` (the program m
 | RadioFoundry runs (debug link answers) | The universal stub (`data/c7000-stub.json`, `stubImages()` in `stub.js`) goes into the RAM span the firmware reports in STUB INFO and copies itself to 0x30000. `univFits()` refuses a span whose copy would overlap or leave SRAM, as `stubtool.py` does. After HELLO the page sends CONFIG with the board's profile and checks the echo before any write |
 | RadioFoundry runs but does not answer | "Recover at Power-On": the first stage offers the boot ROM handshake for a short time at power-on. The page answers it and loads the universal stub, as the boot ROM route does |
 | The stock firmware runs | `usmart.js`: the stock firmware's debug console takes one framed command per write and answers `read_addr` and `write_addr`. The page identifies the build from its version string (another build is refused), writes the universal stub word by word into RAM, reads every word back, and points the console's command entry at it. Only RAM addresses can be written, never flash. The stub then copies itself to 0x30000 and the radio continues as from RadioFoundry |
-| Factory update mode (recovery) | `iap.js`: the loader's update mode takes `Erase` and 2 KB pages with additive checksums. Install: the first stage, RadioFoundry and the codec slot in one file; it must start with the first stage's signature (`flash.first_stage`). Restore: a backup's application area and slot (`restoreTarget()`). Offered when nothing answers on the cable, for a stock build the page doesn't know, and in Troubleshooting (`recovery.extra`, "Reinstall in Factory Update Mode") |
+| Factory update mode (recovery) | `iap.js`: the loader's update mode takes `Erase` and 2 KB pages with additive checksums. Install: the first stage, RadioFoundry and the codec slot in one file; it must start with the first stage's signature (`flash.first_stage`). Restore: a backup's application area and slot (`restoreTarget()`), or the original firmware from its file. Offered when nothing answers on the cable, for a stock build the page doesn't know, and in Troubleshooting (`recovery.extra`, "Reinstall in Factory Update Mode") |
 
 The first stage is the only way into the stub from a radio that runs RadioFoundry without answering.
 `site/tests/iap.test.mjs` runs the console stub load and the IAP write against simulated radios (`fakec7000.js`) and
@@ -177,6 +265,12 @@ The build writes the layout and the codec profiles to `data/flash-boards.json` (
 
 The calibration choice reads the stock codeplug area, which is about 10 seconds, and is on by default. Choosing the whole
 data memory includes it. Restore writes the program memory back from 0x0300C000 up; the data memory is not written.
+
+Without a backup, the original firmware comes back from its vendor file. The restore task takes the file in place of a
+bundle (`vendorRestore`) once `vendorfile.js` identifies it for this radio, mapped or not. `c7.progmemFromFile()` takes a
+whole program memory readout as it is. A firmware file it lays out as a program memory read holds it: the application
+after the file's header (256 bytes for a `BFUV32-V2` file, none for a plain one) at the application start, everything
+else erased. The stub or update mode then writes it as it writes a backup. A file larger than the application area is refused as `internal`.
 
 ## STM32F4 radios (the loader route)
 
@@ -270,7 +364,8 @@ keeps the reassurance that the page never writes the part of the radio that star
 | Works but something is wrong | The fix chooser. |
 
 The fix chooser offers installing again (the install steps without the current-firmware question), putting back a
-backup (the restore task with the target preselected) or the original firmware (stock file, then update mode). Each
+backup (the restore task with the target preselected) or the original firmware (STM32: the stock file, then update
+mode; HR_C7000: the restore task, with the backup or the original firmware file). Each
 failure message in the install steps links here (`helpLink`).
 
 ## USB network mode

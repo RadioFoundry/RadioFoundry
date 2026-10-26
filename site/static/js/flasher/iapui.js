@@ -141,8 +141,9 @@ export function makeStockRoutes(host) {
 			done: t("flash.iap.ok"), onDone: () => ctx.next() });
 	}
 
-	// The restore task through update mode: the backup's application area and codec slot, exactly (c7.restoreTarget)
-	function iapRestoreView(progmem, onDone) {
+	// The restore task through update mode: the backup's application area and codec slot, exactly (c7.restoreTarget).
+	// vendor: the name of the original firmware file the program memory came from (c7000ui.js vendorBundle), or null
+	function iapRestoreView(progmem, vendor, onDone) {
 		let image;
 		try {
 			image = c7.restoreTarget(C(), progmem)[1];
@@ -150,11 +151,12 @@ export function makeStockRoutes(host) {
 			return panel(t("flash.c7.restore.title"), notice(ctx.errorText(e), "bad"));
 		}
 		return iapPanel({ title: t("flash.c7.restore.title"), image, restore: true, rows: [],
-			report: { task: "restore", source: "c7000-progmem", radio: boardId(), firmware: S().bundle?.meta.firmware_now?.kind || "" },
+			lead: vendor ? t("flash.iap.restore_lead_vendor", { file: vendor }) : null,
+			report: { task: "restore", source: vendor ? "stock" : "c7000-progmem", radio: boardId(), firmware: S().bundle?.meta.firmware_now?.kind || "" },
 			done: t("flash.iap.restored"), onDone });
 	}
 
-	function iapPanel({ title, rows, image, restore, report, done, onDone }) {
+	function iapPanel({ title, rows, image, restore, report, done, onDone, lead = null }) {
 		const c = session();
 		const prog = progressBar();
 		const status = h("div");
@@ -162,7 +164,7 @@ export function makeStockRoutes(host) {
 		const go = button(t(restore ? "flash.iap.restore_go" : "flash.iap.go"), () => run(), { primary: true });
 		const box = panel(title,
 			rows.length ? h("dl", { class: "kv-list" }, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])) : null,
-			h("p", {}, t(restore ? "flash.iap.restore_lead" : "flash.iap.lead")),
+			h("p", {}, lead || t(restore ? "flash.iap.restore_lead" : "flash.iap.lead")),
 			h("ol", { class: "steps c7-big" }, h("li", {}, t(restore ? "flash.iap.restore_step_go" : "flash.iap.step_go")), ...steps.map((x) => h("li", {}, x))),
 			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t("flash.iap.careful_text"))),
 			prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));

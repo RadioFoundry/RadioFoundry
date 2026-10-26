@@ -20,6 +20,8 @@ import { hex, sha256, sleep } from "./bytes.js";
 import { SerialStream, Link, probe, serialSupported } from "./link.js";
 import { Stub, stubImages, StubError, DONE_LED, MEM } from "./stub.js";
 import * as c7 from "./c7000.js";
+import { openVendorFile, describe as describeVendorFile, analysisCandidate } from "./vendorfile.js";
+import { pickProblem } from "./explain.js";
 import { upgradeSlot } from "./c7000v1.js";
 import { radioTop } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
@@ -35,7 +37,8 @@ const CH340 = 0x1A86;
 const ROM_WAIT = 180000;		// how long the page listens for the boot ROM per try
 const BOOT_MS = 9000;			// a soft reset to RadioFoundry answering its debug link (bench 2026-10-15: 8-9 s)
 
-let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, errorText, stubJson}
+let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, errorText, analysisOffer,
+					// problemNotice, failureNotice, stubJson}
 const S = () => ctx.S;
 const C = () => ctx.fb().c7000;
 const boardId = () => S().radio.flash.board;
@@ -516,12 +519,30 @@ export function checkView() {
 		const text = !d ? t("flash.c7.codec.missing") : d.mode === "keep" ? t("flash.c7.codec.keep")
 			: d.mode === "none" ? t("flash.c7.codec.none") : t(`flash.c7.codec.from_${d.source}`, { name: d.name || "", tag: String(d.tag ?? "").padStart(3, "0") });
 		say("codec", d ? (d.mode === "none" ? "bad" : "ok") : "bad", text);
-		const pick = filePicker(t("flash.c7.codec.pick"), ".bin", async (f) => {
+		// any vendor file: a .bin, a readout or the vendor's zip, opened as on every radio's page (vendorfile.js)
+		// a file that gives no codec is explained (explain.js), with what each file in the pick is; what was picked goes into
+		// error reports (S.vendorPick)
+		const pick = filePicker(t("flash.c7.codec.pick"), ".bin,.zip", async (f) => {
+			let opened = null;
 			try {
-				c.fileCodec = await c7.codecFromFile(f.data, C(), boardId());
+				S().vendorPick = { picked: { name: f.name, size: f.data.length, sha256: await sha256(f.data) }, opened: null, problem: null };
+				opened = await openVendorFile(f.name, f.data, ctx.fb(), boardId());
+				S().vendorPick.opened = opened;
+				const got = opened.best?.match;
+				if (got?.kind !== "codec") {
+					const lines = describeVendorFile(opened, ctx.fb(), boardId());
+					fill(status, ctx.problemNotice(pickProblem(opened, boardId()), { offer: analysisCandidate(opened, ctx.fb(), boardId()) }),
+						h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, lines.map((l) => h("li", {}, l)))));
+					return;
+				}
+				c.fileCodec = got.codec;
+				S().vendorPick.decision = { mode: "write", source: "file" };
 				await decideView();
 			} catch (e) {
-				fill(status, notice(ctx.errorText(e), "bad"));
+				// a codec the page identified but can't put in the slot (no map, a check failing): the file is offered
+				c.fileCodec = null;
+				const used = opened?.best;
+				fill(status, ctx.failureNotice(e, used ? { name: used.path.split("/").pop(), data: used.data } : null));
 			}
 		});
 		fill(status, 
@@ -796,21 +817,36 @@ export function hasC7Backup(bundle) {
 	return !!bundle?.parts.get("c7000-progmem");
 }
 
+// The radio's original firmware file (one the page identified for it: vendorfile.js kind "codec"), or a program
+// memory backup, as a restore bundle: the restore puts it back as it puts back a backup's program memory, so a radio
+// returns to its original firmware without the backup from before the first installation (c7.progmemFromFile)
+export function vendorBundle(radio, file, c) {
+	const name = file.path.split("/").pop();
+	// only a file a profile of this radio names: a C-SKY codec signature alone tells no radio
+	if (file.match.kind !== "codec" || file.match.board !== radio.flash.board)
+		throw new c7.CodecError(`${name} is not identified as the ${radio.name}'s original firmware`, "unmapped");
+	const data = c7.progmemFromFile(c, radio.flash.board, file.data, file.match.codec?.profile?.stock_header);
+	return { meta: { radio: { board: radio.id, name: radio.name }, created: new Date().toISOString(), vendor_file: name,
+		firmware_now: { kind: "stock", version: file.match.known || null } },
+	parts: new Map([["c7000-progmem", { what: "c7000-progmem", file: name, complete: true, addr: 0, data }]]) };
+}
+
 export function restoreView() {
 	const c = session();
 	const out = h("div", { class: "flasher" });
 	const meta = S().bundle.meta;
 	// what the file holds, before and while connecting
+	const vendor = meta.vendor_file || null;	// the original firmware from its file (vendorBundle), not a backup
 	out.append(panel(t("flash.restore.what"), h("dl", { class: "kv-list" },
 		h("dt", {}, t("flash.now.board")), h("dd", {}, meta.radio.name),
-		h("dt", {}, t("flash.restore.taken")), h("dd", {}, localTime(meta.created)),
+		vendor ? [h("dt", {}, t("flash.restore.vendor_file")), h("dd", {}, vendor)] : [h("dt", {}, t("flash.restore.taken")), h("dd", {}, localTime(meta.created))],
 		h("dt", {}, t("flash.restore.fw_now")), h("dd", {}, describeFirmware(meta.firmware_now)),
 		h("dt", {}, t("flash.restore.parts")), h("dd", {}, partNames(S().bundle.parts)))));
 	const pm = S().bundle.parts.get("c7000-progmem").data;
 	// a radio that answers nothing else gets the backup through the vendor update mode
 	if (c.how === "iap" && c.stream) {
 		const after = h("div");
-		out.append(routes.iapRestoreView(pm, async () => {
+		out.append(routes.iapRestoreView(pm, vendor, async () => {
 			await dropC7();
 			c.how = null;
 			fill(after, notice(t("flash.iap.restored_text"), "ok"));
@@ -830,7 +866,7 @@ export function restoreView() {
 		go.disabled = true;
 		await busy(true);
 		top.set({ led: "busy", screen: "off" });
-		const started = ctx.flashStarted({ task: "restore", source: "c7000-progmem", radio: boardId(), firmware: S().bundle.meta.firmware_now?.kind || "" });
+		const started = ctx.flashStarted({ task: "restore", source: vendor ? "stock" : "c7000-progmem", radio: boardId(), firmware: S().bundle.meta.firmware_now?.kind || "" });
 		try {
 			const model = c7.bootloaderModel(C(), pm);
 			if (model && model !== boardId()) throw new Error(t("flash.c7.restore.other_radio"));
@@ -860,7 +896,7 @@ export function restoreView() {
 		}
 	}, { primary: true });
 	out.append(panel(t("flash.c7.restore.title"), h("div", { class: "c7-grid" },
-		h("div", {}, h("p", {}, t("flash.c7.restore.lead")), prog.el, status), top.el), map.el));
+		h("div", {}, h("p", {}, vendor ? t("flash.c7.restore.lead_vendor", { file: vendor }) : t("flash.c7.restore.lead")), prog.el, status), top.el), map.el));
 	S().forward(go);
 	return out;
 }
@@ -878,7 +914,8 @@ export async function splitOwnImage(c, board, data) {
 }
 
 // The backend (backends.js): connect and check take the place of "now" and "codec"; a reinstall from the help task
-// skips the radio step. Stock firmware comes back from a backup, never from a stock file.
+// skips the radio step. Stock firmware comes back through the restore task: from a backup, or from the radio's
+// original firmware file (vendorBundle).
 const INSTALL = ["radio", "build", "connect", "check", "write", "done"], RECOVER = ["build", "connect", "check", "write", "done"];
 register({
 	id: "c7000-stub",
@@ -891,6 +928,7 @@ register({
 		extra: (radio) => (radio.flash.update_mode === "iap"
 			? [{ id: "updatemode", title: "flash.help.fix.iap", text: "flash.help.fix.iap_text", prepare: () => { session().forceIap = true; } }] : []) },
 	ownsBundle: hasC7Backup,
+	vendorRestore: (radio, file, fb) => vendorBundle(radio, file, fb.c7000),
 	ownImage: async (fb, board, data) => {
 		const { image, slot } = await splitOwnImage(fb.c7000, board, data);
 		if (slot) session().fileCodec = slot;

@@ -109,12 +109,12 @@ def md380_like(out):
 		"vote_wrong": sum(a != b for a, b in zip(vote, key))}
 
 
-def flash_readout(out, rng):
-	"""A synthetic MD-UV380 V19.26 stock file, and a read of the internal flash of a radio running it (the application
-	decrypted at 0x0800C000, as stockfw.from_flash takes it): what stockfw.js fromFlash must find, and the codec it must
-	give, as rfoundry places it. Returns the fixture entry."""
+def flash_readout(out, rng, sha=None, name="mduv380"):
+	"""A synthetic MD-UV380 stock file (default the first build, V19.26), and a read of the internal flash of a radio
+	running it (the application decrypted at 0x0800C000, as stockfw.from_flash takes it): what stockfw.js fromFlash must
+	find, and the codec it must give, as rfoundry places it. Returns the fixture entry."""
 	key = synthetic_key(380)
-	sha = next(h for h, p in stockfw.PROFILES.items() if p["board"] == "mduv380")
+	sha = sha or next(h for h, p in stockfw.PROFILES.items() if p["board"] == "mduv380")
 	stock, profiles, _, _ = stockfw.build_synthetic_stock(key, rng, sha)
 	(ssha, prof), = profiles.items()
 	segs = stockfw.parse_container(stock)
@@ -124,9 +124,9 @@ def flash_readout(out, rng):
 		stock, stockfw.app_file_offset(segs, app[0]), app[1], key)
 	got, codec = stockfw.from_flash(bytes(flash), profiles=profiles)
 	assert got is prof
-	with open(os.path.join(out, "flash-mduv380.bin"), "wb") as f:
+	with open(os.path.join(out, "flash-%s.bin" % name), "wb") as f:
 		f.write(flash)
-	with open(os.path.join(out, "stock-mduv380.bin"), "wb") as f:
+	with open(os.path.join(out, "stock-%s.bin" % name), "wb") as f:
 		f.write(stock)
 	q = dict(prof, segments=[list(x) for x in prof["segments"]], windows=[list(w) for w in stockfw.windows(prof)])
 	for k in ("code", "tables", "extra"):
@@ -166,6 +166,9 @@ def main(out):
 		"placed": [[a, stockfw.sha256(d), len(d)] for a, d in codec],
 		"md380like": md380_like(out),
 		"readout": flash_readout(out, random.Random(380)),
+		# RT3S V219.60: the code doesn't fit after its tables, so it goes to the start of sector 10, below them
+		"readout_v21960": flash_readout(out, random.Random(21960),
+						"447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee", "rt3s-v21960"),
 	}
 	for k in ("code", "tables", "extra"):
 		doc["profile"].pop(k, None)

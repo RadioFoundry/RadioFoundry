@@ -15,6 +15,9 @@ const SENTRY_SRI = "sha384-jS9CKUOSAB+VN9i8uqR3dDKFThyW/VFLVW7VU8FJIEA6hwAy3aY71
 
 export const REPORTING = typeof location === "undefined" || new URLSearchParams(location.search).get("reporting") !== "0";
 
+// Errors go out automatically (Sentry is set up): a page can say "it has been reported" only then
+export const reportingActive = () => !!sentry;
+
 let attachmentsFn = () => [];
 let sentry = null;		// the Sentry global once it's loaded and set up
 let site = {};

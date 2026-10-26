@@ -49,7 +49,38 @@ values = [
 family = "usb-dfu"
 keep_codec = true
 stock_download = "https://passion-radio.com/dmr-equipment/tyt-md380-321.html"
-stock_versions = ["V19.26 CSV", "D19.26 REC", "P19.26 CSV-GPS", "S19.26 GPS-REC"]
+stock_versions = [
+	"V19.26 CSV",
+	"D19.26 REC",
+	"P19.26 CSV-GPS",
+	"S19.26 GPS-REC",
+	"V18.11 CSV",
+	"D18.11 REC",
+	"P18.11 CSV-GPS",
+	"S18.11 GPS-REC",
+	"P18.16 CSV-GPS",
+	"S18.16 GPS-REC",
+	"V19.06 CSV",
+	"P19.06 CSV-GPS",
+	"V19.74 CSV",
+	"D19.74 REC",
+	"P19.74 CSV-GPS",
+	"S19.74 GPS-REC",
+	"10W V19.74 CSV",
+	"10W D19.74 REC",
+	"10W P19.74 CSV-GPS",
+	"10W S19.74 GPS-REC",
+	"V219.60 CSV AES 255",
+	"P219.60 CSV-GPS AES 255",
+	"V219.74 CSV AES 255",
+	"D219.74 REC AES 255",
+	"P219.74 CSV-GPS AES 255",
+	"S219.74 GPS-REC AES 255",
+	"10W V219.74 CSV AES 255",
+	"10W D219.74 REC AES 255",
+	"10W P219.74 CSV-GPS AES 255",
+	"10W S219.74 GPS-REC AES 255",
+]
 backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 notice = "MD-UV390 Plus 10 W owners: choose the 10 W image, and everyone else the 5 W one. The two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart, so a wrong choice isn't caught: it drives the wrong pins. Check the label on the radio or its box."
 
@@ -79,7 +110,7 @@ tested = false
 spi = { bus = 1, mode = 0, hz = 4500000 }
 
 # The codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after them
-# and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file rfoundry merges the codec
+# (or at the start of sector 10 when it doesn't fit there) and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file rfoundry merges the codec
 # from (tools/rfoundry/rfoundry/stockfw.py PROFILES)
 [codec]
 tool = "codec_extract"
@@ -88,6 +119,32 @@ stock = [
 	"7dec4b751e8a0f44cf7d54d0ebc3b439a9f49899eadd7c8ff14d2804edbe8ac2",	# D19.26 REC
 	"84331dbc9bccf5021122b715dcb77d7589dba0745694bf3a249aae6e7c383ef1",	# P19.26 CSV-GPS
 	"77923d67aa75a07f7601a1c53ae1d5f5af37bd4367d52a50c8aeff89b834eceb",	# S19.26 GPS-REC
+	"fb1897b7123dc6a039a5266972c5bb6f563f574d3769bd1cbdc7bb02b5039cc7",	# V18.11 CSV (also RT3S(CSV)-V18.11.bin)
+	"78650258f65fef33d78fad65678bedd74e44b75e924466829c9a360ce8915f39",	# D18.11 REC (also RT3S(REC)-D18.11.bin)
+	"e31ecd122f77ccd34e563193b004e8621ff5422676521503521f64f1045f73a9",	# P18.11 CSV-GPS
+	"fbb307fd14577e48e1fb6edb3395d4d684baf12dd9fed66280ad76d12e0e04c2",	# S18.11 GPS-REC
+	"6c2e43558290076e86671cb2d25bd18c90cbeb08e02a1b68e534c0ab4fe808bb",	# P18.16 CSV-GPS (also RT3S(CSV-GPS)-P18.16.bin)
+	"23c14a9c30b2b626021c39159a8bb68a2403f4eda28fd8101a0264d022fb06da",	# S18.16 GPS-REC (also RT3S(GPS-REC)-S18.16.bin)
+	"657cd4e6c86aa63428f1bc081ce0614b35db0607d34ba6b6065357a58a045c89",	# V19.06 CSV
+	"9c58aca48de3d42b897852e424b0da1392f6e983d51ca69b1425b72a0a836ca1",	# P19.06 CSV-GPS
+	"1e6a74b8cc62ffabd06dd83912f1bf0a7a7ef12d4bda63b961544c7e1393655a",	# V19.74 CSV
+	"d3996d672d6878ca823880320e240883ea64208f121923cd2bb6fe51d2e50784",	# D19.74 REC
+	"14e5634eeffa5f99f85fd762df4dc141432762d75b933031000d1f398fc4d2e4",	# P19.74 CSV-GPS
+	"3ebe806da0bbda993220cca9a97411225c1bf9e29097db3224ff722b00c6d023",	# S19.74 GPS-REC
+	"4acf6d48baca843d7e1220de8c0486670ee7f43953ebbb53d910ef1d94bfbe52",	# 10 W V19.74 CSV
+	"2768ece93ddd4f1fd4ffc4e58ee073bd145b865f4ea6d256315f6e0019e93995",	# 10 W D19.74 REC
+	"ebc5e34f4a00679a9200df8233c4b42b89dbd440a7487bbac2796223b796b392",	# 10 W P19.74 CSV-GPS
+	"b0345e8c9e28b353954f3b6aa66599b5ac682c2037e212052af16e2c888572cd",	# 10 W S19.74 GPS-REC
+	"447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee",	# V219.60 CSV AES 255
+	"a7b277137c32ac3583083d8a650488415f62360b7f38a6d903fc732b858dd502",	# P219.60 CSV-GPS AES 255
+	"a8a5265d29f8f69ee050a0a47052a8925a3c403ac270d8e5fda324a4a697b220",	# V219.74 CSV AES 255
+	"3d1b9ed4a2293981d0915d0655172e7a4d9bc702fe493328be37901427d51108",	# D219.74 REC AES 255
+	"70a44a4a77d6ffb4b0b6b9b4a8f26afb9607d65875d2ba1094baf6c8e6a46c9a",	# P219.74 CSV-GPS AES 255
+	"bf58116bcd695d8b14634fbffab7cd33ba9bcd1325b92179ef6bf94d380d2151",	# S219.74 GPS-REC AES 255
+	"531947c0d4d7d3ae0c5a3f94d81fbf3a04259488a9af09f9a3a8b57cabf135ed",	# 10 W V219.74 CSV AES 255
+	"7b7ed3075a7735cde969402eda163f96bf2931ae55cbcc4fbf62625bdaf04855",	# 10 W D219.74 REC AES 255
+	"bf98dc6ca9d888712924af75dd5eff7495de4ab82848f0701616e29eb9d5e5a2",	# 10 W P219.74 CSV-GPS AES 255
+	"e6c696a3f1a6ac3d622559d7422efc97399b748aac8923a7440239b28c03a5c1",	# 10 W S219.74 GPS-REC AES 255
 ]
 
 # How the site draws the radio

@@ -244,7 +244,7 @@ Follow [Installing](02-installing.md) with these values. To keep the stock codep
 
 | Item | MD-380 |
 |---|---|
-| Stock firmware file | The manufacturer's `MD-380-D2.32(AD).bin` (D002.032). It gives the bootloader key and the voice codec. The archive at md380.org/firmware/orig/ has every release |
+| Stock firmware file | The manufacturer's `MD-380-D2.32(AD).bin` (D002.032), or TYT's `TYT-72310-11-MD380-D35.14.bin` (D35.14) or `TYT-72310-11-MD390-S35.14.bin` (S35.14). It gives the bootloader key and the voice codec. The archive at md380.org/firmware/orig/ has every release |
 | Bootloader keys | Hold **PTT** and the side key just above it while you turn the radio on |
 | Images | One per band: UHF and VHF. rfoundry takes `--option BAND=vhf` |
 | Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) |
@@ -314,7 +314,7 @@ Follow [Installing](02-installing.md) with these values.
 
 | Item | MD-UV380 |
 |---|---|
-| Stock firmware file | Any of TYT's four 19.26 files: `MD-UV380(CSV)-V19.26.bin`, `MD-UV380(REC)-D19.26.bin`, `MD-UV390(CSV-GPS)-P19.26.bin`, `MD-UV390(GPS-REC)-S19.26.bin`. It gives the bootloader key and the voice codec; the codec is the same in all four, so any of them works on any of these radios |
+| Stock firmware file | Any supported TYT or Retevis file: 18.11, 18.16, 19.06, 19.26, 19.74, 219.60 or 219.74 ([the list](../spec/codec-mduv380.md#stock-files)). It gives the bootloader key and the voice codec; the codec is the same in all of them, so any of them works on any of these radios |
 | Bootloader keys | Hold **PTT** and the side key just above it (SK1) while you turn the radio on |
 | Images | Two: 5 W (the MD-UV380, MD-UV390 and RT3S) and 10 W (the MD-UV390 Plus). rfoundry takes `--option POWER=10w`. **Pick by the label on the radio or its box**: the two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart, so a wrong image isn't caught |
 | Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) (assumed the same as the DM-1701's) |

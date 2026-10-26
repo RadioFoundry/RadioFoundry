@@ -48,6 +48,7 @@ pre code { background: none; padding: 0; }
 .notice { background: var(--warn-soft); border-left: 4px solid var(--warn); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); }
 .notice.info { background: var(--info-soft); border-color: var(--link); }
 .notice.ok { background: var(--ok-soft); border-color: var(--ok); }
+.analysis-note { display: block; width: 100%; box-sizing: border-box; margin: var(--space-2) 0; padding: var(--space-2); font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); resize: vertical; }
 .notice.bad { background: var(--bad-soft); border-color: var(--bad); }
 
 /* header and footer */
