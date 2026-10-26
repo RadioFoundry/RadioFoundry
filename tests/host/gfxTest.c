@@ -367,7 +367,8 @@ static void test_big_text(void)
 	ui_layout_init();
 }
 
-// The splash footer (board and version) stays on a 128 px display with the longest release name, a beta's: the board
+// The splash footer (board and version) stays on a 128 px display with an 11-character board name and the longest
+// release name, a beta's: the board
 // name goes before the version is cut
 static void test_splash_footer(void)
 {
@@ -378,7 +379,7 @@ static void test_splash_footer(void)
 	ui_layout_init();
 	const char *const versions[] = { "a1b2c3d4-dirty", "v26.12-beta.1", "v26.11.10-beta.10" };
 	for (unsigned v = 0; v < 3; v++) {
-		ui_draw_splash("DM-1801 Pro", versions[v], "", "");
+		ui_draw_splash("Radio 12345", versions[v], "", "");
 		int lit = 0;
 		for (int y = 64 - ui_layout.tiny->h; y < 64; y++) {
 			CHECK(gfx_get_pixel(0, y) == ui_col.bg && gfx_get_pixel(127, y) == ui_col.bg);
