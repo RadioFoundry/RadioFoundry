@@ -19,7 +19,8 @@ The web installer's "Select the Symptom" step covers most of these on screen. Th
 
 ## Command line installs (advanced)
 
-The web installer shows these on screen and walks through the fixes. They apply when you install with `rfoundry`.
+The web installer shows these on screen and walks through the fixes. They apply when you install with `rfoundry`,
+also from the installer's [manual install kit](02-installing.md#install-from-the-command-line-with-a-kit).
 
 | Problem | Cause and fix |
 |---|---|

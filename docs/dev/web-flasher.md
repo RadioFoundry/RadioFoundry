@@ -498,6 +498,30 @@ so WebUSB can't claim them. WebUSB can still list the device, so the flasher det
 before is found without a prompt; otherwise "Check for USB network mode" under every connect button) and tells the user
 to switch USB back to serial on the radio. The bootloader is unaffected: it is a separate USB device.
 
+## The manual install kit
+
+Where the page can't install, `manual.js` builds a zip for installing from the command line with rfoundry (user view:
+[installing](../user/02-installing.md#install-from-the-command-line-with-a-kit)). No release carries an rfoundry
+executable yet, and the tool must come from the site's own commit: `manifest.verify` refuses a codec profile or board
+it doesn't know. So the site build publishes `downloads/rfoundry-tool.zip` (`site/rfoundrysite/toolzip.py`): the
+`rfoundry` package, `tools/serial_loader.py`, `tools/hrc7000_codec.py`, `stub/stubtool.py` and `stub/f4stub.py` in the
+repository's layout (`serialflash.py` loads the tools by path from the package's grandparent), a root `rfoundry.py`
+launcher, `requirements.txt` and the license. The zip is reproducible: sorted entries, the commit's time.
+`data/site.json` `tool` is `{zip, sha256, size}`; the page refuses a download that doesn't match it.
+
+| Function | Does |
+|---|---|
+| `kitRoute(radio)` | `dfu` (`usb-dfu` family), `serial` (`serial-loader`), or null: rfoundry refuses `serial-iap`, so that radio gets no kit |
+| `missingApi(radio, task, step, apis)` | The API an install step needs and the browser lacks: the `anyroad-dfu` write (USB, or serial on the loader route), the `c7000-stub` connect (serial) |
+| `kitReadme(o)` | `README.txt`, a pure function: per-OS setup, the radio's `[flash.bootloader] steps` (a docs link when there are none), the `--dry-run` and install commands with the kit's file names, where to get help. English, like rfoundry's output. A `serial` radio whose codec has no stock file (only a program flash read) gets the `stubtool.py --progmem` command first |
+| `makeKit(o)` | Fetches and checks the tool zip, adds `README.txt` (CRLF), `firmware/<base>.bin` and `.json` (`<base>`: the manifest's `image.file`, else `rfoundry_<board>`), `stock/<file>` |
+| `kitPanel`, `kitLine` | The panel `render()` draws in place of a step `missingApi` names, with the stock file picker when the kit has none; the line under a failure |
+
+The stock file is `S.stock` (the inner file of a vendor zip), else the file the C7000 codec step took
+(`S.vendorPick`); a file with a problem is left out. The line sits under a failed bootloader connect (not a cancelled
+chooser) or write, and under the C7000 connect's boot ROM timeout (`ctx.manualKitLine` in `c7000ui.js`). Practice
+mode never offers a kit: its image is random bytes. Tests: `site/tests/manual.test.mjs`.
+
 ## Browser support
 
 WebUSB and Web Serial: Chrome, Edge and other Chromium browsers on a computer, over https or localhost. Windows needs
@@ -505,3 +529,6 @@ the WinUSB driver for the bootloader (Zadig, once), as rfoundry does. On Windows
 steps ([installing](../user/02-installing.md#windows-the-bootloader-driver)), open until this computer has reached a
 bootloader once, and again with any failed connect: without the driver Chrome either doesn't list the bootloader or
 can't open it. The device name comes from `[flash.dfu] product` in the board's `board.toml`.
+
+Other browsers (Safari, Firefox) can still choose and build the firmware; the step that needs the radio then offers
+the [manual install kit](#the-manual-install-kit).
