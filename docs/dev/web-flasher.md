@@ -361,8 +361,14 @@ Nothing is read from the radio this way, so the check step takes the codec from 
 this browser kept). The decision is never "keep": the image is `c7.target()` with the slot, without the 0xFF tail
 (`factoryInstallImage()` in `iapui.js`). Restore writes a backup's application area and slot, or the original firmware
 from its file, the same way. A step the user leaves (Back, Start over) while the page listens for update mode stops
-listening, so a radio switched on with its keys later is not written (`site/tests/iapui.test.mjs`). The Baofeng route is
-untested on a radio from the web page.
+listening, so a radio switched on with its keys later is not written (`site/tests/iapui.test.mjs`). The Baofeng updater
+answers steps 1-3 once per power-on, so the session keeps the `BfLoader` that found it (`c.loader`, `ready`) for the
+write and the next try; after a write started, a try waits for update mode again. After the end of transfer the radio
+starts RadioFoundry by itself, so the done step's first check waits 20 s before it asks for a power cycle.
+
+`bfloader.js` and `c7000.js` have installed a radio this way from Node, over an FTDI cable (the radio's hardware page
+has the figures). The page around them is checked only in practice mode, and the route is untested on the other
+radios on this loader.
 
 ### A board with a first stage
 

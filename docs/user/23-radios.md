@@ -380,7 +380,7 @@ Follow [Installing](02-installing.md) with these values. To keep the stock codep
 | Stock firmware file | The manufacturer's `DM32.01.01.049.bin` |
 | Cable | The USB-serial programming cable. The radio has no USB of its own |
 | Update mode | Hold **PTT** and **SK1** while you switch the radio on. The green LED lights |
-| If the cable can't prepare the radio | **Use Factory Update Mode**: the update mode above, with the stock firmware file for the codec. Untested on a DM-32UV from the web installer |
+| If the cable can't prepare the radio | **Use Factory Update Mode**: the update mode above, with the stock firmware file for the codec. It takes about 2.5 minutes, and the radio restarts by itself. The install itself worked on a DM-32UV (2026-10-26); the web installer's own steps are still untested on a radio |
 | Board name | `dm32` |
 
 ### DM-32UV keys
