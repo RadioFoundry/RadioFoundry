@@ -8,6 +8,9 @@
 #include "hrc/vocoder.h"
 #include "pins.h"
 #include "fsmc_keypad/fsmc_keypad.h"
+#if CONFIG_GPS
+#include "gps_uart/gps_uart.h"
+#endif
 #if CONFIG_USB
 #include "usb/usb_device.h"
 #include "usb/usb_ncm.h"
@@ -33,6 +36,9 @@ const uvf_variant_t uvf_variant = {
 	.vol_min = 26, .vol_break = 318, .vol_max = 2060,
 	.frac = { { 450, 750, 250, 530 }, { 460, 730, 140, 360 } },
 	.cal_k = { { 610, 1000, 850, 1300 }, { 650, 1000, 860, 1700 } },
+#if CONFIG_GPS
+	.init = uvf_gps_init,	// an owner-fitted module on PA10 / PA9 (hardware-dm1701.md 14.2)
+#endif
 };
 
 static const band_t bands[] = {
@@ -104,7 +110,8 @@ static const hal_cps_t cps = {
 
 const board_t board = {
 	.name = "DM-1701",
-	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_DMR ? CAP_DMR : 0),
+	// CAP_GPS: no module from the factory, but the pins are there for one; gps_present says whether one was heard
+	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -141,6 +148,9 @@ const board_t board = {
 #endif
 #endif
 	.system = &stm32_system,
+#if CONFIG_GPS
+	.gps_present = stm32_gps_present,
+#endif
 	// hardware-dm1701.md 11.1: low battery 6.2 V (back above 6.4 V); critical 6.0 V (3.0 V a cell) is our choice, the
 	// spec gives none (below 5.5 V the board reads as switched off)
 	.battery_low_mv = 6200,

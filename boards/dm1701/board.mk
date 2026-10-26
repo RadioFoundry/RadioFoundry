@@ -8,7 +8,7 @@ MCU        := stm32f405
 HSE_VALUE  := 8000000U
 APP_BASE   := 0x0800C000
 BOARD_DIRS := boards/dm1701 boards/uv380_family platform/stm32f4/hrc platform/stm32f4/spi_flash platform/stm32f4/fsmc_keypad drivers/rf/at1846s drivers/rf/subaudio drivers/modem/hrc6000 drivers/modem/hrc_common drivers/display/st7735 drivers/flash/spi_nor \
-	drivers/input/quadrature
+	drivers/input/quadrature drivers/gps/nmea_line drivers/gps/gps_rx platform/stm32f4/gps_uart
 # The HAL's I2C driver besides the platform's modules
 BOARD_HAL_MODULES := hal_i2c
 # The 160x120 panel in 16 colors (boards/uv380_family/display_uvf.c): the 4 bpp frame buffer is 9600 B and 120 rows, not the 40 KB / 160 row

@@ -28,7 +28,7 @@
 // Power, audio, LEDs
 #define PIN_POWER_LATCH		GPIOA, GPIO_PIN_7
 #define PIN_MIC_POWER		GPIOA, GPIO_PIN_13	// SWDIO: driving it needs connect-under-reset for SWD
-#define PIN_GPS_POWER		GPIOA, GPIO_PIN_9	// high = on (hardware-mduv380.md 9; no module on the DM-1701)
+#define PIN_GPS_POWER		GPIOA, GPIO_PIN_9	// high = on (hardware-mduv380.md 9, hardware-dm1701.md 14.2)
 #define PIN_GPS_RX		GPIOA, GPIO_PIN_10	// USART1 RX (AF7), the module's NMEA output
 #define PIN_SPK_MUTE		GPIOB, GPIO_PIN_8	// high = muted
 #define PIN_AMP_EN		GPIOB, GPIO_PIN_9	// high = on
