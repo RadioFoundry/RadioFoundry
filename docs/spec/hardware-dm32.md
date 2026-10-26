@@ -1075,8 +1075,16 @@ mode with an image that ends before the slot.
 ### 13.3 ROM serial boot (recovery, no bootloader needed)
 
 The HR_C7000 ROM listens on the serial port after reset. Dahua's DH_SOC_TOOLS (Windows) with a script first loads
-a "miniBoot" image to RAM 0x00014000 and starts it, then writes the application to flash (at 0x03001000, unverified). Works with FTDI-based cables only; CH340 cables, which work with the Baofeng bootloader and CPS, do not reach the
-ROM loader (unverified). The ROM protocol itself is not documented here. Production radios are programmed over JTAG (unverified).
+a "miniBoot" image to RAM 0x00014000 and starts it, then writes the application to flash (at 0x03001000, unverified).
+Production radios are programmed over JTAG (unverified). The ROM protocol itself is not documented here.
+
+Cables:
+
+- Any USB-serial chip can reach the ROM loader, CH340 included. Cable quality varies: some cables that work with the
+  Baofeng bootloader and CPS fail the ROM load, so a failed load names the cable's chip and offers the stock-file route.
+- Some cables echo what the host sends. The host drops an exact copy of the frame it sent, ahead of the ROM's
+  acknowledgement, and keeps reading until its timeout (`stub.js` `romAck`, `stubtool.py` `rom_ack`).
+- When a frame is not acknowledged, the first 16 bytes received are logged.
 
 ### 13.4 Backing up
 
