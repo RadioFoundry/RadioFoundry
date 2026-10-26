@@ -268,8 +268,13 @@ leave it out. Attached files and your email address are deleted within 90 days.
 with an FTDI, CP210x or PL2303 chip. The installer warns when it sees a CH340 cable.
 
 **When the cable can't prepare the radio:** a radio installed over its programming cable first gets a small loader in
-its memory. If that fails ("Preparing the radio failed") or the radio never answers, the installer offers **Use
-Factory Update Mode** next to Try Again: the radio's own update mode, entered by holding keys while you turn the radio
+its memory. When the radio turns on, it waits only about 1/20 of a second for the installer's answer, and some cables
+and USB hubs are slower than that. If the load fails ("Preparing the radio failed"), the radio starts normally instead,
+or it never answers, the installer offers **Try Slow Cable Mode**: turn the radio off, select **Radio Is Off**, then
+turn it on, and the installer keeps sending its answer while the radio starts. Select Radio Is Off only once the radio is
+off: the installer then sends to the cable, and the firmware of a radio that is still on would receive it.
+
+If the slow cable mode fails too, the installer offers **Use Factory Update Mode**: the radio's own update mode, entered by holding keys while you turn the radio
 on (your radio's "Installing" section in the [Radio reference](23-radios.md)). Nothing can be read from the radio that
 way, so no backup is taken and the voice codec comes from a file: the stock firmware file, or a program memory backup
 of the radio where the installer knows no stock file for it. Troubleshooting offers the same route ("Reinstall in

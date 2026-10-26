@@ -2231,11 +2231,12 @@ async function main() {
 	}
 	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
-	// #sim=<board>[-stock|-romfail|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
+	// #sim=<board>[-stock|-romfail|-slowcable|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
 	// open firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file
 	// fallback); -romfail: an HR_C7000 radio on stock firmware whose boot ROM refuses the load, for the factory update
-	// mode; #sim: the first radio on stock firmware
-	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-romfail|-openfw(?:-nocodec)?)?)?(?:&|$)/);
+	// mode; -slowcable: one on a cable too slow for the boot ROM's answer window, for the slow cable mode; #sim: the first
+	// radio on stock firmware
+	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-romfail|-slowcable|-openfw(?:-nocodec)?)?)?(?:&|$)/);
 	const simRadio = simAsk && (simAsk[1] ? S.data.radios.find((r) => r.id === simAsk[1]) : S.data.radios[0]);
 	const simOpen = !!simAsk?.[2]?.startsWith("-openfw") && openfw.supported(S.data.fb.boards[simRadio?.flash.board]);
 	const simStock = !!simAsk && (!simAsk[1] || (!!simAsk[2] && !simOpen));
@@ -2244,8 +2245,10 @@ async function main() {
 		const board = simRadio.id;
 		const sim = await c7000Simulation(S.data.fb.c7000, board, 7000, simRadio);
 		S.sim = { fb: { ...S.data.fb, c7000: sim.c } };
-		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600,
-			faults: { silentAfterReset: true, romNak: simAsk[2] === "-romfail" },
+		// -slowcable: the radio's own 48 ms window, and a cable that takes 80 ms
+		const slow = simAsk[2] === "-slowcable";
+		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: slow ? 48 : 600,
+			faults: { silentAfterReset: true, romNak: simAsk[2] === "-romfail", slowCable: slow ? 80 : 0 },
 			...fakeC7000Options(simRadio, S.data.fb) });
 		if (!simStock) {
 			const img = randomBytes(rng(98), 180 * 1024);

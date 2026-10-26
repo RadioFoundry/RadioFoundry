@@ -156,13 +156,99 @@ test("boot ROM load answered with something else: the error has the bytes, the c
 		assert.match(e.message, /stub block 0 was not acknowledged \(received 02 0a 00 03\)/);
 		assert.match(e.message, /CH340 programming cable/);
 		assert.match(e.message, /chips: FTDI, CP210x or PL2303/);
-		assert.match(e.message, /factory update mode/);
+		assert.match(e.message, /slow cable mode/, "the first way out: the slow cable mode");
 		return true;
 	});
+	// once the slow cable mode failed too, the factory update mode
+	const after = new Stub(r.stream, { cable: "CH340" });
+	after.repeated = true;
+	assert.match(after.romError("stub block 0 was not acknowledged", null).message, /factory update mode/);
 	assert.ok(lines.some((l) => /not acknowledged \(received 02 0a 00 03\), sending it again/.test(l)), "each try logged with its bytes");
 	// an FTDI cable that failed isn't told to try an FTDI cable
 	const ftdi = new Stub(r.stream, { cable: "FTDI" }).romError("stub block 0 was not acknowledged", null);
 	assert.match(ftdi.message, /FTDI programming cable.*chips: CP210x or PL2303,/);
+});
+
+test("slow cable: the answer to the greeting comes too late, the ROM says so, and the error offers the slow cable mode", async (t) => {
+	const { r } = await radio("stock", { romWindow: 40, faults: { slowCable: 60 } });
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet, cable: "FTDI" });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await assert.rejects(s.loadThroughRom(stubs.image, stubs.load), (e) => {
+		assert.equal(e.code, "rom-late");
+		assert.match(e.message, /stopped waiting before the page's answer reached it \(received 00 10 00 03\)/);
+		assert.match(e.message, /slow cable mode/);
+		return true;
+	});
+	assert.notEqual(r.state, "stub");
+});
+
+test("slow cable mode: the answer sent ahead every 30 ms gets the load through the same slow cable", async (t) => {
+	const { r } = await radio("stock", { romWindow: 40, faults: { slowCable: 60 } });
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	const writes = [];
+	const write = r.stream.write.bind(r.stream);
+	r.stream.write = (d) => { writes.push(performance.now()); return write(d); };
+	setTimeout(() => r.powerOn(), 300);	// the answers sent before power-on reach a radio that is off: lost, as on the radio
+	const got = await s.waitForRom(5000, { repeat: 30 });
+	assert.deepEqual(got, { answered: true });
+	const gaps = writes.slice(1).map((x, i) => x - writes[i]);
+	assert.ok(gaps.every((g) => g >= 25 && g < 80), `sent every 30 ms (${gaps.map(Math.round)})`);
+	const n = writes.length;
+	await s.loadThroughRom(stubs.image, stubs.load, () => {}, { answered: true });
+	assert.equal(r.state, "stub");
+	assert.ok(writes.length > n, "the blocks followed; the repeating stopped when the greeting came");
+	assert.ok(s.repeated);
+});
+
+test("slow cable mode on a fast cable: the answers go on after the greeting, so one reaches the ROM in its window", async (t) => {
+	const { r } = await radio("stock", { romWindow: 40 });
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	setTimeout(() => r.powerOn(), 100);	// what is sent before then reaches a radio that is off
+	assert.deepEqual(await s.waitForRom(5000, { repeat: 30 }), { answered: true });
+	await s.loadThroughRom(stubs.image, stubs.load, () => {}, { answered: true });
+	assert.equal(r.state, "stub");
+});
+
+test("slow cable mode: a ROM that took an earlier answer is found by its NAK of a later one", async (t) => {
+	const { r } = await radio("stock");
+	t.after(() => r.stop());
+	r.powerOn();
+	await r.stream.write(new Uint8Array([0x02, 0x14, 0x00, 0x03]));	// taken: the ROM waits for blocks
+	await new Promise((ok) => setTimeout(ok, 50));
+	r.stream.clear();
+	const s = new Stub(r.stream, { log: quiet });
+	assert.deepEqual(await s.waitForRom(2000, { repeat: 30 }), { answered: true });
+	await s.loadThroughRom(stubs.image, stubs.load, () => {}, { answered: true });
+	assert.equal(r.state, "stub");
+});
+
+test("boot ROM wait: the ROM giving up with no greeting seen ends the wait at once, saying the radio started", async () => {
+	const stream = { buf: new Uint8Array(0), clear() { this.buf = new Uint8Array(0); }, take(n) { const b = this.buf.slice(0, n); this.buf = this.buf.slice(n); return b; } };
+	const s = new Stub(stream, { log: quiet });
+	setTimeout(() => { stream.buf = new Uint8Array([0x00, 0x7F, 0x00, 0x10, 0x00, 0x03]); }, 20);
+	const t0 = Date.now();
+	await assert.rejects(s.waitForRom(5000), (e) => e.code === "rom-booted" && /started its firmware/.test(e.message));
+	assert.ok(Date.now() - t0 < 1000);
+});
+
+test("simulated boot ROM: unanswered, it says it stops waiting; a second answer is NAKed", async (t) => {
+	const { r } = await radio("stock");
+	t.after(() => r.stop());
+	r.powerOn();
+	await new Promise((ok) => setTimeout(ok, 450));
+	assert.deepEqual([...r.stream.buf], [0x02, 0x24, 0x00, 0x03, 0x00, 0x10, 0x00, 0x03]);
+	r.powerOff();
+	r.stream.clear();
+	r.powerOn();
+	await new Promise((ok) => setTimeout(ok, 20));
+	await r.stream.write(new Uint8Array([0x02, 0x14, 0x00, 0x03, 0x02, 0x14, 0x00, 0x03]));
+	await new Promise((ok) => setTimeout(ok, 450));
+	assert.deepEqual([...r.stream.buf], [0x02, 0x24, 0x00, 0x03, 0x02, 0x0A, 0x00, 0x03]);
+	assert.equal(r.state, "romload");
 });
 
 test("boot ROM ack read: an exact echo is dropped, a partial one waits, anything else fails with its bytes", async () => {
@@ -177,10 +263,22 @@ test("boot ROM ack read: an exact echo is dropped, a partial one waits, anything
 	stream.buf = frame.slice(0, 5);
 	setTimeout(() => { stream.buf = new Uint8Array([...stream.buf, ...frame.slice(5), 0x02, 0x05, 0x00, 0x03]); }, 20);
 	assert.equal((await s.romAck(frame, 500)).ok, true, "an echo arriving in pieces");
-	stream.buf = new Uint8Array([0x02, 0x1B, 0x01, 0x03, 0x00, 0x01, 0x00, 0x07, 0x02, 0x05, 0x00, 0x03]);
-	const bad = await s.romAck(frame, 200);
+	s.echo = false;
+	stream.buf = new Uint8Array([0x02, 0x1B, 0x01, 0x03, 0x00, 0x01, 0x00, 0x07]);
+	const bad = await s.romAck(frame, 100);
 	assert.equal(bad.ok, false, "a near-echo is not an echo");
+	assert.equal(s.echo, false);
 	assert.deepEqual([...bad.got.slice(0, 4)], [0x02, 0x1B, 0x01, 0x03]);
+	// bytes ahead of the ack (a damaged echo on a CH340 cable): the ack after them counts
+	stream.buf = new Uint8Array([0x47, 0x02, 0x00, 0x40, 0x00, 0x00]);
+	setTimeout(() => { stream.buf = new Uint8Array([...stream.buf, 0x02, 0x05, 0x00, 0x03]); }, 30);
+	assert.equal((await s.romAck(frame, 500)).ok, true, "garbage, then the ack");
+	assert.equal(stream.buf.length, 0);
+	// a NAK ends the wait at once
+	stream.buf = new Uint8Array([0x00, 0x00, 0x02, 0x0A, 0x00, 0x03]);
+	const t0 = Date.now();
+	const nak = await s.romAck(frame, 5000);
+	assert.ok(!nak.ok && Date.now() - t0 < 500);
 	stream.buf = new Uint8Array(0);
 	assert.deepEqual(await s.romAck(frame, 30), { ok: false, got: new Uint8Array(0) }, "silence");
 });

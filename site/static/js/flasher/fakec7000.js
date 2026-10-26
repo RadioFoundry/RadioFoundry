@@ -243,8 +243,9 @@ export class FakeC7000 {
 		// sector's data (as a record left over from an earlier request would); silentAfterReset: after the stub's soft
 		// reset RadioFoundry runs but its host link stays silent until a power cycle, as on the real radios (dm32-bringup.md);
 		// romEcho: the cable sends every byte the host writes to the boot ROM back to it, ahead of the ROM's answer;
-		// romNak: the boot ROM answers the load's frames with something other than its acknowledgement
-		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, ...faults };
+		// romNak: the boot ROM answers the load's frames with something other than its acknowledgement; slowCable: ms the
+		// cable takes to carry what the host writes (longer than romWindow: the answer to the greeting comes too late)
+		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, slowCable: 0, ...faults };
 		this.rand = rng(11);
 		this.state = "off";		// off | rom | booting | firmware | stub | bfloader
 		this.inb = new Uint8Array(0);
@@ -278,7 +279,11 @@ export class FakeC7000 {
 			buf: new Uint8Array(0), closed: false,
 			clear() { s.buf = new Uint8Array(0); },
 			take(n) { const o = s.buf.slice(0, n); s.buf = s.buf.slice(n); return o; },
-			async write(data) { radio.receive(data); },
+			async write(data) {
+				const d = data.slice();
+				if (radio.faults.slowCable) setTimeout(() => radio.receive(d), radio.faults.slowCable);
+				else radio.receive(d);
+			},
 			async close() { s.closed = true; },
 		};
 		return s;
@@ -326,6 +331,7 @@ export class FakeC7000 {
 		setTimeout(() => {
 			if (this.gen !== gen || this.state !== "rom") return;
 			if (this.keysHeld && this.loaderId && !this.softReset) return this.updateMode();
+			this.send(new Uint8Array([0x00, 0x10, 0x00, 0x03]));	// no answer came: the ROM stops waiting
 			this.state = "booting";
 			setTimeout(() => {
 				if (this.gen !== gen || this.state !== "booting") return;
@@ -380,6 +386,8 @@ export class FakeC7000 {
 		const ib = this.inb;
 		if (ib.length < 4) return 0;
 		if (ib[0] === 0x02 && ib[1] === 0x14 && ib[2] === 0 && ib[3] === 3) {
+			// the first answer starts the load; one more after it is NAKed, as on the radio (hardware-dm32.md 13.3)
+			if (this.state === "romload") this.send(new Uint8Array([0x02, BADSUM, 0x00, 0x03]));
 			this.state = "romload";
 			this.inb = ib.slice(4);
 			return 1;

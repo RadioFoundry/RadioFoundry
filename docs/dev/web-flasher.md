@@ -44,7 +44,8 @@ Add `#sim=<radio>-stock` to the flasher's address to run every step against a si
 through the loader hand-over). `#sim` alone is the first radio on stock firmware. The fake comes from the radio's data
 (`fakeC7000Options()` and `c7000Simulation()` in `fakec7000.js`, `simulation()` in `fake.js`): a radio with a stock
 console gets one, with its first stock version. `#sim=<radio>-romfail` is an HR_C7000 radio on stock firmware whose boot
-ROM refuses the load, to practice the factory update mode; a radio with the Baofeng updater enters it when switched on
+ROM refuses the load, to practice the factory update mode; `#sim=<radio>-slowcable` one on a cable too slow for the
+boot ROM's 48 ms window, to practice the slow cable mode; a radio with the Baofeng updater enters it when switched on
 with "Hold the Keys and Turn On".
 
 ## Vendor files
@@ -340,7 +341,17 @@ programming cable with Web Serial, through the boot stub ([stub/README.md](../..
 A cable whose USB vendor id is a CH340's (1a86) gets a warning on the connect, check, write, backup and restore steps:
 some of these cables fail the backup or the install. The boot ROM load drops an exact echo of each frame it sent (some
 cables loop TX back to RX). A frame not acknowledged logs the first 16 bytes received, and the error names the cable's
-chip and points to the factory update mode.
+chip.
+
+The boot ROM waits about 48 ms for the answer to its greeting (measured; the radio pages have the timing), and
+the greeting in and the answer out both cross the cable and the browser's read loop. When the load fails, the ROM says
+it stopped waiting (`00 10 00 03`, error code `rom-late`, or `rom-booted` when no greeting was seen), or nothing is
+heard for 25 s, the page offers the **slow cable mode** (`slowCable()` in `c7000ui.js`). After the user selects
+"Radio Is Off", `waitForRom({ repeat: ROM_REPEAT })` sends the answer every 30 ms, and on for 150 ms after the greeting,
+so one leaves within 30 ms of it whatever the cable's latency. The page then waits for the line to go quiet (the ROM
+NAKs the extra answers) before block 0. It never starts with the radio possibly on: the firmware of a radio left on
+would get the answers too (RadioFoundry ignores them; stock firmware is untested). Once the slow cable mode failed too,
+the factory update mode is the main action. `stubtool.py --slow-cable` does the same.
 
 ### The factory update mode
 
@@ -354,7 +365,7 @@ no steps.
 | `iap` | `iap.js` | Erase, then 2 KB pages with an additive checksum the loader reports back. The install image starts with the first stage. A radio without a complete application stays in this mode at every power-on, so the page probes for it when nothing else answers |
 | `baofeng` | `bfloader.js` | The Baofeng updater (the protocol `tools/serial_loader.py` names, on the radio pages of the boards that use it): steps 1-3 identify the loader by the board's `bootloader_id`, step 7 erases the whole application area (the codec slot included), then 1 KB blocks, each acknowledged by its CRC-16/XMODEM. A port of `tools/serial_loader.py`'s `Flasher`; `site/tests/bfloader.test.mjs` checks the bytes it sends against the Python tool's (`fixtures.py`) and runs it against `FakeBfLoader` |
 
-The page offers it next to Try Again when the boot ROM load fails or the ROM wait times out, in Troubleshooting
+The page offers it once the slow cable mode failed too (above), in Troubleshooting
 (`recovery.extra`, "Reinstall in Factory Update Mode"), and where the stock console and the first stage routes offer it.
 Nothing is read from the radio this way, so the check step takes the codec from a file (`factoryRoute()` in
 `c7000ui.js`): the stock firmware file where a profile of the board names one, else a program memory backup (or a slot
