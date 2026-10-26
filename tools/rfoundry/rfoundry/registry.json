@@ -324,7 +324,12 @@
    "loader_id": "BF1801-V1",
    "loader_keys": "PTT and SK1 (the upper side key)",
    "loader_sign": "",
-   "bootloader_steps": [],
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold PTT and SK1 (the upper side key).",
+    "Turn the radio on while you hold both keys.",
+    "Release the keys."
+   ],
    "stock_download": null,
    "key_sha256": null,
    "key_prefix": null,

@@ -402,7 +402,10 @@ refuses the slot at 0x030E8000 and any image that reaches it). `rfoundry` flashe
 of two routes ([release.md](../dev/release.md#the-serial-route-hr_c7000-radios)). Through the stub, only the image's
 sectors are written, so the codec slot stays. Through the bootloader above, the loader erases the whole application
 area, so the slot is rewritten from a program flash read of this radio (`--stock`). A first install through update mode
-needs that read once. A whole `rfoundry` run on either route has not been done on a radio.
+needs that read once. A whole `rfoundry` run on either route has not been done on a radio. The web flasher writes
+through this loader as its factory update mode when the boot ROM load fails (`site/static/js/flasher/bfloader.js`,
+the steps from `boards/dm1801pro/board.toml`). With no vendor file for this radio, the codec slot comes from a program
+flash backup of this radio or a slot the browser kept. Not yet run from the web page on a radio.
 
 ### 6.3 Identity read
 

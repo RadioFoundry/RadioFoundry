@@ -33,8 +33,8 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `f4stub.js` | The STM32F4 loader: handed over by RadioFoundry, the board record (CONFIG) and its echo, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
 | `c7000v1.js` | Rebuilds a version 1 codec slot (from before the codec moved) as version 2 | |
 | `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/hrc7000_codec.py` |
-| `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, RadioFoundry's debug link (VERSION, 0x1A), the stub and both flash chips | |
-| `usmart.js`, `iap.js`, `iapui.js` | The stock side of an HR_C7000 radio, by protocol: the stub loaded through a stock debug console (USMART, `flash.stock_console`), the vendor update mode write (IAP, `flash.update_mode`) and their steps | |
+| `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, RadioFoundry's debug link (VERSION, 0x1A), the stub, both flash chips and the Baofeng updater (`FakeBfLoader`) | `tools/serial_loader.py` `FakeBootloader` |
+| `usmart.js`, `iap.js`, `bfloader.js`, `iapui.js` | The stock side of an HR_C7000 radio, by protocol: the stub loaded through a stock debug console (USMART, `flash.stock_console`), the factory update mode write (IAP or the Baofeng updater, `flash.update_mode`) and their steps | `tools/serial_loader.py` (`bfloader.js`) |
 | `c7000ui.js`, `radiotop.js` | The HR_C7000 backend: its steps (connect, back up and check, write, check) and the radio picture with its LED | |
 | `dom.js` | DOM helpers and strings shared by `app.js` and `c7000ui.js` | |
 | `app.js` | The page: the tasks, the shared steps and the `anyroad-dfu` backend | |
@@ -43,7 +43,9 @@ Add `#sim=<radio>-stock` to the flasher's address to run every step against a si
 `#sim=<radio>` against one that runs RadioFoundry (an STM32F4 radio updates through the STM32F4 loader, an HR_C7000 radio
 through the loader hand-over). `#sim` alone is the first radio on stock firmware. The fake comes from the radio's data
 (`fakeC7000Options()` and `c7000Simulation()` in `fakec7000.js`, `simulation()` in `fake.js`): a radio with a stock
-console gets one, with its first stock version.
+console gets one, with its first stock version. `#sim=<radio>-romfail` is an HR_C7000 radio on stock firmware whose boot
+ROM refuses the load, to practice the factory update mode; a radio with the Baofeng updater enters it when switched on
+with "Hold the Keys and Turn On".
 
 ## Vendor files
 
@@ -325,8 +327,8 @@ documented, and RadioFoundry doesn't overwrite it unless an ID database is uploa
 Radios whose backend is `c7000-stub` (the `serial-loader` and `serial-iap` families; a board with a first stage adds the section
 below) are flashed over their
 programming cable with Web Serial, through the boot stub ([stub/README.md](../../stub/README.md),
-[debuglink.md](../spec/debuglink.md) 3.18). The Baofeng bootloader is never used and never written. The install has
-its own steps:
+[debuglink.md](../spec/debuglink.md) 3.18), or through the radio's factory update mode when the stub can't be loaded
+(below). No loader in the radio is ever written. The install has its own steps:
 
 | Step | What happens |
 |---|---|
@@ -338,7 +340,27 @@ its own steps:
 A cable whose USB vendor id is a CH340's (1a86) gets a warning on the connect, check, write, backup and restore steps:
 some of these cables fail the backup or the install. The boot ROM load drops an exact echo of each frame it sent (some
 cables loop TX back to RX). A frame not acknowledged logs the first 16 bytes received, and the error names the cable's
-chip and points to the stock-file route.
+chip and points to the factory update mode.
+
+### The factory update mode
+
+Every HR_C7000 board has one: `update_mode` in its `data/radios.json` `flash` entry, from the family in
+`tools/boards.py` (`serial-iap`: `iap`; `serial-loader`: `baofeng`), entered by the keys in `flash.bootloader` (the
+steps) and `bootloader_hold` (marked on the radio's picture). The registry check refuses a board on such a family with
+no steps.
+
+| Protocol | Module | What it takes |
+|---|---|---|
+| `iap` | `iap.js` | Erase, then 2 KB pages with an additive checksum the loader reports back. The install image starts with the first stage. A radio without a complete application stays in this mode at every power-on, so the page probes for it when nothing else answers |
+| `baofeng` | `bfloader.js` | The Baofeng updater (the protocol `tools/serial_loader.py` names, on the radio pages of the boards that use it): steps 1-3 identify the loader by the board's `bootloader_id`, step 7 erases the whole application area (the codec slot included), then 1 KB blocks, each acknowledged by its CRC-16/XMODEM. A port of `tools/serial_loader.py`'s `Flasher`; `site/tests/bfloader.test.mjs` checks the bytes it sends against the Python tool's (`fixtures.py`) and runs it against `FakeBfLoader` |
+
+The page offers it next to Try Again when the boot ROM load fails or the ROM wait times out, in Troubleshooting
+(`recovery.extra`, "Reinstall in Factory Update Mode"), and where the stock console and the first stage routes offer it.
+Nothing is read from the radio this way, so the check step takes the codec from a file (`factoryRoute()` in
+`c7000ui.js`): the stock firmware file where a profile of the board names one, else a program memory backup (or a slot
+this browser kept). The decision is never "keep": the image is `c7.target()` with the slot, without the 0xFF tail
+(`factoryInstallImage()` in `iapui.js`). Restore writes a backup's application area and slot, or the original firmware
+from its file, the same way. The Baofeng route has not been run from the web page on a radio.
 
 ### A board with a first stage
 
@@ -355,7 +377,7 @@ route knows, `update_mode` (the `serial-iap` family), `read_rate` (the program m
 | RadioFoundry runs (debug link answers) | The universal stub (`data/c7000-stub.json`, `stubImages()` in `stub.js`) goes into the RAM span the firmware reports in STUB INFO and copies itself to 0x30000. `univFits()` refuses a span whose copy would overlap or leave SRAM, as `stubtool.py` does. After HELLO the page sends CONFIG with the board's profile and checks the echo before any write |
 | RadioFoundry runs but does not answer | "Recover at Power-On": the first stage offers the boot ROM handshake for a short time at power-on. The page answers it and loads the universal stub, as the boot ROM route does |
 | The stock firmware runs | `usmart.js`: the stock firmware's debug console takes one framed command per write and answers `read_addr` and `write_addr`. The page identifies the build from its version string (another build is refused), writes the universal stub word by word into RAM, reads every word back, and points the console's command entry at it. Only RAM addresses can be written, never flash. The stub then copies itself to 0x30000 and the radio continues as from RadioFoundry |
-| Factory update mode (recovery) | `iap.js`: the loader's update mode takes `Erase` and 2 KB pages with additive checksums. Install: the first stage, RadioFoundry and the codec slot in one file; it must start with the first stage's signature (`flash.first_stage`). Restore: a backup's application area and slot (`restoreTarget()`), or the original firmware from its file. Offered when nothing answers on the cable, for a stock build the page doesn't know, and in Troubleshooting (`recovery.extra`, "Reinstall in Factory Update Mode") |
+| Factory update mode (recovery) | `iap.js`: the loader's update mode takes `Erase` and 2 KB pages with additive checksums. Install: the first stage, RadioFoundry and the codec slot in one file; it must start with the first stage's signature (`flash.first_stage`). Restore: a backup's application area and slot (`restoreTarget()`), or the original firmware from its file. Offered when nothing answers on the cable, for a stock build the page doesn't know, and as on every HR_C7000 board ([above](#the-factory-update-mode)) |
 
 The first stage is the only way into the stub from a radio that runs RadioFoundry without answering.
 `site/tests/iap.test.mjs` runs the console stub load and the IAP write against simulated radios (`fakec7000.js`) and

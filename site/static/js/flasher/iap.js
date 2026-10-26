@@ -134,6 +134,11 @@ export class Iap {
 		throw new IapError("the radio did not report update mode");
 	}
 
+	// The factory route waits for a loader the same way whatever its protocol (bfloader.js listen): here, its banner
+	listen(timeout, opts) {
+		return this.waitBanner(timeout, opts);
+	}
+
 	// Erase and write `image`. onPage(i, total). Returns the checksum the radio reported (it matches ours or this throws).
 	// restore: the image is a backup's application area (checkRestoreImage), not an install image
 	async write(image, { onPage = () => {}, onPhase = () => {}, signal, eraseTimeout = 60000, pageTimeout = 10000, restore = false } = {}) {

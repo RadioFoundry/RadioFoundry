@@ -1063,7 +1063,10 @@ The image sent is the raw application (the 256-byte header is stripped). The fil
 
 If the radio does not boot the new image, remove and refit the battery; update mode still works (unverified).
 
-`tools/serial_loader.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1). `serial_loader.py --probe` runs steps 1-3 only and prints the answers, for checking whether
+`tools/serial_loader.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1). The web
+flasher's factory update mode uses it too (`site/static/js/flasher/bfloader.js`, a port checked byte for byte against
+`serial_loader.py`): offered when the boot ROM load (13.3) fails, it writes RadioFoundry and the codec slot, the codec
+taken from the stock file. Untested on a DM-32UV from the web page. `serial_loader.py --probe` runs steps 1-3 only and prints the answers, for checking whether
 another HR_C7000 radio's update loader speaks this protocol and which model string it reports at step 3.
 
 Release: the application area is 0x0300C000..0x030E8000 (880 KB) and the codec slot is 0x030E8000..0x03100000. The
@@ -1081,7 +1084,8 @@ Production radios are programmed over JTAG (unverified). The ROM protocol itself
 Cables:
 
 - Any USB-serial chip can reach the ROM loader, CH340 included. Cable quality varies: some cables that work with the
-  Baofeng bootloader and CPS fail the ROM load, so a failed load names the cable's chip and offers the stock-file route.
+  Baofeng bootloader and CPS fail the ROM load, so a failed load names the cable's chip and offers the update mode
+  (13.2) instead, which needs no load over the cable.
 - Some cables echo what the host sends. The host drops an exact copy of the frame it sent, ahead of the ROM's
   acknowledgement, and reads on for the acknowledgement until its timeout; any other reply fails the frame (`stub.js` `romAck`, `stubtool.py` `rom_ack`).
 - When a frame is not acknowledged, the first 16 bytes received are logged.

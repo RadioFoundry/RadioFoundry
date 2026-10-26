@@ -265,6 +265,14 @@ leave it out. Attached files and your email address are deleted within 90 days.
 **Programming cables:** cables with a CH340 chip can be unreliable for backups and installs. If one fails, try a cable
 with an FTDI, CP210x or PL2303 chip. The installer warns when it sees a CH340 cable.
 
+**When the cable can't prepare the radio:** a radio installed over its programming cable first gets a small loader in
+its memory. If that fails ("Preparing the radio failed") or the radio never answers, the installer offers **Use
+Factory Update Mode** next to Try Again: the radio's own update mode, entered by holding keys while you turn the radio
+on (your radio's "Installing" section in the [Radio reference](23-radios.md)). Nothing can be read from the radio that
+way, so no backup is taken and the voice codec comes from a file: the stock firmware file, or a program memory backup
+of the radio where the installer knows no stock file for it. Troubleshooting offers the same route ("Reinstall in
+Factory Update Mode"), and Restore uses it too.
+
 ## Going back to the stock firmware
 
 1. Put the radio in its bootloader.

@@ -1928,8 +1928,9 @@ function afterRestore() {
 
 const SYMPTOMS = ["dark", "stuck", "stopped", "novoice", "channels", "revert"];
 // "iap": a white, backlit screen and a solid red LED at every power-on. Only for a radio whose backend has a way back
-// through the vendor update mode (recovery.extra); it is listed after the dark screen it is mistaken for
-const symptoms = () => (backend().recovery.extra?.(S.radio, fb()).length ? ["dark", "iap", ...SYMPTOMS.slice(1)] : SYMPTOMS);
+// through an update mode the radio stays in when its application is incomplete (recovery.extra, stuck); it is listed
+// after the dark screen it is mistaken for
+const symptoms = () => (backend().recovery.extra?.(S.radio, fb()).some((x) => x.stuck) ? ["dark", "iap", ...SYMPTOMS.slice(1)] : SYMPTOMS);
 
 // From a failure: the radio is known, so the page asks what's wrong right away
 function startHelp() {
@@ -2228,10 +2229,11 @@ async function main() {
 	}
 	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
-	// #sim=<board>[-stock|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another open
-	// firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file
-	// fallback); #sim: the first radio on stock firmware
-	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-openfw(?:-nocodec)?)?)?(?:&|$)/);
+	// #sim=<board>[-stock|-romfail|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
+	// open firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file
+	// fallback); -romfail: an HR_C7000 radio on stock firmware whose boot ROM refuses the load, for the factory update
+	// mode; #sim: the first radio on stock firmware
+	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-romfail|-openfw(?:-nocodec)?)?)?(?:&|$)/);
 	const simRadio = simAsk && (simAsk[1] ? S.data.radios.find((r) => r.id === simAsk[1]) : S.data.radios[0]);
 	const simOpen = !!simAsk?.[2]?.startsWith("-openfw") && openfw.supported(S.data.fb.boards[simRadio?.flash.board]);
 	const simStock = !!simAsk && (!simAsk[1] || (!!simAsk[2] && !simOpen));
@@ -2240,7 +2242,8 @@ async function main() {
 		const board = simRadio.id;
 		const sim = await c7000Simulation(S.data.fb.c7000, board, 7000, simRadio);
 		S.sim = { fb: { ...S.data.fb, c7000: sim.c } };
-		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600, faults: { silentAfterReset: true },
+		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600,
+			faults: { silentAfterReset: true, romNak: simAsk[2] === "-romfail" },
 			...fakeC7000Options(simRadio, S.data.fb) });
 		if (!simStock) {
 			const img = randomBytes(rng(98), 180 * 1024);
