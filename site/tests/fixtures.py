@@ -349,18 +349,18 @@ def bfloader(out):
 			self.sent += b
 			super().write(b)
 
-	model = sl.MODELS["dm32"]
+	model = next(m for m in sl.MODELS.values() if m.codec_slot)	# any radio on this loader: the framing is the same
 	raw = bytes((i * 31 + (i >> 10)) & 0xFF for i in range(260 * 1024 + 517))
 	corrupt = [3, 255, 0]
 	fake = Recorded(model, corrupt=set(corrupt))
-	name = "rfoundry_dm32_codec.bin"
+	name = "rfoundry_%s_codec.bin" % model.id
 	sl.Flasher(fake, log=lambda *a: None, step_timeout=0.2, model=model).flash(raw, name)
 	assert not fake.errors and fake.image() == raw and fake.naks == len(corrupt)
 	for n, data in (("bfloader_image.bin", raw), ("bfloader_host.bin", bytes(fake.sent))):
 		with open(os.path.join(out, n), "wb") as f:
 			f.write(data)
 	with open(os.path.join(out, "bfloader.json"), "w") as f:
-		json.dump({"board": "dm32", "id": model.tag, "name": name, "corrupt": corrupt, "naks": fake.naks,
+		json.dump({"board": model.id, "id": model.tag, "name": name, "corrupt": corrupt, "naks": fake.naks,
 			   "blocks": len(fake.blocks), "header": list(fake.header)}, f, indent=1)
 
 

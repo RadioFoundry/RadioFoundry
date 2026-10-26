@@ -111,8 +111,11 @@ test("Baofeng updater: silence, a wrong step 2 answer, another radio's loader an
 	await assert.rejects(loaderOn(silent.s).write(img), /step 1: no answer/);
 	assert.equal(await loaderOn(silent.s).probe(200), null);
 	await assert.rejects(loaderOn(bench({ badStep2: true }).s).write(img), /step 2: the radio answered 4D 01 08, expected 4D 01 09/);
-	const other = bench({ id: "BF1801-V1" });
-	await assert.rejects(loaderOn(other.s).listen(1000), /step 3 \(model\).*"BF1801-V1", not BFUV32-V2: this is another radio/);
+	// another radio's loader: an ID of the same length (step 2 announces it), or a made-up one
+	const otherId = Object.values(C.boards).map((b) => b.bootloader_id).find((x) => x && x !== fx.id && x.length === fx.id.length)
+		|| "X".repeat(fx.id.length);
+	const other = bench({ id: otherId });
+	await assert.rejects(loaderOn(other.s).listen(1000), new RegExp(`step 3 \\(model\\).*"${otherId}", not ${fx.id}: this is another radio`));
 	assert.equal(other.fake.header, null, "nothing erased");
 	const slow = bench({ eraseMs: 1500 });
 	await assert.rejects(loaderOn(slow.s, { eraseTimeout: 200 }).write(img), /step 7 \(erase\): no answer/);
@@ -161,7 +164,7 @@ test("factory install image: the codec slot is always written, a kept slot is re
 test("practice radio: switched on with its keys held it enters the updater, which erases the area and writes the install", { timeout: 60000 }, async (t) => {
 	const { radio, sim, slot } = await withFile();
 	const o = fakeC7000Options(radio, FB);
-	assert.equal(o.loaderId, "BFUV32-V2");
+	assert.equal(o.loaderId, C.boards[radio.flash.board].bootloader_id);
 	const r = new FakeC7000({ progmem: sim.progmem.slice(), speed: 200, romWindow: 50, bootTime: 50, ...o });
 	t.after(() => r.stop());
 	const image = app(200 * 1024, 2);

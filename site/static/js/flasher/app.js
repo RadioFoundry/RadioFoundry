@@ -1950,37 +1950,6 @@ function helpLink() {
 }
 
 // What a bug report says about the flasher: no names, callsigns or IDs (automatic error reports carry it too)
-// ---------------------------------------------------------------------------------------------------------------
-// the manual install kit (manual.js): in place of a step this browser can't run, and under a failed install
-
-// The stock file the kit carries: the one picked for the codec (the inner vendor file of a zip), or the file the C7000
-// codec step took; none when it gave no codec
-function kitStock() {
-	if (S.stock?.data && !S.stock.problem) return { name: S.stock.name, data: S.stock.data };
-	const best = S.vendorPick?.opened?.best;
-	return best?.match?.kind === "codec" && !S.vendorPick.problem ? { name: best.path.split("/").pop(), data: best.data } : null;
-}
-
-const kitArgs = () => ({ radio: S.radio, board: S.board, firmware: S.firmware, stock: kitStock(), site: S.data.site, root: ROOT,
-	url: new URL(ROOT || "./", location.href).href });
-
-// Under a failed install (also c7000ui.js): the kit, for a radio rfoundry installs. Never in practice mode, whose image
-// is random bytes
-function manualKitLine() {
-	return S.sim || !S.radio ? null : kitLine(kitArgs);
-}
-
-function kitView(api) {
-	const out = h("div", { class: "flasher" });
-	const draw = () => {
-		const { el, action } = kitPanel(kitArgs, api, { pickStock: async (f) => { S.stock = await pickedStock(f); draw(); } });
-		out.replaceChildren(el);
-		S.forward(action);
-	};
-	draw();
-	return out;
-}
-
 // The USB device in use (adapter.js): on the trail, as a tag on error reports, in the flash log and problem reports
 function useAdapter(a) {
 	if (!a) {
@@ -2212,6 +2181,39 @@ function stockRecovery(go) {
 
 // practice mode (#sim...): a problem report is answered in the page, nothing sent, also before the simulation is up
 const SIM_HASH = /(?:^#|&)sim(?:=|&|$)/;
+
+// ---------------------------------------------------------------------------------------------------------------
+// the manual install kit (manual.js): in place of a step this browser can't run, and under a failed install
+
+// The stock file the kit carries: the one picked for the codec (the inner vendor file of a zip), or the file the C7000
+// codec step took; none when it gave no codec
+function kitStock() {
+	if (S.stock?.data && !S.stock.problem) return { name: S.stock.name, data: S.stock.data };
+	const best = S.vendorPick?.opened?.best;
+	return best?.match?.kind === "codec" && !S.vendorPick.problem ? { name: best.path.split("/").pop(), data: best.data } : null;
+}
+
+const kitArgs = () => ({ radio: S.radio, board: S.board, firmware: S.firmware, stock: kitStock(), site: S.data.site, root: ROOT,
+	url: new URL(ROOT || "./", location.href).href });
+
+// Under a failed install (also c7000ui.js): the kit, for a radio rfoundry installs. Never in practice mode, whose image
+// is random bytes
+function manualKitLine() {
+	return S.sim || !S.radio ? null : kitLine(kitArgs);
+}
+
+function kitView(api) {
+	const out = h("div", { class: "flasher" });
+	const draw = () => {
+		const { el, action } = kitPanel(kitArgs, api, { pickStock: async (f) => { S.stock = await pickedStock(f); draw(); } });
+		out.replaceChildren(el);
+		S.forward(action);
+	};
+	draw();
+	return out;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 
 async function main() {
 	initReporting({ tool: "flasher", context: reportContext, attachments: reportAttachments, backend: { api: API, meta: reportMeta, practice: () => !!S.sim || SIM_HASH.test(location.hash) } });
