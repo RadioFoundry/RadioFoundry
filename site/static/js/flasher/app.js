@@ -48,6 +48,7 @@ import * as diag from "../diag.js";
 import { initReporting, reportLine, reportingActive, errorNotice, reportButton, setAdapter } from "../report.js";
 import * as adapter from "./adapter.js";
 import * as crumbs from "./trail.js";
+import { missingApi, kitPanel, kitLine } from "./manual.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
@@ -645,7 +646,9 @@ function render() {
 	// the shared steps, then the ones the radio's backend draws; a bundle's own backend restores it
 	const step = steps[S.step];
 	diag.note(`step ${S.task || "start"}/${step}`);
-	const view = (step === "restore" && bundleBackend(S.bundle)?.views.restore) || (S.radio && backend().views[step])
+	// a step this browser can't run (no WebUSB or Web Serial): the manual install kit in its place
+	const missing = S.radio && !S.sim && missingApi(S.radio, S.task, step, { usb: usbSupported(), serial: serialSupported(), stub: stubRoute() });
+	const view = (missing && (() => kitView(missing))) || (step === "restore" && bundleBackend(S.bundle)?.views.restore) || (S.radio && backend().views[step])
 		|| { radio: radioView, build: buildView, bundle: bundleView, symptom: symptomView, recover: recoverView }[step];
 	app.append(view());
 	app.append(h("div", { class: "nav-bar" },
@@ -689,6 +692,7 @@ function startView() {
 	const usb = S.sim || usbSupported(), serial = S.sim || serialSupported();
 	const support = !usb && !serial ? [notice(t("flash.support.none"), "bad")]
 		: [!usb && notice(t("flash.support.usb"), "bad"), !serial && notice(t("flash.support.serial"), "bad")].filter(Boolean);
+	if (support.length) support.push(notice(t("flash.kit.start"), "info"));
 	const choice = (task, icon) => h("button", { class: "choice", type: "button", onclick: () => { S.task = task; S.step = 0; render(); } },
 		h("strong", {}, `${icon} ${t(`flash.task.${task}`)}`), h("span", { class: "small muted" }, t(`flash.task.${task}.text`)));
 	return h("div", { class: "flasher" },
@@ -1550,7 +1554,8 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 				place(write);
 			} catch (e) {
 				status.replaceChildren(...h("div", {}, errorNotice(errorText(e)),
-					onWindows() && usbSupported() ? windowsDriverHelp({ failed: true }) : null).childNodes);
+					onWindows() && usbSupported() ? windowsDriverHelp({ failed: true }) : null,
+					e?.name === "NotFoundError" ? null : manualKitLine()).childNodes);
 				winHelp?.replaceChildren();
 			}
 		}, { primary: true });
@@ -1569,7 +1574,7 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 				onDone();
 			} catch (e) {
 				flashFinished(started, e);
-				status.replaceChildren(errorNotice(t("flash.write.failed", { error: errorText(e) })), helpLink());
+				status.replaceChildren(...h("div", {}, errorNotice(t("flash.write.failed", { error: errorText(e) })), helpLink(), manualKitLine()).childNodes);
 				write.disabled = false;
 				place(connect);
 				connect.disabled = false;
@@ -1944,6 +1949,37 @@ function helpLink() {
 }
 
 // What a bug report says about the flasher: no names, callsigns or IDs (automatic error reports carry it too)
+// ---------------------------------------------------------------------------------------------------------------
+// the manual install kit (manual.js): in place of a step this browser can't run, and under a failed install
+
+// The stock file the kit carries: the one picked for the codec (the inner vendor file of a zip), or the file the C7000
+// codec step took; none when it gave no codec
+function kitStock() {
+	if (S.stock?.data && !S.stock.problem) return { name: S.stock.name, data: S.stock.data };
+	const best = S.vendorPick?.opened?.best;
+	return best?.match?.kind === "codec" && !S.vendorPick.problem ? { name: best.path.split("/").pop(), data: best.data } : null;
+}
+
+const kitArgs = () => ({ radio: S.radio, board: S.board, firmware: S.firmware, stock: kitStock(), site: S.data.site, root: ROOT,
+	url: new URL(ROOT || "./", location.href).href });
+
+// Under a failed install (also c7000ui.js): the kit, for a radio rfoundry installs. Never in practice mode, whose image
+// is random bytes
+function manualKitLine() {
+	return S.sim || !S.radio ? null : kitLine(kitArgs);
+}
+
+function kitView(api) {
+	const out = h("div", { class: "flasher" });
+	const draw = () => {
+		const { el, action } = kitPanel(kitArgs, api, { pickStock: async (f) => { S.stock = await pickedStock(f); draw(); } });
+		out.replaceChildren(el);
+		S.forward(action);
+	};
+	draw();
+	return out;
+}
+
 // The USB device in use (adapter.js): on the trail, as a tag on error reports, in the flash log and problem reports
 function useAdapter(a) {
 	if (!a) {
@@ -2190,7 +2226,7 @@ async function main() {
 		app.replaceChildren(notice(t("flash.err.load"), "bad"), reportLine());
 		return;
 	}
-	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
+	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
 	// #sim=<board>[-stock|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another open
 	// firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file
