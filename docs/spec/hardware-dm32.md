@@ -1109,6 +1109,26 @@ Cables:
   acknowledgement, and reads on for the acknowledgement until its timeout; any other reply fails the frame (`stub.js` `romAck`, `stubtool.py` `rom_ack`).
 - When a frame is not acknowledged, the first 16 bytes received are logged.
 
+Timing, measured 2026-10-26 on a DM-32UV through an FTDI FT232R cable at 115200 baud:
+
+| What | Measured |
+|---|---|
+| Greeting | `02 24 00 03`, once, 0.6 to 2.7 s after power-on (after one `00` byte). Never repeated |
+| Answer window | The host's `02 14 00 03` must reach the ROM within about 48 ms of the greeting: 46 ms works, 100 ms fails. Without it the ROM sends `00 10 00 03`, ignores the line and starts the firmware from flash |
+| Before the greeting | Bytes that reach the ROM before its greeting are dropped |
+| After the answer | No timeout: 10 s before block 0 and 3 s between blocks work. The ROM waits for commands until the next reset |
+| Block `0x18` ack | 28 to 40 ms for a 268-byte frame (23 ms of it on the wire) |
+| Bad checksum | NAK `02 0a 00 03`; the block sent again is taken |
+| A second answer | NAK `02 0a 00 03`, harmless |
+| Start `0x1B` | Acknowledged `02 05 00 03`, then the stub runs |
+
+The window is tight for a cable that holds received bytes before passing them on (an FTDI chip's latency timer is
+16 ms by default on Windows), behind a USB hub, or in a busy browser. The slow cable mode (`stub.js` `waitForRom`
+`repeat`, `stubtool.py --slow-cable`) sends the answer every 30 ms from before power-on until 150 ms after the
+greeting, so one leaves within 30 ms of it, and drains the NAKs of the rest before block 0. It worked on the same radio
+with the host answering 100 ms late (2026-10-26). RadioFoundry ignored 30 s of these answers while running (881 frames,
+no reply, still answering afterwards).
+
 ### 13.4 Backing up
 
 Back up the program flash (1 MB) and the data flash (16 MB) before flashing anything; both can be read through the bootloader/ROM path (unverified).

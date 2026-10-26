@@ -23,7 +23,8 @@ export function browserErrorKey(e) {
 	const raw = e?.message || String(e);
 	switch (e?.name) {
 	case "NotFoundError": return /disconnect/i.test(raw) ? "flash.err.disconnected" : "flash.err.no_device";
-	case "SecurityError": return "flash.err.security";
+	// "Access denied" on opening a USB device is the device's driver or another program (Windows without WinUSB), not the page
+	case "SecurityError": return /access denied/i.test(raw) ? "flash.err.usb_busy" : "flash.err.security";
 	case "InvalidStateError": return "flash.err.port_open";
 	case "NotAllowedError": return "flash.err.not_allowed";
 	case "NetworkError": return /open serial port/i.test(raw) ? "flash.err.port_busy" : /claim|access denied/i.test(raw) ? "flash.err.usb_busy" : "flash.err.connection_lost";

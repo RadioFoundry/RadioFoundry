@@ -154,6 +154,10 @@ failed on long reads, so leave it off unless a normal run is too slow and you ha
 
 - **"The radio did not respond" / "did not start its serial boot ROM"**: switch the radio off, make sure the cable is in,
   run the tool, and only then switch the radio on.
+- **"stopped waiting before the answer to its greeting reached it"** or **"the radio started its firmware"**: the boot
+  ROM waits only about 48 ms for the tool's answer, and the cable or a USB hub was too slow. Switch the radio off, run
+  the tool again with `--slow-cable`, then switch the radio on. The tool then keeps sending its answer while the radio
+  starts. Run it only with the radio off: a running firmware would receive those answers too.
 - **A message about retries**: the tool checks every block and asks again when a block arrives damaged. A few retries are
   normal. If it gives up, switch the radio off and on and run it again.
 - **"flash does not answer"**: the radio is not in loader mode, or the cable is wrong. Switch off and on and try again.

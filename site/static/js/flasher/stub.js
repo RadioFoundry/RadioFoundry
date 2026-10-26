@@ -19,7 +19,14 @@ import { Link, LinkError } from "./link.js";
 // USB-serial chips known to take the boot ROM load well (adapter.js names a cable by these)
 const GOOD_CHIPS = ["FTDI", "CP210x", "PL2303"];
 
-export class StubError extends Error {}
+// code: what kind of failure, for the page's next offer ("rom-late": the boot ROM stopped waiting for the answer to its
+// greeting; "rom-booted": the radio started its firmware and no greeting was seen)
+export class StubError extends Error {
+	constructor(message, code = null) {
+		super(message);
+		this.code = code;
+	}
+}
 // A damaged, short or missing frame, or a sector that failed its CRC: worth asking again
 export class FrameError extends StubError {}
 
@@ -31,7 +38,14 @@ export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
 // RadioFoundry's restart-cause mark (docs/spec/crash-log.md 1.3; stubtool.py CRASH_SOFT_MARK): the reset was asked for
 export const CRASH_SOFT_MARK = 0x18007EF4, CRASH_BOOT_SOFT = 0x54464F53;
 export const STUB_MAGIC = 0x42533743, DL_STUB = 0x1A;
-const ROM_HELLO = [0x02, 0x24, 0x00, 0x03], ROM_ACK = [0x02, 0x05, 0x00, 0x03];
+const ROM_HELLO = [0x02, 0x24, 0x00, 0x03], ROM_ACK = [0x02, 0x05, 0x00, 0x03], ROM_REPLY = [0x02, 0x14, 0x00, 0x03];
+// The boot ROM's two other frames: it stops waiting (about 48 ms after its greeting when no answer came) and starts the
+// firmware; and its NAK (BADSUM), which is also how it answers a repeated greeting reply once it took the first one
+const ROM_GAVE_UP = [0x00, 0x10, 0x00, 0x03], ROM_NAK = [0x02, 0x0A, 0x00, 0x03];
+// Slow cable mode: the greeting reply goes out this often while the radio is switched on, and on for ROM_REPEAT_AFTER
+// ms once the greeting is seen: the ROM drops what reaches it before its greeting, so only the answers sent after that
+// count, and the ROM's 48 ms must be covered however late the greeting shows here (hardware-dm32.md 13.3)
+export const ROM_REPEAT = 30, ROM_REPEAT_AFTER = 150;
 // memory: SSI base, the GPIO chip select (the data flash's is PTA18), size
 export const MEM = {
 	progmem: { base: SSI_PROG, cs: null, size: 0x100000, name: "program memory" },
@@ -109,25 +123,54 @@ export class Stub {
 	// ---- boot ROM
 
 	// Resolves once the boot ROM greets the host (the radio was just switched on, or soft-reset). signal stops it.
-	async waitForRom(timeout, { signal } = {}) {
+	//
+	// The ROM waits only about 48 ms for the answer, and a slow cable or USB hub can take longer than that to carry the
+	// greeting in and the answer out. repeat (ms, slow cable mode): send the answer that often all along, so one is on
+	// its way when the greeting goes out; only with the radio off at the start, since the firmware of a radio left on
+	// would get it too. Resolves {answered}: true when the ROM took one of those (a NAK of a later one shows it, or the
+	// greeting and ROM_REPEAT_AFTER ms of answers after it without the ROM giving up)
+	async waitForRom(timeout, { signal, repeat = 0 } = {}) {
 		const until = Date.now() + timeout;
 		this.s.clear();
-		while (Date.now() < until) {
-			if (signal?.aborted) throw new StubError("stopped");
-			const at = find(this.s.buf, ROM_HELLO);
-			if (at >= 0) {
-				this.s.take(at + ROM_HELLO.length);
-				return;
+		let sending = Promise.resolve(), next = 0, heard = 0;
+		try {
+			while (Date.now() < until) {
+				if (signal?.aborted) throw new StubError("stopped");
+				if (repeat && Date.now() >= next) {
+					next = Date.now() + repeat;
+					sending = sending.then(() => this.s.write(new Uint8Array(ROM_REPLY)));
+				}
+				const b = this.s.buf;
+				const at = find(b, ROM_HELLO);
+				if (at >= 0) {
+					this.s.take(at + ROM_HELLO.length);
+					if (!repeat) return { answered: false };
+					heard = Date.now();
+					continue;
+				}
+				if (repeat && (find(b, ROM_NAK) >= 0 || (heard && find(b, ROM_GAVE_UP) < 0 && Date.now() - heard >= ROM_REPEAT_AFTER))) {
+					this.s.take(b.length);
+					return { answered: true };
+				}
+				if (find(b, ROM_GAVE_UP) >= 0) {
+					this.s.take(b.length);
+					throw new StubError(repeat ? "the radio started its firmware without taking the loader, even with the answer sent ahead"
+						: "the radio started its firmware: its boot ROM's greeting did not come through", "rom-booted");
+				}
+				if (b.length > 64) this.s.take(b.length - 3);
+				await sleep(1);
 			}
-			if (this.s.buf.length > 64) this.s.take(this.s.buf.length - 3);
-			await sleep(1);
+		} finally {
+			await sending;
 		}
 		throw new StubError("the radio's boot ROM did not answer");
 	}
 
 	// The boot ROM's acknowledgement of `sent`, within timeout. A cable that echoes (some USB-serial cables loop TX back
-	// to RX) puts an exact copy of the frame first: it is dropped and the reading goes on. {ok, got}: got is what came
-	// instead, for the log and the error
+	// to RX) puts an exact copy of the frame first: it is dropped and the reading goes on. Other bytes ahead of the ack
+	// (a damaged echo, seen on a CH340 cable) are passed over: the ack is the last thing the ROM sends, so it counts
+	// when the bytes end with it. A NAK or the ROM giving up ends the wait. {ok, got}: got is what came instead, for
+	// the log and the error
 	async romAck(sent, timeout) {
 		const until = Date.now() + timeout;
 		for (;;) {
@@ -141,11 +184,13 @@ export class Stub {
 				this.echo = true;
 				continue;
 			}
-			if (b.length >= 4 && ROM_ACK.every((x, k) => b[k] === x)) {
-				this.s.take(4);
+			const ends = (pat) => b.length >= 4 && pat.every((x, k) => b[b.length - 4 + k] === x);
+			if (ends(ROM_ACK) && !(echo && b.length < sent.length)) {
+				if (b.length > 4) this.log(`before the boot ROM's acknowledgement: ${hexBytes(b.subarray(0, Math.min(16, b.length - 4)))}`);
+				this.s.take(b.length);
 				return { ok: true, got: null };
 			}
-			if (b.length >= 4 && !echo) return { ok: false, got: this.s.take(Math.min(16, b.length)) };
+			if (!echo && (ends(ROM_NAK) || find(b, ROM_GAVE_UP) >= 0)) return { ok: false, got: this.s.take(Math.min(16, b.length)) };
 			if (Date.now() >= until) return { ok: false, got: this.s.take(Math.min(16, b.length)) };
 			await sleep(1);
 		}
@@ -160,22 +205,44 @@ export class Stub {
 		const others = GOOD_CHIPS.filter((x) => x !== this.cable);
 		const chips = `${others.slice(0, -1).join(", ")} or ${others[others.length - 1]}`;
 		return new StubError(`${what} (${bytes}${this.echo ? "; the cable echoes" : ""}). The radio's boot ROM did not take the loader over ${cable}. `
-			+ `Check that the plug is all the way in, try a cable with one of these chips: ${chips}, or install through the radio's factory update mode instead, which needs no load over the cable`);
+			+ `Check that the plug is all the way in, try a cable with one of these chips: ${chips}, `
+			+ (this.repeated ? "or install through the radio's factory update mode instead, which needs no load over the cable" : "or try the slow cable mode"));
 	}
 
-	// Answer the ROM's greeting at once (it waits only briefly), load the stub at `load` and start it
-	async loadThroughRom(image, load, progress = () => {}) {
+	// The ROM said it stopped waiting (ROM_GAVE_UP) before the answer to its greeting reached it
+	romLate(got) {
+		return new StubError(`the radio's boot ROM stopped waiting before the page's answer reached it (received ${hexBytes(got.subarray(0, 16))}). `
+			+ (this.repeated ? "It did so even with the answer sent ahead" : "The cable or a USB hub carries it too slowly: try the slow cable mode"), "rom-late");
+	}
+
+	// Answer the ROM's greeting at once (it waits only about 48 ms), load the stub at `load` and start it. answered:
+	// waitForRom's slow cable mode answered already. The ROM has no timeout once it took the answer (hardware-dm32.md 13.3)
+	async loadThroughRom(image, load, progress = () => {}, { answered = false } = {}) {
 		univFits(image, load);
-		const hello = new Uint8Array([0x02, 0x14, 0x00, 0x03]);
-		await this.s.write(hello);
+		this.repeated = answered;
+		const hello = new Uint8Array(ROM_REPLY);
+		if (!answered) await this.s.write(hello);
+		// the ROM's reply to it isn't needed; an echo of it shows the cable loops back. After slow cable mode the NAKs of
+		// the answers still on their way come in too: they must be gone before block 0, so the page waits until the line
+		// is quiet (the ROM has no timeout once it took the answer)
 		await sleep(50);
-		// the ROM's reply to it isn't needed; an echo of it shows the cable loops back
-		const reply = this.s.take(Math.min(16, this.s.buf.length));
-		if (reply.length >= 4 && hello.every((x, k) => reply[k] === x)) {
+		let reply = this.s.take(this.s.buf.length);
+		for (let quiet = 0, until = Date.now() + 1500; answered && quiet < 100 && Date.now() < until; quiet += 10) {
+			await sleep(10);
+			if (this.s.buf.length) {
+				reply = concat(reply, this.s.take(this.s.buf.length));
+				quiet = -10;
+			}
+		}
+		if (find(reply, ROM_GAVE_UP) >= 0) {
+			this.log(`after the boot ROM greeting: ${hexBytes(reply.subarray(0, 16))}`);
+			throw this.romLate(reply);
+		}
+		if (find(reply, hello) >= 0) {
 			this.echo = true;
 			this.log("the cable echoes what the page sends; the echo is ignored");
 		}
-		if (reply.length) this.log(`after the boot ROM greeting: ${hexBytes(reply)}`);
+		if (reply.length) this.log(`after the boot ROM greeting: ${hexBytes(reply.subarray(0, 16))}`);
 		const padded = new Uint8Array(Math.ceil(image.length / ROM_BLOCK) * ROM_BLOCK).fill(0xFF);
 		padded.set(image);
 		const blocks = padded.length / ROM_BLOCK;
@@ -190,6 +257,7 @@ export class Stub {
 				const r = await this.romAck(frame, 1000);
 				ok = r.ok;
 				got = r.got;
+				if (!ok && got && find(got, ROM_GAVE_UP) >= 0) throw this.romLate(got);
 				if (!ok) this.log(`stub block ${i} not acknowledged (${got?.length ? `received ${hexBytes(got)}` : "nothing received"}), sending it again`);
 			}
 			if (!ok) throw this.romError(`stub block ${i} was not acknowledged`, got);

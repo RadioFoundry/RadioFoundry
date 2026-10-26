@@ -617,6 +617,13 @@ def sum8(b):
 
 
 ROM_ACK = b"\x02\x05\x00\x03"
+ROM_HELLO, ROM_REPLY = b"\x02\x24\x00\x03", b"\x02\x14\x00\x03"
+# The boot ROM stops waiting (about 48 ms after its greeting when no answer came) and starts the firmware; its NAK is
+# also how it answers a repeated greeting reply once it took the first one (docs/spec/hardware-dm32.md 13.3)
+ROM_GAVE_UP, ROM_NAK = b"\x00\x10\x00\x03", b"\x02\x0a\x00\x03"
+# --slow-cable: the greeting reply goes out this often while the radio is switched on, and on for ROM_REPEAT_AFTER once
+# the greeting is seen: the ROM drops what reaches it before its greeting, so only the answers sent after that count
+ROM_REPEAT, ROM_REPEAT_AFTER = 0.03, 0.15
 
 
 def rom_cmd(op, payload=b""):
@@ -639,6 +646,7 @@ class Radio:
         self.v6 = None                  # the universal stub's HELLO fields (protocol 6), None for an older stub
         self.configured = None          # the board profile the stub confirmed after CONFIG
         self.profile = GENERIC
+        self.slow = False               # --slow-cable: the boot ROM's greeting is answered ahead (wait_for_radio)
 
     def set_timeout(self, t):
         """Only when it changes: on macOS pyserial re-applies the terminal settings on every timeout assignment, which
@@ -661,7 +669,9 @@ class Radio:
     # ---- boot ROM: wait for it, load the stub, start it
     def rom_ack(self, sent, timeout):
         """The boot ROM's acknowledgement of `sent`: (ok, got). A cable that echoes (some USB-serial cables loop TX back
-        to RX) puts an exact copy of the frame first: it is dropped and the reading goes on. got: what came instead."""
+        to RX) puts an exact copy of the frame first: it is dropped and the reading goes on. Other bytes ahead of the ack (a
+        damaged echo, seen on a CH340 cable) are passed over: the ack is the last thing the ROM sends, so it counts when
+        the bytes end with it. A NAK or the ROM giving up ends the wait. got: what came instead."""
         end = time.monotonic() + timeout
         buf = b""
         while True:
@@ -675,7 +685,10 @@ class Radio:
                     self.log("the cable echoes what the host sends; the echo is ignored")
                 self.echo = True
                 continue
-            if len(buf) >= 4 and not echo:
+            if not echo and buf[-4:] == ROM_ACK:
+                self.log("before the boot ROM's acknowledgement: %s" % buf[:-4][:16].hex(" "))
+                return True, b""
+            if not echo and (buf[-4:] == ROM_NAK or ROM_GAVE_UP in buf):
                 return False, buf[:16]
             if time.monotonic() >= end:
                 return False, buf[:16]
@@ -686,24 +699,45 @@ class Radio:
         bytes_ = "received %s" % got.hex(" ") if got else "nothing received"
         cable = "the %s programming cable" % self.cable if self.cable else "the programming cable"
         return DumpError("%s (%s%s). The radio's boot ROM did not take the loader over %s. Try a cable with an FTDI, "
-                         "CP210x or PL2303 chip, or use the stock firmware file instead of reading the radio"
-                         % (what, bytes_, "; the cable echoes" if self.echo else "", cable))
+                         "CP210x or PL2303 chip, %s, or use the stock firmware file instead of reading the radio"
+                         % (what, bytes_, "; the cable echoes" if self.echo else "", cable,
+                            "the radio's factory update mode" if self.slow else "--slow-cable"))
 
-    def wait_for_radio(self, wait):
-        want = b"\x02\x24\x00\x03"
-        pos = 0
+    def rom_late(self, got):
+        return DumpError("the radio's boot ROM stopped waiting before the answer to its greeting reached it (received %s). %s"
+                         % (got[:16].hex(" "), "It did so even with --slow-cable" if self.slow
+                            else "The cable or a USB hub carries it too slowly: run again with --slow-cable"))
+
+    def wait_for_radio(self, wait, slow=False):
+        """Wait for the boot ROM's greeting. The ROM waits only about 48 ms for the answer; slow (--slow-cable): send the
+        answer every ROM_REPEAT s all along, and on for ROM_REPEAT_AFTER after the greeting, so the ROM's window is
+        covered however late the greeting shows here. Only with the radio off at the start: the firmware of a radio left
+        on would get it too. True when the ROM took one of those (a NAK of a later one shows it, or the greeting and
+        ROM_REPEAT_AFTER of answers after it without the ROM giving up)."""
         end = time.monotonic() + wait
-        self.set_timeout(0.1)
+        nxt = 0.0
+        heard = 0.0
+        last = b""
+        self.set_timeout(0.005 if slow else 0.1)
         while time.monotonic() < end:
+            if slow and time.monotonic() >= nxt:
+                nxt = time.monotonic() + ROM_REPEAT
+                self.port.write(ROM_REPLY)
+            if heard and time.monotonic() - heard >= ROM_REPEAT_AFTER:
+                return True
             b = self.port.read(1)
             if not b:
                 continue
-            if b[0] == want[pos]:
-                pos += 1
-                if pos == len(want):
-                    return
-            else:
-                pos = 1 if b[0] == want[0] else 0
+            last = (last + b)[-4:]
+            if last == ROM_HELLO:
+                if not slow:
+                    return False
+                heard = time.monotonic()
+            elif slow and last == ROM_NAK:
+                return True
+            if last == ROM_GAVE_UP:
+                raise DumpError("the radio started its firmware%s" % (" without taking the loader, even with --slow-cable" if slow
+                                else ": its boot ROM's greeting did not come through. Run again with --slow-cable"))
         raise DumpError("the radio did not start its serial boot ROM within %d s: radio off and cable in before the "
                         "script starts, then switch it on" % wait)
 
@@ -726,7 +760,7 @@ class Radio:
         self.log("attached to stub v%d (max payload %d, SSI burst %d / %d bytes)"
                  % (info[0], info[1], self.info >> 8 & 0xFF, self.info & 0xFF))
 
-    def start(self, wait=120, stub=None, load=LOAD_ADDR):
+    def start(self, wait=120, stub=None, load=LOAD_ADDR, slow=False):
         """Boot a stub through the serial boot ROM at power-on, written to and started at load (the DB25-D's first
         stage answers the same way). Default: the universal stub at 0x10000, which copies itself to its run address;
         a position-dependent stub (--legacy-stub, --stub FILE) must be linked for `load` (--load-base)."""
@@ -738,16 +772,21 @@ class Radio:
             self.stub_head = stub[:CHUNK]
         stub += b"\xFF" * (-len(stub) % BLOCK)
         self.stub_base = load
-        self.wait_for_radio(wait)
-        hello = b"\x02\x14\x00\x03"
-        self.port.write(hello)
-        time.sleep(0.05)
-        reply = self.read_exact(16, 0.02)       # the ROM's reply to it isn't needed; an echo shows the cable loops back
-        if reply[:4] == hello:
+        self.slow = slow
+        answered = self.wait_for_radio(wait, slow)
+        if not answered:
+            self.port.write(ROM_REPLY)
+        # the ROM's reply to it isn't needed; an echo shows the cable loops back. After --slow-cable the NAKs of the answers
+        # still on their way come in too: they must be gone before block 0. The ROM has no timeout once it took the answer
+        time.sleep(0.2 if answered else 0.05)
+        reply = self.read_exact(256, 0.02)
+        if ROM_GAVE_UP in reply:
+            raise self.rom_late(reply)
+        if ROM_REPLY in reply:
             self.echo = True
             self.log("the cable echoes what the host sends; the echo is ignored")
         if reply:
-            self.log("after the boot ROM greeting: %s" % reply.hex(" "))
+            self.log("after the boot ROM greeting: %s" % reply[:16].hex(" "))
         blocks = len(stub) // BLOCK
         self.log("boot ROM answered; loading %d-byte stub (%d blocks)" % (len(stub), blocks))
         for i in range(blocks):
@@ -760,6 +799,8 @@ class Radio:
                 ok, got = self.rom_ack(frame, 1.0)
                 if ok:
                     break
+                if ROM_GAVE_UP in got:
+                    raise self.rom_late(got)
                 self.log("stub block %d not acknowledged (%s), sending it again"
                          % (i, "received %s" % got.hex(" ") if got else "nothing received"))
             else:
@@ -1408,17 +1449,19 @@ def lz4_encode(src):
 
 class FakeRadio:
     def __init__(self, images, drop=None, flip=(), silent=(), swap=(), misplace=(), stub_len=1536, load=LOAD_ADDR,
-                 rom_echo=False, rom_nak=False):
+                 rom_echo=False, rom_nak=False, rom_late=False):
         self.images = images                # {"progmem": bytes, "q128": bytes}
         self.rom_echo = rom_echo            # the cable sends back every byte written while the boot ROM listens
         self.rom_nak = rom_nak              # the boot ROM answers the load with something other than its ack
+        self.rom_late = rom_late            # the answer to the greeting comes too late: the ROM stops waiting
+        self.rom_taken = False              # the ROM took the answer to its greeting (a second one is NAKed)
         self.drop, self.flip, self.silent, self.swap = drop or {}, set(flip), set(silent), set(swap)
         self.misplace = set(misplace)
         self.data_bytes = 0                 # flash bytes sent over the cable
         self.sectors_sent = 0
         self.pokes = []
         self.led = self.led_seq = None
-        self.out = bytearray(b"\x02\x24\x00\x03")
+        self.out = bytearray(b"\x02\x24\x00\x03" + (ROM_GAVE_UP if rom_late else b""))
         self.inb = bytearray()
         self.loaded = bytearray()
         self.running = False
@@ -1481,8 +1524,14 @@ class FakeRadio:
         if not self.running:
             if len(ib) < 4:
                 return False
+            if self.rom_late:                   # it stopped waiting: the firmware runs, and ignores all of it
+                ib.clear()
+                return False
             if bytes(ib[:4]) == b"\x02\x14\x00\x03":
                 del ib[:4]
+                if self.rom_taken:
+                    self.out += ROM_NAK
+                self.rom_taken = True
                 return True
             op, chk = ib[1], ib[2]
             n = {0x18: 4 + 8 + BLOCK, 0x1B: 4 + 4}.get(op)
@@ -1790,11 +1839,42 @@ def self_test():
         m = str(e)
         check("received 02 0a 00 03" in m and "CH340 programming cable" in m and "stock firmware file" in m,
               "a refused boot ROM load says what came back, the cable and the way out: %s" % m)
-    # a near-echo is not an echo
+    # the answer to the greeting came too late: the ROM says it stopped waiting, and the error names --slow-cable
+    radio = FakeRadio(images, stub_len=len(stub), rom_late=True)
+    try:
+        Radio(radio, log=quiet).start(wait=2, stub=stub)
+        check(False, "a boot ROM that stopped waiting fails the load")
+    except DumpError as e:
+        check("stopped waiting" in str(e) and "--slow-cable" in str(e), "a late answer is reported as one: %s" % e)
+    # --slow-cable: the answer goes out before the greeting is seen; the load goes on, the NAKs of the extra answers dropped
+    radio = FakeRadio(images, stub_len=len(stub))
+    sent = []
+    write = radio.write
+    radio.write = lambda b: (sent.append(bytes(b)), write(b))
+    r = Radio(radio, log=quiet)
+    r.start(wait=2, stub=stub, slow=True)
+    check(radio.running and not radio.errors and sent[0] == ROM_REPLY, "the boot ROM load works with --slow-cable")
+    radio = FakeRadio(images, stub_len=len(stub))
+    radio.out = bytearray(ROM_GAVE_UP)
+    try:
+        Radio(radio, log=quiet).start(wait=2, stub=stub)
+        check(False, "a radio that started its firmware fails the wait")
+    except DumpError as e:
+        check("started its firmware" in str(e) and "--slow-cable" in str(e), "the ROM giving up with no greeting seen: %s" % e)
+    # a near-echo is not an echo: it stays in the error, and only an ack after it counts (a damaged echo on a CH340 cable)
     r = Radio(io.BytesIO(), log=quiet)
-    r.read_exact = lambda n, t, q=[b"\x02\x1b\x01\x03\x00\x01\x00\x07\x02\x05\x00\x03"]: q.pop() if q else b""
+    r.read_exact = lambda n, t, q=[b"\x02\x1b\x01\x03\x00\x01\x00\x07"]: q.pop() if q else b""
     ok, got = r.rom_ack(b"\x02\x1b\x01\x03\x00\x01\x00\x00", 0.1)
-    check(not ok and got[:4] == b"\x02\x1b\x01\x03", "a frame that differs from the one sent is not taken for an echo")
+    check(not ok and got[:4] == b"\x02\x1b\x01\x03" and not r.echo, "a frame that differs from the one sent is not taken for an echo")
+    r = Radio(io.BytesIO(), log=quiet)
+    r.read_exact = lambda n, t, q=[ROM_ACK, b"\x47\x02\x00\x40\x00\x00"]: q.pop() if q else b""
+    ok, got = r.rom_ack(b"\x02\x1b\x01\x03\x00\x01\x00\x00", 0.5)
+    check(ok, "bytes ahead of the acknowledgement are passed over")
+    r = Radio(io.BytesIO(), log=quiet)
+    r.read_exact = lambda n, t, q=[ROM_NAK, b"\x00\x00"]: q.pop() if q else b""
+    t0 = time.monotonic()
+    ok, got = r.rom_ack(b"\x02\x1b\x01\x03\x00\x01\x00\x00", 5)
+    check(not ok and got.endswith(ROM_NAK) and time.monotonic() - t0 < 1, "a NAK ends the wait at once")
     # an echo that arrives in pieces, then the acknowledgement; and silence
     frame = b"\x02\x1b\x01\x03\x00\x01\x00\x00"
     r = Radio(io.BytesIO(), log=quiet)
@@ -2201,6 +2281,9 @@ def main(argv=None):
     ap.add_argument("--peek", metavar="ADDR:LEN", help="print LEN bytes of radio memory (hex dump)")
     ap.add_argument("--retries", type=int, default=6)
     ap.add_argument("--wait", type=int, default=120, help="seconds to wait for the radio to be switched on")
+    ap.add_argument("--slow-cable", action="store_true", help="boot ROM: send the answer to its greeting every 30 ms "
+                    "from the start, for a cable or USB hub too slow for the ROM's 48 ms window. Radio OFF before the "
+                    "tool starts: a running firmware would get the answers too")
     ap.add_argument("--led-red", type=int, default=LED_RED, help="GPIO pin index of the red LED (default %d, 255 = none)" % LED_RED)
     ap.add_argument("--led-green", type=int, default=LED_GREEN, help="GPIO pin index of the green LED (default %d, 255 = none)" % LED_GREEN)
     ap.add_argument("--led-status", choices=("red", "green", "both", "off"), default="both",
@@ -2317,7 +2400,7 @@ def main(argv=None):
                 else:
                     raise DumpError("no legacy stub is linked for 0x%X: give --stub" % load)
             print("radio OFF? switch it on now (waiting up to %d s)" % a.wait)
-            radio.start(a.wait, stub, load)
+            radio.start(a.wait, stub, load, slow=a.slow_cable)
             radio.configure(a.board)
         jobs = [(mem, f) + parse_range(rng, radio.mem_size(mem)) for mem, f, rng in jobs]
         if a.baud:

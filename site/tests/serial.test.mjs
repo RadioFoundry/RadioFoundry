@@ -287,6 +287,9 @@ test("the browser's own serial and USB errors get what to do", () => {
 	const err = (name, message) => Object.assign(new Error(message), { name });
 	assert.equal(browserErrorKey(err("NetworkError", "Failed to execute 'open' on 'SerialPort': Failed to open serial port.")), "flash.err.port_busy");
 	assert.equal(browserErrorKey(err("InvalidStateError", "The port is already open.")), "flash.err.port_open");
+	// Windows without the WinUSB driver, or another program holding the radio: not the page's origin
+	assert.equal(browserErrorKey(err("SecurityError", "Failed to execute 'open' on 'USBDevice': Access denied.")), "flash.err.usb_busy");
+	assert.equal(browserErrorKey(err("SecurityError", "Access to the feature \"usb\" is disallowed by permissions policy.")), "flash.err.security");
 	assert.equal(browserErrorKey(err("NotFoundError", "The device has been disconnected.")), "flash.err.disconnected");
 	assert.equal(browserErrorKey(err("BreakError", "Break received")), "flash.err.connection_lost");
 	assert.equal(browserErrorKey(new Error("anything else")), null);
