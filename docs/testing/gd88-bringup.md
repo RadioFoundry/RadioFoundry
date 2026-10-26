@@ -175,7 +175,7 @@ bytes, timing word that worked.
 | Check | If not / resolves |
 |---|---|
 | Digits, `*`, `#`, P1, P2, P3 do what `board.c` says (P2 direct on PTB9, P1 PTB10, P3 PTB11). PTT is PTA9 low | Matrix map in `input_gd88.c`. PTT: check the line stays high with the cable idle |
-| The six front keys (soft left, soft right, green, red, up, down; matrix codes 1-6): write down which physical key gives which code | Fix `map[]` in `input_gd88.c` (the code-to-key assignment is a guess; the key names, `keymap[]` and the drawing's `key-*` tags stay). TODO input_gd88.c |
+| The six front keys: the original firmware's handlers settle the soft keys (codes 5, 6) and the rocker (1, 2); check green is code 3 and red code 4, and up is code 1 | Fix `map[]` in `input_gd88.c` (the key names, `keymap[]` and the drawing's `key-*` tags stay). TODO input_gd88.c |
 | Encoder: one event per detent, clockwise = up. `rfoundry_debug.py`'s HIL: `pytest tests/hil -k encoder --manual` | Swap `PIN_ENC_A`/`PIN_ENC_B` if backwards; `ENC_STEPS` 1 vs 2 if a detent gives two events. TODO input_gd88.c |
 | PTA30 (parked low): any key or effect | TODO pins.h |
 
@@ -390,9 +390,9 @@ section 3 step that settles it.
 
 | # | File:line | What is unknown | How to settle it | Step |
 |---|---|---|---|---|
-| 1 | `boards/gd88/input_gd88.c:25` | Which front key (soft left, soft right, green, red, up, down) each matrix code 1-6 is | Press each, read `view --section input`, fix `map[]` | 6 |
+| 1 | `boards/gd88/input_gd88.c:28` | Codes 3 and 4 as green and red, code 1 as up (codes 5, 6, 1, 2 are settled from the original firmware) | Press each, read `view --section input`, fix `map[]` | 6 |
 | 2 | `boards/gd88/pins.h:15` | PTA30's role (parked low from start-up) | Note any effect when high; leave low if none | 6 |
-| 3 | `boards/gd88/input_gd88.c:44` | Encoder direction and steps per detent | Turn clockwise; swap `PIN_ENC_A`/`PIN_ENC_B` or set `ENC_STEPS` | 6 |
+| 3 | `boards/gd88/input_gd88.c:47` | Encoder direction and steps per detent | Turn clockwise; swap `PIN_ENC_A`/`PIN_ENC_B` or set `ENC_STEPS` | 6 |
 | 4 | `boards/gd88/display_gd88.c:20` | The LCD controller's timing word (`LCDC_CFG_VALUE`, the DM-32UV's 0x303) | Try neighbors if the picture tears or hangs; record the working one | 6 |
 | 5 | `boards/gd88/display_gd88.c:28` | The panel record's layout past `lcd`, and the default variant without one | Read 0x031FD000 from the backup; `diag lcd vN rec/dflt` | 3, 6 |
 | 6 | `drivers/display/ili9341/ili9341.c:59` | Variant 2 gamma sets 0xE0/0xE1 | Compare with the original firmware's picture; try values | 6 |

@@ -168,18 +168,21 @@ Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
 ### 9.2 Keys
 
 The matrix code is the vendor's key number. The front panel has six keys besides the digits: two blank soft keys
-under the display (the original firmware labels the right one A/B on its screen), green and red, and an up/down
-rocker. Which of codes 1-6 is which of them is not known; the RadioFoundry key names (`KEY_*`) are the front panel's,
-and the column below is the assignment `input_gd88.c` takes until a radio settles it.
+under the display, green and red, and an up/down rocker. The original firmware draws the soft keys' labels on the
+screen's bottom row, left and right (Menu and A/B at idle; Ok, Select, Unlock left; Back, Delete right). The sense
+lines are the digit columns (PTB9 left: 1 4 7 `*`, PTB10 center, PTB11 right). The RadioFoundry key names (`KEY_*`) are
+the front panel's.
 
-| Code | Vendor name | Key (RadioFoundry) | Where |
-|---|---|---|---|
-| 8-17 | digits 0-9 (8 = 0) | `KEY_0`-`KEY_9` | matrix |
-| 18, 19 | `*`, `#` | `KEY_STAR`, `KEY_HASH` | matrix |
-| 1, 2 | navigation | `KEY_UP`, `KEY_DOWN` (taken) | matrix |
-| 5, 6 | navigation | `KEY_RED`, `KEY_GREEN` (taken) | matrix |
-| 4 | mode key | `KEY_SOFT_LEFT` (taken) | matrix |
-| 3 | P4 | `KEY_SOFT_RIGHT` (taken) | matrix, PTB9 x PTB22 |
+| Code | Vendor name | Key (RadioFoundry) | Where | Source |
+|---|---|---|---|---|
+| 8-17 | digits 0-9 (8 = 0) | `KEY_0`-`KEY_9` | matrix | BIN |
+| 18, 19 | `*`, `#` | `KEY_STAR`, `KEY_HASH` | matrix | BIN |
+| 5 | navigation | `KEY_SOFT_LEFT`: at idle opens the main menu; Menu + `*` unlocks the keypad | PTB9 x PTB23 | BIN |
+| 6 | navigation | `KEY_SOFT_RIGHT`: at idle swaps VFO A and B | PTB11 x PTB23 | BIN |
+| 1 | navigation | `KEY_UP`: at idle the channel up | PTB10 x PTB23 | BIN (up for +1: INF) |
+| 2 | navigation | `KEY_DOWN`: at idle the channel down | PTB10 x PTB22 | BIN |
+| 3 | P4 | `KEY_GREEN`: the vendor's programmable P4 (its function from the codeplug) | PTB9 x PTB22 | INF (position) |
+| 4 | mode key | `KEY_RED`: in a menu, back one level | PTB11 x PTB22 | INF (position) |
 | 22 | P2, the IAP key | `KEY_P2`, upper left side key | PTB9 direct |
 | 23 | P1 | `KEY_P1`, lower left side key | PTB10 direct |
 | 24 | P3 | `KEY_P3`, the orange top key | PTB11 direct |

@@ -24,15 +24,16 @@ static const band_t bands[] = {
 // GD88_TX=1 altogether
 static const char *const power_names[] = { "L", "H" };
 
-// docs/ux/information-architecture.md 7.1. Green and red are select and back; the original firmware labels the right
-// soft key A/B on its screen. P1-P3 are the side and top keys
+// docs/ux/information-architecture.md 7.1. As the original firmware: the left soft key opens the menu and accepts
+// (its screen labels it Menu or Ok), the right one is A/B, red goes back; green is its programmable key. P1-P3 are the
+// side and top keys
 static const keymap_entry_t keymap[] = {
 	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
 	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ KEY_SOFT_LEFT, ACT_SELECT, ACT_SELECT, false, false, 0 },
 	{ KEY_RED, ACT_BACK, ACT_BACK, false, false, 0 },
-	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 },
-	{ KEY_SOFT_LEFT, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false, 0 },
 	{ KEY_SOFT_RIGHT, ACT_AB, ACT_DUAL_WATCH, false, false, 0 },
+	{ KEY_GREEN, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false, 0 },
 	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false, 0 },
 	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
 	{ KEY_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },
