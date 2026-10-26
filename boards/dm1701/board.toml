@@ -78,7 +78,7 @@ spi = { bus = 1, mode = 0, hz = 4500000 }
 # CSV hold the same codec 0x40 lower, so their tables and code sit 0x40 lower in the same sectors; the V02.06 and V02.03
 # noCSV files hold it higher (tables from 0x080D4794 and 0x080D4754), still in sectors 10 and 11. The MD-9600 files hold
 # the same codec (an open-firmware install leaves it on the radio): the codec only, never the bootloader key; their
-# tables move into sector 10 with the code
+# tables move into sectors 10 and 11 with the code
 [codec]
 tool = "codec_extract"
 stock = [

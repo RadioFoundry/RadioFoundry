@@ -57,7 +57,7 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
    right after the installation, before anything else changes.
 
    On a radio installed over its programming cable the cable is slow, so the installer shows how long each part
-   takes. The firmware memory is required. **All channels and settings** is optional and off by default: the
+   takes. The firmware memory is required, unless you use a stock file instead (below). **All channels and settings** is optional and off by default: the
    installer never changes them, and the whole data memory can take many minutes. If you have the radio's stock
    firmware file, **Use a Stock File Instead** skips the firmware backup, before or during the read. The installer
    then reads only the codec area and takes the codec from the file in the next step. The firmware in the radio is

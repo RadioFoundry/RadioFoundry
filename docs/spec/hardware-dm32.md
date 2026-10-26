@@ -1083,7 +1083,7 @@ Cables:
 - Any USB-serial chip can reach the ROM loader, CH340 included. Cable quality varies: some cables that work with the
   Baofeng bootloader and CPS fail the ROM load, so a failed load names the cable's chip and offers the stock-file route.
 - Some cables echo what the host sends. The host drops an exact copy of the frame it sent, ahead of the ROM's
-  acknowledgement, and keeps reading until its timeout (`stub.js` `romAck`, `stubtool.py` `rom_ack`).
+  acknowledgement, and reads on for the acknowledgement until its timeout; any other reply fails the frame (`stub.js` `romAck`, `stubtool.py` `rom_ack`).
 - When a frame is not acknowledged, the first 16 bytes received are logged.
 
 ### 13.4 Backing up
