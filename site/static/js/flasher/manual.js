@@ -12,8 +12,6 @@ import { h, t, button, download, filePicker } from "./dom.js";
 
 export class KitError extends Error {}
 
-export const COMMUNITY = "https://www.facebook.com/groups/radiofoundry/";
-
 // How rfoundry installs a radio (registry.json family): "dfu" over USB, "serial" over the programming cable, null where
 // rfoundry has no install (a radio installed through the RAM stub: the web flasher or stub/stubtool.py)
 export function kitRoute(radio) {
@@ -46,8 +44,65 @@ const q = (p) => `"${p}"`;
 // The stock files the radio's codec comes from, as the codec step names them; a program flash read is not one
 const stockFiles = (board) => (board?.codec?.sources || []).filter((s) => /\.bin$/i.test(s));
 
+// rfoundry's Python and packages (tools/rfoundry/pyproject.toml requires-python and dependencies; the tool zip's
+// requirements.txt lists the same, site/tests/manual.test.mjs checks both)
+export const PYTHON_MIN = "3.8";
+export const PACKAGES = [["pyserial", "the programming cable and the radio's serial port"], ["pyusb", "the bootloader over USB"],
+	["libusb-package", "the USB library pyusb needs, built in for Windows, macOS and Linux"], ["certifi", "checks downloads from GitHub"]];
+
+const hex4 = (n) => n.toString(16).toUpperCase().padStart(4, "0");
+
+// README.txt's setup section: Python, the packages, and per system what the route needs besides them (the WinUSB
+// driver and the udev rule for a USB bootloader, the serial port's permission and name). Not bundled in the kit: pip
+// takes the right libusb-package build for the system, which a kit made in the browser can't know
+export function kitSetup(route, board) {
+	const [vid, pid] = board?.dfu_ids || [0x0483, 0xDF11];
+	const usbId = `${hex4(vid)}:${hex4(pid)}`;
+	const pip = (py) => [`      ${py} -m venv venv`, `      ${py === "py" ? "venv\\Scripts\\python" : "venv/bin/python"} -m pip install -r requirements.txt`];
+	const L = [
+		`rfoundry needs Python ${PYTHON_MIN} or later and these packages (requirements.txt). pip installs them from the`,
+		"internet into a folder of their own (venv) inside this one, so nothing else on the computer changes:",
+		...PACKAGES.map(([n, why]) => `  ${n.padEnd(16)} ${why}`), "",
+		"Unpack the zip into a folder and open a terminal in it. Then follow your system.", "",
+		"Windows",
+		`  - Install Python ${PYTHON_MIN} or later from https://www.python.org/downloads/. In the first screen of the`,
+		"    installer tick \"Add python.exe to PATH\", then click Install Now.",
+		"  - In the folder's address bar type cmd and press Enter. Check the version, then make the venv:",
+		"      py --version", ...pip("py")];
+	if (route === "dfu") L.push(
+		"  - The radio's bootloader needs the WinUSB driver, once:",
+		"      1. Download Zadig from https://zadig.akeo.ie and run it.",
+		"      2. Put the radio in its bootloader (the steps under INSTALL below) and plug it in.",
+		`      3. In Zadig's list pick "${board?.dfu_product || "Digital Radio in USB mode"}" (USB ID ${usbId.replace(":", " ")}).`,
+		"         Not listed: Options > List All Devices.",
+		"      4. Choose WinUSB and click Install Driver (or Replace Driver).",
+		"      5. Unplug the radio, put it back in its bootloader and connect again.");
+	else L.push("  - The cable's port is COM3, COM4, ...: Device Manager lists it under Ports. A cable missing there needs",
+		"    the driver from its chip's maker (CH340: WCH; FTDI; CP210x: Silicon Labs; PL2303: Prolific).");
+	L.push("", "macOS",
+		`  - Install Python ${PYTHON_MIN} or later from https://www.python.org/downloads/ (or Homebrew: brew install python).`,
+		"  - In Terminal:",
+		"      cd FOLDER   (type cd and a space, then drag the folder onto the window)",
+		"      python3 --version", ...pip("python3"),
+		"  - Nothing else to install: libusb-package brings the USB library, and macOS has the cable drivers.");
+	if (route === "serial") L.push("  - The cable's port is /dev/cu.usbserial-... (or /dev/cu.wchusbserial-...).");
+	L.push("", "Linux",
+		`  - Python ${PYTHON_MIN} or later comes with the system. Debian, Ubuntu: sudo apt install python3-venv first.`,
+		"  - In a terminal, in the folder:",
+		"      python3 --version", ...pip("python3"));
+	if (route === "dfu") L.push(
+		`  - Let your user reach the bootloader (${usbId.toLowerCase()}), once:`,
+		`      echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="${hex4(vid).toLowerCase()}", ATTRS{idProduct}=="${hex4(pid).toLowerCase()}", MODE="0666"' | sudo tee /etc/udev/rules.d/50-rfoundry-dfu.rules`,
+		"      sudo udevadm control --reload-rules && sudo udevadm trigger");
+	L.push("  - Join the dialout group for the serial port, then log out and in again:",
+		"      sudo usermod -aG dialout $USER");
+	if (route === "serial") L.push("  - The cable's port is /dev/ttyUSB0 (or /dev/ttyACM0).");
+	L.push("", "pip needs the internet. If it fails, check the connection and run the pip line again.");
+	return L;
+}
+
 // README.txt. o: {radio (radios.json), board (flash-boards.json), base, manifest, stock: file name or null, site (the
-// page's address, ending in /), repo, git, date}
+// page's address, ending in /), repo, community (site.json's), git, date}
 export function kitReadme(o) {
 	const route = kitRoute(o.radio);
 	if (!route) throw new KitError(`rfoundry does not install the ${o.radio.name}`);
@@ -76,40 +131,7 @@ export function kitReadme(o) {
 		`  ${"LICENSE".padEnd(40)} MIT`, "",
 		"Nothing here writes the radio's bootloader, so the radio's own update mode always stays available.", "");
 
-	add("1. SET UP (ONCE)", "",
-		"Unpack the zip into a folder and open a terminal in it.", "",
-		"Windows",
-		"  - Install Python 3 from https://www.python.org/downloads/ (tick \"Add python.exe to PATH\").",
-		"  - In the folder's address bar type cmd and press Enter. Then:",
-		"      py -m venv venv",
-		"      venv\\Scripts\\python -m pip install -r requirements.txt");
-	if (route === "dfu") add(
-		"  - The radio's bootloader needs the WinUSB driver, once:",
-		"      1. Download Zadig from https://zadig.akeo.ie and run it.",
-		"      2. Put the radio in its bootloader (the steps under INSTALL below) and plug it in.",
-		`      3. In Zadig's list pick "${o.board?.dfu_product || "Digital Radio in USB mode"}" (USB ID 0483 DF11).`,
-		"         Not listed: Options > List All Devices.",
-		"      4. Choose WinUSB and click Install Driver (or Replace Driver).",
-		"      5. Unplug the radio, put it back in its bootloader and connect again.");
-	else add("  - The cable's port is COM3, COM4, ...: Device Manager lists it under Ports.");
-	add("", "macOS",
-		"  - Python 3 from https://www.python.org/downloads/ (or Homebrew: brew install python). In Terminal:",
-		"      cd FOLDER   (type cd and a space, then drag the folder onto the window)",
-		"      python3 -m venv venv",
-		"      venv/bin/python -m pip install -r requirements.txt");
-	if (route === "serial") add("  - The cable's port is /dev/cu.usbserial-... (or /dev/cu.wchusbserial-...).");
-	add("", "Linux",
-		"  - In a terminal, in the folder (Debian, Ubuntu: sudo apt install python3-venv first):",
-		"      python3 -m venv venv",
-		"      venv/bin/python -m pip install -r requirements.txt");
-	if (route === "dfu") add(
-		"  - Let your user reach the bootloader (0483:DF11), once:",
-		"      echo 'SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"0483\", ATTRS{idProduct}==\"df11\", MODE=\"0666\"' | sudo tee /etc/udev/rules.d/50-rfoundry-dfu.rules",
-		"      sudo udevadm control --reload-rules && sudo udevadm trigger");
-	add("  - Join the dialout group for the serial port, then log out and in again:",
-		"      sudo usermod -aG dialout $USER");
-	if (route === "serial") add("  - The cable's port is /dev/ttyUSB0 (or /dev/ttyACM0).");
-	add("");
+	add("1. SET UP (ONCE)", "", ...kitSetup(route, o.board), "");
 
 	// the codec source the commands use, and what to do when the kit has none
 	let n = 2;
@@ -153,8 +175,8 @@ export function kitReadme(o) {
 	add("IF IT FAILS", "",
 		"  - Run the same command again. The radio's update mode is never written, so it can always be reached.",
 		`  - Command line troubleshooting: ${docs("20-troubleshooting", "command-line-installs-advanced")}`,
-		`  - rfoundry on the command line: ${docs("02-installing", "advanced-rfoundry-on-the-command-line")}`,
-		`  - Ask the community: ${COMMUNITY}`);
+		`  - rfoundry on the command line: ${docs("02-installing", "advanced-rfoundry-on-the-command-line")}`);
+	if (o.community) add(`  - Ask the community: ${o.community}`);
 	if (o.repo) add(`  - Report a bug: ${o.repo}/issues (paste what rfoundry printed)`);
 	return L.join("\n") + "\n";
 }
@@ -191,7 +213,7 @@ export async function makeKit(o, fetchFn = globalThis.fetch) {
 	const base = kitBase(o.firmware.manifest, o.radio.flash.board);
 	const stock = o.stock?.data ? { name: o.stock.name.split(/[\\/]/).pop(), data: o.stock.data } : null;
 	const text = kitReadme({ radio: o.radio, board: o.board, base, manifest: o.firmware.manifest, stock: stock?.name || null,
-		site: o.url, repo: o.site?.repo, git: o.site?.git, date: day(when) });
+		site: o.url, repo: o.site?.repo, community: o.site?.community, git: o.site?.git, date: day(when) });
 	const tool = await toolEntries(o.site, o.root, fetchFn);
 	return { name: kitName(o.radio, when), bytes: await zip(kitEntries(tool, o.firmware, base, stock, text), when) };
 }

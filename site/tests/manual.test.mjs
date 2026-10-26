@@ -43,6 +43,7 @@ const fb = json("flash-boards.json");
 const radios = Object.fromEntries(json("radios.json").radios.map((r) => [r.id, r]));
 const SITE = "https://radiofoundry.org/";
 const REPO = "https://github.com/radiofoundry/radiofoundry";
+const COMMUNITY = "https://community.example/";
 const manifest = (board) => ({ format: "rfoundry-release/1", board, version: "v0.2.0", variant: "full", image: { file: `rfoundry-${board}-v0.2.0.bin`, size: 4, sha256: "x" } });
 // one radio of each kind, found by what it is, not by name
 const all_ = Object.values(radios);
@@ -59,7 +60,7 @@ const READOUT = pick((r) => family(r) === "serial-loader" && !files(r.id).length
 const NONE = pick((r) => !["usb-dfu", "serial-loader"].includes(family(r)) && r.flash.backend === "c7000-stub", "a radio rfoundry doesn't install");
 const brd = (id) => fb.boards[radios[id].flash.board];
 const readme = (id, stock) => kit.kitReadme({ radio: radios[id], board: brd(id), base: `rfoundry-${id}-v0.2.0`,
-	manifest: manifest(id), stock, site: SITE, repo: REPO, git: "abcd1234", date: "2026-10-26" });
+	manifest: manifest(id), stock, site: SITE, repo: REPO, community: COMMUNITY, git: "abcd1234", date: "2026-10-26" });
 
 test("kit: a route for each radio rfoundry installs, none for the RAM stub radios", () => {
 	for (const r of Object.values(radios)) {
@@ -106,10 +107,41 @@ test("kit README: a USB DFU radio with its stock file", () => {
 	for (const s of radios[DFU].flash.bootloader) assert.ok(r.includes(s), s);
 	assert.ok(r.includes("the codec and the bootloader key"));
 	assert.ok(r.includes(`${SITE}docs/user/20-troubleshooting.html#command-line-installs-advanced`));
-	assert.ok(r.includes("Ask the community: https://www.facebook.com/groups/radiofoundry/"));
+	assert.ok(r.includes(`Ask the community: ${COMMUNITY}`));
 	assert.ok(r.includes(`Report a bug: ${REPO}/issues`));
 	assert.ok(r.includes("v0.2.0, full"));
 	assert.ok(!/\bodr\b|colour|behaviour/i.test(r));
+});
+
+// What rfoundry needs, as its package says (tools/rfoundry/pyproject.toml) and the tool zip's requirements.txt lists
+const PYPROJECT = readFileSync(fileURLToPath(new URL("../../tools/rfoundry/pyproject.toml", import.meta.url)), "utf8");
+const deps = (text) => [...text.matchAll(/^\s*"?([A-Za-z][\w-]*)(?:[<>=!~][^"\n]*)?"?,?\s*$/gm)].map((m) => m[1]);
+
+test("kit README: the setup covers Python, every package and each system's drivers", () => {
+	assert.equal(PYPROJECT.match(/requires-python = ">=([\d.]+)"/)[1], kit.PYTHON_MIN);
+	const wanted = deps(PYPROJECT.match(/dependencies = \[([^\]]*)\]/)[1]);
+	assert.deepEqual(kit.PACKAGES.map(([n]) => n).sort(), wanted.sort());
+	const reqs = readFileSync(fileURLToPath(new URL("../rfoundrysite/toolzip.py", import.meta.url)), "utf8").match(/REQUIREMENTS = """\\\n([^]*?)"""/)[1];
+	assert.deepEqual(deps(reqs.replace(/^#.*$/gm, "")).sort(), wanted.sort(), "requirements.txt in the tool zip");
+	for (const id of [DFU, SERIAL, READOUT]) {
+		const r = readme(id, null);
+		const setup = r.slice(r.indexOf("1. SET UP"), r.indexOf("\n2. "));
+		assert.ok(setup.includes(`Python ${kit.PYTHON_MIN} or later`), setup);
+		assert.ok(setup.includes("https://www.python.org/downloads/") && setup.includes("Add python.exe to PATH"));
+		for (const n of wanted) assert.ok(setup.includes(n), n);
+		assert.ok(setup.includes("py -m venv venv") && setup.includes("venv\\Scripts\\python -m pip install -r requirements.txt"));
+		assert.equal(setup.split("python3 -m venv venv").length - 1, 2, "macOS and Linux make the venv");
+		assert.equal(setup.split("venv/bin/python -m pip install -r requirements.txt").length - 1, 2);
+		assert.ok(setup.includes("python3-venv") && setup.includes("usermod -aG dialout"));
+		assert.ok(setup.includes("macOS has the cable drivers"));
+		const dfu = family(radios[id]) === "usb-dfu";
+		assert.equal(setup.includes("Zadig") && setup.includes("WinUSB"), dfu);
+		assert.equal(setup.includes("50-rfoundry-dfu.rules"), dfu);
+		if (dfu) {
+			const [vid, pid] = brd(id).dfu_ids;
+			assert.ok(setup.includes(`ATTRS{idVendor}=="${vid.toString(16).padStart(4, "0")}", ATTRS{idProduct}=="${pid.toString(16).padStart(4, "0")}"`));
+		} else assert.ok(setup.includes("Device Manager lists it under Ports") && setup.includes("/dev/ttyUSB0"));
+	}
 });
 
 test("kit README: a USB DFU radio without a stock file says where to put it", () => {
