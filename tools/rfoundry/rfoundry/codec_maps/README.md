@@ -11,5 +11,10 @@ byte-identical: `dm32-049` also covers DM32.01.01.047, `dm32-037` covers 039 and
 `dm1701-v0203-csv` covers DM-1701 V02.01 and V02.02 CSV. Builds whose codec code differs get a map each: the DM-1701
 noCSV files have `dm1701-v0206-nocsv` and `dm1701-v0203-nocsv`.
 
+`md9600/` maps the eight TYT MD-9600 files (V06.09 and V16.45, four variants each). No board builds for the MD-9600; the
+DM-1701 takes its codec from these files, since an open-firmware install leaves that codec on the radio
+([docs/spec/codec-dm1701.md](../../../../docs/spec/codec-dm1701.md)). Each was checked by running the codec, moved as
+the merge moves it, in a host emulator with only the moved windows mapped: bit-identical to the stock build.
+
 The maps hold addresses, lengths, offsets and hashes only, never codec bytes. They come from static analysis of the
 stock builds, which is kept outside this repository.
