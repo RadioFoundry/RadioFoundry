@@ -7,7 +7,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 python3 -m pip install -q -r site/requirements.txt
-# the newest release's images for the flasher, from the public API, and a newer pre-release's name (a -beta.N), which
+# the newest release's images for the flasher, from the public API, and a newer pre-release's name (a bN tag), which
 # the flasher offers as an opt-in version link. No release yet is fine: the flasher then builds main. Any other failure
 # stops the build, so a deployment never loses the images by accident
 mkdir -p build/dist

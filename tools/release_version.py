@@ -5,7 +5,7 @@
 
   vYY.M          the first release of a month (v26.11)
   vYY.M.N        the next ones that month (v26.11.1, v26.11.2)
-  ...-beta.N       a pre-release of that name (v26.12-beta.1); the final keeps the name even if it ships later
+  ...bN          a pre-release of that name (v26.12b1); the final keeps the name even if it ships later
 
 The month has no leading zero and the count starts at 1, so v26.11.3 never reads as March. The Makefile (the
 RFOUNDRY_RELEASE the radio shows), tools/release_build.sh, the release workflow and the web site's build all ask this
@@ -22,7 +22,7 @@ import subprocess
 import sys
 
 # the year in two digits (26 is 2026, saving room on small displays), from the first release on
-NAME_RE = re.compile(r"v(2[6-9]|[3-9][0-9])\.(1[0-2]|[1-9])(?:\.([1-9][0-9]{0,2}))?(?:-beta\.([1-9][0-9]{0,2}))?")
+NAME_RE = re.compile(r"v(2[6-9]|[3-9][0-9])\.(1[0-2]|[1-9])(?:\.([1-9][0-9]{0,2}))?(?:b([1-9][0-9]{0,2}))?")
 
 
 def parse(tag):
@@ -31,12 +31,12 @@ def parse(tag):
     if m is None:
         return None
     year, month, n, beta = m.groups()
-    # a beta sorts before its final: v26.12-beta.2 < v26.12
+    # a beta sorts before its final: v26.12b2 < v26.12
     return (int(year), int(month), int(n or 0), (0, int(beta)) if beta else (1, 0))
 
 
 def is_prerelease(tag):
-    return parse(tag) is not None and "-" in tag
+    return parse(tag) is not None and "b" in tag
 
 
 def newest(tags):
@@ -53,16 +53,16 @@ def self_test():
             print("FAIL:", what)
             ok = False
 
-    for good in ("v26.11", "v26.1", "v26.11.1", "v26.12-beta.1", "v27.3.2-beta.10"):
+    for good in ("v26.11", "v26.1", "v26.11.1", "v26.12b1", "v27.3.2b10"):
         want(parse(good) is not None, "accepts " + good)
     for bad in ("v0.1.0", "v26.011", "v26.13", "v26.0", "v26.11.0", "2026.11", "v26.11-rc.1",
-                "v26.11-beta.0", "v26.11-beta", "v2026", "v26.11.1.1", "v2026.11", "v25.12", "v026.1", ""):
+                "v26.11b0", "v26.11b", "v26.11B1", "v26.12-beta.1", "v26.12-b1", "v2026", "v26.11.1.1", "v2026.11", "v25.12", "v026.1", ""):
         want(parse(bad) is None, "refuses " + repr(bad))
-    want(newest(["v26.11", "v26.12-beta.1", "v26.11.1", "v0.9.0"]) == "v26.12-beta.1", "newest with a beta")
-    want(newest(["v26.12-beta.2", "v26.12", "v26.12-beta.10"]) == "v26.12", "the final after its betas")
+    want(newest(["v26.11", "v26.12b1", "v26.11.1", "v0.9.0"]) == "v26.12b1", "newest with a beta")
+    want(newest(["v26.12b2", "v26.12", "v26.12b10"]) == "v26.12", "the final after its betas")
     want(newest(["v26.2", "v26.10"]) == "v26.10", "months sort as numbers")
     want(newest(["main", "v1.0.0"]) is None, "no release name")
-    want(is_prerelease("v26.12-beta.1") and not is_prerelease("v26.12"), "pre-release")
+    want(is_prerelease("v26.12b1") and not is_prerelease("v26.12"), "pre-release")
 
     # the Makefile takes RELEASE= only when it is a release name
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -94,7 +94,7 @@ def main(argv):
         return 0 if self_test() else 1
     if len(argv) == 2 and argv[0] == "check":
         if parse(argv[1]) is None:
-            print("%r is not a release name: vYY.M, vYY.M.N, either with -beta.N (docs/dev/release.md)" % argv[1],
+            print("%r is not a release name: vYY.M, vYY.M.N, either with bN (docs/dev/release.md)" % argv[1],
                   file=sys.stderr)
             return 1
         return 0

@@ -40,7 +40,7 @@ a new deployment in one step, so a deployment has no downtime.
 
 | Part | Setup |
 |---|---|
-| Build | Command `site/cloudflare-build.sh`, output directory `build/site`, root directory the repository root. The script installs `site/requirements.txt`, lists the releases through the GitHub API, fetches the `rfoundry-*` images of the newest one that is not a pre-release, passes the newest pre-release (a `-beta.N`) when it is newer than that (`--beta`), and runs `site/build.py --strict`. A failed build leaves the last deployment up |
+| Build | Command `site/cloudflare-build.sh`, output directory `build/site`, root directory the repository root. The script installs `site/requirements.txt`, lists the releases through the GitHub API, fetches the `rfoundry-*` images of the newest one that is not a pre-release, passes the newest pre-release (a `bN` tag) when it is newer than that (`--beta`), and runs `site/build.py --strict`. A failed build leaves the last deployment up |
 | Branches | Production branch `main`; every other branch of this repository builds a preview |
 | Variables | `PYTHON_VERSION` `3.12` (both environments). `RFOUNDRY_SENTRY_DSN` in production only, so previews send no error reports. `GITHUB_TOKEN` (encrypted, both environments): a fine-grained token with read-only access to public repositories. Without it the release lookup shares the builders' 60 requests an hour, and a build can fail with 403 "rate limit exceeded" after a minute of retries |
 | Custom domain | `radiofoundry.org` on the project (Custom domains). The `www` name redirects to it |

@@ -16,15 +16,15 @@ from rfoundrysite import build, repo  # noqa: E402
 
 class Release(unittest.TestCase):
 	def test_newest_release_and_newer_beta(self):
-		self.assertEqual(build.release_and_beta(["v26.11", "v26.11"], "v26.12-beta.1"), ("v26.11", "v26.12-beta.1"))
+		self.assertEqual(build.release_and_beta(["v26.11", "v26.11"], "v26.12b1"), ("v26.11", "v26.12b1"))
 
 	def test_beta_older_than_release_is_dropped(self):
-		self.assertEqual(build.release_and_beta(["v26.12"], "v26.12-beta.2"), ("v26.12", ""))
-		self.assertEqual(build.release_and_beta(["v27.1"], "v26.12-beta.1"), ("v27.1", ""))
+		self.assertEqual(build.release_and_beta(["v26.12"], "v26.12b2"), ("v26.12", ""))
+		self.assertEqual(build.release_and_beta(["v27.1"], "v26.12b1"), ("v27.1", ""))
 
 	def test_no_release(self):
 		self.assertEqual(build.release_and_beta([], ""), ("", ""))
-		self.assertEqual(build.release_and_beta([], "v26.12-beta.1"), ("", "v26.12-beta.1"))
+		self.assertEqual(build.release_and_beta([], "v26.12b1"), ("", "v26.12b1"))
 
 	def test_bad_beta_refused(self):
 		with self.assertRaises(repo.SourceError):

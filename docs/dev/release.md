@@ -4,9 +4,9 @@
 
 A release is a git tag on main named for its year and month (`v26.11`, below) and a GitHub release that carries,
 for each releasable radio, the firmware image **without the AMBE codec**, its manifest, `SHA256SUMS`, the `rfoundry`
-flashing tool as single-file executables for Linux, macOS and Windows, and the user manual as a PDF. Users never build firmware: `rfoundry`
-downloads the image, checks it, and either keeps the codec already in the radio or writes the codec from the user's
-own stock firmware file ([tools/rfoundry/README.md](../../tools/rfoundry/README.md)).
+flashing tool as single-file executables for Linux, macOS and Windows, and the user manual as a PDF. Users never
+build firmware: `rfoundry` downloads the image, checks it, and either keeps the codec already in the radio or writes
+the codec from the user's own stock firmware file ([tools/rfoundry/README.md](../../tools/rfoundry/README.md)).
 
 ## Release names
 
@@ -18,10 +18,11 @@ all ask it.
 |---|---|
 | `vYY.M` | The first release of a month: `v26.11` |
 | `vYY.M.N` | Another release that month: `v26.11.1`, `v26.11.2` |
-| `vYY.M-beta.N` | A pre-release (beta) of that name: `v26.12-beta.1`. The final keeps the name even if it ships the next month |
+| `vYY.MbN` | A pre-release (beta) of that name: `v26.12b1`. The final keeps the name even if it ships the next month |
 
-The year has two digits (`26` is 2026), to save room on the radios' small displays. The month has no leading zero and the count starts at 1, so `v26.11.3` never reads as March. Main is the alpha;
-there is no `-rc` yet. `tools/release_build.sh` and the release workflow refuse any other tag.
+The year has two digits (`26` is 2026) and a beta is a bare `b` and its count, to save room on the radios' small
+displays. The month has no leading zero and the count starts at 1, so `v26.11.3` never reads as March. Main is the
+alpha; there is no release candidate yet. `tools/release_build.sh` and the release workflow refuse any other tag.
 
 **On the radio.** A clean build of a commit that carries a release tag gets `RFOUNDRY_RELEASE` (the Makefile reads the
 tag; `make RELEASE=<tag>` sets it, as `tools/release_build.sh` does, and `RELEASE=` leaves it out). The splash screen
@@ -30,7 +31,7 @@ shows the release name in place of the commit, About shows both, and the debug l
 id, the manifests and the CPS id need it. The build service fetches tags, so a custom build of a tagged commit shows
 the release name too.
 
-**Betas.** A tag with `-beta.N` becomes a GitHub pre-release. GitHub's latest release skips pre-releases, and so does
+**Betas.** A tag ending `bN` becomes a GitHub pre-release. GitHub's latest release skips pre-releases, and so does
 the site: the flasher installs the newest release that is not a pre-release by default, and offers a newer beta only as
 an opt-in version link (`?version=<tag>`, [website.md](website.md#flasher-notices)). `?version=main` still builds main.
 

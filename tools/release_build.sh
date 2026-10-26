@@ -23,7 +23,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$TOOLCHAIN" ] && [ -n "$VERSION" ] && [ -n "$OUT" ] || { echo "usage: $0 --toolchain T --version V --out DIR" >&2; exit 2; }
 PY=$(tools/rfoundry_python.sh)	# the registry reads TOML
-# A tag must be a release name (tools/release_version.py: vYY.M[.N][-beta.N]); the image shows it (RELEASE=, the
+# A tag must be a release name (tools/release_version.py: vYY.M[.N][bN]); the image shows it (RELEASE=, the
 # Makefile's RFOUNDRY_RELEASE). A pull request's or a manual run's dev-<commit> builds show the commit
 case $VERSION in
 dev-*) RELEASE="" ;;

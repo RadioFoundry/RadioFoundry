@@ -83,7 +83,7 @@ jobs:
         run: |
           set -eu
           TAG="${GITHUB_REF_NAME}"
-          # a -beta.N tag is a pre-release: the site's default install (the latest release) skips it
+          # a beta tag (bN) is a pre-release: the site's default install (the latest release) skips it
           PRE=""
           if python3 tools/release_version.py prerelease "$TAG"; then PRE=--prerelease; fi
           if ! gh release view "$TAG" > /dev/null 2>&1; then

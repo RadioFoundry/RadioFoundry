@@ -118,7 +118,7 @@ Example from an STM32F4 radio (`<profile>` stands for the codec profile id):
 proto=1                 protocol version (this document)
 view=3                  GET_VIEW record version (3.7)
 git=5277f73a            firmware git hash
-release=v26.11        release name; only in a build of a release tag
+release=v26.11          release name; only in a build of a release tag
 board=XR-100UV
 features=FM,SUBTONE,DMR,DMR_PRIVACY,...,USB,HOSTLINK,DEBUGLINK
 codec=<profile>-s11  the codec profile found in flash (below)

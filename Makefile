@@ -212,7 +212,7 @@ RFOUNDRY_GIT_HEAD := $(firstword $(subst -, ,$(RFOUNDRY_VERSION)))
 RFOUNDRY_GIT_ID := $(if $(shell printf '%s' '$(RFOUNDRY_GIT_HEAD)' | grep -Eqx '[0-9a-fA-F]{1,8}' && echo y),0x$(RFOUNDRY_GIT_HEAD)u,0u)
 RFOUNDRY_GIT_DIRTY := $(if $(findstring -dirty,$(RFOUNDRY_VERSION)),1,0)
 # The release name the radio shows (splash, About, the debug link's release=): the newest release tag on this commit
-# (tools/release_version.py: vYY.M[.N][-beta.N]), none for a dirty tree or an untagged commit. RELEASE= sets it
+# (tools/release_version.py: vYY.M[.N][bN]), none for a dirty tree or an untagged commit. RELEASE= sets it
 # (tools/release_build.sh passes the tag) and RELEASE= alone leaves it out. RFOUNDRY_GIT stays the commit: the crash
 # record, the manifests and the CPS id read it
 ifeq ($(origin RELEASE),undefined)
@@ -220,7 +220,7 @@ RELEASE_TAGS := $(if $(GITDIRTY),,$(shell git tag --points-at HEAD --list 'v[0-9
 RFOUNDRY_RELEASE := $(if $(RELEASE_TAGS),$(shell python3 tools/release_version.py pick $(RELEASE_TAGS)))
 else ifneq ($(RELEASE),)
 RFOUNDRY_RELEASE := $(shell python3 tools/release_version.py check '$(RELEASE)' && echo '$(RELEASE)')
-$(if $(RFOUNDRY_RELEASE),,$(error RELEASE=$(RELEASE) is not a release name: vYY.M, vYY.M.N, either with -beta.N (docs/dev/release.md)))
+$(if $(RFOUNDRY_RELEASE),,$(error RELEASE=$(RELEASE) is not a release name: vYY.M, vYY.M.N, either with bN (docs/dev/release.md)))
 endif
 # RFOUNDRY_BOARD_ID: the board's id (boards/<id>), for platform code that names things after the board (the HR_C7000 codec
 # host's profile ids, "<id>-<stock tag>"); core/ never uses it

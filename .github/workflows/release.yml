@@ -74,7 +74,7 @@ jobs:
           fi
           echo "rfoundry=$m" >> "$GITHUB_OUTPUT"
           if [ "${GITHUB_REF_TYPE}" = tag ] && [ "${GITHUB_REF_NAME#v}" != "${GITHUB_REF_NAME}" ]; then
-            # a release name or nothing: vYY.M, vYY.M.N, either with -beta.N (docs/dev/release.md)
+            # a release name or nothing: vYY.M, vYY.M.N, either with bN (docs/dev/release.md)
             python3 tools/release_version.py check "${GITHUB_REF_NAME}"
             echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
@@ -250,7 +250,7 @@ jobs:
           Windows. Flash with: rfoundry flash --release ${TAG}. rfoundry keeps the codec already in your radio when
           that is known to be safe, or writes it from your radio's stock firmware file (--stock). See
           docs/user/02-installing.md."
-          # a -beta.N tag is a pre-release: the site's default install (the latest release) skips it
+          # a beta tag (bN) is a pre-release: the site's default install (the latest release) skips it
           PRE=""
           if python3 tools/release_version.py prerelease "$TAG"; then PRE=--prerelease; fi
           gh release view "$TAG" > /dev/null 2>&1 || \

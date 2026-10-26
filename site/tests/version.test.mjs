@@ -34,8 +34,8 @@ test("a release names the radio's firmware with its commit, a plain build by its
 });
 
 test("a beta is offered as a version link on this page, never over one in use", () => {
-	assert.equal(betaLink("v26.12-beta.1", "https://radiofoundry.org/flash/?reporting=0#radio=x", null),
-		"/flash/?reporting=0&version=v26.12-beta.1#radio=x");
-	assert.equal(betaLink("v26.12-beta.1", "https://radiofoundry.org/flash/", "main"), null);
+	assert.equal(betaLink("v26.12b1", "https://radiofoundry.org/flash/?reporting=0#radio=x", null),
+		"/flash/?reporting=0&version=v26.12b1#radio=x");
+	assert.equal(betaLink("v26.12b1", "https://radiofoundry.org/flash/", "main"), null);
 	for (const none of ["", null, undefined, "bad tag"]) assert.equal(betaLink(none, "https://radiofoundry.org/flash/", null), null);
 });

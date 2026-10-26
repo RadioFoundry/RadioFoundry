@@ -376,7 +376,7 @@ static void test_splash_footer(void)
 	d.width = 128; d.height = 64; d.bpp = 1;
 	CHECK(gfx_init(&d));
 	ui_layout_init();
-	const char *const versions[] = { "a1b2c3d4-dirty", "v26.12-beta.1", "v26.11.10-beta.10" };
+	const char *const versions[] = { "a1b2c3d4-dirty", "v26.12b1", "v26.11.10b10" };
 	for (unsigned v = 0; v < 3; v++) {
 		ui_draw_splash("Radio 12345", versions[v], "", "");
 		int lit = 0;

@@ -25,7 +25,7 @@ from . import device, docs as docsmod, i18n, repo, social, tmpl, toolzip
 
 
 def _release_version():
-	"""tools/release_version.py: the release names (vYY.M[.N][-beta.N]) and their order."""
+	"""tools/release_version.py: the release names (vYY.M[.N][bN]) and their order."""
 	spec = importlib.util.spec_from_file_location("release_version", repo.path("tools", "release_version.py"))
 	mod = importlib.util.module_from_spec(spec)
 	spec.loader.exec_module(mod)
