@@ -72,3 +72,28 @@ their contact back, 403 of 403 channels keep theirs (T). Before this module, 194
 (R, issue #9); `dmrconf read` fails the same way. `cps_client.py` writes the same regions qdmr does (0x80, 0x7500,
 0x20000, 0x9B000) through the same protocol, sector by sector, and only the sectors that change. The radio keeps its
 quick keys, and its own VFO records (0x7590-0x75B8) differ from the file afterwards (R). A radio tool may add an offset to every address (the open-firmware image sits above the data flash base on some radios).
+
+## 5. Codeplugs from a backup
+
+`tools/backup_codeplug.py` turns the data flash in a backup into qdmr YAML, offline. It takes a web installer backup
+bundle (`rfoundry-backup/1`, [web-flasher.md](../dev/web-flasher.md), "Backup bundles") or a raw dump
+with `--board`. The bundle part it reads is the first of `spi-flash`, `c7000-data` and `c7000-data-start`; each holds
+the data flash from address 0.
+
+| Codeplug | Where it comes from | Decoded with |
+|---|---|---|
+| RadioFoundry | 0x120000 bytes at the board's `hal_flash_map_t` `openfw_eeprom`, as one DfuSe element at 0 | `dmrconf decode --radio openuv380` |
+| Stock | the board's `[stock_codeplug]` in `board.toml`: `span`, page layout `pages`, driver `dmrconf` | that driver |
+
+A part that is blank (all 0xFF) or not in the backup is skipped. One element over the whole image decodes the same as
+the four regions qdmr writes (T). Each codeplug is written as `<name>-rfoundry.dfu` / `.yaml` or `<name>-stock.dfu` /
+`.yaml`.
+
+Page layouts:
+
+| `pages` | Layout | Address given to dmrconf |
+|---|---|---|
+| `block-id` | 4 KB pages behind a translation layer: the last byte of a page is its logical block. 0 is a free page, 0xFF an erased one. A block found in two pages is refused | block × 0x1000 |
+
+With the pages at their physical addresses, the decoder walks past the end of the span and fails ("Cannot resolve
+offset") (T).
