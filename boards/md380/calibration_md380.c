@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 factory calibration reader (docs/spec/hardware-md380.md section 11).
 // The radio is single band: the table in SPI flash security registers 1-2 (512 bytes) holds one band. The row layout
-// is assumed to be the MD-UV380 family's (the same factory tool) and is not confirmed on an MD-380, so the reader is
+// is assumed to be the one hardware-mduv380.md 8 gives (the same factory tool) and is not confirmed on an MD-380, so the reader is
 // read only, checks every row before use, and the radio refuses to transmit when the table is not accepted.
 #include <string.h>
 #include "md380.h"

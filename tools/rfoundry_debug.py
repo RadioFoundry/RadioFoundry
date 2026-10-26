@@ -116,7 +116,7 @@ PROBE_BLOCK = 160
 REGIONS = {0: "none", 1: "ours", 2: "foreign"}
 DATA_OP_SMS, DATA_OP_CALL_ALERT, DATA_OP_RADIO_CHECK, DATA_OP_SETTINGS, DATA_OP_INBOX, DATA_OP_MARK_READ = range(1, 7)
 DATA_OP_EMERGENCY, DATA_OP_EMERGENCY_SETTINGS = 7, 8
-DATA_OP_IP_SETTINGS, DATA_OP_IP_SEND = 9, 10
+DATA_OP_IP_SETTINGS, DATA_OP_IP_SEND, DATA_OP_TX_SPACING = 9, 10, 11
 IP_COMPRESS = {"off": 0, "auto": 1, "all": 2}
 IP_CONFIRMED = {"off": 0, "rules": 1, "all": 2}
 IP_RULE_PORT = 0x80000000
@@ -148,7 +148,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-                 "sfr", "tasks", "crash", "watchdog", "reset"]
+                 "sfr", "tasks", "crash", "watchdog", "reset", "air"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -179,7 +179,8 @@ SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit"
             "key_beep": 12, "vox": 13, "vox_level": 14, "vox_tail_ms": 15, "rx_save": 16, "rx_save_idle_s": 17,
             "battery_off_s": 18, "scan_beep": 19, "reply_s": 20, "roam_rssi_dbm": 21, "roam_hyst_db": 22,
             "roam_probe": 23, "roam_check_s": 24, "roam_beacon_s": 25, "roam_beacon_len_s": 26, "roam_survey": 27,
-            "rpt_beacon": 28, "mic_gain": 29, "dual_delay_ms": 30, "enc_options": 31}
+            "rpt_beacon": 28, "mic_gain": 29, "dual_delay_ms": 30, "enc_options": 31,
+            "zs_offers": 32, "sfr_cwid": 33, "sfr_rx": 34}
 
 
 class DebugLinkError(Exception):
@@ -917,6 +918,12 @@ class DebugLink:
             req += struct.pack("<I", ip & 0xFFFFFFFF)
         self.data_request(DATA_OP_IP_SEND, req + bytes(payload)[:REQ_MAX - 1 - len(req)])
 
+    def tx_spacing(self, guard_ms, chain=True):
+        """The data service's spacing of our transmissions (docs/spec/dmr-data.md 12.6), RAM only: the guard after
+        our own transmission in ms, and whether unconfirmed IP packets to one destination share a transmission.
+        State: data.tx_guard_ms and data.tx_chain in the air view section."""
+        self.data_request(DATA_OP_TX_SPACING, struct.pack("<HB", int(guard_ms) & 0xFFFF, 1 if chain else 0))
+
     # APRS (docs/spec/debuglink.md 3.16, docs/spec/aprs.md 13). State: the aprs and aprs_set view sections
     def aprs_request(self, op, args=b""):
         return self.request(APRS, bytes([op]) + bytes(args))[1]
@@ -1346,6 +1353,11 @@ def cmd_data(link, a):
         dst, _, dst_ip = args[0].partition("@")
         link.ip_send(int(dst, 0), int(args[1], 0), int(args[2], 0), " ".join(args[3:]).encode(), group=a.group,
                      dst_ip=dst_ip or None)
+    elif a.op == "tx-spacing":
+        if not args or not args[0].isdigit() or (args[1:] and args[1] not in ("chain", "no-chain")):
+            print("data tx-spacing: GUARD_MS [chain|no-chain]", file=sys.stderr)
+            return 2
+        link.tx_spacing(int(args[0]), args[1:2] != ["no-chain"])
     elif a.op == "em-settings":
         if not args or args[0] not in EMERGENCY_MODES:
             print("data em-settings: alarm|alarm_call|call [DST] [private] [etsi] [no-tone] [tries=N] [hot=S]",
@@ -1747,13 +1759,13 @@ def main(argv=None):
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",
-                                  "ip-settings", "ip-send"])
+                                  "ip-settings", "ip-send", "tx-spacing"])
     p.add_argument("args", nargs="*", help="sms: ID TEXT [--group] [--no-ack] [--format tms|etsi|etsi_ip|default]; "
                    "alert / check: ID; settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp] [sms-etsi|sms-tms] "
                    "[check-etsi]; inbox / read: [INDEX]; emergency: start|cancel|dismiss; em-settings: "
                    "alarm|alarm_call|call [DST] [private] [etsi] [no-tone] [tries=N] [hot=S]; ip-settings: off|auto|all "
                    "[off|rules|all] [tries=N] [id=ID] [port=N] [gateway=ID]; ip-send: ID[@A.B.C.D] SRC_PORT DST_PORT "
-                   "[TEXT] [--group]")
+                   "[TEXT] [--group]; tx-spacing: GUARD_MS [chain|no-chain]")
     p.add_argument("--format", choices=["tms", "etsi", "etsi_ip", "default"], default="default")
     p.add_argument("--group", action="store_true")
     p.add_argument("--no-ack", action="store_true")

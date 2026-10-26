@@ -2,11 +2,42 @@
 
 # Releases
 
-A release is a git tag `vMAJOR.MINOR.PATCH` on main and a GitHub release that carries, for each releasable radio, the
-firmware image **without the AMBE codec**, its manifest, `SHA256SUMS`, the `rfoundry` flashing tool as single-file
-executables for Linux, macOS and Windows, and the user manual as a PDF. Users never build firmware: `rfoundry`
-downloads the image, checks it, and either keeps the codec already in the radio or writes the codec from the user's
-own stock firmware file ([tools/rfoundry/README.md](../../tools/rfoundry/README.md)).
+A release is a git tag on main named for its year and month (`v26.11`, below) and a GitHub release that carries,
+for each releasable radio, the firmware image **without the AMBE codec**, its manifest, `SHA256SUMS`, the `rfoundry`
+flashing tool as single-file executables for Linux, macOS and Windows, and the user manual as a PDF. Users never
+build firmware: `rfoundry` downloads the image, checks it, and either keeps the codec already in the radio or writes
+the codec from the user's own stock firmware file ([tools/rfoundry/README.md](../../tools/rfoundry/README.md)).
+
+## Release names
+
+A release is named for the year and month it comes out, so a user sees at a glance how old the firmware is.
+`tools/release_version.py` holds the rule; the Makefile, `tools/release_build.sh`, the release workflow and the site
+all ask it.
+
+| Name | When |
+|---|---|
+| `vYY.M` | The first release of a month: `v26.11` |
+| `vYY.M.N` | Another release that month: `v26.11.1`, `v26.11.2` |
+| `vYY.MbN` | A pre-release (beta) of that name: `v26.12b1`. The final keeps the name even if it ships the next month |
+
+The year has two digits (`26` is 2026) and a beta is a bare `b` and its count, to save room on the radios' small
+displays. The month has no leading zero and the count starts at 1, so `v26.11.3` never reads as March. Main is the
+alpha; there is no release candidate yet. `tools/release_build.sh` and the release workflow refuse any other tag.
+
+**On the radio.** A clean build of a commit that carries a release tag gets `RFOUNDRY_RELEASE` (the Makefile reads the
+tag; `make RELEASE=<tag>` sets it, as `tools/release_build.sh` does, and `RELEASE=` leaves it out). The splash screen
+shows the release name in place of the commit, About shows both, and the debug link's VERSION adds `release=`
+([debuglink.md](../spec/debuglink.md) 3.1). `RFOUNDRY_GIT` stays the commit everywhere else: the crash record's build
+id, the manifests and the CPS id need it. The build service fetches tags, so a custom build of a tagged commit shows
+the release name too.
+
+**Betas.** A tag ending `bN` becomes a GitHub pre-release. GitHub's latest release skips pre-releases, and so does
+the site: the flasher installs the newest release that is not a pre-release by default, and offers a newer beta only as
+an opt-in version link (`?version=<tag>`, [website.md](website.md#flasher-notices)). `?version=main` still builds main.
+
+**On the site.** The footer shows the firmware release the flasher installs, linked to its GitHub release, and a
+Changelog link to the GitHub releases. The release notes start from GitHub's generated notes (`--generate-notes`):
+edit them into a short list of what changed for users.
 
 ## Checklist
 
@@ -27,12 +58,13 @@ own stock firmware file ([tools/rfoundry/README.md](../../tools/rfoundry/README.
 9. Tag and push the tag:
 
    ```
-   git tag -a v0.1.0 -m "RadioFoundry 0.1.0"
-   git push origin v0.1.0
+   git tag -a v26.11 -m "RadioFoundry 26.11"
+   git push origin v26.11
    ```
 
 10. The release workflow builds the firmware and rfoundry and attaches them; the manual workflow attaches the PDF
-    ([manual-pdf.md](manual-pdf.md)). Edit the release notes on GitHub.
+    ([manual-pdf.md](manual-pdf.md)). Edit the release notes on GitHub (they are the changelog the site links).
+11. The next push to main redeploys the site, which then installs the new release (or offers the new beta).
 
 ## Release artifacts
 
@@ -44,7 +76,7 @@ own stock firmware file ([tools/rfoundry/README.md](../../tools/rfoundry/README.
 | `SHA256SUMS` | SHA-256 of every file above |
 | `RadioFoundry-manual-<version>.pdf` | The user manual (the manual workflow) |
 
-`tools/release.py --board <id> --version v0.1.0` writes the first two (with `--variant amateur`, the image of `make
+`tools/release.py --board <id> --version v26.11` writes the first two (with `--variant amateur`, the image of `make
 VARIANT=amateur` as `rfoundry-<board>-amateur-<version>.bin`, its manifest naming the variant: [build-config.md](../build-config.md#variants)) and the sums for a built image into `dist/`
 (or `--out DIR`). It refuses an image that reaches into a codec sector or carries the codec's signature word, so a
 release can never contain the codec, even by accident.
@@ -55,8 +87,8 @@ The manifest (`format` `rfoundry-release/1`, written and checked by `tools/rfoun
 {
   "format": "rfoundry-release/1",
   "board": "<id>", "board_name": "<name>",
-  "version": "v0.1.0", "git": "5f034440", "git_full": "5f03444001b77a00ebaef28d3358dd902c03474b",
-  "image": {"file": "rfoundry-<id>-v0.1.0.bin", "size": 220780, "sha256": "dc8b8ed7..."},
+  "version": "v26.11", "git": "5f034440", "git_full": "5f03444001b77a00ebaef28d3358dd902c03474b",
+  "image": {"file": "rfoundry-<id>-v26.11.bin", "size": 220780, "sha256": "dc8b8ed7..."},
   "ranges": [{"addr": "0x0800C000", "size": 220780}],
   "sectors": [3, 4, 5, 6],
   "codec": {"included": false, "profile": "<id>-<codec>-s11", "sectors": [10, 11],
@@ -120,7 +152,11 @@ over the bootloader (the radio is at RDP level 1), so rfoundry needs another way
    sectors the update overwrites, so keep is not safe.
 2. **Otherwise the codec is written (merge),** from the copy rfoundry saved from this radio if it has one, else from
    the stock file. A vendor firmware doesn't hold the codec where RadioFoundry keeps it, so `--stock-installed` never makes keep safe.
-3. `--codec keep` forces keep in every case.
+3. `--codec keep` forces keep in every case. Where the radio is known to have no codec, the keep expects none, so the
+   check after flashing doesn't count `codec=absent` as a failure: the radio reported no codec, or the user says it runs
+   its stock firmware (`--stock-installed`, or the web flasher's "Original firmware" with or without a version) and no
+   stock version of the board holds the codec where RadioFoundry keeps it (the board's `codec.installed` is empty).
+   rfoundry and the web flasher (`site/static/js/flasher/decide.js`) apply the same rules.
 
 **The saved copy.** Whenever rfoundry or the web flasher sees a radio running RadioFoundry, it reads the codec over the debug
 link (READ_MEM, in the stock or the placed layout), checks it against the profile's hashes and saves it (rfoundry's

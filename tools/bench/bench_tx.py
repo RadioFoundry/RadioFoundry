@@ -58,6 +58,7 @@ import zlib
 from rfoundry_sdrbench.dmr import ambe as AMBE
 from rfoundry_sdrbench.dmr import fec, pdu
 from rfoundry_sdrbench import layer2 as L2
+from rfoundry_sdrbench import lcinfo
 from rfoundry_sdrbench import sim
 from rfoundry_sdrbench.mmdvm import bursts as B
 from rfoundry_sdrbench.mmdvm.modem import Modem, ModemConfig, SYNC_AUDIO, SYNC_DATA
@@ -332,7 +333,8 @@ class Listener:
         if self.cur is None or self.cur.get("ended"):
             self.cur = {"src": src, "dst": dst, "flco": flco, "start": how, "t0": round(time.time(), 3),
                         "headers": 0, "voice": 0, "terminators": 0, "ended": None, "emb_lc": 0, "pi": 0,
-                        "talker_alias": None, "gps": None, "ta": {}, "ambe": [], "cc": set(), "after_end": 0}
+                        "talker_alias": None, "gps": None, "ta": {}, "ambe": [], "cc": set(), "after_end": 0,
+                        "lc_type": None, "lc_types": {}, "alias_asm": lcinfo.AliasAssembler(), "gps_info": None}
             self.calls.append(self.cur)
         return self.cur
 
@@ -357,10 +359,12 @@ class Listener:
             if dt in (pdu.DT_VOICE_LC_HEADER, pdu.DT_TERMINATOR_WITH_LC):
                 lc = pdu.decode_voice_lc(burst, dt)
                 if lc is not None:
-                    rec.update(src=lc.src_id, dst=lc.dst_id, flco=lc.flco, so=lc.service_options)
+                    rec.update(src=lc.src_id, dst=lc.dst_id, flco=lc.flco, so=lc.service_options,
+                               lc_type=lcinfo.lc_type(lc.flco, lc.fid))
                 if dt == pdu.DT_VOICE_LC_HEADER:
                     c = self._call(rec.get("src"), rec.get("dst"), rec.get("flco"))
                     c["headers"] += 1
+                    c["lc_type"] = c["lc_type"] or rec.get("lc_type")
                 elif self.cur is not None:
                     self.cur["terminators"] += 1
                     self.cur["ended"] = self.cur["ended"] or "terminator"
@@ -384,7 +388,12 @@ class Listener:
                     lc9 = fec.embedded_lc_decode(sum((self.frags[k] for k in (1, 2, 3, 4)), []))
                     if lc9 is not None:
                         lc = pdu.parse_full_lc(lc9)
-                        rec["emb_lc"] = {"flco": lc.flco, "fid": lc.fid, "src": lc.src_id, "dst": lc.dst_id}
+                        # decoded by FLCO (lcinfo): type, call LC service options, alias fragment, GPS degrees
+                        d = lcinfo.describe(lc9)
+                        if d["type"] == "talker_alias_hdr" and self.cur is not None:
+                            self.cur["ta_fmt"] = d["format"]
+                        lcinfo.fill_fragment(d, (self.cur or {}).get("ta_fmt"))
+                        rec["emb_lc"] = {"flco": lc.flco, "fid": lc.fid, "src": lc.src_id, "dst": lc.dst_id, **d}
                         g = gps_decode(lc9)
                         if g is not None:
                             rec["emb_lc"]["gps"] = g
@@ -414,6 +423,12 @@ class Listener:
         c = self.cur
         if c is None:
             return
+        t = lcinfo.lc_type(lc.flco, lc.fid)
+        c["lc_types"][t] = c["lc_types"].get(t, 0) + 1
+        c["alias_asm"].push(lc.raw)
+        if t == "gps_info":
+            c["gps_info"] = {"lat": round(lc.lat, 6), "lon": round(lc.lon, 6), "position_error": lc.position_error,
+                             "position_error_m": pdu.POSITION_ERROR_M.get(lc.position_error)}
         if lc.flco in (FLCO_GROUP, FLCO_PRIVATE):
             c["emb_lc"] += 1
             if c["src"] is None:
@@ -436,6 +451,8 @@ class Listener:
         for i, c in enumerate(self.calls, 1):
             frames = c.pop("ambe")
             c.pop("ta")
+            c.pop("ta_fmt", None)
+            c["alias"] = c.pop("alias_asm").result()      # {text, format_name, length, complete, blocks_seen} or None
             c.pop("t_last", None)
             c["cc"] = sorted(c["cc"])
             c["ambe_frames"] = len(frames)

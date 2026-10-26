@@ -179,15 +179,25 @@ static void dev_mark_bad(void *ctx, uint16_t block)
 	}
 }
 
-// The sector layer's long loops (the mount at start-up reads every page in use; garbage collection) keep the CPU with
-// busy waits: the watchdog is fed per block or sector there instead of by the idle task, and the hang check counts
-// from that feed (watchdog_kick)
+// The sector layer's long loops (the mount at start-up reads every page in use; garbage collection; a run of sector
+// writes such as a zone import) keep the CPU with busy waits: the watchdog is fed per block or sector there instead of
+// by the idle task, and the hang check counts from that feed (watchdog_kick). The writes come from the start task's
+// storage jobs at priority 5, above the radio, input, host and UI tasks, so every DEV_BUSY_YIELD_MS of such work gives
+// them one tick: a long import doesn't freeze the radio, and the cost is about 5 % of the job's time
+#define DEV_BUSY_YIELD_MS	20u
+
 static void dev_busy(void *ctx)
 {
+	static uint32_t last_yield;
 	(void)ctx;
+	uint32_t now = hal_millis();
 #if CONFIG_WATCHDOG
-	watchdog_kick(hal_millis());
+	watchdog_kick(now);
 #endif
+	if (now - last_yield >= DEV_BUSY_YIELD_MS && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
+		vTaskDelay(1);
+		last_yield = hal_millis();
+	}
 }
 
 const nand_dev_t db25d_nand_dev = {

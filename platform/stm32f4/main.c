@@ -8,6 +8,10 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+// gotchas.md 13.11: the syscall level must fit the 3 priority bits of the APM32F4 clones
+_Static_assert((configMAX_SYSCALL_INTERRUPT_PRIORITY & 0x1Fu) == 0u,
+	"configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY must be even (3 priority bits)");
+
 void stm32_time_init(void);
 void app_start(void);	// core/app: creates the tasks
 

@@ -44,6 +44,7 @@ stock_versions = ["909E.DBB.EARSAB.018", "909E.DBB.EARSAB.020"]
 backup = { stock = "full", rfoundry = "full", spi_size = 0 }
 
 [flash.bootloader]
+hold = ["p1"]	# then power (no key of the enum: PTB12 on its own, hardware-db25d.md 3.3)
 steps = [
 	"Turn the radio off and connect the programming cable.",
 	"Hold P1 and press power. The red LED lights and the display stays blank.",
@@ -76,6 +77,10 @@ shape = "mobile"
 body = "#202226"
 accent = "#c8372d"
 lens = [20, 20]
+
+# HIL pass limits this radio is held to instead of a test's default (tools/boards.py HIL_LIMITS), each with its reason
+[hil.limits]
+dmr_tx_ramp_ms = { value = 1.75, reason = "the PA's key-up ramp measures 1.56-1.62 ms on the SDR bench (2026-10-25), with the stock burst timing too: over the 1.5 ms of the ETSI power mask; hardware-db25d.md 4.5" }
 
 # The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
 # reports them (6, the shim's default)

@@ -20,13 +20,13 @@ typedef enum {
 // TXDENY_MODE: the channel's mode is not built in (a DMR channel in an FM-only build, or the reverse).
 // DMR: NO_CODEC no vocoder merged (receive only), NO_DMR the modem didn't start, BUSY a call on our slot (polite
 // access), NO_REPEATER the repeater didn't wake, REJECTED the modem refused, HOTSPOT the radio is a hotspot now,
-// NO_ID no DMR ID in the codeplug. BUSY on FM: busy channel lockout. INHIBIT: transmit is switched off in the
+// NO_ID no DMR ID in the codeplug, SFR_RPT the radio is the channel's single frequency repeater. BUSY on FM: busy channel lockout. INHIBIT: transmit is switched off in the
 // settings. BATTERY: the battery is critical. AM: the channel is received in AM (the air band, CONFIG_AM_RX): receive
 // only, the radio never transmits there. BCAST: the same for the broadcast band (CONFIG_BCAST_FM)
 typedef enum {
 	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
 	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
-	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_BCAST,
+	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_BCAST, TXDENY_SFR_RPT,
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -53,7 +53,7 @@ typedef struct {
 	uint16_t dual_delay_ms;	// dual watch on one receiver: after a signal ends, stay on its channel this long (the
 				// reply), looking at the other one in between
 	// Beeps (CONFIG_BEEP)
-	uint8_t beep_level;	// 0 = silent .. 100, relative to the volume knob
+	uint8_t beep_level;	// 0 = silent .. 100: the loudest a beep gets (it follows the volume up to this)
 	bool key_beep;		// radio_req_beep(BEEP_KEY) sounds
 	bool talk_permit;	// DMR: the talk permit tone when the voice goes on air (channels without no_beep)
 	// VOX (CONFIG_VOX)
@@ -77,6 +77,8 @@ typedef struct {
 	uint8_t roam_beacon_len_s;	// their beacon duration (1 .. 10)
 	uint8_t roam_survey;	// 0 off, 1 the sites beacon together (one window), 2 each on its own schedule
 	bool rpt_beacon;	// our repeater roles (SFR) key an idle beacon on that interval and duration
+	uint8_t sfr_rx;		// SFR user channels hear: dmr_sfr_rx_t (0 the repeat only, 1 both first arrival, 2 dual-path RX)
+	uint8_t sfr_cwid;	// our SFR repeater's CW ID interval: 0 off, 1 5 min, 2 10, 3 15, 4 30 (CONFIG_SFR_CWID)
 	// Broadcast FM (CONFIG_BCAST_FM)
 	uint8_t bcast_step;	// the VFO's automatic step there: RADIO_BCAST_STEP_200_ODD or RADIO_BCAST_STEP_100
 } radio_settings_t;
@@ -151,6 +153,15 @@ typedef struct {
 	bool hear_all;		// every talkgroup on our slot: MONITOR held, or the hear all latch
 	bool hear_all_latch;	// hear all latched (radio_req_dmr_hear_all), until the channel changes
 	uint32_t focus_id;	// the focused row's target (radio_req_dmr_focus), 0 = none: PTT talks to it once
+	// The channel's SFR role (CONFIG_SFR, docs/spec/sfr.md 4): sfrRole_t, 0 none. A repeater role runs instead of the
+	// call stack (active false): sfr_rpt, with its outbound slot keyed (sfr_keyed) and an inbound call (sfr_busy)
+	uint8_t sfr_role;
+	uint8_t sfr_inbound;	// the role's inbound slot: 0 TS1, 1 TS2 (the outbound one is the other)
+	bool sfr_rpt;
+	bool sfr_keyed;
+	bool sfr_busy;
+	bool sfr_cw;		// the repeater role keys its CW ID now (CONFIG_SFR_CWID, sfr.md 4, CW ID)
+	uint16_t sfr_cwid_sent, sfr_cwid_cut;	// its IDs keyed to the end, and cut or skipped (no callsign, retuned)
 	bool focus_private;
 	bool one_shot;		// PTT went to the focused target: it stays the talk target for the reply window
 	// The current call (RX or TX); valid while state != RDMR_IDLE
@@ -230,6 +241,9 @@ typedef struct {
 	int16_t rssi_dbm;
 	uint8_t noise;
 	uint32_t tx_elapsed_ms;	// time in TX, while RS_TX
+	bool tx_auto;		// that TX is the radio's own, not the user's: a data list (ARS, an ACK), a roaming probe, an
+				// APRS beacon. It doesn't light the screen (radio_view_wakes)
+	uint32_t last_tx_ms;	// hal_millis() when the last transmission began, 0 = none yet
 	uint16_t tot_s;		// TX time-out, 0 = none
 	uint32_t last_rx_ms;	// hal_millis() at the end of the last reception, 0 = none yet
 	uint32_t vfo_step_hz;	// the VFO's step in use: as set, or with vfo_step_auto the width's (12.5 or 25 kHz)
@@ -449,6 +463,10 @@ uint8_t radio_volume_percent(uint8_t step);
 // is scaled to the new range; the new form has bit 7 set
 uint8_t radio_volume_step(uint8_t stored);
 uint8_t radio_volume_stored(uint8_t step);
+// A beep's level when the MCU sets the speaker volume (the board has hal_radio_t.volume) and that volume doesn't
+// reach the PCM path the beeps play on (volume_pcm false): the volume percent last given to the board, up to the
+// beep_level setting (cap). volume_percent < 0 (none given yet): the cap
+uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent);
 
 // Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them. get answers
 // with the last ones set until the radio task has taken them in, so a caller that reads, changes one field and sets
@@ -466,6 +484,11 @@ bool radio_power_off_busy(void);
 void radio_req_power_off_cancel(void);
 // The backlight percent for the UI: batt_backlight_pct with the settings and the current battery level
 uint8_t radio_backlight_pct(uint8_t brightness, uint32_t idle_ms);
+// The radio does something the user would want to see, so the backlight comes on: a transmission they keyed, a
+// refused PTT, a call that plays (DMR) or an open squelch (FM). Not the radio's own traffic: ARS, ACKs, location
+// answers, roaming probes, APRS beacons, data or calls it receives but doesn't play, a broadcast program, a hotspot.
+// What reaches the user as a message, a call alert or an emergency wakes it through the UI (its banner)
+bool radio_view_wakes(const radio_view_t *v);
 #if CONFIG_HOTSPOT
 // Bumped when the hotspot engine reports a change (hotspot_radio_ops_t.changed), for the UI's hotspot screen
 uint32_t radio_hotspot_serial(void);

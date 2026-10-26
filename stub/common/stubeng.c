@@ -411,6 +411,43 @@ static void op_xprogram(stubeng_t *s, const uint8_t *p, uint16_t len)
 	status(s, STUB_ST_OK);
 }
 
+// The SPI flash's security registers: SREAD answers status register 2, then for reg 1-3 the register and its CRC-32.
+// SWRITE refuses a register whose one-time lock bit (LB1-LB3) is set, then erases, programs and reads it back. Only
+// for the manufacturer whose commands the target uses: on another chip the same opcodes mean other things
+static uint8_t op_sreg(stubeng_t *s, bool write, const uint8_t *p, uint16_t len)
+{
+	uint8_t *o = s->out + STUBENG_FRAME_HDR;
+	unsigned reg = p[0];
+	// SREAD takes reg 0-3, SWRITE 1-3
+	if (len != (write ? 5u + STUBENG_SREG_LEN : 1u) || reg - write > STUBENG_SREG_COUNT - write ||
+	    s->port->xsreg == NULL || !spi_present(s) || s->cfg.xid[0] != STUBENG_SREG_MFR) {
+		return STUB_ST_BADARG;
+	}
+	if (write && get32(p + 1) != s->port->magic) {
+		return STUB_ST_REFUSED;
+	}
+	if (!s->port->xsreg(s->port->ctx, 0, o, NULL)) {
+		return STUB_ST_FLASHERR;
+	}
+	if (write) {
+		if ((o[0] & (STUBENG_SR2_LB1 << (reg - 1u))) != 0) {
+			return STUB_ST_REFUSED;		// locked for good
+		}
+		uint8_t *buf = (uint8_t *)s->words;
+		feed(s);
+		return s->port->xsreg(s->port->ctx, reg, NULL, p + 5) && s->port->xsreg(s->port->ctx, reg, buf, NULL) &&
+		       memcmp(buf, p + 5, STUBENG_SREG_LEN) == 0 ? STUB_ST_OK : STUB_ST_FLASHERR;
+	}
+	if (reg != 0) {
+		if (!s->port->xsreg(s->port->ctx, reg, o + 5, NULL)) {
+			return STUB_ST_FLASHERR;
+		}
+		put32(o + 1, stubeng_crc32(0, o + 5, STUBENG_SREG_LEN));
+	}
+	reply(s, STUB_ST_OK, reg != 0 ? 5u + STUBENG_SREG_LEN : 1u);
+	return 0;
+}
+
 static void op_erase(stubeng_t *s, const uint8_t *p, uint16_t len)
 {
 	if (len != 5) {
@@ -486,7 +523,8 @@ static void dispatch(stubeng_t *s, uint8_t op, const uint8_t *p, uint16_t len)
 {
 	s->requests++;
 	feed(s);
-	bool write = op == STUB_OP_ERASE || op == STUB_OP_PROGRAM || op == STUB_OP_XERASE || op == STUB_OP_XPROGRAM;
+	bool write = op == STUB_OP_ERASE || op == STUB_OP_PROGRAM || op == STUB_OP_XERASE || op == STUB_OP_XPROGRAM ||
+		     op == STUB_OP_SWRITE;
 	if (write && !s->configured) {
 		status(s, STUB_ST_NOCONFIG);
 		return;
@@ -519,6 +557,15 @@ static void dispatch(stubeng_t *s, uint8_t op, const uint8_t *p, uint16_t len)
 	case STUB_OP_XPROGRAM:
 		op_xprogram(s, p, len);
 		break;
+	case STUB_OP_SREAD:
+	case STUB_OP_SWRITE:
+	{
+		uint8_t st = op_sreg(s, op == STUB_OP_SWRITE, p, len);
+		if (st != 0) {
+			status(s, st);
+		}
+		break;
+	}
 	case STUB_OP_RESET:
 		if (len != 4 || get32(p) != s->port->magic) {
 			status(s, STUB_ST_REFUSED);

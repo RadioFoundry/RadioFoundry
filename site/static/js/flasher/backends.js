@@ -20,6 +20,8 @@
 //                           (flash.help.s.iap<suffix>, "_<radio id>")
 //   ownsBundle(bundle)      optional: this backend restores the backup bundle with its own view
 //   ownImage(fb, board, data)  optional: splits a user's own image file into {image, codec} (a merged codec slot)
+//   vendorRestore(radio, file, fb)  optional: a restore bundle from the radio's original firmware file (an
+//                           openVendorFile entry for this radio), so recovery "restore" also takes that file
 //   release()               optional: let go of a port or loader the backend still holds (start over, other radio)
 //
 // Bulk memory reads for backups go through readers (readers.js), so a backend that shares a radio family's backup

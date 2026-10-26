@@ -56,9 +56,8 @@ static const keymap_entry_t keymap[] = {
 static const uint8_t side_keys[] = { KEY_P1, KEY_P2, KEY_P3 };
 
 #if CONFIG_CPS_OPENFW
-// What the open-firmware CPS reads in the radio info (open-firmware-cps.md 4): type 6 (MD-UV380), as the other HR_C7000
-// radios (hardware-dm32.md, hardware-db25d.md), since the CPS knows no GD-88. The factory calibration is outside the
-// image, so no calibration window
+// What the open-firmware CPS reads in the radio info (open-firmware-cps.md 4): type 6, as the other HR_C7000 boards
+// report, since the CPS knows no GD-88. The factory calibration is outside the image, so no calibration window
 static uint32_t cps_radio_type(void)
 {
 	return 6;

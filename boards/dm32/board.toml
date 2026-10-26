@@ -50,6 +50,7 @@ backup = { stock = "full", rfoundry = "full", spi_size = 0x1000000 }
 # the loader answers (also the magic of its firmware files), sign what the radio shows in update mode
 [flash.bootloader]
 keys = "PTT and SK1 (the side key just below PTT)"
+hold = ["ptt", "sk1"]
 steps = [
 	"Turn the radio off and connect the programming cable.",
 	"Hold PTT and SK1.",

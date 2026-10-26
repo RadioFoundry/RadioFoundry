@@ -1,5 +1,5 @@
 {
- "_about": "The UI gallery (docs/ux/screens) as the site shows it. A radio page shows the first six featured screens the radio has (its build has the features they need), two rows of three. each screen's group and the feature switches it needs. Captions are in site/i18n (screen.<name>). The site build fails on a screen missing here. A color page's shots in each gallery highlight color (<name>__<color>) take its entry, and the caption screen.in_color with color.<color>; its shots in the light and high-contrast themes (<name>__light, <name>__high_contrast) take screen.in_theme with theme.<theme>.",
+ "_about": "The UI gallery (docs/ux/screens) as the site shows it. A radio page shows the first six featured screens the radio has (its build has the features they need), two rows of three; the Screenshots page shows all of them, under the groups below. Each screen's group and the feature switches it needs. Captions are in site/i18n (screen.<name>). The site build fails on a screen missing here. A color page's shots in each gallery highlight color (<name>__<color>) take its entry, and the caption screen.in_color with color.<color>; its shots in the light and high-contrast themes (<name>__light, <name>__high_contrast) take screen.in_theme with theme.<theme>.",
  "featured": [
   "home_dmr",
   "rx_group",
@@ -248,6 +248,42 @@
     "DMR_SMS"
    ]
   },
+  "banner_zone_offer": {
+   "group": "messages",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
+  "zone_offer": {
+   "group": "messages",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
+  "zone_offer_preview": {
+   "group": "messages",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
+  "zone_offer_ch": {
+   "group": "messages",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
+  "tools_zone_offer": {
+   "group": "messages",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
+  "zone_offer_channel": {
+   "group": "messages",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
   "zones": {
    "group": "channels",
    "needs": []
@@ -313,6 +349,13 @@
     "CHANNEL_EDIT"
    ]
   },
+  "channel_share": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "ZONE_SHARE"
+   ]
+  },
   "zone_channels": {
    "group": "channels",
    "needs": []
@@ -347,6 +390,18 @@
     "CHANNEL_LIST",
     "CHANNEL_EDIT",
     "ZONE_EDIT"
+   ]
+  },
+  "zone_share_to": {
+   "group": "channels",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
+  "zone_imported": {
+   "group": "channels",
+   "needs": [
+    "ZONE_SHARE"
    ]
   },
   "find_channel": {
@@ -560,6 +615,18 @@
   "volume": {
    "group": "settings",
    "needs": []
+  },
+  "dmr_id": {
+   "group": "settings",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "dmr_id_entry": {
+   "group": "settings",
+   "needs": [
+    "DMR"
+   ]
   },
   "volume_muted": {
    "group": "settings",

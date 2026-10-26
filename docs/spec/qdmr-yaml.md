@@ -124,7 +124,7 @@ Both types:
 | `name` | Name | 16 characters |
 | `rxFrequency`, `txFrequency` | RX, TX frequency | 10 Hz grid |
 | `power` | Power byte: `Min` 1, `Low` 3, `Mid` 6, `High` 9, `Max` 10, `!default` 0 | open-firmware-cps.md 7.3.3. Another stored level exports as `!default` |
-| `timeout` | TX timeout | 15 s steps, rounded up; `infinite` and `!default` are off |
+| `timeout` | TX timeout | 15 s steps, rounded up. `!default` is 0, the radio's TX timeout. A channel has no "off": `infinite` and `0` also become 0 (note `tot_off`). The export writes 0 as `!default` |
 | `rxOnly` | RX only | |
 | `vox` | VOX on or off | A number above 0 is on, `off` or 0 is off, `!default` follows `settings.audio.vox`. The export writes `1` or `off` |
 | `openGD77.scanZoneSkip`, `scanAllSkip` | Zone skip, all-channel skip | |
@@ -207,7 +207,7 @@ A symbol from the alternate table, or `/D` and `/J`, exports as `None` with a no
 The import returns the record counts and a list of notes, each a code and a count, for what it changed or left out:
 names shortened, scan lists, roaming, encryption keys, DMR position reporting, APRS periods, extra path entries,
 unknown icons, lists and zones over their limits, records over the table limits, unknown element types, channels
-without a valid frequency, sub-tones that aren't CTCSS or DCS. The editor lists them after the import.
+without a valid frequency, sub-tones that aren't CTCSS or DCS, channels whose timeout was off. The editor lists them after the import.
 
 The export returns notes for SFR settings, power levels qdmr has no name for, channel locations rounded to a locator,
 APRS frequencies with no FM channel to name, APRS symbols with no icon, and the silent and ambiguity flags. The VFOs

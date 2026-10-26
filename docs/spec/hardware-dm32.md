@@ -758,6 +758,22 @@ switch after the burst moves it back (`fd6818_dmr_burst_at`). A simplex channel 
 this (issue 72), `tx` tuned the synthesizer to the TX frequency at key-up and left it there: the radio was deaf to the
 hotspot's downlink, never aligned to it, and its bursts were not taken. The radio's own firmware retunes at every burst end too. The PLL lock time after each retune is not measured yet (HIL check open).
 
+RadioFoundry raises the RF TX interrupt **0.4 ms** before each burst (`hrc7000_t.rf_tx_lead` = 4), not the driver's 3.1 ms. At
+the interrupt the switch above leaves receive, and with a long lead it cut off the end of the inbound burst before
+ours. The same fault shows on other HR_C7000 boards. An SFR repeat sweep (SDR bench,
+2026-10-20, 72 inbound frames per call, the radio in another room from the bench, so with a weak signal):
+
+| Lead | Frames lost per call | Bits corrected per call in the frames before ours |
+|---|---|---|
+| 2.0 ms | 7, 9, 17 | 79-143 |
+| 1.2 ms | 4, 5, 8 | 44-96 |
+| 0.6 ms | 0, 0, 0, 0, 0, 6, 7 | 51-96 |
+| 0.4 ms | 0, 0, 0, 2, 2, 4, 6 | 22-46 |
+
+The radio's own repeated bursts decoded clean at every lead. The first frame of each inbound pair kept about 6 bits
+corrected per frame at every TX lead and at RF RX interrupt leads of 1.6, 2.6 and 4.8 ms. That is the weak signal, not
+the switch timing.
+
 Band for PA/LNA purposes: VHF below 280 MHz, UHF from 280 MHz (the 220 MHz range shares the VHF path).
 
 ### 8.6 DMR PA timer
@@ -834,6 +850,14 @@ The radio's own battery save, in order. RadioFoundry uses it in FM receive (the 
 | HR_C7000 | a low-power clock profile (CLK_MGR); WORK_MODE, ADC and DAC unchanged. RadioFoundry leaves the clocks alone | the receive profile, CLK_MGR 0x02C = 0xFFF0FF3C |
 
 The radio's sleep lengths are 12, 18 or 30 ticks of its receive service by the battery save level, with a busy detect waking it at once (the tick's length in ms is not known). RadioFoundry's lengths come from the core settings.
+
+### 8.9 SFR on air (SDR bench, 2026-10-19)
+
+As a standalone repeater (`sfr.md`) at 461.1375 MHz, CC 2: after a user's call the CW ID came 2 s after the hang,
+"N4NQV" at 20 wpm, 800 Hz, about 1.8 kHz deviation; the next one 5 min later after new traffic (interval 5 min). The
+repeat of a call sat 90.2 ms after the original on every voice burst (72 of 72). 212 of 216 repeated voice frames needed
+Golay corrections and 4 were uncorrectable, where the direct copy was clean: the receiver takes bit errors while it
+switches per burst. As a user it reports both copies of a call (gotchas 14.15).
 
 ## 9. Audio path
 
@@ -1037,9 +1061,30 @@ Enter by holding **PTT + SK1** while turning the radio on; the green LED lights 
 
 The image sent is the raw application (the 256-byte header is stripped). The file name and size are not used. The vendor CPS also sends seven 130-byte zero blocks before rebooting; they are not needed (unverified).
 
-If the radio does not boot the new image, remove and refit the battery; update mode still works (unverified).
+The loader answers steps 1-3 once per power-on. After step 3 it ignores a new step 1 (0x52), also from a new
+session on the cable, and waits for step 4 until the radio is switched off and put in update mode again (measured
+2026-10-26). A host must keep the session that did steps 1-3 for the write, and never probe first and then start
+over.
 
-`tools/serial_loader.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1). `serial_loader.py --probe` runs steps 1-3 only and prints the answers, for checking whether
+After the end of transfer (step 9) the radio starts the new image by itself; no power cycle is needed (measured
+2026-10-26). If it does not boot the new image, remove and refit the battery; update mode still works (unverified).
+
+Measured install (2026-10-26, FTDI FT232R cable, the web flasher's `bfloader.js` and `c7000.js` run from Node):
+
+| What | Measured |
+|---|---|
+| Step 3 answer | `BFUV32-V2` |
+| Image | 996,868 bytes: RadioFoundry and the codec slot built from `DM32.01.01.049.bin` |
+| Erase (step 7) | 12.6 s |
+| Blocks (step 8) | 974 in 125 s, no NAK and no resend |
+| Whole install | about 2.5 min |
+| After step 9 | RadioFoundry started by itself and answered on the cable: board `DM-32UV`, codec `dm32-049` |
+
+`tools/serial_loader.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1). The web
+flasher's factory update mode uses it too (`site/static/js/flasher/bfloader.js`, a port checked byte for byte against
+`serial_loader.py`): offered when the boot ROM load (13.3) fails, it writes RadioFoundry and the codec slot, the codec
+taken from the stock file. Its modules installed this radio as measured above; the page's own steps around them are
+checked only in practice mode. `serial_loader.py --probe` runs steps 1-3 only and prints the answers, for checking whether
 another HR_C7000 radio's update loader speaks this protocol and which model string it reports at step 3.
 
 Release: the application area is 0x0300C000..0x030E8000 (880 KB) and the codec slot is 0x030E8000..0x03100000. The
@@ -1051,8 +1096,38 @@ mode with an image that ends before the slot.
 ### 13.3 ROM serial boot (recovery, no bootloader needed)
 
 The HR_C7000 ROM listens on the serial port after reset. Dahua's DH_SOC_TOOLS (Windows) with a script first loads
-a "miniBoot" image to RAM 0x00014000 and starts it, then writes the application to flash (at 0x03001000, unverified). Works with FTDI-based cables only; CH340 cables, which work with the Baofeng bootloader and CPS, do not reach the
-ROM loader (unverified). The ROM protocol itself is not documented here. Production radios are programmed over JTAG (unverified).
+a "miniBoot" image to RAM 0x00014000 and starts it, then writes the application to flash (at 0x03001000, unverified).
+Production radios are programmed over JTAG (unverified). The ROM protocol itself is not documented here.
+
+Cables:
+
+- Any USB-serial chip can reach the ROM loader, CH340 included. Cable quality varies: some cables that work with the
+  Baofeng bootloader and CPS fail the ROM load, so a failed load names the cable's chip and offers the update mode
+  (13.2) instead, which needs no load over the cable. An FTDI FT232R cable carried a whole install that way
+  (2026-10-26, 13.2).
+- Some cables echo what the host sends. The host drops an exact copy of the frame it sent, ahead of the ROM's
+  acknowledgement, and reads on for the acknowledgement until its timeout; any other reply fails the frame (`stub.js` `romAck`, `stubtool.py` `rom_ack`).
+- When a frame is not acknowledged, the first 16 bytes received are logged.
+
+Timing, measured 2026-10-26 on a DM-32UV through an FTDI FT232R cable at 115200 baud:
+
+| What | Measured |
+|---|---|
+| Greeting | `02 24 00 03`, once, 0.6 to 2.7 s after power-on (after one `00` byte). Never repeated |
+| Answer window | The host's `02 14 00 03` must reach the ROM within about 48 ms of the greeting: 46 ms works, 100 ms fails. Without it the ROM sends `00 10 00 03`, ignores the line and starts the firmware from flash |
+| Before the greeting | Bytes that reach the ROM before its greeting are dropped |
+| After the answer | No timeout: 10 s before block 0 and 3 s between blocks work. The ROM waits for commands until the next reset |
+| Block `0x18` ack | 28 to 40 ms for a 268-byte frame (23 ms of it on the wire) |
+| Bad checksum | NAK `02 0a 00 03`; the block sent again is taken |
+| A second answer | NAK `02 0a 00 03`, harmless |
+| Start `0x1B` | Acknowledged `02 05 00 03`, then the stub runs |
+
+The window is tight for a cable that holds received bytes before passing them on (an FTDI chip's latency timer is
+16 ms by default on Windows), behind a USB hub, or in a busy browser. The slow cable mode (`stub.js` `waitForRom`
+`repeat`, `stubtool.py --slow-cable`) sends the answer every 30 ms from before power-on until 150 ms after the
+greeting, so one leaves within 30 ms of it, and drains the NAKs of the rest before block 0. It worked on the same radio
+with the host answering 100 ms late (2026-10-26). RadioFoundry ignored 30 s of these answers while running (881 frames,
+no reply, still answering afterwards).
 
 ### 13.4 Backing up
 
@@ -1139,7 +1214,7 @@ an initial value would be dropped).
 |---|---|
 | `.vectors`, `.ramfunc` | the vector table (512 B) and the RAM code: interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue |
 | `.ram_lo` | the `RFOUNDRY_CPU_RAM` state (radio task, APRS, hotspot rings, DMR data) and the 2 KB interrupt stack |
-| `.data`, `.bss` | frame buffer 40 KB, RTOS heap 40 KB (every task stack and queue), vocoder states 13 KB, the network buffers (TCP connections, the network personality's packets and frame, the gateway's bursts and frame), 2 KB start-up stack |
+| `.data`, `.bss` | frame buffer 40 KB, RTOS heap 34 KB (every task stack and queue; `boards/dm32/freertos_board.h`), vocoder states 13 KB, the network buffers (TCP connections, the network personality's packets and frame, the gateway's bursts and frame), 2 KB start-up stack |
 
 The image sizes and the RAM left in each build are in [feature-matrix.md](../feature-matrix.md), "Whole images".
 

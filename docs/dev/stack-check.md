@@ -43,7 +43,7 @@ what the pointer can hold:
 | Call | Targets |
 |---|---|
 | Through a struct field, `board.radio->tx(...)`, `s->cb(...)` | The struct's type is followed from the variable's declaration (a parameter, a local, a file-scope or `extern` variable) through the members. Every function stored into that field of that type: designated or positional initializers, assignments, compound literals |
-| Through a variable or parameter | What is assigned to the variable; for a parameter, what callers pass in that position. Stores of one pointer into another are followed |
+| Through a variable or parameter | What is assigned to the variable; for a parameter, what callers pass in that position. A call through a struct field passes to the functions stored in that field, and two files' static functions of one name keep their own parameters. Stores of one pointer into another are followed |
 | Inside a macro, `LOCK()` | The macro is expanded first |
 | In an argument, `f(x, p->g())` | GCC files it at the outer call's position; the tool looks inside the arguments |
 

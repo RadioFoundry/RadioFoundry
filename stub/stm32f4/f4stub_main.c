@@ -216,6 +216,12 @@ static bool port_xprogram(void *ctx, uint32_t addr, const uint8_t *data, uint32_
 	return f4spi_program(addr, data, n);
 }
 
+static bool port_xsreg(void *ctx, unsigned reg, uint8_t *dst, const uint8_t *src)
+{
+	(void)ctx;
+	return f4spi_sreg(reg, dst, src);
+}
+
 // CONFIG: the board record decides the crystal (for the stub's timing) and the SPI flash wiring
 static bool port_configure(void *ctx, const uint8_t *rec, uint32_t n, stubeng_config_t *out)
 {
@@ -261,6 +267,7 @@ static stubeng_port_t port = {
 	.xread = port_xread,
 	.xerase = port_xerase,
 	.xprogram = port_xprogram,
+	.xsreg = port_xsreg,
 	.configure = port_configure,
 	.feed = port_feed,
 };

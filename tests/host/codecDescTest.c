@@ -3,7 +3,8 @@
 // The STM32 codec descriptor (platform/stm32f4/codec_desc.h): a sound one passes, every malformed one is refused, the
 // window CRCs are checked against the bytes. Synthetic flash, no codec. With file arguments, also checks the codec
 // sectors as tools/codec_extract.py merges them for its synthetic codecs (--test-desc: the DM-1701's sectors 10 and
-// 11, then the MD-380's 8-11 with five table windows), so the writer and the firmware agree on the format.
+// 11, then the MD-380's 8-11 with five table windows, then the DM-1701's from an MD-9600 file, its tables moved), so
+// the writer and the firmware agree on the format.
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -165,6 +166,26 @@ static void test_tool_md380(const char *path)
 	}
 }
 
+// The DM-1701's sectors 10 and 11 as codec_extract.py merges a synthetic codec from the MD-9600 V16.45 CSV file: the
+// tables moved into sector 10 with the code (boards/dm1701/vocoder_dm1701.c, md1645)
+static void test_tool_md9600(const char *path)
+{
+	FILE *f = fopen(path, "rb");
+	CHECK(f != NULL);
+	if (!f) {
+		return;
+	}
+	size_t n = fread(flash, 1, sizeof flash, f);
+	fclose(f);
+	CHECK(n == ROOM);
+	const codec_desc_t *d = desc();
+	CHECK(codec_desc_check(d, 0x96001645u, LO, CODEC_DESC_ADDR, 0xF214u));
+	CHECK(!codec_desc_check(d, TAG, LO, CODEC_DESC_ADDR, 0xF214u));
+	CHECK(codec_desc_check_bytes(d, flash, LO));
+	CHECK(d->code.addr == 0x080E2C98u && d->code.len == 0xF214u && d->windows == 1);
+	CHECK(d->table[0].addr == 0x080D02BCu && d->table[0].len == 0x11036u);
+}
+
 int main(int argc, char **argv)
 {
 	test_sound();
@@ -174,6 +195,9 @@ int main(int argc, char **argv)
 	}
 	if (argc > 2) {
 		test_tool_md380(argv[2]);
+	}
+	if (argc > 3) {
+		test_tool_md9600(argv[3]);
 	}
 	if (failures) {
 		printf("codecDescTest: %d failures\n", failures);

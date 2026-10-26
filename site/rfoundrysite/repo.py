@@ -262,7 +262,8 @@ def flash_boards():
 	finally:
 		sys.path.pop(0)
 	out = {"format": "rfoundry-flash-boards/1", "manifest_format": manifest.FORMAT, "boards": {}, "profiles": {},
-	       "known_files": dict(stockfw.KNOWN_FILES), "magic": stockfw.MAGIC.decode(), "header_len": stockfw.HEADER_LEN,
+	       "known_files": dict(stockfw.KNOWN_FILES), "no_codec_files": dict(stockfw.NO_CODEC_FILES),
+	       "magic": stockfw.MAGIC.decode(), "header_len": stockfw.HEADER_LEN,
 	       "key_len": stockfw.KEY_LEN, "codec_sig": stockfw.CODEC_SIG, "single_segment": stockfw.SINGLE_SEGMENT,
 	       "descriptor": {"addr": stockfw.DESC_ADDR, "len": stockfw.DESC_LEN, "magic": stockfw.DESC_MAGIC,
 			      "version": stockfw.DESC_VERSION, "windows": stockfw.DESC_WINDOWS}}
@@ -276,7 +277,9 @@ def flash_boards():
 			"keep_codec_supported": b.keep_codec_supported, "key_sha256": b.key_sha256,
 			"dfu_ids": list(b.dfu_ids) if b.dfu_ids else None, "dfu_string1": b.dfu_string1,
 			"dfu_product": b.dfu_product,
-			"protected": [list(p) for p in b.protected]}
+			"protected": [list(p) for p in b.protected],
+			# for a backup over another open firmware's CPS (openfw.js): area 5's base and the radio types
+			"rom_base": b.rom_base, "cps_radio_types": list(b.cps_radio_types)}
 	for sha, p in stockfw.PROFILES.items():
 		q = dict(p)
 		q["segments"] = [list(s) for s in p["segments"]]

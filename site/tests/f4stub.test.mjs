@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { crc32, equal, fromHex, toHex } from "../static/js/flasher/bytes.js";
 import { FakeRadio, simulation, randomBytes, rng } from "../static/js/flasher/fake.js";
 import { F4Stub, f4Image, f4StubHeader, HDR, APP_BASE, MEM_SPI, OP } from "../static/js/flasher/f4stub.js";
-import { StubError } from "../static/js/flasher/stub.js";
+import { Stub, StubError } from "../static/js/flasher/stub.js";
 import { Link } from "../static/js/flasher/link.js";
 import { readRadio } from "../static/js/flasher/backup.js";
 import { f4LoaderReader } from "../static/js/flasher/readers.js";
@@ -213,6 +213,41 @@ test("backup without stub entry: the loader doesn't start and the debug link rea
 	assert.deepEqual(radio.events, []);
 	assert.deepEqual(b.get("internal-flash").data, radio.flash.subarray(APP_BASE - 0x08000000));
 	assert.equal(b.get("spi-flash"), undefined);
+});
+
+test("a chip whose flash size register reads short: the internal flash over the debug link, in full, the SPI flash through the loader", async () => {
+	const { sim, radio } = await running("dm1701", { flashKb: 512 });
+	radio.flash.set(randomBytes(rng(4), 0x4000), 0x0F0000);	// the top sectors, past the register's 512 KB
+	const b = await backupVia(radio, sim, {});
+	assert.ok(b.loader.used, "the loader still reads the SPI flash");
+	assert.equal(radio.mode, "normal");
+	const internal = b.get("internal-flash");
+	assert.ok(internal.complete);
+	assert.deepEqual(internal.data, radio.flash.subarray(APP_BASE - 0x08000000), "up to the board's flash end");
+	assert.deepEqual(b.get("spi-flash").data, radio.spi);
+	// the same chip, internal flash only: no hand-over at all
+	const only = await backupVia(radio, sim, { spi: "none" });
+	assert.ok(!only.loader.used);
+	assert.deepEqual(only.get("internal-flash").data, radio.flash.subarray(APP_BASE - 0x08000000));
+});
+
+test("the loader refuses a read past the chip's register size (what the debug link read avoids)", async () => {
+	const { radio } = await running("dm1701", { flashKb: 512 });
+	const s = await enter(radio);
+	assert.equal(s.info.flashKb, 512);
+	await assert.rejects(s.readFlash(0x0807C000, 0x10000), /refused: status 0xd/);
+});
+
+test("hand-over on a port that went away: says so, not \"built without CONFIG_STUB_ENTRY\"", async () => {
+	const dead = { buf: new Uint8Array(0), clear() {}, take: () => new Uint8Array(0), write: async () => {} };
+	const s = new F4Stub(dead, { log: quiet });
+	await assert.rejects(s.enterFromRFoundry(image, () => {}, { entry: stubJson.run }), (e) => {
+		assert.ok(e instanceof StubError);
+		assert.match(e.message, /does not answer/);
+		assert.doesNotMatch(e.message, /CONFIG_STUB_ENTRY/);
+		return true;
+	});
+	assert.equal(await Stub.rfoundryOffer(new Link(dead, { timeout: 50 })), null, "not strict: null as before");
 });
 
 test("a codeplug-only backup with no reader reads over the debug link", async () => {

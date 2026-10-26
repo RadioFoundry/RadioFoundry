@@ -31,6 +31,9 @@
 #include "hotspot/hotspotSfr.h"
 #endif
 #endif
+#if CONFIG_SFR
+#include "radio/radio_sfr.h"
+#endif
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net.h"
 #include "hostlink/hostlink_net_air.h"
@@ -84,7 +87,8 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "squelch=%u\nmonitor=%u\ntone_ok=%u\n", v->squelch, v->monitor, v->tone_ok);
 	dl_text(t, "rssi_dbm=%d\nnoise=%u\n", v->rssi_dbm, v->noise);
 	dl_text(t, "tx_elapsed_ms=%u\ntot_s=%u\n", (unsigned)v->tx_elapsed_ms, v->tot_s);
-	dl_text(t, "last_rx_ms=%u\n", (unsigned)v->last_rx_ms);
+	dl_text(t, "last_rx_ms=%u\nlast_tx_ms=%u\ntx_auto=%u\nwakes=%u\n", (unsigned)v->last_rx_ms,
+		(unsigned)v->last_tx_ms, v->tx_auto, radio_view_wakes(v));
 	dl_text(t, "vfo_step_hz=%u\n", (unsigned)v->vfo_step_hz);
 	dl_text(t, "codeplug=%s\n", v->source < 3 ? sources[v->source] : "?");
 	dl_text(t, "hotspot=%u\n", v->hotspot);
@@ -155,8 +159,11 @@ static void hotspot_section(dl_text_t *t)
 	hostlink_net_air_stats_t as;
 
 	hostlink_net_air_stats(&as);
-	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\nnet.air_failed=%u\n", (unsigned)as.sent,
-		(unsigned)as.refused_busy, (unsigned)(as.dropped + as.too_long), (unsigned)as.failed);
+	// air_busy: dropped after waiting for a busy service or for too long in the queue (view 3; view 2 counted
+	// packets refused because the service was busy); air_full: refused because the air queue was full
+	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\nnet.air_failed=%u\nnet.air_full=%u\n",
+		(unsigned)as.sent, (unsigned)as.dropped, (unsigned)(as.dropped + as.too_long),
+		(unsigned)as.failed, (unsigned)as.refused_full);
 #endif
 #if CONFIG_NET_PPP
 	// The PPP link on the serial host port (docs/spec/ppp.md): LCP / IPCP states as RFC 1661 numbers them (9 open)
@@ -190,26 +197,55 @@ static void hotspot_section(dl_text_t *t)
 #endif
 }
 
-// The MMDVM hotspot's SFR mode (docs/spec/sfr.md), its own section: in the hotspot section the replies outgrew
-// DL_REPLY_MAX and the last keys were cut off
+// The SFR (docs/spec/sfr.md), its own section: in the hotspot section the replies outgrew DL_REPLY_MAX and the last
+// keys were cut off. The runner of whichever mode runs: a channel's repeater role, else the MMDVM hotspot's SFR mode
 static void sfr_section(dl_text_t *t)
 {
-#if CONFIG_HOTSPOT && CONFIG_SFR
+#if CONFIG_SFR
+	radio_sfr_view_t c;
+	bool on, keyed, busy;
+	uint8_t slot;
+	const sfrRunnerStats_t *st;
+	const char *mode;
+
+	radio_sfr_get_view(&c);
+	on = c.on;
+	keyed = c.keyed;
+	busy = c.inbound_busy;
+	slot = c.inbound_slot;
+	st = &c.stats;
+	mode = c.on ? "channel" : "off";
+#if CONFIG_HOTSPOT
 	hotspot_sfr_view_t f;
 
-	hotspot_sfr_get_view(&f);
-	dl_text(t, "sfr.on=%u\nsfr.keyed=%u\nsfr.busy=%u\nsfr.slots=%u>%u\n", f.on, f.keyed, f.inbound_busy,
-		f.inbound_slot + 1u, 2u - f.inbound_slot);
+	if (!c.on) {
+		hotspot_sfr_get_view(&f);
+		on = f.on;
+		keyed = f.keyed;
+		busy = f.inbound_busy;
+		slot = f.inbound_slot;
+		st = &f.stats;
+		mode = f.on ? "hotspot" : "off";
+	}
+#endif
+	dl_text(t, "sfr.on=%u\nsfr.mode=%s\nsfr.keyed=%u\nsfr.busy=%u\nsfr.slots=%u>%u\n", on, mode, keyed, busy,
+		slot + 1u, 2u - slot);
 	dl_text(t, "sfr.rx=%u\nsfr.repeated=%u\nsfr.ignored=%u\nsfr.echo=%u\nsfr.bad_crc=%u\n",
-		(unsigned)f.stats.rx_bursts, (unsigned)f.stats.rx_repeated, (unsigned)f.stats.rx_ignored,
-		(unsigned)f.stats.rx_echo, (unsigned)f.stats.rx_bad_crc);
+		(unsigned)st->rx_bursts, (unsigned)st->rx_repeated, (unsigned)st->rx_ignored,
+		(unsigned)st->rx_echo, (unsigned)st->rx_bad_crc);
 	dl_text(t, "sfr.tx_bursts=%u\nsfr.tx_idle=%u\nsfr.tx_starts=%u\nsfr.up=%u\nsfr.up_lost=%u\n",
-		(unsigned)f.stats.tx_bursts, (unsigned)f.stats.tx_idle, (unsigned)f.stats.tx_starts,
-		(unsigned)f.stats.up_bursts, (unsigned)f.stats.up_lost);
-	dl_text(t, "sfr.tx_beacons=%u\nsfr.tx_gaps=%u\n", (unsigned)f.stats.tx_beacons, (unsigned)f.stats.tx_gaps);
+		(unsigned)st->tx_bursts, (unsigned)st->tx_idle, (unsigned)st->tx_starts,
+		(unsigned)st->up_bursts, (unsigned)st->up_lost);
+	dl_text(t, "sfr.tx_beacons=%u\nsfr.tx_gaps=%u\nsfr.evq_drops=%u\n", (unsigned)st->tx_beacons,
+		(unsigned)st->tx_gaps, (unsigned)c.evq_drops);
 	// Why bursts were ignored: on the outbound slot, another color code; the last one's CC and type (sfrRunner.h)
-	dl_text(t, "sfr.ignored_slot=%u\nsfr.ignored_cc=%u\nsfr.last_ignored=%02x\n", (unsigned)f.stats.rx_ignored_slot,
-		(unsigned)f.stats.rx_ignored_cc, f.stats.last_ignored);
+	dl_text(t, "sfr.ignored_slot=%u\nsfr.ignored_cc=%u\nsfr.last_ignored=%02x\n", (unsigned)st->rx_ignored_slot,
+		(unsigned)st->rx_ignored_cc, st->last_ignored);
+	// The repeated voice's AMBE FEC as heard (frames, Golay bits corrected, frames lost)
+	dl_text(t, "sfr.rx_fec=%u/%u/%u\n", (unsigned)st->rx_fec_frames, (unsigned)st->rx_fec_bits,
+		(unsigned)st->rx_fec_lost);
+	dl_text(t, "sfr.rx_fec_pos=%u/%u/%u\n", (unsigned)st->rx_fec_pos[0], (unsigned)st->rx_fec_pos[1],
+		(unsigned)st->rx_fec_pos[2]);
 #else
 	dl_text(t, "sfr.built=0\n");
 #endif
@@ -228,7 +264,7 @@ static void link_section(dl_text_t *t)
 		(unsigned)u.count, (unsigned)u.locked);
 	dl_text(t, "ui.banner=%s\nui.toast=%s\nui.query=%s\nui.draws=%u\n", u.banner, u.toast, u.query,
 		(unsigned)u.draws);
-	dl_text(t, "input.idle_ms=%u\n", (unsigned)input_idle_ms());
+	dl_text(t, "input.idle_ms=%u\nui.backlight=%u\n", (unsigned)input_idle_ms(), ui_backlight());
 	dl_text(t, "input.source=%s\n", input_last_source() == INPUT_SRC_HOST ? "host" : "keys");
 	dl_text(t, "input.raw_keys=0x%08x\ninput.injected=0x%08x\n", (unsigned)input_raw_keys(),
 		(unsigned)input_injected_keys());
@@ -264,16 +300,24 @@ static void storage_section(dl_text_t *t)
 	dl_text(t, "settings.saves=%u\nsettings.erases=%u\nsettings.failures=%u\n", (unsigned)ss.saves,
 		(unsigned)ss.erases, (unsigned)ss.failures);
 	dl_text(t, "settings.sector=%u\nsettings.slot=%u\nsettings.skipped=%u\n", ss.sector, ss.slot, ss.skipped);
-	settings_t sv;
-	settings_read(&sv);
-	dl_text(t, "settings.auto_lock_s=%u\nsettings.long_press_ms=%u\nsettings.repeat_ms=%u\nsettings.mic_gain=%u\n",
-		sv.auto_lock_s, sv.long_press_ms, sv.repeat_ms, sv.mic_gain);
-	dl_text(t, "settings.theme=%u\nsettings.ui_flags=%u\nsettings.updown_home=%u\nsettings.low_batt_pct=%u\n",
-		settings_theme(&sv), sv.ui_flags, settings_updown_home(&sv), sv.low_batt_pct);
-	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", sv.auto_off_min,
-		sv.privacy_type[0], sv.privacy_active);
+	// The fields shown, read in place: no copy of the whole settings on the host task's stack (its deepest path
+	// comes through here, stack-check.md), and the lock not held while formatting
+	const settings_t *sv = settings_begin();
+	unsigned auto_lock_s = sv->auto_lock_s, long_press_ms = sv->long_press_ms, repeat_ms = sv->repeat_ms;
+	unsigned mic_gain = sv->mic_gain, theme = settings_theme(sv), ui_flags = sv->ui_flags;
+	unsigned updown_home = settings_updown_home(sv), low_batt_pct = sv->low_batt_pct, auto_off_min = sv->auto_off_min;
+	unsigned privacy_type = sv->privacy_type[0], privacy_active = sv->privacy_active;
 	// bit 0 noise reduction off, bit 1 AGC on (settings_t.accent bits 6-7)
-	dl_text(t, "settings.audio_flags=%u\n", (unsigned)((sv.accent & SETTINGS_AUDIO_MASK) >> SETTINGS_AUDIO_SHIFT));
+	unsigned audio_flags = (unsigned)((sv->accent & SETTINGS_AUDIO_MASK) >> SETTINGS_AUDIO_SHIFT);
+
+	settings_end(hal_millis());	// nothing changed: nothing to save
+	dl_text(t, "settings.auto_lock_s=%u\nsettings.long_press_ms=%u\nsettings.repeat_ms=%u\nsettings.mic_gain=%u\n",
+		auto_lock_s, long_press_ms, repeat_ms, mic_gain);
+	dl_text(t, "settings.theme=%u\nsettings.ui_flags=%u\nsettings.updown_home=%u\nsettings.low_batt_pct=%u\n",
+		theme, ui_flags, updown_home, low_batt_pct);
+	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", auto_off_min,
+		privacy_type, privacy_active);
+	dl_text(t, "settings.audio_flags=%u\n", audio_flags);
 	dl_text(t, "storage.job_busy=%u\n", storage_job_busy());
 	dl_text(t, "storage.sector_writes=%u\nstorage.sector_skips=%u\n", (unsigned)st.sector_writes,
 		(unsigned)st.sector_skips);
@@ -317,7 +361,7 @@ static void storage_section(dl_text_t *t)
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-						  "sfr", "tasks", "crash", "watchdog", "reset" };
+						  "sfr", "tasks", "crash", "watchdog", "reset", "air" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -404,6 +448,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_RESET:
 		debuglink_view_reset(t);
+		break;
+	case DL_VIEW_AIR:
+		debuglink_view_air(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

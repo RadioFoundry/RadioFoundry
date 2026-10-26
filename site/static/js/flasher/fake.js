@@ -76,11 +76,14 @@ export async function simulation(fbReal, boardId, seed = 1701) {
 	if (real.placement) {
 		const [[, code], [tabAddr, tables]] = stockSegments;
 		const pl = real.placement;
+		const cut = tables.slice(0, pl.tables_len ?? tables.length);	// the codec's own data, the map's cut
 		prof.map = { format: "rfoundry-codec-map/1", profile: "sim-" + boardId, board: boardId, isa: "thumb2",
 			code: { flash: run, len: code.length, run, sha256: windows[0][2] }, entries: {},
 			self_refs: [{ kind: "word", off: SYN_SELF_REF, value: run + 0x201 }], island_ptrs: [], table_refs: [], island_refs: [],
 			islands: [{ start: tabAddr + SYN_BL - 0x10, len: 0x40 }], branches: [{ at: tabAddr + SYN_BL, target: run + 0x200, kind: "bl" }],
-			objects: [], groups: [], outside_refs: [] };
+			objects: [], groups: [], outside_refs: [],
+			table_windows: [{ id: "tables", flash: tabAddr, run: tabAddr, len: tables.length, min_start: tabAddr, min_len: cut.length,
+				min_sha256: await sha256(cut) }] };
 		const mc = await moveCode(code, prof.map, pl.code);
 		const mt = moveBranches(tabAddr, tables.slice(0, pl.tables_len ?? tables.length), prof.map, pl.code);
 		prof.placed = { code: [crc32(mc), await sha256(mc)], tables: [crc32(mt), await sha256(mt)] };
@@ -88,7 +91,7 @@ export async function simulation(fbReal, boardId, seed = 1701) {
 	fb.profiles[sha] = prof;
 	fb.known_files[sha] = real.version + " (simulated)";
 	const codecSegments = await place(prof, stockSegments, fb);
-	return { fb, board, key, stock, codecSegments, stockSegments };
+	return { fb, board, key, stock, codecSegments, stockSegments, profile: prof };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -97,10 +100,11 @@ export class FakeRadio {
 	// state: "stock" (stock firmware: codec in place, no serial port), "rfoundry", "rfoundry-nocodec", "bootloader".
 	// stubEntry: RadioFoundry built with CONFIG_STUB_ENTRY; adopt: the stub keeps RadioFoundry's USB device (else the port goes away
 	// and serialStream() gives the new one); cutAfter: stub programs before the "cable" is pulled. stubVersion: the
-	// STM32F4 stub's protocol (4: CONFIG and the record echo; 2 and 3: the DM-1701's wiring built in); stubConfig: what the
-	// stub does with a record it would accept ("ok", "refuse": answers bad argument, "garble": accepts it but HELLO
-	// echoes different bytes)
-	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 4, stubConfig = "ok" } = {}) {
+	// STM32F4 stub's protocol (5: the security register ops, which this fake and the page leave out; 4: CONFIG and the
+	// record echo; 2 and 3: the DM-1701's wiring built in); stubConfig: what the stub does with a record it would
+	// accept ("ok", "refuse": answers bad argument, "garble": accepts it but HELLO echoes different bytes).
+	// state "openfw": another open firmware runs (installOpenFirmware; await radio.ready before using it), options in openfw
+	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {}, flashKb = 1024 } = {}) {
 		this.sim = sim;
 		this.board = sim.board;
 		this.key = sim.key;
@@ -119,6 +123,7 @@ export class FakeRadio {
 		this.mode = state === "bootloader" ? "bootloader" : "normal";
 		this.git = "5f034440";
 		this.stubEntry = stubEntry;
+		this.flashKb = flashKb;	// the chip's flash size register: some parts read less than the flash they have
 		this.adopt = adopt;
 		this.cutAfter = cutAfter;
 		this.stubVersion = stubVersion;
@@ -130,6 +135,7 @@ export class FakeRadio {
 		this.port = 0;
 		this.resetDfu();
 		this.log = [];
+		this.ready = state === "openfw" ? this.installOpenFirmware(openfw) : Promise.resolve();
 	}
 
 	resetDfu() {
@@ -229,6 +235,8 @@ export class FakeRadio {
 		const s = {
 			buf: new Uint8Array(0),
 			inb: new Uint8Array(0),
+			received: 0,
+			first: new Uint8Array(0),
 			clear() { s.buf = new Uint8Array(0); },
 			take(n) { const o = s.buf.slice(0, n); s.buf = s.buf.slice(n); return o; },
 			async write(data) {
@@ -237,6 +245,14 @@ export class FakeRadio {
 					if (radio.cutAfter !== null && radio.programs >= radio.cutAfter) throw new Error("the device has been lost");
 					s.inb = concat(s.inb, data);
 					s.inb = radio.stubFeed(s.inb, (b) => { s.buf = concat(s.buf, b); });
+					return;
+				}
+				if (radio.mode === "normal" && radio.running === "openfw") {
+					// what came in, as SerialStream counts it: link.js silence() tells this firmware by its first byte
+					const a = radio.openfwAnswer(data);
+					s.buf = concat(s.buf, a);
+					s.received += a.length;
+					if (s.first.length < 16) s.first = concat(s.first, a.subarray(0, 16 - s.first.length));
 					return;
 				}
 				if (radio.mode !== "normal" || !radio.running.startsWith("rfoundry")) throw new Error("no serial port: the radio isn't running RadioFoundry");
@@ -304,7 +320,7 @@ export class FakeRadio {
 			if (!spiSize) return reply(BADARG);	// no chip answered, or not configured
 		}
 		if (op === 0x01) {
-			let body = concat(new TextEncoder().encode("F4STUB"), new Uint8Array([this.stubVersion, 0x10, 0x08, 0x04, 0x00, 0x55,
+			let body = concat(new TextEncoder().encode("F4STUB"), new Uint8Array([this.stubVersion, 0x10, 0x08, this.flashKb >> 8, this.flashKb & 0xFF, 0x55,
 				(this.adopt ? 1 : 0) | (cfg && rec ? 0x80 : 0)]), be32(cfg ? appBase : APP_BASE), be32(spiSize),
 				new Uint8Array([0xEF, 0x40, 0x18]));
 			if (cfg) {
@@ -331,6 +347,7 @@ export class FakeRadio {
 			reply(OK, body);
 		} else if (op === 0x09) {
 			const a = u32be(p, 0), k = p[4];
+			if (!isSpi(6) && a + k * 4096 > FLASH_BASE + this.flashKb * 1024) return reply(BADARG);	// past the register's size
 			const [m, o0] = mem(6, a);
 			for (let i = 0; i < k; i++) {
 				const blk = m.subarray(o0 + i * 4096, o0 + (i + 1) * 4096);
@@ -377,6 +394,81 @@ export class FakeRadio {
 		this.running = this.codecReport() === "absent" ? "rfoundry-nocodec" : "rfoundry";
 	}
 
+	// Another open firmware on the radio, as far as docs/spec/open-firmware-cps.md says and as a radio was seen to behave:
+	// its own code where the stock firmware was, the stock codec moved to codecAt (its self references and, with tables
+	// "patched", the islands' calls into it rewritten by the codec map; "stock": the tables as stock left them), or no
+	// codec at all (codec false). Its CPS port: R 1 / R 2 clipped to clip bytes with the VFO overlay (0xEE here) on a read
+	// that spans it; R 5 the MCU flash with no bounds check (a read past the end faults the radio: silent until
+	// powerCycle()); R 9 the radio info; R 10 no answer; C and anything else "-". hangAfter N: the Nth read goes
+	// unanswered, then hangFor more requests (0: until powerCycle()). refuse5: area 5 refused ("-") from this offset.
+	// Every request is logged in openfwLog
+	async installOpenFirmware({ codecAt = null, tables = "patched", codec = true, radioType = null, git = "sim-open1", clip = 2045,
+		hangAfter = 0, hangFor = 0, refuse5 = null } = {}) {
+		const r = rng(77);
+		for (const [a, d] of [...this.sim.codecSegments, ...this.sim.stockSegments]) this.flash.set(randomBytes(r, d.length), a - FLASH_BASE);
+		this.openfw = { radioType: radioType ?? this.board.cps_radio_types?.[0] ?? 6, git, clip, hangAfter, hangFor, refuse5, reads: 0, silent: 0, dead: false, controls: 0 };
+		this.openfwLog = [];
+		if (!codec) return;
+		const m = this.sim.profile.map;
+		if (!m) {
+			for (const [a, d] of this.sim.stockSegments) this.flash.set(d, a - FLASH_BASE);
+			return;
+		}
+		const [[run, code], [tabAddr, tabs], ...extra] = this.sim.stockSegments;
+		const at = codecAt ?? this.board.app_base + 0x1000 + (run & 3);
+		this.openfw.codecAt = at;
+		this.flash.set(await moveCode(code, m, at), at - FLASH_BASE);
+		this.flash.set(tables === "patched" ? moveBranches(tabAddr, tabs, m, at) : tabs, tabAddr - FLASH_BASE);
+		for (const [a, d] of extra) this.flash.set(d, a - FLASH_BASE);
+	}
+
+	powerCycle() {
+		if (this.openfw) Object.assign(this.openfw, { dead: false, silent: 0, hangAfter: 0 });
+	}
+
+	openfwAnswer(req) {
+		const o = this.openfw, none = new Uint8Array(0), refuse = new Uint8Array([0x2D]);
+		if (req[0] !== 0x52) {
+			if (req[0] === 0x43) o.controls++;
+			this.openfwLog.push(req[0] === 0x43 ? `C ${req[1]}` : `other 0x${req[0].toString(16)}`);
+			return o.dead ? none : refuse;
+		}
+		const area = req[1], addr = u32be(req, 2), len = u16be(req, 6);
+		this.openfwLog.push(`R ${area} 0x${addr.toString(16)} ${len}`);
+		o.reads++;
+		if (o.dead) return none;
+		if (o.silent) { o.silent--; return none; }
+		if (o.hangAfter && o.reads === o.hangAfter) {
+			if (o.hangFor) o.silent = o.hangFor;
+			else o.dead = true;
+			return none;
+		}
+		const n = Math.min(len, o.clip);
+		const reply = (d) => concat(new Uint8Array([0x52, d.length >> 8, d.length & 0xFF]), d);
+		if (area === 1 || area === 2) {
+			if (area === 2 && addr + n > 0x10000) return refuse;
+			if (addr + n > this.spi.length) return refuse;
+			const d = this.spi.slice(addr, addr + n);
+			if (addr <= 0x7590 && addr + n > 0x7600 + 8) d.fill(0xEE, 0x7590 - addr, 0x7600 - addr);
+			return reply(d);
+		}
+		if (area === 5) {
+			if (addr + n > this.flash.length) { o.dead = true; return none; }
+			if (o.refuse5 !== null && addr + n > o.refuse5) return refuse;
+			return reply(this.flash.slice(addr, addr + n));
+		}
+		if (area === 9) {
+			const d = new Uint8Array(46);
+			d.set(le32(3), 0); d.set(le32(o.radioType), 4);
+			d.set(new TextEncoder().encode(o.git.slice(0, 16)), 8);
+			d.set(new TextEncoder().encode("20261025120000"), 24);
+			d.set(le32(0x4018), 40);
+			return reply(d);
+		}
+		if (area === 10) return none;
+		return refuse;
+	}
+
 	serialAnswer(req) {
 		if (req[0] === 0xA5) {
 			const f = parseFrames(req)[0];
@@ -387,7 +479,7 @@ export class FakeRadio {
 			}
 			if (f.cmd === 0x0B) {
 				const p = new Uint8Array(28);
-				p.set(le32(0x0009A413), 0); p[4] = 0x00; p[5] = 0x04; p.set(this.uid, 6); p.set(le32(0x0FFF55ED), 18); p[22] = 1; p[23] = 0x55;
+				p.set(le32(0x0009A413), 0); p[4] = this.flashKb & 0xFF; p[5] = this.flashKb >> 8; p.set(this.uid, 6); p.set(le32(0x0FFF55ED), 18); p[22] = 1; p[23] = 0x55;
 				return ok(p);
 			}
 			if (f.cmd === 0x1A && this.stubEntry) {

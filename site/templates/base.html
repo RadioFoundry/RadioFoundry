@@ -6,6 +6,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }} · RadioFoundry</title>
 <meta name="description" content="{{ description }}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="RadioFoundry">
+<meta property="og:title" content="{{ title }} · RadioFoundry">
+<meta property="og:description" content="{{ description }}">
+<meta property="og:url" content="{{ url }}">
+<meta property="og:image" content="{{ og_image }}">
+<meta property="og:image:width" content="{{ og_width }}">
+<meta property="og:image:height" content="{{ og_height }}">
+<meta property="og:image:alt" content="{{t site.preview_alt}}">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="generator" content="site/build.py {{ git }}">
 <link rel="icon" href="{{root}}static/img/icon.svg?v={{ assets }}" type="image/svg+xml">
 <link rel="icon" href="{{root}}static/img/icon-32.png?v={{ assets }}" type="image/png" sizes="32x32">
@@ -35,9 +45,19 @@
 </main>
 <footer class="site-footer">
 	{{{ footer }}}
+	<div class="wrap footer-help">
+		<a class="help-card" href="{{ community }}" target="_blank" rel="noopener">
+			<span class="icon icon-facebook help-card-icon" aria-hidden="true"></span>
+			<span><strong>{{t footer.community_title}}</strong><span class="small muted">{{t footer.community_text}}</span></span>
+		</a>
+		<a class="help-card" href="{{ repo }}/issues/new/choose" target="_blank" rel="noopener">
+			<span class="icon icon-github help-card-icon" aria-hidden="true"></span>
+			<span><strong>{{t footer.issues_title}}</strong><span class="small muted">{{t footer.issues_text}}</span></span>
+		</a>
+	</div>
 	<div class="wrap footer-row">
-		<p>{{t footer.license}} · <a href="{{ repo }}">{{t footer.source}}</a> · <a href="{{ home }}docs/index.html">{{t nav.docs}}</a></p>
-		<p class="build-stamp"><a href="{{ repo }}/commit/{{ git_full }}">{{ git_stamp }}</a> · <time datetime="{{ built_iso }}">{{ built_at }}</time></p>
+		<p>{{t footer.license}} · <a href="{{ repo }}">{{t footer.source}}</a> · <a href="{{ community }}" target="_blank" rel="noopener">{{t footer.community}}</a> · <a href="{{ home }}docs/index.html">{{t nav.docs}}</a></p>
+		<p class="build-stamp">{{{ firmware_release }}} · <a href="{{ repo }}/commit/{{ git_full }}">{{ git_stamp }}</a> · <time datetime="{{ built_iso }}">{{ built_at }}</time></p>
 	</div>
 </footer>
 <script type="module" src="{{root}}static/js/site.js?v={{ assets }}"></script>

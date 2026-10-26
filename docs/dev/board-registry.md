@@ -55,6 +55,7 @@ neighbor on the same platform.
 | `kind` | `handheld` or `mobile` | |
 | `part_of` | string, optional | The radio this board is a second SoC of. The generated tables and the site list only that radio, which flashes this board through its bridge (`[flash.stub] bridge`). The board keeps no codeplug and draws no screen, so the flash map and frame buffer checks are the radio's |
 | `debuglink_aliases` | list, optional | Names older firmware reported on the debug link |
+| `looks` | list of tables, optional | Other bodies the board ships in that look too different to share its picture: `{ id, name, also }`. Each is its own radio card on the site, drawn in `site/static/img/radios/src/<id>-<look id>.svg` (the site build refuses a missing drawing), and links to the board's page. `name` and every entry of `also` (the radios in that body) must be in the board's `also`; the board's own card lists the rest |
 
 ### [docs]
 
@@ -120,6 +121,7 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 | `stock_download` | Optional: where the stock firmware can be downloaded |
 | `stock_versions` | The stock versions the tools know |
 | `backup` | `{ stock, rfoundry, spi_size }`: what a backup reads from stock firmware and from RadioFoundry (`none` or `full`), and the SPI flash size |
+| `notice` | Optional: a warning the web flasher shows on every step once the radio is picked, for a choice the radio can't check itself (two images that differ in hardware the radio can't report, for example) |
 
 `[flash.bootloader]`:
 
@@ -127,6 +129,7 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 |---|---|
 | `steps` | How to enter the bootloader, one step per item, for the web flasher and the manual |
 | `keys` | Optional: the short form the tools print |
+| `hold` | Optional: the keys held to enter it, by key name (the board's `KEY_*` in lower case, `["ptt", "sk1"]`). The web flasher marks them on the radio's picture and names them under it; `steps` stays the instructions. Each must be a key of the board (`tools/boards.py check`) and tagged in its drawing or listed in `data-undrawn` ([Radio images](website.md#radio-images)) |
 | `id` | Optional: the string the loader answers, also the magic of its files (`serial-loader`) |
 | `sign` | Optional: what the radio shows in the bootloader |
 
@@ -158,6 +161,13 @@ stock files' profiles. The files must hold the same codec; each may put its tabl
 codec windows are the union of every file's layout. The image must stay out of all of them, and keeping the codec keeps
 all of them. A merge writes and checks the layout of the file it merges
 ([codec-placement.md](../spec/codec-placement.md)).
+
+### [cps]
+
+`radio_types`: the radio types the open-firmware CPS radio info reports for this radio
+([open-firmware-cps.md](../spec/open-firmware-cps.md) 4). RadioFoundry's CPS shim reports them, and the web flasher
+checks them before it backs up a radio that runs another open firmware. The registry carries them as
+`cps_radio_types`, with `rom_base` (the platform's `flash_base`, where the CPS's area 5 offsets start).
 
 ### [frame]
 

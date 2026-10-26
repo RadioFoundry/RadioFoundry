@@ -84,7 +84,9 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
 The image carries the commit it was built from (`RFOUNDRY_GIT`, shown on the splash screen, in the debug link's VERSION
 and in the MMDVM GET_VERSION description) with `-dirty` appended when tracked files differ from that commit or untracked
 sources sit in the built directories. The build prints it on the image line (`image ...: N bytes, version
-c1544f29-dirty`). An image for anyone else is built from a clean, committed tree.
+c1544f29-dirty`). An image for anyone else is built from a clean, committed tree. A clean build of a release tag also
+carries the release name (`RFOUNDRY_RELEASE`, [release.md](../dev/release.md#release-names)): the splash screen shows it
+in place of the commit, About and the debug link's VERSION (`release=`) show both.
 
 ### The UI without a radio
 

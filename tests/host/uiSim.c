@@ -87,13 +87,33 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "channel_contact", "ok 5 ok down down down down down down down down down ok" },
 	{ "channel_discard", "ok 5 ok down down down down down ok enc+ ok back" },
 	{ "channel_new", "ok 5 up up up ok" },
+#if CONFIG_ZONE_SHARE
+	{ "channel_share", "ok 5 ok up up" },	// the channel editor's Share channel to...
+#endif
 	{ "zone_channels", "ok 4 ctx" },
+#if CONFIG_ZONE_EDIT
+	{ "zone_share_to", "ok 4 ctx down down ctx 5" },	// Channel actions' Share channel to...
+#else
+	{ "zone_share", "ok 4 ctx down down ctx" },
+	{ "zone_share_to", "ok 4 ctx down down ctx 1" },
+#endif
+	{ "banner_zone_offer", "zoneoffer:3101234" },
+	{ "zone_offer", "zoneoffer:3101234 ctx" },
+	{ "zone_offer_preview", "zoneoffer:3101234 ctx 2" },
+	{ "zone_offer_ch", "zoneoffer:3101234,c ctx" },
+	{ "tools_zone_offer", "zoneoffer:3101234 wait:9000 ok 6 down down down down down down down down down" },	// Tools > Zones/Chs Received
+	{ "zone_offer_channel", "zoneoffer:3101234,c ctx 1" },
+	{ "zone_imported", "zoneoffer:3101234 ctx 1 wait:300" },
 #if CONFIG_ZONE_EDIT
 	// The zone editor (ui.md 2.2)
 	{ "zone_actions", "ok 4 ctx ctx" },
 	{ "zone_add", "ok 4 ctx 2 ok" },
 	{ "zone_options", "ok 4 ctx up up up up ok" },
+#if CONFIG_ZONE_SHARE
+	{ "zone_delete", "ok 4 ctx up up up up ok 4" },	// after Share zone to...
+#else
 	{ "zone_delete", "ok 4 ctx up up up up ok 3" },
+#endif
 #endif
 	{ "tools", "ok 6" },
 	{ "position", "ok 6 2" },
@@ -139,6 +159,10 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 	{ "emergency", "emergency:3101234" },
 	{ "volume", "softvol volkey up up" },
+#if CONFIG_DMR
+	{ "dmr_id", "ok 7 9 ok" },		// Settings > My radio
+	{ "dmr_id_entry", "ok 7 9 ok 3 1 0 9" },
+#endif
 	{ "volume_muted", "softvol volkey down down down down down down down down" },
 	{ "hotspot", "hotspot:on" },
 };

@@ -43,6 +43,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gen_webctl_assets  # noqa: E402
 import registry_docs  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -55,13 +56,14 @@ KINDS = ("handheld", "mobile")
 CLOCKS = ("backed", "unbacked", "none", "unknown")
 # The flashing routes, named by protocol (rfoundry cli.py, site/static/js/flasher): the cable they need, and the
 # board.toml keys a board on the route must have
-# web: the web flasher's backend for the family (site/static/js/flasher/backends.js); update_mode: the vendor loader's
-# update mode the page can write through when nothing else answers (iap.js), or None
+# web: the web flasher's backend for the family (site/static/js/flasher/backends.js); update_mode: the protocol of the
+# radio's own update mode, which the page writes through when nothing else answers or its boot ROM load fails (iap.js,
+# bfloader.js), or None. A board on such a family walks the user into it with flash.bootloader steps
 FAMILIES = {
     "usb-dfu": {"link": "usb", "needs": ("flash.dfu",), "web": "anyroad-dfu", "update_mode": None},	# a USB DFU
     # bootloader with a per-model XOR key
     "serial-loader": {"link": "serial-cable", "needs": ("flash.bootloader.id", "flash.bootloader.keys"),
-                      "web": "c7000-stub", "update_mode": None},	# a serial bootloader started by a key
+                      "web": "c7000-stub", "update_mode": "baofeng"},	# a serial bootloader started by a key
     # combination, speaking its own file format (tools/serial_loader.py)
     "serial-iap": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": "iap"},	# a vendor IAP
     # loader on the cable, through the RAM stub
@@ -117,6 +119,11 @@ def _req(spec):
 
 
 STR_LIST = ("list", str)
+# The HIL pass limits a board can override ([hil.limits]): name -> the check that reads it
+HIL_LIMITS = {
+    "dmr_tx_ramp_ms": "a DMR TX burst's key-up and key-down ramps, each (tools/bench/dmr_bench.py check_tx)",
+}
+HIL_LIMIT = {"value": _req(float), "reason": _req(str)}
 RANGE = ("list", int)
 
 BOARD_SCHEMA = {
@@ -128,6 +135,11 @@ BOARD_SCHEMA = {
     "kind": _req(KINDS),
     "order": _req(int),		# where the radio appears in the site's lists; the lowest is the home page's radio
     "part_of": _opt(str),
+    # other bodies the same board ships in that look too different to share its picture: each is its own card on the
+    # site, drawn in site/static/img/radios/src/<id>-<look id>.svg (the site build refuses a missing one), and links to
+    # the board's page. name is one of also;
+    # also lists the radios in that body (each one of the board's also too)
+    "looks": _opt(("list", {"id": _req(str), "name": _req(str), "also": _opt(STR_LIST)})),
     "debuglink_aliases": _opt(STR_LIST),
     "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
     # unconfirmed: a hardware switch (tests/hil/features.toml hardware) that is neither built nor in
@@ -149,9 +161,14 @@ BOARD_SCHEMA = {
         "keep_codec": _req(bool),
         "sectors": _opt(str),
         "stock_download": _opt(str),
+        # a warning the web flasher shows on every step once the radio is picked: a choice the radio can't check itself
+        "notice": _opt(str),
         "stock_versions": _req(STR_LIST),
         "backup": _req({"stock": _req(("none", "full")), "rfoundry": _req(("none", "full")), "spi_size": _req(int)}),
-        "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str)}),
+        # hold: the keys held to enter it, by their key names (the board's KEY_* in lower case, as the drawing's
+        # key-<name> ids), for the web flasher's picture; steps stays the instructions
+        "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str),
+                            "hold": _opt(STR_LIST)}),
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
                      "key_sha256": _req(str), "key_prefix": _req(str)}),
         # a board profile of its platform's stub (platform.toml board_stub): id and tested always, the keys the
@@ -177,11 +194,13 @@ BOARD_SCHEMA = {
     "frame": _req({"shape": _req(str), "body": _req(str), "accent": _req(str), "lens": _req(RANGE)}),
     # tests/hil: what the health checks expect (test_health.py), and the features built here but not working yet
     # (tools/bringup.py, which checks the feature ids; what the hardware lacks is config.mk's BOARD_UNSUPPORTED, code
-    # not written for the radio its BOARD_NOT_WRITTEN)
+    # not written for the radio its BOARD_NOT_WRITTEN). limits: a HIL pass limit this radio is held to instead of the
+    # test's default, by name (HIL_LIMITS), with the reason the check prints beside its result
     "hil": _opt({"display": _opt(str), "features": _opt(STR_LIST), "no_features": _opt(STR_LIST),
                  "flash_jedec": _opt(STR_LIST), "calibration": _opt(bool), "battery_mv": _opt(RANGE),
                  "supply_mv": _opt(RANGE),
-                 "codec": _opt(STR_LIST)}),
+                 "codec": _opt(STR_LIST),
+                 "limits": _opt({name: _opt(HIL_LIMIT) for name in HIL_LIMITS})}),
     "features": _opt(("map", {"state": _req(("unsupported",)), "reason": _req(str)})),
     # the open-firmware CPS radio types the board's hal_cps_t reports (docs/spec/cps-protocol.md 2.2, test_cps.py)
     "cps": _opt({"radio_types": _req(("list", int))}),
@@ -236,6 +255,9 @@ def validate(value, spec, where):
     elif spec is int:
         if not isinstance(value, int) or isinstance(value, bool):
             raise RegistryError("%s: an integer expected" % where)
+    elif spec is float:
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise RegistryError("%s: a number expected" % where)
     elif not isinstance(value, spec):
         raise RegistryError("%s: %s expected" % (where, spec.__name__))
 
@@ -313,10 +335,40 @@ def _braced(text, start):
 
 
 def _c_sources(board_dir):
-    for f in sorted(os.listdir(board_dir)):
-        if f.endswith(".c"):
-            with open(os.path.join(board_dir, f), encoding="utf-8") as fh:
-                yield f, _strip_c_comments(fh.read())
+    """(name, text) of the *.c in a board directory, or in each of a list of them (the board's own and the board family
+    directories its BOARD_DIRS lists, shared_board_dirs)."""
+    for d in [board_dir] if isinstance(board_dir, str) else board_dir:
+        for f in sorted(os.listdir(d)):
+            if f.endswith(".c"):
+                with open(os.path.join(d, f), encoding="utf-8") as fh:
+                    yield f, _strip_c_comments(fh.read())
+
+
+def shared_board_dirs(root, bid, mk):
+    """The directories under boards/ besides boards/<bid> that the board's BOARD_DIRS builds: code a family of radios
+    shares (boards/uv380_family), which has no board.mk of its own."""
+    out = []
+    for d in mk.get("BOARD_DIRS", "").split():
+        parts = d.strip("/").split("/")
+        if parts[0] == "boards" and len(parts) == 2 and parts[1] != bid and os.path.isdir(os.path.join(root, d)):
+            out.append(os.path.join(root, d))
+    return out
+
+
+def key_names(root, bid, mk):
+    """The board's key names, its KEY_* enum in lower case without KEY_ (the drawing's key-<name> ids,
+    tools/gen_webctl_assets.py): from boards/<bid>/<bid>.h, else the first header with the enum in the board's
+    directory or a family directory it builds. None without one."""
+    wa = gen_webctl_assets
+    own = os.path.join(root, "boards", bid, bid + ".h")
+    heads = [own] if os.path.isfile(own) else []
+    for d in [os.path.join(root, "boards", bid)] + shared_board_dirs(root, bid, mk):
+        heads += [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.endswith(".h")]
+    for p in heads:
+        with open(p, encoding="utf-8") as f:
+            if wa.ENUM.search(re.sub(r"//[^\n]*|/\*.*?\*/", "", f.read(), flags=re.S)):
+                return set(wa.key_bits(p))
+    return None
 
 
 def source_volts(board_dir):
@@ -418,8 +470,13 @@ def pin_defines(path):
         return {}
     with open(path, encoding="utf-8") as f:
         text = _strip_c_comments(f.read())
-    out = {m.group(1): int(m.group(2), 0)
-           for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?((?:0[xX][0-9a-fA-F]+|\d+))[uU]?\)?\s*$", text)}
+    # A board's pins.h may take a family's pin map (#include "../uv380_family/pins.h"): its defines first, the file's
+    # own after them
+    out = {}
+    for inc in re.findall(r'(?m)^\s*#\s*include\s+"([^"]+/pins\.h)"', text):
+        out.update(pin_defines(os.path.normpath(os.path.join(os.path.dirname(path), inc))))
+    out.update({m.group(1): int(m.group(2), 0)
+                for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?((?:0[xX][0-9a-fA-F]+|\d+))[uU]?\)?\s*$", text)})
     out.update({m.group(1): "P%s%d" % (m.group(2), int(m.group(3)))
                 for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+GPIO([A-K])\s*,\s*GPIO_PIN_(\d+)\s*$", text)})
     return out
@@ -681,13 +738,14 @@ def load(root=ROOT, only=None):
         plat = platforms.get(mk.get("PLATFORM", ""))
         if plat is None:
             raise RegistryError("boards/%s: PLATFORM %r has no platform/<p>/platform.toml" % (bid, mk.get("PLATFORM")))
-        out[bid] = Board(data, plat, mk, _layout(root, bid, mk), board_t_names(bdir),
+        srcs = [bdir] + shared_board_dirs(root, bid, mk)
+        out[bid] = Board(data, plat, mk, _layout(root, bid, mk), board_t_names(srcs),
                          pin_defines(os.path.join(bdir, "pins.h")),
                          # the platform's config.mk adds its own switches (no USB on a platform without it); the
                          # board's reason wins for a switch both list
                          {**unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
-                          **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(bdir))
-        out[bid].volts = source_volts(bdir)
+                          **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(srcs))
+        out[bid].volts = source_volts(srcs)
         nw = {**not_written_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
               **not_written_reasons(os.path.join(bdir, "config.mk"))}
         out[bid].not_written = {s: nw.get(s, "") for s in mk.get("BOARD_NOT_WRITTEN", "").split()}
@@ -815,6 +873,23 @@ def check(root=ROOT):
         for k, p in d["docs"].items():
             if not os.path.isfile(os.path.join(root, p)):
                 bad("docs.%s %s doesn't exist" % (k, p))
+        for lk in d.get("looks", []):
+            for n in [lk["name"]] + lk.get("also", []):
+                if n not in d["also"]:
+                    bad("looks %s: %r is not in also" % (lk["id"], n))
+        if b.family["update_mode"] and not d["flash"]["bootloader"]["steps"]:
+            bad("flash.bootloader.steps is empty: the web flasher walks the user into the %s update mode with them"
+                % b.family["update_mode"])
+        hold = d["flash"]["bootloader"].get("hold", [])
+        if hold:
+            names = key_names(root, bid, b.mk)
+            if len(set(hold)) != len(hold):
+                bad("flash.bootloader.hold names a key twice")
+            if names is None:
+                bad("flash.bootloader.hold: no key enum (an enum ending in KEY_COUNT) in the board's headers")
+            elif set(hold) - names:
+                bad("flash.bootloader.hold: %s is not a key of the board (its keys: %s)"
+                    % (", ".join(sorted(set(hold) - names)), ", ".join(sorted(names))))
         if d.get("part_of") is not None and d["part_of"] not in boards:
             bad("part_of %r is not a board" % d["part_of"])
         if not b.source_names:
@@ -1000,6 +1075,9 @@ def rfoundry_view(boards):
             "id": bid, "name": d["name"], "model": d["model"], "part_of": d.get("part_of"),
             "platform": b.platform.id, "platform_stubs": list(b.platform.data["stubs"]), "family": fl["family"],
             "link": b.link, "release": d["status"]["release"], "debuglink_names": b.debuglink_names(),
+            # rom_base: the MCU flash's first byte (the platform's flash_base), where the open-firmware CPS's area 5
+            # offsets start (docs/spec/open-firmware-cps.md 3)
+            "rom_base": b.platform.data["flash_base"],
             "app_base": b.app_base, "flash_end": b.flash_end(), "app_region": list(b.app_region),
             "sectors": [list(s) for s in b.sectors()], "protected": [list(p) for p in b.protected],
             "keep_codec_supported": fl["keep_codec"],
@@ -1015,11 +1093,15 @@ def rfoundry_view(boards):
             "codec_tables": list(b.window("__codec_tab_lo", "__codec_tab_hi") or ()) or None,
             "loader_id": fl["bootloader"].get("id"), "loader_keys": fl["bootloader"].get("keys"),
             "loader_sign": fl["bootloader"].get("sign", ""),
+            # what rfoundry tells the user: how to reach the bootloader, where the stock files come from
+            "bootloader_steps": list(fl["bootloader"].get("steps", [])), "stock_download": fl.get("stock_download"),
             "key_sha256": dfu["key_sha256"] if dfu else None, "key_prefix": dfu["key_prefix"] if dfu else None,
             "dfu_ids": [dfu["vid"], dfu["pid"]] if dfu else None,
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
             "stub": b.stub(),
             "build_options": d.get("build_options", []),		# rfoundry asks with the same words as the site
+            # the radio types another open firmware's CPS radio info reports for this radio (board.toml [cps])
+            "cps_radio_types": list(d.get("cps", {}).get("radio_types", [])),
         }
         out[bid] = e
     return {"format": "rfoundry-board-registry/2",
@@ -1089,12 +1171,16 @@ def _product(opts):
     for n, vals in opts:
         combos = [c + [(n, v)] for c in combos for v in vals]
     return combos
+
+
 def _site_flash(b):
     """A board's flash entry for the site (radios.json flash)."""
     d, fl = b.data, b.data["flash"]
     stub = fl.get("stub") or {}
     flash = {"backend": b.family["web"], "board": b.id, "family": fl["family"], "link": b.link,
              "bootloader": list(fl["bootloader"]["steps"]), "stock_versions": list(fl["stock_versions"]),
+             # the keys to hold, by key name: the flasher marks them on the radio's picture (radiotop.js)
+             "bootloader_hold": list(fl["bootloader"].get("hold", [])),
              # the image starts with a first stage of this size, its first word this signature (board.mk BOOT_*)
              "first_stage": {"size": b.first_stage[0], "head": b.first_stage[1].hex()} if b.first_stage else None,
              "stock_console": stub.get("stock_console"), "update_mode": b.family["update_mode"],
@@ -1102,6 +1188,8 @@ def _site_flash(b):
              "build_options": json.loads(json.dumps(d.get("build_options", [])))}
     if "stock_download" in fl:
         flash["stock_download"] = fl["stock_download"]
+    if "notice" in fl:
+        flash["notice"] = fl["notice"]
     if stub:
         flash["stub_tested"] = stub["tested"]
     return flash
@@ -1131,6 +1219,7 @@ def site_view(boards, root=ROOT):
             "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
+            "looks": json.loads(json.dumps(d.get("looks", []))),
             "unsupported": dict(b.unsupported), "not_written": dict(b.not_written), "volts": b.volts,
             "clock": hw["clock"]["rtc"]})
     # the survey's radios without a board, planned or in progress (docs/spec/radios.md Port cells)
@@ -1364,12 +1453,19 @@ def self_test():
                       ({"hil": {"no_such": 1}}, "an unknown [hil] key"),
                       ({"features": {"usb": {"state": "maybe", "reason": "x"}}}, "a [features] state"),
                       ({"features": {"usb": {"state": "unsupported"}}}, "a [features] entry without a reason"),
-                      ({"cps": {"radio_types": ["8"]}}, "a [cps] radio type that isn't a number")):
+                      ({"cps": {"radio_types": ["8"]}}, "a [cps] radio type that isn't a number"),
+                      ({"hil": {"limits": {"no_such_ms": {"value": 1, "reason": "x"}}}}, "a [hil.limits] name it doesn't know"),
+                      ({"hil": {"limits": {"dmr_tx_ramp_ms": {"value": 1.75}}}}, "a [hil.limits] entry without a reason"),
+                      ({"hil": {"limits": {"dmr_tx_ramp_ms": {"value": "1.75", "reason": "x"}}}},
+                       "a [hil.limits] value that isn't a number")):
         try:
             validate(bad, {k: BOARD_SCHEMA[k] for k in ("hil", "features", "cps")}, "t")
             ok(False, "validate refuses " + what)
         except RegistryError:
             ok(True, "validate refuses " + what)
+
+    validate({"hil": {"limits": {"dmr_tx_ramp_ms": {"value": 1.75, "reason": "x"}}}}, {"hil": BOARD_SCHEMA["hil"]}, "t")
+    ok(True, "validate takes a [hil.limits] override with a value and a reason")
 
     # the voltage a board measures, from its sources
     tmpv = tempfile.mkdtemp(prefix="rfoundry-boards-volts-")
@@ -1498,11 +1594,13 @@ def self_test():
     # a fixture tree: the real registry copied, then broken one way at a time
     tmp = tempfile.mkdtemp(prefix="rfoundry-boards-")
     try:
-        # boards and platforms with what make print-vars reads (the Makefile, config/, boot/boot.mk) and pins.h
+        # boards and platforms with what make print-vars reads (the Makefile, config/, boot/boot.mk), pins.h and the
+        # boards' headers (their key enums)
         for top in ("boards", "platform", "config"):
             shutil.copytree(os.path.join(ROOT, top), os.path.join(tmp, top),
                             ignore=lambda d, names: [n for n in names if not (n.endswith((".toml", ".mk", ".ld", ".c"))
                                                                               or n == "pins.h"
+                                                                              or (top == "boards" and n.endswith(".h"))
                                                                               or os.path.isdir(os.path.join(d, n)))])
         shutil.copy(os.path.join(ROOT, "Makefile"), tmp)
         os.makedirs(os.path.join(tmp, "boot"))
@@ -1554,6 +1652,12 @@ def self_test():
                "stub: LED pins from pins.h names and the UART %r" % {k: prof.get(k) for k in ("leds", "uart")})
             with open(path, "w", encoding="utf-8") as f:
                 f.write(good)
+        broken(re.sub(r"(?m)^(\[flash\.bootloader\]\n)", r'\1hold = ["ptt", "no_such_key"]\n',
+                      re.sub(r"(?m)^hold = \[.*\n", "", good)),
+               "a key to hold the board doesn't have", "no_such_key is not a key of the board")
+        if load(tmp)[one].family["update_mode"]:
+            broken(re.sub(r"(?ms)^steps = \[.*?^\]\n", "steps = []\n", good, count=1),
+                   "an update mode without the steps into it", "flash.bootloader.steps is empty")
         two = board_dirs(tmp)[1]
         other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
         broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")
@@ -1614,13 +1718,17 @@ def self_test():
         if st:
             sp = os.path.join(tmp, "boards", st, "board.toml")
             st_good = open(sp, encoding="utf-8").read()
-            for text, what, want in ((re.sub(r'(?m)^stock = \["(\w+)"\]', r'stock = "\1"', st_good),
+            # the stock array, on one line or several (one digest a line, each with its comment)
+            arr = re.search(r"(?ms)^stock = \[.*?\]$", st_good)
+            first = re.search(r"[0-9a-f]{64}", arr.group(0)).group(0)
+            put = lambda new: st_good[:arr.start()] + new + st_good[arr.end():]
+            for text, what, want in ((put('stock = "%s"' % first),
                                       "a codec.stock that isn't a list", "a list expected"),
-                                     (re.sub(r'(?m)^stock = \["(\w+)"\]', r'stock = ["\1", "\1"]', st_good),
+                                     (put('stock = ["%s", "%s"]' % (first, first)),
                                       "a stock file listed twice", "once"),
                                      (re.sub(r'(?m)^stock = \[', 'stock = ["abc", ', st_good),
                                       "a codec.stock entry that isn't a SHA-256", "SHA-256"),
-                                     (re.sub(r"(?m)^(stock = .*)$", r'\1\nsources = ["x"]', st_good),
+                                     (put(arr.group(0) + '\nsources = ["x"]'),
                                       "codec.sources beside codec.stock", "comes from the stock files")):
                 with open(sp, "w", encoding="utf-8") as f:
                     f.write(text)

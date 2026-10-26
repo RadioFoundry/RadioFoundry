@@ -32,7 +32,7 @@ jobs:
     permissions:
       contents: write   # gh release create / upload on tags
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           submodules: false   # the manual needs none of third_party
 
@@ -70,7 +70,7 @@ jobs:
             tools/build_manual.sh --version "$VERSION" --out "$OUT"
           echo "MANUAL_PDF=$OUT" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         with:
           name: user-manual
           path: ${{ env.MANUAL_PDF }}
@@ -83,8 +83,11 @@ jobs:
         run: |
           set -eu
           TAG="${GITHUB_REF_NAME}"
+          # a beta tag (bN) is a pre-release: the site's default install (the latest release) skips it
+          PRE=""
+          if python3 tools/release_version.py prerelease "$TAG"; then PRE=--prerelease; fi
           if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "RadioFoundry $TAG" \
+            gh release create "$TAG" --verify-tag $PRE --generate-notes --title "RadioFoundry $TAG" \
               --notes "Firmware images (without the AMBE codec), rfoundry and the user manual. Flash with: rfoundry flash --release ${TAG} (docs/user/02-installing.md)."
           fi
           gh release upload "$TAG" "$MANUAL_PDF" --clobber

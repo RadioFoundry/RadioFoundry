@@ -75,6 +75,14 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
 - A behavior change updates its spec in `docs/spec/`. If users see it, it also updates `docs/user/`. Run
   `python3 tools/check_doc_links.py` after editing docs.
 - A UI change regenerates the gallery and commits only the PNGs it meant to change.
+- A new screen gets a `uiFlowTest` flow that opens it and checks `screen=<name>`. The crawl doesn't reach every
+  screen, and one never drawn in a test can crash the radio. A screen without its own `draw` is drawn as a list and
+  needs `count` and `item`.
+- Guard a definition with the same condition as its callers, not a narrower one. Some switches are turned on by more
+  than one feature (`CONFIG_ZONE_WRITE` is zone editing or zone sharing), so a caller under one can outlive the block a
+  definition sits in, and the build fails only with one switch off. After touching guarded code, build each switch you
+  touched off: `make BOARD=<b> CONFIG_X=n BUILD=build/t-x` (its sub-features follow it, as in `tools/ci.sh`), or
+  `tools/ci.sh --board <b> --matrix --steps firmware` for all of them. Remove the `build/t-*` trees afterwards.
 - Match the file you're editing: tabs, naming, comment density. Comments say why.
 - Keep RTOS calls and blocking waits out of protocol engines and UI behavior code, so the host tests can run them.
 - Docs read like technical documentation: short sentences, tables, no filler.

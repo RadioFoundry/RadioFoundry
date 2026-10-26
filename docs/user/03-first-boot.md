@@ -9,7 +9,8 @@ click. The [Radio reference](23-radios.md) says where the switch is on each radi
 second, then the radio opens the Home screen. Keys pressed during the boot screen are ignored.
 
 The boot screen shows the RadioFoundry logo and the two boot text lines from the codeplug. Along the bottom it shows the radio
-model and the firmware version. The boot text lines are 16 characters each, set in the codeplug, for example your callsign and name.
+model and the firmware version: the release name, such as v26.11 (the year and month it came out), or for a
+build between releases the commit it was built from. The boot text lines are 16 characters each, set in the codeplug, for example your callsign and name.
 
 <img src="../ux/screens/160x120i5/boot.png" width="200" alt="Boot screen">
 
@@ -43,7 +44,8 @@ Program channels, zones, contacts, talkgroup lists and your DMR ID with the Code
 ([Settings](17-settings.md)). Channels, contacts and the DMR ID come from the codeplug.
 
 DMR needs your DMR ID. Without one, the radio refuses to transmit on DMR channels and shows "No DMR ID in codeplug".
-**Settings > My radio > DMR ID and name** shows the ID the radio has.
+**Settings > My radio > DMR ID and name** shows the ID the radio has, and sets one on the radio: it is written into
+the codeplug.
 
 ## Checks after installing
 

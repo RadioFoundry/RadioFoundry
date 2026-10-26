@@ -29,6 +29,9 @@
 #if CONFIG_TFTP
 #include "net/tftp_codeplug.h"
 #endif
+#if CONFIG_ZONE_SHARE
+#include "dmr/zone_share_api.h"
+#endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
 #endif
@@ -103,6 +106,10 @@ static int32_t key_get(uint8_t id);
 static bool key_set(uint8_t id, int32_t value);
 #endif
 
+#if CONFIG_DMR
+static bool dmr_id_post(uint32_t id);	// a job: the codeplug write is the housekeeping task's
+#endif
+
 int32_t ui_svc_setting_get(uint8_t id)
 {
 	radio_settings_t rs;
@@ -143,6 +150,16 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_REPLY_S:
 		radio_get_settings(&rs);
 		return ui_svc_reply_shown(&rs);
+#if CONFIG_SFR
+	case UI_SET_SFR_RX:
+		radio_get_settings(&rs);
+		return rs.sfr_rx;
+#endif
+#if CONFIG_SFR_CWID
+	case UI_SET_SFR_CWID:
+		radio_get_settings(&rs);
+		return rs.sfr_cwid;
+#endif
 #if CONFIG_DUAL_WATCH
 	case UI_SET_DUAL_DELAY_MS:
 		radio_get_settings(&rs);
@@ -224,6 +241,15 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_TFTP_WRITE:
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
+#if CONFIG_ZONE_SHARE
+	case UI_SET_ZONE_OFFERS:
+		settings_read(&st);
+		return st.zs_offers == ZS_OFFERS_ASK;
+#endif
+#if CONFIG_DMR
+	case UI_SET_DMR_ID:
+		return (int32_t)codeplug_dmr_id();
+#endif
 	case UI_SET_NOISE_REDUCTION:
 		settings_read(&st);
 		return (st.accent & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0;
@@ -300,6 +326,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_BATTERY_SAVER:
 	case UI_SET_REPLY_S:
 	case UI_SET_TALK_PERMIT:
+#if CONFIG_SFR
+	case UI_SET_SFR_RX:
+#endif
+#if CONFIG_SFR_CWID
+	case UI_SET_SFR_CWID:
+#endif
 #if CONFIG_DUAL_WATCH
 	case UI_SET_DUAL_DELAY_MS:
 #endif
@@ -434,6 +466,20 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		tftp_codeplug_allow_write(value != 0);
 #endif
 		return true;
+#if CONFIG_ZONE_SHARE
+	case UI_SET_ZONE_OFFERS:
+		if (value != ZS_OFFERS_OFF && value != ZS_OFFERS_ASK)
+			return false;
+		st = settings_begin();
+		st->zs_offers = (uint8_t)value;
+		settings_end(hal_millis());
+		zone_share_set_offers((uint8_t)value);
+		return true;
+#endif
+#if CONFIG_DMR
+	case UI_SET_DMR_ID:
+		return dmr_id_post((uint32_t)value);
+#endif
 	case UI_SET_NOISE_REDUCTION:	// ui_svc_apply hands them to the vocoder
 	case UI_SET_MIC_AGC: {
 		// The stored bit is set for "on" with AGC, for "off" with noise reduction (0 = the defaults)
@@ -511,6 +557,27 @@ static void save_failed(const char *text)
 	strncpy(ev.text, text, sizeof ev.text - 1);
 	ui_notify(&ev);
 }
+
+#if CONFIG_DMR
+// The radio's own DMR ID, written into the codeplug (Settings > My radio): the radio core takes it when
+// codeplug_serial() changes, and a CPS read shows it
+static uint32_t job_dmr_id;
+
+static void dmr_id_job(void *ctx)
+{
+	(void)ctx;
+	if (!codeplug_set_dmr_id(job_dmr_id))
+		save_failed("Couldn't write the codeplug: not saved");
+}
+
+static bool dmr_id_post(uint32_t id)
+{
+	if (id == 0 || id > CODEPLUG_DMR_ID_MAX || storage_job_busy())
+		return false;
+	job_dmr_id = id;
+	return storage_job_post(dmr_id_job, NULL);
+}
+#endif
 
 // What the job writes: a copy of the radio's view taken when the UI asked (the job runs up to 100 ms later), and the
 // talk target for a permanent one. Only the UI task fills it, and only while no job is pending

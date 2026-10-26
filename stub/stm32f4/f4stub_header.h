@@ -16,8 +16,9 @@
 #define F4STUB_HDR_SIZE		16u
 
 // The stub's version, in the header and in HELLO. 2: the external SPI flash (memory 1, XERASE, XPROGRAM). 3: the
-// image header, and the stub feeds the IWDG. 4: CONFIG, the board record and HELLO's echo (the shared engine)
-#define F4STUB_VERSION			4u
+// image header, and the stub feeds the IWDG. 4: CONFIG, the board record and HELLO's echo (the shared engine). 5: the
+// SPI flash's security registers (SREAD, SWRITE)
+#define F4STUB_VERSION			5u
 #define F4STUB_VERSION_FEEDS_IWDG	3u	// the first version that feeds the IWDG
 
 #define F4STUB_FLAG_FEEDS_IWDG		0x00000001u	// feeds the IWDG in every loop that can take time

@@ -40,11 +40,28 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
 2. **Build.** Pick **Full** (every feature the radio supports), **Amateur**, **Commercial**, or **Custom** to choose
    features one by one. Features the radio can't have are marked. A custom build is made when you continue and takes
    under a minute.
-3. **Current firmware.** Say what the radio runs now: RadioFoundry (connect it and turn it on), the original firmware, or
-   not sure. The installer asks for the stock firmware file when it needs the codec or the key.
+3. **Current firmware.** Say what the radio runs now:
+
+   | Choice | When |
+   | --- | --- |
+   | **RadioFoundry** | Connect the radio and turn it on. The installer reads the installed version. |
+   | **Original firmware** | The firmware installed at the factory. |
+   | **Another open firmware** | Another open firmware project, such as one of the OpenGD77 family. |
+   | **Other / Not sure** | Any other firmware, or you don't know what the radio runs. |
+
+   The installer asks for the stock firmware file only when it needs it for the codec or the key. If you choose
+   RadioFoundry and the radio runs an OpenGD77-family firmware, the installer says so and offers **Another open
+   firmware** instead. A RadioFoundry build without the debug link answers the same way.
 4. **Back up.** The installer saves a backup file (a `.zip`) on your computer: the firmware, the channels and settings
    and the calibration. Keep it. Where the original firmware can't be read first, the installer backs the radio up
    right after the installation, before anything else changes.
+
+   On a radio installed over its programming cable the cable is slow, so the installer shows how long each part
+   takes. The firmware memory is required, unless you use a stock file instead (below). **All channels and settings** is optional and off by default: the
+   installer never changes them, and the whole data memory can take many minutes. If you have the radio's stock
+   firmware file, **Use a Stock File Instead** skips the firmware backup, before or during the read. The installer
+   then reads only the codec area and takes the codec from the file in the next step. The firmware in the radio is
+   not backed up, but the stock file can restore the original firmware.
 5. **Install.** Put the radio in its bootloader when asked ([your radio's keys](23-radios.md)). The installer writes
    the changed parts and restarts the radio. Do not unplug the radio until it says the installation is complete.
 6. **Verify.** The installer reads what the radio reports: the version it wrote, and "DMR voice is ready" when the
@@ -53,6 +70,31 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
 On Windows the bootloader needs a driver once ([Windows: the bootloader driver](#windows-the-bootloader-driver)).
 
 Then continue with [First boot](03-first-boot.md).
+
+### Coming from another open firmware
+
+On a radio that runs an OpenGD77-family firmware, the installer can back up the whole radio through that firmware
+before installing, and take the update key and the voice codec from the backup. You then need no stock firmware file.
+The installer offers this only on radios where it works. On others the stock firmware file is needed as usual.
+
+1. On **Current firmware**, choose **Another open firmware** and then **Check the Radio**, with the radio connected and
+   on. Choosing **RadioFoundry** finds the other firmware too. The installer reports its version.
+2. Choose **Back Up and Read**. The backup takes about a minute and a half. It only reads; nothing on the radio
+   changes. Keep the file it saves.
+3. The installer says whether it found the update key and the codec. If it found both, continue: the codec step uses
+   the codec from your radio. If it found neither or only one, select your stock firmware file on the codec step. The
+   same holds when you skip the backup or the radio reports another model: the codec step asks for the stock file.
+   The open firmware's installer may have put a codec from another radio's firmware there, wherever it chose; the
+   backup finds it, and your radio's section in [Radio Reference](23-radios.md) says which files count.
+4. Install as usual through the bootloader.
+
+If the radio stops responding during the backup, turn it off and on, then choose **Continue Reading**: the backup
+continues where it stopped. **Save What Was Read** keeps what was read so far.
+
+To go back, choose **Restore** with that backup and **Previous open firmware**. The firmware is written back; the
+channels and settings are not. Write them with that firmware's own programming software if they are missing.
+
+This path has not been tested on a real radio yet. Keep your stock firmware file at hand.
 
 ### Updating RadioFoundry
 
@@ -64,8 +106,8 @@ settings stay: they live in separate flash that installing never touches.
 
 **Back Up** saves a file with the radio's firmware, codec, channels and settings. **Restore** takes that file and
 writes back the whole radio, only the firmware, or only the channels and settings. It can also return the radio to its
-original firmware, from your stock firmware file. A restore from the update mode works even when the firmware is
-damaged.
+original firmware, from your stock firmware file. Any version of the manufacturer's file for your radio works, not only
+the one the installer needs for the codec. A restore from the update mode works even when the firmware is damaged.
 
 If the backup holds the original firmware's codeplug, open the file in the
 [Codeplug Editor](04-programming.md#the-codeplug-editor). It converts the channels, zones and contacts to the
@@ -89,6 +131,31 @@ Only the bootloader needs this. The radio's serial port, once it runs RadioFound
 
 Vendor tools that use the same USB ID (the manufacturer's upgrade tool or CPS) need their own driver back. In Device
 Manager, uninstall the device with **Delete the driver software for this device** checked, then replug.
+
+## Install from the command line with a kit
+
+When the web installer can't install, it offers a **manual install kit**: a zip with everything to install the firmware
+you chose from a terminal on this computer, with rfoundry. Choose and build the firmware as usual; the kit takes it from
+there.
+
+| The installer offers it | Where |
+|---|---|
+| The browser has no WebUSB or Web Serial (Safari, Firefox) | The start page says so. The step that needs the radio shows the kit instead, with a picker for the stock firmware file |
+| The bootloader connect or the write fails | A line under the error |
+| The radio doesn't answer the cable within three minutes, or preparing it fails | A line under the error |
+
+| In the kit | What |
+|---|---|
+| `README.txt` | Setup on Windows, macOS and Linux (Python, the bootloader driver, the serial port), how to put the radio in update mode, and the commands to check (`--dry-run`) and install, with the file names filled in |
+| `firmware/` | The image and its manifest |
+| `stock/` | Your stock firmware file, if you gave one. Otherwise the README says which file to put there |
+| `rfoundry.py`, `tools/`, `stub/`, `requirements.txt` | rfoundry from the same version as the web installer. It runs from the folder; `pip` installs its packages in a virtual environment |
+
+It needs Python 3.8 or later. The README says how to install Python and rfoundry's packages on each system, and the
+driver a USB bootloader needs on Windows and Linux. The kit is put together in the browser; nothing is uploaded. A
+radio that rfoundry can't install gets no kit: use Chrome or Edge on a computer. The [feature
+matrix](../feature-matrix.md) and your radio's section of the [Radio reference](23-radios.md) say how each radio
+installs.
 
 ## Advanced: rfoundry on the command line
 
@@ -166,17 +233,60 @@ the stock firmware file, or from a terminal:
 rfoundry flash --release latest --codec merge --stock STOCK.bin
 ```
 
+## When the installer can't use a file
+
+If a firmware file can't be used, the installer says what it found and what to do:
+
+| It says | Do this |
+|---|---|
+| This File Is for Another Radio | Pick your radio's file, or open the installer for the radio the file is for |
+| This Is Not the Manufacturer's Firmware File | Pick the manufacturer's original file. Another open firmware project's build can't be used |
+| This File Is Not for the (your radio) | It is for another model, or a modified build. Pick the manufacturer's file for your radio |
+| This Version's Codec Is Not Supported Yet | Pick one of the supported files listed under it, or send the file so the version can be added |
+| The File Is Damaged or Incomplete | Download it again |
+| The Radio Programming Utility Could Not Use This File | Nothing is wrong with the file. The installer reports the fault, or shows how to report it; you can send the file to help |
+
+A version that isn't supported yet may still give the bootloader key; the notice says so. You can also go on without a
+usable file: the installer then keeps the codec already in the radio and says, before writing, that DMR voice depends on
+it.
+
+**Technical details** shows the exact message. Sending the file is offered only for the manufacturer's firmware file,
+and only when you click. An automatic error report names the file (name, size and checksum), never its contents.
+
 ## If something goes wrong
 
 The bootloader lives in a part of the flash the installer never erases, so you can always start over: put the radio in
 its bootloader and install again. If the radio stays dark after flashing, that's what to do. The web installer's help
 page walks through the update mode. See also [Troubleshooting](20-troubleshooting.md#installing).
 
+**Report a Problem** sits under every failure and on the Verify step. It sends what the installer decided and its last
+steps. You can add a message, an email address for a reply and the files it lists (the stock firmware file, a backup,
+the firmware read from the radio). A backup holds your channels, contacts and the radio's calibration: uncheck it to
+leave it out. Attached files and your email address are deleted within 90 days.
+
+**Programming cables:** cables with a CH340 chip can be unreliable for backups and installs. If one fails, try a cable
+with an FTDI, CP210x or PL2303 chip. The installer warns when it sees a CH340 cable.
+
+**When the cable can't prepare the radio:** a radio installed over its programming cable first gets a small loader in
+its memory. When the radio turns on, it waits only about 1/20 of a second for the installer's answer, and some cables
+and USB hubs are slower than that. If the load fails ("Preparing the radio failed"), the radio starts normally instead,
+or it never answers, the installer offers **Try Slow Cable Mode**: turn the radio off, select **Radio Is Off**, then
+turn it on, and the installer keeps sending its answer while the radio starts. Select Radio Is Off only once the radio is
+off: the installer then sends to the cable, and the firmware of a radio that is still on would receive it.
+
+If the slow cable mode fails too, the installer offers **Use Factory Update Mode**: the radio's own update mode, entered by holding keys while you turn the radio
+on (your radio's "Installing" section in the [Radio reference](23-radios.md)). Nothing can be read from the radio that
+way, so no backup is taken and the voice codec comes from a file: the stock firmware file, or a program memory backup
+of the radio where the installer knows no stock file for it. Troubleshooting offers the same route ("Reinstall in
+Factory Update Mode"), and Restore uses it too.
+
 ## Going back to the stock firmware
 
 1. Put the radio in its bootloader.
 2. In the web installer choose **Restore**, load your backup and pick the original firmware, with your stock firmware
-   file. Or run the manufacturer's firmware upgrade tool and load the stock file.
+   file (any version for your radio). If the installer backed up the original firmware before the first installation
+   (see your radio's section), load that backup; without one, load the manufacturer's firmware file. Or run the manufacturer's firmware
+   upgrade tool and load the stock file.
 3. Write your codeplug backup with the manufacturer's CPS. The stock firmware can't read the codeplug RadioFoundry used.
 
 Your radio's section in the [Radio reference](23-radios.md) says which way applies.

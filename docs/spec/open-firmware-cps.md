@@ -202,6 +202,22 @@ A typical session, as qdmr does it:
 | 9 | Radio info | ignored | Section 4 |
 | 10 | Flash security registers | Register address in the SPI flash's OTP security register space | Not on the MK22. Used by the CPS for identification. The shim may answer `-` or return the chip's registers |
 
+A client that reads a radio running the original firmware (the web flasher's backup before an install,
+[web-flasher.md](../dev/web-flasher.md)) keeps to what that firmware is known to take:
+
+- Ask at most 2045 bytes per `R`. The reply buffer holds no more.
+- Area 5 has no bounds check on the STM32 builds. A read past the end of the MCU flash can fault the radio. Read
+  exactly the MCU flash, from its base to its end, as the board data gives them.
+- Area 10 may not be answered at all: one STM32 build sent nothing, not even `-`. Don't ask it, or don't wait on it.
+- Area 1 at 0x7590-0x75FF is the live VFO overlay (2.2). Read that range in 32-byte requests to get the flash's own
+  bytes.
+- Send no `C` command when only reading. `C` 6 2 saves settings, and once left a radio's USB hung.
+- Long runs of reads hung one radio once. Reads change nothing, so a read that goes unanswered can be asked again, and
+  a backup can stop and continue later.
+
+These points come from one radio and this spec, not from the original firmware's source. Not all are confirmed on
+every build.
+
 ## 4. Radio info (area 9)
 
 The structure is little endian, packed, 46 bytes in struct version 3.
@@ -399,7 +415,7 @@ assuming 500 ms steps (`codeplug.c` `GEN_HANG_UNIT_MS`, `dmr-voice.md` 7); that 
 | 0x18 | 1 | Mode: 0 FM, 1 DMR |
 | 0x19 | 1 | Power: 0 = use the radio's master power; n = power level n-1. qdmr maps 1 min, 3 low, 6 mid, 9 high, 10 max; the levels themselves are per radio. Radios with 9 or more levels read n as level n-1; radios with fewer spread the scale over their levels (2 levels: 1-5 low, 6-10 high) |
 | 0x1A | 1 | Fixed location latitude, low byte |
-| 0x1B | 1 | TX timeout in 15 s units, 0 = off |
+| 0x1B | 1 | TX timeout in 15 s units; 0 = the radio's own TX time-out (the TOT setting), which zone sharing's imported channels use |
 | 0x1C | 2 | Latitude, middle and high bytes |
 | 0x1E | 2 | Longitude, low and middle bytes |
 | 0x20 | 2 | RX tone (LE): 0xFFFF or 0 = none. CTCSS: BCD of tenths of Hz (0x0885 = 88.5 Hz), bits 14-15 clear. DCS: bit 15 set, bit 14 set = inverted, the low bits are the code's octal digits written as hex digits (D023 = 0x8023, D023I = 0xC023) |

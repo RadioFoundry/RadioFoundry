@@ -60,7 +60,7 @@ process on the SDR bench stops it, waits while a hold file exists (at most 300 s
 happens to pytest or the SSH link; the test removes the hold file in a `finally` block and checks that the service
 is back.
 
-Other options: `--codeplug-backup-dir` (where codeplug_write tests keep their backups, outside the repository), `--tx-power` (bench transmitter level 0-255, default 40), `--dmr-freq` / `--dmr-cc` / `--dmr-tg`
+Other options: `--codeplug-backup-dir` (where codeplug_write tests keep their backups, outside the repository), `--codeplug-image FILE` (or `RFOUNDRY_HIL_CODEPLUG_IMAGE`: the radio's codeplug as a file, taken as the backup; only the sectors an edit writes are read from the radio, to check the file against it, verify the write and verify the restore), `--tx-power` (bench transmitter level 0-255, default 40), `--dmr-freq` / `--dmr-cc` / `--dmr-tg`
 (DMR test channel, default 461.6875 MHz, color code 2, talkgroup 9), `--noaa-mhz` / `--rssi-floor` (FM test),
 `--ambe` / `$RFOUNDRY_HIL_AMBE` (speech recording for the voice test), `--shots DIR`, `--sdr-gain` (RTL-SDR gain for
 raw captures, default 5 dB; `dmr_bench.py run C0` picks it), `--sdr-ppm` (overrides the SDR's frequency error for
@@ -229,6 +229,7 @@ Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr
 | `test_fm.py` | VFO on NOAA weather: squelch opens or RSSI above the floor within 10 s (receive only); RX tone squelch: with CTCSS 100.0 and then DCS D023N required, untoned NOAA stays muted (`tone_ok=0`, never `rx`), and opens again without the tone (the squelch stepped down until NOAA opens it) | radio with the FM VFO |
 | `test_hotspot.py` | MMDVM GET_VERSION / GET_STATUS answered (client with DTR clear, so its close doesn't end the session), the hotspot takes the modem (slot 2 space, `hs.running`, `hs.starts`), the debug link answers in hotspot mode, hotspot left through the debug link (no transmission) | radio with the hotspot |
 | `test_hotspot_sfr.py` | MMDVM SFR on the radio's channel: the version suffix, duplex with RX = TX turns it on (121-byte status, both space bytes 16, `sfr.on`), command 0xD5 ACK / NAK 4, simplex turns it off; sends nothing and expects a quiet channel (`sfr.tx_starts` unchanged). `test_sfr_repeats_bench_call`: the bench sends a TS1-synced call, its header goes up as DMR_DATA1 and the repeat with the bench's LC is on air on TS2 (SDR); then the whole call, heard between the radio's own bursts and repeated (`docs/spec/sfr.md` 3); the SFR keys are in the debug link's `sfr` section | `--allow-rf` (the repeat test also `--allow-service-stop`), firmware with `CONFIG_SFR` |
+| `test_sfr_standalone.py` | The codeplug SFR roles without the hotspot, the bench modem as the talker on --sfr-freq (default --dmr-freq): a repeater channel repeats a 4-superframe call (at least 19 bursts, 60 of 72 inbound frames decoded, at most 3 lost, under 4 bit errors a frame; `sfr.rx_fec`, `sfr.rx_fec_pos`); TX inhibit stops the role and it restarts when cleared; the CW ID follows the first call (`dmr.sfr_cwid_sent` or `_cut`); a user channel in receive mode 0 drops the talker's direct copy and in mode 1 plays it (`call.rx_sfr_direct`, `call.rx_voice_bursts`). `test_sfr_chain_rfoundry_user`: RadioFoundry radios only, the --radio-port radio repeating, an ODR talker (`--sfr-talker-port`, keyed with the voice test signal) and an ODR listener (`--sfr-listener-port`) on user channels; per listener receive mode (`--sfr-listen-modes`, default 0,1) the listener plays one call with 90 % of the talker's frames, `voice.rx_peak` at least 1000 and `voice.rx_repeats` at most a tenth of its frames. Skips without a channel of the role on the frequency | `--allow-rf`, SDR bench (the chain test needs none: it takes a bench lease only when one is configured); repeater tests transmit |
 | `test_audio_probe.py` | USB audio feasibility measurements ([hardware-dm1701.md](../../docs/spec/hardware-dm1701.md) 21.3): the PCM stream runs on an FM channel; per HR_C6000 setting, whether FM receive audio reaches the I2S link (NOAA on vs a quiet frequency, RMS of both channels); with the bench, whether a 1 kHz PCM tone reaches the FM modulator (voice band deviation, microphone muted). Prints tables, asserts only that they ran; every register touched is restored | firmware with `CONFIG_AUDIO_PROBE=y`; the TX part `--allow-rf --allow-service-stop` |
 | `test_usb_network.py` | USB network personality: re-enumerates as CDC-NCM, DHCP gives the host 12.<ID>, ping and the debug link over UDP 3334 at the radio's address, back to serial. Passes on the bench Mac (macOS 26). Firmware before 5a13814 stayed a network adapter when the host never configured it (power it off and on); since then it falls back to serial after 10 s | `--allow-usb-switch`, firmware with `CONFIG_DMR_IP_GATEWAY` |
 | `test_tcp_services.py` | The TCP services at the radio's address in network mode (`docs/spec/tcp-services.md`): the HTTP page, `/status` and view JSON, the screen BMP, a 404; KISS over TCP (a foreign-source frame taken by the TNC and refused by the APRS engine; an own-callsign frame on air is in test_aprs.py); rigctld (`f`, `m`, `t`, `get_info`, `+f`, a VFO set 12.5 kHz up and back, `dump_state`, and Hamlib's `rigctl -m 2` where installed); the APRS-IS client with `RFOUNDRY_HIL_APRSIS_SERVER=a.b.c.d[:port]` and NAT on the host. Not run on the bench yet | `--allow-usb-switch`, firmware with `CONFIG_NET_TCP` |
@@ -279,8 +280,8 @@ with every counter clean). One concealed block is allowed only for a single unde
 call stack (`call.rx_voice_bursts`, `call.rx_lost_frames`), voice layer (`voice.rx_in`, `voice.rx_frames`,
 `voice.rx_concealed`, `voice.rx_underruns`, `voice.rx_overflows`) or audio (`audio.ov`, `audio.dr`).
 
-`test_dmr_tx`, `test_fm_tx`, `test_radio_features`, `test_hotspot_voice`, `test_hotspot_sfr`: the criteria are in each
-module's docstring (dmr_bench.py case T1's checks for DMR TX; CTCSS within 0.5 Hz and 200-900 Hz deviation at 12.5
+`test_dmr_tx`, `test_fm_tx`, `test_radio_features`, `test_hotspot_voice`, `test_hotspot_sfr`, `test_sfr_standalone`: the criteria are in
+each module's docstring (dmr_bench.py case T1's checks for DMR TX; CTCSS within 0.5 Hz and 200-900 Hz deviation at 12.5
 kHz, DCS with the right polarity, the 25 / 12.5 kHz deviation ratio 1.5-2.6 for FM; for the radio features: warning
 2.5-4.5 s and time-out 5.5-7.5 s with tot_s 6 / tot_warn_s 3, roger=1 seen after release while still on air,
 beep.blocks grows when beep.played does).
@@ -304,7 +305,8 @@ DM-1701's modem driver clears PI on voice, so it plays as clear).
 `data.rx_headers` 1, `data.rx_packets` 1, `data.rx_for_us` 1, `data.rx_blocks` 4 or more, CRC errors and stale
 blocks 0. Confirmed: `data.rx_confirmed` 1, `data.responses_sent` 1, `data.tx_failed` 0. Text message:
 `data.sms_received` 1, `data.tms_acks_sent` 1, inbox entry 0 is the text from the bench ID, unread until
-MARK_READ. Call alert: `data.call_alerts_received` 1, `data.csbk_answers_sent` 1, `data.event=call_alert` from the
+MARK_READ; the ACK is the last data list (`data.tx_last_kind=reply`, a newer `data.tx_last_ms`) and the radio's own
+transmission (`tx_auto=1`, so it didn't light the screen). Call alert: `data.call_alerts_received` 1, `data.csbk_answers_sent` 1, `data.event=call_alert` from the
 bench ID. Radio check: with `radio_check_reply` off (the default) counted and not answered; on, answered
 (`data.event=radio_check_answered`). Radio TX: call alert and radio check end `failed` after 3 tries counted by the radio; the bench modem must hear 1
 to 3 of them with a good CRC (bench_tx.py listen's `crc_ok`, after the FEC) and every one heard must carry exactly
@@ -380,7 +382,9 @@ SDR clips, and the bench modem's tries counted with a minimum of one. An attenua
   `tools/ci.sh`) fails on a skip without one.
 - Document the pass criteria and tolerances in the module docstring and in the table above.
 - Write tests for every radio, with the board's numbers in its `board.toml` `[hil]` table (`rfoundry_hil.board_hil`) or
-  other registry tables (`rfoundry_hil.board_entry`). A check only one board can use goes in `boards/<id>/hil/test_*.py`:
+  other registry tables (`rfoundry_hil.board_entry`). A pass limit one radio can't meet is a `[hil.limits]` entry,
+  `name = { value, reason }`, not a looser default: the names a board may override are `tools/boards.py` `HIL_LIMITS`,
+  the check reads the override (`dmr_bench.limit`) and prints the reason beside its result. A check only one board can use goes in `boards/<id>/hil/test_*.py`:
   `conftest.py` adds those files to a run of this directory and `hil_plugin.py` skips them `other_board` on other
   radios. Give the file a name no other board's test has (pytest imports test files by their base name).
 - Mark the test with its feature: `@pytest.mark.feature("<id>")`, `optional=True` when it shouldn't gate, `owner=`

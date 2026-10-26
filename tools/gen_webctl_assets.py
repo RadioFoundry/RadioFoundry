@@ -5,8 +5,9 @@
 
     gen_webctl_assets.py BOARD OUT_DIR
 
-OUT_DIR/keys.json maps each key's name to its bit: the board's KEY_* enum in boards/BOARD/BOARD.h, in order from 0,
-named in lower case without KEY_ ("fn_left": 16). OUT_DIR/radio.svg is the radio's drawing,
+OUT_DIR/keys.json maps each key's name to its bit: the board's KEY_* enum (key_header: boards/BOARD/BOARD.h, else the
+header of a board family directory its BOARD_DIRS builds), in order from 0, named in lower case without KEY_
+("fn_left": 16). OUT_DIR/radio.svg is the radio's drawing,
 site/static/img/radios/src/BOARD.svg, whose key-<name>, encoder and led ids the page makes clickable
 (docs/dev/website.md "Radio images"); a radio without one gets no radio.svg and the page draws its keys as buttons.
 OUT_DIR/mic.svg is its hand microphone, site/static/img/radios/src/BOARD-mic.svg, when it has a drawing of one; the
@@ -36,6 +37,30 @@ def key_bits(header):
     return {n[4:].lower(): i for i, n in enumerate(names) if n.startswith("KEY_") and n != "KEY_COUNT"}
 
 
+def key_header(board):
+    """The header with the board's key enum: boards/BOARD/BOARD.h, else the first header that has one in the board's
+    directory or in a boards/<family> directory its board.mk lists in BOARD_DIRS (boards/uv380_family/uvf.h)."""
+    own = os.path.join(ROOT, "boards", board, board + ".h")
+    if os.path.exists(own):
+        return own
+    dirs = [os.path.join("boards", board)]
+    try:
+        with open(os.path.join(ROOT, "boards", board, "board.mk"), encoding="utf-8") as f:
+            mk = f.read().replace("\\\n", " ")
+        for m in re.finditer(r"(?m)^\s*BOARD_DIRS\s*[:+]?=(.*)$", mk):
+            dirs += [d.strip("/") for d in m.group(1).split() if re.fullmatch(r"boards/[\w-]+/?", d)]
+    except OSError:
+        pass
+    for d in dirs:
+        full = os.path.join(ROOT, d)
+        for f in sorted(os.listdir(full)) if os.path.isdir(full) else ():
+            if f.endswith(".h"):
+                with open(os.path.join(full, f), encoding="utf-8") as fh:
+                    if ENUM.search(re.sub(r"//[^\n]*|/\*.*?\*/", "", fh.read(), flags=re.S)):
+                        return os.path.join(full, f)
+    raise SystemExit("boards/%s: no header with the key enum (an enum ending in KEY_COUNT)" % board)
+
+
 def write(path, data):
     try:
         with open(path, "rb") as f:
@@ -50,7 +75,7 @@ def write(path, data):
 
 def main():
     board, out = sys.argv[1], sys.argv[2]
-    keys = key_bits(os.path.join(ROOT, "boards", board, board + ".h"))
+    keys = key_bits(key_header(board))
     os.makedirs(out, exist_ok=True)
     files = [os.path.join(out, "keys.json")]
     write(files[0], json.dumps(keys, separators=(",", ":")).encode())

@@ -120,6 +120,17 @@ where this build expects them with the expected CRCs, and the code's first word.
 it reports the profile with an `-s11` suffix (`<profile>-s11`). A build from before the move
 reports the stock id, so the flashing tools see that the codec isn't where the new layout keeps it.
 
+**One id, many builds.** A board reports one codec id for every stock build it accepts; the descriptor's tag tells
+the builds apart. A release accepts only the tags it was built with:
+
+| Update | Codec kept? |
+|---|---|
+| To the same release or a newer one | Yes, whichever supported build the codec came from |
+| To a release older than the one that added the codec's build | No: that release doesn't know the build's tag, finds no codec and runs FM only |
+
+The flashing tools see the same id either way, so they keep the codec. Going back to such a release needs the codec
+merged again from a stock file that release supports.
+
 Later step: rewrite the `table_refs` and pack code and table objects into one sector (sector 11). The maps hold what
 that needs (objects, groups, compaction), so no further analysis of the stock builds is required.
 

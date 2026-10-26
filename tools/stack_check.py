@@ -118,7 +118,10 @@ class Graph:
 
     def load_dir(self, build):
         n = 0
-        for root, _dirs, files in os.walk(build):
+        # In name order, directories too: the first definition of a title wins and the edge order sets where a cycle is
+        # cut, so a file system's own order (APFS and ext4 differ) would change the figures
+        for root, dirs, files in os.walk(build):
+            dirs.sort()
             for fn in sorted(files):
                 if fn.endswith(".ci"):
                     with open(os.path.join(root, fn), encoding="utf-8", errors="replace") as fh:

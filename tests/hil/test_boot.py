@@ -60,7 +60,8 @@ def test_view_sections(radio):
     v = radio.view()
     for k in ("view", "state", "rx_hz", "ch.name", "dmr.built", "hostlink", "ui.screen", "input.idle_ms"):
         assert k in v, k
-    assert v["view"] == "2"
+    # View 3: net.air_busy counts packets dropped after waiting in the TX queue (debuglink.md 3.7)
+    assert v["view"] == "3"
 
 
 @pytest.mark.feature("debuglink")

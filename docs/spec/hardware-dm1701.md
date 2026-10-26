@@ -68,7 +68,10 @@ back to the PLL.
 STM32F405, 1 MB: sectors 0-3 are 16 KB, sector 4 is 64 KB, sectors 5-11 are 128 KB. The V02.06 CSV codec runs
 in place from sectors 10 and 11, where the merge puts it ([codec-placement.md](codec-placement.md), "STM32 radios";
 [codec-dm1701.md](codec-dm1701.md)): tables at their original address 0x080D19F0..0x080E3A72, code moved from its original
-address 0x08074714 to 0x080E3A74..0x080F3C90, and the descriptor at 0x080FFF80.
+address 0x08074714 to 0x080E3A74..0x080F3C90, and the descriptor at 0x080FFF80. The codec from a V02.01, V02.02 or
+V02.03 CSV file sits 0x40 lower in the same sectors: tables 0x080D19B0..0x080E3A32, code 0x080E3A34..0x080F3C50.
+The codec from a noCSV file sits higher, still in sectors 10 and 11: V02.06 noCSV tables 0x080D4794..0x080E6826, code
+0x080E6828..0x080F6A28; V02.03 noCSV 0x40 lower.
 
 | Sector | Address | Size | Holds |
 |---|---|---|---|
@@ -76,8 +79,8 @@ address 0x08074714 to 0x080E3A74..0x080F3C90, and the descriptor at 0x080FFF80.
 | 3 | 0x0800C000..0x0800FFFF | 16 KB | RadioFoundry (vector table first) |
 | 4 | 0x08010000..0x0801FFFF | 64 KB | RadioFoundry |
 | 5-9 | 0x08020000..0x080BFFFF | 5 x 128 KB | RadioFoundry |
-| 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0) |
-| 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E3A71), codec code (0x080E3A74..0x080F3C8F), descriptor (0x080FFF80..0x080FFFFF) |
+| 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0; V02.01 to V02.03: 0x080D19B0; noCSV: 0x080D4794, 0x080D4754) |
+| 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E3A71), codec code (0x080E3A74..0x080F3C8F), descriptor (0x080FFF80..0x080FFFFF); V02.01 to V02.03: tables to 0x080E3A31, code 0x080E3A34..0x080F3C4F; V02.06 noCSV: tables to 0x080E6825, code 0x080E6828..0x080F6A27 (V02.03 noCSV 0x40 lower) |
 
 A flash sector can only be erased whole, so `boards/dm1701/memory.ld` gives the application sectors 3-9
 (0x0800C000..0x080BFFFF, 720 KB in one piece) and asserts that everything it loads into flash ends before 0x080C0000.
@@ -243,7 +246,8 @@ clock is on. The AT1846S and HR_C6000 keep their state until the next start.
 
 ### 3.1 Interrupt priorities
 
-RTOS kernel at 7 (lowest); RTOS "max syscall" priority 5: ISRs that call RTOS APIs must be at 5..15.
+RTOS kernel at the lowest priority; RTOS "max syscall" priority 4: ISRs that call RTOS APIs must be at 4..15. No
+interrupt uses 4. The level is even so a part with 3 priority bits can hold it (14.1, [gotchas.md](gotchas.md) 13.11).
 
 | IRQ | Priority | Source |
 |---|---|---|
@@ -656,10 +660,24 @@ Ordering:
   enable 1 high, PA band select, then PA enable 2 high. The DAC drive is set when the TX frequency is written.
 - Enter RX: PA enable 1 and 2 low first; RX supply for the band; AT1846S reg 0x30 to the RX value; HR_C6000 to FM RX or
   DMR.
-- Burst-by-burst DMR TX (the PA follows the bursts): to TX, reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX,
-  both RX supplies off, then the PA; back to RX, the PA enables low, reg 0x30 receiver off, the RX frequency if it
-  differs, the RX supply for the band, reg 0x30 RX on. The receiver must work between bursts (an SFR's inbound slot,
-  `sfr.md` 3). The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA
+- Burst-by-burst DMR TX (the PA follows the bursts), keyed 1 ms after the RF TX interrupt (it comes about 1.28 ms
+  before the slot boundary; keyed at once, the PA cut the end of the inbound burst an SFR receives in the other slot).
+  Two sequences:
+  - Direct, when the synthesizer already holds the TX frequency (SFR, simplex) and the band is UHF: reg 0x30 straight
+    from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) = calibrated value + 42, both RX supplies off, then the PA. Back to
+    RX: the PA enables low, 4:0x04 = calibrated value, the RX supply, reg 0x30 RX on. RX straight to TX puts the
+    carrier about 3.07 kHz low, and a frequency write can't correct it (the AT1846S applies one only coming out of
+    idle); 42 steps of about 75 Hz put it back (measured at 461.1375 MHz: +16..+60 Hz). The idle step that the other
+    sequence takes every slot makes the synthesizer settle again, and an SFR lost the first and last frames of its
+    inbound bursts to it: about 190 bit errors and 5-10 lost frames per 72 repeated frames, against about 60 and none
+    direct (SDR bench, 2026-10-19).
+  - Through idle, otherwise (VHF, where 3.07 kHz is more steps than the register holds; RX and TX frequencies that
+    differ): reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX, both RX supplies off, then the PA. Back to RX,
+    the PA enables low, reg 0x30 receiver off, the RX frequency if it differs, the RX supply for the band, reg 0x30 RX
+    on. Going straight back to RX after a burst entered from idle leaves the receiver about 3 kHz off.
+
+  The receiver must work between bursts (an SFR's inbound slot, `sfr.md` 3). Dropping the PA earlier than the next
+  timeslot interrupt (28.5-30 ms after the RF TX interrupt) did not reduce the inbound errors. The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA
   pins: the last burst of a call (the terminator) is still in flight after the PA logic has gone back to RX once.
 - Power-down: PA enables low, both RX supplies low, mic power optionally low, HR_C6000 PWD high, AT1846S reg 0x30 =
   receiver off value.
@@ -992,7 +1010,9 @@ Internal sensor: 943 counts at 25 C, 3.1 counts per C (datasheet nominal 0.76 V 
 
 At start-up: read the working copy; if bytes 0x1B0-0x1B7 are not the marker 00 25 00 40 00 45 01 40, read the factory
 table, overwrite those 8 bytes with the marker, derive the very-low power row and apply the power conversion below, then
-write the result to 0x010000. Never write the security registers.
+write the result to 0x010000. The firmware never writes the security registers. The STM32F4 stub can put a backup of
+them back (`stubtool.py --write-secreg`, [stub-stm32f4.md](stub-stm32f4.md) 6.2), refusing a register whose one-time
+lock bit is set; nothing ever writes status register 2.
 
 Power conversion when deriving the working copy (empirical): very low = low x k0 (always), and if
 converting: low x= k1, mid x= k2, high x= k3.
@@ -1171,6 +1191,44 @@ records are in `open-firmware-cps.md`.
 | Backup SRAM | unused |
 | Watchdog | RadioFoundry starts the IWDG and feeds it from the idle task (`CONFIG_WATCHDOG`, [watchdog.md](watchdog.md)) |
 
+### 14.1 Geehy APM32F407 in place of the STM32F405
+
+Some DM-1701s are reported to carry a Geehy APM32F407VGT6, a pin-compatible STM32F4 clone, in place of the
+STM32F405VGT6 (a user's chip list, unverified on a radio we have). It reports the same device ID (0x413), so firmware
+can't tell the two apart that way. The differences that matter here:
+
+| Difference | APM32F407 | Effect on RadioFoundry |
+|---|---|---|
+| NVIC priority bits | 3 (8 levels; Geehy datasheet V1.1, 4.3.1) | Each priority keeps its top 3 bits: 4 and 5, 6 and 7 share a level. The RTOS syscall level must be even, or the kernel's start-up check fails every boot ([gotchas.md](gotchas.md) 13.11) |
+| ADC and temperature calibration in system memory | missing (user reports) | none: nothing reads them |
+| Internal flash programming | differs (user reports) | the application never writes internal flash; the vendor bootloader programs it |
+| ST-LINK | doesn't recognize the part (user reports) | debug probes only |
+
+Up to the syscall level fix, a radio with this part boots to a black screen: the backlight is still off from
+`board_early_init` when the scheduler starts, so no beep, no USB and no picture. The update mode, the vendor
+bootloader's, still works.
+
+### 14.2 GPS module
+
+No module is fitted at the factory, but the GPS pins are there: USART1 RX on PA10 and the power switch on PA9.
+Owners fit a small 3.3 V NMEA module (an ATGM336H or a GP-02, reported by users) and wire it like this:
+
+| Module pin | Board | STM32 pin (LQFP100) |
+|---|---|---|
+| TX (NMEA out) | PA10, USART1 RX | 69 |
+| power enable (where the module has one) | PA9 | 68 |
+| 3.3 V, GND | a 3.3 V point on the board, such as the SPI flash's supply | |
+
+PA9 and PA10 sit next to each other on the side of the package that holds pins 51-75. A module without an enable pin
+runs from 3.3 V all the time and leaves PA9 unconnected. Nothing goes to the module's RX: the firmware only listens.
+
+RadioFoundry builds GPS by default (`CONFIG_GPS`). At start-up it drives PA9 high and listens on PA10 in 5 s windows,
+9600 first. One checksum-valid NMEA sentence marks the module present. Characters without a valid sentence move on to
+the next rate (14400). A window of silence means no module: USART1 goes off, PA9 goes low, and the listening task ends
+and frees its stack. The task runs at low priority in the background, so start-up doesn't wait for it. The code is
+`boards/uv380_family/gps_uvf.c`, shared with the MD-UV380 G models ([hardware-mduv380.md](hardware-mduv380.md) 9).
+Untested with a module on a DM-1701.
+
 ---
 
 ## 15. Bootloader and firmware images
@@ -1220,7 +1278,7 @@ The key tables are identified by hash only. A key is derived on the user's machi
 **Derived from a firmware file, DM-1701.** The key falls out of any DM-1701 firmware file from the manufacturer. The payload is plain XOR key[i mod 1024], and in a firmware image 0x00 is the most common plain byte in every
 key column, so the most common cipher byte of column j is key[j] for all but a few columns; those are settled by
 trying each close runner-up byte until the SHA-256 of the result matches the table above. On every firmware file in
-`codec-dm1701.md` ("Firmware files": V02.01, V02.02, V02.03 with and without CSV, V02.06 CSV and noCSV) this gives the key
+`codec-dm1701.md` ("Firmware files": V02.01, V02.02 and V02.03 CSV, V02.03 noCSV, V02.06 CSV and noCSV) this gives the key
 with hash `d983ce95...` in under 0.1 s, needing at most a few hundred hash checks. `tools/rfoundry/rfoundry/stockfw.py`
 (`derive_key`) does this on the user's machine; only the hash is in the repository. The same method should work for the
 other models' files (unverified: no MD-UV380, MD-380 or MD-9600 file was tried).
@@ -1281,7 +1339,7 @@ Untested risks of route 1, found while writing it (they matter only on an RDP 0 
   DFU on the F405 and may set it up in crystal mode. If that doesn't start, USB DFU never enumerates.
 - **Interface probing.** The ROM also listens on USART1 (PA9 / PA10, wired to GPS power and GPS RX on GPS-fitted
   siblings) and on USART3 / CAN2. Activity on those pins can capture the loader before USB. The DM-1701 has no GPS
-  fitted, so PA10 is idle on it.
+  fitted from the factory, so PA10 is idle on it. An owner-fitted module (14.2) talks on PA10 from power-up.
 - **Leaving.** Where the ROM's DfuSe leave command jumps, and with which memory mapping, is unverified. A battery
   pull always returns to the normal start (bootloader, then the application).
 
@@ -1440,6 +1498,12 @@ Verified on one radio with the new firmware; they override the unverified notes 
   decoded nothing; a wide-AFC SDR decoder still did). Retuning with the receiver off before every burst (as FM TX
   does) brings it to about +65 Hz, and the MMDVM_HS receiver decodes headers, all superframes with the embedded LC
   and the terminator. Burst spacing 60.000 ms (sd 0.002 ms), 31 ms PA per burst.
+
+### 20.1 SFR user (SDR bench, 2026-10-19)
+
+A bench call (TS1 sync) from the SDR bench through a standalone repeater was played whole, 24 of 24 voice bursts, no
+frame lost. The radio never reported the repeated copy during the call: its HR_C6000 decodes the voice of the slot it
+locked onto (gotchas 14.12). With `sfr_rx` 1 or 2 it falls over to the other copy only between calls or after a loss.
 
 ## 21. Audio paths for USB audio (bench study)
 

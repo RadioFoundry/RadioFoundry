@@ -425,8 +425,8 @@ the reply queue and its 5 s age limit, and the service's TX list and listen befo
 - N(S) per destination: the last 4 radios; a radio not in the table starts at a number from the clock, so a receiver
   still holding our number from before a restart doesn't take the first packet as a duplicate (a strict receiver's
   out of sequence NACK resynchronizes either way).
-- One IP packet at a time: the gateway's mailbox stays taken until the service is done (`net.to_air_refused` counts
-  the host's packets meanwhile; the host's stack retries or drops, as for any lost IP packet).
+- The gateway's packets and zone sharing's go through one TX queue (12.6). A confirmed packet is always alone in its
+  transmission and the next waits for its end; unconfirmed packets to the same destination share one (12.6.2).
 
 ### 12.3 Confirmed data to us
 
@@ -466,7 +466,76 @@ ip.rx_duplicates ip.rx_crc9_mismatch`. DMR_DATA ops 9 IP_SETTINGS (the gateway I
 explicit IP destination optional) (`debuglink.md` 3.12; `rfoundry_debug.py data ip-settings ... gateway=ID`,
 `data ip-send ID@A.B.C.D ...`).
 
-### 12.6 Open
+### 12.6 Our transmissions: the TX queue, chaining and the guard
+
+`core/dmr/dmrAirQueue.c` (`CONFIG_DMR_AIR_QUEUE`, built with the IP gateway or zone sharing). It replaced the
+gateway's one-packet mailbox (#154): a host that sent a second datagram while the first was on air had it refused.
+
+#### 12.6.1 The queue
+
+| Property | Value |
+|---|---|
+| Producers | the IP gateway (the host link task), zone sharing (any task); `airqPut`, `airqPutBatch` (all or none) |
+| Buffer | a static byte ring of `CONFIG_DMR_AIR_QUEUE_BYTES` octets (default 2048); no allocation |
+| Record | a 28-octet header, then the packet, rounded up to 4 octets. Each packet takes its own length, not a fixed slot |
+| Count | no limit but the bytes: a put is refused only when the packet doesn't fit |
+| Layout | a record never wraps. When the end of the buffer has no room, the end is left unused and the record goes at the start, so the data service reads the oldest in place while others are added |
+| Order | first in, first out; the radio task's `airqTick` hands the oldest to the data service |
+| Wait | the gateway's packets are offered for 2 s while the service refuses them (busy, not a DMR channel we may send on), zone sharing's for 10 s; then dropped (`airq.gave_up`) |
+| Age | a gateway packet still queued after 10 s is dropped unsent (`airq.aged`): what it was for has likely moved on |
+| Visibility | depth in packets and octets, both high water marks, refusals and every way a packet ends: the `air` view section ([debuglink.md](debuglink.md) 3.7, section 24); drops are also logged on the debug link |
+
+2048 octets hold two longest packets (480) with room to spare, a zone's four fragments, or about thirteen 120-octet
+datagrams. The RAM is the buffer plus a static list of 40 bursts for raw (SAP 10) packets. Measured on one
+board's build: RAM use rose from 101,664 to 108,056 bytes of 131,068 with the queue, zone sharing and its screens,
+which leaves about 22 KB. A packet may come in two pieces (`airqItem_t.tail`), copied into the queue one after the
+other, so a zone share fragment needs no buffer of its own before the queue; boards with less headroom set a smaller `CONFIG_DMR_AIR_QUEUE_BYTES` (at least 2 x (28 + 480)).
+
+#### 12.6.2 Chaining
+
+ETSI DMR doesn't need a gap between data packets: each has its own data header, and a receiver syncs on it.
+
+- When the oldest queued packet is an IP packet, the queue offers it together with the IP packets right after it to
+  the same destination and call type, with the same IP addresses and TTL (`dmrDataServiceSendIPChain`; the
+  gateway's off-net packets carry their own, 11.1). Anything else stops the chain, so the order stays.
+- The service takes the first as usual. If it goes unconfirmed, the service adds the following ones that also go
+  unconfirmed, up to 8 packets and the 40-burst list ([gotchas.md](gotchas.md) 5.5). What doesn't fit goes in the
+  next transmission. The list is counted with each packet's own header: a full IPv4 header (SAP 4) takes more blocks
+  than a compressed one.
+- Confirmed packets are never chained: a confirmed first goes alone, and a confirmed packet after it ends the chain
+  and waits its turn.
+- On air: the preamble CSBKs once, then each packet's data header and blocks in order. Unconfirmed packets have no
+  data terminator (TS 102 361-3 5.4 defines the Terminator Data LC only after confirmed data in direct mode, to open
+  the response window), so a chain ends after its last block, like a single unconfirmed packet.
+- The preamble count: TS 102 361-2 7.1.2.5 and 7.2.7 define the Pre_CSBK. Its CSBK Blocks to Follow is "the number
+  of Preamble CSBK PDUs and either the following CSBK or data message that will be sent", not counting the CSBK
+  itself. TS 102 361-1 and -3 don't define the preamble. Each data header's Blocks to Follow (TS 102 361-1 9.3.21)
+  counts its own packet's blocks only. Ours: each preamble counts the preambles after it plus every burst of the
+  chain, so a scanning or sleeping receiver that trusts the count stays for the whole transmission
+  (`dmrDataBuildPreambles`).
+- One transmission, one result: every packet in it ends sent or failed together.
+- A transmission stays within the stack's TX deadline ([gotchas.md](gotchas.md) 3.9), which grows with the list.
+- Receive needs nothing new: a data header resets the receiver, also right after the previous packet's last block
+  (`dmrDataRxBurst`).
+
+#### 12.6.3 The guard
+
+Between separate transmissions the service waits `CONFIG_DMR_DATA_TX_GUARD_MS` (default 250 ms) after our own
+transmission ended before it starts another that isn't a reply. Replies (ETSI responses, CSBK answers) are not held:
+the sender waits for them. The end is stamped at the first tick after the stack reports it, never before the real end.
+Lists held back are counted (`data.tx_guarded`).
+
+The guard is a workaround. On the SDR bench, #154 found receivers lost the second of two packets sent as separate
+transmissions with no gap, with `data.rx_blocks_stale` on the receiver: it never saw the second transmission's
+preamble CSBKs or header. The cause is not known. Candidates: our own re-key (the transmitter's ramp), or the
+receiving modem's end-of-call state (200-400 ms, [gotchas.md](gotchas.md) 3.6). 250 ms was enough in every trial.
+Chaining avoids the re-key for packets that can share a transmission.
+
+For finding the cause, the debug link's DMR_DATA op 11 TX_SPACING sets the guard and turns chaining off in RAM
+(`rfoundry_debug.py data tx-spacing MS [chain|no-chain]`). `tests/hil/test_dmr_tx_spacing.py` (opt-in RF) measures
+delivery chained, separate with no gap, and separate with 250 ms.
+
+### 12.7 Open
 
 - No commercial radio has answered our confirmed packets yet, nor sent us a selective retry: the CRC-9 and the
   response formats are from the standard and the vectors (`dmr_ip_vectors.py`); `ip.rx_crc9_mismatch` on air will

@@ -32,18 +32,19 @@ def main(argv=None):
 			help="the repository's web address, for links to files outside docs/")
 	ap.add_argument("--ref", default=None, help="branch or tag those links point at (default: main)")
 	ap.add_argument("--firmware", help="a directory of release images and manifests (tools/release.py --out)")
+	ap.add_argument("--beta", default="", help="a pre-release newer than those images, offered as an opt-in version link")
 	ap.add_argument("--strict", action="store_true", help="exit 1 when the build warns")
 	ap.add_argument("--serve", action="store_true", help="serve the result on localhost")
 	ap.add_argument("--port", type=int, default=8000)
 	args = ap.parse_args(argv)
 	try:
-		import markdown_it  # noqa: F401
+		import markdown_it, resvg_py  # noqa: F401
 	except ImportError:
-		print("site/build.py: markdown-it-py is missing. pip install -r site/requirements.txt, or run:\n"
+		print("site/build.py: markdown-it-py or resvg_py is missing. pip install -r site/requirements.txt, or run:\n"
 		      "  uv run --no-project --with-requirements site/requirements.txt python3 site/build.py", file=sys.stderr)
 		return 2
 	from rfoundrysite.build import Site
-	site = Site(args.out, args.repo_url, args.ref or "main", firmware=args.firmware)
+	site = Site(args.out, args.repo_url, args.ref or "main", firmware=args.firmware, beta=args.beta)
 	try:
 		warnings = site.build()
 	except repo.SourceError as e:

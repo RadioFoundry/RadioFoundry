@@ -35,6 +35,12 @@ unsigned task_stack_snapshot(task_stack_t *out, unsigned max, unsigned *untracke
 	return n;
 }
 
+void task_stack_heap(uint32_t *free_now, uint32_t *least_free)
+{
+	*free_now = 9000;
+	*least_free = 6000;
+}
+
 static void add(const char *name, uint32_t free_bytes)
 {
 	snprintf(fake[fake_n].name, sizeof(fake[fake_n].name), "%s", name);
@@ -73,7 +79,8 @@ static void testEmpty(void)
 	fake_n = 0;
 	fake_untracked = 0;
 	render();
-	CHECK(strcmp(out, "tasks.count=0\ntasks.untracked=0\n") == 0, "empty table: '%s'", out);
+	CHECK(strcmp(out, "tasks.count=0\ntasks.untracked=0\ntasks.heap_free=9000\ntasks.heap_min_free=6000\n") == 0,
+	      "empty table: '%s'", out);
 	CHECK(asked_max == TASK_STACK_MAX, "the whole table asked for: %u", asked_max);
 }
 

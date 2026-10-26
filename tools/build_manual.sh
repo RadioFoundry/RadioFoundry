@@ -5,14 +5,14 @@
 # Builds the PDF user manual from the Markdown chapters in docs/user/ (docs/dev/manual-pdf.md).
 #
 #   tools/build_manual.sh                    # build/manual/RadioFoundry-manual-<version>.pdf
-#   tools/build_manual.sh --version v0.1.0   # the version printed on the title page and in the file name
+#   tools/build_manual.sh --version v26.11   # the version printed on the title page and in the file name
 #   tools/build_manual.sh --typ-only         # stop after the typst source (no typst needed)
 #   tools/build_manual.sh --out FILE.pdf
 #
 # Needs pandoc (3.1.12 or later) and typst (0.12 or later) on PATH, or $PANDOC and $TYPST. Nothing else: no LaTeX,
 # no fonts beyond the ones typst carries. Chapters are the files docs/user/NN-*.md in name order; docs/user/README.md
 # is the GitHub index and is not part of the PDF. Set RFOUNDRY_REPO_URL (for example
-# https://github.com/OWNER/REPO/blob/v0.1.0) to turn links into the rest of the repository into web links; without
+# https://github.com/OWNER/REPO/blob/v26.11) to turn links into the rest of the repository into web links; without
 # it they print as plain text.
 set -eu
 

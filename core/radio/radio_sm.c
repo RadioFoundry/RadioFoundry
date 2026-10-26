@@ -11,7 +11,7 @@
 #include "settings/settings.h"
 #include "config.h"
 #include "hal_dtmf.h"
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 #include "codeplug/zone_edit.h"
 #define ZONE_WRITE_BUSY()	zone_edit_busy()
 #define ZONES_MOVED(sm)		(zone_edit_shifts() != (sm)->zone_shifts)
@@ -39,13 +39,25 @@
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
 #endif
+#if CONFIG_SFR
+#include "radio/radio_sfr.h"		// standalone SFR roles (docs/spec/sfr.md 4)
+#endif
 #if CONFIG_HOTSPOT
 #include "radio/radio_hotspot.h"	// the CW ID handover
+#endif
+#if CONFIG_SFR_CWID
+static void cw_cancel(radio_sm_t *sm);
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net_air.h"	// the IP gateway's air side (the data service's packet hook)
 #include "hostlink/hostlink_net.h"	// control station passthrough
 #include "dmr/ipGateway.h"		// the off-net route's gateway ID
+#endif
+#if CONFIG_DMR_AIR_QUEUE
+#include "dmr/dmrAirQueue.h"	// what the gateway and zone sharing send, in order (docs/spec/dmr-data.md 12)
+#endif
+#if CONFIG_ZONE_SHARE
+#include "dmr/zone_share_api.h"
 #endif
 #if CONFIG_AM_RX
 #include "radio/radio_am.h"	// air band AM receive (docs/spec/airband-and-broadcast.md 3)
@@ -122,6 +134,8 @@ void radio_settings_default(radio_settings_t *s)
 	s->roam_beacon_len_s = 4;	// ROAM_BEACON_LEN_DEFAULT
 	s->roam_survey = 1;		// listening only (P7 allows it): the survey of the synchronized beacon window
 	s->rpt_beacon = false;		// transmits: off until the user turns it on (P7)
+	s->sfr_rx = 0;			// DMR_SFR_RX_REPEATER
+	s->sfr_cwid = 0;		// transmits: off until the user turns it on
 }
 
 static void activity(radio_sm_t *sm, uint32_t now_ms)
@@ -137,7 +151,11 @@ static void beep(radio_sm_t *sm, uint8_t b)
 #if CONFIG_DMR
 	shared = ambeVoiceStreaming();
 #endif
-	beep_play((beep_t)b, sm->set.beep_level, shared);
+	uint8_t level = sm->set.beep_level;
+	if (board.radio != NULL && board.radio->volume != NULL && !board.radio->volume_pcm) {
+		level = radio_beep_level(level, sm->volume_sent);
+	}
+	beep_play((beep_t)b, level, shared);
 #else
 	(void)sm;
 	(void)b;
@@ -153,6 +171,9 @@ static void apply_tot(radio_sm_t *sm)
 }
 
 static uint8_t master_power = SETTINGS_UNSET8;	// the settings' power for "default" channels
+// The radio task's copy of the settings for the few places that read more than one field (data_init, cw_begin,
+// reload). Static: off the radio task's stack; one copy, since none of them calls another (RAM is tight on some radios)
+static settings_t st_copy;
 
 static uint8_t default_power(void)
 {
@@ -182,6 +203,31 @@ uint8_t radio_sm_squelch_open_below(uint8_t level)
 		level = RADIO_SQUELCH_MAX;
 	}
 	return (uint8_t)(RADIO_SQL_OPEN_L1 - (level - 1) * RADIO_SQL_DB_PER_STEP);
+}
+
+bool radio_view_wakes(const radio_view_t *v)
+{
+	if (v->hotspot) {
+		return false;		// the host's traffic
+	}
+	switch (v->state) {
+	case RS_TX:
+		return !v->tx_auto;
+	case RS_TX_DENIED:
+		return true;		// PTT held: the screen says why
+	case RS_RX:
+		if (v->bcast) {
+			return false;	// a broadcast program plays on: not something new to look at
+		}
+#if CONFIG_DMR
+		if (v->ch.mode == RADIO_MODE_DMR) {
+			return v->dmr.state == RDMR_RX;	// a call that plays; not data or a call we don't play
+		}
+#endif
+		return true;		// FM: the squelch opened, something plays
+	default:
+		return false;
+	}
 }
 
 static bool same_tone(const subtone_t *a, const subtone_t *b)
@@ -316,13 +362,13 @@ static void outputs(radio_sm_t *sm)
 	if (!fm && !tx && sm->view.state == RS_RX && sm->view.dmr.state == RDMR_RX) {
 		green = true;
 	}
-	if (sm->hotspot && board.dmr != NULL && board.dmr->is_transmitting()) {
+	if ((sm->hotspot || sm->sfr_rpt) && board.dmr != NULL && board.dmr->is_transmitting()) {
 		tx = true;
 	}
 #endif
-#if CONFIG_HOTSPOT
+#if RADIO_SM_CW
 	if (sm->cw_phase != 0) {
-		tx = true;	// the hotspot's CW ID
+		tx = true;	// a CW ID
 	}
 #endif
 
@@ -427,6 +473,9 @@ static void bcast_status(radio_sm_t *sm, radio_status_t *st)
 
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
+#if CONFIG_SFR_CWID
+	cw_cancel(sm);		// the repeater's ID: the board is set up for the channel below
+#endif
 	end_reception(sm, now_ms);
 #if CONFIG_AM_RX
 	sm->view.am = radio_am_channel(&sm->view.ch);	// an FM channel in the air band: AM, no sub-audio
@@ -925,6 +974,17 @@ static void dmr_configure(radio_sm_t *sm)
 	}
 	cfg.ts = ts_override != 0 ? ts_override : (ch->timeslot == 2 ? 2 : 1);
 	cfg.rmo = ch->tx_hz != 0 && ch->rx_hz != ch->tx_hz && !ch->dmo;
+#if CONFIG_SFR
+	// A user of a single frequency repeater: the inbound slot and its sync, the copies heard (sfr.md 4)
+	sfrConfig_t sc;
+	sm->view.dmr.sfr_role = radio_sfr_channel(ch, sm->view.vfo, &sc);
+	sm->view.dmr.sfr_inbound = sc.inboundSlot;
+	if (sfrRoleIsUser(sm->view.dmr.sfr_role) && !cfg.rmo) {
+		cfg.sfr_user = true;
+		radio_sfr_user(&sc, &cfg.ts, &cfg.tx_sync, &cfg.rx_sync, &cfg.cc2);
+		cfg.sfr_rx = sm->set.sfr_rx;
+	}
+#endif
 	cfg.talk_target.id = sm->one_shot ? sm->one_shot_id : sm->manual ? sm->manual_id : sm->talk_id;
 	cfg.talk_target.private_call = sm->one_shot ? sm->one_shot_private : sm->manual ? sm->manual_private :
 		sm->talk_private;
@@ -1091,9 +1151,97 @@ static void dmr_set_timeslot(radio_sm_t *sm, int32_t ts, bool busy)
 	dmr_reconfigure(sm);
 }
 
+#if CONFIG_SFR
+// The repeater role lets go of the modem and the keying
+static void sfr_rpt_end(radio_sm_t *sm)
+{
+	if (!sm->sfr_rpt) {
+		return;
+	}
+	radio_sfr_stop();
+	if (sm->dmr_keyed) {
+		sm->dmr_keyed = false;
+		board.radio->tx_off();
+	}
+	sm->sfr_rpt = false;
+	sm->view.dmr.sfr_rpt = false;
+	sm->view.dmr.sfr_keyed = false;
+	sm->view.dmr.sfr_busy = false;
+}
+
+// The repeater role waits while the radio may not transmit (TX inhibit, the battery, the band) and while a scan or dual
+// watch runs: they visit the channel to listen, and their activity check reads the call stack
+static bool sfr_rpt_wait(radio_sm_t *sm)
+{
+#if CONFIG_SCAN
+	if (scan_on(&sm->scan)) {
+		return true;
+	}
+#endif
+	return tx_check(sm) != TXDENY_NONE;
+}
+
+#if CONFIG_SFR_CWID
+#define SFR_RPT_RESUMING(sm)	((sm)->cw_sfr)	// back from its CW ID: the same role, its counters carry on
+#else
+#define SFR_RPT_RESUMING(sm)	false
+#endif
+
+// A channel whose SFR role is a repeater: the runner takes the modem instead of the call stack, and the keying is armed
+// on the channel's frequency for the modem's per-burst keying, as in hotspot mode. Not while it must wait (sfr_rpt_wait),
+// or when the board won't key: then the channel is an ordinary one. False: the call stack's channel
+static bool sfr_rpt_begin(radio_sm_t *sm)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	const channel_t *ch = &sm->view.ch;
+	sfrConfig_t sc;
+
+	sm->view.dmr.sfr_role = radio_sfr_channel(ch, sm->view.vfo, &sc);
+	sm->view.dmr.sfr_inbound = sc.inboundSlot;
+	sfr_rpt_end(sm);
+	sm->sfr_denied = false;
+	if (!sfrRoleIsRepeater(sm->view.dmr.sfr_role) || board.dmr == NULL) {
+		return false;
+	}
+	if (sfr_rpt_wait(sm)) {
+		sm->sfr_denied = true;	// radio_sm_tick starts the role once it may
+		return false;
+	}
+	if (sm->dmr_running) {
+		dmr_call_ptt(false);
+		dmr_call_stop();
+		ambeVoiceStop();
+		sm->dmr_running = false;
+	}
+	if (!radio_sfr_start(board.dmr, &sc, sm->set.rpt_beacon ? sm->set.roam_beacon_s : 0, sm->set.roam_beacon_len_s,
+			     SFR_RPT_RESUMING(sm), 0)) {	// the beacon schedule starts at the first poll
+		return false;
+	}
+	sm->dmr_keyed = board.radio->tx(ch->tx_hz, RADIO_BW_12K5, sm->view.power, &none);
+	if (!sm->dmr_keyed) {
+		radio_sfr_stop();	// the board refused the keying: no repeater that can't send
+		return false;
+	}
+#if CONFIG_SFR_CWID
+	if (!sm->cw_sfr) {
+		memset(&sm->cwid, 0, sizeof(sm->cwid));	// a new role (not back from its ID): the first ID after its first
+	}						// transmission
+#endif
+	sm->sfr_rpt = true;
+	sm->view.dmr.sfr_rpt = true;
+	sm->view.dmr.active = false;
+	return true;
+}
+#endif
+
 // On a DMR channel, after set_mode(DMR) and rx(): configure, and start the stack if it isn't running
 static void dmr_begin(radio_sm_t *sm)
 {
+#if CONFIG_SFR
+	if (sfr_rpt_begin(sm)) {
+		return;
+	}
+#endif
 	dmr_load_channel(sm);
 	dmr_configure(sm);
 	if (!sm->dmr_running && board.dmr != NULL) {
@@ -1106,6 +1254,9 @@ static void dmr_begin(radio_sm_t *sm)
 // Leaving DMR (or into hotspot mode): drop any transmission, stop the stack and the PCM stream
 static void dmr_end(radio_sm_t *sm)
 {
+#if CONFIG_SFR
+	sfr_rpt_end(sm);
+#endif
 	dmr_call_ptt(false);
 	dmr_call_stop();
 	ambeVoiceStop();
@@ -1277,6 +1428,10 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 	}
 	if (sm->ptt) {
 		sm->tx_no_ptt = false;	// the user keyed: that transmission counts
+		if (sm->view.tx_auto) {
+			sm->view.tx_auto = false;
+			changed(sm);
+		}
 		if (cv->phase == DMR_CALL_PHASE_TX_DENIED && sm->view.state != RS_TX_DENIED) {
 			deny(sm, dmr_deny_reason(cv->tx_error));
 #if CONFIG_DMR_ROAMING
@@ -1291,6 +1446,8 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 		// transmitting see it
 		sm->view.state = RS_TX;
 		sm->tx_no_ptt = true;
+		sm->view.tx_auto = true;
+		sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
 		sm->view.tx_deny = TXDENY_NONE;
 		sm->view.tx_elapsed_ms = 0;
 		sm->tx_start_ms = now_ms;
@@ -1468,6 +1625,8 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	}
 	one_shot_start(sm);
 	sm->view.state = RS_TX;
+	sm->view.tx_auto = false;
+	sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
 	sm->view.tx_deny = TXDENY_NONE;
 	sm->view.tx_elapsed_ms = 0;
 	sm->tx_start_ms = now_ms;
@@ -1562,7 +1721,7 @@ static bool data_tx_start(const dmrBurst_t *bursts, int count, void *ctx)
 	data_tx.count = count;
 	data_tx.next = 0;
 	dmr_data_source_t src = { .next = data_next, .done = data_done, .ctx = sm,
-				  .count = (uint8_t)(count > 255 ? 255 : count) };
+				  .count = (uint8_t)(count > 255 ? 255 : count), .tag = dmrDataServiceTxStartingName() };
 	if (!dmr_call_data_tx(&src)) {
 		data_tx.list = NULL;
 		return false;	// the keying is released by dmr_follow (the stack isn't transmitting)
@@ -1698,6 +1857,9 @@ static void data_init(radio_sm_t *sm)
 {
 	dmrDataEnv_t env = { .txStart = data_tx_start, .channelClear = data_channel_clear,
 			     .inRxGroup = data_in_rx_group, .ctx = sm };
+#if CONFIG_DMR_AIR_QUEUE
+	airqInit();
+#endif
 #if CONFIG_DMR_IP_GATEWAY
 	env.packet = hostlink_net_air_packet;
 	hostlink_net_air_start();
@@ -1709,34 +1871,38 @@ static void data_init(radio_sm_t *sm)
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = false, .callAlertAck = true, .lrrpReply = true,
 				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
-	settings_t st;
-	settings_read(&st);
-	if (st.ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
-		set.arsServer = st.ds_ars_server <= 0xFFFFFFu ? st.ds_ars_server : 0;
-		set.radioCheckReply = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
-		set.callAlertAck = (st.ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
-		set.lrrpReply = (st.ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
+	settings_t *st = &st_copy;
+	settings_read(st);
+	if (st->ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
+		set.arsServer = st->ds_ars_server <= 0xFFFFFFu ? st->ds_ars_server : 0;
+		set.radioCheckReply = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
+		set.callAlertAck = (st->ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
+		set.lrrpReply = (st->ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
 		// A record from before ETSI IP text has neither format bit: TMS, as that firmware sent (only the default
 		// changed, docs/spec/dmr-data.md 8)
-		set.smsFormat = (st.ds_flags & SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_ETSI_IP :
-				(st.ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
-		set.radioCheckEtsi = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
-		set.udpCompress = (st.ds_flags & SETTINGS_DS_UDPC_OFF) ? DMR_UDPC_OFF :
-				  (st.ds_flags & SETTINGS_DS_UDPC_ALL) ? DMR_UDPC_ALL : DMR_UDPC_AUTO;
-		uint8_t ipc = (uint8_t)(st.ds_ip_cnf >> SETTINGS_DS_IPC_SHIFT) & 3u;
+		set.smsFormat = (st->ds_flags & SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_ETSI_IP :
+				(st->ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		set.radioCheckEtsi = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
+		set.udpCompress = (st->ds_flags & SETTINGS_DS_UDPC_OFF) ? DMR_UDPC_OFF :
+				  (st->ds_flags & SETTINGS_DS_UDPC_ALL) ? DMR_UDPC_ALL : DMR_UDPC_AUTO;
+		uint8_t ipc = (uint8_t)(st->ds_ip_cnf >> SETTINGS_DS_IPC_SHIFT) & 3u;
 		set.ipConfirmed = ipc == SETTINGS_DS_IPC_OFF ? DMR_IPC_OFF : ipc == SETTINGS_DS_IPC_ALL ? DMR_IPC_ALL :
 				  DMR_IPC_RULES;
-		set.ipConfirmedTries = (st.ds_ip_cnf & 0x0F) ? (st.ds_ip_cnf & 0x0F) : DMR_IPC_TRIES_DEFAULT;
-		memcpy(set.ipConfirmedRule, st.ds_ip_rule, sizeof(set.ipConfirmedRule));
-		set.ipGatewayId = st.ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
+		set.ipConfirmedTries = (st->ds_ip_cnf & 0x0F) ? (st->ds_ip_cnf & 0x0F) : DMR_IPC_TRIES_DEFAULT;
+		memcpy(set.ipConfirmedRule, st->ds_ip_rule, sizeof(set.ipConfirmedRule));
+		set.ipGatewayId = st->ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
 	}
 	data_saved = set;
 	data_tx.list = NULL;
 	dmrDataServiceInit(&env);
 	dmrDataServiceSetSettings(&set);
+#if CONFIG_ZONE_SHARE
+	zone_share_init();
+	zone_share_set_offers(st->zs_offers);	// Off unless the user chose Ask (docs/spec/zone-share.md 5)
+#endif
 	dmr_call_set_data_rx(data_rx, NULL);
 #if CONFIG_DMR_EMERGENCY
-	emergency_init(&st);
+	emergency_init(st);
 #endif
 }
 
@@ -1760,13 +1926,21 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 	dmrDataServiceSetPassthrough(hostlink_net_passthrough_active());
 #endif
 	dmrDataServiceTick(now_ms, &c);
+#if CONFIG_DMR_IP_GATEWAY
+	hostlink_net_air_tick(sm->view.dmr.own_id, now_ms);
+#endif
+#if CONFIG_DMR_AIR_QUEUE
+	airqTick(sm->view.dmr.own_id, now_ms);	// the next queued packet, when the service is free
+#endif
+#if CONFIG_ZONE_SHARE
+	zone_share_tick(now_ms);
+#endif
 	data_save_settings(now_ms);
 	if (sm->power_off_req && sm->power_off_busy) {
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
 	}
 #if CONFIG_DMR_IP_GATEWAY
 	ipGatewaySetOffNetId(data_saved.ipGatewayId);	// the setting in force (data_save_settings above follows it)
-	hostlink_net_air_tick(sm->view.dmr.own_id, now_ms);
 #endif
 }
 #endif
@@ -2836,7 +3010,8 @@ static bool roam_probe(radio_sm_t *sm)
 		sm->dmr_keyed = true;
 	}
 	roam_probe_left = 1;
-	dmr_data_source_t src = { .next = roam_probe_next, .done = roam_probe_done, .ctx = sm, .count = 1 };
+	dmr_data_source_t src = { .next = roam_probe_next, .done = roam_probe_done, .ctx = sm, .count = 1,
+				  .tag = "roam" };
 	if (!dmr_call_data_tx(&src)) {
 		return false;	// dmr_follow releases the keying
 	}
@@ -2955,7 +3130,7 @@ static void roam_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 		// Only this zone's flag: the others are the zone writes' to move (zone_settle.c), and a reload not done yet
 		// leaves this zone's index the old one
 		uint16_t saved = zi;
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 		if (zone_edit_map(sm->zone_shifts, zone_edit_shifts(), zi, &saved) != ZONE_MAP_KEPT) {
 			saved = SETTINGS_ROAM_ZONE_BYTES * 8u;	// gone or lost: the reload reads the saved flags again
 		}
@@ -3029,7 +3204,7 @@ static bool aprs_can_start(const radio_sm_t *sm)
 	if ((sm->dmr_running && sm->view.dmr.state != RDMR_IDLE) || sm->dmr_keyed) {
 		return false;
 	}
-#if CONFIG_HOTSPOT
+#if RADIO_SM_CW
 	if (sm->cw_phase != 0) {
 		return false;
 	}
@@ -3124,6 +3299,8 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 		sm->aprs_phase = APRS_RF_KEYUP;		// before tx(): aprs_rf_end unkeys from here on
 		sm->aprs_ms = now_ms;
 		sm->view.state = RS_TX;			// speaker off, red LED on, before keying
+		sm->view.tx_auto = true;
+		sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
 		sm->view.tx_deny = TXDENY_NONE;
 		outputs(sm);
 		changed(sm);
@@ -3452,6 +3629,12 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		deny(sm, TXDENY_HOTSPOT);	// the host link transmits for the hotspot; PTT does nothing until it ends
 		return;
 	}
+#if CONFIG_DMR && CONFIG_SFR
+	if (sm->sfr_rpt) {
+		deny(sm, TXDENY_SFR_RPT);	// the repeater keys for the calls it repeats
+		return;
+	}
+#endif
 	end_reception(sm, now_ms);
 
 	uint8_t reason = tx_check(sm);
@@ -3474,6 +3657,8 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	sm->view.state = RS_TX;		// speaker off, red LED on, before keying
+	sm->view.tx_auto = false;
+	sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
 	sm->view.tx_deny = TXDENY_NONE;
 	sm->view.tx_elapsed_ms = 0;
 	sm->tx_start_ms = now_ms;
@@ -3576,7 +3761,7 @@ static void hotspot_arm(radio_sm_t *sm)
 	if (!sm->hotspot || sm->hs_tx_hz == 0) {
 		return;
 	}
-#if CONFIG_HOTSPOT
+#if RADIO_SM_CW
 	if (sm->cw_phase != 0) {
 		return;		// armed again when the CW ID ends
 	}
@@ -3584,11 +3769,12 @@ static void hotspot_arm(radio_sm_t *sm)
 	sm->dmr_keyed = board.radio->tx(sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
 }
 
-#if CONFIG_HOTSPOT
-// --- The hotspot's CW ID (SEND_CWID, docs/spec/mmdvm-protocol.md 2.11): the hotspot is idle (mmdvm.c accepts it only
-// then); the DMR keying is released, the board goes to FM and keys a carrier on the hotspot's TX frequency, the
-// board's TX tone is keyed in Morse (core/radio/morse.c) at the settings' speed, then FM is left: set_mode(DMR) sets up
-// the modem again (gotcha 8.13), the receiver goes back to the hotspot's RX frequency and the keying is armed again ---
+#if RADIO_SM_CW
+// --- CW IDs: the hotspot's (SEND_CWID, docs/spec/mmdvm-protocol.md 2.11; the hotspot is idle, mmdvm.c accepts it only
+// then) and the standalone SFR repeater's (CONFIG_SFR_CWID, docs/spec/sfr.md 4, CW ID). The DMR keying is released, the
+// board goes to FM and keys a carrier on the TX frequency, the board's TX tone is keyed in Morse (core/radio/morse.c)
+// at the settings' speed, then FM is left: set_mode(DMR) sets up the modem again (gotcha 8.13), the receiver goes
+// back to the RX frequency and the hotspot's keying is armed again, or the repeater role starts again ---
 
 #define CW_LEAD_MS		150	// carrier up before the first element
 #define CW_TAIL_MS		150	// and after the last
@@ -3605,7 +3791,28 @@ static void cw_key(radio_sm_t *sm, bool down)
 	board.radio->tx_tone(down ? sm->cw_tone_hz : 0);
 }
 
-// FM off again, the hotspot's DMR set-up back
+static void cw_ended(radio_sm_t *sm, bool sent, uint32_t ms)
+{
+	(void)ms;
+#if CONFIG_SFR_CWID
+	if (sm->cw_sfr) {
+		if (sent) {
+			sm->view.dmr.sfr_cwid_sent++;
+		} else {
+			sm->view.dmr.sfr_cwid_cut++;
+		}
+		sm->cw_sfr = false;
+		sm->view.dmr.sfr_cw = false;
+		changed(sm);
+		return;
+	}
+#endif
+#if CONFIG_HOTSPOT
+	radio_hs_cw_ended(sent, ms);
+#endif
+}
+
+// FM off again, the hotspot's or the repeater's DMR set-up back
 static void cw_restore(radio_sm_t *sm)
 {
 	static const subtone_t none = { TONE_NONE, 0 };
@@ -3615,6 +3822,15 @@ static void cw_restore(radio_sm_t *sm)
 	sm->cw_key = false;
 	sm->board_mode = RADIO_MODE_DMR;
 	board.radio->set_mode(RADIO_MODE_DMR);
+#if CONFIG_SFR_CWID
+	if (sm->cw_sfr) {
+		board.radio->rx(sm->view.ch.rx_hz, RADIO_BW_12K5, &none);
+		dmr_begin(sm);		// the role again (sfr_rpt still set; cw_sfr keeps the ID schedule), or the call
+					// stack if the radio may not transmit now
+		outputs(sm);
+		return;
+	}
+#endif
 	if (sm->hs_rx_hz != 0) {
 		board.radio->rx(sm->hs_rx_hz, RADIO_BW_12K5, &none);
 	}
@@ -3622,18 +3838,51 @@ static void cw_restore(radio_sm_t *sm)
 	outputs(sm);
 }
 
+// The carrier up in FM on hz and the text queued after the lead-in: the keying speed, 0 if the board refused
+static uint8_t cw_begin(radio_sm_t *sm, uint32_t hz, uint8_t power, const char *text, uint8_t n, uint32_t now_ms)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	settings_t *st = &st_copy;
+	settings_read(st);
+	uint8_t wpm = st->cw_wpm != 0 ? st->cw_wpm : MORSE_WPM_DEFAULT;
+	if (wpm < MORSE_WPM_MIN || wpm > MORSE_WPM_MAX) {
+		wpm = MORSE_WPM_DEFAULT;
+	}
+	uint16_t tone_hz = st->cw_tone_hz;
+	sm->cw_tone_hz = (tone_hz >= CW_TONE_MIN_HZ && tone_hz <= CW_TONE_MAX_HZ) ? tone_hz : MORSE_TONE_HZ_DEFAULT;
+
+	if (sm->dmr_keyed) {
+		sm->dmr_keyed = false;
+		board.radio->tx_off();
+	}
+	sm->board_mode = RADIO_MODE_FM;
+	board.radio->set_mode(RADIO_MODE_FM);
+	sm->cw_phase = CW_KEYING;	// before tx(): cw_restore and outputs see it
+	if (!board.radio->tx(hz, RADIO_BW_12K5, power, &none) || !board.radio->tx_tone(sm->cw_tone_hz)) {
+		cw_restore(sm);
+		cw_ended(sm, false, 0);
+		return 0;
+	}
+	cw_key(sm, false);		// a silent carrier for the lead-in
+	morse_start(&sm->cw, text, n, wpm, now_ms + CW_LEAD_MS);
+	sm->cw_start_ms = now_ms;
+	outputs(sm);
+	changed(sm);
+	return wpm;
+}
+
+#if CONFIG_HOTSPOT
 // Leaving hotspot mode or retuning in the middle: the ID is cut
 static void cw_abort(radio_sm_t *sm)
 {
 	if (sm->cw_phase != CW_OFF) {
 		cw_restore(sm);
-		radio_hs_cw_ended(false, 0);
+		cw_ended(sm, false, 0);
 	}
 }
 
 static void cw_start(radio_sm_t *sm, uint32_t now_ms)
 {
-	static const subtone_t none = { TONE_NONE, 0 };
 	char text[MORSE_TEXT_MAX];
 	uint8_t n = radio_hs_cw_take(text, sizeof(text));
 	if (n == 0) {
@@ -3644,34 +3893,47 @@ static void cw_start(radio_sm_t *sm, uint32_t now_ms)
 		radio_hs_cw_ended(false, 0);
 		return;
 	}
-	settings_t st;
-	settings_read(&st);
-	uint8_t wpm = st.cw_wpm != 0 ? st.cw_wpm : MORSE_WPM_DEFAULT;
-	if (wpm < MORSE_WPM_MIN || wpm > MORSE_WPM_MAX) {
-		wpm = MORSE_WPM_DEFAULT;
+	uint8_t wpm = cw_begin(sm, sm->hs_tx_hz, sm->hs_power, text, n, now_ms);
+	if (wpm != 0) {
+		radio_hs_cw_started(wpm);
 	}
-	uint16_t hz = st.cw_tone_hz;
-	sm->cw_tone_hz = (hz >= CW_TONE_MIN_HZ && hz <= CW_TONE_MAX_HZ) ? hz : MORSE_TONE_HZ_DEFAULT;
+}
+#endif
 
-	if (sm->dmr_keyed) {
-		sm->dmr_keyed = false;
-		board.radio->tx_off();
-	}
-	sm->board_mode = RADIO_MODE_FM;
-	board.radio->set_mode(RADIO_MODE_FM);
-	sm->cw_phase = CW_KEYING;	// before tx(): cw_restore and outputs see it
-	if (!board.radio->tx(sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none) || !board.radio->tx_tone(sm->cw_tone_hz)) {
-		cw_restore(sm);
-		radio_hs_cw_ended(false, 0);
+#if CONFIG_SFR_CWID
+// The SFR repeater's ID, idle and due (sfr_rpt_tick): the runner lets go of the modem, sfr_rpt stays set (PTT stays
+// refused, the poll leaves the state alone) and the callsign is keyed on the channel's frequency
+static void cw_start_sfr(radio_sm_t *sm, uint32_t now_ms)
+{
+	char text[MORSE_TEXT_MAX];
+	uint8_t n = radio_cwid_callsign(sm->radio_name, text, sizeof(text));
+	radio_cwid_sent(&sm->cwid, now_ms);
+	if (n == 0 || board.radio->tx_tone == NULL) {
+		sm->view.dmr.sfr_cwid_cut++;	// nothing to send: no radio name
 		return;
 	}
-	cw_key(sm, false);		// a silent carrier for the lead-in
-	morse_start(&sm->cw, text, n, wpm, now_ms + CW_LEAD_MS);
-	sm->cw_start_ms = now_ms;
-	radio_hs_cw_started(wpm);
-	outputs(sm);
-	changed(sm);
+	radio_sfr_stop();
+	sm->view.dmr.sfr_keyed = false;
+	sm->view.dmr.sfr_busy = false;
+	sm->cw_sfr = true;
+	sm->view.dmr.sfr_cw = true;
+	(void)cw_begin(sm, sm->view.ch.tx_hz, sm->view.power, text, n, now_ms);
 }
+
+// A retune or hotspot mode in the middle of the repeater's ID: cut; the caller sets the board up for what follows
+static void cw_cancel(radio_sm_t *sm)
+{
+	if (sm->cw_phase == CW_OFF || !sm->cw_sfr) {
+		return;
+	}
+	board.radio->tx_tone(0);
+	board.radio->tx_off();
+	sm->cw_phase = CW_OFF;
+	sm->cw_key = false;
+	cw_ended(sm, false, 0);
+	sfr_rpt_end(sm);
+}
+#endif
 
 // Every RADIO_TICK_MS
 static void cw_service(radio_sm_t *sm, uint32_t now_ms)
@@ -3688,7 +3950,7 @@ static void cw_service(radio_sm_t *sm, uint32_t now_ms)
 	} else if (sm->cw_phase == CW_TAIL && (now_ms - sm->cw_ms) >= CW_TAIL_MS) {
 		uint32_t ms = now_ms - sm->cw_start_ms;
 		cw_restore(sm);
-		radio_hs_cw_ended(true, ms);
+		cw_ended(sm, true, ms);
 		changed(sm);
 	}
 }
@@ -3697,9 +3959,16 @@ static void cw_service(radio_sm_t *sm, uint32_t now_ms)
 static void hotspot_enter(radio_sm_t *sm, uint32_t rx_hz, uint32_t now_ms)
 {
 	static const subtone_t none = { TONE_NONE, 0 };
-	if (sm->hotspot || board.dmr == NULL || sm->ptt || sm->view.state == RS_TX || sm->dmr_keyed) {
+	bool keyed = sm->dmr_keyed;
+#if CONFIG_SFR
+	keyed = keyed && !sm->sfr_rpt;	// the repeater role's keying stays armed while it runs: dmr_end ends it
+#endif
+	if (sm->hotspot || board.dmr == NULL || sm->ptt || sm->view.state == RS_TX || keyed) {
 		return;		// refused for now: the hotspot asks again
 	}
+#if CONFIG_SFR_CWID
+	cw_cancel(sm);
+#endif
 	scan_stop(sm, false, now_ms);
 	end_reception(sm, now_ms);
 #if CONFIG_BCAST_FM
@@ -3765,7 +4034,7 @@ static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
 
 // --- Settings: what the radio was set to, back at power-on (core/settings), and saved when it changes ---
 
-// The preferences the radio core uses: base squelch, master power, VFO step, the own DMR ID override
+// The preferences the radio core uses: base squelch, master power, VFO step. The own DMR ID is the codeplug's
 static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 {
 	master_power = st->master_power;
@@ -3782,7 +4051,7 @@ static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 	sm->vfo_step_set = st->vfo_step_hz >= 1000u && st->vfo_step_hz <= 1000000u ? st->vfo_step_hz : 0;
 	step_update(sm);
 #if CONFIG_DMR
-	sm->own_id = st->dmr_id != 0 && st->dmr_id <= 0xFFFFFFu ? st->dmr_id : codeplug_dmr_id();
+	sm->own_id = codeplug_dmr_id();	// set on the radio in Settings > My radio, which writes the codeplug
 	if (sm->own_id == 0) {
 		sm->own_id = RADIO_DMR_ID_DEFAULT;
 	}
@@ -4078,6 +4347,15 @@ static void clamp_settings(radio_settings_t *s)
 	if (s->roam_survey > 2) {
 		s->roam_survey = 1;
 	}
+	// 0 repeat only, 1 both (first arrival), 2 both (dual-path RX, CONFIG_SFR_DUALPATH_RX; else first arrival)
+	if (s->sfr_rx > 2) {
+		s->sfr_rx = 0;
+	} else if (s->sfr_rx == 2 && !CONFIG_SFR_DUALPATH_RX) {
+		s->sfr_rx = 1;
+	}
+	if (s->sfr_cwid > 4 || !CONFIG_SFR_CWID) {
+		s->sfr_cwid = 0;
+	}
 }
 
 // The radio core's settings as kept in the settings store (docs/spec/settings-store.md 3); the defaults if never set
@@ -4092,7 +4370,9 @@ static void settings_to_radio(const settings_t *st, radio_settings_t *s)
 		s->roam_beacon_s = st->roam_beacon_s;
 		s->roam_beacon_len_s = st->roam_beacon_len_s;
 		s->roam_survey = st->roam_survey;
-		s->rpt_beacon = st->rpt_beacon == 1;
+		s->rpt_beacon = (st->rpt_beacon & SETTINGS_RPT_BEACON) != 0;
+		s->sfr_rx = (uint8_t)((st->rpt_beacon & SETTINGS_RPT_SFR_RX) >> SETTINGS_RPT_SFR_RX_SHIFT);
+		s->sfr_cwid = (uint8_t)((st->rpt_beacon & SETTINGS_RPT_SFR_CWID) >> SETTINGS_RPT_SFR_CWID_SHIFT);
 		clamp_settings(s);
 	}
 	// Page 1: 0 (never set, or a page 0 alone) keeps the default
@@ -4167,7 +4447,9 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 	st->roam_beacon_s = s->roam_beacon_s;
 	st->roam_beacon_len_s = s->roam_beacon_len_s;
 	st->roam_survey = s->roam_survey;
-	st->rpt_beacon = s->rpt_beacon ? 1 : 0;
+	st->rpt_beacon = (uint8_t)((s->rpt_beacon ? SETTINGS_RPT_BEACON : 0) |
+				   ((s->sfr_rx << SETTINGS_RPT_SFR_RX_SHIFT) & SETTINGS_RPT_SFR_RX) |
+				   ((s->sfr_cwid << SETTINGS_RPT_SFR_CWID_SHIFT) & SETTINGS_RPT_SFR_CWID));
 	st->roam_stored = 1;
 	settings_end(now_ms);
 }
@@ -4175,7 +4457,7 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms)
 {
 #if CONFIG_DMR
-	bool reply_changed = s->reply_s != sm->set.reply_s;
+	bool reply_changed = s->reply_s != sm->set.reply_s || s->sfr_rx != sm->set.sfr_rx;
 #endif
 	sm->set = *s;
 	clamp_settings(&sm->set);
@@ -4188,7 +4470,7 @@ static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now
 	activity(sm, now_ms);
 #if CONFIG_DMR
 	if (reply_changed && sm->dmr_running) {
-		dmr_configure(sm);	// the reply window
+		dmr_configure(sm);	// the reply window, an SFR user's copies
 	}
 #endif
 #if CONFIG_VOX
@@ -4210,7 +4492,7 @@ void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t n
 
 // The codeplug changed underneath (an edit, a CPS write) or the preferences did: read them again, keep the zone and
 // the channel if they still exist
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 // A zone added ahead of others or a zone deleted moves the indexes after it (zone_edit.h). Followed here: the zone in
 // use (in the VFO too: the zone it goes back to) and dual watch's two channels. The saved roaming zones were moved by
 // the zone write itself (zone_settle.c; a deleted one loses its flag) and the reload reads them. Returns the zone in
@@ -4240,6 +4522,7 @@ static uint16_t follow_zones(radio_sm_t *sm, bool *gone, uint32_t now_ms)
 	return zi;
 }
 
+#if CONFIG_SCAN
 // A checksum of the zone in use and its channel list: an edit of it ends a zone scan (its skips are by position)
 static uint32_t zone_sum(const radio_sm_t *sm)
 {
@@ -4250,14 +4533,15 @@ static uint32_t zone_sum(const radio_sm_t *sm)
 	return h ^ sm->view.zone_index;
 }
 #endif
+#endif
 
 static void reload(radio_sm_t *sm, uint32_t now_ms)
 {
-	static settings_t st;	// off the radio task's stack: its deepest path goes through here (stack-check.md)
+	settings_t *st = &st_copy;
 	roam_cancel(sm, now_ms);	// back to the site the search started from first
-	settings_read(&st);
+	settings_read(st);
 #if CONFIG_DMR_ROAMING
-	memcpy(sm->roam_zones, st.roam_zones, sizeof(sm->roam_zones));
+	memcpy(sm->roam_zones, st->roam_zones, sizeof(sm->roam_zones));
 	sm->roam_dirty = true;
 #endif
 	sm->reload_pending = false;
@@ -4272,8 +4556,10 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	uint16_t number = sm->have_channels && sm->view.zone_pos < sm->zone.count ? sm->zone.channels[sm->view.zone_pos] : 0;
 	bool vfo = sm->view.vfo;
 	uint16_t zi = sm->view.zone_index, pos = sm->view.zone_pos;
-#if CONFIG_ZONE_EDIT
-	uint32_t sum = zone_sum(sm);
+#if CONFIG_ZONE_WRITE && CONFIG_SCAN
+	uint32_t sum = zone_sum(sm);	// read by the zone scan check below
+#endif
+#if CONFIG_ZONE_WRITE
 	bool gone;
 	zi = follow_zones(sm, &gone, now_ms);
 	if (gone) {
@@ -4286,14 +4572,14 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	sm->view.zone_index = zi;
 #endif
 	select_position(sm, zi, number, pos);
-#if CONFIG_ZONE_EDIT && CONFIG_SCAN
+#if CONFIG_ZONE_WRITE && CONFIG_SCAN
 	if (sm->scan.kind == SCAN_ZONE && zone_sum(sm) != sum) {
 		scan_stop(sm, false, now_ms);
 	}
 #endif
-	apply_prefs(sm, &st);
+	apply_prefs(sm, st);
 	radio_settings_t rs;
-	settings_to_radio(&st, &rs);
+	settings_to_radio(st, &rs);
 	use_settings(sm, &rs, now_ms);
 	if (vfo || !sm->have_channels) {
 		if (VFO_AVAILABLE) {
@@ -4378,7 +4664,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	step_update(sm);
 	sm->view.source = codeplug_source();
 	sm->codeplug_serial = codeplug_serial();
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 	sm->zone_shifts = zone_edit_shifts();
 #endif
 
@@ -4980,6 +5266,14 @@ uint8_t radio_volume_step(uint8_t stored)
 	return (uint8_t)((old * RADIO_VOLUME_MAX + 5u) / 10u);
 }
 
+uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent)
+{
+	if (volume_percent < 0 || volume_percent >= cap) {
+		return cap;
+	}
+	return (uint8_t)volume_percent;
+}
+
 uint8_t radio_volume_stored(uint8_t step)
 {
 	return (uint8_t)(0x80u | ((step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step) + 1u));
@@ -5201,11 +5495,12 @@ static void vox_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 
 #if CONFIG_DMR
-// The RSSI to publish for this poll's reading: the peak of the last RADIO_RSSI_HOLD_MS while the DMR path runs, the
+// The RSSI to publish for this poll's reading: the peak of the last RADIO_RSSI_HOLD_MS while the DMR path runs (the
+// call stack, or an SFR repeater role: a reading in an empty slot, or one of the repeater's own, is the floor), the
 // reading itself otherwise (FM, idle, hotspot). The squelch and scan keep using the raw reading.
 static int16_t rssi_held(radio_sm_t *sm, int16_t rssi_dbm)
 {
-	if (!sm->dmr_running) {
+	if (!sm->dmr_running && !sm->sfr_rpt) {
 		sm->rssi_ring_n = 0;
 		return rssi_dbm;
 	}
@@ -5347,6 +5642,11 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->dmr_running) {
 		return;		// the state follows the call stack (radio_sm_tick), and the stack keeps its own TX time-out
 	}
+#if CONFIG_SFR
+	if (sm->sfr_rpt) {
+		return;		// the state follows the repeater (sfr_rpt_tick)
+	}
+#endif
 #endif
 
 	if (sm->view.state == RS_TX) {
@@ -5419,9 +5719,49 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	outputs(sm);
 }
 
+#if CONFIG_SFR
+// The repeater role: its runner, the state shown (receiving while it repeats a call), and back to an ordinary channel
+// once the radio may not transmit any more (TX inhibit set, the battery critical)
+static void sfr_rpt_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	radio_sfr_view_t v;
+
+#if CONFIG_SFR_CWID
+	if (sm->cw_phase != 0) {
+		return;		// the ID is being keyed (cw_service); the role starts again after it
+	}
+#endif
+	if (sfr_rpt_wait(sm)) {
+		sfr_rpt_end(sm);
+		dmr_begin(sm);
+		changed(sm);
+		return;
+	}
+	radio_sfr_poll(now_ms);
+	radio_sfr_get_view(&v);
+#if CONFIG_SFR_CWID
+	if (radio_cwid_due(&sm->cwid, radio_cwid_interval_ms(sm->set.sfr_cwid), v.keyed || v.inbound_busy, now_ms)) {
+		cw_start_sfr(sm, now_ms);
+		return;
+	}
+#endif
+	uint8_t state = v.inbound_busy ? RS_RX : RS_IDLE;
+	if (v.keyed != sm->view.dmr.sfr_keyed || v.inbound_busy != sm->view.dmr.sfr_busy || state != sm->view.state) {
+		sm->view.dmr.sfr_keyed = v.keyed;
+		sm->view.dmr.sfr_busy = v.inbound_busy;
+		if (state == RS_IDLE && sm->view.state == RS_RX) {
+			end_reception(sm, now_ms);
+		}
+		sm->view.state = state;
+		changed(sm);
+	}
+	outputs(sm);
+}
+#endif
+
 void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
-#if CONFIG_HOTSPOT
+#if RADIO_SM_CW
 	cw_service(sm, now_ms);
 #endif
 #if CONFIG_DMR
@@ -5430,6 +5770,14 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 		dmr_follow(sm, now_ms);
 		one_shot_follow(sm, now_ms);
 	}
+#if CONFIG_SFR
+	if (sm->sfr_rpt) {
+		sfr_rpt_tick(sm, now_ms);
+	} else if (sm->sfr_denied && sm->dmr_running && !sm->ptt && sm->view.state == RS_IDLE && !sfr_rpt_wait(sm)) {
+		dmr_begin(sm);		// the repeater role back, between calls
+		changed(sm);
+	}
+#endif
 #if CONFIG_DMR_DATA_CORE
 	data_tick(sm, now_ms);	// also off DMR: requests fail at once, ARS keeps its state. A list it starts is queued
 				// to the modem at once (dmr_call_data_tx)
