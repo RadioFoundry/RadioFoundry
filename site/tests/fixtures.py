@@ -5,6 +5,8 @@
 Python it was ported from (site/tests/flasher.test.mjs):
 
   - a synthetic DM-1701 stock file and its key (rfoundry's stockfw.build_synthetic_stock), with its profile
+  - one synthetic stock file per codec layout of every placed profile, with what stockfw.extract and plan.py make of
+    it (site/tests/stocklayouts.test.mjs), and every profile's readout name (stockfw.layout_name)
   - a plain image standing in for a file known to hold no codec, and rfoundry's message for it
   - a synthetic MD-UV380 stock file and a read of the internal flash of a radio running it, with the codec rfoundry's
     stockfw.from_flash finds in the read
@@ -110,6 +112,47 @@ def md380_like(out):
 		"vote_wrong": sum(a != b for a, b in zip(vote, key))}
 
 
+def js_profile(prof):
+	"""A profile as data/flash-boards.json carries it (site/rfoundrysite/repo.py flash_boards)"""
+	q = dict(prof, segments=[list(s) for s in prof["segments"]], windows=[list(w) for w in stockfw.windows(prof)])
+	for k in ("code", "tables", "extra"):
+		q.pop(k, None)
+	return q
+
+
+def stock_layouts(out, image):
+	"""One synthetic stock file per codec layout of every placed profile (stockfw.same_layout: the files that put the
+	same codec at the same addresses count once), and what rfoundry makes of it: the codec placed, the descriptor's
+	fields and the merge plan, for stocklayouts.test.mjs. Also every real profile's readout name (layout_name)."""
+	seen, docs = set(), []
+	for i, (sha, real) in enumerate(stockfw.PROFILES.items()):
+		group = stockfw.same_layout(real)
+		if not real.get("placement") or id(group[0]) in seen:
+			continue
+		seen.add(id(group[0]))
+		key = synthetic_key(1000 + i)
+		stock, profiles, _, _ = stockfw.build_synthetic_stock(key, random.Random(i), sha)
+		(ssha, prof), = profiles.items()
+		got, segs = stockfw.extract(stock, key, profiles)
+		board = boards.get(prof["board"])
+		merge = plan.make_plan(board, [(board.app_base, image)], plan.MERGE, stockfw.codec_segments(prof, segs),
+				       board.merge_windows(prof))
+		desc = segs[-1][1]
+		w = struct.unpack_from("<%dI" % (7 + 3 * stockfw.DESC_WINDOWS), desc)
+		name = "layout-%s.bin" % sha[:8]
+		with open(os.path.join(out, name), "wb") as f:
+			f.write(stock)
+		docs.append({"file": name, "real_sha256": sha, "stock_sha256": ssha, "key": key.hex(), "profile": js_profile(prof),
+			     "versions": [p["version"] for p in group],
+			     "placed": [[a, stockfw.sha256(d), len(d)] for a, d in segs],
+			     "descriptor": {"tag": w[2], "code": list(w[3:6]),
+					    "tables": [list(w[7 + 3 * k:10 + 3 * k]) for k in range(w[6])]},
+			     "merge_windows": [list(x) for x in board.merge_windows(prof)],
+			     "merge": merge.describe()})
+	names = {sha: stockfw.layout_name(p) for sha, p in stockfw.PROFILES.items()}
+	return {"files": docs, "names": names}
+
+
 def flash_readout(out, rng, sha=None, name="mduv380"):
 	"""A synthetic MD-UV380 stock file (default the first build, V19.26), and a read of the internal flash of a radio
 	running it (the application decrypted at 0x0800C000, as stockfw.from_flash takes it): what stockfw.js fromFlash must
@@ -193,6 +236,7 @@ def main(out):
 		"readout_v21960": flash_readout(out, random.Random(21960),
 						"447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee", "rt3s-v21960"),
 		"no_codec": no_codec(out, random.Random(1702)),
+		"layouts": stock_layouts(out, image),
 	}
 	for k in ("code", "tables", "extra"):
 		doc["profile"].pop(k, None)
