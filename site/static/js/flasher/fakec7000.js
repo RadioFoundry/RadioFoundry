@@ -103,8 +103,10 @@ export class FakeC7000 {
 		this.bootTime = bootTime;
 		// flip: chance per stub frame of a damaged byte; misplace: sector addresses whose record, once, carries the next
 		// sector's data (as a record left over from an earlier request would); silentAfterReset: after the stub's soft
-		// reset RadioFoundry runs but its host link stays silent until a power cycle, as on the real radios (dm32-bringup.md)
-		this.faults = { flip: 0, misplace: [], silentAfterReset: false, ...faults };
+		// reset RadioFoundry runs but its host link stays silent until a power cycle, as on the real radios (dm32-bringup.md);
+		// romEcho: the cable sends every byte the host writes to the boot ROM back to it, ahead of the ROM's answer;
+		// romNak: the boot ROM answers the load's frames with something other than its acknowledgement
+		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, ...faults };
 		this.rand = rng(11);
 		this.state = "off";		// off | rom | booting | firmware | stub
 		this.inb = new Uint8Array(0);
@@ -196,6 +198,7 @@ export class FakeC7000 {
 	receive(data) {
 		if (this.state === "off" || this.state === "booting") return;
 		if (this.state === "firmware" && this.softReset && this.faults.silentAfterReset) return;
+		if (this.faults.romEcho && (this.state === "rom" || this.state === "romload")) this.send(data.slice());
 		this.inb = concat(this.inb, data);
 		for (;;) {
 			const used = this.state === "rom" || this.state === "romload" ? this.rom() : this.state === "stub" ? this.stub()
@@ -231,7 +234,7 @@ export class FakeC7000 {
 			this.led = "slow";
 			this.events.push("stub (boot ROM)");
 		}
-		this.send(new Uint8Array([0x02, 0x05, 0x00, 0x03]));
+		this.send(new Uint8Array(this.faults.romNak ? [0x02, 0x0A, 0x00, 0x03] : [0x02, 0x05, 0x00, 0x03]));
 		return 1;
 	}
 
