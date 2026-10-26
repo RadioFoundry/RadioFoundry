@@ -55,6 +55,13 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
 4. **Back up.** The installer saves a backup file (a `.zip`) on your computer: the firmware, the channels and settings
    and the calibration. Keep it. Where the original firmware can't be read first, the installer backs the radio up
    right after the installation, before anything else changes.
+
+   On a radio installed over its programming cable the cable is slow, so the installer shows how long each part
+   takes. The firmware memory is required. **All channels and settings** is optional and off by default: the
+   installer never changes them, and the whole data memory can take many minutes. If you have the radio's stock
+   firmware file, **Use a Stock File Instead** skips the firmware backup, before or during the read. The installer
+   then reads only the codec area and takes the codec from the file in the next step. The firmware in the radio is
+   not backed up, but the stock file can restore the original firmware.
 5. **Install.** Put the radio in its bootloader when asked ([your radio's keys](23-radios.md)). The installer writes
    the changed parts and restarts the radio. Do not unplug the radio until it says the installation is complete.
 6. **Verify.** The installer reads what the radio reports: the version it wrote, and "DMR voice is ready" when the
