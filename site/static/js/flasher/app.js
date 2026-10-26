@@ -1218,6 +1218,7 @@ function codecView() {
 				haveStock, haveSaved: !!S.savedCodec, requested: S.requested || null,
 				probe: S.now?.kind === "rfoundry" ? S.now.probe : null,
 				stockInstalled: S.now?.kind === "stock" ? S.now.version : null,
+				runsStock: S.now?.kind === "stock",
 			});
 		} catch (e) {
 			S.decision = null;
@@ -1252,7 +1253,7 @@ function codecView() {
 				S.board.codec.sources.length > STOCK_NAMES_MAX ? h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_all")),
 					h("ul", {}, S.board.codec.sources.map((n) => h("li", {}, n)))) : null];
 		// the install goes on without the codec from the picked file: say what DMR voice then depends on, before writing
-		const keeping = keepNote(problem, S.decision, { board: S.board, now: S.now });
+		const keeping = keepNote(problem, S.decision);
 		const parts = [h("p", {}, t("flash.codec.lead"))];
 		const viaStub = stubRoute();
 		if (viaStub) {
