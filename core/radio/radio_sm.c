@@ -205,6 +205,31 @@ uint8_t radio_sm_squelch_open_below(uint8_t level)
 	return (uint8_t)(RADIO_SQL_OPEN_L1 - (level - 1) * RADIO_SQL_DB_PER_STEP);
 }
 
+bool radio_view_wakes(const radio_view_t *v)
+{
+	if (v->hotspot) {
+		return false;		// the host's traffic
+	}
+	switch (v->state) {
+	case RS_TX:
+		return !v->tx_auto;
+	case RS_TX_DENIED:
+		return true;		// PTT held: the screen says why
+	case RS_RX:
+		if (v->bcast) {
+			return false;	// a broadcast program plays on: not something new to look at
+		}
+#if CONFIG_DMR
+		if (v->ch.mode == RADIO_MODE_DMR) {
+			return v->dmr.state == RDMR_RX;	// a call that plays; not data or a call we don't play
+		}
+#endif
+		return true;		// FM: the squelch opened, something plays
+	default:
+		return false;
+	}
+}
+
 static bool same_tone(const subtone_t *a, const subtone_t *b)
 {
 	return a->type == b->type && (a->type == TONE_NONE || a->value == b->value);
@@ -1403,6 +1428,10 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 	}
 	if (sm->ptt) {
 		sm->tx_no_ptt = false;	// the user keyed: that transmission counts
+		if (sm->view.tx_auto) {
+			sm->view.tx_auto = false;
+			changed(sm);
+		}
 		if (cv->phase == DMR_CALL_PHASE_TX_DENIED && sm->view.state != RS_TX_DENIED) {
 			deny(sm, dmr_deny_reason(cv->tx_error));
 #if CONFIG_DMR_ROAMING
@@ -1417,6 +1446,8 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 		// transmitting see it
 		sm->view.state = RS_TX;
 		sm->tx_no_ptt = true;
+		sm->view.tx_auto = true;
+		sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
 		sm->view.tx_deny = TXDENY_NONE;
 		sm->view.tx_elapsed_ms = 0;
 		sm->tx_start_ms = now_ms;
@@ -1594,6 +1625,8 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	}
 	one_shot_start(sm);
 	sm->view.state = RS_TX;
+	sm->view.tx_auto = false;
+	sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
 	sm->view.tx_deny = TXDENY_NONE;
 	sm->view.tx_elapsed_ms = 0;
 	sm->tx_start_ms = now_ms;
@@ -1688,7 +1721,7 @@ static bool data_tx_start(const dmrBurst_t *bursts, int count, void *ctx)
 	data_tx.count = count;
 	data_tx.next = 0;
 	dmr_data_source_t src = { .next = data_next, .done = data_done, .ctx = sm,
-				  .count = (uint8_t)(count > 255 ? 255 : count) };
+				  .count = (uint8_t)(count > 255 ? 255 : count), .tag = dmrDataServiceTxStartingName() };
 	if (!dmr_call_data_tx(&src)) {
 		data_tx.list = NULL;
 		return false;	// the keying is released by dmr_follow (the stack isn't transmitting)
@@ -2977,7 +3010,8 @@ static bool roam_probe(radio_sm_t *sm)
 		sm->dmr_keyed = true;
 	}
 	roam_probe_left = 1;
-	dmr_data_source_t src = { .next = roam_probe_next, .done = roam_probe_done, .ctx = sm, .count = 1 };
+	dmr_data_source_t src = { .next = roam_probe_next, .done = roam_probe_done, .ctx = sm, .count = 1,
+				  .tag = "roam" };
 	if (!dmr_call_data_tx(&src)) {
 		return false;	// dmr_follow releases the keying
 	}
@@ -3265,6 +3299,8 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 		sm->aprs_phase = APRS_RF_KEYUP;		// before tx(): aprs_rf_end unkeys from here on
 		sm->aprs_ms = now_ms;
 		sm->view.state = RS_TX;			// speaker off, red LED on, before keying
+		sm->view.tx_auto = true;
+		sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
 		sm->view.tx_deny = TXDENY_NONE;
 		outputs(sm);
 		changed(sm);
@@ -3621,6 +3657,8 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	sm->view.state = RS_TX;		// speaker off, red LED on, before keying
+	sm->view.tx_auto = false;
+	sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
 	sm->view.tx_deny = TXDENY_NONE;
 	sm->view.tx_elapsed_ms = 0;
 	sm->tx_start_ms = now_ms;

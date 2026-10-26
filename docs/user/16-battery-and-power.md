@@ -56,6 +56,15 @@ Power levels use the radio's factory calibration. Use the lowest power that reac
 **Settings > Display > Backlight time** sets when the backlight dims to a fifth of the brightness. It goes off after
 four times as long. Any key brings it back.
 
+The backlight also comes on for what needs you:
+
+| Comes on | Stays as it is |
+|---|---|
+| A call you hear (DMR), or a signal that opens the squelch (FM) | A DMR call on a talkgroup you don't listen to |
+| A message, call alert, private call or emergency | The radio's own data: ARS registration, ACKs, location answers |
+| Your own transmission, or a refused PTT | Timed beacons (APRS), roaming probes, hotspot traffic |
+| | Broadcast FM that keeps playing |
+
 ## Battery saver
 
 **Settings > Power > Battery saver** puts the receiver to sleep on an idle FM channel. After 10 s without activity the

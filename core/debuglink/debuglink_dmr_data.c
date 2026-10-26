@@ -108,6 +108,10 @@ void debuglink_view_dmr_data(uint8_t part, dl_text_t *t)
 													: "none",
 		(unsigned)dst);
 	dl_text(t, "data.ars_state=%s\n", ars_key(dmr_data_ars_state()));
+	dl_text(t, "data.ars_attempts=%u\ndata.ars_last_ms=%u\ndata.ars_next_ms=%u\n", s.arsAttempts,
+		(unsigned)s.arsLastMs, (unsigned)s.arsNextMs);
+	dl_text(t, "data.tx_last_kind=%s\ndata.tx_last_ms=%u\n", s.txLastMs != 0 ? dmrDataServiceTxKindName(s.txLastKind)
+		: "none", (unsigned)s.txLastMs);
 	dl_text(t, "data.inbox_count=%u\ndata.inbox_unread=%u\n", (unsigned)sms_inbox_count(),
 		(unsigned)sms_inbox_unread());
 	dl_text(t, "data.serial=%u\ndata.event=%s\ndata.event_serial=%u\ndata.event_id=%u\n", (unsigned)dmr_data_serial(),
