@@ -395,12 +395,13 @@ export class FakeRadio {
 	// codec at all (codec false). Its CPS port: R 1 / R 2 clipped to clip bytes with the VFO overlay (0xEE here) on a read
 	// that spans it; R 5 the MCU flash with no bounds check (a read past the end faults the radio: silent until
 	// powerCycle()); R 9 the radio info; R 10 no answer; C and anything else "-". hangAfter N: the Nth read goes
-	// unanswered, then hangFor more requests (0: until powerCycle()). Every request is logged in openfwLog
+	// unanswered, then hangFor more requests (0: until powerCycle()). refuse5: area 5 refused ("-") from this offset.
+	// Every request is logged in openfwLog
 	async installOpenFirmware({ codecAt = null, tables = "patched", codec = true, radioType = null, git = "sim-open1", clip = 2045,
-		hangAfter = 0, hangFor = 0 } = {}) {
+		hangAfter = 0, hangFor = 0, refuse5 = null } = {}) {
 		const r = rng(77);
 		for (const [a, d] of [...this.sim.codecSegments, ...this.sim.stockSegments]) this.flash.set(randomBytes(r, d.length), a - FLASH_BASE);
-		this.openfw = { radioType: radioType ?? this.board.cps_radio_types?.[0] ?? 6, git, clip, hangAfter, hangFor, reads: 0, silent: 0, dead: false, controls: 0 };
+		this.openfw = { radioType: radioType ?? this.board.cps_radio_types?.[0] ?? 6, git, clip, hangAfter, hangFor, refuse5, reads: 0, silent: 0, dead: false, controls: 0 };
 		this.openfwLog = [];
 		if (!codec) return;
 		const m = this.sim.profile.map;
@@ -448,6 +449,7 @@ export class FakeRadio {
 		}
 		if (area === 5) {
 			if (addr + n > this.flash.length) { o.dead = true; return none; }
+			if (o.refuse5 !== null && addr + n > o.refuse5) return refuse;
 			return reply(this.flash.slice(addr, addr + n));
 		}
 		if (area === 9) {

@@ -47,6 +47,15 @@ export const supported = (board) => !!(board?.cps_radio_types?.length && board.f
 
 export const typeMatches = (board, info) => !!info && (board.cps_radio_types || []).includes(info.radioType);
 
+// Where a probe that found another open firmware (link.js whyNoAnswer: {kind: "openfw", radioType}) leads on this
+// board: "backup" (offer it), "wrong-type" (the radio says it is another radio: a wrong pick), "unsupported" (the
+// stock-file route, as for any other firmware); null when the probe found something else
+export function recognized(board, why) {
+	if (why?.kind !== "openfw") return null;
+	if (!supported(board)) return "unsupported";
+	return typeMatches(board, why) ? "backup" : "wrong-type";
+}
+
 // The whole read's size in bytes: the MCU flash and the SPI flash (radios.json backup.spi_size)
 export const backupBytes = (board, radio) => board.flash_end - board.rom_base + radio.backup.spi_size;
 
@@ -69,7 +78,7 @@ export function newState(board, radio) {
 		info: null,
 		rom: { base: board.rom_base, data: new Uint8Array(board.flash_end - board.rom_base).fill(0xFF), done: 0 },
 		spi: { data: new Uint8Array(radio.backup.spi_size).fill(0xFF), done: 0 },
-		stopped: null,		// {part: "internal" | "spi", addr, why: "no answer" | "refused"}
+		stopped: null,		// {part: "internal" | "spi", addr, why: "no answer" | "refused" | "cancelled"}
 		requests: 0,
 	};
 }
@@ -89,8 +98,11 @@ export function pieces(from, size, { chunk = CLIP, avoid = null } = {}) {
 async function dump(link, area, part, name, state, { avoid = null, progress = () => {}, signal } = {}) {
 	const size = part.data.length;
 	while (part.done < size) {
-		if (signal?.aborted) throw new LinkError("stopped");
 		const [[a, n]] = pieces(part.done, size, { avoid });
+		if (signal?.aborted) {
+			state.stopped = { part: name, addr: (part.base || 0) + a, why: "cancelled" };
+			return false;
+		}
 		let d;
 		state.requests++;
 		try {
@@ -114,7 +126,7 @@ async function dump(link, area, part, name, state, { avoid = null, progress = ()
 
 // Read the radio: its info, the MCU flash (bootloader included, for the key), then the SPI flash. state: an earlier
 // run's, to continue it (the same radio and firmware; otherwise it starts over). Returns the state; state.stopped
-// says where and why a run stopped early. Throws OpenFwError "no-info" when the port gives no radio info, "type" when
+// says where and why a run stopped early (signal: the user stopped it, "cancelled"; nothing is lost either way). Throws OpenFwError "no-info" when the port gives no radio info, "type" when
 // the radio type isn't one of this board's.
 export async function readBackup(link, board, radio, { state = null, progress = () => {}, signal } = {}) {
 	const info = await readInfo(link);
