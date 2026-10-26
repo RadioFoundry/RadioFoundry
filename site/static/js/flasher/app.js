@@ -17,6 +17,7 @@
 // first radio on stock firmware. The fake is built from the board's data.
 
 import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
+import { unzip } from "./zip.js";
 import * as stockfw from "./stockfw.js";
 import { openVendorFile, describe as describeVendorFile, analysisCandidate, offerFile } from "./vendorfile.js";
 import { pickProblem, errorProblem, vendorContext, OFFER } from "./explain.js";
@@ -192,7 +193,7 @@ function analysisOffer(cand, boardId, problem = null) {
 		h("p", {}, t(internal ? "flash.analysis.text_internal" : "flash.analysis.text", { name })), note, send, status);
 }
 
-const radioName = (id) => fb().boards[id]?.name || S.data?.radios?.find((r) => r.id === id)?.name || id || "";
+const radioName = (id) => fb().boards[id]?.name || S.data?.radios?.find((r) => r.id === id || r.flash?.board === id)?.name || id || "";
 
 // Why a picked vendor file can't be used (explain.js): what happened, why, what to do, the exact message folded away,
 // and the send offer where the file can help. offer: the analysis candidate for this problem
@@ -1506,11 +1507,15 @@ function backupView() {
 // ---------------------------------------------------------------------------------------------------------------
 // restore task
 
+// A radio whose backend restores from the original firmware file (vendorRestore) takes that file here too: a .bin,
+// or a zip without the backup's backup.json
 function bundleView() {
 	const status = h("div");
-	return panel(t("flash.restore.title"), h("p", {}, t("flash.restore.lead")),
-		filePicker(t("flash.restore.pick"), ".zip", async (f) => {
+	const vendor = S.radio && backend().vendorRestore;
+	return panel(t("flash.restore.title"), h("p", {}, t(vendor ? "flash.restore.lead_or_file" : "flash.restore.lead", { radio: S.radio?.name })),
+		filePicker(t(vendor ? "flash.restore.pick_or_file" : "flash.restore.pick"), vendor ? ".zip,.bin" : ".zip", async (f) => {
 			try {
+				if (vendor && !(await unzip(f.data).catch(() => null))?.has("backup.json")) return await vendorRestoreFile(f, status);
 				S.bundle = await openBundle(f.data);
 				const r = S.data.radios.find((x) => x.id === S.bundle.meta.radio.board);
 				if (!r) throw new Error(t("flash.err.unknown_board", { board: S.bundle.meta.radio.board }));
@@ -1519,9 +1524,21 @@ function bundleView() {
 				if (st) S.stock = { name: "stock-firmware.bin", data: st.data, info: await stockfw.identify(st.data, fb()) };
 				next();
 			} catch (e) {
-				status.replaceChildren(notice(errorText(e), "bad"));
+				status.replaceChildren(failureNotice(e, vendor ? f : null));
 			}
 		}), status);
+}
+
+// The original firmware file for the restore: any build for this radio does (no codec is taken from it). Anything
+// else is explained as on the install's codec step, with the same offer to send the file
+async function vendorRestoreFile(f, status) {
+	const boardId = S.radio.flash.board;
+	const opened = await openVendorFile(f.name, f.data, fb(), boardId);
+	S.vendorPick = { picked: { name: f.name, size: f.data.length, sha256: await sha256(f.data) }, opened, decision: "restore" };
+	const problem = pickProblem(opened, boardId, { need: "key" });
+	if (problem) return status.replaceChildren(problemNotice(problem, { offer: analysisCandidate(opened, fb(), boardId), boardId }));
+	S.bundle = backend().vendorRestore(S.radio, opened.best, fb());
+	next();
 }
 
 function restoreView() {

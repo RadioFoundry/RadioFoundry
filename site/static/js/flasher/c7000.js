@@ -14,7 +14,7 @@
 //
 // The codec is DVSI's and Baofeng's. It only ever moves between the user's radio, files and this browser.
 
-import { concat, crc32, sha256, u32le, le32 } from "./bytes.js";
+import { concat, crc32, sha256, u32le, le32, startsWith } from "./bytes.js";
 import { byCodeSha, checkWords } from "./codecmap.js";
 
 // code: as stockfw.js StockError's, for the page's explanation (explain.js) and the error report; "image" is a
@@ -255,6 +255,21 @@ export function target(c, boardId, image, slot = null) {
 	out.set(image, 0);
 	if (slot) out.set(slot, room);
 	return [c.app_start, out];
+}
+
+// The program memory of a radio on its original firmware, from that firmware's file (one the page identified for this
+// radio: vendorfile.js kind "codec"), as restoreTarget takes it: the application after the file's header (a
+// "BFUV32-V2" file's 256 bytes; the DB25-D's are plain) at the application start, everything else erased. The codec
+// slot goes with it, which the original firmware never reads. A program memory backup is taken as it is. So a radio
+// goes back to its original firmware from its vendor file, without a backup from before the first installation
+export function progmemFromFile(c, boardId, data) {
+	if (data.length === c.progmem_size || data.length === totalSize(c, boardId)) return lowPart(c, data);
+	const body = data.subarray(startsWith(data, c.stock_magic) ? c.stock_header : 0);
+	const room = c.app_end - c.app_start;
+	if (body.length > room) throw new CodecError(`the firmware (${body.length} bytes) is larger than the application area (${room} bytes)`, "internal");
+	const progmem = new Uint8Array(c.progmem_size).fill(0xFF);
+	progmem.set(body, c.app_start);
+	return progmem;
 }
 
 // A program flash backup put back: the application area and the slot, exactly (the bootloader isn't written)

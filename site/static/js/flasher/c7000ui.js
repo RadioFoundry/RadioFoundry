@@ -817,21 +817,33 @@ export function hasC7Backup(bundle) {
 	return !!bundle?.parts.get("c7000-progmem");
 }
 
+// The radio's original firmware file (one the page identified for it: vendorfile.js kind "codec"), or a program
+// memory backup, as a restore bundle: the restore puts it back as it puts back a backup's program memory, so a radio
+// returns to its original firmware without the backup from before the first installation (c7.progmemFromFile)
+export function vendorBundle(radio, file, c) {
+	const name = file.path.split("/").pop();
+	const data = c7.progmemFromFile(c, radio.flash.board, file.data);
+	return { meta: { radio: { board: radio.id, name: radio.name }, created: new Date().toISOString(), vendor_file: name,
+		firmware_now: { kind: "stock", version: file.match.known || null } },
+	parts: new Map([["c7000-progmem", { what: "c7000-progmem", file: name, complete: true, addr: 0, data }]]) };
+}
+
 export function restoreView() {
 	const c = session();
 	const out = h("div", { class: "flasher" });
 	const meta = S().bundle.meta;
 	// what the file holds, before and while connecting
+	const vendor = meta.vendor_file || null;	// the original firmware from its file (vendorBundle), not a backup
 	out.append(panel(t("flash.restore.what"), h("dl", { class: "kv-list" },
 		h("dt", {}, t("flash.now.board")), h("dd", {}, meta.radio.name),
-		h("dt", {}, t("flash.restore.taken")), h("dd", {}, localTime(meta.created)),
+		vendor ? [h("dt", {}, t("flash.restore.vendor_file")), h("dd", {}, vendor)] : [h("dt", {}, t("flash.restore.taken")), h("dd", {}, localTime(meta.created))],
 		h("dt", {}, t("flash.restore.fw_now")), h("dd", {}, describeFirmware(meta.firmware_now)),
 		h("dt", {}, t("flash.restore.parts")), h("dd", {}, partNames(S().bundle.parts)))));
 	const pm = S().bundle.parts.get("c7000-progmem").data;
 	// a radio that answers nothing else gets the backup through the vendor update mode
 	if (c.how === "iap" && c.stream) {
 		const after = h("div");
-		out.append(routes.iapRestoreView(pm, async () => {
+		out.append(routes.iapRestoreView(pm, vendor, async () => {
 			await dropC7();
 			c.how = null;
 			fill(after, notice(t("flash.iap.restored_text"), "ok"));
@@ -851,7 +863,7 @@ export function restoreView() {
 		go.disabled = true;
 		await busy(true);
 		top.set({ led: "busy", screen: "off" });
-		const started = ctx.flashStarted({ task: "restore", source: "c7000-progmem", radio: boardId(), firmware: S().bundle.meta.firmware_now?.kind || "" });
+		const started = ctx.flashStarted({ task: "restore", source: vendor ? "stock" : "c7000-progmem", radio: boardId(), firmware: S().bundle.meta.firmware_now?.kind || "" });
 		try {
 			const model = c7.bootloaderModel(C(), pm);
 			if (model && model !== boardId()) throw new Error(t("flash.c7.restore.other_radio"));
@@ -881,7 +893,7 @@ export function restoreView() {
 		}
 	}, { primary: true });
 	out.append(panel(t("flash.c7.restore.title"), h("div", { class: "c7-grid" },
-		h("div", {}, h("p", {}, t("flash.c7.restore.lead")), prog.el, status), top.el), map.el));
+		h("div", {}, h("p", {}, vendor ? t("flash.c7.restore.lead_vendor", { file: vendor }) : t("flash.c7.restore.lead")), prog.el, status), top.el), map.el));
 	S().forward(go);
 	return out;
 }
@@ -899,7 +911,8 @@ export async function splitOwnImage(c, board, data) {
 }
 
 // The backend (backends.js): connect and check take the place of "now" and "codec"; a reinstall from the help task
-// skips the radio step. Stock firmware comes back from a backup, never from a stock file.
+// skips the radio step. Stock firmware comes back through the restore task: from a backup, or from the radio's
+// original firmware file (vendorBundle).
 const INSTALL = ["radio", "build", "connect", "check", "write", "done"], RECOVER = ["build", "connect", "check", "write", "done"];
 register({
 	id: "c7000-stub",
@@ -912,6 +925,7 @@ register({
 		extra: (radio) => (radio.flash.update_mode === "iap"
 			? [{ id: "updatemode", title: "flash.help.fix.iap", text: "flash.help.fix.iap_text", prepare: () => { session().forceIap = true; } }] : []) },
 	ownsBundle: hasC7Backup,
+	vendorRestore: (radio, file, fb) => vendorBundle(radio, file, fb.c7000),
 	ownImage: async (fb, board, data) => {
 		const { image, slot } = await splitOwnImage(fb.c7000, board, data);
 		if (slot) session().fileCodec = slot;

@@ -16,6 +16,8 @@ import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
 import { stockVersion } from "../static/js/flasher/usmart.js";
+import { openVendorFile } from "../static/js/flasher/vendorfile.js";
+import { vendorBundle, hasC7Backup } from "../static/js/flasher/c7000ui.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
@@ -249,6 +251,36 @@ test("a codec from a stock file or a program memory backup", async () => {
 	assert.equal(await c7.decide(sim.c, "dm1801pro", {}), null);
 	assert.equal((await c7.decide(sim.c, "dm1801pro", { allowNone: true })).mode, "none");
 	assert.equal(crc32(slot.subarray(128, 136)), crc32(c7.sigBytes(sim.c)));
+});
+
+test("the original firmware goes back from its vendor file, without a backup", async (t) => {
+	const { sim, r } = await radio("rfoundry");
+	t.after(() => r.stop());
+	// a vendor file as the manufacturer ships it: the 256-byte BFUV32-V2 header, then the application
+	let end = C.app_end;
+	while (end > C.app_start && sim.progmem[end - 1] === 0xFF) end--;
+	const file = new Uint8Array(256 + end - C.app_start).fill(0);
+	file.set(new TextEncoder().encode("BFUV32-V2"), 0);
+	file.set(new TextEncoder().encode("END"), 0xFD);
+	file.set(sim.progmem.subarray(C.app_start, end), 256);
+	const fb = { ...json("flash-boards.json"), c7000: sim.c };
+	const opened = await openVendorFile("DM1801Pro.bin", file, fb, "dm1801pro");
+	assert.equal(opened.best?.match.board, "dm1801pro", "identified for this radio");
+	const bundle = vendorBundle({ id: "dm1801pro", name: "DM-1801 Pro", flash: { board: "dm1801pro" } }, opened.best, sim.c);
+	assert.ok(hasC7Backup(bundle), "the restore task takes it as it takes a backup");
+	assert.equal(bundle.meta.vendor_file, "DM1801Pro.bin");
+	const [start, data] = c7.restoreTarget(sim.c, bundle.parts.get("c7000-progmem").data);
+	assert.equal(start, C.app_start);
+	const s = new Stub(r.stream, { log: quiet });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.image, stubs.load);
+	await s.configure(C.boards.dm1801pro.stub_board, C.led);
+	assert.ok(!equal(r.progmem.subarray(C.app_start, C.app_end), sim.progmem.subarray(C.app_start, C.app_end)), "RadioFoundry runs before");
+	await s.writeProgram(data, start, { appStart: C.app_start, appEnd: C.app_end });
+	assert.ok(equal(r.progmem.subarray(0, C.app_end), sim.progmem.subarray(0, C.app_end)), "the original firmware is back, the codec slot erased");
+	// a file larger than the application area is refused, as a fault in the page (the file was identified)
+	assert.throws(() => c7.progmemFromFile(sim.c, "dm1801pro", new Uint8Array(256 + C.app_end).fill(1)), (e) => e.code === "internal");
 });
 
 test("factory calibration: the first page of the stock codeplug area whose ID byte is 2, and only in that area", () => {
