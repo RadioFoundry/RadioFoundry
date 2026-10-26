@@ -61,7 +61,7 @@ for (const f of L.files) {
 	});
 }
 
-// A codec from another radio's file (file_radio: the MD-9600 codec an open-firmware install leaves on a DM-1701): the
+// A codec from another radio's file (file_radio: another radio's codec an open-firmware install leaves behind): the
 // key is the file's own, never the radio's, and the codec is found in a flash read wherever another firmware put it
 for (const f of L.files.filter((x) => fb.profiles[x.real_sha256].file_radio)) {
 	const real = fb.profiles[f.real_sha256];

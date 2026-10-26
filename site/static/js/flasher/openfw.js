@@ -175,7 +175,7 @@ export async function keyFromImage(img, board, keyLen) {
 // placement); then a copy another firmware moved anywhere (stockfw.fromMoved: the code at any word boundary, the
 // tables at their stock address or moved, the move undone with the codec map, the stock SHA-256s checked), placed as a
 // merge from the stock file places it. Every profile for the radio is tried, a codec from another radio's file too
-// (the MD-9600 codec an open-firmware install leaves on a DM-1701)
+// (file_radio: another radio's codec an open-firmware install left there)
 export async function codecFromImage(img, base, board, fb) {
 	const profs = profilesFor(board, fb);
 	const save = (prof, segs) => segs.filter(([a]) => !(prof.placement && a === fb.descriptor.addr));
