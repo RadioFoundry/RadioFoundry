@@ -155,11 +155,14 @@ test("boot ROM load answered with something else: the error has the bytes, the c
 		assert.ok(e instanceof StubError);
 		assert.match(e.message, /stub block 0 was not acknowledged \(received 02 0a 00 03\)/);
 		assert.match(e.message, /CH340 programming cable/);
-		assert.match(e.message, /FTDI, CP210x or PL2303/);
+		assert.match(e.message, /chips: FTDI, CP210x or PL2303/);
 		assert.match(e.message, /stock firmware file/);
 		return true;
 	});
 	assert.ok(lines.some((l) => /not acknowledged \(received 02 0a 00 03\), sending it again/.test(l)), "each try logged with its bytes");
+	// an FTDI cable that failed isn't told to try an FTDI cable
+	const ftdi = new Stub(r.stream, { cable: "FTDI" }).romError("stub block 0 was not acknowledged", null);
+	assert.match(ftdi.message, /FTDI programming cable.*chips: CP210x or PL2303,/);
 });
 
 test("boot ROM ack read: an exact echo is dropped, a partial one waits, anything else fails with its bytes", async () => {

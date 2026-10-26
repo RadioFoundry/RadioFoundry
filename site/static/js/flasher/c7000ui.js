@@ -151,13 +151,25 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 	const body = h("div");
 	const box = panel(t("flash.c7.connect.title", { name: radio.name }), h("div", { class: "c7-grid" }, body, top.el));
 	let abort = null;
+	// The user left this panel (Start over, Back) while a wait or a load still runs: when it ends, it must not draw
+	// into the step that replaced it. Start over drops the session (S().forward goes with it); Back takes the panel off
+	// the page.
+	let attached = false;
+	const gone = () => {
+		if (box.isConnected) attached = true;
+		const left = S().c7 !== c || typeof S().forward !== "function" || (attached && !box.isConnected);
+		if (left) abort?.abort();
+		return left;
+	};
 	// each state shows its parts and, through act(), its one action in the nav bar
 	const show = (state, ...parts) => {
+		if (gone()) return;
 		top.set(state);
 		fill(body, cableBanner(), ...parts);
 		S().forward(null);
 	};
 	const act = (...all) => {
+		if (gone()) return;
 		const btns = all.filter(Boolean);
 		S().forward(btns.length > 1 ? btns : btns[0] || null);
 	};

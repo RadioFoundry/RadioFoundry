@@ -53,7 +53,7 @@ console.debug = () => {};
 process.on("exit", () => { console.debug = quiet; });
 const en = JSON.parse(strings);
 
-const { initReporting, reportDialog } = await import("../static/js/report.js");
+const { initReporting, reportDialog, scrubEvent } = await import("../static/js/report.js");
 const { cableBanner } = await import("../static/js/flasher/c7000ui.js");
 const diag = await import("../static/js/diag.js");
 
@@ -276,4 +276,11 @@ test("Report a Problem renders cleanly in every state: no files, some files, sen
 	clean(fresh.reportLine(), "report line");
 	clean(fresh.errorNotice("It failed."), "error notice");
 	clean(cableBanner(adapter.fromSerialInfo({ usbVendorId: 0x1A86, usbProductId: 0x7523 })), "CH340 banner");
+});
+
+test("a Sentry event's context is scrubbed value by value: an ID in a list stays valid, a callsign and an email go", () => {
+	const ev = scrubEvent({ message: "N4NQV failed", contexts: { rfoundry: { iddb: [3101276, 12], dirty: false, step: 0,
+		trail: ["0.1s contact a@b.com, call W1AW", { n: 7 }] } } });
+	assert.equal(ev.message, "[call] failed");
+	assert.deepEqual(ev.contexts.rfoundry, { iddb: ["[id]", 12], dirty: false, step: 0, trail: ["0.1s contact [email], call [call]", { n: 7 }] });
 });

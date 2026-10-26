@@ -55,13 +55,26 @@ function loadScript(src, integrity) {
 	});
 }
 
+// Every string and number in a value, scrubbed one by one: scrubbing its JSON text instead turns a number (a DMR ID
+// in a list) into [id] without quotes, the parse throws and Sentry drops the event
+function scrubDeep(x) {
+	if (typeof x === "string") return diag.scrub(x);
+	if (typeof x === "number") {
+		const t = diag.scrub(String(x));
+		return t === String(x) ? x : t;
+	}
+	if (Array.isArray(x)) return x.map(scrubDeep);
+	if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, scrubDeep(v)]));
+	return x;
+}
+
 // Strings in an event that came from the page: callsigns, IDs and email addresses out
-function scrubEvent(ev) {
+export function scrubEvent(ev) {
 	const s = (x) => (typeof x === "string" ? diag.scrub(x) : x);
 	if (ev.message) ev.message = s(ev.message);
 	for (const v of ev.exception?.values || []) v.value = s(v.value);
 	if (ev.request?.url) ev.request.url = ev.request.url.split("?")[0];
-	if (ev.contexts?.rfoundry) ev.contexts.rfoundry = JSON.parse(diag.scrub(JSON.stringify(ev.contexts.rfoundry)));
+	if (ev.contexts?.rfoundry) ev.contexts.rfoundry = scrubDeep(ev.contexts.rfoundry);
 	ev.user = undefined;
 	return ev;
 }

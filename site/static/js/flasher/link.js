@@ -77,6 +77,11 @@ export function parseKv(text) {
 }
 
 // A byte stream with a receive buffer: WebSerial in the browser, fake.js in tests and the simulator.
+// Web Serial's non-fatal read errors: the reader ends, port.readable is a new stream. A cap, so a line that keeps
+// erroring can't spin the loop for ever.
+const SOFT_READ_ERRORS = new Set(["FramingError", "ParityError", "BreakError", "BufferOverrunError"]);
+const MAX_READ_GLITCHES = 50;
+
 export class SerialStream {
 	constructor(port) {
 		this.port = port;
@@ -118,6 +123,7 @@ export class SerialStream {
 	}
 
 	async pump() {
+		let glitches = 0;
 		while (!this.closed && this.port.readable) {
 			this.reader = this.port.readable.getReader();
 			try {
@@ -129,8 +135,12 @@ export class SerialStream {
 					if (this.first.length < 16) this.first = concat(this.first, value.subarray(0, 16 - this.first.length));
 				}
 			} catch (e) {
-				if (!this.closed) note("serial read stopped", String(e?.message || e));
-				break;
+				// A framing, parity or overrun error or a break (a radio switched on or off with the cable in) ends only
+				// this reader: the port gives a fresh readable and reading goes on. Stopping here left every later
+				// reply unread ("nothing received"). A lost device has no readable, which ends the loop.
+				const soft = SOFT_READ_ERRORS.has(e?.name) && ++glitches <= MAX_READ_GLITCHES;
+				if (!this.closed) note(soft ? "serial read error, reading on" : "serial read stopped", String(e?.message || e));
+				if (!soft) break;
 			} finally {
 				this.reader.releaseLock();
 			}
