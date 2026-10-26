@@ -1795,6 +1795,15 @@ def self_test():
     r.read_exact = lambda n, t, q=[b"\x02\x1b\x01\x03\x00\x01\x00\x07\x02\x05\x00\x03"]: q.pop() if q else b""
     ok, got = r.rom_ack(b"\x02\x1b\x01\x03\x00\x01\x00\x00", 0.1)
     check(not ok and got[:4] == b"\x02\x1b\x01\x03", "a frame that differs from the one sent is not taken for an echo")
+    # an echo that arrives in pieces, then the acknowledgement; and silence
+    frame = b"\x02\x1b\x01\x03\x00\x01\x00\x00"
+    r = Radio(io.BytesIO(), log=quiet)
+    r.read_exact = lambda n, t, q=[ROM_ACK, frame[5:], frame[:5]]: q.pop() if q else b""
+    ok, got = r.rom_ack(frame, 0.5)
+    check(ok and r.echo, "an echo in pieces is dropped and the acknowledgement after it taken")
+    r = Radio(io.BytesIO(), log=quiet)
+    r.read_exact = lambda n, t: b""
+    check(r.rom_ack(frame, 0.1) == (False, b""), "silence: not acknowledged, nothing received")
 
     # a record that belongs to the next sector passes its own CRC: the final check against the radio's sector CRCs
     # catches it and reads the sector again
