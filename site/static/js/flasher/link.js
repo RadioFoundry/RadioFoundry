@@ -391,8 +391,8 @@ export async function openFirmwareInfo(link) {
 	}
 }
 
-// silence(), told apart further where the port can be asked: kind "openfw" for a radio on another open firmware (the
-// OpenGD77 family), with its radio type and revision
+// silence(), told apart further where the port can be asked: kind "openfw" for a radio on another open firmware (one that
+// answers the open-firmware CPS protocol), with its radio type and revision
 export async function whyNoAnswer(link) {
 	const why = silence(link);
 	const info = await openFirmwareInfo(link);
