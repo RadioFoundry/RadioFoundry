@@ -130,6 +130,21 @@ bytes:
 
 The start page's privacy text says that a report names the stock firmware file, never its contents.
 
+### The flash log and the vendor file
+
+The flash log (`POST /v1/flashes`, `PATCH /v1/flashes/{id}`) also records which vendor firmware a use involved, so a
+failed install can be traced to a file. Only lengths, SHA-256 hashes and a short id; never bytes (those go only through
+[Sending a file](#sending-a-file), on the user's click):
+
+| Fields | What | Set |
+|---|---|---|
+| `stock_len`, `stock_sha256`, `stock_id` | The vendor file in use (`S.stock`: the inner file `vendorfile.js` chose for a zip) and what the page took it for (`logId()`: `codec:<known build>`, `no-recipe:<board>`, `key:<board>`, `problem:<problem>`, `known:<name>`, `unknown`) | with the start of the use, when a file was picked by then |
+| `readout_len`, `readout_sha256`, `readout_id` | The internal flash (program memory on the C-SKY radios) read from the radio, and `known:<name>` or the kind of firmware that was running (`noteReadout()`) | with the start when an earlier readout belongs to the use (the backups around an install); with the end for the backup task, which reads after it starts |
+
+`flashStarted()` adds the fields known then to the POST and `flashFinished()` adds them again to the PATCH; the
+backend keeps a field the PATCH leaves out. Opting out (`?reporting=0`) and simulations send nothing, as for the rest of
+the log. A backend without these columns ignores the extra fields.
+
 ## Radio access backends
 
 A radio's `flash.backend` in `data/radios.json` names how the page reaches it (from the board.toml `[flash] family`,

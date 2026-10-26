@@ -166,6 +166,16 @@ export function describe(opened, fb, boardId) {
 	return lines.concat(opened.skipped.map((s) => `${s.path}: skipped, ${s.why}`));
 }
 
+// A short string for the flash log (at most 64 characters): what the page took a picked vendor file (pickedStock's
+// result) for. Names of known builds and board ids only, nothing from the user's file
+export function logId(st) {
+	const m = st.match, i = st.info || {};
+	const id = m ? (m.kind === "codec" ? `codec:${m.known || m.how}` : m.kind === "codec-unmapped" ? `no-recipe:${m.board}` : `${m.kind}:${m.board}`)
+		: st.problem ? `problem:${st.problem.problem}` : i.profile ? `profile:${i.profile.name || i.profile.board}`
+		: i.known ? `known:${i.known}` : "unknown";
+	return id.slice(0, 64);
+}
+
 // The file to offer for analysis when the page can't take the codec from what was picked: a vendor firmware container
 // (the headers the backend accepts, never a readout) of at most maxBytes, with what the page found as its reason. Never
 // a file identified as another radio's: the page already knows what it is and says so

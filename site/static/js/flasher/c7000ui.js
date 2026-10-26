@@ -461,6 +461,7 @@ export function checkView() {
 					c.rate = s.wire / Math.max(0.5, (performance.now() - t0) / 1000);
 				} });
 				c.slot = c.progmem.subarray(lay.slot[0], lay.slot[1]);
+				await ctx.noteReadout(c.progmem);
 				say("progmem", "ok", t("flash.c7.check.progmem_done", { sha: (await sha256(c.progmem)).slice(0, 12) }));
 			} else {
 				say("progmem", "run", t("flash.c7.check.reading_slot"));
@@ -783,9 +784,11 @@ export function backupView() {
 		go.disabled = true;
 		await busy(true);
 		top.set({ led: "busy", screen: screenNow() });
+		S().readout = null;	// this use's own readout, not an earlier one's
 		const started = ctx.flashStarted({ task: "backup", source: Object.keys(want).filter((k) => want[k]).join("+"), radio: boardId(), firmware: c.rfoundry?.git || "", features: c.rfoundry?.features || "" });
 		try {
 			if (want.progmem) c.progmem = await c.stub.dump("progmem", 0, progSize(), { progress: (d, n) => prog.set(d, n, t("flash.c7.check.progmem")) });
+			if (want.progmem) await ctx.noteReadout(c.progmem);
 			if (want.q128) c.q128 = await c.stub.dump("q128", 0, MEM.q128.size, { progress: (d, n) => prog.set(d, n, t("flash.c7.check.q128")) });
 			if (want.cal || want.q128) await readCalibration(c, prog);
 			if (c.progmem) c.analysis = await c7.analyze(c.progmem, C(), boardId());

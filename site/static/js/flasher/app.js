@@ -19,7 +19,7 @@
 import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import { unzip } from "./zip.js";
 import * as stockfw from "./stockfw.js";
-import { openVendorFile, describe as describeVendorFile, analysisCandidate, offerFile } from "./vendorfile.js";
+import { openVendorFile, describe as describeVendorFile, analysisCandidate, offerFile, logId } from "./vendorfile.js";
 import { pickProblem, errorProblem, vendorContext, OFFER } from "./explain.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
 import { validRef, refShort, defaultRef } from "./version.js";
@@ -82,6 +82,7 @@ const initialState = () => ({
 	firmware: null,		// {manifest, image, source}
 	now: null,		// what runs on the radio: {kind: "rfoundry", probe} | {kind: "stock", version} | {kind: "unknown"}
 	stock: null,		// {name, data, info: identify()}
+	readout: null,		// the internal flash read from the radio, for the flash log: {len, sha256, id} (noteReadout)
 	key: null,
 	keySource: null,	// where the key came from (getKey), for error reports
 	vendorPick: null,	// the last vendor file picked and what was found in it (pickedStock), for error reports
@@ -224,14 +225,31 @@ function failureNotice(e, file = null) {
 // One id per use: the custom build requests and the write that follows share it; each write ends the use
 const useId = () => (FLASH_LOG && !S.sim ? (S.useId ||= crypto.randomUUID()) : undefined);
 
-// Fire and forget: a flash never waits for these or fails because of them
+// The vendor firmware involved in this use, as the flash log takes it: lengths, SHA-256 and a short id, never bytes.
+// stock: the file used (the inner one for a zip); readout: the internal flash read from the radio
+function stockLog() {
+	const o = {};
+	if (S.stock?.data && S.stock.info?.sha) Object.assign(o, { stock_len: S.stock.data.length, stock_sha256: S.stock.info.sha, stock_id: logId(S.stock) });
+	if (S.readout) Object.assign(o, { readout_len: S.readout.len, readout_sha256: S.readout.sha256, readout_id: S.readout.id });
+	return o;
+}
+
+// Remember an internal-flash readout for the flash log. A failure to hash never stops a backup
+async function noteReadout(data) {
+	try {
+		const info = await stockfw.identify(data, fb());
+		S.readout = { len: data.length, sha256: info.sha, id: (info.known ? `known:${info.known}` : S.now?.kind || "unidentified").slice(0, 64) };
+	} catch (e) { diag.error("flash/readout hash", e); }
+}
+
+// Fire and forget: a flash never waits for these or fails because of them. The vendor firmware known by now goes along
 function flashStarted(what) {
 	diag.note("flash started", what);
 	const id = useId();
 	if (!id) return null;
 	S.useId = null;
 	const sent = fetch(new URL("flashes", API), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ id, tool: "web", tool_version: S.data.site.version || "", ...what }) }).catch(() => {});
+		body: JSON.stringify({ id, tool: "web", tool_version: S.data.site.version || "", ...stockLog(), ...what }) }).catch(() => {});
 	return { id, sent };
 }
 
@@ -240,7 +258,8 @@ async function flashFinished(started, error = null) {
 	else diag.note("flash finished");
 	if (!started) return;
 	await started.sent;
-	const body = error ? { result: "fail", reason: errorText(error).slice(0, 300) } : { result: "success" };
+	// the readout may have come after the start (the backup task), so the end carries it too
+	const body = { ...stockLog(), ...(error ? { result: "fail", reason: errorText(error).slice(0, 300) } : { result: "success" }) };
 	fetch(new URL(`flashes/${started.id}`, API), { method: "PATCH", keepalive: true, headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(body) }).catch(() => {});
 }
@@ -1834,7 +1853,7 @@ async function main() {
 		app.replaceChildren(notice(t("flash.err.load"), "bad"), reportLine());
 		return;
 	}
-	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText, analysisOffer, problemNotice, failureNotice,
+	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, noteReadout, errorText, analysisOffer, problemNotice, failureNotice,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
 	// #sim=<board>[-stock]: that board, running RadioFoundry or its stock firmware; #sim: the first radio on stock firmware
 	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock)?)?(?:&|$)/);
