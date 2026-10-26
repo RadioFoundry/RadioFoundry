@@ -67,8 +67,12 @@ def self_test():
     # the Makefile takes RELEASE= only when it is a release name
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
+    # any board will do (print-vars builds nothing): the first in boards/
+    board = sorted(d for d in os.listdir(os.path.join(root, "boards"))
+                   if os.path.isfile(os.path.join(root, "boards", d, "board.mk")))[0]
+
     def make(*args):
-        return subprocess.run(["make", "-s", "-C", root, "BOARD=dm1701", "print-vars", "VARS=RFOUNDRY_RELEASE"] + list(args),
+        return subprocess.run(["make", "-s", "-C", root, "BOARD=" + board, "print-vars", "VARS=RFOUNDRY_RELEASE"] + list(args),
                               capture_output=True, text=True, timeout=120)
     r = make("RELEASE=v26.11.1")
     want(r.returncode == 0 and "RFOUNDRY_RELEASE=v26.11.1" in r.stdout.splitlines(), "make RELEASE=v26.11.1: " + r.stdout + r.stderr)
