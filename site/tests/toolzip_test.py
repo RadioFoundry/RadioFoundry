@@ -79,7 +79,7 @@ class ToolZip(unittest.TestCase):
 			self.assertTrue(os.path.realpath(p).startswith(os.path.realpath(self.dir)), p)
 
 	def test_stubtool_runs(self):
-		# the DM-1801 Pro's kit reads the program flash with it; its main imports f4stub
+		# a kit whose codec comes from a program flash read runs it; its main imports f4stub
 		r = self.run_here(os.path.join("stub", "stubtool.py"), "--help")
 		self.assertEqual(r.returncode, 0, r.stderr)
 		self.assertIn("--progmem", r.stdout)
