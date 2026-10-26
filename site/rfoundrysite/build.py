@@ -9,6 +9,7 @@ Layout of the output:
   data/*.json                                             what the pages and the flasher read (also a public API)
   static/                                                 CSS, scripts, images (shared by every language)
   firmware/<board>/                                       release images and manifests, with --firmware
+  downloads/rfoundry-tool.zip                             the rfoundry tool for the flasher's manual install kit
 """
 import datetime
 import hashlib
@@ -19,12 +20,14 @@ import posixpath
 import re
 import shutil
 
-from . import device, docs as docsmod, i18n, repo, social, tmpl
+from . import device, docs as docsmod, i18n, repo, social, tmpl, toolzip
 
 # feature-matrix.md groups of developer tools that never ship in a release: not on the visitor pages
 BENCH_ONLY = {"Bench"}
 # the production address: link previews need absolute URLs (og:url, og:image)
 SITE_URL = "https://radiofoundry.org/"
+# where users help each other: the footer and every failure message link it, next to the GitHub issues
+COMMUNITY_URL = "https://www.facebook.com/groups/radiofoundry/"
 BOARD_ORDER = {"supported": 0, "testing": 1, "in_progress": 2, "planned": 3}
 # a radio page's documentation links (board.toml [docs]), in this order
 DOC_ORDER = ("hardware", "install", "codec", "bringup")
@@ -54,6 +57,7 @@ class Site:
 		self.built_at, self.built_iso = now.strftime("%Y-%m-%d %H:%M UTC"), now.strftime("%Y-%m-%dT%H:%MZ")
 		self.git_full = repo.git("rev-parse", "HEAD", default="")
 		self.asset_version = self.static_hash()
+		self.tool = None	# downloads/rfoundry-tool.zip, once built (toolzip.write)
 
 	@staticmethod
 	def static_hash():
@@ -142,8 +146,8 @@ class Site:
 			    for f in self.features]
 		return {
 			"site.json": {"format": "rfoundry-site/1", "git": self.git, "version": self.version, "built": self.built,
-				      "branch": self.branch, "repo": self.repo_url, "languages": self.i18n.languages, "default_language": self.i18n.default,
-				      "reports": {"sentry_dsn": self.sentry_dsn}},
+				      "branch": self.branch, "repo": self.repo_url, "community": COMMUNITY_URL, "languages": self.i18n.languages, "default_language": self.i18n.default,
+				      "reports": {"sentry_dsn": self.sentry_dsn}, "tool": self.tool},
 			"radios.json": {"radios": radios, "planned": planned},
 			"features.json": {"groups": self.groups, "features": features},
 			"variants.json": {"variants": self.variants},
@@ -190,7 +194,7 @@ class Site:
 		       "description": description or self.i18n.t(lang, "site.tagline"), "scripts": scripts, "footer": footer,
 		       "languages": langs, "git": self.git, "assets": self.asset_version, "version": self.version, "built": self.built,
 		       "built_at": self.built_at, "built_iso": self.built_iso, "git_full": self.git_full,
-		       "git_stamp": self.git + ("-dirty" if self.git_dirty else ""), "repo": self.repo_url, "nav_current": nav,
+		       "git_stamp": self.git + ("-dirty" if self.git_dirty else ""), "repo": self.repo_url, "community": COMMUNITY_URL, "nav_current": nav,
 		       "url": SITE_URL + (full[:-len("index.html")] if full.endswith("index.html") else full),
 		       "og_image": SITE_URL + "static/img/social.png?v=" + self.asset_version,
 		       "og_width": social.W * social.ZOOM, "og_height": social.H * social.ZOOM}
@@ -278,6 +282,7 @@ class Site:
 				self.write("static/img/radios/%s-%s.svg" % (b["id"], lk["id"]), limg["boot"])
 		with open(os.path.join(self.out, "static", "img", "social.png"), "wb") as f:
 			f.write(social.png(social.card(self.boards)))
+		self.tool = toolzip.write(os.path.join(self.out, "downloads"))
 		data = self.json_data()
 		for name, obj in data.items():
 			self.write("data/" + name, json.dumps(obj, indent=1, ensure_ascii=False) + "\n")

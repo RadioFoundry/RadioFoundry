@@ -77,6 +77,35 @@ test("a stream closes its port only after the pump lets go of the reader, so the
 	assert.equal(port.opens, 2);
 });
 
+// Web Serial on a framing error or a break: the pending read rejects and the port has a new readable
+function lineError(port, name) {
+	const old = port.readable;
+	port.readable = new FakeReadable();
+	const w = old.waiting;
+	old.waiting = null;
+	w?.(Promise.reject(Object.assign(new Error(name.replace("Error", " error")), { name })));
+}
+
+test("a framing error or a break doesn't end the reading: the bytes after it still come in; a lost device does", async () => {
+	const port = new FakePort();
+	const s = await SerialStream.open(port);
+	await new Promise((r) => setTimeout(r, 5));
+	lineError(port, "FramingError");
+	await new Promise((r) => setTimeout(r, 5));
+	lineError(port, "BreakError");
+	await new Promise((r) => setTimeout(r, 5));
+	port.readable.push(new Uint8Array([0x06]));
+	await new Promise((r) => setTimeout(r, 5));
+	assert.equal(s.received, 1, "the acknowledgement after the glitches is read");
+	assert.ok(diag.report().log.some((e) => /reading on/.test(e.text)));
+	lineError(port, "NetworkError");
+	await new Promise((r) => setTimeout(r, 5));
+	assert.ok(diag.report().log.some((e) => /read stopped/.test(e.text)));
+	port.readable.push(new Uint8Array([1]));
+	await new Promise((r) => setTimeout(r, 5));
+	assert.equal(s.received, 1, "nothing read after a fatal error");
+});
+
 test("a port this page left open is closed and opened again", async () => {
 	const port = new FakePort();
 	await port.open();

@@ -56,13 +56,14 @@ KINDS = ("handheld", "mobile")
 CLOCKS = ("backed", "unbacked", "none", "unknown")
 # The flashing routes, named by protocol (rfoundry cli.py, site/static/js/flasher): the cable they need, and the
 # board.toml keys a board on the route must have
-# web: the web flasher's backend for the family (site/static/js/flasher/backends.js); update_mode: the vendor loader's
-# update mode the page can write through when nothing else answers (iap.js), or None
+# web: the web flasher's backend for the family (site/static/js/flasher/backends.js); update_mode: the protocol of the
+# radio's own update mode, which the page writes through when nothing else answers or its boot ROM load fails (iap.js,
+# bfloader.js), or None. A board on such a family walks the user into it with flash.bootloader steps
 FAMILIES = {
     "usb-dfu": {"link": "usb", "needs": ("flash.dfu",), "web": "anyroad-dfu", "update_mode": None},	# a USB DFU
     # bootloader with a per-model XOR key
     "serial-loader": {"link": "serial-cable", "needs": ("flash.bootloader.id", "flash.bootloader.keys"),
-                      "web": "c7000-stub", "update_mode": None},	# a serial bootloader started by a key
+                      "web": "c7000-stub", "update_mode": "baofeng"},	# a serial bootloader started by a key
     # combination, speaking its own file format (tools/serial_loader.py)
     "serial-iap": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": "iap"},	# a vendor IAP
     # loader on the cable, through the RAM stub
@@ -863,6 +864,9 @@ def check(root=ROOT):
             for n in [lk["name"]] + lk.get("also", []):
                 if n not in d["also"]:
                     bad("looks %s: %r is not in also" % (lk["id"], n))
+        if b.family["update_mode"] and not d["flash"]["bootloader"]["steps"]:
+            bad("flash.bootloader.steps is empty: the web flasher walks the user into the %s update mode with them"
+                % b.family["update_mode"])
         hold = d["flash"]["bootloader"].get("hold", [])
         if hold:
             names = key_names(root, bid, b.mk)
@@ -1590,6 +1594,9 @@ def self_test():
         broken(re.sub(r"(?m)^(\[flash\.bootloader\]\n)", r'\1hold = ["ptt", "no_such_key"]\n',
                       re.sub(r"(?m)^hold = \[.*\n", "", good)),
                "a key to hold the board doesn't have", "no_such_key is not a key of the board")
+        if load(tmp)[one].family["update_mode"]:
+            broken(re.sub(r"(?ms)^steps = \[.*?^\]\n", "steps = []\n", good, count=1),
+                   "an update mode without the steps into it", "flash.bootloader.steps is empty")
         two = board_dirs(tmp)[1]
         other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
         broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")

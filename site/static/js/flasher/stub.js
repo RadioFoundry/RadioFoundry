@@ -16,6 +16,9 @@ import { be32, concat, crc32, le32, sleep, u32le } from "./bytes.js";
 import { decodeBlock } from "./lz4.js";
 import { Link, LinkError } from "./link.js";
 
+// USB-serial chips known to take the boot ROM load well (adapter.js names a cable by these)
+const GOOD_CHIPS = ["FTDI", "CP210x", "PL2303"];
+
 export class StubError extends Error {}
 // A damaged, short or missing frame, or a sector that failed its CRC: worth asking again
 export class FrameError extends StubError {}
@@ -148,12 +151,16 @@ export class Stub {
 		}
 	}
 
-	// What failed in the boot ROM load, with the bytes received, the cable and the way out
+	// What failed in the boot ROM load, with the bytes received, the cable and the ways out (the page offers the radio's
+	// factory update mode next to Try Again: c7000ui.js factoryWay)
 	romError(what, got) {
 		const bytes = got?.length ? `received ${hexBytes(got)}` : "nothing received";
 		const cable = this.cable ? `the ${this.cable} programming cable` : "the programming cable";
+		// never the chip the user already has: an FTDI cable that failed is told to try a CP210x or PL2303 one
+		const others = GOOD_CHIPS.filter((x) => x !== this.cable);
+		const chips = `${others.slice(0, -1).join(", ")} or ${others[others.length - 1]}`;
 		return new StubError(`${what} (${bytes}${this.echo ? "; the cable echoes" : ""}). The radio's boot ROM did not take the loader over ${cable}. `
-			+ "Try a cable with an FTDI, CP210x or PL2303 chip, or use the stock firmware file instead of reading the radio");
+			+ `Check that the plug is all the way in, try a cable with one of these chips: ${chips}, or install through the radio's factory update mode instead, which needs no load over the cable`);
 	}
 
 	// Answer the ROM's greeting at once (it waits only briefly), load the stub at `load` and start it

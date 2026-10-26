@@ -11,10 +11,15 @@
 // through (usmart.js): framed read_addr / write_addr over a model of its RAM, and the hijack word that starts what was
 // written.
 //
+// A radio with the Baofeng updater (loaderId: the ID its loader answers) enters it when switched on with its keys
+// held (powerOn({ keys: true })): FakeBfLoader, the radio side of bfloader.js, erases the application area and writes
+// the blocks it takes into the program flash.
+//
 // The stock firmware and codec here are random bytes shaped like the real ones: no vendor code is in RadioFoundry.
 
 import { concat, crc32, le32, sha256, sleep, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
+import { ACK, NAK, CRC_REQ, STX, EOT, BLOCK, HEADER_BLOCK, xmodem } from "./bfloader.js";
 import { encodeBlock } from "./lz4.js";
 import { CRASH_BOOT_SOFT, CRASH_SOFT_MARK, STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
 import { HIJACK, STUB_WINDOW, BUILDS, FLASH_BASE } from "./usmart.js";
@@ -32,11 +37,143 @@ const LEGACY_MARK = new TextEncoder().encode("OpenDigitalRadio");
 const consoleBuild = (radio) => (radio?.flash.stock_console ? radio.flash.stock_versions[0]?.slice(-3) || null : null);
 
 // What FakeC7000 needs to play a board, from its flasher data (radio: its radios.json entry): the name it reports, its
-// codec, a small data memory when the stub reads none, and its stock console
+// codec, a small data memory when the stub reads none, its stock console and its Baofeng updater's ID
 export function fakeC7000Options(radio, fb) {
 	const b = fb.boards[radio.id];
 	return { board: b.debuglink_names[0], codecId: b.codec.id,
-		...(fb.c7000.boards[radio.id].data_flash === false ? { dataSize: 0x200000 } : {}), usmart: consoleBuild(radio) };
+		...(fb.c7000.boards[radio.id].data_flash === false ? { dataSize: 0x200000 } : {}), usmart: consoleBuild(radio),
+		loaderId: radio.flash.update_mode === "baofeng" ? fb.c7000.boards[radio.id].bootloader_id : null };
+}
+
+// The radio side of the Baofeng updater (docs/spec/hardware-dm32.md 13.2), a port of tools/serial_loader.py's
+// FakeBootloader: checks every step, the header CRC, each block's number (with the 0xFF -> 0x00 wrap), complement and
+// CRC. send(bytes, delayMs) carries its answers to the host. Faults: corrupt, block numbers whose first transfer
+// arrives damaged (the radio NAKs); silent, never answers; badStep2, a wrong answer at step 2; eraseMs, how long the
+// erase takes before step 7's answer; onEnd(), the end of transfer acknowledged. After step 3 it ignores step 1 (0x52) and waits for step 4, until the radio is
+// switched off (a new FakeBfLoader at the next power-on), as the radio does (hardware-dm32.md 13.2). onErase() and onBlock(k, data) (k from 0) let a radio model keep what is written.
+export class FakeBfLoader {
+	constructor({ id, send, corrupt = [], silent = false, badStep2 = false, eraseMs = 0, onErase = () => {}, onBlock = () => {}, onEnd = () => {} }) {
+		this.magic = new TextEncoder().encode(id);
+		this.send = send;
+		this.corrupt = new Set(corrupt);
+		this.silent = silent;
+		this.badStep2 = badStep2;
+		this.eraseMs = eraseMs;
+		this.onErase = onErase;
+		this.onBlock = onBlock;
+		this.onEnd = onEnd;
+		this.inbuf = new Uint8Array(0);
+		this.state = 1;
+		this.expectN = 1;
+		this.blocks = [];
+		this.header = null;
+		this.naks = 0;
+		this.ignored = 0;	// step 1 bytes passed over after step 3
+		this.done = false;
+		this.errors = [];
+	}
+
+	feed(b) {
+		if (this.silent) return;
+		this.inbuf = concat(this.inbuf, b);
+		while (this.step()) { /* each step takes what it can */ }
+	}
+
+	take(want) {
+		if (this.inbuf.length < want.length || !want.every((x, i) => this.inbuf[i] === x)) return false;
+		this.inbuf = this.inbuf.slice(want.length);
+		return true;
+	}
+
+	step() {
+		const s = this.state, ib = this.inbuf;
+		if (!ib.length) return false;
+		if (s === 4 && ib[0] === 0x52) {
+			this.inbuf = ib.slice(1);
+			this.ignored++;
+			return true;
+		}
+		const fixed = { 1: [[0x52], [0x06]], 2: [[0x4D, 0, 0, 0, 1], [0x4D, 0x01, this.magic.length]], 3: [[0x06], [...this.magic]],
+			4: [[0x45, 0, 0, 0, 0], [0x06]], 5: [[0x31], [0x43]], 6: [[0x01], [0x43]] };
+		if (fixed[s]) {
+			const [want, answer] = fixed[s];
+			if (ib.length < want.length) return false;
+			if (!this.take(want)) {
+				this.errors.push(`step ${s}: got ${[...ib.subarray(0, want.length)].map((x) => x.toString(16)).join(" ")}`);
+				this.inbuf = new Uint8Array(0);
+				return false;
+			}
+			this.send(Uint8Array.from(s === 2 && this.badStep2 ? [0x4D, 0x01, 0x08] : answer));
+			this.state++;
+			return true;
+		}
+		if (s === 7) {
+			if (ib.length < 2 + HEADER_BLOCK + 2) return false;
+			const f = ib.slice(0, 2 + HEADER_BLOCK + 2);
+			this.inbuf = ib.slice(f.length);
+			const blk = f.subarray(2, 2 + HEADER_BLOCK);
+			if (f[0] !== 0x00 || f[1] !== 0xFF || ((f.at(-2) << 8) | f.at(-1)) !== xmodem(blk)) {
+				this.errors.push("header block");
+				this.send(Uint8Array.of(NAK));
+				return true;
+			}
+			const nul = blk.indexOf(0);
+			const rest = blk.subarray(nul + 1);
+			const end = rest.indexOf(0);
+			this.header = [String.fromCharCode(...blk.subarray(0, nul)), Number(String.fromCharCode(...rest.subarray(0, end < 0 ? rest.length : end)))];
+			this.onErase();
+			this.send(Uint8Array.of(ACK, CRC_REQ), this.eraseMs);
+			this.state = 8;
+			return true;
+		}
+		if (s === 8) {		// waiting for STX or EOT
+			const c = ib[0];
+			this.inbuf = ib.slice(1);
+			if (c === STX) {
+				this.send(Uint8Array.of(CRC_REQ));
+				this.state = 9;
+			} else if (c === EOT) {
+				this.send(Uint8Array.of(ACK));
+				this.done = true;
+				this.state = 10;
+				this.onEnd();
+			} else this.errors.push(`expected 02 or 04, got ${c.toString(16)}`);
+			return true;
+		}
+		if (s === 9) {		// one data frame
+			if (ib.length < 2 + BLOCK + 2) return false;
+			const f = ib.slice(0, 2 + BLOCK + 2);
+			this.inbuf = ib.slice(f.length);
+			const n = f[0];
+			if (this.corrupt.has(n)) {
+				this.corrupt.delete(n);
+				f[10] ^= 0x40;		// line noise on the first transfer
+			}
+			const data = f.subarray(2, 2 + BLOCK);
+			let ok = f[1] === 0xFF - n && ((f.at(-2) << 8) | f.at(-1)) === xmodem(data);
+			if (ok && n !== (this.expectN & 0xFF)) {
+				this.errors.push(`block number ${n}, expected ${this.expectN & 0xFF}`);
+				ok = false;
+			}
+			if (ok) {
+				this.onBlock(this.blocks.length, data.slice());
+				this.blocks.push(data.slice());
+				this.expectN++;
+				this.send(Uint8Array.of(ACK));
+			} else {
+				this.naks++;
+				this.send(Uint8Array.of(NAK));
+			}
+			this.state = 8;
+			return true;
+		}
+		this.inbuf = new Uint8Array(0);
+		return false;
+	}
+
+	image() {
+		return this.header ? concat(...this.blocks).subarray(0, this.header[1]) : new Uint8Array(0);
+	}
 }
 
 // A synthetic stock program flash for a board: bootloader, firmware, the codec at made-up addresses, and the c7000
@@ -80,8 +217,9 @@ export async function c7000Simulation(cReal, boardId, seed = 7000, radio = null)
 export class FakeC7000 {
 	// firmware: "stock" | "rfoundry" (with stub entry) | "rfoundry-nostub"; speed: how many times faster than a real cable
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
-		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null } = {}) {
+		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, loaderId = null } = {}) {
 		this.usmart = usmart;			// a stock firmware build with the USMART console ("018")
+		this.loaderId = loaderId;		// the Baofeng updater's ID ("BFUV32-V2"), or null: no such loader
 		this.ram = new Map();			// the console's view of RAM: words written since power-on
 		this.frames = [];			// every console frame received, as text
 		this.stubSpan = stubSpan;		// the RAM span RadioFoundry offers in STUB INFO (the DB25-D's DMR builds: 0x1D000, 0x12000)
@@ -108,7 +246,7 @@ export class FakeC7000 {
 		// romNak: the boot ROM answers the load's frames with something other than its acknowledgement
 		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, ...faults };
 		this.rand = rng(11);
-		this.state = "off";		// off | rom | booting | firmware | stub
+		this.state = "off";		// off | rom | booting | firmware | stub | bfloader
 		this.inb = new Uint8Array(0);
 		this.loaded = new Uint8Array(0);
 		this.wel = false;
@@ -161,8 +299,10 @@ export class FakeC7000 {
 	}
 
 	// ---- power and resets
-	powerOn() {
+	// keys: the update mode keys held while switching on (a radio with the Baofeng updater enters it after the boot ROM)
+	powerOn({ keys = false } = {}) {
 		if (this.state !== "off") return;
+		this.keysHeld = keys;
 		this.boot();
 	}
 
@@ -185,6 +325,7 @@ export class FakeC7000 {
 		this.send(new Uint8Array([0x02, 0x24, 0x00, 0x03]));
 		setTimeout(() => {
 			if (this.gen !== gen || this.state !== "rom") return;
+			if (this.keysHeld && this.loaderId && !this.softReset) return this.updateMode();
 			this.state = "booting";
 			setTimeout(() => {
 				if (this.gen !== gen || this.state !== "booting") return;
@@ -194,9 +335,37 @@ export class FakeC7000 {
 		}, this.romWindow);
 	}
 
+	// The Baofeng updater: its erase and writes go to the program flash model (the loader below 0xC000 is never written).
+	// After the end of transfer the radio starts what was written by itself, its link up (hardware-dm32.md 13.2)
+	updateMode() {
+		this.state = "bfloader";
+		this.inb = new Uint8Array(0);
+		this.events.push("update mode");
+		const app = 0xC000, end = this.progmem.length;
+		this.bf = new FakeBfLoader({ id: this.loaderId, eraseMs: 12600 / this.speed, send: (b, ms = 0) => (ms ? setTimeout(() => this.send(b), ms) : this.send(b)),
+			onErase: () => {
+				this.progmem.fill(0xFF, app, end);
+				this.fwKind = null;
+				this.events.push("erase");
+			},
+			onBlock: (k, data) => {
+				const at = app + k * BLOCK;
+				if (at < end) this.progmem.set(data.subarray(0, Math.min(BLOCK, end - at)), at);
+				this.writes++;
+			},
+			onEnd: () => setTimeout(() => {
+				if (this.state !== "bfloader") return;
+				this.keysHeld = false;
+				this.softReset = false;
+				this.events.push("restart");
+				this.boot();
+			}, 100 / this.speed) });
+	}
+
 	// ---- what arrives from the host
 	receive(data) {
 		if (this.state === "off" || this.state === "booting") return;
+		if (this.state === "bfloader") return this.bf.feed(data);
 		if (this.state === "firmware" && this.softReset && this.faults.silentAfterReset) return;
 		if (this.faults.romEcho && (this.state === "rom" || this.state === "romload")) this.send(data.slice());
 		this.inb = concat(this.inb, data);

@@ -55,13 +55,26 @@ function loadScript(src, integrity) {
 	});
 }
 
+// Every string and number in a value, scrubbed one by one: scrubbing its JSON text instead turns a number (a DMR ID
+// in a list) into [id] without quotes, the parse throws and Sentry drops the event
+function scrubDeep(x) {
+	if (typeof x === "string") return diag.scrub(x);
+	if (typeof x === "number") {
+		const t = diag.scrub(String(x));
+		return t === String(x) ? x : t;
+	}
+	if (Array.isArray(x)) return x.map(scrubDeep);
+	if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, scrubDeep(v)]));
+	return x;
+}
+
 // Strings in an event that came from the page: callsigns, IDs and email addresses out
-function scrubEvent(ev) {
+export function scrubEvent(ev) {
 	const s = (x) => (typeof x === "string" ? diag.scrub(x) : x);
 	if (ev.message) ev.message = s(ev.message);
 	for (const v of ev.exception?.values || []) v.value = s(v.value);
 	if (ev.request?.url) ev.request.url = ev.request.url.split("?")[0];
-	if (ev.contexts?.rfoundry) ev.contexts.rfoundry = JSON.parse(diag.scrub(JSON.stringify(ev.contexts.rfoundry)));
+	if (ev.contexts?.rfoundry) ev.contexts.rfoundry = scrubDeep(ev.contexts.rfoundry);
 	ev.user = undefined;
 	return ev;
 }
@@ -129,9 +142,18 @@ export function reportButton({ quiet = true } = {}) {
 	return button(t("report.button"), () => reportDialog(), { quiet });
 }
 
-// A line under a failure message: the report button with a word on what it's for
+// Where to get help after a failure: the community group and the GitHub issues (site.json community, repo)
+export function helpLinks() {
+	const link = (href, icon, text) => h("a", { href, target: "_blank", rel: "noopener", class: "help-link" },
+		h("span", { class: `icon icon-${icon}`, "aria-hidden": "true" }), text);
+	const links = [site.community && link(site.community, "facebook", t("report.community")),
+		site.repo && link(`${site.repo}/issues/new/choose`, "github", t("report.issue"))].filter(Boolean);
+	return links.length ? h("span", { class: "help-links" }, t("report.help_lead"), " ", ...links) : null;
+}
+
+// A line under a failure message: the report button with a word on what it's for, and where to ask
 export function reportLine() {
-	return h("p", { class: "report-line small" }, t("report.lead"), " ", reportButton());
+	return h("p", { class: "report-line small" }, t("report.lead"), " ", reportButton(), helpLinks());
 }
 
 const shown = new Map();	// event id -> its reported line
@@ -171,7 +193,7 @@ export function reportedLine(rec = diag.currentError()) {
 	});
 	const el = h("div", { class: "report-reported small" },
 		h("p", {}, t("report.reported", { id: String(rec.eventId).slice(0, 8) })), text,
-		h("p", { class: "report-line" }, send, status, reportButton()));
+		h("p", { class: "report-line" }, send, status, reportButton(), helpLinks()));
 	shown.set(rec.eventId, el);
 	return el;
 }
