@@ -96,10 +96,10 @@ test("the CH340 banner shows for a 1a86 cable, not for an FTDI one", () => {
 // ---------------------------------------------------------------------------------------------------------------
 
 const META = {
-	tool: "web", tool_version: "v0.9.0", board: "dm1701", task: "install", step: "done", flash_id: "f-123", result: "failed",
+	tool: "web", tool_version: "v0.9.0", board: "x", task: "install", step: "done", flash_id: "f-123", result: "failed",
 	adapter: { vid: 0x1FC9, pid: 0x0094, chip: "radio USB", product: "" }, error: "flash/write: the radio stopped answering",
 	decisions: { codec_mode: "merge", codec_source: "stock", key_source: "file (opener)", plan: "merge: erase 3,4; write 3:app; keep -; 9 blocks",
-		files: [{ role: "stock", name: "DM-1701(CSV)-V02.06.bin", len: 1024, sha256: "ab".repeat(32), id: "codec:V02.06" }] },
+		files: [{ role: "stock", name: "stock-V01.00.bin", len: 1024, sha256: "ab".repeat(32), id: "codec:V01.00" }] },
 };
 
 test("report body: the page's decisions, the trail capped, empty optional fields left out", () => {
