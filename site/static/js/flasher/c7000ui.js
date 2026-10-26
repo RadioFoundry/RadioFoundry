@@ -822,7 +822,10 @@ export function hasC7Backup(bundle) {
 // returns to its original firmware without the backup from before the first installation (c7.progmemFromFile)
 export function vendorBundle(radio, file, c) {
 	const name = file.path.split("/").pop();
-	const data = c7.progmemFromFile(c, radio.flash.board, file.data);
+	// only a file a profile of this radio names: a C-SKY codec signature alone tells no radio
+	if (file.match.kind !== "codec" || file.match.board !== radio.flash.board)
+		throw new c7.CodecError(`${name} is not identified as the ${radio.name}'s original firmware`, "unmapped");
+	const data = c7.progmemFromFile(c, radio.flash.board, file.data, file.match.codec?.profile?.stock_header);
 	return { meta: { radio: { board: radio.id, name: radio.name }, created: new Date().toISOString(), vendor_file: name,
 		firmware_now: { kind: "stock", version: file.match.known || null } },
 	parts: new Map([["c7000-progmem", { what: "c7000-progmem", file: name, complete: true, addr: 0, data }]]) };

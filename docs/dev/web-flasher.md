@@ -58,10 +58,10 @@ under 64 KB. Each remaining file is identified against every radio the flasher k
 
 | Step | How | Result |
 |---|---|---|
-| 1 | SHA-256 in a codec profile, the known files or the C-SKY profiles | the codec (and the key) |
+| 1 | SHA-256 in a codec profile or a C-SKY profile. A file in the known files without a profile goes on to step 2 | the codec (and the key); the key only for a known file without a profile |
 | 2 | A TYT/Baofeng container (`OutSecurityBin`) no profile knows: every known bootloader key is tried, the chosen radio's first. A key that decrypts it names the radio, and the decrypted application is searched for the codec's signature word | the key; "the codec, no recipe for this build" |
-| 3 | The C-SKY codec search: the codec's own hashes wherever the file or readout holds it (`c7000.js`) | the codec; "no recipe" when only the signature matches |
-| 4 | An STM32 readout, by the codec windows' hashes (`stockfw.fromFlash`) | the codec |
+| 3 | The C-SKY codec search: the codec's own hashes wherever the file or readout holds it (`c7000.js`) | the codec; "no recipe" when only the signature matches. The signature is the same on every C-SKY radio, so such a file is credited to no radio and never written back as original firmware |
+| 4 | An STM32 readout, by the codec windows' hashes (`stockfw.fromFlash`) | named, not used: the page asks for the manufacturer's file instead |
 
 The best file for the chosen radio is used:
 
@@ -199,7 +199,7 @@ What can be read depends on the firmware running:
 |---|---|---|
 | Exactly as backed up (backup taken on RadioFoundry) | The internal flash image through the bootloader (every sector erased and rewritten), then the codeplug areas that differ through CPS writes | The CPS refuses RadioFoundry's own areas and the calibration window |
 | Codeplug only (any backup that holds the codeplug span) | The codeplug areas that differ, through CPS writes; the firmware is not touched | As above |
-| Back to stock | The stock application from the user's stock file, codec included, through the bootloader. Any file for this radio that its key opens serves, mapped or not: no codec is taken from it | The SPI flash stays as it is: writing it back whole needs a firmware command that doesn't exist yet (a gated STORAGE write, like CLAIM). Until then the flasher says so, and the stock codeplug goes back with the vendor CPS |
+| Back to stock | The stock application from the user's stock file, codec included, through the bootloader. Any file for this radio that its key opens can be used, mapped or not: no codec is taken from it | The SPI flash stays as it is: writing it back whole needs a firmware command that doesn't exist yet (a gated STORAGE write, like CLAIM). Until then the flasher says so, and the stock codeplug goes back with the vendor CPS |
 
 The stock file's resource segment (SPI flash 0x60000) is not written back: how the vendor updater writes it is not
 documented, and RadioFoundry doesn't overwrite it unless an ID database is uploaded.
@@ -267,10 +267,10 @@ The calibration choice reads the stock codeplug area, which is about 10 seconds,
 data memory includes it. Restore writes the program memory back from 0x0300C000 up; the data memory is not written.
 
 Without a backup, the original firmware comes back from its vendor file. The restore task takes the file in place of a
-bundle (`vendorRestore`) once `vendorfile.js` identifies it for this radio, mapped or not. `c7.progmemFromFile()` lays
-the application out as a program memory read holds it: after the file's header (256 bytes for a `BFUV32-V2` file, none
-for a plain one) at the application start, everything else erased. The stub or update mode then writes it as it writes
-a backup. A file larger than the application area is refused as `internal`.
+bundle (`vendorRestore`) once `vendorfile.js` identifies it for this radio, mapped or not. `c7.progmemFromFile()` takes a
+whole program memory readout as it is. A firmware file it lays out as a program memory read holds it: the application
+after the file's header (256 bytes for a `BFUV32-V2` file, none for a plain one) at the application start, everything
+else erased. The stub or update mode then writes it as it writes a backup. A file larger than the application area is refused as `internal`.
 
 ## STM32F4 radios (the loader route)
 

@@ -181,7 +181,8 @@ function analysisOffer(cand, boardId, problem = null) {
 		try {
 			const r = await fetch(new URL(`samples?${q}`, API), { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: cand.file.data });
 			const j = await r.json().catch(() => ({}));
-			if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+			// FastAPI's own validation errors carry a list, the backend's refusals a string
+			if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : `HTTP ${r.status}`);
 			status.textContent = t(j.status === "already-have" ? "flash.analysis.have" : "flash.analysis.sent");
 		} catch (e) {
 			status.textContent = t("flash.analysis.failed", { error: e.message });
@@ -503,8 +504,9 @@ async function pickedStock(f) {
 }
 
 // A stock file for this radio, whichever build: what a restore of the original firmware needs (the key and the
-// application), not a codec profile
-const stockForRadio = (st) => !!st && (st.match ? st.match.board === S.board.id : !!st.info?.profile && st.info.profile.board === S.board.id);
+// application), not a codec profile. A flash readout is neither
+const stockForRadio = (st) => !!st && (st.match ? st.match.board === S.board.id && st.match.kind !== "readout"
+	: !!st.info?.profile && st.info.profile.board === S.board.id);
 
 // S.keySource says where the key came from, for error reports: "radio" (keyFromRadio), "saved", "file" or "sim"
 async function getKey(board) {
@@ -1142,7 +1144,9 @@ function codecView() {
 			return;
 		}
 		const haveStock = fb().profiles[S.stock?.info.sha]?.board === S.board.id;
-		const keyKnown = S.sim || !!S.key || !!savedKey(S.board);
+		// a picked build of this radio without a codec profile still gives the key (the opener derived it)
+		const keyStored = S.sim || !!S.key || !!savedKey(S.board);
+		const keyKnown = keyStored || (S.stock?.match?.board === S.board.id && !!S.stock.match.key);
 		// the copy an earlier visit read from this radio: an update that stopped halfway leaves none in the radio, and a
 		// radio back on stock firmware or in its bootloader can't say what it holds
 		if (!S.savedCodec && !S.sim) {
@@ -1167,7 +1171,7 @@ function codecView() {
 		if (S.decision && !keyKnown && !haveStock) needs.push(t("flash.codec.need_key"));
 		const ready = S.decision && (keyKnown || haveStock);
 		const plan = S.decision ? `${t(`flash.codec.mode.${S.decision.mode}`)}: ${S.decision.why}.` : null;
-		const keyLine = S.keyFromRadio ? t("flash.codec.key_from_radio") : keyKnown && !S.sim ? t("flash.codec.key_saved") : null;
+		const keyLine = S.keyFromRadio ? t("flash.codec.key_from_radio") : keyStored && !S.sim ? t("flash.codec.key_saved") : null;
 		const fromSaved = S.decision?.source === "saved";
 		const codecLine = !fromSaved ? null : S.savedCodec.from === "browser" ? t("flash.codec.codec_saved")
 			: t(S.savedCodec.stored ? "flash.codec.codec_from_radio" : "flash.codec.codec_from_radio_unsaved");
@@ -1179,7 +1183,7 @@ function codecView() {
 		const keyOnly = S.stock?.info.known && !fb().profiles[S.stock.info.sha] && S.stock.match?.board === S.board.id;
 		// anything else that gives no codec: why, and what to select instead (explain.js); what each file in the pick is
 		const problem = !keyOnly && S.stock?.problem;
-		const report = S.stock?.report?.length > 1 || (S.stock && !haveStock)
+		const report = S.stock?.report?.length && (S.stock.report.length > 1 || !haveStock)
 			? h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, S.stock.report.map((l) => h("li", {}, l)))) : null;
 		const loaded = !S.stock ? null : [keyOnly ? notice(`${loadedText}. ${t("flash.codec.stock_key_only", { files: stockFiles() })}`, "action")
 			: problem ? problemNotice(problem, { offer: S.stock.analysis })
@@ -1521,7 +1525,8 @@ function bundleView() {
 				if (!r) throw new Error(t("flash.err.unknown_board", { board: S.bundle.meta.radio.board }));
 				selectRadio(r);
 				const st = S.bundle.parts.get("stock-firmware");
-				if (st) S.stock = { name: "stock-firmware.bin", data: st.data, info: await stockfw.identify(st.data, fb()) };
+				// the stock file the install used, identified as a picked file is (any build of this radio restores)
+				if (st) S.stock = await pickedStock({ name: "stock-firmware.bin", data: st.data });
 				next();
 			} catch (e) {
 				status.replaceChildren(failureNotice(e, vendor ? f : null));

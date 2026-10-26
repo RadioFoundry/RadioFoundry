@@ -18,6 +18,7 @@ import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flash
 import { stockVersion } from "../static/js/flasher/usmart.js";
 import { openVendorFile } from "../static/js/flasher/vendorfile.js";
 import { vendorBundle, hasC7Backup } from "../static/js/flasher/c7000ui.js";
+import * as explain from "../static/js/flasher/explain.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
@@ -238,7 +239,7 @@ test("a codec from a stock file or a program memory backup", async () => {
 	await assert.rejects(c7.codecFromFile(new Uint8Array(1000), sim.c, "dm1801pro"), c7.CodecError);
 	// what each failure is, for the page's explanation (explain.js): not a vendor file, another radio's backup, no map
 	await assert.rejects(c7.codecFromFile(new Uint8Array(1000), sim.c, "dm1801pro"), (e) => e.code === "not-vendor");
-	await assert.rejects(c7.codecFromFile(new Uint8Array(sim.progmem.length), sim.c, "dm1801pro"), (e) => e.code === "wrong-key");
+	await assert.rejects(c7.codecFromFile(new Uint8Array(sim.progmem.length), sim.c, "dm1801pro"), (e) => e.code === "not-vendor");
 	assert.throws(() => c7.slotBytes({ ...sim.c, codec_maps: [] }, "dm1801pro", got), (e) => e.code === "unmapped");
 	const slot = c7.slotBytes(sim.c, "dm1801pro", got);
 	assert.equal((await c7.decide(sim.c, "dm1801pro", { savedSlot: slot })).source, "browser");
@@ -281,6 +282,20 @@ test("the original firmware goes back from its vendor file, without a backup", a
 	assert.ok(equal(r.progmem.subarray(0, C.app_end), sim.progmem.subarray(0, C.app_end)), "the original firmware is back, the codec slot erased");
 	// a file larger than the application area is refused, as a fault in the page (the file was identified)
 	assert.throws(() => c7.progmemFromFile(sim.c, "dm1801pro", new Uint8Array(256 + C.app_end).fill(1)), (e) => e.code === "internal");
+	// a build whose codec no profile describes has the signature every C-SKY radio's codec starts with, which tells no
+	// radio: it is credited to none (not to the page's radio), explained as unmapped, and never written back
+	const changed = file.slice();
+	changed[256 + sim.codec.codeAt - C.app_start + 16] ^= 0xFF;
+	for (const board of Object.keys(sim.c.boards)) {
+		const o = await openVendorFile("DM1801Pro-new.bin", changed, fb, board);
+		assert.equal(o.best, null, board);
+		assert.equal(o.files[0].match.board, null);
+		assert.equal(explain.pickProblem(o, board, { need: "key" }).problem, "unmapped", board);
+	}
+	const forged = { path: "x.bin", data: changed, match: { board: "dm1801pro", kind: "codec-unmapped" } };
+	assert.throws(() => vendorBundle({ id: "dm1801pro", name: "DM-1801 Pro", flash: { board: "dm1801pro" } }, forged, sim.c), (e) => e.code === "unmapped");
+	// on an STM32 radio's page it is no vendor file of that radio
+	assert.equal(explain.pickProblem(await openVendorFile("DM1801Pro-new.bin", changed, fb, "md380"), "md380").problem, "not-vendor");
 });
 
 test("factory calibration: the first page of the stock codeplug area whose ID byte is 2, and only in that area", () => {

@@ -86,6 +86,12 @@ test("the codec from a flash readout matches rfoundry", async () => {
 	bad[r.profile.windows[0][0] - 0x08000000 + 100] ^= 1;
 	assert.equal(await stockfw.fromFlash(bad, fb, rprofiles), null);
 	assert.equal(await stockfw.fromFlash(new Uint8Array(0x100000).fill(0xFF), fb), null);
+	// picked on the page, a readout is named but not taken: the page asks for the manufacturer's file
+	const withR = { ...fb, profiles: rprofiles };
+	const opened = await vendorfile.openVendorFile("dump.bin", flash, withR, r.profile.board);
+	assert.equal(opened.best.match.kind, "readout");
+	for (const need of ["codec", "key"]) assert.equal(explain.pickProblem(opened, r.profile.board, { need }).problem, "not-vendor", need);
+	assert.match(vendorfile.describe(opened, withR, r.profile.board)[0], /manufacturer's firmware file instead/);
 });
 
 // A build whose code doesn't fit after its tables (RT3S V219.60): the code at the start of sector 10, below the

@@ -7,7 +7,7 @@
 //   2. an unknown TYT/Baofeng container (the "OutSecurityBin" header): every known bootloader key is tried on it, which
 //      tells which radio it is for, and the decrypted application is searched for the codec's signature word;
 //   3. a C-SKY radio's stock file or readout, by the codec's own hashes wherever the file holds it (c7000.js);
-//   4. an STM32 program flash readout, by the codec windows' hashes (stockfw.fromFlash).
+//   4. an STM32 program flash readout, by the codec windows' hashes (stockfw.fromFlash): named, not used.
 // The signature alone never makes a codec usable: moving the codec needs that build's map (docs/spec/codec-placement.md),
 // so a build without one is reported as "has the codec, no recipe for this build", not taken.
 
@@ -67,15 +67,25 @@ const keyedBoards = (fb, first) => Object.values(fb.boards).filter((b) => b.key_
 
 // One file against every radio: {board, kind, how, profile?, known?, key?, codecAt?, codec?} or {board: null, why,
 // problem}. kind "codec": the codec can be taken from it; "key": it gives a radio's bootloader key, not a codec
-// RadioFoundry can place; "codec-unmapped": it holds the codec of a build without a map. problem (no radio): "damaged",
-// "wrong-key" (a vendor container no known radio's key opens: another model, or a modified build) or "not-vendor"
+// RadioFoundry can place; "codec-unmapped": it holds the codec of a build without a map; "readout": an STM32 radio's
+// flash read, which the page doesn't take. problem (no radio): "damaged", "wrong-key" (a vendor container no known
+// radio's key opens: another model, or a modified build), "unmapped" (a C-SKY codec no profile describes, for one of
+// boards), "internal" (a known file failing its own check) or "not-vendor"
 export async function identifyFile(data, fb, boardId = null) {
 	const sha = await sha256(data);
 	const prof = fb.profiles[sha];
 	if (prof) return { sha, board: prof.board, kind: "codec", how: "sha256", profile: prof, known: fb.known_files[sha] || prof.name };
 	const c = fb.c7000;
 	const cprof = c?.profiles.find((p) => p.stock_file?.sha256 === sha);
-	if (cprof) return { sha, board: cprof.board, kind: "codec", how: "sha256", known: cprof.name, codec: await c7.codecFromFile(data, c, cprof.board) };
+	if (cprof) {
+		// a known file whose codec areas fail their check: the page's data is wrong, not the file; the other files in a
+		// zip are still reported
+		try {
+			return { sha, board: cprof.board, kind: "codec", how: "sha256", known: cprof.name, codec: await c7.codecFromFile(data, c, cprof.board) };
+		} catch (e) {
+			return { sha, board: null, known: cprof.name, problem: "internal", why: e.message };
+		}
+	}
 	const known = fb.known_files[sha];
 	if (startsWith(data, fb.magic)) {
 		let segs;
@@ -103,21 +113,28 @@ export async function identifyFile(data, fb, boardId = null) {
 		return { sha, board: null, known, problem: "wrong-key", why: "a TYT/Baofeng firmware file for a radio whose bootloader key RadioFoundry doesn't know" };
 	}
 	if (c) {
+		// the codec signature is the same on every C-SKY radio, so a signature without a profile's hashes tells no radio:
+		// such a file is for none of them by name, and is never written to a radio as its original firmware
+		let unmapped = null;
 		for (const id of Object.keys(c.boards).sort((a, b) => (b === boardId) - (a === boardId))) {
 			try {
 				const codec = await c7.codecFromFile(data, c, id);
 				return { sha, board: id, kind: "codec", how: "codec hashes", known: codec.profile?.name, codec };
 			} catch (e) {
-				if (e.code === "unmapped") return { sha, board: id, kind: "codec-unmapped", how: "codec signature", why: e.message };
+				if (e.code === "unmapped") unmapped ||= e.message;
+				else if (e.code === "internal") return { sha, board: null, problem: "internal", why: e.message };
 			}
 		}
+		if (unmapped) return { sha, board: null, boards: Object.keys(c.boards), known, problem: "unmapped", how: "codec signature", why: unmapped };
 	}
+	// a readout of an STM32 radio's flash: identified so the page can say what it is, but the page takes the codec and
+	// the key from the manufacturer's file only
 	const flash = await stockfw.fromFlash(data, fb);
-	if (flash) return { sha, board: flash.profile.board, kind: "codec", how: "readout", profile: flash.profile, known: flash.profile.name, flash };
+	if (flash) return { sha, board: flash.profile.board, kind: "readout", how: "readout", profile: flash.profile, known: flash.profile.name };
 	return { sha, board: null, known, problem: "not-vendor", why: known ? `${known}, which gives no codec` : "not a firmware file RadioFoundry knows" };
 }
 
-const RANK = { codec: 3, "codec-unmapped": 1, key: 2 };
+const RANK = { codec: 3, key: 2, "codec-unmapped": 1, readout: 0 };
 
 // Everything in what the user picked, identified, and the best file for boardId: the one with the codec first, then one
 // that gives the bootloader key, then by name. {files: [{path, size, data, match}], skipped, best}; best is null when
@@ -141,7 +158,8 @@ export function describe(opened, fb, boardId) {
 		const what = !m.board ? m.why
 			: m.board !== boardId ? `for the ${name(m.board)}, not this radio`
 			: m.kind === "codec" ? `${m.known || "known"}: the codec${fb.boards[m.board]?.key_sha256 ? " and the bootloader key" : ""}`
-			: m.kind === "codec-unmapped" ? `${m.known || "a build"} with the codec, but RadioFoundry has no recipe for this build yet${m.key ? " (the bootloader key works)" : ""}`
+			: m.kind === "readout" ? `a flash readout of ${m.known}: the installer takes the manufacturer's firmware file instead`
+			: m.kind === "codec-unmapped" ?`${m.known || "a build"} with the codec, but RadioFoundry has no recipe for this build yet${m.key ? " (the bootloader key works)" : ""}`
 			: `${m.known || "a build"}: the bootloader key, not the codec`;
 		return `${f.path}: ${what}${f === opened.best ? " (used)" : ""}`;
 	});
@@ -157,7 +175,8 @@ export function analysisCandidate(opened, fb, boardId = null, maxBytes = 4 << 20
 		x.data.length <= maxBytes && magics.some((m) => startsWith(x.data, m)));
 	if (!f) return null;
 	const m = f.match;
-	return { file: f, reason: m.board ? m.kind : /bootloader key/.test(m.why || "") ? "key-unknown" : "unknown-container" };
+	return { file: f, reason: m.board ? m.kind : m.problem === "unmapped" ? "codec-unmapped" : m.problem === "wrong-key" ? "key-unknown"
+		: m.problem === "internal" ? "internal" : "unknown-container" };
 }
 
 // A file the page identified for this radio but failed on later (placing the codec, restoring): offered with reason,

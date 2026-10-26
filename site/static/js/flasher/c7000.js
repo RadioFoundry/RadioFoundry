@@ -121,7 +121,7 @@ export async function codecFromFile(data, c, boardId) {
 		const hasCodec = codecSignature(low, c, c.app_start, c.boards[boardId].slot[0]) >= 0;
 		throw new CodecError(hasCodec
 			? `this program memory backup holds a stock codec build RadioFoundry has no recipe for; take the codec from a stock firmware file${supported(c, boardId)}`
-			: "this program memory backup contains no codec recognized for this radio", hasCodec ? "unmapped" : "wrong-key");
+			: "this program memory backup contains no codec recognized for this radio", hasCodec ? "unmapped" : "not-vendor");
 	}
 	const sha = await sha256(data);
 	const p = profilesFor(c, boardId).find((x) => x.stock_file?.sha256 === sha);
@@ -261,10 +261,11 @@ export function target(c, boardId, image, slot = null) {
 // radio: vendorfile.js kind "codec"), as restoreTarget takes it: the application after the file's header (a
 // "BFUV32-V2" file's 256 bytes; the DB25-D's are plain) at the application start, everything else erased. The codec
 // slot goes with it, which the original firmware never reads. A program memory backup is taken as it is. So a radio
-// goes back to its original firmware from its vendor file, without a backup from before the first installation
-export function progmemFromFile(c, boardId, data) {
+// goes back to its original firmware from its vendor file, without a backup from before the first installation.
+// header: the matched profile's stock_header, where it has its own
+export function progmemFromFile(c, boardId, data, header = undefined) {
 	if (data.length === c.progmem_size || data.length === totalSize(c, boardId)) return lowPart(c, data);
-	const body = data.subarray(startsWith(data, c.stock_magic) ? c.stock_header : 0);
+	const body = data.subarray(header ?? (startsWith(data, c.stock_magic) ? c.stock_header : 0));
 	const room = c.app_end - c.app_start;
 	if (body.length > room) throw new CodecError(`the firmware (${body.length} bytes) is larger than the application area (${room} bytes)`, "internal");
 	const progmem = new Uint8Array(c.progmem_size).fill(0xFF);

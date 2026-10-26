@@ -9,7 +9,8 @@
 // other-radio  a file for another radio RadioFoundry knows (board names it)
 // wrong-key    a vendor container this radio's bootloader key doesn't open: another model, or a modified build
 // not-vendor   not a vendor firmware file at all: a plain image, another firmware project's build, a zip without one
-// unmapped     this radio's build, but the codec can't be taken from it yet (no codec map)
+// unmapped     this radio's build (or, on a C-SKY radio, a codec no profile describes), but the codec can't be taken
+//              from it yet (no codec map); a C-SKY file of this kind is never written back as original firmware
 // damaged      a cut-short or damaged file or zip
 // internal     a check failing after the file was identified: a fault in the flasher or its data, not in the file
 export const PROBLEMS = ["other-radio", "wrong-key", "not-vendor", "unmapped", "damaged", "internal"];
@@ -24,14 +25,16 @@ const base = (path) => (path || "").split("/").pop();
 // original firmware), so any build of this radio does
 export function pickProblem(opened, boardId, { need = "codec" } = {}) {
 	const best = opened.best;
-	if (best) {
+	// an STM32 flash readout (vendorfile.js kind "readout") is named, but neither the codec nor the restore takes one
+	if (best && best.match.kind !== "readout") {
 		if (need === "key" || best.match.kind === "codec") return null;
 		return { problem: "unmapped", file: base(best.path), known: best.match.known || null };
 	}
+	if (best) return { problem: "not-vendor", file: base(best.path), known: best.match.known || null };
 	const other = opened.files.find((f) => f.match.board && f.match.board !== boardId);
 	if (other) return { problem: "other-radio", file: base(other.path), board: other.match.board, known: other.match.known || null };
-	const marked = (p) => opened.files.find((f) => f.match.problem === p);
-	const f = marked("wrong-key") || marked("damaged");
+	const marked = (p) => opened.files.find((f) => f.match.problem === p && (p !== "unmapped" || f.match.boards?.includes(boardId)));
+	const f = marked("unmapped") || marked("wrong-key") || marked("damaged") || marked("internal");
 	if (f) return { problem: f.match.problem, file: base(f.path), known: f.match.known || null };
 	if (!opened.files.length && opened.skipped.some((s) => s.problem === "damaged" || s.problem === "too-deep"))
 		return { problem: "damaged", file: base(opened.skipped.find((s) => s.problem !== "not-firmware").path) };
