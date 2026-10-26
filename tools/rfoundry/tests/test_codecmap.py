@@ -202,5 +202,61 @@ class TestThumb(unittest.TestCase):
                     cm.normalize(raw)
 
 
+class TestWindowMove(unittest.TestCase):
+    """The code and its table window moved as two blocks (move_window), and the move read back from a copy found in a
+    flash read (unmove_window). The vector is shared with codecmap.js."""
+
+    def setUp(self):
+        self.w = V["window"]
+        self.m = cm.normalize(copy.deepcopy(self.w["map"]))
+        self.code, self.tables = bytes.fromhex(self.w["code"]), bytes.fromhex(self.w["tables"])
+        self.cr, self.tr = int(self.w["code_run"], 0), int(self.w["tables_run"], 0)
+        self.lo = cm.table_window(self.m)[0]
+
+    def test_move_window(self):
+        mc, mt = cm.move_window(self.code, self.tables, self.m, self.cr, self.tr)
+        self.assertEqual(mc.hex(), self.w["code_moved"])
+        self.assertEqual(mt.hex(), self.w["tables_moved"])
+        dt = self.tr - self.lo
+        self.assertEqual(word(mc, 0x84), 0x080D1B70 + dt, "a table ref follows the tables")
+        self.assertEqual(word(mc, 0x80), 0x080D1A11 + dt, "an island pointer follows the tables")
+        self.assertEqual(word(mt, 0x40), 0x080D1B78 + dt, "an island ref follows the tables")
+        for b in self.m["branches"]:
+            self.assertEqual(cm.bl_target(mt, b["at"] - self.lo, b["at"] + dt), b["target"] + self.cr - self.m["code"]["run"])
+        with self.assertRaises(cm.MapError):
+            cm.move_window(self.code, self.tables + b"\0", self.m, self.cr, self.tr)	# not the map's cut
+        with self.assertRaises(cm.MapError):
+            cm.move_window(self.code, self.tables, self.m, self.cr, self.tr + 2)
+
+    def flash(self, cr, tr, tables=None):
+        mc, mt = cm.move_window(self.code, self.tables, self.m, cr, tr)
+        b = bytearray(b"\xff" * 0x100000)
+        b[cr - 0x08000000:cr - 0x08000000 + len(mc)] = mc
+        b[tr - 0x08000000:tr - 0x08000000 + len(mt)] = mt if tables is None else tables
+        return b
+
+    def test_unmove_window(self):
+        """Wherever the copy is: the code anywhere, the tables at their stock address or moved, the islands' calls
+        into the code moved with it or left as stock had them"""
+        for cr, tr, tables in ((self.cr, self.tr, None), (0x0807537C, self.lo, None), (0x0807537C, self.lo, self.tables),
+                               (self.m["code"]["run"], self.lo, None), (0x08060004, 0x08098010, None)):
+            with self.subTest(code=hex(cr), tables=hex(tr)):
+                got = cm.unmove_window(self.flash(cr, tr, tables), 0x08000000, self.m, cr)
+                self.assertEqual(got, (self.code, self.tables, tr))
+        b = self.flash(self.cr, self.tr)
+        self.assertIsNone(cm.unmove_window(b, 0x08000000, self.m, self.cr + 4), "not where the code is")
+        for off in (self.cr + 0x200, self.tr + 0x100, self.tr + 0x40):
+            c = bytearray(b)
+            c[off - 0x08000000] ^= 1
+            self.assertIsNone(cm.unmove_window(c, 0x08000000, self.m, self.cr), "changed at 0x%08X" % off)
+
+    def test_window_must_hold_every_ref(self):
+        t = copy.deepcopy(self.m)
+        t["table_windows"][0]["min_len"] = 0x100		# the object at +0x180 is outside
+        with self.assertRaises(cm.MapError):
+            cm.table_window(t)
+        self.assertIsNone(cm.unmove_window(bytes(0x100000), 0x08000000, t, self.cr))
+
+
 if __name__ == "__main__":
     unittest.main()
