@@ -24,6 +24,11 @@ const bin = (n) => new Uint8Array(readFileSync(join(DIR, n)));
 const FB = json("flash-boards.json");
 const C = FB.c7000;
 const RADIOS = json("radios.json").radios;
+// one radio of each kind, found by what it is, not by name (AGENTS.md rule 4)
+const ofKind = (f, what) => RADIOS.find(f) || assert.fail(`no ${what} in radios.json`);
+const FILE_ID = ofKind((r) => r.flash.update_mode === "baofeng" && factoryRoute(r, FB)?.needs === "file", "Baofeng-loader radio with a stock file").id;
+const BACKUP_ID = ofKind((r) => r.flash.update_mode === "baofeng" && factoryRoute(r, FB)?.needs === "backup", "Baofeng-loader radio without a stock file").id;
+const IAP_ID = ofKind((r) => r.flash.update_mode === "iap", "IAP radio").id;
 const fx = json("bfloader.json");
 const APP_MAX = C.app_end - C.app_start;
 
@@ -70,9 +75,9 @@ test("Baofeng updater: the host sends exactly the bytes serial_loader.py's Flash
 test("Baofeng updater: CRC-16/XMODEM, the header block and the block frame as 13.2 describes them", () => {
 	assert.equal(xmodem(new TextEncoder().encode("123456789")), 0x31C3);
 	assert.equal(xmodem(new Uint8Array(0)), 0);
-	const hb = headerBlock("/x/rfoundry_dm32_codec.bin", 870000);
+	const hb = headerBlock("/x/rfoundry_x_codec.bin", 870000);
 	assert.equal(hb.length, 128);
-	assert.equal(new TextDecoder().decode(hb.subarray(0, 31)), "rfoundry_dm32_codec.bin\u0000870000\u0000");
+	assert.equal(new TextDecoder().decode(hb.subarray(0, 28)), "rfoundry_x_codec.bin\u0000870000\u0000");
 	const f = dataFrame(256, Uint8Array.of(1, 2));
 	assert.deepEqual([...f.subarray(0, 4)], [0x00, 0xFF, 1, 2], "block number wraps, its complement");
 	assert.equal(f.length, 1028);
@@ -131,43 +136,43 @@ test("Baofeng updater: listening passes over other answers until the loader ackn
 
 // ---- the install the page writes that way
 
-async function dm32() {
-	const radio = RADIOS.find((r) => r.id === "dm32");
-	const sim = await c7000Simulation(C, "dm32", 7000, radio);
-	const got = await c7.locateCodec(sim.progmem, sim.c, "dm32");
-	return { radio, sim, slot: c7.slotBytes(sim.c, "dm32", got) };
+async function withFile() {
+	const radio = RADIOS.find((r) => r.id === FILE_ID);
+	const sim = await c7000Simulation(C, FILE_ID, 7000, radio);
+	const got = await c7.locateCodec(sim.progmem, sim.c, FILE_ID);
+	return { radio, sim, slot: c7.slotBytes(sim.c, FILE_ID, got) };
 }
 
 test("factory install image: the codec slot is always written, a kept slot is refused", async () => {
-	const { sim, slot } = await dm32();
+	const { sim, slot } = await withFile();
 	const image = app(300 * 1024);
-	const d = await c7.decide(sim.c, "dm32", { savedSlot: slot });
-	const data = factoryInstallImage(sim.c, "dm32", image, d);
-	const off = C.boards.dm32.slot[0] - C.app_start;
+	const d = await c7.decide(sim.c, FILE_ID, { savedSlot: slot });
+	const data = factoryInstallImage(sim.c, FILE_ID, image, d);
+	const off = C.boards[FILE_ID].slot[0] - C.app_start;
 	assert.ok(equal(data.subarray(0, image.length), image));
 	assert.ok(data.subarray(image.length, off).every((b) => b === 0xFF), "0xFF up to the slot");
 	assert.ok(equal(data.subarray(off, off + slot.length), slot), "the slot where RadioFoundry reads it");
 	assert.ok(data.length <= off + slot.length + 3, "the erased tail is not sent");
-	assert.throws(() => factoryInstallImage(sim.c, "dm32", image, { mode: "keep", slot: null }), /can't be kept/);
-	assert.throws(() => factoryInstallImage(sim.c, "dm32", image, null), c7.CodecError);
-	assert.equal(factoryInstallImage(sim.c, "dm32", image, { mode: "none" }).length, image.length, "without a codec, only when asked");
+	assert.throws(() => factoryInstallImage(sim.c, FILE_ID, image, { mode: "keep", slot: null }), /can't be kept/);
+	assert.throws(() => factoryInstallImage(sim.c, FILE_ID, image, null), c7.CodecError);
+	assert.equal(factoryInstallImage(sim.c, FILE_ID, image, { mode: "none" }).length, image.length, "without a codec, only when asked");
 });
 
 test("practice radio: switched on with its keys held it enters the updater, which erases the area and writes the install", { timeout: 60000 }, async (t) => {
-	const { radio, sim, slot } = await dm32();
+	const { radio, sim, slot } = await withFile();
 	const o = fakeC7000Options(radio, FB);
 	assert.equal(o.loaderId, "BFUV32-V2");
 	const r = new FakeC7000({ progmem: sim.progmem.slice(), speed: 200, romWindow: 50, bootTime: 50, ...o });
 	t.after(() => r.stop());
 	const image = app(200 * 1024, 2);
 	image.set(new TextEncoder().encode("RadioFoundry"), 0x1000);
-	const data = factoryInstallImage(sim.c, "dm32", image, { mode: "write", slot });
+	const data = factoryInstallImage(sim.c, FILE_ID, image, { mode: "write", slot });
 	const l = new BfLoader(r.stream, { id: o.loaderId, appMax: APP_MAX, poll: 100 });
 	const listening = l.listen(5000);
 	setTimeout(() => r.powerOn({ keys: true }), 100);
 	await listening;
 	assert.equal(r.state, "bfloader");
-	await l.write(data, { name: "rfoundry_dm32.bin" });
+	await l.write(data, { name: `rfoundry_${FILE_ID}.bin` });
 	assert.ok(r.events.includes("erase"));
 	assert.ok(equal(r.progmem.subarray(C.app_start, C.app_start + data.length), data));
 	assert.ok(r.progmem.subarray(C.app_start + data.length + 1024).every((b) => b === 0xFF), "the rest of the area erased");
@@ -178,7 +183,7 @@ test("practice radio: switched on with its keys held it enters the updater, whic
 	assert.equal(r.firmware(), "rfoundry");
 	assert.notEqual(r.codecReport(), "absent", "RadioFoundry finds its codec slot");
 	// without the keys the radio boots its application, and the updater never answers
-	const db = RADIOS.find((x) => x.id === "db25d");
+	const db = RADIOS.find((x) => x.id === IAP_ID);
 	assert.equal(fakeC7000Options(db, FB).loaderId, null, "an IAP radio has no Baofeng updater");
 });
 
@@ -200,8 +205,8 @@ test("every HR_C7000 radio has a factory update mode with steps into it, offered
 		assert.equal(x.stuck, r.flash.update_mode === "iap", `${r.id}: only an IAP radio is stuck in update mode`);
 	}
 	// what the install needs for the codec: the stock file where one is known, else a program memory backup
-	assert.equal(factoryRoute(RADIOS.find((r) => r.id === "dm32"), FB).needs, "file");
-	assert.equal(factoryRoute(RADIOS.find((r) => r.id === "dm1801pro"), FB).needs, "backup");
+	assert.equal(factoryRoute(RADIOS.find((r) => r.id === FILE_ID), FB).needs, "file");
+	assert.equal(factoryRoute(RADIOS.find((r) => r.id === BACKUP_ID), FB).needs, "backup");
 	assert.equal(factoryRoute({ flash: { update_mode: null, board: "x" } }, FB), null);
 	const text = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url)));
 	for (const k of ["offer_file", "offer_backup", "offer_restore", "codec_file", "codec_backup"]) assert.ok(text[`flash.factory.${k}`], k);
@@ -209,11 +214,11 @@ test("every HR_C7000 radio has a factory update mode with steps into it, offered
 });
 
 test("a program memory backup gives the codec where the radio has no stock file", async () => {
-	const sim = await c7000Simulation(C, "dm1801pro");
-	const got = await c7.codecFromFile(sim.progmem, sim.c, "dm1801pro");
+	const sim = await c7000Simulation(C, BACKUP_ID);
+	const got = await c7.codecFromFile(sim.progmem, sim.c, BACKUP_ID);
 	assert.equal(got.codeAddr, sim.codec.codeAt);
-	const d = await c7.decide(sim.c, "dm1801pro", { fileCodec: got });
+	const d = await c7.decide(sim.c, BACKUP_ID, { fileCodec: got });
 	assert.equal(d.mode, "write");
-	const data = factoryInstallImage(sim.c, "dm1801pro", app(4096, 3), d);
-	assert.ok(await c7.parseSlot(sim.c, "dm1801pro", data.subarray(C.boards.dm1801pro.slot[0] - C.app_start)));
+	const data = factoryInstallImage(sim.c, BACKUP_ID, app(4096, 3), d);
+	assert.ok(await c7.parseSlot(sim.c, BACKUP_ID, data.subarray(C.boards[BACKUP_ID].slot[0] - C.app_start)));
 });

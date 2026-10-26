@@ -133,8 +133,7 @@ test("kit README: a radio whose codec comes from a program flash read gets the r
 	const r = readme(READOUT, null);
 	assert.ok(r.includes(`stub/stubtool.py PORT --board ${radios[READOUT].flash.board} --progmem "stock/progmem.bin"`), r);
 	assert.ok(r.includes('--stock "stock/progmem.bin" --port PORT'));
-	assert.ok(r.includes("rfoundry names the keys to hold"));
-	assert.ok(r.includes(`${SITE}docs/user/23-radios.html`));
+	for (const step of radios[READOUT].flash.bootloader) assert.ok(r.includes(step), step);
 	assert.ok(!r.includes("THE STOCK FILE"));
 });
 
