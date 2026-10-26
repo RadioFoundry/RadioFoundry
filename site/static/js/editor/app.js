@@ -5,7 +5,7 @@
 // bug report (report.js). The working codeplug is kept in this browser (IndexedDB) so a reload doesn't lose edits.
 
 import { h, t, ROOT, button, notice, download, progressBar } from "../flasher/dom.js";
-import { SerialStream, serialSupported, RFOUNDRY_USB } from "../flasher/link.js";
+import { SerialStream, serialSupported, RFOUNDRY_USB, browserErrorKey } from "../flasher/link.js";
 import { CodeplugImage } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS } from "../codeplug/records.js";
@@ -18,7 +18,7 @@ import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDr
 import { extensions } from "./extensions.js";
 import "./parts.js";
 import * as diag from "../diag.js";
-import { initReporting, reportLine } from "../report.js";
+import { initReporting, reportedLine } from "../report.js";
 
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
 const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "iddb", "problems"];
@@ -86,10 +86,13 @@ function draftSoon() {
 }
 
 // report: a failure worth a bug report gets the way to make one
-function say(text, kind = "info", { report = false } = {}) {
+// report: the record of the error shown (diag.error's return): under the message, that it was sent automatically, or
+// how to report it
+function say(text, kind = "info", { report = null } = {}) {
 	if (kind === "bad") diag.note(`shown: ${text}`);
-	const n = notice(text, kind);
-	if (report) n.append(reportLine());
+	const n = h("div", { class: `notice ${kind}` }, h("p", {}, text));
+	const line = report ? reportedLine(report) : null;
+	if (line) n.append(line);
 	const close = button("×", () => n.remove(), { quiet: true });
 	close.setAttribute("aria-label", t("editor.dismiss"));
 	n.prepend(close);
@@ -430,11 +433,11 @@ async function openPicked(name, bytes) {
 			say(f.format === "tyt-uv380-rdt" ? t("editor.err.foreign_rdt") : t("editor.err.foreign", { format: t(`editor.format.${f.format}`) }), "bad");
 		} else {
 			const handled = await extensions.openText(f, name, api());
-			if (!handled) say(t("editor.err.unknown_file"), "bad");
+			if (!handled) say(t("editor.err.unknown_file", { name }), "bad");
 		}
 	} catch (e) {
-		diag.error("open file", e, { name, size: bytes?.length });
-		say(e instanceof FileError ? t(`editor.err.${e.message}`) : t("editor.err.open_failed", { error: e.message }), "bad", { report: true });
+		const rec = diag.error("open file", e, { name, size: bytes?.length });
+		say(e instanceof FileError ? t(`editor.err.${e.code}`, { name }) : t("editor.err.open_failed", { error: e.message }), "bad", { report: rec });
 	}
 }
 
@@ -512,16 +515,19 @@ function radioError(e) {
 		if (typeof p.addr === "number") p.addr = `0x${p.addr.toString(16).toUpperCase()}`;
 		return t(`editor.radio_err.${e.code}`, p);
 	}
-	if (e?.name === "NotFoundError") return null;	// the user closed the port chooser
+	if (e?.name === "NotFoundError" && !/disconnect/i.test(e.message || "")) return null;	// the user closed the port chooser
+	// the browser's own serial errors (a port another program holds, a radio unplugged): what to do, then its words
+	const key = browserErrorKey(e);
+	if (key) return `${t(key)} (${e.message})`;
 	return t("editor.radio_err.other", { error: e?.message || String(e) });
 }
 
 // A failure with a radio: into the log and the console with what was being done, then shown with the way to report it
 async function fail(stage, e) {
-	diag.error(stage, e);
+	const rec = diag.error(stage, e);
 	await dropConnection();
 	const msg = radioError(e);
-	if (msg) say(msg, "bad", { report: !diag.expected(e) });
+	if (msg) say(msg, "bad", { report: rec });
 }
 
 // A radio fresh from its original firmware may still hold that firmware's data where RadioFoundry keeps its settings: it then
@@ -560,8 +566,22 @@ async function withProgress(title, fn) {
 	}
 }
 
+// One radio operation at a time. Connecting shows no dialog while it probes (up to 2 s), so a second click on Read
+// started a second connection to the same port: it failed with "The port is already open", and its failure dropped
+// the first connection too
+let radioBusy = false;
+async function exclusive(fn) {
+	if (radioBusy) return diag.note("radio busy: click ignored");
+	radioBusy = true;
+	try {
+		return await fn();
+	} finally {
+		radioBusy = false;
+	}
+}
+
 async function readRadio() {
-	const go = async () => {
+	const go = () => exclusive(async () => {
 		try {
 			const c = await connect();
 			if (!c) return;
@@ -574,12 +594,16 @@ async function readRadio() {
 		} catch (e) {
 			await fail("read codeplug", e);
 		}
-	};
+	});
 	if (S.dirty) confirmDialog(t("editor.read_confirm"), t("editor.read"), go);
 	else go();
 }
 
-async function writeRadio() {
+function writeRadio() {
+	return exclusive(planWrite);
+}
+
+async function planWrite() {
 	const errors = problems().filter((p) => p.level === "error");
 	if (errors.length) {
 		say(t("editor.err.fix_first", { n: errors.length }), "bad");
@@ -607,7 +631,7 @@ async function writeRadio() {
 		if (!bytes) return say(prepared + t("editor.write_nothing", { radio: c.radio.name }), "ok");
 		const text = [t("editor.write_summary", { radio: c.radio.name, bytes: bytes.toLocaleString(), seconds: estimate(bytes, c.cable) })];
 		if (iddb) text.push(t("editor.write_iddb", { n: S.model.iddb?.count || 0 }));
-		confirmDialog(text.join(" "), t("editor.write"), async () => {
+		confirmDialog(text.join(" "), t("editor.write"), () => exclusive(async () => {
 			let step = "write codeplug";
 			try {
 				const res = await withProgress(t("editor.writing", { radio: c.radio.name }), async (bar, signal) => {
@@ -628,7 +652,7 @@ async function writeRadio() {
 			} catch (e) {
 				await fail(step, e);
 			}
-		}, { primary: true });
+		}), { primary: true });
 	} catch (e) {
 		await fail(stage, e);
 	}

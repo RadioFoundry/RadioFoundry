@@ -17,6 +17,21 @@ export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C,
 
 export class LinkError extends Error {}
 
+// The flash.err.* text for one of the browser's own USB or serial errors (a DOMException, by name), or null. The
+// browser's words ("Failed to open serial port.") say little; every tool shows what to do, with them after it
+export function browserErrorKey(e) {
+	const raw = e?.message || String(e);
+	switch (e?.name) {
+	case "NotFoundError": return /disconnect/i.test(raw) ? "flash.err.disconnected" : "flash.err.no_device";
+	case "SecurityError": return "flash.err.security";
+	case "InvalidStateError": return "flash.err.port_open";
+	case "NotAllowedError": return "flash.err.not_allowed";
+	case "NetworkError": return /open serial port/i.test(raw) ? "flash.err.port_busy" : /claim|access denied/i.test(raw) ? "flash.err.usb_busy" : "flash.err.connection_lost";
+	case "BufferOverrunError": case "BreakError": case "FramingError": case "ParityError": return "flash.err.connection_lost";
+	default: return null;
+	}
+}
+
 export const serialSupported = () => typeof navigator !== "undefined" && "serial" in navigator;
 
 // CRC-16/CCITT-FALSE
@@ -67,6 +82,9 @@ export class SerialStream {
 		this.port = port;
 		this.buf = new Uint8Array(0);
 		this.closed = false;
+		// what came in since the port opened, for a report when nothing answered as expected (silence())
+		this.received = 0;
+		this.first = new Uint8Array(0);
 	}
 
 	static async request() {
@@ -82,9 +100,20 @@ export class SerialStream {
 	// Chrome's default 255 byte buffer stops the USB reads whenever the page is busy for a moment; the radio gives up
 	// on a reply the host doesn't take for a while (drivers/usb/usb_device.c), so a 2 KB read could lose its tail
 	static async open(port, baudRate = 115200) {
-		await port.open({ baudRate, bufferSize: 65536 });
+		const opts = { baudRate, bufferSize: 65536 };
+		try {
+			await port.open(opts);
+		} catch (e) {
+			// still open from an earlier connection of this page (the user picked the same radio again): closed and
+			// opened afresh, so its settings are these
+			if (e?.name !== "InvalidStateError") throw e;
+			// a port another stream of this page is reading stays as it is: close() refuses it, and the error stands
+			try { await port.close(); } catch { throw e; }
+			note("serial port was still open: closed and opened again");
+			await port.open(opts);
+		}
 		const s = new SerialStream(port);
-		s.pump();
+		s.pumping = s.pump();
 		return s;
 	}
 
@@ -96,6 +125,8 @@ export class SerialStream {
 					const { value, done } = await this.reader.read();
 					if (done) break;
 					this.buf = concat(this.buf, value);
+					this.received += value.length;
+					if (this.first.length < 16) this.first = concat(this.first, value.subarray(0, 16 - this.first.length));
 				}
 			} catch (e) {
 				if (!this.closed) note("serial read stopped", String(e?.message || e));
@@ -119,10 +150,14 @@ export class SerialStream {
 		return out;
 	}
 
+	// The port closes only once the pump has let go of its reader: WebSerial refuses to close a port whose stream is
+	// still locked, and a port left open fails the next connection with "The port is already open"
 	async close() {
 		this.closed = true;
 		try { await this.reader?.cancel(); } catch (e) { /* gone */ }
-		try { await this.port.close(); } catch (e) { /* gone */ }
+		// a pump that never ends (a browser that doesn't settle the read) must not hang the page's close
+		await Promise.race([this.pumping, sleep(2000)]);
+		try { await this.port.close(); } catch (e) { note("serial port did not close", String(e?.message || e)); }
 	}
 }
 
@@ -305,6 +340,19 @@ export async function probe(link) {
 		try { chip = await link.chip(); } catch (e) { /* older firmware */ }
 		return { board: v.board, git: v.git, codec: v.codec, features: v.features || "", display: v.display, version: v, chip };
 	} catch (e) {
+		link.probeError = e;
 		return null;
 	}
+}
+
+// Why a probe got no answer, for the message and the error report: what failed, and what the port gave meanwhile.
+// kind "silent": nothing at all (the wrong port, a radio that is off, a cable not plugged in fully); "link": debug
+// link frames that weren't the reply (RadioFoundry, but the exchange failed); "other": bytes that aren't the debug
+// link, so something else answers there, most often a radio still on its original firmware
+export function silence(link) {
+	const s = link.s || {};
+	const first = s.first || new Uint8Array(0);
+	const kind = !s.received ? "silent" : first[0] === SOF1 && first[1] === SOF2 ? "link" : "other";
+	return { kind, cause: link.probeError ? String(link.probeError.message || link.probeError) : null,
+		received: s.received ?? null, first: first.length ? toHex(first) : null };
 }

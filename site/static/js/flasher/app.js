@@ -25,7 +25,7 @@ import { makePlan, KEEP, MERGE } from "./plan.js";
 import { validRef, refShort, defaultRef } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, serialSupported } from "./link.js";
+import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, silence, serialSupported, browserErrorKey } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -38,12 +38,12 @@ import * as c7ui from "./c7000ui.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
 import { APP_ENTRY } from "./iap.js";
 import { slotBytes, locateCodec } from "./c7000.js";
-import { Stub } from "./stub.js";
+import { Stub, StubError } from "./stub.js";
 import { F4Stub, f4Image } from "./f4stub.js";
 import { f4LoaderReader } from "./readers.js";
 import { register, backendOf, bundleBackend, allBackends } from "./backends.js";
 import * as diag from "../diag.js";
-import { initReporting, reportLine, reportingActive } from "../report.js";
+import { initReporting, reportLine, reportingActive, errorNotice } from "../report.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
@@ -51,6 +51,9 @@ import { initReporting, reportLine, reportingActive } from "../report.js";
 const app = document.getElementById("flasher");
 
 class NetworkModeError extends Error {}
+// A refusal from the backend (its "detail", or a build's error): a feature or option the build doesn't know means
+// the page and the version it builds are out of step
+class ApiError extends Error {}
 
 // Every error shown goes through here: it is logged once (console, bug report) with the step it happened in. The
 // browser's own USB and serial errors say little ("Failed to open serial port."): they get what to do, with the
@@ -60,14 +63,12 @@ function errorText(e) {
 	const raw = e?.message || String(e);
 	const withRaw = (key) => `${t(key)} (${raw})`;
 	if (e instanceof NetworkModeError) return t("flash.net.found");
-	if (e?.name === "NotFoundError") return /disconnect/i.test(raw) ? withRaw("flash.err.disconnected") : t("flash.err.no_device");
-	if (e?.name === "SecurityError") return t("flash.err.security");
-	if (e?.name === "InvalidStateError") return withRaw("flash.err.port_open");
-	if (e?.name === "NotAllowedError") return withRaw("flash.err.not_allowed");
-	if (e?.name === "NetworkError") return withRaw(/open serial port/i.test(raw) ? "flash.err.port_busy" : /claim|access denied/i.test(raw) ? "flash.err.usb_busy" : "flash.err.connection_lost");
-	if (e?.name === "BufferOverrunError" || e?.name === "BreakError" || e?.name === "FramingError" || e?.name === "ParityError") return withRaw("flash.err.connection_lost");
+	const browser = browserErrorKey(e);
+	if (browser) return browser === "flash.err.no_device" || browser === "flash.err.security" ? t(browser) : withRaw(browser);
 	if (e instanceof DfuError && /^USB transfer/.test(raw)) return withRaw("flash.err.connection_lost");
 	if (e instanceof LinkError && /^no answer/.test(raw)) return withRaw("flash.err.no_answer");
+	if (e instanceof StubError && /not acknowledged/.test(raw)) return withRaw("flash.err.rom_no_ack");
+	if (e instanceof ApiError && /^unknown (feature|option)/i.test(raw)) return withRaw("flash.err.build_mismatch");
 	// fetch's own failure: offline, blocked, or the server unreachable
 	if (e instanceof TypeError && /fetch/i.test(raw)) return withRaw("flash.err.download");
 	return raw;
@@ -159,7 +160,7 @@ function versionBanner() {
 async function api(method, path, body) {
 	const r = await fetch(new URL(path, API), body ? { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : { method });
 	const j = await r.json().catch(() => ({}));
-	if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+	if (!r.ok) throw new ApiError(typeof j.detail === "string" ? j.detail : `HTTP ${r.status}`);
 	return j;
 }
 
@@ -217,9 +218,18 @@ function problemNotice(p, { offer = null, boardId = S.board?.id } = {}) {
 function failureNotice(e, file = null) {
 	const text = errorText(e);
 	const p = errorProblem(e);
-	if (!p) return notice(text, "bad");
+	if (!p) return errorNotice(text);
 	return problemNotice({ ...p, file: p.file || file?.name || null },
 		{ offer: file ? offerFile({ path: file.name, data: file.data }, fb(), p.problem) : null });
+}
+
+// A radio that didn't answer the probe: the message, and what the port gave meanwhile for the report (link.js
+// silence(): nothing, or another firmware's bytes)
+function noAnswer(link) {
+	const why = silence(link);
+	const e = new Error(t(why.kind === "other" ? "flash.err.not_rfoundry" : "flash.err.no_answer"));
+	e.params = why;
+	return e;
 }
 
 // One id per use: the custom build requests and the write that follows share it; each write ends the use
@@ -417,7 +427,7 @@ function networkModeHelp() {
 }
 
 function connectError(e) {
-	return e instanceof NetworkModeError ? networkModeHelp() : notice(errorText(e), "bad");
+	return e instanceof NetworkModeError ? networkModeHelp() : errorNotice(errorText(e));
 }
 
 async function dropSerial() {
@@ -658,7 +668,7 @@ function radioView() {
 		try {
 			const link = await connectSerial();
 			const p = await probe(link);
-			if (!p) throw new Error(t("flash.err.no_answer"));
+			if (!p) throw noAnswer(link);
 			const r = S.data.radios.find((x) => S.data.fb.boards[x.flash.board]?.debuglink_names.includes(p.board));
 			if (!r) throw new Error(t("flash.err.unknown_board", { board: p.board }));
 			selectRadio(r);
@@ -795,7 +805,7 @@ function buildView() {
 		// the image's state, then building it yourself: one line and a fold under the features, not a card of its own
 		const image = h("div", { class: "build-image" },
 			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
-				: building && S.build.error ? notice(S.build.error, "bad")
+				: building && S.build.error ? (S.build.error.el ||= errorNotice(S.build.error.text, S.build.error.rec))
 				: building ? h("p", { class: "muted" }, S.build.text)
 				: h("p", { class: "small muted" }, t(S.sim ? "flash.sim.image" : VERSION_REF ? "flash.build.version_on_request" : "flash.build.on_request", { ref: versionShort() })),
 			h("details", { class: "small" }, h("summary", {}, t("flash.build.self_title")),
@@ -903,7 +913,11 @@ async function requestBuild(redraw) {
 			await new Promise((ok) => setTimeout(ok, 3000));
 			b = await api("GET", `builds/${b.id}`);
 		}
-		if (b.status !== "done") throw new Error(t("flash.build.failed", { error: b.error || b.status }));
+		if (b.status !== "done") {
+			const why = b.error || b.status;
+			// a feature or option the built version doesn't have: explained by errorText, not as a failed compile
+			throw /^unknown (feature|option)/i.test(why) ? new ApiError(why) : new Error(t("flash.build.failed", { error: why }));
+		}
 		const [m, img] = await Promise.all([fetch(new URL(b.manifest, API)).then((r) => r.json()),
 			fetch(new URL(b.image, API)).then((r) => r.arrayBuffer()).then((x) => new Uint8Array(x))]);
 		await verify(m, img, fb(), S.board.id);
@@ -915,7 +929,7 @@ async function requestBuild(redraw) {
 			variant: sel.matches() || "custom", build: b.id, selection: key, pinned: !!VERSION_REF };
 		S.build = null;
 	} catch (e) {
-		if (S.build?.selection === key) S.build.error = t("flash.build.unavailable", { error: errorText(e) });
+		if (S.build?.selection === key) S.build.error = { text: t("flash.build.unavailable", { error: errorText(e) }), rec: diag.currentError() };
 	}
 	redraw();
 }
@@ -929,7 +943,8 @@ async function loadOwnImage(f, redraw) {
 		const board = await verify(m, f.data, fb(), S.board.id);
 		S.firmware = { manifest: m, image: f.data, source: f.name, origin: "own", board };
 	} catch (e) {
-		alert(errorText(e));
+		const text = errorText(e);
+		alert(reportingActive() && diag.currentError()?.eventId ? `${text}\n\n${t("report.reported_short")}` : text);
 	}
 	redraw();
 }
@@ -1000,7 +1015,7 @@ function nowView() {
 		try {
 			const link = await connectSerial();
 			const p = await probe(link);
-			if (!p) throw new Error(t("flash.err.no_answer"));
+			if (!p) throw noAnswer(link);
 			if (!S.board.debuglink_names.includes(p.board)) throw new Error(t("flash.err.wrong_board", { board: p.board, name: S.board.name }));
 			const odd = optionMismatch(p);
 			if (odd) throw new Error(t("flash.err.wrong_option", { board: p.board, option: odd[0].title.toLowerCase(), value: odd[1].title }));
@@ -1089,7 +1104,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 		} catch (e) {
 			flashFinished(started, e);
 			if (bulk?.used) await waitForRFoundry();	// readRadio restarted the radio
-			box.append(notice(errorText(e), "bad"));
+			box.append(errorNotice(errorText(e)));
 			box.querySelectorAll("button, input").forEach((b) => { b.disabled = false; });
 			runBtn.disabled = false;
 		}
@@ -1158,7 +1173,7 @@ function codecView() {
 		try {
 			fw = await ensureFirmware();
 		} catch (e) {
-			out.replaceChildren(panel(t("flash.codec.title"), notice(errorText(e), "bad")));
+			out.replaceChildren(panel(t("flash.codec.title"), errorNotice(errorText(e))));
 			forward(null);
 			return;
 		}
@@ -1297,7 +1312,7 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 				winHelp?.replaceChildren();
 				place(write);
 			} catch (e) {
-				status.replaceChildren(...h("div", {}, notice(errorText(e), "bad"),
+				status.replaceChildren(...h("div", {}, errorNotice(errorText(e)),
 					onWindows() && usbSupported() ? windowsDriverHelp({ failed: true }) : null).childNodes);
 				winHelp?.replaceChildren();
 			}
@@ -1317,7 +1332,7 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 				onDone();
 			} catch (e) {
 				flashFinished(started, e);
-				status.replaceChildren(notice(t("flash.write.failed", { error: errorText(e) }), "bad"), helpLink());
+				status.replaceChildren(errorNotice(t("flash.write.failed", { error: errorText(e) })), helpLink());
 				write.disabled = false;
 				place(connect);
 				connect.disabled = false;
@@ -1341,7 +1356,7 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 
 function writeView() {
 	if (!S.firmware) {	// the cable route skips the codec step, which otherwise loads it
-		ensureFirmware().then(render, (e) => out.replaceChildren(notice(errorText(e), "bad")));
+		ensureFirmware().then(render, (e) => out.replaceChildren(errorNotice(errorText(e))));
 		const out = h("p", { class: "muted" }, t("flash.loading"));
 		return out;
 	}
@@ -1408,7 +1423,7 @@ function stubPanel(fallback, onDone, what) {
 				status.replaceChildren(notice(t("flash.f4.failed", { error: t("flash.c7.write.lost") }), "bad"), h("p", {}, t("flash.f4.after_fail")));
 				S.forward(null);
 			}, { primary: true });
-			status.replaceChildren(...h("div", {}, notice(t("flash.f4.failed", { error: errorText(e) }), "bad"),
+			status.replaceChildren(...h("div", {}, errorNotice(t("flash.f4.failed", { error: errorText(e) })),
 				h("p", {}, t("flash.f4.after_fail")), helpLink()).childNodes);
 			S.forward(again);
 			openFallback();
@@ -1424,7 +1439,7 @@ function stubPanel(fallback, onDone, what) {
 				status.replaceChildren();
 				await install();
 			} catch (err) {
-				status.replaceChildren(notice(t("flash.f4.enter_failed", { error: errorText(err) }), "bad"));
+				status.replaceChildren(errorNotice(t("flash.f4.enter_failed", { error: errorText(err) })));
 				openFallback();
 			}
 		}, { primary: true });
@@ -1444,7 +1459,7 @@ function stubPanel(fallback, onDone, what) {
 		} catch (e) {
 			if (stub?.jumped && !S.fakeRadio) return repick();
 			await dropSerial();
-			status.replaceChildren(notice(t("flash.f4.enter_failed", { error: errorText(e) }), "bad"));
+			status.replaceChildren(errorNotice(t("flash.f4.enter_failed", { error: errorText(e) })));
 			go.disabled = false;
 			S.forward(go);
 			openFallback();
@@ -1470,8 +1485,9 @@ function doneView() {
 		status.replaceChildren(h("p", { class: "muted" }, t("flash.now.connecting")));
 		await dropSerial();
 		try {
-			const p = await probe(await connectSerial());
-			if (!p) throw new Error(t("flash.err.no_answer"));
+			const link = await connectSerial();
+			const p = await probe(link);
+			if (!p) throw noAnswer(link);
 			// the loader route never touches the codec, so it is there afterwards as it was before
 			const good = !(S.decision ? S.decision.expectCodec : true) || p.codec === S.board.codec.id;
 			intro.replaceChildren();	// "the radio restarts" is over: what it says now replaces it
@@ -1506,7 +1522,7 @@ function backupView() {
 		try {
 			const link = await connectSerial();
 			const p = await probe(link);
-			if (!p) throw new Error(t("flash.err.no_answer"));
+			if (!p) throw noAnswer(link);
 			if (!S.board.debuglink_names.includes(p.board)) throw new Error(t("flash.err.wrong_board", { board: p.board, name: S.board.name }));
 			S.now = await rfoundryNow(link, p);
 			status.replaceChildren(h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git),

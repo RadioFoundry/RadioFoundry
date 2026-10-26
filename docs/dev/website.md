@@ -241,7 +241,7 @@ note is left off the pages. With it:
 
 | Sent | When |
 |---|---|
-| The error, its stage and code, the tool's state (radio model, firmware version, task; no codeplug contents) | Every error except ones the user caused (port chooser closed, Stop) |
+| The error, its stage, code and params, the tool's state (radio model, firmware version, task; no codeplug contents), the last 20 notes and errors of the log (`diag.trail()`, one line each cut to 300 characters; no wire lines, no shown messages, USB serial numbers masked), and an unknown file's type, size and first 8 bytes (never its name) | Every error except ones the user caused (port chooser closed, Stop) |
 | The whole report and any codeplug the user ticked | Only when the user clicks Send Report |
 
 Automatic reports go through `diag.scrub()`, which removes callsigns, DMR IDs and email addresses. The Sentry bundle

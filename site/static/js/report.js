@@ -2,8 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Bug reports for the web tools. Every failure message offers "Report a Problem": a zip with the session log
 // (diag.js), the browser's details and, if the user ticks it, their codeplug, to download and email. When the site
-// is built with an error reporting address (site.json "reports"), errors are also sent automatically without the
-// log or any radio data, and the dialog can send the whole report too. ?reporting=0 turns sending off.
+// is built with an error reporting address (site.json "reports"), errors are also sent automatically with the log's
+// last steps (diag.trail) but no wire log or radio data, and the dialog can send the whole report too. ?reporting=0 turns sending off.
 
 import * as diag from "./diag.js";
 import { h, t, ROOT, button, download } from "./flasher/dom.js";
@@ -68,18 +68,26 @@ async function startSentry(dsn, tool) {
 		environment: location.hostname,
 		sendDefaultPii: false,
 		defaultIntegrations: false,		// no console, click or fetch breadcrumbs: only what diag.error hands over
+		normalizeDepth: 6,			// the context's params and trail are nested deeper than the default 3 keeps
 		beforeSend: (ev, hint) => (hint?.attachments?.length ? ev : scrubEvent(ev)),
 	});
 	S.setTag("tool", tool);
 	S.setTag("web_serial", "serial" in navigator);
 	S.setTag("web_usb", "usb" in navigator);
 	sentry = S;
+	// an event the ingest didn't take (blocked, offline, rate limited: no status, or not 2xx): its "reported" line goes
+	// back to the report button. A send that worked always has a status
+	S.getClient?.()?.on?.("afterSendEvent", (ev, res) => {
+		const code = res?.statusCode;
+		if (!(code >= 200 && code < 300)) undelivered(ev?.event_id);
+	});
 	diag.setSink((rec, e) => {
 		if (rec.expected) return;
 		const err = e instanceof Error ? e : new Error(rec.message);
-		sentry.captureException(err, {
+		// the id ties the details the user may add (reportedLine) to this event
+		rec.eventId = sentry.captureException(err, {
 			tags: { stage: rec.stage, ...(rec.code ? { code: String(rec.code) } : {}) },
-			contexts: { rfoundry: { ...diag.context(), ...(rec.params ? { params: rec.params } : {}) } },
+			contexts: { rfoundry: { ...diag.context(), ...(rec.params ? { params: rec.params } : {}), trail: diag.trail() } },
 		});
 	});
 	diag.note("error reporting on");
@@ -109,6 +117,54 @@ export function reportButton({ quiet = true } = {}) {
 // A line under a failure message: the report button with a word on what it's for
 export function reportLine() {
 	return h("p", { class: "report-line small" }, t("report.lead"), " ", reportButton());
+}
+
+const shown = new Map();	// event id -> its reported line
+const refused = new Set();	// events the ingest refused
+function undelivered(id) {
+	if (!id) return;
+	refused.add(id);
+	const el = shown.get(id);
+	if (el?.isConnected) el.replaceWith(reportLine());
+}
+
+// Under a failure message: when the error was just sent (error reporting on, not one the user caused), that it was
+// reported and will be looked into, with a box to add what the user was doing (sent as Sentry feedback on that
+// event) and the full report button; otherwise the report line; nothing for an error the user caused
+// rec: the record of the error shown (diag.error's return); by default the error handled last
+export function reportedLine(rec = diag.currentError()) {
+	if (rec?.expected) return null;
+	if (!sentry || !rec?.eventId || refused.has(rec.eventId)) return reportLine();
+	const text = h("textarea", { rows: 2, maxlength: 1000, class: "report-text", placeholder: t("report.reported_hint") });
+	const status = h("span", { class: "small", "aria-live": "polite" });
+	const send = button(t("report.reported_send"), async () => {
+		const message = text.value.trim();
+		if (!message) return text.focus();
+		send.disabled = true;
+		try {
+			const payload = { message: diag.scrub(message), associatedEventId: rec.eventId };
+			if (sentry.captureFeedback) sentry.captureFeedback(payload);
+			else sentry.captureMessage(`Details: ${payload.message.slice(0, 200)}`, { level: "info", tags: { details_for: rec.eventId } });
+			if (!(await sentry.flush(8000))) throw new Error("not delivered in 8 s");
+			status.textContent = t("report.reported_thanks");
+			text.disabled = true;
+		} catch (e) {
+			diag.note("details not sent", String(e?.message || e));
+			status.textContent = t("report.send_failed");
+			send.disabled = false;
+		}
+	});
+	const el = h("div", { class: "report-reported small" },
+		h("p", {}, t("report.reported", { id: String(rec.eventId).slice(0, 8) })), text,
+		h("p", { class: "report-line" }, send, status, reportButton()));
+	shown.set(rec.eventId, el);
+	return el;
+}
+
+// A failure shown to the user: the message (what happened and the likely cause, from the tool's error text) and,
+// under it, that it was reported (reportedLine)
+export function errorNotice(text, rec = diag.currentError()) {
+	return h("div", { class: "notice bad" }, h("p", {}, text), reportedLine(rec));
 }
 
 export function reportDialog() {

@@ -10,7 +10,8 @@ const ERRORS_MAX = 50;
 
 const events = [];
 const errors = [];
-const seen = new WeakSet();
+const recs = new WeakMap();	// each error object's record
+let current = null;		// the record of the error handled last (recorded now, or again)
 const started = Date.now();
 let info = { tool: "", version: "" };
 let contextFn = () => ({});
@@ -52,13 +53,16 @@ export function expected(e) {
 }
 
 // Record an error once (the same object reaching two handlers is one error), print it and pass it to the sink.
-// stage: what was being done ("write codeplug", "flash/write"). Returns the record.
+// stage: what was being done ("write codeplug", "flash/write"). Returns the record, the first one for an error seen
+// before.
 export function error(stage, e, extra) {
-	if (e && typeof e === "object") {
-		if (seen.has(e)) return null;
-		seen.add(e);
+	if (e && typeof e === "object" && recs.has(e)) {
+		current = recs.get(e);
+		return current;
 	}
 	const rec = { t: since(), stage, ...describe(e), ...(extra !== undefined ? { extra: plain(extra) } : {}), expected: expected(e) };
+	if (e && typeof e === "object") recs.set(e, rec);
+	current = rec;
 	errors.push(rec);
 	if (errors.length > ERRORS_MAX) errors.shift();
 	push({ t: rec.t, kind: "error", text: `${stage}: ${rec.message}` });
@@ -143,11 +147,25 @@ export function report(description = "") {
 }
 
 export const lastError = () => errors.at(-1) || null;
+// The record of the error handled last, for the message that shows it (report.js reportedLine)
+export const currentError = () => current;
+
+// The last n steps and errors, for an automatic error report: what led up to the error (the port chosen, what the
+// radio said), one line each, cut to 300 characters. Not the wire log, not the messages shown (they name the user's
+// files), no USB serial numbers
+export function trail(n = 20) {
+	return events.filter((e) => e.kind !== "wire" && !String(e.text).startsWith("shown:")).slice(-n).map((e) => {
+		const line = `${(e.t / 1000).toFixed(1)}s ${e.text}${e.data === undefined ? "" : ` ${JSON.stringify(e.data)}`}`
+			.replace(/(serial["\s:=]+)(?=[0-9a-z]*\d)[0-9a-z]{6,}/gi, "$1[serial]");
+		return line.length > 300 ? `${line.slice(0, 300)}…` : line;
+	});
+}
 
 // For the tests
 export function reset() {
 	events.length = 0;
 	errors.length = 0;
+	current = null;
 	contextFn = () => ({});
 	sink = null;
 	info = { tool: "", version: "" };
