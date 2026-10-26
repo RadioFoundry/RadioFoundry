@@ -645,6 +645,7 @@
  "flash.err.wrong_board": "The radio reports that it is a {board}, not a {name}.",
  "flash.err.not_in_bootloader": "The radio is not in update mode.",
  "flash.err.need_stock_for_key": "Select your stock firmware file first. The radio programming utility requires it to unlock update mode.",
+ "flash.err.codec_only_key": "{file} is {radio} firmware. It gives this radio's codec, but not its bootloader key, which update mode needs. Read the radio's firmware first (\"another open firmware\" backup), or also select a {board} firmware file.",
  "flash.err.stock_as_image": "That is a stock firmware file, not a RadioFoundry image.",
  "radio.show_on_radio": "Show on the radio",
  "tools.convert.planned": "Planned",

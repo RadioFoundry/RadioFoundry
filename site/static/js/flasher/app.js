@@ -562,8 +562,10 @@ async function pickedStock(f) {
 
 // A stock file for this radio, whichever build: what a restore of the original firmware needs (the key and the
 // application), not a codec profile. A flash readout is neither
-const stockForRadio = (st) => !!st && (st.match ? st.match.board === S.board.id && st.match.kind !== "readout"
-	: !!st.info?.profile && st.info.profile.board === S.board.id);
+// A file for another radio that only gives this one's codec (file_radio) is never this radio's firmware
+const stockForRadio = (st) => !!st && !(st.match?.profile || st.info?.profile)?.file_radio
+	&& (st.match ? st.match.board === S.board.id && st.match.kind !== "readout"
+		: !!st.info?.profile && st.info.profile.board === S.board.id);
 
 // S.keySource says where the key came from, for error reports: "radio" (keyFromRadio), "saved", "file" or "sim"
 async function getKey(board) {
@@ -581,6 +583,9 @@ async function getKey(board) {
 		} catch (e) { /* stale: derive again */ }
 	}
 	if (!S.stock) throw new Error(t("flash.err.need_stock_for_key"));
+	// a file for another radio that gives this one's codec (an MD-9600 file for the DM-1701) never gives the key
+	const only = S.stock.match?.profile || S.stock.info?.profile;
+	if (only?.file_radio) throw new Error(t("flash.err.codec_only_key", { file: only.name, radio: only.file_radio, board: board.name }));
 	// the opener already derived it from a build it had no profile for
 	const found = S.stock.match?.board === board.id ? S.stock.match.key : null;
 	S.key = await checkKey(found || await stockfw.deriveKey(S.stock.data, board.key_sha256, fb()), board);
