@@ -167,19 +167,23 @@ Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
 
 ### 9.2 Keys
 
-The matrix code is the vendor's key number.
+The matrix code is the vendor's key number. The front panel has six keys besides the digits: two blank soft keys
+under the display (the original firmware labels the right one A/B on its screen), green and red, and an up/down
+rocker. Which of codes 1-6 is which of them is not known; the RadioFoundry key names (`KEY_*`) are the front panel's,
+and the column below is the assignment `input_gd88.c` takes until a radio settles it.
 
-| Code | Key | Where |
-|---|---|---|
-| 8-17 | digits 0-9 (8 = 0) | matrix |
-| 18, 19 | `*`, `#` | matrix |
-| 1, 2, 5, 6 | navigation keys | matrix |
-| 4 | mode key | matrix |
-| 3 | P4 | matrix, PTB9 x PTB22 |
-| 22 | P2, the IAP key | PTB9 direct |
-| 23 | P1 | PTB10 direct |
-| 24 | P3 | PTB11 direct |
-| - | PTT | PTA9, low = pressed |
+| Code | Vendor name | Key (RadioFoundry) | Where |
+|---|---|---|---|
+| 8-17 | digits 0-9 (8 = 0) | `KEY_0`-`KEY_9` | matrix |
+| 18, 19 | `*`, `#` | `KEY_STAR`, `KEY_HASH` | matrix |
+| 1, 2 | navigation | `KEY_UP`, `KEY_DOWN` (taken) | matrix |
+| 5, 6 | navigation | `KEY_RED`, `KEY_GREEN` (taken) | matrix |
+| 4 | mode key | `KEY_SOFT_LEFT` (taken) | matrix |
+| 3 | P4 | `KEY_SOFT_RIGHT` (taken) | matrix, PTB9 x PTB22 |
+| 22 | P2, the IAP key | `KEY_P2`, upper left side key | PTB9 direct |
+| 23 | P1 | `KEY_P1`, lower left side key | PTB10 direct |
+| 24 | P3 | `KEY_P3`, the orange top key | PTB11 direct |
+| - | PTT | `KEY_PTT`, left side between P2 and P1 | PTA9, low = pressed |
 
 ### 9.3 Audio routing in the serial chain
 

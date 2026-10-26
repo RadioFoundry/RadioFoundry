@@ -24,16 +24,15 @@ static const band_t bands[] = {
 // GD88_TX=1 altogether
 static const char *const power_names[] = { "L", "H" };
 
-// docs/ux/information-architecture.md 7.1. The navigation keys (matrix codes 1, 2, 5, 6) and the mode key (4) are
-// placed by their role in the menus; TODO(gd88): unknown, needs a radio: which navigation key is up, down, back and
-// OK on the front panel (the assignment below is a guess). P1-P3 are the side keys, P4 a front key
+// docs/ux/information-architecture.md 7.1. Green and red are select and back; the original firmware labels the right
+// soft key A/B on its screen. P1-P3 are the side and top keys
 static const keymap_entry_t keymap[] = {
-	{ KEY_NAV1, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
-	{ KEY_NAV2, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
-	{ KEY_NAV5, ACT_BACK, ACT_BACK, false, false, 0 },
-	{ KEY_NAV6, ACT_SELECT, ACT_SELECT, false, false, 0 },
-	{ KEY_MODE, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false, 0 },
-	{ KEY_P4, ACT_AB, ACT_DUAL_WATCH, false, false, 0 },
+	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
+	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ KEY_RED, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 },
+	{ KEY_SOFT_LEFT, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false, 0 },
+	{ KEY_SOFT_RIGHT, ACT_AB, ACT_DUAL_WATCH, false, false, 0 },
 	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false, 0 },
 	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
 	{ KEY_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },

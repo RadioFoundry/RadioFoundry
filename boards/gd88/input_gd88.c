@@ -21,14 +21,16 @@
 #define ROW_SETTLE_US	5u
 
 // [row][sense], the matrix codes 9,10,11 / 12,13,14 / 15,16,17 / 18,8,19 / 3,2,4 / 5,1,6 (9-17 the digits 1-9, 8 the
-// 0, 18 *, 19 #, 3 P4, 4 the mode key, 1, 2, 5, 6 navigation). Direct (no row): 22 P2, 23 P1, 24 P3
+// 0, 18 *, 19 #; 1-6 the six front keys). Direct (no row): 22 P2, 23 P1, 24 P3.
+// TODO(gd88): unknown, needs a radio: which front key each of codes 1-6 is. The vendor calls code 3 P4 and code 4 the
+// mode key; this takes 1 up, 2 down, 5 red, 6 green, 4 the left soft key, 3 the right (A/B on the original screen)
 static const uint8_t map[KEY_ROWS * KEY_SENSES] = {
 	KEY_1, KEY_2, KEY_3,
 	KEY_4, KEY_5, KEY_6,
 	KEY_7, KEY_8, KEY_9,
 	KEY_STAR, KEY_0, KEY_HASH,
-	KEY_P4, KEY_NAV2, KEY_MODE,
-	KEY_NAV5, KEY_NAV1, KEY_NAV6,
+	KEY_SOFT_RIGHT, KEY_DOWN, KEY_SOFT_LEFT,
+	KEY_RED, KEY_UP, KEY_GREEN,
 };
 static const uint8_t direct[KEY_SENSES] = { KEY_P2, KEY_P1, KEY_P3 };
 static const keymatrix_t matrix = { .rows = KEY_ROWS, .cols = KEY_SENSES, .map = map, .direct = direct };

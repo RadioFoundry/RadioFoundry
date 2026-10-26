@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SPDX-License-Identifier: MIT -->
-<svg data-undrawn="p2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 1600">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 1600">
 <defs>
 <linearGradient id="body" x1="0" x2="1"><stop offset="0" stop-color="#121314"/><stop offset=".5" stop-color="#232628"/><stop offset="1" stop-color="#111213"/></linearGradient>
 <linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2d30"/><stop offset="1" stop-color="#17191b"/></linearGradient>
@@ -12,13 +12,15 @@
 </defs>
 <path d="M115 0 L255 0 L260 215 L100 215Z" fill="url(#ant)" stroke="#000" stroke-width="2"/>
 <path d="M120 20 L250 20" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
-<path d="M290 215 L290 104 Q290 82 312 82 L463 82 Q485 82 485 104 L485 215Z" fill="url(#knob)" stroke="#000" stroke-width="2"/><line x1="311.667" y1="90" x2="311.667" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="333.333" y1="90" x2="333.333" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="355" y1="90" x2="355" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="376.667" y1="90" x2="376.667" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="398.333" y1="90" x2="398.333" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="420" y1="90" x2="420" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="441.667" y1="90" x2="441.667" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="463.333" y1="90" x2="463.333" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/>
+<path id="encoder" d="M290 215 L290 104 Q290 82 312 82 L463 82 Q485 82 485 104 L485 215Z" fill="url(#knob)" stroke="#000" stroke-width="2"/><line x1="311.667" y1="90" x2="311.667" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="333.333" y1="90" x2="333.333" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="355" y1="90" x2="355" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="376.667" y1="90" x2="376.667" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="398.333" y1="90" x2="398.333" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="420" y1="90" x2="420" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="441.667" y1="90" x2="441.667" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="463.333" y1="90" x2="463.333" y2="211" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/>
 <path d="M508 205 L508 112 Q508 90 530 90 L644 90 Q666 90 666 112 L666 205Z" fill="url(#knob)" stroke="#000" stroke-width="2"/><line x1="527.75" y1="98" x2="527.75" y2="201" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="547.5" y1="98" x2="547.5" y2="201" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="567.25" y1="98" x2="567.25" y2="201" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="587" y1="98" x2="587" y2="201" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="606.75" y1="98" x2="606.75" y2="201" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="626.5" y1="98" x2="626.5" y2="201" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/><line x1="646.25" y1="98" x2="646.25" y2="201" stroke="#000" stroke-opacity=".6" stroke-width="2.5"/>
 <rect x="580" y="100" width="9" height="70" rx="2" fill="#d8d8d8" />
-<rect x="220" y="162" width="55" height="16" rx="7" fill="#e8761e" stroke="#5a2a08" stroke-width="1.5" />
+<rect id="key-p3" data-edge="top" x="220" y="162" width="55" height="16" rx="7" fill="#e8761e" stroke="#5a2a08" stroke-width="1.5" />
 <path d="M525 178 Q495 180 483 215 Q472 250 473 290 L471 1500 Q471 1580 560 1580 L1030 1580 Q1118 1580 1118 1500 L1114 290 Q1114 225 1100 205 Q1085 180 1040 178Z" fill="url(#body)" stroke="#000" stroke-width="3" transform="translate(-420 0)"/>
-<rect x="24" y="318" width="30" height="78" rx="6" fill="#1a1c1e" stroke="#000" stroke-width="2" />
-<rect x="24" y="758" width="30" height="64" rx="6" fill="#1a1c1e" stroke="#000" stroke-width="2" />
+<rect id="key-p2" data-edge="left" x="24" y="318" width="30" height="78" rx="6" fill="#1a1c1e" stroke="#000" stroke-width="2" />
+<rect id="key-ptt" data-edge="left" x="20" y="420" width="34" height="314" rx="10" fill="#1a1c1e" stroke="#000" stroke-width="2" />
+<path d="M28 470 L46 470 M28 500 L46 500 M28 530 L46 530 M28 560 L46 560 M28 590 L46 590 M28 620 L46 620 M28 650 L46 650 M28 680 L46 680" stroke="#000" stroke-opacity=".55" stroke-width="3"/>
+<rect id="key-p1" data-edge="left" x="24" y="758" width="30" height="64" rx="6" fill="#1a1c1e" stroke="#000" stroke-width="2" />
 <rect x="692" y="470" width="14" height="60" rx="5" fill="#1a1c1e" stroke="#000" stroke-width="2" />
 <rect x="263" y="215" width="210" height="62" rx="14" fill="#0a0b0c" stroke="#2a2d30" stroke-width="2" />
 <text x="368" y="258" font-family="Helvetica,Arial,sans-serif" font-size="37" font-weight="bold" text-anchor="middle" fill="#f2f2f2" textLength="175" lengthAdjust="spacingAndGlyphs">Radioddity</text>
@@ -30,63 +32,65 @@
 <text x="378" y="727" font-family="Helvetica,Arial,sans-serif" font-size="34" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >Digital Mobile Radio</text>
 <text x="524" y="768" font-family="Helvetica,Arial,sans-serif" font-size="32" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >GD-88</text>
 <rect x="105" y="805" width="550" height="670" rx="40" fill="url(#face)" stroke="#000" stroke-width="2" opacity=".35"/>
-<rect x="145" y="845" width="122" height="62" rx="22" fill="url(#keyl)" stroke="#000" stroke-width="2" /><rect x="148" y="848" width="116" height="17.36" rx="19" fill="#fff" fill-opacity=".06"/>
+<rect id="key-soft_left" x="145" y="845" width="122" height="62" rx="22" fill="url(#keyl)" stroke="#000" stroke-width="2" /><rect x="148" y="848" width="116" height="17.36" rx="19" fill="#fff" fill-opacity=".06"/>
 <rect x="175" y="872" width="62" height="5" rx="2.5" fill="#f2f2f2" />
-<rect x="488" y="840" width="122" height="66" rx="22" fill="url(#keyl)" stroke="#000" stroke-width="2" /><rect x="491" y="843" width="116" height="18.48" rx="19" fill="#fff" fill-opacity=".06"/>
+<rect id="key-soft_right" x="488" y="840" width="122" height="66" rx="22" fill="url(#keyl)" stroke="#000" stroke-width="2" /><rect x="491" y="843" width="116" height="18.48" rx="19" fill="#fff" fill-opacity=".06"/>
 <rect x="518" y="870" width="62" height="5" rx="2.5" fill="#f2f2f2" />
-<rect x="145" y="930" width="128" height="86" rx="26" fill="url(#keyl)" stroke="#000" stroke-width="2" /><rect x="148" y="933" width="122" height="24.08" rx="23" fill="#fff" fill-opacity=".06"/>
+<rect id="key-green" x="145" y="930" width="128" height="86" rx="26" fill="url(#keyl)" stroke="#000" stroke-width="2" /><rect x="148" y="933" width="122" height="24.08" rx="23" fill="#fff" fill-opacity=".06"/>
 <path d="M180 960 L180 995 L235 995" fill="none" stroke="#35c46a" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-<rect x="480" y="930" width="98" height="86" rx="26" fill="url(#keyl)" stroke="#000" stroke-width="2" /><rect x="483" y="933" width="92" height="24.08" rx="23" fill="#fff" fill-opacity=".06"/>
+<rect id="key-red" x="480" y="930" width="98" height="86" rx="26" fill="url(#keyl)" stroke="#000" stroke-width="2" /><rect x="483" y="933" width="92" height="24.08" rx="23" fill="#fff" fill-opacity=".06"/>
 <path d="M515 995 L550 995 L550 960" fill="none" stroke="#e0382f" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M740 872 Q800 835 862 872 L876 990 Q870 1035 800 1052 Q730 1035 726 990Z" transform="translate(-420 0)" fill="url(#key)" stroke="#000" stroke-width="3"/>
 <path d="M772 886 L800 876 L828 886" transform="translate(-420 0)" fill="none" stroke="#f2f2f2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M772 1018 L800 1030 L828 1018" transform="translate(-420 0)" fill="none" stroke="#f2f2f2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-<rect x="154" y="1090" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
+<rect id="key-1" x="154" y="1090" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
 <rect x="158" y="1093" width="116" height="22" rx="18" fill="#fff" fill-opacity=".05"/>
 <text x="192" y="1144" font-family="Helvetica,Arial,sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >1</text>
 <text x="242" y="1140" font-family="Helvetica,Arial,sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >!&lt;</text>
-<rect x="313" y="1090" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
+<rect id="key-2" x="313" y="1090" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
 <rect x="317" y="1093" width="116" height="22" rx="18" fill="#fff" fill-opacity=".05"/>
 <text x="351" y="1144" font-family="Helvetica,Arial,sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >2</text>
 <text x="401" y="1140" font-family="Helvetica,Arial,sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >ABC</text>
-<rect x="471" y="1090" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
+<rect id="key-3" x="471" y="1090" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
 <rect x="475" y="1093" width="116" height="22" rx="18" fill="#fff" fill-opacity=".05"/>
 <text x="509" y="1144" font-family="Helvetica,Arial,sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >3</text>
 <text x="559" y="1140" font-family="Helvetica,Arial,sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >DEF</text>
-<rect x="154" y="1182" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
+<rect id="key-4" x="154" y="1182" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
 <rect x="158" y="1185" width="116" height="22" rx="18" fill="#fff" fill-opacity=".05"/>
 <text x="192" y="1236" font-family="Helvetica,Arial,sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >4</text>
 <text x="242" y="1232" font-family="Helvetica,Arial,sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >GHI</text>
-<rect x="313" y="1182" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
+<rect id="key-5" x="313" y="1182" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
 <rect x="317" y="1185" width="116" height="22" rx="18" fill="#fff" fill-opacity=".05"/>
 <text x="351" y="1236" font-family="Helvetica,Arial,sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >5</text>
 <text x="401" y="1232" font-family="Helvetica,Arial,sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >JKL</text>
-<rect x="471" y="1182" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
+<rect id="key-6" x="471" y="1182" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
 <rect x="475" y="1185" width="116" height="22" rx="18" fill="#fff" fill-opacity=".05"/>
 <text x="509" y="1236" font-family="Helvetica,Arial,sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >6</text>
 <text x="559" y="1232" font-family="Helvetica,Arial,sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >MNO</text>
-<rect x="154" y="1275" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
+<rect id="key-7" x="154" y="1275" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
 <rect x="158" y="1278" width="116" height="22" rx="18" fill="#fff" fill-opacity=".05"/>
 <text x="192" y="1329" font-family="Helvetica,Arial,sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >7</text>
 <text x="242" y="1325" font-family="Helvetica,Arial,sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >PQRS</text>
-<rect x="313" y="1275" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
+<rect id="key-8" x="313" y="1275" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
 <rect x="317" y="1278" width="116" height="22" rx="18" fill="#fff" fill-opacity=".05"/>
 <text x="351" y="1329" font-family="Helvetica,Arial,sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >8</text>
 <text x="401" y="1325" font-family="Helvetica,Arial,sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >TUV</text>
-<rect x="471" y="1275" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
+<rect id="key-9" x="471" y="1275" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
 <rect x="475" y="1278" width="116" height="22" rx="18" fill="#fff" fill-opacity=".05"/>
 <text x="509" y="1329" font-family="Helvetica,Arial,sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >9</text>
 <text x="559" y="1325" font-family="Helvetica,Arial,sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >WXYZ</text>
-<rect x="154" y="1370" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
+<rect id="key-star" x="154" y="1370" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
 <rect x="158" y="1373" width="116" height="22" rx="18" fill="#fff" fill-opacity=".05"/>
 <text x="198" y="1424" font-family="Helvetica,Arial,sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >*</text>
 <text x="244" y="1420" font-family="Helvetica,Arial,sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >_</text>
-<rect x="313" y="1370" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
+<rect id="key-0" x="313" y="1370" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
 <rect x="317" y="1373" width="116" height="22" rx="18" fill="#fff" fill-opacity=".05"/>
 <text x="361" y="1424" font-family="Helvetica,Arial,sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >0</text>
 <text x="401" y="1420" font-family="Helvetica,Arial,sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >+</text>
-<rect x="471" y="1370" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
+<rect id="key-hash" x="471" y="1370" width="124" height="80" rx="26" fill="url(#key)" stroke="#000" stroke-width="2" />
 <rect x="475" y="1373" width="116" height="22" rx="18" fill="#fff" fill-opacity=".05"/>
 <text x="515" y="1424" font-family="Helvetica,Arial,sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >#</text>
 <text x="561" y="1420" font-family="Helvetica,Arial,sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="#f2f2f2" >↑</text>
+<rect id="key-up" x="306" y="840" width="150" height="106" fill="none" pointer-events="all"/>
+<rect id="key-down" x="306" y="946" width="150" height="106" fill="none" pointer-events="all"/>
 </svg>
