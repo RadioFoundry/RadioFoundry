@@ -181,8 +181,9 @@ Our allocation, following the DM-1701 (`boards/dm1701`), since the same MCU pins
 | TIM3 | sub-audio tone PWM, CH2 on PC7, only with `CONFIG_SUBTONE` and only while a tone is sent (section 6.4) | 6 |
 | OTG_FS | USB (platform) | platform |
 
-Priority 5 is FreeRTOS's `configMAX_SYSCALL_INTERRUPT_PRIORITY` (`platform/stm32f4/FreeRTOSConfig.h`): the modem ISRs
-notify the DMR task, and a masked section at that level makes every configuration-port and synthesizer transaction
+FreeRTOS's `configMAX_SYSCALL_INTERRUPT_PRIORITY` is 4 (`platform/stm32f4/FreeRTOSConfig.h`; even so that a part with
+3 priority bits can hold it, [gotchas.md](gotchas.md) 13.11), and no interrupt uses 4. The modem ISRs at 5 notify the
+DMR task, and a masked section at the syscall level makes every configuration-port and synthesizer transaction
 atomic.
 
 ---

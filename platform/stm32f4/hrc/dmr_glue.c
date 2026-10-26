@@ -11,8 +11,9 @@
 //   EXTI2 (pin 2, RF TX, priority 5)     key the PA for our burst (the board's RF switch)
 //   "dmr" task (priority 5, 512 words)   drains the engine's events and calls the stack's callback; every 10 ms the
 //                                        watchdog (timing stall, PA left on)
-// Priority 5 is configMAX_SYSCALL, so the ISRs may notify the task. Task-level calls into the engine raise BASEPRI to 5
-// for the duration of their register work, which keeps the three ISRs out (they share the bit-banged config port).
+// Priority 5 is no more urgent than the syscall level (4), so the ISRs may notify the task. Task-level calls into the engine
+// raise BASEPRI to the syscall level for the duration of their register work, which keeps the three ISRs out (they
+// share the bit-banged config port).
 #include <stddef.h>
 #include <string.h>
 #include "hrc/dmr_glue.h"
