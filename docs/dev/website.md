@@ -197,7 +197,9 @@ photos (the photos stay outside the repository: product photos are not ours to p
   missing. The site build runs the same check, so a drawing that lost its tags fails CI. After drawing or redrawing a
   radio, `tools/svg_keys.py tag <radio>` adds the tags: by the labels in the drawing ("MENU", "1", "*"), then by the
   last tagged version in git, mapped onto the new drawing (edges, the LED, the knob and hit rects come along). It
-  prints each tag and what it couldn't place. Check the result on the web control page before committing;
+  prints each tag and what it couldn't place. Check the result on the web control page before committing. A key's
+  shape has no transform, its own or a group's: the build reads its box from its attributes (below), and the check
+  fails one it can't read;
 - a radio with a keyed hand microphone may have `<radio>-mic.svg` beside its drawing, for the web control page only:
   the same `key-` rule, the ids counted once across both files, and gradient ids of its own (the page puts both
   drawings in one document).
@@ -208,8 +210,23 @@ missing.
 
 The build writes `static/img/radios/<radio>-frame.svg` (screen black), `<radio>.svg` (with the boot screen) and the
 screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages), so any screenshot can be
-laid over the frame; the radio pages do that when a screenshot is clicked. A radio without an illustration gets a
-generic drawing from board.toml `[frame]`.
+laid over the frame; the radio pages do that when a screenshot is clicked. `frame_geometry.keys` has each tagged key's
+box, as percentages of the picture. A radio without an illustration gets a generic drawing from board.toml `[frame]`;
+its handheld shapes tag their side PTT, and the caption names any other key.
+
+The web flasher shows the same frame (`frame_image`) beside every update mode step, for every radio
+(`flasher/radiotop.js`): the bootloader entry steps as the picture alone, the HR_C7000 steps with what the screen shows
+laid over it at `frame_geometry` and an LED swatch that blinks as the real LED does, with a caption in words. Nothing
+in the flasher names a radio: a new board's picture appears with no flasher change. `site/tests/radio_images_test.py`
+(run by `site/tests/run.sh`) renders every board's picture and fails a board without a usable one.
+
+On the bootloader entry steps (the STM32 radios' and the HR_C7000 update mode's), the flasher rings the keys to hold
+on the picture and names them under it ("Hold PTT and SK1"). The keys are `[flash.bootloader] hold` in board.toml,
+by key name, carried to the flasher as `flash.bootloader_hold`; the rings sit at `frame_geometry.keys`, and the labels
+are `flash.key.<name>` in the string catalog (a key without one reads as its name in capitals). The rings are
+decoration: the steps stay the instructions, and a key the picture doesn't show (in `data-undrawn`) is named in the
+caption only. `radio_images_test.py` checks every board: each key to hold is a key of the radio, tagged in its drawing
+and each look's or listed undrawn, with a label; `site/tests/radiotop.test.mjs` checks the marks and the caption.
 
 ## Flasher notices
 

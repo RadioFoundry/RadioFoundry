@@ -20,12 +20,13 @@ import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import { unzip } from "./zip.js";
 import * as stockfw from "./stockfw.js";
 import { openVendorFile, describe as describeVendorFile, analysisCandidate, offerFile, logId } from "./vendorfile.js";
-import { pickProblem, errorProblem, vendorContext, OFFER } from "./explain.js";
+import { pickProblem, errorProblem, vendorContext, supportedFiles, foldSupported, keepNote, nowFor, nowChoice, OFFER } from "./explain.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
+import { radioPicture, holdKeys } from "./radiotop.js";
 import { validRef, refShort, defaultRef } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, silence, serialSupported, browserErrorKey } from "./link.js";
+import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, browserErrorKey } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -81,7 +82,8 @@ function errorText(e) {
 const initialState = () => ({
 	task: null, step: 0, data: null, radio: null, board: null, selection: null, sim: null, fakeRadio: null,
 	firmware: null,		// {manifest, image, source}
-	now: null,		// what runs on the radio: {kind: "rfoundry", probe} | {kind: "stock", version} | {kind: "unknown"}
+	now: null,		// what runs on the radio: {kind: "rfoundry", probe} | {kind: "stock", version} | {kind: "unknown"}, with
+			// openfw: true when the user chose "Another open firmware" (explain.js nowFor)
 	stock: null,		// {name, data, info: identify()}
 	readout: null,		// the internal flash read from the radio, for the flash log: {len, sha256, id} (noteReadout)
 	key: null,
@@ -199,17 +201,27 @@ function analysisOffer(cand, boardId, problem = null) {
 const radioName = (id) => fb().boards[id]?.name || S.data?.radios?.find((r) => r.id === id || r.flash?.board === id)?.name || id || "";
 
 // Why a picked vendor file can't be used (explain.js): what happened, why, what to do, the exact message folded away,
-// and the send offer where the file can help. offer: the analysis candidate for this problem
+// and the send offer where the file can help. offer: the analysis candidate for this problem. A build without a codec
+// map also lists every supported file to select instead (in full: the user is choosing one), folded when there are many
+// (explain.js foldSupported), and in a sentence of its own what else the codec can come from (a program flash read)
 function problemNotice(p, { offer = null, boardId = S.board?.id } = {}) {
 	S.vendorPick = { ...(S.vendorPick || {}), problem: p };
 	const vars = { file: p.file || t("flash.problem.this_file"), radio: radioName(boardId), other: radioName(p.board),
 		what: p.known || t("flash.codec.stock_build", { radio: radioName(boardId) }) };
 	const internal = p.problem === "internal";
+	const unmapped = p.problem === "unmapped";
+	const { files, also } = unmapped ? supportedFiles(fb(), boardId) : { files: [], also: [] };
+	const list = h("ul", { class: "supported-files" }, files.map((n) => h("li", {}, n)));
 	return h("div", { class: "notice bad problem" },
 		h("strong", {}, t(`flash.problem.${p.problem}.title`, vars)),
-		h("p", {}, t(`flash.problem.${p.problem}.text`, vars), internal ? [" ", t(reportingActive() ? "flash.problem.internal.reported" : "flash.problem.internal.report")] : null),
+		h("p", {}, t(`flash.problem.${p.problem}.text`, vars), internal ? [" ", t(reportingActive() ? "flash.problem.internal.reported" : "flash.problem.internal.report")] : null,
+			unmapped && p.key ? [" ", t("flash.problem.unmapped.key")] : null),
 		p.raw ? h("details", { class: "small" }, h("summary", {}, t("flash.problem.details")), h("pre", { class: "log" }, p.raw)) : null,
 		OFFER.has(p.problem) ? analysisOffer(offer, boardId, p) : null,
+		files.length ? h("p", {}, t("flash.problem.unmapped.instead")) : null,
+		!files.length ? null : foldSupported(files)
+			? h("details", {}, h("summary", {}, t("flash.problem.unmapped.all", { n: files.length })), list) : list,
+		also.length ? h("p", {}, t(files.length ? "flash.problem.unmapped.also" : "flash.problem.unmapped.only", { what: also.join("; ") })) : null,
 		internal && !reportingActive() ? reportLine() : null);
 }
 
@@ -224,10 +236,11 @@ function failureNotice(e, file = null) {
 }
 
 // A radio that didn't answer the probe: the message, and what the port gave meanwhile for the report (link.js
-// silence(): nothing, or another firmware's bytes)
-function noAnswer(link) {
-	const why = silence(link);
-	const e = new Error(t(why.kind === "other" ? "flash.err.not_rfoundry" : "flash.err.no_answer"));
+// whyNoAnswer(): nothing, another open firmware that gave its radio info, or another firmware's bytes). written: the
+// manifest of the build just written, so that a RadioFoundry build without the debug link is named as that
+async function noAnswer(link, { written = null } = {}) {
+	const why = await whyNoAnswer(link, { written });
+	const e = new Error(t(noAnswerKey(why)));
 	e.params = why;
 	return e;
 }
@@ -400,6 +413,15 @@ async function networkModeSeen() {
 	} catch (e) {
 		return false;
 	}
+}
+
+// Under a failed connect: the cable and driver tips, except where the radio answered with the open-firmware CPS
+// (noAnswer kinds "openfw", "rfoundry-nodebug"): the connection worked, so the next step instead. openfw: that line
+const ANSWERED = new Set(["openfw", "rfoundry-nodebug"]);
+function connectHelp(e, openfw) {
+	const kind = e?.params?.kind;
+	if (!ANSWERED.has(kind)) return serialHelp();
+	return h("p", {}, t(kind === "rfoundry-nodebug" ? "flash.err.rfoundry_nodebug_next" : openfw));
 }
 
 // Under every "connect the radio" button: when the serial chooser lists nothing, look for the radio as a network
@@ -668,7 +690,7 @@ function radioView() {
 		try {
 			const link = await connectSerial();
 			const p = await probe(link);
-			if (!p) throw noAnswer(link);
+			if (!p) throw await noAnswer(link);
 			const r = S.data.radios.find((x) => S.data.fb.boards[x.flash.board]?.debuglink_names.includes(p.board));
 			if (!r) throw new Error(t("flash.err.unknown_board", { board: p.board }));
 			selectRadio(r);
@@ -679,7 +701,7 @@ function radioView() {
 			next();
 		} catch (e) {
 			await dropSerial();
-			status.replaceChildren(connectError(e), serialHelp());
+			status.replaceChildren(connectError(e), connectHelp(e, "flash.radio.openfw_next"));
 		}
 	}, { quiet: true });
 	const status = h("div");
@@ -979,13 +1001,12 @@ function nowView() {
 	let runBackup = null;
 	const draw = () => {
 		runBackup = null;
-		const opts = h("div", { class: "choice-grid" },
-			h("button", { class: "choice", type: "button", "aria-pressed": String(S.now?.kind === "rfoundry"), onclick: checkRFoundry },
-				h("strong", {}, t("flash.now.rfoundry")), h("span", { class: "small muted" }, t("flash.now.rfoundry_text"))),
-			h("button", { class: "choice", type: "button", "aria-pressed": String(S.now?.kind === "stock"), onclick: () => { S.now = { kind: "stock", version: null }; draw(); } },
-				h("strong", {}, t("flash.now.stock")), h("span", { class: "small muted" }, t("flash.now.stock_text"))),
-			h("button", { class: "choice", type: "button", "aria-pressed": String(S.now?.kind === "unknown"), onclick: () => { S.now = { kind: "unknown" }; draw(); } },
-				h("strong", {}, t("flash.now.unknown")), h("span", { class: "small muted" }, t("flash.now.unknown_text"))));
+		// "openfw" and "unknown" are both kind "unknown" to the install (explain.js nowFor); the pressed one is told apart
+		const choice = (id, onclick) => h("button", { class: "choice", type: "button", "aria-pressed": String(nowChoice(S.now) === id), onclick },
+			h("strong", {}, t(`flash.now.${id}`)), h("span", { class: "small muted" }, t(`flash.now.${id}_text`)));
+		const pick = (id) => () => { S.now = nowFor(id); draw(); };
+		const opts = h("div", { class: "choice-grid" }, choice("rfoundry", checkRFoundry), choice("stock", pick("stock")),
+			choice("openfw", pick("openfw")), choice("unknown", pick("unknown")));
 		const detail = h("div");
 		if (S.now?.kind === "rfoundry" && S.now.probe) {
 			const p = S.now.probe;
@@ -1015,7 +1036,7 @@ function nowView() {
 		try {
 			const link = await connectSerial();
 			const p = await probe(link);
-			if (!p) throw noAnswer(link);
+			if (!p) throw await noAnswer(link);
 			if (!S.board.debuglink_names.includes(p.board)) throw new Error(t("flash.err.wrong_board", { board: p.board, name: S.board.name }));
 			const odd = optionMismatch(p);
 			if (odd) throw new Error(t("flash.err.wrong_option", { board: p.board, option: odd[0].title.toLowerCase(), value: odd[1].title }));
@@ -1025,7 +1046,11 @@ function nowView() {
 			status.replaceChildren();
 		} catch (e) {
 			await dropSerial();
-			status.replaceChildren(connectError(e), serialHelp());
+			// another open firmware (or RadioFoundry without the debug link): the "Another open firmware" choice is what
+			// this radio needs, one click away
+			const other = ANSWERED.has(e.params?.kind) ? h("p", {}, t("flash.now.openfw_switch"), " ",
+				button(t("flash.now.openfw_use"), () => { S.now = nowFor("openfw"); status.replaceChildren(); draw(); })) : null;
+			status.replaceChildren(connectError(e), other || serialHelp());
 			return;
 		}
 		draw();
@@ -1193,6 +1218,7 @@ function codecView() {
 				haveStock, haveSaved: !!S.savedCodec, requested: S.requested || null,
 				probe: S.now?.kind === "rfoundry" ? S.now.probe : null,
 				stockInstalled: S.now?.kind === "stock" ? S.now.version : null,
+				runsStock: S.now?.kind === "stock",
 			});
 		} catch (e) {
 			S.decision = null;
@@ -1213,20 +1239,21 @@ function codecView() {
 			: filePicker(t("flash.codec.stock_pick"), ".bin,.zip", useStock);
 		// shown only for a file that serves (a problem has its own notice)
 		const loadedText = S.stock && t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known || t("flash.codec.stock_build", { radio: S.board.name }) });
-		// a known file without a codec profile (MD-380 D2.30) gives the bootloader key, not the codec: say what it's good for
-		const keyOnly = S.stock?.info.known && !fb().profiles[S.stock.info.sha] && S.stock.match?.board === S.board.id;
-		// anything else that gives no codec: why, and what to select instead (explain.js); what each file in the pick is
-		const problem = !keyOnly && S.stock?.problem;
+		// anything that gives no codec: why, and what to select instead (explain.js); what each file in the pick is. A
+		// build of this radio without a codec map (it may still give the bootloader key) is "unmapped": the notice names
+		// the version, offers to send the file and lists every supported file
+		const problem = S.stock?.problem || null;
 		const report = S.stock?.report?.length && (S.stock.report.length > 1 || !haveStock)
 			? h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, S.stock.report.map((l) => h("li", {}, l)))) : null;
-		const loaded = !S.stock ? null : [keyOnly ? notice(`${loadedText}. ${t("flash.codec.stock_key_only", { files: stockFiles() })}`, "action")
-			: problem ? problemNotice(problem, { offer: S.stock.analysis })
-			: h("p", {}, "✓ ", loadedText), report];
-		// a download link only where there is a known one; no vague pointers
-		const where = [h("p", {}, t("flash.codec.stock_files", { files: stockFiles() }),
-			S.radio.flash.stock_download ? [" ", h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download"))] : null),
-			S.board.codec.sources.length > STOCK_NAMES_MAX ? h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_all")),
-				h("ul", {}, S.board.codec.sources.map((n) => h("li", {}, n)))) : null];
+		const loaded = !S.stock ? null : [problem ? problemNotice(problem, { offer: S.stock.analysis }) : h("p", {}, "✓ ", loadedText), report];
+		// a download link only where there is a known one; no vague pointers. The unmapped notice lists the files itself
+		const download = S.radio.flash.stock_download ? h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download")) : null;
+		const where = problem?.problem === "unmapped" ? (download ? [h("p", {}, download)] : [])
+			: [h("p", {}, t("flash.codec.stock_files", { files: stockFiles() }), download ? [" ", download] : null),
+				S.board.codec.sources.length > STOCK_NAMES_MAX ? h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_all")),
+					h("ul", {}, S.board.codec.sources.map((n) => h("li", {}, n)))) : null];
+		// the install goes on without the codec from the picked file: say what DMR voice then depends on, before writing
+		const keeping = keepNote(problem, S.decision);
 		const parts = [h("p", {}, t("flash.codec.lead"))];
 		const viaStub = stubRoute();
 		if (viaStub) {
@@ -1240,7 +1267,11 @@ function codecView() {
 			parts.push(notice(err, "bad"));
 		} else {
 			parts.push(h("div", { class: "notice ok" }, h("strong", {}, t(haveStock && S.stock ? "flash.codec.ready_title" : "flash.codec.none_title")),
-				h("p", {}, plan), codecLine ? h("p", {}, codecLine) : null, keyLine ? h("p", {}, keyLine) : null, loaded));
+				h("p", {}, plan), codecLine ? h("p", {}, codecLine) : null, keyLine ? h("p", {}, keyLine) : null, problem ? null : loaded));
+			// a file that gives no codec has its own notice, outside the "ready" one, and then what the install does instead
+			if (problem) parts.push(...loaded.filter(Boolean));
+			if (keeping) parts.push(h("div", { class: `notice ${keeping === "ok" ? "info" : keeping === "none" ? "bad" : "warn"}` },
+				h("strong", {}, t(`flash.codec.keep_${keeping}.title`)), h("p", {}, t(`flash.codec.keep_${keeping}.text`))));
 			if (S.decision.risk) parts.push(h("p", { class: "small muted" }, S.decision.risk[0].toUpperCase() + S.decision.risk.slice(1) + "."));
 		}
 		// writing the codec from the stock file anyway, or forcing a mode: always there, never in the way
@@ -1275,6 +1306,14 @@ function planTable(plan) {
 			h("td", { class: st.action === "write" || st.action === "erase" ? "write" : st.action === "keep" ? "keep" : "" },
 				st.action === "write" ? t("flash.plan.write", { content: st.content, n: st.blocks.length })
 					: st.action === "erase" ? t("flash.plan.erase") : st.action === "keep" ? t("flash.plan.keep") : t("flash.plan.skip")))))));
+}
+
+// Update mode steps beside the radio's own picture (radiotop.js), with the keys to hold marked on it and named under
+// it (board.toml [flash.bootloader] hold). The picture makes no claim about the LED or the screen: what a radio shows in
+// its bootloader is in its steps' words, not in the data
+function withPicture(steps) {
+	const pic = radioPicture(S.radio, { keys: holdKeys(S.radio) });
+	return pic ? h("div", { class: "radio-grid" }, steps, pic) : steps;
 }
 
 // The bootloader panel: instructions, then one button that connects and, once the radio is found, installs.
@@ -1342,8 +1381,8 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 		// through h(): the DOM's own replaceChildren writes a null as the text "null"
 		box.replaceChildren(...h("div", {}, inline ? null : h("h2", {}, title),
 			h("h3", {}, t("flash.write.bootloader_title")),
-			h("ol", { class: "steps" }, S.radio.flash.bootloader.map((s) => h("li", {}, s)),
-				h("li", {}, t("flash.write.then_connect"))),
+			withPicture(h("ol", { class: "steps" }, S.radio.flash.bootloader.map((s) => h("li", {}, s)),
+				h("li", {}, t("flash.write.then_connect")))),
 			S.fakeRadio ? h("p", {}, button(t("flash.sim.enter_bootloader"), () => { S.fakeRadio.enterBootloader(); log.add("(simulated) radio in update mode"); }, { quiet: true })) : null,
 			winHelp, inline ? slot : null, fp, status,
 			h("details", { class: "small" }, h("summary", {}, t("flash.write.plan", { erase: plan.erase.length, blocks: plan.totalBlocks })), planTable(plan),
@@ -1487,7 +1526,7 @@ function doneView() {
 		try {
 			const link = await connectSerial();
 			const p = await probe(link);
-			if (!p) throw noAnswer(link);
+			if (!p) throw await noAnswer(link, { written: S.firmware?.manifest });
 			// the loader route never touches the codec, so it is there afterwards as it was before
 			const good = !(S.decision ? S.decision.expectCodec : true) || p.codec === S.board.codec.id;
 			intro.replaceChildren();	// "the radio restarts" is over: what it says now replaces it
@@ -1503,7 +1542,7 @@ function doneView() {
 		} catch (e) {
 			await dropSerial();
 			check.disabled = false;
-			status.replaceChildren(connectError(e), serialHelp(), helpLink());
+			status.replaceChildren(connectError(e), connectHelp(e, "flash.done.openfw_next"), helpLink());
 		}
 	}, { primary: true });
 	S.forward(check);
@@ -1522,7 +1561,7 @@ function backupView() {
 		try {
 			const link = await connectSerial();
 			const p = await probe(link);
-			if (!p) throw noAnswer(link);
+			if (!p) throw await noAnswer(link);
 			if (!S.board.debuglink_names.includes(p.board)) throw new Error(t("flash.err.wrong_board", { board: p.board, name: S.board.name }));
 			S.now = await rfoundryNow(link, p);
 			status.replaceChildren(h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git),
@@ -1533,7 +1572,7 @@ function backupView() {
 				onDone: () => S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true })) }));
 		} catch (e) {
 			await dropSerial();
-			status.replaceChildren(connectError(e), serialHelp());
+			status.replaceChildren(connectError(e), connectHelp(e, "flash.backup.openfw_next"));
 		}
 	}, { primary: true });
 	// Connect is the step's action until the radio answers; then the backup's own run button takes its place
@@ -1693,7 +1732,7 @@ function reportContext() {
 		task: S.task, step: stepsFor()?.[S.step] ?? S.step, radio: S.radio?.id || null, board: S.board?.id || null, sim: !!S.sim,
 		version: VERSION_REF || null,
 		firmware: S.firmware ? { source: S.firmware.source, version: S.firmware.manifest?.version, git: S.firmware.manifest?.git } : null,
-		now: S.now ? { kind: S.now.kind, version: S.now.version || null, board: p?.board, git: p?.git, features: p?.features, codec: p?.codec } : null,
+		now: S.now ? { kind: S.now.kind, openfw: !!S.now.openfw, version: S.now.version || null, board: p?.board, git: p?.git, features: p?.features, codec: p?.codec } : null,
 		// the vendor file picked and what was found in it (names, sizes, hashes; never its bytes): enough to tell a wrong
 		// radio's file, a build without a codec map or a fault in the page apart from the report alone
 		vendor_file: vendorContext({ boardId: S.board?.id || null, ...(S.vendorPick || {}), keySource: S.keySource,
@@ -1757,7 +1796,7 @@ function updateModeCheck(go) {
 	}, { primary: true });
 	S.forward([giveUp, check]);
 	return panel(t("flash.help.um_title"), h("p", {}, t("flash.help.um_lead")),
-		h("ol", { class: "steps" }, S.radio.flash.bootloader.map((x) => h("li", {}, x)), h("li", {}, t("flash.help.um_then"))),
+		withPicture(h("ol", { class: "steps" }, S.radio.flash.bootloader.map((x) => h("li", {}, x)), h("li", {}, t("flash.help.um_then")))),
 		S.fakeRadio ? h("p", {}, button(t("flash.sim.enter_bootloader"), () => S.fakeRadio.enterBootloader(), { quiet: true })) : null, status);
 }
 
@@ -1815,7 +1854,7 @@ function fixChooser(st, go) {
 function stuckInUpdateMode() {
 	return h("div", {}, h("p", {}, t("flash.help.iap_cause")), h("p", {}, t("flash.help.iap_nokeys")),
 		h("p", { class: "small" }, t("flash.help.iap_enter")),
-		h("ol", { class: "steps small" }, S.radio.flash.bootloader.map((x) => h("li", {}, x))),
+		withPicture(h("ol", { class: "steps small" }, S.radio.flash.bootloader.map((x) => h("li", {}, x)))),
 		h("p", { class: "small muted" }, t("flash.help.iap_original")));
 }
 

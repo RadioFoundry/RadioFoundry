@@ -51,7 +51,9 @@ stock_download = "https://md380.org/firmware/orig/"
 stock_versions = ["D002.032", "D35.14", "S35.14"]
 backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 
+# hold: SK1 is the upper side key, the one above PTT (hardware-md380.md 9.1 and 14.3, unverified on a radio)
 [flash.bootloader]
+hold = ["ptt", "sk1"]
 steps = [
 	"Turn the radio off and connect the programming cable.",
 	"Hold PTT and the side key just above it.",

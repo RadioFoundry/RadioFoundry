@@ -174,6 +174,24 @@ export async function fromFlash(flash, fb, profiles = fb.profiles, base = 0x0800
 	return null;
 }
 
+// Every profile whose codec is the same bytes at the same addresses as prof's (stockfw.same_layout): the same board,
+// stock windows and placement. A readout of the radio's flash can't tell these files apart
+export function sameLayout(prof, profiles) {
+	const key = (p) => JSON.stringify([p.board, p.windows, p.placement ?? null, p.placed ?? null]);
+	return Object.values(profiles).filter((p) => key(p) === key(prof));
+}
+
+// The versions a readout's codec could come from (stockfw.layout_name): "V02.06 CSV" for a codec one file holds,
+// "V02.01/V02.02/V02.03 CSV" for one several files hold, their common last words said once
+export function layoutName(prof, profiles) {
+	const same = sameLayout(prof, profiles);
+	const vs = (same.length ? same : [prof]).map((p) => p.version);
+	const parts = vs.map((v) => { const i = v.indexOf(" "); return i < 0 ? [v, ""] : [v.slice(0, i), v.slice(i + 1)]; });
+	const tails = new Set(parts.map(([, t]) => t));
+	if (vs.length > 1 && tails.size === 1 && parts[0][1]) return `${parts.map(([h]) => h).join("/")} ${parts[0][1]}`;
+	return vs.join(" / ");
+}
+
 // The whole application segment of a stock file, decrypted: what the stock firmware is in internal flash. Used to
 // put a radio back on stock firmware (restore). Returns [addr, bytes].
 export function stockApplication(data, key, board, fb) {

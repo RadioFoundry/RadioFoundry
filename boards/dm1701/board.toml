@@ -46,6 +46,7 @@ stock_versions = ["V02.06 CSV", "V02.06 noCSV", "V02.03 CSV", "V02.03 noCSV", "V
 backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 
 [flash.bootloader]
+hold = ["ptt", "sk1"]
 steps = [
 	"Turn the radio off and connect the programming cable.",
 	"Hold PTT and SK1 (the side key just above PTT).",
@@ -73,10 +74,19 @@ spi = { bus = 1, mode = 0, hz = 4500000 }
 # The codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after them
 # and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file rfoundry merges the codec
 # from (tools/rfoundry/rfoundry/stockfw.py PROFILES); stock firmware keeps its code in sectors 7 and 8, which are the
-# application's now, so no stock version leaves it in place and rfoundry merges it from the stock file
+# application's now, so no stock version leaves it in place and rfoundry merges it from the stock file. V02.01 to V02.03
+# CSV hold the same codec 0x40 lower, so their tables and code sit 0x40 lower in the same sectors; the V02.06 and V02.03
+# noCSV files hold it higher (tables from 0x080D4794 and 0x080D4754), still in sectors 10 and 11
 [codec]
 tool = "codec_extract"
-stock = ["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
+stock = [
+	"0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d",	# V02.06 CSV
+	"cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713",	# V02.01 CSV
+	"643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7",	# V02.02 CSV
+	"35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948",	# V02.03 CSV
+	"4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9",	# V02.06 noCSV
+	"0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a",	# V02.03 noCSV
+]
 
 # How the site draws the radio
 [frame]

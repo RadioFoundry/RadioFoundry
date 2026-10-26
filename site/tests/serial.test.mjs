@@ -8,7 +8,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import * as diag from "../static/js/diag.js";
-import { SerialStream, Link, probe, silence, browserErrorKey } from "../static/js/flasher/link.js";
+import { SerialStream, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, browserErrorKey } from "../static/js/flasher/link.js";
 import { CpsSerial, TransportError } from "../static/js/codeplug/transport.js";
 import { openFile, FileError } from "../static/js/editor/files.js";
 
@@ -134,6 +134,124 @@ test("the codeplug editor names the case, and the report carries what the port g
 	const other = await ask(stream(new TextEncoder().encode("junk from stock firmware")), false);
 	assert.equal(other.code, "not_rfoundry");
 	assert.equal(diag.describe(other).params.kind, "other");
+});
+
+// The open-firmware CPS's radio info (open-firmware-cps.md 4), 46 bytes
+const radioInfo = ({ version = 3, type = 6, git = "abc1234", built = "20260101120000" } = {}) => {
+	const b = new Uint8Array(46);
+	const dv = new DataView(b.buffer);
+	dv.setUint32(0, version, true);
+	dv.setUint32(4, type, true);
+	b.set(new TextEncoder().encode(git), 8);
+	b.set(new TextEncoder().encode(built), 24);
+	dv.setUint32(40, 0x4018, true);
+	dv.setUint16(44, 2, true);
+	return b;
+};
+
+// A radio on another open firmware: "-" to anything it doesn't know (a debug link frame among them), its radio info to
+// R 9. info: the bytes it gives for area 9, or null to refuse that too. Every request is kept, to check what was sent
+const openFw = (info = radioInfo()) => ({
+	...stream(),
+	sent: [],
+	async write(d) {
+		this.sent.push(d.slice());
+		const answer = d[0] === 0x52 && d[1] === 9 && info ? new Uint8Array([0x52, 0, info.length, ...info]) : new Uint8Array([0x2D]);
+		this.buf = answer;
+		this.received += answer.length;
+		if (!this.first.length) this.first = answer.slice(0, 16);
+	},
+});
+
+test("the radio info is read only when it has that structure", () => {
+	assert.deepEqual(parseRadioInfo(radioInfo()), { structVersion: 3, radioType: 6, git: "abc1234", built: "20260101120000", flashId: 0x4018, features: 2 });
+	assert.equal(parseRadioInfo(null), null);
+	assert.equal(parseRadioInfo(radioInfo().subarray(0, 30)), null, "too short");
+	assert.equal(parseRadioInfo(radioInfo({ version: 0 })), null, "no struct version");
+	assert.equal(parseRadioInfo(radioInfo({ type: 1000 })), null, "no radio type");
+	assert.equal(parseRadioInfo(radioInfo({ built: "yesterday" })), null, "not a build date");
+	const junk = radioInfo();
+	junk[10] = 0x01;
+	assert.equal(parseRadioInfo(junk), null, "control bytes in the revision");
+	const tail = radioInfo();
+	tail[22] = 0x41;
+	assert.equal(parseRadioInfo(tail), null, "text after the padding");
+	// our shim fills both; one of them is enough, neither is not the structure (46 zero bytes after struct version 1)
+	assert.equal(parseRadioInfo(radioInfo({ git: "", built: "" })), null, "no revision, no build date");
+	const zeros = new Uint8Array(46);
+	zeros[0] = 1;
+	assert.equal(parseRadioInfo(zeros), null, "all zeros");
+	assert.equal(parseRadioInfo(radioInfo({ git: "" })).built, "20260101120000");
+	assert.equal(parseRadioInfo(radioInfo({ built: "" })).git, "abc1234");
+});
+
+// A RadioFoundry build without the debug link answers like another open firmware; right after the installer wrote it,
+// its feature list says it is that build, or its revision when the features aren't known
+test("a RadioFoundry build without the debug link is told apart right after it was written", async () => {
+	const info = { git: "1a4901ae-dirty" };
+	const full = "1a4901ae7c0ffee0000000000000000000000000";
+	assert.equal(writtenWithoutLink(info, { git: full, features: "" }), true, "the same commit");
+	assert.equal(writtenWithoutLink({ git: "1A4901AE" }, { git: full, features: "" }), true);
+	assert.equal(writtenWithoutLink(info, { git: "ffff" + full.slice(4), features: "FM,DMR" }), true, "no DEBUGLINK in its features");
+	assert.equal(writtenWithoutLink(info, { git: "ffff" + full.slice(4), features: "FM,DMR,DEBUGLINK" }), false);
+	assert.equal(writtenWithoutLink(info, { git: full, features: "FM,DMR,DEBUGLINK" }), false,
+		"the same commit, but a build with the debug link would have answered over it");
+	assert.equal(writtenWithoutLink(info, { git: full, features: "FM,DMR" }), true);
+	assert.equal(writtenWithoutLink(info, { git: "unknown", features: "" }), false, "a local build: not known");
+	assert.equal(writtenWithoutLink({ git: "v1.2" }, { git: full, features: "" }), false);
+	assert.equal(writtenWithoutLink(info, null), false);
+	const link = new Link(openFw(radioInfo({ git: "1a4901ae" })), { timeout: 30 });
+	await probe(link);
+	assert.equal((await whyNoAnswer(link, { written: { git: full, features: "FM,DMR" } })).kind, "rfoundry-nodebug");
+	const withLink = new Link(openFw(radioInfo({ git: "1a4901ae" })), { timeout: 30 });
+	await probe(withLink);
+	assert.equal((await whyNoAnswer(withLink, { written: { git: full, features: "FM,DMR,DEBUGLINK" } })).kind, "openfw",
+		"a build with the debug link that doesn't answer over it is not that build");
+	const other = new Link(openFw(radioInfo({ git: "1a4901ae" })), { timeout: 30 });
+	await probe(other);
+	assert.equal((await whyNoAnswer(other)).kind, "openfw");
+	// each kind's message
+	assert.equal(noAnswerKey({ kind: "openfw" }), "flash.err.openfw");
+	assert.equal(noAnswerKey({ kind: "rfoundry-nodebug" }), "flash.err.rfoundry_nodebug");
+	assert.equal(noAnswerKey({ kind: "other" }), "flash.err.not_rfoundry");
+	assert.equal(noAnswerKey({ kind: "silent" }), "flash.err.no_answer");
+	assert.equal(noAnswerKey({ kind: "link" }), "flash.err.no_answer");
+});
+
+test("another open firmware is recognized by its refusal and its radio info, with reads only", async () => {
+	const s = openFw();
+	const link = new Link(s, { timeout: 30 });
+	assert.equal(await probe(link), null);
+	assert.equal(silence(link).kind, "other");
+	const why = await whyNoAnswer(link);
+	assert.equal(why.kind, "openfw");
+	assert.equal(why.radioType, 6);
+	assert.equal(why.git, "abc1234");
+	// after the probe, one R 9 and nothing else: never a C control command
+	const after = s.sent.filter((d) => d[0] !== 0xA5);
+	assert.deepEqual(after.map((d) => [...d]), [[0x52, 9, 0, 0, 0, 0, 0, 46]]);
+	// "-" to everything, the info too: some other firmware, not told apart
+	const refuses = new Link(openFw(null), { timeout: 30 });
+	await probe(refuses);
+	assert.equal((await whyNoAnswer(refuses)).kind, "other");
+	// an info area that isn't the structure
+	const bad = new Link(openFw(new Uint8Array(46).fill(0xFF)), { timeout: 30 });
+	await probe(bad);
+	assert.equal((await whyNoAnswer(bad)).kind, "other");
+	// other bytes than "-" are never asked
+	const stock = stream(new TextEncoder().encode("junk"));
+	const quiet = new Link(stock, { timeout: 30 });
+	await probe(quiet);
+	stock.write = async () => { throw new Error("asked"); };
+	assert.equal((await whyNoAnswer(quiet)).kind, "other");
+	// silent: nothing asked either
+	assert.equal((await whyNoAnswer(new Link(stream(), { timeout: 30 }))).kind, "silent");
+	// the codeplug editor says so too
+	const tr = new CpsSerial(openFw(), { cable: false });
+	tr.link.timeout = 30;
+	const e = await tr.identify([]).then(() => null, (x) => x);
+	assert.equal(e.code, "openfw");
+	assert.equal(diag.describe(e).params.kind, "openfw");
 });
 
 test("the browser's own serial and USB errors get what to do", () => {

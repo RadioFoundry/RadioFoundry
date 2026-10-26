@@ -18,6 +18,7 @@ import { FakeRadio, simulation } from "../static/js/flasher/fake.js";
 import { zip, unzip } from "../static/js/flasher/zip.js";
 import * as vendorfile from "../static/js/flasher/vendorfile.js";
 import * as explain from "../static/js/flasher/explain.js";
+import { pictureSrc } from "../static/js/flasher/radiotop.js";
 import { readRadio, makeBundle, openBundle, bundleName } from "../static/js/flasher/backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "../static/js/flasher/restore.js";
 import { Selection } from "../static/js/flasher/select.js";
@@ -243,7 +244,7 @@ test("a file that can't be used is explained: another radio, not a vendor file, 
 	const fbY = { ...fbX, boards: { ...fbX.boards, y: { id: "y", name: "Radio Y" } } };
 	const pick = async (name, data, f = fbX, board = "x", opts) => explain.pickProblem(await vendorfile.openVendorFile(name, data, f, board), board, opts);
 	// a build of this radio without a codec map: the codec can't be taken, but a restore of the original firmware can use it
-	assert.deepEqual(await pick("new.bin", stock), { problem: "unmapped", file: "new.bin", known: null });
+	assert.deepEqual(await pick("new.bin", stock), { problem: "unmapped", file: "new.bin", known: null, key: true });
 	assert.equal(await pick("new.bin", stock, fbX, "x", { need: "key" }), null);
 	// a mapped build: nothing wrong
 	assert.equal(await pick("x.bin", stock, await radioX({ profiles: { [fx.stock_sha256]: { ...fx.profile, board: "x" } } })), null);
@@ -270,6 +271,130 @@ test("a file that can't be used is explained: another radio, not a vendor file, 
 	// errors that aren't about a file stay as they are
 	assert.equal(explain.errorProblem(new Error("stopped")), null);
 	assert.equal(explain.errorProblem(new stockfw.StockError("x", "internal")).problem, "internal");
+});
+
+// A known build of this radio without a codec map (stockfw KNOWN_FILES only): named, its key used, the codec refused
+// with the version, the file offered for analysis, and every supported file listed to pick instead
+test("a known build without a codec map: the version named, the file offered, the supported files listed", async () => {
+	const sources = ["Radio A V1 (a-v1.bin)", "Radio A V2 (a-v2.bin)"];
+	const fbX = await radioX({ known_files: { [fx.stock_sha256]: "Radio A V0.9" } });
+	fbX.boards.x.codec = { sources };
+	const opened = await vendorfile.openVendorFile("a-v09.bin", stock, fbX, "x");
+	assert.equal(opened.best.match.kind, "key");
+	const p = explain.pickProblem(opened, "x");
+	assert.deepEqual(p, { problem: "unmapped", file: "a-v09.bin", known: "Radio A V0.9", key: true });
+	assert.ok(explain.OFFER.has(p.problem));
+	assert.equal(vendorfile.analysisCandidate(opened, fbX, "x").file, opened.best);
+	assert.equal(explain.pickProblem(opened, "x", { need: "key" }), null);
+	// the full list, a copy of the board's
+	const got = explain.supportedFiles(fbX, "x");
+	assert.deepEqual(got, { files: sources, also: [] });
+	got.files.push("z");
+	assert.equal(fbX.boards.x.codec.sources.length, 2);
+	// C-SKY radios: the profiles that describe a whole stock file first, then the other files the sources name; a source
+	// that isn't a file (a program flash read) on its own; none for an unknown radio
+	const c = { c7000: { boards: { b: {}, d: {} }, profiles: [{ name: "B 001 build", board: "b", stock_file: {} },
+		{ name: "B readout", board: "b", stock_file: null }, { name: "C 001", board: "c", stock_file: {} }] },
+	boards: { b: { codec: { sources: ["b-002.bin", "B 001 build", "a program flash read of the radio"] } },
+		d: { codec: { sources: ["a program flash read of the radio"] } } } };
+	assert.deepEqual(explain.supportedFiles(c, "b"), { files: ["B 001 build", "b-002.bin"], also: ["a program flash read of the radio"] });
+	assert.deepEqual(explain.supportedFiles(c, "d"), { files: [], also: ["a program flash read of the radio"] });
+	assert.deepEqual(explain.supportedFiles({ boards: {} }, "q"), { files: [], also: [] });
+	// every C-SKY radio in the data lists at least one stock file, profiles first
+	for (const id of Object.keys(fb.c7000?.boards || {})) {
+		const { files } = explain.supportedFiles(fb, id);
+		const named = (fb.c7000.profiles || []).filter((p) => p.board === id && p.stock_file).map((p) => p.name);
+		assert.deepEqual(files.slice(0, named.length), named, id);
+	}
+	// the notice folds a long list, never a short one
+	assert.equal(explain.foldSupported(Array(explain.SUPPORTED_OPEN_MAX).fill("f")), false);
+	assert.equal(explain.foldSupported(Array(explain.SUPPORTED_OPEN_MAX + 1).fill("f")), true);
+});
+
+// The install goes on without the picked file's codec (decide.js): what the codec step says DMR voice depends on
+test("keeping the radio's codec with a file that gives none is spelled out", () => {
+	const board = { name: "Radio A", keep_codec_supported: true, debuglink_names: ["a"], codec: { id: "a-codec", installed: ["V1"] } };
+	const manifest = { codec: { profile: "a-codec" } };
+	const un = { problem: "unmapped", file: "a.bin", known: "Radio A V0.9", key: true };
+	const keep = (opts) => explain.keepNote(un, decideCodec(board, manifest, opts));
+	// nothing verified it: selected, or a version the user named
+	assert.equal(keep({ requested: KEEP }), "unverified");
+	assert.equal(keep({ stockInstalled: "V1" }), "unverified");
+	// the radio reported its codec, or that it has none and keeping was forced
+	assert.equal(keep({ probe: { board: "a", codec: "a-codec" } }), "ok");
+	assert.equal(keep({ requested: KEEP, probe: { board: "a", codec: null } }), "none");
+	// the original firmware, version not given: "unverified" where a stock version keeps the codec in place, "none" on
+	// a radio whose stock firmware never does (board.codec.installed empty), and the decision expects no codec, so the
+	// done step doesn't call the outcome a failure
+	assert.equal(keep({ requested: KEEP, runsStock: true }), "unverified");
+	const never = { ...board, codec: { ...board.codec, installed: [] } };
+	const kept = decideCodec(never, manifest, { requested: KEEP, runsStock: true });
+	assert.equal(kept.mode, KEEP);
+	assert.equal(kept.expectCodec, false);
+	assert.match(kept.risk, /DMR voice is not available/);
+	assert.equal(explain.keepNote(un, kept), "none");
+	assert.equal(decideCodec(never, manifest, { requested: KEEP, stockInstalled: "V1" }).expectCodec, false, "a named version too");
+	// not known to run its original firmware, or keeping not selected: unchanged
+	assert.equal(explain.keepNote(un, decideCodec(never, manifest, { requested: KEEP })), "unverified");
+	assert.equal(decideCodec(never, manifest, { requested: KEEP }).expectCodec, true);
+	assert.equal(decideCodec(never, manifest, { runsStock: true, haveStock: true }).mode, MERGE);
+	assert.throws(() => decideCodec(never, manifest, { runsStock: true }));
+	// the codec comes from elsewhere, nothing was decided, or the file is not the issue
+	assert.equal(explain.keepNote(un, { mode: MERGE, source: "saved", expectCodec: true }), null);
+	assert.equal(explain.keepNote(un, null), null);
+	assert.equal(explain.keepNote(null, decideCodec(board, manifest, { requested: KEEP })), null);
+	assert.equal(explain.keepNote({ problem: "not-vendor" }, decideCodec(board, manifest, { requested: KEEP })), null);
+});
+
+// The "current firmware" step: four choices; "Another open firmware" and "Other / Not sure" are both kind "unknown" to
+// the install (the codec decision, the steps), told apart only for the pressed button and the report
+test("the current firmware choices: four, two of them the same to the install", () => {
+	assert.deepEqual(explain.NOW_CHOICES, ["rfoundry", "stock", "openfw", "unknown"]);
+	assert.equal(explain.nowChoice(null), null);
+	for (const id of ["stock", "openfw", "unknown"]) assert.equal(explain.nowChoice(explain.nowFor(id)), id);
+	assert.equal(explain.nowChoice({ kind: "rfoundry", probe: {} }), "rfoundry");
+	assert.deepEqual(explain.nowFor("stock"), { kind: "stock", version: null });
+	assert.equal(explain.nowFor("openfw").kind, "unknown");
+	assert.equal(explain.nowFor("unknown").kind, "unknown");
+	// the same decision either way
+	const b = { name: "Radio A", keep_codec_supported: true, debuglink_names: ["a"], codec: { id: "a-codec", installed: [] } };
+	const decide = (now) => decideCodec(b, { codec: { profile: "a-codec" } }, { haveStock: true, probe: null,
+		stockInstalled: now.kind === "stock" ? now.version : null, runsStock: now.kind === "stock" });
+	assert.deepEqual(decide(explain.nowFor("openfw")), decide(explain.nowFor("unknown")));
+	// every choice has its title and help line
+	const en = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url), "utf8"));
+	for (const id of explain.NOW_CHOICES) assert.ok(en[`flash.now.${id}`] && en[`flash.now.${id}_text`], id);
+});
+
+// The update mode steps show the radio's own picture from the data (radiotop.js), never a list of radios: every radio
+// gets one from the site build (site/tests/radio_images_test.py renders each)
+test("the update mode picture comes from the radio's data", () => {
+	assert.equal(pictureSrc({ id: "q", frame_image: "static/img/radios/q-frame.svg" }), "static/img/radios/q-frame.svg");
+	assert.equal(pictureSrc({ id: "q" }), null);
+	assert.equal(pictureSrc(null), null);
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	// every bootloader step list sits beside the picture
+	const lists = [...src.matchAll(/S\.radio\.flash\.bootloader\.map/g)].length;
+	assert.ok(lists >= 3);
+	assert.equal([...src.matchAll(/withPicture\(h\("ol", \{ class: "steps[^"]*" \}, S\.radio\.flash\.bootloader\.map/g)].length, lists);
+});
+
+// app.js needs the DOM, so what it must keep is checked in its source: whyNoAnswer() is async, so a noAnswer() that
+// isn't awaited throws a Promise and the user reads "[object Promise]"; a radio that answered with the open-firmware
+// CPS gets the next step, not the cable and driver tips; every string it picks exists
+test("the flasher page awaits noAnswer and explains an open-firmware answer", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	const en = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url), "utf8"));
+	const calls = [...src.matchAll(/(\S+)\s+noAnswer\(/g)].filter((m) => m[1] !== "function");
+	assert.ok(calls.length >= 4, "noAnswer calls found");
+	for (const m of calls) assert.equal(m[1], "await", `noAnswer() not awaited: ${m[0]}`);
+	// the connect failures outside the current firmware step go through connectHelp, with a key that exists
+	const helps = [...src.matchAll(/connectHelp\(e, "([\w.]+)"\)/g)].map((m) => m[1]);
+	assert.deepEqual(helps.sort(), ["flash.backup.openfw_next", "flash.done.openfw_next", "flash.radio.openfw_next"]);
+	for (const k of [...helps, "flash.err.rfoundry_nodebug_next", "flash.now.openfw_switch", "flash.now.openfw_use",
+		"flash.problem.unmapped.also", "flash.problem.unmapped.only"]) assert.ok(en[k], k);
+	// the done step names the build it just wrote, so RadioFoundry without the debug link is told apart
+	assert.match(src, /noAnswer\(link, \{ written: S\.firmware\?\.manifest \}\)/);
 });
 
 // A file known to hold no codec (stockfw.NO_CODEC_FILES), bare or zipped with small language files: named by its
@@ -350,9 +475,10 @@ test("codec extraction checks every window", async () => {
 });
 
 test("keep and merge plans match plan.py", async () => {
-	const { segments: codec } = await stockfw.extract(stock, fromHex(fx.key), fb, profiles);
+	const { profile, segments: codec } = await stockfw.extract(stock, fromHex(fx.key), fb, profiles);
 	assert.deepEqual(makePlan(board, [[board.app_base, image]], KEEP).describe(), fx.keep);
-	assert.deepEqual(makePlan(board, [[board.app_base, image]], MERGE, codec).describe(), fx.merge);
+	assert.deepEqual(makePlan(board, [[board.app_base, image]], MERGE, codec, stockfw.layoutWindows(profile, fb)).describe(),
+		fx.merge);
 	assert.throws(() => makePlan(board, [[board.app_base, image]], MERGE), PlanError);
 	assert.throws(() => makePlan(board, [[0x08074000, image]], KEEP), PlanError);
 });
@@ -455,8 +581,11 @@ test("first install on stock: the codec merged from the stock file, then back up
 	assert.throws(() => decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV" }), DecisionError);
 	const d = decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV", haveStock: true });
 	const { profile, segments: codec } = await stockfw.extract(sim.stock, sim.key, sim.fb);
-	// the merge plans against the merged file's layout; with one stock file that is the board's windows
-	assert.deepEqual(stockfw.layoutWindows(profile, sim.fb), sim.board.codec.windows);
+	// the merge plans against the merged file's layout, one of the board's (its windows are the union of every stock
+	// file's layout)
+	const lay = stockfw.layoutWindows(profile, sim.fb);
+	assert.ok(lay.every(([a, n]) => sim.board.codec.windows.some(([wa, wn]) => wa === a && wn === n)));
+	assert.ok(sim.board.codec.windows.length > lay.length);
 	assert.deepEqual(codec.map(([a, d]) => [a, d.length]), stockfw.layoutWindows(profile, sim.fb));
 	const plan = makePlan(sim.board, segments(m, image), d.mode, codec, stockfw.layoutWindows(profile, sim.fb));
 	radio.enterBootloader();
@@ -557,11 +686,12 @@ test("merge on a radio without a codec, then restore stock from the bundle's sto
 	const p = await probe(link);
 	assert.equal(p.codec, "absent");
 	const key = await stockfw.deriveKey(sim.stock, sim.board.key_sha256, sim.fb);
-	const { segments: codec } = await stockfw.extract(sim.stock, key, sim.fb);
+	const { profile, segments: codec } = await stockfw.extract(sim.stock, key, sim.fb);
 	const d = decideCodec(sim.board, fx.manifest, { probe: p, haveStock: true });
 	assert.equal(d.mode, MERGE);
 	radio.enterBootloader();
-	await new Dfu(radio.dfuTransport(), noWait).run(makePlan(sim.board, segments(fx.manifest, image), MERGE, codec), key);
+	await new Dfu(radio.dfuTransport(), noWait).run(makePlan(sim.board, segments(fx.manifest, image), MERGE, codec,
+		stockfw.layoutWindows(profile, sim.fb)), key);
 	assert.equal((await probe(new Link(radio.serialStream()))).codec, sim.board.codec.id);
 	// back to stock: the whole stock application, codec included, through a restore plan
 	const plan = planStock(sim.stock, key, sim.board, sim.fb);

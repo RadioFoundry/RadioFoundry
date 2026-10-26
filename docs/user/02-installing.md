@@ -40,9 +40,18 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
 2. **Build.** Pick **Full** (every feature the radio supports), **Amateur**, **Commercial**, or **Custom** to choose
    features one by one. Features the radio can't have are marked. A custom build is made when you continue and takes
    under a minute.
-3. **Current firmware.** Say what the radio runs now: RadioFoundry (connect it and turn it on), the original firmware, or
-   **Other / Not sure** (another firmware, such as another open firmware project, or you don't know). The installer
-   asks for the stock firmware file when it needs the codec or the key.
+3. **Current firmware.** Say what the radio runs now:
+
+   | Choice | When |
+   | --- | --- |
+   | **RadioFoundry** | Connect the radio and turn it on. The installer reads the installed version. |
+   | **Original firmware** | The firmware installed at the factory. |
+   | **Another open firmware** | Another open firmware project, such as one of the OpenGD77 family. |
+   | **Other / Not sure** | Any other firmware, or you don't know what the radio runs. |
+
+   The installer asks for the stock firmware file only when it needs it for the codec or the key. If you choose
+   RadioFoundry and the radio runs an OpenGD77-family firmware, the installer says so and offers **Another open
+   firmware** instead. A RadioFoundry build without the debug link answers the same way.
 4. **Back up.** The installer saves a backup file (a `.zip`) on your computer: the firmware, the channels and settings
    and the calibration. Keep it. Where the original firmware can't be read first, the installer backs the radio up
    right after the installation, before anything else changes.
@@ -176,9 +185,13 @@ If a firmware file can't be used, the installer says what it found and what to d
 | This File Is for Another Radio | Pick your radio's file, or open the installer for the radio the file is for |
 | This Is Not the Manufacturer's Firmware File | Pick the manufacturer's original file. Another open firmware project's build can't be used |
 | This File Is Not for the (your radio) | It is for another model, or a modified build. Pick the manufacturer's file for your radio |
-| The Codec Cannot Be Taken from This Build Yet | Pick one of the versions listed, or send the file so it can be added |
+| This Version's Codec Is Not Supported Yet | Pick one of the supported files listed under it, or send the file so the version can be added |
 | The File Is Damaged or Incomplete | Download it again |
 | The Radio Programming Utility Could Not Use This File | Nothing is wrong with the file. The installer reports the fault, or shows how to report it; you can send the file to help |
+
+A version that isn't supported yet may still give the bootloader key; the notice says so. You can also go on without a
+usable file: the installer then keeps the codec already in the radio and says, before writing, that DMR voice depends on
+it.
 
 **Technical details** shows the exact message. Sending the file is offered only for the manufacturer's firmware file,
 and only when you click. An automatic error report names the file (name, size and checksum), never its contents.
