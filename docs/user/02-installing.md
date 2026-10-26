@@ -234,6 +234,14 @@ The bootloader lives in a part of the flash the installer never erases, so you c
 its bootloader and install again. If the radio stays dark after flashing, that's what to do. The web installer's help
 page walks through the update mode. See also [Troubleshooting](20-troubleshooting.md#installing).
 
+**Report a Problem** sits under every failure and on the Verify step. It sends what the installer decided and its last
+steps. You can add a message, an email address for a reply and the files it lists (the stock firmware file, a backup,
+the firmware read from the radio). A backup holds your channels, contacts and the radio's calibration: untick it to
+leave it out. Attached files and your email address are deleted within 90 days.
+
+**Programming cables:** cables with a CH340 chip can be unreliable for backups and installs. If one fails, try a cable
+with an FTDI, CP210x or PL2303 chip. The installer warns when it sees a CH340 cable.
+
 ## Going back to the stock firmware
 
 1. Put the radio in its bootloader.

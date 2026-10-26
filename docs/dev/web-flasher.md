@@ -173,6 +173,54 @@ failed install can be traced to a file. Only lengths, SHA-256 hashes and a short
 backend keeps a field the PATCH leaves out. Opting out (`?reporting=0`) and simulations send nothing, as for the rest of
 the log. A backend without these columns ignores the extra fields.
 
+Both requests also carry `adapter`, and the PATCH carries `trail`:
+
+| Field | Content |
+|---|---|
+| `adapter` | `{vid, pid, chip, product}` of the USB device in use (`adapter.js`). `chip` from the vendor id: `FTDI` (0403), `CH340` (1a86), `CP210x` (10c4), `PL2303` (067b), `radio USB` (the radio's own port), `DFU bootloader`, else `other`. `product` only from WebUSB. Never a serial number |
+| `trail` | The newest 200 breadcrumbs (`diag.trail()`, scrubbed, 300 characters each), the oldest dropped to keep the keepalive request under 64 KB |
+
+### Breadcrumbs
+
+`diag.note()` lines record what the page decided, built in `trail.js` (names, sizes, hashes and reasons; never bytes):
+
+| Line | When |
+|---|---|
+| `file picked` | A vendor file: name, size, SHA-256 prefix, `logId()`, what it matched, its problem |
+| `codec search at known addresses`, `moved codec search` | The codec search in an open-firmware read: each stage, the profile and address found, or how many code starts were checked and why the nearest failed |
+| `codec decision` | `decideCodec()`: mode, source, why; or why none |
+| `key` | Where the bootloader key came from |
+| `write plan` | Mode, sectors erased, written (with content), kept, blocks, the codec profile |
+| `open firmware backup` | The key and codec found in the open-firmware read |
+| `verify`, `verify failed` | What the radio reported after the install |
+| `cable radio check`, `cable radio codec decision` | The cable radio's read choices and codec decision |
+| `adapter` | The USB device, once per change |
+
+The cable log (`logBox()`) also goes to the trail, so a boot ROM load that fails leaves the bytes received.
+
+Every Sentry event carries the newest 40 lines in `contexts.rfoundry.trail`, the adapter in `contexts.rfoundry.adapter`
+and the tag `adapter_chip`.
+
+### Report a Problem
+
+`report.js` `reportDialog()`. With the backend configured (the flasher), Send posts to the project's backend
+(`problemreport.js`), not Sentry:
+
+1. `POST /v1/reports` with `{result, flash_id, tool, tool_version, board, task, step, decisions, trail, error, message,
+   contact, adapter}`. `result` is `problem` when the install verified and `failed` otherwise. `decisions` holds
+   `codec_mode`, `codec_source`, `key_source`, `plan` and `files` (role, name, length, SHA-256, id). The answer is 201
+   with `id` and an upload `token`.
+2. Each ticked file: `POST /v1/reports/{id}/files?kind=stock|backup|readout&name=&token=`, `application/octet-stream`.
+   A refused file (413, 409, 410, 429, ...) is listed under the result. The report still counts.
+
+The files offered are the vendor file picked, the internal flash read and the last backup the page saved. All are
+ticked by default. The message and the email address are optional. The dialog says what is sent and that files and
+the address are deleted within 90 days. It works with `?reporting=0`, since the user sends it. `#sim` answers
+locally (`practiceFetch`) and sends nothing.
+
+Where it is offered: the button under every failure notice (`errorNotice()`, `problemNotice()`), the failed checks of
+the install, cable radio and loader routes, and the quiet "Something wrong? Report a Problem" link on Verify.
+
 ## Radio access backends
 
 A radio's `flash.backend` in `data/radios.json` names how the page reaches it (from the board.toml `[flash] family`,
@@ -286,6 +334,11 @@ its own steps:
 | Back up and check | A first install reads the whole program memory (required) and the calibration area; the whole data memory only if asked (off by default: 16 MB at 115200 baud). Each choice shows its time: the stub's sector sums count the blank sectors first (no data moved, `c7000.js` `blankCount`, at most 8 s per memory), and `readSeconds` turns the used share into wire bytes, pessimistically: every used sector whole (no credit for LZ4), 13 bytes a record, at 9000 B/s or the rate measured on this radio, never above the 11,520 B/s of the line; without a count every sector is taken as used ("up to"). The page keeps the program memory in IndexedDB and downloads a backup bundle. A first install can skip the program memory read, before or during it, and take the codec from the stock file instead: only the codec slot is read, and the firmware is reported as not read. An update reads only the codec slot. The page then decides the codec |
 | Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector |
 | Check | The stub resets the chip; the page asks RadioFoundry's VERSION for the build and the codec |
+
+A cable whose USB vendor id is a CH340's (1a86) gets a warning on the connect, check, write, backup and restore steps:
+some of these cables fail the backup or the install. The boot ROM load drops an exact echo of each frame it sent (some
+cables loop TX back to RX). A frame not acknowledged logs the first 16 bytes received, and the error names the cable's
+chip and points to the stock-file route.
 
 ### A board with a first stage
 
