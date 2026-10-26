@@ -77,6 +77,19 @@ pre code { background: none; padding: 0; }
 	.header-tools { order: 1; }
 }
 .site-footer { border-top: 1px solid var(--border); margin-top: var(--space-5); padding: var(--space-4) 0; background: var(--surface); }
+/* icons: a mask in the text color, so they follow the theme (the Facebook and GitHub marks) */
+.icon { display: inline-block; width: 1.1em; height: 1.1em; flex: none; vertical-align: -0.18em; background: currentColor;
+	-webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
+.icon-facebook { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M24 12a12 12 0 1 0-13.9 11.9v-8.4h-3V12h3V9.4c0-3 1.8-4.7 4.5-4.7 1.3 0 2.7.2 2.7.2v2.9h-1.5c-1.5 0-2 .9-2 1.9V12h3.4l-.5 3.5h-2.9v8.4A12 12 0 0 0 24 12z'/%3E%3C/svg%3E"); }
+.icon-github { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.3-3.1-.2-.4-.6-1.6 0-3.2 0 0 1-.3 3.4 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.7 1.6.2 2.9.1 3.2.8.8 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3'/%3E%3C/svg%3E"); }
+/* where to get help: two cards above the footer line */
+.footer-help { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+.help-card { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border);
+	border-radius: var(--radius); background: var(--bg); color: var(--text); text-decoration: none; transition: border-color .15s, transform .15s; }
+.help-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.help-card strong { display: block; }
+.help-card .small { display: block; margin-top: 2px; }
+.help-card-icon { width: 2rem; height: 2rem; color: var(--accent); }
 .footer-row { display: flex; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
 .footer-row p { margin: 0; }
 .build-stamp { flex: 1 1 auto; text-align: end; align-self: flex-end; font-size: var(--text-xs); color: var(--faint); font-family: var(--font-mono); }
@@ -447,6 +460,8 @@ dialog.confirm h2 { margin-top: 0; }
 
 /* bug reports (static/js/report.js): the line under a failure, the dialog */
 .report-line { margin: var(--space-2) 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.help-links { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); }
+.help-link { display: inline-flex; align-items: center; gap: var(--space-1); font-weight: 600; }
 .report-reported { margin-top: var(--space-2); }
 .report-reported .report-text { margin-top: var(--space-1); }
 .report-label { display: grid; gap: var(--space-1); font-weight: 600; margin-bottom: var(--space-3); }

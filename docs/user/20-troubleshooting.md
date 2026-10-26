@@ -74,9 +74,15 @@ modem's state and counters, battery, the board's own lines. **\*** pages through
 
 Developers get the same and more over USB with `tools/rfoundry_debug.py diag` and `tools/rfoundry_debug.py view`.
 
+## Getting help
+
+Ask in the [RadioFoundry community group](https://www.facebook.com/groups/radiofoundry/) on Facebook: other users and
+the developers answer questions there, help with installs and post news. The web installer links the group and the
+GitHub issues under every error message.
+
 ## Reporting a problem
 
-Open an issue in the project repository. Include the firmware version (**Settings > Advanced > About**), the radio
+Open an issue in the [project repository](https://github.com/radiofoundry/radiofoundry/issues/new/choose). Include the firmware version (**Settings > Advanced > About**), the radio
 model, what you did, what you expected and what happened. A screenshot helps: `tools/rfoundry_debug.py screenshot -o
 screen.png` saves one over USB.
 

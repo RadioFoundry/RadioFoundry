@@ -25,6 +25,8 @@ from . import device, docs as docsmod, i18n, repo, social, tmpl
 BENCH_ONLY = {"Bench"}
 # the production address: link previews need absolute URLs (og:url, og:image)
 SITE_URL = "https://radiofoundry.org/"
+# where users help each other: the footer and every failure message link it, next to the GitHub issues
+COMMUNITY_URL = "https://www.facebook.com/groups/radiofoundry/"
 BOARD_ORDER = {"supported": 0, "testing": 1, "in_progress": 2, "planned": 3}
 # a radio page's documentation links (board.toml [docs]), in this order
 DOC_ORDER = ("hardware", "install", "codec", "bringup")
@@ -142,7 +144,7 @@ class Site:
 			    for f in self.features]
 		return {
 			"site.json": {"format": "rfoundry-site/1", "git": self.git, "version": self.version, "built": self.built,
-				      "branch": self.branch, "repo": self.repo_url, "languages": self.i18n.languages, "default_language": self.i18n.default,
+				      "branch": self.branch, "repo": self.repo_url, "community": COMMUNITY_URL, "languages": self.i18n.languages, "default_language": self.i18n.default,
 				      "reports": {"sentry_dsn": self.sentry_dsn}},
 			"radios.json": {"radios": radios, "planned": planned},
 			"features.json": {"groups": self.groups, "features": features},
@@ -190,7 +192,7 @@ class Site:
 		       "description": description or self.i18n.t(lang, "site.tagline"), "scripts": scripts, "footer": footer,
 		       "languages": langs, "git": self.git, "assets": self.asset_version, "version": self.version, "built": self.built,
 		       "built_at": self.built_at, "built_iso": self.built_iso, "git_full": self.git_full,
-		       "git_stamp": self.git + ("-dirty" if self.git_dirty else ""), "repo": self.repo_url, "nav_current": nav,
+		       "git_stamp": self.git + ("-dirty" if self.git_dirty else ""), "repo": self.repo_url, "community": COMMUNITY_URL, "nav_current": nav,
 		       "url": SITE_URL + (full[:-len("index.html")] if full.endswith("index.html") else full),
 		       "og_image": SITE_URL + "static/img/social.png?v=" + self.asset_version,
 		       "og_width": social.W * social.ZOOM, "og_height": social.H * social.ZOOM}

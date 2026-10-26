@@ -126,6 +126,11 @@ Markup lives in `site/templates/*.html` and `partials/`, with four kinds of plac
 root (static files, data) and `{{home}}` the path to the root of the page's language (links between pages). Loops
 stay in Python, which renders a partial per item.
 
+Every page's footer has two help cards: the community group (`COMMUNITY_URL` in `site/rfoundrysite/build.py`, also
+`community` in `data/site.json`) and the GitHub issues. The web tools' report line under an error (`reportLine()` in
+`static/js/report.js`) links the same two. Their icons are CSS masks (`.icon-*` in `site.css`), drawn in the text
+color.
+
 Every page's footer ends with a faint build stamp: the commit the site was built from (`-dirty` with uncommitted
 changes, linked to the commit) and the build time in UTC (`data/site.json` has the same commit and the date).
 

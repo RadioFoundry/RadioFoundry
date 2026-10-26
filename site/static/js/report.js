@@ -142,9 +142,18 @@ export function reportButton({ quiet = true } = {}) {
 	return button(t("report.button"), () => reportDialog(), { quiet });
 }
 
-// A line under a failure message: the report button with a word on what it's for
+// Where to get help after a failure: the community group and the GitHub issues (site.json community, repo)
+export function helpLinks() {
+	const link = (href, icon, text) => h("a", { href, target: "_blank", rel: "noopener", class: "help-link" },
+		h("span", { class: `icon icon-${icon}`, "aria-hidden": "true" }), text);
+	const links = [site.community && link(site.community, "facebook", t("report.community")),
+		site.repo && link(`${site.repo}/issues/new/choose`, "github", t("report.issue"))].filter(Boolean);
+	return links.length ? h("span", { class: "help-links" }, t("report.help_lead"), " ", ...links) : null;
+}
+
+// A line under a failure message: the report button with a word on what it's for, and where to ask
 export function reportLine() {
-	return h("p", { class: "report-line small" }, t("report.lead"), " ", reportButton());
+	return h("p", { class: "report-line small" }, t("report.lead"), " ", reportButton(), helpLinks());
 }
 
 const shown = new Map();	// event id -> its reported line
@@ -184,7 +193,7 @@ export function reportedLine(rec = diag.currentError()) {
 	});
 	const el = h("div", { class: "report-reported small" },
 		h("p", {}, t("report.reported", { id: String(rec.eventId).slice(0, 8) })), text,
-		h("p", { class: "report-line" }, send, status, reportButton()));
+		h("p", { class: "report-line" }, send, status, reportButton(), helpLinks()));
 	shown.set(rec.eventId, el);
 	return el;
 }
