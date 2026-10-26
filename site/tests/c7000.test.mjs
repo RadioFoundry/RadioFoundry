@@ -17,7 +17,7 @@ import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
 import { stockVersion } from "../static/js/flasher/usmart.js";
 import { openVendorFile } from "../static/js/flasher/vendorfile.js";
-import { vendorBundle, hasC7Backup } from "../static/js/flasher/c7000ui.js";
+import { vendorBundle, hasC7Backup, backupChoices } from "../static/js/flasher/c7000ui.js";
 import * as explain from "../static/js/flasher/explain.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
@@ -334,4 +334,71 @@ test("a codec with a map gets hrc7000_codec.py's slot; a version 1 slot or a bui
 	const bad = code.slice();
 	bad.fill(0, 0x40, 0x44);
 	assert.throws(() => c7.slotBytes(c, "db25d", { ...got, code: bad }), /doesn't hold/);
+});
+
+test("backup choices: the firmware memory on a first install, never all channels and settings unless asked", () => {
+	assert.deepEqual(backupChoices(true, true), { progmem: true, cal: true, q128: false });
+	assert.deepEqual(backupChoices(false, true), { progmem: false, cal: true, q128: false });
+	assert.deepEqual(backupChoices(true, false), { progmem: true, cal: false, q128: false });
+});
+
+test("read times: pessimistic, from the radio's count of blank sectors, else the board's rate, else every sector used", () => {
+	const MB = 0x100000;
+	// a data memory 98 % blank: 82 used sectors whole (336 KB) and 4096 records, 43 s on the wire, plus the checksum pass
+	const data = c7.readSeconds(16 * MB, { sizing: { sectors: 4096, blank: 4014, ms: 6000 } });
+	assert.equal(data.upTo, false);
+	assert.ok(data.seconds > 45 && data.seconds < 52, `${data.seconds}`);
+	// half counted: the share counted stands for the whole range, and the checksum time grows with it
+	const half = c7.readSeconds(16 * MB, { sizing: { sectors: 2048, blank: 2007, ms: 3000 } });
+	assert.ok(Math.abs(half.seconds - data.seconds) < 1);
+	// a full program memory: about 2 min
+	const pm = c7.readSeconds(MB, { sizing: { sectors: 256, blank: 0, ms: 1000 } });
+	assert.ok(pm.seconds > 110 && pm.seconds < 125, `${pm.seconds}`);
+	// a measured rate replaces the bench one, but never beats the line
+	assert.ok(c7.readSeconds(MB, { sizing: { sectors: 256, blank: 0, ms: 0 }, rate: 4500 }).seconds > 2 * 115);
+	assert.ok(c7.readSeconds(MB, { sizing: { sectors: 256, blank: 0, ms: 0 }, rate: 1e6 }).seconds > MB / 11520);
+	assert.deepEqual(c7.readSeconds(2 * MB, { plainRate: 46000 }), { seconds: 2 * MB / 46000, upTo: false });
+	// nothing known: every sector used, about 31 min for 16 MB, said as "up to"
+	const worst = c7.readSeconds(16 * MB);
+	assert.equal(worst.upTo, true);
+	assert.ok(worst.seconds > 30 * 60 && worst.seconds < 33 * 60, `${worst.seconds}`);
+});
+
+test("the radio counts its blank sectors without sending data; a deadline or a stop ends the count early", async (t) => {
+	const { sim, r } = await radio();
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.image, stubs.load);
+	const want = (mem, from, to) => {
+		let n = 0;
+		for (let a = from; a < to; a += 0x1000) n += mem.subarray(a, a + 0x1000).every((x) => x === 0xFF);
+		return n;
+	};
+	const pm = await c7.blankCount(s, "progmem", 0, 0x100000);
+	assert.deepEqual([pm.sectors, pm.blank], [256, want(sim.progmem, 0, 0x100000)]);
+	const dm = await c7.blankCount(s, "q128", 0, 0x200000);
+	assert.deepEqual([dm.sectors, dm.blank], [512, want(r.q128, 0, 0x200000)]);
+	let n = 0;
+	const stopped = await c7.blankCount(s, "q128", 0, 0x200000, { stop: () => ++n > 3 });
+	assert.equal(stopped.sectors, 3 * 16, "three windows, then stopped");
+	assert.equal(await c7.blankCount(s, "q128", 0, 0x200000, { deadline: -1 }), null, "nothing counted past the deadline");
+	// the stub still answers a read right after
+	assert.ok(equal(await s.dump("progmem", 0, 0x2000), sim.progmem.subarray(0, 0x2000)));
+});
+
+test("a firmware memory read stopped for the stock file: the stub stays usable and the codec slot reads after it", async (t) => {
+	const { r } = await radio("rfoundry");
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.image, stubs.load);
+	const ac = new AbortController();
+	await assert.rejects(s.dump("progmem", 0, 0x100000, { signal: ac.signal, progress: (d) => { if (d >= 0x20000) ac.abort(); } }), /stopped/);
+	await s.drain();
+	const lay = C.boards.dm1801pro;
+	const slot = await s.dump("progmem", lay.slot[0], lay.slot[1]);
+	assert.ok(equal(slot, r.progmem.subarray(lay.slot[0], lay.slot[1])), "the slot after the stop is the radio's");
 });
