@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-380 vocoder: the stock D002.032 AMBE+2 codec run in place from flash (docs/spec/codec-placement.md, "STM32
+// MD-380 vocoder: the radio's own AMBE+2 codec run in place from flash (docs/spec/codec-placement.md, "STM32
 // radios"; the codec: docs/spec/codec-md380.md, "State init and calls").
 //
 // The merge on the user's machine (rfoundry, tools/codec_extract.py, the web flasher) writes the codec's main table
@@ -9,7 +9,8 @@
 // (platform/stm32f4/codec_desc.h). The code reaches its tables through absolute addresses, which don't change. The
 // merge rewrites what does: two address pairs in the code that point into the code, and the 12 calls from the code
 // that stock keeps in the table window back into the code (the codec map). None of it is part of this repository or a
-// release. The calls and the checks are the shared ones (platform/stm32f4/hrc/vocoder.c); this file says which build and
+// release. The 35.14 builds (MD-380 D35.14, MD-390 S35.14) carry the UV380 family's codec instead, with three table
+// windows: the main one in sector 9 stays there, the code goes right after it, the two small ones stay in sector 11. The calls and the checks are the shared ones (platform/stm32f4/hrc/vocoder.c); this file says which build and
 // where. Without a valid descriptor and codec, present() is false and the radio is FM only.
 #include "md380.h"
 #include "config.h"
@@ -36,18 +37,48 @@ static const codec_desc_window_t tables[CODEC_WINDOWS] = {
 	{ 0x080FD490u, 0x20u, 0xDA18C5EFu },
 };
 
-// The id tools/rfoundry and the release manifests use for this codec: D002.032 placed as above (the descriptor and
-// every CRC matched). A build from before the move reports "md380-d2032", which tells rfoundry that the codec isn't
-// where this layout keeps it
+// The id tools/rfoundry and the release manifests use for a codec placed as these profiles say (the descriptor and
+// every CRC matched; stockfw.py MD380_CODEC), whichever build it came from: named after D002.032, the first. A build
+// from before the move reports "md380-d2032", which tells rfoundry that the codec isn't where this layout keeps it
+#define CODEC_ID		"md380-d2032-s11"
+
 static const stm32_codec_profile_t d2032 = {
-	.tag = CODEC_TAG, .id = "md380-d2032-s11", .flash_lo = CODEC_FLASH_LO,
+	.tag = CODEC_TAG, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
 	.code = CODEC_CODE, .code_len = CODEC_CODE_LEN, .code_crc = CODEC_CRC, .tables = tables, .windows = CODEC_WINDOWS,
 	// Not used: encode ECC +0x514 and FEC decode +0xAC8. The air frame FEC is ours (core/dmr/ambe) and matches stock's
 	.at = { .encode = 0x14C, .decode = 0x604, .enc_init = 0x294, .fec_init = 0x4FC, .dec_init = 0x6F0,
 		.enc_params = 0x854, .enc_set = 0x1E0, .dec_set = 0x6AC },
 };
 
-static const stm32_codec_profile_t *const profiles[] = { &d2032 };
-const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 1 };
+// The 35.14 builds as the merge places them (stockfw.py, "placed"); the entry offsets are the UV380 family's
+// (codec-mduv380.md). Not used: encode ECC +0x4E8 and FEC decode +0xB78
+#define UV_ENTRIES { .encode = 0x130, .decode = 0x5D8, .enc_init = 0x284, .fec_init = 0x4CC, .dec_init = 0x6D0, 		.enc_params = 0x848, .enc_set = 0x1C0, .dec_set = 0x688 }
+
+// MD-380 D35.14
+static const codec_desc_window_t d3514_tables[] = {
+	{ 0x080B7868u, 0xCD68u, 0x810CC7B3u },
+	{ 0x080ECC98u, 0x87Cu, 0xA5F0D272u },
+	{ 0x080F0C14u, 0xEu, 0xEFDB66A5u },
+};
+static const stm32_codec_profile_t d3514 = {
+	.tag = 0x00443514u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080C45D0u, .code_len = 0x10366u, .code_crc = 0x83A0361Fu, .tables = d3514_tables, .windows = 3,
+	.at = UV_ENTRIES,
+};
+
+// MD-390 S35.14
+static const codec_desc_window_t s3514_tables[] = {
+	{ 0x080B8928u, 0xCDE8u, 0x68B2CC40u },
+	{ 0x080EDDD8u, 0x87Cu, 0xA2B85A33u },
+	{ 0x080F1D54u, 0xEu, 0xEFDB66A5u },
+};
+static const stm32_codec_profile_t s3514 = {
+	.tag = 0x00533514u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080C5710u, .code_len = 0x10372u, .code_crc = 0xD953C7A8u, .tables = s3514_tables, .windows = 3,
+	.at = UV_ENTRIES,
+};
+
+static const stm32_codec_profile_t *const profiles[] = { &d2032, &d3514, &s3514 };
+const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 3 };
 
 #endif	// CONFIG_DMR

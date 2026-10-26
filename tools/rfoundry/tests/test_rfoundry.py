@@ -12,6 +12,7 @@ import io
 import json
 import os
 import random
+import re
 import struct
 import sys
 import tempfile
@@ -724,14 +725,16 @@ class StockLibrary(unittest.TestCase):
     def test_md380_board(self):
         b = boards.get("md380")
         self.assertTrue(b.releasable)
-        self.assertTrue(b.keep_codec_supported)	# the application has sectors 3-7, the codec 8, 10 and 11
+        self.assertTrue(b.keep_codec_supported)	# the application has sectors 3-7, the codec 8-11
         self.assertEqual(b.codec.id, "md380-d2032-s11")
-        self.assertEqual([s.index for s in b.codec_sectors()], [8, 10, 11])
+        # D002.032 uses sectors 8, 10 and 11, a 35.14 build 9, 10 and 11: an update keeps them all
+        self.assertEqual([s.index for s in b.codec_sectors()], [8, 9, 10, 11])
         ld = open(os.path.join(HERE, "..", "..", "..", "boards", "md380", "memory.ld")).read()
         self.assertIn("ORIGIN = __app_start, LENGTH = 0x08080000 - __app_start", ld)
         self.assertEqual(b.app_region, (0x0800C000, 0x08080000))
         self.assertEqual(b.codec.windows[0][0], 0x080E0000)
-        self.assertEqual(b.codec.windows[-1], (stockfw.DESC_ADDR, stockfw.DESC_LEN))
+        self.assertIn((stockfw.DESC_ADDR, stockfw.DESC_LEN), b.codec.windows)
+        self.assertEqual(b.codec_codes, [0x080E0000, 0x080C45D0, 0x080C5710])	# D002.032, D35.14, S35.14
         self.assertIs(boards.from_debuglink_name("MD-380 VHF"), b)
 
     def test_md380_profile(self):
@@ -764,10 +767,26 @@ class StockLibrary(unittest.TestCase):
             self.assertEqual(merged[a - 0x0800C000:a - 0x0800C000 + len(d)], d)
         with self.assertRaises(stockfw.StockError):
             stockfw.merge(img + b"\0" * (0x0808FC64 - 0x08080000 + 1), prof, segs)
-        p = plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs)
+        p = plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs, b.merge_windows(prof))
         self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7, 8, 10, 11])
         p = plan.make_plan(b, [(b.app_base, img)], plan.KEEP)
         self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7])
+
+    def test_md380_3514_merge(self):
+        """An MD-380 D35.14 file: the UV380 family's codec with three table windows. The main one stays in sector 9,
+        the code goes right after it, the small ones stay in sector 11; the same application fits."""
+        b = boards.get("md380")
+        d3514 = "ff6c3d79b205391c9c2096f8e4367c514c1e1e4dac7d421ed69077e5b42eaf2f"
+        self.assertEqual(stockfw.PROFILES[d3514]["codec_profile"], b.codec.id)
+        stock, profiles, _, _ = stockfw.build_synthetic_stock(KEY, random.Random(35), d3514)
+        prof, segs = stockfw.extract(stock, KEY, profiles)
+        self.assertEqual([a for a, _ in segs], [0x080C45D0, 0x080B7868, 0x080ECC98, 0x080F0C14, stockfw.DESC_ADDR])
+        self.assertEqual(struct.unpack_from("<I", segs[-1][1], 24)[0], 3)	# table windows in the descriptor
+        img = app_image(0x08080000 - 0x0800C000)
+        merged = stockfw.merge(img, prof, segs)
+        self.assertEqual(stockfw.split_merged(merged, profiles)[1], prof)
+        p = plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs, b.merge_windows(prof))
+        self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7, 9, 10, 11])
         with self.assertRaises(plan.PlanError):		# the application can't reach the codec sectors
             plan.make_plan(b, [(b.app_base, app_image(0x08080000 - 0x0800C000 + 4))], plan.KEEP)
 
@@ -826,16 +845,51 @@ def flash_readout(stock, key, profiles, placed_image=None):
     return bytes(out)
 
 
+class FirmwareProfiles(unittest.TestCase):
+    """Every placed stock profile is one the radio's firmware accepts: boards/<radio>/vocoder_<radio>.c lists its tag,
+    code window and table windows with the CRC-32s the merge's descriptor carries, and nothing else."""
+
+    WIN = re.compile(r"\{ (0x[0-9A-F]+)u, (0x[0-9A-F]+)u, (0x[0-9A-F]+)u \}")
+
+    def firmware(self, board):
+        src = open(os.path.join(HERE, "..", "..", "..", "boards", board, "vocoder_%s.c" % board)).read()
+        defs = dict(re.findall(r"#define (\w+)\s+(\w+)u\b", src))
+        tables = {m.group(1): [tuple(int(x, 16) for x in w) for w in self.WIN.findall(m.group(2))]
+                  for m in re.finditer(r"codec_desc_window_t (\w+)\[\w*\] = \{(.*?)\};", src, re.S)}
+        out = set()
+        for m in re.finditer(r"stm32_codec_profile_t \w+ = \{(.*?)\n\};", src, re.S):
+            f = dict(re.findall(r"\.(\w+) = (\w+)", m.group(1)))
+            num = lambda v: int(defs.get(v, v).rstrip("u"), 0)
+            wins = tables[f["tables"]]
+            self.assertEqual(len(wins), num(f["windows"]))
+            out.add((num(f["tag"]), num(f["code"]), num(f["code_len"]), num(f["code_crc"]), tuple(wins)))
+        return out
+
+    def test_every_profile_in_the_firmware(self):
+        for board in ("mduv380", "md380"):
+            want = set()
+            for prof in stockfw.PROFILES.values():
+                if prof["board"] != board:
+                    continue
+                d = stockfw.descriptor(prof)
+                w = struct.unpack_from("<%dI" % (7 + 3 * stockfw.DESC_WINDOWS), d)
+                want.add((w[2], w[3], w[4], w[5], tuple(tuple(w[7 + 3 * i:10 + 3 * i]) for i in range(w[6]))))
+            self.assertEqual(self.firmware(board), want, board)
+
+
 class MdUv380(unittest.TestCase):
-    """The MD-UV380 family: four TYT 19.26 stock files, one codec, each build's tables at its own address."""
+    """The MD-UV380 family: TYT and Retevis files from 18.11 to 219.74, one codec, each build's tables at its own
+    address."""
 
     B = boards.get("mduv380")
     V1926 = "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e"
+    V21960 = "447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee"	# RT3S, the code before the tables
 
     def test_board(self):
         b = self.B
         self.assertEqual(b.codec.id, "mduv380-1926-s11")
-        self.assertEqual(len(b.codec_stock), 4)
+        self.assertEqual(len(b.codec_stock), 30)
+        self.assertEqual(b.codec_stock[0], self.V1926)		# the first: what the simulations use
         self.assertEqual([s.index for s in b.codec_sectors()], [10, 11])
         self.assertEqual(b.app_region, (0x0800C000, 0x080C0000))
         self.assertEqual(b.key_prefix, bytes.fromhex("00AA8989"))
@@ -849,18 +903,24 @@ class MdUv380(unittest.TestCase):
         hint = cli.stock_hint(b)
         for h in b.codec_stock:
             self.assertIn(stockfw.PROFILES[h]["name"], hint)
-            self.assertIn("MD-UV380", stockfw.KNOWN_FILES[h])
+            self.assertRegex(stockfw.KNOWN_FILES[h], r"^(MD-UV380|RT3S) ")
 
     def test_placements(self):
         """Each file's tables at their stock address cut to the codec's data, the code right after them, word aligned,
-        everything inside sectors 10 and 11 below the descriptor; each its own tag; its map found by the code's hash."""
+        or at the start of sector 10 when it doesn't fit there; everything inside sectors 10 and 11 below the
+        descriptor; each its own tag; its map found by the code's hash."""
         maps = codecmap.load_maps()
         tags = set()
         for h in self.B.codec_stock:
             prof = stockfw.PROFILES[h]
             pl = prof["placement"]
             tab = prof["tables"][0]
-            self.assertEqual(pl["code"], (tab + pl["tables_len"] + 3) & ~3, prof["name"])
+            after = (tab + pl["tables_len"] + 3) & ~3
+            if after + prof["code"][1] <= stockfw.DESC_ADDR:
+                self.assertEqual(pl["code"], after, prof["name"])
+            else:
+                self.assertEqual(pl["code"], 0x080C0000, prof["name"])
+                self.assertLessEqual(pl["code"] + prof["code"][1], tab, prof["name"])
             self.assertLessEqual(pl["code"] + prof["code"][1], stockfw.DESC_ADDR, prof["name"])
             self.assertGreaterEqual(tab, 0x080C0000)
             tags.add(pl["tag"])
@@ -873,7 +933,7 @@ class MdUv380(unittest.TestCase):
             self.assertEqual(tw["min_len"], pl["tables_len"])
             wins = stockfw.layout(prof)
             self.assertEqual(wins[-1][:2], (stockfw.DESC_ADDR, stockfw.DESC_LEN))
-        self.assertEqual(len(tags), 4)
+        self.assertEqual(len(tags), 30)
 
     def synthetic(self):
         return stockfw.build_synthetic_stock(KEY, random.Random(19), self.V1926)
@@ -885,6 +945,25 @@ class MdUv380(unittest.TestCase):
         self.assertEqual(len(segs[1][1]), 0x1266A)
         merged = stockfw.merge(app_image(0x080C0000 - 0x0800C000), prof, segs)
         self.assertEqual(stockfw.split_merged(merged, profiles)[1], prof)
+
+    def test_code_before_the_tables(self):
+        """A build whose code doesn't fit after its tables (RT3S 219.60): the code at the start of sector 10, below
+        the tables; merged, split and read back from a readout like any other."""
+        stock, profiles, _, _ = stockfw.build_synthetic_stock(KEY, random.Random(20), self.V21960)
+        prof, segs = stockfw.extract(stock, KEY, profiles)
+        self.assertEqual([a for a, _ in segs], [0x080C0000, 0x080E322C, stockfw.DESC_ADDR])
+        self.assertLess(0x080C0000 + len(segs[0][1]), 0x080E322C)
+        desc = segs[-1][1]
+        self.assertEqual(struct.unpack_from("<4I", desc, 8), (0x80561960, 0x080C0000, len(segs[0][1]),
+                                                              prof["placed"]["code"][0]))
+        merged = stockfw.merge(app_image(0x080C0000 - 0x0800C000), prof, segs)
+        self.assertEqual(stockfw.split_merged(merged, profiles)[1], prof)
+        self.assertEqual(stockfw.from_flash(flash_readout(stock, KEY, profiles), profiles=profiles), (prof, segs))
+        b = self.B
+        p = plan.make_plan(b, [(b.app_base, app_image(5000))], plan.MERGE, segs, b.merge_windows(prof))
+        self.assertEqual([s.index for s in p.erase if s.index >= 10], [10, 11])
+        with self.assertRaises(stockfw.StockError):	# an image reaching into sector 10 meets the code
+            stockfw.merge(app_image(0x080C0000 - 0x0800C000 + 4), prof, segs)
 
     def test_codec_from_a_flash_readout(self):
         """A stub readout of a radio still on its stock firmware gives the codec as the stock file's merge does; so does
@@ -1127,7 +1206,8 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
             self.assertEqual(rc, 0, out + err)
             self.assertIn("MERGE", out)
             self.assertIn("sector 11  0x080E0000..0x080FFFFF   128 KB  ERASE + WRITE codec", out)
-            self.assertIn("sector  9  0x080A0000..0x080BFFFF   128 KB  not touched (free)", out)
+            # a 35.14 build's tables would be in sector 9: a D002.032 merge leaves it alone
+            self.assertIn("sector  9  0x080A0000..0x080BFFFF   128 KB  not touched\n", out)
             self.assertIn("sim      PASS", out)
 
     def test_merged_image_simulation(self):

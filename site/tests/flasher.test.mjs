@@ -87,6 +87,20 @@ test("the codec from a flash readout matches rfoundry", async () => {
 	assert.equal(await stockfw.fromFlash(new Uint8Array(0x100000).fill(0xFF), fb), null);
 });
 
+// A build whose code doesn't fit after its tables (RT3S V219.60): the code at the start of sector 10, below the
+// tables, the same from the stock file and from a readout as rfoundry places it
+test("code placed before the tables matches rfoundry", async () => {
+	const r = fx.readout_v21960;
+	const rprofiles = { [r.stock_sha256]: r.profile };
+	assert.equal(r.profile.placement.code, 0x080C0000);
+	assert.ok(r.profile.placement.code + r.profile.windows[0][1] <= r.profile.windows[1][0]);
+	const got = await stockfw.fromFlash(bin("flash-rt3s-v21960.bin"), fb, rprofiles);
+	assert.deepEqual(await Promise.all(got.segments.map(async ([a, d]) => [a, await sha256(d), d.length])), r.placed);
+	const fromStock = await stockfw.extract(bin("stock-rt3s-v21960.bin"), fromHex(r.key), fb, rprofiles);
+	assert.deepEqual(fromStock.segments, got.segments);
+	assert.deepEqual(fromStock.segments.map(([a]) => a), [0x080C0000, 0x080E322C, fb.descriptor.addr]);
+});
+
 // Every board with stock files: each file's profile in the flasher data, its codec the board's, its layout inside the
 // flash the board leaves to the codec and below the descriptor
 test("stock-file boards: profiles and layouts", () => {

@@ -75,14 +75,19 @@ id = 2
 tested = false
 spi = { bus = 1, mode = 0, hz = 4500000 }
 
-# The codec where the merge puts it (docs/spec/codec-placement.md): the main table window at its stock address in
-# sector 8, the small ones in sectors 10 and 11, the code moved to the start of sector 11 and the descriptor. The
-# application has sectors 3-7, so an update leaves the codec sectors alone. Stock firmware keeps the code in sectors 6
-# and 7, so no stock version leaves it in place and rfoundry merges it from the stock file. stock lists the SHA-256
+# The codec where the merge puts it (docs/spec/codec-placement.md). From D002.032: the main table window at its stock
+# address in sector 8, the small ones in sectors 10 and 11, the code moved to the start of sector 11. From a 35.14
+# build: the main table window at its stock address in sector 9, the code right after it, the small ones in sector 11.
+# Then the descriptor. The application has sectors 3-7, so an update leaves the codec sectors alone. D002.032 keeps
+# the code in sectors 6 and 7, so it can't stay in place and rfoundry merges it from the stock file. stock lists the SHA-256
 # of each stock file rfoundry merges the codec from (tools/rfoundry/rfoundry/stockfw.py PROFILES)
 [codec]
 tool = "codec_extract"
-stock = ["e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"]
+stock = [
+	"e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43",	# D002.032
+	"ff6c3d79b205391c9c2096f8e4367c514c1e1e4dac7d421ed69077e5b42eaf2f",	# MD-380 D35.14
+	"167e79f18e78d7d31460dc577c4efd0cb881344f5ee44a4c9a30798ead0fb79d",	# MD-390 S35.14
+]
 
 # How the site draws the radio
 [frame]
