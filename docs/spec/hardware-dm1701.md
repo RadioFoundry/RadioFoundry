@@ -246,7 +246,8 @@ clock is on. The AT1846S and HR_C6000 keep their state until the next start.
 
 ### 3.1 Interrupt priorities
 
-RTOS kernel at 7 (lowest); RTOS "max syscall" priority 5: ISRs that call RTOS APIs must be at 5..15.
+RTOS kernel at the lowest priority; RTOS "max syscall" priority 4: ISRs that call RTOS APIs must be at 4..15. No
+interrupt uses 4. The level is even so a part with 3 priority bits can hold it (14.1, [gotchas.md](gotchas.md) 13.11).
 
 | IRQ | Priority | Source |
 |---|---|---|
@@ -1189,6 +1190,23 @@ records are in `open-firmware-cps.md`.
 | LEDs | PE0 green, PE1 red, active high |
 | Backup SRAM | unused |
 | Watchdog | RadioFoundry starts the IWDG and feeds it from the idle task (`CONFIG_WATCHDOG`, [watchdog.md](watchdog.md)) |
+
+### 14.1 Geehy APM32F407 in place of the STM32F405
+
+Some DM-1701s are reported to carry a Geehy APM32F407VGT6, a pin-compatible STM32F4 clone, in place of the
+STM32F405VGT6 (a user's chip list, unverified on a radio we have). It reports the same device ID (0x413), so firmware
+can't tell the two apart that way. The differences that matter here:
+
+| Difference | APM32F407 | Effect on RadioFoundry |
+|---|---|---|
+| NVIC priority bits | 3 (8 levels; Geehy datasheet V1.1, 4.3.1) | Each priority keeps its top 3 bits: 4 and 5, 6 and 7 share a level. The RTOS syscall level must be even, or the kernel's start-up check fails every boot ([gotchas.md](gotchas.md) 13.11) |
+| ADC and temperature calibration in system memory | missing (user reports) | none: nothing reads them |
+| Internal flash programming | differs (user reports) | the application never writes internal flash; the vendor bootloader programs it |
+| ST-LINK | doesn't recognize the part (user reports) | debug probes only |
+
+Up to the syscall level fix, a radio with this part boots to a black screen: the backlight is still off from
+`board_early_init` when the scheduler starts, so no beep, no USB and no picture. The update mode, the vendor
+bootloader's, still works.
 
 ---
 
