@@ -234,6 +234,10 @@ test("a codec from a stock file or a program memory backup", async () => {
 	const got = await c7.codecFromFile(sim.progmem, sim.c, "dm1801pro");
 	assert.equal(got.codeAddr, sim.codec.codeAt);
 	await assert.rejects(c7.codecFromFile(new Uint8Array(1000), sim.c, "dm1801pro"), c7.CodecError);
+	// what each failure is, for the page's explanation (explain.js): not a vendor file, another radio's backup, no map
+	await assert.rejects(c7.codecFromFile(new Uint8Array(1000), sim.c, "dm1801pro"), (e) => e.code === "not-vendor");
+	await assert.rejects(c7.codecFromFile(new Uint8Array(sim.progmem.length), sim.c, "dm1801pro"), (e) => e.code === "wrong-key");
+	assert.throws(() => c7.slotBytes({ ...sim.c, codec_maps: [] }, "dm1801pro", got), (e) => e.code === "unmapped");
 	const slot = c7.slotBytes(sim.c, "dm1801pro", got);
 	assert.equal((await c7.decide(sim.c, "dm1801pro", { savedSlot: slot })).source, "browser");
 	// a codec slot that came with the user's firmware file has no name of its own: its text must not print an empty one

@@ -34,23 +34,24 @@ function notFirmware(d) {
 
 const isZip = (d) => d.length > 4 && d[0] === 0x50 && d[1] === 0x4B && d[2] === 0x03 && d[3] === 0x04;
 
-// Every file in what the user picked: [{path, data}] for the candidates, [{path, why}] for what was set aside
+// Every file in what the user picked: [{path, data}] for the candidates, [{path, why, problem}] for what was set aside
+// (problem: "not-firmware", "damaged" or "too-deep", for explain.js)
 export async function unpack(name, data, depth = 0, out = { files: [], skipped: [] }) {
 	if (!isZip(data)) {
 		const why = notFirmware(data);
-		if (why) out.skipped.push({ path: name, why });
+		if (why) out.skipped.push({ path: name, why, problem: "not-firmware" });
 		else out.files.push({ path: name, data });
 		return out;
 	}
 	if (depth >= MAX_DEPTH) {
-		out.skipped.push({ path: name, why: "a zip nested too deep" });
+		out.skipped.push({ path: name, why: "a zip nested too deep", problem: "too-deep" });
 		return out;
 	}
 	let entries;
 	try {
 		entries = await unzip(data);
 	} catch (e) {
-		out.skipped.push({ path: name, why: `a damaged zip (${e.message})` });
+		out.skipped.push({ path: name, why: `a damaged zip (${e.message})`, problem: "damaged" });
 		return out;
 	}
 	for (const [path, body] of entries) {
@@ -64,9 +65,10 @@ export async function unpack(name, data, depth = 0, out = { files: [], skipped: 
 // The STM32 radios that take a TYT/Baofeng container, one entry per bootloader key; the radio being flashed first
 const keyedBoards = (fb, first) => Object.values(fb.boards).filter((b) => b.key_sha256).sort((a, b) => (b.id === first) - (a.id === first));
 
-// One file against every radio: {board, kind, how, profile?, known?, key?, codecAt?, codec?} or {board: null, why}.
-// kind "codec": the codec can be taken from it; "key": it gives a radio's bootloader key, not a codec RadioFoundry can
-// place; "codec-unmapped": it holds the codec of a build without a map
+// One file against every radio: {board, kind, how, profile?, known?, key?, codecAt?, codec?} or {board: null, why,
+// problem}. kind "codec": the codec can be taken from it; "key": it gives a radio's bootloader key, not a codec
+// RadioFoundry can place; "codec-unmapped": it holds the codec of a build without a map. problem (no radio): "damaged",
+// "wrong-key" (a vendor container no known radio's key opens: another model, or a modified build) or "not-vendor"
 export async function identifyFile(data, fb, boardId = null) {
 	const sha = await sha256(data);
 	const prof = fb.profiles[sha];
@@ -80,7 +82,7 @@ export async function identifyFile(data, fb, boardId = null) {
 		try {
 			segs = stockfw.parseContainer(data, fb);
 		} catch (e) {
-			return { sha, board: null, why: e.message };
+			return { sha, board: null, why: e.message, problem: e.code === "not-vendor" ? "not-vendor" : "damaged" };
 		}
 		for (const b of keyedBoards(fb, boardId)) {
 			let key;
@@ -98,7 +100,7 @@ export async function identifyFile(data, fb, boardId = null) {
 			// a known file without a profile (KNOWN_FILES only) is known to give the key, not a codec RadioFoundry can place
 			return { sha, board: b.id, kind: codecAt === null || known ? "key" : "codec-unmapped", how: "key", key, known, codecAt };
 		}
-		return { sha, board: null, known, why: "a TYT/Baofeng firmware file for a radio whose bootloader key RadioFoundry doesn't know" };
+		return { sha, board: null, known, problem: "wrong-key", why: "a TYT/Baofeng firmware file for a radio whose bootloader key RadioFoundry doesn't know" };
 	}
 	if (c) {
 		for (const id of Object.keys(c.boards).sort((a, b) => (b === boardId) - (a === boardId))) {
@@ -106,13 +108,13 @@ export async function identifyFile(data, fb, boardId = null) {
 				const codec = await c7.codecFromFile(data, c, id);
 				return { sha, board: id, kind: "codec", how: "codec hashes", known: codec.profile?.name, codec };
 			} catch (e) {
-				if (/no recipe/.test(e.message)) return { sha, board: id, kind: "codec-unmapped", how: "codec signature", why: e.message };
+				if (e.code === "unmapped") return { sha, board: id, kind: "codec-unmapped", how: "codec signature", why: e.message };
 			}
 		}
 	}
 	const flash = await stockfw.fromFlash(data, fb);
 	if (flash) return { sha, board: flash.profile.board, kind: "codec", how: "readout", profile: flash.profile, known: flash.profile.name, flash };
-	return { sha, board: null, known, why: known ? `${known}, which gives no codec` : "not a firmware file RadioFoundry knows" };
+	return { sha, board: null, known, problem: "not-vendor", why: known ? `${known}, which gives no codec` : "not a firmware file RadioFoundry knows" };
 }
 
 const RANK = { codec: 3, "codec-unmapped": 1, key: 2 };
@@ -147,11 +149,21 @@ export function describe(opened, fb, boardId) {
 }
 
 // The file to offer for analysis when the page can't take the codec from what was picked: a vendor firmware container
-// (the headers the backend accepts, never a readout) of at most maxBytes, with what the page found as its reason
-export function analysisCandidate(opened, fb, maxBytes = 4 << 20) {
+// (the headers the backend accepts, never a readout) of at most maxBytes, with what the page found as its reason. Never
+// a file identified as another radio's: the page already knows what it is and says so
+export function analysisCandidate(opened, fb, boardId = null, maxBytes = 4 << 20) {
 	const magics = [fb.magic, fb.c7000?.stock_magic].filter(Boolean);
-	const f = opened.files.find((x) => x.match.kind !== "codec" && x.data.length <= maxBytes && magics.some((m) => startsWith(x.data, m)));
+	const f = opened.files.find((x) => x.match.kind !== "codec" && (!boardId || !x.match.board || x.match.board === boardId) &&
+		x.data.length <= maxBytes && magics.some((m) => startsWith(x.data, m)));
 	if (!f) return null;
 	const m = f.match;
 	return { file: f, reason: m.board ? m.kind : /bootloader key/.test(m.why || "") ? "key-unknown" : "unknown-container" };
+}
+
+// A file the page identified for this radio but failed on later (placing the codec, restoring): offered with reason,
+// under the same rules (a vendor container, at most maxBytes), or null
+export function offerFile(file, fb, reason, maxBytes = 4 << 20) {
+	const magics = [fb.magic, fb.c7000?.stock_magic].filter(Boolean);
+	if (!file?.data || file.data.length > maxBytes || !magics.some((m) => startsWith(file.data, m))) return null;
+	return { file, reason };
 }

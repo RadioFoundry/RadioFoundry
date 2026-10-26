@@ -17,6 +17,7 @@ import { Link, crc16, frame, parseFrames, probe } from "../static/js/flasher/lin
 import { FakeRadio, simulation } from "../static/js/flasher/fake.js";
 import { zip, unzip } from "../static/js/flasher/zip.js";
 import * as vendorfile from "../static/js/flasher/vendorfile.js";
+import * as explain from "../static/js/flasher/explain.js";
 import { readRadio, makeBundle, openBundle, bundleName } from "../static/js/flasher/backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "../static/js/flasher/restore.js";
 import { Selection } from "../static/js/flasher/select.js";
@@ -196,7 +197,109 @@ test("vendor file: only a vendor container the page can't use is offered for ana
 	// not a vendor container (a readout, anything else), or too large: never offered
 	const other = new Uint8Array(100000).fill(0x5A);
 	assert.equal(vendorfile.analysisCandidate(await vendorfile.openVendorFile("dump.bin", other, fbX, "x"), fbX), null);
-	assert.equal(vendorfile.analysisCandidate(await vendorfile.openVendorFile("new.bin", stock, fbX, "x"), fbX, stock.length - 1), null);
+	assert.equal(vendorfile.analysisCandidate(await vendorfile.openVendorFile("new.bin", stock, fbX, "x"), fbX, "x", stock.length - 1), null);
+});
+
+// OPENDIGITALRADIO-J: on the MD-380's page, with the MD-380's key, an MD-UV380 file matched its profile by SHA-256 and
+// failed only when decrypted, as "decrypted code window does not match (wrong key?)". Now refused by name, before
+// any decryption, whatever key is passed
+test("a file for another radio is refused by name, never blamed on the key", async () => {
+	const other = Object.keys(fb.boards).find((b) => b !== fx.profile.board && fb.boards[b].key_sha256);
+	const err = await stockfw.extract(stock, new Uint8Array(fb.key_len), fb, profiles, other).catch((e) => e);
+	assert.ok(err instanceof stockfw.StockError);
+	assert.equal(err.code, "other-radio");
+	assert.equal(err.params.board, fx.profile.board);
+	assert.match(err.message, new RegExp(`for the ${fb.boards[fx.profile.board].name}, not the ${fb.boards[other].name}`));
+	assert.doesNotMatch(err.message, /key/);
+	assert.deepEqual(explain.errorProblem(err), { problem: "other-radio", board: fx.profile.board, file: fx.profile.name, known: null, raw: err.message });
+	// the radio's own file goes through
+	assert.equal((await stockfw.extract(stock, fromHex(fx.key), fb, profiles, fx.profile.board)).segments.length, 3);
+});
+
+// The same with the real files: RFOUNDRY_MD380_STOCK (any MD-380 file, for its key) and RFOUNDRY_MDUV380_STOCK (an
+// MD-UV380 19.26 file)
+test("OPENDIGITALRADIO-J with the real files", { skip: !(process.env.RFOUNDRY_MD380_STOCK && process.env.RFOUNDRY_MDUV380_STOCK) && "set RFOUNDRY_MD380_STOCK and RFOUNDRY_MDUV380_STOCK" }, async () => {
+	const md380 = await vendorfile.openVendorFile("md380.bin", new Uint8Array(readFileSync(process.env.RFOUNDRY_MD380_STOCK)), fb, "md380");
+	const key = md380.best.match.key || await stockfw.deriveKey(md380.best.data, fb.boards.md380.key_sha256, fb);
+	const uv = new Uint8Array(readFileSync(process.env.RFOUNDRY_MDUV380_STOCK));
+	await assert.rejects(stockfw.extract(uv, key, fb), /window does not match/);	// as the live page failed
+	await assert.rejects(stockfw.extract(uv, key, fb, fb.profiles, "md380"), (e) => e.code === "other-radio" && /MD-UV380/.test(e.message));
+	// and the page never gets there: the opener names the file's radio and uses nothing
+	const opened = await vendorfile.openVendorFile("uv.bin", uv, fb, "md380");
+	assert.equal(opened.best, null);
+	assert.equal(explain.pickProblem(opened, "md380").problem, "other-radio");
+	assert.equal(vendorfile.analysisCandidate(opened, fb, "md380"), null);
+});
+
+// explain.js: what the user picked sorted into the problem the page explains
+test("a file that can't be used is explained: another radio, not a vendor file, damaged, unmapped, unknown key", async () => {
+	const fbX = await radioX();
+	const fbY = { ...fbX, boards: { ...fbX.boards, y: { id: "y", name: "Radio Y" } } };
+	const pick = async (name, data, f = fbX, board = "x", opts) => explain.pickProblem(await vendorfile.openVendorFile(name, data, f, board), board, opts);
+	// a build of this radio without a codec map: the codec can't be taken, but a restore of the original firmware can use it
+	assert.deepEqual(await pick("new.bin", stock), { problem: "unmapped", file: "new.bin", known: null });
+	assert.equal(await pick("new.bin", stock, fbX, "x", { need: "key" }), null);
+	// a mapped build: nothing wrong
+	assert.equal(await pick("x.bin", stock, await radioX({ profiles: { [fx.stock_sha256]: { ...fx.profile, board: "x" } } })), null);
+	// the same file on another radio's page, for either need
+	assert.deepEqual(await pick("new.bin", stock, fbY, "y"), { problem: "other-radio", file: "new.bin", board: "x", known: null });
+	assert.equal((await pick("new.bin", stock, fbY, "y", { need: "key" })).problem, "other-radio");
+	// a vendor container no known key opens: another model, or a modified build
+	assert.equal((await pick("new.bin", stock, { ...fbX, boards: {} })).problem, "wrong-key");
+	// another firmware project's image, a plain readout without a known codec, or a zip of documents
+	assert.equal((await pick("other-project.bin", new Uint8Array(100000).fill(0x5A))).problem, "not-vendor");
+	assert.deepEqual(await pick("docs.zip", await zip([{ name: "manual.doc", data: ole() }])), { problem: "not-vendor", file: "manual.doc" });
+	// cut short (an interrupted download) or a damaged zip
+	assert.equal((await pick("cut.bin", stock.slice(0, stock.length - 5000))).problem, "damaged");
+	const z = await zip([{ name: "fw.bin", data: stock }]);
+	const bad = z.slice();
+	bad[60] ^= 0xFF;
+	assert.equal((await pick("fw.zip", bad)).problem, "damaged");
+	// the send offer: never for another radio's file, which the page names instead
+	assert.equal(vendorfile.analysisCandidate(await vendorfile.openVendorFile("new.bin", stock, fbY, "y"), fbY, "y"), null);
+	assert.equal(vendorfile.analysisCandidate(await vendorfile.openVendorFile("new.bin", stock, fbX, "x"), fbX, "x").reason, "codec-unmapped");
+	// a file identified for this radio that failed later: offered only if it is a vendor container within the limit
+	assert.equal(vendorfile.offerFile({ path: "a.bin", data: stock }, fbX, "internal").reason, "internal");
+	assert.equal(vendorfile.offerFile({ path: "a.bin", data: new Uint8Array(100000) }, fbX, "internal"), null);
+	// errors that aren't about a file stay as they are
+	assert.equal(explain.errorProblem(new Error("stopped")), null);
+	assert.equal(explain.errorProblem(new stockfw.StockError("x", "internal")).problem, "internal");
+});
+
+test("an error report names the picked file and what was found, never its bytes", async () => {
+	const fbX = await radioX();
+	const opened = await vendorfile.openVendorFile("fw.zip", await zip([{ name: "a/new.bin", data: stock }, { name: "a/setup.exe", data: (() => { const d = new Uint8Array(70000); d.set([0x4D, 0x5A]); return d; })() }]), fbX, "x");
+	const ctx = explain.vendorContext({ boardId: "x", picked: { name: "fw.zip", size: 123, sha256: "ab".repeat(32) }, opened,
+		problem: { problem: "unmapped", raw: "no codec map" }, keySource: "file", decision: { mode: "merge", source: "stock" } });
+	assert.equal(ctx.board, "x");
+	assert.deepEqual(ctx.picked, { name: "fw.zip", size: 123, sha256: "ab".repeat(32) });
+	assert.deepEqual(ctx.files, [{ path: "a/new.bin", size: stock.length, sha256: await sha256(stock), board: "x", kind: "codec-unmapped", how: "key", known: null, problem: null }]);
+	assert.deepEqual(ctx.skipped, [{ path: "a/setup.exe", problem: "not-firmware" }]);
+	assert.equal(ctx.used, "a/new.bin");
+	assert.equal(ctx.key, "file");
+	assert.deepEqual(ctx.problem, { problem: "unmapped", board: null, raw: "no codec map" });
+	const text = JSON.stringify(ctx);
+	assert.ok(!text.includes("bytes>") && text.length < 2000, "no file contents");
+	assert.equal(explain.vendorContext({}), null);
+});
+
+// Restoring the original firmware takes any build of the radio, mapped or not: the key and the application come from
+// it, not the codec. A build without a profile still writes its whole application back
+test("the original firmware goes back from a build without a codec profile", async () => {
+	const fbX = await radioX();
+	const opened = await vendorfile.openVendorFile("new.bin", stock, fbX, "x");
+	const m = opened.best.match;
+	assert.equal(m.kind, "codec-unmapped");
+	const xb = { ...board, id: "x", app_base: fbX.boards.x.app_base };
+	const plan = planStock(opened.best.data, m.key, xb, fbX);
+	const [addr, app] = stockfw.stockApplication(opened.best.data, m.key, xb, fbX);
+	assert.equal(addr, xb.app_base);
+	assert.ok(plan.totalBlocks > 0 && plan.totalBlocks * 1024 >= app.length);
+	// the same application the profiled file gives
+	const [, known] = stockfw.stockApplication(stock, fromHex(fx.key), board, fb);
+	assert.deepEqual(app, known);
+	// not this radio's: the key can't come from it, and the page says why before it gets there
+	await assert.rejects(stockfw.deriveKey(new Uint8Array(100000).fill(0x5A), fbX.boards.x.key_sha256, fbX), (e) => e.code === "not-vendor");
 });
 
 test("codec extraction checks every window", async () => {

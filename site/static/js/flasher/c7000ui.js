@@ -21,6 +21,7 @@ import { SerialStream, Link, probe, serialSupported } from "./link.js";
 import { Stub, stubImages, StubError, DONE_LED, MEM } from "./stub.js";
 import * as c7 from "./c7000.js";
 import { openVendorFile, describe as describeVendorFile, analysisCandidate } from "./vendorfile.js";
+import { pickProblem } from "./explain.js";
 import { upgradeSlot } from "./c7000v1.js";
 import { radioTop } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
@@ -36,7 +37,8 @@ const CH340 = 0x1A86;
 const ROM_WAIT = 180000;		// how long the page listens for the boot ROM per try
 const BOOT_MS = 9000;			// a soft reset to RadioFoundry answering its debug link (bench 2026-10-15: 8-9 s)
 
-let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, errorText, stubJson}
+let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, errorText, analysisOffer,
+					// problemNotice, failureNotice, stubJson}
 const S = () => ctx.S;
 const C = () => ctx.fb().c7000;
 const boardId = () => S().radio.flash.board;
@@ -518,20 +520,29 @@ export function checkView() {
 			: d.mode === "none" ? t("flash.c7.codec.none") : t(`flash.c7.codec.from_${d.source}`, { name: d.name || "", tag: String(d.tag ?? "").padStart(3, "0") });
 		say("codec", d ? (d.mode === "none" ? "bad" : "ok") : "bad", text);
 		// any vendor file: a .bin, a readout or the vendor's zip, opened as on every radio's page (vendorfile.js)
+		// a file that gives no codec is explained (explain.js), with what each file in the pick is; what was picked goes into
+		// error reports (S.vendorPick)
 		const pick = filePicker(t("flash.c7.codec.pick"), ".bin,.zip", async (f) => {
+			let opened = null;
 			try {
-				const opened = await openVendorFile(f.name, f.data, ctx.fb(), boardId());
+				S().vendorPick = { picked: { name: f.name, size: f.data.length, sha256: await sha256(f.data) }, opened: null, problem: null };
+				opened = await openVendorFile(f.name, f.data, ctx.fb(), boardId());
+				S().vendorPick.opened = opened;
 				const got = opened.best?.match;
 				if (got?.kind !== "codec") {
 					const lines = describeVendorFile(opened, ctx.fb(), boardId());
-					fill(status, h("div", { class: "notice bad" }, h("p", {}, got?.why || t("flash.c7.codec.file_unusable")), h("ul", { class: "small" }, lines.map((l) => h("li", {}, l)))),
-						ctx.analysisOffer(analysisCandidate(opened, ctx.fb()), boardId()));
+					fill(status, ctx.problemNotice(pickProblem(opened, boardId()), { offer: analysisCandidate(opened, ctx.fb(), boardId()) }),
+						h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, lines.map((l) => h("li", {}, l)))));
 					return;
 				}
 				c.fileCodec = got.codec;
+				S().vendorPick.decision = { mode: "write", source: "file" };
 				await decideView();
 			} catch (e) {
-				fill(status, notice(ctx.errorText(e), "bad"));
+				// a codec the page identified but can't put in the slot (no map, a check failing): the file is offered
+				c.fileCodec = null;
+				const used = opened?.best;
+				fill(status, ctx.failureNotice(e, used ? { name: used.path.split("/").pop(), data: used.data } : null));
 			}
 		});
 		fill(status, 

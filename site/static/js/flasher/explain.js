@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+// Why a vendor file can't be used, as one of a few problems the page explains with what happened, why and what to do
+// (docs/dev/web-flasher.md, "When a file can't be used"). The modules under the page say exactly what failed (stockfw.js
+// StockError and c7000.js CodecError carry a code; vendorfile.js marks every file it opened); this sorts that into a
+// problem. The exact message stays for the technical details and the error report. No DOM here, so the host tests
+// check it.
+
+// other-radio  a file for another radio RadioFoundry knows (board names it)
+// wrong-key    a vendor container this radio's bootloader key doesn't open: another model, or a modified build
+// not-vendor   not a vendor firmware file at all: a plain image, another firmware project's build, a zip without one
+// unmapped     this radio's build, but the codec can't be taken from it yet (no codec map)
+// damaged      a cut-short or damaged file or zip
+// internal     a check failing after the file was identified: a fault in the flasher or its data, not in the file
+export const PROBLEMS = ["other-radio", "wrong-key", "not-vendor", "unmapped", "damaged", "internal"];
+
+// Problems where sending the file can help: a build the project can add, or a fault the file reproduces
+export const OFFER = new Set(["unmapped", "wrong-key", "internal"]);
+
+const base = (path) => (path || "").split("/").pop();
+
+// The problem with what the user picked (vendorfile.openVendorFile's result), or null when a file in it serves.
+// need "codec": the codec must come from it; "key": only the bootloader key and the application (restoring the
+// original firmware), so any build of this radio does
+export function pickProblem(opened, boardId, { need = "codec" } = {}) {
+	const best = opened.best;
+	if (best) {
+		if (need === "key" || best.match.kind === "codec") return null;
+		return { problem: "unmapped", file: base(best.path), known: best.match.known || null };
+	}
+	const other = opened.files.find((f) => f.match.board && f.match.board !== boardId);
+	if (other) return { problem: "other-radio", file: base(other.path), board: other.match.board, known: other.match.known || null };
+	const marked = (p) => opened.files.find((f) => f.match.problem === p);
+	const f = marked("wrong-key") || marked("damaged");
+	if (f) return { problem: f.match.problem, file: base(f.path), known: f.match.known || null };
+	if (!opened.files.length && opened.skipped.some((s) => s.problem === "damaged" || s.problem === "too-deep"))
+		return { problem: "damaged", file: base(opened.skipped.find((s) => s.problem !== "not-firmware").path) };
+	return { problem: "not-vendor", file: base(opened.files[0]?.path || opened.skipped[0]?.path || "") };
+}
+
+// The problem behind a thrown error, or null when it isn't a file problem (a cable, a radio, a user's choice)
+export function errorProblem(e) {
+	if (!e || !PROBLEMS.includes(e.code) || !["StockError", "CodecError"].includes(e.name)) return null;
+	return { problem: e.code, board: e.params?.board || null, file: e.params?.file || null, known: e.params?.known || null, raw: e.message };
+}
+
+// What an error report carries about the vendor file the user picked: never its bytes. picked: {name, size, sha256}
+// of what the user chose (a zip, or the file itself); opened: openVendorFile's result
+export function vendorContext({ boardId = null, picked = null, opened = null, problem = null, keySource = null, decision = null } = {}) {
+	if (!picked && !opened && !problem) return null;
+	const used = opened?.best || null;
+	const prof = used?.match.profile;
+	return {
+		board: boardId,
+		picked: picked ? { name: String(picked.name || "").slice(0, 80), size: picked.size, sha256: picked.sha256 || null } : null,
+		files: (opened?.files || []).slice(0, 20).map((f) => ({ path: String(f.path).slice(0, 80), size: f.size ?? f.data?.length,
+			sha256: f.match.sha || null, board: f.match.board || null, kind: f.match.kind || null, how: f.match.how || null,
+			known: f.match.known || null, problem: f.match.problem || null })),
+		skipped: (opened?.skipped || []).slice(0, 20).map((s) => ({ path: String(s.path).slice(0, 80), problem: s.problem || null })),
+		used: used ? String(used.path).slice(0, 80) : null,
+		profile: prof ? { name: prof.name, board: prof.board } : null,
+		key: keySource,
+		decision,
+		problem: problem ? { problem: problem.problem, board: problem.board || null, raw: problem.raw ? String(problem.raw).slice(0, 300) : null } : null,
+	};
+}

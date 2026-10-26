@@ -18,12 +18,13 @@
 
 import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import * as stockfw from "./stockfw.js";
-import { openVendorFile, describe as describeVendorFile, analysisCandidate } from "./vendorfile.js";
+import { openVendorFile, describe as describeVendorFile, analysisCandidate, offerFile } from "./vendorfile.js";
+import { pickProblem, errorProblem, vendorContext, OFFER } from "./explain.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
 import { validRef, refShort, defaultRef } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
-import { Dfu, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, serialSupported } from "./link.js";
+import { Dfu, DfuError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
+import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, serialSupported } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -41,7 +42,7 @@ import { F4Stub, f4Image } from "./f4stub.js";
 import { f4LoaderReader } from "./readers.js";
 import { register, backendOf, bundleBackend, allBackends } from "./backends.js";
 import * as diag from "../diag.js";
-import { initReporting, reportLine } from "../report.js";
+import { initReporting, reportLine, reportingActive } from "../report.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
@@ -50,13 +51,25 @@ const app = document.getElementById("flasher");
 
 class NetworkModeError extends Error {}
 
-// Every error shown goes through here: it is logged once (console, bug report) with the step it happened in
+// Every error shown goes through here: it is logged once (console, bug report) with the step it happened in. The
+// browser's own USB and serial errors say little ("Failed to open serial port."): they get what to do, with the
+// browser's words after it for a bug report
 function errorText(e) {
 	diag.error(`${S.task || "start"}/${stepsFor()?.[S.step] ?? S.step}`, e);
+	const raw = e?.message || String(e);
+	const withRaw = (key) => `${t(key)} (${raw})`;
 	if (e instanceof NetworkModeError) return t("flash.net.found");
-	if (e?.name === "NotFoundError") return t("flash.err.no_device");
+	if (e?.name === "NotFoundError") return /disconnect/i.test(raw) ? withRaw("flash.err.disconnected") : t("flash.err.no_device");
 	if (e?.name === "SecurityError") return t("flash.err.security");
-	return e?.message || String(e);
+	if (e?.name === "InvalidStateError") return withRaw("flash.err.port_open");
+	if (e?.name === "NotAllowedError") return withRaw("flash.err.not_allowed");
+	if (e?.name === "NetworkError") return withRaw(/open serial port/i.test(raw) ? "flash.err.port_busy" : /claim|access denied/i.test(raw) ? "flash.err.usb_busy" : "flash.err.connection_lost");
+	if (e?.name === "BufferOverrunError" || e?.name === "BreakError" || e?.name === "FramingError" || e?.name === "ParityError") return withRaw("flash.err.connection_lost");
+	if (e instanceof DfuError && /^USB transfer/.test(raw)) return withRaw("flash.err.connection_lost");
+	if (e instanceof LinkError && /^no answer/.test(raw)) return withRaw("flash.err.no_answer");
+	// fetch's own failure: offline, blocked, or the server unreachable
+	if (e instanceof TypeError && /fetch/i.test(raw)) return withRaw("flash.err.download");
+	return raw;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -69,6 +82,8 @@ const initialState = () => ({
 	now: null,		// what runs on the radio: {kind: "rfoundry", probe} | {kind: "stock", version} | {kind: "unknown"}
 	stock: null,		// {name, data, info: identify()}
 	key: null,
+	keySource: null,	// where the key came from (getKey), for error reports
+	vendorPick: null,	// the last vendor file picked and what was found in it (pickedStock), for error reports
 	decision: null,
 	backupParts: [], backupDone: false,
 	bundle: null, restoreTarget: null,
@@ -146,18 +161,22 @@ async function api(method, path, body) {
 	return j;
 }
 
-// "Send this file for further analysis": a vendor firmware file the page couldn't take the codec from goes to the
-// backend (POST /v1/samples: vendor containers only, size and rate limited, never served back), so its build can be
-// mapped. Only on the user's click, with what was found; nothing from the radio. Not offered in a simulation
-function analysisOffer(cand, boardId) {
+// "Send this file for further analysis": a vendor firmware file the page couldn't take the codec from, or failed on after
+// identifying it, goes to the backend (POST /v1/samples: vendor containers only, size and rate limited, never served
+// back), so its build can be mapped or the fault reproduced. Only on the user's click, with what was found; nothing
+// from the radio. problem (explain.js): what went wrong; for a fault in the page its message goes with the user's note.
+// Not offered in a simulation
+function analysisOffer(cand, boardId, problem = null) {
 	if (!cand || S.sim) return null;
+	const internal = problem?.problem === "internal";
 	const status = h("p", { class: "small" });
-	const note = h("textarea", { class: "analysis-note", rows: 2, maxlength: 500, placeholder: t("flash.analysis.note") });
+	const note = h("textarea", { class: "analysis-note", rows: 2, maxlength: 400, placeholder: t("flash.analysis.note") });
 	const send = button(t("flash.analysis.send"), async () => {
 		send.disabled = true;
 		status.textContent = t("flash.analysis.sending");
-		const q = new URLSearchParams({ board: boardId, name: cand.file.path.split("/").pop(), reason: cand.reason,
-			version: S.data.site.version || "", note: note.value.trim() });
+		const page = internal && problem.raw ? ` [page: ${problem.raw}]` : "";
+		const q = new URLSearchParams({ board: boardId, name: cand.file.path?.split("/").pop() || cand.file.name || "", reason: cand.reason,
+			version: S.data.site.version || "", note: (note.value.trim() + page).slice(0, 500) });
 		try {
 			const r = await fetch(new URL(`samples?${q}`, API), { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: cand.file.data });
 			const j = await r.json().catch(() => ({}));
@@ -168,8 +187,36 @@ function analysisOffer(cand, boardId) {
 			send.disabled = false;
 		}
 	});
+	const name = cand.file.path?.split("/").pop() || cand.file.name || "";
 	return h("div", { class: "notice" }, h("strong", {}, t("flash.analysis.title")),
-		h("p", {}, t("flash.analysis.text", { name: cand.file.path.split("/").pop() })), note, send, status);
+		h("p", {}, t(internal ? "flash.analysis.text_internal" : "flash.analysis.text", { name })), note, send, status);
+}
+
+const radioName = (id) => fb().boards[id]?.name || S.data?.radios?.find((r) => r.id === id)?.name || id || "";
+
+// Why a picked vendor file can't be used (explain.js): what happened, why, what to do, the exact message folded away,
+// and the send offer where the file can help. offer: the analysis candidate for this problem
+function problemNotice(p, { offer = null, boardId = S.board?.id } = {}) {
+	S.vendorPick = { ...(S.vendorPick || {}), problem: p };
+	const vars = { file: p.file || t("flash.problem.this_file"), radio: radioName(boardId), other: radioName(p.board),
+		what: p.known || t("flash.codec.stock_build", { radio: radioName(boardId) }) };
+	const internal = p.problem === "internal";
+	return h("div", { class: "notice bad problem" },
+		h("strong", {}, t(`flash.problem.${p.problem}.title`, vars)),
+		h("p", {}, t(`flash.problem.${p.problem}.text`, vars), internal ? [" ", t(reportingActive() ? "flash.problem.internal.reported" : "flash.problem.internal.report")] : null),
+		p.raw ? h("details", { class: "small" }, h("summary", {}, t("flash.problem.details")), h("pre", { class: "log" }, p.raw)) : null,
+		OFFER.has(p.problem) ? analysisOffer(offer, boardId, p) : null,
+		internal && !reportingActive() ? reportLine() : null);
+}
+
+// An error from a step that uses a vendor file: its problem explained when it is one (logged and reported like every
+// error), else the plain message. file: the vendor file in use ({name, data}), offered when the fault is the page's
+function failureNotice(e, file = null) {
+	const text = errorText(e);
+	const p = errorProblem(e);
+	if (!p) return notice(text, "bad");
+	return problemNotice({ ...p, file: p.file || file?.name || null },
+		{ offer: file ? offerFile({ path: file.name, data: file.data }, fb(), p.problem) : null });
 }
 
 // One id per use: the custom build requests and the write that follows share it; each write ends the use
@@ -413,6 +460,7 @@ async function keyFromRadio(link) {
 	if (!key) return;
 	S.key = key;
 	S.keyFromRadio = true;
+	S.keySource = "radio";
 	if (!S.sim) try { localStorage.setItem(KEY_STORE(S.board.id), toHex(key)); } catch (e) { /* not remembered */ }
 }
 
@@ -429,30 +477,54 @@ async function codecFromRadio(link, probe, status) {
 }
 
 // A stock file the user picked (a .bin, a readout, or the vendor's zip with updaters and several builds inside),
-// opened by vendorfile.js: the best file for this radio, identified, and one line per file for the page (report)
+// opened by vendorfile.js: the best file for this radio, identified, one line per file for the page (report), and
+// what is wrong with it when nothing in it serves (explain.js): problem for the codec, keyProblem for a restore of the
+// original firmware, which takes any build of this radio. What was picked also goes into error reports (S.vendorPick)
 async function pickedStock(f) {
+	const picked = { name: f.name, size: f.data.length, sha256: await sha256(f.data) };
+	const none = { sha: null, known: null, profile: null };
 	try {
 		const opened = await openVendorFile(f.name, f.data, fb(), S.board.id);
 		const report = describeVendorFile(opened, fb(), S.board.id);
 		const b = opened.best;
-		const analysis = analysisCandidate(opened, fb());
-		if (!b) return { ...f, report, analysis, info: { sha: null, known: null, profile: null } };
-		return { name: b.path.split("/").pop(), data: b.data, report, analysis, match: b.match, info: await stockfw.identify(b.data, fb()) };
+		const common = { picked, opened, report, analysis: analysisCandidate(opened, fb(), S.board.id),
+			problem: pickProblem(opened, S.board.id), keyProblem: pickProblem(opened, S.board.id, { need: "key" }) };
+		S.vendorPick = { picked, opened, problem: common.problem };
+		if (!b) return { ...f, ...common, info: none };
+		return { name: b.path.split("/").pop(), data: b.data, ...common, match: b.match, info: await stockfw.identify(b.data, fb()) };
 	} catch (e) {
-		console.warn(e.message);
-		return { ...f, report: [e.message], info: { sha: null, known: null, profile: null } };
+		// the opener reports what it can't read as a file problem, so this is the page's own fault
+		diag.error("flash/open file", e);
+		const problem = { problem: "internal", file: f.name, raw: e.message };
+		S.vendorPick = { picked, opened: null, problem };
+		return { ...f, picked, report: [e.message], problem, keyProblem: problem, info: none };
 	}
 }
 
+// A stock file for this radio, whichever build: what a restore of the original firmware needs (the key and the
+// application), not a codec profile
+const stockForRadio = (st) => !!st && (st.match ? st.match.board === S.board.id : !!st.info?.profile && st.info.profile.board === S.board.id);
+
+// S.keySource says where the key came from, for error reports: "radio" (keyFromRadio), "saved", "file" or "sim"
 async function getKey(board) {
 	if (S.key) return S.key;
-	if (S.sim) return (S.key = S.sim.key);
+	if (S.sim) {
+		S.keySource = "sim";
+		return (S.key = S.sim.key);
+	}
 	const saved = savedKey(board);
 	if (saved) {
-		try { return (S.key = await checkKey(saved, board)); } catch (e) { /* stale: derive again */ }
+		try {
+			S.key = await checkKey(saved, board);
+			S.keySource = "saved";
+			return S.key;
+		} catch (e) { /* stale: derive again */ }
 	}
 	if (!S.stock) throw new Error(t("flash.err.need_stock_for_key"));
-	S.key = await checkKey(await stockfw.deriveKey(S.stock.data, board.key_sha256, fb()), board);
+	// the opener already derived it from a build it had no profile for
+	const found = S.stock.match?.board === board.id ? S.stock.match.key : null;
+	S.key = await checkKey(found || await stockfw.deriveKey(S.stock.data, board.key_sha256, fb()), board);
+	S.keySource = "file";
 	try { localStorage.setItem(KEY_STORE(board.id), toHex(S.key)); } catch (e) { /* not remembered */ }
 	return S.key;
 }
@@ -710,7 +782,8 @@ function buildView() {
 				filePicker(t("flash.build.own_manifest"), ".json", async (f) => { S.ownManifest = JSON.parse(new TextDecoder().decode(f.data)); })));
 		wrap.replaceChildren(
 			panel(t("flash.build.title"),
-				S.radio.status !== "supported" ? notice(t("flash.build.untested", { name: S.radio.name }), "bad") : null,
+				// "back up first" only where the original firmware can be backed up before the installation
+				S.radio.status !== "supported" ? notice(t(S.radio.backup?.stock === "none" ? "flash.build.untested_keep_file" : "flash.build.untested", { name: S.radio.name }), "bad") : null,
 				...options,
 				h("p", {}, t("flash.build.lead")),
 				h("div", { class: "choice-grid", role: "radiogroup" }, cards),
@@ -1067,7 +1140,7 @@ function codecView() {
 			forward(null);
 			return;
 		}
-		const haveStock = !!(S.stock && fb().profiles[S.stock.info.sha]);
+		const haveStock = fb().profiles[S.stock?.info.sha]?.board === S.board.id;
 		const keyKnown = S.sim || !!S.key || !!savedKey(S.board);
 		// the copy an earlier visit read from this radio: an update that stopped halfway leaves none in the radio, and a
 		// radio back on stock firmware or in its bootloader can't say what it holds
@@ -1099,17 +1172,17 @@ function codecView() {
 			: t(S.savedCodec.stored ? "flash.codec.codec_from_radio" : "flash.codec.codec_from_radio_unsaved");
 		const picker = S.sim ? button(t("flash.sim.use_stock"), async () => { await useStock({ name: "simulated-stock.bin", data: S.sim.stock }); })
 			: filePicker(t("flash.codec.stock_pick"), ".bin,.zip", useStock);
-		const loadedText = S.stock && t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known
-			|| (S.stock.match?.board === S.board.id ? t("flash.codec.stock_build", { radio: S.board.name }) : t("flash.codec.stock_unknown")) });
+		// shown only for a file that serves (a problem has its own notice)
+		const loadedText = S.stock && t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known || t("flash.codec.stock_build", { radio: S.board.name }) });
 		// a known file without a codec profile (MD-380 D2.30) gives the bootloader key, not the codec: say what it's good for
-		const keyOnly = S.stock?.info.known && !fb().profiles[S.stock.info.sha];
-		// a build with the codec but no map yet, or a file for another radio: what each file in the pick is
-		const unmapped = S.stock?.match?.kind === "codec-unmapped" && t("flash.codec.stock_unmapped", { files: stockFiles() });
-		const report = S.stock?.report?.length > 1 || (S.stock && !S.stock.info.profile)
-			? h("details", { class: "small", open: !S.stock.info.known }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, S.stock.report.map((l) => h("li", {}, l)))) : null;
+		const keyOnly = S.stock?.info.known && !fb().profiles[S.stock.info.sha] && S.stock.match?.board === S.board.id;
+		// anything else that gives no codec: why, and what to select instead (explain.js); what each file in the pick is
+		const problem = !keyOnly && S.stock?.problem;
+		const report = S.stock?.report?.length > 1 || (S.stock && !haveStock)
+			? h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, S.stock.report.map((l) => h("li", {}, l)))) : null;
 		const loaded = !S.stock ? null : [keyOnly ? notice(`${loadedText}. ${t("flash.codec.stock_key_only", { files: stockFiles() })}`, "action")
-			: unmapped ? notice(`${loadedText}. ${unmapped}`, "action")
-			: S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad"), report, analysisOffer(S.stock.analysis, S.board.id)];
+			: problem ? problemNotice(problem, { offer: S.stock.analysis })
+			: h("p", {}, "✓ ", loadedText), report];
 		// a download link only where there is a known one; no vague pointers
 		const where = [h("p", {}, t("flash.codec.stock_files", { files: stockFiles() }),
 			S.radio.flash.stock_download ? [" ", h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download"))] : null),
@@ -1144,7 +1217,7 @@ function codecView() {
 	};
 	async function useStock(f) {
 		S.stock = await pickedStock(f);
-		if (!S.keyFromRadio) S.key = null;
+		if (!S.keyFromRadio) S.key = S.keySource = null;
 		draw();
 	}
 	out.append(h("p", { class: "muted" }, t("flash.loading")));
@@ -1182,7 +1255,8 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 			const key = await getKey(S.board);
 			plan = await makePlanFn(key);
 		} catch (e) {
-			box.replaceChildren(h("h2", {}, title), notice(errorText(e), "bad"));
+			// the stock file is what the key and the codec come from: a problem with it is explained, not just quoted
+			box.replaceChildren(h("h2", {}, title), failureNotice(e, S.stock));
 			return;
 		}
 		const fp = h("div");
@@ -1257,7 +1331,7 @@ function writeView() {
 		if (S.decision.mode === MERGE && S.decision.source === "saved") {
 			prof = S.savedCodec.profile;
 			codec = await codecSegments(prof, S.savedCodec.segments, fb());
-		} else if (S.decision.mode === MERGE) ({ profile: prof, segments: codec } = await stockfw.extract(S.stock.data, S.key, fb()));
+		} else if (S.decision.mode === MERGE) ({ profile: prof, segments: codec } = await stockfw.extract(S.stock.data, S.key, fb(), fb().profiles, S.board.id));
 		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec,
 			prof ? stockfw.layoutWindows(prof, fb()) : S.board.codec.windows);
 	}, next, what, opts);
@@ -1469,8 +1543,8 @@ function restoreView() {
 	const parts = [panel(t("flash.restore.what"), summary, choices)];
 	// the stock file: the application to write back, or (any target) where the bootloader key comes from
 	if (S.restoreTarget === "codeplug") parts.push(afterRestore());
-	else if (S.restoreTarget && !S.stock && (S.restoreTarget === "stock" || (!S.sim && !S.key && !savedKey(S.board))))
-		parts.push(panel(t("flash.codec.stock_title"), h("p", {}, t("flash.restore.stock_needed")),
+	else if (S.restoreTarget && !stockForRadio(S.stock) && (S.restoreTarget === "stock" || (!S.sim && !S.key && !savedKey(S.board))))
+		parts.push(panel(t("flash.codec.stock_title"), h("p", {}, t("flash.restore.stock_needed")), stockPickProblem(),
 			filePicker(t("flash.codec.stock_pick"), ".bin,.zip", async (f) => { S.stock = await pickedStock(f); render(); })));
 	else if (S.restoreTarget) {
 		parts.push(bootloaderPanel(t("flash.restore.write_title"), async (key) =>
@@ -1563,6 +1637,10 @@ function reportContext() {
 		version: VERSION_REF || null,
 		firmware: S.firmware ? { source: S.firmware.source, version: S.firmware.manifest?.version, git: S.firmware.manifest?.git } : null,
 		now: S.now ? { kind: S.now.kind, version: S.now.version || null, board: p?.board, git: p?.git, features: p?.features, codec: p?.codec } : null,
+		// the vendor file picked and what was found in it (names, sizes, hashes; never its bytes): enough to tell a wrong
+		// radio's file, a build without a codec map or a fault in the page apart from the report alone
+		vendor_file: vendorContext({ boardId: S.board?.id || null, ...(S.vendorPick || {}), keySource: S.keySource,
+			decision: S.decision ? { mode: S.decision.mode, source: S.decision.source || null } : S.vendorPick?.decision || null }),
 	};
 }
 
@@ -1684,7 +1762,6 @@ function stuckInUpdateMode() {
 		h("p", { class: "small muted" }, t("flash.help.iap_original")));
 }
 
-// STM32 radios back on their original firmware, from the stock file, through update mode (no backup needed)
 // The board's supported stock files as a short text: their names when there are a few, else how many there are and
 // their versions (the codec page lists every name under it)
 const STOCK_NAMES_MAX = 6;
@@ -1696,13 +1773,24 @@ function stockFiles() {
 	return t("flash.codec.stock_versions", { n: names.length, versions: versions.join(", ") });
 }
 
+// A picked stock file that can't restore the original firmware (not this radio's, not a vendor file, damaged): why,
+// and what each file in the pick is
+function stockPickProblem() {
+	if (!S.stock || stockForRadio(S.stock)) return null;
+	const p = S.stock.keyProblem || { problem: "not-vendor", file: S.stock.name };
+	return h("div", {}, problemNotice(p, { offer: S.stock.analysis }), S.stock.report?.length
+		? h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, S.stock.report.map((l) => h("li", {}, l)))) : null);
+}
+
+// STM32 radios back on their original firmware, from the owner's stock file, through update mode (no backup needed).
+// Any build of this radio does, mapped or not: the bootloader key and the application come from it, not the codec
 function stockRecovery(go) {
-	if (!S.stock?.info?.known) {
+	if (!stockForRadio(S.stock)) {
 		const picker = S.sim ? button(t("flash.sim.use_stock"), async () => { S.stock = { name: "simulated-stock.bin", data: S.sim.stock, info: await stockfw.identify(S.sim.stock, fb()) }; render(); })
 			: filePicker(t("flash.codec.stock_pick"), ".bin,.zip", async (f) => { S.stock = await pickedStock(f); render(); });
 		const where = S.radio.flash.stock_download ? h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download")) : null;
-		return panel(t("flash.help.stock_title"), h("p", {}, t("flash.help.stock_need", { files: stockFiles() }), " ", where),
-			S.stock ? notice(t("flash.codec.stock_loaded", { name: S.stock.name, what: t("flash.codec.stock_unknown") }), "bad") : null, picker);
+		return panel(t("flash.help.stock_title"), h("p", {}, t("flash.help.stock_need", { radio: S.board.name, files: stockFiles() }), " ", where),
+			stockPickProblem(), picker);
 	}
 	return bootloaderPanel(t("flash.help.stock_title"), async (key) => planStock(S.stock.data, key, S.board, fb()), () => {
 		if (S.fakeRadio) S.fakeRadio.running = "stock";
@@ -1724,7 +1812,7 @@ async function main() {
 		app.replaceChildren(notice(t("flash.err.load"), "bad"), reportLine());
 		return;
 	}
-	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText, analysisOffer,
+	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText, analysisOffer, problemNotice, failureNotice,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
 	// #sim=<board>[-stock]: that board, running RadioFoundry or its stock firmware; #sim: the first radio on stock firmware
 	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock)?)?(?:&|$)/);
