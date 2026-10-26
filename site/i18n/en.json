@@ -1005,7 +1005,7 @@
  "flash.factory.offer_restore": "This uses the radio's own update mode, which you enter by holding keys while you turn the radio on, and writes the backup or original firmware you selected.",
  "flash.factory.codec_file": "Nothing is read from the radio through the factory update mode, so the codec comes from the radio's original (stock) firmware file. Select the file, or a program memory backup of this radio.",
  "flash.factory.codec_backup": "Nothing is read from the radio through the factory update mode, and this radio has no stock firmware file the codec can be taken from. Select a program memory backup of this radio: program-memory.bin, or the backup .zip saved before the first installation.",
- "flash.factory.careful_restart": "The installation takes a few minutes. When it is finished, turn the radio off and on if it does not start by itself.",
+ "flash.factory.careful_restart": "The installation takes about 2.5 minutes: the radio erases its memory (about 13 seconds), then takes the firmware. It then starts by itself. If it does not, turn it off and on.",
  "flash.factory.written": "Written, every block acknowledged by the radio",
  "flash.factory.ok": "Installation complete: the radio acknowledged every block.",
  "flash.factory.restored": "Restore complete: the radio acknowledged every block. Turn the radio off and on if it does not start by itself.",
