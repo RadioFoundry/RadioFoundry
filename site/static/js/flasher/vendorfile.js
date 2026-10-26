@@ -163,6 +163,7 @@ export function describe(opened, fb, boardId) {
 		const m = f.match;
 		const what = !m.board ? m.why
 			: m.board !== boardId ? `for the ${name(m.board)}, not this radio`
+			: m.kind === "codec" && m.profile?.file_radio ? `${m.known || "known"}: ${m.profile.file_radio} firmware, the codec only (no bootloader key; never restored as this radio's firmware)`
 			: m.kind === "codec" ? `${m.known || "known"}: the codec${fb.boards[m.board]?.key_sha256 ? " and the bootloader key" : ""}`
 			: m.kind === "readout" ? `a flash readout of ${m.known}: the installer takes the manufacturer's firmware file instead`
 			: m.kind === "codec-unmapped" ?`${m.known || "a build"} with the codec, but RadioFoundry has no recipe for this build yet${m.key ? " (the bootloader key works)" : ""}`

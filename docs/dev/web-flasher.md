@@ -108,12 +108,16 @@ build's commit, or its feature list leaves out `DEBUGLINK`, the kind is `rfoundr
 has no debug link.
 
 Where the radio answered (`openfw`, `rfoundry-nodebug`), the connection worked, so the page gives the next step instead
-of the cable and driver tips: on the "current firmware" step a button that chooses **Another open firmware**; on the
-radio, done and backup steps one line (`connectHelp()`).
+of the cable and driver tips: on the "current firmware" step a button that chooses **Another open firmware** (on a
+board `openfw.js` backs up from, an `openfw` answer goes straight to that choice with its backup); on the radio, done
+and backup steps one line (`connectHelp()`).
 
 The "current firmware" step has four choices (`explain.js` `NOW_CHOICES`): RadioFoundry, original firmware, **Another
 open firmware** and **Other / Not sure**. The last two are the same to the install (`S.now.kind` `unknown`: the codec
 decision and the steps don't change); `S.now.openfw` marks the first, for the pressed button and the error report.
+On a board `openfw.js` supports, **Another open firmware** also offers **Check the Radio** and, once the probe
+recognized the radio (`S.now.radioType`, `git`), the backup below. **Other / Not sure** doesn't: its route is the stock
+file.
 
 The browser's own USB and serial errors (`NetworkError`, `InvalidStateError`, a failed `fetch`) say little. `errorText()`
 puts what to do in front of them: close the program that holds the port, check the cable, the Windows driver or the
@@ -168,6 +172,54 @@ failed install can be traced to a file. Only lengths, SHA-256 hashes and a short
 `flashStarted()` adds the fields known then to the POST and `flashFinished()` adds them again to the PATCH; the
 backend keeps a field the PATCH leaves out. Opting out (`?reporting=0`) and simulations send nothing, as for the rest of
 the log. A backend without these columns ignores the extra fields.
+
+Both requests also carry `adapter`, and the PATCH carries `trail`:
+
+| Field | Content |
+|---|---|
+| `adapter` | `{vid, pid, chip, product}` of the USB device in use (`adapter.js`). `chip` from the vendor id: `FTDI` (0403), `CH340` (1a86), `CP210x` (10c4), `PL2303` (067b), `radio USB` (the radio's own port), `DFU bootloader`, else `other`. `product` only from WebUSB. Never a serial number |
+| `trail` | The newest 200 breadcrumbs (`diag.trail()`, scrubbed, 300 characters each), the oldest dropped to keep the keepalive request under 64 KB |
+
+### Breadcrumbs
+
+`diag.note()` lines record what the page decided, built in `trail.js` (names, sizes, hashes and reasons; never bytes):
+
+| Line | When |
+|---|---|
+| `file picked` | A vendor file: name, size, SHA-256 prefix, `logId()`, what it matched, its problem |
+| `codec search at known addresses`, `moved codec search` | The codec search in an open-firmware read: each stage, the profile and address found, or how many code starts were checked and why the nearest failed |
+| `codec decision` | `decideCodec()`: mode, source, why; or why none |
+| `key` | Where the bootloader key came from |
+| `write plan` | Mode, sectors erased, written (with content), kept, blocks, the codec profile |
+| `open firmware backup` | The key and codec found in the open-firmware read |
+| `verify`, `verify failed` | What the radio reported after the install |
+| `cable radio check`, `cable radio codec decision` | The cable radio's read choices and codec decision |
+| `adapter` | The USB device, once per change |
+
+The cable log (`logBox()`) also goes to the trail, so a boot ROM load that fails leaves the bytes received.
+
+Every Sentry event carries the newest 40 lines in `contexts.rfoundry.trail`, the adapter in `contexts.rfoundry.adapter`
+and the tag `adapter_chip`.
+
+### Report a Problem
+
+`report.js` `reportDialog()`. With the backend configured (the flasher), Send posts to the project's backend
+(`problemreport.js`), not Sentry:
+
+1. `POST /v1/reports` with `{result, flash_id, tool, tool_version, board, task, step, decisions, trail, error, message,
+   contact, adapter}`. `result` is `problem` when the install verified and `failed` otherwise. `decisions` holds
+   `codec_mode`, `codec_source`, `key_source`, `plan` and `files` (role, name, length, SHA-256, id). The answer is 201
+   with `id` and an upload `token`.
+2. Each checked file: `POST /v1/reports/{id}/files?kind=stock|backup|readout&name=&token=`, `application/octet-stream`.
+   A refused file (413, 409, 410, 429, ...) is listed under the result. The report still counts.
+
+The files offered are the vendor file picked, the internal flash read and the last backup the page saved. All are
+checked by default. The message and the email address are optional. The dialog says what is sent and that files and
+the address are deleted within 90 days. It works with `?reporting=0`, since the user sends it. `#sim` answers
+locally (`practiceFetch`) and sends nothing.
+
+Where it is offered: the button under every failure notice (`errorNotice()`, `problemNotice()`), the failed checks of
+the install, cable radio and loader routes, and the quiet "Something wrong? Report a Problem" link on Verify.
 
 ## Radio access backends
 
@@ -230,7 +282,31 @@ What can be read depends on the firmware running:
 |---|---|
 | RadioFoundry | Everything, through the CPS reads (areas 1, 5, 9 and 10): the whole SPI flash, the internal flash, the security registers |
 | RadioFoundry with stub entry (STM32F4) | The same. The radio info and security registers come over the debug link; the internal flash and the SPI flash come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into RadioFoundry. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves RadioFoundry running, and the debug link reads everything |
+| Another open firmware (OpenGD77 family) | Everything but the security registers, over that firmware's CPS (`openfw.js`, below) |
 | Stock (STM32F4) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing RadioFoundry: flashing never touches the SPI flash, and RadioFoundry doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
+
+## Another open firmware (`openfw.js`)
+
+A radio whose port answers the debug link probe with `-` and gives a valid radio info is on another open firmware
+(`link.js` `whyNoAnswer()`, kind `openfw`). Where the board supports it, the **Another open firmware** choice of the
+current-firmware step offers a full backup before the install, and the install then needs no stock file.
+
+| | |
+|---|---|
+| Which boards | `openfw.supported()`: CPS radio types (`board.toml` `[cps]`, `cps_radio_types` in `flash-boards.json`), the `usb-dfu` family, a `key_sha256`, an integer `rom_base` and a `protected` list (where the key is searched). All from board data; HR_C7000 boards are left out (other install route, area 1 offset) |
+| What the probe leads to | `openfw.recognized()`: `backup` (offered), `wrong-type` (the radio info names another radio: a wrong pick, with the stock-file route, **Other / Not sure**, one click away), `unsupported` (the stock-file route, as for any other firmware) |
+| Radio type | The radio info's type must be one of the board's, or nothing is read |
+| Requests | `R` only: area 9, then area 5 over exactly [`rom_base`, `flash_end`) (bootloader included, for the key), then area 1 over the whole SPI flash. Never `C` (a `C` 6 2 saves settings and once hung a radio's USB), never area 10 (some builds don't answer), never more than 2045 bytes per request. 0x7590-0x75FF of area 1 is read in 32-byte requests, so the VFO overlay never applies |
+| A radio that stops answering | Each request is asked three times (a read changes nothing). Then the backup stops and keeps what it read (`state.stopped`, why `no answer`); after a power cycle the same state continues (`readBackup({state})`) where it stopped. A refused read (`refused`) stops the same way. **Stop Reading**, or leaving the step (`render()` aborts it), stops it as `canceled`. What was read can be saved as an incomplete bundle |
+| Fallback | Whatever the backup didn't give comes from the stock file, as from any other firmware: key or codec not found, a read that stopped before them, a skipped backup, a wrong radio type. The codec step says why (`openfwCodecNote()`). `decideCodec()` never keeps a codec it can't verify unless the user forces it |
+| Speed | About 190 KB/s (2045-byte requests): 1 MB of MCU flash and 16 MB of SPI flash take about 1.5 minutes |
+| The key | `keyFromImage()`: the 1024-byte block of the bootloader region whose SHA-256 is the board's `key_sha256`, searched (`bootkey.js`), no offset assumed. Stored as a key read from a RadioFoundry radio (`S.key`, local storage) |
+| The codec | `codecFromImage()`: first the forms `stockfw.fromFlash()` knows (stock addresses, RadioFoundry's placement); then a copy moved anywhere: the codec's first word at each word boundary, the move undone with the codec map (`codecmap.js` `unmoveCode()`, `unmoveBranches()` for tables whose islands call the moved copy or still the stock address), the stock SHA-256s checked (for a profile whose merge cuts the tables, the codec's own data at their start), then placed and checked as a merge from the stock file. Kept as the saved codec (`codecsave.js`), so `decideCodec()` merges from the saved copy. Not found: the codec step asks for the stock file as before |
+| Bundle | `firmware_now` `{kind: "openfw", radio_type, git, built, flash_id}`; `radio-info.bin`, `internal-flash.bin` from the application base, `spi-flash.bin`. No security registers; the bootloader (and the key in it) is read but not stored |
+| After the install | The settings area is claimed (`prepareStorage()`), as after any full backup |
+| Practice mode | `#sim=<board>-openfw`: `fake.js` state `openfw` (2045-byte clip, VFO overlay, unbounded area 5, silent area 10, hangs); `#sim=<board>-openfw-nocodec`: the same without the codec, for the stock-file fallback |
+
+Not yet tested on a real radio.
 
 ## Restore
 
@@ -238,6 +314,7 @@ What can be read depends on the firmware running:
 |---|---|---|
 | Exactly as backed up (backup taken on RadioFoundry) | The internal flash image through the bootloader (every sector erased and rewritten), then the codeplug areas that differ through CPS writes | The CPS refuses RadioFoundry's own areas and the calibration window |
 | Codeplug only (any backup that holds the codeplug span) | The codeplug areas that differ, through CPS writes; the firmware is not touched | As above |
+| Previous open firmware (backup taken on another open firmware) | That firmware's internal flash image through the bootloader (`planInternal`) | The SPI flash is not written back, as for stock: that firmware's own CPS writes its codeplug from `spi-flash.bin` |
 | Back to stock | The stock application from the user's stock file, codec included, through the bootloader. Any file for this radio that its key opens can be used, mapped or not: no codec is taken from it | The SPI flash stays as it is: writing it back whole needs a firmware command that doesn't exist yet (a gated STORAGE write, like CLAIM). Until then the flasher says so, and the stock codeplug goes back with the vendor CPS |
 
 The stock file's resource segment (SPI flash 0x60000) is not written back: how the vendor updater writes it is not
@@ -254,9 +331,14 @@ its own steps:
 | Step | What happens |
 |---|---|
 | Connect | The page looks for a stub that still runs, then for RadioFoundry. RadioFoundry with `CONFIG_STUB_ENTRY` hands over to the stub (command 0x1A); RadioFoundry without it is restarted with its CPS reboot, which passes the boot ROM's serial window (not yet tried on a radio). Otherwise the page asks the user to switch the radio off and on and catches the boot ROM. The radio model is then checked by the bootloader's ID string, and the page sends the stub the board's profile (CONFIG: clocks, UART, pins, board id) and checks the echo; the stub refuses writes until then |
-| Back up and check | A first install reads the whole program memory (required) and, if asked, the data memory, keeps the program memory in IndexedDB and downloads a backup bundle. An update reads only the codec slot. The page then decides the codec |
+| Back up and check | A first install reads the whole program memory (required) and the calibration area; the whole data memory only if asked (off by default: 16 MB at 115200 baud). Each choice shows its time: the stub's sector sums count the blank sectors first (no data moved, `c7000.js` `blankCount`, at most 8 s per memory), and `readSeconds` turns the used share into wire bytes, pessimistically: every used sector whole (no credit for LZ4), 13 bytes a record, at 9000 B/s or the rate measured on this radio, never above the 11,520 B/s of the line; without a count every sector is taken as used ("up to"). The page keeps the program memory in IndexedDB and downloads a backup bundle. A first install can skip the program memory read, before or during it, and take the codec from the stock file instead: only the codec slot is read, and the firmware is reported as not read. An update reads only the codec slot. The page then decides the codec |
 | Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector |
 | Check | The stub resets the chip; the page asks RadioFoundry's VERSION for the build and the codec |
+
+A cable whose USB vendor id is a CH340's (1a86) gets a warning on the connect, check, write, backup and restore steps:
+some of these cables fail the backup or the install. The boot ROM load drops an exact echo of each frame it sent (some
+cables loop TX back to RX). A frame not acknowledged logs the first 16 bytes received, and the error names the cable's
+chip and points to the stock-file route.
 
 ### A board with a first stage
 

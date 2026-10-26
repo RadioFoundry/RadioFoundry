@@ -36,16 +36,22 @@ entering the bootloader: rfoundry says how for the radio (the steps are each rad
 
 
 
-def stock_hint(board=None):
-    """Which stock files give the codec (and the key): the board's, or every radio's when the board isn't known."""
+def stock_hint(board=None, key=False):
+    """Which stock files give the codec (and the key): the board's, or every radio's when the board isn't known. Files
+    for another radio that give the codec only (an MD-9600 file for the DM-1701) are named by radio and count, unless
+    the hint is for the key (key=True), which they never give"""
     bs = [board] if board else [b for _, b in sorted(boards.BOARDS.items()) if b.codec_stock]
     parts = []
     for b in bs:
-        files = " or ".join("%s (sha256 %s...)" % (stockfw.PROFILES[h]["name"], h[:8])
-                            for h in b.codec_stock if h in stockfw.PROFILES)
+        profs = [(h, stockfw.PROFILES[h]) for h in b.codec_stock if h in stockfw.PROFILES]
+        files = " or ".join("%s (sha256 %s...)" % (p["name"], h[:8]) for h, p in profs if not stockfw.codec_only(p))
         if files:
             parts.append("the %s stock firmware file %s%s" % (b.name, files, ", from %s" % b.stock_download
                                                                if getattr(b, "stock_download", None) else ""))
+        other = sorted({p["file_radio"] for _, p in profs if stockfw.codec_only(p)})
+        n = sum(1 for _, p in profs if stockfw.codec_only(p))
+        if other and not key:
+            parts.append("for the codec only, one of %d %s firmware files" % (n, " or ".join(other)))
     return "; ".join(parts) or "a supported stock firmware file"
 
 
@@ -313,10 +319,13 @@ def get_key(args, board, stock, sim_key=None):
         return sim_key
     if args.key:
         return dfumod.load_key(args.key, board)
-    if isinstance(stock, bytes) and stockfw.is_container(stock):
+    prof = stockfw.PROFILES.get(stockfw.sha256(stock)) if isinstance(stock, bytes) else None
+    if prof is not None and stockfw.codec_only(prof):
+        # another radio's file that gives this radio's codec: the key comes from elsewhere
+        say("key      %s" % stockfw.codec_only(prof))
+    elif isinstance(stock, bytes) and stockfw.is_container(stock):
         # another radio's file is refused by name: deriving this radio's key from it could only fail as "could not
         # derive the key"
-        prof = stockfw.PROFILES.get(stockfw.sha256(stock))
         if prof is not None and prof["board"] != board.id:
             raise UsageError("%s is a firmware file for the %s, not the %s"
                              % (prof["name"], boards.get(prof["board"]).name, board.name))
@@ -337,7 +346,7 @@ def get_key(args, board, stock, sim_key=None):
     raise UsageError("the %s bootloader needs its 1024-byte key. Start the radio with RadioFoundry and connect it (rfoundry reads "
                      "the key from it), or give --stock with %s (rfoundry derives the key from it), or --key FILE, or "
                      "save it once with: rfoundry key --stock FILE --save"
-                     % (board.name, stock_hint(board)))
+                     % (board.name, stock_hint(board, key=True)))
 
 
 def get_saved_codec(args, board, probe):
@@ -902,6 +911,9 @@ def cmd_key(args):
         what = stockfw.identify(stock)
         say("stock    %s" % (what or "unknown file (trying anyway)"))
         board = stock_board(stock, args.board)
+        prof = stockfw.PROFILES.get(stockfw.sha256(stock))
+        if prof is not None and stockfw.codec_only(prof):
+            raise UsageError(stockfw.codec_only(prof))
         try:
             key = dfumod.check_key(stockfw.derive_key(stock, board.key_sha256), board)
         except stockfw.StockError as e:
@@ -925,7 +937,8 @@ def cmd_merge(args):
         stock = f.read()
     board = stock_board(stock, args.board)
     key = None
-    if stockfw.is_container(stock):
+    prof = stockfw.PROFILES.get(stockfw.sha256(stock))
+    if stockfw.is_container(stock) and not (prof and stockfw.codec_only(prof)):	# a codec-only file: its own key
         key = (dfumod.load_key(args.key, board) if args.key
                else dfumod.check_key(stockfw.derive_key(stock, board.key_sha256), board))
     # a release image comes with its manifest: check the two belong together

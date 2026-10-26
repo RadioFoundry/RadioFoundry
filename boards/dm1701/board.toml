@@ -76,7 +76,9 @@ spi = { bus = 1, mode = 0, hz = 4500000 }
 # from (tools/rfoundry/rfoundry/stockfw.py PROFILES); stock firmware keeps its code in sectors 7 and 8, which are the
 # application's now, so no stock version leaves it in place and rfoundry merges it from the stock file. V02.01 to V02.03
 # CSV hold the same codec 0x40 lower, so their tables and code sit 0x40 lower in the same sectors; the V02.06 and V02.03
-# noCSV files hold it higher (tables from 0x080D4794 and 0x080D4754), still in sectors 10 and 11
+# noCSV files hold it higher (tables from 0x080D4794 and 0x080D4754), still in sectors 10 and 11. The MD-9600 files hold
+# the same codec (an open-firmware install leaves it on the radio): the codec only, never the bootloader key; their
+# tables move into sectors 10 and 11 with the code
 [codec]
 tool = "codec_extract"
 stock = [
@@ -86,6 +88,14 @@ stock = [
 	"35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948",	# V02.03 CSV
 	"4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9",	# V02.06 noCSV
 	"0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a",	# V02.03 noCSV
+	"de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532",	# MD-9600 V16.45 CSV
+	"7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f",	# MD-9600 P16.45 CSV-GPS
+	"d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c",	# MD-9600 D16.45 REC
+	"3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff",	# MD-9600 S16.45 GPS-REC
+	"79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09",	# MD-9600 V06.09 CSV
+	"9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5",	# MD-9600 P06.09 CSV-GPS
+	"7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f",	# MD-9600 D06.09 REC
+	"4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7",	# MD-9600 S06.09 GPS-REC
 ]
 
 # How the site draws the radio

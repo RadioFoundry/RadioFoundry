@@ -61,3 +61,28 @@ test("Thumb-2: movw/movt self references and island calls move as rfoundry moves
 	stale.fill(0, 0x10, 0x14);
 	assert.throws(() => cm.moveBranches(T.window_addr, stale, T.map, T.new_run), cm.MapError);
 });
+
+test("the code and its table window move as two blocks, and the move is read back, as rfoundry does it", async () => {
+	const W = V.window;
+	const code = fromHex(W.code), tables = fromHex(W.tables);
+	const [mc, mt] = await cm.moveWindow(code, tables, W.map, W.code_run, W.tables_run);
+	assert.equal(toHex(mc), W.code_moved);
+	assert.equal(toHex(mt), W.tables_moved);
+	const [lo, n] = cm.tableWindow(W.map);
+	assert.equal(n, tables.length);
+	await assert.rejects(cm.moveWindow(code, tables, W.map, W.code_run, W.tables_run + 2), cm.MapError);
+	for (const [cr, tr, verbatim] of [[W.code_run, W.tables_run, false], [0x0807537C, lo, false], [0x0807537C, lo, true], [0x08060004, 0x08098010, false]]) {
+		const [c2, t2] = await cm.moveWindow(code, tables, W.map, cr, tr);
+		const flash = new Uint8Array(0x100000).fill(0xFF);
+		flash.set(c2, cr - 0x08000000);
+		flash.set(verbatim ? tables : t2, tr - 0x08000000);
+		const got = await cm.unmoveWindow(flash, 0x08000000, W.map, cr);
+		assert.ok(got, `${cr} ${tr} ${verbatim}`);
+		assert.equal(toHex(got[0]), W.code);
+		assert.equal(toHex(got[1]), W.tables);
+		assert.equal(got[2], tr);
+		assert.equal(await cm.unmoveWindow(flash, 0x08000000, W.map, cr + 4), null);
+		flash[tr - 0x08000000 + 0x100] ^= 1;
+		assert.equal(await cm.unmoveWindow(flash, 0x08000000, W.map, cr), null);
+	}
+});

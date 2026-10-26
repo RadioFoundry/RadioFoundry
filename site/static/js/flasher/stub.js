@@ -42,6 +42,7 @@ const be16 = (n) => new Uint8Array([(n >> 8) & 0xFF, n & 0xFF]);
 const u32be = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
 const romCmd = (op, payload = new Uint8Array(0)) => concat(new Uint8Array([0x02, op, sum8(payload), 0x03]), payload);
 const isBlank = (b) => b.every((x) => x === 0xFF);
+const hexBytes = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join(" ");
 const memArgs = (m) => new Uint8Array([1 | (m.cs !== null ? 2 : 0), m.cs || 0]);
 
 function find(buf, pat) {
@@ -83,9 +84,11 @@ export function univFits(image, load, window = null) {
 
 export class Stub {
 	// stream: link.js SerialStream or a simulated one (buf, write, clear, take)
-	constructor(stream, { log = () => {}, retries = 6 } = {}) {
+	constructor(stream, { log = () => {}, retries = 6, cable = "" } = {}) {
 		this.s = stream;
 		this.log = log;
+		this.cable = cable;	// the programming cable's chip (adapter.js), named in a boot ROM error
+		this.echo = false;	// the cable sends back what the page sends (seen in the boot ROM load)
 		this.retries = retries;
 		this.retried = 0;
 		this.info = null;
@@ -119,32 +122,80 @@ export class Stub {
 		throw new StubError("the radio's boot ROM did not answer");
 	}
 
+	// The boot ROM's acknowledgement of `sent`, within timeout. A cable that echoes (some USB-serial cables loop TX back
+	// to RX) puts an exact copy of the frame first: it is dropped and the reading goes on. {ok, got}: got is what came
+	// instead, for the log and the error
+	async romAck(sent, timeout) {
+		const until = Date.now() + timeout;
+		for (;;) {
+			const b = this.s.buf;
+			const n = Math.min(b.length, sent.length);
+			let echo = n > 0;
+			for (let k = 0; k < n && echo; k++) echo = b[k] === sent[k];
+			if (echo && b.length >= sent.length && !(b.length >= 4 && ROM_ACK.every((x, k) => b[k] === x))) {
+				this.s.take(sent.length);
+				if (!this.echo) this.log("the cable echoes what the page sends; the echo is ignored");
+				this.echo = true;
+				continue;
+			}
+			if (b.length >= 4 && ROM_ACK.every((x, k) => b[k] === x)) {
+				this.s.take(4);
+				return { ok: true, got: null };
+			}
+			if (b.length >= 4 && !echo) return { ok: false, got: this.s.take(Math.min(16, b.length)) };
+			if (Date.now() >= until) return { ok: false, got: this.s.take(Math.min(16, b.length)) };
+			await sleep(1);
+		}
+	}
+
+	// What failed in the boot ROM load, with the bytes received, the cable and the way out
+	romError(what, got) {
+		const bytes = got?.length ? `received ${hexBytes(got)}` : "nothing received";
+		const cable = this.cable ? `the ${this.cable} programming cable` : "the programming cable";
+		return new StubError(`${what} (${bytes}${this.echo ? "; the cable echoes" : ""}). The radio's boot ROM did not take the loader over ${cable}. `
+			+ "Try a cable with an FTDI, CP210x or PL2303 chip, or use the stock firmware file instead of reading the radio");
+	}
+
 	// Answer the ROM's greeting at once (it waits only briefly), load the stub at `load` and start it
 	async loadThroughRom(image, load, progress = () => {}) {
 		univFits(image, load);
-		await this.s.write(new Uint8Array([0x02, 0x14, 0x00, 0x03]));
+		const hello = new Uint8Array([0x02, 0x14, 0x00, 0x03]);
+		await this.s.write(hello);
 		await sleep(50);
+		// the ROM's reply to it isn't needed; an echo of it shows the cable loops back
+		const reply = this.s.take(Math.min(16, this.s.buf.length));
+		if (reply.length >= 4 && hello.every((x, k) => reply[k] === x)) {
+			this.echo = true;
+			this.log("the cable echoes what the page sends; the echo is ignored");
+		}
+		if (reply.length) this.log(`after the boot ROM greeting: ${hexBytes(reply)}`);
 		const padded = new Uint8Array(Math.ceil(image.length / ROM_BLOCK) * ROM_BLOCK).fill(0xFF);
 		padded.set(image);
 		const blocks = padded.length / ROM_BLOCK;
 		this.log(`boot ROM answered; loading the ${padded.length}-byte stub (${blocks} blocks)`);
 		for (let i = 0; i < blocks; i++) {
 			const payload = concat(be32(load + i * ROM_BLOCK), new Uint8Array([0, 0, 0, 0x40]), padded.subarray(i * ROM_BLOCK, (i + 1) * ROM_BLOCK));
-			let ok = false;
+			let ok = false, got = null;
 			for (let attempt = 0; attempt < 3 && !ok; attempt++) {	// a write to a fixed address: sending it again is safe
 				this.s.clear();
-				await this.s.write(romCmd(0x18, payload));
-				const r = await this.readExact(4, 1000);
-				ok = r.length === 4 && ROM_ACK.every((x, k) => r[k] === x);
-				if (!ok) this.log(`stub block ${i} not acknowledged, sending it again`);
+				const frame = romCmd(0x18, payload);
+				await this.s.write(frame);
+				const r = await this.romAck(frame, 1000);
+				ok = r.ok;
+				got = r.got;
+				if (!ok) this.log(`stub block ${i} not acknowledged (${got?.length ? `received ${hexBytes(got)}` : "nothing received"}), sending it again`);
 			}
-			if (!ok) throw new StubError(`stub block ${i} was not acknowledged`);
+			if (!ok) throw this.romError(`stub block ${i} was not acknowledged`, got);
 			progress(i + 1, blocks);
 		}
 		this.s.clear();
-		await this.s.write(romCmd(0x1B, be32(load)));
-		const r = await this.readExact(4, 1000);
-		if (!(r.length === 4 && ROM_ACK.every((x, k) => r[k] === x))) throw new StubError("the start command was not acknowledged");
+		const go = romCmd(0x1B, be32(load));
+		await this.s.write(go);
+		const r = await this.romAck(go, 1000);
+		if (!r.ok) {
+			this.log(`start command not acknowledged (${r.got?.length ? `received ${hexBytes(r.got)}` : "nothing received"})`);
+			throw this.romError("the start command was not acknowledged", r.got);
+		}
 		await this.helloWithin(3000, "the stub was started but does not answer");
 	}
 

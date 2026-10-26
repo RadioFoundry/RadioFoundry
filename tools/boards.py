@@ -1047,6 +1047,9 @@ def rfoundry_view(boards):
             "id": bid, "name": d["name"], "model": d["model"], "part_of": d.get("part_of"),
             "platform": b.platform.id, "platform_stubs": list(b.platform.data["stubs"]), "family": fl["family"],
             "link": b.link, "release": d["status"]["release"], "debuglink_names": b.debuglink_names(),
+            # rom_base: the MCU flash's first byte (the platform's flash_base), where the open-firmware CPS's area 5
+            # offsets start (docs/spec/open-firmware-cps.md 3)
+            "rom_base": b.platform.data["flash_base"],
             "app_base": b.app_base, "flash_end": b.flash_end(), "app_region": list(b.app_region),
             "sectors": [list(s) for s in b.sectors()], "protected": [list(p) for p in b.protected],
             "keep_codec_supported": fl["keep_codec"],
@@ -1069,6 +1072,8 @@ def rfoundry_view(boards):
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
             "stub": b.stub(),
             "build_options": d.get("build_options", []),		# rfoundry asks with the same words as the site
+            # the radio types another open firmware's CPS radio info reports for this radio (board.toml [cps])
+            "cps_radio_types": list(d.get("cps", {}).get("radio_types", [])),
         }
         out[bid] = e
     return {"format": "rfoundry-board-registry/2",

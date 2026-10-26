@@ -616,6 +616,9 @@ def sum8(b):
     return sum(b) & 0xFF
 
 
+ROM_ACK = b"\x02\x05\x00\x03"
+
+
 def rom_cmd(op, payload=b""):
     """02 op chk 03 payload; chk = sum of the payload. The ROM's own framing."""
     return bytes([0x02, op, sum8(payload), 0x03]) + payload
@@ -624,9 +627,11 @@ def rom_cmd(op, payload=b""):
 class Radio:
     """port: write(bytes), read(n) (what arrived within its timeout), reset_input_buffer(), a timeout attribute."""
 
-    def __init__(self, port, log=print, retries=6):
+    def __init__(self, port, log=print, retries=6, cable=""):
         self.port = port
         self.log = log
+        self.cable = cable              # the programming cable's chip, named in a boot ROM error
+        self.echo = False               # the cable sends back what the host sends (seen in the boot ROM load)
         self.retries = retries
         self.retried = 0
         self.stub_head = b""
@@ -654,6 +659,36 @@ class Radio:
         return out
 
     # ---- boot ROM: wait for it, load the stub, start it
+    def rom_ack(self, sent, timeout):
+        """The boot ROM's acknowledgement of `sent`: (ok, got). A cable that echoes (some USB-serial cables loop TX back
+        to RX) puts an exact copy of the frame first: it is dropped and the reading goes on. got: what came instead."""
+        end = time.monotonic() + timeout
+        buf = b""
+        while True:
+            if buf[:4] == ROM_ACK:
+                return True, b""
+            n = min(len(buf), len(sent))
+            echo = n > 0 and buf[:n] == sent[:n]
+            if echo and len(buf) >= len(sent):
+                buf = buf[len(sent):]
+                if not self.echo:
+                    self.log("the cable echoes what the host sends; the echo is ignored")
+                self.echo = True
+                continue
+            if len(buf) >= 4 and not echo:
+                return False, buf[:16]
+            if time.monotonic() >= end:
+                return False, buf[:16]
+            want = len(sent) - len(buf) if echo else 4 - len(buf)
+            buf += self.read_exact(max(1, want), max(0.0, min(0.05, end - time.monotonic())))
+
+    def rom_error(self, what, got):
+        bytes_ = "received %s" % got.hex(" ") if got else "nothing received"
+        cable = "the %s programming cable" % self.cable if self.cable else "the programming cable"
+        return DumpError("%s (%s%s). The radio's boot ROM did not take the loader over %s. Try a cable with an FTDI, "
+                         "CP210x or PL2303 chip, or use the stock firmware file instead of reading the radio"
+                         % (what, bytes_, "; the cable echoes" if self.echo else "", cable))
+
     def wait_for_radio(self, wait):
         want = b"\x02\x24\x00\x03"
         pos = 0
@@ -704,23 +739,37 @@ class Radio:
         stub += b"\xFF" * (-len(stub) % BLOCK)
         self.stub_base = load
         self.wait_for_radio(wait)
-        self.port.write(b"\x02\x14\x00\x03")
+        hello = b"\x02\x14\x00\x03"
+        self.port.write(hello)
         time.sleep(0.05)
+        reply = self.read_exact(16, 0.02)       # the ROM's reply to it isn't needed; an echo shows the cable loops back
+        if reply[:4] == hello:
+            self.echo = True
+            self.log("the cable echoes what the host sends; the echo is ignored")
+        if reply:
+            self.log("after the boot ROM greeting: %s" % reply.hex(" "))
         blocks = len(stub) // BLOCK
         self.log("boot ROM answered; loading %d-byte stub (%d blocks)" % (len(stub), blocks))
         for i in range(blocks):
             payload = (load + i * BLOCK).to_bytes(4, "big") + b"\x00\x00\x00\x40" + stub[i * BLOCK:(i + 1) * BLOCK]
+            got = b""
             for attempt in range(3):             # a block is a write to a fixed address: sending it again is safe
                 self.port.reset_input_buffer()
-                self.port.write(rom_cmd(0x18, payload))
-                if self.read_exact(4, 1.0) == b"\x02\x05\x00\x03":
+                frame = rom_cmd(0x18, payload)
+                self.port.write(frame)
+                ok, got = self.rom_ack(frame, 1.0)
+                if ok:
                     break
-                self.log("stub block %d not acknowledged, sending it again" % i)
+                self.log("stub block %d not acknowledged (%s), sending it again"
+                         % (i, "received %s" % got.hex(" ") if got else "nothing received"))
             else:
-                raise DumpError("stub block %d was not acknowledged" % i)
-        self.port.write(rom_cmd(0x1B, load.to_bytes(4, "big")))
-        if self.read_exact(4, 1.0) != b"\x02\x05\x00\x03":
-            raise DumpError("the start command was not acknowledged")
+                raise self.rom_error("stub block %d was not acknowledged" % i, got)
+        self.port.reset_input_buffer()
+        go = rom_cmd(0x1B, load.to_bytes(4, "big"))
+        self.port.write(go)
+        ok, got = self.rom_ack(go, 1.0)
+        if not ok:
+            raise self.rom_error("the start command was not acknowledged", got)
         end = time.monotonic() + 3
         while True:
             try:
@@ -1358,8 +1407,11 @@ def lz4_encode(src):
 
 
 class FakeRadio:
-    def __init__(self, images, drop=None, flip=(), silent=(), swap=(), misplace=(), stub_len=1536, load=LOAD_ADDR):
+    def __init__(self, images, drop=None, flip=(), silent=(), swap=(), misplace=(), stub_len=1536, load=LOAD_ADDR,
+                 rom_echo=False, rom_nak=False):
         self.images = images                # {"progmem": bytes, "q128": bytes}
+        self.rom_echo = rom_echo            # the cable sends back every byte written while the boot ROM listens
+        self.rom_nak = rom_nak              # the boot ROM answers the load with something other than its ack
         self.drop, self.flip, self.silent, self.swap = drop or {}, set(flip), set(silent), set(swap)
         self.misplace = set(misplace)
         self.data_bytes = 0                 # flash bytes sent over the cable
@@ -1415,6 +1467,8 @@ class FakeRadio:
     def write(self, b):
         if self.running and not self.linked():
             return                              # garbled on the wire: the stub sees nothing it can use
+        if self.rom_echo and not self.running:
+            self.out += b
         self.inb += b
         while self.step():
             pass
@@ -1452,7 +1506,7 @@ class FakeRadio:
                 if int.from_bytes(payload, "big") != self.load or len(self.loaded) != self.stub_len:
                     self.errors.append("start command")
                 self.running = True
-            self.out += b"\x02\x05\x00\x03"
+            self.out += b"\x02\x0a\x00\x03" if self.rom_nak else ROM_ACK
             return True
         if len(ib) < 6:
             return False
@@ -1718,6 +1772,38 @@ def self_test():
     check(r.retried >= 6, "retries counted (%d)" % r.retried)
     check(not radio.errors, "radio saw errors: %s" % radio.errors)
     check(radio.data_bytes < (len(prog) + len(data)) * 0.7, "blank sectors stay off the cable (%d bytes)" % radio.data_bytes)
+
+    # a cable that echoes what the host sends: the echo is dropped and the load goes on
+    radio = FakeRadio(images, stub_len=len(stub), rom_echo=True)
+    lines = []
+    r = Radio(radio, log=lines.append)
+    r.start(wait=2, stub=stub)
+    check(radio.running and r.echo and not radio.errors, "the boot ROM load works through an echoing cable")
+    check(sum("echoes what" in l for l in lines) == 1, "the echo is logged once")
+    # the ROM answers with something else: the error names the bytes, the cable and the way out
+    radio = FakeRadio(images, stub_len=len(stub), rom_nak=True)
+    r = Radio(radio, log=quiet, cable="CH340")
+    try:
+        r.start(wait=2, stub=stub)
+        check(False, "a refused boot ROM load fails")
+    except DumpError as e:
+        m = str(e)
+        check("received 02 0a 00 03" in m and "CH340 programming cable" in m and "stock firmware file" in m,
+              "a refused boot ROM load says what came back, the cable and the way out: %s" % m)
+    # a near-echo is not an echo
+    r = Radio(io.BytesIO(), log=quiet)
+    r.read_exact = lambda n, t, q=[b"\x02\x1b\x01\x03\x00\x01\x00\x07\x02\x05\x00\x03"]: q.pop() if q else b""
+    ok, got = r.rom_ack(b"\x02\x1b\x01\x03\x00\x01\x00\x00", 0.1)
+    check(not ok and got[:4] == b"\x02\x1b\x01\x03", "a frame that differs from the one sent is not taken for an echo")
+    # an echo that arrives in pieces, then the acknowledgement; and silence
+    frame = b"\x02\x1b\x01\x03\x00\x01\x00\x00"
+    r = Radio(io.BytesIO(), log=quiet)
+    r.read_exact = lambda n, t, q=[ROM_ACK, frame[5:], frame[:5]]: q.pop() if q else b""
+    ok, got = r.rom_ack(frame, 0.5)
+    check(ok and r.echo, "an echo in pieces is dropped and the acknowledgement after it taken")
+    r = Radio(io.BytesIO(), log=quiet)
+    r.read_exact = lambda n, t: b""
+    check(r.rom_ack(frame, 0.1) == (False, b""), "silence: not acknowledged, nothing received")
 
     # a record that belongs to the next sector passes its own CRC: the final check against the radio's sector CRCs
     # catches it and reads the sector again

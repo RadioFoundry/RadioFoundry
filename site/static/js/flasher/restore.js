@@ -5,6 +5,10 @@
 //   target "rfoundry"    the radio as it was when the backup was taken on RadioFoundry: the internal flash image exactly (RadioFoundry and
 //                   its codec, through the bootloader), then the codeplug areas of the SPI flash (through the CPS,
 //                   which only allows the codeplug areas)
+//   target "openfw"   the other open firmware the radio ran before the install (a backup taken over its CPS,
+//                   openfw.js): its internal flash image exactly, through the bootloader. The SPI flash is not written
+//                   back (no command for that yet, as for "stock"): that firmware's own CPS can write its codeplug back
+//                   from the bundle's spi-flash.bin
 //   target "codeplug"  only the codeplug areas, through the CPS: the firmware stays as it is (a codeplug backup)
 //   target "stock"  stock firmware back: the application from the user's stock file (in the bundle, or chosen
 //                   again), through the bootloader. The SPI flash keeps what is in it; the bundle's copy shows what
@@ -23,6 +27,7 @@ export function targets(bundle) {
 	const internal = bundle.parts.get("internal-flash");
 	const spi = bundle.parts.get("spi-flash");
 	if (bundle.meta.firmware_now?.kind === "rfoundry" && internal?.complete) out.push("rfoundry");
+	if (bundle.meta.firmware_now?.kind === "openfw" && internal?.complete) out.push("openfw");
 	if (bundle.meta.firmware_now?.kind === "rfoundry" && spi && spi.data.length >= CODEPLUG_SPAN && codeplugLayout(bundle) === "openfw") out.push("codeplug");
 	if (bundle.parts.has("stock-firmware") || bundle.meta.firmware_before?.kind === "stock") out.push("stock");
 	return out;

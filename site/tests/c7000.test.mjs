@@ -17,8 +17,10 @@ import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
 import { stockVersion } from "../static/js/flasher/usmart.js";
 import { openVendorFile } from "../static/js/flasher/vendorfile.js";
-import { vendorBundle, hasC7Backup } from "../static/js/flasher/c7000ui.js";
+import { vendorBundle, hasC7Backup, backupChoices } from "../static/js/flasher/c7000ui.js";
 import * as explain from "../static/js/flasher/explain.js";
+import * as crumbs from "../static/js/flasher/trail.js";
+import * as diag from "../static/js/diag.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
@@ -126,6 +128,58 @@ test("a sector record that belongs to another sector is caught by the radio's ch
 	assert.ok(equal(got, sim.progmem.subarray(0x40000, 0xA0000)), "the read matches the radio");
 	assert.equal(r.faults.misplace.length, 0, "both bad records were sent");
 	assert.ok(s.retried >= 2, "the two sectors were read again");
+});
+
+test("boot ROM load through a cable that echoes what it sends: the echo is dropped and the load goes on", async (t) => {
+	const { r } = await radio("stock", { faults: { romEcho: true } });
+	t.after(() => r.stop());
+	const lines = [];
+	const s = new Stub(r.stream, { log: (l) => lines.push(l) });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.image, stubs.load);
+	assert.equal(r.state, "stub");
+	assert.ok(s.echo, "the echo was seen");
+	assert.ok(lines.some((l) => /echoes/.test(l)), "and logged once");
+	assert.equal(lines.filter((l) => /echoes what/.test(l)).length, 1);
+});
+
+test("boot ROM load answered with something else: the error has the bytes, the cable and the way out", async (t) => {
+	const { r } = await radio("stock", { faults: { romNak: true } });
+	t.after(() => r.stop());
+	const lines = [];
+	const s = new Stub(r.stream, { log: (l) => lines.push(l), cable: "CH340" });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await assert.rejects(s.loadThroughRom(stubs.image, stubs.load), (e) => {
+		assert.ok(e instanceof StubError);
+		assert.match(e.message, /stub block 0 was not acknowledged \(received 02 0a 00 03\)/);
+		assert.match(e.message, /CH340 programming cable/);
+		assert.match(e.message, /FTDI, CP210x or PL2303/);
+		assert.match(e.message, /stock firmware file/);
+		return true;
+	});
+	assert.ok(lines.some((l) => /not acknowledged \(received 02 0a 00 03\), sending it again/.test(l)), "each try logged with its bytes");
+});
+
+test("boot ROM ack read: an exact echo is dropped, a partial one waits, anything else fails with its bytes", async () => {
+	const stream = { buf: new Uint8Array(0), take(n) { const b = this.buf.slice(0, n); this.buf = this.buf.slice(n); return b; } };
+	const s = new Stub(stream, { log: quiet });
+	const frame = new Uint8Array([0x02, 0x1B, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00]);
+	stream.buf = new Uint8Array([...frame, 0x02, 0x05, 0x00, 0x03]);
+	assert.deepEqual(await s.romAck(frame, 200), { ok: true, got: null });
+	assert.ok(s.echo);
+	stream.buf = new Uint8Array([0x02, 0x05, 0x00, 0x03]);
+	assert.equal((await s.romAck(frame, 200)).ok, true, "no echo: the ack alone");
+	stream.buf = frame.slice(0, 5);
+	setTimeout(() => { stream.buf = new Uint8Array([...stream.buf, ...frame.slice(5), 0x02, 0x05, 0x00, 0x03]); }, 20);
+	assert.equal((await s.romAck(frame, 500)).ok, true, "an echo arriving in pieces");
+	stream.buf = new Uint8Array([0x02, 0x1B, 0x01, 0x03, 0x00, 0x01, 0x00, 0x07, 0x02, 0x05, 0x00, 0x03]);
+	const bad = await s.romAck(frame, 200);
+	assert.equal(bad.ok, false, "a near-echo is not an echo");
+	assert.deepEqual([...bad.got.slice(0, 4)], [0x02, 0x1B, 0x01, 0x03]);
+	stream.buf = new Uint8Array(0);
+	assert.deepEqual(await s.romAck(frame, 30), { ok: false, got: new Uint8Array(0) }, "silence");
 });
 
 test("boot ROM path: load, read with damaged frames, write, reset into RadioFoundry", async (t) => {
@@ -334,4 +388,93 @@ test("a codec with a map gets hrc7000_codec.py's slot; a version 1 slot or a bui
 	const bad = code.slice();
 	bad.fill(0, 0x40, 0x44);
 	assert.throws(() => c7.slotBytes(c, "db25d", { ...got, code: bad }), /doesn't hold/);
+});
+
+test("backup choices: the firmware memory on a first install, never all channels and settings unless asked", () => {
+	assert.deepEqual(backupChoices(true, true), { progmem: true, cal: true, q128: false });
+	assert.deepEqual(backupChoices(false, true), { progmem: false, cal: true, q128: false });
+	assert.deepEqual(backupChoices(true, false), { progmem: true, cal: false, q128: false });
+});
+
+test("read times: pessimistic, from the radio's count of blank sectors, else the board's rate, else every sector used", () => {
+	const MB = 0x100000;
+	// a data memory 98 % blank: 82 used sectors whole (336 KB) and 4096 records, 43 s on the wire, plus the checksum pass
+	const data = c7.readSeconds(16 * MB, { sizing: { sectors: 4096, blank: 4014, ms: 6000 } });
+	assert.equal(data.upTo, false);
+	assert.ok(data.seconds > 45 && data.seconds < 52, `${data.seconds}`);
+	// half counted: the share counted stands for the whole range, and the checksum time grows with it
+	const half = c7.readSeconds(16 * MB, { sizing: { sectors: 2048, blank: 2007, ms: 3000 } });
+	assert.ok(Math.abs(half.seconds - data.seconds) < 1);
+	// a full program memory: about 2 min
+	const pm = c7.readSeconds(MB, { sizing: { sectors: 256, blank: 0, ms: 1000 } });
+	assert.ok(pm.seconds > 110 && pm.seconds < 125, `${pm.seconds}`);
+	// a measured rate replaces the bench one, but never beats the line
+	assert.ok(c7.readSeconds(MB, { sizing: { sectors: 256, blank: 0, ms: 0 }, rate: 4500 }).seconds > 2 * 115);
+	assert.ok(c7.readSeconds(MB, { sizing: { sectors: 256, blank: 0, ms: 0 }, rate: 1e6 }).seconds > MB / 11520);
+	assert.deepEqual(c7.readSeconds(2 * MB, { plainRate: 46000 }), { seconds: 2 * MB / 46000, upTo: false });
+	// nothing known: every sector used, about 31 min for 16 MB, said as "up to"
+	const worst = c7.readSeconds(16 * MB);
+	assert.equal(worst.upTo, true);
+	assert.ok(worst.seconds > 30 * 60 && worst.seconds < 33 * 60, `${worst.seconds}`);
+});
+
+test("the radio counts its blank sectors without sending data; a deadline or a stop ends the count early", async (t) => {
+	const { sim, r } = await radio();
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.image, stubs.load);
+	const want = (mem, from, to) => {
+		let n = 0;
+		for (let a = from; a < to; a += 0x1000) n += mem.subarray(a, a + 0x1000).every((x) => x === 0xFF);
+		return n;
+	};
+	const pm = await c7.blankCount(s, "progmem", 0, 0x100000);
+	assert.deepEqual([pm.sectors, pm.blank], [256, want(sim.progmem, 0, 0x100000)]);
+	const dm = await c7.blankCount(s, "q128", 0, 0x200000);
+	assert.deepEqual([dm.sectors, dm.blank], [512, want(r.q128, 0, 0x200000)]);
+	let n = 0;
+	const stopped = await c7.blankCount(s, "q128", 0, 0x200000, { stop: () => ++n > 3 });
+	assert.equal(stopped.sectors, 3 * 16, "three windows, then stopped");
+	assert.equal(await c7.blankCount(s, "q128", 0, 0x200000, { deadline: -1 }), null, "nothing counted past the deadline");
+	// the stub still answers a read right after
+	assert.ok(equal(await s.dump("progmem", 0, 0x2000), sim.progmem.subarray(0, 0x2000)));
+});
+
+test("a firmware memory read stopped for the stock file: the stub stays usable and the codec slot reads after it", async (t) => {
+	const { r } = await radio("rfoundry");
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.image, stubs.load);
+	const ac = new AbortController();
+	await assert.rejects(s.dump("progmem", 0, 0x100000, { signal: ac.signal, progress: (d) => { if (d >= 0x20000) ac.abort(); } }), /stopped/);
+	await s.drain();
+	const lay = C.boards.dm1801pro;
+	const slot = await s.dump("progmem", lay.slot[0], lay.slot[1]);
+	assert.ok(equal(slot, r.progmem.subarray(lay.slot[0], lay.slot[1])), "the slot after the stop is the radio's");
+});
+
+test("trail of a cable radio run: the boot ROM load (an echoing cable), the choices, the codec decision", async (t) => {
+	diag.reset();
+	const debug = console.debug;
+	console.debug = () => {};
+	t.after(() => { console.debug = debug; });
+	const { sim, r } = await radio("stock", { faults: { romEcho: true } });
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: (l) => diag.note(l), cable: "CH340" });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.image, stubs.load);
+	diag.note(...crumbs.c7Check({ progmem: true, cal: true, q128: false }, { skipFirmware: false, firstInstall: true, how: "rom" }));
+	const what = await c7.analyze(sim.progmem, sim.c, "dm1801pro");
+	diag.note(...crumbs.c7Decision(await c7.decide(sim.c, "dm1801pro", { flashCodec: what.codec }), what, null));
+	diag.note(...crumbs.c7Decision(null, { firmware: "stock", notRead: true }, null));
+	const tr = diag.trail(200);
+	assert.ok(tr.some((l) => /the cable echoes what the page sends; the echo is ignored/.test(l)));
+	assert.ok(tr.some((l) => /cable radio check \{"progmem":true,"cal":true,"q128":false,"skipFirmware":false,"firstInstall":true,"how":"rom"\}/.test(l)));
+	assert.ok(tr.some((l) => /cable radio codec decision \{"mode":"[a-z]+"/.test(l)));
+	assert.ok(tr.some((l) => /cable radio codec decision \{"mode":null,"firmware":"stock","notRead":true,"file":false\}/.test(l)));
 });

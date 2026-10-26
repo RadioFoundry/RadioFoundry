@@ -17,6 +17,7 @@
     "DB25-D PRO",
     "db25d"
    ],
+   "rom_base": 50331648,
    "app_base": 50380800,
    "flash_end": 51380224,
    "app_region": [
@@ -98,7 +99,10 @@
     "progmem": 2097152,
     "stock_console": "usmart"
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": [
+    6
+   ]
   },
   "dm1701": {
    "id": "dm1701",
@@ -116,6 +120,7 @@
     "DM-1701",
     "dm1701"
    ],
+   "rom_base": 134217728,
    "app_base": 134266880,
    "flash_end": 135266304,
    "app_region": [
@@ -184,7 +189,15 @@
     "643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7",
     "35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948",
     "4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9",
-    "0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a"
+    "0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a",
+    "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532",
+    "7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f",
+    "d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c",
+    "3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff",
+    "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09",
+    "9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5",
+    "7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f",
+    "4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7"
    ],
    "codec": {
     "id": null,
@@ -232,7 +245,11 @@
      "idle": []
     }
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": [
+    8,
+    10
+   ]
   },
   "dm1801pro": {
    "id": "dm1801pro",
@@ -249,6 +266,7 @@
     "DM-1801Pro",
     "dm1801pro"
    ],
+   "rom_base": 50331648,
    "app_base": 50380800,
    "flash_end": 51380224,
    "app_region": [
@@ -323,7 +341,8 @@
     "progmem": 1048576,
     "stock_console": null
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": []
   },
   "dm32": {
    "id": "dm32",
@@ -340,6 +359,7 @@
     "DM-32",
     "dm32"
    ],
+   "rom_base": 50331648,
    "app_base": 50380800,
    "flash_end": 51380224,
    "app_region": [
@@ -420,7 +440,8 @@
     "progmem": 1048576,
     "stock_console": null
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": []
   },
   "md380": {
    "id": "md380",
@@ -439,6 +460,7 @@
     "MD-380 VHF",
     "md380"
    ],
+   "rom_base": 134217728,
    "app_base": 134266880,
    "flash_end": 135266304,
    "app_region": [
@@ -572,6 +594,9 @@
       }
      ]
     }
+   ],
+   "cps_radio_types": [
+    7
    ]
   },
   "mduv380": {
@@ -591,6 +616,7 @@
     "MD-UV380 10W",
     "mduv380"
    ],
+   "rom_base": 134217728,
    "app_base": 134266880,
    "flash_end": 135266304,
    "app_region": [
@@ -751,6 +777,9 @@
       }
      ]
     }
+   ],
+   "cps_radio_types": [
+    6
    ]
   }
  }

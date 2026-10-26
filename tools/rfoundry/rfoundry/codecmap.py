@@ -327,6 +327,108 @@ def move_tables(code, m, moves):
     return bytes(out)
 
 
+def table_window(m):
+    """(start, length) of the table window a whole-window move carries: the codec's own data (the map's cut,
+    min_start/min_len), which every table ref, island pointer, island ref, island and branch must lie in"""
+    tw = (m["table_windows"] or [None])[0]
+    if not tw or "min_len" not in tw:
+        raise MapError("%s: no cut table window" % m["profile"])
+    lo, n = tw.get("min_start", tw["run"]), tw["min_len"]
+    inside = [r["target"] for r in m["table_refs"] + m["island_ptrs"] + m["island_refs"]] + \
+             [r["at"] for r in m["island_refs"]] + [b["at"] for b in m["branches"]] + \
+             [x for i in m["islands"] for x in (i["start"], i["start"] + i["len"] - 1)]
+    if any(not lo <= a < lo + n for a in inside):
+        raise MapError("%s: the codec refers outside its table window; the window can't move as one block" % m["profile"])
+    return lo, n
+
+
+def move_window(code, tables, m, code_run, tables_run):
+    """The codec moved as two blocks: the code to run at code_run and its table window (the cut, table_window(), as
+    the stock build has it) to tables_run. In the code every self ref moves with the code, every island pointer and
+    table ref with the tables; in the tables every island ref moves with the tables and every BL from an island into
+    the code is re-encoded for both moves. Returns (code, tables). The code and every listed site are checked first,
+    as move_code does"""
+    lo, n = table_window(m)
+    if len(tables) != n:
+        raise MapError("%s: tables are %d bytes, the map's window %d" % (m["profile"], len(tables), n))
+    if (tables_run - lo) % 4:
+        raise MapError("%s: a table move by 0x%X breaks the tables' alignment" % (m["profile"], tables_run - lo))
+    moved = bytearray(move_code(code, m, code_run))
+    dc, dt = code_run - m["code"]["run"], tables_run - lo
+    for r in m["table_refs"]:
+        if _read(moved, r) != r["target"]:
+            raise MapError("%s: site +0x%X doesn't hold 0x%08X" % (m["profile"], r["off"], r["target"]))
+    for r in m["island_ptrs"] + m["table_refs"]:
+        _write(moved, r, r["target"] + dt)
+    tab = bytearray(tables)
+    for r in m["island_refs"]:
+        if _word(tab, r["at"] - lo) != r["target"]:
+            raise MapError("%s: island ref at 0x%08X doesn't hold 0x%08X" % (m["profile"], r["at"], r["target"]))
+        struct.pack_into("<I", tab, r["at"] - lo, (r["target"] + dt) & 0xFFFFFFFF)
+    for b in m["branches"]:
+        if bl_target(tab, b["at"] - lo, b["at"]) != b["target"]:
+            raise MapError("%s: no bl to 0x%08X at 0x%08X" % (m["profile"], b["target"], b["at"]))
+        put_bl(tab, b["at"] - lo, b["at"] + dt, b["target"] + dc)
+    return bytes(moved), bytes(tab)
+
+
+def unmove_window(flash, base, m, code_at):
+    """The reverse of move_window for a copy found in a flash read (flash: bytes from address base) whose code starts
+    at code_at: (code, tables, tables_at) as the stock build has them, or None when this isn't the map's build. The
+    moves are read from the copy itself: the code's from its self refs, the tables' from its table refs and island
+    pointers, which must all agree. The islands' calls into the code may point anywhere, as long as all of them were
+    moved by one amount (a tool that moved the code but left the tables verbatim leaves them calling the old address).
+    Both parts are checked by their SHA-256 (the code's, and the cut table window's)"""
+    c = m["code"]
+    try:
+        lo, n = table_window(m)
+    except MapError:
+        return None
+    tw = m["table_windows"][0]
+    off = code_at - base
+    code = bytearray(flash[off:off + c["len"]])
+    if off < 0 or len(code) != c["len"] or not tw.get("min_sha256"):
+        return None
+    dc = code_at - c["run"]
+    for r in m["self_refs"]:
+        got = _read(code, r)
+        if got is None or (got - r["value"]) & 0xFFFFFFFF != dc & 0xFFFFFFFF:
+            return None
+        _write(code, r, r["value"])
+    deltas = set()
+    for r in m["island_ptrs"] + m["table_refs"]:
+        got = _read(code, r)
+        if got is None:
+            return None
+        deltas.add((got - r["target"]) & 0xFFFFFFFF)
+    if len(deltas) > 1:
+        return None
+    dt = deltas.pop() if deltas else 0	# a code that holds no address in its tables: they are where stock had them
+    dt = dt - (1 << 32) if dt >= 1 << 31 else dt
+    for r in m["island_ptrs"] + m["table_refs"]:
+        _write(code, r, r["target"])
+    if hashlib.sha256(code).hexdigest() != c["sha256"]:
+        return None
+    t0 = lo + dt - base
+    tab = bytearray(flash[t0:t0 + n]) if t0 >= 0 else bytearray()
+    if len(tab) != n:
+        return None
+    for r in m["island_refs"]:
+        if _word(tab, r["at"] - lo) != (r["target"] + dt) & 0xFFFFFFFF:
+            return None
+        struct.pack_into("<I", tab, r["at"] - lo, r["target"])
+    bd = set()
+    for b in m["branches"]:
+        got = bl_target(tab, b["at"] - lo, b["at"] + dt)
+        if got is None:
+            return None
+        bd.add(got - b["target"])
+        put_bl(tab, b["at"] - lo, b["at"], b["target"])
+    if len(bd) > 1 or hashlib.sha256(tab).hexdigest() != tw["min_sha256"]:
+        return None
+    return bytes(code), bytes(tab), lo + dt
+
+
 def relocations(m):
     """The code offsets a firmware that moves the code itself (the HR_C7000 slot, version 2) must add the delta to:
     whole words only, and no islands (both hold for every HR_C7000 build)"""

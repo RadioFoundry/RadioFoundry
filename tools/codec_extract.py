@@ -278,15 +278,16 @@ def self_test():
     return 1 if fails else 0
 
 
-def test_desc(path, board="dm1701"):
-    """Write the codec sectors as the merge leaves them for a synthetic codec of the board's first stock file, for
+def test_desc(path, board="dm1701", profile=None):
+    """Write the codec sectors as the merge leaves them for a synthetic codec of the board's first stock file (or of
+    the stock file whose SHA-256 profile is: an MD-9600 file, whose tables the merge moves), for
     tests/host/codecDescTest.c (the firmware's descriptor checks and this writer must agree): from the end of the
     board's application region (the DM-1701's sectors 10 and 11, 0x080C0000..0x08100000; the MD-380's sectors 8-11,
     0x08080000..0x08100000) to the end of flash"""
     import random
     rng = random.Random(1701)
     key = bytes(rng.randrange(256) for _ in range(KEY_LEN))
-    stock, profiles, _, _ = build_synthetic_stock(key, rng, profile_for_board(board))
+    stock, profiles, _, _ = build_synthetic_stock(key, rng, profile or profile_for_board(board))
     p, wins = extract(stock, key, profiles)
     lo = boards.get(board).app_region[1]
     out = bytearray(b"\xFF" * (FLASH_END - lo))
@@ -307,6 +308,8 @@ def main():
                     help="refuse a stock file for another radio (the stock file picks the board otherwise)")
     ap.add_argument("--image", help="built RadioFoundry image (default: build/<board>/rfoundry_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image to write (default: <image>_codec.bin next to the image)")
+    ap.add_argument("--test-profile", metavar="SHA256", help="with --test-desc: the stock file whose layout the synthetic "
+                    "codec takes (default: the board's first)")
     ap.add_argument("--self-test", action="store_true", help="check the tool's logic on a synthetic file and key")
     ap.add_argument("--test-desc", metavar="FILE", help="write the codec sectors for a synthetic codec, as merged "
                     "(tests/host/codecDescTest.c), for --board")
@@ -317,7 +320,7 @@ def main():
     if args.test_desc:
         if not args.board:
             ap.error("--test-desc needs --board")
-        return test_desc(args.test_desc, args.board)
+        return test_desc(args.test_desc, args.board, args.test_profile)
     if not args.stock:
         ap.error("--stock is required (or --self-test)")
     try:

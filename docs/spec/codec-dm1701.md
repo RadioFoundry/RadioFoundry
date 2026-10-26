@@ -45,6 +45,57 @@ a key source or original firmware, as for any file that is not the manufacturer'
   word there and calls encode (+0x130) and decode (+0x5D8), the V02.06 CSV entry offsets. What puts the codec there is
   outside the file.
 
+### MD-9600 files
+
+The open-firmware install (the OpenGD77 family's DM-1701 build) starts from the TYT MD-9600 V4 firmware (V16.45), and
+the codec it calls at 0x0807537C is that firmware's. A DM-1701 that ran it carries the **MD-9600 codec**, not the
+DM-1701's. It is the same codec in function: the same entry offsets, state sizes and calls (the FEC decode offset
+differs and is not used), bit-identical in a host emulator ([codec-md9600.md](codec-md9600.md) "Verification").
+
+So the eight MD-9600 files are DM-1701 codec sources too, each with its own map
+(`tools/rfoundry/rfoundry/codec_maps/md9600/`) and profile (`stockfw.py`, `"file_radio": "MD-9600"`):
+
+* **The codec only.** They are encrypted with the MD-9600's key, which the tools derive from the file itself. They never
+  give the DM-1701 bootloader key and are never restored as the radio's firmware. The key comes from a DM-1701 file, a
+  key file, a radio running RadioFoundry, or the open-firmware backup's read of the bootloader.
+* **Tables moved.** The stock table windows (0x080AB13C to 0x080AFFE0) lie in sector 9, the application's. The merge
+  moves the table window (the codec's own data, the map's cut) with the code (`codecmap.move_window`): every table
+  reference, island pointer and island reference follows the tables, every self reference the code, and the islands'
+  calls into the code are re-encoded for both. The tables go to 0x080D0000 plus their stock offset in a 4 KB page, the
+  code to the next page after them at its own stock page offset.
+* **Checked by running it.** Each build, moved as the merge moves it, was run in the host emulator with only the moved
+  windows mapped (the stock addresses unmapped): 30 frames `32b5fdbac4a399c9`, 300 stress frames `7b0f10283a8114ce`,
+  as the stock build gives.
+
+Placements (tag 0x96VVxxxx: VV the variant, 0 CSV, 1 CSV-GPS, 2 REC, 3 GPS-REC; xxxx the version):
+
+| build | file | tag | tables (address, length, CRC-32) | code (address, length, CRC-32) |
+|---|---|---|---|---|
+| V16.45 CSV | `MD9600-CSV(V4)-V16.45.bin` | 0x96001645 | 0x080D02BC, 0x11036, 0xD4FB8040 | 0x080E2C98, 0xF214, 0x07D97C60 |
+| P16.45 CSV-GPS | `MD9600-CSV-GPS(V4)-P16.45.bin` | 0x96011645 | 0x080D0A7C, 0x110B6, 0x53687A8C | 0x080E2434, 0xF238, 0xDB9C6525 |
+| D16.45 REC | `MD9600-REC(V4)-D16.45.bin` | 0x96021645 | 0x080D0820, 0x11046, 0x407C8912 | 0x080E2E38, 0xF234, 0x5C29A9B4 |
+| S16.45 GPS-REC | `MD9600-GPS-REC(V4)-S16.45.bin` | 0x96031645 | 0x080D0FE0, 0x110C6, 0x2E4B09C6 | 0x080E3630, 0xF1FC, 0x7E5C1170 |
+| V06.09 CSV | `MD9600-CSV-V06.09.bin` | 0x96000609 | 0x080D013C, 0x10FE6, 0x028B006A | 0x080E2B18, 0xF214, 0x51334F80 |
+| P06.09 CSV-GPS | `MD9600-CSV-GPS-P06.09.bin` | 0x96010609 | 0x080D06FC, 0x11066, 0x9E0642E5 | 0x080E20B8, 0xF234, 0x7C7A0876 |
+| D06.09 REC | `MD9600-REC-D06.09.bin` | 0x96020609 | 0x080D0660, 0x10FF6, 0x8EFB3BDF | 0x080E2C9C, 0xF210, 0x53A7AF3B |
+| S06.09 GPS-REC | `MD9600-GPS-REC-S06.09.bin` | 0x96030609 | 0x080D0C60, 0x11076, 0x4758C9EE | 0x080E2280, 0xF22C, 0xB54871EE |
+
+### Finding the codec in a flash read
+
+The open-firmware backup (`openfw.js`, and `stockfw.from_moved` in rfoundry) reads the MCU flash, then looks for the codec
+in three ways:
+
+1. At a supported file's stock addresses, or where RadioFoundry's merge put it (with its descriptor): `from_flash`.
+2. Anywhere else: every word-aligned 0x4FF0E92D is a candidate code start. For every profile with a map, the code's self
+   references give the code's move, and its table references and island pointers give the tables' move (all must
+   agree). Both moves are undone. The islands' calls into the code may point anywhere, as long as all were moved by one
+   amount: a tool that moved the code but left the tables verbatim leaves them calling the old address.
+3. The undone code and tables must match the stock SHA-256s. The codec is then placed as a merge from that file places
+   it.
+
+So the read finds a DM-1701 or MD-9600 codec whether the code moved by any amount and the tables stayed or moved too.
+Where the OpenGD77 installer puts the tables is not known; the search does not assume it.
+
 ## Container and encryption
 
 The files are "OutSecurityBin" upgrade files:

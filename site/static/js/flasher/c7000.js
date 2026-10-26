@@ -295,3 +295,45 @@ export function findCalibration(area) {
 	for (let a = 0x1000; a + 0x1000 <= Math.min(area.length, CAL_AREA_END); a += 0x1000) if (area[a + 0xFFF] === 2) return a;
 	return -1;
 }
+
+// How long a read through the stub takes, for the backup choices. Pessimistic on purpose: a user who sees a short time
+// and waits much longer gives up halfway. The cable runs at 115200 baud, at most 11,520 bytes a second; with the frames
+// and the radio's work per sector about 9000 (bench 2026-10-15/17). The radio sends a blank 4 KB sector as its record
+// alone; a used one counts whole here, although LZ4 often packs it (a program flash to 57 %), since a codeplug or an
+// encrypted firmware may not pack at all. So the time follows the used sectors, which the radio counts by its own
+// checksums before any data moves; without that count every sector is taken as used.
+export const WIRE_RATE = 9000;
+export const LINE_RATE = 11520;	// 115200 baud, 10 bits a byte: no read is faster
+export const RECORD = 13;	// a sector record's header and frame
+const SECTOR = 0x1000;
+
+// Seconds to read bytes of a memory. sizing: blankCount's answer for that memory (its blank share is taken for the
+// part read); rate: wire bytes a second measured on this radio (never above the line rate); plainRate: bytes a second a
+// board states for a whole program memory read (flash.read_rate), used only without a count. Without either the
+// estimate takes every sector as used: upTo.
+export function readSeconds(bytes, { sizing = null, rate = null, plainRate = null } = {}) {
+	const sectors = Math.ceil(bytes / SECTOR);
+	const wireRate = Math.min(rate || WIRE_RATE, LINE_RATE);
+	if (sizing?.sectors) {
+		const used = sectors * (1 - sizing.blank / sizing.sectors);
+		const wire = used * SECTOR + sectors * RECORD;
+		// a read ends with the radio's checksums over the range again, as long as the count took for its share
+		return { seconds: wire / wireRate + (sizing.ms / 1000) * (sectors / sizing.sectors), upTo: false };
+	}
+	if (plainRate) return { seconds: bytes / plainRate, upTo: false };
+	return { seconds: (sectors * (SECTOR + RECORD)) / wireRate, upTo: true };
+}
+
+// The blank 4 KB sectors of [start, end), counted by the radio (the stub's sector sums: no flash data crosses the
+// cable), window by window. Stops at the deadline (ms) or when stop() turns true, with what it counted:
+// {sectors, blank, ms}, or null when it counted nothing. An estimate takes the counted share for the whole range.
+export async function blankCount(stub, mem, start, end, { deadline = 8000, stop = () => false, window = 16 } = {}) {
+	const t0 = Date.now();
+	let sectors = 0, blank = 0;
+	for (let a = start; a < end && !stop() && Date.now() - t0 < deadline; a += window * SECTOR) {
+		const sums = await stub.sums(mem, a, Math.min(window, (end - a) / SECTOR));
+		sectors += sums.length;
+		blank += sums.filter((s) => s.blank).length;
+	}
+	return sectors ? { sectors, blank, ms: Date.now() - t0 } : null;
+}
