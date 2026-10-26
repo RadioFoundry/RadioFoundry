@@ -780,10 +780,14 @@ def find_profile(stock, profiles=None):
     return prof
 
 
-def extract(stock, key, profiles=None):
+def extract(stock, key, profiles=None, board=None):
     """Check the stock file and return (profile, segments): every codec window decrypted and checked, placed as the
-    merge writes them, [(flash address, bytes)] in layout() order (segments[0] is the code)."""
+    merge writes them, [(flash address, bytes)] in layout() order (segments[0] is the code). board: the radio being
+    flashed; another radio's file is refused before it is decrypted with this radio's key, which could only fail as
+    a window mismatch that blames the key."""
     prof = find_profile(stock, profiles)
+    if board is not None and prof["board"] != board:
+        raise StockError("%s is a firmware file for the %s, not the %s" % (prof["name"], prof["board"], board))
     if len(stock) != prof["size"]:
         raise StockError("size %d, expected %d" % (len(stock), prof["size"]))
     segs = parse_container(stock)

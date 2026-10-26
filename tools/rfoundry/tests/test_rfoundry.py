@@ -665,6 +665,10 @@ class StockLibrary(unittest.TestCase):
             stockfw.extract(stock, bytes([KEY[0] ^ 1]) + KEY[1:], profiles)
         with self.assertRaises(stockfw.StockError):
             stockfw.extract(stock, KEY)				# not the real file
+        # another radio's file is named as such before any decryption, never blamed on the key
+        other = next(b for b in ("dm1701", "md380", "mduv380") if b != list(profiles.values())[0]["board"])
+        with self.assertRaisesRegex(stockfw.StockError, "firmware file for the .*, not the " + other):
+            stockfw.extract(stock, bytes(len(KEY)), profiles, board=other)
         with self.assertRaises(stockfw.StockError):
             stockfw.parse_container(b"x" * 300)
         with self.assertRaises(stockfw.StockError):

@@ -279,12 +279,13 @@ def load_image(args, board_hint):
     return board, m, image, None
 
 
-def stock_codec(stock, key):
+def stock_codec(stock, key, board=None):
     """(profile, segments as the merge writes them) from a stock file (decrypted with key) or from a readout of the
-    radio's internal flash while it ran its stock firmware (stub/f4stub.py --progmem FILE; no key needed)."""
+    radio's internal flash while it ran its stock firmware (stub/f4stub.py --progmem FILE; no key needed). board: the
+    radio's id, to refuse another radio's stock file by name."""
     if stockfw.is_container(stock):
         try:
-            return stockfw.extract(stock, key)
+            return stockfw.extract(stock, key, board=board)
         except stockfw.StockError as e:
             raise UsageError(str(e))
     got = stockfw.from_flash(stock)
@@ -559,7 +560,7 @@ def cmd_flash(args):
         else:
             if stockfw.is_container(stock):
                 key = get_key(args, board, stock, sim_key)
-            prof, csegs = stock_codec(stock, key)
+            prof, csegs = stock_codec(stock, key, board.id)
             if prof["board"] != board.id or prof["codec_profile"] != board.codec.id:
                 raise UsageError("the stock file holds the %s codec %s, the image expects the %s codec %s"
                                  % (prof["board"], prof["codec_profile"], board.id, board.codec.id))
@@ -915,7 +916,7 @@ def cmd_merge(args):
     man_path = os.path.splitext(os.path.expanduser(args.image))[0] + ".json"
     if os.path.exists(man_path):
         mf.verify(mf.load(man_path), image, board.id)
-    prof, segs = stock_codec(stock, key)
+    prof, segs = stock_codec(stock, key, board.id)
     try:
         merged = stockfw.merge(image, prof, segs)
     except stockfw.StockError as e:
