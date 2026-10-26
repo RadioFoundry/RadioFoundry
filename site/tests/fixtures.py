@@ -15,6 +15,8 @@ Python it was ported from (site/tests/flasher.test.mjs):
   - the site's data files (radios, features, variants, flash boards, the C7000 stub), as site/build.py writes them
   - for the HR_C7000 radios: an LZ4 block from stubtool's encoder, and a synthetic program flash with a codec at
     made-up addresses, its profile, what hrc7000_codec.locate() finds and the slot hrc7000_codec.merge() builds from it
+  - for the Baofeng updater: the bytes tools/serial_loader.py's Flasher sends to its FakeBootloader for a small image
+    (block numbers wrapping, three blocks damaged on the line), so bfloader.js is checked byte for byte against it
   - for the STM32F4 loader: each radio's board record from stub/f4stub.py config_record(), and the HELLO replies its
     simulated stub (FakeF4) gives before and after CONFIG, so f4stub.js sends and parses the Python tool's bytes; and
     f4stub's test profile, a board with other SPI wiring
@@ -251,6 +253,7 @@ def main(out):
 	radios, _ = repo.boards([f["name"] for f in feats], [v["id"] for v in variants])
 	# the synthetic codecs' maps go into the flash-boards data, as a real build's would (docs/spec/codec-placement.md)
 	test_maps = {**c7000(out, rng), **db25d(out, rng)}
+	bfloader(out)
 	codeplug(out)
 	fb = repo.flash_boards()
 	fb["codec_maps"].update(test_maps)
@@ -331,6 +334,34 @@ def db25d(out, rng):
 	with open(os.path.join(out, "db25d.json"), "w") as f:
 		json.dump(doc, f, indent=1)
 	return maps
+
+
+def bfloader(out):
+	"""serial_loader's Flasher writing a 261-block image to its FakeBootloader, every byte it sent recorded"""
+	sl = repo._tool("tools", "serial_loader.py")
+
+	class Recorded(sl.FakeBootloader):
+		def __init__(self, *a, **k):
+			super().__init__(*a, **k)
+			self.sent = bytearray()
+
+		def write(self, b):
+			self.sent += b
+			super().write(b)
+
+	model = sl.MODELS["dm32"]
+	raw = bytes((i * 31 + (i >> 10)) & 0xFF for i in range(260 * 1024 + 517))
+	corrupt = [3, 255, 0]
+	fake = Recorded(model, corrupt=set(corrupt))
+	name = "rfoundry_dm32_codec.bin"
+	sl.Flasher(fake, log=lambda *a: None, step_timeout=0.2, model=model).flash(raw, name)
+	assert not fake.errors and fake.image() == raw and fake.naks == len(corrupt)
+	for n, data in (("bfloader_image.bin", raw), ("bfloader_host.bin", bytes(fake.sent))):
+		with open(os.path.join(out, n), "wb") as f:
+			f.write(data)
+	with open(os.path.join(out, "bfloader.json"), "w") as f:
+		json.dump({"board": "dm32", "id": model.tag, "name": name, "corrupt": corrupt, "naks": fake.naks,
+			   "blocks": len(fake.blocks), "header": list(fake.header)}, f, indent=1)
 
 
 def codeplug(out):
