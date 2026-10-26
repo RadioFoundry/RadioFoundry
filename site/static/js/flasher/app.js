@@ -581,7 +581,9 @@ async function pickedStock(f) {
 // A stock file for this radio, whichever build: what a restore of the original firmware needs (the key and the
 // application), not a codec profile. A flash readout is neither
 // A file for another radio that only gives this one's codec (file_radio) is never this radio's firmware
-const stockForRadio = (st) => !!st && !(st.match?.profile || st.info?.profile)?.file_radio
+// (nor kept in a backup as its stock firmware, which would offer it for a restore to stock)
+const codecOnlyFile = (st) => !!(st?.match?.profile || st?.info?.profile)?.file_radio;
+const stockForRadio = (st) => !!st && !codecOnlyFile(st)
 	&& (st.match ? st.match.board === S.board.id && st.match.kind !== "readout"
 		: !!st.info?.profile && st.info.profile.board === S.board.id);
 
@@ -1135,7 +1137,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			S.backupParts = await readRadio(link, S.board, S.radio, {
 				what: choices[pick].what, readers: bulk ? [bulk] : [], progress: (part, d, total) => prog.set(d, total, t(`flash.backup.part.${part}`)) });
 			if (!bulk?.used) S.readRate = choices[pick].bytes / Math.max(0.5, (performance.now() - t0) / 1000);
-			if (S.stock) S.backupParts.push({ file: "stock-firmware.bin", what: "stock-firmware", addr: 0, data: S.stock.data, complete: true });
+			if (S.stock && !codecOnlyFile(S.stock)) S.backupParts.push({ file: "stock-firmware.bin", what: "stock-firmware", addr: 0, data: S.stock.data, complete: true });
 			const after = when === "after";
 			const meta = {
 				radio: { board: S.radio.id, name: S.radio.name, model: S.radio.model, chip: p.chip, version: p.version },
@@ -1260,7 +1262,7 @@ function openfwBackupNow({ onDone = null, actions = null } = {}) {
 			notes: openfw.complete(st) ? [] : [t("flash.openfw.note_incomplete")],
 		};
 		const parts = openfw.bundleParts(st, S.board);
-		if (S.stock) parts.push({ file: "stock-firmware.bin", what: "stock-firmware", addr: 0, data: S.stock.data, complete: true });
+		if (S.stock && !codecOnlyFile(S.stock)) parts.push({ file: "stock-firmware.bin", what: "stock-firmware", addr: 0, data: S.stock.data, complete: true });
 		const zipped = await makeBundle(meta, parts, { git: S.data.site.git, url: location.origin });
 		const name = bundleName(meta);
 		download(name, zipped, "application/zip");
