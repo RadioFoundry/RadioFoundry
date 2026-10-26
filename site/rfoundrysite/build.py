@@ -14,6 +14,7 @@ Layout of the output:
 import datetime
 import hashlib
 import html
+import importlib.util
 import json
 import os
 import posixpath
@@ -21,6 +22,28 @@ import re
 import shutil
 
 from . import device, docs as docsmod, i18n, repo, social, tmpl, toolzip
+
+
+def _release_version():
+	"""tools/release_version.py: the release names (vYY.M[.N][bN]) and their order."""
+	spec = importlib.util.spec_from_file_location("release_version", repo.path("tools", "release_version.py"))
+	mod = importlib.util.module_from_spec(spec)
+	spec.loader.exec_module(mod)
+	return mod
+
+
+release_version = _release_version()
+
+
+def release_and_beta(versions, beta):
+	"""The release the flasher installs (the newest name among the images' versions; they are all one release's, "" for
+	none) and the pre-release it offers (beta when it is newer, else "")."""
+	release = release_version.newest(versions) or ""
+	if beta and release_version.parse(beta) is None:
+		raise repo.SourceError("--beta %s is not a release name (tools/release_version.py)" % beta)
+	if beta and release and release_version.parse(beta) <= release_version.parse(release):
+		beta = ""
+	return release, beta
 
 # feature-matrix.md groups of developer tools that never ship in a release: not on the visitor pages
 BENCH_ONLY = {"Bench"}
@@ -34,11 +57,12 @@ DOC_ORDER = ("hardware", "install", "codec", "bringup")
 
 
 class Site:
-	def __init__(self, out, repo_url, ref, firmware=None, strict=False, log=print):
+	def __init__(self, out, repo_url, ref, firmware=None, strict=False, log=print, beta=""):
 		self.out = out
 		self.repo_url = repo_url.rstrip("/")
 		self.ref = ref
 		self.firmware = firmware
+		self.beta = beta	# a pre-release newer than the release in firmware (site/cloudflare-build.sh), or ""
 		self.strict = strict
 		self.log = log
 		self.warnings = []
@@ -116,6 +140,7 @@ class Site:
 			if f["group"] not in self.groups:
 				self.groups.append(f["group"])
 		self.releases = repo.releases(self.firmware)
+		self.release, self.beta = release_and_beta([m["version"] for m, _ in self.releases], self.beta)
 
 	def feature_state(self, board, name, variant="full"):
 		"""on: in this build; off: the board supports it but this build leaves it out; nw: the hardware can, the
@@ -146,6 +171,7 @@ class Site:
 			    for f in self.features]
 		return {
 			"site.json": {"format": "rfoundry-site/1", "git": self.git, "version": self.version, "built": self.built,
+				      "release": self.release, "beta": self.beta,
 				      "branch": self.branch, "repo": self.repo_url, "community": COMMUNITY_URL, "languages": self.i18n.languages, "default_language": self.i18n.default,
 				      "reports": {"sentry_dsn": self.sentry_dsn}, "tool": self.tool},
 			"radios.json": {"radios": radios, "planned": planned},
@@ -157,6 +183,15 @@ class Site:
 			"screens.json": self.screens,
 			"releases.json": {"releases": self.release_list()},
 		}
+
+	def firmware_line(self, lang):
+		"""The footer's firmware release (what the flasher installs) and the changelog: the GitHub releases."""
+		rels = self.repo_url + "/releases"
+		line = '<a href="%s">%s</a>' % (html.escape(rels), html.escape(self.i18n.t(lang, "footer.changelog")))
+		if self.release:
+			line = '<a href="%s/tag/%s">%s</a> · %s' % (html.escape(rels), html.escape(self.release),
+				html.escape(self.i18n.t(lang, "footer.firmware", version=self.release)), line)
+		return line
 
 	def release_list(self):
 		out = []
@@ -194,7 +229,8 @@ class Site:
 		       "description": description or self.i18n.t(lang, "site.tagline"), "scripts": scripts, "footer": footer,
 		       "languages": langs, "git": self.git, "assets": self.asset_version, "version": self.version, "built": self.built,
 		       "built_at": self.built_at, "built_iso": self.built_iso, "git_full": self.git_full,
-		       "git_stamp": self.git + ("-dirty" if self.git_dirty else ""), "repo": self.repo_url, "community": COMMUNITY_URL, "nav_current": nav,
+		       "git_stamp": self.git + ("-dirty" if self.git_dirty else ""), "firmware_release": self.firmware_line(lang),
+		       "repo": self.repo_url, "community": COMMUNITY_URL, "nav_current": nav,
 		       "url": SITE_URL + (full[:-len("index.html")] if full.endswith("index.html") else full),
 		       "og_image": SITE_URL + "static/img/social.png?v=" + self.asset_version,
 		       "og_width": social.W * social.ZOOM, "og_height": social.H * social.ZOOM}

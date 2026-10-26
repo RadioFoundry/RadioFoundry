@@ -5,8 +5,8 @@
     {
       "format": "rfoundry-release/1",
       "board": "dm1701", "board_name": "Baofeng DM-1701",
-      "version": "v0.1.0", "git": "5f034440", "git_full": "5f03444...",
-      "image": {"file": "rfoundry-dm1701-v0.1.0.bin", "size": 220780, "sha256": "..."},
+      "version": "v26.11", "git": "5f034440", "git_full": "5f03444...",
+      "image": {"file": "rfoundry-dm1701-v26.11.bin", "size": 220780, "sha256": "..."},
       "ranges": [{"addr": "0x0800C000", "size": 220780}],
       "sectors": [3, 4, 5, 6],
       "codec": {"included": false, "profile": "dm1701-v0206-csv-s11", "sectors": [10, 11],

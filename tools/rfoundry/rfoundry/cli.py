@@ -20,14 +20,14 @@ from . import serialflash
 EPILOG = """\
 examples:
   rfoundry flash --release latest                       download the newest release and flash it
-  rfoundry flash rfoundry-dm1701-v0.1.0.bin                  a downloaded image (its .json manifest next to it)
-  rfoundry flash --release v0.1.0 --dry-run             print exactly which sectors would be erased and written
+  rfoundry flash rfoundry-dm1701-v26.11.bin                  a downloaded image (its .json manifest next to it)
+  rfoundry flash --release v26.11 --dry-run             print exactly which sectors would be erased and written
   rfoundry flash --release latest --stock "DM-1701(CSV)-V02.06.bin"
                                                         also write the codec from your stock firmware file
   rfoundry probe                                        ask the radio (running RadioFoundry) whether its codec can be kept
   rfoundry key --stock "DM-1701(CSV)-V02.06.bin" --save derive the bootloader key from the stock file, keep it
   rfoundry key --save                                   read it from the radio instead (running RadioFoundry)
-  rfoundry flash rfoundry-dm1801pro-v0.1.0.bin --port /dev/ttyUSB0
+  rfoundry flash rfoundry-dm1801pro-v26.11.bin --port /dev/ttyUSB0
                                                         a DM-1801 Pro over its programming cable (the stub when it
                                                         runs RadioFoundry with stub entry, else Baofeng's update mode)
 
@@ -983,7 +983,7 @@ def build_parser():
 
     f = sub.add_parser("flash", help="flash a release image", formatter_class=argparse.RawDescriptionHelpFormatter)
     f.add_argument("image", nargs="?", help="image file (.bin, with its .json manifest next to it, or with the codec merged in)")
-    f.add_argument("--release", metavar="VERSION", help="download this release (v0.1.0, or latest) from GitHub")
+    f.add_argument("--release", metavar="VERSION", help="download this release (v26.11, or latest) from GitHub")
     f.add_argument("--manifest", help="the manifest, when it isn't next to the image")
     f.add_argument("--repo", default=relmod.DEFAULT_REPO, help="GitHub repository (default %(default)s)")
     f.add_argument("--codec", choices=("auto", "keep", "merge"), default="auto",

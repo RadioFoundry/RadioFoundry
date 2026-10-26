@@ -40,7 +40,7 @@ a new deployment in one step, so a deployment has no downtime.
 
 | Part | Setup |
 |---|---|
-| Build | Command `site/cloudflare-build.sh`, output directory `build/site`, root directory the repository root. The script installs `site/requirements.txt`, fetches the newest release's `rfoundry-*` images from the GitHub API and runs `site/build.py --strict`. A failed build leaves the last deployment up |
+| Build | Command `site/cloudflare-build.sh`, output directory `build/site`, root directory the repository root. The script installs `site/requirements.txt`, lists the releases through the GitHub API, fetches the `rfoundry-*` images of the newest one that is not a pre-release, passes the newest pre-release (a `bN` tag) when it is newer than that (`--beta`), and runs `site/build.py --strict`. A failed build leaves the last deployment up |
 | Branches | Production branch `main`; every other branch of this repository builds a preview |
 | Variables | `PYTHON_VERSION` `3.12` (both environments). `RFOUNDRY_SENTRY_DSN` in production only, so previews send no error reports. `GITHUB_TOKEN` (encrypted, both environments): a fine-grained token with read-only access to public repositories. Without it the release lookup shares the builders' 60 requests an hour, and a build can fail with 403 "rate limit exceeded" after a minute of retries |
 | Custom domain | `radiofoundry.org` on the project (Custom domains). The `www` name redirects to it |
@@ -132,8 +132,10 @@ Every page's footer has two help cards: the community group (`COMMUNITY_URL` in 
 `static/js/report.js`) links the same two. Their icons are CSS masks (`.icon-*` in `site.css`), drawn in the text
 color.
 
-Every page's footer ends with a faint build stamp: the commit the site was built from (`-dirty` with uncommitted
-changes, linked to the commit) and the build time in UTC (`data/site.json` has the same commit and the date).
+Every page's footer ends with a faint build stamp: the firmware release the flasher installs (linked to its GitHub
+release; left out before the first release), a Changelog link to the GitHub releases, the commit the site was built from
+(`-dirty` with uncommitted changes, linked to the commit) and the build time in UTC. `data/site.json` has the same
+commit and the date, the release (`release`) and the pre-release offered (`beta`, below).
 
 All visual decisions are variables in `tokens.css`: colors for light and dark, type sizes, spacing, radii.
 `site.css` only uses them. A redesign replaces `tokens.css`, then `site.css` and the templates; the generator doesn't
@@ -242,6 +244,11 @@ Two notices show on every step of the web flasher once a radio is picked, above 
 |---|---|---|
 | Pre-release | The radio's `[status] level` is below `supported`. Says the build is in development, that not every feature may work or has been tried on a radio, and links to the project's GitHub issues to report a bug | The `flash.prerelease.*` strings of `site/i18n/<code>.json` |
 | Board | The board sets `[flash] notice`: a warning for a choice the radio can't check itself | board.toml ([board-registry.md](board-registry.md)) |
+
+One more shows on the start page and the first install step: **Beta**, when `site.json` names a pre-release newer
+than the release (`--beta`, from `site/cloudflare-build.sh`). It links to the same page with `?version=<beta>`, so the
+user opts in through a version link and the build service builds the tag; the default install stays the release. It is
+hidden while a version link is in use. Text: the `flash.beta.*` strings.
 
 ## Error logging and bug reports
 

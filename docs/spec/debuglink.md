@@ -118,6 +118,7 @@ Example from an STM32F4 radio (`<profile>` stands for the codec profile id):
 proto=1                 protocol version (this document)
 view=3                  GET_VIEW record version (3.7)
 git=5277f73a            firmware git hash
+release=v26.11          release name; only in a build of a release tag
 board=XR-100UV
 features=FM,SUBTONE,DMR,DMR_PRIVACY,...,USB,HOSTLINK,DEBUGLINK
 codec=<profile>-s11  the codec profile found in flash (below)
@@ -128,6 +129,9 @@ req_max=64
 reply_max=1024
 inject_max_ms=10000     longest hold of an injected key, PTT included
 ```
+
+`release=` is the release name (`RFOUNDRY_RELEASE`, [release.md](../dev/release.md#release-names)), present only when
+the image was built from a release tag; `git=` is always the commit. A host shows the release name when there is one.
 
 `codec=` is the board's own check of the codec in flash, the same one that decides whether DMR voice runs: a
 profile id (`<profile>-s11` on an STM32F4 radio: the descriptor is valid and the signature word and the CRC-32 of

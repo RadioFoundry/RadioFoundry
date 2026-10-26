@@ -54,6 +54,11 @@ jobs:
       publish: ${{ steps.v.outputs.publish }}
       rfoundry: ${{ steps.v.outputs.rfoundry }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          submodules: false
+          sparse-checkout: tools/release_version.py   # the tag's check
+          sparse-checkout-cone-mode: false
       - id: v
         env:
           # never for a pull request: its workflow file is its own, and the self-hosted runner refuses those
@@ -69,6 +74,8 @@ jobs:
           fi
           echo "rfoundry=$m" >> "$GITHUB_OUTPUT"
           if [ "${GITHUB_REF_TYPE}" = tag ] && [ "${GITHUB_REF_NAME#v}" != "${GITHUB_REF_NAME}" ]; then
+            # a release name or nothing: vYY.M, vYY.M.N, either with bN (docs/dev/release.md)
+            python3 tools/release_version.py check "${GITHUB_REF_NAME}"
             echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
@@ -243,7 +250,10 @@ jobs:
           Windows. Flash with: rfoundry flash --release ${TAG}. rfoundry keeps the codec already in your radio when
           that is known to be safe, or writes it from your radio's stock firmware file (--stock). See
           docs/user/02-installing.md."
+          # a beta tag (bN) is a pre-release: the site's default install (the latest release) skips it
+          PRE=""
+          if python3 tools/release_version.py prerelease "$TAG"; then PRE=--prerelease; fi
           gh release view "$TAG" > /dev/null 2>&1 || \
-            gh release create "$TAG" --verify-tag --title "RadioFoundry $TAG" --notes "$NOTES" || \
+            gh release create "$TAG" --verify-tag $PRE --generate-notes --title "RadioFoundry $TAG" --notes "$NOTES" || \
             gh release view "$TAG" > /dev/null   # created meanwhile by the manual workflow
           gh release upload "$TAG" out/* --clobber

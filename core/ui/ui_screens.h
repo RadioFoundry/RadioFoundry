@@ -227,7 +227,7 @@ int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *ti
 int ui_list_rows(const ui_list_t *l);
 
 // The boot screen: the mark, the name, the owner's two boot text lines (empty: left out), board and version
-void ui_draw_splash(const char *board_name, const char *git, const char *line1, const char *line2);
+void ui_draw_splash(const char *board_name, const char *version, const char *line1, const char *line2);
 void ui_draw_home(const radio_view_t *v, const ui_state_t *s);
 #if CONFIG_DUAL_WATCH
 // Home while dual watch runs: both channels, each with its frequency, which one PTT uses (PTT) and which one a call is
