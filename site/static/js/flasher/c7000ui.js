@@ -30,6 +30,7 @@ import { register } from "./backends.js";
 import { makeStockRoutes } from "./iapui.js";
 import { Usmart, stockVersion, stockName } from "./usmart.js";
 import { Iap, checkInstallImage } from "./iap.js";
+import { errorNotice } from "../report.js";
 
 // USB-serial chips found in programming cables (tools/serial_loader.py USB_SERIAL), for the port chooser
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
@@ -150,7 +151,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			h("ol", { class: "steps c7-big" },
 				h("li", {}, t("flash.c7.connect.step_cable")),
 				h("li", {}, t("flash.c7.connect.step_choose"))),
-			err ? notice(err, "bad") : null,
+			err ? errorNotice(err) : null,
 			h("p", { class: "small muted" }, t("flash.c7.connect.no_cable"), " ",
 				h("a", { href: "#", onclick: (e) => { e.preventDefault(); start(true); } }, t("flash.c7.connect.all_ports"))),
 			h("details", { class: "small" }, h("summary", {}, t("flash.c7.connect.which_port")), h("p", {}, t("flash.c7.connect.which_port_text"))));
@@ -241,7 +242,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			c.how = "rfoundry";
 			await ready(t("flash.c7.connect.found_rfoundry_stub"));
 		} catch (e) {
-			show({ led: "off", screen: "on" }, notice(t("flash.c7.connect.rfoundry_failed", { error: ctx.errorText(e) }), "bad"));
+			show({ led: "off", screen: "on" }, errorNotice(t("flash.c7.connect.rfoundry_failed", { error: ctx.errorText(e) })));
 			act(button(t("flash.c7.connect.power_instead"), () => powerCycle(), { primary: true }));
 		}
 	};
@@ -316,7 +317,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			c.how = "rom";
 			await ready(t("flash.c7.connect.found_rom"));
 		} catch (e) {
-			show({ led: "off", screen: "off" }, notice(t("flash.c7.connect.load_failed", { error: ctx.errorText(e) }), "bad"));
+			show({ led: "off", screen: "off" }, errorNotice(t("flash.c7.connect.load_failed", { error: ctx.errorText(e) })), powerHints());
 			act(button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: true }));
 		}
 	};
@@ -347,7 +348,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			await sleep(S().fakeC7 ? 400 : 1500);
 			onReady();
 		} catch (e) {
-			show({ led: "wait", screen }, notice(ctx.errorText(e), "bad"));
+			show({ led: "wait", screen }, errorNotice(ctx.errorText(e)));
 			act(button(t("flash.c7.connect.try_again"), () => find(), { primary: true }));
 		}
 	};
@@ -500,7 +501,7 @@ export function checkView() {
 			await decideView();
 		} catch (e) {
 			say("progmem", items.progmem.dataset.state === "run" ? "bad" : items.progmem.dataset.state);
-			fill(status, notice(t("flash.c7.check.failed", { error: ctx.errorText(e) }), "bad"), retryHelp());
+			fill(status, errorNotice(t("flash.c7.check.failed", { error: ctx.errorText(e) })), retryHelp());
 			run.disabled = false;
 		} finally {
 			await busy(false);
@@ -646,7 +647,7 @@ export function writeView() {
 		if (flash().first_stage) checkInstallImage(fw.image, flash().first_stage);
 		[start, data] = c7.target(C(), boardId(), fw.image, d.mode === "write" ? d.slot : null);
 	} catch (e) {
-		return panel(t("flash.write.title"), notice(ctx.errorText(e), "bad"));
+		return panel(t("flash.write.title"), errorNotice(ctx.errorText(e)));
 	}
 	const what = d.mode === "keep" ? t("flash.c7.codec.keep") : d.mode === "none" ? t("flash.c7.codec.none") : t(`flash.c7.codec.from_${d.source}`, { name: d.name || "", tag: String(d.tag ?? "").padStart(3, "0") });
 	const go = button(t("flash.c7.write.go"), () => write(), { primary: true });
@@ -692,7 +693,7 @@ export function writeView() {
 			ctx.flashFinished(started, e);
 			await busy(false);
 			top.set({ led: "wait", screen: "off" });
-			fill(status, notice(t("flash.c7.write.failed", { error: ctx.errorText(e) }), "bad"), retryHelp(), ctx.helpLink());
+			fill(status, errorNotice(t("flash.c7.write.failed", { error: ctx.errorText(e) })), retryHelp(), ctx.helpLink());
 			S().forward(button(t("flash.c7.write.again"), async () => {
 					if (!(await c.stub.attach())) {
 						await dropC7();
@@ -798,7 +799,7 @@ export function backupView() {
 			S().forward(leaveLoaderButton(t("flash.c7.backup.leave")));
 		} catch (e) {
 			ctx.flashFinished(started, e);
-			fill(status, notice(ctx.errorText(e), "bad"), retryHelp());
+			fill(status, errorNotice(ctx.errorText(e)), retryHelp());
 			go.disabled = false;
 		} finally {
 			await busy(false);
@@ -889,7 +890,7 @@ export function restoreView() {
 				S().bundle.parts.get("c7000-data") ? notice(t("flash.c7.restore.data_note"), "info") : null);
 		} catch (e) {
 			ctx.flashFinished(started, e);
-			fill(status, notice(ctx.errorText(e), "bad"), retryHelp());
+			fill(status, errorNotice(ctx.errorText(e)), retryHelp());
 			go.disabled = false;
 		} finally {
 			await busy(false);

@@ -31,6 +31,10 @@ Any way you can:
 
 **The web flasher or the Codeplug Editor failed. How do I report it?**
 
+On radiofoundry.org most errors are reported automatically: the message says so and gives a reference. Type what you
+were doing in the box under it and click **Send Details**; the developers review every report and work on the
+underlying problem. To send more, or where reporting is off or blocked, use **Report a Problem**.
+
 Click **Report a Problem** under the error message, describe what you were doing, and download the report. It's a zip
 file with the steps the page took, the errors and your browser's details. Email it to the developers or attach it to a
 GitHub issue. If the problem is reading or writing a codeplug, tick the box that includes it: a codeplug holds your

@@ -144,6 +144,15 @@ export function report(description = "") {
 
 export const lastError = () => errors.at(-1) || null;
 
+// The last n steps and errors, without the wire log, for an automatic error report: what led up to the error (the
+// port chosen, what the radio said) at a size that suits it. Each step's data is cut to 300 characters
+export function trail(n = 20) {
+	return events.filter((e) => e.kind !== "wire").slice(-n).map((e) => {
+		const data = e.data === undefined ? undefined : JSON.stringify(e.data);
+		return { t: e.t, text: String(e.text).slice(0, 120), ...(data !== undefined ? { data: data.length > 300 ? `${data.slice(0, 300)}…` : data } : {}) };
+	});
+}
+
 // For the tests
 export function reset() {
 	events.length = 0;

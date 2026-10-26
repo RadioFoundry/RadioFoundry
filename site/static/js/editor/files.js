@@ -8,12 +8,24 @@ import { CodeplugImage, CODEPLUG_SPAN, TFTP_SIZE } from "../codeplug/image.js";
 import { readHeader, recordSize, AREA1, AREA1_SIZE, HEADER, AREA2 } from "../codeplug/iddb.js";
 import { openBundle } from "../flasher/backup.js";
 import { unzip } from "../flasher/zip.js";
-import { startsWith } from "../flasher/bytes.js";
+import { startsWith, toHex } from "../flasher/bytes.js";
 import { classify } from "../codeplug/detect.js";
 import { importStock, STOCK, RDT_MD380 } from "../codeplug/stock_tyt.js";
 import { empty, encode } from "../codeplug/model.js";
 
-export class FileError extends Error {}
+// code: the editor.err.* text; params: what the file was, for the error report (never its contents)
+export class FileError extends Error {
+	constructor(code, params = undefined) {
+		super(code);
+		this.name = "FileError";
+		this.code = code;
+		if (params) this.params = params;
+	}
+}
+
+// What an unknown file was, for the report: its extension, size and first bytes (a vendor format's signature)
+const fileFacts = (name, bytes, more = {}) => ({ ext: (/\.([^./]{1,8})$/.exec(name || "")?.[1] || "").toLowerCase(),
+	size: bytes.length, head: toHex(bytes.subarray(0, 16)), ...more });
 
 // How far a dump must be kept so the DMR ID database in it stays whole
 function idDbTop(b) {
@@ -53,7 +65,7 @@ export async function openFile(name, bytes) {
 		if (!entries.has("backup.json")) {
 			const dec = new TextDecoder();
 			const files = [...entries].filter(([n]) => /\.csv$/i.test(n)).map(([n, d]) => ({ name: n.replace(/^.*\//, ""), text: dec.decode(d) }));
-			if (!files.length) throw new FileError("unknown_file");
+			if (!files.length) throw new FileError("unknown_file", fileFacts(name, bytes, { entries: [...entries.keys()].slice(0, 10).map((n) => n.slice(-60)) }));
 			return { kind: "csv-set", files };
 		}
 		const { meta, parts } = await openBundle(bytes);
@@ -71,7 +83,7 @@ export async function openFile(name, bytes) {
 		const f = fromBytes(bytes);
 		if (f.kind === "converted") return f;
 	}
-	throw new FileError("unknown_file");
+	throw new FileError("unknown_file", fileFacts(name, bytes));
 }
 
 // The bytes Save writes: the image up to the end of its ID database

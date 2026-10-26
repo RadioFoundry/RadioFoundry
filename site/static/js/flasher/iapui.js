@@ -18,6 +18,7 @@ import { sleep } from "./bytes.js";
 import * as c7 from "./c7000.js";
 import { Usmart, stockName } from "./usmart.js";
 import { trimTail } from "./iap.js";
+import { errorNotice } from "../report.js";
 
 const LISTEN_MS = 180000;	// how long the page waits for update mode
 const WORD_RATE = 14;		// console frames per second, written or read back (radio, 2026-10-18: 3,470 in 242 s)
@@ -42,7 +43,7 @@ export function makeStockRoutes(host) {
 		try {
 			build = await con.build();
 		} catch (e) {
-			show({ led: "off", screen: "on" }, notice(t("flash.usmart.failed", { error: ctx.errorText(e) }), "bad"));
+			show({ led: "off", screen: "on" }, errorNotice(t("flash.usmart.failed", { error: ctx.errorText(e) })));
 			return act(button(t("flash.iap.none.again"), onAgain, { primary: true }), other);
 		}
 		if (!build) {
@@ -83,7 +84,7 @@ export function makeStockRoutes(host) {
 				await busy(false);
 				const stopped = e.message === "stopped";
 				// a stop or a failure before the start leaves the original firmware running; one after it may not
-				fill(status, notice(stopped ? t("flash.usmart.stopped") : t("flash.usmart.failed", { error: ctx.errorText(e) }), stopped ? "info" : "bad"),
+				fill(status, (stopped ? notice(t("flash.usmart.stopped"), "info") : errorNotice(t("flash.usmart.failed", { error: ctx.errorText(e) }))),
 					stopped ? null : h("p", {}, t("flash.usmart.retry_how")));
 				act(button(t("flash.iap.none.again"), onAgain, { primary: true }), other);
 			}
@@ -94,7 +95,7 @@ export function makeStockRoutes(host) {
 	// The console started the stub but it does not answer: the original firmware may have stopped, so the radio needs
 	// a restart before anything else is tried
 	function stubSilent({ show, act, onAgain, onUpdateMode }, error) {
-		show({ led: "off", screen: "any", knob: "cycle" }, notice(t("flash.usmart.no_stub", { error }), "bad"),
+		show({ led: "off", screen: "any", knob: "cycle" }, errorNotice(t("flash.usmart.no_stub", { error })),
 			h("ol", { class: "steps c7-big" }, h("li", {}, t("flash.usmart.no_stub_off")), h("li", {}, t("flash.usmart.no_stub_on"))));
 		act(button(t("flash.iap.none.again"), onAgain, { primary: true }), onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode, { quiet: true }));
 	}
@@ -130,7 +131,7 @@ export function makeStockRoutes(host) {
 			const [, data] = c7.target(C(), boardId(), fw.image, d.mode === "write" ? d.slot : null);
 			image = trimTail(data);
 		} catch (e) {
-			return panel(t("flash.write.title"), notice(ctx.errorText(e), "bad"));
+			return panel(t("flash.write.title"), errorNotice(ctx.errorText(e)));
 		}
 		const what = d.mode === "keep" ? t("flash.c7.codec.keep") : d.mode === "none" ? t("flash.c7.codec.none")
 			: t(`flash.c7.codec.from_${d.source}`, { name: d.name || "", tag: String(d.tag ?? "").padStart(3, "0") });
@@ -148,7 +149,7 @@ export function makeStockRoutes(host) {
 		try {
 			image = c7.restoreTarget(C(), progmem)[1];
 		} catch (e) {
-			return panel(t("flash.c7.restore.title"), notice(ctx.errorText(e), "bad"));
+			return panel(t("flash.c7.restore.title"), errorNotice(ctx.errorText(e)));
 		}
 		return iapPanel({ title: t("flash.c7.restore.title"), image, restore: true, rows: [],
 			lead: vendor ? t("flash.iap.restore_lead_vendor", { file: vendor }) : null,
@@ -200,7 +201,7 @@ export function makeStockRoutes(host) {
 				ctx.flashFinished(started, e);
 				await busy(false);
 				const stopped = e.message === "stopped";
-				fill(status, notice(stopped ? t("flash.iap.cancelled") : t("flash.iap.failed", { error: ctx.errorText(e) }), stopped ? "info" : "bad"),
+				fill(status, (stopped ? notice(t("flash.iap.cancelled"), "info") : errorNotice(t("flash.iap.failed", { error: ctx.errorText(e) }))),
 					stopped ? null : h("div", { class: "notice info" }, h("p", {}, t("flash.iap.retry_safe")), h("p", { class: "small" }, t("flash.iap.retry_how"))),
 					stopped ? null : ctx.helpLink());
 				prog.el.hidden = true;

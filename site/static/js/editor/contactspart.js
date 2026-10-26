@@ -6,6 +6,7 @@
 // sent anywhere but RadioID itself.
 
 import { register } from "./extensions.js";
+import * as diag from "../diag.js";
 import { h, button, progressBar } from "../flasher/dom.js";
 import * as radioid from "../codeplug/sources/radioid.js";
 import { writeIddb, eraseIddb, addContacts, iddbEnd, iddbSize } from "../codeplug/sources/output.js";
@@ -381,7 +382,8 @@ async function fetchUsers() {
 	} catch (e) {
 		d.close();
 		if (e?.name === "AbortError" || ctrl.signal.aborted) return;
-		api.say(t("editor.rid.fetch_failed", { error: e?.params?.error || e?.message || String(e) }), "bad");
+		diag.error("radioid fetch", e);
+		api.say(t("editor.rid.fetch_failed", { error: e?.params?.error || e?.message || String(e) }), "bad", { report: true });
 	}
 }
 
