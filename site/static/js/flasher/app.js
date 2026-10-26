@@ -677,6 +677,7 @@ async function reset() {
 	// exactly a fresh load: fields set along the way (buildOptions, keyFromRadio, ...) go, the rest start over
 	for (const k of Object.keys(S)) delete S[k];
 	Object.assign(S, initialState(), keep);
+	setAdapter(null);	// the next connect names its own
 	render();
 }
 
@@ -1284,8 +1285,13 @@ function openfwBackupNow({ onDone = null, actions = null } = {}) {
 		return openfwFound();
 	};
 	const partial = button(t("flash.openfw.save_partial"), async () => {
-		const s = await saveBundle(S.openfwRead);
-		status.append(notice(t("flash.backup.saved", { name: s.name, size: s.size }), "ok"));
+		try {
+			const s = await saveBundle(S.openfwRead);
+			status.append(notice(t("flash.backup.saved", { name: s.name, size: s.size }), "ok"));
+		} catch (e) {
+			diag.error("flash/openfw save partial", e);
+			status.append(errorNotice(errorText(e)));
+		}
 	}, { quiet: true });
 	const run = async () => {
 		runBtn.disabled = true;
@@ -1303,7 +1309,7 @@ function openfwBackupNow({ onDone = null, actions = null } = {}) {
 			if (st.stopped) {
 				flashFinished(started, new Error(`stopped at ${hex(st.stopped.addr)}: ${st.stopped.why}`));
 				await dropSerial();
-				const why = { "no answer": "flash.openfw.stopped", refused: "flash.openfw.refused", cancelled: "flash.openfw.cancelled" }[st.stopped.why];
+				const why = { "no answer": "flash.openfw.stopped", refused: "flash.openfw.refused", canceled: "flash.openfw.canceled" }[st.stopped.why];
 				status.replaceChildren(notice(t(why, { addr: hex(st.stopped.addr), part: t(`flash.backup.part.${st.stopped.part}`) }), "action"),
 					...found, h("div", { class: "actions" }, partial));
 				runBtn.textContent = t("flash.openfw.again");
@@ -1940,7 +1946,16 @@ function helpLink() {
 // What a bug report says about the flasher: no names, callsigns or IDs (automatic error reports carry it too)
 // The USB device in use (adapter.js): on the trail, as a tag on error reports, in the flash log and problem reports
 function useAdapter(a) {
-	if (!a || (S.adapter && adapter.describe(S.adapter) === adapter.describe(a))) return;
+	if (!a) {
+		// a port without USB ids (the "all ports" choice) after a cable: no stale chip, no stale CH340 banner
+		if (S.adapter) {
+			S.adapter = null;
+			setAdapter(null);
+			diag.note("adapter none (no USB ids)");
+		}
+		return;
+	}
+	if (S.adapter && adapter.describe(S.adapter) === adapter.describe(a)) return;
 	S.adapter = a;
 	setAdapter(a);
 	diag.note(`adapter ${adapter.describe(a)}`);
@@ -1972,11 +1987,11 @@ function reportMeta() {
 		step: String(stepsFor()?.[S.step] ?? S.step ?? ""), flash_id: S.lastFlashId || undefined, adapter: S.adapter || undefined,
 		result: S.reportResult || "failed", error: last ? `${last.stage}: ${last.message}` : undefined,
 		decisions: { codec_mode: S.decision?.mode || "", codec_source: S.decision ? S.decision.source || "stock" : "", key_source: S.keySource || "",
-			plan: S.planText || "", files },
+			plan: (S.planText || "").slice(0, 300), files },
 	};
 }
 
-// The files the user can attach to a problem report, all ticked: the vendor file picked, the internal flash read, the
+// The files the user can attach to a problem report, all checked: the vendor file picked, the internal flash read, the
 // backup the page made
 function reportAttachments() {
 	const out = [];
@@ -2158,8 +2173,11 @@ function stockRecovery(go) {
 	}, { task: "restore", source: "stock", radio: S.board.id, firmware: "stock" });
 }
 
+// practice mode (#sim...): a problem report is answered in the page, nothing sent, also before the simulation is up
+const SIM_HASH = /(?:^#|&)sim(?:=|&|$)/;
+
 async function main() {
-	initReporting({ tool: "flasher", context: reportContext, attachments: reportAttachments, backend: { api: API, meta: reportMeta, practice: () => !!S.sim } });
+	initReporting({ tool: "flasher", context: reportContext, attachments: reportAttachments, backend: { api: API, meta: reportMeta, practice: () => !!S.sim || SIM_HASH.test(location.hash) } });
 	if (!FLASH_LOG) document.getElementById("flash-log-off")?.replaceWith(t("flash.log.is_off"));
 	// the privacy contact is put together here, so address scrapers don't find it in the page or the repository
 	const mail = ["tseuqer-ycavirp-rdo", "moc.relwofrecneps"].map((x) => [...x].reverse().join("")).join("@");

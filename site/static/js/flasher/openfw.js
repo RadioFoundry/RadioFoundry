@@ -77,7 +77,7 @@ export function newState(board, radio) {
 		info: null,
 		rom: { base: board.rom_base, data: new Uint8Array(board.flash_end - board.rom_base).fill(0xFF), done: 0 },
 		spi: { data: new Uint8Array(radio.backup.spi_size).fill(0xFF), done: 0 },
-		stopped: null,		// {part: "internal" | "spi", addr, why: "no answer" | "refused" | "cancelled"}
+		stopped: null,		// {part: "internal" | "spi", addr, why: "no answer" | "refused" | "canceled"}
 		requests: 0,
 	};
 }
@@ -99,7 +99,7 @@ async function dump(link, area, part, name, state, { avoid = null, progress = ()
 	while (part.done < size) {
 		const [[a, n]] = pieces(part.done, size, { avoid });
 		if (signal?.aborted) {
-			state.stopped = { part: name, addr: (part.base || 0) + a, why: "cancelled" };
+			state.stopped = { part: name, addr: (part.base || 0) + a, why: "canceled" };
 			return false;
 		}
 		let d;
@@ -125,7 +125,7 @@ async function dump(link, area, part, name, state, { avoid = null, progress = ()
 
 // Read the radio: its info, the MCU flash (bootloader included, for the key), then the SPI flash. state: an earlier
 // run's, to continue it (the same radio and firmware; otherwise it starts over). Returns the state; state.stopped
-// says where and why a run stopped early (signal: the user stopped it, "cancelled"; nothing is lost either way). Throws OpenFwError "no-info" when the port gives no radio info, "type" when
+// says where and why a run stopped early (signal: the user stopped it, "canceled"; nothing is lost either way). Throws OpenFwError "no-info" when the port gives no radio info, "type" when
 // the radio type isn't one of this board's.
 export async function readBackup(link, board, radio, { state = null, progress = () => {}, signal } = {}) {
 	const info = await readInfo(link);

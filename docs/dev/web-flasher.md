@@ -210,11 +210,11 @@ and the tag `adapter_chip`.
    contact, adapter}`. `result` is `problem` when the install verified and `failed` otherwise. `decisions` holds
    `codec_mode`, `codec_source`, `key_source`, `plan` and `files` (role, name, length, SHA-256, id). The answer is 201
    with `id` and an upload `token`.
-2. Each ticked file: `POST /v1/reports/{id}/files?kind=stock|backup|readout&name=&token=`, `application/octet-stream`.
+2. Each checked file: `POST /v1/reports/{id}/files?kind=stock|backup|readout&name=&token=`, `application/octet-stream`.
    A refused file (413, 409, 410, 429, ...) is listed under the result. The report still counts.
 
 The files offered are the vendor file picked, the internal flash read and the last backup the page saved. All are
-ticked by default. The message and the email address are optional. The dialog says what is sent and that files and
+checked by default. The message and the email address are optional. The dialog says what is sent and that files and
 the address are deleted within 90 days. It works with `?reporting=0`, since the user sends it. `#sim` answers
 locally (`practiceFetch`) and sends nothing.
 
@@ -297,7 +297,7 @@ current-firmware step offers a full backup before the install, and the install t
 | What the probe leads to | `openfw.recognized()`: `backup` (offered), `wrong-type` (the radio info names another radio: a wrong pick, with the stock-file route, **Other / Not sure**, one click away), `unsupported` (the stock-file route, as for any other firmware) |
 | Radio type | The radio info's type must be one of the board's, or nothing is read |
 | Requests | `R` only: area 9, then area 5 over exactly [`rom_base`, `flash_end`) (bootloader included, for the key), then area 1 over the whole SPI flash. Never `C` (a `C` 6 2 saves settings and once hung a radio's USB), never area 10 (some builds don't answer), never more than 2045 bytes per request. 0x7590-0x75FF of area 1 is read in 32-byte requests, so the VFO overlay never applies |
-| A radio that stops answering | Each request is asked three times (a read changes nothing). Then the backup stops and keeps what it read (`state.stopped`, why `no answer`); after a power cycle the same state continues (`readBackup({state})`) where it stopped. A refused read (`refused`) stops the same way. **Stop Reading**, or leaving the step (`render()` aborts it), stops it as `cancelled`. What was read can be saved as an incomplete bundle |
+| A radio that stops answering | Each request is asked three times (a read changes nothing). Then the backup stops and keeps what it read (`state.stopped`, why `no answer`); after a power cycle the same state continues (`readBackup({state})`) where it stopped. A refused read (`refused`) stops the same way. **Stop Reading**, or leaving the step (`render()` aborts it), stops it as `canceled`. What was read can be saved as an incomplete bundle |
 | Fallback | Whatever the backup didn't give comes from the stock file, as from any other firmware: key or codec not found, a read that stopped before them, a skipped backup, a wrong radio type. The codec step says why (`openfwCodecNote()`). `decideCodec()` never keeps a codec it can't verify unless the user forces it |
 | Speed | About 190 KB/s (2045-byte requests): 1 MB of MCU flash and 16 MB of SPI flash take about 1.5 minutes |
 | The key | `keyFromImage()`: the 1024-byte block of the bootloader region whose SHA-256 is the board's `key_sha256`, searched (`bootkey.js`), no offset assumed. Stored as a key read from a RadioFoundry radio (`S.key`, local storage) |

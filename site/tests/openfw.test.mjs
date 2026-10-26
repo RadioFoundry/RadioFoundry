@@ -377,7 +377,7 @@ test("flow: the user stops the read (Stop Reading, or leaves the step), then con
 	const stop = new AbortController();
 	let n = 0;
 	const st = await openfw.readBackup(link, sim.board, radioOf(), { signal: stop.signal, progress: () => { if (++n === 50) stop.abort(); } });
-	assert.equal(st.stopped.why, "cancelled");
+	assert.equal(st.stopped.why, "canceled");
 	assert.equal(st.rom.done, 50 * openfw.CLIP);
 	const again = await openfw.readBackup(link, sim.board, radioOf(), { state: st });
 	assert.ok(openfw.complete(again));
