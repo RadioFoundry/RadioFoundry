@@ -100,7 +100,7 @@ A radio that doesn't answer the debug link probe is told apart by what its port 
 `whyNoAnswer()`): nothing (`silent`), debug link frames that weren't the reply (`link`), or other bytes (`other`). When
 the first byte is `-`, the open-firmware CPS's refusal ([open-firmware-cps.md](../spec/open-firmware-cps.md) 2), the
 page reads the radio info (area 9, section 4) and checks its structure: a match is `openfw`, a radio on another open
-firmware (the OpenGD77 family), and the "current firmware" step offers **Other open firmware**. Only that read is sent,
+firmware (the OpenGD77 family), and the "current firmware" step offers **Another open firmware**. Only that read is sent,
 never a `C` control command. A RadioFoundry build with the CPS shim but without the debug link answers the same way.
 
 The browser's own USB and serial errors (`NetworkError`, `InvalidStateError`, a failed `fetch`) say little. `errorText()`

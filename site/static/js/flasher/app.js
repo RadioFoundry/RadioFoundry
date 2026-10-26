@@ -1034,7 +1034,7 @@ function nowView() {
 			status.replaceChildren();
 		} catch (e) {
 			await dropSerial();
-			// another open firmware: the "Other open firmware" choice is what this radio needs, one click away
+			// another open firmware: the "Another open firmware" choice is what this radio needs, one click away
 			const other = e.params?.kind === "openfw" ? h("p", {}, t("flash.now.openfw_switch"), " ",
 				button(t("flash.now.openfw_use"), () => { S.now = { kind: "unknown" }; status.replaceChildren(); draw(); })) : null;
 			status.replaceChildren(connectError(e), other || serialHelp());
