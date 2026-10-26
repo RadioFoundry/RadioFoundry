@@ -134,7 +134,9 @@ export async function identifyFile(data, fb, boardId = null) {
 	// a readout of an STM32 radio's flash: identified so the page can say what it is, but the page takes the codec and
 	// the key from the manufacturer's file only
 	const flash = await stockfw.fromFlash(data, fb);
-	if (flash) return { sha, board: flash.profile.board, kind: "readout", how: "readout", profile: flash.profile, known: flash.profile.name };
+	// named by its codec's layout, not by the first file that has it: several files can put the same codec in flash
+	if (flash) return { sha, board: flash.profile.board, kind: "readout", how: "readout", profile: flash.profile,
+		known: `${fb.boards[flash.profile.board]?.name || flash.profile.board} ${stockfw.layoutName(flash.profile, fb.profiles)}` };
 	return { sha, board: null, known, problem: "not-vendor", why: known ? `${known}, which gives no codec` : "not a firmware file RadioFoundry knows" };
 }
 

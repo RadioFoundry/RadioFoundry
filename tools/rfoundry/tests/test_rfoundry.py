@@ -1012,6 +1012,14 @@ class Dm1701Builds(unittest.TestCase):
         self.assertEqual(sorted(tags), [0x0203, 0x0206, 0x10203, 0x10206])
         self.assertTrue(all(len(v) == 1 for v in tags.values()), tags)
 
+    def test_readout_named_by_layout(self):
+        """A readout can't tell files with the same codec layout apart, so it is named after all of them"""
+        for h in (self.V0201, self.V0202, self.V0203):
+            self.assertEqual(stockfw.layout_name(stockfw.PROFILES[h]), "V02.01/V02.02/V02.03 CSV")
+        for h, v in ((self.V0206, "V02.06 CSV"), (self.V0206N, "V02.06 noCSV"), (self.V0203N, "V02.03 noCSV")):
+            self.assertEqual(stockfw.layout_name(stockfw.PROFILES[h]), v)
+            self.assertEqual(stockfw.same_layout(stockfw.PROFILES[h]), [stockfw.PROFILES[h]])
+
     def test_one_map_for_three_files(self):
         """The three older files: one code window (by its hash), the dm1701-v0203-csv map, one placement and tag."""
         maps = codecmap.load_maps()

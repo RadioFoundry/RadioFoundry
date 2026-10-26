@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfo
 from rfoundry.stockfw import (APP_BASE, CODEC_SIG, DESC_ADDR, FLASH_BASE, FLASH_END, HEADER_LEN, KEY_LEN,  # noqa: E402,F401
                               MAGIC, PROFILES, SYN_BL, SYN_SELF_REF, StockError as ExtractError, app_file_offset,
                               build_synthetic_stock, decrypt, derive_key, descriptor, extract, find_profile, from_flash,
-                              is_container, layout, merge, no_codec, parse_container, profile_for_board, sha256,
+                              is_container, layout, layout_name, merge, no_codec, parse_container, profile_for_board, sha256,
                               windows)
 from rfoundry.codecmap import bl_target  # noqa: E402
 from rfoundry import boards  # noqa: E402  (the board registry: the boards this tool serves)
@@ -351,7 +351,7 @@ def main():
         print("error: %s" % e, file=sys.stderr)
         return 1
     print("stock  %s (%s), %s codec: %s verified"
-          % (prof["name"] if readout is None else "flash readout with " + prof["version"], sha256(stock)[:8], board,
+          % (prof["name"] if readout is None else "flash readout with " + layout_name(prof), sha256(stock)[:8], board,
              ", ".join("0x%08X+0x%X" % (a, n) for a, n, _ in layout(prof))))
     print("wrote  %s (%d bytes; contains the proprietary codec: keep it to yourself)" % (out, len(merged)))
     return 0

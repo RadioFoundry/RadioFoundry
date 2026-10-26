@@ -942,6 +942,24 @@ def from_flash(flash, base=FLASH_BASE, profiles=None):
     return None
 
 
+def same_layout(prof, profiles=None):
+    """Every profile whose codec is the same bytes at the same addresses as prof's, in profiles order: the same board,
+    stock windows and placement. A readout of the radio's flash can't tell these files apart"""
+    profiles = PROFILES if profiles is None else profiles
+    key = lambda p: (p["board"], windows(p), p.get("placement"), p.get("placed"))
+    return [p for p in profiles.values() if key(p) == key(prof)]
+
+
+def layout_name(prof, profiles=None):
+    """The versions a readout's codec could come from (same_layout): "V02.06 CSV" for a codec only one file holds,
+    "V02.01/V02.02/V02.03 CSV" for one that several files hold, their common last words said once"""
+    vs = [p["version"] for p in same_layout(prof, profiles)] or [prof["version"]]
+    heads, tails = zip(*[(v.split(" ", 1) + [""])[:2] for v in vs])
+    if len(vs) > 1 and len(set(tails)) == 1 and tails[0]:
+        return "%s %s" % ("/".join(heads), tails[0])
+    return " / ".join(vs)
+
+
 def codec_segments(prof, segments):
     """The codec as flash segments [(address, bytes), ...] for rfoundry's planner."""
     return [(a, d) for a, d in segments]

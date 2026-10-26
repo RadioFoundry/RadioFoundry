@@ -576,7 +576,7 @@ def cmd_flash(args):
                 say("stock    %s verified (SHA-256), codec windows decrypted and checked" % prof["name"])
             else:
                 say("stock    a flash readout of a radio with %s: codec windows found and checked (SHA-256)"
-                    % prof["version"])
+                    % stockfw.layout_name(prof))
         codec_prof, codec_segs = prof, stockfw.codec_segments(prof, csegs)
 
     p = planmod.make_plan(board, mf.segments(man, image), d.mode, codec_segs,
