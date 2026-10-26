@@ -30,6 +30,7 @@ import { register } from "./backends.js";
 import { makeStockRoutes } from "./iapui.js";
 import { Usmart, stockVersion, stockName } from "./usmart.js";
 import { Iap, checkInstallImage } from "./iap.js";
+import { BfLoader } from "./bfloader.js";
 import { errorNotice, reportLine, reportButton } from "../report.js";
 import * as diag from "../diag.js";
 import { fromSerialInfo, isCh340 } from "./adapter.js";
@@ -49,15 +50,24 @@ const boardId = () => S().radio.flash.board;
 const store = (what) => `c7000-${what}-${boardId()}`;
 
 // What a board's radios.json flash data adds (iapui.js): stock_console, the stub started through the stock firmware's
-// debug console (usmart.js); update_mode, the vendor loader's update mode as the way back when nothing else answers
-// (iap.js)
+// debug console (usmart.js); update_mode, the radio's own factory update mode, by protocol: the way in when nothing
+// else answers or the boot ROM load fails
 let routes = null;
 const flash = () => S().radio.flash;
 const hasData = () => C().boards[boardId()].data_flash !== false;	// the SPI data flash the stub reads
 const CONSOLES = { usmart: Usmart };	// flash.stock_console: the console's protocol
 const stockRadio = () => !!CONSOLES[flash().stock_console];
-const updateMode = () => flash().update_mode === "iap";
-const iap = (c) => new Iap(c.stream, { log: (l) => c.log.add(l), firstStage: flash().first_stage });
+// flash.update_mode: iap, a vendor IAP loader (iap.js) that a radio without a complete application stays in at every
+// power-on (stuck), so the page looks for it when nothing else answers; baofeng, the Baofeng updater (bfloader.js),
+// entered only with the keys held, which erases the whole application area. Neither loader is ever written.
+const LOADERS = {
+	iap: { stuck: true, make: (c) => new Iap(c.stream, { log: (l) => c.log.add(l), firstStage: flash().first_stage }) },
+	baofeng: { stuck: false, make: (c) => new BfLoader(c.stream, { log: (l) => c.log.add(l), id: C().boards[boardId()].bootloader_id,
+		appMax: C().app_end - C().app_start }) },
+};
+const updateMode = () => !!LOADERS[flash().update_mode];
+const stuckMode = () => !!LOADERS[flash().update_mode]?.stuck;
+const iap = (c) => LOADERS[flash().update_mode].make(c);
 const progSize = () => c7.totalSize(C(), boardId());
 const viaIap = () => session().how === "iap";
 // What the radio's screen shows while the stub runs: RadioFoundry's loader screen, whatever the original firmware last drew, or
@@ -66,8 +76,19 @@ const screenNow = () => ({ rfoundry: "loader", usmart: "any" })[session().how] |
 
 export function init(context) {
 	ctx = context;
-	routes = makeStockRoutes({ S, ctx, C, boardId, session, busy, iap, fill: (el, ...p) => fill(el, ...p), stubImage: async () => (await stubs()).image,
+	routes = makeStockRoutes({ S, ctx, C, boardId, session, busy, loader: iap, fill: (el, ...p) => fill(el, ...p), stubImage: async () => (await stubs()).image,
 		cableBanner: () => cableBanner() });
+}
+
+// The factory update mode route of a radio (radios.json flash.update_mode), or null: its protocol, and what the install
+// needs for the codec, since nothing can be read from the radio that way: "file", the radio's stock firmware file (a
+// profile of the board names one), else "backup", a program memory backup of the radio (or a slot this browser kept).
+// fb: the site's own data, not a practice radio's (whose made-up profile has no file)
+export function factoryRoute(radio, fb) {
+	const kind = LOADERS[radio?.flash.update_mode];
+	if (!kind) return null;
+	const file = (fb.c7000?.profiles || []).some((p) => p.board === radio.flash.board && p.stock_file);
+	return { protocol: radio.flash.update_mode, stuck: kind.stuck, needs: file ? "file" : "backup" };
 }
 
 // Radios the page flashes this way
@@ -197,8 +218,9 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		// Troubleshooting asked for update mode: nothing else is tried
 		if (c.forceIap && toIap) {
 			c.forceIap = false;
-			// a radio already in update mode printed its banner at power-on: remember that, so the install doesn't wait for it
-			c.iapReady = !!(await iap(c).probe());
+			// a radio already in update mode printed its banner at power-on: remember that, so the install doesn't wait for it.
+			// A loader entered only with the keys held is listened for in the install's own step
+			c.iapReady = stuckMode() && !!(await iap(c).probe());
 			return toIap();
 		}
 		await find();
@@ -222,7 +244,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			if (offer) return fromRFoundry(offer);
 			return restartRFoundry();
 		}
-		if (stockRadio() || updateMode()) return stockOrNothing();
+		if (stockRadio() || stuckMode()) return stockOrNothing();
 		return powerCycle();
 	};
 
@@ -240,7 +262,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		}
 		// the loader's update mode answers a read-only probe: a radio whose application won't start stays in it
 		c.iapReady = false;
-		const um = updateMode() && await iap(c).probe();
+		const um = stuckMode() && await iap(c).probe();
 		if (um) {
 			c.iapReady = true;
 			return routes.alreadyUpdateMode({ show, act, onUpdateMode: toIap, onAgain: () => find() }, um.version);
@@ -324,10 +346,20 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		} catch (e) {
 			clearInterval(tick);
 			if (ac.signal.aborted && e.message === "stopped") return;
-			show({ led: "off", screen: "off" }, notice(t("flash.c7.connect.no_rom"), "bad"), powerHints(), reportLine());
-			act(button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: true }));
+			show({ led: "off", screen: "off" }, notice(t("flash.c7.connect.no_rom"), "bad"), powerHints(), factoryWay(), reportLine());
+			act(button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: true }), factoryButton());
 		}
 	};
+
+	// When the boot ROM load fails or never starts: the radio's own update mode, which needs no load over the cable.
+	// Nothing is read from the radio that way, so the install says what it takes the codec from
+	const factoryWay = () => {
+		const route = toIap && factoryRoute(S().radio, S().data.fb);
+		if (!route) return null;
+		const text = S().task === "restore" ? "flash.factory.offer_restore" : `flash.factory.offer_${route.needs}`;
+		return h("div", { class: "notice action" }, h("p", {}, h("b", {}, t("flash.factory.offer_title"))), h("p", {}, t(text)));
+	};
+	const factoryButton = () => toIap && button(t("flash.iap.none.update_mode"), toIap);
 
 	const powerHints = () => {
 		const ch340 = c.portInfo?.usbVendorId === CH340;
@@ -346,8 +378,8 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			c.how = "rom";
 			await ready(t("flash.c7.connect.found_rom"));
 		} catch (e) {
-			show({ led: "off", screen: "off" }, errorNotice(t("flash.c7.connect.load_failed", { error: ctx.errorText(e) })), powerHints());
-			act(button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: true }));
+			show({ led: "off", screen: "off" }, errorNotice(t("flash.c7.connect.load_failed", { error: ctx.errorText(e) })), powerHints(), factoryWay());
+			act(button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: true }), factoryButton());
 		}
 	};
 
@@ -493,7 +525,8 @@ export function checkView() {
 	const c = session();
 	const out = h("div", { class: "flasher" });
 	const forward = S().forward;
-	const top = radioTop(S().radio, { led: "wait", screen: screenNow() });
+	// through the factory update mode nothing of the stub runs: the radio is off until the install's own step
+	const top = radioTop(S().radio, viaIap() ? { led: "off", screen: "any" } : { led: "wait", screen: screenNow() });
 	const firstInstall = !c.rfoundry;
 	const want = (S().c7want ||= backupChoices(firstInstall, hasData()));
 	if (viaIap() && !c.analysis) c.analysis = { firmware: "unknown", slot: null, codec: null };
@@ -685,6 +718,7 @@ export function checkView() {
 	// Why no codec was found, and what to select instead. A stock radio whose codec is a build without a recipe is
 	// named, so the message says that the backup is fine and only the codec needs a file
 	function codecActionText() {
+		if (viaIap()) return t(`flash.factory.codec_${factoryRoute(S().radio, S().data.fb).needs}`);
 		if (c.analysis?.notRead) return t("flash.c7.codec.action_stock");
 		if (!stockRadio()) return t("flash.c7.codec.action_text");
 		const file = { model: S().radio.model, codec_version: flash().codec_version || "" };
@@ -1065,9 +1099,13 @@ register({
 	stepLabel: (step, task) => (task === "install" && step === "done" ? "c7_done" : step),
 	views: { connect: connectView, check: checkView, write: writeView, done: doneView, backup: backupView, restore: restoreView },
 	recovery: { first: "fix", stock: "restore", reach: "flash.help.c7_reach", stockText: "flash.help.fix.stock_c7",
-		// a vendor update mode: a reinstall that needs nothing to answer on the cable
-		extra: (radio) => (radio.flash.update_mode === "iap"
-			? [{ id: "updatemode", title: "flash.help.fix.iap", text: "flash.help.fix.iap_text", prepare: () => { session().forceIap = true; } }] : []) },
+		// the factory update mode: a reinstall that needs nothing to answer on the cable but the radio's own loader. stuck:
+		// a radio without a complete application stays in it (white screen, red LED), a symptom of its own
+		extra: (radio, fb) => {
+			const route = factoryRoute(radio, fb);
+			return route ? [{ id: "updatemode", title: "flash.help.fix.iap", stuck: route.stuck,
+				text: route.stuck ? "flash.help.fix.iap_text" : `flash.help.fix.factory_text_${route.needs}`, prepare: () => { session().forceIap = true; } }] : [];
+		} },
 	ownsBundle: hasC7Backup,
 	vendorRestore: (radio, file, fb) => vendorBundle(radio, file, fb.c7000),
 	ownImage: async (fb, board, data) => {

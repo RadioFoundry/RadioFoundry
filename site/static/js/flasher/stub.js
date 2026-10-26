@@ -151,7 +151,8 @@ export class Stub {
 		}
 	}
 
-	// What failed in the boot ROM load, with the bytes received, the cable and the way out
+	// What failed in the boot ROM load, with the bytes received, the cable and the ways out (the page offers the radio's
+	// factory update mode next to Try Again: c7000ui.js factoryWay)
 	romError(what, got) {
 		const bytes = got?.length ? `received ${hexBytes(got)}` : "nothing received";
 		const cable = this.cable ? `the ${this.cable} programming cable` : "the programming cable";
@@ -159,7 +160,7 @@ export class Stub {
 		const others = GOOD_CHIPS.filter((x) => x !== this.cable);
 		const chips = `${others.slice(0, -1).join(", ")} or ${others[others.length - 1]}`;
 		return new StubError(`${what} (${bytes}${this.echo ? "; the cable echoes" : ""}). The radio's boot ROM did not take the loader over ${cable}. `
-			+ `Check that the plug is all the way in, try a cable with one of these chips: ${chips}, or use the stock firmware file instead of reading the radio`);
+			+ `Check that the plug is all the way in, try a cable with one of these chips: ${chips}, or install through the radio's factory update mode instead, which needs no load over the cable`);
 	}
 
 	// Answer the ROM's greeting at once (it waits only briefly), load the stub at `load` and start it

@@ -156,7 +156,7 @@ test("boot ROM load answered with something else: the error has the bytes, the c
 		assert.match(e.message, /stub block 0 was not acknowledged \(received 02 0a 00 03\)/);
 		assert.match(e.message, /CH340 programming cable/);
 		assert.match(e.message, /chips: FTDI, CP210x or PL2303/);
-		assert.match(e.message, /stock firmware file/);
+		assert.match(e.message, /factory update mode/);
 		return true;
 	});
 	assert.ok(lines.some((l) => /not acknowledged \(received 02 0a 00 03\), sending it again/.test(l)), "each try logged with its bytes");
