@@ -62,11 +62,25 @@ def columns(png_bytes):
 	return xs[0] / w, (xs[-1] + 1) / w
 
 
+# a screenshot's pixels are copied this many times each way before the card scales it
+SCREEN_UPSCALE = 12
+
+
+def sharp(png, k=SCREEN_UPSCALE):
+	"""A screenshot blown up k times with hard pixel edges. The card draws a screen at no whole multiple of its
+	size, and nearest-neighbor there makes some pixel rows twice as thick as others; scaled smoothly from k times
+	its size, every pixel keeps the same width and its edges stay sharp."""
+	w, h = struct.unpack(">II", png[16:24])
+	svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d"><image href="data:image/png;base64,%s" '
+	       'width="%d" height="%d" image-rendering="optimizeSpeed"/></svg>' % (w * k, h * k, base64.b64encode(png).decode(), w * k, h * k))
+	return rasterize(svg)
+
+
 def with_screen(frame, geometry, png):
 	"""The radio's drawing with a screenshot in its display."""
 	s = geometry["screen"]
-	image = ('<image href="data:image/png;base64,%s" x="%g" y="%g" width="%g" height="%g" image-rendering="optimizeSpeed" '
-		 'preserveAspectRatio="none"/>' % (base64.b64encode(png).decode(), s["x"], s["y"], s["w"], s["h"]))
+	image = ('<image href="data:image/png;base64,%s" x="%g" y="%g" width="%g" height="%g" image-rendering="optimizeQuality" '
+		 'preserveAspectRatio="none"/>' % (base64.b64encode(sharp(png)).decode(), s["x"], s["y"], s["w"], s["h"]))
 	return device.SCREEN_RECT.sub(image, frame, count=1)
 
 
