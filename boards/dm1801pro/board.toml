@@ -43,10 +43,11 @@ keep_codec = false
 stock_versions = []
 backup = { stock = "full", rfoundry = "full", spi_size = 0x1000000 }
 
-# The loader stays in update mode while PTB11 (PTT) and PTB26 both read low; which key PTB26 is isn't known. The web
-# flasher has no steps for it yet
+# The loader stays in update mode while PTB11 (PTT) and PTB26 (SK1, the upper side key) both read low (measured,
+# hardware-dm1801pro.md 3, 6 and 9). The web flasher has no steps for it yet
 [flash.bootloader]
-keys = "PTT and the key on PTB26 (probably SK1)"
+keys = "PTT and SK1 (the upper side key)"
+hold = ["ptt", "sk1"]
 steps = []
 id = "BF1801-V1"
 

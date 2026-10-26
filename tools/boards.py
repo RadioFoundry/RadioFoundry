@@ -43,6 +43,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gen_webctl_assets  # noqa: E402
 import registry_docs  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -163,7 +164,10 @@ BOARD_SCHEMA = {
         "notice": _opt(str),
         "stock_versions": _req(STR_LIST),
         "backup": _req({"stock": _req(("none", "full")), "rfoundry": _req(("none", "full")), "spi_size": _req(int)}),
-        "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str)}),
+        # hold: the keys held to enter it, by their key names (the board's KEY_* in lower case, as the drawing's
+        # key-<name> ids), for the web flasher's picture; steps stays the instructions
+        "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str),
+                            "hold": _opt(STR_LIST)}),
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
                      "key_sha256": _req(str), "key_prefix": _req(str)}),
         # a board profile of its platform's stub (platform.toml board_stub): id and tested always, the keys the
@@ -341,6 +345,22 @@ def shared_board_dirs(root, bid, mk):
         if parts[0] == "boards" and len(parts) == 2 and parts[1] != bid and os.path.isdir(os.path.join(root, d)):
             out.append(os.path.join(root, d))
     return out
+
+
+def key_names(root, bid, mk):
+    """The board's key names, its KEY_* enum in lower case without KEY_ (the drawing's key-<name> ids,
+    tools/gen_webctl_assets.py): from boards/<bid>/<bid>.h, else the first header with the enum in the board's
+    directory or a family directory it builds. None without one."""
+    wa = gen_webctl_assets
+    own = os.path.join(root, "boards", bid, bid + ".h")
+    heads = [own] if os.path.isfile(own) else []
+    for d in [os.path.join(root, "boards", bid)] + shared_board_dirs(root, bid, mk):
+        heads += [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.endswith(".h")]
+    for p in heads:
+        with open(p, encoding="utf-8") as f:
+            if wa.ENUM.search(re.sub(r"//[^\n]*|/\*.*?\*/", "", f.read(), flags=re.S)):
+                return set(wa.key_bits(p))
+    return None
 
 
 def source_volts(board_dir):
@@ -843,6 +863,16 @@ def check(root=ROOT):
             for n in [lk["name"]] + lk.get("also", []):
                 if n not in d["also"]:
                     bad("looks %s: %r is not in also" % (lk["id"], n))
+        hold = d["flash"]["bootloader"].get("hold", [])
+        if hold:
+            names = key_names(root, bid, b.mk)
+            if len(set(hold)) != len(hold):
+                bad("flash.bootloader.hold names a key twice")
+            if names is None:
+                bad("flash.bootloader.hold: no key enum (an enum ending in KEY_COUNT) in the board's headers")
+            elif set(hold) - names:
+                bad("flash.bootloader.hold: %s is not a key of the board (its keys: %s)"
+                    % (", ".join(sorted(set(hold) - names)), ", ".join(sorted(names))))
         if d.get("part_of") is not None and d["part_of"] not in boards:
             bad("part_of %r is not a board" % d["part_of"])
         if not b.source_names:
@@ -1117,6 +1147,8 @@ def site_view(boards, root=ROOT):
         stub = fl.get("stub") or {}
         flash = {"backend": b.family["web"], "board": bid, "family": fl["family"], "link": b.link,
                  "bootloader": list(fl["bootloader"]["steps"]), "stock_versions": list(fl["stock_versions"]),
+                 # the keys to hold, by key name: the flasher marks them on the radio's picture (radiotop.js)
+                 "bootloader_hold": list(fl["bootloader"].get("hold", [])),
                  # the image starts with a first stage of this size, its first word this signature (board.mk BOOT_*)
                  "first_stage": {"size": b.first_stage[0], "head": b.first_stage[1].hex()} if b.first_stage else None,
                  "stock_console": stub.get("stock_console"), "update_mode": b.family["update_mode"],
@@ -1507,11 +1539,13 @@ def self_test():
     # a fixture tree: the real registry copied, then broken one way at a time
     tmp = tempfile.mkdtemp(prefix="rfoundry-boards-")
     try:
-        # boards and platforms with what make print-vars reads (the Makefile, config/, boot/boot.mk) and pins.h
+        # boards and platforms with what make print-vars reads (the Makefile, config/, boot/boot.mk), pins.h and the
+        # boards' headers (their key enums)
         for top in ("boards", "platform", "config"):
             shutil.copytree(os.path.join(ROOT, top), os.path.join(tmp, top),
                             ignore=lambda d, names: [n for n in names if not (n.endswith((".toml", ".mk", ".ld", ".c"))
                                                                               or n == "pins.h"
+                                                                              or (top == "boards" and n.endswith(".h"))
                                                                               or os.path.isdir(os.path.join(d, n)))])
         shutil.copy(os.path.join(ROOT, "Makefile"), tmp)
         os.makedirs(os.path.join(tmp, "boot"))
@@ -1548,6 +1582,9 @@ def self_test():
                "the test profiles' stub id", "reserved for the stub tools' test profiles")
         broken(re.sub(r"(?m)^(hold_power = .*)$", r"\1\nspi = { bus = 1, mode = 0, hz = 1000000 }", good),
                "a key of another platform's stub", "not a key of the stubtool stub")
+        broken(re.sub(r"(?m)^(\[flash\.bootloader\]\n)", r'\1hold = ["ptt", "no_such_key"]\n',
+                      re.sub(r"(?m)^hold = \[.*\n", "", good)),
+               "a key to hold the board doesn't have", "no_such_key is not a key of the board")
         two = board_dirs(tmp)[1]
         other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
         broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")

@@ -44,6 +44,7 @@ stock_versions = ["909E.DBB.EARSAB.018", "909E.DBB.EARSAB.020"]
 backup = { stock = "full", rfoundry = "full", spi_size = 0 }
 
 [flash.bootloader]
+hold = ["p1"]	# then power (no key of the enum: PTB12 on its own, hardware-db25d.md 3.3)
 steps = [
 	"Turn the radio off and connect the programming cable.",
 	"Hold P1 and press power. The red LED lights and the display stays blank.",

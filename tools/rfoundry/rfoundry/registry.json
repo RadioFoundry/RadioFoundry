@@ -304,7 +304,7 @@
     402669160
    ],
    "loader_id": "BF1801-V1",
-   "loader_keys": "PTT and the key on PTB26 (probably SK1)",
+   "loader_keys": "PTT and SK1 (the upper side key)",
    "loader_sign": "",
    "bootloader_steps": [],
    "stock_download": null,

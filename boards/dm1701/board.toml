@@ -46,6 +46,7 @@ stock_versions = ["V02.06 CSV", "V02.06 noCSV", "V02.03 CSV", "V02.03 noCSV", "V
 backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 
 [flash.bootloader]
+hold = ["ptt", "sk1"]
 steps = [
 	"Turn the radio off and connect the programming cable.",
 	"Hold PTT and SK1 (the side key just above PTT).",

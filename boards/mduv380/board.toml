@@ -85,6 +85,7 @@ backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 notice = "MD-UV390 Plus 10 W owners: choose the 10 W image, and everyone else the 5 W one. The two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart, so a wrong choice isn't caught: it drives the wrong pins. Check the label on the radio or its box."
 
 [flash.bootloader]
+hold = ["ptt", "sk1"]
 steps = [
 	"Turn the radio off and connect the programming cable.",
 	"Hold PTT and the side key just above it (SK1).",
