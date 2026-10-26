@@ -31,7 +31,7 @@ on the radio`, any of the three. The README marks each ◐ until the board merge
 
 | Radio (and rebadges) | MCU | DMR chip | RF | Display | Ext. memory | GPS | Update path | Port |
 |---|---|---|---|---|---|---|---|---|
-| Baofeng DM-1701, Retevis RT84 | STM32F405VG (measured) | HR_C6000 (measured) | AT1846S (measured) | 160x128 color, 8080 bus (measured) | 16 MB SPI NOR (measured) | none | USB DFU on the MCU, wrapped images | Supported ([hardware-dm1701.md](hardware-dm1701.md)) |
+| Baofeng DM-1701, Retevis RT84 | STM32F405VG (measured) | HR_C6000 (measured) | AT1846S (measured) | 160x128 color, 8080 bus (measured) | 16 MB SPI NOR (measured) | none from the factory; owners fit one on PA10 ([hardware-dm1701.md](hardware-dm1701.md) 14.2) | USB DFU on the MCU, wrapped images | Supported ([hardware-dm1701.md](hardware-dm1701.md)) |
 | Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | GD32F303VGT6; early 868UVs GD32F303VET6 (unverified) | SCT3258 with built-in AMBE+2 (unverified) | AT1846S (unverified) | 160x128 color (unverified) | 1-2 Gbit SPI NAND (unverified) | 878: yes (unverified) | USB CDC update mode (unverified) | Planned. A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](hardware-anytone.md)) |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | STM32F405VG | HR_C6000 | AT1846S | 160x128 color, HX8302A (unverified) | 25Q128FV, 16 MB (unverified) | optional, JS-H210 (unverified) | USB DFU on the MCU, XOR-keyed images | Bring-up ([mduv380-bringup.md](../testing/mduv380-bringup.md)) |
 | TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG | HR_C6000 | 2x SKY72310 (V1-V3), "PLL1590" (V4), LMX2571 (V4A/V5, unverified) PLLs; AK2365A IF x2 on V1-V4 | 128x64 mono, ST7567 | 25Q128FV, 16 MB | optional, JS-M710 (unverified) | USB DFU on the MCU | In progress, #112, builds, host tests. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
@@ -53,7 +53,7 @@ on the radio`, any of the three. The README marks each ◐ until the board merge
 
 ### Baofeng DM-1701 / Retevis RT84
 
-- Bands 136–174 / 400–480 MHz, 1/2/5 W, 1.77" color TFT, no GPS
+- Bands 136–174 / 400–480 MHz, 1/2/5 W, 1.77" color TFT, no GPS from the factory
   ([baofengradio.com](https://baofengradio.com/products/dm-1701)). A search snippet from the same site said
   400–520 MHz; the product page itself says 400–480 MHz.
 - FCC ID 2AJGM-DM1701, granted 2018-12-22. Internal photos exist but are too low resolution to read parts
