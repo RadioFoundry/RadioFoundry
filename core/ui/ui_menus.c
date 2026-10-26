@@ -3873,7 +3873,8 @@ typedef struct {
 } set_group_t;
 
 static const int16_t v_backlight[] = { 5, 10, 30, 60, 120, 0 };
-static const char *const n_backlight[] = { "5 s", "10 s", "30 s", "1 min", "2 min", "Never" };
+// Dim after / off after (four times as long): both times shown, so that the dim step isn't taken for the time-out
+static const char *const n_backlight[] = { "5s/20s", "10s/40s", "30s/2m", "1m/4m", "2m/8m", "Never" };
 #if CONFIG_UI_COLOR
 static const int16_t v_theme[] = { 0, 1, 2 };
 static const char *const n_theme[] = { "Dark", "Light", "High contrast" };
@@ -4016,7 +4017,7 @@ static const set_item_t s_sound[] = {
 };
 static const set_item_t s_display[] = {
 	NUMBER("Brightness", "backlight", UI_SET_BRIGHTNESS, 10, 100, 10, "%"),
-	LIST("Backlight time", "timeout", UI_SET_BACKLIGHT_S, v_backlight, n_backlight),
+	LIST("Backlight Dim/Off", "timeout", UI_SET_BACKLIGHT_S, v_backlight, n_backlight),
 #if CONFIG_UI_COLOR	// a radio whose only screen is monochrome has no colors to set: no rows for them
 	LIST("Theme", "contrast", UI_SET_THEME, v_theme, n_theme),
 	LIST("Highlight color", "accent", UI_SET_ACCENT, v_accent, n_accent),

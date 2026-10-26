@@ -305,7 +305,8 @@ DM-1701's modem driver clears PI on voice, so it plays as clear).
 `data.rx_headers` 1, `data.rx_packets` 1, `data.rx_for_us` 1, `data.rx_blocks` 4 or more, CRC errors and stale
 blocks 0. Confirmed: `data.rx_confirmed` 1, `data.responses_sent` 1, `data.tx_failed` 0. Text message:
 `data.sms_received` 1, `data.tms_acks_sent` 1, inbox entry 0 is the text from the bench ID, unread until
-MARK_READ. Call alert: `data.call_alerts_received` 1, `data.csbk_answers_sent` 1, `data.event=call_alert` from the
+MARK_READ; the ACK is the last data list (`data.tx_last_kind=reply`, a newer `data.tx_last_ms`) and the radio's own
+transmission (`tx_auto=1`, so it didn't light the screen). Call alert: `data.call_alerts_received` 1, `data.csbk_answers_sent` 1, `data.event=call_alert` from the
 bench ID. Radio check: with `radio_check_reply` off (the default) counted and not answered; on, answered
 (`data.event=radio_check_answered`). Radio TX: call alert and radio check end `failed` after 3 tries counted by the radio; the bench modem must hear 1
 to 3 of them with a good CRC (bench_tx.py listen's `crc_ok`, after the FEC) and every one heard must carry exactly

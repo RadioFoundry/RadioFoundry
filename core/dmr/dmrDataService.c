@@ -86,7 +86,8 @@ static void unlock(void)
 // --- The burst list being sent ---
 
 // What the list on air is for, so that its end reaches the right owner
-enum { TXK_OTHER, TXK_SMS, TXK_SIGNAL, TXK_ARS, TXK_REPLY, TXK_EMERGENCY, TXK_IP, TXK_UDP };
+enum { TXK_OTHER, TXK_SMS, TXK_SIGNAL, TXK_ARS, TXK_REPLY, TXK_EMERGENCY, TXK_IP, TXK_UDP, TXK_COUNT };
+static const char *const txKindNames[TXK_COUNT] = { "other", "sms", "signal", "ars", "reply", "emergency", "ip", "udp" };
 
 DMR_DATA_BUFFER static dmrBurst_t txBursts[DMR_DATA_MAX_BURSTS];
 static int txBurstCount = 0;
@@ -1421,6 +1422,10 @@ static void arsTick(void)
 		post(DMR_DATA_EV_ARS_CHANGED, state);
 	}
 
+	stats.arsAttempts = ars.attempts;
+	stats.arsNextMs = ((ars.context != 0) && !ars.registered && (ars.attempts <= ARS_RETRIES)) ? ((ars.due != 0) ? ars.due : 1)
+				: (ars.registered && (ars.refreshMs != 0)) ? ars.registeredAt + ars.refreshMs : 0;
+
 	if (dmrDataServiceIsBusy() || !canTransmit())
 	{
 		return;
@@ -1974,6 +1979,12 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 			txPending = false;
 			txRunning = true;
 			stats.txLists++;
+			stats.txLastKind = txKind;
+			stats.txLastMs = (now != 0) ? now : 1;
+			if (txKind == TXK_ARS)
+			{
+				stats.arsLastMs = stats.txLastMs;
+			}
 		}
 		else if ((now - txPendingSince) > (txIsReply ? REPLY_TIMEOUT_MS : START_TIMEOUT_MS))
 		{
@@ -2598,7 +2609,27 @@ void dmrDataServiceGetStats(dmrDataStats_t *out)
 
 void dmrDataServiceResetStats(void)
 {
+	// Not the timing: a reset before a test mustn't hide when the radio last sent on its own. Field by field, not a
+	// copy of the struct: this runs on the host link's task, whose stack is tight
+	uint8_t kind = stats.txLastKind, attempts = stats.arsAttempts;
+	uint32_t txMs = stats.txLastMs, arsMs = stats.arsLastMs, nextMs = stats.arsNextMs;
+
 	memset(&stats, 0, sizeof(stats));
+	stats.txLastKind = kind;
+	stats.txLastMs = txMs;
+	stats.arsLastMs = arsMs;
+	stats.arsNextMs = nextMs;
+	stats.arsAttempts = attempts;
+}
+
+const char *dmrDataServiceTxKindName(uint8_t kind)
+{
+	return (kind < TXK_COUNT) ? txKindNames[kind] : "?";
+}
+
+const char *dmrDataServiceTxStartingName(void)
+{
+	return dmrDataServiceTxKindName(txKind);
 }
 
 // --- dmr_data_api.h: any task ---

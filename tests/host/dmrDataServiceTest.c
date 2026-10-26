@@ -336,6 +336,18 @@ static void testARS(void)
 	CHECK(countSent('A', DMR_ARS_DEVICE_REGISTRATION) == 1);
 	CHECK(dmrDataServiceArsState() == DMR_ARS_STATE_REGISTERING);
 
+	// The refresh on air is in the stats as ARS, with its time and the retry due; a counter reset keeps them
+	{
+		dmrDataStats_t st;
+		dmrDataServiceGetStats(&st);
+		CHECK((st.txLastMs != 0) && (st.arsLastMs == st.txLastMs) && (strcmp(dmrDataServiceTxKindName(st.txLastKind), "ars") == 0));
+		CHECK((st.arsAttempts == 1) && ((int32_t)(st.arsNextMs - st.arsLastMs) > 0));
+		dmrDataServiceResetStats();
+		dmrDataStats_t kept;
+		dmrDataServiceGetStats(&kept);
+		CHECK((kept.txLists == 0) && (kept.arsLastMs == st.arsLastMs) && (kept.txLastMs == st.txLastMs) && (kept.txLastKind == st.txLastKind));
+	}
+
 	// Refused: shown so, and tried again on the retry schedule (30 s)
 	receiveARS(NAK, sizeof(NAK));
 	runMainTask(1000);

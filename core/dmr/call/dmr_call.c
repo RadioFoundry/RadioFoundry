@@ -267,11 +267,26 @@ static char tr_burst(const dmr_burst_t *b)
 	return b->kind < sizeof(data) ? data[b->kind] : 'X';
 }
 
+// TX trace: each data list (no PTT), so that an unattended transmission shows in the log among the RX lines. Logged
+// even with the RX trace off: there are few of them
+//   ctx <tag> n<bursts>          given to the stack (its repeater wake-up comes first when needed)
+//   ctx <tag> end <err> <ms>     off the air (err: dmr_tx_error_t, 0 sent whole) after ms
+static void tr_tx(const char *tag, bool end, uint32_t a, uint32_t b)
+{
+	tr_flush();
+	if (end)
+		dlog("ctx %s end %u %u", tag != NULL ? tag : "data", (unsigned)a, (unsigned)b);
+	else
+		dlog("ctx %s n%u", tag != NULL ? tag : "data", (unsigned)a);
+}
+
 #define TR_WHAT(c)	(tr.what = (c))
 #define TR_LOST(n)	(tr.lost = (uint16_t)(tr.lost + (n)))
+#define TR_TX(tag, end, a, b)	tr_tx(tag, end, a, b)
 #else
 #define TR_WHAT(c)	((void)(c))
 #define TR_LOST(n)	((void)(n))
+#define TR_TX(tag, end, a, b)	((void)(tag), (void)(end), (void)(a), (void)(b))
 #endif
 
 void dmr_call_set_rx_trace(bool on)
@@ -1304,6 +1319,7 @@ static void data_end(uint8_t err)
 	s.data_staged = false;
 	s.tx = TX_NONE;
 	s.dirty = true;
+	TR_TX(d.tag, true, err, s.now - s.tx_since);
 	if (d.done)
 		d.done(err, d.ctx);
 	if (s.ptt)
@@ -1859,6 +1875,7 @@ bool dmr_call_data_tx(const dmr_data_source_t *src)
 	s.tx_since = s.now;
 	s.wake_tries = 0;
 	s.dirty = true;
+	TR_TX(src->tag, false, src->count, 0);
 	if (s.cfg.rmo && !repeater_up(s.now))
 		tx_wakeup(s.now);
 	else

@@ -398,6 +398,7 @@ static void test_beacon_on_air(void)
 	CHECK(wait_start(1, 5000));
 	CHECK(hw.tx_calls == 1 && hw.tx_hz == APRS_HZ && hw.starts == 1);
 	CHECK(sm.view.state == RS_TX);
+	CHECK(sm.view.tx_auto && !radio_view_wakes(&sm.view));	// a timed beacon leaves the screen as it is
 	CHECK(nframes == 1);
 	CHECK(strcmp(frames[0], "N0TST-7>APZRDF,WIDE1-1,WIDE2-1:!4903.50N/07201.75W[RadioFoundry test") == 0);
 	if (nframes > 0) {

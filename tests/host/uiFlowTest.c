@@ -376,6 +376,11 @@ static const flow_t flows[] = {
 	{ "S vibrate off", "ok 7 1 down down down down down ok long:back", "msg:3101234,Hi", "vibes=0 beep=2", 0,
 	  false },
 	{ "S low battery warning", "", "battery:14", "banner=Battery_14%", 0, false },
+	// What reaches the user lights the screen; the radio's own traffic doesn't (radio_view_wakes covers the radio side)
+	{ "S a message lights the screen", "", "msg:3101234,Hi", "wake=1", 0, false },
+	{ "S a private call lights the screen", "", "privcall:91", "wake=1", 0, false },
+	{ "S an emergency lights the screen", "", "emergency:91", "wake=1", 0, false },
+	{ "S nothing new, no wake", "", "wait:1000", "wake=0", 0, false },
 	{ "S privacy key typed", "", "ok 7 4 ok down ok 1 2 3 ok", "set31=1 set32=123", 10, false },
 	{ "S privacy key out of range", "ok 7 4 ok down", "ok 3 0 0 ok", "toast=Not_changed set32=0", 5, false },
 	{ "S privacy key needs a type", "ok 7 4 down", "ok", "toast=Pick_a_key", 1, false },
