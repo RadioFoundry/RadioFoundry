@@ -53,8 +53,8 @@ Power levels use the radio's factory calibration. Use the lowest power that reac
 
 **Settings > Display > Brightness** sets the backlight level. Quick settings has it too (**\***, **9**).
 
-**Settings > Display > Backlight time** sets when the backlight dims to a fifth of the brightness. It goes off after
-four times as long. Any key brings it back.
+**Settings > Display > Backlight Dim/Off** sets two times: when the backlight dims to a fifth of the brightness, and
+when it goes off. `30s/2m` dims after 30 s and goes off after 2 minutes. Any key brings it back.
 
 The backlight also comes on for what needs you:
 

@@ -54,7 +54,7 @@ static uint8_t backlight_target(uint32_t now)
 	uint32_t since_radio = now - radio_active_ms;
 	if (since_radio < idle)
 		idle = since_radio;
-	// Dim and off times from the radio's settings (Display > Backlight time), dimmer on a low battery
+	// Dim and off times from the radio's settings (Display > Backlight Dim/Off), dimmer on a low battery
 	return radio_backlight_pct(ui_app_brightness(), idle);
 }
 
