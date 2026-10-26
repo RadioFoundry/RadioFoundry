@@ -157,7 +157,7 @@ export function trail(n = 20) {
 	return events.filter((e) => e.kind !== "wire" && !String(e.text).startsWith("shown:")).slice(-n).map((e) => {
 		const line = `${(e.t / 1000).toFixed(1)}s ${e.text}${e.data === undefined ? "" : ` ${JSON.stringify(e.data)}`}`
 			.replace(/(serial["\s:=]+)(?=[0-9a-z]*\d)[0-9a-z]{6,}/gi, "$1[serial]");
-		return line.length > 300 ? `${line.slice(0, 300)}…` : line;
+		return line.length > 300 ? `${line.slice(0, 299)}…` : line;	// 300 at most, as the flash log takes them
 	});
 }
 

@@ -30,7 +30,10 @@ import { register } from "./backends.js";
 import { makeStockRoutes } from "./iapui.js";
 import { Usmart, stockVersion, stockName } from "./usmart.js";
 import { Iap, checkInstallImage } from "./iap.js";
-import { errorNotice } from "../report.js";
+import { errorNotice, reportLine, reportButton } from "../report.js";
+import * as diag from "../diag.js";
+import { fromSerialInfo, isCh340 } from "./adapter.js";
+import * as crumbs from "./trail.js";
 
 // USB-serial chips found in programming cables (tools/serial_loader.py USB_SERIAL), for the port chooser
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
@@ -112,8 +115,15 @@ async function openCable(any = false) {
 	if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
 	const port = await navigator.serial.requestPort(any ? {} : { filters: CABLES });
 	c.portInfo = port.getInfo();
+	ctx.useAdapter?.(fromSerialInfo(c.portInfo));
 	c.stream = await SerialStream.open(port);
 	return c.stream;
+}
+
+// A CH340 cable (adapter.js): the warning on every step that works through it
+export function cableBanner(a = S().adapter) {
+	return isCh340(a) ? h("div", { class: "notice action cable-warning" }, h("p", {}, h("b", {}, t("flash.cable.ch340_title"))),
+		h("p", {}, t("flash.cable.ch340_text"))) : null;
 }
 
 // replaceChildren() would print a null part as "null"
@@ -121,7 +131,7 @@ const fill = (el, ...parts) => el.replaceChildren(...parts.filter(Boolean));
 
 const mkStub = () => {
 	const c = session();
-	c.stub = new Stub(c.stream, { log: (l) => c.log.add(l) });
+	c.stub = new Stub(c.stream, { log: (l) => c.log.add(l), cable: S().adapter && S().adapter.chip !== "other" ? S().adapter.chip : "" });
 	c.stub.size.progmem = progSize();
 	return c.stub;
 };
@@ -140,7 +150,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 	// each state shows its parts and, through act(), its one action in the nav bar
 	const show = (state, ...parts) => {
 		top.set(state);
-		fill(body, ...parts);
+		fill(body, cableBanner(), ...parts);
 		S().forward(null);
 	};
 	const act = (...all) => {
@@ -298,7 +308,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		} catch (e) {
 			clearInterval(tick);
 			if (ac.signal.aborted && e.message === "stopped") return;
-			show({ led: "off", screen: "off" }, notice(t("flash.c7.connect.no_rom"), "bad"), powerHints());
+			show({ led: "off", screen: "off" }, notice(t("flash.c7.connect.no_rom"), "bad"), powerHints(), reportLine());
 			act(button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: true }));
 		}
 	};
@@ -502,7 +512,7 @@ export function checkView() {
 	const stopRead = canSkip ? button(t("flash.c7.check.skip_stop"), () => reading?.abort()) : null;
 	if (stopRead) stopRead.hidden = true;
 	out.append(panel(t("flash.c7.check.title"), h("div", { class: "c7-grid" },
-		h("div", {}, h("p", {}, t(viaIap() ? "flash.iap.check_lead" : firstInstall ? "flash.c7.check.lead_first" : "flash.c7.check.lead_update")),
+		h("div", {}, cableBanner(), h("p", {}, t(viaIap() ? "flash.iap.check_lead" : firstInstall ? "flash.c7.check.lead_first" : "flash.c7.check.lead_update")),
 			firstInstall && !viaIap() && !S().radio.flash.stock_download ? h("div", { class: "notice action" }, h("p", {}, h("b", {}, t("flash.c7.check.only_copy"))), h("p", {}, t("flash.c7.check.only_copy_text"))) : null,
 			skip, options,
 			checks, prog.el, stopRead, status), top.el)));
@@ -519,6 +529,7 @@ export function checkView() {
 
 	async function go({ skipFirmware = false } = {}) {
 		run.disabled = true;
+		diag.note(...crumbs.c7Check(want, { skipFirmware, firstInstall, how: c.how || null, rate: c.rate ? Math.round(c.rate) : null }));
 		started();
 		await busy(true);
 		top.set({ led: "busy", screen: screenNow() });
@@ -539,6 +550,7 @@ export function checkView() {
 				} catch (e) {
 					if (!reading?.signal.aborted) throw e;
 					skipFirmware = true;	// stopped by the user: on to the stock file
+					diag.note("firmware read stopped for the stock file");
 					c.progmem = null;
 					await st.drain();
 				} finally {
@@ -610,6 +622,7 @@ export function checkView() {
 		c.decision = await c7.decide(C(), boardId(), { slotInFlash, movedSlot, savedSlot: saved, flashCodec: c.analysis.codec, fileCodec: c.fileCodec,
 			allowNone: S().c7none });
 		const d = c.decision;
+		diag.note(...crumbs.c7Decision(d, c.analysis, c.fileCodec));
 		const text = !d ? t("flash.c7.codec.missing") : d.mode === "keep" ? t("flash.c7.codec.keep")
 			: d.mode === "none" ? t("flash.c7.codec.none") : t(`flash.c7.codec.from_${d.source}`, { name: d.name || "", tag: String(d.tag ?? "").padStart(3, "0") });
 		// a first install that skipped the firmware memory read expects the codec from the stock file: not a problem yet
@@ -693,6 +706,7 @@ async function saveBundle() {
 	const bytes = await makeBundle(meta, parts, { git: S().data.site.git, url: location.origin });
 	c.backupName = bundleName(meta);
 	download(c.backupName, bytes, "application/zip");
+	S().lastBackup = { name: c.backupName, data: bytes };
 	c.backupSaved = true;
 }
 
@@ -749,7 +763,7 @@ export function writeView() {
 	const what = d.mode === "keep" ? t("flash.c7.codec.keep") : d.mode === "none" ? t("flash.c7.codec.none") : t(`flash.c7.codec.from_${d.source}`, { name: d.name || "", tag: String(d.tag ?? "").padStart(3, "0") });
 	const go = button(t("flash.c7.write.go"), () => write(), { primary: true });
 	const box = panel(t("flash.c7.write.title"), h("div", { class: "c7-grid" },
-		h("div", {},
+		h("div", {}, cableBanner(),
 			h("dl", { class: "kv-list" },
 				h("dt", {}, t("flash.c7.write.firmware")), h("dd", {}, `${fw.source} (${Math.round(fw.image.length / 1024)} KB)`),
 				h("dt", {}, t("flash.c7.write.codec")), h("dd", {}, what)),
@@ -814,7 +828,8 @@ export function doneView() {
 	const c = session();
 	const top = radioTop(S().radio, { led: "off", screen: "off" });
 	const status = h("div", {}, h("p", { class: "muted c7-big" }, t("flash.c7.done.restarting")));
-	const box = panel(t("flash.done.title"), h("div", { class: "c7-grid" }, h("div", {}, h("p", {}, t("flash.c7.done.lead")), status), top.el));
+	const quiet = h("p", { class: "small muted" }, t("report.something_wrong"), " ", reportButton());
+	const box = panel(t("flash.done.title"), h("div", { class: "c7-grid" }, h("div", {}, h("p", {}, t("flash.c7.done.lead")), status, quiet), top.el));
 	let tries = 0;
 	const check = async () => {
 		S().forward(null);
@@ -831,19 +846,22 @@ export function doneView() {
 			p = await probe(new Link(c.stream, { timeout: 1000 }));
 		}
 		if (!p) {
+			diag.note("verify: no answer", { tries });
 			top.set({ led: "off", screen: "on", knob: "cycle" });
 			fill(status, notice(t("flash.c7.done.no_answer"), tries > 1 ? "bad" : ""),
 				S().fakeC7 ? h("div", { class: "actions" }, button(t("flash.sim.c7_off"), () => S().fakeC7.powerOff()),
 					button(t("flash.sim.c7_on"), () => S().fakeC7.powerOn())) : null,
-				tries > 1 ? ctx.helpLink() : null);
+				tries > 1 ? ctx.helpLink() : null, tries > 1 ? reportLine() : null);
 			return S().forward(button(t("flash.c7.done.check"), check, { primary: true }));
 		}
 		const wantCodec = c.decision?.mode !== "none";
 		const good = !wantCodec || (p.codec && !["absent", "none"].includes(p.codec));
+		diag.note(...crumbs.verify(p, good));
+		S().reportResult = good ? "problem" : "failed";
 		top.set({ led: "off", screen: "on" });
 		fill(status, 
 			h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git)),
-			notice(good ? t("flash.c7.done.ready") : t("flash.c7.done.no_codec"), good ? "ok" : "bad"), good ? null : ctx.helpLink(),
+			notice(good ? t("flash.c7.done.ready") : t("flash.c7.done.no_codec"), good ? "ok" : "bad"), good ? null : ctx.helpLink(), good ? null : reportLine(),
 			// a backup taken from a radio that ran RadioFoundry holds that RadioFoundry build, not the original firmware
 			c.backupSaved ? h("p", { class: "small muted" }, t(c.rfoundry ? "flash.c7.done.backup_kept_rfoundry" : "flash.c7.done.backup_kept")) : null,
 			// not asked of the radio: any STUB command parks RadioFoundry's codec until the next restart (platform stub_region, core/stubentry)
@@ -906,7 +924,7 @@ export function backupView() {
 		}
 	}, { primary: true });
 	out.append(panel(t("flash.backup.task_title", { name: S().radio.name }), h("div", { class: "c7-grid" },
-		h("div", {}, h("p", {}, t("flash.c7.backup.lead")), options, prog.el, status), top.el)));
+		h("div", {}, cableBanner(), h("p", {}, t("flash.c7.backup.lead")), options, prog.el, status), top.el)));
 	S().forward(go);
 	sizeUp(c).then(() => options.refresh());
 	return out;
@@ -998,7 +1016,7 @@ export function restoreView() {
 		}
 	}, { primary: true });
 	out.append(panel(t("flash.c7.restore.title"), h("div", { class: "c7-grid" },
-		h("div", {}, h("p", {}, vendor ? t("flash.c7.restore.lead_vendor", { file: vendor }) : t("flash.c7.restore.lead")), prog.el, status), top.el), map.el));
+		h("div", {}, cableBanner(), h("p", {}, vendor ? t("flash.c7.restore.lead_vendor", { file: vendor }) : t("flash.c7.restore.lead")), prog.el, status), top.el), map.el));
 	S().forward(go);
 	return out;
 }

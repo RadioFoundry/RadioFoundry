@@ -18,7 +18,7 @@ import { sleep } from "./bytes.js";
 import * as c7 from "./c7000.js";
 import { Usmart, stockName } from "./usmart.js";
 import { trimTail } from "./iap.js";
-import { errorNotice } from "../report.js";
+import { errorNotice, reportLine } from "../report.js";
 import { radioPicture, holdKeys } from "./radiotop.js";
 
 const LISTEN_MS = 180000;	// how long the page waits for update mode
@@ -55,7 +55,7 @@ export function makeStockRoutes(host) {
 		}
 		if (!build) {
 			const versions = S().radio.flash.stock_versions.join(" and ");
-			show({ led: "off", screen: "on" }, notice(t("flash.usmart.unknown_build"), "bad"), h("p", {}, t("flash.usmart.unknown_how", { versions })));
+			show({ led: "off", screen: "on" }, notice(t("flash.usmart.unknown_build"), "bad"), h("p", {}, t("flash.usmart.unknown_how", { versions })), reportLine());
 			return act(button(t("flash.iap.none.again"), onAgain, { primary: true }), other);
 		}
 		const image = await stubImage();

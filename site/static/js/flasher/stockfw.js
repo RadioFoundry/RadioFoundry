@@ -4,7 +4,7 @@
 // A port of tools/rfoundry/rfoundry/stockfw.py; the profiles come from that file through data/flash-boards.json, so
 // both read the same table. The codec and the key are only ever handled on the user's machine.
 
-import { u32le, sha256, startsWith, crc32 } from "./bytes.js";
+import { u32le, sha256, startsWith, crc32, hex } from "./bytes.js";
 import { byCodeSha, moveCode, moveBranches, branchesIn, moveWindow, unmoveWindow, tableWindow, MapError } from "./codecmap.js";
 
 // code: what kind of problem it is, for the page's explanation (explain.js) and the error report: "not-vendor" (not a
@@ -189,8 +189,9 @@ export const codecOnly = (prof) => (prof?.file_radio
 // The codec in a read where another firmware moved it (stockfw.from_moved): {profile, segments, at} or null. Every
 // word-aligned codec signature is a candidate start; for every profile whose map's table window moves as one block,
 // the moves are read from the copy and undone (unmoveWindow), the stock SHA-256s checked, then placed as a merge from
-// the stock file places it. fromFlash first: this is for what it doesn't find
-export async function fromMoved(flash, fb, profiles = fb.profiles, base = 0x08000000) {
+// the stock file places it. fromFlash first: this is for what it doesn't find. log(text): what was tried and why each
+// candidate failed, for the page's trail (a few lines, never bytes)
+export async function fromMoved(flash, fb, profiles = fb.profiles, base = 0x08000000, log = null) {
 	const cands = [];
 	for (const prof of Object.values(profiles)) {
 		const m = prof.placement ? prof.map || byCodeSha(fb.codec_maps, prof.windows[0][2])[0] : null;
@@ -202,9 +203,15 @@ export async function fromMoved(flash, fb, profiles = fb.profiles, base = 0x0800
 		}
 		cands.push([prof, m]);
 	}
-	if (!cands.length) return null;
+	if (!cands.length) {
+		log?.("moved codec search: no profile with a movable map");
+		return null;
+	}
+	let starts = 0;
+	const failed = [];
 	for (let o = 0; o + 4 <= flash.length; o += 4) {
 		if (u32le(flash, o) !== fb.codec_sig) continue;
+		starts++;
 		for (const [prof, m] of cands) {
 			const got = await unmoveWindow(flash, base, m, base + o);
 			if (!got) continue;
@@ -215,14 +222,21 @@ export async function fromMoved(flash, fb, profiles = fb.profiles, base = 0x0800
 				if (a < base || d.length !== n || (await sha256(d)) !== want) { ok = false; break; }
 				parts.push([a, d]);
 			}
-			if (!ok) continue;
+			if (!ok) {
+				failed.push(`${prof.name} at ${hex(base + o)}: an extra window differs`);
+				continue;
+			}
 			try {
-				return { profile: prof, segments: await place(prof, parts, fb), at: base + o };
+				const segments = await place(prof, parts, fb);
+				log?.(`moved codec search: ${prof.name} at ${hex(base + o)} (${starts} code start(s) checked)`);
+				return { profile: prof, segments, at: base + o };
 			} catch (e) {
 				if (!(e instanceof StockError)) throw e;
+				failed.push(`${prof.name} at ${hex(base + o)}: ${e.message}`);
 			}
 		}
 	}
+	log?.(`moved codec search: none in ${starts} code start(s) against ${cands.length} profile(s)${failed.length ? `; ${failed.slice(0, 3).join("; ")}` : ""}`);
 	return null;
 }
 

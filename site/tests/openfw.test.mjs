@@ -410,3 +410,19 @@ test("flow: after the install, the other firmware's data in the settings area is
 	assert.equal(await link.storageClaim(), true);
 	assert.equal((await link.storageInfo()).region, "ours");
 });
+
+test("trail of an open-firmware backup: each codec search stage and what it found, or why not", async () => {
+	const { sim, link } = await openRadio(ONE);
+	const st = await openfw.readBackup(link, sim.board, radioOf());
+	const lines = [];
+	const got = await openfw.analyze(st, sim.board, sim.fb, (l) => lines.push(l));
+	assert.ok(got.codec);
+	assert.match(lines[0], /^codec search at known addresses: none \(\d+ profile\(s\)\)$/);
+	assert.match(lines[1], /^moved codec search: .+ at 0x[0-9A-F]{8} \(\d+ code start\(s\) checked\)$/);
+	// no codec: the search says how much it looked at
+	const none = await openRadio(ONE, { codec: false });
+	const st2 = await openfw.readBackup(none.link, none.sim.board, radioOf());
+	const lines2 = [];
+	await openfw.analyze(st2, none.sim.board, none.sim.fb, (l) => lines2.push(l));
+	assert.match(lines2.at(-1), /^moved codec search: none in \d+ code start\(s\) against \d+ profile\(s\)/);
+});

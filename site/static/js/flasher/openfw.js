@@ -175,18 +175,19 @@ export async function keyFromImage(img, board, keyLen) {
 // placement); then a copy another firmware moved anywhere (stockfw.fromMoved: the code at any word boundary, the
 // tables at their stock address or moved, the move undone with the codec map, the stock SHA-256s checked), placed as a
 // merge from the stock file places it. Every profile for the radio is tried, a codec from another radio's file too
-// (file_radio: another radio's codec an open-firmware install left there)
-export async function codecFromImage(img, base, board, fb) {
+// (file_radio: another radio's codec an open-firmware install left there). log(text): each stage's outcome, for the trail
+export async function codecFromImage(img, base, board, fb, log = null) {
 	const profs = profilesFor(board, fb);
 	const save = (prof, segs) => segs.filter(([a]) => !(prof.placement && a === fb.descriptor.addr));
 	const known = await fromFlash(img, fb, profs, base);
+	log?.(`codec search at known addresses: ${known ? known.profile.name : "none"} (${Object.keys(profs).length} profile(s))`);
 	if (known) return { ...known, save: save(known.profile, known.segments), where: "known" };
-	const moved = await fromMoved(img, fb, profs, base);
+	const moved = await fromMoved(img, fb, profs, base, log);
 	return moved ? { profile: moved.profile, segments: moved.segments, save: save(moved.profile, moved.segments), where: hex(moved.at) } : null;
 }
 
 // The key and the codec from a backup's MCU flash read (as far as it got)
-export async function analyze(state, board, fb) {
+export async function analyze(state, board, fb, log = null) {
 	const img = state.rom.data.subarray(0, state.rom.done);
-	return { key: await keyFromImage(img, board, fb.key_len), codec: await codecFromImage(img, board.rom_base, board, fb) };
+	return { key: await keyFromImage(img, board, fb.key_len), codec: await codecFromImage(img, board.rom_base, board, fb, log) };
 }

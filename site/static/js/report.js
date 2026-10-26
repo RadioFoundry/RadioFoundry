@@ -8,6 +8,7 @@
 import * as diag from "./diag.js";
 import { h, t, ROOT, button, download } from "./flasher/dom.js";
 import { zip } from "./flasher/zip.js";
+import { reportBody, sendProblemReport, contactOk, practiceFetch } from "./problemreport.js";
 
 // The Sentry browser bundle, loaded only when the site has a reporting address
 const SENTRY_JS = "https://browser.sentry-cdn.com/10.75.3/bundle.min.js";
@@ -21,11 +22,17 @@ export const reportingActive = () => !!sentry;
 let attachmentsFn = () => [];
 let sentry = null;		// the Sentry global once it's loaded and set up
 let site = {};
+let backend = null;		// {api, meta: () => what the page decided}: Send goes to the project's backend (problemreport.js)
+let adapterNow = null;		// the USB device in use (flasher/adapter.js), as a tag on every error report
 
 // tool: "editor" or "flasher". context: () => the tool's state for a report (no personal data: it is also sent
-// with automatic error reports). attachments: () => [{name, label, data: () => Uint8Array}], offered unticked.
-export async function initReporting({ tool, context, attachments }) {
+// with automatic error reports). attachments: () => [{name, label, data: () => Uint8Array, kind?, checked?}],
+// offered unticked unless checked. backend: {api, meta: () => reportBody's meta}: Send posts the report and the ticked
+// files there (with an email field), even with ?reporting=0, since the user asks for it; practice() true: answered
+// by practiceFetch, nothing sent
+export async function initReporting({ tool, context, attachments, backend: be }) {
 	if (attachments) attachmentsFn = attachments;
+	if (be) backend = be;
 	diag.configure({ tool, context });
 	addEventListener("error", (ev) => diag.error("uncaught", ev.error || new Error(ev.message || "script error")));
 	addEventListener("unhandledrejection", (ev) => diag.error("unhandled", ev.reason));
@@ -74,6 +81,7 @@ async function startSentry(dsn, tool) {
 	S.setTag("tool", tool);
 	S.setTag("web_serial", "serial" in navigator);
 	S.setTag("web_usb", "usb" in navigator);
+	if (adapterNow) S.setTag("adapter_chip", adapterNow.chip || "none");
 	sentry = S;
 	// an event the ingest didn't take (blocked, offline, rate limited: no status, or not 2xx): its "reported" line goes
 	// back to the report button. A send that worked always has a status
@@ -87,10 +95,17 @@ async function startSentry(dsn, tool) {
 		// the id ties the details the user may add (reportedLine) to this event
 		rec.eventId = sentry.captureException(err, {
 			tags: { stage: rec.stage, ...(rec.code ? { code: String(rec.code) } : {}) },
-			contexts: { rfoundry: { ...diag.context(), ...(rec.params ? { params: rec.params } : {}), trail: diag.trail() } },
+			contexts: { rfoundry: { ...diag.context(), ...(rec.params ? { params: rec.params } : {}), ...(adapterNow ? { adapter: adapterNow } : {}),
+				trail: diag.trail(40) } },
 		});
 	});
 	diag.note("error reporting on");
+}
+
+// The USB device the page now talks to ({vid, pid, chip, product} or null): a tag on the error reports from here on
+export function setAdapter(a) {
+	adapterNow = a || null;
+	sentry?.setTag("adapter_chip", adapterNow?.chip || "none");
 }
 
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
@@ -167,12 +182,16 @@ export function errorNotice(text, rec = diag.currentError()) {
 	return h("div", { class: "notice bad" }, h("p", {}, text), reportedLine(rec));
 }
 
+const kb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
 export function reportDialog() {
 	const text = h("textarea", { rows: 4, class: "report-text", placeholder: t("report.describe_hint") });
 	const boxes = attachmentsFn().map((a) => {
-		const box = h("input", { type: "checkbox" });
-		return { a, box, el: h("label", { class: "report-check" }, box, " ", a.label) };
+		const box = h("input", { type: "checkbox", checked: !!a.checked });
+		const size = a.size ? ` (${kb(a.size)})` : "";
+		return { a, box, el: h("label", { class: "report-check" }, box, " ", a.label, size) };
 	});
+	const email = backend ? h("input", { type: "email", class: "report-email", maxlength: 254, autocomplete: "email", placeholder: t("report.email_hint") }) : null;
 	const result = h("div", { "aria-live": "polite" });
 	const picked = () => boxes.filter((b) => b.box.checked).map((b) => b.a);
 	const d = h("dialog", { class: "confirm report-dialog", "aria-labelledby": "report-title" });
@@ -180,8 +199,29 @@ export function reportDialog() {
 		const { files } = await bundle(text.value, picked());
 		download(`rfoundry-bug-report-${diag.report().tool || "web"}-${stamp()}.zip`, await zip(files), "application/zip");
 		result.replaceChildren(h("p", { class: "notice ok" }, t("report.downloaded")));
-	}, { primary: !sentry });
-	const send = sentry ? button(t("report.send"), async () => {
+	}, { primary: !sentry && !backend });
+	// the project's backend: the report and the ticked files, the user's message and address if given
+	const toBackend = async () => {
+		if (!contactOk(email.value)) {
+			result.replaceChildren(h("p", { class: "notice bad" }, t("report.email_bad")));
+			return email.focus();
+		}
+		send.disabled = true;
+		result.replaceChildren(h("p", { class: "muted" }, t("report.sending")));
+		try {
+			const meta = { ...backend.meta(), trail: diag.trail(200).map((l) => diag.scrub(l)) };
+			const body = reportBody(meta, { message: text.value, contact: email.value, result: meta.result || "failed" });
+			const r = await sendProblemReport({ api: backend.api, body, files: picked(), ...(backend.practice?.() ? { fetchFn: practiceFetch } : {}) });
+			diag.note("problem report sent", { id: r.id, files: r.sent.length, refused: r.refused.map((x) => x.why) });
+			result.replaceChildren(h("div", { class: "notice ok" }, h("p", {}, t("report.sent_backend", { id: r.id })),
+				r.refused.length ? h("ul", {}, r.refused.map((x) => h("li", {}, t("report.file_refused", { name: x.name, why: t(`report.refused.${x.why}`) })))) : null));
+		} catch (e) {
+			diag.note("problem report not sent", String(e?.message || e));
+			result.replaceChildren(h("p", { class: "notice bad" }, t("report.send_failed_backend", { error: String(e?.message || e) })));
+			send.disabled = false;
+		}
+	};
+	const toSentry = async () => {
 		send.disabled = true;
 		try {
 			const { rep, files } = await bundle(text.value, picked());
@@ -199,16 +239,20 @@ export function reportDialog() {
 			result.replaceChildren(h("p", { class: "notice bad" }, t("report.send_failed")));
 			send.disabled = false;
 		}
-	}, { primary: true }) : null;
-	d.append(
+	};
+	const send = backend || sentry ? button(t("report.send"), backend ? toBackend : toSentry, { primary: true }) : null;
+	d.append(...[	// append() would write a null as "null"
 		h("h2", { id: "report-title" }, t("report.title")),
-		h("p", {}, t(sentry ? "report.text_send" : "report.text")),
-		h("label", { class: "report-label" }, t("report.describe"), text),
+		h("p", {}, t(backend ? "report.text_backend" : sentry ? "report.text_send" : "report.text")),
+		h("label", { class: "report-label" }, backend ? t("report.describe_optional") : t("report.describe"), text),
+		email ? h("label", { class: "report-label" }, t("report.email"), email) : null,
+		email ? h("p", { class: "small muted" }, t("report.optional_note")) : null,
 		...boxes.map((b) => b.el),
-		boxes.length ? h("p", { class: "small muted" }, t("report.attach_note")) : null,
+		boxes.length ? h("p", { class: "small muted" }, t(backend ? "report.attach_note_files" : "report.attach_note")) : null,
+		backend ? h("p", { class: "small muted" }, t("report.kept")) : null,
 		result,
 		h("div", { class: "confirm-actions" }, button(t("report.close"), () => d.close()), save, send),
-	);
+	].filter(Boolean));
 	d.addEventListener("close", () => d.remove());
 	document.body.append(d);
 	d.showModal();

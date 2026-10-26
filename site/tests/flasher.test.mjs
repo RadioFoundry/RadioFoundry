@@ -26,6 +26,8 @@ import { decideCodec, DecisionError } from "../static/js/flasher/decide.js";
 import { findKey, readBootKey } from "../static/js/flasher/bootkey.js";
 import { codecSegments, readCodec } from "../static/js/flasher/codecsave.js";
 import { detect, convertersFor } from "../static/js/flasher/codeplug.js";
+import * as crumbs from "../static/js/flasher/trail.js";
+import * as diag from "../static/js/diag.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
@@ -798,4 +800,36 @@ test("backup file names: the model and the local date, letters and digits only, 
 	assert.equal(bundleName({ radio: { board: "dm1801pro", name: "Baofeng DM-1801 Pro", model: "DM-1801 Pro" } }, when), "DM1801Pro_Backup_2026-10-06.zip");
 	assert.equal(bundleName({ radio: { board: "dm1701" } }, when), "dm1701_Backup_2026-10-06.zip");
 	assert.equal(bundleName({ radio: { board: "x", model: 'A/B: "C"' } }, when), "ABC_Backup_2026-10-06.zip");
+});
+
+test("trail of a merge from the stock file: the file by name, size and hash, the decision and why, the key, the plan", async () => {
+	diag.reset();
+	const debug = console.debug;
+	console.debug = () => {};
+	try {
+		const picked = { name: "DM-1701(CSV)-V02.06.bin", size: stock.length, sha256: await sha256(stock) };
+		const opened = await vendorfile.openVendorFile(picked.name, stock, { ...fb, profiles }, "dm1701");
+		const b = opened.best;
+		const got = { name: picked.name, data: b.data, match: b.match, info: await stockfw.identify(b.data, { ...fb, profiles }) };
+		diag.note(...crumbs.filePicked(picked, got));
+		const d = decideCodec(board, fx.manifest, { stockInstalled: "V02.06 CSV", haveStock: true });
+		diag.note(...crumbs.decision(d));
+		diag.note(...crumbs.key("file (opener)"));
+		const { profile, segments: codec } = await stockfw.extract(stock, fromHex(fx.key), fb, profiles);
+		const plan = makePlan(board, [[board.app_base, image]], MERGE, codec, stockfw.layoutWindows(profile, fb));
+		diag.note(...crumbs.plan(plan, profile));
+		const tr = diag.trail(200);
+		const line = (re) => tr.find((l) => re.test(l));
+		assert.match(line(/file picked/), new RegExp(`"size":${stock.length}`));
+		assert.match(line(/file picked/), new RegExp(`"sha":"${picked.sha256.slice(0, 12)}"`));
+		assert.match(line(/file picked/), /"id":"[a-z-]+:/);
+		assert.match(line(/codec decision/), /"mode":"merge","source":"stock","why":"[^"]+"/);
+		assert.match(line(/key /), /"source":"file \(opener\)"/);
+		assert.match(line(/write plan merge: erase [\d,]+; write [\d:a-z,]+; keep -; \d+ blocks; codec /), new RegExp(profile.name.replace(/[()]/g, "\\$&")));
+		assert.ok(tr.every((l) => l.length <= 300));
+		// names, sizes and hashes only: no run of the file's bytes
+		assert.ok(!tr.join("\n").includes(toHex(stock.subarray(0x100, 0x110))));
+	} finally {
+		console.debug = debug;
+	}
 });

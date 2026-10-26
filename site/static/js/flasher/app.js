@@ -45,7 +45,9 @@ import { f4LoaderReader } from "./readers.js";
 import * as openfw from "./openfw.js";
 import { register, backendOf, bundleBackend, allBackends } from "./backends.js";
 import * as diag from "../diag.js";
-import { initReporting, reportLine, reportingActive, errorNotice } from "../report.js";
+import { initReporting, reportLine, reportingActive, errorNotice, reportButton, setAdapter } from "../report.js";
+import * as adapter from "./adapter.js";
+import * as crumbs from "./trail.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
@@ -228,7 +230,7 @@ function problemNotice(p, { offer = null, boardId = S.board?.id } = {}) {
 		!files.length ? null : foldSupported(files)
 			? h("details", {}, h("summary", {}, t("flash.problem.unmapped.all", { n: files.length })), list) : list,
 		also.length ? h("p", {}, t(files.length ? "flash.problem.unmapped.also" : "flash.problem.unmapped.only", { what: also.join("; ") })) : null,
-		internal && !reportingActive() ? reportLine() : null);
+		reportLine());	// a file the page can't use may be the page's fault: the user can send it with the report
 }
 
 // An error from a step that uses a vendor file: its problem explained when it is one (logged and reported like every
@@ -268,6 +270,7 @@ async function noteReadout(data) {
 	try {
 		const info = await stockfw.identify(data, fb());
 		S.readout = { len: data.length, sha256: info.sha, id: (info.known ? `known:${info.known}` : S.now?.kind || "unidentified").slice(0, 64) };
+		S.readoutBytes = data;
 	} catch (e) { diag.error("flash/readout hash", e); }
 }
 
@@ -278,7 +281,8 @@ function flashStarted(what) {
 	if (!id) return null;
 	S.useId = null;
 	const sent = fetch(new URL("flashes", API), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ id, tool: "web", tool_version: S.data.site.version || "", ...stockLog(), ...what }) }).catch(() => {});
+		body: JSON.stringify({ id, tool: "web", tool_version: S.data.site.version || "", ...stockLog(), ...(S.adapter ? { adapter: S.adapter } : {}), ...what }) }).catch(() => {});
+	S.lastFlashId = id;
 	return { id, sent };
 }
 
@@ -288,9 +292,16 @@ async function flashFinished(started, error = null) {
 	if (!started) return;
 	await started.sent;
 	// the readout may have come after the start (the backup task), so the end carries it too
-	const body = { ...stockLog(), ...(error ? { result: "fail", reason: errorText(error).slice(0, 300) } : { result: "success" }) };
+	const body = { ...stockLog(), ...(error ? { result: "fail", reason: errorText(error).slice(0, 300) } : { result: "success" }),
+		...(S.adapter ? { adapter: S.adapter } : {}), trail: diag.trail(200).map((l) => diag.scrub(l).slice(0, 300)) };
+	// a keepalive request carries 64 KB at most: the oldest steps go first
+	let json = JSON.stringify(body);
+	while (new TextEncoder().encode(json).length > 60000 && body.trail.length) {
+		body.trail.splice(0, 20);
+		json = JSON.stringify(body);
+	}
 	fetch(new URL(`flashes/${started.id}`, API), { method: "PATCH", keepalive: true, headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body) }).catch(() => {});
+		body: json }).catch(() => {});
 }
 
 const STEPS = {
@@ -378,6 +389,7 @@ async function connectSerial() {
 		if (await networkModeSeen()) throw new NetworkModeError();
 		const granted = await grantedRFoundryPorts();
 		stream = granted.length ? await SerialStream.open(granted[0]) : await SerialStream.request();
+		useAdapter(adapter.fromSerialInfo(stream.port?.getInfo?.()));
 	}
 	S.link = new Link(stream);
 	return S.link;
@@ -474,7 +486,9 @@ async function connectBootloader() {
 		return S.fakeRadio.dfuTransport();
 	}
 	if (!usbSupported()) throw new Error(t("flash.err.no_usb"));
-	return WebUsbTransport.request(S.board);
+	const tr = await WebUsbTransport.request(S.board);
+	useAdapter(adapter.fromUsbDevice(tr.device));
+	return tr;
 }
 
 const KEY_STORE = (id) => `rfoundry-key-${id}`;
@@ -520,6 +534,7 @@ async function keyFromRadio(link) {
 	S.key = key;
 	S.keyFromRadio = true;
 	S.keySource = "radio";
+	diag.note(...crumbs.key("radio (debug link)"));
 	if (!S.sim) try { localStorage.setItem(KEY_STORE(S.board.id), toHex(key)); } catch (e) { /* not remembered */ }
 }
 
@@ -549,8 +564,11 @@ async function pickedStock(f) {
 		const common = { picked, opened, report, analysis: analysisCandidate(opened, fb(), S.board.id),
 			problem: pickProblem(opened, S.board.id), keyProblem: pickProblem(opened, S.board.id, { need: "key" }) };
 		S.vendorPick = { picked, opened, problem: common.problem };
-		if (!b) return { ...f, ...common, info: none };
-		return { name: b.path.split("/").pop(), data: b.data, ...common, match: b.match, info: await stockfw.identify(b.data, fb()) };
+		const info = b ? await stockfw.identify(b.data, fb()) : none;
+		const got = b ? { name: b.path.split("/").pop(), data: b.data, ...common, match: b.match, info } : { ...f, ...common, info };
+		diag.note(...crumbs.filePicked(picked, got));
+		S.picked = { name: f.name, data: f.data };
+		return got;
 	} catch (e) {
 		// the opener reports what it can't read as a file problem, so this is the page's own fault
 		diag.error("flash/open file", e);
@@ -579,6 +597,7 @@ async function getKey(board) {
 		try {
 			S.key = await checkKey(saved, board);
 			S.keySource = "saved";
+			diag.note(...crumbs.key("saved in this browser"));
 			return S.key;
 		} catch (e) { /* stale: derive again */ }
 	}
@@ -590,6 +609,7 @@ async function getKey(board) {
 	const found = S.stock.match?.board === board.id ? S.stock.match.key : null;
 	S.key = await checkKey(found || await stockfw.deriveKey(S.stock.data, board.key_sha256, fb()), board);
 	S.keySource = "file";
+	diag.note(...crumbs.key(found ? "file (opener)" : "file (derived)"));
 	try { localStorage.setItem(KEY_STORE(board.id), toHex(S.key)); } catch (e) { /* not remembered */ }
 	return S.key;
 }
@@ -1128,6 +1148,8 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			const bytes = await makeBundle(meta, S.backupParts, { git: S.data.site.git, url: location.origin });
 			const name = bundleName(meta);
 			download(name, bytes, "application/zip");
+			S.lastBackup = { name, data: bytes };
+			diag.note("backup saved", { contents: pick, size: bytes.length, parts: S.backupParts.map((x) => `${x.what}${x.complete ? "" : " (incomplete)"}`) });
 			S.backupDone = true;
 			flashFinished(started);
 			const incomplete = S.backupParts.filter((x) => !x.complete && x.what !== "spi-flash").map((x) => x.file);
@@ -1242,11 +1264,12 @@ function openfwBackupNow({ onDone = null, actions = null } = {}) {
 		const zipped = await makeBundle(meta, parts, { git: S.data.site.git, url: location.origin });
 		const name = bundleName(meta);
 		download(name, zipped, "application/zip");
+		S.lastBackup = { name, data: zipped };
 		return { name, size: Math.round(zipped.length / 1024) };
 	};
 	// the key and the codec, from as much of the MCU flash as was read
 	const take = async (st) => {
-		const { key, codec } = await openfw.analyze(st, S.board, fb());
+		const { key, codec } = await openfw.analyze(st, S.board, fb(), (line) => diag.note(line));
 		if (key) {
 			S.key = key;
 			S.keyFromRadio = true;
@@ -1324,7 +1347,7 @@ async function prepareStorage(box) {
 		line.replaceWith(notice(t(ok ? "flash.storage.done" : "flash.storage.failed"), ok ? "ok" : "bad"));
 	} catch (e) {
 		diag.error("flash/prepare storage", e);
-		box.append(notice(t("flash.storage.failed"), "bad"));
+		box.append(notice(t("flash.storage.failed"), "bad"), reportLine());
 	}
 }
 
@@ -1382,6 +1405,7 @@ function codecView() {
 			S.decision = null;
 			err = e.reason || e.message;
 		}
+		noteDecision(err);
 		// The stock file is needed when the codec has to come from it, or the bootloader key can't come from anywhere
 		// else. Whatever the case, the page says what happens and what the user has to do.
 		const needs = [];
@@ -1570,8 +1594,10 @@ function writeView() {
 			prof = S.savedCodec.profile;
 			codec = await codecSegments(prof, S.savedCodec.segments, fb());
 		} else if (S.decision.mode === MERGE) ({ profile: prof, segments: codec } = await stockfw.extract(S.stock.data, S.key, fb(), fb().profiles, S.board.id));
-		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec,
+		const plan = makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec,
 			prof ? stockfw.layoutWindows(prof, fb()) : S.board.codec.windows);
+		notePlan(plan, prof);
+		return plan;
 	}, next, what, opts);
 	if (!stubRoute()) return dfu();
 	// the bootloader route stays one click away: it finishes an install the loader couldn't
@@ -1619,7 +1645,7 @@ function stubPanel(fallback, onDone, what) {
 					status.replaceChildren();
 					return install();
 				}
-				status.replaceChildren(notice(t("flash.f4.failed", { error: t("flash.c7.write.lost") }), "bad"), h("p", {}, t("flash.f4.after_fail")));
+				status.replaceChildren(notice(t("flash.f4.failed", { error: t("flash.c7.write.lost") }), "bad"), h("p", {}, t("flash.f4.after_fail")), reportLine());
 				S.forward(null);
 			}, { primary: true });
 			status.replaceChildren(...h("div", {}, errorNotice(t("flash.f4.failed", { error: errorText(e) })),
@@ -1689,11 +1715,13 @@ function doneView() {
 			if (!p) throw await noAnswer(link, { written: S.firmware?.manifest });
 			// the loader route never touches the codec, so it is there afterwards as it was before
 			const good = !(S.decision ? S.decision.expectCodec : true) || p.codec === S.board.codec.id;
+			diag.note(...crumbs.verify(p, good));
+			S.reportResult = good ? "problem" : "failed";
 			intro.replaceChildren();	// "the radio restarts" is over: what it says now replaces it
 			status.replaceChildren(h("dl", { class: "kv-list" },
 				h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, codecText(p.codec))),
-			notice(good ? t("flash.done.ready") : t("flash.done.no_codec"), good ? "ok" : "bad"), ...(good ? [] : [helpLink()]));	// the DOM writes a null as "null"
+			notice(good ? t("flash.done.ready") : t("flash.done.no_codec"), good ? "ok" : "bad"), ...(good ? [] : [helpLink(), reportLine()]));	// the DOM writes a null as "null"
 			if (!S.backupDone) {
 				S.now = { ...S.now, probe: S.now?.kind === "rfoundry" ? p : S.now?.probe, after: p };
 				status.append(backupNow({ when: "after", onDone: () => S.forward(finish()),
@@ -1706,12 +1734,16 @@ function doneView() {
 		} catch (e) {
 			await dropSerial();
 			check.disabled = false;
+			diag.note("verify failed", { kind: e?.params?.kind || null, message: String(e?.message || e).slice(0, 120) });
+			S.reportResult = "failed";
 			status.replaceChildren(connectError(e), connectHelp(e, "flash.done.openfw_next"), helpLink());
 		}
 	}, { primary: true });
 	S.forward(check);
 	const intro = h("div", {}, S.stubResult ? notice(S.stubResult, "ok") : null, h("p", {}, t("flash.done.lead")));
-	box.append(panel(t("flash.done.title"), intro, status));
+	// whatever the check says: the user may know better (a radio that verifies but misbehaves)
+	const quiet = h("p", { class: "small muted" }, t("report.something_wrong"), " ", reportButton());
+	box.append(panel(t("flash.done.title"), intro, status, quiet));
 	return box;
 }
 
@@ -1898,9 +1930,61 @@ function helpLink() {
 }
 
 // What a bug report says about the flasher: no names, callsigns or IDs (automatic error reports carry it too)
+// The USB device in use (adapter.js): on the trail, as a tag on error reports, in the flash log and problem reports
+function useAdapter(a) {
+	if (!a || (S.adapter && adapter.describe(S.adapter) === adapter.describe(a))) return;
+	S.adapter = a;
+	setAdapter(a);
+	diag.note(`adapter ${adapter.describe(a)}`);
+}
+
+// The codec decision and why, on the trail (decide.js); err: why there is none
+function noteDecision(err = null) {
+	diag.note(...crumbs.decision(S.decision, { err, stock: !!S.stock?.data, saved: S.savedCodec?.from || null }));
+}
+
+// What the write erases and writes, for the trail and the problem report
+function notePlan(p, prof = null) {
+	const [line] = crumbs.plan(p, prof);
+	S.planText = line.replace(/^write plan /, "");
+	diag.note(line);
+}
+
+// For a problem report (report.js, problemreport.js): what the page decided and the files involved, by hash only
+function reportMeta() {
+	const file = (role, name, data, sha, id) => (data ? { role, name: String(name || "").slice(0, 200), len: data.length, sha256: sha || undefined, id: id || undefined } : null);
+	const files = [
+		file("stock", S.stock?.name, S.stock?.data, S.stock?.info?.sha, S.stock ? logId(S.stock) : null),
+		file("readout", "internal-flash.bin", S.readoutBytes, S.readout?.sha256, S.readout?.id),
+		file("backup", S.lastBackup?.name, S.lastBackup?.data, null, null),
+	].filter(Boolean);
+	const last = diag.lastError();
+	return {
+		tool: "web", tool_version: S.data?.site?.version || S.data?.site?.git || "", board: S.board?.id || S.radio?.id || "", task: S.task || "",
+		step: String(stepsFor()?.[S.step] ?? S.step ?? ""), flash_id: S.lastFlashId || undefined, adapter: S.adapter || undefined,
+		result: S.reportResult || "failed", error: last ? `${last.stage}: ${last.message}` : undefined,
+		decisions: { codec_mode: S.decision?.mode || "", codec_source: S.decision ? S.decision.source || "stock" : "", key_source: S.keySource || "",
+			plan: S.planText || "", files },
+	};
+}
+
+// The files the user can attach to a problem report, all ticked: the vendor file picked, the internal flash read, the
+// backup the page made
+function reportAttachments() {
+	const out = [];
+	if (S.picked?.data) out.push({ name: S.picked.name, kind: "stock", size: S.picked.data.length, checked: true,
+		label: t("report.attach_stock", { name: S.picked.name }), data: () => S.picked.data });
+	if (S.readoutBytes) out.push({ name: "internal-flash.bin", kind: "readout", size: S.readoutBytes.length, checked: true,
+		label: t("report.attach_readout"), data: () => S.readoutBytes });
+	if (S.lastBackup?.data) out.push({ name: S.lastBackup.name, kind: "backup", size: S.lastBackup.data.length, checked: true,
+		label: t("report.attach_backup", { name: S.lastBackup.name }), data: () => S.lastBackup.data });
+	return out;
+}
+
 function reportContext() {
 	const p = S.now?.probe;
 	return {
+		adapter: S.adapter ? adapter.describe(S.adapter) : null,
 		task: S.task, step: stepsFor()?.[S.step] ?? S.step, radio: S.radio?.id || null, board: S.board?.id || null, sim: !!S.sim,
 		version: VERSION_REF || null,
 		firmware: S.firmware ? { source: S.firmware.source, version: S.firmware.manifest?.version, git: S.firmware.manifest?.git } : null,
@@ -2067,7 +2151,7 @@ function stockRecovery(go) {
 }
 
 async function main() {
-	initReporting({ tool: "flasher", context: reportContext });
+	initReporting({ tool: "flasher", context: reportContext, attachments: reportAttachments, backend: { api: API, meta: reportMeta, practice: () => !!S.sim } });
 	if (!FLASH_LOG) document.getElementById("flash-log-off")?.replaceWith(t("flash.log.is_off"));
 	// the privacy contact is put together here, so address scrapers don't find it in the page or the repository
 	const mail = ["tseuqer-ycavirp-rdo", "moc.relwofrecneps"].map((x) => [...x].reverse().join("")).join("@");
@@ -2080,7 +2164,7 @@ async function main() {
 		app.replaceChildren(notice(t("flash.err.load"), "bad"), reportLine());
 		return;
 	}
-	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, noteReadout, errorText, analysisOffer, problemNotice, failureNotice,
+	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
 	// #sim=<board>[-stock|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another open
 	// firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file
