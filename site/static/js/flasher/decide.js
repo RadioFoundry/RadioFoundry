@@ -44,7 +44,7 @@ export function decideCodec(board, manifest, { requested = null, haveStock = fal
 		if (requested === KEEP) return { mode: KEEP, why: `the codec is not changed, as selected, although the radio has no codec (${what})`, risk: "DMR voice is not available (FM works) until the radio is reinstalled with your stock file", expectCodec: false };
 		throw new DecisionError(`The radio has no codec (${what}); ${mergeHint}.`, `The radio has no codec (${what}).`);
 	}
-	if (haveSaved && requested !== KEEP) return { mode: MERGE, source: "saved", why: "the radio's codec cannot be verified, so the copy saved from your radio is used", expectCodec: true };
+	if (haveSaved && requested !== KEEP) return { mode: MERGE, source: "saved", why: "the codec is written from the copy saved from your radio, so it does not depend on what the radio holds now", expectCodec: true };
 	// no version of the original firmware holds the codec where RadioFoundry keeps it, so a kept codec is known to be missing
 	if ((runsStock || stockInstalled) && requested === KEEP && !board.codec.installed.length)
 		return { mode: KEEP, why: "the codec is not changed, as selected, although the original firmware never stores it where RadioFoundry uses it",
