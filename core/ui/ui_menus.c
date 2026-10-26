@@ -1362,7 +1362,7 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 #endif
 	for (uint8_t i = 1; i <= sp; i++) {
 		ui_frame_t *f = &stack[i];
-		if (f->scr == SCR_ZONES && f->focus >= CH_VFO) {
+		if (f->scr == SCR_ZONES && !chans_is_vfo(f->focus)) {
 			if (zone_edit_map(from, to, (uint16_t)(f->focus - CH_VFO), &out) != ZONE_MAP_LOST)
 				f->focus = (uint16_t)(out + CH_VFO);	// a deleted one: the next zone, clamped by the list
 		} else if (f->scr == SCR_ZONE) {

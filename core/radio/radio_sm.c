@@ -4522,6 +4522,7 @@ static uint16_t follow_zones(radio_sm_t *sm, bool *gone, uint32_t now_ms)
 	return zi;
 }
 
+#if CONFIG_SCAN
 // A checksum of the zone in use and its channel list: an edit of it ends a zone scan (its skips are by position)
 static uint32_t zone_sum(const radio_sm_t *sm)
 {
@@ -4531,6 +4532,7 @@ static uint32_t zone_sum(const radio_sm_t *sm)
 	}
 	return h ^ sm->view.zone_index;
 }
+#endif
 #endif
 
 static void reload(radio_sm_t *sm, uint32_t now_ms)
@@ -4554,8 +4556,10 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	uint16_t number = sm->have_channels && sm->view.zone_pos < sm->zone.count ? sm->zone.channels[sm->view.zone_pos] : 0;
 	bool vfo = sm->view.vfo;
 	uint16_t zi = sm->view.zone_index, pos = sm->view.zone_pos;
+#if CONFIG_ZONE_WRITE && CONFIG_SCAN
+	uint32_t sum = zone_sum(sm);	// read by the zone scan check below
+#endif
 #if CONFIG_ZONE_WRITE
-	uint32_t sum = zone_sum(sm);
 	bool gone;
 	zi = follow_zones(sm, &gone, now_ms);
 	if (gone) {

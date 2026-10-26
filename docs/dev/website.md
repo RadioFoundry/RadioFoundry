@@ -42,7 +42,7 @@ a new deployment in one step, so a deployment has no downtime.
 |---|---|
 | Build | Command `site/cloudflare-build.sh`, output directory `build/site`, root directory the repository root. The script installs `site/requirements.txt`, fetches the newest release's `rfoundry-*` images from the GitHub API and runs `site/build.py --strict`. A failed build leaves the last deployment up |
 | Branches | Production branch `main`; every other branch of this repository builds a preview |
-| Variables | `PYTHON_VERSION` `3.12` (both environments). `RFOUNDRY_SENTRY_DSN` in production only, so previews send no error reports |
+| Variables | `PYTHON_VERSION` `3.12` (both environments). `RFOUNDRY_SENTRY_DSN` in production only, so previews send no error reports. `GITHUB_TOKEN` (encrypted, both environments): a fine-grained token with read-only access to public repositories. Without it the release lookup shares the builders' 60 requests an hour, and a build can fail with 403 "rate limit exceeded" after a minute of retries |
 | Custom domain | `radiofoundry.org` on the project (Custom domains). The `www` name redirects to it |
 | Release rebuild | The project's deploy hook, as `CLOUDFLARE_DEPLOY_HOOK` in the `site` environment (main and release tags only), which `site.yml` calls |
 | Analytics | Cloudflare Web Analytics, turned on in the project's Metrics tab. Pages adds the beacon to each deployment; it sets no cookies |
