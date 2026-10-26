@@ -224,7 +224,7 @@ export function kitPanel(args, api, { pickStock = null } = {}) {
 	const route = kitRoute(o.radio);
 	const why = t(api === "usb" ? "flash.err.no_usb" : "flash.err.no_serial");
 	if (!route) {
-		return { el: h("section", { class: "panel kit" }, h("h2", {}, t("flash.kit.title")),
+		return { el: h("section", { class: "panel kit" }, h("h2", {}, t("flash.kit.none_title")),
 			h("p", { class: "notice bad" }, why), h("p", {}, t("flash.kit.none", { radio: o.radio.name }))), action: null };
 	}
 	const status = h("p", { class: "small", "aria-live": "polite" });
@@ -236,7 +236,7 @@ export function kitPanel(args, api, { pickStock = null } = {}) {
 			: h("li", {}, t("flash.kit.readout"));
 	const el = h("section", { class: "panel kit" },
 		h("h2", {}, t("flash.kit.title")),
-		h("p", { class: "notice info" }, why, " ", t("flash.kit.lead")),
+		h("div", { class: "notice info" }, h("p", {}, h("strong", {}, why)), h("p", {}, t("flash.kit.lead"))),
 		h("ul", { class: "kit-list" },
 			h("li", {}, t("flash.kit.has_firmware", { version: o.firmware?.manifest?.version || "", radio: o.radio.name })),
 			stockPart,
