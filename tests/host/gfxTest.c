@@ -368,8 +368,7 @@ static void test_big_text(void)
 }
 
 // The splash footer (board and version) stays on a 128 px display with an 11-character board name and the longest
-// release name, a beta's: the board
-// name goes before the version is cut
+// release name, a beta's: the board name goes before the version is cut
 static void test_splash_footer(void)
 {
 	hal_display_t d = disp;
