@@ -57,7 +57,8 @@ def read_bundle(path):
             meta = json.loads(z.read("backup.json"))
         except KeyError:
             raise BackupError("%s: no backup.json, not a radio backup" % path)
-        if not str(meta.get("format", "")).startswith("rfoundry-backup/"):
+        # odr-backup/1: the same bundle from before the project was renamed (backup.js LEGACY_FORMAT)
+        if not str(meta.get("format", "")).startswith(("rfoundry-backup/", "odr-backup/")):
             raise BackupError("%s: backup format %r unknown" % (path, meta.get("format")))
         board = (meta.get("radio") or {}).get("board")
         parts = {p.get("what"): p for p in meta.get("parts", [])}
@@ -75,11 +76,11 @@ def read_bundle(path):
 
 def board_layout(board):
     """{openfw: data flash address of the open-firmware image or None, stock: the [stock_codeplug] table or None}."""
-    d = os.path.join(ROOT, "boards", board or "")
-    if not board or not os.path.isfile(os.path.join(d, "board.toml")):
+    if not board or board not in boards.board_dirs():
         raise BackupError("board %r unknown (boards/<id>/board.toml)" % board)
-    data = boards._read_toml(os.path.join(d, "board.toml"))
-    return {"openfw": boards.flash_map(d).get("openfw_eeprom"), "stock": data.get("stock_codeplug")}
+    # the registry: the board's own directory and its family's (BOARD_DIRS), where hal_flash_map_t may sit
+    b = boards.load(only=[board])[board]
+    return {"openfw": b.flash_map.get("openfw_eeprom"), "stock": b.data.get("stock_codeplug")}
 
 
 def blank(b):
@@ -95,7 +96,7 @@ def openfw_dfu(data, base):
                           (len(data), base, base + OPENFW_SPAN))
     if blank(img):
         return None
-    return cp.build_dfuse([("OpenGD77 Codeplug EEPROM", []), ("OpenGD77 Codeplug FLASH", [(0, img)])])
+    return cp.build_dfuse([("Codeplug EEPROM", []), ("Codeplug FLASH", [(0, img)])])
 
 
 def block_id_pages(data, start, end):
@@ -255,7 +256,14 @@ def self_test():
         meta3 = dict(meta, parts=meta["parts"][:1])
         expect_error(lambda: read_bundle(bundle("c.zip", meta3, {})), "no data flash part")
         expect_error(lambda: read_bundle(bundle("d.zip", None, {"x": b"x"})), "no backup.json")
+        b, _, _ = read_bundle(bundle("e.zip", dict(meta, format="odr-backup/1"), {"original-channels.bin": b"\x01"}))
+        check(b == "b1", "a bundle from before the rename (odr-backup/1)")
+        expect_error(lambda: read_bundle(bundle("f.zip", dict(meta, format="other/1"), {})), "an unknown format")
     expect_error(lambda: board_layout("no-such-board"), "unknown board")
+
+    # every board's open-firmware image is found, also where hal_flash_map_t sits in a family directory
+    for bid in boards.board_dirs():
+        check(board_layout(bid)["openfw"] is not None, "%s: no openfw_eeprom found" % bid)
 
     # every [stock_codeplug] in boards/ names a layout this tool knows
     for bid in boards.board_dirs():

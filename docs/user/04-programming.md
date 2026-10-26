@@ -169,8 +169,9 @@ serial port, or TFTP in USB network mode ([USB network](15-usb-network.md#progra
 
 To get the codeplugs out of a web installer backup (the `.zip`) as qdmr YAML, run
 `tools/backup_codeplug.py BACKUP.zip -o DIR`. It writes RadioFoundry's codeplug and, where the backup holds it, the
-original (stock) one, each as a `.yaml` and a `.dfu`. Open the `.yaml` in qdmr. It needs Python 3.11 or newer and
-qdmr's `dmrconf` (0.15 or newer), and it never touches the radio.
+original (stock) one, each as a `.yaml` and a `.dfu`. Open the `.yaml` in the Codeplug Editor or in qdmr. It needs
+Python 3.11 or newer and qdmr's `dmrconf` (0.15 or newer), and it never touches the radio. This is how a stock
+codeplug in a layout the Codeplug Editor can't read gets into it ([Radio reference](23-radios.md#codeplug-files-from-the-original-firmware) says which radios).
 
 To carry a stock codeplug over while you install, see [Moving from the stock firmware](README.md#moving-from-the-stock-firmware).
 

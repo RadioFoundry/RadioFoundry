@@ -76,8 +76,9 @@ quick keys, and its own VFO records (0x7590-0x75B8) differ from the file afterwa
 ## 5. Codeplugs from a backup
 
 `tools/backup_codeplug.py` turns the data flash in a backup into qdmr YAML, offline. It takes a web installer backup
-bundle (`rfoundry-backup/1`, [web-flasher.md](../dev/web-flasher.md), "Backup bundles") or a raw dump
-with `--board`. The bundle part it reads is the first of `spi-flash`, `c7000-data` and `c7000-data-start`; each holds
+bundle (`rfoundry-backup/1`, or `odr-backup/1` from before the rename; [web-flasher.md](../dev/web-flasher.md),
+"Backup bundles") or a raw dump with `--board`. The board's layout comes from the board registry (`tools/boards.py`),
+so a `hal_flash_map_t` in a board family directory is found too. The bundle part it reads is the first of `spi-flash`, `c7000-data` and `c7000-data-start`; each holds
 the data flash from address 0.
 
 | Codeplug | Where it comes from | Decoded with |
@@ -85,7 +86,8 @@ the data flash from address 0.
 | RadioFoundry | 0x120000 bytes at the board's `hal_flash_map_t` `openfw_eeprom`, as one DfuSe element at 0 | `dmrconf decode --radio openuv380` |
 | Stock | the board's `[stock_codeplug]` in `board.toml`: `span`, page layout `pages`, driver `dmrconf` | that driver |
 
-A part that is blank (all 0xFF) or not in the backup is skipped. One element over the whole image decodes the same as
+The Codeplug Editor's qdmr import reads the YAML of either (T: a stock codeplug of 24 channels, 5 zones and 23
+contacts). A part that is blank (all 0xFF) or not in the backup is skipped. One element over the whole image decodes the same as
 the four regions qdmr writes (T). Each codeplug is written as `<name>-rfoundry.dfu` / `.yaml` or `<name>-stock.dfu` /
 `.yaml`.
 

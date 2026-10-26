@@ -290,11 +290,18 @@ What can be read depends on the firmware running:
 
 ### Codeplugs from a bundle
 
-A bundle can hold two codeplugs: the original (stock) one and RadioFoundry's. The Tools page's `backup-to-image`
-(`codeplug.js`) reads only the `spi-flash` part, from address 0, and returns one image. `tools/backup_codeplug.py`
-extracts both offline, from any data flash part, at the board's `openfw_eeprom` and through the board's
-`[stock_codeplug]` page layout ([codeplug-port.md](../spec/codeplug-port.md) 5). The same in the page, as a restore
-task choice, is planned (issue #228).
+A bundle can hold two codeplugs: the original (stock) one and RadioFoundry's. In the page:
+
+| Codeplug | Where the page reads it |
+|---|---|
+| RadioFoundry's | The Tools page's `backup-to-image` (`codeplug.js`) and the Codeplug Editor's open (`editor/files.js`): the `spi-flash` part, from address 0 |
+| A stock TYT-family codeplug | The same, converted by `codeplug/stock_tyt.js` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
+| Any other stock codeplug | Nowhere: no spec in `docs/spec/` describes its records, and only `dmrconf` (GPL, never in the page) decodes it |
+
+`tools/backup_codeplug.py` extracts both offline, from any data flash part, at the board's `openfw_eeprom` and through
+the board's `[stock_codeplug]` page layout, and decodes them with `dmrconf` ([codeplug-port.md](../spec/codeplug-port.md)
+5). The Codeplug Editor opens the YAML it writes. Doing it in the page needs a clean-room spec of that stock layout
+first (issue #228).
 
 ## Another open firmware (`openfw.js`)
 
