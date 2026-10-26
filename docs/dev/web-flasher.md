@@ -108,12 +108,16 @@ build's commit, or its feature list leaves out `DEBUGLINK`, the kind is `rfoundr
 has no debug link.
 
 Where the radio answered (`openfw`, `rfoundry-nodebug`), the connection worked, so the page gives the next step instead
-of the cable and driver tips: on the "current firmware" step a button that chooses **Another open firmware**; on the
-radio, done and backup steps one line (`connectHelp()`).
+of the cable and driver tips: on the "current firmware" step a button that chooses **Another open firmware** (on a
+board `openfw.js` backs up from, an `openfw` answer goes straight to that choice with its backup); on the radio, done
+and backup steps one line (`connectHelp()`).
 
 The "current firmware" step has four choices (`explain.js` `NOW_CHOICES`): RadioFoundry, original firmware, **Another
 open firmware** and **Other / Not sure**. The last two are the same to the install (`S.now.kind` `unknown`: the codec
 decision and the steps don't change); `S.now.openfw` marks the first, for the pressed button and the error report.
+On a board `openfw.js` supports, **Another open firmware** also offers **Check the Radio** and, once the probe
+recognized the radio (`S.now.radioType`, `git`), the backup below. **Other / Not sure** doesn't: its route is the stock
+file.
 
 The browser's own USB and serial errors (`NetworkError`, `InvalidStateError`, a failed `fetch`) say little. `errorText()`
 puts what to do in front of them: close the program that holds the port, check the cable, the Windows driver or the
@@ -236,13 +240,13 @@ What can be read depends on the firmware running:
 ## Another open firmware (`openfw.js`)
 
 A radio whose port answers the debug link probe with `-` and gives a valid radio info is on another open firmware
-(`link.js` `whyNoAnswer()`, kind `openfw`). Where the board supports it, the current-firmware step offers a full backup
-before the install, and the install then needs no stock file.
+(`link.js` `whyNoAnswer()`, kind `openfw`). Where the board supports it, the **Another open firmware** choice of the
+current-firmware step offers a full backup before the install, and the install then needs no stock file.
 
 | | |
 |---|---|
 | Which boards | `openfw.supported()`: CPS radio types (`board.toml` `[cps]`, `cps_radio_types` in `flash-boards.json`), the `usb-dfu` family and a `key_sha256`. All from board data; HR_C7000 boards are left out (other install route, area 1 offset) |
-| What the probe leads to | `openfw.recognized()`: `backup` (offered), `wrong-type` (the radio info names another radio: a wrong pick, with the stock-file route one click away), `unsupported` (the stock-file route, as for any other firmware) |
+| What the probe leads to | `openfw.recognized()`: `backup` (offered), `wrong-type` (the radio info names another radio: a wrong pick, with the stock-file route, **Other / Not sure**, one click away), `unsupported` (the stock-file route, as for any other firmware) |
 | Radio type | The radio info's type must be one of the board's, or nothing is read |
 | Requests | `R` only: area 9, then area 5 over exactly [`rom_base`, `flash_end`) (bootloader included, for the key), then area 1 over the whole SPI flash. Never `C` (a `C` 6 2 saves settings and once hung a radio's USB), never area 10 (some builds don't answer), never more than 2045 bytes per request. 0x7590-0x75FF of area 1 is read in 32-byte requests, so the VFO overlay never applies |
 | A radio that stops answering | Each request is asked three times (a read changes nothing). Then the backup stops and keeps what it read (`state.stopped`, why `no answer`); after a power cycle the same state continues (`readBackup({state})`) where it stopped. A refused read (`refused`) stops the same way. **Stop Reading**, or leaving the step (`render()` aborts it), stops it as `cancelled`. What was read can be saved as an incomplete bundle |
@@ -252,7 +256,7 @@ before the install, and the install then needs no stock file.
 | The codec | `codecFromImage()`: first the forms `stockfw.fromFlash()` knows (stock addresses, RadioFoundry's placement); then a copy moved anywhere: the codec's first word at each word boundary, the move undone with the codec map (`codecmap.js` `unmoveCode()`, `unmoveBranches()` for tables whose islands call the moved copy or still the stock address), the stock SHA-256s checked (for a profile whose merge cuts the tables, the codec's own data at their start), then placed and checked as a merge from the stock file. Kept as the saved codec (`codecsave.js`), so `decideCodec()` merges from the saved copy. Not found: the codec step asks for the stock file as before |
 | Bundle | `firmware_now` `{kind: "openfw", radio_type, git, built, flash_id}`; `radio-info.bin`, `internal-flash.bin` from the application base, `spi-flash.bin`. No security registers; the bootloader (and the key in it) is read but not stored |
 | After the install | The settings area is claimed (`prepareStorage()`), as after any full backup |
-| Practice mode | `#sim=<board>-openfw`: `fake.js` state `openfw` (2045-byte clip, VFO overlay, unbounded area 5, silent area 10, hangs) |
+| Practice mode | `#sim=<board>-openfw`: `fake.js` state `openfw` (2045-byte clip, VFO overlay, unbounded area 5, silent area 10, hangs); `#sim=<board>-openfw-nocodec`: the same without the codec, for the stock-file fallback |
 
 Not yet tested on a real radio.
 

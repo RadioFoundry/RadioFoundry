@@ -68,15 +68,15 @@ Then continue with [First boot](03-first-boot.md).
 
 On a radio that runs an OpenGD77-family firmware, the installer can back up the whole radio through that firmware
 before installing, and take the update key and the voice codec from the backup. You then need no stock firmware file.
-The installer offers this only on radios where it works. On others it suggests **Other / Not sure**, and the stock
-firmware file is needed as usual.
+The installer offers this only on radios where it works. On others the stock firmware file is needed as usual.
 
-1. On **Current firmware**, choose **RadioFoundry**, or choose **Other / Not sure** and then **Check the Radio**, with
-   the radio connected and on. The installer reports the other firmware.
+1. On **Current firmware**, choose **Another open firmware** and then **Check the Radio**, with the radio connected and
+   on. Choosing **RadioFoundry** finds the other firmware too. The installer reports its version.
 2. Choose **Back Up and Read**. The backup takes about a minute and a half. It only reads; nothing on the radio
    changes. Keep the file it saves.
 3. The installer says whether it found the update key and the codec. If it found both, continue: the codec step uses
-   the codec from your radio. If it found neither or only one, select your stock firmware file on the codec step.
+   the codec from your radio. If it found neither or only one, select your stock firmware file on the codec step. The
+   same holds when you skip the backup or the radio reports another model: the codec step asks for the stock file.
 4. Install as usual through the bootloader.
 
 If the radio stops responding during the backup, turn it off and on, then choose **Continue Reading**: the backup
