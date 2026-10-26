@@ -173,7 +173,8 @@ typedef struct
 	uint8_t  txLastError;					// dmr_tx_error_t of the last list
 	uint8_t  txLastKind;					// what the last list started was for (dmrDataServiceTxKindName)
 	uint32_t txLastMs;						// when it started (the service's clock), 0 = none yet
-	// ARS timing, so that an unattended transmission can be told apart (refreshed every tick, not counters)
+	// ARS timing, so that an unattended transmission can be told apart. Not counters: these and the two above survive
+	// dmrDataServiceResetStats
 	uint32_t arsLastMs;						// the last registration or deregistration given to the air, 0 = none
 	uint32_t arsNextMs;						// when the next registration is due, 0 = none pending
 	uint8_t  arsAttempts;					// registrations sent since the last change of channel, ID or server

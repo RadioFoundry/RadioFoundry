@@ -2609,7 +2609,17 @@ void dmrDataServiceGetStats(dmrDataStats_t *out)
 
 void dmrDataServiceResetStats(void)
 {
+	// Not the timing: a reset before a test mustn't hide when the radio last sent on its own. Field by field, not a
+	// copy of the struct: this runs on the host link's task, whose stack is tight
+	uint8_t kind = stats.txLastKind, attempts = stats.arsAttempts;
+	uint32_t txMs = stats.txLastMs, arsMs = stats.arsLastMs, nextMs = stats.arsNextMs;
+
 	memset(&stats, 0, sizeof(stats));
+	stats.txLastKind = kind;
+	stats.txLastMs = txMs;
+	stats.arsLastMs = arsMs;
+	stats.arsNextMs = nextMs;
+	stats.arsAttempts = attempts;
 }
 
 const char *dmrDataServiceTxKindName(uint8_t kind)
