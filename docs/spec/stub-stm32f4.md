@@ -16,8 +16,9 @@ the radio's board record (section 5.2), and only then can the stub write. It doe
 | The board profiles | each board's `board.toml` `[flash.stub]` with the SPI flash pins of its `pins.h` (`PIN_FLASH_SCK`, `_MISO`, `_MOSI`, `_CS`), its crystal and image address from `board.mk`; `tools/boards.py` derives the profile and checks it ([board-registry.md](../dev/board-registry.md)), `stub/f4stub.py` `BOARDS` reads it |
 | Switch | `CONFIG_STUB_ENTRY`, on by default on every radio, with or without the debug link ([stub-entry.md](stub-entry.md)) |
 
-Status (2026-10-22): built, host tested and run on an HR_C6000 board (section 11, with protocol 2). Protocol 4 (the board
-record) is host tested only (`tested = false` in each board's `[flash.stub]`).
+Status (2026-10-25): built, host tested and run on an HR_C6000 board (section 11, with protocol 2). Protocol 4 (the board
+record) and protocol 5 (the SPI flash's security registers, section 6.2) are host tested only (`tested = false` in each
+board's `[flash.stub]`).
 
 | Contents | |
 |---|---|
@@ -103,11 +104,11 @@ flasher (`f4stub.js`) read the same layout, and their self-tests check their num
 | 0x10 | 4 | magic | `0x48533446` (bytes `F4SH`) |
 | 0x14 | 2 | layout | 1; a later layout only appends fields |
 | 0x16 | 2 | size | 16 |
-| 0x18 | 4 | stub version | 4 (`F4STUB_VERSION`, also in HELLO) |
+| 0x18 | 4 | stub version | 5 (`F4STUB_VERSION`, also in HELLO) |
 | 0x1C | 4 | flags | bit 0: feeds the IWDG (`F4STUB_FLAG_FEEDS_IWDG`) |
 
 Versions: 1 the first stub, 2 the SPI flash, 3 the header and the IWDG feeds (`F4STUB_VERSION_FEEDS_IWDG`), 4 the
-shared engine with CONFIG and the board record (section 5). Stubs
+shared engine with CONFIG and the board record (section 5), 5 the SPI flash's security registers (SREAD, SWRITE). Stubs
 before version 3 have no header: those bytes are code. While its IWDG runs, RadioFoundry enters a stub only when all three hold:
 the magic, a version of at least 3 and the feed flag (`f4stub_image_ok`). Otherwise ENTER is refused with reason 1
 ([debuglink.md](debuglink.md) 3.18). With the IWDG not running any stub is entered. `stubtool.py --rfoundry-enter` and the
@@ -155,7 +156,7 @@ arriving for 200 ms is dropped. The largest payload is 4104 bytes (`STUBENG_MAX_
 
 | Op | Name | Request | Reply |
 |---|---|---|---|
-| `01` | HELLO | none | `F4STUB`, version u8 (4), max payload u16, flash KB u16, RDP byte u8, flags u8 (bit 0: USB adopted, bit 7: configured), application base u32 (from the board record; 0 before one), SPI flash size u32 (0: none configured or no chip answered), its JEDEC ID (3 bytes), board id u8 (0 before a record), record length u8, the record (the echo, section 5.2). Versions 2 and 3 stopped after the JEDEC ID and always reported 0x0800C000; version 1 stopped after the application base |
+| `01` | HELLO | none | `F4STUB`, version u8 (5), max payload u16, flash KB u16, RDP byte u8, flags u8 (bit 0: USB adopted, bit 7: configured), application base u32 (from the board record; 0 before one), SPI flash size u32 (0: none configured or no chip answered), its JEDEC ID (3 bytes), board id u8 (0 before a record), record length u8, the record (the echo, section 5.2). Versions 2 and 3 stopped after the JEDEC ID and always reported 0x0800C000; version 1 stopped after the application base |
 | `02` | PEEK | addr u32, n u16 (1 to max) | n bytes. Allowed: flash, 0x1FFF0000-0x1FFF7A2F (system memory, OTP, UID, flash size), option bytes 0x1FFFC000-0x1FFFC00F, SRAM, CCM. Peripherals are refused |
 | `07` | SUMS | addr u32 (4 KB aligned), count u16 (1 to 820), memory u8 (optional: 0 internal flash, the default; 1 SPI flash, addresses from 0) | count x (CRC-32 u32, blank u8) |
 | `09` | READ | addr u32 (4 KB aligned), count u8 (1 to 255), compress u8, memory u8 (optional, as SUMS) | count frames, one per 4 KB block: CRC-32 u32, method u8 (0 raw, 2 blank), length u16, data. Compression is not offered; a compress request is answered raw |
@@ -165,6 +166,8 @@ arriving for 200 ms is dropped. The largest payload is 4104 bytes (`STUBENG_MAX_
 | `12` | XERASE | addr u32 (a 4 KB SPI flash sector), magic u32 | OK once erased |
 | `13` | XPROGRAM | addr u32, 1 to 4096 bytes inside one 4 KB SPI flash sector | OK once programmed and read back |
 | `14` | CONFIG | the board record (24 bytes, section 5.2) | OK once checked and applied (SPI bus set up, chip woken). A refused record answers `0D` and leaves the stub unconfigured, even if an earlier record was in force |
+| `15` | SREAD | reg u8: 0 status register 2 only, 1-3 a security register | status register 2 u8; for reg 1-3 then CRC-32 u32 of the register and its 256 bytes (section 6.2). Version 5 |
+| `16` | SWRITE | reg u8 (1-3), magic u32, 256 bytes | OK once the register is erased, programmed and read back equal; `0F` when its lock bit is set; `10` when it reads back different (section 6.2). Version 5 |
 
 The magic is `0x46345342` ("F4SB").
 
@@ -173,11 +176,11 @@ The magic is `0x46345342` ("F4SB").
 | `05` | OK |
 | `0A` | bad request sum: send again |
 | `0B` | unknown op |
-| `0D` | bad argument: length, alignment or range |
+| `0D` | bad argument: length, alignment or range; SREAD / SWRITE with no SPI flash or one of another maker |
 | `0E` | payload longer than the maximum |
 | `0F` | refused by a safety rule (section 6) |
 | `10` | flash error: the controller flagged one, the read-back differs, or the SPI flash stayed busy |
-| `11` | not configured: ERASE, PROGRAM, XERASE and XPROGRAM before a board record was accepted |
+| `11` | not configured: ERASE, PROGRAM, XERASE, XPROGRAM and SWRITE before a board record was accepted |
 
 ### 5.1 Shared with the HR_C7000 stub, and what differs
 
@@ -189,7 +192,7 @@ The magic is `0x46345342` ("F4SB").
 | SUMS, READ | the reply records, 4 KB units | the request is a flash address, not an SPI controller, chip select and offset |
 | Writes | | the HR_C7000 stub passes SPI commands through (write enable, sector erase, page program); this one has ERASE and PROGRAM for the internal flash, with the rules in section 6 |
 | Baud rate, LED, CALL | | not present (USB) |
-| The SPI flash | | a memory byte on SUMS and READ, and XERASE / XPROGRAM, instead of the HR_C7000 stub's SPI pass-through. The stub drives the chip itself |
+| The SPI flash | | a memory byte on SUMS and READ, XERASE / XPROGRAM, and SREAD / SWRITE for its security registers, instead of the HR_C7000 stub's SPI pass-through. The stub drives the chip itself |
 | Entry | the debug link STUB command and its magic `C7SB` | the platform copies the image to its run address; INFO reports the run address |
 | Board configuration | a CONFIG after HELLO, echoed by the next HELLO; no writes before it | op `14` (the HR_C7000's `0D` is RESET here), and the record holds the SPI flash wiring and the bootloader's end instead of clocks and power pins |
 | Transport | | USB CDC-ACM instead of a UART at 115200 |
@@ -273,6 +276,8 @@ The stub enforces these, so a host bug can't break them:
 | ERASE and RESET carry the magic | a stray frame can't erase or reset |
 | Caches and prefetch are off | reads after an erase or program see the flash, not a stale cache line |
 | XERASE carries the magic; XPROGRAM only goes to bytes that read erased, inside one 4 KB sector, and every byte is read back | the same rules as the internal flash. The SPI flash holds no code, so there is no interlock: what goes there (a backup put back, a codeplug) is the host's choice |
+| Nothing writes an SPI flash status register (0x01, 0x31, 0x11 are never sent) | the security register lock bits (LB1-LB3), which are one-time, can't be set |
+| SWRITE carries the magic, is refused while the register's lock bit reads set, and is read back; SREAD and SWRITE are sent only to a chip whose JEDEC manufacturer is Winbond (0xEF) | a locked register is never erased; another maker's chip never sees these opcodes (section 6.2) |
 
 ### 6.1 The SPI flash
 
@@ -286,6 +291,34 @@ the status register (0x05) polled. A chip that doesn't answer gives size 0, and 
 
 On an HR_C6000 board on the bench (2026-10-16): JEDEC `ef4018`, the whole 16 MB read in 59 s (about 280 KB/s) and verified, and a
 pattern written to a blank sector, read back and erased again, after which the whole chip matched the first read.
+
+### 6.2 The security registers
+
+The SPI NOR flash has three 256-byte security registers outside its main array, at addresses 0x001000, 0x002000 and
+0x003000 of their own address space. Some radios keep their factory calibration and flags there (each radio's hardware
+page says which; [feature-matrix.md](../feature-matrix.md)). The commands are the W25Q128 data sheet's:
+
+| Command | Use |
+|---|---|
+| 0x35 | read status register 2: LB1-LB3 at bits 3-5 (0x08, 0x10, 0x20) |
+| 0x48 | read a register: 3 address bytes, 1 dummy byte, then the data |
+| 0x44 | erase a register: 3 address bytes, behind write enable (0x06), busy polled (0x05) |
+| 0x42 | program a register: 3 address bytes and 256 bytes (one page), behind write enable, busy polled |
+
+LB1-LB3 are one-time: once set, the register is read only for good. The stub sends no status register write (0x01,
+0x31, 0x11), so it can't set them. SREAD reads status register 2 first and answers it with every reply, so the host can
+show the lock state. SWRITE reads it, refuses a register whose bit is set (status `0F`), then erases, programs and reads
+the register back. A chip that doesn't answer reads 0xFF, every lock bit set, and every SWRITE is refused.
+
+These opcodes are Winbond's (JEDEC manufacturer 0xEF, the CONFIG ID). Other makers use other commands for their OTP
+areas, and some give 0x35 another meaning (a mode switch), so for any other manufacturer SREAD and SWRITE answer `0D`
+before the chip sees anything.
+
+The host (`stubtool.py --secreg FILE`) reads all three into 768 bytes, each checked by its CRC-32, and prints the lock
+bits. `--write-secreg FILE --confirm-secreg` refuses a file that isn't 768 bytes, reads the registers, writes only the
+ones that differ, refuses before sending anything when one of those is locked, saves the old 768 bytes to
+`--backup-dir` (never inside a work tree), and reads all three again at the end. Power lost between a register's erase
+and its program leaves it erased: the saved file puts it back.
 
 ## 7. Update order and recovery
 
@@ -349,7 +382,7 @@ never committed.
 
 | Item | Size |
 |---|---|
-| Stub image | 7,968 bytes (limit 8 KB, RadioFoundry's staging buffer, asserted by `f4stub.ld`) |
+| Stub image | 8,072 bytes (limit 8 KB, RadioFoundry's staging buffer, asserted by `f4stub.ld`). Built with link-time optimization (`-flto`): without it, protocol 5 is about 8,500 bytes |
 | Stub RAM after the jump | 28.6 KB of SRAM (image, engine buffers, 8 KB receive ring), then the stack: at least 4 KB is left for it (asserted by `f4stub.ld`); the deepest call chain needs under 1 KB (`-fstack-usage`) |
 | RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C6000 board | the STUB state machine, the entry and the banner text, all in sectors 3-9 (720 KB); +8 KB of SRAM (the staging buffer): RAM 95.4 % used, the default build |
 | RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C5000 board | the same code, in an application area of 464 KB (the default image is 320,236 bytes), RAM 78.8 %. The switch fits with no other switch off |
@@ -413,7 +446,7 @@ same for every target; only the HELLO name, the op magic and the board record's 
 
 | `stubeng_port_t` field | What the target gives | STM32F4 |
 |---|---|---|
-| `name`, `version`, `magic` | HELLO's first 6 bytes, the protocol version, the u32 ERASE / XERASE / RESET carry | `F4STUB`, 4, 0x46345342 |
+| `name`, `version`, `magic` | HELLO's first 6 bytes, the protocol version, the u32 ERASE / XERASE / SWRITE / RESET carry | `F4STUB`, 5, 0x46345342 |
 | `flash` (`stubeng_flash_t`) | internal flash: `base`, `size` (sectors that don't fit wholly don't exist), `runs` (the sector map as runs of equal sectors), `prog_unit` (PROGRAM's alignment and length unit: 4 or 8 bytes), `min_app_base` (no record opens anything below it) | 0x08000000, the flash size register, 4 x 16 KB + 64 KB + 7 x 128 KB, 4, 0x08004000 |
 | `peek`, `npeek` | address ranges PEEK may read besides the internal flash; never peripherals | system memory and OTP, option bytes, SRAM, CCM |
 | `security`, `flags` | HELLO bytes 11 and 12 (the target's bits below 0x80; the engine adds bit 7, configured) | RDP byte; USB adopted |
@@ -422,6 +455,7 @@ same for every target; only the HELLO name, the op magic and the board record's 
 | `erase`, `program` | erase one sector by index; program words at an address the engine has checked erased (aligned to `prog_unit`) | the flash controller, x32 |
 | `reset` | after the RESET reply | `NVIC_SystemReset` |
 | `xread`, `xerase`, `xprogram` | the external SPI flash, or NULL: read, erase one 4 KB sector, program inside one sector | `f4stub_spi.c` |
+| `xsreg` | the SPI flash's security registers, or NULL: reg 0 reads status register 2; reg 1-3 reads a register, or with a source erases and programs it. The engine has checked the maker, the magic and the lock bit | `f4spi_sreg` |
 | `configure` | check and apply the board record (1 to 32 bytes, first byte the nonzero board id); fill `stubeng_config_t`: `app_base`, and the SPI flash's `xsize` and `xid` | `f4_board_parse`, then the clock and `f4spi_init` |
 
 The engine checks the application base `configure` returns: a sector start, not sector 0, at or above
@@ -436,4 +470,4 @@ units.
 
 Sources: STM32F405/407 reference manual (embedded flash interface: unlock, sector erase, programming parallelism,
 read protection levels; OTG_FS device programming model), STM32F405 data sheet (flash erase and program times), USB 2.0
-chapter 9, USB CDC 1.2 and PSTN 1.2.
+chapter 9, USB CDC 1.2 and PSTN 1.2, the W25Q128 data sheet (security registers, status register 2, LB1-LB3).

@@ -2105,6 +2105,12 @@ def main(argv=None):
     ap.add_argument("--verify-q128", metavar="FILE", help="compare the data flash with FILE by CRC")
     ap.add_argument("--write-q128", metavar="FILE", help="STM32 radios: write FILE into the SPI flash from --q128-range's "
                     "start (default 0), changed 4 KB sectors only, each verified by CRC")
+    ap.add_argument("--secreg", metavar="FILE", help="STM32 radios: read the SPI flash's three 256-byte security registers "
+                    "(the DM-1701 family's factory calibration and flags) into FILE (768 bytes), and print their lock bits")
+    ap.add_argument("--write-secreg", metavar="FILE", help="STM32 radios: write FILE (768 bytes, registers 1-3) into the "
+                    "security registers, only those that differ, each read back; the old content is saved to --backup-dir "
+                    "first. Refused for a locked register. Needs --confirm-secreg")
+    ap.add_argument("--confirm-secreg", action="store_true", help="confirm --write-secreg: it rewrites factory data")
     ap.add_argument("--probe", action="store_true", help="chip IDs, a first block of each flash and some registers")
     ap.add_argument("--peek", metavar="ADDR:LEN", help="print LEN bytes of radio memory (hex dump)")
     ap.add_argument("--retries", type=int, default=6)
@@ -2166,8 +2172,18 @@ def main(argv=None):
             if mem == "nand" and not rng:
                 ap.error("--nand needs --nand-range (the chip is 256 MB)")
             jobs.append((mem, f, rng))
-    if not (jobs or a.probe or a.peek or a.verify_progmem or a.verify_q128 or a.verify_nand or a.led_test or a.led_seq or a.boot or a.write_test or a.write_app or a.write_q128):
+    if not (jobs or a.probe or a.peek or a.verify_progmem or a.verify_q128 or a.verify_nand or a.led_test or a.led_seq or a.boot or a.write_test or a.write_app or a.write_q128
+            or a.secreg or a.write_secreg):
         ap.error("nothing to do: give --progmem, --q128, --verify-*, --probe, --peek or OUT")
+    if (a.secreg or a.write_secreg) and a.board in C7_BOARDS:
+        ap.error("--secreg and --write-secreg are for the STM32 radios; the HR_C7000 stub has no security register ops")
+    if a.write_secreg:
+        # checked before the radio is touched
+        if not a.confirm_secreg:
+            ap.error("--write-secreg rewrites the radio's factory calibration: add --confirm-secreg")
+        if os.path.getsize(a.write_secreg) != 768:
+            ap.error("%s is %d bytes: --write-secreg takes the 768 bytes --secreg reads (registers 1-3)"
+                     % (a.write_secreg, os.path.getsize(a.write_secreg)))
     try:
         import serial
     except ImportError:
@@ -2197,6 +2213,9 @@ def main(argv=None):
             return f4stub.run(a, port, reopen)
         if a.write_q128:
             raise DumpError("--write-q128 is for the STM32 radios (DM-1701, MD-380)")
+        if a.secreg or a.write_secreg:
+            raise DumpError("--secreg and --write-secreg are for the STM32 radios (DM-1701, MD-380); the HR_C7000 stub has "
+                            "no security register ops")
         if a.rfoundry_enter:
             radio.rfoundry_enter(open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else ("legacy" if a.legacy_stub else None), board=a.board)
         elif a.attach:

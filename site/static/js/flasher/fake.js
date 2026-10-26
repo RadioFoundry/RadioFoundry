@@ -97,10 +97,10 @@ export class FakeRadio {
 	// state: "stock" (stock firmware: codec in place, no serial port), "rfoundry", "rfoundry-nocodec", "bootloader".
 	// stubEntry: RadioFoundry built with CONFIG_STUB_ENTRY; adopt: the stub keeps RadioFoundry's USB device (else the port goes away
 	// and serialStream() gives the new one); cutAfter: stub programs before the "cable" is pulled. stubVersion: the
-	// STM32F4 stub's protocol (4: CONFIG and the record echo; 2 and 3: the DM-1701's wiring built in); stubConfig: what the
-	// stub does with a record it would accept ("ok", "refuse": answers bad argument, "garble": accepts it but HELLO
-	// echoes different bytes)
-	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 4, stubConfig = "ok" } = {}) {
+	// STM32F4 stub's protocol (5: the security register ops, which this fake and the page leave out; 4: CONFIG and the
+	// record echo; 2 and 3: the DM-1701's wiring built in); stubConfig: what the stub does with a record it would
+	// accept ("ok", "refuse": answers bad argument, "garble": accepts it but HELLO echoes different bytes)
+	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok" } = {}) {
 		this.sim = sim;
 		this.board = sim.board;
 		this.key = sim.key;

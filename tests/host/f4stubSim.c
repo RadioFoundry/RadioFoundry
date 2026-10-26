@@ -5,7 +5,8 @@
 // tool (stub/f4stub.py) can be checked against it end to end (f4stub_wire_check.py). Usage: f4stubSim FLASH_IN
 // FLASH_OUT; the flash is written out when stdin closes, and a 1 MB SPI flash (a fixed pattern at the start) to
 // FLASH_OUT.spi. Every accepted board record is logged on stderr ("config BOARD BUS MODE CS"), so the check sees which
-// wiring the stub would have used.
+// wiring the stub would have used. The SPI flash's security registers start with a pattern and register 3 locked
+// (status register 2 = 0x22: LB3 and QE); each erase of one is logged ("sreg N"), and they go to FLASH_OUT.sreg.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +20,8 @@ static uint8_t flash[FLASH_SIZE];
 static stubeng_port_t port;
 #define SPI_SIZE	0x100000u
 static uint8_t spi[SPI_SIZE];
+static uint8_t sreg[STUBENG_SREG_COUNT][STUBENG_SREG_LEN];
+static uint8_t sr2 = 0x22;
 
 static void sim_write(void *ctx, const uint8_t *buf, uint32_t n)
 {
@@ -82,6 +85,20 @@ static bool sim_xprogram(void *ctx, uint32_t addr, const uint8_t *data, uint32_t
 	return true;
 }
 
+static bool sim_xsreg(void *ctx, unsigned reg, uint8_t *dst, const uint8_t *src)
+{
+	(void)ctx;
+	if (reg == 0) {
+		dst[0] = sr2;
+	} else if (src == NULL) {
+		memcpy(dst, sreg[reg - 1], STUBENG_SREG_LEN);
+	} else if ((sr2 & (STUBENG_SR2_LB1 << (reg - 1u))) == 0) {	// a locked register ignores both on the chip
+		memcpy(sreg[reg - 1], src, STUBENG_SREG_LEN);
+		fprintf(stderr, "sreg %u\n", reg);
+	}
+	return true;
+}
+
 static bool sim_configure(void *ctx, const uint8_t *rec, uint32_t n, stubeng_config_t *out)
 {
 	(void)ctx;
@@ -136,9 +153,13 @@ int main(int argc, char **argv)
 		.xread = sim_xread,
 		.xerase = sim_xerase,
 		.xprogram = sim_xprogram,
+		.xsreg = sim_xsreg,
 	};
 	for (uint32_t i = 0; i < SPI_SIZE; i++) {
 		spi[i] = (uint8_t)(i * 13u + (i >> 12));
+	}
+	for (uint32_t i = 0; i < sizeof(sreg); i++) {
+		(&sreg[0][0])[i] = (uint8_t)(i * 29u + 7u);
 	}
 	static stubeng_t eng;
 	stubeng_init(&eng, &port);
@@ -156,6 +177,12 @@ int main(int argc, char **argv)
 	snprintf(name, sizeof(name), "%s.spi", argv[2]);
 	f = fopen(name, "wb");
 	if (f == NULL || fwrite(spi, 1, SPI_SIZE, f) != SPI_SIZE) {
+		return 2;
+	}
+	fclose(f);
+	snprintf(name, sizeof(name), "%s.sreg", argv[2]);
+	f = fopen(name, "wb");
+	if (f == NULL || fwrite(sreg, 1, sizeof(sreg), f) != sizeof(sreg)) {
 		return 2;
 	}
 	fclose(f);

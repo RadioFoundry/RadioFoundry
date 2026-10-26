@@ -1006,7 +1006,9 @@ Internal sensor: 943 counts at 25 C, 3.1 counts per C (datasheet nominal 0.76 V 
 
 At start-up: read the working copy; if bytes 0x1B0-0x1B7 are not the marker 00 25 00 40 00 45 01 40, read the factory
 table, overwrite those 8 bytes with the marker, derive the very-low power row and apply the power conversion below, then
-write the result to 0x010000. Never write the security registers.
+write the result to 0x010000. The firmware never writes the security registers. The STM32F4 stub can put a backup of
+them back (`stubtool.py --write-secreg`, [stub-stm32f4.md](stub-stm32f4.md) 6.2), refusing a register whose one-time
+lock bit is set; nothing ever writes status register 2.
 
 Power conversion when deriving the working copy (empirical): very low = low x k0 (always), and if
 converting: low x= k1, mid x= k2, high x= k3.

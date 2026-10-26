@@ -16,11 +16,13 @@ OBJCOPY := $(CROSS)objcopy
 SIZE := $(CROSS)size
 BUILD ?= $(ROOT)/build/stub-stm32f4
 
-# Soft float: the stub has no floating point, and RadioFoundry may hand over with the FPU context flag in any state
-CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -std=gnu11 -ffreestanding -fno-builtin -ffunction-sections \
+# Soft float: the stub has no floating point, and RadioFoundry may hand over with the FPU context flag in any state.
+# Link-time optimization: the image must fit RadioFoundry's 8 KB staging buffer, and across files (the engine's ops
+# through the port's callbacks) it saves about 400 bytes
+CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -std=gnu11 -ffreestanding -fno-builtin -ffunction-sections \
 	-fdata-sections -fno-common -Wall -Wextra -Wshadow -Wstrict-prototypes -DSTM32F405xx \
 	-I../common -I$(ROOT)/third_party/cmsis-device-f4/Include -I$(ROOT)/third_party/cmsis-core/Include
-LDFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -nostdlib -nostartfiles -Wl,--gc-sections -T f4stub.ld \
+LDFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -nostdlib -nostartfiles -Wl,--gc-sections -T f4stub.ld \
 	-Wl,-Map=$(BUILD)/f4stub.map -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments
 
 SRC := f4stub_main.c stubeng.c f4stub_board.c f4stub_usb.c f4stub_flash.c f4stub_spi.c
