@@ -276,13 +276,17 @@ export class Stub {
 
 	// ---- entry from RadioFoundry (debug link STUB, docs/spec/debuglink.md 3.18)
 
-	// {load, size, chunk} when the running RadioFoundry offers stub entry, null when it doesn't (built without CONFIG_STUB_ENTRY)
-	static async rfoundryOffer(link) {
+	// {load, size, chunk} when the running RadioFoundry offers stub entry, null when it doesn't (built without
+	// CONFIG_STUB_ENTRY: it refuses the command). strict: no answer throws instead of giving null. A port that went
+	// away (the radio switched off or into update mode since it was connected) once read as "built without" on a
+	// build that had stub entry
+	static async rfoundryOffer(link, { strict = false } = {}) {
 		let r;
 		try {
 			r = await link.request(DL_STUB, new Uint8Array([0]));
 		} catch (e) {
-			return null;
+			if (!strict || (e instanceof LinkError && /status/.test(e.message))) return null;
+			throw new StubError(`RadioFoundry does not answer on this port (${e.message}): check that the radio is on and running RadioFoundry, then connect again`);
 		}
 		if (r.length < 14 || u32le(r, 0) !== STUB_MAGIC) return null;
 		return { load: u32le(r, 4), size: u32le(r, 8), chunk: Math.min(r[12] | (r[13] << 8), 59) };
@@ -303,7 +307,7 @@ export class Stub {
 			}
 			throw new StubError(`RadioFoundry refused ${what} (${last?.message})`);
 		};
-		const offer = await Stub.rfoundryOffer(link);
+		const offer = await Stub.rfoundryOffer(link, { strict: true });
 		if (!offer) throw new StubError("this RadioFoundry build cannot hand over to the loader (built without CONFIG_STUB_ENTRY)");
 		if (image.length > offer.size) throw new StubError(`the stub (${image.length} bytes) does not fit RadioFoundry's free RAM (${offer.size} bytes)`);
 		if (entry === null) univFits(image, offer.load, [offer.load, offer.size]);

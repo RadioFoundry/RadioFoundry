@@ -104,7 +104,7 @@ export class FakeRadio {
 	// record echo; 2 and 3: the DM-1701's wiring built in); stubConfig: what the stub does with a record it would
 	// accept ("ok", "refuse": answers bad argument, "garble": accepts it but HELLO echoes different bytes).
 	// state "openfw": another open firmware runs (installOpenFirmware; await radio.ready before using it), options in openfw
-	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {} } = {}) {
+	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {}, flashKb = 1024 } = {}) {
 		this.sim = sim;
 		this.board = sim.board;
 		this.key = sim.key;
@@ -123,6 +123,7 @@ export class FakeRadio {
 		this.mode = state === "bootloader" ? "bootloader" : "normal";
 		this.git = "5f034440";
 		this.stubEntry = stubEntry;
+		this.flashKb = flashKb;	// the chip's flash size register: some parts read less than the flash they have
 		this.adopt = adopt;
 		this.cutAfter = cutAfter;
 		this.stubVersion = stubVersion;
@@ -319,7 +320,7 @@ export class FakeRadio {
 			if (!spiSize) return reply(BADARG);	// no chip answered, or not configured
 		}
 		if (op === 0x01) {
-			let body = concat(new TextEncoder().encode("F4STUB"), new Uint8Array([this.stubVersion, 0x10, 0x08, 0x04, 0x00, 0x55,
+			let body = concat(new TextEncoder().encode("F4STUB"), new Uint8Array([this.stubVersion, 0x10, 0x08, this.flashKb >> 8, this.flashKb & 0xFF, 0x55,
 				(this.adopt ? 1 : 0) | (cfg && rec ? 0x80 : 0)]), be32(cfg ? appBase : APP_BASE), be32(spiSize),
 				new Uint8Array([0xEF, 0x40, 0x18]));
 			if (cfg) {
@@ -346,6 +347,7 @@ export class FakeRadio {
 			reply(OK, body);
 		} else if (op === 0x09) {
 			const a = u32be(p, 0), k = p[4];
+			if (!isSpi(6) && a + k * 4096 > FLASH_BASE + this.flashKb * 1024) return reply(BADARG);	// past the register's size
 			const [m, o0] = mem(6, a);
 			for (let i = 0; i < k; i++) {
 				const blk = m.subarray(o0 + i * 4096, o0 + (i + 1) * 4096);
@@ -477,7 +479,7 @@ export class FakeRadio {
 			}
 			if (f.cmd === 0x0B) {
 				const p = new Uint8Array(28);
-				p.set(le32(0x0009A413), 0); p[4] = 0x00; p[5] = 0x04; p.set(this.uid, 6); p.set(le32(0x0FFF55ED), 18); p[22] = 1; p[23] = 0x55;
+				p.set(le32(0x0009A413), 0); p[4] = this.flashKb & 0xFF; p[5] = this.flashKb >> 8; p.set(this.uid, 6); p.set(le32(0x0FFF55ED), 18); p[22] = 1; p[23] = 0x55;
 				return ok(p);
 			}
 			if (f.cmd === 0x1A && this.stubEntry) {

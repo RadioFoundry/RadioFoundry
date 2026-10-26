@@ -73,6 +73,7 @@ test("a stream closes its port only after the pump lets go of the reader, so the
 	assert.equal(s.received, 3);
 	await s.close();
 	assert.equal(port.isOpen, false, "closed");
+	assert.equal(s.lost, false, "closed by the page, not lost");
 	await SerialStream.open(port);
 	assert.equal(port.opens, 2);
 });
@@ -98,9 +99,11 @@ test("a framing error or a break doesn't end the reading: the bytes after it sti
 	await new Promise((r) => setTimeout(r, 5));
 	assert.equal(s.received, 1, "the acknowledgement after the glitches is read");
 	assert.ok(diag.report().log.some((e) => /reading on/.test(e.text)));
+	assert.equal(s.lost, false, "glitches don't lose the device");
 	lineError(port, "NetworkError");
 	await new Promise((r) => setTimeout(r, 5));
 	assert.ok(diag.report().log.some((e) => /read stopped/.test(e.text)));
+	assert.equal(s.lost, true, "the page drops this stream and connects afresh (app.js connectSerial)");
 	port.readable.push(new Uint8Array([1]));
 	await new Promise((r) => setTimeout(r, 5));
 	assert.equal(s.received, 1, "nothing read after a fatal error");

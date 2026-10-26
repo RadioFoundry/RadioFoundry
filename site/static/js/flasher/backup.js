@@ -23,7 +23,7 @@ import { debugLinkReader } from "./readers.js";
 export const FORMAT = "rfoundry-backup/1";
 // Bundles made before the project was renamed: same layout, the old format id and firmware kind
 const LEGACY_FORMAT = "odr-backup/1";
-const CPS_INFO = 9, CPS_SECURITY = 10;
+const CPS_INFO = 9, CPS_SECURITY = 10, MCU_BASE = 0x08000000;
 export const CODEPLUG_SPAN = 0x120000;	// the open-firmware layout: emulated EEPROM, calibration, codeplug, ID database
 
 export class BackupError extends Error {}
@@ -51,8 +51,21 @@ export async function readRadio(link, board, radio, { what = {}, progress = () =
 			parts.push({ file: "security-registers.bin", what: "security-registers", addr: 0x1000, data, complete: regs.length === 3 });
 		}
 	}
+	// A loader bounds the MCU flash by the chip's own size register, which on some parts reads less than the board's
+	// flash (512 KB on a 1 MB chip whose top sectors hold the codec): the loader refuses the top. RadioFoundry reads
+	// the board's whole flash in place, so then it reads the internal flash, before any hand-over
+	let internalFirst = false;
+	if (want.internal && readers.length) {
+		const chip = await link.chip().catch(() => null);
+		internalFirst = !!chip?.flashKb && MCU_BASE + chip.flashKb * 1024 < board.flash_end;
+	}
+	if (internalFirst) {
+		const base = board.app_base, size = board.flash_end - board.app_base;
+		const r = await debugLinkReader(link).read("internal", base, size, { progress: step("internal"), signal });
+		parts.push({ file: "internal-flash.bin", what: "internal-flash", addr: base, data: r.data, complete: r.complete });
+	}
 	let reader = debugLinkReader(link);
-	if (readers.length && (want.internal || want.spi !== "none")) {
+	if (readers.length && ((want.internal && !internalFirst) || want.spi !== "none")) {
 		await link.cpsClose();	// the debug link's CPS session ends before a reader takes the radio
 		for (const r of readers) {
 			if (await r.open(step("loader"))) {
@@ -62,7 +75,7 @@ export async function readRadio(link, board, radio, { what = {}, progress = () =
 		}
 	}
 	try {
-		if (want.internal) {
+		if (want.internal && !internalFirst) {
 			const base = board.app_base, size = board.flash_end - board.app_base;
 			const r = await reader.read("internal", base, size, { progress: step("internal"), signal });
 			parts.push({ file: "internal-flash.bin", what: "internal-flash", addr: base, data: r.data, complete: r.complete });
