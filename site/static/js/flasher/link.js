@@ -155,7 +155,8 @@ export class SerialStream {
 	async close() {
 		this.closed = true;
 		try { await this.reader?.cancel(); } catch (e) { /* gone */ }
-		await this.pumping;
+		// a pump that never ends (a browser that doesn't settle the read) must not hang the page's close
+		await Promise.race([this.pumping, sleep(2000)]);
 		try { await this.port.close(); } catch (e) { note("serial port did not close", String(e?.message || e)); }
 	}
 }

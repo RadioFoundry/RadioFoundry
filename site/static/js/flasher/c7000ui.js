@@ -146,12 +146,13 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		S().forward(btns.length > 1 ? btns : btns[0] || null);
 	};
 
+	// err: an error's text (errorText: reported) or {text} for a message that is no error of the page's
 	const cableStep = (err = null) => {
 		show({ led: "off", screen: "any", note: t("flash.c7.visual.cable") },
 			h("ol", { class: "steps c7-big" },
 				h("li", {}, t("flash.c7.connect.step_cable")),
 				h("li", {}, t("flash.c7.connect.step_choose"))),
-			err ? errorNotice(err) : null,
+			!err ? null : typeof err === "string" ? errorNotice(err) : notice(err.text, "bad"),
 			h("p", { class: "small muted" }, t("flash.c7.connect.no_cable"), " ",
 				h("a", { href: "#", onclick: (e) => { e.preventDefault(); start(true); } }, t("flash.c7.connect.all_ports"))),
 			h("details", { class: "small" }, h("summary", {}, t("flash.c7.connect.which_port")), h("p", {}, t("flash.c7.connect.which_port_text"))));
@@ -188,7 +189,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		if (p) {
 			c.rfoundry = p;
 			if (!S().board.debuglink_names.includes(p.board))
-				return cableStep(t("flash.err.wrong_board", { board: p.board, name: S().board.name }));
+				return cableStep({ text: t("flash.err.wrong_board", { board: p.board, name: S().board.name }) });
 			const offer = await Stub.rfoundryOffer(link);
 			if (offer) return fromRFoundry(offer);
 			return restartRFoundry();

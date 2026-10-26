@@ -86,10 +86,13 @@ function draftSoon() {
 }
 
 // report: a failure worth a bug report gets the way to make one
-function say(text, kind = "info", { report = false } = {}) {
+// report: the record of the error shown (diag.error's return): under the message, that it was sent automatically, or
+// how to report it
+function say(text, kind = "info", { report = null } = {}) {
 	if (kind === "bad") diag.note(`shown: ${text}`);
-	const n = notice(text, kind);
-	if (report) n.append(reportedLine());	// sent automatically, or how to report it
+	const n = h("div", { class: `notice ${kind}` }, h("p", {}, text));
+	const line = report ? reportedLine(report) : null;
+	if (line) n.append(line);
 	const close = button("×", () => n.remove(), { quiet: true });
 	close.setAttribute("aria-label", t("editor.dismiss"));
 	n.prepend(close);
@@ -430,11 +433,11 @@ async function openPicked(name, bytes) {
 			say(f.format === "tyt-uv380-rdt" ? t("editor.err.foreign_rdt") : t("editor.err.foreign", { format: t(`editor.format.${f.format}`) }), "bad");
 		} else {
 			const handled = await extensions.openText(f, name, api());
-			if (!handled) say(t("editor.err.unknown_file"), "bad");
+			if (!handled) say(t("editor.err.unknown_file", { name }), "bad");
 		}
 	} catch (e) {
-		diag.error("open file", e, { name, size: bytes?.length });
-		say(e instanceof FileError ? t(`editor.err.${e.code}`, { name }) : t("editor.err.open_failed", { error: e.message }), "bad", { report: true });
+		const rec = diag.error("open file", e, { name, size: bytes?.length });
+		say(e instanceof FileError ? t(`editor.err.${e.code}`, { name }) : t("editor.err.open_failed", { error: e.message }), "bad", { report: rec });
 	}
 }
 
@@ -521,10 +524,10 @@ function radioError(e) {
 
 // A failure with a radio: into the log and the console with what was being done, then shown with the way to report it
 async function fail(stage, e) {
-	diag.error(stage, e);
+	const rec = diag.error(stage, e);
 	await dropConnection();
 	const msg = radioError(e);
-	if (msg) say(msg, "bad", { report: !diag.expected(e) });
+	if (msg) say(msg, "bad", { report: rec });
 }
 
 // A radio fresh from its original firmware may still hold that firmware's data where RadioFoundry keeps its settings: it then

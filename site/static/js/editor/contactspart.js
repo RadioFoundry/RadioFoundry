@@ -382,8 +382,8 @@ async function fetchUsers() {
 	} catch (e) {
 		d.close();
 		if (e?.name === "AbortError" || ctrl.signal.aborted) return;
-		diag.error("radioid fetch", e);
-		api.say(t("editor.rid.fetch_failed", { error: e?.params?.error || e?.message || String(e) }), "bad", { report: true });
+		const rec = diag.error("radioid fetch", e);
+		api.say(t("editor.rid.fetch_failed", { error: e?.params?.error || e?.message || String(e) }), "bad", { report: rec });
 	}
 }
 

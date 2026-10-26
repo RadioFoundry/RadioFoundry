@@ -14,8 +14,38 @@ import { openFile, FileError } from "../static/js/editor/files.js";
 
 beforeEach(() => diag.reset());
 
-// A WebSerial port as the browser has it: close() refuses while the readable stream is locked, and open() refuses
-// a port that is open
+// A port's readable stream as the browser has it: cancel() resolves at once, but the pending read settles a moment
+// later, so the reader is still locked when cancel() returns
+class FakeReadable {
+	constructor() {
+		this.locked = false;
+		this.queue = [];
+		this.waiting = null;
+	}
+
+	push(chunk) {
+		if (this.waiting) {
+			this.waiting({ value: chunk, done: false });
+			this.waiting = null;
+		} else this.queue.push(chunk);
+	}
+
+	getReader() {
+		this.locked = true;
+		return {
+			read: () => (this.queue.length ? Promise.resolve({ value: this.queue.shift(), done: false })
+				: new Promise((r) => { this.waiting = r; })),
+			cancel: async () => {
+				const w = this.waiting;
+				this.waiting = null;
+				setTimeout(() => w?.({ value: undefined, done: true }), 20);
+			},
+			releaseLock: () => { this.locked = false; },
+		};
+	}
+}
+
+// A WebSerial port: close() refuses while the readable stream is locked, and open() refuses a port that is open
 class FakePort {
 	constructor() {
 		this.isOpen = false;
@@ -26,7 +56,7 @@ class FakePort {
 		if (this.isOpen) throw Object.assign(new Error("Failed to execute 'open' on 'SerialPort': The port is already open."), { name: "InvalidStateError" });
 		this.isOpen = true;
 		this.opens++;
-		this.readable = new ReadableStream({ start: (c) => { this.ctrl = c; } });
+		this.readable = new FakeReadable();
 	}
 
 	async close() {
@@ -38,7 +68,7 @@ class FakePort {
 test("a stream closes its port only after the pump lets go of the reader, so the port can be opened again", async () => {
 	const port = new FakePort();
 	const s = await SerialStream.open(port);
-	port.ctrl.enqueue(new Uint8Array([1, 2, 3]));
+	port.readable.push(new Uint8Array([1, 2, 3]));
 	await new Promise((r) => setTimeout(r, 10));
 	assert.equal(s.received, 3);
 	await s.close();
@@ -57,7 +87,7 @@ test("a port this page left open is closed and opened again", async () => {
 	// one that another stream of this page is reading is left alone: the error stands, the stream keeps the port
 	const live = await SerialStream.open(port);
 	await assert.rejects(SerialStream.open(port), { name: "InvalidStateError" });
-	port.ctrl.enqueue(new Uint8Array([7]));
+	port.readable.push(new Uint8Array([7]));
 	await new Promise((r) => setTimeout(r, 10));
 	assert.equal(live.received, 1);
 	await live.close();
@@ -115,21 +145,38 @@ test("the browser's own serial and USB errors get what to do", () => {
 	assert.equal(browserErrorKey(new Error("anything else")), null);
 });
 
-test("an unknown file is reported by its extension, size and first bytes, never its contents", async () => {
+test("an unknown file is reported by its type, size and first 8 bytes, never its name", async () => {
 	const bytes = new Uint8Array(5000).fill(0x41);
 	bytes.set([0x44, 0x44, 0x4D, 0x52], 0);
 	const e = await openFile("my codeplug.dat", bytes).then(() => null, (x) => x);
 	assert.ok(e instanceof FileError);
 	assert.equal(e.code, "unknown_file");
-	assert.deepEqual(e.params, { ext: "dat", size: 5000, head: "44444d52414141414141414141414141" });
+	assert.deepEqual(e.params, { ext: "dat", size: 5000, head: "44444d5241414141" });
+	assert.ok(!JSON.stringify(e.params).includes("codeplug"));
 });
 
-test("an automatic report carries the last steps, without the wire log, each cut short", () => {
+// one string per step: Sentry keeps only three levels of an event's context, so objects in a list would arrive as
+// "[Object]"
+test("an automatic report carries the last steps, without the wire log, shown messages or USB serials", () => {
 	diag.note("port chosen", { usbVendorId: 0x1A86 });
 	diag.wire("cmd 0x2 seq 1 len 0: no answer");
+	diag.note("shown: Johns_radio.csv is not a file the codeplug editor can open.");
+	diag.note("bootloader: AnyRoad / Digital Radio in USB mode / serial 00000000010C / DFU");
+	diag.note("serial read stopped", "BreakError");
 	diag.note("big", { text: "x".repeat(1000) });
 	const trail = diag.trail();
-	assert.equal(trail.length, 2);
-	assert.equal(trail[0].text, "port chosen");
-	assert.ok(trail[1].data.length <= 301);
+	assert.equal(trail.length, 4);
+	assert.match(trail[2], /serial read stopped/);
+	assert.ok(trail.every((l) => typeof l === "string" && l.length <= 301));
+	assert.match(trail[0], /port chosen \{"usbVendorId":6790\}/);
+	assert.match(trail[1], /serial \[serial\] \/ DFU/);
+	assert.ok(!trail.join().includes("Johns_radio"));
+});
+
+test("a message shows the record of its own error, also for an error handled twice", () => {
+	const a = new Error("first"), b = new Error("second");
+	const ra = diag.error("one", a);
+	diag.error("two", b);
+	assert.equal(diag.error("one again", a), ra);
+	assert.equal(diag.currentError(), ra);
 });

@@ -786,7 +786,7 @@ function buildView() {
 		// the image's state, then building it yourself: one line and a fold under the features, not a card of its own
 		const image = h("div", { class: "build-image" },
 			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
-				: building && S.build.error ? errorNotice(S.build.error.text, S.build.error.rec)
+				: building && S.build.error ? (S.build.error.el ||= errorNotice(S.build.error.text, S.build.error.rec))
 				: building ? h("p", { class: "muted" }, S.build.text)
 				: h("p", { class: "small muted" }, t(S.sim ? "flash.sim.image" : VERSION_REF ? "flash.build.version_on_request" : "flash.build.on_request", { ref: versionShort() })),
 			h("details", { class: "small" }, h("summary", {}, t("flash.build.self_title")),
@@ -910,7 +910,7 @@ async function requestBuild(redraw) {
 			variant: sel.matches() || "custom", build: b.id, selection: key, pinned: !!VERSION_REF };
 		S.build = null;
 	} catch (e) {
-		if (S.build?.selection === key) S.build.error = { text: t("flash.build.unavailable", { error: errorText(e) }), rec: diag.lastError() };
+		if (S.build?.selection === key) S.build.error = { text: t("flash.build.unavailable", { error: errorText(e) }), rec: diag.currentError() };
 	}
 	redraw();
 }
@@ -925,7 +925,7 @@ async function loadOwnImage(f, redraw) {
 		S.firmware = { manifest: m, image: f.data, source: f.name, origin: "own", board };
 	} catch (e) {
 		const text = errorText(e);
-		alert(reportingActive() && diag.lastError()?.eventId ? `${text}\n\n${t("report.reported_short")}` : text);
+		alert(reportingActive() && diag.currentError()?.eventId ? `${text}\n\n${t("report.reported_short")}` : text);
 	}
 	redraw();
 }

@@ -23,9 +23,10 @@ export class FileError extends Error {
 	}
 }
 
-// What an unknown file was, for the report: its extension, size and first bytes (a vendor format's signature)
-const fileFacts = (name, bytes, more = {}) => ({ ext: (/\.([^./]{1,8})$/.exec(name || "")?.[1] || "").toLowerCase(),
-	size: bytes.length, head: toHex(bytes.subarray(0, 16)), ...more });
+// What an unknown file was, for the report: its type by extension, size and first 8 bytes (a format's signature),
+// never its name
+const extOf = (name) => (/\.([^./]{1,8})$/.exec(name || "")?.[1] || "").toLowerCase();
+const fileFacts = (name, bytes, more = {}) => ({ ext: extOf(name), size: bytes.length, head: toHex(bytes.subarray(0, 8)), ...more });
 
 // How far a dump must be kept so the DMR ID database in it stays whole
 function idDbTop(b) {
@@ -65,7 +66,7 @@ export async function openFile(name, bytes) {
 		if (!entries.has("backup.json")) {
 			const dec = new TextDecoder();
 			const files = [...entries].filter(([n]) => /\.csv$/i.test(n)).map(([n, d]) => ({ name: n.replace(/^.*\//, ""), text: dec.decode(d) }));
-			if (!files.length) throw new FileError("unknown_file", fileFacts(name, bytes, { entries: [...entries.keys()].slice(0, 10).map((n) => n.slice(-60)) }));
+			if (!files.length) throw new FileError("unknown_file", fileFacts(name, bytes, { entries: entries.size, types: [...new Set([...entries.keys()].map(extOf))].slice(0, 10) }));
 			return { kind: "csv-set", files };
 		}
 		const { meta, parts } = await openBundle(bytes);
