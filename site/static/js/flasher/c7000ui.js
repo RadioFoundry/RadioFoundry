@@ -66,7 +66,8 @@ const screenNow = () => ({ rfoundry: "loader", usmart: "any" })[session().how] |
 
 export function init(context) {
 	ctx = context;
-	routes = makeStockRoutes({ S, ctx, C, boardId, session, busy, iap, fill: (el, ...p) => fill(el, ...p), stubImage: async () => (await stubs()).image });
+	routes = makeStockRoutes({ S, ctx, C, boardId, session, busy, iap, fill: (el, ...p) => fill(el, ...p), stubImage: async () => (await stubs()).image,
+		cableBanner: () => cableBanner() });
 }
 
 // Radios the page flashes this way
@@ -129,9 +130,12 @@ export function cableBanner(a = S().adapter) {
 // replaceChildren() would print a null part as "null"
 const fill = (el, ...parts) => el.replaceChildren(...parts.filter(Boolean));
 
+// the chips a programming cable has: the boot ROM errors name the cable by it (never "radio USB")
+const USB_SERIAL = new Set(["FTDI", "CH340", "CP210x", "PL2303"]);
+
 const mkStub = () => {
 	const c = session();
-	c.stub = new Stub(c.stream, { log: (l) => c.log.add(l), cable: S().adapter && S().adapter.chip !== "other" ? S().adapter.chip : "" });
+	c.stub = new Stub(c.stream, { log: (l) => c.log.add(l), cable: USB_SERIAL.has(S().adapter?.chip) ? S().adapter.chip : "" });
 	c.stub.size.progmem = progSize();
 	return c.stub;
 };
@@ -368,7 +372,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 
 	if (c.stub && c.stream) {
 		// already connected (back from a later step): check the stub still answers
-		quiet(c).then(() => c.stub.attach()).then((ok) => (ok ? ready(t("flash.c7.connect.still")) : cableStep()));
+		quiet(c).then(() => c.stub.attach()).then((ok) => (ok ? ready(t("flash.c7.connect.still")) : cableStep()), () => cableStep());
 	} else cableStep();
 	return box;
 }
@@ -637,6 +641,9 @@ export function checkView() {
 				S().vendorPick = { picked: { name: f.name, size: f.data.length, sha256: await sha256(f.data) }, opened: null, problem: null };
 				opened = await openVendorFile(f.name, f.data, ctx.fb(), boardId());
 				S().vendorPick.opened = opened;
+				// the file for a problem report and the trail, as on the other radios' codec step
+				S().picked = { name: f.name, data: f.data };
+				diag.note(...crumbs.filePicked(S().vendorPick.picked, opened.best || {}));
 				const got = opened.best?.match;
 				if (got?.kind !== "codec") {
 					const lines = describeVendorFile(opened, ctx.fb(), boardId());
@@ -775,6 +782,7 @@ export function writeView() {
 	async function write() {
 		go.disabled = true;
 		fill(status, );
+		await quiet(c);	// a size count still running (backupView) ends before the write uses the stub
 		await busy(true);
 		top.set({ led: "busy", screen: screenNow() });
 		const started = ctx.flashStarted({ task: "install", source: fw.origin || "", radio: boardId(), firmware: String(fw.manifest.version || ""),
@@ -984,6 +992,7 @@ export function restoreView() {
 	const status = h("div");
 	const go = button(t("flash.c7.restore.go"), async () => {
 		go.disabled = true;
+		await quiet(c);	// a size count still running (backupView) ends before the restore uses the stub
 		await busy(true);
 		top.set({ led: "busy", screen: "off" });
 		const started = ctx.flashStarted({ task: "restore", source: vendor ? "stock" : "c7000-progmem", radio: boardId(), firmware: S().bundle.meta.firmware_now?.kind || "" });

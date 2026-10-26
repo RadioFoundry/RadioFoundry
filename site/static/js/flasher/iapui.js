@@ -27,7 +27,7 @@ const WORD_RATE = 14;		// console frames per second, written or read back (radio
 // host: what c7000ui.js hands over ({S, ctx, C, boardId, session, busy, iap, fill, stubImage}); iap(session) makes the
 // update mode's protocol object
 export function makeStockRoutes(host) {
-	const { S, ctx, C, boardId, session, busy, iap, fill, stubImage } = host;
+	const { S, ctx, C, boardId, session, busy, iap, fill, stubImage, cableBanner = () => null } = host;
 
 	// update mode steps beside the radio's picture, the keys to hold marked on it (radiotop.js; app.js does the same)
 	const withPicture = (steps) => {
@@ -170,7 +170,7 @@ export function makeStockRoutes(host) {
 		const status = h("div");
 		const steps = S().radio.flash.bootloader || [];
 		const go = button(t(restore ? "flash.iap.restore_go" : "flash.iap.go"), () => run(), { primary: true });
-		const box = panel(title,
+		const box = panel(title, cableBanner(),	// a CH340 cable: the warning here too (programming through update mode)
 			rows.length ? h("dl", { class: "kv-list" }, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])) : null,
 			h("p", {}, lead || t(restore ? "flash.iap.restore_lead" : "flash.iap.lead")),
 			withPicture(h("ol", { class: "steps c7-big" }, h("li", {}, t(restore ? "flash.iap.restore_step_go" : "flash.iap.step_go")), ...steps.map((x) => h("li", {}, x)))),
