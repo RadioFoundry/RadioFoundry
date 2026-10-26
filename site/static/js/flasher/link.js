@@ -394,13 +394,15 @@ export async function openFirmwareInfo(link) {
 }
 
 // Whether a radio that answers like another open firmware runs the RadioFoundry build just written (manifest: its
-// manifest), so without the debug link: its revision is that build's commit (the radio info carries the version the
-// Makefile stamps, 8 hex digits and maybe "-dirty"), or the build's feature list leaves DEBUGLINK out. A build whose
-// features aren't known (a local image: "") and another commit can't be told from another open firmware
+// manifest), so without the debug link: the build's feature list leaves DEBUGLINK out. A build with DEBUGLINK answers
+// over the debug link, so a radio that doesn't runs something else. Only when the features aren't known (a local image:
+// "") does the revision decide: the radio info carries the version the Makefile stamps (8 hex digits and maybe
+// "-dirty"), and that build's commit is the one just written. A build of unknown features and another commit can't be
+// told from another open firmware
 export function writtenWithoutLink(info, manifest) {
 	if (!info || !manifest) return false;
 	const feats = String(manifest.features || "").split(",").filter(Boolean);
-	if (feats.length && !feats.includes("DEBUGLINK")) return true;
+	if (feats.length) return !feats.includes("DEBUGLINK");
 	const head = String(info.git || "").split("-")[0].toLowerCase();
 	return /^[0-9a-f]{7,}$/.test(head) && String(manifest.git || "").toLowerCase().startsWith(head);
 }

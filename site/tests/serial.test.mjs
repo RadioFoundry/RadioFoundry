@@ -186,7 +186,7 @@ test("the radio info is read only when it has that structure", () => {
 });
 
 // A RadioFoundry build without the debug link answers like another open firmware; right after the installer wrote it,
-// its revision or its feature list says it is that build
+// its feature list says it is that build, or its revision when the features aren't known
 test("a RadioFoundry build without the debug link is told apart right after it was written", async () => {
 	const info = { git: "1a4901ae-dirty" };
 	const full = "1a4901ae7c0ffee0000000000000000000000000";
@@ -194,12 +194,19 @@ test("a RadioFoundry build without the debug link is told apart right after it w
 	assert.equal(writtenWithoutLink({ git: "1A4901AE" }, { git: full, features: "" }), true);
 	assert.equal(writtenWithoutLink(info, { git: "ffff" + full.slice(4), features: "FM,DMR" }), true, "no DEBUGLINK in its features");
 	assert.equal(writtenWithoutLink(info, { git: "ffff" + full.slice(4), features: "FM,DMR,DEBUGLINK" }), false);
+	assert.equal(writtenWithoutLink(info, { git: full, features: "FM,DMR,DEBUGLINK" }), false,
+		"the same commit, but a build with the debug link would have answered over it");
+	assert.equal(writtenWithoutLink(info, { git: full, features: "FM,DMR" }), true);
 	assert.equal(writtenWithoutLink(info, { git: "unknown", features: "" }), false, "a local build: not known");
 	assert.equal(writtenWithoutLink({ git: "v1.2" }, { git: full, features: "" }), false);
 	assert.equal(writtenWithoutLink(info, null), false);
 	const link = new Link(openFw(radioInfo({ git: "1a4901ae" })), { timeout: 30 });
 	await probe(link);
-	assert.equal((await whyNoAnswer(link, { written: { git: full, features: "FM,DMR,DEBUGLINK" } })).kind, "rfoundry-nodebug");
+	assert.equal((await whyNoAnswer(link, { written: { git: full, features: "FM,DMR" } })).kind, "rfoundry-nodebug");
+	const withLink = new Link(openFw(radioInfo({ git: "1a4901ae" })), { timeout: 30 });
+	await probe(withLink);
+	assert.equal((await whyNoAnswer(withLink, { written: { git: full, features: "FM,DMR,DEBUGLINK" } })).kind, "openfw",
+		"a build with the debug link that doesn't answer over it is not that build");
 	const other = new Link(openFw(radioInfo({ git: "1a4901ae" })), { timeout: 30 });
 	await probe(other);
 	assert.equal((await whyNoAnswer(other)).kind, "openfw");

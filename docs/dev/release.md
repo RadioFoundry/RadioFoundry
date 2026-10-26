@@ -120,7 +120,11 @@ over the bootloader (the radio is at RDP level 1), so rfoundry needs another way
    sectors the update overwrites, so keep is not safe.
 2. **Otherwise the codec is written (merge),** from the copy rfoundry saved from this radio if it has one, else from
    the stock file. A vendor firmware doesn't hold the codec where RadioFoundry keeps it, so `--stock-installed` never makes keep safe.
-3. `--codec keep` forces keep in every case.
+3. `--codec keep` forces keep in every case. Where the radio is known to have no codec, the keep expects none, so the
+   check after flashing doesn't count `codec=absent` as a failure: the radio reported no codec, or the user says it runs
+   its stock firmware (`--stock-installed`, or the web flasher's "Original firmware" with or without a version) and no
+   stock version of the board holds the codec where RadioFoundry keeps it (the board's `codec.installed` is empty).
+   rfoundry and the web flasher (`site/static/js/flasher/decide.js`) apply the same rules.
 
 **The saved copy.** Whenever rfoundry or the web flasher sees a radio running RadioFoundry, it reads the codec over the debug
 link (READ_MEM, in the stock or the placed layout), checks it against the profile's hashes and saves it (rfoundry's

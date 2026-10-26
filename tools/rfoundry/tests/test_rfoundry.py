@@ -1109,6 +1109,17 @@ class Dm1701Builds(unittest.TestCase):
             for k in na:
                 self.assertEqual(na[k], nb[k], (n, k))
             self.assertEqual(a["outside_refs"], [])
+            # groups by object index: the same, but for objects 6 and 7, which the CSV builds keep together because the
+            # second starts where the first ends; in noCSV 0x7C bytes the codec doesn't use lie between them
+            # (docs/spec/codec-dm1701.md, "Codec in the V02.06 CSV file")
+            def groups(m):
+                index = {o["start"]: i for i, o in enumerate(m["objects"])}
+                return sorted(tuple(index[s] for s in g) for g in m["groups"])
+            self.assertEqual(groups(b), sorted(groups(a) + [(6, 7)]), n)
+            for m, gap in ((a, 0x7C), (b, 0)):
+                o6, o7 = m["objects"][6], m["objects"][7]
+                self.assertEqual((o6["len"], o7["len"]), (96, 3072), m["profile"])
+                self.assertEqual(o7["start"] - (o6["start"] + o6["len"]), gap, m["profile"])
 
     def test_synthetic_merge(self):
         """A V02.01 file merges, splits and reads back from a readout like V02.06; its descriptor carries tag 0x0203."""
@@ -1303,10 +1314,10 @@ class CodecDecision(unittest.TestCase):
     NEW, OLD = "dm1701-v0206-csv-s11", "dm1701-v0206-csv"	# the codec where this layout keeps it, where older RadioFoundry did
 
     def d(self, **kw):
-        args = dict(requested="auto", have_stock=False, probe=None, stock_installed=None, ask=None)
+        args = dict(requested="auto", have_stock=False, probe=None, stock_installed=None, ask=None, runs_stock=False)
         args.update(kw)
         return cli.decide_codec(DM1701, self.man, args["requested"], args["have_stock"], args["probe"],
-                                args["stock_installed"], args["ask"])
+                                args["stock_installed"], args["ask"], runs_stock=args["runs_stock"])
 
     def probe(self, codec, board="DM-1701"):
         return {"board": board, "codec": codec, "git": "x"}
@@ -1342,6 +1353,18 @@ class CodecDecision(unittest.TestCase):
             with self.assertRaises(cli.UsageError):
                 self.d(stock_installed=v)
             self.assertEqual(self.d(stock_installed=v, have_stock=True).mode, plan.MERGE)
+
+    def test_keep_on_stock_expects_no_codec(self):
+        """Keeping the codec of a radio on stock firmware keeps none here: the result must not be reported as a failure"""
+        for kw in (dict(runs_stock=True), dict(stock_installed="V02.06 CSV"), dict(runs_stock=True, have_stock=True)):
+            d = self.d(requested="keep", **kw)
+            self.assertEqual(d.mode, plan.KEEP, kw)
+            self.assertFalse(d.expect_codec, kw)
+            self.assertIn("DMR voice", d.risk)
+        self.assertTrue(self.d(requested="keep").expect_codec)		# not known to run stock: unverified
+        self.assertEqual(self.d(runs_stock=True, have_stock=True).mode, plan.MERGE)
+        with self.assertRaises(cli.UsageError):
+            self.d(runs_stock=True)
 
     def test_unknown(self):
         with self.assertRaises(cli.UsageError):

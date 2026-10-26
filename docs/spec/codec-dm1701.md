@@ -113,6 +113,15 @@ The noCSV maps agree with the CSV maps site for site: every reference in the cod
 same offset, and every island call to the same code offset. V02.03 noCSV is V02.06 noCSV 0x40 lower, the same
 relation as between the CSV files.
 
+The maps differ in one place: the CSV maps have 5 `groups`, the noCSV maps 4. The extra CSV group is the 96-byte
+object at 0x080D2C30 and the 3072-byte object at 0x080D2C90 (V02.06; 0x40 lower in V02.03). The first is read
+through one indexed load, and the reads observed in the emulator reach its last byte. In the CSV files the second
+object starts right there, so the analysis can't show that the index never runs on into it, and it keeps the two at
+their distance (a group). In the noCSV files 0x7C bytes of data the codec doesn't use lie between the same two objects
+(0x080D5A34..0x080D5AB0 in V02.06 noCSV), so the first ends at that data and each object stands alone. Both objects have
+the same length, references and observed reads in all four maps. Groups only constrain moving objects apart; the merge
+keeps the table window at its stock address, so this changes nothing in the placed codec.
+
 ### Position dependence
 
 * Calls and branches inside the codec are PC-relative. The three entry points make no calls outside the window.

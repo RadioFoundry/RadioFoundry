@@ -11,7 +11,8 @@
 // V02.03 CSV carry the same codec 0x40 lower, and the merge places it the same way, 0x40 lower. The V02.06 and V02.03
 // noCSV files carry it higher (tables from 0x080D4794 and 0x080D4754), and the merge places it the same way after
 // its tables. None of it is part of this repository or a release. The calls and the checks are the shared ones
-// (platform/stm32f4/hrc/vocoder.c); this file says which build and where. Without a valid descriptor and codec, present() is false and the radio is FM only.
+// (platform/stm32f4/hrc/vocoder.c); this file says which build and where. Without a valid descriptor and codec,
+// present() is false and the radio is FM only.
 #include "../uv380_family/uvf.h"
 #include "config.h"
 

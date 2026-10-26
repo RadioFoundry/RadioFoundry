@@ -61,15 +61,14 @@ export const SUPPORTED_OPEN_MAX = 12;
 export const foldSupported = (files) => files.length > SUPPORTED_OPEN_MAX;
 
 // What the codec step says when the picked file gives no codec (problem "unmapped") but the install goes on anyway
-// (decide.js decision), as the suffix of its flash.codec.keep_* strings: "unverified" when the codec already in the
-// radio is kept without being checked, so DMR voice depends on it; "none" when the radio has no codec where RadioFoundry
-// uses it: it reported none and keeping was selected anyway, or the user chose its original firmware and no version of
-// that keeps the codec there (board.codec.installed is empty); "ok" when the radio reported its codec; null when the file
-// isn't the issue (no problem, no decision yet, or the codec comes from elsewhere). now: what the user said the radio
-// runs (the page's S.now)
-export function keepNote(problem, decision, { board = null, now = null } = {}) {
+// (decide.js decision), as the suffix of its flash.codec.keep_* strings: "none" when the decision keeps a codec it knows
+// is missing (expectCodec false: the radio reported none, or its original firmware never stores it where RadioFoundry
+// uses it); "unverified" when the codec already in the radio is kept without being checked, so DMR voice depends on it;
+// "ok" when the radio reported its codec; null when the file isn't the issue (no problem, no decision yet, or the codec
+// comes from elsewhere)
+export function keepNote(problem, decision) {
 	if (problem?.problem !== "unmapped" || !decision || decision.mode !== "keep") return null;
-	if (!decision.expectCodec || (now?.kind === "stock" && board && !board.codec?.installed?.length)) return "none";
+	if (!decision.expectCodec) return "none";
 	return decision.risk ? "unverified" : "ok";
 }
 

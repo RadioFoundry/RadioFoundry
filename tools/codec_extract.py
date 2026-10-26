@@ -32,11 +32,11 @@ import stm32_dfu  # noqa: E402  (key table and key file check, hardware-dm1701.m
 
 # The container, decryption, profiles and merge live in the rfoundry package (one implementation for both tools)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))
-from rfoundry.stockfw import (APP_BASE, CODEC_SIG, DESC_ADDR, FLASH_BASE, FLASH_END, HEADER_LEN, KEY_LEN,  # noqa: E402,F401
-                              MAGIC, PROFILES, SYN_BL, SYN_SELF_REF, StockError as ExtractError, app_file_offset,
-                              build_synthetic_stock, decrypt, derive_key, descriptor, extract, find_profile, from_flash,
-                              is_container, layout, layout_name, merge, no_codec, parse_container, profile_for_board, sha256,
-                              windows)
+from rfoundry.stockfw import (APP_BASE, CODEC_SIG, DESC_ADDR, FLASH_BASE, FLASH_END, HEADER_LEN,  # noqa: E402,F401
+                              KEY_LEN, MAGIC, PROFILES, SYN_BL, SYN_SELF_REF, StockError as ExtractError,
+                              app_file_offset, build_synthetic_stock, decrypt, derive_key, descriptor, extract,
+                              find_profile, from_flash, is_container, layout, layout_name, merge, no_codec,
+                              parse_container, profile_for_board, sha256, windows)
 from rfoundry.codecmap import bl_target  # noqa: E402
 from rfoundry import boards  # noqa: E402  (the board registry: the boards this tool serves)
 import zlib  # noqa: E402

@@ -26,7 +26,10 @@ test("every placed layout has a fixture, each layout once", () => {
 	assert.ok(L.files.length > 0);
 	const covered = new Set(L.files.flatMap((f) => stockfw.sameLayout(fb.profiles[f.real_sha256], fb.profiles)));
 	for (const [sha, p] of reals) assert.ok(covered.has(p), `${p.name} (${sha.slice(0, 8)})`);
-	assert.equal(new Set(L.files.map((f) => JSON.stringify(f.placed.slice(0, -1)))).size, L.files.length);
+	// a layout is where the codec sits, stock and placed: addresses and lengths (the hashes are of random bytes)
+	const where = (f) => JSON.stringify([fb.profiles[f.real_sha256].board, fb.profiles[f.real_sha256].windows.map(([a, n]) => [a, n]),
+		f.placed.slice(0, -1).map(([a, , n]) => [a, n])]);
+	assert.equal(new Set(L.files.map(where)).size, L.files.length);
 });
 
 for (const f of L.files) {
@@ -66,20 +69,28 @@ test("a readout is named by its codec's layout, as rfoundry names it", () => {
 	}
 });
 
+// Both readouts stockfw.fromFlash takes: a radio on its stock firmware (the codec windows plain at their stock
+// addresses) and one running RadioFoundry (the windows placed, with the descriptor)
 test("the page names a readout of a shared layout by the layout, not the first file", async () => {
 	const shared = L.files.find((x) => x.versions.length > 1);
 	if (!shared) return;
 	const real = fb.profiles[shared.real_sha256];
-	// a radio on its stock firmware: the codec windows plain at their stock addresses
-	const flash = new Uint8Array(0x100000).fill(0xFF);
 	const stock = bin(shared.file);
-	const { segments } = await stockfw.extract(stock, fromHex(shared.key), fb, { [shared.stock_sha256]: shared.profile }, real.board);
-	for (const [a, d] of segments) flash.set(d, a - 0x08000000);
+	const key = fromHex(shared.key);
+	const { segments } = await stockfw.extract(stock, key, fb, { [shared.stock_sha256]: shared.profile }, real.board);
+	const segs = stockfw.parseContainer(stock, fb);
+	const plain = shared.profile.windows.map(([a, n]) => [a, stockfw.decrypt(stock, stockfw.appFileOffset(segs, a, fb), n, key, fb)]);
 	// the synthetic codec under every file of the layout, as the real files share theirs
 	const group = stockfw.sameLayout(real, fb.profiles);
 	const withP = { ...fb, profiles: Object.fromEntries(group.map((p, k) => [`${k}`.padStart(64, "0"), { ...shared.profile, name: p.name, version: p.version }])) };
-	const m = await vendorfile.identifyFile(flash, withP, real.board);
-	assert.equal(m.kind, "readout");
-	assert.equal(m.known, `${fb.boards[real.board].name} ${L.names[shared.real_sha256]}`);
-	assert.ok(!m.known.includes(real.name));
+	for (const [how, parts] of [["stock addresses", plain], ["placed", segments]]) {
+		const flash = new Uint8Array(0x100000).fill(0xFF);
+		for (const [a, d] of parts) flash.set(d, a - 0x08000000);
+		const m = await vendorfile.identifyFile(flash, withP, real.board);
+		assert.equal(m.kind, "readout", how);
+		assert.equal(m.known, `${fb.boards[real.board].name} ${L.names[shared.real_sha256]}`, how);
+		assert.ok(!m.known.includes(real.name), how);
+	}
+	// the stock readout really is the stock layout: no window at a placed address
+	assert.ok(plain.every(([a], i) => i > 0 || a !== segments[0][0]));
 });

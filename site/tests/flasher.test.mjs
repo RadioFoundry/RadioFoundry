@@ -324,12 +324,21 @@ test("keeping the radio's codec with a file that gives none is spelled out", () 
 	assert.equal(keep({ probe: { board: "a", codec: "a-codec" } }), "ok");
 	assert.equal(keep({ requested: KEEP, probe: { board: "a", codec: null } }), "none");
 	// the original firmware, version not given: "unverified" where a stock version keeps the codec in place, "none" on
-	// a radio whose stock firmware never does (board.codec.installed empty)
-	const stockNow = { kind: "stock", version: null };
-	assert.equal(explain.keepNote(un, decideCodec(board, manifest, { requested: KEEP }), { board, now: stockNow }), "unverified");
+	// a radio whose stock firmware never does (board.codec.installed empty), and the decision expects no codec, so the
+	// done step doesn't call the outcome a failure
+	assert.equal(keep({ requested: KEEP, runsStock: true }), "unverified");
 	const never = { ...board, codec: { ...board.codec, installed: [] } };
-	assert.equal(explain.keepNote(un, decideCodec(never, manifest, { requested: KEEP }), { board: never, now: stockNow }), "none");
-	assert.equal(explain.keepNote(un, decideCodec(never, manifest, { requested: KEEP }), { board: never, now: { kind: "unknown" } }), "unverified");
+	const kept = decideCodec(never, manifest, { requested: KEEP, runsStock: true });
+	assert.equal(kept.mode, KEEP);
+	assert.equal(kept.expectCodec, false);
+	assert.match(kept.risk, /DMR voice is not available/);
+	assert.equal(explain.keepNote(un, kept), "none");
+	assert.equal(decideCodec(never, manifest, { requested: KEEP, stockInstalled: "V1" }).expectCodec, false, "a named version too");
+	// not known to run its original firmware, or keeping not selected: unchanged
+	assert.equal(explain.keepNote(un, decideCodec(never, manifest, { requested: KEEP })), "unverified");
+	assert.equal(decideCodec(never, manifest, { requested: KEEP }).expectCodec, true);
+	assert.equal(decideCodec(never, manifest, { runsStock: true, haveStock: true }).mode, MERGE);
+	assert.throws(() => decideCodec(never, manifest, { runsStock: true }));
 	// the codec comes from elsewhere, nothing was decided, or the file is not the issue
 	assert.equal(explain.keepNote(un, { mode: MERGE, source: "saved", expectCodec: true }), null);
 	assert.equal(explain.keepNote(un, null), null);
@@ -350,7 +359,7 @@ test("the current firmware choices: four, two of them the same to the install", 
 	// the same decision either way
 	const b = { name: "Radio A", keep_codec_supported: true, debuglink_names: ["a"], codec: { id: "a-codec", installed: [] } };
 	const decide = (now) => decideCodec(b, { codec: { profile: "a-codec" } }, { haveStock: true, probe: null,
-		stockInstalled: now.kind === "stock" ? now.version : null });
+		stockInstalled: now.kind === "stock" ? now.version : null, runsStock: now.kind === "stock" });
 	assert.deepEqual(decide(explain.nowFor("openfw")), decide(explain.nowFor("unknown")));
 	// every choice has its title and help line
 	const en = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url), "utf8"));

@@ -368,9 +368,12 @@ class Decision:
         self.source = source		# a merge's codec: "stock" (the stock file) or "saved" (read back from the radio)
 
 
-def decide_codec(board, manifest, requested, have_stock, probe, stock_installed, ask=None, have_saved=False):
+def decide_codec(board, manifest, requested, have_stock, probe, stock_installed, ask=None, have_saved=False,
+                 runs_stock=False):
     """Pick keep or merge (docs/dev/release.md "Codec handling"). probe: a debug-link probe of the radio (this run or
-    remembered), or None. stock_installed: what the user says the radio runs ("V02.06 CSV"), or None. ask: a yes/no
+    remembered), or None. stock_installed: what the user says the radio runs ("V02.06 CSV"), or None. runs_stock: the
+    radio runs its stock firmware, version known or not (implied by stock_installed; the web flasher's "Original
+    firmware" without a version). ask: a yes/no
     callable for the interactive question, or None (non-interactive). have_saved: the codec read back from this radio
     (codecsave.py), used where an update can't keep it or the radio's codec can't be checked, before the stock file.
     Raises UsageError when neither is safe."""
@@ -417,6 +420,11 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
     if have_saved and requested != planmod.KEEP:
         return Decision(planmod.MERGE, "the radio's codec can't be checked, so the copy saved from it earlier is "
                         "written", source="saved")
+    if (runs_stock or stock_installed) and requested == planmod.KEEP and not board.codec.installed:
+        # no stock version holds the codec where RadioFoundry keeps it: keeping it means keeping none
+        return Decision(planmod.KEEP, "asked for, although no stock firmware of the %s holds the codec where "
+                        "RadioFoundry keeps it" % board.name,
+                        risk="DMR voice will stay off (FM works) until you flash with --stock", expect_codec=False)
     if stock_installed:
         norm = stock_installed.upper().replace("-", " ").replace("_", " ")
         if any(norm == v.upper() for v in board.codec.installed):
