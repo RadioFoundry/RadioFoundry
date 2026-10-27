@@ -249,12 +249,31 @@ tools/rfoundry_debug.py --port PORT log --follow
 
 | Look for | Resolves / if not |
 |---|---|
-| `rx2 info` shows `present bridge restart up`; diag `b up vN` with B's firmware version text | Link is UART3 (PTA13/PTA14), 115200. `down`: wrong pins on A or B, B not running (step 7), or the mux. Dump `A5 5A` frames if a scope is on hand |
+| `rx2 info` shows `present bridge restart forward up`; diag `b up vN` with B's firmware version text | Link is UART3 (PTA13/PTA14), 115200. `down`: wrong pins on A or B, B not running (step 7), or the mux. Dump `A5 5A` frames if a scope is on hand |
 | `dual.receivers` is 2 in `rfoundry_debug.py view --section features` | `test_second_receiver` |
 | HELLO flags: bit 0 set (B decodes DMR) | |
 | Put the radio on dual watch with two FM channels: B's status (RSSI, noise, active) follows a signal on its channel | TUNE/ACK/STATUS. `ACK` result nonzero: B refused (look at `LOG` messages in the log) |
 | The status LEDs: LED 1 (PTA16) while A transmits, LED 2 (PTB17) while it receives: which one lights, which color | Swap `PIN_LED1`/`PIN_LED2` in `gd88b/pins.h` if reversed. TODO gd88b/pins.h colors |
 | Pull B out of the link (restart it from the debug link: `rx2 restart`): A finds it again within a few seconds and re-sends TUNE/AUDIO/LED | the 1.5 s down rule and HELLO_REQ |
+
+B's own debug link, through A (`--rx2` sends any command to B; rx2-link.md 2.3). Use it for everything below that is
+about B:
+
+```
+tools/rfoundry_debug.py --port PORT --rx2 version          # via=forward, board=gd88b, B's git
+tools/rfoundry_debug.py --port PORT --rx2 diag             # b rx ..., b link ..., b uart ...
+tools/rfoundry_debug.py --port PORT --rx2 view             # rx.*, dmr.*, uart.*, task.stack_free, crash.*, reset.*
+tools/rfoundry_debug.py --port PORT --rx2 log
+tools/rfoundry_debug.py --port PORT --rx2 dump --addr 0x0300C000 --len 16 -o b-head.bin   # 2C 11 01 C0: B's first stage
+python3 -m pytest tests/hil -v -rs --radio-port PORT -k soc_b
+```
+
+| Look for | Resolves / if not |
+|---|---|
+| `--rx2 version` answers within a second | `UNAVAILABLE`: B down or slow (`rx2 info`); `unknown command`: B built without its server (`GD88B_DEBUG=0`) |
+| `--rx2 chip` answers, or answers unavailable | Whether B reads its own chip ID. Unavailable is fine: `--rx2 reboot` then uses the bridge token |
+| `--rx2 view` after a few minutes on dual watch: `uart.overruns=0`, `uart.line_errors=0`, `task.stack_free` above 300 | The link's 115200 and B's single task stack (1536 bytes, 640 the static worst case) |
+| `--rx2 reboot`: B restarts, A logs it down and up again, `reset.*` in B's view says software reset | |
 
 Update test: with B on RadioFoundry, update it through A (this is how every later B install goes):
 
@@ -263,7 +282,10 @@ python3 stub/stubtool.py PORT --board gd88b --write-app build/gd88b/rfoundry_gd8
 ```
 
 The host asks A for the bridge (`DL_CMD_RX2`), A sends `STUB`, B writes `STAY` and jumps to its first stage, the stub
-loads on UART3 (115200, no baud change), the image goes in, B restarts and A restarts 10 s after the last byte.
+loads on UART3 (115200, no baud change), the image goes in, B restarts, and the host sends the bridge's exit sequence
+(rx2-link.md 4.1) so A restarts at once. Without the exit sequence (an older host tool, a pulled cable), A restarts
+10 s after the last byte. Check both: A should answer `version` about 9 s after stubtool ends (its start-up alone), not
+19 s.
 Success: `rx2 info` says `up` again with the new version. The web flasher's done step does the same and asks A whether
 B answers. Record the time. Settles the B-through-A route on a radio.
 
