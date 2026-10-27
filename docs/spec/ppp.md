@@ -207,4 +207,9 @@ PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B 
 - `test_gateway_has_netif` (`tests/hil/test_dmr_ip.py`, radio only): a build with the gateway reports `net.netif=1`.
   One board first set no `board.netif`. LCP and IPCP still opened, but nothing the gateway sent reached
   the host (no ping reply). This test catches that without root or pppd.
+- `test_ppp_link` (`tests/hil/test_ppp_link.py`, radio only): a PPP peer in user space (`tests/hil/ppp_client.py`, no
+  pppd, no root) on the debug link's serial port. LCP and IPCP open with the host at 12.<DMR ID>, a 56 and a 500 byte
+  ping (every byte value, so the escapes both ways) come back, the debug link answers over UDP 3334 through the link
+  with `ppp.lcp` and `ppp.ipcp` at 9, `usb.net_up=1` and no `ppp.rx_errors`, and after LCP Terminate the serial debug
+  link answers again with `ppp.running=0`. Passes on a board without USB (2026-10-27).
 - Not tried yet: macOS pppd (it needs root).
