@@ -40,8 +40,8 @@
 #define DMR_DATA_RATE12_OCTETS		12			// a Rate 1/2 block's octets (unconfirmed)
 
 // The air MTU: the longest IP packet (user data of one packet: the IPv4 header and all, or the compressed header and
-// the UDP payload) that goes in one transmission of ours, confirmed or not: DMR_DATA_MAX_PACKET less the padding and
-// the CRC-32 the last block may take. Not below the USB link's MTU (IPGW_LINK_MTU, 586), so every packet the host
+// the UDP payload) that goes in one transmission of ours, confirmed or not. Confirmed delivery sets it: 60 blocks of
+// 10 octets less the CRC-32 (unconfirmed, 612 octets of blocks would carry 608). Not below the USB link's MTU (IPGW_LINK_MTU, 586), so every packet the host
 // sends fits (docs/spec/usb-network.md 3.2). Unconfirmed it takes 50 blocks after DMR_DATA_IP_PREAMBLES preamble CSBKs
 // and the header, 53 bursts; confirmed (10 octets a block) 60 blocks and a terminator, 64
 #define DMR_DATA_IP_PREAMBLES		2

@@ -461,7 +461,7 @@ __attribute__((noinline)) int ipGatewayAirLength(bool group, bool offNet, uint8_
 	{
 		return length - 8;
 	}
-	if (!offNet && dmrDataUdpCompress(srcPort, dstPort))
+	if (CONFIG_DMR_UDP_COMPRESS && !offNet && dmrDataUdpCompress(srcPort, dstPort))	// as encodeUDP decides
 	{
 		uint8_t h[DMR_UDPC_HEADER_MAX];
 

@@ -276,7 +276,7 @@ so confirm only where it helps. The settings are saved in the radio.
 ## Packet size
 
 The network link takes packets of up to 586 bytes. The radio gives this size to the computer by DHCP, and to PPP as
-its MRU (584), and every packet of that size fits in one transmission on the air: up to 558 bytes of UDP data. There
+its MRU (584), and every packet of that size fits in one transmission on the air: up to 558 bytes of UDP data (556 over PPP). There
 is nothing to set on the computer.
 
 A full-size packet keeps the channel for about 3 seconds (about 4 when it's sent confirmed). Small packets are quicker

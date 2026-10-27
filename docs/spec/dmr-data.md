@@ -553,7 +553,7 @@ The longest IP datagram we send in one transmission. It is not below the USB lin
 | Constant | Value | From |
 |---|---|---|
 | `DMR_DATA_MAX_PACKET` | 612 | the packet buffer: 51 rate 1/2 blocks |
-| `DMR_DATA_IP_MTU` | 596 | 612 - the padding to a whole block and the 4-octet CRC-32 (16) |
+| `DMR_DATA_IP_MTU` | 596 | confirmed delivery: 60 blocks of 10 octets less the 4-octet CRC-32 (612 - 16; unconfirmed, 51 blocks would carry 608) |
 | `DMR_DATA_IP_PREAMBLES` | 2 | preamble CSBKs before an IP packet (also SMS) |
 | `DMR_DATA_MAX_BURSTS` | 64 | the burst list of one transmission: a confirmed packet of 596 octets |
 
@@ -564,7 +564,7 @@ The longest IP datagram we send in one transmission. It is not below the USB lin
 
 - The MTU counts the user data on air: the IP and UDP header as sent (SAP 4: 28 octets; SAP 3: 5, 7 or 9, 11.1)
   plus the payload. The largest UDP payload is 568 octets with the full header and up to 587 with the compressed one
-  (9 octets: ports outside 4000-4099 in the extended headers). A raw port packet (no header) carries up to 608.
+  (9 octets: ports outside 4000-4099 in the extended headers). A raw port packet (no header) carries up to 596 through the gateway, the air MTU (the encoder itself takes 608).
 - Confirmed (12.2) takes every packet of the MTU: 60 blocks, under the 64 of one selective ACK block. Longer packets
   are refused (`DMR_REQ_FAILED`, `ip.failed`), nothing goes on air. Build-time asserts in `dmrData.c`,
   `dmrDataService.c` and `ipGateway.c` keep the four constants and the link MTU in step.

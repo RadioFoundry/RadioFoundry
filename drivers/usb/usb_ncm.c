@@ -75,6 +75,8 @@ bool usbNcmIsUp(void)
 
 // ---- TinyUSB's callbacks (USB task) ----
 
+// The NCM driver of the TinyUSB in third_party never calls it (its bus reset clears only its own state). A held flag
+// left over from before a reset costs one spare renew, which the driver ignores while it has no datagram
 void tud_network_init_cb(void)
 {
 	rx_in = rx_out = 0;
