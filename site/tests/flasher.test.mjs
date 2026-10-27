@@ -304,10 +304,12 @@ test("a known build without a codec map: the version named, the file offered, th
 	assert.deepEqual(explain.supportedFiles(c, "b"), { files: ["B 001 build", "b-002.bin"], also: ["a program flash read of the radio"] });
 	assert.deepEqual(explain.supportedFiles(c, "d"), { files: [], also: ["a program flash read of the radio"] });
 	assert.deepEqual(explain.supportedFiles({ boards: {} }, "q"), { files: [], also: [] });
-	// every C-SKY radio in the data lists at least one stock file, profiles first
+	// every C-SKY radio in the data lists at least one stock file, profiles first: those of the boards whose codec it
+	// takes before its own (codec_boards: the GD-88's B lists A's files first)
 	for (const id of Object.keys(fb.c7000?.boards || {})) {
 		const { files } = explain.supportedFiles(fb, id);
-		const named = (fb.c7000.profiles || []).filter((p) => p.board === id && p.stock_file).map((p) => p.name);
+		const named = (fb.c7000.boards[id].codec_boards || [id]).flatMap((b) =>
+			(fb.c7000.profiles || []).filter((p) => p.board === b && p.stock_file).map((p) => p.name));
 		assert.deepEqual(files.slice(0, named.length), named, id);
 	}
 	// the notice folds a long list, never a short one

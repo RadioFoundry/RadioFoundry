@@ -49,6 +49,7 @@
    ],
    "codec_tool": "hrc7000_codec",
    "codec_stock": [],
+   "codec_from": [],
    "codec": {
     "id": "db25d-018",
     "windows": [
@@ -212,6 +213,7 @@
     "2522008737d7845e43ab47a307d38498ee783c788a377fac855dff94dea53af0",
     "d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f"
    ],
+   "codec_from": [],
    "codec": {
     "id": null,
     "windows": null,
@@ -308,6 +310,7 @@
    "first_stage": null,
    "codec_tool": "hrc7000_codec",
    "codec_stock": [],
+   "codec_from": [],
    "codec": {
     "id": "dm1801pro-049",
     "windows": [
@@ -406,6 +409,7 @@
    "first_stage": null,
    "codec_tool": "hrc7000_codec",
    "codec_stock": [],
+   "codec_from": [],
    "codec": {
     "id": "dm32-049",
     "windows": [
@@ -507,6 +511,7 @@
    ],
    "codec_tool": "hrc7000_codec",
    "codec_stock": [],
+   "codec_from": [],
    "codec": {
     "id": "gd88-2501",
     "windows": [
@@ -613,6 +618,9 @@
    ],
    "codec_tool": "hrc7000_codec",
    "codec_stock": [],
+   "codec_from": [
+    "gd88"
+   ],
    "codec": {
     "id": "gd88b-2501",
     "windows": [
@@ -623,8 +631,9 @@
     ],
     "installed": [],
     "sources": [
-     "GD-88 B B49C.D64.EHRNAB.005 to .012 update files",
-     "a program flash read of SoC B"
+     "GD-88 A B49E.D64.EOPSAB.013 to .021 update files (the A file, as for SoC A)",
+     "a program flash read of SoC A",
+     "GD-88 B B49C.D64.EHRNAB.005 to .012 update files"
     ]
    },
    "codec_code": 51281920,
@@ -638,7 +647,7 @@
    ],
    "codec_tables": [
     402656064,
-    402668304
+    402670372
    ],
    "loader_id": null,
    "loader_keys": null,
@@ -778,6 +787,7 @@
     "0897e946bb123a5942f1458d3d2be8f759befe769c6aeaad4fe093ad3a40ac01",
     "0c954b0fa8426352cf9c99544be4811115f4102fc4ae491269d1cdaef3edd54a"
    ],
+   "codec_from": [],
    "codec": {
     "id": null,
     "windows": null,
@@ -961,6 +971,7 @@
     "bf98dc6ca9d888712924af75dd5eff7495de4ab82848f0701616e29eb9d5e5a2",
     "e6c696a3f1a6ac3d622559d7422efc97399b748aac8923a7440239b28c03a5c1"
    ],
+   "codec_from": [],
    "codec": {
     "id": null,
     "windows": null,

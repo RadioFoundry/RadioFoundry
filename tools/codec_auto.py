@@ -69,13 +69,22 @@ def main():
     mod = __import__(tool)
     profiles = {h: p for h, p in mod.PROFILES.items() if p.get("board", args.board) == args.board}
     if hasattr(mod, "identify"):	# a tool that knows a file by more than its SHA-256 (a program flash dump)
+        # and may take another board's files too ([codec] from: a second SoC that runs the main SoC's codec): the rank of the file's
+        # board among them, the preferred one 0, else None
         def known(path):
             with open(path, "rb") as f:
-                return mod.identify(f.read(), board=args.board) is not None
+                prof = mod.identify(f.read(), board=args.board)
+            return None if prof is None else getattr(mod, "source_rank", lambda p, b: 0)(prof, args.board)
     else:
         def known(path):
-            return sha256_file(path) in profiles
-    stock = next((p for p in candidates(args.dir) if os.path.getsize(p) > 4096 and known(p)), None)
+            return 0 if sha256_file(path) in profiles else None
+    stock, best = None, None
+    for path in candidates(args.dir):
+        rank = known(path) if os.path.getsize(path) > 4096 else None
+        if rank is not None and (best is None or rank < best):
+            stock, best = path, rank
+            if rank == 0:
+                break
     out = args.output or os.path.splitext(args.image)[0] + "_codec.bin"
     if stock is None:
         print("codec: no supported %s stock firmware in %s, built without the codec (codecs/README.md)"

@@ -35,8 +35,10 @@ make BOARD=gd88 GD88_TX=1 BUILD=build/gd88-tx   # kept for step 15 only; never f
 
 The codec comes from the original files. Put them in `codecs/` as [codecs/README.md](../../codecs/README.md) says (the
 directory is ignored by git), and `make` writes `rfoundry_gd88_codec.bin` and `rfoundry_gd88b_codec.bin`: the install image with
-the codec merged in. Without the files, `tools/hrc7000_codec.py --board gd88 --stock A_FILE` and `--board gd88b
---stock B_FILE` do the same. The web flasher can also take the codec from the radio (step 5). **Never commit, share or
+the codec merged in. Both SoCs run A's codec, so the A file is enough for both. Without the files,
+`tools/hrc7000_codec.py --board gd88 --stock A_FILE` and `--board gd88b --stock A_FILE` do the same (B's own file
+also works for B). The web flasher can also take the codec from the radio (step 5), and installs B with the codec
+slot it wrote to A. **Never commit, share or
 upload a merged image.**
 
 ## 2. Safety rules for the day

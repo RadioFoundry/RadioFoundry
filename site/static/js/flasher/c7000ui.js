@@ -47,7 +47,7 @@ let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFini
 const S = () => ctx.S;
 const C = () => ctx.fb().c7000;
 const boardId = () => S().radio.flash.board;
-const store = (what) => `c7000-${what}-${boardId()}`;
+const store = (what, board = boardId()) => `c7000-${what}-${board}`;
 
 // What a board's radios.json flash data adds (iapui.js): stock_console, the stub started through the stock firmware's
 // debug console (usmart.js); update_mode, the radio's own factory update mode, by protocol: the way in when nothing
@@ -101,7 +101,7 @@ export function init(context) {
 export function factoryRoute(radio, fb) {
 	const kind = LOADERS[radio?.flash.update_mode];
 	if (!kind) return null;
-	const file = (fb.c7000?.profiles || []).some((p) => p.board === radio.flash.board && p.stock_file);
+	const file = !!fb.c7000 && c7.profilesFor(fb.c7000, radio.flash.board).some((p) => p.stock_file);
 	return { protocol: radio.flash.update_mode, stuck: kind.stuck, needs: file ? "file" : "backup" };
 }
 
@@ -793,9 +793,16 @@ export function checkView() {
 		const slotInFlash = c.slotBytes && (await c7.parseSlot(C(), boardId(), c.slotBytes)) ? c.slotBytes : null;
 		// a version 1 slot from before the codec moved, on the radio or saved here, rebuilt (c7000v1.js, temporary)
 		const movedSlot = slotInFlash ? null : (await upgradeSlot(C(), boardId(), c.slot)) || (saved ? await upgradeSlot(C(), boardId(), saved) : null);
-		c.decision = await c7.decide(C(), boardId(), { slotInFlash, movedSlot, savedSlot: saved, flashCodec: c.analysis.codec, fileCodec: c.fileCodec,
-			allowNone: S().c7none });
+		// a board that runs another board's codec (a second SoC, the main SoC's): the slot this browser kept for that board, from its
+		// own install moments ago, goes on as it is, so the user gives no file for it
+		let donorSlot = null;
+		for (const id of c7.codecDonors(C(), boardId())) donorSlot ||= await getBlob(store("slot", id));
+		c.decision = await c7.decide(C(), boardId(), { slotInFlash, movedSlot, donorSlot, savedSlot: saved, flashCodec: c.analysis.codec,
+			fileCodec: c.fileCodec, allowNone: S().c7none });
 		const d = c.decision;
+		// a slot made from a file (or taken from the first SoC) is kept here too, as one from the radio's own read is
+		// above: a later install, or a second SoC that takes this one's codec, finds it
+		if (d?.mode === "write" && d.slot && ["file", "image", "first"].includes(d.source)) await putBlob(store("slot"), d.slot);
 		diag.note(...crumbs.c7Decision(d, c.analysis, c.fileCodec));
 		const text = !d ? t("flash.c7.codec.missing") : d.mode === "keep" ? t("flash.c7.codec.keep")
 			: d.mode === "none" ? t("flash.c7.codec.none") : t(`flash.c7.codec.from_${d.source}`, { name: d.name || "", tag: String(d.tag ?? "").padStart(3, "0") });
@@ -843,6 +850,8 @@ export function checkView() {
 	// Why no codec was found, and what to select instead. A stock radio whose codec is a build without a recipe is
 	// named, so the message says that the backup is fine and only the codec needs a file
 	function codecActionText() {
+		// a board that runs another board's codec, with no slot of that board saved here: that board's file
+		if (c7.codecDonors(C(), boardId()).length) return t("flash.c7.codec.action_first", { codec_version: flash().codec_version || "" });
 		if (viaIap()) return t(`flash.factory.codec_${factoryRoute(S().radio, S().data.fb).needs}`);
 		if (c.analysis?.notRead) return t("flash.c7.codec.action_stock");
 		if (!stockRadio()) return t("flash.c7.codec.action_text");
@@ -1159,8 +1168,9 @@ export function hasC7Backup(bundle) {
 // returns to its original firmware without the backup from before the first installation (c7.progmemFromFile)
 export function vendorBundle(radio, file, c) {
 	const name = file.path.split("/").pop();
-	// only a file a profile of this radio names: a C-SKY codec signature alone tells no radio
-	if (file.match.kind !== "codec" || file.match.board !== radio.flash.board)
+	// only a file a profile of this radio names: a C-SKY codec signature alone tells no radio, and another SoC's file whose
+	// codec this one takes (the main SoC's file for a second SoC: vendorfile.js codecFrom) is not this SoC's firmware
+	if (file.match.kind !== "codec" || file.match.board !== radio.flash.board || file.match.codecFrom)
 		throw new c7.CodecError(`${name} is not identified as the ${radio.name}'s original firmware`, "unmapped");
 	const data = c7.progmemFromFile(c, radio.flash.board, file.data, file.match.codec?.profile?.stock_header);
 	return { meta: { radio: { board: radio.id, name: radio.name }, created: new Date().toISOString(), vendor_file: name,

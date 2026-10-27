@@ -56,12 +56,15 @@ uart = 0x14090000
 bridge = true
 nand = true
 
-# The codec slot and windows come from boards/gd88b/memory.ld
+# The codec slot and windows come from boards/gd88b/memory.ld. B runs A's codec, packed as on A (from): the user gives
+# only A's file, or the web flasher reuses A's slot; B's own files still work (hardware-gd88.md 8)
 [codec]
 tool = "hrc7000_codec"
 profile = "gd88b-2501"
-stock_version = "B49C.D64.EHRNAB.012 (2025-01-17)"
-sources = ["GD-88 B B49C.D64.EHRNAB.005 to .012 update files", "a program flash read of SoC B"]
+from = ["gd88"]
+stock_version = "B49E.D64.EOPSAB.021 (2025-01-19)"
+sources = ["GD-88 A B49E.D64.EOPSAB.013 to .021 update files (the A file, as for SoC A)", "a program flash read of SoC A",
+	"GD-88 B B49C.D64.EHRNAB.005 to .012 update files"]
 
 [frame]
 shape = "handheld"

@@ -188,9 +188,12 @@ BOARD_SCHEMA = {
                       "spi": _opt({"bus": _req(int), "mode": _req(int), "hz": _req(int)}),
                       "idle_cs": _opt(STR_LIST)}),
     }),
-    # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file
+    # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file.
+    # from: boards whose codec this board runs too, preferred to its own stock files (a second SoC that takes the first
+    # SoC's codec, so the user supplies one SoC's file): the same codec tool, slot and code window, and each one's
+    # table window inside this board's, so the slot is the same bytes on both
     "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(STR_LIST), "profile": _opt(str), "sources": _opt(STR_LIST),
-                   "installed": _opt(STR_LIST), "stock_version": _opt(str)}),
+                   "installed": _opt(STR_LIST), "stock_version": _opt(str), "from": _opt(STR_LIST)}),
     "frame": _req({"shape": _req(str), "body": _req(str), "accent": _req(str), "lens": _req(RANGE)}),
     # tests/hil: what the health checks expect (test_health.py), and the features built here but not working yet
     # (tools/bringup.py, which checks the feature ids; what the hardware lacks is config.mk's BOARD_UNSUPPORTED, code
@@ -813,6 +816,34 @@ def hardware_switches(root=ROOT):
     return {e["switch"]: e["hardware"] for e in feats.values() if e.get("switch") and e.get("hardware")}
 
 
+def codec_from_problems(bid, b, boards):
+    """[codec] from: each board named exists, isn't this one, uses the same codec tool, has the same codec slot and
+    code window start (the slot's code runs there, so its moved words are the same), and its modem SRAM table window
+    lies inside this board's (the tables go to the donor's stock addresses). Then a slot built for it is a valid slot
+    here, byte for byte."""
+    out = []
+    names = b.data["codec"].get("from", [])
+    if len(set(names)) != len(names):
+        out.append("codec.from lists each board once")
+    for other in names:
+        o = boards.get(other)
+        if o is None or other == bid:
+            out.append("codec.from %r is not another board" % other)
+            continue
+        if o.data["codec"]["tool"] != b.data["codec"]["tool"]:
+            out.append("codec.from %r: another codec tool (%s)" % (other, o.data["codec"]["tool"]))
+            continue
+        run, orun = b.window("__codec_run_lo", "__codec_run_hi"), o.window("__codec_run_lo", "__codec_run_hi")
+        tab, otab = b.window("__codec_tab_lo", "__codec_tab_hi"), o.window("__codec_tab_lo", "__codec_tab_hi")
+        if b.codec_slot is None or b.codec_slot != o.codec_slot or run is None or orun is None or run[0] != orun[0]:
+            out.append("codec.from %r: the codec slot and the code window's start must be the same on both" % other)
+        if run and orun and run[1] - run[0] < orun[1] - orun[0]:
+            out.append("codec.from %r: its code window (0x%X bytes) is bigger than this board's" % (other, orun[1] - orun[0]))
+        if tab is None or otab is None or not (tab[0] <= otab[0] and otab[1] <= tab[1]):
+            out.append("codec.from %r: its table window must lie inside this board's (__codec_tab_lo/hi)" % other)
+    return out
+
+
 def hardware_problems(bid, unsupported, unconfirmed, built, hw):
     """A board's hardware switches that read "off by default": each must be built (built: switch -> "y"/"n"), listed in
     BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (unsupported: both, with their reasons), or, while the fact is unknown, in
@@ -954,6 +985,8 @@ def check(root=ROOT):
         if codec is not None and not codec["profile"].startswith(bid + "-"):
             bad("codec.profile %r must start with %r: the firmware reports <id>-<stock tag> (RFOUNDRY_BOARD_ID)"
                 % (codec["profile"], bid + "-"))
+        for problem in codec_from_problems(bid, b, boards):
+            bad(problem)
         for sym in b.platform.data["codec_symbols"]:
             if sym not in b.symbols:
                 bad("the linker scripts define no %s (platform/%s/platform.toml codec_symbols)" % (sym, b.platform.id))
@@ -1083,6 +1116,8 @@ def rfoundry_view(boards):
             "keep_codec_supported": fl["keep_codec"],
             "first_stage": [b.first_stage[0], b.first_stage[1].hex()] if b.first_stage else None,
             "codec_tool": d["codec"]["tool"], "codec_stock": list(d["codec"].get("stock", [])),
+            # the boards whose codec this one runs too ([codec] from), preferred to its own stock files
+            "codec_from": list(d["codec"].get("from", [])),
             # a stock-file placement has no id or windows here: rfoundry reads them from its stock-file tables
             "codec": {"id": codec["profile"] if codec else None,
                       "windows": [list(w) for w in codec["windows"]] if codec else None,
@@ -1736,6 +1771,27 @@ def self_test():
                 ok(any(want in q for q in got), "check finds %s (%s)" % (what, got[:2]))
             with open(sp, "w", encoding="utf-8") as f:
                 f.write(st_good)
+        # a board that runs another board's codec ([codec] from): that board must exist, and its table window must
+        # lie inside this board's
+        fr = next((b for b in board_dirs(tmp) if re.search(r"(?m)^from = \[", open(os.path.join(tmp, "boards", b,
+                                                                                         "board.toml")).read())), None)
+        if fr:
+            ok(not any("codec.from" in p for p in check(tmp)), "a [codec] from whose windows agree passes")
+            fp = os.path.join(tmp, "boards", fr, "board.toml")
+            fr_good = open(fp, encoding="utf-8").read()
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(re.sub(r"(?m)^from = \[.*\]$", 'from = ["no-such-board"]', fr_good))
+            ok(any("is not another board" in p for p in check(tmp)), "check finds a codec.from naming no board")
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(fr_good)
+            ld = os.path.join(tmp, "boards", fr, "memory.ld")
+            ld_good = open(ld, encoding="utf-8").read()
+            with open(ld, "w", encoding="utf-8") as f:
+                f.write(re.sub(r"(?m)^(__codec_tab_hi\s*=\s*)0x[0-9A-Fa-f]+;", r"\g<1>0x18000004;", ld_good))
+            ok(any("table window must lie inside" in p for p in check(tmp)),
+               "check finds a codec.from whose tables fall outside this board's window")
+            with open(ld, "w", encoding="utf-8") as f:
+                f.write(ld_good)
         # the build view's file names against the Makefile's
         mkf = os.path.join(tmp, "Makefile")
         mkf_good = open(mkf, encoding="utf-8").read()
