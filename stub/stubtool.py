@@ -551,6 +551,20 @@ PROTECT_MEM = {"progmem": "progmem", "q128": "data", "nand": "nand"}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
 
 
+def image_board_check(image, board):
+    """Why a RadioFoundry image is not for the C7_BOARDS board `board`, or None. Every RadioFoundry build carries its
+    board's name (board_t .name, the debug link's board=) as a C string, so an image without the target's is another
+    radio's. Images that aren't RadioFoundry (a stock firmware being put back) and unknown boards are not judged."""
+    prof = C7_BOARDS.get(board)
+    if prof is None or not prof["names"] or b"RadioFoundry" not in image:
+        return None
+    if any(n.encode() + b"\0" in image for n in prof["names"]):
+        return None
+    other = [b["name"] for k, b in sorted(C7_BOARDS.items()) if k != board and any(n.encode() + b"\0" in image for n in b["names"])]
+    return "this RadioFoundry image is %s, not for the %s" % ("for the " + ", ".join(other) if other else "for another radio",
+                                                              prof["name"])
+
+
 def c7_board(name):
     """The C7_BOARDS key for a board id or a VERSION board= name, or None."""
     for bid, b in C7_BOARDS.items():
@@ -1044,7 +1058,7 @@ class Radio:
         raise DumpError("no answer from RadioFoundry's debug link to command 0x%02X (is RadioFoundry running with CONFIG_STUB_ENTRY=y and "
                         "the programming cable on UART0 at 115200?)" % cmd)
 
-    def rfoundry_enter(self, image=None, entry=None, board=None):
+    def rfoundry_enter(self, image=None, entry=None, board=None, force=False):
         """Load the stub into a running RadioFoundry's free RAM over its debug link and jump to it (radio ON, RadioFoundry running). Without
         `image` the embedded stub whose base is the span RadioFoundry reports in STUB INFO is used; a given image must be linked
         for that span (checked). Afterwards the stub answers on the same port. Recover the radio with a power cycle
@@ -1055,8 +1069,11 @@ class Radio:
         elif name and board in C7_BOARDS and name not in C7_BOARDS[board]["names"]:
             # Two cables with one serial number can swap names when they re-enumerate: a GD-88 image once went into a
             # DM-32UV this way, because --board was trusted over what the radio said it is
-            raise DumpError("the radio on this port runs RadioFoundry for the %s, not the %s that --board names: wrong port? "
-                            "Nothing was sent" % (name, C7_BOARDS[board]["name"]))
+            why = ("the radio on this port runs RadioFoundry for the %s, not the %s that --board names"
+                   % (name, C7_BOARDS[board]["name"]))
+            if not force:
+                raise DumpError(why + ": wrong port? Nothing was sent (--force goes ahead anyway)")
+            self.log("warning: %s; going ahead (--force)" % why)
         r = self.dl_request(DL_STUB, b"\x00")
         if r[0] != 0 or len(r) < 19 or int.from_bytes(r[1:5], "little") != STUB_MAGIC:
             raise DumpError("RadioFoundry's STUB info refused or malformed (%s): firmware built without CONFIG_STUB_ENTRY?" % r.hex())
@@ -2463,6 +2480,19 @@ def self_test():
     rfoundry = FakeRFoundry((0x44000, 0x14000))
     ro = Radio(rfoundry, log=quiet)
     ro.attach = lambda: None
+    ro.rfoundry_enter(board=other, force=True)
+    check(rfoundry.entered, "--force enters anyway")
+    nm = {k: C7_BOARDS[k]["names"][0].encode() + b"\0" for k in C7_BOARDS if C7_BOARDS[k]["names"]}
+    a_, b_ = sorted(nm)[:2]
+    img = b"\0" * 64 + b"RadioFoundry\0" + nm[a_] + b"\xff" * 64
+    check(image_board_check(img, a_) is None, "an image naming its own board passes")
+    why = image_board_check(img, b_)
+    check(why is not None and C7_BOARDS[a_]["name"] in why, "an image for the %s refused for the %s: %s" % (a_, b_, why))
+    check(image_board_check(b"stock firmware" + nm[a_], b_) is None, "a stock image is not judged")
+    check(image_board_check(img, None) is None, "no target board: not judged")
+    rfoundry = FakeRFoundry((0x44000, 0x14000))
+    ro = Radio(rfoundry, log=quiet)
+    ro.attach = lambda: None
     ro.rfoundry_enter(board=c7_board("DB25-D"))
     check(rfoundry.entered, "rfoundry_enter takes a --board the running firmware reports")
     rfoundry = FakeRFoundry((0x2F000, 0x4000))                    # a span that would overlap the run copy: refused before BEGIN
@@ -2808,6 +2838,9 @@ def main(argv=None):
                     help="power-on load: write and start the stub at ADDR (default 0x%X). The universal stub runs from any "
                          "base that doesn't overlap its run area; a legacy stub must be linked for it (the DB25-D's first stage "
                          "took the legacy 0x30000 stub at 0x30000)" % LOAD_ADDR)
+    ap.add_argument("--force", action="store_true",
+                    help="write even when the radio's firmware or the image names another board than the one targeted. Two "
+                         "cables with one serial number can swap port names, so a refusal usually means the wrong port")
     ap.add_argument("--board", choices=sorted(b.id for b in rfoundryboards.BOARDS.values()
                                               if b.stub or "stub/stm32f4" in b.platform_stubs),
                     help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (%s: the board profile the "
@@ -2871,13 +2904,20 @@ def main(argv=None):
                     print("RadioFoundry reports board %r: not one with a stub profile, using the generic one" % name)
         if a.board in f4stub.BOARDS:
             return f4stub.run(a, port, reopen)
+        if a.write_app:                         # before the stub goes in: a refusal leaves the radio as it was
+            why = image_board_check(open(a.write_app, "rb").read(), a.board)
+            if why and not a.force:
+                raise DumpError(why + ": wrong image or wrong port? Nothing was sent (--force writes it anyway)")
+            if why:
+                print("warning: %s; writing it anyway (--force)" % why)
         if a.write_q128:
             raise DumpError("--write-q128 is for the STM32 radios (DM-1701, MD-380)")
         if a.secreg or a.write_secreg:
             raise DumpError("--secreg and --write-secreg are for the STM32 radios (DM-1701, MD-380); the HR_C7000 stub has "
                             "no security register ops")
         if a.rfoundry_enter:
-            radio.rfoundry_enter(open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else ("legacy" if a.legacy_stub else None), board=a.board)
+            radio.rfoundry_enter(open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else ("legacy" if a.legacy_stub else None),
+                                 board=a.board, force=a.force)
         elif a.attach:
             radio.attach()
             radio.configure(a.board)
@@ -2920,6 +2960,12 @@ def main(argv=None):
             radio.led_sequence(steps, rep, hold)
         if a.write_app:
             image = open(a.write_app, "rb").read()
+            if a.board is None:                 # the profile a stub attached to already had: checked before any write
+                why = image_board_check(image, next((k for k, b in C7_BOARDS.items() if b is radio.profile), None))
+                if why and not a.force:
+                    raise DumpError(why + ": wrong image or wrong port? Nothing was written (--force writes it anyway)")
+                if why:
+                    print("warning: %s; writing it anyway (--force)" % why)
             t0 = time.monotonic()
             nw, nk = radio.write_image(image, replace_stage=a.replace_stage, progress=lambda i, n: print("\rwriting sector %d of %d changed" % (i + 1, n), end="", flush=True))
             print("\n%s: %d bytes, %d sectors written, %d unchanged, verified by CRC, %.0f s" % (a.write_app, len(image), nw, nk, time.monotonic() - t0))

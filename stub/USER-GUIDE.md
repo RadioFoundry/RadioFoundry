@@ -186,4 +186,8 @@ are normal, and 230400 or 921600 are not offered as such. On the cables tested s
   hangs.
 - **RadioFoundry entry says "no answer from RadioFoundry's debug link"**: the radio is not running a RadioFoundry build with the loader option, or
   the cable is on a different port. Use the switched-off method above instead.
+- **"runs RadioFoundry for the X, not the Y that --board names"** or **"this RadioFoundry image is ... not for the Y"**:
+  the cable on that port goes to another radio, or the image was built for another radio. Nothing was written. Check
+  the port (two cables of the same make can swap names after a replug) and the image. `--force` writes anyway; use it
+  only when you know the radio's firmware reports the wrong board.
 - **The radio does not start after a backup**: remove and refit the battery, then switch it on.
