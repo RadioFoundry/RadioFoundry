@@ -43,6 +43,32 @@ keep_codec = false
 stock_versions = ["909E.DBB.EARSAB.018", "909E.DBB.EARSAB.020"]
 backup = { stock = "full", rfoundry = "full", spi_size = 0 }
 
+# Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
+# as offsets in that memory, what with the spec section that establishes it
+[[flash.protect]]
+mem = "progmem"
+start = 0x1FE000
+end = 0x1FF000
+what = "factory calibration, the program flash copy (hardware-db25d.md 6, 6.1)"
+
+[[flash.protect]]
+mem = "nand"
+start = 0x0
+end = 0x20000
+what = "the stock firmware's bad-block table in physical block 0 (hardware-db25d.md 6.5; its place inferred from the shared stock NAND driver)"
+
+[[flash.protect]]
+mem = "nand"
+start = 0x280000
+end = 0x2E0000
+what = "factory calibration, the NAND copy (logical 0x280000): blocks 20-22, block 21 with no bad block below it, one up for each (hardware-db25d.md 6, 6.5; remapped by the stock bad-block table, inferred from the shared driver)"
+
+[[flash.protect]]
+mem = "nand"
+start = 0xF9C0000
+end = 0x10000000
+what = "the stock firmware's reserve pool, the top 10 good blocks: blocks 1998-2047 hold them with up to 40 bad blocks (hardware-db25d.md 6.6)"
+
 [flash.bootloader]
 hold = ["p1"]	# then power (no key of the enum: PTB12 on its own, hardware-db25d.md 3.3)
 steps = [

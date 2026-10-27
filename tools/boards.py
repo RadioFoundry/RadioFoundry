@@ -80,6 +80,14 @@ FLASH_MAP_FIELDS = ("openfw_eeprom", "openfw_flash", "openfw_end", "staging_addr
 OPENFW_FLASH_OFFSET = 0x20000
 APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one for the codec slot (no geometry)
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
+# The memories a [[flash.protect]] entry names, and what an offset in each means: progmem, the MCU's program flash from
+# the platform's flash_base; data, the SPI NOR data flash from 0; nand, the SPI NAND's main area from 0 (2 KB pages
+# without their spare bytes, block after block, as the stub tools read it); secreg, the SPI NOR flash's security
+# registers, 256 bytes each from register 1 at 0 (stub/f4stub.py's backup file)
+PROTECT_MEMS = {"progmem": "program flash", "data": "data flash", "nand": "NAND", "secreg": "security registers"}
+SECREG_LEN, SECREG_COUNT = 256, 3
+PROGMEM_SECTOR = 0x1000		# the erase sector of a program flash without a platform geometry (an SPI NOR chip)
+DATA_SECTOR = 0x1000		# an SPI NOR data flash's smallest erase (sector erase 0x20)
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
 MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
@@ -171,6 +179,11 @@ BOARD_SCHEMA = {
                             "hold": _opt(STR_LIST)}),
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
                      "key_sha256": _req(str), "key_prefix": _req(str)}),
+        # flash no tool may erase or write (PROTECT_MEMS): the factory calibration and other factory data that can't
+        # be made again. start and end (exclusive) are offsets in the memory, on its erase boundaries; what says
+        # what it is and where the spec says so (docs/dev/board-registry.md, "Protected regions")
+        "protect": _opt(("list", {"mem": _req(tuple(PROTECT_MEMS)), "start": _req(int), "end": _req(int),
+                                  "what": _req(str)})),
         # a board profile of its platform's stub (platform.toml board_stub): id and tested always, the keys the
         # platform lists in board_stub.keys, nothing another platform's stub takes
         "stub": _opt({"id": _req(int), "tested": _req(bool),
@@ -408,6 +421,26 @@ def flash_map(board_dir):
     return out
 
 
+NAND_FIELDS = ("page_size", "pages_per_block", "blocks")
+
+
+def nand_geometry(board_dir):
+    """(block bytes, blocks) of the board's spi_nand_t definition (drivers/flash/spi_nand): the main area only, as the
+    stub tools address it. None without one; a second one with other numbers is an error."""
+    out, where = None, None
+    for f, text in _c_sources(board_dir):
+        for m in re.finditer(r"\bspi_nand_t\s+\w+\s*=\s*\{", text):
+            found = {k: int(v, 0) for k, v in re.findall(r"\.(\w+)\s*=\s*(0[xX][0-9A-Fa-f]+|\d+)[uU]?\b",
+                                                        _braced(text, m.end())) if k in NAND_FIELDS}
+            if set(found) != set(NAND_FIELDS):
+                continue
+            geo = (found["page_size"] * found["pages_per_block"], found["blocks"])
+            if where is not None and geo != out:
+                raise RegistryError("%s: spi_nand_t in %s and %s differ" % (os.path.relpath(board_dir, ROOT), where, f))
+            out, where = geo, f
+    return out
+
+
 UNSUPPORTED_RE = re.compile(r"^\s*BOARD_UNSUPPORTED\s*[:+]?=([^#]*)(?:#(.*))?$")
 
 
@@ -545,6 +578,36 @@ class Board:
     @property
     def nand(self):
         return NAND_DRIVER in self.mk.get("BOARD_DIRS", "").split()
+
+    def memories(self):
+        """{mem: (size, erase boundaries)} of the PROTECT_MEMS the board has. The boundaries: a step in bytes, or the
+        sorted offsets of a sector geometry (the platform's, for a program flash with one). The program flash's size is
+        the stub profile's progmem where it gives one, else the end of the geometry; the data flash's is [flash] backup
+        spi_size (a board without one has 0); the NAND's comes from its spi_nand_t."""
+        base = self.platform.data["flash_base"]
+        name = self.sector_name()
+        geo = self.platform.data["sectors"].get(name) if name != APP_SLOT else None
+        stub = self.data["flash"].get("stub") or {}
+        if geo:
+            size = stub.get("progmem", geo[-1][1] + geo[-1][2] - base)
+            prog = (size, sorted({s[1] - base for s in geo} | {s[1] + s[2] - base for s in geo}))
+        else:
+            prog = (stub.get("progmem", self.flash_end() - base), PROGMEM_SECTOR)
+        out = {"progmem": prog}
+        spi = self.data["flash"]["backup"]["spi_size"]
+        if spi and not self.nand:
+            out["data"] = (spi, DATA_SECTOR)
+            out["secreg"] = (SECREG_LEN * SECREG_COUNT, SECREG_LEN)
+        geo = getattr(self, "nand_geo", None)
+        if self.nand and geo:
+            out["nand"] = (geo[0] * geo[1], geo[0])
+        return out
+
+    @property
+    def protect(self):
+        """[[flash.protect]], in memory and address order."""
+        return sorted((dict(p) for p in self.data["flash"].get("protect", [])),
+                      key=lambda p: (list(PROTECT_MEMS).index(p["mem"]), p["start"]))
 
     def debuglink_names(self):
         """The VERSION board= values that mean this board: board_t's name (or each build option value's), the
@@ -741,6 +804,7 @@ def load(root=ROOT, only=None):
                          {**unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
                           **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(srcs))
         out[bid].volts = source_volts(srcs)
+        out[bid].nand_geo = nand_geometry(srcs) if out[bid].nand else None
         nw = {**not_written_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
               **not_written_reasons(os.path.join(bdir, "config.mk"))}
         out[bid].not_written = {s: nw.get(s, "") for s in mk.get("BOARD_NOT_WRITTEN", "").split()}
@@ -834,6 +898,40 @@ def hardware_problems(bid, unsupported, unconfirmed, built, hw):
     return out
 
 
+def protect_problems(entries, mems, owned=()):
+    """Why a board's [[flash.protect]] entries can't stand: a memory the board lacks, an empty or reversed range, one
+    past the memory's end or off its erase boundaries, an overlap with another entry, or with flash the firmware owns
+    (owned: [(mem, start, end, what)], the application and the codec slot), which every install would then be refused.
+    mems: Board.memories()."""
+    out = []
+    for i, p in enumerate(entries):
+        m, lo, hi = p["mem"], p["start"], p["end"]
+        tag = "flash.protect[%d] (%s 0x%X-0x%X)" % (i, m, lo, hi)
+        if m not in mems:
+            out.append("%s: the board has no %s (it has %s)" % (tag, PROTECT_MEMS[m], ", ".join(sorted(mems))))
+            continue
+        size, step = mems[m]
+        if not 0 <= lo < hi:
+            out.append("%s: start must be below end (end is exclusive)" % tag)
+            continue
+        if hi > size:
+            out.append("%s: past the end of the %s (0x%X bytes)" % (tag, PROTECT_MEMS[m], size))
+        bounds = (lambda a: a % step == 0) if isinstance(step, int) else (lambda a: a in step or a == size)
+        if not (bounds(lo) and bounds(hi)):
+            out.append("%s: start and end must be on the %s's erase boundaries (%s)" % (
+                tag, PROTECT_MEMS[m], "0x%X" % step if isinstance(step, int) else "its sectors"))
+        if not p["what"].strip() or not re.search(r"\(.*\d.*\)", p["what"]):
+            out.append("%s: what names the data and cites the spec section, e.g. \"factory calibration "
+                       "(hardware-<radio>.md 6.1)\"" % tag)
+        for q in entries[:i]:
+            if q["mem"] == m and q["start"] < hi and lo < q["end"]:
+                out.append("%s overlaps the entry for %s 0x%X-0x%X" % (tag, m, q["start"], q["end"]))
+        for om, olo, ohi, what in owned:
+            if om == m and olo < hi and lo < ohi:
+                out.append("%s overlaps %s (0x%X-0x%X), which every install writes" % (tag, what, olo, ohi))
+    return out
+
+
 def check(root=ROOT):
     """Every problem found, as strings (empty: the registry is consistent)."""
     problems = []
@@ -919,6 +1017,12 @@ def check(root=ROOT):
         except RegistryError as e:
             problems.append(str(e))
             continue
+        base = b.platform.data["flash_base"]
+        owned = [("progmem", b.app_base - base, b.app_region[1] - base, "the application")]
+        if b.codec_slot:
+            owned.append(("progmem", b.codec_slot[0] - base, b.codec_slot[1] - base, "the codec slot"))
+        for why in protect_problems(b.protect, b.memories(), owned):
+            bad(why)
         for (_, a0, s0), (_, a1, _) in zip(secs, secs[1:]):
             if a0 + s0 > a1:
                 bad("flash sectors overlap or are out of order at 0x%08X" % a1)
@@ -1070,6 +1174,8 @@ def rfoundry_view(boards):
             "rom_base": b.platform.data["flash_base"],
             "app_base": b.app_base, "flash_end": b.flash_end(), "app_region": list(b.app_region),
             "sectors": [list(s) for s in b.sectors()], "protected": [list(p) for p in b.protected],
+            # [[flash.protect]]: what no tool erases or writes, by memory, offsets from the memory's start (rfoundry/protect.py)
+            "protect": b.protect,
             "keep_codec_supported": fl["keep_codec"],
             "first_stage": [b.first_stage[0], b.first_stage[1].hex()] if b.first_stage else None,
             "codec_tool": d["codec"]["tool"], "codec_stock": list(d["codec"].get("stock", [])),
@@ -1176,7 +1282,9 @@ def site_view(boards, root=ROOT):
                  "first_stage": {"size": b.first_stage[0], "head": b.first_stage[1].hex()} if b.first_stage else None,
                  "stock_console": stub.get("stock_console"), "update_mode": b.family["update_mode"],
                  "read_rate": stub.get("read_rate"), "codec_version": d["codec"].get("stock_version"),
-                 "build_options": json.loads(json.dumps(d.get("build_options", [])))}
+                 "build_options": json.loads(json.dumps(d.get("build_options", []))),
+                 # what no write may touch ([[flash.protect]], site/static/js/flasher/protect.js)
+                 "protect": b.protect}
         if "stock_download" in fl:
             flash["stock_download"] = fl["stock_download"]
         if "notice" in fl:
@@ -1407,6 +1515,28 @@ def self_test():
         except RegistryError:
             ok(True, "validate refuses: " + what)
     ok(lookup({"v": [{"id": "a"}, {"id": "b"}]}, "v.id") == ["a", "b"], "lookup maps over lists")
+    # [[flash.protect]]: a 1 MB program flash with 4 KB sectors, an STM32-like geometry, a 16 MB data flash
+    mems = {"progmem": (0x100000, 0x1000), "data": (0x1000000, 0x1000), "secreg": (0x300, 0x100)}
+    geo = {"progmem": (0x100000, [0, 0x4000, 0x8000, 0x10000, 0x20000, 0x100000])}
+    owned = [("progmem", 0xC000, 0xE8000, "the application")]
+
+    def pe(mem, start, end, what="factory calibration (hardware-x.md 6.1)"):
+        return {"mem": mem, "start": start, "end": end, "what": what}
+    ok(protect_problems([pe("progmem", 0xFE000, 0xFF000), pe("data", 0x1000, 0xC9000), pe("secreg", 0, 0x200)],
+                        mems, owned) == [], "protect: aligned entries inside their memories pass")
+    for ents, ms, want in (
+            ([pe("nand", 0, 0x20000)], mems, "has no NAND"),
+            ([pe("progmem", 0xFE800, 0xFF000)], mems, "erase boundaries"),
+            ([pe("progmem", 0x4000, 0xC000)], geo, "erase boundaries"),
+            ([pe("progmem", 0xFF000, 0x101000)], mems, "past the end"),
+            ([pe("data", 0x2000, 0x2000)], mems, "below end"),
+            ([pe("data", 0x1000, 0x3000), pe("data", 0x2000, 0x4000)], mems, "overlaps the entry"),
+            ([pe("progmem", 0xE0000, 0xF0000)], mems, "every install writes"),
+            ([pe("secreg", 0x80, 0x100)], mems, "erase boundaries"),
+            ([pe("data", 0, 0x1000, "calibration")], mems, "cites the spec")):
+        got = protect_problems(ents, ms, owned)
+        ok(len(got) == 1 and want in got[0], "protect refuses: %s %r" % (want, got))
+    ok(protect_problems([pe("progmem", 0x8000, 0x10000)], geo) == [], "protect: on a geometry's sector boundaries")
     tmpm = tempfile.mkdtemp(prefix="rfoundry-boards-mk-")
     with open(os.path.join(tmpm, "config.mk"), "w", encoding="utf-8") as f:
         f.write("# BOARD_UNSUPPORTED += NO\nBOARD_UNSUPPORTED += USB\t# no USB port\nBOARD_UNSUPPORTED += AM_RX\n"
