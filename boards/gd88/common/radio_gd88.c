@@ -153,6 +153,12 @@ static void init(void)
 
 	bk4819_attach(&rf_main, &bus_main);
 	bk4819_attach(&rf_lo, &bus_lo);
+#if CONFIG_DMR
+	// Before the chip check: the modem's PCM audio (beeps, DMR voice) needs it attached even on a radio whose RF chips
+	// aren't driven here. A beep on a NULL modem faulted the radio task at every PTT press (LO chip 0x1100, 2026-10-26).
+	// set_mode(), rx() and tx() still refuse to use DMR or RF on such a radio
+	gd88_dmr_init(&rf_main, &modem);
+#endif
 	main_id = bk4819_read(&rf_main, BK4819_REG_ID);
 	lo_id = bk4819_read(&rf_lo, BK4819_REG_ID);
 	// TODO(gd88): unknown, needs a radio: which RF chips are fitted. The set-up also knows FD6818, 0x7813, AT1846 and
@@ -165,9 +171,6 @@ static void init(void)
 	bk4819_write(&rf_main, BK4819_REG_PA, BK4819_PA_MAX);	// 0xBF once, never changed
 	bk4819_init_lo(&rf_lo, BK4819_LO_PA_MAX);
 	bk4819_analog_mode(&rf_main);
-#if CONFIG_DMR
-	gd88_dmr_init(&rf_main, &modem);
-#endif
 }
 
 static void volume_apply(void);
