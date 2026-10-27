@@ -176,6 +176,12 @@ BOARD_SCHEMA = {
         "stub": _opt({"id": _req(int), "tested": _req(bool),
                       "hold_power": _opt(bool), "progmem": _opt(int),	# the HR_C7000 universal stub
                       "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int),
+                      # where the factory calibration is, for a backup: in a data flash, the 4 KB page of the stock
+                      # codeplug area [0, area) whose last byte is page_id; on a radio whose data memory is a NAND,
+                      # the 4 KB sectors of the program flash (progmem) and the NAND (nand) that each hold a copy
+                      # starting with magic
+                      "calibration": _opt({"area": _opt(int), "page_id": _opt(int),
+                                           "progmem": _opt(int), "nand": _opt(int), "magic": _opt(str)}),
                       # the STM32F4 stub: the SPI flash's bus (SPIn), mode and fastest clock; the pins come from pins.h
                       # (F4_SPI_PINS), and idle_cs names other chip selects on that bus to hold high
                       "spi": _opt({"bus": _req(int), "mode": _req(int), "hz": _req(int)}),
@@ -569,6 +575,8 @@ class Board:
             out.update(latch=self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
                        key=self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, nand=self.nand,
                        progmem=s["progmem"], stock_console=s.get("stock_console"))
+            if "calibration" in s:
+                out["calibration"] = s["calibration"]
         return out
 
     def codeplug(self):
@@ -962,6 +970,12 @@ def check(root=ROOT):
                         bad("flash.stub needs %s on platform %s (platform.toml board_stub.keys)" % (k, b.platform.id))
                 for k in set(stub) - {"id", "tested"} - set(bs["keys"]) - set(bs["optional"]):
                     bad("flash.stub %s is not a key of the %s stub (platform.toml board_stub)" % (k, bs["tool"]))
+                cal = stub.get("calibration")
+                if cal is not None and set(cal) not in ({"area", "page_id"}, {"progmem", "nand", "magic"}):
+                    bad("flash.stub calibration is either {area, page_id} (a data flash) or {progmem, nand, magic} (a NAND)")
+                if cal is not None and ("nand" in cal) != b.nand:
+                    bad("flash.stub calibration names %s, but the data memory is %s" % ("the NAND" if "nand" in cal else "a data flash",
+                        "a NAND" if b.nand else "a data flash"))
                 # ids are per stub: each stub has its own table of boards
                 if stub["id"] == STUB_TEST_ID:
                     bad("flash.stub id 0x%02X is reserved for the stub tools' test profiles" % STUB_TEST_ID)

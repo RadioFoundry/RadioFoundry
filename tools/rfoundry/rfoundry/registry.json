@@ -97,7 +97,12 @@
     "key": 44,
     "nand": true,
     "progmem": 2097152,
-    "stock_console": "usmart"
+    "stock_console": "usmart",
+    "calibration": {
+     "progmem": 2088960,
+     "nand": 2621440,
+     "magic": "TUNE"
+    }
    },
    "build_options": [],
    "cps_radio_types": [
@@ -357,7 +362,11 @@
     "key": 255,
     "nand": false,
     "progmem": 1048576,
-    "stock_console": null
+    "stock_console": null,
+    "calibration": {
+     "area": 823296,
+     "page_id": 2
+    }
    },
    "build_options": [],
    "cps_radio_types": []
@@ -456,7 +465,11 @@
     "key": 255,
     "nand": false,
     "progmem": 1048576,
-    "stock_console": null
+    "stock_console": null,
+    "calibration": {
+     "area": 823296,
+     "page_id": 2
+    }
    },
    "build_options": [],
    "cps_radio_types": []
