@@ -145,6 +145,7 @@ static void op_status(rx2_status_t *st)
 {
 	radio_status_t rs;
 	gd88_radio.status(&rs);
+	st->tuned = tuned;	// the link reports tuned only while this says so: without it A gave up on B after 1.5 s
 	st->rssi_dbm = rs.rssi_dbm;
 	st->noise = rs.noise;
 	st->active = false;

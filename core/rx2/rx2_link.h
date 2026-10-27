@@ -161,7 +161,9 @@ typedef struct {
 	bool (*tune)(const rx2_tune_t *t);	// false: refused
 	void (*stop)(void);
 	void (*audio)(bool on, uint8_t volume);
-	void (*status)(rx2_status_t *st);	// the receiver's state now (up, tuned and heard are filled in here)
+	// The receiver's state now. tuned: on the last tune's settings (the link also needs a tune it accepted); up and
+	// heard are filled in by the link
+	void (*status)(rx2_status_t *st);
 	void (*stub)(void);			// RX2_STUB: never returns on the radio
 	void (*reset)(void);			// RX2_RESET
 	void (*led)(uint8_t leds);		// RX2_LED; NULL: no LEDs

@@ -35,7 +35,7 @@ static void send_recv(const uint8_t *b, uint16_t n)
 // The receiver's radio
 static rx2_tune_t b_tune;
 static int b_tunes, b_stops, b_stubs, b_resets;
-static bool b_audio, b_active, b_refuse;
+static bool b_audio, b_active, b_refuse, b_off_settings;
 static uint8_t b_volume;
 
 static bool b_do_tune(const rx2_tune_t *t)
@@ -51,7 +51,7 @@ static void b_do_stop(void) { b_stops++; }
 static void b_do_audio(bool on, uint8_t volume) { b_audio = on; b_volume = volume; }
 static void b_do_status(rx2_status_t *st)
 {
-	st->tuned = true;
+	st->tuned = !b_off_settings;
 	st->active = b_active;
 	st->dmr = b_active;
 	st->group = true;
@@ -290,6 +290,16 @@ static void test_link(void)
 	t.rx_hz = 145600000u;
 	rx2_main_tune(&m, &t, now);
 	now = run(now, 100, true);
+
+	// Accepted, but the board says it isn't on the settings: not tuned until it says it is (the status op's word)
+	b_off_settings = true;
+	now = run(now, RX2_STATUS_EVERY_MS + 100u, true);
+	rx2_main_status(&m, &st);
+	CHECK(!st.tuned);
+	b_off_settings = false;
+	now = run(now, RX2_STATUS_EVERY_MS + 100u, true);
+	rx2_main_status(&m, &st);
+	CHECK(st.tuned);
 
 	// The receiver goes silent: down after RX2_ALIVE_MS, nothing active
 	now = run(now, RX2_ALIVE_MS + 100u, false);
