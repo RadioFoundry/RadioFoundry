@@ -43,10 +43,13 @@ CODEC_SIG = (0x152514D8, 0x74C776CD)
 # slot in program flash, the codec window at the top of SRAM (the slot's code runs at its start; sized for the largest
 # code among the board's maps), the modem SRAM table window (docs/spec/codec-placement.md), and what the web flasher
 # needs beyond the codec (site/rfoundrysite/repo.py c7000_flash): the program flash size, whether the SPI0 chip select the
-# data flash sits on has one (not on a radio with the SPI NAND there). The image starts at app_base.
+# data flash sits on has one (not on a radio with the SPI NAND there). The image starts at app_base. codec_boards: the
+# boards whose stock files and program flash reads give this board its codec, preferred first: the boards its [codec]
+# from names (a second SoC that runs the first SoC's codec, packed identically), then its own
 BOARDS = {b.id: {"slot": b.codec_slot, "run": b.codec_run, "tables": b.codec_tables, "app_base": b.app_base,
                  "progmem_size": b.stub["progmem"] if b.stub else 0x100000,
-                 "data_flash": not (b.stub and b.stub["nand"])}
+                 "data_flash": not (b.stub and b.stub["nand"]),
+                 "codec_boards": tuple(getattr(b, "codec_from", None) or ()) + (b.id,)}
           for b in boards.BOARDS.values() if b.codec_tool == "hrc7000_codec"}
 PROGMEM_BASE = 0x03000000   # a program flash dump starts here
 
@@ -221,10 +224,13 @@ PROFILES.update({
     },
 })
 # GD-88: two HR_C7000 SoCs, each with its own plain image linked at 0x0300C000 (hardware-gd88.md 1, 8). A is the main
-# SoC (board gd88), B the second transceiver (board gd88b); each carries its own copy of the codec, so each board merges
-# from its own file. 2023-03 and later: the DB25-D 018 code (0x12B20 bytes, the same entry offsets), run at 0x1795C
-# (2023) or 0x1CEB0 (2024 on). 2022-10: the DB25-D 020 compile (0x131E4 bytes, its entry offsets). The table window is
-# the DB25-D's, found by content; in A the last 47 bytes after the tables hold other data, so A's window hash differs
+# SoC (board gd88), B the second transceiver (board gd88b). Each vendor image carries its own copy of the codec, but
+# RadioFoundry puts A's codec on both: boards/gd88b/board.toml [codec] from = ["gd88"], so an A file (or a program flash
+# read of A) gives B the same slot, byte for byte, as A gets: both boards have the same slot and code window, and B's
+# table window covers A's builds. The user only ever supplies A's file; B's files stay accepted for B.
+# 2023-03 and later: the DB25-D 018 code (0x12B20 bytes, the same entry offsets), run at 0x1795C (2023) or 0x1CEB0 (2024
+# on). 2022-10: the DB25-D 020 compile (0x131E4 bytes, its entry offsets). The table window is the DB25-D's, found by
+# content; in A the last 47 bytes after the tables hold other data, so A's window hash differs
 _GD88_ENTRIES = _DB25D_ENTRIES
 _GD88_2210_ENTRIES = {"decode": 0x0, "encode": 0x294, "dec_init": 0xE8, "dec_set": 0xA4, "enc_init": 0x400,
                       "enc_set": 0x32C, "fec_init": 0x1EB8}
@@ -311,6 +317,8 @@ EPILOG = """\
 examples:
   %(prog)s --stock DM32.01.01.049.bin
   %(prog)s --stock DM32.01.01.049.bin --image build/dm32/rfoundry_dm32.bin -o build/dm32/rfoundry_dm32_codec.bin
+  %(prog)s --board gd88b --stock <the GD-88's A file> --image build/gd88b/rfoundry_gd88b_install.bin \\
+      -o build/gd88b/rfoundry_gd88b_codec.bin           (SoC B runs A's codec)
   %(prog)s --self-test
 
 then:  tools/serial_loader.py --model dm32 build/dm32/rfoundry_dm32_codec.bin --wrap build/dm32/rfoundry_dm32_codec_BFUV32.bin
@@ -320,6 +328,27 @@ then:  tools/serial_loader.py --model dm32 build/dm32/rfoundry_dm32_codec.bin --
 
 class ExtractError(Exception):
     pass
+
+
+def serves(prof, board):
+    """Whether a profile's codec can go into this board's slot: any board when board is None, else a profile of one of
+    the board's codec_boards (its own, or a board its [codec] from names)."""
+    return board is None or prof["board"] in BOARDS.get(board, {}).get("codec_boards", (board,))
+
+
+def source_rank(prof, board):
+    """Where a profile stands among the board's codec sources, 0 the most preferred: tools/codec_auto.py picks by it
+    when codecs/ holds files of several of them."""
+    order = BOARDS.get(board, {}).get("codec_boards", (board,))
+    return order.index(prof["board"]) if prof["board"] in order else len(order)
+
+
+def for_board(prof, board):
+    """The profile as a merge for board takes it: the windows and the slot are that board's, the codec the profile's
+    ("source_board" names whose stock file it came from)."""
+    if board is None or prof["board"] == board:
+        return prof
+    return dict(prof, board=board, source_board=prof["board"])
 
 
 def sha256(data):
@@ -347,11 +376,14 @@ def locate(dump, profiles=None, board=None):
     """A known codec anywhere in a program flash dump (1 MB from 0x03000000). Each stock version links the codec to its
     own flash addresses (DM-32 047 and 049 hold the same code, 0x3C bytes apart), so it is found by content: the code
     starts with the signature words and the tables by TABLES_HEAD_CRC, both 4-byte aligned, and each window must match
-    a profile's SHA-256. Returns the profile with the addresses found (kind "progmem"), else None."""
+    a profile's SHA-256. A read of a larger program flash (the GD-88's 2 MB) is searched in its first 1 MB, where the
+    application lies, as the web flasher does (c7000.js lowPart). Returns the profile with the addresses found (kind
+    "progmem"), else None."""
     profiles = PROFILES if profiles is None else profiles
-    profiles = [p for p in profiles.values() if board in (None, p["board"]) and "code_sha256" in p]
-    if len(dump) != PROGMEM_SIZE or not profiles:
+    profiles = [p for p in profiles.values() if serves(p, board) and "code_sha256" in p]
+    if len(dump) not in {PROGMEM_SIZE} | {b["progmem_size"] for b in BOARDS.values()} or not profiles:
         return None
+    dump = dump[:PROGMEM_SIZE]
     sig = struct.pack("<2I", *CODEC_SIG)
     heads = None
     at = dump.find(sig)
@@ -377,7 +409,7 @@ def locate(dump, profiles=None, board=None):
 def identify(stock, profiles=None, board=None):
     """The profile a stock file matches (whole-file SHA-256, or a program flash dump by its windows), else None."""
     profiles = PROFILES if profiles is None else profiles
-    mine = {h: p for h, p in profiles.items() if board in (None, p["board"])}
+    mine = {h: p for h, p in profiles.items() if serves(p, board)}
     prof = mine.get(sha256(stock))
     if prof is not None and prof.get("kind") != "progmem":
         return prof
@@ -411,9 +443,10 @@ def parse_slot(slot):
 
 
 def extract(stock, profiles=None, board=None):
-    """Check the stock file and return (profile, code bytes, table bytes)."""
+    """Check the stock file and return (profile, code bytes, table bytes). With board, the profile is that board's
+    (for_board): a file of a board it takes its codec from merges into this board's slot."""
     profiles = PROFILES if profiles is None else profiles
-    profiles = {h: p for h, p in profiles.items() if board in (None, p["board"])}
+    profiles = {h: p for h, p in profiles.items() if serves(p, board)}
     digest = sha256(stock)
     prof = identify(stock, profiles, board)
     if prof is None:
@@ -425,7 +458,7 @@ def extract(stock, profiles=None, board=None):
     code, tables = carve(stock, prof)
     if struct.unpack_from("<2I", code, 0) != CODEC_SIG:
         raise ExtractError("codec signature words not found at the code window")
-    return prof, code, tables
+    return for_board(prof, board), code, tables
 
 
 def codec_map(code, maps=None):
@@ -619,12 +652,16 @@ def self_test():
     check(f25[4] == 0x1CEB0 and f25[7] == 0x180014AC and f25[3] == 0x12B20 and f25[6] == 0x2D50, "DB25-D windows")
     check(f25[8:15] == (0, 0x260, 0xB4, 0x84, 0x314, 0x2E4, 0x1DCC) and f25[15] == 2501, "DB25-D entry points and tag")
     check(len(slot25) <= BOARDS["db25d"]["slot"][1] - BOARDS["db25d"]["slot"][0], "DB25-D slot fits")
-    for key, prof in PROFILES.items():
-        lay = BOARDS[prof["board"]]
-        c0, cl, cr = prof["code"]
-        t0, tl, tr = prof["tables"]
-        check(cl <= lay["run"][1] - lay["run"][0], "%s: code fits the codec window" % prof["name"])
-        check(lay["tables"][0] <= tr and tr + tl <= lay["tables"][1], "%s: tables inside the table window" % prof["name"])
+    # every profile fits every board it serves: its own, and each board that takes its codec from it
+    for bid, lay in BOARDS.items():
+        for key, prof in PROFILES.items():
+            if not serves(prof, bid):
+                continue
+            c0, cl, cr = prof["code"]
+            t0, tl, tr = prof["tables"]
+            check(cl <= lay["run"][1] - lay["run"][0], "%s: code fits %s's codec window" % (prof["name"], bid))
+            check(lay["tables"][0] <= tr and tr + tl <= lay["tables"][1],
+                  "%s: tables inside %s's table window" % (prof["name"], bid))
     expect_error(lambda: extract(plain, {sha256(plain): dict(d25)}, board="dm32"), "DB25-D file refused for the DM-32")
 
     # The DB25-D's 020: no vendor file, found in a program flash read by its windows; another run address and entries
@@ -649,6 +686,51 @@ def self_test():
     check(f20[8:15] == (0, 0x294, 0xE8, 0xA4, 0x400, 0x32C, 0x1CE4) and f20[7] == 0x18001610, "DB25-D 020 entries and tables")
     check((BOARDS["db25d"]["run"][0] - 0x180B8) % 4 == 0 and (BOARDS["db25d"]["run"][0] - 0x1CEB0) % 4 == 0,
           "DB25-D window keeps both builds' word alignment")
+
+    # A board that takes another board's codec (the GD-88's B takes A's): an A file gives B the slot A gets, byte for
+    # byte, from A's stock file or a program flash read of A; B's own files stay accepted for B, never for A
+    for bid, lay in BOARDS.items():
+        for donor in lay["codec_boards"][:-1]:
+            check(BOARDS[donor]["slot"] == lay["slot"] and BOARDS[donor]["run"][0] == lay["run"][0],
+                  "%s and %s: the same slot and code window, so the slot is the same" % (bid, donor))
+    if "gd88b" in BOARDS:
+        check(BOARDS["gd88b"]["codec_boards"] == ("gd88", "gd88b"), "gd88b takes A's codec first, then its own")
+        pa = next(p for p in PROFILES.values() if p["board"] == "gd88" and p["tag"] == 2501)
+        (ca, cla, cra), (ta, tla, tra) = pa["code"], pa["tables"]
+        afile = bytearray(pa["size"])
+        acode = bytearray(os.urandom(cla))
+        struct.pack_into("<2I", acode, 0, *CODEC_SIG)
+        acode = bytes(acode)
+        atab = os.urandom(tla)
+        afile[file_offset(ca, 0):file_offset(ca, 0) + cla] = acode
+        afile[file_offset(ta, 0):file_offset(ta, 0) + tla] = atab
+        afile = bytes(afile)
+        aprofs = {sha256(afile): dict(pa, code_sha256=sha256(acode), tables_sha256=sha256(atab),
+                                      tables_head_crc=zlib.crc32(atab[:64]))}
+        amaps = synthetic_map(pa, acode)
+        ga, gac, gat = extract(afile, aprofs, board="gd88")
+        gb, gbc, gbt = extract(afile, aprofs, board="gd88b")
+        check(gb["board"] == "gd88b" and gb["source_board"] == "gd88" and gbc == gac and gbt == gat,
+              "an A file extracted for gd88b: A's codec, B's board")
+        img = b"\x33" * 7000
+        sa = merge(img, ga, gac, gat, amaps)
+        sb = merge(img, gb, gbc, gbt, amaps)
+        check(sa == sb, "gd88b: the merged image is gd88's, byte for byte")
+        fb = struct.unpack_from("<8I", sb, BOARDS["gd88b"]["slot"][0] - APP_BASE)
+        check(fb[7] == 0x180015D4 and fb[4] == 0x1CEB0, "gd88b: A's 021 tables at their stock address, in B's window")
+        check(identify(afile, aprofs)["board"] == "gd88", "an A file without --board is A's")
+        adump = bytearray(b"\xFF" * BOARDS["gd88"]["progmem_size"])     # a whole 2 MB read, the stub's --progmem
+        adump[ca - PROGMEM_BASE:ca - PROGMEM_BASE + cla] = acode
+        adump[ta - PROGMEM_BASE:ta - PROGMEM_BASE + tla] = atab
+        rb, rbc, rbt = extract(bytes(adump), aprofs, board="gd88b")
+        check(rb["board"] == "gd88b" and rb["kind"] == "progmem"
+              and slot_bytes(rb, rbc, rbt, amaps) == slot_bytes(ga, gac, gat, amaps),
+              "gd88b: a program flash read of A gives the same slot")
+        pb = next(p for p in PROFILES.values() if p["board"] == "gd88b")
+        check(serves(pb, "gd88b") and not serves(pb, "gd88"), "B's files: accepted for B, never for A")
+        check(source_rank(pa, "gd88b") < source_rank(pb, "gd88b"), "for B, an A file is preferred to a B file")
+        too_low = dict(pa, tables=(ta, tla, BOARDS["gd88b"]["tables"][0] - 4))
+        expect_error(lambda: slot_bytes(too_low, gac, gat, amaps), "tables below the window refused")
 
     # A build with a codec map runs at the window's start with its listed words moved
     slot2, windows, moved_crc, _ = test_slot()
@@ -697,8 +779,8 @@ def main():
     ap.add_argument("--board", choices=sorted(BOARDS), help="the radio (default: the one the stock file is for)")
     ap.add_argument("--stock", help="your radio's stock firmware file (DM-32UV: 049 or 046; DM-1801 Pro: a program "
                     "flash dump, stub/stubtool.py --progmem; DB25-D PRO: 018, 2024-05-09 or later, or a program flash read of a "
-                    "radio with 020; GD-88: the package's A file for gd88, its B file for gd88b, or a program flash read of "
-                    "that SoC)")
+                    "radio with 020; GD-88: the package's A file, or a program flash read of SoC A, for both gd88 and "
+                    "gd88b, which run A's codec; a B file still works for gd88b)")
     ap.add_argument("--image", help="the built raw application image (default: build/<board>/rfoundry_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image (default: <image>_codec.bin)")
     ap.add_argument("--self-test", action="store_true", help="run the built-in checks on synthetic data")
@@ -730,7 +812,8 @@ def main():
         sys.exit("hrc7000_codec: %s" % e)
     with open(out, "wb") as f:
         f.write(merged)
-    print("hrc7000_codec: %s codec (%d + %d bytes) merged into %s" % (prof["name"], len(code), len(tables), out))
+    print("hrc7000_codec: %s codec (%d + %d bytes) merged into %s%s" % (prof["name"], len(code), len(tables), out,
+          " (for %s)" % prof["board"] if prof.get("source_board") else ""))
 
 
 if __name__ == "__main__":

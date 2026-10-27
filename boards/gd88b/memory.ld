@@ -10,8 +10,10 @@
  *
  * SRAM (288 KB at 0x10000): RadioFoundry's region from 0x10000, and at the top the codec window 0x44E00..0x58000 (the 2022-10
  * code, the largest of B's builds). B's stub comes through its first stage (boot/gd88b), never
- * through a runtime stub entry. The modem SRAM window B's codec tables are copied to,
- * 0x18000B40..0x18003B10 (the union of B's builds, hardware-gd88.md 8), is reserved.
+ * through a runtime stub entry. The modem SRAM window the codec tables are copied to is reserved:
+ * 0x18000B40..0x18004324, the union of B's builds (0x18000B40..0x18003B10) and A's (0x18001204..0x18004324),
+ * because B runs A's codec, packed as on A, with its tables at A's stock address (board.toml [codec] from,
+ * hardware-gd88.md 8). RadioFoundry's only other use of modem SRAM is the crash record at its top (0x18007EF0).
  *
  * The layout is the platform's (platform/hrc7000/common.ld). */
 
@@ -19,11 +21,11 @@ __codec_slot = 0x030E8000;
 __codec_slot_end = 0x03100000;
 /* The codec window (platform/hrc7000/codec_slot.h: the slot's code runs at its start; the size is the largest code
  * among the board's codec maps; tools/boards.py reads these symbols for the codec tools) and the modem SRAM table
- * window, the union of the builds' stock table addresses */
+ * window, the union of A's and B's builds' stock table addresses (B takes A's codec too) */
 __codec_run_lo = 0x00044E00;
 __codec_run_hi = 0x00058000;
 __codec_tab_lo = 0x18000B40;
-__codec_tab_hi = 0x18003B10;
+__codec_tab_hi = 0x18004324;
 
 MEMORY
 {
