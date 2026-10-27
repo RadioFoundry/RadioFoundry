@@ -217,6 +217,13 @@ static void main_send_led(rx2_main_t *m)
 	main_send(m, RX2_LED, &m->leds, 1);
 }
 
+static void main_send_path(rx2_main_t *m)
+{
+	uint8_t p[5] = { m->path_on ? 1u : 0u };
+	put32(&p[1], m->path_hz);
+	main_send(m, RX2_PATH, p, 5);
+}
+
 void rx2_main_init(rx2_main_t *m, rx2_send_fn send)
 {
 	memset(m, 0, sizeof(*m));
@@ -279,6 +286,9 @@ void rx2_main_rx(rx2_main_t *m, uint8_t b, uint32_t now_ms)
 				main_send_audio(m);
 				if (m->leds != 0) {
 					main_send_led(m);
+				}
+				if (m->path_on) {
+					main_send_path(m);
 				}
 			}
 		}
@@ -379,6 +389,21 @@ void rx2_main_led(rx2_main_t *m, uint8_t leds)
 	m->leds = leds;
 	if (m->up) {
 		main_send_led(m);
+	}
+}
+
+void rx2_main_path(rx2_main_t *m, bool on, uint32_t hz)
+{
+	if (!on) {
+		hz = 0;
+	}
+	if (on == m->path_on && hz == m->path_hz) {
+		return;
+	}
+	m->path_on = on;
+	m->path_hz = hz;
+	if (m->up) {
+		main_send_path(m);
 	}
 }
 
@@ -566,6 +591,9 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 		if (r->ops->led != NULL) {
 			r->ops->led(0);
 		}
+		if (r->ops->path != NULL) {
+			r->ops->path(false, 0);
+		}
 		recv_hello(r);
 		break;
 	case RX2_TUNE: {
@@ -595,6 +623,11 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 	case RX2_LED:
 		if (p->len >= 1 && r->ops->led != NULL) {
 			r->ops->led(p->buf[0]);
+		}
+		break;
+	case RX2_PATH:
+		if (p->len >= 5 && r->ops->path != NULL) {
+			r->ops->path(p->buf[0] != 0, get32(&p->buf[1]));
 		}
 		break;
 	case RX2_STUB:

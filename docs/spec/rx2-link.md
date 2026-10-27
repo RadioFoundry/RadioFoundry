@@ -29,7 +29,8 @@ A5 5A  len  type  seq  payload[len]  crc_hi crc_lo
 | 0x06 | `RESET` | A | u32 0x53545542. B restarts |
 | 0x07 | `LED` | A | u8: the LEDs on B's SoC that are on (bit 0 LED 1, bit 1 LED 2), on a board whose status LEDs are wired to B. A sends it on a change and again when B comes back; B turns them off at `HELLO_REQ` |
 | 0x08 | `DL` | A | u8 tag, u8 part, then a debug link request: u8 command, its payload (2.3) |
-| 0x81 | `HELLO` | B | u8 protocol version (1), u8 flags (bit 0: B decodes DMR), then B's firmware version as text |
+| 0x09 | `PATH` | A | u8 on, u32 Hz: where A's own receiver is, on a board whose receive path for A runs through B's pins. A sends it on a change and again when B comes back; B turns A's path off at `HELLO_REQ` |
+| 0x81 | `HELLO` | B | u8 protocol version (1), u8 flags (bit 0: B decodes DMR; bit 1: `STUB` reaches B's first stage, 4), then B's firmware version as text |
 | 0x82 | `STATUS` | B | 13 bytes (2.2) |
 | 0x83 | `ACK` | B | u8 the `TUNE`'s seq, u8 result (0 = on it, else refused) |
 | 0x84 | `LOG` | B | text for A's log |
@@ -107,8 +108,10 @@ for what it has: no display, keys, radio core or storage. The host reaches it th
 B has no USB or PC connector of its own. Its first install goes through its IAP loader. Later ones go through A:
 
 1. The host asks A's debug link for the bridge (`DL_CMD_RX2` BRIDGE, [debuglink.md](debuglink.md) 3.22).
-2. After the reply, A sends `STUB`. B writes `STAY` (0x53544159) at 0x0004FFF8 and jumps to its first stage at
-   0x0300C000 ([boot/README.md](../../boot/README.md)).
+2. After the reply, A sends `STUB`. B writes `STAY` (0x53544159) at 0x0004FFF8, puts UART3 back to unconfigured and
+   jumps to its first stage at 0x0300C000 ([boot/README.md](../../boot/README.md)). A sends `RESET` instead when B's
+   `HELLO` lacks flag bit 1: a B application from before the flag kept its own UART divisor, wrong at the loader's
+   clock. B then restarts, and its first stage makes its ten start-up offers.
 3. A copies bytes between the PC cable (UART1) and the link (UART3) both ways. Its transmitter stays off, and it feeds
    its watchdog.
 4. B's first stage sees `STAY` and offers the boot ROM's handshake on the link for up to a minute. The host answers

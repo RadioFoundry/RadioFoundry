@@ -218,8 +218,9 @@ B has no display, keys, power latch or GPS. Pin index as in section 9.
 | Function | Pins |
 |---|---|
 | RX band | UHF: PTB8 high, PTB7 low. VHF: the reverse |
-| RX front end | UHF PTB15, VHF PTB14, high = on |
-| RX path pairs | mode 0: PTB1 + PTB13; mode 1: PTB0 + PTB5. Both off while transmitting. Which mode is FM is not known |
+| RX front end | UHF PTB15, VHF PTB14, high = on. **Shared**: A's receiver needs its band's front end too |
+| RX path | A: PTB1 (FM and DMR); PTB0 has no effect A can see. B: PTB13 / PTB5, as the vendor's mode 0 / mode 1 pairs (PTB1 + PTB13, PTB0 + PTB5). All off while transmitting |
+| A's receiver | **HW** bench: with PTB15 + PTB1 low A hears nothing (noise floor -127 dBm); high, the floor is -86 dBm and a bench signal shows. VHF the same with PTB14. The band switch (PTB8 / PTB7) and PTB13 make no difference to A. B sets them from A's `PATH` messages ([rx2-link.md](rx2-link.md)) |
 | Audio source to A | mode 0: PTC18 high, PTB4 low; mode 1: the reverse |
 | Audio band | VHF: PTB18 high, PTB22 low; UHF: the reverse |
 | TX path | UHF PTA17, VHF PTB10 |

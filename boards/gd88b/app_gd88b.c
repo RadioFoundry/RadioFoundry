@@ -23,6 +23,10 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include <string.h>
+
+#define UART_FMT_RD(base, off)		REG32((base) + (off))
+#define UART_FMT_WR(base, off, v)	(REG32((base) + (off)) = (v))
+#include "uart_format.h"
 #if CONFIG_DMR
 #include "dmr/call/dmr_call.h"
 #include "dmr/ambe/ambeVoice.h"
@@ -39,6 +43,7 @@
 // The first stage's long window (boot/gd88b): STAY at STAY_ADDR, then a jump to the stage
 #define STAY_ADDR		0x0004FFF8u
 #define STAY_MAGIC		0x53544159u
+#define STAGE_UART_DIV		19u		// 36 MHz APB at the loader's clock / 16 / 115200 (boot/hrc7000/stage.c)
 #define STAGE_ADDR		0x0300C000u
 #define WDT_KEY			0x5ADA7200u
 
@@ -185,6 +190,9 @@ static HRC_RAMFUNC __attribute__((noreturn)) void enter_stage(void)
 #if HRC_LOADER_CPU_HZ != HRC_CPU_HZ
 	hrc_clock_restore_loader();
 #endif
+	// UART3 at 115200 for the loader's clock: the stage keeps a divisor already set, and ours is for our clock, so its
+	// handshake went out at the wrong speed and the host never heard it
+	(void)hrc_uart_format(UART3_BASE, STAGE_UART_DIV);
 	QUAD_ENABLE = 0;
 	LCSFC_BAUDR = 4;
 	hrc_barrier();
@@ -213,6 +221,7 @@ static const rx2_ops_t ops = {
 	.stub = op_stub,
 	.reset = op_reset,
 	.led = gd88b_leds,
+	.path = gd88b_path_main,
 #if CONFIG_RX2_DL_SERVER
 	.dl = rx2_dl_handle,
 #endif
@@ -300,7 +309,7 @@ static void task_fn(void *arg)
 #endif
 	IO_DIPLEX0 |= DIPLEX0_UART3;
 	hrc_link_uart_init(UART3_BASE, IRQ_UART3, LINK_BAUD);
-	rx2_recv_init(&link, send, &ops, CONFIG_DMR ? RX2_HELLO_DMR : 0u, RFOUNDRY_GIT);
+	rx2_recv_init(&link, send, &ops, (CONFIG_DMR ? RX2_HELLO_DMR : 0u) | RX2_HELLO_STAY, RFOUNDRY_GIT);
 #if CONFIG_RX2_DL_SERVER
 	rx2_dl_init(&link, view);
 #endif

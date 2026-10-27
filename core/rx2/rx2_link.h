@@ -30,6 +30,7 @@ enum {
 	RX2_RESET	= 0x06,	// u32 magic RX2_STUB_MAGIC: restart
 	RX2_LED		= 0x07,	// u8: the receiver's LEDs that are on (bit 0 LED 1, bit 1 LED 2)
 	RX2_DL		= 0x08,	// u8 tag, u8 part, a debug link request: command u8, its payload (rx2-link.md 2.3)
+	RX2_PATH	= 0x09,	// u8 on, u32 Hz: the main SoC's own receiver, whose path runs through the receiver's SoC
 	RX2_HELLO	= 0x81,	// u8 protocol version, u8 flags, text: the firmware version
 	RX2_STATUS	= 0x82,	// rx2 status, packed (rx2_pack_status)
 	RX2_ACK		= 0x83,	// u8 seq acknowledged, u8 result (0 ok, else refused)
@@ -40,6 +41,8 @@ enum {
 
 // HELLO flags
 #define RX2_HELLO_DMR		0x01u	// the receiver decodes DMR (codec merged: also its voice)
+#define RX2_HELLO_STAY		0x02u	// RX2_STUB reaches the first stage's long window (rx2-link.md 4); else the main SoC
+				// restarts the receiver for the update
 
 // The debug link through the main SoC (rx2-link.md 2.3)
 #define RX2_DL_LAST		0x80u	// part: the last one; bits 0-6 its index
@@ -99,6 +102,8 @@ typedef struct {
 	bool audio;		// the core gives it the speaker
 	uint8_t volume;
 	uint8_t leds;		// RX2_LED: the main SoC's status LEDs, which are on the receiver's SoC
+	bool path_on;		// RX2_PATH: the main SoC's receiver, as last asked
+	uint32_t path_hz;
 	rx2_status_t st;	// its last STATUS
 	uint32_t frames, tunes, resent;
 	// The debug link request in flight (rx2_main_dl_send): its tag, RX2_DL_* state, the next part expected, the
@@ -122,6 +127,8 @@ void rx2_main_status(const rx2_main_t *m, rx2_status_t *st);
 void rx2_main_audio(rx2_main_t *m, bool on, uint8_t volume);
 // The LEDs on the receiver's SoC (RX2_LED bits): sent on a change and again when it comes back
 void rx2_main_led(rx2_main_t *m, uint8_t leds);
+// The main SoC's own receiver (RX2_PATH): sent on a change and again when the receiver comes back
+void rx2_main_path(rx2_main_t *m, bool on, uint32_t hz);
 // Send RX2_STUB or RX2_RESET (the receiver's update route through the main SoC)
 void rx2_main_command(rx2_main_t *m, uint8_t type);
 // A debug link request to the receiver: command, payload (len <= RX2_DL_REQ_MAX). False when it is down or the request
@@ -161,6 +168,8 @@ typedef struct {
 	// RX2_DL: one debug link command (cmd, its payload) into out, status first, at most cap bytes; returns the
 	// length (>= 1). NULL: every command is answered DL_ST_UNKNOWN_CMD
 	size_t (*dl)(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+	// RX2_PATH: the main SoC's receiver on hz (on) or off; off again at HELLO_REQ. NULL: the board has no shared path
+	void (*path)(bool on, uint32_t hz);
 } rx2_ops_t;
 
 #define RX2_STATUS_EVERY_MS	500u

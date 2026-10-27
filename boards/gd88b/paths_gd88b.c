@@ -3,6 +3,11 @@
 // GD-88 SoC B RF and audio paths (common/gd88_rf.h): direct GPIO pairs (pins.h, docs/spec/hardware-gd88.md 10). B is a
 // receiver only: the TX switches stay low, and the TX calls only make sure of it. Its audio goes to A, which routes it
 // to the speaker; gd88b_path_mute() holds the source pair off while A hasn't given B the speaker.
+//
+// A's receiver also runs through B's pins: the front end of A's band and PTB1 (bench 2026-10-26: without them A hears
+// nothing, with them A's noise floor rises 40 dB and a bench signal shows). A says where it receives with RX2_PATH
+// (gd88b_path_main). Each front end is on while A or B receives in its band. Of the path pins, PTB1 / PTB0 are A's and
+// PTB13 / PTB5 are B's: A needed PTB1 in FM and DMR, and neither PTB13 nor PTB0 helped it.
 #include "gd88_rf.h"
 #include "gd88b.h"
 #include "pins.h"
@@ -17,6 +22,8 @@ static const uint8_t init_low[] = {
 };
 
 static bool spk_on, spk_modem, muted = true;
+static bool b_on, b_uhf, b_dmr;		// B's own receiver
+static bool a_on, a_uhf;		// A's (RX2_PATH)
 
 void gd88_path_init(void)
 {
@@ -27,35 +34,50 @@ void gd88_path_init(void)
 	hrc_pin_out(PIN_AUD_UHF, true);
 	spk_on = spk_modem = false;
 	muted = true;
+	b_on = a_on = false;
 }
 
-static void rx_pairs(bool on, bool dmr)
+// The front ends and the path pins from both receivers' state; interrupts off
+static void rx_pins(void)
 {
-	hrc_pin_write(PIN_RX_M0_A, on && !dmr);
-	hrc_pin_write(PIN_RX_M0_B, on && !dmr);
-	hrc_pin_write(PIN_RX_M1_A, on && dmr);
-	hrc_pin_write(PIN_RX_M1_B, on && dmr);
+	hrc_pin_write(PIN_RX_FRONT_UHF, (b_on && b_uhf) || (a_on && a_uhf));
+	hrc_pin_write(PIN_RX_FRONT_VHF, (b_on && !b_uhf) || (a_on && !a_uhf));
+	hrc_pin_write(PIN_RX_M0_A, a_on);
+	hrc_pin_write(PIN_RX_M0_B, b_on && !b_dmr);
+	hrc_pin_write(PIN_RX_M1_B, b_on && b_dmr);
 }
 
 void gd88_path_rx(uint32_t hz, bool on, bool dmr)
 {
 	bool uhf = hz >= UHF_FROM_HZ;
 	uint32_t s = hrc_irq_save();
+	b_on = on;
+	b_uhf = uhf;
+	b_dmr = dmr;
 	hrc_pin_write(PIN_RX_BAND_UHF, on && uhf);
 	hrc_pin_write(PIN_RX_BAND_VHF, on && !uhf);
-	hrc_pin_write(PIN_RX_FRONT_UHF, on && uhf);
-	hrc_pin_write(PIN_RX_FRONT_VHF, on && !uhf);
-	rx_pairs(on, dmr);
+	rx_pins();
 	hrc_pin_write(PIN_AUD_VHF, !uhf);
 	hrc_pin_write(PIN_AUD_UHF, uhf);
 	hrc_irq_restore(s);
 }
 
+// B's own receiver off; A's path stays as A asked
 void gd88_path_rx_front_off(void)
 {
-	hrc_pin_write(PIN_RX_FRONT_UHF, false);
-	hrc_pin_write(PIN_RX_FRONT_VHF, false);
-	rx_pairs(false, false);
+	uint32_t s = hrc_irq_save();
+	b_on = false;
+	rx_pins();
+	hrc_irq_restore(s);
+}
+
+void gd88b_path_main(bool on, uint32_t hz)
+{
+	uint32_t s = hrc_irq_save();
+	a_on = on;
+	a_uhf = hz >= UHF_FROM_HZ;
+	rx_pins();
+	hrc_irq_restore(s);
 }
 
 // Receive only: the PA selects and supplies stay off

@@ -63,6 +63,14 @@ static void b_do_stub(void) { b_stubs++; }
 static void b_do_reset(void) { b_resets++; }
 static uint8_t b_leds = 0xFF;
 static void b_do_led(uint8_t leds) { b_leds = leds; }
+static bool b_path_on = true;
+static uint32_t b_path_hz, b_paths;
+static void b_do_path(bool on, uint32_t hz)
+{
+	b_path_on = on;
+	b_path_hz = hz;
+	b_paths++;
+}
 
 // The receiver's debug link server: 0x01 echoes its payload; 0x40 answers n bytes (u16 n), status included
 static uint8_t b_dl_cmd;
@@ -90,9 +98,9 @@ static size_t b_do_dl(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *ou
 }
 
 static const rx2_ops_t b_ops = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset, b_do_led,
-				 b_do_dl };
+				 b_do_dl, b_do_path };
 static const rx2_ops_t b_ops_no_dl = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset, b_do_led,
-				       NULL };
+				       NULL, NULL };
 
 static void pump(uint32_t now_ms)
 {
@@ -293,6 +301,7 @@ static void test_link(void)
 	int tunes = b_tunes;
 	rx2_main_audio(&m, true, 70);
 	rx2_main_led(&m, 2);	// while it is down: kept, sent when it is back
+	rx2_main_path(&m, true, 461462500u);
 	rx2_recv_init(&r, send_recv, &b_ops, RX2_HELLO_DMR, "rfoundry-rx2 1.3");
 	b_audio = false;
 	now = run(now, RX2_HELLO_EVERY_MS + 200u, true);
@@ -302,6 +311,14 @@ static void test_link(void)
 	rx2_main_led(&m, 3);
 	now = run(now, 40, true);
 	CHECK(b_leds == 3);
+	CHECK(b_path_on && b_path_hz == 461462500u);
+	uint32_t paths = b_paths;
+	rx2_main_path(&m, true, 461462500u);	// no change: nothing sent
+	now = run(now, 40, true);
+	CHECK(b_paths == paths);
+	rx2_main_path(&m, true, 162475000u);
+	now = run(now, 40, true);
+	CHECK(b_path_on && b_path_hz == 162475000u && b_paths == paths + 1);
 
 	// Stop
 	int stops = b_stops;
@@ -327,7 +344,7 @@ static void test_link(void)
 	stops = b_stops;
 	rx2_main_init(&m, send_main);
 	now = run(now, 100, true);
-	CHECK(b_stops == stops + 1 && !b_audio && m.up && b_leds == 0);
+	CHECK(b_stops == stops + 1 && !b_audio && m.up && b_leds == 0 && !b_path_on);
 	(void)now;
 }
 

@@ -93,7 +93,10 @@ static void task_fn(void *arg)
 		uint32_t now = hal_millis();
 		if (now - polled >= POLL_MS) {
 			polled = now;
+			uint32_t hz;
+			bool on = gd88_path_wanted(&hz);
 			take();
+			rx2_main_path(&link, on, hz);
 			rx2_main_poll(&link, now);
 			give();
 		}
@@ -226,8 +229,10 @@ static void ring_drain(ring_t *r, uint32_t base)
 static void bridge(void) __attribute__((noreturn));
 static void bridge(void)
 {
+	// A receiver that can't reach its stage's long window (one installed before RX2_HELLO_STAY) restarts instead: its
+	// stage then offers the handshake ten times at start-up, at the right speed, and the host is already listening
 	take();
-	rx2_main_command(&link, RX2_STUB);
+	rx2_main_command(&link, (link.flags & RX2_HELLO_STAY) ? RX2_STUB : RX2_RESET);
 	give();
 	hal_delay_ms(STUB_SEND_MS);
 

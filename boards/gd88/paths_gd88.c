@@ -31,6 +31,10 @@ static bool a_dmr, b_dmr;	// the receivers' modes
 static bool a_modem;		// A's speaker source is the modem's line out (DMR voice, beeps)
 static bool receiving;		// A's receive path is on (not transmitting)
 static bool bcast;		// the broadcast FM tuner has the speaker
+// Where A receives, for B (gd88_path_wanted): A's front end and path pins are on SoC B. The TX start
+// (gd88_path_rx_front_off) leaves it, since it also runs per DMR burst, faster than the link can follow
+static volatile bool want_on;
+static volatile uint32_t want_hz;
 
 static uint8_t src_bit(bool dmr, uint8_t vfo)
 {
@@ -84,12 +88,22 @@ void gd88_path_init(void)
 
 void gd88_path_rx(uint32_t hz, bool on, bool dmr)
 {
-	(void)hz;	// the band is the LO chip's GPIOs (radio_gd88.c)
-	uint32_t s = hrc_irq_save();
+	uint32_t s = hrc_irq_save();	// A's band switch is the LO chip's GPIOs (radio_gd88.c); hz is for B
+	want_on = on;
+	want_hz = hz;
 	a_dmr = dmr;
 	receiving = on;
 	rx_path(on);
 	hrc_irq_restore(s);
+}
+
+bool gd88_path_wanted(uint32_t *hz)
+{
+	uint32_t s = hrc_irq_save();
+	bool on = want_on;
+	*hz = want_hz;
+	hrc_irq_restore(s);
+	return on;
 }
 
 // TX start: PTB2 high, the receive path bits off, the transmitter's route
