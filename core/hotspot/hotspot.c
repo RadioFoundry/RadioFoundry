@@ -64,7 +64,8 @@ static bool enq_open;			// a call from the host is open on the queue side (no te
 static uint8_t enq_lc[LC_LEN];
 static uint8_t enq_index;		// last voice burst index queued
 static uint8_t cur_lc[LC_LEN];		// the call on air
-static DMR_DATA_BUFFER dmrBurst_t data_store[DMR_DATA_MAX_BURSTS];
+// Not in CCM RAM with the other big buffers: the data service's bursts (one transmission's worth) took the room there
+static dmrBurst_t data_store[DMR_DATA_MAX_BURSTS];
 static const dmrBurst_t *data_list;
 static int data_count, data_next;
 static bool data_done;

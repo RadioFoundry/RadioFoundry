@@ -294,12 +294,13 @@ def data_lists(args):
 
 def selftest() -> int:
     """Offline: UDP data packets as `data --udp-port --repeat` builds them, each burst's info decoded back through the
-    BPTC, reassembled, its CRCs and IPv4 / UDP checked against what was asked. The largest one (412 octets of payload,
-    440 of IPv4) takes 2 preambles + 1 header + 37 blocks = 40 bursts: what a radio sends at its air MTU."""
+    BPTC, reassembled, its CRCs and IPv4 / UDP checked against what was asked. 568 octets of payload (596 of IPv4, the
+    air MTU) take 2 preambles + 1 header + 50 blocks = 53 bursts: what a radio sends at most unconfirmed; 580 (608 of
+    IPv4) take 51 blocks, the most a radio reassembles."""
     ns = argparse.Namespace(src=9990301, dst=3101276, family="ms", burst_cc=2, confirmed=False, preambles=2, tms=None,
-                            etsi=None, ip_text=None, octets=40, udp_port=50001, udp_src_port=50000, udp_octets=412,
+                            etsi=None, ip_text=None, octets=40, udp_port=50001, udp_src_port=50000, udp_octets=568,
                             udp_payload=None, repeat=3, tms_seq=1, tms_no_ack=False)
-    for octets, bursts_each in ((412, 40), (40, 9), (1, 6)):
+    for octets, bursts_each in ((580, 54), (568, 53), (40, 9), (1, 6)):
         ns.udp_octets = octets
         lists = data_lists(ns)
         assert len(lists) == ns.repeat
@@ -325,7 +326,7 @@ def selftest() -> int:
             udp = ip[20:]
             assert int.from_bytes(udp[0:2], "big") == 50000 and int.from_bytes(udp[2:4], "big") == 50001
             assert udp[8:] == udp_payload(ns, k) and (octets < 2 or udp[8:10] == k.to_bytes(2, "big"))
-    print("bench_tx: selftest passed (UDP data, --repeat, 40 bursts at 440 octets of IPv4)")
+    print("bench_tx: selftest passed (UDP data, --repeat, 53 bursts at 596 octets of IPv4)")
     return 0
 
 

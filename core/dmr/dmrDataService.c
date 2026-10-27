@@ -51,6 +51,9 @@
 #define IP_QUEUE_TIMEOUT_MS		START_TIMEOUT_MS
 #define IP_PREAMBLES			DMR_DATA_IP_PREAMBLES	// what the air MTU (dmrData.h) counts on
 _Static_assert(DMR_DATA_IP_PREAMBLES == DMR_DATA_SMS_PREAMBLES, "IP packets keep the preambles of an SMS");
+// The preambles, the header, the blocks of a confirmed packet of the air MTU (10 octets each) and the terminator
+_Static_assert(IP_PREAMBLES + 1 + ((DMR_DATA_IP_MTU + 4 + 9) / 10) + 1 <= DMR_DATA_MAX_BURSTS,
+				"a confirmed packet of the air MTU goes in one transmission");
 // Confirmed data to us whose blocks stopped coming before the count in its header: lost bursts, asked for again
 #define CNF_RX_STALL_MS			300
 // A confirmed packet again from the same radio with the N(S) we last ACKed this soon is a retry (our ACK was lost)
@@ -350,6 +353,19 @@ bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count)
 
 	memmove(txBursts, bursts, count * sizeof(dmrBurst_t));
 	return queueTx(count, TXK_OTHER);
+}
+
+int dmrDataServiceSendShortData(bool group, uint32_t dst, uint32_t src, const uint8_t *data, int length, int preambles)
+{
+	if (dmrDataServiceIsBusy() || !canTransmit())
+	{
+		return 0;
+	}
+
+	int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, group, dst, src, data, length, DT_RATE_12_DATA,
+									preambles, txBursts, DMR_DATA_MAX_BURSTS);
+
+	return (count <= 0) ? -1 : (queueTx(count, TXK_OTHER) ? 1 : 0);
 }
 
 // --- IP packets (dmrDataServiceSendIP): compressed headers, confirmed delivery ---

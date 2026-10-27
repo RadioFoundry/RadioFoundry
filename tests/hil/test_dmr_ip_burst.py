@@ -15,10 +15,13 @@ misses or garbles some bursts (test_dmr_ip.py), so a packet it didn't hear whole
 packet it heard whole must be right (payload, order, header). The debug link's IP_SEND carries at most 64 octets of
 payload (DL_REQ_MAX), so the largest datagrams come from this host over that link.
 
-The air MTU (DMR_DATA_IP_MTU) is derived below from the firmware's limits, and checked against the radio's
-net.air_mtu: one transmission is at most DMR_DATA_MAX_BURSTS bursts = DMR_DATA_IP_PREAMBLES preamble CSBKs, the data
-header and rate 1/2 blocks of 12 octets, the last ending with the CRC-32. Receiving, the radio reassembles up to
-DMR_DATA_MAX_PACKET octets of blocks (40 blocks), more than it sends."""
+The air MTU (DMR_DATA_IP_MTU, 596) is derived below from the firmware's limits and checked against the radio's
+net.air_mtu. It is above the link's MTU (net.mtu, 586; over PPP ppp.mru), so the largest datagram from this host is
+the link's, and it always fits the air: the ICMP fragmentation needed tests run only on firmware built with a narrower
+IPGW_AIR_MTU (the host test ipGatewayTestAir440 covers that path on every build). Receiving, the radio reassembles up
+to DMR_DATA_MAX_PACKET octets of blocks (51 blocks: 608 octets of IPv4, a UDP payload of 580, what another make's
+radio may send); this host gets what fits the link (558 octets of UDP payload), and a longer one is dropped and
+counted (net.up_too_big)."""
 import ipaddress
 import os
 import socket
@@ -38,20 +41,18 @@ BURST = 5                                  # datagrams in a row
 SRC_PORT, DST_PORT = 50000, 50001          # outside 4000-4099: compressed in auto, both ports in extended headers
 UDPC_HEADER = 9                            # that compressed header: 5 octets and the 2 ports (dmr-data.md 11.1)
 FULL_HEADER = 20 + 8                       # IPv4 and UDP (SAP 4)
-DMR_DATA_MAX_BURSTS = 40                   # core/dmr/dmrData.h
-DMR_DATA_IP_PREAMBLES = 2
+DMR_DATA_MAX_PACKET = 612                  # core/dmr/dmrData.h: one packet's octets of blocks
 RATE12_OCTETS = 12
 CRC32_OCTETS = 4
-DMR_DATA_IP_MAX_BLOCKS = DMR_DATA_MAX_BURSTS - DMR_DATA_IP_PREAMBLES - 1                  # 37
-AIR_MTU = DMR_DATA_IP_MAX_BLOCKS * RATE12_OCTETS - CRC32_OCTETS                           # 440
-MAX_COMPRESSED = AIR_MTU - UDPC_HEADER     # 431: the largest UDP payload with the compressed header
-MAX_FULL = AIR_MTU - FULL_HEADER           # 412: with the full header (compression off, app ports, off-net)
-RX_MAX_BLOCKS = 40                         # DMR_DATA_MAX_PACKET (480) / 12: the most the radio reassembles
-RX_MAX_FULL = RX_MAX_BLOCKS * RATE12_OCTETS - CRC32_OCTETS - FULL_HEADER                  # 448
+AIR_MTU = DMR_DATA_MAX_PACKET - 16         # DMR_DATA_IP_MTU (596): 50 blocks unconfirmed, 60 confirmed
+RX_MAX_BLOCKS = DMR_DATA_MAX_PACKET // RATE12_OCTETS                                     # 51: the most it reassembles
+RX_MAX_FULL = RX_MAX_BLOCKS * RATE12_OCTETS - CRC32_OCTETS - FULL_HEADER                  # 580
 LINK_MTU = 600 - 14                        # IPGW_LINK_MTU: the gateway's frames, DHCP option 26
+UP_MAX_FULL = LINK_MTU - FULL_HEADER       # 558: the largest UDP payload from the air the link carries to this host
 DL_PAYLOAD_MAX = 64                        # the debug link's IP_SEND payload (DL_REQ_MAX)
 # Oversize datagrams go to another ID than the bench's: the host keeps the path MTU an ICMP reply taught it per
-# destination, and the bench's address must stay at the link MTU for the largest compressed datagram (459 octets of IP)
+# destination, and the bench's address must stay at the link MTU for the largest compressed datagram (more IPv4 than
+# the air MTU: the compressed header is 19 octets shorter)
 OVERSIZE_ID = BENCH_ID + 1
 HOST_PORT = 50002                          # this host's port for datagrams from the air
 ICMP_UNREACHABLE, ICMP_FRAG_NEEDED = 3, 4
@@ -95,9 +96,24 @@ def _wait(link, pred, timeout, what):
 
 
 def _need_mtu_keys(v):
+    """The MTU keys, checked: the link's is LINK_MTU, the air's AIR_MTU or (a build with a narrower IPGW_AIR_MTU) less."""
     if "net.air_mtu" not in v:
         skip("not_built", "firmware without the net.air_mtu view key (before the air MTU)")
-    assert v["net.air_mtu"] == AIR_MTU and v["net.mtu"] == LINK_MTU, (v["net.air_mtu"], v["net.mtu"])
+    assert v["net.mtu"] == LINK_MTU and 0 < v["net.air_mtu"] <= AIR_MTU, (v["net.air_mtu"], v["net.mtu"])
+
+
+def _need_narrow_air(v):
+    """Skip unless the air MTU is below the link's: only then can a datagram from this host be too long for the air."""
+    _need_mtu_keys(v)
+    if v["net.air_mtu"] >= v["net.mtu"]:
+        skip("not_built", f"the air MTU ({v['net.air_mtu']}) is not below the link's ({v['net.mtu']}): nothing from "
+             "this host is too long for the air (firmware with a narrower IPGW_AIR_MTU tests it; ipGatewayTestAir440 "
+             "covers it on the host)")
+
+
+def _blocks(user_octets):
+    """Rate 1/2 blocks of an unconfirmed packet of user_octets (the CRC-32 in the last)."""
+    return -(-(user_octets + CRC32_OCTETS) // RATE12_OCTETS)
 
 
 def _udp_socket(df):
@@ -260,10 +276,13 @@ def test_udp_burst_air_to_pc(radio, sdr_bench, pytestconfig):
 @pytest.mark.feature("dmr_ip_gateway")
 def test_air_mtu_view(radio):
     """Radio only: the advertised MTUs (hotspot section): net.mtu the link's (DHCP option 26) and net.air_mtu the
-    air's, as this file derives it from the firmware's limits. Reading them needs no USB switch."""
+    air's, as this file derives it from the firmware's limits, not below the link's. Reading them needs no USB switch."""
     if "DMR_IP_GATEWAY" not in radio.features():
         skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
-    _need_mtu_keys(_ints(radio.view(["hotspot"])))
+    v = _ints(radio.view(["hotspot"]))
+    _need_mtu_keys(v)
+    if v["net.air_mtu"] != AIR_MTU:
+        warnings.warn(f"net.air_mtu is {v['net.air_mtu']}, not {AIR_MTU}: a build with a narrower IPGW_AIR_MTU")
 
 
 @pytest.mark.feature("dmr_ip_gateway")
@@ -272,20 +291,22 @@ def test_air_mtu_view(radio):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
-@pytest.mark.parametrize("compress,payload_len,sap", [("auto", MAX_COMPRESSED, dmr_packet.SAP_UDPIP_COMPRESSION),
-                                                      ("off", MAX_FULL, dmr_packet.SAP_IP)], ids=["sap3", "sap4"])
-def test_udp_max_pc_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars_off, compress, payload_len, sap):
-    """The largest datagram one transmission carries, from this host: its user data on the air is exactly the air MTU
-    (the compressed header and 431 octets, or the full one and 412): the data header says DMR_DATA_IP_MAX_BLOCKS
-    blocks, so with it and the preambles the transmission is all DMR_DATA_MAX_BURSTS bursts (the host test
-    dmrDataServiceTest checks that count burst by burst); the bench decodes the whole payload."""
+@pytest.mark.parametrize("compress,sap", [("auto", dmr_packet.SAP_UDPIP_COMPRESSION), ("off", dmr_packet.SAP_IP)],
+                         ids=["sap3", "sap4"])
+def test_udp_max_pc_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars_off, compress, sap):
+    """The largest datagram this host can send, the link's MTU (net.mtu, over PPP ppp.mru) or the air's when that is
+    smaller: one transmission, its data header the blocks that user data takes (50 at most: the host test
+    dmrDataServiceTest checks the air MTU burst by burst); the bench decodes the whole payload."""
     freq, cc, own, _ = _setup(radio, pytestconfig)
     radio.link.ip_settings(compress, "rules", 0, [])
     bench_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (BENCH_ID & 0xFFFFFF)))
-    sent = [_payload(0, payload_len)]
+    header = UDPC_HEADER if sap == dmr_packet.SAP_UDPIP_COMPRESSION else FULL_HEADER
     with host_network(radio, own) as (udp, host_ip, _):
         before = _views(udp)
         _need_mtu_keys(before)
+        link = before["ppp.mru"] if host_network_kind(radio) == "ppp" else before["net.mtu"]
+        payload_len = min(link - FULL_HEADER, before["net.air_mtu"] - header)
+        sent = [_payload(0, payload_len)]
         with sdr_bench.lease():
             lis = sdr_bench.listen_start(freq, cc, seconds=12)
             s = _udp_socket(df=False)
@@ -301,23 +322,23 @@ def test_udp_max_pc_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars_off,
     assert d["ip.sent"] == 1 and d["ip.failed"] == 0 and d[key] == 1 and d["net.air_too_big"] == 0, d
     pkts = dmr_packet.packets(heard)
     mine = _ours(pkts, own)
-    assert all(p["blocks"] == DMR_DATA_IP_MAX_BLOCKS for p in mine), [p["blocks"] for p in mine]
+    assert all(p["blocks"] == _blocks(header + payload_len) for p in mine), [p["blocks"] for p in mine]
     if not mine:
         warnings.warn("the bench modem heard no header of ours: the block count not checked on air")
     whole = _check_heard(pkts, own, sent, sap, f"the largest datagram ({compress})")
     for p in whole:
-        assert p["header_octets"] == (UDPC_HEADER if sap == dmr_packet.SAP_UDPIP_COMPRESSION else FULL_HEADER), p
+        assert p["header_octets"] == header, p
 
 
 @pytest.mark.feature("dmr_ip_gateway")
 @pytest.mark.usb_switch
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
-@pytest.mark.parametrize("payload_len", [MAX_FULL, RX_MAX_FULL], ids=["air_mtu", "receive_limit"])
+@pytest.mark.parametrize("payload_len", [UP_MAX_FULL, RX_MAX_FULL], ids=["link_mtu", "receive_limit"])
 def test_udp_max_air_to_pc(radio, sdr_bench, pytestconfig, payload_len):
-    """The largest datagrams from the air to this host: one at the air MTU (412 octets with the full header, what a
-    radio like this one sends at most), and one at the receiver's limit (DMR_DATA_MAX_PACKET: 40 blocks, 448 octets),
-    each delivered intact."""
+    """The largest datagrams from the air: one at the link's MTU (558 octets with the full header) delivered intact to
+    this host; one at the receiver's limit (DMR_DATA_MAX_PACKET: 51 blocks, 580 octets, what another make's radio may
+    send) reassembled whole but too long for the link: dropped and counted (net.up_too_big), nothing reaches the host."""
     freq, cc, own, _ = _setup(radio, pytestconfig, tx=False)
     with host_network(radio, own) as (udp, host_ip, _):
         before = _views(udp)
@@ -327,10 +348,18 @@ def test_udp_max_air_to_pc(radio, sdr_bench, pytestconfig, payload_len):
                 _bench_udp(sdr_bench, freq, cc, own, payload_len)
             got = _receive(s, 1, 5)
         after = _views(udp)
-    d = _delta(before, after, ["data.rx_packets", "data.rx_crc_errors", "net.packets_up", "net.packets_dropped"])
+    d = _delta(before, after, ["data.rx_packets", "data.rx_crc_errors", "net.packets_up", "net.packets_dropped",
+                               "net.up_too_big"])
     print("radio deltas:", d, "got:", [len(p) for p, _ in got])
     assert d["data.rx_crc_errors"] == 0 and d["net.packets_dropped"] == 0, d
-    assert [p for p, _ in got] == [_payload(0, payload_len)], "the datagram didn't arrive intact"
+    if payload_len <= UP_MAX_FULL:
+        assert [p for p, _ in got] == [_payload(0, payload_len)], "the datagram didn't arrive intact"
+        assert d.get("net.up_too_big", 0) == 0, d
+    else:
+        assert not got, f"a datagram longer than the link reached the host: {[len(p) for p, _ in got]}"
+        assert d["data.rx_packets"] >= 1, d
+        if "net.up_too_big" in after:
+            assert d["net.up_too_big"] == 1, d
 
 
 @pytest.mark.feature("dmr_ip_gateway")
@@ -338,7 +367,7 @@ def test_udp_max_air_to_pc(radio, sdr_bench, pytestconfig, payload_len):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_udp_over_receive_limit_air_to_pc(radio, sdr_bench, pytestconfig):
-    """One block more than the receiver reassembles (41 blocks): dropped and counted (data.rx_crc_errors), nothing of
+    """One block more than the receiver reassembles (52 blocks): dropped and counted (data.rx_crc_errors), nothing of
     it reaches this host, and a datagram right after it still does."""
     freq, cc, own, _ = _setup(radio, pytestconfig, tx=False)
     with host_network(radio, own) as (udp, host_ip, _):
@@ -364,10 +393,10 @@ def test_udp_over_receive_limit_air_to_pc(radio, sdr_bench, pytestconfig):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
-@pytest.mark.parametrize("compress,payload_len", [("auto", MAX_COMPRESSED + 1), ("off", MAX_FULL + 1)],
-                         ids=["sap3", "sap4"])
-def test_udp_over_max_pc_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars_off, compress, payload_len):
-    """One octet more than the air MTU, from this host with DF set: never on air (no header of ours heard), counted
+@pytest.mark.parametrize("compress,header", [("auto", UDPC_HEADER), ("off", FULL_HEADER)], ids=["sap3", "sap4"])
+def test_udp_over_max_pc_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars_off, compress, header):
+    """Firmware with an air MTU below the link's only (_need_narrow_air). One octet more than the air MTU, from this
+    host with DF set: never on air (no header of ours heard), counted
     (net.air_too_big) and answered with an ICMP fragmentation needed (net.frag_needed), nothing sent or failed in the
     IP service; the host may refuse it itself instead (EMSGSIZE: it knows the path MTU already), which is as good.
     Then a datagram of the air MTU still goes: no crash, the link still works."""
@@ -380,7 +409,9 @@ def test_udp_over_max_pc_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars
     over_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (OVERSIZE_ID & 0xFFFFFF)))
     with host_network(radio, own) as (udp, host_ip, _):
         before = _views(udp)
-        _need_mtu_keys(before)
+        _need_narrow_air(before)
+        air_mtu = before["net.air_mtu"]
+        payload_len = air_mtu - header + 1
         refused_here = False
         with sdr_bench.lease():
             lis = sdr_bench.listen_start(freq, cc, seconds=8)
@@ -408,7 +439,7 @@ def test_udp_over_max_pc_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars
         bench_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (BENCH_ID & 0xFFFFFF)))
         with _udp_socket(df=False) as s:
             s.bind((host_ip, SRC_PORT))
-            s.sendto(_payload(1, AIR_MTU - (UDPC_HEADER if compress == "auto" else FULL_HEADER)), (bench_ip, DST_PORT))
+            s.sendto(_payload(1, air_mtu - header), (bench_ip, DST_PORT))
         _wait(udp, lambda v: v["ip.sent"] > mid["ip.sent"] and v.get("airq.depth", 0) == 0, 10, "the next datagram sent")
 
 
@@ -470,7 +501,8 @@ def test_dhcp_mtu_on_host(radio, pytestconfig):
 @pytest.mark.feature("dmr_ip_gateway")
 @pytest.mark.usb_switch
 def test_frag_needed_received(radio, pytestconfig, ip_settings):
-    """A DF datagram from this host too long for the air, to a radio's address: the radio sends back an ICMP
+    """Firmware with an air MTU below the link's only (_need_narrow_air). A DF datagram from this host too long for the
+    air, to a radio's address: the radio sends back an ICMP
     destination unreachable, fragmentation needed (RFC 1191) from its own address with the air MTU as the next-hop MTU,
     quoting our IPv4 header. Nothing goes on air (the radio refuses it before the air queue), so no RF and no bench:
     a raw ICMP socket on this host (root) sees the reply."""
@@ -486,10 +518,11 @@ def test_frag_needed_received(radio, pytestconfig, ip_settings):
     # the socket that sent it, and drops it when that socket is gone
     with icmp, host_network(radio, own) as (udp, host_ip, radio_ip), _udp_socket(df=True) as s:
         before = _views(udp)
-        _need_mtu_keys(before)
+        _need_narrow_air(before)
+        air_mtu = before["net.air_mtu"]
         s.bind((host_ip, SRC_PORT))
         try:
-            s.sendto(_payload(0, MAX_FULL + 1), (over_ip, DST_PORT))
+            s.sendto(_payload(0, air_mtu - FULL_HEADER + 1), (over_ip, DST_PORT))
         except OSError as e:
             skip("state", f"this host refused the datagram itself ({e}): it already knows the path MTU to {over_ip}")
         reply, end = None, time.monotonic() + 3
@@ -515,9 +548,9 @@ def test_frag_needed_received(radio, pytestconfig, ip_settings):
     print("radio deltas:", d, "reply:", reply[:36].hex() if reply else None, "path MTU the host kept:", kept)
     assert d["net.air_too_big"] == 1 and d["net.frag_needed"] == 1 and d["net.to_air"] == 0, d
     assert reply is not None, "no ICMP destination unreachable from the radio"
-    assert reply[1] == ICMP_FRAG_NEEDED and int.from_bytes(reply[6:8], "big") == AIR_MTU, reply[:8].hex()
+    assert reply[1] == ICMP_FRAG_NEEDED and int.from_bytes(reply[6:8], "big") == air_mtu, reply[:8].hex()
     quoted = reply[8:28]
     assert str(ipaddress.IPv4Address(quoted[12:16])) == host_ip and str(ipaddress.IPv4Address(quoted[16:20])) == over_ip
-    assert int.from_bytes(quoted[2:4], "big") == FULL_HEADER + MAX_FULL + 1, quoted.hex()
-    if kept is not None and kept != AIR_MTU:
-        warnings.warn(f"the host kept a path MTU of {kept} to {over_ip}, not {AIR_MTU}: below net.ipv4.route.min_pmtu?")
+    assert int.from_bytes(quoted[2:4], "big") == air_mtu + 1, quoted.hex()
+    if kept is not None and kept != air_mtu:
+        warnings.warn(f"the host kept a path MTU of {kept} to {over_ip}, not {air_mtu}: below net.ipv4.route.min_pmtu?")

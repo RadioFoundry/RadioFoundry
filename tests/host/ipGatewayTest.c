@@ -382,8 +382,8 @@ static void testToAir(void)
 	CHECK(air.calls == 5);
 }
 
-// The air MTU (usb-network.md 3.2): a host packet whose user data on the air would be longer than DMR_DATA_IP_MTU is
-// dropped and counted, never handed to the air; with DF set an ICMP destination unreachable / fragmentation needed with
+// A narrower air than the link (usb-network.md 3.2; ipGatewayTestAir440 builds one, the radio never has one): a host
+// packet whose user data on the air would be longer than IPGW_AIR_MTU is dropped and counted, never handed to the air; with DF set an ICMP destination unreachable / fragmentation needed with
 // the air MTU as the next-hop MTU goes back, from the radio's address, quoting the header and 8 octets (RFC 792, 1191)
 static void fixIpChecksum(uint8_t *f, int length);
 
@@ -403,11 +403,11 @@ static bool isFragNeeded(const uint8_t *f)
 
 	return (lastLength == 14 + 20 + 8 + 20 + 8) && (len == 8 + 20 + 8) && (memcmp(lastFrame, HOST_MAC, 6) == 0) &&
 			(ip[9] == 1) && (sum16(ip, 20, 0) == 0) && (get32(&ip[12]) == RADIO_IP) && (get32(&ip[16]) == HOST_IP) &&
-			(m[0] == 3) && (m[1] == 4) && (m[4] == 0) && (m[5] == 0) && (((m[6] << 8) | m[7]) == DMR_DATA_IP_MTU) &&
+			(m[0] == 3) && (m[1] == 4) && (m[4] == 0) && (m[5] == 0) && (((m[6] << 8) | m[7]) == IPGW_AIR_MTU) &&
 			(sum16(m, len, 0) == 0) && (memcmp(&m[8], f + 14, 28) == 0);
 }
 
-static void testAirMtu(void)
+static void testFragNeeded(void)
 {
 	static uint8_t payload[600];
 	static uint8_t f[700];
@@ -415,7 +415,7 @@ static void testAirMtu(void)
 	ipGatewayStats_t st;
 	// The longest UDP payload per header: SAP 3 for 50000 to 161 in auto (both ports in extended headers, 9 octets),
 	// SAP 4 for an application port (4001: the full header, 28 octets) and with compression off
-	const int maxCompressed = DMR_DATA_IP_MTU - 9, maxFull = DMR_DATA_IP_MTU - 28;
+	const int maxCompressed = IPGW_AIR_MTU - 9, maxFull = IPGW_AIR_MTU - 28;
 
 	for (int i = 0; i < (int)sizeof(payload); i++) payload[i] = (uint8_t)(i * 5 + 1);
 	dmrDataSetUdpCompression(DMR_UDPC_AUTO);
@@ -431,9 +431,9 @@ static void testAirMtu(void)
 	CHECK(ipGatewayStatsDelta(&st, 0) == 1 && ipGatewayStatsDelta(&st, 1) == 1);
 
 	// 5016 (port ID 1) to 161: one extended header, 7 octets
-	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, 5016, 161, payload, DMR_DATA_IP_MTU - 7));
+	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, 5016, 161, payload, IPGW_AIR_MTU - 7));
 	CHECK(air.calls == 2);
-	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, 5016, 161, payload, DMR_DATA_IP_MTU - 7 + 1));
+	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, 5016, 161, payload, IPGW_AIR_MTU - 7 + 1));
 	CHECK(air.calls == 2 && framesSent == 1 && isFragNeeded(f));
 
 	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, 4001, 4001, payload, maxFull));// an application port: the full header
@@ -462,29 +462,84 @@ static void testAirMtu(void)
 
 	// Raw data: its payload is the user data
 	raw.calls = 0;
-	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, IPGW_RAW_PORT, IPGW_RAW_PORT, payload, DMR_DATA_IP_MTU));
-	CHECK(raw.calls == 1 && raw.length == DMR_DATA_IP_MTU && framesSent == 0);
-	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, IPGW_RAW_PORT, IPGW_RAW_PORT, payload, DMR_DATA_IP_MTU + 1));
+	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, IPGW_RAW_PORT, IPGW_RAW_PORT, payload, IPGW_AIR_MTU));
+	CHECK(raw.calls == 1 && raw.length == IPGW_AIR_MTU && framesSent == 0);
+	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, IPGW_RAW_PORT, IPGW_RAW_PORT, payload, IPGW_AIR_MTU + 1));
 	CHECK(raw.calls == 1 && framesSent == 1 && isFragNeeded(f));
 
 	// ICMP: a 20 octet header on the air. An echo request too long gets the reply; an ICMP error never does
 	uint8_t *echo = payload;
-	memset(echo, 0x41, DMR_DATA_IP_MTU);
+	memset(echo, 0x41, IPGW_AIR_MTU);
 	echo[0] = 8; echo[1] = 0; echo[2] = echo[3] = 0;
-	uint16_t c = sum16(echo, DMR_DATA_IP_MTU - 20, 0); echo[2] = c >> 8; echo[3] = c;
-	in(f, hostIp(f, GW_MAC, HOST_IP, radio, 1, echo, DMR_DATA_IP_MTU - 20));
-	CHECK(air.calls == 5 && air.protocol == 1 && air.length == DMR_DATA_IP_MTU - 20);
+	uint16_t c = sum16(echo, IPGW_AIR_MTU - 20, 0); echo[2] = c >> 8; echo[3] = c;
+	in(f, hostIp(f, GW_MAC, HOST_IP, radio, 1, echo, IPGW_AIR_MTU - 20));
+	CHECK(air.calls == 5 && air.protocol == 1 && air.length == IPGW_AIR_MTU - 20);
 	echo[2] = echo[3] = 0;
-	c = sum16(echo, DMR_DATA_IP_MTU - 19, 0); echo[2] = c >> 8; echo[3] = c;
-	in(f, hostIp(f, GW_MAC, HOST_IP, radio, 1, echo, DMR_DATA_IP_MTU - 19));
+	c = sum16(echo, IPGW_AIR_MTU - 19, 0); echo[2] = c >> 8; echo[3] = c;
+	in(f, hostIp(f, GW_MAC, HOST_IP, radio, 1, echo, IPGW_AIR_MTU - 19));
 	CHECK(air.calls == 5 && framesSent == 1 && isFragNeeded(f));
 	echo[0] = 3;
-	in(f, hostIp(f, GW_MAC, HOST_IP, radio, 1, echo, DMR_DATA_IP_MTU - 19));
+	in(f, hostIp(f, GW_MAC, HOST_IP, radio, 1, echo, IPGW_AIR_MTU - 19));
 	CHECK(air.calls == 5 && framesSent == 0);
 
 	// The longest frame the gateway takes (IPGW_MAX_FRAME) is still answered: the reply quotes only the start
 	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, 50000, 161, payload, IPGW_MAX_FRAME - 14 - 28));
 	CHECK(air.calls == 5 && framesSent == 1 && isFragNeeded(f));
+}
+
+// On the radio the air MTU is not below the link's: the longest frame the gateway takes (IPGW_MAX_FRAME, an IP packet of
+// IPGW_LINK_MTU) goes to the air whole, DF set or not, whatever header it gets there; nothing comes back
+static void testLinkFitsAir(void)
+{
+	static uint8_t payload[600];
+	static uint8_t f[700];
+	const uint32_t radio = IPGW_INDIVIDUAL_NET | 235;
+	const int maxUdp = IPGW_LINK_MTU - 28;
+	ipGatewayStats_t st;
+
+	CHECK(IPGW_LINK_MTU == 586 && IPGW_AIR_MTU == DMR_DATA_IP_MTU && IPGW_AIR_MTU >= IPGW_LINK_MTU);
+	for (int i = 0; i < (int)sizeof(payload); i++) payload[i] = (uint8_t)(i * 5 + 1);
+	dmrDataSetUdpCompression(DMR_UDPC_AUTO);
+	air.calls = 0;
+	framesSent = 0;
+	ipGatewayGetStats(&st);
+	// 50000 to 161 in auto: the compressed header; an application port (4001): the full header; and compression off
+	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, 50000, 161, payload, maxUdp));
+	CHECK(air.calls == 1 && air.length == maxUdp);
+	int n = hostUdp(f, GW_MAC, HOST_IP, radio, 4001, 4001, payload, maxUdp);
+	CHECK(n == IPGW_MAX_FRAME && (f[14 + 6] & 0x40));// DF
+	in(f, n);
+	CHECK(air.calls == 2 && air.length == maxUdp);
+	dmrDataSetUdpCompression(DMR_UDPC_OFF);
+	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, 50000, 161, payload, maxUdp));
+	CHECK(air.calls == 3);
+	dmrDataSetUdpCompression(DMR_UDPC_AUTO);
+
+	// Raw data: its payload is the user data
+	raw.calls = 0;
+	in(f, hostUdp(f, GW_MAC, HOST_IP, radio, IPGW_RAW_PORT, IPGW_RAW_PORT, payload, maxUdp));
+	CHECK(raw.calls == 1 && raw.length == maxUdp);
+
+	// ICMP: a 20 octet header on the air
+	uint8_t *echo = payload;
+	memset(echo, 0x41, IPGW_LINK_MTU - 20);
+	echo[0] = 8; echo[1] = 0; echo[2] = echo[3] = 0;
+	uint16_t c = sum16(echo, IPGW_LINK_MTU - 20, 0); echo[2] = c >> 8; echo[3] = c;
+	in(f, hostIp(f, GW_MAC, HOST_IP, radio, 1, echo, IPGW_LINK_MTU - 20));
+	CHECK(air.calls == 4 && air.protocol == 1 && air.length == IPGW_LINK_MTU - 20);
+	CHECK(framesSent == 0 && ipGatewayStatsDelta(&st, 0) == 0 && ipGatewayStatsDelta(&st, 1) == 0);
+}
+
+static void testAirMtu(void)
+{
+	if (IPGW_AIR_MTU < IPGW_LINK_MTU)
+	{
+		testFragNeeded();
+	}
+	else
+	{
+		testLinkFitsAir();
+	}
 }
 
 // ICMP and SCTP go over the air and back as they are, other protocols don't
@@ -573,6 +628,26 @@ static void testDeliver(void)
 	CHECK(memcmp(lastFrame, BCAST_MAC, 6) == 0);
 	CHECK(get32(&lastFrame[26]) == RADIO_IP && get32(&lastFrame[30]) == IPGW_BROADCAST_IP);
 	CHECK(lastFrame[36] == (IPGW_MONITOR_PORT >> 8) && lastFrame[37] == (IPGW_MONITOR_PORT & 0xFF));
+
+	// From the air, up to the link's MTU goes to the host; longer (another make's radio may send up to the air's
+	// receive limit) is dropped and counted
+	static uint8_t big[IPGW_LINK_MTU];
+	ipGatewayStats_t before, after;
+	ipGatewayGetStats(&before);
+	lastLength = 0;
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(false, RADIO_ID), 64, 4001, 4001, big, IPGW_LINK_MTU - 28));
+	CHECK(lastLength == IPGW_MAX_FRAME);
+	big[2] = big[3] = 0xFF;		// an echo reply of zeros, its checksum right
+	lastLength = 0;
+	CHECK(ipGatewayDeliverIP(false, RADIO_ID, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(false, RADIO_ID), 64, 1, big, IPGW_LINK_MTU - 20));
+	CHECK(lastLength == IPGW_MAX_FRAME);
+	ipGatewayGetStats(&after);
+	CHECK(after.upTooBig == before.upTooBig);
+	lastLength = 0;
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(false, RADIO_ID), 64, 4001, 4001, big, IPGW_LINK_MTU - 27));
+	CHECK(ipGatewayDeliverIP(false, RADIO_ID, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(false, RADIO_ID), 64, 1, big, IPGW_LINK_MTU - 19));
+	ipGatewayGetStats(&after);
+	CHECK(lastLength == 0 && after.upTooBig == before.upTooBig + 2);
 }
 
 // A frame from hostUdp / hostIp with another TTL (the IPv4 checksum redone)

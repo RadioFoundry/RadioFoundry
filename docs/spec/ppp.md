@@ -55,9 +55,9 @@ timer 3 s, Max-Configure 10, Max-Terminate 2, Max-Failure 5 (then Nak'd options 
 | 5 Magic-Number | a number from the start time and DMR ID | any but 0 and ours (Nak'd: a looped-back line) |
 | 3 Authentication, 4 Quality, 7 PFC, 8 ACFC, others | (none) | Configure-Reject |
 
-- The MRU we announce is the link MTU the peer takes for its interface (pppd sets it from the MRU), so it is the
-  link's, not the air's: the air's 440 ([dmr-data.md](dmr-data.md) 12.8) reaches the host per destination by an ICMP
-  fragmentation needed, as on the USB network ([usb-network.md](usb-network.md) 3.2; the gateway's input is shared).
+- The MRU we announce is the link MTU the peer takes for its interface (pppd sets it from the MRU). The air's MTU (596,
+  [dmr-data.md](dmr-data.md) 12.8) is above it, so every datagram the peer sends for the air goes in one transmission
+  ([usb-network.md](usb-network.md) 3.2; the gateway's input is shared).
   A peer that Naks our MRU with a value from 68 (`PPP_MIN_MRU`, the smallest IPv4 MTU, RFC 791) up to ours gets it
   asked for in the next request (RFC 1661 5.3); a bigger or smaller one is ignored and ours asked for again, until
   Max-Failure. A Reject drops the option: the default 1500 then applies (RFC 1661 6.1), and our receive buffer still
@@ -199,7 +199,7 @@ PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B 
   bad FCS, abort, no `FF 03`, too long, a stalled frame; Terminate both ways; the negotiation time-out, the dead
   peer, a live peer answering echoes, another protocol's request; renegotiation on an open link; the MRU Nak'd to a
   smaller value, a too big and a too small one ignored, Rejected (`test_mru`); the air MTU over PPP, the largest UDP
-  datagram for the air and one octet more with DF answered by an ICMP fragmentation needed (`test_air_mtu`). Then a seeded fuzz
+  datagram PPP takes, DF set, to the air whole (`test_air_mtu`). Then a seeded fuzz
   loop (`RFOUNDRY_FUZZ_ITERS`, default 3,000): mutated whole sessions in random pieces, and single packets with a good
   FCS mutated inside (LCP, IPCP, IPv4, IPv6CP), every frame the radio sends checked. Clean under
   `make -C tests/host SANITIZE=1` with 30,000 iterations.

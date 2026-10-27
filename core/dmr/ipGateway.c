@@ -34,6 +34,8 @@
 #define ICMP_FRAG_NEEDED	4				// with ICMP_UNREACHABLE, the next-hop MTU in octets 6-7 (RFC 1191)
 #define IP_DF				0x4000
 #define ICMP_QUOTED_L4		8				// the original datagram's first 64 bits after its header (RFC 792)
+_Static_assert(IPGW_AIR_MTU <= DMR_DATA_IP_MTU, "the data service takes every packet of the gateway's air MTU");
+_Static_assert(DMR_DATA_IP_MTU >= IPGW_LINK_MTU, "the data service takes every packet the link holds (the MTU we advertise)");
 
 // An ID in a range and back. IDs too big for the range are truncated to its low bits, so in a /16 radio 0x010203 is
 // x.y.2.3, the same address as radio 0x0203
@@ -401,7 +403,7 @@ static void handleDHCP(const uint8_t *bootp, int length)
 	{
 		o = putOption(o, 51, 4, DHCP_LEASE_SECONDS);
 		o = putOption(o, 1, 4, (fixedLink != 0) ? IPGW_FIXED_NETMASK : IPGW_NETMASK);
-		o = putOption(o, DHCP_OPTION_MTU, 2, IPGW_LINK_MTU);// the frames the link holds; the air's narrower path: ICMP
+		o = putOption(o, DHCP_OPTION_MTU, 2, IPGW_LINK_MTU);// the frames the link holds, and one transmission
 		o = putRoutes(o, 121, radioIp);
 		o = putRoutes(o, 249, radioIp);
 	}
@@ -492,7 +494,7 @@ __attribute__((noinline)) static bool fitsAir(const uint8_t *frame, int l4Length
 	int ihl = (ip[0] & 0x0F) * 4;
 	const uint8_t *l4 = &ip[ihl];
 
-	if (ipGatewayAirLength(group, offNet, ip[9], l4, l4Length) <= DMR_DATA_IP_MTU)
+	if (ipGatewayAirLength(group, offNet, ip[9], l4, l4Length) <= IPGW_AIR_MTU)
 	{
 		return true;
 	}
@@ -509,7 +511,7 @@ __attribute__((noinline)) static bool fitsAir(const uint8_t *frame, int l4Length
 	m[1] = ICMP_FRAG_NEEDED;
 	put16(&m[2], 0);
 	put16(&m[4], 0);// unused
-	put16(&m[6], DMR_DATA_IP_MTU);
+	put16(&m[6], IPGW_AIR_MTU);
 	put16(&m[2], checksum(m, 8 + quoted, 0));
 	if (sendIPv4(&frame[6], IP_PROTO_ICMP, ipGatewayRadioIP(), get32(&ip[12]), 8 + quoted))
 	{
@@ -844,8 +846,13 @@ bool ipGatewayDeliverIP(bool group, uint32_t dst, uint32_t src, uint32_t srcIp, 
 		return true;// not forwarded
 	}
 
-	if ((length < ((protocol == IP_PROTO_UDP) ? 8 : 1)) || ((ETH_HEADER + 20 + length) > IPGW_MAX_FRAME))
+	if (length < ((protocol == IP_PROTO_UDP) ? 8 : 1))
 	{
+		return true;
+	}
+	if ((ETH_HEADER + 20 + length) > IPGW_MAX_FRAME)
+	{
+		stats.upTooBig++;
 		return true;
 	}
 
@@ -858,8 +865,13 @@ bool ipGatewayDeliverUDP(bool group, uint32_t dst, uint32_t src, uint32_t srcIp,
 {
 	uint8_t *udp = &tx[ETH_HEADER + 20];
 
-	if ((length < 0) || ((ETH_HEADER + 20 + 8 + length) > IPGW_MAX_FRAME))
+	if (length < 0)
 	{
+		return true;
+	}
+	if ((ETH_HEADER + 20 + 8 + length) > IPGW_MAX_FRAME)
+	{
+		stats.upTooBig++;
 		return true;
 	}
 

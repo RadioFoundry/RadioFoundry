@@ -123,14 +123,15 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 // mtu_lines and ppp_lines are not inlined: hotspot_section is, into debuglink_view_section, which is on the host
 // task's deepest path (docs/dev/stack-check.md), and their locals would add to it
 #if CONFIG_DMR_IP_GATEWAY
-// MTUs (usb-network.md 3.2): the link's (DHCP option 26), the air's (the next-hop MTU of the ICMP replies)
+// MTUs (usb-network.md 3.2): the link's (DHCP option 26), the air's (one transmission; the ICMP next-hop MTU)
 __attribute__((noinline)) static void mtu_lines(dl_text_t *t)
 {
 	ipGatewayStats_t gs;
 
 	ipGatewayGetStats(&gs);
-	dl_text(t, "net.mtu=%u\nnet.air_mtu=%u\nnet.air_too_big=%u\nnet.frag_needed=%u\n", (unsigned)IPGW_LINK_MTU,
-		(unsigned)DMR_DATA_IP_MTU, (unsigned)gs.airTooBig, (unsigned)gs.fragNeeded);
+	dl_text(t, "net.mtu=%u\nnet.air_mtu=%u\nnet.air_too_big=%u\nnet.frag_needed=%u\nnet.up_too_big=%u\n",
+		(unsigned)IPGW_LINK_MTU, (unsigned)IPGW_AIR_MTU, (unsigned)gs.airTooBig, (unsigned)gs.fragNeeded,
+		(unsigned)gs.upTooBig);
 }
 #endif
 

@@ -239,6 +239,9 @@ void dmrDataServicePowerOffCanceled(void);
 bool dmrDataServiceSendSMS(bool group, uint32_t dst, const char *text, bool ackRequested);
 bool dmrDataServiceSendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length);
 bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count);
+// Raw data: an unconfirmed Rate 1/2 packet with SAP 10 (short data), built in the service's own bursts (no copy). 1 if
+// it was queued, 0 if it can't be sent now (busy, or no channel to send on), -1 if it is longer than one transmission
+int dmrDataServiceSendShortData(bool group, uint32_t dst, uint32_t src, const uint8_t *data, int length, int preambles);
 // An IP packet from layer 4 on (ICMP, UDP, SCTP; the IP gateway's packets from the host): built with the compressed
 // UDP/IPv4 header when the setting allows it, sent as confirmed data with retries when a confirmed rule matches (an
 // individual destination), else unconfirmed; rate 1/2, 2 preamble CSBKs. l4 is not copied: it must stay unchanged

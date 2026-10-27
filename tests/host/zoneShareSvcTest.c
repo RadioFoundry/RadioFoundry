@@ -70,11 +70,15 @@ int dmrDataServiceSendIPChain(bool group, uint32_t dst, uint32_t srcIp, uint32_t
 	chains += (k > 1);
 	return k;
 }
-bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count)
+int dmrDataServiceSendShortData(bool group, uint32_t dst, uint32_t src, const uint8_t *data, int length, int preambles)
 {
-	(void)bursts;
-	(void)count;
-	return false;
+	(void)group;
+	(void)dst;
+	(void)src;
+	(void)data;
+	(void)length;
+	(void)preambles;
+	return 0;
 }
 bool dmrDataServiceIpBusy(void) { return pending; }
 uint8_t dmrDataServiceIpResult(void) { return result; }

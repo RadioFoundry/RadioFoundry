@@ -54,7 +54,6 @@ static bool headStamped;
 static uint32_t headSince;				// the oldest first offered to the service
 static airqDoneFn doneFn[AIRQ_OWNERS];
 static airqStats_t stats;
-static DMR_DATA_BUFFER dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
 
 static record_t *recAt(uint16_t off)
 {
@@ -407,15 +406,15 @@ void airqTick(uint32_t ownId, uint32_t nowMs)
 		}
 		else
 		{
-			int bc = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, r->group != 0, r->dst, ownId & 0xFFFFFFu, data,
-										r->length, DT_RATE_12_DATA, RAW_PREAMBLES, bursts, DMR_DATA_MAX_BURSTS);
+			int sent = dmrDataServiceSendShortData(r->group != 0, r->dst, ownId & 0xFFFFFFu, data, r->length,
+												  RAW_PREAMBLES);
 
-			if (bc <= 0)
+			if (sent < 0)
 			{
-				finish(AIRQ_TOO_LONG);// more bursts than a list holds
+				finish(AIRQ_TOO_LONG);// more bursts than one transmission holds
 				continue;
 			}
-			if (dmrDataServiceSendBursts(bursts, bc))
+			if (sent > 0)
 			{
 				finish(AIRQ_SENT);
 				return;

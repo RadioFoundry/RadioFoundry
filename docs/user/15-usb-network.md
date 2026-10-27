@@ -275,14 +275,12 @@ so confirm only where it helps. The settings are saved in the radio.
 
 ## Packet size
 
-One packet on the air carries at most 440 bytes of IP: 412 bytes of UDP data with the full header, up to 431 with the
-compressed one. Longer packets are not split; the radio drops them. A computer that marks its packets "don't
-fragment" (most do for TCP, and many programs for UDP) gets an ICMP "fragmentation needed" back with the size
-and sends shorter ones from then on. For other programs, keep UDP packets to radios at 412 bytes or less. Linux
-won't go below 552 bytes this way unless you lower its floor first: `sudo sysctl net.ipv4.route.min_pmtu=440`.
+The network link takes packets of up to 586 bytes. The radio gives this size to the computer by DHCP, and to PPP as
+its MRU (584), and every packet of that size fits in one transmission on the air: up to 558 bytes of UDP data. There
+is nothing to set on the computer.
 
-The network link itself takes 586 bytes (the radio gives this size to the computer by DHCP, and to PPP as its MRU), so
-the radio's own services, such as programming by TFTP, use full-size packets.
+A full-size packet keeps the channel for about 3 seconds (about 4 when it's sent confirmed). Small packets are quicker
+and more likely to get through on a weak channel: a lost burst loses the whole packet.
 
 ## Other networks through a gateway radio
 

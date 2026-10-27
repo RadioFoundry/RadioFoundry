@@ -446,7 +446,7 @@ byte 2 and 6 characters), and FLCO 8 for GPS (7 bytes: longitude as 25-bit two's
 
 ### 6.6 Data transmission
 
-A list of up to 40 bursts (CSBKs, headers, blocks) goes out one burst per slot on our slot, with an idle slot between
+A list of up to 64 bursts (CSBKs, headers, blocks) goes out one burst per slot on our slot, with an idle slot between
 (our slot only), starting from the first "our slot" step of the sequence (no voice headers, no terminator). After the
 last burst, the end steps 10-11 restore passive timing / the receiver and clear CRC_MCU_Control. Timeout: 10 s plus
 60 ms per burst (covers a repeater wake-up). A received-data interrupt for a data burst is queued (8 deep is enough;

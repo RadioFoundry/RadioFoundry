@@ -605,33 +605,23 @@ static void test_mru(void)
 	CHECK((s.lcp == PPP_OPENED) && (s.mru == 1500) && (s.peer_mru == 1500));
 }
 
-// The gateway's air MTU on the PPP path (the same ipGatewayEthernetIn): a DF datagram for the air that doesn't fit one
-// transmission is not sent; the host gets an ICMP fragmentation needed with the air MTU over PPP
+// The air MTU on the PPP path (the same ipGatewayEthernetIn; usb-network.md 3.2): the longest datagram PPP takes
+// (PPP_MRU, below the link's MTU) with the full header, DF set, goes to the air whole, and nothing comes back
 static void test_air_mtu(void)
 {
 	static uint8_t payload[PPP_MRU];
-	uint8_t pkt[1600], d[2048];
-	uint16_t proto;
-	int n;
+	uint8_t pkt[1600];
 
 	open_link();
 	air_count = 0;
 	memset(payload, 0x5A, sizeof(payload));
-	n = udp(pkt, HOST_IP, IPGW_INDIVIDUAL_NET | 5u, 4001, 4001, payload, DMR_DATA_IP_MTU - 28);	// the full header
-	peer_send(IP, pkt, n);
-	CHECK((air_count == 1) && (air_len == DMR_DATA_IP_MTU - 20));
-	CHECK(out_pos == out_len);
-	n = udp(pkt, HOST_IP, IPGW_INDIVIDUAL_NET | 5u, 4001, 4001, payload, DMR_DATA_IP_MTU - 28 + 1);
+	int n = udp(pkt, HOST_IP, IPGW_INDIVIDUAL_NET | 5u, 4001, 4001, payload, PPP_MRU - 28);	// the full header
 	pkt[6] = 0x40;	// DF
 	put16(pkt + 10, 0);
 	put16(pkt + 10, csum(pkt, 20, 0));
 	peer_send(IP, pkt, n);
-	CHECK(air_count == 1);
-	CHECK(radio_frame(&proto, d, &n));
-	CHECK((proto == IP) && (n == 20 + 8 + 28) && (d[9] == 1) && (csum(d, 20, 0) == 0));
-	CHECK((get32(d + 12) == RADIO_IP) && (get32(d + 16) == HOST_IP));
-	CHECK((d[20] == 3) && (d[21] == 4) && (get16(d + 26) == DMR_DATA_IP_MTU) && (csum(d + 20, 36, 0) == 0));
-	CHECK(memcmp(d + 28, pkt, 28) == 0);
+	CHECK((n == PPP_MRU) && (PPP_MRU <= IPGW_LINK_MTU) && (air_count == 1) && (air_len == PPP_MRU - 20));
+	CHECK(out_pos == out_len);
 }
 
 static void test_accm(void)
