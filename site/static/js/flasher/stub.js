@@ -66,7 +66,7 @@ export const MEM = {
 	nand: { base: SSI_DATA, cs: 18, size: 0x10000000, name: "NAND", nand: true },
 };
 const NAND_FLAG = 4;
-// played when a run finishes: three green flashes, then the slow orange blink resumes
+// played when a run finishes: three green flashes, then the slow yellow blink resumes
 export const DONE_LED = [[0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150]];
 
 const sum8 = (b) => b.reduce((a, x) => (a + x) & 0xFF, 0);
@@ -754,7 +754,7 @@ export class Stub {
 		return (((v0 - v1) >>> 0) / (t1 - t0)) * 1000;
 	}
 
-	// Status blink: slow while waiting (500 ms phases), fast while data moves (125 ms). Both LEDs make orange.
+	// Status blink: slow while waiting (500 ms phases), fast while data moves (125 ms). Both LEDs full on make yellow.
 	async setupLed(red, green) {
 		let hz = await this.timerHz();
 		if (!(hz > 1e6 && hz < 4e8)) hz = 24e6;

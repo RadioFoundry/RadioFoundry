@@ -23,7 +23,7 @@ server keeps running while the tool writes through it (`--write-app` took 111 s 
 
 ## The universal stub
 
-One image (7,796 bytes, protocol version 7) serves every HR_C7000 radio and every way in. It is linked to run at 0x30000
+One image (7,784 bytes, protocol version 7) serves every HR_C7000 radio and every way in. It is linked to run at 0x30000
 and copies itself there from wherever it was loaded, then zeroes its .bss and sets its own stack. Board details are not
 built in: after HELLO the host sends CONFIG (clock rates it measured, the UART to keep, the power latch and key pins,
 LEDs, board id, NAND flag), and checks the echo in the next HELLO before it writes anything. The profiles are in
@@ -86,10 +86,10 @@ the modem writes only its own SRAM, so after the stub masks every interrupt noth
 | Region | Address | Size |
 |---|---|---|
 | Entry and copy loop (position independent, no stack) | load address | 0x80 |
-| Image (text, parameter block at +0x80, data) | 0x30000-0x31E74 after the copy | 7,796 B |
-| .bss (receive buffer, sector buffers) | to 0x36C9C | 20,008 B |
-| Stack (4 KB, painted) | 0x36CA0-0x37CA0 | 4,096 B |
-| Whole footprint | 0x30000-0x37CA0 | 31,904 B (32 KB budget, checked by the linker) |
+| Image (text, parameter block at +0x80, data) | 0x30000-0x31E68 after the copy | 7,784 B |
+| .bss (receive buffer, sector buffers) | to 0x36C90 | 20,008 B |
+| Stack (4 KB, painted) | 0x36C90-0x37C90 | 4,096 B |
+| Whole footprint | 0x30000-0x37C90 | 31,888 B (32 KB budget, checked by the linker) |
 
 Measured stack use: 168 bytes on the DM-32UV and DM-1801 Pro, 252 bytes on the DB25-D (NAND reads included); 200 bytes on
 the DM-32UV after two 126-sector WRITE installs (protocol 7, 7,796-byte build).

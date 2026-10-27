@@ -57,7 +57,7 @@ export function radioPicture(radio, { keys = [] } = {}) {
 const SCREEN_SHOTS = { rfoundry: "boot", loader: "stub_entry" };
 const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}docs/ux/screens/${radio.gallery}/${SCREEN_SHOTS[sc]}.png` : null);
 
-// led: off | wait (slow orange) | busy (fast orange) | done (three green flashes) | green (steady)
+// led: off | wait (slow yellow) | busy (fast yellow) | done (three green flashes) | green (steady)
 // screen: off (dark: a power-on stub load or the factory loader) | loader (RadioFoundry handed over to the stub: its
 // "PC Loader Connected" splash) | rfoundry (RadioFoundry running: its boot screen) | on (another firmware running: lit,
 // no picture of its screens) | any (the state doesn't matter yet: no screen line in the caption)

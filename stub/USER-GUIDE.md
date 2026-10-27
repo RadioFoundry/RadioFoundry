@@ -25,7 +25,7 @@ first RadioFoundry build still uses `tools/serial_loader.py`. Items marked **[co
    `--board` names the radio (`dm32`, `dm1801pro` or `db25d`) so the tool sets up the right pins and checks them before
    it writes anything. Without it a backup still works, but writing is refused.
 
-3. When the tool says to, switch the radio **on**. The screen stays blank and the LED blinks slowly orange. This is
+3. When the tool says to, switch the radio **on**. The screen stays blank and the LED blinks slowly yellow. This is
    expected: the radio is in loader mode.
 4. Wait. The program memory takes about a minute and the data memory a few minutes. The LED blinks fast while data is
    moving. Do not touch the radio or the cable.
@@ -47,7 +47,7 @@ If the radio runs a RadioFoundry build with the loader option, you do not need t
    ```
 
 3. The screen shows "PC Loader Connected" and then stops responding to the keys. This is expected. The LED blinks
-   orange as above.
+   yellow as above.
 4. When it is done, restart the radio with the next section.
 
 ## Install a RadioFoundry build without entering the bootloader
@@ -143,12 +143,12 @@ The radio restarts into its normal firmware. If neither works, remove and refit 
 
 | LED | Meaning |
 |---|---|
-| Slow orange blink (half a second on, half a second off) | The radio is in loader mode and waiting. Nothing is being copied. |
-| Fast orange blink (an eighth of a second on and off) | Data is being read. Do not touch the radio or the cable. |
-| Three green flashes | Finished. The slow orange blink comes back after. |
+| Slow yellow blink (half a second on, half a second off) | The radio is in loader mode and waiting. Nothing is being copied. |
+| Fast yellow blink (an eighth of a second on and off) | Data is being read. Do not touch the radio or the cable. |
+| Three green flashes | Finished. The slow yellow blink comes back after. |
 | Nothing, screen dark, tool says "waiting" | The radio is not in loader mode yet: switch it off, make sure the tool is waiting, then switch it on. |
 
-Orange is the red LED at full and the green LED dimmed (about 16%), so it looks the same on every model (red = PTB1, green = PTB0, active high, the same pins on the DM-1801 Pro and the DM-32UV).
+Yellow is the red and the green LED both full on, so it looks the same on every model (red = PTB1, green = PTB0, active high, the same pins on the DM-1801 Pro and the DM-32UV).
 
 On the GD-88 the LED isn't a guide yet: what it shows during an installation is still changing. Follow the tool's
 messages and the screen.
@@ -189,4 +189,8 @@ are normal, and 230400 or 921600 are not offered as such. On the cables tested s
   hangs.
 - **RadioFoundry entry says "no answer from RadioFoundry's debug link"**: the radio is not running a RadioFoundry build with the loader option, or
   the cable is on a different port. Use the switched-off method above instead.
+- **"runs RadioFoundry for the X, not the Y that --board names"** or **"this RadioFoundry image is ... not for the Y"**:
+  the cable on that port goes to another radio, or the image was built for another radio. Nothing was written. Check
+  the port (two cables of the same make can swap names after a replug) and the image. `--force` writes anyway; use it
+  only when you know the radio's firmware reports the wrong board.
 - **The radio does not start after a backup**: remove and refit the battery, then switch it on.
