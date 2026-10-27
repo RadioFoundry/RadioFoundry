@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The radio view as key=value text for GET_VIEW (docs/spec/debuglink.md 3.7). One key per line; keys are stable
 // (DL_VIEW_VERSION is bumped when one changes meaning or goes away); new keys may appear anywhere in a section.
+#include <string.h>
 #include "config.h"
 #include "board.h"
 #include "hal_time.h"
@@ -119,6 +120,14 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "ch.color_code=%u\nch.timeslot=%u\n", c->color_code, c->timeslot);
 	dl_text(t, "ch.contact=%u\nch.listen_list=%u\n", c->contact, c->listen_list);
 	dl_text(t, "ch.dmr_id=%u\nch.dmo=%u\n", (unsigned)c->dmr_id, c->dmo);
+	// The second receiver while it has dual watch's other channel (v->rx2): a signal or a call for us there, and the
+	// DMR call's source. A HIL test sees a call on that channel here: the main receiver never goes there
+	rx2_status_t r2;
+	memset(&r2, 0, sizeof(r2));
+	if (v->rx2 && board.rx2 != NULL) {
+		board.rx2->status(&r2);
+	}
+	dl_text(t, "rx2.active=%u\nrx2.src=%u\n", r2.tuned && r2.active, (unsigned)r2.src);
 }
 
 static void hotspot_section(dl_text_t *t)
