@@ -344,6 +344,7 @@ static void task_fn(void *arg)
 			}
 		}
 		rx2_recv_poll(&link, now);
+		gd88b_leds_poll(now);
 	}
 }
 

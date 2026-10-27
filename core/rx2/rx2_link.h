@@ -28,7 +28,7 @@ enum {
 	RX2_AUDIO	= 0x04,	// u8 on, u8 volume percent
 	RX2_STUB	= 0x05,	// u32 magic RX2_STUB_MAGIC: enter the flash stub on the link UART (stub/README.md)
 	RX2_RESET	= 0x06,	// u32 magic RX2_STUB_MAGIC: restart
-	RX2_LED		= 0x07,	// u8: the receiver's LEDs that are on (bit 0 LED 1, bit 1 LED 2)
+	RX2_LED		= 0x07,	// u8: the receiver's LEDs that are on (bit 0 LED 1, bit 1 LED 2), or RX2_LED_STUB
 	RX2_DL		= 0x08,	// u8 tag, u8 part, a debug link request: command u8, its payload (rx2-link.md 2.3)
 	RX2_PATH	= 0x09,	// u8 on, u32 Hz: the main SoC's own receiver, whose path runs through the receiver's SoC
 	RX2_HELLO	= 0x81,	// u8 protocol version, u8 flags, text: the firmware version
@@ -125,6 +125,9 @@ bool rx2_main_tune(rx2_main_t *m, const rx2_tune_t *t, uint32_t now_ms);
 void rx2_main_stop(rx2_main_t *m);
 void rx2_main_status(const rx2_main_t *m, rx2_status_t *st);
 void rx2_main_audio(rx2_main_t *m, bool on, uint8_t volume);
+// RX2_LED: the main SoC is jumping to its flash stub, which has no link: the receiver blinks its LEDs until the main
+// SoC's next HELLO_REQ or LED
+#define RX2_LED_STUB		0x80u
 // The LEDs on the receiver's SoC (RX2_LED bits): sent on a change and again when it comes back
 void rx2_main_led(rx2_main_t *m, uint8_t leds);
 // The main SoC's own receiver (RX2_PATH): sent on a change and again when the receiver comes back

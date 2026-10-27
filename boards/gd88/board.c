@@ -96,6 +96,9 @@ const board_t board = {
 	.gps_present = hrc_gps_present,
 #endif
 	.rx2 = &gd88_rx2,
+#if CONFIG_STUB_ENTRY
+	.stub_entering = gd88_rx2_stub_entering,
+#endif
 #if CONFIG_DIAG
 	.diag_line = gd88_diag_line,
 	.diag_reset = gd88_diag_reset,

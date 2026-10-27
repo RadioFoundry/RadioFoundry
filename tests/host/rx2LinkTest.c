@@ -346,7 +346,13 @@ static void test_link(void)
 	now = run(now, 40, true);
 	CHECK(b_stubs == 1 && b_resets == 1);
 
-	// The main side restarting (HELLO_REQ while tuned): the receiver stops and mutes
+	// The main side leaving for its flash stub: the stub bit reaches the receiver's LEDs (it blinks them)
+	rx2_main_led(&m, RX2_LED_STUB);
+	now = run(now, 40, true);
+	CHECK(b_leds == RX2_LED_STUB);
+
+	// The main side restarting (HELLO_REQ while tuned): the receiver stops and mutes, its LEDs off (the stub's blink
+	// ends)
 	rx2_main_tune(&m, &t, now);
 	rx2_main_audio(&m, true, 50);
 	now = run(now, 100, true);

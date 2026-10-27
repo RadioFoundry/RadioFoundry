@@ -27,7 +27,7 @@ A5 5A  len  type  seq  payload[len]  crc_hi crc_lo
 | 0x04 | `AUDIO` | A | u8 on, u8 volume (percent) |
 | 0x05 | `STUB` | A | u32 0x53545542. B enters the flash stub on the link UART |
 | 0x06 | `RESET` | A | u32 0x53545542. B restarts |
-| 0x07 | `LED` | A | u8: the LEDs on B's SoC that are on (bit 0 LED 1, bit 1 LED 2), on a board whose status LEDs are wired to B. A sends it on a change and again when B comes back; B turns them off at `HELLO_REQ` |
+| 0x07 | `LED` | A | u8: the LEDs on B's SoC that are on (bit 0 LED 1, bit 1 LED 2), on a board whose status LEDs are wired to B. A sends it on a change and again when B comes back; B turns them off at `HELLO_REQ`. Bit 7 (`RX2_LED_STUB`): A is jumping to its flash stub, which has no link; B blinks its LEDs until the next `HELLO_REQ` or `LED` |
 | 0x08 | `DL` | A | u8 tag, u8 part, then a debug link request: u8 command, its payload (2.3) |
 | 0x09 | `PATH` | A | u8 on, u32 Hz: where A's own receiver is, on a board whose receive path for A runs through B's pins. A sends it on a change and again when B comes back; B turns A's path off at `HELLO_REQ` |
 | 0x81 | `HELLO` | B | u8 protocol version (1), u8 flags (bit 0: B decodes DMR; bit 1: `STUB` reaches B's first stage, 4), then B's firmware version as text |

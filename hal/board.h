@@ -102,6 +102,9 @@ typedef struct {
 	void (*gps_enable)(bool on);
 	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
 	const hal_rx2_t *rx2;
+	// Optional: the radio is about to jump to the RAM monitor (CONFIG_STUB_ENTRY), past the transmit checks and
+	// tx_off, interrupts still on. For what the monitor can't do itself: status LEDs on another SoC show it is running
+	void (*stub_entering)(void);
 } board_t;
 
 extern const board_t board;

@@ -164,6 +164,19 @@ void gd88_rx2_led(uint8_t which, bool on)
 	give();
 }
 
+#if CONFIG_STUB_ENTRY
+// board.stub_entering: A's stub has no LEDs and no link, so B blinks them until A's next start says hello
+void gd88_rx2_stub_entering(void)
+{
+	if (lock == NULL) {
+		return;
+	}
+	take();
+	rx2_main_led(&link, RX2_LED_STUB);
+	give();
+}
+#endif
+
 static size_t forward(const uint8_t *req, uint8_t len, uint8_t *out, size_t cap)
 {
 	take();

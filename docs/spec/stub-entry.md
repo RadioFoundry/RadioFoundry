@@ -70,7 +70,7 @@ bytes, so a stub upload can't key the radio.
 | The magic `'C7SB'` on BEGIN and ENTER, the exact length and the CRC-32 of the whole image before the jump | `stub_load.c` |
 | ENTER while the radio core is transmitting, or the hotspot is sending, answers busy before the image is looked at | `stub_entry_request` |
 | The platform's image check (the STM32 IWDG: the stub must say it feeds it) | `hal_system_t.stub_image_ok`, [stub-stm32f4.md](stub-stm32f4.md) 3.1 |
-| 100 ms after the ENTER reply, the jump is dropped if the radio is transmitting; otherwise `tx_off`, the banner, the jump | `stub_entry_service` |
+| 100 ms after the ENTER reply, the jump is dropped if the radio is transmitting; otherwise `tx_off`, the board's `stub_entering` (optional: status LEDs the monitor can't drive), the banner, the jump | `stub_entry_service` |
 
 The transmit check reads only the radio core's state (`radio_get_state`), not the whole view, so the check fits the
 host link task's stack in a build without the debug link.

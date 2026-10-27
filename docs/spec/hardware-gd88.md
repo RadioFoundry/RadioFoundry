@@ -226,7 +226,7 @@ B has no display, keys, power latch or GPS. Pin index as in section 9.
 | TX path | UHF PTA17, VHF PTB10 |
 | PA select, then supply | UHF PTB6, 200 us, then PTB20. VHF PTB3, then PTB21. TX off clears the supplies first |
 | Start-up levels | Low: PTB20, PTB21, PTB6, PTB3, PTB1, PTB0, PTB15, PTB14, PTB13, PTB5, PTB12, PTB11, PTB8, PTB7, PTA17, PTB10, PTC18, PTB4. High: PTB22, PTB18 |
-| Status LEDs | PTA16 (lit while A transmits) and PTB17 (receive), high = on. Colors not known |
+| Status LEDs | PTA16 (lit while A transmits) and PTB17 (receive), high = on. Colors not known. While A is in its flash stub they take turns at 2 Hz (`RX2_LED_STUB`: A's stub has no LEDs) |
 | ADC | Channel 4 is a carrier level |
 | RF chips | The same 3-wire bus pins as A (section 9) |
 

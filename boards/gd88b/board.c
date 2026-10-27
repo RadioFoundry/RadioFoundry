@@ -10,6 +10,7 @@
 #include "gd88b.h"
 #include "pins.h"
 #include "platform.h"
+#include "rx2/rx2_link.h"
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, false },
@@ -70,8 +71,32 @@ void board_init(void)
 	gd88_cal_load((const uint8_t *)GD88_CAL_FLASH_ADDR, NULL);
 }
 
+#define STUB_BLINK_MS		250u
+
+static bool blink;
+static uint32_t blink_ms;
+static bool blink_phase;
+
 void gd88b_leds(uint8_t leds)
 {
+	blink = (leds & RX2_LED_STUB) != 0;
+	if (blink) {
+		leds = 1u;
+		blink_phase = false;
+		blink_ms = 0;		// the first poll starts it
+	}
 	hrc_pin_write(PIN_LED1, (leds & 1u) != 0);
 	hrc_pin_write(PIN_LED2, (leds & 2u) != 0);
+}
+
+// A is in its flash stub (RX2_LED_STUB): the two LEDs take turns, 2 Hz each
+void gd88b_leds_poll(uint32_t now_ms)
+{
+	if (!blink || now_ms - blink_ms < STUB_BLINK_MS) {
+		return;
+	}
+	blink_ms = now_ms;
+	blink_phase = !blink_phase;
+	hrc_pin_write(PIN_LED1, !blink_phase);
+	hrc_pin_write(PIN_LED2, blink_phase);
 }
