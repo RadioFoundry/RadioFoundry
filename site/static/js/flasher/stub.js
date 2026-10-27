@@ -60,7 +60,7 @@ export const MEM = {
 const NAND_FLAG = 4;
 // A USB-serial cable holds a write up to its latency timer (16 ms on an FTDI) before it sends it
 const NOREPLY_DRAIN_MS = 50;
-// played when a run finishes: three green flashes, then the slow orange blink resumes
+// played when a run finishes: three green flashes, then the slow yellow blink resumes
 export const DONE_LED = [[0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150]];
 
 const sum8 = (b) => b.reduce((a, x) => (a + x) & 0xFF, 0);
@@ -691,7 +691,7 @@ export class Stub {
 		return (((v0 - v1) >>> 0) / (t1 - t0)) * 1000;
 	}
 
-	// Status blink: slow while waiting (500 ms phases), fast while data moves (125 ms). Both LEDs make orange.
+	// Status blink: slow while waiting (500 ms phases), fast while data moves (125 ms). Both LEDs full on make yellow.
 	async setupLed(red, green) {
 		let hz = await this.timerHz();
 		if (!(hz > 1e6 && hz < 4e8)) hz = 24e6;

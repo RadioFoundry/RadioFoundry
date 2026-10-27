@@ -398,23 +398,23 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .rt-glow { fill: transparent; }
 .rt-caption { display: grid; gap: var(--space-1); font-size: var(--text-sm); margin: var(--space-2) 0 0; }
 .rt-caption span:first-child { font-weight: 600; }
-.radio-top[data-led="wait"] .rt-led, .radio-top[data-led="wait"] .rt-glow { animation: rt-orange 1s steps(1) infinite; }
-.radio-top[data-led="busy"] .rt-led, .radio-top[data-led="busy"] .rt-glow { animation: rt-orange 0.25s steps(1) infinite; }
+.radio-top[data-led="wait"] .rt-led, .radio-top[data-led="wait"] .rt-glow { animation: rt-yellow 1s steps(1) infinite; }
+.radio-top[data-led="busy"] .rt-led, .radio-top[data-led="busy"] .rt-glow { animation: rt-yellow 0.25s steps(1) infinite; }
 .radio-top[data-led="done"] .rt-led, .radio-top[data-led="done"] .rt-glow { animation: rt-green 0.3s steps(1) 3; }
 .radio-top[data-led="green"] .rt-led { fill: #3fe060; }
 .radio-top[data-led="green"] .rt-glow { fill: rgb(63 224 96 / 35%); }
-@keyframes rt-orange { 0% { fill: #ff8a1f; } 50% { fill: #3a3d42; } }
+@keyframes rt-yellow { 0% { fill: #ffd21f; } 50% { fill: #3a3d42; } }
 @keyframes rt-green { 0% { fill: #3fe060; } 50% { fill: #3a3d42; } }
 .rt-glow { animation-name: none; }
-.radio-top[data-led="wait"] .rt-glow, .radio-top[data-led="busy"] .rt-glow { animation-name: rt-orange-glow; }
+.radio-top[data-led="wait"] .rt-glow, .radio-top[data-led="busy"] .rt-glow { animation-name: rt-yellow-glow; }
 .radio-top[data-led="done"] .rt-glow { animation-name: rt-green-glow; }
-@keyframes rt-orange-glow { 0% { fill: rgb(255 138 31 / 40%); } 50% { fill: transparent; } }
+@keyframes rt-yellow-glow { 0% { fill: rgb(255 210 31 / 40%); } 50% { fill: transparent; } }
 @keyframes rt-green-glow { 0% { fill: rgb(63 224 96 / 40%); } 50% { fill: transparent; } }
 @keyframes rt-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) {
 	/* no blinking on the page: the LED shows its color and the caption says how the real one blinks */
 	.radio-top .rt-led, .radio-top .rt-glow, .rt-key { animation: none !important; }
-	.radio-top[data-led="wait"] .rt-led, .radio-top[data-led="busy"] .rt-led { fill: #ff8a1f; }
+	.radio-top[data-led="wait"] .rt-led, .radio-top[data-led="busy"] .rt-led { fill: #ffd21f; }
 	.radio-top[data-led="done"] .rt-led { fill: #3fe060; }
 }
 .c7-checks { list-style: none; padding: 0; margin: 0 0 var(--space-4); display: grid; gap: var(--space-3); }

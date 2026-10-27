@@ -25,7 +25,7 @@ first RadioFoundry build still uses `tools/serial_loader.py`. Items marked **[co
    `--board` names the radio (`dm32`, `dm1801pro` or `db25d`) so the tool sets up the right pins and checks them before
    it writes anything. Without it a backup still works, but writing is refused.
 
-3. When the tool says to, switch the radio **on**. The screen stays blank and the LED blinks slowly orange. This is
+3. When the tool says to, switch the radio **on**. The screen stays blank and the LED blinks slowly yellow. This is
    expected: the radio is in loader mode.
 4. Wait. The program memory takes about a minute and the data memory a few minutes. The LED blinks fast while data is
    moving. Do not touch the radio or the cable.
@@ -47,7 +47,7 @@ If the radio runs a RadioFoundry build with the loader option, you do not need t
    ```
 
 3. The screen shows "PC Loader Connected" and then stops responding to the keys. This is expected. The LED blinks
-   orange as above.
+   yellow as above.
 4. When it is done, restart the radio with the next section.
 
 ## Install a RadioFoundry build without entering the bootloader
@@ -143,12 +143,12 @@ The radio restarts into its normal firmware. If neither works, remove and refit 
 
 | LED | Meaning |
 |---|---|
-| Slow orange blink (half a second on, half a second off) | The radio is in loader mode and waiting. Nothing is being copied. |
-| Fast orange blink (an eighth of a second on and off) | Data is being read. Do not touch the radio or the cable. |
-| Three green flashes | Finished. The slow orange blink comes back after. |
+| Slow yellow blink (half a second on, half a second off) | The radio is in loader mode and waiting. Nothing is being copied. |
+| Fast yellow blink (an eighth of a second on and off) | Data is being read. Do not touch the radio or the cable. |
+| Three green flashes | Finished. The slow yellow blink comes back after. |
 | Nothing, screen dark, tool says "waiting" | The radio is not in loader mode yet: switch it off, make sure the tool is waiting, then switch it on. |
 
-Orange is the red LED at full and the green LED dimmed (about 16%), so it looks the same on every model (red = PTB1, green = PTB0, active high, the same pins on the DM-1801 Pro and the DM-32UV).
+Yellow is the red and the green LED both full on, so it looks the same on every model (red = PTB1, green = PTB0, active high, the same pins on the DM-1801 Pro and the DM-32UV).
 
 ## Transfer speed
 
