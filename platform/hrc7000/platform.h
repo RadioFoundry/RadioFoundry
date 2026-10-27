@@ -257,6 +257,10 @@ void hrc_timer_oneshot(uint8_t n, uint32_t us);
 void hrc_timer_stop(uint8_t n);
 // Periodic: an interrupt every us microseconds until hrc_timer_stop (the handler reads EOI)
 void hrc_timer_periodic(uint8_t n, uint32_t us);
+// The AFSK symbol clock on timer 4 (afsk_tonegen.h's timer hooks): fn every us from its interrupt, until the stop.
+// Not with hrc_afsk.c, which has timer 4 for its FIFO
+void hrc_symbol_timer_start(uint32_t us, void (*fn)(void));
+void hrc_symbol_timer_stop(void);
 // Clear a timer's interrupt (read EOI)
 static inline void hrc_timer_ack(uint8_t n)
 {

@@ -8,6 +8,7 @@
 #include "gd88.h"
 #include "pins.h"
 #include "platform.h"
+#include "audio/afsk_tonegen/afsk_tonegen.h"
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
 #endif
@@ -88,6 +89,9 @@ const board_t board = {
 	.side_keys = side_keys,
 	.side_key_count = sizeof(side_keys),
 	.radio = &gd88_radio,
+#if CONFIG_APRS && GD88_TX
+	.afsk = &afsk_tonegen,
+#endif
 	.power = &gd88_power,
 	.battery_low_mv = 7000,
 	.battery_critical_mv = 6000,

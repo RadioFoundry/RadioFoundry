@@ -275,8 +275,9 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 
 run: run-core
 run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest \
-          rx2LinkTest keyassignTest powerSwitchTest boardBandTest batteryTest
+          rx2LinkTest keyassignTest powerSwitchTest boardBandTest batteryTest afskTonegenTest
 	./aprsRadioTest
+	./afskTonegenTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
 	./radioFeaturesTest
@@ -967,6 +968,13 @@ TESTS   += spiNandTest
 spiNandTest: spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c $(ROOT)/drivers/flash/spi_nand/spi_nand.h \
              $(ROOT)/drivers/bus/spi_bus.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c
+
+# APRS AFSK through an RF chip's tone generator: one tone write per change, the timer at the baud rate, refusals
+TESTS   += afskTonegenTest
+
+afskTonegenTest: afskTonegenTest.c $(ROOT)/drivers/audio/afsk_tonegen/afsk_tonegen.c \
+                 $(ROOT)/drivers/audio/afsk_tonegen/afsk_tonegen.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ afskTonegenTest.c $(ROOT)/drivers/audio/afsk_tonegen/afsk_tonegen.c
 
 # The stock firmware's block map over an SPI NAND: the shift block 0 gives, bad blocks, the reserved pool, no table
 TESTS   += spiNandLutTest

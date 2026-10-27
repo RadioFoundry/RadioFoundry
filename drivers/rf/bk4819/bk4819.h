@@ -199,6 +199,9 @@ void bk4819_tx_tail_end(bk4819_t *dev);
 // the deviation) instead of the microphone: 0x30 = 0xC3FA turns the microphone ADC off. A second start retunes. hz = 0
 // is a stop
 void bk4819_tone_start(bk4819_t *dev, uint16_t hz, uint8_t gain);
+// Retune a running tone: one register write, the generator's phase carried over (AFSK symbols, from an interrupt
+// while nothing else uses the bus)
+void bk4819_tone_freq(bk4819_t *dev, uint16_t hz);
 // Key the running tone: down = on, false = a silent carrier (the tone generator off, the microphone still out). No-op
 // without a tone
 void bk4819_tone_key(bk4819_t *dev, bool down);

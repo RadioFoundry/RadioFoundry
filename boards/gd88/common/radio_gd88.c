@@ -23,6 +23,7 @@
 #include "rf/bk4819/bk4819.h"
 #include "rf/at1141/at1141.h"
 #include "modem/hrc7000/hrc7000.h"
+#include "audio/afsk_tonegen/afsk_tonegen.h"
 
 // TODO(gd88): unknown, needs a radio: DAC C's role on each SoC. These are hardware-db25d.md's levels
 #define DAC_C_INIT		1762u			// at init, and 1780 once receive is set up
@@ -83,6 +84,10 @@ static void dmr_disarm(void);
 #endif
 static radio_mode_t mode = RADIO_MODE_FM;
 static uint16_t last_rssi_raw, last_noise_raw;
+#if CONFIG_APRS && GD88_TX
+static volatile bool afsk_on;	// AFSK tones playing: the chip's bus belongs to the symbol interrupt
+static const afsk_tonegen_board_t afsk_board;
+#endif
 
 // ---- 3-wire bus: clock and data shared, one enable per chip ----
 
@@ -246,6 +251,9 @@ static void init(void)
 		bk4819_init_lo(&rf_lo, BK4819_LO_PA_MAX);
 	}
 	bk4819_analog_mode(&rf_main);
+#if CONFIG_APRS && GD88_TX
+	afsk_tonegen_attach(&afsk_board);
+#endif
 }
 
 static void volume_apply(void);
@@ -516,6 +524,37 @@ static bool tx_tone(uint16_t hz)
 	return true;
 }
 
+#if CONFIG_APRS && GD88_TX
+// APRS AFSK (afsk_tonegen.h): the tone generator again, retuned at each symbol by timer 4. level 50 is the tone
+// burst's level
+static bool afsk_begin(uint16_t hz, uint8_t level)
+{
+	if (!transmitting || mode != RADIO_MODE_FM) {
+		return false;
+	}
+	uint32_t gain = (uint32_t)GD88_TX_TONE_GAIN * level / 50u;
+	bk4819_tone_start(&rf_main, hz, (uint8_t)(gain > BK4819_TONE_GAIN_MAX ? BK4819_TONE_GAIN_MAX : gain));
+	afsk_on = true;
+	return true;
+}
+
+static void afsk_tone(uint16_t hz)
+{
+	bk4819_tone_freq(&rf_main, hz);
+}
+
+static void afsk_end(void)
+{
+	afsk_on = false;
+	bk4819_tone_stop(&rf_main);
+}
+
+static const afsk_tonegen_board_t afsk_board = {
+	.begin = afsk_begin, .tone = afsk_tone, .end = afsk_end,
+	.timer_start = hrc_symbol_timer_start, .timer_stop = hrc_symbol_timer_stop,
+};
+#endif
+
 #if CONFIG_DTMF
 // DTMF (radio-features.md 3.7): the main chip's two tone generators. Dropped at the end of the transmission like a tone
 static bool tx_dtmf(char digit)
@@ -560,6 +599,16 @@ static void status(radio_status_t *st)
 		st->tone_ok = false;
 		return;
 	}
+#if CONFIG_APRS && GD88_TX
+	if (afsk_on) {
+		// The AFSK interrupt owns the bus: the last reading
+		st->rssi_dbm = bk4819_rssi_dbm(last_rssi_raw);
+		st->noise = (uint8_t)(last_noise_raw & 0x7Fu);
+		st->carrier = false;
+		st->tone_ok = false;
+		return;
+	}
+#endif
 	uint16_t r67 = bk4819_read(&rf_main, BK4819_REG_RSSI);
 	uint16_t r65 = bk4819_read(&rf_main, BK4819_REG_NOISE);
 	last_rssi_raw = r67;
