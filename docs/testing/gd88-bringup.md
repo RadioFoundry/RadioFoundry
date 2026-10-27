@@ -412,21 +412,21 @@ section 3 step that settles it.
 
 | # | File:line | What is unknown | How to settle it | Step |
 |---|---|---|---|---|
-| 1 | `boards/gd88/input_gd88.c:28` | Codes 3 and 4 as green and red, code 1 as up (codes 5, 6, 1, 2 are settled from the original firmware) | Press each, read `view --section input`, fix `map[]` | 6 |
+| 1 | - | **Settled 2026-10-26**: codes 1, 3 and 4 checked on the radio (hardware-gd88.md 9.2) | - | 6 |
 | 2 | `boards/gd88/pins.h:15` | PTA30's role (parked low from start-up) | Note any effect when high; leave low if none | 6 |
 | 3 | `boards/gd88/input_gd88.c:47` | Encoder direction and steps per detent | Turn clockwise; swap `PIN_ENC_A`/`PIN_ENC_B` or set `ENC_STEPS` | 6 |
-| 4 | `boards/gd88/display_gd88.c:20` | The LCD controller's timing word (`LCDC_CFG_VALUE`, the DM-32UV's 0x303) | Try neighbors if the picture tears or hangs; record the working one | 6 |
+| 4 | - | **Settled 2026-10-26**: the DM-32UV's 0x303 gives a steady picture | - | 6 |
 | 5 | `boards/gd88/display_gd88.c:28` | The panel record's layout past `lcd`, and the default variant without one | Read 0x031FD000 from the backup; `diag lcd vN rec/dflt` | 3, 6 |
 | 6 | `drivers/display/ili9341/ili9341.c:59` | Variant 2 gamma sets 0xE0/0xE1 | Compare with the original firmware's picture; try values | 6 |
 | 7 | `drivers/display/ili9341/ili9341.c:85` | Variant 0 gamma (as variant 2) | Same, only if a radio reports variant 0 | 6 |
 | 8 | `drivers/display/ili9341/ili9341.c:108` | Register-style panel (variant 1, ID 0xC505): orientation (R03 0x1030) and the R00 writes' value | Screenshot; try the scan direction bits | 6 |
 | 9 | `boards/gd88/power_gd88.c:15` | Whether PTB12 is the volume knob's switch contact or a separate key | Turn off with the knob and with a key press; watch `view --section input` | 6 |
 | 10 | `boards/gd88/power_gd88.c:24` | The volume knob's end readings (taken as 0 and 1023) | Knob fully down and up, read ADC channel 1 | 6 |
-| 11 | `boards/gd88/common/nand_gd88.c:8` | The NAND's geometry, and on B its chip select (PTA18 as on A) | Read the parameter page; `diag nand`; on B see #20 | 6, 7 |
+| 11 | `boards/gd88/common/nand_gd88.c:9` | On B, the NAND's chip select (PTA18 as on A). A's geometry is settled: ID 98 EB, settings kept (2026-10-26) | On B see #21 | 7 |
 | 12 | `boards/gd88/common/gd88_rf.h:96` | The NAND's size and whether its top is used (RadioFoundry's blocks 1920-1951) | Compare with the backup's NAND map and the chip; settings survive | 6 |
 | 13 | `boards/gd88/common/gd88_cal.h:48` | The calibration page items 0x602 (4 bytes), 0x606, 0x607 (1 each), 0x608, 0x60B (3 each) | Record values from the page; match to modem fields at 0x100/0x104 by changing settings in the original firmware (needs the vendor tools) | 6, 15 |
 | 14 | `boards/gd88/common/radio_gd88.c:21` | DAC C's role on each SoC (DB25-D's 1762/1780 are used) | Try values; the RSSI, the sensitivity or the frequency should change | 9 |
-| 15 | `boards/gd88/common/radio_gd88.c:182` | Which RF chips are fitted (only a BK4819 pair is driven) | `diag rf ... lo ...` chip IDs | 6 |
+| 15 | - | **Settled 2026-10-26** on A: main BK4819, LO AT1141 (0x1100), both driven (hardware-gd88.md 11.1). B's: `--rx2 diag` | - | 6 |
 | 16 | `boards/gd88/common/dmr_gd88.c:28` | The modem's RF mode word (`GD88_DMR_RF_MODE`, the DB25-D's 0x034C9860) | SDR bench call; try `GD88_DMR_RF_MODE=` variants | 10 |
 | 17 | `boards/gd88/common/gd88_rf.h:18` | A's output power control (transmit) | Step the levels into the dummy load, measure | 15 |
 | 18 | `boards/gd88/paths_gd88.c:13` | Chain classes (class 1 = FM, 2 = DMR inferred), byte 6 against 7 for the TX route, headset byte along with the loudspeaker, bit 6 as the broadcast tuner source | FM and DMR on A and B through the speaker/headset; TX at volume above and below 6; broadcast FM | 9, 11, 12, 15 |
@@ -438,7 +438,7 @@ section 3 step that settles it.
 | 24 | `boards/gd88b/pins.h:36` | PTB11 and PTB12's roles on B (low from start-up) | Note any effect when high | 9 |
 | 25 | `boards/gd88b/pins.h:45` | The status LEDs' colors (LED 1 lights while A transmits, LED 2 while it receives) | Look | 8 |
 
-That is 25 marks and 25 rows. Recount with the grep after any edit.
+25 rows; the 22 not settled have a mark each. Recount with the grep after any edit.
 
 Items without a mark that this plan also settles (from [hardware-gd88.md](../spec/hardware-gd88.md) 5 and 14):
 

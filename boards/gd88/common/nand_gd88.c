@@ -4,9 +4,9 @@
 // The factory calibration copy is read at boot; with CONFIG_NAND_STORAGE the core's storage lives in RadioFoundry's own block
 // range (GD88_NAND_RFOUNDRY_FIRST), the only blocks the driver will program or erase. One recursive mutex serializes every
 // NAND transaction once the scheduler runs: the storage layer holds it across a whole read-modify-program sequence.
-// The geometry is the TC58CVG1S3HRAIJ's (2 Gbit, 2 KB pages, 64 pages a block), as in hardware-db25d.md.
-// TODO(gd88): unknown, needs a radio: the chip's geometry (the factory set-up reads it from the parameter page) and,
-// on B, the NAND's chip select (taken to be PTA18 as on A)
+// The geometry is the TC58CVG1S3HRAIJ's (2 Gbit, 2 KB pages, 64 pages a block), as in hardware-db25d.md: A's chip
+// answers ID 98 EB, that part, and keeps the settings (2026-10-26).
+// TODO(gd88): unknown, needs a radio: on B, the NAND's chip select (taken to be PTA18 as on A)
 #include "gd88_rf.h"
 #include "config.h"
 #include "platform.h"

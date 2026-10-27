@@ -17,7 +17,7 @@
 #define LCDC_DATA		REG32(LCDC_BASE + 0x04)	// write: data byte (RS high)
 #define LCDC_CFG		REG32(LCDC_BASE + 0x10)
 #define LCDC_EN			REG32(LCDC_BASE + 0x28)	// b0 enable, b1 ready
-// TODO(gd88): unknown, needs a radio: the controller's timing word. hardware-dm32.md's is used
+// The controller's timing word, hardware-dm32.md's: a steady picture on the radio (2026-10-26)
 #define LCDC_CFG_VALUE		0x303u
 #define LCDC_PINS		0x7FFF8u		// IO_DIPLEX2 bits cleared: the bus pins to the controller
 #define LCDC_READY_SPINS	100000u
