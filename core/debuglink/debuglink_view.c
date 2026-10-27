@@ -265,6 +265,26 @@ static void link_section(dl_text_t *t)
 	dl_text(t, "ui.banner=%s\nui.toast=%s\nui.query=%s\nui.draws=%u\n", u.banner, u.toast, u.query,
 		(unsigned)u.draws);
 	dl_text(t, "input.idle_ms=%u\nui.backlight=%u\n", (unsigned)input_idle_ms(), ui_backlight());
+	if (board.display != NULL && board.display->panel != NULL) {
+		hal_display_panel_t pi;
+		board.display->panel(&pi);
+		if (pi.factory < 0) {
+			dl_text(t, "display.panel_raw=none\n");
+		} else {
+			dl_text(t, "display.panel_raw=0x%02x\n", (unsigned)pi.factory);
+		}
+		dl_text(t, "display.panel_type=%u\n", pi.type);
+		if (pi.controller != NULL) {
+			dl_text(t, "display.panel_controller=%s\n", pi.controller);
+		}
+		if (pi.source != NULL) {
+			dl_text(t, "display.panel_source=%s\n", pi.source);
+		}
+		if (pi.id_read) {
+			dl_text(t, "display.panel_id=%02x%02x%02x\ndisplay.panel_id_reg=%02x%02x%02x\n", pi.id[0], pi.id[1],
+				pi.id[2], pi.id_reg[0], pi.id_reg[1], pi.id_reg[2]);
+		}
+	}
 	dl_text(t, "input.source=%s\n", input_last_source() == INPUT_SRC_HOST ? "host" : "keys");
 	dl_text(t, "input.raw_keys=0x%08x\ninput.injected=0x%08x\n", (unsigned)input_raw_keys(),
 		(unsigned)input_injected_keys());
