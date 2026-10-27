@@ -6,12 +6,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classify, latinName } from "../static/js/codeplug/detect.js";
+import { classify, latinName, openfwEvidence } from "../static/js/codeplug/detect.js";
 import { STOCK, detectStock, readStock, importStock, utf16, RDT_MD380, RDT_UV380 } from "../static/js/codeplug/stock_tyt.js";
 import { empty, encode, decode, newChannel, newContact } from "../static/js/codeplug/model.js";
 import { CodeplugImage } from "../static/js/codeplug/image.js";
 import { openFile } from "../static/js/editor/files.js";
-import { makeBundle } from "../static/js/flasher/backup.js";
+import { makeBundle, CODEPLUG_SPAN } from "../static/js/flasher/backup.js";
 import { detect, convertersFor } from "../static/js/flasher/codeplug.js";
 import { Stock, uv380, putText } from "./stockfix.mjs";
 
@@ -62,6 +62,30 @@ test("classify: a RadioFoundry codeplug wins over stock bytes it hasn't overwrit
 	assert.equal(classify(both).layout, "openfw");
 	// the stock dump itself has no open-firmware evidence: its erased general settings and UTF-16 names don't count
 	assert.equal(classify(uv380().b).good, 3);
+});
+
+test("classify: back on stock after RadioFoundry, the stock codeplug wins over RadioFoundry's leftover records", () => {
+	// RadioFoundry's codeplug with channels past the first bank, which lie beyond the 256 KB stock codeplug
+	const m = empty();
+	m.general.dmrId = 3100123;
+	m.general.radioName = "N0CALL";
+	for (let n = 1; n <= 140; n++) m.channels.push(newChannel({ number: n, name: `Ch ${n}` }));
+	const img = encode(m).bytes.slice(0, CODEPLUG_SPAN);
+	const md = new Stock("tyt-md380");
+	md.channel(1, { name: "Simplex", mode: "fm", rx: 146520000 });
+	// the stock software wrote its codeplug over the chip's first 256 KB, general settings included
+	const back = img.slice();
+	back.set(md.b.subarray(0x2000), 0x2000);
+	back.fill(0xFF, 0, 0x2000);
+	assert.ok(openfwEvidence(back).good > 0);	// RadioFoundry's later channels are still there
+	assert.equal(classify(back).layout, "openfw");	// no stock DMR ID: nothing says the stock software wrote last
+	md.general({ name: "N0CALL Radio", id: 3100123 });
+	back.set(md.b.subarray(0x2000), 0x2000);
+	assert.equal(classify(back).layout, "tyt-md380");
+	// RadioFoundry's codeplug written again: its general settings are back and the stock ones gone
+	const again = back.slice();
+	again.set(img.subarray(0, 0x10000));
+	assert.equal(classify(again).layout, "openfw");
 });
 
 // --- Records ---

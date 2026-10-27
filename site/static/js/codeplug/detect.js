@@ -9,7 +9,7 @@ import {
 	CONTACT_SIZE, decodeContact, LIST_COUNTS, LISTS, LIST_SIZE, GENERAL,
 } from "./records.js";
 import { getBcdId } from "./fields.js";
-import { STOCK, stockBytes, stockEvidence, RDT_MD380, RDT_UV380 } from "./stock_tyt.js";
+import { STOCK, stockBytes, stockEvidence, stockDmrId, RDT_MD380, RDT_UV380 } from "./stock_tyt.js";
 
 // A Latin-1 name field: {text, ok}; ok when the text is printable and only 0x00 or 0xFF follow it
 export function latinName(b, off, len) {
@@ -83,11 +83,20 @@ export const formatName = (f) => NAMES[f] || f;
 export function classify(bytes) {
 	if (bytes.length === RDT_UV380) return { layout: "tyt-uv380-rdt", good: 0, bad: 0 };
 	const ev = bytes.length === RDT_MD380 ? { good: 0, bad: 0 } : openfwEvidence(bytes);
-	if (ev.good && ev.bad * 4 <= ev.good) return { layout: "openfw", ...ev };
 	const sb = stockBytes(bytes);
-	for (const format of Object.keys(STOCK)) {
-		const st = stockEvidence(sb, format);
-		if (st.good && st.bad * 4 <= st.good) return { layout: format, ...st };
+	const stock = () => {
+		for (const format of Object.keys(STOCK)) {
+			const st = stockEvidence(sb, format);
+			if (st.good && st.bad * 4 <= st.good) return { layout: format, ...st };
+		}
+		return null;
+	};
+	if (ev.good && ev.bad * 4 <= ev.good) {
+		// A radio put back on its stock firmware after RadioFoundry keeps RadioFoundry's records where the stock codeplug
+		// doesn't reach, but both layouts keep their general settings in the chip's first sectors: a stock DMR ID beside
+		// none of RadioFoundry's means the stock software wrote last (spec section 2, step 1)
+		const back = !(bytes.length >= GENERAL + 12 && getBcdId(bytes, GENERAL + 8)) && stockDmrId(sb) ? stock() : null;
+		return back || { layout: "openfw", ...ev };
 	}
-	return { layout: ev.good || ev.bad ? "unknown" : "blank", ...ev };
+	return stock() || { layout: ev.good || ev.bad ? "unknown" : "blank", ...ev };
 }

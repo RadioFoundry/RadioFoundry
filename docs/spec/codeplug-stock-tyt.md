@@ -61,6 +61,11 @@ was programmed keeps stock bytes wherever RadioFoundry hasn't written. The open-
    it. A UTF-16 name, as the stock layout stores them, fails: its second byte is 0x00 and printable bytes follow.
    The layout is the open-firmware one when there is at least one good record and at most one bad record for every
    four good ones.
+
+   One exception: a radio put back on its stock firmware after RadioFoundry. The stock software rewrites only its own
+   codeplug, so RadioFoundry's records past it still count as good, but both layouts keep their general settings in the
+   chip's first sectors, which the stock codeplug covers. When the open-firmware general settings have no DMR ID and
+   the stock ones (3.1) hold a valid one (1 to 16776415), the stock software wrote last: step 2 decides.
 2. **Stock evidence.** The channel table of each family (section 3.2) is checked: a record is in use when its first
    name character is not 0 and its mode (byte 0 bits 0-1) is 1 or 2. An in-use record is good when both frequencies are
    valid BCD and the name is valid UTF-16 (each character 0x0020 or above and not 0xFFFF, 0x0000 after the first
