@@ -124,6 +124,18 @@ static int makeRecord(uint32_t zoneId, int channels, const char *name)
 	return zsWriterEnd(&w);
 }
 
+// The smallest record of two fragments, whatever the chunk size (it follows the air MTU)
+static int twoFragments(uint32_t zoneId, const char *name)
+{
+	int len = 0;
+
+	for (int channels = 1; (channels <= ZS_CHANNELS_MAX) && (zsFragmentCount(len) < 2); channels++)
+	{
+		len = makeRecord(zoneId, channels, name);
+	}
+	return len;
+}
+
 // The record's fragments arrive from src as the data service hands them over
 static void deliver(uint32_t src, bool group, uint8_t transfer, const uint8_t *rec, int length, int only)
 {
@@ -146,9 +158,9 @@ static void testOffers(void)
 	zone_share_stats_t st;
 	zone_share_offer_t o;
 	const uint8_t *r;
-	int len = makeRecord(0x1234, 24, "Site Zone");
+	int len = twoFragments(0x1234, "Site Zone");
 
-	CHECK(len > ZS_CHUNK_MAX && zsFragmentCount(len) == 2);	// two fragments
+	CHECK(len > ZS_SEND_CHUNK && zsFragmentCount(len) == 2);	// two fragments
 
 	// Off, the default: nothing offered
 	CHECK(zone_share_offers() == ZS_OFFERS_OFF);
@@ -263,7 +275,7 @@ static void testSend(void)
 {
 	zone_share_stats_t st;
 	uint8_t back[ZS_RECORD_MAX];
-	int len = makeRecord(0x2222, 20, "Send Zone");
+	int len = twoFragments(0x2222, "Send Zone");
 	int frags = zsFragmentCount(len);
 
 	CHECK(frags == 2);

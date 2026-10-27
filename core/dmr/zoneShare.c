@@ -4,6 +4,10 @@
 #include <string.h>
 #include "dmr/zoneShare.h"
 
+_Static_assert(ZS_FRAGMENTS_MAX <= 8, "a transfer's fragments fit zsAssembly_t.have (and the 4-bit count)");
+_Static_assert((ZS_SEND_CHUNK >= ZS_CHUNK_MIN) && (ZS_SEND_CHUNK <= ZS_CHUNK_MAX), "our own fragments are ones we take");
+_Static_assert(ZS_SEND_FRAGMENTS_MAX <= 4, "the first builds take at most 4 fragments");
+
 #define REC_HEADER		10		// version, length (2), zone ID (4), flags, channels, contacts; the name follows
 
 #define CH_DMR			0x01
@@ -394,7 +398,7 @@ int zsFragmentCount(int recordLength)
 	{
 		return 0;
 	}
-	return (recordLength + ZS_CHUNK_MAX - 1) / ZS_CHUNK_MAX;
+	return (recordLength + ZS_SEND_CHUNK - 1) / ZS_SEND_CHUNK;
 }
 
 int zsFragmentHeader(uint8_t transfer, int recordLength, int index, uint8_t out[ZS_MSG_HEADER], int *offset)
@@ -405,10 +409,10 @@ int zsFragmentHeader(uint8_t transfer, int recordLength, int index, uint8_t out[
 	{
 		return 0;
 	}
-	int at = index * ZS_CHUNK_MAX;
+	int at = index * ZS_SEND_CHUNK;
 	int n = recordLength - at;
 
-	n = (n > ZS_CHUNK_MAX) ? ZS_CHUNK_MAX : n;
+	n = (n > ZS_SEND_CHUNK) ? ZS_SEND_CHUNK : n;
 	out[0] = ZS_VERSION;
 	out[1] = ZS_MSG_FRAGMENT;
 	out[2] = transfer;
@@ -419,7 +423,7 @@ int zsFragmentHeader(uint8_t transfer, int recordLength, int index, uint8_t out[
 	return n;
 }
 
-int zsBuildFragment(uint8_t transfer, const uint8_t *record, int recordLength, int index, uint8_t out[ZS_MSG_MAX])
+int zsBuildFragment(uint8_t transfer, const uint8_t *record, int recordLength, int index, uint8_t out[ZS_MSG_HEADER + ZS_SEND_CHUNK])
 {
 	int offset = 0;
 	int n = zsFragmentHeader(transfer, recordLength, index, out, &offset);
@@ -472,8 +476,29 @@ bool zsParseMessage(const uint8_t *payload, int length, zsMessage_t *m)
 			m->chunk = &payload[ZS_MSG_HEADER];
 			m->chunkLength = length - ZS_MSG_HEADER;
 			if ((m->count == 0) || (m->count > ZS_FRAGMENTS_MAX) || (m->index >= m->count) ||
-					(m->offset != m->index * ZS_CHUNK_MAX) || ((m->offset + m->chunkLength) > ZS_RECORD_MAX) ||
-					((m->index + 1 < m->count) && (m->chunkLength != ZS_CHUNK_MAX)))
+					((m->offset + m->chunkLength) > ZS_RECORD_MAX))
+			{
+				return false;
+			}
+			// The sender's chunk size: a full chunk's length, or what the offset says. Each fragment carries it
+			// whole or as its offset, so one can be checked alone; zsAssemble checks they agree
+			if (m->index + 1 < m->count)
+			{
+				m->full = (uint16_t)m->chunkLength;
+				if ((m->chunkLength < ZS_CHUNK_MIN) || (m->offset != m->index * m->chunkLength))
+				{
+					return false;
+				}
+			}
+			else if (m->index > 0)
+			{
+				m->full = (uint16_t)(m->offset / m->index);
+				if ((m->offset % m->index != 0) || (m->full < ZS_CHUNK_MIN) || (m->chunkLength > m->full))
+				{
+					return false;
+				}
+			}
+			else if (m->offset != 0)
 			{
 				return false;
 			}
@@ -527,6 +552,10 @@ zsAsmResult_t zsAssemble(zsAssembly_t *a, uint32_t src, const zsMessage_t *m, ui
 	{
 		zsAssemblyReset(a);// the same sender started over
 	}
+	if (a->active && (m->full != 0) && (a->full != 0) && (m->full != a->full))
+	{
+		return ZS_ASM_BAD;
+	}
 	if (!a->active)
 	{
 		a->active = true;
@@ -535,7 +564,12 @@ zsAsmResult_t zsAssemble(zsAssembly_t *a, uint32_t src, const zsMessage_t *m, ui
 		a->count = m->count;
 		a->have = 0;
 		a->length = 0;
+		a->full = 0;
 		a->startedMs = nowMs;
+	}
+	if (m->full != 0)
+	{
+		a->full = m->full;
 	}
 	uint8_t bit = (uint8_t)(1u << m->index);
 
