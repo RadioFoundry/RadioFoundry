@@ -6,13 +6,13 @@
 //
 // The chain is eight bytes; chain bit 8 * byte + bit:
 // - bytes 0 and 1: the loudspeaker and the headset output. Bits 0-3 pick the source, bit 2 * (class - 1) + vfo, where
-//   class 1 is analog FM and 2 DMR, and vfo 0 is A's own receiver, 1 is B's. Bit 5 enables the amplifier.
+//   class 1 is analog FM and 2 DMR, and vfo 0 is A's own receiver, 1 is B's. Bit 5 enables the amplifier. On the radio
+//   A's FM noise plays with bit 0 alone and the modem's beeps with bit 2 alone (2026-10-27).
 // - bytes 2-5, bit 4: the receive path in use, one-hot (byte 2 DMR A, 3 DMR B, 4 FM A, 5 FM B).
 // - bytes 0 and 1, bit 6: another source, taken to be the broadcast FM tuner.
 // - bytes 6 and 7: the transmit route, the source bit of the transmitting (class, vfo). Byte 6 is used.
-// TODO(gd88): unknown, needs a radio: class 1 = FM and class 2 = DMR are inferred, not seen; byte 6 against byte 7 for
-// the TX route (they differ by a volume range); the headset byte is driven along with the loudspeaker byte; bit 6 as
-// the broadcast tuner's source (the vendor code sets it for "no source / tones", and nothing else is left for the tuner)
+// TODO(gd88): unknown, needs a radio: byte 6 against byte 7 for the TX route (they differ by a volume range); the
+// headset byte is driven along with the loudspeaker byte; bit 6 as the broadcast tuner's source (the vendor code sets it for "no source / tones", and nothing else is left for the tuner)
 #include "gd88.h"
 #include "pins.h"
 #include "platform.h"

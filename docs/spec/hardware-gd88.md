@@ -198,7 +198,7 @@ The chain is eight bytes. Byte 0 bit 0 is shifted first; a rising edge on PTB3 l
 
 | Bytes | Bit | Meaning |
 |---|---|---|
-| 0 (speaker), 1 (headset) | 0-3 | the source: bit 2 x (class - 1) + vfo. Class 1 is analog FM, class 2 DMR (INF). Vfo 0 is A's receiver, 1 is B's |
+| 0 (speaker), 1 (headset) | 0-3 | the source: bit 2 x (class - 1) + vfo. Class 1 is analog FM, class 2 DMR (INF; HW for vfo 0: A's FM noise plays with bit 0 alone, the modem's beeps with bit 2 alone). Vfo 0 is A's receiver, 1 is B's |
 | 0, 1 | 5 | amplifier enable |
 | 0, 1 | 6 | another source; RadioFoundry uses it for the broadcast FM tuner (INF) |
 | 2-5 | 4 | the receive path in use, one-hot: byte 2 DMR A, 3 DMR B, 4 FM A, 5 FM B |
@@ -306,7 +306,7 @@ The code marks each with `TODO(gd88)`. The first-day plan that settles them is [
 
 1. Which RF chips other units have (the bench's A: BK4819 and AT1141), and B's.
 2. The output power at each level, and DMR transmit on the radio.
-3. FM against DMR for the chain's classes, chain bit 6 as the broadcast tuner's source, and B's audio source pair.
+3. Chain bit 6 as the broadcast tuner's source, and B's audio source pair.
 4. The front panel's navigation keys, whether PTB12 is the knob's contact.
 5. The LCD controller's timing word, DAC C on each SoC.
 6. ~~The NAND's size and B's NAND chip select.~~ TC58CVG1S3HRAIJ, 2048 blocks of 64 2 KB pages on both; B's chip select is PTA18 (section 10).

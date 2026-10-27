@@ -404,7 +404,7 @@ Expected skips (every test skips cleanly, none should fail):
 
 Any failure other than those is a real result: record the test and the diag lines.
 
-## 4. Every `TODO(gd88)` and `TODO(panel)` in the code (25)
+## 4. Every `TODO(gd88)` and `TODO(panel)` in the code
 
 Grep: `grep -rn "TODO(gd88)" boards` and `grep -n "TODO(panel)" drivers/display/ili9341/ili9341.c`. "Step" is the
 section 3 step that settles it.
@@ -418,25 +418,25 @@ section 3 step that settles it.
 | 5 | - | **Settled 2026-10-27**: `lcd` and a type byte 0..3, variant 3 without one (the vendor code; hardware-gd88.md 9.4) | - | 3, 6 |
 | 6 | `drivers/display/ili9341/ili9341.c:59` | Variant 2 gamma sets 0xE0/0xE1 | Compare with the original firmware's picture; try values | 6 |
 | 7 | `drivers/display/ili9341/ili9341.c:85` | Variant 0 gamma (as variant 2) | Same, only if a radio reports variant 0 | 6 |
-| 8 | `drivers/display/ili9341/ili9341.c:108` | Register-style panel (variant 1, ID 0xC505): orientation (R03 0x1030) and the R00 writes' value | Screenshot; try the scan direction bits | 6 |
-| 9 | `boards/gd88/power_gd88.c:15` | Whether PTB12 is the volume knob's switch contact or a separate key | Turn off with the knob and with a key press; watch `view --section input` | 6 |
+| 8 | `drivers/display/ili9341/ili9341.c:109` | Register-style panel (variant 1, ID 0xC505): orientation (R03 0x1030) and the R00 writes' value | Screenshot; try the scan direction bits | 6 |
+| 9 | `boards/gd88/power_gd88.c:17` | Whether PTB12 is the volume knob's switch contact or a separate key | Turn off with the knob and with a key press; watch `view --section input` | 6 |
 | 10 | - | **Settled 2026-10-27**: the knob reads 0 to 1010 end to end (`VOL_FULL_RAW`) | - | 6 |
-| 11 | `boards/gd88/common/nand_gd88.c:9` | On B, the NAND's chip select (PTA18 as on A). A's geometry is settled: ID 98 EB, settings kept (2026-10-26) | On B see #21 | 7 |
+| 11 | - | **Settled 2026-10-27**: PTA18 on both SoCs, the same part (hardware-gd88.md 10) | - | 7 |
 | 12 | - | **Settled 2026-10-27**: 2048 blocks; the original partitions end below 0x420000, the spare pool is the top 10 usable blocks, so blocks 1920-1951 are free (hardware-gd88.md 7) | - | 6 |
-| 14 | `boards/gd88/common/radio_gd88.c:21` | DAC C's role on each SoC (DB25-D's 1762/1780 are used) | Try values; the RSSI, the sensitivity or the frequency should change | 9 |
+| 14 | `boards/gd88/common/radio_gd88.c:31` | DAC C's role on each SoC (DB25-D's 1762/1780 are used) | Try values; the RSSI, the sensitivity or the frequency should change | 9 |
 | 15 | - | **Settled 2026-10-26** on A: main BK4819, LO AT1141 (0x1100), both driven (hardware-gd88.md 11.1). B's: `--rx2 diag` | - | 6 |
-| 16 | `boards/gd88/common/dmr_gd88.c:29` | The modem's RF mode word (`GD88_DMR_RF_MODE`, the DB25-D's 0x034C9860): receive is settled (2026-10-27, voice and data decode from the SDR bench); its transmit half is open | SDR bench call from a `GD88_TX=1` build; try `GD88_DMR_RF_MODE=` variants | 15 |
-| 17 | `boards/gd88/common/gd88_rf.h:18` | A's output power control (transmit) | Step the levels into the dummy load, measure | 15 |
-| 18 | `boards/gd88/paths_gd88.c:13` | Chain classes (class 1 = FM, 2 = DMR inferred), byte 6 against 7 for the TX route, headset byte along with the loudspeaker, bit 6 as the broadcast tuner source | FM and DMR on A and B through the speaker/headset; TX at volume above and below 6; broadcast FM | 9, 11, 12, 15 |
+| 16 | `boards/gd88/common/dmr_gd88.c:31` | The modem's RF mode word (`GD88_DMR_RF_MODE`, the DB25-D's 0x034C9860): receive is settled (2026-10-27, voice and data decode from the SDR bench); its transmit half is open | SDR bench call from a `GD88_TX=1` build; try `GD88_DMR_RF_MODE=` variants | 15 |
+| 17 | `boards/gd88/common/calibration_gd88.c:16` | A's output power: which PA drive item is high power | Step the levels into the dummy load, measure | 15 |
+| 18 | `boards/gd88/paths_gd88.c:14` | Byte 6 against 7 for the TX route, headset byte along with the loudspeaker, bit 6 as the broadcast tuner source | FM and DMR on A and B through the speaker/headset; TX at volume above and below 6; broadcast FM | 9, 11, 12, 15 |
 | 19 | - | **Settled 2026-10-27**: the RDA5807 answers at 0x11 (`test_broadcast_receiver`) | - | 12 |
-| 20 | `boards/gd88b/board.c:54` | Whether B's three DAC pins are wired as A's | Receive checks on B; compare RSSI with A; probe DAC C | 9 |
-| 21 | `boards/gd88b/board.c:68` | B's NAND chip select (for the NAND copy of its calibration page) | Only if B's program-flash copy of the page is bad; otherwise leave | 7 |
+| 20 | `boards/gd88b/board.c:58` | Whether B's three DAC pins are wired as A's | Receive checks on B; compare RSSI with A; probe DAC C | 9 |
+| 21 | - | **Settled 2026-10-27**: B's chip select is PTA18; B's page read through the map (hardware-gd88.md 7) | - | 7 |
 | 22 | - | **Settled 2026-10-27**: B's RX path pin is PTB0 in FM and DMR (A's is PTB1); PTB13 and PTB5 do nothing (hardware-gd88.md 10) | - | 9, 10 |
 | 23 | `boards/gd88b/pins.h:23` | B's audio source pair to A: mode 0 = the main chip's AF (FM), mode 1 = the modem's line out | B audible in FM and in DMR through A | 9, 10, 11 |
-| 24 | `boards/gd88b/pins.h:38` | PTB11 and PTB12's roles on B (low from start-up) | Note any effect when high | 9 |
-| 25 | `boards/gd88b/pins.h:47` | The status LEDs' colors (LED 1 lights while A transmits, LED 2 while it receives) | Look | 8 |
+| 24 | `boards/gd88b/pins.h:41` | PTB11 and PTB12's roles on B (low from start-up) | Note any effect when high | 9 |
+| 25 | `boards/gd88b/pins.h:55` | The status LEDs' colors (LED 1 lights while A transmits, LED 2 while it receives) | Look | 8 |
 
-25 rows; the 20 not settled have a mark each. Recount with the grep after any edit.
+24 rows (13 was settled and removed); the 13 not settled have a mark each. Recount with the grep after any edit.
 
 Items without a mark that this plan also settles (from [hardware-gd88.md](../spec/hardware-gd88.md) 5 and 14):
 

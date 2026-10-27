@@ -13,6 +13,7 @@
 
 #define OFF_RX_TUNE		0x02Cu
 #define OFF_TX_CENTER		0x43Fu		// VHF half only, used for both bands
+// TODO(gd88): unknown, needs a radio: which of the two is high power (the output at each level)
 #define OFF_PA_HIGH		0x045u		// power level 1 of the factory set-up
 #define OFF_PA_LOW		0x056u		// every other level
 #define OFF_MOD			0x067u		// (u8, u8) pairs, the first byte used
