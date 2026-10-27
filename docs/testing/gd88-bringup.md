@@ -303,7 +303,7 @@ UHF, on A's VFO and on B's (dual watch).
 | Narrow and wide bandwidth sound right | bandwidth words |
 | CTCSS/DCS opens only on the right tone | the BK4819 detector |
 | RSSI in dBm close to a signal generator or the bench's known level | the RSSI offset |
-| B: the same, heard through A's speaker (A gives the speaker vfo 1 while B is heard) | B's RX path pairs and its audio source pair: mode 0 is taken as FM, mode 1 as DMR (TODO gd88b/pins.h modes and source pair). If B is silent in FM, swap the modes. B's PTB11/PTB12 roles (TODO): note if anything changes when they are set |
+| B: the same, heard through A's speaker (A gives the speaker vfo 1 while B is heard) | B's audio source pair: mode 0 is taken as the chip's AF, mode 1 as the modem's line out (TODO gd88b/pins.h). If B is silent in FM, swap them. B's PTB11/PTB12 roles (TODO): note if anything changes when they are set |
 | The audio goes to the speaker, the headset (plug one in) or both, per the setting | the headset byte rides with the loudspeaker byte: TODO paths_gd88.c |
 
 Record, for each of the combinations (FM/DMR x A/B x speaker/headset) which chain bits worked. The chain is visible as
@@ -435,12 +435,12 @@ section 3 step that settles it.
 | 19 | - | **Settled 2026-10-27**: the RDA5807 answers at 0x11 (`test_broadcast_receiver`) | - | 12 |
 | 20 | `boards/gd88b/board.c:54` | Whether B's three DAC pins are wired as A's | Receive checks on B; compare RSSI with A; probe DAC C | 9 |
 | 21 | `boards/gd88b/board.c:68` | B's NAND chip select (for the NAND copy of its calibration page) | Only if B's program-flash copy of the page is bad; otherwise leave | 7 |
-| 22 | `boards/gd88b/pins.h:16` | B's RX path pins: PTB13 = FM and PTB5 = DMR is taken; PTB0's role. A's is settled (2026-10-26): PTB1 and its band's front end, which B switches for A | FM and DMR on B: swap if wrong | 9, 10 |
+| 22 | - | **Settled 2026-10-27**: B's RX path pin is PTB0 in FM and DMR (A's is PTB1); PTB13 and PTB5 do nothing (hardware-gd88.md 10) | - | 9, 10 |
 | 23 | `boards/gd88b/pins.h:23` | B's audio source pair to A: mode 0 = the main chip's AF (FM), mode 1 = the modem's line out | B audible in FM and in DMR through A | 9, 10, 11 |
 | 24 | `boards/gd88b/pins.h:38` | PTB11 and PTB12's roles on B (low from start-up) | Note any effect when high | 9 |
 | 25 | `boards/gd88b/pins.h:47` | The status LEDs' colors (LED 1 lights while A transmits, LED 2 while it receives) | Look | 8 |
 
-25 rows; the 21 not settled have a mark each. Recount with the grep after any edit.
+25 rows; the 20 not settled have a mark each. Recount with the grep after any edit.
 
 Items without a mark that this plan also settles (from [hardware-gd88.md](../spec/hardware-gd88.md) 5 and 14):
 

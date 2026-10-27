@@ -219,8 +219,8 @@ B has no display, keys, power latch or GPS. Pin index as in section 9.
 |---|---|
 | RX band | UHF: PTB8 high, PTB7 low. VHF: the reverse |
 | RX front end | UHF PTB15, VHF PTB14, high = on. **Shared**: A's receiver needs its band's front end too |
-| RX path | A: PTB1 (FM and DMR); PTB0 has no effect A can see. B: PTB13 / PTB5, as the vendor's mode 0 / mode 1 pairs (PTB1 + PTB13, PTB0 + PTB5). All off while transmitting |
-| A's receiver | **HW** bench: with PTB15 + PTB1 low A hears nothing (noise floor -127 dBm); high, the floor is -86 dBm and a bench signal shows. VHF the same with PTB14. The band switch (PTB8 / PTB7) and PTB13 make no difference to A. B sets them from A's `PATH` messages ([rx2-link.md](rx2-link.md)) |
+| RX path | **HW** A: PTB1, B: PTB0, high = on, in FM and DMR alike; neither receiver cares about the other's. B's reading of a bench signal rises 53 dB with PTB0 (-108 to -55 dBm), and without it B's floor is about -120 dBm. PTB13 and PTB5, the rest of the vendor's mode pairs (PTB1 + PTB13, PTB0 + PTB5), and PTB11 / PTB12 change neither receiver: held low. All off while transmitting |
+| A's receiver | **HW** bench: with PTB15 + PTB1 low A hears nothing (noise floor -127 dBm); high, the floor is -86 dBm and a bench signal shows. VHF the same with PTB14. The band switch (PTB8 / PTB7) and PTB13 make no difference to A, nor to B. B sets them from A's `PATH` messages ([rx2-link.md](rx2-link.md)) |
 | Audio source to A | mode 0: PTC18 high, PTB4 low; mode 1: the reverse |
 | Audio band | VHF: PTB18 high, PTB22 low; UHF: the reverse |
 | TX path | UHF PTA17, VHF PTB10 |
@@ -299,8 +299,7 @@ The code marks each with `TODO(gd88)`. The first-day plan that settles them is [
 
 1. Which RF chips other units have (the bench's A: BK4819 and AT1141), and B's.
 2. A's output power control, and so transmit.
-3. FM against DMR for the chain's classes, chain bit 6 as the broadcast tuner's source, B's RX path pairs and B's
-   audio source pair.
+3. FM against DMR for the chain's classes, chain bit 6 as the broadcast tuner's source, and B's audio source pair.
 4. The front panel's navigation keys, the encoder's direction, whether PTB12 is the knob's contact.
 5. The volume knob's level table, the LCD controller's timing word, DAC C on each SoC.
 6. The NAND's size and B's NAND chip select.

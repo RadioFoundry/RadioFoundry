@@ -11,14 +11,13 @@
 // The RX front end of each band, high = on. Shared: A's receiver needs its band's too (paths_gd88b.c)
 #define PIN_RX_FRONT_UHF	0x2F	// PTB15
 #define PIN_RX_FRONT_VHF	0x2E	// PTB14
-// The RX path pins, high = on, all off while transmitting. _A are A's receiver, _B are B's: settled on the radio for
-// PTB1, which A needs in FM and DMR, while PTB13 and PTB0 make no difference to A.
-// TODO(gd88): unknown, needs a radio: on B, which of PTB13 / PTB5 is FM and which DMR (PTB13 is taken as FM); what
-// PTB0 does for A
-#define PIN_RX_M0_A		0x21	// PTB1
-#define PIN_RX_M0_B		0x2D	// PTB13
-#define PIN_RX_M1_A		0x20	// PTB0
-#define PIN_RX_M1_B		0x25	// PTB5
+// The RX path of each receiver, high = on, off while transmitting. Settled on the radio: A needs PTB1 and B needs PTB0
+// (B's reading of a bench signal rises 53 dB with it), and neither cares about the other's. PTB13 and PTB5, the rest
+// of the original firmware's mode pairs (PTB1 + PTB13, PTB0 + PTB5), make no difference to either: held low
+#define PIN_RX_A		0x21	// PTB1
+#define PIN_RX_B		0x20	// PTB0
+#define PIN_PARK_B13		0x2D
+#define PIN_PARK_B5		0x25
 // The audio source to A: mode 0 = PTC18 high, PTB4 low; mode 1 the reverse; both low = none.
 // TODO(gd88): unknown, needs a radio: which mode is the main chip's AF and which the modem's line out. Mode 0 is taken
 // as the chip's AF (FM)
