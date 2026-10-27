@@ -4,8 +4,9 @@
 // with TIM8 CH1 PWM (docs/spec/hardware-md380.md 7).
 //
 // The panel type is the factory's, from SPI flash security register 3 byte 0x1D (low two bits), given to the ST7735
-// driver as it is (an erased byte is type 3, as in stock); a failed read leaves type 0. Every type is driven in RGB
-// order: stock sets the same color order for all of them (hardware-md380.md 7). MD380_PANEL_TYPE overrides the type
+// driver as it is. An erased byte (0xFF, common on radios whose security registers were wiped) or a failed read leaves
+// type 0, the common panel. Every type is driven in RGB order: stock sets the same color order for all of them
+// (hardware-md380.md 7). MD380_PANEL_TYPE overrides the type
 // and MD380_PANEL_MADCTL_XOR mirrors the picture, both build-time bench knobs. All 128 rows are assumed visible.
 //
 // The LCD data lines D0-D7 are also the keypad columns: every LCD burst holds md380_lcdbus_lock(), starts by
@@ -184,7 +185,9 @@ static void init(void)
 	uint8_t raw;
 	if (stm32_spi_flash_read_security(PANEL_SECREG, PANEL_OFFSET, &raw, 1)) {
 		panel_raw = raw;
-		panel.type = raw & 3u;
+		if (raw != 0xFF) {
+			panel.type = raw & 3u;
+		}
 	}
 #ifdef MD380_PANEL_TYPE
 	panel.type = MD380_PANEL_TYPE;

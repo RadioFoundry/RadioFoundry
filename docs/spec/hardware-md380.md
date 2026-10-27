@@ -620,10 +620,12 @@ PWM at 1 kHz (unverified for the pin; PWM ours).
 
 Panel type: the factory stores it in SPI flash security register 3, byte 0x1D, low two bits, as on the other STM32
 radios. `display_md380.c` reads it at start-up and gives it to the st7735 driver unchanged (types in
-`drivers/display/st7735/st7735.h`). An erased byte (0xFF) is type 3, as in the stock firmware; an unreadable register
-leaves type 0. Stock sets the same color order for every type, so all are driven in RGB order (`force_rgb`): one radio
-reads 0xFF there and showed orange as blue as type 3 in BGR order, and right as type 0 in RGB order (2026-10-27).
-Type 3 in RGB order, which types other MD-380 panels carry, and the orientation of types 1 and 2 are untested.
+`drivers/display/st7735/st7735.h`). An erased byte (0xFF) or an unreadable register leaves type 0, the common panel.
+Stock reads 0xFF as type 3, but many radios carry 0xFF because the register was wiped, so it says nothing about the
+panel. Stock sets the same color order for every type, so all are driven in RGB order (`force_rgb`). One radio reading
+0xFF shows a picture with both inits: right as type 0, red and blue swapped as type 3 in BGR order (2026-10-27); which
+controller it has is unknown. Which types other MD-380 panels carry, and the orientation of types 1 and 2, are
+untested.
 
 | Knob or key | What |
 |---|---|
@@ -632,7 +634,7 @@ Type 3 in RGB order, which types other MD-380 panels carry, and the orientation 
 | `display.panel_raw` (debug link `link` section) | the factory byte in hex, `none` when it couldn't be read |
 | `display.panel_type` (same) | the type in use |
 
-`boards/md380/hil/test_md380_panel.py` checks that the byte was read and the type is its low two bits.
+`boards/md380/hil/test_md380_panel.py` checks that the byte was read and the type is its low two bits (0 for 0xFF).
 
 ---
 
