@@ -28,6 +28,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `restore.js` | What a bundle can put back, and the plans for it | |
 | `select.js` | À la carte feature selection with the dependencies, matching prebuilt variants | |
 | `codeplug.js` | Codeplug formats and the converter registry | |
+| `migrate.js` | The original firmware's channels after an install: a stock codeplug found, converted, written and read back (below) | `tools/codeplug_port.py` |
 | `fake.js` | A simulated radio: bootloader with a flash model, RadioFoundry's serial port, a synthetic stock file | `rfoundry/fakedfu.py` |
 | `stub.js`, `lz4.js` | The HR_C7000 boot stub: loaded through the boot ROM or handed over by RadioFoundry, then reads, sector writes and the LED | `stub/stubtool.py` |
 | `f4stub.js` | The STM32F4 loader: handed over by RadioFoundry, the board record (CONFIG) and its echo, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
@@ -294,6 +295,29 @@ What can be read depends on the firmware running:
 | RadioFoundry with stub entry (STM32F4) | The same. The radio info comes over the debug link; the internal flash, the SPI flash and the security registers come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into RadioFoundry. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves RadioFoundry running, and the debug link reads everything. A build whose codeplug protocol has no area 10 still gets the security registers, through the loader's SREAD (protocol 5). When both read them and the copies differ, the loader's checked copy is `security-registers.bin` and the other is kept as `security-registers-codeplug-protocol.bin`, marked incomplete |
 | Another open firmware (OpenGD77 family) | Everything but the security registers, over that firmware's CPS (`openfw.js`, below) |
 | Stock (STM32F4) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing RadioFoundry: flashing never touches the SPI flash, and RadioFoundry doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
+
+## Channels after an install (`migrate.js`)
+
+A radio installed from its stock firmware still holds the stock codeplug, in a layout RadioFoundry does not read. The
+last step of the install brings it over by default, on every radio whose stock codeplug the browser converts:
+
+| Step | What happens |
+|---|---|
+| 1. Read | The codeplug span over the CPS, and further on a family whose stock tables reach past it (`readSpan`) |
+| 2. Recognize | `classify` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md) 2). A RadioFoundry codeplug, a blank chip or an unknown layout ends the step: nothing is written |
+| 3. Convert | `importStock`, the Codeplug Editor's conversion, with its counts and notes. No channels ends the step |
+| 4. Prepare | The settings area is claimed (`prepareStorage`), as before a codeplug restore |
+| 5. Write | The 4 KB sectors that differ (`codeplugSectors`): never RadioFoundry's own areas or protected data |
+| 6. Check | The span read back: every written sector holds its bytes, and the decoded codeplug has the converted counts. A mismatch is reported as a problem and the step stops |
+
+It runs at once when the backup taken in this visit holds the stock codeplug (the SPI flash read covers `readSpan`).
+Without one it waits for the user and says that the original bytes may be lost: on a board whose stock codeplug shares
+sectors with RadioFoundry's codeplug, the write replaces them. A failure at any step leaves RadioFoundry running without
+channels; the backup still holds the original codeplug, and the Codeplug Editor converts it from there.
+
+The boards whose stock codeplug the browser converts are those in the TYT family layouts of `codeplug/stock_tyt.js`.
+The HR_C7000 backend has no conversion: its stock codeplug stays in the data flash and in the backup
+(`original-channels.bin`), and `tools/backup_codeplug.py` ports it.
 
 ## Another open firmware (`openfw.js`)
 

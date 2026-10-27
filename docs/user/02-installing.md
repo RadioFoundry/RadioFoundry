@@ -66,6 +66,12 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
    the changed parts and restarts the radio. Do not unplug the radio until it says the installation is complete.
 6. **Verify.** The installer reads what the radio reports: the version it wrote, and "DMR voice is ready" when the
    codec is in place.
+7. **Channels.** If the radio still holds its original firmware's codeplug, the installer converts it to the
+   RadioFoundry layout and writes it to the radio, then reads it back and shows how many channels, zones and contacts
+   came over. This runs on its own once the backup holds the original codeplug. If you skipped the backup, the installer
+   asks first: on some radios the converted codeplug replaces the original bytes. If the installer can't read the
+   original codeplug, it says nothing and the radio starts without channels: convert the backup as described in
+   [Backing up and restoring](#backing-up-and-restoring).
 
 On Windows the bootloader needs a driver once ([Windows: the bootloader driver](#windows-the-bootloader-driver)).
 
