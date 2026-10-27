@@ -9,6 +9,9 @@
 #include "board.h"
 #include "vocoder.h"
 #include "modem/hrc7000/hrc7000.h"
+#if CONFIG_DEBUG_MEM
+#include "debuglink/debuglink_proto.h"
+#endif
 
 #define SOFT_RESET_SPINS	1000000u
 #define WDT_KEY			0x5ADA7200u
@@ -170,11 +173,34 @@ HRC_RAMFUNC static bool enter_stub(uint32_t entry)
 }
 #endif
 
+#if CONFIG_DEBUG_MEM
+// hal_system_t.pin: pins 0-95 are PTA0-PTC31 (hardware-dm32.md 3.9). The pad's function (IO_DIPLEX) is left as it is
+static bool pin(uint8_t p, uint8_t action, uint8_t *state)
+{
+	if (p >= 96u) {
+		return false;
+	}
+	if (action == DL_MEM_PIN_INPUT) {
+		hrc_pin_in(p);
+	} else if (action != DL_MEM_PIN_READ) {
+		hrc_pin_out(p, action == DL_MEM_PIN_HIGH);
+	}
+	uint32_t bank = hrc_gpio_bank(p), bit = hrc_gpio_bit(p);
+	*state = (uint8_t)(((REG32(bank + GPIO_DDR) & bit) ? DL_MEM_PS_OUTPUT : 0u) |
+			   ((REG32(bank + GPIO_EXT) & bit) ? DL_MEM_PS_LEVEL : 0u) |
+			   ((REG32(bank + GPIO_DR) & bit) ? DL_MEM_PS_LATCH : 0u));
+	return true;
+}
+#endif
+
 const hal_system_t hrc_system = {
 	.chip = chip,
 	.read = rd,
 	.readable = readable,
 	.reboot = reboot,
+#if CONFIG_DEBUG_MEM
+	.pin = pin,
+#endif
 #if CONFIG_STUB_ENTRY
 	.stub_region = stub_region,
 	.enter_stub = enter_stub,

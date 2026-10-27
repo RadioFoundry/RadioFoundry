@@ -216,6 +216,17 @@ static void test_log(void)
 	CHECK(cmd(DL_CMD_CRASH, &c, 1) == 1 && out[0] == DL_ST_UNAVAILABLE);
 }
 
+// MEM reaches the shared handler (dl_mem.c, dlMemTest has the rest): a write unarmed is refused before any access, and
+// a pin without the platform's hook is unavailable
+static void test_mem(void)
+{
+	setup();
+	uint8_t w[10] = { DL_MEM_OP_WRITE, 4, 0x00, 0x00, 0x00, 0x20 };
+	CHECK(cmd(DL_CMD_MEM, w, sizeof w) == 1 && out[0] == DL_ST_REFUSED);
+	uint8_t p[3] = { DL_MEM_OP_PIN, 1, DL_MEM_PIN_READ };
+	CHECK(cmd(DL_CMD_MEM, p, sizeof p) == 1 && out[0] == DL_ST_UNAVAILABLE);
+}
+
 int main(void)
 {
 	test_basic();
@@ -223,6 +234,7 @@ int main(void)
 	test_read_mem();
 	test_reboot();
 	test_log();
+	test_mem();
 	printf("rx2DlTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

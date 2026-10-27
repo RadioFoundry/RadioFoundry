@@ -29,6 +29,12 @@
                                                 stop the feeds (docs/spec/watchdog.md 5): the radio resets. starve polls
                                                 until the link goes quiet and prints how long it lasted
     rfoundry_debug.py watchdog load H L [RST]        HR_C7000: re-arm with raw OT_LOAD_H / OT_LOAD_L (RST_LOAD), then starve
+    rfoundry_debug.py mem read ADDR [N] [-w 1|2|4]   peek: N values of the width (CONFIG_DEBUG_MEM; debuglink.md 3.23)
+    rfoundry_debug.py --dangerous mem write|set|clear ADDR VALUE [-w 1|2|4]
+                                                poke: the value, or its bits set or cleared; prints the read back
+    rfoundry_debug.py pin PIN [--dangerous in|low|high]
+                                                a pin's direction and level (PIN: the platform's index, or PTB9
+                                                on the HR_C7000); with --dangerous make it an input or drive it
     rfoundry_debug.py storage info                   the settings / journal region: ours or foreign, its addresses
     rfoundry_debug.py storage dump --out DIR         the region and the calibration copy (SPI flash) to files outside git
     rfoundry_debug.py storage claim --out DIR        dump first, then let the firmware erase a foreign region and use it
@@ -90,6 +96,13 @@ WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFI
 WDT_OP_CLEAR_GAP, WDT_OP_TEST, WDT_OP_LOAD = range(3)
 WDT_TESTS = {"starve": 1, "spin": 2, "irq-off": 3}
 WDT_TOKEN = 0x474F4457              # 'WDOG'
+MEM = 0x1F                          # peek and poke (CONFIG_DEBUG_MEM; docs/spec/debuglink.md 3.23)
+MEM_OP_READ, MEM_OP_WRITE, MEM_OP_SET, MEM_OP_CLEAR, MEM_OP_ARM, MEM_OP_DISARM, MEM_OP_PIN = range(7)
+MEM_WRITE_OPS = {"write": MEM_OP_WRITE, "set": MEM_OP_SET, "clear": MEM_OP_CLEAR}
+MEM_PIN_ACTIONS = {"read": 0, "in": 1, "low": 2, "high": 3}
+MEM_PS_OUTPUT, MEM_PS_LEVEL, MEM_PS_LATCH = 1, 2, 4
+MEM_READ_MAX = 64
+MEM_KEY = 0x454B4F50                # 'POKE': sent only with --dangerous
 WDT_LEAVE = 0xFFFFFFFF              # load: keep RST_LOAD
 RX2 = 0x1E                          # the second receiver's SoC: info, update bridge, restart (docs/spec/debuglink.md 3.22)
 RX2_OP_INFO, RX2_OP_BRIDGE, RX2_OP_RESTART, RX2_OP_FORWARD = range(4)
@@ -591,6 +604,29 @@ class DebugLink:
     def watchdog_load(self, hi, lo, rst=WDT_LEAVE):
         """HR_C7000: re-arm the watchdog with raw loads, then starve it (the bench measurement of its clock)."""
         self.request(WATCHDOG, struct.pack("<BIIII", WDT_OP_LOAD, hi, lo, rst, WDT_TOKEN))
+
+    def mem_read(self, addr, width=4, count=1):
+        """count values of width bytes from addr (aligned), as ints."""
+        _, r = self.request(MEM, struct.pack("<BBIB", MEM_OP_READ, width, addr, count))
+        return [int.from_bytes(r[i * width:(i + 1) * width], "little") for i in range(len(r) // width)]
+
+    def mem_arm(self):
+        """Allow writes and pin changes for the next minute (the radio refuses them otherwise)."""
+        self.request(MEM, struct.pack("<BI", MEM_OP_ARM, MEM_KEY))
+
+    def mem_disarm(self):
+        self.request(MEM, bytes([MEM_OP_DISARM]))
+
+    def mem_write(self, addr, value, width=4, op="write"):
+        """Write value (op 'write'), or set or clear its bits, at addr; returns the value read back. Needs mem_arm()."""
+        _, r = self.request(MEM, struct.pack("<BBII", MEM_WRITE_OPS[op], width, addr, value & 0xFFFFFFFF))
+        return struct.unpack_from("<I", r)[0]
+
+    def pin(self, pin, action="read"):
+        """A pin's state after the action ('read', or with mem_arm(): 'in', 'low', 'high'): dict output, level, latch."""
+        _, r = self.request(MEM, bytes([MEM_OP_PIN, pin, MEM_PIN_ACTIONS[action]]))
+        return {"output": bool(r[0] & MEM_PS_OUTPUT), "level": int(bool(r[0] & MEM_PS_LEVEL)),
+                "latch": int(bool(r[0] & MEM_PS_LATCH))}
 
     def rx2_info(self):
         """The second receiver's SoC: a set of RX2_FLAGS names (empty on a radio with one SoC)."""
@@ -1716,6 +1752,54 @@ def watchdog_poll(link, limit_s=120.0):
     return 0
 
 
+def pin_index(text):
+    """A pin by the platform's index, or PTA0-PTC31 as the HR_C7000 numbers them (bank * 32 + bit)."""
+    t = text.upper()
+    if len(t) >= 4 and t.startswith("PT") and t[2] in "ABC" and t[3:].isdigit() and int(t[3:]) < 32:
+        return "ABC".index(t[2]) * 32 + int(t[3:])
+    return int(text, 0)
+
+
+def cmd_mem(link, a):
+    width = a.width
+    addr = int(a.addr, 0)
+    if addr % width:
+        print(f"0x{addr:08X} is not a multiple of the width {width}", file=sys.stderr)
+        return 2
+    if a.op == "read":
+        n = int(a.value, 0) if a.value else 1
+        if not 1 <= n <= MEM_READ_MAX:
+            print(f"N must be 1..{MEM_READ_MAX}", file=sys.stderr)
+            return 2
+        vals = link.mem_read(addr, width, n)
+        per = 16 // width
+        for i in range(0, len(vals), per):
+            print(f"{addr + i * width:08X}: " + " ".join(f"{v:0{2 * width}X}" for v in vals[i:i + per]))
+        return 0
+    if not a.dangerous:
+        print(f"mem {a.op} changes the radio's memory or registers: add --dangerous to send the key", file=sys.stderr)
+        return 2
+    if a.value is None:
+        print(f"mem {a.op} ADDR VALUE", file=sys.stderr)
+        return 2
+    link.mem_arm()
+    back = link.mem_write(addr, int(a.value, 0), width, a.op)
+    print(f"{addr:08X} {a.op} 0x{int(a.value, 0):X}: reads 0x{back:0{2 * width}X}")
+    return 0
+
+
+def cmd_pin(link, a):
+    p = pin_index(a.pin)
+    if a.action != "read":
+        if not a.dangerous:
+            print(f"pin {a.action} changes a pin: add --dangerous to send the key", file=sys.stderr)
+            return 2
+        link.mem_arm()
+    s = link.pin(p, a.action)
+    print(f"pin {a.pin} ({p}): {'output' if s['output'] else 'input'}, level {s['level']}, latch {s['latch']}")
+    return 0
+
+
 def cmd_watchdog(link, a):
     if a.op == "clear-gap":
         link.watchdog_clear_gap()
@@ -1903,6 +1987,8 @@ def main(argv=None):
     ap.add_argument("--timeout", type=float, default=1.0, help="seconds to wait for each answer")
     ap.add_argument("--rx2", action="store_true", help="send every request to the second SoC of a radio with two, "
                     "through the first (RX2 FORWARD, docs/spec/debuglink.md 3.22): --rx2 version, --rx2 log, ...")
+    ap.add_argument("--dangerous", action="store_true", help="allow mem write|set|clear and pin in|low|high: sends the "
+                    "radio the key that arms them (they can switch on a transmitter or damage the hardware)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("ping")
     sub.add_parser("version")
@@ -1978,6 +2064,15 @@ def main(argv=None):
                        "(docs/spec/watchdog.md)")
     p.add_argument("op", nargs="?", default="show", choices=["show", "clear-gap", "test", "load"])
     p.add_argument("args", nargs="*")
+    p = sub.add_parser("mem", help="peek and poke: read, or with --dangerous write|set|clear (docs/spec/debuglink.md "
+                       "3.23)")
+    p.add_argument("op", choices=["read", "write", "set", "clear"])
+    p.add_argument("addr")
+    p.add_argument("value", nargs="?", help="read: how many values (default 1); write, set, clear: the value or bits")
+    p.add_argument("-w", "--width", type=int, choices=[1, 2, 4], default=4)
+    p = sub.add_parser("pin", help="a pin's direction and level; with --dangerous: in, low or high")
+    p.add_argument("pin", help="the platform's index, or PTA0-PTC31 (HR_C7000)")
+    p.add_argument("action", nargs="?", default="read", choices=list(MEM_PIN_ACTIONS))
     p = sub.add_parser("rx2", help="the second receiver's SoC: info, restart (the update bridge is stubtool's, "
                        "docs/spec/debuglink.md 3.22)")
     p.add_argument("op", nargs="?", default="info", choices=["info", "restart"])
@@ -2041,6 +2136,10 @@ def main(argv=None):
                 return cmd_crash(link, a)
             elif a.cmd == "watchdog":
                 return cmd_watchdog(link, a)
+            elif a.cmd == "mem":
+                return cmd_mem(link, a)
+            elif a.cmd == "pin":
+                return cmd_pin(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
             elif a.cmd == "rx2":

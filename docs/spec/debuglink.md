@@ -109,6 +109,8 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1B` | CRASH | operation u8 + arguments (3.19); `CONFIG_CRASH_LOG` builds, else status 4 | none (3.19) |
 | `0x1C` | CODEPLUG | operation u8 + arguments (3.20); `CONFIG_CPS_FAST` builds, else status 4 | layout, block sums, an LZ4 stream, or a reason (3.20) |
 | `0x1D` | WATCHDOG | operation u8 + arguments (3.21); `CONFIG_WATCHDOG` builds, else status 4 | none (3.21) |
+| `0x1E` | RX2 | operation u8 + arguments (3.22) | flags, or the second SoC's reply (3.22) |
+| `0x1F` | MEM | operation u8 + arguments (3.23); `CONFIG_DEBUG_MEM` builds, else unknown | values, the value read back, or a pin's state (3.23) |
 
 ### 3.1 VERSION
 
@@ -670,6 +672,33 @@ answered refused (7). The bridge is dropped if PTT went down between the reply a
 `rfoundry_debug.py --rx2 <command>` sends any command through FORWARD (`--rx2 version`, `--rx2 log`, `--rx2 view`,
 `--rx2 dump ...`).
 
+### 3.23 MEM
+
+Peek and poke for the bench (`CONFIG_DEBUG_MEM`, on with the debug link, and on a second SoC with its own server,
+[rx2-link.md](rx2-link.md) 2.3): any address at 1, 2 or 4 bytes, and the SoC's GPIO pins. For what no view key shows
+yet: a peripheral's registers after a fault, a chip's settings, which pin does what. The handler is portable
+(`core/debuglink/dl_mem.c`); the platform gives the pin hook (`hal_system_t.pin`). u32 values are little endian; the
+address is a multiple of the width.
+
+| Op | Name | Arguments | Reply after the status |
+|---|---|---|---|
+| 0 | READ | width u8, address u32, count u8 (1 to 64) | count values, width bytes each |
+| 1 | WRITE | width u8, address u32, value u32 | the value read back u32. Armed only |
+| 2 | SET | the same | the value's bits set (read, or, write); the value read back. Armed only |
+| 3 | CLEAR | the same | the value's bits cleared; the value read back. Armed only |
+| 4 | ARM | key u32 | none: writes and pin changes allowed for 60 s. A wrong key disarms and is refused |
+| 5 | DISARM | none | none |
+| 6 | PIN | pin u8, action u8: 0 read, 1 input, 2 drive low, 3 drive high | state u8 after it: bit 0 an output, bit 1 the level at the pin, bit 2 the level it drives. Actions other than read armed only. No hook: status 4 |
+
+The key is `'POKE'` (`0x454B4F50`). Unarmed writes and pin changes are refused (7) before any access. A pin is the
+platform's index; on the HR_C7000 PTA0 to PTC31 are 0 to 95, and the action leaves the pad's function alone.
+
+- `rfoundry_debug.py mem read ADDR [N] [-w 1|2|4]`
+- `rfoundry_debug.py --dangerous mem write|set|clear ADDR VALUE [-w 1|2|4]`
+- `rfoundry_debug.py pin PIN [in|low|high]` (PIN a number or `PTB9`); a change needs `--dangerous`
+
+The tool sends the key only with `--dangerous`. With `--rx2` every request goes to the second SoC.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -677,7 +706,11 @@ answered refused (7). The bridge is dropped if PTT went down between the reply a
 - Every injected key hold is capped at 10 s, one injected key at a time, 40 ms between them.
 - Radio requests are rate limited (20 ms).
 - INFO_CHIP and READ_MEM only read. READ_MEM reads flash, system memory, OTP and option bytes only, never RAM or
-  peripherals. Nothing in the debug link writes or erases internal flash or the option bytes.
+  peripherals. Nothing in the debug link writes or erases internal flash or the option bytes, except a MEM write to
+  a flash controller's registers, which the person at the bench chooses.
+- MEM reads any address; a read can clear a status flag or pop a FIFO. Its writes and pin changes can key the
+  transmitter, short a driven pin or hang the SoC: they need the key, last 60 s, and the host tool sends the key only
+  with `--dangerous` (3.23).
 - STUB ENTER is refused while transmitting, and the transmitter is switched to receive before the jump (3.18).
 - CRASH TEST needs its token and is refused while transmitting (3.19).
 - WATCHDOG TEST and LOAD need their token and are refused while transmitting; each ends in a reset (3.21).
@@ -686,8 +719,8 @@ answered refused (7). The bridge is dropped if PTT went down between the reply a
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the vendor bootloader is proprietary).
-- AUDIO_PROBE (diagnostic builds only) writes audio chip registers as asked; nothing else in the debug link writes
-  chip registers.
+- AUDIO_PROBE (diagnostic builds only) writes audio chip registers as asked; apart from it, only an armed MEM writes
+  registers.
 - STUB (bench builds only) writes arbitrary RAM and then runs it, giving the host full control: it is gated by a magic
   key, the exact length and a CRC-32, loads only into the platform's declared free RAM span, is refused while
   transmitting, and never returns (recover by a power cycle). Off in a release. The stub, not the debug link, is

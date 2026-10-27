@@ -9,6 +9,7 @@
 #include "board.h"
 #include "hal_time.h"
 #include "debuglink/debuglink.h"
+#include "debuglink/dl_mem.h"
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_chip.h"
 #include "debuglink/dlog.h"
@@ -942,6 +943,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return stub_entry_request(req, len, out, cap);	// core/stubentry; unavailable without CONFIG_STUB_ENTRY
 	case DL_CMD_CRASH:
 		return debuglink_cmd_crash(req, len, out, cap);
+	case DL_CMD_MEM:
+		return debuglink_cmd_mem(req, len, out, cap);
 	case DL_CMD_WATCHDOG:
 		return debuglink_cmd_watchdog(req, len, out, cap);
 	case DL_CMD_RX2:

@@ -265,6 +265,10 @@ TESTS   += rx2DmrTest
 rx2DmrTest: rx2DmrTest.c $(CORE)/rx2/rx2_dmr.c $(CORE)/rx2/rx2_dmr.h $(CORE)/rx2/rx2_link.c $(CORE)/rx2/rx2_link.h \
             $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ rx2DmrTest.c $(CORE)/rx2/rx2_dmr.c $(CORE)/rx2/rx2_link.c
+# The debug link's peek and poke (core/debuglink/dl_mem.c): widths, the arming key, pins
+TESTS   += dlMemTest
+dlMemTest: dlMemTest.c $(CORE)/debuglink/dl_mem.c $(CORE)/debuglink/dl_mem.h $(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ dlMemTest.c $(CORE)/debuglink/dl_mem.c
 TESTS   += miclevelTest
 miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
@@ -280,7 +284,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 
 run: run-core
 run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest \
-          rx2LinkTest rx2DmrTest keyassignTest powerSwitchTest boardBandTest batteryTest afskTonegenTest
+          rx2LinkTest rx2DmrTest dlMemTest keyassignTest powerSwitchTest boardBandTest batteryTest afskTonegenTest
 	./aprsRadioTest
 	./afskTonegenTest
 	./radioCoreTest
@@ -295,6 +299,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTes
 	./miclevelTest
 	./rx2LinkTest
 	./rx2DmrTest
+	./dlMemTest
 	./keyassignTest
 	./powerSwitchTest
 	./boardBandTest
@@ -719,7 +724,7 @@ run-debuglinkRx2: debuglinkRx2Test
 # A second SoC's own debug link server (core/rx2/rx2_dl.c, rx2-link.md 2.3): the main SoC's reply layouts, READ_MEM's
 # windows, the restart's token, the restart and crash tests only after the reply, the log ring. Board and clock faked
 RX2SRV  := rx2DlTest.c $(CORE)/rx2/rx2_dl.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c $(CORE)/debuglink/dl_chip.c \
-	   $(CORE)/debuglink/dl_crash_view.c
+	   $(CORE)/debuglink/dl_crash_view.c $(CORE)/debuglink/dl_mem.c $(CORE)/debuglink/dl_mem_target.c
 TESTS   += rx2DlTest
 rx2DlTest: $(RX2SRV) $(CORE)/rx2/rx2_dl.h $(CORE)/rx2/rx2_link.h $(CORE)/debuglink/debuglink_proto.h $(ROOT)/hal/hal_system.h
 	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -DDLOG_NO_RTOS -DCONFIG_RX2_DL_SERVER=1 -DCONFIG_CRASH_LOG=0 \

@@ -8,6 +8,8 @@ CONFIG_FM ?= y
 CONFIG_SUBTONE ?= y
 CONFIG_DMR ?= y
 CONFIG_WATCHDOG ?= y
+# Peek and poke through A (debuglink.md 3.23), with B's debug link server (board.mk, GD88B_DEBUG)
+CONFIG_DEBUG_MEM ?= $(if $(filter 0,$(GD88B_DEBUG)),n,y)
 BOARD_UNSUPPORTED += DMR_PRIVACY	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
 BOARD_UNSUPPORTED += DMR_TALKER_ALIAS	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
 BOARD_UNSUPPORTED += DMR_GPS	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over

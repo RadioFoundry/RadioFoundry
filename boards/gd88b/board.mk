@@ -16,7 +16,8 @@ BOARD_CORE_FILES := core/debuglink/dl_fmt.c
 # chip checks and the crash log's view sections, without the debug link itself. B has no host port, so this is its
 # debug link; GD88B_DEBUG=0 builds it without (B then answers every forwarded command "unknown")
 ifneq ($(GD88B_DEBUG),0)
-BOARD_CORE_FILES += core/debuglink/dlog.c core/debuglink/dl_chip.c core/debuglink/dl_crash_view.c
+BOARD_CORE_FILES += core/debuglink/dlog.c core/debuglink/dl_chip.c core/debuglink/dl_crash_view.c core/debuglink/dl_mem.c \
+	core/debuglink/dl_mem_target.c
 MCU_DEFS += -DCONFIG_RX2_DL_SERVER=1
 endif
 # The image starts where B's IAP loader jumps, with the first stage (boot/gd88b): it offers the boot ROM's handshake on

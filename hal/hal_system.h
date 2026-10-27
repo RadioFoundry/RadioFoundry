@@ -43,6 +43,9 @@ typedef struct {
 	// enter_stub copies the span there first (the STM32: SRAM base, which RadioFoundry's own data holds until the jump)
 	uint8_t *(*stub_region)(uint32_t *size);
 	bool (*enter_stub)(uint32_t entry);
+	// Optional (NULL: none): a GPIO pin by the platform's index, for the debug link's peek and poke (DL_MEM_PIN_*
+	// action, DL_MEM_PS_* state after it, debuglink.md 3.23). False: no such pin
+	bool (*pin)(uint8_t pin, uint8_t action, uint8_t *state);
 #if defined(CONFIG_STUB_ENTRY) && CONFIG_STUB_ENTRY
 	uint32_t stub_run_addr;		// last, so a file built without config.h sees the same layout before it
 	// Optional (NULL: any image): the loaded image may run here. The STM32 refuses one that doesn't feed the IWDG

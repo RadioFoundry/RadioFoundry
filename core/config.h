@@ -129,6 +129,11 @@
 #ifndef CONFIG_RX2_DL_SERVER
 #define CONFIG_RX2_DL_SERVER		0
 #endif
+// Peek and poke on the debug link (core/debuglink/dl_mem.c, debuglink.md 3.23): the debug link's, or a second SoC's
+// server's
+#ifndef CONFIG_DEBUG_MEM
+#define CONFIG_DEBUG_MEM		(CONFIG_DEBUGLINK || CONFIG_RX2_DL_SERVER)
+#endif
 // The log ring (core/debuglink/dlog.c): with the debug link or the server above. Not a feature switch: it follows those
 #ifndef CONFIG_DLOG
 #define CONFIG_DLOG			(CONFIG_DEBUGLINK || CONFIG_RX2_DL_SERVER)
@@ -319,6 +324,9 @@
 #endif
 #if CONFIG_TASK_STACKS && !CONFIG_DEBUGLINK
 #error "CONFIG_TASK_STACKS needs CONFIG_DEBUGLINK"
+#endif
+#if CONFIG_DEBUG_MEM && !(CONFIG_DEBUGLINK || CONFIG_RX2_DL_SERVER)
+#error "CONFIG_DEBUG_MEM needs CONFIG_DEBUGLINK or CONFIG_RX2_DL_SERVER"
 #endif
 #if CONFIG_CPS_OPENFW && !CONFIG_HOSTLINK
 #error "CONFIG_CPS_OPENFW needs CONFIG_HOSTLINK"
