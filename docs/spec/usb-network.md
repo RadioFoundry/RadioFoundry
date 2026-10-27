@@ -104,7 +104,7 @@ mode can replace the link pair with a fixed one (5.3).
   net.air_full`, the MTUs `net.mtu net.air_mtu` and their drops `net.air_too_big net.frag_needed net.up_too_big` (3.2), with PPP
   built `ppp.mru ppp.peer_mru` ([ppp.md](ppp.md) 2); the queue's depth, chaining and the guard are in the `air` section ([debuglink.md](debuglink.md)); the
   compression and confirmed delivery counters are in the `dmr_ip` section (`dmr-data.md` 12.5), the radio's own
-  services' in the `net` section.
+  services' in the `net` and `net_svc` sections.
 - Test hook: the debug link's DMR_DATA IP_SEND hands a UDP datagram to `ipGatewayIPToAir`, the same path as a datagram
   from the host, without switching USB (`tests/hil/test_dmr_ip.py`).
 

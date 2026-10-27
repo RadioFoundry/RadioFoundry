@@ -386,7 +386,7 @@ static void storage_section(dl_text_t *t)
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-						  "sfr", "tasks", "crash", "watchdog", "reset", "air" };
+						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -476,6 +476,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_AIR:
 		debuglink_view_air(t);
+		break;
+	case DL_VIEW_NET_SVC:
+		debuglink_view_net_svc(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP
