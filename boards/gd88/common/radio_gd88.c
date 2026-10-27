@@ -24,6 +24,9 @@
 #include "rf/at1141/at1141.h"
 #include "modem/hrc7000/hrc7000.h"
 #include "audio/afsk_tonegen/afsk_tonegen.h"
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+#include "rx2/rx2_dmr.h"
+#endif
 
 // TODO(gd88): unknown, needs a radio: DAC C's role on each SoC. These are hardware-db25d.md's levels
 #define DAC_C_INIT		1762u			// at init, and 1780 once receive is set up
@@ -83,13 +86,17 @@ static bool audio_open;		// what audio() was last asked, restored after a transm
 static bool vol_muted;		// volume step 0: the chip output stays off whatever audio() asks
 static uint8_t vol_gain = GD88_VOL_GAIN_DEFAULT;
 static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_gd88.c)
-#if GD88_TX
+#if GD88_TX || GD88_DMR_TX
 static uint16_t tx_off_us;
 #endif
-#if CONFIG_DMR && GD88_TX
+#if CONFIG_DMR && GD88_DMR_TX
 static uint16_t tx_on_us;
 static uint32_t tx_hz;
 static void dmr_disarm(void);
+#endif
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+static bool dmr_remote;		// DMR TX armed on B's transmitter (gd88_dmr_split)
+static uint8_t tx_power;
 #endif
 static radio_mode_t mode = RADIO_MODE_FM;
 static uint16_t last_rssi_raw, last_noise_raw;
@@ -164,7 +171,7 @@ static void lo_tune(uint32_t hz)
 	}
 }
 
-#if GD88_TX || CONFIG_BATTERY_SAVE
+#if GD88_TX || GD88_DMR_TX || CONFIG_BATTERY_SAVE
 static void lo_off(void)
 {
 	if (lo_is_at1141) {
@@ -175,7 +182,7 @@ static void lo_off(void)
 }
 #endif
 
-#if CONFIG_DMR && GD88_TX
+#if CONFIG_DMR && GD88_DMR_TX
 static void lo_resume(void)
 {
 	if (lo_is_at1141) {
@@ -311,7 +318,7 @@ static void set_mode(radio_mode_t m)
 		gd88_dmr_enter(rx_hz);
 		mode = RADIO_MODE_DMR;
 	} else {
-#if GD88_TX
+#if GD88_DMR_TX
 		dmr_disarm();
 #endif
 		gd88_dmr_leave();
@@ -333,7 +340,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	if (!supported || !board_in_band(hz, false)) {
 		return false;
 	}
-#if CONFIG_DMR && GD88_TX
+#if CONFIG_DMR && GD88_DMR_TX
 	dmr_disarm();	// a retune ends DMR TX
 #endif
 	bool from_tx = tx_stop();
@@ -376,9 +383,23 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 
 static void audio(bool on);
 
-#if CONFIG_DMR && GD88_TX
+#if CONFIG_DMR && GD88_DMR_TX
 // DMR TX, armed at the key-up. The RF stays receiving until the first burst's RF TX interrupt; the modem's bias gets
-// the modulation level for the TX frequency, the main chip the digital TX words (deviation off)
+// the modulation level for the TX frequency, the main chip the digital TX words (deviation off). With an SFR's split
+// on (A), B's transmitter is armed instead: it keys the bursts the modem's caller sends it (core/rx2/rx2_dmr.h)
+#if !GD88_TX
+// B's own transmitter: the main chip's GPIO5 selects its output to the PA (the original firmware's path 1), GPIO4 the
+// band (high: VHF). Per burst like the PA: held high, B's receiver hears nothing, and an SFR's repeat needs B's modem
+// to keep the inbound slot timing between bursts
+#define OWN_GPIO_PATH		5u
+#define OWN_GPIO_VHF		4u
+static void own_gpio(bool on, uint32_t hz)
+{
+	bk4819_gpio(&rf_main, OWN_GPIO_VHF, on && hz < UHF_FROM_HZ);
+	bk4819_gpio(&rf_main, OWN_GPIO_PATH, on);
+}
+#endif
+
 static bool dmr_tx(uint32_t hz, uint8_t power)
 {
 	gd88_tx_plan_t plan;
@@ -388,6 +409,22 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	if (dmr_armed) {
 		gd88_dmr_tx_disarm();
 	}
+#if GD88_TX && CONFIG_SFR
+	if (rx2_dmr_main_split()) {
+		if (dmr_armed) {
+			dmr_armed = false;
+			gd88_pa_disarm();
+		}
+		if (!rx2_dmr_main_arm(hz, power)) {
+			return false;
+		}
+		tx_hz = hz;
+		tx_power = power;
+		dmr_remote = true;
+		return true;
+	}
+	tx_power = power;
+#endif
 	if (!gd88_pa_arm(hz, plan.pa, plan.on_us, plan.off_us)) {
 		return false;
 	}
@@ -408,8 +445,34 @@ static void dmr_disarm(void)
 		dmr_armed = false;
 		gd88_pa_disarm();
 	}
+#if GD88_TX && CONFIG_SFR
+	if (dmr_remote) {
+		rx2_dmr_main_arm(0, 0);
+		dmr_remote = false;
+	}
+#endif
 }
 
+#if GD88_TX && CONFIG_SFR
+bool gd88_dmr_listen(uint32_t *hz, uint8_t *power)
+{
+	*hz = rx_hz;
+	*power = tx_power;
+	return mode == RADIO_MODE_DMR && rx_hz != 0;
+}
+
+void gd88_dmr_split(bool on)
+{
+	(void)on;	// dmr_tx reads it
+	if (dmr_armed || dmr_remote) {
+		uint32_t hz = tx_hz;
+		dmr_disarm();
+		dmr_tx(hz, tx_power);
+	}
+}
+#endif
+
+#if GD88_TX
 // One burst: the TX line high (B starts its PA sequence: the page's TX-on delay, PA select, 200 us, supply, ramp),
 // 50 us, main chip to f and the LO off, then as long as B's sequence takes
 void gd88_burst_on(gd88_wait_fn wait)
@@ -440,12 +503,47 @@ uint32_t gd88_burst_off(gd88_wait_fn wait, uint32_t elapsed_us, bool now)
 	wait(TX_END_RX_US);
 	return late;
 }
+#else
+// B's own burst (the original firmware's path 1): its path pins to its chip in the TX band and its RX path off, 50 us,
+// the chip to f and the LO off, the page's TX-on delay, then its PA: select, 200 us, supply, the ramp
+void gd88_burst_on(gd88_wait_fn wait)
+{
+	gd88_path_own_tx(true, tx_hz);
+	own_gpio(true, tx_hz);
+	wait(TX_RX_OFF_US);
+	bk4819_burst_tune(&rf_main, tx_hz, BK4819_STATE_TX_MAIN);
+	lo_off();
+	wait(tx_on_us);
+	gd88_pa_own(true);
+}
+
+// After it: the hold, the page's TX-off delay, the PA down, 300 us, the chip back to the IF and the LO on, 300 us, the
+// path pins and the RX path back, 200 us
+uint32_t gd88_burst_off(gd88_wait_fn wait, uint32_t elapsed_us, bool now)
+{
+	uint32_t late = now ? 0 : gd88_dmr_late_us(elapsed_us, 0);
+	if (!now) {
+		wait(gd88_dmr_hold_us(elapsed_us, 0));
+		wait(tx_off_us);
+	}
+	gd88_pa_own(false);
+	wait(TX_END_PATH_US);
+	bk4819_burst_tune(&rf_main, IF_HZ, BK4819_STATE_RX);
+	lo_resume();
+	wait(TX_END_PATH_US);
+	own_gpio(false, tx_hz);
+	gd88_path_own_tx(false, tx_hz);
+	gd88_path_rx(rx_hz, true, true);
+	wait(TX_END_RX_US);
+	return late;
+}
+#endif
 #endif
 
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
 {
 	(void)bw;	// the deviation isn't switched by bandwidth yet: the chip's init value is used
-#if GD88_TX
+#if GD88_DMR_TX
 	if (mode == RADIO_MODE_DMR) {
 #if CONFIG_DMR
 		return dmr_tx(hz, power);
@@ -453,6 +551,8 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 #endif
 	}
+#endif
+#if GD88_TX
 	subtone_t tone = tx_tone != NULL ? *tx_tone : (subtone_t){ TONE_NONE, 0 };
 	if (tone.type == TONE_CTCSS && (tone.value < CTCSS_MIN_X10 || tone.value > CTCSS_MAX_X10)) {
 		return false;
@@ -513,7 +613,7 @@ static bool tx_stop(void)
 
 static void tx_off(void)
 {
-#if CONFIG_DMR && GD88_TX
+#if CONFIG_DMR && GD88_DMR_TX
 	dmr_disarm();	// the RF task finishes the burst it is in; rx() then sets the receiver up again
 #endif
 	if (have_rx) {

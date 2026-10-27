@@ -60,6 +60,11 @@ void gd88_flash_stats(nand_sectors_stats_t *st);
 // --- The second receiver on SoC B (rx2_gd88.c) ---
 extern const hal_rx2_t gd88_rx2;
 void gd88_rx2_init(void);
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+#include "hal_dmr_modem.h"
+// The DMR modem the core gets: hrc_dmr, with an SFR's repeat sent on B's transmitter (rx2_gd88.c, core/rx2/rx2_dmr.h)
+extern hal_dmr_modem_t gd88_dmr;
+#endif
 // Where A's own receiver is (paths_gd88.c): on, and its frequency in *hz. B switches A's front end (RX2_PATH)
 bool gd88_path_wanted(uint32_t *hz);
 void gd88_rx2_led(uint8_t which, bool on);	// hal_power_t.led: LED_RED (TX) is B's LED 1, the other LED 2

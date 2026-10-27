@@ -3,7 +3,8 @@
 // GD-88 DMR, either SoC: the HR_C7000's modem on the shared glue (platform/hrc7000/dmr_glue.c) with the main BK4819
 // as the RF front end (docs/spec/hardware-gd88.md 11), the scheme of hardware-db25d.md 4.
 //
-// Transmit only with GD88_TX=1 (gd88_rf.h); without it tx() refuses in DMR mode and the glue's RF hooks do nothing.
+// Transmit only with GD88_DMR_TX=1 (gd88_rf.h: A with GD88_TX, B as A's second transmitter); without it tx() refuses
+// in DMR mode and the glue's RF hooks do nothing.
 // With it the modem's 4FSK goes on the reference oscillator, and every burst runs the whole TX sequence of the analog
 // transmitter, keyed from the modem's RF TX interrupt (3.1 ms ahead of the burst) and ended at its RF RX interrupt plus
 // the page's TX-off delay. The sequences take a few milliseconds with waits in them, so they run in a task of their
@@ -13,7 +14,7 @@
 #include "platform.h"
 
 #if CONFIG_DMR
-#if GD88_TX
+#if GD88_DMR_TX
 #include "hal_time.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -40,7 +41,7 @@
 static hrc7000_t *modem;
 static bk4819_t *rf;
 
-#if GD88_TX
+#if GD88_DMR_TX
 static void rf_post(uint32_t ev);
 static void rf_burst_start(void);
 #define EV_ON		0x01u	// RF TX interrupt: the burst's TX on
@@ -51,10 +52,10 @@ static void rf_burst_start(void);
 #endif
 
 // From the modem interrupts, per burst (ISR, or task level for a halt): wake the RF task for our burst's TX on, or for
-// its TX off. Without GD88_TX nothing is armed and there is nothing to switch
+// its TX off. Without GD88_DMR_TX nothing is armed and there is nothing to switch
 static void dmr_rf_switch(bool tx)
 {
-#if GD88_TX
+#if GD88_DMR_TX
 	if (tx) {
 		rf_burst_start();
 	} else {
@@ -95,7 +96,7 @@ static void speaker_pcm(bool on)
 	gd88_speaker_pcm(on);	// the amplifier and its source: the squelch path never opens for DMR voice
 }
 
-#if GD88_TX
+#if GD88_DMR_TX
 static void dmr_tx_init(void);
 #endif
 
@@ -105,7 +106,7 @@ void gd88_dmr_init(bk4819_t *main_chip, hrc7000_t *m)
 	modem = m;	// attached and powered on by the radio init (modem-hrc7000.md 4 steps 4-32)
 	hrc_dmr_board_init(modem, &dmr_board);
 	hrc_audio_pcm_attach(modem, speaker_pcm);
-#if GD88_TX
+#if GD88_DMR_TX
 	dmr_tx_init();
 #endif
 }
@@ -143,7 +144,7 @@ uint32_t gd88_dmr_phase(void)
 	return hrc7000_rd(modem, C7_PHASE_OUT);
 }
 
-#if GD88_TX
+#if GD88_DMR_TX
 // ---- DMR transmit: the RF task ----
 
 #define RF_TASK_PRIORITY	(configMAX_PRIORITIES - 1)	// above the glue's DMR task: the burst timing comes first
@@ -291,6 +292,6 @@ void gd88_dmr_tx_stats(gd88_dmr_tx_stats_t *st)
 {
 	*st = stats;
 }
-#endif	// GD88_TX
+#endif	// GD88_DMR_TX
 
 #endif	// CONFIG_DMR

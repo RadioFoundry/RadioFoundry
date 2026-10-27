@@ -18,6 +18,11 @@
 #ifndef GD88_TX
 #define GD88_TX			0
 #endif
+// DMR transmit on this SoC's own chip, per burst (dmr_gd88.c). A: with GD88_TX. B: A's second transmitter, the repeat of
+// an SFR (core/rx2/rx2_dmr.h, the original firmware's "path 1": B's chip, B's path pins and B's own calibration)
+#ifndef GD88_DMR_TX
+#define GD88_DMR_TX		GD88_TX
+#endif
 // The band path is the LO chip's GPIO4 / GPIO5 (A: VHF = GPIO5 high, GPIO4 low; UHF the reverse). B switches its band
 // by GPIO instead and builds with 0
 #ifndef GD88_BAND_LO_GPIO
@@ -60,11 +65,24 @@ void gd88_path_init(void);			// every switch at its safe level: TX off, RX path 
 void gd88_path_rx(uint32_t hz, bool on, bool dmr);
 void gd88_path_rx_front_off(void);		// TX start: the receive path off (A: PTB2 high)
 void gd88_path_tx_off(void);			// TX switches off (A: PTB2 low). Any task
-#if GD88_TX
-// B's PA for A's next transmissions (rx2_gd88.c, RX2_TX): the drive and the page's delays on hz. False when B is down
-// or didn't take it within a short wait: nothing may transmit then. Disarm after the last one
+#if GD88_DMR_TX
+// The PA for the next transmissions: the drive and the page's delays on hz. A: B's PA (rx2_gd88.c, RX2_TX), false when
+// B is down or didn't take it within a short wait: nothing may transmit then. B: its own (pa_gd88b.c). Disarm after the
+// last one
 bool gd88_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
 void gd88_pa_disarm(void);
+#endif
+#if GD88_DMR_TX && !GD88_TX
+// B's own transmitter, per burst (radio_gd88.c gd88_burst_on / off): its path pins to its chip in hz's band and its RX
+// path off, or back (paths_gd88b.c); its PA up to the armed drive (select, 200 us, supply, ramp) or down (pa_gd88b.c)
+void gd88_path_own_tx(bool on, uint32_t hz);
+void gd88_pa_own(bool on);
+#endif
+#if GD88_TX && CONFIG_SFR
+// The SFR's repeat on B's transmitter (core/rx2/rx2_dmr.h) turned on or off: DMR TX armed here moves there or back
+// (rx2_gd88.c)
+void gd88_dmr_split(bool on);
+bool gd88_dmr_listen(uint32_t *hz, uint8_t *power);	// rx2_dmr_main_cfg_t.listen: A's DMR receive frequency
 #endif
 // The speaker: on or off, fed from the modem's line out (DMR voice, beeps) or the main chip's AF (FM)
 void gd88_path_speaker(bool on, bool from_modem);
@@ -85,7 +103,7 @@ void gd88_dmr_lo_side(bool high);
 void gd88_speaker_pcm(bool on);		// radio_gd88.c: the speaker on while the modem plays CPU samples
 uint32_t gd88_dmr_phase(void);		// HR_C7000 PHASE_OUT: b29:16 / b13:0, the largest / smallest AF phase
 
-#if GD88_TX
+#if GD88_DMR_TX
 void gd88_dmr_tx_arm(void);
 void gd88_dmr_tx_disarm(void);
 typedef void (*gd88_wait_fn)(uint32_t us);

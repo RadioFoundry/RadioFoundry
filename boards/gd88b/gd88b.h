@@ -19,6 +19,10 @@ void gd88b_path_pa(bool uhf, bool select, bool supply);
 void gd88b_pa_init(void);
 bool gd88b_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
 bool gd88b_pa_diag_line(char *buf, uint8_t len);
+// B's own transmitter, for the debug view: its path switched to it (and refused: A's transmission had it), its PA
+// keyed (and skipped: not armed, or A's transmission had the PA)
+void gd88b_own_tx_counts(uint32_t *paths, uint32_t *path_refused, uint32_t *keys, uint32_t *skips);
+void gd88b_pa_own_counts(uint32_t *keys, uint32_t *skips);	// pa_gd88b.c's half
 // The status LEDs (RX2_LED bits: bit 0 LED 1, bit 1 LED 2; RX2_LED_STUB blinks them until the next call)
 void gd88b_leds(uint8_t leds);
 void gd88b_leds_poll(uint32_t now_ms);	// the blink, from the link task's loop

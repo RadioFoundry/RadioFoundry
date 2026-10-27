@@ -15,6 +15,9 @@
 //
 // B's debug link server (rx2-link.md 2.3): forward() sends one command over the link and waits for the reply, which
 // the link task collects.
+//
+// B as the second DMR transmitter (CONFIG_SFR, core/rx2/rx2_dmr.h): gd88_dmr is the modem the core gets, hrc_dmr with
+// the transmit calls sent to B while an SFR's split is on. B's events come back through the link task.
 #include <string.h>
 #include "gd88.h"
 #include "gd88_rf.h"
@@ -23,6 +26,9 @@
 #include "platform.h"
 #include "hal_time.h"
 #include "rx2/rx2_link.h"
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+#include "rx2/rx2_dmr.h"
+#endif
 #include "debuglink/dlog.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -102,20 +108,54 @@ static void task_fn(void *arg)
 			take();
 			rx2_main_path(&link, on, hz);
 			rx2_main_poll(&link, now);
+			bool up = link.up;
 			give();
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+			rx2_dmr_main_poll(up, now);
+#else
+			(void)up;
+#endif
 		}
 	}
 }
+
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+hal_dmr_modem_t gd88_dmr;
+
+// From the link task, the lock held
+static void dmr_ev(const uint8_t *p, uint8_t len)
+{
+	rx2_dmr_main_event(p, len, hal_millis());
+}
+
+static bool dmr_send(const uint8_t *p, uint8_t len)
+{
+	if (lock == NULL) {
+		return false;
+	}
+	take();
+	bool ok = rx2_main_dmr(&link, p, len);
+	give();
+	return ok;
+}
+#endif
 
 void gd88_rx2_init(void)
 {
 	if (lock == NULL) {
 		lock = xSemaphoreCreateMutex();
 	}
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+	static const rx2_dmr_main_cfg_t dmr_cfg = { &hrc_dmr, dmr_send, gd88_dmr_split, gd88_dmr_listen };
+	rx2_dmr_main_init(&dmr_cfg, &gd88_dmr);
+#endif
 	uint32_t s = hrc_irq_save();
 	IO_DIPLEX0 |= DIPLEX0_UART3;
 	hrc_irq_restore(s);
 	rx2_main_init(&link, send);
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+	link.dmr_ev = dmr_ev;
+#endif
 	hrc_link_uart_init(UART3_BASE, IRQ_UART3, LINK_BAUD);
 	if (task == NULL) {
 		xTaskCreate(task_fn, "rx2", TASK_STACK, NULL, TASK_PRIORITY, &task);

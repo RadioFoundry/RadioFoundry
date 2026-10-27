@@ -25,6 +25,10 @@ static bool spk_on, spk_modem, muted = true;
 static bool b_on, b_uhf;		// B's own receiver
 static bool a_on, a_uhf;		// A's (RX2_PATH)
 static bool a_tx;			// A transmits: its RX path off (pa_gd88b.c)
+static bool b_tx;			// B transmits on its own chip: its RX path off (gd88_path_own_tx)
+#if GD88_DMR_TX
+static uint32_t own_paths, own_refused;	// the debug view's counts (gd88b_own_tx_counts)
+#endif
 static bool aud_vhf = true, aud_uhf = true;	// the band pair as the receiver set it
 
 void gd88_path_init(void)
@@ -36,7 +40,7 @@ void gd88_path_init(void)
 	hrc_pin_out(PIN_AUD_UHF, true);
 	spk_on = spk_modem = false;
 	muted = true;
-	b_on = a_on = a_tx = false;
+	b_on = a_on = a_tx = b_tx = false;
 	aud_vhf = aud_uhf = true;
 }
 
@@ -46,7 +50,7 @@ static void rx_pins(void)
 	hrc_pin_write(PIN_RX_FRONT_UHF, (b_on && b_uhf) || (a_on && a_uhf));
 	hrc_pin_write(PIN_RX_FRONT_VHF, (b_on && !b_uhf) || (a_on && !a_uhf));
 	hrc_pin_write(PIN_RX_A, a_on && !a_tx);
-	hrc_pin_write(PIN_RX_B, b_on);
+	hrc_pin_write(PIN_RX_B, b_on && !b_tx);
 }
 
 void gd88_path_rx(uint32_t hz, bool on, bool dmr)
@@ -61,7 +65,7 @@ void gd88_path_rx(uint32_t hz, bool on, bool dmr)
 	rx_pins();
 	aud_vhf = !uhf;
 	aud_uhf = uhf;
-	if (!a_tx) {
+	if (!a_tx && !b_tx) {
 		hrc_pin_write(PIN_AUD_VHF, aud_vhf);
 		hrc_pin_write(PIN_AUD_UHF, aud_uhf);
 	}
@@ -97,8 +101,8 @@ void gd88_path_tx_off(void)
 
 static void source(void)
 {
-	if (a_tx) {
-		return;		// held at mode 0 while A transmits
+	if (a_tx || b_tx) {
+		return;		// held at mode 0 while A transmits, 1 while B does
 	}
 	bool on = spk_on && !muted;
 	hrc_pin_write(PIN_AUD_SRC0, on && !spk_modem);
@@ -133,6 +137,45 @@ void gd88b_path_a_tx(bool on, bool uhf)
 	rx_pins();
 	hrc_irq_restore(s);
 }
+
+#if GD88_DMR_TX
+// B transmits on its own chip (on, in hz's band) or not: the original firmware's path 1, A's second transmitter (an
+// SFR's repeat, core/rx2/rx2_dmr.h). On: the source pair at mode 1, the band pair and B's TX path pin to the TX band,
+// B's RX path off. Off: all back as the receivers have them
+void gd88_path_own_tx(bool on, uint32_t hz)
+{
+	bool uhf = hz >= UHF_FROM_HZ;
+	uint32_t s = hrc_irq_save();
+	if (on && a_tx) {
+		own_refused++;
+		on = false;	// A's transmission has the PA (never both: A doesn't key while B transmits for it)
+	} else if (on) {
+		own_paths++;
+	}
+	b_tx = on;
+	hrc_pin_write(PIN_TX_PATH_UHF, on && uhf);
+	hrc_pin_write(PIN_TX_PATH_VHF, on && !uhf);
+	if (on) {
+		hrc_pin_write(PIN_AUD_SRC0, false);
+		hrc_pin_write(PIN_AUD_SRC1, true);
+		hrc_pin_write(PIN_AUD_UHF, uhf);
+		hrc_pin_write(PIN_AUD_VHF, !uhf);
+	} else {
+		source();
+		hrc_pin_write(PIN_AUD_VHF, aud_vhf);
+		hrc_pin_write(PIN_AUD_UHF, aud_uhf);
+	}
+	rx_pins();
+	hrc_irq_restore(s);
+}
+
+void gd88b_own_tx_counts(uint32_t *paths, uint32_t *path_refused, uint32_t *keys, uint32_t *skips)
+{
+	*paths = own_paths;
+	*path_refused = own_refused;
+	gd88b_pa_own_counts(keys, skips);
+}
+#endif
 
 // The band's PA select or supply (pa_gd88b.c); off: both bands' supplies, then selects
 void gd88b_path_pa(bool uhf, bool select, bool supply)

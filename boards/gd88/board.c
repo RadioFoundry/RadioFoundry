@@ -108,7 +108,11 @@ const board_t board = {
 	.diag_reset = gd88_diag_reset,
 #endif
 #if CONFIG_DMR
+#if GD88_TX && CONFIG_SFR
+	.dmr = &gd88_dmr,	// hrc_dmr, the SFR's repeat on B (gd88_rx2_init sets it up)
+#else
 	.dmr = &hrc_dmr,
+#endif
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,
 #endif

@@ -12,9 +12,11 @@
 #include "platform.h"
 #include "rx2/rx2_link.h"
 
+// Receive only, unless built as A's second DMR transmitter (GD88_DMR_TX, an SFR's repeat: rx2-link.md 2.4): its
+// tx() checks the band like any radio's
 static const band_t bands[] = {
-	{ 136000000, 174000000, false },
-	{ 400000000, 480000000, false },
+	{ 136000000, 174000000, GD88_DMR_TX != 0 },
+	{ 400000000, 480000000, GD88_DMR_TX != 0 },
 };
 
 const board_t board = {

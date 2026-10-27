@@ -6,6 +6,10 @@
 // call stack and codec (core/dmr). The calls rx2_ops_t makes all come from rx2_recv_rx() in this task, the debug link
 // server's (core/rx2/rx2_dl.c, reached through A) among them. A second task keys the PA of A's transmitter
 // (pa_gd88b.c, armed by RX2_TX).
+//
+// With GD88_DMR_TX B is also A's second DMR transmitter (RX2_DMR, core/rx2/rx2_dmr.h): for an SFR's repeat A goes on
+// receiving while B sends the bursts A hands it on its own chip. The role stops B's own receiving (its call stack)
+// and gives the modem to rx2_dmr.c; A's RX2_TUNE meanwhile is kept for when the role ends.
 #include "config.h"
 #include "board.h"
 #include "gd88_rf.h"
@@ -16,6 +20,12 @@
 #include "hal_watchdog.h"
 #include "rx2/rx2_link.h"
 #include "rx2/rx2_dl.h"
+#if CONFIG_DMR && GD88_DMR_TX
+#include "rx2/rx2_dmr.h"
+#endif
+#if CONFIG_DMR
+#include "dmr_glue.h"
+#endif
 #include "debuglink/dlog.h"
 #if CONFIG_CRASH_LOG
 #include "crash/crash.h"
@@ -96,8 +106,20 @@ static bool dmr_start(const rx2_tune_t *t)
 }
 #endif
 
+#if CONFIG_DMR && GD88_DMR_TX
+static bool split;		// A's second transmitter (rx2_dmr.h): the modem is rx2_dmr.c's
+static int8_t split_cc;
+#endif
+
 static bool op_tune(const rx2_tune_t *t)
 {
+#if CONFIG_DMR && GD88_DMR_TX
+	if (split) {
+		cur = *t;	// taken when the role ends
+		tuned = true;
+		return true;
+	}
+#endif
 	if (t->mode != RADIO_MODE_FM && (t->mode != RADIO_MODE_DMR || !CONFIG_DMR)) {
 		return false;
 	}
@@ -127,6 +149,12 @@ static bool op_tune(const rx2_tune_t *t)
 
 static void op_stop(void)
 {
+#if CONFIG_DMR && GD88_DMR_TX
+	if (split) {
+		tuned = false;
+		return;
+	}
+#endif
 #if CONFIG_DMR
 	dmr_stop();
 #endif
@@ -216,6 +244,65 @@ static void op_reset(void)
 	hrc_soft_reset();
 }
 
+#if CONFIG_DMR && GD88_DMR_TX
+// ---- A's second transmitter (rx2_dmr.h) ----
+
+static void tx_event(const dmr_event_t *ev, void *ctx)
+{
+	(void)ctx;
+	rx2_dmr_recv_event(ev);
+}
+
+static bool tx_split(bool on, int8_t cc)
+{
+	if (on) {
+		dmr_stop();
+		gd88_radio.audio(false);
+		sq_open = false;
+		split = true;
+		split_cc = cc;
+		return true;
+	}
+	split = false;
+	if (tuned) {
+		rx2_tune_t t = cur;
+		op_tune(&t);	// back to what A asked of the receiver
+	} else {
+		gd88_path_rx(cur.rx_hz, false, false);
+	}
+	return true;
+}
+
+// Receive on hz in DMR (the modem's slot timing comes from what it hears there) and arm the bursts at the power level
+static bool tx_arm(uint32_t hz, uint8_t power)
+{
+	gd88_radio.tx_off();
+	hrc_dmr.stop();
+	if (hz == 0) {
+		return true;
+	}
+	static const subtone_t none = { TONE_NONE, 0 };
+	gd88_radio.set_mode(RADIO_MODE_DMR);
+	if (!gd88_radio.rx(hz, RADIO_BW_12K5, &none)) {
+		return false;
+	}
+	dmr_config_t c = { .own_id = cur.own_id, .cc = split_cc, .access = DMR_ACCESS_IMPOLITE, .repeater = false };
+	if (!hrc_dmr.start(&c, tx_event, NULL)) {
+		return false;
+	}
+	if (!gd88_radio.tx(hz, RADIO_BW_12K5, power, &none)) {
+		hrc_dmr.stop();
+		return false;
+	}
+	return true;
+}
+
+static void tx_ev_send(const uint8_t *p, uint8_t len)
+{
+	rx2_recv_dmr_ev(&link, p, len);
+}
+#endif
+
 static const rx2_ops_t ops = {
 	.tune = op_tune,
 	.stop = op_stop,
@@ -226,6 +313,9 @@ static const rx2_ops_t ops = {
 	.led = gd88b_leds,
 	.path = gd88b_path_main,
 	.tx = gd88b_pa_arm,
+#if CONFIG_DMR && GD88_DMR_TX
+	.dmr = rx2_dmr_recv,
+#endif
 #if CONFIG_RX2_DL_SERVER
 	.dl = rx2_dl_handle,
 #endif
@@ -245,6 +335,18 @@ static void view(dl_text_t *t)
 	const dmr_call_view_t *v = dmr_call_view();
 	dl_text(t, "dmr.on=%u\ndmr.phase=%u\ndmr.cc=%u\ndmr.ts=%u\ndmr.src=%u\ndmr.dst=%u\n", dmr_on, v->phase,
 		cur.color_code, cur.timeslot, (unsigned)v->caller.src, (unsigned)v->caller.dst);
+#if GD88_DMR_TX
+	// A's second transmitter (rx2_dmr.h)
+	const rx2_dmr_recv_state_t *x = rx2_dmr_recv_state();
+	dl_text(t, "dmrtx.split=%u\ndmrtx.armed=%u\ndmrtx.tx=%u\ndmrtx.hz=%u\ndmrtx.requests=%u\ndmrtx.bursts=%u\n", x->split,
+		x->armed, x->tx, (unsigned)x->hz, (unsigned)x->requests, (unsigned)x->bursts);
+	dl_text(t, "dmrtx.refused=%u\ndmrtx.dropped=%u\ndmrtx.arm_fails=%u\n", (unsigned)x->refused, (unsigned)x->dropped,
+		(unsigned)x->arm_fails);
+	uint32_t paths, path_refused, keys, skips;
+	gd88b_own_tx_counts(&paths, &path_refused, &keys, &skips);
+	dl_text(t, "dmrtx.paths=%u\ndmrtx.path_refused=%u\ndmrtx.pa_keys=%u\ndmrtx.pa_skips=%u\n", (unsigned)paths,
+		(unsigned)path_refused, (unsigned)keys, (unsigned)skips);
+#endif
 #endif
 	hrc_link_uart_stats_t u;
 	hrc_link_uart_stats(&u);
@@ -285,7 +387,12 @@ bool gd88b_diag_line(uint8_t i, char *buf, uint8_t len)
 		       gd88_nand_ready() ? "up" : "down");
 		return true;
 	default:
+#if CONFIG_DMR
+		// Then the DMR modem's lines, as A's (its TX starts' timing while it is A's second transmitter)
+		return hrc_dmr_stats_line((uint8_t)(i - 5u), buf, len);
+#else
 		return false;
+#endif
 	}
 }
 
@@ -321,7 +428,14 @@ static void task_fn(void *arg)
 #endif
 	IO_DIPLEX0 |= DIPLEX0_UART3;
 	hrc_link_uart_init(UART3_BASE, IRQ_UART3, LINK_BAUD);
-	rx2_recv_init(&link, send, &ops, (CONFIG_DMR ? RX2_HELLO_DMR : 0u) | RX2_HELLO_STAY, RFOUNDRY_GIT);
+#if CONFIG_DMR && GD88_DMR_TX
+	static const rx2_dmr_recv_cfg_t tx_cfg = { &hrc_dmr, tx_split, tx_arm, tx_ev_send };
+	rx2_dmr_recv_init(&tx_cfg);
+#define HELLO_DMR_TX	RX2_HELLO_DMR_TX
+#else
+#define HELLO_DMR_TX	0u
+#endif
+	rx2_recv_init(&link, send, &ops, (CONFIG_DMR ? RX2_HELLO_DMR : 0u) | RX2_HELLO_STAY | HELLO_DMR_TX, RFOUNDRY_GIT);
 #if CONFIG_RX2_DL_SERVER
 	rx2_dl_init(&link, view);
 #endif
@@ -343,6 +457,12 @@ static void task_fn(void *arg)
 #endif
 #if CONFIG_CRASH_LOG
 		crash_alive(now);	// the tick does this too, with the watchdog
+#endif
+#if CONFIG_DMR && GD88_DMR_TX
+		rx2_dmr_recv_poll(now);
+		if (split) {
+			// the modem is A's transmitter's
+		} else
 #endif
 		if (tuned) {
 #if CONFIG_DMR

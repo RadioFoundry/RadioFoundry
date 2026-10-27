@@ -223,7 +223,7 @@ B has no display, keys, power latch or GPS. Pin index as in section 9.
 | A's receiver | **HW** bench: with PTB15 + PTB1 low A hears nothing (noise floor -127 dBm); high, the floor is -86 dBm and a bench signal shows. VHF the same with PTB14. The band switch (PTB8 / PTB7) and PTB13 make no difference to A, nor to B. B sets them from A's `PATH` messages ([rx2-link.md](rx2-link.md)) |
 | Audio source to A | mode 0: PTC18 high, PTB4 low; mode 1: the reverse. Held at mode 0 ("path 0", A's chip) while A transmits (BIN) |
 | Audio band | VHF: PTB18 high, PTB22 low; UHF: the reverse. Set to A's TX band while A transmits (BIN) |
-| TX path | UHF PTA17, VHF PTB10: B's own transmitter, which the vendor uses only for transmitting on B's chip |
+| TX path | UHF PTA17, VHF PTB10: B's own transmitter, which the vendor uses only for transmitting on B's chip. With it, per burst, PTB4 high and PTC18 low, and A's main BK4819 GPIO5 high (B's chip to the PA) and GPIO4 high for VHF (register 0x33, BIN). Without GPIO5 the PA keys with no signal; held high between bursts it deafens B's receiver (**HW** 2026-10-27) |
 | PA select, then supply | UHF PTB6, 200 us, then PTB20. VHF PTB3, then PTB21. TX off clears the supplies first |
 | A's TX line | PTB2 in, both-edge interrupt: A's PTB2 (section 9) (BIN) |
 | A's PA | **B keys the PA for A's transmitter** (BIN; **HW** FM 2026-10-27). A sends B a record first (vendor link id 0x6B00) with the drive and the page's delays, then raises PTB2. Rising edge: mode 0, the TX band pair, A's RX path PTB1 (and PTB13) off, 50 us, the TX-on delay, PA select, 200 us, supply, DAC B ramped up to the drive (180 steps of 4 us, S-shaped). Falling edge: the TX-off delay, the ramp down, supply then select off, 300 + 1000 + 300 us, the RX front end and A's RX path back, 200 us |
@@ -287,7 +287,7 @@ page, DMR on the modem and the SPI NAND. Both run on the bench's radio (2026-10-
 |---|---|---|
 | Runs | the radio core: UI, codeplug, scan, dual watch, host link on UART1, DMR, GPS | no core: a receiver task under `app_start` |
 | Receive | FM and DMR on its own main BK4819 and LO (11.1) | FM and DMR, on what A asks for |
-| Transmit | On (`GD88_TX=0` builds a receiver). A's main chip makes the signal; A arms B (`RX2_TX`, the drive and delays from A's page) and raises PTB2 | B's own chip never transmits. It keys the PA for A on PTB2's edges while armed (`pa_gd88b.c`) |
+| Transmit | On (`GD88_TX=0` builds a receiver). A's main chip makes the signal; A arms B (`RX2_TX`, the drive and delays from A's page) and raises PTB2 | It keys the PA for A on PTB2's edges while armed (`pa_gd88b.c`). Its own chip transmits only as A's second DMR transmitter: an SFR's repeat ([rx2-link.md](rx2-link.md) 2.4), with A setting its GPIO4 / GPIO5 per burst (section 10) |
 | Second receiver | B over UART3 (`board.rx2`, [rx2-link.md](rx2-link.md)). The core keeps B on the dual watch channel that is not selected | - |
 | Audio | the chain's source bits (9.3) and PTC18. B's audio gets vfo 1 while A gives it the speaker | the source pair to A, muted until A sends `AUDIO` on |
 | LEDs | sent to B (`RX2_LED`) | PTA16, PTB17 |

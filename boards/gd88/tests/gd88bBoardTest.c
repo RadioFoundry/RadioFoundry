@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The GD-88's SoC B is a receiver only (boards/gd88b/board.c, docs/spec/hardware-gd88.md 10): every band of its
-// descriptor is receive only, so the shared radio code's tx() (board_in_band(hz, true), common/radio_gd88.c) refuses
-// every frequency it can tune, and it is built with GD88_TX=0 besides. Its transmitter-off hook drives every TX
-// switch low and powers the PA drive down. Built against a host stand-in for the platform header (hostplat/)
+// The GD-88's SoC B (boards/gd88b/board.c, docs/spec/hardware-gd88.md 10) is built with GD88_TX=0. Without
+// GD88_DMR_TX every band of its descriptor is receive only, so the shared radio code's tx() (board_in_band(hz, true),
+// common/radio_gd88.c) refuses every frequency it can tune; with it (A's second DMR transmitter, rx2-link.md 2.4)
+// every band transmits. Its transmitter-off hook drives every TX switch low and powers the PA drive down. Built
+// against a host stand-in for the platform header (hostplat/), once each way
 #include <stdio.h>
 #include <string.h>
 #include "../../gd88b/board.c"
@@ -29,13 +30,14 @@ bool gd88_nand_read_stock(uint32_t addr, void *buf, uint32_t len) { (void)addr; 
 
 int main(void)
 {
-	// Receive only: no band may transmit, and every tunable frequency is refused for transmit
+	// Receive only (no band may transmit, every tunable frequency refused for transmit), or every band transmits
+	const bool tx = GD88_DMR_TX != 0;
 	CHECK(board.band_count == 2);
 	for (uint8_t i = 0; i < board.band_count; i++) {
 		const band_t *b = &board.bands[i];
-		CHECK(!b->tx);
+		CHECK(b->tx == tx);
 		for (uint32_t hz = b->lo_hz; hz <= b->hi_hz; hz += 12500u) {
-			if (!board_in_band(hz, false) || board_in_band(hz, true)) {
+			if (!board_in_band(hz, false) || board_in_band(hz, true) != tx) {
 				printf("FAIL %u Hz: receive %d, transmit %d\n", (unsigned)hz, board_in_band(hz, false),
 				       board_in_band(hz, true));
 				failures++;
@@ -43,8 +45,9 @@ int main(void)
 			}
 		}
 	}
-	CHECK(board_in_band(146520000, false) && !board_in_band(146520000, true));
-	CHECK(board_in_band(446000000, false) && !board_in_band(446000000, true));
+	CHECK(board_in_band(146520000, false) && board_in_band(146520000, true) == tx);
+	CHECK(board_in_band(446000000, false) && board_in_band(446000000, true) == tx);
+	CHECK(!board_in_band(520000000, true));
 #if GD88_TX
 	CHECK(!"SoC B must build without the transmit path (GD88_TX=0)");
 #endif

@@ -87,7 +87,12 @@ LDSCRIPT := boards/gd88/fm_only.ld
 CPU_RAM_SECTION :=
 MCU_DEFS += -DHRC_STUB_BASE=0x00030000u -DHRC_STUB_SIZE=0x00020000u
 endif
-# Receive only: the band's TX switches stay low (paths_gd88b.c), and the shared radio code refuses tx()
+# No transmitter of its own for the user: the shared radio code refuses tx() in FM. In DMR it keys its own chip per
+# burst as A's second transmitter (GD88B_DMR_TX, core/rx2/rx2_dmr.h: an SFR's repeat while A receives). 0: receive only
+GD88B_DMR_TX ?= 1
 MCU_DEFS += -DGD88_TX=0 -DGD88_BAND_LO_GPIO=0
+ifeq ($(CONFIG_DMR),y)
+MCU_DEFS += -DGD88_DMR_TX=$(GD88B_DMR_TX)
+endif
 # B's IF (hardware-gd88.md 11): A's is 45 MHz
 MCU_DEFS += -DGD88_IF_HZ=51550000u

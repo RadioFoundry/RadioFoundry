@@ -19,15 +19,20 @@ bootGd88Test: $(HERE)bootGd88Test.c $(ROOT)/boot/gd88/boot.c $(ROOT)/boot/hrc700
 bootGd88bTest: $(HERE)bootGd88Test.c $(ROOT)/boot/gd88b/boot.c $(ROOT)/boot/hrc7000/stage.c
 	$(CC) $(CFLAGS) -Wshadow -DSOC_B=1 -o $@ $<
 
-# SoC B's descriptor: receive-only bands (its tx() refuses every frequency) and the transmitter-off hook, built against
-# a host stand-in for the platform header. The calibration page's flash address is an integer cast to a pointer
-TESTS   += gd88bBoardTest
+# SoC B's descriptor: receive-only bands (its tx() refuses every frequency), or transmitting ones as A's second DMR
+# transmitter (Tx), and the transmitter-off hook, built against a host stand-in for the platform header. The
+# calibration page's flash address is an integer cast to a pointer
+TESTS   += gd88bBoardTest gd88bBoardTestTx
 gd88bBoardTest: $(HERE)gd88bBoardTest.c $(ROOT)/boards/gd88b/board.c $(HERE)hostplat/platform.h
 	$(CC) $(CFLAGS) -I$(dir $<)hostplat -I$(ROOT)/hal -I$(ROOT)/boards/gd88b -I$(dir $<)../common $(FMONLY) \
-		-DGD88_TX=0 -Wshadow -Wno-int-to-pointer-cast -o $@ $<
+		-DGD88_TX=0 -DGD88_DMR_TX=0 -Wshadow -Wno-int-to-pointer-cast -o $@ $<
+gd88bBoardTestTx: $(HERE)gd88bBoardTest.c $(ROOT)/boards/gd88b/board.c $(HERE)hostplat/platform.h
+	$(CC) $(CFLAGS) -I$(dir $<)hostplat -I$(ROOT)/hal -I$(ROOT)/boards/gd88b -I$(dir $<)../common $(FMONLY) \
+		-DGD88_TX=0 -DGD88_DMR_TX=1 -Wshadow -Wno-int-to-pointer-cast -o $@ $<
 
-run-boards:: gd88CalTest bootGd88Test bootGd88bTest gd88bBoardTest
+run-boards:: gd88CalTest bootGd88Test bootGd88bTest gd88bBoardTest gd88bBoardTestTx
 	./gd88CalTest
 	./bootGd88Test
 	./bootGd88bTest
 	./gd88bBoardTest
+	./gd88bBoardTestTx
