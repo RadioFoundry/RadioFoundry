@@ -249,7 +249,9 @@ export class FakeC7000 {
 	// nand: the data bus holds an SPI NAND (a sparse 256 MB chip with a few used areas) instead of the data flash, and
 	// nand.calibration ({progmem, nand, magic}, the board profile's) where its two calibration copies go
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
-		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, loaderId = null, nand = null } = {}) {
+		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, loaderId = null, nand = null,
+		stubWrite = true } = {}) {
+		this.stubWrite = stubWrite;		// the universal stub is protocol 7, with op 0x0E (WRITE); false: protocol 6
 		this.usmart = usmart;			// a stock firmware build with the USMART console ("018")
 		this.loaderId = loaderId;		// the Baofeng updater's ID ("BFUV32-V2"), or null: no such loader
 		this.ram = new Map();			// the console's view of RAM: words written since power-on
@@ -288,8 +290,11 @@ export class FakeC7000 {
 		// reset RadioFoundry runs but its host link stays silent until a power cycle, as on the real radios (dm32-bringup.md);
 		// romEcho: the cable sends every byte the host writes to the boot ROM back to it, ahead of the ROM's answer;
 		// romNak: the boot ROM answers the load's frames with something other than its acknowledgement; slowCable: ms the
-		// cable takes to carry what the host writes (longer than romWindow: the answer to the greeting comes too late)
-		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, slowCable: 0, ...faults };
+		// cable takes to carry what the host writes (longer than romWindow: the answer to the greeting comes too late);
+		// badWrite: how many of the next WRITEs (op 0x0E) leave a bit wrong in their sector; writeStatus: the status every
+		// WRITE answers instead (0x0F write protected, 0x0C flash busy too long), 0 = none
+		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, slowCable: 0, badWrite: 0,
+			writeStatus: 0, ...faults };
 		this.rand = rng(11);
 		this.state = "off";		// off | rom | booting | firmware | stub | bfloader
 		this.inb = new Uint8Array(0);
@@ -562,11 +567,25 @@ export class FakeC7000 {
 		const crcOf = (sec) => (sec === BLANK_SECTOR ? BLANK_CRC : crc32(sec));
 		const univ = this.loaded.length >= 0xC0 && String.fromCharCode(...this.loaded.subarray(0x80, 0x84)) === "UCFG";
 		const be = (v) => new Uint8Array([v >>> 24, (v >>> 16) & 0xFF, (v >>> 8) & 0xFF, v & 0xFF]);
-		if (op === 0x01 && univ) {		// the universal stub: protocol 6, board and flags echoed, its RAM footprint
+		if (op === 0x01 && univ) {		// the universal stub: protocol 6 or 7, board and flags echoed, its RAM footprint
 			const run = u32le(this.loaded, 0xB8), end = u32le(this.loaded, 0xBC);
-			this.reply(OK, concat(new TextEncoder().encode("C7STUB"), new Uint8Array([6, 0x04, 0x08]), be(0x10000), be(0x0808),
+			this.reply(OK, concat(new TextEncoder().encode("C7STUB"), new Uint8Array([this.stubWrite ? 7 : 6, 0x04, 0x08]), be(0x10000), be(0x0808),
 				new Uint8Array([this.stubCfg.board, this.stubCfg.flags]), be(run), be(this.loaded.length), be(end - 0x1004),
 				be(end - 0x1000), be(end), be(200)));
+		} else if (op === 0x0E && univ && this.stubWrite) {	// WRITE: erase, program, read back one sector
+			const m = mem(u32be(p, 0), p[4], p[5]), a = u32be(p, 6);
+			if ((p.length !== 10 && p.length !== 10 + SECTOR) || a % SECTOR || p[4] & ~3) return this.reply(0x0B, new Uint8Array(0)), 1;
+			if (!m || this.nand && m === this.nand) return this.reply(0x0F, new Uint8Array(0)), 1;
+			if (m === this.progmem && a < 0xC000) throw new Error("simulated radio: a write reached the bootloader");
+			if (this.faults.writeStatus) return this.reply(this.faults.writeStatus, new Uint8Array(0)), 1;
+			if (p.length > 10) m.set(p.subarray(10), a);
+			else m.fill(0xFF, a, a + SECTOR);
+			if (this.faults.badWrite > 0) {
+				this.faults.badWrite--;
+				m[a + 100] ^= 0x10;
+			}
+			this.writes++;
+			this.reply(OK, be32(crc32(m.subarray(a, a + SECTOR))));
 		} else if (op === 0x0D && univ) {
 			if (p.length !== 16) return this.reply(0x0B, new Uint8Array(0)), 1;
 			this.configs.push(p);

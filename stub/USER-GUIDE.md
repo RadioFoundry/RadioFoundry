@@ -25,7 +25,7 @@ first RadioFoundry build still uses `tools/serial_loader.py`. Items marked **[co
    `--board` names the radio (`dm32`, `dm1801pro` or `db25d`) so the tool sets up the right pins and checks them before
    it writes anything. Without it a backup still works, but writing is refused.
 
-3. When the tool says to, switch the radio **on**. The screen stays blank and the LED blinks slowly orange. This is
+3. When the tool says to, switch the radio **on**. The screen stays blank and the LED blinks slowly yellow. This is
    expected: the radio is in loader mode.
 4. Wait. The program memory takes about a minute and the data memory a few minutes. The LED blinks fast while data is
    moving. Do not touch the radio or the cable.
@@ -47,7 +47,7 @@ If the radio runs a RadioFoundry build with the loader option, you do not need t
    ```
 
 3. The screen shows "PC Loader Connected" and then stops responding to the keys. This is expected. The LED blinks
-   orange as above.
+   yellow as above.
 4. When it is done, restart the radio with the next section.
 
 ## Install a RadioFoundry build without entering the bootloader
@@ -84,6 +84,10 @@ for a stub built elsewhere; the tool refuses one that does not match the running
 The DB25-D also has a 256 MB NAND chip (recordings, and RadioFoundry's own area at 0xF000000). Read part of it with
 `--nand nand.bin --nand-range START:END` and compare with `--verify-nand nand.bin`. The NAND is only read, never written.
 
+Factory data is never written either. Each radio's `board.toml` lists it (`[[flash.protect]]`: the calibration, and on
+the DB25-D the NAND's bad-block table and reserve blocks). The tool refuses any write or erase that would touch it, and
+says which region and why, before anything is erased.
+
 The radio's bootloader area is never written, so the usual update mode (hold the keys while switching on) always still
 works. Do not unplug the cable or remove the battery while it writes. If it is interrupted, run the same command again
 once the radio is back in loader mode, or use update mode and `tools/serial_loader.py`. A build for the **DM-1801 Pro** was
@@ -103,7 +107,9 @@ python3 stubtool.py PORT --rfoundry-enter --secreg secreg.bin
 The tool saves the three registers and prints whether each one is locked. A locked register can never be changed again,
 by anything. Keep the file with your other backups.
 
-To put a saved copy back (only if the calibration was damaged):
+The registers are protected regions of these radios (`board.toml` `[[flash.protect]]`: registers 1 and 2 on every one,
+register 3 too on the DM-1701 and MD-UV380). Putting a saved copy back is therefore refused for them, before anything
+is written, unless the register already holds the saved bytes. The command stays for a register that isn't listed:
 
 ```
 python3 stubtool.py PORT --attach --write-secreg secreg.bin --confirm-secreg
@@ -137,18 +143,31 @@ The radio restarts into its normal firmware. If neither works, remove and refit 
 
 | LED | Meaning |
 |---|---|
-| Slow orange blink (half a second on, half a second off) | The radio is in loader mode and waiting. Nothing is being copied. |
-| Fast orange blink (an eighth of a second on and off) | Data is being read. Do not touch the radio or the cable. |
-| Three green flashes | Finished. The slow orange blink comes back after. |
+| Slow yellow blink (half a second on, half a second off) | The radio is in loader mode and waiting. Nothing is being copied. |
+| Fast yellow blink (an eighth of a second on and off) | Data is being read. Do not touch the radio or the cable. |
+| Three green flashes | Finished. The slow yellow blink comes back after. |
 | Nothing, screen dark, tool says "waiting" | The radio is not in loader mode yet: switch it off, make sure the tool is waiting, then switch it on. |
 
-Orange is the red LED at full and the green LED dimmed (about 16%), so it looks the same on every model (red = PTB1, green = PTB0, active high, the same pins on the DM-1801 Pro and the DM-32UV).
+Yellow is the red and the green LED both full on, so it looks the same on every model (red = PTB1, green = PTB0, active high, the same pins on the DM-1801 Pro and the DM-32UV).
 
-## Faster transfer (experimental)
+## Transfer speed
 
-`--baud 750000` (or 500000, 375000, 250000; `--baud auto` tries them) asks the radio to talk faster. The tool tests the
-new speed first and goes back to normal speed by itself if the cable cannot keep up. On the cable tested so far it
-failed on long reads, so leave it off unless a normal run is too slow and you have a different cable **[confirm]**.
+With a current loader (protocol 7), writes and backups pick the fastest serial speed your cable and radio manage, by
+themselves. The tool tries faster speeds first, tests each with full-size transfers both ways, and keeps the fastest
+that passes. It remembers the result for that port and radio, so the next run starts at it at once. If the link goes
+bad later (a worn cable, a loose jack), the tool goes quiet for a few seconds, the radio goes back to normal speed by
+itself, and the run carries on at normal speed. You do nothing.
+
+| Option | What it does |
+|---|---|
+| none | Pick the speed by itself for writes and backups |
+| `--baud auto` | The same, also for other jobs |
+| `--baud off` | Stay at 115200 |
+| `--baud 262500` | Ask for one speed; if it fails the test, the run stays at 115200 |
+
+The radio's serial port has whole steps only (its clock divided by 16 times a whole number), so speeds such as 262500
+are normal, and 230400 or 921600 are not offered as such. On the cables tested so far the fastest that held was about
+260000.
 
 ## If something goes wrong
 
@@ -167,4 +186,8 @@ failed on long reads, so leave it off unless a normal run is too slow and you ha
   hangs.
 - **RadioFoundry entry says "no answer from RadioFoundry's debug link"**: the radio is not running a RadioFoundry build with the loader option, or
   the cable is on a different port. Use the switched-off method above instead.
+- **"runs RadioFoundry for the X, not the Y that --board names"** or **"this RadioFoundry image is ... not for the Y"**:
+  the cable on that port goes to another radio, or the image was built for another radio. Nothing was written. Check
+  the port (two cables of the same make can swap names after a replug) and the image. `--force` writes anyway; use it
+  only when you know the radio's firmware reports the wrong board.
 - **The radio does not start after a backup**: remove and refit the battery, then switch it on.

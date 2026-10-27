@@ -438,3 +438,22 @@ test("backup through the loader on a radio whose stub refuses the record: the ra
 	assert.deepEqual(radio.events, ["stub (from RadioFoundry)", "reset"]);
 	assert.equal(radio.mode, "normal");
 });
+
+test("protected regions: an SPI restore keeps the radio's bytes there, erases and installs over one are refused", async () => {
+	const { radio } = await running();
+	const s = await enter(radio);
+	s.board = { ...s.board, protect: [
+		{ mem: "data", start: 0x2000, end: 0x4000, what: "test (x.md 1)" },
+		{ mem: "progmem", start: 0x20000, end: 0x40000, what: "test (x.md 1)" }] };
+	const before = radio.spi.slice(0, 0x8000);
+	const data = before.slice();
+	data.fill(0x5A, 0x1000, 0x5000);
+	assert.deepEqual(await s.spiWrite(data, 0), { written: 2, same: 6 });
+	assert.ok(equal(radio.spi.subarray(0x2000, 0x4000), before.subarray(0x2000, 0x4000)), "protected sectors kept");
+	assert.ok(equal(radio.spi.subarray(0x1000, 0x2000), data.subarray(0x1000, 0x2000)) && equal(radio.spi.subarray(0x4000, 0x5000), data.subarray(0x4000, 0x5000)));
+	await assert.rejects(s.erase(5), /protected region/);
+	await assert.rejects(s.program(0x08020000, new Uint8Array(4)), /protected region/);
+	const flash = radio.flash.slice();
+	await assert.rejects(s.writeImage(fb.f4stub.boards.dm1701.owned, [[APP_BASE, app(2, 0x30000)]]), /protected region/);
+	assert.ok(equal(radio.flash, flash), "nothing erased");
+});

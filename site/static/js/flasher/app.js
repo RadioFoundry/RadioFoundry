@@ -284,7 +284,18 @@ function flashStarted(what) {
 	const sent = fetch(new URL("flashes", API), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ id, tool: "web", tool_version: S.data.site.version || "", ...stockLog(), ...(S.adapter ? { adapter: S.adapter } : {}), ...what }) }).catch(() => {});
 	S.lastFlashId = id;
-	return { id, sent };
+	return (S.lastStarted = { id, sent, marked: new Set() });
+}
+
+// A milestone of the use: first_byte, last_byte (data on the radio) or verify (the check after, with its outcome). Each is
+// sent once; fire and forget like the rest
+async function flashMark(started, event, outcome = null) {
+	if (!started || started.marked.has(event)) return;
+	started.marked.add(event);
+	diag.note("flash " + event, outcome);
+	await started.sent;
+	fetch(new URL(`flashes/${started.id}/events`, API), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ event, ...(outcome ? { result: outcome.ok ? "success" : "fail", reason: (outcome.reason || "").slice(0, 300) } : {}) }) }).catch(() => {});
 }
 
 async function flashFinished(started, error = null) {
@@ -1587,7 +1598,11 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 			try {
 				await dropSerial();
 				started = flashStarted(what);
-				await new Dfu(transport, { log: log.add }).run(plan, S.key, (d, total) => prog.set(d, total, t("flash.write.writing")));
+				await new Dfu(transport, { log: log.add }).run(plan, S.key, (d, total) => {
+					if (d > 0) flashMark(started, "first_byte");
+					prog.set(d, total, t("flash.write.writing"));
+				});
+				flashMark(started, "last_byte");
 				flashFinished(started);
 				log.add(t("flash.write.finished"));
 				await transport.close?.();
@@ -1668,7 +1683,11 @@ function stubPanel(fallback, onDone, what) {
 					if (!S.sim) download(file, sec.kept);
 					log.add(t("flash.f4.kept", { sector: sec.index, file }));
 				},
-				progress: (done, todo) => prog.set(done, todo, t("flash.f4.writing", { done, todo })) });
+				progress: (done, todo) => {
+					if (done > 0) flashMark(started, "first_byte");
+					prog.set(done, todo, t("flash.f4.writing", { done, todo }));
+				} });
+			flashMark(started, "last_byte");
 			prog.set(1, 1, t("flash.c7.write.verified"));
 			S.stubResult = t(r.written ? "flash.f4.ok" : "flash.f4.same", r);
 			log.add(S.stubResult);
@@ -1755,6 +1774,7 @@ function doneView() {
 			// the loader route never touches the codec, so it is there afterwards as it was before
 			const good = !(S.decision ? S.decision.expectCodec : true) || p.codec === S.board.codec.id;
 			diag.note(...crumbs.verify(p, good));
+			flashMark(S.lastStarted, "verify", { ok: good, reason: good ? "" : `codec ${p.codec || "none"}` });
 			S.reportResult = good ? "problem" : "failed";
 			intro.replaceChildren();	// "the radio restarts" is over: what it says now replaces it
 			status.replaceChildren(h("dl", { class: "kv-list" },
@@ -1773,6 +1793,7 @@ function doneView() {
 		} catch (e) {
 			await dropSerial();
 			check.disabled = false;
+			flashMark(S.lastStarted, "verify", { ok: false, reason: String(e?.message || e) });
 			diag.note("verify failed", { kind: e?.params?.kind || null, message: String(e?.message || e).slice(0, 120) });
 			S.reportResult = "failed";
 			status.replaceChildren(connectError(e), connectHelp(e, "flash.done.openfw_next"), helpLink());
@@ -1967,7 +1988,7 @@ function afterRestore() {
 			const link = await connectSerial();
 			const spi = S.bundle.parts.get("spi-flash");
 			const now = await link.cpsDump(1, 0, Math.min(spi.data.length, 0x120000), { progress: (d, n) => prog.set(d, n, t("flash.restore.comparing")) });
-			const sectors = codeplugSectors(spi.data, now.data);
+			const sectors = codeplugSectors(spi.data, now.data, S.board?.protect);
 			await prepareStorage(status);	// the radio refuses every codeplug write until its settings area is RadioFoundry's
 			const refused = await writeCodeplug(link, sectors, (d, n) => prog.set(d, n, t("flash.restore.writing_codeplug")));
 			status.append(notice(refused.length ? t("flash.restore.codeplug_refused", { n: refused.length, total: sectors.length })
@@ -2293,7 +2314,7 @@ async function main() {
 		app.replaceChildren(notice(t("flash.err.load"), "bad"), reportLine());
 		return;
 	}
-	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
+	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, flashMark, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
 	// #sim=<board>[-stock|-romfail|-slowcable|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
 	// open firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file

@@ -442,3 +442,11 @@ test("IAP: a loader without the board's first stage writes nothing", async () =>
 	await assert.rejects(new Iap(new Pipe(() => { sent++; })).write(new Uint8Array(0x2000)), /no first stage/);
 	assert.equal(sent, 0);
 });
+
+test("IAP: an erase that reaches a protected region writes nothing", async () => {
+	let sent = 0;
+	const img = installImage();
+	const cal = [{ mem: "progmem", start: 0xD000, end: 0xE000, what: "test (x.md 1)" }];
+	await assert.rejects(new Iap(new Pipe(() => { sent++; }), { firstStage: FS, protect: cal }).write(img), /protected region/);
+	assert.equal(sent, 0);
+});

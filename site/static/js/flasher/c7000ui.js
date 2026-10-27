@@ -42,7 +42,7 @@ const CH340 = 0x1A86;
 const ROM_WAIT = 180000;		// how long the page listens for the boot ROM per try
 const BOOT_MS = 9000;			// a soft reset to RadioFoundry answering its debug link (bench 2026-10-15: 8-9 s)
 
-let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, errorText, analysisOffer,
+let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, flashMark, errorText, analysisOffer,
 					// problemNotice, failureNotice, stubJson}
 const S = () => ctx.S;
 const C = () => ctx.fb().c7000;
@@ -67,9 +67,10 @@ const stockRadio = () => !!CONSOLES[flash().stock_console];
 // power-on (stuck), so the page looks for it when nothing else answers; baofeng, the Baofeng updater (bfloader.js),
 // entered only with the keys held, which erases the whole application area. Neither loader is ever written.
 const LOADERS = {
-	iap: { stuck: true, make: (c) => new Iap(c.stream, { log: (l) => c.log.add(l), firstStage: flash().first_stage }) },
+	iap: { stuck: true, make: (c) => new Iap(c.stream, { log: (l) => c.log.add(l), firstStage: flash().first_stage,
+		protect: C().boards[boardId()].protect }) },
 	baofeng: { stuck: false, make: (c) => new BfLoader(c.stream, { log: (l) => c.log.add(l), id: C().boards[boardId()].bootloader_id,
-		appMax: C().app_end - C().app_start }) },
+		appMax: C().app_end - C().app_start, appStart: C().app_start, protect: C().boards[boardId()].protect }) },
 };
 const updateMode = () => !!LOADERS[flash().update_mode];
 const stuckMode = () => !!LOADERS[flash().update_mode]?.stuck;
@@ -437,7 +438,8 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		show({ led: "wait", screen }, h("p", { class: "c7-big" }, h("b", {}, how)), h("p", { class: "muted" }, t("flash.c7.connect.checking")));
 		try {
 			const led = C().led;
-			await st.configure(C().boards[boardId()].stub_board, led);	// the radio's profile, checked before any write
+			// the radio's profile, checked before any write, and its protected regions, which every write checks
+			await st.configure({ ...C().boards[boardId()].stub_board, protect: C().boards[boardId()].protect || [] }, led);
 			await st.setupLed(led.red, led.green);
 			c.jedec = { progmem: await st.checkId("progmem"), [dataMem()]: await st.checkId(dataMem()) };
 			// RadioFoundry named the radio already; otherwise the bootloader's ID string does (48 KB, a few seconds). A radio
@@ -923,9 +925,10 @@ export function writeView() {
 			const res = await c.stub.writeProgram(data, start, { appStart: C().app_start, appEnd: C().app_end, onSector: (a, st) => {
 				map.set(a, st);
 				if (st === "todo") todo++;
-				if (st === "written") done++;
+				if (st === "written") { done++; ctx.flashMark(started, "first_byte"); }
 				prog.set(done, todo, t("flash.c7.write.writing", { done, todo }));
 			} });
+			ctx.flashMark(started, "last_byte");
 			prog.set(1, 1, t("flash.c7.write.verified"));
 			c.log.add(`written ${res.written} sectors, ${res.same} unchanged, all verified by CRC`);
 			ctx.flashFinished(started);
@@ -1150,8 +1153,9 @@ export function restoreView() {
 			if (model && model !== boardId()) throw new Error(t("flash.c7.restore.other_radio"));
 			const [start, data] = c7.restoreTarget(C(), pm);
 			let todo = 0, done = 0;
-			const res = await c.stub.writeProgram(data, start, { appStart: C().app_start, appEnd: C().app_end, onSector: (a, st) => {
-				map.set(a, st);
+			// carve: a protected sector keeps what the radio has, whatever the backup holds
+			const res = await c.stub.writeProgram(data, start, { appStart: C().app_start, appEnd: C().app_end, carve: true, onSector: (a, st) => {
+				map.set(a, st === "kept" ? "boot" : st);
 				if (st === "todo") todo++;
 				if (st === "written") done++;
 				prog.set(done, todo, t("flash.c7.write.writing", { done, todo }));

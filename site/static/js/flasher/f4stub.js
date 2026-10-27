@@ -17,6 +17,7 @@
 
 import { be32, concat, crc32, equal, fromHex, sleep, toHex } from "./bytes.js";
 import { FrameError, OK, Stub, StubError, unpack } from "./stub.js";
+import * as protect from "./protect.js";
 
 export const BLOCK = 4096, FLASH_BASE = 0x08000000, APP_BASE = 0x0800C000, STUB_RUN = 0x20000000;
 export const F4_MAGIC = 0x46345342;	// 'F4SB': ERASE, XERASE and RESET carry it
@@ -253,8 +254,20 @@ export class F4Stub extends Stub {
 		return out;
 	}
 
-	erase(sector) {
+	// The board's protected regions (data/f4-stub.json boards[id].protect, board.toml [[flash.protect]]): every erase and
+	// program below checks them before it sends anything, whoever calls it
+	guard(mem, start, end, action = "write") {
+		try {
+			protect.check(this.board?.protect, mem, start, end, action);
+		} catch (e) {
+			throw new StubError(e.message);
+		}
+	}
+
+	async erase(sector) {
 		this.needConfigured();
+		const sec = f405Sectors(this.info?.flashKb).find((s) => s.index === sector);
+		if (sec) this.guard("progmem", sec.addr - FLASH_BASE, sec.addr + sec.size - FLASH_BASE, "erase");
 		return this.request(OP.ERASE, concat(new Uint8Array([sector]), be32(F4_MAGIC)), { retries: 0, timeout: ERASE_TIMEOUT });
 	}
 
@@ -262,6 +275,7 @@ export class F4Stub extends Stub {
 	async program(addr, data) {
 		this.needConfigured();
 		if (addr % 4 || data.length % 4) throw new StubError(`program ${hex8(addr)}+${data.length}: words only`);
+		this.guard("progmem", addr - FLASH_BASE, addr + data.length - FLASH_BASE);
 		for (let off = 0; off < data.length; off += BLOCK) {
 			const piece = data.subarray(off, off + BLOCK);
 			if (!isBlank(piece)) await this.request(OP.PROGRAM, concat(be32(addr + off), piece), { retries: 0, timeout: 2000 });
@@ -318,6 +332,7 @@ export class F4Stub extends Stub {
 		const p = plan || await this.plan(owned, segs);
 		if (!p.changed.length) return { written: 0, same: p.sectors.length };
 		const by = new Map(p.sectors.map((s) => [s.index, s]));
+		for (const i of p.changed) this.guard("progmem", by.get(i).addr - FLASH_BASE, by.get(i).addr + by.get(i).size - FLASH_BASE, "erase");	// before the first erase
 		for (const i of p.changed) if (by.get(i).kept) await onKept(by.get(i));
 		const order = [3, ...p.changed.filter((i) => i !== 3)];
 		const s3 = by.get(3);
@@ -368,14 +383,18 @@ export class F4Stub extends Stub {
 	}
 
 	// Write data (whole 4 KB sectors) into the SPI flash from start: only the sectors whose CRC differs are erased and
-	// programmed (blank pieces skipped), each read back by the stub, then all checked again. Returns {written, same}.
+	// programmed (blank pieces skipped), each read back by the stub, then all checked again. A restore: the board's
+	// protected regions are carved out, so the radio keeps its own bytes there. Returns {written, same}; protected
+	// sectors count as same.
 	async spiWrite(data, start = 0, { progress = () => {}, signal } = {}) {
 		this.needSpi();
 		if (start % BLOCK || data.length % BLOCK || start + data.length > this.info.spiSize) throw new StubError("SPI flash writes are whole 4 KB sectors inside the chip");
-		const todo = await this.diff(data, start, MEM_SPI);
+		const free = (a) => !protect.overlapping(this.board?.protect, "data", a, a + BLOCK).length;
+		const todo = (await this.diff(data, start, MEM_SPI)).filter(free);
 		for (const [n, a] of todo.entries()) {
 			if (signal?.aborted) throw new StubError("stopped");
 			const sec = data.subarray(a - start, a - start + BLOCK);
+			this.guard("data", a, a + BLOCK, "erase");
 			await this.request(OP.XERASE, concat(be32(a), be32(F4_MAGIC)), { retries: 0, timeout: 2000 });
 			for (let off = 0; off < BLOCK; off += 1024) {
 				const piece = sec.subarray(off, off + 1024);
@@ -383,7 +402,7 @@ export class F4Stub extends Stub {
 			}
 			progress(n + 1, todo.length);
 		}
-		const bad = todo.length ? await this.diff(data, start, MEM_SPI) : [];
+		const bad = todo.length ? (await this.diff(data, start, MEM_SPI)).filter(free) : [];
 		if (bad.length) throw new StubError(`SPI flash verify: ${bad.length} sector(s) differ, first at 0x${bad[0].toString(16)}`);
 		return { written: todo.length, same: data.length / BLOCK - todo.length };
 	}

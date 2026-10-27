@@ -613,11 +613,51 @@ sine at the same swing (`subaudio_tx_tail`, with the interrupt held off for the 
 ## 7. Display
 
 160 x 128 color TFT on the FSMC 8-bit bus (NE1), command at 0x60000000 and data at 0x60040000 (A17 = RS on PD12),
-chip select PD6, reset PD13: the DM-1701's wiring (unverified). The controller type is unconfirmed (an HX8302A or
-an ILI9481 are candidates). RadioFoundry drives it with `drivers/display/st7735` (assuming the ST7735 command set) with
-safe-area insets of 1 px at the top and 2 px on the left (the case edge crowds them; right and bottom are close but usable; seen on the radio, 2026-10-16) and two build-time knobs for the bench: `MD380_PANEL_TYPE` (the st7735 driver's panel
-type, default 0) and `MD380_PANEL_MADCTL_XOR` (orientation bits flipped, default 0). Backlight: LAMP (PC6), TIM8 CH1
+chip select PD6, reset PD13: the DM-1701's wiring (unverified). The controller differs between radios and is detected (below). RadioFoundry drives it with `drivers/display/st7735` with
+safe-area insets of 1 px at the top and 2 px on the left (the case edge crowds them; right and bottom are close but usable; seen on the radio, 2026-10-16). Backlight: LAMP (PC6), TIM8 CH1
 PWM at 1 kHz (unverified for the pin; PWM ours).
+
+Panel type: `display_md380.c` picks the st7735 driver's type (`drivers/display/st7735/st7735.h`) at start-up, from
+the controller's own ID and the factory byte (`panel_md380.c`):
+
+1. After a hardware reset, before any init, it reads the display ID: command 0x04 returns a dummy byte and three ID
+   bytes, 0xDA, 0xDB and 0xDC a dummy byte and one each. Reads use a slower FSMC strobe than writes (address setup 15,
+   data 60 HCLK cycles).
+2. It reads the factory byte: SPI flash security register 3, byte 0x1D. Many radios carry 0xFF there because the
+   register was wiped, so an erased byte says nothing.
+3. The controller ID chooses the init, the byte (where programmed) only the orientation:
+
+| Controller ID | Controller | Factory byte | Type |
+|---|---|---|---|
+| `00 91 xx` | GalaxyCore GC9xxx (the unlock-variant init) | 0xFF, unread, or bit 0 = 1 | 3 (normal) |
+| | | bit 0 = 0 | 2 (flipped) |
+| `7C xx xx` | Sitronix ST7735 class | 1 | 1 (rotated 180 degrees) |
+| | | anything else | 0 (normal) |
+| anything else | unknown | programmed | its low two bits |
+| | | 0xFF or unread | 0 |
+
+Bit 0 gives a GC9xxx's orientation in both stock layouts: stock D3.008 to D13.20 tested only bit 0 (0 = flipped
+GC9xxx, 1 = normal); D3.32 and later use all four types (2 = flipped, 3 = normal GC9xxx).
+
+Stock sets the same color order for every type, so all are driven in RGB order (`force_rgb`).
+
+One radio (2026-10-27): ID `00 91 02` from both commands on every start (probably a GC9102), factory byte 0xFF, so
+type 3; picture right side up with correct colors. Its panel also showed a picture with the ST7735 init (type 0),
+which is why a picture alone doesn't identify the controller. Untested: an ST7735 panel, and types 1 and 2.
+
+| Knob or key | What |
+|---|---|
+| `MD380_PANEL_TYPE` (build, `MD380_DEFS`) | overrides the detected type |
+| `MD380_PANEL_MADCTL_XOR` (build) | orientation bits flipped on top of the type's, default 0 |
+| `display.panel_controller` (debug link `link` section) | `gc9xxx`, `st7735` or `unknown` |
+| `display.panel_source` (same) | what chose the type: `id`, `factory`, `default` or `build` |
+| `display.panel_type` (same) | the type in use |
+| `display.panel_id`, `display.panel_id_reg` (same) | the ID bytes in hex from 0x04 and from 0xDA-0xDC |
+| `display.panel_raw` (same) | the factory byte in hex, `none` when it couldn't be read |
+
+`boards/md380/tests/md380PanelTest.c` checks the rules. `boards/md380/hil/test_md380_panel.py` checks the radio:
+both ID reads agree, the controller is known, the type follows the rules. An unknown controller fails it: add its ID
+to `panel_md380.c`.
 
 ---
 
@@ -835,7 +875,7 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | # | Unknown | How to settle it on a radio |
 |---|---|---|
 | 1 | HSE crystal or external clock | Stage 1: the radio boots on HSE (USB enumerates); if only bypass works, record it |
-| 2 | Display controller, orientation, colors | Stage 2: try `MD380_PANEL_TYPE` / `MD380_PANEL_MADCTL_XOR` until the boot screen is right side up and in color |
+| 2 | Display controller, orientation, colors | Stage 2: the type is detected (section 7); if the boot screen is wrong, note the `display.panel_*` keys and try `MD380_PANEL_TYPE` / `MD380_PANEL_MADCTL_XOR` |
 | 3 | Key matrix positions, side keys on K3 | Stage 3: press each key, read "keys" on the diagnostics page, correct section 9.1 and `input_md380.c` |
 | 4 | Channel switch code polarity and order | Settled 2026-10-16: a Gray code, table in 9.2 |
 | 5 | Volume knob on PA0 vs the TX LED | Stage 3: "vol" on the diagnostics page follows the knob, and the red LED lights on PE1 |

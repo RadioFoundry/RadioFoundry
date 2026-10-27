@@ -833,3 +833,26 @@ test("trail of a merge from the stock file: the file by name, size and hash, the
 		console.debug = debug;
 	}
 });
+
+test("protected regions: keep and merge plans refuse a protected sector, a restore keeps it, Dfu.run checks again", async () => {
+	const sec5 = board.sectors.find((s) => s.index === 5);
+	const b = { ...board, protect: [{ mem: "progmem", start: sec5.addr - board.rom_base, end: sec5.addr + sec5.size - board.rom_base, what: "test (x.md 1)" }] };
+	const img = new Uint8Array(150000).fill(0x11);
+	img.set([0xFC, 0xFF, 0x01, 0x20, 0xC1, 0xC1, 0x00, 0x08]);
+	assert.throws(() => makePlan(b, [[b.app_base, img]], KEEP), /protected region/);
+	const small = makePlan(b, [[b.app_base, img.subarray(0, 5000)]], KEEP);
+	assert.deepEqual(small.erase.map((s) => s.index), [3]);
+	const r = makePlan(b, [[b.app_base, new Uint8Array(b.flash_end - b.app_base).fill(0x22)]], RESTORE);
+	assert.ok(!r.erase.some((s) => s.index === 5) && r.kept.some((s) => s.index === 5), "restore carves the protected sector out");
+	const plan = makePlan(board, [[board.app_base, img]], KEEP);
+	plan.board = b;
+	let sent = 0;
+	const t = { out: async () => { sent++; }, in: async () => { sent++; return new Uint8Array(6); } };
+	await assert.rejects(new Dfu(t, { log: () => {} }).run(plan, new Uint8Array(1024)), /protected region/);
+	assert.equal(sent, 0);
+	// the codeplug restore over the CPS leaves a protected data sector out
+	const spi = new Uint8Array(0x30000).fill(1), now = new Uint8Array(0x30000);
+	const all = codeplugSectors(spi, now).map(([a]) => a);
+	const cut = codeplugSectors(spi, now, [{ mem: "data", start: 0x2000, end: 0x4000, what: "test (x.md 1)" }]).map(([a]) => a);
+	assert.deepEqual(all.filter((a) => a < 0x2000 || a >= 0x4000), cut);
+});

@@ -51,6 +51,14 @@ stock_download = "https://md380.org/firmware/orig/"
 stock_versions = ["D002.032", "D35.14", "S35.14"]
 backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 
+# Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
+# as offsets in that memory, what with the spec section that establishes it
+[[flash.protect]]
+mem = "secreg"
+start = 0x0
+end = 0x200
+what = "factory calibration in security registers 1 and 2 (hardware-md380.md 11.1)"
+
 # hold: SK1 is the upper side key, the one above PTT (hardware-md380.md 9.1 and 14.3, unverified on a radio)
 [flash.bootloader]
 hold = ["ptt", "sk1"]
