@@ -119,6 +119,9 @@ that keeps a calibration copy in its program memory, that option is named **Prog
 whose channels and settings are in NAND memory, **All channels and settings** reads the whole NAND, which can take
 several minutes.
 
+Without the program memory, a backup can't be restored to your initial radio firmware using these tools. Restore
+writes back the program memory only; a backup's calibration and data memory are kept for the record.
+
 If the backup holds the original firmware's codeplug, open the file in the
 [Codeplug Editor](04-programming.md#the-codeplug-editor). It converts the channels, zones and contacts to the
 RadioFoundry layout.

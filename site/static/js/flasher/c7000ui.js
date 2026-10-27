@@ -528,10 +528,14 @@ const calOneCopy = (c) => (c.calMissing ? notice(t("flash.c7.backup.cal_one_copy
 // (sizeUp).
 function backupOptions(want, { firstInstall = false, text = (k) => t(`flash.c7.backup.${k}_text`) } = {}) {
 	const box = {}, times = {};
+	// restore writes back the program memory only (restoreView): without it the backup can't restore the radio's firmware
+	const noProgmem = notice(t("flash.c7.backup.no_progmem"), "info");
+	const showNote = () => { noProgmem.hidden = !!want.progmem; };
 	const opt = (k, title, why, disabled = false) => h("label", { class: "toggle" },
 		box[k] = h("input", { type: "checkbox", checked: want[k], disabled, onchange: (e) => {
 			want[k] = e.target.checked;
 			if (k === "q128" && box.cal) { box.cal.checked = want.cal || want.q128; box.cal.disabled = want.q128; }
+			showNote();
 		} }),
 		h("span", {}, h("b", {}, title), h("span", { class: "why" }, why, " ", times[k] = h("span", { "data-time": k }))), h("span"));
 	const mb = (n) => `${n / 0x100000} MB`;
@@ -543,8 +547,9 @@ function backupOptions(want, { firstInstall = false, text = (k) => t(`flash.c7.b
 		calInProgmem ? opt("progmem", t("flash.c7.check.opt_progmem_whole", { size: mb(progSize()) }), t("flash.c7.check.opt_progmem_whole_text"), firstInstall)
 			: opt("progmem", t("flash.c7.check.opt_progmem", { size: mb(progSize()) }), text("progmem"), firstInstall),
 		hasCal() ? opt("cal", t("flash.c7.check.opt_cal"), t(calInProgmem ? "flash.c7.check.opt_cal_copies_text" : "flash.c7.check.opt_cal_text"), want.q128) : null,
-		opt("q128", t("flash.c7.check.opt_q128", { size: mb(dataSize()) }), text("q128")));
+		opt("q128", t("flash.c7.check.opt_q128", { size: mb(dataSize()) }), text("q128")), noProgmem);
 	if (box.cal) box.cal.checked = want.cal || want.q128;
+	showNote();
 	refresh();
 	el.refresh = refresh;
 	return el;
@@ -1107,7 +1112,14 @@ export function restoreView() {
 		vendor ? [h("dt", {}, t("flash.restore.vendor_file")), h("dd", {}, vendor)] : [h("dt", {}, t("flash.restore.taken")), h("dd", {}, localTime(meta.created))],
 		h("dt", {}, t("flash.restore.fw_now")), h("dd", {}, describeFirmware(meta.firmware_now)),
 		h("dt", {}, t("flash.restore.parts")), h("dd", {}, partNames(S().bundle.parts)))));
-	const pm = S().bundle.parts.get("c7000-progmem").data;
+	// what the page writes back is the program memory: a backup of the calibration or the data memory alone is kept,
+	// not written (restore.data_note)
+	const pm = S().bundle.parts.get("c7000-progmem")?.data;
+	if (!pm) {
+		out.append(notice(t("flash.c7.restore.no_progmem"), "bad"));
+		S().forward(null);
+		return out;
+	}
 	// a radio that answers nothing else gets the backup through the vendor update mode
 	if (c.how === "iap" && c.stream) {
 		const after = h("div");
