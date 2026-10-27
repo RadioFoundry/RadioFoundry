@@ -1214,7 +1214,7 @@ an initial value would be dropped).
 |---|---|
 | `.vectors`, `.ramfunc` | the vector table (512 B) and the RAM code: interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue |
 | `.ram_lo` | the `RFOUNDRY_CPU_RAM` state (radio task, APRS, hotspot rings, DMR data) and the 2 KB interrupt stack |
-| `.data`, `.bss` | frame buffer 40 KB, RTOS heap 34 KB (every task stack and queue; `boards/dm32/freertos_board.h`), vocoder states 13 KB, the network buffers (TCP connections, the network personality's packets and frame, the gateway's bursts and frame), 2 KB start-up stack |
+| `.data`, `.bss` | frame buffer 40 KB, RTOS heap 33 KB (every task stack and queue; `boards/dm32/freertos_board.h`), vocoder states 13 KB, the network buffers (TCP connections, the network personality's packets and frame, the gateway's bursts and frame), 2 KB start-up stack |
 
 The image sizes and the RAM left in each build are in [feature-matrix.md](../feature-matrix.md), "Whole images".
 
