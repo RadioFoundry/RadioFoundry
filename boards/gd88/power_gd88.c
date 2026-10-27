@@ -29,6 +29,23 @@ static battery_avg_t bat;
 static uint8_t off_count, gone_count;
 static bool seen_on;		// the key was seen released
 static uint8_t vol_level;
+// What the knob does when turned off, for the diagnostics page (the radio stays up on the latch, 2026-10-26): the
+// battery channel's lowest reading, the polls PTB12 read high, and the input bits of each GPIO bank that ever changed
+static gd88_power_watch_t watch;
+static uint32_t port_start[3];
+static const uint32_t port_base[3] = { GPIOA_BASE, GPIOB_BASE, GPIOC_BASE };
+
+static void watch_ports(void)
+{
+	for (unsigned i = 0; i < 3; i++) {
+		watch.changed[i] |= REG32(port_base[i] + GPIO_EXT) ^ port_start[i];
+	}
+}
+
+void gd88_power_watch(gd88_power_watch_t *w)
+{
+	*w = watch;
+}
 
 static uint32_t raw_to_mv(uint16_t raw)
 {
@@ -50,6 +67,10 @@ static void init(void)
 	gone_count = 0;
 	seen_on = false;
 	vol_level = 0;
+	watch = (gd88_power_watch_t){ .bat_min = UINT16_MAX };
+	for (unsigned i = 0; i < 3; i++) {
+		port_start[i] = REG32(port_base[i] + GPIO_EXT);
+	}
 }
 
 static void latch(bool on)
@@ -83,7 +104,12 @@ static int8_t volume(void)
 
 static bool switch_on(void)
 {
-	if (hrc_adc_read(GD88_ADC_BATTERY) < BAT_GONE_RAW) {
+	uint16_t b = hrc_adc_read(GD88_ADC_BATTERY);
+	if (b < watch.bat_min) {
+		watch.bat_min = b;
+	}
+	watch_ports();
+	if (b < BAT_GONE_RAW) {
 		if (gone_count < BAT_GONE_SAMPLES) {
 			gone_count++;
 		}
@@ -94,7 +120,11 @@ static bool switch_on(void)
 		return false;
 	}
 	// The key only counts once it has been seen released (it is held to switch on)
-	if (!hrc_pin_read(PIN_POWER_KEY)) {
+	bool high = hrc_pin_read(PIN_POWER_KEY);
+	if (high && watch.key_high < UINT16_MAX) {
+		watch.key_high++;
+	}
+	if (!high) {
 		seen_on = true;		// released
 		off_count = 0;
 	} else if (seen_on && off_count < KEY_OFF_POLLS) {

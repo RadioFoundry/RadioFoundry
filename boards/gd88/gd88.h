@@ -42,6 +42,13 @@ uint64_t gd88_chain_shadow(void);
 #define GD88_ADC_MIC		0u	// VOX / mic level
 #define GD88_ADC_VOLUME		1u	// volume knob
 #define GD88_ADC_BATTERY	2u
+// The knob watch (power_gd88.c), for the diagnostics page
+typedef struct {
+	uint16_t bat_min;		// the battery channel's lowest raw reading
+	uint16_t key_high;		// polls PTB12 read high
+	uint32_t changed[3];		// GPIO A, B, C input bits that changed since start-up
+} gd88_power_watch_t;
+void gd88_power_watch(gd88_power_watch_t *w);
 
 // --- Data flash (flash_gd88.c; CONFIG_NAND_STORAGE) ---
 #if CONFIG_NAND_STORAGE

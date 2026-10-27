@@ -81,10 +81,22 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " n ");
 		put_x(&o, d.noise_raw, 4);
 		break;
-	case 2:
+	case 2: {
+		// The knob watch: PTB12's high polls and the GPIO input bits that changed (bus and key lines included)
+		gd88_power_watch_t w;
+		gd88_power_watch(&w);
 		put(&o, "keys ");
 		put_x(&o, gd88_input_raw(), 5);
+		put(&o, " pk");
+		put_u(&o, w.key_high);
+		put(&o, " A");
+		put_x(&o, w.changed[0], 8);
+		put(&o, " B");
+		put_x(&o, w.changed[1], 8);
+		put(&o, " C");
+		put_x(&o, w.changed[2], 8);
 		break;
+	}
 	case 3:
 		put(&o, "adc0 ");
 		put_u(&o, hrc_adc_read(GD88_ADC_MIC));
@@ -92,6 +104,12 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, hrc_adc_read(GD88_ADC_VOLUME));
 		put(&o, " 2 ");
 		put_u(&o, hrc_adc_read(GD88_ADC_BATTERY));
+		{
+			gd88_power_watch_t w;
+			gd88_power_watch(&w);
+			put(&o, " min ");
+			put_u(&o, w.bat_min);
+		}
 		break;
 	case 4:
 		put(&o, "bat ");
