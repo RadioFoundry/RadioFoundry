@@ -110,6 +110,8 @@ bool gd88_nand_ready(void);
 uint16_t gd88_nand_id(void);
 uint32_t gd88_nand_corrected(void);
 bool gd88_nand_read(uint32_t addr, void *buf, uint32_t len);
+// A stock partition's bytes at its logical address, through the stock block map (spi-nand-lut.md); false without one
+bool gd88_nand_read_stock(uint32_t addr, void *buf, uint32_t len);
 void gd88_nand_lock(void);
 void gd88_nand_unlock(void);
 #if CONFIG_NAND_STORAGE

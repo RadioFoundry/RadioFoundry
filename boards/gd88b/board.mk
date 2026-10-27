@@ -6,7 +6,7 @@
 # calibration code is A's (boards/gd88/common)
 PLATFORM   := hrc7000
 MCU_DEFS   := -DHRC_HOST_UART=1 -DHRC_LOADER_CPU_HZ=72000000u
-BOARD_DIRS := boards/gd88b boards/gd88/common drivers/rf/bk4819 drivers/rf/at1141 drivers/rf/subaudio drivers/modem/hrc7000
+BOARD_DIRS := boards/gd88b boards/gd88/common drivers/rf/bk4819 drivers/rf/at1141 drivers/rf/subaudio drivers/modem/hrc7000 drivers/flash/spi_nand
 BOARD_INC  := boards/gd88/common
 CORE_BASE_DIRS :=
 BOARD_CORE_DIRS := core/rx2

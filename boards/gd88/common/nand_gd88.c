@@ -1,22 +1,24 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 SPI NAND: a TC58-family chip on SPI0 of each SoC, chip select PTA18 by GPIO (docs/spec/hardware-gd88.md 7).
+// The stock partitions (the calibration page) are read through the stock firmware's block map (spi-nand-lut.md).
 // The factory calibration copy is read at boot; with CONFIG_NAND_STORAGE the core's storage lives in RadioFoundry's own block
 // range (GD88_NAND_RFOUNDRY_FIRST), the only blocks the driver will program or erase. One recursive mutex serializes every
 // NAND transaction once the scheduler runs: the storage layer holds it across a whole read-modify-program sequence.
 // The geometry is the TC58CVG1S3HRAIJ's (2 Gbit, 2 KB pages, 64 pages a block), as in hardware-db25d.md: A's chip
 // answers ID 98 EB, that part, and keeps the settings (2026-10-26).
-// TODO(gd88): unknown, needs a radio: on B, the NAND's chip select (taken to be PTA18 as on A)
 #include "gd88_rf.h"
 #include "config.h"
 #include "platform.h"
 #include "flash/spi_nand/spi_nand.h"
+#include "flash/spi_nand/spi_nand_lut.h"
 #include "hal_watchdog.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "task.h"
 
 #define DIPLEX1_SPI0		(0x3Fu << 3)	// SPI0 SCLK / MOSI / MISO to the SPI master (0 = peripheral)
+#define GD88_NAND_BLOCKS	2048u
 #define SPI0_BAUDR		4u		// APB / 4: 21 MHz at RadioFoundry's 84 MHz, 9 MHz at the loader's 36 (the chip takes 133)
 
 static void chip_select(bool active)
@@ -37,7 +39,7 @@ static spi_nand_t nand = {
 	.page_size = 2048,
 	.spare_size = 64,
 	.pages_per_block = 64,
-	.blocks = 2048,
+	.blocks = GD88_NAND_BLOCKS,
 #if CONFIG_NAND_STORAGE
 	// Feature 0xB0: ECC on, high speed read off (the internal data move needs it off, and random page reads are
 	// faster without it), block protection commands off. Every block locked (0xA0 = 0x38) except during a program
@@ -101,6 +103,18 @@ bool gd88_nand_read(uint32_t addr, void *buf, uint32_t len)
 	bool ok = ready && spi_nand_read(&nand, addr, buf, len);
 	gd88_nand_unlock();
 	return ok;
+}
+
+bool gd88_nand_read_stock(uint32_t addr, void *buf, uint32_t len)
+{
+	static uint8_t table[SPI_NAND_LUT_LEN(GD88_NAND_BLOCKS)];
+	const uint32_t block = (uint32_t)nand.page_size * nand.pages_per_block;
+	uint32_t phys;
+	if (!ready || addr % block + len > block || !gd88_nand_read(0, table, sizeof table)
+	    || !spi_nand_lut_map(table, sizeof table, nand.blocks, addr / block, &phys)) {
+		return false;
+	}
+	return gd88_nand_read(phys * block + addr % block, buf, len);
 }
 
 #if CONFIG_NAND_STORAGE

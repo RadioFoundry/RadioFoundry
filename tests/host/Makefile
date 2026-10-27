@@ -942,10 +942,11 @@ settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/set
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
 
 run: run-settings
-run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
+run-settings: settingsTest spiNorTest spiNandTest spiNandLutTest nandSectorsTest
 	./settingsTest
 	./spiNorTest
 	./spiNandTest
+	./spiNandLutTest
 	./nandSectorsTest
 .PHONY: run-settings
 
@@ -966,6 +967,12 @@ TESTS   += spiNandTest
 spiNandTest: spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c $(ROOT)/drivers/flash/spi_nand/spi_nand.h \
              $(ROOT)/drivers/bus/spi_bus.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c
+
+# The stock firmware's block map over an SPI NAND: the shift block 0 gives, bad blocks, the reserved pool, no table
+TESTS   += spiNandLutTest
+
+spiNandLutTest: spiNandLutTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand_lut.c $(ROOT)/drivers/flash/spi_nand/spi_nand_lut.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ spiNandLutTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand_lut.c
 
 # NOR-like 4 KB sectors over NAND (drivers/flash/nand_sectors) on a simulated NAND: bad and worn blocks, garbage
 # collection, wear leveling, a power cut at every operation of a write, an erase and a garbage collection (torn pages

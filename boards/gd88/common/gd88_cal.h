@@ -11,7 +11,7 @@
 #define GD88_CAL_LEN		0x800u
 #define GD88_CAL_POINTS		8u
 #define GD88_CAL_FLASH_ADDR	0x031FE000u	// the program-flash copy, memory-mapped
-#define GD88_CAL_NAND_ADDR	0x280000u	// the NAND copy (block 20)
+#define GD88_CAL_NAND_ADDR	0x280000u	// the NAND copy, a stock logical address (spi-nand-lut.md)
 typedef enum { GD88_CAL_NONE, GD88_CAL_FLASH, GD88_CAL_NAND } gd88_cal_source_t;
 // Which copy wins: "TUNE" and the higher save counter. Either pointer may be NULL; only the first 8 bytes are read
 gd88_cal_source_t gd88_cal_choose(const uint8_t *flash_copy, const uint8_t *nand_copy);

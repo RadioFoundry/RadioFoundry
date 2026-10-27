@@ -9,6 +9,7 @@
 #include "config.h"
 #include "board.h"
 #include "gd88_rf.h"
+#include "gd88_cal.h"
 #include "gd88b.h"
 #include "platform.h"
 #include "hal_time.h"
@@ -278,6 +279,11 @@ bool gd88b_diag_line(uint8_t i, char *buf, uint8_t len)
 		return true;
 	case 3:
 		return gd88b_pa_diag_line(buf, len);
+	case 4:
+		dl_fmt(buf, len, "b cal %s #%u nand %s", gd88_cal_source() == GD88_CAL_FLASH ? "flash"
+		       : gd88_cal_source() == GD88_CAL_NAND ? "nand" : "none", (unsigned)gd88_cal_counter(),
+		       gd88_nand_ready() ? "up" : "down");
+		return true;
 	default:
 		return false;
 	}
