@@ -393,7 +393,7 @@ static void test_messages(void)
 	bad[5] = (uint8_t)(3 * ZS_SEND_CHUNK);
 	CHECK(zsParseMessage(bad, ZS_MSG_HEADER + (ZS_RECORD_MAX - 3 * ZS_SEND_CHUNK), &m) && m.full == ZS_SEND_CHUNK);
 	CHECK(!zsParseMessage(bad, ZS_MSG_HEADER + (ZS_RECORD_MAX - 3 * ZS_SEND_CHUNK) + 1, &m));
-	// A last fragment's offset must be a whole number of chunks no smaller than ZS_CHUNK_MIN, and it no longer
+	// A last fragment's offset must be a whole number of chunks of ZS_CHUNK_MIN to ZS_CHUNK_MAX, and it no longer
 #define OFFSET(at) do { bad[4] = (uint8_t)((at) >> 8); bad[5] = (uint8_t)(at); } while (0)
 	bad[3] = 0x23;
 	OFFSET(401);					// not a multiple of 2
@@ -401,6 +401,11 @@ static void test_messages(void)
 	OFFSET(400);					// chunks of 200
 	CHECK(zsParseMessage(bad, ZS_MSG_HEADER + 200, &m) && m.full == 200 && !zsParseMessage(bad, ZS_MSG_HEADER + 201, &m));
 	OFFSET(2 * (ZS_CHUNK_MIN - 1));	// chunks too small
+	CHECK(!zsParseMessage(bad, ZS_MSG_HEADER + 10, &m));
+	bad[3] = 0x12;
+	OFFSET(ZS_CHUNK_MAX);			// chunks of the largest we take
+	CHECK(zsParseMessage(bad, ZS_MSG_HEADER + 10, &m) && m.full == ZS_CHUNK_MAX);
+	OFFSET(ZS_CHUNK_MAX + 1);		// too large: no first fragment could carry it
 	CHECK(!zsParseMessage(bad, ZS_MSG_HEADER + 10, &m));
 	bad[3] = 0x01;					// a lone fragment starts at 0
 	OFFSET(4);

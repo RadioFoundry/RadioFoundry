@@ -54,7 +54,7 @@ Every message starts with the version (1) and the type. Multi-octet fields are b
   for a full record) once the first builds are no longer in use. `zoneShareTest` checks our fragments against the
   first builds' rules.
 - Every fragment but the last is full, and its offset is index x its length. The last fragment's offset is a whole
-  number of chunks of at least 128 octets, and it is no longer than one. Every fragment of a transfer must give the
+  number of chunks of a size the receiver takes, and it is no longer than one. Every fragment of a transfer must give the
   same chunk size. A fragment that breaks a rule is dropped (`zs.rx_bad`).
 - The transfer number is the sender's, one per send.
 

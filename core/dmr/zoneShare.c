@@ -493,7 +493,8 @@ bool zsParseMessage(const uint8_t *payload, int length, zsMessage_t *m)
 			else if (m->index > 0)
 			{
 				m->full = (uint16_t)(m->offset / m->index);
-				if ((m->offset % m->index != 0) || (m->full < ZS_CHUNK_MIN) || (m->chunkLength > m->full))
+				if ((m->offset % m->index != 0) || (m->full < ZS_CHUNK_MIN) || (m->full > ZS_CHUNK_MAX) ||
+						(m->chunkLength > m->full))
 				{
 					return false;
 				}
