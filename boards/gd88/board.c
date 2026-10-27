@@ -30,10 +30,11 @@ static const char *const power_names[] = { "L", "H" };
 static const keymap_entry_t keymap[] = {
 	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
 	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	// The soft keys are Ok and Back, as the stock firmware labels them on the screen (hardware-gd88.md 9.2)
 	{ KEY_SOFT_LEFT, ACT_SELECT, ACT_SELECT, false, false, 0 },
-	{ KEY_RED, ACT_BACK, ACT_BACK, false, false, 0 },
-	{ KEY_SOFT_RIGHT, ACT_AB, ACT_DUAL_WATCH, false, false, 0 },
-	{ KEY_GREEN, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false, 0 },
+	{ KEY_SOFT_RIGHT, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ KEY_GREEN, ACT_AB, ACT_DUAL_WATCH, false, false, 0 },
+	{ KEY_RED, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false, 0 },
 	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false, 0 },
 	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
 	{ KEY_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },

@@ -25,8 +25,7 @@
 // are the digit columns (left, center, right), so the last two rows are the keys under the display: green, down, red,
 // then the soft keys around up. The original firmware's handlers settle 5 and 6 (Menu, A/B) and 1 and 2 (channel up,
 // down).
-// TODO(gd88): unknown, needs a radio: codes 3 and 4 as green and red (by position: 3 is the vendor's programmable P4,
-// 4 goes back a menu level), and up as code 1
+// Checked on the radio (2026-10-26): each front key reads as its name below
 static const uint8_t map[KEY_ROWS * KEY_SENSES] = {
 	KEY_1, KEY_2, KEY_3,
 	KEY_4, KEY_5, KEY_6,

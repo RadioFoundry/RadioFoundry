@@ -632,6 +632,20 @@ To start the radio's update mode, turn it off and connect the programming cable.
 the volume knob. When the LED lights red and the top line shows `IAP_A` or `IAP_B`, release **P2**. Hold **P2** to
 switch between them: `IAP_A` updates the first chip, `IAP_B` the second.
 
+### GD-88 keys
+
+| Key | Role |
+|---|---|
+| Left soft key (under the display) | **OK** |
+| Right soft key | **Back** |
+| Green | **A/B** |
+| Red | **VFO** |
+| Up, Down | **Up**, **Down** |
+| P1 (lower left side key) | **Monitor** |
+| P2 (upper left side key) | Talk target. Held at power-on, it starts the update mode |
+| P3 (orange top key) | User key 3 |
+| **PTT** | **PTT** |
+
 ## Planned radios
 
 These radios aren't built in a release yet. An in-progress port is on its own branch. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
