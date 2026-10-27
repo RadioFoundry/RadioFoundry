@@ -112,7 +112,9 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		}
 		break;
 	case 4:
-		put(&o, "bat ");
+		put(&o, "bat ");			// raw then mV, as the other radios (the HIL voltage test reads both)
+		put_u(&o, hrc_adc_read(GD88_ADC_BATTERY));
+		put(&o, " ");
 		put_u(&o, gd88_power.battery_mv());
 		put(&o, "mV vol ");
 		put_u(&o, (uint32_t)gd88_power.volume());

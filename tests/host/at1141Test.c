@@ -85,7 +85,7 @@ static void test_plan(void)
 		at1141_plan(t[i].hz, 0x40, &h);			// reference halved
 		CHECK(h.div == p.div && h.r3f == p.r3f && p.pll - 2u * h.pll <= 1u);
 	}
-	// The GD-88's bands keep the VCO between 2.2 and 3.3 GHz
+	// VHF and UHF receive with a 45 MHz IF, either side: the VCO stays between 2.2 and 3.3 GHz
 	for (uint32_t hz = 136000000u + 45000000u; hz <= 174000000u + 45000000u; hz += 1000000u) {
 		at1141_plan_t p;
 		at1141_plan(hz, 0, &p);
