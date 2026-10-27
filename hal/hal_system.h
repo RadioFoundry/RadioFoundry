@@ -28,8 +28,11 @@ enum {
 
 typedef struct {
 	bool (*chip)(hal_chip_t *c);
-	// Copy n bytes from a memory address the caller has already checked (dl_mem_allowed)
+	// Copy n bytes from a memory address the caller has already checked (readable, else dl_mem_allowed)
 	void (*read)(uint32_t addr, void *dst, size_t n);
+	// Optional: whether n bytes from addr are memory read() may copy (RAM and program flash, never peripheral
+	// registers). NULL: the STM32F4's windows (dl_mem_allowed, by the chip's flash size)
+	bool (*readable)(uint32_t addr, uint32_t n);
 	// Does not return (or returns false when the request could not be armed, e.g. the backup register didn't stick)
 	bool (*reboot)(uint8_t mode);
 	// Runtime RAM-monitor entry (CONFIG_STUB_ENTRY, docs/spec/debuglink.md 3.18), both optional (NULL where the

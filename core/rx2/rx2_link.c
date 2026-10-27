@@ -224,6 +224,32 @@ void rx2_main_init(rx2_main_t *m, rx2_send_fn send)
 	rx2_parser_init(&m->parser);
 }
 
+static void main_dl_fail(rx2_main_t *m)
+{
+	m->dl_state = RX2_DL_FAILED;
+	m->dl_failed++;
+}
+
+// A part of the reply in flight: in order, from index 0, until the one marked last
+static void main_dl_part(rx2_main_t *m, const rx2_parser_t *p)
+{
+	if (m->dl_state != RX2_DL_WAIT || p->len < 2u || p->buf[0] != m->dl_tag) {
+		return;		// late, or another request's
+	}
+	uint8_t idx = (uint8_t)(p->buf[1] & ~RX2_DL_LAST);
+	uint16_t n = (uint16_t)(p->len - 2u);
+	if (idx != m->dl_next || m->dl_len + n > RX2_DL_REPLY_MAX) {
+		main_dl_fail(m);
+		return;
+	}
+	memcpy(&m->dl_reply[m->dl_len], &p->buf[2], n);
+	m->dl_len = (uint16_t)(m->dl_len + n);
+	m->dl_next++;
+	if (p->buf[1] & RX2_DL_LAST) {
+		m->dl_state = m->dl_len > 0 ? RX2_DL_DONE : RX2_DL_FAILED;
+	}
+}
+
 void rx2_main_rx(rx2_main_t *m, uint8_t b, uint32_t now_ms)
 {
 	rx2_parser_t *p = &m->parser;
@@ -267,6 +293,9 @@ void rx2_main_rx(rx2_main_t *m, uint8_t b, uint32_t now_ms)
 			m->tune_acked = p->buf[1] == 0;
 		}
 		break;
+	case RX2_DL_REPLY:
+		main_dl_part(m, p);
+		break;
 	default:
 		break;	// RX2_LOG: the board reads it from the parser before calling here, if it wants it
 	}
@@ -277,6 +306,9 @@ void rx2_main_poll(rx2_main_t *m, uint32_t now_ms)
 	if (m->up && now_ms - m->heard_ms > RX2_ALIVE_MS) {
 		m->up = false;
 		memset(&m->st, 0, sizeof(m->st));
+	}
+	if (m->dl_state == RX2_DL_WAIT && (!m->up || now_ms - m->dl_sent_ms >= RX2_DL_TIMEOUT_MS)) {
+		main_dl_fail(m);
 	}
 	if (!m->up) {
 		if (now_ms - m->asked_ms >= RX2_HELLO_EVERY_MS || m->asked_ms == 0) {
@@ -357,6 +389,76 @@ void rx2_main_command(rx2_main_t *m, uint8_t type)
 	main_send(m, type, p, 4);
 }
 
+bool rx2_main_dl_send(rx2_main_t *m, const uint8_t *req, uint8_t len, uint32_t now_ms)
+{
+	uint8_t p[RX2_PAYLOAD_MAX];
+	if (!m->up || len == 0 || len > RX2_DL_REQ_MAX) {
+		return false;
+	}
+	m->dl_tag++;
+	m->dl_state = RX2_DL_WAIT;
+	m->dl_next = 0;
+	m->dl_len = 0;
+	m->dl_sent_ms = now_ms;
+	m->dl_requests++;
+	p[0] = m->dl_tag;
+	p[1] = RX2_DL_LAST;
+	memcpy(&p[2], req, len);
+	main_send(m, RX2_DL, p, (uint8_t)(len + 2u));
+	return true;
+}
+
+// --- The update bridge's exit sequence ---
+
+const uint8_t rx2_exit_seq[RX2_EXIT_LEN] = { 0x7E, 0xE7, 0x81, 0x18 };
+
+void rx2_exit_init(rx2_exit_t *x, uint32_t now_us)
+{
+	x->held = 0;
+	x->ok = false;
+	x->last_us = now_us;
+}
+
+static uint8_t exit_release(rx2_exit_t *x, uint8_t *out)
+{
+	uint8_t n = x->held;
+	memcpy(out, rx2_exit_seq, n);
+	x->held = 0;
+	return n;
+}
+
+uint8_t rx2_exit_byte(rx2_exit_t *x, uint8_t c, uint32_t now_us, uint8_t *out)
+{
+	uint8_t n = 0;
+	if (now_us - x->last_us >= RX2_EXIT_GUARD_US) {
+		n = exit_release(x, out);	// a new burst: what the last one held goes first
+		x->ok = true;
+	}
+	x->last_us = now_us;
+	if (x->ok && x->held < RX2_EXIT_LEN && c == rx2_exit_seq[x->held]) {
+		x->held++;
+		return n;
+	}
+	n = (uint8_t)(n + exit_release(x, out + n));
+	x->ok = false;
+	out[n++] = c;
+	return n;
+}
+
+bool rx2_exit_idle(rx2_exit_t *x, uint32_t now_us, uint8_t *out, uint8_t *n)
+{
+	*n = 0;
+	if (x->held == 0 || now_us - x->last_us < RX2_EXIT_GUARD_US) {
+		return false;
+	}
+	if (x->held == RX2_EXIT_LEN) {
+		return true;
+	}
+	*n = exit_release(x, out);
+	x->ok = false;
+	return false;
+}
+
 // --- Receiver side ---
 
 static void recv_send(rx2_recv_t *r, uint8_t type, const uint8_t *payload, uint8_t len)
@@ -407,6 +509,35 @@ void rx2_recv_init(rx2_recv_t *r, rx2_send_fn send, const rx2_ops_t *ops, uint8_
 	r->flags = flags;
 	r->fw = fw;
 	rx2_parser_init(&r->parser);
+}
+
+// RX2_DL: run the command, then send the reply in parts, in order. DL_ST_UNKNOWN_CMD (1) without a server
+static void recv_dl(rx2_recv_t *r, const rx2_parser_t *p)
+{
+	if (p->len < 3u || p->buf[1] != RX2_DL_LAST) {
+		return;		// a request is one part with at least its command
+	}
+	uint8_t tag = p->buf[0];
+	size_t n = 1;
+	r->dl_requests++;
+	if (r->ops->dl != NULL) {
+		n = r->ops->dl(p->buf[2], &p->buf[3], (uint16_t)(p->len - 3u), r->dl_out, sizeof(r->dl_out));
+	} else {
+		r->dl_out[0] = 1;
+	}
+	if (n == 0 || n > sizeof(r->dl_out)) {
+		n = 1;
+		r->dl_out[0] = 1;
+	}
+	uint8_t f[RX2_PAYLOAD_MAX];
+	for (size_t off = 0, idx = 0; off < n; idx++) {
+		size_t k = n - off < RX2_DL_PIECE ? n - off : RX2_DL_PIECE;
+		f[0] = tag;
+		f[1] = (uint8_t)(idx | (off + k == n ? RX2_DL_LAST : 0u));
+		memcpy(&f[2], &r->dl_out[off], k);
+		recv_send(r, RX2_DL_REPLY, f, (uint8_t)(k + 2u));
+		off += k;
+	}
 }
 
 static bool magic_ok(const rx2_parser_t *p)
@@ -475,6 +606,9 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 		if (magic_ok(p) && r->ops->reset != NULL) {
 			r->ops->reset();
 		}
+		break;
+	case RX2_DL:
+		recv_dl(r, p);
 		break;
 	default:
 		break;

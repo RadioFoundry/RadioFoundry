@@ -196,6 +196,9 @@ ifneq ($(CONFIG_DEBUGLINK),y)
 APP_SRC += core/debuglink/dl_fmt.c
 endif
 endif
+# Single core files a board takes without their whole directory (BOARD_CORE_FILES in its board.mk: the debug link's
+# text, log and crash view files for a second SoC's server, which runs without the debug link)
+APP_SRC += $(sort $(filter-out $(APP_SRC),$(BOARD_CORE_FILES)))	# after every other list: none twice
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) $(addprefix -I,$(BOARD_INC)) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC)
 

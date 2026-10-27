@@ -7,8 +7,12 @@
 // A's status LEDs are on B too: led() sends them over the link (RX2_LED).
 //
 // B's update route (rx2-link.md 4): bridge() sends B to its first stage, then copies bytes between the PC cable
-// (UART1) and the link (UART3) in a polled loop with interrupts off and the transmitter off, until the host has been
-// quiet 10 s (90 s if it never sent anything), then restarts A.
+// (UART1) and the link (UART3) in a polled loop with interrupts off and the transmitter off, until the host sends the
+// exit sequence (4.1) or has been quiet 10 s (90 s if it never sent anything), then restarts A. Not a break: the
+// cable's RX line is also the PTT line, so a press or a loose plug would end a write half done.
+//
+// B's debug link server (rx2-link.md 2.3): forward() sends one command over the link and waits for the reply, which
+// the link task collects.
 #include <string.h>
 #include "gd88.h"
 #include "config.h"
@@ -34,6 +38,8 @@
 #define BRIDGE_NO_HOST_MS	90000u
 #define BRIDGE_RING		256u		// power of two, per direction
 #define BRIDGE_FEED_MS		500u
+#define FORWARD_WAIT_MS		1500u		// the link times the request out at RX2_DL_TIMEOUT_MS; this is a backstop
+#define FORWARD_POLL_MS		2u
 
 static rx2_main_t link;
 static SemaphoreHandle_t lock;
@@ -155,6 +161,37 @@ void gd88_rx2_led(uint8_t which, bool on)
 	give();
 }
 
+static size_t forward(const uint8_t *req, uint8_t len, uint8_t *out, size_t cap)
+{
+	take();
+	bool sent = rx2_main_dl_send(&link, req, len, hal_millis());
+	give();
+	if (!sent) {
+		return 0;
+	}
+	uint32_t start = hal_millis();
+	for (;;) {
+		vTaskDelay(pdMS_TO_TICKS(FORWARD_POLL_MS));
+		size_t n = 0;
+		take();
+		uint8_t st = link.dl_state;
+		if (st == RX2_DL_WAIT && hal_millis() - start >= FORWARD_WAIT_MS) {
+			st = RX2_DL_FAILED;
+		}
+		if (st == RX2_DL_DONE) {
+			n = link.dl_len < cap ? link.dl_len : cap;
+			memcpy(out, link.dl_reply, n);
+		}
+		if (st != RX2_DL_WAIT) {
+			link.dl_state = RX2_DL_IDLE;
+		}
+		give();
+		if (st != RX2_DL_WAIT) {
+			return n;
+		}
+	}
+}
+
 static void restart(void)
 {
 	take();
@@ -205,12 +242,24 @@ static void bridge(void)
 	uint32_t start = hal_millis();
 	uint32_t host_ms = 0, fed = start;
 	bool host_seen = false;
+	rx2_exit_t ex;
+	rx2_exit_init(&ex, hal_micros());
+	uint8_t pass[RX2_EXIT_LEN + 1u];
 	for (;;) {
-		uint8_t c;
+		uint8_t c, n;
 		while (hrc_uart_poll_rx(UART1_BASE, &c)) {
-			ring_put(&to_b, c);
+			n = rx2_exit_byte(&ex, c, hal_micros(), pass);
+			for (uint8_t i = 0; i < n; i++) {
+				ring_put(&to_b, pass[i]);
+			}
 			host_seen = true;
 			host_ms = hal_millis();
+		}
+		if (rx2_exit_idle(&ex, hal_micros(), pass, &n)) {
+			break;		// the host's exit sequence (rx2-link.md 4.1)
+		}
+		for (uint8_t i = 0; i < n; i++) {
+			ring_put(&to_b, pass[i]);
 		}
 		while (hrc_uart_poll_rx(UART3_BASE, &c)) {
 			ring_put(&to_host, c);	// B's bytes don't count: its handshake offers go on until the host answers
@@ -259,4 +308,5 @@ const hal_rx2_t gd88_rx2 = {
 	.audio = audio,
 	.bridge = bridge,
 	.restart = restart,
+	.forward = forward,
 };

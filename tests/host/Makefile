@@ -477,7 +477,7 @@ micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(R
 # of it with the report (core/ui/ui_svc_crash.c), the debug link's (core/debuglink/debuglink_crash.c)
 TESTS   += crashTest
 CRASHT  := crashTest.c $(CORE)/crash/crash.c $(CORE)/crash/crash_trace.c $(CORE)/ui/ui_svc_crash.c $(CORE)/debuglink/debuglink_crash.c \
-	   $(CORE)/debuglink/dl_fmt.c
+	   $(CORE)/debuglink/dl_crash_view.c $(CORE)/debuglink/dl_fmt.c
 crashTest: $(CRASHT) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(CORE)/ui/ui_svc.h $(CORE)/debuglink/debuglink.h \
 	   $(CORE)/debuglink/debuglink_proto.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(CRASHT)
@@ -708,6 +708,20 @@ run: run-debuglinkRx2
 run-debuglinkRx2: debuglinkRx2Test
 	./debuglinkRx2Test
 .PHONY: run-debuglinkRx2
+
+# A second SoC's own debug link server (core/rx2/rx2_dl.c, rx2-link.md 2.3): the main SoC's reply layouts, READ_MEM's
+# windows, the restart's token, the restart and crash tests only after the reply, the log ring. Board and clock faked
+RX2SRV  := rx2DlTest.c $(CORE)/rx2/rx2_dl.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c $(CORE)/debuglink/dl_chip.c \
+	   $(CORE)/debuglink/dl_crash_view.c
+TESTS   += rx2DlTest
+rx2DlTest: $(RX2SRV) $(CORE)/rx2/rx2_dl.h $(CORE)/rx2/rx2_link.h $(CORE)/debuglink/debuglink_proto.h $(ROOT)/hal/hal_system.h
+	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -DDLOG_NO_RTOS -DCONFIG_RX2_DL_SERVER=1 -DCONFIG_CRASH_LOG=0 \
+		-o $@ $(RX2SRV)
+
+run: run-rx2Dl
+run-rx2Dl: rx2DlTest
+	./rx2DlTest
+.PHONY: run-rx2Dl
 
 # DL_CMD_DMR_DATA's IP operations (core/debuglink/debuglink_dmr_data.c): the settings' gateway ID and IP_SEND's parsing
 DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/debuglink/dl_fmt.c $(DATA)

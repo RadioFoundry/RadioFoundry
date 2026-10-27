@@ -124,6 +124,15 @@
 #ifndef CONFIG_TASK_STACKS
 #define CONFIG_TASK_STACKS		CONFIG_DEBUGLINK
 #endif
+// A second SoC's own debug link server, answering through the main SoC (core/rx2/rx2_dl.c, rx2-link.md 2.3). Only a
+// second SoC's board.mk turns it on; it has no host port, so it is that SoC's debug link
+#ifndef CONFIG_RX2_DL_SERVER
+#define CONFIG_RX2_DL_SERVER		0
+#endif
+// The log ring (core/debuglink/dlog.c): with the debug link or the server above. Not a feature switch: it follows those
+#ifndef CONFIG_DLOG
+#define CONFIG_DLOG			(CONFIG_DEBUGLINK || CONFIG_RX2_DL_SERVER)
+#endif
 #ifndef CONFIG_CPS_OPENFW
 #define CONFIG_CPS_OPENFW		CONFIG_HOSTLINK
 #endif

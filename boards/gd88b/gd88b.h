@@ -11,5 +11,6 @@
 void gd88b_path_mute(bool mute);
 // The status LEDs (RX2_LED bits: bit 0 LED 1, bit 1 LED 2)
 void gd88b_leds(uint8_t leds);
+bool gd88b_diag_line(uint8_t i, char *buf, uint8_t len);	// board.diag_line (app_gd88b.c)
 
 #endif

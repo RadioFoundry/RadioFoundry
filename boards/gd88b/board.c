@@ -28,6 +28,7 @@ const board_t board = {
 	.vocoder = &hrc_vocoder,
 #endif
 	.system = &hrc_system,
+	.diag_line = gd88b_diag_line,
 };
 
 // Transmitter off from any context (board.h, docs/spec/crash-log.md 8): every TX switch low and the PA drive (DAC B)

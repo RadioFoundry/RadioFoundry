@@ -360,9 +360,19 @@ Example (an STM32F4 radio on the bench): idcode `0x0009A413`, 1024 KB, `FLASH_OP
 
 ### 3.10 READ_MEM
 
-Request: address u32, length u16 (1 to 1000). Reply after the status: the address u32, then the bytes. STM32F4 only
-(INFO_CHIP family 0): any other chip answers UNAVAILABLE. The whole range must lie inside one of these, otherwise the
-answer is refused (7):
+Request: address u32, length u16 (1 to 1000). Reply after the status: the address u32, then the bytes. The whole range
+must lie inside one of the chip's windows, otherwise the answer is refused (7). A platform names its windows
+(`hal_system_t.readable`); without that, the STM32F4's below apply, and a chip that isn't one answers UNAVAILABLE.
+
+HR_C7000 (both SoCs of a radio with two; the second through FORWARD, 3.22):
+
+| Range | Contents |
+|---|---|
+| `0x00010000-0x00057FFF` | main SRAM |
+| `0x03000000-0x031FFFFF` | program flash through the XIP window, the vendor loader at `0x03000000-0x0300BFFF` included |
+| `0x18000000-0x18007FFF` | the SRAM shared with the modem (the crash record at its top) |
+
+STM32F4:
 
 | Range | Contents |
 |---|---|
@@ -649,13 +659,16 @@ a radio with one SoC, INFO answers no flags and the rest `DL_ST_UNAVAILABLE`.
 
 | Op | Name | Arguments | Reply / effect |
 |---|---|---|---|
-| 0 | INFO | none | flags u8: bit 0 a second receiver, 1 it answers, 2 the update bridge is there, 3 so is RESTART |
+| 0 | INFO | none | flags u8: bit 0 a second receiver, 1 it answers, 2 the update bridge is there, 3 so is RESTART, 4 so is FORWARD |
 | 1 | BRIDGE | token u32 | about 100 ms after the reply: the second SoC is sent to its first stage, and the cable is bridged to it ([rx2-link.md](rx2-link.md) 4). Never returns; the radio restarts when the host has been quiet for a while |
 | 2 | RESTART | token u32 | the second SoC restarts |
+| 3 | FORWARD | command u8, its payload (at most 62 bytes: the request's 64 less the op and the command) | status OK (0), then the second SoC's reply payload, its own status first ([rx2-link.md](rx2-link.md) 2.3). `DL_ST_UNAVAILABLE` (4) when it is down or did not answer within 1 s. No token: the second SoC never transmits |
 
 The token is `'BRDG'` (`0x47445242`, little endian in the payload); another value, or a transmitting radio, is
 answered refused (7). The bridge is dropped if PTT went down between the reply and its start.
 `rfoundry_debug.py rx2 [info|restart]`; `stubtool.py` uses BRIDGE for a board that is part of a radio.
+`rfoundry_debug.py --rx2 <command>` sends any command through FORWARD (`--rx2 version`, `--rx2 log`, `--rx2 view`,
+`--rx2 dump ...`).
 
 ## 4. Safety
 

@@ -735,11 +735,17 @@ static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	if (n == 0 || n > DL_MEM_READ_MAX || 5u + n > cap) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
-	// The address windows are the STM32F4's
-	if (board.system == NULL || board.system->read == NULL || !read_chip(&c) || c.family != HAL_CHIP_STM32F4) {
+	// The platform's windows, else the STM32F4's
+	if (board.system == NULL || board.system->read == NULL) {
 		return status_only(out, DL_ST_UNAVAILABLE);
 	}
-	if (!dl_mem_allowed(addr, n, c.flash_kb)) {
+	if (board.system->readable != NULL) {
+		if (!board.system->readable(addr, n)) {
+			return status_only(out, DL_ST_REFUSED);
+		}
+	} else if (!read_chip(&c) || c.family != HAL_CHIP_STM32F4) {
+		return status_only(out, DL_ST_UNAVAILABLE);
+	} else if (!dl_mem_allowed(addr, n, c.flash_kb)) {
 		return status_only(out, DL_ST_REFUSED);
 	}
 	out[0] = DL_ST_OK;

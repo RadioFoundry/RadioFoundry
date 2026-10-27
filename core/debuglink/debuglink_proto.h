@@ -39,11 +39,13 @@ enum {
 	DL_RX2_OP_INFO = 0,	// -> status, flags u8 (DL_RX2_F_*)
 	DL_RX2_OP_BRIDGE = 1,	// token u32 -> status; after the reply the radio bridges the cable to the second SoC
 	DL_RX2_OP_RESTART = 2,	// token u32 -> status: restart the second SoC
+	DL_RX2_OP_FORWARD = 3,	// command u8, its payload -> status, then the second SoC's reply payload (its status first)
 };
 #define DL_RX2_F_PRESENT	0x01u	// the board has a second receiver
 #define DL_RX2_F_UP		0x02u	// it answers
 #define DL_RX2_F_BRIDGE		0x04u	// the update bridge is there
 #define DL_RX2_F_RESTART	0x08u	// so is the restart
+#define DL_RX2_F_FORWARD	0x10u	// so is FORWARD, to the second SoC's own debug link server
 #define DL_RX2_TOKEN		0x47445242u	// 'BRDG
 
 // DL_CMD_WATCHDOG operations (first payload byte; docs/spec/debuglink.md 3.21). u32 little endian. Every test ends in

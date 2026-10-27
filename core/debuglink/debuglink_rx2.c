@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // DL_CMD_RX2 (docs/spec/debuglink.md 3.22): the second receiver's SoC on a radio with two (board.rx2). INFO says what is
 // there; BRIDGE hands the PC cable to the second SoC so the host can load its stub and write its flash
-// (docs/spec/rx2-link.md 4); RESTART restarts it. The bridge starts after the reply has gone out, as cmd_reboot's reset
+// (docs/spec/rx2-link.md 4); RESTART restarts it; FORWARD passes one debug link command to the second SoC's own server
+// and answers with its reply (rx2-link.md 2.3). The bridge starts after the reply has gone out, as cmd_reboot's reset
 // does, and never returns.
 #include "config.h"
 #include "board.h"
@@ -34,7 +35,7 @@ static uint8_t flags(void)
 		r->status(&st);
 	}
 	return DL_RX2_F_PRESENT | (st.up ? DL_RX2_F_UP : 0) | (r->bridge != NULL ? DL_RX2_F_BRIDGE : 0)
-	       | (r->restart != NULL ? DL_RX2_F_RESTART : 0);
+	       | (r->restart != NULL ? DL_RX2_F_RESTART : 0) | (r->forward != NULL ? DL_RX2_F_FORWARD : 0);
 }
 
 size_t debuglink_cmd_rx2(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
@@ -48,6 +49,21 @@ size_t debuglink_cmd_rx2(const uint8_t *req, uint16_t len, uint8_t *out, size_t 
 		out[0] = DL_ST_OK;
 		out[1] = flags();
 		return 2;
+	}
+	if (req[0] == DL_RX2_OP_FORWARD) {
+		const hal_rx2_t *r = board.rx2;
+		if (len < 2) {
+			out[0] = DL_ST_BAD_ARG;
+			return 1;
+		}
+		size_t n = r != NULL && r->forward != NULL && cap > 1 ? r->forward(req + 1, (uint8_t)(len - 1u), out + 1,
+										   cap - 1u) : 0;
+		if (n == 0) {
+			out[0] = DL_ST_UNAVAILABLE;	// no second SoC, or it did not answer
+			return 1;
+		}
+		out[0] = DL_ST_OK;
+		return 1u + n;
 	}
 	if ((req[0] != DL_RX2_OP_BRIDGE && req[0] != DL_RX2_OP_RESTART) || len != 5) {
 		out[0] = DL_ST_BAD_ARG;

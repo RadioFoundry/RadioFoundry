@@ -10,6 +10,15 @@ BOARD_DIRS := boards/gd88b boards/gd88/common drivers/rf/bk4819 drivers/rf/subau
 BOARD_INC  := boards/gd88/common
 CORE_BASE_DIRS :=
 BOARD_CORE_DIRS := core/rx2
+# The debug link's text helpers: B's diagnostic lines and the crash log's summary use them
+BOARD_CORE_FILES := core/debuglink/dl_fmt.c
+# Its own debug link server, answering through A (core/rx2/rx2_dl.c, docs/spec/rx2-link.md 2.3): the log ring, the
+# chip checks and the crash log's view sections, without the debug link itself. B has no host port, so this is its
+# debug link; GD88B_DEBUG=0 builds it without (B then answers every forwarded command "unknown")
+ifneq ($(GD88B_DEBUG),0)
+BOARD_CORE_FILES += core/debuglink/dlog.c core/debuglink/dl_chip.c core/debuglink/dl_crash_view.c
+MCU_DEFS += -DCONFIG_RX2_DL_SERVER=1
+endif
 # The image starts where B's IAP loader jumps, with the first stage (boot/gd88b): it offers the boot ROM's handshake on
 # the link (UART3), for a minute when the application asked for it, then runs the application right after it
 APP_BASE   := 0x0300C000

@@ -65,7 +65,6 @@ BOARD_UNSUPPORTED += BATTERY_SAVE	# SoC A powers B down and up
 BOARD_UNSUPPORTED += STUB_ENTRY	# B's stub comes through its first stage and A's bridge
 BOARD_UNSUPPORTED += NAND_STORAGE	# B keeps no settings: SoC A stores them
 BOARD_UNSUPPORTED += TASK_STACKS	# B has no storage or display to report on: SoC A does this
-BOARD_UNSUPPORTED += CRASH_LOG	# B has no storage or display to report on: SoC A does this
 BOARD_UNSUPPORTED += CRASH_SCREEN	# B has no storage or display to report on: SoC A does this
 BOARD_UNSUPPORTED += CRASH_REPORT	# B has no storage or display to report on: SoC A does this
 BOARD_UNSUPPORTED += FAULT_TRACE	# B has no storage or display to report on: SoC A does this

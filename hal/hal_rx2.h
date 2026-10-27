@@ -58,6 +58,10 @@ typedef struct {
 	void (*bridge)(void);
 	// Optional: restart the second SoC (RX2_RESET)
 	void (*restart)(void);
+	// Optional: one debug link command to the second SoC's own server (docs/spec/rx2-link.md 2.3): req is the command
+	// and its payload. Waits for the whole reply, up to about a second. Returns the reply payload's length in out (its
+	// status first), 0 when it is down or did not answer. One caller at a time (the debug link's task)
+	size_t (*forward)(const uint8_t *req, uint8_t len, uint8_t *out, size_t cap);
 } hal_rx2_t;
 
 #endif

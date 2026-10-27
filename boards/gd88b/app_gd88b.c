@@ -3,7 +3,8 @@
 // GD-88 SoC B: the second receiver's application (docs/spec/rx2-link.md, hardware-gd88.md 10). There is no radio core
 // here: app_start (called by platform/hrc7000/main.c) starts one task that runs the link's receiver side (core/rx2) on
 // UART3, the shared radio code (boards/gd88/common) on B's own BK4819 pair, the FM squelch and, on DMR channels, the
-// call stack and codec (core/dmr). The calls rx2_ops_t makes all come from rx2_recv_rx() in this task.
+// call stack and codec (core/dmr). The calls rx2_ops_t makes all come from rx2_recv_rx() in this task, the debug link
+// server's (core/rx2/rx2_dl.c, reached through A) among them.
 #include "config.h"
 #include "board.h"
 #include "gd88_rf.h"
@@ -12,6 +13,13 @@
 #include "hal_time.h"
 #include "hal_watchdog.h"
 #include "rx2/rx2_link.h"
+#include "rx2/rx2_dl.h"
+#include "debuglink/dlog.h"
+#if CONFIG_CRASH_LOG
+#include "crash/crash.h"
+#include "hal_crash.h"
+#include "app/watchdog.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 #include <string.h>
@@ -205,7 +213,61 @@ static const rx2_ops_t ops = {
 	.stub = op_stub,
 	.reset = op_reset,
 	.led = gd88b_leds,
+#if CONFIG_RX2_DL_SERVER
+	.dl = rx2_dl_handle,
+#endif
 };
+
+#if CONFIG_RX2_DL_SERVER
+// The debug link's view section of this SoC (rx2_dl.c; from the link task, so the stack is this task's)
+static void view(dl_text_t *t)
+{
+	radio_status_t rs;
+	gd88_radio.status(&rs);
+	dl_text(t, "rx.tuned=%u\nrx.hz=%u\nrx.mode=%u\nrx.bw=%u\nrx.squelch=%u\nrx.sq_open=%u\nrx.audio=%u\n", tuned,
+		(unsigned)cur.rx_hz, cur.mode, cur.bw, cur.squelch, sq_open, audio_on);
+	dl_text(t, "rx.rssi_dbm=%d\nrx.noise=%u\nrx.carrier=%u\nrx.tone_ok=%u\n", rs.rssi_dbm, rs.noise, rs.carrier,
+		rs.tone_ok);
+#if CONFIG_DMR
+	const dmr_call_view_t *v = dmr_call_view();
+	dl_text(t, "dmr.on=%u\ndmr.phase=%u\ndmr.cc=%u\ndmr.ts=%u\ndmr.src=%u\ndmr.dst=%u\n", dmr_on, v->phase,
+		cur.color_code, cur.timeslot, (unsigned)v->caller.src, (unsigned)v->caller.dst);
+#endif
+	hrc_link_uart_stats_t u;
+	hrc_link_uart_stats(&u);
+	dl_text(t, "uart.rx=%u\nuart.tx=%u\nuart.overruns=%u\nuart.line_errors=%u\nuart.tx_stalls=%u\n",
+		(unsigned)u.rx_bytes, (unsigned)u.tx_bytes, (unsigned)u.overruns, (unsigned)u.line_errors,
+		(unsigned)u.tx_stalls);
+	dl_text(t, "task.stack_free=%u\nheap.free=%u\n", (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t)),
+		(unsigned)xPortGetFreeHeapSize());
+}
+#endif
+
+// The debug link's diagnostic lines of this SoC (board.diag_line, through A: rfoundry_debug.py --rx2 diag)
+bool gd88b_diag_line(uint8_t i, char *buf, uint8_t len)
+{
+	radio_status_t rs;
+	hrc_link_uart_stats_t u;
+	switch (i) {
+	case 0:
+		gd88_radio.status(&rs);
+		dl_fmt(buf, len, "b rx %s %u.%05u %s sq %s rssi %d nz %u", tuned ? "on" : "off",
+		       (unsigned)(cur.rx_hz / 1000000u), (unsigned)((cur.rx_hz % 1000000u) / 10u),
+		       cur.mode == RADIO_MODE_DMR ? "DMR" : "FM", sq_open ? "open" : "shut", rs.rssi_dbm, rs.noise);
+		return true;
+	case 1:
+		dl_fmt(buf, len, "b link frames %u bad %u dl %u audio %u", (unsigned)link.frames,
+		       (unsigned)link.parser.bad, (unsigned)link.dl_requests, audio_on);
+		return true;
+	case 2:
+		hrc_link_uart_stats(&u);
+		dl_fmt(buf, len, "b uart rx %u tx %u ovr %u err %u stall %u", (unsigned)u.rx_bytes, (unsigned)u.tx_bytes,
+		       (unsigned)u.overruns, (unsigned)u.line_errors, (unsigned)u.tx_stalls);
+		return true;
+	default:
+		return false;
+	}
+}
 
 // FM: the squelch with a short hold, and the chip's audio while it is open
 static void fm_poll(void)
@@ -226,6 +288,9 @@ static void fm_poll(void)
 static void task_fn(void *arg)
 {
 	(void)arg;
+#if CONFIG_CRASH_LOG
+	crash_init();		// the record of a crash before this start, before anything can crash again
+#endif
 	board_init();
 	gd88_radio.init();
 #if CONFIG_DMR
@@ -236,7 +301,11 @@ static void task_fn(void *arg)
 	IO_DIPLEX0 |= DIPLEX0_UART3;
 	hrc_link_uart_init(UART3_BASE, IRQ_UART3, LINK_BAUD);
 	rx2_recv_init(&link, send, &ops, CONFIG_DMR ? RX2_HELLO_DMR : 0u, RFOUNDRY_GIT);
+#if CONFIG_RX2_DL_SERVER
+	rx2_dl_init(&link, view);
+#endif
 	rx2_recv_log(&link, "gd88b up");
+	dlog("gd88b up, %s", RFOUNDRY_GIT);
 	uint8_t buf[32];
 	for (;;) {
 		hrc_link_uart_wait(POLL_MS);
@@ -248,6 +317,12 @@ static void task_fn(void *arg)
 				rx2_recv_rx(&link, buf[i], now);
 			}
 		}
+#if CONFIG_RX2_DL_SERVER
+		rx2_dl_service();	// a restart or crash test asked for, its reply out
+#endif
+#if CONFIG_CRASH_LOG
+		crash_alive(now);	// the tick does this too, with the watchdog
+#endif
 		if (tuned) {
 #if CONFIG_DMR
 			if (cur.mode == RADIO_MODE_DMR) {
@@ -270,11 +345,29 @@ void app_start(void)
 #if CONFIG_WATCHDOG
 // FreeRTOS calls it on every pass of the idle loop (configUSE_IDLE_HOOK): the watchdog is fed while the receiver task
 // keeps running
+static volatile uint32_t fed_ms;
+
 void vApplicationIdleHook(void);
 void vApplicationIdleHook(void)
 {
-	if (hal_millis() - alive_ms < WD_STALL_MS) {
+	uint32_t now = hal_millis();
+	if (now - alive_ms < WD_STALL_MS) {
 		hal_watchdog_feed();
+		fed_ms = now;
 	}
 }
+
+#if CONFIG_CRASH_LOG
+// From the tick interrupt (platform port.c), as core/app/watchdog.c's on A: the uptime the next start reports, and a
+// record of the hang shortly before the watchdog's reset (crash-log.md 1.1)
+void watchdog_tick(void)
+{
+	uint32_t now = hal_millis();
+	uint32_t timeout = hal_watchdog_timeout_ms();
+	crash_alive(now);
+	if (fed_ms != 0 && timeout != 0 && now - fed_ms >= timeout - timeout / 4u) {
+		hal_crash_hang(now - fed_ms);
+	}
+}
+#endif
 #endif

@@ -22,6 +22,7 @@ void hrc_pin_force(uint8_t pin, bool on) { level[pin & 0x7F] = on; }
 const hal_system_t hrc_system;
 const hal_radio_t gd88_radio;
 void gd88_path_init(void) {}
+bool gd88b_diag_line(uint8_t i, char *buf, uint8_t len) { (void)i; (void)buf; (void)len; return false; }
 bool gd88_cal_load(const uint8_t *flash_page, gd88_cal_read_fn nand) { (void)flash_page; (void)nand; return false; }
 
 int main(void)
