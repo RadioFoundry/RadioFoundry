@@ -45,9 +45,12 @@ adapter (`pid_network`), with their own descriptors. Switching drops the D+ pull
 ## 2. Frames
 
 TinyUSB's NCM class (NTB16): OUT NTBs up to 2048 bytes, IN NTBs one datagram each. Frames from the host are copied in
-the USB task into a ring of 4 frames of at most 600 bytes (the gateway's limit); longer frames and frames arriving
-while the ring is full are dropped and counted (`usb_ncm_stats_t`), never held, so the class driver's buffer is free
-at once. One frame to the host is in flight at a time; a second send reports busy and the caller retries. The class
+the USB task into a ring of 4 slots (3 frames waiting) of at most 600 bytes (the gateway's limit); longer frames are
+dropped and counted (`usb_ncm_stats_t`). A frame that finds the ring full is held: the receive callback refuses it,
+the class driver keeps it and its NTB (and takes nothing more from the host meanwhile: USB flow control), and gives it
+again once the consumer frees a slot and asks for a renew (`usbNcmReceive`, with `usbNcmTick` as a backstop). Hosts
+pack back-to-back frames into one NTB (Linux does, macOS too in a burst); dropping them lost all but the first 3 of a
+burst. One frame to the host is in flight at a time; a second send reports busy and the caller retries. The class
 driver is touched only from the USB task (`usbd_defer_func`). The interface reaches the core as `board_t.netif`
 (`hal/hal_netif.h`).
 
