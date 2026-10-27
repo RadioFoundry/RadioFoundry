@@ -672,3 +672,30 @@ test("trail of a cable radio run: the boot ROM load (an echoing cable), the choi
 	assert.ok(tr.some((l) => /cable radio codec decision \{"mode":"[a-z]+"/.test(l)));
 	assert.ok(tr.some((l) => /cable radio codec decision \{"mode":null,"firmware":"stock","notRead":true,"file":false\}/.test(l)));
 });
+
+test("protected regions: the stub refuses a write over one, a restore leaves it as the radio has it", async (t) => {
+	const { sim, r } = await radio("rfoundry");
+	t.after(() => r.stop());
+	r.powerOn();
+	await new Promise((ok) => setTimeout(ok, 800));
+	const s = new Stub(r.stream, { log: quiet });
+	await s.enterFromRFoundry(stubs.image);
+	const cal = [{ mem: "progmem", start: 0x20000, end: 0x21000, what: "test (x.md 1)" },
+		{ mem: "data", start: 0x1000, end: 0xC9000, what: "test (x.md 1)" }];
+	await s.configure({ ...C.boards.dm1801pro.stub_board, protect: cal }, C.led);
+	assert.deepEqual(s.protect, cal);
+	const before = r.progmem.slice();
+	const image = r.progmem.slice(0xC000, 0x4C000);
+	image.fill(0x33, 0x13000, 0x16000);	// 0x1F000-0x22000: the protected sector and one each side
+	const [start, data] = c7.target(sim.c, "dm1801pro", image, null);
+	await assert.rejects(s.writeProgram(data, start, { appStart: C.app_start, appEnd: C.app_end }), /protected region/);
+	assert.ok(equal(r.progmem, before), "nothing written");
+	const states = new Map();
+	const res = await s.writeProgram(data, start, { appStart: C.app_start, appEnd: C.app_end, carve: true, onSector: (a, st) => states.set(a, st) });
+	assert.deepEqual(res, { written: 2, same: 62 });
+	assert.equal(states.get(0x20000), "kept");
+	assert.ok(equal(r.progmem.subarray(0x20000, 0x21000), before.subarray(0x20000, 0x21000)), "the protected sector kept");
+	assert.ok(equal(r.progmem.subarray(0x1F000, 0x20000), data.subarray(0x13000, 0x14000)));
+	await assert.rejects(s.writeCmd("q128", Uint8Array.of(0x60), "chip erase", 1000), /protected regions/);
+	await assert.rejects(s.writeCmd("q128", Uint8Array.of(0x20, 0x00, 0x7C, 0x00), "erase", 1000), /protected region/);
+});

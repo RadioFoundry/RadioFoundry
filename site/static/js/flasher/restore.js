@@ -16,6 +16,7 @@
 //                   (docs/dev/web-flasher.md "Restore"), so the flasher reports what differs instead of guessing.
 
 import { RESTORE, makePlan } from "./plan.js";
+import { overlapping as protectOverlap } from "./protect.js";
 import { stockApplication } from "./stockfw.js";
 import { CODEPLUG_SPAN } from "./backup.js";
 import { classify } from "../codeplug/detect.js";
@@ -55,11 +56,13 @@ export function planStock(stockFile, key, board, fb) {
 
 // The 4 KB sectors of the codeplug areas whose bytes differ between the radio and the backup: [addr, bytes] (emulated
 // EEPROM 0x00000-0x0FFFF and the open-firmware flash image 0x20000-0x11FFFF; never the calibration and RadioFoundry's own areas
-// at 0x10000-0x1FFFF, which the CPS refuses anyway)
-export function codeplugSectors(backupSpi, radioSpi) {
+// at 0x10000-0x1FFFF, which the CPS refuses anyway). protect: the board's protected regions; a sector in one of
+// them (data memory) is left out, so the radio keeps its own bytes there
+export function codeplugSectors(backupSpi, radioSpi, protect = []) {
 	const out = [];
 	for (let a = 0; a < CODEPLUG_SPAN; a += 4096) {
 		if (a >= 0x10000 && a < 0x20000) continue;
+		if (protected_(protect, a)) continue;
 		const want = backupSpi.subarray(a, a + 4096);
 		const have = radioSpi.subarray(a, a + 4096);
 		if (want.length < 4096) break;
@@ -69,6 +72,8 @@ export function codeplugSectors(backupSpi, radioSpi) {
 	}
 	return out;
 }
+
+const protected_ = (list, a) => protectOverlap(list, "data", a, a + 4096).length > 0;
 
 export async function writeCodeplug(link, sectors, progress = () => {}) {
 	const refused = [];

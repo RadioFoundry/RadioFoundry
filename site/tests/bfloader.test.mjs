@@ -246,3 +246,12 @@ test("a program memory backup gives the codec where the radio has no stock file"
 	const data = factoryInstallImage(sim.c, BACKUP_ID, app(4096, 3), d);
 	assert.ok(await c7.parseSlot(sim.c, BACKUP_ID, data.subarray(C.boards[BACKUP_ID].slot[0] - C.app_start)));
 });
+
+test("a protected region in the area the loader erases refuses the write before anything is sent", async () => {
+	let sent = 0;
+	const stream = { buf: new Uint8Array(0), clear() {}, take: () => new Uint8Array(0), write: async () => { sent++; } };
+	const cal = [{ mem: "progmem", start: C.app_end - 0x1000, end: C.app_end, what: "test (x.md 1)" }];
+	const l = new BfLoader(stream, { id: "X", appMax: C.app_end - C.app_start, appStart: C.app_start, protect: cal });
+	await assert.rejects(l.write(new Uint8Array(4096).fill(1)), /protected region/);
+	assert.equal(sent, 0);
+});

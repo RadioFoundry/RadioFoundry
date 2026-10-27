@@ -6,6 +6,7 @@
 // starts at key index 0). The bootloader can't read flash back (the radios are at read protection level 1).
 
 import { BLOCK, FIRST_BLOCK } from "./plan.js";
+import * as protect from "./protect.js";
 import { hex, le32, sha256, sleep } from "./bytes.js";
 
 export const KEY_LEN = 1024;
@@ -84,6 +85,8 @@ export class Dfu {
 	// Erase the plan's sectors in the bootloader's order, write each, exit (the radio restarts).
 	async run(plan, key, progress = () => {}) {
 		const base = plan.board.app_base;
+		// makePlan refuses or carves these; a plan built another way is checked again before anything is sent
+		for (const s of plan.erase) protect.check(plan.board.protect, "progmem", s.addr - plan.board.rom_base, s.addr + s.size - plan.board.rom_base, "erase");
 		for (const st of plan.writes) if ((st.sector.addr - base) % KEY_LEN) throw new DfuError(`sector ${hex(st.sector.addr)} is not key-aligned`);
 		await this.waitIdle();
 		await this.vendor(0x91, 0x01);
