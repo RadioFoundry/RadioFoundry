@@ -20,6 +20,8 @@ typedef struct {
 	// bpp 4 instead of flush: the same with the palette, 16 RGB565 colors the indexes stand for
 	void (*flush_indexed)(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t y1);
 	void (*set_backlight)(uint8_t percent);
+	// Optional, for the debug link: the factory's panel byte as read (-1: not read) and the controller type in use
+	void (*panel)(int16_t *raw, uint8_t *type);
 } hal_display_t;
 
 #endif

@@ -3,9 +3,9 @@
 // MD-380 display: 160x128 TFT on FSMC bank 1 (8-bit on D0-D7, RS on A17), wired as on the other STM32 radios; backlight on PC6
 // with TIM8 CH1 PWM (docs/spec/hardware-md380.md 7).
 //
-// The controller is reported as an HX8302A (ST7735 compatible) or "maybe an ILI9481": unconfirmed. The ST7735 driver's
-// type 0 init is used; MD380_PANEL_TYPE picks another of its types and MD380_PANEL_MADCTL_XOR mirrors the picture,
-// both build-time until the panel is seen. All 128 rows are assumed visible.
+// The panel type is the factory's, from SPI flash security register 3 byte 0x1D (low two bits), given to the ST7735
+// driver as it is; an erased byte (0xFF) or a failed read leaves type 0 (hardware-md380.md 7). MD380_PANEL_TYPE overrides it and MD380_PANEL_MADCTL_XOR mirrors the
+// picture, both build-time bench knobs. All 128 rows are assumed visible.
 //
 // The LCD data lines D0-D7 are also the keypad columns: every LCD burst holds md380_lcdbus_lock(), starts by
 // reconnecting them to the FSMC and ends with a 0x00 write so the lines rest low for the next key scan.
@@ -15,15 +15,15 @@
 #include "hal_time.h"
 #include "display/st7735/st7735.h"
 
-#ifndef MD380_PANEL_TYPE
-#define MD380_PANEL_TYPE	0
-#endif
 #ifndef MD380_PANEL_MADCTL_XOR
 #define MD380_PANEL_MADCTL_XOR	0
 #endif
 
 #define LCD_AF		12	// GPIO_AF12_FSMC
 #define LCD_CTRL_PORTD	(GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_12)	// NOE, NWE, A17 (RS)
+
+#define PANEL_SECREG	3
+#define PANEL_OFFSET	0x1D
 
 #define VISIBLE_W	160
 #define VISIBLE_H	128
@@ -130,7 +130,6 @@ static const st7735_bus_t bus = {
 
 static st7735_t panel = {
 	.bus = &bus,
-	.type = MD380_PANEL_TYPE,
 	.width = VISIBLE_W,
 	.height = VISIBLE_H,
 	.col_offset = 0,
@@ -139,6 +138,7 @@ static st7735_t panel = {
 };
 
 static bool ready;
+static int16_t panel_raw = -1;	// the factory byte, -1 until read
 
 // ---- Backlight: TIM8 CH1 PWM on PC6 (AF3), 1 kHz, 100 steps ----
 
@@ -178,6 +178,18 @@ static void init(void)
 	stm32_gpio_clock(GPIOE);
 	fsmc_init();
 	bl_init();
+
+	uint8_t raw;
+	if (stm32_spi_flash_read_security(PANEL_SECREG, PANEL_OFFSET, &raw, 1)) {
+		panel_raw = raw;
+		// An erased byte was never programmed: as type 3 it swapped red and blue on a radio (hardware-md380.md 7)
+		if (raw != 0xFF) {
+			panel.type = raw & 3u;
+		}
+	}
+#ifdef MD380_PANEL_TYPE
+	panel.type = MD380_PANEL_TYPE;
+#endif
 	st7735_init(&panel);
 	ready = true;
 }
@@ -190,6 +202,12 @@ static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t
 	st7735_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
 }
 
+static void panel_info(int16_t *raw, uint8_t *type)
+{
+	*raw = panel_raw;
+	*type = panel.type;
+}
+
 const hal_display_t md380_display = {
 	.inset_top = CONFIG_DISPLAY_INSET_TOP, .inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
 	.inset_left = CONFIG_DISPLAY_INSET_LEFT, .inset_right = CONFIG_DISPLAY_INSET_RIGHT,
@@ -199,4 +217,5 @@ const hal_display_t md380_display = {
 	.init = init,
 	.flush_indexed = flush,
 	.set_backlight = set_backlight,
+	.panel = panel_info,
 };

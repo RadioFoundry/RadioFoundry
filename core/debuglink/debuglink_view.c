@@ -265,6 +265,17 @@ static void link_section(dl_text_t *t)
 	dl_text(t, "ui.banner=%s\nui.toast=%s\nui.query=%s\nui.draws=%u\n", u.banner, u.toast, u.query,
 		(unsigned)u.draws);
 	dl_text(t, "input.idle_ms=%u\nui.backlight=%u\n", (unsigned)input_idle_ms(), ui_backlight());
+	if (board.display != NULL && board.display->panel != NULL) {
+		int16_t raw;
+		uint8_t type;
+		board.display->panel(&raw, &type);
+		if (raw < 0) {
+			dl_text(t, "display.panel_raw=none\n");
+		} else {
+			dl_text(t, "display.panel_raw=0x%02x\n", (unsigned)raw);
+		}
+		dl_text(t, "display.panel_type=%u\n", type);
+	}
 	dl_text(t, "input.source=%s\n", input_last_source() == INPUT_SRC_HOST ? "host" : "keys");
 	dl_text(t, "input.raw_keys=0x%08x\ninput.injected=0x%08x\n", (unsigned)input_raw_keys(),
 		(unsigned)input_injected_keys());

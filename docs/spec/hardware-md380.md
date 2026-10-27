@@ -615,9 +615,24 @@ sine at the same swing (`subaudio_tx_tail`, with the interrupt held off for the 
 160 x 128 color TFT on the FSMC 8-bit bus (NE1), command at 0x60000000 and data at 0x60040000 (A17 = RS on PD12),
 chip select PD6, reset PD13: the DM-1701's wiring (unverified). The controller type is unconfirmed (an HX8302A or
 an ILI9481 are candidates). RadioFoundry drives it with `drivers/display/st7735` (assuming the ST7735 command set) with
-safe-area insets of 1 px at the top and 2 px on the left (the case edge crowds them; right and bottom are close but usable; seen on the radio, 2026-10-16) and two build-time knobs for the bench: `MD380_PANEL_TYPE` (the st7735 driver's panel
-type, default 0) and `MD380_PANEL_MADCTL_XOR` (orientation bits flipped, default 0). Backlight: LAMP (PC6), TIM8 CH1
+safe-area insets of 1 px at the top and 2 px on the left (the case edge crowds them; right and bottom are close but usable; seen on the radio, 2026-10-16). Backlight: LAMP (PC6), TIM8 CH1
 PWM at 1 kHz (unverified for the pin; PWM ours).
+
+Panel type: the factory stores it in SPI flash security register 3, byte 0x1D, low two bits, as on the other STM32
+radios. `display_md380.c` reads it at start-up and gives it to the st7735 driver unchanged (types in
+`drivers/display/st7735/st7735.h`; type 3 is BGR, the others RGB). An unreadable register or an erased byte (0xFF)
+leaves type 0: one radio reads 0xFF there, and as type 3 its colors had red and blue swapped (orange shown blue; type 0
+is right on it, 2026-10-27). Which types other MD-380 panels carry, and whether red and blue are right on types 1-2,
+is untested.
+
+| Knob or key | What |
+|---|---|
+| `MD380_PANEL_TYPE` (build, `MD380_DEFS`) | overrides the factory type |
+| `MD380_PANEL_MADCTL_XOR` (build) | orientation bits flipped on top of the type's, default 0 |
+| `display.panel_raw` (debug link `link` section) | the factory byte in hex, `none` when it couldn't be read |
+| `display.panel_type` (same) | the type in use |
+
+`boards/md380/hil/test_md380_panel.py` checks that the byte was read and the type is its low two bits (0 for 0xFF).
 
 ---
 
@@ -835,7 +850,7 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | # | Unknown | How to settle it on a radio |
 |---|---|---|
 | 1 | HSE crystal or external clock | Stage 1: the radio boots on HSE (USB enumerates); if only bypass works, record it |
-| 2 | Display controller, orientation, colors | Stage 2: try `MD380_PANEL_TYPE` / `MD380_PANEL_MADCTL_XOR` until the boot screen is right side up and in color |
+| 2 | Display controller, orientation, colors | Stage 2: the factory type is used (section 7); if the boot screen is wrong, note `display.panel_raw` and try `MD380_PANEL_TYPE` / `MD380_PANEL_MADCTL_XOR` |
 | 3 | Key matrix positions, side keys on K3 | Stage 3: press each key, read "keys" on the diagnostics page, correct section 9.1 and `input_md380.c` |
 | 4 | Channel switch code polarity and order | Settled 2026-10-16: a Gray code, table in 9.2 |
 | 5 | Volume knob on PA0 vs the TX LED | Stage 3: "vol" on the diagnostics page follows the knob, and the red LED lights on PE1 |
