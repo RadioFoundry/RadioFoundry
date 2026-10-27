@@ -211,5 +211,8 @@ PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B 
   pppd, no root) on the debug link's serial port. LCP and IPCP open with the host at 12.<DMR ID>, a 56 and a 500 byte
   ping (every byte value, so the escapes both ways) come back, the debug link answers over UDP 3334 through the link
   with `ppp.lcp` and `ppp.ipcp` at 9, `usb.net_up=1` and no `ppp.rx_errors`, and after LCP Terminate the serial debug
-  link answers again with `ppp.running=0`. Passes on a board without USB (2026-10-27).
+  link answers again with `ppp.running=0`. Over the same link: HTTP `/status` and a 404 (the client's own minimal
+  TCP), an SNMP get of `sysName.0` and `sysDescr.0`, a TFTP read of `info.txt` (`test_ppp_http`, `test_ppp_snmp`,
+  `test_ppp_tftp_read`). The tests share one link and send nothing on the serial port while it runs: a debug link
+  frame there ends PPP. All pass on a board without USB (2026-10-27).
 - Not tried yet: macOS pppd (it needs root).

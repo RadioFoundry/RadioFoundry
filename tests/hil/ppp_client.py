@@ -5,8 +5,11 @@ Written from RFC 1661 (LCP), RFC 1662 (HDLC-like framing) and RFC 1332 (IPCP).
 
 It runs on an open port-like object (read, write; the debug link's serial port), negotiates LCP and IPCP as pppd
 would with `noipdefault` (asks for 0.0.0.0 and takes the radio's Nak), then carries IPv4: ICMP echo and UDP.
-`UdpPort` gives a UDP port on the radio as a port-like object, so tools/rfoundry_debug.py's DebugLink runs over it."""
+`UdpPort` gives a UDP port on the radio as a port-like object, so tools/rfoundry_debug.py's DebugLink runs over it;
+`udp_socket()` a socket-like object (sendto, recvfrom, settimeout) for the host tools' clients; `tcp_request()` one TCP
+connection (RFC 793, no options but the MSS, segments in order only): send a request, read until the radio closes."""
 import random
+import socket
 import struct
 import time
 
@@ -78,6 +81,7 @@ class PppClient:
         self.peer_ip = None
         self.udp_in = {}            # our port -> list of (src ip, src port, payload)
         self.icmp_in = []
+        self.tcp_in = {}            # our port -> list of (src ip, src port, seq, ack, flags, payload)
         self.bad_frames = 0
         self.ip_id = random.randrange(0x10000)
         self.magic = random.randrange(1, 1 << 32)
@@ -241,6 +245,10 @@ class PppClient:
         elif proto == 17 and len(body) >= 8:
             sport, dport, ulen = struct.unpack(">HHH", body[:6])
             self.udp_in.setdefault(dport, []).append((src, sport, bytes(body[8:ulen])))
+        elif proto == 6 and len(body) >= 20:
+            sport, dport, seq, ack, off_flags = struct.unpack(">HHIIH", body[:14])
+            off = (off_flags >> 12) * 4
+            self.tcp_in.setdefault(dport, []).append((src, sport, seq, ack, off_flags & 0x3F, bytes(body[off:])))
 
     def ping(self, size=56, timeout=3.0, ident=0x5250, seq=1):
         """One ICMP echo to the radio. The round trip in seconds, or None."""
@@ -298,3 +306,119 @@ class UdpPort:
 
     def close(self):
         pass
+
+
+class UdpSocket:
+    """A UDP socket on the PPP link, for clients written against socket.socket(AF_INET, SOCK_DGRAM): sendto,
+    recvfrom (socket.timeout when nothing came), settimeout, close."""
+
+    def __init__(self, ppp, sport=None):
+        self.ppp = ppp
+        self.sport = sport or random.randrange(49152, 65535)
+        self.timeout = 1.0
+
+    def settimeout(self, t):
+        self.timeout = t
+
+    def sendto(self, data, addr):
+        self.ppp.udp_send(self.sport, addr[1], data, addr[0])
+        return len(data)
+
+    def recvfrom(self, n=65535):
+        end = time.monotonic() + (self.timeout if self.timeout is not None else 1e9)
+        while True:
+            q = self.ppp.udp_in.get(self.sport)
+            if q:
+                src, sport, data = q.pop(0)
+                return data[:n], (src, sport)
+            if time.monotonic() >= end:
+                raise socket.timeout("timed out")
+            self.ppp.pump(0.02)
+
+    def close(self):
+        self.ppp.udp_in.pop(self.sport, None)
+
+
+def udp_socket(ppp):
+    return UdpSocket(ppp)
+
+
+TCP_FIN, TCP_SYN, TCP_RST, TCP_PSH, TCP_ACK = 0x01, 0x02, 0x04, 0x08, 0x10
+TCP_MSS = 536
+
+
+def _tcp_send(ppp, sport, dport, seq, ack, flags, payload=b"", options=b""):
+    off = (20 + len(options)) // 4
+    seg = struct.pack(">HHIIHHHH", sport, dport, seq & 0xFFFFFFFF, ack & 0xFFFFFFFF, (off << 12) | flags, 8192, 0, 0)
+    seg += options + bytes(payload)
+    pseudo = ip_bytes(ppp.local_ip) + ip_bytes(ppp.peer_ip) + struct.pack(">BBH", 0, 6, len(seg))
+    seg = seg[:16] + struct.pack(">H", ip_checksum(pseudo + seg)) + seg[18:]
+    ppp._ip_send(6, seg)
+
+
+def tcp_request(ppp, dport, request, timeout=15.0):
+    """Connect to the radio's port, send request, and return what came back until the radio's FIN (or timeout's end
+    with the bytes so far). Raises PppError on a refused connection or no answer to the SYN."""
+    sport = random.randrange(49152, 65535)
+    iss = random.randrange(1 << 32)
+    end = time.monotonic() + timeout
+    snd_nxt, rcv_nxt = iss + 1, None
+    last = 0
+    while rcv_nxt is None:                      # SYN until the SYN-ACK
+        if time.monotonic() > end:
+            raise PppError(f"no SYN-ACK from port {dport}")
+        if time.monotonic() - last > 1.0:
+            _tcp_send(ppp, sport, dport, iss, 0, TCP_SYN, options=struct.pack(">BBH", 2, 4, TCP_MSS))
+            last = time.monotonic()
+        ppp.pump(0.02)
+        for src, sp, seq, ack, flags, data in ppp.tcp_in.pop(sport, []):
+            if flags & TCP_RST:
+                raise PppError(f"port {dport} refused the connection (RST)")
+            if flags & TCP_SYN and flags & TCP_ACK and ack == (iss + 1) & 0xFFFFFFFF:
+                rcv_nxt = (seq + 1) & 0xFFFFFFFF
+    request = bytes(request)
+    out = bytearray()
+    acked = snd_nxt
+    fin = False
+    last = 0
+    while time.monotonic() < end and not fin:
+        if acked - snd_nxt < len(request) and time.monotonic() - last > 1.0:   # (re)send what isn't acked
+            for i in range(acked - snd_nxt, len(request), TCP_MSS):
+                _tcp_send(ppp, sport, dport, snd_nxt + i, rcv_nxt, TCP_ACK | TCP_PSH, request[i:i + TCP_MSS])
+            last = time.monotonic()
+        ppp.pump(0.02)
+        for src, sp, seq, ack, flags, data in ppp.tcp_in.pop(sport, []):
+            if flags & TCP_RST:
+                raise PppError(f"port {dport} reset the connection after {len(out)} bytes")
+            if flags & TCP_ACK and 0 < ((ack - snd_nxt) & 0xFFFFFFFF) <= len(request):
+                acked = max(acked, snd_nxt + ((ack - snd_nxt) & 0xFFFFFFFF))
+            if seq == rcv_nxt:
+                out += data
+                rcv_nxt = (rcv_nxt + len(data)) & 0xFFFFFFFF
+                if flags & TCP_FIN:
+                    rcv_nxt = (rcv_nxt + 1) & 0xFFFFFFFF
+                    fin = True
+            if data or flags & TCP_FIN:
+                _tcp_send(ppp, sport, dport, snd_nxt + len(request), rcv_nxt, TCP_ACK)   # in order or a duplicate ACK
+    if fin:
+        _tcp_send(ppp, sport, dport, snd_nxt + len(request), rcv_nxt, TCP_FIN | TCP_ACK)
+        ppp.pump(0.3)
+        ppp.tcp_in.pop(sport, None)
+    else:
+        _tcp_send(ppp, sport, dport, snd_nxt + len(request), rcv_nxt, TCP_RST | TCP_ACK)
+    return bytes(out)
+
+
+def http_get(ppp, path, timeout=20.0):
+    """(status, headers dict with lower-case names, body) of an HTTP/1.0 GET on the radio."""
+    raw = tcp_request(ppp, 80, f"GET {path} HTTP/1.0\r\nHost: {ppp.peer_ip}\r\nConnection: close\r\n\r\n".encode(),
+                      timeout)
+    head, _, body = raw.partition(b"\r\n\r\n")
+    lines = head.decode(errors="replace").split("\r\n")
+    if not lines or not lines[0].startswith("HTTP/"):
+        raise PppError(f"no HTTP answer for {path}: {raw[:80]!r}")
+    headers = {}
+    for ln in lines[1:]:
+        k, _, v = ln.partition(":")
+        headers[k.strip().lower()] = v.strip()
+    return int(lines[0].split()[1]), headers, body
