@@ -452,6 +452,49 @@ test("RadioFoundry path: no buttons, keep the codec, write only what changed", a
 	assert.ok(equal(r.progmem.subarray(0xE8000), before), "codec slot kept");
 });
 
+test("protocol 7 writes a sector in one request and checks its read-back CRC; protocol 6 keeps the SPI path", async (t) => {
+	for (const stubWrite of [true, false]) {
+		const { sim, r } = await radio("rfoundry", { stubWrite, faults: { badWrite: stubWrite ? 1 : 0 } });
+		t.after(() => r.stop());
+		r.powerOn();
+		await new Promise((ok) => setTimeout(ok, 800));
+		const s = new Stub(r.stream, { log: quiet });
+		await s.enterFromRFoundry(stubs.image);
+		await s.configure(C.boards.dm1801pro.stub_board, C.led);
+		assert.equal(s.sectorOp, stubWrite, `HELLO v${stubWrite ? 7 : 6}`);
+		const image = r.progmem.slice(0xC000, 0xC000 + 0x40000);
+		for (const off of [0x1000, 0x5000, 0x9000]) image[off + 7] ^= 0xFF;
+		image.fill(0xFF, 0x20000, 0x21000);		// a sector left erased
+		const [start, data] = c7.target(sim.c, "dm1801pro", image, null);
+		const writes = r.writes, retried = s.retried;
+		const res = await s.writeProgram(data, start, { appStart: C.app_start, appEnd: C.app_end });
+		assert.equal(res.written, 4);
+		assert.ok(equal(r.progmem.subarray(start, start + data.length), data), "image written");
+		if (stubWrite) {
+			assert.equal(r.writes - writes, 5, "one WRITE per sector, and one again for the sector that read back wrong");
+			assert.equal(s.retried, retried, "a wrong read-back is a write again, not a damaged frame");
+		} else assert.ok(r.writes - writes > 4 * 4, "erase and page programs as separate SPI requests");
+	}
+});
+
+test("protocol 7: a write-protected or stuck flash stops the write with a plain reason, nothing written", async (t) => {
+	for (const [status, why] of [[0x0F, /write-protected/], [0x0C, /stayed busy/]]) {
+		const { sim, r } = await radio("rfoundry", { faults: { writeStatus: status } });
+		t.after(() => r.stop());
+		r.powerOn();
+		await new Promise((ok) => setTimeout(ok, 800));
+		const s = new Stub(r.stream, { log: quiet });
+		await s.enterFromRFoundry(stubs.image);
+		await s.configure(C.boards.dm1801pro.stub_board, C.led);
+		const image = r.progmem.slice(0xC000, 0xC000 + 0x40000);
+		image[0x1007] ^= 0xFF;
+		const before = r.progmem.slice();
+		const [start, data] = c7.target(sim.c, "dm1801pro", image, null);
+		await assert.rejects(s.writeProgram(data, start, { appStart: C.app_start, appEnd: C.app_end }), (e) => e instanceof StubError && why.test(e.message));
+		assert.ok(equal(r.progmem, before), "the flash is as it was");
+	}
+});
+
 test("RadioFoundry without stub entry says so; the stub refuses writes outside the application", async (t) => {
 	const { r } = await radio("rfoundry-nostub");
 	t.after(() => r.stop());
