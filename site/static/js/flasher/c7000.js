@@ -297,8 +297,8 @@ export function findCalibration(area, { area: end, page_id: id }) {
 
 // Which of a NAND radio's calibration copies ([{where, data}], each a 4 KB sector) to keep: those starting with magic.
 // A blank or foreign copy isn't a calibration (a NAND erased after the stock firmware left has none), so with one good
-// copy only that one is kept, and missing names the other's where. With none good, all are kept: the area that should
-// hold it
+// copy only that one is kept, and missing names the other's where. With none good, all are kept: what the places
+// that should hold it hold
 export function calibrationCopies(copies, magic) {
 	const m = new TextEncoder().encode(magic);
 	const ok = (d) => m.every((b, i) => d[i] === b);

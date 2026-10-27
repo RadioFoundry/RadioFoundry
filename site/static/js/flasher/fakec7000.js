@@ -36,8 +36,6 @@ const LEGACY_MARK = new TextEncoder().encode("OpenDigitalRadio");
 // A stock console's build from the board's first stock version ("909E.DBB.EARSAB.018" -> "018"), or null
 const consoleBuild = (radio) => (radio?.flash.stock_console ? radio.flash.stock_versions[0]?.slice(-3) || null : null);
 
-// What FakeC7000 needs to play a board, from its flasher data (radio: its radios.json entry): the name it reports, its
-// codec, a small data memory when the stub reads none, its stock console and its Baofeng updater's ID
 // A 256 MB SPI NAND that keeps only its used sectors: subarray() of a sector gives its bytes, or the one shared blank
 // sector, so the simulated radio answers a whole-chip read without holding the chip
 const BLANK_SECTOR = new Uint8Array(SECTOR).fill(0xFF);
@@ -67,6 +65,8 @@ class SparseNand {
 	}
 }
 
+// What FakeC7000 needs to play a board, from its flasher data (radio: its radios.json entry): the name it reports, its
+// codec, a small data memory when the stub reads none, its stock console and its Baofeng updater's ID
 export function fakeC7000Options(radio, fb) {
 	const b = fb.boards[radio.id];
 	return { board: b.debuglink_names[0], codecId: b.codec.id,

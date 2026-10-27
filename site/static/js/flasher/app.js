@@ -1131,7 +1131,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 		all: { bytes: internalSize + S.radio.backup.spi_size, what: { internal: true, spi: "full" } },
 		firmware: { bytes: internalSize, what: { internal: true, spi: "none" } },
 		codeplug: { bytes: CODEPLUG_SPAN, what: { internal: false, spi: "codeplug" } },
-		// the factory calibration is the SPI flash's security registers (readRadio: 3 x 256 bytes over the debug link)
+		// the factory calibration is the SPI flash's security registers (readRadio: 3 x 256 bytes, over the debug link or the loader)
 		calibration: { bytes: 768, what: { internal: false, spi: "none" } },
 	};
 	let pick = "all";
@@ -1176,9 +1176,12 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			diag.note("backup saved", { contents: pick, size: bytes.length, parts: S.backupParts.map((x) => `${x.what}${x.complete ? "" : " (incomplete)"}`) });
 			S.backupDone = true;
 			flashFinished(started);
-			const incomplete = S.backupParts.filter((x) => !x.complete && x.what !== "spi-flash").map((x) => x.file);
+			// the codeplug protocol's copy of the security registers kept beside the loader's is not a failed read
+			const incomplete = S.backupParts.filter((x) => !x.complete && !["spi-flash", "security-registers-unchecked"].includes(x.what)).map((x) => x.file);
+			const noCal = !S.backupParts.some((x) => x.what === "security-registers");
 			box.append(notice(t("flash.backup.saved", { name, size: Math.round(bytes.length / 1024) }), "ok"));
 			if (incomplete.length) box.append(notice(t("flash.backup.incomplete", { files: incomplete.join(", ") })));
+			if (noCal) box.append(notice(t("flash.backup.no_security"), pick === "calibration" ? "bad" : ""));
 			if (bulk?.used) {
 				// the next step talks to RadioFoundry again: it has to be back first
 				prog.set(0, 1, t("flash.backup.restarting"));

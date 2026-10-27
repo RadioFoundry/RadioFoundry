@@ -340,8 +340,6 @@ export class F4Stub extends Stub {
 		return { written: order.length, same: p.sectors.length - order.length };
 	}
 
-	// Write data (whole 4 KB sectors) into the SPI flash from start: only the sectors whose CRC differs are erased and
-	// programmed (blank pieces skipped), each read back by the stub, then all checked again. Returns {written, same}.
 	// The SPI flash's three security registers (768 bytes), each checked against the stub's CRC-32 and read again when it
 	// doesn't match. null: a stub before protocol 5, or a flash it doesn't send their commands to (not Winbond: BADARG)
 	async sregReadAll({ tries = 3 } = {}) {
@@ -369,6 +367,8 @@ export class F4Stub extends Stub {
 		return out;
 	}
 
+	// Write data (whole 4 KB sectors) into the SPI flash from start: only the sectors whose CRC differs are erased and
+	// programmed (blank pieces skipped), each read back by the stub, then all checked again. Returns {written, same}.
 	async spiWrite(data, start = 0, { progress = () => {}, signal } = {}) {
 		this.needSpi();
 		if (start % BLOCK || data.length % BLOCK || start + data.length > this.info.spiSize) throw new StubError("SPI flash writes are whole 4 KB sectors inside the chip");
