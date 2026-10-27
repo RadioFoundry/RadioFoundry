@@ -84,12 +84,14 @@ class RegistryCarriesTheList(unittest.TestCase):
             for p in b.protect:
                 self.assertIn(p["mem"], protect.MEMS, bid)
 
-    def test_known_entries(self):
-        db = boards.get("db25d")
-        self.assertTrue(protect.overlapping(db, "progmem", 0x1FE000, 0x1FF000))
-        self.assertTrue(protect.overlapping(db, "nand", 0x2A0000, 0x2A0800))
-        self.assertTrue(protect.overlapping(boards.get("dm32"), "data", 0x7C000, 0x7D000))
-        self.assertTrue(protect.overlapping(boards.get("dm1701"), "secreg", 0, 0x100))
+    def test_each_entry_is_refused(self):
+        listed = [b for b in boards.BOARDS.values() if b.protect]
+        self.assertTrue(listed, "some board has a protected region")
+        for b in listed:
+            for p in b.protect:
+                with self.assertRaises(protect.ProtectedError):
+                    protect.check(b, p["mem"], p["end"] - 1, p["end"])
+                self.assertEqual(protect.carve(b, p["mem"], p["start"], p["end"]), [])
 
 
 class Writers(unittest.TestCase):
@@ -101,8 +103,9 @@ class Writers(unittest.TestCase):
         import random
         import struct
         from rfoundry import fakedfu, stockfw
-        self.b = copy.copy(boards.get("dm1701"))
-        sec = self.b.sector_at(0x08020000)		# sector 5
+        self.base = next(b for b in boards.BOARDS.values() if b.dfu_ids)		# a board on the DFU route
+        self.b = copy.copy(self.base)
+        sec = self.b.sectors[2]		# the third sector the bootloader erases
         self.b.protect = [{"mem": "progmem", "start": sec.addr - self.b.rom_base, "end": sec.end - self.b.rom_base,
                            "what": "test (x.md 1)"}]
         rng = random.Random(3)
@@ -115,12 +118,12 @@ class Writers(unittest.TestCase):
         with self.assertRaises(plan.PlanError) as e:
             plan.make_plan(self.b, [(self.b.app_base, self.img)], plan.KEEP)
         self.assertIn("protected region", str(e.exception))
-        p = plan.make_plan(self.b, [(self.b.app_base, self.img[:5000])], plan.KEEP)	# sector 3 only: fine
-        self.assertEqual([s.index for s in p.erase], [3])
+        p = plan.make_plan(self.b, [(self.b.app_base, self.img[:5000])], plan.KEEP)	# the first sector only: fine
+        self.assertEqual(p.erase, [self.b.sectors[0]])
 
     def test_dfu_refuses_before_anything_is_sent(self):
         from rfoundry import dfu, plan
-        p = plan.make_plan(boards.get("dm1701"), [(self.b.app_base, self.img)], plan.KEEP)
+        p = plan.make_plan(self.base, [(self.b.app_base, self.img)], plan.KEEP)
         p.board = self.b
         with self.assertRaises(protect.ProtectedError):
             dfu.Dfu(self.dev, 0, log=lambda *a: None, sleep=lambda s: None).run(p, self.key)

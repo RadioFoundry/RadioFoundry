@@ -145,6 +145,54 @@ per-model XOR key's hash and first bytes, never the key).
 
 A key of another platform's stub fails the check.
 
+#### Protected regions
+
+`[[flash.protect]]` lists flash that no tool erases or writes: factory data that can't be made again, the calibration
+first. One table per region:
+
+```toml
+[[flash.protect]]
+mem = "data"
+start = 0x1000
+end = 0xC9000
+what = "factory calibration: the page tagged 2 in the stock codeplug area (hardware-<radio>.md 6.4)"
+```
+
+| Key | Meaning |
+|---|---|
+| `mem` | The memory: `progmem` (the MCU's program flash), `data` (the SPI NOR data flash), `nand` (the SPI NAND's main area, without spare bytes) or `secreg` (the SPI NOR flash's security registers) |
+| `start`, `end` | The range, `end` exclusive, as offsets in that memory: `progmem` from the platform's `flash_base`, `data` and `nand` from 0, `secreg` 256 bytes per register from register 1 at 0 |
+| `what` | What lies there, with the spec section that establishes it in parentheses |
+
+`tools/boards.py check` refuses an entry:
+
+- whose memory the board doesn't have (`data` and `secreg` need `backup.spi_size` and no NAND; `nand` needs a
+  `spi_nand_t` in the board's sources)
+- that runs past the memory's end
+- that isn't on the memory's erase boundaries: the platform's sectors (or 4 KB) for `progmem`, 4 KB for `data`, a
+  block for `nand`, a register for `secreg`
+- that overlaps another entry, the application or the codec slot
+- whose `what` cites no section
+
+A region whose place moves (remapped by a bad-block table, for example) is protected over every place it can be. The
+registry carries the list as `protect` (`registry.json`, `radios.json` `flash`, `flash-boards.json` `boards`, `c7000`
+and `f4stub`).
+
+What the tools do with it. `tools/rfoundry/rfoundry/protect.py` and `site/static/js/flasher/protect.js` hold the one
+check each language uses:
+
+| Write | Behavior |
+|---|---|
+| An install, a test write, a single sector | Refused before anything is erased |
+| A restore of a whole memory (program flash backup through the stub, internal flash through DFU, SPI flash through the STM32 stub, codeplug through the CPS) | Carved: the protected sectors keep what the radio has, the rest is written |
+| A security register restore | Refused when a protected register differs (a register is written whole) |
+| A loader that erases a fixed area (the vendor IAP and serial loaders, the DFU updater in `tools/stm32_dfu.py`) | Refused when the area holds a protected region: those erases can't be carved |
+| A whole-chip erase | Refused on a memory with any protected region. No tool sends one |
+
+The stub tools check every erase and program command they send, not only the high-level writes. RadioFoundry's own
+firmware keeps its own rules for what it writes (the CPS shim refuses its areas,
+[cps-protocol.md](../spec/cps-protocol.md) 2.3).
+
 ### [codec]
 
 | Key | Meaning |

@@ -324,6 +324,23 @@ Not yet tested on a real radio.
 The stock file's resource segment (SPI flash 0x60000) is not written back: how the vendor updater writes it is not
 documented, and RadioFoundry doesn't overwrite it unless an ID database is uploaded.
 
+### Protected regions
+
+No write touches a board's protected regions ([board-registry.md](board-registry.md#protected-regions):
+`[[flash.protect]]`, the factory calibration first). `protect.js` is the one check, with the data from
+`flash-boards.json`.
+
+| Writer | Over a protected region |
+|---|---|
+| `Stub` (`stub.js`) | Every erase and program command is checked before it is sent; a chip erase is refused. `writeProgram` refuses an install that overlaps one. The restore task passes `carve`: those sectors keep what the radio has and show as never written |
+| `F4Stub` (`f4stub.js`) | `erase`, `program` and `writeImage` refuse. `spiWrite` carves |
+| `makePlan` (`plan.js`), `Dfu.run` | Keep and merge plans refuse; a restore plan keeps the sector (`keep`, "protected"). `Dfu.run` checks the plan again before the first request |
+| `Iap`, `BfLoader` | Refused when the area the loader erases holds one: the vendor loaders erase a fixed span, which can't be carved |
+| Codeplug restore (`codeplugSectors`) | Protected data sectors are left out |
+
+The error is a `ProtectedError` (`code` "protected") naming the region and the reason from `board.toml`. Nothing is
+erased before the check.
+
 ## HR_C7000 radios (the boot stub)
 
 Radios whose backend is `c7000-stub` (the `serial-loader` and `serial-iap` families; a board with a first stage adds the section
