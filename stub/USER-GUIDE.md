@@ -150,11 +150,24 @@ The radio restarts into its normal firmware. If neither works, remove and refit 
 
 Orange is the red LED at full and the green LED dimmed (about 16%), so it looks the same on every model (red = PTB1, green = PTB0, active high, the same pins on the DM-1801 Pro and the DM-32UV).
 
-## Faster transfer (experimental)
+## Transfer speed
 
-`--baud 750000` (or 500000, 375000, 250000; `--baud auto` tries them) asks the radio to talk faster. The tool tests the
-new speed first and goes back to normal speed by itself if the cable cannot keep up. On the cable tested so far it
-failed on long reads, so leave it off unless a normal run is too slow and you have a different cable **[confirm]**.
+With a current loader (protocol 7), writes and backups pick the fastest serial speed your cable and radio manage, by
+themselves. The tool tries faster speeds first, tests each with full-size transfers both ways, and keeps the fastest
+that passes. It remembers the result for that port and radio, so the next run starts at it at once. If the link goes
+bad later (a worn cable, a loose jack), the tool goes quiet for a few seconds, the radio goes back to normal speed by
+itself, and the run carries on at normal speed. You do nothing.
+
+| Option | What it does |
+|---|---|
+| none | Pick the speed by itself for writes and backups |
+| `--baud auto` | The same, also for other jobs |
+| `--baud off` | Stay at 115200 |
+| `--baud 262500` | Ask for one speed; if it fails the test, the run stays at 115200 |
+
+The radio's serial port has whole steps only (its clock divided by 16 times a whole number), so speeds such as 262500
+are normal, and 230400 or 921600 are not offered as such. On the cables tested so far the fastest that held was about
+260000.
 
 ## If something goes wrong
 
