@@ -119,7 +119,7 @@ All facts from the same A and B images (BIN). Detail and addresses are kept outs
 |---|---|
 | NAND | SPI NAND on SPI0, chip select PTA18, standard SPI-NAND opcodes; geometry is read from the chip at run time. Each SoC has its own |
 | Partition table | Names and NAND byte bases: font 0x040000, debug 0x100000, userop 0x280000, LinkMan 0x2C0000, xiepin1 0x380000, xiepin2 0x3C0000, App 0x400000 |
-| Calibration | Primary copy is one 2 KB NAND page at logical 0x280000 starting with `TUNE` and a 32-bit counter (higher = newer). The partition bases are logical: the stock block map in block 0 places them ([spi-nand-lut.md](spi-nand-lut.md)). On the bench's A, bad blocks 186, 1536 and 1537 and the map put the page at physical 0x2A0000 (block 21). A backup copy sits in program flash at 0x031FE000 (4 KB). The firmware compares the two at boot and copies the newer over the older. Each SoC has its own pair, with its own values: A's page sets A's transmitter and the PA drive B applies, B's page B's receiver (**HW** A's pair read 2026-10-27; B's NAND copy BIN). RadioFoundry reads both through the map and never writes them |
+| Calibration | Primary copy is one 2 KB NAND page at logical 0x280000 starting with `TUNE` and a 32-bit counter (higher = newer). The partition bases are logical: the stock block map in block 0 places them ([spi-nand-lut.md](spi-nand-lut.md)). On the bench's A, bad blocks 186, 1536 and 1537 and the map put the page at physical 0x2A0000 (block 21). A backup copy sits in program flash at 0x031FE000 (4 KB). The firmware compares the two at boot and copies the newer over the older. Each SoC has its own pair, with its own values: A's page sets A's transmitter and the PA drive B applies, B's page B's receiver (**HW** both pairs read through the map 2026-10-27: A counter 1285, B 1427). RadioFoundry reads both through the map and never writes them |
 
 ## 8. Memory map and the codec
 
@@ -229,7 +229,7 @@ B has no display, keys, power latch or GPS. Pin index as in section 9.
 | A's PA | **B keys the PA for A's transmitter** (BIN; **HW** FM 2026-10-27). A sends B a record first (vendor link id 0x6B00) with the drive and the page's delays, then raises PTB2. Rising edge: mode 0, the TX band pair, A's RX path PTB1 (and PTB13) off, 50 us, the TX-on delay, PA select, 200 us, supply, DAC B ramped up to the drive (180 steps of 4 us, S-shaped). Falling edge: the TX-off delay, the ramp down, supply then select off, 300 + 1000 + 300 us, the RX front end and A's RX path back, 200 us |
 | PA drive and delays | From A's page: drive = item 0x045 (channel power byte 0) or 0x056 (otherwise), interpolated at the TX frequency; TX-on / TX-off delays from item 0x0AE, in us, over 2000 read as 0 (BIN). Which item is high power: INF |
 | Start-up levels | Low: PTB20, PTB21, PTB6, PTB3, PTB1, PTB0, PTB15, PTB14, PTB13, PTB5, PTB12, PTB11, PTB8, PTB7, PTA17, PTB10, PTC18, PTB4. High: PTB22, PTB18 |
-| NAND | SPI0, CS PTA18, the same part and map as A's (BIN). B's calibration pair is in it and at 0x031FE000 of B's program flash |
+| NAND | SPI0, CS PTA18, the same part and map as A's (**HW**). B's calibration pair is in it and at 0x031FE000 of B's program flash |
 | Status LEDs | PTA16 (lit while A transmits) and PTB17 (receive), high = on. Colors not known. While A is in its flash stub they take turns at 2 Hz (`RX2_LED_STUB`: A's stub has no LEDs) |
 | ADC | Channel 4 is a carrier level |
 | RF chips | The same 3-wire bus pins as A (section 9) |
