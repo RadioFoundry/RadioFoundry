@@ -22,7 +22,7 @@ CONFIG_DISPLAY_INSET_RIGHT ?= 10
 # span inside the codec window (0x45000..0x58000). Without DMR: no codec window, the CPU state in .bss and the stub in
 # the 128 KB above it (fm_only.ld). Bench knobs (dmr_gd88.c): GD88_DMR_RF_MODE, GD88_DMR_AF_GAIN
 ifeq ($(CONFIG_DMR),y)
-MCU_DEFS += -DHRC_CODEC_BOARD='"gd88"' -DHRC_STUB_BASE=0x00045000u -DHRC_STUB_SIZE=0x00013000u
+MCU_DEFS += -DHRC_STUB_BASE=0x00045000u -DHRC_STUB_SIZE=0x00013000u
 ifneq ($(GD88_DMR_RF_MODE),)
 MCU_DEFS += -DGD88_DMR_RF_MODE=$(GD88_DMR_RF_MODE)
 endif

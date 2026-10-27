@@ -80,7 +80,7 @@ BOARD_REQUIRED := FM
 # With DMR: the platform's linker script with the codec window at the top of SRAM and the modem SRAM table window
 # (memory.ld) and its codec host (profile ids gd88b-<version>). Without DMR: A's FM-only script (the same layout)
 ifeq ($(CONFIG_DMR),y)
-MCU_DEFS += -DHRC_CODEC_BOARD='"gd88b"' -DHRC_STUB_BASE=0x00045000u -DHRC_STUB_SIZE=0x00013000u
+MCU_DEFS += -DHRC_STUB_BASE=0x00045000u -DHRC_STUB_SIZE=0x00013000u
 MCU_DEFS += -DHRC7000_RX_NEXT_SLOT_XOR=0u
 else
 LDSCRIPT := boards/gd88/fm_only.ld
