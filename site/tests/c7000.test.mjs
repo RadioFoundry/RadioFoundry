@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { crc32, equal, sha256, sleep } from "../static/js/flasher/bytes.js";
 import { decodeBlock, encodeBlock } from "../static/js/flasher/lz4.js";
-import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout, patchUniv, boardLed, RX2_F } from "../static/js/flasher/stub.js";
+import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout, patchUniv, boardLed, RX2_F, BRIDGE_EXIT } from "../static/js/flasher/stub.js";
 import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
@@ -161,6 +161,40 @@ test("GD-88 receiver B: RadioFoundry on the first SoC hands the cable over, the 
 	plain.r.powerOn();
 	await sleep(800);
 	await assert.rejects(Stub.bridgeFromRFoundry(new Link(plain.r.stream, { timeout: 300 })), /route to the second receiver/);
+});
+
+test("the bridge to a second SoC ends on the exit sequence alone, with quiet around it; the first SoC restarts at once", async (t) => {
+	const { r } = await radio("rfoundry", { rx2: true, board: "GD-88" });
+	t.after(() => r.stop());
+	r.powerOn();
+	await sleep(800);
+	await Stub.bridgeFromRFoundry(new Link(r.stream, { timeout: 1000 }));
+	const s = new Stub(r.stream, { log: quiet });
+	await s.waitForRom(3000);
+	await s.loadThroughRom(patchUniv(stubs.image, C.boards.gd88b.stub_board), stubs.load);
+	// the 4 bytes with more after them, or right after other bytes, are not the exit sequence
+	const write = r.stream.write.bind(r.stream);
+	await sleep(10);
+	await write(new Uint8Array([...BRIDGE_EXIT, 0x00]));
+	await sleep(10);
+	await write(new Uint8Array([0x00]));
+	await write(new Uint8Array(BRIDGE_EXIT));
+	await write(new Uint8Array([0x00]));
+	await sleep(20);
+	assert.ok(!r.events.includes("bridge exit") && r.onB, "no exit: the bytes were not a burst of their own");
+	// the page's exit: one write of exactly those bytes, quiet before and after
+	const wire = [];
+	r.stream.write = async (d) => (wire.push([performance.now(), d.slice()]), write(d));
+	await sleep(10);
+	const t0 = performance.now();
+	await s.bridgeExit();
+	const t1 = performance.now();
+	assert.equal(wire.length, 1);
+	assert.deepEqual([...wire[0][1]], [0x7E, 0xE7, 0x81, 0x18]);
+	assert.ok(wire[0][0] - t0 >= 5 && t1 - wire[0][0] >= 5, "at least 5 ms of quiet on each side");
+	assert.ok(r.events.includes("bridge exit") && !r.onB, "the bridge ended: the first SoC restarts");
+	await sleep(800);
+	assert.equal((await probe(new Link(r.stream, { timeout: 1000 })))?.board, "GD-88", "the first SoC's RadioFoundry answers again");
 });
 
 test("GD-88 receiver B on its original firmware: the first SoC reports it down and the bridge reaches nothing", async (t) => {

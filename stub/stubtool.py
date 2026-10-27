@@ -570,6 +570,8 @@ STUB_MAGIC = 0x42533743                 # 'C7SB': the guard word of RadioFoundry
 DL_STUB = 0x1A
 DL_RX2 = 0x1E                           # the second receiver's SoC (docs/spec/debuglink.md 3.22)
 RX2_TOKEN = 0x47445242                  # 'BRDG'
+BRIDGE_EXIT = bytes([0x7E, 0xE7, 0x81, 0x18])   # ends A's bridge: a burst of its own (docs/spec/rx2-link.md 4.1)
+BRIDGE_QUIET = 0.02                     # quiet on the cable before and after it (the spec asks for 2 ms or more)
 
 
 def lz4_block(src, size):
@@ -1054,6 +1056,23 @@ class Radio:
         if r[0] != 0:
             raise DumpError("RadioFoundry refused the bridge (status %d)" % r[0])
         self.log("A is bridging the cable to the second receiver")
+
+    def bridge_exit(self):
+        """End A's bridge (docs/spec/rx2-link.md 4.1): the exit sequence alone, with quiet before and after, so A sees it
+        as a burst of its own. A restarts at once instead of 10 s after our last byte. Whatever B was doing stops
+        reaching the cable."""
+        try:
+            self.port.flush()                   # what is still on its way to B goes first
+        except (OSError, AttributeError):
+            pass
+        time.sleep(BRIDGE_QUIET)
+        self.port.write(BRIDGE_EXIT)
+        try:
+            self.port.flush()
+        except (OSError, AttributeError):
+            pass
+        time.sleep(BRIDGE_QUIET)
+        self.log("bridge ended: A restarts")
 
     def send_noreply(self, op, payload=b""):
         """A request the radio will not answer because it is about to reset or jump away."""
@@ -1826,6 +1845,8 @@ class FakeBridged(FakeRadio):
         super().__init__(images, **kw)
         self.out = bytearray()
         self.flags, self.bridged, self.armed = flags, False, False
+        self.wire = []                      # (time, bytes) of every write: the exit sequence's quiet is checked
+        self.exited = False                 # A took the exit sequence: it restarts, nothing reaches B any more
 
     def read(self, n):
         if self.armed and not self.out:
@@ -1834,7 +1855,13 @@ class FakeBridged(FakeRadio):
         return super().read(n)
 
     def write(self, b):
+        self.wire.append((time.monotonic(), bytes(b)))
+        if self.exited:
+            return
         if self.bridged:
+            if bytes(b) == BRIDGE_EXIT:
+                self.exited = True
+                return
             return super().write(b)
         assert b[:2] == b"\xA5\x5A" and crc16_ccitt(b[2:-2]) == int.from_bytes(b[-2:], "little")
         cmd, seq, p = b[2], b[3], b[6:-2]
@@ -2249,6 +2276,14 @@ def self_test():
     r.configure("gd88b")
     check(bridge.bridged and bridge.running and bytes(bridge.loaded[:len(pb)]) == pb, "gd88b stub loaded through the bridge")
     check(r.configured is C7_BOARDS["gd88b"] and bridge.configs[-1][10:12] == bytes([16, 49]), "gd88b configured, its LEDs")
+    r.reset_chip()
+    t_last = bridge.wire[-1][0]
+    r.bridge_exit()
+    t_done = time.monotonic()
+    t_exit, sent = bridge.wire[-1]
+    check(bridge.exited and sent == bytes([0x7E, 0xE7, 0x81, 0x18]), "the bridge ends on exactly 7E E7 81 18 in one write")
+    check(t_exit - t_last >= 0.005 and t_done - t_exit >= 0.005,
+          "quiet around the exit sequence (%.1f ms before, %.1f ms after)" % ((t_exit - t_last) * 1e3, (t_done - t_exit) * 1e3))
     for flags, what in ((0x00, "no second receiver"), (0x03, "no bridge")):
         try:
             Radio(FakeBridged(images, flags=flags), log=quiet).rx2_bridge()
@@ -2462,6 +2497,8 @@ def main(argv=None):
     except ImportError:
         print("pyserial is missing: pip install pyserial", file=sys.stderr)
         return 1
+    bridge_on = False                           # the cable goes through A's bridge: end it when done (or on an error)
+    radio = None
     try:
         stub = open(a.stub, "rb").read() if a.stub else None
         if a.port.startswith("udp:"):
@@ -2495,12 +2532,14 @@ def main(argv=None):
                             "runs at 115200)" % a.board)
         if bridged and not a.attach:
             radio.rx2_bridge()
+            bridge_on = True
             load = LOAD_ADDR if a.load_base is None else a.load_base
             radio.start(min(a.wait, 70), stub, load, a.board)
             radio.configure(a.board)
         elif a.rfoundry_enter:
             radio.rfoundry_enter(open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else ("legacy" if a.legacy_stub else None), board=a.board)
         elif a.attach:
+            bridge_on = bridged                 # the bridge from an earlier run, still up
             radio.attach()
             radio.configure(a.board)
         else:
@@ -2540,7 +2579,9 @@ def main(argv=None):
             nw, nk = radio.write_image(image, replace_stage=a.replace_stage, progress=lambda i, n: print("\rwriting sector %d of %d changed" % (i + 1, n), end="", flush=True))
             print("\n%s: %d bytes, %d sectors written, %d unchanged, verified by CRC, %.0f s" % (a.write_app, len(image), nw, nk, time.monotonic() - t0))
             print("sha256", fingerprint(a.write_app))
-            if not a.boot:
+            if not a.boot and bridge_on:
+                print("the bridge ends now: power-cycle the radio to start the new firmware (or give --boot reset)")
+            elif not a.boot:
                 print("run again with --attach --boot reset (or power-cycle) to start the new firmware")
         if a.write_test:
             for mem in (("progmem", "q128") if a.write_test == "both" else (a.write_test,)):
@@ -2606,6 +2647,12 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("\nstubtool: stopped", file=sys.stderr)
         return 1
+    finally:
+        if bridge_on and radio is not None:
+            try:
+                radio.bridge_exit()
+            except OSError as e:
+                print("stubtool: could not end the bridge (%s): A restarts 10 s after the last byte" % e, file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -86,6 +86,10 @@ The GD-88 has two HR_C7000 SoCs, each with its own program flash. `--board gd88`
 routes and pins (latch PTB13, key PTB12, the NAND). `--board gd88b` is B, the second receiver. B has no cable, so the
 tool reaches it through RadioFoundry on A ([rx2-link.md](../docs/spec/rx2-link.md) 4): it asks A for the bridge
 (`DL_CMD_RX2`), then loads the stub into B's first stage through it. That route takes no `--rfoundry-enter` and no `--baud`.
+When it is done with B, after `--boot reset` or on an error, the tool ends the bridge with the exit sequence
+`7E E7 81 18`, sent alone with 20 ms of quiet before and after ([rx2-link.md](../docs/spec/rx2-link.md) 4.1): A
+restarts at once instead of 10 s after the tool's last byte. Without `--boot reset`, B stays in the stub until the radio
+is power-cycled; `--attach` works only within those 10 s of an older run that ended without the sequence.
 
 The radio's two LEDs are on B (PTA16, PTB17), and on A the default LED pins (PTB0 / PTB1) clock and feed its serial
 output chain. So the tool patches the image's parameter block before it sends it: no LEDs and the latch and key on A;

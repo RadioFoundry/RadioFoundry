@@ -134,9 +134,22 @@ function session() {
 		decision: null, fileCodec: null, backupSaved: false, rate: null, log: logBox() });
 }
 
+// End the first SoC's bridge to the second (rx2-link.md 4.1), once, when the page is done with the second SoC or gives
+// up on it after the bridge started: the first SoC restarts at once instead of 10 s after the page's last byte
+async function endBridge(stub = null) {
+	const c = S().c7;
+	if (!c?.bridgeOn) return;
+	c.bridgeOn = false;
+	try {
+		await (stub || c.stub || new Stub(c.stream)).bridgeExit();
+		c.bridgeEnded = true;
+	} catch (e) { /* the cable is gone: the first SoC's own time-out ends the bridge */ }
+}
+
 export async function dropC7() {
 	const c = S().c7;
 	if (!c?.stream) return;
+	await endBridge();
 	c.stopSizing = true;
 	c.size = null;	// the next connection may be another radio
 	if (!S().fakeC7) try { await c.stream.close(); } catch (e) { /* gone */ }
@@ -299,8 +312,11 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		const stub = mkStub();
 		try {
 			await Stub.bridgeFromRFoundry(link);
+			c.bridgeOn = true;
+			c.bridgeEnded = false;
 			await stub.waitForRom(S().fakeC7 ? 3000 : BRIDGE_ROM_WAIT);
 		} catch (e) {
+			await endBridge(stub);
 			show({ led: "off", screen: "on" }, notice(t("flash.second.bridge.failed", { error: ctx.errorText(e) }), "bad"),
 				toIap ? h("p", {}, t("flash.second.bridge.failed_iap")) : null);
 			return act(button(t("flash.c7.connect.try_again"), () => find(), { primary: true }),
@@ -480,6 +496,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			await ready(t(bridge ? "flash.second.bridge.found" : "flash.c7.connect.found_rom"));
 		} catch (e) {
 			if (!bridge) return romFailed(answered, errorNotice(t("flash.c7.connect.load_failed", { error: ctx.errorText(e) })));
+			await endBridge(stub);
 			show({ led: "off", screen: "off" }, errorNotice(t("flash.c7.connect.load_failed", { error: ctx.errorText(e) })));
 			act(button(t("flash.c7.connect.try_again"), () => find(), { primary: true }));
 		}
@@ -515,6 +532,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			await sleep(S().fakeC7 ? 400 : 1500);
 			onReady();
 		} catch (e) {
+			await endBridge();
 			show({ led: "wait", screen }, errorNotice(ctx.errorText(e)));
 			act(button(t("flash.c7.connect.try_again"), () => find(), { primary: true }));
 		}
@@ -960,11 +978,13 @@ export function writeView() {
 			fill(status, notice(t("flash.c7.write.ok", { written: res.written, same: res.same }), "ok"));
 			await sleep(1200);
 			await c.stub.resetChip();
+			await endBridge();	// the second SoC: the first restarts now
 			c.resetAt = Date.now();
 			await busy(false);
 			ctx.next();
 		} catch (e) {
 			ctx.flashFinished(started, e);
+			await endBridge();	// the second SoC: a retry finds it again through a new bridge
 			await busy(false);
 			top.set({ led: "wait", screen: "off" });
 			fill(status, errorNotice(t("flash.c7.write.failed", { error: ctx.errorText(e) })), retryHelp(), ctx.helpLink());
@@ -1011,8 +1031,9 @@ export function doneView() {
 		// boot and then asks for the power cycle; a check after one allows for the boot it starts. After the Baofeng
 		// updater's end of transfer the radio starts RadioFoundry by itself with its link up (DM-32UV, hardware-dm32.md
 		// 13.2), so the first check there waits as long, and the power cycle is only the fallback. The second SoC behind
-		// the first: the first ends the bridge after a quiet spell and restarts, then reports it
-		await sleep(Math.max(0, (c.resetAt || 0) + (S().fakeC7 ? 1500 : BOOT_MS + (bridged() ? BRIDGE_END_MS : 0)) - Date.now()));
+		// the first: the exit sequence restarted the first at once (without it, the first ends the bridge after a quiet
+		// spell), then it reports it
+		await sleep(Math.max(0, (c.resetAt || 0) + (S().fakeC7 ? 1500 : BOOT_MS + (bridged() && !c.bridgeEnded ? BRIDGE_END_MS : 0)) - Date.now()));
 		const restartsItself = viaIap() && flash().update_mode === "baofeng";
 		const until = Date.now() + (tries++ || restartsItself ? 20000 : 6000);
 		let p = null;

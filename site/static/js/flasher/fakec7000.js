@@ -10,8 +10,10 @@
 // rx2: the radio has a second SoC behind RadioFoundry (a board's flash.second): DL_CMD_RX2 answers, and its BRIDGE
 // hands the cable to the second SoC's first stage, which this model plays with the same stub. rx2: {progmem} gives the
 // second SoC its own program flash, in place while the bridge is up; the first SoC's RadioFoundry answers again after the stub's
-// reset. rx2: {stock} is a second SoC still on its original firmware: it does not answer the first, and the bridge
-// reaches nothing.
+// reset (standing in for the first SoC's restart after a quiet spell). The exit sequence (BRIDGE_EXIT alone, with 2 ms
+// of quiet before and after: docs/spec/rx2-link.md 4.1) ends the bridge at once: the first SoC restarts, and the event
+// "bridge exit" records it. rx2: {stock} is a second SoC still on its original firmware: it does not answer the first,
+// and the bridge reaches nothing.
 //
 // A stock firmware with a USMART console (usmart: its build) also answers the debug console the page loads the stub
 // through (usmart.js): framed read_addr / write_addr over a model of its RAM, and the hijack word that starts what was
@@ -27,7 +29,7 @@ import { concat, crc32, le32, sha256, sleep, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
 import { ACK, NAK, CRC_REQ, STX, EOT, BLOCK, HEADER_BLOCK, xmodem } from "./bfloader.js";
 import { encodeBlock } from "./lz4.js";
-import { CRASH_BOOT_SOFT, CRASH_SOFT_MARK, STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
+import { BRIDGE_EXIT, CRASH_BOOT_SOFT, CRASH_SOFT_MARK, STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
 import { HIJACK, STUB_WINDOW, BUILDS, FLASH_BASE, versionTail } from "./usmart.js";
 import { rng, randomBytes } from "./fake.js";
 import { sigBytes } from "./c7000.js";
@@ -321,6 +323,7 @@ export class FakeC7000 {
 
 	powerOff() {
 		this.state = "off";
+		this.bridgeUp = false;
 		this.softReset = false;
 		this.led = "off";
 		this.gen = (this.gen || 0) + 1;
@@ -337,6 +340,7 @@ export class FakeC7000 {
 
 	boot() {
 		this.swapSecond(false);
+		this.onB = false;
 		this.state = "rom";
 		this.ram = new Map();
 		this.fwKind = null;
@@ -387,6 +391,19 @@ export class FakeC7000 {
 
 	// ---- what arrives from the host
 	receive(data) {
+		const now = performance.now(), gap = now - (this.lastRx ?? -Infinity);
+		this.lastRx = now;
+		if (this.exitPending) {			// more came within 2 ms: the 4 bytes were not a burst of their own
+			clearTimeout(this.exitPending);
+			this.exitPending = null;
+		}
+		if (this.bridgeUp && gap >= 2 && data.length === BRIDGE_EXIT.length && BRIDGE_EXIT.every((b, i) => data[i] === b)) {
+			this.exitPending = setTimeout(() => {
+				this.exitPending = null;
+				this.endBridge();
+			}, 2);
+			return;
+		}
 		if (this.state === "off" || this.state === "booting") return;
 		if (this.state === "bfloader") return this.bf.feed(data);
 		if (this.state === "firmware" && this.softReset && this.faults.silentAfterReset) return;
@@ -470,16 +487,26 @@ export class FakeC7000 {
 			if (p[0] === 0) return reply(0, new Uint8Array([this.rx2.stock ? 0x0D : 0x0F])), 1;	// present, (up), bridge, restart
 			if (p.length !== 5 || u32le(p, 1) !== 0x47445242) return reply(7), 1;
 			reply(0);
+			if (p[0] === 1) this.bridgeUp = true;
 			if (p[0] === 1 && !this.rx2.stock) setTimeout(() => {				// the second SoC's first stage, through the bridge
 				this.swapSecond(true);
 				this.state = "rom";
 				this.inb = new Uint8Array(0);
 				this.loaded = new Uint8Array(0);
 				this.events.push("bridge");
+				this.onB = true;		// what answers on the cable is the second SoC, until the first restarts
 				this.send(new Uint8Array([0x02, 0x24, 0x00, 0x03]));
 			}, 100);
 		} else reply(3);
 		return 1;
+	}
+
+	// The exit sequence: the first SoC restarts at once (unless the second SoC's reset brought it back already)
+	endBridge() {
+		this.bridgeUp = false;
+		this.events.push("bridge exit");
+		if (!this.onB || this.state === "off") return;
+		this.boot();
 	}
 
 	// The original firmware's debug console: "@AT", a filler byte, the text, CR LF. The reply, then the application's

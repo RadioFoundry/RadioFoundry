@@ -39,7 +39,10 @@ export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
 export const CRASH_SOFT_MARK = 0x18007EF4, CRASH_BOOT_SOFT = 0x54464F53;
 export const STUB_MAGIC = 0x42533743, DL_STUB = 0x1A;
 // DL_CMD_RX2: the second SoC of a radio with two (the GD-88), reached through the first (docs/spec/debuglink.md 3.22)
-export const DL_RX2 = 0x1E, RX2_TOKEN = 0x47445242, RX2_F = { present: 1, up: 2, bridge: 4, restart: 8 };
+export const DL_RX2 = 0x1E, RX2_TOKEN = 0x47445242, RX2_F = { present: 1, up: 2, bridge: 4, restart: 8, forward: 16 };
+// The end of the bridge: these 4 bytes alone, with quiet on the cable before and after (docs/spec/rx2-link.md 4.1; the
+// spec asks for 2 ms or more). The first SoC restarts at once instead of 10 s after the page's last byte
+export const BRIDGE_EXIT = [0x7E, 0xE7, 0x81, 0x18], BRIDGE_QUIET_MS = 20;
 const ROM_HELLO = [0x02, 0x24, 0x00, 0x03], ROM_ACK = [0x02, 0x05, 0x00, 0x03], ROM_REPLY = [0x02, 0x14, 0x00, 0x03];
 // The boot ROM's two other frames: it stops waiting (about 48 ms after its greeting when no answer came) and starts the
 // firmware; and its NAK (BADSUM), which is also how it answers a repeated greeting reply once it took the first one
@@ -332,6 +335,13 @@ export class Stub {
 				: `RadioFoundry refused the hand-over (${e.message})`);
 		}
 		return flags;
+	}
+
+	// End the first SoC's bridge (bridgeFromRFoundry): the exit sequence in a write of its own between two quiet spells
+	async bridgeExit() {
+		await sleep(BRIDGE_QUIET_MS);
+		await this.s.write(new Uint8Array(BRIDGE_EXIT));
+		await sleep(BRIDGE_QUIET_MS);
 	}
 
 	// The second SoC's state, from RadioFoundry on the first: RX2_F flags, or null when it doesn't say
