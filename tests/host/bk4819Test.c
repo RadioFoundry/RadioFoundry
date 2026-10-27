@@ -362,6 +362,11 @@ static void test_sequences(void)
 	chips[0].n = 0;
 	bk4819_tone_start(&m, 1000, 200);
 	CHECK(c->n == 3 && c->log[0].reg == 0x70 && c->log[0].val == 0xFF00 && c->log[1].reg == 0x71 && c->log[1].val == 10324);
+	// The tone's deviation: 0x40 bits 11:0, bits 15:12 as stock (the stop below puts 0x34A8 back)
+	chips[0].n = 0;
+	bk4819_tone_deviation(&m, 0x423);
+	bk4819_tone_deviation(&m, 0x1FFF);
+	CHECK(c->n == 2 && c->log[0].reg == 0x40 && c->log[0].val == 0x3423 && c->log[1].val == 0x3FFF);
 	// Stop: 47, 50, 70, 37, idle, 0xC3FE, 40 = 0x34A8; a second stop and a key do nothing
 	chips[0].n = 0;
 	bk4819_tone_stop(&m);

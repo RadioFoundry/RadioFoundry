@@ -244,6 +244,7 @@ B has no display, keys, power latch or GPS. Pin index as in section 9.
 | Fitted parts | **HW** A on the bench: main 0x4819, LO 0x1100 (AT1141); the firmware's version string reads `DBT` (main BK4819 'B', LO AT1141 'T'). The firmware picks the driver by ID at start-up, so other units can differ |
 | Superhet | The main chip receives at the IF and transmits at f; the second chip is the LO. **A's IF is 45 MHz** with either LO chip; B's is 51.55 MHz. DAC C = 1780 at RX set-up; DAC B drives the PA with a 180-step ramp |
 | BK4819 LO | High-side, f + IF, in registers 0x38 / 0x39 |
+| TX deviation (0x40) | **HW** A, SDR bench 2026-10-27: bits 11:0 scale the deviation of the tone generator too (its gain in 0x70 does not), about 10 Hz peak per count above about 0x2FA, linear from 0x448 to 0x4D9; the low end is not linear (0x35C gave about 300 Hz). Stock words: 0x34D0 plain (4.8 kHz with the tone), 0x34A8 with CTCSS, 0x348A for DTMF. APRS sets 0x2FA + 0x129 for its 3 kHz (aprs.md 5.2): 2.97-2.99 kHz peak, twist under 0.4 dB |
 
 ### 11.1 The AT1141 LO
 

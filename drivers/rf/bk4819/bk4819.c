@@ -441,6 +441,11 @@ void bk4819_tone_freq(bk4819_t *dev, uint16_t hz)
 	bk4819_write(dev, BK4819_REG_TONE1_FREQ, (uint16_t)((uint32_t)hz * 103244u / 10000u));
 }
 
+void bk4819_tone_deviation(bk4819_t *dev, uint16_t scale)
+{
+	bk4819_write(dev, 0x40, (uint16_t)(0x3000u | (scale & 0x0FFFu)));
+}
+
 // 4.4 DTMF: the tone start with both generators at the stock DTMF level and the stock DTMF deviation (0x40)
 void bk4819_dtmf_start(bk4819_t *dev, uint16_t low_hz, uint16_t high_hz)
 {

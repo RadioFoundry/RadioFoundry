@@ -41,6 +41,15 @@
 #ifndef GD88_TX_TONE_GAIN
 #define GD88_TX_TONE_GAIN	BK4819_TONE_GAIN_STOCK
 #endif
+// AFSK at level 50: about 3 kHz peak (aprs.md 5.2) through 0x40's deviation scale (bk4819_tone_deviation), not the
+// tone's gain (the stock word gave 4.8 kHz at any gain from 13 to 48). The deviation rises about 10 Hz per count from
+// GD88_AFSK_DEV_ZERO (SDR bench, 0x448 to 0x4D9); level 50 adds GD88_AFSK_DEV_SPAN (3.0 kHz measured; level 25 2.1 kHz).
+// Never above the stock voice word (4.8 kHz): level 100 would give 6.8 kHz
+#ifndef GD88_AFSK_DEV_SPAN
+#define GD88_AFSK_DEV_SPAN	0x129u
+#endif
+#define GD88_AFSK_DEV_ZERO	0x2FAu
+#define GD88_AFSK_DEV_MAX	0x4D0u
 // Speaker volume steps 1..RADIO_VOLUME_MAX -> the AF DAC gain nibble (register 0x48 bits 3:0), step 1 = 0 up to
 // GD88_VOL_GAIN_TOP. Step 0 is mute
 #ifndef GD88_VOL_GAIN_TOP
@@ -532,8 +541,9 @@ static bool afsk_begin(uint16_t hz, uint8_t level)
 	if (!transmitting || mode != RADIO_MODE_FM) {
 		return false;
 	}
-	uint32_t gain = (uint32_t)GD88_TX_TONE_GAIN * level / 50u;
-	bk4819_tone_start(&rf_main, hz, (uint8_t)(gain > BK4819_TONE_GAIN_MAX ? BK4819_TONE_GAIN_MAX : gain));
+	uint32_t scale = GD88_AFSK_DEV_ZERO + (uint32_t)GD88_AFSK_DEV_SPAN * level / 50u;
+	bk4819_tone_start(&rf_main, hz, GD88_TX_TONE_GAIN);
+	bk4819_tone_deviation(&rf_main, (uint16_t)(scale > GD88_AFSK_DEV_MAX ? GD88_AFSK_DEV_MAX : scale));
 	afsk_on = true;
 	return true;
 }
