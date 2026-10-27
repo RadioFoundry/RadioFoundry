@@ -69,7 +69,7 @@ def main():
     mod = __import__(tool)
     profiles = {h: p for h, p in mod.PROFILES.items() if p.get("board", args.board) == args.board}
     if hasattr(mod, "identify"):	# a tool that knows a file by more than its SHA-256 (a program flash dump)
-        # and may take another board's files too ([codec] from: the GD-88's B runs A's codec): the rank of the file's
+        # and may take another board's files too ([codec] from: a second SoC that runs the main SoC's codec): the rank of the file's
         # board among them, the preferred one 0, else None
         def known(path):
             with open(path, "rb") as f:
