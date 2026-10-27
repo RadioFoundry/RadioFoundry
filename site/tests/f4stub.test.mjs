@@ -188,9 +188,9 @@ async function backupVia(radio, sim, what) {
 	return { parts, loader, handedOver, get: (w) => parts.find((x) => x.what === w) };
 }
 
-test("backup through the loader: the security registers over the debug link, both memories through the loader, then RadioFoundry again", async () => {
-	for (const adopt of [true, false]) {
-		const { sim, radio } = await running("dm1701", { adopt });
+test("backup through the loader, every loader board: the security registers over the debug link, both memories through the loader, then RadioFoundry again", async () => {
+	for (const [id, adopt] of Object.keys(fb.f4stub.boards).flatMap((id) => [[id, true], [id, false]])) {
+		const { sim, radio } = await running(id, { adopt });
 		const b = await backupVia(radio, sim, {});
 		assert.ok(b.loader.used && b.handedOver);
 		assert.deepEqual(radio.events, ["stub (from RadioFoundry)", "reset"]);

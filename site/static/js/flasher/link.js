@@ -120,6 +120,7 @@ export class SerialStream {
 			await port.open(opts);
 		}
 		const s = new SerialStream(port);
+		s.baud = baudRate;
 		s.pumping = s.pump();
 		return s;
 	}

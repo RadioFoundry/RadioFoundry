@@ -57,7 +57,7 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
    right after the installation, before anything else changes.
 
    On a radio installed over its programming cable the cable is slow, so the installer shows how long each part
-   takes. The firmware memory is required, unless you use a stock file instead (below). **All channels and settings** is optional and off by default: the
+   takes. The program memory is required, unless you use a stock file instead (below). **All channels and settings** is optional and off by default: the
    installer never changes them, and the whole data memory can take many minutes. If you have the radio's stock
    firmware file, **Use a Stock File Instead** skips the firmware backup, before or during the read. The installer
    then reads only the codec area and takes the codec from the file in the next step. The firmware in the radio is
@@ -108,6 +108,16 @@ settings stay: they live in separate flash that installing never touches.
 writes back the whole radio, only the firmware, or only the channels and settings. It can also return the radio to its
 original firmware, from your stock firmware file. Any version of the manufacturer's file for your radio works, not only
 the one the installer needs for the codec. A restore from the update mode works even when the firmware is damaged.
+
+**Back Up** asks what the radio runs now, as the install does. **RadioFoundry** reads it over the debug link.
+**Another open firmware** reads it through that firmware, on radios where the installer supports it. A radio on its
+original firmware is not backed up here: choose Install, which backs it up right after the installation.
+
+Each radio lists every backup option and the time it takes: the program memory, the factory calibration and all
+channels and settings. **Calibration only** (or **Factory calibration**) reads just the factory calibration. On a radio
+that keeps a calibration copy in its program memory, that option is named **Program Memory & Calibration**. On a radio
+whose channels and settings are in NAND memory, **All channels and settings** reads the whole NAND, which can take
+several minutes.
 
 If the backup holds the original firmware's codeplug, open the file in the
 [Codeplug Editor](04-programming.md#the-codeplug-editor). It converts the channels, zones and contacts to the
