@@ -120,7 +120,7 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "ch.dmr_id=%u\nch.dmo=%u\n", (unsigned)c->dmr_id, c->dmo);
 }
 
-// mtu_lines and ppp_lines are not inlined: hotspot_section is, into debuglink_view_section, which is on the host
+// mtu_lines and ppp_lines are not inlined: net_link_section is, into debuglink_view_section, which is on the host
 // task's deepest path (docs/dev/stack-check.md), and their locals would add to it
 #if CONFIG_DMR_IP_GATEWAY
 // MTUs (usb-network.md 3.2): the link's (DHCP option 26), the air's (one transmission; the ICMP next-hop MTU)
@@ -149,6 +149,20 @@ __attribute__((noinline)) static void ppp_lines(dl_text_t *t)
 	dl_text(t, "ppp.mru=%u\nppp.peer_mru=%u\n", ps.mru, ps.peer_mru);
 }
 #endif
+
+// Its own section: with them the hotspot section outgrew a reply on radios with PPP (truncated=1 before hs.starts)
+static void net_link_section(dl_text_t *t)
+{
+#if CONFIG_DMR_IP_GATEWAY
+	mtu_lines(t);
+#endif
+#if CONFIG_NET_PPP
+	ppp_lines(t);
+#endif
+#if !CONFIG_DMR_IP_GATEWAY && !CONFIG_NET_PPP
+	dl_text(t, "net_link.built=0\n");
+#endif
+}
 
 static void hotspot_section(dl_text_t *t)
 {
@@ -194,10 +208,6 @@ static void hotspot_section(dl_text_t *t)
 	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\nnet.air_failed=%u\nnet.air_full=%u\n",
 		(unsigned)as.sent, (unsigned)as.dropped, (unsigned)(as.dropped + as.too_long),
 		(unsigned)as.failed, (unsigned)as.refused_full);
-	mtu_lines(t);
-#endif
-#if CONFIG_NET_PPP
-	ppp_lines(t);
 #endif
 #if CONFIG_HOTSPOT
 	hotspot_view_t h;
@@ -386,7 +396,8 @@ static void storage_section(dl_text_t *t)
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc" };
+						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
+						  "net_link" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -479,6 +490,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_NET_SVC:
 		debuglink_view_net_svc(t);
+		break;
+	case DL_VIEW_NET_LINK:
+		net_link_section(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

@@ -32,7 +32,7 @@ import warnings
 
 import pytest
 
-from rfoundry_hil import skip, host_network, host_network_kind, INDIVIDUAL_NET
+from rfoundry_hil import DebugLinkError, skip, host_network, host_network_kind, INDIVIDUAL_NET
 import dmr_packet
 # Shared with test_dmr_ip.py: its setup, views and fixtures (ip_settings and ars_off put the settings back)
 from test_dmr_ip import BENCH_ID, _ip_view, _ours, _setup, ars_off, ip_settings  # noqa: F401
@@ -75,10 +75,20 @@ def _ints(view):
     return out
 
 
+def _net_link(link):
+    """The net_link section (the MTUs and their drops), empty on firmware from before it (view version 4)."""
+    try:
+        return link.view(["net_link"])
+    except DebugLinkError:
+        return {}
+
+
 def _views(link):
-    """The counters these tests read: the IP service (dmr_ip), the air queue (air), the gateway (hotspot), the data
-    service's receiver (dmr_data_stats: data.rx_packets, data.rx_crc_errors; the dmr_data section has none)."""
-    return _ints(link.view(["dmr_ip", "air", "hotspot", "dmr_data_stats"]))
+    """The counters these tests read: the IP service (dmr_ip), the air queue (air), the gateway (hotspot, net_link),
+    the data service's receiver (dmr_data_stats: data.rx_packets, data.rx_crc_errors; the dmr_data section has none)."""
+    v = link.view(["dmr_ip", "air", "hotspot", "dmr_data_stats"])
+    v.update(_net_link(link))
+    return _ints(v)
 
 
 def _delta(before, after, keys):
@@ -246,6 +256,7 @@ def _receive(s, count, timeout):
 
 @pytest.mark.feature("dmr_ip_gateway")
 @pytest.mark.usb_switch
+@pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_udp_burst_air_to_pc(radio, sdr_bench, pytestconfig):
@@ -275,11 +286,11 @@ def test_udp_burst_air_to_pc(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.feature("dmr_ip_gateway")
 def test_air_mtu_view(radio):
-    """Radio only: the advertised MTUs (hotspot section): net.mtu the link's (DHCP option 26) and net.air_mtu the
+    """Radio only: the advertised MTUs (net_link section): net.mtu the link's (DHCP option 26) and net.air_mtu the
     air's, as this file derives it from the firmware's limits, not below the link's. Reading them needs no USB switch."""
     if "DMR_IP_GATEWAY" not in radio.features():
         skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
-    v = _ints(radio.view(["hotspot"]))
+    v = _ints(_net_link(radio.link))
     _need_mtu_keys(v)
     if v["net.air_mtu"] != AIR_MTU:
         warnings.warn(f"net.air_mtu is {v['net.air_mtu']}, not {AIR_MTU}: a build with a narrower IPGW_AIR_MTU")
@@ -332,6 +343,7 @@ def test_udp_max_pc_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars_off,
 
 @pytest.mark.feature("dmr_ip_gateway")
 @pytest.mark.usb_switch
+@pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 @pytest.mark.parametrize("payload_len", [UP_MAX_FULL, RX_MAX_FULL], ids=["link_mtu", "receive_limit"])
@@ -364,6 +376,7 @@ def test_udp_max_air_to_pc(radio, sdr_bench, pytestconfig, payload_len):
 
 @pytest.mark.feature("dmr_ip_gateway")
 @pytest.mark.usb_switch
+@pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_udp_over_receive_limit_air_to_pc(radio, sdr_bench, pytestconfig):
@@ -400,6 +413,7 @@ def test_udp_over_max_pc_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars
     (net.air_too_big) and answered with an ICMP fragmentation needed (net.frag_needed), nothing sent or failed in the
     IP service; the host may refuse it itself instead (EMSGSIZE: it knows the path MTU already), which is as good.
     Then a datagram of the air MTU still goes: no crash, the link still works."""
+    _need_narrow_air(_ints(_net_link(radio.link)))      # before the USB switch: on most builds it skips
     freq, cc, own, _ = _setup(radio, pytestconfig)
     radio.link.ip_settings(compress, "rules", 0, [])
     s = _udp_socket(df=True)
@@ -506,6 +520,7 @@ def test_frag_needed_received(radio, pytestconfig, ip_settings):
     destination unreachable, fragmentation needed (RFC 1191) from its own address with the air MTU as the next-hop MTU,
     quoting our IPv4 header. Nothing goes on air (the radio refuses it before the air queue), so no RF and no bench:
     a raw ICMP socket on this host (root) sees the reply."""
+    _need_narrow_air(_ints(_net_link(radio.link)))      # before the USB switch: on most builds it skips
     _, _, own, _ = _setup(radio, pytestconfig, tx=False)
     radio.link.ip_settings("off", "rules", 0, [])
     probe = _udp_socket(df=True)

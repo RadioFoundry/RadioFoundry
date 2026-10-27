@@ -61,7 +61,7 @@ timer 3 s, Max-Configure 10, Max-Terminate 2, Max-Failure 5 (then Nak'd options 
   A peer that Naks our MRU with a value from 68 (`PPP_MIN_MRU`, the smallest IPv4 MTU, RFC 791) up to ours gets it
   asked for in the next request (RFC 1661 5.3); a bigger or smaller one is ignored and ours asked for again, until
   Max-Failure. A Reject drops the option: the default 1500 then applies (RFC 1661 6.1), and our receive buffer still
-  takes only 584, so longer frames are dropped. View keys `ppp.mru` (what we receive: the MRU asked for, 1500 when
+  takes only 584, so longer frames are dropped. View keys (section `net_link`) `ppp.mru` (what we receive: the MRU asked for, 1500 when
   rejected) and `ppp.peer_mru` (the peer's, 1500 when it gave none).
 - Echo-Request answered with our magic number while open. Echo-Reply and Discard-Request are taken quietly.
 - Terminate-Request: Terminate-Ack, IP down at once, the link ends one restart time later (the Stopping state, so
@@ -106,8 +106,8 @@ modes, exactly as on the adapter, so MMDVMHost over UDP gets hotspot mode while 
 personality is in use (`hostlink_network_mode()`): the gateway, the radio's services, and the serial protocols over
 UDP 3334 (`usb-network.md` 1), so `rfoundry_debug.py --port udp:<radio IP>`, MMDVMHost over UDP and the HTTP / SNMP / TFTP
 / mDNS services work as over the adapter. UDP serial bytes never reach PPP, whatever they start with. The view
-section `hotspot` shows `usb.network=1`, `usb.net_up` (IPCP open) and the `ppp.*` keys; `hostlink` is the mode of
-the protocols over UDP.
+section `hotspot` shows `usb.network=1` and `usb.net_up` (IPCP open), section `net_link` the `ppp.*` keys; `hostlink`
+is the mode of the protocols over UDP.
 
 **Leaving** gives the port back to the serial protocols in idle mode; a hotspot session over UDP ends with the link,
 as when the USB personality switches.

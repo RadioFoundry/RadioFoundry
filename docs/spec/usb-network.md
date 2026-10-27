@@ -101,8 +101,8 @@ mode can replace the link pair with a fixed one (5.3).
 - Debug link view, section `hotspot`: `usb.network usb.net_up usb.boot_network net.passthrough net.passthrough_active
   net.fixed_link net.link_ip net.link_in_force net.host_ip net.radio_ip net.frames_in net.to_air net.to_air_refused
   net.packets_air net.packets_up net.packets_dropped net.air_sent net.air_busy net.air_dropped net.air_failed
-  net.air_full`, the MTUs `net.mtu net.air_mtu` and their drops `net.air_too_big net.frag_needed net.up_too_big` (3.2), with PPP
-  built `ppp.mru ppp.peer_mru` ([ppp.md](ppp.md) 2); the queue's depth, chaining and the guard are in the `air` section ([debuglink.md](debuglink.md)); the
+  net.air_full`; section `net_link`: the MTUs `net.mtu net.air_mtu` and their drops `net.air_too_big net.frag_needed
+  net.up_too_big` (3.2), with PPP built `ppp.mru ppp.peer_mru` ([ppp.md](ppp.md) 2); the queue's depth, chaining and the guard are in the `air` section ([debuglink.md](debuglink.md)); the
   compression and confirmed delivery counters are in the `dmr_ip` section (`dmr-data.md` 12.5), the radio's own
   services' in the `net` and `net_svc` sections.
 - Test hook: the debug link's DMR_DATA IP_SEND hands a UDP datagram to `ipGatewayIPToAir`, the same path as a datagram
