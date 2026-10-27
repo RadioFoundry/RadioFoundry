@@ -39,7 +39,15 @@ const find = (buf, pat, from = 0) => {
 };
 
 export const sigBytes = (c) => concat(le32(c.codec_sig[0]), le32(c.codec_sig[1]));
-export const profilesFor = (c, boardId) => c.profiles.filter((p) => p.board === boardId);
+// The boards whose stock files and program memory give this board its codec, preferred first (codec_boards: a second
+// SoC that runs the first SoC's codec, packed as on the first, then its own; hrc7000_codec.py BOARDS), and their profiles
+export const codecBoards = (c, boardId) => c.boards[boardId]?.codec_boards || [boardId];
+// the other boards of codecBoards: the ones this board takes its codec from
+export const codecDonors = (c, boardId) => codecBoards(c, boardId).filter((b) => b !== boardId);
+export const profilesFor = (c, boardId) => {
+	const ids = codecBoards(c, boardId);
+	return c.profiles.filter((p) => ids.includes(p.board));
+};
 
 // The size of the board's whole program flash (the DB25-D's is 2 MB), and the first progmem_size bytes of a read of it,
 // which is where the codec and the profiles' addresses lie
@@ -230,11 +238,17 @@ export async function analyze(progmem, c, boardId) {
 	return { firmware, slot, slotBytes: slot ? slotRaw.slice(0, slot.length) : null, codec, otherCodec };
 }
 
-// The codec decision for an install. have: {slotInFlash, movedSlot, savedSlot, flashCodec, fileCodec} (any may be null):
-// slots (Uint8Array) or located codecs; movedSlot: a version 1 slot rebuilt by c7000v1.js (temporary) (fileCodec either: a merged image's slot, or a codec out of a stock file). Returns {mode: "keep" | "write" | "none", slot, why, source}.
-export async function decide(c, boardId, { slotInFlash = null, movedSlot = null, savedSlot = null, flashCodec = null, fileCodec = null, allowNone = false } = {}) {
+// The codec decision for an install. have: {slotInFlash, movedSlot, donorSlot, savedSlot, flashCodec, fileCodec} (any may
+// be null): slots (Uint8Array) or located codecs; movedSlot: a version 1 slot rebuilt by c7000v1.js (temporary);
+// donorSlot: the slot this browser kept for a board this one takes its codec from (codecDonors: a second SoC gets the main
+// SoC's, byte for byte), preferred to the board's own stock codec, taken only when its codec is a known build; fileCodec either: a merged image's slot, or a codec out of a
+// stock file. Returns {mode: "keep" | "write" | "none", slot, why, source}.
+export async function decide(c, boardId, { slotInFlash = null, movedSlot = null, donorSlot = null, savedSlot = null, flashCodec = null, fileCodec = null, allowNone = false } = {}) {
 	if (slotInFlash) return { mode: "keep", slot: null, source: "flash", why: "keep" };
 	if (movedSlot) return { mode: "write", slot: movedSlot, source: "moved" };
+	// only a codec a profile knows (by its code's SHA-256): never a slot practice mode left under that board's name
+	const donor = donorSlot && codecDonors(c, boardId).length && (await parseSlot(c, boardId, donorSlot));
+	if (donor?.name) return { mode: "write", slot: donorSlot, source: "first", name: donor.name, tag: donor.tag };
 	if (flashCodec) return { mode: "write", slot: slotBytes(c, boardId, flashCodec), source: "radio", name: flashCodec.profile.name, tag: flashCodec.profile.tag };
 	if (savedSlot && (await parseSlot(c, boardId, savedSlot))) return { mode: "write", slot: savedSlot, source: "browser" };
 	if (fileCodec instanceof Uint8Array && (await parseSlot(c, boardId, fileCodec))) return { mode: "write", slot: fileCodec, source: "image" };

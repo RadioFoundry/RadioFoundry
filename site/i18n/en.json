@@ -913,6 +913,8 @@
  "flash.c7.codec.from_browser": "The codec this browser saved from this radio is transferred.",
  "flash.c7.codec.from_file": "The codec is taken from your file {name}.",
  "flash.c7.codec.from_moved": "The radio's codec is kept and rewritten for the new memory layout.",
+ "flash.c7.codec.from_first": "The codec this browser saved when it installed the radio's main receiver is transferred unchanged: both receivers run the same codec.",
+ "flash.c7.codec.action_first": "Both receivers run the codec of the radio's main receiver, and this browser has none saved from its installation. Select the stock firmware file for the main receiver (version {codec_version}), or a program memory backup of the main receiver. The second receiver's own stock file works too.",
  "flash.c7.codec.none": "No codec. FM works; DMR voice is not available.",
  "flash.c7.codec.missing": "No codec found",
  "flash.c7.codec.from_stock_next": "from your stock firmware file (select it below)",

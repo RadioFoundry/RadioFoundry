@@ -318,6 +318,9 @@ def c7000_flash():
 			       # the radio has the SPI data flash the stub reads, and the board profile the universal stub gets
 			       # (CONFIG). A stock console, the update mode and the read rate are in radios.json flash
 			       "progmem_size": lay.get("progmem_size", dc.PROGMEM_SIZE), "data_flash": lay.get("data_flash", True),
+			       # the boards whose profiles give this board its codec, preferred first (hrc7000_codec.py
+			       # codec_boards: a second SoC that runs the first SoC's codec, then its own)
+			       "codec_boards": list(lay.get("codec_boards", (bid,))),
 			       # (CONFIG), with its LED pins, UART and bridge where the board has them (a second SoC)
 			       "stub_board": {k: (list(v) if isinstance(v, tuple) else v) for k, v in st.C7_BOARDS[bid].items()
 					      if k in ("id", "latch", "key", "nand", "leds", "uart", "bridge")} if bid in st.C7_BOARDS

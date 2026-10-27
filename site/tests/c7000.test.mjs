@@ -502,7 +502,7 @@ test("a codec from a stock file or a program memory backup", async () => {
 	const fromImage = await c7.decide(sim.c, "dm1801pro", { fileCodec: slot });
 	assert.equal(fromImage.source, "image");
 	const text = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url)));
-	for (const src of ["radio", "browser", "file", "image"]) assert.ok(text[`flash.c7.codec.from_${src}`], src);
+	for (const src of ["radio", "browser", "file", "image", "first", "moved"]) assert.ok(text[`flash.c7.codec.from_${src}`], src);
 	assert.ok(!text["flash.c7.codec.from_image"].includes("{name}"));
 	assert.equal(await c7.decide(sim.c, "dm1801pro", {}), null);
 	assert.equal((await c7.decide(sim.c, "dm1801pro", { allowNone: true })).mode, "none");
@@ -678,4 +678,80 @@ test("trail of a cable radio run: the boot ROM load (an echoing cable), the choi
 	assert.ok(tr.some((l) => /cable radio check \{"progmem":true,"cal":true,"q128":false,"skipFirmware":false,"firstInstall":true,"how":"rom"\}/.test(l)));
 	assert.ok(tr.some((l) => /cable radio codec decision \{"mode":"[a-z]+"/.test(l)));
 	assert.ok(tr.some((l) => /cable radio codec decision \{"mode":null,"firmware":"stock","notRead":true,"file":false\}/.test(l)));
+});
+
+// The GD-88: SoC B (gd88b) runs SoC A's codec, packed as on A (board.toml [codec] from). The synthetic A file of
+// fixtures.py gd88(): its profile with the synthetic file's hashes, so the page knows it as it knows the real one
+const gx = json("gd88.json");
+function gd88Data() {
+	const fb = json("flash-boards.json");
+	const c = fb.c7000;
+	const a = c.profiles.find((p) => p.board === "gd88" && p.tag === gx.tag);
+	Object.assign(a, { code_sha256: gx.code_sha256, tables_sha256: gx.tables_sha256, stock_file: { ...a.stock_file, sha256: gx.sha256 } });
+	return { fb, c, a };
+}
+
+test("GD-88: B takes A's codec first, and B's window holds every A build's tables", () => {
+	assert.deepEqual(C.boards.gd88b.codec_boards, ["gd88", "gd88b"]);
+	assert.deepEqual(C.boards.gd88.codec_boards, ["gd88"]);
+	assert.deepEqual(c7.codecDonors(C, "gd88b"), ["gd88"]);
+	assert.deepEqual(C.boards.gd88b.tables, [0x18000B40, 0x18004324], "the union of A's and B's builds");
+	assert.deepEqual(C.boards.gd88b.slot, C.boards.gd88.slot);
+	assert.equal(C.boards.gd88b.run[0], C.boards.gd88.run[0]);
+	const forB = c7.profilesFor(C, "gd88b");
+	assert.ok(forB.some((p) => p.board === "gd88") && forB.some((p) => p.board === "gd88b"), "A's files and B's own");
+	assert.ok(!c7.profilesFor(C, "gd88").some((p) => p.board === "gd88b"), "B's files never for A");
+	for (const p of C.profiles.filter((p) => p.board === "gd88")) {
+		const t = C.boards.gd88b.tables;
+		assert.ok(t[0] <= p.tables_ram && p.tables_ram + p.tables_len <= t[1], `${p.name}: tables inside B's window`);
+	}
+});
+
+test("GD-88: an A file gives B the slot it gives A, byte for byte, as hrc7000_codec.py does", async () => {
+	const { c } = gd88Data();
+	const file = bin("gd88a_stock.bin");
+	const forA = await c7.codecFromFile(file, c, "gd88");
+	const forB = await c7.codecFromFile(file, c, "gd88b");
+	assert.equal(forB.profile.board, "gd88", "A's profile");
+	const slotA = c7.slotBytes(c, "gd88", forA), slotB = c7.slotBytes(c, "gd88b", forB);
+	assert.ok(equal(slotA, bin("gd88_slot.bin")), "A's slot as hrc7000_codec.py makes it");
+	assert.ok(equal(slotB, bin("gd88b_slot.bin")) && equal(slotB, slotA), "B's slot: A's bytes");
+	const parsed = await c7.parseSlot(c, "gd88b", slotA);
+	assert.equal(parsed?.name, forA.profile.name, "A's slot is a valid slot for B, its codec known");
+	assert.equal(await c7.parseSlot({ ...c, boards: { ...c.boards, gd88b: { ...c.boards.gd88b, tables: [0x18000B40, 0x18003B10] } } }, "gd88b", slotA),
+		null, "B's old window (its own builds only) refuses A's tables");
+});
+
+test("GD-88: B is installed with the slot this browser kept from A's install, before B's own stock codec", async () => {
+	const { c } = gd88Data();
+	const slotA = bin("gd88_slot.bin");
+	const own = { profile: c.profiles.find((p) => p.board === "gd88b") };
+	const d = await c7.decide(c, "gd88b", { donorSlot: slotA, flashCodec: own });
+	assert.equal(d.mode, "write");
+	assert.equal(d.source, "first");
+	assert.equal(d.tag, gx.tag);
+	assert.ok(equal(d.slot, slotA), "written as A has it");
+	assert.equal((await c7.decide(c, "gd88b", { slotInFlash: slotA, donorSlot: slotA })).mode, "keep", "a slot B already has stays");
+	// a slot whose codec no profile knows (one practice mode left under A's name) is never taken
+	const unknown = { ...c, profiles: c.profiles.filter((p) => p.board !== "gd88") };
+	assert.equal(await c7.decide(unknown, "gd88b", { donorSlot: slotA }), null);
+	assert.equal(await c7.decide(c, "gd88", { donorSlot: slotA }), null, "A takes no other board's slot");
+});
+
+test("GD-88: the A file picked for B is B's codec source, never B's original firmware", async () => {
+	const { fb, c } = gd88Data();
+	const file = bin("gd88a_stock.bin");
+	const forB = await openVendorFile("B49E.D64.EOPSAB.021.bin", file, fb, "gd88b");
+	assert.equal(forB.best?.match.board, "gd88b");
+	assert.equal(forB.best.match.kind, "codec");
+	assert.equal(forB.best.match.codecFrom, "gd88");
+	assert.ok(equal(c7.slotBytes(c, "gd88b", forB.best.match.codec), bin("gd88b_slot.bin")));
+	const forA = await openVendorFile("B49E.D64.EOPSAB.021.bin", file, fb, "gd88");
+	assert.equal(forA.best?.match.board, "gd88");
+	assert.equal(forA.best.match.codecFrom, undefined);
+	assert.throws(() => vendorBundle({ id: "gd88b", name: "GD-88, receiver B", flash: { board: "gd88b" } }, forB.best, c), (e) => e.code === "unmapped",
+		"A's firmware is never put back on B");
+	assert.ok(hasC7Backup(vendorBundle({ id: "gd88", name: "GD-88", flash: { board: "gd88" } }, forA.best, c)), "but on A it is");
+	const listed = explain.supportedFiles(fb, "gd88b").files;
+	assert.ok(listed[0].startsWith("GD-88 A"), "B's list names A's files first");
 });
