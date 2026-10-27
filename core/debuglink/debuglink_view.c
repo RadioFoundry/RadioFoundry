@@ -71,6 +71,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "view=%u\n", DL_VIEW_VERSION);
 	dl_text(t, "state=%s\n", state_key((uint8_t)v->state));
 	dl_text(t, "tx_deny=%s\n", deny_key(v->tx_deny));
+	dl_text(t, "can_tx=%u\n", board_can_tx() ? 1u : 0u);
 	dl_text(t, "mode=%s\n", v->ch.mode == RADIO_MODE_DMR ? "dmr" : "fm");
 	dl_text(t, "am=%u\nbcast=%u\nbcast_fault=%u\nbcast_khz=%u\n", v->am, v->bcast, v->bcast_fault, (unsigned)v->bcast_khz);
 	dl_text(t, "vfo=%u\nvfo_index=%u\n", v->vfo, v->vfo_index);

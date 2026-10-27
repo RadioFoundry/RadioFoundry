@@ -8,11 +8,13 @@
 // The receive band: UHF = PTB8 high, PTB7 low; VHF the reverse
 #define PIN_RX_BAND_UHF		0x28	// PTB8
 #define PIN_RX_BAND_VHF		0x27	// PTB7
-// The RX front end of each band, high = on
+// The RX front end of each band, high = on. Shared: A's receiver needs its band's too (paths_gd88b.c)
 #define PIN_RX_FRONT_UHF	0x2F	// PTB15
 #define PIN_RX_FRONT_VHF	0x2E	// PTB14
-// The RX path pairs, one per receive mode, high = on; both off while transmitting.
-// TODO(gd88): unknown, needs a radio: which mode is which. Mode 0 is taken as analog FM, mode 1 as DMR
+// The RX path pins, high = on, all off while transmitting. _A are A's receiver, _B are B's: settled on the radio for
+// PTB1, which A needs in FM and DMR, while PTB13 and PTB0 make no difference to A.
+// TODO(gd88): unknown, needs a radio: on B, which of PTB13 / PTB5 is FM and which DMR (PTB13 is taken as FM); what
+// PTB0 does for A
 #define PIN_RX_M0_A		0x21	// PTB1
 #define PIN_RX_M0_B		0x2D	// PTB13
 #define PIN_RX_M1_A		0x20	// PTB0

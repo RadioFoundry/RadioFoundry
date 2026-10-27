@@ -435,10 +435,10 @@ section 3 step that settles it.
 | 19 | `boards/gd88/bcast_gd88.c:17` | `IO_DIPLEX0` bits 5 and 6 as the pads of PTA7/PTA8 (inferred) | Does the RDA5807 answer at 0x11 | 12 |
 | 20 | `boards/gd88b/board.c:54` | Whether B's three DAC pins are wired as A's | Receive checks on B; compare RSSI with A; probe DAC C | 9 |
 | 21 | `boards/gd88b/board.c:68` | B's NAND chip select (for the NAND copy of its calibration page) | Only if B's program-flash copy of the page is bad; otherwise leave | 7 |
-| 22 | `boards/gd88b/pins.h:15` | B's RX path pairs: mode 0 = FM and mode 1 = DMR is taken | FM and DMR on B: swap if wrong | 9, 10 |
-| 23 | `boards/gd88b/pins.h:21` | B's audio source pair to A: mode 0 = the main chip's AF (FM), mode 1 = the modem's line out | B audible in FM and in DMR through A | 9, 10, 11 |
-| 24 | `boards/gd88b/pins.h:36` | PTB11 and PTB12's roles on B (low from start-up) | Note any effect when high | 9 |
-| 25 | `boards/gd88b/pins.h:45` | The status LEDs' colors (LED 1 lights while A transmits, LED 2 while it receives) | Look | 8 |
+| 22 | `boards/gd88b/pins.h:16` | B's RX path pins: PTB13 = FM and PTB5 = DMR is taken; PTB0's role. A's is settled (2026-10-26): PTB1 and its band's front end, which B switches for A | FM and DMR on B: swap if wrong | 9, 10 |
+| 23 | `boards/gd88b/pins.h:23` | B's audio source pair to A: mode 0 = the main chip's AF (FM), mode 1 = the modem's line out | B audible in FM and in DMR through A | 9, 10, 11 |
+| 24 | `boards/gd88b/pins.h:38` | PTB11 and PTB12's roles on B (low from start-up) | Note any effect when high | 9 |
+| 25 | `boards/gd88b/pins.h:47` | The status LEDs' colors (LED 1 lights while A transmits, LED 2 while it receives) | Look | 8 |
 
 25 rows; the 22 not settled have a mark each. Recount with the grep after any edit.
 
