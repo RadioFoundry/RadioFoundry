@@ -59,6 +59,14 @@
 #define GD88_VOL_GAIN_TOP	15u
 #endif
 #define GD88_VOL_GAIN_DEFAULT	3u
+// What the modem plays (beeps, DMR voice) leaves its line out, not the main chip's AF, so the knob sets the line out's
+// gain too, as the original firmware does: 3 dB a step, 0 dB at the middle step and GD88_PCM_VOL_TOP_DB at the top.
+// At 0 dB a beep was too quiet to hear over the microphone at a loud knob; +16 dB was as loud as the receiver's noise
+// (bench 2026-10-27)
+#define GD88_PCM_VOL_DEF_STEP	(RADIO_VOLUME_MAX / 2u)
+#ifndef GD88_PCM_VOL_TOP_DB
+#define GD88_PCM_VOL_TOP_DB	24
+#endif
 #define TX_RX_OFF_US		50u		// RX paths off, then this long before the transmitter is tuned
 #define TX_SETTLE_MS		3u		// the chip's VCO calibration, before the PA is selected
 #define TX_SUPPLY_US		200u		// B: PA select, then this long before the TX supply
@@ -85,6 +93,18 @@ static bool transmitting;
 static bool audio_open;		// what audio() was last asked, restored after a transmission
 static bool vol_muted;		// volume step 0: the chip output stays off whatever audio() asks
 static uint8_t vol_gain = GD88_VOL_GAIN_DEFAULT;
+static uint8_t vol_pct = 50;
+
+static unsigned vol_step(uint8_t percent)
+{
+	unsigned step = (percent * RADIO_VOLUME_MAX + 50u) / 100u;
+	return step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step;
+}
+
+static uint8_t pcm_gain(unsigned step)
+{
+	return hrc7000_dac_code(hrc7000_volume_db(step, GD88_PCM_VOL_DEF_STEP, RADIO_VOLUME_MAX, GD88_PCM_VOL_TOP_DB));
+}
 static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_gd88.c)
 #if GD88_TX || GD88_DMR_TX
 static uint16_t tx_off_us;
@@ -237,6 +257,7 @@ static void init(void)
 
 	// The modem block powered as the DMR glue does, so the reference trim reaches the TCXO in FM builds too
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
+	modem.dac_gain = pcm_gain(vol_step(vol_pct));	// the power-on init writes it
 	hrc7000_power_on_init(&modem, gd88_cal_tx_center(), GD88_MIC_GAIN_DB);
 	ref_trim(BIAS_DEFAULT_HZ);
 
@@ -769,8 +790,6 @@ static void volume_apply(void)
 	bk4819_set_af(&rf_main, audio_open && !vol_muted ? BK4819_AF_FM : BK4819_AF_MUTE);
 }
 
-static uint8_t vol_pct = 50;
-
 uint8_t gd88_radio_volume(void)
 {
 	return vol_pct;
@@ -779,12 +798,12 @@ uint8_t gd88_radio_volume(void)
 static void volume(uint8_t percent)
 {
 	vol_pct = percent;
-	unsigned step = (percent * RADIO_VOLUME_MAX + 50u) / 100u;
-	if (step > RADIO_VOLUME_MAX) {
-		step = RADIO_VOLUME_MAX;
-	}
+	unsigned step = vol_step(percent);
 	vol_muted = step == 0;
 	vol_gain = step == 0 ? 0 : (uint8_t)(((step - 1u) * GD88_VOL_GAIN_TOP + (RADIO_VOLUME_MAX - 1u) / 2u) / (RADIO_VOLUME_MAX - 1u));
+	if (modem.regs != NULL) {
+		hrc7000_set_dac_gain(&modem, pcm_gain(step));	// the init sets it from vol_pct before then
+	}
 	volume_apply();
 }
 

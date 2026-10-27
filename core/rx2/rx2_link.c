@@ -235,6 +235,12 @@ static void main_send_path(rx2_main_t *m)
 	main_send(m, RX2_PATH, p, 5);
 }
 
+static void main_send_speaker(rx2_main_t *m)
+{
+	uint8_t on = m->speaker ? 1u : 0u;
+	main_send(m, RX2_SPEAKER, &on, 1);
+}
+
 void rx2_main_init(rx2_main_t *m, rx2_send_fn send)
 {
 	memset(m, 0, sizeof(*m));
@@ -300,6 +306,9 @@ void rx2_main_rx(rx2_main_t *m, uint8_t b, uint32_t now_ms)
 				}
 				if (m->path_on) {
 					main_send_path(m);
+				}
+				if (m->speaker) {
+					main_send_speaker(m);
 				}
 			}
 		}
@@ -423,6 +432,17 @@ void rx2_main_path(rx2_main_t *m, bool on, uint32_t hz)
 	m->path_hz = hz;
 	if (m->up) {
 		main_send_path(m);
+	}
+}
+
+void rx2_main_speaker(rx2_main_t *m, bool on)
+{
+	if (on == m->speaker) {
+		return;
+	}
+	m->speaker = on;
+	if (m->up) {
+		main_send_speaker(m);
 	}
 }
 
@@ -644,6 +664,9 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 		if (r->ops->dmr != NULL) {
 			r->ops->dmr(NULL, 0);
 		}
+		if (r->ops->speaker != NULL) {
+			r->ops->speaker(false);
+		}
 		recv_hello(r);
 		break;
 	case RX2_TUNE: {
@@ -678,6 +701,11 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 	case RX2_PATH:
 		if (p->len >= 5 && r->ops->path != NULL) {
 			r->ops->path(p->buf[0] != 0, get32(&p->buf[1]));
+		}
+		break;
+	case RX2_SPEAKER:
+		if (p->len >= 1 && r->ops->speaker != NULL) {
+			r->ops->speaker(p->buf[0] != 0);
 		}
 		break;
 	case RX2_TX: {

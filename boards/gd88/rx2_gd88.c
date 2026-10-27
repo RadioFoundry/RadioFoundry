@@ -50,6 +50,8 @@
 #define FORWARD_WAIT_MS		1500u		// the link times the request out at RX2_DL_TIMEOUT_MS; this is a backstop
 #define FORWARD_POLL_MS		2u
 #define PA_ARM_WAIT_MS		150u		// RX2_TX and its ACK: 2 ms on the wire, the rest B's task
+#define SPK_HOLD_MS		1000u		// the speaker switch stays closed this long after the last sound: key beeps
+						// and squelch tails in a row don't each wait for it
 
 static rx2_main_t link;
 static SemaphoreHandle_t lock;
@@ -85,7 +87,8 @@ static void task_fn(void *arg)
 {
 	(void)arg;
 	uint8_t buf[32];
-	uint32_t polled = 0;
+	uint32_t polled = 0, spk_ms = 0;
+	bool spk_hold = false;
 	for (;;) {
 		hrc_link_uart_wait(POLL_MS);
 		size_t n;
@@ -101,6 +104,17 @@ static void task_fn(void *arg)
 			give();
 		}
 		uint32_t now = hal_millis();
+		if (gd88_path_speaker_wanted()) {
+			spk_ms = now;
+			spk_hold = true;
+		} else if (spk_hold && now - spk_ms >= SPK_HOLD_MS) {
+			spk_hold = false;
+		}
+		if (spk_hold != link.speaker) {
+			take();
+			rx2_main_speaker(&link, spk_hold);
+			give();
+		}
 		if (now - polled >= POLL_MS) {
 			polled = now;
 			uint32_t hz;

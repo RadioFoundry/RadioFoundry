@@ -19,8 +19,8 @@
 #define PIN_CHAIN_DATA		0x21	// PTB1
 #define PIN_TX_RX		0x22	// PTB2: high = transmit (A's TX / RX switch line), low at start-up
 #define PIN_CHAIN_LATCH		0x23	// PTB3, idle high
-#define PIN_ENC_A		0x25	// PTB5
-#define PIN_ENC_B		0x28	// PTB8
+#define PIN_ENC_A		0x28	// PTB8: A and B the way round that makes clockwise up
+#define PIN_ENC_B		0x25	// PTB5
 #define PIN_KEY_SENSE0		0x29	// PTB9-PTB11, low = closed
 #define PIN_POWER_KEY		0x2C	// PTB12, high = pressed
 #define PIN_POWER_LATCH		0x2D	// PTB13, high = stay on

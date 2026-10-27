@@ -56,13 +56,11 @@ CONFIG_AM_RX ?= n
 # Off by default (docs/build-config.md, "Unsupported, not written, unconfirmed"), one switch a line with the reason.
 # The hardware has each of these; the code for it on this radio isn't written yet. USB and USB_NETWORK are the
 # platform's (no USB data port)
-CONFIG_VOX ?= n
 BOARD_NOT_WRITTEN += NET_USRP	# the host link stalls under USRP's PCM; another HR_C7000 board carries it at the same 115200 baud
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the per-burst TX path has no continuous base-station outbound yet (above)
 BOARD_NOT_WRITTEN += APRS_RX	# FM receive audio isn't taken from the modem's AF ADC as PCM yet
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += AM_RX	# the air band isn't wired yet (board.radio->rx_am)
-BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet (the mic level is on ADC channel 0)
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe's audio tap (board.audio_tap) isn't written for this radio
 # DMR needs the codec merged for voice, so FM stays the one mode every configuration needs
 BOARD_REQUIRED := FM

@@ -71,6 +71,13 @@ static void b_do_path(bool on, uint32_t hz)
 	b_path_hz = hz;
 	b_paths++;
 }
+static bool b_speaker;
+static uint32_t b_speakers;
+static void b_do_speaker(bool on)
+{
+	b_speaker = on;
+	b_speakers++;
+}
 // The PA for the main SoC's transmitter: refused above 4095 (a DAC's range)
 static uint32_t b_tx_hz = 1;
 static uint16_t b_tx_pa, b_tx_on, b_tx_off;
@@ -112,9 +119,9 @@ static size_t b_do_dl(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *ou
 }
 
 static const rx2_ops_t b_ops = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset, b_do_led,
-				 b_do_dl, b_do_path, b_do_tx, NULL };
+				 b_do_dl, b_do_path, b_do_tx, NULL, b_do_speaker };
 static const rx2_ops_t b_ops_no_dl = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset, b_do_led,
-				       NULL, NULL, NULL, NULL };
+				       NULL, NULL, NULL, NULL, NULL };
 
 static void pump(uint32_t now_ms)
 {
@@ -326,6 +333,7 @@ static void test_link(void)
 	rx2_main_audio(&m, true, 70);
 	rx2_main_led(&m, 2);	// while it is down: kept, sent when it is back
 	rx2_main_path(&m, true, 461462500u);
+	rx2_main_speaker(&m, true);
 	rx2_recv_init(&r, send_recv, &b_ops, RX2_HELLO_DMR, "rfoundry-rx2 1.3");
 	b_audio = false;
 	now = run(now, RX2_HELLO_EVERY_MS + 200u, true);
@@ -344,6 +352,19 @@ static void test_link(void)
 	now = run(now, 40, true);
 	CHECK(b_path_on && b_path_hz == 162475000u && b_paths == paths + 1);
 
+	// The speaker switch: sent again when the receiver came back, then only on a change
+	CHECK(b_speaker);	// it was off before the receiver went down
+	uint32_t speakers = b_speakers;
+	rx2_main_speaker(&m, true);
+	now = run(now, 40, true);
+	CHECK(b_speakers == speakers);
+	rx2_main_speaker(&m, false);
+	now = run(now, 40, true);
+	CHECK(!b_speaker && b_speakers == speakers + 1);
+	rx2_main_speaker(&m, true);
+	now = run(now, 40, true);
+	CHECK(b_speaker);
+
 	// TX: armed with the drive and delays, acknowledged; a refused one isn't; disarmed; HELLO_REQ disarms
 	CHECK(rx2_main_tx(&m, 461462500u, 1234, 300, 150) && !m.tx_acked);
 	now = run(now, 40, true);
@@ -361,7 +382,7 @@ static void test_link(void)
 		send_main(hf, hn);
 		now = run(now, 40, true);
 	}
-	CHECK(b_tx_hz == 0);
+	CHECK(b_tx_hz == 0 && !b_speaker);	// HELLO_REQ: the switch open too
 
 	// Stop
 	int stops = b_stops;

@@ -139,10 +139,11 @@ Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
 |---|---|
 | Key matrix | 6 rows PTB18-23 (outputs, idle low) by 3 sense lines PTB9-11 (inputs). Plus three keys read directly on the sense lines (9.2); 20-tick debounce |
 | Power key / latch | PTB12 in (high = pressed); PTB13 out, high keeps power on (9.1) |
-| Rotary encoder | PTB5, PTB8, both edges: one event +1 or -1 |
+| Rotary encoder | PTB5, PTB8, both edges: one event +1 or -1. PTB5 leads PTB8 clockwise; a detent rests with both lines equal (both high or both low), two steps each (**HW** 2026-10-27) |
 | TX / RX line | PTB2, high = transmit. The modem's RF TX and RX interrupts also switch it, so on DMR it follows every burst. It is wired to B's PTB2 too: B keys the PA on its edges (section 10) (BIN) |
 | Speaker amplifier | PTC18 high, together with the serial chain's amplifier bit (9.3) |
 | PTC20 | Low cuts the modem's audio line while a beep plays (INF). Low at start-up |
+| Line out gain | Beeps and DMR voice come from the modem's line out, not the main chip's AF, so the volume sets the codec's DAC gain (GCR_DACL) as well, as the original firmware does (3 dB a step). At 0 dB a beep doesn't reach A's microphone at a loud knob; from about +16 dB it is as loud as the receiver's noise (**HW** 2026-10-27). The loudspeaker also needs B's switch closed (section 10) |
 | PTT / K1 data | PTA9, shared with UART1 RXD; low = PTT |
 | UARTs | UART1 PTA9/10 PC cable (115200); UART2 PTA11/12 GPS (9600); UART3 PTA13/14 link to B (115200) |
 | GPS power | PTB17, high = on. On start-up the receiver gets `$CFGPRT,,0,9600,3,3` |
@@ -165,7 +166,7 @@ Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
 |---|---|
 | Power key | PTB12 reads high while pressed. The radio is switched on with the volume knob, so PTB12 is most likely the knob's switch contact (INF). The vendor code latches on when it reads high, and switches off when the key is pressed again or the battery reading drops |
 | Battery | ADC channel 2, 2S Li-ion. V x 10 = (raw + 5.7818) / 7.8551. Below 6.0 V critical, 6.0-6.9 V warnings, 7.0 V and up normal. A raw reading below 50 means the supply is going: switch off |
-| Volume | ADC channel 1, 21 levels with hysteresis. The table values are not known |
+| Volume | ADC channel 1, 0 at the lowest end to 1010 at the highest (**HW** 2026-10-27). 21 equal levels with hysteresis |
 
 ### 9.2 Keys
 
@@ -222,13 +223,14 @@ B has no display, keys, power latch or GPS. Pin index as in section 9.
 | RX path | **HW** A: PTB1, B: PTB0, high = on, in FM and DMR alike; neither receiver cares about the other's. B's reading of a bench signal rises 53 dB with PTB0 (-108 to -55 dBm), and without it B's floor is about -120 dBm. PTB13 and PTB5, the rest of the vendor's mode pairs (PTB1 + PTB13, PTB0 + PTB5), and PTB11 / PTB12 change neither receiver: held low. All off while transmitting |
 | A's receiver | **HW** bench: with PTB15 + PTB1 low A hears nothing (noise floor -127 dBm); high, the floor is -86 dBm and a bench signal shows. VHF the same with PTB14. The band switch (PTB8 / PTB7) and PTB13 make no difference to A, nor to B. B sets them from A's `PATH` messages ([rx2-link.md](rx2-link.md)) |
 | Audio source to A | mode 0: PTC18 high, PTB4 low; mode 1: the reverse. Held at mode 0 ("path 0", A's chip) while A transmits (BIN) |
+| Speaker switch | **HW** PTA15 high and PTB9 low close a switch in A's loudspeaker path; PTA15 low and PTB9 high open it, which leaves A's speaker silent. The original firmware keeps it open from start-up and closes it while A holds an audio user (vendor link ids 0x1034 / 0x1035). RadioFoundry: A sends `SPEAKER` ([rx2-link.md](rx2-link.md)) and holds it 1 s after the last sound. Bench 2026-10-27: A's microphone hears the receiver's noise with the monitor on only while it is closed |
 | Audio band | VHF: PTB18 high, PTB22 low; UHF: the reverse. Set to A's TX band while A transmits (BIN) |
 | TX path | UHF PTA17, VHF PTB10: B's own transmitter, which the vendor uses only for transmitting on B's chip. With it, per burst, PTB4 high and PTC18 low, and A's main BK4819 GPIO5 high (B's chip to the PA) and GPIO4 high for VHF (register 0x33, BIN). Without GPIO5 the PA keys with no signal; held high between bursts it deafens B's receiver (**HW** 2026-10-27) |
 | PA select, then supply | UHF PTB6, 200 us, then PTB20. VHF PTB3, then PTB21. TX off clears the supplies first |
 | A's TX line | PTB2 in, both-edge interrupt: A's PTB2 (section 9) (BIN) |
 | A's PA | **B keys the PA for A's transmitter** (BIN; **HW** FM 2026-10-27). A sends B a record first (vendor link id 0x6B00) with the drive and the page's delays, then raises PTB2. Rising edge: mode 0, the TX band pair, A's RX path PTB1 (and PTB13) off, 50 us, the TX-on delay, PA select, 200 us, supply, DAC B ramped up to the drive (180 steps of 4 us, S-shaped). Falling edge: the TX-off delay, the ramp down, supply then select off, 300 + 1000 + 300 us, the RX front end and A's RX path back, 200 us |
 | PA drive and delays | From A's page: drive = item 0x045 (channel power byte 0) or 0x056 (otherwise), interpolated at the TX frequency; TX-on / TX-off delays from item 0x0AE, in us, over 2000 read as 0 (BIN). Which item is high power: INF |
-| Start-up levels | Low: PTB20, PTB21, PTB6, PTB3, PTB1, PTB0, PTB15, PTB14, PTB13, PTB5, PTB12, PTB11, PTB8, PTB7, PTA17, PTB10, PTC18, PTB4. High: PTB22, PTB18 |
+| Start-up levels | Low: PTB20, PTB21, PTB6, PTB3, PTB1, PTB0, PTB15, PTB14, PTB13, PTB5, PTB12, PTB11, PTB8, PTB7, PTA17, PTB10, PTC18, PTB4, PTA15. High: PTB22, PTB18, PTB9 |
 | NAND | SPI0, CS PTA18, the same part and map as A's (**HW**). B's calibration pair is in it and at 0x031FE000 of B's program flash |
 | Status LEDs | PTA16 (lit while A transmits) and PTB17 (receive), high = on. Colors not known. While A is in its flash stub they take turns at 2 Hz (`RX2_LED_STUB`: A's stub has no LEDs) |
 | ADC | Channel 4 is a carrier level |
@@ -305,8 +307,8 @@ The code marks each with `TODO(gd88)`. The first-day plan that settles them is [
 1. Which RF chips other units have (the bench's A: BK4819 and AT1141), and B's.
 2. The output power at each level, and DMR transmit on the radio.
 3. FM against DMR for the chain's classes, chain bit 6 as the broadcast tuner's source, and B's audio source pair.
-4. The front panel's navigation keys, the encoder's direction, whether PTB12 is the knob's contact.
-5. The volume knob's level table, the LCD controller's timing word, DAC C on each SoC.
+4. The front panel's navigation keys, whether PTB12 is the knob's contact.
+5. The LCD controller's timing word, DAC C on each SoC.
 6. ~~The NAND's size and B's NAND chip select.~~ TC58CVG1S3HRAIJ, 2048 blocks of 64 2 KB pages on both; B's chip select is PTA18 (section 10).
 7. Meaning of the link command ids and calibration items 0x602-0x60B.
 8. Bootloader contents and the IAP packet format on this radio (not captured).

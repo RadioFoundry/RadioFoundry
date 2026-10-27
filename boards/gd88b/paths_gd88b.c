@@ -30,6 +30,7 @@ static bool b_tx;			// B transmits on its own chip: its RX path off (gd88_path_o
 static uint32_t own_paths, own_refused;	// the debug view's counts (gd88b_own_tx_counts)
 #endif
 static bool aud_vhf = true, aud_uhf = true;	// the band pair as the receiver set it
+static bool spk_switch;			// the loudspeaker switch closed (RX2_SPEAKER)
 
 void gd88_path_init(void)
 {
@@ -38,6 +39,9 @@ void gd88_path_init(void)
 	}
 	hrc_pin_out(PIN_AUD_VHF, true);
 	hrc_pin_out(PIN_AUD_UHF, true);
+	hrc_pin_out(PIN_SPK_CLOSE, false);
+	hrc_pin_out(PIN_SPK_OPEN, true);
+	spk_switch = false;
 	spk_on = spk_modem = false;
 	muted = true;
 	b_on = a_on = a_tx = b_tx = false;
@@ -190,4 +194,20 @@ void gd88b_path_mute(bool mute)
 	muted = mute;
 	source();
 	hrc_irq_restore(s);
+}
+
+// RX2_SPEAKER: the switch in A's loudspeaker path. PTA15 is raised before PTB9 drops and PTB9 rises before PTA15 drops,
+// as the original firmware orders them
+void gd88b_speaker(bool on)
+{
+	uint32_t s = hrc_irq_save();
+	spk_switch = on;
+	hrc_pin_write(on ? PIN_SPK_CLOSE : PIN_SPK_OPEN, true);
+	hrc_pin_write(on ? PIN_SPK_OPEN : PIN_SPK_CLOSE, false);
+	hrc_irq_restore(s);
+}
+
+bool gd88b_speaker_on(void)
+{
+	return spk_switch;
 }

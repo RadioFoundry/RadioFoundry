@@ -11,6 +11,9 @@
 void gd88b_path_mute(bool mute);
 // A's own receiver on hz or off (RX2_PATH): its front end and path pins are B's (paths_gd88b.c)
 void gd88b_path_main(bool on, uint32_t hz);
+// The switch in A's loudspeaker path closed (on) or open: RX2_SPEAKER (paths_gd88b.c)
+void gd88b_speaker(bool on);
+bool gd88b_speaker_on(void);
 // A transmits (pa_gd88b.c): the path pins for A's chip in its TX band (on), or back as the receivers have them
 void gd88b_path_a_tx(bool on, bool uhf);
 // The band's PA select and supply pins

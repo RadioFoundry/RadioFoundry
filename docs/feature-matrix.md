@@ -42,7 +42,7 @@ is `tools/bringup.py list --radio <id>`.
 | `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | not recorded |
 | `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded | not recorded |
 | `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded |
-| `vox` | not written | not recorded | not recorded | not written | not recorded | not recorded | not written |
+| `vox` | not written | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | not written |
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | not recorded |
@@ -186,6 +186,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `SFR_DUALPATH_RX` | ● | ● | ● | ● | ✕ | ● | ● |
 | `SFR_CWID` | ● | ● | ● | ● | ✕ | ● | ● |
 | `TASK_STACKS` | ● | ● | ● | ● | ● | ● | ● |
+| `DEBUG_MEM` | ● | ● | ● | ● | ● | ● | ● |
 | `USB` | ✕ | ● | ✕ | ✕ | ● | ● | ✕ |
 | `HOSTLINK` | ● | ● | ● | ● | ● | ● | ● |
 | `USB_NETWORK` | ✕ | ● | ✕ | ✕ | ● | ● | ✕ |
@@ -209,7 +210,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `BEEP` | ● | ● | ● | ● | ● | ● | ● |
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | ● |
 | `DTMF` | ● | ● | ● | ● | … | ● | ● |
-| `VOX` | … | ● | ● | … | ● | ● | … |
+| `VOX` | … | ● | ● | … | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● |
 | `VIBRATE` | ? | ✕ | ● | ✕ | ✕ | ✕ | ? |
 | `GPS` | ● | ● | ✕ | ● | ● | ● | ● |

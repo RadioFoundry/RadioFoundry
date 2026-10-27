@@ -34,6 +34,8 @@ enum {
 	RX2_TX		= 0x0A,	// u32 Hz (0: disarm), u16 PA drive, u16 on us, u16 off us: the main SoC's transmitter,
 				// whose PA the receiver's SoC keys on the main SoC's TX line (acknowledged)
 	RX2_DMR		= 0x0B,	// the receiver's transmitter as the main SoC's second one (rx2_dmr.h): its request
+	RX2_SPEAKER	= 0x0C,	// u8 on: the main SoC's loudspeaker is in use, on a board whose speaker path has a switch
+				// on the receiver's SoC
 	RX2_HELLO	= 0x81,	// u8 protocol version, u8 flags, text: the firmware version
 	RX2_STATUS	= 0x82,	// rx2 status, packed (rx2_pack_status)
 	RX2_ACK		= 0x83,	// u8 seq acknowledged, u8 result (0 ok, else refused)
@@ -108,6 +110,7 @@ typedef struct {
 	uint8_t volume;
 	uint8_t leds;		// RX2_LED: the main SoC's status LEDs, which are on the receiver's SoC
 	bool path_on;		// RX2_PATH: the main SoC's receiver, as last asked
+	bool speaker;		// RX2_SPEAKER, as last asked
 	uint32_t path_hz;
 	uint8_t tx_seq;		// RX2_TX in flight, and whether the receiver took it
 	bool tx_acked;
@@ -141,6 +144,8 @@ void rx2_main_audio(rx2_main_t *m, bool on, uint8_t volume);
 void rx2_main_led(rx2_main_t *m, uint8_t leds);
 // The main SoC's own receiver (RX2_PATH): sent on a change and again when the receiver comes back
 void rx2_main_path(rx2_main_t *m, bool on, uint32_t hz);
+// The main SoC's loudspeaker in use (RX2_SPEAKER): sent on a change and again when the receiver comes back
+void rx2_main_speaker(rx2_main_t *m, bool on);
 // RX2_TX: arm the receiver's SoC to key the PA for the main SoC's transmission on hz with drive pa and the delays
 // (hz 0: disarm). tx_acked turns true when the receiver took it. False when the receiver is down
 bool rx2_main_tx(rx2_main_t *m, uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
@@ -195,6 +200,9 @@ typedef struct {
 	// RX2_DMR: a request to its transmitter (rx2_dmr.h); (NULL, 0) at HELLO_REQ: the main SoC restarted, all off.
 	// NULL: dropped (offer it with RX2_HELLO_DMR_TX)
 	void (*dmr)(const uint8_t *p, uint8_t len);
+	// RX2_SPEAKER: close (on) or open the switch in the main SoC's speaker path; open again at HELLO_REQ. NULL: the
+	// board has none
+	void (*speaker)(bool on);
 } rx2_ops_t;
 
 #define RX2_STATUS_EVERY_MS	500u

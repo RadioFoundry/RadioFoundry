@@ -46,6 +46,11 @@
 #define PIN_CABLE_RXD		0x09	// PTA9
 #define PIN_CABLE_TXD		0x0A	// PTA10
 #define DIPLEX0_UART1		((1u << 9) | (1u << 10))	// IO_DIPLEX0: 1 = GPIO, 0 = UART1
+// A switch in the loudspeaker's path, closed with PTA15 high and PTB9 low, open the other way round (the original
+// firmware's state from start-up). It is closed while A's loudspeaker is in use (RX2_SPEAKER): with it open A's
+// speaker plays nothing (bench 2026-10-27, A's microphone hears the receiver's noise only with it closed)
+#define PIN_SPK_CLOSE		0x0F	// PTA15
+#define PIN_SPK_OPEN		0x29	// PTB9
 // The status LEDs, high = on. A's status LEDs: A switches them over the link (RX2_LED).
 // TODO(gd88): unknown, needs a radio: their colors. LED 1 lights while A transmits, LED 2 while it receives
 #define PIN_LED1		0x10	// PTA16

@@ -313,6 +313,7 @@ static const rx2_ops_t ops = {
 	.led = gd88b_leds,
 	.path = gd88b_path_main,
 	.tx = gd88b_pa_arm,
+	.speaker = gd88b_speaker,
 #if CONFIG_DMR && GD88_DMR_TX
 	.dmr = rx2_dmr_recv,
 #endif
@@ -331,6 +332,7 @@ static void view(dl_text_t *t)
 		(unsigned)cur.rx_hz, cur.mode, cur.bw, cur.squelch, sq_open, audio_on);
 	dl_text(t, "rx.rssi_dbm=%d\nrx.noise=%u\nrx.carrier=%u\nrx.tone_ok=%u\n", rs.rssi_dbm, rs.noise, rs.carrier,
 		rs.tone_ok);
+	dl_text(t, "spk.switch=%u\n", gd88b_speaker_on());
 #if CONFIG_DMR
 	const dmr_call_view_t *v = dmr_call_view();
 	dl_text(t, "dmr.on=%u\ndmr.phase=%u\ndmr.cc=%u\ndmr.ts=%u\ndmr.src=%u\ndmr.dst=%u\n", dmr_on, v->phase,

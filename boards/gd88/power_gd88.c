@@ -10,6 +10,7 @@
 #include "gd88.h"
 #include "pins.h"
 #include "platform.h"
+#include "audio_pcm.h"
 #include "hal_time.h"
 #include "power/battery/battery.h"
 
@@ -20,9 +21,9 @@
 #define BAT_FULL_MV		8400u
 #define BAT_EMPTY_MV		6000u
 // The knob: 21 positions over the ADC's range, with a little hysteresis so a knob resting on a boundary doesn't
-// flicker between two. TODO(gd88): unknown, needs a radio: the knob's end readings (taken as 0 and 1023 here)
+// flicker between two. The knob reads 0 to 1010 end to end (hardware-gd88.md 9)
 #define VOL_LEVELS		21u
-#define VOL_FULL_RAW		1023u
+#define VOL_FULL_RAW		1010u
 #define VOL_HYST_RAW		12u
 
 static battery_avg_t bat;
@@ -144,6 +145,7 @@ const hal_power_t gd88_power = {
 	.battery_mv = battery_mv,
 	.battery_pct = battery_pct,
 	.volume = volume,
+	.mic_level = HRC_MIC_LEVEL,	// the mic PCM, as on the other HR_C7000 radios
 	.switch_on = switch_on,
 	.led = led,
 };
