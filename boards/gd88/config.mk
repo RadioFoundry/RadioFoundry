@@ -15,6 +15,9 @@ CONFIG_SFR ?= n
 CONFIG_FONT_XL ?= y
 CONFIG_FONT_AA ?= y
 CONFIG_FONT_BIG ?= $(CONFIG_FONT_AA)
+# The bezel hides the panel's right edge: the status bar's battery percent lost its last digit on the radio (2026-10-26),
+# so 5 px on the right
+CONFIG_DISPLAY_INSET_RIGHT ?= 5
 # With DMR: the platform's linker script with the codec window at the top of SRAM and the modem SRAM table window
 # (memory.ld), its codec host (profile ids gd88-<version>), the core's CPU state in .ram_lo and the runtime stub's load
 # span inside the codec window (0x45000..0x58000). Without DMR: no codec window, the CPU state in .bss and the stub in
