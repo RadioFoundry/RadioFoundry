@@ -53,10 +53,11 @@ instead.
 The DB25-D writes `build/db25d/rfoundry_db25d_codec.bin`: the first stage, the application and the codec in one file, the one
 to flash (DMR on that radio is a receive-only build option, `CONFIG_DMR=y`, hardware-db25d.md 9).
 
-The GD-88 has two SoCs, A and B, each with its own firmware and its own copy of the codec. Its firmware package has an
-A file and a B file: put both here. `make BOARD=gd88` merges the A file into `build/gd88/rfoundry_gd88_codec.bin` and
-`make BOARD=gd88b` the B file into `build/gd88b/rfoundry_gd88b_codec.bin`. A program flash read of either SoC running its
-stock firmware works too (`stub/stubtool.py --progmem`).
+The GD-88 has two SoCs, A and B, each with its own firmware and its own copy of the codec. Both run A's codec, so
+only the A file is needed: `make BOARD=gd88` merges it into `build/gd88/rfoundry_gd88_codec.bin` and `make BOARD=gd88b`
+into `build/gd88b/rfoundry_gd88b_codec.bin`, and the two codec slots are the same bytes. A program flash read of A
+running its stock firmware works too (`stub/stubtool.py --progmem`). The B file, or a read of B, still works for B
+when no A file is here.
 
 If no supported file is here, the build prints a line saying so and writes only the plain image. A radio running the
 plain image works on FM only and shows "No codec: voice off".

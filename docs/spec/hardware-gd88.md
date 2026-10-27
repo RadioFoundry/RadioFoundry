@@ -127,8 +127,8 @@ All facts from the same A and B images (BIN). Detail and addresses are kept outs
 |---|---|
 | Program flash | 2 MB at 0x03000000 on each SoC. The IAP loader is below 0x0300C000. RadioFoundry's first stage takes 0x0300C000-0x0300D000 and the application starts at 0x0300D000 ([boot/README.md](../../boot/README.md)) |
 | Data in program flash | The display record at 0x031FD000 (`lcd` and a type byte) and the calibration copy at 0x031FE000 (section 7) |
-| Codec slot | 0x030E8000-0x03100000 on each SoC. The codec is merged there on the user's machine from that SoC's own vendor image (`tools/hrc7000_codec.py`, boards `gd88` and `gd88b`) |
-| Codec RAM | The code runs at 0x44E00-0x58000. Its tables go to modem SRAM: A 0x18001204-0x18004324, B 0x18000B40-0x18003B10. Each SoC links with its own `memory.ld` (`boards/gd88`, `boards/gd88b`); both keep the union of the two table windows free |
+| Codec slot | 0x030E8000-0x03100000 on each SoC. Both SoCs run A's codec, merged on the user's machine from A's vendor image (`tools/hrc7000_codec.py`, boards `gd88` and `gd88b`). B's slot is byte for byte A's: the slot header names the run address and the tables address, and both are the same on the two SoCs. The user supplies only A's file, or the web flasher reuses the slot it wrote to A when it installs B through A's bridge. B's own vendor image is still accepted for B (`[codec] from` in `boards/gd88b/board.toml`) |
+| Codec RAM | The code runs at 0x44E00-0x58000. Its tables go to modem SRAM: A's builds use 0x18001204-0x18004324, B's 0x18000B40-0x18003B10. A links with A's window. B links with the union, 0x18000B40-0x18004324, so that it takes A's codec or its own. The only other modem SRAM use is the crash record at 0x18007EF0 |
 | SRAM | 288 KB at 0x10000 |
 
 ## 9. SoC A pins and chips
