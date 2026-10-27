@@ -57,6 +57,14 @@ def skip(kind, reason):
     raise e
 
 
+def need_radio_tx(radio):
+    """Skip (not_built) when the radio can't transmit at all: its view's can_tx is 0 (no band may, a transmitter not
+    written yet). A test that also checks what the radio received calls this after those checks."""
+    __tracebackhide__ = True
+    if radio.view(["core"]).get("can_tx") == "0":
+        skip("not_built", "the radio can't transmit (can_tx 0: its transmitter isn't written yet)")
+
+
 def skip_mark(kind, reason):
     """pytest.mark.skip with a kind, for marks added at collection."""
     import pytest

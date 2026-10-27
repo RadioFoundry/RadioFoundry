@@ -8,7 +8,8 @@ import os
 import pytest
 
 import bringup_plugin
-from rfoundry_hil import DebugLinkError, Radio, SdrBench, board_id, find_ports, skip, skip_kind, skip_mark
+from rfoundry_hil import (DebugLinkError, Radio, SdrBench, board_id, find_ports, need_radio_tx, skip, skip_kind,
+                          skip_mark)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
@@ -87,6 +88,13 @@ def only_on(bid, radio):
     name = radio.version().get("board", "")
     if board_id(name) != bid:
         skip("other_board", f"a test of boards/{bid}; this radio is {board_id(name) or name or 'unknown'}")
+
+
+@pytest.fixture(autouse=True)
+def radio_can_tx(request):
+    """A radio_tx test on a radio that can't transmit: not_built."""
+    if "radio_tx" in request.keywords and "radio" in request.fixturenames:
+        need_radio_tx(request.getfixturevalue("radio"))
 
 
 @pytest.fixture(autouse=True)

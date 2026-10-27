@@ -190,6 +190,8 @@ def test_beep_counts(radio):
         skip("not_built", "built without CONFIG_BEEP")
     if as_int(f0.get("set.beep_level"), 0) == 0:
         skip("state", "beep level 0")
+    if as_int(f0.get("volume.sent"), -1) == 0:
+        skip("state", "volume 0 (a knob turned down): the beep follows it and is dropped before it is counted")
     played0, none0, blocks0 = (as_int(f0.get(k), 0) for k in ("beep.played", "beep.no_stream", "beep.blocks"))
     radio.link.beep("error")
     f = wait_features(radio, lambda v: as_int(v.get("beep.played"), 0) + as_int(v.get("beep.no_stream"), 0)
@@ -352,6 +354,10 @@ def test_dual_watch_debug_link(radio):
     radio.link.scan("dual", b)
     try:
         wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+        # The UI takes over a watch the link started (its toast) once 0.5 s have passed since its last one ended; a
+        # channel change before that ends the watch for good, as the UI never had it
+        radio.wait_for(lambda v: v.get("ui.toast") == "Dual watch on", 3.0, sections=("link",),
+                       what="the UI took the watch")
         radio.link.scan("select", 1)
         wait_features(radio, lambda v: v.get("dual.sel") == "b", 1.0, "B selected")
         radio.link.zone_pos(c)

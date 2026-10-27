@@ -24,7 +24,7 @@ import warnings
 
 import pytest
 
-from rfoundry_hil import skip
+from rfoundry_hil import need_radio_tx, skip
 
 BENCH_SRC = 9990301
 CSBK_CALL_ALERT, CSBK_CALL_ALERT_ACK, CSBK_RADIO_CHECK = 0x1F, 0x20, 0x24
@@ -206,7 +206,9 @@ def test_confirmed_data_response(radio, sdr_bench, pytestconfig):
     d = _deltas(before, after, ["data.rx_packets", "data.rx_confirmed", "data.responses_sent", "data.tx_ok",
                                 "data.tx_failed"])
     print("radio deltas:", d)
-    assert d["data.rx_confirmed"] == 1 and d["data.responses_sent"] == 1, d
+    assert d["data.rx_confirmed"] == 1, d
+    need_radio_tx(radio)
+    assert d["data.responses_sent"] == 1, d
     assert d["data.tx_ok"] >= 1 and d["data.tx_failed"] == 0, d
     _soft((src, own) in _heard_headers(heard), "the response header to the bench")
 
@@ -229,15 +231,17 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     after = radio.data_view()
     d = _deltas(before, after, ["data.sms_received", "data.tms_acks_sent", "data.tx_ok", "data.tx_failed"])
     print("radio deltas:", d, "event:", after["data.event"], after["data.event_id"])
-    assert d["data.sms_received"] == 1 and d["data.tms_acks_sent"] == 1 and d["data.tx_failed"] == 0, d
-    # The ACK was the radio's own transmission: named in the data view, and not one that lights the screen
-    if "data.tx_last_kind" in after:
-        assert after["data.tx_last_kind"] == "reply" and after["data.tx_last_ms"] != before["data.tx_last_ms"], after
-        assert radio.view(["core"]).get("tx_auto") == "1"
+    assert d["data.sms_received"] == 1, d
     m = radio.link.inbox(0)
     assert m is not None and m["text"] == text and m["src"] == BENCH_SRC and m["unread"], m
     radio.link.mark_read(0)
     assert radio.link.inbox(0)["unread"] is False
+    need_radio_tx(radio)
+    assert d["data.tms_acks_sent"] == 1 and d["data.tx_failed"] == 0, d
+    # The ACK was the radio's own transmission: named in the data view, and not one that lights the screen
+    if "data.tx_last_kind" in after:
+        assert after["data.tx_last_kind"] == "reply" and after["data.tx_last_ms"] != before["data.tx_last_ms"], after
+        assert radio.view(["core"]).get("tx_auto") == "1"
     _soft((BENCH_SRC, own) in _heard_headers(heard), "the TMS ACK packet's header to the bench")
 
 
@@ -258,8 +262,10 @@ def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
     after = radio.data_view()
     d = _deltas(before, after, ["data.call_alerts_received", "data.csbk_answers_sent", "data.tx_ok"])
     print("radio deltas:", d)
-    assert d["data.call_alerts_received"] == 1 and d["data.csbk_answers_sent"] == 1 and d["data.tx_ok"] >= 1, d
+    assert d["data.call_alerts_received"] == 1, d
     assert after["data.event"] in ("call_alert",) and after["data.event_id"] == BENCH_SRC, after
+    need_radio_tx(radio)
+    assert d["data.csbk_answers_sent"] == 1 and d["data.tx_ok"] >= 1, d
     _soft(any(a == BENCH_SRC and b == own for _o3, a, b in _heard_csbks(heard, CSBK_CALL_ALERT_ACK)),
           "the call alert ack")
 
@@ -283,6 +289,7 @@ def test_radio_check_rx(radio, sdr_bench, pytestconfig, data_settings):
         print("reply off:", d)
         assert d["data.radio_checks_received"] == 1 and d["data.csbk_answers_sent"] == 0, d
 
+        need_radio_tx(radio)
         radio.link.data_settings(0, radio_check_reply=True)
         heard = sdr_bench.csbk(freq, cc, own, opcode=CSBK_RADIO_CHECK, fid=FID_MOTOROLA, octet3=0x80,
                                src=BENCH_SRC, listen_after=3)
@@ -405,10 +412,11 @@ def test_etsi_sms_rx(radio, sdr_bench, pytestconfig):
     e = _deltas(xb, xa, ["data.etsi_sms_received"])
     print("radio deltas:", d, e)
     assert d["data.sms_received"] == 1 and e["data.etsi_sms_received"] == 1, (d, e)
-    assert d["data.responses_sent"] == 1 and d["data.tms_acks_sent"] == 0 and d["data.tx_failed"] == 0, d
     m = radio.link.inbox(0)
     assert m is not None and m["text"] == text and m["src"] == BENCH_SRC and m["format"] == "etsi", m
     radio.link.mark_read(0)
+    need_radio_tx(radio)
+    assert d["data.responses_sent"] == 1 and d["data.tms_acks_sent"] == 0 and d["data.tx_failed"] == 0, d
     _soft((BENCH_SRC, own) in _heard_headers(heard), "the ETSI response header to the bench")
 
 
