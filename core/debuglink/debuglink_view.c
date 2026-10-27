@@ -246,8 +246,18 @@ static void sfr_section(dl_text_t *t)
 	dl_text(t, "sfr.tx_bursts=%u\nsfr.tx_idle=%u\nsfr.tx_starts=%u\nsfr.up=%u\nsfr.up_lost=%u\n",
 		(unsigned)st->tx_bursts, (unsigned)st->tx_idle, (unsigned)st->tx_starts,
 		(unsigned)st->up_bursts, (unsigned)st->up_lost);
-	dl_text(t, "sfr.tx_beacons=%u\nsfr.tx_gaps=%u\nsfr.evq_drops=%u\n", (unsigned)st->tx_beacons,
-		(unsigned)st->tx_gaps, (unsigned)c.evq_drops);
+	dl_text(t, "sfr.tx_beacons=%u\nsfr.tx_gaps=%u\nsfr.evq_drops=%u\nsfr.split=%u\n", (unsigned)st->tx_beacons,
+		(unsigned)st->tx_gaps, (unsigned)c.evq_drops, st->tx_split);
+	// The second transmitter (hal_dmr_modem_t.tx_split_stats): ready, the last transmission's place, its counts
+	dmr_split_stats_t sp;
+	memset(&sp, 0, sizeof(sp));
+	if (board.dmr != NULL && board.dmr->tx_split_stats != NULL) {
+		board.dmr->tx_split_stats(&sp);
+	}
+	dl_text(t, "sfr.split_ready=%u\nsfr.split_remote=%u\nsfr.split_events=%u\nsfr.split_bursts=%u\n", sp.ready,
+		sp.remote, (unsigned)sp.events, (unsigned)sp.bursts);
+	dl_text(t, "sfr.split_ends_forced=%u\nsfr.split_fallbacks=%u\n", (unsigned)sp.ends_forced,
+		(unsigned)sp.fallbacks);
 	// Why bursts were ignored: on the outbound slot, another color code; the last one's CC and type (sfrRunner.h)
 	dl_text(t, "sfr.ignored_slot=%u\nsfr.ignored_cc=%u\nsfr.last_ignored=%02x\n", (unsigned)st->rx_ignored_slot,
 		(unsigned)st->rx_ignored_cc, st->last_ignored);
