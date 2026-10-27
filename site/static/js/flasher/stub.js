@@ -34,6 +34,7 @@ export const SECTOR = 4096, PAGE = 256, WINDOW = 16, PACK = 16, CHUNK = 1024, RO
 export const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, TOOLONG = 0x0E;
 export const SSI_PROG = 0x04000000, SSI_DATA = 0x140A0000;
 export const QUAD_ENABLE = 0x1100005C, LCSFC_BAUDR = 0x11000030, SYS_SOFT_RSTN = 0x11000000, TIMER2_VALUE = 0x14000018;
+const NOREPLY_DRAIN_MS = 100;	// after a no-reply request, before the caller may close the port
 export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
 // RadioFoundry's restart-cause mark (docs/spec/crash-log.md 1.3; stubtool.py CRASH_SOFT_MARK): the reset was asked for
 export const CRASH_SOFT_MARK = 0x18007EF4, CRASH_BOOT_SOFT = 0x54464F53;
@@ -419,9 +420,12 @@ export class Stub {
 		throw new StubError(`op 0x${op.toString(16)}: no clean reply after ${retries + 1} tries (${why})`);
 	}
 
+	// A request the radio won't answer (a reset, a jump). The caller often closes the port next, which can drop what the
+	// USB-serial adapter still holds: stubtool's reset never reached a GD-88 that way (2026-10-26), so give it time to leave
 	async sendNoReply(op, payload) {
 		this.s.clear();
 		await this.s.write(concat(new Uint8Array([0x02, op, payload.length >> 8, payload.length & 0xFF, sum8(payload), 0x03]), payload));
+		await sleep(NOREPLY_DRAIN_MS);
 	}
 
 	async hello({ retries = 0 } = {}) {

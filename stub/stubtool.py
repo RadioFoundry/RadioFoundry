@@ -382,6 +382,7 @@ SSI_DATA = 0x140A0000               # SPI0, the data flash
 GPIOA = 0x14020000
 IO_DIPLEX1 = 0x11000038
 SYS_SOFT_RSTN = 0x11000000
+NOREPLY_DRAIN_S = 0.1                # after flush(): the adapter's own FIFO still sends (6 bytes + payload at 115200: < 3 ms)
 QUAD_ENABLE = 0x1100005C
 LCSFC_BAUDR = 0x11000030            # XIP flash SCLK divider; a soft reset keeps it
 WDT_LOCK = 0x14010000               # watchdog: unlock key, then EN = 0, then lock (hardware-dm32.md 3.5)
@@ -1075,9 +1076,13 @@ class Radio:
         self.log("bridge ended: A restarts")
 
     def send_noreply(self, op, payload=b""):
-        """A request the radio will not answer because it is about to reset or jump away."""
+        """A request the radio will not answer because it is about to reset or jump away. Waits until the bytes have
+        left: the caller often exits next, and closing the port drops what the USB-serial adapter still holds (a GD-88
+        never got `--boot reset`, 2026-10-26)."""
         self.port.reset_input_buffer()
         self.port.write(bytes([0x02, op, len(payload) >> 8, len(payload) & 0xFF, sum8(payload), 0x03]) + payload)
+        self.port.flush()
+        time.sleep(NOREPLY_DRAIN_S)
 
     def reset_chip(self):
         """Soft-reset the SoC (hardware-dm32.md 1.1: XIP quad off and the reset divider, then SYS_SOFT_RSTN = 0). The boot
@@ -1559,7 +1564,7 @@ class FakeRadio:
         return self.baudrate == self.stub_baud and (self.max_baud is None or self.baudrate <= self.max_baud)
 
     def flush(self):
-        pass
+        self.flushes = getattr(self, "flushes", 0) + 1
 
     def reset_input_buffer(self):
         self.out.clear()
@@ -2055,7 +2060,9 @@ def self_test():
     except DumpError:
         pass
     r.setup_led(32, 33, "red")
+    flushes = getattr(radio, "flushes", 0)
     r.reset_chip()
+    check(getattr(radio, "flushes", 0) > flushes, "reset_chip waits until the reset has left before returning")
     check(radio.pokes[-3:] == [(QUAD_ENABLE, 0), (LCSFC_BAUDR, 4), (SYS_SOFT_RSTN, 0)],
           "reset_chip pokes XIP quad off and the reset divider, then the soft reset (%s)" % (radio.pokes[-3:],))
     check(radio.pokes[-7] == (CRASH_SOFT_MARK, CRASH_BOOT_SOFT),
