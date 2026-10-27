@@ -571,6 +571,7 @@ STUB_MAGIC = 0x42533743                 # 'C7SB': the guard word of RadioFoundry
 DL_STUB = 0x1A
 DL_RX2 = 0x1E                           # the second receiver's SoC (docs/spec/debuglink.md 3.22)
 RX2_TOKEN = 0x47445242                  # 'BRDG'
+BRIDGE_LISTEN = 0.5                   # s: B's first stage greets more often than this; a stub is silent
 BRIDGE_EXIT = bytes([0x7E, 0xE7, 0x81, 0x18])   # ends A's bridge: a burst of its own (docs/spec/rx2-link.md 4.1)
 BRIDGE_QUIET = 0.02                     # quiet on the cable before and after it (the spec asks for 2 ms or more)
 
@@ -1049,14 +1050,37 @@ class Radio:
             raise DumpError("this radio has no second receiver")
         if not r[1] & 0x04:
             raise DumpError("this firmware has no bridge to the second receiver")
-        if not r[1] & 0x02:
-            self.log("the second receiver does not answer A: trying anyway (its first stage may still start)")
+        answering = bool(r[1] & 0x02)
+        if not answering:
+            self.log("the second receiver does not answer A: trying anyway (its first stage may still start, or a stub "
+                     "from an earlier run may be running)")
         r = self.dl_request(DL_RX2, b"\x01" + RX2_TOKEN.to_bytes(4, "little"))
         if r[0] == 7:
             raise DumpError("RadioFoundry refused the bridge: the radio is transmitting. Release PTT and run again")
         if r[0] != 0:
             raise DumpError("RadioFoundry refused the bridge (status %d)" % r[0])
         self.log("A is bridging the cable to the second receiver")
+        return answering
+
+    def bridge_start(self, wait, stub, load, board):
+        """Open A's bridge and get a stub running on B. B normally goes to its first stage, which offers the boot ROM's
+        handshake again and again: start() loads the stub. A B that doesn't answer A may still be in the stub an earlier
+        run left (one that ended without --boot reset): that one is silent on the line and answers a HELLO, so it is
+        used as it is, and nobody has to pull the battery to get B back. Returns True when it attached."""
+        if not self.rx2_bridge():
+            self.set_timeout(0.05)
+            heard, t0 = b"", time.monotonic()
+            while time.monotonic() - t0 < BRIDGE_LISTEN and not heard:
+                heard = self.port.read(4)       # one greeting at most: start() takes the next
+            if not heard:
+                try:
+                    self.hello()
+                    self.log("the second receiver's stub from an earlier run answers: using it")
+                    return True
+                except DumpError:
+                    pass
+        self.start(wait, stub, load, board)
+        return False
 
     def bridge_exit(self):
         """End A's bridge (docs/spec/rx2-link.md 4.1): the exit sequence alone, with quiet before and after, so A sees it
@@ -1846,17 +1870,19 @@ class FakeBridged(FakeRadio):
     """GD-88 SoC B behind A's bridge for the self-tests: RadioFoundry on A answers DL_CMD_RX2 (flags), and once BRIDGE has been
     answered the port carries B's first stage, as FakeRadio's boot ROM."""
 
-    def __init__(self, images, flags=0x07, **kw):
+    def __init__(self, images, flags=0x07, in_stub=False, **kw):
         super().__init__(images, **kw)
         self.out = bytearray()
         self.flags, self.bridged, self.armed = flags, False, False
+        self.running = in_stub              # B still runs a stub from an earlier run: no first stage, no greeting
         self.wire = []                      # (time, bytes) of every write: the exit sequence's quiet is checked
         self.exited = False                 # A took the exit sequence: it restarts, nothing reaches B any more
 
     def read(self, n):
         if self.armed and not self.out:
             self.armed, self.bridged = False, True
-            self.out += b"\x02\x24\x00\x03"
+            if not self.running:
+                self.out += b"\x02\x24\x00\x03" * 2     # the first stage greets again and again
         return super().read(n)
 
     def write(self, b):
@@ -2278,8 +2304,7 @@ def self_test():
     bridge = FakeBridged(images, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
     bridge.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
     r = Radio(bridge, log=quiet)
-    r.rx2_bridge()
-    r.start(wait=2, board="gd88b")
+    check(r.bridge_start(2, None, LOAD_ADDR, "gd88b") is False, "B answering A: its first stage loads the stub")
     r.configure("gd88b")
     check(bridge.bridged and bridge.running and bytes(bridge.loaded[:len(pb)]) == pb, "gd88b stub loaded through the bridge")
     check(r.configured is C7_BOARDS["gd88b"] and bridge.configs[-1][10:12] == bytes([16, 49]), "gd88b configured, its LEDs")
@@ -2291,6 +2316,17 @@ def self_test():
     check(bridge.exited and sent == bytes([0x7E, 0xE7, 0x81, 0x18]), "the bridge ends on exactly 7E E7 81 18 in one write")
     check(t_exit - t_last >= 0.005 and t_done - t_exit >= 0.005,
           "quiet around the exit sequence (%.1f ms before, %.1f ms after)" % ((t_exit - t_last) * 1e3, (t_done - t_exit) * 1e3))
+    # B left in a stub by an earlier run: it doesn't answer A and is silent on the line, and the stub answers HELLO
+    left = FakeBridged(images, flags=0x05, in_stub=True)
+    left.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+    r = Radio(left, log=quiet)
+    check(r.bridge_start(2, None, LOAD_ADDR, "gd88b") is True and not left.loaded, "B's stub from an earlier run is used")
+    # B not answering A but in its first stage (greeting): loaded as usual
+    late = FakeBridged(images, flags=0x05, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
+    late.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+    r = Radio(late, log=quiet)
+    check(r.bridge_start(2, None, LOAD_ADDR, "gd88b") is False and late.running and bytes(late.loaded[:len(pb)]) == pb,
+          "B silent to A but in its first stage: the stub is loaded")
     for flags, what in ((0x00, "no second receiver"), (0x03, "no bridge")):
         try:
             Radio(FakeBridged(images, flags=flags), log=quiet).rx2_bridge()
@@ -2538,10 +2574,9 @@ def main(argv=None):
             raise DumpError("--board %s goes through the bridge on the other SoC: no --rfoundry-enter, no --baud (the bridge "
                             "runs at 115200)" % a.board)
         if bridged and not a.attach:
-            radio.rx2_bridge()
             bridge_on = True
             load = LOAD_ADDR if a.load_base is None else a.load_base
-            radio.start(min(a.wait, 70), stub, load, a.board)
+            radio.bridge_start(min(a.wait, 70), stub, load, a.board)
             radio.configure(a.board)
         elif a.rfoundry_enter:
             radio.rfoundry_enter(open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else ("legacy" if a.legacy_stub else None), board=a.board)
