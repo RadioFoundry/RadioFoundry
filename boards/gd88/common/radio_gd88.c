@@ -62,6 +62,7 @@ static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
 static bool have_rx;
+static bool asleep;		// rx_sleep(true): the receiver is off until rx_sleep(false) or the next rx()
 static bool transmitting;
 static bool audio_open;		// what audio() was last asked, restored after a transmission
 static bool vol_muted;		// volume step 0: the chip output stays off whatever audio() asks
@@ -136,7 +137,7 @@ static void lo_tune(uint32_t hz)
 	}
 }
 
-#if GD88_TX
+#if GD88_TX || CONFIG_BATTERY_SAVE
 static void lo_off(void)
 {
 	if (lo_is_at1141) {
@@ -298,6 +299,7 @@ static void set_mode(radio_mode_t m)
 	}
 	speaker();
 	have_rx = false;	// the next rx() retunes
+	asleep = false;
 #else
 	(void)m;	// FM only without CONFIG_DMR
 #endif
@@ -318,6 +320,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	rx_bw = bw;
 	rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
 	have_rx = true;
+	asleep = false;
 
 	ref_trim(hz);
 	tx_paths_off();
@@ -533,7 +536,7 @@ static bool tx_tone_key(bool down)
 
 static void status(radio_status_t *st)
 {
-	if (!supported) {
+	if (!supported || asleep) {
 		st->rssi_dbm = -160;
 		st->noise = UINT8_MAX;		// all noise: 0 reads as a quiet channel, the squelch opens and the screen says receiving
 		st->carrier = false;
@@ -609,6 +612,26 @@ static void volume(uint8_t percent)
 	volume_apply();
 }
 
+#if CONFIG_BATTERY_SAVE
+// Battery save, FM only: the main chip idle, the LO off and A's receive path dropped, which B also hears (RX2_PATH) and
+// switches the shared front end off. Waking retunes with the last rx() settings
+static void rx_sleep(bool sleep)
+{
+	if (!supported || mode != RADIO_MODE_FM || transmitting || !have_rx || sleep == asleep) {
+		return;
+	}
+	if (sleep) {
+		bk4819_set_state(&rf_main, BK4819_STATE_IDLE);
+		lo_off();
+		gd88_path_rx(rx_hz, false, false);
+		asleep = true;
+	} else {
+		subtone_t t = rx_tone;
+		(void)rx(rx_hz, rx_bw, &t);
+	}
+}
+#endif
+
 void gd88_radio_diag(gd88_radio_diag_t *d)
 {
 	d->main_id = main_id;
@@ -635,4 +658,7 @@ const hal_radio_t gd88_radio = {
 	.volume = volume,
 	.tx_tone = tx_tone,
 	.tx_tone_key = tx_tone_key,
+#if CONFIG_BATTERY_SAVE
+	.rx_sleep = rx_sleep,
+#endif
 };
