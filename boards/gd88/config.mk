@@ -9,8 +9,8 @@ CONFIG_NAND_STORAGE ?= y
 CONFIG_DMR ?= y
 # Not written yet (the list below)
 CONFIG_NET_USRP ?= n
-# The split-duplex roles need a continuous base-station outbound that the per-burst TX path doesn't have (as on the
-# DB25-D, the same modem and PA sequence)
+# The split-duplex roles need a continuous base-station outbound that the per-burst TX path (B keys the PA per
+# burst) doesn't have
 CONFIG_HOTSPOT_SPLIT ?= n
 # The 320x240 panel takes the large fonts (they are for 240 px and wider)
 CONFIG_FONT_XL ?= y
