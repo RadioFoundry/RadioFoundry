@@ -368,11 +368,12 @@ def _c_sources(board_dir):
 
 def shared_board_dirs(root, bid, mk):
     """The directories under boards/ besides boards/<bid> that the board's BOARD_DIRS builds: code a family of radios
-    shares (boards/uv380_family), which has no board.mk of its own."""
+    shares (boards/uv380_family), which has no board.mk of its own, and a subdirectory such as boards/<radio>/common
+    (code a radio's SoCs share)."""
     out = []
     for d in mk.get("BOARD_DIRS", "").split():
         parts = d.strip("/").split("/")
-        if parts[0] == "boards" and len(parts) == 2 and parts[1] != bid and os.path.isdir(os.path.join(root, d)):
+        if parts[0] == "boards" and parts[1:] != [bid] and len(parts) >= 2 and os.path.isdir(os.path.join(root, d)):
             out.append(os.path.join(root, d))
     return out
 

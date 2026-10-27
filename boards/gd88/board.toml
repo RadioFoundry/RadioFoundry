@@ -45,6 +45,33 @@ keep_codec = false
 stock_versions = ["B49E.D64.EOPSAB.021"]
 backup = { stock = "full", rfoundry = "full", spi_size = 0 }
 
+# Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
+# as offsets in that memory, what with the spec section that establishes it. The NAND entries follow the stock block
+# map (docs/spec/spi-nand-lut.md), read on the bench's A
+[[flash.protect]]
+mem = "progmem"
+start = 0x1FD000
+end = 0x1FF000
+what = "the display record and the factory calibration's program flash copy (hardware-gd88.md 7)"
+
+[[flash.protect]]
+mem = "nand"
+start = 0x0
+end = 0x20000
+what = "the stock block map (LUT0) in physical block 0 (hardware-gd88.md 7, spi-nand-lut.md)"
+
+[[flash.protect]]
+mem = "nand"
+start = 0x280000
+end = 0x380000
+what = "factory calibration, the NAND copy (logical 0x280000): physical block 20 plus one block up for each unusable block below it; up to 7 covered, as the web flasher's search (hardware-gd88.md 7: block 21 on the bench's A)"
+
+[[flash.protect]]
+mem = "nand"
+start = 0xF9C0000
+end = 0x10000000
+what = "the stock firmware's spare pool, the top 10 usable blocks: blocks 1998-2047 hold them with up to 40 unusable blocks (hardware-gd88.md 7, spi-nand-lut.md)"
+
 [flash.bootloader]
 hold = ["sk1"]	# while turning the volume knob on
 steps = [
@@ -57,7 +84,8 @@ steps = [
 # PTB13 latch, PTB12 power key, hardware-gd88.md 9.1); 2 MB of program flash. No LEDs: the default LED pins (PTB0,
 # PTB1) are the serial chain's clock and data on this radio, and its status LEDs are on SoC B.
 # stock_console: the stock firmware answers the debug console (USMART) the web flasher loads the stub through before
-# RadioFoundry is installed (stock_versions: the builds it knows)
+# RadioFoundry is installed (stock_versions: the builds it knows). calibration: the factory calibration's two copies,
+# the program flash's and the NAND page at its stock logical address (hardware-gd88.md 7)
 [flash.stub]
 id = 4
 hold_power = true
@@ -65,6 +93,7 @@ progmem = 0x200000
 tested = false
 stock_console = "usmart"
 leds = []
+calibration = { progmem = 0x1FE000, nand = 0x280000, magic = "TUNE" }
 
 # The codec slot and windows come from boards/gd88/memory.ld (__codec_*, the script CONFIG_DMR selects)
 [codec]

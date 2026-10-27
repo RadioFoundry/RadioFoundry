@@ -579,6 +579,32 @@
      50380800
     ]
    ],
+   "protect": [
+    {
+     "mem": "progmem",
+     "start": 2084864,
+     "end": 2093056,
+     "what": "the display record and the factory calibration's program flash copy (hardware-gd88.md 7)"
+    },
+    {
+     "mem": "nand",
+     "start": 0,
+     "end": 131072,
+     "what": "the stock block map (LUT0) in physical block 0 (hardware-gd88.md 7, spi-nand-lut.md)"
+    },
+    {
+     "mem": "nand",
+     "start": 2621440,
+     "end": 3670016,
+     "what": "factory calibration, the NAND copy (logical 0x280000): physical block 20 plus one block up for each unusable block below it; up to 7 covered, as the web flasher's search (hardware-gd88.md 7: block 21 on the bench's A)"
+    },
+    {
+     "mem": "nand",
+     "start": 261881856,
+     "end": 268435456,
+     "what": "the stock firmware's spare pool, the top 10 usable blocks: blocks 1998-2047 hold them with up to 40 unusable blocks (hardware-gd88.md 7, spi-nand-lut.md)"
+    }
+   ],
    "keep_codec_supported": false,
    "first_stage": [
     4096,
@@ -637,6 +663,11 @@
     "nand": true,
     "progmem": 2097152,
     "stock_console": "usmart",
+    "calibration": {
+     "progmem": 2088960,
+     "nand": 2621440,
+     "magic": "TUNE"
+    },
     "leds": [
      255,
      255
@@ -685,6 +716,32 @@
      50331648,
      50380800
     ]
+   ],
+   "protect": [
+    {
+     "mem": "progmem",
+     "start": 2084864,
+     "end": 2093056,
+     "what": "SoC B: the display record and the factory calibration's program flash copy (hardware-gd88.md 7)"
+    },
+    {
+     "mem": "nand",
+     "start": 0,
+     "end": 131072,
+     "what": "SoC B: the stock block map (LUT0) in physical block 0 (hardware-gd88.md 7, spi-nand-lut.md)"
+    },
+    {
+     "mem": "nand",
+     "start": 2621440,
+     "end": 3670016,
+     "what": "SoC B: factory calibration, the NAND copy (logical 0x280000): physical block 20 plus one block up for each unusable block below it; up to 7 covered, as the web flasher's search (hardware-gd88.md 7: block 21 on the bench's A)"
+    },
+    {
+     "mem": "nand",
+     "start": 261881856,
+     "end": 268435456,
+     "what": "SoC B: the stock firmware's spare pool, the top 10 usable blocks: blocks 1998-2047 hold them with up to 40 unusable blocks (hardware-gd88.md 7, spi-nand-lut.md)"
+    }
    ],
    "keep_codec_supported": false,
    "first_stage": [
@@ -747,6 +804,11 @@
     "nand": true,
     "progmem": 2097152,
     "stock_console": null,
+    "calibration": {
+     "progmem": 2088960,
+     "nand": 2621440,
+     "magic": "TUNE"
+    },
     "leds": [
      16,
      49

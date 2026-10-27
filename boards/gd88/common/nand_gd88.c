@@ -39,7 +39,7 @@ static spi_nand_t nand = {
 	.page_size = 2048,
 	.spare_size = 64,
 	.pages_per_block = 64,
-	.blocks = GD88_NAND_BLOCKS,
+	.blocks = 2048,			// GD88_NAND_BLOCKS, a literal for tools/boards.py (the NAND's size)
 #if CONFIG_NAND_STORAGE
 	// Feature 0xB0: ECC on, high speed read off (the internal data move needs it off, and random page reads are
 	// faster without it), block protection commands off. Every block locked (0xA0 = 0x38) except during a program

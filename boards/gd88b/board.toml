@@ -36,6 +36,33 @@ keep_codec = false
 stock_versions = []
 backup = { stock = "full", rfoundry = "full", spi_size = 0 }
 
+# Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
+# as offsets in that memory, what with the spec section that establishes it. The NAND entries follow the stock block
+# map (docs/spec/spi-nand-lut.md), read on the bench's A
+[[flash.protect]]
+mem = "progmem"
+start = 0x1FD000
+end = 0x1FF000
+what = "SoC B: the display record and the factory calibration's program flash copy (hardware-gd88.md 7)"
+
+[[flash.protect]]
+mem = "nand"
+start = 0x0
+end = 0x20000
+what = "SoC B: the stock block map (LUT0) in physical block 0 (hardware-gd88.md 7, spi-nand-lut.md)"
+
+[[flash.protect]]
+mem = "nand"
+start = 0x280000
+end = 0x380000
+what = "SoC B: factory calibration, the NAND copy (logical 0x280000): physical block 20 plus one block up for each unusable block below it; up to 7 covered, as the web flasher's search (hardware-gd88.md 7: block 21 on the bench's A)"
+
+[[flash.protect]]
+mem = "nand"
+start = 0xF9C0000
+end = 0x10000000
+what = "SoC B: the stock firmware's spare pool, the top 10 usable blocks: blocks 1998-2047 hold them with up to 40 unusable blocks (hardware-gd88.md 7, spi-nand-lut.md)"
+
 [flash.bootloader]
 steps = [
 	"Turn the radio off and connect the programming cable.",
@@ -44,8 +71,8 @@ steps = [
 ]
 
 # The universal stub's board profile: no power latch (A holds the power), its status LEDs (pins.h PIN_LED1, PIN_LED2),
-# UART 0x14090000 before CONFIG (the link to A), reached through A's bridge. B has its own SPI NAND
-# (hardware-gd88.md 7), which its build doesn't use
+# UART 0x14090000 before CONFIG (the link to A), reached through A's bridge. B has its own SPI NAND, which holds its
+# own calibration page; calibration: its two copies (hardware-gd88.md 7, 10)
 [flash.stub]
 id = 5
 hold_power = false
@@ -54,7 +81,7 @@ tested = false
 leds = ["PIN_LED1", "PIN_LED2"]
 uart = 0x14090000
 bridge = true
-nand = true
+calibration = { progmem = 0x1FE000, nand = 0x280000, magic = "TUNE" }
 
 # The codec slot and windows come from boards/gd88b/memory.ld. B runs A's codec, packed as on A (from): the user gives
 # only A's file, or the web flasher reuses A's slot; B's own files still work (hardware-gd88.md 8)
