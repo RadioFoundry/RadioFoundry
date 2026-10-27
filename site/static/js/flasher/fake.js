@@ -100,11 +100,12 @@ export class FakeRadio {
 	// state: "stock" (stock firmware: codec in place, no serial port), "rfoundry", "rfoundry-nocodec", "bootloader".
 	// stubEntry: RadioFoundry built with CONFIG_STUB_ENTRY; adopt: the stub keeps RadioFoundry's USB device (else the port goes away
 	// and serialStream() gives the new one); cutAfter: stub programs before the "cable" is pulled. stubVersion: the
-	// STM32F4 stub's protocol (5: the security register ops, which this fake and the page leave out; 4: CONFIG and the
-	// record echo; 2 and 3: the DM-1701's wiring built in); stubConfig: what the stub does with a record it would
-	// accept ("ok", "refuse": answers bad argument, "garble": accepts it but HELLO echoes different bytes).
+	// STM32F4 stub's protocol (5: SREAD, the security registers; 4: CONFIG and the record echo; 2 and 3: the DM-1701's
+	// wiring built in); stubConfig: what the stub does with a record it would accept ("ok", "refuse": answers bad
+	// argument, "garble": accepts it but HELLO echoes different bytes). cpsSecurity false: a build whose codeplug
+	// protocol doesn't serve the security registers (area 10).
 	// state "openfw": another open firmware runs (installOpenFirmware; await radio.ready before using it), options in openfw
-	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {}, flashKb = 1024 } = {}) {
+	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {}, flashKb = 1024, cpsSecurity = true } = {}) {
 		this.sim = sim;
 		this.board = sim.board;
 		this.key = sim.key;
@@ -127,6 +128,7 @@ export class FakeRadio {
 		this.adopt = adopt;
 		this.cutAfter = cutAfter;
 		this.stubVersion = stubVersion;
+		this.cpsSecurity = cpsSecurity;
 		this.stubConfig = stubConfig;
 		this.stubRecord = null;		// the board record in force; a fresh stub has none
 		this.configs = 0;
@@ -378,6 +380,12 @@ export class FakeRadio {
 			if (!this.spi.subarray(a, a + data.length).every((x) => x === 0xFF)) return reply(REFUSED);
 			this.spi.set(data, a);
 			reply(OK);
+		} else if (op === 0x15 && this.stubVersion >= 5) {
+			// SREAD: status register 2 (no lock bits), then for 1-3 the register's CRC-32 and its 256 bytes
+			if (!spiSize || p[0] > 3) return reply(BADARG);
+			if (p[0] === 0) return reply(OK, new Uint8Array([0]));
+			const d = this.security.subarray((p[0] - 1) * 256, p[0] * 256);
+			reply(OK, concat(new Uint8Array([0]), be32(crc32(d)), d));
 		} else if (op === 0x0D) {
 			if (u32be(p, 0) !== F4_MAGIC) return reply(REFUSED);
 			reply(OK);
@@ -523,7 +531,7 @@ export class FakeRadio {
 			let src = null, a = addr;
 			if (area === 1) src = this.spi;
 			else if (area === 5) src = this.flash;
-			else if (area === 10) { src = this.security; a = ((addr >> 12) - 1) * 0x100 + (addr & 0xFFF); }
+			else if (area === 10 && this.cpsSecurity) { src = this.security; a = ((addr >> 12) - 1) * 0x100 + (addr & 0xFFF); }
 			if (!src || a + len > src.length || len === 0) return new Uint8Array([0x2D]);
 			return concat(new Uint8Array([0x52, len >> 8, len & 0xFF]), src.subarray(a, a + len));
 		}

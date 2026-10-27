@@ -180,8 +180,9 @@ test("SPI flash: only changed sectors are written, then verified; outside the ch
 });
 
 // A backup through the loader the way the backup step runs it
-async function backupVia(radio, sim, what) {
+async function backupVia(radio, sim, what, { patch = () => {} } = {}) {
 	const link = new Link(radio.serialStream());
+	patch(link);
 	let handedOver = false;
 	const loader = f4LoaderReader(link, { stubJson: async () => stubJson, reopen: async () => radio.serialStream(), board: fb.f4stub.boards[radio.board.id], onHandOver: () => { handedOver = true; } });
 	const parts = await readRadio(link, sim.board, { backup: { spi_size: radio.spi.length } }, { what, readers: [loader] });
@@ -195,7 +196,9 @@ test("backup through the loader, every loader board: the security registers over
 		assert.ok(b.loader.used && b.handedOver);
 		assert.deepEqual(radio.events, ["stub (from RadioFoundry)", "reset"]);
 		assert.equal(radio.mode, "normal", "the radio runs RadioFoundry again");
-		assert.ok(b.get("security-registers").complete, "read over the debug link before the hand-over");
+		assert.ok(b.get("security-registers").complete, "read before the hand-over, and again through the loader");
+		assert.deepEqual(b.get("security-registers").data, radio.security);
+		assert.equal(b.parts.filter((x) => x.what === "security-registers").length, 1, "the two reads agree: one copy");
 		const internal = b.get("internal-flash");
 		assert.equal(internal.addr, APP_BASE);
 		assert.ok(internal.complete);
@@ -204,6 +207,30 @@ test("backup through the loader, every loader board: the security registers over
 		assert.ok(spi.complete);
 		assert.deepEqual(spi.data, radio.spi);
 	}
+});
+
+test("security registers: a build without them in the codeplug protocol gets them through the loader's SREAD", async () => {
+	for (const id of Object.keys(fb.f4stub.boards)) {
+		const { sim, radio } = await running(id, { cpsSecurity: false });
+		const b = await backupVia(radio, sim, { internal: false, spi: "none" });
+		assert.ok(b.loader.used, "the loader opened for the calibration alone");
+		assert.deepEqual(b.get("security-registers").data, radio.security);
+		assert.equal(radio.mode, "normal", "and RadioFoundry runs again");
+	}
+});
+
+test("security registers: the codeplug protocol's copy alone without SREAD (a protocol 4 stub), both when the reads differ", async () => {
+	const { sim, radio } = await running("dm1701", { stubVersion: 4 });
+	const old = await backupVia(radio, sim, {});
+	assert.deepEqual(old.get("security-registers").data, radio.security);
+	const { sim: sim2, radio: radio2 } = await running("dm1701");
+	const differ = await backupVia(radio2, sim2, {}, { patch: (link) => {
+		const read = link.cpsRead.bind(link);
+		link.cpsRead = async (area, addr, len) => { const d = await read(area, addr, len); if (area === 10 && d) d[0] ^= 1; return d; };
+	} });
+	assert.deepEqual(differ.get("security-registers").data, radio2.security, "the loader's CRC-checked copy is the one kept");
+	const other = differ.parts.find((x) => x.file === "security-registers-codeplug-protocol.bin");
+	assert.ok(other && !other.complete && other.data[0] === (radio2.security[0] ^ 1));
 });
 
 test("backup without stub entry: the loader doesn't start and the debug link reads everything, RadioFoundry untouched", async () => {

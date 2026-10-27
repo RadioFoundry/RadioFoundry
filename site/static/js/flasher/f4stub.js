@@ -21,10 +21,11 @@ import { FrameError, OK, Stub, StubError, unpack } from "./stub.js";
 export const BLOCK = 4096, FLASH_BASE = 0x08000000, APP_BASE = 0x0800C000, STUB_RUN = 0x20000000;
 export const F4_MAGIC = 0x46345342;	// 'F4SB': ERASE, XERASE and RESET carry it
 export const MEM_INTERNAL = 0, MEM_SPI = 1;
-export const OP = { HELLO: 0x01, PEEK: 0x02, SUMS: 0x07, READ: 0x09, RESET: 0x0D, ERASE: 0x10, PROGRAM: 0x11, XERASE: 0x12, XPROGRAM: 0x13, CONFIG: 0x14 };
+export const OP = { HELLO: 0x01, PEEK: 0x02, SUMS: 0x07, READ: 0x09, RESET: 0x0D, ERASE: 0x10, PROGRAM: 0x11, XERASE: 0x12, XPROGRAM: 0x13, CONFIG: 0x14, SREAD: 0x15 };
 export const BADARG = 0x0D, REFUSED = 0x0F, NOCONFIG = 0x11;
 export const HELLO_CONFIGURED = 0x80, HELLO_LEN = 26, REC_LEN = 24;	// HELLO v4 without the record echo; the board record
 export const CONFIG_VERSION = 4;	// the first protocol with CONFIG (3 added the image header and the watchdog feed)
+export const SREG_VERSION = 5, SREG_LEN = 256, SREG_COUNT = 3;	// the SPI flash's security registers 1-3 (stub-stm32f4.md 6.2)
 const SUM_MAX = 800, READ_PACK = 16, ERASE_TIMEOUT = 6000;
 const be16 = (n) => new Uint8Array([(n >> 8) & 0xFF, n & 0xFF]);
 const u16be = (b, o) => (b[o] << 8) | b[o + 1];
@@ -341,6 +342,33 @@ export class F4Stub extends Stub {
 
 	// Write data (whole 4 KB sectors) into the SPI flash from start: only the sectors whose CRC differs are erased and
 	// programmed (blank pieces skipped), each read back by the stub, then all checked again. Returns {written, same}.
+	// The SPI flash's three security registers (768 bytes), each checked against the stub's CRC-32 and read again when it
+	// doesn't match. null: a stub before protocol 5, or a flash it doesn't send their commands to (not Winbond: BADARG)
+	async sregReadAll({ tries = 3 } = {}) {
+		if (!(this.info?.version >= SREG_VERSION)) return null;
+		const out = new Uint8Array(SREG_LEN * SREG_COUNT);
+		for (let reg = 1; reg <= SREG_COUNT; reg++) {
+			for (let i = 0; ; i++) {
+				let r;
+				try {
+					r = await this.request(OP.SREAD, new Uint8Array([reg]), { timeout: 2000 });
+				} catch (e) {
+					if (e.status === BADARG) return null;
+					throw e;
+				}
+				if (r.length !== 5 + SREG_LEN) throw new StubError(`SREAD ${reg} reply is ${r.length} bytes, wanted ${5 + SREG_LEN}`);
+				const data = r.subarray(5);
+				if (crc32(data) === u32be(r, 1)) {
+					out.set(data, (reg - 1) * SREG_LEN);
+					break;
+				}
+				if (i + 1 >= tries) throw new StubError(`security register ${reg}: no read matching the stub's CRC after ${tries} tries`);
+				this.log(`security register ${reg}: CRC mismatch, reading again`);
+			}
+		}
+		return out;
+	}
+
 	async spiWrite(data, start = 0, { progress = () => {}, signal } = {}) {
 		this.needSpi();
 		if (start % BLOCK || data.length % BLOCK || start + data.length > this.info.spiSize) throw new StubError("SPI flash writes are whole 4 KB sectors inside the chip");

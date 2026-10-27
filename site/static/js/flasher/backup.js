@@ -16,7 +16,7 @@
 // firmware_now.kind: "rfoundry", or "openfw" for a radio backed up on another open firmware before the install
 // (openfw.js: radio_type, git, built, flash_id from its radio info). Nothing here leaves the user's computer: the bundle is built in the page and saved as a download.
 
-import { hex, sha256 } from "./bytes.js";
+import { equal, hex, sha256 } from "./bytes.js";
 import { zip, unzip } from "./zip.js";
 import { debugLinkReader } from "./readers.js";
 
@@ -30,25 +30,31 @@ export class BackupError extends Error {}
 
 // Read a radio that runs RadioFoundry. what: {internal, spi: "full" | "codeplug" | "none", security}. Returns the parts.
 // readers (readers.js): bulk readers to try first, in order, for the two memories; the debug link reads them when
-// none opens. The small parts only the debug link reads (radio info, security registers) come first, before a reader
-// may hand the radio over to a loader. A reader that opened is closed (or aborted on a failure) before this returns.
+// none opens. The small parts the codeplug protocol serves (radio info, security registers) come first, before a
+// reader may hand the radio over to a loader. A build may not serve the security registers there: then a reader is
+// opened for them alone. A reader that reads them (the loader's SREAD, CRC-checked) reads them again, and its copy
+// is the one kept; one that differs from the first keeps that too. A reader that opened is closed (or aborted on a
+// failure) before this returns.
 export async function readRadio(link, board, radio, { what = {}, progress = () => {}, signal, readers = [] } = {}) {
 	const parts = [];
 	const want = { internal: true, spi: "full", security: true, ...what };
 	const step = (name) => (done, total) => progress(name, done, total);
-	const info = await link.cpsRead(CPS_INFO, 0, 128);
+	// a build without the codeplug protocol's areas refuses these, or doesn't answer them
+	const cps = async (area, addr, len) => { try { return await link.cpsRead(area, addr, len); } catch (e) { return null; } };
+	const info = await cps(CPS_INFO, 0, 128);
 	if (info) parts.push({ file: "radio-info.bin", what: "radio-info", addr: 0, data: info, complete: true });
+	let security = null;
 	if (want.security) {
 		const regs = [];
 		for (const a of [0x1000, 0x2000, 0x3000]) {
-			const d = await link.cpsRead(CPS_SECURITY, a, 256);
+			const d = await cps(CPS_SECURITY, a, 256);
 			if (d) regs.push(d);
 		}
 		if (regs.length) {
 			const data = new Uint8Array(regs.reduce((n, d) => n + d.length, 0));
 			let o = 0;
 			for (const d of regs) { data.set(d, o); o += d.length; }
-			parts.push({ file: "security-registers.bin", what: "security-registers", addr: 0x1000, data, complete: regs.length === 3 });
+			security = { file: "security-registers.bin", what: "security-registers", addr: 0x1000, data, complete: regs.length === 3 };
 		}
 	}
 	// A loader bounds the MCU flash by the chip's own size register, which on some parts reads less than the board's
@@ -65,7 +71,7 @@ export async function readRadio(link, board, radio, { what = {}, progress = () =
 		parts.push({ file: "internal-flash.bin", what: "internal-flash", addr: base, data: r.data, complete: r.complete });
 	}
 	let reader = debugLinkReader(link);
-	if (readers.length && ((want.internal && !internalFirst) || want.spi !== "none")) {
+	if (readers.length && ((want.internal && !internalFirst) || want.spi !== "none" || (want.security && !security?.complete))) {
 		await link.cpsClose();	// the debug link's CPS session ends before a reader takes the radio
 		for (const r of readers) {
 			if (await r.open(step("loader"))) {
@@ -75,6 +81,14 @@ export async function readRadio(link, board, radio, { what = {}, progress = () =
 		}
 	}
 	try {
+		if (want.security && reader.security) {
+			const data = await reader.security();
+			if (data) {
+				if (security && !equal(security.data, data)) parts.push({ ...security, file: "security-registers-codeplug-protocol.bin", what: "security-registers-unchecked", complete: false });
+				security = { file: "security-registers.bin", what: "security-registers", addr: 0x1000, data, complete: true };
+			}
+		}
+		if (security) parts.push(security);
 		if (want.internal && !internalFirst) {
 			const base = board.app_base, size = board.flash_end - board.app_base;
 			const r = await reader.read("internal", base, size, { progress: step("internal"), signal });

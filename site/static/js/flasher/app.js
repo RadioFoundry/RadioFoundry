@@ -1137,8 +1137,9 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 	let pick = "all";
 	const times = {};
 	// the loader reads the internal flash at about 500 KB/s and the SPI flash at about 280 KB/s (stub-stm32f4.md 11),
-	// plus the hand-over and the restart; the codeplug alone is no faster that way, so the debug link reads it
-	const viaLoader = () => !!(f4Board() && S.now?.kind === "rfoundry" && S.now.stubOffer && pick !== "codeplug" && pick !== "calibration");
+	// plus the hand-over and the restart; the codeplug alone is no faster that way, so the debug link reads it. The
+	// calibration alone takes the loader only where the build doesn't serve the security registers (readRadio)
+	const viaLoader = () => !!(f4Board() && S.now?.kind === "rfoundry" && S.now.stubOffer && pick !== "codeplug");
 	const seconds = (id) => (id !== "codeplug" && id !== "calibration" && f4Board() && S.now?.stubOffer
 		? 12 + internalSize / 500e3 + (choices[id].what.spi === "full" ? S.radio.backup.spi_size / 280e3 : 0)
 		: S.readRate ? choices[id].bytes / S.readRate : null);

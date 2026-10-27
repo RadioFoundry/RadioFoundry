@@ -69,6 +69,8 @@ export function f4LoaderReader(link, { stubJson, reopen, board, log = () => {}, 
 		},
 		read: async (mem, addr, n, { progress } = {}) =>
 			({ data: await stub.readFlash(addr, n, { mem: mem === "spi" ? MEM_SPI : MEM_INTERNAL, progress }), complete: true }),
+		// the SPI flash's security registers through the stub (SREAD), CRC-checked; null where the stub can't
+		security: () => stub.sregReadAll(),
 		close: async () => {
 			holding = false;
 			await stub.resetChip();
