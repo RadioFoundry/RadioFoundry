@@ -42,7 +42,7 @@ const CH340 = 0x1A86;
 const ROM_WAIT = 180000;		// how long the page listens for the boot ROM per try
 const BOOT_MS = 9000;			// a soft reset to RadioFoundry answering its debug link (bench 2026-10-15: 8-9 s)
 
-let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, errorText, analysisOffer,
+let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, flashMark, errorText, analysisOffer,
 					// problemNotice, failureNotice, stubJson}
 const S = () => ctx.S;
 const C = () => ctx.fb().c7000;
@@ -925,9 +925,10 @@ export function writeView() {
 			const res = await c.stub.writeProgram(data, start, { appStart: C().app_start, appEnd: C().app_end, onSector: (a, st) => {
 				map.set(a, st);
 				if (st === "todo") todo++;
-				if (st === "written") done++;
+				if (st === "written") { done++; ctx.flashMark(started, "first_byte"); }
 				prog.set(done, todo, t("flash.c7.write.writing", { done, todo }));
 			} });
+			ctx.flashMark(started, "last_byte");
 			prog.set(1, 1, t("flash.c7.write.verified"));
 			c.log.add(`written ${res.written} sectors, ${res.same} unchanged, all verified by CRC`);
 			ctx.flashFinished(started);

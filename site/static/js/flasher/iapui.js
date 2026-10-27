@@ -233,7 +233,8 @@ export function makeStockRoutes(host) {
 				prog.el.hidden = false;
 				await loader.write(image, { signal: stop.signal, restore, name,
 					onPhase: (p) => fill(status, h("p", { class: "muted c7-big" }, t(p === "erase" ? "flash.iap.erasing" : "flash.iap.writing"))),
-					onPage: (i, n) => prog.set(i, n, t("flash.iap.page", { done: i, total: n })) });
+					onPage: (i, n) => { if (i > 0) ctx.flashMark(started, "first_byte"); prog.set(i, n, t("flash.iap.page", { done: i, total: n })); } });
+				ctx.flashMark(started, "last_byte");
 				prog.set(1, 1, t(TEXTS[protocol()].written));
 				ctx.flashFinished(started);
 				c.resetAt = Date.now();

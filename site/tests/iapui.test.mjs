@@ -63,7 +63,7 @@ function route() {
 		};
 		return l;
 	};
-	const ctx = { flashStarted: () => 0, flashFinished() {}, errorText: (e) => e.message, helpLink: () => null, next() {} };
+	const ctx = { flashStarted: () => 0, flashFinished() {}, flashMark() {}, errorText: (e) => e.message, helpLink: () => null, next() {} };
 	const routes = makeStockRoutes({ S, ctx, C: () => C, boardId: () => radio.flash.board, session: () => state.c7, busy: async () => {},
 		loader, fill: (el, ...p) => el.replaceChildren(...p.flat().filter(Boolean)), stubImage: async () => new Uint8Array(0) });
 	return { state, forwards, calls, routes };
