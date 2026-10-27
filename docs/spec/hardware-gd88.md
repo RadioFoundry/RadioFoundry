@@ -19,7 +19,7 @@ manual, the vendor's PC tools and the disassembly agree.
 | **BIN** | Observed by disassembly of the official GD-88 firmware images (facts only: addresses, values, string references; no code carried over) |
 | **COM** | Vendor or community public material: Radioddity manuals, release notes, product page, and the vendor's PC installers (inspected as data, never run) |
 | **INF** | Inferred by us from the above; not seen directly |
-| **HW** | Seen on a radio running RadioFoundry |
+| **HW** | Seen on a radio, running the stock firmware or RadioFoundry |
 
 Images examined (BIN): A `B49E.D64.EOPSAB.021` (2025-01-19) and B `B49C.D64.EHRNAB.012` (2025-01-17), plus
 A `B49E.D64.EOPSAB.013` and B `B49C.D64.EHRNAB.008` (2023-03) as a cross-check, and a raw byte scan of the
@@ -54,6 +54,7 @@ USB 21 / 53 (datasheet).
 | Which SoC | A, UART1 (0x14040000), interrupt vector 42, set to 115200 by the start-up task. The A routines that read and write UART1 serve the PC protocol: model handshake strings "+DRS-880plus" and "+136-480MHZ+", 2 MB read/write blocks, record read, factory data, the B reset, and a command-word table shared with the DB25-D family (section 6). The same UART also sends GPS NMEA out to the PC | BIN |
 | Baud | 115200 8N1 in the application (BIN). The vendor's IAP updater offers "115200,n,8,1" and "38400,n,8,1" | BIN, COM |
 | Electrical level | Not stated for the K1 jack. The DB40-D's RJ-45 programming port, on the same platform, is documented as 3.3 V, 115.2 kbaud | COM; INF for the GD-88 level |
+| Speaker with the cable in | The internal speaker still plays with the programming cable plugged in: the stock power-on tone sounds (2026-10-26). The plug doesn't switch the speaker off, so beeps and receive audio can be heard while the debug link runs. Whether the plug cuts the internal microphone is not known | HW; mic unknown |
 | B's own UART1 | Set to 115200 with a receive handler, but it carries only factory tuning / flash-copy commands. Whether it is wired to the K1 jack (directly or through a switch), to test pads, or to nothing is unknown | BIN, INF |
 
 ### PC tools
