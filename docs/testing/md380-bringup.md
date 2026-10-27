@@ -89,7 +89,7 @@ With SNMP off by default (`boards/md380/config.mk`) all of them fit together.
 | Look for | Proves | If not |
 |---|---|---|
 | Backlight on | TIM8 CH1 on PC6 | `display_md380.c` backlight set-up; the LAMP pin may be plain GPIO, not PWM |
-| The Home screen, right side up, black background, red and blue right | FSMC timing, controller init, the factory panel type (hardware-md380.md 7) | Note `display.panel_raw` and `display.panel_type` (debug link `link` section), then rebuild with `MD380_PANEL_TYPE` set to another of the st7735 driver's types, then `MD380_PANEL_MADCTL_XOR` (0x40, 0x80, 0xC0) for orientation. Unknown 2 |
+| The Home screen, right side up, black background, red and blue right | FSMC timing, controller init, the factory panel type (hardware-md380.md 7) | Note the `display.panel_*` keys (debug link `link` section: controller, ID bytes, factory byte, type), then rebuild with `MD380_PANEL_TYPE` set to another of the st7735 driver's types, then `MD380_PANEL_MADCTL_XOR` (0x40, 0x80, 0xC0) for orientation. Unknown 2 |
 | No band of garbage at the edges | 160 x 128 window, no inset | `CONFIG_DISPLAY_INSET` in `config.mk`, the panel's row offset in `display_md380.c` |
 
 ## 3. Keys, channel switch, power, flash
