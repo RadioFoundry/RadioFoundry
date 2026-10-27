@@ -200,7 +200,7 @@ BOARD_SCHEMA = {
     # the stock firmware's codeplug in a data flash backup (tools/backup_codeplug.py, docs/spec/codeplug-port.md 5):
     # dmrconf's driver for it, the span of data flash it sits in, and how its pages map to the addresses the driver
     # takes (block-id: each 4 KB page names its logical block in its last byte)
-    "stock_codeplug": _opt({"dmrconf": _req(str), "span": _req(RANGE), "pages": _req(("block-id",))}),
+    "stock_codeplug": _opt({"dmrconf": _req(str), "span": _req(RANGE), "pages": _req(("block-id", "linear"))}),
 }
 
 PLATFORM_SCHEMA = {

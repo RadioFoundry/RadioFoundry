@@ -102,3 +102,10 @@ lens = [30, 30]
 # reports them
 [cps]
 radio_types = [7]
+
+# The stock codeplug in a backup's SPI flash (tools/backup_codeplug.py): the TYT layout at 0x2000-0x3FFFF, decoded by
+# qdmr's md380 driver. It shares the start of the open-firmware image (hardware-md380.md, flash map)
+[stock_codeplug]
+dmrconf = "md380"
+span = [0x2000, 0x40000]
+pages = "linear"
