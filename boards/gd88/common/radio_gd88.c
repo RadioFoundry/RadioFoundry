@@ -153,7 +153,7 @@ static void lo_resume(void)
 	if (lo_is_at1141) {
 		at1141_restart(&lo_at);
 	} else {
-		lo_resume();
+		bk4819_lo_resume(&rf_lo);
 	}
 }
 #endif
