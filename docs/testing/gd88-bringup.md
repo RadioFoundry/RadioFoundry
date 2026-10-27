@@ -30,7 +30,7 @@ Set up the build before the radio arrives:
 
 ```
 make BOARD=gd88 && make BOARD=gd88b        # build/gd88/rfoundry_gd88_install.bin, build/gd88b/rfoundry_gd88b_install.bin
-make BOARD=gd88 GD88_TX=1 BUILD=build/gd88-tx   # kept for step 15 only; never flash it before then
+make BOARD=gd88 GD88_TX=0 BUILD=build/gd88-rx   # a receiver: for steps 1-14 on a radio not yet checked
 ```
 
 The codec comes from the original files. Put them in `codecs/` as [codecs/README.md](../../codecs/README.md) says (the
@@ -49,8 +49,8 @@ upload a merged image.**
 2. **Never write below 0xC000.** The vendor IAP loader lives at 0x03000000-0x0300BFFF on each SoC. The first stage
    keeps its entry bytes `2C 11 01 C0`; the loader runs the application only if they are there. `pad.py` fails the
    build if the stage loses them.
-3. **Transmit stays off** (`GD88_TX` unset, the default) until step 15. No PTT, no TX test, `--allow-rf` not passed. A's
-   power control is not known; the `GD88_TX=1` build only ramps a DAC as the DB25-D does and may drive the PA wrongly.
+3. **No transmit** until step 15. No PTT, no TX test, `--allow-rf` not passed. On a radio not yet checked, flash the
+   `GD88_TX=0` build for steps 1-14.
 4. **Dummy load for every transmit**, lowest power, short keys. Never key into the antenna jack open.
 5. Back up before the first write (step 3 for A). B has no RadioFoundry route for a backup before its first stage (step 7): the
    original B file is its backup.
@@ -358,30 +358,27 @@ Optional: `qdmr` or another CPS on the same port, and MMDVMHost, on the cable at
 
 ### 15. Transmit, last
 
-Only after steps 6-14 pass. This is where the radio can hurt itself.
+Only after steps 6-14 pass. A's chip makes the signal; the PA, its supplies and its drive (DAC B) are B's, keyed by B on
+A's TX line PTB2 with the drive A sends over the link (hardware-gd88.md 10). Both SoCs must run the same tree.
 
-1. Build the TX image: `make BOARD=gd88 GD88_TX=1 BUILD=build/gd88-tx`. Keep the same codec merge. Install it with
-   `stubtool --rfoundry-enter --write-app` (A running RadioFoundry).
-2. Dummy load on the antenna jack, a power meter if you have one, the bench SDR or a spectrum analyzer in a
-   directional coupler path to the load. Lowest power level.
-3. FM TX, a few seconds, no modulation first (carrier only): measure the frequency (within a few hundred Hz), the
-   power, and any spurs on the second band. Then speech or a tone: deviation about 2.5 kHz at 12.5 kHz.
-4. Power control: the DAC B ramp in `GD88_TX=1` is the DB25-D's; A has no PA drive DAC (the vendor code writes DAC A
-   with 0 for each of its 180 steps) so the power comes from the main BK4819's PA bias (register 0x36) and the page.
-   Step the power levels low to high, one by one, and record the output at each. Do not go above what the load and the
-   radio take (the GD-88 is a 7 W radio). Settles TODO gd88_rf.h (A's power control), hardware-gd88.md 14 item 2.
-5. The TX line PTB2 (high = TX), the speaker-amplifier and TX route bits (bytes 6 or 7 depending on the volume: record
-   at volume 6 and below, and above), and the other VFO's path during TX. Resolves the byte 6 / byte 7 question.
+1. Install B, then A (the default build transmits).
+2. Dummy load on the antenna jack, the bench SDR or a spectrum analyzer in a directional coupler path to the load.
+   Lowest power level.
+3. `rfoundry_debug.py diag`: `pa L/H` at the current frequency, the drives of the page's two tables (0x056 low, 0x045
+   high); `--rx2 diag`: `b pa off idle`.
+4. FM TX, a few seconds: frequency (within a few hundred Hz), deviation, sub-audio (`test_fm_tx.py`). `--rx2 diag`
+   then counts one key and two edges, and B is disarmed again.
+5. Power: step the levels low to high, one by one, and record the output at each. Do not go above what the load and
+   the radio take (the GD-88 is a 7 W radio).
 6. After the key-up: back to receive within a second.
-7. DMR TX: the same, with a second radio or the SDR bench decoding the call (ID, talkgroup, voice). Bursts stay in
-   their 30 ms slot (`DMR_PA_DELAY_US`); `GD88_DMR_TX_INVERT` if the second radio decodes noise. Through a repeater, if
-   one is in reach.
+7. DMR TX: the SDR bench decoding the call (ID, talkgroup, voice, `test_dmr_tx.py`). B ramps the PA for every burst;
+   bursts stay in their 30 ms slot. `GD88_DMR_TX_INVERT` if the decoder sees noise; `GD88_DMR_RF_MODE=` variants if
+   it sees nothing.
 8. Set the bench knob `GD88_TX_CENTER=N` for the reference trim sweep if the frequency is off (the page's TX center
    byte is replaced by N).
-9. B never transmits (its TX pins stay low). Check B stays silent: the SDR sees nothing on B's TX path when A keys.
 
-When all of this works, put the working power control in `radio_gd88.c` and `gd88_rf.h`, turn `GD88_TX` on by default
-and remove the TODO.
+Seen on the bench radio (2026-10-27): FM on 461.4625 MHz at low power, carrier 71 Hz off, CTCSS 100.0 Hz at 307 Hz
+deviation (12.5 kHz) and 633 Hz (25 kHz).
 
 ### 16. The HIL suite
 

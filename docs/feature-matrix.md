@@ -41,7 +41,7 @@ is `tools/bringup.py list --radio <id>`.
 | `fm` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded |
 | `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | not recorded |
 | `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded | not recorded |
-| `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not written |
+| `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded |
 | `vox` | not written | not recorded | not recorded | not written | not recorded | not recorded | not written |
 | `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | not written |
@@ -72,9 +72,9 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_lrrp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_udp_compress` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `sfr` | not recorded | pass (seed) | pass (seed) | not recorded | ✕ | not recorded | not written |
-| `sfr_dualpath_rx` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | off |
-| `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | off |
+| `sfr` | not recorded | pass (seed) | pass (seed) | not recorded | ✕ | not recorded | not recorded |
+| `sfr_dualpath_rx` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | not recorded |
+| `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | not recorded |
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written | not recorded | not written |
 | `aprs_igate` | not recorded | off | not recorded | not written | not written | off | not written |
@@ -182,9 +182,9 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `TFTP_IDDB` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● | ● | ● |
 | `SNMP` | ● | ● | ● | ● | ● | ● | ● |
-| `SFR` | ● | ● | ● | ● | ✕ | ● | … |
-| `SFR_DUALPATH_RX` | ● | ● | ● | ● | ✕ | ● | ○ |
-| `SFR_CWID` | ● | ● | ● | ● | ✕ | ● | ○ |
+| `SFR` | ● | ● | ● | ● | ✕ | ● | ● |
+| `SFR_DUALPATH_RX` | ● | ● | ● | ● | ✕ | ● | ● |
+| `SFR_CWID` | ● | ● | ● | ● | ✕ | ● | ● |
 | `TASK_STACKS` | ● | ● | ● | ● | ● | ● | ● |
 | `USB` | ✕ | ● | ✕ | ✕ | ● | ● | ✕ |
 | `HOSTLINK` | ● | ● | ● | ● | ● | ● | ● |
@@ -208,7 +208,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DUAL_WATCH` | ● | ● | ● | ● | ● | ● | ● |
 | `BEEP` | ● | ● | ● | ● | ● | ● | ● |
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | ● |
-| `DTMF` | ● | ● | ● | ● | … | ● | … |
+| `DTMF` | ● | ● | ● | ● | … | ● | ● |
 | `VOX` | … | ● | ● | … | ● | ● | … |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● |
 | `VIBRATE` | ? | ✕ | ● | ✕ | ✕ | ✕ | ? |

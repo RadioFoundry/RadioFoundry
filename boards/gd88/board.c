@@ -15,7 +15,7 @@
 #include "bcast/rda5807m/rda5807m_hal.h"
 #endif
 
-// Receive only until GD88_TX: the core then refuses every transmission at the band check
+// Receive only with GD88_TX=0: the core then refuses every transmission at the band check
 static const band_t bands[] = {
 	{ 136000000, 174000000, GD88_TX != 0 },
 	{ 400000000, 480000000, GD88_TX != 0 },
@@ -25,7 +25,7 @@ static const band_t bands[] = {
 };
 
 // The page's two PA tables. The radio refuses TX until the PA calibration can be read (radio_gd88.c), and without
-// GD88_TX=1 altogether
+// with GD88_TX=0 altogether
 static const char *const power_names[] = { "L", "H" };
 
 // docs/ux/information-architecture.md 7.1. As the original firmware: the left soft key opens the menu and accepts

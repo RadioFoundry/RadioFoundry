@@ -16,6 +16,7 @@
 // gd88_burst_off, from the RF task in dmr_gd88.c).
 #include "gd88_rf.h"
 #include "config.h"
+#include "hal_dtmf.h"
 #include "radio/radio.h"
 #include "platform.h"
 #include "hal_time.h"
@@ -121,6 +122,16 @@ static const bk4819_bus_t bus_lo = {
 static void at_write(uint8_t reg, uint16_t val) { bk4819_write(&rf_lo, reg, val); }
 static uint16_t at_read(uint8_t reg) { return bk4819_read(&rf_lo, reg); }
 static const at1141_bus_t bus_at = { .write = at_write, .read = at_read, .delay_ms = hal_delay_ms };
+
+static bk4819_tone_t bk_tone(uint8_t type)
+{
+	switch (type) {
+	case TONE_CTCSS: return BK4819_TONE_CTCSS;
+	case TONE_DCS: return BK4819_TONE_DCS;
+	case TONE_DCS_INV: return BK4819_TONE_DCS_INV;
+	default: return BK4819_TONE_NONE;
+	}
+}
 
 static uint32_t lo_hz_for(uint32_t hz)
 {
@@ -327,7 +338,9 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 #endif
 	if (mode != RADIO_MODE_DMR) {	// DMR: the bandwidth and sub-audio are the digital set's
 		bk4819_set_bandwidth(&rf_main, bw == RADIO_BW_25K ? BK4819_BW_25K : BK4819_BW_12K5);
-		bk4819_set_rx_tone(&rf_main, rx_tone.type == TONE_CTCSS ? BK4819_TONE_CTCSS : BK4819_TONE_NONE, rx_tone.value);
+		// An LO above the signal inverts the IF: DCS arrives inverted
+		rf_main.rx_inverted = lo_hz_for(hz) > hz;
+		bk4819_set_rx_tone(&rf_main, bk_tone(rx_tone.type), rx_tone.value);
 	}
 #if GD88_BAND_LO_GPIO
 	lo_band(hz);
@@ -423,14 +436,12 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 #endif
 	}
-	uint16_t ctcss = 0;
-	if (tx_tone != NULL && tx_tone->type == TONE_CTCSS) {
-		if (tx_tone->value < CTCSS_MIN_X10 || tx_tone->value > CTCSS_MAX_X10) {
-			return false;
-		}
-		ctcss = tx_tone->value;
-	} else if (tx_tone != NULL && tx_tone->type != TONE_NONE) {
-		return false;	// no DCS transmit yet
+	subtone_t tone = tx_tone != NULL ? *tx_tone : (subtone_t){ TONE_NONE, 0 };
+	if (tone.type == TONE_CTCSS && (tone.value < CTCSS_MIN_X10 || tone.value > CTCSS_MAX_X10)) {
+		return false;
+	}
+	if ((tone.type == TONE_DCS || tone.type == TONE_DCS_INV) && tone.value > 0777u) {
+		return false;
 	}
 	gd88_tx_plan_t plan;
 	// Power index 1 ("H") is table 0x045; "L" the other table
@@ -442,7 +453,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 	}
 	tx_off_us = plan.off_us;
-	bk4819_tx_prepare(&rf_main, ctcss != 0 ? BK4819_TONE_CTCSS : BK4819_TONE_NONE, ctcss);	// deviation and sub-audio words while the chip still receives
+	bk4819_tx_prepare(&rf_main, bk_tone(tone.type), tone.value);	// deviation and sub-audio words while the chip still receives
 
 	// Receive audio muted at the chip, then the speaker off
 	bk4819_set_af(&rf_main, BK4819_AF_MUTE);
@@ -456,7 +467,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	hal_delay_us(plan.on_us + TX_SUPPLY_US + PA_RAMP_US + PA_SLACK_US);	// B's PA sequence, begun at the edge
 	return true;
 #else
-	// Without GD88_TX (gd88_rf.h): A's power control isn't known yet, and B is a receiver only
+	// Without GD88_TX (gd88_rf.h): B is a receiver only
 	(void)hz;
 	(void)power;
 	(void)tx_tone;
@@ -505,6 +516,32 @@ static bool tx_tone(uint16_t hz)
 	return true;
 }
 
+#if CONFIG_DTMF
+// DTMF (radio-features.md 3.7): the main chip's two tone generators. Dropped at the end of the transmission like a tone
+static bool tx_dtmf(char digit)
+{
+	uint16_t low = 0, high = 0;
+	if (!transmitting || mode != RADIO_MODE_FM || (digit != 0 && !dtmf_pair(digit, &low, &high))) {
+		return false;
+	}
+	bk4819_dtmf_start(&rf_main, low, high);
+	return true;
+}
+#endif
+
+// The DCS turn-off tail; the core holds the carrier for it
+static bool tx_tail(bool on)
+{
+	if (!transmitting || mode != RADIO_MODE_FM) {
+		return false;
+	}
+	if (on) {
+		return bk4819_tx_tail_start(&rf_main);
+	}
+	bk4819_tx_tail_end(&rf_main);
+	return true;
+}
+
 static bool tx_tone_key(bool down)
 {
 	if (!transmitting || mode != RADIO_MODE_FM || rf_main.tone_hz == 0) {
@@ -530,7 +567,7 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = bk4819_rssi_dbm(r67);	// at the main chip's input, the front end's gain not taken out
 	st->noise = (uint8_t)(r65 & 0x7Fu);
 	st->carrier = false;
-	st->tone_ok = bk4819_rx_tone_ok(&rf_main, rx_tone.type == TONE_CTCSS ? BK4819_TONE_CTCSS : BK4819_TONE_NONE);
+	st->tone_ok = bk4819_rx_tone_ok(&rf_main, bk_tone(rx_tone.type));
 }
 
 bool gd88_radio_squelch_open(uint8_t level)
@@ -638,6 +675,10 @@ const hal_radio_t gd88_radio = {
 	.volume = volume,
 	.tx_tone = tx_tone,
 	.tx_tone_key = tx_tone_key,
+	.tx_tail = tx_tail,
+#if CONFIG_DTMF
+	.tx_dtmf = tx_dtmf,
+#endif
 #if CONFIG_BATTERY_SAVE
 	.rx_sleep = rx_sleep,
 #endif

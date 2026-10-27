@@ -2,15 +2,16 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 # GD-88 SoC A feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-gd88.md 13):
 # written from the hardware notes, not yet run on a radio. Analog FM and DMR receive on the BK4819 pair and the C7000
-# modem, the host link on UART1, settings on the SPI NAND, SoC B as the second receiver (dual watch). Transmit is off
-# (GD88_TX). The switches that are off are listed below; USB, PPP and TCP_CONNS follow the platform
+# modem, the host link on UART1, settings on the SPI NAND, SoC B as the second receiver (dual watch), transmit on A's
+# chip through B's PA (GD88_TX). The switches that are off are listed below; USB, PPP and TCP_CONNS follow the platform
 # (platform/hrc7000/config.mk)
 CONFIG_NAND_STORAGE ?= y
 CONFIG_DMR ?= y
 # Not written yet (the list below)
 CONFIG_NET_USRP ?= n
+# The split-duplex roles need a continuous base-station outbound that the per-burst TX path doesn't have (as on the
+# DB25-D, the same modem and PA sequence)
 CONFIG_HOTSPOT_SPLIT ?= n
-CONFIG_SFR ?= n
 # The 320x240 panel takes the large fonts (they are for 240 px and wider)
 CONFIG_FONT_XL ?= y
 CONFIG_FONT_AA ?= y
@@ -38,10 +39,9 @@ LDSCRIPT := boards/gd88/fm_only.ld
 CPU_RAM_SECTION :=
 MCU_DEFS += -DHRC_STUB_BASE=0x00030000u -DHRC_STUB_SIZE=0x00020000u
 endif
-# Transmit (common/gd88_rf.h): off until A's power control is known. ci's maximal configuration builds it
-GD88_TX ?= 0
+# Transmit (common/gd88_rf.h): A's chip, B's PA. GD88_TX=0 builds a receiver
+GD88_TX ?= 1
 MCU_DEFS += -DGD88_TX=$(GD88_TX)
-MAXIMAL_VARS := GD88_TX=1
 # A bench sweep of the reference trim: GD88_TX_CENTER=116 replaces the page's TX center byte
 GD88_TX_CENTER ?=
 ifneq ($(GD88_TX_CENTER),)
@@ -54,15 +54,11 @@ CONFIG_APRS_IGATE ?= n
 CONFIG_BCAST_FM ?= y
 CONFIG_AM_RX ?= n
 # Off by default (docs/build-config.md, "Unsupported, not written, unconfirmed"), one switch a line with the reason.
-# The hardware has each of these; the code for it on this radio isn't written yet. Transmit itself is off until A's
-# power control is worked out (GD88_TX), so the transmit-only features wait for it. USB and USB_NETWORK are the
+# The hardware has each of these; the code for it on this radio isn't written yet. USB and USB_NETWORK are the
 # platform's (no USB data port)
 CONFIG_VOX ?= n
-CONFIG_DTMF ?= n
 BOARD_NOT_WRITTEN += NET_USRP	# the host link stalls under USRP's PCM; another HR_C7000 board carries it at the same 115200 baud
-BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# needs transmit, which waits for A's power control (GD88_TX)
-BOARD_NOT_WRITTEN += SFR	# needs transmit, which waits for A's power control (GD88_TX)
-BOARD_NOT_WRITTEN += DTMF	# no hal_radio_t.tx_dtmf hook yet, and transmit waits for A's power control (GD88_TX)
+BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the per-burst TX path has no continuous base-station outbound yet (above)
 BOARD_NOT_WRITTEN += APRS_RX	# FM receive audio isn't taken from the modem's AF ADC as PCM yet
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += AM_RX	# the air band isn't wired yet (board.radio->rx_am)
