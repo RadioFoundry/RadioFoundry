@@ -613,8 +613,8 @@ runs a real pair (bring-up and timing readout, no upstream; `--repeat` repeats a
   shift). Skips without capability bit 2, which no driver sets yet: the HR_C7000's LAYER2_MAX_CNT trim was tried with
   this test and does not move the physical layer's slot timer (`modem-hrc7000.md` 2.10 finding 13), and the HR_C6000
   has no trim (`modem-hrc6000.md` 9.1).
-- `test_split_rx_half_labels` (10.2) turns RX_META on when INFO offers it and checks an event for every burst sent up,
-  the sequence numbers and both labels.
+- `test_split_rx_half_labels` (10.2) turns RX_META on when INFO offers it and checks an event for every burst heard (a
+  header the uplink makes up for a late entry has none), the sequence numbers and both labels.
 
 ### 10.4 What runs without hardware
 
