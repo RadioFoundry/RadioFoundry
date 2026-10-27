@@ -127,5 +127,38 @@ class Writers(unittest.TestCase):
         self.assertEqual((self.dev.erased, self.dev.vendor), ([], []))
 
 
+class CpsWrites(unittest.TestCase):
+    """tools/cps_client.py: the wire addresses are the data flash's, so a write whose sectors overlap a protected
+    region is refused before the first byte goes out, with or without the image offset."""
+
+    def test_refused_before_anything_is_sent(self):
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import cps_client
+
+        class Wire:
+            sent = b""
+
+            def write(self, b):
+                self.sent += b
+
+            def read(self, n, timeout):
+                return b""
+
+        cal = [{"mem": "data", "start": 0x1000, "end": 0xC9000, "what": "test (x.md 1)"}]
+        img = bytearray(b"\x5a" * cps_client.IMAGE_SIZE)
+        for offset, regions in ((0, cps_client.REGIONS["codeplug"]), (0x700000, [(0x0, 0x1000), (0xC8000, 0xC9000)])):
+            w = Wire()
+            cps = cps_client.Cps(w, 0.01, offset)
+            if offset:
+                with self.assertRaises(cps_client.CpsError):	# no overlap: it gets as far as the radio, which is mute
+                    cps.write_image(img, regions, protect=cal)
+                self.assertTrue(w.sent)
+                continue
+            with self.assertRaises(cps_client.CpsError) as e:
+                cps.write_image(img, regions, protect=cal)
+            self.assertIn("protected region", str(e.exception))
+            self.assertEqual(w.sent, b"")
+
+
 if __name__ == "__main__":
     unittest.main()
