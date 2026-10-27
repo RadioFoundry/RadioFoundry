@@ -366,6 +366,9 @@ void hrc_uart_rx_clear(uint32_t base);	// drain the RX FIFO, clear line status a
 uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged));
 bool hrc_uart_poll_rx(uint32_t base, uint8_t *c);	// a character waiting: taken. No interrupts needed
 bool hrc_uart_poll_tx(uint32_t base, uint8_t c);	// false: the TX FIFO is full
+// Write through the TX FIFO: a task with interrupts on sleeps a tick while it is full, other callers spin. A FIFO full
+// for 20 ticks (or the spin limit) counts a stall and ends the write; returns the bytes written
+size_t hrc_uart_write(uint32_t base, const uint8_t *buf, size_t len, volatile uint32_t *stalls);
 
 // A link to another SoC on a UART (link_uart.c), on a board with two SoCs. Receive by
 // interrupt into a ring, transmit by polling the TX FIFO; one writer at a time (the caller serializes). The board muxes

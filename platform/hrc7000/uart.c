@@ -9,6 +9,7 @@
 #include "hal_time.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "task.h"
 
 #define UART_FMT_RD(base, off)		REG32((base) + (off))
 #define UART_FMT_WR(base, off, v)	(REG32((base) + (off)) = (v))
@@ -28,6 +29,7 @@
 #define BAUD		115200u
 #define RX_SIZE		1024u	// power of two; MMDVM frames are at most 255 bytes, CPS writes 4 KB in 32-byte chunks
 #define TX_SPIN		200000u	// per byte, about 2 ms at 168 MHz: a stalled UART gives up rather than hangs
+#define TX_SLEEPS	20u	// per byte, in ticks, for a task that sleeps while the FIFO is full
 
 #ifndef HRC_HOST_UART
 #define HRC_HOST_UART	0
@@ -52,7 +54,8 @@ static volatile uint32_t rx_line_errors;	// the UART flagged a character (FIFO o
 static volatile uint32_t rx_bytes;
 static volatile uint32_t rx_good_ms;	// hal_millis() at the last byte with no line error (hrc_host_uart_last_rx)
 static volatile bool rx_good_seen;
-static uint32_t tx_bytes, tx_stalls;	// a stall: the TX FIFO stayed full for TX_SPIN, the rest of the write dropped
+static uint32_t tx_bytes;
+static volatile uint32_t tx_stalls;	// a stall: the TX FIFO stayed full (hrc_uart_write), the rest of the write dropped
 static uint32_t waits;			// wait_rx() calls: the host link task's heartbeat (one per pass, 5 ms at most)
 static SemaphoreHandle_t rx_sem;
 static bool started;
@@ -109,6 +112,37 @@ bool hrc_uart_poll_rx(uint32_t base, uint8_t *c)
 	}
 	*c = (uint8_t)UB(base, UART_RBR);
 	return true;
+}
+
+// A task with interrupts on may sleep while the FIFO is full; an interrupt, a fault handler or a section with
+// interrupts off (PSR.IE, bit 6) spins
+static bool may_sleep(void)
+{
+	uint32_t psr;
+	__asm__ volatile ("mfcr %0, psr" : "=r"(psr));
+	return (psr & 0x40u) != 0 && !hrc_in_isr() && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING;
+}
+
+// A spinning writer keeps the CPU for a whole reply: 1 KB is 90 ms at 115200. A host polling the debug link through a
+// 3 s DMR transmission left the idle task out until the watchdog's hang check reset the radio. Sleeping a tick while
+// the FIFO is full keeps the line just as busy (a CPS read is no slower)
+size_t hrc_uart_write(uint32_t base, const uint8_t *buf, size_t len, volatile uint32_t *stalls)
+{
+	bool sleep = may_sleep();
+	for (size_t i = 0; i < len; i++) {
+		uint32_t tries = sleep ? TX_SLEEPS : TX_SPIN;
+		while ((UB(base, UART_USR) & USR_TFNF) == 0) {
+			if (--tries == 0) {
+				(*stalls)++;
+				return i;
+			}
+			if (sleep) {
+				vTaskDelay(1);
+			}
+		}
+		UB(base, UART_RBR) = buf[i];
+	}
+	return len;
 }
 
 bool hrc_uart_poll_tx(uint32_t base, uint8_t c)
@@ -219,18 +253,9 @@ static bool wait_rx(uint32_t timeout_ms)
 
 static size_t wr(const uint8_t *buf, size_t len)
 {
-	for (size_t i = 0; i < len; i++) {
-		uint32_t spins = TX_SPIN;
-		while ((U(UART_USR) & USR_TFNF) == 0) {
-			if (--spins == 0) {
-				tx_stalls++;
-				return i;
-			}
-		}
-		U(UART_RBR) = buf[i];
-		tx_bytes++;
-	}
-	return len;
+	size_t n = hrc_uart_write(HOST_BASE, buf, len, &tx_stalls);
+	tx_bytes += n;
+	return n;
 }
 
 void hrc_host_uart_put_polled(const char *s)

@@ -126,6 +126,12 @@ deaf until a power cycle (bench 2026-10-22; quiet resets came back every time): 
 low divisor byte went out as data. So every HR_C7000 UART set-up (`platform/hrc7000/uart_format.h`) drains the RX FIFO, writes,
 reads LCR, DLL and DLH back, and tries again until they stick (about 100 ms at most).
 
+**2.9 Don't spin on a full UART TX FIFO in a task.** At 115200 a 1 KB debug link reply takes about 90 ms, and a writer
+that spins keeps the CPU the whole time. A host polling the debug link through a 3 s DMR transmission (an emergency
+call's hot mic) kept the idle task out for about 3 s, and the watchdog's hang check reset the radio. `hrc_uart_write`
+sleeps a tick while the FIFO is full when called from a task with interrupts on, and spins only in an interrupt, a
+fault handler or a section with interrupts off. A CPS read is no slower.
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,

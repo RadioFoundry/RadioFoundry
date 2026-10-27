@@ -1,19 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // A link to another SoC on one of the UARTs (platform.h hrc_link_uart_*): a board's two SoCs talk at 115200 8N1
-// (docs/spec/rx2-link.md). Receive by interrupt into a ring buffer with a
-// semaphore for the reading task; transmit by polling the TX FIFO, with a spin limit so a stalled UART drops the rest
-// of a write instead of hanging. Linked only into a build that calls it.
+// (docs/spec/rx2-link.md). Receive by interrupt into a ring buffer with a semaphore for the reading task; transmit
+// by polling the TX FIFO (hrc_uart_write: a task sleeps while it is full), with a limit so a stalled UART drops the
+// rest of a write instead of hanging. Linked only into a build that calls it.
 #include "platform.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
 
-#define UART_RBR	0x00u
-#define UART_USR	0x7Cu
-#define USR_TFNF	0x02u	// TX FIFO not full
-
 #define RX_SIZE		512u	// power of two: several link frames (at most 103 bytes each)
-#define TX_SPIN		200000u	// per byte, about 2 ms at 168 MHz
 
 static uint32_t link_base;
 static uint8_t rx_buf[RX_SIZE];
@@ -85,18 +80,9 @@ size_t hrc_link_uart_write(const uint8_t *buf, size_t len)
 	if (link_base == 0) {
 		return 0;
 	}
-	for (size_t i = 0; i < len; i++) {
-		uint32_t spins = TX_SPIN;
-		while ((REG32(link_base + UART_USR) & USR_TFNF) == 0) {
-			if (--spins == 0) {
-				stats.tx_stalls++;
-				return i;
-			}
-		}
-		REG32(link_base + UART_RBR) = buf[i];
-		stats.tx_bytes++;
-	}
-	return len;
+	size_t n = hrc_uart_write(link_base, buf, len, &stats.tx_stalls);
+	stats.tx_bytes += n;
+	return n;
 }
 
 void hrc_link_uart_stats(hrc_link_uart_stats_t *st)
