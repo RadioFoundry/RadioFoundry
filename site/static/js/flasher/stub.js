@@ -141,14 +141,17 @@ export class Stub {
 	async waitForRom(timeout, { signal, repeat = 0 } = {}) {
 		const until = Date.now() + timeout;
 		this.s.clear();
-		let sending = Promise.resolve(), next = 0, heard = 0;
+		// the answers go out in the background: a write that fails (the cable pulled) ends the wait with its error, and
+		// is never left as an unhandled rejection
+		let sending = Promise.resolve(), next = 0, heard = 0, failed = null;
 		try {
 			while (Date.now() < until) {
 				if (signal?.aborted) throw new StubError("stopped");
 				if (repeat && Date.now() >= next) {
 					next = Date.now() + repeat;
-					sending = sending.then(() => this.s.write(new Uint8Array(ROM_REPLY)));
+					sending = sending.then(() => this.s.write(new Uint8Array(ROM_REPLY))).catch((e) => { failed ||= e; });
 				}
+				if (failed) throw failed;
 				const b = this.s.buf;
 				const at = find(b, ROM_HELLO);
 				if (at >= 0) {

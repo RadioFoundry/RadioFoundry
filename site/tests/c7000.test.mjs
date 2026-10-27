@@ -184,6 +184,21 @@ test("slow cable: the answer to the greeting comes too late, the ROM says so, an
 	assert.notEqual(r.state, "stub");
 });
 
+test("slow cable mode: a cable pulled while the answers go out ends the wait with the lost connection", async (t) => {
+	const { r } = await radio("stock", { romWindow: 40 });
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	let n = 0;
+	r.stream.write = async () => { if (++n > 2) throw new DOMException("The device has been lost.", "NetworkError"); };
+	const unhandled = [];
+	const seen = (e) => unhandled.push(e);
+	process.on("unhandledRejection", seen);
+	t.after(() => process.off("unhandledRejection", seen));
+	await assert.rejects(s.waitForRom(5000, { repeat: 30 }), { name: "NetworkError" });
+	await new Promise((ok) => setTimeout(ok, 50));
+	assert.equal(unhandled.length, 0);
+});
+
 test("slow cable mode: the answer sent ahead every 30 ms gets the load through the same slow cable", async (t) => {
 	const { r } = await radio("stock", { romWindow: 40, faults: { slowCable: 60 } });
 	t.after(() => r.stop());
