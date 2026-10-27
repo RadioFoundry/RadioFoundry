@@ -318,17 +318,33 @@ static void test_trigger(void)
 	CHECK(st && st[7] == SFR_QUEUE_SIZE && st[8] == SFR_QUEUE_SIZE);	// both carry the outbound slot's space
 	CHECK(st && st[13 + 47] == 0xFF && st[13 + 23] == 0xFF);		// raw area -1, reg12 the driver's
 
+	CHECK(sim.split_ons >= 1 && sim.split_offs == 0);	// asked for a second transmitter (sfr.md 3 item 7): none
+	CHECK(!sim.split);
+
 	// Back to simplex: off
 	configure(true, 1);
 	CHECK(!hotspot_alt_active());
+	CHECK(sim.split_offs == 0);	// never on: nothing to turn off
 	st = status();
 	CHECK(st && st[1] == 13);
 	configure(false, 1);
 	CHECK(hotspot_alt_active());
 
+	// With a second transmitter: on while the role runs, off at its end
+	sim.split_offer = true;
+	configure(true, 1);
+	configure(false, 1);
+	CHECK(hotspot_alt_active() && sim.split);
+	configure(true, 1);
+	CHECK(!sim.split && sim.split_offs >= 1);
+	configure(false, 1);
+	CHECK(sim.split);
+
 	// The session's end turns it off; a new session starts in simplex
 	mmdvm_end();
 	CHECK(!hotspot_alt_active());
+	CHECK(!sim.split);
+	sim.split_offer = false;
 	host(MMDVM_GET_VERSION, NULL, 0);
 	slots(2);
 	CHECK(hotspot_running() && !hotspot_alt_active());
@@ -508,13 +524,11 @@ static void test_rf_priority(void)
 // A call of silence (the SDR bench's test call): every superframe's burst B is the same as the last one's. At the
 // 90 ms repeat latency our copy is out of the echo window when the next one arrives; a modem without tx_fill repeated
 // 210 ms late and dropped 3 of them as our echo (HIL 2026-10-16)
-static void test_silent_call(void)
+static void silent_call(void)
 {
 	hotspot_sfr_view_t v;
-	int o;
+	int o = out_count;
 
-	sfr_on();
-	o = out_count;
 	rx_lc(DMR_BURST_VOICE_LC_HEADER, LC1, 1, DMR_SYNC_TS1);
 	rx_then_wait();
 	for (int sf = 0; sf < 3; sf++) {
@@ -545,6 +559,30 @@ static void test_silent_call(void)
 	CHECK(count_out(MMDVM_DMR_DATA1, o) == 20);	// the terminator too
 	CHECK(air_count_kind(DMR_BURST_VOICE, 0) == 18);
 	slots(60);
+}
+
+static void test_silent_call(void)
+{
+	sfr_on();
+	silent_call();
+}
+
+// The same call repeated by a second transmitter (tx_split) without tx_fill: the copy goes out 210 ms late, inside the
+// echo window. The receiving chip doesn't send, so it reports nothing of ours: no echo check (HIL 2026-10-27: a
+// repeat through a second SoC dropped superframes 2 and 3 as our echo)
+static void test_silent_call_split(void)
+{
+	reset_world();
+	sim.split_offer = true;
+	sim.no_fill = true;
+	host(MMDVM_GET_VERSION, NULL, 0);
+	configure(false, 1);
+	set_freq(438500000, 438500000);
+	slots(2);
+	CHECK(sim.split);
+	silent_call();
+	sim.split_offer = false;
+	sim.no_fill = false;
 }
 
 static void test_echo_and_late_entry(void)
@@ -745,6 +783,7 @@ int main(void)
 	test_net_stream();
 	test_rf_priority();
 	test_silent_call();
+	test_silent_call_split();
 	test_rx_fec();
 	test_echo_and_late_entry();
 	test_vendor();

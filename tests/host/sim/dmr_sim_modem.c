@@ -60,6 +60,9 @@ static bool tx_queue(const dmr_tx_burst_t *b)
 
 static int8_t tx_fill(const dmr_tx_burst_t *b)
 {
+	if (sim.no_fill) {
+		return -1;
+	}
 	for (uint8_t i = 0; i < sim.q_count; i++) {
 		dmr_tx_burst_t *q = &sim.q[(sim.q_head + i) % SIM_QUEUE_DEPTH];
 		if (q->kind == DMR_BURST_EMPTY) {
@@ -95,6 +98,18 @@ static void tx_listen(void)
 		sim.tx_listens++;
 }
 
+static bool tx_split(bool on)
+{
+	if (on) {
+		sim.split_ons++;
+		sim.split = sim.split_offer;
+	} else {
+		sim.split_offs++;
+		sim.split = false;
+	}
+	return sim.split;
+}
+
 static void set_cc_filter(int8_t cc) { sim.cc_filter = cc; }
 static bool is_transmitting(void) { return sim.tx_active; }
 
@@ -102,7 +117,7 @@ const hal_dmr_modem_t sim_modem = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
-	.is_transmitting = is_transmitting, .tx_listen = tx_listen, .tx_fill = tx_fill,
+	.is_transmitting = is_transmitting, .tx_listen = tx_listen, .tx_fill = tx_fill, .tx_split = tx_split,
 };
 
 void sim_reset(void)

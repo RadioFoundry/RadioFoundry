@@ -536,7 +536,8 @@ from the call's LC; hold data calls and repeat them whole after 130 ms quiet.
 
 **14.2 Own echo and phantom voice.** The chip reports voice in empty inbound slots with what we sent. Drop voice or
 data matching anything we sent in the last 250 ms; voice counts only within a voice call; after a terminator, ignore
-headerless voice for 10 s; a stale voice A after F with recent AMBE is dropped.
+headerless voice for 10 s; a stale voice A after F with recent AMBE is dropped. Only the sending chip echoes: with
+the repeat on a second transmitter (`tx_split`) there is no check, else a call of silence repeated 180 ms late is lost.
 
 **14.3 Repeat timing.** A burst is ready just after the timeslot interrupt that sets up the next outbound slot, so the
 repeat goes out 90 ms later (measured 90.02-90.05 ms). Read bursts at their Sys interrupt (deferred reads found reg 0x51

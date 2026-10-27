@@ -13,7 +13,9 @@
 //   - honor dmr_tx_burst_t.sync_override (the outbound sync: MS, BS, or the direct mode sync of the outbound slot);
 //   - send DMR_BURST_IDLE bursts with the payload given (the ETSI idle message) and no CRC of its own;
 //   - DMR_EV_TX_SLOT_STARTED once per burst taken from its queue, DMR_EV_TX_DONE after tx_end has drained it;
-//   - tx_listen (optional, called after every tx_begin): receive the inbound slot between our bursts.
+//   - tx_listen (optional, called after every tx_begin): receive the inbound slot between our bursts;
+//   - tx_split (optional, on at the start, off at the stop): send on a second transmitter, so the receiver never
+//     turns around (sfr.md 3 item 7).
 //
 // No RTOS, no board headers: the host link task (hotspot) or the radio task (repeater role) runs it, and the host
 // tests drive it against the simulated modem.
@@ -56,6 +58,7 @@ typedef struct {
 	uint32_t tx_gaps;	// outbound slots left empty in an inbound call's gaps
 	uint32_t tx_filled;	// of those, taken by a burst heard after they were queued (tx_fill)
 	uint32_t tx_beacons;		// idle beacons keyed (sfrRunnerSetBeacon)
+	bool tx_split;			// the repeat goes out on the radio's second transmitter (hal_dmr_modem_t.tx_split)
 	uint32_t up_bursts, up_lost;
 	uint8_t last_rx;		// sync (bits 7-6, sfrSync_t), data type or 0x0F voice (3-0)
 	uint8_t last_rx_cc;		// color code, 0x80 checksum good
