@@ -643,7 +643,7 @@ class Site:
 			  self.tpl.render("features", ctx, lang), "features", nav="features")
 
 	def flash_page(self, lang):
-		strings = json.dumps(self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "report.")),
+		strings = json.dumps(self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "report.", "editor.qdmr.note.")),
 				     ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
 			   '<script type="module" src="{{root}}static/js/flasher/app.js?v=%s"></script>' % (strings, self.asset_version))
