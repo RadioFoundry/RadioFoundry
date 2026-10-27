@@ -26,7 +26,8 @@
 // The modem's receive mode word of hardware-db25d.md 4.5 (the same modem library and RF scheme): AF receive with
 // averaging, AF gain 0x4C, RX IQ inverted (high-side LO: gd88_dmr_lo_side), dynamic sync threshold, dual receive
 // channels, two-point TX.
-// GD88_DMR_RF_MODE=0x... replaces it on the bench. TODO(gd88): unknown, needs a radio: the word on the GD-88 itself
+// GD88_DMR_RF_MODE=0x... replaces it on the bench. Receive works with it on the radio (voice and data decode).
+// TODO(gd88): unknown, needs a GD88_TX build: its transmit half on the GD-88
 #ifndef GD88_DMR_RF_MODE
 #define GD88_DMR_RF_MODE	0x034C9860u
 #endif

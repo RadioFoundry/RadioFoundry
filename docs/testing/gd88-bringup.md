@@ -298,7 +298,7 @@ UHF, on A's VFO and on B's (dual watch).
 
 | Check | If not / resolves |
 |---|---|
-| Audio from the speaker with the squelch open; `rssi` and noise follow the signal; the squelch closes on a quiet channel | A: BK4819 main/LO set-up and the IF scheme (`radio_gd88.c`: IF 51.550 MHz, LO at f + IF); DAC C `DAC_C_INIT/RX` (the DB25-D's values; record what works: TODO radio_gd88.c DAC C); the band path (LO GPIO4/GPIO5: VHF GPIO5 high, GPIO4 low) |
+| Audio from the speaker with the squelch open; `rssi` and noise follow the signal; the squelch closes on a quiet channel | A: BK4819 main/LO set-up and the IF scheme (`radio_gd88.c`: IF 45 MHz on A, 51.55 MHz on B, LO at f + IF); DAC C `DAC_C_INIT/RX` (the DB25-D's values; record what works: TODO radio_gd88.c DAC C); the band path (LO GPIO4/GPIO5: VHF GPIO5 high, GPIO4 low; checked on A 2026-10-27: either one wrong costs about 40 dB) |
 | Right frequency on both bands (SDR waterfall at a known carrier) | the IF/LO frequencies, the page's reference trim |
 | Narrow and wide bandwidth sound right | bandwidth words |
 | CTCSS/DCS opens only on the right tone | the BK4819 detector |
@@ -429,10 +429,10 @@ section 3 step that settles it.
 | 13 | `boards/gd88/common/gd88_cal.h:48` | The calibration page items 0x602 (4 bytes), 0x606, 0x607 (1 each), 0x608, 0x60B (3 each) | Record values from the page; match to modem fields at 0x100/0x104 by changing settings in the original firmware (needs the vendor tools) | 6, 15 |
 | 14 | `boards/gd88/common/radio_gd88.c:21` | DAC C's role on each SoC (DB25-D's 1762/1780 are used) | Try values; the RSSI, the sensitivity or the frequency should change | 9 |
 | 15 | - | **Settled 2026-10-26** on A: main BK4819, LO AT1141 (0x1100), both driven (hardware-gd88.md 11.1). B's: `--rx2 diag` | - | 6 |
-| 16 | `boards/gd88/common/dmr_gd88.c:28` | The modem's RF mode word (`GD88_DMR_RF_MODE`, the DB25-D's 0x034C9860) | SDR bench call; try `GD88_DMR_RF_MODE=` variants | 10 |
+| 16 | `boards/gd88/common/dmr_gd88.c:29` | The modem's RF mode word (`GD88_DMR_RF_MODE`, the DB25-D's 0x034C9860): receive is settled (2026-10-27, voice and data decode from the SDR bench); its transmit half is open | SDR bench call from a `GD88_TX=1` build; try `GD88_DMR_RF_MODE=` variants | 15 |
 | 17 | `boards/gd88/common/gd88_rf.h:18` | A's output power control (transmit) | Step the levels into the dummy load, measure | 15 |
 | 18 | `boards/gd88/paths_gd88.c:13` | Chain classes (class 1 = FM, 2 = DMR inferred), byte 6 against 7 for the TX route, headset byte along with the loudspeaker, bit 6 as the broadcast tuner source | FM and DMR on A and B through the speaker/headset; TX at volume above and below 6; broadcast FM | 9, 11, 12, 15 |
-| 19 | `boards/gd88/bcast_gd88.c:17` | `IO_DIPLEX0` bits 5 and 6 as the pads of PTA7/PTA8 (inferred) | Does the RDA5807 answer at 0x11 | 12 |
+| 19 | - | **Settled 2026-10-27**: the RDA5807 answers at 0x11 (`test_broadcast_receiver`) | - | 12 |
 | 20 | `boards/gd88b/board.c:54` | Whether B's three DAC pins are wired as A's | Receive checks on B; compare RSSI with A; probe DAC C | 9 |
 | 21 | `boards/gd88b/board.c:68` | B's NAND chip select (for the NAND copy of its calibration page) | Only if B's program-flash copy of the page is bad; otherwise leave | 7 |
 | 22 | `boards/gd88b/pins.h:16` | B's RX path pins: PTB13 = FM and PTB5 = DMR is taken; PTB0's role. A's is settled (2026-10-26): PTB1 and its band's front end, which B switches for A | FM and DMR on B: swap if wrong | 9, 10 |
@@ -440,7 +440,7 @@ section 3 step that settles it.
 | 24 | `boards/gd88b/pins.h:38` | PTB11 and PTB12's roles on B (low from start-up) | Note any effect when high | 9 |
 | 25 | `boards/gd88b/pins.h:47` | The status LEDs' colors (LED 1 lights while A transmits, LED 2 while it receives) | Look | 8 |
 
-25 rows; the 22 not settled have a mark each. Recount with the grep after any edit.
+25 rows; the 21 not settled have a mark each. Recount with the grep after any edit.
 
 Items without a mark that this plan also settles (from [hardware-gd88.md](../spec/hardware-gd88.md) 5 and 14):
 
@@ -487,6 +487,9 @@ Fill this in as the steps run, in the shape of [dm32-bringup.md](dm32-bringup.md
 - Panel variant, orientation, gamma, timing word; encoder direction; navigation keys; PTB12.
 - Battery and volume end points; NAND geometry; B's NAND chip select.
 - RF chips fitted; DAC C on each SoC.
+- VHF receive on A: the floor at the main chip is about -72 dBm from 140 to 165 MHz and -86 dBm from 170 MHz and on
+  UHF (2026-10-27). NOAA at 162.475 MHz reads 4 dB above it with little quieting, so `test_rx_tone_squelch` skips
+  (`bench`). Compare with a known VHF carrier before calling it the site.
 - B's mode and source pairs; the chain classes and bits (FM, DMR, headset, TX route, broadcast).
 - The modem's RF mode word.
 - A's power control and transmit.

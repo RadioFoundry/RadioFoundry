@@ -13,8 +13,7 @@
 #include "hal_time.h"
 #include "bcast/rda5807m/rda5807m_hal.h"
 
-// IO_DIPLEX0 bits 5 and 6: the pads of PTA7 / PTA8 (bit = 1 is a GPIO)
-// TODO(gd88): inferred from the bits the vendor code changes around the tuner; check the bus answers on a radio
+// IO_DIPLEX0 bits 5 and 6: the pads of PTA7 / PTA8 (bit = 1 is a GPIO). Settled on the radio: the tuner answers
 #define DIPLEX0_I2C_GPIO	((1u << 5) | (1u << 6))
 
 static void scl(bool high)
