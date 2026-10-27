@@ -6,9 +6,9 @@
 //   framing   flag 0x7E, control escape 0x7D, the async control character map (ACCM) both ways, FCS-16 (bitwise:
 //             the link is 115200 baud, so the 512 byte table buys nothing); full Address / Control and Protocol fields
 //   LCP       we ask for MRU PPP_MRU (a smaller one the peer Naks to is taken), ACCM 0 and a Magic-Number; we take the
-//             peer's MRU, ACCM and Magic-Number and
-//             Configure-Reject everything else (authentication, quality, PFC, ACFC, ...); Echo-Request answered,
-//             Terminate both ways, Code-Reject for unknown codes, Protocol-Reject for unknown protocols (IPv6CP, CCP)
+//             peer's MRU, ACCM and Magic-Number and Configure-Reject everything else (authentication, quality, PFC,
+//             ACFC, ...); Echo-Request answered, Terminate both ways, Code-Reject for unknown codes, Protocol-Reject
+//             for unknown protocols (IPv6CP, CCP)
 //   IPCP      IP-Address only: ours is ppp_local_ip(), the peer is Nak'd to ppp_peer_ip() (the addresses of the USB
 //             network link, so the gateway and the services behave the same); everything else Configure-Rejected
 //   leaving   the link ends (ppp_running() false) when LCP finishes: a Terminate either way, the negotiation timing
