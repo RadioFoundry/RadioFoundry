@@ -30,9 +30,10 @@ A5 5A  len  type  seq  payload[len]  crc_hi crc_lo
 | 0x07 | `LED` | A | u8: the LEDs on B's SoC that are on (bit 0 LED 1, bit 1 LED 2), on a board whose status LEDs are wired to B. A sends it on a change and again when B comes back; B turns them off at `HELLO_REQ`. Bit 7 (`RX2_LED_STUB`): A is jumping to its flash stub, which has no link; B blinks its LEDs until the next `HELLO_REQ` or `LED` |
 | 0x08 | `DL` | A | u8 tag, u8 part, then a debug link request: u8 command, its payload (2.3) |
 | 0x09 | `PATH` | A | u8 on, u32 Hz: where A's own receiver is, on a board whose receive path for A runs through B's pins. A sends it on a change and again when B comes back; B turns A's path off at `HELLO_REQ` |
+| 0x0A | `TX` | A | u32 Hz (0 = disarm), u16 PA drive (0-4095), u16 TX-on delay (us), u16 TX-off delay (us): on a board whose PA for A's transmitter is wired to B. A sends it before every transmission and waits for the `ACK`; it doesn't transmit without one. While armed, B keys the PA on the edges of A's TX line, with this drive and these delays. A disarms after the transmission; B also disarms at `HELLO_REQ`, and a disarm while keyed ramps the PA down at once |
 | 0x81 | `HELLO` | B | u8 protocol version (1), u8 flags (bit 0: B decodes DMR; bit 1: `STUB` reaches B's first stage, 4), then B's firmware version as text |
 | 0x82 | `STATUS` | B | 13 bytes (2.2) |
-| 0x83 | `ACK` | B | u8 the `TUNE`'s seq, u8 result (0 = on it, else refused) |
+| 0x83 | `ACK` | B | u8 the `TUNE`'s or `TX`'s seq, u8 result (0 = on it, else refused) |
 | 0x84 | `LOG` | B | text for A's log |
 | 0x85 | `DL_REPLY` | B | u8 tag, u8 part, then a piece of the debug link reply (2.3) |
 

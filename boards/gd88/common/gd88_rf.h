@@ -13,9 +13,8 @@
 #include "config.h"
 #include "gd88_cal.h"
 
-// Transmit (config.mk GD88_TX=1). Off by default: A has no PA drive DAC, and how it sets its output power (the main
-// chip's PA bias from the page) isn't worked out; B is built as a receiver only.
-// TODO(gd88): unknown, needs a radio: A's power control. With GD88_TX=1 the DAC B ramp runs as in hardware-db25d.md
+// Transmit (config.mk GD88_TX=1, A only; B is built as a receiver). A's main chip makes the signal; its PA, PA
+// supplies and PA drive (DAC B) are B's, keyed by B on A's TX line PTB2 with the drive A sends (hardware-gd88.md 10)
 #ifndef GD88_TX
 #define GD88_TX			0
 #endif
@@ -60,9 +59,13 @@ void gd88_path_init(void);			// every switch at its safe level: TX off, RX path 
 // The receive path of hz's band on (dmr: on a DMR channel), or every RX switch off
 void gd88_path_rx(uint32_t hz, bool on, bool dmr);
 void gd88_path_rx_front_off(void);		// TX start: the receive path off (A: PTB2 high)
-void gd88_path_tx_select(bool uhf);		// TX: the band's PA select on (none on A)
-void gd88_path_tx_supply(bool uhf);		// TX: the band's TX supply on, 200 us after the select (none on A)
 void gd88_path_tx_off(void);			// TX switches off (A: PTB2 low). Any task
+#if GD88_TX
+// B's PA for A's next transmissions (rx2_gd88.c, RX2_TX): the drive and the page's delays on hz. False when B is down
+// or didn't take it within a short wait: nothing may transmit then. Disarm after the last one
+bool gd88_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
+void gd88_pa_disarm(void);
+#endif
 // The speaker: on or off, fed from the modem's line out (DMR voice, beeps) or the main chip's AF (FM)
 void gd88_path_speaker(bool on, bool from_modem);
 

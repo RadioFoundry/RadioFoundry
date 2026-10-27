@@ -4,7 +4,9 @@
 // The link's main side is core/rx2/rx2_link.c; this file moves its bytes, runs it from a task of its own, and routes
 // B's audio to the speaker. Text B sends (RX2_LOG) goes to the debug link's log.
 //
-// A's status LEDs are on B too: led() sends them over the link (RX2_LED).
+// A's status LEDs are on B too: led() sends them over the link (RX2_LED). So is A's PA (hardware-gd88.md 10):
+// gd88_pa_arm() hands B the drive and delays before a transmission (RX2_TX) and waits for B to take them; B then keys
+// the PA on A's TX line.
 //
 // B's update route (rx2-link.md 4): bridge() sends B to its first stage, then copies bytes between the PC cable
 // (UART1) and the link (UART3) in a polled loop with interrupts off and the transmitter off, until the host sends the
@@ -15,6 +17,7 @@
 // the link task collects.
 #include <string.h>
 #include "gd88.h"
+#include "gd88_rf.h"
 #include "config.h"
 #include "pins.h"
 #include "platform.h"
@@ -40,6 +43,7 @@
 #define BRIDGE_FEED_MS		500u
 #define FORWARD_WAIT_MS		1500u		// the link times the request out at RX2_DL_TIMEOUT_MS; this is a backstop
 #define FORWARD_POLL_MS		2u
+#define PA_ARM_WAIT_MS		150u		// RX2_TX and its ACK: 2 ms on the wire, the rest B's task
 
 static rx2_main_t link;
 static SemaphoreHandle_t lock;
@@ -207,6 +211,42 @@ static size_t forward(const uint8_t *req, uint8_t len, uint8_t *out, size_t cap)
 		}
 	}
 }
+
+#if GD88_TX
+bool gd88_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
+{
+	if (lock == NULL) {
+		return false;
+	}
+	take();
+	bool sent = rx2_main_tx(&link, hz, pa, on_us, off_us);
+	give();
+	if (!sent) {
+		return false;
+	}
+	for (uint32_t t = 0; t < PA_ARM_WAIT_MS; t += FORWARD_POLL_MS) {
+		vTaskDelay(pdMS_TO_TICKS(FORWARD_POLL_MS));
+		take();
+		bool ok = link.tx_acked;
+		give();
+		if (ok) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Not waited for: B also stops keying when A's TX line stays low, and HELLO_REQ disarms it
+void gd88_pa_disarm(void)
+{
+	if (lock == NULL) {
+		return;
+	}
+	take();
+	rx2_main_tx(&link, 0, 0, 0, 0);
+	give();
+}
+#endif
 
 static void restart(void)
 {

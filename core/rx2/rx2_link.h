@@ -31,6 +31,8 @@ enum {
 	RX2_LED		= 0x07,	// u8: the receiver's LEDs that are on (bit 0 LED 1, bit 1 LED 2), or RX2_LED_STUB
 	RX2_DL		= 0x08,	// u8 tag, u8 part, a debug link request: command u8, its payload (rx2-link.md 2.3)
 	RX2_PATH	= 0x09,	// u8 on, u32 Hz: the main SoC's own receiver, whose path runs through the receiver's SoC
+	RX2_TX		= 0x0A,	// u32 Hz (0: disarm), u16 PA drive, u16 on us, u16 off us: the main SoC's transmitter,
+				// whose PA the receiver's SoC keys on the main SoC's TX line (acknowledged)
 	RX2_HELLO	= 0x81,	// u8 protocol version, u8 flags, text: the firmware version
 	RX2_STATUS	= 0x82,	// rx2 status, packed (rx2_pack_status)
 	RX2_ACK		= 0x83,	// u8 seq acknowledged, u8 result (0 ok, else refused)
@@ -104,6 +106,8 @@ typedef struct {
 	uint8_t leds;		// RX2_LED: the main SoC's status LEDs, which are on the receiver's SoC
 	bool path_on;		// RX2_PATH: the main SoC's receiver, as last asked
 	uint32_t path_hz;
+	uint8_t tx_seq;		// RX2_TX in flight, and whether the receiver took it
+	bool tx_acked;
 	rx2_status_t st;	// its last STATUS
 	uint32_t frames, tunes, resent;
 	// The debug link request in flight (rx2_main_dl_send): its tag, RX2_DL_* state, the next part expected, the
@@ -132,6 +136,9 @@ void rx2_main_audio(rx2_main_t *m, bool on, uint8_t volume);
 void rx2_main_led(rx2_main_t *m, uint8_t leds);
 // The main SoC's own receiver (RX2_PATH): sent on a change and again when the receiver comes back
 void rx2_main_path(rx2_main_t *m, bool on, uint32_t hz);
+// RX2_TX: arm the receiver's SoC to key the PA for the main SoC's transmission on hz with drive pa and the delays
+// (hz 0: disarm). tx_acked turns true when the receiver took it. False when the receiver is down
+bool rx2_main_tx(rx2_main_t *m, uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
 // Send RX2_STUB or RX2_RESET (the receiver's update route through the main SoC)
 void rx2_main_command(rx2_main_t *m, uint8_t type);
 // A debug link request to the receiver: command, payload (len <= RX2_DL_REQ_MAX). False when it is down or the request
@@ -175,6 +182,9 @@ typedef struct {
 	size_t (*dl)(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 	// RX2_PATH: the main SoC's receiver on hz (on) or off; off again at HELLO_REQ. NULL: the board has no shared path
 	void (*path)(bool on, uint32_t hz);
+	// RX2_TX: arm (hz != 0) or disarm the PA for the main SoC's transmitter; false refuses. Disarmed again at
+	// HELLO_REQ. NULL: refused
+	bool (*tx)(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
 } rx2_ops_t;
 
 #define RX2_STATUS_EVERY_MS	500u

@@ -106,6 +106,17 @@ static uint32_t get32(const uint8_t *p)
 	return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
 }
 
+static void put16(uint8_t *p, uint16_t v)
+{
+	p[0] = (uint8_t)v;
+	p[1] = (uint8_t)(v >> 8);
+}
+
+static uint16_t get16(const uint8_t *p)
+{
+	return (uint16_t)(p[0] | p[1] << 8);
+}
+
 // rx_hz 4, mode, bw, squelch, tone type, tone value 2, cc, ts, own_id 4, talk_group 4, count, reserved 4 = 25
 uint8_t rx2_pack_tune(const rx2_tune_t *t, uint8_t *out)
 {
@@ -302,6 +313,9 @@ void rx2_main_rx(rx2_main_t *m, uint8_t b, uint32_t now_ms)
 		if (p->len >= 2 && p->buf[0] == m->tune_seq) {
 			m->tune_acked = p->buf[1] == 0;
 		}
+		if (p->len >= 2 && p->buf[0] == m->tx_seq) {
+			m->tx_acked = p->buf[1] == 0;
+		}
 		break;
 	case RX2_DL_REPLY:
 		main_dl_part(m, p);
@@ -405,6 +419,22 @@ void rx2_main_path(rx2_main_t *m, bool on, uint32_t hz)
 	if (m->up) {
 		main_send_path(m);
 	}
+}
+
+bool rx2_main_tx(rx2_main_t *m, uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
+{
+	m->tx_acked = false;
+	if (!m->up) {
+		return false;
+	}
+	uint8_t p[10];
+	put32(&p[0], hz);
+	put16(&p[4], pa);
+	put16(&p[6], on_us);
+	put16(&p[8], off_us);
+	m->tx_seq = m->seq;
+	main_send(m, RX2_TX, p, 10);
+	return true;
 }
 
 void rx2_main_command(rx2_main_t *m, uint8_t type)
@@ -594,6 +624,9 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 		if (r->ops->path != NULL) {
 			r->ops->path(false, 0);
 		}
+		if (r->ops->tx != NULL) {
+			r->ops->tx(0, 0, 0, 0);
+		}
 		recv_hello(r);
 		break;
 	case RX2_TUNE: {
@@ -630,6 +663,16 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 			r->ops->path(p->buf[0] != 0, get32(&p->buf[1]));
 		}
 		break;
+	case RX2_TX: {
+		uint8_t res = 1;
+		if (p->len >= 10 && r->ops->tx != NULL &&
+		    r->ops->tx(get32(&p->buf[0]), get16(&p->buf[4]), get16(&p->buf[6]), get16(&p->buf[8]))) {
+			res = 0;
+		}
+		uint8_t a[2] = { p->seq, res };
+		recv_send(r, RX2_ACK, a, 2);
+		break;
+	}
 	case RX2_STUB:
 		if (magic_ok(p) && r->ops->stub != NULL) {
 			r->ops->stub();

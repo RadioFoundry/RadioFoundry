@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 SoC B RF and audio paths (common/gd88_rf.h): direct GPIO pairs (pins.h, docs/spec/hardware-gd88.md 10). B is a
-// receiver only: the TX switches stay low, and the TX calls only make sure of it. Its audio goes to A, which routes it
+// GD-88 SoC B RF and audio paths (common/gd88_rf.h): direct GPIO pairs (pins.h, docs/spec/hardware-gd88.md 10). B's own
+// chip only receives. The PA is A's transmitter's, keyed by pa_gd88b.c through gd88b_path_pa and gd88b_path_a_tx. Its audio goes to A, which routes it
 // to the speaker; gd88b_path_mute() holds the source pair off while A hasn't given B the speaker.
 //
 // A's receiver also runs through B's pins: the front end of A's band and PTB1 (bench 2026-10-26: without them A hears
@@ -24,6 +24,8 @@ static const uint8_t init_low[] = {
 static bool spk_on, spk_modem, muted = true;
 static bool b_on, b_uhf;		// B's own receiver
 static bool a_on, a_uhf;		// A's (RX2_PATH)
+static bool a_tx;			// A transmits: its RX path off (pa_gd88b.c)
+static bool aud_vhf = true, aud_uhf = true;	// the band pair as the receiver set it
 
 void gd88_path_init(void)
 {
@@ -34,7 +36,8 @@ void gd88_path_init(void)
 	hrc_pin_out(PIN_AUD_UHF, true);
 	spk_on = spk_modem = false;
 	muted = true;
-	b_on = a_on = false;
+	b_on = a_on = a_tx = false;
+	aud_vhf = aud_uhf = true;
 }
 
 // The front ends and the path pins from both receivers' state; interrupts off
@@ -42,7 +45,7 @@ static void rx_pins(void)
 {
 	hrc_pin_write(PIN_RX_FRONT_UHF, (b_on && b_uhf) || (a_on && a_uhf));
 	hrc_pin_write(PIN_RX_FRONT_VHF, (b_on && !b_uhf) || (a_on && !a_uhf));
-	hrc_pin_write(PIN_RX_A, a_on);
+	hrc_pin_write(PIN_RX_A, a_on && !a_tx);
 	hrc_pin_write(PIN_RX_B, b_on);
 }
 
@@ -56,8 +59,12 @@ void gd88_path_rx(uint32_t hz, bool on, bool dmr)
 	hrc_pin_write(PIN_RX_BAND_UHF, on && uhf);
 	hrc_pin_write(PIN_RX_BAND_VHF, on && !uhf);
 	rx_pins();
-	hrc_pin_write(PIN_AUD_VHF, !uhf);
-	hrc_pin_write(PIN_AUD_UHF, uhf);
+	aud_vhf = !uhf;
+	aud_uhf = uhf;
+	if (!a_tx) {
+		hrc_pin_write(PIN_AUD_VHF, aud_vhf);
+		hrc_pin_write(PIN_AUD_UHF, aud_uhf);
+	}
 	hrc_irq_restore(s);
 }
 
@@ -79,32 +86,20 @@ void gd88b_path_main(bool on, uint32_t hz)
 	hrc_irq_restore(s);
 }
 
-// Receive only: the PA selects and supplies stay off
-void gd88_path_tx_select(bool uhf)
-{
-	(void)uhf;
-	gd88_path_tx_off();
-}
-
-void gd88_path_tx_supply(bool uhf)
-{
-	(void)uhf;
-	gd88_path_tx_off();
-}
-
-// The supplies first, as the TX-off sequence does
+// B's own transmitter's path, which is never used (the shared code calls this at every retune). The PA's selects and
+// supplies are left alone: they are A's transmitter's while it transmits (pa_gd88b.c), and a retune of B's receiver
+// mustn't cut them
 void gd88_path_tx_off(void)
 {
-	hrc_pin_write(PIN_PA_SUP_UHF, false);
-	hrc_pin_write(PIN_PA_SUP_VHF, false);
-	hrc_pin_write(PIN_PA_SEL_UHF, false);
-	hrc_pin_write(PIN_PA_SEL_VHF, false);
 	hrc_pin_write(PIN_TX_PATH_UHF, false);
 	hrc_pin_write(PIN_TX_PATH_VHF, false);
 }
 
 static void source(void)
 {
+	if (a_tx) {
+		return;		// held at mode 0 while A transmits
+	}
 	bool on = spk_on && !muted;
 	hrc_pin_write(PIN_AUD_SRC0, on && !spk_modem);
 	hrc_pin_write(PIN_AUD_SRC1, on && spk_modem);
@@ -117,6 +112,33 @@ void gd88_path_speaker(bool on, bool from_modem)
 	spk_modem = from_modem;
 	source();
 	hrc_irq_restore(s);
+}
+
+// A transmits (on, in its band) or not: the original firmware's path 0. On: the source pair at mode 0, the band pair to
+// A's TX band, A's RX path off. Off: all three back as the receivers have them
+void gd88b_path_a_tx(bool on, bool uhf)
+{
+	uint32_t s = hrc_irq_save();
+	a_tx = on;
+	if (on) {
+		hrc_pin_write(PIN_AUD_SRC0, true);
+		hrc_pin_write(PIN_AUD_SRC1, false);
+		hrc_pin_write(PIN_AUD_UHF, uhf);
+		hrc_pin_write(PIN_AUD_VHF, !uhf);
+	} else {
+		source();
+		hrc_pin_write(PIN_AUD_VHF, aud_vhf);
+		hrc_pin_write(PIN_AUD_UHF, aud_uhf);
+	}
+	rx_pins();
+	hrc_irq_restore(s);
+}
+
+// The band's PA select or supply (pa_gd88b.c); off: both bands' supplies, then selects
+void gd88b_path_pa(bool uhf, bool select, bool supply)
+{
+	hrc_pin_write(uhf ? PIN_PA_SEL_UHF : PIN_PA_SEL_VHF, select);
+	hrc_pin_write(uhf ? PIN_PA_SUP_UHF : PIN_PA_SUP_VHF, supply);
 }
 
 void gd88b_path_mute(bool mute)

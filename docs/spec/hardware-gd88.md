@@ -140,7 +140,7 @@ Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
 | Key matrix | 6 rows PTB18-23 (outputs, idle low) by 3 sense lines PTB9-11 (inputs). Plus three keys read directly on the sense lines (9.2); 20-tick debounce |
 | Power key / latch | PTB12 in (high = pressed); PTB13 out, high keeps power on (9.1) |
 | Rotary encoder | PTB5, PTB8, both edges: one event +1 or -1 |
-| TX / RX line | PTB2, high = transmit. The modem's RF TX and RX interrupts also switch it |
+| TX / RX line | PTB2, high = transmit. The modem's RF TX and RX interrupts also switch it, so on DMR it follows every burst. It is wired to B's PTB2 too: B keys the PA on its edges (section 10) (BIN) |
 | Speaker amplifier | PTC18 high, together with the serial chain's amplifier bit (9.3) |
 | PTC20 | Low cuts the modem's audio line while a beep plays (INF). Low at start-up |
 | PTT / K1 data | PTA9, shared with UART1 RXD; low = PTT |
@@ -155,7 +155,7 @@ Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
 | RF chips | bit-banged 3-wire: SCLK PTB16, SDIO PTB24, main chip select PTB25, second chip select PTA19; status lines PTB26/27 |
 | Output expander | 64-bit serial chain: clock PTB0, data PTB1, latch PTB3 (rising edge). Carries the audio routing only (9.3). PTB0 / PTB1 are not LEDs |
 | Band path | The LO BK4819's GPIO4 / GPIO5 (register 0x33): VHF = GPIO5 high, GPIO4 low; UHF the reverse. A has no band, PA or TX supply GPIO |
-| PA drive | No DAC: DAC A is written 0 by the PA ramp. The output power comes from the main BK4819 (register 0x36) and the page |
+| PA drive | None on A. Register 0x36 of the main BK4819 is written once at start-up (0x00BF) and the vendor's "ramp" on A writes only zeros. The PA, its supplies and its drive DAC are B's (section 10) (BIN) |
 | ADC | Channel 0 microphone, 1 volume knob, 2 battery |
 | Status LEDs | On SoC B (section 10). A switches them over the link |
 
@@ -221,10 +221,13 @@ B has no display, keys, power latch or GPS. Pin index as in section 9.
 | RX front end | UHF PTB15, VHF PTB14, high = on. **Shared**: A's receiver needs its band's front end too |
 | RX path | **HW** A: PTB1, B: PTB0, high = on, in FM and DMR alike; neither receiver cares about the other's. B's reading of a bench signal rises 53 dB with PTB0 (-108 to -55 dBm), and without it B's floor is about -120 dBm. PTB13 and PTB5, the rest of the vendor's mode pairs (PTB1 + PTB13, PTB0 + PTB5), and PTB11 / PTB12 change neither receiver: held low. All off while transmitting |
 | A's receiver | **HW** bench: with PTB15 + PTB1 low A hears nothing (noise floor -127 dBm); high, the floor is -86 dBm and a bench signal shows. VHF the same with PTB14. The band switch (PTB8 / PTB7) and PTB13 make no difference to A, nor to B. B sets them from A's `PATH` messages ([rx2-link.md](rx2-link.md)) |
-| Audio source to A | mode 0: PTC18 high, PTB4 low; mode 1: the reverse |
-| Audio band | VHF: PTB18 high, PTB22 low; UHF: the reverse |
-| TX path | UHF PTA17, VHF PTB10 |
+| Audio source to A | mode 0: PTC18 high, PTB4 low; mode 1: the reverse. Held at mode 0 ("path 0", A's chip) while A transmits (BIN) |
+| Audio band | VHF: PTB18 high, PTB22 low; UHF: the reverse. Set to A's TX band while A transmits (BIN) |
+| TX path | UHF PTA17, VHF PTB10: B's own transmitter, which the vendor uses only for transmitting on B's chip |
 | PA select, then supply | UHF PTB6, 200 us, then PTB20. VHF PTB3, then PTB21. TX off clears the supplies first |
+| A's TX line | PTB2 in, both-edge interrupt: A's PTB2 (section 9) (BIN) |
+| A's PA | **B keys the PA for A's transmitter** (BIN). A sends B a record first (vendor link id 0x6B00) with the drive and the page's delays, then raises PTB2. Rising edge: mode 0, the TX band pair, A's RX path PTB1 (and PTB13) off, 50 us, the TX-on delay, PA select, 200 us, supply, DAC B ramped up to the drive (180 steps of 4 us, S-shaped). Falling edge: the TX-off delay, the ramp down, supply then select off, 300 + 1000 + 300 us, the RX front end and A's RX path back, 200 us |
+| PA drive and delays | From A's page: drive = item 0x045 (channel power byte 0) or 0x056 (otherwise), interpolated at the TX frequency; TX-on / TX-off delays from item 0x0AE, in us, over 2000 read as 0 (BIN). Which item is high power: INF |
 | Start-up levels | Low: PTB20, PTB21, PTB6, PTB3, PTB1, PTB0, PTB15, PTB14, PTB13, PTB5, PTB12, PTB11, PTB8, PTB7, PTA17, PTB10, PTC18, PTB4. High: PTB22, PTB18 |
 | Status LEDs | PTA16 (lit while A transmits) and PTB17 (receive), high = on. Colors not known. While A is in its flash stub they take turns at 2 Hz (`RX2_LED_STUB`: A's stub has no LEDs) |
 | ADC | Channel 4 is a carrier level |
@@ -282,7 +285,7 @@ page, DMR on the modem and the SPI NAND. Both run on the bench's radio (2026-10-
 |---|---|---|
 | Runs | the radio core: UI, codeplug, scan, dual watch, host link on UART1, DMR, GPS | no core: a receiver task under `app_start` |
 | Receive | FM and DMR on its own main BK4819 and LO (11.1) | FM and DMR, on what A asks for |
-| Transmit | Off by default. `GD88_TX=1` builds it, but A's power control is not worked out | Never: the TX pins stay low |
+| Transmit | Off by default; `GD88_TX=1` builds it. A's main chip makes the signal; A arms B (`RX2_TX`, the drive and delays from A's page) and raises PTB2 | B's own chip never transmits. It keys the PA for A on PTB2's edges while armed (`pa_gd88b.c`) |
 | Second receiver | B over UART3 (`board.rx2`, [rx2-link.md](rx2-link.md)). The core keeps B on the dual watch channel that is not selected | - |
 | Audio | the chain's source bits (9.3) and PTC18. B's audio gets vfo 1 while A gives it the speaker | the source pair to A, muted until A sends `AUDIO` on |
 | LEDs | sent to B (`RX2_LED`) | PTA16, PTB17 |
@@ -298,7 +301,7 @@ Not supported yet: the IMU, the headset path on its own, the RTC.
 The code marks each with `TODO(gd88)`. The first-day plan that settles them is [gd88-bringup.md](../testing/gd88-bringup.md).
 
 1. Which RF chips other units have (the bench's A: BK4819 and AT1141), and B's.
-2. A's output power control, and so transmit.
+2. Transmit on the radio: the PA sequence on B is from the vendor firmware (section 10), not yet keyed on air.
 3. FM against DMR for the chain's classes, chain bit 6 as the broadcast tuner's source, and B's audio source pair.
 4. The front panel's navigation keys, the encoder's direction, whether PTB12 is the knob's contact.
 5. The volume knob's level table, the LCD controller's timing word, DAC C on each SoC.

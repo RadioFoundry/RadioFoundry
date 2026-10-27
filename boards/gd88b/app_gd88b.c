@@ -4,7 +4,8 @@
 // here: app_start (called by platform/hrc7000/main.c) starts one task that runs the link's receiver side (core/rx2) on
 // UART3, the shared radio code (boards/gd88/common) on B's own BK4819 pair, the FM squelch and, on DMR channels, the
 // call stack and codec (core/dmr). The calls rx2_ops_t makes all come from rx2_recv_rx() in this task, the debug link
-// server's (core/rx2/rx2_dl.c, reached through A) among them.
+// server's (core/rx2/rx2_dl.c, reached through A) among them. A second task keys the PA of A's transmitter
+// (pa_gd88b.c, armed by RX2_TX).
 #include "config.h"
 #include "board.h"
 #include "gd88_rf.h"
@@ -223,6 +224,7 @@ static const rx2_ops_t ops = {
 	.reset = op_reset,
 	.led = gd88b_leds,
 	.path = gd88b_path_main,
+	.tx = gd88b_pa_arm,
 #if CONFIG_RX2_DL_SERVER
 	.dl = rx2_dl_handle,
 #endif
@@ -274,6 +276,8 @@ bool gd88b_diag_line(uint8_t i, char *buf, uint8_t len)
 		dl_fmt(buf, len, "b uart rx %u tx %u ovr %u err %u stall %u", (unsigned)u.rx_bytes, (unsigned)u.tx_bytes,
 		       (unsigned)u.overruns, (unsigned)u.line_errors, (unsigned)u.tx_stalls);
 		return true;
+	case 3:
+		return gd88b_pa_diag_line(buf, len);
 	default:
 		return false;
 	}
@@ -303,6 +307,7 @@ static void task_fn(void *arg)
 #endif
 	board_init();
 	gd88_radio.init();
+	gd88b_pa_init();
 #if CONFIG_DMR
 	dmr_call_init(&hrc_dmr);
 	ambeVoiceInit(&hrc_audio_pcm, &hrc_vocoder);

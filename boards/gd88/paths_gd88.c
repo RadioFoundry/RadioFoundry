@@ -115,16 +115,6 @@ void gd88_path_rx_front_off(void)
 	bit(BYTE_TX_ROUTE, src_bit(a_dmr, VFO_A), true);
 }
 
-void gd88_path_tx_select(bool uhf)
-{
-	(void)uhf;	// no PA select on A
-}
-
-void gd88_path_tx_supply(bool uhf)
-{
-	(void)uhf;	// no TX supply switch on A
-}
-
 void gd88_path_tx_off(void)
 {
 	hrc_pin_write(PIN_TX_RX, false);

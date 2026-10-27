@@ -71,6 +71,20 @@ static void b_do_path(bool on, uint32_t hz)
 	b_path_hz = hz;
 	b_paths++;
 }
+// The PA for the main SoC's transmitter: refused above 4095 (a DAC's range)
+static uint32_t b_tx_hz = 1;
+static uint16_t b_tx_pa, b_tx_on, b_tx_off;
+static bool b_do_tx(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
+{
+	if (pa > 4095u) {
+		return false;
+	}
+	b_tx_hz = hz;
+	b_tx_pa = pa;
+	b_tx_on = on_us;
+	b_tx_off = off_us;
+	return true;
+}
 
 // The receiver's debug link server: 0x01 echoes its payload; 0x40 answers n bytes (u16 n), status included
 static uint8_t b_dl_cmd;
@@ -98,9 +112,9 @@ static size_t b_do_dl(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *ou
 }
 
 static const rx2_ops_t b_ops = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset, b_do_led,
-				 b_do_dl, b_do_path };
+				 b_do_dl, b_do_path, b_do_tx };
 static const rx2_ops_t b_ops_no_dl = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset, b_do_led,
-				       NULL, NULL };
+				       NULL, NULL, NULL };
 
 static void pump(uint32_t now_ms)
 {
@@ -329,6 +343,25 @@ static void test_link(void)
 	rx2_main_path(&m, true, 162475000u);
 	now = run(now, 40, true);
 	CHECK(b_path_on && b_path_hz == 162475000u && b_paths == paths + 1);
+
+	// TX: armed with the drive and delays, acknowledged; a refused one isn't; disarmed; HELLO_REQ disarms
+	CHECK(rx2_main_tx(&m, 461462500u, 1234, 300, 150) && !m.tx_acked);
+	now = run(now, 40, true);
+	CHECK(m.tx_acked && b_tx_hz == 461462500u && b_tx_pa == 1234 && b_tx_on == 300 && b_tx_off == 150);
+	CHECK(rx2_main_tx(&m, 461462500u, 5000, 300, 150));
+	now = run(now, 40, true);
+	CHECK(!m.tx_acked && b_tx_pa == 1234);
+	CHECK(rx2_main_tx(&m, 0, 0, 0, 0));
+	now = run(now, 40, true);
+	CHECK(m.tx_acked && b_tx_hz == 0);
+	b_tx_hz = 1;
+	{
+		uint8_t hf[RX2_FRAME_MAX];
+		uint16_t hn = rx2_frame(hf, RX2_HELLO_REQ, 0, NULL, 0);
+		send_main(hf, hn);
+		now = run(now, 40, true);
+	}
+	CHECK(b_tx_hz == 0);
 
 	// Stop
 	int stops = b_stops;

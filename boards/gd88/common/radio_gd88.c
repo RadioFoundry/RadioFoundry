@@ -8,10 +8,12 @@
 // firmware does; the AT1141 runs low-side, f - IF, from 400 to 440 MHz. On A the LO chip's GPIO4 / GPIO5 also select
 // the band's path (GD88_BAND_LO_GPIO). DAC A isn't used.
 //
-// Analog FM transmit (GD88_TX=1 only): the main chip is tuned to f and modulates the microphone, the LO chip is off,
-// and the PA is keyed through the band's switches (gd88_path_*) and DAC B with its drive from the page. TX is refused
-// without a valid page, outside the bands, or with a tone other than CTCSS. DMR transmit runs the same sequence once
-// per burst (gd88_burst_on / gd88_burst_off, from the RF task in dmr_gd88.c).
+// Analog FM transmit (GD88_TX=1, A only): the main chip is tuned to f and modulates the microphone, the LO chip is
+// off. The PA is B's (hardware-gd88.md 10): A sends B the drive from A's page and the page's delays (RX2_TX, before
+// every transmission), then raises its TX line PTB2; B keys the PA on that edge and ramps its DAC B, and drops it on
+// the falling edge. A never writes DAC B. TX is refused without a valid page, outside the bands, with a tone other
+// than CTCSS, or when B doesn't take the drive. DMR transmit runs the same sequence once per burst (gd88_burst_on /
+// gd88_burst_off, from the RF task in dmr_gd88.c).
 #include "gd88_rf.h"
 #include "config.h"
 #include "radio/radio.h"
@@ -45,7 +47,9 @@
 #define GD88_VOL_GAIN_DEFAULT	3u
 #define TX_RX_OFF_US		50u		// RX paths off, then this long before the transmitter is tuned
 #define TX_SETTLE_MS		3u		// the chip's VCO calibration, before the PA is selected
-#define TX_SUPPLY_US		200u		// PA select, then this long before the TX supply
+#define TX_SUPPLY_US		200u		// B: PA select, then this long before the TX supply
+#define PA_RAMP_US		(GD88_APC_STEPS * GD88_APC_STEP_US)	// B's ramp up or down
+#define PA_SLACK_US		200u		// B's task wake-up after the edge, with room
 #define TX_END_PATH_US		300u		// PA select off, then this long before the receiver is retuned
 #define TX_END_RX_US		200u		// after the RX path is switched on again
 #define BIAS_DEFAULT_HZ		450000000u	// the modulation balance's frequency before one is known
@@ -69,8 +73,6 @@ static bool vol_muted;		// volume step 0: the chip output stays off whatever aud
 static uint8_t vol_gain = GD88_VOL_GAIN_DEFAULT;
 static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_gd88.c)
 #if GD88_TX
-static bool tx_uhf;
-static uint16_t tx_pa;
 static uint16_t tx_off_us;
 #endif
 #if CONFIG_DMR && GD88_TX
@@ -172,21 +174,12 @@ static void lo_gpio(uint8_t pin, bool high)
 
 // ---- RF paths ----
 
+// The TX line low (A: B drops the PA on its edge). DAC B is never touched here: on B it is the PA drive, which B's PA
+// code owns (a retune of B's receiver while A transmits mustn't cut it)
 static void tx_paths_off(void)
 {
-	DAC_DATA_B = 0;
 	gd88_path_tx_off();
 }
-
-#if GD88_TX
-static void apc_ramp(uint16_t target, bool up)
-{
-	for (uint16_t i = 0; i <= GD88_APC_STEPS; i++) {
-		DAC_DATA_B = gd88_apc_level(target, up ? i : (uint16_t)(GD88_APC_STEPS - i));
-		hal_delay_us(GD88_APC_STEP_US);
-	}
-}
-#endif
 
 // The C7000 modem's DC bias at every receive set-up, in FM too: the page's TX center in SIG_CENTER and the two-point
 // bias level with the modulation balance in RF_MOD_BIAS_CTRL. It is the voltage on the TCXO's control pin, so it sets
@@ -205,8 +198,8 @@ static void init(void)
 	hrc_pin_out(GD88_PIN_RF_CLK, true);
 	hrc_pin_in(GD88_PIN_RF_DATA);
 	gd88_path_init();
-	// The modem's analog set-up with the bias DAC at its init value; the PA control DAC stays powered down until a
-	// transmission
+	// The modem's analog set-up with the bias DAC at its init value. DAC B: the PA drive on B (pa_gd88b.c); A doesn't
+	// use it
 	hrc_modem_analog_init(DAC_C_INIT);
 	hrc_dac_b_power(false);
 
@@ -365,15 +358,14 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	if (dmr_armed) {
 		gd88_dmr_tx_disarm();
 	}
-	tx_uhf = hz >= UHF_FROM_HZ;
-	tx_pa = plan.pa;
+	if (!gd88_pa_arm(hz, plan.pa, plan.on_us, plan.off_us)) {
+		return false;
+	}
 	tx_on_us = plan.on_us;
 	tx_off_us = plan.off_us;
 	tx_hz = hz;
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(gd88_cal_tx_center(), gd88_cal_mod(hz)));
 	bk4819_dmr_tx_prepare(&rf_main);
-	DAC_DATA_B = 0;
-	hrc_dac_b_power(true);
 	dmr_armed = true;
 	gd88_dmr_tx_arm();
 	return true;
@@ -384,41 +376,35 @@ static void dmr_disarm(void)
 	if (dmr_armed) {
 		gd88_dmr_tx_disarm();
 		dmr_armed = false;
-		DAC_DATA_B = 0;
-		hrc_dac_b_power(false);
+		gd88_pa_disarm();
 	}
 }
 
-// One burst: RX front end off, 50 us, main chip to f and the LO off, the page's TX-on delay, PA select with the RX
-// supply off, 200 us, the band's TX supply, the ramp up
+// One burst: the TX line high (B starts its PA sequence: the page's TX-on delay, PA select, 200 us, supply, ramp),
+// 50 us, main chip to f and the LO off, then as long as B's sequence takes
 void gd88_burst_on(gd88_wait_fn wait)
 {
 	gd88_path_rx_front_off();
 	wait(TX_RX_OFF_US);
 	bk4819_burst_tune(&rf_main, tx_hz, BK4819_STATE_TX_MAIN);
 	lo_off();
-	wait(tx_on_us);
-	DAC_DATA_B = 0;
-	gd88_path_tx_select(tx_uhf);
-	wait(TX_SUPPLY_US);
-	gd88_path_tx_supply(tx_uhf);
-	apc_ramp(tx_pa, true);
+	wait(tx_on_us + TX_SUPPLY_US + PA_RAMP_US);
 }
 
-// After a burst: the hold until the ramp-down point (none when now), the ramp down, supplies and PA selects off,
-// 300 us, the main chip back to the IF and the LO on again, 300 us, the band's RX path, 200 us. Returns how late the
-// ramp down started, in us
+// After a burst: the hold until the TX-off point (none when now), the TX line low (B waits the page's TX-off delay
+// and ramps down), that long, 300 us, the main chip back to the IF and the LO on again, 300 us, the band's RX path,
+// 200 us. Returns how late the TX line dropped, in us
 uint32_t gd88_burst_off(gd88_wait_fn wait, uint32_t elapsed_us, bool now)
 {
-	uint32_t late = now ? 0 : gd88_dmr_late_us(elapsed_us, tx_off_us);
+	uint32_t late = now ? 0 : gd88_dmr_late_us(elapsed_us, 0);
 	if (!now) {
-		wait(gd88_dmr_hold_us(elapsed_us, tx_off_us));
+		wait(gd88_dmr_hold_us(elapsed_us, 0));
 	}
-	apc_ramp(tx_pa, false);
 	tx_paths_off();
+	wait(tx_off_us + PA_RAMP_US + PA_SLACK_US);
 	wait(TX_END_PATH_US);
 	bk4819_burst_tune(&rf_main, IF_HZ, BK4819_STATE_RX);
-	bk4819_lo_resume(&rf_lo);
+	lo_resume();
 	wait(TX_END_PATH_US);
 	gd88_path_rx(rx_hz, true, true);
 	wait(TX_END_RX_US);
@@ -452,8 +438,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 	}
 	tx_stop();
-	tx_uhf = hz >= UHF_FROM_HZ;
-	tx_pa = plan.pa;
+	if (!gd88_pa_arm(hz, plan.pa, plan.on_us, plan.off_us)) {
+		return false;
+	}
 	tx_off_us = plan.off_us;
 	bk4819_tx_prepare(&rf_main, ctcss != 0 ? BK4819_TONE_CTCSS : BK4819_TONE_NONE, ctcss);	// deviation and sub-audio words while the chip still receives
 
@@ -466,14 +453,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	bk4819_tx_tune(&rf_main, hz);
 	lo_off();
 	hal_delay_ms(TX_SETTLE_MS);
-	hal_delay_us(plan.on_us);
-
-	DAC_DATA_B = 0;
-	hrc_dac_b_power(true);
-	gd88_path_tx_select(tx_uhf);
-	hal_delay_us(TX_SUPPLY_US);
-	gd88_path_tx_supply(tx_uhf);
-	apc_ramp(tx_pa, true);
+	hal_delay_us(plan.on_us + TX_SUPPLY_US + PA_RAMP_US + PA_SLACK_US);	// B's PA sequence, begun at the edge
 	return true;
 #else
 	// Without GD88_TX (gd88_rf.h): A's power control isn't known yet, and B is a receiver only
@@ -484,19 +464,19 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 #endif
 }
 
-// End of a transmission without going back to receive: the main chip to its RX state (still on the TX frequency),
-// the page's delay, the ramp down, supply and PA select off. True when there was one; rx() then retunes
+// End of a transmission without going back to receive: the TX line low (B waits the page's delay, ramps the PA down
+// and switches it off), that long, then the main chip to its RX state (still on the TX frequency), and B disarmed.
+// True when there was one; rx() then retunes
 static bool tx_stop(void)
 {
 	if (!transmitting) {
 		return false;
 	}
 #if GD88_TX
-	bk4819_tx_end(&rf_main);
-	hal_delay_us(tx_off_us);
-	apc_ramp(tx_pa, false);
 	tx_paths_off();
-	hrc_dac_b_power(false);
+	hal_delay_us(tx_off_us + PA_RAMP_US + PA_SLACK_US);
+	bk4819_tx_end(&rf_main);
+	gd88_pa_disarm();
 #endif
 	transmitting = false;
 	audio(audio_open);

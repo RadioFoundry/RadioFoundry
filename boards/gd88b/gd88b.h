@@ -11,6 +11,14 @@
 void gd88b_path_mute(bool mute);
 // A's own receiver on hz or off (RX2_PATH): its front end and path pins are B's (paths_gd88b.c)
 void gd88b_path_main(bool on, uint32_t hz);
+// A transmits (pa_gd88b.c): the path pins for A's chip in its TX band (on), or back as the receivers have them
+void gd88b_path_a_tx(bool on, bool uhf);
+// The band's PA select and supply pins
+void gd88b_path_pa(bool uhf, bool select, bool supply);
+// A's PA (pa_gd88b.c): pa_init at start-up; pa_arm is RX2_TX (hz 0 disarms, and stops a transmission in progress)
+void gd88b_pa_init(void);
+bool gd88b_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
+bool gd88b_pa_diag_line(char *buf, uint8_t len);
 // The status LEDs (RX2_LED bits: bit 0 LED 1, bit 1 LED 2; RX2_LED_STUB blinks them until the next call)
 void gd88b_leds(uint8_t leds);
 void gd88b_leds_poll(uint32_t now_ms);	// the blink, from the link task's loop

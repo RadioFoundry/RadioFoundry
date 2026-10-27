@@ -18,22 +18,26 @@
 #define PIN_RX_B		0x20	// PTB0
 #define PIN_PARK_B13		0x2D
 #define PIN_PARK_B5		0x25
-// The audio source to A: mode 0 = PTC18 high, PTB4 low; mode 1 the reverse; both low = none.
+// The audio source to A: mode 0 = PTC18 high, PTB4 low; mode 1 the reverse; both low = none. While A transmits the
+// original firmware holds mode 0 ("path 0", A's chip), and so does pa_gd88b.c.
 // TODO(gd88): unknown, needs a radio: which mode is the main chip's AF and which the modem's line out. Mode 0 is taken
 // as the chip's AF (FM)
 #define PIN_AUD_SRC0		0x52	// PTC18
 #define PIN_AUD_SRC1		0x24	// PTB4
-// The audio band pair: VHF = PTB18 high, PTB22 low; UHF the reverse. Both high at start-up
+// The audio band pair: VHF = PTB18 high, PTB22 low; UHF the reverse. Both high at start-up. Set to A's TX band while A
+// transmits
 #define PIN_AUD_VHF		0x32	// PTB18
 #define PIN_AUD_UHF		0x36	// PTB22
-// The transmitter's switches: held low, B is built as a receiver only. TX path UHF / VHF, PA select UHF / VHF, PA
-// supply UHF / VHF
+// The transmitter's switches. The PA is A's (pa_gd88b.c): PA select, 200 us, PA supply, then the drive (DAC B), in
+// A's TX band. TX path UHF / VHF belongs to B's own transmitter, which isn't used: held low
 #define PIN_TX_PATH_UHF		0x11	// PTA17
 #define PIN_TX_PATH_VHF		0x2A	// PTB10
 #define PIN_PA_SEL_UHF		0x26	// PTB6
 #define PIN_PA_SEL_VHF		0x23	// PTB3
 #define PIN_PA_SUP_UHF		0x34	// PTB20
 #define PIN_PA_SUP_VHF		0x35	// PTB21
+// A's TX line, an input: high while A transmits (A's PTB2). B keys the PA on its edges
+#define PIN_TX_LINE		0x22	// PTB2
 // TODO(gd88): unknown, needs a radio: PTB11 and PTB12's roles. Low from start-up on
 #define PIN_PARK_B11		0x2B
 #define PIN_PARK_B12		0x2C
