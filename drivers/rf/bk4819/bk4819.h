@@ -203,8 +203,8 @@ void bk4819_tone_start(bk4819_t *dev, uint16_t hz, uint8_t gain);
 // while nothing else uses the bus)
 void bk4819_tone_freq(bk4819_t *dev, uint16_t hz);
 // The TX deviation while a tone runs: 0x40 bits 11:0 (stock 0x4D0 plain, 0x4A8 with CTCSS, 0x48A for DTMF), bits
-// 15:12 as stock. A tone's deviation follows this, not the tone's gain: on the GD-88 about 10 Hz peak per count above
-// about 0x2FA (0x448 to 0x4D9 measured). bk4819_tone_stop() puts the stock word back
+// 15:12 as stock. A tone's deviation follows this, not the tone's gain (one radio's figures: its hardware page).
+// bk4819_tone_stop() puts the stock word back
 void bk4819_tone_deviation(bk4819_t *dev, uint16_t scale);
 // Key the running tone: down = on, false = a silent carrier (the tone generator off, the microphone still out). No-op
 // without a tone
