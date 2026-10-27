@@ -33,7 +33,10 @@ same records at the same addresses as the base model, plus tables this spec does
 
 RadioFoundry's flash map on these radios puts its emulated EEPROM, settings ring, journal and second DMR ID database
 area at addresses that overlap the stock tables ([settings-store.md](settings-store.md) 1). Until the user writes a
-RadioFoundry codeplug and an ID database, those areas still hold the stock bytes.
+RadioFoundry codeplug and an ID database, those areas still hold the stock bytes. Claiming the settings area erases
+it, and on some boards the zone table (0x0149E0) lies inside it. A conversion therefore reads the stock codeplug from
+a copy taken before the claim, such as the installer's backup ([web-flasher.md](../dev/web-flasher.md), "Channels
+after an install").
 
 Files that carry the same codeplug:
 
