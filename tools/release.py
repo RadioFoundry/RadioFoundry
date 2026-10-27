@@ -20,6 +20,7 @@ Refuses an image that reaches into a codec sector or that carries the codec sign
 the codec or break "keep the radio's codec" (tools/rfoundry).
 """
 import argparse
+import hashlib
 import os
 import struct
 import subprocess
@@ -54,13 +55,15 @@ def toolchain(board_id):
 
 def check_no_codec(board, image):
     """The release image must not contain any codec bytes: it ends before the codec sectors (manifest.generate checks
-    that), and the codec's first word must not appear where a merged image puts it: an STM32 radio's code window (or
-    the stock address, where merges from before the codec moved put it), an HR_C7000 radio's codec slot (the build's
-    _codec.bin)."""
+    that), and the codec must not be where a merged image puts it: an STM32 radio's code window (its first word), or
+    the stock address, where merges from before the codec moved put it (the stock code, by its SHA-256: the image's
+    own code reaches past those addresses now, and the codec's first word, a push, is common there), an HR_C7000
+    radio's codec slot (the build's _codec.bin)."""
     off = board.codec.windows[0][0] - board.app_base
     if board.codec_slot is None:	# a codec merged from a stock file at the stock placement
-        offs = {off} | {p["code"][0] - board.app_base for p in stockfw.PROFILES.values() if p["board"] == board.id}
-        if any(o + 4 <= len(image) and struct.unpack_from("<I", image, o)[0] == stockfw.CODEC_SIG for o in offs):
+        stock = {(p["code"][0] - board.app_base, p["code"][1], p["code"][2]) for p in stockfw.PROFILES.values() if p["board"] == board.id}
+        if (off + 4 <= len(image) and struct.unpack_from("<I", image, off)[0] == stockfw.CODEC_SIG) or any(
+                o + n <= len(image) and hashlib.sha256(image[o:o + n]).hexdigest() == sha for o, n, sha in stock):
             raise SystemExit("release: %s carries the codec signature: never release a merged image" % board.id)
     else:				# a codec in RadioFoundry's own slot
         if off + 4 <= len(image) and struct.unpack_from("<I", image, off)[0] == serialflash.SLOT_MAGIC:
