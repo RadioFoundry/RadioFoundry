@@ -62,3 +62,31 @@ test("install done: a check still running when the user starts over draws nothin
 	assert.equal(after.length, 0, "nothing put in the nav bar of the step that replaced it");
 	assert.ok(forwards.length >= 1);
 });
+
+test("restore: a backup without the program memory (the calibration or the data memory alone) says so, offers no restore", () => {
+	const forwards = [];
+	const parts = new Map([["c7000-calibration", { what: "c7000-calibration", file: "calibration.bin", complete: true, addr: 0, data: new Uint8Array(16) }]]);
+	const state = { radio, task: "restore", forward: (b) => forwards.push(b), data: { fb },
+		bundle: { meta: { radio: { name: radio.name }, created: new Date().toISOString(), firmware_now: { kind: "stock" } }, parts } };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {} });
+	state.c7 = { log: { add() {}, el: new El("div") }, stream: null };
+	const box = c7ui.restoreView();
+	assert.match(box.textContent, /no program memory/);
+	assert.deepEqual(forwards, [null], "no Restore button");
+});
+
+test("backup: unticking the program memory says such a backup can't restore the radio's firmware", () => {
+	const state = { radio, task: "backup", forward() {}, data: { fb } };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, noteReadout() {} });
+	state.c7 = { log: { add() {}, el: new El("div") }, stream: null, size: {}, stopSizing: true,
+		stub: { size: {}, sums: async () => { throw new Error("no radio"); } } };
+	const box = c7ui.backupView();
+	const all = (el) => [el, ...(el.children || []).filter((c) => c instanceof El).flatMap(all)];
+	const note = all(box).find((e) => /initial radio firmware/.test(e.textContent) && e.className?.includes?.("notice"));
+	assert.ok(note, "the note is on the page");
+	assert.equal(note.hidden, true, "hidden while the program memory is ticked");
+	const progmem = all(box).find((e) => e.tagName === "INPUT" && e.attrs.type === "checkbox");
+	progmem.checked = false;
+	for (const f of progmem.listeners.change) f({ target: progmem });
+	assert.equal(note.hidden, false, "shown once it is unticked");
+});

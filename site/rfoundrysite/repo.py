@@ -315,9 +315,11 @@ def c7000_flash():
 			       "run": list(lay["run"]), "tables": list(lay["tables"]),
 			       "bootloader_id": fl.MODELS[bid].tag if bid in fl.MODELS else None,
 			       # the whole program flash (a backup reads it all; writes stay in the application area), whether
-			       # the radio has the SPI data flash the stub reads, and the board profile the universal stub gets
-			       # (CONFIG). A stock console, the update mode and the read rate are in radios.json flash
+			       # the data memory is SPI NOR flash (else SPI NAND), where a NAND radio's calibration copies sit,
+			       # and the board profile the universal stub gets (CONFIG). A stock console, the update mode and
+			       # the read rate are in radios.json flash
 			       "progmem_size": lay.get("progmem_size", dc.PROGMEM_SIZE), "data_flash": lay.get("data_flash", True),
+			       "calibration": lay.get("calibration"),
 			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand")} if bid in st.C7_BOARDS
 			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")}}
 	profiles = []

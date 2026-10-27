@@ -62,6 +62,8 @@ id = 2
 hold_power = false
 progmem = 0x100000
 tested = true
+# the factory calibration: the 4 KB page of the stock codeplug area whose last byte is 2 (hardware-dm1801pro.md 6.4)
+calibration = { area = 0xC9000, page_id = 2 }
 
 # The codec slot and windows come from boards/dm1801pro/memory.ld (__codec_*). The codec comes from the radio's own program flash
 # (read with stub/stubtool.py), not from a stock file (docs/spec/codec-dm1801pro.md)

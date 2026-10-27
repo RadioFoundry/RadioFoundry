@@ -1131,13 +1131,16 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 		all: { bytes: internalSize + S.radio.backup.spi_size, what: { internal: true, spi: "full" } },
 		firmware: { bytes: internalSize, what: { internal: true, spi: "none" } },
 		codeplug: { bytes: CODEPLUG_SPAN, what: { internal: false, spi: "codeplug" } },
+		// the factory calibration is the SPI flash's security registers (readRadio: 3 x 256 bytes, over the debug link or the loader)
+		calibration: { bytes: 768, what: { internal: false, spi: "none" } },
 	};
 	let pick = "all";
 	const times = {};
 	// the loader reads the internal flash at about 500 KB/s and the SPI flash at about 280 KB/s (stub-stm32f4.md 11),
-	// plus the hand-over and the restart; the codeplug alone is no faster that way, so the debug link reads it
+	// plus the hand-over and the restart; the codeplug alone is no faster that way, so the debug link reads it. The
+	// calibration alone takes the loader only where the build doesn't serve the security registers (readRadio)
 	const viaLoader = () => !!(f4Board() && S.now?.kind === "rfoundry" && S.now.stubOffer && pick !== "codeplug");
-	const seconds = (id) => (id !== "codeplug" && f4Board() && S.now?.stubOffer
+	const seconds = (id) => (id !== "codeplug" && id !== "calibration" && f4Board() && S.now?.stubOffer
 		? 12 + internalSize / 500e3 + (choices[id].what.spi === "full" ? S.radio.backup.spi_size / 280e3 : 0)
 		: S.readRate ? choices[id].bytes / S.readRate : null);
 	const run = async () => {
@@ -1154,7 +1157,8 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			bulk = viaLoader() ? f4LoaderReader(link, { stubJson: f4StubJson, reopen: reopenRFoundryPort, board: f4Board(), onHandOver: () => { S.link = null; } }) : null;
 			S.backupParts = await readRadio(link, S.board, S.radio, {
 				what: choices[pick].what, readers: bulk ? [bulk] : [], progress: (part, d, total) => prog.set(d, total, t(`flash.backup.part.${part}`)) });
-			if (!bulk?.used) S.readRate = choices[pick].bytes / Math.max(0.5, (performance.now() - t0) / 1000);
+			// only a read long enough to time says how fast the memory reads: the calibration is mostly round trips
+			if (!bulk?.used && choices[pick].bytes >= 0x10000) S.readRate = choices[pick].bytes / Math.max(0.5, (performance.now() - t0) / 1000);
 			if (S.stock && !codecOnlyFile(S.stock)) S.backupParts.push({ file: "stock-firmware.bin", what: "stock-firmware", addr: 0, data: S.stock.data, complete: true });
 			const after = when === "after";
 			const meta = {
@@ -1172,9 +1176,12 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			diag.note("backup saved", { contents: pick, size: bytes.length, parts: S.backupParts.map((x) => `${x.what}${x.complete ? "" : " (incomplete)"}`) });
 			S.backupDone = true;
 			flashFinished(started);
-			const incomplete = S.backupParts.filter((x) => !x.complete && x.what !== "spi-flash").map((x) => x.file);
+			// the codeplug protocol's copy of the security registers kept beside the loader's is not a failed read
+			const incomplete = S.backupParts.filter((x) => !x.complete && !["spi-flash", "security-registers-unchecked"].includes(x.what)).map((x) => x.file);
+			const noCal = !S.backupParts.some((x) => x.what === "security-registers");
 			box.append(notice(t("flash.backup.saved", { name, size: Math.round(bytes.length / 1024) }), "ok"));
 			if (incomplete.length) box.append(notice(t("flash.backup.incomplete", { files: incomplete.join(", ") })));
+			if (noCal) box.append(notice(t("flash.backup.no_security"), pick === "calibration" ? "bad" : ""));
 			if (bulk?.used) {
 				// the next step talks to RadioFoundry again: it has to be back first
 				prog.set(0, 1, t("flash.backup.restarting"));
@@ -1202,7 +1209,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 		h("span"));
 	box.append(h("h3", {}, t(`flash.backup.title_${when}`)),
 		h("p", {}, t(when === "after" && S.now?.kind !== "rfoundry" ? "flash.backup.after_lead" : "flash.backup.lead")),
-		option("all"), option("firmware"), option("codeplug"));
+		option("all"), option("firmware"), option("codeplug"), option("calibration"));
 	const runBtn = button(t("flash.backup.run"), run, { primary: true });
 	if (actions) actions(runBtn);
 	else box.append(h("div", { class: "actions" }, runBtn));
@@ -1785,6 +1792,14 @@ function doneView() {
 function backupView() {
 	const box = h("div", { class: "flasher" });
 	const status = h("div");
+	// the step asks what the radio runs, as the install does; each choice is a different way to read the radio
+	const choices = ["rfoundry", ...(openfw.supported(S.board) ? ["openfw"] : []), "stock", "unknown"];
+	const choose = (id) => () => {
+		S.backupPick = id;
+		S.now = id === "openfw" ? nowFor("openfw") : null;
+		status.replaceChildren();
+		draw();
+	};
 	const connect = button(t("flash.backup.connect"), async () => {
 		try {
 			const link = await connectSerial();
@@ -1800,13 +1815,49 @@ function backupView() {
 				onDone: () => S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true })) }));
 		} catch (e) {
 			await dropSerial();
+			if (openfwRecognized(e, status, () => { S.backupPick = "openfw"; draw(); })) return;
 			status.replaceChildren(connectError(e), connectHelp(e, "flash.backup.openfw_next"));
 		}
 	}, { primary: true });
-	// Connect is the step's action until the radio answers; then the backup's own run button takes its place
-	S.forward(connect);
-	box.append(panel(t("flash.backup.task_title", { name: S.radio.name }), h("p", {}, t("flash.backup.task_lead")),
-		S.radio.backup.stock === "none" ? notice(t("flash.backup.stock_none"), "info") : null, status));
+	const finish = () => S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true }));
+	const draw = () => {
+		const pick = S.backupPick || null;
+		const opts = h("div", { class: "choice-grid" }, choices.map((id) =>
+			h("button", { class: "choice", type: "button", "aria-pressed": String(pick === id), onclick: choose(id) },
+				h("strong", {}, t(`flash.now.${id}`)), h("span", { class: "small muted" }, t(`flash.backup.from.${id}_text`)))));
+		let detail = null;
+		if (pick === "rfoundry") {
+			detail = h("div", {}, h("p", {}, t("flash.backup.task_lead")), status);
+			// Connect is the step's action until the radio answers; then the backup's own run button takes its place
+			if (S.now?.kind !== "rfoundry") S.forward(connect);
+		} else if (pick === "openfw") {
+			// the install's own backup of another open firmware (openfwBackupNow); done, only Finish is left
+			detail = h("div", {}, openfwDetail({ draw, check: connectOpenfw, setRun: (b) => S.forward(b) }), status);
+			if (!openfwRecognizedNow()) S.forward(null);
+			else if (S.backupDone) finish();
+		} else {
+			detail = pick ? notice(t("flash.backup.stock_none"), "info") : null;
+			S.forward(null);
+		}
+		box.replaceChildren(panel(t("flash.backup.task_title", { name: S.radio.name }), opts, detail));
+	};
+	// "Check the Radio" on another open firmware: a probe that answers with its CPS is what openfwRecognized takes
+	async function connectOpenfw() {
+		status.replaceChildren(h("p", { class: "muted" }, t("flash.now.connecting")));
+		try {
+			const link = await connectSerial();
+			const p = await probe(link);
+			if (!p) throw await noAnswer(link);
+			// the debug link answered: this is RadioFoundry, not another open firmware
+			await dropSerial();
+			status.replaceChildren(notice(t("flash.backup.is_rfoundry"), "info"));
+		} catch (e) {
+			await dropSerial();
+			if (openfwRecognized(e, status, draw)) return;
+			status.replaceChildren(connectError(e), serialHelp());
+		}
+	}
+	draw();
 	return box;
 }
 

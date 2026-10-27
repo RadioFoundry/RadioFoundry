@@ -55,7 +55,8 @@ steps = [
 # 2 MB of program flash (Boya, JEDEC 68 40 15).
 # stock_console: the stock firmware answers a debug console (USMART) the web flasher loads the stub through before
 # RadioFoundry is installed (stock_versions: the builds it knows). read_rate: bytes a second of a program flash read
-# through the stub (2 MB in about 45 s on the radio, 2026-10-17: blank sectors and LZ4 beat the 9 KB/s wire)
+# through the stub (2 MB in about 45 s on the radio, 2026-10-17: blank sectors and LZ4 beat the 9 KB/s wire).
+# calibration: the factory calibration's two copies, the program flash's and the NAND page (hardware-db25d.md 6.1)
 [flash.stub]
 id = 3
 hold_power = true
@@ -63,6 +64,7 @@ progmem = 0x200000
 tested = false
 stock_console = "usmart"
 read_rate = 46000
+calibration = { progmem = 0x1FE000, nand = 0x280000, magic = "TUNE" }
 
 # The codec slot and windows come from boards/db25d/memory.ld (__codec_*, the script CONFIG_DMR selects)
 [codec]

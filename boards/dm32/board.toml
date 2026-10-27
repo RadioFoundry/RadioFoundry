@@ -69,6 +69,8 @@ id = 1
 hold_power = false
 progmem = 0x100000
 tested = true
+# the factory calibration: the 4 KB page of the stock codeplug area whose last byte is 2 (hardware-dm32.md 11.1)
+calibration = { area = 0xC9000, page_id = 2 }
 
 # The codec slot and windows come from boards/dm32/memory.ld (__codec_*); profile is the id rfoundry gives a merged codec
 [codec]

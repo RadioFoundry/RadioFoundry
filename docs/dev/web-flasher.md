@@ -256,7 +256,8 @@ contract tests are in `site/tests/backends.test.mjs`.
 
 Bulk reads for a backup go through readers (`readers.js`). `backup.js` `readRadio` reads the small parts only the
 debug link has (radio info, security registers) first. It then tries the readers it is given, in order, and the debug
-link reads the memories when none opens. A reader has `open(progress)` (false: not possible now, nothing changed),
+link reads the memories when none opens. A reader may also have `security()`, the security registers or null: the
+STM32F4 loader's SREAD (stub-stm32f4.md 6.2), each register checked against the CRC the loader sends. A reader has `open(progress)` (false: not possible now, nothing changed),
 `used`, `read(mem, addr, n)` giving `{data, complete}`, `close()` and `abort()`. A new read-back protocol is a reader,
 and the bundle format and the backup step stay as they are.
 
@@ -284,7 +285,7 @@ What can be read depends on the firmware running:
 | Radio runs | Read |
 |---|---|
 | RadioFoundry | Everything, through the CPS reads (areas 1, 5, 9 and 10): the whole SPI flash, the internal flash, the security registers |
-| RadioFoundry with stub entry (STM32F4) | The same. The radio info and security registers come over the debug link; the internal flash and the SPI flash come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into RadioFoundry. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves RadioFoundry running, and the debug link reads everything |
+| RadioFoundry with stub entry (STM32F4) | The same. The radio info comes over the debug link; the internal flash, the SPI flash and the security registers come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into RadioFoundry. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves RadioFoundry running, and the debug link reads everything. A build whose codeplug protocol has no area 10 still gets the security registers, through the loader's SREAD (protocol 5). When both read them and the copies differ, the loader's checked copy is `security-registers.bin` and the other is kept as `security-registers-codeplug-protocol.bin`, marked incomplete |
 | Another open firmware (OpenGD77 family) | Everything but the security registers, over that firmware's CPS (`openfw.js`, below) |
 | Stock (STM32F4) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing RadioFoundry: flashing never touches the SPI flash, and RadioFoundry doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
 
@@ -334,7 +335,7 @@ programming cable with Web Serial, through the boot stub ([stub/README.md](../..
 | Step | What happens |
 |---|---|
 | Connect | The page looks for a stub that still runs, then for RadioFoundry. RadioFoundry with `CONFIG_STUB_ENTRY` hands over to the stub (command 0x1A); RadioFoundry without it is restarted with its CPS reboot, which passes the boot ROM's serial window (not yet tried on a radio). Otherwise the page asks the user to switch the radio off and on and catches the boot ROM. The radio model is then checked by the bootloader's ID string, and the page sends the stub the board's profile (CONFIG: clocks, UART, pins, board id) and checks the echo; the stub refuses writes until then |
-| Back up and check | A first install reads the whole program memory (required) and the calibration area; the whole data memory only if asked (off by default: 16 MB at 115200 baud). Each choice shows its time: the stub's sector sums count the blank sectors first (no data moved, `c7000.js` `blankCount`, at most 8 s per memory), and `readSeconds` turns the used share into wire bytes, pessimistically: every used sector whole (no credit for LZ4), 13 bytes a record, at 9000 B/s or the rate measured on this radio, never above the 11,520 B/s of the line; without a count every sector is taken as used ("up to"). The page keeps the program memory in IndexedDB and downloads a backup bundle. A first install can skip the program memory read, before or during it, and take the codec from the stock file instead: only the codec slot is read, and the firmware is reported as not read. An update reads only the codec slot. The page then decides the codec |
+| Back up and check | A first install reads the whole program memory (required) and the calibration area; the whole data memory only if asked (off by default: many minutes at 115200 baud). Each choice shows its time: the stub's sector sums count the blank sectors first (no data moved, `c7000.js` `blankCount`, at most 8 s per memory, windows spread over the range), and `readSeconds` turns the used share into wire bytes, plus the radio's own time per sector where it is slower (a NAND), pessimistically: every used sector whole (no credit for LZ4), 13 bytes a record, at 9000 B/s or the rate measured on this radio, never above the 11,520 B/s of the line; without a count every sector is taken as used ("up to"). The page keeps the program memory in IndexedDB and downloads a backup bundle. A first install can skip the program memory read, before or during it, and take the codec from the stock file instead: only the codec slot is read, and the firmware is reported as not read. An update reads only the codec slot. The page then decides the codec |
 | Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector |
 | Check | The stub resets the chip; the page asks RadioFoundry's VERSION for the build and the codec |
 
@@ -418,15 +419,37 @@ until the next restart.
 The build writes the layout and the codec profiles to `data/flash-boards.json` (`c7000`, from `stub/stubtool.py`,
 `tools/hrc7000_codec.py` and `tools/serial_loader.py`) and the universal stub image (with its load address, run address and RAM end) to `data/c7000-stub.json`. Bundle parts:
 
+Each board's `[flash.stub]` in `board.toml` says what there is to back up: the program memory's size (`progmem`), whether
+the data memory is SPI NOR flash or an SPI NAND (from the board's NAND driver: the stub's `nand` flag), and where the
+factory calibration is (`calibration`, required). The page lists the same three choices for every radio from that data:
+the program memory, the calibration and the whole data memory, each with its size and time.
+
+| `calibration` | Where | What the calibration choice reads |
+|---|---|---|
+| `{area, page_id}` | A data flash: the 4 KB page of the stock codeplug area [0, `area`) whose last byte is `page_id` | The whole area (about 10 seconds), kept as `original-channels.bin` |
+| `{progmem, nand, magic}` | A NAND radio: a copy in a 4 KB sector of the program memory and one in the NAND, each starting with `magic` | Both sectors. The NAND copy is looked for at `nand`, then a block later each time (`findNandCalibration`): the stock firmware skips its bad blocks, so a bad block at or below the copy moves it up. The bundle keeps the copies starting with `magic` and names a blank one (`calibrationCopies`). The program memory choice is then "Program Memory & Calibration" |
+
+The NAND is read through the stub's NAND path (`stub.js` `MEM.nand`: flags bit 2 on op 07 and 09, the stub configured
+for a NAND board): its 2 KB pages without the spare bytes, two to a 4 KB sector, never written. The whole chip (256 MB)
+reads in minutes because the stub sends a blank sector as its record alone. `blankCount` samples windows spread over the
+whole range, so the estimate holds for a chip whose data sits in a few areas.
+
+The count gives how much of a memory is used, not how well it packs. `readSeconds` takes a used sector whole for its
+time and packed to `BEST_PACK` (0.3) for `least`. Where the two differ by a minute or more, the choice shows a range:
+a full data memory packs well with a codeplug and not with an encrypted image.
+
 | File | Part | Content |
 |---|---|---|
-| `program-memory.bin` | `c7000-progmem` | The whole 1 MB program memory |
-| `data-memory.bin` | `c7000-data` | The whole 16 MB data memory |
-| `original-channels.bin` | `c7000-data-start` | Data memory 0 to 0xC9000, the stock codeplug area, when the whole data memory isn't read |
-| `calibration.bin` | `c7000-calibration` | The 4 KB calibration page (logical ID 2), at its own address |
+| `program-memory.bin` | `c7000-progmem` | The whole program memory |
+| `data-memory.bin` | `c7000-data` | The whole data flash |
+| `nand.bin` | `c7000-nand` | The whole NAND, 2 KB pages without the spare bytes |
+| `original-channels.bin` | `c7000-data-start` | The data flash's stock codeplug area, when the whole data memory isn't read |
+| `calibration.bin` | `c7000-calibration` | A data flash's calibration page, at its own address |
+| `calibration.bin` | `c7000-calibration-nand` | A NAND radio's NAND copy (4 KB sector), at its NAND address |
+| `calibration-program-memory.bin` | `c7000-calibration-progmem` | A NAND radio's program memory copy (4 KB sector), at its address |
 
-The calibration choice reads the stock codeplug area, which is about 10 seconds, and is on by default. Choosing the whole
-data memory includes it. Restore writes the program memory back from 0x0300C000 up; the data memory is not written.
+The calibration choice is on by default. Choosing the whole data memory includes it. Restore writes the program memory
+back from the application start up; the data memory is not written.
 
 Without a backup, the original firmware comes back from its vendor file. The restore task takes the file in place of a
 bundle (`vendorRestore`) once `vendorfile.js` identifies it for this radio, mapped or not. `c7.progmemFromFile()` takes a
