@@ -543,7 +543,7 @@ static void status(radio_status_t *st)
 {
 	if (!supported) {
 		st->rssi_dbm = -160;
-		st->noise = 0;
+		st->noise = UINT8_MAX;		// all noise: 0 reads as a quiet channel, the squelch opens and the screen says receiving
 		st->carrier = false;
 		st->tone_ok = false;
 		return;

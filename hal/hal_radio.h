@@ -19,7 +19,7 @@ typedef struct {
 
 typedef struct {
 	int16_t rssi_dbm;
-	uint8_t noise;		// chip noise reading, larger = more noise (1 dB units where the chip allows)
+	uint8_t noise;		// chip noise reading, larger = more noise (1 dB units where the chip allows); UINT8_MAX when it can't hear
 	bool carrier;		// the chip's own squelch says carrier (if it has one)
 	bool tone_ok;		// the RX sub-audio tone or code matches (true when none is set)
 } radio_status_t;
