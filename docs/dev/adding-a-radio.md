@@ -128,6 +128,8 @@ one without a label.
    data: send back-to-back 0x00 bytes and watch the raw PTT pin. If it goes low, gate PTT on UART traffic
    (`drivers/input/sharedptt`, [gotchas.md](../spec/gotchas.md) 16.2) before anything transmits. Then run
    `tests/hil/test_ptt_host_traffic.py`: host polling must make no PTT press.
+   If PTT also comes through a mic jack, power on with the jack empty and watch the raw pin. If it reads low, count it
+   only once it has read high (`drivers/input/plugptt`, [gotchas.md](../spec/gotchas.md) 16.3).
 4. Flash, settings and calibration reads. Check the foreign-region guard on a radio that still runs the vendor firmware
    ([settings-store.md](../spec/settings-store.md) 5).
 5. RF chip: FM receive, then FM transmit into a dummy load.
