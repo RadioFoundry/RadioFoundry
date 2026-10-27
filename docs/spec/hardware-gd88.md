@@ -236,8 +236,24 @@ B has no display, keys, power latch or GPS. Pin index as in section 9.
 | Driver | A and B run the same RF driver code over the same 3-wire bus |
 | Main chip ID (register 0) | 0x6818 (FD6818), 0x7813, 0x1846 (RDA1846/AT1846S, init is an empty stub), 0x4819 (BK4819) |
 | Second chip ID | 0x6818, 0x7813, 0x1100 (AT1141), 0x4819 |
-| Fitted parts | Not visible in the image; a BK4819 pair as in the DB25-D PRO is the likely case. The firmware prints `RF_LO_IC_CHIPID` on its debug UART |
-| BK4819 scheme | IF 51.550 MHz: the main chip receives at the IF and transmits at f; the second chip is the high-side LO at f + 51.55 MHz. DAC C = 1780 at RX set-up; DAC B drives the PA with a 180-step ramp |
+| Fitted parts | **HW** A on the bench: main 0x4819, LO 0x1100 (AT1141); the firmware's version string reads `DBT` (main BK4819 'B', LO AT1141 'T'). The firmware picks the driver by ID at start-up, so other units can differ |
+| Superhet | The main chip receives at the IF and transmits at f; the second chip is the LO. **A's IF is 45 MHz** with either LO chip; B's is 51.55 MHz. DAC C = 1780 at RX set-up; DAC B drives the PA with a 180-step ramp |
+| BK4819 LO | High-side, f + IF, in registers 0x38 / 0x39 |
+
+### 11.1 The AT1141 LO
+
+A PLL / VCO synthesizer on the LO's enable with the BK4819's bus format (8-bit address, bit 7 = read, 16-bit data). No
+datasheet; the driver (`drivers/rf/at1141`) replays the firmware's set-up.
+
+| Item | Finding |
+|---|---|
+| Banks | Register 0x7F = 1 selects a second bank; every table ends with 0x7F = 0 |
+| Set-up | A 91-entry table, read back 0x15 / 0x16 / 0x19, the band for 400 MHz, the VCO start (waits 2, 5, 5 and 350 ms), 0x21 bits 10:5 = 10, output level 2 |
+| Control (0x30) | 0x4006 standby, 0x4046 on, 0x4002 off for TX. Restart after TX: standby, 10 ms, standby, on |
+| Tuning | Divider d (0x16 low byte) and multiplier m (0x15 bit 0: x3 when set, else x2) per octave from 550.4 MHz down, so d x f x (2 or 3) stays at 2.2-3.3 GHz. 0x3F = VCO / 406 250. PLL word in 0x62 (low) / 0x63 (high): VCO / 2 / 26 MHz in 6.26 fixed point, the reference halved when 0x19 bit 6 is set |
+| Injection | f + 45 MHz, except **f - 45 MHz from 400 to 440 MHz** |
+| Output level (0x26) | 0: 0x7F40; 1-7: one bit from bit 15 down, OR 0x0140; 8 and up: 0x0140 |
+| GPIO | 0-3 in 0x2B, 4-7 in 0x2A, a nibble each (0xF = high). The band path is GPIO4 / GPIO5, as with a BK4819 LO |
 | Baseband | Both images link the same HR_C7000 and vocoder library versions as the DB25-D. Each SoC has its own modem, RF pair and NAND |
 
 ## 12. The vendor's A to B link (UART3, 115200 8N1)
@@ -258,13 +274,13 @@ grouped by range (0x0000-0x9006 A to B, 0xB000-0xDB03 B to A). Most meanings are
 
 ## 13. The RadioFoundry port
 
-Two boards, one per SoC. Both use `boards/gd88/common`: the BK4819 pair, the calibration page, DMR on the modem and
-the SPI NAND. Neither has run on a radio yet.
+Two boards, one per SoC. Both use `boards/gd88/common`: the main BK4819 with a BK4819 or AT1141 LO, the calibration
+page, DMR on the modem and the SPI NAND. Both run on the bench's radio (2026-10-26); receive is not yet checked on air.
 
 | | A (`boards/gd88`) | B (`boards/gd88b`) |
 |---|---|---|
 | Runs | the radio core: UI, codeplug, scan, dual watch, host link on UART1, DMR, GPS | no core: a receiver task under `app_start` |
-| Receive | FM and DMR on its own BK4819 pair | FM and DMR, on what A asks for |
+| Receive | FM and DMR on its own main BK4819 and LO (11.1) | FM and DMR, on what A asks for |
 | Transmit | Off by default. `GD88_TX=1` builds it, but A's power control is not worked out | Never: the TX pins stay low |
 | Second receiver | B over UART3 (`board.rx2`, [rx2-link.md](rx2-link.md)). The core keeps B on the dual watch channel that is not selected | - |
 | Audio | the chain's source bits (9.3) and PTC18. B's audio gets vfo 1 while A gives it the speaker | the source pair to A, muted until A sends `AUDIO` on |
@@ -280,7 +296,7 @@ Not supported yet: the IMU, the headset path on its own, the RTC.
 
 The code marks each with `TODO(gd88)`. The first-day plan that settles them is [gd88-bringup.md](../testing/gd88-bringup.md).
 
-1. Which RF chips are fitted (read the debug UART chip-ID line or photograph the board).
+1. Which RF chips other units have (the bench's A: BK4819 and AT1141), and B's.
 2. A's output power control, and so transmit.
 3. FM against DMR for the chain's classes, chain bit 6 as the broadcast tuner's source, B's RX path pairs and B's
    audio source pair.

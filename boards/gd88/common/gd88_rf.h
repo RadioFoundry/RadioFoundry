@@ -24,6 +24,10 @@
 #ifndef GD88_BAND_LO_GPIO
 #define GD88_BAND_LO_GPIO	1
 #endif
+// The superhet's IF: A's firmware tunes the main chip to 45 MHz with either LO chip; B's is 51.55 MHz (its config.mk)
+#ifndef GD88_IF_HZ
+#define GD88_IF_HZ		45000000u
+#endif
 #define GD88_MIC_GAIN_DB	11u	// GCR_ADCL at init, as the other HR_C7000 radios
 
 // The RF chips' 3-wire bus, the same pins on both SoCs
@@ -73,6 +77,8 @@ void gd88_path_speaker(bool on, bool from_modem);
 void gd88_dmr_init(bk4819_t *main_chip, hrc7000_t *modem);
 void gd88_dmr_enter(uint32_t rx_hz);
 void gd88_dmr_leave(void);
+// The LO's side for the modem's RX IQ inversion (RF_MODE bit 15: set with the LO above the signal, modem-hrc7000.md)
+void gd88_dmr_lo_side(bool high);
 void gd88_speaker_pcm(bool on);		// radio_gd88.c: the speaker on while the modem plays CPU samples
 uint32_t gd88_dmr_phase(void);		// HR_C7000 PHASE_OUT: b29:16 / b13:0, the largest / smallest AF phase
 

@@ -89,3 +89,5 @@ MCU_DEFS += -DHRC_STUB_BASE=0x00030000u -DHRC_STUB_SIZE=0x00020000u
 endif
 # Receive only: the band's TX switches stay low (paths_gd88b.c), and the shared radio code refuses tx()
 MCU_DEFS += -DGD88_TX=0 -DGD88_BAND_LO_GPIO=0
+# B's IF (hardware-gd88.md 11): A's is 45 MHz
+MCU_DEFS += -DGD88_IF_HZ=51550000u

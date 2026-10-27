@@ -24,7 +24,8 @@
 #define C7_PHASE_OUT		0x128u	// RO: largest / smallest 14-bit AF phase seen (modem-hrc7000.md 2.1)
 
 // The modem's receive mode word of hardware-db25d.md 4.5 (the same modem library and RF scheme): AF receive with
-// averaging, AF gain 0x4C, RX IQ inverted, dynamic sync threshold, dual receive channels, two-point TX.
+// averaging, AF gain 0x4C, RX IQ inverted (high-side LO: gd88_dmr_lo_side), dynamic sync threshold, dual receive
+// channels, two-point TX.
 // GD88_DMR_RF_MODE=0x... replaces it on the bench. TODO(gd88): unknown, needs a radio: the word on the GD-88 itself
 #ifndef GD88_DMR_RF_MODE
 #define GD88_DMR_RF_MODE	0x034C9860u
@@ -116,6 +117,16 @@ void gd88_dmr_enter(uint32_t rx_hz)
 	hrc7000_dmr_enter(modem, hrc7000_mod_bias_dc(gd88_cal_tx_center(), gd88_cal_mod(rx_hz)), MIC_GAIN_DB);
 	hrc7000_wr(modem, C7_RF_MODE, GD88_DMR_RF_MODE);	// it only acts in DMR
 	hrc_dmr_enter();
+}
+
+#define RF_MODE_RX_INVERT	(1u << 15)
+
+// The word's bit 15 is for a high-side LO. An AT1141 LO runs low-side from 400 to 440 MHz, which turns the spectrum
+// the other way round: the original firmware keeps a side flag per channel
+void gd88_dmr_lo_side(bool high)
+{
+	uint32_t m = hrc7000_rd(modem, C7_RF_MODE);
+	hrc7000_wr(modem, C7_RF_MODE, high ? (m | RF_MODE_RX_INVERT) : (m & ~RF_MODE_RX_INVERT));
 }
 
 void gd88_dmr_leave(void)

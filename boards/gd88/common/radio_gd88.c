@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 radio, either SoC: two BK4819 on one bit-banged 3-wire bus, the superhet's RX paths and analog FM
-// (docs/spec/hardware-gd88.md 11). The same scheme and chip set-up as hardware-db25d.md 4.
+// GD-88 radio, either SoC: a main BK4819 and an LO chip on one bit-banged 3-wire bus, the superhet's RX paths and
+// analog FM (docs/spec/hardware-gd88.md 11). The same scheme and chip set-up as hardware-db25d.md 4.
 //
-// Receive on f: the LO chip synthesizes f + 51.55 MHz, the main chip receives and demodulates at the 51.55 MHz IF. On
-// A the LO chip's GPIO4 / GPIO5 also select the band's path (GD88_BAND_LO_GPIO). DAC A isn't used.
+// Receive on f: the LO chip synthesizes f + IF (GD88_IF_HZ: 45 MHz on A, 51.55 MHz on B), the main chip receives and
+// demodulates at the IF. The LO chip is a second BK4819 or an AT1141 (ID 0x1100), told apart by its ID as the original
+// firmware does; the AT1141 runs low-side, f - IF, from 400 to 440 MHz. On A the LO chip's GPIO4 / GPIO5 also select
+// the band's path (GD88_BAND_LO_GPIO). DAC A isn't used.
 //
 // Analog FM transmit (GD88_TX=1 only): the main chip is tuned to f and modulates the microphone, the LO chip is off,
 // and the PA is keyed through the band's switches (gd88_path_*) and DAC B with its drive from the page. TX is refused
@@ -16,13 +18,16 @@
 #include "platform.h"
 #include "hal_time.h"
 #include "rf/bk4819/bk4819.h"
+#include "rf/at1141/at1141.h"
 #include "modem/hrc7000/hrc7000.h"
 
 // TODO(gd88): unknown, needs a radio: DAC C's role on each SoC. These are hardware-db25d.md's levels
 #define DAC_C_INIT		1762u			// at init, and 1780 once receive is set up
 #define DAC_C_RX		1780u
 
-#define IF_HZ			51550000u
+#define IF_HZ			GD88_IF_HZ
+#define LOW_SIDE_FROM_HZ	400000000u	// AT1141: f - IF from here to LOW_SIDE_TO_HZ, as the original firmware
+#define LOW_SIDE_TO_HZ		440000000u
 #define UHF_FROM_HZ		280000000u
 
 // GD88_TX_DRIVE_PCT scales the page's PA drive (100 = the page's value)
@@ -48,8 +53,10 @@
 #define CTCSS_MAX_X10		2600u
 
 static bk4819_t rf_main, rf_lo;
+static at1141_t lo_at;		// the LO when it answers as an AT1141: register access through rf_lo's bus
+static bool lo_is_at1141;
 static hrc7000_t modem;
-static bool supported;		// both chips answered as BK4819
+static bool supported;		// the main chip answered as a BK4819, the LO as a BK4819 or an AT1141
 static uint16_t main_id, lo_id;
 static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_12K5;
@@ -106,6 +113,62 @@ static const bk4819_bus_t bus_lo = {
 	.delay_ms = hal_delay_ms,
 };
 
+// ---- LO chip: a BK4819 or an AT1141 on the LO enable ----
+
+static void at_write(uint8_t reg, uint16_t val) { bk4819_write(&rf_lo, reg, val); }
+static uint16_t at_read(uint8_t reg) { return bk4819_read(&rf_lo, reg); }
+static const at1141_bus_t bus_at = { .write = at_write, .read = at_read, .delay_ms = hal_delay_ms };
+
+static uint32_t lo_hz_for(uint32_t hz)
+{
+	if (lo_is_at1141 && hz >= LOW_SIDE_FROM_HZ && hz <= LOW_SIDE_TO_HZ) {
+		return hz - IF_HZ;
+	}
+	return hz + IF_HZ;
+}
+
+static void lo_tune(uint32_t hz)
+{
+	if (lo_is_at1141) {
+		at1141_tune(&lo_at, lo_hz_for(hz));
+	} else {
+		bk4819_lo_tune(&rf_lo, lo_hz_for(hz));
+	}
+}
+
+#if GD88_TX
+static void lo_off(void)
+{
+	if (lo_is_at1141) {
+		at1141_off(&lo_at);
+	} else {
+		bk4819_lo_off(&rf_lo);
+	}
+}
+#endif
+
+#if CONFIG_DMR && GD88_TX
+static void lo_resume(void)
+{
+	if (lo_is_at1141) {
+		at1141_restart(&lo_at);
+	} else {
+		lo_resume();
+	}
+}
+#endif
+
+#if GD88_BAND_LO_GPIO
+static void lo_gpio(uint8_t pin, bool high)
+{
+	if (lo_is_at1141) {
+		at1141_gpio(&lo_at, pin, high);
+	} else {
+		bk4819_gpio(&rf_lo, pin, high);
+	}
+}
+#endif
+
 // ---- RF paths ----
 
 static void tx_paths_off(void)
@@ -161,15 +224,22 @@ static void init(void)
 #endif
 	main_id = bk4819_read(&rf_main, BK4819_REG_ID);
 	lo_id = bk4819_read(&rf_lo, BK4819_REG_ID);
-	// TODO(gd88): unknown, needs a radio: which RF chips are fitted. The set-up also knows FD6818, 0x7813, AT1846 and
-	// AT1141 parts; only a BK4819 pair is driven here, anything else leaves the radio receive-less
-	supported = main_id == BK4819_ID && lo_id == BK4819_ID;
+	// The original firmware also knows an FD6818 main chip and a 0x7813 LO; only the main BK4819 with a BK4819 or an
+	// AT1141 LO is driven here (a GD-88 A on the bench has the AT1141, 2026-10-26), anything else leaves the radio
+	// receive-less
+	lo_is_at1141 = lo_id == AT1141_ID;
+	supported = main_id == BK4819_ID && (lo_id == BK4819_ID || lo_is_at1141);
 	if (!supported) {
 		return;
 	}
 	bk4819_init_main(&rf_main);
 	bk4819_write(&rf_main, BK4819_REG_PA, BK4819_PA_MAX);	// 0xBF once, never changed
-	bk4819_init_lo(&rf_lo, BK4819_LO_PA_MAX);
+	if (lo_is_at1141) {
+		at1141_attach(&lo_at, &bus_at);
+		at1141_init(&lo_at);
+	} else {
+		bk4819_init_lo(&rf_lo, BK4819_LO_PA_MAX);
+	}
 	bk4819_analog_mode(&rf_main);
 }
 
@@ -182,8 +252,8 @@ static void volume_apply(void);
 static void lo_band(uint32_t hz)
 {
 	bool uhf = hz >= UHF_FROM_HZ;
-	bk4819_gpio(&rf_lo, LO_GPIO_UHF, uhf);
-	bk4819_gpio(&rf_lo, LO_GPIO_VHF, !uhf);
+	lo_gpio(LO_GPIO_UHF, uhf);
+	lo_gpio(LO_GPIO_VHF, !uhf);
 }
 #endif
 
@@ -252,8 +322,13 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	ref_trim(hz);
 	tx_paths_off();
 	bk4819_set_state(&rf_main, BK4819_STATE_IDLE);
-	bk4819_lo_tune(&rf_lo, hz + IF_HZ);
+	lo_tune(hz);
 	bk4819_set_freq(&rf_main, IF_HZ);
+#if CONFIG_DMR
+	if (mode == RADIO_MODE_DMR) {
+		gd88_dmr_lo_side(lo_hz_for(hz) > hz);
+	}
+#endif
 	if (mode != RADIO_MODE_DMR) {	// DMR: the bandwidth and sub-audio are the digital set's
 		bk4819_set_bandwidth(&rf_main, bw == RADIO_BW_25K ? BK4819_BW_25K : BK4819_BW_12K5);
 		bk4819_set_rx_tone(&rf_main, rx_tone.type == TONE_CTCSS ? BK4819_TONE_CTCSS : BK4819_TONE_NONE, rx_tone.value);
@@ -318,7 +393,7 @@ void gd88_burst_on(gd88_wait_fn wait)
 	gd88_path_rx_front_off();
 	wait(TX_RX_OFF_US);
 	bk4819_burst_tune(&rf_main, tx_hz, BK4819_STATE_TX_MAIN);
-	bk4819_lo_off(&rf_lo);
+	lo_off();
 	wait(tx_on_us);
 	DAC_DATA_B = 0;
 	gd88_path_tx_select(tx_uhf);
@@ -386,7 +461,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	gd88_path_rx_front_off();
 	hal_delay_us(TX_RX_OFF_US);
 	bk4819_tx_tune(&rf_main, hz);
-	bk4819_lo_off(&rf_lo);
+	lo_off();
 	hal_delay_ms(TX_SETTLE_MS);
 	hal_delay_us(plan.on_us);
 
@@ -540,7 +615,7 @@ void gd88_radio_diag(gd88_radio_diag_t *d)
 	d->lo_id = lo_id;
 	d->rssi_raw = last_rssi_raw;
 	d->noise_raw = last_noise_raw;
-	d->rf_writes = rf_main.writes + rf_lo.writes;
+	d->rf_writes = rf_main.writes + rf_lo.writes + lo_at.writes;
 	d->hz = rx_hz;
 	d->transmitting = transmitting || dmr_armed;
 	d->supported = supported;
