@@ -15,6 +15,7 @@
 import { be32, concat, crc32, le32, sleep, u32le } from "./bytes.js";
 import { decodeBlock } from "./lz4.js";
 import { Link, LinkError } from "./link.js";
+import * as protect from "./protect.js";
 
 // USB-serial chips known to take the boot ROM load well (adapter.js names a cable by these)
 const GOOD_CHIPS = ["FTDI", "CP210x", "PL2303"];
@@ -121,6 +122,9 @@ export class Stub {
 		this.size = {};		// per-radio memory sizes where they differ from MEM (the DB25-D's program flash is 2 MB)
 		this.v6 = null;		// the universal stub's HELLO fields (protocol 6); null for an older stub
 		this.configured = null;	// the board profile the stub confirmed after CONFIG
+		// the board's protected regions (c7000.boards[id].protect, board.toml [[flash.protect]]), from the profile
+		// configure() gets: every erase and program checks them before it is sent
+		this.protect = [];
 	}
 
 	async readExact(n, timeout) {
@@ -394,6 +398,7 @@ export class Stub {
 	// the APB clock, measured (24 MHz under the boot ROM, 36 MHz on the DB25-D, 84 MHz under RadioFoundry on the DM-32UV and
 	// DM-1801 Pro). An older stub has no CONFIG.
 	async configure(profile, led = { red: 33, green: 32 }) {
+		if (profile?.protect) this.protect = profile.protect;
 		if (!this.v6) return;
 		if (this.v6.board && this.v6.board === profile.id && this.v6.flags === (profile.nand ? 1 : 0)) {
 			this.configured = profile;
@@ -576,8 +581,25 @@ export class Stub {
 		}
 	}
 
+	// The last check before a flash command goes out, whoever built it (stubtool.py _guard): a sector erase or page
+	// program must miss the protected regions, a chip erase is refused on a memory that has any
+	guard(mem, tx) {
+		const m = { progmem: "progmem", q128: "data" }[mem];
+		const op = tx[0], a = (tx[1] << 16) | (tx[2] << 8) | tx[3];
+		try {
+			if (op === 0x60 || op === 0xC7) protect.checkWhole(this.protect, m);
+			else if (op === 0x20 || op === 0x52 || op === 0xD8) {
+				const n = { 0x20: SECTOR, 0x52: 0x8000, 0xD8: 0x10000 }[op];
+				protect.check(this.protect, m, a - (a % n), a - (a % n) + n, "erase");
+			} else if (op === 0x02) protect.check(this.protect, m, a, a + Math.max(tx.length - 4, 1), "program");
+		} catch (e) {
+			throw new StubError(e.message);
+		}
+	}
+
 	async writeCmd(mem, tx, what, timeout) {
 		if (MEM[mem].nand) throw new StubError("the NAND is only read here");
+		this.guard(mem, tx);
 		await this.spi(mem, new Uint8Array([0x06]), 0);
 		const st = await this.status(mem);
 		if (!(st & 2)) throw new StubError(`${what}: write enable did not stick (status 0x${st.toString(16)}): chip write-protected?`);
@@ -598,14 +620,24 @@ export class Stub {
 	// [appStart, appEnd). Only sectors whose CRC differs are written; each is read back by CRC at once and written
 	// again (up to 3 times) when it doesn't match, the first sector of the application last, so the radio only has a
 	// start address when everything else is in place. A final CRC pass over the whole range ends it.
-	// onSector(addr, state): "todo" | "same" | "writing" | "retry" | "written"
-	async writeProgram(data, start, { appStart, appEnd, onSector = () => {}, signal } = {}) {
+	// A protected region of the board (this.protect) refuses the write before anything is erased; with carve (a
+	// restore) its sectors are left as the radio has them instead ("kept") and the rest is written.
+	// onSector(addr, state): "todo" | "same" | "kept" | "writing" | "retry" | "written"
+	async writeProgram(data, start, { appStart, appEnd, onSector = () => {}, signal, carve = false } = {}) {
 		if (start % SECTOR || data.length % SECTOR || !data.length) throw new StubError("writes are whole 4 KB sectors");
 		if (start < appStart || start + data.length > appEnd) throw new StubError(`refusing to write outside the application area 0x${appStart.toString(16)}..0x${appEnd.toString(16)}`);
+		if (!carve) {
+			try {
+				protect.check(this.protect, "progmem", start, start + data.length);
+			} catch (e) {
+				throw new StubError(e.message);
+			}
+		}
+		const kept = (a) => protect.overlapping(this.protect, "progmem", a, a + SECTOR).length > 0;
 		if (this.v6 && !this.configured) throw new StubError("the loader's radio configuration is not confirmed: refusing to write");
 		await this.checkId("progmem");
-		const todo = await this.verify("progmem", data, start);
-		for (let a = start; a < start + data.length; a += SECTOR) onSector(a, todo.includes(a) ? "todo" : "same");
+		const todo = (await this.verify("progmem", data, start)).filter((a) => !kept(a));
+		for (let a = start; a < start + data.length; a += SECTOR) onSector(a, kept(a) ? "kept" : todo.includes(a) ? "todo" : "same");
 		const order = todo.filter((a) => a !== appStart).concat(todo.includes(appStart) ? [appStart] : []);
 		for (const a of order) {
 			if (signal?.aborted) throw new StubError("stopped");
@@ -620,7 +652,7 @@ export class Stub {
 			}
 			onSector(a, "written");
 		}
-		const bad = todo.length ? await this.verify("progmem", data, start) : [];
+		const bad = todo.length ? (await this.verify("progmem", data, start)).filter((a) => !kept(a)) : [];
 		if (bad.length) throw new StubError(`verify after write: sectors differ at ${bad.map((x) => "0x" + x.toString(16)).join(", ")}`);
 		return { written: todo.length, same: data.length / SECTOR - todo.length };
 	}

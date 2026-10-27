@@ -84,6 +84,10 @@ for a stub built elsewhere; the tool refuses one that does not match the running
 The DB25-D also has a 256 MB NAND chip (recordings, and RadioFoundry's own area at 0xF000000). Read part of it with
 `--nand nand.bin --nand-range START:END` and compare with `--verify-nand nand.bin`. The NAND is only read, never written.
 
+Factory data is never written either. Each radio's `board.toml` lists it (`[[flash.protect]]`: the calibration, and on
+the DB25-D the NAND's bad-block table and reserve blocks). The tool refuses any write or erase that would touch it, and
+says which region and why, before anything is erased.
+
 The radio's bootloader area is never written, so the usual update mode (hold the keys while switching on) always still
 works. Do not unplug the cable or remove the battery while it writes. If it is interrupted, run the same command again
 once the radio is back in loader mode, or use update mode and `tools/serial_loader.py`. A build for the **DM-1801 Pro** was
@@ -103,7 +107,9 @@ python3 stubtool.py PORT --rfoundry-enter --secreg secreg.bin
 The tool saves the three registers and prints whether each one is locked. A locked register can never be changed again,
 by anything. Keep the file with your other backups.
 
-To put a saved copy back (only if the calibration was damaged):
+The registers are protected regions of these radios (`board.toml` `[[flash.protect]]`: registers 1 and 2 on every one,
+register 3 too on the DM-1701 and MD-UV380). Putting a saved copy back is therefore refused for them, before anything
+is written, unless the register already holds the saved bytes. The command stays for a register that isn't listed:
 
 ```
 python3 stubtool.py PORT --attach --write-secreg secreg.bin --confirm-secreg

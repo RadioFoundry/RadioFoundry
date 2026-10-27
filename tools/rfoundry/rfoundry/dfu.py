@@ -13,6 +13,7 @@ import struct
 import sys
 import time
 
+from . import protect
 from .plan import BLOCK, FIRST_BLOCK
 
 KEY_LEN = 1024
@@ -106,6 +107,8 @@ class Dfu:
     def run(self, plan, key, progress=None):
         """Erase the plan's sectors (in the bootloader's order), write each, exit (the radio resets)."""
         base = plan.board.app_base
+        for s in plan.erase:		# make_plan refuses these; a plan built another way is checked again before any erase
+            protect.check_absolute(plan.board, plan.board.rom_base, s.addr, s.end, "erase")
         for st in plan.writes:
             if (st.sector.addr - base) % KEY_LEN:
                 raise DfuError("sector 0x%08X is not key-aligned" % st.sector.addr)

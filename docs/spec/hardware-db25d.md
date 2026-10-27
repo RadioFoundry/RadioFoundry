@@ -500,6 +500,16 @@ the end of the transmission writes 0x028F back if a tail is still on). On the SD
 **Rule:** RadioFoundry reads both calibration copies and never writes them. It never writes program flash at 0x031FE000 or NAND
 block 20.
 
+The flashing tools enforce this from `boards/db25d/board.toml` `[[flash.protect]]`
+([board-registry.md](../dev/board-registry.md#protected-regions)):
+
+| Memory | Range | What |
+|---|---|---|
+| Program flash | 0x1FE000-0x1FEFFF (0x031FE000) | The calibration copy (6.1) |
+| NAND | Block 0 (0x0-0x1FFFF) | The vendor firmware's bad-block table (6.5) |
+| NAND | Blocks 20-22 (0x280000-0x2DFFFF) | The calibration page wherever the bad-block table puts it (6.5) |
+| NAND | Blocks 1998-2047 (0xF9C0000 up) | The vendor's reserve of the 10 highest good blocks (6.5, 6.6) |
+
 ### 6.1 Page header and the two copies
 
 | Offset | Size | Field |
@@ -596,6 +606,7 @@ data sheet adds:
 | Spare bytes | The vendor firmware keeps its own block marks at spare offset 4 (column 2052) |
 | Bad blocks | Factory-bad blocks read 0x00 in every page; the mark is judged from the data whatever the ECC status says (datasheet) |
 | Vendor bad-block skip | The vendor firmware builds a bad-block list at boot and, for some address ranges, skips bad blocks when it maps an address to a page. Which ranges, and whether that ever moves block 20, is unverified |
+| Vendor bad-block table | Inferred from the vendor's stock NAND driver, unverified on this radio: the table sits in physical block 0 ("LUT0" and a bitmap). Logical block L is physical block L + 1 + the bad blocks at or below it, so logical 0x280000 (block 20) is physical 0x2A0000 (block 21) with no bad block, one block higher for each. The 10 highest good blocks are a reserve pool |
 
 The write side, from the data sheet:
 

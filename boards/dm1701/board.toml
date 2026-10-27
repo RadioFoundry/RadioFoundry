@@ -45,6 +45,20 @@ stock_download = "https://github.com/daniel5600/BAOFENG-DM1701-Original-Firmware
 stock_versions = ["V02.06 CSV", "V02.06 noCSV", "V02.03 CSV", "V02.03 noCSV", "V02.02 CSV", "V02.01 CSV"]
 backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 
+# Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
+# as offsets in that memory, what with the spec section that establishes it
+[[flash.protect]]
+mem = "secreg"
+start = 0x0
+end = 0x200
+what = "factory calibration in security registers 1 and 2 (hardware-dm1701.md 12.1, 13.2)"
+
+[[flash.protect]]
+mem = "secreg"
+start = 0x200
+end = 0x300
+what = "factory flags in security register 3: power class, panel type, band limits (hardware-dm1701.md 13.2)"
+
 [flash.bootloader]
 hold = ["ptt", "sk1"]
 steps = [
