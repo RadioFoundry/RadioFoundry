@@ -75,8 +75,9 @@ const LOADERS = {
 const updateMode = () => !!LOADERS[flash().update_mode];
 const stuckMode = () => !!LOADERS[flash().update_mode]?.stuck;
 const iap = (c) => LOADERS[flash().update_mode].make(c);
-// whether the chip the cable reaches has a status LED the stub drives (stub_board.leds 255, 255: none)
-const hasLed = () => (C().boards[boardId()].stub_board?.leds || [0]).some((p) => p !== 255);
+// whether the chip the cable reaches has a status LED the stub drives (stub_board.leds 255, 255: none), and the radio's
+// steps describe it (flash.led_hints false: the screen only)
+const hasLed = () => flash().led_hints !== false && (C().boards[boardId()].stub_board?.leds || [0]).some((p) => p !== 255);
 // A second SoC with no cable of its own (stub_board.bridge, a board's flash.second): reached through RadioFoundry on the
 // first, whose board the radio entry names (flash.via)
 const bridged = () => !!C().boards[boardId()].stub_board?.bridge;

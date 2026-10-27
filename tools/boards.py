@@ -171,6 +171,9 @@ BOARD_SCHEMA = {
         "stock_download": _opt(str),
         # a warning the web flasher shows on every step once the radio is picked: a choice the radio can't check itself
         "notice": _opt(str),
+        # false: the web pages describe no LED for this radio (its second SoC's steps too), while what it shows isn't
+        # settled; the steps say what the screen shows instead
+        "led_hints": _opt(bool),
         "stock_versions": _req(STR_LIST),
         "backup": _req({"stock": _req(("none", "full")), "rfoundry": _req(("none", "full")), "spi_size": _req(int)}),
         # hold: the keys held to enter it, by their key names (the board's KEY_* in lower case, as the drawing's
@@ -1348,6 +1351,8 @@ def _site_flash(b):
         flash["stock_download"] = fl["stock_download"]
     if "notice" in fl:
         flash["notice"] = fl["notice"]
+    if fl.get("led_hints") is False:
+        flash["led_hints"] = False
     if stub:
         flash["stub_tested"] = stub["tested"]
     return flash
@@ -1371,6 +1376,8 @@ def site_view(boards, root=ROOT):
         second = [p for p in parts.get(bid, []) if (p.data["flash"].get("stub") or {}).get("bridge")]
         if second:
             flash["second"] = _site_flash(second[0])
+            if flash.get("led_hints") is False:
+                flash["second"]["led_hints"] = False	# one radio, one LED: the radio's word holds for its second SoC
         out.append({
             "id": bid, "name": d["name"], "maker": d["maker"], "model": d["model"], "also": list(d["also"]),
             "kind": d["kind"], "order": d["order"], "level": d["status"]["level"], "release": d["status"]["release"],

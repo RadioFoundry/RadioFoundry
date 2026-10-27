@@ -44,6 +44,8 @@ family = "serial-iap"
 keep_codec = false
 stock_versions = ["B49E.D64.EOPSAB.021"]
 backup = { stock = "full", rfoundry = "full", spi_size = 0 }
+# The LED during installation isn't settled (B drives it): the pages describe the screen only
+led_hints = false
 
 # Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
 # as offsets in that memory, what with the spec section that establishes it. The NAND entries follow the stock block

@@ -90,3 +90,22 @@ test("backup: unticking the program memory says such a backup can't restore the 
 	for (const f of progmem.listeners.change) f({ target: progmem });
 	assert.equal(note.hidden, false, "shown once it is unticked");
 });
+
+test("led_hints false: the steps describe no LED, on the radio's own chip or its second", () => {
+	const quiet = json("radios.json").radios.filter((r) => fb.c7000.boards[r.flash.board] && r.flash.led_hints === false);
+	for (const r of quiet) {
+		const s = r.flash.second;
+		assert.ok(!s || s.led_hints === false, `${r.id}: its second SoC follows the radio`);
+		// as app.js secondRadio() makes it
+		const chips = [r, ...(s ? [{ ...r, id: s.board, second_of: r.id, flash: { ...s, via: r.flash.board } }] : [])];
+		for (const radio of chips) {
+			const state = { radio, task: "install", forward() {}, data: { fb } };
+			c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {} });
+			state.c7 = { log: { add() {}, el: new El("div") }, stream: null };
+			const box = c7ui.connectView();
+			const lamps = (e) => (e instanceof El ? (e.className === "rt-lamp" ? 1 : 0) + e.children.reduce((n, c) => n + lamps(c), 0) : 0);
+			assert.equal(lamps(box), 0, `${radio.id}: no LED drawn on the radio's picture`);
+			assert.doesNotMatch(box.textContent, /\bLEDs?\b|blink/i, `${radio.id}: ${box.textContent}`);
+		}
+	}
+});

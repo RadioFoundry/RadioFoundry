@@ -122,6 +122,7 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 | `stock_versions` | The stock versions the tools know |
 | `backup` | `{ stock, rfoundry, spi_size }`: what a backup reads from stock firmware and from RadioFoundry (`none` or `full`), and the SPI flash size |
 | `notice` | Optional: a warning the web flasher shows on every step once the radio is picked, for a choice the radio can't check itself (two images that differ in hardware the radio can't report, for example) |
+| `led_hints` | Optional, default `true`. `false`: the radio's page and the web flasher's steps (its second SoC's too) describe no LED, only the screen. For a radio whose LED behavior during installation isn't settled |
 
 `[flash.bootloader]`:
 
