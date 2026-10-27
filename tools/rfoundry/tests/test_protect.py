@@ -92,5 +92,40 @@ class RegistryCarriesTheList(unittest.TestCase):
         self.assertTrue(protect.overlapping(boards.get("dm1701"), "secreg", 0, 0x100))
 
 
+class Writers(unittest.TestCase):
+    """The rfoundry DFU route: a plan that would erase a protected sector is refused, and Dfu.run checks again before
+    it sends anything."""
+
+    def setUp(self):
+        import copy
+        import random
+        import struct
+        from rfoundry import fakedfu, stockfw
+        self.b = copy.copy(boards.get("dm1701"))
+        sec = self.b.sector_at(0x08020000)		# sector 5
+        self.b.protect = [{"mem": "progmem", "start": sec.addr - self.b.rom_base, "end": sec.end - self.b.rom_base,
+                           "what": "test (x.md 1)"}]
+        rng = random.Random(3)
+        self.img = struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + stockfw.random_bytes(rng, 150000)
+        self.key = fakedfu.synthetic_key()
+        self.dev = fakedfu.FakeAnyRoad(self.b, self.key, fakedfu.stock_flash(self.b, rng, []))
+
+    def test_plan_refused(self):
+        from rfoundry import plan
+        with self.assertRaises(plan.PlanError) as e:
+            plan.make_plan(self.b, [(self.b.app_base, self.img)], plan.KEEP)
+        self.assertIn("protected region", str(e.exception))
+        p = plan.make_plan(self.b, [(self.b.app_base, self.img[:5000])], plan.KEEP)	# sector 3 only: fine
+        self.assertEqual([s.index for s in p.erase], [3])
+
+    def test_dfu_refuses_before_anything_is_sent(self):
+        from rfoundry import dfu, plan
+        p = plan.make_plan(boards.get("dm1701"), [(self.b.app_base, self.img)], plan.KEEP)
+        p.board = self.b
+        with self.assertRaises(protect.ProtectedError):
+            dfu.Dfu(self.dev, 0, log=lambda *a: None, sleep=lambda s: None).run(p, self.key)
+        self.assertEqual((self.dev.erased, self.dev.vendor), ([], []))
+
+
 if __name__ == "__main__":
     unittest.main()
