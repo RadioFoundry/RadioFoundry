@@ -23,7 +23,7 @@ server keeps running while the tool writes through it (`--write-app` took 111 s 
 
 ## The universal stub
 
-One image (7,004 bytes, protocol version 6) serves every HR_C7000 radio and every way in. It is linked to run at 0x30000
+One image (7,796 bytes, protocol version 7) serves every HR_C7000 radio and every way in. It is linked to run at 0x30000
 and copies itself there from wherever it was loaded, then zeroes its .bss and sets its own stack. Board details are not
 built in: after HELLO the host sends CONFIG (clock rates it measured, the UART to keep, the power latch and key pins,
 LEDs, board id, NAND flag), and checks the echo in the next HELLO before it writes anything. The profiles are in
@@ -40,6 +40,43 @@ embedded with `python3 stub/embed_stub.py stub/stubtool.py UNIV stub_univ.bin`, 
 HELLO v6 also reports the RAM footprint (run address, image length, end of .bss, stack bounds) and the deepest stack use
 so far, measured from a painted stack. `stubtool` prints it as `stub RAM:`.
 
+Protocol 7 adds WRITE (op 0x0E): one request carries a whole 4 KB sector, and the stub erases it, programs its non-blank
+pages, waits on the flash itself and replies with the CRC-32 of the sector read back. The host compares that CRC with
+its own and writes the sector again (up to 3 times) on a mismatch. The CRC pass over the whole range afterwards is
+unchanged. Before protocol 7 every page took four or more requests (write enable, status, program, busy polls), so a
+write was bound by turnarounds, not bytes. Both hosts (`stubtool.py`, the web flasher's `stub.js`) use WRITE when HELLO
+says 7 or more and the per-page SPI requests otherwise. The host checks the write range before it sends, as before.
+
+| DM-32UV, 115200 baud, FTDI cable on a Mac (2026-10-27) | Per-page requests (v6) | WRITE (v7) |
+|---|---|---|
+| One changed sector | 1.37 s | 0.41 s |
+| A 505 KB image, all 127 sectors changed | about 174 s (estimate) | 51.9 s |
+
+At 115200 a WRITE frame (4,106 bytes) takes about 360 ms on the wire, so what is left is bandwidth.
+
+Protocol 7 also lets the host raise the serial rate without user help. The stub goes back to its home rate by itself
+once a raised link has carried no good request for one BAUD window, so the host can always get home by going quiet
+(`common/PROTOCOL.md`, "Going home on a lost link"). `stubtool.py` picks the rate for writes and backups: a binary
+search over the rates the UART makes (clock / (16 * d), 200000 to 1100000, fastest first), each proved with
+WRITE-size frames to the radio and full-size reads back, then remembered per port and radio in
+`~/.cache/rfoundry/stub-baud.json`. A raised rate that starts damaging frames mid-run is dropped (+10 per damaged
+frame, -1 per clean one, give up at 30) and the run carries on at 115200. `--baud off` keeps 115200, `--baud N` asks
+for one rate. The web flasher stays at 115200.
+
+| DM-32UV, FTDI FT232R cable on a Mac (2026-10-27) | Result |
+|---|---|
+| 350000, 291666, 276315 | Fail the proof (no reply, or bad request checksums on 4 KB frames to the radio); fall back by themselves |
+| 262500 | Holds; picked by the search in about 16 s, then at once from the cache |
+| A 517 KB image, 126 sectors changed, at 262500 | 27 s writing, 34 s including the stub upload |
+
+The limit was the cable and the radio's jack, not the divisor: 276315 passed full-size reads but damaged long frames
+towards the radio, which is why the proof sends both.
+
+The rates take a measured clock. `timer_hz` times each sample as its request goes out, since the reply can wait up to
+the cable's latency timer (16 ms on an FTDI). Timing to the reply read an 84 MHz clock as about 80 MHz, and every
+divisor but the first came out 5 % off. Both hosts round the measured clock to whole MHz (every APB clock here is:
+24, 36 or 84 MHz), so the same rates come out every run.
+
 ### RAM placement
 
 The HR_C7000's RAM is IRAM 0x10000-0x57FFF (288 KB). The 32 KB SRAM at 0x18000000 is shared with the modem and is not
@@ -49,12 +86,13 @@ the modem writes only its own SRAM, so after the stub masks every interrupt noth
 | Region | Address | Size |
 |---|---|---|
 | Entry and copy loop (position independent, no stack) | load address | 0x80 |
-| Image (text, parameter block at +0x80, data) | 0x30000-0x31B5C after the copy | 7,004 B |
-| .bss (receive buffer, sector buffer) | to 0x36974 | 19,992 B |
-| Stack (4 KB, painted) | 0x36978-0x37978 | 4,096 B |
-| Whole footprint | 0x30000-0x37978 | 31,096 B (32 KB budget, checked by the linker) |
+| Image (text, parameter block at +0x80, data) | 0x30000-0x31E74 after the copy | 7,796 B |
+| .bss (receive buffer, sector buffers) | to 0x36C9C | 20,008 B |
+| Stack (4 KB, painted) | 0x36CA0-0x37CA0 | 4,096 B |
+| Whole footprint | 0x30000-0x37CA0 | 31,904 B (32 KB budget, checked by the linker) |
 
-Measured stack use: 168 bytes on the DM-32UV and DM-1801 Pro, 252 bytes on the DB25-D (NAND reads included).
+Measured stack use: 168 bytes on the DM-32UV and DM-1801 Pro, 252 bytes on the DB25-D (NAND reads included); 200 bytes on
+the DM-32UV after two 126-sector WRITE installs (protocol 7, 7,796-byte build).
 
 The entry stops in place, writing nothing, when the loaded copy and 0x30000 would overlap. The host checks the same
 rule, and that the load lies in IRAM, before it sends the image (`check_univ_load`).

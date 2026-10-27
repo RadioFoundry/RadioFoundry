@@ -31,7 +31,8 @@ export class StubError extends Error {
 export class FrameError extends StubError {}
 
 export const SECTOR = 4096, PAGE = 256, WINDOW = 16, PACK = 16, CHUNK = 1024, ROM_BLOCK = 256;
-export const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, TOOLONG = 0x0E;
+export const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, SPITIMEOUT = 0x0C, TOOLONG = 0x0E, NOWEL = 0x0F;
+export const WRITE_VERSION = 7;	// the stub has op 0x0E (WRITE): a sector erased, programmed and read back in one request
 export const SSI_PROG = 0x04000000, SSI_DATA = 0x140A0000;
 export const QUAD_ENABLE = 0x1100005C, LCSFC_BAUDR = 0x11000030, SYS_SOFT_RSTN = 0x11000000, TIMER2_VALUE = 0x14000018;
 export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
@@ -120,6 +121,7 @@ export class Stub {
 		this.info = null;
 		this.size = {};		// per-radio memory sizes where they differ from MEM (the DB25-D's program flash is 2 MB)
 		this.v6 = null;		// the universal stub's HELLO fields (protocol 6); null for an older stub
+		this.sectorOp = false;	// protocol 7: whole-sector writes (op 0x0E); else one SPI request per step
 		this.configured = null;	// the board profile the stub confirmed after CONFIG
 	}
 
@@ -383,6 +385,7 @@ export class Stub {
 		const r = await this.request(0x01, new Uint8Array(0), { retries });
 		if (String.fromCharCode(...r.subarray(0, 6)) !== "C7STUB") throw new StubError("unexpected hello");
 		this.info = { version: r[6], maxPayload: (r[7] << 8) | r[8] };
+		this.sectorOp = r[6] >= WRITE_VERSION;
 		const g = (o) => ((r[o] << 24) | (r[o + 1] << 16) | (r[o + 2] << 8) | r[o + 3]) >>> 0;
 		this.v6 = r.length >= 43 && r[6] >= 6 ? { load: g(9), board: r[17], flags: r[18], run: g(19), image: g(23), bssEnd: g(27),
 			stackLo: g(31), stackTop: g(35), stackUsed: g(39) } : null;
@@ -401,7 +404,7 @@ export class Stub {
 		}
 		let hz = await this.timerHz(300);
 		if (!(hz > 1e6 && hz < 4e8)) throw new StubError("the radio's timer rate can't be right: not configuring the loader");
-		hz = Math.round(hz / 1e5) * 1e5;
+		hz = Math.round(hz / 1e6) * 1e6;	// every APB clock here is whole MHz
 		await this.request(0x0D, concat(be32(hz), be32(hz), new Uint8Array([profile.latch, profile.key, led.red, led.green, profile.id,
 			profile.nand ? 1 : 0, 3, 0])));
 		await this.hello({ retries: this.retries });	// a request like any other here: a damaged reply is asked for again
@@ -585,13 +588,31 @@ export class Stub {
 		await this.waitReady(mem, what, timeout);
 	}
 
+	// Erase the program flash sector at addr and program data into it. A protocol 7 stub does all of it in one request
+	// (op 0x0E) and answers with the CRC-32 it reads back; an older one takes write enable, status, command and busy
+	// polls as separate SPI requests, four or more per page. Resolves the radio's CRC, or null when only a SUMS can tell
 	async writeSector(addr, data) {
+		if (this.sectorOp) {
+			const m = MEM.progmem;
+			const payload = concat(be32(m.base), memArgs(m), be32(addr), isBlank(data) ? new Uint8Array(0) : data);
+			let r;
+			try {	// the frame's time on the wire, then erase and program (worst case about 2 s)
+				r = await this.request(0x0E, payload, { timeout: 4000 + Math.ceil((payload.length * 10 * 1000) / (this.s.baud || 115200)) });
+			} catch (e) {
+				if (e.status === NOWEL) throw new StubError(`write 0x${addr.toString(16)}: write enable did not stick: chip write-protected?`);
+				if (e.status === SPITIMEOUT) throw new StubError(`write 0x${addr.toString(16)}: the flash stayed busy past its erase or program time`);
+				throw e;
+			}
+			if (r.length !== 4) throw new StubError(`write 0x${addr.toString(16)}: reply is ${r.length} bytes, wanted 4`);
+			return u32be(r, 0);
+		}
 		const a3 = (a) => new Uint8Array([(a >> 16) & 0xFF, (a >> 8) & 0xFF, a & 0xFF]);
 		await this.writeCmd("progmem", concat(new Uint8Array([0x20]), a3(addr)), `erase 0x${addr.toString(16)}`, 3000);
 		for (let p = 0; p < SECTOR; p += PAGE) {
 			const page = data.subarray(p, p + PAGE);
 			if (!isBlank(page)) await this.writeCmd("progmem", concat(new Uint8Array([0x02]), a3(addr + p), page), `program 0x${(addr + p).toString(16)}`, 1000);
 		}
+		return null;
 	}
 
 	// Program `data` (whole sectors) into the program flash at `start`, which must lie in the application area
@@ -612,8 +633,7 @@ export class Stub {
 			const sec = data.subarray(a - start, a - start + SECTOR);
 			for (let attempt = 1; ; attempt++) {
 				onSector(a, attempt === 1 ? "writing" : "retry");
-				await this.writeSector(a, sec);
-				const [{ crc }] = await this.sums("progmem", a, 1);
+				const crc = (await this.writeSector(a, sec)) ?? (await this.sums("progmem", a, 1))[0].crc;
 				if (crc === crc32(sec)) break;
 				this.log(`0x${a.toString(16)}: read back differs, writing it again (${attempt} of 3)`);
 				if (attempt === 3) throw new StubError(`0x${a.toString(16)}: the sector reads back wrong after 3 writes`);
@@ -628,12 +648,15 @@ export class Stub {
 	// ---- the LED on top of the radio, and leaving the loader
 
 	// Tick rate of timer 2 (it counts down), measured against this computer's clock
+	// Each sample's time is taken as its request goes out: the reply waits up to the cable's latency timer (16 ms on an
+	// FTDI) on its way back, and timing to the second reply read an 84 MHz clock as about 80 MHz over 0.3 s
 	async timerHz(span = 400) {
 		const t0 = performance.now();
 		const v0 = u32le(await this.peek(TIMER2_VALUE, 4), 0);
 		await sleep(span);
+		const t1 = performance.now();
 		const v1 = u32le(await this.peek(TIMER2_VALUE, 4), 0);
-		return (((v0 - v1) >>> 0) / (performance.now() - t0)) * 1000;
+		return (((v0 - v1) >>> 0) / (t1 - t0)) * 1000;
 	}
 
 	// Status blink: slow while waiting (500 ms phases), fast while data moves (125 ms). Both LEDs make orange.
