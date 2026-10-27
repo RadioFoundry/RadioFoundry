@@ -82,8 +82,8 @@ GD-88 those balls carry the A↔B link, so they are not available for USB.
 
 | Item | Finding | Tag |
 |---|---|---|
-| Entry | Radio off, cable connected, CPS closed. Hold the upper side key P2 and turn the radio on with the volume knob. The status LED lights red and a special screen shows "IAP_A" or "IAP_B" on the top line. Then release P2. It can take more than one try | COM (update guide v2.2, release notes 2024-06) |
-| A or B target | In IAP mode, long-press P2 to switch between IAP_A and IAP_B. The A file goes to IAP_A and the B file to IAP_B. Write the codeplug after updating both | COM |
+| Entry | Radio off, cable connected, CPS closed. Hold the upper side key SK1 (the vendor's P2) and turn the radio on with the volume knob. The status LED lights red and a special screen shows "IAP_A" or "IAP_B" on the top line. Then release SK1. It can take more than one try | COM (update guide v2.2, release notes 2024-06) |
+| A or B target | In IAP mode, long-press SK1 to switch between IAP_A and IAP_B. The A file goes to IAP_A and the B file to IAP_B. Write the codeplug after updating both | COM |
 | Bootloader code | Not in the update files: they start at the 0x0300C000 application base, so the bootloader sits below it, as on the DM-32UV. No dump is available, so how IAP_B reaches SoC B (A relaying over the UART3 link, or a switch moving the cable to B's UART) is not known | BIN, INF |
 | How IAP_B may reach B | The updater's form has no A or B choice and sends the same commands for both: the target is picked on the radio only. Both applications use the same pads for UART1, PTA9 (RXD, also the K1 PTT line) and PTA10 (TXD), and both have the same release (IO_DIPLEX0 bits 9 and 10 set, both pins GPIO inputs). B releases them at boot. A tells B to release them at the start of every PC session (link id 0x6200) and to listen to PTA9 again at its end (0x6201). That points to the cable's two lines reaching both SoCs, with one owner at a time, so in IAP_B B's loader would answer the cable itself while A's lets go. A relaying (the applications already pass frames both ways over the link) is the other candidate. No reset or boot-strap line from A to B is in either application. RadioFoundry's B releases the pads at start-up as the original firmware does. A continuity check from the K1 pads to both SoCs, or a `Flash Read ` probe in IAP_A and in IAP_B, settles it | BIN, INF |
 | Software entry | The string "BLL_IAP_Flash" is a function-name tag in a log call (line constant 1445). That the routine hands over to the bootloader is not shown | BIN, INF |
@@ -186,10 +186,10 @@ soft keys OK and Back, as the original firmware labels them.
 | 2 | navigation | `KEY_DOWN`: at idle the channel down | PTB10 x PTB22 | BIN |
 | 3 | P4 | `KEY_GREEN`: the vendor's programmable P4 (its function from the codeplug) | PTB9 x PTB22 | HW |
 | 4 | mode key | `KEY_RED`: in a menu, back one level | PTB11 x PTB22 | HW |
-| 22 | P2, the IAP key | `KEY_P2`, upper left side key | PTB9 direct |
-| 23 | P1 | `KEY_P1`, lower left side key | PTB10 direct |
-| 24 | P3 | `KEY_P3`, the orange top key | PTB11 direct |
-| - | PTT | `KEY_PTT`, left side between P2 and P1 | PTA9, low = pressed |
+| 22 | P2, the IAP key | `KEY_SK1`, upper left side key, above PTT | PTB9 direct |
+| 23 | P1 | `KEY_SK2`, lower left side key, below PTT | PTB10 direct |
+| 24 | P3 | `KEY_SOS`, the orange top key | PTB11 direct |
+| - | PTT | `KEY_PTT`, left side between SK1 and SK2 | PTA9, low = pressed |
 
 ### 9.3 Audio routing in the serial chain
 

@@ -46,11 +46,11 @@ stock_versions = ["B49E.D64.EOPSAB.021"]
 backup = { stock = "full", rfoundry = "full", spi_size = 0 }
 
 [flash.bootloader]
-hold = ["p2"]	# while turning the volume knob on
+hold = ["sk1"]	# while turning the volume knob on
 steps = [
 	"Turn the radio off and connect the programming cable.",
-	"Hold P2 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release P2. It can take more than one try.",
-	"If the top line shows IAP_B, hold P2 until it shows IAP_A.",
+	"Hold SK1 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release SK1. It can take more than one try.",
+	"If the top line shows IAP_B, hold SK1 until it shows IAP_A.",
 ]
 
 # The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the stub holds the power latch (pins.h:

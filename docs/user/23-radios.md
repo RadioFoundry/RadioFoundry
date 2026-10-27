@@ -628,8 +628,8 @@ chip's image follows on the same cable, as the installer's next step. The first 
 original firmware, so the installer writes it in the radio's update mode (`IAP_B`). After that it goes through the
 first chip.
 
-To start the radio's update mode, turn it off and connect the programming cable. Hold **P2** and turn the radio on with
-the volume knob. When the LED lights red and the top line shows `IAP_A` or `IAP_B`, release **P2**. Hold **P2** to
+To start the radio's update mode, turn it off and connect the programming cable. Hold **SK1** (the side key above **PTT**) and turn the radio
+on with the volume knob. When the LED lights red and the top line shows `IAP_A` or `IAP_B`, release **SK1**. Hold **SK1** to
 switch between them: `IAP_A` updates the first chip, `IAP_B` the second.
 
 ### GD-88 keys
@@ -641,9 +641,9 @@ switch between them: `IAP_A` updates the first chip, `IAP_B` the second.
 | Green | **A/B** |
 | Red | **VFO** |
 | Up, Down | **Up**, **Down** |
-| P1 (lower left side key) | **Monitor** |
-| P2 (upper left side key) | Talk target. Held at power-on, it starts the update mode |
-| P3 (orange top key) | User key 3 |
+| SK1 (the side key above **PTT**) | **Monitor**. Held at power-on, it starts the update mode |
+| SK2 (the side key below **PTT**) | Talk target |
+| SOS (the orange top key) | User key 3 |
 | **PTT** | **PTT** |
 
 ## Planned radios

@@ -39,8 +39,8 @@ backup = { stock = "full", rfoundry = "full", spi_size = 0 }
 [flash.bootloader]
 steps = [
 	"Turn the radio off and connect the programming cable.",
-	"Hold P2 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release P2. It can take more than one try.",
-	"If the top line shows IAP_A, hold P2 until it shows IAP_B.",
+	"Hold SK1 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release SK1. It can take more than one try.",
+	"If the top line shows IAP_A, hold SK1 until it shows IAP_B.",
 ]
 
 # The universal stub's board profile: no power latch (A holds the power), its status LEDs (pins.h PIN_LED1, PIN_LED2),

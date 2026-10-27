@@ -21,7 +21,7 @@
 #define ROW_SETTLE_US	5u
 
 // [row][sense], the matrix codes 9,10,11 / 12,13,14 / 15,16,17 / 18,8,19 / 3,2,4 / 5,1,6 (9-17 the digits 1-9, 8 the
-// 0, 18 *, 19 #; 1-6 the six front keys, hardware-gd88.md 9.2). Direct (no row): 22 P2, 23 P1, 24 P3. The sense lines
+// 0, 18 *, 19 #; 1-6 the six front keys, hardware-gd88.md 9.2). Direct (no row): 22 SK1, 23 SK2, 24 SOS. The sense lines
 // are the digit columns (left, center, right), so the last two rows are the keys under the display: green, down, red,
 // then the soft keys around up. The original firmware's handlers settle 5 and 6 (Menu, A/B) and 1 and 2 (channel up,
 // down).
@@ -34,7 +34,7 @@ static const uint8_t map[KEY_ROWS * KEY_SENSES] = {
 	KEY_GREEN, KEY_DOWN, KEY_RED,
 	KEY_SOFT_LEFT, KEY_UP, KEY_SOFT_RIGHT,
 };
-static const uint8_t direct[KEY_SENSES] = { KEY_P2, KEY_P1, KEY_P3 };
+static const uint8_t direct[KEY_SENSES] = { KEY_SK1, KEY_SK2, KEY_SOS };
 static const keymatrix_t matrix = { .rows = KEY_ROWS, .cols = KEY_SENSES, .map = map, .direct = direct };
 
 static uint32_t last_raw, stable;

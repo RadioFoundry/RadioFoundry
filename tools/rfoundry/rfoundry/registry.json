@@ -539,8 +539,8 @@
    "loader_sign": "",
    "bootloader_steps": [
     "Turn the radio off and connect the programming cable.",
-    "Hold P2 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release P2. It can take more than one try.",
-    "If the top line shows IAP_B, hold P2 until it shows IAP_A."
+    "Hold SK1 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release SK1. It can take more than one try.",
+    "If the top line shows IAP_B, hold SK1 until it shows IAP_A."
    ],
    "stock_download": null,
    "key_sha256": null,
@@ -645,8 +645,8 @@
    "loader_sign": "",
    "bootloader_steps": [
     "Turn the radio off and connect the programming cable.",
-    "Hold P2 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release P2. It can take more than one try.",
-    "If the top line shows IAP_A, hold P2 until it shows IAP_B."
+    "Hold SK1 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release SK1. It can take more than one try.",
+    "If the top line shows IAP_A, hold SK1 until it shows IAP_B."
    ],
    "stock_download": null,
    "key_sha256": null,

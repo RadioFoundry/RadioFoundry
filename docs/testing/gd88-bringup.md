@@ -57,13 +57,13 @@ upload a merged image.**
 How to get back to the original firmware (the IAP loader is never written, so it always works):
 
 1. Radio off, cable connected, the vendor CPS closed.
-2. Hold **P2** (the upper side key) and turn the radio on with the volume knob. The status LED is red and the top line
-   reads `IAP_A` or `IAP_B`. Release P2. It can take more than one try. Long-press P2 to switch between `IAP_A` and
+2. Hold **SK1** (the upper side key, the vendor's P2) and turn the radio on with the volume knob. The status LED is red and the top line
+   reads `IAP_A` or `IAP_B`. Release SK1. It can take more than one try. Long-press SK1 to switch between `IAP_A` and
    `IAP_B`.
 3. Use the vendor IAP updater (Windows, it needs a COM port at 115200) to write the A file to `IAP_A` and the B file to
    `IAP_B`. Write the codeplug again afterwards with the vendor CPS.
 
-Record what P2 power-on shows (step 3). The web flasher's radio entry, its troubleshooting texts and the user guide
+Record what SK1 power-on shows (step 3). The web flasher's radio entry, its troubleshooting texts and the user guide
 follow the spec: the LED lights red and the top line shows `IAP_A` or `IAP_B`. If the radio shows something else, fix
 them (`[flash.bootloader]` in `boards/gd88/board.toml` and `boards/gd88b/board.toml`, the `_gd88` and `_gd88b` texts in
 `site/i18n/en.json`).
@@ -93,7 +93,7 @@ a 3.3 V cable on a 3.3 V UART is the expectation, and the DB40-D's documentation
 
 Before anything else, switch the radio on with its original firmware and record, for both SoCs if the menu shows them:
 the firmware versions (must be A 021 for the console route; if A is older, update it with the vendor updater first:
-the console is only in 021), the display (orientation, any odd color), what P2 power-on shows (section 2), and the
+the console is only in 021), the display (orientation, any odd color), what SK1 power-on shows (section 2), and the
 battery state. Read the codeplug with the vendor CPS and keep it.
 
 ### 3. Back up A through the console (build 021)
@@ -174,7 +174,7 @@ bytes, timing word that worked.
 
 | Check | If not / resolves |
 |---|---|
-| Digits, `*`, `#`, P1, P2, P3 do what `board.c` says (P2 direct on PTB9, P1 PTB10, P3 PTB11). PTT is PTA9 low | Matrix map in `input_gd88.c`. PTT: check the line stays high with the cable idle |
+| Digits, `*`, `#`, SK1, SK2, SOS do what `board.c` says (SK1 direct on PTB9, SK2 PTB10, SOS PTB11). PTT is PTA9 low | Matrix map in `input_gd88.c`. PTT: check the line stays high with the cable idle |
 | The six front keys: the original firmware's handlers settle the soft keys (codes 5, 6) and the rocker (1, 2); check green is code 3 and red code 4, and up is code 1 | Fix `map[]` in `input_gd88.c` (the key names, `keymap[]` and the drawing's `key-*` tags stay). TODO input_gd88.c |
 | Encoder: one event per detent, clockwise = up. `rfoundry_debug.py`'s HIL: `pytest tests/hil -k encoder --manual` | Swap `PIN_ENC_A`/`PIN_ENC_B` if backwards; `ENC_STEPS` 1 vs 2 if a detent gives two events. TODO input_gd88.c |
 | PTA30 (parked low): any key or effect | TODO pins.h |
@@ -223,7 +223,7 @@ answers both, and relays to B or switches it by another way. The loader's `Flash
 gives no backup of B's program flash. Also check that A's PTT still works over the cable afterwards: RadioFoundry's B leaves
 PTA9 and PTA10 as inputs, as the original firmware does.
 
-1. Radio off, cable in, hold P2 and turn on. Long-press P2 until the top line reads `IAP_B`.
+1. Radio off, cable in, hold SK1 and turn on. Long-press SK1 until the top line reads `IAP_B`.
 2. In the web flasher, select Use Factory Update Mode and Install. If the loader does not answer or refuses, save the
    page's log and use the vendor IAP updater instead: write `rfoundry_gd88b_install.bin` (or its `_codec` version) as B's file. This is the
    **unverified** part: the updater takes the vendor files; RadioFoundry's install image starts at 0x0300C000 like them, so it

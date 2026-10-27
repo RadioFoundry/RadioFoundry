@@ -25,8 +25,8 @@ static const band_t bands[] = {
 static const char *const power_names[] = { "L", "H" };
 
 // docs/ux/information-architecture.md 7.1. As the original firmware: the left soft key opens the menu and accepts
-// (its screen labels it Menu or Ok), the right one is A/B, red goes back; green is its programmable key. P1-P3 are the
-// side and top keys
+// (its screen labels it Menu or Ok), the right one is A/B, red goes back; green is its programmable key. SK1 / SK2
+// (above / below PTT) and SOS (the orange top key) as on the other radios
 static const keymap_entry_t keymap[] = {
 	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
 	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
@@ -47,14 +47,14 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
 	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
 	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
-	{ KEY_P1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
-	{ KEY_P2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
-	{ KEY_P3, ACT_USER_3, ACT_USER_3, false, false, 0 },
+	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ KEY_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ KEY_SOS, ACT_USER_3, ACT_USER_3, false, false, 0 },
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 
 // Reassignable in Settings > Keys (core/input/keyassign.h): side key 1, side key 2, top key
-static const uint8_t side_keys[] = { KEY_P1, KEY_P2, KEY_P3 };
+static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2, KEY_SOS };
 
 #if CONFIG_CPS_OPENFW
 // What the open-firmware CPS reads in the radio info (open-firmware-cps.md 4): type 6, as the other HR_C7000 boards

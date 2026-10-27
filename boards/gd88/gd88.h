@@ -19,12 +19,13 @@ extern const hal_input_t gd88_input;
 extern const hal_power_t gd88_power;
 
 // Physical key bits returned by gd88_input.scan(), named by the key as the front panel shows it (docs/spec/hardware-gd88.md
-// 9.2): the two blank soft keys under the display, green and red, the up/down rocker; P1 and P2 the left side keys
-// (P2 the IAP key), P3 the orange top key. Which matrix code is which front key is input_gd88.c's map
+// 9.2): the two blank soft keys under the display, green and red, the up/down rocker; SK1 and SK2 the left side keys
+// above and below PTT (SK1 the IAP key, the vendor's P2), SOS the orange top key (the vendor's P3). Which matrix code
+// is which front key is input_gd88.c's map
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_STAR, KEY_HASH,
 	KEY_UP, KEY_DOWN, KEY_GREEN, KEY_RED, KEY_SOFT_LEFT, KEY_SOFT_RIGHT,
-	KEY_P1, KEY_P2, KEY_P3,
+	KEY_SK1, KEY_SK2, KEY_SOS,
 	KEY_PTT,
 	KEY_COUNT
 };
