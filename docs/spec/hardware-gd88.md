@@ -118,8 +118,8 @@ All facts from the same A and B images (BIN). Detail and addresses are kept outs
 | Item | Finding |
 |---|---|
 | NAND | SPI NAND on SPI0, chip select PTA18, standard SPI-NAND opcodes; geometry is read from the chip at run time. Each SoC has its own |
-| Partition table | Names and NAND byte bases: font 0x040000, debug 0x100000, userop 0x280000, LinkMan 0x2C0000, xiepin1 0x380000, xiepin2 0x3C0000, App 0x400000 |
-| Calibration | Primary copy is one 2 KB NAND page at logical 0x280000 starting with `TUNE` and a 32-bit counter (higher = newer). The partition bases are logical: the stock block map in block 0 places them ([spi-nand-lut.md](spi-nand-lut.md)). On the bench's A, bad blocks 186, 1536 and 1537 and the map put the page at physical 0x2A0000 (block 21). A backup copy sits in program flash at 0x031FE000 (4 KB). The firmware compares the two at boot and copies the newer over the older. Each SoC has its own pair, with its own values: A's page sets A's transmitter and the PA drive B applies, B's page B's receiver (**HW** both pairs read through the map 2026-10-27: A counter 1285, B 1427). RadioFoundry reads both through the map and never writes them |
+| Partition table | Names and NAND byte bases: font 0x040000, debug 0x100000, userop 0x280000, LinkMan 0x2C0000, xiepin1 0x380000, xiepin2 0x3C0000, App 0x400000 (8 pages). Nothing past 0x420000 is a partition; the rest of the 2048 blocks is free but for the spare pool at the top ([spi-nand-lut.md](spi-nand-lut.md)). RadioFoundry's settings take blocks 1920-1951 (BIN) |
+| Calibration | Primary copy is one 2 KB NAND page at logical 0x280000 starting with `TUNE` and a 32-bit counter (higher = newer). The partition bases are logical: the stock block map in block 0 places them ([spi-nand-lut.md](spi-nand-lut.md)). On the bench's A, bad blocks 186, 1536 and 1537 and the map put the page at physical 0x2A0000 (block 21). A backup copy sits in program flash at 0x031FE000 (4 KB). The firmware compares the two at boot and copies the newer over the older. Each SoC has its own pair, with its own values: A's page sets A's transmitter and the PA drive B applies, B's page B's receiver (**HW** both pairs read through the map 2026-10-27: A counter 1285, B 1427). RadioFoundry reads both through the map and never writes them. Items 0x602 (4 bytes), 0x606, 0x607 (1 each), 0x608 and 0x60B (3 each), past the DB25-D's layout, are written only by the factory tune tool (trims of the modem's 0x100 / 0x104 fields); the original firmware's receive and transmit code never reads them, and they are 0xFF on both of the bench radio's pages (BIN, **HW**). Not used |
 
 ## 8. Memory map and the codec
 
@@ -310,7 +310,7 @@ The code marks each with `TODO(gd88)`. The first-day plan that settles them is [
 4. The front panel's navigation keys, whether PTB12 is the knob's contact.
 5. The LCD controller's timing word, DAC C on each SoC.
 6. ~~The NAND's size and B's NAND chip select.~~ TC58CVG1S3HRAIJ, 2048 blocks of 64 2 KB pages on both; B's chip select is PTA18 (section 10).
-7. Meaning of the link command ids and calibration items 0x602-0x60B.
+7. Meaning of the link command ids. (~~Calibration items 0x602-0x60B~~: factory trims, unused, section 7.)
 8. Bootloader contents and the IAP packet format on this radio (not captured).
 
 ## Sources

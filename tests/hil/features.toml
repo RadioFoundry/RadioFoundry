@@ -235,6 +235,10 @@ spec = "docs/spec/debuglink.md"
 switch = "TASK_STACKS"
 spec = "docs/spec/debuglink.md"
 
+[feature.debug_mem]
+switch = "DEBUG_MEM"
+spec = "docs/spec/debuglink.md"
+
 [feature.cps_openfw]
 switch = "CPS_OPENFW"
 spec = "docs/spec/cps-protocol.md"

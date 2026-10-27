@@ -25,8 +25,9 @@
 #define PANEL_W			320u
 #define PANEL_H			240u
 #define PANEL_RECORD		0x031FD000u
-// TODO(gd88): unknown, needs a radio: the record's layout past "lcd" (the type is taken as the next byte, a digit or
-// a number) and the variant to use without one
+// The record is four bytes, "lcd" and the type 0..3 (an ASCII digit is taken too); without one the vendor code uses
+// variant 3 (hardware-gd88.md 9.4). The vendor also picks variant 1 for a panel that answers ID 0xC505 to command 0xD3,
+// RadioFoundry doesn't read the panel's ID, so such a panel needs its record
 #define PANEL_DEFAULT		ILI9341_VARIANT_3
 
 static bool ready;

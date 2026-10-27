@@ -45,8 +45,9 @@ bool gd88_cal_tx_plan(uint32_t hz, bool high, uint8_t drive_pct, gd88_tx_plan_t 
 uint16_t gd88_apc_level(uint16_t target, uint16_t step);
 // Squelch open threshold for level 0..9, in dB below 0 dBm at the main chip (bk4819_squelch_rssi(-v, 2))
 uint8_t gd88_cal_squelch_db(uint32_t hz, uint8_t level);
-// TODO(gd88): unknown, needs a radio: the page's items at 0x602 (4 bytes), 0x606, 0x607 (1 each), 0x608 and 0x60B
-// (3 each) set modem fields at 0x100 / 0x104; their meaning isn't known, so they aren't used
+// The page's items at 0x602 (4 bytes), 0x606, 0x607 (1 each), 0x608 and 0x60B (3 each) are the factory tune tool's
+// trims of modem fields at 0x100 / 0x104. The original firmware's receive and transmit code never reads them and both
+// bench radios have them unwritten (0xFF) (hardware-gd88.md 7), so they aren't used
 #define GD88_CAL_OFF_EXTRA	0x602u
 
 // DMR burst end: the TX-off starts at the modem's RF RX interrupt, 30.5 ms after the RF TX interrupt that keyed the

@@ -118,9 +118,9 @@ void gd88_dmr_tx_stats(gd88_dmr_tx_stats_t *st);
 #endif
 
 // --- SPI NAND (nand_gd88.c) ---
-// RadioFoundry's own block range, the only blocks it programs or erases: 32 blocks (4 MB) from block 1920, far above the
-// factory areas (0x40000 .. 0x400000 and the image areas after it)
-// TODO(gd88): unknown, needs a radio: the chip's size and whether the top of it is used; as hardware-db25d.md
+// RadioFoundry's own block range, the only blocks it programs or erases: 32 blocks (4 MB) from block 1920 of the 2048,
+// far above the original firmware's partitions (all below 0x420000) and below its spare pool, the top 10 usable blocks
+// (hardware-gd88.md 7)
 #define GD88_NAND_RFOUNDRY_FIRST	1920u
 #define GD88_NAND_RFOUNDRY_BLOCKS	32u
 bool gd88_nand_init(void);

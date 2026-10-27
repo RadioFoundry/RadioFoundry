@@ -178,7 +178,7 @@ bytes, timing word that worked.
 |---|---|
 | Digits, `*`, `#`, SK1, SK2, SOS do what `board.c` says (SK1 direct on PTB9, SK2 PTB10, SOS PTB11). PTT is PTA9 low | Matrix map in `input_gd88.c`. PTT: check the line stays high with the cable idle |
 | The six front keys: the original firmware's handlers settle the soft keys (codes 5, 6) and the rocker (1, 2); check green is code 3 and red code 4, and up is code 1 | Fix `map[]` in `input_gd88.c` (the key names, `keymap[]` and the drawing's `key-*` tags stay). TODO input_gd88.c |
-| Encoder: one event per detent, clockwise = up. `rfoundry_debug.py`'s HIL: `pytest tests/hil -k encoder --manual` | Swap `PIN_ENC_A`/`PIN_ENC_B` if backwards; `ENC_STEPS` 1 vs 2 if a detent gives two events. TODO input_gd88.c |
+| Encoder: one event per detent, clockwise = up. `rfoundry_debug.py`'s HIL: `pytest tests/hil -k encoder --manual` | Swap `PIN_ENC_A`/`PIN_ENC_B` if backwards; `ENC_STEPS` 1 vs 2 if a detent gives two events. Settled 2026-10-27 |
 | PTA30 (parked low): any key or effect | TODO pins.h |
 
 **Power key and latch.** Turn the radio off with the knob while RadioFoundry runs: it saves and powers down. If PTB12 is the knob's
@@ -198,8 +198,8 @@ power_gd88.c (knob end readings) and `test_battery`.
 | The NAND ID is a real chip; a settings change survives a power cycle | `nand_gd88.c` geometry: read the parameter page and compare with the TC58 numbers; `GD88_NAND_RFOUNDRY_FIRST` 1920 and 32 blocks are the DB25-D's: check the top of the chip is not used by the original data. TODO nand_gd88.c, TODO gd88_rf.h range |
 | `cal flash #N` and `cal nand #N` found, the newer one used; the TX center, PA values not zero | Compare with the page in the backup (0x031FE000, `TUNE` + counter; the NAND copy at 0x280000). Wrong: `gd88_cal.h`. RadioFoundry only reads both and never writes them |
 
-The calibration items 0x602, 0x606-0x60B are not used; if the page is on hand, record their values and which radio
-settings they match later (step 15). Resolves TODO gd88_cal.h.
+The calibration items 0x602, 0x606-0x60B are not used: only the factory tune tool writes them, and the bench radio's
+pages have them blank (hardware-gd88.md, calibration row).
 
 **RF chips.** `diag`: `rf ... lo ...`. Both must read the BK4819 ID (0x4819), or the radio is receive-less (`supported`
 false). If they read FD6818 (0x6818), 0x7813, AT1846S (0x1846) or AT1141 (0x1100), record the pair: the driver does not
@@ -413,17 +413,16 @@ section 3 step that settles it.
 |---|---|---|---|---|
 | 1 | - | **Settled 2026-10-26**: codes 1, 3 and 4 checked on the radio (hardware-gd88.md 9.2) | - | 6 |
 | 2 | `boards/gd88/pins.h:15` | PTA30's role (parked low from start-up) | Note any effect when high; leave low if none | 6 |
-| 3 | `boards/gd88/input_gd88.c:47` | Encoder direction and steps per detent | Turn clockwise; swap `PIN_ENC_A`/`PIN_ENC_B` or set `ENC_STEPS` | 6 |
+| 3 | - | **Settled 2026-10-27**: PTB5 leads PTB8 clockwise, two steps a detent (hardware-gd88.md 9) | - | 6 |
 | 4 | - | **Settled 2026-10-26**: the DM-32UV's 0x303 gives a steady picture | - | 6 |
-| 5 | `boards/gd88/display_gd88.c:28` | The panel record's layout past `lcd`, and the default variant without one | Read 0x031FD000 from the backup; `diag lcd vN rec/dflt` | 3, 6 |
+| 5 | - | **Settled 2026-10-27**: `lcd` and a type byte 0..3, variant 3 without one (the vendor code; hardware-gd88.md 9.4) | - | 3, 6 |
 | 6 | `drivers/display/ili9341/ili9341.c:59` | Variant 2 gamma sets 0xE0/0xE1 | Compare with the original firmware's picture; try values | 6 |
 | 7 | `drivers/display/ili9341/ili9341.c:85` | Variant 0 gamma (as variant 2) | Same, only if a radio reports variant 0 | 6 |
 | 8 | `drivers/display/ili9341/ili9341.c:108` | Register-style panel (variant 1, ID 0xC505): orientation (R03 0x1030) and the R00 writes' value | Screenshot; try the scan direction bits | 6 |
 | 9 | `boards/gd88/power_gd88.c:15` | Whether PTB12 is the volume knob's switch contact or a separate key | Turn off with the knob and with a key press; watch `view --section input` | 6 |
-| 10 | `boards/gd88/power_gd88.c:24` | The volume knob's end readings (taken as 0 and 1023) | Knob fully down and up, read ADC channel 1 | 6 |
+| 10 | - | **Settled 2026-10-27**: the knob reads 0 to 1010 end to end (`VOL_FULL_RAW`) | - | 6 |
 | 11 | `boards/gd88/common/nand_gd88.c:9` | On B, the NAND's chip select (PTA18 as on A). A's geometry is settled: ID 98 EB, settings kept (2026-10-26) | On B see #21 | 7 |
-| 12 | `boards/gd88/common/gd88_rf.h:96` | The NAND's size and whether its top is used (RadioFoundry's blocks 1920-1951) | Compare with the backup's NAND map and the chip; settings survive | 6 |
-| 13 | `boards/gd88/common/gd88_cal.h:48` | The calibration page items 0x602 (4 bytes), 0x606, 0x607 (1 each), 0x608, 0x60B (3 each) | Record values from the page; match to modem fields at 0x100/0x104 by changing settings in the original firmware (needs the vendor tools) | 6, 15 |
+| 12 | - | **Settled 2026-10-27**: 2048 blocks; the original partitions end below 0x420000, the spare pool is the top 10 usable blocks, so blocks 1920-1951 are free (hardware-gd88.md 7) | - | 6 |
 | 14 | `boards/gd88/common/radio_gd88.c:21` | DAC C's role on each SoC (DB25-D's 1762/1780 are used) | Try values; the RSSI, the sensitivity or the frequency should change | 9 |
 | 15 | - | **Settled 2026-10-26** on A: main BK4819, LO AT1141 (0x1100), both driven (hardware-gd88.md 11.1). B's: `--rx2 diag` | - | 6 |
 | 16 | `boards/gd88/common/dmr_gd88.c:29` | The modem's RF mode word (`GD88_DMR_RF_MODE`, the DB25-D's 0x034C9860): receive is settled (2026-10-27, voice and data decode from the SDR bench); its transmit half is open | SDR bench call from a `GD88_TX=1` build; try `GD88_DMR_RF_MODE=` variants | 15 |
