@@ -120,6 +120,7 @@ export class SerialStream {
 			await port.open(opts);
 		}
 		const s = new SerialStream(port);
+		s.baud = baudRate;
 		s.pumping = s.pump();
 		return s;
 	}
@@ -151,7 +152,9 @@ export class SerialStream {
 		if (!this.closed) this.lost = true;
 	}
 
+	// A port whose device went away has no writable: that is a lost connection (errorKey), not a TypeError
 	async write(data) {
+		if (!this.port.writable) throw new DOMException("The device has been lost.", "NetworkError");
 		const w = this.port.writable.getWriter();
 		try { await w.write(data); } finally { w.releaseLock(); }
 	}

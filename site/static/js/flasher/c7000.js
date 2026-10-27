@@ -301,13 +301,39 @@ export function bootloaderModel(c, head) {
 	return null;
 }
 
-// The stock codeplug area at the start of the data memory, which holds the factory calibration: 4 KB pages up to
-// 0xC8FFF, the calibration the first whose last byte (its logical ID) is 2 (hardware-dm32.md 11.1,
-// hardware-dm1801pro.md 6.4). Returns its address in area, or -1.
-export const CAL_AREA_END = 0xC9000;
-export function findCalibration(area) {
-	for (let a = 0x1000; a + 0x1000 <= Math.min(area.length, CAL_AREA_END); a += 0x1000) if (area[a + 0xFFF] === 2) return a;
+// The factory calibration in a data flash's stock codeplug area, by the board profile's rule (calibration: {area,
+// page_id}, board.toml [flash.stub]): the first 4 KB page from 0x1000 below area whose last byte (its logical ID) is
+// page_id. Returns its address in area, or -1.
+export function findCalibration(area, { area: end, page_id: id }) {
+	for (let a = 0x1000; a + 0x1000 <= Math.min(area.length, end); a += 0x1000) if (area[a + 0xFFF] === id) return a;
 	return -1;
+}
+
+// Which of a NAND radio's calibration copies ([{where, data}], each a 4 KB sector) to keep: those starting with magic.
+// A blank or foreign copy isn't a calibration (a NAND erased after the stock firmware left has none), so with one good
+// copy only that one is kept, and missing names the other's where. With none good, all are kept: what the places
+// that should hold it hold
+export function calibrationCopies(copies, magic) {
+	const m = new TextEncoder().encode(magic);
+	const ok = (d) => m.every((b, i) => d[i] === b);
+	const good = copies.filter((p) => ok(p.data));
+	return { found: good.length > 0, missing: good.length && good.length < copies.length ? copies.find((p) => !ok(p.data)).where : null,
+		keep: good.length ? good : copies };
+}
+
+// The NAND's calibration copy: the stock firmware maps its addresses through a table of good blocks, so the copy at
+// nand sits that many blocks later for each bad block at or below its own. read(addr) gives the 4 KB at addr. Tries
+// nand, then the same offset in each following block, for the first that starts with magic; none: the one at nand
+export const NAND_BLOCK = 0x20000, CAL_NAND_TRIES = 8;
+export async function findNandCalibration(read, { nand, magic }) {
+	const m = new TextEncoder().encode(magic);
+	let first = null;
+	for (let i = 0; i < CAL_NAND_TRIES; i++) {
+		const addr = nand + i * NAND_BLOCK, data = await read(addr);
+		first ||= { addr, data };
+		if (m.every((b, j) => data[j] === b)) return { addr, data };
+	}
+	return first;
 }
 
 // How long a read through the stub takes, for the backup choices. Pessimistic on purpose: a user who sees a short time
@@ -319,32 +345,46 @@ export function findCalibration(area) {
 export const WIRE_RATE = 9000;
 export const LINE_RATE = 11520;	// 115200 baud, 10 bits a byte: no read is faster
 export const RECORD = 13;	// a sector record's header and frame
+// The best LZ4 does on a used sector, for the short end of a range: a codeplug packed to about a third on the bench
+// (2026-10-27), contacts and channel names much the same. How well a memory packs isn't known until it's read
+export const BEST_PACK = 0.3;
 const SECTOR = 0x1000;
 
 // Seconds to read bytes of a memory. sizing: blankCount's answer for that memory (its blank share is taken for the
 // part read); rate: wire bytes a second measured on this radio (never above the line rate); plainRate: bytes a second a
 // board states for a whole program memory read (flash.read_rate), used only without a count. Without either the
-// estimate takes every sector as used: upTo.
+// estimate takes every sector as used: upTo. With a count, least is the time if every used sector packs as well as
+// BEST_PACK: the read takes between least and seconds
 export function readSeconds(bytes, { sizing = null, rate = null, plainRate = null } = {}) {
 	const sectors = Math.ceil(bytes / SECTOR);
 	const wireRate = Math.min(rate || WIRE_RATE, LINE_RATE);
 	if (sizing?.sectors) {
 		const used = sectors * (1 - sizing.blank / sizing.sectors);
-		const wire = used * SECTOR + sectors * RECORD;
-		// a read ends with the radio's checksums over the range again, as long as the count took for its share
-		return { seconds: wire / wireRate + (sizing.ms / 1000) * (sectors / sizing.sectors), upTo: false };
+		// the radio's own work per sector, as long as the count took for its share: the read waits for it where it is
+		// slower than the cable (a NAND loads each page first), and the read ends with the radio's checksums over the
+		// range again
+		const scan = (sizing.ms / 1000) * (sectors / sizing.sectors);
+		const time = (pack) => Math.max((used * SECTOR * pack + sectors * RECORD) / wireRate, scan) + scan;
+		return { seconds: time(1), least: time(BEST_PACK), upTo: false };
 	}
 	if (plainRate) return { seconds: bytes / plainRate, upTo: false };
 	return { seconds: (sectors * (SECTOR + RECORD)) / wireRate, upTo: true };
 }
 
 // The blank 4 KB sectors of [start, end), counted by the radio (the stub's sector sums: no flash data crosses the
-// cable), window by window. Stops at the deadline (ms) or when stop() turns true, with what it counted:
-// {sectors, blank, ms}, or null when it counted nothing. An estimate takes the counted share for the whole range.
+// cable), window by window. The windows are visited spread over the whole range (a stride coprime to their number), so
+// a count the deadline cuts short is still a sample of all of it, not of its start: a large memory keeps its data in
+// a few areas. Stops at the deadline (ms) or when stop() turns true, with what it counted: {sectors, blank, ms}, or
+// null when it counted nothing. An estimate takes the counted share for the whole range.
 export async function blankCount(stub, mem, start, end, { deadline = 8000, stop = () => false, window = 16 } = {}) {
 	const t0 = Date.now();
+	const span = window * SECTOR, n = Math.ceil((end - start) / span);
+	const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+	let step = Math.max(1, Math.round(n * 0.618));
+	while (gcd(step, n) !== 1) step++;
 	let sectors = 0, blank = 0;
-	for (let a = start; a < end && !stop() && Date.now() - t0 < deadline; a += window * SECTOR) {
+	for (let i = 0; i < n && !stop() && Date.now() - t0 < deadline; i++) {
+		const a = start + ((i * step) % n) * span;
 		const sums = await stub.sums(mem, a, Math.min(window, (end - a) / SECTOR));
 		sectors += sums.length;
 		blank += sums.filter((s) => s.blank).length;

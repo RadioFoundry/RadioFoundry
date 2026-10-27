@@ -15,6 +15,7 @@
 import { be32, concat, crc32, le32, sleep, u32le } from "./bytes.js";
 import { decodeBlock } from "./lz4.js";
 import { Link, LinkError } from "./link.js";
+import * as protect from "./protect.js";
 
 // USB-serial chips known to take the boot ROM load well (adapter.js names a cable by these)
 const GOOD_CHIPS = ["FTDI", "CP210x", "PL2303"];
@@ -34,7 +35,9 @@ export const SECTOR = 4096, PAGE = 256, WINDOW = 16, PACK = 16, CHUNK = 1024, RO
 export const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, TOOLONG = 0x0E;
 export const SSI_PROG = 0x04000000, SSI_DATA = 0x140A0000;
 export const QUAD_ENABLE = 0x1100005C, LCSFC_BAUDR = 0x11000030, SYS_SOFT_RSTN = 0x11000000, TIMER2_VALUE = 0x14000018;
-const NOREPLY_DRAIN_MS = 100;	// after a no-reply request, before the caller may close the port
+// After a no-reply request, before the caller may close the port: a USB-serial cable holds a write up to its latency
+// timer (16 ms on an FTDI) before it sends it; closing at once lost a GD-88's reset (2026-10-26)
+const NOREPLY_DRAIN_MS = 100;
 export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
 // RadioFoundry's restart-cause mark (docs/spec/crash-log.md 1.3; stubtool.py CRASH_SOFT_MARK): the reset was asked for
 export const CRASH_SOFT_MARK = 0x18007EF4, CRASH_BOOT_SOFT = 0x54464F53;
@@ -52,11 +55,16 @@ const ROM_GAVE_UP = [0x00, 0x10, 0x00, 0x03], ROM_NAK = [0x02, 0x0A, 0x00, 0x03]
 // ms once the greeting is seen: the ROM drops what reaches it before its greeting, so only the answers sent after that
 // count, and the ROM's 48 ms must be covered however late the greeting shows here (hardware-dm32.md 13.3)
 export const ROM_REPEAT = 30, ROM_REPEAT_AFTER = 150;
-// memory: SSI base, the GPIO chip select (the data flash's is PTA18), size
+// memory: SSI base, the GPIO chip select (the data flash's is PTA18), size. A radio's data memory is either the SPI NOR
+// flash (q128) or an SPI NAND on the same bus and chip select (nand): the universal stub reads the NAND's 2 KB pages
+// without their spare bytes, two to a 4 KB sector, when a read or checksum request carries NAND_FLAG and the stub was
+// configured for a NAND board (stub/stubtool.py). It is only ever read.
 export const MEM = {
 	progmem: { base: SSI_PROG, cs: null, size: 0x100000, name: "program memory" },
 	q128: { base: SSI_DATA, cs: 18, size: 0x1000000, name: "data memory" },
+	nand: { base: SSI_DATA, cs: 18, size: 0x10000000, name: "NAND", nand: true },
 };
+const NAND_FLAG = 4;
 // played when a run finishes: three green flashes, then the slow orange blink resumes
 export const DONE_LED = [[0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150]];
 
@@ -66,7 +74,9 @@ const u32be = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o
 const romCmd = (op, payload = new Uint8Array(0)) => concat(new Uint8Array([0x02, op, sum8(payload), 0x03]), payload);
 const isBlank = (b) => b.every((x) => x === 0xFF);
 const hexBytes = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join(" ");
-const memArgs = (m) => new Uint8Array([1 | (m.cs !== null ? 2 : 0), m.cs || 0]);
+// the flags and chip select of a request; a sector read or checksum of the NAND also carries NAND_FLAG (a plain SPI
+// transfer never does: the command bytes are the caller's)
+const memArgs = (m, sectors = false) => new Uint8Array([1 | (m.cs !== null ? 2 : 0) | (sectors && m.nand ? NAND_FLAG : 0), m.cs || 0]);
 
 function find(buf, pat) {
 	outer: for (let i = 0; i + pat.length <= buf.length; i++) {
@@ -136,6 +146,9 @@ export class Stub {
 		this.size = {};		// per-radio memory sizes where they differ from MEM (the DB25-D's program flash is 2 MB)
 		this.v6 = null;		// the universal stub's HELLO fields (protocol 6); null for an older stub
 		this.configured = null;	// the board profile the stub confirmed after CONFIG
+		// the board's protected regions (c7000.boards[id].protect, board.toml [[flash.protect]]), from the profile
+		// configure() gets: every erase and program checks them before it is sent
+		this.protect = [];
 	}
 
 	async readExact(n, timeout) {
@@ -156,14 +169,17 @@ export class Stub {
 	async waitForRom(timeout, { signal, repeat = 0 } = {}) {
 		const until = Date.now() + timeout;
 		this.s.clear();
-		let sending = Promise.resolve(), next = 0, heard = 0;
+		// the answers go out in the background: a write that fails (the cable pulled) ends the wait with its error, and
+		// is never left as an unhandled rejection
+		let sending = Promise.resolve(), next = 0, heard = 0, failed = null;
 		try {
 			while (Date.now() < until) {
 				if (signal?.aborted) throw new StubError("stopped");
 				if (repeat && Date.now() >= next) {
 					next = Date.now() + repeat;
-					sending = sending.then(() => this.s.write(new Uint8Array(ROM_REPLY)));
+					sending = sending.then(() => this.s.write(new Uint8Array(ROM_REPLY))).catch((e) => { failed ||= e; });
 				}
+				if (failed) throw failed;
 				const b = this.s.buf;
 				const at = find(b, ROM_HELLO);
 				if (at >= 0) {
@@ -420,12 +436,14 @@ export class Stub {
 		throw new StubError(`op 0x${op.toString(16)}: no clean reply after ${retries + 1} tries (${why})`);
 	}
 
-	// A request the radio won't answer (a reset, a jump). The caller often closes the port next, which can drop what the
-	// USB-serial adapter still holds: stubtool's reset never reached a GD-88 that way (2026-10-26), so give it time to leave
+	// A request the radio won't answer (a reset, a jump). The write resolves once the bytes are handed to the cable, not
+	// once they are on the line: wait out the frame at the line rate and the cable's latency, or a port closed next
+	// (Restart Radio) discards it and the radio stays in the stub (a GD-88 reset was lost that way, 2026-10-26)
 	async sendNoReply(op, payload) {
 		this.s.clear();
-		await this.s.write(concat(new Uint8Array([0x02, op, payload.length >> 8, payload.length & 0xFF, sum8(payload), 0x03]), payload));
-		await sleep(NOREPLY_DRAIN_MS);
+		const frame = concat(new Uint8Array([0x02, op, payload.length >> 8, payload.length & 0xFF, sum8(payload), 0x03]), payload);
+		await this.s.write(frame);
+		await sleep(NOREPLY_DRAIN_MS + Math.ceil((frame.length * 10 * 1000) / (this.s.baud || 115200)));
 	}
 
 	async hello({ retries = 0 } = {}) {
@@ -443,6 +461,7 @@ export class Stub {
 	// the APB clock, measured (24 MHz under the boot ROM, 36 MHz on the DB25-D, 84 MHz under RadioFoundry on the DM-32UV and
 	// DM-1801 Pro). An older stub has no CONFIG.
 	async configure(profile, led = { red: 33, green: 32 }) {
+		if (profile?.protect) this.protect = profile.protect;
 		if (!this.v6) return;
 		if (this.v6.board && this.v6.board === profile.id && this.v6.flags === (profile.nand ? 1 : 0)) {
 			this.configured = profile;
@@ -502,18 +521,19 @@ export class Stub {
 		return r;
 	}
 
-	// The JEDEC ID; refuses a chip that doesn't answer (chip select or cable wrong)
+	// The JEDEC ID; refuses a chip that doesn't answer (chip select or cable wrong). An SPI NAND answers 0x9F after a
+	// dummy byte, with its maker and device
 	async checkId(mem) {
-		const id = await this.spi(mem, new Uint8Array([0x9F]), 3);
+		const id = MEM[mem].nand ? await this.spi(mem, new Uint8Array([0x9F, 0x00]), 2) : await this.spi(mem, new Uint8Array([0x9F]), 3);
 		const hexId = [...id].map((b) => b.toString(16).padStart(2, "0")).join("");
-		if (hexId === "ffffff" || hexId === "000000") throw new StubError(`the ${MEM[mem].name} chip does not answer (${hexId})`);
+		if (/^(ff)+$|^(00)+$/.test(hexId)) throw new StubError(`the ${MEM[mem].name} chip does not answer (${hexId})`);
 		return hexId;
 	}
 
 	// [{crc, blank}] for `count` sectors from addr, computed by the radio: no flash data crosses the cable
 	async sums(mem, addr, count) {
 		const m = MEM[mem];
-		const r = await this.request(0x07, concat(be32(m.base), memArgs(m), be32(addr), be16(count)), { timeout: 1000 + count * 150 });
+		const r = await this.request(0x07, concat(be32(m.base), memArgs(m, true), be32(addr), be16(count)), { timeout: 1000 + count * 150 });
 		if (r.length !== count * 5) throw new StubError(`sector sums reply is ${r.length} bytes, wanted ${count * 5}`);
 		return Array.from({ length: count }, (_, i) => ({ crc: u32be(r, i * 5), blank: r[i * 5 + 4] === 1 }));
 	}
@@ -567,7 +587,8 @@ export class Stub {
 			for (const sa of bad) await this.readSectors(m, full, lo, sa, sa + SECTOR, { compress: false, signal, stats });
 		}
 		this.stats = stats;
-		return full.slice(start - lo, end - lo);
+		// a whole memory is returned as read: a NAND's copy would hold its size twice
+		return start === lo && end === hi ? full : full.slice(start - lo, end - lo);
 	}
 
 	// Sectors [from, to) into full (which starts at base), resuming where a damaged frame stopped
@@ -578,7 +599,7 @@ export class Stub {
 			const count = Math.min(PACK, (to - sa) / SECTOR);
 			try {
 				this.s.clear();
-				const payload = concat(be32(m.base), memArgs(m), be32(sa), new Uint8Array([count, want ? 1 : 0]));
+				const payload = concat(be32(m.base), memArgs(m, true), be32(sa), new Uint8Array([count, want ? 1 : 0]));
 				await this.s.write(concat(new Uint8Array([0x02, 0x09, 0, payload.length, sum8(payload), 0x03]), payload));
 				for (let i = 0; i < count; i++) {
 					const [status, r] = await this.readFrame(i === 0 ? 3000 : 1500);
@@ -623,7 +644,25 @@ export class Stub {
 		}
 	}
 
+	// The last check before a flash command goes out, whoever built it (stubtool.py _guard): a sector erase or page
+	// program must miss the protected regions, a chip erase is refused on a memory that has any
+	guard(mem, tx) {
+		const m = { progmem: "progmem", q128: "data" }[mem];
+		const op = tx[0], a = (tx[1] << 16) | (tx[2] << 8) | tx[3];
+		try {
+			if (op === 0x60 || op === 0xC7) protect.checkWhole(this.protect, m);
+			else if (op === 0x20 || op === 0x52 || op === 0xD8) {
+				const n = { 0x20: SECTOR, 0x52: 0x8000, 0xD8: 0x10000 }[op];
+				protect.check(this.protect, m, a - (a % n), a - (a % n) + n, "erase");
+			} else if (op === 0x02) protect.check(this.protect, m, a, a + Math.max(tx.length - 4, 1), "program");
+		} catch (e) {
+			throw new StubError(e.message);
+		}
+	}
+
 	async writeCmd(mem, tx, what, timeout) {
+		if (MEM[mem].nand) throw new StubError("the NAND is only read here");
+		this.guard(mem, tx);
 		await this.spi(mem, new Uint8Array([0x06]), 0);
 		const st = await this.status(mem);
 		if (!(st & 2)) throw new StubError(`${what}: write enable did not stick (status 0x${st.toString(16)}): chip write-protected?`);
@@ -644,14 +683,24 @@ export class Stub {
 	// [appStart, appEnd). Only sectors whose CRC differs are written; each is read back by CRC at once and written
 	// again (up to 3 times) when it doesn't match, the first sector of the application last, so the radio only has a
 	// start address when everything else is in place. A final CRC pass over the whole range ends it.
-	// onSector(addr, state): "todo" | "same" | "writing" | "retry" | "written"
-	async writeProgram(data, start, { appStart, appEnd, onSector = () => {}, signal } = {}) {
+	// A protected region of the board (this.protect) refuses the write before anything is erased; with carve (a
+	// restore) its sectors are left as the radio has them instead ("kept") and the rest is written.
+	// onSector(addr, state): "todo" | "same" | "kept" | "writing" | "retry" | "written"
+	async writeProgram(data, start, { appStart, appEnd, onSector = () => {}, signal, carve = false } = {}) {
 		if (start % SECTOR || data.length % SECTOR || !data.length) throw new StubError("writes are whole 4 KB sectors");
 		if (start < appStart || start + data.length > appEnd) throw new StubError(`refusing to write outside the application area 0x${appStart.toString(16)}..0x${appEnd.toString(16)}`);
+		if (!carve) {
+			try {
+				protect.check(this.protect, "progmem", start, start + data.length);
+			} catch (e) {
+				throw new StubError(e.message);
+			}
+		}
+		const kept = (a) => protect.overlapping(this.protect, "progmem", a, a + SECTOR).length > 0;
 		if (this.v6 && !this.configured) throw new StubError("the loader's radio configuration is not confirmed: refusing to write");
 		await this.checkId("progmem");
-		const todo = await this.verify("progmem", data, start);
-		for (let a = start; a < start + data.length; a += SECTOR) onSector(a, todo.includes(a) ? "todo" : "same");
+		const todo = (await this.verify("progmem", data, start)).filter((a) => !kept(a));
+		for (let a = start; a < start + data.length; a += SECTOR) onSector(a, kept(a) ? "kept" : todo.includes(a) ? "todo" : "same");
 		const order = todo.filter((a) => a !== appStart).concat(todo.includes(appStart) ? [appStart] : []);
 		for (const a of order) {
 			if (signal?.aborted) throw new StubError("stopped");
@@ -666,7 +715,7 @@ export class Stub {
 			}
 			onSector(a, "written");
 		}
-		const bad = todo.length ? await this.verify("progmem", data, start) : [];
+		const bad = todo.length ? (await this.verify("progmem", data, start)).filter((a) => !kept(a)) : [];
 		if (bad.length) throw new StubError(`verify after write: sectors differ at ${bad.map((x) => "0x" + x.toString(16)).join(", ")}`);
 		return { written: todo.length, same: data.length / SECTOR - todo.length };
 	}

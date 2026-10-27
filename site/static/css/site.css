@@ -382,15 +382,16 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .radio-top { margin: 0; text-align: center; }
 .rt-pic { position: relative; max-width: 220px; margin: 0 auto; }
 .rt-img { width: 100%; max-width: 220px; height: auto; display: block; margin: 0 auto; }
-.rt-screen { position: absolute; display: grid; place-content: center; font: 700 12px var(--font-sans); line-height: 1.2; color: #1b1e22; }
-.rt-screen .small { font-weight: 500; font-size: 10px; }
+.rt-screen { position: absolute; display: grid; place-content: stretch; overflow: hidden; }
+/* the radio's own screen from the UI gallery, its pixels kept sharp */
+.rt-shot { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; background: #000; }
 /* a key to hold, ringed where the picture shows it (frame_geometry.keys): bright on the dark radio, a dark halo for the
    page around it; the caption under the picture names the keys */
 .rt-key { position: absolute; border-radius: 4px; pointer-events: none; outline: 3px solid #ffb020; outline-offset: 2px;
 	box-shadow: 0 0 0 7px rgb(0 0 0 / 35%), 0 0 14px 7px rgb(255 176 32 / 50%); animation: rt-key 1.2s ease-in-out infinite; }
 @keyframes rt-key { 50% { outline-color: rgb(255 176 32 / 40%); } }
-.radio-top[data-screen="loader"] .rt-screen { background: #c9d6c2; }
-.radio-top[data-screen="on"] .rt-screen { background: #1d3550; color: #e8f0f8; }
+.radio-top[data-screen="loader"] .rt-screen, .radio-top[data-screen="rfoundry"] .rt-screen { background: #000; }
+.radio-top[data-screen="on"] .rt-screen { background: #1d3550; }
 .rt-lamp { display: flex; justify-content: center; align-items: center; gap: var(--space-2); margin-top: var(--space-2); font-size: var(--text-sm); }
 .radio-top[data-led="off"] .rt-lamp { display: none; }
 .rt-led { fill: #3a3d42; stroke: #000; stroke-width: 1; }

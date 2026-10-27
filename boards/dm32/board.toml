@@ -46,6 +46,20 @@ keep_codec = false
 stock_versions = ["DM32.01.01.049", "DM32.00.01.046"]
 backup = { stock = "full", rfoundry = "full", spi_size = 0x1000000 }
 
+# Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
+# as offsets in that memory, what with the spec section that establishes it
+[[flash.protect]]
+mem = "data"
+start = 0x1000
+end = 0xC9000
+what = "factory calibration: the stock codeplug area's 4 KB page tagged 2, which can be any page of it (hardware-dm32.md 10.1, 11.1)"
+
+[[flash.protect]]
+mem = "data"
+start = 0x710000
+end = 0x711000
+what = "a decoded calibration copy an earlier firmware left, the fallback when no factory page is found (hardware-dm32.md 10.1, 17)"
+
 # Baofeng's update mode: keys is the short form tools print, steps the web flasher's and the manual's, id the string
 # the loader answers (also the magic of its firmware files), sign what the radio shows in update mode
 [flash.bootloader]
@@ -69,6 +83,8 @@ id = 1
 hold_power = false
 progmem = 0x100000
 tested = true
+# the factory calibration: the 4 KB page of the stock codeplug area whose last byte is 2 (hardware-dm32.md 11.1)
+calibration = { area = 0xC9000, page_id = 2 }
 
 # The codec slot and windows come from boards/dm32/memory.ld (__codec_*); profile is the id rfoundry gives a merged codec
 [codec]

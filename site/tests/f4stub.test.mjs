@@ -180,22 +180,25 @@ test("SPI flash: only changed sectors are written, then verified; outside the ch
 });
 
 // A backup through the loader the way the backup step runs it
-async function backupVia(radio, sim, what) {
+async function backupVia(radio, sim, what, { patch = () => {} } = {}) {
 	const link = new Link(radio.serialStream());
+	patch(link);
 	let handedOver = false;
 	const loader = f4LoaderReader(link, { stubJson: async () => stubJson, reopen: async () => radio.serialStream(), board: fb.f4stub.boards[radio.board.id], onHandOver: () => { handedOver = true; } });
 	const parts = await readRadio(link, sim.board, { backup: { spi_size: radio.spi.length } }, { what, readers: [loader] });
 	return { parts, loader, handedOver, get: (w) => parts.find((x) => x.what === w) };
 }
 
-test("backup through the loader: the security registers over the debug link, both memories through the loader, then RadioFoundry again", async () => {
-	for (const adopt of [true, false]) {
-		const { sim, radio } = await running("dm1701", { adopt });
+test("backup through the loader, every loader board: the security registers over the debug link, both memories through the loader, then RadioFoundry again", async () => {
+	for (const [id, adopt] of Object.keys(fb.f4stub.boards).flatMap((id) => [[id, true], [id, false]])) {
+		const { sim, radio } = await running(id, { adopt });
 		const b = await backupVia(radio, sim, {});
 		assert.ok(b.loader.used && b.handedOver);
 		assert.deepEqual(radio.events, ["stub (from RadioFoundry)", "reset"]);
 		assert.equal(radio.mode, "normal", "the radio runs RadioFoundry again");
-		assert.ok(b.get("security-registers").complete, "read over the debug link before the hand-over");
+		assert.ok(b.get("security-registers").complete, "read before the hand-over, and again through the loader");
+		assert.deepEqual(b.get("security-registers").data, radio.security);
+		assert.equal(b.parts.filter((x) => x.what === "security-registers").length, 1, "the two reads agree: one copy");
 		const internal = b.get("internal-flash");
 		assert.equal(internal.addr, APP_BASE);
 		assert.ok(internal.complete);
@@ -204,6 +207,30 @@ test("backup through the loader: the security registers over the debug link, bot
 		assert.ok(spi.complete);
 		assert.deepEqual(spi.data, radio.spi);
 	}
+});
+
+test("security registers: a build without them in the codeplug protocol gets them through the loader's SREAD", async () => {
+	for (const id of Object.keys(fb.f4stub.boards)) {
+		const { sim, radio } = await running(id, { cpsSecurity: false });
+		const b = await backupVia(radio, sim, { internal: false, spi: "none" });
+		assert.ok(b.loader.used, "the loader opened for the calibration alone");
+		assert.deepEqual(b.get("security-registers").data, radio.security);
+		assert.equal(radio.mode, "normal", "and RadioFoundry runs again");
+	}
+});
+
+test("security registers: the codeplug protocol's copy alone without SREAD (a protocol 4 stub), both when the reads differ", async () => {
+	const { sim, radio } = await running("dm1701", { stubVersion: 4 });
+	const old = await backupVia(radio, sim, {});
+	assert.deepEqual(old.get("security-registers").data, radio.security);
+	const { sim: sim2, radio: radio2 } = await running("dm1701");
+	const differ = await backupVia(radio2, sim2, {}, { patch: (link) => {
+		const read = link.cpsRead.bind(link);
+		link.cpsRead = async (area, addr, len) => { const d = await read(area, addr, len); if (area === 10 && d) d[0] ^= 1; return d; };
+	} });
+	assert.deepEqual(differ.get("security-registers").data, radio2.security, "the loader's CRC-checked copy is the one kept");
+	const other = differ.parts.find((x) => x.file === "security-registers-codeplug-protocol.bin");
+	assert.ok(other && !other.complete && other.data[0] === (radio2.security[0] ^ 1));
 });
 
 test("backup without stub entry: the loader doesn't start and the debug link reads everything, RadioFoundry untouched", async () => {
@@ -410,4 +437,23 @@ test("backup through the loader on a radio whose stub refuses the record: the ra
 	await assert.rejects(backupVia(radio, sim, {}), /refused/);
 	assert.deepEqual(radio.events, ["stub (from RadioFoundry)", "reset"]);
 	assert.equal(radio.mode, "normal");
+});
+
+test("protected regions: an SPI restore keeps the radio's bytes there, erases and installs over one are refused", async () => {
+	const { radio } = await running();
+	const s = await enter(radio);
+	s.board = { ...s.board, protect: [
+		{ mem: "data", start: 0x2000, end: 0x4000, what: "test (x.md 1)" },
+		{ mem: "progmem", start: 0x20000, end: 0x40000, what: "test (x.md 1)" }] };
+	const before = radio.spi.slice(0, 0x8000);
+	const data = before.slice();
+	data.fill(0x5A, 0x1000, 0x5000);
+	assert.deepEqual(await s.spiWrite(data, 0), { written: 2, same: 6 });
+	assert.ok(equal(radio.spi.subarray(0x2000, 0x4000), before.subarray(0x2000, 0x4000)), "protected sectors kept");
+	assert.ok(equal(radio.spi.subarray(0x1000, 0x2000), data.subarray(0x1000, 0x2000)) && equal(radio.spi.subarray(0x4000, 0x5000), data.subarray(0x4000, 0x5000)));
+	await assert.rejects(s.erase(5), /protected region/);
+	await assert.rejects(s.program(0x08020000, new Uint8Array(4)), /protected region/);
+	const flash = radio.flash.slice();
+	await assert.rejects(s.writeImage(fb.f4stub.boards.dm1701.owned, [[APP_BASE, app(2, 0x30000)]]), /protected region/);
+	assert.ok(equal(radio.flash, flash), "nothing erased");
 });

@@ -126,6 +126,12 @@ with `CONFIG_STUB_ENTRY=y` loads it over the USB debug link; it then installs bu
 kept), backs up and verifies the internal flash, reads and writes the external SPI flash, and backs up and puts back the SPI
 flash's security registers (`--secreg`, `--write-secreg`; never their one-time lock bits). Spec: [docs/spec/stub-stm32f4.md](../docs/spec/stub-stm32f4.md).
 
+Both host tools refuse to touch a board's protected regions (`board.toml` `[[flash.protect]]`,
+[board-registry.md](../docs/dev/board-registry.md#protected-regions)): `stubtool.py` checks every erase and program
+command it sends and refuses a chip erase; `f4stub.py` checks installs, sector erases and programs, carves the regions
+out of an SPI flash restore (`--write-q128`), and refuses a security register write to a protected register. The stubs
+themselves don't know the list.
+
 One image serves every STM32F4 radio, as the HR_C7000's universal stub does: after HELLO the host sends a CONFIG with the
 radio's board record (SPI flash bus, pins, mode and chip select, other chip selects to hold high, the crystal, the
 bootloader's end), and checks the echo in the next HELLO. The stub writes nothing before that. The profiles are

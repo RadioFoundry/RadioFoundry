@@ -28,6 +28,12 @@
    "group": "home",
    "needs": []
   },
+  "stub_entry": {
+   "group": "tools",
+   "needs": [
+    "STUB_ENTRY"
+   ]
+  },
   "home_fm": {
    "group": "home",
    "needs": [

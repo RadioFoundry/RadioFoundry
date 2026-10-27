@@ -33,6 +33,7 @@ import zlib
 # the board registry (tools/boards.py generates it): the boards with a stub profile, their pins and memories
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "rfoundry"))
 from rfoundry import boards as rfoundryboards  # noqa: E402
+from rfoundry import protect  # noqa: E402  (protected flash regions, board.toml [[flash.protect]])
 
 # --- STUB begin (stub/embed.py rewrites everything up to the end marker)
 STUB_SHA256 = "053a6b645d122dc85443616ed622c3a91229d8f949fc5e07aec68d14a8e4cbe1"
@@ -521,14 +522,17 @@ def check_univ_load(image, load, window=None):
 # Board profiles for the universal stub (CONFIG, op 0x0D), from each board's [flash.stub] (boards/<id>/board.toml):
 # board id echoed by HELLO, power latch / power key pins (255 = none), whether the data memory is the SPI NAND, the
 # program flash size; where the board gives them, the LED pins (red, green), the UART the stub answers on before CONFIG
-# and whether it is reached through the main SoC's bridge. VERSION's board= names them on the RadioFoundry route; --board at
-# power-on. Unknown radio: GENERIC (no pins, nothing echoed but 0).
+# and whether it is reached through the main SoC's bridge; its protected regions. VERSION's board= names them on the
+# RadioFoundry route; --board at power-on. Unknown radio: GENERIC (no pins, nothing echoed but 0).
 C7_BOARDS = {b.id: dict({"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names),
                          "latch": b.stub["latch"], "key": b.stub["key"], "nand": b.stub["nand"],
-                         "progmem": b.stub["progmem"]},
+                         "progmem": b.stub["progmem"], "protect": b.protect},
                         **{k: tuple(v) if k == "leds" else v for k, v in b.stub.items() if k in ("leds", "uart", "bridge")})
              for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
-GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000}
+GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000,
+           "protect": []}
+# This tool's memory names as board.toml [[flash.protect]] names them
+PROTECT_MEM = {"progmem": "progmem", "q128": "data", "nand": "nand"}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
 
 
@@ -909,6 +913,8 @@ class Radio:
         DM-32UV / DM-1801 Pro). An older stub has no CONFIG: nothing is sent."""
         if self.v6 is None:
             self.log("stub protocol before 6: no board configuration")
+            if board:			# the stub can't take it, but its protected regions still apply here
+                self.profile = C7_BOARDS[board]
             return
         if board is None and self.v6["board"]:     # attached to a stub configured earlier: keep its profile
             prof = next((b for b in C7_BOARDS.values() if b["id"] == self.v6["board"]), None)
@@ -1168,6 +1174,7 @@ class Radio:
                 raise DumpError("%s: flash still busy after %.1f s (status 0x%02X)" % (what, timeout, st))
 
     def _write_cmd(self, mem, tx, what, timeout):
+        self._guard(mem, tx)
         base, ser, cs, _, _ = MEM[mem]
         self.spi(base, b"\x06", 0, ser, cs)                     # write enable
         if not self._status(mem) & 2:
@@ -1175,9 +1182,33 @@ class Radio:
         self.spi(base, tx, 0, ser, cs)
         self._wait_ready(mem, what, timeout)
 
+    def _guard(self, mem, tx):
+        """The last check before a flash command goes out, whoever built it: a sector erase (0x20) or page program
+        (0x02) must miss the board's protected regions, a chip erase (0x60, 0xC7) is refused on a memory that has any,
+        and a 64 KB or 32 KB block erase (0xD8, 0x52) is checked over its block. Nothing here sends the last three."""
+        op = tx[0]
+        pm = PROTECT_MEM[mem]
+        try:
+            if op in (0x60, 0xC7):
+                protect.check_whole(self.profile, pm)
+            elif op in (0x20, 0x52, 0xD8, 0x02) and len(tx) >= 4:
+                a = int.from_bytes(tx[1:4], "big")
+                n = {0x20: SECTOR, 0x52: 0x8000, 0xD8: 0x10000}.get(op, len(tx) - 4)
+                a -= a % n if op != 0x02 else 0
+                protect.check(self.profile, pm, a, a + max(n, 1), "erase" if op != 0x02 else "program")
+        except protect.ProtectedError as e:
+            raise DumpError(str(e))
+
     def check_write_range(self, mem, start, end, app=False):
+        """Refuse a write or erase of [start, end) before anything is sent: whole sectors, never the NAND, only the
+        allowed regions, and never a protected region of the board the stub is configured for (board.toml
+        [[flash.protect]], rfoundry/protect.py)."""
         if start % SECTOR or end % SECTOR or start >= end:
             raise DumpError("writes are whole 4 KB sectors")
+        try:
+            protect.check(self.profile, PROTECT_MEM[mem], start, end)
+        except protect.ProtectedError as e:
+            raise DumpError(str(e))
         if mem == "nand":
             raise DumpError("the NAND is read only here")
         ok = WRITE_OK.get(mem, []) + ([(APP_START, APP_END)] if app and mem == "progmem" else [])
@@ -2085,6 +2116,27 @@ def self_test():
         check(False, "oversized image refused")
     except DumpError:
         pass
+    # protected regions (board.toml [[flash.protect]]): refused before anything is erased, whoever builds the command
+    r.profile = dict(r.profile, protect=[
+        {"mem": "progmem", "start": APP_START + 2 * SECTOR, "end": APP_START + 3 * SECTOR, "what": "test (x.md 1)"},
+        {"mem": "data", "start": lo + SECTOR, "end": lo + 2 * SECTOR, "what": "test (x.md 1)"}])
+    radio.writes.clear()
+    for what, call in (("write_image over a protected sector", lambda: r.write_image(appimg)),
+                       ("write_flash over a protected sector", lambda: r.write_flash("q128", lo, pat)),
+                       ("erase of a protected sector", lambda: r.erase_sectors("q128", lo + SECTOR, lo + 2 * SECTOR)),
+                       ("a raw sector erase in a protected region", lambda: r._write_cmd(
+                           "q128", bytes([0x20, (lo + SECTOR) >> 16 & 0xFF, 0x10, 0]), "erase", 1.0)),
+                       ("a chip erase of a memory with a protected region", lambda: r._write_cmd(
+                           "q128", b"\x60", "chip erase", 1.0))):
+        try:
+            call()
+            check(False, "%s refused" % what)
+        except DumpError as e:
+            check("protected region" in str(e), "%s refused with the reason (%s)" % (what, e))
+    check(radio.writes == [], "nothing written by a refused write (%s)" % radio.writes[:3])
+    r.erase_sectors("q128", lo, lo + SECTOR)
+    check(radio.images["q128"][lo:lo + SECTOR] == b"\xff" * SECTOR, "the sector beside a protected one still erases")
+    r.profile = GENERIC
     r.setup_led(32, 33, "red")
     flushes = getattr(radio, "flushes", 0)
     r.reset_chip()
@@ -2353,6 +2405,14 @@ def self_test():
     r.configure(sorted(C7_BOARDS)[0])
     check(r.v6 is None and not radio.configs, "an old stub gets no CONFIG")
     r.write_image(images["progmem"][APP_START:APP_START + SECTOR])
+    # the board named still brings its protected regions
+    for p in (x for x in C7_BOARDS[sorted(C7_BOARDS)[0]]["protect"] if x["mem"] in PROTECT_MEM.values()):
+        mem = next(m for m, n in PROTECT_MEM.items() if n == p["mem"])
+        try:
+            r.check_write_range(mem, p["start"] - p["start"] % SECTOR, p["start"] - p["start"] % SECTOR + SECTOR)
+            check(False, "an old stub: a protected region still refused")
+        except DumpError as e:
+            check("protected region" in str(e), "an old stub: a protected region still refused (%s)" % e)
     print("stubtool self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                     "" if len(fails) == 1 else "s"))
     return 0 if not fails else 1

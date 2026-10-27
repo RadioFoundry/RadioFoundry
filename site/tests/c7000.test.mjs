@@ -284,6 +284,21 @@ test("slow cable: the answer to the greeting comes too late, the ROM says so, an
 	assert.notEqual(r.state, "stub");
 });
 
+test("slow cable mode: a cable pulled while the answers go out ends the wait with the lost connection", async (t) => {
+	const { r } = await radio("stock", { romWindow: 40 });
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	let n = 0;
+	r.stream.write = async () => { if (++n > 2) throw new DOMException("The device has been lost.", "NetworkError"); };
+	const unhandled = [];
+	const seen = (e) => unhandled.push(e);
+	process.on("unhandledRejection", seen);
+	t.after(() => process.off("unhandledRejection", seen));
+	await assert.rejects(s.waitForRom(5000, { repeat: 30 }), { name: "NetworkError" });
+	await new Promise((ok) => setTimeout(ok, 50));
+	assert.equal(unhandled.length, 0);
+});
+
 test("slow cable mode: the answer sent ahead every 30 ms gets the load through the same slow cable", async (t) => {
 	const { r } = await radio("stock", { romWindow: 40, faults: { slowCable: 60 } });
 	t.after(() => r.stop());
@@ -349,6 +364,73 @@ test("simulated boot ROM: unanswered, it says it stops waiting; a second answer 
 	await new Promise((ok) => setTimeout(ok, 450));
 	assert.deepEqual([...r.stream.buf], [0x02, 0x24, 0x00, 0x03, 0x02, 0x0A, 0x00, 0x03]);
 	assert.equal(r.state, "romload");
+});
+
+test("blank count: the windows are visited spread over the whole range, each once", async () => {
+	const seen = [];
+	const fake = { sums: async (mem, a, n) => (seen.push(a), Array.from({ length: n }, () => ({ crc: 0, blank: true }))) };
+	const MB = 0x100000;
+	const all = await c7.blankCount(fake, "nand", 0, 256 * MB);
+	assert.equal(all.sectors, 65536);
+	assert.equal(new Set(seen).size, seen.length, "no window twice");
+	seen.length = 0;
+	let n = 0;
+	await c7.blankCount(fake, "nand", 0, 256 * MB, { stop: () => ++n > 8 });
+	assert.equal(seen.length, 8);
+	assert.ok(Math.max(...seen) > 128 * MB && seen.some((a) => a > 0 && a < 128 * MB), "a short count samples the whole chip");
+});
+
+test("a NAND radio: the stub reads the NAND through its NAND path once configured for it, and never writes it", async (t) => {
+	const sim = await c7000Simulation(C, "db25d");
+	const lay = C.boards.db25d;
+	assert.equal(lay.data_flash, false);
+	assert.ok(lay.calibration, "the board profile says where the calibration copies are");
+	const r = new FakeC7000({ progmem: sim.progmem.slice(), speed: 200, romWindow: 400, bootTime: 200, nand: { calibration: lay.calibration } });
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	s.size.progmem = lay.progmem_size;
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.image, stubs.load);
+	await s.configure(lay.stub_board, C.led);
+	assert.equal(await s.checkId("nand"), "98e2");
+	const a = lay.calibration.nand;
+	const page = await s.dump("nand", a, a + 0x1000);
+	assert.ok(equal(page, r.nand.subarray(a, a + 0x1000)));
+	assert.equal(new TextDecoder().decode(page.subarray(0, 4)), lay.calibration.magic);
+	assert.ok(equal(await s.dump("nand", 0x40000, 0x50000), r.nand.subarray(0x40000, 0x50000)), "used and blank sectors read back");
+	const dm = await c7.blankCount(s, "nand", 0, 0x10000000, { deadline: 300 });
+	assert.ok(dm.sectors > 0 && dm.blank <= dm.sectors);
+	await assert.rejects(s.writeCmd("nand", new Uint8Array([0x20, 0, 0, 0]), "erase", 100), /only read/);
+});
+
+test("NAND calibration copies: only those with the magic are kept, and a missing one is named", () => {
+	const tune = new Uint8Array(0x1000).fill(0x11);
+	tune.set(new TextEncoder().encode("TUNE"));
+	const blank = new Uint8Array(0x1000).fill(0xFF);
+	const both = c7.calibrationCopies([{ where: "nand", data: tune }, { where: "progmem", data: tune }], "TUNE");
+	assert.deepEqual([both.found, both.missing, both.keep.length], [true, null, 2]);
+	// a NAND erased after the stock firmware left (seen on a radio, 2026-10-27): the program memory copy alone
+	const one = c7.calibrationCopies([{ where: "nand", data: blank }, { where: "progmem", data: tune }], "TUNE");
+	assert.deepEqual([one.found, one.missing, one.keep.map((p) => p.where)], [true, "nand", ["progmem"]]);
+	const none = c7.calibrationCopies([{ where: "nand", data: blank }, { where: "progmem", data: blank }], "TUNE");
+	assert.deepEqual([none.found, none.missing, none.keep.length], [false, null, 2]);
+});
+
+test("NAND calibration: found past bad blocks the stock firmware skips, else the copy where the profile says", async () => {
+	const tune = new Uint8Array(0x1000).fill(0x11);
+	tune.set(new TextEncoder().encode("TUNE"));
+	const blank = new Uint8Array(0x1000).fill(0xFF);
+	const lay = { nand: 0x280000, magic: "TUNE" };
+	const reads = [];
+	// one bad block at or below block 20 (seen on a radio, 2026-10-27): the copy is a block later
+	const at = (where) => async (a) => (reads.push(a), a === where ? tune : blank);
+	const moved = await c7.findNandCalibration(at(0x2A0000), lay);
+	assert.equal(moved.addr, 0x2A0000);
+	assert.deepEqual(reads, [0x280000, 0x2A0000], "stops at the first copy");
+	assert.equal((await c7.findNandCalibration(at(0x280000), lay)).addr, 0x280000);
+	const none = await c7.findNandCalibration(at(-1), lay);
+	assert.deepEqual([none.addr, none.data[0]], [0x280000, 0xFF]);
 });
 
 test("boot ROM ack read: an exact echo is dropped, a partial one waits, anything else fails with its bytes", async () => {
@@ -553,17 +635,20 @@ test("the original firmware goes back from its vendor file, without a backup", a
 	assert.equal(explain.pickProblem(await openVendorFile("DM1801Pro-new.bin", changed, fb, "md380"), "md380").problem, "not-vendor");
 });
 
-test("factory calibration: the first page of the stock codeplug area whose ID byte is 2, and only in that area", () => {
-	const area = new Uint8Array(c7.CAL_AREA_END + 0x2000).fill(0xFF);
-	assert.equal(c7.findCalibration(area), -1);
-	area[0x0FFF] = 2;				// page 0 isn't a codeplug page
-	area[c7.CAL_AREA_END + 0xFFF] = 2;		// past the area
-	assert.equal(c7.findCalibration(area), -1);
-	area[0x7CFFF] = 2;
-	area[0x9CFFF] = 2;
-	assert.equal(c7.findCalibration(area), 0x7C000);
+test("factory calibration: the first page of the stock codeplug area with the profile's ID byte, and only in that area", () => {
+	const lay = C.boards.dm1801pro.calibration;
+	assert.ok(lay.area && lay.page_id !== undefined, "a data flash radio's profile gives the area and the page ID");
+	for (const [id, b] of Object.entries(C.boards)) assert.ok(b.calibration, `${id}: every board says where its calibration is`);
+	const area = new Uint8Array(lay.area + 0x2000).fill(0xFF);
+	assert.equal(c7.findCalibration(area, lay), -1);
+	area[0x0FFF] = lay.page_id;			// page 0 isn't a codeplug page
+	area[lay.area + 0xFFF] = lay.page_id;		// past the area
+	assert.equal(c7.findCalibration(area, lay), -1);
+	area[0x7CFFF] = lay.page_id;
+	area[0x9CFFF] = lay.page_id;
+	assert.equal(c7.findCalibration(area, lay), 0x7C000);
 	// the simulated radio carries one where the DM-1801 Pro examined had it
-	assert.equal(c7.findCalibration(new FakeC7000({ progmem: new Uint8Array(0x100000) }).q128), 0x7C000);
+	assert.equal(c7.findCalibration(new FakeC7000({ progmem: new Uint8Array(0x100000) }).q128, lay), 0x7C000);
 });
 
 // Slots (docs/spec/codec-placement.md): the same bytes as hrc7000_codec.py, read back; a version 1 slot from before the
@@ -609,6 +694,14 @@ test("read times: pessimistic, from the radio's count of blank sectors, else the
 	// a full program memory: about 2 min
 	const pm = c7.readSeconds(MB, { sizing: { sectors: 256, blank: 0, ms: 1000 } });
 	assert.ok(pm.seconds > 110 && pm.seconds < 125, `${pm.seconds}`);
+	// how well the used sectors pack isn't counted: least takes them packed to BEST_PACK. A data memory 15 % used read
+	// in 2.25 min on the bench, between the two
+	const used = c7.readSeconds(16 * MB, { sizing: { sectors: 4096, blank: 3458, ms: 3000 } });
+	assert.ok(used.least < 135 && used.seconds > 135, `${used.least} ${used.seconds}`);
+	assert.ok(pm.least < pm.seconds / 2, `${pm.least}`);
+	// a full data memory: about 10 to 31 min
+	const full = c7.readSeconds(16 * MB, { sizing: { sectors: 4096, blank: 0, ms: 3000 } });
+	assert.ok(full.least > 9 * 60 && full.seconds > 30 * 60, `${full.least} ${full.seconds}`);
 	// a measured rate replaces the bench one, but never beats the line
 	assert.ok(c7.readSeconds(MB, { sizing: { sectors: 256, blank: 0, ms: 0 }, rate: 4500 }).seconds > 2 * 115);
 	assert.ok(c7.readSeconds(MB, { sizing: { sectors: 256, blank: 0, ms: 0 }, rate: 1e6 }).seconds > MB / 11520);
@@ -754,4 +847,31 @@ test("GD-88: the A file picked for B is B's codec source, never B's original fir
 	assert.ok(hasC7Backup(vendorBundle({ id: "gd88", name: "GD-88", flash: { board: "gd88" } }, forA.best, c)), "but on A it is");
 	const listed = explain.supportedFiles(fb, "gd88b").files;
 	assert.ok(listed[0].startsWith("GD-88 A"), "B's list names A's files first");
+});
+
+test("protected regions: the stub refuses a write over one, a restore leaves it as the radio has it", async (t) => {
+	const { sim, r } = await radio("rfoundry");
+	t.after(() => r.stop());
+	r.powerOn();
+	await new Promise((ok) => setTimeout(ok, 800));
+	const s = new Stub(r.stream, { log: quiet });
+	await s.enterFromRFoundry(stubs.image);
+	const cal = [{ mem: "progmem", start: 0x20000, end: 0x21000, what: "test (x.md 1)" },
+		{ mem: "data", start: 0x1000, end: 0xC9000, what: "test (x.md 1)" }];
+	await s.configure({ ...C.boards.dm1801pro.stub_board, protect: cal }, C.led);
+	assert.deepEqual(s.protect, cal);
+	const before = r.progmem.slice();
+	const image = r.progmem.slice(0xC000, 0x4C000);
+	image.fill(0x33, 0x13000, 0x16000);	// 0x1F000-0x22000: the protected sector and one each side
+	const [start, data] = c7.target(sim.c, "dm1801pro", image, null);
+	await assert.rejects(s.writeProgram(data, start, { appStart: C.app_start, appEnd: C.app_end }), /protected region/);
+	assert.ok(equal(r.progmem, before), "nothing written");
+	const states = new Map();
+	const res = await s.writeProgram(data, start, { appStart: C.app_start, appEnd: C.app_end, carve: true, onSector: (a, st) => states.set(a, st) });
+	assert.deepEqual(res, { written: 2, same: 62 });
+	assert.equal(states.get(0x20000), "kept");
+	assert.ok(equal(r.progmem.subarray(0x20000, 0x21000), before.subarray(0x20000, 0x21000)), "the protected sector kept");
+	assert.ok(equal(r.progmem.subarray(0x1F000, 0x20000), data.subarray(0x13000, 0x14000)));
+	await assert.rejects(s.writeCmd("q128", Uint8Array.of(0x60), "chip erase", 1000), /protected regions/);
+	await assert.rejects(s.writeCmd("q128", Uint8Array.of(0x20, 0x00, 0x7C, 0x00), "erase", 1000), /protected region/);
 });

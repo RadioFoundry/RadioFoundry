@@ -484,18 +484,27 @@ class Manifests(unittest.TestCase):
             sums = open(os.path.join(out, "SHA256SUMS")).read().splitlines()
             self.assertEqual(len(sums), 2)
             self.assertIn(hashlib.sha256(img).hexdigest() + "  rfoundry-dm1701-v9.9.9.bin", sums)
-            # a merged image is refused: the codec where this layout puts it, or where merges before the move did
-            for at in (0x080E3A74, 0x08074714):
-                merged = bytearray(b"\xFF" * (at - 0x0800C000 + 4))
+            # a merged image is refused: the codec where this layout puts it (its first word), or where merges before
+            # the move did (the stock code, here a stand-in profile's)
+            code = struct.pack("<I", stockfw.CODEC_SIG) + bytes(random.Random(5).randrange(256) for _ in range(252))
+            fake = {"board": "dm1701", "code": (0x08074714, len(code), hashlib.sha256(code).hexdigest())}
+            for at, data in ((0x080E3A74, code[:4]), (0x08074714, code)):
+                merged = bytearray(b"\xFF" * (at - 0x0800C000 + len(data)))
                 merged[:len(img)] = img
-                struct.pack_into("<I", merged, at - 0x0800C000, stockfw.CODEC_SIG)
+                merged[at - 0x0800C000:] = data
                 open(bp, "wb").write(merged)
-                with self.assertRaises(SystemExit) as e:
-                    release.check_no_codec(DM1701, bytes(merged))
-                self.assertIn("codec signature", str(e.exception))
-                with self.assertRaises(SystemExit):
-                    release.main(["--board", "dm1701", "--version", "v9", "--bin", bp, "--out", out, "--git", "d" * 40,
-                                  "--features", "", "--toolchain", ""])
+                with mock.patch.dict(stockfw.PROFILES, {"stand-in": fake}):
+                    with self.assertRaises(SystemExit) as e:
+                        release.check_no_codec(DM1701, bytes(merged))
+                    self.assertIn("codec signature", str(e.exception))
+                    with self.assertRaises(SystemExit):
+                        release.main(["--board", "dm1701", "--version", "v9", "--bin", bp, "--out", out, "--git", "d" * 40,
+                                      "--features", "", "--toolchain", ""])
+            # the image's own code may hold the codec's first word at a stock address: that's a push, not the codec
+            mine = bytearray(b"\xFF" * (0x08074714 - 0x0800C000 + 4))
+            mine[:len(img)] = img
+            struct.pack_into("<I", mine, 0x08074714 - 0x0800C000, stockfw.CODEC_SIG)
+            release.check_no_codec(DM1701, bytes(mine))
 
     def test_release_build_option(self):
         """--build-option: a non-default value of a board's [[build_options]] gets its own names and manifest field;

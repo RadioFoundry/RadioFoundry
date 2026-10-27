@@ -7,6 +7,7 @@
 // (flash.first_stage, from board.mk BOOT_SIZE and BOOT_SIGNATURE).
 
 import { be32, concat, sleep } from "./bytes.js";
+import * as protect from "./protect.js";
 
 export class IapError extends Error {}
 
@@ -32,6 +33,7 @@ const headBytes = (fs) => fs.head.match(/../g).map((x) => parseInt(x, 16));
 
 export const PAGE = 2048;
 export const APP_MAX = 0x0310C000 - 0x0300C000;	// the application region ends where the stock data area starts
+const ERASE_FROM = 0x0300C000 - 0x03000000;	// the loader's erase starts here, as a program flash offset
 
 // The install image as pages: {n, pages, sum}. The pad byte fills the last page.
 export function iapPlan(image, pad = 0xFF) {
@@ -81,10 +83,12 @@ const isBanner = (t) => t.includes("IAPReady");
 
 export class Iap {
 	// firstStage: the board's flash.first_stage, which every image the loader takes starts with
-	constructor(stream, { log = () => {}, firstStage = null } = {}) {
+	// protect: the board's protected regions (board.toml [[flash.protect]]); a write whose erase reaches one is refused
+	constructor(stream, { log = () => {}, firstStage = null, protect = [] } = {}) {
 		this.s = stream;
 		this.log = log;
 		this.firstStage = firstStage;
+		this.protect = protect || [];
 	}
 
 	text() { return latin(this.s.buf); }
@@ -145,6 +149,12 @@ export class Iap {
 		if (!this.firstStage) throw new IapError("this radio has no first stage: the loader would not start the image");
 		(restore ? checkRestoreImage : checkInstallImage)(image, this.firstStage);
 		const { n, pages, sum } = iapPlan(image);
+		// the loader erases n + 1 pages from the application's start: no carving there, so a protected one refuses it
+		try {
+			protect.check(this.protect, "progmem", ERASE_FROM, ERASE_FROM + pages.length * PAGE, "let the loader erase");
+		} catch (e) {
+			throw new IapError(e.message);
+		}
 		onPhase("erase");
 		this.s.clear();
 		await this.s.write(erasePacket(n));

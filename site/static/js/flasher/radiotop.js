@@ -51,8 +51,16 @@ export function radioPicture(radio, { keys = [] } = {}) {
 		h("div", { class: "rt-pic" }, h("img", { src: ROOT + src, alt: radio.name || "", class: "rt-img" }), ...marks), caption);
 }
 
+// What RadioFoundry's own screens look like on this radio: the UI gallery's picture of a screen for the radio's display
+// class (radios.json gallery; docs/ux/screens/<gallery>/<name>.png, made by the host tests' ui-gallery), so the
+// picture shows the radio's real boot screen and the stub entry's splash, at any display size
+const SCREEN_SHOTS = { rfoundry: "boot", loader: "stub_entry" };
+const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}docs/ux/screens/${radio.gallery}/${SCREEN_SHOTS[sc]}.png` : null);
+
 // led: off | wait (slow orange) | busy (fast orange) | done (three green flashes) | green (steady)
-// screen: off | loader ("PC Loader Connected") | on | any (the state doesn't matter yet: no screen line in the caption)
+// screen: off (dark: a power-on stub load or the factory loader) | loader (RadioFoundry handed over to the stub: its
+// "PC Loader Connected" splash) | rfoundry (RadioFoundry running: its boot screen) | on (another firmware running: lit,
+// no picture of its screens) | any (the state doesn't matter yet: no screen line in the caption)
 // knob: null | "cycle" (off, then on) | "on"
 // note: a line for the caption in place of the LED's, while the LED says nothing
 // hasLed false: the chip the cable reaches drives no LED (they are on another SoC): none is drawn and the caption names
@@ -60,9 +68,9 @@ export function radioPicture(radio, { keys = [] } = {}) {
 export function radioTop(radio, initial = {}, { hasLed = true } = {}) {
 	const src = pictureSrc(radio);
 	const pct = radio?.frame_geometry?.screen_pct;
-	const line1 = h("span"), line2 = h("span", { class: "small" });
+	const shot = h("img", { alt: "", class: "rt-shot", hidden: true });
 	// what the screen shows, laid over the picture's screen where the data says it is
-	const screen = src && pct ? h("div", { class: "rt-screen", style: `left:${pct.left}%;top:${pct.top}%;width:${pct.width}%;height:${pct.height}%` }, line1, line2) : null;
+	const screen = src && pct ? h("div", { class: "rt-screen", style: `left:${pct.left}%;top:${pct.top}%;width:${pct.width}%;height:${pct.height}%` }, shot) : null;
 	const pic = h("div", { class: "rt-pic", role: "img" }, src ? h("img", { src: ROOT + src, alt: "", class: "rt-img" }) : null, screen);
 	const led = svg("circle", { cx: 12, cy: 12, r: 5, class: "rt-led" });
 	const glow = svg("circle", { cx: 12, cy: 12, r: 11, class: "rt-glow" });
@@ -75,8 +83,9 @@ export function radioTop(radio, initial = {}, { hasLed = true } = {}) {
 		el.dataset.screen = sc;
 		el.dataset.knob = knob || "";
 		label.textContent = l === "off" || !hasLed ? "" : t(`flash.c7.visual.tag_${l}`);
-		line1.textContent = sc === "loader" ? "PC Loader" : sc === "on" ? "RadioFoundry" : "";
-		line2.textContent = sc === "loader" ? "Connected" : "";
+		const url = screenShot(radio, sc);
+		shot.hidden = !url;
+		if (url && shot.getAttribute("src") !== url) shot.setAttribute("src", url);
 		const words = [knob === "cycle" ? t("flash.c7.visual.cycle") : knob === "on" ? t("flash.c7.visual.on") : null,
 			note || (hasLed ? t(`flash.c7.visual.led_${l}`) : null), sc === "any" ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);
 		caption.replaceChildren(...words.map((w) => h("span", {}, w)));

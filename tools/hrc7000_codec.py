@@ -43,12 +43,14 @@ CODEC_SIG = (0x152514D8, 0x74C776CD)
 # slot in program flash, the codec window at the top of SRAM (the slot's code runs at its start; sized for the largest
 # code among the board's maps), the modem SRAM table window (docs/spec/codec-placement.md), and what the web flasher
 # needs beyond the codec (site/rfoundrysite/repo.py c7000_flash): the program flash size, whether the SPI0 chip select the
-# data flash sits on has one (not on a radio with the SPI NAND there). The image starts at app_base. codec_boards: the
-# boards whose stock files and program flash reads give this board its codec, preferred first: the boards its [codec]
-# from names (a second SoC that runs the first SoC's codec, packed identically), then its own
+# data flash sits on has one (not on a radio with the SPI NAND there), and where a NAND radio keeps its calibration
+# copies. The image starts at app_base. codec_boards: the boards whose stock files and program flash reads give this
+# board its codec, preferred first: the boards its [codec] from names (a second SoC that runs the first SoC's codec,
+# packed identically), then its own
 BOARDS = {b.id: {"slot": b.codec_slot, "run": b.codec_run, "tables": b.codec_tables, "app_base": b.app_base,
                  "progmem_size": b.stub["progmem"] if b.stub else 0x100000,
                  "data_flash": not (b.stub and b.stub["nand"]),
+                 "calibration": b.stub.get("calibration") if b.stub else None,
                  "codec_boards": tuple(getattr(b, "codec_from", None) or ()) + (b.id,)}
           for b in boards.BOARDS.values() if b.codec_tool == "hrc7000_codec"}
 PROGMEM_BASE = 0x03000000   # a program flash dump starts here
