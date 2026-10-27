@@ -6,7 +6,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stockLayoutOf, readSpan, convertStock, imageCounts, migrationSectors, checkMigration } from "../static/js/flasher/migrate.js";
+import { stockLayoutOf, stockSource, readSpan, convertStock, imageCounts, migrationSectors, checkMigration } from "../static/js/flasher/migrate.js";
 import { CODEPLUG_SPAN } from "../static/js/flasher/backup.js";
 import { STOCK } from "../static/js/codeplug/stock_tyt.js";
 import { Stock, uv380 } from "./stockfix.mjs";
@@ -84,4 +84,29 @@ test("a 256 KB stock codeplug, which shares the chip's first sectors with RadioF
 	assert.deepEqual(c.counts, { channels: 2, contacts: 1, rxLists: 0, zones: 1 });
 	const sectors = migrationSectors(c.image, radio);
 	assert.equal(checkMigration(sectors, written(radio, sectors), c.counts).ok, true);
+});
+
+test("the backup's read is converted: the claim erased the stock zones from the live radio", () => {
+	// a 256 KB stock codeplug keeps its zones inside RadioFoundry's settings area, which the backup's last step claims
+	const m = new Stock(SMALL);
+	m.general({ name: "N0CALL", id: 3100123 });
+	m.channel(1, { name: "Simplex", mode: "fm", rx: 146520000 });
+	m.channel(2, { name: "Calling", mode: "fm", rx: 446000000 });
+	m.zone(1, "Home", [1, 2]);
+	m.zone(2, "Away", [2]);
+	const backup = new Uint8Array(CODEPLUG_SPAN).fill(0xFF);
+	backup.set(m.b);
+	const live = backup.slice();
+	live.fill(0xFF, 0x11000, 0x1B000);	// the settings area and journal, as the claim leaves them
+	assert.equal(convertStock(live, SMALL).counts.zones, 0);	// what the install converted before the fix
+	const src = stockSource(live, backup);
+	assert.equal(src.from, "backup");
+	assert.equal(src.layout, SMALL);
+	assert.equal(convertStock(src.bytes, src.layout).counts.zones, 2);
+	// no backup, or one without a stock codeplug: the live read
+	assert.equal(stockSource(live, null).from, "radio");
+	assert.equal(stockSource(live, new Uint8Array(CODEPLUG_SPAN).fill(0xFF)).from, "radio");
+	// a backup too short for the family's tables is not used
+	const s = uv380();
+	assert.equal(stockSource(s.b, s.b.slice(0, CODEPLUG_SPAN)).from, "radio");
 });

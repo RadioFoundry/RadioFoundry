@@ -22,6 +22,16 @@ export function stockLayoutOf(bytes) {
 // How much of the memory chip the conversion reads: the codeplug span RadioFoundry writes, and all of the stock tables
 export const readSpan = (layout) => Math.max(CODEPLUG_SPAN, layout ? STOCK[layout].size : 0);
 
+// What to convert: the memory chip read from the backup this visit took, when it holds a stock codeplug, else the
+// live read. The backup's read comes first because the backup ends by claiming RadioFoundry's settings area, and on
+// some families the stock tables (zones on the 256 KB ones) lie inside it: the live read no longer has them.
+// {bytes, layout, from: "backup" | "radio"}; layout null when neither holds a stock codeplug
+export function stockSource(live, saved) {
+	const fromSaved = saved ? stockLayoutOf(saved) : null;
+	if (fromSaved && saved.length >= readSpan(fromSaved)) return { bytes: saved.subarray(0, readSpan(fromSaved)), layout: fromSaved, from: "backup" };
+	return { bytes: live, layout: stockLayoutOf(live), from: "radio" };
+}
+
 // The converted codeplug: {image, counts, notes}. counts as the editing model holds them (importStock), notes the
 // editor's import note codes (what was cut or dropped)
 export function convertStock(bytes, layout) {

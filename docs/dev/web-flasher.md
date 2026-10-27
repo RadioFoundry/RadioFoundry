@@ -303,12 +303,15 @@ last step of the install brings it over by default, on every radio whose stock c
 
 | Step | What happens |
 |---|---|
-| 1. Read | The codeplug span over the CPS, and further on a family whose stock tables reach past it (`readSpan`) |
+| 1. Read | The codeplug span over the CPS. The stock codeplug comes from this visit's backup when it holds one (`stockSource`), else from the live read, further on a family whose stock tables reach past the span (`readSpan`) |
 | 2. Recognize | `classify` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md) 2). A RadioFoundry codeplug, a blank chip or an unknown layout ends the step: nothing is written |
 | 3. Convert | `importStock`, the Codeplug Editor's conversion, with its counts and notes. No channels ends the step |
 | 4. Prepare | The settings area is claimed (`prepareStorage`), as before a codeplug restore |
 | 5. Write | The 4 KB sectors that differ (`codeplugSectors`): never RadioFoundry's own areas or protected data |
 | 6. Check | The span read back: every written sector holds its bytes, and the decoded codeplug has the converted counts. A mismatch is reported as a problem and the step stops |
+
+The backup's copy comes first because the backup ends by claiming the settings area. On a family whose stock tables
+lie inside that area (zones on the 256 KB layout), the live read no longer holds them.
 
 It runs at once when the backup taken in this visit holds the stock codeplug (the SPI flash read covers `readSpan`).
 Without one it waits for the user and says that the original bytes may be lost: on a board whose stock codeplug shares

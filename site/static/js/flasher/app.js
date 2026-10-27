@@ -1808,8 +1808,8 @@ function doneView() {
 	return box;
 }
 
-// The original firmware's channels, after an install (migrate.js): read the memory chip; if it holds a stock codeplug
-// this page converts, convert it, prepare the settings area, write the sectors that change and read them back. With
+// The original firmware's channels, after an install (migrate.js): read the memory chip; if it (or this visit's
+// backup, read before the settings area was claimed) holds a stock codeplug this page converts, convert it, prepare the settings area, write the sectors that change and read them back. With
 // a backup from this visit that holds the original codeplug it runs at once; without one it waits for the user, since
 // on some radios the write replaces the original bytes. Any failure stops the step and leaves the radio as RadioFoundry,
 // without channels: the backup still has them.
@@ -1818,22 +1818,24 @@ async function bringChannels(status, { finish }) {
 	const prog = progressBar();
 	status.append(box);
 	const say = (...x) => box.append(...x);
-	let m, link, layout, read;
+	let m, link, read, src = { layout: null };
 	try {
 		m = await import("./migrate.js");
 		link = await connectSerial();
 		box.append(prog.el);
 		const reading = (d, n) => prog.set(d, n, t("flash.channels.reading"));
+		// the radio's codeplug span as it is now, for the sectors that change; the stock codeplug from the backup if
+		// this visit took one (migrate.js stockSource)
 		read = await link.cpsDump(1, 0, m.readSpan(null), { progress: reading });
-		layout = read.complete ? m.stockLayoutOf(read.data) : null;
+		const saved = S.backupDone ? S.backupParts?.find((x) => x.what === "spi-flash")?.data : null;
+		if (read.complete) src = m.stockSource(read.data, saved);
 		// the stock tables reach past RadioFoundry's codeplug span on some families
-		if (layout && m.readSpan(layout) > read.data.length) {
-			const more = await link.cpsDump(1, read.data.length, m.readSpan(layout) - read.data.length, { progress: reading });
+		if (src.from === "radio" && src.layout && m.readSpan(src.layout) > read.data.length) {
+			const more = await link.cpsDump(1, read.data.length, m.readSpan(src.layout) - read.data.length, { progress: reading });
 			const all = new Uint8Array(read.data.length + more.data.length);
 			all.set(read.data);
 			all.set(more.data, read.data.length);
-			read = { data: all, complete: more.complete };
-			layout = read.complete ? m.stockLayoutOf(read.data) : null;
+			src = more.complete ? m.stockSource(all, null) : { layout: null };
 		}
 	} catch (e) {
 		diag.error("flash/channels read", e);
@@ -1843,14 +1845,15 @@ async function bringChannels(status, { finish }) {
 		return;
 	}
 	prog.el.remove();
-	diag.note("channels", { layout, read: read.data.length, complete: read.complete });
+	const { layout } = src;
+	diag.note("channels", { layout, from: src.from, read: read.data.length, complete: read.complete });
 	if (!layout) {
 		S.forward(finish());
 		return;
 	}
 	let conv;
 	try {
-		conv = m.convertStock(read.data, layout);
+		conv = m.convertStock(src.bytes, layout);
 	} catch (e) {
 		diag.error("flash/channels convert", e);
 		say(notice(t("flash.channels.convert_failed"), "bad"), reportLine());
@@ -1888,8 +1891,7 @@ async function bringChannels(status, { finish }) {
 		}
 		S.forward(finish());
 	};
-	const saved = S.backupDone && S.backupParts?.find((x) => x.what === "spi-flash");
-	if (saved && saved.data.length >= m.readSpan(layout)) return run();
+	if (src.from === "backup") return run();
 	// no backup: the user decides, knowing the original codeplug is not saved anywhere
 	say(h("p", {}, t("flash.channels.found", { counts: counts(conv.counts) })), notes, notice(t("flash.channels.no_backup"), "warn"));
 	S.forward([button(t("flash.nav.finish_no_channels"), () => reset(), { quiet: true }),
