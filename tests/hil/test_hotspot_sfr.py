@@ -20,7 +20,9 @@ Before the SFR session the radio keys up once on its own timing (1 s, nothing he
 that transmission is in place, the case the repeater work found (modem-hrc7000.md 2.5): the repeat must still take
 the received slot timing. On an HR_C7000 the debug link's txh line gives the repeat's first TX tick against the last
 receive tick (u, 0.1 ms): a whole number of slots (300) is on the received grid. Pass also needs u within 1 ms of
-one there. An SFR's start reads 600: after the SLOTON b5 strobe the first TX-vector interrupt comes two slots after
+one there. With the split on (sfr.split=1, sfr.md 3 item 7) the repeat goes out on the radio's second transmitter
+and the own modem's ticks don't apply: the SDR's offset of the repeat from the inbound bursts must be within 1 ms of
+30 ms instead. An SFR's start reads 600: after the SLOTON b5 strobe the first TX-vector interrupt comes two slots after
 the last receive one (DM-32UV and DM-1801 Pro, 2026-10-18). The SDR's offset of the
 repeat from the inbound bursts (30 ms) is printed. A bench station that keeps its carrier up through the call hides
 our slot from the SDR until it drops: with no burst of ours seen inside the inbound call, the repeat is judged by the
@@ -162,7 +164,13 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
             offs.append(round((b["t_ms"] - prior[-1]) % 60.0, 1))
     print(f"repeat timing: {len(offs)} TS2 bursts, ms after the last inbound burst: "
           f"median {statistics.median(offs) if offs else None}, {offs[:12]}; diag {diag}")
-    m = next((re.search(r"\bu(\d+)", x) for x in diag if x.startswith("txh ")), None)
+    split = v1.get("sfr.split") == "1"
+    if split:
+        # The repeat went out on the radio's second transmitter: the own modem's TX ticks say nothing, the SDR does
+        assert offs, "split: no repeat burst of ours seen on the outbound slot"
+        med = statistics.median(offs)
+        assert abs(med - 30.0) <= 1.0, f"split: the repeat came {med} ms after the inbound bursts, off the slot grid"
+    m = None if split else next((re.search(r"\bu(\d+)", x) for x in diag if x.startswith("txh ")), None)
     if m:
         u = int(m.group(1))
         off = min(u % 300, 300 - u % 300)
