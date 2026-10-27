@@ -685,7 +685,7 @@ static int draw_wordmark(const font_t *f, int y)
 	return f->h;
 }
 
-void ui_draw_splash(const char *board_name, const char *git, const char *line1, const char *line2)
+void ui_draw_splash(const char *board_name, const char *version, const char *line1, const char *line2)
 {
 	int w = gfx_width(), h = gfx_height();
 	const ui_layout_t *L = &ui_layout;
@@ -702,14 +702,22 @@ void ui_draw_splash(const char *board_name, const char *git, const char *line1, 
 		if (gfx_text_width(lf, lines[i]) > w - 2)
 			lf = L->small;
 
-	// Footer: board and version, small and dim along the bottom
-	char foot[48];
-	sbuf_t b;
-	sb_init(&b, foot, sizeof foot);
-	sb_str(&b, board_name);
-	sb_str(&b, "  ");
-	sb_str(&b, git);
+	// Footer: board and version, small and dim along the bottom. Too wide (a beta's name on a 128 px display): one
+	// space between them, then the version alone
 	const font_t *ff = L->tiny;
+	char foot[48];
+	static const char *const seps[] = { "  ", " ", NULL };
+	for (int i = 0; i < 3; i++) {
+		sbuf_t b;
+		sb_init(&b, foot, sizeof foot);
+		if (seps[i] != NULL) {
+			sb_str(&b, board_name);
+			sb_str(&b, seps[i]);
+		}
+		sb_str(&b, version);
+		if (gfx_text_width(ff, foot) <= w)
+			break;
+	}
 	int foot_y = h - ff->h;
 
 	// Stack: mark, wordmark, rule, lines; centered in the space above the footer. The mark takes what is left

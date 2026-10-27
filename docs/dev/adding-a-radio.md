@@ -105,12 +105,19 @@ over 8), `GFX_MAX_ROWS` (the height) and `GFX_INDEXED=1` for a 16-color panel. W
 
 ## The drawing
 
-The site and the web control page show the radio as a drawing, `site/static/img/radios/src/<b>.svg`; until it has
-one, a generic drawing from `board.toml` `[frame]` stands in. Its rules are in
+The site, the web control page and the web flasher's update mode steps show the radio as a drawing,
+`site/static/img/radios/src/<b>.svg`; until it has one, a generic drawing from `board.toml` `[frame]` stands in. Its rules are in
 [Radio images](website.md#radio-images). Once the board's key enum is written, run `tools/svg_keys.py tag <b>`: it tags
 the keys it finds by their labels and prints the rest. Tag those by hand, with `data-edge` on side and top keys, or
 list them in `data-undrawn`. `tools/svg_keys.py check <b>` must pass; the site build fails CI otherwise. Run `tag`
 again after any redraw, so the tags follow the new shapes.
+
+The keys held to enter the bootloader go in `board.toml` `[flash.bootloader] hold` by key name (`["ptt", "sk1"]`),
+beside the prose `steps`, and only from a documented source (the radio's hardware page). The web flasher rings them on
+the drawing and names them in a caption, so tag those keys in the drawing when it shows them, and add a
+`flash.key.<name>` label to `site/i18n/en.json` for a key no other radio holds. `tools/boards.py check` and
+`site/tests/radio_images_test.py` fail a key the board doesn't have, one in neither the drawing nor `data-undrawn`, or
+one without a label.
 
 ## Bring-up order
 
@@ -126,6 +133,16 @@ again after any redraw, so the tags follow the new shapes.
 5. RF chip: FM receive, then FM transmit into a dummy load.
 6. DMR modem and the codec: receive, then transmit, checked on the SDR bench.
 7. CPS, so qdmr can program it.
+8. Flashing from where an owner starts:
+   - Find every stock build an owner's radio may run before RadioFoundry: every firmware version the vendor and its
+     rebadgers have shipped, for every model the board is sold as (`also`, `looks`). Give each a codec map and a
+     `[codec] stock` entry, so the web flasher and rfoundry find the codec in whatever file or readout the
+     owner has.
+   - For each of those models, check the bootloader's USB identity, entry keys and key against `[flash]`.
+   - Walk the web flasher through each starting point:
+     - the vendor's download as the owner gets it (a zip or a `.bin`);
+     - a readout of the radio;
+     - an update of a radio already running RadioFoundry.
 
 A bring-up page under [docs/testing/](../testing/README.md) is this list made concrete for one radio.
 

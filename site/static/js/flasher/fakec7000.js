@@ -11,10 +11,15 @@
 // through (usmart.js): framed read_addr / write_addr over a model of its RAM, and the hijack word that starts what was
 // written.
 //
+// A radio with the Baofeng updater (loaderId: the ID its loader answers) enters it when switched on with its keys
+// held (powerOn({ keys: true })): FakeBfLoader, the radio side of bfloader.js, erases the application area and writes
+// the blocks it takes into the program flash.
+//
 // The stock firmware and codec here are random bytes shaped like the real ones: no vendor code is in RadioFoundry.
 
 import { concat, crc32, le32, sha256, sleep, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
+import { ACK, NAK, CRC_REQ, STX, EOT, BLOCK, HEADER_BLOCK, xmodem } from "./bfloader.js";
 import { encodeBlock } from "./lz4.js";
 import { CRASH_BOOT_SOFT, CRASH_SOFT_MARK, STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
 import { HIJACK, STUB_WINDOW, BUILDS, FLASH_BASE } from "./usmart.js";
@@ -31,12 +36,174 @@ const LEGACY_MARK = new TextEncoder().encode("OpenDigitalRadio");
 // A stock console's build from the board's first stock version ("909E.DBB.EARSAB.018" -> "018"), or null
 const consoleBuild = (radio) => (radio?.flash.stock_console ? radio.flash.stock_versions[0]?.slice(-3) || null : null);
 
+// A 256 MB SPI NAND that keeps only its used sectors: subarray() of a sector gives its bytes, or the one shared blank
+// sector, so the simulated radio answers a whole-chip read without holding the chip
+const BLANK_SECTOR = new Uint8Array(SECTOR).fill(0xFF);
+const BLANK_CRC = crc32(BLANK_SECTOR);
+class SparseNand {
+	constructor(size = 0x10000000) {
+		this.length = size;
+		this.sectors = new Map();
+	}
+	set(data, at) {
+		for (let o = 0; o < data.length; o += SECTOR) {
+			const a = at + o, k = Math.floor(a / SECTOR);
+			const sec = this.sectors.get(k) || BLANK_SECTOR.slice();
+			sec.set(data.subarray(o, o + SECTOR - (a % SECTOR)), a % SECTOR);
+			this.sectors.set(k, sec);
+		}
+	}
+	subarray(a, b) {
+		const sec = a % SECTOR === 0 && b - a === SECTOR ? this.sectors.get(a / SECTOR) : null;
+		if (sec || (a % SECTOR === 0 && b - a === SECTOR)) return sec || BLANK_SECTOR;
+		const out = new Uint8Array(b - a).fill(0xFF);
+		for (let x = a; x < b; x += SECTOR - (x % SECTOR)) {
+			const s = this.sectors.get(Math.floor(x / SECTOR));
+			if (s) out.set(s.subarray(x % SECTOR, Math.min(SECTOR, x % SECTOR + b - x)), x - a);
+		}
+		return out;
+	}
+}
+
 // What FakeC7000 needs to play a board, from its flasher data (radio: its radios.json entry): the name it reports, its
-// codec, a small data memory when the stub reads none, and its stock console
+// codec, a small data memory when the stub reads none, its stock console and its Baofeng updater's ID
 export function fakeC7000Options(radio, fb) {
 	const b = fb.boards[radio.id];
 	return { board: b.debuglink_names[0], codecId: b.codec.id,
-		...(fb.c7000.boards[radio.id].data_flash === false ? { dataSize: 0x200000 } : {}), usmart: consoleBuild(radio) };
+		...(fb.c7000.boards[radio.id].data_flash === false ? { dataSize: 0x200000, nand: { calibration: fb.c7000.boards[radio.id].calibration } } : {}),
+		usmart: consoleBuild(radio),
+		loaderId: radio.flash.update_mode === "baofeng" ? fb.c7000.boards[radio.id].bootloader_id : null };
+}
+
+// The radio side of the Baofeng updater (docs/spec/hardware-dm32.md 13.2), a port of tools/serial_loader.py's
+// FakeBootloader: checks every step, the header CRC, each block's number (with the 0xFF -> 0x00 wrap), complement and
+// CRC. send(bytes, delayMs) carries its answers to the host. Faults: corrupt, block numbers whose first transfer
+// arrives damaged (the radio NAKs); silent, never answers; badStep2, a wrong answer at step 2; eraseMs, how long the
+// erase takes before step 7's answer; onEnd(), the end of transfer acknowledged. After step 3 it ignores step 1 (0x52) and waits for step 4, until the radio is
+// switched off (a new FakeBfLoader at the next power-on), as the radio does (hardware-dm32.md 13.2). onErase() and onBlock(k, data) (k from 0) let a radio model keep what is written.
+export class FakeBfLoader {
+	constructor({ id, send, corrupt = [], silent = false, badStep2 = false, eraseMs = 0, onErase = () => {}, onBlock = () => {}, onEnd = () => {} }) {
+		this.magic = new TextEncoder().encode(id);
+		this.send = send;
+		this.corrupt = new Set(corrupt);
+		this.silent = silent;
+		this.badStep2 = badStep2;
+		this.eraseMs = eraseMs;
+		this.onErase = onErase;
+		this.onBlock = onBlock;
+		this.onEnd = onEnd;
+		this.inbuf = new Uint8Array(0);
+		this.state = 1;
+		this.expectN = 1;
+		this.blocks = [];
+		this.header = null;
+		this.naks = 0;
+		this.ignored = 0;	// step 1 bytes passed over after step 3
+		this.done = false;
+		this.errors = [];
+	}
+
+	feed(b) {
+		if (this.silent) return;
+		this.inbuf = concat(this.inbuf, b);
+		while (this.step()) { /* each step takes what it can */ }
+	}
+
+	take(want) {
+		if (this.inbuf.length < want.length || !want.every((x, i) => this.inbuf[i] === x)) return false;
+		this.inbuf = this.inbuf.slice(want.length);
+		return true;
+	}
+
+	step() {
+		const s = this.state, ib = this.inbuf;
+		if (!ib.length) return false;
+		if (s === 4 && ib[0] === 0x52) {
+			this.inbuf = ib.slice(1);
+			this.ignored++;
+			return true;
+		}
+		const fixed = { 1: [[0x52], [0x06]], 2: [[0x4D, 0, 0, 0, 1], [0x4D, 0x01, this.magic.length]], 3: [[0x06], [...this.magic]],
+			4: [[0x45, 0, 0, 0, 0], [0x06]], 5: [[0x31], [0x43]], 6: [[0x01], [0x43]] };
+		if (fixed[s]) {
+			const [want, answer] = fixed[s];
+			if (ib.length < want.length) return false;
+			if (!this.take(want)) {
+				this.errors.push(`step ${s}: got ${[...ib.subarray(0, want.length)].map((x) => x.toString(16)).join(" ")}`);
+				this.inbuf = new Uint8Array(0);
+				return false;
+			}
+			this.send(Uint8Array.from(s === 2 && this.badStep2 ? [0x4D, 0x01, 0x08] : answer));
+			this.state++;
+			return true;
+		}
+		if (s === 7) {
+			if (ib.length < 2 + HEADER_BLOCK + 2) return false;
+			const f = ib.slice(0, 2 + HEADER_BLOCK + 2);
+			this.inbuf = ib.slice(f.length);
+			const blk = f.subarray(2, 2 + HEADER_BLOCK);
+			if (f[0] !== 0x00 || f[1] !== 0xFF || ((f.at(-2) << 8) | f.at(-1)) !== xmodem(blk)) {
+				this.errors.push("header block");
+				this.send(Uint8Array.of(NAK));
+				return true;
+			}
+			const nul = blk.indexOf(0);
+			const rest = blk.subarray(nul + 1);
+			const end = rest.indexOf(0);
+			this.header = [String.fromCharCode(...blk.subarray(0, nul)), Number(String.fromCharCode(...rest.subarray(0, end < 0 ? rest.length : end)))];
+			this.onErase();
+			this.send(Uint8Array.of(ACK, CRC_REQ), this.eraseMs);
+			this.state = 8;
+			return true;
+		}
+		if (s === 8) {		// waiting for STX or EOT
+			const c = ib[0];
+			this.inbuf = ib.slice(1);
+			if (c === STX) {
+				this.send(Uint8Array.of(CRC_REQ));
+				this.state = 9;
+			} else if (c === EOT) {
+				this.send(Uint8Array.of(ACK));
+				this.done = true;
+				this.state = 10;
+				this.onEnd();
+			} else this.errors.push(`expected 02 or 04, got ${c.toString(16)}`);
+			return true;
+		}
+		if (s === 9) {		// one data frame
+			if (ib.length < 2 + BLOCK + 2) return false;
+			const f = ib.slice(0, 2 + BLOCK + 2);
+			this.inbuf = ib.slice(f.length);
+			const n = f[0];
+			if (this.corrupt.has(n)) {
+				this.corrupt.delete(n);
+				f[10] ^= 0x40;		// line noise on the first transfer
+			}
+			const data = f.subarray(2, 2 + BLOCK);
+			let ok = f[1] === 0xFF - n && ((f.at(-2) << 8) | f.at(-1)) === xmodem(data);
+			if (ok && n !== (this.expectN & 0xFF)) {
+				this.errors.push(`block number ${n}, expected ${this.expectN & 0xFF}`);
+				ok = false;
+			}
+			if (ok) {
+				this.onBlock(this.blocks.length, data.slice());
+				this.blocks.push(data.slice());
+				this.expectN++;
+				this.send(Uint8Array.of(ACK));
+			} else {
+				this.naks++;
+				this.send(Uint8Array.of(NAK));
+			}
+			this.state = 8;
+			return true;
+		}
+		this.inbuf = new Uint8Array(0);
+		return false;
+	}
+
+	image() {
+		return this.header ? concat(...this.blocks).subarray(0, this.header[1]) : new Uint8Array(0);
+	}
 }
 
 // A synthetic stock program flash for a board: bootloader, firmware, the codec at made-up addresses, and the c7000
@@ -79,9 +246,12 @@ export async function c7000Simulation(cReal, boardId, seed = 7000, radio = null)
 
 export class FakeC7000 {
 	// firmware: "stock" | "rfoundry" (with stub entry) | "rfoundry-nostub"; speed: how many times faster than a real cable
+	// nand: the data bus holds an SPI NAND (a sparse 256 MB chip with a few used areas) instead of the data flash, and
+	// nand.calibration ({progmem, nand, magic}, the board profile's) where its two calibration copies go
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
-		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null } = {}) {
+		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, loaderId = null, nand = null } = {}) {
 		this.usmart = usmart;			// a stock firmware build with the USMART console ("018")
+		this.loaderId = loaderId;		// the Baofeng updater's ID ("BFUV32-V2"), or null: no such loader
 		this.ram = new Map();			// the console's view of RAM: words written since power-on
 		this.frames = [];			// every console frame received, as text
 		this.stubSpan = stubSpan;		// the RAM span RadioFoundry offers in STUB INFO (the DB25-D's DMR builds: 0x1D000, 0x12000)
@@ -95,6 +265,18 @@ export class FakeC7000 {
 		for (let p = 0x1000; p < 0x41000; p += 0x1000) this.q128[p + 0xFFF] = 0x10 + (p >> 12);
 		this.q128.set(randomBytes(rng(6), 0xFFF), 0x7C000);
 		this.q128[0x7CFFF] = 2;
+		this.nand = null;
+		if (nand) {
+			this.nand = new SparseNand();
+			this.nand.set(randomBytes(rng(7), 0x10000), 0x40000);
+			this.nand.set(randomBytes(rng(8), 0x30000), 0x1100000);
+			const cal = nand.calibration;
+			if (cal) {
+				const page = concat(new TextEncoder().encode(cal.magic), randomBytes(rng(9), 0x800 - cal.magic.length));
+				this.nand.set(page, cal.nand);
+				this.progmem.set(page, cal.progmem);
+			}
+		}
 		this.boardName = board;
 		this.codecId = codecId;
 		this.stubEntry = stubEntry;
@@ -103,10 +285,13 @@ export class FakeC7000 {
 		this.bootTime = bootTime;
 		// flip: chance per stub frame of a damaged byte; misplace: sector addresses whose record, once, carries the next
 		// sector's data (as a record left over from an earlier request would); silentAfterReset: after the stub's soft
-		// reset RadioFoundry runs but its host link stays silent until a power cycle, as on the real radios (dm32-bringup.md)
-		this.faults = { flip: 0, misplace: [], silentAfterReset: false, ...faults };
+		// reset RadioFoundry runs but its host link stays silent until a power cycle, as on the real radios (dm32-bringup.md);
+		// romEcho: the cable sends every byte the host writes to the boot ROM back to it, ahead of the ROM's answer;
+		// romNak: the boot ROM answers the load's frames with something other than its acknowledgement; slowCable: ms the
+		// cable takes to carry what the host writes (longer than romWindow: the answer to the greeting comes too late)
+		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, slowCable: 0, ...faults };
 		this.rand = rng(11);
-		this.state = "off";		// off | rom | booting | firmware | stub
+		this.state = "off";		// off | rom | booting | firmware | stub | bfloader
 		this.inb = new Uint8Array(0);
 		this.loaded = new Uint8Array(0);
 		this.wel = false;
@@ -138,7 +323,11 @@ export class FakeC7000 {
 			buf: new Uint8Array(0), closed: false,
 			clear() { s.buf = new Uint8Array(0); },
 			take(n) { const o = s.buf.slice(0, n); s.buf = s.buf.slice(n); return o; },
-			async write(data) { radio.receive(data); },
+			async write(data) {
+				const d = data.slice();
+				if (radio.faults.slowCable) setTimeout(() => radio.receive(d), radio.faults.slowCable);
+				else radio.receive(d);
+			},
 			async close() { s.closed = true; },
 		};
 		return s;
@@ -159,8 +348,10 @@ export class FakeC7000 {
 	}
 
 	// ---- power and resets
-	powerOn() {
+	// keys: the update mode keys held while switching on (a radio with the Baofeng updater enters it after the boot ROM)
+	powerOn({ keys = false } = {}) {
 		if (this.state !== "off") return;
+		this.keysHeld = keys;
 		this.boot();
 	}
 
@@ -183,6 +374,8 @@ export class FakeC7000 {
 		this.send(new Uint8Array([0x02, 0x24, 0x00, 0x03]));
 		setTimeout(() => {
 			if (this.gen !== gen || this.state !== "rom") return;
+			if (this.keysHeld && this.loaderId && !this.softReset) return this.updateMode();
+			this.send(new Uint8Array([0x00, 0x10, 0x00, 0x03]));	// no answer came: the ROM stops waiting
 			this.state = "booting";
 			setTimeout(() => {
 				if (this.gen !== gen || this.state !== "booting") return;
@@ -192,10 +385,39 @@ export class FakeC7000 {
 		}, this.romWindow);
 	}
 
+	// The Baofeng updater: its erase and writes go to the program flash model (the loader below 0xC000 is never written).
+	// After the end of transfer the radio starts what was written by itself, its link up (hardware-dm32.md 13.2)
+	updateMode() {
+		this.state = "bfloader";
+		this.inb = new Uint8Array(0);
+		this.events.push("update mode");
+		const app = 0xC000, end = this.progmem.length;
+		this.bf = new FakeBfLoader({ id: this.loaderId, eraseMs: 12600 / this.speed, send: (b, ms = 0) => (ms ? setTimeout(() => this.send(b), ms) : this.send(b)),
+			onErase: () => {
+				this.progmem.fill(0xFF, app, end);
+				this.fwKind = null;
+				this.events.push("erase");
+			},
+			onBlock: (k, data) => {
+				const at = app + k * BLOCK;
+				if (at < end) this.progmem.set(data.subarray(0, Math.min(BLOCK, end - at)), at);
+				this.writes++;
+			},
+			onEnd: () => setTimeout(() => {
+				if (this.state !== "bfloader") return;
+				this.keysHeld = false;
+				this.softReset = false;
+				this.events.push("restart");
+				this.boot();
+			}, 100 / this.speed) });
+	}
+
 	// ---- what arrives from the host
 	receive(data) {
 		if (this.state === "off" || this.state === "booting") return;
+		if (this.state === "bfloader") return this.bf.feed(data);
 		if (this.state === "firmware" && this.softReset && this.faults.silentAfterReset) return;
+		if (this.faults.romEcho && (this.state === "rom" || this.state === "romload")) this.send(data.slice());
 		this.inb = concat(this.inb, data);
 		for (;;) {
 			const used = this.state === "rom" || this.state === "romload" ? this.rom() : this.state === "stub" ? this.stub()
@@ -208,6 +430,8 @@ export class FakeC7000 {
 		const ib = this.inb;
 		if (ib.length < 4) return 0;
 		if (ib[0] === 0x02 && ib[1] === 0x14 && ib[2] === 0 && ib[3] === 3) {
+			// the first answer starts the load; one more after it is NAKed, as on the radio (hardware-dm32.md 13.3)
+			if (this.state === "romload") this.send(new Uint8Array([0x02, BADSUM, 0x00, 0x03]));
 			this.state = "romload";
 			this.inb = ib.slice(4);
 			return 1;
@@ -231,7 +455,7 @@ export class FakeC7000 {
 			this.led = "slow";
 			this.events.push("stub (boot ROM)");
 		}
-		this.send(new Uint8Array([0x02, 0x05, 0x00, 0x03]));
+		this.send(new Uint8Array(this.faults.romNak ? [0x02, 0x0A, 0x00, 0x03] : [0x02, 0x05, 0x00, 0x03]));
 		return 1;
 	}
 
@@ -326,10 +550,16 @@ export class FakeC7000 {
 		const p = ib.slice(6, 6 + ln);
 		this.inb = ib.slice(6 + ln);
 		if (sum8(p) !== ib[4]) return this.reply(BADSUM, new Uint8Array(0)), 1;
+		// the memory a request selects: the NAND only through the stub's NAND path (flags bit 2, the stub configured for
+		// a NAND board), the data flash only on a radio that has one
 		const mem = (base, flags, cs) => {
-			const which = base === SSI_PROG ? this.progmem : this.q128;
-			return (flags & 1) && (base === SSI_PROG || ((flags & 2) && cs === 18)) ? which : null;
+			if (!(flags & 1) || (base !== SSI_PROG && !((flags & 2) && cs === 18))) return null;
+			if (base === SSI_PROG) return this.progmem;
+			if (flags & 4) return this.nand && this.stubCfg.flags & 1 ? this.nand : null;
+			return this.nand ? null : this.q128;
 		};
+		const blank = (sec) => sec === BLANK_SECTOR || sec.every((b) => b === 0xFF);
+		const crcOf = (sec) => (sec === BLANK_SECTOR ? BLANK_CRC : crc32(sec));
 		const univ = this.loaded.length >= 0xC0 && String.fromCharCode(...this.loaded.subarray(0x80, 0x84)) === "UCFG";
 		const be = (v) => new Uint8Array([v >>> 24, (v >>> 16) & 0xFF, (v >>> 8) & 0xFF, v & 0xFF]);
 		if (op === 0x01 && univ) {		// the universal stub: protocol 6, board and flags echoed, its RAM footprint
@@ -362,7 +592,8 @@ export class FakeC7000 {
 			const m = mem(u32be(p, 0), p[4], p[5]);
 			const txn = (p[6] << 8) | p[7], rxn = (p[8] << 8) | p[9], tx = p.subarray(10, 10 + txn);
 			let body = new Uint8Array(rxn);
-			if (!m) body.fill(0xFF);
+			if (this.nand && u32be(p, 0) !== SSI_PROG && tx[0] === 0x9F && txn === 2) body = new Uint8Array([0x98, 0xE2]).subarray(0, rxn);
+			else if (!m) body.fill(0xFF);
 			else if (tx[0] === 0x9F) body = new Uint8Array([0xC8, 0x40, m === this.progmem ? 0x14 : 0x18]).subarray(0, rxn);
 			else if (tx[0] === 0x03) body = m.slice((tx[1] << 16) | (tx[2] << 8) | tx[3]).subarray(0, rxn);
 			else if (tx[0] === 0x06) this.wel = true;
@@ -389,8 +620,8 @@ export class FakeC7000 {
 					this.faults.misplace.splice(k, 1);
 					at += SECTOR;
 				}
-				const sec = m ? m.subarray(at, at + SECTOR) : new Uint8Array(SECTOR).fill(0xFF);
-				out.push(be32(crc32(sec)), new Uint8Array([sec.every((b) => b === 0xFF) ? 1 : 0]));
+				const sec = m ? m.subarray(at, at + SECTOR) : BLANK_SECTOR;
+				out.push(be32(crcOf(sec)), new Uint8Array([blank(sec) ? 1 : 0]));
 			}
 			this.reply(OK, concat(...out));
 		} else if (op === 0x08 || op === 0x0A) {
@@ -407,10 +638,10 @@ export class FakeC7000 {
 					this.faults.misplace.splice(k, 1);
 					at += SECTOR;
 				}
-				const sec = m ? m.subarray(at, at + SECTOR) : new Uint8Array(SECTOR).fill(0xFF);
-				const crc = be32(crc32(sec));
+				const sec = m ? m.subarray(at, at + SECTOR) : BLANK_SECTOR;
+				const crc = be32(crcOf(sec));
 				let rec;
-				if (sec.every((b) => b === 0xFF)) rec = concat(crc, new Uint8Array([2, 0, 0]));
+				if (blank(sec)) rec = concat(crc, new Uint8Array([2, 0, 0]));
 				else {
 					const z = packed ? encodeBlock(sec) : sec;
 					const use = packed && z.length < SECTOR - 16 ? z : sec;

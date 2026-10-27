@@ -5,7 +5,8 @@
 // same bus, which are held high (a display on the flash's bus). The bus is set up from scratch, since RadioFoundry may
 // have left it mid-use. Commands are the common SPI NOR set (JEDEC 0x9F, read 0x03 with 3 address bytes, write enable
 // 0x06, status 0x05, 4 KB sector erase 0x20, page program 0x02, release from power-down 0xAB), so parts up to 16 MB
-// work, in mode 0 or 3.
+// work, in mode 0 or 3. The security registers use a Winbond chip's commands (f4spi_sreg); the engine sends them only
+// to one. No status register is ever written.
 #include <stddef.h>
 #include "stm32f4xx.h"
 #include "f4stub_spi.h"
@@ -188,12 +189,14 @@ bool f4spi_read(uint32_t addr, uint8_t *dst, uint32_t n)
 	return up && cmd_addr(0x03, addr, dst, NULL, n);
 }
 
-bool f4spi_erase(uint32_t addr)
+// An erase or a program behind write enable, the chip ready before and after. op: the main array's (0x20, 0x02) or a
+// security register's (0x44, 0x42)
+static bool erase_op(uint8_t op, uint32_t addr)
 {
-	return up && wait_ready(ERASE_MS) && write_enable() && cmd_addr(0x20, addr, NULL, NULL, 0) && wait_ready(ERASE_MS);
+	return up && wait_ready(ERASE_MS) && write_enable() && cmd_addr(op, addr, NULL, NULL, 0) && wait_ready(ERASE_MS);
 }
 
-bool f4spi_program(uint32_t addr, const uint8_t *data, uint32_t n)
+static bool program_op(uint8_t op, uint32_t addr, const uint8_t *data, uint32_t n)
 {
 	if (!up) {
 		return false;
@@ -203,7 +206,7 @@ bool f4spi_program(uint32_t addr, const uint8_t *data, uint32_t n)
 		if (k > n) {
 			k = n;
 		}
-		if (!wait_ready(PROGRAM_MS) || !write_enable() || !cmd_addr(0x02, addr, NULL, data, k) ||
+		if (!wait_ready(PROGRAM_MS) || !write_enable() || !cmd_addr(op, addr, NULL, data, k) ||
 		    !wait_ready(PROGRAM_MS)) {
 			return false;
 		}
@@ -212,4 +215,27 @@ bool f4spi_program(uint32_t addr, const uint8_t *data, uint32_t n)
 		n -= k;
 	}
 	return true;
+}
+
+bool f4spi_erase(uint32_t addr)
+{
+	return erase_op(0x20, addr);
+}
+
+bool f4spi_program(uint32_t addr, const uint8_t *data, uint32_t n)
+{
+	return program_op(0x02, addr, data, n);
+}
+
+// Status register 2 (0x35, reg 0), or security register 1-3 at reg << 12 (W25Q128 data sheet: read 0x48 with a dummy
+// byte, erase 0x44, program 0x42; 256 bytes, one page). Never 0x01 / 0x31 / 0x11: writing status register 2 could set
+// LB1-LB3, which lock a register for good
+bool f4spi_sreg(unsigned reg, uint8_t *dst, const uint8_t *src)
+{
+	uint32_t addr = reg << 12;
+	if (src != NULL) {
+		return erase_op(0x44, addr) && program_op(0x42, addr, src, PAGE);
+	}
+	uint8_t tx[5] = { reg == 0 ? 0x35 : 0x48, 0, (uint8_t)(addr >> 8), 0, 0 };
+	return up && cmd(tx, reg == 0 ? 1u : 5u, dst, NULL, reg == 0 ? 1u : PAGE);
 }

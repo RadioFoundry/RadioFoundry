@@ -14,10 +14,18 @@
 //
 // The codec is DVSI's and Baofeng's. It only ever moves between the user's radio, files and this browser.
 
-import { concat, crc32, sha256, u32le, le32 } from "./bytes.js";
+import { concat, crc32, sha256, u32le, le32, startsWith } from "./bytes.js";
 import { byCodeSha, checkWords } from "./codecmap.js";
 
-export class CodecError extends Error {}
+// code: as stockfw.js StockError's, for the page's explanation (explain.js) and the error report; "image" is a
+// RadioFoundry image the codec slot can't take (the user's own build), not a vendor file
+export class CodecError extends Error {
+	constructor(message, code = "internal") {
+		super(message);
+		this.name = "CodecError";
+		this.code = code;
+	}
+}
 
 const HEAD = 64;	// the tables are found by the CRC-32 of their first 64 bytes, then checked by SHA-256
 const ENTRIES = 7;
@@ -109,18 +117,21 @@ export async function codecFromFile(data, c, boardId) {
 		const low = lowPart(c, data);
 		const got = await locateCodec(low, c, boardId);
 		if (got) return got;
-		throw new CodecError(codecSignature(low, c, c.app_start, c.boards[boardId].slot[0]) >= 0
+		// a backup without a codec known for this radio: one of a build without a recipe, or another radio's backup
+		const hasCodec = codecSignature(low, c, c.app_start, c.boards[boardId].slot[0]) >= 0;
+		throw new CodecError(hasCodec
 			? `this program memory backup holds a stock codec build RadioFoundry has no recipe for; take the codec from a stock firmware file${supported(c, boardId)}`
-			: "this program memory backup contains no codec recognized for this radio");
+			: "this program memory backup contains no codec recognized for this radio", hasCodec ? "unmapped" : "not-vendor");
 	}
 	const sha = await sha256(data);
 	const p = profilesFor(c, boardId).find((x) => x.stock_file?.sha256 === sha);
 	if (!p) {
 		const got = await locateInFile(data, c, boardId);
 		if (got) return got;
-		throw new CodecError(codecSignature(data, c) >= 0
+		const hasCodec = codecSignature(data, c) >= 0;
+		throw new CodecError(hasCodec
 			? `this file holds a codec build RadioFoundry has no recipe for${supported(c, boardId)}`
-			: `not a stock firmware file the codec can be taken from${supported(c, boardId)}`);
+			: `not a stock firmware file the codec can be taken from${supported(c, boardId)}`, hasCodec ? "unmapped" : "not-vendor");
 	}
 	// the whole file is identified by its SHA-256 above; the codec hashes, where the profile has them, check the carve too
 	const hdr = p.stock_header ?? c.stock_header;
@@ -149,7 +160,7 @@ export function slotBytes(c, boardId, got) {
 	const tabOff = codeOff + align4(code.length);
 	if (!(lay.tables[0] <= p.tables_ram && p.tables_ram + tables.length <= lay.tables[1])) throw new CodecError("table address outside the reserved modem SRAM window");
 	const m = codecMap(c, got);
-	if (!m) throw new CodecError("no codec map for this build: its code can't be moved to the board's codec window");
+	if (!m) throw new CodecError("no codec map for this build: its code can't be moved to the board's codec window", "unmapped");
 	if (m.code.run !== p.run || m.code.len !== code.length) throw new CodecError(`the codec map of ${p.name} doesn't match its profile`);
 	if (!fitsRun(lay, code.length)) throw new CodecError("the codec is bigger than the board's codec window");
 	if ((lay.run[0] - p.run) % 4) throw new CodecError("the codec window would change the code's word alignment");
@@ -237,8 +248,8 @@ export async function decide(c, boardId, { slotInFlash = null, movedSlot = null,
 export function target(c, boardId, image, slot = null) {
 	const lay = c.boards[boardId];
 	const room = lay.slot[0] - c.app_start;
-	if (image.length > room) throw new CodecError(`the image (${image.length} bytes) runs into the codec slot (${room} bytes free)`);
-	if (u32le(image, 0) === 0 || new Set(image.subarray(0, 64)).size < 2) throw new CodecError("this file is not a firmware image");
+	if (image.length > room) throw new CodecError(`the image (${image.length} bytes) runs into the codec slot (${room} bytes free)`, "image");
+	if (u32le(image, 0) === 0 || new Set(image.subarray(0, 64)).size < 2) throw new CodecError("this file is not a firmware image", "image");
 	const end = slot ? c.app_end : c.app_start + Math.ceil(image.length / c.sector) * c.sector;
 	const out = new Uint8Array(end - c.app_start).fill(0xFF);
 	out.set(image, 0);
@@ -246,9 +257,25 @@ export function target(c, boardId, image, slot = null) {
 	return [c.app_start, out];
 }
 
+// The program memory of a radio on its original firmware, from that firmware's file (one the page identified for this
+// radio: vendorfile.js kind "codec"), as restoreTarget takes it: the application after the file's header (a
+// "BFUV32-V2" file's 256 bytes; the DB25-D's are plain) at the application start, everything else erased. The codec
+// slot goes with it, which the original firmware never reads. A program memory backup is taken as it is. So a radio
+// goes back to its original firmware from its vendor file, without a backup from before the first installation.
+// header: the matched profile's stock_header, where it has its own
+export function progmemFromFile(c, boardId, data, header = undefined) {
+	if (data.length === c.progmem_size || data.length === totalSize(c, boardId)) return lowPart(c, data);
+	const body = data.subarray(header ?? (startsWith(data, c.stock_magic) ? c.stock_header : 0));
+	const room = c.app_end - c.app_start;
+	if (body.length > room) throw new CodecError(`the firmware (${body.length} bytes) is larger than the application area (${room} bytes)`, "internal");
+	const progmem = new Uint8Array(c.progmem_size).fill(0xFF);
+	progmem.set(body, c.app_start);
+	return progmem;
+}
+
 // A program flash backup put back: the application area and the slot, exactly (the bootloader isn't written)
 export function restoreTarget(c, progmem) {
-	if (progmem.length < c.progmem_size) throw new CodecError("not a whole program memory backup");
+	if (progmem.length < c.progmem_size) throw new CodecError("not a whole program memory backup", "damaged");
 	return [c.app_start, progmem.slice(c.app_start, c.app_end)];
 }
 
@@ -260,11 +287,93 @@ export function bootloaderModel(c, head) {
 	return null;
 }
 
-// The stock codeplug area at the start of the data memory, which holds the factory calibration: 4 KB pages up to
-// 0xC8FFF, the calibration the first whose last byte (its logical ID) is 2 (hardware-dm32.md 11.1,
-// hardware-dm1801pro.md 6.4). Returns its address in area, or -1.
-export const CAL_AREA_END = 0xC9000;
-export function findCalibration(area) {
-	for (let a = 0x1000; a + 0x1000 <= Math.min(area.length, CAL_AREA_END); a += 0x1000) if (area[a + 0xFFF] === 2) return a;
+// The factory calibration in a data flash's stock codeplug area, by the board profile's rule (calibration: {area,
+// page_id}, board.toml [flash.stub]): the first 4 KB page from 0x1000 below area whose last byte (its logical ID) is
+// page_id. Returns its address in area, or -1.
+export function findCalibration(area, { area: end, page_id: id }) {
+	for (let a = 0x1000; a + 0x1000 <= Math.min(area.length, end); a += 0x1000) if (area[a + 0xFFF] === id) return a;
 	return -1;
+}
+
+// Which of a NAND radio's calibration copies ([{where, data}], each a 4 KB sector) to keep: those starting with magic.
+// A blank or foreign copy isn't a calibration (a NAND erased after the stock firmware left has none), so with one good
+// copy only that one is kept, and missing names the other's where. With none good, all are kept: what the places
+// that should hold it hold
+export function calibrationCopies(copies, magic) {
+	const m = new TextEncoder().encode(magic);
+	const ok = (d) => m.every((b, i) => d[i] === b);
+	const good = copies.filter((p) => ok(p.data));
+	return { found: good.length > 0, missing: good.length && good.length < copies.length ? copies.find((p) => !ok(p.data)).where : null,
+		keep: good.length ? good : copies };
+}
+
+// The NAND's calibration copy: the stock firmware maps its addresses through a table of good blocks, so the copy at
+// nand sits that many blocks later for each bad block at or below its own. read(addr) gives the 4 KB at addr. Tries
+// nand, then the same offset in each following block, for the first that starts with magic; none: the one at nand
+export const NAND_BLOCK = 0x20000, CAL_NAND_TRIES = 8;
+export async function findNandCalibration(read, { nand, magic }) {
+	const m = new TextEncoder().encode(magic);
+	let first = null;
+	for (let i = 0; i < CAL_NAND_TRIES; i++) {
+		const addr = nand + i * NAND_BLOCK, data = await read(addr);
+		first ||= { addr, data };
+		if (m.every((b, j) => data[j] === b)) return { addr, data };
+	}
+	return first;
+}
+
+// How long a read through the stub takes, for the backup choices. Pessimistic on purpose: a user who sees a short time
+// and waits much longer gives up halfway. The cable runs at 115200 baud, at most 11,520 bytes a second; with the frames
+// and the radio's work per sector about 9000 (bench 2026-10-15/17). The radio sends a blank 4 KB sector as its record
+// alone; a used one counts whole here, although LZ4 often packs it (a program flash to 57 %), since a codeplug or an
+// encrypted firmware may not pack at all. So the time follows the used sectors, which the radio counts by its own
+// checksums before any data moves; without that count every sector is taken as used.
+export const WIRE_RATE = 9000;
+export const LINE_RATE = 11520;	// 115200 baud, 10 bits a byte: no read is faster
+export const RECORD = 13;	// a sector record's header and frame
+// The best LZ4 does on a used sector, for the short end of a range: a codeplug packed to about a third on the bench
+// (2026-10-27), contacts and channel names much the same. How well a memory packs isn't known until it's read
+export const BEST_PACK = 0.3;
+const SECTOR = 0x1000;
+
+// Seconds to read bytes of a memory. sizing: blankCount's answer for that memory (its blank share is taken for the
+// part read); rate: wire bytes a second measured on this radio (never above the line rate); plainRate: bytes a second a
+// board states for a whole program memory read (flash.read_rate), used only without a count. Without either the
+// estimate takes every sector as used: upTo. With a count, least is the time if every used sector packs as well as
+// BEST_PACK: the read takes between least and seconds
+export function readSeconds(bytes, { sizing = null, rate = null, plainRate = null } = {}) {
+	const sectors = Math.ceil(bytes / SECTOR);
+	const wireRate = Math.min(rate || WIRE_RATE, LINE_RATE);
+	if (sizing?.sectors) {
+		const used = sectors * (1 - sizing.blank / sizing.sectors);
+		// the radio's own work per sector, as long as the count took for its share: the read waits for it where it is
+		// slower than the cable (a NAND loads each page first), and the read ends with the radio's checksums over the
+		// range again
+		const scan = (sizing.ms / 1000) * (sectors / sizing.sectors);
+		const time = (pack) => Math.max((used * SECTOR * pack + sectors * RECORD) / wireRate, scan) + scan;
+		return { seconds: time(1), least: time(BEST_PACK), upTo: false };
+	}
+	if (plainRate) return { seconds: bytes / plainRate, upTo: false };
+	return { seconds: (sectors * (SECTOR + RECORD)) / wireRate, upTo: true };
+}
+
+// The blank 4 KB sectors of [start, end), counted by the radio (the stub's sector sums: no flash data crosses the
+// cable), window by window. The windows are visited spread over the whole range (a stride coprime to their number), so
+// a count the deadline cuts short is still a sample of all of it, not of its start: a large memory keeps its data in
+// a few areas. Stops at the deadline (ms) or when stop() turns true, with what it counted: {sectors, blank, ms}, or
+// null when it counted nothing. An estimate takes the counted share for the whole range.
+export async function blankCount(stub, mem, start, end, { deadline = 8000, stop = () => false, window = 16 } = {}) {
+	const t0 = Date.now();
+	const span = window * SECTOR, n = Math.ceil((end - start) / span);
+	const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+	let step = Math.max(1, Math.round(n * 0.618));
+	while (gcd(step, n) !== 1) step++;
+	let sectors = 0, blank = 0;
+	for (let i = 0; i < n && !stop() && Date.now() - t0 < deadline; i++) {
+		const a = start + ((i * step) % n) * span;
+		const sums = await stub.sums(mem, a, Math.min(window, (end - a) / SECTOR));
+		sectors += sums.length;
+		blank += sums.filter((s) => s.blank).length;
+	}
+	return sectors ? { sectors, blank, ms: Date.now() - t0 } : null;
 }

@@ -306,6 +306,12 @@ for f in sys.argv[1:]:
 			tail -20 "$OUT/glossary-site.log"
 			bad "glossary markup tests (see $OUT/glossary-site.log)"
 		fi
+		if $SITE_PY site/tests/release_test.py > "$OUT/release-site.log" 2>&1; then
+			ok "site release and beta tests: $(tail -3 "$OUT/release-site.log" | head -1)"
+		else
+			tail -20 "$OUT/release-site.log"
+			bad "site release and beta tests (see $OUT/release-site.log)"
+		fi
 	else
 		skip "web site build: site/requirements.txt not installed (pip install -r site/requirements.txt, or install uv)"
 	fi

@@ -51,40 +51,13 @@ static const char *tx_block(void)
 	return NULL;
 }
 
-#if CONFIG_GPS
-// The G models' module (hardware-mduv380.md 9): NMEA on USART1 RX (PA10), power on PA9, high = on. The same board ships
-// without it, so the module is powered for the listen window only and switched off again when nothing is heard. A
-// sentence keeps it on, and every sentence goes to the APRS position source (CONFIG_APRS)
-// The TYT images ask for 14400 from a clock library built for a 12 MHz crystal, which is 9600 on this 8 MHz one (14400 x
-// 8 / 12, hardware-mduv380.md 9). 14400 stays in the hunt until a G model confirms 9600 on the wire
-static const uint32_t gps_rates[] = { 9600, 14400 };
-
-static void gps_absent(void)
-{
-	PIN_WRITE(PIN_GPS_POWER, false);
-}
-
-static const stm32_gps_cfg_t gps = {
-	.uart = USART1, .irq = USART1_IRQn,
-	.rx_port = PIN_PORT(PIN_GPS_RX), .rx_pin = PIN_MASK(PIN_GPS_RX), .rx_af = GPIO_AF7_USART1,
-	.rates = gps_rates, .n_rates = 2, .listen_ms = 5000,
-	.absent = gps_absent,
-};
-
-void USART1_IRQHandler(void)
-{
-	stm32_gps_irq();
-}
-#endif
-
 static void init(void)
 {
 	if (!stm32_spi_flash_read_security(3, 0x1C, &mark_10w, 1)) {
 		mark_10w = 0xFF;
 	}
 #if CONFIG_GPS
-	PIN_WRITE(PIN_GPS_POWER, true);	// an output, low since reset (system_uvf.c)
-	stm32_gps_init(&gps);
+	uvf_gps_init();	// the G models' module (hardware-mduv380.md 9)
 #endif
 }
 

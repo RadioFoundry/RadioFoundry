@@ -5,6 +5,9 @@
 Python it was ported from (site/tests/flasher.test.mjs):
 
   - a synthetic DM-1701 stock file and its key (rfoundry's stockfw.build_synthetic_stock), with its profile
+  - one synthetic stock file per codec layout of every placed profile, with what stockfw.extract and plan.py make of
+    it (site/tests/stocklayouts.test.mjs), and every profile's readout name (stockfw.layout_name)
+  - a plain image standing in for a file known to hold no codec, and rfoundry's message for it
   - a synthetic MD-UV380 stock file and a read of the internal flash of a radio running it, with the codec rfoundry's
     stockfw.from_flash finds in the read
   - plans for a synthetic image in keep and merge mode, as plan.describe() prints them
@@ -12,6 +15,8 @@ Python it was ported from (site/tests/flasher.test.mjs):
   - the site's data files (radios, features, variants, flash boards, the C7000 stub), as site/build.py writes them
   - for the HR_C7000 radios: an LZ4 block from stubtool's encoder, and a synthetic program flash with a codec at
     made-up addresses, its profile, what hrc7000_codec.locate() finds and the slot hrc7000_codec.merge() builds from it
+  - for the Baofeng updater: the bytes tools/serial_loader.py's Flasher sends to its FakeBootloader for a small image
+    (block numbers wrapping, three blocks damaged on the line), so bfloader.js is checked byte for byte against it
   - for the STM32F4 loader: each radio's board record from stub/f4stub.py config_record(), and the HELLO replies its
     simulated stub (FakeF4) gives before and after CONFIG, so f4stub.js sends and parses the Python tool's bytes; and
     f4stub's test profile, a board with other SPI wiring
@@ -48,6 +53,9 @@ def codec_map_vectors(out):
 	t = v["thumb"]
 	t["map"] = codecmap.normalize(t["map"])
 	t["new_run"], t["window_addr"] = int(t["new_run"], 0), int(t["window_addr"], 0)
+	w = v["window"]
+	w["map"] = codecmap.normalize(w["map"])
+	w["code_run"], w["tables_run"] = int(w["code_run"], 0), int(w["tables_run"], 0)
 	with open(os.path.join(out, "codecmap.json"), "w") as f:
 		json.dump(v, f, indent=1)
 
@@ -109,12 +117,53 @@ def md380_like(out):
 		"vote_wrong": sum(a != b for a, b in zip(vote, key))}
 
 
-def flash_readout(out, rng):
-	"""A synthetic MD-UV380 V19.26 stock file, and a read of the internal flash of a radio running it (the application
-	decrypted at 0x0800C000, as stockfw.from_flash takes it): what stockfw.js fromFlash must find, and the codec it must
-	give, as rfoundry places it. Returns the fixture entry."""
+def js_profile(prof):
+	"""A profile as data/flash-boards.json carries it (site/rfoundrysite/repo.py flash_boards)"""
+	q = dict(prof, segments=[list(s) for s in prof["segments"]], windows=[list(w) for w in stockfw.windows(prof)])
+	for k in ("code", "tables", "extra"):
+		q.pop(k, None)
+	return q
+
+
+def stock_layouts(out, image):
+	"""One synthetic stock file per codec layout of every placed profile (stockfw.same_layout: the files that put the
+	same codec at the same addresses count once), and what rfoundry makes of it: the codec placed, the descriptor's
+	fields and the merge plan, for stocklayouts.test.mjs. Also every real profile's readout name (layout_name)."""
+	seen, docs = set(), []
+	for i, (sha, real) in enumerate(stockfw.PROFILES.items()):
+		group = stockfw.same_layout(real)
+		if not real.get("placement") or id(group[0]) in seen:
+			continue
+		seen.add(id(group[0]))
+		key = synthetic_key(1000 + i)
+		stock, profiles, _, _ = stockfw.build_synthetic_stock(key, random.Random(i), sha)
+		(ssha, prof), = profiles.items()
+		got, segs = stockfw.extract(stock, key, profiles)
+		board = boards.get(prof["board"])
+		merge = plan.make_plan(board, [(board.app_base, image)], plan.MERGE, stockfw.codec_segments(prof, segs),
+				       board.merge_windows(prof))
+		desc = segs[-1][1]
+		w = struct.unpack_from("<%dI" % (7 + 3 * stockfw.DESC_WINDOWS), desc)
+		name = "layout-%s.bin" % sha[:8]
+		with open(os.path.join(out, name), "wb") as f:
+			f.write(stock)
+		docs.append({"file": name, "real_sha256": sha, "stock_sha256": ssha, "key": key.hex(), "profile": js_profile(prof),
+			     "versions": [p["version"] for p in group],
+			     "placed": [[a, stockfw.sha256(d), len(d)] for a, d in segs],
+			     "descriptor": {"tag": w[2], "code": list(w[3:6]),
+					    "tables": [list(w[7 + 3 * k:10 + 3 * k]) for k in range(w[6])]},
+			     "merge_windows": [list(x) for x in board.merge_windows(prof)],
+			     "merge": merge.describe()})
+	names = {sha: stockfw.layout_name(p) for sha, p in stockfw.PROFILES.items()}
+	return {"files": docs, "names": names}
+
+
+def flash_readout(out, rng, sha=None, name="mduv380"):
+	"""A synthetic MD-UV380 stock file (default the first build, V19.26), and a read of the internal flash of a radio
+	running it (the application decrypted at 0x0800C000, as stockfw.from_flash takes it): what stockfw.js fromFlash must
+	find, and the codec it must give, as rfoundry places it. Returns the fixture entry."""
 	key = synthetic_key(380)
-	sha = next(h for h, p in stockfw.PROFILES.items() if p["board"] == "mduv380")
+	sha = sha or next(h for h, p in stockfw.PROFILES.items() if p["board"] == "mduv380")
 	stock, profiles, _, _ = stockfw.build_synthetic_stock(key, rng, sha)
 	(ssha, prof), = profiles.items()
 	segs = stockfw.parse_container(stock)
@@ -124,15 +173,36 @@ def flash_readout(out, rng):
 		stock, stockfw.app_file_offset(segs, app[0]), app[1], key)
 	got, codec = stockfw.from_flash(bytes(flash), profiles=profiles)
 	assert got is prof
-	with open(os.path.join(out, "flash-mduv380.bin"), "wb") as f:
+	with open(os.path.join(out, "flash-%s.bin" % name), "wb") as f:
 		f.write(flash)
-	with open(os.path.join(out, "stock-mduv380.bin"), "wb") as f:
+	with open(os.path.join(out, "stock-%s.bin" % name), "wb") as f:
 		f.write(stock)
 	q = dict(prof, segments=[list(x) for x in prof["segments"]], windows=[list(w) for w in stockfw.windows(prof)])
 	for k in ("code", "tables", "extra"):
 		q.pop(k, None)
 	return {"key": key.hex(), "stock_sha256": ssha, "profile": q,
 		"placed": [[a, stockfw.sha256(d), len(d)] for a, d in codec]}
+
+
+def no_codec(out, rng):
+	"""A plain application image standing in for a file known to hold no codec (stockfw.NO_CODEC_FILES; the real one
+	is never in the repository): registered under its own SHA-256 with the first entry's text, and the message
+	rfoundry gives for it, which the flasher must give too. Returns the fixture entry."""
+	from unittest import mock
+	data = bytes(rng.getrandbits(8) for _ in range(96 * 1024))
+	sha = stockfw.sha256(data)
+	real = next(iter(stockfw.NO_CODEC_FILES))
+	with mock.patch.dict(stockfw.NO_CODEC_FILES, {sha: stockfw.NO_CODEC_FILES[real]}):
+		msg = stockfw.no_codec(data)
+		try:
+			stockfw.find_profile(data)
+			raise AssertionError("a file without a codec was taken")
+		except stockfw.StockError as e:
+			assert str(e) == msg
+	assert stockfw.from_flash(data) is None
+	with open(os.path.join(out, "nocodec.bin"), "wb") as f:
+		f.write(data)
+	return {"sha256": sha, "real_sha256": real, "message": msg}
 
 
 def main(out):
@@ -147,7 +217,8 @@ def main(out):
 	image = bytes(rng.getrandbits(8) for _ in range(150 * 1024 + 123))
 	_, codec = stockfw.extract(stock, key, profiles)
 	keep = plan.make_plan(board, [(board.app_base, image)], plan.KEEP)
-	merge = plan.make_plan(board, [(board.app_base, image)], plan.MERGE, stockfw.codec_segments(prof, codec))
+	merge = plan.make_plan(board, [(board.app_base, image)], plan.MERGE, stockfw.codec_segments(prof, codec),
+			       board.merge_windows(prof))
 	m = manifest.generate(board, image, "v0.0.0-test", "ab" * 20, features="FM,DMR")
 	with open(os.path.join(out, "stock.bin"), "wb") as f:
 		f.write(stock)
@@ -166,6 +237,11 @@ def main(out):
 		"placed": [[a, stockfw.sha256(d), len(d)] for a, d in codec],
 		"md380like": md380_like(out),
 		"readout": flash_readout(out, random.Random(380)),
+		# RT3S V219.60: the code doesn't fit after its tables, so it goes to the start of sector 10, below them
+		"readout_v21960": flash_readout(out, random.Random(21960),
+						"447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee", "rt3s-v21960"),
+		"no_codec": no_codec(out, random.Random(1702)),
+		"layouts": stock_layouts(out, image),
 	}
 	for k in ("code", "tables", "extra"):
 		doc["profile"].pop(k, None)
@@ -177,6 +253,7 @@ def main(out):
 	radios, _ = repo.boards([f["name"] for f in feats], [v["id"] for v in variants])
 	# the synthetic codecs' maps go into the flash-boards data, as a real build's would (docs/spec/codec-placement.md)
 	test_maps = {**c7000(out, rng), **db25d(out, rng)}
+	bfloader(out)
 	codeplug(out)
 	fb = repo.flash_boards()
 	fb["codec_maps"].update(test_maps)
@@ -257,6 +334,34 @@ def db25d(out, rng):
 	with open(os.path.join(out, "db25d.json"), "w") as f:
 		json.dump(doc, f, indent=1)
 	return maps
+
+
+def bfloader(out):
+	"""serial_loader's Flasher writing a 261-block image to its FakeBootloader, every byte it sent recorded"""
+	sl = repo._tool("tools", "serial_loader.py")
+
+	class Recorded(sl.FakeBootloader):
+		def __init__(self, *a, **k):
+			super().__init__(*a, **k)
+			self.sent = bytearray()
+
+		def write(self, b):
+			self.sent += b
+			super().write(b)
+
+	model = next(m for m in sl.MODELS.values() if m.codec_slot)	# any radio on this loader: the framing is the same
+	raw = bytes((i * 31 + (i >> 10)) & 0xFF for i in range(260 * 1024 + 517))
+	corrupt = [3, 255, 0]
+	fake = Recorded(model, corrupt=set(corrupt))
+	name = "rfoundry_%s_codec.bin" % model.id
+	sl.Flasher(fake, log=lambda *a: None, step_timeout=0.2, model=model).flash(raw, name)
+	assert not fake.errors and fake.image() == raw and fake.naks == len(corrupt)
+	for n, data in (("bfloader_image.bin", raw), ("bfloader_host.bin", bytes(fake.sent))):
+		with open(os.path.join(out, n), "wb") as f:
+			f.write(data)
+	with open(os.path.join(out, "bfloader.json"), "w") as f:
+		json.dump({"board": model.id, "id": model.tag, "name": name, "corrupt": corrupt, "naks": fake.naks,
+			   "blocks": len(fake.blocks), "header": list(fake.header)}, f, indent=1)
 
 
 def codeplug(out):

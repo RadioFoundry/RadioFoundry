@@ -13,9 +13,9 @@ Recipes from each radio's codec page (docs/spec/codec-<radio>.md, "Extraction re
      way);
   3. check each window's SHA-256 and the code's first word 0x4FF0E92D;
   4. write a new image: the built application from 0x0800C000, then the codec where its profile places it, 0xFF between
-     (docs/spec/codec-placement.md): the tables at their stock address, the code moved as one block into sector 11
-     (right after the tables, or at the start of the sector), with the addresses the build's codec map lists
-     rewritten, and the descriptor at 0x080FFF80 that tells the firmware where the code is.
+     (docs/spec/codec-placement.md): the tables at their stock address, the code moved as one block (right after
+     the tables, or at the start of sector 10 or 11 as the build's profile says), with the addresses the build's
+     codec map lists rewritten, and the descriptor at 0x080FFF80 that tells the firmware where the code is.
 
 The codec is DVSI's and the radio maker's, not ours: it is never stored in this repository or in a release. This tool
 reads your stock file and your key file and writes the merged image to a file you choose (by default next to the
@@ -32,10 +32,11 @@ import stm32_dfu  # noqa: E402  (key table and key file check, hardware-dm1701.m
 
 # The container, decryption, profiles and merge live in the rfoundry package (one implementation for both tools)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))
-from rfoundry.stockfw import (APP_BASE, CODEC_SIG, DESC_ADDR, FLASH_BASE, FLASH_END, HEADER_LEN, KEY_LEN,  # noqa: E402,F401
-                              MAGIC, PROFILES, SYN_BL, SYN_SELF_REF, StockError as ExtractError, app_file_offset,
-                              build_synthetic_stock, decrypt, derive_key, descriptor, extract, find_profile, from_flash,
-                              is_container, layout, merge, parse_container, profile_for_board, sha256, windows)
+from rfoundry.stockfw import (APP_BASE, CODEC_SIG, DESC_ADDR, FLASH_BASE, FLASH_END, HEADER_LEN,  # noqa: E402,F401
+                              KEY_LEN, MAGIC, PROFILES, SYN_BL, SYN_SELF_REF, StockError as ExtractError,
+                              app_file_offset, build_synthetic_stock, decrypt, derive_key, descriptor, extract,
+                              find_profile, from_flash, is_container, layout, layout_name, merge, no_codec,
+                              parse_container, profile_for_board, sha256, windows)
 from rfoundry.codecmap import bl_target  # noqa: E402
 from rfoundry import boards  # noqa: E402  (the board registry: the boards this tool serves)
 import zlib  # noqa: E402
@@ -43,6 +44,9 @@ import zlib  # noqa: E402
 DM1701_V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
 MD380_D2032 = "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
 MDUV380_V1926 = "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e"
+RT3S_V21960 = "447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee"
+DM1701_V0201 = "cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713"
+DM1701_V0206_NOCSV = "4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9"
 
 EPILOG = """\
 examples:
@@ -209,6 +213,31 @@ def self_test():
     check(from_flash(bytes(flash), profiles=uprofiles) is None, "a readout with a changed code byte gives nothing")
     umerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), up, uwins)
     check(not stm32_dfu.check_image(umerged, "mduv380"), "stm32_dfu accepts the MD-UV380 merged image")
+    # RT3S V219.60: the code doesn't fit after the tables, so it goes to the start of sector 10, below them
+    rstock, rprofiles, rcode, _ = build_synthetic_stock(key, rng, RT3S_V21960)
+    rp, rwins = extract(rstock, key, rprofiles)
+    check([a for a, _ in rwins] == [0x080C0000, 0x080E322C, DESC_ADDR] and 0x080C0000 + len(rcode) <= 0x080E322C,
+          "RT3S 219.60: code at the start of sector 10, below the tables")
+    rmerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), rp, rwins)
+    check(not stm32_dfu.check_image(rmerged, "mduv380"), "stm32_dfu accepts the RT3S 219.60 merged image")
+    # DM-1701 V02.01 CSV (V02.02 and V02.03 alike): the V02.06 placement 0x40 lower, its own tag
+    ostock, oprofiles, ocode, _ = build_synthetic_stock(key, rng, DM1701_V0201)
+    op, owins = extract(ostock, key, oprofiles)
+    check([(a, len(d)) for a, d in owins] == [(0x080E3A34, len(ocode)), (0x080D19B0, 0x12082), (DESC_ADDR, 0x80)],
+          "DM-1701 V02.01: code at 0x080E3A34 after the tables cut at 0x080E3A32, then the descriptor")
+    check(struct.unpack_from("<I", owins[2][1], 8)[0] == 0x0203, "DM-1701 V02.01 descriptor tag")
+    omerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), op, owins)
+    check(not stm32_dfu.check_image(omerged, "dm1701"), "stm32_dfu accepts the DM-1701 V02.01 merged image")
+    # DM-1701 V02.06 noCSV (V02.03 noCSV alike, 0x40 lower): a larger application segment, the codec higher up, the
+    # code 0x1C bytes shorter; still after the tables in sector 11, below the descriptor
+    nstock, nprofiles, ncode, _ = build_synthetic_stock(key, rng, DM1701_V0206_NOCSV)
+    np_, nwins = extract(nstock, key, nprofiles)
+    check([(a, len(d)) for a, d in nwins] == [(0x080E6828, 0x10200), (0x080D4794, 0x12092), (DESC_ADDR, 0x80)]
+          and len(ncode) == 0x10200 and 0x080E6828 + 0x10200 <= DESC_ADDR,
+          "DM-1701 V02.06 noCSV: code at 0x080E6828 after the tables cut at 0x080E6826, then the descriptor")
+    check(struct.unpack_from("<I", nwins[2][1], 8)[0] == 0x10206, "DM-1701 V02.06 noCSV descriptor tag")
+    nmerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), np_, nwins)
+    check(not stm32_dfu.check_image(nmerged, "dm1701"), "stm32_dfu accepts the DM-1701 V02.06 noCSV merged image")
 
     # main() end to end on the synthetic file
     import contextlib
@@ -249,15 +278,16 @@ def self_test():
     return 1 if fails else 0
 
 
-def test_desc(path, board="dm1701"):
-    """Write the codec sectors as the merge leaves them for a synthetic codec of the board's first stock file, for
+def test_desc(path, board="dm1701", profile=None):
+    """Write the codec sectors as the merge leaves them for a synthetic codec of the board's first stock file (or of
+    the stock file whose SHA-256 profile is: an MD-9600 file, whose tables the merge moves), for
     tests/host/codecDescTest.c (the firmware's descriptor checks and this writer must agree): from the end of the
     board's application region (the DM-1701's sectors 10 and 11, 0x080C0000..0x08100000; the MD-380's sectors 8-11,
     0x08080000..0x08100000) to the end of flash"""
     import random
     rng = random.Random(1701)
     key = bytes(rng.randrange(256) for _ in range(KEY_LEN))
-    stock, profiles, _, _ = build_synthetic_stock(key, rng, profile_for_board(board))
+    stock, profiles, _, _ = build_synthetic_stock(key, rng, profile or profile_for_board(board))
     p, wins = extract(stock, key, profiles)
     lo = boards.get(board).app_region[1]
     out = bytearray(b"\xFF" * (FLASH_END - lo))
@@ -278,6 +308,8 @@ def main():
                     help="refuse a stock file for another radio (the stock file picks the board otherwise)")
     ap.add_argument("--image", help="built RadioFoundry image (default: build/<board>/rfoundry_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image to write (default: <image>_codec.bin next to the image)")
+    ap.add_argument("--test-profile", metavar="SHA256", help="with --test-desc: the stock file whose layout the synthetic "
+                    "codec takes (default: the board's first)")
     ap.add_argument("--self-test", action="store_true", help="check the tool's logic on a synthetic file and key")
     ap.add_argument("--test-desc", metavar="FILE", help="write the codec sectors for a synthetic codec, as merged "
                     "(tests/host/codecDescTest.c), for --board")
@@ -288,12 +320,14 @@ def main():
     if args.test_desc:
         if not args.board:
             ap.error("--test-desc needs --board")
-        return test_desc(args.test_desc, args.board)
+        return test_desc(args.test_desc, args.board, args.test_profile)
     if not args.stock:
         ap.error("--stock is required (or --self-test)")
     try:
         with open(os.path.expanduser(args.stock), "rb") as f:
             stock = f.read()
+        if no_codec(stock):
+            raise ExtractError(no_codec(stock))
         readout = None if is_container(stock) else from_flash(stock)
         if not is_container(stock) and readout is None:
             raise ExtractError("%s is neither a supported stock file nor a flash readout (from 0x%08X) holding a "
@@ -320,7 +354,7 @@ def main():
         print("error: %s" % e, file=sys.stderr)
         return 1
     print("stock  %s (%s), %s codec: %s verified"
-          % (prof["name"] if readout is None else "flash readout with " + prof["version"], sha256(stock)[:8], board,
+          % (prof["name"] if readout is None else "flash readout with " + layout_name(prof), sha256(stock)[:8], board,
              ", ".join("0x%08X+0x%X" % (a, n) for a, n, _ in layout(prof))))
     print("wrote  %s (%d bytes; contains the proprietary codec: keep it to yourself)" % (out, len(merged)))
     return 0

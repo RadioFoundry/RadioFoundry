@@ -128,6 +128,7 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 |---|---|
 | `steps` | How to enter the bootloader, one step per item, for the web flasher and the manual |
 | `keys` | Optional: the short form the tools print |
+| `hold` | Optional: the keys held to enter it, by key name (the board's `KEY_*` in lower case, `["ptt", "sk1"]`). The web flasher marks them on the radio's picture and names them under it; `steps` stays the instructions. Each must be a key of the board (`tools/boards.py check`) and tagged in its drawing or listed in `data-undrawn` ([Radio images](website.md#radio-images)) |
 | `id` | Optional: the string the loader answers, also the magic of its files (`serial-loader`) |
 | `sign` | Optional: what the radio shows in the bootloader |
 
@@ -159,6 +160,13 @@ stock files' profiles. The files must hold the same codec; each may put its tabl
 codec windows are the union of every file's layout. The image must stay out of all of them, and keeping the codec keeps
 all of them. A merge writes and checks the layout of the file it merges
 ([codec-placement.md](../spec/codec-placement.md)).
+
+### [cps]
+
+`radio_types`: the radio types the open-firmware CPS radio info reports for this radio
+([open-firmware-cps.md](../spec/open-firmware-cps.md) 4). RadioFoundry's CPS shim reports them, and the web flasher
+checks them before it backs up a radio that runs another open firmware. The registry carries them as
+`cps_radio_types`, with `rom_base` (the platform's `flash_base`, where the CPS's area 5 offsets start).
 
 ### [frame]
 

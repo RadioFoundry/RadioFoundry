@@ -3,7 +3,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """Check and add the key tags of the radio drawings (docs/dev/website.md "Radio images").
 
-    tools/svg_keys.py check [BOARD...]          every board with a drawing when none is named
+    tools/svg_keys.py check [BOARD...]          every board with a drawing when none is named, and its looks' drawings
     tools/svg_keys.py tag BOARD [--from FILE] [--dry-run]
     tools/svg_keys.py --self-test
 
@@ -38,6 +38,7 @@ TAG_ID = re.compile(r"\bid=\"(key-[^\"]*|led|encoder)\"")
 KEY_ID = re.compile(r"\bid=\"key-([^\"]*)\"")
 EDGE = re.compile(r"\bdata-edge=\"([^\"]*)\"")
 UNDRAWN = re.compile(r"<svg\b[^>]*\bdata-undrawn=\"([^\"]*)\"")
+MOVED = r"<g\b[^>]*\btransform=[^>]*>.*?</g>"	# a group with a transform: the boxes of the shapes in it are wrong
 
 
 def key_names(board):
@@ -67,6 +68,10 @@ def problems(text, keys):
         out.append("data-undrawn names no key of the radio: %s" % ", ".join(sorted(set(undrawn) - set(keys))))
     if sorted(set(undrawn) & set(ids)):
         out.append("data-undrawn lists tagged keys: %s" % ", ".join(sorted(set(undrawn) & set(ids))))
+    boxless = sorted(set(i for i in ids if i not in key_boxes(text)))
+    if boxless:
+        out.append("key ids on no plain shape (a transform, the shape's or a group's, or not a rect, circle, ellipse, "
+                   "path or polygon): %s" % ", ".join(boxless))
     missing = [k for k in keys if k not in ids and k not in undrawn]
     if missing:
         out.append("keys in no drawing: %s (tag them: tools/svg_keys.py tag, or list them in the <svg> element's "
@@ -89,15 +94,19 @@ def check(boards):
     if not boards:
         boards = sorted(b for b in os.listdir(os.path.join(ROOT, "boards"))
                         if os.path.isfile(os.path.join(SRC, b + ".svg")))
-    fails = 0
+    fails = n = 0
     for b in boards:
         svg, mic = drawings(b)
-        text = read(svg) + (read(mic) if mic else "")
-        for p in problems(text, key_names(b)):
-            print("%s: %s" % (os.path.relpath(svg, ROOT), p))
-            fails += 1
+        # the board's drawing and its looks' (BOARD-<look>.svg, board.toml looks), each with the microphone's
+        looks = sorted(os.path.join(SRC, f) for f in os.listdir(SRC)
+                       if f.startswith(b + "-") and f.endswith(".svg") and f != b + "-mic.svg")
+        for d in [svg] + looks:
+            n += 1
+            for p in problems(read(d) + (read(mic) if mic else ""), key_names(b)):
+                print("%s: %s" % (os.path.relpath(d, ROOT), p))
+                fails += 1
     if not fails:
-        print("svg_keys: %d drawing%s, every key tagged or listed undrawn" % (len(boards), "" if len(boards) == 1 else "s"))
+        print("svg_keys: %d drawing%s, every key tagged or listed undrawn" % (n, "" if n == 1 else "s"))
     return 1 if fails else 0
 
 
@@ -194,6 +203,16 @@ def parse(text):
         if x is not None and y is not None:
             labels.append((x, y, re.sub(r"<[^>]*>", "", m.group(2)).strip()))
     return shapes, labels
+
+
+def key_boxes(text):
+    """{name: (x0, y0, x1, y1)}, in viewBox units, of each key-<name> shape: where the key is on the picture (the site
+    build's frame_geometry.keys, which the web flasher marks the keys to hold with). A shape with a transform, its own
+    or a group's, has none: problems() reports it."""
+    moved = spans(text, MOVED)
+    shapes, _ = parse(text)
+    return {s["id"][4:]: s["box"] for s in shapes
+            if s["id"] and s["id"].startswith("key-") and not any(a <= s["start"] < b for a, b in moved)}
 
 
 def label_key(s, keys):
@@ -486,6 +505,13 @@ def self_test():
     ok(any("keys in no drawing:" in s and "menu" in s and "vfo_mr" not in s.split("(")[0] for s in p),
        "missing keys, the undrawn one left out: %r" % p)
     ok(problems(head + "</svg>", keys) == [], "a drawing without key ids is fine (the page shows buttons)")
+    ok(key_boxes(out).get("sk1") == (2, 195, 14, 223) and key_boxes(out).get("up") == (85, 210, 125, 230),
+       "key boxes: %r" % (key_boxes(out),))
+    two = re.search(r'<rect id="key-2"[^>]*/>', out).group(0)
+    moved = out.replace('<rect id="key-sk1"', '<rect transform="rotate(5)" id="key-sk1"').replace(
+        two, '<g transform="translate(4 0)">%s</g>' % two)
+    p = problems(moved, keys)
+    ok(any(s.startswith("key ids on no plain shape") and s.endswith(": 2, sk1") for s in p), "transformed keys have no box: %r" % p)
     ok(label_key("VFO/MR", keys) == "vfo_mr" and label_key("A/B", ["ab"]) == "ab", "label names")
     ok(path_box("M246 645l8-12l8 12z") == (246, 633, 262, 645), "relative path box: %r" % (path_box("M246 645l8-12l8 12z"),))
     print("svg_keys self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),

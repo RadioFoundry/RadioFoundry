@@ -24,6 +24,8 @@ Any way you can:
 
 - **Test and report.** Run RadioFoundry on your radio and [report what breaks](https://github.com/radiofoundry/radiofoundry/issues/new?template=bug_report.yml). If the radio restarted,
   include the crash log from **Settings > Advanced > Crash log** ([settings](17-settings.md#crash-log)).
+- **Help others.** Answer questions and share what works in the
+  [community group](https://www.facebook.com/groups/radiofoundry/) on Facebook.
 - **Ask.** [Request a feature](https://github.com/radiofoundry/radiofoundry/issues/new?template=feature_request.yml) or [a radio](https://github.com/radiofoundry/radiofoundry/issues/new?template=radio_request.yml) you'd like supported.
 - **Contribute.** Send pull requests for code or docs ([contributing](../dev/contributing.md)).
 - **Donate or lend a radio.** This helps the most, especially older models that are hard to find now, because every
@@ -31,9 +33,13 @@ Any way you can:
 
 **The web flasher or the Codeplug Editor failed. How do I report it?**
 
+On radiofoundry.org most errors are reported automatically: the message says so and gives a reference. Type what you
+were doing in the box under it and click **Send Details**; the developers review every report and work on the
+underlying problem. To send more, or where reporting is off or blocked, use **Report a Problem**.
+
 Click **Report a Problem** under the error message, describe what you were doing, and download the report. It's a zip
-file with the steps the page took, the errors and your browser's details. Email it to the developers or attach it to a
-GitHub issue. If the problem is reading or writing a codeplug, tick the box that includes it: a codeplug holds your
+file with the steps the page took, the errors and your browser's details. Email it to the developers, attach it to a
+GitHub issue or share it in the [community group](https://www.facebook.com/groups/radiofoundry/). If the problem is reading or writing a codeplug, tick the box that includes it: a codeplug holds your
 callsign, DMR ID and contacts, so it's left out unless you add it. Developers can also open the browser's console
 (F12): every error is printed there with its details.
 

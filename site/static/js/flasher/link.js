@@ -17,6 +17,22 @@ export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C,
 
 export class LinkError extends Error {}
 
+// The flash.err.* text for one of the browser's own USB or serial errors (a DOMException, by name), or null. The
+// browser's words ("Failed to open serial port.") say little; every tool shows what to do, with them after it
+export function browserErrorKey(e) {
+	const raw = e?.message || String(e);
+	switch (e?.name) {
+	case "NotFoundError": return /disconnect/i.test(raw) ? "flash.err.disconnected" : "flash.err.no_device";
+	// "Access denied" on opening a USB device is the device's driver or another program (Windows without WinUSB), not the page
+	case "SecurityError": return /access denied/i.test(raw) ? "flash.err.usb_busy" : "flash.err.security";
+	case "InvalidStateError": return "flash.err.port_open";
+	case "NotAllowedError": return "flash.err.not_allowed";
+	case "NetworkError": return /open serial port/i.test(raw) ? "flash.err.port_busy" : /claim|access denied/i.test(raw) ? "flash.err.usb_busy" : "flash.err.connection_lost";
+	case "BufferOverrunError": case "BreakError": case "FramingError": case "ParityError": return "flash.err.connection_lost";
+	default: return null;
+	}
+}
+
 export const serialSupported = () => typeof navigator !== "undefined" && "serial" in navigator;
 
 // CRC-16/CCITT-FALSE
@@ -62,11 +78,20 @@ export function parseKv(text) {
 }
 
 // A byte stream with a receive buffer: WebSerial in the browser, fake.js in tests and the simulator.
+// Web Serial's non-fatal read errors: the reader ends, port.readable is a new stream. A cap, so a line that keeps
+// erroring can't spin the loop for ever.
+const SOFT_READ_ERRORS = new Set(["FramingError", "ParityError", "BreakError", "BufferOverrunError"]);
+const MAX_READ_GLITCHES = 50;
+
 export class SerialStream {
 	constructor(port) {
 		this.port = port;
 		this.buf = new Uint8Array(0);
 		this.closed = false;
+		this.lost = false;	// the pump ended without close(): the device is gone
+		// what came in since the port opened, for a report when nothing answered as expected (silence())
+		this.received = 0;
+		this.first = new Uint8Array(0);
 	}
 
 	static async request() {
@@ -82,13 +107,26 @@ export class SerialStream {
 	// Chrome's default 255 byte buffer stops the USB reads whenever the page is busy for a moment; the radio gives up
 	// on a reply the host doesn't take for a while (drivers/usb/usb_device.c), so a 2 KB read could lose its tail
 	static async open(port, baudRate = 115200) {
-		await port.open({ baudRate, bufferSize: 65536 });
+		const opts = { baudRate, bufferSize: 65536 };
+		try {
+			await port.open(opts);
+		} catch (e) {
+			// still open from an earlier connection of this page (the user picked the same radio again): closed and
+			// opened afresh, so its settings are these
+			if (e?.name !== "InvalidStateError") throw e;
+			// a port another stream of this page is reading stays as it is: close() refuses it, and the error stands
+			try { await port.close(); } catch { throw e; }
+			note("serial port was still open: closed and opened again");
+			await port.open(opts);
+		}
 		const s = new SerialStream(port);
-		s.pump();
+		s.baud = baudRate;
+		s.pumping = s.pump();
 		return s;
 	}
 
 	async pump() {
+		let glitches = 0;
 		while (!this.closed && this.port.readable) {
 			this.reader = this.port.readable.getReader();
 			try {
@@ -96,17 +134,27 @@ export class SerialStream {
 					const { value, done } = await this.reader.read();
 					if (done) break;
 					this.buf = concat(this.buf, value);
+					this.received += value.length;
+					if (this.first.length < 16) this.first = concat(this.first, value.subarray(0, 16 - this.first.length));
 				}
 			} catch (e) {
-				if (!this.closed) note("serial read stopped", String(e?.message || e));
-				break;
+				// A framing, parity or overrun error or a break (a radio switched on or off with the cable in) ends only
+				// this reader: the port gives a fresh readable and reading goes on. Stopping here left every later
+				// reply unread ("nothing received"). A lost device has no readable, which ends the loop.
+				const soft = SOFT_READ_ERRORS.has(e?.name) && ++glitches <= MAX_READ_GLITCHES;
+				if (!this.closed) note(soft ? "serial read error, reading on" : "serial read stopped", String(e?.message || e));
+				if (!soft) break;
 			} finally {
 				this.reader.releaseLock();
 			}
 		}
+		// the device went away (or its port stopped reading): a page that kept this stream would talk to nothing
+		if (!this.closed) this.lost = true;
 	}
 
+	// A port whose device went away has no writable: that is a lost connection (errorKey), not a TypeError
 	async write(data) {
+		if (!this.port.writable) throw new DOMException("The device has been lost.", "NetworkError");
 		const w = this.port.writable.getWriter();
 		try { await w.write(data); } finally { w.releaseLock(); }
 	}
@@ -119,10 +167,14 @@ export class SerialStream {
 		return out;
 	}
 
+	// The port closes only once the pump has let go of its reader: WebSerial refuses to close a port whose stream is
+	// still locked, and a port left open fails the next connection with "The port is already open"
 	async close() {
 		this.closed = true;
 		try { await this.reader?.cancel(); } catch (e) { /* gone */ }
-		try { await this.port.close(); } catch (e) { /* gone */ }
+		// a pump that never ends (a browser that doesn't settle the read) must not hang the page's close
+		await Promise.race([this.pumping, sleep(2000)]);
+		try { await this.port.close(); } catch (e) { note("serial port did not close", String(e?.message || e)); }
 	}
 }
 
@@ -305,6 +357,86 @@ export async function probe(link) {
 		try { chip = await link.chip(); } catch (e) { /* older firmware */ }
 		return { board: v.board, git: v.git, codec: v.codec, features: v.features || "", display: v.display, version: v, chip };
 	} catch (e) {
+		link.probeError = e;
 		return null;
 	}
+}
+
+// Why a probe got no answer, for the message and the error report: what failed, and what the port gave meanwhile.
+// kind "silent": nothing at all (the wrong port, a radio that is off, a cable not plugged in fully); "link": debug
+// link frames that weren't the reply (RadioFoundry, but the exchange failed); "other": bytes that aren't the debug
+// link, so something else answers there, most often a radio still on its original firmware
+export function silence(link) {
+	const s = link.s || {};
+	const first = s.first || new Uint8Array(0);
+	const kind = !s.received ? "silent" : first[0] === SOF1 && first[1] === SOF2 ? "link" : "other";
+	return { kind, cause: link.probeError ? String(link.probeError.message || link.probeError) : null,
+		received: s.received ?? null, first: first.length ? toHex(first) : null };
+}
+
+// The open-firmware CPS's radio info (open-firmware-cps.md 4: area 9, little endian): {structVersion, radioType, git,
+// built, flashId, features}, or null when the bytes aren't that structure. Checked field by field, so a reply of another
+// protocol that happens to start with "R" isn't taken for it. The revision or the build date must be there: our shim
+// (core/cps/cps_openfw.c) always fills both, so all zeros after the struct version is not that structure
+export const RADIO_INFO_LEN = 46;
+export function parseRadioInfo(b) {
+	if (!b || b.length < 40) return null;
+	// ASCII, NUL padded: printable characters, then only NULs
+	const text = (o, n) => {
+		const f = b.subarray(o, o + n);
+		const end = f.indexOf(0) < 0 ? n : f.indexOf(0);
+		if (f.subarray(0, end).some((c) => c < 0x20 || c > 0x7E) || f.subarray(end).some((c) => c !== 0)) return null;
+		return String.fromCharCode(...f.subarray(0, end));
+	};
+	const structVersion = u32le(b, 0), radioType = u32le(b, 4), git = text(8, 16), built = text(24, 16);
+	if (structVersion < 1 || structVersion > 15 || radioType > 63 || git === null || built === null) return null;
+	if (!git && !built) return null;
+	if (built && !/^\d{8,14}$/.test(built)) return null;
+	return { structVersion, radioType, git, built, flashId: b.length >= 44 ? u32le(b, 40) : null,
+		features: b.length >= 46 ? u16le(b, 44) : null };
+}
+
+// A radio whose port refused the debug link probe with the open-firmware CPS's "-" (open-firmware-cps.md 2: the reply to
+// any request it doesn't know) is asked for its radio info, a read that changes nothing on the radio; never a C control
+// command (some save settings or restart the radio). The info, or null when the port isn't that protocol. A
+// RadioFoundry build with the CPS shim but without the debug link (CONFIG_DEBUGLINK=n) answers the same way
+export async function openFirmwareInfo(link) {
+	const first = link.s?.first;
+	if (silence(link).kind !== "other" || first?.[0] !== 0x2D) return null;
+	try {
+		return parseRadioInfo(await link.cpsRead(9, 0, RADIO_INFO_LEN, 1));
+	} catch (e) {
+		return null;
+	}
+}
+
+// Whether a radio that answers like another open firmware runs the RadioFoundry build just written (manifest: its
+// manifest), so without the debug link: the build's feature list leaves DEBUGLINK out. A build with DEBUGLINK answers
+// over the debug link, so a radio that doesn't runs something else. Only when the features aren't known (a local image:
+// "") does the revision decide: the radio info carries the version the Makefile stamps (8 hex digits and maybe
+// "-dirty"), and that build's commit is the one just written. A build of unknown features and another commit can't be
+// told from another open firmware
+export function writtenWithoutLink(info, manifest) {
+	if (!info || !manifest) return false;
+	const feats = String(manifest.features || "").split(",").filter(Boolean);
+	if (feats.length) return !feats.includes("DEBUGLINK");
+	const head = String(info.git || "").split("-")[0].toLowerCase();
+	return /^[0-9a-f]{7,}$/.test(head) && String(manifest.git || "").toLowerCase().startsWith(head);
+}
+
+// silence(), told apart further where the port can be asked: kind "openfw" for a radio on another open firmware (one that
+// answers the open-firmware CPS protocol), with its radio type and revision. A RadioFoundry build without the debug link
+// answers the same way; written: the manifest of the build just written, so that it is told apart (kind
+// "rfoundry-nodebug") right after installing it
+export async function whyNoAnswer(link, { written = null } = {}) {
+	const why = silence(link);
+	const info = await openFirmwareInfo(link);
+	if (!info) return why;
+	return { ...why, kind: writtenWithoutLink(info, written) ? "rfoundry-nodebug" : "openfw", radioType: info.radioType, git: info.git };
+}
+
+// The message for whyNoAnswer()'s kind (site/i18n/en.json)
+export function noAnswerKey(why) {
+	return { openfw: "flash.err.openfw", "rfoundry-nodebug": "flash.err.rfoundry_nodebug", other: "flash.err.not_rfoundry" }[why?.kind]
+		|| "flash.err.no_answer";
 }

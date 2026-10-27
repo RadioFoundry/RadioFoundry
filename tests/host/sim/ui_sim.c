@@ -38,6 +38,7 @@
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
 //   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
+//   splash:loader       the same splash as the stub entry draws it, while the flashing tools have the radio
 //   shot:<name>         save the screen (sim_set_shot_dir)
 //   expect:<key>=<value>   check (see check()); value "*" = anything; shows=<text> / hides=<text>: a drawn
 //                          text contains it / none does; markafter=<text> / nomarkafter=<text>: a mark is drawn just right of it / none is;
@@ -59,6 +60,7 @@
 #include "input/input.h"
 #include "hostlink/hostlink.h"
 #include "hotspot/hotspot.h"
+#include "stubentry/stub_entry.h"
 #include "ui/ui_svc_aprs.h"
 
 #define TICK_MS		50
@@ -2065,6 +2067,7 @@ static bool check(const char *kv, char *err, size_t len)
 	}
 	else if (strcmp(key, "pttblock") == 0) snprintf(got, sizeof got, "%u", ptt_blocked);
 	else if (strcmp(key, "poweroff") == 0) snprintf(got, sizeof got, "%u", ui_app_power_off_due());
+	else if (strcmp(key, "wake") == 0) snprintf(got, sizeof got, "%u", ui_app_take_wake());	// the backlight asked for
 	else if (strncmp(key, "set", 3) == 0 && key[3] >= '0' && key[3] <= '9')	// set<N>: ui_setting_t N's value
 		snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get((uint8_t)atoi(key + 3)));
 	else if (strcmp(key, "radio_tot") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tot_s);
@@ -2416,6 +2419,10 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 	if (strcmp(t, "splash") == 0) {		// the boot screen (last in a script: nothing redraws over it)
+		if (arg != NULL && strcmp(arg, "loader") == 0) {	// the stub entry's (stub_entry.c show_banner)
+			ui_draw_splash(board.name, "a1b2c3d4", STUB_ENTRY_LINE1, STUB_ENTRY_LINE2);
+			return true;
+		}
 		char l1[17], l2[17];
 		ui_svc_boot_text(l1, l2);
 		ui_draw_splash(board.name, "a1b2c3d4", l1, l2);

@@ -508,6 +508,7 @@ static void test_squelch(void)
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX && hw.audio && hw.led[LED_GREEN]);
 	CHECK(sm.view.rssi_dbm == -80);
+	CHECK(radio_view_wakes(&sm.view));	// FM: what opens the squelch plays, so it lights the screen
 	signal(thr + RADIO_SQL_HYST_DB - 1, true);	// inside the hysteresis: stays open
 	poll_for(200);
 	CHECK(sm.view.state == RS_RX);
@@ -560,6 +561,7 @@ static void test_tx(void)
 	CHECK(sm.view.state == RS_RX);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && hw.tx_hz == 146520000 && hw.tx_power == 1);
+	CHECK(!sm.view.tx_auto && sm.view.last_tx_ms != 0 && radio_view_wakes(&sm.view));	// the user's own
 	CHECK(!hw.audio && hw.led[LED_RED] && !hw.led[LED_GREEN]);
 	CHECK(sm.view.last_rx_ms != 0);		// the reception ended when TX started
 	req(RREQ_CH_STEP, 1);			// no retuning while transmitting
@@ -577,6 +579,7 @@ static void test_tx(void)
 	req(RREQ_CH_STEP, 1);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == 1);
+	CHECK(radio_view_wakes(&sm.view));	// the screen says why
 	CHECK(!hw.led[LED_RED]);
 	poll_for(100);
 	CHECK(sm.view.state == RS_TX_DENIED);	// until release
@@ -1032,6 +1035,7 @@ static void test_dmr_rx(void)
 	// A group call on the talk target: received, shown, played (silence without the codec)
 	hear_call(true, 201, 3101234, 2, 1, false);
 	CHECK(sm.view.state == RS_RX && d->state == RDMR_RX);
+	CHECK(radio_view_wakes(&sm.view));	// a call that plays lights the screen
 	CHECK(d->call.src == 3101234 && d->call.dst == 201 && d->call.group && strcmp(d->call.dst_name, "Main Ops") == 0);
 	CHECK(strcmp(d->call.src_name, "Joe") == 0);	// a private contact in the listen list
 	CHECK(d->rssi_dbm == -85);
@@ -1061,6 +1065,7 @@ static void test_dmr_rx(void)
 	// A talkgroup outside the list: shown as busy, not played
 	hear_call(true, 3100, 3107777, 2, 1, false);
 	CHECK(sm.view.state == RS_RX && d->state == RDMR_RX_OTHER && d->call.dst == 3100 && !hw.led[LED_GREEN]);
+	CHECK(!radio_view_wakes(&sm.view));	// one we don't play doesn't
 	run(500);			// fades out
 	CHECK(sm.view.state == RS_IDLE);
 	// MONITOR on DMR: a short press toggles digital monitor (the hear all latch) on its release (#19)
@@ -3822,7 +3827,8 @@ static void test_dmr_data_glue(void)
 	int tx0 = hw.tx_calls;
 	CHECK(dmr_signal_call_alert(3101234));
 	// On air without PTT, the view says TX like a call (#148): the strip's pill, the red LED, Home's activity line
-	bool shown_tx = false, red = false, unkeyed = true;
+	bool shown_tx = false, red = false, unkeyed = true, dark = true;
+	uint32_t tx_ms = sm.view.last_tx_ms;
 	for (int i = 0; i < 60; i++) {
 		run(10);
 		if (sm.view.state == RS_TX && sm.view.dmr.state == RDMR_TX_DATA) {
@@ -3831,9 +3837,12 @@ static void test_dmr_data_glue(void)
 #if CONFIG_APRS
 			unkeyed = unkeyed && sm.tx_no_ptt && !sm.aprs_was_tx;	// not the user's PTT: no "beacon after PTT"
 #endif
+			// ... but the radio's own: the screen stays as it is
+			dark = dark && sm.view.tx_auto && !radio_view_wakes(&sm.view);
 		}
 	}
-	CHECK(shown_tx && red && unkeyed);
+	CHECK(shown_tx && red && unkeyed && dark);
+	CHECK(sm.view.last_tx_ms != 0 && sm.view.last_tx_ms != tx_ms);	// when it went out, for the debug link
 	CHECK(!sm.tx_no_ptt);
 	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT) >= 1 && hw.tx_calls > tx0);
 	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_SENDING && dst == 3101234);
@@ -3847,6 +3856,7 @@ static void test_dmr_data_glue(void)
 	run(50);
 	CHECK(sm.view.state == RS_RX && sm.view.dmr.state == RDMR_IDLE);	// the ack heard: RX, though no call
 	CHECK(!hw.led[LED_GREEN]);	// green is for a call being played
+	CHECK(!radio_view_wakes(&sm.view));	// nor the screen: the radio takes the ack on its own
 	run(150);
 	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_OK);
 	CHECK(!(sm.view.state == RS_TX));
@@ -3871,6 +3881,7 @@ static void test_dmr_data_glue(void)
 	csbk_rx(DMR_CSBKO_CALL_ALERT, 3100001, 3109876, 2);
 	run(50);
 	CHECK(sm.view.state == RS_RX && sm.view.dmr.state == RDMR_IDLE && !hw.led[LED_GREEN]);	// others' data: RX, no call
+	CHECK(!radio_view_wakes(&sm.view));
 	run(1000);
 	CHECK(sim.air_count == n0);
 	CHECK(sm.view.state == RS_IDLE);	// faded
@@ -3901,6 +3912,7 @@ static void test_dmr_data_glue(void)
 	run(300);
 	CHECK((sm.view.state == RS_TX));
 	CHECK(!sm.tx_no_ptt);	// the user's own voice transmission counts for the after-PTT beacon
+	CHECK(!sm.view.tx_auto && radio_view_wakes(&sm.view));	// and lights the screen
 	unsigned voice0 = sim.air_count;
 	CHECK(dmr_signal_call_alert(3101234));
 	run(600);

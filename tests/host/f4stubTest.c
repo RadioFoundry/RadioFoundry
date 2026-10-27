@@ -4,8 +4,8 @@
 // check (stub/stm32f4/f4stub_board.c, docs/spec/stub-stm32f4.md) against a simulated 1 MB flash and a 1 MB SPI flash:
 // framing and resync, the board record (refusals, the echo, nothing written before it), every op's checks, the
 // bootloader guard, the commit sector interlock, blank checks and read-back, a whole update in the order the host tool
-// uses, the SPI flash's reads, erases and programs, and another board's geometry (an application base at sector 4,
-// 8-byte program units).
+// uses, the SPI flash's reads, erases and programs, its security registers (the lock bits, the maker check), and
+// another board's geometry (an application base at sector 4, 8-byte program units).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +45,16 @@ static bool spi_dead;		// the chip stops answering
 static bool spi_flip;		// a programmed byte reads back wrong
 static int spi_erases;
 static bool spi_absent;		// no chip answers at CONFIG
+static uint8_t spi_mfr = 0xEF;	// the JEDEC manufacturer CONFIG reports
+
+// The security registers: registers 1-3, status register 2 (LB1-LB3 at bits 3-5), what the port was asked to do
+static uint8_t sreg[STUBENG_SREG_COUNT][STUBENG_SREG_LEN];
+static uint8_t sr2;
+static int sreg_calls;		// every call: a chip of another maker must see none
+static int sreg_writes;
+static int feeds_at_sreg;
+static bool sreg_flip;		// a programmed byte reads back wrong
+static bool sreg_dead;		// the chip stops answering
 
 static stubeng_port_t port;
 static f4_board_t last_board;	// what the target's configure saw
@@ -143,6 +153,34 @@ static bool sim_xprogram(void *ctx, uint32_t addr, const uint8_t *data, uint32_t
 	return !spi_dead;
 }
 
+static bool sim_xsreg(void *ctx, unsigned reg, uint8_t *dst, const uint8_t *src)
+{
+	(void)ctx;
+	sreg_calls++;
+	if (sreg_dead || reg > STUBENG_SREG_COUNT || (src != NULL && reg == 0)) {
+		return false;
+	}
+	if (reg == 0) {
+		dst[0] = sr2;
+	} else if (src == NULL) {
+		memcpy(dst, sreg[reg - 1], STUBENG_SREG_LEN);
+	} else {
+		// A locked register ignores erase and program on the chip; the engine must not have got this far
+		if ((sr2 & (STUBENG_SR2_LB1 << (reg - 1u))) == 0) {
+			memset(sreg[reg - 1], 0xFF, STUBENG_SREG_LEN);
+			for (unsigned i = 0; i < STUBENG_SREG_LEN; i++) {
+				sreg[reg - 1][i] &= src[i];
+			}
+			if (sreg_flip) {
+				sreg[reg - 1][7] ^= 0x01;
+			}
+		}
+		sreg_writes++;
+		feeds_at_sreg = feeds;
+	}
+	return true;
+}
+
 // The target's configure: the real record check, then a simulated SPI flash on any bus
 static bool sim_configure(void *ctx, const uint8_t *rec, uint32_t n, stubeng_config_t *out)
 {
@@ -153,7 +191,7 @@ static bool sim_configure(void *ctx, const uint8_t *rec, uint32_t n, stubeng_con
 	out->app_base = last_board.app_base;
 	if (last_board.spi_bus != 0 && !spi_absent) {
 		out->xsize = SPI_SIZE;
-		out->xid[0] = 0xEF;
+		out->xid[0] = spi_mfr;
 		out->xid[1] = 0x40;
 		out->xid[2] = 0x14;
 	}
@@ -177,6 +215,7 @@ static stubeng_port_t port = {
 	.xread = sim_xread,
 	.xerase = sim_xerase,
 	.xprogram = sim_xprogram,
+	.xsreg = sim_xsreg,
 	.feed = sim_feed,
 };
 static stubeng_t eng;
@@ -360,6 +399,10 @@ static void test_config(void)
 	put32(x + 4, F4STUB_MAGIC);
 	CHECK(simple(STUB_OP_XERASE, x, 8) == STUB_ST_NOCONFIG, "no SPI erase");
 	CHECK(simple(STUB_OP_XPROGRAM, x, 8) == STUB_ST_NOCONFIG, "no SPI program");
+	uint8_t sw[5 + STUBENG_SREG_LEN] = { 1 };
+	put32(sw + 1, F4STUB_MAGIC);
+	CHECK(simple(STUB_OP_SWRITE, sw, sizeof(sw)) == STUB_ST_NOCONFIG, "no security register write");
+	CHECK(simple(STUB_OP_SREAD, sw, 1) == STUB_ST_BADARG && sreg_calls == 0, "no security register read (no wiring)");
 	uint8_t sums[6] = { 0x08, 0x00, 0x00, 0x00, 0x00, 0x03 };
 	CHECK(simple(STUB_OP_SUMS, sums, 6) == STUB_ST_OK, "internal flash reads work unconfigured");
 	uint8_t xsums[7] = { 0, 0, 0, 0, 0, 1, STUB_MEM_SPI };
@@ -800,6 +843,111 @@ static void test_spi(void)
 	CHECK(configure(dm1701_rec, F4_REC_LEN) == STUB_ST_OK, "configured again");
 }
 
+static uint8_t sread(unsigned reg, const uint8_t **b, uint32_t *n)
+{
+	uint8_t p = (uint8_t)reg;
+	return request(STUB_OP_SREAD, &p, 1, b, n);
+}
+
+static uint8_t swrite(unsigned reg, uint32_t magic, const uint8_t *data)
+{
+	static uint8_t p[5 + STUBENG_SREG_LEN];
+	p[0] = (uint8_t)reg;
+	put32(p + 1, magic);
+	memcpy(p + 5, data, STUBENG_SREG_LEN);
+	return simple(STUB_OP_SWRITE, p, sizeof(p));
+}
+
+// The SPI flash's security registers: reads with the CRC, the write's magic, read-back and lock bits, the reg range,
+// and nothing at all sent to a chip of another maker
+static void test_sreg(void)
+{
+	const uint8_t *b;
+	uint32_t n;
+	uint8_t data[STUBENG_SREG_LEN], old[STUBENG_SREG_COUNT][STUBENG_SREG_LEN];
+	for (unsigned r = 0; r < STUBENG_SREG_COUNT; r++) {
+		for (unsigned i = 0; i < STUBENG_SREG_LEN; i++) {
+			sreg[r][i] = (uint8_t)(i * 7u + r * 31u + 3u);	// factory calibration
+		}
+	}
+	for (unsigned i = 0; i < STUBENG_SREG_LEN; i++) {
+		data[i] = (uint8_t)(i ^ 0x5Au);
+	}
+	sr2 = 0x02;		// QE set, no lock bit
+	CHECK(configure(dm1701_rec, F4_REC_LEN) == STUB_ST_OK, "configured for the security registers");
+
+	// Reads
+	CHECK(sread(0, &b, &n) == STUB_ST_OK && n == 1 && b[0] == 0x02, "status register 2 alone");
+	for (unsigned r = 1; r <= STUBENG_SREG_COUNT; r++) {
+		CHECK(sread(r, &b, &n) == STUB_ST_OK && n == 5u + STUBENG_SREG_LEN && b[0] == 0x02 &&
+		      get32(b + 1) == stubeng_crc32(0, sreg[r - 1], STUBENG_SREG_LEN) &&
+		      memcmp(b + 5, sreg[r - 1], STUBENG_SREG_LEN) == 0, "register %u read with its CRC", r);
+	}
+	uint8_t two[2] = { 1, 0 };
+	CHECK(sread(4, NULL, NULL) == STUB_ST_BADARG && simple(STUB_OP_SREAD, two, 2) == STUB_ST_BADARG &&
+	      simple(STUB_OP_SREAD, NULL, 0) == STUB_ST_BADARG, "read: register 4, wrong lengths");
+
+	// Writes: the magic, the range, the length; then one register, read back, the others untouched
+	memcpy(old, sreg, sizeof(old));
+	int w0 = sreg_writes;
+	CHECK(swrite(2, 0x12345678u, data) == STUB_ST_REFUSED, "write without the magic");
+	CHECK(swrite(0, F4STUB_MAGIC, data) == STUB_ST_BADARG, "write to register 0 (status register 2)");
+	CHECK(swrite(4, F4STUB_MAGIC, data) == STUB_ST_BADARG, "write to register 4");
+	{
+		uint8_t p[5 + STUBENG_SREG_LEN - 1] = { 2 };
+		put32(p + 1, F4STUB_MAGIC);
+		CHECK(simple(STUB_OP_SWRITE, p, sizeof(p)) == STUB_ST_BADARG, "write of 255 bytes");
+	}
+	CHECK(sreg_writes == w0 && memcmp(old, sreg, sizeof(old)) == 0, "refused writes change nothing");
+	int f0 = feeds;
+	CHECK(swrite(2, F4STUB_MAGIC, data) == STUB_ST_OK && memcmp(sreg[1], data, STUBENG_SREG_LEN) == 0,
+	      "register 2 written and read back");
+	CHECK(feeds_at_sreg > f0, "the write starts on a fresh feed");
+	CHECK(memcmp(sreg[0], old[0], STUBENG_SREG_LEN) == 0 && memcmp(sreg[2], old[2], STUBENG_SREG_LEN) == 0,
+	      "registers 1 and 3 untouched");
+	sreg_flip = true;
+	CHECK(swrite(1, F4STUB_MAGIC, data) == STUB_ST_FLASHERR, "a register that reads back wrong");
+	sreg_flip = false;
+	sreg_dead = true;
+	CHECK(sread(1, NULL, NULL) == STUB_ST_FLASHERR && swrite(1, F4STUB_MAGIC, data) == STUB_ST_FLASHERR,
+	      "the chip stops answering");
+	sreg_dead = false;
+
+	// The lock bits: LBn refuses register n only, before anything is erased
+	for (unsigned r = 1; r <= STUBENG_SREG_COUNT; r++) {
+		sr2 = (uint8_t)(0x02u | (STUBENG_SR2_LB1 << (r - 1u)));
+		memcpy(old, sreg, sizeof(old));
+		w0 = sreg_writes;
+		CHECK(swrite(r, F4STUB_MAGIC, data) == STUB_ST_REFUSED && sreg_writes == w0 &&
+		      memcmp(old, sreg, sizeof(old)) == 0, "LB%u: register %u refused, nothing erased", r, r);
+		unsigned other = r % STUBENG_SREG_COUNT + 1u;
+		CHECK(swrite(other, F4STUB_MAGIC, sreg[other - 1]) == STUB_ST_OK, "LB%u: register %u still written", r, other);
+		CHECK(sread(r, &b, &n) == STUB_ST_OK && b[0] == sr2, "LB%u: reads still work and report it", r);
+	}
+	sr2 = 0xFF;		// a chip that drives nothing: MISO high reads every lock bit set
+	CHECK(swrite(1, F4STUB_MAGIC, data) == STUB_ST_REFUSED, "an all-ones status register 2 refuses every write");
+	sr2 = 0x02;
+
+	// Another maker: the opcodes mean other things there (0x35 is a mode switch on some), so nothing is sent
+	spi_mfr = 0xC2;
+	CHECK(configure(dm1701_rec, F4_REC_LEN) == STUB_ST_OK, "configured with another maker's SPI flash");
+	int c0 = sreg_calls;
+	CHECK(sread(0, NULL, NULL) == STUB_ST_BADARG && sread(1, NULL, NULL) == STUB_ST_BADARG &&
+	      swrite(1, F4STUB_MAGIC, data) == STUB_ST_BADARG && sreg_calls == c0, "another maker: refused, nothing sent");
+	spi_mfr = 0xEF;
+	CHECK(configure(dm1701_rec, F4_REC_LEN) == STUB_ST_OK, "back to a Winbond chip");
+
+	// A port without the hook, and no chip
+	port.xsreg = NULL;
+	CHECK(sread(1, NULL, NULL) == STUB_ST_BADARG, "a target without security registers");
+	port.xsreg = sim_xsreg;
+	spi_absent = true;
+	CHECK(configure(dm1701_rec, F4_REC_LEN) == STUB_ST_OK && sread(1, NULL, NULL) == STUB_ST_BADARG,
+	      "no SPI flash: refused");
+	spi_absent = false;
+	CHECK(configure(dm1701_rec, F4_REC_LEN) == STUB_ST_OK, "configured again");
+}
+
 // A board whose bootloader ends at sector 4 (0x08010000), and a target that programs 8-byte units: the rules follow
 // the record and the map, not the DM-1701's numbers
 static void test_other_geometry(void)
@@ -853,6 +1001,7 @@ int main(void)
 	test_program_rules();
 	test_update_order();
 	test_spi();
+	test_sreg();
 	test_other_geometry();
 	test_reset();
 	printf("f4stubTest: %d checks, %d failures\n", checks, failures);

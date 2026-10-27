@@ -24,6 +24,9 @@
 #ifndef RFOUNDRY_GIT
 #define RFOUNDRY_GIT "unknown"
 #endif
+#ifndef RFOUNDRY_RELEASE
+#define RFOUNDRY_RELEASE ""
+#endif
 
 #define STUB_ENTER_DELAY_MS	100u	// let the ENTER reply leave the UART before interrupts are masked
 
@@ -42,7 +45,7 @@ static void show_banner(void)
 	if (board.display == NULL || gfx_framebuffer() == NULL || gfx_width() <= 0) {
 		return;
 	}
-	ui_draw_splash(board.name, RFOUNDRY_GIT, "PC Loader Connected", "Power-cycle to exit");
+	ui_draw_splash(board.name, RFOUNDRY_RELEASE[0] != '\0' ? RFOUNDRY_RELEASE : RFOUNDRY_GIT, STUB_ENTRY_LINE1, STUB_ENTRY_LINE2);
 	gfx_flush();
 	// Full backlight: the UI's idle timeout may have dimmed or switched it off, and the UI never runs again while the
 	// monitor has the radio, so the splash would otherwise sit on a dark panel

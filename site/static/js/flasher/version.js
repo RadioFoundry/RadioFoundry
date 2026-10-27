@@ -28,3 +28,17 @@ export function refShort(ref) {
 export function defaultRef(siteBranch) {
 	return siteBranch && siteBranch !== "main" && siteBranch !== "master" && isBranch(siteBranch) ? siteBranch : "main";
 }
+
+// What a radio running RadioFoundry says it runs (its VERSION reply): the release name and the commit, or the commit
+export function firmwareName(version) {
+	return version.release ? `${version.release} (${version.git})` : version.git;
+}
+
+// The link that opts in to a pre-release newer than the release (site.json beta): this page with ?version=<beta>, or
+// null when there is none or a version link is already in use
+export function betaLink(beta, href, versionRef) {
+	if (!beta || !validRef(beta) || versionRef) return null;
+	const u = new URL(href);
+	u.searchParams.set("version", beta);
+	return u.pathname + u.search + u.hash;
+}

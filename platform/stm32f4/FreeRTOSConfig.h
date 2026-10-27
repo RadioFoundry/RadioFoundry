@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // FreeRTOS for the STM32F4 radios (docs/spec/hardware-dm1701.md 3.1, hardware-md380.md 3: kernel at the lowest
-// priority, max syscall 5)
+// priority, max syscall 4)
 #ifndef FREERTOS_CONFIG_H
 #define FREERTOS_CONFIG_H
 
@@ -67,7 +67,10 @@ extern uint32_t SystemCoreClock;
 
 #define configPRIO_BITS				4
 #define configLIBRARY_LOWEST_INTERRUPT_PRIORITY		15
-#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY	5
+// Even, so it survives a part with 3 priority bits: the APM32F405/407 clones keep only the top 3 bits of each priority,
+// and the kernel's start-up check fails on a level they can't hold (an odd one), every boot (gotchas.md 13.11). No
+// interrupt is at 4, so on an STM32 this masks exactly what 5 did
+#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY	4
 #define configKERNEL_INTERRUPT_PRIORITY		(configLIBRARY_LOWEST_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY	(configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))
 

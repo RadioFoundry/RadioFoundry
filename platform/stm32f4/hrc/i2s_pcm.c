@@ -33,7 +33,7 @@
 
 #define AUDIO_TASK_PRIORITY	5	// above the radio task: a late block is an audible gap
 #define AUDIO_TASK_STACK	1280	// words: the vocoder in the callback needs about 4 KB (stock_vocoder.c)
-#define AUDIO_IRQ_PRIORITY	6	// numerically >= 5 for FreeRTOS API calls
+#define AUDIO_IRQ_PRIORITY	6	// numerically >= 4 for FreeRTOS API calls
 
 #define PIN_I2S_WS		GPIOA, GPIO_PIN_15	// AF6
 #define PIN_I2S_CK		GPIOC, GPIO_PIN_10	// AF6

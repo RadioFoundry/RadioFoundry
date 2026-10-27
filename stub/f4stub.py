@@ -13,6 +13,8 @@ had to enumerate again, on a port with the same serial number). stubtool.py hand
     stubtool.py PORT --rfoundry-enter --verify-progmem flash.bin               compare by CRC
     stubtool.py PORT --rfoundry-enter --q128 spi.bin                           back up the external SPI flash (16 MB)
     stubtool.py PORT --rfoundry-enter --write-q128 spi.bin                     put it back (changed 4 KB sectors only)
+    stubtool.py PORT --rfoundry-enter --secreg secreg.bin                      back up the SPI flash's security registers
+    stubtool.py PORT --attach --write-secreg secreg.bin --confirm-secreg       put them back (changed registers only)
     stubtool.py PORT --attach --board md380 --boot reset                  restart into the firmware
     f4stub.py --self-test                                                 against a simulated radio, no hardware
     f4stub.py --embed build/stub-stm32f4/f4stub.bin                       put a new stub build into this file
@@ -46,104 +48,111 @@ import stubtool  # noqa: E402  (the shared framing, LZ4 decoder and debug link l
 from stubtool import rfoundryboards  # noqa: E402  (the board registry, tools/rfoundry/rfoundry/registry.json)
 
 # --- F4STUB begin (f4stub.py --embed rewrites everything up to the end marker)
-F4STUB_SHA256 = "b08a2dfd15b8085a770b5bc155d5a3931f4f5c6bbd77d5b559defde933579a1f"
+F4STUB_SHA256 = "8141381cf472d079dd0b4bea6d187b1351c8a71535956fc3a7561c2dcfada083"
 F4STUB_B64 = (
-    "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"
+    "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"
 )
 # --- F4STUB end
 
 MAGIC = 0x46345342                     # 'F4SB': ERASE and RESET (stub/stm32f4/f4stub.h)
 OP_HELLO, OP_PEEK, OP_SUMS, OP_READ, OP_RESET, OP_ERASE, OP_PROGRAM = 0x01, 0x02, 0x07, 0x09, 0x0D, 0x10, 0x11
 OP_XERASE, OP_XPROGRAM, OP_CONFIG = 0x12, 0x13, 0x14
+OP_SREAD, OP_SWRITE = 0x15, 0x16       # the SPI flash's security registers (stub version 5)
 MEM_INTERNAL, MEM_SPI = 0, 1           # the memory byte SUMS and READ end with (stub version 2)
 OK, BADSUM, BADOP, BADARG, TOOLONG, REFUSED, FLASHERR, NOCONFIG = 0x05, 0x0A, 0x0B, 0x0D, 0x0E, 0x0F, 0x10, 0x11
-VERSION = 4                            # the embedded stub's protocol: 3 added the image header and the IWDG feed,
-                                       # 4 CONFIG and HELLO's record echo
+VERSION = 5                            # the embedded stub's protocol: 3 added the image header and the IWDG feed,
+                                       # 4 CONFIG and HELLO's record echo, 5 SREAD and SWRITE
 CONFIG_VERSION = 4                     # the first protocol with CONFIG
+SREG_VERSION = 5                       # the first protocol with the security registers
+SREG_LEN, SREG_COUNT = 256, 3          # registers 1-3 at 0x001000, 0x002000, 0x003000 (stub/common/stubeng.h)
+SREG_MFR = 0xEF                        # the JEDEC manufacturer the stub sends their commands to (Winbond)
+SR2_LB1 = 0x08                         # status register 2: LB1; LB2 and LB3 are the next bits up (one-time locks)
+SREG_TIMEOUT = 3.0                     # an erase (400 ms worst case) and a page program
 HELLO_CONFIGURED = 0x80                # HELLO flags: a board record is in force
 HELLO_LEN = 26                         # HELLO v4 without the record echo
 REC_LEN, REC_LAYOUT = 24, 1            # the board record (stub/stm32f4/f4stub.h)
@@ -666,6 +675,98 @@ class F4Radio(stubtool.Radio):
             raise F4Error("SPI flash verify: %d sector(s) differ, first at 0x%06X" % (len(bad), bad[0]))
         return len(todo), len(data) // BLOCK - len(todo)
 
+    # ---- the SPI flash's security registers (docs/spec/stub-stm32f4.md 6.2): three 256-byte registers, which the
+    # DM-1701 family's factory fills with calibration (1, 2) and flags (3). Each has a one-time lock bit in status
+    # register 2 (LB1-LB3); nothing here, or in the stub, ever writes a status register
+    def need_sreg(self):
+        self.need_spi()
+        if self.version < SREG_VERSION:
+            raise F4Error("this stub (protocol %d) has no security register ops: restart the radio and enter again "
+                          "with this tool's stub" % self.version)
+        if self.spi_id[:2] != "%02x" % SREG_MFR:
+            raise F4Error("the SPI flash (JEDEC %s) is not a Winbond part: its security register commands are not "
+                          "known, nothing sent" % self.spi_id)
+
+    def sr2(self):
+        """Status register 2 (read only)"""
+        self.need_sreg()
+        r = self.request(OP_SREAD, b"\x00")
+        if len(r) != 1:
+            raise F4Error("SREAD 0 reply is %d bytes, wanted 1" % len(r))
+        return r[0]
+
+    @staticmethod
+    def sreg_locks(sr2):
+        """[locked] for registers 1-3, from status register 2's LB1-LB3"""
+        return [bool(sr2 & (SR2_LB1 << i)) for i in range(SREG_COUNT)]
+
+    def sreg_read(self, reg):
+        """(status register 2, register reg's 256 bytes), checked against the stub's CRC-32"""
+        self.need_sreg()
+        if not 1 <= reg <= SREG_COUNT:
+            raise F4Error("security registers are 1 to %d" % SREG_COUNT)
+        for _ in range(self.retries + 1):
+            r = self.request(OP_SREAD, bytes([reg]))
+            if len(r) != 5 + SREG_LEN:
+                raise F4Error("SREAD %d reply is %d bytes, wanted %d" % (reg, len(r), 5 + SREG_LEN))
+            data = bytes(r[5:])
+            if zlib.crc32(data) & 0xFFFFFFFF == int.from_bytes(r[1:5], "big"):
+                return r[0], data
+            self.log("security register %d: CRC mismatch, reading again" % reg)
+        raise F4Error("security register %d: no read matching the stub's CRC after %d tries" % (reg, self.retries + 1))
+
+    def sreg_read_all(self):
+        """(status register 2, the three registers: 768 bytes)"""
+        out, sr2 = b"", 0
+        for reg in range(1, SREG_COUNT + 1):
+            sr2, data = self.sreg_read(reg)
+            out += data
+        return sr2, out
+
+    @staticmethod
+    def sreg_slice(data, reg):
+        return data[(reg - 1) * SREG_LEN:reg * SREG_LEN]
+
+    def sreg_write(self, data, backup_dir):
+        """Put data (768 bytes: registers 1-3) into the security registers, writing only the registers that differ.
+        Refused before anything is sent when a register to write is locked, or data has another length. The current
+        content is saved to backup_dir first (never inside a work tree). Each register is erased, programmed and read
+        back by the stub, then all three are read again here. Returns the registers written."""
+        self.need_board()
+        self.need_sreg()
+        if len(data) != SREG_COUNT * SREG_LEN:
+            raise F4Error("security register data is %d bytes, not %d (registers 1-%d): nothing written"
+                          % (len(data), SREG_COUNT * SREG_LEN, SREG_COUNT))
+        sr2, have = self.sreg_read_all()
+        todo = [reg for reg in range(1, SREG_COUNT + 1) if self.sreg_slice(have, reg) != self.sreg_slice(data, reg)]
+        if not todo:
+            return []
+        locked = [reg for reg in todo if self.sreg_locks(sr2)[reg - 1]]
+        if locked:
+            raise F4Error("security register(s) %s differ but are locked for good (status register 2 = 0x%02X): "
+                          "nothing written" % (", ".join(map(str, locked)), sr2))
+        if backup_dir is None:
+            raise F4Error("give a backup directory: the security registers' current content is saved first")
+        path = os.path.join(backup_dir, "%s_secreg_%s.bin" % (self.board, time.strftime("%Y%m%d-%H%M%S")))
+        if inside_git_tree(path):
+            raise F4Error("%s is inside a work tree: factory calibration is never written there" % path)
+        with open(path, "wb") as f:
+            f.write(have)
+        self.log("security registers' current content saved to %s" % path)
+        for reg in todo:
+            try:
+                self.request(OP_SWRITE, bytes([reg]) + MAGIC.to_bytes(4, "big") + self.sreg_slice(data, reg),
+                             retries=0, timeout=SREG_TIMEOUT)
+            except stubtool.DumpError as e:
+                raise F4Error("security register %d: %s (0x0F: refused, locked; 0x10: did not read back as written). "
+                              "The old content is in %s" % (reg, e, path))
+        _, now = self.sreg_read_all()
+        bad = [reg for reg in range(1, SREG_COUNT + 1) if self.sreg_slice(now, reg) != self.sreg_slice(data, reg)]
+        if bad:
+            raise F4Error("security register(s) %s differ after the write. The old content is in %s"
+                          % (", ".join(map(str, bad)), path))
+        return todo
+
     def dump(self, path, start=FLASH_BASE, end=None, progress=None, mem=MEM_INTERNAL):
         if end is None:
             end = start + (self.spi_size if mem == MEM_SPI else self.flash_kb * 1024)
@@ -835,6 +936,29 @@ def run(a, port, reopen, log=print):
         nw, nk = radio.spi_write(data, start, progress=lambda i, n: log("SPI sector %d of %d" % (i, n)) if i % 64 == 0 or i == n else None)
         log("%s: SPI flash from 0x%06X, %d sector(s) written, %d unchanged, verified by CRC, %.0f s" % (
             a.write_q128, start, nw, nk, time.monotonic() - t0))
+    if a.secreg or a.write_secreg:
+        def locks(sr2):
+            return "status register 2 = 0x%02X, %s" % (sr2, ", ".join(
+                "register %d %s" % (i + 1, "LOCKED (one-time)" if lk else "unlocked")
+                for i, lk in enumerate(F4Radio.sreg_locks(sr2))))
+        log("SPI flash security registers: %s" % locks(radio.sr2()))
+    if a.secreg:
+        if inside_git_tree(a.secreg):
+            raise F4Error("%s is inside a git work tree: factory calibration is never written there" % a.secreg)
+        _, data = radio.sreg_read_all()
+        with open(a.secreg, "wb") as f:
+            f.write(data)
+        log("%s: security registers 1-3 (768 bytes, each checked by CRC); sha256 %s" % (
+            a.secreg, stubtool.fingerprint(a.secreg)))
+    if a.write_secreg:
+        if not a.confirm_secreg:
+            raise F4Error("--write-secreg rewrites the factory calibration: add --confirm-secreg")
+        if board is None:
+            raise F4Error("which radio? pass --board (%s)" % ", ".join(sorted(BOARDS)))
+        data = open(a.write_secreg, "rb").read()
+        done = radio.sreg_write(data, a.backup_dir or os.path.expanduser("~"))
+        log("%s: %s" % (a.write_secreg, "security register(s) %s written, each read back" % ", ".join(map(str, done))
+                        if done else "all three registers already hold it, nothing written"))
     if a.boot:
         if a.boot != "reset":
             raise F4Error("on the STM32 radios --boot takes only reset")
@@ -860,6 +984,13 @@ class FakeF4:
         self.timeout = 0.02
         self.erased, self.programs, self.resets = [], 0, 0
         self.fail_after = fail_after        # programs before the "cable" is pulled
+        self.jedec = bytes([0xEF, 0x40, 0x18])
+        # The security registers (version 5): 3 x 256 bytes, status register 2 (QE set, as many chips ship) and the
+        # registers each SWRITE erased
+        self.sregs = [bytearray((i * 17 + r * 5) & 0xFF for i in range(SREG_LEN)) for r in range(SREG_COUNT)]
+        self.sr2 = 0x02
+        self.sreg_writes = []
+        self.crc_flips = 0
 
     def reset_input_buffer(self):
         self.out.clear()
@@ -901,7 +1032,7 @@ class FakeF4:
         return int.from_bytes(self.flash[o:o + 4], "little")
 
     def handle(self, op, p):
-        if op in (OP_ERASE, OP_PROGRAM, OP_XERASE, OP_XPROGRAM) and not self.record:
+        if op in (OP_ERASE, OP_PROGRAM, OP_XERASE, OP_XPROGRAM, OP_SWRITE) and not self.record:
             return self.frame(NOCONFIG)
         if op == OP_HELLO:
             rec = self.record
@@ -909,7 +1040,7 @@ class FakeF4:
             body = (b"F4STUB" + bytes([self.version]) + (4104).to_bytes(2, "big") + self.flash_kb.to_bytes(2, "big")
                     + bytes([0x55, 1 | (HELLO_CONFIGURED if on else 0)])
                     + (int.from_bytes(rec[8:12], "big") if rec else 0).to_bytes(4, "big")
-                    + (len(self.spi) if self.spi and rec else 0).to_bytes(4, "big") + bytes([0xEF, 0x40, 0x18]))
+                    + (len(self.spi) if self.spi and rec else 0).to_bytes(4, "big") + self.jedec)
             if self.version >= CONFIG_VERSION:
                 body += bytes([rec[0] if on else 0, len(rec)]) + rec
             self.frame(OK, body)
@@ -970,6 +1101,28 @@ class FakeF4:
                 return self.frame(REFUSED)
             self.spi[a:a + len(data)] = data
             self.frame(OK)
+        elif op in (OP_SREAD, OP_SWRITE) and self.version >= SREG_VERSION:
+            write = op == OP_SWRITE
+            reg = p[0] if p else 99
+            if (len(p) != (5 + SREG_LEN if write else 1) or not (1 if write else 0) <= reg <= SREG_COUNT
+                    or not (self.spi and self.record) or self.jedec[0] != SREG_MFR):
+                return self.frame(BADARG)
+            if write and int.from_bytes(p[1:5], "big") != MAGIC:
+                return self.frame(REFUSED)
+            if write:
+                if self.sr2 & (SR2_LB1 << (reg - 1)):
+                    return self.frame(REFUSED)
+                self.sregs[reg - 1][:] = p[5:]
+                self.sreg_writes.append(reg)
+                return self.frame(OK)
+            if reg == 0:
+                return self.frame(OK, bytes([self.sr2]))
+            data = bytes(self.sregs[reg - 1])
+            crc = zlib.crc32(data) & 0xFFFFFFFF
+            if self.crc_flips:              # a reply damaged on the way (the frame sum still right)
+                self.crc_flips -= 1
+                crc ^= 1
+            self.frame(OK, bytes([self.sr2]) + crc.to_bytes(4, "big") + data)
         elif op == OP_RESET:
             self.resets += 1
             self.frame(OK)
@@ -1268,6 +1421,80 @@ def self_test():
         check(False, "no SPI flash: refused")
     except F4Error:
         pass
+
+    # The security registers: read with CRC, written only where they differ (the old content saved first), a locked
+    # register refused by the tool before anything is sent and by the stub when asked anyway
+    fake = FakeF4(stock(5), spi=spi)
+    r = F4Radio(fake, log=quiet)
+    r.hello()
+    try:
+        r.sreg_write(b"\xff" * 768, tmp)
+        check(False, "security registers: no write before the board record")
+    except F4Error:
+        check(fake.sreg_writes == [], "security registers: no write before the board record")
+    r.configure("dm1701")
+    check(r.sr2() == 0x02 and r.sreg_locks(r.sr2()) == [False] * 3, "security registers: status register 2, no locks")
+    sr2, regs = r.sreg_read_all()
+    check(regs == b"".join(bytes(x) for x in fake.sregs) and len(regs) == 768, "security registers read")
+    fake.crc_flips = 1
+    check(r.sreg_read(2)[1] == bytes(fake.sregs[1]), "security register read again after a CRC mismatch")
+    new = bytearray(regs)
+    new[256 + 0x10] ^= 0xFF
+    check(r.sreg_write(bytes(new), tmp) == [2] and fake.sreg_writes == [2] and bytes(fake.sregs[1]) == new[256:512],
+          "security registers: only register 2 written %s" % fake.sreg_writes)
+    saved = [f for f in os.listdir(tmp) if f.startswith("dm1701_secreg_")]
+    check(len(saved) == 1 and open(os.path.join(tmp, saved[0]), "rb").read() == regs, "the old registers saved first")
+    check(r.sreg_write(bytes(new), tmp) == [] and fake.sreg_writes == [2], "the same registers again: nothing written")
+    fake.sr2 |= SR2_LB1 << 2                # LB3: register 3 locked for good
+    check(r.sreg_locks(r.sr2()) == [False, False, True], "LB3 read as register 3 locked")
+    new2 = bytearray(new)
+    new2[0] ^= 0xFF
+    new2[512] ^= 0xFF
+    try:
+        r.sreg_write(bytes(new2), tmp)
+        check(False, "a locked register to write: refused")
+    except F4Error:
+        check(fake.sreg_writes == [2] and bytes(fake.sregs[0]) == new[:256], "a locked register: refused, nothing sent")
+    try:
+        r.request(OP_SWRITE, bytes([3]) + MAGIC.to_bytes(4, "big") + bytes(256), retries=0)
+        check(False, "the stub refuses a locked register")
+    except stubtool.DumpError as e:
+        check("status 0x0F" in str(e) and bytes(fake.sregs[2]) == new[512:], "the stub refuses a locked register")
+    check(r.sreg_write(bytes(new2[:512]) + bytes(new[512:]), tmp) == [1], "an unlocked register still written")
+    for bad in (b"\xff" * 767, b"\xff" * 1024):
+        try:
+            r.sreg_write(bad, tmp)
+            check(False, "security registers: %d bytes refused" % len(bad))
+        except F4Error:
+            pass
+    fake.jedec = bytes([0xC2, 0x20, 0x18])  # another maker: its 0x35 / 0x48 mean other things
+    r.hello()
+    try:
+        r.sr2()
+        check(False, "a non-Winbond SPI flash: refused")
+    except F4Error:
+        check(True, "")
+    r = F4Radio(FakeF4(stock(5), spi=spi, version=4), log=quiet)
+    r.hello()
+    r.configure("dm1701")
+    try:
+        r.sreg_read_all()
+        check(False, "a protocol 4 stub has no security register ops")
+    except F4Error:
+        pass
+    import contextlib
+    import io
+    sp = os.path.join(tmp, "secreg.bin")
+    open(sp, "wb").write(bytes(new))
+    for args, what in ((["X", "--write-secreg", sp], "no --confirm-secreg"),
+                       (["X", "--write-secreg", pp, "--confirm-secreg"], "a file that is not 768 bytes"),
+                       (["X", "--board", sorted(stubtool.C7_BOARDS)[0], "--secreg", sp], "an HR_C7000 board")):
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                stubtool.main(args)
+            check(False, "stubtool refuses --write-secreg with %s" % what)
+        except SystemExit as e:
+            check(e.code == 2, "stubtool refuses %s before opening the port" % what)
 
     check(len(stub_image()) > 4096 and stub_image()[:4] != b"\xff" * 4, "the embedded stub decodes and checks")
 

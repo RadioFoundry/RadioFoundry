@@ -518,6 +518,14 @@ disagreed by 8 to 16 bytes on a task (CI's ui task over its stack while the Mac'
 `$(wildcard)` that feeds the build (sources, generated tables); `tools/stack_check.py` reads its `.ci` files in name
 order for the same reason. The figures then match CI byte for byte.
 
+**13.11 An STM32F4 clone with 3 priority bits.** The Geehy APM32F405/407 implements 3 NVIC priority bits, not the
+STM32F4's 4, and keeps only the top 3 of each priority byte. FreeRTOS checks at scheduler start that
+`configMAX_SYSCALL_INTERRUPT_PRIORITY` has no bit the hardware lacks; at 5 (0x50) it had, so the check failed every
+boot, before the display or USB came up: a black screen that only the update mode survives. Rule: keep
+`configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY` even (`platform/stm32f4/main.c` asserts it at build time), and don't
+let correctness depend on two interrupts one apart (4 and 5, 6 and 7) preempting each other: on the clone they are
+one level. STM32F4 boards; built, not run on a clone.
+
 ## 14. SFR (single frequency repeater)
 
 **14.1 The HR_C6000's RX status is unreliable while it transmits.** CRC flag, color code (reg 0x52), sync type

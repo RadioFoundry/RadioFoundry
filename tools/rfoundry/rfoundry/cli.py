@@ -20,14 +20,14 @@ from . import serialflash
 EPILOG = """\
 examples:
   rfoundry flash --release latest                       download the newest release and flash it
-  rfoundry flash rfoundry-dm1701-v0.1.0.bin                  a downloaded image (its .json manifest next to it)
-  rfoundry flash --release v0.1.0 --dry-run             print exactly which sectors would be erased and written
+  rfoundry flash rfoundry-dm1701-v26.11.bin                  a downloaded image (its .json manifest next to it)
+  rfoundry flash --release v26.11 --dry-run             print exactly which sectors would be erased and written
   rfoundry flash --release latest --stock "DM-1701(CSV)-V02.06.bin"
                                                         also write the codec from your stock firmware file
   rfoundry probe                                        ask the radio (running RadioFoundry) whether its codec can be kept
   rfoundry key --stock "DM-1701(CSV)-V02.06.bin" --save derive the bootloader key from the stock file, keep it
   rfoundry key --save                                   read it from the radio instead (running RadioFoundry)
-  rfoundry flash rfoundry-dm1801pro-v0.1.0.bin --port /dev/ttyUSB0
+  rfoundry flash rfoundry-dm1801pro-v26.11.bin --port /dev/ttyUSB0
                                                         a DM-1801 Pro over its programming cable (the stub when it
                                                         runs RadioFoundry with stub entry, else Baofeng's update mode)
 
@@ -36,16 +36,22 @@ entering the bootloader: rfoundry says how for the radio (the steps are each rad
 
 
 
-def stock_hint(board=None):
-    """Which stock files give the codec (and the key): the board's, or every radio's when the board isn't known."""
+def stock_hint(board=None, key=False):
+    """Which stock files give the codec (and the key): the board's, or every radio's when the board isn't known. Files
+    for another radio that give the codec only (an MD-9600 file for the DM-1701) are named by radio and count, unless
+    the hint is for the key (key=True), which they never give"""
     bs = [board] if board else [b for _, b in sorted(boards.BOARDS.items()) if b.codec_stock]
     parts = []
     for b in bs:
-        files = " or ".join("%s (sha256 %s...)" % (stockfw.PROFILES[h]["name"], h[:8])
-                            for h in b.codec_stock if h in stockfw.PROFILES)
+        profs = [(h, stockfw.PROFILES[h]) for h in b.codec_stock if h in stockfw.PROFILES]
+        files = " or ".join("%s (sha256 %s...)" % (p["name"], h[:8]) for h, p in profs if not stockfw.codec_only(p))
         if files:
             parts.append("the %s stock firmware file %s%s" % (b.name, files, ", from %s" % b.stock_download
                                                                if getattr(b, "stock_download", None) else ""))
+        other = sorted({p["file_radio"] for _, p in profs if stockfw.codec_only(p)})
+        n = sum(1 for _, p in profs if stockfw.codec_only(p))
+        if other and not key:
+            parts.append("for the codec only, one of %d %s firmware files" % (n, " or ".join(other)))
     return "; ".join(parts) or "a supported stock firmware file"
 
 
@@ -279,14 +285,17 @@ def load_image(args, board_hint):
     return board, m, image, None
 
 
-def stock_codec(stock, key):
+def stock_codec(stock, key, board=None):
     """(profile, segments as the merge writes them) from a stock file (decrypted with key) or from a readout of the
-    radio's internal flash while it ran its stock firmware (stub/f4stub.py --progmem FILE; no key needed)."""
+    radio's internal flash while it ran its stock firmware (stub/f4stub.py --progmem FILE; no key needed). board: the
+    radio's id, to refuse another radio's stock file by name."""
     if stockfw.is_container(stock):
         try:
-            return stockfw.extract(stock, key)
+            return stockfw.extract(stock, key, board=board)
         except stockfw.StockError as e:
             raise UsageError(str(e))
+    if stockfw.no_codec(stock):
+        raise UsageError(stockfw.no_codec(stock))
     got = stockfw.from_flash(stock)
     if got is None:
         raise UsageError("neither a supported stock firmware file nor a flash readout (from 0x%08X) that holds a "
@@ -310,7 +319,16 @@ def get_key(args, board, stock, sim_key=None):
         return sim_key
     if args.key:
         return dfumod.load_key(args.key, board)
-    if isinstance(stock, bytes) and stockfw.is_container(stock):
+    prof = stockfw.PROFILES.get(stockfw.sha256(stock)) if isinstance(stock, bytes) else None
+    if prof is not None and stockfw.codec_only(prof):
+        # another radio's file that gives this radio's codec: the key comes from elsewhere
+        say("key      %s" % stockfw.codec_only(prof))
+    elif isinstance(stock, bytes) and stockfw.is_container(stock):
+        # another radio's file is refused by name: deriving this radio's key from it could only fail as "could not
+        # derive the key"
+        if prof is not None and prof["board"] != board.id:
+            raise UsageError("%s is a firmware file for the %s, not the %s"
+                             % (prof["name"], boards.get(prof["board"]).name, board.name))
         say("key      deriving the %s bootloader key from the stock file" % board.name)
         try:
             return dfumod.check_key(stockfw.derive_key(stock, board.key_sha256), board)
@@ -328,7 +346,7 @@ def get_key(args, board, stock, sim_key=None):
     raise UsageError("the %s bootloader needs its 1024-byte key. Start the radio with RadioFoundry and connect it (rfoundry reads "
                      "the key from it), or give --stock with %s (rfoundry derives the key from it), or --key FILE, or "
                      "save it once with: rfoundry key --stock FILE --save"
-                     % (board.name, stock_hint(board)))
+                     % (board.name, stock_hint(board, key=True)))
 
 
 def get_saved_codec(args, board, probe):
@@ -359,9 +377,12 @@ class Decision:
         self.source = source		# a merge's codec: "stock" (the stock file) or "saved" (read back from the radio)
 
 
-def decide_codec(board, manifest, requested, have_stock, probe, stock_installed, ask=None, have_saved=False):
+def decide_codec(board, manifest, requested, have_stock, probe, stock_installed, ask=None, have_saved=False,
+                 runs_stock=False):
     """Pick keep or merge (docs/dev/release.md "Codec handling"). probe: a debug-link probe of the radio (this run or
-    remembered), or None. stock_installed: what the user says the radio runs ("V02.06 CSV"), or None. ask: a yes/no
+    remembered), or None. stock_installed: what the user says the radio runs ("V02.06 CSV"), or None. runs_stock: the
+    radio runs its stock firmware, version known or not (implied by stock_installed; the web flasher's "Original
+    firmware" without a version). ask: a yes/no
     callable for the interactive question, or None (non-interactive). have_saved: the codec read back from this radio
     (codecsave.py), used where an update can't keep it or the radio's codec can't be checked, before the stock file.
     Raises UsageError when neither is safe."""
@@ -408,6 +429,11 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
     if have_saved and requested != planmod.KEEP:
         return Decision(planmod.MERGE, "the radio's codec can't be checked, so the copy saved from it earlier is "
                         "written", source="saved")
+    if (runs_stock or stock_installed) and requested == planmod.KEEP and not board.codec.installed:
+        # no stock version holds the codec where RadioFoundry keeps it: keeping it means keeping none
+        return Decision(planmod.KEEP, "asked for, although no stock firmware of the %s holds the codec where "
+                        "RadioFoundry keeps it" % board.name,
+                        risk="DMR voice will stay off (FM works) until you flash with --stock", expect_codec=False)
     if stock_installed:
         norm = stock_installed.upper().replace("-", " ").replace("_", " ")
         if any(norm == v.upper() for v in board.codec.installed):
@@ -559,7 +585,7 @@ def cmd_flash(args):
         else:
             if stockfw.is_container(stock):
                 key = get_key(args, board, stock, sim_key)
-            prof, csegs = stock_codec(stock, key)
+            prof, csegs = stock_codec(stock, key, board.id)
             if prof["board"] != board.id or prof["codec_profile"] != board.codec.id:
                 raise UsageError("the stock file holds the %s codec %s, the image expects the %s codec %s"
                                  % (prof["board"], prof["codec_profile"], board.id, board.codec.id))
@@ -567,7 +593,7 @@ def cmd_flash(args):
                 say("stock    %s verified (SHA-256), codec windows decrypted and checked" % prof["name"])
             else:
                 say("stock    a flash readout of a radio with %s: codec windows found and checked (SHA-256)"
-                    % prof["version"])
+                    % stockfw.layout_name(prof))
         codec_prof, codec_segs = prof, stockfw.codec_segments(prof, csegs)
 
     p = planmod.make_plan(board, mf.segments(man, image), d.mode, codec_segs,
@@ -885,6 +911,9 @@ def cmd_key(args):
         what = stockfw.identify(stock)
         say("stock    %s" % (what or "unknown file (trying anyway)"))
         board = stock_board(stock, args.board)
+        prof = stockfw.PROFILES.get(stockfw.sha256(stock))
+        if prof is not None and stockfw.codec_only(prof):
+            raise UsageError(stockfw.codec_only(prof))
         try:
             key = dfumod.check_key(stockfw.derive_key(stock, board.key_sha256), board)
         except stockfw.StockError as e:
@@ -908,14 +937,15 @@ def cmd_merge(args):
         stock = f.read()
     board = stock_board(stock, args.board)
     key = None
-    if stockfw.is_container(stock):
+    prof = stockfw.PROFILES.get(stockfw.sha256(stock))
+    if stockfw.is_container(stock) and not (prof and stockfw.codec_only(prof)):	# a codec-only file: its own key
         key = (dfumod.load_key(args.key, board) if args.key
                else dfumod.check_key(stockfw.derive_key(stock, board.key_sha256), board))
     # a release image comes with its manifest: check the two belong together
     man_path = os.path.splitext(os.path.expanduser(args.image))[0] + ".json"
     if os.path.exists(man_path):
         mf.verify(mf.load(man_path), image, board.id)
-    prof, segs = stock_codec(stock, key)
+    prof, segs = stock_codec(stock, key, board.id)
     try:
         merged = stockfw.merge(image, prof, segs)
     except stockfw.StockError as e:
@@ -953,7 +983,7 @@ def build_parser():
 
     f = sub.add_parser("flash", help="flash a release image", formatter_class=argparse.RawDescriptionHelpFormatter)
     f.add_argument("image", nargs="?", help="image file (.bin, with its .json manifest next to it, or with the codec merged in)")
-    f.add_argument("--release", metavar="VERSION", help="download this release (v0.1.0, or latest) from GitHub")
+    f.add_argument("--release", metavar="VERSION", help="download this release (v26.11, or latest) from GitHub")
     f.add_argument("--manifest", help="the manifest, when it isn't next to the image")
     f.add_argument("--repo", default=relmod.DEFAULT_REPO, help="GitHub repository (default %(default)s)")
     f.add_argument("--codec", choices=("auto", "keep", "merge"), default="auto",

@@ -49,7 +49,7 @@ static void init(void)
 	hal_delay_us(10);				// let the pull-ups settle before the first sample
 	quad_init(&enc, ENC_STEPS, QUAD_REST_EQUAL, QUAD_AB(PIN_READ(PIN_ENC_A), PIN_READ(PIN_ENC_B)));
 	enc_taken = 0;
-	HAL_NVIC_SetPriority(EXTI15_10_IRQn, 6, 0);	// spec 3.1; must stay numerically >= 5 for FreeRTOS
+	HAL_NVIC_SetPriority(EXTI15_10_IRQn, 6, 0);	// spec 3.1; must stay numerically >= 4 for FreeRTOS
 	HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 

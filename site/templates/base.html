@@ -45,9 +45,19 @@
 </main>
 <footer class="site-footer">
 	{{{ footer }}}
+	<div class="wrap footer-help">
+		<a class="help-card" href="{{ community }}" target="_blank" rel="noopener">
+			<span class="icon icon-facebook help-card-icon" aria-hidden="true"></span>
+			<span><strong>{{t footer.community_title}}</strong><span class="small muted">{{t footer.community_text}}</span></span>
+		</a>
+		<a class="help-card" href="{{ repo }}/issues/new/choose" target="_blank" rel="noopener">
+			<span class="icon icon-github help-card-icon" aria-hidden="true"></span>
+			<span><strong>{{t footer.issues_title}}</strong><span class="small muted">{{t footer.issues_text}}</span></span>
+		</a>
+	</div>
 	<div class="wrap footer-row">
-		<p>{{t footer.license}} · <a href="{{ repo }}">{{t footer.source}}</a> · <a href="{{ home }}docs/index.html">{{t nav.docs}}</a></p>
-		<p class="build-stamp"><a href="{{ repo }}/commit/{{ git_full }}">{{ git_stamp }}</a> · <time datetime="{{ built_iso }}">{{ built_at }}</time></p>
+		<p>{{t footer.license}} · <a href="{{ repo }}">{{t footer.source}}</a> · <a href="{{ community }}" target="_blank" rel="noopener">{{t footer.community}}</a> · <a href="{{ home }}docs/index.html">{{t nav.docs}}</a></p>
+		<p class="build-stamp">{{{ firmware_release }}} · <a href="{{ repo }}/commit/{{ git_full }}">{{ git_stamp }}</a> · <time datetime="{{ built_iso }}">{{ built_at }}</time></p>
 	</div>
 </footer>
 <script type="module" src="{{root}}static/js/site.js?v={{ assets }}"></script>

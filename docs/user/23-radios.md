@@ -139,8 +139,9 @@ Follow [Installing](02-installing.md) with these values:
 
 | Item | DM-1701 |
 |---|---|
-| Stock firmware file | Baofeng's `DM-1701(CSV)-V02.06.bin` (V02.06 CSV). An archive is at github.com/daniel5600/BAOFENG-DM1701-Original-Firmware |
-| `--stock-installed` | `"V02.06 CSV"` |
+| Stock firmware file | Baofeng's `DM-1701(CSV)-V02.06.bin` or `DM-1701(noCSV)-V02.06.bin` (V02.06), or Radioddity's V02.01, V02.02 or V02.03 file (`Firmware-DM-1701(CSV)-V02.01.bin`, `DM-1701(CSV)-V02.02.bin`, `DM-1701(CSV)-V02.03 Only for Radioddity.bin`, `DM-1701-V02.03 Only for Radioddity.bin`). Each gives the bootloader key and the voice codec. An archive of V02.06 is at github.com/daniel5600/BAOFENG-DM1701-Original-Firmware ([the list](../spec/codec-dm1701.md#firmware-files)) |
+| MD-9600 files | Any TYT MD-9600 V16.45 or V06.09 file (`MD9600-CSV(V4)-V16.45.bin` and the rest) gives the voice codec, the one an OpenGD77-family install leaves on the radio. It does not give the bootloader key and is never written back as the radio's firmware: also select a DM-1701 file, or read the radio first (**Another open firmware**, which finds this codec in the radio). [Details](../spec/codec-dm1701.md#md-9600-files) |
+| `--stock-installed` | The version the radio runs, e.g. `"V02.06 CSV"` |
 | Bootloader keys | Hold **PTT** and **SK1** together while you turn the radio on with the volume knob |
 | Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) |
 | Board name | `dm1701` |
@@ -200,7 +201,9 @@ manual are this size.
 
 ### What the DM-1701 lacks
 
-- No GPS. LRRP location requests get "no fix". APRS positions come from a computer or a fixed position.
+- No GPS from the factory. LRRP location requests get "no fix". APRS positions come from a computer or a fixed
+  position. If you fit a GPS module yourself, wire its NMEA output to PA10 (STM32 pin 69). The radio finds it at
+  start-up ([hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module)).
 - APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
 - No APRS iGate (passing heard packets to APRS-IS): it doesn't fit in the flash yet.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
@@ -244,7 +247,7 @@ Follow [Installing](02-installing.md) with these values. To keep the stock codep
 
 | Item | MD-380 |
 |---|---|
-| Stock firmware file | The manufacturer's `MD-380-D2.32(AD).bin` (D002.032). It gives the bootloader key and the voice codec. The archive at md380.org/firmware/orig/ has every release |
+| Stock firmware file | The manufacturer's `MD-380-D2.32(AD).bin` (D002.032), or TYT's `TYT-72310-11-MD380-D35.14.bin` (D35.14) or `TYT-72310-11-MD390-S35.14.bin` (S35.14). It gives the bootloader key and the voice codec. The archive at md380.org/firmware/orig/ has every release |
 | Bootloader keys | Hold **PTT** and the side key just above it while you turn the radio on |
 | Images | One per band: UHF and VHF. rfoundry takes `--option BAND=vhf` |
 | Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) |
@@ -314,7 +317,7 @@ Follow [Installing](02-installing.md) with these values.
 
 | Item | MD-UV380 |
 |---|---|
-| Stock firmware file | Any of TYT's four 19.26 files: `MD-UV380(CSV)-V19.26.bin`, `MD-UV380(REC)-D19.26.bin`, `MD-UV390(CSV-GPS)-P19.26.bin`, `MD-UV390(GPS-REC)-S19.26.bin`. It gives the bootloader key and the voice codec; the codec is the same in all four, so any of them works on any of these radios |
+| Stock firmware file | Any supported TYT or Retevis file: 18.11, 18.16, 19.06, 19.26, 19.74, 219.60 or 219.74 ([the list](../spec/codec-mduv380.md#stock-files)). It gives the bootloader key and the voice codec; the codec is the same in all of them, so any of them works on any of these radios |
 | Bootloader keys | Hold **PTT** and the side key just above it (SK1) while you turn the radio on |
 | Images | Two: 5 W (the MD-UV380, MD-UV390 and RT3S) and 10 W (the MD-UV390 Plus). rfoundry takes `--option POWER=10w`. **Pick by the label on the radio or its box**: the two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart, so a wrong image isn't caught |
 | Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) (assumed the same as the DM-1701's) |
@@ -377,6 +380,7 @@ Follow [Installing](02-installing.md) with these values. To keep the stock codep
 | Stock firmware file | The manufacturer's `DM32.01.01.049.bin` |
 | Cable | The USB-serial programming cable. The radio has no USB of its own |
 | Update mode | Hold **PTT** and **SK1** while you switch the radio on. The green LED lights |
+| If the cable can't prepare the radio | **Use Factory Update Mode**: the update mode above, with the stock firmware file for the codec. It takes about 2.5 minutes, and the radio restarts by itself. The install itself worked on a DM-32UV (2026-10-26); the web installer's own steps are still untested on a radio |
 | Board name | `dm32` |
 
 ### DM-32UV keys
@@ -569,6 +573,11 @@ Settings > Talk & listen > Mic gain sets the microphone level for FM and DMR on 
 
 `--route stub` or `--route bootloader` chooses by hand, and `--dry-run` shows the plan without writing. Neither route of
 rfoundry has flashed a radio yet; `tools/serial_loader.py` and `stub/stubtool.py` have.
+
+In the web installer, when the cable can't prepare the radio, **Use Factory Update Mode** installs through the same
+update mode (PTT and SK1 at power-on). There is no stock firmware file for this radio, so the codec comes from a
+program memory backup of it (`program-memory.bin`, or the backup .zip the installer saved before the first
+installation) or from a codec the browser kept. Untested on a DM-1801 Pro from the web installer.
 
 ### DM-1801 Pro keys
 

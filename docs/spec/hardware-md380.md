@@ -37,8 +37,7 @@ needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (unve
 |---|---|---|
 | 0-2 (3 x 16 KB) | 0x08000000-0x0800BFFF | TYT bootloader, never written (unverified) |
 | 3-7 | 0x0800C000-0x0807FFFF | RadioFoundry application, 464 KB in one piece (`boards/md380/memory.ld`) |
-| 8, 10, 11 | see [codec-md380.md](codec-md380.md) | The D002.032 codec as the merge places it: the table windows at their original addresses (sectors 8, 10, 11), the code moved to 0x080E0000 (sector 11), the descriptor at 0x080FFF80 |
-| 9 | 0x080A0000-0x080BFFFF | Holds nothing |
+| 8-11 | see [codec-md380.md](codec-md380.md) | The codec as the merge places it. From D002.032: the table windows at their original addresses (sectors 8, 10, 11), the code moved to 0x080E0000 (sector 11). From D35.14 / S35.14: the main table window at its original address (from sector 9 into sector 10), the code right after it, the small ones in sector 11. Then the descriptor at 0x080FFF80 |
 
 The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (unverified).
 
@@ -182,8 +181,9 @@ Our allocation, following the DM-1701 (`boards/dm1701`), since the same MCU pins
 | TIM3 | sub-audio tone PWM, CH2 on PC7, only with `CONFIG_SUBTONE` and only while a tone is sent (section 6.4) | 6 |
 | OTG_FS | USB (platform) | platform |
 
-Priority 5 is FreeRTOS's `configMAX_SYSCALL_INTERRUPT_PRIORITY` (`platform/stm32f4/FreeRTOSConfig.h`): the modem ISRs
-notify the DMR task, and a masked section at that level makes every configuration-port and synthesizer transaction
+FreeRTOS's `configMAX_SYSCALL_INTERRUPT_PRIORITY` is 4 (`platform/stm32f4/FreeRTOSConfig.h`; even so that a part with
+3 priority bits can hold it, [gotchas.md](gotchas.md) 13.11), and no interrupt uses 4. The modem ISRs at 5 notify the
+DMR task, and a masked section at the syscall level makes every configuration-port and synthesizer transaction
 atomic.
 
 ---
@@ -792,9 +792,11 @@ sectors 3-7 and keeps the codec).
 The AMBE+2 codec is inside the manufacturer's application: the same library as the
 DM-1701's, at other addresses. In the D002.032 file: code window 0x08050C44+0x10884, table window 0x0808FC64+0xAFF8 and
 four small table windows in sectors 10 and 11. The merge moves the code to 0x080E0000, keeps the table windows at
-their original addresses and writes a descriptor at 0x080FFF80; the codec runs in place from there. Entry points,
+their original addresses and writes a descriptor at 0x080FFF80; the codec runs in place from there. The D35.14 (MD-380)
+and S35.14 (MD-390) files work too: they carry the MD-UV380 family's codec, placed next to its tables in sectors 9 and
+10 (untested on the radio). Entry points,
 calling convention, state sizes, the placement and the extraction recipe are in [codec-md380.md](codec-md380.md).
-`stockfw.PROFILES` has the profile, the codec map (`rfoundry/codec_maps/md380/md380-d2032.json`) the rewrites,
+`stockfw.PROFILES` has the profiles, the codec maps (`rfoundry/codec_maps/md380/`, one per build) the rewrites,
 `boards/md380/memory.ld` keeps the application out of sectors 8-11, `vocoder_md380.c` checks and hosts the codec, and
 `make BOARD=md380` merges it when the firmware file is in `codecs/`. The debug link reports the codec as
 `md380-d2032-s11`; a build from before the move reports `md380-d2032`. Without the codec merged the radio is FM only.
@@ -884,6 +886,6 @@ Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380)
   tone path yet, so AFSK TX is not written (`boards/md380/config.mk`). Without a calibration the board refuses to
   transmit.
 - Release: `[status] release = "stable"`, both band images (`rfoundry-md380-<version>.bin` UHF, `rfoundry-md380-vhf-<version>.bin`).
-  Application sectors 3-7 (464 KB), codec sectors 8, 10, 11, sector 9 unused, so an update keeps the codec. Profile
-  `md380-d2032-s11` (a build from before the move reports `md380-d2032`). `tools/md380_migrate.py` flashes it and keeps
+  Application sectors 3-7 (464 KB), codec sectors 8-11 (D002.032: 8, 10, 11; 35.14: 9-11), so an update keeps the
+  codec. Profile `md380-d2032-s11` (a build from before the move reports `md380-d2032`). `tools/md380_migrate.py` flashes it and keeps
   the codeplug.

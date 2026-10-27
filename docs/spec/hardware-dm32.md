@@ -1061,9 +1061,30 @@ Enter by holding **PTT + SK1** while turning the radio on; the green LED lights 
 
 The image sent is the raw application (the 256-byte header is stripped). The file name and size are not used. The vendor CPS also sends seven 130-byte zero blocks before rebooting; they are not needed (unverified).
 
-If the radio does not boot the new image, remove and refit the battery; update mode still works (unverified).
+The loader answers steps 1-3 once per power-on. After step 3 it ignores a new step 1 (0x52), also from a new
+session on the cable, and waits for step 4 until the radio is switched off and put in update mode again (measured
+2026-10-26). A host must keep the session that did steps 1-3 for the write, and never probe first and then start
+over.
 
-`tools/serial_loader.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1). `serial_loader.py --probe` runs steps 1-3 only and prints the answers, for checking whether
+After the end of transfer (step 9) the radio starts the new image by itself; no power cycle is needed (measured
+2026-10-26). If it does not boot the new image, remove and refit the battery; update mode still works (unverified).
+
+Measured install (2026-10-26, FTDI FT232R cable, the web flasher's `bfloader.js` and `c7000.js` run from Node):
+
+| What | Measured |
+|---|---|
+| Step 3 answer | `BFUV32-V2` |
+| Image | 996,868 bytes: RadioFoundry and the codec slot built from `DM32.01.01.049.bin` |
+| Erase (step 7) | 12.6 s |
+| Blocks (step 8) | 974 in 125 s, no NAK and no resend |
+| Whole install | about 2.5 min |
+| After step 9 | RadioFoundry started by itself and answered on the cable: board `DM-32UV`, codec `dm32-049` |
+
+`tools/serial_loader.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1). The web
+flasher's factory update mode uses it too (`site/static/js/flasher/bfloader.js`, a port checked byte for byte against
+`serial_loader.py`): offered when the boot ROM load (13.3) fails, it writes RadioFoundry and the codec slot, the codec
+taken from the stock file. Its modules installed this radio as measured above; the page's own steps around them are
+checked only in practice mode. `serial_loader.py --probe` runs steps 1-3 only and prints the answers, for checking whether
 another HR_C7000 radio's update loader speaks this protocol and which model string it reports at step 3.
 
 Release: the application area is 0x0300C000..0x030E8000 (880 KB) and the codec slot is 0x030E8000..0x03100000. The
@@ -1075,8 +1096,38 @@ mode with an image that ends before the slot.
 ### 13.3 ROM serial boot (recovery, no bootloader needed)
 
 The HR_C7000 ROM listens on the serial port after reset. Dahua's DH_SOC_TOOLS (Windows) with a script first loads
-a "miniBoot" image to RAM 0x00014000 and starts it, then writes the application to flash (at 0x03001000, unverified). Works with FTDI-based cables only; CH340 cables, which work with the Baofeng bootloader and CPS, do not reach the
-ROM loader (unverified). The ROM protocol itself is not documented here. Production radios are programmed over JTAG (unverified).
+a "miniBoot" image to RAM 0x00014000 and starts it, then writes the application to flash (at 0x03001000, unverified).
+Production radios are programmed over JTAG (unverified). The ROM protocol itself is not documented here.
+
+Cables:
+
+- Any USB-serial chip can reach the ROM loader, CH340 included. Cable quality varies: some cables that work with the
+  Baofeng bootloader and CPS fail the ROM load, so a failed load names the cable's chip and offers the update mode
+  (13.2) instead, which needs no load over the cable. An FTDI FT232R cable carried a whole install that way
+  (2026-10-26, 13.2).
+- Some cables echo what the host sends. The host drops an exact copy of the frame it sent, ahead of the ROM's
+  acknowledgement, and reads on for the acknowledgement until its timeout; any other reply fails the frame (`stub.js` `romAck`, `stubtool.py` `rom_ack`).
+- When a frame is not acknowledged, the first 16 bytes received are logged.
+
+Timing, measured 2026-10-26 on a DM-32UV through an FTDI FT232R cable at 115200 baud:
+
+| What | Measured |
+|---|---|
+| Greeting | `02 24 00 03`, once, 0.6 to 2.7 s after power-on (after one `00` byte). Never repeated |
+| Answer window | The host's `02 14 00 03` must reach the ROM within about 48 ms of the greeting: 46 ms works, 100 ms fails. Without it the ROM sends `00 10 00 03`, ignores the line and starts the firmware from flash |
+| Before the greeting | Bytes that reach the ROM before its greeting are dropped |
+| After the answer | No timeout: 10 s before block 0 and 3 s between blocks work. The ROM waits for commands until the next reset |
+| Block `0x18` ack | 28 to 40 ms for a 268-byte frame (23 ms of it on the wire) |
+| Bad checksum | NAK `02 0a 00 03`; the block sent again is taken |
+| A second answer | NAK `02 0a 00 03`, harmless |
+| Start `0x1B` | Acknowledged `02 05 00 03`, then the stub runs |
+
+The window is tight for a cable that holds received bytes before passing them on (an FTDI chip's latency timer is
+16 ms by default on Windows), behind a USB hub, or in a busy browser. The slow cable mode (`stub.js` `waitForRom`
+`repeat`, `stubtool.py --slow-cable`) sends the answer every 30 ms from before power-on until 150 ms after the
+greeting, so one leaves within 30 ms of it, and drains the NAKs of the rest before block 0. It worked on the same radio
+with the host answering 100 ms late (2026-10-26). RadioFoundry ignored 30 s of these answers while running (881 frames,
+no reply, still answering afterwards).
 
 ### 13.4 Backing up
 

@@ -287,6 +287,7 @@ typedef struct {
 	void (*done)(uint8_t err, void *ctx);
 	void *ctx;
 	uint8_t count;		// bursts in the list, for the time-out
+	const char *tag;	// what the list is for, in the TX trace ("ars", "sms", "roam"); NULL = "data"
 } dmr_data_source_t;
 
 // Send a burst list now: on our slot, one burst per frame, the repeater woken first through a repeater that isn't

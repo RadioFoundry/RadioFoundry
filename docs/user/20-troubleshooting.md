@@ -11,13 +11,17 @@ The web installer's "Select the Symptom" step covers most of these on screen. Th
 | "no radio bootloader found" | The radio isn't in its bootloader, or the cable is charge-only. Turn the radio off. Hold the radio's bootloader keys ([Radio reference](23-radios.md), your radio's "Installing" section) and turn it on; the screen stays dark. Try another USB port or cable. Windows: the bootloader's driver may be missing ([steps](02-installing.md#windows-the-bootloader-driver)) |
 | "access denied" | Linux: add the udev rule rfoundry prints, then unplug and replug. Windows: install the bootloader's driver with Zadig ([steps](02-installing.md#windows-the-bootloader-driver)) |
 | "the bootloader is busy" | Another program has it open (a CPS, a virtual machine with USB passthrough). Close it and replug |
+| The web installer says the radio's port or USB connection is in use | Close the other program or browser tab that uses the radio (a CPS, qdmr, a hotspot host, a second installer tab), then try again. Windows: the bootloader's driver ([steps](02-installing.md#windows-the-bootloader-driver)). Linux: your user needs access to the device |
+| The web installer can't use a firmware file | It says why: another radio's file, not the manufacturer's file, a version without a recipe yet, a damaged download. [What each one means](02-installing.md#when-the-installer-cant-use-a-file) |
 | The screen stays dark after flashing | The radio is still in its bootloader. Turn it off and on again without holding any key |
 | A white, backlit screen and a solid red LED at every power-on, and the radio never starts | The radio is stuck in its factory update mode because the application is missing or incomplete. Nothing else is damaged. Install again with the web installer ([Radio reference](23-radios.md), your radio's "Installing" section says whether this applies) |
+| "Preparing the radio failed", or the radio does not respond on its programming cable | Push the cable plug fully in and try again, or try a cable with an FTDI, CP210x or PL2303 chip. Then select **Try Slow Cable Mode**: turn the radio off, select **Radio Is Off**, then turn it on. If that fails too, select **Use Factory Update Mode**: hold the radio's update mode keys while you turn it on ([Radio reference](23-radios.md), your radio's "Installing" section). It needs the stock firmware file or a program memory backup for the codec ([Installing](02-installing.md#if-something-goes-wrong)) |
 | Flashing stopped half way | Put the radio in its bootloader and run the same command again. rfoundry never erases the bootloader |
 
 ## Command line installs (advanced)
 
-The web installer shows these on screen and walks through the fixes. They apply when you install with `rfoundry`.
+The web installer shows these on screen and walks through the fixes. They apply when you install with `rfoundry`,
+also from the installer's [manual install kit](02-installing.md#install-from-the-command-line-with-a-kit).
 
 | Problem | Cause and fix |
 |---|---|
@@ -72,9 +76,15 @@ modem's state and counters, battery, the board's own lines. **\*** pages through
 
 Developers get the same and more over USB with `tools/rfoundry_debug.py diag` and `tools/rfoundry_debug.py view`.
 
+## Getting help
+
+Ask in the [RadioFoundry community group](https://www.facebook.com/groups/radiofoundry/) on Facebook: other users and
+the developers answer questions there, help with installs and post news. The web installer links the group and the
+GitHub issues under every error message.
+
 ## Reporting a problem
 
-Open an issue in the project repository. Include the firmware version (**Settings > Advanced > About**), the radio
+Open an issue in the [project repository](https://github.com/radiofoundry/radiofoundry/issues/new/choose). Include the firmware version (**Settings > Advanced > About**), the radio
 model, what you did, what you expected and what happened. A screenshot helps: `tools/rfoundry_debug.py screenshot -o
 screen.png` saves one over USB.
 

@@ -27,6 +27,9 @@
 #ifndef RFOUNDRY_GIT
 #define RFOUNDRY_GIT "host"
 #endif
+#ifndef RFOUNDRY_RELEASE
+#define RFOUNDRY_RELEASE ""
+#endif
 
 extern const ui_scr_def_t ui_find_screen;
 extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen;	// ui_aprs.c
@@ -1362,7 +1365,7 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 #endif
 	for (uint8_t i = 1; i <= sp; i++) {
 		ui_frame_t *f = &stack[i];
-		if (f->scr == SCR_ZONES && f->focus >= CH_VFO) {
+		if (f->scr == SCR_ZONES && !chans_is_vfo(f->focus)) {
 			if (zone_edit_map(from, to, (uint16_t)(f->focus - CH_VFO), &out) != ZONE_MAP_LOST)
 				f->focus = (uint16_t)(out + CH_VFO);	// a deleted one: the next zone, clamped by the list
 		} else if (f->scr == SCR_ZONE) {
@@ -3143,7 +3146,7 @@ static const ui_scr_def_t dmr_id_screen = {
 #endif
 
 // ======================= About (Settings > Advanced) =======================
-// A text page, every word shown (nothing shortened), no status strip while idle: the version, RadioFoundry's license, the
+// A text page, every word shown (nothing shortened), no status strip while idle: the release and the commit, RadioFoundry's license, the
 // authors, the third-party code and fonts in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
 // through the header make generates (tools/gen_about.py)
 
@@ -3158,6 +3161,11 @@ static const char *about_text(void)
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
 	sb_str(&b, "RadioFoundry ");
+	// a release: its name, then the commit it was built from
+	if (RFOUNDRY_RELEASE[0] != '\0') {
+		sb_str(&b, RFOUNDRY_RELEASE);
+		sb_str(&b, "\nBuild ");
+	}
 	sb_str(&b, RFOUNDRY_GIT);
 	sb_str(&b, "\nRadio: ");
 	sb_str(&b, board.name);
@@ -3873,7 +3881,8 @@ typedef struct {
 } set_group_t;
 
 static const int16_t v_backlight[] = { 5, 10, 30, 60, 120, 0 };
-static const char *const n_backlight[] = { "5 s", "10 s", "30 s", "1 min", "2 min", "Never" };
+// Dim after / off after (four times as long): both times shown, so that the dim step isn't taken for the time-out
+static const char *const n_backlight[] = { "5s/20s", "10s/40s", "30s/2m", "1m/4m", "2m/8m", "Never" };
 #if CONFIG_UI_COLOR
 static const int16_t v_theme[] = { 0, 1, 2 };
 static const char *const n_theme[] = { "Dark", "Light", "High contrast" };
@@ -4016,7 +4025,7 @@ static const set_item_t s_sound[] = {
 };
 static const set_item_t s_display[] = {
 	NUMBER("Brightness", "backlight", UI_SET_BRIGHTNESS, 10, 100, 10, "%"),
-	LIST("Backlight time", "timeout", UI_SET_BACKLIGHT_S, v_backlight, n_backlight),
+	LIST("Backlight Dim/Off", "timeout", UI_SET_BACKLIGHT_S, v_backlight, n_backlight),
 #if CONFIG_UI_COLOR	// a radio whose only screen is monochrome has no colors to set: no rows for them
 	LIST("Theme", "contrast", UI_SET_THEME, v_theme, n_theme),
 	LIST("Highlight color", "accent", UI_SET_ACCENT, v_accent, n_accent),

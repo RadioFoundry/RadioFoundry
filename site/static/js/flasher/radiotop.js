@@ -1,74 +1,93 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The radio as the page wants the user to see it: a handheld with its antenna, knobs, LED on top, PTT, speaker grille,
-// screen and keypad. The LED blinks the way the real one does in each state (the stub's status blink: half-second
-// phases while waiting, an eighth of a second while data moves, three green flashes when done), a callout names the
-// blink, and a caption says the same in words, so nobody has to read the animation. Colors follow the radio's frame
-// in radios.json.
+// The radio as the page wants the user to see it while entering or using update mode: the radio's own picture, the
+// one its radio page shows (data/radios.json frame_image: its illustration with the screen dark, or the generic drawing
+// per shape the site build makes for a radio without one, docs/dev/website.md "Radio images"), so a new board gets it
+// with no change here. Over the picture's screen (frame_geometry) what the screen shows; under it an LED that blinks
+// the way the real one does in each state (the stub's status blink: half-second phases while waiting, an eighth of a
+// second while data moves, three green flashes when done), and a caption that says the same in words, so nobody has to
+// read the animation.
 
-import { h, svg, t } from "./dom.js";
+import { h, svg, t, ROOT } from "./dom.js";
+
+// The picture's address in the site, or null when the data has none
+export const pictureSrc = (radio) => radio?.frame_image || null;
+
+// The keys held to enter update mode, by key name (board.toml [flash.bootloader] hold): [] when the data has none
+export const holdKeys = (radio) => radio?.flash?.bootloader_hold || [];
+
+// A key as the radio's label names it (flash.key.<name>), else its name in capitals
+export function keyLabel(name, tr = t) {
+	const k = `flash.key.${name}`, s = tr(k);
+	return s && s !== k ? s : name.toUpperCase();
+}
+
+// "Hold PTT and SK1": the keys in words, in the page's language, or "" for none. The steps stay the instructions;
+// this names what the marks on the picture show, and the keys the picture doesn't (a front view without side keys)
+export function holdCaption(names, tr = t, lang = globalThis.document?.documentElement.lang || "en") {
+	if (!names.length) return "";
+	const labels = names.map((n) => keyLabel(n, tr));
+	return tr("flash.keys.hold", { keys: new Intl.ListFormat(lang, { type: "conjunction" }).format(labels) });
+}
+
+// Where each of those keys is on the picture, as percentages of it (the site build's frame_geometry.keys from the
+// drawing's key-<name> shapes): only the keys the picture shows
+export function keyMarks(radio, names) {
+	const boxes = radio?.frame_geometry?.keys || {};
+	return names.filter((n) => boxes[n]).map((n) => ({ name: n, ...boxes[n] }));
+}
+
+// The radio's picture alone, for steps that say nothing about the LED or the screen (the bootloader entry: what a
+// radio shows there is in its steps' words, not in the data), or null without one. keys: names of keys to mark on it
+// (holdKeys), each ringed where the picture shows it, and named in a caption. The marks are decoration: the caption
+// and the steps say the same in words.
+export function radioPicture(radio, { keys = [] } = {}) {
+	const src = pictureSrc(radio);
+	if (!src) return null;
+	const marks = keyMarks(radio, keys).map((m) => h("span", { class: "rt-key", "aria-hidden": "true",
+		"data-key": m.name, style: `left:${m.left}%;top:${m.top}%;width:${m.width}%;height:${m.height}%` }));
+	const caption = keys.length ? h("figcaption", { class: "rt-caption" }, h("span", {}, holdCaption(keys))) : null;
+	return h("figure", { class: "radio-top radio-pic" },
+		h("div", { class: "rt-pic" }, h("img", { src: ROOT + src, alt: radio.name || "", class: "rt-img" }), ...marks), caption);
+}
+
+// What RadioFoundry's own screens look like on this radio: the UI gallery's picture of a screen for the radio's display
+// class (radios.json gallery; docs/ux/screens/<gallery>/<name>.png, made by the host tests' ui-gallery), so the
+// picture shows the radio's real boot screen and the stub entry's splash, at any display size
+const SCREEN_SHOTS = { rfoundry: "boot", loader: "stub_entry" };
+const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}docs/ux/screens/${radio.gallery}/${SCREEN_SHOTS[sc]}.png` : null);
 
 // led: off | wait (slow orange) | busy (fast orange) | done (three green flashes) | green (steady)
-// screen: off | loader ("PC Loader Connected") | on | any (the state doesn't matter yet: no screen line in the caption)
+// screen: off (dark: a power-on stub load or the factory loader) | loader (RadioFoundry handed over to the stub: its
+// "PC Loader Connected" splash) | rfoundry (RadioFoundry running: its boot screen) | on (another firmware running: lit,
+// no picture of its screens) | any (the state doesn't matter yet: no screen line in the caption)
 // knob: null | "cycle" (off, then on) | "on"
 // note: a line for the caption in place of the LED's, while the LED says nothing
 export function radioTop(radio, initial = {}) {
-	const body = radio?.frame?.body || "#22252a", accent = radio?.frame?.accent || "#e0a526";
-	const dark = "#15171b", trim = "#2b2f35";
-	// LED on the top face, between the antenna and the channel knob; the callout rises from it to the label
-	const lx = 96, ly = 92;
-	const led = svg("circle", { cx: lx, cy: ly, r: 5, class: "rt-led" });
-	const glow = svg("circle", { cx: lx, cy: ly, r: 12, class: "rt-glow" });
-	const label = svg("text", { x: lx - 6, y: 20, class: "rt-label" });
-	const callout = svg("g", { class: "rt-led-callout" },
-		svg("line", { x1: lx, y1: ly - 8, x2: lx, y2: 27, class: "rt-callout" }), label);
-	// the arrow around the volume knob, which is also the power switch
-	const knobTurn = svg("g", { class: "rt-knob-turn" },
-		svg("path", { d: "M 168 58 A 20 20 0 1 0 132 58", fill: "none", "stroke-width": 3, class: "rt-arrow" }),
-		svg("path", { d: "M 126 54 L 132 63 L 138 54 Z", class: "rt-arrow-head" }));
-	const screenText = svg("text", { x: 116, y: 186, "text-anchor": "middle", class: "rt-screen-text" });
-	const screenText2 = svg("text", { x: 116, y: 201, "text-anchor": "middle", class: "rt-screen-text small" });
-	const screen = svg("rect", { x: 74, y: 166, width: 84, height: 44, rx: 4, class: "rt-screen" });
-	const key = (x, y, w = 24, ht = 12) => svg("rect", { x, y, width: w, height: ht, rx: 3, fill: "rgb(255 255 255 / 14%)" });
-	const keys = [key(78, 220, 22), key(105, 220, 22), key(132, 220, 22)];
-	for (let r = 0; r < 4; r++) for (let k = 0; k < 3; k++) keys.push(key(78 + 27 * k, 240 + 15 * r, 22, 10));
-	// a knob: a cylinder with grip ridges
-	const knob = (x, y, w, ht, cap) => svg("g", {},
-		svg("rect", { x, y, width: w, height: ht, rx: 4, fill: trim }),
-		Array.from({ length: Math.floor(w / 5) - 1 }, (_, i) => svg("rect", { x: x + 4 + 5 * i, y: y + 3, width: 2, height: ht - 6, rx: 1, fill: "rgb(0 0 0 / 35%)" })),
-		cap ? svg("rect", { x, y: y - 3, width: w, height: 6, rx: 3, fill: cap }) : null);
-	const pic = svg("svg", { viewBox: "0 0 230 312", class: "rt-svg", role: "img" },
-		// antenna with its collar, the channel knob, the volume knob (power), side keys and PTT, body, belt-clip edge
-		svg("rect", { x: 64, y: 30, width: 16, height: 60, rx: 8, fill: dark }),
-		svg("rect", { x: 60, y: 80, width: 24, height: 14, rx: 3, fill: trim }),
-		knob(106, 72, 18, 20),
-		knob(136, 64, 26, 28, accent),
-		svg("rect", { x: 42, y: 128, width: 10, height: 44, rx: 3, fill: trim }),
-		svg("rect", { x: 44, y: 178, width: 8, height: 14, rx: 2, fill: trim }),
-		svg("rect", { x: 44, y: 196, width: 8, height: 14, rx: 2, fill: trim }),
-		svg("rect", { x: 50, y: 88, width: 132, height: 214, rx: 16, fill: body }),
-		svg("rect", { x: 50, y: 88, width: 132, height: 14, rx: 8, fill: "rgb(255 255 255 / 8%)" }),
-		svg("rect", { x: 176, y: 110, width: 6, height: 170, rx: 3, fill: "rgb(0 0 0 / 25%)" }),
-		// speaker grille: the upper half of the front, as on a handheld
-		svg("rect", { x: 66, y: 108, width: 100, height: 50, rx: 8, fill: "rgb(0 0 0 / 22%)" }),
-		[116, 124, 132, 140, 148].map((y) => svg("rect", { x: 74, y, width: 84, height: 3, rx: 1.5, fill: "rgb(0 0 0 / 45%)" })),
-		knobTurn,
-		glow, led, callout,
-		screen, screenText, screenText2,
-		keys);
+	const src = pictureSrc(radio);
+	const pct = radio?.frame_geometry?.screen_pct;
+	const shot = h("img", { alt: "", class: "rt-shot", hidden: true });
+	// what the screen shows, laid over the picture's screen where the data says it is
+	const screen = src && pct ? h("div", { class: "rt-screen", style: `left:${pct.left}%;top:${pct.top}%;width:${pct.width}%;height:${pct.height}%` }, shot) : null;
+	const pic = h("div", { class: "rt-pic", role: "img" }, src ? h("img", { src: ROOT + src, alt: "", class: "rt-img" }) : null, screen);
+	const led = svg("circle", { cx: 12, cy: 12, r: 5, class: "rt-led" });
+	const glow = svg("circle", { cx: 12, cy: 12, r: 11, class: "rt-glow" });
+	const label = h("strong", {});
+	const lamp = h("div", { class: "rt-lamp" }, svg("svg", { viewBox: "0 0 24 24", width: 24, height: 24, "aria-hidden": "true" }, glow, led), label);
 	const caption = h("p", { class: "rt-caption" });
-	const el = h("figure", { class: "radio-top" }, pic, caption);
+	const el = h("figure", { class: "radio-top" }, pic, lamp, caption);
 	const set = ({ led: l = "off", screen: sc = "off", knob = null, note = null } = {}) => {
 		el.dataset.led = l;
 		el.dataset.screen = sc;
 		el.dataset.knob = knob || "";
 		label.textContent = l === "off" ? "" : t(`flash.c7.visual.tag_${l}`);
-		screenText.textContent = sc === "loader" ? "PC Loader" : sc === "on" ? "RadioFoundry" : "";
-		screenText2.textContent = sc === "loader" ? "Connected" : "";
+		const url = screenShot(radio, sc);
+		shot.hidden = !url;
+		if (url && shot.getAttribute("src") !== url) shot.setAttribute("src", url);
 		const words = [knob === "cycle" ? t("flash.c7.visual.cycle") : knob === "on" ? t("flash.c7.visual.on") : null,
 			note || t(`flash.c7.visual.led_${l}`), sc === "any" ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);
 		caption.replaceChildren(...words.map((w) => h("span", {}, w)));
-		pic.setAttribute("aria-label", words.join(" "));
+		pic.setAttribute("aria-label", [radio?.name, ...words].filter(Boolean).join(" "));
 		// restart the animation on every change, so "done" plays its three flashes from the start
 		led.style.animation = "none";
 		void led.getBBox?.();

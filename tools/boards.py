@@ -43,6 +43,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gen_webctl_assets  # noqa: E402
 import registry_docs  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -55,13 +56,14 @@ KINDS = ("handheld", "mobile")
 CLOCKS = ("backed", "unbacked", "none", "unknown")
 # The flashing routes, named by protocol (rfoundry cli.py, site/static/js/flasher): the cable they need, and the
 # board.toml keys a board on the route must have
-# web: the web flasher's backend for the family (site/static/js/flasher/backends.js); update_mode: the vendor loader's
-# update mode the page can write through when nothing else answers (iap.js), or None
+# web: the web flasher's backend for the family (site/static/js/flasher/backends.js); update_mode: the protocol of the
+# radio's own update mode, which the page writes through when nothing else answers or its boot ROM load fails (iap.js,
+# bfloader.js), or None. A board on such a family walks the user into it with flash.bootloader steps
 FAMILIES = {
     "usb-dfu": {"link": "usb", "needs": ("flash.dfu",), "web": "anyroad-dfu", "update_mode": None},	# a USB DFU
     # bootloader with a per-model XOR key
     "serial-loader": {"link": "serial-cable", "needs": ("flash.bootloader.id", "flash.bootloader.keys"),
-                      "web": "c7000-stub", "update_mode": None},	# a serial bootloader started by a key
+                      "web": "c7000-stub", "update_mode": "baofeng"},	# a serial bootloader started by a key
     # combination, speaking its own file format (tools/serial_loader.py)
     "serial-iap": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": "iap"},	# a vendor IAP
     # loader on the cable, through the RAM stub
@@ -163,7 +165,10 @@ BOARD_SCHEMA = {
         "notice": _opt(str),
         "stock_versions": _req(STR_LIST),
         "backup": _req({"stock": _req(("none", "full")), "rfoundry": _req(("none", "full")), "spi_size": _req(int)}),
-        "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str)}),
+        # hold: the keys held to enter it, by their key names (the board's KEY_* in lower case, as the drawing's
+        # key-<name> ids), for the web flasher's picture; steps stays the instructions
+        "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str),
+                            "hold": _opt(STR_LIST)}),
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
                      "key_sha256": _req(str), "key_prefix": _req(str)}),
         # a board profile of its platform's stub (platform.toml board_stub): id and tested always, the keys the
@@ -171,6 +176,12 @@ BOARD_SCHEMA = {
         "stub": _opt({"id": _req(int), "tested": _req(bool),
                       "hold_power": _opt(bool), "progmem": _opt(int),	# the HR_C7000 universal stub
                       "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int),
+                      # where the factory calibration is, for a backup: in a data flash, the 4 KB page of the stock
+                      # codeplug area [0, area) whose last byte is page_id; on a radio whose data memory is a NAND,
+                      # the 4 KB sectors of the program flash (progmem) and the NAND (nand) that each hold a copy
+                      # starting with magic
+                      "calibration": _opt({"area": _opt(int), "page_id": _opt(int),
+                                           "progmem": _opt(int), "nand": _opt(int), "magic": _opt(str)}),
                       # the STM32F4 stub: the SPI flash's bus (SPIn), mode and fastest clock; the pins come from pins.h
                       # (F4_SPI_PINS), and idle_cs names other chip selects on that bus to hold high
                       "spi": _opt({"bus": _req(int), "mode": _req(int), "hz": _req(int)}),
@@ -341,6 +352,22 @@ def shared_board_dirs(root, bid, mk):
         if parts[0] == "boards" and len(parts) == 2 and parts[1] != bid and os.path.isdir(os.path.join(root, d)):
             out.append(os.path.join(root, d))
     return out
+
+
+def key_names(root, bid, mk):
+    """The board's key names, its KEY_* enum in lower case without KEY_ (the drawing's key-<name> ids,
+    tools/gen_webctl_assets.py): from boards/<bid>/<bid>.h, else the first header with the enum in the board's
+    directory or a family directory it builds. None without one."""
+    wa = gen_webctl_assets
+    own = os.path.join(root, "boards", bid, bid + ".h")
+    heads = [own] if os.path.isfile(own) else []
+    for d in [os.path.join(root, "boards", bid)] + shared_board_dirs(root, bid, mk):
+        heads += [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.endswith(".h")]
+    for p in heads:
+        with open(p, encoding="utf-8") as f:
+            if wa.ENUM.search(re.sub(r"//[^\n]*|/\*.*?\*/", "", f.read(), flags=re.S)):
+                return set(wa.key_bits(p))
+    return None
 
 
 def source_volts(board_dir):
@@ -548,6 +575,8 @@ class Board:
             out.update(latch=self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
                        key=self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, nand=self.nand,
                        progmem=s["progmem"], stock_console=s.get("stock_console"))
+            if "calibration" in s:
+                out["calibration"] = s["calibration"]
         return out
 
     def codeplug(self):
@@ -843,6 +872,19 @@ def check(root=ROOT):
             for n in [lk["name"]] + lk.get("also", []):
                 if n not in d["also"]:
                     bad("looks %s: %r is not in also" % (lk["id"], n))
+        if b.family["update_mode"] and not d["flash"]["bootloader"]["steps"]:
+            bad("flash.bootloader.steps is empty: the web flasher walks the user into the %s update mode with them"
+                % b.family["update_mode"])
+        hold = d["flash"]["bootloader"].get("hold", [])
+        if hold:
+            names = key_names(root, bid, b.mk)
+            if len(set(hold)) != len(hold):
+                bad("flash.bootloader.hold names a key twice")
+            if names is None:
+                bad("flash.bootloader.hold: no key enum (an enum ending in KEY_COUNT) in the board's headers")
+            elif set(hold) - names:
+                bad("flash.bootloader.hold: %s is not a key of the board (its keys: %s)"
+                    % (", ".join(sorted(set(hold) - names)), ", ".join(sorted(names))))
         if d.get("part_of") is not None and d["part_of"] not in boards:
             bad("part_of %r is not a board" % d["part_of"])
         if not b.source_names:
@@ -928,6 +970,12 @@ def check(root=ROOT):
                         bad("flash.stub needs %s on platform %s (platform.toml board_stub.keys)" % (k, b.platform.id))
                 for k in set(stub) - {"id", "tested"} - set(bs["keys"]) - set(bs["optional"]):
                     bad("flash.stub %s is not a key of the %s stub (platform.toml board_stub)" % (k, bs["tool"]))
+                cal = stub.get("calibration")
+                if cal is not None and set(cal) not in ({"area", "page_id"}, {"progmem", "nand", "magic"}):
+                    bad("flash.stub calibration is either {area, page_id} (a data flash) or {progmem, nand, magic} (a NAND)")
+                if cal is not None and ("nand" in cal) != b.nand:
+                    bad("flash.stub calibration names %s, but the data memory is %s" % ("the NAND" if "nand" in cal else "a data flash",
+                        "a NAND" if b.nand else "a data flash"))
                 # ids are per stub: each stub has its own table of boards
                 if stub["id"] == STUB_TEST_ID:
                     bad("flash.stub id 0x%02X is reserved for the stub tools' test profiles" % STUB_TEST_ID)
@@ -1017,6 +1065,9 @@ def rfoundry_view(boards):
             "id": bid, "name": d["name"], "model": d["model"], "part_of": d.get("part_of"),
             "platform": b.platform.id, "platform_stubs": list(b.platform.data["stubs"]), "family": fl["family"],
             "link": b.link, "release": d["status"]["release"], "debuglink_names": b.debuglink_names(),
+            # rom_base: the MCU flash's first byte (the platform's flash_base), where the open-firmware CPS's area 5
+            # offsets start (docs/spec/open-firmware-cps.md 3)
+            "rom_base": b.platform.data["flash_base"],
             "app_base": b.app_base, "flash_end": b.flash_end(), "app_region": list(b.app_region),
             "sectors": [list(s) for s in b.sectors()], "protected": [list(p) for p in b.protected],
             "keep_codec_supported": fl["keep_codec"],
@@ -1039,6 +1090,8 @@ def rfoundry_view(boards):
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
             "stub": b.stub(),
             "build_options": d.get("build_options", []),		# rfoundry asks with the same words as the site
+            # the radio types another open firmware's CPS radio info reports for this radio (board.toml [cps])
+            "cps_radio_types": list(d.get("cps", {}).get("radio_types", [])),
         }
         out[bid] = e
     return {"format": "rfoundry-board-registry/2",
@@ -1117,6 +1170,8 @@ def site_view(boards, root=ROOT):
         stub = fl.get("stub") or {}
         flash = {"backend": b.family["web"], "board": bid, "family": fl["family"], "link": b.link,
                  "bootloader": list(fl["bootloader"]["steps"]), "stock_versions": list(fl["stock_versions"]),
+                 # the keys to hold, by key name: the flasher marks them on the radio's picture (radiotop.js)
+                 "bootloader_hold": list(fl["bootloader"].get("hold", [])),
                  # the image starts with a first stage of this size, its first word this signature (board.mk BOOT_*)
                  "first_stage": {"size": b.first_stage[0], "head": b.first_stage[1].hex()} if b.first_stage else None,
                  "stock_console": stub.get("stock_console"), "update_mode": b.family["update_mode"],
@@ -1507,11 +1562,13 @@ def self_test():
     # a fixture tree: the real registry copied, then broken one way at a time
     tmp = tempfile.mkdtemp(prefix="rfoundry-boards-")
     try:
-        # boards and platforms with what make print-vars reads (the Makefile, config/, boot/boot.mk) and pins.h
+        # boards and platforms with what make print-vars reads (the Makefile, config/, boot/boot.mk), pins.h and the
+        # boards' headers (their key enums)
         for top in ("boards", "platform", "config"):
             shutil.copytree(os.path.join(ROOT, top), os.path.join(tmp, top),
                             ignore=lambda d, names: [n for n in names if not (n.endswith((".toml", ".mk", ".ld", ".c"))
                                                                               or n == "pins.h"
+                                                                              or (top == "boards" and n.endswith(".h"))
                                                                               or os.path.isdir(os.path.join(d, n)))])
         shutil.copy(os.path.join(ROOT, "Makefile"), tmp)
         os.makedirs(os.path.join(tmp, "boot"))
@@ -1548,6 +1605,12 @@ def self_test():
                "the test profiles' stub id", "reserved for the stub tools' test profiles")
         broken(re.sub(r"(?m)^(hold_power = .*)$", r"\1\nspi = { bus = 1, mode = 0, hz = 1000000 }", good),
                "a key of another platform's stub", "not a key of the stubtool stub")
+        broken(re.sub(r"(?m)^(\[flash\.bootloader\]\n)", r'\1hold = ["ptt", "no_such_key"]\n',
+                      re.sub(r"(?m)^hold = \[.*\n", "", good)),
+               "a key to hold the board doesn't have", "no_such_key is not a key of the board")
+        if load(tmp)[one].family["update_mode"]:
+            broken(re.sub(r"(?ms)^steps = \[.*?^\]\n", "steps = []\n", good, count=1),
+                   "an update mode without the steps into it", "flash.bootloader.steps is empty")
         two = board_dirs(tmp)[1]
         other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
         broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")
@@ -1608,13 +1671,17 @@ def self_test():
         if st:
             sp = os.path.join(tmp, "boards", st, "board.toml")
             st_good = open(sp, encoding="utf-8").read()
-            for text, what, want in ((re.sub(r'(?m)^stock = \["(\w+)"\]', r'stock = "\1"', st_good),
+            # the stock array, on one line or several (one digest a line, each with its comment)
+            arr = re.search(r"(?ms)^stock = \[.*?\]$", st_good)
+            first = re.search(r"[0-9a-f]{64}", arr.group(0)).group(0)
+            put = lambda new: st_good[:arr.start()] + new + st_good[arr.end():]
+            for text, what, want in ((put('stock = "%s"' % first),
                                       "a codec.stock that isn't a list", "a list expected"),
-                                     (re.sub(r'(?m)^stock = \["(\w+)"\]', r'stock = ["\1", "\1"]', st_good),
+                                     (put('stock = ["%s", "%s"]' % (first, first)),
                                       "a stock file listed twice", "once"),
                                      (re.sub(r'(?m)^stock = \[', 'stock = ["abc", ', st_good),
                                       "a codec.stock entry that isn't a SHA-256", "SHA-256"),
-                                     (re.sub(r"(?m)^(stock = .*)$", r'\1\nsources = ["x"]', st_good),
+                                     (put(arr.group(0) + '\nsources = ["x"]'),
                                       "codec.sources beside codec.stock", "comes from the stock files")):
                 with open(sp, "w", encoding="utf-8") as f:
                     f.write(text)

@@ -20,7 +20,7 @@ enum { CH_VOLUME = MD380_ADC_VOLUME, CH_BATTERY = MD380_ADC_BATTERY, CH_MIC = MD
 // The sub-audio input is one more rank of the scan (about 2.6 kHz per channel at 72 MHz), streamed from the DMA
 // half and full transfer interrupts. A longer ring: a half is 8 scans (3 ms), and the averaged readings cover 6 ms
 #define SCANS			16
-#define QT_IRQ_PRIORITY		7	// numerically >= 5: no RTOS calls in the handler, but below the modem interrupts
+#define QT_IRQ_PRIORITY		7	// numerically >= 4: no RTOS calls in the handler, but below the modem interrupts
 #else
 #define SCANS			8		// about 330 us per scan at 9 MHz ADC clock and 480-cycle sampling: 2.7 ms window
 #endif

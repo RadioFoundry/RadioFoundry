@@ -31,7 +31,7 @@ on the radio`, any of the three. The README marks each ◐ until the board merge
 
 | Radio (and rebadges) | MCU | DMR chip | RF | Display | Ext. memory | GPS | Update path | Port |
 |---|---|---|---|---|---|---|---|---|
-| Baofeng DM-1701, Retevis RT84 | STM32F405VG (measured) | HR_C6000 (measured) | AT1846S (measured) | 160x128 color, 8080 bus (measured) | 16 MB SPI NOR (measured) | none | USB DFU on the MCU, wrapped images | Supported ([hardware-dm1701.md](hardware-dm1701.md)) |
+| Baofeng DM-1701, Retevis RT84 | STM32F405VG (measured) | HR_C6000 (measured) | AT1846S (measured) | 160x128 color, 8080 bus (measured) | 16 MB SPI NOR (measured) | none from the factory; owners fit one on PA10 ([hardware-dm1701.md](hardware-dm1701.md) 14.2) | USB DFU on the MCU, wrapped images | Supported ([hardware-dm1701.md](hardware-dm1701.md)) |
 | Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | GD32F303VGT6; early 868UVs GD32F303VET6 (unverified) | SCT3258 with built-in AMBE+2 (unverified) | AT1846S (unverified) | 160x128 color (unverified) | 1-2 Gbit SPI NAND (unverified) | 878: yes (unverified) | USB CDC update mode (unverified) | Planned. A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](hardware-anytone.md)) |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | STM32F405VG | HR_C6000 | AT1846S | 160x128 color, HX8302A (unverified) | 25Q128FV, 16 MB (unverified) | optional, JS-H210 (unverified) | USB DFU on the MCU, XOR-keyed images | Bring-up ([mduv380-bringup.md](../testing/mduv380-bringup.md)) |
 | TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG | HR_C6000 | 2x SKY72310 (V1-V3), "PLL1590" (V4), LMX2571 (V4A/V5, unverified) PLLs; AK2365A IF x2 on V1-V4 | 128x64 mono, ST7567 | 25Q128FV, 16 MB | optional, JS-M710 (unverified) | USB DFU on the MCU | In progress, #112, builds, host tests. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
@@ -53,7 +53,7 @@ on the radio`, any of the three. The README marks each ◐ until the board merge
 
 ### Baofeng DM-1701 / Retevis RT84
 
-- Bands 136–174 / 400–480 MHz, 1/2/5 W, 1.77" color TFT, no GPS
+- Bands 136–174 / 400–480 MHz, 1/2/5 W, 1.77" color TFT, no GPS from the factory
   ([baofengradio.com](https://baofengradio.com/products/dm-1701)). A search snippet from the same site said
   400–520 MHz; the product page itself says 400–480 MHz.
 - FCC ID 2AJGM-DM1701, granted 2018-12-22. Internal photos exist but are too low resolution to read parts
@@ -87,8 +87,9 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   It needs a key map, no LCD row offset and its own panel-type table, battery and volume ADC scaling, power tables
   (5 W and Plus 10 W, whose PA band select and backlight pins are swapped), its own DFU key and GPS on USART1 (PA10,
   power PA9; an earlier note here said USART3, which is the MD-380's). No new drivers.
-- Codec: the TYT 19.26 files (V/D non-GPS, P/S GPS) carry the same codec library as the DM-1701, with the same entry
-  offsets, in the same flash sectors ([codec-mduv380.md](codec-mduv380.md)).
+- Codec: the TYT and Retevis files from 18.11 to 219.74 (V/D non-GPS, P/S GPS) carry the same codec library as the
+  DM-1701, with the same entry offsets, placed in the same flash sectors ([codec-mduv380.md](codec-mduv380.md)). The
+  RT3S takes the TYT key.
 
 ### TYT MD-9600 / Retevis RT90
 
@@ -133,8 +134,8 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   `platform/stm32f4`, `drivers/flash/spi_nor` and `drivers/display/st7735` (HX8302A assumed compatible, ?). The
   HR_C5000 is a variant of `drivers/modem/hrc6000` (a chip flag selects the register differences). New:
   `drivers/rf/sky72310` (shared with the MD-9600 later), `drivers/gps/nmea_line`, run-time GPS detection
-  (`board.gps_present`). DMR voice uses the codec of the vendor D002.032 file, merged at build time and run in place
-  ([codec-md380.md](codec-md380.md)); untested on a radio.
+  (`board.gps_present`). DMR voice uses the codec of the vendor D002.032, D35.14 or S35.14 file, merged at build time
+  and run in place ([codec-md380.md](codec-md380.md)); untested on a radio.
 
 ### Radioddity GD-77 family
 
@@ -389,7 +390,7 @@ By effort, then by how many radios a port unlocks and how popular they are:
 3. **TYT MD-9600 / RT90.** STM32 + HR_C6000 again. New are the SKY72310 driver, the ST7567 display (shared work with
    the GD-77's mono driver) and the board-version problem. Effort: weeks, and the V4/V5 PLL needs identifying first.
 4. **TYT MD-380 / MD-390 / RT3.** Builds now, with the SKY72310 driver the MD-9600 can reuse, and runs the vendor
-   D002.032 codec in place for DMR voice ([codec-md380.md](codec-md380.md)); it needs a radio for bring-up.
+   D002.032 or 35.14 codec in place for DMR voice ([codec-md380.md](codec-md380.md)); it needs a radio for bring-up.
 5. **HR_C7000 family after the DM-32UV is on air**: the DM-1801 Pro (air band and broadcast like the DM-32UV, chip
    list still open), then the DB25-D (one HR_C7000, but a new RF
    chip and SPI NAND), then the GD-88, then the DB40-D (two SoCs, reusing the GD-88's A/B work). All four are wish

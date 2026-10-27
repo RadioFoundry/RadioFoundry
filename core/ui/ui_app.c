@@ -450,6 +450,7 @@ void ui_open_caller_actions(void)
 
 static ui_event_t events[UI_EVENTS];
 static volatile uint8_t ev_head, ev_tail;
+static bool wake_req;		// a banner or the emergency screen came up: ui_app_take_wake
 
 bool ui_notify(const ui_event_t *ev)
 {
@@ -478,6 +479,14 @@ static void banner(uint8_t kind, bool warn, uint32_t id, const char *title, cons
 	b->text[sizeof b->text - 1] = 0;
 	ui_st.toast = NULL;	// the banner has the news now ("Checking Joe..." is answered)
 	dirty = true;
+	wake_req = true;
+}
+
+bool ui_app_take_wake(void)
+{
+	bool w = wake_req;
+	wake_req = false;
+	return w;
 }
 
 static void station(sbuf_t *b, const ui_event_t *ev)
@@ -563,6 +572,7 @@ static void handle_event(const ui_event_t *ev)
 		strcpy(emerg_name, ev->name);
 		if (stack[sp].scr != SCR_EMERGENCY)
 			ui_push(SCR_EMERGENCY, 0);
+		wake_req = true;
 		vibrate(UI_VIBE_EMERGENCY);
 		break;
 	case UI_EV_HOTSPOT_STARTED:
@@ -1583,6 +1593,7 @@ void ui_app_init(void)
 #endif
 	view = &view_none;
 	memset(&ui_st, 0, sizeof ui_st);
+	wake_req = false;
 #if CONFIG_DUAL_WATCH
 	ui_dual_reset();
 #endif
