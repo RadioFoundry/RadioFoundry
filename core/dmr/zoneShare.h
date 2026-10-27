@@ -30,7 +30,8 @@
 #define ZS_CHUNK_MIN			128		// the smallest full chunk a receiver takes
 #define ZS_FRAGMENTS_MAX		((ZS_RECORD_MAX + ZS_CHUNK_MIN - 1) / ZS_CHUNK_MIN)	// in a transfer we receive
 // The chunk we send: the first builds take only 322-octet chunks (messages of 328), so a larger one would be lost on
-// them. Raise it to ZS_CHUNK_MAX once those are gone; every build from this one takes it
+// them. Raise it once those are gone, to at most 562: every build from this one takes chunks up to that (its
+// ZS_CHUNK_MAX, at air MTU 596), and a build with a larger air MTU must not send more while these are in use
 #define ZS_SEND_CHUNK			322
 #define ZS_SEND_FRAGMENTS_MAX	((ZS_RECORD_MAX + ZS_SEND_CHUNK - 1) / ZS_SEND_CHUNK)	// in one we send (4)
 #define ZS_REQUEST_LEN			5		// a request message, octets

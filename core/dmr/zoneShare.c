@@ -6,6 +6,7 @@
 
 _Static_assert(ZS_FRAGMENTS_MAX <= 8, "a transfer's fragments fit zsAssembly_t.have (and the 4-bit count)");
 _Static_assert((ZS_SEND_CHUNK >= ZS_CHUNK_MIN) && (ZS_SEND_CHUNK <= ZS_CHUNK_MAX), "our own fragments are ones we take");
+_Static_assert(ZS_SEND_CHUNK <= 562, "the builds since the first take chunks up to 562 (zone-share.md 3.1)");
 _Static_assert(ZS_SEND_FRAGMENTS_MAX <= 4, "the first builds take at most 4 fragments");
 
 #define REC_HEADER		10		// version, length (2), zone ID (4), flags, channels, contacts; the name follows

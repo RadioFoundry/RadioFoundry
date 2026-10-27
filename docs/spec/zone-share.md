@@ -50,8 +50,9 @@ Every message starts with the version (1) and the type. Multi-octet fields are b
   [dmr-data.md](dmr-data.md) 12.8). That limit grows with the air MTU. A record in 128-octet chunks takes 8 fragments,
   the most a transfer may have.
 - We still send 322: the first builds take only that chunk size and messages of at most 328 octets, and would drop
-  larger fragments. Every build since takes larger chunks, so the sender can move up to `ZS_CHUNK_MAX` (2 fragments
-  for a full record) once the first builds are no longer in use. `zoneShareTest` checks our fragments against the
+  larger fragments. Every build since takes chunks up to 562, so the sender can move up to 562 (2 fragments for a
+  full record) once the first builds are no longer in use. A build whose air MTU is larger takes larger chunks, but
+  must not send them while builds that take only 562 are in use. `zoneShareTest` checks our fragments against the
   first builds' rules.
 - Every fragment but the last is full, and its offset is index x its length. The last fragment's offset is a whole
   number of chunks of a size the receiver takes, and it is no longer than one. Every fragment of a transfer must give the
