@@ -622,7 +622,6 @@ class F4Radio(stubtool.Radio):
             self.guard("progmem", sec[idx][0] - FLASH_BASE, sum(sec[idx]) - FLASH_BASE, "erase")
         if not changed:
             return 0, len(new)
-        sec = {i: (a, s) for i, a, s in f405_sectors(self.flash_kb)}
         for idx in changed:
             if idx in kept:			# bytes that are not ours: a copy first
                 if backup_dir is None:
@@ -681,7 +680,7 @@ class F4Radio(stubtool.Radio):
         self.need_board()
         if start % BLOCK or len(data) % BLOCK or start + len(data) > self.spi_size:
             raise F4Error("SPI flash writes are whole 4 KB sectors inside the chip's %d KB" % (self.spi_size // 1024))
-        keep = [p for p in protect.overlapping(self.protect(), "data", start, start + len(data))]
+        keep = protect.overlapping(self.protect(), "data", start, start + len(data))
         if keep:
             self.log("left as the radio has them (protected): %s" % "; ".join(protect.describe(p) for p in keep))
         free = set(protect.carved_units(self.protect(), "data", start, start + len(data), BLOCK))

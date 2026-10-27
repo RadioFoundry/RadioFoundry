@@ -62,7 +62,7 @@ export function codeplugSectors(backupSpi, radioSpi, protect = []) {
 	const out = [];
 	for (let a = 0; a < CODEPLUG_SPAN; a += 4096) {
 		if (a >= 0x10000 && a < 0x20000) continue;
-		if (protected_(protect, a)) continue;
+		if (protectOverlap(protect, "data", a, a + 4096).length) continue;
 		const want = backupSpi.subarray(a, a + 4096);
 		const have = radioSpi.subarray(a, a + 4096);
 		if (want.length < 4096) break;
@@ -72,8 +72,6 @@ export function codeplugSectors(backupSpi, radioSpi, protect = []) {
 	}
 	return out;
 }
-
-const protected_ = (list, a) => protectOverlap(list, "data", a, a + 4096).length > 0;
 
 export async function writeCodeplug(link, sectors, progress = () => {}) {
 	const refused = [];

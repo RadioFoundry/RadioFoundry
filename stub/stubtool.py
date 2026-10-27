@@ -884,6 +884,8 @@ class Radio:
         DM-32UV / DM-1801 Pro). An older stub has no CONFIG: nothing is sent."""
         if self.v6 is None:
             self.log("stub protocol before 6: no board configuration")
+            if board:			# the stub can't take it, but its protected regions still apply here
+                self.profile = C7_BOARDS[board]
             return
         if board is None and self.v6["board"]:     # attached to a stub configured earlier: keep its profile
             prof = next((b for b in C7_BOARDS.values() if b["id"] == self.v6["board"]), None)
@@ -2221,6 +2223,14 @@ def self_test():
     r.configure(sorted(C7_BOARDS)[0])
     check(r.v6 is None and not radio.configs, "an old stub gets no CONFIG")
     r.write_image(images["progmem"][APP_START:APP_START + SECTOR])
+    # the board named still brings its protected regions
+    for p in (x for x in C7_BOARDS[sorted(C7_BOARDS)[0]]["protect"] if x["mem"] in PROTECT_MEM.values()):
+        mem = next(m for m, n in PROTECT_MEM.items() if n == p["mem"])
+        try:
+            r.check_write_range(mem, p["start"] - p["start"] % SECTOR, p["start"] - p["start"] % SECTOR + SECTOR)
+            check(False, "an old stub: a protected region still refused")
+        except DumpError as e:
+            check("protected region" in str(e), "an old stub: a protected region still refused (%s)" % e)
     print("stubtool self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                     "" if len(fails) == 1 else "s"))
     return 0 if not fails else 1
