@@ -261,7 +261,7 @@ blocks. Accept blocks only within 400 ms of a header, CSBK, MBC or previous bloc
 
 **5.5 Data list sizing.** A data header must always set how many bursts follow (preamble count + header's blocks); the
 old code compared with the preamble's count and stopped after the header (blocks never sent). A list goes out when
-complete or 180 ms after its last frame, max 40 bursts; frames that can't be sent are NAKed, not silently ACKed.
+complete or 180 ms after its last frame, max 64 bursts (`DMR_DATA_MAX_BURSTS`); frames that can't be sent are NAKed, not silently ACKed.
 
 **5.6 TMS ACK sequence number is 7 bits.** The ACK carried only the low 5 bits, so senders numbering past 31 never
 matched. Bytes must equal a MOTOTRBO capture (example 00 04 9F 00 95 20 for s/n 53), sent as its own transmission after

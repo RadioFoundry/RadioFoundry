@@ -208,8 +208,8 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 ### 2.6 Transmitting data and CSBK
 
 - A list of bursts (CSBK preambles, data header, blocks; or single CSBKs) goes out one per frame on our slot. No
-  voice header, no terminator. Same channel access and BS activation as voice. Up to 40 bursts per transmission in
-  current practice; a timeout of 10 s + 60 ms per burst covers a wake-up.
+  voice header, no terminator. Same channel access and BS activation as voice. Up to 64 bursts per transmission
+  (`DMR_DATA_MAX_BURSTS`); a timeout of 10 s + 60 ms per burst covers a wake-up.
 - The data service needs a "send this payload verbatim, I supplied the CRC" option (raw passthrough of CSBK / data
   headers from a host). On modems that always compute the CSBK / data header CRC (HR_C7000, HR_C5000), raw
   passthrough of a burst with an intentionally wrong CRC is not possible; the stack must then give the payload without

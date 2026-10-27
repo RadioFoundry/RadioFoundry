@@ -14,17 +14,26 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "dmr/dmrData.h"
 
 #define ZS_PORT					4100	// UDP source and destination port (above 4000-4099: compressed headers on auto)
 #define ZS_VERSION				1		// record and message version
-#define ZS_RECORD_MAX			1024	// a record is at most this long (4 fragments)
+#define ZS_RECORD_MAX			1024	// a record is at most this long
 #define ZS_NAME_MAX				16		// zone, channel and contact names, octets (no terminator on air)
 #define ZS_CHANNELS_MAX			80		// channels in one record
 #define ZS_CONTACTS_MAX			32		// contacts in one record
-#define ZS_MSG_MAX				328		// UDP payload of one message: fits a confirmed packet with the full IPv4 header
+// The longest message we take: the air MTU less the full IPv4 and UDP headers, so it grows with the data service's
+// limits. A receiver takes any chunk size from ZS_CHUNK_MIN up to its ZS_CHUNK_MAX
+#define ZS_MSG_MAX				(DMR_DATA_IP_MTU - 28)
 #define ZS_MSG_HEADER			6		// a fragment's header
 #define ZS_CHUNK_MAX			(ZS_MSG_MAX - ZS_MSG_HEADER)
-#define ZS_FRAGMENTS_MAX		4
+#define ZS_CHUNK_MIN			128		// the smallest full chunk a receiver takes
+#define ZS_FRAGMENTS_MAX		((ZS_RECORD_MAX + ZS_CHUNK_MIN - 1) / ZS_CHUNK_MIN)	// in a transfer we receive
+// The chunk we send: the first builds take only 322-octet chunks (messages of 328), so a larger one would be lost on
+// them. Raise it once those are gone, to at most 562: every build from this one takes chunks up to that (its
+// ZS_CHUNK_MAX, at air MTU 596), and a build with a larger air MTU must not send more while these are in use
+#define ZS_SEND_CHUNK			322
+#define ZS_SEND_FRAGMENTS_MAX	((ZS_RECORD_MAX + ZS_SEND_CHUNK - 1) / ZS_SEND_CHUNK)	// in one we send (4)
 #define ZS_REQUEST_LEN			5		// a request message, octets
 #define ZS_REFUSAL_LEN			4		// a refusal message, octets
 #define ZS_REASSEMBLY_MS		30000	// a transfer whose fragments stop coming is dropped after this
@@ -140,8 +149,8 @@ bool zsChannelAt(const zsRecord_t *rec, int index, zsChannel_t *ch);
 
 // --- Messages ---
 
-// Fragment `index` of `count` for a record (offset = index * ZS_CHUNK_MAX); the message's length
-int zsBuildFragment(uint8_t transfer, const uint8_t *record, int recordLength, int index, uint8_t out[ZS_MSG_MAX]);
+// Fragment `index` of `count` for a record (offset = index * ZS_SEND_CHUNK); the message's length
+int zsBuildFragment(uint8_t transfer, const uint8_t *record, int recordLength, int index, uint8_t out[ZS_MSG_HEADER + ZS_SEND_CHUNK]);
 // The same fragment's header alone: the record's slice that follows it starts at *offset and is the return's octets
 // long (0: no such fragment)
 int zsFragmentHeader(uint8_t transfer, int recordLength, int index, uint8_t out[ZS_MSG_HEADER], int *offset);
@@ -156,6 +165,7 @@ typedef struct
 	// Fragment
 	uint8_t index, count;
 	uint16_t offset;
+	uint16_t full;						// the transfer's chunk size: offset / index, or the length of a full chunk
 	const uint8_t *chunk;
 	int     chunkLength;
 	// Request: what; refusal: the code
@@ -174,6 +184,7 @@ typedef struct
 	uint8_t  count;
 	uint8_t  have;						// bit i: fragment i is in
 	bool     active;
+	uint16_t full;						// the sender's chunk size
 	uint16_t length;					// the record's length (known from the last fragment)
 	uint8_t  data[ZS_RECORD_MAX];
 } zsAssembly_t;

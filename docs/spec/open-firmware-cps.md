@@ -260,7 +260,7 @@ reply starts with `D`, the sub command, and a result byte: 1 means OK; 0 means f
 | --- | --- | --- |
 | 1 Clear | none | none. Fails while a transmission is in progress |
 | 2 Append bytes | len (1 byte), then len bytes (up to 61) | none. Appends to a 300 byte message buffer; fails when full |
-| 3 Append burst | data type (1), flags (1: bit 0 = the payload already holds its CRC / mask, send it verbatim), len (1, at most 24), payload | none. Up to 40 bursts; fails while busy |
+| 3 Append burst | data type (1), flags (1: bit 0 = the payload already holds its CRC / mask, send it verbatim), len (1, at most 24), payload | none. Up to 64 bursts; fails while busy |
 | 4 Send | kind (1), flags (1), destination (3 bytes BE), port (2 bytes BE; for kind 3: byte 0 = DPF, low 4 bits of byte 1 = SAP) | none. Result 1 means queued |
 | 5 Status | none | The result byte is the TX status (0 idle, 1 running, 2 done, 3 failed); then the received bursts waiting (1 byte) and the inbox messages not yet read by the host (1 byte) |
 | 6 Pop RX burst | none | data type, flags (bit 1 = the receiver reported a CRC error), len, payload (oldest first; the queue holds the last 8) |

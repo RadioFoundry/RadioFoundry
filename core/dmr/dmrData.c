@@ -367,6 +367,9 @@ static uint16_t onesComplementSum(uint32_t sum, const uint8_t *data, int length)
 
 DMR_DATA_BUFFER static uint8_t ipPacket[DMR_DATA_MAX_PACKET];
 #define IP_PDU_MAX		(DMR_DATA_MAX_PACKET - 16)	// user data that still fits the blocks with padding and the CRC-32
+_Static_assert(DMR_DATA_IP_MTU <= IP_PDU_MAX, "the encoder takes every packet of the air MTU");
+_Static_assert((DMR_DATA_IP_MTU + 4 + DMR_DATA_RATE12_OCTETS - 3) / (DMR_DATA_RATE12_OCTETS - 2) <= DMR_CONFIRMED_MAX_BLOCKS,
+				"a packet of the air MTU goes confirmed");
 
 static uint8_t udpCompression = DMR_UDPC_AUTO;
 static dmrDataIpTxStats_t ipTxStats;
