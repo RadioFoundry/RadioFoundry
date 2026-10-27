@@ -1049,9 +1049,14 @@ class Radio:
         `image` the embedded stub whose base is the span RadioFoundry reports in STUB INFO is used; a given image must be linked
         for that span (checked). Afterwards the stub answers on the same port. Recover the radio with a power cycle
         (or --boot reset)."""
+        name = version_board(self)
         if board is None:                       # the profile the stub gets: from VERSION's board= (a library caller)
-            name = version_board(self)
             board = c7_board(name) if name else None
+        elif name and board in C7_BOARDS and name not in C7_BOARDS[board]["names"]:
+            # Two cables with one serial number can swap names when they re-enumerate: a GD-88 image once went into a
+            # DM-32UV this way, because --board was trusted over what the radio said it is
+            raise DumpError("the radio on this port runs RadioFoundry for the %s, not the %s that --board names: wrong port? "
+                            "Nothing was sent" % (name, C7_BOARDS[board]["name"]))
         r = self.dl_request(DL_STUB, b"\x00")
         if r[0] != 0 or len(r) < 19 or int.from_bytes(r[1:5], "little") != STUB_MAGIC:
             raise DumpError("RadioFoundry's STUB info refused or malformed (%s): firmware built without CONFIG_STUB_ENTRY?" % r.hex())
@@ -2446,6 +2451,20 @@ def self_test():
             check(False, "universal stub refused %s (0x%X)" % (why, load))
         except DumpError:
             pass
+    rfoundry = FakeRFoundry((0x44000, 0x14000))                   # it says board=DB25-D: a --board for another radio is refused
+    other = next(b for b in sorted(C7_BOARDS) if "DB25-D" not in C7_BOARDS[b]["names"])
+    try:
+        ro = Radio(rfoundry, log=quiet)
+        ro.attach = lambda: None
+        ro.rfoundry_enter(board=other)
+        check(False, "rfoundry_enter refuses a --board the running firmware does not report")
+    except DumpError as e:
+        check(rfoundry.total is None and "wrong port" in str(e), "--board %s on a DB25-D refused before BEGIN: %s" % (other, e))
+    rfoundry = FakeRFoundry((0x44000, 0x14000))
+    ro = Radio(rfoundry, log=quiet)
+    ro.attach = lambda: None
+    ro.rfoundry_enter(board=c7_board("DB25-D"))
+    check(rfoundry.entered, "rfoundry_enter takes a --board the running firmware reports")
     rfoundry = FakeRFoundry((0x2F000, 0x4000))                    # a span that would overlap the run copy: refused before BEGIN
     try:
         Radio(rfoundry, log=quiet).rfoundry_enter()
