@@ -33,11 +33,13 @@ enum {
 	RX2_PATH	= 0x09,	// u8 on, u32 Hz: the main SoC's own receiver, whose path runs through the receiver's SoC
 	RX2_TX		= 0x0A,	// u32 Hz (0: disarm), u16 PA drive, u16 on us, u16 off us: the main SoC's transmitter,
 				// whose PA the receiver's SoC keys on the main SoC's TX line (acknowledged)
+	RX2_DMR		= 0x0B,	// the receiver's transmitter as the main SoC's second one (rx2_dmr.h): its request
 	RX2_HELLO	= 0x81,	// u8 protocol version, u8 flags, text: the firmware version
 	RX2_STATUS	= 0x82,	// rx2 status, packed (rx2_pack_status)
 	RX2_ACK		= 0x83,	// u8 seq acknowledged, u8 result (0 ok, else refused)
 	RX2_LOG		= 0x84,	// text, for the main SoC's log
 	RX2_DL_REPLY	= 0x85,	// u8 tag, u8 part, a piece of the debug link reply payload (status first)
+	RX2_DMR_EV	= 0x86,	// the receiver's transmitter (rx2_dmr.h): its event
 };
 #define RX2_STUB_MAGIC		0x53545542u	// "STUB"
 
@@ -45,6 +47,7 @@ enum {
 #define RX2_HELLO_DMR		0x01u	// the receiver decodes DMR (codec merged: also its voice)
 #define RX2_HELLO_STAY		0x02u	// RX2_STUB reaches the first stage's long window (rx2-link.md 4); else the main SoC
 				// restarts the receiver for the update
+#define RX2_HELLO_DMR_TX	0x04u	// the receiver transmits DMR for the main SoC (RX2_DMR, rx2-link.md 2.4)
 
 // The debug link through the main SoC (rx2-link.md 2.3)
 #define RX2_DL_LAST		0x80u	// part: the last one; bits 0-6 its index
@@ -109,6 +112,8 @@ typedef struct {
 	uint8_t tx_seq;		// RX2_TX in flight, and whether the receiver took it
 	bool tx_acked;
 	rx2_status_t st;	// its last STATUS
+	// RX2_DMR_EV payloads, from rx2_main_rx (the board's link task); NULL: dropped
+	void (*dmr_ev)(const uint8_t *p, uint8_t len);
 	uint32_t frames, tunes, resent;
 	// The debug link request in flight (rx2_main_dl_send): its tag, RX2_DL_* state, the next part expected, the
 	// reply so far
@@ -139,6 +144,8 @@ void rx2_main_path(rx2_main_t *m, bool on, uint32_t hz);
 // RX2_TX: arm the receiver's SoC to key the PA for the main SoC's transmission on hz with drive pa and the delays
 // (hz 0: disarm). tx_acked turns true when the receiver took it. False when the receiver is down
 bool rx2_main_tx(rx2_main_t *m, uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
+// RX2_DMR: a request to the receiver's transmitter (rx2_dmr.h). False when it is down or doesn't offer one
+bool rx2_main_dmr(rx2_main_t *m, const uint8_t *p, uint8_t len);
 // Send RX2_STUB or RX2_RESET (the receiver's update route through the main SoC)
 void rx2_main_command(rx2_main_t *m, uint8_t type);
 // A debug link request to the receiver: command, payload (len <= RX2_DL_REQ_MAX). False when it is down or the request
@@ -185,6 +192,9 @@ typedef struct {
 	// RX2_TX: arm (hz != 0) or disarm the PA for the main SoC's transmitter; false refuses. Disarmed again at
 	// HELLO_REQ. NULL: refused
 	bool (*tx)(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
+	// RX2_DMR: a request to its transmitter (rx2_dmr.h); (NULL, 0) at HELLO_REQ: the main SoC restarted, all off.
+	// NULL: dropped (offer it with RX2_HELLO_DMR_TX)
+	void (*dmr)(const uint8_t *p, uint8_t len);
 } rx2_ops_t;
 
 #define RX2_STATUS_EVERY_MS	500u
@@ -210,5 +220,7 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms);
 void rx2_recv_poll(rx2_recv_t *r, uint32_t now_ms);
 // Text to the main SoC's log
 void rx2_recv_log(rx2_recv_t *r, const char *text);
+// RX2_DMR_EV: an event of its transmitter (rx2_dmr.h)
+void rx2_recv_dmr_ev(rx2_recv_t *r, const uint8_t *p, uint8_t len);
 
 #endif

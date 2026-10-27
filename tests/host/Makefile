@@ -260,6 +260,11 @@ serialmicTest: serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c $(ROO
 TESTS   += rx2LinkTest
 rx2LinkTest: rx2LinkTest.c $(CORE)/rx2/rx2_link.c $(CORE)/rx2/rx2_link.h $(ROOT)/hal/hal_rx2.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ rx2LinkTest.c $(CORE)/rx2/rx2_link.c
+# The second receiver's SoC as the main SoC's second DMR transmitter (core/rx2/rx2_dmr.c) over the link
+TESTS   += rx2DmrTest
+rx2DmrTest: rx2DmrTest.c $(CORE)/rx2/rx2_dmr.c $(CORE)/rx2/rx2_dmr.h $(CORE)/rx2/rx2_link.c $(CORE)/rx2/rx2_link.h \
+            $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ rx2DmrTest.c $(CORE)/rx2/rx2_dmr.c $(CORE)/rx2/rx2_link.c
 TESTS   += miclevelTest
 miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
@@ -275,7 +280,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 
 run: run-core
 run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest \
-          rx2LinkTest keyassignTest powerSwitchTest boardBandTest batteryTest afskTonegenTest
+          rx2LinkTest rx2DmrTest keyassignTest powerSwitchTest boardBandTest batteryTest afskTonegenTest
 	./aprsRadioTest
 	./afskTonegenTest
 	./radioCoreTest
@@ -289,6 +294,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTes
 	./serialmicTest
 	./miclevelTest
 	./rx2LinkTest
+	./rx2DmrTest
 	./keyassignTest
 	./powerSwitchTest
 	./boardBandTest

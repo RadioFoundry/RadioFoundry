@@ -320,6 +320,11 @@ void rx2_main_rx(rx2_main_t *m, uint8_t b, uint32_t now_ms)
 	case RX2_DL_REPLY:
 		main_dl_part(m, p);
 		break;
+	case RX2_DMR_EV:
+		if (m->up && m->dmr_ev != NULL) {
+			m->dmr_ev(p->buf, p->len);
+		}
+		break;
 	default:
 		break;	// RX2_LOG: the board reads it from the parser before calling here, if it wants it
 	}
@@ -434,6 +439,15 @@ bool rx2_main_tx(rx2_main_t *m, uint32_t hz, uint16_t pa, uint16_t on_us, uint16
 	put16(&p[8], off_us);
 	m->tx_seq = m->seq;
 	main_send(m, RX2_TX, p, 10);
+	return true;
+}
+
+bool rx2_main_dmr(rx2_main_t *m, const uint8_t *p, uint8_t len)
+{
+	if (!m->up || (m->flags & RX2_HELLO_DMR_TX) == 0 || len > RX2_PAYLOAD_MAX) {
+		return false;
+	}
+	main_send(m, RX2_DMR, p, len);
 	return true;
 }
 
@@ -627,6 +641,9 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 		if (r->ops->tx != NULL) {
 			r->ops->tx(0, 0, 0, 0);
 		}
+		if (r->ops->dmr != NULL) {
+			r->ops->dmr(NULL, 0);
+		}
 		recv_hello(r);
 		break;
 	case RX2_TUNE: {
@@ -686,6 +703,11 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 	case RX2_DL:
 		recv_dl(r, p);
 		break;
+	case RX2_DMR:
+		if (p->len > 0 && r->ops->dmr != NULL) {
+			r->ops->dmr(p->buf, p->len);
+		}
+		break;
 	default:
 		break;
 	}
@@ -718,4 +740,9 @@ void rx2_recv_log(rx2_recv_t *r, const char *text)
 		n = RX2_PAYLOAD_MAX;
 	}
 	recv_send(r, RX2_LOG, (const uint8_t *)text, (uint8_t)n);
+}
+
+void rx2_recv_dmr_ev(rx2_recv_t *r, const uint8_t *p, uint8_t len)
+{
+	recv_send(r, RX2_DMR_EV, p, len);
 }

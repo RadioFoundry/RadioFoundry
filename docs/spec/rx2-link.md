@@ -31,11 +31,13 @@ A5 5A  len  type  seq  payload[len]  crc_hi crc_lo
 | 0x08 | `DL` | A | u8 tag, u8 part, then a debug link request: u8 command, its payload (2.3) |
 | 0x09 | `PATH` | A | u8 on, u32 Hz: where A's own receiver is, on a board whose receive path for A runs through B's pins. A sends it on a change and again when B comes back; B turns A's path off at `HELLO_REQ` |
 | 0x0A | `TX` | A | u32 Hz (0 = disarm), u16 PA drive (0-4095), u16 TX-on delay (us), u16 TX-off delay (us): on a board whose PA for A's transmitter is wired to B. A sends it before every transmission and waits for the `ACK`; it doesn't transmit without one. While armed, B keys the PA on the edges of A's TX line, with this drive and these delays. A disarms after the transmission; B also disarms at `HELLO_REQ`, and a disarm while keyed ramps the PA down at once |
-| 0x81 | `HELLO` | B | u8 protocol version (1), u8 flags (bit 0: B decodes DMR; bit 1: `STUB` reaches B's first stage, 4), then B's firmware version as text |
+| 0x0B | `DMR` | A | u8 op, then its fields: a request to B's transmitter as A's second DMR transmitter (2.4), on a board whose B can transmit (`HELLO` flag bit 2). No `ACK`: B's state comes back in `DMR_EV` |
+| 0x81 | `HELLO` | B | u8 protocol version (1), u8 flags (bit 0: B decodes DMR; bit 1: `STUB` reaches B's first stage, 4; bit 2: B transmits DMR for A, 2.4), then B's firmware version as text |
 | 0x82 | `STATUS` | B | 13 bytes (2.2) |
 | 0x83 | `ACK` | B | u8 the `TUNE`'s or `TX`'s seq, u8 result (0 = on it, else refused) |
 | 0x84 | `LOG` | B | text for A's log |
 | 0x85 | `DL_REPLY` | B | u8 tag, u8 part, then a piece of the debug link reply (2.3) |
+| 0x86 | `DMR_EV` | B | 5 bytes: an event or the state of B's transmitter (2.4) |
 
 ### 2.1 TUNE
 
@@ -95,6 +97,48 @@ for what it has: no display, keys, radio core or storage. The host reaches it th
 - B's log (`dlog`) is its own ring, read with GET_LOG. The `LOG` frames B sends at start-up go to A's log as before.
 - B's server is built in unless the board's build turns it off; without it, B answers every command
   `DL_ST_UNKNOWN_CMD`, and A's `FORWARD` passes that status on.
+
+### 2.4 B as A's second DMR transmitter
+
+On a board where B has a transmitter of its own, A can send DMR on it while its own modem goes on receiving: a single
+frequency repeater's repeat ([sfr.md](sfr.md) 3 item 7). The modem A's core gets is A's own with the transmit calls
+(`tx_begin`, `tx_queue`, `tx_listen`, `tx_end`, `tx_abort`, `set_embedded_lc`) sent to B while the split is on, and
+B's transmit events passed back to the core's callback (`core/rx2/rx2_dmr.c`, both ends).
+
+| Op | Name | Fields | B |
+|---|---|---|---|
+| 0x01 | `SPLIT` | u8 on, i8 color code | on: stops its own receiving and takes the role; off: back to A's last `TUNE` |
+| 0x02 | `ARM` | u32 Hz (0 = disarm), u8 power level | receives there in DMR (the modem's slot timing comes from the inbound bursts) and keys its PA per burst there, with its own calibration |
+| 0x03 | `BEGIN` | u8 timing, i8 slot, u8 access | `tx_begin`; refused: a `TX_REJECTED` event |
+| 0x04 | `BURST` | u8 kind, u8 voice index, u8 flags (bit 0 host CRC), u8 sync override, u8 length, the payload | `tx_queue` |
+| 0x05 | `END` | none | `tx_end` |
+| 0x06 | `ABORT` | none | `tx_abort` |
+| 0x07 | `EMB` | 9 bytes | `set_embedded_lc` |
+| 0x08 | `LISTEN` | none | `tx_listen` |
+
+`DMR_EV`: u8 kind, i8 slot, u8 queue space, u8 state (bit 0 ready: split and armed; bit 1 transmitting), u8 bursts
+taken. Kind is the modem's event for `TX_SLOT_STARTED`, `TX_DONE` and `TX_REJECTED`, or 0x80 for the state alone,
+which B sends on a change and every 200 ms while split. Bursts taken counts every `BURST` B received (mod 256): A
+counts the bursts still on the link against the space B reported.
+
+- No `tx_fill`: its answer can't wait for the link, so A's caller queues the burst instead.
+- A's `tx_begin` waits (returns false) until B reports ready. Not ready 1.5 s after the split, or the link down, and A
+  turns the split off and transmits itself.
+- A transmission B goes quiet on for 600 ms, or the link down, ends at A with `TX_DONE` (after `tx_end`) or
+  `TX_REJECTED`, so the core never waits for an event that won't come.
+- `HELLO_REQ` ends the role at B (A restarted).
+- A's radio keys B's transmitter instead of its own while the split is on (`ARM` from its `tx()`). Its `tx_off()`
+  leaves B armed: B goes on receiving there for the slot timing and keys nothing without a `BEGIN`. The split's end
+  disarms it.
+- At the split A arms B at once on its receive frequency (the board's `listen`), so B's modem has the inbound slot
+  timing before the first repeat is begun. An aligned `BEGIN` with nothing heard takes the modem's own timing (the
+  repeat landed 12 ms off the grid).
+- A's `set_cc_filter` goes to B too (`SPLIT` with the new code, then `ARM` again): with a stale code B heard nothing
+  and fell back to its own timing.
+- A's SFR doesn't check its inbound bursts for its own echo while split: A's chip sends nothing, and the repeat runs
+  about 180 ms behind (no `tx_fill`), close enough that a call of silence matched its own copy from the superframe
+  before (gotchas 14.2).
+- One `BURST` frame is 40 bytes, about 3.5 ms at 115200: well inside a repeat's 90 ms.
 
 ## 3. Timing
 

@@ -112,9 +112,9 @@ static size_t b_do_dl(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *ou
 }
 
 static const rx2_ops_t b_ops = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset, b_do_led,
-				 b_do_dl, b_do_path, b_do_tx };
+				 b_do_dl, b_do_path, b_do_tx, NULL };
 static const rx2_ops_t b_ops_no_dl = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset, b_do_led,
-				       NULL, NULL, NULL };
+				       NULL, NULL, NULL, NULL };
 
 static void pump(uint32_t now_ms)
 {
