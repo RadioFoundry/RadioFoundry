@@ -541,11 +541,10 @@ def check_univ_load(image, load, window=None):
 # program flash size. VERSION's board= names them on the RadioFoundry route; --board at power-on. Unknown radio: GENERIC (no
 # pins, nothing echoed but 0).
 C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
-                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"], "protect": b.protect,
-                    "stock_versions": tuple(b.stock_versions)}
+                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"], "protect": b.protect}
              for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000,
-           "protect": [], "stock_versions": ()}
+           "protect": []}
 # This tool's memory names as board.toml [[flash.protect]] names them
 PROTECT_MEM = {"progmem": "progmem", "q128": "data", "nand": "nand"}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
@@ -563,26 +562,6 @@ def image_board_check(image, board):
     other = [b["name"] for k, b in sorted(C7_BOARDS.items()) if k != board and any(n.encode() + b"\0" in image for n in b["names"])]
     return "this RadioFoundry image is %s, not for the %s" % ("for the " + ", ".join(other) if other else "for another radio",
                                                               prof["name"])
-
-
-VENDOR_VERSION = re.compile(rb"909E\.([0-9A-Za-z]{2,4})\.EARSAB\.([0-9]{3})")
-VENDOR_SCAN = (APP_START, 0x90000)  # where the vendor application keeps its version string, with room for other builds
-
-
-def vendor_batch_check(read, board):
-    """Why the vendor firmware in the program flash is a hardware batch the board's `stock_versions` don't name, or None.
-    `read(addr, n)` reads the program flash. A radio that runs RadioFoundry has no vendor string and is not judged. The batch
-    is the code after "909E." in the version (DBB, D6T): the same build line is made for radios with other RF chips."""
-    known = {v.split(".")[1] for v in board["stock_versions"] if v.count(".") >= 3}
-    if not known:
-        return None
-    lo, hi = VENDOR_SCAN
-    data = b"".join(read(a, min(CHUNK, hi - a)) for a in range(lo, hi, CHUNK))
-    m = VENDOR_VERSION.search(data)
-    if m is None or m.group(1).decode() in known:
-        return None
-    return "the radio runs the vendor firmware %s, a hardware batch RadioFoundry does not support for the %s (%s)" % (
-        m.group(0).decode(), board["name"], ", ".join(sorted(known)))
 
 
 def c7_board(name):
@@ -2510,17 +2489,6 @@ def self_test():
     check(why is not None and C7_BOARDS[a_]["name"] in why, "an image for the %s refused for the %s: %s" % (a_, b_, why))
     check(image_board_check(b"stock firmware" + nm[a_], b_) is None, "a stock image is not judged")
     check(image_board_check(img, None) is None, "no target board: not judged")
-    pro = {"name": "DB25-D PRO", "stock_versions": ("909E.DBB.EARSAB.018", "909E.DBB.EARSAB.020")}
-    def vendor_flash(ver):
-        mem = bytearray(b"\xff" * VENDOR_SCAN[1])
-        if ver:
-            mem[0x79F3C:0x79F3C + len(ver)] = ver
-        return lambda x, n: bytes(mem[x:x + n])
-    check(vendor_batch_check(vendor_flash(b"909E.DBB.EARSAB.018"), pro) is None, "a supported vendor batch is not refused")
-    old = vendor_batch_check(vendor_flash(b"909E.D6T.EARSAB.018"), pro)
-    check(old is not None and "909E.D6T.EARSAB.018" in old, "an older hardware batch is refused, naming its version")
-    check(vendor_batch_check(vendor_flash(b""), pro) is None, "no vendor string (a radio that runs RadioFoundry): not judged")
-    check(vendor_batch_check(vendor_flash(b"909E.D6T.EARSAB.018"), {"name": "x", "stock_versions": ()}) is None, "a board without stock versions: not judged")
     rfoundry = FakeRFoundry((0x44000, 0x14000))
     ro = Radio(rfoundry, log=quiet)
     ro.attach = lambda: None
@@ -2997,11 +2965,6 @@ def main(argv=None):
                     raise DumpError(why + ": wrong image or wrong port? Nothing was written (--force writes it anyway)")
                 if why:
                     print("warning: %s; writing it anyway (--force)" % why)
-            prof = next((b for b in C7_BOARDS.values() if b is radio.profile), None)
-            if prof and not a.rfoundry_enter and not a.force:    # a radio that runs RadioFoundry has no vendor firmware to judge
-                why = vendor_batch_check(lambda x, n: radio.read_flash("progmem", x, n), prof)
-                if why:
-                    raise DumpError(why + ". Nothing was written (--force writes it anyway)")
             t0 = time.monotonic()
             nw, nk = radio.write_image(image, replace_stage=a.replace_stage, progress=lambda i, n: print("\rwriting sector %d of %d changed" % (i + 1, n), end="", flush=True))
             print("\n%s: %d bytes, %d sectors written, %d unchanged, verified by CRC, %.0f s" % (a.write_app, len(image), nw, nk, time.monotonic() - t0))

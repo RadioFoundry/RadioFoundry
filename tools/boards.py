@@ -1191,7 +1191,6 @@ def rfoundry_view(boards):
             "loader_sign": fl["bootloader"].get("sign", ""),
             # what rfoundry tells the user: how to reach the bootloader, where the stock files come from
             "bootloader_steps": list(fl["bootloader"].get("steps", [])), "stock_download": fl.get("stock_download"),
-            "stock_versions": list(fl["stock_versions"]),
             "key_sha256": dfu["key_sha256"] if dfu else None, "key_prefix": dfu["key_prefix"] if dfu else None,
             "dfu_ids": [dfu["vid"], dfu["pid"]] if dfu else None,
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
