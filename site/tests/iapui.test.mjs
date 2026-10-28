@@ -156,14 +156,14 @@ const { BUILDS, FLASH_BASE } = await import("../static/js/flasher/usmart.js");
 const { stubImages } = await import("../static/js/flasher/stub.js");
 
 // The radio on its stock firmware with this variant code; what the route shows and offers
-async function stockRoute(t, { variant, radioData = stockRadio, faults = {}, identify } = {}) {
+async function stockRoute(t, { variant, radioData = stockRadio, faults = {} } = {}) {
 	const sim = await c7000Simulation(C, stockRadio.id, 7000, stockRadio);
 	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 50, bootTime: 50,
 		usmart: stockRadio.flash.stock_versions[0].slice(-3), variant, faults });
 	t.after(() => r.stop());
 	r.powerOn();
 	await sleep(300);
-	const rt = route(radioData, { stubImage: async () => stubImages(json("c7000-stub.json")).image, ...(identify ? { identify } : {}) });
+	const rt = route(radioData, { stubImage: async () => stubImages(json("c7000-stub.json")).image });
 	rt.state.c7.stream = r.stream;
 	rt.state.fakeC7 = r;
 	const seen = { shown: null, acts: [] };
@@ -301,4 +301,28 @@ test("update mode: the picker holds the install until the user names the hardwar
 	assert.equal(go.disabled, false);
 	assert.equal(state.variant.code, null);
 	assert.match(box.textContent, /can't be checked/);
+});
+
+test("update mode: a pick changed to hardware the image doesn't run while the page listens writes nothing", async () => {
+	// a variant listed without an image, so the pick is refused
+	const radioData = { ...stockRadio, variants: [...stockRadio.variants, { code: "DZZ", name: "test hardware" }] };
+	const { state, forwards, calls, routes } = route(radioData);
+	state.firmware = { image: Uint8Array.from({ length: 4096 }, (_, i) => (i * 7 + 1) & 0xFF), source: "test", manifest: {} };
+	state.c7.decision = { mode: "none" };
+	const box = routes.iapWriteView();
+	box.isConnected = true;
+	const buttons = [];
+	const walk = (e) => { if (e.tagName === "BUTTON") buttons.push(e); (e.children || []).forEach((c) => c instanceof El && walk(c)); };
+	walk(box);
+	const ok = stockRadio.variants.find((v) => v.runs && v.level === "supported");
+	buttons.find((b) => b.textContent.startsWith(`${ok.code}:`)).click();
+	forwards.at(-1).click();
+	await sleep(10);
+	assert.equal(calls.listen, 1);
+	buttons.find((b) => b.textContent.startsWith("DZZ:")).click();
+	calls.found();
+	await sleep(50);
+	assert.equal(calls.write, 0, "nothing written");
+	assert.match(box.textContent, /Nothing was written/);
+	box.isConnected = false;
 });

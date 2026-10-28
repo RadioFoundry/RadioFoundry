@@ -76,13 +76,6 @@ const LOADERS = {
 const updateMode = () => !!LOADERS[flash().update_mode];
 const stuckMode = () => !!LOADERS[flash().update_mode]?.stuck;
 const iap = (c) => LOADERS[flash().update_mode].make(c);
-// The stock application's version text, as it answers the vendor programming software's identify (iap.js probe), or
-// null: read only, and only on a radio with an IAP loader (the same request reaches either)
-async function identify(c) {
-	if (!stuckMode()) return null;
-	const um = await iap(c).probe();
-	return um?.stock ? versionText(S().radio, um.stock) : null;
-}
 const progSize = () => c7.totalSize(C(), boardId());
 const viaIap = () => session().how === "iap";
 // What the radio's screen shows while the stub runs: RadioFoundry's loader screen, whatever the original firmware last drew, or
@@ -92,7 +85,7 @@ const screenNow = () => ({ rfoundry: "loader", usmart: "any" })[session().how] |
 export function init(context) {
 	ctx = context;
 	routes = makeStockRoutes({ S, ctx, C, boardId, session, busy, loader: iap, fill: (el, ...p) => fill(el, ...p), stubImage: async () => (await stubs()).image,
-		cableBanner: () => cableBanner(), identify: () => identify(session()) });
+		cableBanner: () => cableBanner() });
 }
 
 // The factory update mode route of a radio (radios.json flash.update_mode), or null: its protocol, and what the install

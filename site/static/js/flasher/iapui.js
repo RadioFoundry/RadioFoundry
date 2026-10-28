@@ -61,10 +61,9 @@ export function variantWarning(vd) {
 }
 
 // host: what c7000ui.js hands over ({S, ctx, C, boardId, session, busy, loader, fill, stubImage}); loader(session) makes
-// the update mode's protocol object (listen, write). identify(): the version text the stock application reports to the
-// vendor programming software's identify (iap.js probe), or null
+// the update mode's protocol object (listen, write)
 export function makeStockRoutes(host) {
-	const { S, ctx, C, boardId, session, busy, loader: makeLoader, fill, stubImage, cableBanner = () => null, identify = async () => null } = host;
+	const { S, ctx, C, boardId, session, busy, loader: makeLoader, fill, stubImage, cableBanner = () => null } = host;
 	const protocol = () => S().radio.flash.update_mode;
 	const radioName = (id) => S().data?.radios?.find((r) => r.flash.board === id)?.name || id;
 
@@ -317,7 +316,12 @@ export function makeStockRoutes(host) {
 		const vd = variantVerdict(S(), boardId());
 		if (vd && !writable(vd)) return panel(t("flash.c7.write.title"), variantStop(vd));
 		const gate = vd || S().variant || !S().radio.variants?.length ? null : (go) => variantPicker((ok) => { go.disabled = !ok; });
-		return iapPanel({ title: t("flash.c7.write.title"), image, restore: false, gate,
+		// checked again when the write starts: the pick can change while the page listens, and Write Again is not go
+		const allowed = () => {
+			const now = variantVerdict(S(), boardId());
+			return now ? writable(now) : !!S().variant || !S().radio.variants?.length;
+		};
+		return iapPanel({ title: t("flash.c7.write.title"), image, restore: false, gate, allowed,
 			rows: [[t("flash.c7.write.firmware"), `${fw.source} (${Math.round(fw.image.length / 1024)} KB)`], [t("flash.c7.write.codec"), what]],
 			report: { task: "install", source: fw.origin || "", radio: boardId(), firmware: String(fw.manifest.version || ""),
 				variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null },
@@ -343,8 +347,9 @@ export function makeStockRoutes(host) {
 			done: t(TEXTS[protocol()].restored), name: vendor || "restore.bin", onDone });
 	}
 
-	// gate(go): an element that decides when go may be pressed (the variant picker)
-	function iapPanel({ title, rows, image, restore, report, done, onDone, name, lead = null, gate = null }) {
+	// gate(go): an element that decides when go may be pressed (the variant picker); allowed(): whether the write may
+	// start, asked again once the radio answers
+	function iapPanel({ title, rows, image, restore, report, done, onDone, name, lead = null, gate = null, allowed = () => true }) {
 		const c = session();
 		const prog = progressBar();
 		const status = h("div");
@@ -383,6 +388,7 @@ export function makeStockRoutes(host) {
 				if (c.iapReady) c.iapReady = false;
 				else if (!loader.ready) await loader.listen(LISTEN_MS, { signal: stop.signal });
 				if (left()) throw new Error("stopped");
+				if (!allowed()) throw new Error(t("flash.variant.nothing_written"));
 				writing = true;
 				await busy(true);
 				fill(status, h("p", { class: "muted c7-big" }, t("flash.iap.erasing")));
