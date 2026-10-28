@@ -171,6 +171,7 @@ class Radio:
         self.port = self.link.port
         self._version = None
         self._last_shot = 0.0
+        self._last_key = 0.0     # when this host last pressed a key (ensure_awake is asked only after a pause)
 
     def close(self):
         self.link.close()
@@ -322,8 +323,13 @@ class Radio:
             time.sleep(1.2)
 
     def press(self, name, gesture=PRESS, value=0, settle=0.15):
+        # A pause long enough for the backlight to go off (a screenshot of a large screen takes over 30 s at 115200
+        # baud) would let the UI eat this key: ask whether it needs waking, after a pause only, so a sequence stays fast
+        if time.monotonic() - self._last_key > 15:
+            self.ensure_awake()
         self.link.key(name, gesture, value)
         self.link.wait_keys_idle()
+        self._last_key = time.monotonic()
         time.sleep(settle)
 
     def long_press(self, name):
