@@ -799,7 +799,7 @@ export function checkView() {
 				fill(status, ctx.failureNotice(e, used ? { name: used.path.split("/").pop(), data: used.data } : null));
 			}
 		});
-		fill(status, untriedOffer(),
+		fill(status, untriedOffer(c),
 			d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, codecActionText()), pick,
 				h("p", { class: "small" }, h("a", { href: "#", onclick: async (e) => { e.preventDefault(); S().c7none = true; await decideView(); } }, t("flash.c7.codec.without")))),
 			d && d.mode === "none" ? notice(t("flash.c7.codec.none_risk"), "bad") : null,
@@ -808,15 +808,6 @@ export function checkView() {
 		forward(button(t("flash.nav.to_write"), () => ctx.next(), { primary: true, disabled: !d }));
 	}
 
-	// A backup through a stock build whose stub load was not proven before: the project wants that firmware. The
-	// program memory read goes with a problem report (report.js attaches S.stockRead); the backup stays the user's
-	function untriedOffer() {
-		if (!c.stockUntried || !c.progmem) return null;
-		const v = c.stockUntried.version || stockVersion(c.progmem) || "unknown";
-		S().stockRead = { name: `program-memory-${S().radio.id}-${v.replace(/[^\w.-]/g, "_")}.bin`, data: c.progmem };
-		return h("div", { class: "notice" }, h("strong", {}, t("flash.variant.send_title")), h("p", {}, t("flash.variant.send", { version: v })),
-			reportButton({ quiet: false }));
-	}
 
 	// Why no codec was found, and what to select instead. A stock radio whose codec is a build without a recipe is
 	// named, so the message says that the backup is fine and only the codec needs a file
@@ -1059,6 +1050,17 @@ function hasStubEntry() {
 // ---------------------------------------------------------------------------------------------------------------
 // backup task: both memories, any firmware, then back to normal
 
+// A backup through a stock build whose stub load was not proven before (install's check step, the backup task): the
+// project wants that firmware. The program memory read goes with a problem report (report.js attaches S.stockRead);
+// the backup stays the user's
+function untriedOffer(c) {
+	if (!c.stockUntried || !c.progmem) return null;
+	const v = c.stockUntried.version || stockVersion(c.progmem) || "unknown";
+	S().stockRead = { name: `program-memory-${S().radio.id}-${v.replace(/[^\w.-]/g, "_")}.bin`, data: c.progmem };
+	return h("div", { class: "notice" }, h("strong", {}, t("flash.variant.send_title")), h("p", {}, t("flash.variant.send", { version: v })),
+		reportButton({ quiet: false }));
+}
+
 export function backupView() {
 	const c = session();
 	const out = h("div", { class: "flasher" });
@@ -1089,7 +1091,7 @@ export function backupView() {
 			await c.stub.ledSequence(DONE_LED);
 			top.set({ led: "done", screen: screenNow() });
 			fill(status, notice(t("flash.c7.backup.done", { name: c.backupName }), "ok"),
-				c.calCopies && !c.calFound ? notice(t("flash.c7.backup.cal_missing"), "bad") : calOneCopy(c));
+				c.calCopies && !c.calFound ? notice(t("flash.c7.backup.cal_missing"), "bad") : calOneCopy(c), untriedOffer(c));
 			S().forward(leaveLoaderButton(t("flash.c7.backup.leave")));
 		} catch (e) {
 			ctx.flashFinished(started, e);

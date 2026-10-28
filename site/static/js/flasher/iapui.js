@@ -60,6 +60,14 @@ export function variantWarning(vd) {
 		h("p", {}, h("strong", {}, t("flash.variant.dev_title", { variant: `${vd.code} (${vd.variant.name})` })), " ", vd.variant.notice)) : null;
 }
 
+// What the connect step says of the variant: its warning, or for one the image doesn't run on (only a backup gets
+// that far) that the backup is still safe
+function variantNote(vd) {
+	if (!vd || writable(vd)) return variantWarning(vd);
+	const what = vd.variant?.name ? `${vd.code} (${vd.variant.name})` : vd.code;
+	return notice(t("flash.variant.backup_only", { variant: what }), "info");
+}
+
 // host: what c7000ui.js hands over ({S, ctx, C, boardId, session, busy, loader, fill, stubImage}); loader(session) makes
 // the update mode's protocol object (listen, write)
 export function makeStockRoutes(host) {
@@ -79,6 +87,10 @@ export function makeStockRoutes(host) {
 		diag.note("radio variant", { version: version || null, code, via, verdict: vd.kind });
 		return vd;
 	}
+
+	// Whether the variant stops the task here: one the image doesn't run on, unless the task only reads. A backup of
+	// any hardware is safe, and its stock firmware is what the project wants for that variant
+	const blocks = (vd) => !!vd && !writable(vd) && S().task !== "backup";
 
 	// Why the image can't go on this variant; nothing was written
 	function variantStop(vd) {
@@ -139,7 +151,7 @@ export function makeStockRoutes(host) {
 		show({ led: "off", screen: "on" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.usmart.found"))),
 			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.usmart.version")), h("dd", {}, version)) : null,
-			variantWarning(vd),
+			variantNote(vd),
 			failed ? notice(t("flash.variant.try_failed"), "info") : notice(t(tryAnyway ? "flash.variant.no_backup_known" : "flash.variant.no_backup"), "info"),
 			failed ? h("details", { class: "small" }, h("summary", {}, t("flash.problem.details")), h("pre", { class: "log" }, failed)) : null,
 			h("ol", { class: "steps" },
@@ -156,7 +168,7 @@ export function makeStockRoutes(host) {
 	// then offer the ways on without a backup
 	function stockIdentified(parts, version) {
 		const vd = seen(version, "identify");
-		if (vd && !writable(vd)) {
+		if (blocks(vd)) {
 			parts.show({ led: "off", screen: "on" }, h("dl", { class: "kv-list" }, h("dt", {}, t("flash.usmart.version")), h("dd", {}, version)), variantStop(vd));
 			return parts.act(button(t("flash.iap.none.again"), parts.onAgain, { primary: true }));
 		}
@@ -201,7 +213,7 @@ export function makeStockRoutes(host) {
 		}
 		diag.note("stock firmware", { build: build ? `${build.name} ${build.date}` : null, version: version || null, console_stub: build?.stub ? "proven" : "untried" });
 		const vd = version ? seen(version, "console") : null;
-		if (vd && !writable(vd)) {
+		if (blocks(vd)) {
 			show({ led: "off", screen: "on" }, version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.usmart.version")), h("dd", {}, version)) : null,
 				variantStop(vd));
 			return act(button(t("flash.iap.none.again"), onAgain, { primary: true }));
@@ -226,7 +238,7 @@ export function makeStockRoutes(host) {
 		show({ led: "off", screen: "on" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.usmart.found"))),
 			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.usmart.version")), h("dd", {}, version)) : null,
-			variantWarning(vd),
+			variantNote(vd),
 			untried ? notice(t("flash.variant.try_note"), "info") : null,
 			h("p", {}, t("flash.usmart.lead", { min: Math.ceil((2 * words) / WORD_RATE / 60) })),
 			h("p", { class: "small muted" }, t("flash.usmart.note")), prog.el, status);

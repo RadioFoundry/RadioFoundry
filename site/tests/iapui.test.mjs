@@ -208,6 +208,18 @@ test("stock console: a variant the image doesn't run stops before anything is wr
 	}
 });
 
+test("stock console, backup task: a variant the image doesn't run still gets the backup, with a note that it is safe", async (t) => {
+	const code = "D6T";
+	const data = { ...stockRadio, variants: stockRadio.variants.map((v) => (v.code === code ? { code, name: v.name } : v)) };
+	const { r, rt, seen, parts } = await stockRoute(t, { variant: code, radioData: data });
+	rt.state.task = "backup";
+	await rt.routes.stockFound(parts);
+	assert.doesNotMatch(seen.shown.textContent, /Nothing was written/);
+	assert.match(seen.shown.textContent, /A backup only reads the radio, so it is safe/);
+	assert.ok(seen.acts.map(label).includes("Switch to Update Mode"), "the stub load is offered");
+	assert.ok(r.frames.every((f) => f.startsWith("read_addr(")));
+});
+
 // The radio runs an older build: its version string where that build has it, and none where the proven builds do
 function olderBuild(r) {
 	const old = BUILDS.find((b) => !b.stub);
