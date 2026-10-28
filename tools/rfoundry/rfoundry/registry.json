@@ -110,6 +110,10 @@
     "Hold P1 and press power. The red LED lights and the display stays blank."
    ],
    "stock_download": null,
+   "stock_versions": [
+    "909E.DBB.EARSAB.018",
+    "909E.DBB.EARSAB.020"
+   ],
    "key_sha256": null,
    "key_prefix": null,
    "dfu_ids": null,
@@ -277,6 +281,14 @@
     "Release the keys."
    ],
    "stock_download": "https://github.com/daniel5600/BAOFENG-DM1701-Original-Firmware",
+   "stock_versions": [
+    "V02.06 CSV",
+    "V02.06 noCSV",
+    "V02.03 CSV",
+    "V02.03 noCSV",
+    "V02.02 CSV",
+    "V02.01 CSV"
+   ],
    "key_sha256": "d983ce95fbc19fc78b913d9afc0381e3ba4ffedb480798865292d05a2fb3deff",
    "key_prefix": "3A0474AD",
    "dfu_ids": [
@@ -397,6 +409,7 @@
     "Release the keys."
    ],
    "stock_download": null,
+   "stock_versions": [],
    "key_sha256": null,
    "key_prefix": null,
    "dfu_ids": null,
@@ -514,6 +527,10 @@
     "Release the keys."
    ],
    "stock_download": null,
+   "stock_versions": [
+    "DM32.01.01.049",
+    "DM32.00.01.046"
+   ],
    "key_sha256": null,
    "key_prefix": null,
    "dfu_ids": null,
@@ -669,6 +686,11 @@
     "Release the keys."
    ],
    "stock_download": "https://md380.org/firmware/orig/",
+   "stock_versions": [
+    "D002.032",
+    "D35.14",
+    "S35.14"
+   ],
    "key_sha256": "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd",
    "key_prefix": "2EDF40B5",
    "dfu_ids": [
@@ -866,6 +888,38 @@
     "Release the keys."
    ],
    "stock_download": "https://passion-radio.com/dmr-equipment/tyt-md380-321.html",
+   "stock_versions": [
+    "V19.26 CSV",
+    "D19.26 REC",
+    "P19.26 CSV-GPS",
+    "S19.26 GPS-REC",
+    "V18.11 CSV",
+    "D18.11 REC",
+    "P18.11 CSV-GPS",
+    "S18.11 GPS-REC",
+    "P18.16 CSV-GPS",
+    "S18.16 GPS-REC",
+    "V19.06 CSV",
+    "P19.06 CSV-GPS",
+    "V19.74 CSV",
+    "D19.74 REC",
+    "P19.74 CSV-GPS",
+    "S19.74 GPS-REC",
+    "10W V19.74 CSV",
+    "10W D19.74 REC",
+    "10W P19.74 CSV-GPS",
+    "10W S19.74 GPS-REC",
+    "V219.60 CSV AES 255",
+    "P219.60 CSV-GPS AES 255",
+    "V219.74 CSV AES 255",
+    "D219.74 REC AES 255",
+    "P219.74 CSV-GPS AES 255",
+    "S219.74 GPS-REC AES 255",
+    "10W V219.74 CSV AES 255",
+    "10W D219.74 REC AES 255",
+    "10W P219.74 CSV-GPS AES 255",
+    "10W S219.74 GPS-REC AES 255"
+   ],
    "key_sha256": "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991",
    "key_prefix": "00AA8989",
    "dfu_ids": [

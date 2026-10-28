@@ -450,6 +450,10 @@ A mobile radio for 136-174 and 400-480 MHz with a front knob, a few front keys a
 voice both ways, the hotspot, the DMR VFO and the network services work on the radio. It is installed with the
 [radio programming utility](#installing-the-db25-d-pro) only.
 
+**Which DB25-D.** Only the PRO is supported: its version code starts with `909E.DBB`. Older DB25-D radios (`909E.D64`,
+`909E.D66`, `909E.D6T`; the FD6818 batches, built 2021 to 2023) have other RF hardware and are not supported yet. To
+read the code on the radio, open its **Version** screen.
+
 ### Installing the DB25-D PRO
 
 The radio programming utility on the web site installs and updates this radio over the programming cable (K1 jack).

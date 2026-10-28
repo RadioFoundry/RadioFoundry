@@ -133,7 +133,7 @@ export function makeStockRoutes(host) {
 	function nothing({ show, act, onUpdateMode, onPowerOn, onAgain }) {
 		show({ led: "off", screen: "any" },
 			notice(t("flash.iap.none.lead"), "info"),
-			h("ul", {}, h("li", {}, t("flash.iap.none.on")), h("li", {}, t("flash.iap.none.cable")), h("li", {}, t("flash.iap.none.stock"))),
+			h("ul", {}, h("li", {}, t("flash.iap.none.on")), h("li", {}, t("flash.iap.none.cable")), h("li", {}, t("flash.iap.none.stock")), h("li", {}, t("flash.iap.none.batch"))),
 			h("p", { class: "small muted" }, t("flash.iap.none.rfoundry")));
 		act(button(t("flash.iap.none.again"), onAgain, { primary: true }), onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode),
 			button(t("flash.iap.none.power_on"), onPowerOn, { quiet: true }));
