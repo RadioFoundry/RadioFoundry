@@ -36,6 +36,9 @@ msgstr "中"
 
 
 class Generate(unittest.TestCase):
+    def test_source_references_use_forward_slashes(self):
+        self.assertTrue(all("\\" not in path for path in i18n.source_files()))
+
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.saved = i18n.LANG_DIR
