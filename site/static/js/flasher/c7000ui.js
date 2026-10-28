@@ -27,7 +27,8 @@ import { radioTop } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
 import { register } from "./backends.js";
-import { makeStockRoutes } from "./iapui.js";
+import { makeStockRoutes, variantVerdict } from "./iapui.js";
+import { versionText, writable } from "./variant.js";
 import { Usmart, stockVersion, stockName } from "./usmart.js";
 import { Iap, checkInstallImage } from "./iap.js";
 import { BfLoader } from "./bfloader.js";
@@ -227,7 +228,9 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			c.forceIap = false;
 			// a radio already in update mode printed its banner at power-on: remember that, so the install doesn't wait for it.
 			// A loader entered only with the keys held is listened for in the install's own step
-			c.iapReady = stuckMode() && !!(await iap(c).probe());
+			const um = stuckMode() && await iap(c).probe();
+			c.iapReady = !!um && !um.stock;
+			if (um) diag.note(um.stock ? "identify answered" : "update mode loader", { version: um.stock ? versionText(S().radio, um.stock) : um.version });
 			return toIap();
 		}
 		await find();
@@ -270,7 +273,11 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		// the loader's update mode answers a read-only probe: a radio whose application won't start stays in it
 		c.iapReady = false;
 		const um = stuckMode() && await iap(c).probe();
-		if (um) {
+		// the stock application answered as it answers the vendor software: its console is silent or missing
+		const version = um?.stock ? versionText(S().radio, um.stock) : null;
+		if (um) diag.note(um.stock ? "identify answered" : "update mode loader", { version: um.stock ? version : um.version });
+		if (version) return routes.stockIdentified({ show, act, onUpdateMode: toIap, onAgain: () => find() }, version);
+		if (um && !um.stock) {
 			c.iapReady = true;
 			return routes.alreadyUpdateMode({ show, act, onUpdateMode: toIap, onAgain: () => find() }, um.version);
 		}
@@ -792,13 +799,23 @@ export function checkView() {
 				fill(status, ctx.failureNotice(e, used ? { name: used.path.split("/").pop(), data: used.data } : null));
 			}
 		});
-		fill(status, 
+		fill(status, untriedOffer(),
 			d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, codecActionText()), pick,
 				h("p", { class: "small" }, h("a", { href: "#", onclick: async (e) => { e.preventDefault(); S().c7none = true; await decideView(); } }, t("flash.c7.codec.without")))),
 			d && d.mode === "none" ? notice(t("flash.c7.codec.none_risk"), "bad") : null,
 			c.progmem ? h("p", { class: "small" }, h("a", { href: "#", onclick: (e) => { e.preventDefault(); saveBundle(); } }, t("flash.c7.check.download_again"))) : null,
 			h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		forward(button(t("flash.nav.to_write"), () => ctx.next(), { primary: true, disabled: !d }));
+	}
+
+	// A backup through a stock build whose stub load was not proven before: the project wants that firmware. The
+	// program memory read goes with a problem report (report.js attaches S.stockRead); the backup stays the user's
+	function untriedOffer() {
+		if (!c.stockUntried || !c.progmem) return null;
+		const v = c.stockUntried.version || stockVersion(c.progmem) || "unknown";
+		S().stockRead = { name: `program-memory-${S().radio.id}-${v.replace(/[^\w.-]/g, "_")}.bin`, data: c.progmem };
+		return h("div", { class: "notice" }, h("strong", {}, t("flash.variant.send_title")), h("p", {}, t("flash.variant.send", { version: v })),
+			reportButton({ quiet: false }));
 	}
 
 	// Why no codec was found, and what to select instead. A stock radio whose codec is a build without a recipe is
@@ -810,8 +827,10 @@ export function checkView() {
 		const file = { model: S().radio.model, codec_version: flash().codec_version || "" };
 		if (!c.analysis?.otherCodec) return t("flash.usmart.codec.action_text", file);
 		// named as flash.stock_versions name it (iapui.js too); the image's own string carries another batch code
+		// as the radio reported it (the variant filled in), else the image's own string by the build's number
 		const v = c.progmem && stockVersion(c.progmem);
-		return t("flash.usmart.codec.action_other", { ...file, version: v ? stockName(flash(), v.slice(-3)) : t("flash.usmart.codec.version_unknown") });
+		const version = S().variant?.version || (v ? stockName(flash(), v.slice(-3)) : t("flash.usmart.codec.version_unknown"));
+		return t("flash.usmart.codec.action_other", { ...file, version });
 	}
 
 	// Coming back to this step: what was read is still here
@@ -891,6 +910,10 @@ export function writeView() {
 	const map = sectorMap(C());
 	const prog = progressBar();
 	const status = h("div");
+	// a variant read on the way here (the stock console) that the chosen image doesn't run: nothing is written (one in
+	// development: app.js shows its notice above the step)
+	const vd = variantVerdict(S(), boardId());
+	if (vd && !writable(vd)) return panel(t("flash.write.title"), routes.variantStop(vd));
 	let start, data;
 	try {
 		// an image that starts with a first stage: the application alone would be written over it
