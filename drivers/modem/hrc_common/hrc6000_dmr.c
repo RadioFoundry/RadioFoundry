@@ -61,9 +61,11 @@
 #define STAT_TX_SLOT	0x80
 
 // The CACH TC read at the timeslot interrupt: 1 = it gives the number of the slot now starting, 0 = of the slot that
-// just ended. (unverified: flip it if bursts heard through a repeater report the wrong ts on the bench)
+// just ended. 0 on the HR_C6000: read as the slot starting, a DM-1701 through a full duplex repeater heard outbound
+// TS2 as TS1 and transmitted its TS1 under outbound TS2, one slot off both ways (2026-10-27; aligned timing,
+// ETSI TS 102 361-1 5.1.1 table 5.1). The HR_C5000 sets tc_last_rx instead (hardware-md380.md).
 #ifndef HRC6000_DMR_TC_IS_SLOT_NOW
-#define HRC6000_DMR_TC_IS_SLOT_NOW	1
+#define HRC6000_DMR_TC_IS_SLOT_NOW	0
 #endif
 
 // Timing rules (modem-hrc6000.md 4.2, 4.3, 5.3, 5.5; gotchas 1.2, 1.5)
@@ -616,10 +618,7 @@ static void track_tc(hrc6000_dmr_t *e)
 		heard = (int8_t)(3 - heard);	// it was the slot that ended: the one starting is the other
 	}
 	// The HR_C5000 (tc_last_rx): bit 2 is 1 after a TS1 burst, so 1 = TS2 starting (on air through a duplex hotspot,
-	// 2026-10-21: read as the slot that ended, every call landed on the other slot)
-	if (e->own_ts != 0) {
-		e->own_ts = (int8_t)(3 - e->own_ts);
-	}
+	// 2026-10-21: read as the slot that ended, every call landed on the other slot). own_ts already toggled this tick
 	if (e->own_ts == 0) {
 		e->own_ts = heard;
 		e->tc_agree = 0;
@@ -1336,8 +1335,15 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 	}
 
 	bool idle = e->tx_state == TXS_IDLE || e->tx_state == TXS_START;
-	// The HR_C5000's TC is the last received slot's: after a slot not received (ours, sending) it is stale
-	uint8_t tc_ctl = e->dev->chip->tc_last_rx ? ctl_ended : e->ctl_now;
+	// The slot number toggles every tick, received or not: once locked the HR_C6000 receives one slot in two, and a
+	// transmission skips the compare altogether (toggled only per compare, it fell out of step and resynced onto the
+	// wrong slot: a DM-1701's TS2 call moved to TS1 mid-call, 2026-10-27)
+	if (e->own_ts != 0) {
+		e->own_ts = (int8_t)(3 - e->own_ts);
+	}
+	// The TC read here is the slot that ended (HRC6000_DMR_TC_IS_SLOT_NOW 0, the HR_C5000's tc_last_rx): after a slot
+	// not received (ours, sending, or closed by the lock) it is stale
+	uint8_t tc_ctl = (e->dev->chip->tc_last_rx || !HRC6000_DMR_TC_IS_SLOT_NOW) ? ctl_ended : e->ctl_now;
 	if (idle && (tc_ctl & CTL_RX) != 0 && rmo(e)) {
 		track_tc(e);
 	}

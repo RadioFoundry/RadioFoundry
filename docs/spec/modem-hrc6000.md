@@ -211,7 +211,8 @@ burst by one slot (30 ms) or by a frame (60 ms).
 While transmitting, the slot between our bursts gets 0x00. An SFR writes 0x50 there instead, because it hears its
 inbound slot in that slot (`hrc6000_dmr_tx_listen`, `sfr.md` 3).
 
-The CACH TC bit (0x52 bit 2) can be read here. The chip refreshes it only in slots being received.
+The CACH TC bit (0x52 bit 2) can be read here. The chip refreshes it only in slots being received. It is the TC of
+the slot that just ended, not the one starting (5.3).
 
 ### 4.2 System interrupt
 
@@ -309,7 +310,12 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
 ### 5.3 Timeslot tracking (repeater signals)
 
 The TC bit of the CACH alternates 0/1 slot by slot. At each timeslot interrupt the driver toggles its own slot number
-and compares it with the received TC:
+and compares it with the received TC. The TC read there belongs to the slot that just ended, so the slot starting is
+the other one (`HRC6000_DMR_TC_IS_SLOT_NOW` 0). Read the other way, a DM-1701 through a full duplex repeater heard
+outbound TS2 as TS1 and transmitted its TS1 under outbound TS2: one slot off both ways (bench, 2026-10-27). With it
+right, a subscriber on TSx receives outbound TSx and transmits under it, the aligned timing of ETSI TS 102 361-1
+5.1.1 table 5.1 that repeaters (MMDVM among them) use; the AT for TSx comes in the CACH before the other outbound
+slot (`dmr-modem.md` 1.6, `split-duplex.md` 5.2).
 
 | Parameter | Value |
 |---|---|

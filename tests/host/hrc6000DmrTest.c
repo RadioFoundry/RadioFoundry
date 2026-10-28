@@ -739,11 +739,12 @@ static void test_tx_aligned_rmo(void)
 	hrc6000_dmr_configure(&eng, &cfg);
 	CHECK(last_write(4, 0x14) == (3100001 >> 16) && last_write(4, 0x16) == (3100001 & 0xFF));
 	CHECK(last_write(4, 0x1F) == 0x10);
-	// The repeater's CACH: the slot starting at tick k is TS1 on odd ticks, TS2 on even ones
+	// The repeater's CACH: the slot starting at tick k is TS1 on odd ticks, TS2 on even ones; 0x52 bit 2 at the
+	// interrupt is the TC of the slot that just ended (HRC6000_DMR_TC_IS_SLOT_NOW 0)
 	uint32_t t = 7000000;
 	for (int k = 0; k < 8; k++) {
 		uint32_t next = eng.tick + 1;
-		rd[4][0x52] = (next & 1) ? 0x00 : 0x04;
+		rd[4][0x52] = (next & 1) ? 0x04 : 0x00;
 		ts_at(t);
 		t += 30000;
 	}
@@ -757,7 +758,7 @@ static void test_tx_aligned_rmo(void)
 	int setup_tick = -1;
 	for (int k = 0; k < 4 && setup_tick < 0; k++) {
 		uint32_t next = eng.tick + 1;
-		rd[4][0x52] = (next & 1) ? 0x00 : 0x04;
+		rd[4][0x52] = (next & 1) ? 0x04 : 0x00;
 		int r50, r41;
 		tx_tick(t, &r50, &r41);
 		if (r41 == 0x80) {
@@ -776,6 +777,35 @@ static void test_tx_aligned_rmo(void)
 	uint8_t v[8];
 	CHECK(writes_of(0x41, v, 8) >= 1);
 	CHECK(last_write(4, 0x41) == 0x50);	// repeater: back to receiving on its timing, no resync
+}
+
+// Locked to one slot of a repeater: the other slot is closed, and the TC (the ended slot's) is refreshed only after a
+// slot received, so the compare runs every other tick; the slot numbers must hold (a DM-1701's TS2 call moved to TS1
+// mid-call when the number toggled per compare, 2026-10-27)
+static void test_tc_locked_one_in_two(void)
+{
+	fresh_engine();
+	pending_burst = false;
+	dmr_config_t cfg = { .own_id = 3100001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
+	hrc6000_dmr_configure(&eng, &cfg);
+	hrc6000_dmr_rx_lock_slot(&eng, 2);
+	uint32_t t = 7000000;
+	int closed = 0, wrong = 0;
+	for (int k = 0; k < 60; k++) {
+		uint32_t next = eng.tick + 1;
+		if ((eng.ctl_now & 0x50) == 0x50) {	// the slot ending was received: its TC is fresh
+			rd[4][0x52] = (next & 1) ? 0x04 : 0x00;
+		}
+		log_reset();
+		ts_at(t);
+		t += 30000;
+		closed += last_write(4, 0x41) == 0x00;
+		if (eng.phase_ts[0] != 0 && !(eng.phase_ts[1] == 1 && eng.phase_ts[0] == 2)) {
+			wrong++;	// (an idle restart, no bursts heard, may forget them: not wrong)
+		}
+	}
+	CHECK(closed > 0);	// the lock closed the other slot
+	CHECK(wrong == 0);
 }
 
 static void test_tx_rejected_and_stall(void)
@@ -1044,6 +1074,7 @@ int main(void)
 	test_tx_fill();
 	test_tx_crc_and_underrun();
 	test_tx_aligned_rmo();
+	test_tc_locked_one_in_two();
 	test_tx_rejected_and_stall();
 	test_cc_follow();
 	test_rx_repeat_report();
