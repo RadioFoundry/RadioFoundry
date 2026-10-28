@@ -61,7 +61,7 @@
 #define STAT_TX_SLOT	0x80
 
 // The CACH TC read at the timeslot interrupt: 1 = it gives the number of the slot now starting, 0 = of the slot that
-// just ended. 0 on the HR_C6000: read as the slot starting, a DM-1701 through a full duplex repeater heard outbound
+// just ended. 0 on the HR_C6000: read as the slot starting, a radio through a full duplex repeater heard outbound
 // TS2 as TS1 and transmitted its TS1 under outbound TS2, one slot off both ways (2026-10-27; aligned timing,
 // ETSI TS 102 361-1 5.1.1 table 5.1). The HR_C5000 sets tc_last_rx instead (hardware-md380.md).
 #ifndef HRC6000_DMR_TC_IS_SLOT_NOW
@@ -1337,7 +1337,7 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 	bool idle = e->tx_state == TXS_IDLE || e->tx_state == TXS_START;
 	// The slot number toggles every tick, received or not: once locked the HR_C6000 receives one slot in two, and a
 	// transmission skips the compare altogether (toggled only per compare, it fell out of step and resynced onto the
-	// wrong slot: a DM-1701's TS2 call moved to TS1 mid-call, 2026-10-27)
+	// wrong slot: a TS2 call moved to TS1 mid-call, 2026-10-27)
 	if (e->own_ts != 0) {
 		e->own_ts = (int8_t)(3 - e->own_ts);
 	}

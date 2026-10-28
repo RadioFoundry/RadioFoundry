@@ -311,11 +311,15 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
 
 The TC bit of the CACH alternates 0/1 slot by slot. At each timeslot interrupt the driver toggles its own slot number
 and compares it with the received TC. The TC read there belongs to the slot that just ended, so the slot starting is
-the other one (`HRC6000_DMR_TC_IS_SLOT_NOW` 0). Read the other way, a DM-1701 through a full duplex repeater heard
-outbound TS2 as TS1 and transmitted its TS1 under outbound TS2: one slot off both ways (bench, 2026-10-27). With it
-right, a subscriber on TSx receives outbound TSx and transmits under it, the aligned timing of ETSI TS 102 361-1
-5.1.1 table 5.1 that repeaters (MMDVM among them) use; the AT for TSx comes in the CACH before the other outbound
-slot (`dmr-modem.md` 1.6, `split-duplex.md` 5.2).
+the other one (`HRC6000_DMR_TC_IS_SLOT_NOW` 0). Read as the slot starting, a subscriber through a full duplex
+repeater was one slot off both ways: it heard outbound TS2 as TS1 and transmitted its TS1 under outbound TS2 (bench,
+2026-10-27). Read right, a subscriber on TSx receives outbound TSx and transmits under it: the aligned timing of ETSI
+TS 102 361-1 5.1.1, table 5.1. The AT for TSx comes in the CACH before the other outbound slot (`dmr-modem.md` 1.6,
+`split-duplex.md` 5.2).
+
+The driver toggles its slot number at every timeslot interrupt, received or not, and compares only after a received
+slot. Locked to one slot, the chip receives one slot in two, and a transmission skips the compare altogether: toggled
+only at a compare, the number fell out of step and resynced onto the wrong slot mid-call.
 
 | Parameter | Value |
 |---|---|

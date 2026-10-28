@@ -256,8 +256,9 @@ class Host:
 
 def schedule_calls(w, host, t_call):
     """Two mobile calls timed from the TX half's outbound (its true clock): aligned timing, inbound TS1 runs during
-    outbound TS1 and inbound TS2 during outbound TS2 (split-duplex.md 7, ETSI TS 102 361-1 5.1.1 table 5.1); a 2 ms air plus chip delay; each burst reported 31 ms after
-    its slot started. Returns the expected per-slot seed sequences."""
+    outbound TS1 and inbound TS2 during outbound TS2 (split-duplex.md 7, ETSI TS 102 361-1 5.1.1 table 5.1); a 2 ms
+    air plus chip delay; each burst reported 31 ms after its slot started. Returns the expected per-slot seed
+    sequences."""
     h_ep, ep = host.epochs[-1]
     t1 = ep["t_us"] + (30_000 if ep["ts"] == 2 else 0)       # an outbound TS1 boundary, TX clock
     h_t1 = w.tx.host_of(t1, h_ep)

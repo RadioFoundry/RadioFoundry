@@ -105,9 +105,9 @@ alias header, 5-7 talker alias blocks 1-3, 8 GPS info (TS 102 361-2 7.1.1.3-7.1.
 | polite to all | don't transmit while the channel carries any DMR or RF activity |
 
 Through a repeater, "busy" is the AT bit for our channel (in the CACH before the other outbound slot, above), plus
-decoded activity on our slot. In direct mode,
-"busy" is decoded activity with our CC (or carrier, for polite to all). A data or voice transmission that waits for
-the channel must time out (a few seconds, configurable) rather than wait forever.
+decoded activity on our slot. In direct mode, "busy" is decoded activity with our CC (or carrier, for polite to all).
+A data or voice transmission that waits for the channel must time out (a few seconds, configurable) rather than wait
+forever.
 
 ---
 

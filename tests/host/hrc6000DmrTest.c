@@ -780,8 +780,8 @@ static void test_tx_aligned_rmo(void)
 }
 
 // Locked to one slot of a repeater: the other slot is closed, and the TC (the ended slot's) is refreshed only after a
-// slot received, so the compare runs every other tick; the slot numbers must hold (a DM-1701's TS2 call moved to TS1
-// mid-call when the number toggled per compare, 2026-10-27)
+// slot received, so the compare runs every other tick; the slot numbers must hold (a TS2 call moved to TS1 mid-call
+// when the number toggled per compare, 2026-10-27)
 static void test_tc_locked_one_in_two(void)
 {
 	fresh_engine();

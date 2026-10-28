@@ -269,7 +269,7 @@ void bsOutboundNext(bsOutbound_t *o, int8_t ts, uint32_t now_ms, dmr_tx_burst_t 
 	}
 
 	// The CACH before this burst (split-duplex.md 5.2). Its AT speaks for the inbound slot a slot later (-1 4.5 figure
-	// 4.8): with aligned timing (-1 5.1.1 table 5.1) that's the other channel's, as an MMDVM sends it
+	// 4.8): with aligned timing (-1 5.1.1 table 5.1) that's the other channel's
 	uint8_t bit = (ts == 1) ? 1u : 2u;
 	uint8_t other = (uint8_t)(bit ^ 3u);
 	bool busy = out->kind != DMR_BURST_IDLE;
