@@ -32,8 +32,21 @@ const FRAME = "@AT ";
 export const STUB_WINDOW = [0x54000, 0x4000];		// [load address, size]
 export const HIJACK = 0x18000848;
 export const APP_SIG = [0x0300C000, 0xC001112C];		// the application's first word: 2C 11 01 C0
-// The version string "EARSAB.0NN" of each known build, and a word just below it: four words cover it
-export const BUILDS = [["018", 0x03079F3C], ["020", 0x0307DCCC]];
+// Every vendor build known (hardware-db25d.md 7, USMART console): name, its build date, at: the word just below
+// "EARSAB.0NN" in its program flash (four words cover it: how the build is told), ram: the version string's copy in
+// RAM, where the firmware writes the RF chips it found at boot (the hardware variant; the flash holds a placeholder).
+// stub: the stub load through this build's console is proven on a radio (its free RAM and command table measured);
+// on the others the console only reads. The proven builds first: a radio on one is told with the fewest reads
+export const BUILDS = [
+	{ name: "018", date: "2025-01-21", at: 0x03079F3C, ram: 0x18000AF4, stub: true },
+	{ name: "020", date: "2026-01-10", at: 0x0307DCCC, ram: 0x18000B74, stub: true },
+	{ name: "018", date: "2024-09-23", at: 0x03079C64, ram: 0x18000AFC, stub: false },
+	{ name: "018", date: "2024-05-09", at: 0x030797A0, ram: 0x18000AF8, stub: false },
+	{ name: "018", date: "2023-07-06", at: 0x03075AAC, ram: 0x18000A74, stub: false },
+	{ name: "018", date: "2022-11-23", at: 0x030759EC, ram: 0x18000A64, stub: false },
+	{ name: "017", date: "2022-10-21", at: 0x030759E8, ram: 0x18000A60, stub: false },
+];
+const VERSION_WORDS = 6;	// "909E.DBB.EARSAB.018" and its terminator
 
 // A build's full version as the board's flash.stock_versions name it ("018" -> "909E.DBB.EARSAB.018"), or the build
 export const stockName = (flash, build) => (flash.stock_versions || []).find((v) => v.endsWith(`.${build}`)) || build;
@@ -143,17 +156,26 @@ export class Usmart {
 		return (await this.readWord(APP_SIG[0], timeout)) !== null;
 	}
 
-	// Which stock build runs: "018", "020", or null for one this page does not know (its RAM may differ)
+	// `n` words from `addr` as text (one char per byte)
+	async readText(addr, n, signal) {
+		const bytes = new Uint8Array(4 * n);
+		for (let i = 0; i < n; i++) new DataView(bytes.buffer).setUint32(4 * i, await this.readWordRetry(addr + 4 * i, 6, signal), true);
+		return latin(bytes);
+	}
+
+	// Which stock build runs (a BUILDS entry), or null for one this page does not know (its RAM may differ)
 	async build(signal) {
-		for (const [name, addr] of BUILDS) {
-			const words = [];
-			for (let i = 0; i < 4; i++) words.push(await this.readWordRetry(addr + 4 * i, 6, signal));
-			const bytes = new Uint8Array(16);
-			words.forEach((w, i) => new DataView(bytes.buffer).setUint32(4 * i, w, true));
-			const text = latin(bytes);
-			if (text.includes(`EARSAB.${name}`)) return name;
+		for (const b of BUILDS) {
+			if ((await this.readText(b.at, 4, signal)).includes(`EARSAB.${b.name}`)) return b;
 		}
 		return null;
+	}
+
+	// The version string as the running build filled it in ("909E.DBB.EARSAB.018"), from its RAM copy: the text up to
+	// its terminator
+	async version(build, signal) {
+		const text = await this.readText(build.ram, VERSION_WORDS, signal);
+		return text.split("\0")[0];
 	}
 
 	// Write the universal stub into the window, read every word back, then point the hijack word at it and send one

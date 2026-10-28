@@ -37,8 +37,14 @@ test("the DB25-D's data in the flasher tables", () => {
 	assert.equal(radio.flash.update_mode, "iap");
 	assert.deepEqual(FS, { size: 0x1000, head: "2c1101c0" });
 	assert.equal(radio.flash.read_rate, 46000);
-	// every build the console route knows is a stock version of the board, by which the page names it
-	for (const [build] of BUILDS) assert.equal(stockName(radio.flash, build), `909E.DBB.EARSAB.${build}`);
+	// every build the stub goes in through is a stock version of the board, by which the page names it; every build
+	// known has its version string inside the application and its RAM copy in the console's RAM
+	for (const b of BUILDS.filter((x) => x.stub)) assert.equal(stockName(radio.flash, b.name), `909E.DBB.EARSAB.${b.name}`);
+	for (const b of BUILDS) {
+		assert.ok(b.at >= 0x0300C000 && b.at < 0x03090000 && b.at % 4 === 0, b.date);
+		assert.ok(b.ram >= 0x18000000 && b.ram < 0x18001000 && b.ram % 4 === 0, b.date);
+	}
+	assert.equal(new Set(BUILDS.map((b) => b.date)).size, BUILDS.length);
 	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true });
 	assert.deepEqual(b.slot, [0xE8000, 0x100000]);
 	const ps = C.profiles.filter((p) => p.board === "db25d");
@@ -233,9 +239,34 @@ test("USMART: a write counts only with its echo, and the echo must carry the val
 
 test("USMART: the build comes from the version string; an unknown build is reported as null", async (t) => {
 	const { r } = await stockDb25d(t);
-	assert.equal(await new Usmart(r.stream).build(), "018");
+	const b = await new Usmart(r.stream).build();
+	assert.deepEqual([b.name, b.date, b.stub], ["018", "2025-01-21", true]);
 	r.progmem.fill(0x20, 0x79F30, 0x79F50);
 	assert.equal(await new Usmart(r.stream).build(), null);
+});
+
+test("USMART: the version comes from its RAM copy, which carries the variant the flash copy leaves out", async (t) => {
+	const { r } = await stockDb25d(t, { variant: "D6T" });
+	const u = new Usmart(r.stream);
+	const b = await u.build();
+	assert.equal(stockVersion(r.progmem), "909E.D6x.EARSAB.018", "the program flash holds the placeholder");
+	assert.equal(await u.version(b), "909E.D6T.EARSAB.018");
+	assert.ok(r.frames.every((f) => f.startsWith("read_addr(")), "reads only");
+});
+
+test("identify: the stock application's answer to the read-only probe is its version, never the loader's", async (t) => {
+	const { r } = await stockDb25d(t, { variant: "D64", faults: { consoleSilent: true } });
+	const um = await iapOn(r.stream).probe(1500);
+	assert.equal(um.version, null);
+	assert.match(um.stock, /909E\.D64\.EARSAB\.018/);
+	const { versionText, variantCode } = await import("../static/js/flasher/variant.js");
+	assert.equal(versionText(radio, um.stock), "909E.D64.EARSAB.018");
+	assert.equal(variantCode(radio, um.stock), "D64");
+	assert.ok(r.events.includes("identify"));
+	assert.equal(r.progmem.length, 0x200000);
+	// after an identify the console stays quiet until the next power-on, as on the radio
+	r.faults.consoleSilent = false;
+	assert.equal(await new Usmart(r.stream).readWord(0x0300C000, 200), null);
 });
 
 test("USMART: the stub goes into 0x54000, is read back, and the hijack word starts it; then it reads and writes the flash", { timeout: 120000 }, async (t) => {
