@@ -36,6 +36,8 @@ import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
 import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
+import { variantWarning, variantVerdict } from "./iapui.js";
+import { groups as variantGroups } from "./variant.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
 import { APP_ENTRY } from "./iap.js";
 import { slotBytes, locateCodec } from "./c7000.js";
@@ -649,6 +651,8 @@ function render() {
 	if (VERSION_REF && S.task === "install") app.append(versionBanner());
 	else if (S.task === "install" && S.step === 0) app.append(...[betaNotice()].filter(Boolean));
 	if (S.radio && S.radio.status !== "supported" && S.step > 0) app.append(prereleaseNotice());
+	// a hardware variant in development, once the page read it or the user picked it (board.toml [hardware] variants)
+	if (S.radio && S.variant && S.step > 0) app.append(...[variantWarning(variantVerdict(S, S.radio.flash.board))].filter(Boolean));
 	// One bar of buttons under every step: back, start over, and the step's own next action, which the view sets (and
 	// changes when it redraws) through S.forward. The main action is always there, at the right; a step never puts a
 	// second one in its panel. S.forward also takes [alternative, ..., main].
@@ -749,7 +753,8 @@ function radioView() {
 			onclick: () => { selectRadio(r); next(); } },
 		h("img", { src: ROOT + r.image, alt: "" }), h("strong", {}, r.name),
 		h("span", { class: "small muted" }, r.also.join(", ")),
-		h("span", { class: "small" }, ok ? t(`status.${r.status}`) : t("flash.radio.not_yet")));
+		h("span", { class: "small" }, ok ? t(`status.${r.status}`) : t("flash.radio.not_yet")),
+		...variantLines(r));
 	}));
 	const detect = button(t("flash.radio.detect"), async () => {
 		status.replaceChildren(h("p", { class: "muted" }, t("flash.now.connecting")));
@@ -776,6 +781,14 @@ function radioView() {
 		S.task === "help" ? null : h("p", { class: "small muted detect" }, t("flash.radio.detect_hint"), " ", detect), status);
 }
 
+// A radio card's hardware variants (board.toml [hardware] variants): which codes are supported, which in development,
+// which not yet; nothing for a radio that lists none
+function variantLines(r) {
+	const g = variantGroups(r);
+	const line = (key, vs) => (vs.length ? h("span", { class: "small muted" }, t(key, { codes: vs.map((v) => v.code).join(", ") })) : null);
+	return [line("flash.radio.variants_supported", g.supported), line("flash.radio.variants_dev", g.dev), line("flash.radio.variants_none", g.none)].filter(Boolean);
+}
+
 function selectRadio(r) {
 	if (S.radio && S.radio.id !== r.id) Promise.resolve(backend().release?.()).then(() => { S.c7 = null; });
 	S.radio = r;
@@ -784,6 +797,7 @@ function selectRadio(r) {
 	S.selection.useVariant("full");
 	S.firmware = null;
 	S.buildOptions = {};
+	S.variant = null;	// the hardware variant is read from the radio again
 }
 
 // ---------------------------------------------------------------------------------------------------------------

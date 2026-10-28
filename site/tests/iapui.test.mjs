@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The factory update mode's write step (iapui.js iapPanel) against a small stand-in for the DOM: a step the user left
-// while the page listens for update mode stops listening and draws nothing. Run with site/tests/run.sh.
+// while the page listens for update mode stops listening and draws nothing. The stock console route against a simulated
+// radio: the hardware variant it reports decides what the page offers. Run with site/tests/run.sh.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -43,8 +44,8 @@ const C = json("flash-boards.json").c7000;
 const radio = json("radios.json").radios.find((r) => r.flash.update_mode === "baofeng");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function route() {
-	const state = { c7: { log: { add() {}, el: new El("div") } }, radio, forward: null };
+function route(r = radio, host = {}) {
+	const state = { c7: { log: { add() {}, el: new El("div") } }, radio: r, forward: null };
 	const forwards = [];
 	const S = () => state;
 	state.forward = (b) => forwards.push(b);
@@ -64,8 +65,8 @@ function route() {
 		return l;
 	};
 	const ctx = { flashStarted: () => 0, flashFinished() {}, flashMark() {}, errorText: (e) => e.message, helpLink: () => null, next() {} };
-	const routes = makeStockRoutes({ S, ctx, C: () => C, boardId: () => radio.flash.board, session: () => state.c7, busy: async () => {},
-		loader, fill: (el, ...p) => el.replaceChildren(...p.flat().filter(Boolean)), stubImage: async () => new Uint8Array(0) });
+	const routes = makeStockRoutes({ S, ctx, C: () => C, boardId: () => r.flash.board, session: () => state.c7, busy: async () => {},
+		loader, fill: (el, ...p) => el.replaceChildren(...p.flat().filter(Boolean)), stubImage: async () => new Uint8Array(64), ...host });
 	return { state, forwards, calls, routes };
 }
 
@@ -145,4 +146,109 @@ test("factory update mode: a loader that identified itself is kept for the next 
 	assert.deepEqual([calls.made, calls.listen], [2, 2]);
 	third.isConnected = false;
 	await sleep(300);
+});
+
+// ---- the hardware variant on the stock console route (a radio with a stock console and variants, found by its data)
+
+const stockRadio = json("radios.json").radios.find((r) => r.flash.stock_console && r.variants?.length);
+const { FakeC7000, c7000Simulation } = await import("../static/js/flasher/fakec7000.js");
+const { BUILDS, FLASH_BASE } = await import("../static/js/flasher/usmart.js");
+
+// The radio on its stock firmware with this variant code; what the route shows and offers
+async function stockRoute(t, { variant, radioData = stockRadio, faults = {}, identify } = {}) {
+	const sim = await c7000Simulation(C, stockRadio.id, 7000, stockRadio);
+	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 50, bootTime: 50,
+		usmart: stockRadio.flash.stock_versions[0].slice(-3), variant, faults });
+	t.after(() => r.stop());
+	r.powerOn();
+	await sleep(300);
+	const rt = route(radioData, identify ? { identify } : {});
+	rt.state.c7.stream = r.stream;
+	rt.state.fakeC7 = r;
+	const seen = { shown: null, acts: [] };
+	const parts = { show: (_, ...els) => { seen.shown = new El("div"); seen.shown.append(...els.flat().filter(Boolean)); },
+		act: (...bs) => { seen.acts = bs.filter(Boolean); }, onLoaded: async () => {}, onUpdateMode: () => { seen.updateMode = true; }, onAgain: () => {} };
+	return { r, rt, seen, parts };
+}
+const label = (b) => b.textContent;
+
+test("stock console: the supported variant goes on to the stub load with no warning", async (t) => {
+	assert.ok(stockRadio, "a radio with a stock console and variants in radios.json");
+	const ok = stockRadio.variants.find((v) => v.level === "supported" && v.runs?.board === stockRadio.flash.board);
+	const { r, rt, seen, parts } = await stockRoute(t, { variant: ok.code });
+	await rt.routes.stockFound(parts);
+	assert.match(seen.shown.textContent, new RegExp(`\\.${ok.code}\\.`), "the version as the radio filled it in");
+	assert.doesNotMatch(seen.shown.textContent, /in development/i);
+	assert.deepEqual(rt.state.variant, { version: rt.state.variant.version, code: ok.code, via: "console" });
+	assert.ok(r.frames.every((f) => f.startsWith("read_addr(")), "nothing written yet");
+	assert.ok(seen.acts.map(label).includes("Switch to Update Mode"));
+});
+
+test("stock console: a variant in development shows its notice and still offers the load", async (t) => {
+	const dev = stockRadio.variants.find((v) => v.runs && v.level !== "supported");
+	const { rt, seen, parts } = await stockRoute(t, { variant: dev.code });
+	await rt.routes.stockFound(parts);
+	assert.match(seen.shown.textContent, /in development/i);
+	assert.ok(seen.shown.textContent.includes(dev.notice));
+	assert.ok(seen.acts.map(label).includes("Switch to Update Mode"), "the stub load is offered");
+});
+
+test("stock console: a variant the image doesn't run stops before anything is written", async (t) => {
+	// the same radio data with the variant listed without an image, and with another board's
+	for (const runs of [undefined, { board: "elsewhere" }]) {
+		const code = "D6T";
+		const data = { ...stockRadio, variants: stockRadio.variants.map((v) => (v.code === code ? { code, name: v.name, ...(runs ? { runs, level: "supported" } : {}) } : v)) };
+		const { r, rt, seen, parts } = await stockRoute(t, { variant: code, radioData: data });
+		await rt.routes.stockFound(parts);
+		assert.match(seen.shown.textContent, /Nothing was written/);
+		assert.match(seen.shown.textContent, runs ? /needs the elsewhere firmware/ : /does not support yet/);
+		assert.deepEqual(seen.acts.map(label), ["Search Again"]);
+		assert.ok(r.frames.every((f) => f.startsWith("read_addr(")));
+	}
+});
+
+test("stock console: a build without a proven stub load offers the two ways on, without a backup", async (t) => {
+	const { r, rt, seen, parts } = await stockRoute(t, { variant: "DBB" });
+	// the radio runs an older build: its version string where that build has it, and none where the proven ones do
+	const old = BUILDS.find((b) => !b.stub);
+	for (const b of BUILDS.filter((x) => x.stub)) r.progmem.fill(0x20, b.at - FLASH_BASE - 16, b.at - FLASH_BASE + 32);
+	r.progmem.set(new TextEncoder().encode(`909E.D6x.EARSAB.${old.name}\0`), old.at - FLASH_BASE - 8);
+	r.usmart = old.name;
+	await rt.routes.stockFound(parts);
+	assert.match(seen.shown.textContent, /can't be backed up here/);
+	assert.match(seen.shown.textContent, /Update the original firmware first/);
+	assert.match(seen.shown.textContent, /Install without a backup/);
+	assert.ok(seen.acts.map(label).includes("Install Without Backup"));
+	seen.acts.find((b) => label(b) === "Install Without Backup").click();
+	assert.ok(seen.updateMode);
+	assert.ok(r.frames.every((f) => f.startsWith("read_addr(")));
+});
+
+test("identify only: the console is silent but the identify names the variant; no backup, two ways on", async (t) => {
+	const { rt, seen, parts } = await stockRoute(t, { variant: "DBB" });
+	rt.routes.stockIdentified(parts, "909E.D6T.EARSAB.018");
+	assert.equal(rt.state.variant.code, "D6T");
+	assert.equal(rt.state.variant.via, "identify");
+	assert.match(seen.shown.textContent, /in development/i);
+	assert.match(seen.shown.textContent, /Install without a backup/);
+});
+
+test("update mode: the picker holds the install until the user names the hardware or says they can't", () => {
+	const { state, routes } = route(stockRadio);
+	const go = new El("button");
+	const box = routes.variantPicker((ok) => { go.disabled = !ok; });
+	assert.equal(go.disabled, true);
+	const buttons = [];
+	const walk = (e) => { if (e.tagName === "BUTTON") buttons.push(e); (e.children || []).forEach((c) => c instanceof El && walk(c)); };
+	walk(box);
+	assert.equal(buttons.length, stockRadio.variants.length + 1);
+	const dev = stockRadio.variants.find((v) => v.runs && v.level !== "supported");
+	buttons.find((b) => b.textContent.startsWith(`${dev.code}:`)).click();
+	assert.equal(go.disabled, false);
+	assert.equal(state.variant.code, dev.code);
+	assert.match(box.textContent, /in development/i);
+	buttons.at(-1).click();
+	assert.equal(go.disabled, false);
+	assert.equal(state.variant.code, null);
+	assert.match(box.textContent, /can't be checked/);
 });

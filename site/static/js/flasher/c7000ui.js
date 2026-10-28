@@ -27,7 +27,8 @@ import { radioTop } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
 import { register } from "./backends.js";
-import { makeStockRoutes } from "./iapui.js";
+import { makeStockRoutes, variantVerdict } from "./iapui.js";
+import { versionText, writable } from "./variant.js";
 import { Usmart, stockVersion, stockName } from "./usmart.js";
 import { Iap, checkInstallImage } from "./iap.js";
 import { BfLoader } from "./bfloader.js";
@@ -75,6 +76,13 @@ const LOADERS = {
 const updateMode = () => !!LOADERS[flash().update_mode];
 const stuckMode = () => !!LOADERS[flash().update_mode]?.stuck;
 const iap = (c) => LOADERS[flash().update_mode].make(c);
+// The stock application's version text, as it answers the vendor programming software's identify (iap.js probe), or
+// null: read only, and only on a radio with an IAP loader (the same request reaches either)
+async function identify(c) {
+	if (!stuckMode()) return null;
+	const um = await iap(c).probe();
+	return um?.stock ? versionText(S().radio, um.stock) : null;
+}
 const progSize = () => c7.totalSize(C(), boardId());
 const viaIap = () => session().how === "iap";
 // What the radio's screen shows while the stub runs: RadioFoundry's loader screen, whatever the original firmware last drew, or
@@ -84,7 +92,7 @@ const screenNow = () => ({ rfoundry: "loader", usmart: "any" })[session().how] |
 export function init(context) {
 	ctx = context;
 	routes = makeStockRoutes({ S, ctx, C, boardId, session, busy, loader: iap, fill: (el, ...p) => fill(el, ...p), stubImage: async () => (await stubs()).image,
-		cableBanner: () => cableBanner() });
+		cableBanner: () => cableBanner(), identify: () => identify(session()) });
 }
 
 // The factory update mode route of a radio (radios.json flash.update_mode), or null: its protocol, and what the install
@@ -227,7 +235,9 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			c.forceIap = false;
 			// a radio already in update mode printed its banner at power-on: remember that, so the install doesn't wait for it.
 			// A loader entered only with the keys held is listened for in the install's own step
-			c.iapReady = stuckMode() && !!(await iap(c).probe());
+			const um = stuckMode() && await iap(c).probe();
+			c.iapReady = !!um && !um.stock;
+			if (um) diag.note(um.stock ? "identify answered" : "update mode loader", { version: um.stock ? versionText(S().radio, um.stock) : um.version });
 			return toIap();
 		}
 		await find();
@@ -270,7 +280,11 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		// the loader's update mode answers a read-only probe: a radio whose application won't start stays in it
 		c.iapReady = false;
 		const um = stuckMode() && await iap(c).probe();
-		if (um) {
+		// the stock application answered as it answers the vendor software: its console is silent or missing
+		const version = um?.stock ? versionText(S().radio, um.stock) : null;
+		if (um) diag.note(um.stock ? "identify answered" : "update mode loader", { version: um.stock ? version : um.version });
+		if (version) return routes.stockIdentified({ show, act, onUpdateMode: toIap, onAgain: () => find() }, version);
+		if (um && !um.stock) {
 			c.iapReady = true;
 			return routes.alreadyUpdateMode({ show, act, onUpdateMode: toIap, onAgain: () => find() }, um.version);
 		}
@@ -810,8 +824,10 @@ export function checkView() {
 		const file = { model: S().radio.model, codec_version: flash().codec_version || "" };
 		if (!c.analysis?.otherCodec) return t("flash.usmart.codec.action_text", file);
 		// named as flash.stock_versions name it (iapui.js too); the image's own string carries another batch code
+		// as the radio reported it (the variant filled in), else the image's own string by the build's number
 		const v = c.progmem && stockVersion(c.progmem);
-		return t("flash.usmart.codec.action_other", { ...file, version: v ? stockName(flash(), v.slice(-3)) : t("flash.usmart.codec.version_unknown") });
+		const version = S().variant?.version || (v ? stockName(flash(), v.slice(-3)) : t("flash.usmart.codec.version_unknown"));
+		return t("flash.usmart.codec.action_other", { ...file, version });
 	}
 
 	// Coming back to this step: what was read is still here
@@ -891,6 +907,10 @@ export function writeView() {
 	const map = sectorMap(C());
 	const prog = progressBar();
 	const status = h("div");
+	// a variant read on the way here (the stock console) that the chosen image doesn't run: nothing is written (one in
+	// development: app.js shows its notice above the step)
+	const vd = variantVerdict(S(), boardId());
+	if (vd && !writable(vd)) return panel(t("flash.write.title"), routes.variantStop(vd));
 	let start, data;
 	try {
 		// an image that starts with a first stage: the application alone would be written over it
