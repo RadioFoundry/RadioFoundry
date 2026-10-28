@@ -443,9 +443,9 @@ static void test_outbound(void)
 	CHECK(bsOutboundPush(&o, 1, &v1, NULL, t) == 0);
 	CHECK(bsOutboundCount(&o, 1) == 3 && bsOutboundSpace(&o, 1) == BS_OUT_DEPTH - 3 && bsOutboundSpace(&o, 2) == 16);
 	bsOutboundNext(&o, 1, t, &b, &c, &lc);
-	CHECK(b.kind == DMR_BURST_VOICE_LC_HEADER && b.sync_override == DMR_SYNC_BS && c.at == 1 && c.tc == 0);
+	CHECK(b.kind == DMR_BURST_VOICE_LC_HEADER && b.sync_override == DMR_SYNC_BS && c.at == 0 && c.tc == 0);
 	bsOutboundNext(&o, 2, t, &b, &c, &lc);
-	CHECK(b.kind == DMR_BURST_IDLE && c.at == 0 && c.tc == 1);	// TS2 untouched
+	CHECK(b.kind == DMR_BURST_IDLE && c.at == 1 && c.tc == 1);	// TS1 busy, in the CACH before outbound TS2
 	bsOutboundNext(&o, 1, t, &b, &c, &lc);
 	CHECK(b.kind == DMR_BURST_VOICE && b.voice_index == 0 && lc != NULL && memcmp(lc, elc, 9) == 0);
 	bsOutboundNext(&o, 1, t, &b, &c, &lc);
@@ -454,7 +454,7 @@ static void test_outbound(void)
 	t += 60;
 	for (int i = 2; i <= 6; i++) {
 		bsOutboundNext(&o, 1, t, &b, &c, &lc);
-		CHECK(b.kind == DMR_BURST_VOICE && b.voice_index == (i % 6) && c.at == 1);
+		CHECK(b.kind == DMR_BURST_VOICE && b.voice_index == (i % 6) && c.at == 0);	// TS2's, idle
 		if ((i % 6) == 0) {
 			CHECK(lc != NULL && memcmp(lc, hdr.payload, 9) == 0);
 		}
@@ -495,11 +495,11 @@ static void test_outbound(void)
 	// AT: the host's mask, its 2 s expiry, mode 1 (mask alone)
 	bsOutboundReset(&o);
 	bsOutboundSetAt(&o, 2, BS_AT_MODE_OR, t);
-	bsOutboundNext(&o, 1, t, &b, &c, &lc);
-	CHECK(c.at == 0);
 	bsOutboundNext(&o, 2, t, &b, &c, &lc);
-	CHECK(c.at == 1 && o.at_on_air == 2);
-	bsOutboundNext(&o, 2, t + BS_OUT_AT_HOLD_MS, &b, &c, &lc);
+	CHECK(c.at == 0);
+	bsOutboundNext(&o, 1, t, &b, &c, &lc);
+	CHECK(c.at == 1 && o.at_on_air == 2);	// TS2 busy, in the CACH before outbound TS1
+	bsOutboundNext(&o, 1, t + BS_OUT_AT_HOLD_MS, &b, &c, &lc);
 	CHECK(c.at == 0 && bsOutboundAtMask(&o, t + BS_OUT_AT_HOLD_MS) == 0);
 	bsOutboundSetAt(&o, 0, BS_AT_MODE_MASK, t);
 	bsOutboundPush(&o, 1, &hdr, NULL, t);
@@ -539,16 +539,16 @@ static void test_epoch(void)
 	CHECK(slotEpochLabel(&e, 123, 0, &res) == 0);		// no epoch
 	CHECK(!slotEpochSet(&e, 0, 29989999u, 0) && !slotEpochSet(&e, 0, 30010001u, 0));
 	CHECK(slotEpochSet(&e, 1000000u, 0, 100));
-	// Outbound TS1 at E: the inbound slot then is TS2; one slot later TS1
-	CHECK(slotEpochLabel(&e, 1000000u, 100, &res) == 2 && res == 0);
-	CHECK(slotEpochLabel(&e, 1030000u, 100, &res) == 1 && res == 0);
-	CHECK(slotEpochLabel(&e, 1060000u + 14000u, 100, &res) == 2 && res == 14000);
-	CHECK(slotEpochLabel(&e, 1060000u - 14000u, 100, &res) == 2 && res == -14000);
-	CHECK(slotEpochLabel(&e, 1000000u - 30000u, 100, &res) == 1);	// before E
+	// Outbound TS1 at E: a burst under it is TS1 (aligned timing); one slot later TS2
+	CHECK(slotEpochLabel(&e, 1000000u, 100, &res) == 1 && res == 0);
+	CHECK(slotEpochLabel(&e, 1030000u, 100, &res) == 2 && res == 0);
+	CHECK(slotEpochLabel(&e, 1060000u + 14000u, 100, &res) == 1 && res == 14000);
+	CHECK(slotEpochLabel(&e, 1060000u - 14000u, 100, &res) == 1 && res == -14000);
+	CHECK(slotEpochLabel(&e, 1000000u - 30000u, 100, &res) == 2);	// before E
 	// Wrap-around of the 32-bit clock
 	CHECK(slotEpochSet(&e, 0xFFFFFFFFu - 10000u, 0, 200));
-	CHECK(slotEpochLabel(&e, 0xFFFFFFFFu - 10000u + 60000u, 200, &res) == 2 && res == 0);
-	CHECK(slotEpochLabel(&e, 0xFFFFFFFFu - 10000u + 90000u, 200, &res) == 1 && res == 0);
+	CHECK(slotEpochLabel(&e, 0xFFFFFFFFu - 10000u + 60000u, 200, &res) == 1 && res == 0);
+	CHECK(slotEpochLabel(&e, 0xFFFFFFFFu - 10000u + 90000u, 200, &res) == 2 && res == 0);
 	// Too old
 	CHECK(slotEpochLabel(&e, 0, 200 + SLOT_EPOCH_MAX_AGE_MS, &res) == 0);
 
@@ -556,21 +556,21 @@ static void test_epoch(void)
 	CHECK(slotEpochSet(&e, 5000000u, 30003000u, 0));
 	uint32_t n = 3001u;	// slots in about 90 s
 	uint64_t t = 5000000ull + ((uint64_t)n * 30003000ull) / 1000ull;
-	CHECK(slotEpochLabel(&e, (uint32_t)t, 1000, &res) == ((n & 1) ? 1 : 2) && res > -2 && res < 2);
+	CHECK(slotEpochLabel(&e, (uint32_t)t, 1000, &res) == ((n & 1) ? 2 : 1) && res > -2 && res < 2);
 	uint64_t t2 = 5000000ull + ((uint64_t)(n + 1) * 30003000ull) / 1000ull;
-	CHECK(slotEpochLabel(&e, (uint32_t)t2, 1000, &res) == ((n & 1) ? 2 : 1) && res > -2 && res < 2);
+	CHECK(slotEpochLabel(&e, (uint32_t)t2, 1000, &res) == ((n & 1) ? 1 : 2) && res > -2 && res < 2);
 
 	// Tracking: a constant 4 ms chip delay is followed; never more than 5 ms in all
 	CHECK(slotEpochSet(&e, 0, 0, 0));
 	for (int i = 0; i < 200; i++) {
 		uint32_t s = (uint32_t)(i * 2 + 1) * 30000u + 4000u;
-		CHECK(slotEpochLabel(&e, s, 0, &res) == 1);
+		CHECK(slotEpochLabel(&e, s, 0, &res) == 2);
 		slotEpochTrack(&e, res);
 	}
 	CHECK(e.track_us > 3800 && e.track_us <= 4100);
-	CHECK(slotEpochLabel(&e, 30000u * 501u + 4000u, 0, &res) == 1 && res > -300 && res < 300);
+	CHECK(slotEpochLabel(&e, 30000u * 501u + 4000u, 0, &res) == 2 && res > -300 && res < 300);
 	for (int i = 0; i < 400; i++) {
-		CHECK(slotEpochLabel(&e, (uint32_t)(i * 2 + 1) * 30000u + 12000u, 0, &res) == 1);
+		CHECK(slotEpochLabel(&e, (uint32_t)(i * 2 + 1) * 30000u + 12000u, 0, &res) == 2);
 		slotEpochTrack(&e, res);
 	}
 	CHECK(e.track_us == SLOT_EPOCH_TRACK_MAX_US);
@@ -956,13 +956,14 @@ static void test_tx_half(void)
 	net(MMDVM_DMR_DATA2, 0x42, f);
 	CHECK(nak_of(MMDVM_DMR_DATA1, from) < 0 && nak_of(MMDVM_DMR_DATA2, from) < 0);
 	run_ms(600);
-	// On air: TS1 header, A-F twice with our payload, one terminator; TS2 likewise; AT busy on the call's slot
+	// On air: TS1 header, A-F twice with our payload, one terminator; TS2 likewise; AT busy once both calls are on
 	for (int8_t ts = 1; ts <= 2; ts++) {
 		int h = air_find(air0, ts, DMR_BURST_VOICE_LC_HEADER, -1);
 		CHECK(h >= 0 && memcmp(ssim.air[h].b.payload, (ts == 1) ? LC1 : LC2, 9) == 0 && ssim.air[h].b.host_crc);
-		CHECK(h >= 0 && ssim.air[h].cach.at == 1 && ssim.air[h].b.sync_override == DMR_SYNC_BS);
+		CHECK(h >= 0 && ssim.air[h].b.sync_override == DMR_SYNC_BS);
 		int a = air_find(air0, ts, DMR_BURST_VOICE, 0);
 		CHECK(a > h && ssim.air[a].emb_lc_valid && memcmp(ssim.air[a].emb_lc, (ts == 1) ? LC1 : LC2, 9) == 0);
+		CHECK(ssim.air[a].cach.at == 1);	// the other channel's call (aligned timing), on by voice A
 		int pos = a, voices = 0;
 		for (unsigned i = (unsigned)a; i < ssim.air_n; i++) {
 			if ((ssim.air[i].ts == ts) && (ssim.air[i].b.kind == DMR_BURST_VOICE)) {
@@ -982,12 +983,12 @@ static void test_tx_half(void)
 	CHECK(r[9] == 0 && r[10] == 0 && rd16(r + 11) == 0 && rd16(r + 13) == 0);
 	CHECK(rd16(r + 19) == 1 && rd16(r + 33) == 0);	// one short LC taken, none bad
 
-	// SET_AT from the RX half: AT busy on TS2 in the CACH before outbound TS2 only
+	// SET_AT from the RX half: TS2 busy, in the CACH before outbound TS1 only (aligned timing)
 	CHECK(split_cmd(SPLIT_SUB_SET_AT, (const uint8_t[]){ 2 }, 1) == 0 && split_reply(5)[5] == 2);
 	air0 = ssim.air_n + 4;			// what the driver held already went out with the old bits
 	run_ms(200);
 	for (unsigned i = air0; i < ssim.air_n; i++) {
-		CHECK(ssim.air[i].cach.at == (ssim.air[i].ts == 2));
+		CHECK(ssim.air[i].cach.at == (ssim.air[i].ts == 1));
 	}
 	for (int i = 0; i < 9; i++) {		// not refreshed: back to idle after 2 s (the host still polls)
 		host(MMDVM_GET_STATUS, NULL, 0);
@@ -1185,7 +1186,8 @@ static void test_rx_half(void)
 	run_ms(600);
 	CHECK(count_out(MMDVM_DMR_LOST2, from) == 1);
 
-	// The epoch: outbound TS1 starts at E (RX clock). Inbound TS1 runs during outbound TS2: E + 30 ms + 60 k ms
+	// The epoch: outbound TS1 starts at E (RX clock). Aligned timing (ETSI TS 102 361-1 5.1.1 table 5.1): inbound TS1
+	// runs during outbound TS1, E + 60 k ms
 	uint32_t E = now_ms * 1000u + clock_base_us + 100000u;
 	uint8_t ep[8];
 	for (int i = 0; i < 4; i++) {
@@ -1200,16 +1202,8 @@ static void test_rx_half(void)
 	uint32_t base = E + 600000u;
 	dmr_burst_t b;
 	for (int k = 0; k < 14; k++) {
-		uint32_t s1 = base + (uint32_t)k * 60000u + 30000u + 3000u;	// inbound TS1
-		uint32_t s2 = base + (uint32_t)k * 60000u + 3000u;		// inbound TS2
-		if (k == 0) {
-			b = rx_lc(DMR_BURST_VOICE_LC_HEADER, LC2);
-		} else if (k < 13) {
-			b = rx_voice((uint8_t)((k - 1) % 6), (uint8_t)(0x60 + k), LC2);
-		} else {
-			b = rx_lc(DMR_BURST_TERMINATOR_LC, LC2);
-		}
-		rx_at(&b, s2);
+		uint32_t s1 = base + (uint32_t)k * 60000u + 3000u;		// inbound TS1
+		uint32_t s2 = base + (uint32_t)k * 60000u + 30000u + 3000u;	// inbound TS2
 		if (k == 0) {
 			b = rx_lc(DMR_BURST_VOICE_LC_HEADER, LC1);
 		} else if (k < 13) {
@@ -1218,6 +1212,14 @@ static void test_rx_half(void)
 			b = rx_lc(DMR_BURST_TERMINATOR_LC, LC1);
 		}
 		rx_at(&b, s1);
+		if (k == 0) {
+			b = rx_lc(DMR_BURST_VOICE_LC_HEADER, LC2);
+		} else if (k < 13) {
+			b = rx_voice((uint8_t)((k - 1) % 6), (uint8_t)(0x60 + k), LC2);
+		} else {
+			b = rx_lc(DMR_BURST_TERMINATOR_LC, LC2);
+		}
+		rx_at(&b, s2);
 	}
 	run_ms(20);
 	// Each slot's call went up whole on its own command: header, 12 voice in order, terminator
@@ -1265,7 +1267,7 @@ static void test_rx_half(void)
 	from = out_count;
 	base = E + 3000000u;
 	b = rx_lc(DMR_BURST_VOICE_LC_HEADER, LC1);
-	rx_at(&b, base + 30000u + 3000u);
+	rx_at(&b, base + 3000u);
 	run_ms(10);
 	CHECK(split_cmd(SPLIT_SUB_STATUS, NULL, 0) == 0 && split_reply(6)[7] == 1);
 	host(MMDVM_GET_STATUS, NULL, 0);
@@ -1279,7 +1281,7 @@ static void test_rx_half(void)
 	b = rx_lc(DMR_BURST_CSBK, LC1);
 	b.lc_valid = false;
 	memset(b.payload, 0x77, 12);
-	rx_at(&b, base + 1200000u + 3000u);
+	rx_at(&b, base + 1200000u + 30000u + 3000u);
 	run_ms(10);
 	CHECK(count_out(MMDVM_DMR_DATA2, from) == 1);
 	CHECK(split_cmd(SPLIT_SUB_STATUS, NULL, 0) == 0 && split_reply(6)[7] == 2);
@@ -1715,15 +1717,15 @@ static void test_rx_meta(void)
 	}
 	CHECK(split_cmd(SPLIT_SUB_SET_EPOCH, ep, 8) == 0);
 	int from = out_count;
-	uint32_t s2 = E + 600000u + 3000u, s1 = s2 + 30000u;
+	uint32_t s1 = E + 600000u + 3000u, s2 = s1 + 30000u;
 	dmr_burst_t h = rx_lc(DMR_BURST_VOICE_LC_HEADER, LC1);
 	h.cc = 1;
 	h.sync = DMR_SYNC_MS;
-	rx_at(&h, s2);
+	rx_at(&h, s1);
 	dmr_burst_t vb = rx_voice(0, 0x33, LC1);
 	vb.rssi_dbm = -97;
 	vb.in_step = false;
-	rx_at(&vb, s1);
+	rx_at(&vb, s2);
 	run_ms(10);
 	int ev[2], n = 0, data2 = -1, data1 = -1;
 	for (int i = from; i < out_count; i++) {
@@ -1737,13 +1739,13 @@ static void test_rx_meta(void)
 			data1 = i;
 		}
 	}
-	CHECK(n == 2 && data2 > ev[0] && data2 < ev[1] && (data1 < 0 || data1 > ev[1]));
+	CHECK(n == 2 && data1 > ev[0] && data1 < ev[1] && (data2 < 0 || data2 > ev[1]));
 	const uint8_t *m = out[ev[0]].b + 5;
-	CHECK(rd32(m) == s2 && (int16_t)rd16(m + 4) == 3000 && m[6] == 2 && m[7] == DMR_BURST_VOICE_LC_HEADER && m[8] == 1);
+	CHECK(rd32(m) == s1 && (int16_t)rd16(m + 4) == 3000 && m[6] == 1 && m[7] == DMR_BURST_VOICE_LC_HEADER && m[8] == 1);
 	CHECK(m[9] == (SPLIT_META_CRC_OK | SPLIT_META_IN_STEP | SPLIT_META_LC | SPLIT_META_EPOCH | SPLIT_META_TIMED));
 	CHECK((int16_t)rd16(m + 10) == -80 && rd16(m + 12) == 0);
 	m = out[ev[1]].b + 5;
-	CHECK(rd32(m) == s1 && m[6] == 1 && m[7] == DMR_BURST_VOICE && (int16_t)rd16(m + 10) == -97 && rd16(m + 12) == 1);
+	CHECK(rd32(m) == s2 && m[6] == 2 && m[7] == DMR_BURST_VOICE && (int16_t)rd16(m + 10) == -97 && rd16(m + 12) == 1);
 	CHECK(m[9] == (SPLIT_META_CRC_OK | SPLIT_META_EPOCH | SPLIT_META_TIMED));
 	// A burst that goes up nowhere (a header with a bad CRC) still gets its event; without an epoch: label 0
 	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 0 }, 1) == 0);

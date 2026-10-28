@@ -156,10 +156,11 @@ outside 29 990 000-30 010 000 (more than 333 ppm off).
 ### 3.6 SET_AT (05), TX half, and the STATUS block (06)
 
 SET_AT: busy mask bit 0 = inbound TS1 busy, bit 1 = inbound TS2 busy; mode 0 (default): the AT bit on air is the mask
-OR the automatic rule (an outbound slot carrying a call or data, not idle, marks its inbound slot busy: the repeat of
+OR the automatic rule (an outbound slot carrying a call or data, not idle, marks its own channel busy: the repeat of
 an inbound call keeps its own inbound busy, -1 4.5 "may also set the AT bit to Busy during the call hang"); mode 1:
-the mask alone. The mask holds until the next SET_AT, and falls back to idle after 2 s without one (a host that died
-must not leave the channel marked busy). The reply carries the mask that is on air now.
+the mask alone. Each channel's bit goes out in the CACH before the other outbound slot (5.2). The mask holds until
+the next SET_AT, and falls back to idle after 2 s without one (a host that died must not leave the channel marked
+busy). The reply carries the mask that is on air now.
 
 STATUS block (all counters wrap):
 
@@ -335,11 +336,12 @@ TX(23..0) = AT  P16 P15 P14  TC  P13 P12 P11  LS1 P10 P9 P8  LS0 P7  H2 P6 P5 P4
 ```
 
 - **TC**: the outbound slot that follows the CACH (0 = TS1, 1 = TS2), -1 4.5 figure 4.9.
-- **AT**: inbound busy for the inbound slot with the same number, which starts one slot later (-1 4.5 figure 4.8:
-  "the CACH burst preceding outbound time slot 2 indicates the status of the burst in inbound time slot 2"). The TX half
-  can't hear the inbound; the host feeds it (SET_AT) from the RX half, plus the automatic rule of 3.6. With neither,
-  AT is 0 (idle). (-1 table 9.5's note, AT = 1 "in continuous transmission mode", is about MS-to-MS continuous mode,
-  not a repeater outbound.)
+- **AT**: inbound busy for the inbound slot that starts one slot later (-1 4.5 figure 4.8: "the CACH burst preceding
+  outbound time slot 2 indicates the status of the burst in inbound time slot 2", in the physical inbound numbering of
+  -1 4.x). With aligned timing (section 7) that inbound slot is the other channel's: the CACH before outbound TS1
+  carries TS2's busy bit, the one before outbound TS2 carries TS1's. The TX half can't hear the inbound; the host
+  feeds it (SET_AT) from the RX half, plus the automatic rule of 3.6. With neither, AT is 0 (idle). (-1 table 9.5's
+  note, AT = 1 "in continuous transmission mode", is about MS-to-MS continuous mode, not a repeater outbound.)
 - **LCSS / payload**: the short LC (-1 7.1.4, B.2.3, figure B.6): 28 bits (SLCO + 24 data bits) plus CRC-8 (x^8 +
   x^2 + x + 1, init 0, -1 B.3.7) = 36 bits in a 3 x 12 matrix, each row Hamming(17,12,3) (generator x^5 + x^2 + 1, -1
   table B.13), a fourth row of column parity (even), read out column by column into four 17-bit rows, one per CACH,
@@ -450,9 +452,16 @@ The RX half's modem receives on both slots (`rx_lock_slot(0)`, color code from S
 with the slot counter of its report (`DMR_EV_BURST_RX` arg); `hal_dmr_modem_t.slot_clock` gives the latest slot
 boundary's counter and µs time, so the boundary at which burst k's slot started is t(k-1) = t_last - (c_last - k + 1)
 x 30 ms (the report comes in the slot after the one the burst was in, `hrc6000_dmr.h`). With the epoch E (start of an
-outbound TS1) and period P: n = round((t(k-1) - E) / P). Outbound slot n is TS1 when n is even; the inbound slot that
-runs at the same time has the other number (inbound TSx starts one slot after outbound TSx, -1 4.5 figure 4.8 / 4.9;
--1 table 5.1: aligned logical channel 1 = inbound TS2 + outbound TS1). So **label = TS2 for even n, TS1 for odd n.**
+outbound TS1) and period P: n = round((t(k-1) - E) / P). Outbound slot n is TS1 when n is even, and the repeater runs
+**aligned timing** (-1 5.1.1, table 5.1): logical channel x is the inbound burst under outbound TSx, so a subscriber
+on TS1 transmits under outbound TS1. So **label = TS1 for even n, TS2 for odd n.** That is what subscriber radios
+set up for a repeater expect. Offset timing (logical channel x a slot after outbound TSx) isn't supported.
+
+The label is the logical channel, not the physical inbound slot number of -1 4.x ("the channel 1 and 2 bursts in the
+inbound channel are offset 30 ms in time"): physical inbound slot 2 runs under outbound TS1, and table 5.1 maps it
+back (aligned logical channel 1 = inbound slot 2 + outbound slot 1). 4.5 figure 4.8 (the AT bit, section 5.2) uses
+the physical numbering too. The SFR (`sfr.md`) is its own case: it listens on one slot and repeats on the other, on
+its own slot clock.
 
 Each slot has its own uplink tracker (`hotspotUplink_t`: headers, late entry, silence fill, one terminator, DMR_LOST
 after 500 ms) and its own embedded LC fragments, so two calls on the two slots go up interleaved and whole. Without a
