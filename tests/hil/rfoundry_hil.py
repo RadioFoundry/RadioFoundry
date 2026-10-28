@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "tools", "bench"))
 
 from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_ports, parse_counters,  # noqa: E402
-                       to_rgb, write_png, ACTIONS, PRESS, LONG)
+                       to_rgb, write_png, PRESS, LONG)
 
 
 # ── skips ───────────────────────────────────────────────────────────────────
@@ -188,6 +188,33 @@ class Radio:
                     break
                 except DebugLinkError:
                     time.sleep(0.25)
+
+    def reconnect(self, timeout=30.0, what="the restart"):
+        """Open the link again after the radio restarted. Its own port first; another radio port (a USB radio can come
+        back under a new name) only when it reports the same board and build, so a restart test never carries on with
+        another radio on the same computer."""
+        was = self._version or {}     # read before the restart (the link may be closed now)
+        same = (was.get("board"), was.get("git")) if was else None
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            for port in [self.port] + [p for p in find_ports() if p != self.port]:
+                link = None
+                try:
+                    link = DebugLink(port, timeout=1.5)
+                    link.ping()
+                    if port != self.port:
+                        v = link.version()
+                        if (v.get("board"), v.get("git")) != same:
+                            link.close()
+                            continue
+                    self.link, self.port = link, port
+                    return
+                except (DebugLinkError, OSError):
+                    # A serial hub takes one client per port: a link left open would lock out every later try.
+                    if link is not None:
+                        link.close()
+                    time.sleep(0.5)
+        raise AssertionError(f"the radio did not come back after {what}")
 
     # ── reading ──
     def ping(self):
