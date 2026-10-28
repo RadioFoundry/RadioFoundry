@@ -18,7 +18,7 @@
 import { h, t, notice, button, panel, progressBar } from "./dom.js";
 import { sleep } from "./bytes.js";
 import * as c7 from "./c7000.js";
-import { Usmart, stockName, BUILDS } from "./usmart.js";
+import { Usmart, stockName, BUILDS, UNKNOWN_BUILD } from "./usmart.js";
 import { trimTail } from "./iap.js";
 import { variantCode, verdict, writable, groups } from "./variant.js";
 import * as diag from "../diag.js";
@@ -209,14 +209,14 @@ export function makeStockRoutes(host) {
 		}
 		const parts = { show, act, onLoaded, onUpdateMode, onAgain };
 		const shown = version || (build && `${build.name} (${build.date})`);
-		if (!build?.stub) return noBackup(parts, shown, vd, { tryAnyway: () => loadOffer(parts, con, shown, vd, true, build) });
+		if (!build?.stub) return noBackup(parts, shown, vd, { tryAnyway: () => loadOffer(parts, con, shown, vd, true, build || UNKNOWN_BUILD) });
 		return loadOffer(parts, con, version || stockName(S().radio.flash, build.name), vd, false, build);
 	}
 
 	// The stub load through the console, from the user's go. untried: a build whose load is not proven; a failure is
 	// then what this firmware made likely, and the page says so and offers the other ways on. Its backup is offered
 	// to the project (session().stockUntried)
-	// build: the BUILDS entry, whose window and hijack word the load uses (null: an unknown build, the proven ones')
+	// build: the BUILDS entry (UNKNOWN_BUILD for a build the page doesn't know), whose window and hijack word the load uses
 	async function loadOffer({ show, act, onLoaded, onUpdateMode, onAgain }, con, version, vd, untried, build) {
 		const other = onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode, { quiet: true });
 		const image = await stubImage();

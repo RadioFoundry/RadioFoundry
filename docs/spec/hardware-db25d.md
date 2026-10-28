@@ -722,18 +722,24 @@ Every vendor build has the USMART console and the identify handler below. The ve
 (`at`, four words read through `read_addr` tell the build) and its RAM copy (`ram`, the variant filled in) per build,
 from static analysis of the vendor files:
 
-| Build | Date | `at` | `ram` | Command table at 0x18000840 | Stub load through USMART |
-|---|---|---|---|---|---|
-| 018 | 2025-01-21 | 0x03079F3C | 0x18000AF4 | `cmd_rec` at +8 | Measured |
-| 020 | 2026-01-10 | 0x0307DCCC | 0x18000B74 | `cmd_rec` at +8 | Same window and table as 018 (7, Stub from the vendor firmware) |
-| 018 | 2024-09-23 | 0x03079C64 | 0x18000AFC | Same layout as 2025-01-21 | Not proven: offered as a try |
-| 018 | 2024-05-09 | 0x030797A0 | 0x18000AF8 | Same layout as 2025-01-21 | Not proven: offered as a try |
-| 018 | 2023-07-06 | 0x03075AAC | 0x18000A74 | One word shorter: +8 is another entry | Not proven: offered as a try, likely to fail |
-| 018 | 2022-11-23 | 0x030759EC | 0x18000A64 | One word shorter | Not proven: offered as a try, likely to fail |
-| 017 | 2022-10-21 | 0x030759E8 | 0x18000A60 | One word shorter | Not proven: offered as a try, likely to fail |
+| Build | Date | `at` | `ram` | Heap end | Stub window | `cmd_rec` (hijack) | Stub load |
+|---|---|---|---|---|---|---|---|
+| 018 | 2025-01-21 | 0x03079F3C | 0x18000AF4 | 0x53DE0 | 0x54000, 16 KB | 0x18000848 | Measured |
+| 020 | 2026-01-10 | 0x0307DCCC | 0x18000B74 | 0x50950 | 0x54000, 16 KB | 0x18000848 | Same window and table as 018 (7) |
+| 018 | 2024-09-23 | 0x03079C64 | 0x18000AFC | 0x54130 | 0x55000, 12 KB | 0x18000848 | Offered as a try |
+| 018 | 2024-05-09 | 0x030797A0 | 0x18000AF8 | 0x54290 | 0x55000, 12 KB | 0x18000848 | Offered as a try |
+| 018 | 2023-07-06 | 0x03075AAC | 0x18000A74 | 0x54990 (interrupt stack top 0x54190) | 0x55000, 12 KB | 0x18000840 | Offered as a try |
+| 018 | 2022-11-23 | 0x030759EC | 0x18000A64 | 0x554A0 | 0x56000, 8 KB | 0x18000840 | Offered as a try |
+| 017 | 2022-10-21 | 0x030759E8 | 0x18000A60 | 0x553C0 | 0x56000, 8 KB | 0x18000840 | Offered as a try |
+| Unknown | | | found in 0x18000A00-0x18000BFF | | 0x56000, 8 KB | 0x18000848 | Offered as a try |
 
-The table's flash copy (`.data`, `ram` - 0x18000800 below the version string's) holds code addresses in every build,
-so a read of 0x18000848 before the load tells a moved table from a known one but not which entry `cmd_rec` is.
+The heap is the 2 KB above the interrupt stack, which sits above `.bss`; the RTOS task stacks are static in `.bss`.
+In five builds the heap reaches above 0x54000, so the proven window would overwrite it there: each build has its own
+window above its heap, and SRAM ends at 0x58000. The 2022-2023 console structure has no pad word, so `cmd_rec` is its
+first table entry (seen in the 2022-11-23 frame handler, which calls the word 8 bytes after 0x18000838; the others by
+the same function spacing). The table holds code addresses in every build: before an untried load the page reads the
+hijack word and writes nothing unless it holds an application address. The values of the untried builds are from
+static analysis; UART DMA set up at run time was not traced.
 
 | Item | Finding |
 |---|---|

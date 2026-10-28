@@ -42,12 +42,17 @@ export const APP_SIG = [0x0300C000, 0xC001112C];		// the application's first wor
 export const BUILDS = [
 	{ name: "018", date: "2025-01-21", at: 0x03079F3C, ram: 0x18000AF4, stub: true },
 	{ name: "020", date: "2026-01-10", at: 0x0307DCCC, ram: 0x18000B74, stub: true },
-	{ name: "018", date: "2024-09-23", at: 0x03079C64, ram: 0x18000AFC, stub: false },
-	{ name: "018", date: "2024-05-09", at: 0x030797A0, ram: 0x18000AF8, stub: false },
-	{ name: "018", date: "2023-07-06", at: 0x03075AAC, ram: 0x18000A74, stub: false },
-	{ name: "018", date: "2022-11-23", at: 0x030759EC, ram: 0x18000A64, stub: false },
-	{ name: "017", date: "2022-10-21", at: 0x030759E8, ram: 0x18000A60, stub: false },
+	// from static analysis (hardware-db25d.md 7.1): the heap ends above 0x54000 in these, so each has a window above it;
+	// the 2022-2023 command table has no pad word, so cmd_rec is its first entry
+	{ name: "018", date: "2024-09-23", at: 0x03079C64, ram: 0x18000AFC, stub: false, window: [0x55000, 0x3000] },
+	{ name: "018", date: "2024-05-09", at: 0x030797A0, ram: 0x18000AF8, stub: false, window: [0x55000, 0x3000] },
+	{ name: "018", date: "2023-07-06", at: 0x03075AAC, ram: 0x18000A74, stub: false, window: [0x55000, 0x3000], hijack: 0x18000840 },
+	{ name: "018", date: "2022-11-23", at: 0x030759EC, ram: 0x18000A64, stub: false, window: [0x56000, 0x2000], hijack: 0x18000840 },
+	{ name: "017", date: "2022-10-21", at: 0x030759E8, ram: 0x18000A60, stub: false, window: [0x56000, 0x2000], hijack: 0x18000840 },
 ];
+// A build this page doesn't know: the top 8 KB of SRAM, above the heap of every known build (its highest end:
+// 0x554A0, 2022-11-23), and the newer builds' table layout. The pointer check of an untried load still applies
+export const UNKNOWN_BUILD = { name: null, date: null, stub: false, window: [0x56000, 0x2000], hijack: 0x18000848 };
 const VERSION_WORDS = 6;	// "909E.DBB.EARSAB.018" and its terminator
 // Where a build this page doesn't know keeps the version string's RAM copy: around the known builds' (0x18000A60-0x18000B74)
 const VERSION_SCAN = [0x18000A00, 0x18000C00];

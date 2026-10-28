@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { equal, sha256, be32, concat } from "../static/js/flasher/bytes.js";
 import { stubImages, univFits, StubError } from "../static/js/flasher/stub.js";
 import * as c7 from "../static/js/flasher/c7000.js";
-import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS, STUB_WINDOW, stubTarget } from "../static/js/flasher/usmart.js";
+import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS, STUB_WINDOW, stubTarget, UNKNOWN_BUILD } from "../static/js/flasher/usmart.js";
 import {
 	Iap, iapPlan, readPacket, checkInstallImage as checkInstall, checkRestoreImage as checkRestore, trimTail, erasePacket,
 	IapError,
@@ -484,7 +484,12 @@ test("IAP: an erase that reaches a protected region writes nothing", async () =>
 
 test("USMART: a build's own stub window and hijack word are used, and checked against what the stub may use", { timeout: 60000 }, async (t) => {
 	assert.deepEqual(stubTarget(null), { window: STUB_WINDOW, hijack: HIJACK });
-	for (const b of BUILDS) assert.ok(stubTarget(b), b.date);
+	for (const b of [...BUILDS, UNKNOWN_BUILD]) assert.ok(stubTarget(b), b.date);
+	// the stub image fits every build's window, and an unproven build's window is never the default one, which is
+	// inside their heap (hardware-db25d.md 7.1)
+	const stubLen = stubImages(json("c7000-stub.json")).image.length;
+	for (const b of [...BUILDS, UNKNOWN_BUILD]) assert.ok(stubLen <= stubTarget(b).window[1], b.date);
+	for (const b of BUILDS.filter((x) => !x.stub)) assert.ok(b.window && b.window[0] > STUB_WINDOW[0], b.date);
 	assert.throws(() => stubTarget({ window: [0x32000, 0x4000] }), /outside the RAM/, "over where the stub runs");
 	assert.throws(() => stubTarget({ window: [0x56000, 0x4000] }), /outside the RAM/, "past the end of SRAM");
 	assert.throws(() => stubTarget({ hijack: 0x18000900 }), /command table/);
