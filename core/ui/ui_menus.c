@@ -451,7 +451,7 @@ static void contacts_context(uint16_t i)
 
 static const ui_scr_def_t contacts_screen = {
 	.name = "contacts", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = "Contacts",
-	.hint = "0-9 find  OK talk  # more", .empty = "No contacts: add them in qdmr",
+	.hint = TEXT_ALT_OPEN "0-9 find  OK talk  # more" TEXT_ALT_NEXT "0-9  OK talk  # more" TEXT_ALT_CLOSE, .empty = "No contacts: add them in qdmr",
 	.count = ui_filter_count, .item = contacts_item, .select = contacts_select, .context = contacts_context,
 	.target = contacts_target, .raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
 };
