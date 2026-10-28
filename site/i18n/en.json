@@ -889,6 +889,8 @@
  "flash.c7.check.progmem": "Program Memory",
  "flash.c7.check.q128": "All channels and settings",
  "flash.c7.check.slot": "Codec",
+ "flash.progress.waiting": "Still working, waiting for the radio ({s} s). This can take a moment.",
+ "flash.c7.check.retrying": "The radio is not answering cleanly, trying again (retry {n} of {max})",
  "flash.c7.check.what": "Installed firmware",
  "flash.c7.check.codec": "Voice codec (DMR)",
  "flash.c7.check.saved": "Backup file",

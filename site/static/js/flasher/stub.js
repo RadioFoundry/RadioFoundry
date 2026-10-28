@@ -508,7 +508,7 @@ export class Stub {
 	// a sector that doesn't match is asked for again, uncompressed from the second try. A record carries no address, so
 	// one left over from a request cut short could pass for another sector: at the end every sector is checked against
 	// the radio's own CRCs (op 07) and read again until it matches. progress(done, total, stats)
-	async dump(mem, start, end, { progress = () => {}, signal, compress = true } = {}) {
+	async dump(mem, start, end, { progress = () => {}, onRetry = () => {}, signal, compress = true } = {}) {
 		const m = MEM[mem];
 		const size = this.size[mem] || m.size;
 		if (!(start >= 0 && start < end && end <= size)) throw new StubError(`${m.name} range must lie within 0..0x${size.toString(16)}`);
@@ -517,14 +517,14 @@ export class Stub {
 		const full = new Uint8Array(hi - lo);
 		const stats = { blank: 0, packed: 0, wire: 0 };
 		await this.readSectors(m, full, lo, lo, hi, { compress, signal, stats,
-			progress: (sa) => progress(Math.min(sa, end) - start, end - start, stats) });
+			progress: (sa) => progress(Math.min(sa, end) - start, end - start, stats), onRetry });
 		for (let pass = 0; ; pass++) {
 			const bad = await this.verify(mem, full, lo);
 			if (!bad.length) break;
 			if (pass >= this.retries) throw new StubError(`0x${bad[0].toString(16)}: the read does not match the radio's checksum after ${pass + 1} tries`);
 			this.log(`${bad.length} sector(s) read wrong (first 0x${bad[0].toString(16)}), reading them again`);
 			this.retried += bad.length;
-			for (const sa of bad) await this.readSectors(m, full, lo, sa, sa + SECTOR, { compress: false, signal, stats });
+			for (const sa of bad) await this.readSectors(m, full, lo, sa, sa + SECTOR, { compress: false, signal, stats, onRetry });
 		}
 		this.stats = stats;
 		// a whole memory is returned as read: a NAND's copy would hold its size twice
@@ -532,7 +532,7 @@ export class Stub {
 	}
 
 	// Sectors [from, to) into full (which starts at base), resuming where a damaged frame stopped
-	async readSectors(m, full, base, from, to, { compress, signal, stats, progress = () => {} }) {
+	async readSectors(m, full, base, from, to, { compress, signal, stats, progress = () => {}, onRetry = () => {} }) {
 		let sa = from, fails = 0, want = compress;
 		while (sa < to) {
 			if (signal?.aborted) throw new StubError("stopped");
@@ -565,6 +565,8 @@ export class Stub {
 				this.retried++;
 				if (fails > this.retries) throw new StubError(`0x${sa.toString(16)}: no clean read after ${fails} tries (${e.message})`);
 				this.log(`0x${sa.toString(16)}: ${e.message}, resuming here (${fails} of ${this.retries})`);
+				// the first retry is routine; from the second the user is told, and the next good sector clears it (progress)
+				if (fails >= 2) onRetry(fails, this.retries, sa);
 				await this.drain();
 				want = compress && fails < 2;
 			}

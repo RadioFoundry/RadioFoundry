@@ -669,6 +669,10 @@ export function checkView() {
 		top.set({ led: "busy", screen: screenNow() });
 		const st = c.stub;
 		const lay = C().boards[boardId()];
+		// a read that keeps failing says so from the second try, in the progress line, until a sector comes through
+		let last = [0, 1];
+		const bar = (label) => (d, n) => { last = [d, n]; prog.set(d, n, label); };
+		const retrying = (fails, max) => prog.set(last[0], last[1], t("flash.c7.check.retrying", { n: fails, max }));
 		try {
 			await quiet(c);
 			let t0 = performance.now();
@@ -677,8 +681,8 @@ export function checkView() {
 				reading = canSkip ? new AbortController() : null;
 				if (stopRead) stopRead.hidden = false;
 				try {
-					c.progmem = await st.dump("progmem", 0, progSize(), { signal: reading?.signal, progress: (d, n, s) => {
-						prog.set(d, n, t("flash.c7.check.progmem"));
+					c.progmem = await st.dump("progmem", 0, progSize(), { signal: reading?.signal, onRetry: retrying, progress: (d, n, s) => {
+						bar(t("flash.c7.check.progmem"))(d, n);
 						c.rate = s.wire / Math.max(0.5, (performance.now() - t0) / 1000);
 					} });
 				} catch (e) {
@@ -698,13 +702,13 @@ export function checkView() {
 				say("progmem", "ok", t("flash.c7.check.progmem_done", { sha: (await sha256(c.progmem)).slice(0, 12) }));
 			} else {
 				say("progmem", "run", t("flash.c7.check.reading_slot"));
-				c.slot = await st.dump("progmem", lay.slot[0], lay.slot[1], { progress: (d, n) => prog.set(d, n, t("flash.c7.check.slot")) });
+				c.slot = await st.dump("progmem", lay.slot[0], lay.slot[1], { onRetry: retrying, progress: bar(t("flash.c7.check.slot")) });
 				say("progmem", "skip", t(skipFirmware ? "flash.c7.check.progmem_stock" : "flash.c7.check.progmem_skipped"));
 			}
 			if (want.q128) {
 				say("q128", "run", t("flash.c7.check.reading"));
 				t0 = performance.now();
-				c.q128 = await st.dump(dataMem(), 0, dataSize(), { progress: (d, n) => prog.set(d, n, t("flash.c7.check.q128")) });
+				c.q128 = await st.dump(dataMem(), 0, dataSize(), { onRetry: retrying, progress: bar(t("flash.c7.check.q128")) });
 				say("q128", "ok", t("flash.c7.check.q128_done", { sha: (await sha256(c.q128)).slice(0, 12) }));
 			} else say("q128", "skip", t("flash.c7.check.q128_skipped"));
 			if (want.cal || want.q128) {
@@ -766,7 +770,8 @@ export function checkView() {
 		// any vendor file: a .bin, a readout or the vendor's zip, opened as on every radio's page (vendorfile.js)
 		// a file that gives no codec is explained (explain.js), with what each file in the pick is; what was picked goes into
 		// error reports (S.vendorPick)
-		const pick = filePicker(t("flash.c7.codec.pick"), ".bin,.zip", async (f) => {
+		// a file that fails leaves a fresh picker under its notice, so another file can be tried
+		const makePick = () => filePicker(t("flash.c7.codec.pick"), ".bin,.zip", async (f) => {
 			let opened = null;
 			try {
 				S().vendorPick = { picked: { name: f.name, size: f.data.length, sha256: await sha256(f.data) }, opened: null, problem: null };
@@ -779,7 +784,8 @@ export function checkView() {
 				if (got?.kind !== "codec") {
 					const lines = describeVendorFile(opened, ctx.fb(), boardId());
 					fill(status, ctx.problemNotice(pickProblem(opened, boardId()), { offer: analysisCandidate(opened, ctx.fb(), boardId()) }),
-						h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, lines.map((l) => h("li", {}, l)))));
+						h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, lines.map((l) => h("li", {}, l)))),
+						makePick());
 					return;
 				}
 				c.fileCodec = got.codec;
@@ -789,9 +795,10 @@ export function checkView() {
 				// a codec the page identified but can't put in the slot (no map, a check failing): the file is offered
 				c.fileCodec = null;
 				const used = opened?.best;
-				fill(status, ctx.failureNotice(e, used ? { name: used.path.split("/").pop(), data: used.data } : null));
+				fill(status, ctx.failureNotice(e, used ? { name: used.path.split("/").pop(), data: used.data } : null), makePick());
 			}
 		});
+		const pick = makePick();
 		fill(status, 
 			d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, codecActionText()), pick,
 				h("p", { class: "small" }, h("a", { href: "#", onclick: async (e) => { e.preventDefault(); S().c7none = true; await decideView(); } }, t("flash.c7.codec.without")))),
@@ -907,8 +914,8 @@ export function writeView() {
 				h("dt", {}, t("flash.c7.write.firmware")), h("dd", {}, `${fw.source} (${Math.round(fw.image.length / 1024)} KB)`),
 				h("dt", {}, t("flash.c7.write.codec")), h("dd", {}, what)),
 			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t("flash.c7.write.careful_text"))),
-			prog.el, status),
-		top.el), map.el, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
+			prog.el, status, map.el),
+		top.el), h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 	S().forward(go);
 
 	async function write() {
@@ -1178,7 +1185,7 @@ export function restoreView() {
 		}
 	}, { primary: true });
 	out.append(panel(t("flash.c7.restore.title"), h("div", { class: "c7-grid" },
-		h("div", {}, cableBanner(), h("p", {}, vendor ? t("flash.c7.restore.lead_vendor", { file: vendor }) : t("flash.c7.restore.lead")), prog.el, status), top.el), map.el));
+		h("div", {}, cableBanner(), h("p", {}, vendor ? t("flash.c7.restore.lead_vendor", { file: vendor }) : t("flash.c7.restore.lead")), prog.el, status, map.el), top.el)));
 	S().forward(go);
 	return out;
 }

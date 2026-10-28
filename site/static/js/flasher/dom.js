@@ -65,17 +65,37 @@ export function filePicker(label, accept, onFile) {
 	return h("label", { class: "file-pick" }, h("span", {}, label), input);
 }
 
+// A bar that never looks frozen: it shimmers while work is under way (set() below 100%), and once nothing has changed
+// for STALL_S seconds it says how long it has been waiting. A page that keeps the bar after the work ends calls done().
+const STALL_S = 4;
+
 export function progressBar() {
 	const bar = h("span");
 	const text = h("span", { class: "small muted" });
-	const el = h("div", {}, h("div", { class: "progress", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": 100 }, bar), text);
+	const wait = h("span", { class: "small muted progress-wait", role: "status", hidden: true });
+	const track = h("div", { class: "progress", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": 100 }, bar);
+	const el = h("div", {}, track, text, wait);
+	let timer = null, changed = 0, key = "";
+	const stop = () => { clearInterval(timer); timer = null; wait.hidden = true; track.className = "progress"; };
+	const tick = () => {
+		if (!el.isConnected) return stop();
+		const s = Math.floor((Date.now() - changed) / 1000);
+		wait.hidden = s < STALL_S;
+		if (!wait.hidden) wait.textContent = t("flash.progress.waiting", { s });
+	};
 	return {
 		el,
 		set(done, total, label = "") {
 			const pct = total ? Math.round((100 * done) / total) : 0;
 			bar.style.width = pct + "%";
-			el.firstChild.setAttribute("aria-valuenow", pct);
+			track.setAttribute("aria-valuenow", pct);
 			text.textContent = `${label} ${pct}%`.trim();
+			// any new position or wording counts as life
+			const now = `${done}/${total}/${label}`;
+			if (now !== key) { key = now; changed = Date.now(); wait.hidden = true; }
+			if (pct >= 100) return stop();
+			track.className = "progress active";
+			if (!timer) timer = setInterval(tick, 1000);
 		},
 	};
 }
