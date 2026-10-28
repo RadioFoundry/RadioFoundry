@@ -12,6 +12,7 @@
 #include "codeplug/codeplug.h"
 #include "codeplug/zone_edit.h"
 #include "settings/settings.h"
+#include "radio/ref_trim.h"
 #include "storage/storage.h"
 #if CONFIG_APRS
 #include "aprs/aprs.h"
@@ -360,6 +361,7 @@ static void storage_section(dl_text_t *t)
 	const settings_t *sv = settings_begin();
 	unsigned auto_lock_s = sv->auto_lock_s, long_press_ms = sv->long_press_ms, repeat_ms = sv->repeat_ms;
 	unsigned mic_gain = sv->mic_gain, theme = settings_theme(sv), ui_flags = sv->ui_flags;
+	int ref_trim = sv->ref_trim_hz;
 	unsigned updown_home = settings_updown_home(sv), low_batt_pct = sv->low_batt_pct, auto_off_min = sv->auto_off_min;
 	unsigned privacy_type = sv->privacy_type[0], privacy_active = sv->privacy_active;
 	// bit 0 noise reduction off, bit 1 AGC on (settings_t.accent bits 6-7)
@@ -373,6 +375,13 @@ static void storage_section(dl_text_t *t)
 	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", auto_off_min,
 		privacy_type, privacy_active);
 	dl_text(t, "settings.audio_flags=%u\n", audio_flags);
+	// The reference trim: stored, and in effect (the SETTING op's, or - on a radio without one)
+	dl_text(t, "settings.ref_trim=%d\n", ref_trim);
+	if (ref_trim_available()) {
+		dl_text(t, "ref_trim=%d\n", (int)radio_ref_trim());
+	} else {
+		dl_text(t, "ref_trim=-\n");
+	}
 	dl_text(t, "storage.job_busy=%u\n", storage_job_busy());
 	dl_text(t, "storage.sector_writes=%u\nstorage.sector_skips=%u\n", (unsigned)st.sector_writes,
 		(unsigned)st.sector_skips);

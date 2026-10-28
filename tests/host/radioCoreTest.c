@@ -109,9 +109,11 @@ static bool r_tx_tone_key(bool down)
 }
 static char dtmf_on;		// tx_dtmf: the digit sounding
 static bool r_tx_dtmf(char digit) { dtmf_on = digit; return true; }
+static int16_t ref_trim_hz = 1;	// ref_trim: the last trim (1: never called)
+static void r_ref_trim(int16_t hz) { ref_trim_hz = hz; }
 static hal_radio_t fake_radio = { .init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off,
 					.status = r_status, .audio = r_audio, .tx_tone = r_tx_tone,
-					.tx_tone_key = r_tx_tone_key, .tx_dtmf = r_tx_dtmf };
+					.tx_tone_key = r_tx_tone_key, .tx_dtmf = r_tx_dtmf, .ref_trim = r_ref_trim };
 
 // (fake_radio.volume is set by test_soft_volume only)
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
@@ -3034,6 +3036,14 @@ static void test_ui_glue(void)
 	settings_t sv;
 	settings_read(&sv);
 	CHECK(sv.auto_lock_s == 60 && sv.mic_gain == 8 && sv.long_press_ms == 900 && sv.gps == 1 && sv.pos_send_s == 300);
+	// The reference trim (radio-features.md 6.1): stored rounded to 100 Hz, and applying it reaches the board
+	CHECK(ui_svc_setting_set(UI_SET_REF_TRIM, -2140) && ui_svc_setting_get(UI_SET_REF_TRIM) == -2100);
+	settings_read(&sv);
+	CHECK(sv.ref_trim_hz == -2100);
+	ui_svc_apply(UI_SET_REF_TRIM, ui_svc_setting_get(UI_SET_REF_TRIM));
+	CHECK(ref_trim_hz == -2100);
+	CHECK(ui_svc_setting_set(UI_SET_REF_TRIM, 9000) && ui_svc_setting_get(UI_SET_REF_TRIM) == 3000);
+	CHECK(ui_svc_setting_set(UI_SET_REF_TRIM, -2100));
 #if CONFIG_DUAL_WATCH
 	// Dual watch's B, and whether the watch ran and which channel was selected (it comes back at power on)
 	CHECK(ui_svc_setting_set(UI_SET_DUAL_B, 37) && ui_svc_setting_get(UI_SET_DUAL_B) == 37);
@@ -3198,6 +3208,7 @@ static void test_ui_glue(void)
 	storage_job_poll();
 	settings_read(&sv);
 	CHECK(sv.auto_lock_s == 0 && sv.mic_gain == 5 && sv.privacy_type[1] == 0 && sv.rs_stored == 0);
+	CHECK(sv.ref_trim_hz == 0);
 	run(100);
 	CHECK(sm.set.reply_s == RADIO_REPLY_CODEPLUG && sm.set.vox == RADIO_VOX_OFF);
 }

@@ -5,7 +5,7 @@
 Scan, the FM transmit extras, beeps and power management in the radio core. Code: `core/radio/scan.c` (the scan
 engine, pure), `core/radio/beep.c` (beep patterns and synthesis), `core/radio/vibe.c` (vibration patterns),
 `core/radio/battery.c` (battery levels, the backlight helper), all glued into `core/radio/radio_sm.c`; board hooks in
-`hal/hal_radio.h` (`tx_tone`, `tx_dtmf`, `rx_sleep`, `mic_gain`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
+`hal/hal_radio.h` (`tx_tone`, `tx_dtmf`, `rx_sleep`, `mic_gain`, `ref_trim`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
 and RADIO ops 20-24 (`docs/spec/debuglink.md` 3.7, 3.8). Host tests: `tests/host/radioFeaturesTest.c`; HIL tests:
 `tests/hil/test_radio_features.py`.
 
@@ -479,6 +479,23 @@ the network or the user sets it, the radio shows "no time", and records keep usi
 Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,
 and refuses a TX frequency outside the board's bands (`tx_deny=band`). Without a calibration the board either drives
 a low fixed value or refuses to transmit; the board's hardware page says which.
+
+### 6.1 Reference trim
+
+Settings > Talk & listen > Freq trim: Hz at the carrier, -3000 to +3000 in 100 Hz steps, 0 by default
+(`core/radio/ref_trim.c`). It is for a radio whose reference oscillator is off even with its calibration: it moves
+receive and transmit together, FM and DMR. The UI stores it (`settings_t.ref_trim_hz`) and applies it at start-up and
+on each change with `radio_set_ref_trim()`, which clamps, rounds to the step and calls `hal_radio_t.ref_trim`. The
+debug link's SETTING op 35 sets it in RAM only.
+
+| Board | Trim |
+|---|---|
+| with `hal_radio_t.ref_trim` | the board adds the trim to the reference control its calibration sets, at once and at every receive tune; its hardware page gives the scale |
+| without it | the row is hidden; nothing changes |
+
+The value is a correction to enter by hand: measure the carrier against a reference (a frequency counter, a service
+monitor, or a hotspot's MMDVMCal BER test) and enter the error with its sign reversed. A radio 2 kHz high takes
+-2000. [feature-matrix.md](../feature-matrix.md) lists which radios have the hook.
 
 ## 7. Verification status
 

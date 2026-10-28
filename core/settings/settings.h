@@ -207,7 +207,8 @@ typedef struct {
 	uint8_t rs_dual_delay;		// radio_settings_t.dual_delay_ms: n - 1 steps of 100 ms, 0 = the default
 	uint8_t rs_bcast_step;		// radio_settings_t.bcast_step + 1, 0 = the default (200 kHz on the odd tenths)
 	uint8_t zs_offers;		// zone share offers: 0 Off (the default), 1 Ask (docs/spec/zone-share.md 5)
-	uint8_t reserved8[2];
+	int16_t ref_trim_hz;		// reference oscillator trim, Hz at the carrier, -3000..+3000 (radio/ref_trim.h; was
+					// reserved8, so older records read 0 = none)
 	// The IP gateway's off-net route (dmrDataSettings_t.ipGatewayId, docs/spec/usb-network.md 3.1; appended for
 	// ip-addr), taken with the other ds_ fields: the gateway radio's DMR ID, 0 = off-net packets dropped
 	uint32_t ds_ip_gateway;

@@ -14,6 +14,7 @@
 #include "hal_time.h"
 #include "radio/tones.h"
 #include "radio/mic_gain.h"
+#include "radio/ref_trim.h"
 #include "radio/radio_am.h"
 #include "input/keyassign.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
@@ -4045,6 +4046,8 @@ static const set_item_t s_talk[] = {
 	LIST("FM broadcast step", "VFO tuning radio station 200 kHz odd", UI_SET_BCAST_STEP, v_bcast_step, n_bcast_step),
 #endif
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
+	NUMBER("Freq trim", "frequency offset reference oscillator calibration", UI_SET_REF_TRIM, -REF_TRIM_MAX_HZ,
+	       REF_TRIM_MAX_HZ, REF_TRIM_STEP_HZ, " Hz"),
 	TOGGLE("Mic AGC", "automatic gain level", UI_SET_MIC_AGC),
 	TOGGLE("Mic noise reduction", "noise suppression background", UI_SET_NOISE_REDUCTION),
 	TOGGLE("Monitor by default", "digital monitor promiscuous hear all", UI_SET_HEAR_ALL_DEFAULT),
@@ -4178,6 +4181,8 @@ static bool set_hidden(const set_item_t *s)
 		return !(feats() & UI_FEAT_VOLUME);	// a knob sets the volume on the other radios
 	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
 		return !(feats() & UI_FEAT_BCAST);
+	if (s->type != ST_ACTION && s->id == UI_SET_REF_TRIM)
+		return !ref_trim_available();	// only a radio whose board has the trim
 	return !board_has_battery() && s->type != ST_ACTION &&
 	       (s->id == UI_SET_BATTERY_SAVER || s->id == UI_SET_LOW_BATTERY);
 }

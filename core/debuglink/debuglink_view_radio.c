@@ -10,6 +10,7 @@
 #include "radio/beep.h"
 #include "radio/vibe.h"
 #include "radio/mic_gain.h"
+#include "radio/ref_trim.h"
 #include "radio/radio_cwid.h"
 #include "hal_time.h"
 #include "hal_dtmf.h"
@@ -24,6 +25,7 @@
 #define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)
 #define DL_SETTING_ENC_OPTIONS	31u	// SETTING id of the vocoder's encode options (VOCODER_OPT_*)
 #define DL_SETTING_ZS_OFFERS	32u	// SETTING id of zone share offers (zone_share_api.h)
+#define DL_SETTING_REF_TRIM	35u	// SETTING id of the reference trim, Hz two's complement (radio/ref_trim.h)
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
@@ -342,6 +344,17 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 				return DL_ST_UNAVAILABLE;
 			}
 			radio_set_mic_gain((uint8_t)v);
+			return DL_ST_OK;
+		}
+		if (a[0] == DL_SETTING_REF_TRIM) {	// as the mic gain: the UI stores it, this sets it in RAM only
+			int16_t hz = (int16_t)v;
+			if (hz < -REF_TRIM_MAX_HZ || hz > REF_TRIM_MAX_HZ) {
+				return DL_ST_BAD_ARG;
+			}
+			if (!ref_trim_available()) {
+				return DL_ST_UNAVAILABLE;
+			}
+			radio_set_ref_trim(hz);
 			return DL_ST_OK;
 		}
 #if CONFIG_DMR

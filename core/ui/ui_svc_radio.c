@@ -10,6 +10,7 @@
 #include "radio/beep.h"
 #include "radio/vibe.h"
 #include "radio/mic_gain.h"
+#include "radio/ref_trim.h"
 #include "radio/radio_cwid.h"
 #include "radio/radio_bcast.h"
 #include "input/input.h"
@@ -408,6 +409,9 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		return;
 	case UI_SET_MIC_GAIN:		// the board's gain (FM and DMR) or DMR's sample scaling (radio/mic_gain.h)
 		apply_mic_gain(value, ui_svc_setting_get(UI_SET_MIC_AGC) != 0);
+		return;
+	case UI_SET_REF_TRIM:		// the board's reference, receive and transmit (radio/ref_trim.h)
+		radio_set_ref_trim(value);
 		return;
 #if CONFIG_DMR
 	case UI_SET_MIC_AGC:
