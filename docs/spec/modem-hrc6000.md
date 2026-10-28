@@ -328,7 +328,9 @@ only at a compare, the number fell out of step and resynced onto the wrong slot 
 | disagreements before resync | more than 3 (each disagreement also takes one agreement away) |
 
 Once locked, write 0x41=0x50 before our slot and 0x41=0x00 before the other. The CACH is then not refreshed in the
-other slot, so the TC compare is only meaningful before the lock.
+other slot, so the TC compare is only meaningful before the lock. The driver compares only when the slot that ended and the one before it were both
+received (gotchas 1.10): after a slot not received the TC read is junk (43% agreement on the bench), and those reads
+used to resync a good lock. Once locked, the number is kept by the toggle alone until the reception ends (5.5).
 
 In direct mode there is no CACH: lock to the slot of the first good burst (its number is meaningless) and receive one
 slot in two from then on.

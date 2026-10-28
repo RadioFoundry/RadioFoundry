@@ -85,6 +85,15 @@ Radios: HR_C6000.
 After a special mode, writing back the init value (0x6B) instead of the running value (0x6E: relay, aligned, slot 1)
 broke subsequent operation. Rule: save and restore modem mode registers around any temporary change.
 
+**1.10 The CACH TC is valid only after two received slots in a row.**
+Symptom: through a duplex repeater, the slot lock built from the TC (0x52 bit 2) resynced on its own while the
+outbound was steady, and a lock that was right was thrown away. Cause: once locked, the driver closes the other slot,
+so every later compare reads the TC after a slot not received. On the HR_C6000 those reads agreed with the lock 43% of
+the time (5485 reads), against 557 of 557 for reads after two received slots (bench, 2026-10-28). The HR_C5000 has
+the same weakness in another form: its TC stops changing while a slot is closed (`tc_last_rx`). Rule: compare only
+when the slot that ended and the one before it were both opened for receive; after our own transmission, a closed
+slot or a lock, skip the first read. Radios: HR_C6000, HR_C5000.
+
 ## 2. DMR modem timing: HR_C7000
 
 **2.1 The TX interrupts must be hooked.** Without the TX timeslot interrupt (vector 62) and the RF TX interrupt (vector 64) connected, the TX handler is never called and DMR TX never starts. TX states must run on the

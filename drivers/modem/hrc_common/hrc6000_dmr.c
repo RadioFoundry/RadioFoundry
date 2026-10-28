@@ -1323,7 +1323,9 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 #endif
 	e->t_tick = t;
 	e->timing = true;
+	uint8_t ctl_before = e->ctl_ended;
 	uint8_t ctl_ended = e->ctl_now;
+	e->ctl_ended = ctl_ended;
 	e->ctl_now = e->ctl_next;
 	uint8_t r42 = r(e->dev, R_SLOT_STAT);
 	e->st.last_r42 = r42;
@@ -1341,10 +1343,13 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 	if (e->own_ts != 0) {
 		e->own_ts = (int8_t)(3 - e->own_ts);
 	}
-	// The TC read here is the slot that ended (HRC6000_DMR_TC_IS_SLOT_NOW 0, the HR_C5000's tc_last_rx): after a slot
-	// not received (ours, sending, or closed by the lock) it is stale
-	uint8_t tc_ctl = (e->dev->chip->tc_last_rx || !HRC6000_DMR_TC_IS_SLOT_NOW) ? ctl_ended : e->ctl_now;
-	if (idle && (tc_ctl & CTL_RX) != 0 && rmo(e)) {
+	// The TC read here is the slot that ended (HRC6000_DMR_TC_IS_SLOT_NOW 0, the HR_C5000's tc_last_rx). It is
+	// right only when that slot and the one before it were both received: after a slot not received (ours, sending,
+	// or closed by the lock) the next read is junk too (gotchas 1.10)
+	bool ended = e->dev->chip->tc_last_rx || !HRC6000_DMR_TC_IS_SLOT_NOW;
+	uint8_t tc_ctl = ended ? ctl_ended : e->ctl_now;
+	uint8_t tc_prev = ended ? ctl_before : ctl_ended;
+	if (idle && (tc_ctl & CTL_RX) != 0 && (tc_prev & CTL_RX) != 0 && rmo(e)) {
 		track_tc(e);
 	}
 	uint8_t ph = (uint8_t)(e->tick & 1u);

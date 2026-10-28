@@ -779,9 +779,9 @@ static void test_tx_aligned_rmo(void)
 	CHECK(last_write(4, 0x41) == 0x50);	// repeater: back to receiving on its timing, no resync
 }
 
-// Locked to one slot of a repeater: the other slot is closed, and the TC (the ended slot's) is refreshed only after a
-// slot received, so the compare runs every other tick; the slot numbers must hold (a TS2 call moved to TS1 mid-call
-// when the number toggled per compare, 2026-10-27)
+// Locked to one slot of a repeater: the other slot is closed, so the TC read after our slot follows a slot not
+// received and is junk (bench 2026-10-28: such reads agreed 43% of the time). The slot numbers must hold: toggled per
+// compare, a TS2 call moved to TS1 mid-call (2026-10-27); resynced on junk, a good lock flipped
 static void test_tc_locked_one_in_two(void)
 {
 	fresh_engine();
@@ -789,22 +789,29 @@ static void test_tc_locked_one_in_two(void)
 	dmr_config_t cfg = { .own_id = 3100001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
 	hrc6000_dmr_configure(&eng, &cfg);
 	hrc6000_dmr_rx_lock_slot(&eng, 2);
-	uint32_t t = 7000000;
-	int closed = 0, wrong = 0;
-	for (int k = 0; k < 60; k++) {
+	uint32_t t = 7000000, junk = 12345;
+	int closed = 0, wrong = 0, locked = 0;
+	for (int k = 0; k < 400; k++) {
 		uint32_t next = eng.tick + 1;
-		if ((eng.ctl_now & 0x50) == 0x50) {	// the slot ending was received: its TC is fresh
+		if ((eng.ctl_now & 0x50) == 0x50 && (eng.ctl_ended & 0x50) == 0x50) {	// two slots received: fresh
 			rd[4][0x52] = (next & 1) ? 0x04 : 0x00;
+		} else {
+			junk = junk * 1103515245u + 12345u;
+			rd[4][0x52] = (junk >> 16) & 0x04;
 		}
 		log_reset();
 		ts_at(t);
 		t += 30000;
 		closed += last_write(4, 0x41) == 0x00;
-		if (eng.phase_ts[0] != 0 && !(eng.phase_ts[1] == 1 && eng.phase_ts[0] == 2)) {
-			wrong++;	// (an idle restart, no bursts heard, may forget them: not wrong)
+		if (eng.phase_ts[0] != 0) {
+			locked++;
+			if (!(eng.phase_ts[1] == 1 && eng.phase_ts[0] == 2)) {
+				wrong++;	// (an idle restart, no bursts heard, may forget them: not wrong)
+			}
 		}
 	}
 	CHECK(closed > 0);	// the lock closed the other slot
+	CHECK(locked > 0);
 	CHECK(wrong == 0);
 }
 
