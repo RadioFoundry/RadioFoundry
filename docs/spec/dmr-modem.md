@@ -87,7 +87,10 @@ alias header, 5-7 talker alias blocks 1-3, 8 GPS info (TS 102 361-2 7.1.1.3-7.1.
   reverse channel or privacy information. The color code and PI are in every EMB.
 - **CACH** (BS outbound only): 24 bits per slot: TACT = AT (1), TC (1), LCSS (2) + Hamming(7,4) parity; 17 bits of a
   short LC fragment. **TC** says which timeslot follows (0 = TS1, 1 = TS2): it is the only way an MS learns the slot
-  number. **AT** (access type) says whether the inbound channel of that slot is busy (1) or idle (0).
+  number. **AT** (access type) says whether the inbound slot that starts one slot later is busy (1) or idle (0)
+  (-1 4.5 figure 4.8). Repeaters run aligned timing (-1 5.1.1, table 5.1: a subscriber on TSx transmits under
+  outbound TSx), so the AT before outbound TSx is the other channel's: an MS on TSx reads its busy state from the CACH
+  before the other outbound slot (`split-duplex.md` 5.2 and 7).
 - **Voice call on air**: one or more voice LC headers (DT 1), optionally a PI header (DT 0) for privacy, then
   superframes, then one or more terminators with LC (DT 2). Calls should end at a superframe boundary (after F).
 - **Repeater outbound**: continuous while active; after a call the repeater keeps the outbound up for the hang time
@@ -101,7 +104,8 @@ alias header, 5-7 talker alias blocks 1-3, 8 GPS info (TS 102 361-2 7.1.1.3-7.1.
 | polite to own color code | don't transmit while the channel carries our CC (other CCs are ignored) |
 | polite to all | don't transmit while the channel carries any DMR or RF activity |
 
-Through a repeater, "busy" is the AT bit of the CACH for our slot, plus decoded activity on our slot. In direct mode,
+Through a repeater, "busy" is the AT bit for our channel (in the CACH before the other outbound slot, above), plus
+decoded activity on our slot. In direct mode,
 "busy" is decoded activity with our CC (or carrier, for polite to all). A data or voice transmission that waits for
 the channel must time out (a few seconds, configurable) rather than wait forever.
 
