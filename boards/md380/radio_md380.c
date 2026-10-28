@@ -54,6 +54,10 @@
 #define MD380_TX_OFFSET_HZ	0
 #endif
 
+// Reference trim (hal_radio_t.ref_trim): DAC2 moves the reference about 36.1 ppb a count, higher = higher (16.2 Hz a
+// count at 448.7 MHz, hardware-md380.md 5.2), added to the calibration's tune
+#define REF_PPB_X10_PER_COUNT	361
+
 #define DAC_MAX			4095u
 #define PLL_PD_GAIN		31u	// phase detector gain, the data sheet's largest (1 mA/rad): a guess (?)
 #define PLL_LOCK_US		5000u	// task-level wait for lock detect after a retune
@@ -81,6 +85,8 @@ static struct {
 	radio_bw_t rx_bw;
 	bool asleep;
 	uint32_t rx_tune_dac;	// DAC1 for the receiver front end at rx_hz (the PA drive shares DAC1)
+	uint8_t ref_tune;	// the calibration's reference tune at rx_hz
+	volatile int16_t ref_trim_hz;	// hal_radio_t.ref_trim
 	md380_radio_diag_t diag;
 	uint32_t bus_errors;
 	subtone_t rx_tone;	// the RX sub-audio the detector is set for (CONFIG_SUBTONE)
@@ -183,6 +189,19 @@ static void dac1_set(uint32_t value)
 static void dac2_set(uint32_t value)
 {
 	DAC->DHR12R2 = value > DAC_MAX ? DAC_MAX : value;
+}
+
+// DAC2 for the calibration's reference tune plus the user's trim at the carrier hz
+static uint32_t ref_dac(uint8_t tune, uint32_t hz)
+{
+	int32_t counts = 0;
+	if (r.ref_trim_hz != 0 && hz != 0) {
+		int64_t num = (int64_t)r.ref_trim_hz * 10000000000LL;	// Hz x 1e9 x 10
+		int64_t den = (int64_t)hz * REF_PPB_X10_PER_COUNT;
+		counts = (int32_t)((num + (num < 0 ? -den / 2 : den / 2)) / den);
+	}
+	int32_t v = (int32_t)hrc5000_ref_dac(tune) + counts;
+	return v < 0 ? 0u : (uint32_t)v;	// dac2_set clamps the top
 }
 
 static volatile bool pa_timer_running;
@@ -292,6 +311,15 @@ static bool pll_tune(uint32_t vco_hz, bool tx, bool wait)
 		r.diag.pll_fails++;
 	}
 	return !wait || r.diag.pll_locked;
+}
+
+// hal_radio_t.ref_trim: DAC2 at once (one register; receive and transmit share it), and at every rx()
+static void ref_trim(int16_t hz)
+{
+	r.ref_trim_hz = hz;
+	if (r.rx_valid) {
+		dac2_set(ref_dac(r.ref_tune, r.rx_hz));
+	}
 }
 
 // --- Helpers ---
@@ -678,7 +706,8 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	md380_cal_at(hz, &cal);	// on false it fills safe defaults
 	r.rx_tune_dac = cal.rx_tune_dac;
 	dac1_set(cal.rx_tune_dac);
-	dac2_set(hrc5000_ref_dac(cal.ref_tune));
+	r.ref_tune = cal.ref_tune;
+	dac2_set(ref_dac(cal.ref_tune, hz));
 	count(hrc5000_set_ref(&r.modem, cal.ref_tune));
 	if (r.mode == RADIO_MODE_FM) {
 		count(hrc5000_set_mode_fm_rx(&r.modem));
@@ -816,6 +845,7 @@ const hal_radio_t md380_radio = {
 	.status = status,
 	.audio = audio,
 	.rx_sleep = rx_sleep,
+	.ref_trim = ref_trim,
 };
 
 void md380_radio_diag(md380_radio_diag_t *d)
