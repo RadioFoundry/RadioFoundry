@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { equal, sha256, be32, concat } from "../static/js/flasher/bytes.js";
 import { stubImages, univFits, StubError } from "../static/js/flasher/stub.js";
 import * as c7 from "../static/js/flasher/c7000.js";
-import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS } from "../static/js/flasher/usmart.js";
+import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS, STUB_WINDOW, stubTarget } from "../static/js/flasher/usmart.js";
 import {
 	Iap, iapPlan, readPacket, checkInstallImage as checkInstall, checkRestoreImage as checkRestore, trimTail, erasePacket,
 	IapError,
@@ -480,4 +480,24 @@ test("IAP: an erase that reaches a protected region writes nothing", async () =>
 	const cal = [{ mem: "progmem", start: 0xD000, end: 0xE000, what: "test (x.md 1)" }];
 	await assert.rejects(new Iap(new Pipe(() => { sent++; }), { firstStage: FS, protect: cal }).write(img), /protected region/);
 	assert.equal(sent, 0);
+});
+
+test("USMART: a build's own stub window and hijack word are used, and checked against what the stub may use", { timeout: 60000 }, async (t) => {
+	assert.deepEqual(stubTarget(null), { window: STUB_WINDOW, hijack: HIJACK });
+	for (const b of BUILDS) assert.ok(stubTarget(b), b.date);
+	assert.throws(() => stubTarget({ window: [0x32000, 0x4000] }), /outside the RAM/, "over where the stub runs");
+	assert.throws(() => stubTarget({ window: [0x56000, 0x4000] }), /outside the RAM/, "past the end of SRAM");
+	assert.throws(() => stubTarget({ hijack: 0x18000900 }), /command table/);
+	const { r } = await stockDb25d(t);
+	const build = { ...BUILDS[0], window: [0x48000, 0x4000], hijack: 0x18000844 };
+	r.build = build;
+	const u = new Usmart(r.stream, { quiet: 2 });
+	await u.loadStub(stubImages(json("c7000-stub.json")).image, { build, untried: true });
+	await new Promise((ok) => setTimeout(ok, 100));
+	assert.equal(r.state, "stub");
+	const writes = r.frames.filter((f) => f.startsWith("write_addr("));
+	assert.ok(writes.every((f) => /^write_addr\(0x(0004[89ab][0-9a-f]{3}|18000844),/.test(f)), "only the build's window and hijack word");
+	assert.equal(r.ram.get(HIJACK), undefined, "the default hijack word untouched");
+	// a write outside the target is refused before the port
+	await assert.rejects(u.send("write_addr(0x00054000,0x00000001)"), /refused/);
 });

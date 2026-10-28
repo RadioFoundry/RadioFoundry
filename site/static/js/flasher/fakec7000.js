@@ -539,11 +539,12 @@ export class FakeC7000 {
 		this.frames.push(cmd);
 		if (this.flashRead || this.faults.consoleSilent) return 1;
 		const H = (n) => n.toString(16).toUpperCase();
-		if (cmd !== "01" && cmd !== "DMRCALL" && this.ram.get(HIJACK) === STUB_WINDOW[0]) {
+		const [load, size] = this.build?.window || STUB_WINDOW, hijack = this.build?.hijack || HIJACK;
+		if (cmd !== "01" && cmd !== "DMRCALL" && this.ram.get(hijack) === load) {
 			let top = 0;
-			for (const a of this.ram.keys()) if (a >= STUB_WINDOW[0] && a < STUB_WINDOW[0] + STUB_WINDOW[1]) top = Math.max(top, a + 4 - STUB_WINDOW[0]);
+			for (const a of this.ram.keys()) if (a >= load && a < load + size) top = Math.max(top, a + 4 - load);
 			this.loaded = new Uint8Array(top);
-			for (let o = 0; o < top; o += 4) this.loaded.set(le32(this.ram.get(STUB_WINDOW[0] + o) || 0), o);
+			for (let o = 0; o < top; o += 4) this.loaded.set(le32(this.ram.get(load + o) || 0), o);
 			this.state = "stub";
 			this.led = "slow";
 			this.events.push("stub (debug console)");
@@ -555,7 +556,7 @@ export class FakeC7000 {
 			const a = Number(m[1]);
 			const off = a - 0x03000000;
 			const v = off >= 0 && off + 4 <= this.progmem.length ? u32le(this.progmem, off)
-				: this.ram.get(a) ?? (a === HIJACK ? this.cmdRec : this.versionWord(a));
+				: this.ram.get(a) ?? (a === (this.build?.hijack || HIJACK) ? this.cmdRec : this.versionWord(a));
 			out = `\r\nread_addr(0X${H(a)})=0X${H(v)};`;
 		} else if ((m = /^write_addr\((0x[0-9a-f]+),(0x[0-9a-f]+)\)$/.exec(cmd))) {
 			const a = Number(m[1]), v = Number(m[2]) >>> 0;

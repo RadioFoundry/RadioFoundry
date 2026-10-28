@@ -209,14 +209,15 @@ export function makeStockRoutes(host) {
 		}
 		const parts = { show, act, onLoaded, onUpdateMode, onAgain };
 		const shown = version || (build && `${build.name} (${build.date})`);
-		if (!build?.stub) return noBackup(parts, shown, vd, { tryAnyway: () => loadOffer(parts, con, shown, vd, true) });
-		return loadOffer(parts, con, version || stockName(S().radio.flash, build.name), vd, false);
+		if (!build?.stub) return noBackup(parts, shown, vd, { tryAnyway: () => loadOffer(parts, con, shown, vd, true, build) });
+		return loadOffer(parts, con, version || stockName(S().radio.flash, build.name), vd, false, build);
 	}
 
 	// The stub load through the console, from the user's go. untried: a build whose load is not proven; a failure is
 	// then what this firmware made likely, and the page says so and offers the other ways on. Its backup is offered
 	// to the project (session().stockUntried)
-	async function loadOffer({ show, act, onLoaded, onUpdateMode, onAgain }, con, version, vd, untried) {
+	// build: the BUILDS entry, whose window and hijack word the load uses (null: an unknown build, the proven ones')
+	async function loadOffer({ show, act, onLoaded, onUpdateMode, onAgain }, con, version, vd, untried, build) {
 		const other = onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode, { quiet: true });
 		const image = await stubImage();
 		const words = Math.ceil(image.length / 4);
@@ -241,7 +242,7 @@ export function makeStockRoutes(host) {
 			let sent = 0;
 			try {
 				session().stockUntried = untried ? { version: version || null } : null;
-				await con.loadStub(image, { signal: ac.signal, untried, onProgress: (phase, d, n) => {
+				await con.loadStub(image, { signal: ac.signal, untried, build, onProgress: (phase, d, n) => {
 					if (phase === "start") return prog.set(d, n, t("flash.usmart.starting"));
 					sent = (phase === "write" ? 0 : n) + d;
 					const rate = sent / Math.max(1, (performance.now() - t0) / 1000);
