@@ -68,7 +68,7 @@ bool ui_svc_hear_all(bool on);
 bool ui_svc_privacy(bool on);			// false also when there is no key: the UI says how to add one
 bool ui_svc_monitor(bool on);			// FM monitor latch
 bool ui_svc_vox(bool on);
-// Make the temporary changes permanent (storage-cps): false if the codeplug can't be written
+// Make temporary channel changes permanent (storage-cps): false when busy, off a stored channel, or unavailable
 bool ui_svc_save_channel(void);
 // Store a whole channel (the channel editor, ui.md 2.1) at number 1..CODEPLUG_CHANNELS_MAX, as a storage job like
 // ui_svc_save_channel. false: a write is still going on, or no codeplug storage in this build

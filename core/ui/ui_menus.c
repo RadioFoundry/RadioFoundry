@@ -292,12 +292,8 @@ static void act_select(uint16_t i, bool hold)
 		ui_toast("Voice prompts: not in this build");
 		break;
 	case A_SAVE_CHANNEL:
-		if (ui_svc_save_channel()) {
+		if (ui_try_save_channel())
 			ui_go_home();
-			ui_toast("Saved to channel");
-		} else {
-			ui_toast("Can't save here: use qdmr");
-		}
 		break;
 	default:
 		break;
