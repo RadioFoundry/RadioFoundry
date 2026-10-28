@@ -312,8 +312,9 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		}
 		if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES) {
 			uint32_t ph = gd88_dmr_phase();
-			put(&o, "cdc ");
+			put(&o, "codec ");	// three digits, as the other radios print it (the HIL codec check)
 			if (hrc_vocoder_tag() != 0) {
+				put(&o, hrc_vocoder_tag() < 100 ? "0" : "");
 				put_u(&o, hrc_vocoder_tag());
 			} else {
 				put(&o, "none");

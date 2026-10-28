@@ -423,7 +423,7 @@ section 3 step that settles it.
 | 10 | - | **Settled 2026-10-27**: the knob reads 0 to 1010 end to end (`VOL_FULL_RAW`) | - | 6 |
 | 11 | - | **Settled 2026-10-27**: PTA18 on both SoCs, the same part (hardware-gd88.md 10) | - | 7 |
 | 12 | - | **Settled 2026-10-27**: 2048 blocks; the original partitions end below 0x420000, the spare pool is the top 10 usable blocks, so blocks 1920-1951 are free (hardware-gd88.md 7) | - | 6 |
-| 14 | `boards/gd88/common/radio_gd88.c:31` | DAC C's role on each SoC (DB25-D's 1762/1780 are used) | Try values; the RSSI, the sensitivity or the frequency should change | 9 |
+| 14 | `boards/gd88/common/radio_gd88.c:31` | DAC C's role on each SoC (DB25-D's 1762/1780 are used). Not RX gain: 0-4095 leave A's RSSI unchanged (2026-10-27) | With a bench carrier, step it (`--dangerous mem write 0x140F0010 N`) and watch the frequency error; then in TX | 9, 15 |
 | 15 | - | **Settled 2026-10-26** on A: main BK4819, LO AT1141 (0x1100), both driven (hardware-gd88.md 11.1). B's: `--rx2 diag` | - | 6 |
 | 16 | `boards/gd88/common/dmr_gd88.c:31` | The modem's RF mode word (`GD88_DMR_RF_MODE`, the DB25-D's 0x034C9860): receive is settled (2026-10-27, voice and data decode from the SDR bench); its transmit half is open | SDR bench call from a `GD88_TX=1` build; try `GD88_DMR_RF_MODE=` variants | 15 |
 | 17 | `boards/gd88/common/calibration_gd88.c:16` | A's output power: which PA drive item is high power | Step the levels into the dummy load, measure | 15 |

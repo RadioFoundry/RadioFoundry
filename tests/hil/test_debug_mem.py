@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The debug link's peek and poke (DL_CMD_MEM, docs/spec/debuglink.md 3.23), without changing anything on the radio.
 
-- test_mem_read_matches_read_mem: 16 bytes of the chip's first READ_MEM window read by MEM at each width equal READ_MEM's.
+- test_mem_read_matches_read_mem: 16 bytes at the start of a READ_MEM window read by MEM at each width equal READ_MEM's.
 - test_mem_changes_need_the_key: a write and a pin change unarmed, and after an arm and a disarm, are refused before any
   access (the write goes to program flash, so it would not take anyway); a pin read needs no key.
 - test_mem_on_second_soc: the same read on a radio's second SoC through RX2 FORWARD. Skips on a radio with one.
@@ -23,11 +23,16 @@ N = 16
 
 
 def _window(link):
-    family = dbg.chip_family(link)
-    windows = dbg.MEM_WINDOWS.get(family)
-    if windows is None:
-        skip("state", f"no READ_MEM window known for chip family {family}")
-    return windows[0][0]
+    """The start of a READ_MEM window (the chip's, or any known one without INFO_CHIP) that reads the same twice: the
+    comparisons below read it more than once, so RAM in use would differ."""
+    windows = dbg.MEM_WINDOWS.get(dbg.chip_family(link)) or [w for ws in dbg.MEM_WINDOWS.values() for w in ws]
+    for lo, _ in windows:
+        try:
+            if link.read_mem(lo, N) == link.read_mem(lo, N):
+                return lo
+        except dbg.DebugLinkError:
+            pass
+    skip("state", "no READ_MEM window that holds still")
 
 
 def _need_mem(link):

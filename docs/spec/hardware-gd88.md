@@ -308,7 +308,7 @@ The code marks each with `TODO(gd88)`. The first-day plan that settles them is [
 2. The output power at each level, and DMR transmit on the radio.
 3. Chain bit 6 as the broadcast tuner's source, and B's audio source pair.
 4. The front panel's navigation keys, whether PTB12 is the knob's contact.
-5. The LCD controller's timing word, DAC C on each SoC.
+5. DAC C on each SoC. On A it is powered and on its pin, and 0 to 4095 leave the RSSI unchanged at 146, 162 and 461 MHz (**HW**): not receive gain; a frequency trim or a transmit role is left.
 6. ~~The NAND's size and B's NAND chip select.~~ TC58CVG1S3HRAIJ, 2048 blocks of 64 2 KB pages on both; B's chip select is PTA18 (section 10).
 7. Meaning of the link command ids. (~~Calibration items 0x602-0x60B~~: factory trims, unused, section 7.)
 8. Bootloader contents and the IAP packet format on this radio (not captured).

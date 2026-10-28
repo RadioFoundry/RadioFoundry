@@ -28,7 +28,9 @@
 #include "rx2/rx2_dmr.h"
 #endif
 
-// TODO(gd88): unknown, needs a radio: DAC C's role on each SoC. These are hardware-db25d.md's levels
+// TODO(gd88): unknown, needs a radio: DAC C's role on each SoC. These are hardware-db25d.md's levels. Not receive gain
+// or front-end tuning: on A, 0 to 4095 leave the RSSI at 146, 162 and 461 MHz unchanged (2026-10-27); a reference
+// frequency trim or a transmit-only role is left
 #define DAC_C_INIT		1762u			// at init, and 1780 once receive is set up
 #define DAC_C_RX		1780u
 
