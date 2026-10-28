@@ -806,13 +806,23 @@ export function checkView() {
 				fill(status, ctx.failureNotice(e, used ? { name: used.path.split("/").pop(), data: used.data } : null));
 			}
 		});
-		fill(status, 
+		fill(status, untriedOffer(),
 			d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, codecActionText()), pick,
 				h("p", { class: "small" }, h("a", { href: "#", onclick: async (e) => { e.preventDefault(); S().c7none = true; await decideView(); } }, t("flash.c7.codec.without")))),
 			d && d.mode === "none" ? notice(t("flash.c7.codec.none_risk"), "bad") : null,
 			c.progmem ? h("p", { class: "small" }, h("a", { href: "#", onclick: (e) => { e.preventDefault(); saveBundle(); } }, t("flash.c7.check.download_again"))) : null,
 			h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		forward(button(t("flash.nav.to_write"), () => ctx.next(), { primary: true, disabled: !d }));
+	}
+
+	// A backup through a stock build whose stub load was not proven before: the project wants that firmware. The
+	// program memory read goes with a problem report (report.js attaches S.stockRead); the backup stays the user's
+	function untriedOffer() {
+		if (!c.stockUntried || !c.progmem) return null;
+		const v = c.stockUntried.version || stockVersion(c.progmem) || "unknown";
+		S().stockRead = { name: `program-memory-${S().radio.id}-${v.replace(/[^\w.-]/g, "_")}.bin`, data: c.progmem };
+		return h("div", { class: "notice" }, h("strong", {}, t("flash.variant.send_title")), h("p", {}, t("flash.variant.send", { version: v })),
+			reportButton({ quiet: false }));
 	}
 
 	// Why no codec was found, and what to select instead. A stock radio whose codec is a build without a recipe is

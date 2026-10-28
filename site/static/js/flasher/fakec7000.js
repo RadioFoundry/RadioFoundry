@@ -262,6 +262,8 @@ export class FakeC7000 {
 		this.stubWrite = stubWrite;		// the universal stub is protocol 7, with op 0x0E (WRITE); false: protocol 6
 		this.usmart = usmart;			// a stock firmware build with the USMART console ("018")
 		this.variant = variant;			// the hardware code the stock firmware reports ("DBB", "D6T")
+		this.cmdRec = 0x0300E9D8;		// what the console's hijack word holds at boot: its command handler
+		this.build = null;			// the BUILDS entry it runs, when not the first of its number
 		this.loaderId = loaderId;		// the Baofeng updater's ID ("BFUV32-V2"), or null: no such loader
 		this.ram = new Map();			// the console's view of RAM: words written since power-on
 		this.frames = [];			// every console frame received, as text
@@ -552,7 +554,8 @@ export class FakeC7000 {
 		if (m) {
 			const a = Number(m[1]);
 			const off = a - 0x03000000;
-			const v = off >= 0 && off + 4 <= this.progmem.length ? u32le(this.progmem, off) : this.ram.get(a) ?? this.versionWord(a);
+			const v = off >= 0 && off + 4 <= this.progmem.length ? u32le(this.progmem, off)
+				: this.ram.get(a) ?? (a === HIJACK ? this.cmdRec : this.versionWord(a));
 			out = `\r\nread_addr(0X${H(a)})=0X${H(v)};`;
 		} else if ((m = /^write_addr\((0x[0-9a-f]+),(0x[0-9a-f]+)\)$/.exec(cmd))) {
 			const a = Number(m[1]), v = Number(m[2]) >>> 0;
@@ -566,7 +569,7 @@ export class FakeC7000 {
 
 	// A word of the RAM copy of the version string (the build's ram address), else 0
 	versionWord(a) {
-		const build = buildNamed(this.usmart);
+		const build = this.build || buildNamed(this.usmart);
 		const text = new TextEncoder().encode(`${runtimeVersion(build, this.variant)}\0`);
 		const o = a - build.ram;
 		if (o < 0 || o >= text.length) return 0;

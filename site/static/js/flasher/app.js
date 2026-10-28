@@ -798,6 +798,7 @@ function selectRadio(r) {
 	S.firmware = null;
 	S.buildOptions = {};
 	S.variant = null;	// the hardware variant is read from the radio again
+	S.stockRead = null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2104,6 +2105,9 @@ function reportAttachments() {
 		label: t("report.attach_stock", { name: S.picked.name }), data: () => S.picked.data });
 	if (S.readoutBytes) out.push({ name: "internal-flash.bin", kind: "readout", size: S.readoutBytes.length, checked: true,
 		label: t("report.attach_readout"), data: () => S.readoutBytes });
+	// the program memory read through a stock build the page had not loaded its stub through before (c7000ui.js)
+	if (S.stockRead?.data) out.push({ name: S.stockRead.name, kind: "stock", size: S.stockRead.data.length, checked: true,
+		label: t("report.attach_stock_read", { name: S.stockRead.name }), data: () => S.stockRead.data });
 	if (S.lastBackup?.data) out.push({ name: S.lastBackup.name, kind: "backup", size: S.lastBackup.data.length, checked: true,
 		label: t("report.attach_backup", { name: S.lastBackup.name }), data: () => S.lastBackup.data });
 	return out;

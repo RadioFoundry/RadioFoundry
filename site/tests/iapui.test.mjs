@@ -153,6 +153,7 @@ test("factory update mode: a loader that identified itself is kept for the next 
 const stockRadio = json("radios.json").radios.find((r) => r.flash.stock_console && r.variants?.length);
 const { FakeC7000, c7000Simulation } = await import("../static/js/flasher/fakec7000.js");
 const { BUILDS, FLASH_BASE } = await import("../static/js/flasher/usmart.js");
+const { stubImages } = await import("../static/js/flasher/stub.js");
 
 // The radio on its stock firmware with this variant code; what the route shows and offers
 async function stockRoute(t, { variant, radioData = stockRadio, faults = {}, identify } = {}) {
@@ -162,7 +163,7 @@ async function stockRoute(t, { variant, radioData = stockRadio, faults = {}, ide
 	t.after(() => r.stop());
 	r.powerOn();
 	await sleep(300);
-	const rt = route(radioData, identify ? { identify } : {});
+	const rt = route(radioData, { stubImage: async () => stubImages(json("c7000-stub.json")).image, ...(identify ? { identify } : {}) });
 	rt.state.c7.stream = r.stream;
 	rt.state.fakeC7 = r;
 	const seen = { shown: null, acts: [] };
@@ -207,21 +208,70 @@ test("stock console: a variant the image doesn't run stops before anything is wr
 	}
 });
 
-test("stock console: a build without a proven stub load offers the two ways on, without a backup", async (t) => {
-	const { r, rt, seen, parts } = await stockRoute(t, { variant: "DBB" });
-	// the radio runs an older build: its version string where that build has it, and none where the proven ones do
+// The radio runs an older build: its version string where that build has it, and none where the proven builds do
+function olderBuild(r) {
 	const old = BUILDS.find((b) => !b.stub);
 	for (const b of BUILDS.filter((x) => x.stub)) r.progmem.fill(0x20, b.at - FLASH_BASE - 16, b.at - FLASH_BASE + 32);
 	r.progmem.set(new TextEncoder().encode(`909E.D6x.EARSAB.${old.name}\0`), old.at - FLASH_BASE - 8);
 	r.usmart = old.name;
+	r.build = old;
+	return old;
+}
+
+test("stock console: a build without a proven stub load offers the try, then the two ways on without a backup", async (t) => {
+	const { r, rt, seen, parts } = await stockRoute(t, { variant: "DBB" });
+	olderBuild(r);
 	await rt.routes.stockFound(parts);
-	assert.match(seen.shown.textContent, /can't be backed up here/);
+	assert.match(seen.shown.textContent, /has not made a backup through this version/);
+	assert.match(seen.shown.textContent, /Try the backup anyway/);
 	assert.match(seen.shown.textContent, /Update the original firmware first/);
 	assert.match(seen.shown.textContent, /Install without a backup/);
-	assert.ok(seen.acts.map(label).includes("Install Without Backup"));
+	assert.deepEqual(seen.acts.map(label), ["Try Backup Anyway", "Install Without Backup", "Search Again"]);
 	seen.acts.find((b) => label(b) === "Install Without Backup").click();
 	assert.ok(seen.updateMode);
 	assert.ok(r.frames.every((f) => f.startsWith("read_addr(")));
+});
+
+test("stock console: the try on an untried build loads the stub and marks the session for the firmware offer", { timeout: 60000 }, async (t) => {
+	const { r, rt, seen, parts } = await stockRoute(t, { variant: "DBB" });
+	olderBuild(r);
+	let loaded = 0;
+	parts.onLoaded = async () => { loaded++; };
+	await rt.routes.stockFound(parts);
+	seen.acts.find((b) => label(b) === "Try Backup Anyway").click();
+	await sleep(50);
+	assert.match(seen.shown.textContent, /new to the radio programming utility/);
+	seen.acts.find((b) => label(b) === "Switch to Update Mode").click();
+	for (let i = 0; i < 400 && !loaded; i++) await sleep(50);
+	assert.equal(loaded, 1);
+	assert.equal(r.state, "stub");
+	assert.deepEqual(rt.state.c7.stockUntried, { version: "909E.DBB.EARSAB.018" });
+});
+
+test("stock console: the try stops before any write when the command table isn't where the known builds keep it", { timeout: 30000 }, async (t) => {
+	const { r, rt, seen, parts } = await stockRoute(t, { variant: "DBB" });
+	olderBuild(r);
+	r.cmdRec = 0x00012345;
+	await rt.routes.stockFound(parts);
+	seen.acts.find((b) => label(b) === "Try Backup Anyway").click();
+	await sleep(50);
+	seen.acts.find((b) => label(b) === "Switch to Update Mode").click();
+	for (let i = 0; i < 200 && !/which was expected/.test(seen.shown.textContent); i++) await sleep(50);
+	assert.match(seen.shown.textContent, /which was expected/);
+	assert.match(seen.shown.textContent, /command table/);
+	assert.ok(!seen.acts.map(label).includes("Try Backup Anyway"), "no second try offered");
+	assert.ok(r.frames.every((f) => f.startsWith("read_addr(")), "nothing written, RAM included");
+});
+
+test("stock console: a build the page doesn't know still names its version, found in RAM", { timeout: 30000 }, async (t) => {
+	const { r, rt, seen, parts } = await stockRoute(t, { variant: "D6T" });
+	for (const b of BUILDS) r.progmem.fill(0x20, b.at - FLASH_BASE - 16, b.at - FLASH_BASE + 32);
+	await rt.routes.stockFound(parts);
+	assert.equal(rt.state.variant.code, "D6T");
+	assert.match(seen.shown.textContent, /909E\.D6T\.EARSAB\.018/);
+	assert.match(seen.shown.textContent, /in development/i);
+	assert.deepEqual(seen.acts.map(label), ["Try Backup Anyway", "Install Without Backup", "Search Again"]);
+	assert.ok(!r.events.includes("identify"), "the console was not silenced by an identify");
 });
 
 test("identify only: the console is silent but the identify names the variant; no backup, two ways on", async (t) => {

@@ -722,22 +722,25 @@ Every vendor build has the USMART console and the identify handler below. The ve
 (`at`, four words read through `read_addr` tell the build) and its RAM copy (`ram`, the variant filled in) per build,
 from static analysis of the vendor files:
 
-| Build | Date | `at` | `ram` | Stub load through USMART |
-|---|---|---|---|---|
-| 018 | 2025-01-21 | 0x03079F3C | 0x18000AF4 | Measured |
-| 020 | 2026-01-10 | 0x0307DCCC | 0x18000B74 | Same window and table as 018 (7, Stub from the vendor firmware) |
-| 018 | 2024-09-23 | 0x03079C64 | 0x18000AFC | Not proven: read only |
-| 018 | 2024-05-09 | 0x030797A0 | 0x18000AF8 | Not proven: read only |
-| 018 | 2023-07-06 | 0x03075AAC | 0x18000A74 | Not proven: read only |
-| 018 | 2022-11-23 | 0x030759EC | 0x18000A64 | Not proven: read only |
-| 017 | 2022-10-21 | 0x030759E8 | 0x18000A60 | Not proven: read only |
+| Build | Date | `at` | `ram` | Command table at 0x18000840 | Stub load through USMART |
+|---|---|---|---|---|---|
+| 018 | 2025-01-21 | 0x03079F3C | 0x18000AF4 | `cmd_rec` at +8 | Measured |
+| 020 | 2026-01-10 | 0x0307DCCC | 0x18000B74 | `cmd_rec` at +8 | Same window and table as 018 (7, Stub from the vendor firmware) |
+| 018 | 2024-09-23 | 0x03079C64 | 0x18000AFC | Same layout as 2025-01-21 | Not proven: offered as a try |
+| 018 | 2024-05-09 | 0x030797A0 | 0x18000AF8 | Same layout as 2025-01-21 | Not proven: offered as a try |
+| 018 | 2023-07-06 | 0x03075AAC | 0x18000A74 | One word shorter: +8 is another entry | Not proven: offered as a try, likely to fail |
+| 018 | 2022-11-23 | 0x030759EC | 0x18000A64 | One word shorter | Not proven: offered as a try, likely to fail |
+| 017 | 2022-10-21 | 0x030759E8 | 0x18000A60 | One word shorter | Not proven: offered as a try, likely to fail |
+
+The table's flash copy (`.data`, `ram` - 0x18000800 below the version string's) holds code addresses in every build,
+so a read of 0x18000848 before the load tells a moved table from a known one but not which entry `cmd_rec` is.
 
 | Item | Finding |
 |---|---|
 | Version in RAM | The `.data` copy of the version string. The boot code finds its first `.` and writes the main chip's letter 2 bytes after it and the LO's 3 bytes after it (4.2). Six words cover the string and its terminator |
 | Identify | The vendor programming software sends `Flash Read ` + u32 BE 0x3C + u32 BE 0x37 + 12 zero bytes; the IAP probe's 19-byte `Flash Read ` + 0 + 1 has the same prefix. The application answers `  Read_2M_`, a NUL, a few binary bytes, then the RAM version string, its build date and time and `+DRS-300UV+136-480MHZ+`. The loader's answer starts `Read_2M_V1.08B` instead. The screen then shows "Flash Read" and the console stays silent until a power cycle. Read only (measured with the vendor software on a PRO; the reply to the 19-byte form is unverified) |
 | Variants in the registry | `[hardware] variants` in `board.toml`: DBB supported; D64, D66 and D6T run the same image at `bring-up` (the FD6818 has no driver yet) |
-| Web flasher | Console answers on a build with a proven stub load: the variant from `ram`, then the backup and install. Other builds, or an unknown build: the variant from `ram` or the identify, then no backup; the page offers updating the vendor firmware to a build above first, or installing through the IAP loader without a backup. Console silent: the identify. Only the IAP loader answers: the user picks the variant from the Version screen, or says it can't be read. A variant no image runs stops the page before any write |
+| Web flasher | Console answers on a build with a proven stub load: the variant from `ram`, then the backup and install. Other builds: the variant from `ram`; an unknown build, or a `ram` that doesn't read as a version: found by reading 0x18000A00-0x18000BFF (never the identify, which silences the console). The page then offers three ways: try the stub load anyway (refused before any write unless 0x18000848 holds an application address; a failure is reported as expected, and a power cycle recovers it), update the vendor firmware to a proven build first, or install through the IAP loader without a backup. A backup made by the try offers its program memory read to the project with a problem report. Console silent: the identify. Only the IAP loader answers: the user picks the variant from the Version screen, or says it can't be read. A variant no image runs stops the page before any write |
 
 ## 8. Codec
 

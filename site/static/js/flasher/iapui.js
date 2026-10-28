@@ -132,20 +132,25 @@ export function makeStockRoutes(host) {
 	// The original firmware answers, but the stub can't go in through its console (a build whose console load is not
 	// proven, or a console that does not answer): no backup of it. Two ways on: put a version the page loads the stub
 	// through on the radio first (the user's file, the manufacturer's tool), or install through update mode without a backup
-	function noBackup({ show, act, onUpdateMode, onAgain }, version, vd) {
+	// tryAnyway: offer the stub load all the same (a build whose console has the known command table, or one the page
+	// doesn't know); failed: the error of such a try, which this firmware made likely
+	function noBackup({ show, act, onUpdateMode, onAgain }, version, vd, { tryAnyway = null, failed = null } = {}) {
 		// the builds whose console takes the stub, by the board's names for them
 		const versions = BUILDS.filter((b) => b.stub).map((b) => `${stockName(S().radio.flash, b.name)} (${b.date})`).join(" or ");
 		show({ led: "off", screen: "on" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.usmart.found"))),
 			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.usmart.version")), h("dd", {}, version)) : null,
 			variantWarning(vd),
-			notice(t("flash.variant.no_backup"), "info"),
+			failed ? notice(t("flash.variant.try_failed"), "info") : notice(t(tryAnyway ? "flash.variant.no_backup_known" : "flash.variant.no_backup"), "info"),
+			failed ? h("details", { class: "small" }, h("summary", {}, t("flash.problem.details")), h("pre", { class: "log" }, failed)) : null,
 			h("ol", { class: "steps" },
+				tryAnyway ? h("li", {}, h("b", {}, t("flash.variant.try_title")), " ", t("flash.variant.try")) : null,
 				h("li", {}, h("b", {}, t("flash.variant.update_first_title")), " ", t("flash.variant.update_first", { versions })),
 				onUpdateMode ? h("li", {}, h("b", {}, t("flash.variant.direct_title")), " ", t("flash.variant.direct")) : null),
 			howToCheck(), reportLine());
-		act(onUpdateMode ? button(t("flash.variant.direct_go"), onUpdateMode, { primary: true }) : null,
-			button(t("flash.iap.none.again"), onAgain, { primary: !onUpdateMode, quiet: !!onUpdateMode }));
+		act(tryAnyway ? button(t("flash.variant.try_go"), tryAnyway, { primary: true }) : null,
+			onUpdateMode ? button(t("flash.variant.direct_go"), onUpdateMode, { primary: !tryAnyway, quiet: !!tryAnyway }) : null,
+			button(t("flash.iap.none.again"), onAgain, { primary: !onUpdateMode && !tryAnyway, quiet: !!onUpdateMode || !!tryAnyway }));
 	}
 
 	// The console did not answer but the stock application answered the identify (the cable works): judge the variant,
@@ -184,16 +189,35 @@ export function makeStockRoutes(host) {
 			show({ led: "off", screen: "on" }, errorNotice(t("flash.usmart.failed", { error: ctx.errorText(e) })));
 			return act(button(t("flash.iap.none.again"), onAgain, { primary: true }), other);
 		}
-		// a build this page does not know: its version as the vendor software asks for it (read only)
-		if (!build) version = await identify();
-		diag.note("stock firmware", { build: build ? `${build.name} ${build.date}` : null, version: version || null, console_stub: !!build?.stub });
-		const vd = version ? seen(version, build ? "console" : "identify") : null;
+		// a build this page does not know: its version string looked for in RAM (the identify would silence the console
+		// until a power cycle, and the backup is still worth a try)
+		// a RAM copy that doesn't read as a version (a build whose RAM differs from what the table says): looked for too
+		if (version && !variantCode(S().radio, version)) version = null;
+		if (!version) {
+			try {
+				version = await con.findVersion(S().radio.variant_pattern);
+			} catch (e) {
+				version = null;
+			}
+		}
+		diag.note("stock firmware", { build: build ? `${build.name} ${build.date}` : null, version: version || null, console_stub: build?.stub ? "proven" : "untried" });
+		const vd = version ? seen(version, "console") : null;
 		if (vd && !writable(vd)) {
 			show({ led: "off", screen: "on" }, version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.usmart.version")), h("dd", {}, version)) : null,
 				variantStop(vd));
 			return act(button(t("flash.iap.none.again"), onAgain, { primary: true }));
 		}
-		if (!build?.stub) return noBackup({ show, act, onUpdateMode, onAgain }, version || (build && `${build.name} (${build.date})`), vd);
+		const parts = { show, act, onLoaded, onUpdateMode, onAgain };
+		const shown = version || (build && `${build.name} (${build.date})`);
+		if (!build?.stub) return noBackup(parts, shown, vd, { tryAnyway: () => loadOffer(parts, con, shown, vd, true) });
+		return loadOffer(parts, con, version || stockName(S().radio.flash, build.name), vd, false);
+	}
+
+	// The stub load through the console, from the user's go. untried: a build whose load is not proven; a failure is
+	// then what this firmware made likely, and the page says so and offers the other ways on. Its backup is offered
+	// to the project (session().stockUntried)
+	async function loadOffer({ show, act, onLoaded, onUpdateMode, onAgain }, con, version, vd, untried) {
+		const other = onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode, { quiet: true });
 		const image = await stubImage();
 		const words = Math.ceil(image.length / 4);
 		const prog = progressBar();
@@ -201,8 +225,9 @@ export function makeStockRoutes(host) {
 		prog.el.hidden = true;
 		show({ led: "off", screen: "on" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.usmart.found"))),
-			h("dl", { class: "kv-list" }, h("dt", {}, t("flash.usmart.version")), h("dd", {}, version || stockName(S().radio.flash, build.name))),
+			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.usmart.version")), h("dd", {}, version)) : null,
 			variantWarning(vd),
+			untried ? notice(t("flash.variant.try_note"), "info") : null,
 			h("p", {}, t("flash.usmart.lead", { min: Math.ceil((2 * words) / WORD_RATE / 60) })),
 			h("p", { class: "small muted" }, t("flash.usmart.note")), prog.el, status);
 		const ac = new AbortController();
@@ -215,7 +240,8 @@ export function makeStockRoutes(host) {
 			const t0 = performance.now();
 			let sent = 0;
 			try {
-				await con.loadStub(image, { signal: ac.signal, onProgress: (phase, d, n) => {
+				session().stockUntried = untried ? { version: version || null } : null;
+				await con.loadStub(image, { signal: ac.signal, untried, onProgress: (phase, d, n) => {
 					if (phase === "start") return prog.set(d, n, t("flash.usmart.starting"));
 					sent = (phase === "write" ? 0 : n) + d;
 					const rate = sent / Math.max(1, (performance.now() - t0) / 1000);
@@ -227,6 +253,10 @@ export function makeStockRoutes(host) {
 			} catch (e) {
 				await busy(false);
 				const stopped = e.message === "stopped";
+				if (untried && !stopped) {
+					diag.note("untried stock build: stub load failed", { version: version || null, error: ctx.errorText(e) });
+					return noBackup({ show, act, onUpdateMode, onAgain }, version, vd, { failed: ctx.errorText(e) });
+				}
 				// a stop or a failure before the start leaves the original firmware running; one after it may not
 				fill(status, (stopped ? notice(t("flash.usmart.stopped"), "info") : errorNotice(t("flash.usmart.failed", { error: ctx.errorText(e) }))),
 					stopped ? null : h("p", {}, t("flash.usmart.retry_how")));
@@ -239,7 +269,9 @@ export function makeStockRoutes(host) {
 	// The console started the stub but it does not answer: the original firmware may have stopped, so the radio needs
 	// a restart before anything else is tried
 	function stubSilent({ show, act, onAgain, onUpdateMode }, error) {
-		show({ led: "off", screen: "any", knob: "cycle" }, errorNotice(t("flash.usmart.no_stub", { error })),
+		const untried = session().stockUntried;
+		if (untried) diag.note("untried stock build: the stub did not answer", { version: untried.version, error });
+		show({ led: "off", screen: "any", knob: "cycle" }, untried ? notice(t("flash.variant.try_silent"), "info") : errorNotice(t("flash.usmart.no_stub", { error })),
 			h("ol", { class: "steps c7-big" }, h("li", {}, t("flash.usmart.no_stub_off")), h("li", {}, t("flash.usmart.no_stub_on"))));
 		act(button(t("flash.iap.none.again"), onAgain, { primary: true }), onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode, { quiet: true }));
 	}

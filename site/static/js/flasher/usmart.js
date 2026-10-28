@@ -47,6 +47,8 @@ export const BUILDS = [
 	{ name: "017", date: "2022-10-21", at: 0x030759E8, ram: 0x18000A60, stub: false },
 ];
 const VERSION_WORDS = 6;	// "909E.DBB.EARSAB.018" and its terminator
+// Where a build this page doesn't know keeps the version string's RAM copy: around the known builds' (0x18000A60-0x18000B74)
+const VERSION_SCAN = [0x18000A00, 0x18000C00];
 
 // A build's full version as the board's flash.stock_versions name it ("018" -> "909E.DBB.EARSAB.018"), or the build
 export const stockName = (flash, build) => (flash.stock_versions || []).find((v) => v.endsWith(`.${build}`)) || build;
@@ -178,10 +180,31 @@ export class Usmart {
 		return text.split("\0")[0];
 	}
 
+	// On a build this page doesn't know: the version string's RAM copy, found by reading the RAM around the known
+	// builds' copies word by word until `pattern` (the radio's variant_pattern) matches and the string ends. The
+	// string ("909E.DBB.EARSAB.018"), or null
+	async findVersion(pattern, signal) {
+		if (!pattern) return null;
+		const re = new RegExp(pattern);
+		let text = "";
+		for (let a = VERSION_SCAN[0]; a < VERSION_SCAN[1]; a += 4) {
+			text += await this.readText(a, 1, signal);
+			const m = re.exec(text);
+			if (!m) continue;
+			const end = text.indexOf("\0", m.index);
+			if (end < 0) continue;
+			const start = Math.max(text.lastIndexOf("\0", m.index) + 1, 0);
+			return text.slice(start, end);
+		}
+		return null;
+	}
+
 	// Write the universal stub into the window, read every word back, then point the hijack word at it and send one
 	// more frame, which starts it. The console stops answering from then on: the stub owns the cable.
-	// onProgress(phase, done, total), phase "write" | "check" | "start".
-	async loadStub(image, { onProgress = () => {}, signal } = {}) {
+	// onProgress(phase, done, total), phase "write" | "check" | "start". untried: a build whose stub load is not
+	// proven; the hijack word must then hold a code address in the application, as in every known build, or nothing
+	// is written
+	async loadStub(image, { onProgress = () => {}, signal, untried = false } = {}) {
 		const [load, size] = STUB_WINDOW;
 		univFits(image, load, [load, size]);
 		const pad = new Uint8Array(Math.ceil(image.length / 4) * 4);
@@ -189,6 +212,11 @@ export class Usmart {
 		const words = Array.from({ length: pad.length / 4 }, (_, i) => new DataView(pad.buffer).getUint32(4 * i, true));
 		const sig = await this.readWordRetry(APP_SIG[0], 6, signal);
 		if (sig !== APP_SIG[1]) throw new UsmartError(`the application does not start as the original firmware does (0x${hex8(sig)})`);
+		if (untried) {
+			// read before anything points it at the stub (a read after that would start the stub)
+			const fn = await this.readWordRetry(HIJACK, 6, signal);
+			if (!(fn >= APP_SIG[0] && fn < APP_END)) throw new UsmartError(`the console's command table is not where the known builds keep it (0x${hex8(HIJACK)} reads 0x${hex8(fn)})`);
+		}
 		for (let i = 0; i < words.length; i++) {
 			await this.writeWordRetry(load + 4 * i, words[i], 6, signal);
 			if (i % 16 === 15 || i === words.length - 1) onProgress("write", i + 1, words.length);
