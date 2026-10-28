@@ -79,6 +79,23 @@ One-line summaries for the site and the generated tables; the facts stay in `doc
 | `gallery` | The display class (`160x128`); `check` requires the UI gallery to have it, and the frame buffer in `board.mk` (`GFX_FB_BYTES`, `GFX_MAX_ROWS`, `GFX_INDEXED`) to hold it |
 | `unconfirmed` | Optional: hardware switches (`hardware` in `tests/hil/features.toml`) the board neither builds nor lists in `BOARD_UNSUPPORTED` or `BOARD_NOT_WRITTEN` ([the rule](../build-config.md#unsupported-not-written-unconfirmed)), because no source says yet whether the radio has the part: switch to what is unknown. `check` fails on any other hardware switch that is off by default, and on an entry for a switch the board builds or lists. The feature matrix shows it as ? |
 | `clock` | `{ rtc, note }`: the real-time clock. `rtc` is `backed` (keeps time through power-off), `unbacked` (only while on), `none` or `unknown`; `note` gives the source. The feature matrix and the site show it |
+| `variants` | Optional: the hardware variants sold under the model, as `[[hardware.variants]]` tables (below) |
+| `variant_pattern` | With `variants`: a regular expression over the stock firmware's version text whose first group is the variant code |
+| `variant_check` | With `variants`: how a user reads the code on the radio, one or two sentences. The flasher and the radio page show it |
+
+A variant is `{ code, name, level, notice, runs }`:
+
+| Key | Meaning |
+|---|---|
+| `code` | What `variant_pattern` captures; unique within the board |
+| `name` | Short text: what sets this hardware apart |
+| `runs` | `{ board, options }`: the image it runs. `board` is this board when variants share an image, another board id when the variant needs its own. `options` names build option values of that board (`[[build_options]]`) the image must be built with. No `runs`: not supported, and no `level` or `notice` |
+| `level` | With `runs`: `bring-up`, `testing` or `supported`, as in `[status]` |
+| `notice` | Required below `supported`: what doesn't work yet. The flasher shows it as a warning when it reads or the user picks the variant |
+
+The web flasher reads the code before it writes (the stock console, the vendor identify reply) or asks the user, and
+refuses an image the variant doesn't run (`site/static/js/flasher/variant.js`). `check` requires a supported board
+to have a supported variant that runs its own image.
 
 ### [status]
 

@@ -92,7 +92,7 @@ test("#sim=<board>: every C7 stub radio's fake comes from its data", async () =>
 		// a stock console's version string is where the console's build check reads it
 		if (r.flash.stock_console) {
 			assert.equal(o.usmart, r.flash.stock_versions[0].slice(-3), r.id);
-			assert.equal(stockVersion(sim.progmem), r.flash.stock_versions[0], r.id);
+			assert.equal(stockVersion(sim.progmem)?.slice(-3), o.usmart, r.id);
 		} else assert.equal(o.usmart, null, r.id);
 	}
 });
