@@ -461,8 +461,9 @@ after `909E.` name the hardware.
 The radio programming utility reads the code from the radio before it writes, and asks for it when only the factory
 update mode answers. On vendor firmware older than the 2025-01-21 build a backup is not proven: the utility offers to
 try it anyway (nothing is written to the radio's flash; if it fails, switch the radio off and on), to update the vendor
-firmware first, or to install without a backup. A backup made that way can be sent to the project with a report, so
-the next version knows that firmware.
+firmware first, or to install without a backup. The same try runs from **Back Up**. A backup made that way can be sent
+to the project with a report, so the next version knows that firmware. **Back Up** works on every hardware version,
+including one RadioFoundry doesn't run on yet: it only reads the radio.
 
 ### Installing the DB25-D PRO
 

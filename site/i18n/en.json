@@ -1010,6 +1010,7 @@
  "flash.iap.none.power_on": "Recover at Power-On",
  "flash.variant.other_board": "This radio is the {variant} hardware, which needs the {radio} firmware. Start over and select the {radio}.",
  "flash.variant.options": "This radio is the {variant} hardware, which needs a build with {options}. Go back to the build step and choose it.",
+ "flash.variant.backup_only": "This radio is the {variant} hardware, which RadioFoundry does not run on yet. A backup only reads the radio, so it is safe, and the original firmware it holds helps add this hardware.",
  "flash.variant.unsupported": "This radio is the {variant} hardware, which RadioFoundry for the {radio} does not support yet.",
  "flash.variant.nothing_written": "Nothing was written to the radio.",
  "flash.variant.dev_title": "Hardware in development: {variant}.",
