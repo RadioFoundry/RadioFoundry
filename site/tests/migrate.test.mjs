@@ -6,7 +6,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stockLayoutOf, stockSource, readSpan, convertStock, imageCounts, migrationSectors, checkMigration } from "../static/js/flasher/migrate.js";
+import { stockLayoutOf, stockSource, savedStock, channelsWanted, readSpan, convertStock, imageCounts, migrationSectors, checkMigration } from "../static/js/flasher/migrate.js";
+import { VFOS } from "../static/js/codeplug/transport.js";
 import { CODEPLUG_SPAN } from "../static/js/flasher/backup.js";
 import { STOCK } from "../static/js/codeplug/stock_tyt.js";
 import { Stock, uv380 } from "./stockfix.mjs";
@@ -31,6 +32,8 @@ test("a stock codeplug is recognized and read in full; a RadioFoundry one is lef
 	assert.equal(readSpan(null), CODEPLUG_SPAN);
 	const { image } = convertStock(s.b, WIDE);
 	assert.equal(stockLayoutOf(image), null);	// after the conversion, the next install finds nothing to do
+	const radio = s.b.slice(0, readSpan(null));
+	assert.equal(stockLayoutOf(written(radio, migrationSectors(image, radio))), null);
 	assert.equal(stockLayoutOf(new Uint8Array(CODEPLUG_SPAN).fill(0xFF)), null);
 });
 
@@ -109,4 +112,55 @@ test("the backup's read is converted: the claim erased the stock zones from the 
 	// a backup too short for the family's tables is not used
 	const s = uv380();
 	assert.equal(stockSource(s.b, s.b.slice(0, CODEPLUG_SPAN)).from, "radio");
+});
+
+test("the write keeps the radio's bytes outside the codeplug's regions", () => {
+	const s = uv380();
+	const radio = s.b.slice(0, readSpan(null));
+	radio.fill(0x5A, 0x604B, 0x6060);	// the radio's own settings block, inside the first region's sector
+	radio.fill(0x3C, VFOS[0], VFOS[1]);	// the live VFOs, as a read shows them
+	radio.fill(0x77, 0x50000, 0x50010);	// the ID database area
+	const c = convertStock(s.b, WIDE);
+	const sectors = migrationSectors(c.image, radio);
+	const after = written(radio, sectors);
+	assert.ok(after.subarray(0x604B, 0x6060).every((x) => x === 0x5A));
+	assert.ok(after.subarray(VFOS[0], VFOS[1]).every((x) => x === 0x3C));
+	assert.ok(after.subarray(0x50000, 0x50010).every((x) => x === 0x77));
+	// the codeplug's regions end at 0xAEE60: the stock tables past them (this family's channels) stay as they were
+	for (const [a] of sectors) assert.ok(a < 0xAF000, `sector 0x${a.toString(16)} is past the codeplug's regions`);
+	assert.deepEqual(imageCounts(after), c.counts);
+});
+
+test("the check doesn't count the live VFOs a read shows", () => {
+	const s = uv380();
+	const radio = s.b.slice(0, readSpan(null));
+	const c = convertStock(s.b, WIDE);
+	const sectors = migrationSectors(c.image, radio);
+	const back = written(radio, sectors);
+	back.fill(0x11, VFOS[0], VFOS[1]);
+	if (!sectors.some(([a]) => a === (VFOS[0] & ~0xFFF))) sectors.push([VFOS[0] & ~0xFFF, radio.slice(VFOS[0] & ~0xFFF, (VFOS[0] & ~0xFFF) + 4096)]);
+	assert.equal(checkMigration(sectors, back, c.counts).ok, true);
+	back[VFOS[0] - 1] ^= 0xFF;
+	assert.equal(checkMigration(sectors, back, c.counts).ok, false);
+});
+
+test("the step reads the radio only where a stock codeplug can be", () => {
+	const s = uv380();
+	const none = new Uint8Array(readSpan(WIDE)).fill(0xFF);
+	const spiSize = 0x1000000;
+	assert.equal(channelsWanted({ before: "stock", spiSize, saved: null }), true);
+	assert.equal(channelsWanted({ before: null, spiSize, saved: null }), true);
+	assert.equal(channelsWanted({ before: "unknown", spiSize, saved: s.b }), true);
+	// an update or a move from another open firmware: the codeplug is already the open-firmware one
+	assert.equal(channelsWanted({ before: "rfoundry", spiSize, saved: null }), false);
+	assert.equal(channelsWanted({ before: "openfw", spiSize, saved: null }), false);
+	// no memory chip
+	assert.equal(channelsWanted({ before: "stock", spiSize: 0, saved: null }), false);
+	// a backup that read every family's tables and found none; one too short to tell doesn't decide
+	assert.equal(channelsWanted({ before: "stock", spiSize, saved: none }), false);
+	assert.equal(channelsWanted({ before: "stock", spiSize, saved: none.subarray(0, CODEPLUG_SPAN) }), true);
+	assert.equal(savedStock(s.b), WIDE);
+	assert.equal(savedStock(s.b.subarray(0, CODEPLUG_SPAN)), null);
+	assert.equal(savedStock(none), null);
+	assert.equal(savedStock(null), null);
 });

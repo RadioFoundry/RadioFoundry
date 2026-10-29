@@ -303,12 +303,13 @@ last step of the install brings it over by default, on every radio whose stock c
 
 | Step | What happens |
 |---|---|
+| 0. Skip | An update, a move from another open firmware, a board without a memory chip (`backup.spi_size` 0), or a backup from this visit that read every stock family's tables and found none (`channelsWanted`): nothing is read |
 | 1. Read | The codeplug span over the CPS. The stock codeplug comes from this visit's backup when it holds one (`stockSource`), else from the live read, further on a family whose stock tables reach past the span (`readSpan`) |
 | 2. Recognize | `classify` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md) 2). A RadioFoundry codeplug, a blank chip or an unknown layout ends the step: nothing is written |
 | 3. Convert | `importStock`, the Codeplug Editor's conversion, with its counts and notes. No channels ends the step |
 | 4. Prepare | The settings area is claimed (`prepareStorage`), as before a codeplug restore |
-| 5. Write | The 4 KB sectors that differ (`codeplugSectors`): never RadioFoundry's own areas or protected data |
-| 6. Check | The span read back: every written sector holds its bytes, and the decoded codeplug has the converted counts. A mismatch is reported as a problem and the step stops |
+| 5. Write | The radio's bytes with the converted image over the codeplug's regions (`writeRanges`, as a Codeplug Editor write), in the 4 KB sectors that differ (`codeplugSectors`). The radio's own settings block, the VFO pair, the ID database area, RadioFoundry's own areas and protected data keep the radio's bytes |
+| 6. Check | The span read back: every written sector holds its bytes (the VFO pair aside: a read shows the live VFOs), and the decoded codeplug has the converted counts. A mismatch is reported as a problem and the step stops |
 
 The backup's copy comes first because the backup ends by claiming the settings area. On a family whose stock tables
 lie inside that area (zones on the 256 KB layout), the live read no longer holds them.
@@ -316,7 +317,8 @@ lie inside that area (zones on the 256 KB layout), the live read no longer holds
 It runs at once when the backup taken in this visit holds the stock codeplug (the SPI flash read covers `readSpan`).
 Without one it waits for the user and says that the original bytes may be lost: on a board whose stock codeplug shares
 sectors with RadioFoundry's codeplug, the write replaces them. A failure at any step leaves RadioFoundry running without
-channels; the backup still holds the original codeplug, and the Codeplug Editor converts it from there.
+channels and says so. With the backup, the Codeplug Editor converts the original codeplug from there; without one, the
+message says whether the original is still on the radio (a read or conversion failure writes nothing).
 
 The boards whose stock codeplug the browser converts are those in the TYT family layouts of `codeplug/stock_tyt.js`.
 The HR_C7000 backend has no conversion: its stock codeplug stays in the data flash and in the backup
