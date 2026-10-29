@@ -66,7 +66,7 @@ typedef struct {
 	uint8_t at_mask, at_mode;
 	uint32_t at_ms;
 	bool at_set;
-	uint8_t at_on_air;	// AT bits of the last CACH per slot (bit 0 TS1, bit 1 TS2)
+	uint8_t at_on_air;	// AT bits last sent per channel (bit 0 TS1, in the CACH before outbound TS2; bit 1 TS2)
 	uint8_t at_auto;	// ... of those, what the automatic rule gave (the slot's last burst not idle)
 	uint32_t slc_cur[4];	// short LC rows on air
 	uint32_t slc_new[4];	// ... from slot switch_s on

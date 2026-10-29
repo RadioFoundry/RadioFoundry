@@ -1105,13 +1105,8 @@ static void testIpTx(void)
 	CHECK(dmrDataServiceIpResult() == DMR_REQ_FAILED && txLists - lists == 2);
 	ch.rmo = false;
 
-	// Never confirmed to a group; too long for one confirmed packet (64 blocks, the list): sent unconfirmed
+	// Never confirmed to a group (a packet of the air MTU does go confirmed: testIpAirMtu)
 	CHECK(dmrDataServiceSendIP(true, 9, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
-	runMainTask(SEND_MS);
-	CHECK((txHeader()->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED && dmrDataServiceIpResult() == DMR_REQ_OK);
-	static uint8_t big[400];
-	big[4] = 400 >> 8; big[5] = 400 & 0xFF;
-	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, big, sizeof(big)));
 	runMainTask(SEND_MS);
 	CHECK((txHeader()->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED && dmrDataServiceIpResult() == DMR_REQ_OK);
 
@@ -1128,9 +1123,9 @@ static void testIpTx(void)
 	ch.canTransmit = true;
 
 	dmrDataServiceGetStats(&st);
-	CHECK(st.ipPackets - st0.ipPackets == 9 && st.ipSent - st0.ipSent == 6 && st.ipFailed - st0.ipFailed == 3);
+	CHECK(st.ipPackets - st0.ipPackets == 8 && st.ipSent - st0.ipSent == 5 && st.ipFailed - st0.ipFailed == 3);
 	CHECK(st.ipConfirmed - st0.ipConfirmed == 5 && st.ipCnfAcks - st0.ipCnfAcks == 3 && st.ipCnfSacks - st0.ipCnfSacks == 1);
-	CHECK(st.ipCnfNacks - st0.ipCnfNacks == 1 && st.ipCnfResyncs - st0.ipCnfResyncs == 1 && st.ipCnfTooLong - st0.ipCnfTooLong == 1);
+	CHECK(st.ipCnfNacks - st0.ipCnfNacks == 1 && st.ipCnfResyncs - st0.ipCnfResyncs == 1 && st.ipCnfTooLong - st0.ipCnfTooLong == 0);
 	CHECK(st.ipCnfTimeouts - st0.ipCnfTimeouts == DMR_IPC_TRIES_DEFAULT + 2 && st.ipCnfFailed - st0.ipCnfFailed == 3);
 	CHECK(st.ipCnfRetries - st0.ipCnfRetries == 2 + (DMR_IPC_TRIES_DEFAULT - 1) + 1);
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
@@ -1151,6 +1146,78 @@ static const dmrDataPacket_t *txPacket(void)
 		}
 	}
 	return got;
+}
+
+// The air MTU (dmrData.h, docs/spec/dmr-data.md 12.8): a UDP datagram whose user data on the air is exactly
+// DMR_DATA_IP_MTU octets goes in one transmission (the preambles, the header, 50 blocks), with either header; one octet
+// more doesn't go at all. It is not below the USB link's MTU, and it goes confirmed too: 60 blocks and the terminator,
+// all DMR_DATA_MAX_BURSTS bursts
+static void testIpAirMtu(void)
+{
+	static uint8_t l4[8 + DMR_DATA_IP_MTU];
+	static const struct { uint8_t compress; uint8_t sap; int header; } cases[] = {
+		{ DMR_UDPC_OFF, DMR_SAP_IP, 28 },// the full IPv4 / UDP header
+		{ DMR_UDPC_AUTO, DMR_SAP_UDPIP_COMPRESSION, 9 },// 50000 to 161: both ports in extended headers
+	};
+	const int blocks = 50, cnfBlocks = 60;
+	dmrDataStats_t st0, st;
+
+	reset();
+	decodeTx = false;
+	CHECK(DMR_DATA_IP_MTU == 596 && DMR_DATA_IP_MTU >= 586);// as the spec gives it; IPGW_LINK_MTU
+	CHECK(dmrDataPacketBursts(DMR_DATA_IP_MTU, DT_RATE_12_DATA) == 1 + blocks);
+	CHECK(dmrDataConfirmedBlocks(DMR_DATA_IP_MTU, DT_RATE_12_DATA) == cnfBlocks);
+	CHECK(DMR_DATA_IP_PREAMBLES + 1 + cnfBlocks + 1 == DMR_DATA_MAX_BURSTS);
+	for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++)
+	{
+		for (int extra = 0; extra <= 1; extra++)
+		{
+			for (int cnf = 0; cnf <= 1; cnf++)
+			{
+				int payload = DMR_DATA_IP_MTU - cases[c].header + extra;
+				int lists = txLists;
+
+				ipSettings(cases[c].compress, cnf ? DMR_IPC_ALL : DMR_IPC_OFF, 1, 0, 0);
+				l4[0] = 50000 >> 8; l4[1] = 50000 & 0xFF; l4[2] = 0; l4[3] = 161;
+				l4[4] = (uint8_t)((8 + payload) >> 8); l4[5] = (uint8_t)(8 + payload); l4[6] = 0; l4[7] = 0;
+				for (int i = 0; i < payload; i++) l4[8 + i] = (uint8_t)(i * 7 + c);
+				dmrDataServiceGetStats(&st0);
+				CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT,
+											DMR_IP_PROTO_UDP, l4, 8 + payload));
+				runMainTask(SEND_MS);
+				if (extra != 0)
+				{
+					dmrDataServiceGetStats(&st);
+					CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_FAILED);
+					CHECK(st.ipFailed - st0.ipFailed == 1 && txLists == lists);// nothing of it on air
+					continue;
+				}
+				CHECK(txLists - lists == 1);
+				const dmrBurst_t *h = txHeader();
+				CHECK(h != NULL && (h->payload[1] >> 4) == cases[c].sap);
+				if (cnf)
+				{
+					// Unanswered: one try, then given up
+					CHECK(h != NULL && (h->payload[0] & 0x0F) == DMR_DPF_CONFIRMED && (h->payload[8] & 0x7F) == cnfBlocks);
+					CHECK(lastTxCount == DMR_DATA_MAX_BURSTS && lastTx[lastTxCount - 1].dataType == DT_TERMINATOR_WITH_LC);
+					runMainTask(2 * DMR_IPC_RESPONSE_MS);
+					dmrDataServiceGetStats(&st);
+					CHECK(!dmrDataServiceIpBusy() && st.ipConfirmed - st0.ipConfirmed == 1);
+					CHECK(st.ipCnfTooLong == st0.ipCnfTooLong);
+					continue;
+				}
+				dmrDataServiceGetStats(&st);
+				CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK && st.ipSent - st0.ipSent == 1);
+				CHECK(h != NULL && (h->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED && (h->payload[8] & 0x7F) == blocks);
+				CHECK(lastTxCount == DMR_DATA_IP_PREAMBLES + 1 + blocks);
+				const dmrDataPacket_t *p = txPacket();
+				CHECK(p != NULL && p->length == DMR_DATA_IP_MTU && p->sap == cases[c].sap);
+				CHECK(p != NULL && memcmp(&p->data[cases[c].header], &l4[8], payload) == 0);
+			}
+		}
+	}
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
+	decodeTx = true;
 }
 
 // Real IP addresses (docs/spec/dmr-data.md 11.1): an IP destination other than the ID's goes with the full header in
@@ -1739,12 +1806,12 @@ static void testChain(void)
 	dmrDataServiceSetTxSpacing(DMR_DATA_TX_GUARD_MS, true);
 
 	// The gateway's off-net route: a chain with an IP destination of its own and a TTL. Each packet in it has the full
-	// header with them, and the list is counted with that longer header: of eight 20-octet datagrams fewer fit than
+	// header with them, and the list is counted with that longer header: of eight 60-octet datagrams fewer fit than
 	// with the compressed one, and one more wouldn't have fit
-	chainMake(8, 20, DMR_IPS_UNCONFIRMED);
+	chainMake(8, 60, DMR_IPS_UNCONFIRMED);
 	int ours = chainSend(false, RADIO_A, chainPk, 8);
 	runMainTask(SEND_MS);
-	chainMake(8, 20, DMR_IPS_UNCONFIRMED);
+	chainMake(8, 60, DMR_IPS_UNCONFIRMED);
 	int offNet = dmrDataServiceSendIPChain(false, RADIO_A, DMR_DATA_IP_OURS, 0xC0A80A05u, 30, chainPk, 8);
 	expChains += (offNet > 1) ? 1u : 0u;
 	expChained += (offNet > 1) ? (uint32_t)(offNet - 1) : 0u;
@@ -1920,6 +1987,7 @@ int main(void)
 	testNotOnChannel();
 #endif
 	testIpTx();
+	testIpAirMtu();
 	testIpAddresses();
 	testConfirmedRx();
 	testIpText();

@@ -38,16 +38,25 @@ Every message starts with the version (1) and the type. Multi-octet fields are b
 
 | Type | Octets | Layout |
 |---|---|---|
-| 1 Fragment | 7 to 328 | version, type, transfer number, index (bits 7-4) and count (bits 3-0), offset (2), chunk |
+| 1 Fragment | 7 to 328 sent, up to 568 taken | version, type, transfer number, index (bits 7-4) and count (bits 3-0), offset (2), chunk |
 | 2 Request | 5 | version, type, request number, what (1: the zone of the site the request came in through), options (0) |
 | 3 Refusal | 4 | version, type, request number, code |
 
 ### 3.1 Fragments
 
-- A record of up to 1024 octets goes in 1 to 4 fragments. Each chunk is 322 octets, the last one shorter. The largest
-  message, 328 octets, fits one confirmed packet with the full IPv4 and UDP headers.
-- The offset must be index x 322. Every fragment but the last must be full. A fragment that breaks a rule is dropped
-  (`zs.rx_bad`).
+- A record of up to 1024 octets goes in 1 to 4 fragments of 322-octet chunks, the last one shorter (`ZS_SEND_CHUNK`).
+- The chunk size is the sender's. A receiver takes any from 128 octets up to the longest message the air MTU allows
+  with the full IPv4 and UDP headers (`ZS_MSG_MAX` = `DMR_DATA_IP_MTU` - 28: 568 octets, a 562-octet chunk,
+  [dmr-data.md](dmr-data.md) 12.8). That limit grows with the air MTU. A record in 128-octet chunks takes 8 fragments,
+  the most a transfer may have.
+- We still send 322: the first builds take only that chunk size and messages of at most 328 octets, and would drop
+  larger fragments. Every build since takes chunks up to 562, so the sender can move up to 562 (2 fragments for a
+  full record) once the first builds are no longer in use. A build whose air MTU is larger takes larger chunks, but
+  must not send them while builds that take only 562 are in use. `zoneShareTest` checks our fragments against the
+  first builds' rules.
+- Every fragment but the last is full, and its offset is index x its length. The last fragment's offset is a whole
+  number of chunks of a size the receiver takes, and it is no longer than one. Every fragment of a transfer must give the
+  same chunk size. A fragment that breaks a rule is dropped (`zs.rx_bad`).
 - The transfer number is the sender's, one per send.
 
 ### 3.2 Reassembly
@@ -174,5 +183,5 @@ channel; the banner says "Sent to <name>" or "Not sent to <name>". One send at a
 |---|---|
 | Record | 1024 octets, 80 channels, 32 contacts |
 | Names | 16 printable ASCII characters |
-| Fragments | 4 of up to 322 octets |
+| Fragments | sent: up to 4 of 322 octets; taken: up to 8, chunks of 128 to 562 octets |
 | RAM | about 4 KB on one board's build; the record being sent comes from the RTOS heap while it is made ([feature-matrix.md](../feature-matrix.md)) |

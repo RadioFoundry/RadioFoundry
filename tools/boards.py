@@ -156,7 +156,19 @@ BOARD_SCHEMA = {
     "hardware": _req({"cpu": _opt(str), "bands": _req(str), "power": _req(str), "display": _req(str),
                       "gallery": _req(str), "unconfirmed": _opt(("map", str)),
                       # the real-time clock (CLOCKS) and the source of that fact; no driver uses it yet
-                      "clock": _req({"rtc": _req(CLOCKS), "note": _req(str)})}),
+                      "clock": _req({"rtc": _req(CLOCKS), "note": _req(str)}),
+                      # hardware variants sold under this model that the radio itself names (variant_pattern: a regular
+                      # expression whose first group is the code, in the version text the stock firmware reports;
+                      # variant_check: how a user reads that text on the radio). runs: the image a variant takes. The
+                      # board's own image (board = this id) is shared by every variant that names it, options pick a
+                      # build option's values; another board's id is a variant that needs its own image. No runs: not
+                      # supported yet. level: as [status] level, for that variant (below supported, the web flasher
+                      # shows notice as a warning once the variant is picked or read). The web flasher reads the code
+                      # before it writes and refuses another image
+                      "variants": _opt(("list", {"code": _req(str), "name": _req(str), "level": _opt(LEVELS),
+                                                 "notice": _opt(str),
+                                                 "runs": _opt({"board": _req(str), "options": _opt(("map", str))})})),
+                      "variant_pattern": _opt(str), "variant_check": _opt(str)}),
     # summary: what works, then at most one short clause of what is open; plain text, no links (the README, the
     # user manual's radio table and the site show it)
     "status": _req({"level": _req(LEVELS), "summary": _req(str), "release": _req(RELEASES)}),
@@ -932,6 +944,52 @@ def protect_problems(entries, mems, owned=()):
     return out
 
 
+def variant_problems(bid, d, boards, bad):
+    """Reports through bad() what is wrong with [hardware] variants: a pattern and a check text to read the code by, unique codes, at least one the board's
+    own image runs, and every runs naming a board and that board's build option values."""
+    hw = d["hardware"]
+    vs = hw.get("variants", [])
+    if not vs:
+        if "variant_pattern" in hw or "variant_check" in hw:
+            bad("hardware.variant_pattern and variant_check go with hardware.variants")
+        return
+    if "variant_pattern" not in hw or "variant_check" not in hw:
+        bad("hardware.variants needs variant_pattern (how the code is read) and variant_check (how a user reads it)")
+    else:
+        try:
+            if re.compile(hw["variant_pattern"]).groups < 1:
+                bad("hardware.variant_pattern needs a group: the code")
+        except re.error as e:
+            bad("hardware.variant_pattern: %s" % e)
+    codes = [v["code"] for v in vs]
+    if len(set(codes)) != len(codes):
+        bad("hardware.variants names a code twice")
+    if not any(v.get("runs", {}).get("board") == bid and v.get("level") == "supported" for v in vs) \
+            and d["status"]["level"] == "supported":
+        bad("hardware.variants: a supported board needs a supported variant that runs its image (runs.board = %r)" % bid)
+    if not any(v.get("runs", {}).get("board") == bid for v in vs):
+        bad("hardware.variants: none runs this board's image (runs.board = %r)" % bid)
+    for v in vs:
+        runs = v.get("runs")
+        if not runs:
+            if "level" in v or "notice" in v:
+                bad("hardware.variants %s: level and notice go with runs (a variant no image runs is not supported)"
+                    % v["code"])
+            continue
+        if "level" not in v:
+            bad("hardware.variants %s: runs needs a level" % v["code"])
+        elif v["level"] != "supported" and not v.get("notice"):
+            bad("hardware.variants %s: a level below supported needs a notice (what doesn't work yet)" % v["code"])
+        other = boards.get(runs["board"])
+        if other is None:
+            bad("hardware.variants %s: runs.board %r is no board" % (v["code"], runs["board"]))
+            continue
+        opts = {o["name"]: [x["id"] for x in o["values"]] for o in other.data.get("build_options", [])}
+        for n, val in runs.get("options", {}).items():
+            if val not in opts.get(n, []):
+                bad("hardware.variants %s: %s=%s is not a build option value of %s" % (v["code"], n, val, runs["board"]))
+
+
 def check(root=ROOT):
     """Every problem found, as strings (empty: the registry is consistent)."""
     problems = []
@@ -966,6 +1024,7 @@ def check(root=ROOT):
         for k, p in d["docs"].items():
             if not os.path.isfile(os.path.join(root, p)):
                 bad("docs.%s %s doesn't exist" % (k, p))
+        variant_problems(bid, d, boards, bad)
         for lk in d.get("looks", []):
             for n in [lk["name"]] + lk.get("also", []):
                 if n not in d["also"]:
@@ -1299,7 +1358,10 @@ def site_view(boards, root=ROOT):
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
             "looks": json.loads(json.dumps(d.get("looks", []))),
             "unsupported": dict(b.unsupported), "not_written": dict(b.not_written), "volts": b.volts,
-            "clock": hw["clock"]["rtc"]})
+            "clock": hw["clock"]["rtc"],
+            # the hardware variants and how the flasher reads them ([hardware] variants)
+            "variants": json.loads(json.dumps(hw.get("variants", []))), "variant_pattern": hw.get("variant_pattern"),
+            "variant_check": hw.get("variant_check")})
     # the survey's radios without a board, planned or in progress (docs/spec/radios.md Port cells)
     rows, problems = registry_docs.survey(root, boards)
     if problems:

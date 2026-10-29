@@ -163,6 +163,12 @@ The start page's privacy text says that a report names the stock firmware file, 
 
 ### The flash log and the vendor file
 
+A use reports its milestones to the flash log, each once: the build request (custom builds), the start, the first
+data on the radio (`first_byte`), the last (`last_byte`), the end of the write (`result`) and the check on the
+"Done" step (`verify`, with its outcome). `flashMark()` sends the three data events to
+`POST /v1/flashes/{id}/events` from each install route's progress callback and from `doneView()`. A row with
+`first_byte` and no `last_byte` is a write that stopped midway. A row with no `started` is a build nobody wrote.
+
 The flash log (`POST /v1/flashes`, `PATCH /v1/flashes/{id}`) also records which vendor firmware a use involved, so a
 failed install can be traced to a file. Only lengths, SHA-256 hashes and a short id; never bytes (those go only through
 [Sending a file](#sending-a-file), on the user's click):

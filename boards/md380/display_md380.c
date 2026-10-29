@@ -3,9 +3,10 @@
 // MD-380 display: 160x128 TFT on FSMC bank 1 (8-bit on D0-D7, RS on A17), wired as on the other STM32 radios; backlight on PC6
 // with TIM8 CH1 PWM (docs/spec/hardware-md380.md 7).
 //
-// The controller is reported as an HX8302A (ST7735 compatible) or "maybe an ILI9481": unconfirmed. The ST7735 driver's
-// type 0 init is used; MD380_PANEL_TYPE picks another of its types and MD380_PANEL_MADCTL_XOR mirrors the picture,
-// both build-time until the panel is seen. All 128 rows are assumed visible.
+// The panel type comes from the controller's ID (read display ID, 0x04, after a hardware reset) and, for the
+// orientation, the factory byte in SPI flash security register 3 at 0x1D where it was programmed (hardware-md380.md 7).
+// Every type is driven in RGB order: stock sets the same color order for all of them. MD380_PANEL_TYPE overrides the
+// type and MD380_PANEL_MADCTL_XOR mirrors the picture, both build-time bench knobs. All 128 rows are assumed visible.
 //
 // The LCD data lines D0-D7 are also the keypad columns: every LCD burst holds md380_lcdbus_lock(), starts by
 // reconnecting them to the FSMC and ends with a 0x00 write so the lines rest low for the next key scan.
@@ -14,16 +15,17 @@
 #include "pins.h"
 #include "hal_time.h"
 #include "display/st7735/st7735.h"
+#include "panel_md380.h"
 
-#ifndef MD380_PANEL_TYPE
-#define MD380_PANEL_TYPE	0
-#endif
 #ifndef MD380_PANEL_MADCTL_XOR
 #define MD380_PANEL_MADCTL_XOR	0
 #endif
 
 #define LCD_AF		12	// GPIO_AF12_FSMC
 #define LCD_CTRL_PORTD	(GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_12)	// NOE, NWE, A17 (RS)
+
+#define PANEL_SECREG	3
+#define PANEL_OFFSET	0x1D
 
 #define VISIBLE_W	160
 #define VISIBLE_H	128
@@ -130,15 +132,49 @@ static const st7735_bus_t bus = {
 
 static st7735_t panel = {
 	.bus = &bus,
-	.type = MD380_PANEL_TYPE,
 	.width = VISIBLE_W,
 	.height = VISIBLE_H,
 	.col_offset = 0,
 	.row_offset = 0,
 	.madctl_xor = MD380_PANEL_MADCTL_XOR,
+	.force_rgb = true,
 };
 
 static bool ready;
+static int16_t panel_raw = -1;	// the factory byte, -1 until read
+static hal_display_panel_t panel_id;
+
+// ---- Panel ID: read display ID (0x04) and ID1-ID3 (0xDA-0xDC), each answered after a dummy byte ----
+
+// Reads want a longer strobe than writes (ST7735S: 45 ns RD low for the IDs, more on other controllers)
+#define BTR_READ	((15u << FSMC_BTR1_ADDSET_Pos) | (60u << FSMC_BTR1_DATAST_Pos) | (1u << FSMC_BTR1_BUSTURN_Pos))
+
+static void read_reg(uint8_t c, uint8_t *out, uint32_t n)
+{
+	volatile uint8_t *port = LCD_DATA_ADDR;
+
+	bus_begin();
+	*LCD_CMD_ADDR = c;
+	bus_settle();
+	(void)*port;		// dummy
+	for (uint32_t i = 0; i < n; i++) {
+		out[i] = *port;
+	}
+	bus_end();
+}
+
+static void read_panel_id(void)
+{
+	uint32_t btr = FSMC_Bank1->BTCR[1];
+
+	FSMC_Bank1->BTCR[1] = BTR_READ;
+	read_reg(0x04, panel_id.id, 3);
+	for (uint32_t i = 0; i < 3; i++) {
+		read_reg((uint8_t)(0xDA + i), &panel_id.id_reg[i], 1);
+	}
+	FSMC_Bank1->BTCR[1] = btr;
+	panel_id.id_read = true;
+}
 
 // ---- Backlight: TIM8 CH1 PWM on PC6 (AF3), 1 kHz, 100 steps ----
 
@@ -178,6 +214,26 @@ static void init(void)
 	stm32_gpio_clock(GPIOE);
 	fsmc_init();
 	bl_init();
+
+	// The IDs straight after a hardware reset, before any controller's init has run
+	PIN_WRITE(PIN_LCD_RST, false);
+	hal_delay_ms(20);
+	PIN_WRITE(PIN_LCD_RST, true);
+	hal_delay_ms(120);
+	read_panel_id();
+
+	uint8_t raw;
+	if (stm32_spi_flash_read_security(PANEL_SECREG, PANEL_OFFSET, &raw, 1)) {
+		panel_raw = raw;
+	}
+	md380_panel_t found = md380_panel_detect(panel_raw, panel_id.id);
+	panel.type = found.type;
+	panel_id.controller = found.controller;
+	panel_id.source = found.source;
+#ifdef MD380_PANEL_TYPE
+	panel.type = MD380_PANEL_TYPE;
+	panel_id.source = "build";
+#endif
 	st7735_init(&panel);
 	ready = true;
 }
@@ -190,6 +246,13 @@ static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t
 	st7735_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
 }
 
+static void panel_info(hal_display_panel_t *p)
+{
+	*p = panel_id;
+	p->factory = panel_raw;
+	p->type = panel.type;
+}
+
 const hal_display_t md380_display = {
 	.inset_top = CONFIG_DISPLAY_INSET_TOP, .inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
 	.inset_left = CONFIG_DISPLAY_INSET_LEFT, .inset_right = CONFIG_DISPLAY_INSET_RIGHT,
@@ -199,4 +262,5 @@ const hal_display_t md380_display = {
 	.init = init,
 	.flush_indexed = flush,
 	.set_backlight = set_backlight,
+	.panel = panel_info,
 };

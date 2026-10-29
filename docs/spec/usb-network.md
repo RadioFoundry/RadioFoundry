@@ -45,9 +45,12 @@ adapter (`pid_network`), with their own descriptors. Switching drops the D+ pull
 ## 2. Frames
 
 TinyUSB's NCM class (NTB16): OUT NTBs up to 2048 bytes, IN NTBs one datagram each. Frames from the host are copied in
-the USB task into a ring of 4 frames of at most 600 bytes (the gateway's limit); longer frames and frames arriving
-while the ring is full are dropped and counted (`usb_ncm_stats_t`), never held, so the class driver's buffer is free
-at once. One frame to the host is in flight at a time; a second send reports busy and the caller retries. The class
+the USB task into a ring of 4 slots (3 frames waiting) of at most 600 bytes (the gateway's limit); longer frames are
+dropped and counted (`usb_ncm_stats_t`). A frame that finds the ring full is held: the receive callback refuses it,
+the class driver keeps it and its NTB (and takes nothing more from the host meanwhile: USB flow control), and gives it
+again once the consumer frees a slot and asks for a renew (`usbNcmReceive`, with `usbNcmTick` as a backstop). Hosts
+pack back-to-back frames into one NTB (Linux does, macOS too in a burst); dropping them lost all but the first 3 of a
+burst. One frame to the host is in flight at a time; a second send reports busy and the caller retries. The class
 driver is touched only from the USB task (`usbd_defer_func`). The interface reaches the core as `board_t.netif`
 (`hal/hal_netif.h`).
 
@@ -98,9 +101,10 @@ mode can replace the link pair with a fixed one (5.3).
 - Debug link view, section `hotspot`: `usb.network usb.net_up usb.boot_network net.passthrough net.passthrough_active
   net.fixed_link net.link_ip net.link_in_force net.host_ip net.radio_ip net.frames_in net.to_air net.to_air_refused
   net.packets_air net.packets_up net.packets_dropped net.air_sent net.air_busy net.air_dropped net.air_failed
-  net.air_full`; the queue's depth, chaining and the guard are in the `air` section ([debuglink.md](debuglink.md)); the
+  net.air_full`; section `net_link`: the MTUs `net.mtu net.air_mtu` and their drops `net.air_too_big net.frag_needed
+  net.up_too_big` (3.2), with PPP built `ppp.mru ppp.peer_mru` ([ppp.md](ppp.md) 2); the queue's depth, chaining and the guard are in the `air` section ([debuglink.md](debuglink.md)); the
   compression and confirmed delivery counters are in the `dmr_ip` section (`dmr-data.md` 12.5), the radio's own
-  services' in the `net` section.
+  services' in the `net` and `net_svc` sections.
 - Test hook: the debug link's DMR_DATA IP_SEND hands a UDP datagram to `ipGatewayIPToAir`, the same path as a datagram
   from the host, without switching USB (`tests/hil/test_dmr_ip.py`).
 
@@ -160,6 +164,35 @@ packet that goes round a loop of gateway radios runs out. One with TTL 0 is drop
 A packet to our DMR ID whose IP destination is not our ID's address is never taken by the radio's own services (TMS,
 ARS, LRRP, text, SNMP): it goes to the host only.
 
+### 3.2 MTUs
+
+| MTU | Value | What sets it | How the host learns it |
+|---|---|---|---|
+| Link | 586 (`IPGW_LINK_MTU`) | the gateway's 600-octet frames (`IPGW_MAX_FRAME`) less the Ethernet header | DHCP option 26 in the OFFER and ACK; PPP: the LCP MRU, 584 ([ppp.md](ppp.md) 2) |
+| Air | 596 (`IPGW_AIR_MTU` = `DMR_DATA_IP_MTU`) | one transmission ([dmr-data.md](dmr-data.md) 12.8) | it needn't: not below the link's |
+
+- The link MTU covers everything the gateway passes: the radio's own services (TFTP's 512-octet blocks are 544 octets
+  of IP, [tftp.md](tftp.md)), the host's own address and the air. A frame longer than 600 octets is dropped at USB
+  before the gateway sees it. The NCM descriptor's maximum segment size stays at its 1514 default; DHCP gives the
+  real figure.
+- The air MTU is not below the link's (a build-time assert in `ipGateway.c`), so every host packet for the air goes in
+  one transmission, confirmed or not, with the header it gets on air (SAP 3 or SAP 4, or none for the raw port): the
+  user data on air is never longer than the IPv4 packet. The host needs no path MTU discovery to reach other radios.
+- The gateway still measures each host packet for the air (`ipGatewayAirLength`) against `IPGW_AIR_MTU`, for a build
+  whose air is narrower than its link. None is on a radio: `net.air_too_big` and `net.frag_needed` stay 0. Such a
+  packet would be dropped before the air queue and counted (`net.air_too_big`); with DF set, the gateway sends an ICMP
+  type 3 code 4 from the radio's address to the sender, the air MTU as the next-hop MTU, quoting the IP header and the
+  first 8 octets (`net.frag_needed`); DF clear, no ICMP (code 4 is defined only for DF, RFC 1191); none for an ICMP
+  message other than an echo or echo reply, or for a multicast or broadcast destination (RFC 1122 3.2.2). The host
+  test `ipGatewayTestAir440` builds the gateway with `IPGW_AIR_MTU=440` and runs all of it.
+- Linux keeps no path MTU below `net.ipv4.route.min_pmtu` (552 by default): an air MTU below that would not hold on a
+  Linux host. One reason the air MTU follows the link's.
+- From the air, the receiver takes up to 608 octets of user data (another make's radio may send that much). What is
+  longer than the link as IPv4 is dropped and counted (`net.up_too_big`). There is no ICMP: the sender is on air.
+- IP fragments from the host are dropped, without an ICMP.
+- PPP shares the gateway's input (`ipGatewayEthernetIn`): the same holds there.
+- Built with `CONFIG_DMR_IP_GATEWAY`; nothing of it without the gateway.
+
 ## 4. Tests
 
 - Host: `tests/host/hostlinkNetTest.c` (the gateway with a fake interface and fake air ops: unicast, multicast and raw
@@ -169,13 +202,16 @@ ARS, LRRP, text, SNMP): it goes to the host only.
   service has the packet, a busy service retried, the 2 s give-up, the packet hook, the off-net destination and TTL
   through the queue, a packet to our ID for another address passed to the host),
   and the gateway's own `ipGatewayTest*` with pcaps checked by tshark (`testOffNet`: the routing and addresses of
-  3.1). Control station mode: section 5.6.
+  3.1; `testDHCP`: option 26; `testAirMtu`: the air MTU of 3.2: the longest frame to the air whole with SAP 3,
+  SAP 4, the raw port and ICMP echo, nothing back; in `ipGatewayTestAir440`, the ICMP replies and their checksums, DF
+  clear, multicast, an ICMP error not answered). Control station mode: section 5.6.
 - HIL: `tests/hil/test_usb_network.py` (`--allow-usb-switch`). `tests/hil/test_usb_network_services.py` runs the host
   port's protocols over UDP 3334: the split duplex extension (protocol, and the RX half's labels against a bench call
   with `--allow-rf --allow-service-stop`) and the KISS TNC (TNC mode, a host position from SetHardware 'N'). All pass
   on 4a9c002. One protocol at a time: the radio answers the sender of the last frame, so a tool closes its socket
   before another protocol's tool opens one. `tests/hil/test_dmr_ip.py` (on air, the bench modem decoding; its last
-  test sends from the host over the USB network). The radio's own services: `tests/hil/test_tcp_services.py`,
+  test sends from the host over the USB network). `tests/hil/test_dmr_ip_burst.py`: bursts each way and the MTUs of
+  3.2 (the view keys, option 26 on the host, the largest datagram each way, the ICMP reply on a raw socket). The radio's own services: `tests/hil/test_tcp_services.py`,
   `tests/hil/test_net_services.py` (`mdns.md` 5, `tftp.md` 6).
 
 ## 5. Control station mode

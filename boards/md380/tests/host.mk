@@ -13,5 +13,11 @@ md380RfbusTest: $(HERE)md380RfbusTest.c $(HERE)../rfbus_md380.c $(ROOT)/drivers/
                 $(wildcard $(ROOT)/drivers/modem/hrc5000/*.h $(ROOT)/drivers/modem/hrc_common/*.h)
 	$(CC) $(CFLAGS) -I$(dir $<)stub -I$(dir $<).. -I$(ROOT)/hal -Wshadow -o $@ $(filter %.c,$^)
 
-run-boards:: md380RfbusTest
+# The panel type from the controller's ID and the factory byte (panel_md380.c)
+TESTS   += md380PanelTest
+md380PanelTest: $(HERE)md380PanelTest.c $(HERE)../panel_md380.c $(HERE)../panel_md380.h
+	$(CC) $(CFLAGS) -I$(dir $<).. -o $@ $(filter %.c,$^)
+
+run-boards:: md380RfbusTest md380PanelTest
 	./md380RfbusTest
+	./md380PanelTest

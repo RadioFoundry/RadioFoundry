@@ -90,3 +90,31 @@ test("backup: unticking the program memory says such a backup can't restore the 
 	for (const f of progmem.listeners.change) f({ target: progmem });
 	assert.equal(note.hidden, false, "shown once it is unticked");
 });
+
+test("backup: a backup made through an untried stock build offers its program memory read with a report", async (t) => {
+	// what the run touches of the browser: the leave warning and the backup's download
+	globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
+	globalThis.location ??= { origin: "http://test" };
+	const made = URL.createObjectURL;
+	URL.createObjectURL = () => "blob:test";
+	El.prototype.remove ??= function () {};
+	t.after(() => { URL.createObjectURL = made; });
+	const forwards = [];
+	const state = { radio, task: "backup", forward: (b) => forwards.push(b), data: { fb, site: { git: "test" } } };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, noteReadout: async () => {},
+		flashStarted: () => 0, flashFinished() {}, errorText: (e) => e.message });
+	const progmem = new Uint8Array(fb.c7000.progmem_size).fill(0xFF);
+	state.c7 = { log: { add() {}, el: new El("div") }, stream: null, size: {}, stopSizing: true, stockUntried: { version: "909E.DBB.EARSAB.018" },
+		stub: { size: {}, sums: async () => { throw new Error("no radio"); }, dump: async () => progmem.slice(), ledSequence: async () => {} } };
+	const box = c7ui.backupView();
+	const all = (el) => [el, ...(el.children || []).filter((c) => c instanceof El).flatMap(all)];
+	// the program memory only: the other parts need a radio
+	for (const cb of all(box).filter((e) => e.tagName === "INPUT" && e.attrs.type === "checkbox").slice(1)) {
+		cb.checked = false;
+		for (const f of cb.listeners.change || []) f({ target: cb });
+	}
+	forwards.at(-1).click();
+	for (let i = 0; i < 100 && !state.stockRead; i++) await sleep(20);
+	assert.equal(state.stockRead?.name, `program-memory-${radio.id}-909E.DBB.EARSAB.018.bin`);
+	assert.match(box.textContent, /Send the program memory read/);
+});

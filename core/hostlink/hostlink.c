@@ -47,10 +47,10 @@
 
 #define HOSTLINK_TASK_PRIORITY	3	// with input and USB; above the UI (core/app/app.c task table)
 #if CONFIG_DEBUGLINK
-// words: MMDVM frames on the stack; debug link replies format diagnostics lines. 701: the deepest chain (the web
-// view's debug link section > the DMR data view, with the air queue inlined into the task) reads 2544 bytes with the
-// macOS toolchain; the CI's reads up to 16 deeper, and stack-check.md's overhead and margin come on top, 4 to spare
-#define HOSTLINK_TASK_STACK	725
+// words: MMDVM frames on the stack; debug link replies format diagnostics lines. The deepest chain (the web view's
+// debug link section > the DMR data view, with the air queue inlined into the task) reads 2568 bytes with the macOS
+// toolchain; the CI's reads up to 16 deeper, and stack-check.md's overhead and margin come on top, 4 to spare
+#define HOSTLINK_TASK_STACK	731
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
 #endif

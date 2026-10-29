@@ -36,6 +36,8 @@ import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
 import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
+import { variantWarning, variantVerdict } from "./iapui.js";
+import { groups as variantGroups } from "./variant.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
 import { APP_ENTRY } from "./iap.js";
 import { slotBytes, locateCodec } from "./c7000.js";
@@ -284,7 +286,18 @@ function flashStarted(what) {
 	const sent = fetch(new URL("flashes", API), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ id, tool: "web", tool_version: S.data.site.version || "", ...stockLog(), ...(S.adapter ? { adapter: S.adapter } : {}), ...what }) }).catch(() => {});
 	S.lastFlashId = id;
-	return { id, sent };
+	return (S.lastStarted = { id, sent, marked: new Set() });
+}
+
+// A milestone of the use: first_byte, last_byte (data on the radio) or verify (the check after, with its outcome). Each is
+// sent once; fire and forget like the rest
+async function flashMark(started, event, outcome = null) {
+	if (!started || started.marked.has(event)) return;
+	started.marked.add(event);
+	diag.note("flash " + event, outcome);
+	await started.sent;
+	fetch(new URL(`flashes/${started.id}/events`, API), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ event, ...(outcome ? { result: outcome.ok ? "success" : "fail", reason: (outcome.reason || "").slice(0, 300) } : {}) }) }).catch(() => {});
 }
 
 async function flashFinished(started, error = null) {
@@ -638,6 +651,8 @@ function render() {
 	if (VERSION_REF && S.task === "install") app.append(versionBanner());
 	else if (S.task === "install" && S.step === 0) app.append(...[betaNotice()].filter(Boolean));
 	if (S.radio && S.radio.status !== "supported" && S.step > 0) app.append(prereleaseNotice());
+	// a hardware variant in development, once the page read it or the user picked it (board.toml [hardware] variants)
+	if (S.radio && S.variant && S.step > 0) app.append(...[variantWarning(variantVerdict(S, S.radio.flash.board))].filter(Boolean));
 	// One bar of buttons under every step: back, start over, and the step's own next action, which the view sets (and
 	// changes when it redraws) through S.forward. The main action is always there, at the right; a step never puts a
 	// second one in its panel. S.forward also takes [alternative, ..., main].
@@ -738,7 +753,8 @@ function radioView() {
 			onclick: () => { selectRadio(r); next(); } },
 		h("img", { src: ROOT + r.image, alt: "" }), h("strong", {}, r.name),
 		h("span", { class: "small muted" }, r.also.join(", ")),
-		h("span", { class: "small" }, ok ? t(`status.${r.status}`) : t("flash.radio.not_yet")));
+		h("span", { class: "small" }, ok ? t(`status.${r.status}`) : t("flash.radio.not_yet")),
+		...variantLines(r));
 	}));
 	const detect = button(t("flash.radio.detect"), async () => {
 		status.replaceChildren(h("p", { class: "muted" }, t("flash.now.connecting")));
@@ -765,6 +781,14 @@ function radioView() {
 		S.task === "help" ? null : h("p", { class: "small muted detect" }, t("flash.radio.detect_hint"), " ", detect), status);
 }
 
+// A radio card's hardware variants (board.toml [hardware] variants): which codes are supported, which in development,
+// which not yet; nothing for a radio that lists none
+function variantLines(r) {
+	const g = variantGroups(r);
+	const line = (key, vs) => (vs.length ? h("span", { class: "small muted" }, t(key, { codes: vs.map((v) => v.code).join(", ") })) : null);
+	return [line("flash.radio.variants_supported", g.supported), line("flash.radio.variants_dev", g.dev), line("flash.radio.variants_none", g.none)].filter(Boolean);
+}
+
 function selectRadio(r) {
 	if (S.radio && S.radio.id !== r.id) Promise.resolve(backend().release?.()).then(() => { S.c7 = null; });
 	S.radio = r;
@@ -773,6 +797,8 @@ function selectRadio(r) {
 	S.selection.useVariant("full");
 	S.firmware = null;
 	S.buildOptions = {};
+	S.variant = null;	// the hardware variant is read from the radio again
+	S.stockRead = null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1587,7 +1613,11 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 			try {
 				await dropSerial();
 				started = flashStarted(what);
-				await new Dfu(transport, { log: log.add }).run(plan, S.key, (d, total) => prog.set(d, total, t("flash.write.writing")));
+				await new Dfu(transport, { log: log.add }).run(plan, S.key, (d, total) => {
+					if (d > 0) flashMark(started, "first_byte");
+					prog.set(d, total, t("flash.write.writing"));
+				});
+				flashMark(started, "last_byte");
 				flashFinished(started);
 				log.add(t("flash.write.finished"));
 				await transport.close?.();
@@ -1668,7 +1698,11 @@ function stubPanel(fallback, onDone, what) {
 					if (!S.sim) download(file, sec.kept);
 					log.add(t("flash.f4.kept", { sector: sec.index, file }));
 				},
-				progress: (done, todo) => prog.set(done, todo, t("flash.f4.writing", { done, todo })) });
+				progress: (done, todo) => {
+					if (done > 0) flashMark(started, "first_byte");
+					prog.set(done, todo, t("flash.f4.writing", { done, todo }));
+				} });
+			flashMark(started, "last_byte");
 			prog.set(1, 1, t("flash.c7.write.verified"));
 			S.stubResult = t(r.written ? "flash.f4.ok" : "flash.f4.same", r);
 			log.add(S.stubResult);
@@ -1755,6 +1789,7 @@ function doneView() {
 			// the loader route never touches the codec, so it is there afterwards as it was before
 			const good = !(S.decision ? S.decision.expectCodec : true) || p.codec === S.board.codec.id;
 			diag.note(...crumbs.verify(p, good));
+			flashMark(S.lastStarted, "verify", { ok: good, reason: good ? "" : `codec ${p.codec || "none"}` });
 			S.reportResult = good ? "problem" : "failed";
 			intro.replaceChildren();	// "the radio restarts" is over: what it says now replaces it
 			status.replaceChildren(h("dl", { class: "kv-list" },
@@ -1773,6 +1808,7 @@ function doneView() {
 		} catch (e) {
 			await dropSerial();
 			check.disabled = false;
+			flashMark(S.lastStarted, "verify", { ok: false, reason: String(e?.message || e) });
 			diag.note("verify failed", { kind: e?.params?.kind || null, message: String(e?.message || e).slice(0, 120) });
 			S.reportResult = "failed";
 			status.replaceChildren(connectError(e), connectHelp(e, "flash.done.openfw_next"), helpLink());
@@ -2069,6 +2105,9 @@ function reportAttachments() {
 		label: t("report.attach_stock", { name: S.picked.name }), data: () => S.picked.data });
 	if (S.readoutBytes) out.push({ name: "internal-flash.bin", kind: "readout", size: S.readoutBytes.length, checked: true,
 		label: t("report.attach_readout"), data: () => S.readoutBytes });
+	// the program memory read through a stock build the page had not loaded its stub through before (c7000ui.js)
+	if (S.stockRead?.data) out.push({ name: S.stockRead.name, kind: "stock", size: S.stockRead.data.length, checked: true,
+		label: t("report.attach_stock_read", { name: S.stockRead.name }), data: () => S.stockRead.data });
 	if (S.lastBackup?.data) out.push({ name: S.lastBackup.name, kind: "backup", size: S.lastBackup.data.length, checked: true,
 		label: t("report.attach_backup", { name: S.lastBackup.name }), data: () => S.lastBackup.data });
 	return out;
@@ -2293,7 +2332,7 @@ async function main() {
 		app.replaceChildren(notice(t("flash.err.load"), "bad"), reportLine());
 		return;
 	}
-	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
+	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, flashMark, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
 	// #sim=<board>[-stock|-romfail|-slowcable|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
 	// open firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file

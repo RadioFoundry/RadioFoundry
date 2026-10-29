@@ -144,15 +144,19 @@ static void local_udp(bool from_air, uint32_t src, uint16_t port, uint32_t dst, 
 static bool service_busy;
 static dmrBurst_t svc_bursts[DMR_DATA_MAX_BURSTS];
 static int svc_count, svc_lists;
-bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count)
+int dmrDataServiceSendShortData(bool group, uint32_t dst, uint32_t src, const uint8_t *data, int length, int preambles)
 {
 	if (service_busy) {
-		return false;
+		return 0;
 	}
-	memcpy(svc_bursts, bursts, (size_t)count * sizeof(dmrBurst_t));
+	int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, group, dst, src, data, length, DT_RATE_12_DATA,
+				       preambles, svc_bursts, DMR_DATA_MAX_BURSTS);
+	if (count <= 0) {
+		return -1;
+	}
 	svc_count = count;
 	svc_lists++;
-	return true;
+	return 1;
 }
 
 // The service's IP path: built by the codec as the service builds an unconfirmed packet (the compression setting

@@ -33,8 +33,19 @@
 
 // Largest burst info field: Rate 1 data is 24 bytes, Rate 3/4 is 18, everything else is 12
 #define DMR_BURST_PAYLOAD_MAX		24
-#define DMR_DATA_MAX_BURSTS			40
-#define DMR_DATA_MAX_PACKET			480			// 40 Rate 1/2 blocks
+
+// One transmission's bursts and one packet's octets, sized for the air MTU below (docs/spec/dmr-data.md 12.8)
+#define DMR_DATA_MAX_BURSTS			64			// confirmed at the air MTU: preambles, header, 60 blocks, terminator
+#define DMR_DATA_MAX_PACKET			612			// 51 Rate 1/2 blocks
+#define DMR_DATA_RATE12_OCTETS		12			// a Rate 1/2 block's octets (unconfirmed)
+
+// The air MTU: the longest IP packet (user data of one packet: the IPv4 header and all, or the compressed header and
+// the UDP payload) that goes in one transmission of ours, confirmed or not. Confirmed delivery sets it: 60 blocks of
+// 10 octets less the CRC-32 (unconfirmed, 612 octets of blocks would carry 608). Not below the USB link's MTU (IPGW_LINK_MTU, 586), so every packet the host
+// sends fits (docs/spec/usb-network.md 3.2). Unconfirmed it takes 50 blocks after DMR_DATA_IP_PREAMBLES preamble CSBKs
+// and the header, 53 bursts; confirmed (10 octets a block) 60 blocks and a terminator, 64
+#define DMR_DATA_IP_PREAMBLES		2
+#define DMR_DATA_IP_MTU				(DMR_DATA_MAX_PACKET - 16)
 
 // Burst flags
 #define DMR_BURST_FLAG_MCU_CRC		0x01		// TX: payload already holds its CRC / mask, the HR-C6000 must send it verbatim
