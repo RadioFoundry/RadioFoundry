@@ -669,7 +669,7 @@ class Site:
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
 			   '<script type="module" src="{{root}}static/js/flasher/app.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "flash/index.html", self.t(lang, "flash.title"), self.tpl.render("flash", {}, lang),
-			  "flash", scripts=scripts, nav="flash", footer=self.tpl.partial("flash_log", {}, lang) + self.reports_footer(lang))
+			  "flash", scripts=scripts, nav="flash", footer=self.tpl.partial("flash_log", {"errors": self.errors_paragraph(lang)}, lang))
 
 	def tools_page(self, lang):
 		strings = json.dumps(self.i18n.subset(lang, ("tools.", "flash.convert.")),
@@ -685,6 +685,10 @@ class Site:
 			   '<script type="module" src="{{root}}static/js/editor/app.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "codeplug/index.html", self.t(lang, "editor.title"), self.tpl.render("codeplug", {}, lang),
 			  "codeplug", description=self.t(lang, "editor.lead"), scripts=scripts, nav="codeplug", footer=self.reports_footer(lang))
+
+	def errors_paragraph(self, lang):
+		"""The error tracker's note, folded into the flasher's one privacy note: only when the build has an address."""
+		return "<p>%s</p>" % html.escape(self.t(lang, "report.privacy_text")) if self.sentry_dsn else ""
 
 	def reports_footer(self, lang):
 		"""The privacy note on automatic error reports, on the pages that send them: only when the build has an address."""

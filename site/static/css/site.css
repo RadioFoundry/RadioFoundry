@@ -297,6 +297,9 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .flash-log { margin-bottom: var(--space-3); color: var(--muted); }
 .flash-log p { margin: 0; max-width: 90ch; }
 .flash-log summary { cursor: pointer; }
+/* one quiet line under the help cards: its links read as the text does */
+.flash-log { font-size: var(--text-sm); margin: 0 auto var(--space-4); }
+.flash-log a { color: inherit; }
 .stepper { display: flex; gap: var(--space-2); list-style: none; padding: 0; margin: 0; flex-wrap: wrap; counter-reset: step; }
 .stepper li { counter-increment: step; display: flex; align-items: center; gap: var(--space-2); color: var(--muted); font-size: var(--text-sm); font-weight: 600; padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1); border-radius: 999px; background: var(--surface); border: 1px solid var(--border); }
 .stepper li::before { content: counter(step); width: 1.35rem; height: 1.35rem; border-radius: 50%; display: inline-grid; place-items: center; background: var(--surface-2); color: var(--muted); }
@@ -357,6 +360,11 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 @media (max-width: 520px) { .kv-list { grid-template-columns: 1fr; gap: 0; } .kv-list dd { margin-bottom: var(--space-2); } }
 .progress { width: 100%; height: 14px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--accent); width: 0; transition: width 0.2s; }
+/* work under way: a light band slides along the filled part, so a slow step still looks alive */
+.progress.active > span { background-image: linear-gradient(90deg, transparent 0, rgb(255 255 255 / 35%) 50%, transparent 100%); background-size: 40% 100%; background-repeat: no-repeat; animation: progress-sweep 1.2s linear infinite; }
+@keyframes progress-sweep { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+@media (prefers-reduced-motion: reduce) { .progress.active > span { animation: none; } }
+.progress-wait { display: block; }
 .log { background: var(--code-bg); border-radius: var(--radius-sm); padding: var(--space-3); font-family: var(--font-mono); font-size: 0.8rem; max-height: 260px; overflow-y: auto; white-space: pre-wrap; margin: 0; }
 .plan td, .plan th { font-family: var(--font-mono); font-size: 0.8rem; white-space: nowrap; }
 .plan .write { color: var(--accent); font-weight: 700; }
