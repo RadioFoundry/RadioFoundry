@@ -49,8 +49,11 @@ jobs:
           HEAD: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -eu
-          # a pull request's own head commit; a run for an older commit has nothing to post once a newer one exists
-          n=$(gh api "repos/$REPO/commits/$HEAD/pulls" --jq '[.[] | select(.state == "open")][0].number // empty')
+          # a pull request's own head commit; a run for an older commit has nothing to post once a newer one exists.
+          # The open pull requests are searched by head commit: commits/{sha}/pulls and workflow_run.pull_requests are
+          # both empty for a commit pushed to a fork.
+          n=$(gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" \
+                --jq ".[] | select(.head.sha == \"$HEAD\") | .number" | head -n 1)
           if [ -z "$n" ]; then
             echo "::notice::no open pull request for $HEAD; nothing to post"
             echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
