@@ -759,15 +759,17 @@ copies it to the board's codec window at the top of RAM at boot and moves the ad
 ### 8.1 Vendor firmware files
 
 The 2024-05-09 build is the first a PRO can run (1), and older images must never be loaded on one, so no profile exists
-for them. Three 018 files are supported, all plain images linked at 0x0300C000 (no header, no container, no key), and
-the 020 build from a read of the radio's program flash. The three 018 files carry the same codec code, built from the
-same library, with different literal pool words.
+for loading them. The tool only carves the codec out of an older file and never writes the old image, so the
+2023-07-06 file is a codec source (8.4). Four 018 files are supported, all plain images linked at 0x0300C000 (no header,
+no container, no key), and the 020 build from a read of the radio's program flash. The four 018 files carry the same
+codec code, built from the same library, with different literal pool words.
 
 | File | Size | sha256 | Profile id |
 |---|---|---|---|
 | `DB25-D PRO 909E.Dx.EARSAB.018_2025-01-21.bin` | 846,700 | `341536cbac0c1b2471f8198ebc456946e5fe026d96d153df14d6aa5566304f8b` | `db25d-2501` |
 | `DB25-D PRO 909E.Dx.EARSAB.018_2024-09-23.bin` | 845,900 | `f2a4b214720b971b58cdadcc53d44695e1462b75296afc41f2a0b53a704d36b4` | `db25d-2409` |
 | 2024-05-09 build (`909E.D6x.EARSAB.018`) | 843,944 | `9e199f54cd6545d153d39542ca5be3ac1076ee215eb93ca630a83cbdbbff4606` | `db25d-2405` |
+| `DB25-D_909E.Dx.EARSAB.018_2023-07-06.bin` (untested on a radio) | 808,292 | `03f3ddfe1c4117ddf4ed64eaa1f72cd24783d5d0de8933ce53651e02b4fe2e68` | `db25d-2307` |
 | 909E.DBB.EARSAB.020, a 1 MB program flash read (`stub/stubtool.py --progmem`) | 1,048,576 | none: found by the codec's own hashes | `db25d-020` |
 
 The 020 build carries a different compile of the codec, and its profile works from a read of the radio's program flash. A radio can run any supported codec whatever its own firmware version, because
@@ -792,15 +794,15 @@ a supported file; the backup is not affected.
 
 ### 8.2 Where the codec is
 
-| | 2025-01-21 | 2024-09-23 | 2024-05-09 |
-|---|---|---|---|
-| Code: file offset / flash address | 0xB5C58 / 0x030C1C58 | 0xB592C / 0x030C192C | 0xB5130 / 0x030C1130 |
-| Code: length | 0x12B20 (76,576) | same | same |
-| Code: run address (RAM) | 0x1CEB0 | 0x1CEB0 | 0x1CEB0 |
-| Tables: flash address | 0x0307A8EC | 0x0307A614 | 0x0307A150 |
-| Tables: length | 0x2D50 (11,600) | same | same |
-| Tables: run address (modem SRAM) | 0x180014AC | 0x180014B4 | 0x180014B0 |
-| First two code words | 0x152514D8, 0x74C776CD | same | same |
+| | 2025-01-21 | 2024-09-23 | 2024-05-09 | 2023-07-06 |
+|---|---|---|---|---|
+| Code: file offset / flash address | 0xB5C58 / 0x030C1C58 | 0xB592C / 0x030C192C | 0xB5130 / 0x030C1130 | 0xAB9D4 / 0x030B79D4 |
+| Code: length | 0x12B20 (76,576) | same | same | same |
+| Code: run address (RAM) | 0x1CEB0 | 0x1CEB0 | 0x1CEB0 | 0x1795C |
+| Tables: flash address | 0x0307A8EC | 0x0307A614 | 0x0307A150 | 0x030760E4 |
+| Tables: length | 0x2D50 (11,600) | same | same | same |
+| Tables: run address (modem SRAM) | 0x180014AC | 0x180014B4 | 0x180014B0 | 0x180010B4 |
+| First two code words | 0x152514D8, 0x74C776CD | same | same | same |
 | sha256 of the carved tables | `e1e4358224...` | same | same |
 
 Layout facts:
@@ -830,7 +832,41 @@ would lie inside RadioFoundry's RAM, is no obstacle.
 | Slot | 0x030E8000..0x03100000 (96 KB; 88,316 bytes used for 018, 89,912 for 020): the version 2 header of `platform/hrc7000/codec_slot.h`, the code and tables as the vendor firmware has them, and the relocation list. `tools/hrc7000_codec.py --board db25d --stock FILE` writes it from a vendor firmware file or a program flash read |
 | Flash | The merged image goes where `_install.bin` goes (the loader's update mode or `stubtool --write-app`, 7): it is the stage, the application and the slot in one file. The loader writes as far as the image reaches, about 1 MB, so the first flash takes a while; `stubtool --write-app` writes only the sectors that changed |
 | Check | The debug link's VERSION reports `codec=db25d-2501` (or `-2409`, `-2405`, `-020`) when the slot is valid, `absent` when it's built with `CONFIG_DMR=y` and the slot is missing, damaged or version 1 |
-| RAM | `CONFIG_DMR=y` links `boards/db25d/memory.ld`: one region for RadioFoundry, 0x10000..0x44E00 (216,576 B: the vectors, the slot engine, the core's CPU state, data, bss with the RTOS heap, the start-up stack), and the codec window 0x44E00..0x58000 (78,336 B) at the top. The tables go to modem SRAM 0x180014AC..0x18004360, which the script leaves out. The runtime stub window is 0x45000..0x58000 (inside the codec window, after the codec is parked; `HRC_STUB_BASE` in `config.mk`). The universal stub loads there and copies itself to 0x30000, which is RadioFoundry's RAM and dead after the jump (7). Without DMR the span is 0x30000 (`boards/db25d/fm_only.ld`) |
+| RAM | `CONFIG_DMR=y` links `boards/db25d/memory.ld`: one region for RadioFoundry, 0x10000..0x44E00 (216,576 B: the vectors, the slot engine, the core's CPU state, data, bss with the RTOS heap, the start-up stack), and the codec window 0x44E00..0x58000 (78,336 B) at the top. The tables go to modem SRAM 0x180010B4..0x18004360, which the script leaves out. The runtime stub window is 0x45000..0x58000 (inside the codec window, after the codec is parked; `HRC_STUB_BASE` in `config.mk`). The universal stub loads there and copies itself to 0x30000, which is RadioFoundry's RAM and dead after the jump (7). Without DMR the span is 0x30000 (`boards/db25d/fm_only.ld`) |
+
+### 8.4 Codec data stays where stock put it (open item)
+
+The merge moves the codec's code into RadioFoundry's codec window, but not its tables. They are copied to the modem
+SRAM address the stock build linked them to, because the code's literal pools hold 58 absolute table addresses and
+the slot's relocation list rewrites only the three code addresses ([codec-placement.md](codec-placement.md)). So the
+board reserves the union of its builds' table windows (`__codec_tab_lo..hi` in `boards/db25d/memory.ld`), and the
+firmware refuses a slot whose tables lie outside it.
+
+| Build | Tables run at | Window start |
+|---|---|---|
+| 018 2025-01-21, 2024-09-23, 2024-05-09, 020 | 0x180014AC..0x18001610 | 0x180014AC |
+| 018 2023-07-06 | 0x180010B4 | 0x180010B4 (lowered for it) |
+
+Gotcha: a build whose tables run below the window can't be added by writing a map and a profile. The map is fine and
+`hrc7000_codec.py --self-test` fails ("tables inside the table window"). The window start has to drop to the build's
+table address first. That reserves more modem SRAM for every DB25-D image. Nothing in the tree uses
+0x180010B4..0x180014AC (the microphone PCM buffers are at 0x18000000, the crash record at the top), but stock keeps its
+console state at 0x18000840 and up, so check a new window against the build's `ram` and heap addresses in 7.
+
+The 2022-11-23 and 2022-10-25 C7000 Ham files carry 020's compile (entry offsets as 020, FEC init +0x1EB8, code
+78,308 bytes) with tables at 0x18001104 and 0x18001118. They are not supported: the same widening would cover them,
+but nothing has run their code and they are a different compile. A static map for each was made and is not in the
+repository. Their table window is 0x2D50 bytes, as in every build: a carve past the end had made it look longer.
+
+To look into later, moving the codec's data along with its code:
+
+* The maps already list the 69 `table_refs` sites per build and the objects and groups they point into, so the
+  rewrite is the code move's: add (board window start - build's table address) to each site and keep each group's
+  distance. With that the window could stay at 0x180014AC and every older build would fit.
+* The slot loader and `hrc7000_codec.py` apply `self_refs` only. They would need to apply `table_refs` too (the slot
+  header carries the tables' RAM address already, `tab_ram`).
+* Unknown: whether the HR_C7000 hardware or its ROM expects the tables at those modem SRAM addresses, or only stock put
+  them there. A voice TX and RX test on a radio with moved tables answers it. Until then the tables stay put.
 
 ## 9. How RadioFoundry uses it (`make BOARD=db25d`)
 
