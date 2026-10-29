@@ -16,7 +16,7 @@ import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
 import { stockVersion } from "../static/js/flasher/usmart.js";
-import { openVendorFile } from "../static/js/flasher/vendorfile.js";
+import { openVendorFile, whyNot, analysisCandidate } from "../static/js/flasher/vendorfile.js";
 import { vendorBundle, hasC7Backup, backupChoices } from "../static/js/flasher/c7000ui.js";
 import * as explain from "../static/js/flasher/explain.js";
 import * as crumbs from "../static/js/flasher/trail.js";
@@ -521,6 +521,13 @@ test("a codec from a stock file or a program memory backup", async () => {
 	await assert.rejects(c7.codecFromFile(new Uint8Array(1000), sim.c, "dm1801pro"), (e) => e.code === "not-vendor");
 	await assert.rejects(c7.codecFromFile(new Uint8Array(sim.progmem.length), sim.c, "dm1801pro"), (e) => e.code === "not-vendor");
 	assert.throws(() => c7.slotBytes({ ...sim.c, codec_maps: [] }, "dm1801pro", got), (e) => e.code === "unmapped");
+	// the same build in the radio, its codec without a map: the check step's analysis completes (the backup is saved) and
+	// names it a codec the page doesn't know, so the codec step asks for a stock file instead of failing the read
+	const unmapped = await c7.analyze(sim.progmem, { ...sim.c, codec_maps: [] }, "dm1801pro");
+	assert.equal(unmapped.firmware, "stock");
+	assert.equal(unmapped.codec, null);
+	assert.equal(unmapped.otherCodec, true);
+	assert.equal(await c7.decide(sim.c, "dm1801pro", { flashCodec: unmapped.codec }), null);
 	const slot = c7.slotBytes(sim.c, "dm1801pro", got);
 	assert.equal((await c7.decide(sim.c, "dm1801pro", { savedSlot: slot })).source, "browser");
 	// a codec slot that came with the user's firmware file has no name of its own: its text must not print an empty one
@@ -741,4 +748,57 @@ test("protected regions: the stub refuses a write over one, a restore leaves it 
 	assert.ok(equal(r.progmem.subarray(0x1F000, 0x20000), data.subarray(0x13000, 0x14000)));
 	await assert.rejects(s.writeCmd("q128", Uint8Array.of(0x60), "chip erase", 1000), /protected regions/);
 	await assert.rejects(s.writeCmd("q128", Uint8Array.of(0x20, 0x00, 0x7C, 0x00), "erase", 1000), /protected region/);
+});
+
+test("a program memory dump of this radio with no codec restores, but never gives a codec", async () => {
+	const id = Object.keys(C.boards).find((b) => C.boards[b].bootloader_id);
+	const radioInfo = { id, name: "Radio", flash: { board: id } };
+	const fb = json("flash-boards.json");
+	const dump = new Uint8Array(c7.totalSize(C, id)).fill(0xFF);
+	dump.set(new TextEncoder().encode(C.boards[id].bootloader_id), 0x100);
+	for (let i = C.app_start; i < C.app_start + 4096; i++) dump[i] = (i * 7) & 0xFF;
+	const opened = await openVendorFile("DM32_progmem_backup.bin", dump, fb, id);
+	assert.equal(opened.best?.match.kind, "progmem");
+	assert.equal(opened.best.match.board, id);
+	// the restore takes it as it is, and says nothing is known of its firmware
+	assert.equal(explain.pickProblem(opened, id, { need: "key" }), null);
+	const bundle = vendorBundle(radioInfo, opened.best, C);
+	assert.equal(bundle.meta.firmware_now.kind, "unknown");
+	assert.deepEqual(c7.restoreTarget(C, bundle.parts.get("c7000-progmem").data)[1], dump.subarray(C.app_start, C.app_end));
+	// the codec step explains it (a dump, not "not the manufacturer's file")
+	assert.equal(explain.pickProblem(opened, id).problem, "dump");
+	assert.match(opened.files[0].match.why, /no codec/);
+	// the notice offers it to the team for mapping (the backend takes a dump by its bootloader ID), as itself
+	assert.ok(explain.OFFER.has("dump"));
+	const offer = analysisCandidate(opened, fb, id);
+	assert.equal(offer?.reason, "progmem-dump");
+	assert.equal(offer.file.data, dump);
+	assert.equal(analysisCandidate(await openVendorFile("d.bin", dump, fb, Object.keys(C.boards).find((b) => b !== id)), fb, id), null);
+	// the log says what it was
+	const [, got] = crumbs.filePicked({ name: "d.bin", size: dump.length, sha256: "ab" }, opened.best);
+	assert.equal(got.match, "progmem");
+	assert.equal(got.board, id);
+	// another radio's bootloader, or a blank application area, is not one
+	const other = Object.keys(C.boards).find((b) => b !== id);
+	const asOther = await openVendorFile("d.bin", dump, fb, other);
+	assert.equal(asOther.best, null);
+	const blank = dump.slice();
+	blank.fill(0xFF, C.app_start, C.app_start + 4096);
+	const bo = await openVendorFile("d.bin", blank, fb, id);
+	assert.equal(bo.best, null);
+	assert.throws(() => vendorBundle(radioInfo, { path: "d.bin", data: blank, match: { kind: "key", board: id } }, C), (e) => e.code === "unmapped");
+});
+
+test("a pick nothing in which serves is logged with its problem and why, not as an empty record", async () => {
+	const id = Object.keys(C.boards)[0];
+	const fb = json("flash-boards.json");
+	const junk = new Uint8Array(5000).fill(7);
+	const opened = await openVendorFile("junk.bin", junk, fb, id);
+	assert.equal(opened.best, null);
+	const problem = explain.pickProblem(opened, id);
+	const [, rec] = crumbs.filePicked({ name: "junk.bin", size: junk.length, sha256: "cd" }, { problem, why: whyNot(opened) });
+	assert.equal(rec.problem, problem.problem);
+	assert.ok(rec.problem);
+	assert.ok(rec.why, "why the file was not taken");
+	assert.match(rec.id, /^problem:/);
 });

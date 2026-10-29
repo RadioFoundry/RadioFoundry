@@ -65,14 +65,62 @@ test("install done: a check still running when the user starts over draws nothin
 
 test("restore: a backup without the program memory (the calibration or the data memory alone) says so, offers no restore", () => {
 	const forwards = [];
+	let reset = 0;
 	const parts = new Map([["c7000-calibration", { what: "c7000-calibration", file: "calibration.bin", complete: true, addr: 0, data: new Uint8Array(16) }]]);
 	const state = { radio, task: "restore", forward: (b) => forwards.push(b), data: { fb },
 		bundle: { meta: { radio: { name: radio.name }, created: new Date().toISOString(), firmware_now: { kind: "stock" } }, parts } };
-	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {} });
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() { reset++; } });
 	state.c7 = { log: { add() {}, el: new El("div") }, stream: null };
 	const box = c7ui.restoreView();
 	assert.match(box.textContent, /no program memory/);
-	assert.deepEqual(forwards, [null], "no Restore button");
+	// what to do instead, in the notice and as the step's one action: no Restore button
+	assert.match(box.textContent, /manufacturer firmware file instead of this backup/);
+	assert.equal(forwards.length, 1);
+	assert.match(forwards[0].textContent, /Select a Firmware File/);
+	forwards[0].click();
+	assert.equal(reset, 1);
+});
+
+test("install: a write without a codec warns above the button; the write logs its range and that the bootloader is unchanged", async () => {
+	globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
+	if (!("classList" in El.prototype)) Object.defineProperty(El.prototype, "classList", { get() { return { add() {}, remove() {} }; } });
+	const C = fb.c7000;
+	const forwards = [];
+	const state = { radio, task: "install", forward: (b) => forwards.push(b), data: { fb }, fakeC7: {},
+		firmware: { image: Uint8Array.from({ length: 8192 }, (_, i) => (i * 7 + 1) & 0xFF), source: "test", manifest: { version: "t" } } };
+	const diag = await import("../static/js/diag.js");
+	diag.reset();
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, flashStarted: () => 0, flashFinished() {}, flashMark() {},
+		errorText: (e) => e.message, next() {} });
+	const boot = new Uint8Array(C.app_start).fill(0xA5);
+	let bootNow = boot;
+	const writes = [];
+	state.c7 = { log: { add() {}, el: new El("div") }, stream: null, decision: { mode: "none" }, analysis: { notRead: true },
+		stub: { attach: async () => true, dump: async () => bootNow.slice(), ledSequence: async () => {}, resetChip: async () => {},
+			writeProgram: async (data, start, { onSector }) => {
+				for (const a of [C.app_start, C.app_start + 4096]) { onSector(a, "todo"); onSector(a, "written"); writes.push(a); }
+				return { written: 2, same: 0 };
+			} } };
+	const box = c7ui.writeView();
+	// the warning says why: nothing backed up, no stock file; and that the codec can be added by installing again
+	assert.match(box.textContent, /will not include the DMR voice codec/i);
+	assert.match(box.textContent, /was not backed up and no supported stock firmware file was selected/);
+	assert.doesNotMatch(box.textContent, /no way back/i);
+	forwards.at(-1).click();
+	await sleep(1500);
+	const tr = diag.trail(50).join("\n");
+	assert.match(tr, /write range/);
+	assert.match(tr, new RegExp(`"first":"0x${C.app_start.toString(16).toUpperCase().padStart(8, "0")}"`));
+	assert.match(tr, /"bootloader":"unchanged"/);
+	// a bootloader area that differs after the write is an error, not an install that finished
+	diag.reset();
+	bootNow = boot;
+	state.c7.stub.writeProgram = async (data, start, { onSector }) => { bootNow = new Uint8Array(C.app_start).fill(0); onSector(C.app_start, "written"); return { written: 1, same: 0 }; };
+	const box2 = c7ui.writeView();
+	forwards.at(-1).click();
+	await sleep(300);
+	assert.match(box2.textContent, /bootloader area changed/);
+	assert.match(diag.trail(50).join("\n"), /"bootloader":"changed"/);
 });
 
 test("backup: unticking the program memory says such a backup can't restore the radio's firmware", () => {
@@ -117,4 +165,118 @@ test("backup: a backup made through an untried stock build offers its program me
 	for (let i = 0; i < 100 && !state.stockRead; i++) await sleep(20);
 	assert.equal(state.stockRead?.name, `program-memory-${radio.id}-909E.DBB.EARSAB.018.bin`);
 	assert.match(box.textContent, /Send the program memory read/);
+});
+
+test("backup: a connection lost after the step was drawn says the radio no longer responds, not a script error", async () => {
+	globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
+	const forwards = [];
+	const finished = [];
+	const state = { radio, task: "backup", forward: (b) => forwards.push(b), data: { fb, site: { git: "test" } } };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, noteReadout: async () => {},
+		flashStarted: () => 0, flashFinished: (s, e) => finished.push(e), errorText: (e) => e.message });
+	state.c7 = { log: { add() {}, el: new El("div") }, stream: null, size: {}, stopSizing: true,
+		stub: { size: {}, sums: async () => { throw new Error("no radio"); } } };
+	const box = c7ui.backupView();
+	state.c7.stub = null;	// the device lost while the page waited (the blank count fails, the session drops the stub)
+	forwards.at(-1).click();
+	for (let i = 0; i < 50 && !finished.length; i++) await sleep(10);
+	assert.match(box.textContent, /the radio no longer responds/);
+	assert.doesNotMatch(box.textContent, /Cannot read properties/);
+	assert.match(String(finished[0]?.message), /no longer responds/);
+});
+
+test("restore: the write logs its range and that the bootloader is unchanged, as an install does", async () => {
+	globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
+	const C = fb.c7000;
+	const forwards = [];
+	const pm = new Uint8Array(C.progmem_size).fill(0xFF);
+	pm.fill(0x11, C.app_start, C.app_start + 8192);
+	const state = { radio, task: "restore", forward: (b) => forwards.push(b), data: { fb },
+		bundle: { meta: { radio: { name: radio.name }, firmware_now: { kind: "stock" } },
+			parts: new Map([["c7000-progmem", { what: "c7000-progmem", file: "program-memory.bin", complete: true, addr: 0, data: pm }]]) } };
+	const diag = await import("../static/js/diag.js");
+	diag.reset();
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, flashStarted: () => 0, flashFinished() {}, flashMark() {},
+		errorText: (e) => e.message });
+	const boot = new Uint8Array(C.app_start).fill(0xA5);
+	state.c7 = { log: { add() {}, el: new El("div") }, stream: null,
+		stub: { dump: async () => boot.slice(), ledSequence: async () => {}, resetChip: async () => {},
+			writeProgram: async (data, start, { onSector }) => { onSector(C.app_start, "todo"); onSector(C.app_start, "written"); return { written: 1, same: 0 }; } } };
+	state.fakeC7 = {};
+	const box = c7ui.restoreView();
+	forwards.at(-1).click();
+	for (let i = 0; i < 300 && !/Restore complete/.test(box.textContent); i++) await sleep(10);
+	assert.match(box.textContent, /Restore complete/);
+	const tr = diag.trail(50).join("\n");
+	assert.match(tr, /restore bundle \{"progmem":true/);
+	assert.match(tr, /write range \{"sectors":1,.*"bootloader":"unchanged"/);
+});
+
+test("progress bar: a stall says how long it has waited; an error shown ends the shimmer and the wait line", async (t) => {
+	const { progressBar, notice } = await import("../static/js/flasher/dom.js");
+	const now = Date.now;
+	t.after(() => { Date.now = now; });
+	const p = progressBar();
+	p.el.isConnected = true;
+	p.set(3, 10, "Program Memory");
+	const [track, , wait] = p.el.children;
+	assert.equal(track.className, "progress active");
+	Date.now = () => now() + 6000;	// nothing new for six seconds
+	await sleep(1100);
+	assert.equal(wait.hidden, false);
+	assert.match(wait.textContent, /Still waiting for the radio \(\d+ s\)/);
+	notice("the radio no longer responds", "bad");	// the step failed with the bar at 30%
+	assert.equal(track.className, "progress");
+	assert.equal(wait.hidden, true);
+	await sleep(1100);
+	assert.equal(wait.hidden, true, "no wait line after the failure");
+});
+
+test("spinner: hidden from screen readers; a redraw starts at the angle the last one reached", async (t) => {
+	const { spinner } = await import("../static/js/flasher/dom.js");
+	const now = Date.now;
+	t.after(() => { Date.now = now; });
+	Date.now = () => 7200 * 1000 + 300;
+	const s = spinner();
+	assert.equal(s.className, "spinner");
+	assert.equal(s.attrs["aria-hidden"], "true");
+	assert.equal(s.attrs.style, "animation-delay: -300ms");
+	globalThis.matchMedia = (q) => ({ matches: q.includes("reduce") });	// reduced motion: the 2.4 s turn in site.css
+	t.after(() => { delete globalThis.matchMedia; });
+	Date.now = () => 7200 * 1000 + 2000;
+	assert.equal(spinner().attrs.style, "animation-delay: -2000ms");
+});
+
+test("beta notice: once per session and again after 12 hours; storage that throws shows it again rather than failing", async () => {
+	const { showBetaNotice, BETA_NOTICE_EVERY_MS } = await import("../static/js/flasher/beta.js");
+	const make = () => {
+		const dlg = new El("dialog");
+		dlg.open = false;
+		dlg.showModal = () => { dlg.open = true; };
+		dlg.close = () => { dlg.open = false; for (const f of dlg.listeners.close || []) f(); };
+		return { dlg, doc: { getElementById: (id) => (id === "beta-notice" ? dlg : null) } };
+	};
+	const kept = new Map();
+	const store = () => ({ getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v) });
+	let t = 1_000_000;
+	const now = () => t;
+	const a = make();
+	assert.equal(showBetaNotice(a.doc, store, now), true);
+	assert.equal(a.dlg.open, true);
+	a.dlg.close();
+	t += BETA_NOTICE_EVERY_MS - 1;
+	const b = make();
+	assert.equal(showBetaNotice(b.doc, store, now), false, "dismissed: not shown again within 12 hours");
+	assert.equal(b.dlg.open, false);
+	t += 1;
+	const d = make();
+	assert.equal(showBetaNotice(d.doc, store, now), true, "12 hours after it was closed: shown again");
+	d.dlg.close();
+	assert.equal(kept.get("rfoundry.betaNoticeSeen"), String(t), "the new close restarts the 12 hours");
+	kept.set("rfoundry.betaNoticeSeen", "1");
+	assert.equal(showBetaNotice(make().doc, store, now), true, "an old flag value counts as long ago");
+	const c = make();
+	assert.equal(showBetaNotice(c.doc, () => { throw new Error("SecurityError"); }), true);
+	c.dlg.close();	// closing without storage doesn't throw
+	assert.equal(showBetaNotice({ getElementById: () => null }, store), false, "a page without the notice");
 });
