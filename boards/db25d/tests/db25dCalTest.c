@@ -246,16 +246,25 @@ static void test_apc(void)
 	CHECK(db25d_apc_level(4095, 1) < 4 && db25d_apc_level(4095, 179) > 4095 - 4);
 }
 
-// DMR burst end (4.5): the ramp down starts 30.5 ms + the page's TX-off delay after the RF TX interrupt, whatever woke
-// the TX-off; a trigger after that point ramps at once and counts as late
-static void test_dmr_hold(void)
+// DMR burst timing (4.5): the shortest lead that has the PA up (2.4 ms + the page's TX-on delay) when the first symbol
+// goes out 0.85 ms after the lead; the ramp down at the last symbol, 27.5 ms later, whatever woke the TX-off. A
+// trigger after that point ramps at once and counts as late
+static void test_dmr_timing(void)
 {
-	CHECK(db25d_dmr_hold_us(0, 1700) == 32200u);
-	CHECK(db25d_dmr_hold_us(30500, 1700) == 1700u);		// woken by the RF RX interrupt: the page's delay
-	CHECK(db25d_dmr_hold_us(30500, 0) == 0);
-	CHECK(db25d_dmr_hold_us(32200, 1700) == 0 && db25d_dmr_late_us(32200, 1700) == 0);
-	CHECK(db25d_dmr_hold_us(33100, 1700) == 0 && db25d_dmr_late_us(33100, 1700) == 900u);
-	CHECK(db25d_dmr_late_us(20000, 1700) == 0);
+	CHECK(db25d_dmr_rf_tx_lead(1) == 16);			// UHF page: 1.6 ms, not the driver's 3.1 ms
+	CHECK(db25d_dmr_rf_tx_lead(0) == 16);
+	CHECK(db25d_dmr_rf_tx_lead(1000) == 26);		// VHF page
+	for (uint16_t on = 0; on <= 3000; on += 50) {
+		uint8_t lead = db25d_dmr_rf_tx_lead(on);
+		CHECK(lead * 100u + DB25D_DMR_SYMBOL_AFTER_LEAD_US >= DB25D_DMR_PA_UP_US + on);	// PA up in time
+		CHECK(lead * 100u + DB25D_DMR_SYMBOL_AFTER_LEAD_US < DB25D_DMR_PA_UP_US + on + 100u);	// and no earlier
+	}
+	CHECK(db25d_dmr_off_at_us(16) == 29950u);
+	CHECK(db25d_dmr_hold_us(0, 16) == 29950u);
+	CHECK(db25d_dmr_hold_us(29000, 16) == 950u);		// woken by the RF RX interrupt (27.4 ms + the lead)
+	CHECK(db25d_dmr_hold_us(29950, 16) == 0 && db25d_dmr_late_us(29950, 16) == 0);
+	CHECK(db25d_dmr_hold_us(30850, 16) == 0 && db25d_dmr_late_us(30850, 16) == 900u);
+	CHECK(db25d_dmr_late_us(20000, 16) == 0);
 }
 
 int main(void)
@@ -267,7 +276,7 @@ int main(void)
 	test_squelch();
 	test_tx_plan();
 	test_apc();
-	test_dmr_hold();
+	test_dmr_timing();
 	if (failures) {
 		printf("db25dCalTest: %d failures\n", failures);
 		return 1;

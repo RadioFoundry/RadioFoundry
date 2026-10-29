@@ -273,6 +273,15 @@ tools/rfoundry_debug.py data ip-settings auto rules id=3101234 port=161 tries=4
 Talkgroup packets are never confirmed. A packet to a radio that doesn't answer is sent every try before it is dropped,
 so confirm only where it helps. The settings are saved in the radio.
 
+## Packet size
+
+The network link takes packets of up to 586 bytes. The radio gives this size to the computer by DHCP, and to PPP as
+its MRU (584), and every packet of that size fits in one transmission on the air: up to 558 bytes of UDP data (556 over PPP). There
+is nothing to set on the computer.
+
+A full-size packet keeps the channel for about 3 seconds (about 4 when it's sent confirmed). Small packets are quicker
+and more likely to get through on a weak channel: a lost burst loses the whole packet.
+
 ## Other networks through a gateway radio
 
 By default the radio carries only addresses that stand for a DMR ID: 12.x.y.z for a radio and 225.x.y.z for a

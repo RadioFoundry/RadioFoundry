@@ -33,8 +33,19 @@
 
 // Largest burst info field: Rate 1 data is 24 bytes, Rate 3/4 is 18, everything else is 12
 #define DMR_BURST_PAYLOAD_MAX		24
-#define DMR_DATA_MAX_BURSTS			40
-#define DMR_DATA_MAX_PACKET			480			// 40 Rate 1/2 blocks
+
+// One transmission's bursts and one packet's octets, sized for the air MTU below (docs/spec/dmr-data.md 12.8)
+#define DMR_DATA_MAX_BURSTS			64			// confirmed at the air MTU: preambles, header, 60 blocks, terminator
+#define DMR_DATA_MAX_PACKET			612			// 51 Rate 1/2 blocks
+#define DMR_DATA_RATE12_OCTETS		12			// a Rate 1/2 block's octets (unconfirmed)
+
+// The air MTU: the longest IP packet (user data of one packet: the IPv4 header and all, or the compressed header and
+// the UDP payload) that goes in one transmission of ours, confirmed or not. Confirmed delivery sets it: 60 blocks of
+// 10 octets less the CRC-32 (unconfirmed, 612 octets of blocks would carry 608). Not below the USB link's MTU (IPGW_LINK_MTU, 586), so every packet the host
+// sends fits (docs/spec/usb-network.md 3.2). Unconfirmed it takes 50 blocks after DMR_DATA_IP_PREAMBLES preamble CSBKs
+// and the header, 53 bursts; confirmed (10 octets a block) 60 blocks and a terminator, 64
+#define DMR_DATA_IP_PREAMBLES		2
+#define DMR_DATA_IP_MTU				(DMR_DATA_MAX_PACKET - 16)
 
 // Burst flags
 #define DMR_BURST_FLAG_MCU_CRC		0x01		// TX: payload already holds its CRC / mask, the HR-C6000 must send it verbatim
@@ -131,6 +142,12 @@ int dmrDataBuildCSBKAnswer(const uint8_t *csbk, uint32_t src, dmrBurst_t *out);
 int dmrDataBlockLength(uint8_t blockType);
 int dmrDataBuildPacket(uint8_t dpf, uint8_t sap, bool group, uint32_t dst, uint32_t src,
 						const uint8_t *data, int length, uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts);
+// The bursts of an unconfirmed packet of length octets without preambles (header and blocks), 0 if it doesn't fit one
+int dmrDataPacketBursts(int length, uint8_t blockType);
+// count preamble CSBKs (Pre_CSBK, TS 102 361-2 7.1.2.5) announcing data, followed by `follow` more bursts: each one's
+// CSBK Blocks to Follow is the preambles after it plus `follow` (7.2.7: the count leaves out the CSBK itself). For
+// several packets in one transmission `follow` covers them all
+int dmrDataBuildPreambles(bool group, uint32_t dst, uint32_t src, int count, int follow, dmrBurst_t *out);
 // IPv4 addresses (srcIp, dstIp) are uint32_t in host byte order everywhere in the DMR data code: 12.0.39.21 is
 // 0x0C002715. A packet's IP addresses are the Motorola CAI addresses of its DMR IDs (dmrDataIdAddress) unless a caller
 // gives others: the full header (SAP 4) carries any address, so the IP destination may be an off-net host while the

@@ -24,6 +24,16 @@
 
 // Fields are only ever appended (docs/spec/settings-store.md 3); a record written by an older firmware fills the
 // fields it knows, the rest keep their defaults. Fixed-width members, ordered so there is no padding
+// A zone share import: which sender's zone it was, and the zone it became
+#define SETTINGS_ZS_IMPORTS	4
+typedef struct {
+	uint32_t key;			// hash of the sender's ID and the record's zone ID, 0 = unused
+	char zone[16];			// the zone's name here (not terminated when 16 long)
+	uint32_t sig;			// XOR of the imported channels' hashes (number and content), as written
+	uint8_t count;			// how many channels the import wrote (the first count of the zone)
+	uint8_t reserved[3];
+} settings_zs_import_t;
+
 typedef struct {
 	// Where the radio is
 	uint8_t vfo;			// 1 = tuning the VFO, 0 = on a channel
@@ -55,7 +65,7 @@ typedef struct {
 	uint8_t accent;			// color displays (docs/spec/ui.md 8): SETTINGS_ACCENT_* (was reserved1's first byte;
 					// 0 = the defaults: the theme's highlight, the strip filled)
 	uint8_t vfo_talk_lo;		// the DMR VFO's talk target ID, bits 0-7 (was reserved1's second byte; see below)
-	uint32_t dmr_id;		// own DMR ID override, 0 = the codeplug's
+	uint32_t unused_dmr_id;		// was an own DMR ID override: ignored (the ID is the codeplug's), kept for the layout
 	char radio_name[SETTINGS_NAME_LEN];	// NUL padded, "" = the codeplug's callsign
 	// DMR basic privacy keys (the key store dmr-voice's privacy uses; docs/spec/settings-store.md 3). A channel's
 	// choice of key will be a slot number in the native codeplug
@@ -131,7 +141,9 @@ typedef struct {
 	uint16_t roam_beacon_s;		// the repeaters' beacon interval, 0 = no beacons, else 10..600
 	uint8_t roam_beacon_len_s;	// their beacon duration, 1..10
 	uint8_t roam_survey;		// 0 off, 1 the sites beacon together, 2 each site on its own schedule
-	uint8_t rpt_beacon;		// our repeater roles key an idle beacon (roam_beacon_s / _len_s): 0 off, 1 on
+	uint8_t rpt_beacon;		// SETTINGS_RPT_* bits: our repeater roles key an idle beacon (roam_beacon_s / _len_s);
+					// bits 1-2 what an SFR user channel hears (radio_settings_t.sfr_rx; 0 in older records),
+					// bits 3-5 the SFR repeater's CW ID interval (radio_settings_t.sfr_cwid; 0 off)
 	uint8_t aprs_power;		// APRS RF power: 0 = the radio's current level, n = level n - 1 (was reserved6[0]; taken
 					// with the aprs_ fields below)
 	uint8_t aprs_cp_path;		// the codeplug APRS record's path last taken into aprs_path, aprs_path_t + 1 (0 = none
@@ -194,7 +206,8 @@ typedef struct {
 	uint8_t vfo2_tx_tone_type;
 	uint8_t rs_dual_delay;		// radio_settings_t.dual_delay_ms: n - 1 steps of 100 ms, 0 = the default
 	uint8_t rs_bcast_step;		// radio_settings_t.bcast_step + 1, 0 = the default (200 kHz on the odd tenths)
-	uint8_t reserved8[3];
+	uint8_t zs_offers;		// zone share offers: 0 Off (the default), 1 Ask (docs/spec/zone-share.md 5)
+	uint8_t reserved8[2];
 	// The IP gateway's off-net route (dmrDataSettings_t.ipGatewayId, docs/spec/usb-network.md 3.1; appended for
 	// ip-addr), taken with the other ds_ fields: the gateway radio's DMR ID, 0 = off-net packets dropped
 	uint32_t ds_ip_gateway;
@@ -204,6 +217,9 @@ typedef struct {
 	uint16_t zone_jrn_count;	// the stored zone count before it (0: only the built-in zone)
 	uint8_t zone_jrn_kind;		// SETTINGS_ZONE_JRN_*
 	uint8_t reserved8b[3];
+	// Zone share: the zones imported last, so the same zone sent again updates its import instead of adding a copy
+	// (docs/spec/zone-share.md 5.4); key 0 = unused, the oldest replaced first
+	settings_zs_import_t zs_import[SETTINGS_ZS_IMPORTS];
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -317,6 +333,12 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 #define SETTINGS_RS_SCAN_BEEP		0x08u
 #define SETTINGS_RS_KEY_BEEP		0x10u
 #define SETTINGS_RS_NO_TALK_PERMIT	0x20u	// the talk permit tone off (0 = on, as before)
+// settings_t.rpt_beacon (taken with the roam_ fields)
+#define SETTINGS_RPT_BEACON		0x01u	// our repeater roles key an idle beacon
+#define SETTINGS_RPT_SFR_RX		0x06u	// an SFR user channel hears: 0 the repeat, 1 both (first), 2 both (dual-path RX)
+#define SETTINGS_RPT_SFR_RX_SHIFT	1
+#define SETTINGS_RPT_SFR_CWID		0x38u	// the SFR repeater's CW ID interval code (radio_cwid_interval_ms), 0 off
+#define SETTINGS_RPT_SFR_CWID_SHIFT	3
 
 // settings_t.ds_flags
 #define SETTINGS_DS_RADIO_CHECK_REPLY	0x01u

@@ -23,6 +23,8 @@ typedef struct {
 	uint8_t n_rates;
 	uint32_t listen_ms;		// listening time per rate
 	void (*found)(void);		// optional, task context: the module was just heard
+	void (*absent)(void);		// optional, task context: nothing was heard, the USART is off again (a board
+					// that powered the module up to listen powers it down)
 } stm32_gps_cfg_t;
 
 // Start listening (from board_init). cfg stays valid

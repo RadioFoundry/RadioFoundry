@@ -17,9 +17,9 @@ OBJCOPY := $(CROSS)objcopy
 BUILD ?= $(ROOT)/build/stub-k22f
 
 # Soft float: the stub has no floating point, and RadioFoundry hands over with the FPU context flag cleared. Link time
-# optimization inlines the shared pieces across files
+# optimization inlines the shared pieces across files. No security register ops (STUBENG_NO_SREG): the image is at its limit
 CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -std=gnu11 -ffreestanding -fno-builtin -ffunction-sections \
-	-fdata-sections -fno-common -Wall -Wextra -Wshadow -Wstrict-prototypes \
+	-fdata-sections -fno-common -Wall -Wextra -Wshadow -Wstrict-prototypes -DSTUBENG_NO_SREG \
 	-I../common -I$(ROOT)/platform/k22f -I$(ROOT)/drivers/bus/spi_gpio -I$(ROOT)/third_party/cmsis-core/Include
 LDFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -flto -Os -nostdlib -nostartfiles -Wl,--gc-sections -T k22stub.ld \
 	-Wl,-Map=$(BUILD)/k22stub.map -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments

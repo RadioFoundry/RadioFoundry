@@ -30,6 +30,7 @@ BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB only
 # (platform/k22f/config.mk)
 CONFIG_HOTSPOT ?= n
 CONFIG_CRASH_REPORT ?= n
+CONFIG_ZONE_SHARE ?= n
 CONFIG_USB_NETWORK ?= n
 CONFIG_APRS ?= n
 CONFIG_DTMF ?= n
@@ -38,6 +39,7 @@ CONFIG_VOX ?= n
 BOARD_NOT_WRITTEN += HOTSPOT	# with the CPS on, its buffers overflow the 64 KB SRAM_L; nothing moves them to SRAM_U yet
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# needs the hotspot (above)
 BOARD_NOT_WRITTEN += CRASH_REPORT	# its buffers overflow the 64 KB SRAM_L, as the hotspot's (above)
+BOARD_NOT_WRITTEN += ZONE_SHARE	# its air queue and fragment buffers overflow the 64 KB SRAM_L (4 KB over with it on); nothing moves them to SRAM_U yet
 BOARD_NOT_WRITTEN += USB_NETWORK	# the network adapter personality (CDC-NCM) isn't brought up on this radio's USB
 BOARD_NOT_WRITTEN += NET_PPP	# the IP stack isn't brought up on this radio
 BOARD_NOT_WRITTEN += DMR_IP_GATEWAY	# rides the USB network adapter (above)

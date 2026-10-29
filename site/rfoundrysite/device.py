@@ -5,10 +5,10 @@ the file stands alone in an <img>).
 
 An illustration of the radio in site/static/img/radios/src/<id>.svg is used when there is one: its
 <rect id="screen" .../> marks the display and is replaced by the boot screen (docs/dev/website.md "Radio images").
-Its key-<name> ids, for the radio's web control page, must name keys the radio has.
-Its key-<name> ids, for the radio's web control page, must name keys the radio has.
-Its key-<name> ids, for the radio's web control page, must name keys the radio has.
-Without one, a generic drawing per shape (handheld, tall handheld, mobile) tinted by board.toml [frame] stands in.
+Its key-<name> ids, for the radio's web control page, must name keys the radio has; where each key sits goes into the
+geometry, for the web flasher, which marks the keys to hold for update mode (board.toml [flash.bootloader] hold).
+Without one, a generic drawing per shape (handheld, tall handheld, mobile) tinted by board.toml [frame] stands in; its
+handheld shapes tag their side PTT.
 """
 import base64
 import importlib.util
@@ -51,14 +51,18 @@ def attr(tag, name):
 	return float(m.group(1))
 
 
-def render(radio, label):
+def render(radio, label, look=None):
 	"""{"frame": the drawing with its screen black, "boot": the same with the boot screen in it, "geometry": where the
-	screen is}. geometry: {"viewbox": [x, y, w, h], "screen": {x, y, w, h} in viewBox units, "screen_pct": {left,
-	top, width, height} as percentages of the image}, so any screenshot can be laid over the frame (data/radios.json,
-	the radio pages)."""
+	screen and the keys are}. geometry: {"viewbox": [x, y, w, h], "screen": {x, y, w, h} in viewBox units,
+	"screen_pct": {left, top, width, height} as percentages of the image, "keys": {name: {left, top, width, height}}
+	as percentages, for each key the drawing shows}, so any screenshot can be laid over the frame (data/radios.json,
+	the radio pages) and the flasher can mark a key (radiotop.js)."""
 	with open(repo.path("docs", "ux", "screens", radio["gallery"], "boot.png"), "rb") as f:
 		png = f.read()
-	src = repo.path("site", "static", "img", "radios", "src", radio["id"] + ".svg")
+	# a look (board.toml looks): the same radio in another body, drawn in <id>-<look>.svg, with the same keys
+	src = repo.path("site", "static", "img", "radios", "src", radio["id"] + ("-" + look if look else "") + ".svg")
+	if look and not os.path.isfile(src):
+		raise repo.SourceError("boards/%s/board.toml looks %s: no drawing %s" % (radio["id"], look, src))
 	if os.path.isfile(src):
 		with open(src, encoding="utf-8") as f:
 			frame = f.read()
@@ -84,13 +88,14 @@ def render(radio, label):
 	if not m:
 		raise repo.SourceError("%s: no viewBox" % src)
 	vx, vy, vw, vh = (float(v) for v in m.group(1).split())
+	pct = lambda x0, y0, x1, y1: {"left": round(100 * (x0 - vx) / vw, 3), "top": round(100 * (y0 - vy) / vh, 3),
+				      "width": round(100 * (x1 - x0) / vw, 3), "height": round(100 * (y1 - y0) / vh, 3)}
 	frame = re.sub(r"<svg\b", '<svg role="img" aria-label="%s"' % label, frame, count=1)
 	image = ('<image href="data:image/png;base64,%s" x="%g" y="%g" width="%g" height="%g" '
 		 'style="image-rendering:pixelated" preserveAspectRatio="none"/>' % (base64.b64encode(png).decode(), x, y, w, h))
 	geometry = {"viewbox": [vx, vy, vw, vh], "screen": {"x": x, "y": y, "w": w, "h": h},
-		    "screen_pct": {"left": round(100 * (x - vx) / vw, 3), "top": round(100 * (y - vy) / vh, 3),
-				   "width": round(100 * w / vw, 3), "height": round(100 * h / vh, 3)},
-		    "aspect": round(vw / vh, 5)}
+		    "screen_pct": pct(x, y, x + w, y + h), "aspect": round(vw / vh, 5),
+		    "keys": {k: pct(*b) for k, b in sorted(svg_keys().key_boxes(frame).items())}}
 	return {"frame": frame, "boot": frame.replace(r, image), "geometry": geometry}
 
 
@@ -132,8 +137,8 @@ def generic(radio, png, label):
 			'<rect x="%d" y="70" width="40" height="%d" rx="8" fill="#16171a"/>' % (W - W // 3 - 20, top - 50),
 			'<rect x="%d" y="78" width="40" height="6" fill="#ffffff18"/>' % (W - W // 3 - 20),
 			'<rect x="%d" y="94" width="40" height="6" fill="#ffffff18"/>' % (W - W // 3 - 20),
-			# body, side PTT
-			'<rect x="-8" y="%d" width="14" height="110" rx="5" fill="%s"/>' % (top + 120, accent),
+			# body, side PTT (tagged: the flasher marks it when it is a key to hold)
+			'<rect id="key-ptt" data-edge="left" x="-8" y="%d" width="14" height="110" rx="5" fill="%s"/>' % (top + 120, accent),
 			'<rect x="0" y="%d" width="%d" height="%d" rx="40" fill="%s"/>' % (top, W, H - top, body),
 			'<rect x="7" y="%d" width="%d" height="%d" rx="34" fill="none" stroke="#ffffff14" stroke-width="2"/>'
 			% (top + 7, W - 14, H - top - 14),

@@ -27,6 +27,7 @@ typedef struct {
 
 static frame_t rx_ring[USB_NCM_RX_FRAMES];
 static volatile uint8_t rx_in, rx_out;		// producer: the USB task; consumer: usbNcmReceive's task
+static volatile bool rx_held;			// the ring was full: the class driver holds the datagram until a renew
 static frame_t tx_frame;
 static volatile bool tx_pending;		// tx_frame holds a frame not yet given to the class driver
 static volatile bool tx_deferred;		// a kick is queued for the USB task
@@ -74,10 +75,29 @@ bool usbNcmIsUp(void)
 
 // ---- TinyUSB's callbacks (USB task) ----
 
+// The NCM driver of the TinyUSB in third_party never calls it (its bus reset clears only its own state). A held flag
+// left over from before a reset costs one spare renew, which the driver ignores while it has no datagram
 void tud_network_init_cb(void)
 {
 	rx_in = rx_out = 0;
+	rx_held = false;
 	tx_pending = false;
+}
+
+static void recv_resume(void *param)
+{
+	(void)param;
+	tud_network_recv_renew();
+}
+
+// Consumer side: a slot is free, so a held datagram can come (in the USB task)
+static void resume_held(void)
+{
+	__sync_synchronize();
+	if (rx_held) {
+		rx_held = false;
+		usbd_defer_func(recv_resume, NULL, false);
+	}
 }
 
 bool tud_network_recv_cb(const uint8_t *src, uint16_t size)
@@ -85,8 +105,21 @@ bool tud_network_recv_cb(const uint8_t *src, uint16_t size)
 	uint8_t next = (uint8_t)((rx_in + 1) % USB_NCM_RX_FRAMES);
 
 	host_heard = true;
-	if ((size > USB_NCM_FRAME_MAX) || (next == rx_out)) {
-		stats.rx_dropped++;		// too big for the gateway, or the consumer is behind: dropped, never held
+	if ((size <= USB_NCM_FRAME_MAX) && (next == rx_out)) {
+		// The consumer is behind. A host packs back-to-back frames into one NTB (Linux does), and dropping the rest
+		// of it lost datagrams and debug link requests in any burst over 3 frames. Held instead: the class driver
+		// gives this datagram again after a renew, which usbNcmReceive (or usbNcmTick) asks for once a slot is free,
+		// and meanwhile takes no more from the host (USB flow control). Flagged before the second look, so a slot
+		// freed in between is either seen here or sees the flag
+		rx_held = true;
+		__sync_synchronize();
+		if (next == rx_out) {
+			return false;
+		}
+		rx_held = false;
+	}
+	if (size > USB_NCM_FRAME_MAX) {
+		stats.rx_dropped++;		// too big for the gateway: dropped
 	} else {
 		rx_ring[rx_in].len = size;
 		memcpy(rx_ring[rx_in].data, src, size);
@@ -94,7 +127,7 @@ bool tud_network_recv_cb(const uint8_t *src, uint16_t size)
 		rx_in = next;
 		stats.rx_frames++;
 	}
-	// Always taken (copied above, or dropped and counted). The class driver gives the next datagram of the same NTB
+	// Taken (copied above, or dropped and counted). The class driver gives the next datagram of the same NTB
 	// only after tud_network_recv_renew: macOS packs several frames into one NTB in a burst, and without this call
 	// the rest of it, and every NTB after it, never came (the link went dead both ways). Called from here it is
 	// re-entrant safe: the driver notes it and goes on with the next datagram once this returns
@@ -160,6 +193,7 @@ int usbNcmReceive(uint8_t *buf, int max)
 
 	memcpy(buf, f->data, (size_t)n);
 	rx_out = (uint8_t)((rx_out + 1) % USB_NCM_RX_FRAMES);
+	resume_held();
 	return n;
 }
 
@@ -186,6 +220,9 @@ void usbNcmTick(uint32_t now_ms)
 		mounted_ms = 0;
 		tx_since = 0;	// a stall timer left from before an unplug would fire the moment the cable is back
 		return;
+	}
+	if (rx_in == rx_out) {
+		resume_held();	// a backstop: the ring is empty, so nothing should be held
 	}
 	if (!tx_pending) {
 		tx_since = 0;

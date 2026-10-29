@@ -1,0 +1,852 @@
+{
+ "format": "rfoundry-codec-map/1",
+ "profile": "dm1701-v0203-nocsv",
+ "board": "dm1701",
+ "isa": "thumb2",
+ "stock": {
+  "name": "DM-1701-V02.03 Only for Radioddity.bin",
+  "version": "V02.03 noCSV",
+  "sha256": "0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a"
+ },
+ "code": {
+  "flash": "0x80770B0",
+  "len": 66048,
+  "run": "0x80770B0",
+  "sha256": "4fccfdda199e239464bc7a2622af20e99eb7885bcf8bffa2df1e4bc0f756a3ce",
+  "reachable_len": 63162,
+  "move_alignment": 4
+ },
+ "entries": {
+  "encode": "0x130",
+  "encode_ecc": "0x4E8",
+  "decode": "0x5D8",
+  "enc_init": "0x284",
+  "fec_init": "0x4CC",
+  "dec_init": "0x6D0",
+  "enc_params": "0x848",
+  "enc_set": "0x1C0",
+  "dec_set": "0x688",
+  "fec_decode": "0xB54"
+ },
+ "self_refs": [
+  {
+   "kind": "word",
+   "off": "0xF64",
+   "value": "0x807C1CD",
+   "reachable": true
+  }
+ ],
+ "island_ptrs": [
+  {
+   "kind": "word",
+   "off": "0xF68",
+   "target": "0x80DBA61"
+  },
+  {
+   "kind": "word",
+   "off": "0x3538",
+   "target": "0x80D8861"
+  }
+ ],
+ "table_refs": [
+  {
+   "kind": "word",
+   "off": "0x12C",
+   "target": "0x80DA8DC"
+  },
+  {
+   "kind": "word",
+   "off": "0x598",
+   "target": "0x80E67D8"
+  },
+  {
+   "kind": "word",
+   "off": "0x59C",
+   "target": "0x80E1A96"
+  },
+  {
+   "kind": "word",
+   "off": "0xAAC",
+   "target": "0x80DB60C"
+  },
+  {
+   "kind": "word",
+   "off": "0xB4C",
+   "target": "0x80E1AA4"
+  },
+  {
+   "kind": "word",
+   "off": "0xB50",
+   "target": "0x80E1AB0"
+  },
+  {
+   "kind": "word",
+   "off": "0xF60",
+   "target": "0x80E1A98"
+  },
+  {
+   "kind": "word",
+   "off": "0xF6C",
+   "target": "0x80DB60C"
+  },
+  {
+   "kind": "word",
+   "off": "0x1044",
+   "target": "0x80E67D8"
+  },
+  {
+   "kind": "word",
+   "off": "0x2278",
+   "target": "0x80DD210"
+  },
+  {
+   "kind": "word",
+   "off": "0x273C",
+   "target": "0x80DA9A4"
+  },
+  {
+   "kind": "word",
+   "off": "0x2740",
+   "target": "0x80DB60C"
+  },
+  {
+   "kind": "word",
+   "off": "0x3228",
+   "target": "0x80D8F68"
+  },
+  {
+   "kind": "word",
+   "off": "0x37C8",
+   "target": "0x80E67D8"
+  },
+  {
+   "kind": "word",
+   "off": "0x3B58",
+   "target": "0x80E67D8"
+  },
+  {
+   "kind": "word",
+   "off": "0x3C5C",
+   "target": "0x80DBDAC"
+  },
+  {
+   "kind": "word",
+   "off": "0x3D30",
+   "target": "0x80E0770"
+  },
+  {
+   "kind": "word",
+   "off": "0x3F30",
+   "target": "0x80DBDF4"
+  },
+  {
+   "kind": "word",
+   "off": "0x3F34",
+   "target": "0x80DBD64"
+  },
+  {
+   "kind": "word",
+   "off": "0x4120",
+   "target": "0x80E2C40"
+  },
+  {
+   "kind": "word",
+   "off": "0x4124",
+   "target": "0x80DB60C"
+  },
+  {
+   "kind": "word",
+   "off": "0x4E0C",
+   "target": "0x80D6A98"
+  },
+  {
+   "kind": "word",
+   "off": "0x4ED4",
+   "target": "0x80D6A8C"
+  },
+  {
+   "kind": "word",
+   "off": "0x4FC4",
+   "target": "0x80D6A84"
+  },
+  {
+   "kind": "word",
+   "off": "0x5EA0",
+   "target": "0x80DAFF4"
+  },
+  {
+   "kind": "word",
+   "off": "0x5EA4",
+   "target": "0x80DB0D8"
+  },
+  {
+   "kind": "word",
+   "off": "0x60B4",
+   "target": "0x80D5A70"
+  },
+  {
+   "kind": "word",
+   "off": "0x6174",
+   "target": "0x80E67DF"
+  },
+  {
+   "kind": "word",
+   "off": "0x62E8",
+   "target": "0x80D5A70"
+  },
+  {
+   "kind": "word",
+   "off": "0x6B0C",
+   "target": "0x80DD258"
+  },
+  {
+   "kind": "word",
+   "off": "0x92C0",
+   "target": "0x80D8FB8"
+  },
+  {
+   "kind": "word",
+   "off": "0x9AE8",
+   "target": "0x80DED08"
+  },
+  {
+   "kind": "word",
+   "off": "0x9AEC",
+   "target": "0x80DECE8"
+  },
+  {
+   "kind": "word",
+   "off": "0x9AF0",
+   "target": "0x80DECDC"
+  },
+  {
+   "kind": "word",
+   "off": "0x9AF4",
+   "target": "0x80DECFC"
+  },
+  {
+   "kind": "word",
+   "off": "0x9AF8",
+   "target": "0x80DECF0"
+  },
+  {
+   "kind": "word",
+   "off": "0x9AFC",
+   "target": "0x80DECF4"
+  },
+  {
+   "kind": "word",
+   "off": "0x9B00",
+   "target": "0x80DED00"
+  },
+  {
+   "kind": "word",
+   "off": "0x9B04",
+   "target": "0x80DECE4"
+  },
+  {
+   "kind": "word",
+   "off": "0x9B08",
+   "target": "0x80DECD8"
+  },
+  {
+   "kind": "word",
+   "off": "0x9B0C",
+   "target": "0x80DECD0"
+  },
+  {
+   "kind": "word",
+   "off": "0x9E0C",
+   "target": "0x80DECD2"
+  },
+  {
+   "kind": "word",
+   "off": "0xA3DC",
+   "target": "0x80DA31C"
+  },
+  {
+   "kind": "word",
+   "off": "0xAC44",
+   "target": "0x80D5994"
+  },
+  {
+   "kind": "word",
+   "off": "0xAC48",
+   "target": "0x80D4D94"
+  },
+  {
+   "kind": "word",
+   "off": "0xAC4C",
+   "target": "0x80D4994"
+  },
+  {
+   "kind": "word",
+   "off": "0xAC50",
+   "target": "0x80D4894"
+  },
+  {
+   "kind": "word",
+   "off": "0xAC54",
+   "target": "0x80D4794"
+  },
+  {
+   "kind": "word",
+   "off": "0xAC58",
+   "target": "0x80D4754"
+  },
+  {
+   "kind": "word",
+   "off": "0xAC64",
+   "target": "0x80D4814"
+  },
+  {
+   "kind": "word",
+   "off": "0xB404",
+   "target": "0x80DA31C"
+  },
+  {
+   "kind": "word",
+   "off": "0xBA00",
+   "target": "0x80DB60C"
+  },
+  {
+   "kind": "word",
+   "off": "0xBBA0",
+   "target": "0x80DB60C"
+  },
+  {
+   "kind": "word",
+   "off": "0xBEE0",
+   "target": "0x80DC8E4"
+  },
+  {
+   "kind": "word",
+   "off": "0xC16C",
+   "target": "0x80DC8E4"
+  },
+  {
+   "kind": "word",
+   "off": "0xC268",
+   "target": "0x80D6670"
+  },
+  {
+   "kind": "word",
+   "off": "0xC3D0",
+   "target": "0x80D6670"
+  },
+  {
+   "kind": "word",
+   "off": "0xCF00",
+   "target": "0x80E3530"
+  },
+  {
+   "kind": "word",
+   "off": "0xD300",
+   "target": "0x80D6670"
+  },
+  {
+   "kind": "word",
+   "off": "0xDF2C",
+   "target": "0x80D9810"
+  },
+  {
+   "kind": "word",
+   "off": "0xDFE4",
+   "target": "0x80DD24C"
+  },
+  {
+   "kind": "word",
+   "off": "0xE0A0",
+   "target": "0x80D6A84"
+  },
+  {
+   "kind": "word",
+   "off": "0xE414",
+   "target": "0x80D6A98"
+  },
+  {
+   "kind": "word",
+   "off": "0xE4D0",
+   "target": "0x80D6670"
+  },
+  {
+   "kind": "word",
+   "off": "0xE600",
+   "target": "0x80D6A74"
+  },
+  {
+   "kind": "word",
+   "off": "0xF15C",
+   "target": "0x80DD0C0"
+  },
+  {
+   "kind": "word",
+   "off": "0xF160",
+   "target": "0x80D6670"
+  },
+  {
+   "kind": "word",
+   "off": "0xF53C",
+   "target": "0x80DD0C0"
+  },
+  {
+   "kind": "word",
+   "off": "0xF540",
+   "target": "0x80D6670"
+  },
+  {
+   "kind": "word",
+   "off": "0xF640",
+   "target": "0x80DF230"
+  }
+ ],
+ "island_refs": [
+  {
+   "kind": "word",
+   "at": "0x80D885C",
+   "target": "0x80DD340"
+  },
+  {
+   "kind": "word",
+   "at": "0x80D8F4C",
+   "target": "0x80DD356"
+  },
+  {
+   "kind": "word",
+   "at": "0x80D8F64",
+   "target": "0x80DD354"
+  },
+  {
+   "kind": "word",
+   "at": "0x80DBA5C",
+   "target": "0x80DB60C"
+  }
+ ],
+ "islands": [
+  {
+   "start": "0x80D87A0",
+   "len": 1992
+  },
+  {
+   "start": "0x80DB9DC",
+   "len": 240
+  }
+ ],
+ "branches": [
+  {
+   "at": "0x80D89D0",
+   "target": "0x807BBC0",
+   "kind": "bl"
+  },
+  {
+   "at": "0x80D8B56",
+   "target": "0x807BD40",
+   "kind": "bl"
+  },
+  {
+   "at": "0x80D8BCA",
+   "target": "0x807BDC0",
+   "kind": "bl"
+  },
+  {
+   "at": "0x80D8BFE",
+   "target": "0x807BBC0",
+   "kind": "bl"
+  },
+  {
+   "at": "0x80D8CFE",
+   "target": "0x807BC40",
+   "kind": "bl"
+  },
+  {
+   "at": "0x80D8D18",
+   "target": "0x807BE40",
+   "kind": "bl"
+  },
+  {
+   "at": "0x80D8DB8",
+   "target": "0x807BE40",
+   "kind": "bl"
+  },
+  {
+   "at": "0x80D8DF0",
+   "target": "0x807BC40",
+   "kind": "bl"
+  },
+  {
+   "at": "0x80D8E00",
+   "target": "0x807BC40",
+   "kind": "bl"
+  },
+  {
+   "at": "0x80D8EA2",
+   "target": "0x807BEC0",
+   "kind": "bl"
+  },
+  {
+   "at": "0x80D8EEE",
+   "target": "0x807BC40",
+   "kind": "bl"
+  },
+  {
+   "at": "0x80D8F0E",
+   "target": "0x807BBC0",
+   "kind": "bl"
+  }
+ ],
+ "objects": [
+  {
+   "start": "0x80D4754",
+   "len": 64,
+   "len_conservative": 64,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80D4794",
+   "len": 128,
+   "len_conservative": 128,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80D4814",
+   "len": 128,
+   "len_conservative": 128,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80D4894",
+   "len": 256,
+   "len_conservative": 256,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80D4994",
+   "len": 1024,
+   "len_conservative": 1024,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80D4D94",
+   "len": 3072,
+   "len_conservative": 3072,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80D5994",
+   "len": 96,
+   "len_conservative": 220,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80D5A70",
+   "len": 3072,
+   "len_conservative": 3072,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80D6670",
+   "len": 1028,
+   "len_conservative": 1028,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80D6A74",
+   "len": 16,
+   "len_conservative": 16,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80D6A84",
+   "len": 8,
+   "len_conservative": 8,
+   "bound": "bounded by access"
+  },
+  {
+   "start": "0x80D6A8C",
+   "len": 12,
+   "len_conservative": 12,
+   "bound": "bounded by access"
+  },
+  {
+   "start": "0x80D6A98",
+   "len": 12,
+   "len_conservative": 7432,
+   "bound": "bounded by access"
+  },
+  {
+   "start": "0x80D8F68",
+   "len": 80,
+   "len_conservative": 80,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80D8FB8",
+   "len": 2136,
+   "len_conservative": 2136,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80D9810",
+   "len": 960,
+   "len_conservative": 2828,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80DA31C",
+   "len": 1472,
+   "len_conservative": 1472,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DA8DC",
+   "len": 200,
+   "len_conservative": 200,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DA9A4",
+   "len": 841,
+   "len_conservative": 1616,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80DAFF4",
+   "len": 228,
+   "len_conservative": 228,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DB0D8",
+   "len": 50,
+   "len_conservative": 1332,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80DB60C",
+   "len": 976,
+   "len_conservative": 976,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DBD64",
+   "len": 72,
+   "len_conservative": 72,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DBDAC",
+   "len": 72,
+   "len_conservative": 72,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DBDF4",
+   "len": 288,
+   "len_conservative": 2800,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80DC8E4",
+   "len": 162,
+   "len_conservative": 2012,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80DD0C0",
+   "len": 114,
+   "len_conservative": 336,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80DD210",
+   "len": 60,
+   "len_conservative": 60,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DD24C",
+   "len": 8,
+   "len_conservative": 12,
+   "bound": "bounded by access"
+  },
+  {
+   "start": "0x80DD258",
+   "len": 32,
+   "len_conservative": 232,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80DD340",
+   "len": 18,
+   "len_conservative": 20,
+   "bound": "bounded by access"
+  },
+  {
+   "start": "0x80DD354",
+   "len": 80,
+   "len_conservative": 6524,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80DECD0",
+   "len": 8,
+   "len_conservative": 8,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DECD8",
+   "len": 4,
+   "len_conservative": 4,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DECDC",
+   "len": 8,
+   "len_conservative": 8,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DECE4",
+   "len": 4,
+   "len_conservative": 4,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DECE8",
+   "len": 8,
+   "len_conservative": 8,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DECF0",
+   "len": 4,
+   "len_conservative": 4,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DECF4",
+   "len": 8,
+   "len_conservative": 8,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DECFC",
+   "len": 4,
+   "len_conservative": 4,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DED00",
+   "len": 8,
+   "len_conservative": 8,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80DED08",
+   "len": 16,
+   "len_conservative": 1320,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80DF230",
+   "len": 128,
+   "len_conservative": 5440,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80E0770",
+   "len": 44,
+   "len_conservative": 4902,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80E1A96",
+   "len": 2,
+   "len_conservative": 2,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80E1A98",
+   "len": 12,
+   "len_conservative": 12,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80E1AA4",
+   "len": 12,
+   "len_conservative": 12,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80E1AB0",
+   "len": 1156,
+   "len_conservative": 4496,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80E2C40",
+   "len": 1004,
+   "len_conservative": 2284,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80E352C",
+   "len": 212,
+   "len_conservative": 12972,
+   "bound": "to proven non-codec"
+  },
+  {
+   "start": "0x80E67D8",
+   "len": 7,
+   "len_conservative": 7,
+   "bound": "to next object"
+  },
+  {
+   "start": "0x80E67DF",
+   "len": 7,
+   "len_conservative": 1989,
+   "bound": "to proven non-codec"
+  }
+ ],
+ "groups": [
+  [
+   "0x80D4754",
+   "0x80D4794",
+   "0x80D4814",
+   "0x80D4894",
+   "0x80D4994",
+   "0x80D4D94"
+  ],
+  [
+   "0x80D6A74",
+   "0x80D6A84"
+  ],
+  [
+   "0x80D8F68",
+   "0x80D8FB8"
+  ],
+  [
+   "0x80DA8DC",
+   "0x80DA9A4"
+  ]
+ ],
+ "table_windows": [
+  {
+   "id": "tables",
+   "flash": "0x80D4754",
+   "run": "0x80D4754",
+   "len": 75856,
+   "sha256": "b5a73a199e91a6d684d9d1bfe46261a6f6aeb0fe65a907c781b809d0425f537a",
+   "min_start": "0x80D4754",
+   "min_len": 73874,
+   "min_sha256": "0020a29e4259750b12cef706c59f1c77383dd659bfc33b6cfb1fba62bfd0844d"
+  }
+ ],
+ "outside_refs": [],
+ "compaction": {
+  "packed_len": 84830,
+  "packed_len_conservative": 138356,
+  "islands_len": 2232,
+  "objects_len": 19421
+ }
+}

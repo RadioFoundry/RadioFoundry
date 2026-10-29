@@ -11,7 +11,7 @@
 #include "usb/usb_port.h"
 #include "tusb.h"
 
-#define OTG_FS_PRIORITY		6	// docs/spec/hardware-dm1701.md 3.1 (at or below the RTOS max syscall level 5)
+#define OTG_FS_PRIORITY		6	// docs/spec/hardware-dm1701.md 3.1 (at or below the RTOS max syscall level 4)
 
 void usb_port_init(void)
 {

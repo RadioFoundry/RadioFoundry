@@ -6,7 +6,8 @@
  * See functions/sfr.h and docs/sfr.md.
  */
 
-#if defined(HAS_SFR) || CONFIG_SFR
+#include "config.h"
+#if CONFIG_SFR
 
 #include <stdio.h>
 #include <string.h>

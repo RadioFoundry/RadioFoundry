@@ -45,7 +45,7 @@ Terms the user guide uses. In the web version, hover over, focus or tap a dotted
 | <a id="t-rf"></a>RF | Radio frequency: the signal in the air, as opposed to audio or data inside the radio. |
 | <a id="t-rssi"></a>RSSI | Received signal strength indicator: how strong the received signal is, in dBm. |
 | <a id="t-rx"></a>RX | Receive. |
-| <a id="t-sfr"></a>SFR | Single frequency repeater. It repeats a call from one timeslot on the other timeslot of the same frequency. In MMDVM SFR the hotspot repeats, turned on by its host. In standalone SFR a channel repeats on its own (not built yet). [More](../spec/sfr.md) |
+| <a id="t-sfr"></a>SFR | Single frequency repeater. It repeats a call from one timeslot on the other timeslot of the same frequency. In MMDVM SFR the hotspot repeats, turned on by its host. In standalone SFR a channel set up in the codeplug repeats on its own, or talks through one. [More](../spec/sfr.md) |
 | <a id="t-split-duplex"></a>Split duplex | Transmitting on one frequency and receiving on another at the same time. Repeaters do, and so does the duplex hotspot setup. [More](../spec/split-duplex.md) |
 | <a id="t-squelch"></a>Squelch | The level a received signal must exceed before the radio plays it. |
 | <a id="t-tot"></a>TOT | Transmit timeout: the longest transmission the radio allows. |
@@ -75,6 +75,7 @@ Terms the user guide uses. In the web version, hover over, focus or tap a dotted
 |---|---|
 | <a id="t-aprs"></a>APRS | Automatic Packet Reporting System: positions and short messages shared between amateur stations. [More](13-aprs.md) |
 | <a id="t-brandmeister"></a>BrandMeister | A worldwide amateur DMR network of linked servers and talkgroups. |
+| <a id="t-cw-id"></a>CW ID | A station's callsign sent in Morse code. A standalone SFR repeater channel sends one in FM every few minutes after traffic (Settings > Talk & listen > SFR CW ID). [More](14-hotspot.md) |
 | <a id="t-dmr-id"></a>DMR ID (RadioID, DMR IDs) | The number that identifies your radio on DMR. Amateur IDs come from RadioID.net. |
 | <a id="t-hotspot"></a>Hotspot | A small DMR modem that connects radios nearby to a DMR network over the internet. [More](14-hotspot.md) |
 | <a id="t-igate"></a>iGate | A station that passes APRS packets between the air and the APRS-IS internet network. |

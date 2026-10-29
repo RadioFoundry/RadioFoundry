@@ -15,7 +15,8 @@ reaches it at run time through the board descriptor, `board_t` in [hal/board.h](
  hal/         interfaces: board_t, radio, DMR modem, audio, vocoder, display, input, flash, power, stream, netif,
               system, AFSK, broadcast receiver
    |  implemented by
- boards/<b>/  the radio: board_t, pins, key map, how its build differs from the platform's, codec hosting, chip glue
+ boards/<b>/  the radio: board_t, pins, key map, how its build differs from the platform's, codec hosting, chip glue;
+              radios of one board design share it in a family directory (adding-a-radio.md)
    |  uses
  drivers/     chips shared by several radios: AT1846S, BK4819, FD6818, SKY72310, HR_C6000, HR_C7000, ST7735, ST7789,
               RDA5807M, SPI NOR, key matrix, encoder, NMEA GPS, USB; and the math they share (mic level, battery)

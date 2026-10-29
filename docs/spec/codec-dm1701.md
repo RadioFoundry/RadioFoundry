@@ -14,16 +14,100 @@ manufacturer's upgrade tool installer.
 The V02.01 to V02.03 files are downloadable from Radioddity's bucket `dm-1701.s3.amazonaws.com` (the zips named
 "DM-1701 Programming Software V1.0x & Firmware V02.0x"). No V02.04, V02.05 or V02.07 file is known.
 
-| version | file | size | sha256 | codec start |
-|---|---|---|---|---|
-| **V02.06 CSV (primary)** | `DM-1701(CSV)-V02.06.bin` | 1272320 | `0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d` | 0x08074714 |
-| V02.06 noCSV | `DM-1701(noCSV)-V02.06.bin` | 1283584 | `4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9` | 0x080770F0 |
-| V02.03 CSV | `DM-1701(CSV)-V02.03 Only for Radioddity.bin` | 1272320 | `35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948` | 0x080746D4 |
-| V02.03 without CSV | `DM-1701-V02.03 Only for Radioddity.bin` | 1283584 | `0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a` | 0x080770B0 |
-| V02.02 CSV | `DM-1701(CSV)-V02.02.bin` | 1272320 | `643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7` | 0x080746D4 |
-| V02.01 CSV | `Firmware-DM-1701(CSV)-V02.01.bin` | 1272320 | `cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713` | 0x080746D4 |
+| version | file | size | sha256 | codec start | codec source |
+|---|---|---|---|---|---|
+| **V02.06 CSV (primary)** | `DM-1701(CSV)-V02.06.bin` | 1272320 | `0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d` | 0x08074714 | yes, map `dm1701-v0206-csv` |
+| V02.06 noCSV | `DM-1701(noCSV)-V02.06.bin` | 1283584 | `4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9` | 0x080770F0 | yes, map `dm1701-v0206-nocsv` |
+| V02.03 CSV | `DM-1701(CSV)-V02.03 Only for Radioddity.bin` | 1272320 | `35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948` | 0x080746D4 | yes, map `dm1701-v0203-csv` |
+| V02.03 noCSV | `DM-1701-V02.03 Only for Radioddity.bin` | 1283584 | `0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a` | 0x080770B0 | yes, map `dm1701-v0203-nocsv` |
+| V02.02 CSV | `DM-1701(CSV)-V02.02.bin` | 1272320 | `643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7` | 0x080746D4 | yes, map `dm1701-v0203-csv` |
+| V02.01 CSV | `Firmware-DM-1701(CSV)-V02.01.bin` | 1272320 | `cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713` | 0x080746D4 | yes, map `dm1701-v0203-csv` |
 
-V02.01, V02.02 and V02.03 CSV have byte-identical codec code and table windows.
+V02.01, V02.02 and V02.03 CSV have byte-identical codec code and table windows, so one codec map serves all three
+(`tools/rfoundry/rfoundry/codec_maps/dm1701/dm1701-v0203-csv.json`, found by the code window's SHA-256). The noCSV
+files keep the codec at other addresses, each with its own map (`dm1701-v0206-nocsv.json`, `dm1701-v0203-nocsv.json`).
+These six files are every DM-1701 stock build known (2026-10-25); all six are codec sources.
+
+### Files without the codec
+
+rfoundry and the web flasher name these by SHA-256 (`stockfw.py` `NO_CODEC_FILES`) and refuse them as a codec source,
+a key source or original firmware, as for any file that is not the manufacturer's.
+
+| file | size | sha256 | codec |
+|---|---|---|---|
+| an open-firmware build | 804256 | `a09ab4d364d199853204ebdf068ba0886d7e7bb99689f08437aae52104474a7e` | none |
+
+* A plain application image (no container) linked at 0x0800C000, ending at 0x080D05A0. It may come zipped with small
+  `.gla` language files, which the opener sets aside.
+* It holds neither part of the codec: no 64-byte block of the V02.06 CSV code or table window is in it. The file ends
+  below the stock table window (0x080D19F0).
+* It expects the code at 0x0807537C, which it leaves blank (0xFF from there to 0x080BDF2C). It checks the codec's first
+  word there and calls encode (+0x130) and decode (+0x5D8), the V02.06 CSV entry offsets. What puts the codec there is
+  outside the file.
+
+### MD-9600 files
+
+The open-firmware install (the OpenGD77 family's DM-1701 build) starts from the TYT MD-9600 V4 firmware (V16.45), and
+the codec it calls at 0x0807537C is that firmware's. A DM-1701 that ran it carries the **MD-9600 codec**, not the
+DM-1701's. It is the same codec in function: the same entry offsets, state sizes and calls (the FEC decode offset
+differs and is not used), bit-identical in a host emulator ([codec-md9600.md](codec-md9600.md) "Verification").
+
+So the MD-9600 files (21, V06.09, V06.24, V16.24, V16.45, V26.45 and D26.57, below) are DM-1701 codec sources too, each with its own map
+(`tools/rfoundry/rfoundry/codec_maps/md9600/`) and profile (`stockfw.py`, `"file_radio": "MD-9600"`):
+
+* **The codec only.** They are encrypted with the MD-9600's key, which the tools derive from the file itself. They never
+  give the DM-1701 bootloader key and are never restored as the radio's firmware. The key comes from a DM-1701 file, a
+  key file, a radio running RadioFoundry, or the open-firmware backup's read of the bootloader.
+* **Tables moved.** The stock table windows (0x080AB13C to 0x080AFFE0) lie in sector 9, the application's. The merge
+  moves the table window (the codec's own data, the map's cut) with the code (`codecmap.move_window`): every table
+  reference, island pointer and island reference follows the tables, every self reference the code, and the islands'
+  calls into the code are re-encoded for both. The tables go to 0x080D0000 plus their stock offset in a 4 KB page, the
+  code to the next page after them at its own stock page offset.
+* **Checked by running it.** Each build, moved as the merge moves it, was run in the host emulator with only the moved
+  windows mapped (the stock addresses unmapped): 30 frames `32b5fdbac4a399c9`, 300 stress frames `7b0f10283a8114ce`,
+  as the stock build gives.
+
+Placements (tag 0x96VVxxxx: VV the variant, 0 CSV, 1 CSV-GPS, 2 REC, 3 GPS-REC; xxxx the version):
+
+| build | file | tag | tables (address, length, CRC-32) | code (address, length, CRC-32) |
+|---|---|---|---|---|
+| V16.45 CSV | `MD9600-CSV(V4)-V16.45.bin` | 0x96001645 | 0x080D02BC, 0x11036, 0xD4FB8040 | 0x080E2C98, 0xF214, 0x07D97C60 |
+| P16.45 CSV-GPS | `MD9600-CSV-GPS(V4)-P16.45.bin` | 0x96011645 | 0x080D0A7C, 0x110B6, 0x53687A8C | 0x080E2434, 0xF238, 0xDB9C6525 |
+| D16.45 REC | `MD9600-REC(V4)-D16.45.bin` | 0x96021645 | 0x080D0820, 0x11046, 0x407C8912 | 0x080E2E38, 0xF234, 0x5C29A9B4 |
+| S16.45 GPS-REC | `MD9600-GPS-REC(V4)-S16.45.bin` | 0x96031645 | 0x080D0FE0, 0x110C6, 0x2E4B09C6 | 0x080E3630, 0xF1FC, 0x7E5C1170 |
+| V06.09 CSV | `MD9600-CSV-V06.09.bin` | 0x96000609 | 0x080D013C, 0x10FE6, 0x028B006A | 0x080E2B18, 0xF214, 0x51334F80 |
+| P06.09 CSV-GPS | `MD9600-CSV-GPS-P06.09.bin` | 0x96010609 | 0x080D06FC, 0x11066, 0x9E0642E5 | 0x080E20B8, 0xF234, 0x7C7A0876 |
+| D06.09 REC | `MD9600-REC-D06.09.bin` | 0x96020609 | 0x080D0660, 0x10FF6, 0x8EFB3BDF | 0x080E2C9C, 0xF210, 0x53A7AF3B |
+| S06.09 GPS-REC | `MD9600-GPS-REC-S06.09.bin` | 0x96030609 | 0x080D0C60, 0x11076, 0x4758C9EE | 0x080E2280, 0xF22C, 0xB54871EE |
+| V06.24 CSV | `MD9600-CSV-V06.24.bin` | 0x96000624 | 0x080D02BC, 0x10FE6, 0x337667F2 | 0x080E2C78, 0xF232, 0xF977B4D6 |
+| P06.24 CSV-GPS | `MD9600-CSV-GPS-P06.24.bin` | 0x96010624 | 0x080D09FC, 0x11066, 0x2D8040A6 | 0x080E23CC, 0xF21E, 0x25094D99 |
+| S06.24 GPS-REC | `MD9600-GPS-REC-S06.24.bin` | 0x96030624 | 0x080D0F60, 0x11076, 0x49D18C19 | 0x080E2594, 0xF216, 0x69B987A1 |
+| D06.24 REC | `MD9600-REC-D06.24.bin` | 0x96020624 | 0x080D07E0, 0x10FF6, 0xDDBD5036 | 0x080E2DFC, 0xF22E, 0x05F34587 |
+| V16.24 CSV | `MD9600-CSV(V4)-V16.24.bin` | 0x96001624 | 0x080D05FC, 0x10FE6, 0x8C4CD107 | 0x080E2FB0, 0xF23A, 0xE413CEF1 |
+| P16.24 CSV-GPS | `MD9600-CSV-GPS(V4)-P16.24.bin` | 0x96011624 | 0x080D0D3C, 0x11066, 0x1BA5D665 | 0x080E2704, 0xF226, 0xB2F7AB22 |
+| S16.24 GPS-REC | `MD9600-GPS-REC(V4)-S16.24.bin` | 0x96031624 | 0x080D02A0, 0x11076, 0xFC643CC9 | 0x080E28CC, 0xF21E, 0x111C3DB7 |
+| D16.24 REC | `MD9600-REC(V4)-D16.24.bin` | 0x96021624 | 0x080D0B20, 0x10FF6, 0x82E6D100 | 0x080E2134, 0xF236, 0x4FD7EB93 |
+| P26.45 CSV-GPS | `MD9600-CSV-GPS(2571V5)-P26.45.bin` | 0x96012645 | 0x080D013C, 0x110B6, 0x230044AB | 0x080E2B18, 0xF212, 0x757367A4 |
+| S26.45 GPS-REC | `MD9600-GPS-REC(2571V5)-S26.45.bin` | 0x96032645 | 0x080D06E0, 0x110C6, 0x960E46C6 | 0x080E2D14, 0xF216, 0xD772D25B |
+| D26.45 REC | `MD9600-REC(2571V5)-D26.45.bin` | 0x96022645 | 0x080D0EE0, 0x11046, 0x5D4334F8 | 0x080E251C, 0xF20E, 0x3CE9E9D7 |
+| D26.57 REC | `MD9600-REC(2571V4)-D26.57.bin` | 0x96022657 | 0x080D05E0, 0x11032, 0x782C12BE | 0x080E2C3C, 0xF1EE, 0x24D32768 |
+| V26.45 CSV | `MD9600-CSV(2571V5)-V26.45.bin` | 0x96002645 | 0x080D09BC, 0x11036, 0xDA6E4D8D | 0x080E237C, 0xF22E, 0x0095F077 |
+
+### Finding the codec in a flash read
+
+The open-firmware backup (`openfw.js`, and `stockfw.from_moved` in rfoundry) reads the MCU flash, then looks for the codec
+in three ways:
+
+1. At a supported file's stock addresses, or where RadioFoundry's merge put it (with its descriptor): `from_flash`.
+2. Anywhere else: every word-aligned 0x4FF0E92D is a candidate code start. For every profile with a map, the code's self
+   references give the code's move, and its table references and island pointers give the tables' move (all must
+   agree). Both moves are undone. The islands' calls into the code may point anywhere, as long as all were moved by one
+   amount: a tool that moved the code but left the tables verbatim leaves them calling the old address.
+3. The undone code and tables must match the stock SHA-256s. The codec is then placed as a merge from that file places
+   it.
+
+So the read finds a DM-1701 or MD-9600 codec whether the code moved by any amount and the tables stayed or moved too.
+Where the OpenGD77 installer puts the tables is not known; the search does not assume it.
 
 ## Container and encryption
 
@@ -74,6 +158,34 @@ The V02.01, V02.02 and V02.03 CSV values are the same, minus 0x40. Their code wi
 `ab3cfb49...54f1379b`). V02.06 is not only V02.03 shifted. 119 halfwords of the code window differ. Those are the
 table literals (+0x40) and calls from non-codec code inside the window.
 
+The codec maps of the two layouts agree site for site: the same entry offsets, the same 1 self reference, 2 island
+pointers, 70 table references, 4 island references, 2 islands, 12 island calls and 52 data objects at the same offsets,
+every address 0x40 lower in V02.01 to V02.03. Three objects' trimmed lengths differ, because their bound is the next
+address that stock code outside the codec loads; the minimal table window (0x12082 bytes) is the same.
+
+The noCSV files have a larger application segment (0xDC000) and the codec higher up:
+
+| file | code window (address, length, sha256) | table window (address, length 0x12850, sha256) | codec data |
+|---|---|---|---|
+| V02.06 noCSV | 0x080770F0, 0x10200, `c34e4588...0b870566` | 0x080D4794, `de6e8494...d1683acf` | 0x080D4794..0x080E6826 (0x12092) |
+| V02.03 noCSV | 0x080770B0, 0x10200, `4fccfdda...f756a3ce` | 0x080D4754, `b5a73a19...425f537a` | 0x080D4754..0x080E67E6 (0x12092) |
+
+The noCSV code is the CSV code of its version with 0x1C bytes fewer at offset 0x4A00, past every entry point. The
+entry offsets are the same. Inside the table window, other data between the codec's objects is sized differently, so
+the codec's objects sit at +0x2DA4, +0x2E20 and +0x2DB4 from the CSV file's, and the codec data is 0x10 bytes longer.
+The noCSV maps agree with the CSV maps site for site: every reference in the code points to the same object at the
+same offset, and every island call to the same code offset. V02.03 noCSV is V02.06 noCSV 0x40 lower, the same
+relation as between the CSV files.
+
+The maps differ in one place: the CSV maps have 5 `groups`, the noCSV maps 4. The extra CSV group is the 96-byte
+object at 0x080D2C30 and the 3072-byte object at 0x080D2C90 (V02.06; 0x40 lower in V02.03). The first is read
+through one indexed load, and the reads observed in the emulator reach its last byte. In the CSV files the second
+object starts right there, so the analysis can't show that the index never runs on into it, and it keeps the two at
+their distance (a group). In the noCSV files 0x7C bytes of data the codec doesn't use lie between the same two objects
+(0x080D5A34..0x080D5AB0 in V02.06 noCSV), so the first ends at that data and each object stands alone. Both objects have
+the same length, references and observed reads in all four maps. Groups only constrain moving objects apart; the merge
+keeps the table window at its stock address, so this changes nothing in the placed codec.
+
 ### Position dependence
 
 * Calls and branches inside the codec are PC-relative. The three entry points make no calls outside the window.
@@ -89,7 +201,9 @@ table literals (+0x40) and calls from non-codec code inside the window.
    0x4FF0E92D and the sha256 to be `1d8d0460...`.
 3. Decrypt the table window file[0x122EF0 .. +0x12850] the same way. Expect sha256 `b99f14e7...`.
 4. Place them as [codec-placement.md](codec-placement.md) "STM32 radios" says: the tables, cut to 0x12082 bytes,
-   stay at 0x080D19F0; the code moves to 0x080E3A74. Rewrite the one literal in the code that points into the code
+   stay at 0x080D19F0; the code moves to 0x080E3A74 (V02.01 to V02.03: every address 0x40 lower, map
+   `dm1701-v0203-csv.json`; noCSV: the table below "Hosting", maps `dm1701-v0206-nocsv.json` and
+   `dm1701-v0203-nocsv.json`). Rewrite the one literal in the code that points into the code
    and the 12 calls (BL) from the islands in the table window back into the code (the codec map
    `tools/rfoundry/rfoundry/codec_maps/dm1701/dm1701-v0206-csv.json`, `self_refs` and `branches`).
 5. Write the descriptor at 0x080FFF80 (`platform/stm32f4/codec_desc.h`): code and table window with their CRC-32s.
@@ -103,20 +217,35 @@ address, so the code's 63 table literals stay as they are.
 
 * `boards/dm1701/memory.ld` keeps the application out of every flash sector the codec uses:
 
-  | region | sectors | range |
-  |---|---|---|
-  | application | 3-9 | 0x0800C000..0x080BFFFF (720 KB) |
-  | table window | 10, 11 | 0x080D19F0..0x080E3A72 |
-  | code window | 11 | 0x080E3A74..0x080F3C90 |
-  | descriptor | 11 | 0x080FFF80, 128 bytes |
+  | region | sectors | V02.06 CSV | V02.01, V02.02, V02.03 CSV | V02.06 noCSV | V02.03 noCSV |
+  |---|---|---|---|---|---|
+  | application | 3-9 | 0x0800C000..0x080BFFFF (720 KB) | the same | the same | the same |
+  | table window | 10, 11 | 0x080D19F0..0x080E3A72 | 0x080D19B0..0x080E3A32 | 0x080D4794..0x080E6826 | 0x080D4754..0x080E67E6 |
+  | code window | 11 | 0x080E3A74..0x080F3C90 | 0x080E3A34..0x080F3C50 | 0x080E6828..0x080F6A28 | 0x080E67E8..0x080F69E8 |
+  | descriptor | 11 | 0x080FFF80, 128 bytes | the same | the same | the same |
+
+  The board's codec windows are the union of the layouts; a merge writes the layout of the file it merges.
 
   A firmware update then erases and writes only sectors 3-9 and leaves the codec in place (hardware-dm1701.md 1.4,
   docs/dev/release.md "Codec handling").
 * The firmware takes the code's address from the descriptor and calls the entries at their offsets from it.
 * Before the move, the original addresses kept sectors 7, 8, 10 and 11 (512 KB) for about 140 KB of codec, and the application
   got sectors 3-6 (336 KB) with sector 9 apart.
-* Support one version per build, keyed by sha256. The noCSV variants and older versions sit at other addresses and
-  would need their own windows and codec map.
+* Each supported file is keyed by its sha256 (`tools/rfoundry/rfoundry/stockfw.py` `PROFILES`). One codec id for
+  every file, `dm1701-v0206-csv-s11`; the descriptor's tag tells the layouts apart, and
+  `boards/dm1701/vocoder_dm1701.c` pins each:
+
+  | files | tag | tables (address, length, CRC-32) | code (address, length, CRC-32) |
+  |---|---|---|---|
+  | V02.06 CSV | 0x0206 | 0x080D19F0, 0x12082, 0xC1EEFA8B | 0x080E3A74, 0x1021C, 0x485BFC13 |
+  | V02.01, V02.02, V02.03 CSV | 0x0203 | 0x080D19B0, 0x12082, 0x811EC3C0 | 0x080E3A34, 0x1021C, 0x99B02204 |
+  | V02.06 noCSV | 0x10206 | 0x080D4794, 0x12092, 0x3EDE91FF | 0x080E6828, 0x10200, 0xAF82F7D0 |
+  | V02.03 noCSV | 0x10203 | 0x080D4754, 0x12092, 0x217E610A | 0x080E67E8, 0x10200, 0x96264D90 |
+
+  The three older files put the same bytes at the same addresses, so they share one tag. A release accepts only the
+  tags it was built with: a release from before 0x0203 finds no codec in a radio merged from V02.01 to V02.03 and runs
+  FM only until the codec is merged again. The same holds for the noCSV tags (bit 16 set) and releases from before
+  them.
 
 ## Open items
 
@@ -124,6 +253,14 @@ address, so the code's 63 table literals stay as they are.
   still includes some non-codec bytes, which are never executed.
 * Done 2026-10-19 with the code moved to 0x080E3A74: the debug link reported `dm1701-v0206-csv-s11`, on-air speech RX
   decoded 234 of 234 frames, and the SDR bench modem decoded the radio's voice TX.
+* V02.01 to V02.03 CSV (2026-10-25): checked in a host emulator only, not yet on the radio. With the code window and
+  the minimal table window only, and with the codec as the merge places it (code at 0x080E3A34, the 12 calls
+  re-encoded), a 300 frame stress run gives air bits and decoded PCM bit-identical to the V02.06 codec's, and the FEC
+  decode results agree. Each real file decrypts, places and matches the profile's hashes in rfoundry and
+  `tools/codec_extract.py`.
+* V02.06 and V02.03 noCSV (2026-10-25): checked the same way, in a host emulator only, not yet on the radio. Placed
+  (code at 0x080E6828 and 0x080E67E8), the 300 frame stress run gives air bits and decoded PCM bit-identical to the
+  V02.06 CSV codec's; each real file decrypts, places and matches its profile's hashes.
 
 ## Codec state init and calls
 
@@ -210,7 +347,7 @@ no FPU instructions.
 
   | function | does |
   |---|---|
-  | `present()` | checks the descriptor, that the code is at 0x080E3A74 and the tables at 0x080D19F0 with the placed CRC-32s (code 0x485BFC13, tables 0xC1EEFA8B), the first word 0x4FF0E92D and the CRC of both windows (computed once) |
+  | `present()` | checks the descriptor, that the code and tables are where one of the profiles in "Hosting" puts them, with its placed CRC-32s, the first word 0x4FF0E92D and the CRC of both windows (computed once) |
   | `reset()` | runs the init sequence above on zeroed CCM blocks |
   | `encode()` / `decode()` | make the two calls per frame |
 

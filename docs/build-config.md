@@ -75,7 +75,10 @@ Each variant file starts with `## title:` and `## summary:` lines, and the comme
 left out; the site shows both. The lists are a draft for the project lead to settle.
 
 The firmware version (`RFOUNDRY_GIT`) is the commit plus `-dirty` when the tree differs from it (tracked changes, or
-untracked sources in the built directories); only the few files that use it are rebuilt when it changes.
+untracked sources in the built directories). The release name (`RFOUNDRY_RELEASE`, for example `v26.11`) is the
+release tag on that commit, empty for a dirty tree or an untagged commit; `make RELEASE=<tag>` sets it and `RELEASE=`
+leaves it out ([dev/release.md](dev/release.md#release-names)). Only the few files that use either are rebuilt when it
+changes.
 
 ## Switches
 
@@ -107,6 +110,7 @@ below are for an STM32F4 radio.
 | `CONFIG_DMR_EMERGENCY` | = DMR | DMR emergency: the alarm CSBK, the emergency call with hot mic, the alert heard (`spec/dmr-emergency.md`) |
 | `CONFIG_DMR_ROAMING` | = DMR | DMR repeater roaming: per-zone roaming between repeater sites with the same talkgroup, chosen by base station sync with our color code and signal, passive (an optional wake probe sends a standard BS_Dwn_Act); Tools > Roaming, the Home chip (`docs/spec/dmr-roaming.md`). About 1 KB RAM |
 | `CONFIG_DMR_IP_GATEWAY` | = DMR and (USB_NETWORK or NET_PPP) | IP over DMR packet data through a network link to the host, the USB network adapter or PPP on the serial host port, carried by the data service (`docs/spec/usb-network.md`, `docs/spec/ppp.md`). Needs one of the two links |
+| `CONFIG_ZONE_SHARE` | = DMR | zone and channel sharing over DMR data: send a zone or one channel to a contact or talkgroup, and a received one offered for import as receive-only channels (UDP port 4100, `docs/spec/zone-share.md`). Receiving is off until the user sets it to Ask. About 12 KB flash and 4 KB RAM, with its screens and the import (one board's build, measured on and off); it also builds the TX queue |
 | `CONFIG_DMR_UDP_COMPRESS` | = DMR | compressed UDP/IPv4 headers (SAP 3, TS 102 361-3 5.6) on transmit: UDP packets go with a 5-9 octet header instead of 28 where the setting allows (default: ports outside 4000-4099; `docs/spec/dmr-data.md` 11) |
 | `CONFIG_DMR_CONFIRMED` | = DMR | confirmed packet data for the IP gateway's packets per destination or UDP port (N(S), ACK / NACK / selective retry, tries), and for confirmed data to us the CRC-9 check, selective ACK, NACK and duplicate drop (`docs/spec/dmr-data.md` 12). Both together about 0.3 KB RAM |
 | `CONFIG_NET_TCP` | = DMR_IP_GATEWAY | a minimal TCP for the radio's own services on the USB network link, never over RF (`core/net`, `docs/spec/tcp-services.md`). About 4.6 KB RAM (4 connections) |
@@ -122,7 +126,9 @@ below are for an STM32F4 radio.
 | `CONFIG_TFTP_IDDB` | = TFTP | the DMR ID database over TFTP: `iddb.bin` read and written in place (header erased first, programmed last), and the database part of a combined `codeplug.bin` (`docs/spec/tftp.md` 5). About 2.2 KB of flash |
 | `CONFIG_DMR_CONTROL_STATION` | = DMR_IP_GATEWAY | control station mode for PC dispatch software: passthrough (the PC is the endpoint of the radio's own IP data while the link is up; the link layer stays on the radio) and the fixed link pair 192.168.10.1 / .2 instead of the address by DMR ID (`docs/spec/usb-network.md` 5). The power-on network setting belongs to `CONFIG_USB_NETWORK` |
 | `CONFIG_SNMP` | = DMR_IP_GATEWAY | the SNMPv2c agent on UDP 161 over the USB network and over the air, the RadioFoundry MIB, notifications to the host and an RF manager (`core/snmp`, `docs/spec/snmp.md`). Management over the air read-only and RF notifications off by default. About 3.2 KB RAM |
-| `CONFIG_SFR` | = DMR (n where the modem can't) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX); Standalone SFR (the repeater and user roles on a channel) is not wired yet (`docs/spec/sfr.md`) |
+| `CONFIG_SFR` | = DMR (n where the modem can't) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX) and Standalone SFR (the repeater and user roles of a channel, `docs/spec/sfr.md`) |
+| `CONFIG_SFR_CWID` | = SFR | the standalone SFR repeater's periodic CW ID: the callsign from the radio name in Morse, in FM on the channel (`sfr.md` 4). Off: the setting isn't offered |
+| `CONFIG_SFR_DUALPATH_RX` | = SFR | the SFR user receive mode "Dual-path RX": a voice frame whose FEC failed is taken from the other copy of the call. Off: the mode isn't offered |
 | `CONFIG_AM_RX` | = `CONFIG_FM` | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, AM squelch on RSSI, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. Off on boards whose receiver has no AM (`BOARD_UNSUPPORTED`) |
 | `CONFIG_BCAST_FM` | y | broadcast FM receive: an FM channel or the VFO in the range of a second receiver chip (`hal_bcast.h`) plays on it, transmit there refused, the FM broadcast step setting (`core/radio/radio_bcast.c`, the board's tuner glue; `docs/spec/airband-and-broadcast.md` 4). Off on boards without one |
 | `CONFIG_USB` | y (n on a radio without a USB data connector) | USB device (CDC serial) |
@@ -160,12 +166,16 @@ below are for an STM32F4 radio.
 | `CONFIG_AUDIO_PROBE` | n | diagnostics: debug link command 0x10 reads / writes the audio chip's registers and measures the PCM stream, for the USB audio bench tests (`docs/spec/debuglink.md` 3.14); needs DEBUGLINK and DMR; about 2 KB RAM and 2.2 KB flash. Never for a release; CI builds it in one board's `audio-probe` configuration (with `LTO=1`: the default image has no room for it without), not in maximal. A bench image without LTO: add `CONFIG_SNMP=n` |
 | `CONFIG_UI_SETTINGS` | y | the Settings menu on the radio; off: settings keep their stored values and are set with qdmr (`docs/spec/ui.md` 5) |
 
-Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is.
+Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
+`CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
+`CONFIG_ZONE_SHARE`.
 
 ## Values
 
 | Value | Default | Meaning |
 |---|---|---|
+| `CONFIG_DMR_AIR_QUEUE_BYTES` | 2048 | octets in the data service's TX queue: each queued packet takes its length plus a 36-octet record header, rounded up to 4 (`docs/spec/dmr-data.md` 12.6.1). At least 1296 (two longest packets) |
+| `CONFIG_DMR_DATA_TX_GUARD_MS` | 250 | the gap the data service leaves after our own transmission before it starts another that isn't a reply. A workaround for receivers that lose a packet sent right after ours ended; the cause is open (`docs/spec/dmr-data.md` 12.6.3). 0 turns it off |
 | `CONFIG_DISPLAY_INSET` | 0 (a board sets its own) | pixels hidden by the bezel or lens at each edge; the UI draws inside them. A board may set the top and bottom to 0 when only the sides are covered |
 | `CONFIG_DISPLAY_INSET_TOP` / `_BOTTOM` / `_LEFT` / `_RIGHT` | = `CONFIG_DISPLAY_INSET` | one edge |
 

@@ -43,10 +43,13 @@ enum {
 	DL_VIEW_CRASH,		// the crash log's record from before this start (debuglink_crash.c)
 	DL_VIEW_WATCHDOG,	// the hardware watchdog: timeout, feeds, longest idle gap, raw registers (debuglink_watchdog.c)
 	DL_VIEW_RESET,		// why this start happened: the crash log's restart cause (debuglink_crash.c)
+	DL_VIEW_AIR,		// the data TX queue, its guard and zone sharing (debuglink_view_air.c)
+	DL_VIEW_NET_SVC,	// mDNS and TFTP (were in DL_VIEW_NET until view version 4)
+	DL_VIEW_NET_LINK,	// the MTUs and the PPP link (PPP was in DL_VIEW_HOTSPOT until view version 4)
 	DL_VIEW_BOARD,		// the board's own bring-up readings, board.view_line (debuglink_view_board.c)
 	DL_VIEW_COUNT
 };
-#define DL_VIEW_VERSION		2	// bumped when a key changes meaning or goes away (new keys don't bump it)
+#define DL_VIEW_VERSION		4	// bumped when a key changes meaning or goes away (new keys don't bump it)
 
 // Render one section of v into t. Every section starts with "section=<name>"
 void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t);
@@ -101,6 +104,10 @@ size_t debuglink_cmd_aprs(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 
 // The net section (debuglink_view_net.c); built without any of the radio's own services (CONFIG_NET_LOCAL) it says "net.built=0"
 void debuglink_view_net(dl_text_t *t);
+// The net_svc section (debuglink_view_net.c): mDNS and TFTP; "net_svc.built=0" without either
+void debuglink_view_net_svc(dl_text_t *t);
+// The air section (debuglink_view_air.c): "airq.built=0" / "zs.built=0" without the air queue / zone sharing
+void debuglink_view_air(dl_text_t *t);
 // The SNMP agent (debuglink_snmp.c): the snmp section and the SNMP command; without CONFIG_SNMP "snmp.built=0" /
 // unavailable
 void debuglink_view_snmp(dl_text_t *t);

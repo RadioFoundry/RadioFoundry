@@ -450,6 +450,7 @@ void ui_open_caller_actions(void)
 
 static ui_event_t events[UI_EVENTS];
 static volatile uint8_t ev_head, ev_tail;
+static bool wake_req;		// a banner or the emergency screen came up: ui_app_take_wake
 
 bool ui_notify(const ui_event_t *ev)
 {
@@ -478,6 +479,14 @@ static void banner(uint8_t kind, bool warn, uint32_t id, const char *title, cons
 	b->text[sizeof b->text - 1] = 0;
 	ui_st.toast = NULL;	// the banner has the news now ("Checking Joe..." is answered)
 	dirty = true;
+	wake_req = true;
+}
+
+bool ui_app_take_wake(void)
+{
+	bool w = wake_req;
+	wake_req = false;
+	return w;
 }
 
 static void station(sbuf_t *b, const ui_event_t *ev)
@@ -563,6 +572,7 @@ static void handle_event(const ui_event_t *ev)
 		strcpy(emerg_name, ev->name);
 		if (stack[sp].scr != SCR_EMERGENCY)
 			ui_push(SCR_EMERGENCY, 0);
+		wake_req = true;
 		vibrate(UI_VIBE_EMERGENCY);
 		break;
 	case UI_EV_HOTSPOT_STARTED:
@@ -595,6 +605,35 @@ static void handle_event(const ui_event_t *ev)
 		break;
 	case UI_EV_SCAN_STOPPED:
 		break;
+	case UI_EV_ZONE_OFFER:
+		sb_str(&b, ev->index ? GLYPH_DOWNLOAD " Channel from " : GLYPH_DOWNLOAD " Zone from ");
+		station(&b, ev);
+		banner(UI_BANNER_ZONE_OFFER, false, ev->id, title, ev->text);
+		if (ui_st.message_tone)
+			ui_svc_beep(UI_BEEP_MESSAGE);
+		vibrate(UI_VIBE_MESSAGE);
+		break;
+	case UI_EV_ZONE_SENT:
+		sb_str(&b, ev->ok ? "Sent to " : "Not sent to ");
+		if (ev->index && !ev->name[0])
+			sb_str(&b, "TG ");
+		station(&b, ev);
+		banner(UI_BANNER_RESULT, !ev->ok, ev->id, title, ev->ok ? NULL : "Try again on a DMR channel");
+		break;
+	case UI_EV_ZONE_IMPORTED:
+		if (ev->ok) {
+			char text[32];
+			sbuf_t tb;
+			sb_init(&tb, text, sizeof text);
+			sb_str(&b, ev->id ? "Updated " : "Imported ");
+			sb_str(&b, ev->name);
+			sb_u32(&tb, ev->index, 1);
+			sb_str(&tb, ev->index == 1 ? " channel, receive only" : " channels, receive only");
+			banner(UI_BANNER_RESULT, false, 0, title, text);
+		} else {
+			banner(UI_BANNER_RESULT, true, 0, "Zone not imported", ev->text);
+		}
+		break;
 	default:
 		break;
 	}
@@ -613,6 +652,10 @@ static void banner_open(void)
 	b->kind = UI_BANNER_NONE;
 	if (kind == UI_BANNER_MESSAGE)
 		ui_push(SCR_MESSAGE, msg);
+#if CONFIG_ZONE_SHARE
+	else if (kind == UI_BANNER_ZONE_OFFER)
+		ui_push(SCR_OFFER, 0);
+#endif
 	else
 		ui_open_actions(&t);
 }
@@ -1550,6 +1593,7 @@ void ui_app_init(void)
 #endif
 	view = &view_none;
 	memset(&ui_st, 0, sizeof ui_st);
+	wake_req = false;
 #if CONFIG_DUAL_WATCH
 	ui_dual_reset();
 #endif
@@ -1960,14 +2004,18 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ev_tail = (uint8_t)((ev_tail + 1u) % UI_EVENTS);
 		handle_event(&ev);
 	}
-#if CONFIG_ZONE_EDIT
-	// The codeplug changed (a zone edit's job, a CPS write): the screens holding a zone index follow it when zones
-	// moved (zone_edit.h), a filtered list reads its rows again, so the zone editor's lists show the change, and the
-	// editor's screens read their zone again once our queued changes are written (or one was refused). Not while a
+#if CONFIG_ZONE_WRITE
+	// The codeplug changed (a zone edit's job, an import, a CPS write): the screens holding a zone index follow it when
+	// zones moved (zone_edit.h), a filtered list reads its rows again, so the zone editor's lists show the change, and
+	// the editor's screens read their zone again once our queued changes are written (or one was refused). Not while a
 	// zone write is under way: codeplug_serial() first, then zone_edit_busy(), as the radio core does
 	static uint32_t codeplug_seen, shifts_seen;
 	static bool zone_queued;
+#if CONFIG_ZONE_EDIT
 	bool queued = ui_svc_zone_pending();
+#else
+	bool queued = false;	// no editor queue: only imports and CPS writes
+#endif
 	if ((codeplug_serial() != codeplug_seen || zone_edit_shifts() != shifts_seen || (zone_queued && !queued)) &&
 	    !zone_edit_busy()) {
 		codeplug_seen = codeplug_serial();
@@ -1986,10 +2034,14 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 			ui_filter_rebuild();
 			if (f->focus >= ui_filter_count())
 				f->focus = ui_filter_count() > 0 ? (uint16_t)(ui_filter_count() - 1u) : 0;
+#if CONFIG_ZONE_EDIT
 			ui_menus_resume();
+#endif
 		}
+#if CONFIG_ZONE_EDIT
 		if (!queued)
 			ui_menus_codeplug();
+#endif
 		dirty = true;
 	}
 	zone_queued = queued;
@@ -1999,7 +2051,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	// "DMR modem off" only once it's been off a while: a channel or mode change (APRS on FM and back, a retune)
 	// turns the modem off for a moment, and a warning that flashes up for a few frames only worries
 	static uint32_t dmr_off_since;
-	if (v->ch.mode == RADIO_MODE_DMR && !v->dmr.active) {
+	if (v->ch.mode == RADIO_MODE_DMR && !v->dmr.active && !v->dmr.sfr_rpt) {	// an SFR repeater has the modem
 		if (dmr_off_since == 0)
 			dmr_off_since = now != 0 ? now : 1;
 	} else {

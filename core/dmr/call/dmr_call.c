@@ -6,6 +6,13 @@
 #include <string.h>
 #include "dmr/call/dmr_call.h"
 #include "config.h"
+#if CONFIG_SFR
+#include "dmr/sfr.h"
+#endif
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
+#include "dmr/ambe/ambeFec.h"
+#define SFR_DUALPATH_DEPTH	3	// bursts held: the repeat of the first comes 90 ms later, after the talker's next
+#endif
 
 // RX trace into the debug link's log (see dmr_call.h). Host tests that don't link dlog build with DMR_RX_TRACE=0
 #ifndef DMR_RX_TRACE
@@ -79,6 +86,14 @@ static struct {
 	bool data_seen;
 	uint32_t last_any_ms;	// last burst of any kind / CC (polite to all)
 	bool any_seen;
+	uint32_t slots_ms;	// last burst whose sync gave its slot number (TS1 / TS2 / BS), our CC
+	bool slots_seen;
+#if CONFIG_SFR
+	sfrDedup_t sfr_dd;	// SFR user, both copies heard: the voice burst last taken, of either copy
+#endif
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
+	uint8_t vq_n;		// bursts in vq
+#endif
 	uint32_t last_call_end_ms;
 	bool call_end_seen;
 	uint8_t term_lc[DMR_LC_BYTES];	// the LC of the last call a terminator ended, and when
@@ -144,6 +159,16 @@ static struct {
 	dmr_data_rx_fn data_rx;
 	void *data_rx_ctx;
 } s;
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
+// SFR user, dual-path RX: voice bursts taken but not played yet, oldest first (play order; s.vq_n of them). A burst waits
+// while one of its frames failed the FEC and the other copy may still fix it. CPU only, so in the board's CPU RAM
+static struct {
+	dmr_burst_t b;
+	uint32_t ms, slot;	// arrival, the modem's slot counter
+	uint8_t bad;		// bit f: frame f failed the FEC
+	bool wait;		// the other copy hasn't come yet
+} vq[SFR_DUALPATH_DEPTH] RFOUNDRY_CPU_RAM;
+#endif
 
 // --- RX trace: one entry per burst event, packed into lines for the debug link's log ---
 //
@@ -242,11 +267,26 @@ static char tr_burst(const dmr_burst_t *b)
 	return b->kind < sizeof(data) ? data[b->kind] : 'X';
 }
 
+// TX trace: each data list (no PTT), so that an unattended transmission shows in the log among the RX lines. Logged
+// even with the RX trace off: there are few of them
+//   ctx <tag> n<bursts>          given to the stack (its repeater wake-up comes first when needed)
+//   ctx <tag> end <err> <ms>     off the air (err: dmr_tx_error_t, 0 sent whole) after ms
+static void tr_tx(const char *tag, bool end, uint32_t a, uint32_t b)
+{
+	tr_flush();
+	if (end)
+		dlog("ctx %s end %u %u", tag != NULL ? tag : "data", (unsigned)a, (unsigned)b);
+	else
+		dlog("ctx %s n%u", tag != NULL ? tag : "data", (unsigned)a);
+}
+
 #define TR_WHAT(c)	(tr.what = (c))
 #define TR_LOST(n)	(tr.lost = (uint16_t)(tr.lost + (n)))
+#define TR_TX(tag, end, a, b)	tr_tx(tag, end, a, b)
 #else
 #define TR_WHAT(c)	((void)(c))
 #define TR_LOST(n)	((void)(n))
+#define TR_TX(tag, end, a, b)	((void)(tag), (void)(end), (void)(a), (void)(b))
 #endif
 
 void dmr_call_set_rx_trace(bool on)
@@ -306,6 +346,55 @@ static void set_reply(dmr_target_t t, uint32_t now)
 	s.reply_until = now + (uint32_t)w * 1000u;
 	s.reply_set = true;
 	s.dirty = true;
+}
+
+static bool sfr_user(void)
+{
+	return CONFIG_SFR && s.cfg.sfr_user && !s.cfg.rmo;
+}
+
+// SFR user hearing both copies (first arrival or dual-path RX), and dual-path RX
+static bool sfr_both(void)
+{
+	return sfr_user() && s.cfg.sfr_rx != DMR_SFR_RX_REPEATER;
+}
+
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
+static bool sfr_dualpath_rx(void)
+{
+	return sfr_user() && s.cfg.sfr_rx == DMR_SFR_RX_DUALPATH;
+}
+#endif
+
+// A burst of the talker's own copy, not the repeat. TS framing: the slot is in the sync, and the modem numbers the
+// bursts without one (voice B-F) from it. BS framing: the talker's bursts carry MS sync. MS framing: the copies look
+// alike, and the call stays on the slot of the copy heard first
+static bool sfr_direct(const dmr_burst_t *b)
+{
+	switch (s.cfg.rx_sync) {
+	case DMR_SYNC_TS1:
+	case DMR_SYNC_TS2:
+		return b->sync == s.cfg.tx_sync || (b->ts != 0 && b->ts == (int8_t)s.cfg.ts);
+	case DMR_SYNC_BS:
+		return b->sync == DMR_SYNC_MS;
+	default:
+		return false;
+	}
+}
+
+// DMO start timing. An SFR user keys in step with the repeater's slots (the sync told their numbers) when they were
+// heard lately, else on its own clock: an aligned start with no slot numbers to go by would wait for a slot that never
+// comes and be refused. Everyone else: in step with a station heard within align_ms
+static dmr_timing_t dmo_timing(uint32_t now, uint32_t align_ms)
+{
+	if (sfr_user())
+		return elapsed(now, s.slots_ms, s.slots_seen, DMR_CALL_ALIGN_MS) ? DMR_TIMING_OWN : DMR_TIMING_ALIGNED;
+	return elapsed(now, s.last_activity_ms, s.activity_seen, align_ms) ? DMR_TIMING_OWN : DMR_TIMING_ALIGNED;
+}
+
+static uint8_t tx_sync(void)
+{
+	return sfr_user() ? s.cfg.tx_sync : (uint8_t)DMR_SYNC_NONE;
 }
 
 static bool transmitting(void)
@@ -400,11 +489,14 @@ static bool rx_accept(const dmr_lc_t *l, uint32_t now)
 	return l->dst == s.cfg.own_id || l->dst == DMR_ID_ALL_CALL || s.cfg.listen.hear_all;
 }
 
+static void dual_flush(void);
+
 static void rx_end(uint32_t now)
 {
 	if (s.rx == RXC_NONE)
 		return;
 	if (s.rx == RXC_PLAY) {
+		dual_flush();
 		if (s.sink && s.sink->end)
 			s.sink->end(s.sink->ctx);
 		s.view.last_heard = s.view.caller;
@@ -436,8 +528,11 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 	bool continuing = s.rx != RXC_NONE;
 	bool new_talker = !continuing || l.src != s.view.caller.src;
 
-	if (s.rx == RXC_PLAY && s.sink && s.sink->end)
-		s.sink->end(s.sink->ctx);
+	if (s.rx == RXC_PLAY) {
+		dual_flush();
+		if (s.sink && s.sink->end)
+			s.sink->end(s.sink->ctx);
+	}
 
 	memcpy(s.call_lc, lc, DMR_LC_BYTES);
 	s.call_ts = b->ts;
@@ -471,6 +566,9 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 			c->encrypted = true;
 		}
 		s.view.call_start_ms = now;
+#if CONFIG_SFR
+		sfrDedupReset(&s.sfr_dd);
+#endif
 		stats.rx_calls++;
 		if (late)
 			stats.rx_late_entries++;
@@ -566,6 +664,108 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	if (s.sink && s.sink->frame)
 		for (int f = 0; f < DMR_AMBE_FRAMES_PER_BURST; f++)
 			s.sink->frame(&v[f * DMR_AMBE_FRAME_BYTES], s.sink->ctx);
+}
+
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
+// Bit f set: frame f of a voice burst failed the FEC (its C0 word, the one the vocoder can't do without)
+static uint8_t frames_bad(const uint8_t v[DMR_VOICE_BYTES])
+{
+	uint8_t bits[AMBE_PARAM_BITS];
+	uint8_t bad = 0;
+
+	for (int f = 0; f < DMR_AMBE_FRAMES_PER_BURST; f++) {
+		ambe_fec_result_t r;
+
+		ambeFecDecode(&v[f * DMR_AMBE_FRAME_BYTES], bits, &r);
+		if (r.c0_failed)
+			bad |= (uint8_t)(1u << f);
+	}
+	return bad;
+}
+
+static void dual_pop(void)
+{
+	rx_play(&vq[0].b, vq[0].ms, vq[0].slot);
+	s.vq_n--;
+	memmove(&vq[0], &vq[1], s.vq_n * sizeof(vq[0]));
+}
+
+// Play the held bursts that are ready, in order: the head's other copy came, or it waited long enough
+static void dual_drain(uint32_t now)
+{
+	while (s.vq_n && (!vq[0].wait || elapsed(now, vq[0].ms, true, DMR_SFR_DUALPATH_MS)))
+		dual_pop();
+}
+
+static void dual_flush(void)
+{
+	while (s.vq_n)
+		dual_pop();
+	s.vq_n = 0;
+}
+
+// A voice burst of the call to play. Encrypted voice can't be checked (the FEC is over the scrambled bits): played
+static void dual_take(const dmr_burst_t *b, uint32_t now, uint32_t slot)
+{
+	bool enc = b->pi || (s.view.caller.svc & DMR_SVC_PRIVACY) || s.view.caller.pi_header;
+	uint8_t bad = enc ? 0 : frames_bad(b->payload);
+
+	if (bad == 0 && s.vq_n == 0) {
+		rx_play(b, now, slot);
+		return;
+	}
+	if (s.vq_n == SFR_DUALPATH_DEPTH)
+		dual_pop();
+	vq[s.vq_n].b = *b;
+	vq[s.vq_n].ms = now;
+	vq[s.vq_n].slot = slot;
+	vq[s.vq_n].bad = bad;
+	vq[s.vq_n].wait = bad != 0;
+	s.vq_n++;
+	if (bad)
+		stats.rx_sfr_held++;
+	dual_drain(now);
+}
+
+// The other copy of a burst already taken: a frame that failed the FEC in the held one is taken from it if it decodes
+static void dual_other(const dmr_burst_t *b, uint32_t now)
+{
+	for (uint8_t k = 0; k < s.vq_n; k++) {
+		if (!vq[k].wait || vq[k].b.voice_index % 6 != b->voice_index % 6)
+			continue;
+		uint8_t other = frames_bad(b->payload);
+
+		for (int f = 0; f < DMR_AMBE_FRAMES_PER_BURST; f++) {
+			uint8_t m = (uint8_t)(1u << f);
+
+			if ((vq[k].bad & m) && !(other & m)) {
+				memcpy(&vq[k].b.payload[f * DMR_AMBE_FRAME_BYTES], &b->payload[f * DMR_AMBE_FRAME_BYTES],
+				       DMR_AMBE_FRAME_BYTES);
+				vq[k].bad &= (uint8_t)~m;
+				stats.rx_sfr_fixed++;
+			}
+		}
+		vq[k].wait = false;
+		break;
+	}
+	dual_drain(now);
+}
+#else
+static void dual_flush(void)
+{
+}
+#endif
+
+// A voice burst of a call being played: straight to the sink, or through the dual-path RX queue
+static void rx_voice(const dmr_burst_t *b, uint32_t now, uint32_t slot)
+{
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
+	if (sfr_dualpath_rx()) {
+		dual_take(b, now, slot);
+		return;
+	}
+#endif
+	rx_play(b, now, slot);
 }
 
 // Voice with no call: start one from the embedded LC once two consecutive bursts were seen (a lone burst is noise).
@@ -727,7 +927,7 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	// A was dropped here, three frames concealed per superframe)
 	bool cc_known = !(b->kind == DMR_BURST_VOICE && b->voice_index % 6 == 0);
 
-	if (!s.cfg.listen.any_cc && cc_known && b->cc != s.cfg.cc) {
+	if (!s.cfg.listen.any_cc && cc_known && b->cc != s.cfg.cc && !(sfr_user() && s.cfg.cc2 >= 0 && b->cc == s.cfg.cc2)) {
 		stats.rx_cc_dropped++;
 		TR_WHAT('x');
 		return;
@@ -739,7 +939,20 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	// The slot number is only known through a repeater (CACH) or from the TDMA direct mode sync
 	bool ts_known = b->ts != 0 && (s.cfg.rmo || b->sync == DMR_SYNC_BS || b->sync == DMR_SYNC_TS1 ||
 				       b->sync == DMR_SYNC_TS2);
-	if ((ts_known && b->ts != s.cfg.ts) || (s.rx != RXC_NONE && b->ts != 0 && s.call_ts != 0 && b->ts != s.call_ts)) {
+	if (ts_known && b->sync != DMR_SYNC_MS) {
+		s.slots_ms = now;
+		s.slots_seen = true;
+	}
+	// An SFR user hearing only the repeat drops the talker's own copy; one hearing both takes either slot
+	if (sfr_user() && !sfr_both() && sfr_direct(b)) {
+		stats.rx_sfr_direct++;
+		TR_WHAT('s');
+		return;
+	}
+	bool other_slot = sfr_user() ? false : ts_known && b->ts != s.cfg.ts;
+
+	if (!sfr_both() &&
+	    (other_slot || (s.rx != RXC_NONE && b->ts != 0 && s.call_ts != 0 && b->ts != s.call_ts))) {
 		stats.rx_ts_dropped++;
 		TR_WHAT('s');
 		return;
@@ -766,6 +979,8 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			rx_lc(lc, b, false, now);
 			if (s.rx != RXC_NONE) {
 				s.last_rx_ms = now;
+				if (was && sfr_both())
+					break;	// the other copy of the call's header: its voice may be playing already
 				s.have_index = true;
 				s.next_index = 0;
 				s.last_voice_ms = now;
@@ -792,6 +1007,19 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		}
 		break;
 	case DMR_BURST_VOICE:
+#if CONFIG_SFR
+		if (sfr_both() && !sfrDedupVoice(&s.sfr_dd, b->voice_index % 6, now)) {
+			if (s.rx != RXC_NONE)
+				s.last_rx_ms = now;
+			stats.rx_sfr_dup++;
+#if CONFIG_SFR_DUALPATH_RX
+			if (s.rx == RXC_PLAY && sfr_dualpath_rx())
+				dual_other(b, now);
+#endif
+			TR_WHAT('d');
+			break;
+		}
+#endif
 		if (s.rx == RXC_NONE) {
 			rx_late_entry(b, now, slot);
 			break;
@@ -801,7 +1029,7 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			rx_embedded(b, now);
 		TR_WHAT('o');
 		if (s.rx == RXC_PLAY)
-			rx_play(b, now, slot);
+			rx_voice(b, now, slot);
 		break;
 	default:
 		// Any other burst on the call's slot keeps the call (a PI header precedes the voice of a call too; bench
@@ -881,7 +1109,7 @@ static bool tx_put(uint8_t kind, uint8_t index, bool host_crc, const uint8_t *pa
 	tb.kind = kind;
 	tb.voice_index = index;
 	tb.host_crc = host_crc;
-	tb.sync_override = DMR_SYNC_NONE;
+	tb.sync_override = tx_sync();
 	tb.len = len;
 	memcpy(tb.payload, payload, len);
 	if (!s.modem->tx_queue(&tb))
@@ -985,10 +1213,10 @@ static void tx_start_voice(uint32_t now)
 	if (s.cfg.rmo)
 		timing = DMR_TIMING_ALIGNED;
 	else	// DMO: answer in step with a station just heard, else on our own timing
-		timing = elapsed(now, s.last_activity_ms, s.activity_seen, DMR_CALL_ALIGN_MS) ? DMR_TIMING_OWN
-											    : DMR_TIMING_ALIGNED;
-	// Our own check is done; through a repeater the modem must not refuse because of the hang time (gotcha 1.8)
-	dmr_access_t access = s.cfg.rmo ? DMR_ACCESS_IMPOLITE : s.cfg.access;
+		timing = dmo_timing(now, DMR_CALL_ALIGN_MS);
+	// Our own check is done; through a repeater the modem must not refuse because of the hang time (gotcha 1.8). An
+	// SFR's hang (idle bursts on its outbound slot) is the same
+	dmr_access_t access = s.cfg.rmo || sfr_user() ? DMR_ACCESS_IMPOLITE : s.cfg.access;
 
 	if (!s.modem->tx_begin(timing, (int8_t)s.cfg.ts, access)) {
 		tx_deny(DMR_TX_ERR_REJECTED);
@@ -1091,6 +1319,7 @@ static void data_end(uint8_t err)
 	s.data_staged = false;
 	s.tx = TX_NONE;
 	s.dirty = true;
+	TR_TX(d.tag, true, err, s.now - s.tx_since);
 	if (d.done)
 		d.done(err, d.ctx);
 	if (s.ptt)
@@ -1110,6 +1339,8 @@ static void tx_data_fill(uint32_t now)
 			}
 			s.data_staged = true;
 		}
+		if (s.data_stage.sync_override == DMR_SYNC_NONE)
+			s.data_stage.sync_override = tx_sync();
 		if (!s.modem->tx_queue(&s.data_stage))
 			return;	// kept staged for the next poll
 		s.data_staged = false;
@@ -1126,8 +1357,7 @@ static void tx_start_data(uint32_t now)
 	else	// DMO: in step with a station just heard (an ACK to its data), else on our own timing. The modem keeps the
 		// slot timing of a reception only briefly (the HR_C6000 engine: 390 ms), so not DMR_CALL_ALIGN_MS here: an
 		// aligned start after that waits for a slot that never comes and is refused (found by dmrDataChainTest)
-		timing = elapsed(now, s.last_activity_ms, s.activity_seen, DMR_CALL_DATA_ALIGN_MS) ? DMR_TIMING_OWN
-												 : DMR_TIMING_ALIGNED;
+		timing = dmo_timing(now, DMR_CALL_DATA_ALIGN_MS);
 	if (!s.modem->tx_begin(timing, (int8_t)s.cfg.ts, DMR_ACCESS_IMPOLITE)) {
 		tx_deny(DMR_TX_ERR_REJECTED);
 		return;
@@ -1328,6 +1558,7 @@ void dmr_call_config_default(dmr_call_config_t *cfg)
 	cfg->reply_window_s = DMR_CALL_REPLY_WINDOW_S;
 	cfg->wakeup_attempts = DMR_CALL_WAKEUP_ATTEMPTS;
 	cfg->fade_ms = DMR_CALL_FADE_MS;
+	cfg->cc2 = -1;
 }
 
 void dmr_call_init(const hal_dmr_modem_t *modem)
@@ -1353,7 +1584,9 @@ void dmr_call_set_voice(const dmr_voice_sink_t *sink, const dmr_voice_source_t *
 static void modem_config(dmr_config_t *mc)
 {
 	mc->own_id = s.cfg.own_id;
-	mc->cc = (s.cfg.listen.any_cc || s.cfg.access == DMR_ACCESS_POLITE_ALL) ? -1 : (int8_t)s.cfg.cc;
+	bool two_cc = sfr_user() && s.cfg.cc2 >= 0 && s.cfg.cc2 != s.cfg.cc;	// an ERDM user: the stack filters
+
+	mc->cc = (s.cfg.listen.any_cc || s.cfg.access == DMR_ACCESS_POLITE_ALL || two_cc) ? -1 : (int8_t)s.cfg.cc;
 	mc->access = s.cfg.access;
 	mc->repeater = s.cfg.rmo;
 }
@@ -1372,7 +1605,8 @@ void dmr_call_configure(const dmr_call_config_t *cfg)
 {
 	bool rf_change = !s.configured || cfg->cc != s.cfg.cc || cfg->ts != s.cfg.ts || cfg->rmo != s.cfg.rmo ||
 			 cfg->listen.any_cc != s.cfg.listen.any_cc || cfg->access != s.cfg.access ||
-			 cfg->own_id != s.cfg.own_id;
+			 cfg->own_id != s.cfg.own_id || cfg->sfr_user != s.cfg.sfr_user || cfg->tx_sync != s.cfg.tx_sync ||
+			 cfg->rx_sync != s.cfg.rx_sync || cfg->sfr_rx != s.cfg.sfr_rx || cfg->cc2 != s.cfg.cc2;
 	bool target_change = !same_target(cfg->talk_target, s.cfg.talk_target);
 
 	if (rf_change && s.configured) {
@@ -1561,6 +1795,10 @@ void dmr_call_poll(uint32_t now_ms)
 		tr_flush();
 #endif
 
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
+	if (s.vq_n)
+		dual_drain(now_ms);
+#endif
 	// Fade: no burst on the call for a while ends it
 	if (s.rx != RXC_NONE && elapsed(now_ms, s.last_rx_ms, true, fade_ms()))
 		rx_end(now_ms);
@@ -1637,6 +1875,7 @@ bool dmr_call_data_tx(const dmr_data_source_t *src)
 	s.tx_since = s.now;
 	s.wake_tries = 0;
 	s.dirty = true;
+	TR_TX(src->tag, false, src->count, 0);
 	if (s.cfg.rmo && !repeater_up(s.now))
 		tx_wakeup(s.now);
 	else

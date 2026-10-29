@@ -105,8 +105,9 @@ ifeq ($(CONFIG_NAND_STORAGE),y)
 BOARD_DIRS += $(BOARD_NAND_DIRS)
 endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
-APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
-APP_ASM := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.S))
+# Sorted: the link order steers LTO's code, and $(wildcard)'s order depends on the make (gotchas 13.10)
+APP_SRC := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.c)))
+APP_ASM := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.S)))
 # The stub entry without the debug link: its listener uses the debug link's framing (dl_frame.c, no RTOS or board)
 ifeq ($(CONFIG_STUB_ENTRY)$(CONFIG_DEBUGLINK),yn)
 APP_SRC += core/debuglink/dl_frame.c
@@ -153,6 +154,14 @@ APP_SRC := $(filter-out core/crash/crash_trace.c,$(APP_SRC))
 ifeq ($(CONFIG_FAULT_TRACE),y)
 APP_SRC += core/crash/crash_trace.c
 endif
+# Zone sharing over DMR data: the record, the sender and the offers (its codeplug side is core/codeplug/zone_import.c)
+ifeq ($(CONFIG_ZONE_SHARE),y)
+APP_SRC += core/dmr/zoneShare.c core/dmr/zoneShareSvc.c
+endif
+# The air queue: the packets the IP gateway and zone sharing hand to the air, in order, one at a time
+ifneq ($(filter y,$(CONFIG_DMR_IP_GATEWAY) $(CONFIG_ZONE_SHARE)),)
+APP_SRC += core/dmr/dmrAirQueue.c
+endif
 # The IP gateway (the data service above carries its packets: CONFIG_DMR_DATA_CORE follows it)
 ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
 APP_SRC += core/dmr/ipGateway.c
@@ -186,8 +195,8 @@ endif
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC)
 
 # Firmware version: the commit, with -dirty when tracked files differ from it or untracked sources sit in the built
-# directories (both end up in the image). Only the files that use RFOUNDRY_GIT get it, through their own stamp, so a new
-# commit or an edit rebuilds those few objects, not everything.
+# directories (both end up in the image). Only the files that use RFOUNDRY_GIT or RFOUNDRY_RELEASE get it, through
+# their own stamp, so a new commit or an edit rebuilds those few objects, not everything.
 GITVERSION := $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
 ifneq ($(GITVERSION),unknown)
 GITDIRTY := $(shell git update-index -q --refresh >/dev/null 2>&1; git diff-index --quiet --ignore-submodules=all HEAD -- \
@@ -202,6 +211,17 @@ RFOUNDRY_VERSION := $(GITVERSION)$(GITDIRTY)
 RFOUNDRY_GIT_HEAD := $(firstword $(subst -, ,$(RFOUNDRY_VERSION)))
 RFOUNDRY_GIT_ID := $(if $(shell printf '%s' '$(RFOUNDRY_GIT_HEAD)' | grep -Eqx '[0-9a-fA-F]{1,8}' && echo y),0x$(RFOUNDRY_GIT_HEAD)u,0u)
 RFOUNDRY_GIT_DIRTY := $(if $(findstring -dirty,$(RFOUNDRY_VERSION)),1,0)
+# The release name the radio shows (splash, About, the debug link's release=): the newest release tag on this commit
+# (tools/release_version.py: vYY.M[.N][bN]), none for a dirty tree or an untagged commit. RELEASE= sets it
+# (tools/release_build.sh passes the tag) and RELEASE= alone leaves it out. RFOUNDRY_GIT stays the commit: the crash
+# record, the manifests and the CPS id read it
+ifeq ($(origin RELEASE),undefined)
+RELEASE_TAGS := $(if $(GITDIRTY),,$(shell git tag --points-at HEAD --list 'v[0-9]*' 2>/dev/null))
+RFOUNDRY_RELEASE := $(if $(RELEASE_TAGS),$(shell python3 tools/release_version.py pick $(RELEASE_TAGS)))
+else ifneq ($(RELEASE),)
+RFOUNDRY_RELEASE := $(shell python3 tools/release_version.py check '$(RELEASE)' && echo '$(RELEASE)')
+$(if $(RFOUNDRY_RELEASE),,$(error RELEASE=$(RELEASE) is not a release name: vYY.M, vYY.M.N, either with bN (docs/dev/release.md)))
+endif
 # RFOUNDRY_BOARD_ID: the board's id (boards/<id>), for platform code that names things after the board (the HR_C7000 codec
 # host's profile ids, "<id>-<stock tag>"); core/ never uses it
 DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DRFOUNDRY_BOARD_ID=\"$(BOARD)\"
@@ -258,13 +278,13 @@ codec: $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin)
 # the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects
 # are removed outright, because make's 1 s timestamps can't order a stamp written in the same second as an object
 # (and a file removed by a recipe would still be in make's cache)
-VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l RFOUNDRY_GIT $(APP_SRC) 2>/dev/null))
+VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -lE 'RFOUNDRY_(GIT|RELEASE)' $(APP_SRC) 2>/dev/null))
 ifeq ($(filter clean test print-config print-cc print-unsupported print-not-written print-required print-maximal-skip print-maximal-vars \
 	print-vars,$(MAKECMDGOALS)),)
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
 	rm -f $(OBJ); })
-$(shell echo '$(RFOUNDRY_VERSION)' | cmp -s - $(BUILD)/version || { echo '$(RFOUNDRY_VERSION)' > $(BUILD)/version; \
+$(shell echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE)' | cmp -s - $(BUILD)/version || { echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE)' > $(BUILD)/version; \
 	rm -f $(VERSION_OBJ); })
 # The About page's authors and third-party list (tools/gen_about.py), and the objects that include it when it changed
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
@@ -277,7 +297,7 @@ HTTP_ASSETS := $(sort $(wildcard core/net/http_assets/*))
 # With web control, its front panel page (core/net/webctl_assets) replaces the files of the same name, and the radio's
 # key map and drawing go with it (tools/gen_webctl_assets.py)
 ifeq ($(CONFIG_NET_WEBCTL),y)
-WEBCTL_ASSETS := $(wildcard core/net/webctl_assets/*) $(shell python3 tools/gen_webctl_assets.py $(BOARD) $(BUILD)/gen/webctl)
+WEBCTL_ASSETS := $(sort $(wildcard core/net/webctl_assets/*)) $(shell python3 tools/gen_webctl_assets.py $(BOARD) $(BUILD)/gen/webctl)
 HTTP_ASSETS := $(filter-out $(addprefix core/net/http_assets/,$(notdir $(WEBCTL_ASSETS))),$(HTTP_ASSETS)) $(WEBCTL_ASSETS)
 endif
 $(shell python3 tools/gen_http_assets.py $(if $(filter y,$(CONFIG_NET_HTTP_GZIP)),--gzip) $(BUILD)/gen/http_assets_gen.h \
@@ -286,7 +306,8 @@ endif
 endif
 $(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
 $(VERSION_OBJ): $(BUILD)/version
-$(VERSION_OBJ): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY)
+$(VERSION_OBJ): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY) \
+	-DRFOUNDRY_RELEASE=\"$(RFOUNDRY_RELEASE)\"
 ifeq ($(LTO),1)
 $(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += -fno-lto
 endif
@@ -296,7 +317,7 @@ $(TARGET).elf: $(OBJ) $(LDSCRIPT) $(wildcard platform/$(PLATFORM)/*.ld)
 	$(CC) $(LDFLAGS) -o $@ $(OBJ) -lm
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $(addprefix -j ,$(BIN_SECTIONS)) $< $@
-	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes, version $(RFOUNDRY_VERSION)"
+	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes, version $(RFOUNDRY_VERSION)$(if $(RFOUNDRY_RELEASE), ($(RFOUNDRY_RELEASE)))"
 
 # A first stage in front of the application (boot/), for a board that sets BOOT_STAGE
 ifneq ($(BOOT_STAGE),)

@@ -23,7 +23,7 @@ server keeps running while the tool writes through it (`--write-app` took 111 s 
 
 ## The universal stub
 
-One image (7,004 bytes, protocol version 6) serves every HR_C7000 radio and every way in. It is linked to run at 0x30000
+One image (7,784 bytes, protocol version 7) serves every HR_C7000 radio and every way in. It is linked to run at 0x30000
 and copies itself there from wherever it was loaded, then zeroes its .bss and sets its own stack. Board details are not
 built in: after HELLO the host sends CONFIG (clock rates it measured, the UART to keep, the power latch and key pins,
 LEDs, board id, NAND flag), and checks the echo in the next HELLO before it writes anything. The profiles are in
@@ -40,6 +40,43 @@ embedded with `python3 stub/embed_stub.py stub/stubtool.py UNIV stub_univ.bin`, 
 HELLO v6 also reports the RAM footprint (run address, image length, end of .bss, stack bounds) and the deepest stack use
 so far, measured from a painted stack. `stubtool` prints it as `stub RAM:`.
 
+Protocol 7 adds WRITE (op 0x0E): one request carries a whole 4 KB sector, and the stub erases it, programs its non-blank
+pages, waits on the flash itself and replies with the CRC-32 of the sector read back. The host compares that CRC with
+its own and writes the sector again (up to 3 times) on a mismatch. The CRC pass over the whole range afterwards is
+unchanged. Before protocol 7 every page took four or more requests (write enable, status, program, busy polls), so a
+write was bound by turnarounds, not bytes. Both hosts (`stubtool.py`, the web flasher's `stub.js`) use WRITE when HELLO
+says 7 or more and the per-page SPI requests otherwise. The host checks the write range before it sends, as before.
+
+| DM-32UV, 115200 baud, FTDI cable on a Mac (2026-10-27) | Per-page requests (v6) | WRITE (v7) |
+|---|---|---|
+| One changed sector | 1.37 s | 0.41 s |
+| A 505 KB image, all 127 sectors changed | about 174 s (estimate) | 51.9 s |
+
+At 115200 a WRITE frame (4,106 bytes) takes about 360 ms on the wire, so what is left is bandwidth.
+
+Protocol 7 also lets the host raise the serial rate without user help. The stub goes back to its home rate by itself
+once a raised link has carried no good request for one BAUD window, so the host can always get home by going quiet
+(`common/PROTOCOL.md`, "Going home on a lost link"). `stubtool.py` picks the rate for writes and backups: a binary
+search over the rates the UART makes (clock / (16 * d), 200000 to 1100000, fastest first), each proved with
+WRITE-size frames to the radio and full-size reads back, then remembered per port and radio in
+`~/.cache/rfoundry/stub-baud.json`. A raised rate that starts damaging frames mid-run is dropped (+10 per damaged
+frame, -1 per clean one, give up at 30) and the run carries on at 115200. `--baud off` keeps 115200, `--baud N` asks
+for one rate. The web flasher stays at 115200.
+
+| DM-32UV, FTDI FT232R cable on a Mac (2026-10-27) | Result |
+|---|---|
+| 350000, 291666, 276315 | Fail the proof (no reply, or bad request checksums on 4 KB frames to the radio); fall back by themselves |
+| 262500 | Holds; picked by the search in about 16 s, then at once from the cache |
+| A 517 KB image, 126 sectors changed, at 262500 | 27 s writing, 34 s including the stub upload |
+
+The limit was the cable and the radio's jack, not the divisor: 276315 passed full-size reads but damaged long frames
+towards the radio, which is why the proof sends both.
+
+The rates take a measured clock. `timer_hz` times each sample as its request goes out, since the reply can wait up to
+the cable's latency timer (16 ms on an FTDI). Timing to the reply read an 84 MHz clock as about 80 MHz, and every
+divisor but the first came out 5 % off. Both hosts round the measured clock to whole MHz (every APB clock here is:
+24, 36 or 84 MHz), so the same rates come out every run.
+
 ### RAM placement
 
 The HR_C7000's RAM is IRAM 0x10000-0x57FFF (288 KB). The 32 KB SRAM at 0x18000000 is shared with the modem and is not
@@ -49,12 +86,13 @@ the modem writes only its own SRAM, so after the stub masks every interrupt noth
 | Region | Address | Size |
 |---|---|---|
 | Entry and copy loop (position independent, no stack) | load address | 0x80 |
-| Image (text, parameter block at +0x80, data) | 0x30000-0x31B5C after the copy | 7,004 B |
-| .bss (receive buffer, sector buffer) | to 0x36974 | 19,992 B |
-| Stack (4 KB, painted) | 0x36978-0x37978 | 4,096 B |
-| Whole footprint | 0x30000-0x37978 | 31,096 B (32 KB budget, checked by the linker) |
+| Image (text, parameter block at +0x80, data) | 0x30000-0x31E68 after the copy | 7,784 B |
+| .bss (receive buffer, sector buffers) | to 0x36C90 | 20,008 B |
+| Stack (4 KB, painted) | 0x36C90-0x37C90 | 4,096 B |
+| Whole footprint | 0x30000-0x37C90 | 31,888 B (32 KB budget, checked by the linker) |
 
-Measured stack use: 168 bytes on the DM-32UV and DM-1801 Pro, 252 bytes on the DB25-D (NAND reads included).
+Measured stack use: 168 bytes on the DM-32UV and DM-1801 Pro, 252 bytes on the DB25-D (NAND reads included); 200 bytes on
+the DM-32UV after two 126-sector WRITE installs (protocol 7, 7,796-byte build).
 
 The entry stops in place, writing nothing, when the loaded copy and 0x30000 would overlap. The host checks the same
 rule, and that the load lies in IRAM, before it sends the image (`check_univ_load`).
@@ -102,7 +140,14 @@ The universal stub is built outside this repository with the monitor's source; `
 
 A second stub, with its source here, for the STM32F405 radios behind the AnyRoad / TYT bootloader. A running RadioFoundry built
 with `CONFIG_STUB_ENTRY=y` loads it over the USB debug link; it then installs builds (changed sectors only, the codec
-kept), backs up and verifies the internal flash, and reads and writes the external SPI flash. Spec: [docs/spec/stub-stm32f4.md](../docs/spec/stub-stm32f4.md).
+kept), backs up and verifies the internal flash, reads and writes the external SPI flash, and backs up and puts back the SPI
+flash's security registers (`--secreg`, `--write-secreg`; never their one-time lock bits). Spec: [docs/spec/stub-stm32f4.md](../docs/spec/stub-stm32f4.md).
+
+Both host tools refuse to touch a board's protected regions (`board.toml` `[[flash.protect]]`,
+[board-registry.md](../docs/dev/board-registry.md#protected-regions)): `stubtool.py` checks every erase and program
+command it sends and refuses a chip erase; `f4stub.py` checks installs, sector erases and programs, carves the regions
+out of an SPI flash restore (`--write-q128`), and refuses a security register write to a protected register. The stubs
+themselves don't know the list.
 
 One image serves every STM32F4 radio, as the HR_C7000's universal stub does: after HELLO the host sends a CONFIG with the
 radio's board record (SPI flash bus, pins, mode and chip select, other chip selects to hold high, the crystal, the
@@ -115,7 +160,7 @@ reports must be 0x20000000.
 
 The IWDG can't be stopped once RadioFoundry starts it (`CONFIG_WATCHDOG`), so the stub feeds it: at start-up, in every wait loop
 (through `stub_ms()`, including the flash erase busy wait), at every request and once per 4 KB block of a long read
-or checksum. Its image has a 16-byte header at offset 0x10 (magic, stub version 4, flags with bit 0 "feeds the
+or checksum. Its image has a 16-byte header at offset 0x10 (magic, stub version 5, flags with bit 0 "feeds the
 IWDG"; `stm32f4/f4stub_header.h`, the one definition the stub and RadioFoundry share, layout in
 [stub-stm32f4.md](../docs/spec/stub-stm32f4.md) 3.1). A watchdog build of RadioFoundry refuses ENTER unless the header has the
 magic, a version of at least 3 and the flag, so an older `f4stub.py` or web page gets a refusal before anything is
@@ -124,14 +169,15 @@ written, never a reset part way through. `--rfoundry-enter` prints the version i
 | File | What |
 |---|---|
 | `common/` | what every stub target shares: the protocol engine (`stubeng.h` documents the port a target supplies: framing, ops, safety rules, SUMS and READ; host tested), the runtime and main loop (`stubrt`), the CDC-ACM device's descriptors and requests (`stubcdc`), the SPI NOR commands (`stubnor`) |
-| `stm32f4/` | the STM32F4 target: entry, USB, flash controller, SPI flash, the board record check, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (8,156 bytes, at most 8 KB) |
+| `stm32f4/` | the STM32F4 target: entry, USB, flash controller, SPI flash, the board record check, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (8,184 bytes, at most 8 KB, built with `-flto`) |
 | `k22f/` | the Kinetis K22F target, the same shape: `make -C stub/k22f` writes `build/stub-k22f/k22stub.bin` (at most 8 KB). Spec: [docs/spec/stub-k22f.md](../docs/spec/stub-k22f.md) |
 | `k22stub.py` | the K22F host side on top of `f4stub.py`'s radio class, with its build embedded the same way; `stubtool.py` hands every board with a `k22stub` `[flash.stub]` to it (`--rfoundry-enter`, or `--attach --board <id>`); `--self-test` runs without a radio |
 | `f4stub.py` | its host side, with the stub build embedded (checked by SHA-256; `--embed` puts a new build in, and CI fails while a fresh build differs); `stubtool.py` hands every board with an `f4stub` `[flash.stub]` to it (`--rfoundry-enter`, or `--attach --board md380`); the board profiles come from the board registry (`board.toml` `[flash.stub]` and `pins.h`, [board-registry.md](../docs/dev/board-registry.md)); `--self-test` runs without a radio |
 
-Status (2026-10-22): built and host tested (`tests/host`: the protocol engine with the board record, and the host tool
-against the real engine through a pipe). Protocol 2 ran on the DM-1701 ([stub-stm32f4.md](../docs/spec/stub-stm32f4.md)
-11); protocol 4 (the board record) and the MD-380 have not run on a radio yet.
+Status (2026-10-25): built and host tested (`tests/host`: the protocol engine with the board record and the security
+registers, and the host tool against the real engine through a pipe). Protocol 2 ran on the DM-1701
+([stub-stm32f4.md](../docs/spec/stub-stm32f4.md) 11); protocol 4 (the board record), protocol 5 (the security registers)
+and the MD-380 have not run on a radio yet.
 
 The K22F stub works the same way: one stub image, the board record sent with CONFIG, the same install order. Its record
 also limits the writable flash (the application base up to the board's protected last sector) and keeps the SPI NOR

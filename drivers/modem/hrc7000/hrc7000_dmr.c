@@ -230,6 +230,7 @@ static void chip_rx_restart(hrc7000_dmr_t *e)
 	w(e, C7_LAYER2_TXRX_CTRL, TXRX_RX);
 	w(e, C7_LAYER2_SLOTON, SLOTON_RXTX);
 	e->voice_chip_slot = -1;
+	e->voice_slots = 0;
 	e->tc_slot[0] = e->tc_slot[1] = 0;
 	e->tc_agree = 0;
 	e->emb_pending = false;
@@ -545,9 +546,12 @@ static int8_t slot_ts(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
 		e->tc_slot[s->chip_slot ^ 1u] = (int8_t)(2 - s->tc);
 		return (int8_t)(s->tc + 1);
 	case DMR_SYNC_TS1:
-		return 1;
 	case DMR_SYNC_TS2:
-		return 2;
+		// TDMA direct mode sync names the slot too: kept for the voice bursts after it (no sync of their own), so
+		// an SFR user tells the talker's copy from the repeat on every burst
+		e->tc_slot[s->chip_slot] = s->sync == DMR_SYNC_TS1 ? 1 : 2;
+		e->tc_slot[s->chip_slot ^ 1u] = s->sync == DMR_SYNC_TS1 ? 2 : 1;
+		return e->tc_slot[s->chip_slot];
 	default:
 		return e->tc_slot[s->chip_slot] != 0 ? e->tc_slot[s->chip_slot] : (int8_t)(s->chip_slot + 1);
 	}
@@ -559,11 +563,20 @@ static void rx_tick(hrc7000_dmr_t *e)
 		ev_simple(e, DMR_EV_VOICE_LOST, e->tc_slot[e->voice_chip_slot], tick_arg(e));
 		e->voice_chip_slot = -1;
 	}
+	for (uint8_t cs = 0; cs < 2; cs++) {
+		if ((e->voice_slots & (1u << cs)) && (uint32_t)(e->tick - e->voice_slot_tick[cs]) > VOICE_LOST_TICKS) {
+			e->voice_slots &= (uint8_t)~(1u << cs);
+		}
+	}
 	rx_resync(e);
 	uint32_t status = r(e, C7_LAYER2_STATUS);
 	e->st.last_l2_status = status;
-	int8_t next = (int8_t)((((status >> 30) & 1u) ^ HRC7000_RX_NEXT_SLOT_XOR) & 1u);
-	w(e, C7_LAYER2_TXRX_CTRL, (e->voice_chip_slot >= 0 && next == e->voice_chip_slot) ? TXRX_RX_VOICE : TXRX_RX);
+	uint8_t next = (uint8_t)((((status >> 30) & 1u) ^ HRC7000_RX_NEXT_SLOT_XOR) & 1u);
+	// The voice-access flag on every chip slot with a call on it, not only the one of the last voice burst: without it
+	// the chip leaves the voice RAM unwritten, and the burst reads the bytes of the last one decoded. An SFR user hears
+	// voice on both slots, so a flag that followed the last burst was always on the wrong slot, and the listener played
+	// the call's first decoded burst over and over (the three-radio SFR test, 2026-10-20)
+	w(e, C7_LAYER2_TXRX_CTRL, (e->voice_slots & (1u << next)) ? TXRX_RX_VOICE : TXRX_RX);
 
 	// Color code scan when no filter is set: step through the codes while nothing is heard
 	if (e->cc_filter < 0 && (uint32_t)(e->tick - e->cc_tick) >= (e->rx_any ? CC_HOLD_TICKS : CC_SCAN_TICKS)) {
@@ -645,6 +658,8 @@ static void rx_burst(hrc7000_dmr_t *e)
 		}
 		e->voice_chip_slot = (int8_t)s.chip_slot;
 		e->voice_tick = e->tick;
+		e->voice_slots |= (uint8_t)(1u << s.chip_slot);
+		e->voice_slot_tick[s.chip_slot] = e->tick;
 		e->st.rx_voice++;
 	} else {
 		for (uint8_t i = 0; i < b->len; i++) {
@@ -655,6 +670,9 @@ static void rx_burst(hrc7000_dmr_t *e)
 			memcpy(b->lc, b->payload, 9);
 			b->lc_valid = true;
 			e->listen_voice = e->tx_state != TXS_IDLE;
+			// The call's voice follows on this slot: burst A gets the flag too (stock sets it from the call's start)
+			e->voice_slots |= (uint8_t)(1u << s.chip_slot);
+			e->voice_slot_tick[s.chip_slot] = e->tick;
 			e->st.rx_lc_header++;
 			break;
 		case DMR_BURST_TERMINATOR_LC:
@@ -663,6 +681,7 @@ static void rx_burst(hrc7000_dmr_t *e)
 			if (e->voice_chip_slot == (int8_t)s.chip_slot) {
 				e->voice_chip_slot = -1;
 			}
+			e->voice_slots &= (uint8_t)~(1u << s.chip_slot);
 			e->listen_voice = false;
 			e->st.rx_terminator++;
 			break;

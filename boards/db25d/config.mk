@@ -18,10 +18,11 @@ CONFIG_NET_USRP ?= n
 # The split-duplex roles need a continuous base-station outbound that the per-burst TX path doesn't have: the core
 # would refuse the role, so the 1.8 KB of RAM stays free
 CONFIG_HOTSPOT_SPLIT ?= n
-# The single frequency repeater: switches RX and TX every slot, which this radio's per-burst retune hasn't been timed for
-CONFIG_SFR ?= n
+# The single frequency repeater (CONFIG_SFR, with SFR_DUALPATH_RX and SFR_CWID) follows the default: RX and TX switch
+# every slot on the per-burst retune, with the RF TX interrupt's lead and the TX off timed for it (hardware-db25d.md
+# 4.5), checked on the SDR bench
 # With DMR: the platform's linker script with the codec window at the top of SRAM and the modem SRAM table window
-# (memory.ld), its codec host (the profile ids are db25d-2501, db25d-2409, db25d-2405, db25d-020; hardware-db25d.md 8),
+# (memory.ld), its codec host (the profile ids are db25d-2501, db25d-2409, db25d-2405, db25d-2307, db25d-020; hardware-db25d.md 8),
 # the core's CPU state in .ram_lo and the runtime stub's load span inside the codec window (0x45000..0x58000; the
 # universal stub copies itself to its run address). Without DMR: no codec window, the CPU state in .bss, and the stub
 # in the 128 KB above it (fm_only.ld). Bench knobs (dmr_db25d.c, radio_db25d.c): DB25D_DMR_RF_MODE (the modem's RF_MODE word), DB25D_DMR_AF_GAIN
@@ -77,7 +78,6 @@ BOARD_UNSUPPORTED += AM_RX	# no air band receive (owner, 2026-10-22)
 # maximal configuration too
 BOARD_NOT_WRITTEN += NET_USRP	# the host link stalls under USRP's PCM; another HR_C7000 board carries it at the same 115200 baud
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the per-burst TX path has no continuous base-station outbound yet (above)
-BOARD_NOT_WRITTEN += SFR	# RX and TX switch every slot: the per-burst retune isn't timed for it (above)
 BOARD_NOT_WRITTEN += APRS_RX	# FM receive audio isn't taken from the modem's AF ADC as PCM yet (above)
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += BCAST_FM	# the RDA5802N broadcast receiver is fitted, its glue isn't written

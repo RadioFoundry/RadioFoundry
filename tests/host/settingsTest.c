@@ -744,7 +744,7 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, usb_mode), 37 },
 		{ offsetof(settings_t, accent), 38 },
 		{ offsetof(settings_t, vfo_talk_lo), 39 },
-		{ offsetof(settings_t, dmr_id), 40 },
+		{ offsetof(settings_t, unused_dmr_id), 40 },
 		{ offsetof(settings_t, radio_name), 44 },
 		{ offsetof(settings_t, privacy_key), 60 },
 		{ offsetof(settings_t, privacy_type), 76 },

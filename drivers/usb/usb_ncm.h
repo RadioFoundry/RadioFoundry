@@ -11,7 +11,7 @@
 #include "hal_netif.h"
 
 #define USB_NCM_FRAME_MAX	600	// largest frame kept from the host (IPGW_MAX_FRAME); longer ones are dropped
-#define USB_NCM_RX_FRAMES	4	// frames from the host waiting for usbNcmReceive (more are dropped, counted)
+#define USB_NCM_RX_FRAMES	4	// ring slots for frames from the host (3 waiting); more are held in the class driver
 
 // True in network mode once the host has configured the device (the data interface's alternate setting 1 follows)
 bool usbNcmIsUp(void);

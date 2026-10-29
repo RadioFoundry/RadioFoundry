@@ -34,6 +34,12 @@ export function rfoundryClaimed(b) {
 	for (let a = RFOUNDRY_AREA[0]; a < 0x19000; a += 256) if (at(a) === "OSET") return true;
 	return MAGICS.includes(at(0x19000)) || MAGICS.includes(at(0x1A000));
 }
+// The DMR ID in the stock general settings, or 0 when it isn't a valid one (erased, or overwritten by RadioFoundry's codeplug)
+export function stockDmrId(b) {
+	if (b.length < GENERAL.dmrId + 3) return 0;
+	const id = b[GENERAL.dmrId] | (b[GENERAL.dmrId + 1] << 8) | (b[GENERAL.dmrId + 2] << 16);
+	return id >= 1 && id <= 16776415 ? id : 0;
+}
 export const RDT_MD380 = 262709, RDT_UV380 = 852533, RDT_HEADER = 549;
 const HIGH = Number(Object.keys(POWER_NAMES).find((k) => POWER_NAMES[k] === "High"));
 const LOW = Number(Object.keys(POWER_NAMES).find((k) => POWER_NAMES[k] === "Low"));
@@ -201,6 +207,9 @@ export function importStock(m, bytes, format) {
 		stockChannels = stockChannels.slice(0, LIMITS.channels);
 	}
 	if (stockChannels.some((c) => c.scanList)) note("scan_lists");
+	// the stock 0 is "off"; RadioFoundry's 0 is the radio's TX timeout
+	const totOff = stockChannels.filter((c) => !c.tot).length;
+	if (totOff) note("tot_off", totOff);
 	if (s.claimed) note("settings_area");
 
 	// RX group lists, then contacts: the ones kept channels and lists refer to come first when a table is too long

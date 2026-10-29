@@ -11,7 +11,7 @@
 
 import { CodeplugImage, REGIONS, IDDB_HEADER, CODEPLUG_SPAN } from "./image.js";
 import { readHeader, AREA1, AREA1_SIZE, AREA2 } from "./iddb.js";
-import { Link, probe } from "../flasher/link.js";
+import { Link, probe, whyNoAnswer } from "../flasher/link.js";
 import { sleep } from "../flasher/bytes.js";
 import { note } from "../diag.js";
 
@@ -28,7 +28,7 @@ export class TransportError extends Error {
 const KEEP_OUT = [[0x604B, 0x6060]];
 // The VFO pair: a read shows the radio's live VFOs there, not the bytes written (open-firmware-cps.md 2.2, "VFO
 // overlay"), so a verify doesn't compare it
-const VFOS = [0x7590, 0x7600];
+export const VFOS = [0x7590, 0x7600];
 
 // Regions of the codeplug a write may change
 export function writeRanges() {
@@ -103,10 +103,17 @@ export class CpsSerial {
 		this.base = 0;
 	}
 
-	// Which radio answers, matched by the board name it reports to radios.json's codeplug.names
+	// Which radio answers, matched by the board name it reports to radios.json's codeplug.names. No answer is told
+	// apart by what the port gave (link.js whyNoAnswer()): another open firmware that gives its radio info, or bytes
+	// that aren't the debug link (another firmware)
 	async identify(radios) {
 		const p = await probe(this.link);
-		if (!p) throw new TransportError("no_answer");
+		if (!p) {
+			const why = { ...(await whyNoAnswer(this.link)), cable: this.cable };
+			note("no answer", why);
+			throw new TransportError(why.kind === "openfw" ? "openfw" : why.kind === "other" ? "not_rfoundry"
+				: this.cable ? "no_answer_cable" : "no_answer", why);
+		}
 		const radio = radios.find((r) => r.codeplug?.names?.some((n) => n.toLowerCase() === String(p.board || "").toLowerCase()));
 		if (!radio) throw new TransportError("unknown_radio", { board: p.board || "?" });
 		this.radio = radio;

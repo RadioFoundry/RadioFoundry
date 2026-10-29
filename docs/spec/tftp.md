@@ -163,5 +163,5 @@ A read of codeplug.bin stays 716,384 bytes without the database: read `iddb.bin`
 - HIL: `tests/hil/test_net_services.py` (`--allow-usb-switch`): `info.txt`, two reads of `codeplug.bin` identical and
   equal to the stored image; with `--allow-codeplug-write` also: back up, write a channel rename, read it back, write
   the backup again and verify it byte for byte, as `test_cps.py` does over the CPS.
-  Debug link view keys (section `net`): `tftp.state` (0 idle, 1 reading, 2 writing, 3 committing, 4 dallying)
+  Debug link view keys (section `net_svc`): `tftp.state` (0 idle, 1 reading, 2 writing, 3 committing, 4 dallying)
   `tftp.reads tftp.writes tftp.errors tftp.timeouts tftp.retransmits tftp.last_size tftp.blksize tftp.write_allowed`.

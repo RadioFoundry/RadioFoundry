@@ -142,6 +142,10 @@ typedef struct {
 	uint8_t rx_chip_slot;	// chip slot of the last burst taken (an aligned start's reference)
 	int8_t voice_chip_slot;	// chip slot of the voice call being received, -1 none
 	uint32_t voice_tick;
+	// Each chip slot with a voice call on it (bit n: chip slot n), and its last voice burst or header: each gets the
+	// voice-access flag. Two at once for an SFR user, who hears the talker's copy and the repeat (modem-hrc7000.md 5.3)
+	uint8_t voice_slots;
+	uint32_t voice_slot_tick[2];
 	int8_t tc_slot[2];	// TS (1/2) of each chip slot, learned from BS-sync bursts (TC), 0 unknown
 	bool rx_bs;		// the last burst taken was BS-sourced (a repeater)
 	uint8_t tc_agree;	// BS bursts in a row, one per slot, with TC alternating (the lock: TC_LOCK)

@@ -100,11 +100,17 @@ static void startup_task(void *arg)
 	input_start();
 	ui_start();
 #if CONFIG_HOSTLINK
-	settings_t st;
-	settings_read(&st);
-	hostlink_set_hotspot_allowed(st.hotspot_allowed != 0);
+	// The two fields read in place: a settings copy here would stay on this task's stack under the radio core's
+	// set-up above, its deepest path (stack-check.md)
+	const settings_t *st = settings_begin();
+	bool hotspot_allowed = st->hotspot_allowed != 0;
+	uint8_t net_flags = st->net_flags;
+	settings_end(hal_millis());	// nothing changed: nothing to save
+	hostlink_set_hotspot_allowed(hotspot_allowed);
 #if CONFIG_TFTP
-	tftp_codeplug_allow_write((st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0);
+	tftp_codeplug_allow_write((net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0);
+#else
+	(void)net_flags;
 #endif
 #if CONFIG_CPS_OPENFW
 	cps_openfw_start();		// registers the CPS handler with the host link

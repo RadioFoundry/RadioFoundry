@@ -1779,6 +1779,331 @@ static void test_gps_call(void)
 		CHECK(memcmp(got[k], lc, 9) == 0);
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// SFR user (docs/spec/sfr.md 4)
+
+// A call as a user of a single frequency repeater hears it: each burst from the talker on the inbound slot (TS1 sync
+// on burst A) and, 90 ms later, the repeater's copy on the outbound slot (TS2 sync). direct_until: the talker's copies
+// stop after this many bursts (out of range), -1 = all heard
+static void sfr_rx_call(const uint8_t lc[9], int superframes, int direct_until)
+{
+	int n = 3 + superframes * 6 + 1;	// headers, voice, terminator
+	unsigned fd = 1, fr = 1;
+
+	for (int step = 0; step < 2 * n + 3; step++) {	// 30 ms steps; burst k direct at step 2k, repeated at 2k + 3
+		for (int copy = 0; copy < 2; copy++) {
+			int k = copy == 0 ? step / 2 : (step - 3) / 2;
+			bool due = copy == 0 ? (step % 2 == 0) : (step >= 3 && (step - 3) % 2 == 0);
+
+			if (!due || k >= n || (copy == 0 && direct_until >= 0 && k >= direct_until))
+				continue;
+			int8_t ts = copy == 0 ? 1 : 2;
+			uint8_t sync = copy == 0 ? DMR_SYNC_TS1 : DMR_SYNC_TS2;
+			unsigned *f = copy == 0 ? &fd : &fr;
+
+			if (k < 3) {
+				rx_header(lc, 1, ts, sync, false);
+			} else if (k < n - 1) {
+				int v = (k - 3) % 6;
+
+				rx_voice((uint8_t)v, 1, ts, sync, f, v == 5 ? lc : NULL, false);
+			} else {
+				rx_header(lc, 1, ts, sync, true);
+			}
+		}
+		run_ms(30);
+	}
+}
+
+static void test_sfr_user(void)
+{
+	dmr_call_config_t c = base_cfg();
+	uint8_t lc[9];
+	dmr_call_stats_t st;
+
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_LIST, 2345678);
+
+	// Without the SFR role, the repeat on the other slot is dropped (the TDMA direct mode sync names it)
+	setup(&c);
+	sfr_rx_call(lc, 2, -1);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 1 && sink_log.frames == 36 && sink_log.losts == 0);
+	CHECK(st.rx_ts_dropped >= 12 && st.rx_sfr_dup == 0);
+
+	// SFR user hearing the repeat only (the default): the talker's copy is dropped, the repeat plays in full
+	c.sfr_user = true;
+	c.tx_sync = DMR_SYNC_TS1;
+	c.rx_sync = DMR_SYNC_TS2;
+	setup(&c);
+	sfr_rx_call(lc, 2, -1);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 1 && sink_log.ends == 1 && sink_log.frames == 36 && sink_log.losts == 0);
+	for (unsigned i = 0; i < 36; i++)
+		CHECK(sink_log.seq[i] == (uint8_t)(i + 1));	// the repeat's own numbering: no talker frame played
+	CHECK(st.rx_sfr_direct == 3 + 12 + 1 && st.rx_sfr_dup == 0 && st.rx_calls == 1);
+
+	// ... and with only the talker in range, nothing plays
+	setup(&c);
+	{
+		unsigned f = 1;
+
+		for (int h = 0; h < 3; h++) {
+			rx_header(lc, 1, 1, DMR_SYNC_TS1, false);
+			run_ms(60);
+		}
+		for (int i = 0; i < 12; i++) {
+			rx_voice((uint8_t)(i % 6), 1, 1, DMR_SYNC_TS1, &f, i % 6 == 5 ? lc : NULL, false);
+			run_ms(60);
+		}
+	}
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 0 && sink_log.frames == 0 && st.rx_calls == 0 && st.rx_sfr_direct == 15);
+
+	// Both, first arrival: each voice burst played once, in order, nothing concealed
+	c.sfr_rx = DMR_SFR_RX_FIRST;
+	setup(&c);
+	sfr_rx_call(lc, 2, -1);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 1 && sink_log.ends == 1 && sink_log.frames == 36 && sink_log.losts == 0);
+	for (unsigned i = 0; i < 36; i++)
+		CHECK(sink_log.seq[i] == (uint8_t)(i + 1));
+	CHECK(st.rx_ts_dropped == 0 && st.rx_sfr_dup == 12 && st.rx_calls == 1);
+	run_ms(600);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.begins == 1);	// the repeat's tail started no second call
+
+	// The talker fades out after the headers and burst C: the repeat carries the rest, still nothing concealed
+	setup(&c);
+	sfr_rx_call(lc, 2, 3 + 3);
+	CHECK(sink_log.begins == 1 && sink_log.frames == 36 && sink_log.losts == 0);
+	for (unsigned i = 0; i < 36; i++)
+		CHECK(sink_log.seq[i] == (uint8_t)(i + 1));
+
+	// Only the repeat heard (the talker out of range): a normal call on the outbound slot
+	setup(&c);
+	sfr_rx_call(lc, 1, 0);
+	CHECK(sink_log.begins == 1 && sink_log.frames == 18 && sink_log.losts == 0);
+
+	// TX: on the inbound slot with its TDMA direct mode sync; own timing with no repeater heard, impolite (the
+	// repeater's hang would make a polite modem refuse)
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(400);
+	dmr_call_ptt(false);
+	run_ms(800);
+	CHECK(sim.tx_begins == 1 && sim.first_timing == DMR_TIMING_OWN && sim.first_ts == 1);
+	CHECK(sim.last_access == DMR_ACCESS_IMPOLITE);
+	CHECK(sim.air_count > 4);
+	for (unsigned i = 0; i < sim.air_count; i++)
+		CHECK(sim.air[i].sync == DMR_SYNC_TS1);
+
+	// The repeater's hang heard just now (idle bursts with TS2 sync): keyed in step with its slots, on TS1
+	setup(&c);
+	{
+		dmr_burst_t b;
+
+		memset(&b, 0, sizeof(b));
+		b.kind = DMR_BURST_IDLE;
+		b.sync = DMR_SYNC_TS2;
+		b.ts = 2;
+		b.cc = 1;
+		b.crc_ok = true;
+		b.in_step = true;
+		sim_rx(&b);
+	}
+	run_ms(60);
+	dmr_call_ptt(true);
+	run_ms(100);
+	CHECK(sim.tx_begins == 1 && sim.first_timing == DMR_TIMING_ALIGNED && sim.first_ts == 1);
+	dmr_call_ptt(false);
+	run_ms(800);
+	// ... but not once it has been quiet longer than the modem keeps slot timing
+	run_ms(DMR_CALL_ALIGN_MS);
+	sim.tx_begins = 0;
+	dmr_call_ptt(true);
+	run_ms(100);
+	CHECK(sim.tx_begins == 1 && sim.last_timing == DMR_TIMING_OWN);
+	dmr_call_ptt(false);
+	run_ms(800);
+
+	// Plain DMO keeps MS sync
+	c.sfr_user = false;
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(200);
+	dmr_call_ptt(false);
+	run_ms(800);
+	CHECK(sim.air_count > 0 && sim.air[0].sync == DMR_SYNC_NONE);
+
+	// ERDM user: the repeater's outbound color code is heard too; the modem passes every color code to the stack
+	c = base_cfg();
+	c.sfr_user = true;
+	c.tx_sync = DMR_SYNC_MS;
+	c.cc2 = 5;
+	setup(&c);
+	CHECK(sim.cc_filter == -1);
+	{
+		unsigned f = 1;
+
+		rx_header(lc, 5, 2, DMR_SYNC_BS, false);
+		run_ms(60);
+		for (int i = 0; i < 6; i++) {
+			rx_voice((uint8_t)i, 5, 2, DMR_SYNC_BS, &f, i == 5 ? lc : NULL, false);
+			run_ms(60);
+		}
+		rx_header(lc, 7, 2, DMR_SYNC_BS, false);	// a third color code: not ours
+	}
+	run_ms(60);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 1 && sink_log.frames == 18 && st.rx_cc_dropped == 1);
+}
+
+#if CONFIG_SFR_DUALPATH_RX
+// Dual-path RX needs real voice frames: frame n of the call is the FEC encoding of parameters made from n, and a bad copy of
+// it has four bits of its C0 word flipped (detected, not corrected: the vocoder would conceal it)
+static void dual_frame(unsigned n, bool bad, uint8_t out[9])
+{
+	uint8_t bits[AMBE_PARAM_BITS];
+
+	for (int j = 0; j < AMBE_PARAM_BITS; j++)
+		bits[j] = (uint8_t)(((n * 2654435761u) >> (j % 29)) & 1u);
+	ambeFecEncode(bits, out);
+	if (bad) {
+		uint32_t c[4];
+
+		ambeDeinterleave(out, c);
+		c[0] ^= 0xC00030u;	// bits that land in the first octet (the sink log keeps it)
+		ambeInterleave(c, out);
+	}
+}
+
+// One SFR call, as in sfr_rx_call, with real frames. bad_direct / bad_repeat: bit k = burst k's frame 1 is bad in
+// that copy. repeat: the repeater is heard
+static void sfr_dual_call(int superframes, uint32_t bad_direct, uint32_t bad_repeat, bool repeat)
+{
+	uint8_t lc[9];
+	int n = 3 + superframes * 6 + 1;
+
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_LIST, 2345678);
+	for (int step = 0; step < 2 * n + 3; step++) {
+		for (int copy = 0; copy < 2; copy++) {
+			int k = copy == 0 ? step / 2 : (step - 3) / 2;
+			bool due = copy == 0 ? (step % 2 == 0) : (step >= 3 && (step - 3) % 2 == 0);
+
+			if (!due || k >= n || (copy == 1 && !repeat))
+				continue;
+			int8_t ts = copy == 0 ? 1 : 2;
+			uint8_t sync = copy == 0 ? DMR_SYNC_TS1 : DMR_SYNC_TS2;
+
+			if (k < 3 || k == n - 1) {
+				rx_header(lc, 1, ts, sync, k == n - 1);
+				continue;
+			}
+			int v = k - 3;
+			dmr_burst_t b;
+
+			memset(&b, 0, sizeof(b));
+			b.kind = DMR_BURST_VOICE;
+			b.voice_index = (uint8_t)(v % 6);
+			b.sync = v % 6 == 0 ? sync : DMR_SYNC_NONE;
+			b.cc = 1;
+			b.ts = ts;
+			b.crc_ok = true;
+			b.in_step = true;
+			b.len = 27;
+			uint32_t bad = copy == 0 ? bad_direct : bad_repeat;
+
+			for (int f = 0; f < 3; f++)
+				dual_frame((unsigned)(v * 3 + f), f == 1 && ((bad >> v) & 1u), &b.payload[f * 9]);
+			if (v % 6 == 5) {
+				b.lc_valid = true;
+				memcpy(b.lc, lc, 9);
+			}
+			sim_rx(&b);
+		}
+		run_ms(30);
+	}
+	run_ms(600);
+}
+
+// The frames played are the good ones, in order
+static bool dual_played_good(unsigned frames)
+{
+	if (sink_log.frames != frames || sink_log.losts != 0)
+		return false;
+	for (unsigned i = 0; i < frames; i++) {
+		uint8_t g[9];
+
+		dual_frame(i, false, g);
+		if (sink_log.seq[i] != g[0])
+			return false;
+	}
+	return true;
+}
+
+static void test_sfr_dualpath_rx(void)
+{
+	dmr_call_config_t c = base_cfg();
+	dmr_call_stats_t st;
+	uint8_t g[9], b[9];
+	ambe_fec_result_t r;
+	uint8_t bits[AMBE_PARAM_BITS];
+
+	// The test's bad frame: C0 fails, and its first octet differs from the good one's (what the sink log keeps)
+	dual_frame(4, false, g);
+	dual_frame(4, true, b);
+	ambeFecDecode(b, bits, &r);
+	CHECK(r.c0_failed && g[0] != b[0]);
+
+	c.sfr_user = true;
+	c.tx_sync = DMR_SYNC_TS1;
+	c.rx_sync = DMR_SYNC_TS2;
+	c.sfr_rx = DMR_SFR_RX_DUALPATH;
+
+	// Bursts B and E of the talker's copy have a bad frame, the repeat's are good: those frames come from the repeat
+	setup(&c);
+	sfr_dual_call(2, (1u << 1) | (1u << 4), 0, true);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 1 && sink_log.ends == 1 && dual_played_good(36));
+	CHECK(st.rx_sfr_held == 2 && st.rx_sfr_fixed == 2 && st.rx_sfr_dup == 12);
+
+	// The repeat bad where the talker's copy is good: nothing held (the first copy decodes), the talker's played
+	setup(&c);
+	sfr_dual_call(2, 0, (1u << 2), true);
+	dmr_call_get_stats(&st);
+	CHECK(dual_played_good(36) && st.rx_sfr_held == 0 && st.rx_sfr_fixed == 0);
+
+	// Both copies bad in the same burst: held, then played as it is (the vocoder conceals the frame)
+	setup(&c);
+	sfr_dual_call(1, 1u << 3, 1u << 3, true);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.frames == 18 && st.rx_sfr_held == 1 && st.rx_sfr_fixed == 0);
+	dual_frame(3 * 3 + 1, true, b);
+	CHECK(sink_log.seq[3 * 3 + 1] == b[0]);
+
+	// No repeat heard: a bad burst waits DMR_SFR_DUALPATH_MS, then plays; the call keeps its order and every frame
+	setup(&c);
+	sfr_dual_call(2, 1u << 1, 0, false);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 1 && sink_log.frames == 36 && sink_log.losts == 0 && st.rx_sfr_held == 1);
+	dual_frame(4, true, b);
+	CHECK(sink_log.seq[4] == b[0] && sink_log.seq[5] != b[0]);
+	for (unsigned i = 0; i < 36; i++) {
+		dual_frame(i, false, g);
+		if (i != 4)
+			CHECK(sink_log.seq[i] == g[0]);
+	}
+
+	// First arrival doesn't fix anything: the talker's bad frame is played
+	c.sfr_rx = DMR_SFR_RX_FIRST;
+	setup(&c);
+	sfr_dual_call(2, 1u << 1, 0, true);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.frames == 36 && st.rx_sfr_held == 0 && st.rx_sfr_fixed == 0);
+	dual_frame(4, true, b);
+	CHECK(sink_log.seq[4] == b[0]);
+}
+#endif
+
 int main(void)
 {
 	test_lc_pack();
@@ -1809,6 +2134,10 @@ int main(void)
 	test_basic_privacy();
 	test_gps_lc();
 	test_gps_call();
+	test_sfr_user();
+#if CONFIG_SFR_DUALPATH_RX
+	test_sfr_dualpath_rx();
+#endif
 	printf("# dmrCallTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

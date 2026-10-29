@@ -10,6 +10,7 @@
 #include "radio/beep.h"
 #include "radio/vibe.h"
 #include "radio/mic_gain.h"
+#include "radio/radio_cwid.h"
 #include "radio/radio_bcast.h"
 #include "input/input.h"
 #include "settings/settings.h"
@@ -449,6 +450,16 @@ void ui_svc_apply(uint8_t id, int32_t value)
 			rs.reply_s = value >= 0 && value <= 30 ? (uint8_t)value : RADIO_REPLY_CODEPLUG;
 		}
 		break;
+#if CONFIG_SFR
+	case UI_SET_SFR_RX:		// the radio core clamps (dual-path RX only with CONFIG_SFR_DUALPATH_RX)
+		rs.sfr_rx = (uint8_t)(v16 > 2 ? 0 : v16);
+		break;
+#endif
+#if CONFIG_SFR_CWID
+	case UI_SET_SFR_CWID:		// off, 5, 10, 15 or 30 min (radio_cwid.h)
+		rs.sfr_cwid = (uint8_t)(v16 >= RADIO_CWID_CODES ? 0 : v16);
+		break;
+#endif
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:
 		rs.roam_survey = (uint8_t)(v16 > 2 ? 1 : v16);

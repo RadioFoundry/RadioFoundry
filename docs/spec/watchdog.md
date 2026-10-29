@@ -129,7 +129,7 @@ FreeRTOS call after the scheduler starts lets the idle task run and needs nothin
 |---|---|---|
 | Start-up before the scheduler (clocks, board early init, display, the radio chips' reset waits) | `platform/*/main.c`, `board_early_init` | `main()` feeds between steps; `hal_delay_ms()`'s busy wait feeds every millisecond before the scheduler runs |
 | SPI NOR erase and program (settings, journal, codeplug, CPS writes, TFTP) | `drivers/flash/spi_nor` | none needed: the busy polls are `hal_delay_ms(1)`, which sleeps once the scheduler runs |
-| SPI NAND mount, garbage collection, wear leveling (boards with SPI NAND storage) | `drivers/flash/nand_sectors` | busy waits of 10 µs: the layer calls `nand_dev_t.busy` once per block or sector, which such a board points at `watchdog_kick()` |
+| SPI NAND mount, garbage collection, wear leveling, and every sector write, replace and erase (boards with SPI NAND storage) | `drivers/flash/nand_sectors` | busy waits of 10 µs: the layer calls `nand_dev_t.busy` once per block or sector, which such a board points at `watchdog_kick()`. A run of plain writes needs it as much as a collection: a zone import's dozens of sector writes in a row kept the idle task out past the hang check before the writes called it |
 | A single NAND page read, program or block erase | `drivers/flash/spi_nand` | at most a few ms each, fed through the above around them |
 | Settings saves, codeplug sector rewrites, CPS sessions, fast codeplug commits | `core/settings`, `core/storage`, `core/cps` | through the flash drivers above |
 | The HR_C7000 codec load into RAM at the first DMR call | `platform/hrc7000/vocoder.c` | a memcpy of tens of KB: milliseconds |

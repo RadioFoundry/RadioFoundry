@@ -61,3 +61,9 @@ unsigned task_stack_snapshot(task_stack_t *out, unsigned max, unsigned *untracke
 	}
 	return n;
 }
+
+void task_stack_heap(uint32_t *free_now, uint32_t *least_free)
+{
+	*free_now = (uint32_t)xPortGetFreeHeapSize();
+	*least_free = (uint32_t)xPortGetMinimumEverFreeHeapSize();
+}

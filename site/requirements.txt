@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# The site generator's only dependency (MIT licensed, pure Python): Markdown for docs/
+# The site generator's dependencies (MIT licensed): Markdown for docs/ (pure Python), and resvg (a wheel) for the
+# link preview image (site/rfoundrysite/social.py)
 markdown-it-py==3.0.0
 mdurl==0.1.2
+resvg_py==0.5.0

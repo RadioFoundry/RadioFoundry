@@ -367,6 +367,30 @@ static void test_big_text(void)
 	ui_layout_init();
 }
 
+// The splash footer (board and version) stays on a 128 px display with an 11-character board name and the longest
+// release name, a beta's: the board name goes before the version is cut
+static void test_splash_footer(void)
+{
+	hal_display_t d = disp;
+	d.inset_top = d.inset_bottom = d.inset_left = d.inset_right = 0;
+	d.width = 128; d.height = 64; d.bpp = 1;
+	CHECK(gfx_init(&d));
+	ui_layout_init();
+	const char *const versions[] = { "a1b2c3d4-dirty", "v26.12b1", "v26.11.10b10" };
+	for (unsigned v = 0; v < 3; v++) {
+		ui_draw_splash("Radio 12345", versions[v], "", "");
+		int lit = 0;
+		for (int y = 64 - ui_layout.tiny->h; y < 64; y++) {
+			CHECK(gfx_get_pixel(0, y) == ui_col.bg && gfx_get_pixel(127, y) == ui_col.bg);
+			for (int x = 0; x < 128; x++)
+				lit += gfx_get_pixel(x, y) != ui_col.bg;
+		}
+		CHECK(lit > 0);
+	}
+	gfx_init(&disp);
+	ui_layout_init();
+}
+
 static void test_aa_text(void)
 {
 	// RGB565: edges are blends between the text and what is under it
@@ -554,6 +578,7 @@ int main(void)
 
 	test_indexed();
 	test_aa_text();
+	test_splash_footer();
 	test_pass_wait();
 	test_idle_pill_contrast();
 	test_big_text();

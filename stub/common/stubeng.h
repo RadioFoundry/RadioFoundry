@@ -32,7 +32,10 @@
 //  - a program only goes to units that read erased, and every word is read back;
 //  - the external SPI flash holds no code: erase there needs the magic, program needs erased bytes, every byte is read
 //    back, and nothing below the board's write floor is erased or programmed. What to write is the host's choice (a
-//    backup put back, a codeplug).
+//    backup put back, a codeplug);
+//  - its security registers (SREAD / SWRITE, a Winbond chip only): a write carries the magic, is refused while the
+//    register's one-time lock bit (status register 2, LB1-LB3) is set, and is read back. Nothing ever writes a status
+//    register, so nothing can set a lock bit.
 #ifndef STUBENG_H
 #define STUBENG_H
 
@@ -44,6 +47,10 @@
 #define STUBENG_FRAME_HDR	6u			// 02 op/status len_hi len_lo sum 03
 #define STUBENG_CONFIG_MAX	32u			// the longest board record a target may define
 #define STUBENG_HELLO_LEN	26u			// HELLO without the board record echo
+#define STUBENG_SREG_LEN	256u			// one SPI flash security register
+#define STUBENG_SREG_COUNT	3u			// registers 1-3
+#define STUBENG_SREG_MFR	0xEFu			// the JEDEC manufacturer whose command set SREAD / SWRITE use (Winbond)
+#define STUBENG_SR2_LB1		0x08u			// status register 2's LB1 bit; LB2 and LB3 are the next two up
 
 // The memories SUMS and READ take as an optional last byte: internal flash (the default when the byte is left out) or
 // the external SPI flash (addresses from 0)
@@ -62,6 +69,8 @@ enum {
 	STUB_OP_XERASE		= 0x12,	// addr u32 (a 4 KB SPI flash sector), magic u32 -> ok once erased
 	STUB_OP_XPROGRAM	= 0x13,	// addr u32, data (1 to 4096 bytes in one 4 KB sector) -> ok once programmed and read back
 	STUB_OP_CONFIG		= 0x14,	// the target's board record -> ok once applied (HELLO echoes it)
+	STUB_OP_SREAD		= 0x15,	// reg u8 (0-3) -> status register 2 u8; for reg 1-3 then crc32 u32, the 256 bytes
+	STUB_OP_SWRITE		= 0x16,	// reg u8 (1-3), magic u32, 256 bytes -> ok once erased, programmed and read back
 };
 
 // Reply status bytes (the HR_C7000 stub's values where they exist)
@@ -136,6 +145,10 @@ typedef struct {
 	bool (*xread)(void *ctx, uint32_t addr, void *dst, uint32_t n);
 	bool (*xerase)(void *ctx, uint32_t addr);
 	bool (*xprogram)(void *ctx, uint32_t addr, const uint8_t *data, uint32_t n);
+	// Optional (NULL: none): the SPI flash's security registers. reg 0: status register 2 into dst[0]; reg 1-3 with
+	// src NULL: the register's 256 bytes into dst; with src: erase the register, then program src's 256 bytes. Never
+	// a status register write: the lock bits are one-time
+	bool (*xsreg)(void *ctx, unsigned reg, uint8_t *dst, const uint8_t *src);
 	// Check and apply a board record (1 to STUBENG_CONFIG_MAX bytes, the target's layout, first byte the nonzero
 	// board id). False: refused, and the stub is left unconfigured
 	bool (*configure)(void *ctx, const uint8_t *rec, uint32_t n, stubeng_config_t *out);

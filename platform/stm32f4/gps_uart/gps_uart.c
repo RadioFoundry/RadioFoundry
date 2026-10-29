@@ -16,7 +16,7 @@
 #define GPS_TASK_STACK		384	// words: the APRS NMEA parser runs on it
 #define GPS_TASK_PRIORITY	1
 #define GPS_POLL_MS		20
-#define GPS_IRQ_PRIORITY	7	// numerically >= 5: may not call FreeRTOS, doesn't need to
+#define GPS_IRQ_PRIORITY	7	// numerically >= 4: may call FreeRTOS, doesn't need to
 #define NO_TIMEOUT		0xFFFFFFFFu	// gps_rx never gives up on its own: the rate hunt decides
 
 static const stm32_gps_cfg_t *cfg;
@@ -132,6 +132,9 @@ static void gps_task(void *arg)
 			break;
 		case GPS_BAUD_ABSENT:
 			uart_on(false);		// no module: nothing more to do
+			if (cfg->absent != NULL) {
+				cfg->absent();
+			}
 			task = NULL;
 			vTaskDelete(NULL);
 			break;

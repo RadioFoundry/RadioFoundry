@@ -255,9 +255,10 @@ class Host:
 
 
 def schedule_calls(w, host, t_call):
-    """Two mobile calls timed from the TX half's outbound (its true clock): inbound TS1 runs during outbound TS2,
-    inbound TS2 during outbound TS1 (split-duplex.md 7); a 2 ms air plus chip delay; each burst reported 31 ms after
-    its slot started. Returns the expected per-slot seed sequences."""
+    """Two mobile calls timed from the TX half's outbound (its true clock): aligned timing, inbound TS1 runs during
+    outbound TS1 and inbound TS2 during outbound TS2 (split-duplex.md 7, ETSI TS 102 361-1 5.1.1 table 5.1); a 2 ms
+    air plus chip delay; each burst reported 31 ms after its slot started. Returns the expected per-slot seed
+    sequences."""
     h_ep, ep = host.epochs[-1]
     t1 = ep["t_us"] + (30_000 if ep["ts"] == 2 else 0)       # an outbound TS1 boundary, TX clock
     h_t1 = w.tx.host_of(t1, h_ep)
@@ -268,8 +269,8 @@ def schedule_calls(w, host, t_call):
         n_voice = 18
         for j in range(n_voice + 2):
             k = k0 + start + j
-            # Outbound boundary of frame k in TX time; inbound TS1 = the TS2 half of the frame
-            t_out = (t1 + k * 60_000 + (30_000 if slot == 1 else 0)) % WRAP
+            # Outbound boundary of frame k in TX time; inbound TS1 = the TS1 half of the frame
+            t_out = (t1 + k * 60_000 + (30_000 if slot == 2 else 0)) % WRAP
             h_start = w.tx.host_of(t_out, t_call) + 2000.0
             if j == 0:
                 kind, idx, seed = KIND_HEADER, 0, 0
@@ -280,7 +281,7 @@ def schedule_calls(w, host, t_call):
             t_rx = w.rx.modem(h_start)
             w.at(h_start + 31_000, (lambda a: lambda: w.rx.burst(*a, w.h))((kind, idx, t_rx, seed, lc)))
     return {1: [0x40 + j for j in range(1, 19)], 2: [0x80 + j for j in range(1, 19)]}, w.tx.host_of(
-        (t1 + k0 * 60_000 + 30_000) % WRAP, t_call) + 2000.0
+        (t1 + k0 * 60_000) % WRAP, t_call) + 2000.0
 
 
 def scenario(exe, seed, ppm_tx, ppm_rx, off_tx, off_rx, spike_ms, label):
@@ -323,7 +324,7 @@ def scenario(exe, seed, ppm_tx, ppm_rx, off_tx, off_rx, spike_ms, label):
             check(voice == want[slot], f"{label} uplink TS{slot}: voice {[hex(x) for x in voice]}")
         lost = [f for _, f in host.uplink[mark_up:] if f[2] in (sdh.DMR_LOST1, sdh.DMR_LOST2)]
         check(not lost, f"{label}: no DMR_LOST (both calls ended with their terminators)")
-        # TX half: each call on its own outbound slot, whole and in order; TC right on every CACH; AT busy
+        # TX half: each call on its own outbound slot, whole and in order; TC right on every CACH; AT busy for the other
         air = w.tx.air[mark_air:]
         for slot in (1, 2):
             mine = [a for a in air if a["ts"] == slot and a["kind"] != KIND_IDLE]
@@ -334,8 +335,11 @@ def scenario(exe, seed, ppm_tx, ppm_rx, off_tx, off_rx, spike_ms, label):
             check(voice == want[slot], f"{label} air TS{slot}: voice {[hex(x) for x in voice]}")
             idx = [a["index"] for a in mine if a["kind"] == KIND_VOICE]
             check(idx == [i % 6 for i in range(18)], f"{label} air TS{slot}: voice A-F in turn")
-            if mine:
-                span = [a for a in air if a["ts"] == slot and mine[0]["counter"] <= a["counter"] <= mine[-1]["counter"]]
+            # AT in the CACH before outbound TSx speaks for the other channel (aligned timing, ETSI TS 102 361-1 4.5
+            # figure 4.8): busy while the other slot's call is on air
+            other = [a for a in air if a["ts"] == 3 - slot and a["kind"] != KIND_IDLE]
+            if other:
+                span = [a for a in air if a["ts"] == slot and other[0]["counter"] < a["counter"] <= other[-1]["counter"]]
                 busy = sum(1 for a in span if a["at"] == 1)
                 check(busy >= 0.9 * len(span), f"{label} air TS{slot}: AT busy {busy}/{len(span)}")
                 gaps = [b["counter"] - a["counter"] for a, b in zip(span, span[1:])]

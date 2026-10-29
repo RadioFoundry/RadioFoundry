@@ -71,7 +71,7 @@ Home answers four questions at a glance (P2, P5): **Where am I** (zone, channel)
 
 Regions, top to bottom, the same on every display class (sizes differ):
 
-1. **Status strip**: state pill (TX red / RX green / scan / hotspot / idle), USB network word (IP, with link arrows once the computer has it up), RSSI, battery %, GPS fix, unread messages, lock, privacy. Drawn on every screen.
+1. **Status strip**: state pill (TX red / RX green / scan / hotspot / idle), USB network word (IP, with link arrows once the computer has it up), RSSI, battery %, GPS fix, unread messages, lock, privacy. Drawn on every screen; on small displays a page's title takes the strip's place and the battery is left to Home.
 2. **Place**: zone name (small) and channel number + name (large). In VFO: the frequency (large) and "VFO".
 3. **Talk target**: "PTT →" + TG or contact name and number (large), with chips: mode, TS, CC (DMR) or tone and bandwidth (FM), power. Temporary fields have a dot; reply window shows a countdown.
 4. **Activity**: idle = the last heard station (name, callsign, TG, time ago). RX = the current caller big (name, callsign, ID, TG, talker alias, RSSI bar, distance if a position is known). TX = timer and target.
@@ -110,7 +110,7 @@ Large-text mode (accessibility, or chosen by the user) shows only the status str
 | 1 | **Contacts** | Search field on top. Tabs (or filter chips): Talkgroups, People, Listen lists. Item actions: Talk to, Private call, Message, Radio check, Call alert, Request position, Add to speed dial, Edit |
 | 2 | **Messages** | Inbox (unread first), New message, Canned messages, Sent, Drafts |
 | 3 | **Recent** | Everyone heard and every call made, newest first, filters: All / Calls to me / Missed / Talkgroups. Item actions are the same as Contacts, plus "Save as contact" and "Show position" |
-| 4 | **Zones** | Zone picker, current zone's channels, VFO, Scan lists. A zone's list is also its editor: "Add channel" first, "Zone options" (Rename, Copy as new zone, Delete zone) last, and Channel actions on a channel (Move up, Move down, Copy here, Edit channel, Remove from zone) |
+| 4 | **Zones** | Zone picker, current zone's channels, VFO, Scan lists. A zone's list is also its editor: "Add channel" first, "Zone options" (Rename, Copy as new zone, Share zone to..., Delete zone) last, and Channel actions on a channel (Move up, Move down, Copy here, Edit channel, Share channel to..., Remove from zone; the Share rows with zone sharing) |
 | 5 | **Channels** | Every channel by number; New channel from current settings (first row); a channel's settings, edited in place and saved (ui.md 2.1) |
 | 6 | **Tools** | Scan, Position (GPS), Hotspot, USB network, Single frequency repeater, ID lookup, Signal meter, DTMF, APRS, Registration (ARS), Battery |
 | 7 | **Settings** | Grouped by intent (below), with search |

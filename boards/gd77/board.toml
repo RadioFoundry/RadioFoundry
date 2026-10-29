@@ -35,7 +35,7 @@ release = "testing"
 family = "usb-hid-sgl"
 keep_codec = false
 # The last 2 KB sector holds radio data that must survive (memory.ld)
-protect = [[0x7F800, 0x80000]]
+unwritten = [[0x7F800, 0x80000]]
 stock_versions = ["V3.2.1", "V3.2.2", "V4.2.8", "V4.3.3", "V4.3.6", "V4.3.9", "V6.0.1"]
 backup = { stock = "none", rfoundry = "none", spi_size = 0 }
 

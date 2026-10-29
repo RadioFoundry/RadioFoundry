@@ -85,6 +85,15 @@ Radios: HR_C6000.
 After a special mode, writing back the init value (0x6B) instead of the running value (0x6E: relay, aligned, slot 1)
 broke subsequent operation. Rule: save and restore modem mode registers around any temporary change.
 
+**1.10 The CACH TC is valid only after two received slots in a row.**
+Symptom: through a duplex repeater, the slot lock built from the TC (0x52 bit 2) resynced on its own while the
+outbound was steady, and a lock that was right was thrown away. Cause: once locked, the driver closes the other slot,
+so every later compare reads the TC after a slot not received. On the HR_C6000 those reads agreed with the lock 43% of
+the time (5485 reads), against 557 of 557 for reads after two received slots (bench, 2026-10-28). The HR_C5000 has
+the same weakness in another form: its TC stops changing while a slot is closed (`tc_last_rx`). Rule: compare only
+when the slot that ended and the one before it were both opened for receive; after our own transmission, a closed
+slot or a lock, skip the first read. Radios: HR_C6000, HR_C5000.
+
 ## 2. DMR modem timing: HR_C7000
 
 **2.1 The TX interrupts must be hooked.** Without the TX timeslot interrupt (vector 62) and the RF TX interrupt (vector 64) connected, the TX handler is never called and DMR TX never starts. TX states must run on the
@@ -160,7 +169,9 @@ time.
 **3.5 The AT1846S +3 kHz TX offset is a sequencing hack.** The driver adds 3 kHz to the TX frequency to compensate an
 offset caused by turning the receiver on between the frequency write and TX. A switch that writes the frequency with
 the receiver off and goes straight to TX must not add it (bursts were +2.93 kHz off). Rule: measure TX frequency per
-switching sequence; don't carry a fixed offset.
+switching sequence; don't carry a fixed offset. RFoundry's direct sequence (RX straight to TX, no idle, which a
+single frequency repeater needs) corrects the same shift with the HR_C6000 MOD1 offset, because the AT1846S applies a
+frequency write only coming out of idle.
 
 **3.6 Listen before talk for machine traffic.** Data, ACKs and CSBK answers collided with the far end. Rule: direct
 mode: no voice, data burst or carrier for 120 ms; repeater: 180 ms without data bursts and wait for the hang time to
@@ -259,7 +270,7 @@ blocks. Accept blocks only within 400 ms of a header, CSBK, MBC or previous bloc
 
 **5.5 Data list sizing.** A data header must always set how many bursts follow (preamble count + header's blocks); the
 old code compared with the preamble's count and stopped after the header (blocks never sent). A list goes out when
-complete or 180 ms after its last frame, max 40 bursts; frames that can't be sent are NAKed, not silently ACKed.
+complete or 180 ms after its last frame, max 64 bursts (`DMR_DATA_MAX_BURSTS`); frames that can't be sent are NAKed, not silently ACKed.
 
 **5.6 TMS ACK sequence number is 7 bits.** The ACK carried only the low 5 bits, so senders numbering past 31 never
 matched. Bytes must equal a MOTOTRBO capture (example 00 04 9F 00 95 20 for s/n 53), sent as its own transmission after
@@ -509,6 +520,21 @@ duration: the baseline build failed on `FreeRTOS.h`, and git refuses most operat
 path not to be a symbolic link"). The pop put them back. Build a baseline from `git archive HEAD` into a scratch
 directory with its own `third_party` symlinks instead, and delete it afterwards.
 
+**13.10 Link order changes LTO code.** `$(wildcard)` returns files in an order that depends on the make: GNU make 4.3
+(CI) sorts it, macOS's make 3.81 doesn't. With LTO the object order on the link line steers partitioning and
+inlining, so the same commit and the same Arm GNU Toolchain release gave different code on the two: `make stack-check`
+disagreed by 8 to 16 bytes on a task (CI's ui task over its stack while the Mac's passed). Rule: sort every
+`$(wildcard)` that feeds the build (sources, generated tables); `tools/stack_check.py` reads its `.ci` files in name
+order for the same reason. The figures then match CI byte for byte.
+
+**13.11 An STM32F4 clone with 3 priority bits.** The Geehy APM32F405/407 implements 3 NVIC priority bits, not the
+STM32F4's 4, and keeps only the top 3 of each priority byte. FreeRTOS checks at scheduler start that
+`configMAX_SYSCALL_INTERRUPT_PRIORITY` has no bit the hardware lacks; at 5 (0x50) it had, so the check failed every
+boot, before the display or USB came up: a black screen that only the update mode survives. Rule: keep
+`configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY` even (`platform/stm32f4/main.c` asserts it at build time), and don't
+let correctness depend on two interrupts one apart (4 and 5, 6 and 7) preempting each other: on the clone they are
+one level. STM32F4 boards; built, not run on a clone.
+
 ## 14. SFR (single frequency repeater)
 
 **14.1 The HR_C6000's RX status is unreliable while it transmits.** CRC flag, color code (reg 0x52), sync type
@@ -564,6 +590,45 @@ in an open inbound call, voice headers and terminators are never echo-checked (t
 - Every terminator heard while keyed came with the chip's RS flag and was dropped in the driver. Rule: while sending,
   the driver passes headers and terminators on with `crc_ok` false and the runner checks them itself (14.1).
 
+**14.12 An HR_C6000 SFR user hears one copy of a call (SDR bench, 2026-10-19).** In direct mode the chip
+decodes the voice stream of the slot it locked onto. Reports for the other slot during the call are stale status
+(class 0, the same values again and again), not the other copy. So the user modes "First copy" and "Dual-path RX" only fall
+over from one copy to the other between calls or after a loss, never take frames from both. Not timing (the repeat
+sat 0.13 ms off the talker's slot grid) and not the repeat's sync (clean TS2 voice sync); a stronger repeat made it
+worse. Rule: don't count on both copies from an HR_C6000; hearing both needs the raw RX RAM path (sfr.md 3).
+
+**14.13 The HR_C7000 repeat carries bit errors (SDR bench, 2026-10-19).** The repeater's own receiver takes errors while it switches
+TX/RX every burst: on air 212 of 216 repeated voice frames needed Golay corrections and 4 were uncorrectable, where
+the talker's direct copy was clean. It plays, but it is the reason a user would want the direct copy (sfr.md 4).
+
+**14.14 An AT1846S SFR keys straight from RX (SDR bench, 2026-10-19).** For any radio with an AT1846S and an HR_C6000
+([feature-matrix.md](../feature-matrix.md)):
+- Going through idle (reg 0x30) at every switch (14.9) makes the synthesizer settle again each slot. The repeat then
+  lost 5-10 of 72 inbound frames, with about 190 bit errors. With RX and TX on one frequency, switching 0x30 straight
+  between RX and DMR TX keeps it locked: no frames lost, 48-68 bits. The band's RX supply still follows the PA.
+- Straight from RX the carrier is about 3.07 kHz low, and a frequency write can't correct it (3.5). Raise the HR_C6000
+  MOD1 offset (4:0x04, about 75 Hz a step at 461 MHz) for the burst and restore it for RX. On the board measured that is 42
+  steps over the calibrated value (41: -57..-15 Hz, 42: +16..+60 Hz), at 461.1375 MHz only. Check it at
+  other frequencies and on each radio.
+- Key 1 ms after the RF TX interrupt, which comes about 1.28 ms before the slot. 0.6-1.2 ms all did the same; keying
+  at the interrupt lost frames. Dropping the PA earlier (28.5-30 ms) changed nothing.
+- VHF and split frequencies keep the idle sequence (not measured).
+
+**14.15 An HR_C7000 SFR user needs the voice-access flag on both slots.** The chip writes the voice RAM only for a
+slot decided with TXRX_CTRL 0x8040; with 0x40 the burst is reported, but its voice RAM still holds the last burst
+decoded. The driver gave the flag to the chip slot of the last voice burst only. A user hearing both copies gets voice
+on both slots in turn, so the flag was always on the other slot, and every burst read the same stale bytes: the
+listener played the call's first decoded burst over and over while every counter looked clean (frames, bursts, no
+loss). That is the hand test of 2026-10-20 (an HR_C7000 repeater and two users, 1 clean call of about
+30). Rule: each chip slot with a voice header or voice burst in the last 390 ms gets the flag; a terminator clears its
+own slot (`hrc7000DmrTest` test_rx_sfr_both_copies). The frame counters can't show this: an HIL check has to look at
+the payloads (or the audio) the listener plays.
+
+This rule picks which slots carry a call; 14.16 picks which slot an interrupt decides. They compose at each RX slot
+interrupt: the decided slot is LAYER2_STATUS b30 (XOR 0), and it gets 0x8040 if that slot is in the voice set, else
+0x40. The test models the chip the same way (b30 names the slot about to be decided), so it fails both on a flag that
+follows the last voice burst and on the old polarity.
+
 **14.16 HR_C7000 voice-access slot polarity.** The RX timeslot interrupt decides the slot LAYER2_STATUS b30 shows
 then (`HRC7000_RX_NEXT_SLOT_XOR` 0), not the one after it. With the flag on the other slot the chip never writes the
 voice RAM, and every frame of every call reads the same stale bytes: silence (`voice.rx_peak` about 6), exactly 3 bit
@@ -600,6 +665,14 @@ presses in 100 s (2026-10-22). A key scan that ran late caught up with two scans
 read the low bits of the first byte of a burst 65 ms after the last one, before the UART had reported it. Rule:
 debounce the shared pin by time, not by scan count. The pin must read low, and not gated, for 20 ms
 (`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio.
+
+**16.3 PTT on an empty mic jack.**
+Symptom: a radio powered on without its hand mic transmitted at once (RadioFoundry, issue #230). Cause: the mic's PTT
+line has no pull-up the firmware can set, and with nothing in the jack it reads low from power-on, which is a press.
+Rule: on a PTT line that comes through a connector, count a low as a press only once the line has read high since
+start-up, something plugged in (`drivers/input/plugptt`). Pulling the plug while armed still reads as a held press;
+the transmit timeout ends it, and with TX timeout Off nothing does until power-off. Radios: one confirmed. Check every
+radio with a mic jack: power on with the jack empty and watch the raw PTT pin (adding-a-radio.md, bring-up order).
 
 ## 17. Scan
 

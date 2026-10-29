@@ -40,6 +40,14 @@ class's small font (24 characters a line) and takes the 160 px class's channel a
 line ("No calls heard yet") is centered in the region. Text that doesn't fit is shortened (an alternate, the name
 dropped, then an ellipsis), never drawn in a smaller font.
 
+A page title is in Title Case: every word capitalized except a, an, the, and, or, to, of, in, on, for and by
+inside the title; acronyms and units as written ("Unsaved Changes", "RX Group List", "Single-Freq Repeater", "Send To").
+A fixed prefix ahead of a name is lowercase in the middle ("Talk to Ops", "Zone for A"). Names and counts in a title
+("1 of 3", a zone's name) are shown as stored. List rows, values, hints, toasts and banners keep sentence case, so the
+row that opens a page can differ from its title: the Settings row "Talk & listen" opens "Talk & Listen".
+A page title is centered on the screen at every display class, moved only as far as it must to clear what shares its
+row (the state pill, the lock, the unread count).
+
 The hint row is groups separated by two spaces (`"OK open  # more  Back"`). The group for the Back key (it starts with
 "Back") is drawn against the right edge, under the key; the other groups run from the left, and those that don't fit
 are left out whole from the right. A toast is one centered line instead. A banner or a two-line toast starts in a gap
@@ -90,17 +98,23 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Zones | `zones` | Hub 4: the VFO, then every zone with its channel count. OK goes to the zone, CONTEXT opens its channels (`zone`; long OK on a radio without CONTEXT) |
 | Zone | `zone` | CONTEXT in Zones: the zone's channels in order, OK goes to one. With `CONFIG_ZONE_EDIT` also the zone's editor (2.2): "Add channel" first, "Zone options" last, CONTEXT on a channel opens Channel actions |
 | Channel actions | `zchannel` | CONTEXT (long OK without CONTEXT) on a channel in a zone's list (2.2) |
-| Add channel | `zpick` | "Add channel" in a zone's list: the stored channels the zone doesn't hold, T9 filtered (2.2) |
-| Zone options | `zoneedit` | "Zone options" in a zone's list: Rename, Copy as new zone, Delete zone (2.2) |
-| Delete zone | `zonedel` | Zone options 3: the confirmation, "No, keep it" first (P7) |
+| Add Channel | `zpick` | "Add channel" in a zone's list: the stored channels the zone doesn't hold, T9 filtered (2.2) |
+| Zone options | `zoneedit` | "Zone options" in a zone's list: Rename, Copy as new zone, Share zone to... (with `CONFIG_ZONE_SHARE`), Delete zone (2.2) |
+| Delete Zone | `zonedel` | Delete zone in Zone options: the confirmation, "No, keep it" first (P7) |
 | Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). The first row is "New from current", New channel from current settings (2.1). OK opens the channel (`channel`), CONTEXT goes to it |
-| Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), save, and save as a new channel |
+| Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), share it (with `CONFIG_ZONE_SHARE`), save, and save as a new channel |
 | Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
-| Unsaved changes | `discard` | BACK in the channel editor with unsaved changes (2.1) |
+| Unsaved Changes | `discard` | BACK in the channel editor with unsaved changes (2.1) |
 | List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered |
 | Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (a side key set to it), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
+| Share | `zone_share` | without `CONFIG_ZONE_EDIT`: CONTEXT in a zone's channels (`zone`): Share zone to..., Share channel to... ([zone-share.md](zone-share.md) 7). With the zone editor these are rows of Zone options and Channel actions (2.2) |
+| Share To | `zone_share_to` | a pick in Share, Channel actions, Zone options or the channel editor: the contacts, T9 filtered; OK sends and returns to the zone's list (to the channel editor from there) |
+| Zone Share Received | `zone_offer` | CONTEXT on the offer's banner, or Tools > Zones/Chs Received while one waits; titled Channel Share Received (shorter where it doesn't fit) for one channel: the offer's text, then Import, Preview, Reject ([zone-share.md](zone-share.md) 5.2) |
+| Offer preview | `zone_offer_preview` | Preview in Zone Share Received: the offered channels, "Not in band" dimmed |
+| Add to zone | `zone_offer_zone` | Import of a one-channel offer: the zone it goes in |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
+| DMR ID | `dmr-id` | Settings > My radio > DMR ID and name (`CONFIG_DMR`; without it the row opens the read-only My Radio info page): one row, the radio's own DMR ID from the codeplug ("Not set" without one), and the radio model above it. Digits type an ID as the channel editor's Own ID (2.1): the first digit replaces the shown one, a digit that would take it past `CODEPLUG_DMR_ID_MAX` (16776415) is refused, BACK takes the last digit back and with none typed leaves the ID as it was, OK writes it into the codeplug (with nothing typed, leaves it; 0 is refused: "IDs start at 1") |
 | About | `about` | Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
 
 The gallery (section 7) shows every screen at every display class.
@@ -116,15 +130,15 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 |---|---|---|
 | Toggle | the other value, at once | Mode (FM / DMR, with `CONFIG_DMR`), RX only, Bandwidth (FM), Timeslot (DMR), VOX (FM), Direct mode (DMR), Talk permit beeps (DMR), Talker alias TS1 / TS2 (DMR), Scan, Battery saver |
 | Spin | opens the spinner: the knob or Up / Down step through the values, shown as they change; digits type where the value is a number; OK keeps, BACK cancels (the quick-tile and Settings-number editor) | Power (the board's levels, then "Radio's"), Color code (0-15), TX time-out (0 = "Radio's", 15-495 s in steps of 15), RX tone and TX tone (None, the CTCSS (PL) tones, the DCS codes normal then inverted; in a build without `CONFIG_SUBTONE`, such as a small-flash board's, the tone rows only show the stored tone and OK toasts "Tones: not in this build") |
-| Direct entry | opens an editor that takes digits | RX and TX frequency (as VFO entry: MHz digits, then decimals, refused out of band as typed), Own ID (0 = "Radio's", up to 16777215) |
+| Direct entry | opens an editor that takes digits | RX and TX frequency (as VFO entry: MHz digits, then decimals, refused out of band as typed), Own ID (0 = "Radio's", up to 16776415, `CODEPLUG_DMR_ID_MAX`) |
 | Text | opens Text entry | Name |
 | Pick | opens the List picker | TX contact, RX group list |
 | Read only | nothing | Number, Zones |
-| Action | runs it | Go to it, Save, Save as new channel |
+| Action | runs it | Go to it, Share channel to... (with `CONFIG_ZONE_SHARE`: Share To for the stored channel; with unsaved changes "Save first: hold OK"), Save, Save as new channel |
 
 - A changed row shows the temporary mark (`UI_ITEM_TEMP`, the dot Home uses).
 - Long SELECT anywhere saves, as long SELECT makes a quick setting permanent. The Save row does the same.
-- BACK with unsaved changes opens Unsaved changes (`discard`): "No, keep editing" first (the default, P7), then "Yes,
+- BACK with unsaved changes opens Unsaved Changes (`discard`): "No, keep editing" first (the default, P7), then "Yes,
   discard". Long BACK still goes Home (P3) and drops the copy without asking.
 - Save checks the copy first and names the first problem in a toast: an empty name, RX out of every band, TX out of
   the transmit bands on a channel that isn't RX only, a DMR channel without a TX contact.
@@ -152,7 +166,8 @@ one, long OK keeps. Names stop at `CODEPLUG_NAME_LEN` (16).
 Typed rows (frequencies, the ID): BACK takes back the last digit, and with none typed closes the editor; OK keeps what
 is typed, and with nothing typed leaves the row as it was. A new RX frequency moves TX with it, keeping a repeater's
 offset. Where that offset would put TX outside every band, TX becomes the new RX (simplex). Own ID refuses a digit
-that would take it past 16777215, and takes at most 8 digits.
+that would take it past 16776415 (the IDs above it are the network's: gateways, all call), and takes at most 8
+digits.
 
 ### 2.2 Zone editor
 
@@ -176,10 +191,12 @@ they show the change within a fraction of a second.
 | Channel actions | 1 Move up, 2 Move down | swaps it with its neighbor. The menu stays open, so the digit again moves it on; the toast gives the position ("Position 4 of 16"), and "Already first" / "Already last" at the ends |
 | | 3 Copy here | the channel editor (2.1) on an unsaved copy at the lowest free number, named with " 2" appended (a copy of the channel in use keeps its temporary changes). Save writes it and inserts it after its source in one job (`ZONE_OP_ADD_NEW`); BACK asks as for any unsaved channel. Refused first with "No free channel" or "Zone full" |
 | | 4 Edit channel | the channel editor on the channel |
-| | 5 Remove from zone | takes it out of this zone at once, "Removed from <zone>". The channel stays in Channels and any other zone |
+| | 5 Share channel to... | with `CONFIG_ZONE_SHARE`: Share To (`zone_share_to`) for this channel ([zone-share.md](zone-share.md) 7). Waits while a zone change is still being saved ("Saving the zone: try again"): the send reads the stored zone |
+| | 6 Remove from zone (5 without zone sharing) | takes it out of this zone at once, "Removed from <zone>". The channel stays in Channels and any other zone |
 | Zone options | 1 Rename | text entry on the zone's name (2.1); OK writes it, an empty name is refused |
 | | 2 Copy as new zone | a new zone with the same channels, named with " 2" appended, then back to Zones |
-| | 3 Delete zone | asks first (`zonedel`): "Delete <name>? Channels stay." with "No, keep it" focused (P7). Yes deletes it and returns to Zones |
+| | 3 Share zone to... | with `CONFIG_ZONE_SHARE`: Share To (`zone_share_to`) for the whole zone (zone-share.md 7) |
+| | 4 Delete zone (3 without zone sharing) | asks first (`zonedel`): "Delete <name>? Channels stay." with "No, keep it" focused (P7). Yes deletes it and returns to Zones |
 
 - Channel actions and Edit channel replace their menu on the stack, so the deepest path (Home, Hub, Zones, the zone,
   the channel editor, text entry) fits the six frames.
@@ -189,8 +206,9 @@ they show the change within a fraction of a second.
   as a real zone 0, so the user keeps what they saw; it can't be deleted until then ("It holds every channel").
 - A new zone takes the lowest free slot, so it can come ahead of zones already there, and deleting a zone moves the
   ones after it up. `zone_edit.c` logs each such shift (`zone_edit_shifts`, the last `ZONE_SHIFT_LOG` = 8 kept), and
-  every holder of a zone index maps it with `zone_edit_map` once no zone write is under way (`zone_edit_busy`). An
-  import that writes zones through the same layer is followed the same way. A reader more than 8 shifts behind keeps
+  every holder of a zone index maps it with `zone_edit_map` once no zone write is under way (`zone_edit_busy`). Zone
+  sharing's import adds its zones through the same layer and is followed the same way, editor or not
+  (`CONFIG_ZONE_WRITE`). A reader more than 8 shifts behind keeps
   its indexes.
 - The settings hold zone indexes too (the zone in use, the roaming zones). An add or delete that moves indexes is
   noted in the settings before the codeplug write, and the saved indexes are moved in the settings record that clears
@@ -262,8 +280,9 @@ A"). The pill shows RX while data or CSBK bursts arrive on our slot and color co
 stays for a call being played.
 
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
-idle, the bars and battery icon give way, the battery percent stays (on a radio without a battery, `CAP_NO_BATTERY`,
-neither is drawn anywhere, and Tools > Battery, Settings > Power > Battery saver and Low battery warning are left
+idle, the bars and the battery (icon and percent) give way, so the title is centered across the whole row; the lock
+and the unread count stay. Home shows the battery, and the low battery banner warns on any screen. On a radio without
+a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Tools > Battery, Settings > Power > Battery saver and Low battery warning are left
 out of their lists, so the other Tools rows move up), and only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 
@@ -336,9 +355,10 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain, mic AGC, mic noise reduction) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; mic gain goes to `radio_set_mic_gain` (2 dB a step, 5 = the board's levels: the board's FM and DMR mic gain where it has `hal_radio_t.mic_gain`, else DMR scales the samples before the vocoder; radio-features.md 3.6); mic AGC and mic noise reduction to `ambeVoiceSetEncodeOptions` (tone frames always, plus each option that is on; `dmr-voice.md` 6), and with AGC on the mic gain is step 5 |
 | `ui_svc_beep` kinds (key, error, message, battery low) | radio-features | `ui_svc_radio.c`: a table from `UI_BEEP_*` to `BEEP_*` (`BEEP_MESSAGE` is the new-message tone) |
 | `UI_FEAT_VOLUME`, `UI_SET_VOLUME` | radio-features | `ui_svc_radio.c`: the feature bit when `radio_volume_soft()` (no knob, a board volume hook); `ui_svc_storage.c`: the step in `settings_t.volume`, and `radio_req_volume` so it is in force at once. The UI side is the volume screen (`SCR_VOLUME`, opened by `ACT_VOLUME`) and Settings > Sound > Volume, both only with the feature (`radio-features.md` 4.2) |
+| `UI_SET_DMR_ID` | storage-cps | `ui_svc_storage.c`: the codeplug's own DMR ID (`codeplug_dmr_id`); a set (1..`CODEPLUG_DMR_ID_MAX`) posts a storage job that calls `codeplug_set_dmr_id`, and the radio core takes the new ID when `codeplug_serial()` changes. A CPS read shows it |
 | `ui_svc_vibrate` patterns (message, call, emergency), `UI_FEAT_VIBRATE` | radio-features | `ui_svc_radio.c` (CONFIG_VIBRATE): a table from `UI_VIBE_*` to `VIBE_*` for `radio_req_vibrate`; the feature bit when the board has `hal_power_t.vibrate` (`radio-features.md` 4.1). Weak no-op otherwise |
 | `ui_svc_ptt_block`, `ui_svc_emergency_active` | input / dmr-ext | `ui_svc_radio.c`: `input_set_ptt_block`; `ui_svc_emergency.c`: `dmr_emergency_state` |
-| backlight dim / off | radio-features | `ui.c`: `radio_backlight_pct` (dims on a low battery too) |
+| backlight dim / off | radio-features | `ui.c`: `radio_backlight_pct` (dims on a low battery too); full again on a key, a banner or the emergency screen (`ui_app_take_wake`) and while `radio_view_wakes` (radio-features.md 5.3) |
 | `ui_svc_msg_*`, `ui_svc_radio_check`, `ui_svc_call_alert`, `ui_svc_poll`, `ui_svc_feat_data` | dmr-data | `ui_svc_data.c` on `dmr_data_api.h`; `ui_svc_msg_delete` is `sms_inbox_delete` |
 | `ui_svc_position` | GPS (no owner yet) | stub: "No GPS on this radio"; the GPS settings are dimmed with the same reason on boards without `CAP_GPS` |
 | USB mode (Tools > USB network) | hostlink | `hostlink_network_mode`, `hostlink_request_usb_network` (with `CONFIG_USB_NETWORK` and `CONFIG_HOSTLINK`) |
@@ -434,7 +454,7 @@ draw the anti-aliased fonts (`CONFIG_FONT_AA`), and `240x320i10x5` the larger te
 | `offfailed` | the auto power off didn't cut the power (`UI_EV_POWER_OFF_FAILED`) |
 | `worst` | worst-case codeplug content from here on (`sim_worst`: 16-character names, 8-digit talkgroups, 7-digit IDs, channels 985-1024, 80-channel zones) |
 | `power:<n>` | the radio's power level index |
-| `expect:<key>=<value>` | check: `screen focus depth count zone pos vfo freq mode tx txid txpriv talk locked query banner toast power sq ts cc temporary writes checks sent text scanning privacy hearall monitor hotspot beeps radio_tot radio_backlight beep pttblock poweroff usbnet set<id>` (`beep` the last beep kind, `set<id>` a setting's stored value; `_` = space, `*` = anything) |
+| `expect:<key>=<value>` | check: `screen focus depth count zone pos vfo freq mode tx txid txpriv talk locked query banner toast power sq ts cc temporary writes checks sent text scanning privacy hearall monitor hotspot beeps radio_tot radio_backlight beep pttblock poweroff wake usbnet set<id>` (`wake` 1 when a banner or the emergency screen asked for the backlight since the last check, `beep` the last beep kind, `set<id>` a setting's stored value; `_` = space, `*` = anything) |
 
 `uiFlowTest` runs every task flow of `task-flows.md` with the press budgets of `usability-tests.md` on four display
 and key map pairs (K at 160x120i5, M at 128x64, V at 160x128, K at 240x320) plus the few-key fallbacks: 160 flow runs.

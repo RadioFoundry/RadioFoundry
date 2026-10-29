@@ -45,7 +45,22 @@ stock_download = "https://github.com/daniel5600/BAOFENG-DM1701-Original-Firmware
 stock_versions = ["V02.06 CSV", "V02.06 noCSV", "V02.03 CSV", "V02.03 noCSV", "V02.02 CSV", "V02.01 CSV"]
 backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 
+# Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
+# as offsets in that memory, what with the spec section that establishes it
+[[flash.protect]]
+mem = "secreg"
+start = 0x0
+end = 0x200
+what = "factory calibration in security registers 1 and 2 (hardware-dm1701.md 12.1, 13.2)"
+
+[[flash.protect]]
+mem = "secreg"
+start = 0x200
+end = 0x300
+what = "factory flags in security register 3: power class, panel type, band limits (hardware-dm1701.md 13.2)"
+
 [flash.bootloader]
+hold = ["ptt", "sk1"]
 steps = [
 	"Turn the radio off and connect the programming cable.",
 	"Hold PTT and SK1 (the side key just above PTT).",
@@ -73,10 +88,42 @@ spi = { bus = 1, mode = 0, hz = 4500000 }
 # The codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after them
 # and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file rfoundry merges the codec
 # from (tools/rfoundry/rfoundry/stockfw.py PROFILES); stock firmware keeps its code in sectors 7 and 8, which are the
-# application's now, so no stock version leaves it in place and rfoundry merges it from the stock file
+# application's now, so no stock version leaves it in place and rfoundry merges it from the stock file. V02.01 to V02.03
+# CSV hold the same codec 0x40 lower, so their tables and code sit 0x40 lower in the same sectors; the V02.06 and V02.03
+# noCSV files hold it higher (tables from 0x080D4794 and 0x080D4754), still in sectors 10 and 11. The MD-9600 files hold
+# the same codec (an open-firmware install leaves it on the radio): the codec only, never the bootloader key; their
+# tables move into sectors 10 and 11 with the code
 [codec]
 tool = "codec_extract"
-stock = ["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
+stock = [
+	"0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d",	# V02.06 CSV
+	"cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713",	# V02.01 CSV
+	"643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7",	# V02.02 CSV
+	"35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948",	# V02.03 CSV
+	"4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9",	# V02.06 noCSV
+	"0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a",	# V02.03 noCSV
+	"de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532",	# MD-9600 V16.45 CSV
+	"7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f",	# MD-9600 P16.45 CSV-GPS
+	"d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c",	# MD-9600 D16.45 REC
+	"3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff",	# MD-9600 S16.45 GPS-REC
+	"79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09",	# MD-9600 V06.09 CSV
+	"9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5",	# MD-9600 P06.09 CSV-GPS
+	"7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f",	# MD-9600 D06.09 REC
+	"4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7",	# MD-9600 S06.09 GPS-REC
+	"194526d60f796cc0f7339d14c1efeedc267731d108fd66a96876b459408de0ba",	# MD-9600 V06.24 CSV
+	"1eafdb774fd71cb7bc3334d06617ed42264ee25df1c73f61744f6b21742bbd20",	# MD-9600 P06.24 CSV-GPS
+	"ec44929e855442ad248f1a5c171a467922d6cb5742fc35f759db269c645e22ab",	# MD-9600 S06.24 GPS-REC
+	"6643261e62b9778a5df43b1e5c3428d6d308bf54b34478513df3e08f6f4dbb63",	# MD-9600 D06.24 REC
+	"98302fbc26fa0db93bd7ecbd29a410ac9fbb42cbd7d6ce15d54ce085fefff329",	# MD-9600 V16.24 CSV
+	"e86b9e9775758548dd2d01334cfacc96c640fbf843aa6c5fa009b4bc7598e98d",	# MD-9600 P16.24 CSV-GPS
+	"4e1c5c081d5bdf4bef8f205668fd7381391187d8b07150df7e99275b030b811b",	# MD-9600 S16.24 GPS-REC
+	"e21c72e30716fb43e4d15798012aec15e964b9ec8c1a534ede5d0b0fe73f3acb",	# MD-9600 D16.24 REC
+	"02e366687f122ed752581344db8316666d21782d9353334518b69237a81e74dc",	# MD-9600 P26.45 CSV-GPS
+	"6df34152e9786530d61032ab71f1962cf194aca0b99cf0a54e3802fd2cd4ac72",	# MD-9600 S26.45 GPS-REC
+	"baee36b0fd852dfc1fb14952242a1231dbfa4fabc37cba57c61f1b8d3e0d830d",	# MD-9600 D26.45 REC
+	"2522008737d7845e43ab47a307d38498ee783c788a377fac855dff94dea53af0",	# MD-9600 D26.57 REC
+	"d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f",	# MD-9600 V26.45 CSV
+]
 
 # How the site draws the radio
 [frame]

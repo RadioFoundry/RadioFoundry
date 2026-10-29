@@ -29,6 +29,7 @@
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
+//   zoneoffer:<src>[,c] another radio offers its zone "Club net" (,c: one channel); the import and sends always work
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
@@ -37,9 +38,11 @@
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
 //   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
+//   splash:loader       the same splash as the stub entry draws it, while the flashing tools have the radio
 //   shot:<name>         save the screen (sim_set_shot_dir)
 //   expect:<key>=<value>   check (see check()); value "*" = anything; shows=<text> / hides=<text>: a drawn
-//                          text contains it / none does; markafter=<text> / nomarkafter=<text>: a mark is drawn just right of it / none is
+//                          text contains it / none does; markafter=<text> / nomarkafter=<text>: a mark is drawn just right of it / none is;
+//                          centered=<text>: a text that contains it is centered on the screen, to a character cell
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,6 +60,7 @@
 #include "input/input.h"
 #include "hostlink/hostlink.h"
 #include "hotspot/hotspot.h"
+#include "stubentry/stub_entry.h"
 #include "ui/ui_svc_aprs.h"
 
 #define TICK_MS		50
@@ -1199,6 +1203,80 @@ void ui_svc_boot_text(char line1[17], char line2[17])
 	strcpy(line1, "N0CALL");
 	strcpy(line2, "Jamie Thompson");	// placeholders: the codeplug's boot text is the user's own
 }
+// Zone sharing (ui_svc.h): one offer of 6 channels, one of them outside the radio's bands
+static struct {
+	bool pending, channel;
+	uint32_t src, serial;
+	unsigned sends, imports;
+	bool sent_one;			// the last send: one channel, from this zone and position
+	uint16_t sent_zone, sent_pos;
+} zs_sim;
+static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; } zs_chans[] = {
+	{ "Club rpt", 146760000, false, true }, { "Club DMR", 442375000, true, true },
+	{ "Simplex", 146520000, false, true }, { "Club TG 2", 442375000, true, true },
+	{ "Field day", 446100000, true, true }, { "Club 900", 927500000, true, false },
+};
+#define ZS_SIM_CHANNELS	(sizeof zs_chans / sizeof zs_chans[0])
+uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t dst, bool group, uint8_t *total)
+{
+	(void)dst; (void)group;
+	zs_sim.sends++;
+	zs_sim.sent_one = one;
+	zs_sim.sent_zone = zone;
+	zs_sim.sent_pos = pos;
+	if (total != NULL)
+		*total = one ? 1 : 16;
+	return one ? 1 : 16;
+}
+bool ui_svc_zone_offer(ui_zone_offer_t *out)
+{
+	if (!zs_sim.pending)
+		return false;
+	memset(out, 0, sizeof *out);
+	out->channel = zs_sim.channel;
+	out->serial = zs_sim.serial;
+	out->src = zs_sim.src;
+	out->channels = zs_sim.channel ? 1 : (uint8_t)ZS_SIM_CHANNELS;
+	out->in_band = zs_sim.channel ? 1 : (uint8_t)(ZS_SIM_CHANNELS - 1);
+	strcpy(out->name, zs_sim.channel ? "Club rpt" : "Club net");
+	strcpy(out->from, contact_name(zs_sim.src, false));
+	return true;
+}
+void ui_svc_zone_offer_open(uint32_t which) { (void)which; }
+bool ui_svc_zone_offer_channel(uint32_t which, uint16_t i, ui_zone_offer_ch_t *out)
+{
+	if (!zs_sim.pending || which != zs_sim.serial || i >= (zs_sim.channel ? 1 : ZS_SIM_CHANNELS))
+		return false;
+	memset(out, 0, sizeof *out);
+	strcpy(out->name, zs_chans[i].name);
+	out->rx_hz = zs_chans[i].hz;
+	out->dmr = zs_chans[i].dmr;
+	out->in_band = zs_chans[i].in_band;
+	return true;
+}
+void ui_svc_zone_offer_reject(uint32_t which)
+{
+	if (which == zs_sim.serial)
+		zs_sim.pending = false;
+}
+bool ui_svc_zone_offer_import(uint32_t which, uint16_t zone)
+{
+	(void)zone;
+	if (!zs_sim.pending || which != zs_sim.serial)
+		return false;
+	zs_sim.pending = false;
+	zs_sim.imports++;
+	ui_event_t ev;
+	memset(&ev, 0, sizeof ev);
+	ev.kind = UI_EV_ZONE_IMPORTED;
+	ev.ok = true;
+	strcpy(ev.name, zs_sim.channel ? "Zone 1" : "Club net");
+	ev.index = zs_sim.channel ? 1 : (uint16_t)(ZS_SIM_CHANNELS - 1);
+	ui_notify(&ev);
+	return true;
+}
+bool ui_svc_zone_event(uint8_t kind, uint32_t id, ui_event_t *ev) { (void)kind; (void)id; (void)ev; return false; }
+
 bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
 {
 	to_selected();
@@ -1764,6 +1842,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	sim_keep_ok[0] = sim_keep_ok[1] = false;
 #endif
 	memset(&crash_sim, 0, sizeof crash_sim);
+	memset(&zs_sim, 0, sizeof zs_sim);
 	ptt_blocked = false;
 	ui_app_init();
 	presses = 0;
@@ -1966,6 +2045,20 @@ static bool check(const char *kv, char *err, size_t len)
 		}
 		snprintf(got, sizeof got, "%s", mark == (key[0] == 'm') ? want : mark ? "a mark after it" : "nothing after it");
 	}
+	else if (strcmp(key, "centered") == 0) {	// a text that contains the value, its middle within a cell of the screen's
+		snprintf(got, sizeof got, "not shown");
+		for (int i = 0; i < live_n; i++) {
+			if (strstr(live[i].s, want) == NULL || live[i].s[0] == 0)
+				continue;
+			int cw = (live[i].x1 - live[i].x0) / (int)strlen(live[i].s);
+			int off = (live[i].x0 + live[i].x1) / 2 - gfx_width() / 2;
+			if (off >= -cw && off <= cw) {
+				snprintf(got, sizeof got, "%s", want);
+				break;
+			}
+			snprintf(got, sizeof got, "%d px off center", off);
+		}
+	}
 	else if (strcmp(key, "hides") == 0) {	// no text on the screen contains the value
 		snprintf(got, sizeof got, "%s", want);
 		for (int i = 0; i < live_n; i++)
@@ -1974,6 +2067,7 @@ static bool check(const char *kv, char *err, size_t len)
 	}
 	else if (strcmp(key, "pttblock") == 0) snprintf(got, sizeof got, "%u", ptt_blocked);
 	else if (strcmp(key, "poweroff") == 0) snprintf(got, sizeof got, "%u", ui_app_power_off_due());
+	else if (strcmp(key, "wake") == 0) snprintf(got, sizeof got, "%u", ui_app_take_wake());	// the backlight asked for
 	else if (strncmp(key, "set", 3) == 0 && key[3] >= '0' && key[3] <= '9')	// set<N>: ui_setting_t N's value
 		snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get((uint8_t)atoi(key + 3)));
 	else if (strcmp(key, "radio_tot") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tot_s);
@@ -1983,6 +2077,10 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);
 	else if (strcmp(key, "usbnet") == 0) snprintf(got, sizeof got, "%u", usb_net);
 	else if (strcmp(key, "aprs_sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)aprs_sim.sent);
+	else if (strcmp(key, "zs_sends") == 0) snprintf(got, sizeof got, "%u", zs_sim.sends);
+	else if (strcmp(key, "zs_one") == 0) snprintf(got, sizeof got, "%u", zs_sim.sent_one);
+	else if (strcmp(key, "zs_zone") == 0) snprintf(got, sizeof got, "%u", zs_sim.sent_zone);
+	else if (strcmp(key, "zs_pos") == 0) snprintf(got, sizeof got, "%u", zs_sim.sent_pos);
 	else if (strcmp(key, "crash_sends") == 0) snprintf(got, sizeof got, "%u", crash_sim.sends);
 	else if (strcmp(key, "crash_seen") == 0) snprintf(got, sizeof got, "%u", crash_sim.seen);
 	else if (strcmp(key, "crash_have") == 0) snprintf(got, sizeof got, "%u", crash_sim.have);
@@ -2262,6 +2360,22 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+	if (strcmp(t, "zoneoffer") == 0 && arg != NULL) {
+		ui_event_t ev;
+		memset(&ev, 0, sizeof ev);
+		zs_sim.pending = true;
+		zs_sim.channel = strstr(arg, ",c") != NULL;
+		zs_sim.src = (uint32_t)atoi(arg);
+		zs_sim.serial++;
+		ev.kind = UI_EV_ZONE_OFFER;
+		ev.id = zs_sim.src;
+		ev.index = zs_sim.channel;
+		strcpy(ev.name, contact_name(ev.id, false));
+		strcpy(ev.text, zs_sim.channel ? "Channel Club rpt" : "Zone Club net, 6 channels");
+		ui_notify(&ev);
+		advance(200);
+		return true;
+	}
 	if (strcmp(t, "aprs") == 0 && arg != NULL) {	// aprs:off (not built), aprs:nocall, aprs:custom (a custom frequency set)
 		aprs_sim.off = strcmp(arg, "off") == 0;
 		aprs_sim.no_call = strcmp(arg, "nocall") == 0;
@@ -2305,6 +2419,10 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 	if (strcmp(t, "splash") == 0) {		// the boot screen (last in a script: nothing redraws over it)
+		if (arg != NULL && strcmp(arg, "loader") == 0) {	// the stub entry's (stub_entry.c show_banner)
+			ui_draw_splash(board.name, "a1b2c3d4", STUB_ENTRY_LINE1, STUB_ENTRY_LINE2);
+			return true;
+		}
 		char l1[17], l2[17];
 		ui_svc_boot_text(l1, l2);
 		ui_draw_splash(board.name, "a1b2c3d4", l1, l2);
