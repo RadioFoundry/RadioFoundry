@@ -521,6 +521,13 @@ test("a codec from a stock file or a program memory backup", async () => {
 	await assert.rejects(c7.codecFromFile(new Uint8Array(1000), sim.c, "dm1801pro"), (e) => e.code === "not-vendor");
 	await assert.rejects(c7.codecFromFile(new Uint8Array(sim.progmem.length), sim.c, "dm1801pro"), (e) => e.code === "not-vendor");
 	assert.throws(() => c7.slotBytes({ ...sim.c, codec_maps: [] }, "dm1801pro", got), (e) => e.code === "unmapped");
+	// the same build in the radio, its codec without a map: the check step's analysis completes (the backup is saved) and
+	// names it a codec the page doesn't know, so the codec step asks for a stock file instead of failing the read
+	const unmapped = await c7.analyze(sim.progmem, { ...sim.c, codec_maps: [] }, "dm1801pro");
+	assert.equal(unmapped.firmware, "stock");
+	assert.equal(unmapped.codec, null);
+	assert.equal(unmapped.otherCodec, true);
+	assert.equal(await c7.decide(sim.c, "dm1801pro", { flashCodec: unmapped.codec }), null);
 	const slot = c7.slotBytes(sim.c, "dm1801pro", got);
 	assert.equal((await c7.decide(sim.c, "dm1801pro", { savedSlot: slot })).source, "browser");
 	// a codec slot that came with the user's firmware file has no name of its own: its text must not print an empty one

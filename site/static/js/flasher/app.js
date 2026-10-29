@@ -27,14 +27,14 @@ import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./versio
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
 import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, browserErrorKey } from "./link.js";
-import { readRadio, makeBundle, openBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
+import { readRadio, makeBundle, openBundle, bundleFolder, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
 import { decideCodec } from "./decide.js";
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
-import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
+import { t, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
 import { groups as variantGroups } from "./variant.js";
@@ -306,6 +306,7 @@ async function flashMark(started, event, outcome = null) {
 }
 
 async function flashFinished(started, error = null) {
+	stopBars();	// a bar left short of 100% by a failure or a cancel stops saying it waits
 	if (error) errorText(error);
 	else diag.note("flash finished");
 	if (!started) return;
@@ -1906,14 +1907,14 @@ function backupView() {
 // restore task
 
 // A radio whose backend restores from the original firmware file (vendorRestore) takes that file here too: a .bin,
-// or a zip without the backup's backup.json
+// or a zip without the backup's backup.json (bundleFolder)
 function bundleView() {
 	const status = h("div");
 	const vendor = S.radio && backend().vendorRestore;
 	return panel(t("flash.restore.title"), h("p", {}, t(vendor ? "flash.restore.lead_or_file" : "flash.restore.lead", { radio: S.radio?.name })),
 		filePicker(t(vendor ? "flash.restore.pick_or_file" : "flash.restore.pick"), vendor ? ".zip,.bin" : ".zip", async (f) => {
 			try {
-				if (vendor && !(await unzip(f.data).catch(() => null))?.has("backup.json")) return await vendorRestoreFile(f, status);
+				if (vendor && bundleFolder((await unzip(f.data).catch(() => null)) || new Map()) === null) return await vendorRestoreFile(f, status);
 				S.bundle = await openBundle(f.data);
 				const r = S.data.radios.find((x) => x.id === S.bundle.meta.radio.board);
 				if (!r) throw new Error(t("flash.err.unknown_board", { board: S.bundle.meta.radio.board }));

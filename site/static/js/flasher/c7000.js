@@ -223,10 +223,13 @@ export async function analyze(progmem, c, boardId) {
 	const app = progmem.subarray(c.app_start, c.boards[boardId].slot[0]);
 	const slotRaw = progmem.subarray(c.boards[boardId].slot[0], c.boards[boardId].slot[1]);
 	const slot = await parseSlot(c, boardId, slotRaw);
-	const codec = await locateCodec(lowPart(c, progmem), c, boardId);
+	const found = await locateCodec(lowPart(c, progmem), c, boardId);
+	// a known stock build whose codec has no map yet can't be put in the slot (slotBytes): the backup still completes, and
+	// the codec step asks for a stock file as for a codec it doesn't know
+	const codec = found && codecMap(c, found) ? found : null;
 	const firmware = app.subarray(0, 4096).every((b) => b === 0xFF) ? "empty"
-		: find(app, RFOUNDRY_MARK) >= 0 || find(app, LEGACY_MARK) >= 0 ? "rfoundry" : codec ? "stock" : "unknown";
-	const otherCodec = firmware === "unknown" && codecSignature(app, c) >= 0;
+		: find(app, RFOUNDRY_MARK) >= 0 || find(app, LEGACY_MARK) >= 0 ? "rfoundry" : found ? "stock" : "unknown";
+	const otherCodec = (firmware === "unknown" && codecSignature(app, c) >= 0) || (!!found && !codec);
 	return { firmware, slot, slotBytes: slot ? slotRaw.slice(0, slot.length) : null, codec, otherCodec };
 }
 

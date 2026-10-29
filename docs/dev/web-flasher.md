@@ -144,8 +144,8 @@ text asks for the manufacturer's original file only. The file goes to the backen
 - the site version;
 - an optional note (it asks where the file came from). For `internal`, the page's message is added to it.
 
-The backend (`POST /v1/samples`, raw body, the rest as query parameters) checks the header (or a dump's bootloader ID) and the size itself. It
-rate-limits per address and per day, caps the total storage, keeps one copy per SHA-256 and never serves a file back.
+The backend (`POST /v1/samples`, raw body, the rest as query parameters) checks the header (or a dump's bootloader ID)
+and the size itself. It rate-limits per address and per day, caps the total storage, keeps one copy per SHA-256 and never serves a file back.
 Simulations don't offer it.
 
 ### What an error report says about the file
@@ -201,7 +201,7 @@ Both requests also carry `adapter`, and the PATCH carries `trail`:
 |---|---|
 | `file picked` | A vendor file: name, size, SHA-256 prefix, `logId()`, what it matched, its problem and why (`whyNot()`: also for a pick nothing in which serves, and for the restore's file) |
 | `restore bundle` | The restore task's input: whether it holds program memory, whether it is a vendor file, the part names |
-| `write range` | A cable radio's write: how many sectors, the first and last address written, and whether the bootloader area (read before and after the write) is `unchanged`, `changed` (the write then fails) or `not checked` |
+| `write range` | A cable radio's install or restore write: how many sectors, the first and last address written, and whether the bootloader area (read before and after the write) is `unchanged`, `changed` (the write then fails) or `not checked` (also when the write failed part way) |
 | `codec search at known addresses`, `moved codec search` | The codec search in an open-firmware read: each stage, the profile and address found, or how many code starts were checked and why the nearest failed |
 | `codec decision` | `decideCodec()`: mode, source, why; or why none |
 | `key` | Where the bootloader key came from |
@@ -279,6 +279,9 @@ A zip the user keeps: `backup.json` (the radio, its chip UID, the firmware when 
 each part's address, size, SHA-256 and whether the read completed), `internal-flash.bin` (from the application
 base; the bootloader is never read or written), `spi-flash.bin`, `security-registers.bin` (the factory calibration),
 `radio-info.bin`, and `stock-firmware.bin` when the user gave one.
+
+`openBundle()` also reads a backup whose files sit in one folder (`bundleFolder()`): what macOS's Compress makes of a
+backup it unpacked, `__MACOSX/` ignored. The restore picker and the codeplug editor use the same test.
 
 The user picks what to read, each with a time estimate: from a short timed read of this radio, or through the loader
 from its measured speeds (stub-stm32f4.md 11) plus the hand-over and the restart:

@@ -611,6 +611,8 @@ function sizeUp(c) {
 async function quiet(c) {
 	c.stopSizing = true;
 	await c.sizing;
+	// the connection may have dropped meanwhile (the cable pulled, the count failing on a lost device): said plainly
+	if (!c.stub) throw new StubError(t("flash.c7.write.lost"));
 }
 
 export function checkView() {
@@ -674,7 +676,6 @@ export function checkView() {
 		started();
 		await busy(true);
 		top.set({ led: "busy", screen: screenNow() });
-		const st = c.stub;
 		const lay = C().boards[boardId()];
 		// a read that keeps failing says so from the second try, in the progress line, until a sector comes through
 		let last = [0, 1];
@@ -682,6 +683,7 @@ export function checkView() {
 		const retrying = (fails, max) => prog.set(last[0], last[1], t("flash.c7.check.retrying", { n: fails, max }));
 		try {
 			await quiet(c);
+			const st = c.stub;
 			let t0 = performance.now();
 			if (want.progmem && !skipFirmware) {
 				say("progmem", "run", t("flash.c7.check.reading"));
@@ -910,6 +912,28 @@ async function bootloaderHash(stub) {
 	}
 }
 
+// A program flash write (install or restore) framed by the bootloader check: the stub refuses writes there (protect),
+// and the bootloader's bytes read before and after show it held. The trail's "write range" line says which flash was
+// written, for a report of a radio that stopped working: also when the write fails part way (bootloader "not checked").
+// write(onWritten) runs the write and calls onWritten(addr) for each sector written
+async function guardedWrite(stub, write) {
+	const sectors = [];
+	const range = (bootloader) => diag.note("write range", { sectors: sectors.length, first: sectors.length ? hex(Math.min(...sectors)) : null,
+		last: sectors.length ? hex(Math.max(...sectors)) : null, bootloader });
+	const before = await bootloaderHash(stub);
+	let res;
+	try {
+		res = await write((a) => sectors.push(a));
+	} catch (e) {
+		range("not checked");
+		throw e;
+	}
+	const after = before ? await bootloaderHash(stub) : null;
+	range(!before ? "not checked" : after === before ? "unchanged" : "changed");
+	if (before && after !== before) throw new StubError(t("flash.c7.boot.changed"));
+	return res;
+}
+
 export function writeView() {
 	if (viaIap()) return routes.iapWriteView();
 	const c = session();
@@ -947,30 +971,21 @@ export function writeView() {
 	async function write() {
 		go.disabled = true;
 		fill(status, );
-		await quiet(c);	// a size count still running (backupView) ends before the write uses the stub
 		await busy(true);
 		top.set({ led: "busy", screen: screenNow() });
 		const started = ctx.flashStarted({ task: "install", source: fw.origin || "", radio: boardId(), firmware: String(fw.manifest.version || ""),
 			variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null });
 		let todo = 0, done = 0;
-		const sectors = [];
 		try {
+			await quiet(c);	// a size count still running (backupView) ends before the write uses the stub
 			if (!(await c.stub.attach())) throw new StubError(t("flash.c7.write.lost"));
-			// the bootloader's own bytes before and after: the stub refuses writes there (protect), and this shows it held
-			const bootBefore = await bootloaderHash(c.stub);
-			const res = await c.stub.writeProgram(data, start, { appStart: C().app_start, appEnd: C().app_end, onSector: (a, st) => {
+			const res = await guardedWrite(c.stub, (written) => c.stub.writeProgram(data, start, { appStart: C().app_start, appEnd: C().app_end, onSector: (a, st) => {
 				map.set(a, st);
 				if (st === "todo") todo++;
-				if (st === "written") { done++; sectors.push(a); ctx.flashMark(started, "first_byte"); }
+				if (st === "written") { done++; written(a); ctx.flashMark(started, "first_byte"); }
 				prog.set(done, todo, t("flash.c7.write.writing", { done, todo }));
-			} });
+			} }));
 			ctx.flashMark(started, "last_byte");
-			// which flash was written, for a report of a radio that stopped working: the first and last sector, and whether the
-			// bootloader's area is the same as before
-			const bootAfter = bootBefore ? await bootloaderHash(c.stub) : null;
-			diag.note("write range", { sectors: sectors.length, first: sectors.length ? hex(Math.min(...sectors)) : null,
-				last: sectors.length ? hex(Math.max(...sectors)) : null, bootloader: bootBefore ? (bootAfter === bootBefore ? "unchanged" : "changed") : "not checked" });
-			if (bootBefore && bootAfter !== bootBefore) throw new StubError(t("flash.c7.boot.changed"));
 			prog.set(1, 1, t("flash.c7.write.verified"));
 			c.log.add(`written ${res.written} sectors, ${res.same} unchanged, all verified by CRC`);
 			ctx.flashFinished(started);
@@ -989,7 +1004,7 @@ export function writeView() {
 			top.set({ led: "wait", screen: "off" });
 			fill(status, errorNotice(t("flash.c7.write.failed", { error: ctx.errorText(e) })), retryHelp(), ctx.helpLink());
 			S().forward(button(t("flash.c7.write.again"), async () => {
-					if (!(await c.stub.attach())) {
+					if (!c.stub || !(await c.stub.attach().catch(() => false))) {
 						await dropC7();
 						S().step--;	// back to connect: the radio has to be found again
 						S().step--;
@@ -1106,9 +1121,9 @@ export function backupView() {
 		await busy(true);
 		top.set({ led: "busy", screen: screenNow() });
 		S().readout = null;	// this use's own readout, not an earlier one's
-		await quiet(c);
 		const started = ctx.flashStarted({ task: "backup", source: Object.keys(want).filter((k) => want[k]).join("+"), radio: boardId(), firmware: c.rfoundry?.git || "", features: c.rfoundry?.features || "" });
 		try {
+			await quiet(c);
 			if (want.progmem) c.progmem = await c.stub.dump("progmem", 0, progSize(), { progress: (d, n) => prog.set(d, n, t("flash.c7.check.progmem")) });
 			if (want.progmem) await ctx.noteReadout(c.progmem);
 			if (want.q128) c.q128 = await c.stub.dump(dataMem(), 0, dataSize(), { progress: (d, n) => prog.set(d, n, t("flash.c7.check.q128")) });
@@ -1201,22 +1216,23 @@ export function restoreView() {
 	const status = h("div");
 	const go = button(t("flash.c7.restore.go"), async () => {
 		go.disabled = true;
-		await quiet(c);	// a size count still running (backupView) ends before the restore uses the stub
 		await busy(true);
 		top.set({ led: "busy", screen: "off" });
 		const started = ctx.flashStarted({ task: "restore", source: vendor ? "stock" : "c7000-progmem", radio: boardId(), firmware: S().bundle.meta.firmware_now?.kind || "" });
 		try {
+			await quiet(c);	// a size count still running (backupView) ends before the restore uses the stub
 			const model = c7.bootloaderModel(C(), pm);
 			if (model && model !== boardId()) throw new Error(t("flash.c7.restore.other_radio"));
 			const [start, data] = c7.restoreTarget(C(), pm);
 			let todo = 0, done = 0;
 			// carve: a protected sector keeps what the radio has, whatever the backup holds
-			const res = await c.stub.writeProgram(data, start, { appStart: C().app_start, appEnd: C().app_end, carve: true, onSector: (a, st) => {
+			const res = await guardedWrite(c.stub, (written) => c.stub.writeProgram(data, start, { appStart: C().app_start, appEnd: C().app_end, carve: true, onSector: (a, st) => {
 				map.set(a, st === "kept" ? "boot" : st);
 				if (st === "todo") todo++;
-				if (st === "written") done++;
+				if (st === "written") { done++; written(a); ctx.flashMark(started, "first_byte"); }
 				prog.set(done, todo, t("flash.c7.write.writing", { done, todo }));
-			} });
+			} }));
+			ctx.flashMark(started, "last_byte");
 			prog.set(1, 1, t("flash.c7.write.verified"));
 			ctx.flashFinished(started);
 			await c.stub.ledSequence(DONE_LED);

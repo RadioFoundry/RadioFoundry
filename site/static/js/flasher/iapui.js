@@ -47,8 +47,6 @@ export function factoryInstallImage(c, boardId, image, decision) {
 }
 const WORD_RATE = 14;		// console frames per second, written or read back (radio, 2026-10-18: 3,470 in 242 s)
 
-// The hardware variant the page knows the radio is (S().variant: {version, code, via}), judged against the image and
-// build options chosen now: null when it is not known
 // The install goes on without a codec: why there is none, and how to get one. skipped: the radio's firmware was not read
 // (a first install without a backup, or the factory update mode), else its firmware holds no codec the page knows. Either
 // way no supported stock firmware file was selected, which is the one other place the codec can come from
@@ -58,6 +56,8 @@ export function noCodecNotice(skipped) {
 		h("p", { class: "small" }, t("flash.c7.codec.none_go_back")));
 }
 
+// The hardware variant the page knows the radio is (S().variant: {version, code, via}), judged against the image and
+// build options chosen now: null when it is not known
 export function variantVerdict(state, boardId) {
 	const v = state.variant;
 	return v?.code ? verdict(state.radio, v.code, boardId, state.buildOptions || {}) : null;

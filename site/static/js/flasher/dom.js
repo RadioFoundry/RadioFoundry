@@ -66,8 +66,15 @@ export function filePicker(label, accept, onFile) {
 }
 
 // A bar that never looks frozen: it shimmers while work is under way (set() below 100%), and once nothing has changed
-// for STALL_S seconds it says how long it has been waiting. A page that keeps the bar after the work ends calls done().
+// for STALL_S seconds it says how long it has been waiting. Work that ends short of 100% (an error, a flash task
+// finished) ends it with stopBars(): a failed step must not keep saying it waits for the radio.
 const STALL_S = 4;
+const running = new Set();
+
+// Ends every bar's shimmer and wait line, wherever it stopped: errorNotice(), a "bad" notice() and flashFinished() call it
+export function stopBars() {
+	for (const stop of [...running]) stop();
+}
 
 export function progressBar() {
 	const bar = h("span");
@@ -76,7 +83,7 @@ export function progressBar() {
 	const track = h("div", { class: "progress", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": 100 }, bar);
 	const el = h("div", {}, track, text, wait);
 	let timer = null, changed = 0, key = "";
-	const stop = () => { clearInterval(timer); timer = null; wait.hidden = true; track.className = "progress"; };
+	const stop = () => { clearInterval(timer); timer = null; running.delete(stop); wait.hidden = true; track.className = "progress"; };
 	const tick = () => {
 		if (!el.isConnected) return stop();
 		const s = Math.floor((Date.now() - changed) / 1000);
@@ -95,7 +102,7 @@ export function progressBar() {
 			if (now !== key) { key = now; changed = Date.now(); wait.hidden = true; }
 			if (pct >= 100) return stop();
 			track.className = "progress active";
-			if (!timer) timer = setInterval(tick, 1000);
+			if (!timer) { timer = setInterval(tick, 1000); running.add(stop); }
 		},
 	};
 }
@@ -105,7 +112,10 @@ export function logBox() {
 	return { el, add(line) { el.textContent += line + "\n"; el.scrollTop = el.scrollHeight; note(line); } };
 }
 
-export const notice = (text, kind = "") => h("p", { class: `notice ${kind}` }, text);
+export const notice = (text, kind = "") => {
+	if (kind === "bad") stopBars();
+	return h("p", { class: `notice ${kind}` }, text);
+};
 export const button = (label, onclick, { primary = false, disabled = false, danger = false, quiet = false } = {}) =>
 	h("button", { class: `btn${primary ? " btn-primary" : ""}${danger ? " btn-danger" : ""}${quiet ? " btn-quiet" : ""}`, type: "button", onclick, disabled }, label);
 

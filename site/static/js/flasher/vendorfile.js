@@ -195,8 +195,8 @@ export function logId(st) {
 }
 
 // The file to offer for analysis when the page can't take the codec from what was picked: a vendor firmware container
-// (the headers the backend accepts) or a program memory dump of this radio, never a readout of at most maxBytes, with what the page found as its reason. Never
-// a file identified as another radio's: the page already knows what it is and says so
+// (the headers the backend accepts) or a program memory dump of this radio, of at most maxBytes, with what the page found
+// as its reason. Never a readout, and never a file identified as another radio's: the page already knows what it is
 export function analysisCandidate(opened, fb, boardId = null, maxBytes = 4 << 20) {
 	const magics = [fb.magic, fb.c7000?.stock_magic].filter(Boolean);
 	// a program memory dump has no updater header: the backend takes it by the bootloader ID the page matched

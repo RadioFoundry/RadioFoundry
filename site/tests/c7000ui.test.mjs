@@ -166,3 +166,68 @@ test("backup: a backup made through an untried stock build offers its program me
 	assert.equal(state.stockRead?.name, `program-memory-${radio.id}-909E.DBB.EARSAB.018.bin`);
 	assert.match(box.textContent, /Send the program memory read/);
 });
+
+test("backup: a connection lost after the step was drawn says the radio no longer responds, not a script error", async () => {
+	globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
+	const forwards = [];
+	const finished = [];
+	const state = { radio, task: "backup", forward: (b) => forwards.push(b), data: { fb, site: { git: "test" } } };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, noteReadout: async () => {},
+		flashStarted: () => 0, flashFinished: (s, e) => finished.push(e), errorText: (e) => e.message });
+	state.c7 = { log: { add() {}, el: new El("div") }, stream: null, size: {}, stopSizing: true,
+		stub: { size: {}, sums: async () => { throw new Error("no radio"); } } };
+	const box = c7ui.backupView();
+	state.c7.stub = null;	// the device lost while the page waited (the blank count fails, the session drops the stub)
+	forwards.at(-1).click();
+	for (let i = 0; i < 50 && !finished.length; i++) await sleep(10);
+	assert.match(box.textContent, /the radio no longer responds/);
+	assert.doesNotMatch(box.textContent, /Cannot read properties/);
+	assert.match(String(finished[0]?.message), /no longer responds/);
+});
+
+test("restore: the write logs its range and that the bootloader is unchanged, as an install does", async () => {
+	globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
+	const C = fb.c7000;
+	const forwards = [];
+	const pm = new Uint8Array(C.progmem_size).fill(0xFF);
+	pm.fill(0x11, C.app_start, C.app_start + 8192);
+	const state = { radio, task: "restore", forward: (b) => forwards.push(b), data: { fb },
+		bundle: { meta: { radio: { name: radio.name }, firmware_now: { kind: "stock" } },
+			parts: new Map([["c7000-progmem", { what: "c7000-progmem", file: "program-memory.bin", complete: true, addr: 0, data: pm }]]) } };
+	const diag = await import("../static/js/diag.js");
+	diag.reset();
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, flashStarted: () => 0, flashFinished() {}, flashMark() {},
+		errorText: (e) => e.message });
+	const boot = new Uint8Array(C.app_start).fill(0xA5);
+	state.c7 = { log: { add() {}, el: new El("div") }, stream: null,
+		stub: { dump: async () => boot.slice(), ledSequence: async () => {}, resetChip: async () => {},
+			writeProgram: async (data, start, { onSector }) => { onSector(C.app_start, "todo"); onSector(C.app_start, "written"); return { written: 1, same: 0 }; } } };
+	state.fakeC7 = {};
+	const box = c7ui.restoreView();
+	forwards.at(-1).click();
+	for (let i = 0; i < 300 && !/Restore complete/.test(box.textContent); i++) await sleep(10);
+	assert.match(box.textContent, /Restore complete/);
+	const tr = diag.trail(50).join("\n");
+	assert.match(tr, /restore bundle \{"progmem":true/);
+	assert.match(tr, /write range \{"sectors":1,.*"bootloader":"unchanged"/);
+});
+
+test("progress bar: a stall says how long it has waited; an error shown ends the shimmer and the wait line", async (t) => {
+	const { progressBar, notice } = await import("../static/js/flasher/dom.js");
+	const now = Date.now;
+	t.after(() => { Date.now = now; });
+	const p = progressBar();
+	p.el.isConnected = true;
+	p.set(3, 10, "Program Memory");
+	const [track, , wait] = p.el.children;
+	assert.equal(track.className, "progress active");
+	Date.now = () => now() + 6000;	// nothing new for six seconds
+	await sleep(1100);
+	assert.equal(wait.hidden, false);
+	assert.match(wait.textContent, /Still waiting for the radio \(\d+ s\)/);
+	notice("the radio no longer responds", "bad");	// the step failed with the bar at 30%
+	assert.equal(track.className, "progress");
+	assert.equal(wait.hidden, true);
+	await sleep(1100);
+	assert.equal(wait.hidden, true, "no wait line after the failure");
+});

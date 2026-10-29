@@ -65,9 +65,12 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
 
    **Without a firmware backup or a stock file, the installer has no codec to give the radio.** If you skip the
    firmware backup and select no supported stock file, **Install without the codec** is the only way on. The installer
-   then warns, above the Install button, that the RadioFoundry firmware will not include the DMR voice codec. Analog
-   FM will work, but DMR voice won't. Go back and select the manufacturer's firmware file to add it, or install
-   RadioFoundry again later with the file. Installing again keeps your channels and settings.
+   then warns, above the Install button, that this installation will not include the DMR voice codec: analog FM will
+   work, but DMR voice will not until you install RadioFoundry again with a supported manufacturer firmware file.
+   Installing again keeps your channels and settings.
+
+   The same choice comes when the backup finds a firmware version whose codec RadioFoundry has not mapped yet. The
+   backup is still complete; the codec step asks for a supported stock firmware file instead.
 
 5. **Install.** Put the radio in its bootloader when asked ([your radio's keys](23-radios.md)). The installer writes
    the changed parts and restarts the radio. Do not unplug the radio until it says the installation is complete.
@@ -128,11 +131,13 @@ several minutes.
 
 Without the program memory, a backup can't be restored to your initial radio firmware using these tools. Restore
 writes back the program memory only; a backup's calibration and data memory are kept for the record. When you pick
-such a backup, Restore says so and offers **Select a Firmware File**: pick the manufacturer's firmware file for your
-radio instead (any version works). A whole program memory dump of the radio also works, even when its firmware version
-has not been mapped yet: Restore puts it back as it is, never touching the bootloader. An install can't use that
-dump's codec until the version is mapped. The installer then asks you to send the file with **Report a Problem**, and
-offers the manufacturer's firmware file instead.
+such a backup, Restore says so and offers **Select a Firmware File**: pick a manufacturer firmware file for your
+radio instead, in a version the installer supports. A whole program memory dump of the radio also works, even when its
+firmware version has not been mapped yet: Restore puts it back as it is, never touching the bootloader. An install
+can't use that dump's codec until the version is mapped, so the installer offers to send the dump to the RadioFoundry
+team for mapping and asks for a supported manufacturer firmware file instead.
+
+A backup you unpacked and zipped again (macOS unpacks downloads by itself) still restores.
 
 If the backup holds the original firmware's codeplug, open the file in the
 [Codeplug Editor](04-programming.md#the-codeplug-editor). It converts the channels, zones and contacts to the

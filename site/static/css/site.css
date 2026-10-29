@@ -294,11 +294,10 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .flasher { display: grid; gap: var(--space-3); }
 .flasher > :last-child, .flasher > :last-child > :last-child { margin-bottom: 0; }
 /* what the flasher sends: always on screen under every step */
-.flash-log { margin-bottom: var(--space-3); color: var(--muted); }
+/* one quiet line under the help cards: its links read as the text does */
+.flash-log { color: var(--muted); font-size: var(--text-sm); margin: 0 auto var(--space-4); }
 .flash-log p { margin: 0; max-width: 90ch; }
 .flash-log summary { cursor: pointer; }
-/* one quiet line under the help cards: its links read as the text does */
-.flash-log { font-size: var(--text-sm); margin: 0 auto var(--space-4); }
 .flash-log a { color: inherit; }
 .stepper { display: flex; gap: var(--space-2); list-style: none; padding: 0; margin: 0; flex-wrap: wrap; counter-reset: step; }
 .stepper li { counter-increment: step; display: flex; align-items: center; gap: var(--space-2); color: var(--muted); font-size: var(--text-sm); font-weight: 600; padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1); border-radius: 999px; background: var(--surface); border: 1px solid var(--border); }

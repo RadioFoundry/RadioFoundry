@@ -23,7 +23,8 @@ def links():
 	"""{url: [board ids]} from every board's stock_download."""
 	found = {}
 	for path in sorted(glob.glob(os.path.join(ROOT, "boards", "*", "board.toml"))):
-		m = re.search(r'^stock_download\s*=\s*"([^"]+)"', open(path, encoding="utf-8").read(), re.M)
+		with open(path, encoding="utf-8") as f:
+			m = re.search(r'^stock_download\s*=\s*"([^"]+)"', f.read(), re.M)
 		if m:
 			found.setdefault(m.group(1), []).append(os.path.basename(os.path.dirname(path)))
 	return found

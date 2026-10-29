@@ -352,7 +352,7 @@ test("update mode: an install without a codec says why there is none and how to 
 	assert.match(none, /will not include the DMR voice codec/i);
 	assert.match(none, /no supported stock firmware file was selected/);
 	assert.match(none, /Analog FM will work/);
-	assert.match(none, /go back and select the manufacturer's firmware file/);
+	assert.match(none, /go back and select a supported manufacturer firmware file/);
 	assert.doesNotMatch(none, /no way back/i, "a way back exists: it needs the stock file");
 	assert.doesNotMatch(text({ mode: "keep" }), /will not include the DMR voice codec/i);
 });
