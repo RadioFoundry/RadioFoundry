@@ -34,7 +34,7 @@ import { decideCodec } from "./decide.js";
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
-import { t, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
+import { t, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
 import { groups as variantGroups } from "./variant.js";
@@ -909,14 +909,14 @@ function buildView() {
 					: t("flash.build.custom_start")));
 		const busy = building && !S.build.error;
 		const missing = buildOptions().find((o) => !S.buildOptions?.[o.name]);
-		forward(button(t(busy ? "flash.nav.building" : missing ? "flash.nav.choose" : S.firmware || S.sim ? `flash.nav.to_${stepsFor()[S.step + 1]}`
+		forward(button(busy ? [spinner(), t("flash.nav.building")] : t(missing ? "flash.nav.choose" : S.firmware || S.sim ? `flash.nav.to_${stepsFor()[S.step + 1]}`
 			: VERSION_REF ? "flash.nav.build_version" : "flash.nav.build", { what: missing?.title.toLowerCase(), ref: VERSION_REF && versionShort() }), go, { primary: true, disabled: busy || !!missing }), summary);
 		// every image, prebuilt choice or not, comes from the build service (or is the user's own)
 		// the image's state, then building it yourself: one line and a fold under the features, not a card of its own
 		const image = h("div", { class: "build-image" },
 			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
 				: building && S.build.error ? (S.build.error.el ||= errorNotice(S.build.error.text, S.build.error.rec))
-				: building ? h("p", { class: "muted" }, S.build.text)
+				: building ? h("p", { class: "muted", role: "status" }, spinner(), S.build.text)
 				: h("p", { class: "small muted" }, t(S.sim ? "flash.sim.image" : VERSION_REF ? "flash.build.version_on_request" : "flash.build.on_request", { ref: versionShort() })),
 			h("details", { class: "small" }, h("summary", {}, t("flash.build.self_title")),
 				h("p", {}, t("flash.build.self_text")), h("pre", {}, h("code", {}, sel.makeCommand(S.buildOptions))),

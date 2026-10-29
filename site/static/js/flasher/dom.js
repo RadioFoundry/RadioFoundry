@@ -116,6 +116,12 @@ export const notice = (text, kind = "") => {
 	if (kind === "bad") stopBars();
 	return h("p", { class: `notice ${kind}` }, text);
 };
+// A turning circle for a wait with no progress to show. A redraw makes a new one: the delay keeps it at the angle the old
+// one had, so a redraw every few seconds doesn't make it jump.
+export const spinner = () => {
+	const period = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? 2400 : 800;	// as in site.css
+	return h("span", { class: "spinner", "aria-hidden": "true", style: `animation-delay: -${Date.now() % period}ms` });
+};
 export const button = (label, onclick, { primary = false, disabled = false, danger = false, quiet = false } = {}) =>
 	h("button", { class: `btn${primary ? " btn-primary" : ""}${danger ? " btn-danger" : ""}${quiet ? " btn-quiet" : ""}`, type: "button", onclick, disabled }, label);
 

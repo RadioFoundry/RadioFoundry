@@ -232,6 +232,21 @@ test("progress bar: a stall says how long it has waited; an error shown ends the
 	assert.equal(wait.hidden, true, "no wait line after the failure");
 });
 
+test("spinner: hidden from screen readers; a redraw starts at the angle the last one reached", async (t) => {
+	const { spinner } = await import("../static/js/flasher/dom.js");
+	const now = Date.now;
+	t.after(() => { Date.now = now; });
+	Date.now = () => 7200 * 1000 + 300;
+	const s = spinner();
+	assert.equal(s.className, "spinner");
+	assert.equal(s.attrs["aria-hidden"], "true");
+	assert.equal(s.attrs.style, "animation-delay: -300ms");
+	globalThis.matchMedia = (q) => ({ matches: q.includes("reduce") });	// reduced motion: the 2.4 s turn in site.css
+	t.after(() => { delete globalThis.matchMedia; });
+	Date.now = () => 7200 * 1000 + 2000;
+	assert.equal(spinner().attrs.style, "animation-delay: -2000ms");
+});
+
 test("beta notice: once per session and again after 12 hours; storage that throws shows it again rather than failing", async () => {
 	const { showBetaNotice, BETA_NOTICE_EVERY_MS } = await import("../static/js/flasher/beta.js");
 	const make = () => {
