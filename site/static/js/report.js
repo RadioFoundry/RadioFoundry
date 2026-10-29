@@ -6,7 +6,7 @@
 // last steps (diag.trail) but no wire log or radio data, and the dialog can send the whole report too. ?reporting=0 turns sending off.
 
 import * as diag from "./diag.js";
-import { h, t, ROOT, button, download } from "./flasher/dom.js";
+import { h, t, ROOT, button, download, stopBars } from "./flasher/dom.js";
 import { zip } from "./flasher/zip.js";
 import { reportBody, sendProblemReport, contactOk, practiceFetch } from "./problemreport.js";
 
@@ -201,6 +201,7 @@ export function reportedLine(rec = diag.currentError()) {
 // A failure shown to the user: the message (what happened and the likely cause, from the tool's error text) and,
 // under it, that it was reported (reportedLine)
 export function errorNotice(text, rec = diag.currentError()) {
+	stopBars();
 	return h("div", { class: "notice bad" }, h("p", {}, text), reportedLine(rec));
 }
 

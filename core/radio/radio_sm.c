@@ -281,6 +281,7 @@ static bool clear_temporary(radio_sm_t *sm)
 	sm->temp_power = false;
 	sm->temp_squelch = false;
 	sm->temp_ts = 0;
+	sm->ts_pending = 0;
 	sm->view.power = channel_power(&sm->view.ch);
 	sm->view.squelch = sm->base_squelch;
 	if (!sm->view.vfo) {
@@ -1127,9 +1128,18 @@ static void set_hear_all_latch(radio_sm_t *sm, bool on)
 // channel's) clears it again
 static void dmr_set_timeslot(radio_sm_t *sm, int32_t ts, bool busy)
 {
-	if (busy || sm->view.ch.mode != RADIO_MODE_DMR || (ts != 1 && ts != 2)) {
+	if (sm->view.ch.mode != RADIO_MODE_DMR || (ts != 1 && ts != 2)) {
 		return;
 	}
+	if (busy) {
+		// A data burst list (ARS after a slot change, a position) is not the user's transmission: the change waits
+		// for its end instead of being lost (a TS2 call went out on TS1, 2026-10-27)
+		if (sm->view.state == RS_TX && sm->tx_no_ptt && !sm->hotspot) {
+			sm->ts_pending = (uint8_t)ts;
+		}
+		return;
+	}
+	sm->ts_pending = 0;
 	if (sm->view.vfo) {
 		// The VFO's own slot, not a temporary change
 		if (ts != sm->view.ch.timeslot) {
@@ -1460,6 +1470,11 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 		sm->view.state = RS_IDLE;
 		sm->view.tx_deny = TXDENY_NONE;
 		changed(sm);
+		if (sm->ts_pending != 0) {
+			uint8_t ts = sm->ts_pending;
+			sm->ts_pending = 0;	// taken or refused now, never left for a later transmission
+			dmr_set_timeslot(sm, ts, sm->hotspot);
+		}
 		if (cv->tx_error == DMR_TX_ERR_NO_REPEATER && !data) {	// a data sender hears about its own failure
 			// A short press goes on waking the repeater after the release: its failure still gets the deny tone
 			beep(sm, BEEP_TX_DENY);

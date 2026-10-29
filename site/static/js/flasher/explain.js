@@ -16,7 +16,7 @@
 export const PROBLEMS = ["other-radio", "wrong-key", "not-vendor", "unmapped", "damaged", "internal"];
 
 // Problems where sending the file can help: a build the project can add, or a fault the file reproduces
-export const OFFER = new Set(["unmapped", "wrong-key", "internal"]);
+export const OFFER = new Set(["unmapped", "wrong-key", "internal", "dump"]);
 
 const base = (path) => (path || "").split("/").pop();
 
@@ -28,6 +28,8 @@ export function pickProblem(opened, boardId, { need = "codec" } = {}) {
 	// an STM32 flash readout (vendorfile.js kind "readout") is named, but neither the codec nor the restore takes one
 	if (best && best.match.kind !== "readout") {
 		if (need === "key" || best.match.kind === "codec") return null;
+		// a program memory dump of this radio: it restores, but gives no codec (unless it holds a build without a recipe)
+		if (best.match.kind === "progmem" && !best.match.unmapped) return { problem: "dump", file: base(best.path) };
 		// key: the radio's bootloader key opens it, so it still unlocks update mode (STM32 kinds "key", "codec-unmapped")
 		return { problem: "unmapped", file: base(best.path), known: best.match.known || null, ...(best.match.key ? { key: true } : {}) };
 	}

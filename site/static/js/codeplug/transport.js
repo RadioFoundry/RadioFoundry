@@ -28,7 +28,7 @@ export class TransportError extends Error {
 const KEEP_OUT = [[0x604B, 0x6060]];
 // The VFO pair: a read shows the radio's live VFOs there, not the bytes written (open-firmware-cps.md 2.2, "VFO
 // overlay"), so a verify doesn't compare it
-const VFOS = [0x7590, 0x7600];
+export const VFOS = [0x7590, 0x7600];
 
 // Regions of the codeplug a write may change
 export function writeRanges() {

@@ -68,7 +68,8 @@ const keyedBoards = (fb, first) => Object.values(fb.boards).filter((b) => b.key_
 
 // One file against every radio: {board, kind, how, profile?, known?, key?, codecAt?, codec?} or {board: null, why,
 // problem}. kind "codec": the codec can be taken from it; "key": it gives a radio's bootloader key, not a codec
-// RadioFoundry can place; "codec-unmapped": it holds the codec of a build without a map; "readout": an STM32 radio's
+// RadioFoundry can place; "codec-unmapped": it holds the codec of a build without a map; "progmem": a C-SKY radio's whole
+// program flash read with no codec known (a restore source, never a codec source); "readout": an STM32 radio's
 // flash read, which the page doesn't take. problem (no radio): "damaged", "wrong-key" (a vendor container no known
 // radio's key opens: another model, or a modified build), "unmapped" (a C-SKY codec no profile describes, for one of
 // boards), "internal" (a known file failing its own check) or "not-vendor"
@@ -129,6 +130,11 @@ export async function identifyFile(data, fb, boardId = null) {
 				else if (e.code === "internal") return { sha, board: null, problem: "internal", why: e.message };
 			}
 		}
+		// a whole program flash read of this radio with no codec to take: still what a restore puts back as it is
+		// (unmapped: it holds a codec build without a recipe, which the codec step says rather than "no codec")
+		if (boardId && c7.isProgmemDump(data, c, boardId))
+			return { sha, board: boardId, kind: "progmem", how: "bootloader id", unmapped: !!unmapped,
+				why: unmapped ? "a program memory dump of this radio whose codec build has no recipe" : "a program memory dump of this radio with no codec RadioFoundry knows" };
 		if (unmapped) return { sha, board: null, boards: Object.keys(c.boards), known, problem: "unmapped", how: "codec signature", why: unmapped };
 	}
 	// a readout of an STM32 radio's flash: identified so the page can say what it is, but the page takes the codec and
@@ -140,7 +146,7 @@ export async function identifyFile(data, fb, boardId = null) {
 	return { sha, board: null, known, problem: "not-vendor", why: known ? `${known}, which gives no codec` : "not a firmware file RadioFoundry knows" };
 }
 
-const RANK = { codec: 3, key: 2, "codec-unmapped": 1, readout: 0 };
+const RANK = { codec: 3, key: 2, "codec-unmapped": 1, progmem: 1, readout: 0 };
 
 // Everything in what the user picked, identified, and the best file for boardId: the one with the codec first, then one
 // that gives the bootloader key, then by name. {files: [{path, size, data, match}], skipped, best}; best is null when
@@ -166,12 +172,17 @@ export function describe(opened, fb, boardId) {
 			: m.kind === "codec" && m.profile?.file_radio ? `${m.known || "known"}: ${m.profile.file_radio} firmware, the codec only (no bootloader key; never restored as this radio's firmware)`
 			: m.kind === "codec" ? `${m.known || "known"}: the codec${fb.boards[m.board]?.key_sha256 ? " and the bootloader key" : ""}`
 			: m.kind === "readout" ? `a flash readout of ${m.known}: the installer takes the manufacturer's firmware file instead`
+			: m.kind === "progmem" ? `${m.why}: a restore puts it back, but it gives no codec`
 			: m.kind === "codec-unmapped" ?`${m.known || "a build"} with the codec, but RadioFoundry has no recipe for this build yet${m.key ? " (the bootloader key works)" : ""}`
 			: `${m.known || "a build"}: the bootloader key, not the codec`;
 		return `${f.path}: ${what}${f === opened.best ? " (used)" : ""}`;
 	});
 	return lines.concat(opened.skipped.map((s) => `${s.path}: skipped, ${s.why}`));
 }
+
+// Why nothing in a pick serves, in a few words for the log: what the first file was found to be, else why it was set
+// aside (a file too small or too large to be firmware is skipped before it is identified)
+export const whyNot = (opened) => opened.files[0]?.match.why || opened.skipped[0]?.why || null;
 
 // A short string for the flash log (at most 64 characters): what the page took a picked vendor file (pickedStock's
 // result) for. Names of known builds and board ids only, nothing from the user's file
@@ -184,15 +195,16 @@ export function logId(st) {
 }
 
 // The file to offer for analysis when the page can't take the codec from what was picked: a vendor firmware container
-// (the headers the backend accepts, never a readout) of at most maxBytes, with what the page found as its reason. Never
-// a file identified as another radio's: the page already knows what it is and says so
+// (the headers the backend accepts) or a program memory dump of this radio, of at most maxBytes, with what the page found
+// as its reason. Never a readout, and never a file identified as another radio's: the page already knows what it is
 export function analysisCandidate(opened, fb, boardId = null, maxBytes = 4 << 20) {
 	const magics = [fb.magic, fb.c7000?.stock_magic].filter(Boolean);
+	// a program memory dump has no updater header: the backend takes it by the bootloader ID the page matched
 	const f = opened.files.find((x) => x.match.kind !== "codec" && (!boardId || !x.match.board || x.match.board === boardId) &&
-		x.data.length <= maxBytes && magics.some((m) => startsWith(x.data, m)));
+		x.data.length <= maxBytes && (x.match.kind === "progmem" || magics.some((m) => startsWith(x.data, m))));
 	if (!f) return null;
 	const m = f.match;
-	return { file: f, reason: m.board ? m.kind : m.problem === "unmapped" ? "codec-unmapped" : m.problem === "wrong-key" ? "key-unknown"
+	return { file: f, reason: m.kind === "progmem" ? "progmem-dump" : m.board ? m.kind : m.problem === "unmapped" ? "codec-unmapped" : m.problem === "wrong-key" ? "key-unknown"
 		: m.problem === "internal" ? "internal" : "unknown-container" };
 }
 

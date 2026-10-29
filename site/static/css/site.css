@@ -294,9 +294,11 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .flasher { display: grid; gap: var(--space-3); }
 .flasher > :last-child, .flasher > :last-child > :last-child { margin-bottom: 0; }
 /* what the flasher sends: always on screen under every step */
-.flash-log { margin-bottom: var(--space-3); color: var(--muted); }
+/* one quiet line under the help cards: its links read as the text does */
+.flash-log { color: var(--muted); font-size: var(--text-sm); margin: 0 auto var(--space-4); }
 .flash-log p { margin: 0; max-width: 90ch; }
 .flash-log summary { cursor: pointer; }
+.flash-log a { color: inherit; }
 .stepper { display: flex; gap: var(--space-2); list-style: none; padding: 0; margin: 0; flex-wrap: wrap; counter-reset: step; }
 .stepper li { counter-increment: step; display: flex; align-items: center; gap: var(--space-2); color: var(--muted); font-size: var(--text-sm); font-weight: 600; padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1); border-radius: 999px; background: var(--surface); border: 1px solid var(--border); }
 .stepper li::before { content: counter(step); width: 1.35rem; height: 1.35rem; border-radius: 50%; display: inline-grid; place-items: center; background: var(--surface-2); color: var(--muted); }
@@ -357,6 +359,15 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 @media (max-width: 520px) { .kv-list { grid-template-columns: 1fr; gap: 0; } .kv-list dd { margin-bottom: var(--space-2); } }
 .progress { width: 100%; height: 14px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--accent); width: 0; transition: width 0.2s; }
+/* work under way: a light band slides along the filled part, so a slow step still looks alive */
+.progress.active > span { background-image: linear-gradient(90deg, transparent 0, rgb(255 255 255 / 35%) 50%, transparent 100%); background-size: 40% 100%; background-repeat: no-repeat; animation: progress-sweep 1.2s linear infinite; }
+@keyframes progress-sweep { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+@media (prefers-reduced-motion: reduce) { .progress.active > span { animation: none; } }
+/* a wait with nothing to count (the firmware build): turns, slower where motion is reduced, since a still one says nothing */
+.spinner { display: inline-block; width: 1em; height: 1em; margin-right: 0.5em; vertical-align: -0.15em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+.progress-wait { display: block; }
 .log { background: var(--code-bg); border-radius: var(--radius-sm); padding: var(--space-3); font-family: var(--font-mono); font-size: 0.8rem; max-height: 260px; overflow-y: auto; white-space: pre-wrap; margin: 0; }
 .plan td, .plan th { font-family: var(--font-mono); font-size: 0.8rem; white-space: nowrap; }
 .plan .write { color: var(--accent); font-weight: 700; }
@@ -457,6 +468,19 @@ dialog.confirm { max-width: 36rem; width: calc(100% - 2 * var(--space-4)); borde
 	background: var(--surface); color: var(--text); padding: var(--space-5); }
 dialog.confirm::backdrop { background: rgb(0 0 0 / 0.45); }
 dialog.confirm h2 { margin-top: 0; }
+/* the flasher's beta notice: a long read, so it scrolls inside the window and keeps its sections apart */
+dialog.beta-notice { max-width: 40rem; max-height: calc(100dvh - 2 * var(--space-4)); overflow-y: auto; }
+dialog.beta-notice h2:focus { outline: none; }
+dialog.beta-notice h3 { font-size: 1rem; margin: var(--space-4) 0 var(--space-1); }
+dialog.beta-notice ul { margin: 0; padding-left: 1.25rem; }
+dialog.beta-notice li + li { margin-top: var(--space-1); }
+dialog.beta-notice .notice { margin: var(--space-4) 0 0; }
+dialog.beta-notice .notice p, dialog.beta-notice .beta-links { margin: 0; }
+dialog.beta-notice details { border-top: 1px solid var(--border); padding: var(--space-2) 0; }
+dialog.beta-notice details:last-of-type { border-bottom: 1px solid var(--border); }
+dialog.beta-notice details ul { margin-top: var(--space-2); }
+/* the way out stays in view while the notice scrolls */
+dialog.beta-notice .confirm-actions { position: sticky; bottom: calc(-1 * var(--space-5)); margin: var(--space-3) calc(-1 * var(--space-5)) calc(-1 * var(--space-5)); padding: var(--space-3) var(--space-5) var(--space-5); background: var(--surface); border-top: 1px solid var(--border); }
 .confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
 
 /* bug reports (static/js/report.js): the line under a failure, the dialog */
