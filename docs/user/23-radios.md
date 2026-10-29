@@ -456,7 +456,12 @@ after `909E.` name the hardware.
 | Code | Hardware | RadioFoundry |
 |---|---|---|
 | DBB | DB25-D PRO: two BK4819 (2024 on) | Supported |
-| D64, D66, D6T | FD6818 transceiver (2021 to 2023) | In development: not tried on this hardware yet; FM and DMR don't receive or transmit |
+| D64 | FD6818 transceiver, 0x7813 LO (2021 to 2023) | Testing: the same image, not tried on this hardware yet |
+| D66 | FD6818 transceiver and LO (2021 to 2023) | Testing: the same image, not tried on this hardware yet |
+| D6T | FD6818 transceiver, AT1141 LO (2021 to 2023) | Testing: the same image, not tried on this hardware yet |
+
+One image runs on every batch: it reads which RF chips the radio has when it starts. Tools > Diagnostics shows them
+(`rf` line). If you install it on a D64, D66 or D6T, a report of what works and what doesn't helps the project.
 
 The radio programming utility reads the code from the radio before it writes, and asks for it when only the factory
 update mode answers. On vendor firmware older than the 2025-01-21 build a backup is not proven: the utility offers to

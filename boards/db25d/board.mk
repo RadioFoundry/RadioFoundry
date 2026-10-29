@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Radioddity DB25-D PRO (mobile): HR_C7000 SoC (C-SKY CK803S + DMR modem) + two BK4819 (receiver / transmitter and the
-# superhet LO) + ST7735S 160x128 on a bit-banged serial bus (docs/spec/hardware-db25d.md). The PC link is UART1
+# Radioddity DB25-D (mobile): HR_C7000 SoC (C-SKY CK803S + DMR modem) + the superhet's main transceiver and LO (the PRO's
+# two BK4819, or an older batch's FD6818 with an FD6818, 0x7813 or AT1141 LO; one image detects which) + ST7735S 160x128
+# on a bit-banged serial bus (docs/spec/hardware-db25d.md). The PC link is UART1
 PLATFORM   := hrc7000
 # The IAP loader leaves the PLL at 72 MHz (hardware-db25d.md 2). With DB25D_FULL_CLOCK=1 (default) RadioFoundry re-programs it to
 # the platform's 168 MHz CPU / 84 MHz APB at start-up (platform/hrc7000/clock.c) and puts the loader's clocks back before
@@ -15,7 +16,7 @@ MCU_DEFS   += -DHRC_CPU_HZ=168000000u
 else
 MCU_DEFS   += -DHRC_CPU_HZ=72000000u
 endif
-BOARD_DIRS := boards/db25d drivers/rf/bk4819 drivers/rf/subaudio drivers/display/st7735 drivers/input/keymatrix drivers/input/quadrature drivers/input/sharedptt drivers/input/plugptt drivers/input/serialmic \
+BOARD_DIRS := boards/db25d drivers/rf/bk4819 drivers/rf/fd6818 drivers/rf/at1141 drivers/rf/subaudio drivers/display/st7735 drivers/input/keymatrix drivers/input/quadrature drivers/input/sharedptt drivers/input/plugptt drivers/input/serialmic \
 	drivers/flash/spi_nand drivers/modem/hrc7000
 # The core's storage on the NAND, with CONFIG_NAND_STORAGE (hardware-db25d.md 6.6)
 BOARD_NAND_DIRS := drivers/flash/nand_sectors
