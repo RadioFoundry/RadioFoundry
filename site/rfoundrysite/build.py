@@ -665,7 +665,7 @@ class Site:
 
 	def flash_page(self, lang):
 		# the beta notice's text is in the page itself (beta_notice.html), not needed by the scripts
-		subset = {k: v for k, v in self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "report.")).items()
+		subset = {k: v for k, v in self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "report.", "editor.qdmr.note.")).items()
 			  if not k.startswith("flash.beta.")}
 		strings = json.dumps(subset, ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
