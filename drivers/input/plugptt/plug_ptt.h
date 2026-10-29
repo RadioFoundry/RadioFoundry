@@ -3,7 +3,7 @@
 // PTT on a connector that may be empty. A press pulls the line low, but with nothing plugged in the line can rest low
 // too, and that must not key the radio at power-on. Whatever plugs in holds the line high while idle, so a low counts
 // as a press only once the line has read high for PLUG_PTT_ARM_MS since start-up. Pulling the plug while armed reads
-// as a held press: the transmit timeout ends it.
+// as a held press: the transmit timeout ends it (nothing does with the timeout off).
 #ifndef PLUG_PTT_H
 #define PLUG_PTT_H
 

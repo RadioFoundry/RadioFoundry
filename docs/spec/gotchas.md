@@ -671,8 +671,8 @@ Symptom: a radio powered on without its hand mic transmitted at once (RadioFound
 line has no pull-up the firmware can set, and with nothing in the jack it reads low from power-on, which is a press.
 Rule: on a PTT line that comes through a connector, count a low as a press only once the line has read high since
 start-up, something plugged in (`drivers/input/plugptt`). Pulling the plug while armed still reads as a held press;
-the transmit timeout ends it. Radios: one confirmed. Check every radio with a mic jack: power on with the jack empty
-and watch the raw PTT pin (adding-a-radio.md, bring-up order).
+the transmit timeout ends it, and with TX timeout Off nothing does until power-off. Radios: one confirmed. Check every
+radio with a mic jack: power on with the jack empty and watch the raw PTT pin (adding-a-radio.md, bring-up order).
 
 ## 17. Scan
 
