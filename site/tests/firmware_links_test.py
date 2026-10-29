@@ -2,7 +2,8 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The places the flasher sends people to for a radio's stock firmware (`stock_download` in boards/*/board.toml) still
 exist. A page that is gone (404, 410), a host that no longer resolves or one that refuses the connection fails the
-test. A site that answers a script with 401, 403, 429 or a 5xx (bot protection, a bad day) only warns. The test
+test. A site that answers a script with 401, 403, 429 or a 5xx (bot protection, a bad day) only warns, and so does a
+proxy in front of the test that won't connect to the host (CI's egress filter): the link wasn't checked. The test
 skips when the network is down, and with RFOUNDRY_OFFLINE=1.
 
     python3 site/tests/firmware_links_test.py
@@ -39,6 +40,11 @@ def status(url, method):
 		return e.code
 
 
+def unchecked(e):
+	"""An error from a proxy refusing to reach the host, not from the host: says nothing about the link."""
+	return "Tunnel connection failed" in str(e)
+
+
 def reachable():
 	try:
 		status("https://github.com", "HEAD")
@@ -58,6 +64,9 @@ class FirmwareLinks(unittest.TestCase):
 				if code in SOFT | {404}:	# some servers refuse HEAD: ask again with GET before judging
 					code = status(url, "GET")
 			except OSError as e:
+				if unchecked(e):
+					print("warning: %s not checked: %s" % (url, e), file=sys.stderr)
+					continue
 				bad.append("%s (%s): %s" % (url, ", ".join(boards), e))
 				continue
 			if code in SOFT:
@@ -65,6 +74,10 @@ class FirmwareLinks(unittest.TestCase):
 			elif code >= 400:
 				bad.append("%s (%s): HTTP %d" % (url, ", ".join(boards), code))
 		self.assertEqual(bad, [], "dead firmware links")
+
+	def test_proxy_refusal_is_not_a_dead_link(self):
+		self.assertTrue(unchecked(urllib.error.URLError(OSError("Tunnel connection failed: 403 Filtered"))))
+		self.assertFalse(unchecked(urllib.error.URLError(OSError("[Errno 8] nodename nor servname provided"))))
 
 	def test_links_are_https(self):
 		self.assertTrue(links(), "no board has a stock_download")
