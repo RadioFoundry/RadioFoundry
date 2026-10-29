@@ -30,7 +30,7 @@ concurrency:
 jobs:
   changes:
     if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
-    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       run: ${{ steps.decide.outputs.run }}
@@ -84,7 +84,7 @@ jobs:
     name: matrix (${{ matrix.name }})
     needs: changes
     if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
-    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -141,7 +141,7 @@ jobs:
   reuse:
     needs: changes
     if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true') && (needs.changes.outputs.reuse == 'true')
-    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
@@ -159,7 +159,7 @@ jobs:
   mark:
     needs: [matrix]
     if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
-    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Remember that this commit passed

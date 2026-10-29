@@ -28,74 +28,38 @@ Things to know:
   (`actions/cache@v4` on the runner's built-in cache server) and `actions/upload-artifact@v4`. The job summary
   (`$GITHUB_STEP_SUMMARY`) is written but not shown by Gitea; the size and coverage tables are also in the logs.
 
+## GitHub hosted runners
+
+On GitHub every workflow runs on GitHub's hosted runners (`ubuntu-24.04`, and for `release.yml`'s rfoundry builds
+`ubuntu-22.04`, macOS and Windows), except `hil.yml` ([below](#hil-runner)). The repository is public, so they cost
+nothing. Each job starts on a fresh VM: it installs what it needs (`apt-get`, the pinned Arm toolchain) and pulls the
+public csky-elf image for the C-SKY builds. On a private copy they use the account's Actions minutes, so `ci.yml` and
+`nightly.yml` run there only when `RFOUNDRY_CI_GITHUB` is `true`.
+
+A fork's `pull_request` runs wait for a maintainer's approval (Settings, Actions, "Approval for running fork pull
+request workflows": all external contributors). Approve a run only after reading its changes to `.github/` and to the
+scripts the jobs run.
+
 ## The GitHub self-hosted runner
 
-The repository variable `RFOUNDRY_CI_RUNNER` moves the Linux jobs to a self-hosted runner: each such job has
-`runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}`, so with the variable set to `rfoundry-ci` they go to a
-runner with that label, and with it unset (or on Gitea, where it isn't defined) nothing changes. `hil.yml` keeps its
-own runner. `release.yml` builds rfoundry on GitHub's macOS and Windows runners only for a `v*` tag; a push to `main`
-builds the Linux rfoundry alone, on the self-hosted runner.
-
-The runner is the image in `tools/ci-runner/` (its README has the setup): Ubuntu 24.04 with everything the
-workflows install (the Arm and csky-elf toolchains, host GCC, Python with NumPy, pytest, pyserial, Pillow and
-markdown-it, gcovr, tshark, Node.js 22, gh, reuse). The workflows notice it by `RFOUNDRY_CI_IMAGE=1` in the
-environment (and `runner.environment == 'self-hosted'` in a step's `if`) and skip their `apt-get` steps,
-`setup-python`, `setup-node`, `pip` and Docker: the C-SKY jobs build directly with the image's
-csky-elf GCC. Every job gets a new container, as a non-root user, with no Docker socket, no host network or other
-host directories, and CPU, memory and process limits. Its network has no route out: an egress proxy passes HTTPS
-to the hosts in `tools/ci-runner/proxy/allow` only (GitHub, the npm registry and PyPI), so a job can't download from
-anywhere else (nodejs.org, developer.arm.com). A tool a job needs goes into the image. Ubuntu's system Python takes
-no `pip install`; a job that needs packages makes a venv (`release.yml`'s rfoundry job does).
-
-When the runner is off, jobs routed to it wait in the queue (and fail after a day). Unset `RFOUNDRY_CI_RUNNER` to go back
-to the hosted runners.
+Retired: no workflow routes a job to it any more, and the repository variable `RFOUNDRY_CI_RUNNER` is unused. The
+image and its job gate stay in `tools/ci-runner/` (its README has the setup).
 
 ### Which jobs it takes
 
-On a public repository anyone can open a pull request, and a `pull_request` run uses the pull request's own copy of
-the workflows: it can name any runner label, whatever `runs-on` says on `main`. So the runner decides for itself.
-Its job-started hook, `tools/ci-runner/job-gate.sh`, runs before the first step of every job and fails the job
-unless the workflow file is this repository's, from `main` or a `v*` tag (`GITHUB_WORKFLOW_REF`). That is a push to
-`main`, a schedule, a manual run on `main`, a `pull_request_target` or `workflow_run` run (both always use `main`'s
-copy) or a release tag. A `pull_request` run is refused before anything in it runs, from a fork or a branch. It is
-the check an organization runner group restricted to selected workflows makes, on the runner, where no workflow can
-change it, and on any GitHub plan.
-
-| Job | Runs | Why |
-|---|---|---|
-| `pr-tests.yml` (`pull_request_target`) | self-hosted for a branch of this repository, GitHub's for a fork | `main`'s workflow; the condition `github.event.pull_request.head.repo.full_name == github.repository` holds, because the pull request can't edit it |
-| `ui-gallery.yml`, and `release.yml` on a pull request (`pull_request`) | always GitHub's | the pull request's own workflow file: the gate would refuse it |
-| Jobs with a write token: `ui-gallery-comment.yml`, `release.yml` `publish`, `manual.yml`, `pr-tests.yml` `PR checks status` | always GitHub's | [below](#jobs-with-a-write-token) |
-
-A branch of this repository still runs its code on the runner, through `pr-tests.yml`. Whoever can push a branch
-can therefore read the runner's registration and take its place for later jobs, so write access to the repository
-is what the runner trusts. Keep it to the people who have it on purpose.
-
-### Jobs with a write token
-
-Four jobs hold a write token: `ui-gallery-comment.yml` (`contents: write`, the `ui-previews` branch), `release.yml`'s
-`publish` (`contents: write`, the release), `manual.yml` (`contents: write` on tags) and `pr-tests.yml`'s `PR checks
-status` (`statuses: write`, the required check). They always run on GitHub's runners (`runs-on: ubuntu-24.04`), never
-the self-hosted one: a branch's code runs there through `pr-tests.yml`, and code that read the runner's registration
-could take the runner's place and receive one of these jobs with its token. They are short jobs.
-
-No workflow uses the `rfoundry-ui` label or the variable `RFOUNDRY_UI_RUNNER` any more: every self-hosted runner
-has the label `rfoundry-ci`.
-
-## GitHub hosted runners
-
-The same workflows run on GitHub's hosted runners when the repository is pushed there and `RFOUNDRY_CI_RUNNER` is unset. Everything except the C-SKY
-jobs works as is; those skip with a notice (the release's fails) until the csky-elf image is in a registry the runner
-can pull (below).
-On a private repository the hosted runners use the account's Actions minutes.
+None. A self-hosted runner on a public repository runs any `pull_request` job that names its label, from a fork's
+own copy of a workflow, so bringing one back takes `tools/ci-runner/job-gate.sh` (it refuses every workflow that isn't
+`main`'s or a `v*` tag's) and never a job that runs a pull request's code.
 
 ## The csky-elf image
 
-The C-SKY jobs use the image named by the repository variable `RFOUNDRY_CSKY_IMAGE`, default `rfoundry/csky-gcc14:latest`
-(`platform/hrc7000/platform.toml` `[toolchain] image`, which `run.sh` and `push.sh` read):
-the tag `tools/docker/csky-toolchain/build.sh` gives its image on the Gitea runner (`rfoundry/csky-gcc14:<date>`). `run.sh` uses an image already on the Docker host, and pulls one only when the name starts with a
-registry host (`ghcr.io/...`, `docker.io/...`), never a bare name from Docker Hub. When the image can't be had, a CI
-or nightly job ends with a notice instead of failing; the release job fails.
+The C-SKY jobs use the image `platform/hrc7000/platform.toml` `[toolchain] image` names,
+`ghcr.io/radiofoundry/rfoundry-csky-gcc14:<date>`, a public package: anyone can pull it, with no login. The repository
+variable `RFOUNDRY_CSKY_IMAGE` overrides it in `ci.yml`, `nightly.yml` and `release.yml` (`pr-tests.yml` reads no
+variable). `tools/docker/csky-toolchain/build.sh` builds the image (local tag `rfoundry/csky-gcc14:<date>` and
+`:latest`) and `push.sh` publishes it. `run.sh` uses an image already on the Docker host, and pulls one only when the
+name starts with a registry host (`ghcr.io/...`, `docker.io/...`), never a bare name from Docker Hub. When the image
+can't be had, a CI or nightly job ends with a notice instead of failing; the release job fails.
 
 ### Publishing it to GitHub Packages (ghcr.io)
 
@@ -110,23 +74,17 @@ ssh <runner-vm> 'docker logout ghcr.io'
 gh auth refresh -h github.com -r write:packages          # optional: drop the scope again
 ```
 
-`push.sh REPO [TAG...]` tags the local image (`SRC`, default the platform's `image`) as `REPO:<its dated tag>`
+`push.sh REPO [TAG...]` tags the local image (`SRC`, default `rfoundry/csky-gcc14:latest`) as `REPO:<its dated tag>`
 and `REPO:latest`, pushes both and prints the digest. It never handles a credential: log in before and out after.
 The same script pushes to Docker Hub (`push.sh docker.io/<user>/rfoundry-csky-gcc14` after `docker login`).
 
-A new package on ghcr.io is **private**. Then:
-
-1. Set `RFOUNDRY_CSKY_IMAGE` to the dated tag, e.g. `ghcr.io/<owner>/rfoundry-csky-gcc14:20261011b` (a fixed tag keeps CI
-   reproducible; `latest` follows each push), and `RFOUNDRY_CSKY_REGISTRY=ghcr.io`, in both Gitea's and GitHub's
-   repository variables.
-2. GitHub's hosted runners: in the package's settings, under "Manage Actions access", add the RadioFoundry
-   repository with read access. The jobs log in with their own token (`packages: read`); no secret is needed.
-3. The Gitea runner: either pull the image once on the VM (`docker login ghcr.io`, `docker pull`, `docker logout`;
-   `run.sh` then finds it locally), or give the jobs a token: create a classic personal access token with only
-   `read:packages`, and set it as the Gitea repository secret `RFOUNDRY_CSKY_REGISTRY_TOKEN` and your GitHub user name as the variable
-   `RFOUNDRY_CSKY_REGISTRY_USER`. The jobs log in through stdin and log out at the end.
-
-Making the package public instead removes steps 2 and 3.
+A new package on ghcr.io is **private**: make it public (the package's settings, "Change visibility"), then set
+`[toolchain] image` in `platform/hrc7000/platform.toml` to the new dated tag (a fixed tag keeps CI reproducible;
+`latest` follows each push). A private copy of the repository can keep a private image instead: set
+`RFOUNDRY_CSKY_IMAGE` to it and `RFOUNDRY_CSKY_REGISTRY=ghcr.io`, and give the package's "Manage Actions access" the
+repository with read access; `ci.yml`, `nightly.yml` and `release.yml` then log in with the job's own token
+(`packages: read`). On the Gitea runner, pull a private image once on the VM, or set the secret
+`RFOUNDRY_CSKY_REGISTRY_TOKEN` (a classic token with only `read:packages`) and the variable `RFOUNDRY_CSKY_REGISTRY_USER`.
 
 ## HIL runner
 

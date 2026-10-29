@@ -11,7 +11,7 @@ so one set serves the self-hosted Gitea runner and GitHub.
 | Workflow | Runs on | When | What |
 |---|---|---|---|
 | `ci.yml` | `ubuntu-24.04` | every push to `main` that changes source (below); by hand on any branch | the unit tests (once, with coverage and sanitizers), Python and license checks, every board's default build |
-| `pr-tests.yml` | `ubuntu-24.04` | every pull request, from `main`'s copy of the workflow | `ci.yml`'s jobs and the manual check, for the files the pull request changes; `PR checks` gates the merge. A branch's only CI |
+| `pr-tests.yml` | `ubuntu-24.04` | every pull request; a fork's after a maintainer approves the run | `ci.yml`'s jobs and the manual check, for the files the pull request changes; `PR checks` gates the merge. A branch's only CI |
 | `nightly.yml` | `ubuntu-24.04` | 07:17 UTC daily when a file the firmware builds read changed since the last pass; by hand | the feature matrix of every board, `reuse lint` |
 | `site.yml` | `ubuntu-24.04` | a published release; by hand | asks Cloudflare Pages to build `main` again, for the new release's images. Pages itself builds every push ([website.md](website.md)); pull requests also build the site in the unit tests job |
 | `hil.yml` | `rfoundry-hil` (the bench Mac) | by hand; nightly only when `RFOUNDRY_HIL_SCHEDULE=true` | `tests/hil` against the radio and the SDR bench |
@@ -23,11 +23,8 @@ so one set serves the self-hosted Gitea runner and GitHub.
 On GitHub, `ci.yml` and `nightly.yml` run only when the repository variable `RFOUNDRY_CI_GITHUB` is `true` (on a
 private copy, hosted runners use paid minutes). On Gitea they always run.
 
-The `ubuntu-24.04` in the table is the default. When the repository variable `RFOUNDRY_CI_RUNNER` is set (to `rfoundry-ci`),
-every Linux job goes to the self-hosted runner with that label instead
-([runners](ci-runners.md#the-github-self-hosted-runner)). The runner takes only `main`'s and release tags' workflows
-([which jobs it takes](ci-runners.md#which-jobs-it-takes)), so a pull request's `pull_request` jobs and a fork's
-`pr-tests.yml` jobs stay on GitHub's runners.
+Every job on GitHub runs on GitHub's hosted runners; only `hil.yml` has a runner of its own
+([runners](ci-runners.md)).
 
 Each change is checked once. A branch is tested through its pull request (`pr-tests.yml`), and `main` again after
 the merge (`ci.yml`). The unit tests run once per check, with the coverage counters and the sanitizers in the same
@@ -66,10 +63,9 @@ the current tree yet (run it to see the files), and the nightly reports it as a 
 
 ## Submodules
 
-The jobs that build firmware check out without submodules, then run `tools/checkout-submodules.sh`. The self-hosted
-runner image keeps bare clones of the `third_party/` repositories in `/opt/rfoundry-git` (`RFOUNDRY_GIT_CACHE`), and the script
-borrows their objects (`git submodule update --reference`), so a job fetches from GitHub only the commits newer than
-the image. A submodule the image lacks, or a runner without the image, takes a plain network checkout. Each submodule
+The jobs that build firmware check out without submodules, then run `tools/checkout-submodules.sh`. On a runner with
+bare clones of the `third_party/` repositories (`RFOUNDRY_GIT_CACHE`) the script borrows their objects
+(`git submodule update --reference`); GitHub's runners have none and take a plain network checkout. Each submodule
 gets three tries, so one dropped connection to GitHub no longer fails the job.
 
 The nested submodules of FreeRTOS-Kernel (its partner and community ports) aren't checked out: no build uses them,
@@ -83,36 +79,28 @@ Every pull request runs `ci.yml`'s jobs (`unit tests`, `firmware (Arm)` and `fir
 built with each toolchain) and `checks` on its merge commit. The first job,
 `changes`, looks at the files the pull request changes and skips what they don't touch: source changes (`ci.yml`'s
 paths) run the build and test jobs. `checks` runs on every pull request: the Python and license checks (doc links
-among them) always, and the PDF manual build (as `manual.yml` does) when docs change (`manual.yml`'s paths). The last job always runs and sets the
-`PR checks` commit status on the pull request's head commit: failure when any job failed or was canceled, success
-otherwise. It is the one status check the `main` ruleset requires, so a skipped job never holds a pull request up,
-and a new job only has to be added to its `needs` list. The job posts the status itself because a
-`pull_request_target` run's own checks belong to `main`'s commit, where the ruleset doesn't look.
+among them) always, and the PDF manual build (as `manual.yml` does) when docs change (`manual.yml`'s paths). The last
+job, `PR checks`, always runs and fails when any job failed or was canceled. It is the one check the `main` ruleset
+requires, so a skipped job never holds a pull request up, and a new job only has to be added to its `needs` list.
 
-The workflow runs on `pull_request_target`, so GitHub takes it from `main`, never from the pull request: a
-contributor's edited workflow doesn't run here, and the checks run on every pull request without anyone approving
-them. `ci.yml` and `manual.yml` have no `pull_request` trigger for the same reason, and `ci.yml` doesn't run on a
-branch's pushes either, so a pull request is checked once.
+The workflow is a plain `pull_request` run: the pull request's own copy of it, on its merge commit, on GitHub's
+hosted runners, with a read-only token that isn't stored in the checkout and no secrets. A fork's run waits until a
+maintainer approves it (the repository's fork policy, Settings, Actions: approval for all external contributors).
+`ci.yml` and `manual.yml` have no `pull_request` trigger, and `ci.yml` doesn't run on a branch's pushes either, so a
+pull request is checked once.
 
-The pull request's code runs with a read-only token that isn't stored in the checkout, no secrets and no cache, so
-it gets nothing a fork couldn't have. The image's submodule clones aren't a cache it could write to: each job gets a
-new container, so whatever a job changes is gone when it ends. The firmware jobs download the toolchain each time (checksummed by
-`tools/install-arm-toolchain.sh`, about 50 s, as every workflow does). They run `main`'s copy of
-the toolchain action, checked out from the workflow's own commit into `.ci-main/`, never the pull request's. It runs
-before any of the pull request's code, so the C-SKY job logs in to the image registry with the job's own token
-(`packages: read`), pulls the image and logs out before a script from the pull request runs. The status job is the only one with a write
-permission (`statuses: write`), and it checks out nothing. Keep it that way: never add secrets, another write
-permission, `actions/cache` or the pull request's text (title, body, branch name) in a run step to `pr-tests.yml`.
+Because the workflow is the pull request's copy, a pull request can change its own jobs, `PR checks` included.
 Changes to `.github/` need the owner's review (`.github/CODEOWNERS`, with code owner review required in the `main`
-ruleset), since `main`'s workflows are the ones that run.
+ruleset): read a workflow change before approving a fork's run, and before merging. Never add secrets, a write
+permission, a self-hosted runner, `actions/cache` or the pull request's text (title, body, branch name) in a run step
+to `pr-tests.yml`. It reads no repository variable, since a fork's run may not get them: the C-SKY job pulls the public
+csky-elf image `platform/hrc7000/platform.toml` names, without logging in.
 
-"No cache" means the jobs restore none. The pull request's code can still write one: a `pull_request_target` run
-has `main`'s cache scope, and its runner holds the token for it. A restore unpacks with absolute paths, so a poisoned
-entry can write any file the job's user can, the job's actions and scripts included. So nothing that builds firmware,
-packages a release or holds a write permission restores a cache. The toolchains are downloaded and checked against
-the pin every time ([Toolchains](#toolchains)). The one cache left is the nightly run's `nightly-ok-*` marker, in a
-job with a read-only token that builds nothing and only decides whether the night's matrix runs. A forged entry can
-skip a night or run code with what the pull request's code already had.
+A `pull_request` run's cache scope is the pull request's own: it can read `main`'s entries but not write them, so
+nothing it does reaches another branch's jobs. Still, nothing that builds firmware, packages a release or holds a
+write permission restores a cache. The toolchains are downloaded and checked against the pin every time
+([Toolchains](#toolchains)). The one cache is the nightly run's `nightly-ok-*` marker, in a job with a read-only token
+that builds nothing and only decides whether the night's matrix runs.
 
 Every action is pinned to a commit, with its release in a comment. Dependabot (`.github/dependabot.yml`) proposes
 newer commits monthly, as pull requests for the owner's review. Use `actions/*` only, pinned the same way: the
@@ -260,14 +248,13 @@ action `.github/actions/toolchain`, given the job's toolchain id. A composite ac
 adds no job. It reads the pin from the `[toolchain]` table of the `platform/*/platform.toml` with that `id`; no
 workflow types a version. Platforms that share a toolchain id must pin the same toolchain (`tools/boards.py check`).
 
-| Toolchain | On the self-hosted runner | Elsewhere |
-|---|---|---|
-| `arm` | `tools/install-arm-toolchain.sh` finds the image's toolchain and does nothing | the same script downloads the pinned, checksummed release into `~/opt`, every time (no cache) |
-| `csky` | the image's csky-elf GCC on `PATH` (`/opt/csky-elf`) | the csky-elf image: log in (when `RFOUNDRY_CSKY_REGISTRY` is set), pull, log out, then the job runs its build through `tools/docker/csky-toolchain/run.sh` (the action's `run` output) |
+| Toolchain | Set-up |
+|---|---|
+| `arm` | `tools/install-arm-toolchain.sh` downloads the pinned, checksummed release into `~/opt`, every time (no cache); a runner that has it already skips the download |
+| `csky` | csky-elf GCC on `PATH` when the runner has it; otherwise the csky-elf image (`[toolchain] image`, public on ghcr.io, or `RFOUNDRY_CSKY_IMAGE`): logged in to only when a workflow passes a registry (`RFOUNDRY_CSKY_REGISTRY`, for a private copy), pulled, then the job runs its build through `tools/docker/csky-toolchain/run.sh` (the action's `run` output) |
 
 No workflow builds csky-elf GCC from source. The image is built by `tools/docker/csky-toolchain/build.sh`
-([The csky-elf image](ci-runners.md#the-csky-elf-image)). Neither is cached: `pr-tests.yml` runs a pull request's
-code with `main`'s cache scope, so a cached compiler could be one the pull request planted
+([The csky-elf image](ci-runners.md#the-csky-elf-image)). Neither is cached
 (Pull request checks, above). When the image isn't available (`run.sh` exit status 3), a CI or nightly job ends with a notice
 and the release job fails. A new toolchain gets a branch in the action's first step and an entry in each firmware
 matrix.
