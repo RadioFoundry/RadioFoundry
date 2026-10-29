@@ -666,6 +666,14 @@ read the low bits of the first byte of a burst 65 ms after the last one, before 
 debounce the shared pin by time, not by scan count. The pin must read low, and not gated, for 20 ms
 (`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio.
 
+**16.3 PTT on an empty mic jack.**
+Symptom: a radio powered on without its hand mic transmitted at once (RadioFoundry, issue #230). Cause: the mic's PTT
+line has no pull-up the firmware can set, and with nothing in the jack it reads low from power-on, which is a press.
+Rule: on a PTT line that comes through a connector, count a low as a press only once the line has read high since
+start-up, something plugged in (`drivers/input/plugptt`). Pulling the plug while armed still reads as a held press;
+the transmit timeout ends it, and with TX timeout Off nothing does until power-off. Radios: one confirmed. Check every
+radio with a mic jack: power on with the jack empty and watch the raw PTT pin (adding-a-radio.md, bring-up order).
+
 ## 17. Scan
 
 **17.1 Scanning DMR direct mode: the carrier is on air every other slot.**
