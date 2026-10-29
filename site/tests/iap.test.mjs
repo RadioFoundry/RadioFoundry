@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { equal, sha256, be32, concat } from "../static/js/flasher/bytes.js";
 import { stubImages, univFits, StubError } from "../static/js/flasher/stub.js";
 import * as c7 from "../static/js/flasher/c7000.js";
-import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS } from "../static/js/flasher/usmart.js";
+import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS, STUB_WINDOW, stubTarget, UNKNOWN_BUILD, versionOf, buildsFor } from "../static/js/flasher/usmart.js";
 import {
 	Iap, iapPlan, readPacket, checkInstallImage as checkInstall, checkRestoreImage as checkRestore, trimTail, erasePacket,
 	IapError,
@@ -37,15 +37,20 @@ test("the DB25-D's data in the flasher tables", () => {
 	assert.equal(radio.flash.update_mode, "iap");
 	assert.deepEqual(FS, { size: 0x1000, head: "2c1101c0" });
 	assert.equal(radio.flash.read_rate, 46000);
-	// every build the console route knows is a stock version of the board, by which the page names it
-	for (const v of radio.flash.stock_versions) {
-		assert.ok(BUILDS.some(([b]) => b === v), `the console knows ${v}`);
-		assert.equal(stockName(radio.flash, v.slice(-3)), v);
+	// every build the console route knows of this board's series is a stock version of it or an older build, the ones the
+	// stub goes in through by the board's names; every build known has its version string inside the application, and
+	// those whose RAM copy is known have it in the console's RAM
+	for (const v of radio.flash.stock_versions) assert.ok(BUILDS.some((b) => versionOf(b) === v), `the console knows ${v}`);
+	for (const b of buildsFor(radio.flash.stock_versions).filter((x) => x.stub)) assert.equal(stockName(radio.flash, b.name), `909E.DBB.EARSAB.${b.name}`);
+	for (const b of BUILDS) {
+		assert.ok(b.at >= 0x0300C000 && b.at < 0x03090000 && b.at % 4 === 0, b.date);
+		assert.ok(b.ram === undefined || (b.ram >= 0x18000000 && b.ram < 0x18001000 && b.ram % 4 === 0), b.date);
 	}
+	assert.equal(new Set(BUILDS.map((b) => b.date)).size, BUILDS.length);
 	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true });
 	assert.deepEqual(b.slot, [0xE8000, 0x100000]);
 	const ps = C.profiles.filter((p) => p.board === "db25d");
-	assert.equal(ps.length, 4);
+	assert.equal(ps.length, 5);
 	// the 018 builds come as vendor files; 020 has no vendor file, only a program flash read of the radio
 	assert.ok(ps.filter((p) => p.tag !== 20).every((p) => p.stock_header === 0 && p.stock_file));
 	assert.equal(ps.find((p) => p.tag === 20).stock_file, null);
@@ -236,7 +241,8 @@ test("USMART: a write counts only with its echo, and the echo must carry the val
 
 test("USMART: the build comes from the version string; an unknown build is reported as null", async (t) => {
 	const { r } = await stockDb25d(t);
-	assert.equal(await new Usmart(r.stream).build(), "018");
+	const b = await new Usmart(r.stream).build();
+	assert.deepEqual([b.name, b.date, b.stub], ["018", "2025-01-21", true]);
 	r.progmem.fill(0x20, 0x79F30, 0x79F50);
 	assert.equal(await new Usmart(r.stream).build(), null);
 });
@@ -253,7 +259,7 @@ test("GD-88: its main SoC's console build 021 is found by its own version string
 	t.after(() => r.stop());
 	r.powerOn();
 	await new Promise((ok) => setTimeout(ok, 300));
-	assert.equal(await new Usmart(r.stream, { versions: gd88.flash.stock_versions }).build(), "021");
+	assert.equal((await new Usmart(r.stream, { versions: gd88.flash.stock_versions }).build())?.name, "021");
 	assert.equal(await new Usmart(r.stream, { versions: radio.flash.stock_versions }).build(), null,
 		"the DB25-D's builds are not looked for on a GD-88");
 	const image = patchUniv(stubImages(json("c7000-stub.json")).image, C.boards.gd88.stub_board);
@@ -264,6 +270,30 @@ test("GD-88: its main SoC's console build 021 is found by its own version string
 	await s.helloWithin(3000, "no stub");
 	await s.configure(C.boards.gd88.stub_board, boardLed(C, "gd88"));
 	assert.equal(r.stubCfg.board, 4);
+});
+
+test("USMART: the version comes from its RAM copy, which carries the variant the flash copy leaves out", async (t) => {
+	const { r } = await stockDb25d(t, { variant: "D6T" });
+	const u = new Usmart(r.stream);
+	const b = await u.build();
+	assert.equal(stockVersion(r.progmem), "909E.D6x.EARSAB.018", "the program flash holds the placeholder");
+	assert.equal(await u.version(b), "909E.D6T.EARSAB.018");
+	assert.ok(r.frames.every((f) => f.startsWith("read_addr(")), "reads only");
+});
+
+test("identify: the stock application's answer to the read-only probe is its version, never the loader's", async (t) => {
+	const { r } = await stockDb25d(t, { variant: "D64", faults: { consoleSilent: true } });
+	const um = await iapOn(r.stream).probe(1500);
+	assert.equal(um.version, null);
+	assert.match(um.stock, /909E\.D64\.EARSAB\.018/);
+	const { versionText, variantCode } = await import("../static/js/flasher/variant.js");
+	assert.equal(versionText(radio, um.stock), "909E.D64.EARSAB.018");
+	assert.equal(variantCode(radio, um.stock), "D64");
+	assert.ok(r.events.includes("identify"));
+	assert.equal(r.progmem.length, 0x200000);
+	// after an identify the console stays quiet until the next power-on, as on the radio
+	r.faults.consoleSilent = false;
+	assert.equal(await new Usmart(r.stream).readWord(0x0300C000, 200), null);
 });
 
 test("USMART: the stub goes into 0x54000, is read back, and the hijack word starts it; then it reads and writes the flash", { timeout: 120000 }, async (t) => {
@@ -477,4 +507,29 @@ test("IAP: an erase that reaches a protected region writes nothing", async () =>
 	const cal = [{ mem: "progmem", start: 0xD000, end: 0xE000, what: "test (x.md 1)" }];
 	await assert.rejects(new Iap(new Pipe(() => { sent++; }), { firstStage: FS, protect: cal }).write(img), /protected region/);
 	assert.equal(sent, 0);
+});
+
+test("USMART: a build's own stub window and hijack word are used, and checked against what the stub may use", { timeout: 60000 }, async (t) => {
+	assert.deepEqual(stubTarget(null), { window: STUB_WINDOW, hijack: HIJACK });
+	for (const b of [...BUILDS, UNKNOWN_BUILD]) assert.ok(stubTarget(b), b.date);
+	// the stub image fits every build's window, and an unproven build's window is never the default one, which is
+	// inside their heap (hardware-db25d.md 7.1)
+	const stubLen = stubImages(json("c7000-stub.json")).image.length;
+	for (const b of [...BUILDS, UNKNOWN_BUILD]) assert.ok(stubLen <= stubTarget(b).window[1], b.date);
+	for (const b of BUILDS.filter((x) => !x.stub)) assert.ok(b.window && b.window[0] > STUB_WINDOW[0], b.date);
+	assert.throws(() => stubTarget({ window: [0x32000, 0x4000] }), /outside the RAM/, "over where the stub runs");
+	assert.throws(() => stubTarget({ window: [0x56000, 0x4000] }), /outside the RAM/, "past the end of SRAM");
+	assert.throws(() => stubTarget({ hijack: 0x18000900 }), /command table/);
+	const { r } = await stockDb25d(t);
+	const build = { ...BUILDS[0], window: [0x48000, 0x4000], hijack: 0x18000844 };
+	r.build = build;
+	const u = new Usmart(r.stream, { quiet: 2 });
+	await u.loadStub(stubImages(json("c7000-stub.json")).image, { build, untried: true });
+	await new Promise((ok) => setTimeout(ok, 100));
+	assert.equal(r.state, "stub");
+	const writes = r.frames.filter((f) => f.startsWith("write_addr("));
+	assert.ok(writes.every((f) => /^write_addr\(0x(0004[89ab][0-9a-f]{3}|18000844),/.test(f)), "only the build's window and hijack word");
+	assert.equal(r.ram.get(HIJACK), undefined, "the default hijack word untouched");
+	// a write outside the target is refused before the port
+	await assert.rejects(u.send("write_addr(0x00054000,0x00000001)"), /refused/);
 });

@@ -20,14 +20,15 @@ import { hex, sha256, sleep } from "./bytes.js";
 import { SerialStream, Link, probe, serialSupported } from "./link.js";
 import { Stub, stubImages, StubError, DONE_LED, MEM, patchUniv, boardLed, RX2_F, ROM_REPEAT } from "./stub.js";
 import * as c7 from "./c7000.js";
-import { openVendorFile, describe as describeVendorFile, analysisCandidate } from "./vendorfile.js";
+import { openVendorFile, describe as describeVendorFile, analysisCandidate, whyNot } from "./vendorfile.js";
 import { pickProblem } from "./explain.js";
 import { upgradeSlot } from "./c7000v1.js";
 import { radioTop } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
 import { register } from "./backends.js";
-import { makeStockRoutes } from "./iapui.js";
+import { makeStockRoutes, variantVerdict, noCodecNotice } from "./iapui.js";
+import { versionText, writable } from "./variant.js";
 import { Usmart, stockVersion, stockName } from "./usmart.js";
 import { Iap, checkInstallImage } from "./iap.js";
 import { BfLoader } from "./bfloader.js";
@@ -42,7 +43,7 @@ const CH340 = 0x1A86;
 const ROM_WAIT = 180000;		// how long the page listens for the boot ROM per try
 const BOOT_MS = 9000;			// a soft reset to RadioFoundry answering its debug link (bench 2026-10-15: 8-9 s)
 
-let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, errorText, analysisOffer,
+let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, flashMark, errorText, analysisOffer,
 					// problemNotice, failureNotice, stubJson, installSecond}
 const S = () => ctx.S;
 const C = () => ctx.fb().c7000;
@@ -255,7 +256,9 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			c.forceIap = false;
 			// a radio already in update mode printed its banner at power-on: remember that, so the install doesn't wait for it.
 			// A loader entered only with the keys held is listened for in the install's own step
-			c.iapReady = stuckMode() && !!(await iap(c).probe());
+			const um = stuckMode() && await iap(c).probe();
+			c.iapReady = !!um && !um.stock;
+			if (um) diag.note(um.stock ? "identify answered" : "update mode loader", { version: um.stock ? versionText(S().radio, um.stock) : um.version });
 			return toIap();
 		}
 		await find();
@@ -348,7 +351,11 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		// the loader's update mode answers a read-only probe: a radio whose application won't start stays in it
 		c.iapReady = false;
 		const um = stuckMode() && await iap(c).probe();
-		if (um) {
+		// the stock application answered as it answers the vendor software: its console is silent or missing
+		const version = um?.stock ? versionText(S().radio, um.stock) : null;
+		if (um) diag.note(um.stock ? "identify answered" : "update mode loader", { version: um.stock ? version : um.version });
+		if (version) return routes.stockIdentified({ show, act, onUpdateMode: toIap, onAgain: () => find() }, version);
+		if (um && !um.stock) {
 			c.iapReady = true;
 			return routes.alreadyUpdateMode({ show, act, onUpdateMode: toIap, onAgain: () => find() }, um.version);
 		}
@@ -688,6 +695,8 @@ function sizeUp(c) {
 async function quiet(c) {
 	c.stopSizing = true;
 	await c.sizing;
+	// the connection may have dropped meanwhile (the cable pulled, the count failing on a lost device): said plainly
+	if (!c.stub) throw new StubError(t("flash.c7.write.lost"));
 }
 
 export function checkView() {
@@ -752,18 +761,22 @@ export function checkView() {
 		started();
 		await busy(true);
 		top.set({ led: "busy", screen: screenNow() });
-		const st = c.stub;
 		const lay = C().boards[boardId()];
+		// a read that keeps failing says so from the second try, in the progress line, until a sector comes through
+		let last = [0, 1];
+		const bar = (label) => (d, n) => { last = [d, n]; prog.set(d, n, label); };
+		const retrying = (fails, max) => prog.set(last[0], last[1], t("flash.c7.check.retrying", { n: fails, max }));
 		try {
 			await quiet(c);
+			const st = c.stub;
 			let t0 = performance.now();
 			if (want.progmem && !skipFirmware) {
 				say("progmem", "run", t("flash.c7.check.reading"));
 				reading = canSkip ? new AbortController() : null;
 				if (stopRead) stopRead.hidden = false;
 				try {
-					c.progmem = await st.dump("progmem", 0, progSize(), { signal: reading?.signal, progress: (d, n, s) => {
-						prog.set(d, n, t("flash.c7.check.progmem"));
+					c.progmem = await st.dump("progmem", 0, progSize(), { signal: reading?.signal, onRetry: retrying, progress: (d, n, s) => {
+						bar(t("flash.c7.check.progmem"))(d, n);
 						c.rate = s.wire / Math.max(0.5, (performance.now() - t0) / 1000);
 					} });
 				} catch (e) {
@@ -783,13 +796,13 @@ export function checkView() {
 				say("progmem", "ok", t("flash.c7.check.progmem_done", { sha: (await sha256(c.progmem)).slice(0, 12) }));
 			} else {
 				say("progmem", "run", t("flash.c7.check.reading_slot"));
-				c.slot = await st.dump("progmem", lay.slot[0], lay.slot[1], { progress: (d, n) => prog.set(d, n, t("flash.c7.check.slot")) });
+				c.slot = await st.dump("progmem", lay.slot[0], lay.slot[1], { onRetry: retrying, progress: bar(t("flash.c7.check.slot")) });
 				say("progmem", "skip", t(skipFirmware ? "flash.c7.check.progmem_stock" : "flash.c7.check.progmem_skipped"));
 			}
 			if (want.q128) {
 				say("q128", "run", t("flash.c7.check.reading"));
 				t0 = performance.now();
-				c.q128 = await st.dump(dataMem(), 0, dataSize(), { progress: (d, n) => prog.set(d, n, t("flash.c7.check.q128")) });
+				c.q128 = await st.dump(dataMem(), 0, dataSize(), { onRetry: retrying, progress: bar(t("flash.c7.check.q128")) });
 				say("q128", "ok", t("flash.c7.check.q128_done", { sha: (await sha256(c.q128)).slice(0, 12) }));
 			} else say("q128", "skip", t("flash.c7.check.q128_skipped"));
 			if (want.cal || want.q128) {
@@ -858,7 +871,8 @@ export function checkView() {
 		// any vendor file: a .bin, a readout or the vendor's zip, opened as on every radio's page (vendorfile.js)
 		// a file that gives no codec is explained (explain.js), with what each file in the pick is; what was picked goes into
 		// error reports (S.vendorPick)
-		const pick = filePicker(t("flash.c7.codec.pick"), ".bin,.zip", async (f) => {
+		// a file that fails leaves a fresh picker under its notice, so another file can be tried
+		const makePick = () => filePicker(t("flash.c7.codec.pick"), ".bin,.zip", async (f) => {
 			let opened = null;
 			try {
 				S().vendorPick = { picked: { name: f.name, size: f.data.length, sha256: await sha256(f.data) }, opened: null, problem: null };
@@ -866,12 +880,14 @@ export function checkView() {
 				S().vendorPick.opened = opened;
 				// the file for a problem report and the trail, as on the other radios' codec step
 				S().picked = { name: f.name, data: f.data };
-				diag.note(...crumbs.filePicked(S().vendorPick.picked, opened.best || {}));
+				// a pick with no file for this radio logs why, not an empty record
+				diag.note(...crumbs.filePicked(S().vendorPick.picked, opened.best || { problem: pickProblem(opened, boardId()), why: whyNot(opened) }));
 				const got = opened.best?.match;
 				if (got?.kind !== "codec") {
 					const lines = describeVendorFile(opened, ctx.fb(), boardId());
+					// the file picker and the install without the codec stay under the problem: another file is one click away
 					fill(status, ctx.problemNotice(pickProblem(opened, boardId()), { offer: analysisCandidate(opened, ctx.fb(), boardId()) }),
-						h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, lines.map((l) => h("li", {}, l)))));
+						h("details", { class: "small" }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, lines.map((l) => h("li", {}, l)))), action());
 					return;
 				}
 				c.fileCodec = got.codec;
@@ -881,17 +897,19 @@ export function checkView() {
 				// a codec the page identified but can't put in the slot (no map, a check failing): the file is offered
 				c.fileCodec = null;
 				const used = opened?.best;
-				fill(status, ctx.failureNotice(e, used ? { name: used.path.split("/").pop(), data: used.data } : null));
+				fill(status, ctx.failureNotice(e, used ? { name: used.path.split("/").pop(), data: used.data } : null), action());
 			}
 		});
-		fill(status, 
-			d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, codecActionText()), pick,
-				h("p", { class: "small" }, h("a", { href: "#", onclick: async (e) => { e.preventDefault(); S().c7none = true; await decideView(); } }, t("flash.c7.codec.without")))),
-			d && d.mode === "none" ? notice(t("flash.c7.codec.none_risk"), "bad") : null,
+		// the way to a codec: pick a file, or go on without one. Drawn again, with a fresh picker, under a pick that gave none
+		const action = () => d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, codecActionText()), makePick(),
+			h("p", { class: "small" }, h("a", { href: "#", onclick: async (e) => { e.preventDefault(); S().c7none = true; await decideView(); } }, t("flash.c7.codec.without"))));
+		fill(status, untriedOffer(c), action(),
+			d && d.mode === "none" ? noCodecNotice(c.analysis?.notRead) : null,
 			c.progmem ? h("p", { class: "small" }, h("a", { href: "#", onclick: (e) => { e.preventDefault(); saveBundle(); } }, t("flash.c7.check.download_again"))) : null,
 			h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		forward(button(t("flash.nav.to_write"), () => ctx.next(), { primary: true, disabled: !d }));
 	}
+
 
 	// Why no codec was found, and what to select instead. A stock radio whose codec is a build without a recipe is
 	// named, so the message says that the backup is fine and only the codec needs a file
@@ -904,8 +922,10 @@ export function checkView() {
 		const file = { model: S().radio.model, codec_version: flash().codec_version || "" };
 		if (!c.analysis?.otherCodec) return t("flash.usmart.codec.action_text", file);
 		// named as flash.stock_versions name it (iapui.js too); the image's own string carries another batch code
+		// as the radio reported it (the variant filled in), else the image's own string by the build's number
 		const v = c.progmem && stockVersion(c.progmem, flash().stock_versions);
-		return t("flash.usmart.codec.action_other", { ...file, version: v ? stockName(flash(), v.slice(-3)) : t("flash.usmart.codec.version_unknown") });
+		const version = S().variant?.version || (v ? stockName(flash(), v.slice(-3)) : t("flash.usmart.codec.version_unknown"));
+		return t("flash.usmart.codec.action_other", { ...file, version });
 	}
 
 	// Coming back to this step: what was read is still here
@@ -978,6 +998,38 @@ function sectorMap(c) {
 	};
 }
 
+// The SHA-256 of the bootloader's area (the first app_start bytes of the program flash), or null when it can't be read
+// (the write goes on: this is a check, not a gate)
+async function bootloaderHash(stub) {
+	try {
+		return await sha256(await stub.dump("progmem", 0, C().app_start));
+	} catch (e) {
+		return null;
+	}
+}
+
+// A program flash write (install or restore) framed by the bootloader check: the stub refuses writes there (protect),
+// and the bootloader's bytes read before and after show it held. The trail's "write range" line says which flash was
+// written, for a report of a radio that stopped working: also when the write fails part way (bootloader "not checked").
+// write(onWritten) runs the write and calls onWritten(addr) for each sector written
+async function guardedWrite(stub, write) {
+	const sectors = [];
+	const range = (bootloader) => diag.note("write range", { sectors: sectors.length, first: sectors.length ? hex(Math.min(...sectors)) : null,
+		last: sectors.length ? hex(Math.max(...sectors)) : null, bootloader });
+	const before = await bootloaderHash(stub);
+	let res;
+	try {
+		res = await write((a) => sectors.push(a));
+	} catch (e) {
+		range("not checked");
+		throw e;
+	}
+	const after = before ? await bootloaderHash(stub) : null;
+	range(!before ? "not checked" : after === before ? "unchanged" : "changed");
+	if (before && after !== before) throw new StubError(t("flash.c7.boot.changed"));
+	return res;
+}
+
 export function writeView() {
 	if (viaIap()) return routes.iapWriteView();
 	const c = session();
@@ -987,6 +1039,10 @@ export function writeView() {
 	const map = sectorMap(C());
 	const prog = progressBar();
 	const status = h("div");
+	// a variant read on the way here (the stock console) that the chosen image doesn't run: nothing is written (one in
+	// development: app.js shows its notice above the step)
+	const vd = variantVerdict(S(), boardId());
+	if (vd && !writable(vd)) return panel(t("flash.write.title"), routes.variantStop(vd));
 	let start, data;
 	try {
 		// an image that starts with a first stage: the application alone would be written over it
@@ -1002,28 +1058,30 @@ export function writeView() {
 			h("dl", { class: "kv-list" },
 				h("dt", {}, t("flash.c7.write.firmware")), h("dd", {}, `${fw.source} (${Math.round(fw.image.length / 1024)} KB)`),
 				h("dt", {}, t("flash.c7.write.codec")), h("dd", {}, what)),
+			d.mode === "none" ? noCodecNotice(c.analysis?.notRead) : null,
 			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t(hasLed() ? "flash.c7.write.careful_text" : "flash.c7.write.careful_text_noled"))),
-			prog.el, status),
-		top.el), map.el, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
+			prog.el, status, map.el),
+		top.el), h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 	S().forward(go);
 
 	async function write() {
 		go.disabled = true;
 		fill(status, );
-		await quiet(c);	// a size count still running (backupView) ends before the write uses the stub
 		await busy(true);
 		top.set({ led: "busy", screen: screenNow() });
 		const started = ctx.flashStarted({ task: "install", source: fw.origin || "", radio: boardId(), firmware: String(fw.manifest.version || ""),
 			variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null });
 		let todo = 0, done = 0;
 		try {
+			await quiet(c);	// a size count still running (backupView) ends before the write uses the stub
 			if (!(await c.stub.attach())) throw new StubError(t("flash.c7.write.lost"));
-			const res = await c.stub.writeProgram(data, start, { appStart: C().app_start, appEnd: C().app_end, onSector: (a, st) => {
+			const res = await guardedWrite(c.stub, (written) => c.stub.writeProgram(data, start, { appStart: C().app_start, appEnd: C().app_end, onSector: (a, st) => {
 				map.set(a, st);
 				if (st === "todo") todo++;
-				if (st === "written") done++;
+				if (st === "written") { done++; written(a); ctx.flashMark(started, "first_byte"); }
 				prog.set(done, todo, t("flash.c7.write.writing", { done, todo }));
-			} });
+			} }));
+			ctx.flashMark(started, "last_byte");
 			prog.set(1, 1, t("flash.c7.write.verified"));
 			c.log.add(`written ${res.written} sectors, ${res.same} unchanged, all verified by CRC`);
 			ctx.flashFinished(started);
@@ -1044,7 +1102,7 @@ export function writeView() {
 			top.set({ led: "wait", screen: "off" });
 			fill(status, errorNotice(t("flash.c7.write.failed", { error: ctx.errorText(e) })), retryHelp(), ctx.helpLink());
 			S().forward(button(t("flash.c7.write.again"), async () => {
-					if (!(await c.stub.attach())) {
+					if (!c.stub || !(await c.stub.attach().catch(() => false))) {
 						await dropC7();
 						S().step--;	// back to connect: the radio has to be found again
 						S().step--;
@@ -1155,6 +1213,17 @@ function hasStubEntry() {
 // ---------------------------------------------------------------------------------------------------------------
 // backup task: both memories, any firmware, then back to normal
 
+// A backup through a stock build whose stub load was not proven before (install's check step, the backup task): the
+// project wants that firmware. The program memory read goes with a problem report (report.js attaches S.stockRead);
+// the backup stays the user's
+function untriedOffer(c) {
+	if (!c.stockUntried || !c.progmem) return null;
+	const v = c.stockUntried.version || stockVersion(c.progmem) || "unknown";
+	S().stockRead = { name: `program-memory-${S().radio.id}-${v.replace(/[^\w.-]/g, "_")}.bin`, data: c.progmem };
+	return h("div", { class: "notice" }, h("strong", {}, t("flash.variant.send_title")), h("p", {}, t("flash.variant.send", { version: v })),
+		reportButton({ quiet: false }));
+}
+
 export function backupView() {
 	const c = session();
 	const out = h("div", { class: "flasher" });
@@ -1172,9 +1241,9 @@ export function backupView() {
 		await busy(true);
 		top.set({ led: "busy", screen: screenNow() });
 		S().readout = null;	// this use's own readout, not an earlier one's
-		await quiet(c);
 		const started = ctx.flashStarted({ task: "backup", source: Object.keys(want).filter((k) => want[k]).join("+"), radio: boardId(), firmware: c.rfoundry?.git || "", features: c.rfoundry?.features || "" });
 		try {
+			await quiet(c);
 			if (want.progmem) c.progmem = await c.stub.dump("progmem", 0, progSize(), { progress: (d, n) => prog.set(d, n, t("flash.c7.check.progmem")) });
 			if (want.progmem) await ctx.noteReadout(c.progmem);
 			if (want.q128) c.q128 = await c.stub.dump(dataMem(), 0, dataSize(), { progress: (d, n) => prog.set(d, n, t("flash.c7.check.q128")) });
@@ -1185,7 +1254,7 @@ export function backupView() {
 			await c.stub.ledSequence(DONE_LED);
 			top.set({ led: "done", screen: screenNow() });
 			fill(status, notice(t("flash.c7.backup.done", { name: c.backupName }), "ok"),
-				c.calCopies && !c.calFound ? notice(t("flash.c7.backup.cal_missing"), "bad") : calOneCopy(c));
+				c.calCopies && !c.calFound ? notice(t("flash.c7.backup.cal_missing"), "bad") : calOneCopy(c), untriedOffer(c));
 			S().forward(leaveLoaderButton(t("flash.c7.backup.leave")));
 		} catch (e) {
 			ctx.flashFinished(started, e);
@@ -1214,13 +1283,16 @@ export function hasC7Backup(bundle) {
 // returns to its original firmware without the backup from before the first installation (c7.progmemFromFile)
 export function vendorBundle(radio, file, c) {
 	const name = file.path.split("/").pop();
-	// only a file a profile of this radio names: a C-SKY codec signature alone tells no radio, and another SoC's file whose
-	// codec this one takes (the main SoC's file for a second SoC: vendorfile.js codecFrom) is not this SoC's firmware
-	if (file.match.kind !== "codec" || file.match.board !== radio.flash.board || file.match.codecFrom)
+	// only a file a profile of this radio names (a C-SKY codec signature alone tells no radio), or a whole program memory
+	// dump whose bootloader names this radio (vendorfile.js kind "progmem"): it goes back as it is, like a backup's. Not
+	// another SoC's file whose codec this one takes (the main SoC's file for a second SoC: vendorfile.js codecFrom): it
+	// is not this SoC's firmware
+	const dump = file.match.kind === "progmem";
+	if ((file.match.kind !== "codec" && !dump) || file.match.board !== radio.flash.board || file.match.codecFrom)
 		throw new c7.CodecError(`${name} is not identified as the ${radio.name}'s original firmware`, "unmapped");
 	const data = c7.progmemFromFile(c, radio.flash.board, file.data, file.match.codec?.profile?.stock_header);
 	return { meta: { radio: { board: radio.id, name: radio.name }, created: new Date().toISOString(), vendor_file: name,
-		firmware_now: { kind: "stock", version: file.match.known || null } },
+		firmware_now: dump ? { kind: "unknown" } : { kind: "stock", version: file.match.known || null } },
 	parts: new Map([["c7000-progmem", { what: "c7000-progmem", file: name, complete: true, addr: 0, data }]]) };
 }
 
@@ -1239,10 +1311,12 @@ export function restoreView() {
 	// not written (restore.data_note)
 	const pm = S().bundle.parts.get("c7000-progmem")?.data;
 	if (!pm) {
-		out.append(notice(t("flash.c7.restore.no_progmem"), "bad"));
-		S().forward(null);
+		diag.note("restore bundle", { progmem: false, parts: [...S().bundle.parts.keys()].join(",") });
+		out.append(notice(t("flash.c7.restore.no_progmem", { radio: S().radio.name }), "bad"));
+		S().forward(button(t("flash.c7.restore.pick_file"), () => ctx.reset(), { primary: true }));
 		return out;
 	}
+	diag.note("restore bundle", { progmem: true, vendor: !!vendor, parts: [...S().bundle.parts.keys()].join(",") });
 	// a radio that answers nothing else gets the backup through the vendor update mode
 	if (c.how === "iap" && c.stream) {
 		const after = h("div");
@@ -1264,22 +1338,23 @@ export function restoreView() {
 	const status = h("div");
 	const go = button(t("flash.c7.restore.go"), async () => {
 		go.disabled = true;
-		await quiet(c);	// a size count still running (backupView) ends before the restore uses the stub
 		await busy(true);
 		top.set({ led: "busy", screen: "off" });
 		const started = ctx.flashStarted({ task: "restore", source: vendor ? "stock" : "c7000-progmem", radio: boardId(), firmware: S().bundle.meta.firmware_now?.kind || "" });
 		try {
+			await quiet(c);	// a size count still running (backupView) ends before the restore uses the stub
 			const model = c7.bootloaderModel(C(), pm);
 			if (model && model !== boardId()) throw new Error(t("flash.c7.restore.other_radio"));
 			const [start, data] = c7.restoreTarget(C(), pm);
 			let todo = 0, done = 0;
 			// carve: a protected sector keeps what the radio has, whatever the backup holds
-			const res = await c.stub.writeProgram(data, start, { appStart: C().app_start, appEnd: C().app_end, carve: true, onSector: (a, st) => {
+			const res = await guardedWrite(c.stub, (written) => c.stub.writeProgram(data, start, { appStart: C().app_start, appEnd: C().app_end, carve: true, onSector: (a, st) => {
 				map.set(a, st === "kept" ? "boot" : st);
 				if (st === "todo") todo++;
-				if (st === "written") done++;
+				if (st === "written") { done++; written(a); ctx.flashMark(started, "first_byte"); }
 				prog.set(done, todo, t("flash.c7.write.writing", { done, todo }));
-			} });
+			} }));
+			ctx.flashMark(started, "last_byte");
 			prog.set(1, 1, t("flash.c7.write.verified"));
 			ctx.flashFinished(started);
 			await c.stub.ledSequence(DONE_LED);
@@ -1298,7 +1373,7 @@ export function restoreView() {
 		}
 	}, { primary: true });
 	out.append(panel(t("flash.c7.restore.title"), h("div", { class: "c7-grid" },
-		h("div", {}, cableBanner(), h("p", {}, vendor ? t("flash.c7.restore.lead_vendor", { file: vendor }) : t("flash.c7.restore.lead")), prog.el, status), top.el), map.el));
+		h("div", {}, cableBanner(), h("p", {}, vendor ? t("flash.c7.restore.lead_vendor", { file: vendor }) : t("flash.c7.restore.lead")), prog.el, status, map.el), top.el)));
 	S().forward(go);
 	return out;
 }

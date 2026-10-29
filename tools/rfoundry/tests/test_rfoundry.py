@@ -1349,7 +1349,7 @@ class MdUv380(unittest.TestCase):
     def test_board(self):
         b = self.B
         self.assertEqual(b.codec.id, "mduv380-1926-s11")
-        self.assertEqual(len(b.codec_stock), 30)
+        self.assertEqual(len(b.codec_stock), 35)
         self.assertEqual(b.codec_stock[0], self.V1926)		# the first: what the simulations use
         self.assertEqual([s.index for s in b.codec_sectors()], [10, 11])
         self.assertEqual(b.app_region, (0x0800C000, 0x080C0000))
@@ -1394,7 +1394,7 @@ class MdUv380(unittest.TestCase):
             self.assertEqual(tw["min_len"], pl["tables_len"])
             wins = stockfw.layout(prof)
             self.assertEqual(wins[-1][:2], (stockfw.DESC_ADDR, stockfw.DESC_LEN))
-        self.assertEqual(len(tags), 30)
+        self.assertEqual(len(tags), 35)
 
     def synthetic(self):
         return stockfw.build_synthetic_stock(KEY, random.Random(19), self.V1926)

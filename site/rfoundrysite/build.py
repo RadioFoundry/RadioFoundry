@@ -159,7 +159,7 @@ class Site:
 			r = {k: b[k] for k in ("id", "name", "maker", "model", "also", "kind", "order", "status", "bands",
 					       "power", "gallery", "cpu", "display", "docs", "flash", "backup", "unsupported",
 					       "unsupported_reasons", "not_written", "not_written_reasons", "required", "config", "screens", "codeplug", "volts",
-					       "clock")}
+					       "clock", "variants", "variant_pattern", "variant_check")}
 			r["support"] = docsmod.plain(b["summary"])
 			r["image"] = "static/img/radios/%s.svg" % b["id"]
 			r["frame_image"] = "static/img/radios/%s-frame.svg" % b["id"]
@@ -280,6 +280,26 @@ class Site:
 
 	def badge(self, lang, status):
 		return '<span class="badge badge-%s">%s</span>' % (status, html.escape(self.t(lang, "status." + status)))
+
+	def variants_html(self, lang, b):
+		"""The hardware variants sold under the model (board.toml [hardware] variants): each with whether RadioFoundry
+		runs on it, and how to tell which one a radio is. Empty for a radio that lists none."""
+		if not b["variants"]:
+			return ""
+		def state(v):
+			if not v.get("runs"):
+				return self.t(lang, "radio.variant.none")
+			if v["runs"]["board"] != b["id"]:
+				other = next((o["name"] for o in self.boards if o["id"] == v["runs"]["board"]), v["runs"]["board"])
+				return self.t(lang, "radio.variant.other", board=other)
+			return self.t(lang, "status." + repo.LEVEL_STATUS[v["level"]])
+		rows = "".join("<li><code>%s</code> %s: <b>%s</b>%s</li>" % (
+			html.escape(v["code"]), html.escape(v["name"]), html.escape(state(v)),
+			" " + html.escape(v["notice"]) if v.get("notice") else "") for v in b["variants"])
+		return ('<div class="radio-variants"><h3>%s</h3><ul class="small">%s</ul>'
+			'<details class="small"><summary>%s</summary><p>%s</p></details></div>'
+			% (html.escape(self.t(lang, "radio.variants_title")), rows, html.escape(self.t(lang, "radio.variant_how")),
+			   html.escape(b["variant_check"] or "")))
 
 	def board_note(self, lang, b):
 		"""A board's line for visitors: board.toml [status] summary. A catalog may translate it (radio.note.<id>)."""
@@ -548,6 +568,7 @@ class Site:
 		       "bands": self.bands(lang, b), "power": b["power"], "kind": self.t(lang, "radio.kind." + b["kind"]),
 		       "cpu": b["cpu"], "display": b["display"], "volts": self.t(lang, "radio.volts." + b["volts"]),
 		       "clock": self.t(lang, "radio.clock." + b["clock"]),
+		       "variants": self.variants_html(lang, b),
 		       "variant_head": vhead, "feature_groups": "".join(groups),
 		       "na_list": ", ".join(html.escape(self.ftitle(lang, f)) for f in na) or "—",
 		       "shots": "".join(shots), "docs_links": docs_links, "gallery": b["gallery"],
@@ -645,12 +666,16 @@ class Site:
 			  self.tpl.render("features", ctx, lang), "features", nav="features")
 
 	def flash_page(self, lang):
-		strings = json.dumps(self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "report.")),
-				     ensure_ascii=False).replace("</", "<\\/")
+		# the beta notice's text is in the page itself (beta_notice.html), not needed by the scripts
+		subset = {k: v for k, v in self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "report.", "editor.qdmr.note.")).items()
+			  if not k.startswith("flash.beta.")}
+		strings = json.dumps(subset, ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
 			   '<script type="module" src="{{root}}static/js/flasher/app.js?v=%s"></script>' % (strings, self.asset_version))
-		self.page(lang, "flash/index.html", self.t(lang, "flash.title"), self.tpl.render("flash", {}, lang),
-			  "flash", scripts=scripts, nav="flash", footer=self.tpl.partial("flash_log", {}, lang) + self.reports_footer(lang))
+		# the beta notice, opened once per browser session (static/js/flasher/beta.js)
+		beta = self.tpl.partial("beta_notice", {"repo": self.repo_url, "community": COMMUNITY_URL, "home": "{{home}}"}, lang)	# page() fills in home
+		self.page(lang, "flash/index.html", self.t(lang, "flash.title"), self.tpl.render("flash", {"beta": beta}, lang),
+			  "flash", scripts=scripts, nav="flash", footer=self.tpl.partial("flash_log", {"errors": self.errors_paragraph(lang)}, lang))
 
 	def tools_page(self, lang):
 		strings = json.dumps(self.i18n.subset(lang, ("tools.", "flash.convert.")),
@@ -666,6 +691,10 @@ class Site:
 			   '<script type="module" src="{{root}}static/js/editor/app.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "codeplug/index.html", self.t(lang, "editor.title"), self.tpl.render("codeplug", {}, lang),
 			  "codeplug", description=self.t(lang, "editor.lead"), scripts=scripts, nav="codeplug", footer=self.reports_footer(lang))
+
+	def errors_paragraph(self, lang):
+		"""The error tracker's note, folded into the flasher's one privacy note: only when the build has an address."""
+		return "<p>%s</p>" % html.escape(self.t(lang, "report.privacy_text")) if self.sentry_dsn else ""
 
 	def reports_footer(self, lang):
 		"""The privacy note on automatic error reports, on the pages that send them: only when the build has an address."""

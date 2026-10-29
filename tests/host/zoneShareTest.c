@@ -176,7 +176,7 @@ static void test_writer_limits(void)
 		zsWriterChannel(&w, &s);
 	}
 	CHECK(zsWriterEnd(&w) == 0);
-	CHECK(zsFragmentCount(ZS_RECORD_MAX) == ZS_FRAGMENTS_MAX && zsFragmentCount(0) == 0 &&
+	CHECK(zsFragmentCount(ZS_RECORD_MAX) == ZS_SEND_FRAGMENTS_MAX && zsFragmentCount(0) == 0 &&
 		  zsFragmentCount(ZS_RECORD_MAX + 1) == 0);
 }
 
@@ -253,6 +253,22 @@ static void test_malformed(void)
 #undef MUTATED
 }
 
+// A fragment as a sender with another chunk size builds it (another radio's limits, or an older build's)
+static int foreignFragment(uint8_t transfer, const uint8_t *rec, int n, int chunk, int index, uint8_t *out)
+{
+	int at = index * chunk;
+	int len = (n - at < chunk) ? n - at : chunk;
+
+	out[0] = ZS_VERSION;
+	out[1] = ZS_MSG_FRAGMENT;
+	out[2] = transfer;
+	out[3] = (uint8_t)((index << 4) | ((n + chunk - 1) / chunk));
+	out[4] = (uint8_t)(at >> 8);
+	out[5] = (uint8_t)at;
+	memcpy(&out[ZS_MSG_HEADER], &rec[at], (size_t)len);
+	return ZS_MSG_HEADER + len;
+}
+
 static void test_messages(void)
 {
 	uint8_t rec[ZS_RECORD_MAX], msg[ZS_MSG_MAX];
@@ -260,20 +276,25 @@ static void test_messages(void)
 	int count = zsFragmentCount(n);
 	zsMessage_t m;
 
-	CHECK(n > ZS_CHUNK_MAX * 2 && count == (n + ZS_CHUNK_MAX - 1) / ZS_CHUNK_MAX && count <= ZS_FRAGMENTS_MAX);
+	CHECK(n > ZS_SEND_CHUNK * 2 && count == (n + ZS_SEND_CHUNK - 1) / ZS_SEND_CHUNK && count <= ZS_SEND_FRAGMENTS_MAX);
 	printf("# 40 channels: %d octets, %d fragments\n", n, count);
 
 	// Fragments, out of order, with a duplicate; the record comes out whole
 	static zsAssembly_t a;
 	zsAssemblyReset(&a);
-	int order[] = { 2, 0, 0, 1 };
+	// The first twice, then the last, then the rest
+	int order[ZS_SEND_FRAGMENTS_MAX + 1] = { 0, 0, count - 1 };
+	for (int k = 3; k <= count; k++)
+	{
+		order[k] = k - 2;
+	}
 	zsAsmResult_t res = ZS_ASM_BAD;
-	for (int k = 0; k < 4; k++)
+	for (int k = 0; k <= count; k++)
 	{
 		int len = zsBuildFragment(9, rec, n, order[k], msg);
 		CHECK(len > ZS_MSG_HEADER && len <= ZS_MSG_MAX && zsParseMessage(msg, len, &m) && m.type == ZS_MSG_FRAGMENT);
 		res = zsAssemble(&a, 1234, &m, 1000);
-		CHECK(res == ((k == 2) ? ZS_ASM_DUPLICATE : (k == 3) ? ZS_ASM_DONE : ZS_ASM_TAKEN));
+		CHECK(res == ((k == 1) ? ZS_ASM_DUPLICATE : (k == count) ? ZS_ASM_DONE : ZS_ASM_TAKEN));
 	}
 	CHECK(res == ZS_ASM_DONE && a.length == n && memcmp(a.data, rec, (size_t)n) == 0);
 	CHECK(zsBuildFragment(9, rec, n, count, msg) == 0 && zsBuildFragment(9, rec, 0, 0, msg) == 0);
@@ -284,7 +305,7 @@ static void test_messages(void)
 		int offset = -1;
 		int len = zsBuildFragment(9, rec, n, k, whole);
 		int chunk = zsFragmentHeader(9, n, k, head, &offset);
-		CHECK(chunk == len - ZS_MSG_HEADER && offset == k * ZS_CHUNK_MAX && memcmp(head, whole, ZS_MSG_HEADER) == 0 &&
+		CHECK(chunk == len - ZS_MSG_HEADER && offset == k * ZS_SEND_CHUNK && memcmp(head, whole, ZS_MSG_HEADER) == 0 &&
 		      memcmp(&rec[offset], &whole[ZS_MSG_HEADER], (size_t)chunk) == 0);
 	}
 	{
@@ -304,6 +325,41 @@ static void test_messages(void)
 	zsParseMessage(msg, len, &m);
 	CHECK(zsAssemble(&a, 5678, &m, 40000) == ZS_ASM_TAKEN && a.transfer == 4 && a.have == 0x02);
 
+	// What the first builds take, which every fragment we send must meet: messages of at most 328 octets, every chunk
+	// but the last 322, offset index x 322, at most 4 fragments
+	CHECK(ZS_SEND_CHUNK == 322 && zsFragmentCount(ZS_RECORD_MAX) <= 4);
+	for (int k = 0; k < zsFragmentCount(ZS_RECORD_MAX); k++)
+	{
+		static const uint8_t full[ZS_RECORD_MAX];
+		int fl = zsBuildFragment(1, full, ZS_RECORD_MAX, k, msg);
+		CHECK(fl <= 328 && ((msg[4] << 8) | msg[5]) == k * 322 && ((k == 3) || (fl == 328)));
+	}
+
+	// Other senders' chunk sizes: the smallest we take (the most fragments) and the largest (a later build's), last first
+	int sizes[] = { ZS_CHUNK_MIN, ZS_CHUNK_MAX };
+	for (int i = 0; i < 2; i++)
+	{
+		int c = (n + sizes[i] - 1) / sizes[i];
+		CHECK(c <= ZS_FRAGMENTS_MAX);
+		zsAssemblyReset(&a);
+		res = ZS_ASM_BAD;
+		for (int k = c - 1; k >= 0; k--)
+		{
+			int fl = foreignFragment(6, rec, n, sizes[i], k, msg);
+			CHECK(zsParseMessage(msg, fl, &m) && m.count == c && ((c == 1) || m.full == sizes[i]));
+			res = zsAssemble(&a, 42, &m, 0);
+			CHECK(res == ((k == 0) ? ZS_ASM_DONE : ZS_ASM_TAKEN));
+		}
+		CHECK(res == ZS_ASM_DONE && a.length == n && memcmp(a.data, rec, (size_t)n) == 0);
+	}
+	// Fragments of one transfer that disagree on the chunk size: the odd one is refused
+	zsAssemblyReset(&a);
+	len = foreignFragment(6, rec, n, ZS_SEND_CHUNK, 0, msg);
+	CHECK(zsParseMessage(msg, len, &m) && zsAssemble(&a, 42, &m, 0) == ZS_ASM_TAKEN);
+	len = foreignFragment(6, rec, n, 330, 1, msg);
+	msg[3] = (uint8_t)(0x10 | ((n + ZS_SEND_CHUNK - 1) / ZS_SEND_CHUNK));	// the same count
+	CHECK(zsParseMessage(msg, len, &m) && m.full == 330 && zsAssemble(&a, 42, &m, 0) == ZS_ASM_BAD && a.have == 0x01);
+
 	// A one-fragment record
 	uint8_t small[ZS_RECORD_MAX];
 	int s = sampleZone(small, sizeof(small), 2);
@@ -318,23 +374,43 @@ static void test_messages(void)
 	BADMSG(0, 2);				// version
 	BADMSG(1, 9);				// type
 	BADMSG(3, 0x00);			// count 0
-	BADMSG(3, 0x05);			// count 5
+	BADMSG(3, ZS_FRAGMENTS_MAX + 1);	// more fragments than a transfer may have
 	BADMSG(3, 0x22);			// index 2 of 2
 	BADMSG(3, 0x13);			// index 1 at offset 0
 	BADMSG(5, 1);				// offset not index * chunk
 #undef BADMSG
 	CHECK(!zsParseMessage(msg, ZS_MSG_HEADER, &m));		// no chunk
-	CHECK(!zsParseMessage(msg, len - 1, &m));			// a short fragment that isn't the last
-	memcpy(bad, msg, (size_t)len);
-	bad[len] = 0;
-	CHECK(!zsParseMessage(bad, len + 1, &m));			// longer than a message
-	// The last fragment may not reach past ZS_RECORD_MAX
+	CHECK(zsParseMessage(msg, len - 1, &m) && m.full == len - 1 - ZS_MSG_HEADER);	// a first fragment sets the size
+	CHECK(!zsParseMessage(msg, ZS_MSG_HEADER + ZS_CHUNK_MIN - 1, &m));	// one too small isn't taken
+	memset(bad, 0, sizeof(bad));
+	memcpy(bad, msg, ZS_MSG_HEADER);
+	CHECK(zsParseMessage(bad, ZS_MSG_MAX, &m) && m.full == ZS_CHUNK_MAX);	// the longest message we take
+	CHECK(!zsParseMessage(bad, ZS_MSG_MAX + 1, &m));	// longer
+	// The last fragment (here the fourth) may not reach past ZS_RECORD_MAX
 	memcpy(bad, msg, ZS_MSG_HEADER);
 	bad[3] = 0x34;
-	bad[4] = (uint8_t)((3 * ZS_CHUNK_MAX) >> 8);
-	bad[5] = (uint8_t)(3 * ZS_CHUNK_MAX);
-	CHECK(zsParseMessage(bad, ZS_MSG_HEADER + (ZS_RECORD_MAX - 3 * ZS_CHUNK_MAX), &m));
-	CHECK(!zsParseMessage(bad, ZS_MSG_HEADER + (ZS_RECORD_MAX - 3 * ZS_CHUNK_MAX) + 1, &m));
+	bad[4] = (uint8_t)((3 * ZS_SEND_CHUNK) >> 8);
+	bad[5] = (uint8_t)(3 * ZS_SEND_CHUNK);
+	CHECK(zsParseMessage(bad, ZS_MSG_HEADER + (ZS_RECORD_MAX - 3 * ZS_SEND_CHUNK), &m) && m.full == ZS_SEND_CHUNK);
+	CHECK(!zsParseMessage(bad, ZS_MSG_HEADER + (ZS_RECORD_MAX - 3 * ZS_SEND_CHUNK) + 1, &m));
+	// A last fragment's offset must be a whole number of chunks of ZS_CHUNK_MIN to ZS_CHUNK_MAX, and it no longer
+#define OFFSET(at) do { bad[4] = (uint8_t)((at) >> 8); bad[5] = (uint8_t)(at); } while (0)
+	bad[3] = 0x23;
+	OFFSET(401);					// not a multiple of 2
+	CHECK(!zsParseMessage(bad, ZS_MSG_HEADER + 10, &m));
+	OFFSET(400);					// chunks of 200
+	CHECK(zsParseMessage(bad, ZS_MSG_HEADER + 200, &m) && m.full == 200 && !zsParseMessage(bad, ZS_MSG_HEADER + 201, &m));
+	OFFSET(2 * (ZS_CHUNK_MIN - 1));	// chunks too small
+	CHECK(!zsParseMessage(bad, ZS_MSG_HEADER + 10, &m));
+	bad[3] = 0x12;
+	OFFSET(ZS_CHUNK_MAX);			// chunks of the largest we take
+	CHECK(zsParseMessage(bad, ZS_MSG_HEADER + 10, &m) && m.full == ZS_CHUNK_MAX);
+	OFFSET(ZS_CHUNK_MAX + 1);		// too large: no first fragment could carry it
+	CHECK(!zsParseMessage(bad, ZS_MSG_HEADER + 10, &m));
+	bad[3] = 0x01;					// a lone fragment starts at 0
+	OFFSET(4);
+	CHECK(!zsParseMessage(bad, ZS_MSG_HEADER + 10, &m));
+#undef OFFSET
 
 	// Request and refusal
 	len = zsBuildRequest(7, ZS_WANT_SITE_ZONE, msg);

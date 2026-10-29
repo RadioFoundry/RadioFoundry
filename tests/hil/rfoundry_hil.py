@@ -477,6 +477,120 @@ class Radio:
         raise AssertionError(f"no channel on {rx_hz / 1e6:.5f} MHz{' ' + mode if mode else ''} in any zone: "
                              f"{', '.join(searched)}")
 
+INDIVIDUAL_NET = 0x0C000000        # 12.0.0.0/8: the IP gateway's individual range (default addressing)
+
+
+@contextlib.contextmanager
+def usb_network(radio, own_id, timeout=30.0):
+    """The radio as this host's USB network adapter for the duration (docs/spec/usb-network.md; the test needs
+    --allow-usb-switch): switched to the network personality, then its debug link over UDP at the radio's address once
+    the host has its DHCP lease. Yields (udp, host_ip, radio_ip): the DebugLink over UDP and the addresses as strings,
+    12.<own_id> for the host and that xor 1 for the radio (the default /32 link). Afterwards, also on failure, the radio
+    goes back to the serial personality and radio.link is opened again."""
+    import ipaddress
+    host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | (own_id & 0xFFFFFF))
+    radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
+    radio.link.usb_network(True)
+    radio.link.close()
+    udp = None
+    try:
+        end = time.monotonic() + timeout
+        while udp is None and time.monotonic() < end:
+            try:
+                udp = DebugLink(f"udp:{radio_ip}", timeout=1.0)
+                udp.ping()
+            except (DebugLinkError, OSError):
+                udp = None
+                time.sleep(0.5)
+        assert udp is not None, f"no debug link over UDP at {radio_ip} (DHCP on the host's adapter?)"
+        yield udp, str(host_ip), radio_ip
+    finally:
+        if udp is not None:
+            try:
+                udp.usb_network(False)
+            except (DebugLinkError, OSError):
+                pass
+            udp.close()
+        end = time.monotonic() + 20
+        while not find_ports() and time.monotonic() < end:
+            time.sleep(0.5)
+        for _ in range(40):
+            try:
+                radio.link = DebugLink(radio.port, timeout=1.5)
+                break
+            except DebugLinkError:
+                time.sleep(0.25)
+
+
+def host_network_kind(radio):
+    """The radio's IP link to this host: "usb" (USB_NETWORK, the network adapter), "ppp" (NET_PPP only: PPP on the
+    serial host port, docs/spec/ppp.md) or None."""
+    feats = radio.features()
+    return "usb" if "USB_NETWORK" in feats else "ppp" if "NET_PPP" in feats else None
+
+
+@contextlib.contextmanager
+def ppp_network(radio, own_id, timeout=30.0):
+    """PPP on the radio's serial host port for the duration, as usb_network yields (udp, host_ip, radio_ip): pppd on
+    radio.port through tools/rfoundry_ppp.sh (root, or passwordless sudo), which adds the routes to 12.0.0.0/8 and
+    225.0.0.0/8. Afterwards, also on failure, pppd hangs up (LCP Terminate) and radio.link is opened again. Skips where
+    this host can't run it (no pppd, no root, the radio not on a local serial port)."""
+    import ipaddress
+    import shutil
+    port = str(radio.port)
+    if not port.startswith("/dev/"):
+        skip("bench", f"PPP needs the radio's serial port on this host, not {port}")
+    if not (shutil.which("pppd") or os.path.exists("/usr/sbin/pppd")):
+        skip("bench", "no pppd on this host")
+    sudo = [] if os.geteuid() == 0 else ["sudo", "-n"]
+    if sudo and subprocess.run(sudo + ["true"], capture_output=True).returncode != 0:
+        skip("bench", "pppd needs root: run as root or with passwordless sudo")
+    script = os.path.join(ROOT, "tools", "rfoundry_ppp.sh")
+    host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | (own_id & 0xFFFFFF))
+    radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
+    radio.link.close()
+    up, udp = False, None
+    try:
+        r = subprocess.run(sudo + ["sh", script, port], capture_output=True, text=True, timeout=timeout + 30)
+        assert r.returncode == 0, f"pppd didn't bring the link up: {r.stdout}{r.stderr}"
+        up = True
+        end = time.monotonic() + timeout
+        while udp is None and time.monotonic() < end:
+            try:
+                udp = DebugLink(f"udp:{radio_ip}", timeout=1.0)
+                udp.ping()
+            except (DebugLinkError, OSError):
+                udp = None
+                time.sleep(0.5)
+        assert udp is not None, f"no debug link over UDP at {radio_ip} over PPP"
+        yield udp, str(host_ip), radio_ip
+    finally:
+        if udp is not None:
+            udp.close()
+        if up:
+            subprocess.run(sudo + ["sh", script, "--stop"], capture_output=True, timeout=10)
+        # pppd waits for the radio's Terminate-Ack before it lets go of the port; the debug link's first frame also
+        # takes the port back from PPP (ppp.md 4)
+        for _ in range(80):
+            try:
+                radio.link = DebugLink(radio.port, timeout=1.5)
+                radio.link.ping()
+                break
+            except (DebugLinkError, OSError):
+                time.sleep(0.25)
+
+
+@contextlib.contextmanager
+def host_network(radio, own_id, timeout=30.0):
+    """The radio's IP link to this host for the duration (the test needs --allow-usb-switch): the USB network adapter,
+    or PPP on the serial host port on a radio without one (host_network_kind). Yields as usb_network."""
+    kind = host_network_kind(radio)
+    if kind is None:
+        skip("not_built", "no IP link to the host (neither CONFIG_USB_NETWORK nor CONFIG_NET_PPP)")
+    with (usb_network if kind == "usb" else ppp_network)(radio, own_id, timeout) as link:
+        yield link
+
+
 def counter_deltas(before, after, keys):
     return {k: after.get(k, 0) - before.get(k, 0) for k in keys}
 
@@ -819,24 +933,41 @@ class SdrBench:
         return self.transmit(a, freq, cc, expect_s=(count + 1) * 0.06 + listen_after)
 
     def data(self, freq, cc, dst, tms=None, tms_seq=1, tms_ack=True, confirmed=False, octets=40, preambles=2,
-             src=None, listen_after=0, etsi=None, etsi_response=True, ip_text=None):
+             src=None, listen_after=0, etsi=None, etsi_response=True, ip_text=None, udp_port=None, udp_src_port=None,
+             udp_payload=None, repeat=1, repeat_gap_ms=0):
         """One data packet (bench_tx.py data): tms text in IPv4 / UDP 4007 user data, etsi text as ETSI defined short
-        data (ISO 8859-1), ip_text as ETSI IP text (UTF-16BE on UDP 5016), else octets of filler."""
+        data (ISO 8859-1), ip_text as ETSI IP text (UTF-16BE on UDP 5016), udp_port a UDP datagram to that port (SAP 4,
+        the full IPv4 header) with udp_payload (bytes) or octets of filler as its payload, else octets of filler.
+        repeat: that many packets back to back, each with its own preambles and header, in one key-up (repeat_gap_ms
+        0) or that far apart; with udp_port the payload's first 2 octets are each packet's index (bench_tx.py)."""
         a = f"--listen-after {listen_after} " if listen_after else ""
         a += f"data --dst {dst} --preambles {preambles}"
+        user = octets
         if etsi is not None:
             a += f" --etsi {shlex.quote(etsi)}" + ("" if etsi_response else " --etsi-no-response")
         elif tms is not None:
             a += f" --tms {shlex.quote(tms)} --tms-seq {tms_seq}" + ("" if tms_ack else " --tms-no-ack")
         elif ip_text is not None:
             a += f" --ip-text {shlex.quote(ip_text)}"
+        elif udp_port is not None:
+            a += f" --udp-port {int(udp_port)}" + (f" --udp-src-port {int(udp_src_port)}" if udp_src_port else "")
+            a += f" --udp-payload {bytes(udp_payload).hex()}" if udp_payload is not None else f" --udp-octets {octets}"
+            user = 28 + (len(udp_payload) if udp_payload is not None else octets)
         else:
             a += f" --octets {octets}"
+        if repeat > 1:
+            a += f" --repeat {int(repeat)} --repeat-gap-ms {int(repeat_gap_ms)}"
         if confirmed:
             a += " --confirmed"
         if src:
             a += f" --src {src}"
-        return self.transmit(a, freq, cc, expect_s=(preambles + octets / 12 + 3) * 0.06 + listen_after)
+        # Key-up time: preambles, the header and the rate 1/2 blocks (the CRC-32 included) of each packet, and the
+        # gaps between them; confirmed blocks carry 10 octets
+        per = 10 if confirmed else 12
+        bursts = preambles + 1 + -(-(user + 4) // per)
+        n = max(1, int(repeat))
+        return self.transmit(a, freq, cc,
+                             expect_s=n * bursts * 0.06 + (n - 1) * repeat_gap_ms / 1000 + listen_after)
 
     def listen_start(self, freq, cc, seconds, ambe_out=None):
         """bench_tx.py listen in the background (receive only); listen_result() collects its JSON lines."""

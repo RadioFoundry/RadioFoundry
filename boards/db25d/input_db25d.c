@@ -8,6 +8,8 @@
 // too, so a low read within 50 ms of a good byte is serial data, not PTT (drivers/input/sharedptt, as on the other HR_C7000 boards),
 // and the line then has to read low on three scans in a row (INF: the pad level is assumed readable while the pin is
 // the UART's). The hand mic's PTT is PTC11, low while held (found on the radio), as the stock firmware reads it.
+// With no mic in the front jack PTC11 rests low from power-on, so it counts only once it has read high, a mic
+// plugged in (drivers/input/plugptt, 3.3).
 #include "db25d.h"
 #include "config.h"
 #include "pins.h"
@@ -16,6 +18,7 @@
 #include "input/keymatrix/keymatrix.h"
 #include "input/quadrature/quadrature.h"
 #include "input/sharedptt/shared_ptt.h"
+#include "input/plugptt/plug_ptt.h"
 
 #define N		KEYMATRIX_NONE
 #define PTT_SCANS	3
@@ -52,6 +55,7 @@ static const keymatrix_t matrix = { .rows = KEY_DRIVES, .cols = KEY_SENSES, .map
 static uint32_t last_raw, stable;
 static uint8_t ptt_low;
 static shared_ptt_t ptt_gate;	// PTA9 is also the host UART's RXD
+static plug_ptt_t mic_ptt;	// PTC11 rests low with no mic
 static uint8_t mic_levels;
 static uint16_t a9_changes, c11_changes;
 
@@ -143,6 +147,11 @@ uint32_t db25d_input_ptt_ignored(void)
 	return ptt_gate.ignored;
 }
 
+bool db25d_input_mic_armed(void)
+{
+	return mic_ptt.armed;
+}
+
 void db25d_mic_lines_reset(void)
 {
 	a9_changes = 0;
@@ -172,9 +181,11 @@ static uint32_t scan(void)
 	}
 	sample_mic_lines();
 	uint32_t rx_ms;
+	uint32_t now = hal_millis();
 	bool rx_seen = hrc_host_uart_last_rx(&rx_ms);
-	bool rxd_low = shared_ptt_pressed(&ptt_gate, !hrc_pin_read(PIN_MIC_RXD), rx_seen, rx_ms, hal_millis());
-	if (rxd_low || !hrc_pin_read(PIN_PTT2)) {
+	bool rxd_low = shared_ptt_pressed(&ptt_gate, !hrc_pin_read(PIN_MIC_RXD), rx_seen, rx_ms, now);
+	bool mic_low = plug_ptt_pressed(&mic_ptt, !hrc_pin_read(PIN_PTT2), now);
+	if (rxd_low || mic_low) {
 		if (ptt_low < PTT_SCANS) {
 			ptt_low++;
 		}

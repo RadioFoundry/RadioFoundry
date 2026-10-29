@@ -43,6 +43,7 @@ static uint32_t rx_accm;	// control characters the peer escapes: bare ones are l
 static uint32_t tx_accm;	// the peer's map, for everything but LCP
 static uint32_t want_accm;	// the map we ask the peer for
 static uint16_t peer_mru;
+static uint16_t our_mru;	// the MRU we ask for: PPP_MRU, or less when the peer Nak'd it so
 static uint32_t magic;
 static uint8_t other_id;	// Code-Reject, Protocol-Reject, Echo-Request
 static bool running;
@@ -179,7 +180,7 @@ static void scr(fsm_t *f)
 		if (f->ask & (1u << LCP_MRU)) {
 			o[0] = LCP_MRU;
 			o[1] = 4;
-			put16(o + 2, PPP_MRU);
+			put16(o + 2, our_mru);
 			o += 4;
 		}
 		if (f->ask & (1u << LCP_ACCM)) {
@@ -440,13 +441,21 @@ static void our_options(fsm_t *f, uint8_t code, const uint8_t *p, int len)
 			f->ask &= (uint8_t)~(1u << o[0]);
 		} else if ((f == &lcp) && (o[0] == LCP_ACCM) && (o[1] == 6)) {
 			want_accm = get32(o + 2);
+		} else if ((f == &lcp) && (o[0] == LCP_MRU) && (o[1] == 4)) {
+			// A smaller MRU still fits our buffer: asked for next time (RFC 1661 6.1). A bigger one doesn't, so ours
+			// is asked for again; the peer's Max-Failure then ends with it rejecting the option
+			uint16_t v = get16(o + 2);
+
+			if ((v >= PPP_MIN_MRU) && (v <= PPP_MRU)) {
+				our_mru = v;
+			}
 		} else if ((f == &lcp) && (o[0] == LCP_MAGIC)) {
 			magic = (magic * 1103515245u) + 12345u;	// a new number (RFC 1661 6.4)
 			if (magic == 0) {
 				magic = 1;
 			}
 		}
-		// The MRU and our IP address stay what they are: the gateway's frame size and address
+		// Our IP address stays what it is: the gateway's
 	}
 }
 
@@ -715,6 +724,7 @@ void ppp_start(bool active, uint32_t salt, uint32_t now_ms, uint8_t *rx_buffer)
 	tx_accm = ACCM_ALL;
 	want_accm = 0;
 	peer_mru = DEFAULT_MRU;
+	our_mru = PPP_MRU;
 	magic = (salt * 2654435761u) ^ 0x4F445221u;
 	if ((magic == 0) || (magic == ACCM_ALL)) {
 		magic = 0x4F445221u;
@@ -835,4 +845,6 @@ void ppp_stats(ppp_stats_t *s)
 	*s = stats;
 	s->lcp = lcp.state;
 	s->ipcp = ipcp.state;
+	s->mru = (lcp.ask & (1u << LCP_MRU)) ? our_mru : DEFAULT_MRU;
+	s->peer_mru = peer_mru;
 }

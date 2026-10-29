@@ -85,6 +85,15 @@ Radios: HR_C6000.
 After a special mode, writing back the init value (0x6B) instead of the running value (0x6E: relay, aligned, slot 1)
 broke subsequent operation. Rule: save and restore modem mode registers around any temporary change.
 
+**1.10 The CACH TC is valid only after two received slots in a row.**
+Symptom: through a duplex repeater, the slot lock built from the TC (0x52 bit 2) resynced on its own while the
+outbound was steady, and a lock that was right was thrown away. Cause: once locked, the driver closes the other slot,
+so every later compare reads the TC after a slot not received. On the HR_C6000 those reads agreed with the lock 43% of
+the time (5485 reads), against 557 of 557 for reads after two received slots (bench, 2026-10-28). The HR_C5000 has
+the same weakness in another form: its TC stops changing while a slot is closed (`tc_last_rx`). Rule: compare only
+when the slot that ended and the one before it were both opened for receive; after our own transmission, a closed
+slot or a lock, skip the first read. Radios: HR_C6000, HR_C5000.
+
 ## 2. DMR modem timing: HR_C7000
 
 **2.1 The TX interrupts must be hooked.** Without the TX timeslot interrupt (vector 62) and the RF TX interrupt (vector 64) connected, the TX handler is never called and DMR TX never starts. TX states must run on the
@@ -267,7 +276,7 @@ blocks. Accept blocks only within 400 ms of a header, CSBK, MBC or previous bloc
 
 **5.5 Data list sizing.** A data header must always set how many bursts follow (preamble count + header's blocks); the
 old code compared with the preamble's count and stopped after the header (blocks never sent). A list goes out when
-complete or 180 ms after its last frame, max 40 bursts; frames that can't be sent are NAKed, not silently ACKed.
+complete or 180 ms after its last frame, max 64 bursts (`DMR_DATA_MAX_BURSTS`); frames that can't be sent are NAKed, not silently ACKed.
 
 **5.6 TMS ACK sequence number is 7 bits.** The ACK carried only the low 5 bits, so senders numbering past 31 never
 matched. Bytes must equal a MOTOTRBO capture (example 00 04 9F 00 95 20 for s/n 53), sent as its own transmission after
@@ -663,6 +672,14 @@ presses in 100 s (2026-10-22). A key scan that ran late caught up with two scans
 read the low bits of the first byte of a burst 65 ms after the last one, before the UART had reported it. Rule:
 debounce the shared pin by time, not by scan count. The pin must read low, and not gated, for 20 ms
 (`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio.
+
+**16.3 PTT on an empty mic jack.**
+Symptom: a radio powered on without its hand mic transmitted at once (RadioFoundry, issue #230). Cause: the mic's PTT
+line has no pull-up the firmware can set, and with nothing in the jack it reads low from power-on, which is a press.
+Rule: on a PTT line that comes through a connector, count a low as a press only once the line has read high since
+start-up, something plugged in (`drivers/input/plugptt`). Pulling the plug while armed still reads as a held press;
+the transmit timeout ends it, and with TX timeout Off nothing does until power-off. Radios: one confirmed. Check every
+radio with a mic jack: power on with the jack empty and watch the raw PTT pin (adding-a-radio.md, bring-up order).
 
 ## 17. Scan
 

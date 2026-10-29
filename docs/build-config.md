@@ -175,7 +175,7 @@ Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK
 
 | Value | Default | Meaning |
 |---|---|---|
-| `CONFIG_DMR_AIR_QUEUE_BYTES` | 2048 | octets in the data service's TX queue: each queued packet takes its length plus 28, rounded up to 4 (`docs/spec/dmr-data.md` 12.6.1). At least 1016 (two longest packets) |
+| `CONFIG_DMR_AIR_QUEUE_BYTES` | 2048 | octets in the data service's TX queue: each queued packet takes its length plus a 36-octet record header, rounded up to 4 (`docs/spec/dmr-data.md` 12.6.1). At least 1296 (two longest packets) |
 | `CONFIG_DMR_DATA_TX_GUARD_MS` | 250 | the gap the data service leaves after our own transmission before it starts another that isn't a reply. A workaround for receivers that lose a packet sent right after ours ended; the cause is open (`docs/spec/dmr-data.md` 12.6.3). 0 turns it off |
 | `CONFIG_DISPLAY_INSET` | 0 (a board sets its own) | pixels hidden by the bezel or lens at each edge; the UI draws inside them. A board may set the top and bottom to 0 when only the sides are covered |
 | `CONFIG_DISPLAY_INSET_TOP` / `_BOTTOM` / `_LEFT` / `_RIGHT` | = `CONFIG_DISPLAY_INSET` | one edge |

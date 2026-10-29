@@ -72,7 +72,7 @@ int8_t slotEpochLabel(slotEpoch_t *e, uint32_t t_us, uint32_t now_ms, int32_t *r
 
 	*residual_us = (int32_t)(res_ns / 1000);
 	e->last_residual_us = *residual_us;
-	return ((n & 1) == 0) ? 2 : 1;
+	return ((n & 1) == 0) ? 1 : 2;
 }
 
 void slotEpochTrack(slotEpoch_t *e, int32_t residual_us)

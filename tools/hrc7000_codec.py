@@ -180,7 +180,7 @@ PROFILES = {
 
 # DB25-D PRO stock images: plain, linked at 0x0300C000, no container (hardware-db25d.md 8). Code: 0x12B20 bytes at the
 # signature, run at 0x1CEB0 (the stock start-up copies the RAM block from 0x030B4DA8-class addresses to 0x10000, which puts
-# the codec at 0x1CEB0 in all three). Tables: one 0x2D50 window (two object groups, 4 bytes apart) in the modem SRAM
+# the codec at 0x1CEB0 in the three newest; the 2023-07-06 build's is at 0x1795C, its tables at 0x180010B4, the lowest). Tables: one 0x2D50 window (two object groups, 4 bytes apart) in the modem SRAM
 # image, run at 0x180014AC + the build's shift. fec_init is +0x1DCC in all three
 _DB25D_ENTRIES = {"decode": 0x0, "encode": 0x260, "dec_init": 0xB4, "dec_set": 0x84, "enc_init": 0x314,
                   "enc_set": 0x2E4, "fec_init": 0x1DCC}
@@ -208,6 +208,15 @@ PROFILES.update({
         "size": 843944, "hdr": 0, "magic": None,
         "code": (0x030C1130, 0x12B20, 0x0001CEB0),
         "tables": (0x0307A150, 0x2D50, 0x180014B0),
+        "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
+        "entries": _DB25D_ENTRIES,
+    },
+    "03f3ddfe1c4117ddf4ed64eaa1f72cd24783d5d0de8933ce53651e02b4fe2e68": {
+        "name": "DB25-D_909E.Dx.EARSAB.018_2023-07-06.bin", "board": "db25d", "tag": 2307, "size": 808292,
+        "hdr": 0, "magic": None,
+        "code_sha256": "686a4173288dd6b3e43f61d8c9bd48f984dcfe8d56e013b3c7ef75a25881811a",
+        "code": (0x030B79D4, 0x12B20, 0x0001795C),
+        "tables": (0x030760E4, 0x2D50, 0x180010B4),
         "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
         "entries": _DB25D_ENTRIES,
     },

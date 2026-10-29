@@ -147,6 +147,14 @@ export function bundleName(meta, when = new Date()) {
 	return `${model}_Backup_${when.getFullYear()}-${p(when.getMonth() + 1)}-${p(when.getDate())}.zip`;
 }
 
+// Where a zip's files (name -> bytes) keep backup.json: "" at the top, "name/" for a backup unpacked and zipped again
+// (macOS opens a downloaded zip by itself; Compress then adds its folder and __MACOSX/), null when it isn't a backup
+export function bundleFolder(files) {
+	if (files.has("backup.json")) return "";
+	const found = [...files.keys()].filter((k) => !k.startsWith("__MACOSX/") && /^[^/]+\/backup\.json$/.test(k));
+	return found.length === 1 ? found[0].slice(0, -"backup.json".length) : null;
+}
+
 // Read a bundle back; every part checked against its SHA-256. Returns {meta, parts: Map(what -> {..., data})}
 export async function openBundle(bytes) {
 	let files;
@@ -155,7 +163,8 @@ export async function openBundle(bytes) {
 	} catch (e) {
 		throw new BackupError(`this file is not a backup created by the radio programming utility (${e.message})`);
 	}
-	const doc = files.get("backup.json");
+	const top = bundleFolder(files) ?? "";
+	const doc = files.get(top + "backup.json");
 	if (!doc) throw new BackupError("this file is not a backup created by the radio programming utility (no backup.json)");
 	const meta = JSON.parse(new TextDecoder().decode(doc));
 	if (meta.format !== FORMAT && meta.format !== LEGACY_FORMAT) throw new BackupError(`unknown backup format ${meta.format}`);
@@ -163,7 +172,7 @@ export async function openBundle(bytes) {
 		if (meta[k]?.kind === "odr") meta[k].kind = "rfoundry";
 	const parts = new Map();
 	for (const p of meta.parts) {
-		const data = files.get(p.file);
+		const data = files.get(top + p.file);
 		if (!data) throw new BackupError(`${p.file} is missing from the backup file`);
 		if (await sha256(data) !== p.sha256) throw new BackupError(`${p.file} does not match its checksum; the backup file is damaged`);
 		parts.set(p.what, { ...p, addr: Number(p.addr), data });

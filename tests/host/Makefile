@@ -27,7 +27,7 @@ FRAME   := $(CORE)/hotspot/dmrDataFrame.c $(CORE)/dmr/fec/dmrFec.c
 TSHARK  ?= $(firstword $(wildcard /Applications/Wireshark*.app/Contents/MacOS/tshark) $(shell command -v tshark))
 
 TESTS   := dmrFecTest sfrTest dmrDataTest dmrDataServiceTest hotspotDataTest hotspotUplinkTest dmrPrivacyTest \
-           ipGatewayTest ipGatewayTest16 ipGatewayTest31 ipGatewayTestShared
+           ipGatewayTest ipGatewayTest16 ipGatewayTest31 ipGatewayTestShared ipGatewayTestAir440
 
 all: run
 
@@ -66,6 +66,10 @@ ipGatewayTest31: $(IPGW) $(CORE)/dmr/ipGateway.h
 
 ipGatewayTestShared: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=8 '-DPCAP_NAME="ipGatewayTestShared.pcap"' -o $@ $(IPGW)
+
+# An air narrower than the link, which no radio has: runs the ICMP fragmentation needed path (usb-network.md 3.2)
+ipGatewayTestAir440: $(IPGW) $(CORE)/dmr/ipGateway.h
+	$(CC) $(CFLAGS) -DIPGW_AIR_MTU=440 '-DPCAP_NAME="ipGatewayTestAir440.pcap"' -o $@ $(IPGW)
 
 # The data service (replies, signaling, our SMS, ARS, LRRP, the API mailbox) on a fake host
 SVC     := dmrDataServiceTest.c $(DATA) $(FRAME) $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/dmr/call/dmr_lc.c
@@ -132,19 +136,22 @@ run: $(TESTS)
 	./ipGatewayTest16
 	./ipGatewayTest31
 	./ipGatewayTestShared
+	./ipGatewayTestAir440
 	./sfrTest
 	./aprsTest
 ifneq ($(TSHARK),)
 	@# Independent check of the frames the gateway sent: no malformed packets or bad checksums
-	@for f in ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap; do "$(TSHARK)" -r $$f -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q; done > ipGatewayTest.expert
-	@if grep -q -i -E "malformed|bad|incorrect|error" ipGatewayTest.expert; then echo "# tshark found problems"; cat ipGatewayTest.expert; exit 1; else echo "# tshark: no malformed packets or bad checksums"; fi
+	@for f in ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap; do "$(TSHARK)" -r $$f -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q; done > ipGatewayTest.expert
+	@# The fragmentation needed replies are ICMP errors by type (tshark's note "Type indicates an error"): expected
+	@if grep -v -E "ICMP +Type indicates an error" ipGatewayTest.expert | grep -q -i -E "malformed|bad|incorrect|error"; then echo "# tshark found problems"; cat ipGatewayTest.expert; exit 1; else echo "# tshark: no malformed packets or bad checksums"; fi
 endif
 
 clean:
 	rm -f mdnsTest.pcap tftpTest.pcap netTest.expert hrc7000_test_slot.bin codec_desc_test.bin codec_desc_md380.bin \
 		codec_desc_md9600.bin
 	rm -rf gen
-	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTest.expert
+	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap \
+		ipGatewayTest.expert
 	rm -rf *.dSYM out
 	rm -f *.gcda *.gcno
 
@@ -769,7 +776,7 @@ run-f4stub: f4stubTest f4stubSim
 # column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the Baofeng factory calibration decoder
 # (modem-hrc7000.md)
 HRC7    := $(ROOT)/drivers/modem/hrc7000
-TESTS   += at1141Test fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest
+TESTS   += at1141Test fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest hrc7000DmrTest baofengCalTest
 
 at1141Test: at1141Test.c $(ROOT)/drivers/rf/at1141/at1141.c $(ROOT)/drivers/rf/at1141/at1141.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ at1141Test.c $(ROOT)/drivers/rf/at1141/at1141.c -lm
@@ -788,6 +795,8 @@ st7789Test: st7789Test.c $(ROOT)/drivers/display/st7789/st7789.c $(ROOT)/drivers
 
 sharedPttTest: sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c $(ROOT)/drivers/input/sharedptt/shared_ptt.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c
+plugPttTest: plugPttTest.c $(ROOT)/drivers/input/plugptt/plug_ptt.c $(ROOT)/drivers/input/plugptt/plug_ptt.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ plugPttTest.c $(ROOT)/drivers/input/plugptt/plug_ptt.c
 keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROOT)/drivers/input/keymatrix/keymatrix.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c
 
@@ -827,7 +836,7 @@ baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROO
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
 run: run-drivers
-run-drivers: at1141Test fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
+run-drivers: at1141Test fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
              lis3dhTest hrc7000BsTest hrc7000DmrTestSplit ili9341Test
 	./ili9341Test
 	./hrc7000BsTest
@@ -841,6 +850,7 @@ run-drivers: at1141Test fd6818Test st7567Test st7735Test st7789Test keymatrixTes
 	./st7789Test
 	./keymatrixTest
 	./sharedPttTest
+	./plugPttTest
 	./hrc7000DmrTest
 	./baofengCalTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --self-test

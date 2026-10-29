@@ -226,19 +226,21 @@ static void testIPPackets(void)
 	CHECK(dmrDataBuildIP(false, 235, 1, DMR_IP_PROTO_UDP, datagram, 4, DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS) == 0);// too short
 }
 
-// Raw data (the network adapter's IPGW_RAW_PORT): the user data of a SAP 10 packet, up to 440 bytes with 2 preambles
+// Raw data (the network adapter's IPGW_RAW_PORT): the user data of a SAP 10 packet, up to 608 bytes (51 blocks: all of
+// DMR_DATA_MAX_PACKET) with 2 preambles
 static void testRawPacket(void)
 {
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
-	uint8_t data[441];
+	uint8_t data[609];
 	dmrDataUDP_t udp;
 	dmrDataIP_t ip;
 
 	for (int i = 0; i < (int)sizeof(data); i++) data[i] = i * 7;
 
-	int n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, false, 16776962, 3141592, data, 440, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
-	CHECK(n == DMR_DATA_MAX_BURSTS);
-	CHECK(dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, false, 16776962, 3141592, data, 441, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS) == 0);
+	int n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, false, 16776962, 3141592, data, 608, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(n == 2 + 1 + 51);
+	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET && dmrDataRxPacket.length == 608 && memcmp(dmrDataRxPacket.data, data, 608) == 0);
+	CHECK(dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, false, 16776962, 3141592, data, 609, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS) == 0);
 
 	n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, false, 16776962, 3141592, data, 2, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
 	CHECK(n == 4);
@@ -785,9 +787,10 @@ static void testConfirmedTx(void)
 	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DT_RATE_34_DATA, 6, false, 1ULL << 5, 0, b, DMR_DATA_MAX_BURSTS);
 	CHECK(feed(b, n) == DMR_DATA_RX_NACK);
 
-	// Too big for one selective ACK block (64 blocks) or the burst list
+	// Too big for the packet buffer (606 octets fit: 61 blocks of 10), or for one selective ACK block (64 blocks)
 	static uint8_t huge[DMR_DATA_MAX_PACKET];
-	CHECK(dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, huge, 400, DT_RATE_12_DATA, 0, true, 0, 0, b, DMR_DATA_MAX_BURSTS) == 0);
+	CHECK(dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, huge, 606, DT_RATE_12_DATA, 0, true, 0, 0, b, DMR_DATA_MAX_BURSTS) == 62);
+	CHECK(dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, huge, 607, DT_RATE_12_DATA, 0, true, 0, 0, b, DMR_DATA_MAX_BURSTS) == 0);
 	CHECK(dmrDataConfirmedBlocks(700, DT_RATE_12_DATA) == 0);
 }
 

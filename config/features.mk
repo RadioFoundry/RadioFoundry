@@ -413,7 +413,7 @@ CONFIG_DISPLAY_INSET_BOTTOM ?= $(CONFIG_DISPLAY_INSET)
 CONFIG_DISPLAY_INSET_LEFT ?= $(CONFIG_DISPLAY_INSET)
 CONFIG_DISPLAY_INSET_RIGHT ?= $(CONFIG_DISPLAY_INSET)
 # The air queue's buffer in octets (IP gateway and zone sharing, docs/spec/dmr-data.md 12): queued packets take
-# their own length plus a 28-octet header. 2048 holds two longest packets (480) with room to spare, a zone's four
+# their own length plus a 36-octet header. 2048 holds two longest packets (612) with room to spare, a zone's four
 # fragments, or about thirteen 120-octet datagrams
 CONFIG_DMR_AIR_QUEUE_BYTES ?= 2048
 # The gap the data service keeps after our own data transmission before it keys up for another, in ms (0: none;

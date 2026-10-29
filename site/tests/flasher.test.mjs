@@ -19,7 +19,7 @@ import { zip, unzip } from "../static/js/flasher/zip.js";
 import * as vendorfile from "../static/js/flasher/vendorfile.js";
 import * as explain from "../static/js/flasher/explain.js";
 import { pictureSrc } from "../static/js/flasher/radiotop.js";
-import { readRadio, makeBundle, openBundle, bundleName } from "../static/js/flasher/backup.js";
+import { readRadio, makeBundle, openBundle, bundleFolder, bundleName } from "../static/js/flasher/backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "../static/js/flasher/restore.js";
 import { Selection } from "../static/js/flasher/select.js";
 import { decideCodec, DecisionError } from "../static/js/flasher/decide.js";
@@ -857,4 +857,17 @@ test("protected regions: keep and merge plans refuse a protected sector, a resto
 	const all = codeplugSectors(spi, now).map(([a]) => a);
 	const cut = codeplugSectors(spi, now, [{ mem: "data", start: 0x2000, end: 0x4000, what: "test (x.md 1)" }]).map(([a]) => a);
 	assert.deepEqual(all.filter((a) => a < 0x2000 || a >= 0x4000), cut);
+});
+
+test("a backup unpacked and zipped again (one folder, macOS's __MACOSX/) still opens; a zip without backup.json does not", async () => {
+	const data = Uint8Array.from({ length: 256 }, (_, i) => i);
+	const made = await unzip(await makeBundle({ radio: { board: "dm1701", name: "x" }, firmware_now: { kind: "stock" } },
+		[{ file: "program-memory.bin", what: "c7000-progmem", addr: 0, data, complete: true }]));
+	const again = [...made].flatMap(([n, d]) => [{ name: `DM1701_Backup_2026-10-28/${n}`, data: d }, { name: `__MACOSX/DM1701_Backup_2026-10-28/._${n}`, data: "x" }]);
+	const files = await unzip(await zip(again));
+	assert.equal(bundleFolder(files), "DM1701_Backup_2026-10-28/");
+	const bundle = await openBundle(await zip(again));
+	assert.deepEqual(bundle.parts.get("c7000-progmem").data, data);
+	assert.equal(bundleFolder(await unzip(await zip([{ name: "a/firmware.bin", data }]))), null);
+	await assert.rejects(openBundle(await zip([{ name: "a/firmware.bin", data }])), /no backup\.json/);
 });

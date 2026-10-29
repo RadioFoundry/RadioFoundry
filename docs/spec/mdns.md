@@ -96,6 +96,6 @@ delays them. The identity is read once a second (the call sign comes from storag
   TTL 255 and checksums). `mdnsTest.pcap` is checked by tshark's DNS dissector.
 - HIL: `tests/hil/test_net_services.py` (`--allow-usb-switch`): `dns-sd -G v4 rfoundry-<id>.local` resolves to the radio's
   address, `dns-sd -B _rfoundry-debug._udp` finds the instance and `dns-sd -L` gives port 3334 and the TXT record; with
-  python zeroconf instead of `dns-sd` where that is installed. Debug link view keys (section `net`): `mdns.state`
+  python zeroconf instead of `dns-sd` where that is installed. Debug link view keys (section `net_svc`): `mdns.state`
   (0 off, 1 probing, 2 announcing, 3 running) `mdns.name mdns.queries mdns.answered mdns.sent mdns.busy
   mdns.conflicts mdns.bad`.

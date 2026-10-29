@@ -17,7 +17,10 @@
 //
 // A stock firmware with a USMART console (usmart: its build) also answers the debug console the page loads the stub
 // through (usmart.js): framed read_addr / write_addr over a model of its RAM, and the hijack word that starts what was
-// written.
+// written. Its version string is in RAM as the firmware fills it in at boot (variant: the hardware code after "909E."),
+// while the program flash holds the placeholder. The same firmware answers the vendor programming software's identify
+// ("Flash Read ...", iap.js probe) with that string, and then stops answering its console until the next power-on;
+// faults.consoleSilent: a console that never answers (the identify still does).
 //
 // A radio with the Baofeng updater (loaderId: the ID its loader answers) enters it when switched on with its keys
 // held (powerOn({ keys: true })): FakeBfLoader, the radio side of bfloader.js, erases the application area and writes
@@ -30,7 +33,7 @@ import { frame, parseFrames } from "./link.js";
 import { ACK, NAK, CRC_REQ, STX, EOT, BLOCK, HEADER_BLOCK, xmodem } from "./bfloader.js";
 import { encodeBlock } from "./lz4.js";
 import { BRIDGE_EXIT, CRASH_BOOT_SOFT, CRASH_SOFT_MARK, STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
-import { HIJACK, STUB_WINDOW, BUILDS, FLASH_BASE, versionTail } from "./usmart.js";
+import { HIJACK, STUB_WINDOW, BUILDS, FLASH_BASE, buildTail, seriesOf } from "./usmart.js";
 import { rng, randomBytes } from "./fake.js";
 import { sigBytes } from "./c7000.js";
 
@@ -43,6 +46,14 @@ const LEGACY_MARK = new TextEncoder().encode("OpenDigitalRadio");
 
 // A stock console's build from the board's first stock version ("909E.DBB.EARSAB.018" -> "018"), or null
 const consoleBuild = (radio) => (radio?.flash.stock_console ? radio.flash.stock_versions[0]?.slice(-3) || null : null);
+// A build by its number: the first BUILDS entry, the one whose console load is proven
+const buildNamed = (name) => BUILDS.find((b) => b.name === name) || null;
+// The version string a build's firmware writes at boot, with the variant code filled in ("909E.DBB.EARSAB.018"); a
+// build without a RAM copy keeps its series' model code
+const runtimeVersion = (build, variant) => {
+	const [chip, model, word] = seriesOf(build).split(".");
+	return `${chip}.${build.ram ? variant : model}.${word}.${build.name}`;
+};
 
 // A 256 MB SPI NAND that keeps only its used sectors: subarray() of a sector gives its bytes, or the one shared blank
 // sector, so the simulated radio answers a whole-chip read without holding the chip
@@ -236,10 +247,11 @@ export async function c7000Simulation(cReal, boardId, seed = 7000, radio = null)
 	progmem.set(tables, tabAt);
 	const fs = radio?.flash.first_stage;
 	if (fs) progmem.set(fs.head.match(/../g).map((x) => parseInt(x, 16)), c.app_start);	// the entry the loader checks
-	const build = consoleBuild(radio) && BUILDS.find(([v]) => v === radio.flash.stock_versions[0]);
-	if (build) {	// the version string the console's build check reads: "EARSAB.<build>" just after the build's word
-		const version = build[0];
-		progmem.set(new TextEncoder().encode(`${version}.Jan 21 2025`), build[1] - FLASH_BASE + 1 - version.lastIndexOf(versionTail(version)));
+	const build = buildNamed(consoleBuild(radio));
+	if (build) {	// the version string the console's build check reads: "EARSAB.<build>" just after the build's word, with
+			// the placeholder where the firmware writes the variant into its RAM copy
+		const version = runtimeVersion(build, "D6x");
+		progmem.set(new TextEncoder().encode(`${version}\0Jan 21 2025\0`), build.at - FLASH_BASE + 1 - version.indexOf(buildTail(build)));
 	}
 	c.profiles = c.profiles.filter((p) => p.board !== boardId);
 	c.profiles.push({ ...real, name: `simulated ${real.name}`, code_sha256: await sha256(code), tables_sha256: await sha256(tables),
@@ -258,10 +270,13 @@ export class FakeC7000 {
 	// nand.calibration ({progmem, nand, magic}, the board profile's) where its two calibration copies go
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
 		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, loaderId = null,
-		rx2 = false, nand = null, stubWrite = true } = {}) {
+		rx2 = false, nand = null, stubWrite = true, variant = "DBB" } = {}) {
 		this.rx2 = rx2;
 		this.stubWrite = stubWrite;		// the universal stub is protocol 7, with op 0x0E (WRITE); false: protocol 6
 		this.usmart = usmart;			// a stock firmware build with the USMART console ("018")
+		this.variant = variant;			// the hardware code the stock firmware reports ("DBB", "D6T")
+		this.cmdRec = 0x0300E9D8;		// what the console's hijack word holds at boot: its command handler
+		this.build = null;			// the BUILDS entry it runs, when not the first of its number
 		this.loaderId = loaderId;		// the Baofeng updater's ID ("BFUV32-V2"), or null: no such loader
 		this.ram = new Map();			// the console's view of RAM: words written since power-on
 		this.frames = [];			// every console frame received, as text
@@ -391,6 +406,7 @@ export class FakeC7000 {
 		this.onB = false;
 		this.state = "rom";
 		this.ram = new Map();
+		this.flashRead = false;			// the stock firmware answered an identify and waits for the read to go on
 		this.fwKind = null;
 		this.inb = new Uint8Array(0);
 		this.loaded = new Uint8Array(0);
@@ -561,6 +577,16 @@ export class FakeC7000 {
 	// own log line. With the hijack word pointing at the window, any frame but "01" and "DMRCALL" starts what is there.
 	console() {
 		const text = String.fromCharCode(...this.inb);
+		const fr = text.indexOf("Flash Read ");
+		if (fr >= 0) {
+			if (text.length < fr + 19) return 0;
+			this.inb = this.inb.slice(fr + 19);
+			this.flashRead = true;
+			const build = buildNamed(this.usmart);
+			this.events.push("identify");
+			this.send(new TextEncoder().encode("  Read_2M_\0\0\x03\0\x0e\0P\x008\0\x01\0" + runtimeVersion(build, this.variant) + "\0Jan 21 2025\0\0\x0011:20:46\0+DRS-300UV+136-480MHZ+"));
+			return 1;
+		}
 		const at = text.indexOf("@AT");
 		if (at < 0) {
 			this.inb = this.inb.slice(Math.max(0, this.inb.length - 2));
@@ -571,12 +597,14 @@ export class FakeC7000 {
 		const cmd = text.slice(at + 4, end);
 		this.inb = this.inb.slice(end + 2);
 		this.frames.push(cmd);
+		if (this.flashRead || this.faults.consoleSilent) return 1;
 		const H = (n) => n.toString(16).toUpperCase();
-		if (cmd !== "01" && cmd !== "DMRCALL" && this.ram.get(HIJACK) === STUB_WINDOW[0]) {
+		const [load, size] = this.build?.window || STUB_WINDOW, hijack = this.build?.hijack || HIJACK;
+		if (cmd !== "01" && cmd !== "DMRCALL" && this.ram.get(hijack) === load) {
 			let top = 0;
-			for (const a of this.ram.keys()) if (a >= STUB_WINDOW[0] && a < STUB_WINDOW[0] + STUB_WINDOW[1]) top = Math.max(top, a + 4 - STUB_WINDOW[0]);
+			for (const a of this.ram.keys()) if (a >= load && a < load + size) top = Math.max(top, a + 4 - load);
 			this.loaded = new Uint8Array(top);
-			for (let o = 0; o < top; o += 4) this.loaded.set(le32(this.ram.get(STUB_WINDOW[0] + o) || 0), o);
+			for (let o = 0; o < top; o += 4) this.loaded.set(le32(this.ram.get(load + o) || 0), o);
 			this.state = "stub";
 			this.led = "slow";
 			this.events.push("stub (debug console)");
@@ -587,7 +615,8 @@ export class FakeC7000 {
 		if (m) {
 			const a = Number(m[1]);
 			const off = a - 0x03000000;
-			const v = off >= 0 && off + 4 <= this.progmem.length ? u32le(this.progmem, off) : this.ram.get(a) || 0;
+			const v = off >= 0 && off + 4 <= this.progmem.length ? u32le(this.progmem, off)
+				: this.ram.get(a) ?? (a === (this.build?.hijack || HIJACK) ? this.cmdRec : this.versionWord(a));
 			out = `\r\nread_addr(0X${H(a)})=0X${H(v)};`;
 		} else if ((m = /^write_addr\((0x[0-9a-f]+),(0x[0-9a-f]+)\)$/.exec(cmd))) {
 			const a = Number(m[1]), v = Number(m[2]) >>> 0;
@@ -597,6 +626,18 @@ export class FakeC7000 {
 		}
 		if (out) this.send(new TextEncoder().encode(`${out}\r\nclose slot.\r\nu8PassWord 0 u8EncLevel 0 u8Enc0\r\n`));
 		return 1;
+	}
+
+	// A word of the RAM copy of the version string (the build's ram address), else 0
+	versionWord(a) {
+		const build = this.build || buildNamed(this.usmart);
+		if (!build?.ram) return 0;
+		const text = new TextEncoder().encode(`${runtimeVersion(build, this.variant)}\0`);
+		const o = a - build.ram;
+		if (o < 0 || o >= text.length) return 0;
+		const w = new Uint8Array(4);
+		w.set(text.subarray(o, o + 4));
+		return u32le(w, 0);
 	}
 
 	stub() {
