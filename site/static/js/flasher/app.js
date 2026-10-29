@@ -19,7 +19,7 @@
 import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import { unzip } from "./zip.js";
 import * as stockfw from "./stockfw.js";
-import { openVendorFile, describe as describeVendorFile, analysisCandidate, offerFile, logId } from "./vendorfile.js";
+import { openVendorFile, describe as describeVendorFile, analysisCandidate, offerFile, logId, whyNot } from "./vendorfile.js";
 import { pickProblem, errorProblem, vendorContext, supportedFiles, foldSupported, keepNote, nowFor, nowChoice, OFFER } from "./explain.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
 import { radioPicture, holdKeys } from "./radiotop.js";
@@ -27,14 +27,14 @@ import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./versio
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
 import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, browserErrorKey } from "./link.js";
-import { readRadio, makeBundle, openBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
+import { readRadio, makeBundle, openBundle, bundleFolder, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
 import { decideCodec } from "./decide.js";
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
-import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
+import { t, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
 import { groups as variantGroups } from "./variant.js";
@@ -51,6 +51,7 @@ import { initReporting, reportLine, reportingActive, errorNotice, reportButton, 
 import * as adapter from "./adapter.js";
 import * as crumbs from "./trail.js";
 import { missingApi, kitPanel, kitLine } from "./manual.js";
+import { showBetaNotice } from "./beta.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
@@ -185,6 +186,7 @@ async function api(method, path, body) {
 function analysisOffer(cand, boardId, problem = null) {
 	if (!cand || S.sim) return null;
 	const internal = problem?.problem === "internal";
+	const dump = problem?.problem === "dump";
 	const status = h("p", { class: "small" });
 	const note = h("textarea", { class: "analysis-note", rows: 2, maxlength: 400, placeholder: t("flash.analysis.note") });
 	const send = button(t("flash.analysis.send"), async () => {
@@ -205,8 +207,8 @@ function analysisOffer(cand, boardId, problem = null) {
 		}
 	});
 	const name = cand.file.path?.split("/").pop() || cand.file.name || "";
-	return h("div", { class: "notice" }, h("strong", {}, t("flash.analysis.title")),
-		h("p", {}, t(internal ? "flash.analysis.text_internal" : "flash.analysis.text", { name })), note, send, status);
+	return h("div", { class: "notice" }, h("strong", {}, t(dump ? "flash.analysis.title_dump" : "flash.analysis.title")),
+		h("p", {}, t(internal ? "flash.analysis.text_internal" : dump ? "flash.analysis.text_dump" : "flash.analysis.text", { name })), note, send, status);
 }
 
 const radioName = (id) => fb().boards[id]?.name || S.data?.radios?.find((r) => r.id === id || r.flash?.board === id)?.name || id || "";
@@ -221,7 +223,11 @@ function problemNotice(p, { offer = null, boardId = S.board?.id } = {}) {
 		what: p.known || t("flash.codec.stock_build", { radio: radioName(boardId) }) };
 	const internal = p.problem === "internal";
 	const unmapped = p.problem === "unmapped";
-	const { files, also } = unmapped ? supportedFiles(fb(), boardId) : { files: [], also: [] };
+	// a dump of this radio's firmware that has no map yet: it restores, and the same supported files give the codec
+	const dump = p.problem === "dump";
+	const { files, also } = unmapped || dump ? supportedFiles(fb(), boardId) : { files: [], also: [] };
+	const download = dump && S.radio?.flash.stock_download
+		? h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.problem.dump.download")) : null;
 	const list = h("ul", { class: "supported-files" }, files.map((n) => h("li", {}, n)));
 	return h("div", { class: "notice bad problem" },
 		h("strong", {}, t(`flash.problem.${p.problem}.title`, vars)),
@@ -229,10 +235,10 @@ function problemNotice(p, { offer = null, boardId = S.board?.id } = {}) {
 			unmapped && p.key ? [" ", t("flash.problem.unmapped.key")] : null),
 		p.raw ? h("details", { class: "small" }, h("summary", {}, t("flash.problem.details")), h("pre", { class: "log" }, p.raw)) : null,
 		OFFER.has(p.problem) ? analysisOffer(offer, boardId, p) : null,
-		files.length ? h("p", {}, t("flash.problem.unmapped.instead")) : null,
-		!files.length ? null : foldSupported(files)
+		files.length ? h("p", {}, t(dump ? "flash.problem.dump.instead" : "flash.problem.unmapped.instead", vars), download ? [" ", download] : null) : null,
+		!files.length ? null : dump || foldSupported(files)
 			? h("details", {}, h("summary", {}, t("flash.problem.unmapped.all", { n: files.length })), list) : list,
-		also.length ? h("p", {}, t(files.length ? "flash.problem.unmapped.also" : "flash.problem.unmapped.only", { what: also.join("; ") })) : null,
+		also.length && !dump ? h("p", {}, t(files.length ? "flash.problem.unmapped.also" : "flash.problem.unmapped.only", { what: also.join("; ") })) : null,
 		reportLine());	// a file the page can't use may be the page's fault: the user can send it with the report
 }
 
@@ -301,6 +307,7 @@ async function flashMark(started, event, outcome = null) {
 }
 
 async function flashFinished(started, error = null) {
+	stopBars();	// a bar left short of 100% by a failure or a cancel stops saying it waits
 	if (error) errorText(error);
 	else diag.note("flash finished");
 	if (!started) return;
@@ -902,14 +909,14 @@ function buildView() {
 					: t("flash.build.custom_start")));
 		const busy = building && !S.build.error;
 		const missing = buildOptions().find((o) => !S.buildOptions?.[o.name]);
-		forward(button(t(busy ? "flash.nav.building" : missing ? "flash.nav.choose" : S.firmware || S.sim ? `flash.nav.to_${stepsFor()[S.step + 1]}`
+		forward(button(busy ? [spinner(), t("flash.nav.building")] : t(missing ? "flash.nav.choose" : S.firmware || S.sim ? `flash.nav.to_${stepsFor()[S.step + 1]}`
 			: VERSION_REF ? "flash.nav.build_version" : "flash.nav.build", { what: missing?.title.toLowerCase(), ref: VERSION_REF && versionShort() }), go, { primary: true, disabled: busy || !!missing }), summary);
 		// every image, prebuilt choice or not, comes from the build service (or is the user's own)
 		// the image's state, then building it yourself: one line and a fold under the features, not a card of its own
 		const image = h("div", { class: "build-image" },
 			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
 				: building && S.build.error ? (S.build.error.el ||= errorNotice(S.build.error.text, S.build.error.rec))
-				: building ? h("p", { class: "muted" }, S.build.text)
+				: building ? h("p", { class: "muted", role: "status" }, spinner(), S.build.text)
 				: h("p", { class: "small muted" }, t(S.sim ? "flash.sim.image" : VERSION_REF ? "flash.build.version_on_request" : "flash.build.on_request", { ref: versionShort() })),
 			h("details", { class: "small" }, h("summary", {}, t("flash.build.self_title")),
 				h("p", {}, t("flash.build.self_text")), h("pre", {}, h("code", {}, sel.makeCommand(S.buildOptions))),
@@ -1901,14 +1908,14 @@ function backupView() {
 // restore task
 
 // A radio whose backend restores from the original firmware file (vendorRestore) takes that file here too: a .bin,
-// or a zip without the backup's backup.json
+// or a zip without the backup's backup.json (bundleFolder)
 function bundleView() {
 	const status = h("div");
 	const vendor = S.radio && backend().vendorRestore;
 	return panel(t("flash.restore.title"), h("p", {}, t(vendor ? "flash.restore.lead_or_file" : "flash.restore.lead", { radio: S.radio?.name })),
 		filePicker(t(vendor ? "flash.restore.pick_or_file" : "flash.restore.pick"), vendor ? ".zip,.bin" : ".zip", async (f) => {
 			try {
-				if (vendor && !(await unzip(f.data).catch(() => null))?.has("backup.json")) return await vendorRestoreFile(f, status);
+				if (vendor && bundleFolder((await unzip(f.data).catch(() => null)) || new Map()) === null) return await vendorRestoreFile(f, status);
 				S.bundle = await openBundle(f.data);
 				const r = S.data.radios.find((x) => x.id === S.bundle.meta.radio.board);
 				if (!r) throw new Error(t("flash.err.unknown_board", { board: S.bundle.meta.radio.board }));
@@ -1930,6 +1937,8 @@ async function vendorRestoreFile(f, status) {
 	const opened = await openVendorFile(f.name, f.data, fb(), boardId);
 	S.vendorPick = { picked: { name: f.name, size: f.data.length, sha256: await sha256(f.data) }, opened, decision: "restore" };
 	const problem = pickProblem(opened, boardId, { need: "key" });
+	// the restore's file is a pick like the codec's: logged with what the page made of it, or why it was refused
+	diag.note(...crumbs.filePicked(S.vendorPick.picked, opened.best || { problem, why: whyNot(opened) }));
 	if (problem) return status.replaceChildren(problemNotice(problem, { offer: analysisCandidate(opened, fb(), boardId), boardId }));
 	S.bundle = backend().vendorRestore(S.radio, opened.best, fb());
 	next();
@@ -2319,6 +2328,7 @@ function kitView(api) {
 // ---------------------------------------------------------------------------------------------------------------
 
 async function main() {
+	showBetaNotice();	// before the data loads: the first thing a visitor reads, once per session
 	initReporting({ tool: "flasher", context: reportContext, attachments: reportAttachments, backend: { api: API, meta: reportMeta, practice: () => !!S.sim || SIM_HASH.test(location.hash) } });
 	if (!FLASH_LOG) document.getElementById("flash-log-off")?.replaceWith(t("flash.log.is_off"));
 	// the privacy contact is put together here, so address scrapers don't find it in the page or the repository

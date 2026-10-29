@@ -6,7 +6,7 @@
 
 import { CodeplugImage, CODEPLUG_SPAN, TFTP_SIZE } from "../codeplug/image.js";
 import { readHeader, recordSize, AREA1, AREA1_SIZE, HEADER, AREA2 } from "../codeplug/iddb.js";
-import { openBundle } from "../flasher/backup.js";
+import { openBundle, bundleFolder } from "../flasher/backup.js";
 import { unzip } from "../flasher/zip.js";
 import { startsWith, toHex } from "../flasher/bytes.js";
 import { classify } from "../codeplug/detect.js";
@@ -63,7 +63,7 @@ export async function openFile(name, bytes) {
 	if (startsWith(bytes, "PK\u0003\u0004")) {
 		// a radio backup, or the editor's own .zip of CSV tables
 		const entries = await unzip(bytes);
-		if (!entries.has("backup.json")) {
+		if (bundleFolder(entries) === null) {
 			const dec = new TextDecoder();
 			const files = [...entries].filter(([n]) => /\.csv$/i.test(n)).map(([n, d]) => ({ name: n.replace(/^.*\//, ""), text: dec.decode(d) }));
 			if (!files.length) throw new FileError("unknown_file", fileFacts(name, bytes, { entries: entries.size, types: [...new Set([...entries.keys()].map(extOf))].slice(0, 10) }));

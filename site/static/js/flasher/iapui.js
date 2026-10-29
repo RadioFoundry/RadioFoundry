@@ -47,6 +47,15 @@ export function factoryInstallImage(c, boardId, image, decision) {
 }
 const WORD_RATE = 14;		// console frames per second, written or read back (radio, 2026-10-18: 3,470 in 242 s)
 
+// The install goes on without a codec: why there is none, and how to get one. skipped: the radio's firmware was not read
+// (a first install without a backup, or the factory update mode), else its firmware holds no codec the page knows. Either
+// way no supported stock firmware file was selected, which is the one other place the codec can come from
+export function noCodecNotice(skipped) {
+	return h("div", { class: "notice bad" }, h("p", {}, h("b", {}, t("flash.c7.codec.none_title"))),
+		h("p", {}, t(skipped ? "flash.c7.codec.none_text_skipped" : "flash.c7.codec.none_text_missing")),
+		h("p", { class: "small" }, t("flash.c7.codec.none_go_back")));
+}
+
 // The hardware variant the page knows the radio is (S().variant: {version, code, via}), judged against the image and
 // build options chosen now: null when it is not known
 export function variantVerdict(state, boardId) {
@@ -334,6 +343,7 @@ export function makeStockRoutes(host) {
 			return now ? writable(now) : !!S().variant || !S().radio.variants?.length;
 		};
 		return iapPanel({ title: t("flash.c7.write.title"), image, restore: false, gate, allowed,
+			notices: d.mode === "none" ? [noCodecNotice(true)] : [],
 			rows: [[t("flash.c7.write.firmware"), `${fw.source} (${Math.round(fw.image.length / 1024)} KB)`], [t("flash.c7.write.codec"), what]],
 			report: { task: "install", source: fw.origin || "", radio: boardId(), firmware: String(fw.manifest.version || ""),
 				variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null },
@@ -361,7 +371,7 @@ export function makeStockRoutes(host) {
 
 	// gate(go): an element that decides when go may be pressed (the variant picker); allowed(): whether the write may
 	// start, asked again once the radio answers
-	function iapPanel({ title, rows, image, restore, report, done, onDone, name, lead = null, gate = null, allowed = () => true }) {
+	function iapPanel({ title, rows, image, restore, report, done, onDone, name, lead = null, gate = null, allowed = () => true, notices = [] }) {
 		const c = session();
 		const prog = progressBar();
 		const status = h("div");
@@ -369,7 +379,7 @@ export function makeStockRoutes(host) {
 		const go = button(t(restore ? "flash.iap.restore_go" : "flash.iap.go"), () => run(), { primary: true });
 		const box = panel(title, cableBanner(),	// a CH340 cable: the warning here too (programming through update mode)
 			rows.length ? h("dl", { class: "kv-list" }, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])) : null,
-			gate ? gate(go) : null,
+			gate ? gate(go) : null, ...notices,
 			h("p", {}, lead || t(restore ? "flash.iap.restore_lead" : "flash.iap.lead")),
 			withPicture(h("ol", { class: "steps c7-big" }, h("li", {}, t(restore ? "flash.iap.restore_step_go" : "flash.iap.step_go")), ...steps.map((x) => h("li", {}, x)))),
 			simKeys(),

@@ -338,3 +338,21 @@ test("update mode: a pick changed to hardware the image doesn't run while the pa
 	assert.match(box.textContent, /Nothing was written/);
 	box.isConnected = false;
 });
+
+test("update mode: an install without a codec says why there is none and how to add it, one with a codec says nothing", () => {
+	const image = Uint8Array.from({ length: 4096 }, (_, i) => (i * 7 + 1) & 0xFF);
+	const noVariants = { ...radio, variants: [] };
+	const text = (decision) => {
+		const { state, routes } = route(noVariants);
+		state.firmware = { image, source: "test", manifest: {} };
+		state.c7.decision = decision;
+		return routes.iapWriteView().textContent;
+	};
+	const none = text({ mode: "none" });
+	assert.match(none, /will not include the DMR voice codec/i);
+	assert.match(none, /no supported stock firmware file was selected/);
+	assert.match(none, /Analog FM will work/);
+	assert.match(none, /go back and select a supported manufacturer firmware file/);
+	assert.doesNotMatch(none, /no way back/i, "a way back exists: it needs the stock file");
+	assert.doesNotMatch(text({ mode: "keep" }), /will not include the DMR voice codec/i);
+});
