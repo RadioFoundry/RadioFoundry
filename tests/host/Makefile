@@ -823,6 +823,18 @@ run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPtt
 # The BK4819 driver: main and LO chips on one shared three-wire bus (docs/spec/hardware-db25d.md 4)
 TESTS   += bk4819Test
 
+# The AT1141 LO (a superhet's local oscillator on the same bus kind): divider plan, PLL word, init and tune order
+TESTS   += at1141Test
+
+# The FD6818 in a superhet (main transceiver and LO, also the 0x7813 LO): words and write orders
+TESTS   += fd6818shTest
+
+fd6818shTest: fd6818shTest.c $(ROOT)/drivers/rf/fd6818/fd6818sh.c $(ROOT)/drivers/rf/fd6818/fd6818sh.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818shTest.c $(ROOT)/drivers/rf/fd6818/fd6818sh.c $(SUBAUDIO)
+
+at1141Test: at1141Test.c $(ROOT)/drivers/rf/at1141/at1141.c $(ROOT)/drivers/rf/at1141/at1141.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ at1141Test.c $(ROOT)/drivers/rf/at1141/at1141.c -lm
+
 bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4819.h $(SUBAUDIO)
 	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(SUBAUDIO)
 
@@ -846,8 +858,10 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
 
 run: run-platform
-run-platform: bk4819Test hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest
+run-platform: bk4819Test at1141Test fd6818shTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest
 	./bk4819Test
+	./at1141Test
+	./fd6818shTest
 	./hrc7000ClockTest
 	./hrc7000UartFormatTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
