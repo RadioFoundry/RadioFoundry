@@ -295,6 +295,21 @@ What can be read depends on the firmware running:
 | Another open firmware (OpenGD77 family) | Everything but the security registers, over that firmware's CPS (`openfw.js`, below) |
 | Stock (STM32F4) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing RadioFoundry: flashing never touches the SPI flash, and RadioFoundry doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
 
+### Codeplugs from a bundle
+
+A bundle can hold two codeplugs: the original (stock) one and RadioFoundry's. In the page:
+
+| Codeplug | Where the page reads it |
+|---|---|
+| RadioFoundry's | The Tools page's `backup-to-image` (`codeplug.js`) and the Codeplug Editor's open (`editor/files.js`): the `spi-flash` part, from address 0 |
+| A stock TYT-family codeplug | The same, converted by `codeplug/stock_tyt.js` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
+| Any other stock codeplug | Nowhere: no spec in `docs/spec/` describes its records, and only `dmrconf` (GPL, never in the page) decodes it |
+
+`tools/backup_codeplug.py` extracts both offline, from any data flash part, at the board's `openfw_eeprom` and through
+the board's `[stock_codeplug]` page layout, and decodes them with `dmrconf` ([codeplug-port.md](../spec/codeplug-port.md)
+5). The Codeplug Editor opens the YAML it writes. Doing it in the page needs a clean-room spec of that stock layout
+first (issue #228).
+
 ## Another open firmware (`openfw.js`)
 
 A radio whose port answers the debug link probe with `-` and gives a valid radio info is on another open firmware

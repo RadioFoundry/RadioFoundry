@@ -112,3 +112,10 @@ flash_jedec = ["C84018", "852018"]
 calibration = true
 battery_mv = [5500, 8800]
 codec = ["049", "046"]
+
+# The stock codeplug in a data flash backup (tools/backup_codeplug.py): the pages of its translation layer, each with
+# its logical block in its last byte (docs/spec/hardware-dm32.md 10.1), decoded by qdmr's dm32uv driver
+[stock_codeplug]
+dmrconf = "dm32uv"
+span = [0x1000, 0xC9000]
+pages = "block-id"
