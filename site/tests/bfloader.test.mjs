@@ -237,6 +237,25 @@ test("every HR_C7000 radio has a factory update mode with steps into it, offered
 	for (const k of ["file", "backup"]) assert.ok(text[`flash.help.fix.factory_text_${k}`], k);
 });
 
+// The cable page's connect step is one panel for every task. A ROM load that fails offers the slow cable mode, and once
+// that failed too the factory update mode (c7000ui.js romFailed). The tasks that write take the factory mode's way in;
+// the backup can't (nothing can be read through update mode). A task that stopped passing it would leave a radio with a
+// slow cable and a damaged application without the way that works
+test("the connect step offers the slow cable mode and the factory update mode to the install and the restore", () => {
+	const src = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
+	const connects = [...src.matchAll(/(?<!function )connectPanel\(([^\n]*)\)/g)].map((m) => m[1]);
+	assert.equal(connects.filter((x) => /onUpdateMode/.test(x)).length, 2, "install and restore pass the factory way in");
+	assert.equal(connects.filter((x) => !/onUpdateMode/.test(x)).length, 1, "only the backup goes without: nothing can be read in update mode");
+	// the failure offers: first the slow mode, then (after the slow mode failed) the factory mode
+	const failed = src.slice(src.indexOf("const romFailed"), src.indexOf("const factoryWay"));
+	assert.match(failed, /slow \? factoryWay\(\) : slowWay\(\)/);
+	assert.match(failed, /slowButton\(\)/);
+	assert.match(failed, /factoryButton\(/);
+	// and the restore's own text for it
+	const text = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url)));
+	assert.ok(text["flash.factory.offer_restore"] && text["flash.c7.slow.button"]);
+});
+
 test("a program memory backup gives the codec where the radio has no stock file", async () => {
 	const sim = await c7000Simulation(C, BACKUP_ID);
 	const got = await c7.codecFromFile(sim.progmem, sim.c, BACKUP_ID);

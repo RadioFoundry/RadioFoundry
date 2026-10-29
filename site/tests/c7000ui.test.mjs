@@ -65,14 +65,62 @@ test("install done: a check still running when the user starts over draws nothin
 
 test("restore: a backup without the program memory (the calibration or the data memory alone) says so, offers no restore", () => {
 	const forwards = [];
+	let reset = 0;
 	const parts = new Map([["c7000-calibration", { what: "c7000-calibration", file: "calibration.bin", complete: true, addr: 0, data: new Uint8Array(16) }]]);
 	const state = { radio, task: "restore", forward: (b) => forwards.push(b), data: { fb },
 		bundle: { meta: { radio: { name: radio.name }, created: new Date().toISOString(), firmware_now: { kind: "stock" } }, parts } };
-	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {} });
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() { reset++; } });
 	state.c7 = { log: { add() {}, el: new El("div") }, stream: null };
 	const box = c7ui.restoreView();
 	assert.match(box.textContent, /no program memory/);
-	assert.deepEqual(forwards, [null], "no Restore button");
+	// what to do instead, in the notice and as the step's one action: no Restore button
+	assert.match(box.textContent, /manufacturer firmware file instead of this backup/);
+	assert.equal(forwards.length, 1);
+	assert.match(forwards[0].textContent, /Select a Firmware File/);
+	forwards[0].click();
+	assert.equal(reset, 1);
+});
+
+test("install: a write without a codec warns above the button; the write logs its range and that the bootloader is unchanged", async () => {
+	globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
+	if (!("classList" in El.prototype)) Object.defineProperty(El.prototype, "classList", { get() { return { add() {}, remove() {} }; } });
+	const C = fb.c7000;
+	const forwards = [];
+	const state = { radio, task: "install", forward: (b) => forwards.push(b), data: { fb }, fakeC7: {},
+		firmware: { image: Uint8Array.from({ length: 8192 }, (_, i) => (i * 7 + 1) & 0xFF), source: "test", manifest: { version: "t" } } };
+	const diag = await import("../static/js/diag.js");
+	diag.reset();
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, flashStarted: () => 0, flashFinished() {}, flashMark() {},
+		errorText: (e) => e.message, next() {} });
+	const boot = new Uint8Array(C.app_start).fill(0xA5);
+	let bootNow = boot;
+	const writes = [];
+	state.c7 = { log: { add() {}, el: new El("div") }, stream: null, decision: { mode: "none" }, analysis: { notRead: true },
+		stub: { attach: async () => true, dump: async () => bootNow.slice(), ledSequence: async () => {}, resetChip: async () => {},
+			writeProgram: async (data, start, { onSector }) => {
+				for (const a of [C.app_start, C.app_start + 4096]) { onSector(a, "todo"); onSector(a, "written"); writes.push(a); }
+				return { written: 2, same: 0 };
+			} } };
+	const box = c7ui.writeView();
+	// the warning says why: nothing backed up, no stock file; and that the codec can be added by installing again
+	assert.match(box.textContent, /no voice codec/i);
+	assert.match(box.textContent, /was not backed up and no supported stock firmware file was selected/);
+	assert.doesNotMatch(box.textContent, /no way back/i);
+	forwards.at(-1).click();
+	await sleep(1500);
+	const tr = diag.trail(50).join("\n");
+	assert.match(tr, /write range/);
+	assert.match(tr, new RegExp(`"first":"0x${C.app_start.toString(16).toUpperCase().padStart(8, "0")}"`));
+	assert.match(tr, /"bootloader":"unchanged"/);
+	// a bootloader area that differs after the write is an error, not an install that finished
+	diag.reset();
+	bootNow = boot;
+	state.c7.stub.writeProgram = async (data, start, { onSector }) => { bootNow = new Uint8Array(C.app_start).fill(0); onSector(C.app_start, "written"); return { written: 1, same: 0 }; };
+	const box2 = c7ui.writeView();
+	forwards.at(-1).click();
+	await sleep(300);
+	assert.match(box2.textContent, /bootloader area changed/);
+	assert.match(diag.trail(50).join("\n"), /"bootloader":"changed"/);
 });
 
 test("backup: unticking the program memory says such a backup can't restore the radio's firmware", () => {

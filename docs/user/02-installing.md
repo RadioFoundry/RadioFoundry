@@ -62,6 +62,12 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
    firmware file, **Use a Stock File Instead** skips the firmware backup, before or during the read. The installer
    then reads only the codec area and takes the codec from the file in the next step. The firmware in the radio is
    not backed up, but the stock file can restore the original firmware.
+
+   **Without a firmware backup or a stock file, the installer has no codec to give the radio.** If you skip the
+   firmware backup and select no supported stock file, **Install without the codec** is the only way on. The installer
+   then warns, above the Install button, that the radio gets no voice codec: FM works, DMR voice doesn't. Go back and
+   select the manufacturer's firmware file to add it, or install again later with the file. Installing again keeps
+   your channels and settings.
 5. **Install.** Put the radio in its bootloader when asked ([your radio's keys](23-radios.md)). The installer writes
    the changed parts and restarts the radio. Do not unplug the radio until it says the installation is complete.
 6. **Verify.** The installer reads what the radio reports: the version it wrote, and "DMR voice is ready" when the
@@ -120,7 +126,10 @@ whose channels and settings are in NAND memory, **All channels and settings** re
 several minutes.
 
 Without the program memory, a backup can't be restored to your initial radio firmware using these tools. Restore
-writes back the program memory only; a backup's calibration and data memory are kept for the record.
+writes back the program memory only; a backup's calibration and data memory are kept for the record. When you pick
+such a backup, Restore says so and offers **Select a Firmware File**: pick the manufacturer's firmware file for your
+radio instead (any version works). A whole program memory dump of the radio also works, even when the installer finds
+no codec in it: Restore puts it back as it is, never touching the bootloader. It can't give a codec to an install.
 
 If the backup holds the original firmware's codeplug, open the file in the
 [Codeplug Editor](04-programming.md#the-codeplug-editor). It converts the channels, zones and contacts to the

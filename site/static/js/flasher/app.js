@@ -19,7 +19,7 @@
 import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import { unzip } from "./zip.js";
 import * as stockfw from "./stockfw.js";
-import { openVendorFile, describe as describeVendorFile, analysisCandidate, offerFile, logId } from "./vendorfile.js";
+import { openVendorFile, describe as describeVendorFile, analysisCandidate, offerFile, logId, whyNot } from "./vendorfile.js";
 import { pickProblem, errorProblem, vendorContext, supportedFiles, foldSupported, keepNote, nowFor, nowChoice, OFFER } from "./explain.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
 import { radioPicture, holdKeys } from "./radiotop.js";
@@ -1930,6 +1930,8 @@ async function vendorRestoreFile(f, status) {
 	const opened = await openVendorFile(f.name, f.data, fb(), boardId);
 	S.vendorPick = { picked: { name: f.name, size: f.data.length, sha256: await sha256(f.data) }, opened, decision: "restore" };
 	const problem = pickProblem(opened, boardId, { need: "key" });
+	// the restore's file is a pick like the codec's: logged with what the page made of it, or why it was refused
+	diag.note(...crumbs.filePicked(S.vendorPick.picked, opened.best || { problem, why: whyNot(opened) }));
 	if (problem) return status.replaceChildren(problemNotice(problem, { offer: analysisCandidate(opened, fb(), boardId), boardId }));
 	S.bundle = backend().vendorRestore(S.radio, opened.best, fb());
 	next();

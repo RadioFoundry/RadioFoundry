@@ -273,6 +273,15 @@ export function progmemFromFile(c, boardId, data, header = undefined) {
 	return progmem;
 }
 
+// A whole program flash read of this radio that holds no codec RadioFoundry knows (a stock build without a profile, a
+// radio already on another firmware): the bootloader's ID string in its first 48 KB names the radio, and the application
+// area holds something. Not a source for the codec, but a restore puts it back as it is, as a backup's program memory
+export function isProgmemDump(data, c, boardId) {
+	if (data.length !== totalSize(c, boardId) || bootloaderModel(c, data) !== boardId) return false;
+	const app = data.subarray(c.app_start, Math.min(data.length, c.app_start + 4096));
+	return app.some((b) => b !== 0xFF) && app.some((b) => b !== 0x00);
+}
+
 // A program flash backup put back: the application area and the slot, exactly (the bootloader isn't written)
 export function restoreTarget(c, progmem) {
 	if (progmem.length < c.progmem_size) throw new CodecError("not a whole program memory backup", "damaged");
