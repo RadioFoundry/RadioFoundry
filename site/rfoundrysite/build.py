@@ -664,11 +664,15 @@ class Site:
 			  self.tpl.render("features", ctx, lang), "features", nav="features")
 
 	def flash_page(self, lang):
-		strings = json.dumps(self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "report.")),
-				     ensure_ascii=False).replace("</", "<\\/")
+		# the beta notice's text is in the page itself (beta_notice.html), not needed by the scripts
+		subset = {k: v for k, v in self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "report.")).items()
+			  if not k.startswith("flash.beta.")}
+		strings = json.dumps(subset, ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
 			   '<script type="module" src="{{root}}static/js/flasher/app.js?v=%s"></script>' % (strings, self.asset_version))
-		self.page(lang, "flash/index.html", self.t(lang, "flash.title"), self.tpl.render("flash", {}, lang),
+		# the beta notice, opened once per browser session (static/js/flasher/beta.js)
+		beta = self.tpl.partial("beta_notice", {"repo": self.repo_url, "community": COMMUNITY_URL, "home": "{{home}}"}, lang)	# page() fills in home
+		self.page(lang, "flash/index.html", self.t(lang, "flash.title"), self.tpl.render("flash", {"beta": beta}, lang),
 			  "flash", scripts=scripts, nav="flash", footer=self.tpl.partial("flash_log", {"errors": self.errors_paragraph(lang)}, lang))
 
 	def tools_page(self, lang):

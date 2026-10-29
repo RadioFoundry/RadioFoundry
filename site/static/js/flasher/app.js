@@ -51,6 +51,7 @@ import { initReporting, reportLine, reportingActive, errorNotice, reportButton, 
 import * as adapter from "./adapter.js";
 import * as crumbs from "./trail.js";
 import { missingApi, kitPanel, kitLine } from "./manual.js";
+import { showBetaNotice } from "./beta.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
@@ -2327,6 +2328,7 @@ function kitView(api) {
 // ---------------------------------------------------------------------------------------------------------------
 
 async function main() {
+	showBetaNotice();	// before the data loads: the first thing a visitor reads, once per session
 	initReporting({ tool: "flasher", context: reportContext, attachments: reportAttachments, backend: { api: API, meta: reportMeta, practice: () => !!S.sim || SIM_HASH.test(location.hash) } });
 	if (!FLASH_LOG) document.getElementById("flash-log-off")?.replaceWith(t("flash.log.is_off"));
 	// the privacy contact is put together here, so address scrapers don't find it in the page or the repository

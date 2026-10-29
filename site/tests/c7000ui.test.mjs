@@ -231,3 +231,27 @@ test("progress bar: a stall says how long it has waited; an error shown ends the
 	await sleep(1100);
 	assert.equal(wait.hidden, true, "no wait line after the failure");
 });
+
+test("beta notice: shown once per session; storage that throws shows it again rather than failing", async () => {
+	const { showBetaNotice } = await import("../static/js/flasher/beta.js");
+	const make = () => {
+		const dlg = new El("dialog");
+		dlg.open = false;
+		dlg.showModal = () => { dlg.open = true; };
+		dlg.close = () => { dlg.open = false; for (const f of dlg.listeners.close || []) f(); };
+		return { dlg, doc: { getElementById: (id) => (id === "beta-notice" ? dlg : null) } };
+	};
+	const kept = new Map();
+	const store = () => ({ getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v) });
+	const a = make();
+	assert.equal(showBetaNotice(a.doc, store), true);
+	assert.equal(a.dlg.open, true);
+	a.dlg.close();
+	const b = make();
+	assert.equal(showBetaNotice(b.doc, store), false, "dismissed once: not shown again this session");
+	assert.equal(b.dlg.open, false);
+	const c = make();
+	assert.equal(showBetaNotice(c.doc, () => { throw new Error("SecurityError"); }), true);
+	c.dlg.close();	// closing without storage doesn't throw
+	assert.equal(showBetaNotice({ getElementById: () => null }, store), false, "a page without the notice");
+});

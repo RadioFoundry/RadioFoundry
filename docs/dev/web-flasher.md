@@ -48,6 +48,15 @@ ROM refuses the load, to practice the factory update mode; `#sim=<radio>-slowcab
 boot ROM's 48 ms window, to practice the slow cable mode; a radio with the Baofeng updater enters it when switched on
 with "Hold the Keys and Turn On".
 
+## The beta notice
+
+The page opens a dialog (`templates/partials/beta_notice.html`, opened by `beta.js`) before anything else: what can
+go wrong, that the radio can always be recovered, where to get help, and common questions folded into accordions
+(testing, damage, channels and settings, fixes, feedback). It shows once per browser session (`sessionStorage` key
+`rfoundry.betaNoticeSeen`, set on any close); where storage is blocked it shows on every visit. The installation count
+in `flash.beta.lead` is written by hand: total successful installations from the backend's `flashes` table plus about
+50 development installs, rounded down. Raise it now and then.
+
 ## Vendor files
 
 `vendorfile.js` opens whatever the user picks, the same way on every radio's page. The input can be:
