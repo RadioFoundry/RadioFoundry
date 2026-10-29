@@ -1824,44 +1824,54 @@ function doneView() {
 }
 
 // The original firmware's channels, after an install (migrate.js): read the memory chip; if it (or this visit's
-// backup, read before the settings area was claimed) holds a stock codeplug this page converts, convert it, prepare the settings area, write the sectors that change and read them back. With
-// a backup from this visit that holds the original codeplug it runs at once; without one it waits for the user, since
-// on some radios the write replaces the original bytes. Any failure stops the step and leaves the radio as RadioFoundry,
-// without channels: the backup still has them.
+// backup, read before the settings area was claimed) holds a stock codeplug this page converts, convert it, prepare the
+// settings area, write the sectors that change and read them back. With a backup from this visit that holds the
+// original codeplug it runs at once; without one it waits for the user, since on some radios the write replaces the
+// original bytes. Any failure stops the step and leaves the radio as RadioFoundry, without channels. An update, a move
+// from another open firmware and a radio whose backup shows no stock codeplug skip it (channelsWanted)
 async function bringChannels(status, { finish }) {
+	const saved = S.backupDone ? S.backupParts?.find((x) => x.what === "spi-flash")?.data : null;
+	const m = await import("./migrate.js");
+	if (!m.channelsWanted({ before: nowChoice(S.now), spiSize: S.radio?.backup?.spi_size, saved })) {
+		S.forward(finish());
+		return;
+	}
 	const box = h("div");
 	const prog = progressBar();
 	status.append(box);
 	const say = (...x) => box.append(...x);
-	let m, link, read, src = { layout: null };
+	// what a failure says depends on whether this visit's backup holds the original codeplug
+	const failed = (key, copy, x = {}) => t(copy ? key : `${key}_no_backup`, x);
+	let link, read, src = { layout: null };
 	try {
-		m = await import("./migrate.js");
 		link = await connectSerial();
 		box.append(prog.el);
 		const reading = (d, n) => prog.set(d, n, t("flash.channels.reading"));
 		// the radio's codeplug span as it is now, for the sectors that change; the stock codeplug from the backup if
 		// this visit took one (migrate.js stockSource)
 		read = await link.cpsDump(1, 0, m.readSpan(null), { progress: reading });
-		const saved = S.backupDone ? S.backupParts?.find((x) => x.what === "spi-flash")?.data : null;
-		if (read.complete) src = m.stockSource(read.data, saved);
+		if (!read.complete) throw new Error(`memory chip read stopped at ${read.data.length}`);
+		src = m.stockSource(read.data, saved);
 		// the stock tables reach past RadioFoundry's codeplug span on some families
 		if (src.from === "radio" && src.layout && m.readSpan(src.layout) > read.data.length) {
 			const more = await link.cpsDump(1, read.data.length, m.readSpan(src.layout) - read.data.length, { progress: reading });
+			if (!more.complete) throw new Error("memory chip read stopped past the codeplug span");
 			const all = new Uint8Array(read.data.length + more.data.length);
 			all.set(read.data);
 			all.set(more.data, read.data.length);
-			src = more.complete ? m.stockSource(all, null) : { layout: null };
+			src = m.stockSource(all, null);
 		}
 	} catch (e) {
 		diag.error("flash/channels read", e);
 		prog.el.remove();
-		say(notice(t("flash.channels.read_failed"), ""), reportLine());
+		say(notice(failed("flash.channels.read_failed", !!m.savedStock(saved)), "bad"), reportLine());
 		S.forward(finish());
 		return;
 	}
 	prog.el.remove();
 	const { layout } = src;
-	diag.note("channels", { layout, from: src.from, read: read.data.length, complete: read.complete });
+	const copy = src.from === "backup";
+	diag.note("channels", { layout, from: src.from, read: read.data.length });
 	if (!layout) {
 		S.forward(finish());
 		return;
@@ -1871,7 +1881,7 @@ async function bringChannels(status, { finish }) {
 		conv = m.convertStock(src.bytes, layout);
 	} catch (e) {
 		diag.error("flash/channels convert", e);
-		say(notice(t("flash.channels.convert_failed"), "bad"), reportLine());
+		say(notice(failed("flash.channels.convert_failed", copy), "bad"), reportLine());
 		S.forward(finish());
 		return;
 	}
@@ -1884,6 +1894,7 @@ async function bringChannels(status, { finish }) {
 		return;
 	}
 	const run = async () => {
+		S.forward(null);
 		box.replaceChildren(prog.el);
 		try {
 			const radio = read.data.subarray(0, m.readSpan(null));
@@ -1896,17 +1907,18 @@ async function bringChannels(status, { finish }) {
 			diag.note("channels written", { sectors: sectors.length, refused: refused.length, differ: check.differ.length, have: check.have });
 			if (refused.length || !back.complete || !check.ok) {
 				S.reportResult = "problem";
-				say(notice(t("flash.channels.check_failed", { want: counts(conv.counts), have: check.have ? counts(check.have) : "?" }), "bad"),
+				say(notice(failed("flash.channels.check_failed", copy, { want: counts(conv.counts), have: check.have ? counts(check.have) : "?" }), "bad"),
 					reportLine());
 			} else say(notice(t("flash.channels.done", { counts: counts(conv.counts) }), "ok"), notes);
 		} catch (e) {
 			diag.error("flash/channels write", e);
 			prog.el.remove();
-			say(notice(t("flash.channels.write_failed"), "bad"), connectError(e), reportLine());
+			S.reportResult = "problem";
+			say(notice(failed("flash.channels.write_failed", copy), "bad"), connectError(e), reportLine());
 		}
 		S.forward(finish());
 	};
-	if (src.from === "backup") return run();
+	if (copy) return run();
 	// no backup: the user decides, knowing the original codeplug is not saved anywhere
 	say(h("p", {}, t("flash.channels.found", { counts: counts(conv.counts) })), notes, notice(t("flash.channels.no_backup"), "warn"));
 	S.forward([button(t("flash.nav.finish_no_channels"), () => reset(), { quiet: true }),
