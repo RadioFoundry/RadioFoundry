@@ -96,7 +96,7 @@ static bool set_mic_gain(hrc_t *dev, uint8_t gain)
 	if (gain > 31u) {
 		gain = 31u;
 	}
-	return hrc_write(dev, 4, 0xE4, (uint8_t)(0x20u + gain));
+	return hrc_write(dev, 4, 0xE4, (uint8_t)(dev->mic_gain_base + gain));
 }
 
 static bool dmr_enter(hrc_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mic_gain)
@@ -105,7 +105,7 @@ static bool dmr_enter(hrc_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mic_gain)
 	ok &= hrc_write(dev, 4, 0x01, 0xF0);		// two-point modulation TX, IF RX
 	ok &= hrc_set_mod_gain(dev, mod2, mod1);	// DMR pair
 	ok &= hrc_write(dev, 4, 0x10, dmr_mode(false));	// DMR, Tier II, layer 2
-	ok &= hrc_write(dev, 4, 0xE0, 0xC9);		// codec under MCU control, mic on
+	ok &= hrc_write(dev, 4, 0xE0, (uint8_t)(0x89u | dev->mic_input));	// codec under MCU control, mic on
 	ok &= hrc_set_mic_gain(dev, mic_gain);
 	ok &= hrc_write(dev, 4, 0x26, 0xFD);
 	ok &= hrc_write(dev, 4, 0x81, 0x19);		// system interrupt mask: post access, received data, PHY
@@ -153,16 +153,19 @@ static bool write_rows(hrc_t *dev, const hrc_row_t *rows, uint32_t n)
 
 // --- Chip operations ---
 
-static bool init_clock(hrc_t *dev)
+const hrc6000_clock_t hrc6000_clock_29m4912 = { 0x28, 0x33, 0x05, 0x04, 0x02 };
+const hrc6000_clock_t hrc6000_clock_12m288 = { 0x40, 0x32, 0x05, 0x04, 0x02 };
+
+static bool init_clock(hrc_t *dev, const hrc6000_clock_t *clk)
 {
 	bool ok = hrc_write(dev, 4, 0x0A, 0x80);	// run from XTALI
-	ok &= hrc_write(dev, 4, 0x0B, 0x28);	// PLL M
-	ok &= hrc_write(dev, 4, 0x0C, 0x33);	// PLL N / NO
+	ok &= hrc_write(dev, 4, 0x0B, clk->pll_m);	// PLL M
+	ok &= hrc_write(dev, 4, 0x0C, clk->pll_n);	// PLL N / NO
 	dev->bus->delay_us(1000);			// datasheet: more than 500 us before switching to the PLL
 	ok &= hrc_write(dev, 4, 0x0A, 0x00);	// run from the PLL
-	ok &= hrc_write(dev, 4, 0xB9, 0x05);	// system clock divider
-	ok &= hrc_write(dev, 4, 0xBA, 0x04);	// codec clock divider
-	ok &= hrc_write(dev, 4, 0xBB, 0x02);	// CLKOUT divider
+	ok &= hrc_write(dev, 4, 0xB9, clk->sys_div);	// system clock divider
+	ok &= hrc_write(dev, 4, 0xBA, clk->codec_div);	// codec clock divider
+	ok &= hrc_write(dev, 4, 0xBB, clk->clkout_div);	// CLKOUT divider
 	return ok;
 }
 
@@ -180,7 +183,12 @@ static bool write_dtmf_table(hrc_t *dev)
 
 bool hrc6000_power_on_init(hrc_t *dev, uint8_t dmr_mic_gain)
 {
-	bool ok = init_clock(dev);					// 1
+	return hrc6000_power_on_init_clock(dev, dmr_mic_gain, &hrc6000_clock_29m4912);
+}
+
+bool hrc6000_power_on_init_clock(hrc_t *dev, uint8_t dmr_mic_gain, const hrc6000_clock_t *clk)
+{
+	bool ok = init_clock(dev, clk);					// 1
 	ok &= write_rows(dev, ROWS(init_step2));			// 2
 	ok &= hrc_write_burst(dev, 4, 0x11, init_sys_block, sizeof(init_sys_block));	// 3
 	ok &= hrc_write(dev, 4, 0x00, 0x2A);			// 4: partial reset
@@ -220,6 +228,14 @@ bool hrc6000_set_ref_offset(hrc_t *dev, int8_t offset, bool fm_tx)
 	return ok;
 }
 
+bool hrc6000_set_mod_bias(hrc_t *dev, uint16_t bias, uint8_t offset)
+{
+	bool ok = hrc_write(dev, 4, 0x47, (uint8_t)bias);
+	ok &= hrc_write(dev, 4, 0x48, (uint8_t)(bias >> 8));
+	ok &= hrc_write(dev, 4, 0x04, offset);
+	return ok;
+}
+
 bool hrc6000_fm_audio(hrc_t *dev, bool on)
 {
 	return hrc_write(dev, 4, 0x36, on ? 0x02 : 0x00);
@@ -234,7 +250,7 @@ bool hrc6000_set_mode_fm_tx(hrc_t *dev, const hrc6000_fm_tx_t *cfg)
 {
 	hrc6000_fm_dev_t dev_coef = hrc6000_fm_deviation(cfg->uhf, cfg->wide);
 	bool ok = hrc_write(dev, 4, 0x10, 0x80);	// FM
-	ok &= hrc_write(dev, 4, 0xE0, 0xC9);	// codec under MCU control, mic on
+	ok &= hrc_write(dev, 4, 0xE0, (uint8_t)(0x89u | dev->mic_input));	// codec under MCU control, mic on
 	ok &= hrc_set_mic_gain(dev, cfg->mic_gain);
 	ok &= hrc_write(dev, 4, 0xC2, 0x00);	// mic AGC off
 	ok &= hrc_write(dev, 4, 0xE5, 0x1A);

@@ -2786,8 +2786,9 @@ def main(argv=None):
     ap.add_argument("--end", type=lambda s: int(s, 0), help="old form: end (exclusive)")
     ap.add_argument("--verify-progmem", metavar="FILE", help="compare the program flash with FILE by CRC (no data transfer)")
     ap.add_argument("--verify-q128", metavar="FILE", help="compare the data flash with FILE by CRC")
-    ap.add_argument("--write-q128", metavar="FILE", help="STM32 radios: write FILE into the SPI flash from --q128-range's "
-                    "start (default 0), changed 4 KB sectors only, each verified by CRC")
+    ap.add_argument("--write-q128", metavar="FILE", help="STM32F4 and K22F radios: write FILE into the SPI flash from "
+                    "--q128-range's start (default 0), changed 4 KB sectors only, each verified by CRC (a board's "
+                    "own data below its write floor is never written)")
     ap.add_argument("--secreg", metavar="FILE", help="STM32 radios: read the SPI flash's three 256-byte security registers "
                     "(the DM-1701 family's factory calibration and flags) into FILE (768 bytes), and print their lock bits")
     ap.add_argument("--write-secreg", metavar="FILE", help="STM32 radios: write FILE (768 bytes, registers 1-3) into the "
@@ -2842,17 +2843,19 @@ def main(argv=None):
                          "cables with one serial number can swap port names, so a refusal usually means the wrong port")
     ap.add_argument("--board", choices=sorted(b.id for b in rfoundryboards.BOARDS.values()
                                               if b.stub or "stub/stm32f4" in b.platform_stubs),
-                    help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (%s: the board profile the "
+                    help="the radio: an STM32F4 one (stub/f4stub.py), a K22F one (stub/k22stub.py) or an HR_C7000 "
+                         "one (%s: the board profile the "
                          "universal stub gets). Found from the radio's VERSION reply with --rfoundry-enter; give it at "
                          "power-on and with --attach (without it the stub gets a profile that drives no board pins)"
                          % ", ".join(sorted(C7_BOARDS)))
-    ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
-                    "is saved before it is erased (default the home directory, never a git tree)")
+    ap.add_argument("--backup-dir", metavar="DIR", help="STM32F4 and K22F --write-app: where a sector that also holds "
+                    "codec bytes is saved before it is erased (default the home directory, never a git tree)")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
     if a.self_test:
         import f4stub
-        return self_test() | f4stub.self_test()
+        import k22stub
+        return self_test() | f4stub.self_test() | k22stub.self_test()
     if not a.port:
         ap.error("give PORT")
     jobs = []                                   # (mem, file, start, end, twice)
@@ -2892,17 +2895,20 @@ def main(argv=None):
             import f4stub
             reopen = f4stub.PortFollower(serial, a.port)
         radio = Radio(port, retries=a.retries)
-        # The STM32 radios (DM-1701, MD-380) run their own stub over USB: stub/f4stub.py
+        # The STM32F4 and K22F radios run the shared engine's stubs over USB: stub/f4stub.py, stub/k22stub.py
         import f4stub
+        import k22stub
         if a.board is None and a.rfoundry_enter:
             name = version_board(radio)
-            a.board = f4stub.board_for(name) if name else None
+            a.board = (f4stub.board_for(name) or k22stub.board_for(name)) if name else None
             if a.board is None and name:
                 a.board = c7_board(name)
                 if a.board is None:
                     print("RadioFoundry reports board %r: not one with a stub profile, using the generic one" % name)
         if a.board in f4stub.BOARDS:
             return f4stub.run(a, port, reopen)
+        if a.board in k22stub.BOARDS:
+            return k22stub.run(a, port, reopen)
         if a.write_app:                         # before the stub goes in: a refusal leaves the radio as it was
             why = image_board_check(open(a.write_app, "rb").read(), a.board)
             if why and not a.force:
@@ -2910,7 +2916,8 @@ def main(argv=None):
             if why:
                 print("warning: %s; writing it anyway (--force)" % why)
         if a.write_q128:
-            raise DumpError("--write-q128 is for the STM32 radios (DM-1701, MD-380)")
+            raise DumpError("--write-q128 is for the STM32F4 and K22F radios (%s)" % ", ".join(
+                sorted(list(f4stub.BOARDS) + list(k22stub.BOARDS))))
         if a.secreg or a.write_secreg:
             raise DumpError("--secreg and --write-secreg are for the STM32 radios (DM-1701, MD-380); the HR_C7000 stub has "
                             "no security register ops")

@@ -342,7 +342,7 @@ The bootloader stays in DFU mode when the application's initial stack pointer at
 
 The bootloader (sectors 0-2) is never touched, so the bootloader route always stays.
 
-HR_C5000 boards: whether the bootloader checks the stack pointer the same way is **unverified**. If it does not, an
+Boards with the TYT bootloader (HR_C5000, and the HR_C6000 mobile): whether it checks the stack pointer the same way is **unverified**. If it does not, an
 interrupted update makes the radio jump to an erased vector. The power-on key combination still reaches DFU, so
 recovery is the same with the keys held.
 
@@ -354,6 +354,7 @@ The host knows which flash the firmware owns (`f4stub.BOARDS`, from the board re
 |---|---|---|---|
 | HR_C6000 boards | 0x0800C000-0x080BFFFF (sectors 3-9) | those of 3-9 the image covers | sectors 10 and 11: written only from an image merged with the codec, otherwise never erased, so the installed codec stays (rfoundry's keep mode) |
 | HR_C5000 boards | 0x0800C000-0x0807FFFF (sectors 3-7) | those of 3-7 the image covers | sectors 8-11: written only from an image merged with the codec, otherwise never erased |
+| 464 KB application area, HR_C6000 board | 0x0800C000-0x0807FFFF (sectors 3-7) | those of 3-7 the image covers | sectors 8-11, as the HR_C5000 boards (the merge puts the tables in sector 9 and the code and descriptor in sector 11, [codec-placement.md](codec-placement.md)) |
 
 Inside an owned range, bytes past the image end become 0xFF, so an older, longer build leaves nothing behind. An image
 merged with the codec (`rfoundry_<board>_codec.bin`) runs to the end of flash; the tool splits it into the application and
@@ -382,10 +383,11 @@ never committed.
 
 | Item | Size |
 |---|---|
-| Stub image | 8,072 bytes (limit 8 KB, RadioFoundry's staging buffer, asserted by `f4stub.ld`). Built with link-time optimization (`-flto`): without it, protocol 5 is about 8,500 bytes |
+| Stub image | 8,184 bytes (limit 8 KB, RadioFoundry's staging buffer, asserted by `f4stub.ld`). Built with link-time optimization (`-flto`): without it, protocol 5 is about 8,500 bytes |
 | Stub RAM after the jump | 28.6 KB of SRAM (image, engine buffers, 8 KB receive ring), then the stack: at least 4 KB is left for it (asserted by `f4stub.ld`); the deepest call chain needs under 1 KB (`-fstack-usage`) |
 | RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C6000 board | the STUB state machine, the entry and the banner text, all in sectors 3-9 (720 KB); +8 KB of SRAM (the staging buffer): RAM 95.4 % used, the default build |
 | RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C5000 board | the same code, in an application area of 464 KB (the default image is 320,236 bytes), RAM 78.8 %. The switch fits with no other switch off |
+| RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C6000 board with the 464 KB area | the same code: 283 KB of the 464 KB application area, RAM 72.5 % (the maximal configuration: 73.9 %) |
 | RadioFoundry with the switch off | no change: the same image, byte for byte in size |
 
 The switch is on by default. The command hands the whole SoC to whatever image the host sends, guarded by the magic,
@@ -433,6 +435,7 @@ codec sectors stay (the radio still finds its codec). Step 9 is still to do.
 - Step 9 of section 11 (an interrupted write and the recovery) on hardware.
 - Protocol 4 (the board record) on hardware: section 11 again on an HR_C6000 board.
 - HR_C5000 boards: the bootloader's stack pointer check, and the stub on a real radio.
+- The HR_C6000 mobile: everything on a real radio (its hardware page lists what is taken from documentation, not measured).
 - rfoundry: use the stub when the radio runs a `CONFIG_STUB_ENTRY` build, with the bootloader as the fallback.
 - Release use: pin the stub image (the radio could refuse a stub whose SHA-256 is not built in), then turn the switch on
   by default.
@@ -441,7 +444,8 @@ codec sectors stay (the radio still finds its codec). Step 9 is still to do.
 
 The protocol engine (`stub/common/stubeng.h`, `stubeng.c`) knows no chip. It holds the framing, every op, the safety
 rules of section 6, CRC-32 SUMS and block READ, and the board record's copy for the HELLO echo. A target supplies a
-`stubeng_port_t` and its glue: the STM32F4 target is `stub/stm32f4` (USB, flash controller, SPI, entry); a Kinetis K22F target would be another directory with the same shape. The wire protocol (section 5) is the
+`stubeng_port_t` and its glue: the STM32F4 target is `stub/stm32f4` (USB, flash controller, SPI, entry); the Kinetis
+K22F target is `stub/k22f` ([stub-k22f.md](stub-k22f.md)). The wire protocol (section 5) is the
 same for every target; only the HELLO name, the op magic and the board record's layout are the target's.
 
 | `stubeng_port_t` field | What the target gives | STM32F4 |
@@ -456,7 +460,8 @@ same for every target; only the HELLO name, the op magic and the board record's 
 | `reset` | after the RESET reply | `NVIC_SystemReset` |
 | `xread`, `xerase`, `xprogram` | the external SPI flash, or NULL: read, erase one 4 KB sector, program inside one sector | `f4stub_spi.c` |
 | `xsreg` | the SPI flash's security registers, or NULL: reg 0 reads status register 2; reg 1-3 reads a register, or with a source erases and programs it. The engine has checked the maker, the magic and the lock bit | `f4spi_sreg` |
-| `configure` | check and apply the board record (1 to 32 bytes, first byte the nonzero board id); fill `stubeng_config_t`: `app_base`, and the SPI flash's `xsize` and `xid` | `f4_board_parse`, then the clock and `f4spi_init` |
+| `configure` | check and apply the board record (1 to 32 bytes, first byte the nonzero board id); fill `stubeng_config_t`: `app_base`, optionally `app_end` (no ERASE or PROGRAM at or above it; 0 the flash end) and `xfloor` (no XERASE or XPROGRAM below it), and the SPI flash's `xsize` and `xid` | `f4_board_parse`, then the clock and `f4spi_init`; `app_end` and `xfloor` 0 |
+| `feed` | optional: feed the watchdog. The engine calls it at every request, before each erase and program, and once per 4 KB block of SUMS and READ | the IWDG (section 3) |
 
 The flash size register can read less than the flash the chip has. On one field radio it read 512 KB on a part whose
 top sectors hold the codec (seen 2026-10). The stub then refuses READ, SUMS and writes past that size with status
@@ -469,6 +474,13 @@ The engine checks the application base `configure` returns: a sector start, not 
 `min_app_base`. The commit word is at that base, and the commit sector (the interlock's) is the sector holding it. The
 engine keeps 2 x 4 KB frame buffers and a 4 KB word buffer (`stubeng_t`, about 12.3 KB of RAM) and needs no heap. It
 calls nothing but the port, `memcpy`, `memmove`, `memset` and `memcmp`.
+
+Besides the engine, `stub/common` holds what both targets share: `stubrt` (memory functions, cycle counter timing
+that also calls the target's `stub_feed` at every read of the time,
+the hex serial number, the receive loop with the 200 ms idle rule, the reset after the reply), `stubcdc` (the CDC-ACM
+descriptors, control requests and receive ring; the target gives EP0 send, stall, address, endpoint setup and halt)
+and `stubnor` (the SPI NOR commands; the target gives chip select and a byte exchange). Both stubs are built with link
+time optimization to stay under 8 KB.
 
 A new target needs: the port, a receive loop that feeds bytes with `stubeng_feed` and calls `stubeng_idle` after
 200 ms of silence, its board record layout and check (host tested, as `f4stub_board.c`), its host-side profiles, and

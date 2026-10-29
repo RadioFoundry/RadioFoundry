@@ -291,7 +291,61 @@ def flash_boards():
 	out["codec_maps"] = codecmap.load_maps()
 	out["c7000"] = c7000_flash()
 	out["f4stub"] = f4_flash()
+	out["hid"] = sgl_hid_flash()
 	return out
+
+
+def sgl_hid_flash():
+	"""What the web flasher needs for the radios it installs through a vendor loader's USB HID update mode (backend
+	"sgl-hid"): the update file and loader constants (updatefile.py, hidboot.py), the codec placement constants and the
+	spec of each supported stock build (k22fcodec.py: addresses, lengths, hashes, never codec bytes), and the codec as
+	the merge places it (each pack's "placed": the descriptor tag, the code region's length and both CRC-32s)."""
+	sys.path.insert(0, path("tools", "rfoundry"))
+	try:
+		from rfoundry import boards as ob, hidboot as gb, k22fcodec as gc, updatefile as uf
+	finally:
+		sys.path.pop(0)
+	specs, placed = {}, {}
+	for name, s in gc.load_specs().items():
+		placed[name] = dict(s["placed"])
+		specs[name] = {"profile": s["profile"], "stock": s["stock"], "entries": s["entries"],
+			       "words": [list(w) for w in s["words"]], "branches": [list(b) for b in s["branches"]],
+			       **{p: dict(s[p]) for p in ("main", "low", "tab")}}
+	return {"boards": sorted(b.id for b in ob.BOARDS.values() if b.family == "usb-hid-sgl"),
+		"flash_base": gc.FLASH_BASE, "code_base": gc.CODE_BASE, "desc_addr": gc.DESC_ADDR, "desc_len": gc.DESC_LEN,
+		"desc_magic": gc.DESC_MAGIC, "desc_version": gc.DESC_VERSION, "table_lo": gc.TABLE_LO, "table_hi": gc.TABLE_HI,
+		"placed": placed, "specs": specs,
+		"update": {"period": uf.PERIOD, "info_len": uf.INFO_LEN, "body_at": uf.BODY_AT, "flash_base": uf.FLASH_BASE},
+		"loader": {"vid": gb.VID, "pid": gb.PID, "report": gb.REPORT, "step_timeout_ms": int(gb.STEP_TIMEOUT * 1000),
+			   "erase_timeout_ms": int(gb.ERASE_TIMEOUT * 1000)},
+		"stub": k22_flash()}
+
+
+def k22_flash():
+	"""What the web flasher's cable route on a K22F radio already running RadioFoundry needs (stub/k22stub.py, docs/spec/stub-k22f.md):
+	the K22F stub's chip facts (HELLO name, op magic, flash map, program unit, where the application starts), and per
+	radio the flash its firmware owns, the codec area, and the board record the stub takes in CONFIG (config_record(),
+	as hex), so the page and k22stub.py send the same bytes. "stack": the lowest and highest initial stack pointer the
+	radio's loader takes (K22Chip.sp_ok, scanned). The stub image goes to k22-stub.json (k22_stub())."""
+	k22 = _tool("stub", "k22stub.py")
+	ok = [a for a in range(k22.RUN_ADDR - 0x10000, k22.RUN_ADDR + 4 * k22.SRAM_SIZE, 4) if k22.K22.sp_ok(a)]
+	return {"title": k22.K22.title, "name": k22.K22.name.decode(), "magic": k22.MAGIC, "protocol": k22.VERSION,
+		"flash_base": k22.FLASH_BASE, "flash_kb": k22.FLASH_KB, "sector": k22.SECTOR, "prog_unit": k22.PROG_UNIT,
+		"app_base": k22.APP_BASE, "run": k22.RUN_ADDR, "erase_timeout_ms": int(k22.ERASE_TIMEOUT * 1000),
+		"stack": [ok[0], ok[-1]], "record_len": k22.REC_LEN,
+		"boards": {bid: {"name": b["name"], "stub_id": b["id"], "record": k22.config_record(bid).hex(),
+				 "owned": [list(r) for r in b["owned"]], "codec": list(b["codec"]),
+				 "codec_image_end": b["codec_image_end"], "app_end": b["app_end"], "spi_floor": b["spi_floor"],
+				 "debuglink_names": list(b["names"])}
+			   for bid, b in k22.BOARDS.items()}}
+
+
+def k22_stub():
+	"""The K22F stub k22stub.py embeds, checked against its SHA-256 by k22stub itself, as base64 for the page."""
+	import base64
+	k22 = _tool("stub", "k22stub.py")
+	return {"format": "rfoundry-k22-stub/1", "sha256": k22.K22STUB_SHA256, "run": k22.RUN_ADDR, "protocol": k22.VERSION,
+		"data": base64.b64encode(k22.stub_image()).decode()}
 
 
 def _tool(*parts):

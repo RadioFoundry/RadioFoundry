@@ -200,8 +200,9 @@ CONFIG_AUDIO_PROBE ?= n
 # to it without a power cycle, so updates need no key combo at power-on (the web flasher, stub/stubtool.py, rfoundry;
 # core/stubentry, docs/spec/stub-entry.md). Its own feature: with the debug link off it answers on its own small
 # listener (PING, VERSION, STUB). Needs HOSTLINK (the task that owns the port) and a platform with
-# hal_system_t.enter_stub: the HR_C7000, and the STM32F4 with an 8 KB staging buffer (docs/spec/stub-stm32f4.md). On
-# wherever the host link is; a board leaves it off in its config.mk only for a stated reason
+# hal_system_t.enter_stub: the HR_C7000, and the STM32F4 and the K22F with an 8 KB staging buffer
+# (docs/spec/stub-stm32f4.md, stub-k22f.md). On wherever the host link is; a board leaves it off in its config.mk only
+# for a stated reason
 CONFIG_STUB_ENTRY ?= $(CONFIG_HOSTLINK)
 # the crash log: a CPU fault, a task stack overflow, running out of heap or a failed assertion keeps a record (registers,
 # fault status, task, stack words) where a reset doesn't clear it and restarts the radio; the next start shows it

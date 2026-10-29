@@ -180,6 +180,7 @@ class Site:
 			"flash-boards.json": self.flash,
 			"c7000-stub.json": repo.c7000_stub(),
 			"f4-stub.json": repo.f4_stub(),
+			"k22-stub.json": repo.k22_stub(),
 			"screens.json": self.screens,
 			"releases.json": {"releases": self.release_list()},
 		}
@@ -558,7 +559,8 @@ class Site:
 				     for k, p in sorted(b["docs"].items(), key=lambda kv: DOC_ORDER.index(kv[0])))
 		fl = b["flash"]
 		can_flash = ((fl["backend"] == "anyroad-dfu" and bool(self.flash["boards"].get(fl["board"], {}).get("key_sha256")))
-			     or (fl["backend"] == "c7000-stub" and fl["board"] in self.flash["c7000"]["boards"]))
+			     or (fl["backend"] == "c7000-stub" and fl["board"] in self.flash["c7000"]["boards"])
+			     or (fl["backend"] == "sgl-hid" and fl["board"] in self.flash.get("hid", {}).get("boards", [])))
 		g = b["frame_geometry"]
 		pct = g["screen_pct"]
 		ctx = {"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]) or "—",

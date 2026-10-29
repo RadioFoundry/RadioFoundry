@@ -324,14 +324,14 @@ static void testPing(void)
 	put32(&ip[12], HOST_IP);
 	put32(&ip[16], RADIO_IP);
 	uint16_t c = sum16(ip, 20, 0); ip[10] = c >> 8; ip[11] = c;
-	memset(ic, 0, 16); ic[0] = 8; ic[5] = 1; ic[7] = 1; memcpy(ic + 8, "gd77ping", 8);
+	memset(ic, 0, 16); ic[0] = 8; ic[5] = 1; ic[7] = 1; memcpy(ic + 8, "rfoundry-ping", 8);
 	c = sum16(ic, 16, 0); ic[2] = c >> 8; ic[3] = c;
 
 	in(f, 14 + 36);
 	CHECK(framesSent == 1);
 	CHECK(lastFrame[14 + 9] == 1 && lastFrame[34] == 0);// echo reply
 	CHECK(sum16(&lastFrame[34], 16, 0) == 0);
-	CHECK(memcmp(&lastFrame[42], "gd77ping", 8) == 0);
+	CHECK(memcmp(&lastFrame[42], "rfoundry-ping", 8) == 0);
 }
 
 static void testToAir(void)

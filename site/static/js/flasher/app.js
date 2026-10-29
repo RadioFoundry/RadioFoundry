@@ -36,6 +36,8 @@ import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
 import { t, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
+import * as hidui from "./hidui.js";
+import { hidSimulation, FakeHidRFoundry } from "./fakehid.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
 import { groups as variantGroups } from "./variant.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
@@ -1071,6 +1073,7 @@ async function ensureFirmware() {
 			img.set(APP_ENTRY, fs.size);
 			img.set(new TextEncoder().encode("RadioFoundry"), fs.size + 0x100);
 		}
+		if (hidui.isHid(S.radio, S.data.fb)) img.set([0xF0, 0xFE, 0x00, 0x20], 0);	// the K22F's RAM ends at 0x20010000
 		return (S.firmware = { manifest: await forDevBuild(S.board, img), image: img, source: t("flash.sim.image_name") });
 	}
 	throw new Error(t("flash.build.no_image"));
@@ -2319,17 +2322,20 @@ function fixChooser(st, go) {
 	const rec = backend().recovery;
 	const files = S.board?.codec?.sources?.join(", ") || "";
 	const opts = {
-		again: [t("flash.help.fix.again"), t("flash.help.fix.again_text")],
+		again: [t("flash.help.fix.again"), t(rec.againText || "flash.help.fix.again_text")],
 		codec: [t("flash.help.fix.codec"), t("flash.help.fix.codec_text", { files })],
 		backup: [t("flash.help.fix.backup"), t(st.symptom === "channels" ? "flash.help.fix.backup_channels" : "flash.help.fix.backup_text")],
 		stock: [t("flash.help.fix.stock"), t(rec.stockText, { files })],
 	};
-	// a backend's own ways back (the DB25-D's update mode) come after the reinstall
+	// a backend's own ways back (the DB25-D's update mode) come after the reinstall. A backend may offer only some of the
+	// shared ones (choices) and stand its own in for others (alias: the GD-77 puts its original update file back)
 	const extra = rec.extra?.(S.radio, fb()) || [];
 	for (const x of extra) opts[x.id] = [t(x.title), t(x.text)];
-	const order = { novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"],
+	const offered = new Set([...(rec.choices || ["again", "codec", "backup", "stock"]), ...extra.map((x) => x.id)]);
+	const wanted = ({ novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"],
 		iap: ["updatemode", "backup"] }[st.symptom]
-		|| ["again", ...extra.map((x) => x.id), "backup", "stock"];
+		|| ["again", ...extra.map((x) => x.id), "backup", "stock"]).map((id) => rec.alias?.[id] || id).filter((id) => offered.has(id));
+	const order = wanted.length ? [...new Set(wanted)] : ["again", ...extra.map((x) => x.id)].filter((id) => offered.has(id));
 	const start = () => {
 		const pick = st.pick;
 		const own = extra.find((x) => x.id === pick);
@@ -2452,6 +2458,7 @@ async function main() {
 	}
 	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, flashMark, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
+	hidui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText });
 	// #sim=<board>[-stock|-romfail|-slowcable|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
 	// open firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file
 	// fallback); -romfail: an HR_C7000 radio on stock firmware whose boot ROM refuses the load, for the factory update
@@ -2461,7 +2468,13 @@ async function main() {
 	const simRadio = simAsk && (simAsk[1] ? S.data.radios.find((r) => r.id === simAsk[1]) : S.data.radios[0]);
 	const simOpen = !!simAsk?.[2]?.startsWith("-openfw") && openfw.supported(S.data.fb.boards[simRadio?.flash.board]);
 	const simStock = !!simAsk && (!simAsk[1] || (!!simAsk[2] && !simOpen));
-	if (simRadio && c7ui.isC7000(simRadio, S.data.fb)) {
+	if (simRadio && hidui.isHid(simRadio, S.data.fb)) {
+		// in its update mode, with a made-up stock update file whose codec the page knows (fakehid.js); without
+		// -stock it also runs RadioFoundry with stub entry, for the cable route
+		const sim = await hidSimulation(S.data.fb.hid, simRadio.model);
+		S.sim = { fb: { ...S.data.fb, hid: sim.hid }, hidDonor: sim.donor,
+			hidRFoundry: simStock ? null : new FakeHidRFoundry(sim.hid.stub, { board: simRadio.flash.board }) };
+	} else if (simRadio && c7ui.isC7000(simRadio, S.data.fb)) {
 		// on its cable: stock firmware (a stock console answers if the board has one), or RadioFoundry with the stub hand-over
 		const board = simRadio.id;
 		const sim = await c7000Simulation(S.data.fb.c7000, board, 7000, simRadio);

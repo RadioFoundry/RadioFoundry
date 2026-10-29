@@ -36,6 +36,9 @@ open-firmware flash image (up to `openfw_end`), the native codeplug (1 MB) and, 
 area. A board that keeps its calibration in the vendor layout lists no calibration window. The boards are in
 [feature-matrix.md](../feature-matrix.md).
 
+A board with a 1 MB flash uses the same layout moved up by 1 MB, above the radio's own data, with no calibration window and a
+native and staging area only on 4 MB parts (the board's hardware page, [feature-matrix.md](../feature-matrix.md)).
+
 The core works in 4 KB erase units (`STORAGE_SECTOR`). A board whose flash erases in other units gets no writes. A
 NAND board puts `drivers/flash/nand_sectors` in between, which gives NOR behavior in 4 KB sectors
 ([nand-sectors.md](nand-sectors.md)).
