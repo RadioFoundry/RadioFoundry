@@ -16,7 +16,7 @@ import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
 import { stockVersion } from "../static/js/flasher/usmart.js";
-import { openVendorFile, whyNot } from "../static/js/flasher/vendorfile.js";
+import { openVendorFile, whyNot, analysisCandidate } from "../static/js/flasher/vendorfile.js";
 import { vendorBundle, hasC7Backup, backupChoices } from "../static/js/flasher/c7000ui.js";
 import * as explain from "../static/js/flasher/explain.js";
 import * as crumbs from "../static/js/flasher/trail.js";
@@ -761,6 +761,12 @@ test("a program memory dump of this radio with no codec restores, but never give
 	// the codec step explains it (a dump, not "not the manufacturer's file")
 	assert.equal(explain.pickProblem(opened, id).problem, "dump");
 	assert.match(opened.files[0].match.why, /no codec/);
+	// the notice offers it to the team for mapping (the backend takes a dump by its bootloader ID), as itself
+	assert.ok(explain.OFFER.has("dump"));
+	const offer = analysisCandidate(opened, fb, id);
+	assert.equal(offer?.reason, "progmem-dump");
+	assert.equal(offer.file.data, dump);
+	assert.equal(analysisCandidate(await openVendorFile("d.bin", dump, fb, Object.keys(C.boards).find((b) => b !== id)), fb, id), null);
 	// the log says what it was
 	const [, got] = crumbs.filePicked({ name: "d.bin", size: dump.length, sha256: "ab" }, opened.best);
 	assert.equal(got.match, "progmem");

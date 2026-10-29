@@ -16,7 +16,7 @@
 export const PROBLEMS = ["other-radio", "wrong-key", "not-vendor", "unmapped", "damaged", "internal"];
 
 // Problems where sending the file can help: a build the project can add, or a fault the file reproduces
-export const OFFER = new Set(["unmapped", "wrong-key", "internal"]);
+export const OFFER = new Set(["unmapped", "wrong-key", "internal", "dump"]);
 
 const base = (path) => (path || "").split("/").pop();
 

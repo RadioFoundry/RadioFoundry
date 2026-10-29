@@ -195,15 +195,16 @@ export function logId(st) {
 }
 
 // The file to offer for analysis when the page can't take the codec from what was picked: a vendor firmware container
-// (the headers the backend accepts, never a readout) of at most maxBytes, with what the page found as its reason. Never
+// (the headers the backend accepts) or a program memory dump of this radio, never a readout of at most maxBytes, with what the page found as its reason. Never
 // a file identified as another radio's: the page already knows what it is and says so
 export function analysisCandidate(opened, fb, boardId = null, maxBytes = 4 << 20) {
 	const magics = [fb.magic, fb.c7000?.stock_magic].filter(Boolean);
+	// a program memory dump has no updater header: the backend takes it by the bootloader ID the page matched
 	const f = opened.files.find((x) => x.match.kind !== "codec" && (!boardId || !x.match.board || x.match.board === boardId) &&
-		x.data.length <= maxBytes && magics.some((m) => startsWith(x.data, m)));
+		x.data.length <= maxBytes && (x.match.kind === "progmem" || magics.some((m) => startsWith(x.data, m))));
 	if (!f) return null;
 	const m = f.match;
-	return { file: f, reason: m.board ? m.kind : m.problem === "unmapped" ? "codec-unmapped" : m.problem === "wrong-key" ? "key-unknown"
+	return { file: f, reason: m.kind === "progmem" ? "progmem-dump" : m.board ? m.kind : m.problem === "unmapped" ? "codec-unmapped" : m.problem === "wrong-key" ? "key-unknown"
 		: m.problem === "internal" ? "internal" : "unknown-container" };
 }
 

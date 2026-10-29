@@ -185,6 +185,7 @@ async function api(method, path, body) {
 function analysisOffer(cand, boardId, problem = null) {
 	if (!cand || S.sim) return null;
 	const internal = problem?.problem === "internal";
+	const dump = problem?.problem === "dump";
 	const status = h("p", { class: "small" });
 	const note = h("textarea", { class: "analysis-note", rows: 2, maxlength: 400, placeholder: t("flash.analysis.note") });
 	const send = button(t("flash.analysis.send"), async () => {
@@ -205,8 +206,8 @@ function analysisOffer(cand, boardId, problem = null) {
 		}
 	});
 	const name = cand.file.path?.split("/").pop() || cand.file.name || "";
-	return h("div", { class: "notice" }, h("strong", {}, t("flash.analysis.title")),
-		h("p", {}, t(internal ? "flash.analysis.text_internal" : "flash.analysis.text", { name })), note, send, status);
+	return h("div", { class: "notice" }, h("strong", {}, t(dump ? "flash.analysis.title_dump" : "flash.analysis.title")),
+		h("p", {}, t(internal ? "flash.analysis.text_internal" : dump ? "flash.analysis.text_dump" : "flash.analysis.text", { name })), note, send, status);
 }
 
 const radioName = (id) => fb().boards[id]?.name || S.data?.radios?.find((r) => r.id === id || r.flash?.board === id)?.name || id || "";
@@ -233,7 +234,6 @@ function problemNotice(p, { offer = null, boardId = S.board?.id } = {}) {
 			unmapped && p.key ? [" ", t("flash.problem.unmapped.key")] : null),
 		p.raw ? h("details", { class: "small" }, h("summary", {}, t("flash.problem.details")), h("pre", { class: "log" }, p.raw)) : null,
 		OFFER.has(p.problem) ? analysisOffer(offer, boardId, p) : null,
-		dump ? h("p", {}, t("flash.problem.dump.send")) : null,
 		files.length ? h("p", {}, t(dump ? "flash.problem.dump.instead" : "flash.problem.unmapped.instead", vars), download ? [" ", download] : null) : null,
 		!files.length ? null : dump || foldSupported(files)
 			? h("details", {}, h("summary", {}, t("flash.problem.unmapped.all", { n: files.length })), list) : list,

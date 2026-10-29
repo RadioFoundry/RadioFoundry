@@ -89,7 +89,7 @@ anything set aside).
 | `wrong-key` | A vendor container no known bootloader key opens: another model, or a modified build | pick the manufacturer's file for this radio |
 | `not-vendor` | No vendor container: a plain image, another firmware project's build, a zip without a firmware file | pick the manufacturer's file, not another project's |
 | `unmapped` | This radio's build, but no codec map for it yet: a known build without a profile (kind `key`), an unknown one whose codec was found (`codec-unmapped`), or a C-SKY codec no profile describes | pick one of the supported files, which the notice lists in full (`supportedFiles()`: a C-SKY radio's profiles with a stock file first, then the files its codec sources name; a source that isn't a file, such as a program flash read, in a sentence of its own), or send the file |
-| `dump` | A program memory dump of this radio (kind `progmem`) given to the codec step: a firmware version nobody has mapped yet. It restores, but its codec can't be used in an install | send it with Report a Problem (the picked file is attached) so it can be mapped, or select a different firmware file: the notice links the board's `stock_download` when it has one and folds the supported files into an accordion |
+| `dump` | A program memory dump of this radio (kind `progmem`) given to the codec step: a firmware version nobody has mapped yet. It restores, but its codec can't be used in an install | send it from the notice's button so it can be mapped (`progmem-dump`), or select a different firmware file: the notice links the board's `stock_download` when it has one and folds the supported files into an accordion |
 | `damaged` | A cut-short file or a damaged zip | download it again |
 | `internal` | A check that fails after the file was identified: a fault in the page or its data, not the file | nothing: it has been reported (or report it, without error reports) |
 
@@ -131,7 +131,9 @@ Linux device permission, reload the page.
 ### Sending a file
 
 The page offers **Send this file for further analysis** for `unmapped`, `wrong-key` and `internal`, when what was
-picked holds a vendor firmware container: a file with the `OutSecurityBin` or the C-SKY stock header, 4 MB at most. It
+picked holds a vendor firmware container: a file with the `OutSecurityBin` or the C-SKY stock header, 4 MB at most.
+For `dump` it offers **Send This Firmware to the RadioFoundry Team to Be Mapped** with the program memory dump itself
+(reason `progmem-dump`): the backend takes a dump by the bootloader ID in its first 48 KB. It
 comes both when the codec can't be taken from the file and when a later step fails on a file identified for this radio
 (placing the codec, restoring). Readouts, other files and a file identified as another radio's are never offered. The
 text asks for the manufacturer's original file only. The file goes to the backend only on the user's click, with:
@@ -142,7 +144,7 @@ text asks for the manufacturer's original file only. The file goes to the backen
 - the site version;
 - an optional note (it asks where the file came from). For `internal`, the page's message is added to it.
 
-The backend (`POST /v1/samples`, raw body, the rest as query parameters) checks the header and the size itself. It
+The backend (`POST /v1/samples`, raw body, the rest as query parameters) checks the header (or a dump's bootloader ID) and the size itself. It
 rate-limits per address and per day, caps the total storage, keeps one copy per SHA-256 and never serves a file back.
 Simulations don't offer it.
 
