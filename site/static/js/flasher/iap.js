@@ -110,14 +110,20 @@ export class Iap {
 	// Is the loader's update mode on the cable now (a radio whose application is missing or incomplete stays in it at
 	// every power-on)? Asks for one page of a read, which changes nothing, and never sends Erase. Returns {version} when
 	// the loader answers (version is null when only the banner or the checksum was seen), else null.
+	// The stock application answers the same request as the vendor programming software's identify: "Read_2M_" with no
+	// loader version, then its version string as it filled it in at boot (hardware-db25d.md 7). That returns
+	// {version: null, stock: text}, the reply as text, which still changes nothing; the application then shows
+	// "Flash Read" and waits for the read to go on until it is switched off and on.
 	async probe(timeout = 1500) {
 		this.s.clear();
 		await this.s.write(readPacket(0, 1));
-		const seen = (t) => /Read_\w+_V\d+\.\d+[A-Z]?|ChecksumR|IAPReady/.test(t);
+		const loader = /Read_\w+_V\d+\.\d+[A-Z]?|ChecksumR|IAPReady/, stock = /Read_\w+_\0/;
+		const seen = (t) => loader.test(t) || stock.test(t);
 		const text = await this.until(seen, timeout);
 		if (!seen(text)) return null;
-		const v = /Read_\w+_V\d+\.\d+[A-Z]?/.exec(text);
 		this.s.clear();
+		if (!loader.test(text)) return { version: null, stock: text };
+		const v = /Read_\w+_V\d+\.\d+[A-Z]?/.exec(text);
 		return { version: v ? v[0] : null };
 	}
 

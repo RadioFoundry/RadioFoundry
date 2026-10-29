@@ -159,7 +159,7 @@ class Site:
 			r = {k: b[k] for k in ("id", "name", "maker", "model", "also", "kind", "order", "status", "bands",
 					       "power", "gallery", "cpu", "display", "docs", "flash", "backup", "unsupported",
 					       "unsupported_reasons", "not_written", "not_written_reasons", "required", "config", "screens", "codeplug", "volts",
-					       "clock")}
+					       "clock", "variants", "variant_pattern", "variant_check")}
 			r["support"] = docsmod.plain(b["summary"])
 			r["image"] = "static/img/radios/%s.svg" % b["id"]
 			r["frame_image"] = "static/img/radios/%s-frame.svg" % b["id"]
@@ -280,6 +280,26 @@ class Site:
 
 	def badge(self, lang, status):
 		return '<span class="badge badge-%s">%s</span>' % (status, html.escape(self.t(lang, "status." + status)))
+
+	def variants_html(self, lang, b):
+		"""The hardware variants sold under the model (board.toml [hardware] variants): each with whether RadioFoundry
+		runs on it, and how to tell which one a radio is. Empty for a radio that lists none."""
+		if not b["variants"]:
+			return ""
+		def state(v):
+			if not v.get("runs"):
+				return self.t(lang, "radio.variant.none")
+			if v["runs"]["board"] != b["id"]:
+				other = next((o["name"] for o in self.boards if o["id"] == v["runs"]["board"]), v["runs"]["board"])
+				return self.t(lang, "radio.variant.other", board=other)
+			return self.t(lang, "status." + repo.LEVEL_STATUS[v["level"]])
+		rows = "".join("<li><code>%s</code> %s: <b>%s</b>%s</li>" % (
+			html.escape(v["code"]), html.escape(v["name"]), html.escape(state(v)),
+			" " + html.escape(v["notice"]) if v.get("notice") else "") for v in b["variants"])
+		return ('<div class="radio-variants"><h3>%s</h3><ul class="small">%s</ul>'
+			'<details class="small"><summary>%s</summary><p>%s</p></details></div>'
+			% (html.escape(self.t(lang, "radio.variants_title")), rows, html.escape(self.t(lang, "radio.variant_how")),
+			   html.escape(b["variant_check"] or "")))
 
 	def board_note(self, lang, b):
 		"""A board's line for visitors: board.toml [status] summary. A catalog may translate it (radio.note.<id>)."""
@@ -548,6 +568,7 @@ class Site:
 		       "bands": self.bands(lang, b), "power": b["power"], "kind": self.t(lang, "radio.kind." + b["kind"]),
 		       "cpu": b["cpu"], "display": b["display"], "volts": self.t(lang, "radio.volts." + b["volts"]),
 		       "clock": self.t(lang, "radio.clock." + b["clock"]),
+		       "variants": self.variants_html(lang, b),
 		       "variant_head": vhead, "feature_groups": "".join(groups),
 		       "na_list": ", ".join(html.escape(self.ftitle(lang, f)) for f in na) or "—",
 		       "shots": "".join(shots), "docs_links": docs_links, "gallery": b["gallery"],

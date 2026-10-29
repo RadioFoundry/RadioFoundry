@@ -450,6 +450,21 @@ A mobile radio for 136-174 and 400-480 MHz with a front knob, a few front keys a
 voice both ways, the hotspot, the DMR VFO and the network services work on the radio. It is installed with the
 [radio programming utility](#installing-the-db25-d-pro) only.
 
+**Which DB25-D.** Open the radio's **Version** screen. The version reads like `909E.DBB.EARSAB.020`; the letters
+after `909E.` name the hardware.
+
+| Code | Hardware | RadioFoundry |
+|---|---|---|
+| DBB | DB25-D PRO: two BK4819 (2024 on) | Supported |
+| D64, D66, D6T | FD6818 transceiver (2021 to 2023) | In development: not tried on this hardware yet; FM and DMR don't receive or transmit |
+
+The radio programming utility reads the code from the radio before it writes, and asks for it when only the factory
+update mode answers. On vendor firmware older than the 2025-01-21 build a backup is not proven: the utility offers to
+try it anyway (nothing is written to the radio's flash; if it fails, switch the radio off and on), to update the vendor
+firmware first, or to install without a backup. The same try runs from **Back Up**. A backup made that way can be sent
+to the project with a report, so the next version knows that firmware. **Back Up** works on every hardware version,
+including one RadioFoundry doesn't run on yet: it only reads the radio.
+
 ### Installing the DB25-D PRO
 
 The radio programming utility on the web site installs and updates this radio over the programming cable (K1 jack).
