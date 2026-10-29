@@ -49,6 +49,16 @@ ROM refuses the load, to practice the factory update mode; `#sim=<radio>-slowcab
 boot ROM's 48 ms window, to practice the slow cable mode; a radio with the Baofeng updater enters it when switched on
 with "Hold the Keys and Turn On".
 
+## The beta notice
+
+The page opens a dialog (`templates/partials/beta_notice.html`, opened by `beta.js`) before anything else: what can
+go wrong, that the radio can always be recovered, where to get help, and common questions folded into accordions
+(testing, damage, channels and settings, fixes, feedback). It shows once per browser session and again once 12 hours
+have passed since it was closed, so a tab left open still sees it (`sessionStorage` key `rfoundry.betaNoticeSeen`
+holds the time of the last close, set on any close); where storage is blocked it shows on every visit. The installation count
+in `flash.beta.lead` is written by hand: total successful installations from the backend's `flashes` table plus about
+50 development installs, rounded down. Raise it now and then.
+
 ## Vendor files
 
 `vendorfile.js` opens whatever the user picks, the same way on every radio's page. The input can be:
@@ -66,6 +76,7 @@ under 64 KB. Each remaining file is identified against every radio the flasher k
 | 2 | A TYT/Baofeng container (`OutSecurityBin`) no profile knows: every known bootloader key is tried, the chosen radio's first. A key that decrypts it names the radio, and the decrypted application is searched for the codec's signature word | the key; "the codec, no recipe for this build" |
 | 3 | The C-SKY codec search: the codec's own hashes wherever the file or readout holds it (`c7000.js`) | the codec; "no recipe" when only the signature matches. The signature is the same on every C-SKY radio, so such a file is credited to no radio and never written back as original firmware |
 | 4 | An STM32 readout, by the codec windows' hashes (`stockfw.fromFlash`) | named, not used: the page asks for the manufacturer's file instead |
+| 5 | A C-SKY radio's whole program flash dump whose bootloader ID string names the chosen radio and whose application area holds code (`c7000.js` `isProgmemDump`), with no codec step 3 knows | kind `progmem`: a restore source, never a codec source. The restore puts it back as a backup's program memory is (application and codec slot, never the bootloader) |
 
 The best file for the chosen radio is used:
 
@@ -89,6 +100,7 @@ anything set aside).
 | `wrong-key` | A vendor container no known bootloader key opens: another model, or a modified build | pick the manufacturer's file for this radio |
 | `not-vendor` | No vendor container: a plain image, another firmware project's build, a zip without a firmware file | pick the manufacturer's file, not another project's |
 | `unmapped` | This radio's build, but no codec map for it yet: a known build without a profile (kind `key`), an unknown one whose codec was found (`codec-unmapped`), or a C-SKY codec no profile describes | pick one of the supported files, which the notice lists in full (`supportedFiles()`: a C-SKY radio's profiles with a stock file first, then the files its codec sources name; a source that isn't a file, such as a program flash read, in a sentence of its own), or send the file |
+| `dump` | A program memory dump of this radio (kind `progmem`) given to the codec step: a firmware version nobody has mapped yet. It restores, but its codec can't be used in an install | send it from the notice's button so it can be mapped (`progmem-dump`), or select a different firmware file: the notice links the board's `stock_download` when it has one and folds the supported files into an accordion |
 | `damaged` | A cut-short file or a damaged zip | download it again |
 | `internal` | A check that fails after the file was identified: a fault in the page or its data, not the file | nothing: it has been reported (or report it, without error reports) |
 
@@ -130,7 +142,9 @@ Linux device permission, reload the page.
 ### Sending a file
 
 The page offers **Send this file for further analysis** for `unmapped`, `wrong-key` and `internal`, when what was
-picked holds a vendor firmware container: a file with the `OutSecurityBin` or the C-SKY stock header, 4 MB at most. It
+picked holds a vendor firmware container: a file with the `OutSecurityBin` or the C-SKY stock header, 4 MB at most.
+For `dump` it offers **Send This Firmware to the RadioFoundry Team to Be Mapped** with the program memory dump itself
+(reason `progmem-dump`): the backend takes a dump by the bootloader ID in its first 48 KB. It
 comes both when the codec can't be taken from the file and when a later step fails on a file identified for this radio
 (placing the codec, restoring). Readouts, other files and a file identified as another radio's are never offered. The
 text asks for the manufacturer's original file only. The file goes to the backend only on the user's click, with:
@@ -141,8 +155,8 @@ text asks for the manufacturer's original file only. The file goes to the backen
 - the site version;
 - an optional note (it asks where the file came from). For `internal`, the page's message is added to it.
 
-The backend (`POST /v1/samples`, raw body, the rest as query parameters) checks the header and the size itself. It
-rate-limits per address and per day, caps the total storage, keeps one copy per SHA-256 and never serves a file back.
+The backend (`POST /v1/samples`, raw body, the rest as query parameters) checks the header (or a dump's bootloader ID)
+and the size itself. It rate-limits per address and per day, caps the total storage, keeps one copy per SHA-256 and never serves a file back.
 Simulations don't offer it.
 
 ### What an error report says about the file
@@ -196,7 +210,9 @@ Both requests also carry `adapter`, and the PATCH carries `trail`:
 
 | Line | When |
 |---|---|
-| `file picked` | A vendor file: name, size, SHA-256 prefix, `logId()`, what it matched, its problem |
+| `file picked` | A vendor file: name, size, SHA-256 prefix, `logId()`, what it matched, its problem and why (`whyNot()`: also for a pick nothing in which serves, and for the restore's file) |
+| `restore bundle` | The restore task's input: whether it holds program memory, whether it is a vendor file, the part names |
+| `write range` | A cable radio's install or restore write: how many sectors, the first and last address written, and whether the bootloader area (read before and after the write) is `unchanged`, `changed` (the write then fails) or `not checked` (also when the write failed part way) |
 | `codec search at known addresses`, `moved codec search` | The codec search in an open-firmware read: each stage, the profile and address found, or how many code starts were checked and why the nearest failed |
 | `codec decision` | `decideCodec()`: mode, source, why; or why none |
 | `key` | Where the bootloader key came from |
@@ -274,6 +290,9 @@ A zip the user keeps: `backup.json` (the radio, its chip UID, the firmware when 
 each part's address, size, SHA-256 and whether the read completed), `internal-flash.bin` (from the application
 base; the bootloader is never read or written), `spi-flash.bin`, `security-registers.bin` (the factory calibration),
 `radio-info.bin`, and `stock-firmware.bin` when the user gave one.
+
+`openBundle()` also reads a backup whose files sit in one folder (`bundleFolder()`): what macOS's Compress makes of a
+backup it unpacked, `__MACOSX/` ignored. The restore picker and the codeplug editor use the same test.
 
 The user picks what to read, each with a time estimate: from a short timed read of this radio, or through the loader
 from its measured speeds (stub-stm32f4.md 11) plus the hand-over and the restart:
