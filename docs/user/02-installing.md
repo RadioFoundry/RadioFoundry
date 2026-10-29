@@ -65,9 +65,10 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
 
    **Without a firmware backup or a stock file, the installer has no codec to give the radio.** If you skip the
    firmware backup and select no supported stock file, **Install without the codec** is the only way on. The installer
-   then warns, above the Install button, that the RadioFoundry firmware will not include the DMR voice codec: FM will work, DMR voice won't. Go back and
-   select the manufacturer's firmware file to add it, or install again later with the file. Installing again keeps
-   your channels and settings.
+   then warns, above the Install button, that the RadioFoundry firmware will not include the DMR voice codec. Analog
+   FM will work, but DMR voice won't. Go back and select the manufacturer's firmware file to add it, or install
+   RadioFoundry again later with the file. Installing again keeps your channels and settings.
+
 5. **Install.** Put the radio in its bootloader when asked ([your radio's keys](23-radios.md)). The installer writes
    the changed parts and restarts the radio. Do not unplug the radio until it says the installation is complete.
 6. **Verify.** The installer reads what the radio reports: the version it wrote, and "DMR voice is ready" when the
