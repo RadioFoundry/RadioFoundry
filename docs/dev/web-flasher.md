@@ -89,7 +89,7 @@ anything set aside).
 | `wrong-key` | A vendor container no known bootloader key opens: another model, or a modified build | pick the manufacturer's file for this radio |
 | `not-vendor` | No vendor container: a plain image, another firmware project's build, a zip without a firmware file | pick the manufacturer's file, not another project's |
 | `unmapped` | This radio's build, but no codec map for it yet: a known build without a profile (kind `key`), an unknown one whose codec was found (`codec-unmapped`), or a C-SKY codec no profile describes | pick one of the supported files, which the notice lists in full (`supportedFiles()`: a C-SKY radio's profiles with a stock file first, then the files its codec sources name; a source that isn't a file, such as a program flash read, in a sentence of its own), or send the file |
-| `dump` | A program memory dump of this radio (kind `progmem`) given to the codec step: it restores, but holds no codec the page knows | pick the manufacturer's file for the codec |
+| `dump` | A program memory dump of this radio (kind `progmem`) given to the codec step: a firmware version nobody has mapped yet. It restores, but its codec can't be used in an install | send it with Report a Problem (the picked file is attached) so it can be mapped, or select a different firmware file: the notice links the board's `stock_download` when it has one and folds the supported files into an accordion |
 | `damaged` | A cut-short file or a damaged zip | download it again |
 | `internal` | A check that fails after the file was identified: a fault in the page or its data, not the file | nothing: it has been reported (or report it, without error reports) |
 

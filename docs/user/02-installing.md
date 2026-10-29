@@ -65,7 +65,7 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
 
    **Without a firmware backup or a stock file, the installer has no codec to give the radio.** If you skip the
    firmware backup and select no supported stock file, **Install without the codec** is the only way on. The installer
-   then warns, above the Install button, that the radio gets no voice codec: FM works, DMR voice doesn't. Go back and
+   then warns, above the Install button, that the RadioFoundry firmware will not include the DMR voice codec: FM will work, DMR voice won't. Go back and
    select the manufacturer's firmware file to add it, or install again later with the file. Installing again keeps
    your channels and settings.
 5. **Install.** Put the radio in its bootloader when asked ([your radio's keys](23-radios.md)). The installer writes
@@ -128,8 +128,10 @@ several minutes.
 Without the program memory, a backup can't be restored to your initial radio firmware using these tools. Restore
 writes back the program memory only; a backup's calibration and data memory are kept for the record. When you pick
 such a backup, Restore says so and offers **Select a Firmware File**: pick the manufacturer's firmware file for your
-radio instead (any version works). A whole program memory dump of the radio also works, even when the installer finds
-no codec in it: Restore puts it back as it is, never touching the bootloader. It can't give a codec to an install.
+radio instead (any version works). A whole program memory dump of the radio also works, even when its firmware version
+has not been mapped yet: Restore puts it back as it is, never touching the bootloader. An install can't use that
+dump's codec until the version is mapped. The installer then asks you to send the file with **Report a Problem**, and
+offers the manufacturer's firmware file instead.
 
 If the backup holds the original firmware's codeplug, open the file in the
 [Codeplug Editor](04-programming.md#the-codeplug-editor). It converts the channels, zones and contacts to the

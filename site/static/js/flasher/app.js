@@ -221,7 +221,11 @@ function problemNotice(p, { offer = null, boardId = S.board?.id } = {}) {
 		what: p.known || t("flash.codec.stock_build", { radio: radioName(boardId) }) };
 	const internal = p.problem === "internal";
 	const unmapped = p.problem === "unmapped";
-	const { files, also } = unmapped ? supportedFiles(fb(), boardId) : { files: [], also: [] };
+	// a dump of this radio's firmware that has no map yet: it restores, and the same supported files give the codec
+	const dump = p.problem === "dump";
+	const { files, also } = unmapped || dump ? supportedFiles(fb(), boardId) : { files: [], also: [] };
+	const download = dump && S.radio?.flash.stock_download
+		? h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.problem.dump.download")) : null;
 	const list = h("ul", { class: "supported-files" }, files.map((n) => h("li", {}, n)));
 	return h("div", { class: "notice bad problem" },
 		h("strong", {}, t(`flash.problem.${p.problem}.title`, vars)),
@@ -229,10 +233,11 @@ function problemNotice(p, { offer = null, boardId = S.board?.id } = {}) {
 			unmapped && p.key ? [" ", t("flash.problem.unmapped.key")] : null),
 		p.raw ? h("details", { class: "small" }, h("summary", {}, t("flash.problem.details")), h("pre", { class: "log" }, p.raw)) : null,
 		OFFER.has(p.problem) ? analysisOffer(offer, boardId, p) : null,
-		files.length ? h("p", {}, t("flash.problem.unmapped.instead")) : null,
-		!files.length ? null : foldSupported(files)
+		dump ? h("p", {}, t("flash.problem.dump.send")) : null,
+		files.length ? h("p", {}, t(dump ? "flash.problem.dump.instead" : "flash.problem.unmapped.instead", vars), download ? [" ", download] : null) : null,
+		!files.length ? null : dump || foldSupported(files)
 			? h("details", {}, h("summary", {}, t("flash.problem.unmapped.all", { n: files.length })), list) : list,
-		also.length ? h("p", {}, t(files.length ? "flash.problem.unmapped.also" : "flash.problem.unmapped.only", { what: also.join("; ") })) : null,
+		also.length && !dump ? h("p", {}, t(files.length ? "flash.problem.unmapped.also" : "flash.problem.unmapped.only", { what: also.join("; ") })) : null,
 		reportLine());	// a file the page can't use may be the page's fault: the user can send it with the report
 }
 
