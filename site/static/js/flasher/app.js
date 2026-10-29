@@ -1831,8 +1831,13 @@ function doneView() {
 // from another open firmware and a radio whose backup shows no stock codeplug skip it (channelsWanted)
 async function bringChannels(status, { finish }) {
 	const saved = S.backupDone ? S.backupParts?.find((x) => x.what === "spi-flash")?.data : null;
-	const m = await import("./migrate.js");
-	if (!m.channelsWanted({ before: nowChoice(S.now), spiSize: S.radio?.backup?.spi_size, saved })) {
+	let m;
+	try {
+		m = await import("./migrate.js");
+	} catch (e) {
+		diag.error("flash/channels load", e);
+	}
+	if (!m?.channelsWanted({ before: nowChoice(S.now), spiSize: S.radio?.backup?.spi_size, saved })) {
 		S.forward(finish());
 		return;
 	}
