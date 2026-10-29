@@ -232,8 +232,8 @@ test("progress bar: a stall says how long it has waited; an error shown ends the
 	assert.equal(wait.hidden, true, "no wait line after the failure");
 });
 
-test("beta notice: shown once per session; storage that throws shows it again rather than failing", async () => {
-	const { showBetaNotice } = await import("../static/js/flasher/beta.js");
+test("beta notice: once per session and again after 12 hours; storage that throws shows it again rather than failing", async () => {
+	const { showBetaNotice, BETA_NOTICE_EVERY_MS } = await import("../static/js/flasher/beta.js");
 	const make = () => {
 		const dlg = new El("dialog");
 		dlg.open = false;
@@ -243,13 +243,23 @@ test("beta notice: shown once per session; storage that throws shows it again ra
 	};
 	const kept = new Map();
 	const store = () => ({ getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v) });
+	let t = 1_000_000;
+	const now = () => t;
 	const a = make();
-	assert.equal(showBetaNotice(a.doc, store), true);
+	assert.equal(showBetaNotice(a.doc, store, now), true);
 	assert.equal(a.dlg.open, true);
 	a.dlg.close();
+	t += BETA_NOTICE_EVERY_MS - 1;
 	const b = make();
-	assert.equal(showBetaNotice(b.doc, store), false, "dismissed once: not shown again this session");
+	assert.equal(showBetaNotice(b.doc, store, now), false, "dismissed: not shown again within 12 hours");
 	assert.equal(b.dlg.open, false);
+	t += 1;
+	const d = make();
+	assert.equal(showBetaNotice(d.doc, store, now), true, "12 hours after it was closed: shown again");
+	d.dlg.close();
+	assert.equal(kept.get("rfoundry.betaNoticeSeen"), String(t), "the new close restarts the 12 hours");
+	kept.set("rfoundry.betaNoticeSeen", "1");
+	assert.equal(showBetaNotice(make().doc, store, now), true, "an old flag value counts as long ago");
 	const c = make();
 	assert.equal(showBetaNotice(c.doc, () => { throw new Error("SecurityError"); }), true);
 	c.dlg.close();	// closing without storage doesn't throw
