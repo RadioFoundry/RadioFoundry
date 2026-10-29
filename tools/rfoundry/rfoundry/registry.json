@@ -17,6 +17,7 @@
     "DB25-D PRO",
     "db25d"
    ],
+   "rom_base": 50331648,
    "app_base": 50380800,
    "flash_end": 51380224,
    "app_region": [
@@ -40,6 +41,32 @@
      50331648,
      50380800
     ]
+   ],
+   "protect": [
+    {
+     "mem": "progmem",
+     "start": 2088960,
+     "end": 2093056,
+     "what": "factory calibration, the program flash copy (hardware-db25d.md 6, 6.1)"
+    },
+    {
+     "mem": "nand",
+     "start": 0,
+     "end": 131072,
+     "what": "the stock firmware's bad-block table in physical block 0 (hardware-db25d.md 6.5; its place inferred from the shared stock NAND driver)"
+    },
+    {
+     "mem": "nand",
+     "start": 2621440,
+     "end": 3014656,
+     "what": "factory calibration, the NAND copy (logical 0x280000): blocks 20-22, block 21 with no bad block below it, one up for each (hardware-db25d.md 6, 6.5; remapped by the stock bad-block table, inferred from the shared driver)"
+    },
+    {
+     "mem": "nand",
+     "start": 261881856,
+     "end": 268435456,
+     "what": "the stock firmware's reserve pool, the top 10 good blocks: blocks 1998-2047 hold them with up to 40 bad blocks (hardware-db25d.md 6.6)"
+    }
    ],
    "keep_codec_supported": false,
    "first_stage": [
@@ -72,12 +99,17 @@
     360448
    ],
    "codec_tables": [
-    402658476,
+    402657460,
     402670432
    ],
    "loader_id": null,
    "loader_keys": null,
    "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold P1 and press power. The red LED lights and the display stays blank."
+   ],
+   "stock_download": null,
    "key_sha256": null,
    "key_prefix": null,
    "dfu_ids": null,
@@ -91,9 +123,17 @@
     "key": 44,
     "nand": true,
     "progmem": 2097152,
-    "stock_console": "usmart"
+    "stock_console": "usmart",
+    "calibration": {
+     "progmem": 2088960,
+     "nand": 2621440,
+     "magic": "TUNE"
+    }
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": [
+    6
+   ]
   },
   "dm1701": {
    "id": "dm1701",
@@ -111,6 +151,7 @@
     "DM-1701",
     "dm1701"
    ],
+   "rom_base": 134217728,
    "app_base": 134266880,
    "flash_end": 135266304,
    "app_region": [
@@ -170,11 +211,51 @@
      134266880
     ]
    ],
+   "protect": [
+    {
+     "mem": "secreg",
+     "start": 0,
+     "end": 512,
+     "what": "factory calibration in security registers 1 and 2 (hardware-dm1701.md 12.1, 13.2)"
+    },
+    {
+     "mem": "secreg",
+     "start": 512,
+     "end": 768,
+     "what": "factory flags in security register 3: power class, panel type, band limits (hardware-dm1701.md 13.2)"
+    }
+   ],
    "keep_codec_supported": true,
    "first_stage": null,
    "codec_tool": "codec_extract",
    "codec_stock": [
-    "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
+    "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d",
+    "cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713",
+    "643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7",
+    "35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948",
+    "4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9",
+    "0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a",
+    "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532",
+    "7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f",
+    "d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c",
+    "3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff",
+    "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09",
+    "9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5",
+    "7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f",
+    "4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7",
+    "194526d60f796cc0f7339d14c1efeedc267731d108fd66a96876b459408de0ba",
+    "1eafdb774fd71cb7bc3334d06617ed42264ee25df1c73f61744f6b21742bbd20",
+    "ec44929e855442ad248f1a5c171a467922d6cb5742fc35f759db269c645e22ab",
+    "6643261e62b9778a5df43b1e5c3428d6d308bf54b34478513df3e08f6f4dbb63",
+    "98302fbc26fa0db93bd7ecbd29a410ac9fbb42cbd7d6ce15d54ce085fefff329",
+    "e86b9e9775758548dd2d01334cfacc96c640fbf843aa6c5fa009b4bc7598e98d",
+    "4e1c5c081d5bdf4bef8f205668fd7381391187d8b07150df7e99275b030b811b",
+    "e21c72e30716fb43e4d15798012aec15e964b9ec8c1a534ede5d0b0fe73f3acb",
+    "02e366687f122ed752581344db8316666d21782d9353334518b69237a81e74dc",
+    "6df34152e9786530d61032ab71f1962cf194aca0b99cf0a54e3802fd2cd4ac72",
+    "baee36b0fd852dfc1fb14952242a1231dbfa4fabc37cba57c61f1b8d3e0d830d",
+    "2522008737d7845e43ab47a307d38498ee783c788a377fac855dff94dea53af0",
+    "d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f"
    ],
    "codec": {
     "id": null,
@@ -189,6 +270,13 @@
    "loader_id": null,
    "loader_keys": null,
    "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold PTT and SK1 (the side key just above PTT).",
+    "Turn the radio on with the volume knob while you hold both keys. The screen stays dark.",
+    "Release the keys."
+   ],
+   "stock_download": "https://github.com/daniel5600/BAOFENG-DM1701-Original-Firmware",
    "key_sha256": "d983ce95fbc19fc78b913d9afc0381e3ba4ffedb480798865292d05a2fb3deff",
    "key_prefix": "3A0474AD",
    "dfu_ids": [
@@ -215,7 +303,11 @@
      "idle": []
     }
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": [
+    8,
+    10
+   ]
   },
   "dm1801pro": {
    "id": "dm1801pro",
@@ -232,6 +324,7 @@
     "DM-1801Pro",
     "dm1801pro"
    ],
+   "rom_base": 50331648,
    "app_base": 50380800,
    "flash_end": 51380224,
    "app_region": [
@@ -255,6 +348,14 @@
      50331648,
      50380800
     ]
+   ],
+   "protect": [
+    {
+     "mem": "data",
+     "start": 4096,
+     "end": 823296,
+     "what": "factory calibration: the stock codeplug area's 4 KB page tagged 2, which can be any page of it (hardware-dm1801pro.md 6.4)"
+    }
    ],
    "keep_codec_supported": false,
    "first_stage": null,
@@ -287,8 +388,15 @@
     402669160
    ],
    "loader_id": "BF1801-V1",
-   "loader_keys": "PTT and the key on PTB26 (probably SK1)",
+   "loader_keys": "PTT and SK1 (the upper side key)",
    "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold PTT and SK1 (the upper side key).",
+    "Turn the radio on while you hold both keys.",
+    "Release the keys."
+   ],
+   "stock_download": null,
    "key_sha256": null,
    "key_prefix": null,
    "dfu_ids": null,
@@ -302,9 +410,14 @@
     "key": 255,
     "nand": false,
     "progmem": 1048576,
-    "stock_console": null
+    "stock_console": null,
+    "calibration": {
+     "area": 823296,
+     "page_id": 2
+    }
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": []
   },
   "dm32": {
    "id": "dm32",
@@ -321,6 +434,7 @@
     "DM-32",
     "dm32"
    ],
+   "rom_base": 50331648,
    "app_base": 50380800,
    "flash_end": 51380224,
    "app_region": [
@@ -344,6 +458,20 @@
      50331648,
      50380800
     ]
+   ],
+   "protect": [
+    {
+     "mem": "data",
+     "start": 4096,
+     "end": 823296,
+     "what": "factory calibration: the stock codeplug area's 4 KB page tagged 2, which can be any page of it (hardware-dm32.md 10.1, 11.1)"
+    },
+    {
+     "mem": "data",
+     "start": 7405568,
+     "end": 7409664,
+     "what": "a decoded calibration copy an earlier firmware left, the fallback when no factory page is found (hardware-dm32.md 10.1, 17)"
+    }
    ],
    "keep_codec_supported": false,
    "first_stage": null,
@@ -379,6 +507,13 @@
    "loader_id": "BFUV32-V2",
    "loader_keys": "PTT and SK1 (the side key just below PTT)",
    "loader_sign": "The green LED lights",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold PTT and SK1.",
+    "Turn the radio on while you hold both keys. The green LED lights.",
+    "Release the keys."
+   ],
+   "stock_download": null,
    "key_sha256": null,
    "key_prefix": null,
    "dfu_ids": null,
@@ -392,9 +527,14 @@
     "key": 255,
     "nand": false,
     "progmem": 1048576,
-    "stock_console": null
+    "stock_console": null,
+    "calibration": {
+     "area": 823296,
+     "page_id": 2
+    }
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": []
   },
   "md380": {
    "id": "md380",
@@ -413,6 +553,7 @@
     "MD-380 VHF",
     "md380"
    ],
+   "rom_base": 134217728,
    "app_base": 134266880,
    "flash_end": 135266304,
    "app_region": [
@@ -472,11 +613,42 @@
      134266880
     ]
    ],
+   "protect": [
+    {
+     "mem": "secreg",
+     "start": 0,
+     "end": 512,
+     "what": "factory calibration in security registers 1 and 2 (hardware-md380.md 11.1)"
+    }
+   ],
    "keep_codec_supported": true,
    "first_stage": null,
    "codec_tool": "codec_extract",
    "codec_stock": [
-    "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
+    "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43",
+    "ff6c3d79b205391c9c2096f8e4367c514c1e1e4dac7d421ed69077e5b42eaf2f",
+    "167e79f18e78d7d31460dc577c4efd0cb881344f5ee44a4c9a30798ead0fb79d",
+    "c375de54f172346d3f9aecc73cbfa024e753b482e484765b1a890182cfac157e",
+    "db479b26c0c6aed81e9a3d2f7b2bf7476dfccc401c7bdd8976b321b31b967f42",
+    "b92052ea958b15687992cbf796f00a3dbcb33113426def550c32c7dd4e20cd95",
+    "c0053729cfe3155ae19089dd1accaa3a63e2382d6c8d8a50304c548c9dc2a311",
+    "e0a65ef4ba358abd66ce7041b571df5a1b3047b9f113d3cad6f8ab99b6e972be",
+    "18d0080b41cde2871a4801ea0de1876cb3320c2498f3ea04f89d647b7d722e74",
+    "5d0e5671a2e2ee8d2163325b442448e5494b93bd1a3e48e978ddbee6bcfd5bc5",
+    "348f6a6bcddfe80327b5da29a4074fc036bace344891dcf8b7b2b76e7f20b60f",
+    "34ffbc629eb198c4c853c8081f441303a488f80eee5818826b3838b6abcf867c",
+    "1c903d440e35917e8a16906ccae1cbbd539230a5a3352e3eb896ffc3e96eccc6",
+    "9d9a9599f43ef82caefd9239cec3770cc6b411e47f760fa07c6f22167e26fdfb",
+    "466a5d6973926de2148f4ff32382e235ed047c2ef27d5ec5683ab9b91b89489d",
+    "38787da956234f9ec811cae08568f7bdb5f21b4070681ae689a0ba82c845f973",
+    "c8a98648d01c34ec8dca208eb0fff903ac0c9127a46ed482b7ca8e5755396d3d",
+    "5ce02f5f68fcb4d977d3b209d0d3911743ed300ebfb89d583a4a83c10208ed26",
+    "1fc264949d497af9af7dbef541d59d9690f1f9c0167601f5011e17e196584757",
+    "823439219e82f142ddb707003b6d6affa3993e6dd5bee99771a1f7f883de2046",
+    "6b83a74b72df4b13f74f5ac7ef2472593809055fc252c0aabe4c9eeeef1f115c",
+    "9892b2e95da0eee0ec87604007f157f6f9b249a9fb11ba0fc3798e78956e2587",
+    "0897e946bb123a5942f1458d3d2be8f759befe769c6aeaad4fe093ad3a40ac01",
+    "0c954b0fa8426352cf9c99544be4811115f4102fc4ae491269d1cdaef3edd54a"
    ],
    "codec": {
     "id": null,
@@ -491,6 +663,13 @@
    "loader_id": null,
    "loader_keys": null,
    "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold PTT and the side key just above it.",
+    "Turn the radio on while you hold both keys. The LED blinks; the screen stays dark.",
+    "Release the keys."
+   ],
+   "stock_download": "https://md380.org/firmware/orig/",
    "key_sha256": "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd",
    "key_prefix": "2EDF40B5",
    "dfu_ids": [
@@ -537,6 +716,9 @@
       }
      ]
     }
+   ],
+   "cps_radio_types": [
+    7
    ]
   },
   "md9600": {
@@ -557,6 +739,7 @@
     "RT90",
     "md9600"
    ],
+   "rom_base": 134217728,
    "app_base": 134266880,
    "flash_end": 135266304,
    "app_region": [
@@ -616,12 +799,13 @@
      134266880
     ]
    ],
+   "protect": [],
    "keep_codec_supported": true,
    "first_stage": null,
    "codec_tool": "codec_extract",
    "codec_stock": [
-    "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09",
-    "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532"
+    "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09@md9600",
+    "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532@md9600"
    ],
    "codec": {
     "id": null,
@@ -636,6 +820,12 @@
    "loader_id": null,
    "loader_keys": null,
    "loader_sign": "",
+   "bootloader_steps": [
+    "Disconnect the radio's DC power cable (the power key alone is not enough) and connect the USB cable to the mini-USB port on the rear.",
+    "Hold P1 and the orange (alarm) key while you connect the power again. The display flashes, then stays blank. Not yet confirmed on a radio: one report names the red key instead of the orange one.",
+    "Release the keys."
+   ],
+   "stock_download": null,
    "key_sha256": "c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae",
    "key_prefix": "A2FABB4B",
    "dfu_ids": [
@@ -664,7 +854,212 @@
      ]
     }
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": [
+    5
+   ]
+  },
+  "mduv380": {
+   "id": "mduv380",
+   "name": "TYT MD-UV380",
+   "model": "MD-UV380",
+   "part_of": null,
+   "platform": "stm32f4",
+   "platform_stubs": [
+    "stub/stm32f4"
+   ],
+   "family": "usb-dfu",
+   "link": "usb",
+   "release": "testing",
+   "debuglink_names": [
+    "MD-UV380",
+    "MD-UV380 10W",
+    "mduv380"
+   ],
+   "rom_base": 134217728,
+   "app_base": 134266880,
+   "flash_end": 135266304,
+   "app_region": [
+    134266880,
+    135004160
+   ],
+   "sectors": [
+    [
+     3,
+     134266880,
+     16384
+    ],
+    [
+     4,
+     134283264,
+     65536
+    ],
+    [
+     5,
+     134348800,
+     131072
+    ],
+    [
+     6,
+     134479872,
+     131072
+    ],
+    [
+     7,
+     134610944,
+     131072
+    ],
+    [
+     8,
+     134742016,
+     131072
+    ],
+    [
+     9,
+     134873088,
+     131072
+    ],
+    [
+     10,
+     135004160,
+     131072
+    ],
+    [
+     11,
+     135135232,
+     131072
+    ]
+   ],
+   "protected": [
+    [
+     134217728,
+     134266880
+    ]
+   ],
+   "protect": [
+    {
+     "mem": "secreg",
+     "start": 0,
+     "end": 512,
+     "what": "factory calibration in security registers 1 and 2 (hardware-mduv380.md 8)"
+    },
+    {
+     "mem": "secreg",
+     "start": 512,
+     "end": 768,
+     "what": "factory flags in security register 3: power class, panel type, band limits (hardware-mduv380.md 4, 11)"
+    }
+   ],
+   "keep_codec_supported": true,
+   "first_stage": null,
+   "codec_tool": "codec_extract",
+   "codec_stock": [
+    "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e",
+    "7dec4b751e8a0f44cf7d54d0ebc3b439a9f49899eadd7c8ff14d2804edbe8ac2",
+    "84331dbc9bccf5021122b715dcb77d7589dba0745694bf3a249aae6e7c383ef1",
+    "77923d67aa75a07f7601a1c53ae1d5f5af37bd4367d52a50c8aeff89b834eceb",
+    "fb1897b7123dc6a039a5266972c5bb6f563f574d3769bd1cbdc7bb02b5039cc7",
+    "78650258f65fef33d78fad65678bedd74e44b75e924466829c9a360ce8915f39",
+    "e31ecd122f77ccd34e563193b004e8621ff5422676521503521f64f1045f73a9",
+    "fbb307fd14577e48e1fb6edb3395d4d684baf12dd9fed66280ad76d12e0e04c2",
+    "6c2e43558290076e86671cb2d25bd18c90cbeb08e02a1b68e534c0ab4fe808bb",
+    "23c14a9c30b2b626021c39159a8bb68a2403f4eda28fd8101a0264d022fb06da",
+    "195847c34a037f1c7ca8cc1c69bc9bfd12c2fada22fb1f74a86189281096129d",
+    "6f103808b733260903e03b24de375b7f5c046b8cb3f50551e3b665573221f0cd",
+    "7b17e39185a89ada84e5f5e46389c8d9af62a54a4ed0b6096b7e5a6e0df9f9ea",
+    "f816ee4092a0b9e77d6a23bec49508ba5f190c2dc255ac6cc869dfdb67dfb2d3",
+    "657cd4e6c86aa63428f1bc081ce0614b35db0607d34ba6b6065357a58a045c89",
+    "9c58aca48de3d42b897852e424b0da1392f6e983d51ca69b1425b72a0a836ca1",
+    "a2f38eaf4b98379fee6dfc00cae916bbc550e26ba0dd04c5fb56199a9e62b7f8",
+    "1e6a74b8cc62ffabd06dd83912f1bf0a7a7ef12d4bda63b961544c7e1393655a",
+    "d3996d672d6878ca823880320e240883ea64208f121923cd2bb6fe51d2e50784",
+    "14e5634eeffa5f99f85fd762df4dc141432762d75b933031000d1f398fc4d2e4",
+    "3ebe806da0bbda993220cca9a97411225c1bf9e29097db3224ff722b00c6d023",
+    "4acf6d48baca843d7e1220de8c0486670ee7f43953ebbb53d910ef1d94bfbe52",
+    "2768ece93ddd4f1fd4ffc4e58ee073bd145b865f4ea6d256315f6e0019e93995",
+    "ebc5e34f4a00679a9200df8233c4b42b89dbd440a7487bbac2796223b796b392",
+    "b0345e8c9e28b353954f3b6aa66599b5ac682c2037e212052af16e2c888572cd",
+    "447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee",
+    "a7b277137c32ac3583083d8a650488415f62360b7f38a6d903fc732b858dd502",
+    "a8a5265d29f8f69ee050a0a47052a8925a3c403ac270d8e5fda324a4a697b220",
+    "3d1b9ed4a2293981d0915d0655172e7a4d9bc702fe493328be37901427d51108",
+    "70a44a4a77d6ffb4b0b6b9b4a8f26afb9607d65875d2ba1094baf6c8e6a46c9a",
+    "bf58116bcd695d8b14634fbffab7cd33ba9bcd1325b92179ef6bf94d380d2151",
+    "531947c0d4d7d3ae0c5a3f94d81fbf3a04259488a9af09f9a3a8b57cabf135ed",
+    "7b7ed3075a7735cde969402eda163f96bf2931ae55cbcc4fbf62625bdaf04855",
+    "bf98dc6ca9d888712924af75dd5eff7495de4ab82848f0701616e29eb9d5e5a2",
+    "e6c696a3f1a6ac3d622559d7422efc97399b748aac8923a7440239b28c03a5c1"
+   ],
+   "codec": {
+    "id": null,
+    "windows": null,
+    "installed": [],
+    "sources": null
+   },
+   "codec_code": null,
+   "codec_slot": null,
+   "codec_run": null,
+   "codec_tables": null,
+   "loader_id": null,
+   "loader_keys": null,
+   "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold PTT and the side key just above it (SK1).",
+    "Turn the radio on with the volume knob while you hold both keys. The screen stays dark.",
+    "Release the keys."
+   ],
+   "stock_download": "https://passion-radio.com/dmr-equipment/tyt-md380-321.html",
+   "key_sha256": "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991",
+   "key_prefix": "00AA8989",
+   "dfu_ids": [
+    1155,
+    57105
+   ],
+   "dfu_string1": "AnyRoad Technology",
+   "dfu_product": "Digital Radio in USB mode",
+   "stub": {
+    "tool": "f4stub",
+    "id": 5,
+    "tested": false,
+    "hse": 8000000,
+    "boot_end": 134266880,
+    "spi": {
+     "bus": 1,
+     "mode": 0,
+     "hz": 4500000,
+     "af": 5,
+     "sck": "PB3",
+     "miso": "PB4",
+     "mosi": "PB5",
+     "cs": "PD7",
+     "idle": []
+    }
+   },
+   "build_options": [
+    {
+     "name": "POWER",
+     "title": "Power",
+     "help": "The MD-UV380, MD-UV390 and RT3S are 5 W radios. Choose 10 W only for an MD-UV390 Plus, whose box and label say 10 W.",
+     "values": [
+      {
+       "id": "5w",
+       "title": "5 W",
+       "text": "MD-UV380, MD-UV390, RT3S",
+       "board_name": "MD-UV380"
+      },
+      {
+       "id": "10w",
+       "title": "10 W",
+       "text": "MD-UV390 Plus 10 W",
+       "board_name": "MD-UV380 10W"
+      }
+     ]
+    }
+   ],
+   "cps_radio_types": [
+    6
+   ]
   }
  }
 }

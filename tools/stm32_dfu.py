@@ -25,6 +25,7 @@ import time
 # the board registry (tools/boards.py generates it): the RadioFoundry boards on this bootloader, their sectors, keys and codecs
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))
 from rfoundry import boards  # noqa: E402
+from rfoundry import protect  # noqa: E402  (protected flash regions, board.toml [[flash.protect]])
 
 RFOUNDRY_BOARDS = [b for b in boards.BOARDS.values() if b.key_sha256]
 BLOCK = 1024
@@ -45,13 +46,11 @@ assert all([(s.addr, s.size) for s in b.sectors] == REGIONS and (b.app_base, b.f
 # boards' come from the registry ([flash.dfu]); STOCK_ONLY are radios with this bootloader and no RadioFoundry board yet
 # (planned, docs/spec/radios.md), for flashing their stock firmware back.
 STOCK_ONLY = {
-    "mduv380": ("739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991", bytes.fromhex("00AA8989")),
     "md9600": ("c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae", bytes.fromhex("A2FABB4B")),
 }
 KEYS = dict({b.id: (b.key_sha256, b.key_prefix) for b in RFOUNDRY_BOARDS}, **STOCK_ONLY)
 ALIASES = dict({b.id: b.id for b in RFOUNDRY_BOARDS}, **{
     "rt84": "dm1701",      # spec: same key as the DM-1701, unverified
-    "mduv380": "mduv380",
     "mduv390": "mduv380",
     "md2017": "mduv380",
     "md9600": "md9600",
@@ -93,6 +92,17 @@ requirements: Python 3 and pyusb (pip install pyusb) on top of libusb.
 The key file is yours to supply (1024 bytes); it is checked by SHA-256 and never stored in this repository.
 Never flash an official "OutSecurityBin" firmware file with this tool; it is refused.
 """
+
+
+def check_erase():
+    """flash() erases every sector in REGIONS, whatever the image's size, on any radio this bootloader serves: refused
+    when one of them has a protected region there (none has today: their factory data is in the SPI flash)."""
+    for b in RFOUNDRY_BOARDS:
+        for addr, size in REGIONS:
+            try:
+                protect.check_absolute(b, b.rom_base, addr, addr + size, "erase")
+            except protect.ProtectedError as e:
+                raise DfuError("%s: %s" % (b.name, e))
 
 
 class DfuError(Exception):
@@ -343,6 +353,7 @@ class Dfu:
         self.wait_dnload_done(what)
 
     def flash(self, plan, progress=None):
+        check_erase()
         self.wait_idle()
         self.vendor(0x91, 0x01)
         self.vendor(0x91, 0x31)
@@ -573,6 +584,19 @@ def self_test():
           "fake bootloader decrypts the stream back to the image")
     check(sorted(fake.flash) == [APP_BASE + i * BLOCK for i in range(len(fake.flash))], "contiguous from 0x0800C000")
     check(fake.exited, "exit: set address 0x08000000 + zero-length DNLOAD")
+    b0 = RFOUNDRY_BOARDS[0]
+    keep = b0.protect
+    b0.protect = keep + [{"mem": "progmem", "start": REGIONS[-1][0] - b0.rom_base, "end": FLASH_END - b0.rom_base,
+                          "what": "test (x.md 1)"}]
+    fake = FakeBootloader(key)
+    try:
+        Dfu(fake, 0, log=lambda *a: None, sleep=lambda s: None).flash(plan_blocks(xor_image(img, key)))
+        check(False, "a protected region in the erased sectors: refused")
+    except DfuError as e:
+        check("protected region" in str(e) and fake.erased == [] and fake.vendor == [],
+              "a protected region in the erased sectors: refused before anything is sent")
+    finally:
+        b0.protect = keep
 
     print("self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                           "" if len(fails) == 1 else "s"))

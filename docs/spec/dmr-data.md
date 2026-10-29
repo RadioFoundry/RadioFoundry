@@ -406,8 +406,8 @@ the reply queue and its 5 s age limit, and the service's TX list and listen befo
   CRC-9's MSB, octet 1 its other 8 bits, 10 data octets (rate 1/2); the last block ends with the CRC-32 of all data
   octets (pad included). CRC-9 (B.3.10): the block's data octets then the 7 serial bits, x^9 M(x) mod
   x^9 + x^6 + x^4 + x^3 + 1, inverted, then masked with the rate's mask (0x0F0 rate 1/2, 0x1FF rate 3/4, 0x10F rate 1).
-  At most 64 blocks (one selective ACK block) and the 40-burst list: about 360 octets of user data at rate 1/2; a
-  longer packet goes unconfirmed (`ip.cnf_too_long`).
+  At most 64 blocks (one selective ACK block) and the 64-burst list: every packet of the air MTU (596 octets, 60
+  blocks at rate 1/2, 12.8) goes confirmed. A packet too long for it would go unconfirmed (`ip.cnf_too_long`); none is.
 - In direct mode the transmission ends with the Data Terminator LC (FLCO 0x30; octet 8: G/I, A, F, S, N(S)) that
   opens the receiver's response window (TS 102 361-3 5.4.1); through a repeater nothing follows the last block.
 - Then it waits `DMR_IPC_RESPONSE_MS` (1.5 s) after the list has gone for a response from the destination with the
@@ -425,8 +425,8 @@ the reply queue and its 5 s age limit, and the service's TX list and listen befo
 - N(S) per destination: the last 4 radios; a radio not in the table starts at a number from the clock, so a receiver
   still holding our number from before a restart doesn't take the first packet as a duplicate (a strict receiver's
   out of sequence NACK resynchronizes either way).
-- One IP packet at a time: the gateway's mailbox stays taken until the service is done (`net.to_air_refused` counts
-  the host's packets meanwhile; the host's stack retries or drops, as for any lost IP packet).
+- The gateway's packets and zone sharing's go through one TX queue (12.6). A confirmed packet is always alone in its
+  transmission and the next waits for its end; unconfirmed packets to the same destination share one (12.6.2).
 
 ### 12.3 Confirmed data to us
 
@@ -466,13 +466,123 @@ ip.rx_duplicates ip.rx_crc9_mismatch`. DMR_DATA ops 9 IP_SETTINGS (the gateway I
 explicit IP destination optional) (`debuglink.md` 3.12; `rfoundry_debug.py data ip-settings ... gateway=ID`,
 `data ip-send ID@A.B.C.D ...`).
 
-### 12.6 Open
+### 12.6 Our transmissions: the TX queue, chaining and the guard
+
+`core/dmr/dmrAirQueue.c` (`CONFIG_DMR_AIR_QUEUE`, built with the IP gateway or zone sharing). It replaced the
+gateway's one-packet mailbox (#154): a host that sent a second datagram while the first was on air had it refused.
+
+#### 12.6.1 The queue
+
+| Property | Value |
+|---|---|
+| Producers | the IP gateway (the host link task), zone sharing (any task); `airqPut`, `airqPutBatch` (all or none) |
+| Buffer | a static byte ring of `CONFIG_DMR_AIR_QUEUE_BYTES` octets (default 2048); no allocation |
+| Record | a 36-octet header, then the packet, rounded up to 4 octets. Each packet takes its own length, not a fixed slot |
+| Count | no limit but the bytes: a put is refused only when the packet doesn't fit |
+| Layout | a record never wraps. When the end of the buffer has no room, the end is left unused and the record goes at the start, so the data service reads the oldest in place while others are added |
+| Order | first in, first out; the radio task's `airqTick` hands the oldest to the data service |
+| Wait | the gateway's packets are offered for 2 s while the service refuses them (busy, not a DMR channel we may send on), zone sharing's for 10 s; then dropped (`airq.gave_up`) |
+| Age | a gateway packet still queued after 10 s is dropped unsent (`airq.aged`): what it was for has likely moved on |
+| Visibility | depth in packets and octets, both high water marks, refusals and every way a packet ends: the `air` view section ([debuglink.md](debuglink.md) 3.7, section 24); drops are also logged on the debug link |
+
+2048 octets hold two longest packets (612) with room to spare, a zone's four fragments (a build check), or about thirteen 120-octet
+datagrams. The RAM is the buffer only: raw (SAP 10) packets are built in the data service's burst list (12.8). Measured on one
+board's build: RAM use rose from 101,664 to 108,056 bytes of 131,068 with the queue, zone sharing and its screens,
+which leaves about 22 KB. A packet may come in two pieces (`airqItem_t.tail`), copied into the queue one after the
+other, so a zone share fragment needs no buffer of its own before the queue; boards with less headroom set a smaller `CONFIG_DMR_AIR_QUEUE_BYTES` (at least 2 x (36 + 612)).
+
+#### 12.6.2 Chaining
+
+ETSI DMR doesn't need a gap between data packets: each has its own data header, and a receiver syncs on it.
+
+- When the oldest queued packet is an IP packet, the queue offers it together with the IP packets right after it to
+  the same destination and call type, with the same IP addresses and TTL (`dmrDataServiceSendIPChain`; the
+  gateway's off-net packets carry their own, 11.1). Anything else stops the chain, so the order stays.
+- The service takes the first as usual. If it goes unconfirmed, the service adds the following ones that also go
+  unconfirmed, up to 8 packets and the 64-burst list ([gotchas.md](gotchas.md) 5.5). What doesn't fit goes in the
+  next transmission. The list is counted with each packet's own header: a full IPv4 header (SAP 4) takes more blocks
+  than a compressed one.
+- Confirmed packets are never chained: a confirmed first goes alone, and a confirmed packet after it ends the chain
+  and waits its turn.
+- On air: the preamble CSBKs once, then each packet's data header and blocks in order. Unconfirmed packets have no
+  data terminator (TS 102 361-3 5.4 defines the Terminator Data LC only after confirmed data in direct mode, to open
+  the response window), so a chain ends after its last block, like a single unconfirmed packet.
+- The preamble count: TS 102 361-2 7.1.2.5 and 7.2.7 define the Pre_CSBK. Its CSBK Blocks to Follow is "the number
+  of Preamble CSBK PDUs and either the following CSBK or data message that will be sent", not counting the CSBK
+  itself. TS 102 361-1 and -3 don't define the preamble. Each data header's Blocks to Follow (TS 102 361-1 9.3.21)
+  counts its own packet's blocks only. Ours: each preamble counts the preambles after it plus every burst of the
+  chain, so a scanning or sleeping receiver that trusts the count stays for the whole transmission
+  (`dmrDataBuildPreambles`).
+- One transmission, one result: every packet in it ends sent or failed together.
+- A transmission stays within the stack's TX deadline ([gotchas.md](gotchas.md) 3.9), which grows with the list.
+- Receive needs nothing new: a data header resets the receiver, also right after the previous packet's last block
+  (`dmrDataRxBurst`).
+
+#### 12.6.3 The guard
+
+Between separate transmissions the service waits `CONFIG_DMR_DATA_TX_GUARD_MS` (default 250 ms) after our own
+transmission ended before it starts another that isn't a reply. Replies (ETSI responses, CSBK answers) are not held:
+the sender waits for them. The end is stamped at the first tick after the stack reports it, never before the real end.
+Lists held back are counted (`data.tx_guarded`).
+
+The guard is a workaround. On the SDR bench, #154 found receivers lost the second of two packets sent as separate
+transmissions with no gap, with `data.rx_blocks_stale` on the receiver: it never saw the second transmission's
+preamble CSBKs or header. The cause is not known. Candidates: our own re-key (the transmitter's ramp), or the
+receiving modem's end-of-call state (200-400 ms, [gotchas.md](gotchas.md) 3.6). 250 ms was enough in every trial.
+Chaining avoids the re-key for packets that can share a transmission.
+
+For finding the cause, the debug link's DMR_DATA op 11 TX_SPACING sets the guard and turns chaining off in RAM
+(`rfoundry_debug.py data tx-spacing MS [chain|no-chain]`). `tests/hil/test_dmr_tx_spacing.py` (opt-in RF) measures
+delivery chained, separate with no gap, and separate with 250 ms.
+
+### 12.7 Open
 
 - No commercial radio has answered our confirmed packets yet, nor sent us a selective retry: the CRC-9 and the
   response formats are from the standard and the vectors (`dmr_ip_vectors.py`); `ip.rx_crc9_mismatch` on air will
   show a disagreement.
 - Rate 3/4 for confirmed IP (16 octets per block) and the sliding window (TS 102 361-3 5.4.4) are not used.
-- Fragmentation (FSN chains) is not built: one packet per datagram.
+- Fragmentation (FSN chains) is not built: one packet per datagram, so a datagram longer than the air MTU (12.8)
+  doesn't go. The gateway drops IP fragments from the host too ([usb-network.md](usb-network.md) 3.2).
+
+### 12.8 The air MTU
+
+The longest IP datagram we send in one transmission. It is not below the USB link's MTU (586,
+[usb-network.md](usb-network.md) 3.2), so every packet a host sends to the air fits one transmission, confirmed or not.
+`core/dmr/dmrData.h` sizes the burst list and the packet buffer for it:
+
+| Constant | Value | From |
+|---|---|---|
+| `DMR_DATA_MAX_PACKET` | 612 | the packet buffer: 51 rate 1/2 blocks |
+| `DMR_DATA_IP_MTU` | 596 | confirmed delivery: 60 blocks of 10 octets less the 4-octet CRC-32 (612 - 16; unconfirmed, 51 blocks would carry 608) |
+| `DMR_DATA_IP_PREAMBLES` | 2 | preamble CSBKs before an IP packet (also SMS) |
+| `DMR_DATA_MAX_BURSTS` | 64 | the burst list of one transmission: a confirmed packet of 596 octets |
+
+| A packet of 596 octets | Blocks | Bursts | Air time (60 ms a burst) |
+|---|---|---|---|
+| Unconfirmed, rate 1/2 (12 octets a block) | 50 | 2 + 1 + 50 = 53 | about 3.2 s |
+| Confirmed, rate 1/2 (10 octets a block) | 60 | 2 + 1 + 60 + the terminator = 64 | about 3.8 s |
+
+- The MTU counts the user data on air: the IP and UDP header as sent (SAP 4: 28 octets; SAP 3: 5, 7 or 9, 11.1)
+  plus the payload. The largest UDP payload is 568 octets with the full header and up to 587 with the compressed one
+  (9 octets: ports outside 4000-4099 in the extended headers). A raw port packet (no header) carries up to 596 through the gateway, the air MTU (the encoder itself takes 608).
+- Confirmed (12.2) takes every packet of the MTU: 60 blocks, under the 64 of one selective ACK block. Longer packets
+  are refused (`DMR_REQ_FAILED`, `ip.failed`), nothing goes on air. Build-time asserts in `dmrData.c`,
+  `dmrDataService.c` and `ipGateway.c` keep the four constants and the link MTU in step.
+- The gateway still checks each host packet against the air MTU before the air queue, with the header it will get
+  (`ipGatewayAirLength`). On the radio none is too long; the check and its ICMP fragmentation needed answer are
+  covered by a host test built with a narrower air (`ipGatewayTestAir440`; [usb-network.md](usb-network.md) 3.2).
+- Receiving: the receiver reassembles up to `DMR_DATA_MAX_PACKET` (51 blocks, 608 octets of user data unconfirmed)
+  from other radios. A longer packet ends in a receive error (`data.rx_crc_errors`) and nothing is delivered. The
+  gateway passes the host what fits its link (586 octets of IPv4); a longer packet, from a radio that sends more than
+  we do, is dropped and counted (`net.up_too_big`).
+- Keyed time: the stack's TX deadline grows with the list (10 s + 60 ms a burst, [gotchas.md](gotchas.md) 3.9), so a
+  64-burst list has about 13.8 s. The guard (12.6.3) is per transmission and doesn't change.
+- RAM: one list of 64 bursts (27 octets each, 1,728) in the data service. The air queue builds raw packets in it
+  (`dmrDataServiceSendShortData`) instead of a list of its own; the hotspot keeps its own list (it runs in the host
+  link's task), placed outside the CPU-only RAM where a board has one. The packet buffers (`txPacket`, `ipPacket`,
+  `dmrDataRxPacket`) are 612 octets each.
+- Not done, follow-up: fragmentation (12.7: a lost burst loses the whole datagram, and a receiver that misses one
+  fragment drops the rest).
 
 ## 13. Tests
 
@@ -495,8 +605,13 @@ explicit IP destination optional) (`debuglink.md` 3.12; `rfoundry_debug.py data 
   packet and a selective ACK byte for byte against vectors, the selective retry round trip through the receiver with a
   bad block and with a lost block, the NACK cases; testAirtime: the table in 11.3), `tests/host/dmrDataServiceTest.c`
   (testIpTx: unconfirmed SAP 3, confirmed with ACK, selective ACK, N(S) resync, time-outs to failure, tries, repeater
-  mode, group, too long, no channel; testConfirmedRx: selective ACK and the retry passed on once, a duplicate, lost
+  mode, group, too long, no channel; testIpAirMtu: the constants, SAP 4 and SAP 3 at the air MTU unconfirmed in 53 bursts and
+  decoded back, confirmed in all 64, one octet more refused with nothing on air; testConfirmedRx: selective ACK and the retry passed on once, a duplicate, lost
   bursts, NACK), `tests/host/hostlinkNetTest.c` (the gateway's datagrams through the service path: SAP 3 for ports
   outside 4000-4099, SAP 4 for 4007). The vectors come from `tests/host/dmr_ip_vectors.py` (polynomial division from
   the standard's text, apart from the C code).
 - `tests/hil/test_dmr_ip.py`: on air, the bench modem decoding with `tools/bench/dmr_packet.py` (opt-in RF; 11.4).
+- `tests/hil/test_dmr_ip_burst.py`: datagrams back to back each way (radio, host and bench) and the air MTU on air
+  (12.8): the largest datagram each way, the receiver's limit and one block more; one octet more to the air and the
+  ICMP reply to the host on firmware with a narrower air MTU only. The
+  bench sends UDP with `tools/bench/bench_tx.py data --udp-port` (its offline check: `bench_tx.py selftest`).

@@ -54,6 +54,7 @@ neighbor on the same platform.
 | `kind` | `handheld` or `mobile` | |
 | `part_of` | string, optional | Another board this one is a build of |
 | `debuglink_aliases` | list, optional | Names older firmware reported on the debug link |
+| `looks` | list of tables, optional | Other bodies the board ships in that look too different to share its picture: `{ id, name, also }`. Each is its own radio card on the site, drawn in `site/static/img/radios/src/<id>-<look id>.svg` (the site build refuses a missing drawing), and links to the board's page. `name` and every entry of `also` (the radios in that body) must be in the board's `also`; the board's own card lists the rest |
 
 ### [docs]
 
@@ -78,6 +79,23 @@ One-line summaries for the site and the generated tables; the facts stay in `doc
 | `gallery` | The display class (`160x128`); `check` requires the UI gallery to have it, and the frame buffer in `board.mk` (`GFX_FB_BYTES`, `GFX_MAX_ROWS`, `GFX_INDEXED`) to hold it |
 | `unconfirmed` | Optional: hardware switches (`hardware` in `tests/hil/features.toml`) the board neither builds nor lists in `BOARD_UNSUPPORTED` or `BOARD_NOT_WRITTEN` ([the rule](../build-config.md#unsupported-not-written-unconfirmed)), because no source says yet whether the radio has the part: switch to what is unknown. `check` fails on any other hardware switch that is off by default, and on an entry for a switch the board builds or lists. The feature matrix shows it as ? |
 | `clock` | `{ rtc, note }`: the real-time clock. `rtc` is `backed` (keeps time through power-off), `unbacked` (only while on), `none` or `unknown`; `note` gives the source. The feature matrix and the site show it |
+| `variants` | Optional: the hardware variants sold under the model, as `[[hardware.variants]]` tables (below) |
+| `variant_pattern` | With `variants`: a regular expression over the stock firmware's version text whose first group is the variant code |
+| `variant_check` | With `variants`: how a user reads the code on the radio, one or two sentences. The flasher and the radio page show it |
+
+A variant is `{ code, name, level, notice, runs }`:
+
+| Key | Meaning |
+|---|---|
+| `code` | What `variant_pattern` captures; unique within the board |
+| `name` | Short text: what sets this hardware apart |
+| `runs` | `{ board, options }`: the image it runs. `board` is this board when variants share an image, another board id when the variant needs its own. `options` names build option values of that board (`[[build_options]]`) the image must be built with. No `runs`: not supported, and no `level` or `notice` |
+| `level` | With `runs`: `bring-up`, `testing` or `supported`, as in `[status]` |
+| `notice` | Required below `supported`: what doesn't work yet. The flasher shows it as a warning when it reads or the user picks the variant |
+
+The web flasher reads the code before it writes (the stock console, the vendor identify reply) or asks the user, and
+refuses an image the variant doesn't run (`site/static/js/flasher/variant.js`). `check` requires a supported board
+to have a supported variant that runs its own image.
 
 ### [status]
 
@@ -119,6 +137,7 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 | `stock_download` | Optional: where the stock firmware can be downloaded |
 | `stock_versions` | The stock versions the tools know |
 | `backup` | `{ stock, rfoundry, spi_size }`: what a backup reads from stock firmware and from RadioFoundry (`none` or `full`), and the SPI flash size |
+| `notice` | Optional: a warning the web flasher shows on every step once the radio is picked, for a choice the radio can't check itself (two images that differ in hardware the radio can't report, for example) |
 
 `[flash.bootloader]`:
 
@@ -126,6 +145,7 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 |---|---|
 | `steps` | How to enter the bootloader, one step per item, for the web flasher and the manual |
 | `keys` | Optional: the short form the tools print |
+| `hold` | Optional: the keys held to enter it, by key name (the board's `KEY_*` in lower case, `["ptt", "sk1"]`). The web flasher marks them on the radio's picture and names them under it; `steps` stays the instructions. Each must be a key of the board (`tools/boards.py check`) and tagged in its drawing or listed in `data-undrawn` ([Radio images](website.md#radio-images)) |
 | `id` | Optional: the string the loader answers, also the magic of its files (`serial-loader`) |
 | `sign` | Optional: what the radio shows in the bootloader |
 
@@ -142,6 +162,54 @@ per-model XOR key's hash and first bytes, never the key).
 
 A key of another platform's stub fails the check.
 
+#### Protected regions
+
+`[[flash.protect]]` lists flash that no tool erases or writes: factory data that can't be made again, the calibration
+first. One table per region:
+
+```toml
+[[flash.protect]]
+mem = "data"
+start = 0x1000
+end = 0xC9000
+what = "factory calibration: the page tagged 2 in the stock codeplug area (hardware-<radio>.md 6.4)"
+```
+
+| Key | Meaning |
+|---|---|
+| `mem` | The memory: `progmem` (the MCU's program flash), `data` (the SPI NOR data flash), `nand` (the SPI NAND's main area, without spare bytes) or `secreg` (the SPI NOR flash's security registers) |
+| `start`, `end` | The range, `end` exclusive, as offsets in that memory: `progmem` from the platform's `flash_base`, `data` and `nand` from 0, `secreg` 256 bytes per register from register 1 at 0 |
+| `what` | What lies there, with the spec section that establishes it in parentheses |
+
+`tools/boards.py check` refuses an entry:
+
+- whose memory the board doesn't have (`data` and `secreg` need `backup.spi_size` and no NAND; `nand` needs a
+  `spi_nand_t` in the board's sources)
+- that runs past the memory's end
+- that isn't on the memory's erase boundaries: the platform's sectors (or 4 KB) for `progmem`, 4 KB for `data`, a
+  block for `nand`, a register for `secreg`
+- that overlaps another entry, the application or the codec slot
+- whose `what` cites no section
+
+A region whose place moves (remapped by a bad-block table, for example) is protected over every place it can be. The
+registry carries the list as `protect` (`registry.json`, `radios.json` `flash`, `flash-boards.json` `boards`, `c7000`
+and `f4stub`).
+
+What the tools do with it. `tools/rfoundry/rfoundry/protect.py` and `site/static/js/flasher/protect.js` hold the one
+check each language uses:
+
+| Write | Behavior |
+|---|---|
+| An install, a test write, a single sector | Refused before anything is erased |
+| A restore of a whole memory (program flash backup through the stub, internal flash through DFU, SPI flash through the STM32 stub, codeplug through the CPS) | Carved: the protected sectors keep what the radio has, the rest is written |
+| A security register restore | Refused when a protected register differs (a register is written whole) |
+| A loader that erases a fixed area (the vendor IAP and serial loaders, the DFU updater in `tools/stm32_dfu.py`) | Refused when the area holds a protected region: those erases can't be carved |
+| A whole-chip erase | Refused on a memory with any protected region. No tool sends one |
+
+The stub tools check every erase and program command they send, not only the high-level writes. RadioFoundry's own
+firmware keeps its own rules for what it writes (the CPS shim refuses its areas,
+[cps-protocol.md](../spec/cps-protocol.md) 2.3).
+
 ### [codec]
 
 | Key | Meaning |
@@ -157,6 +225,13 @@ stock files' profiles. The files must hold the same codec; each may put its tabl
 codec windows are the union of every file's layout. The image must stay out of all of them, and keeping the codec keeps
 all of them. A merge writes and checks the layout of the file it merges
 ([codec-placement.md](../spec/codec-placement.md)).
+
+### [cps]
+
+`radio_types`: the radio types the open-firmware CPS radio info reports for this radio
+([open-firmware-cps.md](../spec/open-firmware-cps.md) 4). RadioFoundry's CPS shim reports them, and the web flasher
+checks them before it backs up a radio that runs another open firmware. The registry carries them as
+`cps_radio_types`, with `rom_base` (the platform's `flash_base`, where the CPS's area 5 offsets start).
 
 ### [frame]
 

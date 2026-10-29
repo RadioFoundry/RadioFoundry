@@ -11,7 +11,7 @@ also = ["Retevis RT90"]
 kind = "mobile"
 debuglink_aliases = ["MD9600", "RT90"]
 # where the radio appears in the site's lists (the lowest: the home page's radio)
-order = 6
+order = 7
 
 [docs]
 hardware = "docs/spec/hardware-md9600.md"
@@ -78,8 +78,8 @@ key_prefix = "A2FABB4B"
 [codec]
 tool = "codec_extract"
 stock = [
-	"79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09",	# MD9600-CSV-V06.09.bin
-	"de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532",	# MD9600-CSV(V4)-V16.45.bin
+	"79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09@md9600",	# MD9600-CSV-V06.09.bin
+	"de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532@md9600",	# MD9600-CSV(V4)-V16.45.bin
 ]
 
 # How the site draws the radio

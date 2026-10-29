@@ -262,7 +262,8 @@ def flash_boards():
 	finally:
 		sys.path.pop(0)
 	out = {"format": "rfoundry-flash-boards/1", "manifest_format": manifest.FORMAT, "boards": {}, "profiles": {},
-	       "known_files": dict(stockfw.KNOWN_FILES), "magic": stockfw.MAGIC.decode(), "header_len": stockfw.HEADER_LEN,
+	       "known_files": dict(stockfw.KNOWN_FILES), "no_codec_files": dict(stockfw.NO_CODEC_FILES),
+	       "magic": stockfw.MAGIC.decode(), "header_len": stockfw.HEADER_LEN,
 	       "key_len": stockfw.KEY_LEN, "codec_sig": stockfw.CODEC_SIG, "single_segment": stockfw.SINGLE_SEGMENT,
 	       "descriptor": {"addr": stockfw.DESC_ADDR, "len": stockfw.DESC_LEN, "magic": stockfw.DESC_MAGIC,
 			      "version": stockfw.DESC_VERSION, "windows": stockfw.DESC_WINDOWS}}
@@ -276,7 +277,9 @@ def flash_boards():
 			"keep_codec_supported": b.keep_codec_supported, "key_sha256": b.key_sha256,
 			"dfu_ids": list(b.dfu_ids) if b.dfu_ids else None, "dfu_string1": b.dfu_string1,
 			"dfu_product": b.dfu_product,
-			"protected": [list(p) for p in b.protected]}
+			"protected": [list(p) for p in b.protected], "protect": b.protect,
+			# for a backup over another open firmware's CPS (openfw.js): area 5's base and the radio types
+			"rom_base": b.rom_base, "cps_radio_types": list(b.cps_radio_types)}
 	for sha, p in stockfw.PROFILES.items():
 		q = dict(p)
 		q["segments"] = [list(s) for s in p["segments"]]
@@ -312,11 +315,16 @@ def c7000_flash():
 			       "run": list(lay["run"]), "tables": list(lay["tables"]),
 			       "bootloader_id": fl.MODELS[bid].tag if bid in fl.MODELS else None,
 			       # the whole program flash (a backup reads it all; writes stay in the application area), whether
-			       # the radio has the SPI data flash the stub reads, and the board profile the universal stub gets
-			       # (CONFIG). A stock console, the update mode and the read rate are in radios.json flash
+			       # the data memory is SPI NOR flash (else SPI NAND), where a NAND radio's calibration copies sit,
+			       # and the board profile the universal stub gets (CONFIG). A stock console, the update mode and
+			       # the read rate are in radios.json flash
 			       "progmem_size": lay.get("progmem_size", dc.PROGMEM_SIZE), "data_flash": lay.get("data_flash", True),
+			       "calibration": lay.get("calibration"),
 			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand")} if bid in st.C7_BOARDS
-			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")}}
+			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")},
+			       # the board's [[flash.protect]] (progmem offsets are the stub's: from the program flash's base),
+			       # which every write and restore here checks first (protect.js)
+			       "protect": st.C7_BOARDS[bid]["protect"] if bid in st.C7_BOARDS else []}
 	profiles = []
 	for p in dc.PROFILES.values():
 		# a stock file known only by its whole-file hash (e.g. a 2024-05-09 build) has no codec hashes: it can be
@@ -365,7 +373,7 @@ def f4_flash():
 	return {"app_base": f4.APP_BASE, "protocol": f4.VERSION, "record_len": f4.REC_LEN,
 		"boards": {bid: {"owned": [list(r) for r in b["owned"]], "codec": list(b["codec"]) if b["codec"] else None,
 				 "name": b["name"], "stub_id": b["id"], "record": f4.config_record(bid).hex(),
-				 "v2_wiring": f4.config_record(bid)[1:] == v2}
+				 "v2_wiring": f4.config_record(bid)[1:] == v2, "protect": b["protect"]}
 			   for bid, b in f4.BOARDS.items()}}
 
 

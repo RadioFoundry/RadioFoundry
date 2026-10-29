@@ -211,7 +211,8 @@ burst by one slot (30 ms) or by a frame (60 ms).
 While transmitting, the slot between our bursts gets 0x00. An SFR writes 0x50 there instead, because it hears its
 inbound slot in that slot (`hrc6000_dmr_tx_listen`, `sfr.md` 3).
 
-The CACH TC bit (0x52 bit 2) can be read here. The chip refreshes it only in slots being received.
+The CACH TC bit (0x52 bit 2) can be read here. The chip refreshes it only in slots being received. It is the TC of
+the slot that just ended, not the one starting (5.3).
 
 ### 4.2 System interrupt
 
@@ -246,7 +247,7 @@ The interrupt comes before each burst the chip is about to send. The handler key
 TX. On a board without the RF RX interrupt the MCU ends each TX burst itself. At the next timeslot interrupt, if the PA
 has been on for more than 20 ms, the MCU turns it off and puts the RF chip back in RX. After the last burst of a
 transmission, a one-shot 29 ms timer does the same. Keying takes the PA enables high and writes AT1846S register
-0x30 = 0x60C6 (digital TX). Un-keying takes them low and writes 0x30 = 0x7026 (25 kHz) or 0x6026 (12.5 kHz).
+0x30 = 0x60C6 (digital TX). Un-keying takes them low and writes 0x30 = 0x7026 (25 kHz) or 0x6026 (12.5 kHz). A board may key a fixed delay after the interrupt (a timer, 1 ms on one board) and switch from RX straight to TX or through idle; its hardware page has the sequences.
 
 On such a board the RF chip's "transmitting" state therefore goes on and off **burst by burst**. Code that needs to
 know whether a transmission is in progress must use the modem slot state (section 7.5), not the PA.
@@ -309,7 +310,16 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
 ### 5.3 Timeslot tracking (repeater signals)
 
 The TC bit of the CACH alternates 0/1 slot by slot. At each timeslot interrupt the driver toggles its own slot number
-and compares it with the received TC:
+and compares it with the received TC. The TC read there belongs to the slot that just ended, so the slot starting is
+the other one (`HRC6000_DMR_TC_IS_SLOT_NOW` 0). Read as the slot starting, a subscriber through a full duplex
+repeater was one slot off both ways: it heard outbound TS2 as TS1 and transmitted its TS1 under outbound TS2 (bench,
+2026-10-27). Read right, a subscriber on TSx receives outbound TSx and transmits under it: the aligned timing of ETSI
+TS 102 361-1 5.1.1, table 5.1. The AT for TSx comes in the CACH before the other outbound slot (`dmr-modem.md` 1.6,
+`split-duplex.md` 5.2).
+
+The driver toggles its slot number at every timeslot interrupt, received or not, and compares only after a received
+slot. Locked to one slot, the chip receives one slot in two, and a transmission skips the compare altogether: toggled
+only at a compare, the number fell out of step and resynced onto the wrong slot mid-call.
 
 | Parameter | Value |
 |---|---|
@@ -318,7 +328,9 @@ and compares it with the received TC:
 | disagreements before resync | more than 3 (each disagreement also takes one agreement away) |
 
 Once locked, write 0x41=0x50 before our slot and 0x41=0x00 before the other. The CACH is then not refreshed in the
-other slot, so the TC compare is only meaningful before the lock.
+other slot, so the TC compare is only meaningful before the lock. The driver compares only when the slot that ended and the one before it were both
+received (gotchas 1.10): after a slot not received the TC read is junk (43% agreement on the bench), and those reads
+used to resync a good lock. Once locked, the number is kept by the toggle alone until the reception ends (5.5).
 
 In direct mode there is no CACH: lock to the slot of the first good burst (its number is meaningless) and receive one
 slot in two from then on.
@@ -446,7 +458,7 @@ byte 2 and 6 characters), and FLCO 8 for GPS (7 bytes: longitude as 25-bit two's
 
 ### 6.6 Data transmission
 
-A list of up to 40 bursts (CSBKs, headers, blocks) goes out one burst per slot on our slot, with an idle slot between
+A list of up to 64 bursts (CSBKs, headers, blocks) goes out one burst per slot on our slot, with an idle slot between
 (our slot only), starting from the first "our slot" step of the sequence (no voice headers, no terminator). After the
 last burst, the end steps 10-11 restore passive timing / the receiver and clear CRC_MCU_Control. Timeout: 10 s plus
 60 ms per burst (covers a repeater wake-up). A received-data interrupt for a data burst is queued (8 deep is enough;

@@ -9,7 +9,8 @@ battery warnings.
 
 ## Battery level
 
-The status line shows the battery as an icon and a percentage. The percentage turns to the warning color at the low
+The status line shows the battery as an icon and a percentage. On a small screen a page's title takes over the
+status line, so the battery shows on Home and on the larger screens' pages. The percentage turns to the warning color at the low
 battery warning level and below. The level is set in **Settings > Power > Low battery warning** (15 % by default).
 
 **OK**, **6**, **9** opens Tools > Battery, which shows the level. At the warning level and below it also shows "charge
@@ -52,8 +53,17 @@ Power levels use the radio's factory calibration. Use the lowest power that reac
 
 **Settings > Display > Brightness** sets the backlight level. Quick settings has it too (**\***, **9**).
 
-**Settings > Display > Backlight time** sets when the backlight dims to a fifth of the brightness. It goes off after
-four times as long. Any key brings it back.
+**Settings > Display > Backlight Dim/Off** sets two times: when the backlight dims to a fifth of the brightness, and
+when it goes off. `30s/2m` dims after 30 s and goes off after 2 minutes. Any key brings it back.
+
+The backlight also comes on for what needs you:
+
+| Comes on | Stays as it is |
+|---|---|
+| A call you hear (DMR), or a signal that opens the squelch (FM) | A DMR call on a talkgroup you don't listen to |
+| A message, call alert, private call or emergency | The radio's own data: ARS registration, ACKs, location answers |
+| Your own transmission, or a refused PTT | Timed beacons (APRS), roaming probes, hotspot traffic |
+| | Broadcast FM that keeps playing |
 
 ## Battery saver
 

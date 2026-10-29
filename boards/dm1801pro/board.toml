@@ -43,11 +43,25 @@ keep_codec = false
 stock_versions = []
 backup = { stock = "full", rfoundry = "full", spi_size = 0x1000000 }
 
-# The loader stays in update mode while PTB11 (PTT) and PTB26 both read low; which key PTB26 is isn't known. The web
-# flasher has no steps for it yet
+# Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
+# as offsets in that memory, what with the spec section that establishes it
+[[flash.protect]]
+mem = "data"
+start = 0x1000
+end = 0xC9000
+what = "factory calibration: the stock codeplug area's 4 KB page tagged 2, which can be any page of it (hardware-dm1801pro.md 6.4)"
+
+# The loader stays in update mode while PTB11 (PTT) and PTB26 (SK1, the upper side key) both read low (measured,
+# hardware-dm1801pro.md 3, 6 and 9). What the radio shows in update mode is not recorded, so there is no sign
 [flash.bootloader]
-keys = "PTT and the key on PTB26 (probably SK1)"
-steps = []
+keys = "PTT and SK1 (the upper side key)"
+hold = ["ptt", "sk1"]
+steps = [
+	"Turn the radio off and connect the programming cable.",
+	"Hold PTT and SK1 (the upper side key).",
+	"Turn the radio on while you hold both keys.",
+	"Release the keys.",
+]
 id = "BF1801-V1"
 
 # The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py)
@@ -56,6 +70,8 @@ id = 2
 hold_power = false
 progmem = 0x100000
 tested = true
+# the factory calibration: the 4 KB page of the stock codeplug area whose last byte is 2 (hardware-dm1801pro.md 6.4)
+calibration = { area = 0xC9000, page_id = 2 }
 
 # The codec slot and windows come from boards/dm1801pro/memory.ld (__codec_*). The codec comes from the radio's own program flash
 # (read with stub/stubtool.py), not from a stock file (docs/spec/codec-dm1801pro.md)

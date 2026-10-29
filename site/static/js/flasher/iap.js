@@ -7,6 +7,7 @@
 // (flash.first_stage, from board.mk BOOT_SIZE and BOOT_SIGNATURE).
 
 import { be32, concat, sleep } from "./bytes.js";
+import * as protect from "./protect.js";
 
 export class IapError extends Error {}
 
@@ -32,6 +33,7 @@ const headBytes = (fs) => fs.head.match(/../g).map((x) => parseInt(x, 16));
 
 export const PAGE = 2048;
 export const APP_MAX = 0x0310C000 - 0x0300C000;	// the application region ends where the stock data area starts
+const ERASE_FROM = 0x0300C000 - 0x03000000;	// the loader's erase starts here, as a program flash offset
 
 // The install image as pages: {n, pages, sum}. The pad byte fills the last page.
 export function iapPlan(image, pad = 0xFF) {
@@ -81,10 +83,12 @@ const isBanner = (t) => t.includes("IAPReady");
 
 export class Iap {
 	// firstStage: the board's flash.first_stage, which every image the loader takes starts with
-	constructor(stream, { log = () => {}, firstStage = null } = {}) {
+	// protect: the board's protected regions (board.toml [[flash.protect]]); a write whose erase reaches one is refused
+	constructor(stream, { log = () => {}, firstStage = null, protect = [] } = {}) {
 		this.s = stream;
 		this.log = log;
 		this.firstStage = firstStage;
+		this.protect = protect || [];
 	}
 
 	text() { return latin(this.s.buf); }
@@ -106,14 +110,20 @@ export class Iap {
 	// Is the loader's update mode on the cable now (a radio whose application is missing or incomplete stays in it at
 	// every power-on)? Asks for one page of a read, which changes nothing, and never sends Erase. Returns {version} when
 	// the loader answers (version is null when only the banner or the checksum was seen), else null.
+	// The stock application answers the same request as the vendor programming software's identify: "Read_2M_" with no
+	// loader version, then its version string as it filled it in at boot (hardware-db25d.md 7). That returns
+	// {version: null, stock: text}, the reply as text, which still changes nothing; the application then shows
+	// "Flash Read" and waits for the read to go on until it is switched off and on.
 	async probe(timeout = 1500) {
 		this.s.clear();
 		await this.s.write(readPacket(0, 1));
-		const seen = (t) => /Read_\w+_V\d+\.\d+[A-Z]?|ChecksumR|IAPReady/.test(t);
+		const loader = /Read_\w+_V\d+\.\d+[A-Z]?|ChecksumR|IAPReady/, stock = /Read_\w+_\0/;
+		const seen = (t) => loader.test(t) || stock.test(t);
 		const text = await this.until(seen, timeout);
 		if (!seen(text)) return null;
-		const v = /Read_\w+_V\d+\.\d+[A-Z]?/.exec(text);
 		this.s.clear();
+		if (!loader.test(text)) return { version: null, stock: text };
+		const v = /Read_\w+_V\d+\.\d+[A-Z]?/.exec(text);
 		return { version: v ? v[0] : null };
 	}
 
@@ -134,12 +144,23 @@ export class Iap {
 		throw new IapError("the radio did not report update mode");
 	}
 
+	// The factory route waits for a loader the same way whatever its protocol (bfloader.js listen): here, its banner
+	listen(timeout, opts) {
+		return this.waitBanner(timeout, opts);
+	}
+
 	// Erase and write `image`. onPage(i, total). Returns the checksum the radio reported (it matches ours or this throws).
 	// restore: the image is a backup's application area (checkRestoreImage), not an install image
 	async write(image, { onPage = () => {}, onPhase = () => {}, signal, eraseTimeout = 60000, pageTimeout = 10000, restore = false } = {}) {
 		if (!this.firstStage) throw new IapError("this radio has no first stage: the loader would not start the image");
 		(restore ? checkRestoreImage : checkInstallImage)(image, this.firstStage);
 		const { n, pages, sum } = iapPlan(image);
+		// the loader erases n + 1 pages from the application's start: no carving there, so a protected one refuses it
+		try {
+			protect.check(this.protect, "progmem", ERASE_FROM, ERASE_FROM + pages.length * PAGE, "let the loader erase");
+		} catch (e) {
+			throw new IapError(e.message);
+		}
 		onPhase("erase");
 		this.s.clear();
 		await this.s.write(erasePacket(n));

@@ -24,6 +24,19 @@ const int = (lo, hi) => (t) => (r, k, v) => {
 	r[k] = n;
 };
 
+// TX timeout in seconds: 0 (blank, or the default label) is the radio's own, the rest rounds up to the 15 s the
+// record stores, so the form shows what will be saved
+const tot = (t) => (r, k, v) => {
+	const s = String(v ?? "").trim();
+	if (!s || /^(0|default)$/i.test(s) || s.toLowerCase() === t("editor.tot.default").toLowerCase()) {
+		r[k] = 0;
+		return;
+	}
+	const n = Number(s);
+	if (!Number.isInteger(n) || n < 1 || n > 3825) return t("editor.err.tot");
+	r[k] = Math.ceil(n / 15) * 15;
+};
+
 const freq = (t) => (r, k, v) => {
 	const hz = parseFreq(v);
 	if (hz === null) return t("editor.err.bad_freq");
@@ -201,7 +214,7 @@ export function channelForm(m, t) {
 			["⇄", t("editor.freq.swap"), ([rx, tx]) => [tx, rx]],
 			["←", t("editor.freq.tx_to_rx"), ([, tx]) => [tx, tx]],
 		] },
-		txt("tot", "editor.col.tot", int(0, 3825)(t)),
+		txt("tot", "editor.col.tot", tot(t), (v) => (v ? String(v) : t("editor.tot.default"))),
 		chk("rxOnly", "editor.col.rx_only"),
 		fm({ group: t("editor.form.analog") }),
 		fm(sel("bw", "editor.col.bw", () => [[12.5, "12.5 kHz"], [25, "25 kHz"]])),

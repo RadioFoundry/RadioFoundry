@@ -220,7 +220,8 @@ test("import: every table and setting qdmr's file holds", () => {
 	const r = importQdmr(m, SAMPLE);
 	assert.deepEqual(r.counts, { channels: 3, contacts: 4, rxLists: 1, dtmfContacts: 1, aprs: 1, zones: 3 });
 	const codes = Object.fromEntries(r.notes.map((n) => [n.code, n.n]));
-	assert.deepEqual(codes, { path_cut: 1, aprs_period: 1, dmr_positioning: 1, scan_lists: 1 });
+	// ch2's "infinite": a channel can't turn its timeout off, so it takes the radio's
+	assert.deepEqual(codes, { path_cut: 1, aprs_period: 1, dmr_positioning: 1, tot_off: 1, scan_lists: 1 });
 
 	assert.deepEqual(m.general, { radioName: "N0CALL", dmrId: 1234567, groupHang: 6, privateHang: 10, bootLine1: "Test Radio", bootLine2: "N0CALL" });
 	assert.deepEqual(m.contacts.map((c) => [c.number, c.name, c.id, c.type, c.timeslot]),
@@ -285,8 +286,11 @@ test("export: model to YAML to model keeps every field qdmr has", () => {
 	assert.match(text, /^ {6}rxTone: \{ctcss: 67 Hz\}$/m);
 	assert.match(text, /^ {6}txTone: \{dcs: -754\}$/m);
 	assert.match(text, /^ {6}power: !default ""$/m);
+	// TOT 0 is the radio's TX timeout, qdmr's !default, never infinite
+	assert.match(text, /^ {6}timeout: !default ""$/m);
+	assert.doesNotMatch(text, /timeout: infinite/);
 	const m2 = empty();
-	importQdmr(m2, text);
+	assert.ok(!importQdmr(m2, text).notes.some((n) => n.code === "tot_off"));
 	const strip = (x) => JSON.parse(JSON.stringify(x, (k, v) => (k === "base" ? undefined : v && typeof v === "object" && "number" in v && k ? v.number ?? v.name : v)));
 	assert.deepEqual(strip(m2.channels), strip(m.channels));
 	assert.deepEqual(strip(m2.contacts), strip(m.contacts));

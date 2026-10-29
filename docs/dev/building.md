@@ -40,7 +40,8 @@ directories are the core's (some only with their switch), the platform's (`platf
 board's (`BOARD_DIRS` in `boards/<b>/board.mk`). A few single files of `core/dmr` are added by their own switch.
 
 The build stamps the image with the commit (`RFOUNDRY_GIT`), plus `-dirty` when tracked files differ or untracked sources sit
-in the built directories. Changing the compile flags (a switch, a value) rebuilds everything. See
+in the built directories, and with the release name when the commit carries a release tag (`RFOUNDRY_RELEASE`,
+[release.md](release.md#release-names)). Changing the compile flags (a switch, a value) rebuilds everything. See
 [docs/testing/README.md](../testing/README.md), "The firmware version".
 
 ## Feature switches

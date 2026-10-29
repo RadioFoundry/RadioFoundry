@@ -33,7 +33,10 @@ same records at the same addresses as the base model, plus tables this spec does
 
 RadioFoundry's flash map on these radios puts its emulated EEPROM, settings ring, journal and second DMR ID database
 area at addresses that overlap the stock tables ([settings-store.md](settings-store.md) 1). Until the user writes a
-RadioFoundry codeplug and an ID database, those areas still hold the stock bytes.
+RadioFoundry codeplug and an ID database, those areas still hold the stock bytes. Claiming the settings area erases
+it, and on some boards the zone table (0x0149E0) lies inside it. A conversion therefore reads the stock codeplug from
+a copy taken before the claim, such as the installer's backup ([web-flasher.md](../dev/web-flasher.md), "Channels
+after an install").
 
 Files that carry the same codeplug:
 
@@ -61,6 +64,11 @@ was programmed keeps stock bytes wherever RadioFoundry hasn't written. The open-
    it. A UTF-16 name, as the stock layout stores them, fails: its second byte is 0x00 and printable bytes follow.
    The layout is the open-firmware one when there is at least one good record and at most one bad record for every
    four good ones.
+
+   One exception: a radio put back on its stock firmware after RadioFoundry. The stock software rewrites only its own
+   codeplug, so RadioFoundry's records past it still count as good, but both layouts keep their general settings in the
+   chip's first sectors, which the stock codeplug covers. When the open-firmware general settings have no DMR ID and
+   the stock ones (3.1) hold a valid one (1 to 16776415), the stock software wrote last: step 2 decides.
 2. **Stock evidence.** The channel table of each family (section 3.2) is checked: a record is in use when its first
    name character is not 0 and its mode (byte 0 bits 0-1) is 1 or 2. An in-use record is good when both frequencies are
    valid BCD and the name is valid UTF-16 (each character 0x0020 or above and not 0xFFFF, 0x0000 after the first
@@ -171,7 +179,7 @@ The Codeplug Editor and the Tools page build an open-firmware codeplug from a st
 | Stock | Open-firmware |
 |---|---|
 | Radio name, DMR ID, boot text | Radio tab. The name is cut to 8 characters |
-| Channels | Channels, numbered in table order. Power high = level "High" (9), low = "Low" (3). Squelch is the radio's default. Bandwidth only for FM |
+| Channels | Channels, numbered in table order. Power high = level "High" (9), low = "Low" (3). Squelch is the radio's default. Bandwidth only for FM. TX timeout as is, but the stock 0 (off) becomes the radio's TX timeout (note `tot_off`) |
 | Contacts | Contacts with time slot override off. The ring flag is dropped |
 | RX group lists | RX group lists, 32 contacts each at most |
 | Zones | A zone with a B list becomes two zones, "Name A" and "Name B", as for a qdmr import |

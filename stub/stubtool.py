@@ -33,6 +33,7 @@ import zlib
 # the board registry (tools/boards.py generates it): the boards with a stub profile, their pins and memories
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "rfoundry"))
 from rfoundry import boards as rfoundryboards  # noqa: E402
+from rfoundry import protect  # noqa: E402  (protected flash regions, board.toml [[flash.protect]])
 
 # --- STUB begin (stub/embed.py rewrites everything up to the end marker)
 STUB_SHA256 = "053a6b645d122dc85443616ed622c3a91229d8f949fc5e07aec68d14a8e4cbe1"
@@ -291,82 +292,91 @@ STUB_DB25D_DMR_B64 = (
 )
 # --- STUB DB25D_DMR end
 # --- STUB UNIV begin (stub/embed_stub.py rewrites everything up to the end marker)
-STUB_UNIV_SHA256 = "59f99651682125d04508211a8687ce4d244cd68ab18e7166d98adccfdb3eca20"
+STUB_UNIV_SHA256 = "eae5b98615d67ba465061c84a5fb209a902333dc700671ce4ca69a05eb4aaee9"
 STUB_UNIV_B64 = (
-    "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"
+    "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"
 )
 # --- STUB UNIV end
 
@@ -391,7 +401,16 @@ CRASH_SOFT_MARK = 0x18007EF4        # RadioFoundry's restart-cause words (crash-
 CRASH_BOOT_SOFT = 0x54464F53        # "SOFT": the reset was asked for, so RadioFoundry's next start doesn't take it for the watchdog
 TIMER2_VALUE = 0x14000018           # timer 2 current value (counts down; the stub runs it free)
 LED_RED, LED_GREEN = 33, 32         # PTB1 = red, PTB0 = green on the DM-1801 Pro and the DM-32UV (both checked on the radio)
-OK, BADSUM, BADOP, SPITIMEOUT, TOOLONG = 0x05, 0x0A, 0x0B, 0x0C, 0x0E
+OK, BADSUM, BADOP, SPITIMEOUT, TOOLONG, NOWEL = 0x05, 0x0A, 0x0B, 0x0C, 0x0E, 0x0F
+WRITE_VERSION = 7                   # the stub has op 0E (WRITE): a sector erased, programmed and read back in one request,
+                                    # and goes back to its home rate by itself when a raised rate's link goes quiet
+# Raised rates (protocol 7): the UART has whole divisors only, so the stub offers clock / (16 * d). Auto tries those in
+# this span, a binary search for the fastest that carries full frames both ways, and remembers the result per port and
+# radio. LINK_WINDOW: the provisional window, and how long a raised link may stay quiet before the stub goes home
+FAST_MIN, FAST_MAX, LINK_WINDOW = 200000, 1100000, 2.5
+FAST_FALLBACK = 30                  # link score at which a raised rate is given up: +10 per damaged frame, -1 per clean one
+PROOF_ROUNDS = 4                    # set_baud's full frames each way before a rate is kept
+BAUD_CACHE = os.path.join(os.path.expanduser("~"), ".cache", "rfoundry", "stub-baud.json")
 # memory: (SSI base, SER, GPIO chip-select pin or None, size, name). The data flash's chip select is the GPIO PTA18
 # (hardware-dm32.md 10; dm1801pro-hardware.md 6.1); the SSI's own select is not wired to the flash on its own.
 MEM = {"progmem": (SSI_PROG, True, None, 0x100000, "program flash"),
@@ -522,10 +541,27 @@ def check_univ_load(image, load, window=None):
 # program flash size. VERSION's board= names them on the RadioFoundry route; --board at power-on. Unknown radio: GENERIC (no
 # pins, nothing echoed but 0).
 C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
-                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"]}
+                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"], "protect": b.protect}
              for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
-GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000}
+GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000,
+           "protect": []}
+# This tool's memory names as board.toml [[flash.protect]] names them
+PROTECT_MEM = {"progmem": "progmem", "q128": "data", "nand": "nand"}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
+
+
+def image_board_check(image, board):
+    """Why a RadioFoundry image is not for the C7_BOARDS board `board`, or None. Every RadioFoundry build carries its
+    board's name (board_t .name, the debug link's board=) as a C string, so an image without the target's is another
+    radio's. Images that aren't RadioFoundry (a stock firmware being put back) and unknown boards are not judged."""
+    prof = C7_BOARDS.get(board)
+    if prof is None or not prof["names"] or b"RadioFoundry" not in image:
+        return None
+    if any(n.encode() + b"\0" in image for n in prof["names"]):
+        return None
+    other = [b["name"] for k, b in sorted(C7_BOARDS.items()) if k != board and any(n.encode() + b"\0" in image for n in b["names"])]
+    return "this RadioFoundry image is %s, not for the %s" % ("for the " + ", ".join(other) if other else "for another radio",
+                                                              prof["name"])
 
 
 def c7_board(name):
@@ -608,12 +644,22 @@ def parse_led_spec(spec):
     return steps, "repeat" in flags, "hold" in flags
 
 
-# played when a run finishes (--done-led): three green flashes, then the orange status blink resumes
+# played when a run finishes (--done-led): three green flashes, then the yellow status blink resumes
 DONE_LED = "0:255:150,0:0:150,0:255:150,0:0:150,0:255:150,0:0:150"
 
 
 def sum8(b):
     return sum(b) & 0xFF
+
+
+ROM_ACK = b"\x02\x05\x00\x03"
+ROM_HELLO, ROM_REPLY = b"\x02\x24\x00\x03", b"\x02\x14\x00\x03"
+# The boot ROM stops waiting (about 48 ms after its greeting when no answer came) and starts the firmware; its NAK is
+# also how it answers a repeated greeting reply once it took the first one (docs/spec/hardware-dm32.md 13.3)
+ROM_GAVE_UP, ROM_NAK = b"\x00\x10\x00\x03", b"\x02\x0a\x00\x03"
+# --slow-cable: the greeting reply goes out this often while the radio is switched on, and on for ROM_REPEAT_AFTER once
+# the greeting is seen: the ROM drops what reaches it before its greeting, so only the answers sent after that count
+ROM_REPEAT, ROM_REPEAT_AFTER = 0.03, 0.15
 
 
 def rom_cmd(op, payload=b""):
@@ -624,16 +670,25 @@ def rom_cmd(op, payload=b""):
 class Radio:
     """port: write(bytes), read(n) (what arrived within its timeout), reset_input_buffer(), a timeout attribute."""
 
-    def __init__(self, port, log=print, retries=6):
+    def __init__(self, port, log=print, retries=6, cable=""):
         self.port = port
         self.log = log
+        self.cable = cable              # the programming cable's chip, named in a boot ROM error
+        self.echo = False               # the cable sends back what the host sends (seen in the boot ROM load)
         self.retries = retries
         self.retried = 0
         self.stub_head = b""
         self.stub_base = LOAD_ADDR
         self.v6 = None                  # the universal stub's HELLO fields (protocol 6), None for an older stub
+        self.sector_op = False          # protocol 7: whole-sector writes (op 0E); else one SPI request per step
+        self.home_baud = None           # the rate before the first switch: where a lost raised link comes back to
+        self.link_window = LINK_WINDOW  # the stub's quiet limit at a raised rate, as last sent with BAUD
+        self.link_score = 0
+        self.bad_rates = set()          # raised rates given up in this session
+        self.uart_hz = None             # the clock CONFIG sent (the stub's rates are worked out from it)
         self.configured = None          # the board profile the stub confirmed after CONFIG
         self.profile = GENERIC
+        self.slow = False               # --slow-cable: the boot ROM's greeting is answered ahead (wait_for_radio)
 
     def set_timeout(self, t):
         """Only when it changes: on macOS pyserial re-applies the terminal settings on every timeout assignment, which
@@ -654,21 +709,77 @@ class Radio:
         return out
 
     # ---- boot ROM: wait for it, load the stub, start it
-    def wait_for_radio(self, wait):
-        want = b"\x02\x24\x00\x03"
-        pos = 0
+    def rom_ack(self, sent, timeout):
+        """The boot ROM's acknowledgement of `sent`: (ok, got). A cable that echoes (some USB-serial cables loop TX back
+        to RX) puts an exact copy of the frame first: it is dropped and the reading goes on. Other bytes ahead of the ack (a
+        damaged echo, seen on a CH340 cable) are passed over: the ack is the last thing the ROM sends, so it counts when
+        the bytes end with it. A NAK or the ROM giving up ends the wait. got: what came instead."""
+        end = time.monotonic() + timeout
+        buf = b""
+        while True:
+            if buf[:4] == ROM_ACK:
+                return True, b""
+            n = min(len(buf), len(sent))
+            echo = n > 0 and buf[:n] == sent[:n]
+            if echo and len(buf) >= len(sent):
+                buf = buf[len(sent):]
+                if not self.echo:
+                    self.log("the cable echoes what the host sends; the echo is ignored")
+                self.echo = True
+                continue
+            if not echo and buf[-4:] == ROM_ACK:
+                self.log("before the boot ROM's acknowledgement: %s" % buf[:-4][:16].hex(" "))
+                return True, b""
+            if not echo and (buf[-4:] == ROM_NAK or ROM_GAVE_UP in buf):
+                return False, buf[:16]
+            if time.monotonic() >= end:
+                return False, buf[:16]
+            want = len(sent) - len(buf) if echo else 4 - len(buf)
+            buf += self.read_exact(max(1, want), max(0.0, min(0.05, end - time.monotonic())))
+
+    def rom_error(self, what, got):
+        bytes_ = "received %s" % got.hex(" ") if got else "nothing received"
+        cable = "the %s programming cable" % self.cable if self.cable else "the programming cable"
+        return DumpError("%s (%s%s). The radio's boot ROM did not take the loader over %s. Try a cable with an FTDI, "
+                         "CP210x or PL2303 chip, %s, or use the stock firmware file instead of reading the radio"
+                         % (what, bytes_, "; the cable echoes" if self.echo else "", cable,
+                            "the radio's factory update mode" if self.slow else "--slow-cable"))
+
+    def rom_late(self, got):
+        return DumpError("the radio's boot ROM stopped waiting before the answer to its greeting reached it (received %s). %s"
+                         % (got[:16].hex(" "), "It did so even with --slow-cable" if self.slow
+                            else "The cable or a USB hub carries it too slowly: run again with --slow-cable"))
+
+    def wait_for_radio(self, wait, slow=False):
+        """Wait for the boot ROM's greeting. The ROM waits only about 48 ms for the answer; slow (--slow-cable): send the
+        answer every ROM_REPEAT s all along, and on for ROM_REPEAT_AFTER after the greeting, so the ROM's window is
+        covered however late the greeting shows here. Only with the radio off at the start: the firmware of a radio left
+        on would get it too. True when the ROM took one of those (a NAK of a later one shows it, or the greeting and
+        ROM_REPEAT_AFTER of answers after it without the ROM giving up)."""
         end = time.monotonic() + wait
-        self.set_timeout(0.1)
+        nxt = 0.0
+        heard = 0.0
+        last = b""
+        self.set_timeout(0.005 if slow else 0.1)
         while time.monotonic() < end:
+            if slow and time.monotonic() >= nxt:
+                nxt = time.monotonic() + ROM_REPEAT
+                self.port.write(ROM_REPLY)
+            if heard and time.monotonic() - heard >= ROM_REPEAT_AFTER:
+                return True
             b = self.port.read(1)
             if not b:
                 continue
-            if b[0] == want[pos]:
-                pos += 1
-                if pos == len(want):
-                    return
-            else:
-                pos = 1 if b[0] == want[0] else 0
+            last = (last + b)[-4:]
+            if last == ROM_HELLO:
+                if not slow:
+                    return False
+                heard = time.monotonic()
+            elif slow and last == ROM_NAK:
+                return True
+            if last == ROM_GAVE_UP:
+                raise DumpError("the radio started its firmware%s" % (" without taking the loader, even with --slow-cable" if slow
+                                else ": its boot ROM's greeting did not come through. Run again with --slow-cable"))
         raise DumpError("the radio did not start its serial boot ROM within %d s: radio off and cable in before the "
                         "script starts, then switch it on" % wait)
 
@@ -691,7 +802,7 @@ class Radio:
         self.log("attached to stub v%d (max payload %d, SSI burst %d / %d bytes)"
                  % (info[0], info[1], self.info >> 8 & 0xFF, self.info & 0xFF))
 
-    def start(self, wait=120, stub=None, load=LOAD_ADDR):
+    def start(self, wait=120, stub=None, load=LOAD_ADDR, slow=False):
         """Boot a stub through the serial boot ROM at power-on, written to and started at load (the DB25-D's first
         stage answers the same way). Default: the universal stub at 0x10000, which copies itself to its run address;
         a position-dependent stub (--legacy-stub, --stub FILE) must be linked for `load` (--load-base)."""
@@ -703,24 +814,45 @@ class Radio:
             self.stub_head = stub[:CHUNK]
         stub += b"\xFF" * (-len(stub) % BLOCK)
         self.stub_base = load
-        self.wait_for_radio(wait)
-        self.port.write(b"\x02\x14\x00\x03")
-        time.sleep(0.05)
+        self.slow = slow
+        answered = self.wait_for_radio(wait, slow)
+        if not answered:
+            self.port.write(ROM_REPLY)
+        # the ROM's reply to it isn't needed; an echo shows the cable loops back. After --slow-cable the NAKs of the answers
+        # still on their way come in too: they must be gone before block 0. The ROM has no timeout once it took the answer
+        time.sleep(0.2 if answered else 0.05)
+        reply = self.read_exact(256, 0.02)
+        if ROM_GAVE_UP in reply:
+            raise self.rom_late(reply)
+        if ROM_REPLY in reply:
+            self.echo = True
+            self.log("the cable echoes what the host sends; the echo is ignored")
+        if reply:
+            self.log("after the boot ROM greeting: %s" % reply[:16].hex(" "))
         blocks = len(stub) // BLOCK
         self.log("boot ROM answered; loading %d-byte stub (%d blocks)" % (len(stub), blocks))
         for i in range(blocks):
             payload = (load + i * BLOCK).to_bytes(4, "big") + b"\x00\x00\x00\x40" + stub[i * BLOCK:(i + 1) * BLOCK]
+            got = b""
             for attempt in range(3):             # a block is a write to a fixed address: sending it again is safe
                 self.port.reset_input_buffer()
-                self.port.write(rom_cmd(0x18, payload))
-                if self.read_exact(4, 1.0) == b"\x02\x05\x00\x03":
+                frame = rom_cmd(0x18, payload)
+                self.port.write(frame)
+                ok, got = self.rom_ack(frame, 1.0)
+                if ok:
                     break
-                self.log("stub block %d not acknowledged, sending it again" % i)
+                if ROM_GAVE_UP in got:
+                    raise self.rom_late(got)
+                self.log("stub block %d not acknowledged (%s), sending it again"
+                         % (i, "received %s" % got.hex(" ") if got else "nothing received"))
             else:
-                raise DumpError("stub block %d was not acknowledged" % i)
-        self.port.write(rom_cmd(0x1B, load.to_bytes(4, "big")))
-        if self.read_exact(4, 1.0) != b"\x02\x05\x00\x03":
-            raise DumpError("the start command was not acknowledged")
+                raise self.rom_error("stub block %d was not acknowledged" % i, got)
+        self.port.reset_input_buffer()
+        go = rom_cmd(0x1B, load.to_bytes(4, "big"))
+        self.port.write(go)
+        ok, got = self.rom_ack(go, 1.0)
+        if not ok:
+            raise self.rom_error("the start command was not acknowledged", got)
         end = time.monotonic() + 3
         while True:
             try:
@@ -733,41 +865,93 @@ class Radio:
                  % (info[0], info[1], self.info >> 8 & 0xFF, self.info & 0xFF))
 
     # ---- stub frames: 02 op len(2) chk 03 payload  ->  02 status len(2) chk 03 payload
+    def exchange(self, op, payload=b"", timeout=1.0):
+        """One frame out, one reply in: (status, body), or (None, why) when the link damaged or lost it."""
+        frame = bytes([0x02, op, len(payload) >> 8, len(payload) & 0xFF, sum8(payload), 0x03]) + payload
+        self.port.reset_input_buffer()
+        self.port.write(frame)
+        hdr = self.read_exact(6, timeout + len(frame) * 10 / self.rate())
+        if len(hdr) != 6 or hdr[0] != 0x02 or hdr[5] != 0x03:
+            return None, "no or malformed reply header"
+        n = (hdr[2] << 8) | hdr[3]
+        body = self.read_exact(n, 0.5 + n * 0.0002)
+        if len(body) != n:
+            return None, "reply short (%d of %d bytes)" % (len(body), n)
+        if sum8(body) != hdr[4]:
+            return None, "reply checksum"
+        if hdr[1] == BADSUM:
+            return None, "the radio saw a bad request checksum"
+        return hdr[1], body
+
+    def rate(self):
+        return getattr(self.port, "baudrate", 0) or 115200
+
+    def raised(self):
+        """At a raised rate the stub goes home by itself when the link is lost (protocol 7), so this side can too. Not
+        while set_baud is proving a rate: a failure there has its own way back (the provisional window)."""
+        return (self.sector_op and self.home_baud is not None and self.rate() != self.home_baud
+                and not getattr(self, "switching", False))
+
     def request(self, op, payload=b"", retries=None, timeout=1.0):
         retries = self.retries if retries is None else retries
-        frame = bytes([0x02, op, len(payload) >> 8, len(payload) & 0xFF, sum8(payload), 0x03]) + payload
         why = ""
         for attempt in range(retries + 1):
-            self.port.reset_input_buffer()
-            self.port.write(frame)
-            n_expect = None
-            hdr = self.read_exact(6, timeout)
-            if len(hdr) != 6 or hdr[0] != 0x02 or hdr[5] != 0x03:
-                why = "no or malformed reply header"
-            else:
-                n_expect = (hdr[2] << 8) | hdr[3]
-                body = self.read_exact(n_expect, 0.5 + n_expect * 0.0002)
-                if len(body) != n_expect:
-                    why = "reply short (%d of %d bytes)" % (len(body), n_expect)
-                elif sum8(body) != hdr[4]:
-                    why = "reply checksum"
-                elif hdr[1] == OK:
-                    return body
-                elif hdr[1] == BADSUM:
-                    why = "the radio saw a bad request checksum"
-                else:
-                    raise DumpError("stub op 0x%02X refused: status 0x%02X" % (op, hdr[1]))
+            if self.raised() and self.link_score >= FAST_FALLBACK:
+                self.fall_back(why or "damaged frames")
+            status, body = self.exchange(op, payload, timeout)
+            if status == OK:
+                self.link_score = max(0, self.link_score - 1)
+                return body
+            if status is not None:
+                raise DumpError("stub op 0x%02X refused: status 0x%02X" % (op, status))
+            why = body
             self.retried += 1
+            if self.raised():
+                self.link_score += 10
             if attempt < retries:
                 self.log("op 0x%02X: %s, again (%d of %d)" % (op, why, attempt + 1, retries))
                 time.sleep(0.02)
+        if self.raised():                       # the whole budget spent at a raised rate: go home and try once more there
+            self.fall_back(why)
+            return self.request(op, payload, retries, timeout)
         raise DumpError("op 0x%02X: no clean reply after %d tries (%s)" % (op, retries + 1, why))
+
+    def stream_damaged(self, why):
+        """A streamed read (op 09) cut short or damaged, once the rest of it is drained: scored like a damaged reply, so a
+        raised rate that stops holding is given up here too (that path writes its request itself, not through request()).
+        True when the link went home, and the caller's retry budget starts again there."""
+        if not self.raised():
+            return False
+        self.link_score += 10
+        if self.link_score < FAST_FALLBACK:
+            return False
+        self.fall_back(why)
+        return True
+
+    def fall_back(self, why):
+        """Give up a raised rate with nothing but silence: the stub goes back to its home rate on its own once the link
+        has been quiet for its window (protocol 7), whatever state the link was in. Then carry on at the home rate."""
+        bad = self.rate()
+        self.bad_rates.add(bad)
+        self.log("%d baud is not holding (%s): back to %d" % (bad, why, self.home_baud))
+        self.set_timeout(0.02)
+        self.port.baudrate = self.home_baud
+        time.sleep(self.link_window + 0.5)
+        self.port.reset_input_buffer()
+        self.link_score = 0
+        forget_baud(self.baud_key(), bad)
+        for _ in range(3):
+            status, body = self.exchange(0x01)
+            if status == OK:
+                return
+        raise DumpError("the stub does not answer at %d baud after leaving %d: power-cycle the radio" % (self.home_baud, bad))
 
     def hello(self, retries=0):
         r = self.request(0x01, retries=retries)
         if r[:6] != b"C7STUB":
             raise DumpError("unexpected hello %r" % r)
         self.info = int.from_bytes(r[13:17], "big") if len(r) >= 17 else 0      # the port's facts (HR_C7000: SSI bursts)
+        self.sector_op = r[6] >= WRITE_VERSION
         if len(r) >= 43 and r[6] >= 6:          # the universal stub: board, flags and its RAM footprint
             g = lambda o: int.from_bytes(r[o:o + 4], "big")
             self.v6 = {"load": g(9), "board": r[17], "flags": r[18], "run": g(19), "image": g(23), "bss_end": g(27),
@@ -790,6 +974,8 @@ class Radio:
         DM-32UV / DM-1801 Pro). An older stub has no CONFIG: nothing is sent."""
         if self.v6 is None:
             self.log("stub protocol before 6: no board configuration")
+            if board:			# the stub can't take it, but its protected regions still apply here
+                self.profile = C7_BOARDS[board]
             return
         if board is None and self.v6["board"]:     # attached to a stub configured earlier: keep its profile
             prof = next((b for b in C7_BOARDS.values() if b["id"] == self.v6["board"]), None)
@@ -801,7 +987,8 @@ class Radio:
         hz = self.timer_hz(0.3)
         if not 1e6 < hz < 4e8:
             raise DumpError("the stub's timer runs at %.0f Hz, which can't be right: not configuring it" % hz)
-        hz = int(round(hz / 1e5) * 1e5)
+        hz = int(round(hz / 1e6) * 1e6)         # every APB clock here is whole MHz: rates then come out the same each time
+        self.uart_hz = hz
         payload = (hz.to_bytes(4, "big") + hz.to_bytes(4, "big")
                    + bytes([prof["latch"], prof["key"], LED_RED, LED_GREEN, prof["id"], 1 if prof["nand"] else 0, CFG_UART_THIS, 0]))
         self.request(0x0D, payload)
@@ -870,14 +1057,22 @@ class Radio:
         raise DumpError("no answer from RadioFoundry's debug link to command 0x%02X (is RadioFoundry running with CONFIG_STUB_ENTRY=y and "
                         "the programming cable on UART0 at 115200?)" % cmd)
 
-    def rfoundry_enter(self, image=None, entry=None, board=None):
+    def rfoundry_enter(self, image=None, entry=None, board=None, force=False):
         """Load the stub into a running RadioFoundry's free RAM over its debug link and jump to it (radio ON, RadioFoundry running). Without
         `image` the embedded stub whose base is the span RadioFoundry reports in STUB INFO is used; a given image must be linked
         for that span (checked). Afterwards the stub answers on the same port. Recover the radio with a power cycle
         (or --boot reset)."""
+        name = version_board(self)
         if board is None:                       # the profile the stub gets: from VERSION's board= (a library caller)
-            name = version_board(self)
             board = c7_board(name) if name else None
+        elif name and board in C7_BOARDS and name not in C7_BOARDS[board]["names"]:
+            # Two cables with one serial number can swap names when they re-enumerate: a GD-88 image once went into a
+            # DM-32UV this way, because --board was trusted over what the radio said it is
+            why = ("the radio on this port runs RadioFoundry for the %s, not the %s that --board names"
+                   % (name, C7_BOARDS[board]["name"]))
+            if not force:
+                raise DumpError(why + ": wrong port? Nothing was sent (--force goes ahead anyway)")
+            self.log("warning: %s; going ahead (--force)" % why)
         r = self.dl_request(DL_STUB, b"\x00")
         if r[0] != 0 or len(r) < 19 or int.from_bytes(r[1:5], "little") != STUB_MAGIC:
             raise DumpError("RadioFoundry's STUB info refused or malformed (%s): firmware built without CONFIG_STUB_ENTRY?" % r.hex())
@@ -921,7 +1116,10 @@ class Radio:
     def send_noreply(self, op, payload=b""):
         """A request the radio will not answer because it is about to reset or jump away."""
         self.port.reset_input_buffer()
-        self.port.write(bytes([0x02, op, len(payload) >> 8, len(payload) & 0xFF, sum8(payload), 0x03]) + payload)
+        frame = bytes([0x02, op, len(payload) >> 8, len(payload) & 0xFF, sum8(payload), 0x03]) + payload
+        self.port.write(frame)
+        self.port.flush()                       # nothing comes back to wait on: without this the program could exit and
+        time.sleep(0.05 + len(frame) * 10 / self.rate())    # close the port before the frame left (the reset never ran)
 
     def reset_chip(self):
         """Soft-reset the SoC (hardware-dm32.md 1.1: XIP quad off and the reset divider, then SYS_SOFT_RSTN = 0). The boot
@@ -983,6 +1181,7 @@ class Radio:
                 raise DumpError("%s: flash still busy after %.1f s (status 0x%02X)" % (what, timeout, st))
 
     def _write_cmd(self, mem, tx, what, timeout):
+        self._guard(mem, tx)
         base, ser, cs, _, _ = MEM[mem]
         self.spi(base, b"\x06", 0, ser, cs)                     # write enable
         if not self._status(mem) & 2:
@@ -990,9 +1189,33 @@ class Radio:
         self.spi(base, tx, 0, ser, cs)
         self._wait_ready(mem, what, timeout)
 
+    def _guard(self, mem, tx):
+        """The last check before a flash command goes out, whoever built it: a sector erase (0x20) or page program
+        (0x02) must miss the board's protected regions, a chip erase (0x60, 0xC7) is refused on a memory that has any,
+        and a 64 KB or 32 KB block erase (0xD8, 0x52) is checked over its block. Nothing here sends the last three."""
+        op = tx[0]
+        pm = PROTECT_MEM[mem]
+        try:
+            if op in (0x60, 0xC7):
+                protect.check_whole(self.profile, pm)
+            elif op in (0x20, 0x52, 0xD8, 0x02) and len(tx) >= 4:
+                a = int.from_bytes(tx[1:4], "big")
+                n = {0x20: SECTOR, 0x52: 0x8000, 0xD8: 0x10000}.get(op, len(tx) - 4)
+                a -= a % n if op != 0x02 else 0
+                protect.check(self.profile, pm, a, a + max(n, 1), "erase" if op != 0x02 else "program")
+        except protect.ProtectedError as e:
+            raise DumpError(str(e))
+
     def check_write_range(self, mem, start, end, app=False):
+        """Refuse a write or erase of [start, end) before anything is sent: whole sectors, never the NAND, only the
+        allowed regions, and never a protected region of the board the stub is configured for (board.toml
+        [[flash.protect]], rfoundry/protect.py)."""
         if start % SECTOR or end % SECTOR or start >= end:
             raise DumpError("writes are whole 4 KB sectors")
+        try:
+            protect.check(self.profile, PROTECT_MEM[mem], start, end)
+        except protect.ProtectedError as e:
+            raise DumpError(str(e))
         if mem == "nand":
             raise DumpError("the NAND is read only here")
         ok = WRITE_OK.get(mem, []) + ([(APP_START, APP_END)] if app and mem == "progmem" else [])
@@ -1005,7 +1228,55 @@ class Radio:
         self.check_write_range(mem, start, end)
         self.check_id(mem)
         for a in range(start, end, SECTOR):
+            if self.sector_op:
+                self.write_sector(mem, a, None)
+            else:
+                self._write_cmd(mem, bytes([0x20, a >> 16 & 0xFF, a >> 8 & 0xFF, a & 0xFF]), "erase 0x%X" % a, 3.0)
+
+    def write_sector(self, mem, a, sec):
+        """Erase the sector at `a` and program `sec` (4096 bytes, None = leave it erased) into it. A protocol 7 stub does all
+        of it in one request (op 0E) and replies with the CRC-32 it reads back; an older one takes write enable, status,
+        command and busy polls as separate SPI requests, four or more per page. Returns the radio's CRC of the sector, or
+        None when only the final verify will tell. The caller has checked the range."""
+        if not self.sector_op:
             self._write_cmd(mem, bytes([0x20, a >> 16 & 0xFF, a >> 8 & 0xFF, a & 0xFF]), "erase 0x%X" % a, 3.0)
+            for p in range(0, SECTOR, PAGE) if sec else ():
+                page = sec[p:p + PAGE]
+                if page != b"\xff" * PAGE:
+                    q = a + p
+                    self._write_cmd(mem, bytes([0x02, q >> 16 & 0xFF, q >> 8 & 0xFF, q & 0xFF]) + page, "program 0x%X" % q, 1.0)
+            return None
+        base, ser, cs, _, _ = MEM[mem]
+        flags = (1 if ser else 0) | (2 if cs is not None else 0)
+        payload = base.to_bytes(4, "big") + bytes([flags, cs or 0]) + a.to_bytes(4, "big") + (bytes(sec) if sec else b"")
+        try:                                    # the frame's time on the wire, then erase and program (worst case about 2 s)
+            r = self.request(0x0E, payload, timeout=4.0 + len(payload) * 10 / (getattr(self.port, "baudrate", 0) or 115200))
+        except DumpError as e:
+            if "status 0x%02X" % NOWEL in str(e):
+                raise DumpError("write 0x%X: write enable did not stick: chip write-protected?" % a)
+            if "status 0x%02X" % SPITIMEOUT in str(e):
+                raise DumpError("write 0x%X: the flash stayed busy past its erase or program time" % a)
+            raise
+        if len(r) != 4:
+            raise DumpError("write 0x%X: reply is %d bytes, wanted 4" % (a, len(r)))
+        return int.from_bytes(r, "big")
+
+    def write_sectors(self, mem, data, start, todo, progress=None):
+        """Write the sectors at the addresses `todo` from `data` (which starts at `start`). Each is checked against the
+        radio's read-back CRC at once where the stub sends one, and written again up to 3 times."""
+        for n, a in enumerate(todo):
+            if progress:
+                progress(n, len(todo))
+            sec = data[a - start:a - start + SECTOR]
+            want = zlib.crc32(sec) & 0xFFFFFFFF
+            for attempt in range(1, 4):
+                crc = self.write_sector(mem, a, None if sec == b"\xff" * SECTOR else sec)
+                if crc is None or crc == want:
+                    break
+                self.retried += 1
+                if attempt == 3:
+                    raise DumpError("0x%X: the sector reads back wrong after 3 writes" % a)
+                self.log("0x%X: read back differs, writing it again (%d of 3)" % (a, attempt))
 
     def write_image(self, image, progress=None, replace_stage=False):
         """Program an RadioFoundry application image into the program flash at 0xC000 (where it is linked to run): only the 4 KB
@@ -1028,15 +1299,7 @@ class Radio:
                             "install image (rfoundry_<board>_install.bin), not the application alone (--replace-stage "
                             "writes it anyway)" % APP_START)
         todo = self.verify(mem, padded, APP_START)
-        for n, a in enumerate(todo):
-            if progress:
-                progress(n, len(todo))
-            off = a - APP_START
-            self._write_cmd(mem, bytes([0x20, a >> 16 & 0xFF, a >> 8 & 0xFF, a & 0xFF]), "erase 0x%X" % a, 3.0)
-            for p in range(a, a + SECTOR, PAGE):
-                page = padded[p - APP_START:p - APP_START + PAGE]
-                if page != b"\xff" * PAGE:
-                    self._write_cmd(mem, bytes([0x02, p >> 16 & 0xFF, p >> 8 & 0xFF, p & 0xFF]) + page, "program 0x%X" % p, 1.0)
+        self.write_sectors(mem, padded, APP_START, todo, progress)
         bad = self.verify(mem, padded, APP_START) if todo else []
         if bad:
             raise DumpError("verify after write: sectors differ at %s" % ", ".join("0x%X" % x for x in bad))
@@ -1047,11 +1310,8 @@ class Radio:
         end = start + len(data)
         self.check_writable()
         self.check_write_range(mem, start, end)
-        self.erase_sectors(mem, start, end)
-        for a in range(start, end, PAGE):
-            page = data[a - start:a - start + PAGE]
-            if page != b"\xff" * PAGE:                           # erased already
-                self._write_cmd(mem, bytes([0x02, a >> 16 & 0xFF, a >> 8 & 0xFF, a & 0xFF]) + page, "program 0x%X" % a, 1.0)
+        self.check_id(mem)
+        self.write_sectors(mem, data, start, range(start, end, SECTOR))
         bad = self.verify(mem, data, start)
         if bad:
             raise DumpError("verify after write: sectors differ at %s" % ", ".join("0x%X" % x for x in bad))
@@ -1067,12 +1327,23 @@ class Radio:
             raise DumpError("sector sums reply is %d bytes, wanted %d" % (len(r), count * 5))
         return [(int.from_bytes(r[i * 5:i * 5 + 4], "big"), r[i * 5 + 4] == 1) for i in range(count)]
 
-    def set_baud(self, baud, window=4.0, tries=4):
+    def set_baud(self, baud, window=4.0, tries=None):
         """Ask the stub to switch its UART to `baud`, prove the new rate with full-size reads, then confirm. Provisional on
         the radio's side: unless the confirm arrives inside `window` seconds it goes back to the old rate by itself, and
         this side goes back too. Returns True if the new rate is now in force, False (still at the old rate) if not."""
-        old = getattr(self.port, "baudrate", 115200)
+        self.switching = True
+        try:
+            return self._set_baud(baud, window, PROOF_ROUNDS if tries is None else tries)
+        finally:
+            self.switching = False
+
+    def _set_baud(self, baud, window, tries):
+        old = self.rate()
         hz = self.timer_hz(0.2)
+        if self.sector_op:                      # the proof is full frames both ways (prove_link), and the window is also
+            window = max(LINK_WINDOW, 2.5 * tries * (SECTOR + CHUNK + 40) * 10 / baud + 0.5)     # the stub's quiet limit
+        else:                                   # older stubs: about 9 * tries full-size reads, with room to spare
+            window = max(window, 2 * 9 * tries * (CHUNK + 20) * 10 / baud + 1.0)
         try:
             reply = self.request(0x0B, baud.to_bytes(4, "big") + int(window * hz).to_bytes(4, "big"), retries=0)
         except DumpError as e:
@@ -1088,7 +1359,9 @@ class Radio:
             time.sleep(0.05)
             self.port.reset_input_buffer()
             ref = None
-            for _ in range(tries):
+            if self.sector_op:
+                self.prove_link(tries)
+            for _ in range(0 if self.sector_op else tries):
                 self.hello()
                 for _ in range(8):            # a sustained stretch of full frames: a marginal link shows up here, not in one frame
                     got = self.peek(self.stub_base, CHUNK)
@@ -1101,27 +1374,108 @@ class Radio:
                     raise DumpError("read-back differs")
             self.request(0x0C, retries=3)
             ok = True
+            if self.home_baud is None:
+                self.home_baud = old
+            self.link_window = window
+            self.link_score = 0
         except (DumpError, ValueError, OSError) as e:
             self.log("%d baud failed (%s); going back to %d" % (actual, e, old))
         if not ok:
+            self.bad_rates.add(actual)
             try:
                 self.port.baudrate = old
             except (ValueError, OSError):
                 pass
             time.sleep(max(0.0, window + 0.3 - (time.monotonic() - t0)))      # the stub reverts when its window ends
             self.port.reset_input_buffer()
-            self.hello()
+            try:
+                self.hello()
+            except DumpError:
+                if self.home_baud is None or old == self.home_baud:
+                    raise
+                self.switching = False          # back at a raised rate that no longer answers: go home by silence
+                self.fall_back("no answer after a failed try")
             return False
         self.log("serial now %d baud" % actual)
         return True
 
+    def prove_link(self, rounds):
+        """Full-size frames both ways at the new rate, each of which must arrive whole: a WRITE-size frame to the radio
+        (op 0E with a flag no stub takes, so it is refused with 0B after its checksum is checked and nothing is written),
+        then a full-size read of the stub's own image. A cable that manages the replies may still damage long frames
+        towards the radio (seen at 276644 baud on a DM-32UV: the PEEK-only proof passed, then WRITE frames failed)."""
+        ref = None
+        for i in range(rounds):
+            junk = os.urandom(SECTOR)
+            status, body = self.exchange(0x0E, bytes(4) + b"\x80\x00" + bytes(4) + junk, 1.0)
+            if status != BADOP:
+                raise DumpError("a full frame to the radio: %s" % (body if status is None else "status 0x%02X" % status))
+            status, body = self.exchange(0x02, self.stub_base.to_bytes(4, "big") + CHUNK.to_bytes(2, "big"), 1.0)
+            if status != OK or len(body) != CHUNK or body != (ref or body) or (self.stub_head and body[:len(self.stub_head)] != self.stub_head):
+                raise DumpError("a full frame from the radio: %s" % (body if status is None else "read-back differs"))
+            ref = body
+
+    def baud_key(self):
+        """The cable and the radio a remembered rate belongs to: the port's device (or URL) and the board."""
+        return "%s|%s" % (getattr(self.port, "port", None) or getattr(self.port, "name", "?"), self.profile["name"])
+
+    def baud_candidates(self):
+        """Raised rates this stub can make (whole divisors of its UART clock) in FAST_MIN..FAST_MAX, fastest first."""
+        hz = self.uart_hz or self.timer_hz(0.3)
+        out = []
+        for d in range(1, 4096):
+            r = int(hz / (16 * d))
+            if r < FAST_MIN:
+                break
+            if r <= FAST_MAX and r > self.rate() * 1.5:
+                out.append(r)
+        return out
+
+    def auto_baud(self):
+        """The fastest rate that proves itself, from a remembered one or by a binary search over baud_candidates (the
+        failures are a cable's bandwidth edge, so above a failing rate nothing is tried). Every step falls back by
+        itself; the link ends at the home rate when nothing faster holds. Protocol 7 only. Returns the rate."""
+        if not self.sector_op:
+            return self.rate()
+        cands = [r for r in self.baud_candidates() if r not in self.bad_rates]
+        if not cands:
+            return self.rate()
+        key = self.baud_key()
+        known = recall_baud(key)
+        if known == 0:
+            self.log("no raised rate held on this cable lately: staying at %d baud" % self.rate())
+            return self.rate()
+        if known:
+            near = min(cands, key=lambda r: abs(r - known))
+            if abs(near - known) <= known * 0.02 and self.set_baud(near):
+                return self.rate()                      # what the stub made, not this side's estimate of it
+            forget_baud(key, known)
+        lo, hi, best = 0, len(cands) - 1, None         # cands[lo..hi] still open; fastest first
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if self.set_baud(cands[mid]):              # from a working raised rate a failed try comes back to it
+                best = self.rate()                      # the rate the stub made
+                hi = mid - 1                            # try faster
+            else:
+                lo = mid + 1                            # slower
+        if best is None:
+            remember_baud(key, None)
+            return self.rate()
+        if self.rate() != best and not self.set_baud(best):
+            return self.rate()
+        remember_baud(key, self.rate())
+        return self.rate()
+
     def timer_hz(self, span=0.5):
-        """Tick rate of timer 2 (it counts down), measured against this computer's clock."""
+        """Tick rate of timer 2 (it counts down), measured against this computer's clock. Each sample's time is taken as
+        its request goes out: the stub reads the timer as soon as the request arrives, while the reply waits up to the
+        cable's latency timer (16 ms on an FTDI) on its way back. Timing to the second reply put that wait into the span,
+        and over 0.3 s an 84 MHz clock read about 80 MHz: the UART divisor for every rate but the first was 5 % off."""
         t0 = time.monotonic()
         v0 = int.from_bytes(self.peek(TIMER2_VALUE, 4), "little")
         time.sleep(span)
-        v1 = int.from_bytes(self.peek(TIMER2_VALUE, 4), "little")
         t1 = time.monotonic()
+        v1 = int.from_bytes(self.peek(TIMER2_VALUE, 4), "little")
         return ((v0 - v1) & 0xFFFFFFFF) / (t1 - t0)
 
     def setup_led(self, red=LED_RED, green=LED_GREEN, status="both"):
@@ -1246,16 +1600,20 @@ class Radio:
                     sa += SECTOR
                     total += 1
                     fails = 0
+                    self.link_score = max(0, self.link_score - 1)
                     want = compress
                     if progress and total % 64 == 0:
                         progress(sa, end)
             except FrameError as e:
                 fails += 1
                 self.retried += 1
-                if fails > self.retries:
-                    raise DumpError("0x%X: no clean read after %d tries (%s)" % (sa, fails, e))
-                self.log("0x%X: %s, resuming here (%d of %d)" % (sa, e, fails, self.retries))
                 self.drain()
+                if self.stream_damaged(str(e)):
+                    fails = 0                       # at the home rate now: a fresh budget there
+                elif fails > self.retries:
+                    raise DumpError("0x%X: no clean read after %d tries (%s)" % (sa, fails, e))
+                else:
+                    self.log("0x%X: %s, resuming here (%d of %d)" % (sa, e, fails, self.retries))
                 want = compress and fails < 2       # a second failure at the same sector: ask for it uncompressed
         for attempt in range(self.retries + 1):
             bad = self.verify(mem, bytes(full), lo)
@@ -1274,6 +1632,7 @@ class Radio:
                 except FrameError as e:
                     self.log("0x%X: %s" % (sa, e))
                     self.drain()
+                    self.stream_damaged(str(e))
         out.flush()
         if total == self.skipped:
             self.log("warning: every sector was blank (0xFF)")
@@ -1299,6 +1658,55 @@ class Radio:
                 if zlib.crc32(data[off:off + SECTOR]) != crc:
                     bad.append(w + i * SECTOR)
         return bad
+
+
+def _baud_cache():
+    try:
+        import json
+        with open(BAUD_CACHE) as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+BAUD_NONE_DAYS = 7                  # "nothing faster held" is believed this long, then auto searches again
+
+
+def recall_baud(key):
+    """The raised rate that last held for this cable and radio; 0 when none did (lately); None when not known."""
+    v = _baud_cache().get(key)
+    if not isinstance(v, dict) or not isinstance(v.get("rate"), int):
+        return None
+    if v["rate"] == 0 and time.time() - v.get("t", 0) > BAUD_NONE_DAYS * 86400:
+        return None
+    return v["rate"]
+
+
+def remember_baud(key, rate):
+    """Keep `rate` (None: nothing faster held) for the next run; a cache that can't be written is only slower."""
+    import json
+    d = _baud_cache()
+    d[key] = {"rate": rate or 0, "t": int(time.time())}
+    try:
+        os.makedirs(os.path.dirname(BAUD_CACHE), exist_ok=True)
+        with open(BAUD_CACHE, "w") as f:
+            json.dump(d, f, indent=1, sort_keys=True)
+    except OSError:
+        pass
+
+
+def forget_baud(key, rate):
+    """A remembered rate that failed is not tried first again (auto searches next time)."""
+    if recall_baud(key) == rate:
+        import json
+        d = _baud_cache()
+        d.pop(key, None)
+        try:
+            with open(BAUD_CACHE, "w") as f:
+                json.dump(d, f, indent=1, sort_keys=True)
+        except OSError:
+            pass
 
 
 def fingerprint(path):
@@ -1358,15 +1766,20 @@ def lz4_encode(src):
 
 
 class FakeRadio:
-    def __init__(self, images, drop=None, flip=(), silent=(), swap=(), misplace=(), stub_len=1536, load=LOAD_ADDR):
+    def __init__(self, images, drop=None, flip=(), silent=(), swap=(), misplace=(), stub_len=1536, load=LOAD_ADDR,
+                 rom_echo=False, rom_nak=False, rom_late=False):
         self.images = images                # {"progmem": bytes, "q128": bytes}
+        self.rom_echo = rom_echo            # the cable sends back every byte written while the boot ROM listens
+        self.rom_nak = rom_nak              # the boot ROM answers the load with something other than its ack
+        self.rom_late = rom_late            # the answer to the greeting comes too late: the ROM stops waiting
+        self.rom_taken = False              # the ROM took the answer to its greeting (a second one is NAKed)
         self.drop, self.flip, self.silent, self.swap = drop or {}, set(flip), set(silent), set(swap)
         self.misplace = set(misplace)
         self.data_bytes = 0                 # flash bytes sent over the cable
         self.sectors_sent = 0
         self.pokes = []
         self.led = self.led_seq = None
-        self.out = bytearray(b"\x02\x24\x00\x03")
+        self.out = bytearray(b"\x02\x24\x00\x03" + (ROM_GAVE_UP if rom_late else b""))
         self.inb = bytearray()
         self.loaded = bytearray()
         self.running = False
@@ -1379,26 +1792,37 @@ class FakeRadio:
         self.t_hz = 24e6
         self.baudrate = self.stub_baud = 115200   # the host's setting and the stub's; the "cable" only works if they agree
         self.max_baud = None                      # the fastest rate the cable manages
+        self.max_in = None                        # the fastest at which long frames to the radio still arrive whole
+        self.home = self.idle = None              # protocol 7: the stub's home rate, and how long it stays away unheard
+        self.last_ok = 0.0
         self.pending = None                       # (old rate, deadline) of a provisional baud change
         self.baud_log = []
         self.switch_to = None
         self.wel = False
         self.writes = []
         self.univ = None                    # a universal stub: {"run", "end", "board", "flags", "honor"} (protocol 6)
+        self.write_op = False               # protocol 7: op 0E writes a whole sector
+        self.bad_write = 0                  # this many of the next op 0E writes read back with a bit wrong
+        self.write_status = 0               # every op 0E answers this status instead (0F protected, 0C busy), 0 = none
         self.configs = []
 
     def revert_check(self):
         if self.pending and time.monotonic() >= self.pending[1]:
             self.stub_baud = self.pending[0]
             self.pending = None
+            self.last_ok = time.monotonic()             # the stub's quiet limit counts from the revert
             self.baud_log.append("reverted")
+        if (self.write_op and self.home and not self.pending and self.stub_baud != self.home
+                and time.monotonic() - self.last_ok >= self.idle):
+            self.stub_baud = self.home
+            self.baud_log.append("home")
 
     def linked(self):
         self.revert_check()
         return self.baudrate == self.stub_baud and (self.max_baud is None or self.baudrate <= self.max_baud)
 
     def flush(self):
-        pass
+        self.flushed = len(self.inb) + self.requests      # what had been written when the host last waited for it to go
 
     def reset_input_buffer(self):
         self.out.clear()
@@ -1415,6 +1839,10 @@ class FakeRadio:
     def write(self, b):
         if self.running and not self.linked():
             return                              # garbled on the wire: the stub sees nothing it can use
+        if self.rom_echo and not self.running:
+            self.out += b
+        if self.running and self.max_in and self.stub_baud > self.max_in and len(b) > 1100:
+            b = bytes(b[:600]) + bytes([b[600] ^ 0x20]) + bytes(b[601:])
         self.inb += b
         while self.step():
             pass
@@ -1427,8 +1855,14 @@ class FakeRadio:
         if not self.running:
             if len(ib) < 4:
                 return False
+            if self.rom_late:                   # it stopped waiting: the firmware runs, and ignores all of it
+                ib.clear()
+                return False
             if bytes(ib[:4]) == b"\x02\x14\x00\x03":
                 del ib[:4]
+                if self.rom_taken:
+                    self.out += ROM_NAK
+                self.rom_taken = True
                 return True
             op, chk = ib[1], ib[2]
             n = {0x18: 4 + 8 + BLOCK, 0x1B: 4 + 4}.get(op)
@@ -1452,7 +1886,7 @@ class FakeRadio:
                 if int.from_bytes(payload, "big") != self.load or len(self.loaded) != self.stub_len:
                     self.errors.append("start command")
                 self.running = True
-            self.out += b"\x02\x05\x00\x03"
+            self.out += b"\x02\x0a\x00\x03" if self.rom_nak else ROM_ACK
             return True
         if len(ib) < 6:
             return False
@@ -1468,6 +1902,7 @@ class FakeRadio:
             self.out += self.frame(BADSUM, b"")
             return True
         self.requests += 1
+        self.last_ok = time.monotonic()
         n = self.requests
         if n in self.silent:
             return True
@@ -1476,10 +1911,28 @@ class FakeRadio:
             body = b"C7STUB" + bytes([1, 1032 >> 8, 1032 & 255]) + LOAD_ADDR.to_bytes(4, "big")
             u = self.univ
             if u:
-                body = (b"C7STUB" + bytes([6, 1032 >> 8, 1032 & 255]) + self.load.to_bytes(4, "big") + (0x0808).to_bytes(4, "big")
+                body = (b"C7STUB" + bytes([7 if self.write_op else 6, 1032 >> 8, 1032 & 255]) + self.load.to_bytes(4, "big") + (0x0808).to_bytes(4, "big")
                         + bytes([u["board"], u["flags"]]) + u["run"].to_bytes(4, "big") + len(self.loaded).to_bytes(4, "big")
                         + (u["end"] - 0x1004).to_bytes(4, "big") + (u["end"] - 0x1000).to_bytes(4, "big")
                         + u["end"].to_bytes(4, "big") + (600).to_bytes(4, "big"))
+        elif op == 0x0E and self.write_op:
+            base, flags, cs, a = int.from_bytes(payload[:4], "big"), payload[4], payload[5], int.from_bytes(payload[6:10], "big")
+            mem = "progmem" if base == SSI_PROG else "q128"
+            if len(payload) not in (10, 10 + SECTOR) or a % SECTOR or flags & ~3:
+                status = BADOP
+            elif not (flags & 1 and (mem == "progmem" or (flags & 2 and cs == 18))):
+                status = NOWEL                                    # nothing selected: the status reads 0xFF... or 0
+            elif self.write_status:
+                status = self.write_status
+            else:
+                img = bytearray(self.images[mem])
+                img[a:a + SECTOR] = payload[10:] or b"\xff" * SECTOR
+                if self.bad_write:
+                    self.bad_write -= 1
+                    img[a + 100] ^= 0x10
+                self.images[mem] = bytes(img)
+                self.writes.append((mem, 0x0E, a))
+                body = zlib.crc32(bytes(img[a:a + SECTOR])).to_bytes(4, "big")
         elif op == 0x0D and self.univ:
             if len(payload) != 16 or payload[14] > 3:
                 status = BADOP
@@ -1501,6 +1954,8 @@ class FakeRadio:
             want = int.from_bytes(payload[:4], "big")
             body = want.to_bytes(4, "big")
             self.pending = (self.stub_baud, time.monotonic() + int.from_bytes(payload[4:8], "big") / self.t_hz)
+            self.home = self.home or self.stub_baud
+            self.idle = int.from_bytes(payload[4:8], "big") / self.t_hz
             self.out += self.frame(OK, body)           # goes out at the old rate, then the stub switches
             self.switch_to = want
             self.baud_log.append("to %d" % want)
@@ -1719,6 +2174,69 @@ def self_test():
     check(not radio.errors, "radio saw errors: %s" % radio.errors)
     check(radio.data_bytes < (len(prog) + len(data)) * 0.7, "blank sectors stay off the cable (%d bytes)" % radio.data_bytes)
 
+    # a cable that echoes what the host sends: the echo is dropped and the load goes on
+    radio = FakeRadio(images, stub_len=len(stub), rom_echo=True)
+    lines = []
+    r = Radio(radio, log=lines.append)
+    r.start(wait=2, stub=stub)
+    check(radio.running and r.echo and not radio.errors, "the boot ROM load works through an echoing cable")
+    check(sum("echoes what" in l for l in lines) == 1, "the echo is logged once")
+    # the ROM answers with something else: the error names the bytes, the cable and the way out
+    radio = FakeRadio(images, stub_len=len(stub), rom_nak=True)
+    r = Radio(radio, log=quiet, cable="CH340")
+    try:
+        r.start(wait=2, stub=stub)
+        check(False, "a refused boot ROM load fails")
+    except DumpError as e:
+        m = str(e)
+        check("received 02 0a 00 03" in m and "CH340 programming cable" in m and "stock firmware file" in m,
+              "a refused boot ROM load says what came back, the cable and the way out: %s" % m)
+    # the answer to the greeting came too late: the ROM says it stopped waiting, and the error names --slow-cable
+    radio = FakeRadio(images, stub_len=len(stub), rom_late=True)
+    try:
+        Radio(radio, log=quiet).start(wait=2, stub=stub)
+        check(False, "a boot ROM that stopped waiting fails the load")
+    except DumpError as e:
+        check("stopped waiting" in str(e) and "--slow-cable" in str(e), "a late answer is reported as one: %s" % e)
+    # --slow-cable: the answer goes out before the greeting is seen; the load goes on, the NAKs of the extra answers dropped
+    radio = FakeRadio(images, stub_len=len(stub))
+    sent = []
+    write = radio.write
+    radio.write = lambda b: (sent.append(bytes(b)), write(b))
+    r = Radio(radio, log=quiet)
+    r.start(wait=2, stub=stub, slow=True)
+    check(radio.running and not radio.errors and sent[0] == ROM_REPLY, "the boot ROM load works with --slow-cable")
+    radio = FakeRadio(images, stub_len=len(stub))
+    radio.out = bytearray(ROM_GAVE_UP)
+    try:
+        Radio(radio, log=quiet).start(wait=2, stub=stub)
+        check(False, "a radio that started its firmware fails the wait")
+    except DumpError as e:
+        check("started its firmware" in str(e) and "--slow-cable" in str(e), "the ROM giving up with no greeting seen: %s" % e)
+    # a near-echo is not an echo: it stays in the error, and only an ack after it counts (a damaged echo on a CH340 cable)
+    r = Radio(io.BytesIO(), log=quiet)
+    r.read_exact = lambda n, t, q=[b"\x02\x1b\x01\x03\x00\x01\x00\x07"]: q.pop() if q else b""
+    ok, got = r.rom_ack(b"\x02\x1b\x01\x03\x00\x01\x00\x00", 0.1)
+    check(not ok and got[:4] == b"\x02\x1b\x01\x03" and not r.echo, "a frame that differs from the one sent is not taken for an echo")
+    r = Radio(io.BytesIO(), log=quiet)
+    r.read_exact = lambda n, t, q=[ROM_ACK, b"\x47\x02\x00\x40\x00\x00"]: q.pop() if q else b""
+    ok, got = r.rom_ack(b"\x02\x1b\x01\x03\x00\x01\x00\x00", 0.5)
+    check(ok, "bytes ahead of the acknowledgement are passed over")
+    r = Radio(io.BytesIO(), log=quiet)
+    r.read_exact = lambda n, t, q=[ROM_NAK, b"\x00\x00"]: q.pop() if q else b""
+    t0 = time.monotonic()
+    ok, got = r.rom_ack(b"\x02\x1b\x01\x03\x00\x01\x00\x00", 5)
+    check(not ok and got.endswith(ROM_NAK) and time.monotonic() - t0 < 1, "a NAK ends the wait at once")
+    # an echo that arrives in pieces, then the acknowledgement; and silence
+    frame = b"\x02\x1b\x01\x03\x00\x01\x00\x00"
+    r = Radio(io.BytesIO(), log=quiet)
+    r.read_exact = lambda n, t, q=[ROM_ACK, frame[5:], frame[:5]]: q.pop() if q else b""
+    ok, got = r.rom_ack(frame, 0.5)
+    check(ok and r.echo, "an echo in pieces is dropped and the acknowledgement after it taken")
+    r = Radio(io.BytesIO(), log=quiet)
+    r.read_exact = lambda n, t: b""
+    check(r.rom_ack(frame, 0.1) == (False, b""), "silence: not acknowledged, nothing received")
+
     # a record that belongs to the next sector passes its own CRC: the final check against the radio's sector CRCs
     # catches it and reads the sector again
     radio = FakeRadio(images, misplace={4}, stub_len=len(stub))
@@ -1784,8 +2302,31 @@ def self_test():
         check(False, "oversized image refused")
     except DumpError:
         pass
+    # protected regions (board.toml [[flash.protect]]): refused before anything is erased, whoever builds the command
+    r.profile = dict(r.profile, protect=[
+        {"mem": "progmem", "start": APP_START + 2 * SECTOR, "end": APP_START + 3 * SECTOR, "what": "test (x.md 1)"},
+        {"mem": "data", "start": lo + SECTOR, "end": lo + 2 * SECTOR, "what": "test (x.md 1)"}])
+    radio.writes.clear()
+    for what, call in (("write_image over a protected sector", lambda: r.write_image(appimg)),
+                       ("write_flash over a protected sector", lambda: r.write_flash("q128", lo, pat)),
+                       ("erase of a protected sector", lambda: r.erase_sectors("q128", lo + SECTOR, lo + 2 * SECTOR)),
+                       ("a raw sector erase in a protected region", lambda: r._write_cmd(
+                           "q128", bytes([0x20, (lo + SECTOR) >> 16 & 0xFF, 0x10, 0]), "erase", 1.0)),
+                       ("a chip erase of a memory with a protected region", lambda: r._write_cmd(
+                           "q128", b"\x60", "chip erase", 1.0))):
+        try:
+            call()
+            check(False, "%s refused" % what)
+        except DumpError as e:
+            check("protected region" in str(e), "%s refused with the reason (%s)" % (what, e))
+    check(radio.writes == [], "nothing written by a refused write (%s)" % radio.writes[:3])
+    r.erase_sectors("q128", lo, lo + SECTOR)
+    check(radio.images["q128"][lo:lo + SECTOR] == b"\xff" * SECTOR, "the sector beside a protected one still erases")
+    r.profile = GENERIC
     r.setup_led(32, 33, "red")
     r.reset_chip()
+    check(getattr(radio, "flushed", None) == len(radio.inb) + radio.requests,
+          "reset_chip waits for its last frame to leave: nothing answers it, and the program exits next")
     check(radio.pokes[-3:] == [(QUAD_ENABLE, 0), (LCSFC_BAUDR, 4), (SYS_SOFT_RSTN, 0)],
           "reset_chip pokes XIP quad off and the reset divider, then the soft reset (%s)" % (radio.pokes[-3:],))
     check(radio.pokes[-7] == (CRASH_SOFT_MARK, CRASH_BOOT_SOFT),
@@ -1926,6 +2467,33 @@ def self_test():
             check(False, "universal stub refused %s (0x%X)" % (why, load))
         except DumpError:
             pass
+    rfoundry = FakeRFoundry((0x44000, 0x14000))                   # it says board=DB25-D: a --board for another radio is refused
+    other = next(b for b in sorted(C7_BOARDS) if "DB25-D" not in C7_BOARDS[b]["names"])
+    try:
+        ro = Radio(rfoundry, log=quiet)
+        ro.attach = lambda: None
+        ro.rfoundry_enter(board=other)
+        check(False, "rfoundry_enter refuses a --board the running firmware does not report")
+    except DumpError as e:
+        check(rfoundry.total is None and "wrong port" in str(e), "--board %s on a DB25-D refused before BEGIN: %s" % (other, e))
+    rfoundry = FakeRFoundry((0x44000, 0x14000))
+    ro = Radio(rfoundry, log=quiet)
+    ro.attach = lambda: None
+    ro.rfoundry_enter(board=other, force=True)
+    check(rfoundry.entered, "--force enters anyway")
+    nm = {k: C7_BOARDS[k]["names"][0].encode() + b"\0" for k in C7_BOARDS if C7_BOARDS[k]["names"]}
+    a_, b_ = sorted(nm)[:2]
+    img = b"\0" * 64 + b"RadioFoundry\0" + nm[a_] + b"\xff" * 64
+    check(image_board_check(img, a_) is None, "an image naming its own board passes")
+    why = image_board_check(img, b_)
+    check(why is not None and C7_BOARDS[a_]["name"] in why, "an image for the %s refused for the %s: %s" % (a_, b_, why))
+    check(image_board_check(b"stock firmware" + nm[a_], b_) is None, "a stock image is not judged")
+    check(image_board_check(img, None) is None, "no target board: not judged")
+    rfoundry = FakeRFoundry((0x44000, 0x14000))
+    ro = Radio(rfoundry, log=quiet)
+    ro.attach = lambda: None
+    ro.rfoundry_enter(board=c7_board("DB25-D"))
+    check(rfoundry.entered, "rfoundry_enter takes a --board the running firmware reports")
     rfoundry = FakeRFoundry((0x2F000, 0x4000))                    # a span that would overlap the run copy: refused before BEGIN
     try:
         Radio(rfoundry, log=quiet).rfoundry_enter()
@@ -1998,6 +2566,113 @@ def self_test():
             check(False, "no write after a failed CONFIG")
         except DumpError:
             pass
+    # protocol 7: one WRITE request per changed sector, its read-back CRC checked at once; a v6 stub keeps the SPI path
+    for wop in (True, False):
+        pm = images["progmem"] + b"\xff" * (0x100000 - len(images["progmem"]))
+        radio = FakeRadio(dict(images, progmem=pm), stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
+        radio.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+        radio.write_op = wop
+        r = Radio(radio, log=quiet)
+        r.start(wait=2)
+        r.configure(sorted(C7_BOARDS)[0])
+        check(r.sector_op == wop, "HELLO v%d: whole-sector writes %s" % (7 if wop else 6, "on" if wop else "off"))
+        app = bytes((i * 13 + 5) & 0xFF for i in range(5 * SECTOR)) + b"\xff" * SECTOR + bytes(range(256)) * 4
+        radio.images["progmem"] = radio.images["progmem"][:APP_START + 5 * SECTOR] + b"\x00" * SECTOR + radio.images["progmem"][APP_START + 6 * SECTOR:]
+        nw, nk = r.write_image(app)
+        ok = radio.images["progmem"][APP_START:APP_START + len(app)] == app
+        ops = [w[1] for w in radio.writes]
+        if wop:
+            check(ok and nw == 7 and ops == [0x0E] * 7, "WRITE: each changed sector is one request (%d written, %s)" % (nw, ops))
+        else:
+            check(ok and nw == 7 and 0x0E not in ops and ops.count(0x20) == 7, "v6 stub: written by SPI requests as before")
+        if wop:
+            app2 = app[:SECTOR] + bytes(SECTOR) + app[2 * SECTOR:]
+            radio.bad_write = 1
+            n0 = r.retried
+            nw, _ = r.write_image(app2)
+            check(nw == 1 and radio.images["progmem"][APP_START:APP_START + len(app2)] == app2 and r.retried == n0 + 1,
+                  "WRITE: a sector that reads back wrong is written again (%d retried)" % (r.retried - n0))
+            radio.bad_write = 3
+            try:
+                r.write_image(app)
+                check(False, "a sector that never reads back right fails the write")
+            except DumpError as e:
+                check("3 writes" in str(e), "WRITE: gives up after 3 tries: %s" % e)
+            for st, why in ((NOWEL, "write-protected"), (SPITIMEOUT, "stayed busy")):
+                radio.write_status = st
+                before = radio.images["progmem"]
+                try:
+                    r.write_image(app2)
+                    check(False, "WRITE status 0x%02X stops the write" % st)
+                except DumpError as e:
+                    check(why in str(e) and radio.images["progmem"] == before, "WRITE status 0x%02X: %s" % (st, e))
+            radio.write_status = 0
+            lo, hi = WRITE_OK["progmem"][0]
+            r.write_flash("progmem", lo, bytes(range(256)) * 16 * ((hi - lo) // SECTOR))
+            r.erase_sectors("progmem", lo, hi)
+            check(radio.images["progmem"][lo:hi] == b"\xff" * (hi - lo), "WRITE without data erases the sector")
+            try:
+                r.write_flash("progmem", 0x1000, b"\0" * SECTOR)
+                check(False, "WRITE outside the allowed regions refused")
+            except DumpError:
+                pass
+    # raised rates (protocol 7): auto finds the fastest rate that carries full frames both ways and remembers it; a rate
+    # that stops holding is given up by silence alone, because the stub goes home when its link goes quiet
+    import io
+    import shutil
+    import tempfile
+    saved = {k: globals()[k] for k in ("LINK_WINDOW", "PROOF_ROUNDS", "BAUD_CACHE")}
+    tmp = tempfile.mkdtemp()
+    globals().update(LINK_WINDOW=0.2, PROOF_ROUNDS=1, BAUD_CACHE=os.path.join(tmp, "baud.json"))
+
+    def v7(max_baud, max_in=None):
+        pm = images["progmem"] + b"\xff" * (0x100000 - len(images["progmem"]))
+        radio = FakeRadio(dict(images, progmem=pm), stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
+        radio.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+        radio.write_op, radio.t_hz, radio.max_baud, radio.max_in = True, 84e6, max_baud, max_in
+        r = Radio(radio, log=quiet)
+        r.start(wait=2)
+        r.configure(sorted(C7_BOARDS)[0])
+        return radio, r
+
+    try:
+        radio, r = v7(600000, max_in=400000)
+        check(not r.set_baud(437500) and r.rate() == 115200 and 437500 in r.bad_rates and r.hello()[0] == 7,
+              "a rate whose replies hold but whose long frames to the radio are damaged is refused")
+        radio, r = v7(600000, max_in=400000)
+        got = r.auto_baud()
+        check(got == 375000 and radio.stub_baud == 375000 and r.home_baud == 115200 and recall_baud(r.baud_key()) == 375000,
+              "auto: the fastest rate that holds both ways, remembered (%s, tried %s)" % (got, radio.baud_log))
+        radio, r = v7(600000, max_in=400000)
+        check(r.auto_baud() == 375000 and [x for x in radio.baud_log if x.startswith("to")] == ["to 375000"],
+              "auto: the remembered rate is tried first and alone (%s)" % radio.baud_log)
+        want = r.sums("progmem", APP_START, 2)
+        radio.max_baud = 300000                         # the cable gets worse mid-session
+        check(r.sums("progmem", APP_START, 2) == want and r.rate() == 115200 and radio.stub_baud == 115200
+              and "home" in radio.baud_log and recall_baud(r.baud_key()) is None,
+              "a raised rate that stops holding: both sides go home by silence, the request is answered, the rate "
+              "is forgotten (%s)" % radio.baud_log)
+        radio, r = v7(600000, max_in=400000)
+        check(r.auto_baud() == 375000, "auto again after the rate was forgotten")
+        check_id = r.check_id                           # worse once the streamed read (op 09) is under way, not before
+
+        def worse(mem):
+            check_id(mem)
+            radio.max_baud = 300000
+        r.check_id = worse
+        out = io.BytesIO()
+        r.dump(out, "progmem", APP_START, APP_START + 2 * PACK * SECTOR)
+        check(out.getvalue() == radio.images["progmem"][APP_START:APP_START + 2 * PACK * SECTOR] and r.rate() == 115200
+              and radio.stub_baud == 115200, "a raised rate that stops holding during a streamed read: the read goes home "
+              "and finishes there (%s)" % radio.baud_log)
+        radio, r = v7(150000)
+        check(r.auto_baud() == 115200 and r.rate() == 115200 and recall_baud(r.baud_key()) == 0 and r.hello()[0] == 7,
+              "auto: nothing faster holds, so the link stays at the home rate and that is remembered")
+        radio, r = v7(150000)
+        check(r.auto_baud() == 115200 and not radio.baud_log, "auto: a cable known to hold nothing faster is not tried again")
+    finally:
+        globals().update(saved)
+        shutil.rmtree(tmp, ignore_errors=True)
     # an old stub (HELLO without the v6 fields): no CONFIG, writes allowed as before
     radio = FakeRadio(images, stub_len=len(stub))
     r = Radio(radio, log=quiet)
@@ -2005,6 +2680,14 @@ def self_test():
     r.configure(sorted(C7_BOARDS)[0])
     check(r.v6 is None and not radio.configs, "an old stub gets no CONFIG")
     r.write_image(images["progmem"][APP_START:APP_START + SECTOR])
+    # the board named still brings its protected regions
+    for p in (x for x in C7_BOARDS[sorted(C7_BOARDS)[0]]["protect"] if x["mem"] in PROTECT_MEM.values()):
+        mem = next(m for m, n in PROTECT_MEM.items() if n == p["mem"])
+        try:
+            r.check_write_range(mem, p["start"] - p["start"] % SECTOR, p["start"] - p["start"] % SECTOR + SECTOR)
+            check(False, "an old stub: a protected region still refused")
+        except DumpError as e:
+            check("protected region" in str(e), "an old stub: a protected region still refused (%s)" % e)
     print("stubtool self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                     "" if len(fails) == 1 else "s"))
     return 0 if not fails else 1
@@ -2105,10 +2788,19 @@ def main(argv=None):
     ap.add_argument("--verify-q128", metavar="FILE", help="compare the data flash with FILE by CRC")
     ap.add_argument("--write-q128", metavar="FILE", help="STM32 radios: write FILE into the SPI flash from --q128-range's "
                     "start (default 0), changed 4 KB sectors only, each verified by CRC")
+    ap.add_argument("--secreg", metavar="FILE", help="STM32 radios: read the SPI flash's three 256-byte security registers "
+                    "(the DM-1701 family's factory calibration and flags) into FILE (768 bytes), and print their lock bits")
+    ap.add_argument("--write-secreg", metavar="FILE", help="STM32 radios: write FILE (768 bytes, registers 1-3) into the "
+                    "security registers, only those that differ, each read back; the old content is saved to --backup-dir "
+                    "first. Refused for a locked register. Needs --confirm-secreg")
+    ap.add_argument("--confirm-secreg", action="store_true", help="confirm --write-secreg: it rewrites factory data")
     ap.add_argument("--probe", action="store_true", help="chip IDs, a first block of each flash and some registers")
     ap.add_argument("--peek", metavar="ADDR:LEN", help="print LEN bytes of radio memory (hex dump)")
     ap.add_argument("--retries", type=int, default=6)
     ap.add_argument("--wait", type=int, default=120, help="seconds to wait for the radio to be switched on")
+    ap.add_argument("--slow-cable", action="store_true", help="boot ROM: send the answer to its greeting every 30 ms "
+                    "from the start, for a cable or USB hub too slow for the ROM's 48 ms window. Radio OFF before the "
+                    "tool starts: a running firmware would get the answers too")
     ap.add_argument("--led-red", type=int, default=LED_RED, help="GPIO pin index of the red LED (default %d, 255 = none)" % LED_RED)
     ap.add_argument("--led-green", type=int, default=LED_GREEN, help="GPIO pin index of the green LED (default %d, 255 = none)" % LED_GREEN)
     ap.add_argument("--led-status", choices=("red", "green", "both", "off"), default="both",
@@ -2120,7 +2812,10 @@ def main(argv=None):
     ap.add_argument("--led-test", action="store_true", help="walk the LEDs through red, green, both and PWM mixes (watch the radio)")
     ap.add_argument("--boot", metavar="reset|jump:ADDR", help="when done, restart the radio into its firmware: `reset` soft-resets the chip, "
                     "`jump:0x0300C000` jumps to an address")
-    ap.add_argument("--baud", metavar="N|auto", help="after the boot, switch the serial link to N baud (this UART has no fractional divider, so only 750000, 500000, 375000, 250000 are offered; 921600/460800/230400 are refused); auto tries them from fast to slow. Tested before it is kept; falls back to 115200 if the cable cannot do it")
+    ap.add_argument("--baud", metavar="N|auto|off", help="serial link rate after the boot. Default with a protocol 7 stub "
+                    "and a read or --write-app: auto, the fastest rate that carries full frames both ways (the UART has "
+                    "whole divisors only: clock / (16 * d)), remembered per port and radio; if it stops holding the link "
+                    "goes back to the starting rate by itself. N asks for one rate (tested before it is kept); off stays")
     ap.add_argument("--write-test", choices=("progmem", "q128", "both"), help="erase, program a test pattern into, read back and erase "
                     "again the sectors reserved for write tests (see WRITE_OK); nothing else is touched")
     ap.add_argument("--rfoundry-enter", action="store_true", help="the radio is ON and runs RadioFoundry (built with CONFIG_STUB_ENTRY=y): load "
@@ -2142,6 +2837,9 @@ def main(argv=None):
                     help="power-on load: write and start the stub at ADDR (default 0x%X). The universal stub runs from any "
                          "base that doesn't overlap its run area; a legacy stub must be linked for it (the DB25-D's first stage "
                          "took the legacy 0x30000 stub at 0x30000)" % LOAD_ADDR)
+    ap.add_argument("--force", action="store_true",
+                    help="write even when the radio's firmware or the image names another board than the one targeted. Two "
+                         "cables with one serial number can swap port names, so a refusal usually means the wrong port")
     ap.add_argument("--board", choices=sorted(b.id for b in rfoundryboards.BOARDS.values()
                                               if b.stub or "stub/stm32f4" in b.platform_stubs),
                     help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (%s: the board profile the "
@@ -2166,8 +2864,18 @@ def main(argv=None):
             if mem == "nand" and not rng:
                 ap.error("--nand needs --nand-range (the chip is 256 MB)")
             jobs.append((mem, f, rng))
-    if not (jobs or a.probe or a.peek or a.verify_progmem or a.verify_q128 or a.verify_nand or a.led_test or a.led_seq or a.boot or a.write_test or a.write_app or a.write_q128):
+    if not (jobs or a.probe or a.peek or a.verify_progmem or a.verify_q128 or a.verify_nand or a.led_test or a.led_seq or a.boot or a.write_test or a.write_app or a.write_q128
+            or a.secreg or a.write_secreg):
         ap.error("nothing to do: give --progmem, --q128, --verify-*, --probe, --peek or OUT")
+    if (a.secreg or a.write_secreg) and a.board in C7_BOARDS:
+        ap.error("--secreg and --write-secreg are for the STM32 radios; the HR_C7000 stub has no security register ops")
+    if a.write_secreg:
+        # checked before the radio is touched
+        if not a.confirm_secreg:
+            ap.error("--write-secreg rewrites the radio's factory calibration: add --confirm-secreg")
+        if os.path.getsize(a.write_secreg) != 768:
+            ap.error("%s is %d bytes: --write-secreg takes the 768 bytes --secreg reads (registers 1-3)"
+                     % (a.write_secreg, os.path.getsize(a.write_secreg)))
     try:
         import serial
     except ImportError:
@@ -2195,10 +2903,20 @@ def main(argv=None):
                     print("RadioFoundry reports board %r: not one with a stub profile, using the generic one" % name)
         if a.board in f4stub.BOARDS:
             return f4stub.run(a, port, reopen)
+        if a.write_app:                         # before the stub goes in: a refusal leaves the radio as it was
+            why = image_board_check(open(a.write_app, "rb").read(), a.board)
+            if why and not a.force:
+                raise DumpError(why + ": wrong image or wrong port? Nothing was sent (--force writes it anyway)")
+            if why:
+                print("warning: %s; writing it anyway (--force)" % why)
         if a.write_q128:
             raise DumpError("--write-q128 is for the STM32 radios (DM-1701, MD-380)")
+        if a.secreg or a.write_secreg:
+            raise DumpError("--secreg and --write-secreg are for the STM32 radios (DM-1701, MD-380); the HR_C7000 stub has "
+                            "no security register ops")
         if a.rfoundry_enter:
-            radio.rfoundry_enter(open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else ("legacy" if a.legacy_stub else None), board=a.board)
+            radio.rfoundry_enter(open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else ("legacy" if a.legacy_stub else None),
+                                 board=a.board, force=a.force)
         elif a.attach:
             radio.attach()
             radio.configure(a.board)
@@ -2212,13 +2930,21 @@ def main(argv=None):
                 else:
                     raise DumpError("no legacy stub is linked for 0x%X: give --stub" % load)
             print("radio OFF? switch it on now (waiting up to %d s)" % a.wait)
-            radio.start(a.wait, stub, load)
+            radio.start(a.wait, stub, load, slow=a.slow_cable)
             radio.configure(a.board)
         jobs = [(mem, f) + parse_range(rng, radio.mem_size(mem)) for mem, f, rng in jobs]
-        if a.baud:
-            for b in ([921600, 460800, 230400, 750000, 500000, 375000, 250000] if a.baud == "auto" else [int(a.baud)]):
+        if a.baud == "off":
+            pass
+        elif radio.sector_op and (a.baud == "auto" or (a.baud is None and (jobs or a.write_app))):
+            b = radio.auto_baud()               # protocol 7: proven both ways, and it falls back by itself if it stops holding
+            print("serial link at %d baud" % b)
+        elif a.baud == "auto":                  # an older stub: no way back from a raised rate that stops holding
+            for b in sorted((r for r in (radio.baud_candidates() if radio.uart_hz else [750000, 500000, 375000, 250000])
+                             if r <= 750000), reverse=True)[:4]:
                 if radio.set_baud(b):
                     break
+        elif a.baud:
+            radio.set_baud(int(a.baud))
         radio.setup_led(a.led_red, a.led_green, a.led_status)
         if a.led_test:
             for what, steps in (("red only", [(255, 0, 1500)]), ("green only", [(0, 255, 1500)]),
@@ -2233,6 +2959,12 @@ def main(argv=None):
             radio.led_sequence(steps, rep, hold)
         if a.write_app:
             image = open(a.write_app, "rb").read()
+            if a.board is None:                 # the profile a stub attached to already had: checked before any write
+                why = image_board_check(image, next((k for k, b in C7_BOARDS.items() if b is radio.profile), None))
+                if why and not a.force:
+                    raise DumpError(why + ": wrong image or wrong port? Nothing was written (--force writes it anyway)")
+                if why:
+                    print("warning: %s; writing it anyway (--force)" % why)
             t0 = time.monotonic()
             nw, nk = radio.write_image(image, replace_stage=a.replace_stage, progress=lambda i, n: print("\rwriting sector %d of %d changed" % (i + 1, n), end="", flush=True))
             print("\n%s: %d bytes, %d sectors written, %d unchanged, verified by CRC, %.0f s" % (a.write_app, len(image), nw, nk, time.monotonic() - t0))

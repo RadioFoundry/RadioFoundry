@@ -20,9 +20,15 @@
 #include "hostlink/hostlink.h"
 #endif
 #include "rfoundry_about.h"
+#if CONFIG_SFR
+#include "dmr/sfr.h"
+#endif
 
 #ifndef RFOUNDRY_GIT
 #define RFOUNDRY_GIT "host"
+#endif
+#ifndef RFOUNDRY_RELEASE
+#define RFOUNDRY_RELEASE ""
 #endif
 
 extern const ui_scr_def_t ui_find_screen;
@@ -1024,18 +1030,359 @@ static const char *zone_title(void)
 	return zone_of_frame()->name;
 }
 
+#if CONFIG_ZONE_SHARE
+// ======================= Zone sharing (docs/spec/zone-share.md; docs/user/07-channels-zones-vfo.md) =======================
+// CONTEXT in a zone: send the zone, or the channel focused, to a contact or talkgroup (with the zone editor: from
+// its Channel actions and Zone options). An offer from another radio comes as a banner (CONTEXT opens it) and waits
+// under Tools while it lasts: Import, Preview, Reject
+// The rows that share, with the share icon in front
+#define SHARE_ZONE	GLYPH_SHARE " Share zone to..."
+#define SHARE_CHANNEL	GLYPH_SHARE " Share channel to..."
+
+static uint16_t share_zone, share_pos;	// the zone and the channel position CONTEXT was pressed on
+static bool share_one;			// send only that channel
+static char share_name[CODEPLUG_NAME_LEN + 1];
+
+// Share To for the zone, or (one) only its channel at pos; from a menu one level above the zone's list, which
+// share_to_select leaves with it. Zone UI_ZONE_NONE: pos is a channel's number (the channel editor, which stays)
+static void share_send_to(uint16_t zone, uint16_t pos, bool one, const char *name)
+{
+	if (!(feats() & UI_FEAT_ZONE_SHARE)) {
+		ui_toast("Zone sharing: not in this build");
+		return;
+	}
+#if CONFIG_ZONE_EDIT
+	if (ui_svc_zone_pending()) {
+		ui_toast("Saving the zone: try again");	// the send reads the stored zone, its positions as saved
+		return;
+	}
+#endif
+	share_zone = zone;
+	share_pos = pos;
+	share_one = one;
+	if (name != share_name)
+		strcpy(share_name, name);	// the Share menu passes its own
+	ui_push(SCR_SHARE_TO, 0);
+}
+
+#if !CONFIG_ZONE_EDIT
+static void zone_context(uint16_t i)
+{
+	const zone_t *z = zone_of_frame();
+	if (z->count == 0)
+		return;
+	share_zone = ui_frame()->arg;
+	share_pos = ui_filter_raw(i);
+	strcpy(share_name, z->name);
+	ui_push(SCR_SHARE, 0);
+}
+
+enum { SH_ZONE, SH_CHANNEL, SH_COUNT };
+
+static uint16_t share_count(void) { return SH_COUNT; }
+
+static void share_item(uint16_t i, ui_item_t *it)
+{
+	strcpy(it->label, i == SH_ZONE ? SHARE_ZONE : SHARE_CHANNEL);
+	item_num(it, (uint16_t)(i + 1u));
+	if (!(feats() & UI_FEAT_ZONE_SHARE))
+		it->flags |= UI_ITEM_DIM;
+}
+
+static void share_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	share_send_to(share_zone, share_pos, i == SH_CHANNEL, share_name);
+}
+
+static const char *share_title(void) { return share_name; }
+
+static const ui_scr_def_t share_screen = {
+	.name = "zone_share", .flags = SF_LIST | SF_NUMBERED, .prefix = NULL, .hint = "OK pick  Back",
+	.count = share_count, .item = share_item, .select = share_select, .title = share_title,
+};
+#endif
+
+// Share To: the codeplug's contacts, private or group (type to find, as Contacts)
+static void share_to_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	ui_target_t t;
+	uint8_t total = 0;
+	if (!contacts_target(i, &t))
+		return;
+	uint8_t n = ui_svc_zone_send(share_zone, share_pos, share_one, t.id, t.group, &total);
+	static char msg[48];	// the toast keeps the pointer
+	sbuf_t b;
+	sb_init(&b, msg, sizeof msg);
+	if (n == 0) {
+		ui_toast("Can't send now: try again");
+		return;
+	}
+	if (!share_one && n < total) {
+		// The record holds what fits (zone-share.md 4): say how much goes
+		sb_str(&b, "Sending ");
+		sb_u32(&b, n, 1);
+		sb_str(&b, " of ");
+		sb_u32(&b, total, 1);
+		sb_str(&b, " channels");
+	} else {
+		sb_str(&b, share_one ? "Sending channel to " : "Sending zone to ");
+		sb_str(&b, t.name[0] ? t.name : "this contact");
+	}
+	ui_pop();
+	if (share_zone != UI_ZONE_NONE)
+		ui_pop();	// and the menu it came from; the channel editor stays
+	ui_toast(msg);
+}
+
+static const ui_scr_def_t share_to_screen = {
+	.name = "zone_share_to", .flags = SF_LIST | SF_FILTER, .prefix = "Share To",
+	.hint = "0-9 find  OK send  Back", .empty = "No contacts: add them in qdmr",
+	.count = ui_filter_count, .item = contacts_item, .select = share_to_select,
+	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
+};
+
+// --- An offer from another radio ---
+static ui_zone_offer_t offer;	// read on each pass: it may go (imported, rejected, expired)
+
+static bool offer_get(void)
+{
+	if (!ui_svc_zone_offer(&offer)) {
+		offer.serial = 0;
+		return false;
+	}
+	return true;
+}
+
+enum { OF_IMPORT, OF_PREVIEW, OF_REJECT, OF_COUNT };
+
+static uint16_t offer_count(void) { return offer_get() ? OF_COUNT : 0; }
+
+static void offer_item(uint16_t i, ui_item_t *it)
+{
+	static const char *const names[] = { "Import", "Preview", "Reject" };
+	strcpy(it->label, names[i]);
+	item_num(it, (uint16_t)(i + 1u));
+	if (i == OF_IMPORT && offer.in_band == 0)
+		it->flags |= UI_ITEM_DIM;
+}
+
+static void offer_enter(void)
+{
+	if (offer_get())
+		ui_svc_zone_offer_open(offer.serial);	// open: it doesn't expire while the user reads it
+}
+
+static void offer_import(uint16_t zone)
+{
+	if (!ui_svc_zone_offer_import(offer.serial, zone)) {
+		ui_toast("Busy saving: try again");
+		return;
+	}
+	ui_go_home();
+	ui_toast("Importing...");
+}
+
+static void offer_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	if (!offer_get())
+		return;
+	switch (i) {
+	case OF_IMPORT:
+		if (offer.in_band == 0)
+			ui_toast("No channel in this radio's bands");
+		else if (offer.channel)
+			ui_push(SCR_OFFER_ZONE, 0);	// which zone it joins
+		else
+			offer_import(0);
+		break;
+	case OF_PREVIEW:
+		ui_push(SCR_OFFER_PREVIEW, 0);
+		break;
+	default:
+		ui_svc_zone_offer_reject(offer.serial);
+		ui_pop();
+		ui_toast("Offer rejected");
+		break;
+	}
+}
+
+// "Zone Club, 24 channels, from Joe 3101234" and how many can't be received here
+static const char *offer_body(void)
+{
+	static char body[96];
+	sbuf_t b;
+	sb_init(&b, body, sizeof body);
+	if (!offer_get())
+		return NULL;
+	sb_str(&b, offer.channel ? "Channel " : "Zone ");
+	sb_str(&b, offer.name);
+	if (!offer.channel) {
+		sb_str(&b, ", ");
+		sb_u32(&b, offer.channels, 1);
+		sb_str(&b, offer.channels == 1 ? " channel" : " channels");
+	}
+	sb_str(&b, ", from ");
+	if (offer.from[0]) {
+		sb_str(&b, offer.from);
+		sb_chr(&b, ' ');
+	}
+	sb_u32(&b, offer.src, 1);
+	if (offer.in_band < offer.channels) {
+		// Left out by the import (the result banner says the rest come in receive only)
+		sb_str(&b, ". ");
+		sb_u32(&b, (uint32_t)(offer.channels - offer.in_band), 1);
+		sb_str(&b, " not in band");
+	}
+	return body;
+}
+
+// The longest title that fits: a whole zone or one channel
+static const char *offer_title(void)
+{
+	if (offer_get() && offer.channel)
+		return TEXT_ALT_OPEN "Channel Share Received " GLYPH_DOWNLOAD TEXT_ALT_NEXT "Ch Share Received " GLYPH_DOWNLOAD
+		       TEXT_ALT_NEXT "Ch Received " GLYPH_DOWNLOAD TEXT_ALT_NEXT "Ch Received" TEXT_ALT_CLOSE;
+	return TEXT_ALT_OPEN "Zone Share Received " GLYPH_DOWNLOAD TEXT_ALT_NEXT "Zone Received " GLYPH_DOWNLOAD TEXT_ALT_NEXT
+	       "Zone Received" TEXT_ALT_CLOSE;
+}
+
+static const ui_scr_def_t offer_screen = {
+	.name = "zone_offer", .flags = SF_LIST | SF_NUMBERED, .hint = "OK pick  Back",
+	.empty = "No share waiting",
+	.count = offer_count, .item = offer_item, .select = offer_select, .body = offer_body, .enter = offer_enter,
+	.title = offer_title,
+};
+
+static uint16_t preview_count(void) { return offer_get() ? offer.channels : 0; }
+
+static void preview_item(uint16_t i, ui_item_t *it)
+{
+	ui_zone_offer_ch_t ch;
+	if (!ui_svc_zone_offer_channel(offer.serial, i, &ch))
+		return;
+	sbuf_t b;
+	sb_init(&b, it->label, sizeof it->label);
+	sb_str(&b, ch.name[0] ? ch.name : "(no name)");
+	sb_init(&b, it->value, sizeof it->value);
+	if (!ch.in_band) {
+		sb_str(&b, TEXT_ALT_OPEN "Not in band" TEXT_ALT_NEXT "Out" TEXT_ALT_CLOSE);
+		it->flags |= UI_ITEM_DIM;
+		return;
+	}
+	sb_str(&b, TEXT_ALT_OPEN);
+	sb_freq(&b, ch.rx_hz);
+	sb_str(&b, ch.dmr ? " DMR" : " FM");
+	sb_str(&b, TEXT_ALT_NEXT);
+	sb_freq(&b, ch.rx_hz);
+	sb_str(&b, TEXT_ALT_CLOSE);
+}
+
+static void preview_select(uint16_t i, bool hold)
+{
+	(void)i;
+	(void)hold;
+	ui_pop();	// back to Import / Reject
+}
+
+static const char *preview_title(void) { return offer.name; }
+
+static const ui_scr_def_t preview_screen = {
+	.name = "zone_offer_preview", .flags = SF_LIST, .prefix = NULL, .hint = "OK or Back returns",
+	.empty = "No zone offer waiting",
+	.count = preview_count, .item = preview_item, .select = preview_select, .title = preview_title,
+};
+
+// A channel offer joins a zone the user picks
+static uint16_t offer_zone_count(void) { return codeplug_zone_count(); }
+
+static void offer_zone_item(uint16_t i, ui_item_t *it)
+{
+	static zone_t z;
+	if (!codeplug_zone(i, &z))
+		return;
+	strcpy(it->label, z.name);
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	sb_u32(&b, z.count, 1);
+	sb_str(&b, TEXT_ALT_OPEN " channels" TEXT_ALT_NEXT " ch" TEXT_ALT_CLOSE);
+	if (z.count >= CODEPLUG_ZONE_MAX)
+		it->flags |= UI_ITEM_DIM;
+}
+
+static void offer_zone_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	if (offer_get())
+		offer_import(i);
+}
+
+static const ui_scr_def_t offer_zone_screen = {
+	.name = "zone_offer_zone", .flags = SF_LIST, .prefix = "Add to Zone", .hint = "OK add  Back",
+	.empty = "No zones",
+	.count = offer_zone_count, .item = offer_zone_item, .select = offer_zone_select,
+};
+
+// Tools: the offer waiting, while it lasts (the banner may have gone unseen)
+static bool offer_waiting(void)
+{
+	ui_zone_offer_t o;
+	return ui_svc_zone_offer(&o);
+}
+#endif
+
+#if CONFIG_ZONE_EDIT
+#define ZONE_HINT	TEXT_ALT_OPEN "OK go  # edit  0-9 find" TEXT_ALT_NEXT "OK go  # edit" TEXT_ALT_CLOSE
+#define ZONE_CONTEXT	zone_context
+#elif CONFIG_ZONE_SHARE
+#define ZONE_HINT	TEXT_ALT_OPEN "OK go  # share  0-9 find" TEXT_ALT_NEXT "OK go  # share" TEXT_ALT_CLOSE
+#define ZONE_CONTEXT	zone_context
+#else
+#define ZONE_HINT	"OK go  0-9 find  Back"
+#define ZONE_CONTEXT	NULL
+#endif
+
 static const ui_scr_def_t zone_screen = {
 	.name = "zone", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = NULL,
-#if CONFIG_ZONE_EDIT
-	.hint = TEXT_ALT_OPEN "OK go  # edit  0-9 find" TEXT_ALT_NEXT "OK go  # edit" TEXT_ALT_CLOSE,
-	.context = zone_context,
-#else
-	.hint = "OK go  0-9 find  Back",
-#endif
-	.empty = "Empty zone",
-	.count = ui_filter_count, .item = zone_item, .select = zone_select, .title = zone_title,
-	.enter = zone_enter, .raw_count = zone_raw_count, .raw_label = zone_raw_label,
+	.hint = ZONE_HINT, .empty = "Empty zone",
+	.count = ui_filter_count, .item = zone_item, .select = zone_select, .context = ZONE_CONTEXT,
+	.title = zone_title, .enter = zone_enter, .raw_count = zone_raw_count, .raw_label = zone_raw_label,
 };
+
+#if CONFIG_ZONE_WRITE
+// Zone indexes moved (zone_edit.h): the stack's zone screens follow them. Zones keeps its focus on the same zone, a
+// zone's list and the editor's screens on their zone; a list whose zone was deleted closes, with what is above it.
+// Returns the new top of the stack
+uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint32_t to)
+{
+	uint16_t out;
+#if CONFIG_ZONE_EDIT
+	bool ze_ok = zone_edit_map(from, to, ze_zone, &out) == ZONE_MAP_KEPT;
+	if (ze_ok)
+		ze_zone = out;
+#endif
+	for (uint8_t i = 1; i <= sp; i++) {
+		ui_frame_t *f = &stack[i];
+		if (f->scr == SCR_ZONES && !chans_is_vfo(f->focus)) {
+			if (zone_edit_map(from, to, (uint16_t)(f->focus - CH_VFO), &out) != ZONE_MAP_LOST)
+				f->focus = (uint16_t)(out + CH_VFO);	// a deleted one: the next zone, clamped by the list
+		} else if (f->scr == SCR_ZONE) {
+			if (zone_edit_map(from, to, f->arg, &out) != ZONE_MAP_KEPT)
+				return (uint8_t)(i - 1u);
+			f->arg = out;
+		}
+#if CONFIG_ZONE_EDIT
+		else if (f->scr == SCR_ZCHANNEL || f->scr == SCR_ZPICK || f->scr == SCR_ZONEEDIT || f->scr == SCR_ZONEDEL) {
+			if (!ze_ok)
+				return (uint8_t)(i - 1u);
+		}
+#endif
+	}
+	return sp;
+}
+#endif
 
 #if CONFIG_CHANNEL_LIST
 // ======================= Channels: every codeplug channel by number (hub 5) =======================
@@ -1178,7 +1525,7 @@ static const ui_scr_def_t chlist_screen = {
 
 enum { CE_NAME, CE_NUMBER, CE_MODE, CE_RX, CE_TX, CE_POWER, CE_RX_ONLY, CE_BW, CE_RX_TONE, CE_TX_TONE, CE_VOX,
        CE_CC, CE_TS, CE_CONTACT, CE_LIST, CE_ID, CE_DMO, CE_BEEP, CE_ALIAS1, CE_ALIAS2, CE_TOT, CE_SCAN, CE_ECO,
-       CE_ZONES, CE_GO, CE_SAVE, CE_SAVE_NEW, CE_COUNT, CE_NONE = 0xFF };
+       CE_ZONES, CE_GO, CE_SHARE, CE_SAVE, CE_SAVE_NEW, CE_COUNT, CE_NONE = 0xFF };
 
 static channel_t ced_ch;		// what the screen shows (the working copy when editing)
 static uint16_t ced_num;		// its number, 0 = no such channel
@@ -1188,7 +1535,7 @@ static uint8_t ced_n;
 #if CONFIG_CHANNEL_EDIT
 #define CE_TOT_MAX	495
 #define CE_TOT_STEP	15
-#define CE_ID_MAX	16777215
+#define CE_ID_MAX	((int32_t)CODEPLUG_DMR_ID_MAX)
 #define CE_DIGITS	UI_ENTRY_MAX	// a frequency, or an ID (8 digits too)
 
 static channel_t ced_orig;		// what is stored
@@ -1277,7 +1624,9 @@ static void ced_build(void)
 		bool dmr_only = r >= CE_CC && r <= CE_ALIAS2;
 		if ((fm_only && dmr) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR))
 			continue;
-		if ((r == CE_ZONES || r == CE_GO || r == CE_SAVE_NEW) && fresh)
+		if ((r == CE_ZONES || r == CE_GO || r == CE_SHARE || r == CE_SAVE_NEW) && fresh)
+			continue;
+		if (r == CE_SHARE && !CONFIG_ZONE_SHARE)
 			continue;
 		if ((r == CE_SAVE && !(changed || fresh)) || ((r == CE_SAVE || r == CE_SAVE_NEW) && !edit))
 			continue;
@@ -1334,7 +1683,7 @@ static uint16_t chinfo_count(void)
 
 static const char *chinfo_title(void)
 {
-	return ced_ch.name[0] != 0 ? ced_ch.name : "New channel";
+	return ced_ch.name[0] != 0 ? ced_ch.name : "New Channel";
 }
 
 // The zones holding the channel, as much as fits: "Fav, Local, Ga" / "Fav +2" / "3 zones" (text alternates)
@@ -1413,7 +1762,7 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 	static const char *const labels[CE_COUNT] = { "Name", "Number", "Mode", "RX", "TX", "Power", "RX only",
 		"Bandwidth", "RX tone", "TX tone", "VOX", "Color code", "Timeslot", "TX contact", "RX group list", "Own ID",
 		"Direct mode", "Talk permit beeps", "Talker alias TS1", "Talker alias TS2", "TX time-out", "Scan",
-		"Battery saver", "Zones", "Go to it", "Save", "Save as new channel" };
+		"Battery saver", "Zones", "Go to it", GLYPH_SHARE " Share channel to...", "Save", "Save as new channel" };
 	const channel_t *ch = &ced_ch;
 	if (i >= ced_n)
 		return;
@@ -1427,6 +1776,10 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		it->flags |= UI_ITEM_TEMP;
 #endif
 	strcpy(it->label, labels[r]);
+#if CONFIG_ZONE_SHARE
+	if (r == CE_SHARE && !(feats() & UI_FEAT_ZONE_SHARE))
+		it->flags |= UI_ITEM_DIM;
+#endif
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 #if CONFIG_CHANNEL_EDIT
@@ -1659,7 +2012,7 @@ static void ced_digit(char d)
 		if (ced_len >= CE_DIGITS)
 			break;
 		if (v > CE_ID_MAX) {
-			ui_toast("IDs go up to 16777215");
+			ui_toast("IDs go up to 16776415");
 			break;
 		}
 		ced_val = v;
@@ -1776,6 +2129,18 @@ static bool chinfo_key(const input_event_t *ev)
 
 static void chinfo_select(uint16_t i, bool hold)
 {
+#if CONFIG_ZONE_SHARE
+	if (i < ced_n && ced_rows[i] == CE_SHARE && !hold) {
+#if CONFIG_CHANNEL_EDIT
+		if (ced_changed(CE_COUNT)) {
+			ui_toast("Save first: hold OK");	// the send reads the stored channel
+			return;
+		}
+#endif
+		share_send_to(UI_ZONE_NONE, ced_num, true, ced_ch.name);
+		return;
+	}
+#endif
 #if CONFIG_CHANNEL_EDIT
 	if (i >= ced_n)
 		return;
@@ -1889,7 +2254,7 @@ static void discard_select(uint16_t i, bool hold)
 static const char *discard_body(void) { return "Discard the changes to this channel?"; }
 
 static const ui_scr_def_t discard_screen = {
-	.name = "discard", .flags = SF_LIST, .prefix = "Unsaved changes", .hint = TEXT_ALT_OPEN "OK choose  Back keep editing" TEXT_ALT_NEXT "OK choose  Back" TEXT_ALT_CLOSE,
+	.name = "discard", .flags = SF_LIST, .prefix = "Unsaved Changes", .hint = TEXT_ALT_OPEN "OK choose  Back keep editing" TEXT_ALT_NEXT "OK choose  Back" TEXT_ALT_CLOSE,
 	.count = discard_count, .item = discard_item, .select = discard_select, .body = discard_body,
 };
 
@@ -2079,7 +2444,11 @@ static void ze_read(void)
 static const char *ze_title(void) { return ze_z.name; }
 
 // --- Channel actions ---
-enum { ZC_UP, ZC_DOWN, ZC_COPY, ZC_EDIT, ZC_REMOVE, ZC_COUNT };
+enum { ZC_UP, ZC_DOWN, ZC_COPY, ZC_EDIT,
+#if CONFIG_ZONE_SHARE
+	ZC_SEND,	// zone sharing (zone-share.md 7)
+#endif
+	ZC_REMOVE, ZC_COUNT };
 static char zc_name[CODEPLUG_NAME_LEN + 1];
 
 static void zchan_enter(void)
@@ -2096,12 +2465,20 @@ static uint16_t zchan_count(void) { return ZC_COUNT; }
 
 static void zchan_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const names[ZC_COUNT] = { "Move up", "Move down", "Copy here", "Edit channel",
-						     "Remove from zone" };
+	static const char *const names[ZC_COUNT] = {
+		[ZC_UP] = "Move up", [ZC_DOWN] = "Move down", [ZC_COPY] = "Copy here", [ZC_EDIT] = "Edit channel",
+#if CONFIG_ZONE_SHARE
+		[ZC_SEND] = SHARE_CHANNEL,
+#endif
+		[ZC_REMOVE] = "Remove from zone" };
 	strcpy(it->label, names[i]);
 	item_num(it, (uint16_t)(i + 1u));
 	if (i == ZC_REMOVE)
 		it->flags |= UI_ITEM_WARN;
+#if CONFIG_ZONE_SHARE
+	if (i == ZC_SEND && !(feats() & UI_FEAT_ZONE_SHARE))
+		it->flags |= UI_ITEM_DIM;
+#endif
 }
 
 static void zchan_select(uint16_t i, bool hold)
@@ -2147,6 +2524,10 @@ static void zchan_select(uint16_t i, bool hold)
 	} else if (i == ZC_EDIT) {
 		ui_pop();
 		ui_push(SCR_CHANNEL, num);
+#if CONFIG_ZONE_SHARE
+	} else if (i == ZC_SEND) {
+		share_send_to(ze_zone, pos, true, ze_z.name);
+#endif
 	} else if (i == ZC_REMOVE) {
 		ze_op_new(ZONE_OP_REMOVE, pos);
 		if (ze_post()) {
@@ -2159,7 +2540,7 @@ static void zchan_select(uint16_t i, bool hold)
 static const char *zchan_title(void) { return zc_name; }
 
 static const ui_scr_def_t zchan_screen = {
-	.name = "zchannel", .flags = SF_LIST | SF_NUMBERED, .hint = "1-5 pick  Back",
+	.name = "zchannel", .flags = SF_LIST | SF_NUMBERED, .hint = CONFIG_ZONE_SHARE ? "1-6 pick  Back" : "1-5 pick  Back",
 	.count = zchan_count, .item = zchan_item, .select = zchan_select, .title = zchan_title, .enter = zchan_enter,
 };
 
@@ -2216,7 +2597,7 @@ static void zpick_select(uint16_t i, bool hold)
 }
 
 static const ui_scr_def_t zpick_screen = {
-	.name = "zpick", .flags = SF_LIST | SF_FILTER, .prefix = "Add channel",
+	.name = "zpick", .flags = SF_LIST | SF_FILTER, .prefix = "Add Channel",
 	.hint = TEXT_ALT_OPEN "OK add  0-9 find  Back" TEXT_ALT_NEXT "OK add  Back" TEXT_ALT_CLOSE,
 	.empty = "Every channel is in it",
 	.count = ui_filter_count, .item = zpick_item, .select = zpick_select,
@@ -2224,18 +2605,31 @@ static const ui_scr_def_t zpick_screen = {
 };
 
 // --- Zone options ---
-enum { ZO_RENAME, ZO_COPY, ZO_DELETE, ZO_COUNT };
+enum { ZO_RENAME, ZO_COPY,
+#if CONFIG_ZONE_SHARE
+	ZO_SEND,	// zone sharing (zone-share.md 7)
+#endif
+	ZO_DELETE, ZO_COUNT };
 static char ze_name[CODEPLUG_NAME_LEN + 1];
 
 static uint16_t zopt_count(void) { return ZO_COUNT; }
 
 static void zopt_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const names[ZO_COUNT] = { "Rename", "Copy as new zone", "Delete zone" };
+	static const char *const names[ZO_COUNT] = {
+		[ZO_RENAME] = "Rename", [ZO_COPY] = "Copy as new zone",
+#if CONFIG_ZONE_SHARE
+		[ZO_SEND] = SHARE_ZONE,
+#endif
+		[ZO_DELETE] = "Delete zone" };
 	strcpy(it->label, names[i]);
 	item_num(it, (uint16_t)(i + 1u));
 	if (i == ZO_DELETE)
 		it->flags |= UI_ITEM_WARN;
+#if CONFIG_ZONE_SHARE
+	if (i == ZO_SEND && !(feats() & UI_FEAT_ZONE_SHARE))
+		it->flags |= UI_ITEM_DIM;
+#endif
 }
 
 static void ze_renamed(void)
@@ -2272,6 +2666,13 @@ static void zopt_select(uint16_t i, bool hold)
 		char name[CODEPLUG_NAME_LEN + 1];
 		zone_copy_name(name, ze_z.name);
 		ze_toast("Copied as ", name);
+#if CONFIG_ZONE_SHARE
+	} else if (i == ZO_SEND) {
+		if (ze_z.count == 0)
+			ui_toast("Empty zone: nothing to send");
+		else
+			share_send_to(ze_zone, 0, false, ze_z.name);
+#endif
 	} else if (!codeplug_zones_stored()) {
 		ui_toast("It holds every channel: it stays");
 	} else {
@@ -2280,7 +2681,8 @@ static void zopt_select(uint16_t i, bool hold)
 }
 
 static const ui_scr_def_t zopt_screen = {
-	.name = "zoneedit", .flags = SF_LIST | SF_NUMBERED, .prefix = "Zone", .hint = "1-3 pick  Back",
+	.name = "zoneedit", .flags = SF_LIST | SF_NUMBERED, .prefix = "Zone",
+	.hint = CONFIG_ZONE_SHARE ? "1-4 pick  Back" : "1-3 pick  Back",
 	.count = zopt_count, .item = zopt_item, .select = zopt_select, .title = ze_title, .enter = ze_read,
 };
 
@@ -2306,32 +2708,6 @@ static void zdel_select(uint16_t i, bool hold)
 	ui_pop();		// Zone options
 	ui_pop();		// and the zone's list: back to Zones
 	ze_toast("Deleted ", ze_z.name);
-}
-
-// Zone indexes moved (zone_edit.h): the stack's zone screens follow them. Zones keeps its focus on the same zone, a
-// zone's list and the editor's screens on their zone; a list whose zone was deleted closes, with what is above it.
-// Returns the new top of the stack
-uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint32_t to)
-{
-	uint16_t out;
-	bool ze_ok = zone_edit_map(from, to, ze_zone, &out) == ZONE_MAP_KEPT;
-	if (ze_ok)
-		ze_zone = out;
-	for (uint8_t i = 1; i <= sp; i++) {
-		ui_frame_t *f = &stack[i];
-		if (f->scr == SCR_ZONES && f->focus >= CH_VFO) {
-			if (zone_edit_map(from, to, (uint16_t)(f->focus - CH_VFO), &out) != ZONE_MAP_LOST)
-				f->focus = (uint16_t)(out + CH_VFO);	// a deleted one: the next zone, clamped by the list
-		} else if (f->scr == SCR_ZONE) {
-			if (zone_edit_map(from, to, f->arg, &out) != ZONE_MAP_KEPT)
-				return (uint8_t)(i - 1u);
-			f->arg = out;
-		} else if (f->scr == SCR_ZCHANNEL || f->scr == SCR_ZPICK || f->scr == SCR_ZONEEDIT || f->scr == SCR_ZONEDEL) {
-			if (!ze_ok)
-				return (uint8_t)(i - 1u);
-		}
-	}
-	return sp;
 }
 
 // The codeplug changed and nothing of ours is queued (our last change written, or refused, or a CPS write): the
@@ -2366,10 +2742,11 @@ static const char *zdel_body(void)
 }
 
 static const ui_scr_def_t zdel_screen = {
-	.name = "zonedel", .flags = SF_LIST, .prefix = "Delete zone", .hint = "OK choose  Back cancel",
+	.name = "zonedel", .flags = SF_LIST, .prefix = "Delete Zone", .hint = "OK choose  Back cancel",
 	.count = zdel_count, .item = zdel_item, .select = zdel_select, .body = zdel_body,
 };
 #endif
+
 
 #if CONFIG_DMR
 // ======================= A channel's TX contact or RX group list (arg 0 / 1) =======================
@@ -2433,7 +2810,7 @@ static void chpick_select(uint16_t i, bool hold)
 	ui_pop();
 }
 
-static const char *chpick_title(void) { return ui_frame()->arg == 0 ? "TX contact" : "RX group list"; }
+static const char *chpick_title(void) { return ui_frame()->arg == 0 ? "TX Contact" : "RX Group List"; }
 
 static const ui_scr_def_t chpick_screen = {
 	.name = "chpick", .flags = SF_LIST | SF_FILTER, .hint = "OK pick  0-9 find  Back", .empty = "None stored",
@@ -2449,8 +2826,8 @@ static const ui_scr_def_t chpick_screen = {
 enum { INFO_POSITION, INFO_HOTSPOT, INFO_BATTERY, INFO_FIRMWARE, INFO_CODEPLUG, INFO_MY_RADIO, INFO_USB_NET,
        INFO_SFR };
 
-static const char *const info_titles[] = { "Position", "Hotspot", "Battery", "About", "Codeplug", "My radio",
-					   "USB network", "Single-freq repeater" };
+static const char *const info_titles[] = { "Position", "Hotspot", "Battery", "About", "Codeplug", "My Radio",
+					   "USB Network", "Single-Freq Repeater" };
 
 // The USB personality can be switched here (the host link's network adapter, CONFIG_USB_NETWORK)
 #define USB_NET_UI	(CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
@@ -2555,10 +2932,36 @@ static const char *info_body(void)
 		sb_str(&b, "USB network: not in this build");
 #endif
 		break;
-	case INFO_SFR:
-		sb_str(&b, CONFIG_SFR ? "Runs in hotspot mode: the hotspot host turns it on. Repeater and user roles on a "
-			"channel: not built yet." : "Single-freq repeater: not in this build");
+	case INFO_SFR: {
+#if CONFIG_SFR
+		// The channel's SFR role and what it is doing now (docs/spec/sfr.md 4)
+		const radio_dmr_view_t *d = &ui_view()->dmr;
+		char in = d->sfr_inbound ? '2' : '1', out = d->sfr_inbound ? '1' : '2';
+
+		if (ui_view()->ch.mode != RADIO_MODE_DMR || d->sfr_role == SFR_ROLE_OFF) {
+			sb_str(&b, "This channel has no SFR role. Set Repeater or User in the Codeplug Editor, on a channel "
+				"with one frequency.");
+		} else if (d->sfr_role == SFR_ROLE_RPT_STANDARD || d->sfr_role == SFR_ROLE_RPT_MOTOROLA) {
+			sb_str(&b, d->sfr_role == SFR_ROLE_RPT_MOTOROLA ? "Repeater (ERDM style)\nIn TS" : "Repeater\nIn TS");
+			sb_chr(&b, in);
+			sb_str(&b, ", out TS");
+			sb_chr(&b, out);
+			sb_str(&b, !d->sfr_rpt ? "\nOff: transmit not allowed now" : d->sfr_cw ? "\nSending its CW ID" : d->sfr_busy ? "\nRepeating a call" :
+				d->sfr_keyed ? "\nHang time" : "\nListening");
+		} else {
+			sb_str(&b, d->sfr_role == SFR_ROLE_USER_ERDM ? "User of an ERDM repeater\nTalk on TS" :
+				"User of a repeater\nTalk on TS");
+			sb_chr(&b, in);
+			sb_str(&b, ", hear TS");
+			sb_chr(&b, in);
+			sb_str(&b, " and TS");
+			sb_chr(&b, out);
+		}
+#else
+		sb_str(&b, "Single-freq repeater: not in this build");
+#endif
 		break;
+	}
 	default:
 		break;
 	}
@@ -2617,8 +3020,133 @@ static const ui_scr_def_t info_screen = {
 	.select = info_select, .title = info_title, .body = info_body,
 };
 
+#if CONFIG_DMR
+// ======================= DMR ID (Settings > My radio) =======================
+// One row: the radio's own DMR ID, the codeplug's (a CPS read shows it). Digits type a new one, OK writes it into the
+// codeplug. Typed as the channel editor's Own ID (ui.md 2.1): a digit past CODEPLUG_DMR_ID_MAX is refused, BACK takes
+// the last digit back and with none typed leaves the ID unchanged
+
+static uint32_t dmr_id_value;
+static uint8_t dmr_id_len;		// digits typed
+static bool dmr_id_editing;
+static uint32_t dmr_id_saved, dmr_id_serial;	// the ID just saved, shown until the codeplug's serial moves on
+
+static uint16_t dmr_id_count(void) { return 1; }
+
+static void dmr_id_item(uint16_t i, ui_item_t *it)
+{
+	(void)i;
+	strcpy(it->label, "DMR ID");
+	uint32_t v = dmr_id_editing ? dmr_id_value : dmr_id_saved != 0 && codeplug_serial() == dmr_id_serial ?
+		     dmr_id_saved : (uint32_t)ui_svc_setting_get(UI_SET_DMR_ID);
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	if (dmr_id_editing) {
+		if (dmr_id_len > 0)
+			sb_u32(&b, v, 1);
+		sb_chr(&b, '_');		// what is typed so far, as the channel editor: "3101_"
+		it->flags |= UI_ITEM_EDIT;
+	} else if (v != 0) {
+		sb_u32(&b, v, 1);
+	} else {
+		sb_str(&b, "Not set");	// DMR transmit is refused until there is one
+	}
+}
+
+static const char *dmr_id_body(void)
+{
+	static char t[48];
+	sbuf_t b;
+	sb_init(&b, t, sizeof t);
+	sb_str(&b, "Saved in the codeplug\nRadio: ");
+	sb_str(&b, board.name);		// as the info page it replaces
+	return t;
+}
+
+static void dmr_id_begin(void)
+{
+	dmr_id_editing = true;
+	dmr_id_len = 0;
+	dmr_id_value = 0;
+}
+
+static void dmr_id_save(void)
+{
+	if (dmr_id_len == 0) {
+		dmr_id_editing = false;	// nothing typed: as it was
+		return;
+	}
+	if (dmr_id_value == 0) {
+		ui_toast("IDs start at 1");	// 0 would leave the codeplug without one
+		return;
+	}
+	dmr_id_editing = false;
+	uint32_t serial = codeplug_serial();
+	if (!ui_svc_setting_set(UI_SET_DMR_ID, (int32_t)dmr_id_value)) {
+		ui_toast("Couldn't save: try again");
+		return;
+	}
+	dmr_id_saved = dmr_id_value;
+	dmr_id_serial = serial;
+	ui_toast("DMR ID saved");
+}
+
+static void dmr_id_select(uint16_t i, bool hold)
+{
+	(void)i;
+	(void)hold;
+	if (dmr_id_editing)
+		dmr_id_save();
+	else
+		dmr_id_begin();
+}
+
+static bool dmr_id_key(const input_event_t *ev)
+{
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+		if (!dmr_id_editing)
+			dmr_id_begin();
+		uint32_t v = dmr_id_value * 10u + (uint32_t)(ev->action - ACT_DIGIT_0);
+		if (v > CODEPLUG_DMR_ID_MAX) {
+			ui_toast("IDs go up to 16776415");	// the IDs above are the network's
+			return true;
+		}
+		dmr_id_value = v;
+		dmr_id_len++;
+		ui_dirty();
+		return true;
+	}
+	if (!dmr_id_editing)
+		return false;
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		if (dmr_id_len > 0) {
+			dmr_id_len--;
+			dmr_id_value /= 10u;	// takes the last digit back
+		} else {
+			dmr_id_editing = false;
+		}
+		ui_dirty();
+		return true;
+	}
+	return false;
+}
+
+static void dmr_id_enter(void)
+{
+	dmr_id_editing = false;
+	dmr_id_saved = 0;
+}
+
+static const ui_scr_def_t dmr_id_screen = {
+	.name = "dmr-id", .flags = SF_LIST | SF_FIELD, .prefix = "My Radio", .hint = "0-9 type  OK save  Back",
+	.count = dmr_id_count, .item = dmr_id_item, .select = dmr_id_select, .key = dmr_id_key, .enter = dmr_id_enter,
+	.body = dmr_id_body,
+};
+#endif
+
 // ======================= About (Settings > Advanced) =======================
-// A text page, every word shown (nothing shortened), no status strip while idle: the version, RadioFoundry's license, the
+// A text page, every word shown (nothing shortened), no status strip while idle: the release and the commit, RadioFoundry's license, the
 // authors, the third-party code and fonts in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
 // through the header make generates (tools/gen_about.py)
 
@@ -2633,6 +3161,11 @@ static const char *about_text(void)
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
 	sb_str(&b, "RadioFoundry ");
+	// a release: its name, then the commit it was built from
+	if (RFOUNDRY_RELEASE[0] != '\0') {
+		sb_str(&b, RFOUNDRY_RELEASE);
+		sb_str(&b, "\nBuild ");
+	}
 	sb_str(&b, RFOUNDRY_GIT);
 	sb_str(&b, "\nRadio: ");
 	sb_str(&b, board.name);
@@ -3083,7 +3616,7 @@ static void crash_enter(void)
 }
 
 static const ui_scr_def_t crash_screen = {
-	.name = "crash", .flags = SF_LIST | SF_NUMBERED, .prefix = "Crash log", .hint = "OK pick  Back",
+	.name = "crash", .flags = SF_LIST | SF_NUMBERED, .prefix = "Crash Log", .hint = "OK pick  Back",
 	.count = crash_count, .item = crash_item, .select = crash_select, .body = crash_body, .enter = crash_enter,
 };
 
@@ -3109,7 +3642,7 @@ static void crash_to_select(uint16_t i, bool hold)
 }
 
 static const ui_scr_def_t crash_to_screen = {
-	.name = "crash_to", .flags = SF_LIST | SF_FILTER, .prefix = "Send to",
+	.name = "crash_to", .flags = SF_LIST | SF_FILTER, .prefix = "Send To",
 	.hint = "0-9 find  OK pick  Back", .empty = "No contacts: add them in qdmr",
 	.count = ui_filter_count, .item = contacts_item, .select = crash_to_select,
 	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
@@ -3170,13 +3703,18 @@ void ui_crash_tick(uint32_t now_ms)
 // Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
 // user guide) is the same everywhere. The one a radio may not have (Battery) is last, so no radio has a gap; a build
 // without diagnostics skips 7
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_COUNT };
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_ZONE_OFFER, T_COUNT };
 
 // A tool this build or radio doesn't have is left out of the list (Battery, Supply on a radio that measures its DC
 // input instead, is left out where the radio measures neither)
 static bool tool_shown(uint16_t i)
 {
-	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_volts() != BOARD_VOLTS_NONE);
+#if CONFIG_ZONE_SHARE
+	if (i == T_ZONE_OFFER)
+		return offer_waiting();	// 0 on the keypad: only while another radio's zone waits
+#endif
+	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_volts() != BOARD_VOLTS_NONE) &&
+	       i != T_ZONE_OFFER;
 }
 
 // The hint names the last number ("1-9 open"): the highest tool this radio has
@@ -3191,7 +3729,7 @@ static uint16_t tools_count(void)
 			last = (uint16_t)(i + 1u);
 		}
 	}
-	tools_hint[2] = (char)('0' + (last < 9 ? last : 9));
+	tools_hint[2] = (char)('0' + (last < 9 ? last : 9));	// "1-9": the zone offer's 0 isn't named
 	return n;
 }
 
@@ -3208,7 +3746,7 @@ static uint16_t tools_row(uint16_t row)
 static void tools_item(uint16_t row, ui_item_t *it)
 {
 	static const char *const names[] = { "Scan", "Position", "Hotspot", "USB network", "Single-freq repeater",
-					     "Roaming", "Diagnostics", "APRS", "Battery" };
+					     "Roaming", "Diagnostics", "APRS", "Battery", "Zones/Chs Received" };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
@@ -3269,6 +3807,17 @@ static void tools_item(uint16_t row, ui_item_t *it)
 		if (!CONFIG_APRS)
 			it->flags |= UI_ITEM_DIM;
 		break;
+#if CONFIG_ZONE_SHARE
+	case T_ZONE_OFFER: {
+		ui_zone_offer_t o;
+		if (ui_svc_zone_offer(&o)) {
+			sb_str(&b, TEXT_ALT_OPEN);	// the name where it fits beside the whole label, else none
+			sb_str(&b, o.name);
+			sb_str(&b, TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+		}
+		break;
+	}
+#endif
 	default:
 		break;
 	}
@@ -3294,6 +3843,7 @@ static void tools_select(uint16_t row, bool hold)
 	case T_DIAG: ui_push(SCR_DIAG, 0); break;
 	case T_ROAM: ui_push(SCR_ROAM, 0); break;
 	case T_APRS: ui_push(SCR_APRS, 0); break;
+	case T_ZONE_OFFER: ui_push(SCR_OFFER, 0); break;
 	default: break;
 	}
 }
@@ -3325,12 +3875,14 @@ typedef struct {
 
 typedef struct {
 	const char *name;
+	const char *title;	// the group's page title, in Title Case (the name is its row in Settings)
 	const set_item_t *items;
 	uint8_t count;
 } set_group_t;
 
 static const int16_t v_backlight[] = { 5, 10, 30, 60, 120, 0 };
-static const char *const n_backlight[] = { "5 s", "10 s", "30 s", "1 min", "2 min", "Never" };
+// Dim after / off after (four times as long): both times shown, so that the dim step isn't taken for the time-out
+static const char *const n_backlight[] = { "5s/20s", "10s/40s", "30s/2m", "1m/4m", "2m/8m", "Never" };
 #if CONFIG_UI_COLOR
 static const int16_t v_theme[] = { 0, 1, 2 };
 static const char *const n_theme[] = { "Dark", "Light", "High contrast" };
@@ -3432,9 +3984,25 @@ static const int16_t v_msgfmt[] = { 2, 1,	// dmr_sms_format_t: ETSI IP text, ETS
 };
 static const char *const n_msgfmt[] = { "ETSI", "ETSI short", "Motorola" };
 #endif
+#if CONFIG_ZONE_SHARE
+static const int16_t v_zsoffers[] = { 0, 1 };	// ZS_OFFERS_OFF, ZS_OFFERS_ASK
+static const char *const n_zsoffers[] = { "Off", "Ask" };
+#endif
 #if CONFIG_DMR_CONTROL_STATION
 static const int16_t v_netlink[] = { 0, 1 };
 static const char *const n_netlink[] = { "By DMR ID", "192.168.10.x" };
+#endif
+#if CONFIG_SFR
+static const int16_t v_sfrrx[] = { 0, 1,	// dmr_sfr_rx_t
+#if CONFIG_SFR_DUALPATH_RX
+				   2,
+#endif
+};
+static const char *const n_sfrrx[] = { "Repeater", "First copy", "Dual-path RX" };
+#endif
+#if CONFIG_SFR_CWID
+static const int16_t v_sfrcwid[] = { 0, 1, 2, 3, 4 };	// radio_cwid_interval_ms codes
+static const char *const n_sfrcwid[] = { "Off", "5 min", "10 min", "15 min", "30 min" };
 #endif
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
 static const char *const n_ptype[] = { "Off", "Motorola", "Anytone" };
@@ -3457,7 +4025,7 @@ static const set_item_t s_sound[] = {
 };
 static const set_item_t s_display[] = {
 	NUMBER("Brightness", "backlight", UI_SET_BRIGHTNESS, 10, 100, 10, "%"),
-	LIST("Backlight time", "timeout", UI_SET_BACKLIGHT_S, v_backlight, n_backlight),
+	LIST("Backlight Dim/Off", "timeout", UI_SET_BACKLIGHT_S, v_backlight, n_backlight),
 #if CONFIG_UI_COLOR	// a radio whose only screen is monochrome has no colors to set: no rows for them
 	LIST("Theme", "contrast", UI_SET_THEME, v_theme, n_theme),
 	LIST("Highlight color", "accent", UI_SET_ACCENT, v_accent, n_accent),
@@ -3485,6 +4053,12 @@ static const set_item_t s_talk[] = {
 	TOGGLE("Dual watch talk back", "reply other channel A B", UI_SET_DUAL_TALK_BACK),
 	LIST("Dual watch delay", "resume wait reply A B", UI_SET_DUAL_DELAY_MS, v_dual_wait, n_dual_wait),
 #endif
+#if CONFIG_SFR
+	LIST("SFR receive", "single frequency repeater both copies dual-path rx", UI_SET_SFR_RX, v_sfrrx, n_sfrrx),
+#endif
+#if CONFIG_SFR_CWID
+	LIST("SFR CW ID", "single frequency repeater morse callsign identify", UI_SET_SFR_CWID, v_sfrcwid, n_sfrcwid),
+#endif
 };
 static const set_item_t s_privacy[] = {
 	LIST("Key type", "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
@@ -3507,6 +4081,9 @@ static const set_item_t s_connections[] = {
 #endif
 #if CONFIG_DMR_SMS
 	LIST("Message format", "SMS text ETSI TMS", UI_SET_MSG_FORMAT, v_msgfmt, n_msgfmt),
+#endif
+#if CONFIG_ZONE_SHARE
+	LIST("Zone offers", "zone sharing receive import", UI_SET_ZONE_OFFERS, v_zsoffers, n_zsoffers),
 #endif
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
 	TOGGLE("USB network at start", "dispatch control station", UI_SET_USB_BOOT_NET),
@@ -3576,11 +4153,13 @@ static const set_item_t s_advanced[] = {
 	ACTION("Hardware", "board revision", SA_HARDWARE),
 };
 
-#define GROUP(nm, a) { nm, a, sizeof a / sizeof a[0] }
+#define GROUP(nm, a)		{ nm, nm, a, sizeof a / sizeof a[0] }
+#define GROUP_T(nm, t, a)	{ nm, t, a, sizeof a / sizeof a[0] }
 static const set_group_t groups[] = {
-	GROUP("Sound", s_sound), GROUP("Display", s_display), GROUP("Talk & listen", s_talk),
+	GROUP("Sound", s_sound), GROUP("Display", s_display), GROUP_T("Talk & listen", "Talk & Listen", s_talk),
 	GROUP("Privacy", s_privacy), GROUP("Location", s_location), GROUP("Connections", s_connections),
-	GROUP("Power", s_power), GROUP("Keys", s_keys), GROUP("My radio", s_my_radio), GROUP("Advanced", s_advanced),
+	GROUP("Power", s_power), GROUP("Keys", s_keys), GROUP_T("My radio", "My Radio", s_my_radio),
+	GROUP("Advanced", s_advanced),
 };
 #define GROUPS	(sizeof groups / sizeof groups[0])
 
@@ -3850,7 +4429,13 @@ static void group_select(uint16_t i, bool hold)
 			break;
 		case SA_FIRMWARE: ui_push(SCR_ABOUT, 0); break;
 		case SA_CODEPLUG: ui_push(SCR_INFO, INFO_CODEPLUG); break;
-		case SA_MY_RADIO: ui_push(SCR_INFO, INFO_MY_RADIO); break;
+		case SA_MY_RADIO:
+#if CONFIG_DMR
+			ui_push(SCR_DMR_ID, 0);
+#else
+			ui_push(SCR_INFO, INFO_MY_RADIO);
+#endif
+			break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
 #if CONFIG_CRASH_SCREEN
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
@@ -3929,7 +4514,11 @@ static bool group_key(const input_event_t *ev)
 
 static void group_enter(void) { set_editing = false; }
 
-static const char *group_title(void) { return ui_set_group_name((uint8_t)ui_frame()->arg); }
+static const char *group_title(void)
+{
+	uint8_t g = (uint8_t)ui_frame()->arg;
+	return g < GROUPS ? groups[g].title : "";
+}
 
 static const ui_scr_def_t group_screen = {
 	.name = "group", .flags = SF_LIST, .hint = "OK change  Back",
@@ -4027,7 +4616,7 @@ static const char *confirm_body(void)
 }
 
 static const ui_scr_def_t confirm_screen = {
-	.name = "confirm", .flags = SF_LIST, .prefix = "Factory reset", .hint = "OK choose  Back cancel",
+	.name = "confirm", .flags = SF_LIST, .prefix = "Factory Reset", .hint = "OK choose  Back cancel",
 	.count = confirm_count, .item = confirm_item, .select = confirm_select, .body = confirm_body,
 };
 #else
@@ -4259,6 +4848,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
 	[SCR_VOLUME] = &volume_screen,
+#if CONFIG_DMR
+	[SCR_DMR_ID] = &dmr_id_screen,
+#endif
 #if CONFIG_CHANNEL_LIST
 	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,
 #if CONFIG_CHANNEL_EDIT
@@ -4280,6 +4872,13 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_CRASH_REPORT && CONFIG_DMR
 	[SCR_CRASH_TO] = &crash_to_screen,
+#endif
+#if CONFIG_ZONE_SHARE && !CONFIG_ZONE_EDIT
+	[SCR_SHARE] = &share_screen,
+#endif
+#if CONFIG_ZONE_SHARE
+	[SCR_SHARE_TO] = &share_to_screen, [SCR_OFFER] = &offer_screen,
+	[SCR_OFFER_PREVIEW] = &preview_screen, [SCR_OFFER_ZONE] = &offer_zone_screen,
 #endif
 #if CONFIG_DUAL_WATCH
 	[SCR_DUAL] = &ui_dual_screen, [SCR_DUAL_PICK] = &ui_dual_pick_screen,

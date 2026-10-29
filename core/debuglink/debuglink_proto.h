@@ -99,6 +99,8 @@ enum {
 	DL_DATA_OP_IP_SEND,		// dst u32, flags u8 (bit 0 group, bit 1 an IPv4 destination follows), source port u16,
 					// destination port u16, with bit 1 the IPv4 destination u32, payload: a UDP datagram
 					// into the IP gateway's air path as if from the host (CONFIG_DMR_IP_GATEWAY)
+	DL_DATA_OP_TX_SPACING,		// guard ms u16, chain u8 (0 off, 1 on): the data service's spacing of our transmissions,
+					// RAM only, for the SDR bench's comparison (docs/spec/dmr-data.md 12.6)
 };
 
 // DL_CMD_STORAGE operations (first payload byte; docs/spec/debuglink.md 3.13)

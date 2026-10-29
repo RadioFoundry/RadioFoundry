@@ -1,0 +1,190 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# The MD-UV380's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/mduv380/memory.ld.
+
+id = "mduv380"
+name = "TYT MD-UV380"
+maker = "TYT"
+model = "MD-UV380"
+also = ["TYT MD-UV390", "Retevis RT3S", "TYT MD-UV390 Plus 10 W"]
+kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 6
+
+[docs]
+hardware = "docs/spec/hardware-mduv380.md"
+codec = "docs/spec/codec-mduv380.md"
+install = "docs/user/02-installing.md"
+bringup = "docs/testing/mduv380-bringup.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+bands = "136-174 / 400-480 MHz"
+power = "1 / 2 / 5 W (Plus: 10 W)"
+display = "1.77\" color, 160 × 128"
+gallery = "160x128"
+clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal, as on the UV380 family; no backup supply known (docs/spec/hardware-mduv380.md)" }
+
+[status]
+level = "bring-up"
+summary = """\
+Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. \
+Open: every function on air."""
+release = "testing"
+
+# The Plus 10 W swaps two pins and has its own power tables (hardware-mduv380.md 3, 7), a build choice (board.mk POWER).
+# The first value is the default build; ci and the release build the other one too. board_name: what the radio
+# reports as board= on the debug link
+[[build_options]]
+name = "POWER"
+title = "Power"
+help = "The MD-UV380, MD-UV390 and RT3S are 5 W radios. Choose 10 W only for an MD-UV390 Plus, whose box and label say 10 W."
+values = [
+	{ id = "5w", title = "5 W", text = "MD-UV380, MD-UV390, RT3S", board_name = "MD-UV380" },
+	{ id = "10w", title = "10 W", text = "MD-UV390 Plus 10 W", board_name = "MD-UV380 10W" },
+]
+
+[flash]
+family = "usb-dfu"
+keep_codec = true
+stock_download = "https://passion-radio.com/dmr-equipment/tyt-md380-321.html"
+stock_versions = [
+	"V19.26 CSV",
+	"D19.26 REC",
+	"P19.26 CSV-GPS",
+	"S19.26 GPS-REC",
+	"V18.11 CSV",
+	"D18.11 REC",
+	"P18.11 CSV-GPS",
+	"S18.11 GPS-REC",
+	"P18.16 CSV-GPS",
+	"S18.16 GPS-REC",
+	"V18.03 CSV",
+	"D18.03 REC",
+	"P18.03 CSV-GPS",
+	"S18.03 GPS-REC",
+	"V19.06 CSV",
+	"P19.06 CSV-GPS",
+	"P19.33 CSV-GPS",
+	"V19.74 CSV",
+	"D19.74 REC",
+	"P19.74 CSV-GPS",
+	"S19.74 GPS-REC",
+	"10W V19.74 CSV",
+	"10W D19.74 REC",
+	"10W P19.74 CSV-GPS",
+	"10W S19.74 GPS-REC",
+	"V219.60 CSV AES 255",
+	"P219.60 CSV-GPS AES 255",
+	"V219.74 CSV AES 255",
+	"D219.74 REC AES 255",
+	"P219.74 CSV-GPS AES 255",
+	"S219.74 GPS-REC AES 255",
+	"10W V219.74 CSV AES 255",
+	"10W D219.74 REC AES 255",
+	"10W P219.74 CSV-GPS AES 255",
+	"10W S219.74 GPS-REC AES 255",
+]
+backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
+notice = "MD-UV390 Plus 10 W owners: choose the 10 W image, and everyone else the 5 W one. The two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart, so a wrong choice isn't caught: it drives the wrong pins. Check the label on the radio or its box."
+
+# Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
+# as offsets in that memory, what with the spec section that establishes it
+[[flash.protect]]
+mem = "secreg"
+start = 0x0
+end = 0x200
+what = "factory calibration in security registers 1 and 2 (hardware-mduv380.md 8)"
+
+[[flash.protect]]
+mem = "secreg"
+start = 0x200
+end = 0x300
+what = "factory flags in security register 3: power class, panel type, band limits (hardware-mduv380.md 4, 11)"
+
+# No hold yet: the drawing puts SK1 below PTT, the steps say the key just above it (issue #203)
+[flash.bootloader]
+steps = [
+	"Turn the radio off and connect the programming cable.",
+	"Hold PTT and the side key just above it (SK1).",
+	"Turn the radio on with the volume knob while you hold both keys. The screen stays dark.",
+	"Release the keys.",
+]
+
+# The TYT bootloader takes the same DFU protocol and sector order as the other STM32 radios', with its own key
+# (hardware-mduv380.md 11; the MD-UV390 and the MD-2017 use the same key)
+[flash.dfu]
+vid = 0x0483
+pid = 0xDF11
+string1 = "AnyRoad Technology"
+product = "Digital Radio in USB mode"
+key_sha256 = "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991"
+key_prefix = "00AA8989"
+
+# The STM32F4 stub's board record (stub/f4stub.py, stub-stm32f4.md 5.2): its board id (HELLO echoes it), whether
+# protocol 4 has run on a radio, and the SPI flash's bus, mode and clock (its pins: pins.h PIN_FLASH_*)
+[flash.stub]
+id = 5
+tested = false
+spi = { bus = 1, mode = 0, hz = 4500000 }
+
+# The codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after them
+# (or at the start of sector 10 when it doesn't fit there) and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file rfoundry merges the codec
+# from (tools/rfoundry/rfoundry/stockfw.py PROFILES)
+[codec]
+tool = "codec_extract"
+stock = [
+	"75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e",	# V19.26 CSV
+	"7dec4b751e8a0f44cf7d54d0ebc3b439a9f49899eadd7c8ff14d2804edbe8ac2",	# D19.26 REC
+	"84331dbc9bccf5021122b715dcb77d7589dba0745694bf3a249aae6e7c383ef1",	# P19.26 CSV-GPS
+	"77923d67aa75a07f7601a1c53ae1d5f5af37bd4367d52a50c8aeff89b834eceb",	# S19.26 GPS-REC
+	"fb1897b7123dc6a039a5266972c5bb6f563f574d3769bd1cbdc7bb02b5039cc7",	# V18.11 CSV (also RT3S(CSV)-V18.11.bin)
+	"78650258f65fef33d78fad65678bedd74e44b75e924466829c9a360ce8915f39",	# D18.11 REC (also RT3S(REC)-D18.11.bin)
+	"e31ecd122f77ccd34e563193b004e8621ff5422676521503521f64f1045f73a9",	# P18.11 CSV-GPS
+	"fbb307fd14577e48e1fb6edb3395d4d684baf12dd9fed66280ad76d12e0e04c2",	# S18.11 GPS-REC
+	"6c2e43558290076e86671cb2d25bd18c90cbeb08e02a1b68e534c0ab4fe808bb",	# P18.16 CSV-GPS (also RT3S(CSV-GPS)-P18.16.bin)
+	"23c14a9c30b2b626021c39159a8bb68a2403f4eda28fd8101a0264d022fb06da",	# S18.16 GPS-REC (also RT3S(GPS-REC)-S18.16.bin)
+	"195847c34a037f1c7ca8cc1c69bc9bfd12c2fada22fb1f74a86189281096129d",	# V18.03 CSV
+	"6f103808b733260903e03b24de375b7f5c046b8cb3f50551e3b665573221f0cd",	# D18.03 REC
+	"7b17e39185a89ada84e5f5e46389c8d9af62a54a4ed0b6096b7e5a6e0df9f9ea",	# P18.03 CSV-GPS
+	"f816ee4092a0b9e77d6a23bec49508ba5f190c2dc255ac6cc869dfdb67dfb2d3",	# S18.03 GPS-REC
+	"657cd4e6c86aa63428f1bc081ce0614b35db0607d34ba6b6065357a58a045c89",	# V19.06 CSV
+	"9c58aca48de3d42b897852e424b0da1392f6e983d51ca69b1425b72a0a836ca1",	# P19.06 CSV-GPS
+	"a2f38eaf4b98379fee6dfc00cae916bbc550e26ba0dd04c5fb56199a9e62b7f8",	# P19.33 CSV-GPS
+	"1e6a74b8cc62ffabd06dd83912f1bf0a7a7ef12d4bda63b961544c7e1393655a",	# V19.74 CSV
+	"d3996d672d6878ca823880320e240883ea64208f121923cd2bb6fe51d2e50784",	# D19.74 REC
+	"14e5634eeffa5f99f85fd762df4dc141432762d75b933031000d1f398fc4d2e4",	# P19.74 CSV-GPS
+	"3ebe806da0bbda993220cca9a97411225c1bf9e29097db3224ff722b00c6d023",	# S19.74 GPS-REC
+	"4acf6d48baca843d7e1220de8c0486670ee7f43953ebbb53d910ef1d94bfbe52",	# 10 W V19.74 CSV
+	"2768ece93ddd4f1fd4ffc4e58ee073bd145b865f4ea6d256315f6e0019e93995",	# 10 W D19.74 REC
+	"ebc5e34f4a00679a9200df8233c4b42b89dbd440a7487bbac2796223b796b392",	# 10 W P19.74 CSV-GPS
+	"b0345e8c9e28b353954f3b6aa66599b5ac682c2037e212052af16e2c888572cd",	# 10 W S19.74 GPS-REC
+	"447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee",	# V219.60 CSV AES 255
+	"a7b277137c32ac3583083d8a650488415f62360b7f38a6d903fc732b858dd502",	# P219.60 CSV-GPS AES 255
+	"a8a5265d29f8f69ee050a0a47052a8925a3c403ac270d8e5fda324a4a697b220",	# V219.74 CSV AES 255
+	"3d1b9ed4a2293981d0915d0655172e7a4d9bc702fe493328be37901427d51108",	# D219.74 REC AES 255
+	"70a44a4a77d6ffb4b0b6b9b4a8f26afb9607d65875d2ba1094baf6c8e6a46c9a",	# P219.74 CSV-GPS AES 255
+	"bf58116bcd695d8b14634fbffab7cd33ba9bcd1325b92179ef6bf94d380d2151",	# S219.74 GPS-REC AES 255
+	"531947c0d4d7d3ae0c5a3f94d81fbf3a04259488a9af09f9a3a8b57cabf135ed",	# 10 W V219.74 CSV AES 255
+	"7b7ed3075a7735cde969402eda163f96bf2931ae55cbcc4fbf62625bdaf04855",	# 10 W D219.74 REC AES 255
+	"bf98dc6ca9d888712924af75dd5eff7495de4ab82848f0701616e29eb9d5e5a2",	# 10 W P219.74 CSV-GPS AES 255
+	"e6c696a3f1a6ac3d622559d7422efc97399b748aac8923a7440239b28c03a5c1",	# 10 W S219.74 GPS-REC AES 255
+]
+
+# How the site draws the radio
+[frame]
+shape = "handheld"
+body = "#1b1c1f"
+accent = "#e07a1f"
+lens = [30, 30]
+
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them
+[cps]
+radio_types = [6]
+
+# The RT3S is this board in Retevis's own body, which looks nothing like TYT's: its own card and drawing on the site
+[[looks]]
+id = "rt3s"
+name = "Retevis RT3S"

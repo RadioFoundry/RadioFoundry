@@ -231,9 +231,6 @@ void net_view(dl_text_t *t)
 #if CONFIG_NET_APRSIS
 	aprsis_view(t);
 #endif
-#if CONFIG_MDNS || CONFIG_TFTP
-	net_services_view(t);
-#endif
 }
 
 #endif	// CONFIG_NET_LOCAL

@@ -15,5 +15,8 @@ uint32_t f4spi_init(const f4_board_t *b, uint32_t pclk_hz, uint8_t id[3]);
 bool f4spi_read(uint32_t addr, uint8_t *dst, uint32_t n);
 bool f4spi_erase(uint32_t addr);
 bool f4spi_program(uint32_t addr, const uint8_t *data, uint32_t n);
+// reg 0: status register 2 into dst[0]. reg 1-3: the security register's 256 bytes into dst (src NULL), or erase it
+// and program src's 256 bytes. The engine has checked the chip's maker, the lock bit and the magic
+bool f4spi_sreg(unsigned reg, uint8_t *dst, const uint8_t *src);
 
 #endif

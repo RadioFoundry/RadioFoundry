@@ -26,6 +26,38 @@ power = "up to 25 W"
 display = "1.77\" color, 160 × 128"
 gallery = "160x128"
 clock = { rtc = "unknown", note = "the SoC RTC on I2C2; whether a backup supply keeps it through power-off is not known (docs/spec/hardware-db25d.md)" }
+# The stock firmware identifies its RF chips at boot and writes them into its version string, after "909E.D"
+# (hardware-db25d.md 1, 4.2): the Version screen, the vendor CPS identify reply and the console's RAM copy carry it, the
+# program flash only a placeholder. One image serves every variant: the older ones wait for the FD6818 driver
+variant_pattern = '909E\.(D[0-9A-Za-z]{1,3})\.EARSAB'
+variant_check = "Open the Version screen in the radio's menu. The version reads like 909E.DBB.EARSAB.020: the letters after 909E. name the hardware."
+
+[[hardware.variants]]
+code = "DBB"
+name = "DB25-D PRO: two BK4819 (2024 on)"
+level = "supported"
+runs = { board = "db25d" }
+
+[[hardware.variants]]
+code = "D64"
+name = "FD6818 transceiver (2021-2023)"
+level = "bring-up"
+notice = "Not tried on this hardware yet, and its FD6818 transceiver is not driven: FM and DMR don't receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+runs = { board = "db25d" }
+
+[[hardware.variants]]
+code = "D66"
+name = "FD6818 transceiver (2021-2023)"
+level = "bring-up"
+notice = "Not tried on this hardware yet, and its FD6818 transceiver is not driven: FM and DMR don't receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+runs = { board = "db25d" }
+
+[[hardware.variants]]
+code = "D6T"
+name = "FD6818 transceiver, AT1141 LO (2021-2023)"
+level = "bring-up"
+notice = "Not tried on this hardware yet, and its FD6818 transceiver is not driven: FM and DMR don't receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+runs = { board = "db25d" }
 
 [status]
 level = "supported"
@@ -43,7 +75,34 @@ keep_codec = false
 stock_versions = ["909E.DBB.EARSAB.018", "909E.DBB.EARSAB.020"]
 backup = { stock = "full", rfoundry = "full", spi_size = 0 }
 
+# Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
+# as offsets in that memory, what with the spec section that establishes it
+[[flash.protect]]
+mem = "progmem"
+start = 0x1FE000
+end = 0x1FF000
+what = "factory calibration, the program flash copy (hardware-db25d.md 6, 6.1)"
+
+[[flash.protect]]
+mem = "nand"
+start = 0x0
+end = 0x20000
+what = "the stock firmware's bad-block table in physical block 0 (hardware-db25d.md 6.5; its place inferred from the shared stock NAND driver)"
+
+[[flash.protect]]
+mem = "nand"
+start = 0x280000
+end = 0x2E0000
+what = "factory calibration, the NAND copy (logical 0x280000): blocks 20-22, block 21 with no bad block below it, one up for each (hardware-db25d.md 6, 6.5; remapped by the stock bad-block table, inferred from the shared driver)"
+
+[[flash.protect]]
+mem = "nand"
+start = 0xF9C0000
+end = 0x10000000
+what = "the stock firmware's reserve pool, the top 10 good blocks: blocks 1998-2047 hold them with up to 40 bad blocks (hardware-db25d.md 6.6)"
+
 [flash.bootloader]
+hold = ["p1"]	# then power (no key of the enum: PTB12 on its own, hardware-db25d.md 3.3)
 steps = [
 	"Turn the radio off and connect the programming cable.",
 	"Hold P1 and press power. The red LED lights and the display stays blank.",
@@ -54,7 +113,8 @@ steps = [
 # 2 MB of program flash (Boya, JEDEC 68 40 15).
 # stock_console: the stock firmware answers a debug console (USMART) the web flasher loads the stub through before
 # RadioFoundry is installed (stock_versions: the builds it knows). read_rate: bytes a second of a program flash read
-# through the stub (2 MB in about 45 s on the radio, 2026-10-17: blank sectors and LZ4 beat the 9 KB/s wire)
+# through the stub (2 MB in about 45 s on the radio, 2026-10-17: blank sectors and LZ4 beat the 9 KB/s wire).
+# calibration: the factory calibration's two copies, the program flash's and the NAND page (hardware-db25d.md 6.1)
 [flash.stub]
 id = 3
 hold_power = true
@@ -62,6 +122,7 @@ progmem = 0x200000
 tested = false
 stock_console = "usmart"
 read_rate = 46000
+calibration = { progmem = 0x1FE000, nand = 0x280000, magic = "TUNE" }
 
 # The codec slot and windows come from boards/db25d/memory.ld (__codec_*, the script CONFIG_DMR selects)
 [codec]
@@ -76,6 +137,10 @@ shape = "mobile"
 body = "#202226"
 accent = "#c8372d"
 lens = [20, 20]
+
+# HIL pass limits this radio is held to instead of a test's default (tools/boards.py HIL_LIMITS), each with its reason
+[hil.limits]
+dmr_tx_ramp_ms = { value = 1.75, reason = "the PA's key-up ramp measures 1.56-1.62 ms on the SDR bench (2026-10-25), with the stock burst timing too: over the 1.5 ms of the ETSI power mask; hardware-db25d.md 4.5" }
 
 # The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
 # reports them (6, the shim's default)

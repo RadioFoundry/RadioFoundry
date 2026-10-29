@@ -171,6 +171,8 @@ typedef struct {
 	uint8_t last_r42;	// raw 0x42 at the last timeslot interrupt
 	uint8_t last_report_ms;	// last report: ms after its timeslot interrupt
 	uint8_t last_pa_ms;	// last burst of ours: ms the PA was on
+	uint16_t pa_lead_us;	// last burst of ours: from the RF TX interrupt to the next timeslot interrupt
+	uint16_t pa_on_us;	// last burst of ours: from the RF TX interrupt to the PA drop
 	int8_t last_ts;		// slot number of the last burst heard (0 unknown)
 	uint8_t tx_state;	// engine TX state (0 idle)
 	// The LC trace of the last reception (not cleared by a counter reset)
@@ -225,6 +227,7 @@ typedef struct {
 	int8_t phase_ts[2];	// slot number of each phase (tick & 1), 0 unknown
 	uint8_t ctl_next;	// 0x41 written for the slot after the current one
 	uint8_t ctl_now;	// ... and the one for the slot now starting
+	uint8_t ctl_ended;	// ... and the one for the slot that ended at the last interrupt
 	// CACH TC tracking (5.3)
 	int8_t own_ts;
 	uint8_t tc_agree, tc_disagree;

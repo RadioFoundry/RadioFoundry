@@ -37,8 +37,7 @@ needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (unve
 |---|---|---|
 | 0-2 (3 x 16 KB) | 0x08000000-0x0800BFFF | TYT bootloader, never written (unverified) |
 | 3-7 | 0x0800C000-0x0807FFFF | RadioFoundry application, 464 KB in one piece (`boards/md380/memory.ld`) |
-| 8, 10, 11 | see [codec-md380.md](codec-md380.md) | The D002.032 codec as the merge places it: the table windows at their original addresses (sectors 8, 10, 11), the code moved to 0x080E0000 (sector 11), the descriptor at 0x080FFF80 |
-| 9 | 0x080A0000-0x080BFFFF | Holds nothing |
+| 8-11 | see [codec-md380.md](codec-md380.md) | The codec as the merge places it. From D002.032: the table windows at their original addresses (sectors 8, 10, 11), the code moved to 0x080E0000 (sector 11). From D35.14 / S35.14: the main table window at its original address (from sector 9 into sector 10), the code right after it, the small ones in sector 11. Then the descriptor at 0x080FFF80 |
 
 The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (unverified).
 
@@ -182,8 +181,9 @@ Our allocation, following the DM-1701 (`boards/dm1701`), since the same MCU pins
 | TIM3 | sub-audio tone PWM, CH2 on PC7, only with `CONFIG_SUBTONE` and only while a tone is sent (section 6.4) | 6 |
 | OTG_FS | USB (platform) | platform |
 
-Priority 5 is FreeRTOS's `configMAX_SYSCALL_INTERRUPT_PRIORITY` (`platform/stm32f4/FreeRTOSConfig.h`): the modem ISRs
-notify the DMR task, and a masked section at that level makes every configuration-port and synthesizer transaction
+FreeRTOS's `configMAX_SYSCALL_INTERRUPT_PRIORITY` is 4 (`platform/stm32f4/FreeRTOSConfig.h`; even so that a part with
+3 priority bits can hold it, [gotchas.md](gotchas.md) 13.11), and no interrupt uses 4. The modem ISRs at 5 notify the
+DMR task, and a masked section at the syscall level makes every configuration-port and synthesizer transaction
 atomic.
 
 ---
@@ -231,7 +231,7 @@ The chip description in `hrc5000.c` carries these; the HR_C6000 description in `
 | Reg 0x5F (sync / slot report) | read at every burst | absent: DMO / RMO come from the channel | (unverified) not in the manual's table |
 | Embedded LC LCSS | chip | MCU writes it in 0x50 for every voice burst: A-F = 0x08 0x19 0x2B 0x3B 0x4A 0x58 | (unverified) |
 | CRC_MCU_Control (0x40 bit 3) | present | absent: for CSBK, MBC header and data header write 10 bytes and the chip appends the CRC | on air 2026-10-20: CSBKs and data from the MD-380 decode with good CRC on a DM-32UV and an MMDVM hotspot |
-| CACH TC report | 0x52 bit 2, refreshed in received slots | 0x52 bit 2 too (the manual calls bits 3-0 reserved), but **it changes only in slots opened for receive**, and 1 means TS2 is starting | per-tick probe of a hotspot downlink, 2026-10-21: with receive open in both slots the bit alternates every tick (0x55555555 over 32 ticks); with one slot closed it stops changing. That froze the engine's lock (it closed the other slot once locked) and every repeater key-up was rejected or landed on either slot. The chip flag `tc_last_rx` keeps both slots open and reads the bit only after a received slot. Polarity from the calls: read as the slot that had ended, every call landed on the other slot |
+| CACH TC report | 0x52 bit 2, refreshed in received slots | 0x52 bit 2 too (the manual calls bits 3-0 reserved), but **it changes only in slots opened for receive**, and 1 means TS2 is starting | per-tick probe of a hotspot downlink, 2026-10-21: with receive open in both slots the bit alternates every tick (0x55555555 over 32 ticks); with one slot closed it stops changing. That froze the engine's lock (it closed the other slot once locked) and every repeater key-up was rejected or landed on either slot. The chip flag `tc_last_rx` keeps both slots open; the engine reads the bit only after two received slots in a row ([gotchas 1.10](gotchas.md)), so the first read after our own transmission is skipped. Unconfirmed on this chip: whether that first read is frozen or already right. Polarity from the calls: read as the slot that had ended, every call landed on the other slot |
 | Mic gain | 0xE4 = 0x20 + gain | 0x0F = raw value (`C5000_MIC_GAIN` in `radio_md380.c`) | (unverified) |
 
 DMR set-up (`hrc5000_set_mode_dmr`) writes 0x06 before the reset-release block (0x00 = 0xFF) and FM after it (unverified);
@@ -613,11 +613,51 @@ sine at the same swing (`subaudio_tx_tail`, with the interrupt held off for the 
 ## 7. Display
 
 160 x 128 color TFT on the FSMC 8-bit bus (NE1), command at 0x60000000 and data at 0x60040000 (A17 = RS on PD12),
-chip select PD6, reset PD13: the DM-1701's wiring (unverified). The controller type is unconfirmed (an HX8302A or
-an ILI9481 are candidates). RadioFoundry drives it with `drivers/display/st7735` (assuming the ST7735 command set) with
-safe-area insets of 1 px at the top and 2 px on the left (the case edge crowds them; right and bottom are close but usable; seen on the radio, 2026-10-16) and two build-time knobs for the bench: `MD380_PANEL_TYPE` (the st7735 driver's panel
-type, default 0) and `MD380_PANEL_MADCTL_XOR` (orientation bits flipped, default 0). Backlight: LAMP (PC6), TIM8 CH1
+chip select PD6, reset PD13: the DM-1701's wiring (unverified). The controller differs between radios and is detected (below). RadioFoundry drives it with `drivers/display/st7735` with
+safe-area insets of 1 px at the top and 2 px on the left (the case edge crowds them; right and bottom are close but usable; seen on the radio, 2026-10-16). Backlight: LAMP (PC6), TIM8 CH1
 PWM at 1 kHz (unverified for the pin; PWM ours).
+
+Panel type: `display_md380.c` picks the st7735 driver's type (`drivers/display/st7735/st7735.h`) at start-up, from
+the controller's own ID and the factory byte (`panel_md380.c`):
+
+1. After a hardware reset, before any init, it reads the display ID: command 0x04 returns a dummy byte and three ID
+   bytes, 0xDA, 0xDB and 0xDC a dummy byte and one each. Reads use a slower FSMC strobe than writes (address setup 15,
+   data 60 HCLK cycles).
+2. It reads the factory byte: SPI flash security register 3, byte 0x1D. Many radios carry 0xFF there because the
+   register was wiped, so an erased byte says nothing.
+3. The controller ID chooses the init, the byte (where programmed) only the orientation:
+
+| Controller ID | Controller | Factory byte | Type |
+|---|---|---|---|
+| `00 91 xx` | GalaxyCore GC9xxx (the unlock-variant init) | 0xFF, unread, or bit 0 = 1 | 3 (normal) |
+| | | bit 0 = 0 | 2 (flipped) |
+| `7C xx xx` | Sitronix ST7735 class | 1 | 1 (rotated 180 degrees) |
+| | | anything else | 0 (normal) |
+| anything else | unknown | programmed | its low two bits |
+| | | 0xFF or unread | 0 |
+
+Bit 0 gives a GC9xxx's orientation in both stock layouts: stock D3.008 to D13.20 tested only bit 0 (0 = flipped
+GC9xxx, 1 = normal); D3.32 and later use all four types (2 = flipped, 3 = normal GC9xxx).
+
+Stock sets the same color order for every type, so all are driven in RGB order (`force_rgb`).
+
+One radio (2026-10-27): ID `00 91 02` from both commands on every start (probably a GC9102), factory byte 0xFF, so
+type 3; picture right side up with correct colors. Its panel also showed a picture with the ST7735 init (type 0),
+which is why a picture alone doesn't identify the controller. Untested: an ST7735 panel, and types 1 and 2.
+
+| Knob or key | What |
+|---|---|
+| `MD380_PANEL_TYPE` (build, `MD380_DEFS`) | overrides the detected type |
+| `MD380_PANEL_MADCTL_XOR` (build) | orientation bits flipped on top of the type's, default 0 |
+| `display.panel_controller` (debug link `link` section) | `gc9xxx`, `st7735` or `unknown` |
+| `display.panel_source` (same) | what chose the type: `id`, `factory`, `default` or `build` |
+| `display.panel_type` (same) | the type in use |
+| `display.panel_id`, `display.panel_id_reg` (same) | the ID bytes in hex from 0x04 and from 0xDA-0xDC |
+| `display.panel_raw` (same) | the factory byte in hex, `none` when it couldn't be read |
+
+`boards/md380/tests/md380PanelTest.c` checks the rules. `boards/md380/hil/test_md380_panel.py` checks the radio:
+both ID reads agree, the controller is known, the type follows the rules. An unknown controller fails it: add its ID
+to `panel_md380.c`.
 
 ---
 
@@ -792,9 +832,11 @@ sectors 3-7 and keeps the codec).
 The AMBE+2 codec is inside the manufacturer's application: the same library as the
 DM-1701's, at other addresses. In the D002.032 file: code window 0x08050C44+0x10884, table window 0x0808FC64+0xAFF8 and
 four small table windows in sectors 10 and 11. The merge moves the code to 0x080E0000, keeps the table windows at
-their original addresses and writes a descriptor at 0x080FFF80; the codec runs in place from there. Entry points,
+their original addresses and writes a descriptor at 0x080FFF80; the codec runs in place from there. The D35.14 (MD-380)
+and S35.14 (MD-390) files work too: they carry the MD-UV380 family's codec, placed next to its tables in sectors 9 and
+10 (untested on the radio). Entry points,
 calling convention, state sizes, the placement and the extraction recipe are in [codec-md380.md](codec-md380.md).
-`stockfw.PROFILES` has the profile, the codec map (`rfoundry/codec_maps/md380/md380-d2032.json`) the rewrites,
+`stockfw.PROFILES` has the profiles, the codec maps (`rfoundry/codec_maps/md380/`, one per build) the rewrites,
 `boards/md380/memory.ld` keeps the application out of sectors 8-11, `vocoder_md380.c` checks and hosts the codec, and
 `make BOARD=md380` merges it when the firmware file is in `codecs/`. The debug link reports the codec as
 `md380-d2032-s11`; a build from before the move reports `md380-d2032`. Without the codec merged the radio is FM only.
@@ -833,7 +875,7 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | # | Unknown | How to settle it on a radio |
 |---|---|---|
 | 1 | HSE crystal or external clock | Stage 1: the radio boots on HSE (USB enumerates); if only bypass works, record it |
-| 2 | Display controller, orientation, colors | Stage 2: try `MD380_PANEL_TYPE` / `MD380_PANEL_MADCTL_XOR` until the boot screen is right side up and in color |
+| 2 | Display controller, orientation, colors | Stage 2: the type is detected (section 7); if the boot screen is wrong, note the `display.panel_*` keys and try `MD380_PANEL_TYPE` / `MD380_PANEL_MADCTL_XOR` |
 | 3 | Key matrix positions, side keys on K3 | Stage 3: press each key, read "keys" on the diagnostics page, correct section 9.1 and `input_md380.c` |
 | 4 | Channel switch code polarity and order | Settled 2026-10-16: a Gray code, table in 9.2 |
 | 5 | Volume knob on PA0 vs the TX LED | Stage 3: "vol" on the diagnostics page follows the knob, and the red LED lights on PE1 |
@@ -884,6 +926,6 @@ Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380)
   tone path yet, so AFSK TX is not written (`boards/md380/config.mk`). Without a calibration the board refuses to
   transmit.
 - Release: `[status] release = "stable"`, both band images (`rfoundry-md380-<version>.bin` UHF, `rfoundry-md380-vhf-<version>.bin`).
-  Application sectors 3-7 (464 KB), codec sectors 8, 10, 11, sector 9 unused, so an update keeps the codec. Profile
-  `md380-d2032-s11` (a build from before the move reports `md380-d2032`). `tools/md380_migrate.py` flashes it and keeps
+  Application sectors 3-7 (464 KB), codec sectors 8-11 (D002.032: 8, 10, 11; 35.14: 9-11), so an update keeps the
+  codec. Profile `md380-d2032-s11` (a build from before the move reports `md380-d2032`). `tools/md380_migrate.py` flashes it and keeps
   the codeplug.

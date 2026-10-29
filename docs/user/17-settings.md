@@ -37,7 +37,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 |---|---|---|---|---|
 | Key tones | On, Off | On | A short beep on each key press | Works |
 | Volume | 0 to 16 | 8 | The speaker volume, on radios without a volume knob only (the row is not shown on the others). 0 is mute. The **Volume** key opens a screen that changes it faster ([Radio reference](23-radios.md#key-roles)) | Works |
-| Tone volume | 0 to 10 | 5 | Volume of the radio's beeps, relative to the radio's volume | Works |
+| Tone volume | 0 to 10 | 5 | The loudest the radio's beeps get. Beeps follow the speaker volume up to this level, so turning the volume down makes them quieter too | Works |
 | Talk permit tone | On, Off | On | The beep when a DMR transmission starts ([DMR](09-dmr.md)) | Works |
 | Voice prompts | On, Off | Off | Spoken prompts. There is no recorded speech yet | Dimmed |
 | Message tone | On, Off | On | A three-note tone when a text message arrives | Works |
@@ -48,7 +48,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|
 | Brightness | 10 to 100 %, steps of 10 | 100 % | Backlight brightness. Also in quick settings, tile 9 | Works |
-| Backlight time | 5 s, 10 s, 30 s, 1 min, 2 min, Never | 30 s | The backlight dims after this time without a key press and goes off after four times as long | Works |
+| Backlight Dim/Off | 5s/20s, 10s/40s, 30s/2m, 1m/4m, 2m/8m, Never | 30s/2m | Without a key press, the backlight dims to a fifth after the first time and goes off after the second | Works |
 | Theme | Dark, Light, High contrast | Dark | The screen colors. Not on radios with a monochrome screen | Works |
 | Highlight color | Default, Red, Orange, Yellow, Teal, Light blue, Purple, Pink | Default | The color of the selected row or tile and of the channel number on Home. Not on radios with a monochrome screen | Works |
 | Filled status bar | On, Off | On | Fills the top status line with the highlight color (light gray with Default, white in the high-contrast theme) and draws its text black. Not on radios with a monochrome screen | Works |
@@ -71,6 +71,8 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Show talker alias | On, Off | On | Show received talker aliases (names) under the caller's ID | Works |
 | Dual watch talk back | On, Off | Off | Off: a call on the other channel never moves **PTT**. On: when a call ends on the other channel, that channel becomes the selected one for 10 s (restarting with each reply and call there), so **PTT** answers there ([Dual watch](12-scan.md#talk-back)) | Works |
 | Dual watch delay | 0.5 s, 1 s, 1.5 s, 2 s, 3 s, 5 s | 1 s | How long dual watch stays on a channel after a call ends, for the reply. It looks at the other channel meanwhile and shows **Busy** there ([Dual watch](12-scan.md#the-wait-after-a-call)) | Works |
+| SFR receive | Repeater, First copy, Dual-path RX | Repeater | Experimental. What a single frequency repeater user plays ([Standalone SFR](14-hotspot.md#standalone-sfr)). Repeater: only the repeater's copy. First copy: the talker's or the repeater's copy, whichever arrives first. Dual-path RX: both copies, with each damaged voice frame taken from the other copy. Dual-path RX is missing from builds without it | Works (Repeater). First copy and Dual-path RX depend on the radio: some hear only one copy at a time ([Radio reference](23-radios.md)) |
+| SFR CW ID | Off, 5, 10, 15, 30 min | Off | Experimental. How often a single frequency repeater channel sends its callsign in Morse ([Standalone SFR](14-hotspot.md#standalone-sfr)). The callsign is the radio name's first word (before a space, `-` or `/`), and only if it looks like one: 4 to 7 letters and digits, at least one of each. Otherwise nothing is sent. The ID goes out in FM on the channel once the repeater has carried traffic and has been quiet for 2 s, at most once per interval. Missing from builds without it | Works |
 
 ### Privacy (key 4)
 
@@ -99,6 +101,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Answer call alerts | On, Off | On | Acknowledge call alerts, so the caller knows the page arrived | Works |
 | TFTP codeplug write | On, Off | On | Lets a computer write the codeplug over TFTP in USB network mode ([USB network](15-usb-network.md#programming-over-the-network)). Reading is always possible | Works |
 | Message format | ETSI, ETSI short, Motorola | ETSI | The format of the text messages you send ([Messages](10-messages-and-signaling.md#message-formats)). Messages in any format are received | Works |
+| Zone offers | Off, Ask | Off | Ask shows a zone or channel another radio sends you, to import or reject ([Sharing a zone](07-channels-zones-vfo.md#sharing-a-zone)). Off ignores them | Works |
 | USB network at start | On, Off | Off | The radio starts as a USB network adapter instead of a serial port ([USB network](15-usb-network.md#starting-in-network-mode)) | Works |
 | PC answers data | On, Off | Off | Control station mode: while the computer is connected in USB network mode, it answers the data sent to your radio instead of the radio ([USB network](15-usb-network.md#control-station-for-dispatch-software)) | Works |
 | USB address | By DMR ID, 192.168.10.x | By DMR ID | The addresses of the USB network link: from your DMR ID, or the fixed pair 192.168.10.1 (radio) and 192.168.10.2 (computer) | Works |
@@ -127,15 +130,15 @@ the codeplug.
 
 ### My radio (key 9)
 
-| Setting | What it shows |
+| Setting | What it does |
 |---|---|
-| DMR ID and name | Your DMR ID from the codeplug ("not set: set it in qdmr" without one) and the radio model |
+| DMR ID and name | Your DMR ID, as stored in the codeplug ("Not set" without one), and the radio model. Type a new ID with the digit keys (up to 16776415; the IDs above it are reserved for the network) and press **OK**: the radio writes it into the codeplug and uses it at once, and the Codeplug Editor or qdmr shows it on the next read. **Back** takes back the last digit, and with none left leaves the ID unchanged |
 
 ### Advanced (key 0)
 
 | Item | What it does |
 |---|---|
-| About | "RadioFoundry", the firmware version (commit) and the radio model. Then the authors and the license of each part: RadioFoundry (MIT), the third-party libraries, and the AMBE+2 codec. The codec shows as "stock": it comes from your radio's own firmware and isn't part of RadioFoundry. The page is text in small print, with nothing cut short and no status bar. The status bar comes back during a call. **Up**, **Down** or the knob scroll a page longer than the screen |
+| About | "RadioFoundry", the release name (such as v26.11) and the commit it was built from, or only the commit for a build between releases, and the radio model. Then the authors and the license of each part: RadioFoundry (MIT), the third-party libraries, and the AMBE+2 codec. The codec shows as "stock": it comes from your radio's own firmware and isn't part of RadioFoundry. The page is text in small print, with nothing cut short and no status bar. The status bar comes back during a call. **Up**, **Down** or the knob scroll a page longer than the screen |
 | Codeplug | Where the channels come from (built-in or from the CPS), the number of zones and channels |
 | Diagnostics | The diagnostics page (also **OK**, **6**, **7**) |
 | Factory reset | Puts every setting back to its default ([below](#factory-reset)) |

@@ -92,6 +92,10 @@ typedef enum
 	DMR_DATA_EV_EMERGENCY_ALARM,			// id: the radio in emergency (an alarm to us or a group we listen to)
 	DMR_DATA_EV_EMERGENCY_SENT,				// id: the alarm's destination; all tries have gone out
 	DMR_DATA_EV_EMERGENCY_FAILED,			// id: the alarm's destination; it couldn't be sent
+	DMR_DATA_EV_ZONE_OFFER,					// id: the sender; a zone or channel is offered (zone_share_api.h)
+	DMR_DATA_EV_ZONE_SENT,					// id: the destination; our zone went out whole
+	DMR_DATA_EV_ZONE_FAILED,				// id: the destination; it couldn't be sent
+	DMR_DATA_EV_ZONE_REFUSED,				// id: the directory service; it answered our request with a refusal
 } dmrDataEventKind_t;
 
 typedef struct
@@ -167,6 +171,16 @@ typedef struct
 	uint32_t txFailed;						// ... dropped by the stack (no repeater, refused, time-out)
 	uint32_t txGaveUp;						// lists never started: no clear channel in time
 	uint8_t  txLastError;					// dmr_tx_error_t of the last list
+	uint8_t  txLastKind;					// what the last list started was for (dmrDataServiceTxKindName)
+	uint32_t txLastMs;						// when it started (the service's clock), 0 = none yet
+	// ARS timing, so that an unattended transmission can be told apart. Not counters: these and the two above survive
+	// dmrDataServiceResetStats
+	uint32_t arsLastMs;						// the last registration or deregistration given to the air, 0 = none
+	uint32_t arsNextMs;						// when the next registration is due, 0 = none pending
+	uint8_t  arsAttempts;					// registrations sent since the last change of channel, ID or server
+	uint32_t txGuarded;						// lists held back by the guard after our last one
+	uint32_t ipChains;						// transmissions that carried more than one IP packet
+	uint32_t ipChained;						// ... the packets in them after the first
 	// IP packets given to dmrDataServiceSendIP (docs/spec/dmr-data.md 11, 12)
 	uint32_t ipPackets;						// taken
 	uint32_t ipSent;						// ... delivered: on air (unconfirmed) or acknowledged (confirmed)
@@ -194,6 +208,21 @@ void dmrDataServiceSetSettings(const dmrDataSettings_t *settings);
 void dmrDataServiceGetSettings(dmrDataSettings_t *settings);
 // The lock that keeps the API callers' copies consistent (the firmware: scheduler suspend); NULL: none
 void dmrDataServiceSetLock(void (*lock)(void), void (*unlock)(void));
+// The same lock, for the modules on the service that share state with other tasks (dmrAirQueue.c, zoneShareSvc.c).
+// Held briefly: no waits, no flash
+void dmrDataServiceLock(void);
+void dmrDataServiceUnlock(void);
+// An event for the UI from a module on the service (the radio task)
+void dmrDataServicePostEvent(uint8_t kind, uint32_t id);
+// Our transmissions are spaced: a list other than a reply (an ACK, a CSBK answer) starts at the earliest the guard
+// after our previous list ended (#154: receivers lost a packet sent in a new transmission right after ours; 250 ms
+// was enough in every trial, the cause is not known). A workaround, so a build value and a RAM override for the
+// bench; packets that can go together go in one transmission instead (dmrDataServiceSendIPChain)
+#define DMR_DATA_TX_GUARD_MS		CONFIG_DMR_DATA_TX_GUARD_MS
+// The guard in ms (0: none) and whether unconfirmed IP packets to one destination are chained; not stored
+void dmrDataServiceSetTxSpacing(uint16_t guardMs, bool chain);
+uint16_t dmrDataServiceTxGuardMs(void);
+bool dmrDataServiceTxChain(void);
 // Every 10-25 ms with the time and the channel
 void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *channel);
 // A data / control burst heard on our slot (dmr_call_set_data_rx)
@@ -210,6 +239,9 @@ void dmrDataServicePowerOffCanceled(void);
 bool dmrDataServiceSendSMS(bool group, uint32_t dst, const char *text, bool ackRequested);
 bool dmrDataServiceSendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length);
 bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count);
+// Raw data: an unconfirmed Rate 1/2 packet with SAP 10 (short data), built in the service's own bursts (no copy). 1 if
+// it was queued, 0 if it can't be sent now (busy, or no channel to send on), -1 if it is longer than one transmission
+int dmrDataServiceSendShortData(bool group, uint32_t dst, uint32_t src, const uint8_t *data, int length, int preambles);
 // An IP packet from layer 4 on (ICMP, UDP, SCTP; the IP gateway's packets from the host): built with the compressed
 // UDP/IPv4 header when the setting allows it, sent as confirmed data with retries when a confirmed rule matches (an
 // individual destination), else unconfirmed; rate 1/2, 2 preamble CSBKs. l4 is not copied: it must stay unchanged
@@ -221,6 +253,29 @@ bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count);
 #define DMR_DATA_IP_OURS			0u
 bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
 							const uint8_t *l4, int length);
+// The same from us, with the IDs' own addresses and our TTL (DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT), and the delivery
+// chosen by the caller: DMR_IPS_SETTINGS (the confirmed rules, as above), DMR_IPS_CONFIRMED (an individual
+// destination; a group goes unconfirmed) or DMR_IPS_UNCONFIRMED
+#define DMR_IPS_SETTINGS			0
+#define DMR_IPS_CONFIRMED			1
+#define DMR_IPS_UNCONFIRMED			2
+bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length, uint8_t delivery);
+// Several IP packets to one destination, with the same addresses and TTL (srcIp, dstIp, ttl as for
+// dmrDataServiceSendIP): the first goes as dmrDataServiceSendIP would with its own delivery; when it goes unconfirmed,
+// the ones after it that also go unconfirmed follow in the same transmission (preamble CSBKs once, then each packet's
+// header and blocks), as many as the list holds, up to DMR_DATA_CHAIN_MAX. Returns how many it took (0: none; the
+// first is refused as by dmrDataServiceSendIP). The service reads all of them in place until dmrDataServiceIpBusy()
+// is false; dmrDataServiceIpResult() is the transmission's, the same for each
+#define DMR_DATA_CHAIN_MAX			8
+typedef struct
+{
+	uint8_t protocol;
+	uint8_t delivery;
+	const uint8_t *l4;
+	int length;
+} dmrDataChainPacket_t;
+int dmrDataServiceSendIPChain(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl,
+							const dmrDataChainPacket_t *packets, int count);
 bool dmrDataServiceIpBusy(void);
 // The last one's outcome: DMR_REQ_OK (on air; confirmed: acknowledged) or DMR_REQ_FAILED
 uint8_t dmrDataServiceIpResult(void);
@@ -241,6 +296,10 @@ bool dmrDataServiceEmergencyAlarmBusy(void);
 // The 10 octets of an emergency alarm CSBK (docs/spec/dmr-emergency.md 2)
 void dmrDataBuildEmergencyAlarm(uint32_t dst, uint32_t src, bool group, uint8_t fid, uint8_t out[10]);
 
+// Zone share (CONFIG_ZONE_SHARE): a UDP datagram to ZS_PORT for us (or a group we listen to), not left to the PC.
+// zoneShareSvc.c has it
+void dmrDataServiceZoneShareRx(uint32_t src, bool group, const uint8_t *payload, int length);
+
 // Control station passthrough (CONFIG_DMR_CONTROL_STATION, docs/spec/usb-network.md 5): while on, IP based packets
 // (SAP 4, SAP 3) to us or our groups are left to the PC on the USB network link: no TMS ACK, no inbox entry, no ARS
 // or LRRP handling; our own ARS registration and LRRP reports stop. The link layer stays here (ETSI responses to
@@ -260,6 +319,10 @@ int dmrDataServiceMessageCount(void);
 const dmrDataMessage_t *dmrDataServiceMessage(int index);	// 0: the newest
 
 void dmrDataServiceGetStats(dmrDataStats_t *stats);
+// A short name for dmrDataStats_t.txLastKind: "other" "sms" "signal" "ars" "reply" "emergency" "ip" "udp"
+const char *dmrDataServiceTxKindName(uint8_t kind);
+// What the list being started now is for, as dmrDataServiceTxKindName gives it (the host's txStart may log it)
+const char *dmrDataServiceTxStartingName(void);
 void dmrDataServiceResetStats(void);
 
 #endif

@@ -4,22 +4,32 @@
 // A port of tools/rfoundry/rfoundry/stockfw.py; the profiles come from that file through data/flash-boards.json, so
 // both read the same table. The codec and the key are only ever handled on the user's machine.
 
-import { u32le, sha256, startsWith, crc32 } from "./bytes.js";
-import { byCodeSha, moveCode, moveBranches, branchesIn, MapError } from "./codecmap.js";
-import { unzip } from "./zip.js";
+import { u32le, sha256, startsWith, crc32, hex } from "./bytes.js";
+import { byCodeSha, moveCode, moveBranches, branchesIn, moveWindow, unmoveWindow, tableWindow, MapError } from "./codecmap.js";
 
-export class StockError extends Error {}
+// code: what kind of problem it is, for the page's explanation (explain.js) and the error report: "not-vendor" (not a
+// vendor firmware file), "damaged", "other-radio" (a file for another radio; params.board names it), "wrong-key" (it
+// doesn't open with this radio's key), "unmapped" (a build the codec can't be taken from) or "internal" (a check that
+// fails after the file was identified: a fault in the flasher or its data, not in the file)
+export class StockError extends Error {
+	constructor(message, code = "internal", params = undefined) {
+		super(message);
+		this.name = "StockError";
+		this.code = code;
+		if (params) this.params = params;
+	}
+}
 
 export function parseContainer(data, fb) {
 	if (data.length < fb.header_len || !startsWith(data, fb.magic))
-		throw new StockError("not a TYT/Baofeng firmware file (no \"OutSecurityBin\" header)");
+		throw new StockError("not a TYT/Baofeng firmware file (no \"OutSecurityBin\" header)", "not-vendor");
 	let count = u32le(data, 0x7C);
 	if (count === fb.single_segment) count = 1;
-	if (count < 1 || count > 15) throw new StockError(`implausible segment count ${count}`);
+	if (count < 1 || count > 15) throw new StockError(`implausible segment count ${count}`, "damaged");
 	const segs = [];
 	for (let i = 0; i < count; i++) segs.push([u32le(data, 0x80 + 8 * i), u32le(data, 0x84 + 8 * i)]);
 	const total = segs.reduce((a, s) => a + s[1], 0);
-	if (fb.header_len + total > data.length) throw new StockError("segment lengths run past the end of the file");
+	if (fb.header_len + total > data.length) throw new StockError("segment lengths run past the end of the file", "damaged");
 	return segs;
 }
 
@@ -29,36 +39,28 @@ export function appFileOffset(segs, addr, fb) {
 		if (base <= addr && addr < base + length) return off + addr - base;
 		off += length;
 	}
-	throw new StockError(`address 0x${addr.toString(16)} is in no segment`);
+	throw new StockError(`address 0x${addr.toString(16)} is in no segment`, "damaged");
 }
 
 // plain[i] = file[off + i] XOR key[(off + i - header) mod key_len]
 export function decrypt(data, off, length, key, fb) {
-	if (off < fb.header_len || off + length > data.length) throw new StockError("window outside the payload");
+	if (off < fb.header_len || off + length > data.length) throw new StockError("window outside the payload", "damaged");
 	const out = new Uint8Array(length);
 	for (let i = 0; i < length; i++) out[i] = data[off + i] ^ key[(off + i - fb.header_len) % fb.key_len];
 	return out;
 }
 
-// A stock file as the user picked it: the updater .bin itself, or the vendor's zip with it inside (TYT ships the .bin
-// next to Upgrade.exe and its DLLs). From a zip: the one entry with the container header, macOS "._" copies skipped.
-// Returns {name, data}.
-export async function stockFile(name, data, fb) {
-	if (!(data.length > 4 && data[0] === 0x50 && data[1] === 0x4B && data[2] === 0x03 && data[3] === 0x04)) return { name, data };
-	const found = [];
-	for (const [path, body] of await unzip(data)) {
-		const base = path.split("/").pop();
-		if (path.startsWith("__MACOSX/") || base.startsWith("._") || !startsWith(body, fb.magic)) continue;
-		found.push({ name: base, data: body });
-	}
-	if (found.length !== 1) throw new StockError(found.length ? `${name} holds ${found.length} firmware files: pick the .bin itself` : `no firmware file (.bin with an "OutSecurityBin" header) in ${name}`);
-	return found[0];
-}
+// Why a file known to hold no codec (an entry of fb.no_codec_files) can't be used: stockfw.no_codec's words
+export const noCodec = (f) => `this file is ${f.name}: ${f.why}. The codec comes from the manufacturer's firmware file or a readout of a radio that holds it`;
+
+// A file's profile: the one it has on the radio being flashed (a file placed differently on a board is keyed
+// "<sha>@<board>", stockfw.profile_key), else its bare one
+export const profileFor = (profiles, sha, boardId = null) => (boardId && profiles[`${sha}@${boardId}`]) || profiles[sha] || null;
 
 // What a file is: {sha, known: "DM-1701 V02.06 CSV" | null, profile | null}
-export async function identify(data, fb) {
+export async function identify(data, fb, boardId = null) {
 	const sha = await sha256(data);
-	return { sha, known: fb.known_files[sha] || null, profile: fb.profiles[sha] || null };
+	return { sha, known: fb.known_files[sha] || null, profile: profileFor(fb.profiles, sha, boardId) };
 }
 
 // Where the merge puts a profile's codec (stockfw.placed_windows): [[addr, length, sha256]], code first, then the
@@ -66,7 +68,7 @@ export async function identify(data, fb) {
 export function placedWindows(prof) {
 	if (!prof.placement) return prof.windows;
 	const pl = prof.placement, pd = prof.placed, tab = prof.windows[1];
-	return [[pl.code, prof.windows[0][1], pd.code[1]], [tab[0], pl.tables_len ?? tab[1], pd.tables[1]], ...prof.windows.slice(2)];
+	return [[pl.code, prof.windows[0][1], pd.code[1]], [pl.tables ?? tab[0], pl.tables_len ?? tab[1], pd.tables[1]], ...prof.windows.slice(2)];
 }
 
 // The windows a merge of this profile writes, [[addr, length]] (stockfw.layout): the placed windows and the descriptor
@@ -98,17 +100,22 @@ export async function place(prof, segs, fb) {
 	if (!prof.placement) return segs;
 	const pl = prof.placement;
 	const m = prof.map || byCodeSha(fb.codec_maps, prof.windows[0][2])[0];
-	if (!m) throw new StockError(`no codec map for ${prof.name}: its code can't be moved`);
-	const [[, code], [tabAddr, tables], ...extra] = segs;
-	let moved, tab;
+	if (!m) throw new StockError(`no codec map for ${prof.name}: its code can't be moved`, "unmapped");
+	const [[, code], [stockTab, tables], ...extra] = segs;
+	let moved, tab, tabAddr = stockTab;
 	try {
-		moved = await moveCode(code, m, pl.code);
-		tab = moveBranches(tabAddr, tables.slice(0, pl.tables_len ?? tables.length), m, pl.code);
+		if (pl.tables !== undefined) {
+			[moved, tab] = await moveWindow(code, tables, m, pl.code, pl.tables);
+			tabAddr = pl.tables;
+		} else {
+			moved = await moveCode(code, m, pl.code);
+			tab = moveBranches(tabAddr, tables.slice(0, pl.tables_len ?? tables.length), m, pl.code);
+		}
 	} catch (e) {
 		if (e instanceof MapError) throw new StockError(`can't move the codec: ${e.message}`);
 		throw e;
 	}
-	if (branchesIn(m, tabAddr, tab.length) !== (m.branches || []).length) throw new StockError("a branch into the code lies outside the tables the merge keeps");
+	if (pl.tables === undefined && branchesIn(m, tabAddr, tab.length) !== (m.branches || []).length) throw new StockError("a branch into the code lies outside the tables the merge keeps");
 	const want = placedWindows(prof);
 	const got = [moved, tab, ...extra.map(([, d]) => d)];
 	for (const [i, d] of got.entries()) {
@@ -117,16 +124,27 @@ export async function place(prof, segs, fb) {
 	return [[pl.code, moved], [tabAddr, tab], ...extra, [fb.descriptor.addr, descriptor(prof, fb)]];
 }
 
-// The codec windows decrypted, checked and placed as the merge writes them: [[addr, bytes], ...] (code first)
-export async function extract(data, key, fb, profiles = fb.profiles) {
+// The codec windows decrypted, checked and placed as the merge writes them: [[addr, bytes], ...] (code first).
+// boardId: the radio being flashed. A file for another radio is refused by name before it is decrypted with this
+// radio's key, which could only fail as a window mismatch that blames the key (OPENDIGITALRADIO-J). Past the SHA-256
+// match a failure is the flasher's, not the file's: the file is exactly the one the profile describes
+export async function extract(data, key, fb, profiles = fb.profiles, boardId = null) {
 	const sha = await sha256(data);
-	const prof = profiles[sha];
+	const prof = profileFor(profiles, sha, boardId);
 	if (!prof) {
+		const bare = fb.no_codec_files?.[sha];
+		if (bare) throw new StockError(noCodec(bare), "not-vendor", { known: bare.name });
 		const known = fb.known_files[sha];
-		const names = Object.values(profiles).map((p) => p.name).join(", ");
-		throw new StockError(`${known ? "this file is " + known : "unknown stock file"}, not a supported codec source. Supported: ${names}`);
+		const names = Object.values(profiles).filter((p) => !boardId || p.board === boardId).map((p) => p.name).join(", ");
+		throw new StockError(`${known ? "this file is " + known : "unknown stock file"}, not a supported codec source. Supported: ${names}`, "unmapped", { known: known || null });
+	}
+	if (boardId && prof.board !== boardId) {
+		throw new StockError(`${prof.name} is a firmware file for the ${fb.boards[prof.board]?.name || prof.board}, not the ${fb.boards[boardId]?.name || boardId}`,
+			"other-radio", { board: prof.board, file: prof.name });
 	}
 	if (data.length !== prof.size) throw new StockError(`size ${data.length}, expected ${prof.size}`);
+	// a file for another radio that gives this one's codec (file_radio) is encrypted with that radio's key: derived here
+	if (prof.file_radio) key = await deriveKey(data, prof.key_sha256, fb);
 	const segs = parseContainer(data, fb);
 	if (JSON.stringify(segs) !== JSON.stringify(prof.segments)) throw new StockError("unexpected segment table");
 	const out = [];
@@ -140,12 +158,116 @@ export async function extract(data, key, fb, profiles = fb.profiles) {
 	return { profile: prof, segments: await place(prof, out, fb) };
 }
 
+// The codec in a read of a radio's internal flash (stockfw.from_flash; the bytes from base, normally the whole 1 MB):
+// {profile, segments} as the merge writes them, or null. A radio on its stock firmware holds a build's windows plain at
+// their stock addresses (found by their SHA-256), placed here as a merge from the stock file places them; a radio
+// running RadioFoundry holds them placed, with the descriptor, and they are taken as they are. No key is needed.
+export async function fromFlash(flash, fb, profiles = fb.profiles, base = 0x08000000) {
+	const read = async (wins) => {
+		const parts = [];
+		for (const [a, n, want] of wins) {
+			const off = a - base;
+			if (off < 0 || off + n > flash.length) return null;
+			const d = flash.slice(off, off + n);
+			if ((await sha256(d)) !== want) return null;
+			parts.push([a, d]);
+		}
+		return u32le(parts[0][1], 0) === fb.codec_sig ? parts : null;
+	};
+	for (const prof of Object.values(profiles)) {
+		let parts = await read(prof.windows);
+		if (parts) return { profile: prof, segments: await place(prof, parts, fb) };
+		if (!prof.placement) continue;
+		const desc = descriptor(prof, fb);
+		parts = await read([...placedWindows(prof), [fb.descriptor.addr, fb.descriptor.len, await sha256(desc)]]);
+		if (parts) return { profile: prof, segments: parts };
+	}
+	return null;
+}
+
+// Why a codec source can't give the radio's bootloader key (stockfw.codec_only), or null when it can
+export const codecOnly = (prof) => (prof?.file_radio
+	? `${prof.name} is ${prof.file_radio} firmware: it gives the codec only, not the bootloader key. The key comes from a stock file for the radio itself, a key file or the radio`
+	: null);
+
+// The codec in a read where another firmware moved it (stockfw.from_moved): {profile, segments, at} or null. Every
+// word-aligned codec signature is a candidate start; for every profile whose map's table window moves as one block,
+// the moves are read from the copy and undone (unmoveWindow), the stock SHA-256s checked, then placed as a merge from
+// the stock file places it. fromFlash first: this is for what it doesn't find. log(text): what was tried and why each
+// candidate failed, for the page's trail (a few lines, never bytes)
+export async function fromMoved(flash, fb, profiles = fb.profiles, base = 0x08000000, log = null) {
+	const cands = [];
+	for (const prof of Object.values(profiles)) {
+		const m = prof.placement ? prof.map || byCodeSha(fb.codec_maps, prof.windows[0][2])[0] : null;
+		if (!m || m.code.len !== prof.windows[0][1]) continue;
+		try {
+			tableWindow(m);
+		} catch (e) {
+			continue;
+		}
+		cands.push([prof, m]);
+	}
+	if (!cands.length) {
+		log?.("moved codec search: no profile with a movable map");
+		return null;
+	}
+	let starts = 0;
+	const failed = [];
+	for (let o = 0; o + 4 <= flash.length; o += 4) {
+		if (u32le(flash, o) !== fb.codec_sig) continue;
+		starts++;
+		for (const [prof, m] of cands) {
+			const got = await unmoveWindow(flash, base, m, base + o);
+			if (!got) continue;
+			const parts = [[prof.windows[0][0], got[0]], [prof.windows[1][0], got[1]]];
+			let ok = true;
+			for (const [a, n, want] of prof.windows.slice(2)) {
+				const d = flash.slice(a - base, a - base + n);
+				if (a < base || d.length !== n || (await sha256(d)) !== want) { ok = false; break; }
+				parts.push([a, d]);
+			}
+			if (!ok) {
+				failed.push(`${prof.name} at ${hex(base + o)}: an extra window differs`);
+				continue;
+			}
+			try {
+				const segments = await place(prof, parts, fb);
+				log?.(`moved codec search: ${prof.name} at ${hex(base + o)} (${starts} code start(s) checked)`);
+				return { profile: prof, segments, at: base + o };
+			} catch (e) {
+				if (!(e instanceof StockError)) throw e;
+				failed.push(`${prof.name} at ${hex(base + o)}: ${e.message}`);
+			}
+		}
+	}
+	log?.(`moved codec search: none in ${starts} code start(s) against ${cands.length} profile(s)${failed.length ? `; ${failed.slice(0, 3).join("; ")}` : ""}`);
+	return null;
+}
+
+// Every profile whose codec is the same bytes at the same addresses as prof's (stockfw.same_layout): the same board,
+// stock windows and placement. A readout of the radio's flash can't tell these files apart
+export function sameLayout(prof, profiles) {
+	const key = (p) => JSON.stringify([p.board, p.windows, p.placement ?? null, p.placed ?? null]);
+	return Object.values(profiles).filter((p) => key(p) === key(prof));
+}
+
+// The versions a readout's codec could come from (stockfw.layout_name): "V02.06 CSV" for a codec one file holds,
+// "V02.01/V02.02/V02.03 CSV" for one several files hold, their common last words said once
+export function layoutName(prof, profiles) {
+	const same = sameLayout(prof, profiles);
+	const vs = (same.length ? same : [prof]).map((p) => p.version);
+	const parts = vs.map((v) => { const i = v.indexOf(" "); return i < 0 ? [v, ""] : [v.slice(0, i), v.slice(i + 1)]; });
+	const tails = new Set(parts.map(([, t]) => t));
+	if (vs.length > 1 && tails.size === 1 && parts[0][1]) return `${parts.map(([h]) => h).join("/")} ${parts[0][1]}`;
+	return vs.join(" / ");
+}
+
 // The whole application segment of a stock file, decrypted: what the stock firmware is in internal flash. Used to
 // put a radio back on stock firmware (restore). Returns [addr, bytes].
 export function stockApplication(data, key, board, fb) {
 	const segs = parseContainer(data, fb);
 	const seg = segs.find(([base]) => base === board.app_base);
-	if (!seg) throw new StockError("the file has no application segment at the radio's application base");
+	if (!seg) throw new StockError("the file has no application segment at the radio's application base", "wrong-key");
 	return [seg[0], decrypt(data, appFileOffset(segs, seg[0], fb), seg[1], key, fb)];
 }
 
@@ -159,7 +281,7 @@ export async function deriveKey(data, wantSha, fb, { maxAlternatives = 2, candid
 	const total = segs.reduce((a, s) => a + s[1], 0);
 	const payload = data.subarray(fb.header_len, fb.header_len + total);
 	const K = fb.key_len;
-	if (payload.length < 64 * K) throw new StockError("the file is too short to derive the key from");
+	if (payload.length < 64 * K) throw new StockError("the file is too short to derive the key from", "damaged");
 	const cols = [];
 	for (let j = 0; j < K; j++) cols.push(mostCommon(payload, j, K, 8));
 	const base = Uint8Array.from(cols.map((c) => c[0][0]));
@@ -189,7 +311,7 @@ export async function deriveKey(data, wantSha, fb, { maxAlternatives = 2, candid
 		k = await alternatives(refined, alt, order, wantSha, maxAlternatives);
 		if (k) return k;
 	}
-	throw new StockError("could not derive the bootloader key from this file (is it a stock firmware file for this radio?)");
+	throw new StockError("could not derive the bootloader key from this file (is it a stock firmware file for this radio?)", "wrong-key");
 }
 
 // Column j's most common bytes, [[byte, count]], count down, ties in first-seen order (Python's Counter.most_common)

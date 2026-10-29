@@ -7,9 +7,13 @@
 //            sector the image spans is erased, and written where the image has data. Codec windows may be inside
 //            the image: it is the radio's own earlier content, or the stock firmware with its codec.
 //
+// No mode erases a sector that holds a protected region of the board (board.protect, board.toml [[flash.protect]]):
+// keep and merge refuse the plan, as plan.py does; restore leaves those sectors as the radio has them (carved out).
+//
 // The tests (site/tests) check keep and merge against plan.py's output for the same inputs.
 
 import { hex } from "./bytes.js";
+import * as protect from "./protect.js";
 
 export const KEEP = "keep", MERGE = "merge", RESTORE = "restore";
 export const BLOCK = 1024, FIRST_BLOCK = 2;
@@ -78,7 +82,12 @@ export function makePlan(board, segments, mode, codecSegments = [], codecWindows
 	const spanLo = Math.min(...segments.map(([a]) => a));
 	const spanHi = Math.max(...segments.map(([a, d]) => a + d.length));
 	const steps = [];
+	const guarded = (s) => protect.overlapping(board.protect, "progmem", s.addr - board.rom_base, end(s) - board.rom_base);
 	for (const s of board.sectors) {
+		if (mode === RESTORE && guarded(s).length && overlaps(s, spanLo, spanHi)) {
+			steps.push(step(s, "keep", [], "", "protected: " + guarded(s).map((p) => p.what).join("; ")));
+			continue;
+		}
 		let buf = null, last = 0;
 		const kinds = new Set();
 		for (const [kind, segs] of [["app", segments], ["codec", codecSegments]]) {
@@ -108,6 +117,13 @@ export function makePlan(board, segments, mode, codecSegments = [], codecWindows
 		steps.push(step(s, "write", blocks, content));
 	}
 	const plan = new Plan(board, mode, steps);
+	for (const s of plan.erase) {
+		try {
+			protect.check(board.protect, "progmem", s.addr - board.rom_base, end(s) - board.rom_base, "erase");
+		} catch (e) {
+			throw new PlanError(`sector ${s.index}: ${e.message}`);
+		}
+	}
 	if (mode === KEEP && plan.erase.some((s) => codecIdx.has(s.index))) throw new PlanError("internal: keep mode would erase a codec sector");
 	return plan;
 }

@@ -51,7 +51,7 @@ static const keymap_entry_t keymap[] = {
 
 #if CONFIG_CPS_OPENFW
 // What the open-firmware CPS reads in the radio info (open-firmware-cps.md 4). qdmr and the CPS know no DB25-D, and the
-// image layout is the STM32 radios' (flash_db25d.c), so the radio reports type 6 (MD-UV380) as the other HR_C7000 boards do. No
+// image layout is the STM32 radios' (flash_db25d.c), so the radio reports type 6 (open-firmware-cps.md 4) as the other HR_C7000 boards do. No
 // MCU ROM area and no flash security registers: those areas are refused. The factory calibration is outside the
 // image (flash_db25d.c), so there is no calibration window either
 static uint32_t cps_radio_type(void)

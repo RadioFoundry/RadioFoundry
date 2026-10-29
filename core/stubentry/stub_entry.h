@@ -18,6 +18,11 @@
 #include "config.h"
 #include "debuglink/dl_frame.h"
 
+// The two lines of the boot splash the radio shows while the monitor has it (show_banner); the UI gallery draws the
+// same screen (stub_entry.png), which the web flasher shows for this state
+#define STUB_ENTRY_LINE1 "PC Loader Connected"
+#define STUB_ENTRY_LINE2 "Power-cycle to exit"
+
 #if CONFIG_STUB_ENTRY
 #if !CONFIG_DEBUGLINK
 // From hostlink_start, in a build without the debug link: register the listener as the host link's side protocol

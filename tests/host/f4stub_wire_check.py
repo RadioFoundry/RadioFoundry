@@ -3,7 +3,8 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The host tool (stub/f4stub.py) against the stub's real protocol engine (f4stubSim, built from stub/common/stubeng.c
 and stub/stm32f4/f4stub_board.c): the board records, installs on a simulated DM-1701 and MD-380 flash and on f4stub's test
-profile (other SPI wiring), a read-back and the refusals, all over the stub's wire protocol. The profiles come from the
+profile (other SPI wiring), a read-back and the refusals, the SPI flash's security registers (one locked), all over the
+stub's wire protocol. The profiles come from the
 board registry, whose check holds them to the boards' sources (tools/boards.py). Run by `make -C tests/host`."""
 import os
 import select
@@ -67,7 +68,9 @@ def run(sim, flash, job, want_spi=False, board="dm1701"):
         log = proc.stderr.read().decode()
         proc.wait(10)
         out = open(fout, "rb").read()
-        if want_spi:
+        if want_spi == "sreg":
+            out = (out, open(fout + ".sreg", "rb").read())
+        elif want_spi:
             out = (out, open(fout + ".spi", "rb").read())
         return out, result, log
 
@@ -147,6 +150,46 @@ def main():
     check(res == (2, 254) and log.count("xerase") == 2, "SPI write: 2 sectors written %s" % (res,))
     check(spi_out == bytes(new) and bad == [], "SPI flash holds the new copy")
     check(out == bytes(flash), "internal flash untouched by SPI work")
+
+    # The security registers through the real engine: read with the CRC, register 1 rewritten (only it), register 3
+    # locked (LB3): the tool refuses it before sending, and the engine refuses it when asked anyway
+    sregs = bytes((i * 29 + 7) & 0xFF for i in range(768))
+    new = bytearray(sregs)
+    new[5] ^= 0xFF
+
+    def sreg_job(r, d):
+        # the engine's side of a register write: on a board whose registers aren't protected regions (a real board's
+        # factory calibration is, and the tool refuses it first: f4stub.py --self-test)
+        keep = f4stub.BOARDS[r.board].get("protect", [])
+        f4stub.BOARDS[r.board]["protect"] = []
+        try:
+            return sreg_steps(r, d)
+        finally:
+            f4stub.BOARDS[r.board]["protect"] = keep
+
+    def sreg_steps(r, d):
+        sr2, first = r.sreg_read_all()
+        written = r.sreg_write(bytes(new), d)
+        locked = bytearray(new)
+        locked[600] ^= 0xFF
+        try:
+            r.sreg_write(bytes(locked), d)
+            tool = "written"
+        except f4stub.F4Error:
+            tool = "refused"
+        try:
+            r.request(f4stub.OP_SWRITE, bytes([3]) + f4stub.MAGIC.to_bytes(4, "big") + bytes(256), retries=0)
+            stub = "written"
+        except stubtool.DumpError as e:
+            stub = str(e)
+        return sr2, first, written, tool, stub
+
+    out, (sr2, first, written, tool, stub), log = run(sim, bytes(flash), sreg_job, want_spi="sreg")
+    out, sreg_out = out
+    check(sr2 == 0x22 and f4stub.F4Radio.sreg_locks(sr2) == [False, False, True], "status register 2: LB3 %02X" % sr2)
+    check(first == sregs, "security registers read through the real engine")
+    check(written == [1] and log.count("sreg ") == 1 and sreg_out == bytes(new), "only register 1 written %s" % written)
+    check(tool == "refused" and "status 0x0F" in stub, "locked register 3: the tool and the engine refuse (%s)" % stub)
 
     # Other wiring (f4stub's test profile): its board record reaches the engine (SPI2, mode 3, chip select PB12), then
     # an install in sectors 3-7

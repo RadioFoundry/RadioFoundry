@@ -11,6 +11,7 @@
 #include "radio/scan.h"
 #include "radio/battery.h"
 #include "radio/morse.h"
+#include "radio/radio_cwid.h"
 #if CONFIG_APRS
 #include "aprs/aprs.h"
 #endif
@@ -19,6 +20,7 @@
 #include "settings/settings.h"	// SETTINGS_ROAM_ZONE_BYTES
 #endif
 
+#define RADIO_SM_CW		(CONFIG_HOTSPOT || CONFIG_SFR_CWID)	// the CW keyer (radio_sm.c)
 #define RADIO_POLL_MS		25	// status poll and squelch period
 #define RADIO_TICK_MS		10	// DMR call stack poll (radio_sm_tick)
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
@@ -225,6 +227,7 @@ typedef struct {
 	uint8_t base_ts;
 	uint8_t base_mode;
 	uint8_t temp_ts;		// a timeslot chosen for now (RREQ_DMR_TS), 0 = none
+	uint8_t ts_pending;		// RREQ_DMR_TS that came during a transmission without PTT: applied at its end
 	uint8_t board_mode;		// radio_mode_t the board was last put in
 	uint8_t vol_step;		// the volume step of a radio without a knob
 	int8_t vol_override;		// the debug link's step over the knob, -1 = none
@@ -305,7 +308,7 @@ typedef struct {
 	uint32_t save_ms;		// start of the current sleep / wake
 #endif
 	uint32_t codeplug_serial;	// codeplug_serial() when the zone and channel were last read
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 	uint32_t zone_shifts;		// zone_edit_shifts() when the zone indexes below were last followed (zone_edit.h)
 #endif
 	bool reload_pending;		// RREQ_RELOAD came while busy
@@ -317,6 +320,9 @@ typedef struct {
 	bool codec;			// the vocoder is present
 	bool dmr_running;		// the call stack has the modem
 	bool dmr_keyed;			// board.radio->tx() armed the per-burst keying (until tx_off)
+	bool sfr_rpt;			// the channel's SFR repeater role has the modem (radio_sfr.c), not the call stack
+	bool sfr_denied;		// a repeater channel kept ordinary because the radio may not transmit or a scan
+					// runs: the role starts once it may (TX inhibit cleared, the scan stopped)
 	uint32_t own_id;		// the radio's DMR ID (codeplug, else RADIO_DMR_ID_DEFAULT)
 	uint32_t dmr_serial;		// call stack view serial last copied
 	uint32_t talk_id;		// the channel's talk target
@@ -356,13 +362,17 @@ typedef struct {
 	uint32_t hs_rx_hz, hs_tx_hz;	// hotspot frequencies
 	uint8_t hs_power;		// hotspot board power level
 	bool hs_carrier;		// hotspot: the receiver hears a carrier
-#if CONFIG_HOTSPOT
-	uint8_t cw_phase;		// hotspot CW ID: CW_* in radio_sm.c, 0 = not keying
+#if RADIO_SM_CW
+	uint8_t cw_phase;		// a CW ID: CW_* in radio_sm.c, 0 = not keying
 	morse_t cw;
 	uint32_t cw_ms;			// start of the current phase
 	uint32_t cw_start_ms;		// carrier up
 	uint16_t cw_tone_hz;
 	bool cw_key;			// the tone keyed now
+	bool cw_sfr;			// the SFR repeater's ID (CONFIG_SFR_CWID), not the hotspot's
+#endif
+#if CONFIG_SFR_CWID
+	radio_cwid_t cwid;		// the SFR repeater's ID schedule (the counts are in view.dmr)
 #endif
 #endif
 #if CONFIG_DMR_ROAMING

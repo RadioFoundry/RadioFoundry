@@ -55,7 +55,7 @@ Offsets from 0x11000000. Values are the ones the driver writes unless noted.
 | 0x104 | RF_MODE | b25 phase_avg_en; b24 af_mode; b23:16 AF gain (n/16); b15 RX IQ invert; b14:13 RX mode; b12 dynamic sync threshold; b11 use_dual_phy (second timeslot receive channel, 2.1a); b9 soft ramp; b7 TX IQ invert / deviation mapping; b6:5 TX mode (3 = two-point) | **0x03269860**: AF receive on with averaging, gain 0x26 (2.375), RX IQ inverted, dynamic sync threshold, b11 set (2.1a), two-point modulation | Written once at init and left in both modes. Do not switch to 0x03269060 (b11 clear) in DMR |
 | 0x108 | SIG_CENTER | b31:24 TX I bias, b23:16 TX Q bias, b15:8 / b7:0 RX I/Q bias | (cal << 24) or (cal << 16) | TX center from factory calibration (board-specific) |
 | 0x10C | TX_IF_FREQ | b23:0 | 0x0BB800 (reset value) | |
-| 0x110 | RF_CONTROL | b20:16 tx_pre_on (100 us steps); b13:8 rf_pre_on_tx (RF TX interrupt advance, 100 us); b5:0 rf_pre_on_rx | **0x00041F1A**: tx_pre_on 0.4 ms, RF TX interrupt **3.1 ms** before the TX burst, RF RX interrupt 2.6 ms before RX | 0x00040A0A (1.0 ms) gave bad timeslots at low power. b13:8 is per board (`hrc7000_t.rf_tx_lead`): a board whose 3.1 ms clipped the inbound burst before ours uses 0x14 (2.0 ms) |
+| 0x110 | RF_CONTROL | b20:16 tx_pre_on (100 us steps); b13:8 rf_pre_on_tx (RF TX interrupt advance, 100 us); b5:0 rf_pre_on_rx | **0x00041F1A**: tx_pre_on 0.4 ms, RF TX interrupt **3.1 ms** before the TX burst, RF RX interrupt 2.6 ms before RX | 0x00040A0A (1.0 ms) gave bad timeslots at low power. b13:8 is per board (`hrc7000_t.rf_tx_lead`): a board whose 3.1 ms clipped the inbound burst before ours uses a shorter lead: 0x14 (2.0 ms), 0x06 (0.6 ms) or 0x04 (0.4 ms), each from a sweep on that board (the boards' hardware pages) |
 | 0x114 | RF_MOD_BIAS_CTRL | b25:16 two_point_bias; b15:8 sig_reduce (Mod2 amplitude); b7:0 phase_reduce (Mod1 amplitude) | ((cal + 384) << 16) or modcal (0x4D4D before a frequency is set) | Modulation balance from calibration |
 | 0x118 | DEV_LIMITER | b15:0 | 0xFF00 (reset value) |
 | 0x11C | RSSI_BIAS_VALUE | read-only per the datasheet: rssi b31:16; b15:8 / b7:0 the measured DC bias of the ADC's I / Q inputs | 0x1381 is written (no effect expected) |
@@ -518,7 +518,7 @@ Ordered; (register, value, why). The whole DMR block is written once here and no
 | 4 | FM_BANDWIDTH (0x500) | 0x5F | FM wideband defaults |
 | 5 | FM_DEV_COEF (0x504) | 0x33500 | FM deviation defaults (overwritten per TX/RX) |
 | 6 | SYS_SOFT_RSTN (0x000) | clear bit 4, wait 2 us | codec reset pulse |
-| 7 | codec AICR_DAC, AICR_ADC, CR_MIC1, CR_MIC2, CR_DAC, CR_ADC, CR_VIC, CR_CK, GCR_DACL, GCR_MIC1, GCR_ADCL, CR_DAC_AGC, CR_ADC_AGC, DR_ADC_AGC | 0xC0, 0xC0, 0x00, 0x70, 0x20, 0x20, 0x0C, 0x40, 0x80, 0x00, 0x8B, 0, 0, 0x34 | audio codec on, mic input 2, gains (board-specific) |
+| 7 | codec AICR_DAC, AICR_ADC, CR_MIC1, CR_MIC2, CR_DAC, CR_ADC, CR_VIC, CR_CK, GCR_DACL, GCR_MIC1, GCR_ADCL, CR_DAC_AGC, CR_ADC_AGC, DR_ADC_AGC | 0xC0, 0xC0, 0x00, 0x70, 0x20, 0x20, 0x0C, 0x40, 0x80 (with the line out gain, 0 dB unless set), 0x00, 0x8B, 0, 0, 0x34 | audio codec on, mic input 2, gains (board-specific) |
 | 8 | LINEOUT_CTRL (0x088) | 0x01 | speaker line out on |
 | 9 | SIG_CENTER | (cal << 24) or (cal << 16) | TX I/Q center |
 | 10 | RF_MOD_BIAS_CTRL | ((cal + 384) << 16) or 0x4D4D | modulation balance until a TX frequency is known |
@@ -583,6 +583,7 @@ A sequence of TXRX 0xC00000, 0, 0xC00000, 0x8040 with no SLOTON writes, or a bus
 |---|---|
 | System interrupt, bit 3 (deframe) while idle, good CRC, wanted CC | start following: TXRX_CTRL = 0x40 for the next slot (0x8040 here does not work) |
 | Each TX/RX timeslot interrupt while following one slot | alternate: our slot → TXRX = 0x8040 (receive, voice-access flag) for the next; other slot → 0x00 |
+| RadioFoundry: each RX timeslot interrupt | TXRX = 0x8040 for the coming chip slot when a voice header or voice burst came on it in the last 390 ms (no terminator since), else 0x40. Both slots can have it: an SFR user hears the talker and the repeat. Without the flag the chip leaves the voice RAM as it was, and the burst reads the last one decoded (gotchas 14.15) |
 | Voice deframe | read RX_TYPE_INFO, 27 bytes from the voice RAM; burst number from bits 14:12; LC header / terminator / CSBK / data from the RX RAM |
 | BS sync received (recv_sync_type 1) | the other side is a repeater: track the TC bit (RX_TYPE_INFO b22) to find which slot is ours. Locked after 4 bursts in a row, one per slot, with TC alternating; held while a burst came in the last 390 ms. RX_TYPE_INFO b19 and LAYER2_STATUS b30/b31 are not usable for this |
 | Color-code scan | set LOCAL_CC to the received CC, then LAYER2_CONTROL = 0xC0 and, in repeater mode, the 5.2 restart steps 4–7 (no busy wait) |
@@ -699,7 +700,7 @@ information bits in the RX RAM.
 
 | Mode | Writes |
 |---|---|
-| FM receive | FM_BANDWIDTH and FM_DEV_COEF for the bandwidth; FM_PTT = 0; AUDIO_CONTROL = 0x40; GCR_DACL = 0x80 (0 dB); DAC_PD_CTRL bit 1 set (PA drive DAC off); WORK_MODE = 0x80 |
+| FM receive | FM_BANDWIDTH and FM_DEV_COEF for the bandwidth; FM_PTT = 0; AUDIO_CONTROL = 0x40; GCR_DACL = 0x80 with the board's line out gain (`hrc7000_set_dac_gain`, 0 dB unless a soft volume set it); DAC_PD_CTRL bit 1 set (PA drive DAC off); WORK_MODE = 0x80 |
 | FM transmit | FM_BANDWIDTH and FM_DEV_COEF for the bandwidth; DAC_PD_CTRL bit 1 cleared; WORK_MODE = 0x80; FM_PTT = 1. Board: mic switch to analog, RF chip to TX, PA select, DAC B drive |
 | FM audio on / off in DMR context | AUDIO_CONTROL b6 set and WORK_MODE = 0x80 / b6 cleared and WORK_MODE = 0x6E |
 | Mute mic / line out | codec CR_ADC b7 / CR_DAC b7 = 1 |

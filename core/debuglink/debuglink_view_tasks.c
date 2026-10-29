@@ -51,6 +51,11 @@ void debuglink_view_tasks(dl_text_t *t)
 	unsigned n = task_stack_snapshot(ts, TASK_STACK_MAX, &untracked);
 
 	debuglink_view_tasks_format(ts, n, untracked, t);
+	// The heap the stacks come from: what a radio with little RAM keeps spare (boards/<radio>/freertos_board.h)
+	uint32_t heap_free = 0, heap_least = 0;
+
+	task_stack_heap(&heap_free, &heap_least);
+	dl_text(t, "tasks.heap_free=%u\ntasks.heap_min_free=%u\n", (unsigned)heap_free, (unsigned)heap_least);
 #else
 	dl_text(t, "tasks.built=0\n");
 #endif

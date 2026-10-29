@@ -1,16 +1,20 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-1701 vocoder: the stock V02.06 AMBE+2 codec run in place from flash (docs/spec/codec-placement.md, "STM32 radios";
+// DM-1701 vocoder: the radio's own AMBE+2 codec run in place from flash (docs/spec/codec-placement.md, "STM32 radios";
 // the codec: docs/spec/codec-dm1701.md, "Codec state init and calls (stock V02.06)").
 //
-// The merge on the user's machine (rfoundry, tools/codec_extract.py, the web flasher) writes the codec's tables at their
-// stock address (0x080D19F0..0x080E3A72, the codec's own data), its code right after them at 0x080E3A74, and the
-// descriptor at the end of sector 11 (platform/stm32f4/codec_desc.h). The code reaches its tables through absolute
-// addresses, which don't change. The merge rewrites what does: one pointer into the code and the 12 calls from the code
-// that stock keeps in the table window back into the code (the codec map). None of it is part of this repository or a
-// release. The calls and the checks are the shared ones (platform/stm32f4/hrc/vocoder.c); this file says which build and
-// where. Without a valid descriptor and codec, present() is false and the radio is FM only.
-#include "dm1701.h"
+// The merge on the user's machine (rfoundry, tools/codec_extract.py, the web flasher) writes the codec's tables at
+// their stock address (0x080D19F0..0x080E3A72 from V02.06 CSV, the codec's own data), its code right after them at
+// 0x080E3A74, and the descriptor at the end of sector 11 (platform/stm32f4/codec_desc.h). The code reaches its tables
+// through absolute addresses, which don't change. The merge rewrites what does: one pointer into the code and the 12
+// calls from the code that stock keeps in the table window back into the code (the codec map). V02.01, V02.02 and
+// V02.03 CSV carry the same codec 0x40 lower, and the merge places it the same way, 0x40 lower. The V02.06 and V02.03
+// noCSV files carry it higher (tables from 0x080D4794 and 0x080D4754), and the merge places it the same way after
+// its tables. The MD-9600 files carry the same codec; the merge moves their tables into sectors 10 and 11 with the code (below).
+// None of it is part of this repository or a release. The calls and the checks are the shared ones
+// (platform/stm32f4/hrc/vocoder.c); this file says which build and where. Without a valid descriptor and codec,
+// present() is false and the radio is FM only.
+#include "../uv380_family/uvf.h"
 #include "config.h"
 
 #if CONFIG_DMR	// the whole file: DMR only
@@ -30,18 +34,244 @@
 
 static const codec_desc_window_t tables[] = { { CODEC_TABLES, CODEC_TABLES_LEN, CODEC_TABLES_CRC } };
 
-// The id tools/rfoundry and the release manifests use for this codec: V02.06 CSV placed as above (the descriptor and
-// both CRCs matched). A build from before the move reports "dm1701-v0206-csv", which tells rfoundry that the codec
-// isn't where this layout keeps it
+// The id tools/rfoundry and the release manifests use for a codec placed as these profiles say (the descriptor and
+// every CRC matched; stockfw.py DM1701_CODEC): one for every build, named after V02.06 CSV, the first. The radio keeps
+// its codec across updates going forward only: a release older than the one that added a build's profile doesn't know
+// its tag and finds no codec. A build from before the move reports "dm1701-v0206-csv", which tells rfoundry that the
+// codec isn't where this layout keeps it
+#define CODEC_ID		"dm1701-v0206-csv-s11"
+
+// Not used: encode ECC +0x4E8 and FEC decode +0xB54. The air frame FEC is ours (core/dmr/ambe) and matches stock's
+#define ENTRIES { .encode = 0x130, .decode = 0x5D8, .enc_init = 0x284, .fec_init = 0x4CC, .dec_init = 0x6D0, \
+		.enc_params = 0x848, .enc_set = 0x1C0, .dec_set = 0x688 }
+
 static const stm32_codec_profile_t v0206 = {
-	.tag = CODEC_TAG, .id = "dm1701-v0206-csv-s11", .flash_lo = CODEC_FLASH_LO,
+	.tag = CODEC_TAG, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
 	.code = CODEC_CODE, .code_len = CODEC_CODE_LEN, .code_crc = CODEC_CRC, .tables = tables, .windows = 1,
-	// Not used: encode ECC +0x4E8 and FEC decode +0xB54. The air frame FEC is ours (core/dmr/ambe) and matches stock's
-	.at = { .encode = 0x130, .decode = 0x5D8, .enc_init = 0x284, .fec_init = 0x4CC, .dec_init = 0x6D0,
-		.enc_params = 0x848, .enc_set = 0x1C0, .dec_set = 0x688 },
+	.at = ENTRIES,
 };
 
-static const stm32_codec_profile_t *const profiles[] = { &v0206 };
-const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 1 };
+// V02.01, V02.02 and V02.03 CSV: one codec at the same addresses in all three files, so one tag (stockfw.py, "placed");
+// the same entry offsets as V02.06
+static const codec_desc_window_t v0203_tables[] = { { 0x080D19B0u, 0x12082u, 0x811EC3C0u } };
+static const stm32_codec_profile_t v0203 = {
+	.tag = 0x0203u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E3A34u, .code_len = 0x1021Cu, .code_crc = 0x99B02204u, .tables = v0203_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// V02.06 and V02.03 noCSV: the codec 0x29DC (code) and 0x2DA4 (tables) above the CSV file's of the same version, the
+// code 0x1C bytes shorter, the tables' codec data 0x10 longer; the same entry offsets. Tag bit 16 marks noCSV
+static const codec_desc_window_t v0206n_tables[] = { { 0x080D4794u, 0x12092u, 0x3EDE91FFu } };
+static const stm32_codec_profile_t v0206n = {
+	.tag = 0x10206u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E6828u, .code_len = 0x10200u, .code_crc = 0xAF82F7D0u, .tables = v0206n_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t v0203n_tables[] = { { 0x080D4754u, 0x12092u, 0x217E610Au } };
+static const stm32_codec_profile_t v0203n = {
+	.tag = 0x10203u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E67E8u, .code_len = 0x10200u, .code_crc = 0x96264D90u, .tables = v0203n_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// The TYT MD-9600 files (stockfw.py, "file_radio"): the same codec, linked elsewhere; an open-firmware install leaves
+// it on the radio. Its stock tables sit in this radio's application flash, so the merge moves them with the code
+// (codecmap.move_window): the tables from 0x080D0000, the code after them. Tag 0x96VVxxxx: VV the variant (0 CSV,
+// 1 CSV-GPS, 2 REC, 3 GPS-REC), xxxx the version. The same entry offsets (the FEC decode differs; it isn't used)
+static const codec_desc_window_t md1645_tables[] = { { 0x080D02BCu, 0x11036u, 0xD4FB8040u } };
+static const stm32_codec_profile_t md1645 = {
+	.tag = 0x96001645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2C98u, .code_len = 0xF214u, .code_crc = 0x07D97C60u, .tables = md1645_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md1645p_tables[] = { { 0x080D0A7Cu, 0x110B6u, 0x53687A8Cu } };
+static const stm32_codec_profile_t md1645p = {
+	.tag = 0x96011645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2434u, .code_len = 0xF238u, .code_crc = 0xDB9C6525u, .tables = md1645p_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md1645d_tables[] = { { 0x080D0820u, 0x11046u, 0x407C8912u } };
+static const stm32_codec_profile_t md1645d = {
+	.tag = 0x96021645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2E38u, .code_len = 0xF234u, .code_crc = 0x5C29A9B4u, .tables = md1645d_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md1645s_tables[] = { { 0x080D0FE0u, 0x110C6u, 0x2E4B09C6u } };
+static const stm32_codec_profile_t md1645s = {
+	.tag = 0x96031645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E3630u, .code_len = 0xF1FCu, .code_crc = 0x7E5C1170u, .tables = md1645s_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md0609_tables[] = { { 0x080D013Cu, 0x10FE6u, 0x028B006Au } };
+static const stm32_codec_profile_t md0609 = {
+	.tag = 0x96000609u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2B18u, .code_len = 0xF214u, .code_crc = 0x51334F80u, .tables = md0609_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md0609p_tables[] = { { 0x080D06FCu, 0x11066u, 0x9E0642E5u } };
+static const stm32_codec_profile_t md0609p = {
+	.tag = 0x96010609u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E20B8u, .code_len = 0xF234u, .code_crc = 0x7C7A0876u, .tables = md0609p_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md0609d_tables[] = { { 0x080D0660u, 0x10FF6u, 0x8EFB3BDFu } };
+static const stm32_codec_profile_t md0609d = {
+	.tag = 0x96020609u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2C9Cu, .code_len = 0xF210u, .code_crc = 0x53A7AF3Bu, .tables = md0609d_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md0609s_tables[] = { { 0x080D0C60u, 0x11076u, 0x4758C9EEu } };
+static const stm32_codec_profile_t md0609s = {
+	.tag = 0x96030609u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2280u, .code_len = 0xF22Cu, .code_crc = 0xB54871EEu, .tables = md0609s_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-CSV(2571V5)-V26.45.bin V26.45 CSV
+static const codec_desc_window_t xmd9600v2645csv_tables[] = {
+	{ 0x080D09BCu, 0x11036u, 0xDA6E4D8Du },
+};
+static const stm32_codec_profile_t xmd9600v2645csv = {
+	.tag = 0x96002645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E237Cu, .code_len = 0xF22Eu, .code_crc = 0x0095F077u, .tables = xmd9600v2645csv_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-CSV-V06.24.bin V06.24 CSV
+static const codec_desc_window_t xmd9600v0624csv_tables[] = {
+	{ 0x080D02BCu, 0x10FE6u, 0x337667F2u },
+};
+static const stm32_codec_profile_t xmd9600v0624csv = {
+	.tag = 0x96000624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2C78u, .code_len = 0xF232u, .code_crc = 0xF977B4D6u, .tables = xmd9600v0624csv_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-CSV-GPS-P06.24.bin P06.24 CSV-GPS
+static const codec_desc_window_t xmd9600v0624gpscsv_tables[] = {
+	{ 0x080D09FCu, 0x11066u, 0x2D8040A6u },
+};
+static const stm32_codec_profile_t xmd9600v0624gpscsv = {
+	.tag = 0x96010624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E23CCu, .code_len = 0xF21Eu, .code_crc = 0x25094D99u, .tables = xmd9600v0624gpscsv_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-GPS-REC-S06.24.bin S06.24 GPS-REC
+static const codec_desc_window_t xmd9600v0624gpsrec_tables[] = {
+	{ 0x080D0F60u, 0x11076u, 0x49D18C19u },
+};
+static const stm32_codec_profile_t xmd9600v0624gpsrec = {
+	.tag = 0x96030624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2594u, .code_len = 0xF216u, .code_crc = 0x69B987A1u, .tables = xmd9600v0624gpsrec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-REC-D06.24.bin D06.24 REC
+static const codec_desc_window_t xmd9600v0624rec_tables[] = {
+	{ 0x080D07E0u, 0x10FF6u, 0xDDBD5036u },
+};
+static const stm32_codec_profile_t xmd9600v0624rec = {
+	.tag = 0x96020624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2DFCu, .code_len = 0xF22Eu, .code_crc = 0x05F34587u, .tables = xmd9600v0624rec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-CSV(V4)-V16.24.bin V16.24 CSV
+static const codec_desc_window_t xmd9600v1624csv_tables[] = {
+	{ 0x080D05FCu, 0x10FE6u, 0x8C4CD107u },
+};
+static const stm32_codec_profile_t xmd9600v1624csv = {
+	.tag = 0x96001624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2FB0u, .code_len = 0xF23Au, .code_crc = 0xE413CEF1u, .tables = xmd9600v1624csv_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-CSV-GPS(V4)-P16.24.bin P16.24 CSV-GPS
+static const codec_desc_window_t xmd9600v1624gpscsv_tables[] = {
+	{ 0x080D0D3Cu, 0x11066u, 0x1BA5D665u },
+};
+static const stm32_codec_profile_t xmd9600v1624gpscsv = {
+	.tag = 0x96011624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2704u, .code_len = 0xF226u, .code_crc = 0xB2F7AB22u, .tables = xmd9600v1624gpscsv_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-GPS-REC(V4)-S16.24.bin S16.24 GPS-REC
+static const codec_desc_window_t xmd9600v1624gpsrec_tables[] = {
+	{ 0x080D02A0u, 0x11076u, 0xFC643CC9u },
+};
+static const stm32_codec_profile_t xmd9600v1624gpsrec = {
+	.tag = 0x96031624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E28CCu, .code_len = 0xF21Eu, .code_crc = 0x111C3DB7u, .tables = xmd9600v1624gpsrec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-REC(V4)-D16.24.bin D16.24 REC
+static const codec_desc_window_t xmd9600v1624rec_tables[] = {
+	{ 0x080D0B20u, 0x10FF6u, 0x82E6D100u },
+};
+static const stm32_codec_profile_t xmd9600v1624rec = {
+	.tag = 0x96021624u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2134u, .code_len = 0xF236u, .code_crc = 0x4FD7EB93u, .tables = xmd9600v1624rec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-CSV-GPS(2571V5)-P26.45.bin P26.45 CSV-GPS
+static const codec_desc_window_t xmd9600v2645gpscsv_tables[] = {
+	{ 0x080D013Cu, 0x110B6u, 0x230044ABu },
+};
+static const stm32_codec_profile_t xmd9600v2645gpscsv = {
+	.tag = 0x96012645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2B18u, .code_len = 0xF212u, .code_crc = 0x757367A4u, .tables = xmd9600v2645gpscsv_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-GPS-REC(2571V5)-S26.45.bin S26.45 GPS-REC
+static const codec_desc_window_t xmd9600v2645gpsrec_tables[] = {
+	{ 0x080D06E0u, 0x110C6u, 0x960E46C6u },
+};
+static const stm32_codec_profile_t xmd9600v2645gpsrec = {
+	.tag = 0x96032645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2D14u, .code_len = 0xF216u, .code_crc = 0xD772D25Bu, .tables = xmd9600v2645gpsrec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-REC(2571V5)-D26.45.bin D26.45 REC
+static const codec_desc_window_t xmd9600v2645rec_tables[] = {
+	{ 0x080D0EE0u, 0x11046u, 0x5D4334F8u },
+};
+static const stm32_codec_profile_t xmd9600v2645rec = {
+	.tag = 0x96022645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E251Cu, .code_len = 0xF20Eu, .code_crc = 0x3CE9E9D7u, .tables = xmd9600v2645rec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+// MD9600-REC(2571V4)-D26.57.bin D26.57 REC
+static const codec_desc_window_t xmd9600v2657rec_tables[] = {
+	{ 0x080D05E0u, 0x11032u, 0x782C12BEu },
+};
+static const stm32_codec_profile_t xmd9600v2657rec = {
+	.tag = 0x96022657u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2C3Cu, .code_len = 0xF1EEu, .code_crc = 0x24D32768u, .tables = xmd9600v2657rec_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const stm32_codec_profile_t *const profiles[] = {
+	&v0206, &v0203, &v0206n, &v0203n,
+	&md1645, &md1645p, &md1645d, &md1645s, &md0609, &md0609p, &md0609d, &md0609s,
+	&xmd9600v2645csv,
+	&xmd9600v0624csv, &xmd9600v0624gpscsv, &xmd9600v0624gpsrec, &xmd9600v0624rec, &xmd9600v1624csv, &xmd9600v1624gpscsv, &xmd9600v1624gpsrec, &xmd9600v1624rec, &xmd9600v2645gpscsv, &xmd9600v2645gpsrec, &xmd9600v2645rec, &xmd9600v2657rec,
+};
+const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 25 };
 
 #endif	// CONFIG_DMR

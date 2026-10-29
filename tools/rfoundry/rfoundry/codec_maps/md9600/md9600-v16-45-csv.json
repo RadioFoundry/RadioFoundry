@@ -4,8 +4,8 @@
  "board": "md9600",
  "isa": "thumb2",
  "stock": {
-  "name": "md9600-v16.45-csv.bin",
-  "version": "md9600-v16-45-csv",
+  "name": "MD9600-CSV(V4)-V16.45.bin",
+  "version": "V16.45 CSV",
   "sha256": "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532"
  },
  "code": {

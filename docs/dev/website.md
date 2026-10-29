@@ -16,33 +16,38 @@ python3 site/build.py --strict              # any warning fails (CI)
 site/tests/run.sh                           # the flasher's and the editor's tests (Node 20+)
 ```
 
-The generator needs one Python package, markdown-it-py (`pip install -r site/requirements.txt`, or prefix the
+The generator needs two Python packages, markdown-it-py and resvg_py (`pip install -r site/requirements.txt`, or prefix the
 command with `uv run --no-project --with-requirements site/requirements.txt`). The pages need no build step and no
 npm packages: plain HTML, CSS and ES modules. `tools/ci.sh` builds the site and runs the tests (Python step).
 
-`.github/workflows/site.yml` builds it and deploys it to radiofoundry.org (see [Hosting](#hosting)):
+Cloudflare Pages builds and deploys it (see [Hosting](#hosting)):
 
-| Run | Does |
+| Event | Does |
 |---|---|
-| Nightly (07:17 UTC) | Builds and deploys only if something changed since the last deployment: a file the site is built from (`SITE_INPUTS` in the workflow), or a release published after it. Otherwise stops after the check |
-| By hand (Actions > Web site > Run workflow) | Always builds and deploys |
-| Pull request | Not run: the pull request's unit tests job builds the site (`--strict`) and runs the flasher's tests (`tools/ci.sh`'s Python step) |
+| Push to `main` | Builds the site with `site/cloudflare-build.sh` and deploys it to radiofoundry.org |
+| Push to another branch of this repository | Builds a preview at its own `*.radiofoundry.pages.dev` address; a pull request shows the link. Pull requests from forks get no preview |
+| Release published | `.github/workflows/site.yml` calls the project's deploy hook, so `main` is built again with the new release's images for the flasher |
+| By hand | Actions > Web site > Run workflow (the same deploy hook), or Retry deployment in the Pages project |
 
-A merge or a release therefore shows on the site the next morning, or right away when the workflow is run by hand.
+The pull request's unit tests job also builds the site (`--strict`) and runs the flasher's tests (`tools/ci.sh`'s
+Python step).
 
 ## Hosting
 
-The site is static files. nginx serves them from `/var/www/radiofoundry/current`, a symlink to one directory under
-`releases/`. The workflow's `build` job uploads the finished site as an artifact. Its `deploy` job runs on a
-self-hosted runner labeled `rfoundry-deploy`, which sits on the host that serves the site. The job copies the build
-into a new `releases/<sha>-<run>` directory, swaps the symlink in one step and keeps the last three builds.
-Only the nightly and manual runs reach that runner, never a pull request.
+The site is static files on Cloudflare Pages, project `radiofoundry`, connected to this repository through
+Cloudflare's GitHub app. Pages builds in its own build image (Python and Node.js preinstalled) and switches the site to
+a new deployment in one step, so a deployment has no downtime.
 
 | Part | Setup |
 |---|---|
-| nginx | One server block on port 80 with `root /var/www/radiofoundry/current`. TLS and the public name are the reverse proxy's and the CDN's |
-| Runner | A user without sudo that owns `/var/www/radiofoundry`, with a runner registered for the repository with the label `rfoundry-deploy` |
-| Roll back | Point `current` at an earlier directory in `releases/` (`ln -sfn releases/<id> current.new && mv -T current.new current`) |
+| Build | Command `site/cloudflare-build.sh`, output directory `build/site`, root directory the repository root. The script installs `site/requirements.txt`, lists the releases through the GitHub API, fetches the `rfoundry-*` images of the newest one that is not a pre-release, passes the newest pre-release (a `bN` tag) when it is newer than that (`--beta`), and runs `site/build.py --strict`. A failed build leaves the last deployment up |
+| Branches | Production branch `main`; every other branch of this repository builds a preview |
+| Variables | `PYTHON_VERSION` `3.12` (both environments). `RFOUNDRY_SENTRY_DSN` in production only, so previews send no error reports. `GITHUB_TOKEN` (encrypted, both environments): a fine-grained token with read-only access to public repositories. Without it the release lookup shares the builders' 60 requests an hour, and a build can fail with 403 "rate limit exceeded" after a minute of retries |
+| Custom domain | `radiofoundry.org` on the project (Custom domains). The `www` name redirects to it |
+| Release rebuild | The project's deploy hook, as `CLOUDFLARE_DEPLOY_HOOK` in the `site` environment (main and release tags only), which `site.yml` calls |
+| Analytics | Cloudflare Web Analytics, turned on in the project's Metrics tab. Pages adds the beacon to each deployment; it sets no cookies |
+| 404 | Pages serves the build's `404.html` for a missing page |
+| Roll back | The project's Deployments list: Rollback on an earlier production deployment |
 
 ## Sources
 
@@ -52,6 +57,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 |---|---|
 | Radios, their order and status | The board registry, `boards/<radio>/board.toml` (`tools/boards.py json --for site`). `order` sorts them; the lowest is the home page's radio |
 | Planned radios | The rows of the [radio survey](../spec/radios.md) "Summary table" that name no board, by their Port cell (`tools/registry_docs.py`): `Planned`, `Planned, hardware needed`, `In progress, #N` (badge "In progress", linked to the pull request) or `Not planned` (not listed), each with an optional `. note` |
+| A radio's cards | One card per board, then one per `looks` entry of its board.toml (another body the board ships in), each with its own drawing and the radios in that body; a look's card links to the board's page. The board's card lists the radios not moved to a look |
 | A radio's one-line note for visitors | board.toml `[status] summary`, the same line the README and the user manual show; a catalog may translate it as `radio.note.<radio>`. A planned radio's: the note of its Port cell, which a catalog may translate as `planned.note.<slug of the survey name>` |
 | A radio's name, bands, processor, screen, bootloader steps, flash backend, codeplug location | board.toml, the CPU from `platform/<p>/platform.toml`, the backend from the `[flash] family`, the codeplug location from the board's `hal_flash_map_t` |
 | A radio's status badge (Supported, In development) | board.toml `[status] level`: `supported` reads Supported, `testing` and `bring-up` read In development |
@@ -59,17 +65,37 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Feature names, help, dependencies | `config/features.mk` (the comment above each switch, the `needs` checks) |
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
-| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has |
+| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has. The Screenshots page (`/screenshots/`) shows every screen each radio's build has, a section per board, under the `groups` headings of `screens.json`, in its order. The home page's carousel lists its screens in `site/templates/home.html`, from every gallery, one height |
 | Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/rfoundry/rfoundry/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
 
 The build fails when a source doesn't parse, and warns (an error with `--strict`) when a feature has no row in the
-feature matrix, a screen isn't in `screens.json`, a string is missing from the English catalog, or a page links to a
-file the build didn't write.
+feature matrix, a screen isn't in `screens.json` or names a group it doesn't list, a string is missing from the English
+catalog (a screen's caption included), the Screenshots page lacks a board or a screen that board's build has, or a page
+links to a file the build didn't write.
 
 `data/*.json` is what the pages read and doubles as a public API for other tools: `radios.json`, `features.json`,
 `variants.json`, `flash-boards.json`, `screens.json`, `releases.json`, `site.json`.
+
+## The Screenshots page
+
+`/screenshots/` has a section per board, from the registry in its order, and a link per board at the top. Each section
+shows every shot in the board's gallery whose `screens.json` entry needs only switches the board's full build has (the
+radio page's six use the same test). A board's screens are one width: a gallery 160 pixels wide or less at twice its
+size (`image-rendering: pixelated`), a wider one as it is. A color page's shots in other highlight colors and themes
+(`<page>__<color>`) follow the page, hidden until the visitor ticks "Also show other highlight colors and themes" (CSS
+`:has()`, no script). `site.js` switches sections without reloading and keeps the address `#<radio>`, so a link can
+name a radio (each radio page links to its own). Without the script, CSS shows the section the address names
+(`:target`), else the first.
+
+Nothing on the page names a screen, a group or a radio:
+
+| To add | Touch |
+|---|---|
+| A screen | `tests/host/uiSim.c` (`gallery[]`) and `make -C tests/host ui-gallery`; its entry in `site/data/screens.json` (group, needs); its caption `screen.<name>` in `site/i18n/en.json` |
+| A group | `groups` in `screens.json` and its heading `screens.group.<group>` in `en.json` |
+| A radio | `boards/<radio>/` as [Adding a radio](adding-a-radio.md) says; `board.toml` `hardware.gallery` must name a display class the gallery has (`tools/boards.py check`) |
 
 ## Layout
 
@@ -80,10 +106,12 @@ file the build didn't write.
 | `site/rfoundrysite/build.py` | Assembles the pages and data files |
 | `site/rfoundrysite/docs.py` | `docs/` to HTML: GitHub heading ids, `.md` links to `.html`, links out of `docs/` to the repository |
 | `site/rfoundrysite/device.py` | Radio images: frame, overlay geometry, boot screen composite |
+| `site/rfoundrysite/toolzip.py` | `downloads/rfoundry-tool.zip`: rfoundry from the site's commit for the flasher's manual install kit, with a launcher; `data/site.json` `tool` gives its path, size and SHA-256 ([web-flasher.md](web-flasher.md#the-manual-install-kit)). `site/tests/toolzip_test.py` runs it unpacked |
+| `site/rfoundrysite/social.py` | The link preview image (`static/img/social.png`, every page's `og:image`): each radio with a different screen, rasterized with resvg |
 | `site/rfoundrysite/tmpl.py`, `site/templates/` | Page markup (below) |
 | `site/i18n/` | String catalogs (below) |
 | `site/static/css/tokens.css`, `site.css` | Design tokens, then layout and components |
-| `site/static/js/site.js` | Theme toggle, menu, features filter, screen overlay on radio pages |
+| `site/static/js/site.js` | Theme toggle, menu, features filter, screen overlay on radio pages, the home page's screenshot carousel, the Screenshots page's radio links |
 | `site/static/js/flasher/` | The web flasher (below) |
 | `site/static/js/codeplug/` | Codeplug decoding and encoding, CSV, the radio transport, contacts sources ([codeplug-editor.md](codeplug-editor.md)) |
 | `site/static/js/editor/` | The Codeplug Editor page |
@@ -99,8 +127,15 @@ Markup lives in `site/templates/*.html` and `partials/`, with four kinds of plac
 root (static files, data) and `{{home}}` the path to the root of the page's language (links between pages). Loops
 stay in Python, which renders a partial per item.
 
-Every page's footer ends with a faint build stamp: the commit the site was built from (`-dirty` with uncommitted
-changes, linked to the commit) and the build time in UTC (`data/site.json` has the same commit and the date).
+Every page's footer has two help cards: the community group (`COMMUNITY_URL` in `site/rfoundrysite/build.py`, also
+`community` in `data/site.json`) and the GitHub issues. The web tools' report line under an error (`reportLine()` in
+`static/js/report.js`) links the same two. Their icons are CSS masks (`.icon-*` in `site.css`), drawn in the text
+color.
+
+Every page's footer ends with a faint build stamp: the firmware release the flasher installs (linked to its GitHub
+release; left out before the first release), a Changelog link to the GitHub releases, the commit the site was built from
+(`-dirty` with uncommitted changes, linked to the commit) and the build time in UTC. `data/site.json` has the same
+commit and the date, the release (`release`) and the pre-release offered (`beta`, below).
 
 All visual decisions are variables in `tokens.css`: colors for light and dark, type sizes, spacing, radii.
 `site.css` only uses them. A redesign replaces `tokens.css`, then `site.css` and the templates; the generator doesn't
@@ -170,15 +205,50 @@ photos (the photos stay outside the repository: product photos are not ours to p
   missing. The site build runs the same check, so a drawing that lost its tags fails CI. After drawing or redrawing a
   radio, `tools/svg_keys.py tag <radio>` adds the tags: by the labels in the drawing ("MENU", "1", "*"), then by the
   last tagged version in git, mapped onto the new drawing (edges, the LED, the knob and hit rects come along). It
-  prints each tag and what it couldn't place. Check the result on the web control page before committing;
+  prints each tag and what it couldn't place. Check the result on the web control page before committing. A key's
+  shape has no transform, its own or a group's: the build reads its box from its attributes (below), and the check
+  fails one it can't read;
 - a radio with a keyed hand microphone may have `<radio>-mic.svg` beside its drawing, for the web control page only:
   the same `key-` rule, the ids counted once across both files, and gradient ids of its own (the page puts both
   drawings in one document).
 
+A look (board.toml `looks`) has its drawing in `<radio>-<look id>.svg` beside the board's, under the same rules and
+with the same keys. The build writes its frame and boot-screen files like the board's, and fails when the drawing is
+missing.
+
 The build writes `static/img/radios/<radio>-frame.svg` (screen black), `<radio>.svg` (with the boot screen) and the
 screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages), so any screenshot can be
-laid over the frame; the radio pages do that when a screenshot is clicked. A radio without an illustration gets a
-generic drawing from board.toml `[frame]`.
+laid over the frame; the radio pages do that when a screenshot is clicked. `frame_geometry.keys` has each tagged key's
+box, as percentages of the picture. A radio without an illustration gets a generic drawing from board.toml `[frame]`;
+its handheld shapes tag their side PTT, and the caption names any other key.
+
+The web flasher shows the same frame (`frame_image`) beside every update mode step, for every radio
+(`flasher/radiotop.js`): the bootloader entry steps as the picture alone, the HR_C7000 steps with what the screen shows
+laid over it at `frame_geometry` and an LED swatch that blinks as the real LED does, with a caption in words. Nothing
+in the flasher names a radio: a new board's picture appears with no flasher change. `site/tests/radio_images_test.py`
+(run by `site/tests/run.sh`) renders every board's picture and fails a board without a usable one.
+
+On the bootloader entry steps (the STM32 radios' and the HR_C7000 update mode's), the flasher rings the keys to hold
+on the picture and names them under it ("Hold PTT and SK1"). The keys are `[flash.bootloader] hold` in board.toml,
+by key name, carried to the flasher as `flash.bootloader_hold`; the rings sit at `frame_geometry.keys`, and the labels
+are `flash.key.<name>` in the string catalog (a key without one reads as its name in capitals). The rings are
+decoration: the steps stay the instructions, and a key the picture doesn't show (in `data-undrawn`) is named in the
+caption only. `radio_images_test.py` checks every board: each key to hold is a key of the radio, tagged in its drawing
+and each look's or listed undrawn, with a label; `site/tests/radiotop.test.mjs` checks the marks and the caption.
+
+## Flasher notices
+
+Two notices show on every step of the web flasher once a radio is picked, above the step:
+
+| Notice | Shown when | Text from |
+|---|---|---|
+| Pre-release | The radio's `[status] level` is below `supported`. Says the build is in development, that not every feature may work or has been tried on a radio, and links to the project's GitHub issues to report a bug | The `flash.prerelease.*` strings of `site/i18n/<code>.json` |
+| Board | The board sets `[flash] notice`: a warning for a choice the radio can't check itself | board.toml ([board-registry.md](board-registry.md)) |
+
+One more shows on the start page and the first install step: **Beta**, when `site.json` names a pre-release newer
+than the release (`--beta`, from `site/cloudflare-build.sh`). It links to the same page with `?version=<beta>`, so the
+user opts in through a version link and the build service builds the tag; the default install stays the release. It is
+hidden while a version link is in use. Text: the `flash.beta.*` strings.
 
 ## Error logging and bug reports
 
@@ -195,14 +265,14 @@ Every error also goes to the browser console (`[rfoundry] <stage> failed:`). Fai
 (`static/js/report.js`). It downloads a zip with `report.json` (the log, the browser, the tool's state) and, if the
 user ticks them, the edited codeplug and the one last read from the radio.
 
-Automatic error reports go to Sentry when the build has `RFOUNDRY_SENTRY_DSN` set (`site.yml` takes it from the
-repository variable of the same name; `site.json` `reports.sentry_dsn`). Without it nothing is sent and the privacy
+Automatic error reports go to Sentry when the build has `RFOUNDRY_SENTRY_DSN` set (a production variable of the
+Pages project; `site.json` `reports.sentry_dsn`). Without it nothing is sent and the privacy
 note is left off the pages. With it:
 
 | Sent | When |
 |---|---|
-| The error, its stage and code, the tool's state (radio model, firmware version, task; no codeplug contents) | Every error except ones the user caused (port chooser closed, Stop) |
-| The whole report and any codeplug the user ticked | Only when the user clicks Send Report |
+| The error, its stage, code and params, the tool's state (radio model, firmware version, task; no codeplug contents), the last 20 notes and errors of the log (`diag.trail()`, one line each cut to 300 characters; no wire lines, no shown messages, USB serial numbers masked), and an unknown file's type, size and first 8 bytes (never its name) | Every error except ones the user caused (port chooser closed, Stop) |
+| The whole report and any codeplug the user checked | Only when the user clicks Send Report |
 
 Automatic reports go through `diag.scrub()`, which removes callsigns, DMR IDs and email addresses. The Sentry bundle
 is pinned with an SRI hash in `report.js`. It loads without breadcrumbs or other default integrations, so it sends only

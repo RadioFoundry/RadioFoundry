@@ -5,6 +5,10 @@
 //   target "rfoundry"    the radio as it was when the backup was taken on RadioFoundry: the internal flash image exactly (RadioFoundry and
 //                   its codec, through the bootloader), then the codeplug areas of the SPI flash (through the CPS,
 //                   which only allows the codeplug areas)
+//   target "openfw"   the other open firmware the radio ran before the install (a backup taken over its CPS,
+//                   openfw.js): its internal flash image exactly, through the bootloader. The SPI flash is not written
+//                   back (no command for that yet, as for "stock"): that firmware's own CPS can write its codeplug back
+//                   from the bundle's spi-flash.bin
 //   target "codeplug"  only the codeplug areas, through the CPS: the firmware stays as it is (a codeplug backup)
 //   target "stock"  stock firmware back: the application from the user's stock file (in the bundle, or chosen
 //                   again), through the bootloader. The SPI flash keeps what is in it; the bundle's copy shows what
@@ -12,6 +16,7 @@
 //                   (docs/dev/web-flasher.md "Restore"), so the flasher reports what differs instead of guessing.
 
 import { RESTORE, makePlan } from "./plan.js";
+import { overlapping as protectOverlap } from "./protect.js";
 import { stockApplication } from "./stockfw.js";
 import { CODEPLUG_SPAN } from "./backup.js";
 import { classify } from "../codeplug/detect.js";
@@ -23,6 +28,7 @@ export function targets(bundle) {
 	const internal = bundle.parts.get("internal-flash");
 	const spi = bundle.parts.get("spi-flash");
 	if (bundle.meta.firmware_now?.kind === "rfoundry" && internal?.complete) out.push("rfoundry");
+	if (bundle.meta.firmware_now?.kind === "openfw" && internal?.complete) out.push("openfw");
 	if (bundle.meta.firmware_now?.kind === "rfoundry" && spi && spi.data.length >= CODEPLUG_SPAN && codeplugLayout(bundle) === "openfw") out.push("codeplug");
 	if (bundle.parts.has("stock-firmware") || bundle.meta.firmware_before?.kind === "stock") out.push("stock");
 	return out;
@@ -50,11 +56,13 @@ export function planStock(stockFile, key, board, fb) {
 
 // The 4 KB sectors of the codeplug areas whose bytes differ between the radio and the backup: [addr, bytes] (emulated
 // EEPROM 0x00000-0x0FFFF and the open-firmware flash image 0x20000-0x11FFFF; never the calibration and RadioFoundry's own areas
-// at 0x10000-0x1FFFF, which the CPS refuses anyway)
-export function codeplugSectors(backupSpi, radioSpi) {
+// at 0x10000-0x1FFFF, which the CPS refuses anyway). protect: the board's protected regions; a sector in one of
+// them (data memory) is left out, so the radio keeps its own bytes there
+export function codeplugSectors(backupSpi, radioSpi, protect = []) {
 	const out = [];
 	for (let a = 0; a < CODEPLUG_SPAN; a += 4096) {
 		if (a >= 0x10000 && a < 0x20000) continue;
+		if (protectOverlap(protect, "data", a, a + 4096).length) continue;
 		const want = backupSpi.subarray(a, a + 4096);
 		const have = radioSpi.subarray(a, a + 4096);
 		if (want.length < 4096) break;

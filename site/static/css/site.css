@@ -48,6 +48,7 @@ pre code { background: none; padding: 0; }
 .notice { background: var(--warn-soft); border-left: 4px solid var(--warn); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); }
 .notice.info { background: var(--info-soft); border-color: var(--link); }
 .notice.ok { background: var(--ok-soft); border-color: var(--ok); }
+.analysis-note { display: block; width: 100%; box-sizing: border-box; margin: var(--space-2) 0; padding: var(--space-2); font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); resize: vertical; }
 .notice.bad { background: var(--bad-soft); border-color: var(--bad); }
 
 /* header and footer */
@@ -76,6 +77,19 @@ pre code { background: none; padding: 0; }
 	.header-tools { order: 1; }
 }
 .site-footer { border-top: 1px solid var(--border); margin-top: var(--space-5); padding: var(--space-4) 0; background: var(--surface); }
+/* icons: a mask in the text color, so they follow the theme (the Facebook and GitHub marks) */
+.icon { display: inline-block; width: 1.1em; height: 1.1em; flex: none; vertical-align: -0.18em; background: currentColor;
+	-webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
+.icon-facebook { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M24 12a12 12 0 1 0-13.9 11.9v-8.4h-3V12h3V9.4c0-3 1.8-4.7 4.5-4.7 1.3 0 2.7.2 2.7.2v2.9h-1.5c-1.5 0-2 .9-2 1.9V12h3.4l-.5 3.5h-2.9v8.4A12 12 0 0 0 24 12z'/%3E%3C/svg%3E"); }
+.icon-github { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.3-3.1-.2-.4-.6-1.6 0-3.2 0 0 1-.3 3.4 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.7 1.6.2 2.9.1 3.2.8.8 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3'/%3E%3C/svg%3E"); }
+/* where to get help: two cards above the footer line */
+.footer-help { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+.help-card { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border);
+	border-radius: var(--radius); background: var(--bg); color: var(--text); text-decoration: none; transition: border-color .15s, transform .15s; }
+.help-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.help-card strong { display: block; }
+.help-card .small { display: block; margin-top: 2px; }
+.help-card-icon { width: 2rem; height: 2rem; color: var(--accent); }
 .footer-row { display: flex; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
 .footer-row p { margin: 0; }
 .build-stamp { flex: 1 1 auto; text-align: end; align-self: flex-end; font-size: var(--text-xs); color: var(--faint); font-family: var(--font-mono); }
@@ -101,6 +115,7 @@ pre code { background: none; padding: 0; }
 .nav-info:empty { min-width: 0; }
 .nav-forward { margin-left: auto; display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
 .notice > :last-child { margin-bottom: 0; }
+.notice > p:first-of-type { margin-top: 0; }
 .notice.action { display: grid; gap: var(--space-3); }
 .notice.action ul, .notice.action p { margin: 0; }
 details.notice > summary { font-weight: 600; }
@@ -108,8 +123,32 @@ details.notice > summary { font-weight: 600; }
 /* hero */
 .hero { background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%); border-bottom: 1px solid var(--border); }
 .hero-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: var(--space-6); align-items: center; padding-top: var(--space-5); padding-bottom: var(--space-5); }
-.screens-strip { display: flex; gap: var(--space-3); overflow-x: auto; padding-bottom: var(--space-2); }
-.screens-strip img { height: 190px; width: auto; flex: none; border: 1px solid var(--border); border-radius: 6px; }
+/* the home page's screenshot carousel: a row that scrolls and snaps by itself (touch, trackpad, arrow keys on the
+   focused row); site.js adds the buttons and the position. Every screen is one height, whatever its display. */
+.carousel { --shot-h: 176px; min-width: 0; }
+.carousel-track {
+	display: flex; gap: var(--space-4); overflow-x: auto; overscroll-behavior-x: contain;
+	scroll-snap-type: x mandatory; scroll-padding-inline: 2px; padding: 2px 2px var(--space-2);
+	scrollbar-width: thin;
+}
+.carousel-slide { flex: none; margin: 0; width: min-content; scroll-snap-align: start; }
+.carousel-slide img { display: block; height: var(--shot-h); width: auto; max-width: none; border: 1px solid var(--border); border-radius: 6px; }
+/* small displays are scaled up: keep their pixels square instead of blurred */
+.carousel-slide img.px { image-rendering: pixelated; }
+.carousel-slide figcaption {
+	margin-top: var(--space-1); font-size: var(--text-xs); color: var(--muted); line-height: 1.35;
+	display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.carousel-controls { display: flex; align-items: center; justify-content: center; gap: var(--space-3); margin-top: var(--space-2); }
+.carousel-controls button {
+	min-width: 44px; min-height: 40px; font: inherit; font-size: 1.4rem; line-height: 1; cursor: pointer;
+	background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.carousel-controls button:hover:not(:disabled) { background: var(--surface-2); }
+.carousel-controls button:disabled { opacity: 0.4; cursor: default; }
+.carousel-pos { min-width: 7em; text-align: center; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: no-preference) { .carousel-track { scroll-behavior: smooth; } }
+@media (max-width: 560px) { .carousel { --shot-h: 150px; } }
 .hero-device img { max-height: 440px; display: block; margin: 0 auto; filter: drop-shadow(0 18px 30px rgb(0 0 0 / 25%)); }
 .facts { display: flex; gap: var(--space-5); list-style: none; padding: 0; margin: 0; flex-wrap: wrap; color: var(--muted); }
 .facts b { color: var(--text); font-size: 1.3rem; }
@@ -193,7 +232,38 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 	image-rendering: pixelated; border-radius: 6px; background: #000; padding: 6px; display: block; height: auto;
 }
 .shot figcaption { font-size: var(--text-sm); color: var(--muted); max-width: 22ch; margin: var(--space-1) auto 0; }
+.shots-all { margin-top: var(--space-4); }
 .steps li, .links li { margin-bottom: var(--space-2); }
+
+/* screenshots page: one radio's section at a time. Without the script CSS picks it: the one the address names
+   (#<radio>, :target), else the first. With it, site.js marks the chosen one (.is-current) and the links. */
+.screens-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-5); margin-bottom: var(--space-2); }
+.radio-pick { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.radio-pick a {
+	display: inline-flex; align-items: center; min-height: 40px; padding: var(--space-1) var(--space-3);
+	border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
+	text-decoration: none; font-weight: 500;
+}
+.radio-pick a:hover { background: var(--surface-2); }
+.radio-pick a[aria-current="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.variants-toggle { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--muted); cursor: pointer; }
+.variants-toggle input { width: 1.1rem; height: 1.1rem; margin: 0; accent-color: var(--accent); }
+/* the browser scrolls a link to #<radio> to its section; the large margin keeps the page at its top, picker in view */
+.rshots { display: none; scroll-margin-top: 30rem; }
+.rshots h2 { margin: var(--space-4) 0 var(--space-1); }
+.rshots h3 { margin: var(--space-5) 0 var(--space-3); }
+.rshots-all:not(.js) .rshots:first-child, .rshots-all:not(.js) .rshots:target { display: block; }
+.rshots-all:not(.js):has(.rshots:target) .rshots:first-child:not(:target) { display: none; }
+.rshots-all.js .rshots.is-current { display: block; }
+/* each radio's screens at one width (--shot-w, set per section), as many to a row as fit */
+.gshots { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--shot-w)), var(--shot-w))); gap: var(--space-5) var(--space-4); }
+.gshot { margin: 0; }
+.gshot img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; background: #000; }
+.gshot img.px { image-rendering: pixelated; }
+.gshot figcaption { margin-top: var(--space-1); font-size: var(--text-sm); color: var(--muted); line-height: 1.35; }
+/* a color page's shots in other highlight colors and themes: only when asked for (no script needed) */
+.gshot-variant { display: none; }
+.screens-page:has(#show-variants:checked) .gshot-variant { display: block; }
 
 /* docs */
 .doc-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr) 200px; gap: var(--space-6); padding-top: var(--space-5); }
@@ -224,9 +294,11 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .flasher { display: grid; gap: var(--space-3); }
 .flasher > :last-child, .flasher > :last-child > :last-child { margin-bottom: 0; }
 /* what the flasher sends: always on screen under every step */
-.flash-log { margin-bottom: var(--space-3); color: var(--muted); }
+/* one quiet line under the help cards: its links read as the text does */
+.flash-log { color: var(--muted); font-size: var(--text-sm); margin: 0 auto var(--space-4); }
 .flash-log p { margin: 0; max-width: 90ch; }
 .flash-log summary { cursor: pointer; }
+.flash-log a { color: inherit; }
 .stepper { display: flex; gap: var(--space-2); list-style: none; padding: 0; margin: 0; flex-wrap: wrap; counter-reset: step; }
 .stepper li { counter-increment: step; display: flex; align-items: center; gap: var(--space-2); color: var(--muted); font-size: var(--text-sm); font-weight: 600; padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1); border-radius: 999px; background: var(--surface); border: 1px solid var(--border); }
 .stepper li::before { content: counter(step); width: 1.35rem; height: 1.35rem; border-radius: 50%; display: inline-grid; place-items: center; background: var(--surface-2); color: var(--muted); }
@@ -287,6 +359,15 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 @media (max-width: 520px) { .kv-list { grid-template-columns: 1fr; gap: 0; } .kv-list dd { margin-bottom: var(--space-2); } }
 .progress { width: 100%; height: 14px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--accent); width: 0; transition: width 0.2s; }
+/* work under way: a light band slides along the filled part, so a slow step still looks alive */
+.progress.active > span { background-image: linear-gradient(90deg, transparent 0, rgb(255 255 255 / 35%) 50%, transparent 100%); background-size: 40% 100%; background-repeat: no-repeat; animation: progress-sweep 1.2s linear infinite; }
+@keyframes progress-sweep { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+@media (prefers-reduced-motion: reduce) { .progress.active > span { animation: none; } }
+/* a wait with nothing to count (the firmware build): turns, slower where motion is reduced, since a still one says nothing */
+.spinner { display: inline-block; width: 1em; height: 1em; margin-right: 0.5em; vertical-align: -0.15em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+.progress-wait { display: block; }
 .log { background: var(--code-bg); border-radius: var(--radius-sm); padding: var(--space-3); font-family: var(--font-mono); font-size: 0.8rem; max-height: 260px; overflow-y: auto; white-space: pre-wrap; margin: 0; }
 .plan td, .plan th { font-family: var(--font-mono); font-size: 0.8rem; white-space: nowrap; }
 .plan .write { color: var(--accent); font-weight: 700; }
@@ -305,45 +386,46 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .feature-group > summary:hover .group-name { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .feature-group > summary .group-name::before { transition: none; } }
 
-/* flasher, HR_C7000 radios: the radio's top with its LED, the program memory map, the checklist (c7000ui.js) */
-.c7-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--space-5); align-items: start; }
-@media (max-width: 760px) { .c7-grid { grid-template-columns: 1fr; } .c7-grid .radio-top { order: -1; max-width: 240px; margin: 0 auto; } .c7-grid .rt-svg { max-width: 170px; } }
+/* flasher: the radio's own picture beside update mode steps, with its screen and LED (radiotop.js); the HR_C7000
+   pages' program memory map and checklist (c7000ui.js) */
+.c7-grid, .radio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--space-5); align-items: start; }
+@media (max-width: 760px) { .c7-grid, .radio-grid { grid-template-columns: 1fr; } .c7-grid .radio-top, .radio-grid .radio-top { order: -1; max-width: 240px; margin: 0 auto; } .rt-pic, .radio-pic .rt-img { max-width: 170px; } }
 .radio-top { margin: 0; text-align: center; }
-.rt-svg { width: 100%; max-width: 210px; height: auto; display: block; margin: 0 auto; }
-.rt-label { font: 700 14px var(--font-sans); fill: var(--text); }
-.radio-top[data-led="off"] .rt-led-callout { display: none; }
-.rt-callout { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 3 3; }
-.rt-screen { fill: #0b0d10; stroke: #000; }
-.radio-top[data-screen="loader"] .rt-screen { fill: #c9d6c2; }
-.radio-top[data-screen="on"] .rt-screen { fill: #1d3550; }
-.rt-screen-text { font: 700 12px var(--font-sans); fill: #1b1e22; }
-.rt-screen-text.small { font-weight: 500; font-size: 10px; }
-.radio-top[data-screen="on"] .rt-screen-text { fill: #e8f0f8; font-size: 13px; }
+.rt-pic { position: relative; max-width: 220px; margin: 0 auto; }
+.rt-img { width: 100%; max-width: 220px; height: auto; display: block; margin: 0 auto; }
+.rt-screen { position: absolute; display: grid; place-content: stretch; overflow: hidden; }
+/* the radio's own screen from the UI gallery, its pixels kept sharp */
+.rt-shot { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; background: #000; }
+/* a key to hold, ringed where the picture shows it (frame_geometry.keys): bright on the dark radio, a dark halo for the
+   page around it; the caption under the picture names the keys */
+.rt-key { position: absolute; border-radius: 4px; pointer-events: none; outline: 3px solid #ffb020; outline-offset: 2px;
+	box-shadow: 0 0 0 7px rgb(0 0 0 / 35%), 0 0 14px 7px rgb(255 176 32 / 50%); animation: rt-key 1.2s ease-in-out infinite; }
+@keyframes rt-key { 50% { outline-color: rgb(255 176 32 / 40%); } }
+.radio-top[data-screen="loader"] .rt-screen, .radio-top[data-screen="rfoundry"] .rt-screen { background: #000; }
+.radio-top[data-screen="on"] .rt-screen { background: #1d3550; }
+.rt-lamp { display: flex; justify-content: center; align-items: center; gap: var(--space-2); margin-top: var(--space-2); font-size: var(--text-sm); }
+.radio-top[data-led="off"] .rt-lamp { display: none; }
 .rt-led { fill: #3a3d42; stroke: #000; stroke-width: 1; }
 .rt-glow { fill: transparent; }
-.rt-arrow { stroke: var(--accent); }
-.rt-arrow-head { fill: var(--accent); }
-.rt-knob-turn { opacity: 0; }
-.radio-top[data-knob="cycle"] .rt-knob-turn, .radio-top[data-knob="on"] .rt-knob-turn { opacity: 1; animation: rt-pulse 1.6s ease-in-out infinite; }
 .rt-caption { display: grid; gap: var(--space-1); font-size: var(--text-sm); margin: var(--space-2) 0 0; }
 .rt-caption span:first-child { font-weight: 600; }
-.radio-top[data-led="wait"] .rt-led, .radio-top[data-led="wait"] .rt-glow { animation: rt-orange 1s steps(1) infinite; }
-.radio-top[data-led="busy"] .rt-led, .radio-top[data-led="busy"] .rt-glow { animation: rt-orange 0.25s steps(1) infinite; }
+.radio-top[data-led="wait"] .rt-led, .radio-top[data-led="wait"] .rt-glow { animation: rt-yellow 1s steps(1) infinite; }
+.radio-top[data-led="busy"] .rt-led, .radio-top[data-led="busy"] .rt-glow { animation: rt-yellow 0.25s steps(1) infinite; }
 .radio-top[data-led="done"] .rt-led, .radio-top[data-led="done"] .rt-glow { animation: rt-green 0.3s steps(1) 3; }
 .radio-top[data-led="green"] .rt-led { fill: #3fe060; }
 .radio-top[data-led="green"] .rt-glow { fill: rgb(63 224 96 / 35%); }
-@keyframes rt-orange { 0% { fill: #ff8a1f; } 50% { fill: #3a3d42; } }
+@keyframes rt-yellow { 0% { fill: #ffd21f; } 50% { fill: #3a3d42; } }
 @keyframes rt-green { 0% { fill: #3fe060; } 50% { fill: #3a3d42; } }
 .rt-glow { animation-name: none; }
-.radio-top[data-led="wait"] .rt-glow, .radio-top[data-led="busy"] .rt-glow { animation-name: rt-orange-glow; }
+.radio-top[data-led="wait"] .rt-glow, .radio-top[data-led="busy"] .rt-glow { animation-name: rt-yellow-glow; }
 .radio-top[data-led="done"] .rt-glow { animation-name: rt-green-glow; }
-@keyframes rt-orange-glow { 0% { fill: rgb(255 138 31 / 40%); } 50% { fill: transparent; } }
+@keyframes rt-yellow-glow { 0% { fill: rgb(255 210 31 / 40%); } 50% { fill: transparent; } }
 @keyframes rt-green-glow { 0% { fill: rgb(63 224 96 / 40%); } 50% { fill: transparent; } }
 @keyframes rt-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) {
 	/* no blinking on the page: the LED shows its color and the caption says how the real one blinks */
-	.radio-top .rt-led, .radio-top .rt-glow, .rt-knob-turn { animation: none !important; }
-	.radio-top[data-led="wait"] .rt-led, .radio-top[data-led="busy"] .rt-led { fill: #ff8a1f; }
+	.radio-top .rt-led, .radio-top .rt-glow, .rt-key { animation: none !important; }
+	.radio-top[data-led="wait"] .rt-led, .radio-top[data-led="busy"] .rt-led { fill: #ffd21f; }
 	.radio-top[data-led="done"] .rt-led { fill: #3fe060; }
 }
 .c7-checks { list-style: none; padding: 0; margin: 0 0 var(--space-4); display: grid; gap: var(--space-3); }
@@ -386,14 +468,41 @@ dialog.confirm { max-width: 36rem; width: calc(100% - 2 * var(--space-4)); borde
 	background: var(--surface); color: var(--text); padding: var(--space-5); }
 dialog.confirm::backdrop { background: rgb(0 0 0 / 0.45); }
 dialog.confirm h2 { margin-top: 0; }
+/* the flasher's beta notice: a long read, so it scrolls inside the window and keeps its sections apart */
+dialog.beta-notice { max-width: 40rem; max-height: calc(100dvh - 2 * var(--space-4)); overflow-y: auto; }
+dialog.beta-notice h2:focus { outline: none; }
+dialog.beta-notice h3 { font-size: 1rem; margin: var(--space-4) 0 var(--space-1); }
+dialog.beta-notice ul { margin: 0; padding-left: 1.25rem; }
+dialog.beta-notice li + li { margin-top: var(--space-1); }
+dialog.beta-notice .notice { margin: var(--space-4) 0 0; }
+dialog.beta-notice .notice p, dialog.beta-notice .beta-links { margin: 0; }
+dialog.beta-notice details { border-top: 1px solid var(--border); padding: var(--space-2) 0; }
+dialog.beta-notice details:last-of-type { border-bottom: 1px solid var(--border); }
+dialog.beta-notice details ul { margin-top: var(--space-2); }
+/* the way out stays in view while the notice scrolls */
+dialog.beta-notice .confirm-actions { position: sticky; bottom: calc(-1 * var(--space-5)); margin: var(--space-3) calc(-1 * var(--space-5)) calc(-1 * var(--space-5)); padding: var(--space-3) var(--space-5) var(--space-5); background: var(--surface); border-top: 1px solid var(--border); }
 .confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
 
 /* bug reports (static/js/report.js): the line under a failure, the dialog */
 .report-line { margin: var(--space-2) 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.help-links { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); }
+.help-link { display: inline-flex; align-items: center; gap: var(--space-1); font-weight: 600; }
+.report-reported { margin-top: var(--space-2); }
+.report-reported .report-text { margin-top: var(--space-1); }
 .report-label { display: grid; gap: var(--space-1); font-weight: 600; margin-bottom: var(--space-3); }
-.report-text { font: inherit; font-weight: normal; width: 100%; padding: var(--space-2); border: 1px solid var(--border);
+.report-text, .report-email { font: inherit; font-weight: normal; width: 100%; padding: var(--space-2); border: 1px solid var(--border);
 	border-radius: var(--radius-sm); background: var(--bg); color: var(--text); resize: vertical; }
 .report-check { display: flex; gap: var(--space-2); align-items: baseline; margin-bottom: var(--space-2); }
+
+/* the manual install kit (static/js/flasher/manual.js): the panel in place of a step, the line under a failure */
+.kit-list { list-style: none; padding: 0; margin: var(--space-3) 0; display: grid; gap: var(--space-2); }
+.kit-list li { position: relative; padding-left: 1.5em; }
+.kit-list li::before { content: "▸"; position: absolute; left: 0.25em; color: var(--accent); }
+.kit-list .file-pick { margin: var(--space-2) 0 0; }
+.kit-line { margin-top: var(--space-3); }
+.kit-line p { margin: 0; }
+.kit-line .actions { margin: var(--space-2) 0 0; align-items: center; }
+.kit-error { color: var(--bad); }
 
 /* codeplug editor (static/js/editor/): toolbar, tabs, the table, forms */
 .page-codeplug .wrap { max-width: 1400px; }

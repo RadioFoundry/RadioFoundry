@@ -35,7 +35,7 @@ quick changes therefore never reads back a value from before its own last change
 | `scan_priority` | off | zone scan: the start channel again after every 2 others |
 | `scan_beep` | off | a short beep when the scan stops on a signal |
 | `dual_delay_ms` | 1000 | dual watch on one receiver: its wait after a signal ends, in place of `scan_delay_ms` (0-10000; section 2.1) |
-| `beep_level` | 50 | 0 (silent) to 100, relative to the volume knob |
+| `beep_level` | 50 | 0 (silent) to 100: the loudest a beep gets (section 4) |
 | `key_beep` | on | `radio_req_beep(BEEP_KEY)` sounds |
 | `talk_permit` | on | DMR: the talk permit tone when the voice goes on air (stored as `SETTINGS_RS_NO_TALK_PERMIT` in `rs_flags`, 0 = on) |
 | `vox` | off | off, on channels whose codeplug entry allows it, on every FM channel (CONFIG_VOX) |
@@ -315,8 +315,11 @@ None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) 
 | message | 1000, 1300, 1700 Hz rising, 60-90 ms each | a text message arrived: the UI asks for it (`radio_req_beep(BEEP_MESSAGE)`) when Settings > Sound > Message tone is on |
 
 Synthesis: a 64-entry sine table with linear interpolation, 2 ms fades (no clicks); level 100 is about half of full
-scale so a beep mixed over voice doesn't clip. Volume is relative to the knob: the beep goes through the same
-speaker path. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`); otherwise the beep
+scale so a beep mixed over voice doesn't clip. Beeps follow the radio's volume up to `beep_level`. A radio with an analog
+knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM path (`volume_pcm`: an HR_C6000
+board's RX gain, an HR_C7000 board's line out gain) play the beep at `beep_level`, and the volume acts on it in the
+speaker path. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
+volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`); otherwise the beep
 starts the board's PCM audio stream itself and stops it two silent blocks after the pattern. If that stream delivers no
 block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stream, gives the speaker route back and
 drops the pattern, so a codec that goes quiet can't leave the analog receive audio muted. A start that fails (no codec
@@ -421,6 +424,23 @@ switch.
 `radio_backlight_pct(brightness, idle_ms)`: the UI's brightness, dimmed to a fifth (at least 5 %) after
 `backlight_dim_s` without input, off after `backlight_off_s`, capped at 30 % while the battery is low or critical.
 The UI owns the backlight and calls it; the radio core doesn't drive the backlight itself.
+
+Idle time restarts on input and while `radio_view_wakes(view)` holds: something the user would want to see.
+
+| State | Wakes | Why |
+|---|---|---|
+| `RS_TX`, `tx_auto` 0 | yes | the user's PTT (or VOX) |
+| `RS_TX`, `tx_auto` 1 | no | the radio's own: a data list (ARS, ACK, LRRP answer, IP), a roaming probe, an APRS beacon |
+| `RS_TX_DENIED` | yes | PTT held: the screen says why |
+| `RS_RX`, FM | yes | the squelch opened: something plays |
+| `RS_RX`, DMR, `dmr.state` `RDMR_RX` | yes | a call that plays |
+| `RS_RX`, DMR, otherwise | no | data heard (ARS ACK, others' CSBKs), a call not played (other talkgroup, encrypted) |
+| `RS_RX`, `bcast` | no | a broadcast program plays continuously |
+| `hotspot` | no | the host's traffic |
+
+What does reach the user (a message, call alert, private call, radio check result, emergency) comes as a UI banner
+or screen, and the UI wakes the backlight for it (`ui_app_take_wake`). `last_tx_ms` in the view records when the
+last transmission began, so an unattended one can be placed afterwards (debuglink.md 3.7).
 
 ### 5.4 Receiver battery save (CONFIG_BATTERY_SAVE, `rx_save` off by default)
 

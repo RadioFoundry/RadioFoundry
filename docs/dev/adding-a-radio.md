@@ -38,6 +38,21 @@ The board's own files:
 | `boards/<b>/pins.h`, `<b>.h` | Pin assignments and the board's private declarations. The registry reads the pins the flash stub uses from `pins.h` (`[flash.stub]` in [The board registry](board-registry.md#boardtoml)) |
 | `boards/<b>/*_<b>.c` | One file per interface: radio, DMR, audio, vocoder, display, input, flash, power, calibration, diagnostics, USB |
 
+### A board family
+
+Radios that are one board design with different data (other key positions, panel types, power tables, a battery
+divider) share their board code in `boards/<family>/`, which each radio lists in `BOARD_DIRS`. The family directory
+holds the interface files (`*_<prefix>.c`), the family's header and a pin map, and declares what it reads from each
+radio: a variant table and the key matrix, defined in the radio's own `board.c`. Each radio's directory keeps
+`board.mk`, `config.mk`, `board.toml`, `memory.ld`, a `pins.h` that includes the family's (and changes what differs),
+`board.c` and the files that really differ (USB identity, vocoder profiles). Differences the build can't detect, such
+as a higher power version with swapped pins, are a `BUILD_OPTIONS` choice in `board.mk`.
+
+The registry and the tools treat the family directories a board's `BOARD_DIRS` lists as that board's sources: the
+`board_t` name, the flash map, the key enum for the web control page and the stub's pins are found there, and
+`tools/check_generic.py` lets the family's files name the radios that build them. The family's host tests are in
+`boards/<family>/tests/`. [radios.md](../spec/radios.md) says which radios share a family.
+
 Look at the boards on your platform for a model (`tools/boards.py list --platform <p>`; their chips are in
 [radios.md](../spec/radios.md)).
 
@@ -90,12 +105,19 @@ over 8), `GFX_MAX_ROWS` (the height) and `GFX_INDEXED=1` for a 16-color panel. W
 
 ## The drawing
 
-The site and the web control page show the radio as a drawing, `site/static/img/radios/src/<b>.svg`; until it has
-one, a generic drawing from `board.toml` `[frame]` stands in. Its rules are in
+The site, the web control page and the web flasher's update mode steps show the radio as a drawing,
+`site/static/img/radios/src/<b>.svg`; until it has one, a generic drawing from `board.toml` `[frame]` stands in. Its rules are in
 [Radio images](website.md#radio-images). Once the board's key enum is written, run `tools/svg_keys.py tag <b>`: it tags
 the keys it finds by their labels and prints the rest. Tag those by hand, with `data-edge` on side and top keys, or
 list them in `data-undrawn`. `tools/svg_keys.py check <b>` must pass; the site build fails CI otherwise. Run `tag`
 again after any redraw, so the tags follow the new shapes.
+
+The keys held to enter the bootloader go in `board.toml` `[flash.bootloader] hold` by key name (`["ptt", "sk1"]`),
+beside the prose `steps`, and only from a documented source (the radio's hardware page). The web flasher rings them on
+the drawing and names them in a caption, so tag those keys in the drawing when it shows them, and add a
+`flash.key.<name>` label to `site/i18n/en.json` for a key no other radio holds. `tools/boards.py check` and
+`site/tests/radio_images_test.py` fail a key the board doesn't have, one in neither the drawing nor `data-undrawn`, or
+one without a label.
 
 ## Bring-up order
 
@@ -106,11 +128,23 @@ again after any redraw, so the tags follow the new shapes.
    data: send back-to-back 0x00 bytes and watch the raw PTT pin. If it goes low, gate PTT on UART traffic
    (`drivers/input/sharedptt`, [gotchas.md](../spec/gotchas.md) 16.2) before anything transmits. Then run
    `tests/hil/test_ptt_host_traffic.py`: host polling must make no PTT press.
+   If PTT also comes through a mic jack, power on with the jack empty and watch the raw pin. If it reads low, count it
+   only once it has read high (`drivers/input/plugptt`, [gotchas.md](../spec/gotchas.md) 16.3).
 4. Flash, settings and calibration reads. Check the foreign-region guard on a radio that still runs the vendor firmware
    ([settings-store.md](../spec/settings-store.md) 5).
 5. RF chip: FM receive, then FM transmit into a dummy load.
 6. DMR modem and the codec: receive, then transmit, checked on the SDR bench.
 7. CPS, so qdmr can program it.
+8. Flashing from where an owner starts:
+   - Find every stock build an owner's radio may run before RadioFoundry: every firmware version the vendor and its
+     rebadgers have shipped, for every model the board is sold as (`also`, `looks`). Give each a codec map and a
+     `[codec] stock` entry, so the web flasher and rfoundry find the codec in whatever file or readout the
+     owner has.
+   - For each of those models, check the bootloader's USB identity, entry keys and key against `[flash]`.
+   - Walk the web flasher through each starting point:
+     - the vendor's download as the owner gets it (a zip or a `.bin`);
+     - a readout of the radio;
+     - an update of a radio already running RadioFoundry.
 
 A bring-up page under [docs/testing/](../testing/README.md) is this list made concrete for one radio.
 
@@ -137,8 +171,9 @@ What the docs claim for a radio comes from its records, so each step above ends 
 
 - Add host tests for each new driver against a simulated chip (`tests/host/*Test.c`; see the existing driver tests).
   Tests of the board's own code go in `boards/<b>/tests/` with a `host.mk` ([Testing](testing.md#host-tests)).
-- HIL tests ([tests/hil](../../tests/hil/README.md#tests)): the health checks' numbers go in `board.toml` `[hil]`, the
-  CPS radio types in `[cps]`, and a check only this radio can use in `boards/<b>/hil/test_*.py`.
+- HIL tests ([tests/hil](../../tests/hil/README.md#tests)): the health checks' numbers go in `board.toml` `[hil]`, a
+  pass limit the radio is held to instead of a test's default in `[hil.limits]` (with the reason), the CPS radio types
+  in `[cps]`, and a check only this radio can use in `boards/<b>/hil/test_*.py`.
 - `tools/ci.sh` finds the board by its `board.mk` and builds its feature matrix when the compiler is installed. A
   board without its compiler is skipped with a notice.
 - Run `tools/boards.py docs`: it writes the radio into the README's radio table, the user manual's radio index

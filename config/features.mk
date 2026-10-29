@@ -45,6 +45,9 @@ CONFIG_DMR_ROAMING ?= $(CONFIG_DMR)
 # IP over DMR packet data through a network link to the host: the USB network adapter or PPP on the serial host port
 # (needs DMR and USB_NETWORK or NET_PPP; core/hostlink/hostlink_net.c)
 CONFIG_DMR_IP_GATEWAY ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_USB_NETWORK) $(CONFIG_NET_PPP))),y,n)
+# zone and channel sharing over DMR data: "Share zone to..." and offers of zones from other radios, imported only when
+# the user accepts (needs DMR; core/dmr/zoneShare*.c, docs/spec/zone-share.md)
+CONFIG_ZONE_SHARE ?= $(CONFIG_DMR)
 # compressed UDP/IPv4 headers on transmit (SAP 3, ETSI TS 102 361-3 5.6 / 7.2): UDP packets whose header fits the
 # compression rules go with a 5 to 9 octet header instead of 28 (needs DMR; docs/spec/dmr-data.md 11)
 CONFIG_DMR_UDP_COMPRESS ?= $(CONFIG_DMR)
@@ -91,9 +94,13 @@ CONFIG_DMR_CONTROL_STATION ?= $(CONFIG_DMR_IP_GATEWAY)
 # SNMP agent (SNMPv2c) on UDP 161 of the radio's address, over the USB network and over the air, with notifications
 # (needs DMR_IP_GATEWAY; core/snmp, docs/spec/snmp.md)
 CONFIG_SNMP ?= $(CONFIG_DMR_IP_GATEWAY)
-# single frequency repeater (needs DMR): the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c, core/dmr/sfrRunner.c);
-# the stand-alone repeater and user roles on a channel are not wired yet (docs/spec/sfr.md)
+# single frequency repeater (needs DMR): the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c, core/dmr/sfrRunner.c)
+# and the standalone repeater and user roles of a channel (core/radio/radio_sfr.c, docs/spec/sfr.md 4)
 CONFIG_SFR ?= $(CONFIG_DMR)
+# SFR user receive mode "dual-path RX": a voice frame whose FEC failed is taken from the other copy (needs SFR)
+CONFIG_SFR_DUALPATH_RX ?= $(CONFIG_SFR)
+# the standalone SFR repeater's periodic CW ID: its callsign in Morse, in FM on the channel (needs SFR)
+CONFIG_SFR_CWID ?= $(CONFIG_SFR)
 # USB device (CDC serial)
 CONFIG_USB ?= y
 # the host link (core/hostlink): MMDVM hotspot, CPS and debug link over the board's host port (USB CDC, or the
@@ -231,7 +238,7 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR TASK_STACKS \
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP FM_TX_TONES DTMF \
 	VOX BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT
 
@@ -242,7 +249,8 @@ ifneq ($(call feature_on,SUBTONE),)
     $(error CONFIG_SUBTONE=y needs CONFIG_FM=y)
   endif
 endif
-$(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+$(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+$(foreach f,SFR_DUALPATH_RX SFR_CWID,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,SFR),,x)),$(error CONFIG_$(f)=y needs CONFIG_SFR=y)))
 ifneq ($(call feature_on,CHANNEL_EDIT),)
   ifeq ($(call feature_on,CHANNEL_LIST),)
     $(error CONFIG_CHANNEL_EDIT=y needs CONFIG_CHANNEL_LIST=y)
@@ -390,7 +398,7 @@ ifeq ($(call feature_on,FM)$(call feature_on,DMR),)
 endif
 
 # Derived: the shared packet data / CSBK code is built when any data feature is on (the emergency alarm is a CSBK)
-CONFIG_DMR_DATA_CORE := $(if $(strip $(foreach f,DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_IP_GATEWAY CRASH_REPORT,$(call feature_on,$(f)))),y,n)
+CONFIG_DMR_DATA_CORE := $(if $(strip $(foreach f,DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_IP_GATEWAY ZONE_SHARE CRASH_REPORT,$(call feature_on,$(f)))),y,n)
 
 FEATURE_DEFS := $(foreach f,$(FEATURES) DMR_DATA_CORE,-DCONFIG_$(f)=$(if $(call feature_on,$(f)),1,0))
 
@@ -401,5 +409,14 @@ CONFIG_DISPLAY_INSET_TOP ?= $(CONFIG_DISPLAY_INSET)
 CONFIG_DISPLAY_INSET_BOTTOM ?= $(CONFIG_DISPLAY_INSET)
 CONFIG_DISPLAY_INSET_LEFT ?= $(CONFIG_DISPLAY_INSET)
 CONFIG_DISPLAY_INSET_RIGHT ?= $(CONFIG_DISPLAY_INSET)
-VALUES := DISPLAY_INSET_TOP DISPLAY_INSET_BOTTOM DISPLAY_INSET_LEFT DISPLAY_INSET_RIGHT
+# The air queue's buffer in octets (IP gateway and zone sharing, docs/spec/dmr-data.md 12): queued packets take
+# their own length plus a 36-octet header. 2048 holds two longest packets (612) with room to spare, a zone's four
+# fragments, or about thirteen 120-octet datagrams
+CONFIG_DMR_AIR_QUEUE_BYTES ?= 2048
+# The gap the data service keeps after our own data transmission before it keys up for another, in ms (0: none;
+# docs/spec/dmr-data.md 12.6). A workaround: receivers lost a packet that came in a new transmission right after
+# ours ended, cause not yet known; packets to the same destination go in one transmission instead, with no gap
+CONFIG_DMR_DATA_TX_GUARD_MS ?= 250
+VALUES := DISPLAY_INSET_TOP DISPLAY_INSET_BOTTOM DISPLAY_INSET_LEFT DISPLAY_INSET_RIGHT DMR_AIR_QUEUE_BYTES \
+	  DMR_DATA_TX_GUARD_MS
 FEATURE_DEFS += $(foreach v,$(VALUES),-DCONFIG_$(v)=$(strip $(CONFIG_$(v))))

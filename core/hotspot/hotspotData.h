@@ -22,7 +22,7 @@
 #define HOTSPOT_DATA_GIVE_UP_MS		2000U	// the channel never became free
 
 // No hardware dependencies, so it can be unit tested on a host (see tests/host).
-// storage: DMR_DATA_MAX_BURSTS bursts, e.g. the data service's, which isn't used in hotspot mode
+// storage: DMR_DATA_MAX_BURSTS bursts
 void hotspotDataReset(dmrBurst_t *storage);
 
 // A 33 byte frame with data sync from the host. 0 if it was taken, else the MMDVM NAK reason
