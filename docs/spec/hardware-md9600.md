@@ -13,8 +13,9 @@ no AT1846S and no RF transceiver chip at all; the HR_C6000 sees a 450 kHz IF fro
 TYT changed the synthesizer and IF parts during production. The board revision decides how the synthesizers (and on
 V5 the IF) are programmed, and **nothing in the firmware can read the revision**, so a build is made per revision (section 16).
 
-Status: **nothing in this file has been checked on a radio.** No MD-9600 is in hand, and every value is unverified until
-one is. Section 17 lists every open question.
+Status (2026-10-20): **nothing in this file has been checked on a radio.** No MD-9600 is in hand, and every value is
+unverified until one is. RadioFoundry builds for it and drives FM receive on every board revision (section 19). Section
+17 lists every open question.
 
 Conventions: register values are hex; HR_C6000 registers are written `page:reg = value` as in
 [modem-hrc6000.md](modem-hrc6000.md). Frequencies are given in Hz or MHz. A value marked `(datasheet)` is from the
@@ -32,12 +33,16 @@ is used (section 10.2). Read-out protection level 1 assumed, as on every TYT STM
 
 ### 1.2 Clocks
 
-| Item | Value |
-| --- | --- |
-| HSE | 8 MHz external clock in **bypass** mode, as the DM-1701 |
-| LSE | 32.768 kHz crystal, RTC enabled |
-| PLL | M 4, N 72, P 2, Q 3: SYSCLK 72 MHz, USB 48 MHz |
-| AHB / APB1 / APB2 | 72 MHz / **18 MHz (/4)** / **36 MHz (/2)** |
+| Item | Value | Note |
+|---|---|---|
+| HSE | 8 MHz, a crystal oscillator (not bypass mode) | unverified |
+| LSE | 32.768 kHz crystal, RTC enabled |  |
+| SYSCLK, USB | 72 MHz and 48 MHz | unverified |
+| AHB / APB1 / APB2 | 72 MHz / 36 MHz (/2) / 72 MHz (/1): the DM-1701's bus clocks | unverified |
+| RadioFoundry's plan | HSE 8 MHz crystal, PLL M 4, N 72, P 2, Q 3 (2 MHz PLL input, VCO 144 MHz), AHB /1, APB1 /2, APB2 /1, flash 3 wait states. If the crystal doesn't start, RadioFoundry tries bypass mode, then stays on HSI 16 MHz (no USB) | ours |
+
+RadioFoundry derives every time constant from the clock it set up (SystemCoreClock), so a wrong HSE guess shows as a wrong
+USB clock and a wrong tick, not as a silent offset.
 
 Standby (section 10.2) drops SYSCLK to HSE / 512 with both APBs / 16 and voltage scale 2 while waiting for the power
 key.
@@ -63,7 +68,7 @@ applied, used for the standby flag (10.2) and for non-permanent settings.
 |---|---|---|
 | PA0 | ADC1 IN0: VHF RSSI |  |
 | PA1 | ADC1 IN1: supply voltage | 10.3 |
-| PA2 | ADC2 IN2: QT_DQT_IN, sub-audio tone input | tones are decoded in the HR_C6000 |
+| PA2 | ADC123 IN2: QT_DQT_IN, sub-audio tone input, sampled by ADC3 | ADC3 (unverified) |
 | PA3 | ADC1 IN3: VOX / mic level | the only mic level input (no separate "mic" signal) |
 | PA4 | DAC1: TV_U, UHF receiver front-end tuning |  |
 | PA5 | DAC2: APC_TV_V, **shared** TX power (APC) reference and VHF receiver front-end tuning |  |
@@ -76,6 +81,7 @@ applied, used for the standby flag (10.2) and for non-permanent settings.
 | PA13 | R5_U_SW, UHF receiver 5 V; **also SWDIO** |  |
 | PA14 | R5_V_SW, VHF receiver 5 V; **also SWCLK** |  |
 | PA15 | I2S3 WS (AF6) |  |
+
 ### 2.2 Port B
 
 | Pin | Function | Notes |
@@ -84,28 +90,29 @@ applied, used for the standby flag (10.2) and for non-permanent settings.
 | PB1 | ADC1 IN9: UHF noise (squelch) level |  |
 | PB2 | FM_SW, FM audio stages on (high) |  |
 | PB3 / PB4 / PB5 | SPI1 SCK / MISO / MOSI (AF5): HR_C6000 voice port |  |
-| PB6 | AF_SW, audio amplifier mute, TIM4 CH1 PWM (AF2) | 9.x / 6.1 |
+| PB6 | AF_SW, audio amplifier mute, a plain GPIO output: high = muted | unverified; no timer on this pin |
 | PB7 | U_V_MOD_SW: HR_C6000 MOD2 output to the VHF (high) or UHF (low) VCO |  |
-| PB8 / PB9 | I2C1 SCL / SDA (AF4, open drain) | nothing on the bus is known to be used (?) |
+| PB8 / PB9 | I2C1 SCL / SDA (AF4, open drain) | one device at 7-bit address 0x3D, not identified (?) |
 | PB10 / PB11 | Channel encoder A (EXTI, both edges) / B; USART3 TX / RX when the optional remote head is fitted | 9.2, 9.5 |
 | PB12 | SPI flash chip select |  |
-| PB13 / PB14 / PB15 | SPI2 SCK / MISO / MOSI (AF5): SPI flash **and** LCD | mode 0, 4.5 MHz (12.1) |
+| PB13 / PB14 / PB15 | SPI2 SCK / MISO / MOSI (AF5): SPI flash **and** LCD | mode 3, 18 MHz (12.1, unverified) |
 
 ### 2.3 Port C
 
 | Pin | Function | Notes |
 |---|---|---|
 | PC0 / PC1 / PC2 | HR_C6000 timeslot / system / RF TX interrupts (EXTI0-2, falling edge) | see 4.4 for the RF TX line |
-| PC3 | ADC2 IN13: RX_2T_5T (discriminator audio) | unused |
+| PC3 | ADC2 IN13: RX_2T_5T (discriminator audio), sampled with DMA for sub-audio tone detection | unverified |
 | PC4 | RF_APC_SW, PA power loop on |  |
 | PC5 | ADC1 IN15: VHF noise level |  |
-| PC6 | Display_Light: LCD and key backlight, TIM3 CH1 PWM (AF2) | 7.3 |
-| PC7 | CTC_DCS_PWM, sub-audio tone output | open drain, held high; tones are generated in the HR_C6000 instead |
-| PC8 | BEEP_PWM | unused (beeps go through the HR_C6000) |
+| PC6 | Display_Light: LCD and key backlight, TIM8 CH1 PWM (AF3) | unverified, 7.3 |
+| PC7 | CTC_DCS_PWM, sub-audio tone output, TIM8 CH2 PWM (AF3) | unverified |
+| PC8 | BEEP_PWM, TIM8 CH3 PWM (AF3) | unverified |
 | PC9 | C5_V_SW, VHF 5 V supply (receiver side) |  |
 | PC10 / PC11 / PC12 | I2S3 CK (AF6) / I2S3ext SD (AF5) / I2S3 SD (AF6) |  |
 | PC13 | U_V_AF_SW: receive audio from the VHF IF chip (high) or UHF (low) |  |
 | PC14 / PC15 | LSE crystal |  |
+
 ### 2.4 Port D
 
 | Pin | Function | Notes |
@@ -124,7 +131,7 @@ applied, used for the standby flag (10.2) and for non-permanent settings.
 | Pin | Function | Notes |
 |---|---|---|
 | PE0 / PE1 | Key matrix rows K0 / K1 (open drain) |  |
-| PE2 / PE3 / PE4 / PE5 | HR_C6000 configuration port CS / CLK / MISO / MOSI (bit-banged) | as the DM-1701 |
+| PE2 / PE3 / PE4 / PE5 | HR_C6000 configuration port CS / CLK / MISO / MOSI (bit-banged) | MISO and MOSI are the other way round from the DM-1701 (unverified) |
 | PE6 | C6000_PWD, HR_C6000 power down |  |
 | PE7 | FM_MUTE: FM audio to the volume control, high = unmuted |  |
 | PE8 / PE9 | VCO_VCC_U_SW / VCO_VCC_V_SW: per band, high = RX VCO, low = TX VCO |  |
@@ -141,6 +148,9 @@ low, all T5/R5/C5 supply switches low, U_V_MOD_SW low, FM_SW and FM_MUTE low, CT
 `radioPowerOn` sets both T5 low, all C5 and R5 high (both receivers are always powered together, "as the TYT firmware
 does"), then Power_Control high.
 
+RadioFoundry's transmitter-off levels (`board_rf_safe`, on any fault, crash or reset; [crash-log.md](crash-log.md)): APC_EN,
+T5_V and T5_U low, VCO_U and VCO_V high (the receive VCOs), the PA reference DAC (DAC1 channel 2) at 0.
+
 PA13 / PA14 are the receiver supplies of both bands: like the MD-380, the radio takes the SWD pins at run time, and a
 debugger has to connect under reset (D for the pins; the consequence ours).
 
@@ -148,18 +158,18 @@ debugger has to connect under reset (D for the pins; the consequence ours).
 
 ## 3. Interrupts, DMA, timers
 
-| Source | Use |
-| --- | --- |
-| EXTI0/1/2 (PC0-PC2) | HR_C6000 timeslot / system / RF TX, priority 5 |
-| EXTI15_10 (PB10) | Channel encoder A, both edges, priority 5 |
-| DMA1 Stream0 ch0 / Stream5 ch2 | I2S3 RX / I2S3ext TX, circular |
-| DMA2 Stream2 ch4 | USART1 RX (GPS), circular |
-| DMA1 Stream1 / Stream3 ch4 | USART3 RX / TX (remote head only) |
-| TIM3 CH1 | Backlight PWM, period 3000 counts (prescaler 0) |
-| TIM4 CH1 | Amplifier mute PWM on AF_SW, prescaler 16, period 100 |
-| TIM6 | HAL time base |
-| ADC1 | 9-channel scan (10.3), 480 cycles each, interrupt per conversion |
-| ADC2 | IN2 (QT_DQT_IN), single, 3 cycles |
+| Source | Use | Note |
+|---|---|---|
+| EXTI0/1/2 (PC0-PC2) | HR_C6000 timeslot / system / RF TX, priority 5 |  |
+| EXTI15_10 (PB10) | Channel encoder A, both edges, priority 5 |  |
+| DMA1 Stream0 ch0 / Stream5 ch2 | I2S3 RX / I2S3ext TX, circular | as the DM-1701 |
+| DMA2 Stream2 ch4 | USART1 RX (GPS), circular |  |
+| DMA1 Stream1 / Stream3 ch4 | USART3 RX / TX (remote head only) |  |
+| TIM8 CH1 / CH2 / CH3 | PWM on PC6 (backlight), PC7 (sub-audio tone), PC8 (beep): prescaler 9, period 256, about 28 kHz at 72 MHz. CH4's pin (PC9) is a GPIO | unverified |
+| TIM6 | DAC2 trigger at 10 kHz for the PA power ramp | unverified |
+| ADC1 | 8-channel scan with DMA (10.3) | unverified |
+| ADC2 | IN13 (PC3, discriminator audio), circular DMA, for sub-audio tone detection | unverified |
+| ADC3 | IN2 (PA2, QT_DQT_IN) | unverified |
 
 ---
 
@@ -236,10 +246,17 @@ N = VCO / f_pd; reg 0 = N - 32; 18-bit fraction (x 2^18), reg 1 = fraction >> 8,
 0x01F, reg 7 = 0x3D0, reg 8 = 0, reg 9 = 0. Write order: 8, 9, 5, 0, 2, 1, 6, 7 ("the order the TYT firmware uses")
 .
 
+**V1-V3 reference divider:** R 6 (VHF) and 4 (UHF) is one case. The divider also depends on a per-channel setting
+and on which side of the signal the LO sits, giving R 5 / 4 / 6 or 3 / 2 / 4. What the setting means is not known
+(unverified); RadioFoundry uses 6 and 4.
+
 **V4: "PLL1590" synthesizer, one per band**. TYT's own folder for the V4 firmware (V16.45) is named "firmware for
-PLL1590", which names the part family (AK1590); the exact part number is unconfirmed (?). Its programming words are reg 4 = 0x1FF40 (VHF) and 0x19F40 (UHF) in the format below (unverified). 24-bit
+PLL1590", which confirms the part family the reference port calls AK1590; the exact part number is still
+unconfirmed (?). The V16.45 stock images (all four variants) hold the 24-bit words 0x1FF404 and 0x19F404 as literals,
+that is reg 4 = 0x1FF40 and 0x19F40 in the format below; the V06.09 images hold neither (from our own reading of the stock images). 24-bit
 words: 20 data bits then the 4-bit address in the low nibble. N in reg 2 (VHF 0x20000 | N, UHF 0x38000 | N), the
-18-bit fraction in reg 1, reg 3 = 0x6000 | R, reg 4 = 0x1FF40 (VHF) or 0x19F40 (UHF), reg 5 = reg 6 = 0. R: VHF 12,
+18-bit fraction in reg 1, reg 3 = 0x6000 | R, reg 4 = 0x1FF40 for VHF and for UHF receive, 0x19F40 only for UHF transmit (unverified), reg 5 =
+reg 6 = 0. R: VHF 12,
 UHF RX 8, UHF TX 4. **No x2 on VHF** here (VCO on the LO). Write order 5, 6, 3, 4, 1, 2. The V4 VHF synthesizer must
 be programmed (145 MHz RX) right after power-on or it never locks.
 
@@ -250,7 +267,14 @@ reg 0x2A = 0x0108, reg 0x00 = 0x003E. Sequence: reset (0x00 = 0x2000), 0x00, 0x0
 0x08, 0x29, 0x2A, then 0x00 = 0x003F (start calibration) and 0x00 = 0x003E. The clock is left low after each word.
 Delays after reset and calibration may be needed (?).
 
-No lock detect input is known to be wired on any revision (?).
+From the LMX2571 data sheet [TI]: the word is a R/W bit (0 = write), a 7-bit address and 16 data bits, clocked in on
+the rising edge and latched when LE rises. In these values R4 is FRAC_ORDER 3 (third-order modulator) and PLL_N (12
+bits, at most 1023), R1 holds PLL_DEN[23:16] (0) and PLL_NUM[23:16], R2 PLL_NUM[15:0], R3 PLL_DEN[15:0] (0), R5 PLL_R 1
+and the pre-divider R, R6 the multiplier bypassed, R8 EXTVCO_SEL (PLL mode with an external VCO) and FSK_EN. The data
+sheet asks for DEN = 0 when FSK_EN is set; RadioFoundry takes the fraction over 2^24 then (unverified). The data sheet's power-on
+sequence also writes R60, R58, R53 and the rest; this sequence doesn't (unverified).
+
+No lock detect input is wired in the reference port's pin map for any revision (?).
 
 ### 5.4 IF receiver per revision
 
@@ -259,6 +283,13 @@ selects PE11 (VHF) / PE12 (UHF), reset PE15 (pulse low for at least 1 us). Data 
 the rising edge. Written each time the receiver is turned on: soft reset 0x08AA, then 0x02F1 (25 kHz) or 0x02E9
 (12.5 kHz), 0x041D (AGC), 0x0600 (IF gain 6 dB), 0x1601, 0x1880 (auto AGC). The chip's 450 kHz output feeds
 the HR_C6000, its demodulated audio the FM path (6.1).
+
+From the AK2365 data sheet [AKM] (the A part taken to be the same, unverified): a frame is 16 clocks, MSB first,
+latched on the rising edge of SCLK while CSN is low: R/W (0 = write), a 6-bit address, one low bit, 8 data bits. That
+is the word reg << 9 | data above. SCLK high and low are at least 500 ns. Register 1 = 0xF1 is mode 7 (everything on),
+the wide demodulator level, the +-6 kHz filter and the 50.4 MHz second LO; 0xE9 the narrow level and the +-3 kHz
+filter. Register 2 = 0x1D starts the discriminator calibration (1.3 ms). Register 4 = 0xAA is the software reset. After
+power-up the chip needs a hardware reset (RSTN low at least 1 us).
 
 **V5: no programmable IF chip.** PE11 / PE12 set the VHF / UHF IF filter (high = 25 kHz), PE13 / PE14 connect the VHF
 or UHF IF to the HR_C6000. The V5 IF part is not identified (?).
@@ -270,8 +301,9 @@ band; DAC1 (UHF) or DAC2 (VHF) = the calibrated front-end tuning voltage; IF set
 U_V_AF_SW to the band.
 
 TX: both R5 off, synthesizer to the carrier with VCO_VCC low, DAC2 = APC drive (for both bands: PA5 serves the APC in
-TX), then the band's T5 on and the other off, then RF_APC_SW on. Per DMR burst only T5 and RF_APC_SW toggle; return to
-RX drops RF_APC_SW, both T5, then reprograms for RX. The ordering beyond that is not determined; no
+TX), then the band's T5 on and the other off, then RF_APC_SW on. On V4 (and V5, unverified) the other band's C5 supply
+goes off while one band transmits; V1-V3 leave both on (unverified). Per DMR burst only T5 and RF_APC_SW toggle; return to
+RX drops RF_APC_SW, both T5, then reprograms for RX. The ordering beyond that is the reference port's; no
 lock check (?).
 
 ### 5.6 Power levels and control
@@ -320,17 +352,18 @@ then 128 data bytes. Contrast 0x81 + value; the usable range is about 5-30. Slee
 
 ### 7.3 Backlight
 
-PC6, TIM3 CH1, period 3000. On V1 the duty is proportional (percent x 20). **On V2 and later the LEDs are off below
-about 16 % duty (480) and fully on by 19.3 % (580)**, so 1-99 % maps into 480-580; V1 has
-different backlight hardware (a V2 whose display can't be dimmed is probably V1, unverified). The keys
+PC6, TIM8 CH1, period 256 (unverified). **On V2 and later the LEDs are off below about 16 % duty and fully on by
+19.3 %**, so RadioFoundry maps 1-99 % into counts 41-49 of 256 and 100 % to always on. A bit in the hardware option block
+(11.1) marks radios whose backlight is only switched on and off (unverified). On V1 the duty is proportional; V1 has
+different backlight hardware,. The keys
 share the backlight (?).
 
 ---
 
 ## 8. LEDs
 
-No LED GPIOs are known on the MD-9600. Whether the front panel's TX / RX indicator is
-hardware-driven or absent is unknown (?).
+No MCU pin drives an LED (unverified). The front panel's TX / RX indicator may be driven by the HR_C6000 or by the RF
+hardware; unknown (?).
 
 ---
 
@@ -366,7 +399,13 @@ column < 4 means a key is down:
 | 3 | * | 0 | # | D |
 | 4 | (unused) | A/B | Up | Down |
 
-The mic has 16 keys plus its own up / down / A/B (unverified). Thresholds and the mic's resistor ladder are unverified (?).
+The mic has 16 keys plus its own up / down / A/B (unverified). Level windows in raw 12-bit counts, both levels at or
+above 3445 with no key down (unverified):
+
+| Level | Window 0 | Window 1 | Window 2 | Window 3 | Window 4 |
+|---|---|---|---|---|---|
+| Row (PA6) | 2830-3444 | 2215-2705 | 1477-2090 | 862-1352 | 247-737 |
+| Column (PA7) | 0-1106 | 1231-1844 | 1969-2705 | 2830-3320 | - |
 
 ### 9.4 PTT
 
@@ -397,9 +436,10 @@ Removing DC is the only true off. The flag values are RadioFoundry's choice.
 
 ### 10.3 Supply voltage ADC and scan
 
-ADC1 scan order (rank 1-9): IN6 mic row, IN7 mic column, IN1 supply, IN3 VOX, IN0 VHF RSSI, IN8 UHF RSSI, IN15 VHF
-noise, IN9 UHF noise, temperature sensor; 480 cycles each, PCLK2 / 8. Supply: tenths of a volt = raw / 21.3
-; maximum 15.0 V; cutoff hysteresis 8.0 / 10.0 V.
+ADC1 scans eight channels with DMA, ranks IN9 UHF noise, IN15 VHF noise, IN8 UHF RSSI, IN0 VHF RSSI, IN3 mic level,
+IN1 supply, IN6 mic keypad row, IN7 mic keypad column (unverified). RadioFoundry keeps that order, 480 cycles each at PCLK2 / 8,
+in a circular DMA buffer. Supply: tenths of a volt = raw / 21.3
+(D, plus a user trim); maximum 15.0 V; cutoff hysteresis 8.0 / 10.0 V.
 
 ---
 
@@ -411,6 +451,10 @@ noise, IN9 UHF noise, temperature sensor; 480 cycles each, PCLK2 / 8. Supply: te
 (the same mechanism as the MD-380, [hardware-md380.md](hardware-md380.md) 11.1). A copy can also be kept
 at main-array address 0x010000, recognized by the first 8 bytes of the UHF frequency list (00 25 00 40 00 45 01 40,
 400.025 / 400.145 MHz). RadioFoundry reads the security registers and never writes them. The vendor CPS backs the table up.
+
+Registers 1 and 2 hold 256 bytes each (unverified). Register 3 holds a hardware option block: band edges at +0x14,
++0x16, +0x18, +0x1A (16-bit, BCD MHz in the top bits: 0x1450 = 145.0 MHz) and bit 4 of +0x1D, set when the backlight
+is only switched on and off (unverified).
 
 ### 11.2 Layout (dual band: UHF 9 points, VHF 5 points)
 
@@ -448,15 +492,33 @@ extrapolated with the last slope above the top point, clamped to 0-4095.
 
 ### 12.1 Device and bus
 
-W25Q128 class, 16 MB, JEDEC 0x4018, on SPI2 (mode 0, PCLK1 / 4 = 4.5 MHz in the reference
-port) with CS PB12, shared with the LCD (7.1). Security registers hold the calibration (11.1).
+W25Q128 class, 16 MB, JEDEC 0x4018, on SPI2 with CS PB12, shared with the LCD (7.1). The bus runs in mode 3
+at PCLK1 / 2 = 18 MHz for both the flash and the LCD (unverified). Commands in use: 0x03 read, 0x06 write enable, 0x05
+status, 0x02 page program, 0x20 4 KB erase, 0xD8 64 KB erase, 0x44 / 0x42 / 0x48 security register erase / program /
+read with the register number in address bits 15-12. RadioFoundry reads the JEDEC ID but accepts any part that answers with a
+size. Security registers hold the calibration (11.1).
 
 ### 12.2 Map
 
-The codeplug / "EEPROM" image can sit at 0 and the calibration copy at 0x010000. The vendor codeplug
-and user database (CSV builds) also live in this flash and the vendor firmware needs them restored
-to run again, so a full backup before the first RadioFoundry flash is mandatory. RadioFoundry's map: TODO for the
-clean side (reuse the DM-1701 map, keeping 0x010000-0x010FFF free if the calibration copy is wanted).
+The reference port puts its codeplug / "EEPROM" image at 0 and the calibration copy at 0x010000. The stock TYT codeplug
+and the stock user database (CSV builds) also live in this flash: the stock firmware needs its flash content restored
+to run again, so a full backup before the first RadioFoundry flash is mandatory.
+
+What the stock firmware keeps where (unverified; the meaning of most blocks is open):
+
+| Range | Content | RadioFoundry area over it (19.5) |
+|---|---|---|
+| security registers 1-2 | factory calibration, 512 bytes (11) | none: never written |
+| security register 3 | hardware option block, 64 bytes (11.1) | none: never written |
+| 0x002000-0x0021FF | settings and state blocks | open-firmware "EEPROM" image |
+| 0x02EF00-0x02F00C | the current channel / VFO records and a state record | open-firmware flash image |
+| 0x040000-0x049FFF | lists of 200-byte records | open-firmware flash image |
+| 0x060000-0x0B97FF | fonts and bitmaps (the update file's resource segment) | open-firmware flash image |
+| 0x100000-0x2077FF | further blocks, some loaded into RAM at start | open-firmware flash image |
+
+The update file rewrites the resource segment at 0x060000, but nothing restores the codeplug, settings or lists except
+a backup. The security registers are the only factory data that a backup can't put back without the stock CPS, which
+is why RadioFoundry never writes them (19.5).
 
 ---
 
@@ -506,12 +568,36 @@ for the application, payload at 0x100, 0x100 trailing bytes. The leading digit o
 family (0 = V1-V3, 1 = V4, 2 = V5) (F: inferred from the three known files). The V06.09 images report SP 0x20001BA0,
 the V16.45 ones 0x20001BB0.
 
+### 14.4 Flashing: stock bootloader and stub
+
+Nothing below has run on an MD-9600 yet: every row is unverified.
+
+| Route | When | How |
+|---|---|---|
+| TYT bootloader | the first install, a radio on stock firmware, or a radio whose application is not committed | keys at power-up (14.1), then DFU with the MD-9600 key (14.2): `tools/stm32_dfu.py --model md9600` |
+| Flash stub | a radio already running RadioFoundry built with `CONFIG_STUB_ENTRY=y` | `stub/stubtool.py PORT --rfoundry-enter --write-app build/md9600/rfoundry_md9600.bin` ([stub-stm32f4.md](stub-stm32f4.md)) |
+
+The stub is the DM-1701's and MD-380's image. The host sends it this radio's board record: SPI flash on SPI2 (PB13
+SCK, PB14 MISO, PB15 MOSI, AF5), chip select PB12, mode 3, at most 4.5 MHz, the LCD's chip select PD14 held high while
+the stub runs, an 8 MHz crystal, the bootloader ending at 0x0800C000. The stub never touches SPI1 / PD7, the HR_C6000's
+voice port here.
+
+An update with the stub writes the changed sectors of 3-7 only. It leaves the codec in sectors 8-11 alone unless the
+image is merged with the codec (`rfoundry_md9600_codec.bin`), and never touches the bootloader in 0-2. Sector 3 is erased
+first and its first word written last, so an interrupted update leaves the application invalid. Whether the TYT
+bootloader then stays in DFU on its own, as the DM-1701's does, is unverified. If it doesn't, the key combination of
+14.1 still reaches DFU. The stub also backs up and verifies the whole internal flash and the 16 MB SPI flash
+(`--progmem`, `--q128`), which covers the backup 12.2 asks for once RadioFoundry runs, but not before the first install.
+
 ---
 
 ## 15. USB
 
 OTG_FS on PA11 / PA12, mini-USB on the rear, straight to the MCU (no UART bridge). The bootloader's DFU device is
-separate (14.2).
+separate (14.2). No VBUS sensing: PA9, the OTG_FS VBUS pin, is the mic and GPS supply switch (unverified), so the core
+must run with VBUS sensing off. The stock application's device is DFU class with two alternate settings, the internal
+flash and the SPI flash, self powered (unverified). TYT's CPS reads and writes the radio through it; the commands
+inside its transfers are not known (17 #21).
 
 ---
 
@@ -528,6 +614,9 @@ Vendor firmware follows the same split: V06.09 for V1-V3, V16.45 for V4, V26.45 
 sometimes changed chips without changing the label; a wrong build boots but neither receives nor transmits, and does
 no harm (unverified). GPS models have been reported working with the V5 build. Radios needing
 TYT's V4 firmware are V4 or later.
+
+No part of the radio reports its board revision, and TYT ships one firmware per revision (14.3). The GPS and recording
+models use the same pins as the others (unverified).
 
 **Detection:** no ID pin or register is known. A run-time probe is possible because the families differ in the bus
 they need, but every candidate needs a radio: for example, program the V1/V2 SKY72310 words and watch RSSI / noise on
@@ -558,11 +647,271 @@ last (unidentified synthesizer, needs its power-on quirk).
 | 12 | I2C1 devices | Bus scan |
 | 13 | Calibration unknown bytes, BCD frequency format | Dump the security registers and compare with the vendor CPS test screen |
 | 14 | 0xA6 needed at display init | First boot |
+| 15 | The I2C1 device at 0x3D | Bus scan, board photos |
+| 16 | GPS UART baud rate (9600 in 13.1 is unverified) | Listen on PA10 with a GPS model |
+| 17 | DMR slot and burst timing on this RF chain (synthesizer relock per TX/RX switch) | SDR captures of a DMR call |
+| 18 | The crystal: 8 MHz crystal or an oscillator | RadioFoundry reports which mode started (diagnostics); board photos |
+| 19 | LMX2571 registers beyond the documented set (R60, R58, R53 and the rest), the DEN = 0 reading | Lock and spur check on V5 |
+| 20 | Calibration record layout (11.2) and the hardware option block beyond the band edges | Dump security registers 1-3 |
+| 21 | The CPS command set inside the DFU transfers | USB capture of TYT's CPS |
+| 22 | Display orientation and column offset (RadioFoundry: segments normal, COM reversed, offset 0) | First boot |
+| 23 | Encoder steps per detent and rest state (RadioFoundry: 2, resting where A = B) | Turn the knob, read the debug link's encoder counts |
+| 24 | The V1-V3 per-channel reference divider setting (5.3) | Retune across a band on V1-V3 |
+| 25 | Receiver probe thresholds per revision (section 19.3) | Noise readings per revision with the probe words |
+| 26 | Synthesizer settle times, the APC ramp, the PA drive rows and the squelch thresholds as RadioFoundry uses them (19.8) | Scope the synthesizer and PA lines on a retune and a key-up; power meter per level |
 
 ## 18. Sources
 
-- TYT downloads page (https://www.tyt888.com/download.html): CPS releases and a product photo, no firmware.
-- FCC ID POD-DMR3, https://fccid.io/POD-DMR3
-- Skyworks SKY72310-11 data sheet; STM32F405 data sheet and RM0090.
-- Retailer page https://www.passion-radio.com/mobile/md9600-505.html (unverified claims).
-- [gotchas.md](gotchas.md) 13.5, 14.6.
+| Short name | Source | Kind |
+|---|---|---|
+| | The reference port's MD-9600 tree (CubeMX pin map, register writes, README / STATUS notes), outside this repository; facts only |  |
+| | https://www.opengd77.org/viewtopic.php?t=83, hardware versions | Forum (F) |
+| | https://www.opengd77.org/viewtopic.php?p=15, installation | Forum (F) |
+| [passion-radio] | https://www.passion-radio.com/mobile/md9600-505.html | Retailer (F) |
+| [TYT] | https://www.tyt888.com/download.html (2026-10-12: CPS 1.27, 1.33, 1.43 and a product photo; no firmware) | Vendor |
+| | TYT stock firmware V06.09 and V16.45 ("firmware for PLL1590"), kept outside the repository; container headers and literal constants only | Vendor files |
+| [FCC] | FCC ID POD-DMR3, https://fccid.io/POD-DMR3 |  |
+| [SKY] | Skyworks SKY72310-11 data sheet |  |
+| [ST] | STM32F405 data sheet, RM0090 |  |
+| [gotchas] | [gotchas.md](gotchas.md) 13.5, 14.6 | This repo |
+| [TI] | Texas Instruments LMX2571 data sheet, SNAS654A |  |
+| [AKM] | AKM AK2365 data sheet, MS1453-E-02 |  |
+
+---
+
+## 19. RadioFoundry on the MD-9600
+
+Bring-up state (2026-10-20): the image builds; nothing has run on a radio. `boards/md9600/`.
+
+### 19.1 What the image does
+
+| Area | State |
+|---|---|
+| Clocks | 19.2 |
+| Display | ST7567 on SPI2 (mode 3, 18 MHz) with the flash under one lock; TIM8 CH1 backlight, fully on when the option block says it can't be dimmed. The 128x64 layouts; hints name P1 and P2 ([ui.md](ui.md) 1) |
+| Keys | the 4 x 3 matrix (rows open drain, driven low one at a time), the encoder on EXTI10 / EXTI11 into the shared quadrature decoder, PTT on PE10. The power key goes to the power code, not the key map |
+| Power | no battery (`CAP_NO_BATTERY`). "Off" saves, sets a flag in RTC backup register 18 and resets; at start-up the flag holds the radio until the power key is pressed and released. Supply voltage from ADC1 IN1 |
+| Flash | SPI NOR with the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug at 0 and 0x020000); the board revision record at 0x01F000, appended. Security registers read only: calibration and option block (19.5) |
+| Receive | FM on both bands, every revision (19.3). Front-end tuning from calibration rows 0x30 / 0x39 (11.2) when they aren't blank, else mid scale |
+| DMR | receive on the shared HR_C6000 glue (configuration port PE2-PE5, voice port SPI1 at 4.5 MHz, interrupts PC0-PC2, I2S3 PCM). Reference offset and DMR modulation pair (11.2 rows 0x130-0x149) rewritten at each retune. The two codec profiles (tags 0x0609 and 0x1645, one id `md9600-s11`) run the stock codec from flash: code at 0x080E0000, tables in sector 9, descriptor at 0x080FFF80 ([codec-md9600.md](codec-md9600.md)) |
+| Audio | FM from the IF chip (FM_MUTE high), PCM (DMR voice, beeps) from the HR_C6000 line out with FM held back, AF_SW muting otherwise (`boards/md9600/speaker_md9600.h`) |
+| GPS | USART1 RX (PA10), receive interrupt; 9600 baud first, then 4800, 19200, 38400, 57600, 115200, 3 s each. A silent line ends the search after the first window; a module once heard feeds APRS positions. PA9 stays on (it also powers the mic) |
+| Hand mic | the keypad of 9.3 through `drivers/input/adckeys`, three equal scans per key. Key roles of A-D and A/B are a proposal (unverified). No `CAP_KEYPAD`: a mic may have no keypad |
+| Transmit | the sequence is written (19.8) but refused: `CONFIG_MD9600_TX` is off, and a build with it still needs the run-time arm, a stored revision and plausible PA rows. FM modulation needs the HR_C6000 glue DMR transmit glue is behind `CONFIG_MD9600_DMR_TX` (off) and a run-time gate; its per-burst RF keying hook (`md9600_rf_dmr_key`) is not connected to this sequence yet |
+| Not yet | sub-audio, FM transmit, DMR transmit, split duplex and the two-PLL burst switching (17 #5, #17), the CPS's own command set, update packaging |
+
+### 19.2 Clock plan and memory map
+
+| Item | Value |
+|---|---|
+| HSE | 8 MHz crystal; bypass mode tried if it doesn't start; HSI 16 MHz (no USB) as the last resort |
+| PLL | M 4, N 72, P 2, Q 3: SYSCLK 72 MHz, USB 48 MHz |
+| Buses | AHB 72 MHz, APB1 36 MHz (timers 72 MHz), APB2 72 MHz |
+| Flash | 0x0800C000-0x0807FFFF application (sectors 3-7, 464 KB); sectors 8-11 kept free for the codec |
+| RAM | 128 KB main SRAM (DMA buffers), 64 KB CCM (RTOS heap and task stacks, `RFOUNDRY_CPU_RAM`) |
+
+### 19.3 Board revisions in one image
+
+| Revision | Synthesizer | IF | Switch |
+|---|---|---|---|
+| V1-V3 | SKY72310, 16-bit words, VHF VCO at 2 x LO | AK2365A | `CONFIG_MD9600_V1V3` |
+| V4 | "PLL1590", 24-bit words, the VHF synthesizer set at power-on | AK2365A | `CONFIG_MD9600_V4` |
+| V4A / V5 | LMX2571, 24-bit words | PE11-PE14 filter and route lines | `CONFIG_MD9600_V5` |
+
+All three are on by default; a build with fewer drives only those boards. The revision in use comes from, in order:
+
+1. The stored record (8 bytes at 0x01F000: "M96R", a format byte, the revision and its complement). Only a stored
+   record confirms the revision; transmit will need it.
+2. The receiver probe, when built with `MD9600_REV_PROBE=1`. With the transmitter supplies and the PA loop held off and
+   the RX VCOs selected, it programs the UHF synthesizer with each built revision's words for 446.0 MHz receive and
+   reads the UHF noise level against the unprogrammed baseline. A revision wins when its change is at least the
+   threshold and twice every other one's. It never drives PE15. The thresholds are unmeasured, so it is off by default.
+3. The build default, `MD9600_REV_DEFAULT` (v5).
+
+A stored revision this image can't drive leaves the receiver off rather than programming the wrong chip. The record
+is set with Settings > Advanced > Hardware > Board revision or the debug link's HWOPT (`rfoundry_debug.py hwopt "Board
+revision" V4A/V5`); it applies from the next start-up. The open-firmware CPS has no item for it. Until a record is
+stored the radio receives with the probe's or the default's revision and never transmits, and the diagnostics page
+asks for one ("Set rev: Adv>Hardware"). Its first three lines show the revision and its source ("unbuilt" for a
+stored revision this image doesn't drive), that prompt or "rev confirmed", and the probe ("off" when not built).
+
+The default is one constant, `MD9600_REV_DEFAULT` in `boards/md9600/board.mk`. Which revision it should be is the
+owner's decision; v5 stands until then.
+
+### 19.4 Pin use in RadioFoundry
+
+| Pins | Direction | Idle level | Function | Status |
+|---|---|---|---|---|
+| PA0, PA1, PA3, PA6, PA7, PB0, PB1, PC5 | analog in | - | ADC1 scan: RSSI, supply, mic level, mic keypad, noise | unverified |
+| PA4, PA5 | analog out | 0 | DAC1 UHF tuning, DAC2 VHF tuning / APC | unverified |
+| PA8, PC9, PA13, PA14 | out | low, then high in receive | C5 and R5 supplies (PA13 / PA14 are SWD: connect under reset) | unverified |
+| PD5, PD6, PC4 | out | low | T5 supplies, PA loop: high only in an armed `CONFIG_MD9600_TX` build (19.8) | unverified |
+| PD15 | out | low, high in receive | Power_Control | unverified |
+| PE8, PE9 | out | high | RX VCOs | unverified |
+| PB7 | out | low | MOD2 routing | unverified |
+| PD8-PD11 | out | CS high, clock and data low | synthesizer bus, bit-banged | unverified |
+| PE11-PE14 | out | CS high, clock and data low (V5: filter and route levels) | IF bus or V5 lines | unverified |
+| PE15 | in, out on V1-V4 | high after the reset pulse | AK2365A reset | unverified |
+| PB2, PB6, PC13, PE7 | out | low, PB6 high (muted) | FM stages, amplifier mute, audio band, FM mute | unverified |
+| PC6 | TIM8 CH1 | off | backlight | unverified |
+| PC7, PC8 | out, TIM8 CH2 / CH3 when driven | low | sub-audio tone and beep PWM (19.9) | unverified |
+| PA9 | out | high | mic and GPS supply | unverified |
+| PB12, PD14, PD13, PD12 | out | high, high, low, low then high | flash CS, LCD CS, A0, reset | unverified |
+| PB13-PB15 | SPI2 AF5 | - | flash and LCD | unverified |
+| PE0, PE1, PD0, PD1 | out, open drain | high | key rows | unverified |
+| PD2-PD4 | in, pull-up | - | key columns | unverified |
+| PB10, PB11 | in, pull-up, EXTI | - | encoder | unverified |
+| PE10 | in, pull-up | - | PTT | unverified |
+| PE2-PE6, PD7 | out | CS high, PE6 high (powered down) | HR_C6000 (held in power-down) | unverified |
+
+
+### 19.5 Data flash, calibration and the board record
+
+| Area | Range | Use |
+|---|---|---|
+| Open-firmware "EEPROM" image | 0x000000-0x00FFFF | codeplug part 1 (open-firmware-cps.md 7) |
+| Free | 0x010000-0x010FFF | kept free (no calibration copy: the calibration stays in the security registers) |
+| Settings ring | 0x011000-0x018FFF | 8 sectors ([settings-store.md](settings-store.md)) |
+| Sector journal | 0x019000-0x01AFFF | 2 sectors |
+| Board record | 0x01F000-0x01FFFF | the stored board revision (19.3) |
+| Open-firmware flash image | 0x020000-0xDFFFFF | codeplug part 2; the CPS may write up to 0xE00000 |
+| Native codeplug | 0xE00000-0xEFFFFF | reserved |
+| Staging | 0xF00000-0xF3FFFF | TFTP and fast CPS writes ([tftp.md](tftp.md) 4) |
+
+This is the DM-1701's map; a part smaller than 16 MB gets no map and the radio runs from RAM. The settings ring and the
+journal sit under the foreign region guard ([settings-store.md](settings-store.md) 5), so stock data found there is
+left alone until the debug link claims it.
+
+**Board record.** Records of 8 bytes ("M96R", a format byte, the revision and its complement, a spare byte) are
+appended to the sector, and the newest valid one counts. A power cut while one is written leaves the one before it.
+The sector is erased only when its 512 slots are used; a cut during that erase leaves no record, which the radio
+treats as a new radio (probe or build default, transmit refused).
+
+**Security registers.** RadioFoundry reads registers 1-3 once at start-up and never erases or programs them, and never writes a
+status register (the registers' one-time lock bits are there). The SPI NOR driver has no command for either, and
+`tests/host/spiNorTest.c` checks that no such command reaches the chip. The open-firmware CPS can read them as area 10
+and can't write them.
+
+**Calibration.** `boards/md9600/cal_md9600.h` is the interface for the radio code, on the generic reader in
+`drivers/cal/calblock/`. Both blocks are kept whole as read, unknown bytes included.
+
+| Block | Read as | State | Values |
+|---|---|---|---|
+| Calibration | registers 1 and 2, 256 bytes each, one 512-byte block | `factory`, `blank` (all 0xFF or 0x00), `unreadable` (a failed read of either register drops the whole block) | every row of 11.2 by frequency: front-end tuning, the four PA levels, squelch 9 and 1 open and close, CTCSS and DCS deviation; the reference tune per band (byte - 128); the RSSI points; raw bytes |
+| Hardware options | register 3, first 64 bytes | as above | band edges; the backlight on / off bit |
+
+A row whose points are all 0xFF or all 0x00 has no value. Rows interpolate linearly between points (rounded) and
+continue the last slope past the top point. Front-end tuning without a value is mid scale (2048). The four band edges
+are sorted by value, so the order of the halfwords in the block doesn't matter: the two below 300 MHz are VHF, the two
+above UHF, and anything else (a nibble above 9, three edges in one band, two equal) gives none. With the backlight bit
+set, any brightness above 0 drives the backlight fully on. Transmit stays refused whatever the PA rows hold.
+
+### 19.6 Debug link keys
+
+The `board` view section ([debuglink.md](debuglink.md) 3.7) carries these keys, each as `board.<key>`. The supply
+voltage is the generic `supply_mv` key instead (`hal_power_t.supply_mv`; the divider's scale is unverified, 10.3).
+
+| Key | Value |
+|---|---|
+| `rev`, `rev.source`, `rev.usable`, `rev.confirmed` | the revision in use (`V1-V3`, `V4`, `V4A/V5`, `none`), where it came from (`stored`, `probe`, `default`, `none`), whether this image drives it, whether a person set it |
+| `rev.stored` | the board record now (a change takes effect at the next start) |
+| `probe` | `off`, or the revision the receiver probe picked (`none`: no verdict) |
+| `clock`, `sysclk_hz` | `crystal`, `bypass` (an external clock on the HSE pin), `hsi_pll` or `hsi`; the core clock |
+| `flash.id`, `flash.size`, `flash.map` | JEDEC memory type and capacity (`0x4018` for a 25Q128), bytes, 1 when the map of 19.5 is in use |
+| `cal`, `opt` | the calibration and option block states (19.5) |
+| `opt.backlight_switched`, `opt.vhf_hz`, `opt.uhf_hz` | the option bit; the band edges as `low-high` in Hz, `0-0` when there are none |
+| `keys` | the matrix, one hex digit per row K0-K3, bits 0-2 = columns K4-K6, 1 = pressed |
+| `ptt` | 1 while the hand-mic PTT is down |
+| `lo_hz`, `retunes`, `refused` | the synthesizer's last frequency, retunes and refused retunes |
+| `pin.power`, `pin.c5`, `pin.r5`, `pin.tx` | output levels: Power_Control; C5 UHF and VHF; R5 UHF and VHF; T5 UHF, T5 VHF and the PA loop enable (`000` in this build) |
+| `adc.noise_u`, `adc.noise_v`, `adc.rssi_u`, `adc.rssi_v`, `adc.mic`, `adc.supply`, `adc.mic_row`, `adc.mic_col` | the ADC1 scan, raw 12-bit (10.3) |
+| `c6000`, `c6000.dmr`, `c6000.errors`, `c6000.tx_refused` | the HR_C6000 answered after set-up (with 4:0x10), in DMR, failed transfers, bursts the RF switch refused |
+| `speaker` | bit 0 amplifier on, bit 1 FM audio through, bit 2 codec line out |
+| `mic_key` | the hand-mic key decoded on the last scan, 255 for none |
+| `gps`, `gps.baud`, `gps.nmea` | module heard; the rate listened at (0 once given up); valid / bad sentences / bytes |
+
+`tests/hil/test_md9600.py` checks them on a radio: identity, every key present, the transmitter switches low, the
+clock, the flash and its map, both blocks readable, no key or PTT down at rest, the ADC scan in range and a plausible
+supply, and the receiver tuned when the revision is driven. It never transmits and skips on any other radio.
+
+### 19.7 USB, programming and updates
+
+| Path | State |
+|---|---|
+| USB device | CDC serial with the other RadioFoundry STM32 radios' IDs (1FC9:0094, network personality 0096, not built yet), product "MD-9600", serial number from the chip UID; VBUS sensing off (15) |
+| Debug link | on the same port ([debuglink.md](debuglink.md)); the `board` view section (19.6) |
+| Codeplug | the open-firmware CPS protocol as radio type 5 ([open-firmware-cps.md](open-firmware-cps.md)) and the fast codeplug protocol, writing through the journal (19.5). Area 10 reads the security registers; the CPS calibration window is empty (no calibration in the main array), so no CPS can write calibration |
+| TYT's CPS | not supported: its command set is unknown (17 #21). Nothing of it is implemented |
+| ROM DFU | debug link REBOOT mode 1 ([debuglink.md](debuglink.md) 3.11), only at RDP level 0, with the same safe pin levels as at power-up first (`board_sysboot_prepare`) |
+| TYT bootloader | the stock route (14.1, 14.2): keys held at power-up, then DFU with the MD-9600 key |
+| Flash stub | `CONFIG_STUB_ENTRY` (off by default, as on the DM-1701; in the maximal configuration): `board_stub_prepare` switches the transmitter off first, then the shared STM32F4 stub runs with this radio's board record (14.4). Not tried on this radio |
+
+Open: the rfoundry board entry, the web flasher's radio entry and the update image packaging are not written; they are
+the owner's decision.
+
+### 19.8 RF sequencing
+
+`boards/md9600/rfseq_md9600.c` holds the order of every RF step for every revision; `radio_md9600.c` maps its lines to
+the pins of 19.4. No synthesizer has a lock detect line (5.3), so each gets a fixed settle time after its words. All
+times are unverified.
+
+| Step | Receive | Transmit (`CONFIG_MD9600_TX`, armed) |
+|---|---|---|
+| 1 | PA loop and both T5 off, APC reference 0 | the same |
+| 2 | Power_Control, both R5, both C5 on | both R5 off, FM stages off |
+| 3 | both VCO_VCC high (RX VCOs) | the band's C5 on; the other band's C5 off on V4 and V4A / V5, on for V1-V3; U_V_MOD_SW to the band; the band's VCO_VCC low (TX VCO) |
+| 4 | the band's synthesizer words for the LO (5.2), then 2 ms | the words for the carrier, then 2 ms |
+| 5 | front-end tuning: DAC1 (UHF) or DAC2 (VHF) from calibration | the band's T5 on, 1 ms |
+| 6 | the IF: AK2365A set-up and 2 ms for its calibration (V1-V4), or the filter and route lines (V4A / V5) | RF_APC_SW on |
+| 7 | U_V_AF_SW to the band, FM_SW on in FM, off in DMR; 3 ms | APC reference (DAC2) up to the calibrated level in 8 steps of 250 us |
+
+Return to receive ramps the APC reference down in the same steps, opens the loop, drops both T5, then runs the receive
+column with the last receive settings. For DMR bursts the PA alone (T5, the loop, the ramp) switches while the
+synthesizer stays on the carrier. DMR receive uses the 12.5 kHz IF setting.
+
+At power-up, with the revision known: receivers on, then on V1-V4 the AK2365A reset (PE15 low for 10 us), and on V4
+the VHF synthesizer set for 145 MHz receive. PE15 stays an input on V4A / V5.
+
+Transmit is refused unless all hold: the build has `CONFIG_MD9600_TX` (off by default); a person armed it for this
+power cycle (Settings > Advanced > Hardware > Transmit, or HWOPT; every start is unarmed); the revision comes from a
+stored record; the frequency is in a band; the calibration's PA rows are present at every point and rise with the
+power level (11.2). A refusal or a bus failure leaves the PA loop and both T5 off and the receiver back on. Disarming
+drops the PA at once.
+
+Calibration as the RF code uses it (11.2, all unverified): front-end tuning, PA drive per level (5 W row 0x20, 10 W
+0x1A0, 25 W 0x190, 40 W 0x10, VHF 9 bytes later), squelch level 1 and level 9 opening thresholds. DAC values and noise
+thresholds are the byte x 16. The noise reading maps linearly onto the core's squelch scale through the two
+thresholds: level 1's maps to 64, level 9's to 40. Without them it is the 12-bit reading / 16. RSSI uses the curves of
+5.7. The diagnostics page shows which row groups each band accepts ("calrf V RPS U RPS"), the sequencer state, the
+arm and the last refusal.
+
+### 19.9 Other RF-side lines
+
+| Line | Use in RadioFoundry |
+|---|---|
+| PA2, ADC3 IN2 (QT_DQT_IN) | one software-started conversion for the diagnostics page ("qt"). No sub-audio decoder runs on it yet |
+| PC3, ADC2 IN13 (discriminator audio) | not sampled yet. The software CTCSS / DCS detector (`drivers/rf/subaudio`) is the intended consumer; the sample rate and DMA set-up are open |
+| PC7, TIM8 CH2 | sub-audio tone PWM (`md9600_pwm_out`), on the backlight's 28 kHz timebase. No tone generator drives it yet |
+| PC8, TIM8 CH3 | beep PWM, same helper |
+| PA temperature, fan | no sensor or fan line is known on any revision (?) |
+
+### 19.10 Build switches
+
+The board's own switches, in `boards/md9600/board.mk` and `config.mk` (the shared ones:
+[build-config.md](../build-config.md)):
+
+| Switch | Values |
+|---|---|
+| `MD9600_REV_DEFAULT` | `v5` (default), `v4` or `v1v3`: the board revision driven when none is stored and the probe gives no verdict (19.3) |
+| `MD9600_REV_PROBE` | `1`: the receiver probe at start-up picks the revision when none is stored. Off (`0`) until its thresholds are measured |
+| `CONFIG_MD9600_V1V3` / `_V4` / `_V5` | `y` (default) or `n`: the synthesizer driver per board revision: V1-V3 (SKY72310 and the AK2365A IF receivers), V4 (the 24-bit "PLL1590" part and the AK2365A), V4A / V5 (LMX2571). All on, one image runs every revision; fewer make a smaller image for those boards. At least one must be on (19.3) |
+| `CONFIG_MD9600_TX` | `n` (default) or `y`: the transmit sequence (`boards/md9600/rfseq_md9600.c`). Built, transmit is still refused until it is armed for the power cycle (Settings > Advanced > Hardware, or the debug link) on a radio whose board revision is stored, and the PA calibration rows look plausible (19.8) |
+| `CONFIG_MD9600_DMR_TX` | `n` (default) or `y`: the HR_C6000's per-burst RF keying for DMR transmit. Still refused at run time until enabled (19.1) |
+
+Feature switches that differ from the platform's defaults (`config.mk`; the two lists:
+[build-config.md](../build-config.md#unsupported-not-written-unconfirmed)):
+
+| Off by default | Why |
+|---|---|
+| `SUBTONE`, `FM_TX_TONES`, `DTMF`, `APRS_RX`, `HOTSPOT`, `USB_NETWORK`, `NET_PPP` and what follows them (maximal build too: `BOARD_NOT_WRITTEN`) | bring-up: transmit is refused until a radio confirms the RF sequence, and the tone, sub-audio and APRS receive paths aren't written (19.1) |
+| `UI_COLOR`, `FONT_XL`, `FONT_AA`, `FONT_BIG`, `AM_RX`, `BCAST_FM`, `VIBRATE`, `NAND_STORAGE`, `FAULT_TRACE` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen; no air band or broadcast receiver; no vibration motor; NOR data flash; no UART for a fault trace |

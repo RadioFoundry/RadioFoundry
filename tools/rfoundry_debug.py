@@ -80,6 +80,8 @@ APRS = 0x11
 APRS_OP_SEND_NOW, APRS_OP_STATUS, APRS_OP_MESSAGE, APRS_OP_TEST_CALL, APRS_OP_SET, APRS_OP_NMEA = range(1, 7)
 CRASH = 0x1B                        # the crash log (CONFIG_CRASH_LOG; docs/spec/debuglink.md 3.19)
 CRASH_OP_CLEAR, CRASH_OP_TEST = range(2)
+HWOPT = 0x1F                        # the board's hardware options (docs/spec/debuglink.md 3.23)
+HWOPT_OP_LIST, HWOPT_OP_SET = range(2)
 CRASH_TESTS = {"trap": 1, "assert": 2, "hang": 3}
 CRASH_TOKEN = 0x48535243            # 'CRSH'
 WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFIG_WATCHDOG; docs/spec/debuglink.md 3.21)
@@ -148,7 +150,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link"]
+                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "board"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -560,6 +562,17 @@ class DebugLink:
 
     def rx2_restart(self):
         self.request(RX2, struct.pack("<BI", RX2_OP_RESTART, RX2_TOKEN))
+
+    def hwopts(self):
+        """The board's hardware options: [{name, value (-1 = none stored), restart, choices}]"""
+        kv = parse_kv(self.request(HWOPT, bytes([HWOPT_OP_LIST]))[1].decode("ascii", "replace"))
+        return [{"name": kv.get(f"hwopt.{i}.name", ""), "value": int(kv.get(f"hwopt.{i}.value", "-1")),
+                 "restart": kv.get(f"hwopt.{i}.restart") == "1",
+                 "choices": kv.get(f"hwopt.{i}.choices", "").split("|")} for i in range(int(kv.get("hwopt.count", "0")))]
+
+    def hwopt_set(self, option, choice):
+        """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
+        self.request(HWOPT, bytes([HWOPT_OP_SET, option, choice]))
 
     def version(self):
         return parse_kv(self.request(VERSION)[1].decode("ascii", "replace"))
@@ -1680,6 +1693,24 @@ def cmd_watchdog(link, a):
         for k, v in link.view(["watchdog"]).items():
             if k.startswith("watchdog."):
                 print(f"{k}={v}")
+
+
+def cmd_hwopt(link, a):
+    opts = link.hwopts()
+    if a.option is not None:
+        names = [o["name"].lower() for o in opts]
+        i = int(a.option) if a.option.isdigit() else names.index(a.option.lower()) if a.option.lower() in names else -1
+        if not 0 <= i < len(opts) or a.choice not in opts[i]["choices"]:
+            print("hwopt: OPTION (number or name) and one of its choices; see `hwopt` for the list", file=sys.stderr)
+            return 2
+        link.hwopt_set(i, opts[i]["choices"].index(a.choice))
+        print(f"{opts[i]['name']} = {a.choice}" + (" (from the next start-up)" if opts[i]["restart"] else ""))
+        return 0
+    for i, o in enumerate(opts):
+        v = o["choices"][o["value"]] if 0 <= o["value"] < len(o["choices"]) else "not set"
+        print(f"{i} {o['name']}: {v}  ({' | '.join(o['choices'])}){'  restart' if o['restart'] else ''}")
+    if not opts:
+        print("no hardware options on this radio")
     return 0
 
 
@@ -1787,6 +1818,9 @@ def main(argv=None):
     p = sub.add_parser("rx2", help="the second receiver's SoC: info, restart (the update bridge is stubtool's, "
                        "docs/spec/debuglink.md 3.22)")
     p.add_argument("op", nargs="?", default="info", choices=["info", "restart"])
+    p = sub.add_parser("hwopt", help="hardware options: list, or set OPTION CHOICE (docs/spec/debuglink.md 3.23)")
+    p.add_argument("option", nargs="?", help="number or name, e.g. 'Board revision'")
+    p.add_argument("choice", nargs="?", help="one of the option's choices, e.g. V4A/V5")
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
@@ -1845,6 +1879,8 @@ def main(argv=None):
                 return cmd_crash(link, a)
             elif a.cmd == "watchdog":
                 return cmd_watchdog(link, a)
+            elif a.cmd == "hwopt":
+                return cmd_hwopt(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
             elif a.cmd == "rx2":

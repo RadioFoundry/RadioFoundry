@@ -277,7 +277,7 @@ function stockLog() {
 // Remember an internal-flash readout for the flash log. A failure to hash never stops a backup
 async function noteReadout(data) {
 	try {
-		const info = await stockfw.identify(data, fb());
+		const info = await stockfw.identify(data, fb(), S.board?.id);
 		S.readout = { len: data.length, sha256: info.sha, id: (info.known ? `known:${info.known}` : S.now?.kind || "unidentified").slice(0, 64) };
 		S.readoutBytes = data;
 	} catch (e) { diag.error("flash/readout hash", e); }
@@ -587,7 +587,7 @@ async function pickedStock(f) {
 		const common = { picked, opened, report, analysis: analysisCandidate(opened, fb(), S.board.id),
 			problem: pickProblem(opened, S.board.id), keyProblem: pickProblem(opened, S.board.id, { need: "key" }) };
 		S.vendorPick = { picked, opened, problem: common.problem };
-		const info = b ? await stockfw.identify(b.data, fb()) : none;
+		const info = b ? await stockfw.identify(b.data, fb(), S.board?.id) : none;
 		const got = b ? { name: b.path.split("/").pop(), data: b.data, ...common, match: b.match, info } : { ...f, ...common, info };
 		diag.note(...crumbs.filePicked(picked, got));
 		S.picked = { name: f.name, data: f.data };
@@ -1448,7 +1448,8 @@ function codecView() {
 			forward(null);
 			return;
 		}
-		const haveStock = fb().profiles[S.stock?.info.sha]?.board === S.board.id;
+		const stockProf = S.stock ? stockfw.profileFor(fb().profiles, S.stock.info.sha, S.board.id) : null;
+		const haveStock = stockProf?.board === S.board.id;
 		// a picked build of this radio without a codec profile still gives the key (the opener derived it)
 		const keyStored = S.sim || !!S.key || !!savedKey(S.board);
 		const keyKnown = keyStored || (S.stock?.match?.board === S.board.id && !!S.stock.match.key);
@@ -1476,10 +1477,10 @@ function codecView() {
 		const needs = [];
 		if (!S.decision && !haveStock) needs.push(`${err} ${t("flash.codec.need_codec")}`);
 		// a file for another radio that gives this one's codec (file_radio) never gives the key: getKey refuses it
-		const codecOnly = haveStock ? fb().profiles[S.stock.info.sha].file_radio : null;
+		const codecOnly = haveStock ? stockProf.file_radio : null;
 		const stockKey = haveStock && !codecOnly;
 		if (S.decision && !keyKnown && codecOnly) {
-			const prof = fb().profiles[S.stock.info.sha];
+			const prof = stockProf;
 			needs.push(t("flash.err.codec_only_key", { file: prof.name, radio: codecOnly, board: S.board.name }));
 		} else if (S.decision && !keyKnown && !stockKey) needs.push(t("flash.codec.need_key"));
 		const ready = S.decision && (keyKnown || stockKey);

@@ -75,7 +75,7 @@ const keyedBoards = (fb, first) => Object.values(fb.boards).filter((b) => b.key_
 // boards), "internal" (a known file failing its own check) or "not-vendor"
 export async function identifyFile(data, fb, boardId = null) {
 	const sha = await sha256(data);
-	const prof = fb.profiles[sha];
+	const prof = stockfw.profileFor(fb.profiles, sha, boardId);
 	if (prof) return { sha, board: prof.board, kind: "codec", how: "sha256", profile: prof, known: fb.known_files[sha] || prof.name };
 	// a file known to hold no codec (stockfw NO_CODEC_FILES): named, and like any other non-vendor file, never a source
 	const bare = fb.no_codec_files?.[sha];

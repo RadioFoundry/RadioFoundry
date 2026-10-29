@@ -382,13 +382,20 @@ TESTS   += codecDescTest
 codecDescTest: codecDescTest.c $(ROOT)/platform/stm32f4/codec_desc.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ codecDescTest.c
 
+# The two-level analog keypad (drivers/input/adckeys) a hand microphone may use
+TESTS   += adckeysTest
+
+adckeysTest: adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c $(ROOT)/drivers/input/adckeys/adckeys.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c
+
 run: run-chips
-run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest codecDescTest
+run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest adckeysTest codecDescTest
 	./sky72310Test
 	./hrc5000Test
 	./nmeaLineTest
 	./gpsRxTest
 	./gpsBaudTest
+	./adckeysTest
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin --board dm1701
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md9600.bin --board dm1701 \
@@ -479,6 +486,21 @@ ambeVoiceTest: ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/amb
 TESTS   += micGainTest
 micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
+
+# The debug link's hardware options command (core/debuglink/debuglink_hwopt.c), with options and without
+TESTS   += hwoptTest hwoptTestNone
+HWOPTT  := hwoptTest.c $(CORE)/debuglink/debuglink_hwopt.c $(CORE)/debuglink/dl_fmt.c
+HWOPTT_H := $(ROOT)/hal/hal_hwopt.h $(ROOT)/hal/board.h $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h
+hwoptTest: $(HWOPTT) $(HWOPTT_H)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(HWOPTT)
+hwoptTestNone: $(HWOPTT) $(HWOPTT_H)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DHWOPT_NONE_BOARD -o $@ $(HWOPTT)
+
+run: run-hwopt
+run-hwopt: hwoptTest hwoptTestNone
+	./hwoptTest
+	./hwoptTestNone
+.PHONY: run-hwopt
 
 # The crash log's record, its start-up side on a fake store, the packed report (core/crash/crash.c), and the UI's side
 # of it with the report (core/ui/ui_svc_crash.c), the debug link's (core/debuglink/debuglink_crash.c)

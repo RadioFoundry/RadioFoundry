@@ -323,19 +323,31 @@ static const keymap_entry_t map_f[] = {	// few keys (7.5): Up / Down / Select / 
 	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
 	{ K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
+// The MD-9600's front panel as boards/md9600/board.c maps it, the hand-mic keypad not read (7.4): Enter, Back, P1 /
+// P2 as QUICK / CONTEXT, Up / Down, P3 monitor (SK1), P4 talk target (SK2), the orange key (SK3), no digits
+static const keymap_entry_t map_p[] = {
+	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ K_P1, ACT_QUICK, ACT_QUICK, false, false, 0 }, { K_P2, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
+	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ K_SK3, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+};
 static const uint8_t side_k[] = { K_SK1, K_SK2, K_SK3 }, side_m[] = { K_SK1, K_SK2 };	// board.side_keys
 static const char *const side_names[] = { "SK1", "SK2", "SK3" };
+static const char *const side_names_p[] = { "P3", "P4", "Orange" };	// the MD-9600 (boards/md9600/board.c)
 static const struct {
 	const keymap_entry_t *m;
 	uint8_t n;
 	uint32_t caps;
 	const uint8_t *side;
 	uint8_t side_n;
+	const char *const *names;
 } maps[SIM_MAP_COUNT] = {
-	{ map_k, sizeof map_k / sizeof map_k[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_k, 3 },	// the DM-1701 has the channel knob
-	{ map_m, sizeof map_m / sizeof map_m[0], CAP_KEYPAD | CAP_DMR, side_m, 2 },
-	{ map_v, sizeof map_v / sizeof map_v[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_m, 2 },
-	{ map_f, sizeof map_f / sizeof map_f[0], CAP_ENCODER | CAP_DMR, NULL, 0 },
+	{ map_k, sizeof map_k / sizeof map_k[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_k, 3, side_names },	// the DM-1701 has the channel knob
+	{ map_m, sizeof map_m / sizeof map_m[0], CAP_KEYPAD | CAP_DMR, side_m, 2, side_names },
+	{ map_v, sizeof map_v / sizeof map_v[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_m, 2, side_names },
+	{ map_f, sizeof map_f / sizeof map_f[0], CAP_ENCODER | CAP_DMR, NULL, 0, NULL },
+	{ map_p, sizeof map_p / sizeof map_p[0], CAP_ENCODER | CAP_DMR, side_k, 3, side_names_p },
 };
 
 static void d_init(void) {}
@@ -1754,10 +1766,13 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.keymap = maps[map].m;
 	board.keymap_len = maps[map].n;
 	board.side_keys = maps[map].side;
-	board.side_key_names = side_names;
+	board.side_key_names = maps[map].names;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
 	power.supply_mv = NULL;
+	// The MD-9600's panel names its QUICK and CONTEXT keys in the hints
+	board.quick_label = map == SIM_MAP_P ? "P1" : NULL;
+	board.context_label = map == SIM_MAP_P ? "P2" : NULL;
 	cur_map = map;
 	gfx_init(&disp);
 	gfx_invalidate();

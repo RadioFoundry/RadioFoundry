@@ -1,0 +1,116 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+"""MD-9600 bring-up checks (docs/spec/hardware-md9600.md 19), radio only, never transmits. They read the debug link's
+`board` view section (19.6), which only this radio has: the board revision record, the clock that started, the data
+flash map and the record sector beside it, the calibration and option blocks, idle keys, the ADC scan, the
+synthesizer and the transmitter switches held off. The display, the build features and the data flash's JEDEC ID are
+the generic health checks' (tests/hil/test_health.py, from board.toml [hil]). A board's own test: skipped other_board
+on any other radio (tests/hil/hil_plugin.py). Their feature markers are optional: they record bring-up, they gate
+nothing."""
+import pytest
+
+from rfoundry_hil import skip
+
+KEYS = ["rev", "rev.source", "rev.usable", "rev.confirmed", "rev.stored", "probe", "clock", "sysclk_hz", "flash.id",
+        "flash.size", "flash.map", "cal", "opt", "opt.backlight_switched", "opt.vhf_hz", "opt.uhf_hz", "keys", "ptt",
+        "lo_hz", "retunes", "refused", "pin.power", "pin.c5", "pin.r5", "pin.tx", "adc.noise_u",
+        "adc.noise_v", "adc.rssi_u", "adc.rssi_v", "adc.mic", "adc.supply", "adc.mic_row", "adc.mic_col"]
+
+
+@pytest.fixture
+def md9600(radio):
+    return radio
+
+
+def board_view(r):
+    v = r.view(["board"])
+    return {k[len("board."):]: val for k, val in v.items() if k.startswith("board.")}
+
+
+@pytest.mark.feature("debuglink", optional=True)
+def test_board_view_keys(md9600):
+    b = board_view(md9600)
+    assert b.get("name") == "MD-9600"
+    missing = [k for k in KEYS if k not in b]
+    assert not missing, f"board view keys missing: {missing}"
+
+
+@pytest.mark.feature("fm", optional=True)
+def test_transmitter_held_off(md9600):
+    """Transmit is refused in this build: both T5 supplies and the PA loop stay low whatever the radio does."""
+    b = board_view(md9600)
+    assert b["pin.tx"] == "000", f"T5 UHF, T5 VHF, APC enable: {b['pin.tx']}"
+    assert b["rev.confirmed"] in ("0", "1")
+
+
+@pytest.mark.feature("diag", optional=True)
+def test_clock(md9600):
+    """USB works only on the PLL; the debug link answering over USB already says the PLL runs. Which source it took
+    settles hardware-md9600.md 17 #18 (crystal or oscillator)."""
+    b = board_view(md9600)
+    assert b["clock"] in ("crystal", "bypass"), f"clock {b['clock']}: the 8 MHz HSE did not start"
+    assert int(b["sysclk_hz"]) == 72000000
+
+
+@pytest.mark.feature("settings_store", optional=True)
+def test_data_flash_map(md9600):
+    """The board's map over the 16 MB part, with the core's store on it (the part's JEDEC ID is test_health.py's)."""
+    b = board_view(md9600)
+    assert int(b["flash.size"]) == 16 * 1024 * 1024 and b["flash.map"] == "1"
+    s = md9600.view(["storage"])
+    assert s["storage.region"] in ("ours", "foreign"), s["storage.region"]
+    assert int(s["storage.errors"]) == 0
+
+
+@pytest.mark.feature("settings_store", optional=True)
+def test_revision_record(md9600):
+    """A revision is driven, and where it came from: the stored record (store_md9600.c), the probe or the build's
+    default. A stored source means a record is in the sector (a change made since takes effect at the next start)."""
+    b = board_view(md9600)
+    assert b["rev"] != "none" and b["rev.source"] in ("stored", "probe", "default"), (b["rev"], b["rev.source"])
+    assert b["rev.usable"] in ("0", "1")
+    if b["rev.source"] == "stored":
+        assert b["rev.stored"] != "none", "driven from a stored record, but the sector holds none"
+
+
+@pytest.mark.feature("fm", optional=True)
+def test_calibration_and_options_read(md9600):
+    """The security registers answer. A radio from the factory has both blocks; 'blank' means erased registers (worth a
+    note in the bring-up log), 'unreadable' a bus or command problem."""
+    b = board_view(md9600)
+    assert b["cal"] in ("factory", "blank"), f"calibration {b['cal']}"
+    assert b["opt"] in ("factory", "blank"), f"option block {b['opt']}"
+    if b["opt"] == "factory" and b["opt.vhf_hz"] != "0-0":
+        vlo, vhi = (int(x) for x in b["opt.vhf_hz"].split("-"))
+        ulo, uhi = (int(x) for x in b["opt.uhf_hz"].split("-"))
+        assert 130e6 <= vlo < vhi <= 180e6, b["opt.vhf_hz"]
+        assert 400e6 <= ulo < uhi <= 520e6, b["opt.uhf_hz"]
+
+
+@pytest.mark.feature("radio_controls", optional=True)
+def test_keys_idle(md9600):
+    """Nobody at the panel: no matrix key and no PTT reads as pressed (a stuck row or column shows here)."""
+    b = board_view(md9600)
+    assert b["keys"] == "0x0000", f"matrix rows K0-K3: {b['keys']}"
+    assert b["ptt"] == "0"
+
+
+@pytest.mark.feature("diag", optional=True)
+def test_adc_scan(md9600):
+    """The ADC1 scan runs: every rank in range. The supply reading's range is test_health.py's (board.toml [hil]
+    supply_mv)."""
+    b = board_view(md9600)
+    for k in KEYS:
+        if k.startswith("adc."):
+            assert 0 <= int(b[k]) <= 4095, (k, b[k])
+    assert int(b["adc.supply"]) > 0, "supply rank reads 0: the scan isn't running or the channel is wrong"
+
+
+@pytest.mark.feature("fm", optional=True)
+def test_receiver_tuned(md9600):
+    """With a revision this image drives, the synthesizer was programmed for the channel."""
+    b = board_view(md9600)
+    if b["rev.usable"] != "1":
+        skip("state", f"revision {b['rev']} ({b['rev.source']}) not driven by this image")
+    assert int(b["lo_hz"]) > 0 and int(b["retunes"]) > 0, b
+    assert b["pin.power"] == "1", "Power_Control off while receiving"

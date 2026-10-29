@@ -15,7 +15,7 @@ import uuid
 from . import __version__, boards, bootkey, codecsave, debuglink, manifest as mf, plan as planmod, state, stockfw
 from . import dfu as dfumod
 from . import release as relmod
-from . import serialflash
+from . import serialflash, stubroute
 
 EPILOG = """\
 examples:
@@ -209,7 +209,8 @@ def stock_board(stock, board_id):
     """The board a stock file or flash readout is for (its codec profile), checked against --board when both are
     given."""
     try:
-        prof = stock_codec(stock, None)[0] if not stockfw.is_container(stock) else stockfw.find_profile(stock)
+        prof = stock_codec(stock, None)[0] if not stockfw.is_container(stock) else stockfw.find_profile(
+            stock, board=boards.get(board_id).id if board_id else None)
     except (stockfw.StockError, UsageError):
         return pick_board(board_id, "an unknown stock file")
     board = boards.get(prof["board"])
@@ -319,7 +320,10 @@ def get_key(args, board, stock, sim_key=None):
         return sim_key
     if args.key:
         return dfumod.load_key(args.key, board)
-    prof = stockfw.PROFILES.get(stockfw.sha256(stock)) if isinstance(stock, bytes) else None
+    prof = None
+    if isinstance(stock, bytes):
+        sha = stockfw.sha256(stock)
+        prof = stockfw.PROFILES.get(stockfw.profile_key(sha, board.id)) or stockfw.PROFILES.get(sha)
     if prof is not None and stockfw.codec_only(prof):
         # another radio's file that gives this radio's codec: the key comes from elsewhere
         say("key      %s" % stockfw.codec_only(prof))
@@ -536,8 +540,11 @@ def cmd_flash(args):
         return cmd_flash_serial(args, board, man, image, merged)
     if board.family == "serial-iap":
         raise UsageError("%s is installed with the web flasher or stub/stubtool.py, not with rfoundry" % board.name)
+    if args.route == serialflash.STUB:
+        return cmd_flash_stub(args, board, image, merged)
     if args.route != serialflash.AUTO:
-        raise UsageError("--route is for the radios flashed over a programming cable (DM-1801 Pro, DM-32UV)")
+        raise UsageError("--route is for the radios flashed over a programming cable (DM-1801 Pro, DM-32UV) and "
+                         "--route stub (radios running RadioFoundry with stub entry)")
     stock = load_stock(args)
     if merged and stock is not None:
         say("stock    the image carries the codec, so the stock file only gives the bootloader key")
@@ -679,6 +686,29 @@ def _progress(unit):
             sys.stdout.write("writing  %d/%d %s (%d%%)\n" % (done, total, unit, pct))
         sys.stdout.flush()
     return progress
+
+
+def cmd_flash_stub(args, board, image, merged):
+    """A radio with a flash stub route (stubroute.py): RadioFoundry must be running with stub entry."""
+    if board.id not in stubroute.BOARDS:
+        raise UsageError("the %s has no flash stub; use the bootloader route" % board.name)
+    if args.simulate:
+        raise UsageError("--simulate does not cover the stub route")
+    if merged:
+        warn("the codec in this image is ignored: the stub route keeps the radio's own codec")
+    if args.codec == "merge" or (args.stock and args.codec == "auto"):
+        warn("the stub route never writes a codec; --stock is ignored (use the bootloader route to write one)")
+    say("route    stub: the radio must be ON and run RadioFoundry built with CONFIG_STUB_ENTRY=y")
+    if args.dry_run:
+        say("dry run: %d bytes would be written (changed sectors only)" % len(image))
+        return 0
+    if not args.yes and not ask_yes("Write the changed sectors now?", default=True):
+        return 1
+    try:
+        rc = stubroute.run(board, image, args.port, log=say)
+    except stubroute.StubRouteError as e:
+        raise UsageError(str(e))
+    return rc
 
 
 def cmd_flash_serial(args, board, man, app, slot):

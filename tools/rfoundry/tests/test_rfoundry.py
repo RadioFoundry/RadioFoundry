@@ -730,6 +730,12 @@ class OldRouteGuard(unittest.TestCase):
             self.assertEqual(rc, 0, err.getvalue())					# one range: as before
 
 
+# The MD-9600's two stock builds (board.toml [codec] stock): 06.09 CSV and 16.45 CSV, their tables at different addresses
+# the MD-9600's own placement of these files (the same files are DM-1701 codec sources: stockfw.profile_key)
+MD9600_STOCK = ("79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09@md9600",
+                "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532@md9600")
+
+
 class StockLibrary(unittest.TestCase):
     def test_extract_and_merge(self):
         stock, profiles, code, tables = synthetic_stock()
@@ -904,6 +910,67 @@ class StockLibrary(unittest.TestCase):
         self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7, 9, 10, 11])
         with self.assertRaises(plan.PlanError):		# the application can't reach the codec sectors
             plan.make_plan(b, [(b.app_base, app_image(0x08080000 - 0x0800C000 + 4))], plan.KEEP)
+
+    def test_md9600_board(self):
+        b = boards.get("md9600")
+        self.assertFalse(b.releasable)
+        self.assertTrue(b.keep_codec_supported)		# the application has sectors 3-7, the codec 9 and 11
+        self.assertEqual(b.codec.id, "md9600-s11")
+        self.assertEqual([s.index for s in b.codec_sectors()], [9, 11])
+        self.assertEqual(tuple(b.app_region), (0x0800C000, 0x08080000))	# memory.ld: sectors 3-7
+        # The board's windows are the union of both stock builds' (a radio may hold either): every window of each
+        # file's layout lies inside one of them, and an image reaching either table range is refused
+        for sha in MD9600_STOCK:
+            for a, n, _ in stockfw.layout(stockfw.PROFILES[sha]):
+                self.assertTrue(any(lo <= a and a + n <= lo + ln for lo, ln in b.codec.windows),
+                                "0x%08X+0x%X of %s outside the board's codec windows" % (a, n, sha[:8]))
+        self.assertEqual(sorted(b.codec.sources), sorted(stockfw.PROFILES[h]["name"] for h in MD9600_STOCK))
+        self.assertIs(boards.from_debuglink_name("MD-9600"), b)
+        self.assertEqual(b.key_sha256, stockfw.MD9600_KEY_SHA256)
+
+    def test_md9600_profiles(self):
+        mine = [p for p in stockfw.PROFILES.values() if p["board"] == "md9600"]
+        self.assertEqual([p["version"] for p in mine], ["V06.09 CSV", "V16.45 CSV"])
+        for p in mine:
+            self.assertEqual((p["key_sha256"], p["codec_profile"]), (stockfw.MD9600_KEY_SHA256, "md9600-s11"))
+            self.assertEqual(p["code"][1], 0xF214)
+            self.assertEqual(p["segments"][0], (0x00060000, 0x59800))
+        self.assertEqual(stockfw.profile_for_board("md9600"), MD9600_STOCK[0])
+        # the same file on the DM-1701 is a codec source with the DM-1701's placement; the board picks the profile
+        sha = stockfw.key_sha(MD9600_STOCK[0])
+        stock, profiles, _, _ = stockfw.build_synthetic_stock(KEY, random.Random(9600), MD9600_STOCK[0])
+        self.assertEqual(stockfw.find_profile(stock, profiles, "md9600")["board"], "md9600")
+        self.assertEqual(stockfw.PROFILES[sha]["board"], "dm1701")
+        self.assertEqual(stockfw.identify(bytes.fromhex("00")), None)
+        self.assertIn("S16.45 GPS-REC", stockfw.KNOWN_FILES["3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff"])
+        # the firmware's two profiles pin the same placed CRCs (boards/md9600/vocoder_md9600.c)
+        with open(os.path.join(HERE, "..", "..", "..", "boards", "md9600", "vocoder_md9600.c")) as f:
+            src = f.read().lower()
+        for p in mine:
+            self.assertIn("0x%08xu" % p["placed"]["code"][0], src)
+            self.assertIn("0x%08xu" % p["placed"]["tables"][0], src)
+            self.assertIn("0x%04xu" % p["placement"]["tag"], src)
+
+    def test_md9600_extract_merge_and_plan(self):
+        """A synthetic file with each MD-9600 layout: the code moved to sector 11, the tables at the build's stock
+        address in sector 9, the descriptor; the merge plan, against that file's own windows, writes sectors 3-7, 9 and 11,
+        a keep plan only 3-7."""
+        b = boards.get("md9600")
+        for sha, tab_at in zip(MD9600_STOCK, (0x080AB13C, 0x080AC2BC)):
+            stock, profiles, code, tables = stockfw.build_synthetic_stock(KEY, random.Random(9600), sha)
+            prof, segs = stockfw.extract(stock, KEY, profiles)
+            self.assertEqual([a for a, _ in segs], [0x080E0000, tab_at, stockfw.DESC_ADDR])
+            self.assertNotEqual(segs[0][1], code)		# the self reference moved with the code
+            img = app_image(0x08080000 - 0x0800C000)
+            merged = stockfw.merge(img, prof, segs)
+            for a, d in segs:
+                self.assertEqual(merged[a - 0x0800C000:a - 0x0800C000 + len(d)], d)
+            p = plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs, b.merge_windows(prof))
+            self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7, 9, 11])
+            p = plan.make_plan(b, [(b.app_base, img)], plan.KEEP)
+            self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7])
+            with self.assertRaises(plan.PlanError):		# the application can't reach the codec sectors
+                plan.make_plan(b, [(b.app_base, app_image(0x080A0000 - 0x0800C000 + 4))], plan.KEEP)
 
     def test_derive_key_refines_a_bad_vote(self):
         """Plain text like Thumb code (a Markov chain over a vocabulary of halfwords) where 0x00 is common but not
@@ -1662,6 +1729,21 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
             self.assertIn("sector 11  0x080E0000..0x080FFFFF   128 KB  ERASE + WRITE codec", out)
             # a 35.14 build's tables would be in sector 9: a D002.032 merge leaves it alone
             self.assertIn("sector  9  0x080A0000..0x080BFFFF   128 KB  not touched\n", out)
+            self.assertIn("sim      PASS", out)
+
+    def test_md9600_merge_simulation(self):
+        """A local MD-9600 build filling sectors 3-7: merged from a synthetic 06.09 file."""
+        with tempfile.TemporaryDirectory() as d:
+            bp = os.path.join(d, "rfoundry_md9600.bin")
+            with open(bp, "wb") as f:
+                f.write(app_image(0x08080000 - 0x0800C000 - 100))
+            rc, out, err = run_cli(["flash", bp, "--board", "md9600", "--simulate", "rfoundry-nocodec", "--stock", "synthetic",
+                                    "--yes"])
+            self.assertEqual(rc, 0, out + err)
+            self.assertIn("MERGE", out)
+            self.assertIn("sector 11  0x080E0000..0x080FFFFF   128 KB  ERASE + WRITE codec", out)
+            self.assertIn("sector  9  0x080A0000..0x080BFFFF   128 KB  ERASE + WRITE codec", out)
+            self.assertIn("sector  8  0x08080000..0x0809FFFF   128 KB  not touched (free)", out)
             self.assertIn("sim      PASS", out)
 
     def test_merged_image_simulation(self):

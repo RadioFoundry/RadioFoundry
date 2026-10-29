@@ -517,12 +517,65 @@ static void hint_split(const char *text, char *left, size_t lcap, char *right, s
 	left[ln] = 0;
 }
 
+static bool alt_mark(char c)
+{
+	return c == TEXT_ALT_OPEN[0] || c == TEXT_ALT_NEXT[0] || c == TEXT_ALT_CLOSE[0];
+}
+
+static bool board_has_digits(void)
+{
+	for (uint8_t i = 0; board.keymap != NULL && i < board.keymap_len; i++) {
+		if (board.keymap[i].short_action >= ACT_DIGIT_0 && board.keymap[i].short_action <= ACT_DIGIT_9)
+			return true;
+	}
+	return false;
+}
+
+// Hints and toasts are written for a keypad: "*" and "#" name the QUICK and CONTEXT keys, and a hint group may start
+// with a digit ("0-9 find"). On a radio without them (ui.md 1) a "*" or "#" standing alone becomes the board's own
+// key name (board.quick_label / context_label: "P1 Quick"), and in a hint (not a toast, whose numbers are values) a
+// group that starts with a digit goes, so no hint names a key the radio doesn't have. Text for a keypad radio comes
+// back unchanged
+static const char *key_names(const char *text, char *out, size_t cap, bool hint)
+{
+	bool digits = board_has_digits() || !hint;
+	if (text == NULL || cap == 0 || (digits && board.quick_label == NULL && board.context_label == NULL))
+		return text;
+	size_t n = 0;
+	for (const char *p = text; *p && n + 1 < cap; p++) {
+		bool start = p == text || alt_mark(p[-1]) || (p - text >= 2 && p[-1] == ' ' && p[-2] == ' ');
+		if (start && !digits && *p >= '0' && *p <= '9') {
+			// Drop the group and one of the two-space separators around it
+			while (p[1] && !alt_mark(p[1]) && !(p[1] == ' ' && p[2] == ' '))
+				p++;
+			if (n >= 2 && out[n - 1] == ' ' && out[n - 2] == ' ')
+				n -= 2;
+			else if (p[1] == ' ' && p[2] == ' ')
+				p += 2;
+			continue;
+		}
+		bool alone = (p == text || p[-1] == ' ' || alt_mark(p[-1])) && (p[1] == 0 || p[1] == ' ' || alt_mark(p[1]));
+		const char *sub = !alone ? NULL : *p == '*' ? board.quick_label : *p == '#' ? board.context_label : NULL;
+		if (sub == NULL) {
+			out[n++] = *p;
+			continue;
+		}
+		while (*sub && n + 1 < cap)
+			out[n++] = *sub++;
+	}
+	out[n] = 0;
+	return out;
+}
+
 // The hint row. Hints are groups separated by two spaces ("OK open  # more  Back"); the group for the Back key
 // ("Back", "Back keeps", ...) is pinned to the right edge, under the key, and the others run from the left. A hint may
 // hold text alternates (font.h): the longest form that fits is used. A toast is centered; one too long for the row
 // takes a second line above it, so it is never shortened
 void ui_draw_hint(const char *text, bool toast)
 {
+	// Static: only the UI task draws, and the UI task's deepest chain runs through here (docs/dev/stack-check.md)
+	static char named[96];
+	text = key_names(text, named, sizeof named, !toast);
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->small;
 	int w = gfx_width();
@@ -2899,6 +2952,7 @@ void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total, uint8
 		gfx_text(f, 0, y, buf, ui_col.dim);
 		y += f->h;
 	}
-	gfx_text(f, 0, gfx_height() - f->h, "* more  Back", ui_col.idle);
+	char named[32];
+	gfx_text(f, 0, gfx_height() - f->h, key_names("* more  Back", named, sizeof named, true), ui_col.idle);
 }
 #endif

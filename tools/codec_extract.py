@@ -36,13 +36,16 @@ from rfoundry.stockfw import (APP_BASE, CODEC_SIG, DESC_ADDR, FLASH_BASE, FLASH_
                               KEY_LEN, MAGIC, PROFILES, SYN_BL, SYN_SELF_REF, StockError as ExtractError,
                               app_file_offset, build_synthetic_stock, decrypt, derive_key, descriptor, extract,
                               find_profile, from_flash, is_container, layout, layout_name, merge, no_codec,
-                              parse_container, profile_for_board, sha256, windows)
+                              parse_container, profile_for_board, profile_key, sha256, windows)
 from rfoundry.codecmap import bl_target  # noqa: E402
 from rfoundry import boards  # noqa: E402  (the board registry: the boards this tool serves)
 import zlib  # noqa: E402
 
 DM1701_V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
 MD380_D2032 = "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
+# The MD-9600's own placement of these two files (stockfw.profile_key); they are DM-1701 codec sources too
+MD9600_V0609 = profile_key("79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09", "md9600")
+MD9600_V1645 = profile_key("de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532", "md9600")
 MDUV380_V1926 = "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e"
 RT3S_V21960 = "447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee"
 DM1701_V0201 = "cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713"
@@ -53,6 +56,8 @@ examples:
   %(prog)s --stock "DM-1701(CSV)-V02.06.bin"                       (the key is derived from the stock file)
   %(prog)s --stock "DM-1701(CSV)-V02.06.bin" --key ~/keys/dm1701.key
   %(prog)s --stock "MD-380-D2.32(AD).bin"                          (MD-380: image build/md380/rfoundry_md380.bin)
+  %(prog)s --stock "MD9600-CSV-V06.09.bin" --board md9600          (MD-9600: image build/md9600/rfoundry_md9600.bin; without
+                                                                    --board an MD-9600 file is a DM-1701 codec source)
   %(prog)s --stock flash.bin --board mduv380                       (a stub read of a radio on its stock firmware)
   %(prog)s --stock stock.bin --key dm1701.key --image build/dm1701/rfoundry_dm1701.bin -o build/dm1701/rfoundry_dm1701_codec.bin
   %(prog)s --self-test
@@ -239,6 +244,28 @@ def self_test():
     nmerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), np_, nwins)
     check(not stm32_dfu.check_image(nmerged, "dm1701"), "stm32_dfu accepts the DM-1701 V02.06 noCSV merged image")
 
+    # MD-9600 06.09 and 16.45 CSV: a two-segment container, the code in sectors 7 and 8 moved to the start of sector 11,
+    # the table window at the build's own address in sector 9
+    for sha, tab_at, tag in ((MD9600_V0609, 0x080AB13C, 0x0609), (MD9600_V1645, 0x080AC2BC, 0x1645)):
+        gstock, gprofiles, gcode, gtables = build_synthetic_stock(key, rng, sha)
+        greal = PROFILES[sha]
+        check(find_profile(gstock, gprofiles, "md9600")["board"] == "md9600", "MD-9600 %04X profile found for the board" % tag)
+        check(parse_container(gstock) == greal["segments"], "MD-9600 %04X container parsed" % tag)
+        gp, gwins = extract(gstock, key, gprofiles)
+        check([a for a, _ in gwins] == [0x080E0000, tab_at, DESC_ADDR],
+              "MD-9600 %04X: the code in sector 11, the tables at the build's address, the descriptor" % tag)
+        check(gwins[0][1] != gcode and len(gwins[0][1]) == len(gcode), "MD-9600 %04X: the code moved" % tag)
+        gd = gwins[2][1]
+        check(struct.unpack_from("<7I", gd, 0) == (0x43534544, 1, tag, 0x080E0000, len(gcode), zlib.crc32(gwins[0][1]), 1),
+              "MD-9600 %04X descriptor header and code window" % tag)
+        gimage = struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(rng.randrange(256) for _ in range(0x74000 - 8))
+        gmerged = merge(gimage, gp, gwins)
+        check(len(gmerged) == FLASH_END - APP_BASE, "MD-9600 %04X merged image ends with the descriptor" % tag)
+        check(not stm32_dfu.check_image(gmerged, "md9600"), "stm32_dfu accepts the MD-9600 %04X merged image" % tag)
+        expect_error(lambda: merge(gimage + b"\0" * (tab_at - 0x08080000 + 1), gp, gwins),
+                     "MD-9600 %04X: application reaching the tables refused" % tag)
+        expect_error(lambda: extract(gstock, bad_key, gprofiles), "MD-9600 %04X wrong key refused" % tag)
+
     # main() end to end on the synthetic file
     import contextlib
     import io
@@ -254,9 +281,9 @@ def self_test():
             argv = ["codec_extract.py", "--stock", sp, "--image", ip, "--output", op, "--key", "unused"] + list(extra)
             err = io.StringIO()
             with mock.patch.object(sys, "argv", argv), mock.patch.object(sys.modules[__name__], "find_profile",
-                                                                          lambda s: p), \
+                                                                          lambda s, **kw: p), \
                     mock.patch.object(stm32_dfu, "load_key", lambda path, board: key), \
-                    mock.patch.object(sys.modules[__name__], "extract", lambda s, k: (p, wins)), \
+                    mock.patch.object(sys.modules[__name__], "extract", lambda s, k, **kw: (p, wins)), \
                     mock.patch.object(sys.modules[__name__], "check_output_path", lambda path: None), \
                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
                 return main(), err.getvalue()
@@ -332,7 +359,7 @@ def main():
         if not is_container(stock) and readout is None:
             raise ExtractError("%s is neither a supported stock file nor a flash readout (from 0x%08X) holding a "
                                "supported codec" % (args.stock, FLASH_BASE))
-        prof = readout[0] if readout else find_profile(stock)
+        prof = readout[0] if readout else find_profile(stock, board=args.board)
         board = prof["board"]
         if args.board and args.board != board:
             raise ExtractError("%s is a %s stock file, not a %s one" % (args.stock, board, args.board))
@@ -344,7 +371,7 @@ def main():
         with open(os.path.expanduser(image_path), "rb") as f:
             image = f.read()
         check_output_path(out)
-        prof, wins = readout or extract(stock, key)
+        prof, wins = readout or extract(stock, key, board=args.board)
         merged = merge(image, prof, wins)
         for w in stm32_dfu.check_image(merged, board):
             print("warning: %s" % w)

@@ -127,6 +127,12 @@ tests/hil/test_mic_uart_inject.py per-radio skip reasons and bench notes
 tests/hil/test_radio_features.py per-radio skip reasons and bench notes
 tests/hil/test_split_duplex.py per-radio skip reasons and bench notes
 
+# Codec donors: another radio's stock files that give this radio's codec, named by the file (a board with its own
+# codec placement of the same files exists, so the names now match a board).
+boards/dm1701/board.toml the codec donor list names the other radio's stock files it merges from
+boards/dm1701/vocoder_dm1701.c the codec donor builds' placed CRCs, named by the stock file each comes from
+site/tests/stocklayouts.test.mjs a build named by its stock file in a comment
+
 # Generic docs that still name radios (AGENTS.md, generic docs). Exact paths only: a glob can't excuse a generic doc.
 # Each is to rewrite: say what a board provides (CAP_*, board_t) and link feature-matrix.md; move the radio's facts to
 # its own page.

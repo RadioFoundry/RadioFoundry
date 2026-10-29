@@ -77,6 +77,11 @@ FEC init); stack 3822 bytes peak; no fixed RAM address; no FPU instruction execu
 **This is RadioFoundry's STM32 vocoder call interface unchanged** (`platform/stm32f4/codec_call.c` and the boards'
 glue): a board only needs the code base, the FEC decode offset and the window table.
 
+Encode flags: the shared host (`platform/stm32f4/hrc/vocoder.c`) passes one flags word on every encode call, the
+same word as on the DM-1701 and MD-380 (`drivers/vocoder/ambe2_flags.h`, 0x1840 by default; the bits:
+[codec-md380.md](codec-md380.md), "Encode flags"). On the MD-9600 builds the bits are unverified: the code is the
+same family, but they were not measured on it.
+
 ## Codec windows
 
 Two windows per build, cut by execution (below) and checked against the literal targets: the code window from the
@@ -121,27 +126,31 @@ literals, the table window holds a short code island (executed; reached by BL fr
 absolute code pointers into both windows. So the windows must sit at their vendor addresses. Unlike one hosted family there
 are **no small tables outside the two windows** (every literal target lies in them).
 
-## Hosting (proposal)
+## Hosting
 
-Run in place at the vendor addresses. The code window starts at 0x08074B18 (06.09 CSV) or 0x08075C98 (16.45 CSV), inside
-flash sector 7 (0x08060000..0x0807FFFF), and runs into sector 8; the table window lies in sector 9 (0x080A0000..
-0x080BFFFF). So:
+Decided 2026-10-21, as the MD-380 (`docs/spec/codec-placement.md`). The code window starts in sector 7
+(0x08074B18 or 0x08075C98), which the application owns (sectors 3-7, `boards/md9600/memory.ld`), so the merge moves it:
 
-* The application gets 0x0800C000 up to the code window (0x68B18 = 428,824 bytes for 06.09 CSV, 0x69C98 = 433,304 bytes
-  for 16.45 CSV) if every
-  flash re-merges the codec, (`keep_codec_supported=False`), or 0x0800C000..0x0805FFFF (336 KB,
-  sectors 3-6) if the codec sectors are to survive updates, as for the reference build.
-* The gap between the windows (0x08083D2C..0x080AB13B for 06.09 CSV) and sectors 10-11 are free for the application's
-  read-only data if the linker splits it.
-* A board builds for one profile at a time (the windows differ per file). Proposed profile ids `md9600-v0609-csv` and
-  `md9600-v1645-csv`; the first is the default.
-* Boot check: first word 0x4FF0E92D at the code start, then the CRC-32 of both windows.
+| Part | Where it goes | Why |
+|---|---|---|
+| Code (0xF214 bytes) | start of sector 11, 0x080E0000 | the code is position independent except for 1 self reference and 12 calls from the table window's island; the codec map lists them |
+| Table window | stays at the build's stock address in sector 9 (06.09: 0x080AB13C..0x080BC122, 16.45: 0x080AC2BC..0x080BD2F2) | the code reaches the tables through absolute addresses; the two builds differ, so the board reserves all of sector 9 and each profile names its own window |
+| Descriptor | end of sector 11, 0x080FFF80 | `platform/stm32f4/codec_desc.h`: tag, code window, table window, a CRC-32 of each |
 
-**Supported donor: 06.09 CSV**, with 16.45 CSV as the second profile. Reasons: both are the plain CSV builds (no
-recorder or GPS code moving the codec), both are bit-identical in function to V26.45 and the reference build, and between them
-they cover the files an owner of a V1-V4 radio has. Any of the other six works the same way with its own windows from
-the table above, and V26.45 can be added (its windows: the code at 0x0807537C, the FEC decode at
-+0xB64; the table window still to be cut).
+Sectors 8 and 10 stay free. The application never links past 0x0807FFFF, so an update erases sectors 3-7 only and keeps
+the codec. Two profiles, one codec id (`md9600-s11`): the tag in the descriptor (0x0609 or 0x1645) says which build
+the radio holds.
+
+The moved codec was run on the host (Cortex-M model) against the stock-address run: the same 60-frame vector (encode and decode,
+tone plus noise) gives the same air bits and PCM for the 06.09 and the 16.45 build, with the code at 0x080E0000 and the
+table window's island calls rewritten. The placed CRC-32s are in `stockfw.PROFILES` and
+`boards/md9600/vocoder_md9600.c` and must match.
+
+**Supported donors: 06.09 CSV** (the default) **and 16.45 CSV.** Reasons: both are the plain CSV builds (no recorder or
+GPS code moving the codec), both are bit-identical in function to V26.45 and the DM-1701, and between them they cover
+the files an owner of a V1-V4 radio has. The other six work the same way with their own windows from the table above,
+and V26.45 can be added when a copy turns up (its windows: the code at 0x0807537C, the FEC decode at +0xB64; the
+table window still to be cut).
 
 ## Extraction recipe (06.09 CSV)
 
@@ -170,8 +179,8 @@ windows is read.
 
 ## Open items
 
-* RadioFoundry side: a profile per supported file in `stockfw.PROFILES` (with the FEC decode offset, which the reference profile
-  does not carry because it is fixed there), `boards.py`, the linker script end and the vocoder glue.
+* V26.45 itself (V5 boards) is still not on hand; not needed for the codec.
+* The other six builds (GPS and recorder variants) have maps but no profile yet.
 
 ## Only a radio can check
 

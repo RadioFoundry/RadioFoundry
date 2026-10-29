@@ -234,22 +234,32 @@ scroll wheel does; Home and editors follow the number. (Until 2026-10-10 the kno
 
 128x64 has no room for a 3x3 grid; quick settings are a numbered list with the same numbers. Home uses two text sizes only.
 
-### 7.4 TYT MD-9600 (mobile): front panel encoder and a few keys, hand mic with keypad, 160x128 color
+### 7.4 TYT MD-9600 (mobile): front panel keys and encoder, hand mic with keypad, 128x64 monochrome
 
-| Physical | Logical |
+The front panel has Enter (green), Back (red), Up, Down, P1-P4, the orange key, the power key, the channel encoder and
+a volume knob in the audio path; it has no `*`, `#` or digit keys ([hardware-md9600.md](../spec/hardware-md9600.md)
+9). The display is the 128x64 class.
+
+| Physical | Logical (short / long) |
 |---|---|
-| Front encoder detent | `ENC_STEP` |
-| Front encoder push (if present) | `SELECT` / save |
-| Front Menu / Back keys (or P keys, per board) | `SELECT` / `BACK` |
-| Front P1 | `QUICK` / lock |
-| Front P2 | `CONTEXT` / Recent |
-| Mic Up / Down | `NAV_UP` / `NAV_DOWN` |
-| Mic 0-9, `*`, `#` | as on handhelds (`*` = `QUICK`, `#` = `CONTEXT`) |
-| Mic function keys (A-D or P1-P4, per mic) | `TALK_TARGET`, `MONITOR`, Scan, Power cycle by default; assignable |
-| Front VOL key, on a radio without a volume knob | `VOLUME`: the volume screen; the encoder and Up / Down change it, OK / Back or 3 s idle close it |
+| Enter (green) | `SELECT` / save |
+| Back (red) | `BACK` / Home |
+| Up / Down | `NAV_UP` / `NAV_DOWN` (repeat) |
+| Channel encoder detent | `ENC_STEP` |
+| P1 | `QUICK` / lock; hints call it "P1" |
+| P2 | `CONTEXT` / Recent; hints call it "P2" |
+| P3 | `MONITOR` (while held); assignable |
+| P4 | `TALK_TARGET` / `USER_2`; assignable |
+| Orange key | `USER_3`; assignable |
+| Power key | power on and off (standby), not in the key map |
 | Mic PTT | `PTT` |
+| Mic 0-9, `*`, `#` (once the mic keypad is read) | as on handhelds (`*` = `QUICK`, `#` = `CONTEXT`) |
+| Mic Up / Down | `NAV_UP` / `NAV_DOWN` |
 
-Mobile-specific: while driving, the "driving" profile (Settings > Display, or automatic when the radio is a mobile and the mic is the input) hides the text keyboard (P5, NHTSA lockout: no manual text entry), offers canned messages only, and enlarges Home. Voice prompts are on by default on mobiles.
+Until the hand-mic keypad is read the radio has no digits: text entry uses Up / Down ([ui.md](../spec/ui.md) 2.1), and hints that
+start with a digit are left out. Mobile-specific: while driving, the "driving" profile (Settings > Display, or
+automatic when the radio is a mobile and the mic is the input) hides the text keyboard (P5, NHTSA lockout: no manual
+text entry), offers canned messages only, and enlarges Home. Voice prompts are on by default on mobiles.
 
 ### 7.5 Few-key radios (example: four front keys and a knob)
 

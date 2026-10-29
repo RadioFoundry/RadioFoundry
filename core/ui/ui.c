@@ -28,10 +28,11 @@
 #define UI_TASK_PRIORITY	(tskIDLE_PRIORITY + 1)	// below the radio and input tasks
 // List screens and Find: about 1.2 KB measured on the host, plus the driver. The static stack check's deepest chain
 // (ui_task > ui_quick_draw > ui_draw_list > crash_item, down to a crash report taken in a setting's key load) needs
-// 1768 bytes on the STM32 radios, the same on macOS and in CI now that the link order is sorted (gotchas 13.10). 528
-// words leave the 208 byte port overhead, the 128 byte margin and 8 bytes. Every word here is RAM on all radios: raise
+// 1768 bytes on the STM32 radios, 1824 on one whose flash lock is a mutex (the same chain through its unlock), the same
+// on macOS and in CI now that the link order is sorted (gotchas 13.10). 542 words leave the 208 byte port overhead, the
+// 128 byte margin and 8 bytes on the deeper one. Every word here is RAM on all radios: raise
 // it only by what the check shows
-#define UI_TASK_STACK_WORDS	528
+#define UI_TASK_STACK_WORDS	542
 
 #define SPLASH_MS		1000
 #define FRAME_MIN_MS		50	// at most 20 redraws a second

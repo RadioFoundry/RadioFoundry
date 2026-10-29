@@ -413,11 +413,26 @@ static void storage_section(dl_text_t *t)
 #endif
 }
 
+// The board's name and its own keys, each prefixed "board." (bring-up readings a HIL test checks; docs/spec/debuglink.md
+// 3.7)
+static void board_section(dl_text_t *t)
+{
+	char line[80];
+
+	dl_text_kv_str(t, "board.name", board.name);
+	for (uint8_t i = 0; board.view_line != NULL && i < 0xFFu && !t->full; i++) {
+		if (!board.view_line(i, line, sizeof(line))) {
+			break;
+		}
+		dl_text(t, "board.%s\n", line);
+	}
+}
+
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
-						  "net_link" };
+						  "net_link", "board" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -501,6 +516,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_WATCHDOG:
 		debuglink_view_watchdog(t);
+		break;
+	case DL_VIEW_BOARD:
+		board_section(t);
 		break;
 	case DL_VIEW_RESET:
 		debuglink_view_reset(t);

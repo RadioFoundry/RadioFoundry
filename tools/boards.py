@@ -1099,8 +1099,8 @@ def check(root=ROOT):
         if cst is not None:
             if not cst or len(set(cst)) != len(cst):
                 bad("codec.stock lists each stock file once, at least one")
-            if any(not re.fullmatch(r"[0-9a-f]{64}", h) for h in cst):
-                bad("codec.stock entries are SHA-256 digests (64 lowercase hex digits)")
+            if any(not re.fullmatch(r"[0-9a-f]{64}(@[a-z0-9]+)?", h) for h in cst):
+                bad("codec.stock entries are SHA-256 digests (64 lowercase hex digits; '@board' after a file placed differently on that board)")
             for k in ("profile", "sources"):
                 if k in d["codec"]:
                     bad("codec.%s comes from the stock files' profiles when codec.stock is set" % k)
