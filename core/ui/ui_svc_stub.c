@@ -34,6 +34,9 @@ WEAK bool ui_svc_monitor(bool on) { (void)on; return false; }
 WEAK bool ui_svc_vox(bool on) { (void)on; return false; }
 WEAK bool ui_svc_save_channel(void) { return false; }
 WEAK bool ui_svc_write_channel(uint16_t number, const channel_t *ch) { (void)number; (void)ch; return false; }
+#if CONFIG_CONTACT_EDIT
+WEAK bool ui_svc_write_contact(uint16_t index, const contact_t *c) { (void)index; (void)c; return false; }
+#endif
 WEAK bool ui_svc_zone_edit(const zone_op_t *op) { (void)op; return false; }
 WEAK void ui_svc_zone_poll(void) { }
 WEAK bool ui_svc_zone_pending(void) { return false; }
@@ -85,6 +88,7 @@ WEAK uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t ds
 }
 WEAK bool ui_svc_zone_offer(ui_zone_offer_t *out) { (void)out; return false; }
 WEAK void ui_svc_zone_offer_open(uint32_t serial) { (void)serial; }
+WEAK bool ui_svc_zone_offer_pending(void) { return false; }
 WEAK bool ui_svc_zone_offer_channel(uint32_t serial, uint16_t i, ui_zone_offer_ch_t *out) { (void)serial; (void)i; (void)out; return false; }
 WEAK void ui_svc_zone_offer_reject(uint32_t serial) { (void)serial; }
 WEAK bool ui_svc_zone_offer_import(uint32_t serial, uint16_t zone) { (void)serial; (void)zone; return false; }

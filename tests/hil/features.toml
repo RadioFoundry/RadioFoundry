@@ -117,6 +117,10 @@ spec = "docs/spec/ui.md"
 switch = "ZONE_EDIT"
 spec = "docs/spec/ui.md"
 
+[feature.contact_edit]
+switch = "CONTACT_EDIT"
+spec = "docs/spec/ui.md"
+
 [feature.key_assign]
 switch = "KEY_ASSIGN"
 spec = "docs/spec/ui.md"

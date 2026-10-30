@@ -2638,6 +2638,8 @@ bool ui_notify(const ui_event_t *ev) { last_ev = *ev; n_ev++; return true; }
 bool ui_svc_zone_event(uint8_t kind, uint32_t id, ui_event_t *ev) { (void)kind; ev->id = id; return true; }
 static int cp_writes;
 static bool cp_write_fails;
+// The contact editor's write (ui_svc_storage.c); the radio core's tests don't add contacts
+bool codeplug_set_contact(uint16_t index, const contact_t *c) { (void)index; (void)c; return false; }
 bool codeplug_set_channel(uint16_t n, const channel_t *ch)
 {
 	if (cp_write_fails || n < 1 || n > NCH) {

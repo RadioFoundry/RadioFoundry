@@ -105,8 +105,10 @@ codeplug is sent: no scan lists, no RX group lists, no privacy keys.
 
 ### 5.1 The setting
 
-**Settings > Connections > Zone offers**: Off (the default) or Ask. With Off, fragments are dropped (`zs.rx_off`) and
-nothing reaches the user. The setting is `zs_offers` in the settings record ([settings-store.md](settings-store.md)).
+**Settings > Connections > Accept zone shares**: On (the default) or Off. With On, a share is offered to the user,
+who imports it or not (5.2); nothing is imported without that. With Off, fragments are dropped (`zs.rx_off`) and
+nothing reaches the user. The setting is `zs_offers` in the settings record: 0 (never set) and 1 are On, 2 is Off
+([settings-store.md](settings-store.md)). In the service and on the debug link, 1 (`ZS_OFFERS_ASK`) is On and 0 Off.
 
 ### 5.2 Offers
 
@@ -117,8 +119,9 @@ nothing reaches the user. The setting is `zs_offers` in the settings record ([se
 | Lifetime | an offer not opened within 10 minutes is dropped (`zs.expired`). Once opened, it waits for the user |
 | Group offers | a record sent to a talkgroup the radio listens to is offered like one sent to it |
 
-The offer shows as a banner, "Zone from <name or ID>" with "Zone <name>, <n> channels". **#** opens it. While it
-waits it is also under **Tools > Zones/Chs Received**. The offer screen (Zone Share Received, or Channel Share Received) reads "Zone <name>, <n> channels, from <ID>" and
+The offer shows as a banner, "Zone from <name or ID>" with "Zone <name>, <n> channels". **#** opens it. The banner
+has no timer: it stays until **#** opens it, **Back** hides it (on any screen), or the offer ends (it expires, or is answered from
+Tools, which also hides it). Another banner can take its place. While it waits it is also under **Tools > Zones/Chs Received**. The offer screen (Zone Share Received, or Channel Share Received) reads "Zone <name>, <n> channels, from <ID>" and
 how many are not in this radio's bands, with three choices:
 
 - **Import** imports it (5.3).
@@ -174,8 +177,11 @@ In a zone's channel list, **#** opens "Share zone to..." and "Share channel to..
 zone editor (`CONFIG_ZONE_EDIT`), **#** on a channel opens its Channel actions, where "Share channel to..." is item 5,
 and "Share zone to..." is item 3 of Zone options ([ui.md](ui.md) 2.2). The channel editor has "Share channel to..."
 after "Go to it" ([ui.md](ui.md) 2.1); it sends the stored channel, so unsaved changes must be saved first. The rows
-carry a share icon, and the offer's title and banner a download icon. Then the contact list (Share To): a private contact gets confirmed packets, a talkgroup unconfirmed ones. The send works only on a DMR
-channel; the banner says "Sent to <name>" or "Not sent to <name>". One send at a time.
+carry a share icon, and the offer's title and banner a download icon. Then the contact list (Share To): a private contact gets confirmed packets, a talkgroup unconfirmed ones. Digits that make an ID add two rows after the contacts,
+"Private ID 3101234" and "TG 3101234", so a station that isn't a contact can be sent to. The send works only on a DMR
+channel: on another, OK says "Go to a DMR channel to send" and sends nothing. The send's toast names the frequency:
+"Sending to K1ABC Joe via 442.375" ("Sending via 442.375" where that doesn't fit). It is the channel's receive frequency, which on a repeater is its output.
+The banner says "Sent to <name>" or "Not sent to <name>". One send at a time.
 
 ## 8. Limits
 

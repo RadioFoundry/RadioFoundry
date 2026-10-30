@@ -38,7 +38,7 @@ RadioFoundry is early software. Each feature is in one of three groups.
 |---|---|
 | Verified on the radio | Tested on a radio, on air against the SDR bench where RF is involved. The [Radio reference](23-radios.md) says what is verified on each radio |
 | Built, host-tested | Works against simulated chips in the host tests, or is only partly checked on a radio |
-| Not built yet | Shown in the menus, dimmed, with a message when selected: voice prompts, typed text messages, speed dial, saving contacts on the radio |
+| Not built yet | Shown in the menus, dimmed, with a message when selected: voice prompts, typed text messages, speed dial, editing or deleting a stored contact on the radio |
 
 Some features aren't on every radio. Either the hardware lacks something, or the radio's board code isn't written yet.
 The [Radio reference](23-radios.md) lists them for each radio.

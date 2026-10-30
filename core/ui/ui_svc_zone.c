@@ -81,6 +81,11 @@ static bool offer_record(uint32_t serial, zone_share_offer_t *o, zsRecord_t *rec
 
 static zsRecord_t rec;	// static: too big for the UI task's stack
 
+bool ui_svc_zone_offer_pending(void)
+{
+	return zone_share_offer(NULL, NULL);
+}
+
 bool ui_svc_zone_offer(ui_zone_offer_t *out)
 {
 	zone_share_offer_t o;

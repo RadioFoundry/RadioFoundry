@@ -55,6 +55,16 @@ static const flow_t flows[] = {
 	{ "6 canned to contact by name", "", "5 6 3 ctx 3 ok", "sent=1 text=OK", 6, false },
 	{ "7 read message, banner up", "msg:3101234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:3101234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
+#if CONFIG_ZONE_SHARE
+	// An offer's banner has no timer: it waits for #, BACK or the offer's end (zone-share.md 5.2)
+	{ "zone offer banner still up a minute later", "zoneoffer:3101234", "wait:60000", "shows=Zone_from", 0, false },
+	{ "zone offer banner opens a minute later", "zoneoffer:3101234 wait:60000", "ctx", "shows=Import", 1, false },
+	{ "zone offer banner hidden with Back", "zoneoffer:3101234", "back", "banner=none screen=home", 1, false },
+	{ "zone offer banner goes with the offer", "zoneoffer:3101234 wait:5000", "zoneexpire", "banner=none", 0, false },
+	{ "zone offer banner hidden with Back on a menu", "zoneoffer:3101234 ok", "back", "banner=none screen=hub", 1, false },
+	{ "zone offer banner goes when Tools opens the offer", "zoneoffer:3101234", "ok 6 0", "banner=none shows=Import", 3,
+	  false },
+#endif
 	{ "8 radio check last caller", CALLER, "ctx 4", "checks=1", 2, false },
 	{ "8 radio check by name", "", "5 6 3 ctx 4", "checks=1", 5, false },
 	{ "9 power one step", "", "quick 1 back", "power=8 screen=home", 3, false },
@@ -570,6 +580,54 @@ static const flow_t flows[] = {
 	  "ok 4 up ctx up ok " ZO_DELETE_KEY " down ok back wait:500", "dual=1 azone=0 bzone=1 writes=1", 11, true },
 	{ "26 delete dual watch's B zone: B's channel is in no other zone, the watch ends", "quick 7 ctx 1 zone+",
 	  "ok 4 ctx up up ok " ZO_DELETE_KEY " down ok back wait:500", "dual=0 zone=1 writes=1 toast=Dual_watch_off", 11, true },
+#endif
+#if CONFIG_VFO_FM || CONFIG_VFO_DMR
+	// Find's Tune VFO row (#275): the digits as VFO entry reads them, inside a band only, first after a channel number
+	{ "12 a frequency typed on Home tunes the VFO", "", "4 6 1 4 6 2 ok", "vfo=1 freq=461462000 screen=home", 7, false },
+	{ "F the Tune VFO row", "", "1 4 6 5 2", "screen=find focus=Tune_VFO_to_146.520", 5, false },
+	{ "F no Tune VFO row outside the bands", "", "1 2 3 4 5 6", "screen=find hides=Tune_VFO", 6, false },
+	{ "F no Tune VFO row for too few digits", "", "4 4", "screen=find hides=Tune_VFO", 2, false },
+	{ "F a channel number still comes first", "", "1 2", "screen=find focus=Ch_12 hides=Tune_VFO", 2, false },
+#endif
+#if CONFIG_CONTACT_EDIT
+	// The contact editor (ui.md 2.4). 3109876 is no contact: Find lists the talkgroup, the private call, then Create
+	// contact; 7 digits start it on a person
+	{ "C create a contact from Find", "", "3 1 0 9 8 7 6 down down ok",
+	  "screen=contactedit shows=New_Contact shows=Private shows=3109876", 10, false },
+	{ "C a contact's ID in Find: no create row", "", "3 1 0 1 2 3 4", "screen=find hides=Create_contact", 7, false },
+	{ "27 a typed ID saved as a contact", "", "3 1 0 9 8 7 6 down down ok long:ok",
+	  "screen=home writes=1 toast=Saved_contact_3109876", 11, true },
+	{ "27 the last caller saved as a contact", "call:3101999,91,g wait:11000", "ctx 7 long:ok",
+	  "screen=actions writes=1 toast=Saved_contact_3101999", 3, true },
+	{ "C the saved contact is found", "3 1 0 9 8 7 6 down down ok long:ok", "3 1 0 9 8 7 6",
+	  "screen=find focus=3109876_3109876 hides=Create_contact", 7, true },
+	{ "C the type flips", "3 1 0 9 8 7 6 down down ok", "down down ok", "shows=Talkgroup hides=Private", 3, false },
+	{ "C a short number starts as a talkgroup", "", "9 9 9 9 down down ok", "screen=contactedit shows=TG_9999 shows=Talkgroup",
+	  7, false },
+	{ "C the timeslot steps", "3 1 0 9 8 7 6 down down ok", "up up ok", "shows=TS_1", 3, false },
+	{ "C an ID typed in", "3 1 0 9 8 7 6 down down ok", "down ok 5 5 5 ok", "shows=555 hides=3109876_", 6, false },
+	{ "C a contact twice is refused", "3 1 0 9 8 7 6 down down ok", "down ok 3 1 0 1 2 3 4 ok long:ok",
+	  "toast=Already_a_contact:_K1ABC_Joe writes=0", 11, false },
+	{ "C Back asks before discarding", "3 1 0 9 8 7 6 down down ok", "back", "screen=discard shows=new_contact", 1, false },
+	{ "C discard goes back to Find", "3 1 0 9 8 7 6 down down ok back", "down ok", "screen=find writes=0", 2, false },
+	{ "C the name by text entry", "3 1 0 9 8 7 6 down down ok", "ok", "screen=text", 1, false },
+	// A caller who isn't a contact: Save as contact is item 7 of the actions, and they show In contacts after
+	{ "C save a caller as a contact", "call:3101999,91,g wait:11000 ctx", "7", "screen=contactedit shows=3101999", 1,
+	  false },
+	{ "C saved from the actions, back on them", "call:3101999,91,g wait:11000 ctx 7", "long:ok",
+	  "screen=actions shows=In_contacts writes=1", 1, true },
+	// A talkgroup not saved: Save as contact is item 4
+	{ "C save a talkgroup as a contact", "3 1 0 9 8 7 6 ctx", "4", "screen=contactedit shows=TG_3109876 shows=Talkgroup",
+	  1, false },
+#endif
+#if CONFIG_ZONE_EDIT && CONFIG_ZONE_SHARE
+	// Share To a station that isn't a contact: the digits typed as an ID, private first (zone-share.md 7)
+	{ "Z share to a typed ID", "ok 4 ctx ctx 5", "3 1 0 9 8 7 6", "shows=Private_ID_3109876 shows=TG_3109876", 7, false },
+	{ "Z the channel goes to the typed ID, via the channel's frequency", "ok 4 ctx ctx 5 3 1 0 9 8 7 6", "ok",
+	  "screen=zone zs_sends=1 toast=Sending_to_3109876_via_467.375", 1, false },
+	{ "Z after a send by name the zone's list isn't filtered", "ok 4 ctx ctx 5 2 2 5 4", "ok",
+	  "screen=zone zs_sends=1 hides=Find:_2254", 1, false },
+	{ "Z a share from an FM channel is refused", "up ok 4 ctx ctx 5", "ok", "zs_sends=0 toast=Go_to_a_DMR", 1, false },
 #endif
 };
 

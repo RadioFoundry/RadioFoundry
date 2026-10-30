@@ -79,17 +79,19 @@ radio; sending a whole zone and receiving are tested only in the host tests so f
 2. Press **OK**, **4** (Zones). Focus the zone and press **#**. Its channels open.
 3. For one channel: press **#** on it and pick **5 Share channel to...**, or pick **Share channel to...** in the
    channel's settings. For the whole zone: pick **Zone options** (the last row), then **3 Share zone to...**.
-4. Pick a contact or talkgroup and press **OK**. A banner says "Sent to ..." when it is out.
+4. Pick a contact or talkgroup and press **OK**. For a station that isn't a contact, type its ID: "Private ID ..."
+   and "TG ..." appear under the contacts. The radio says where it sends: "Sending to ... via 442.375" (on a
+   repeater, its output frequency). A banner says "Sent to ..." when it is out.
 
 A zone too big for one send goes in part, and the radio says how much ("Sending 40 of 60 channels"). Scan lists,
 group lists and privacy keys are never sent.
 
-**Receive:** set **Settings > Connections > Zone offers** to **Ask**. It is **Off** at first, and with Off the radio
-ignores what others send.
+**Receive:** **Settings > Connections > Accept zone shares** is **On** at first. Nothing is imported until you
+say so. Set it to **Off** to ignore what others send.
 
 <img src="../ux/screens/160x120i5/zone_offer.png" width="200" alt="Zone Share Received: Import, Preview, Reject">
 
-1. A banner says "Zone from ...". Press **#** to open it. It also waits under **Tools > Zones/Chs Received** for 10 minutes. The screen is titled **Zone Share Received**, or **Channel Share Received** for one channel.
+1. A banner says "Zone from ...". It stays until you press **#** to open it or **Back** to hide it. The offer also waits under **Tools > Zones/Chs Received** for 10 minutes. The screen is titled **Zone Share Received**, or **Channel Share Received** for one channel.
 2. The offer shows the zone's name, its channels, the sender and how many channels are outside your radio's bands.
 3. Pick **Preview** to see the channels, **Import** to add them, or **Reject**.
 

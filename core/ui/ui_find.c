@@ -3,11 +3,13 @@
 // Find (information-architecture.md 6, task-flows.md 1, 3, 5): digits typed on Home search everything at once.
 // The keys are read both as a number and as T9 letters (2 = abc ... 9 = wxyz), matched against the start of each
 // word. Order of the results:
-//  1. a channel at that position in the zone (numbers of up to 3 digits: "12" then OK = channel 12, P1),
+//  1. a channel at that position in the zone (numbers of up to 3 digits: "12" then OK = channel 12, P1), then the
+//     digits as a frequency in one of the bands, read as VFO entry reads them ("Tune VFO to 461.462"),
 //  2. channels of the zone, contacts and talkgroups, zones and places / settings whose names match the letters,
 //     contacts whose ID starts with the number (3+ digits),
 //  3. the number itself as a talkgroup and as a private call ("TG 3100 (not saved)", "Private call 3100"), so a
-//     number that isn't in the codeplug is still usable (P6).
+//     number that isn't in the codeplug is still usable (P6), and with the contact editor "Create contact 3100" when
+//     no contact has that ID.
 #include <string.h>
 #include "ui_nav.h"
 #include "ui_svc.h"
@@ -36,7 +38,8 @@ static const struct {
 };
 #define PLACES_N	((uint8_t)(sizeof places / sizeof places[0]))
 
-typedef enum { FR_CHANNEL, FR_ZONE, FR_CONTACT, FR_TG, FR_PRIVATE, FR_SETTING, FR_PLACE } find_kind_t;
+typedef enum { FR_CHANNEL, FR_ZONE, FR_CONTACT, FR_TG, FR_PRIVATE, FR_SETTING, FR_PLACE, FR_FREQ, FR_NEW_CONTACT }
+	find_kind_t;
 
 typedef struct {
 	uint8_t kind;
@@ -143,6 +146,12 @@ void ui_find_run(void)
 	// 1. Channel by position in the zone
 	if (have_zone && len <= 3 && num >= 1 && num <= z.count)
 		add(FR_CHANNEL, num - 1u);
+	// The digits as a frequency
+	if (CONFIG_VFO_FM || CONFIG_VFO_DMR) {
+		uint32_t hz = ui_freq_parse(query, (uint8_t)len);
+		if (hz != 0)
+			add(FR_FREQ, hz);
+	}
 	// 2. Names: channels in this zone
 	uint8_t found = 0;
 	for (uint16_t i = 0; have_zone && i < z.count && found < 4; i++) {
@@ -155,13 +164,17 @@ void ui_find_run(void)
 	// Contacts and talkgroups: by name, or by ID for 3 digits and more
 	contact_t c;
 	found = 0;
-	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX && found < 6; i++) {
+	bool known = false;	// a contact has the number as its ID
+	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
 		if (!codeplug_contact(i, &c))
 			continue;
-		if (ui_t9_match(c.name, query) || (len >= 3 && id_prefix(c.id, query))) {
+		known = known || c.id == num;
+		if (found < 6 && (ui_t9_match(c.name, query) || (len >= 3 && id_prefix(c.id, query)))) {
 			add(FR_CONTACT, i);
 			found++;
 		}
+		if (found >= 6 && (known || !CONFIG_CONTACT_EDIT))
+			break;
 	}
 #endif
 	// Zones by name
@@ -193,6 +206,8 @@ void ui_find_run(void)
 	if (num >= 1 && num <= 0xFFFFFEu) {
 		add(FR_TG, num);
 		add(FR_PRIVATE, num);
+		if (CONFIG_CONTACT_EDIT && !known)
+			add(FR_NEW_CONTACT, num);
 	}
 #endif
 }
@@ -302,6 +317,15 @@ static void find_item(uint16_t i, ui_item_t *it)
 			sb_str(&b, t.name);
 		}
 		break;
+	case FR_FREQ:
+		sb_str(&b, "Tune VFO to ");
+		sb_freq(&b, r->ref);
+		sb_str(&vb, TEXT_ALT_OPEN "VFO" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+		break;
+	case FR_NEW_CONTACT:
+		sb_str(&b, "Create contact ");
+		sb_u32(&b, r->ref, 1);
+		break;
 	case FR_SETTING: {
 		const char *syn;
 		sb_str(&b, ui_set_item_name((uint8_t)(r->ref >> 8), (uint8_t)r->ref, &syn));
@@ -338,6 +362,19 @@ static void find_select(uint16_t i, bool hold)
 		radio_req_zone((uint16_t)r->ref);
 		ui_go_home();
 		break;
+	case FR_FREQ:
+		radio_req_vfo_set(r->ref);	// opens the VFO there; its mode, power and tones stay
+		ui_go_home();
+		break;
+#if CONFIG_CONTACT_EDIT
+	case FR_NEW_CONTACT:
+		// A typed number: the editor starts on a person for a DMR ID's 7 digits and more, else a talkgroup
+		memset(&t, 0, sizeof t);
+		t.id = r->ref;
+		t.group = r->ref < 1000000u;
+		ui_new_contact(&t);
+		break;
+#endif
 	case FR_CONTACT:
 	case FR_TG:
 	case FR_PRIVATE:
