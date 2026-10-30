@@ -46,10 +46,12 @@ static bool tone_on(void *c) { return ((fd6818sh_t *)c)->tone_hz != 0; }
 static void tone_key(void *c, bool down) { fd6818sh_tone_key(c, down); }
 static void dtmf(void *c, uint16_t lo, uint16_t hi) { fd6818sh_dtmf_start(c, lo, hi); }
 
+// The digital set writes the stock's own 0x53 for the modem, so g isn't used: passing it to fd6818sh_set_af_gain() would
+// replace the volume the analog set restores
 static void dmr_enter(void *c, uint8_t g)
 {
+	(void)g;
 	fd6818sh_dmr_mode(c);
-	fd6818sh_set_af_gain(c, g);
 }
 
 static void dmr_leave(void *c) { fd6818sh_analog_mode(c); }

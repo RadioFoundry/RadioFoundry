@@ -115,6 +115,20 @@ static void test_fd6818_main(void)
 	CHECK(same(&direct, &cur));
 }
 
+// The DMR AF gain doesn't reach the FD6818's 0x53: the digital set has its own, and the analog volume comes back after
+static void test_fd6818_dmr_volume(void)
+{
+	fd6818sh_t c;
+	reset();
+	fd6818sh_attach(&c, &bus, FD6818SH_MAIN);
+	superhet_main_t m = { &fd6818sh_superhet_main, &c };
+	m.ops->af_gain(m.chip, 8);
+	m.ops->dmr_enter(m.chip, 4);
+	CHECK(regs[0x53] == 0x957D);
+	m.ops->dmr_leave(m.chip);
+	CHECK(regs[0x53] == fd6818sh_volume_word(8));
+}
+
 static void test_bk4819_main(void)
 {
 	bk4819_t a, b;
@@ -172,6 +186,7 @@ int main(void)
 {
 	test_filled();
 	test_fd6818_main();
+	test_fd6818_dmr_volume();
 	test_bk4819_main();
 	test_at1141_lo();
 	printf("superhetTest: %d/%d checks passed\n", checks - failures, checks);
