@@ -148,11 +148,11 @@ static uint32_t synth_hz(uint32_t hz)
 }
 
 #if CONFIG_REF_TRIM
-// Taken at the next tune: the core asks the radio task for one (radio_req_retune), so the RF chip's bus stays the
-// radio task's
-static void ref_trim(int16_t ppb)
+// Taken at the next tune, so the RF chips' bus stays the radio task's: true asks the core for one
+static bool ref_trim(int16_t ppb)
 {
 	trim_ppb = ppb;
+	return true;
 }
 #endif
 

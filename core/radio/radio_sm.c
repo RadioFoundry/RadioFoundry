@@ -474,6 +474,7 @@ static void bcast_status(radio_sm_t *sm, radio_status_t *st)
 
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
+	sm->retune_pending = sm->retune_due = false;	// this tune is the one they wait for
 #if CONFIG_SFR_CWID
 	cw_cancel(sm);		// the repeater's ID: the board is set up for the channel below
 #endif
@@ -4791,7 +4792,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	// channel, so it neither gives way to nor cancels anything either
 	bool alert = req->type == RREQ_BEEP || req->type == RREQ_VIBRATE || req->type == RREQ_VOLUME ||
 		     req->type == RREQ_VOLUME_OVERRIDE;
-	if (!alert && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS) {
+	if (!alert && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS && req->type != RREQ_RETUNE) {
 		aprs_rf_abort(sm, now_ms);	// the user does something: an APRS transmission gives way
 	}
 	bool busy = sm->view.state == RS_TX || sm->hotspot;	// no retuning while transmitting or a hotspot
@@ -5025,11 +5026,8 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 		break;
 	case RREQ_RETUNE:	// a board that applies its reference trim when it tunes (hal_radio_t.ref_trim)
-		if (busy) {
-			sm->retune_pending = true;
-		} else {
-			tune(sm, now_ms);
-		}
+		sm->retune_due = true;	// radio_sm_poll: once the trim stops changing
+		sm->retune_due_ms = now_ms + RADIO_RETUNE_SETTLE_MS;
 		break;
 	case RREQ_BANDWIDTH:
 		if (busy || sm->view.ch.mode != RADIO_MODE_FM || (req->arg != RADIO_BW_12K5 && req->arg != RADIO_BW_25K) ||
@@ -5577,6 +5575,20 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_APRS
 	aprs_poll(sm, now_ms);	// before battery saving: beacons are due while the receiver sleeps too
 #endif
+	// The reference trim changed (RREQ_RETUNE): one tune once it has held still, so stepping it drops a reception once,
+	// not at every step. It waits for an APRS job; while transmitting or a hotspot, for the end of it
+	if (sm->retune_due && (int32_t)(now_ms - sm->retune_due_ms) >= 0) {
+		bool aprs = false;
+#if CONFIG_APRS
+		aprs = sm->aprs_phase != APRS_RF_OFF;
+#endif
+		if (sm->view.state == RS_TX || sm->hotspot) {
+			sm->retune_due = false;
+			sm->retune_pending = true;
+		} else if (!aprs) {
+			tune(sm, now_ms);
+		}
+	}
 #if CONFIG_BATTERY_SAVE
 	if (save_poll(sm, now_ms)) {
 		outputs(sm);

@@ -412,8 +412,8 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		apply_mic_gain(value, ui_svc_setting_get(UI_SET_MIC_AGC) != 0);
 		return;
 	case UI_SET_REF_TRIM:		// the board's reference, receive and transmit (radio/ref_trim.h)
-		radio_set_ref_trim(value);
-		radio_req_retune();	// for a board that applies it when it tunes
+		if (radio_set_ref_trim(value))
+			radio_req_retune();	// a board that applies it when it tunes
 		return;
 #if CONFIG_DMR
 	case UI_SET_MIC_AGC:

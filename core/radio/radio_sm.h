@@ -22,6 +22,7 @@
 
 #define RADIO_SM_CW		(CONFIG_HOTSPOT || CONFIG_SFR_CWID)	// the CW keyer (radio_sm.c)
 #define RADIO_POLL_MS		25	// status poll and squelch period
+#define RADIO_RETUNE_SETTLE_MS	400	// RREQ_RETUNE: tune once the reference trim has held this long
 #define RADIO_TICK_MS		10	// DMR call stack poll (radio_sm_tick)
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
 #define RADIO_SQUELCH_DEFAULT	5
@@ -239,6 +240,8 @@ typedef struct {
 	uint32_t host_pushes;		// the host's audio pushes last seen, and when they last moved (the watchdog)
 	uint32_t host_push_ms;
 	bool retune_pending;		// receive settings changed during TX: retune on PTT release
+	bool retune_due;		// the reference trim changed: tune at retune_due_ms (RREQ_RETUNE)
+	uint32_t retune_due_ms;
 	uint32_t tx_start_ms;
 	uint8_t close_count;		// polls in a row above the close threshold
 	uint8_t tone_count;		// polls in a row disagreeing with view.tone_ok (debounce)

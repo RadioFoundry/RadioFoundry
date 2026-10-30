@@ -495,7 +495,8 @@ one value holds on every band; the Hz it comes to grows with the frequency.
 
 The value is held in parts per billion (ppb, 100 a step), an int16: `hal_radio_t.ref_trim`, `settings_t.ref_trim_ppb`,
 the debug link. The UI stores it and applies it at start-up and on each change with `radio_set_ref_trim()`, which
-clamps, rounds to the step and calls `hal_radio_t.ref_trim`. The debug link's SETTING op 35 sets it in RAM only.
+clamps, rounds to the step and calls `hal_radio_t.ref_trim` when the value differs from the one the board has (the
+board starts at 0, so a start-up with no trim calls nothing). The debug link's SETTING op 35 sets it in RAM only.
 
 | Board | Trim |
 |---|---|
@@ -503,9 +504,12 @@ clamps, rounds to the step and calls `hal_radio_t.ref_trim`. The debug link's SE
 | with synthesizers only (`hal_radio_t.ref_trim` keeps the value) | programs each RF chip at f x (1 + trim) instead of f, at every tune and burst (`ref_trim_tune_hz`). A superhet's LO takes f x (1 + trim) + IF and its IF stays as it is: both chips run from one reference, so the IF's share of the error cancels |
 | without the hook, or built with `CONFIG_REF_TRIM=n` | the row is hidden; nothing changes |
 
-After each change the caller (the UI, the debug link) asks the radio task to tune again (`radio_req_retune`, the
-`RREQ_RETUNE` request): at once when idle, at the end of a transmission or the hotspot otherwise. The RF chips' bus
-stays the radio task's.
+The hook returns whether the board takes the trim at the next tune. A board that applies it at once returns false;
+one that applies it when it tunes returns true, and the caller (the UI, the debug link) then asks the radio task to
+tune again (`radio_req_retune`, the `RREQ_RETUNE` request). A tune ends a reception in progress, so the radio task tunes
+once the trim has held still `RADIO_RETUNE_SETTLE_MS` (400 ms), not at each step: when idle, after an APRS
+transmission, or at the end of a transmission or the hotspot. Until then the hotspot or a transmission in progress
+keeps the trim it started with on receive. The RF chips' bus stays the radio task's.
 
 The value is a correction to enter by hand: measure the carrier against a reference (a frequency counter, a service
 monitor, or a hotspot's MMDVMCal BER test) and enter the error with its sign reversed. A radio 2 kHz high at 448.7 MHz

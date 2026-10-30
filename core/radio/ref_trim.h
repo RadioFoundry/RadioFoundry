@@ -51,12 +51,13 @@ static inline int16_t ref_trim_clamp(int32_t ppb)
 	return (int16_t)((ppb + half) / REF_TRIM_STEP_PPB * REF_TRIM_STEP_PPB);
 }
 #if CONFIG_REF_TRIM
-// Set the trim (clamped and rounded) and hand it to the board
-void radio_set_ref_trim(int32_t ppb);
+// Set the trim (clamped and rounded) and hand it to the board when it differs from the one the board has. True when
+// the board takes it at the next tune: the caller then asks for one (radio_req_retune)
+bool radio_set_ref_trim(int32_t ppb);
 // The trim last set (0 until the first call)
 int16_t radio_ref_trim(void);
 #else
-static inline void radio_set_ref_trim(int32_t ppb) { (void)ppb; }
+static inline bool radio_set_ref_trim(int32_t ppb) { (void)ppb; return false; }
 static inline int16_t radio_ref_trim(void) { return 0; }
 #endif
 

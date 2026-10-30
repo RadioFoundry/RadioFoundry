@@ -14,11 +14,13 @@ const board_t board = { .radio = &radio };
 
 static int hook_calls;
 static int16_t hook_ppb;
+static bool hook_retune;	// what the hook answers: the board takes it at the next tune
 
-static void hook(int16_t ppb)
+static bool hook(int16_t ppb)
 {
 	hook_calls++;
 	hook_ppb = ppb;
+	return hook_retune;
 }
 
 int main(void)
@@ -44,17 +46,22 @@ int main(void)
 
 	// No board hook: no setting, the value is only kept
 	CHECK(!ref_trim_available());
-	radio_set_ref_trim(-2000);
+	CHECK(!radio_set_ref_trim(-2000));
 	CHECK(radio_ref_trim() == -2000 && hook_calls == 0);
 
-	// The board's trim gets the clamped, rounded value
+	// The board's trim gets the clamped, rounded value; the answer is the board's (a retune wanted or not)
 	radio.ref_trim = hook;
 	CHECK(ref_trim_available());
-	radio_set_ref_trim(-2140);
+	hook_retune = true;
+	CHECK(radio_set_ref_trim(-2140));
 	CHECK(hook_calls == 1 && hook_ppb == -2100 && radio_ref_trim() == -2100);
-	radio_set_ref_trim(30000);
+	// The same trim again (every start applies the settings, often 0): not handed on, no retune
+	CHECK(!radio_set_ref_trim(-2100) && !radio_set_ref_trim(-2080) && hook_calls == 1);
+	hook_retune = false;
+	CHECK(!radio_set_ref_trim(30000));
 	CHECK(hook_calls == 2 && hook_ppb == 10000 && radio_ref_trim() == 10000);
-	radio_set_ref_trim(0);
+	hook_retune = true;
+	CHECK(radio_set_ref_trim(0));
 	CHECK(hook_calls == 3 && hook_ppb == 0 && radio_ref_trim() == 0);
 
 	if (failures) {

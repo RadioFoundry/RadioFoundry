@@ -41,6 +41,12 @@
   "net_tcp": {
    "result": "pass",
    "note": "the network services over PPP"
+  },
+  "ref_trim": {
+   "result": "pass",
+   "commit": "15c71883a",
+   "source": "docs/spec/hardware-db25d.md",
+   "note": "test_ref_trim.py: +-5 ppm moved FM at 461.4625 MHz +2309 / -2311 Hz"
   }
  }
 }

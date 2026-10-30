@@ -324,13 +324,14 @@ static bool pll_tune(uint32_t vco_hz, bool tx, bool wait)
 }
 
 #if CONFIG_REF_TRIM
-// hal_radio_t.ref_trim: DAC2 at once (one register; receive and transmit share it), and at every rx()
-static void ref_trim(int16_t ppb)
+// hal_radio_t.ref_trim: DAC2 at once (one register; receive and transmit share it), and at every rx(): no retune
+static bool ref_trim(int16_t ppb)
 {
 	r.ref_trim_ppb = ppb;
 	if (r.rx_valid) {
 		ref_dac_apply();
 	}
+	return false;
 }
 #endif
 

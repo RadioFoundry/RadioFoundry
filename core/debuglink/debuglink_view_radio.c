@@ -354,8 +354,9 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			if (!ref_trim_available()) {
 				return DL_ST_UNAVAILABLE;
 			}
-			radio_set_ref_trim(ppb);
-			radio_req_retune();
+			if (radio_set_ref_trim(ppb)) {
+				radio_req_retune();
+			}
 			return DL_ST_OK;
 		}
 #if CONFIG_DMR
