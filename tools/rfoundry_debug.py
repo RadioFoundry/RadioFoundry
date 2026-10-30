@@ -138,7 +138,9 @@ F4_SECTORS = [(0x08000000 + i * 0x4000, 0x4000) for i in range(4)] + [(0x0801000
     [(0x08020000 + i * 0x20000, 0x20000) for i in range(7)]
 MEM_WHITELIST = [(0x08000000, 0x08100000), (0x1FFF0000, 0x1FFF7800), (0x1FFF7800, 0x1FFF7A10),
                  (0x1FFFC000, 0x1FFFC010)]
-ST_OK, ST_BUSY = 0, 3
+ST_OK, ST_BAD_ARG, ST_BUSY = 0, 2, 3
+SHOT_LZ4 = 3            # SCREENSHOT's packed form (debuglink.md 3.3)
+SHOT_HDR = 28           # its reply bytes before the palette, status included
 
 ACTIONS = {"up": 1, "down": 2, "left": 3, "right": 4, "select": 5, "ok": 5, "green": 5, "back": 6, "exit": 6,
            "red": 6, "quick": 7, "star": 7, "context": 8, "hash": 8, "ptt": 19, "monitor": 20, "tt": 21,
@@ -284,6 +286,7 @@ class DebugLink:
         self.port = pick_port(port)
         self.timeout = timeout
         self.seq = 0
+        self.packed_shots = None                # packed screenshots: None until the firmware says
         if self.port.startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
             host, _, udp_port = self.port[4:].partition(":")
             self.s = UdpPort(host, int(udp_port or 3334))
@@ -624,8 +627,54 @@ class DebugLink:
             data += chunk
         return info, bytes(data)
 
+    def screenshot_packed(self):
+        """(info, frame buffer at the panel's depth or None, whole) of one pass in the packed form (debuglink.md 3.3):
+        LZ4, a tenth of the RGB565 form's bytes or less. whole: no frame was being drawn during the pass, so the
+        chunks are one frame. DebugLinkError with status ST_BAD_ARG from firmware without the packed form."""
+        stream = bytearray()
+        first = last = None
+        while first is None or len(stream) < first["stream"]:
+            _, r = self.request(SCREENSHOT, struct.pack("<IB", len(stream), SHOT_LZ4))
+            w, h, bpp, fmt, it, ib, il, ir, total, off, size, frame, drawing = struct.unpack_from("<HHBBBBBBIIIIB", r)
+            if off != len(stream):
+                raise DebugLinkError(f"screenshot chunk at {off}, expected {len(stream)}")
+            last = {"width": w, "height": h, "bpp": bpp, "insets": (it, ib, il, ir), "size": size, "stream": total,
+                    "frame": frame, "drawing": bool(drawing)}
+            hdr = SHOT_HDR - 1 + (32 if bpp == 4 else 0)       # r: the payload after the status byte
+            if first is None:
+                first = dict(last, palette=struct.unpack_from("<16H", r, SHOT_HDR - 1) if bpp == 4 else None)
+            elif (total, frame) != (first["stream"], first["frame"]):
+                return first, None, False       # a frame was drawn since the first chunk: the stream changed
+            if len(r) <= hdr:
+                raise DebugLinkError("screenshot: empty chunk")
+            stream += r[hdr:]
+        try:
+            fb = lz4_block(bytes(stream), first["size"])
+        except (ValueError, IndexError):
+            return first, None, False           # chunks of a frame being drawn
+        return first, fb, not first["drawing"] and not last["drawing"]
+
     def screenshot(self, tries=4):
-        """(info, bytes, stable): reads until two passes agree (stable False if they never did)."""
+        """(info, bytes, stable) in the form to_rgb takes (RGB565, or 1 bpp rows). The packed form when the firmware
+        has it, read until one pass is whole; else the RGB565 form, read until two passes agree. stable False if
+        none did."""
+        if self.packed_shots is not False:
+            try:
+                got = None
+                for _ in range(max(1, tries)):
+                    info, fb, whole = self.screenshot_packed()
+                    self.packed_shots = True
+                    if fb is not None:
+                        got = unpack_frame(info, fb)
+                        if whole:
+                            return got[0], got[1], True
+                if got is None:
+                    raise DebugLinkError(f"screenshot: the screen kept changing over {tries} reads")
+                return got[0], got[1], False
+            except DebugLinkError as e:
+                if e.status != ST_BAD_ARG or self.packed_shots:
+                    raise
+                self.packed_shots = False       # firmware before the packed form
         info, prev = self.screenshot_raw()
         for _ in range(max(1, tries) - 1):
             info, cur = self.screenshot_raw()
@@ -978,6 +1027,41 @@ class DebugLink:
 
 # ── pictures ────────────────────────────────────────────────────────────────
 
+def stubtool_module():
+    """stub/stubtool.py, for its LZ4 block codec (imported when first needed: it is large)"""
+    stub_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stub")
+    if stub_dir not in sys.path:
+        sys.path.insert(0, stub_dir)
+    import stubtool
+    return stubtool
+
+
+def lz4_block(src, size):
+    """Decode an LZ4 block to exactly size bytes (stub/stubtool.py's decoder). ValueError if it is corrupt."""
+    stubtool = stubtool_module()
+    try:
+        return stubtool.lz4_block(src, size)
+    except stubtool.DumpError as e:
+        raise ValueError(str(e))
+
+
+def unpack_frame(info, fb):
+    """(info, bytes) in the RGB565 form's terms from a packed screenshot's frame buffer: a 16-color frame through its
+    palette, a 1 bpp or RGB565 frame as it is. info keeps the panel's depth as native_bpp."""
+    w, h, bpp = info["width"], info["height"], info["bpp"]
+    out = {"width": w, "height": h, "insets": info["insets"], "native_bpp": bpp, "packed": True}
+    if bpp == 4:
+        pal = [struct.pack("<H", c) for c in info["palette"]]
+        pair = [pal[b >> 4] + pal[b & 15] for b in range(256)]
+        stride = (w + 1) // 2
+        data = b"".join(b"".join(pair[b] for b in fb[y * stride:(y + 1) * stride])[:w * 2] for y in range(h))
+        bpp = 16
+    else:
+        data = fb
+    out.update(bpp=bpp, format=2 if bpp == 1 else 1, total=len(data))
+    return out, data
+
+
 def to_rgb(info, data, crop=False):
     """(width, height, RGB888 rows as bytes) from the frame buffer"""
     w, h = info["width"], info["height"]
@@ -1102,7 +1186,7 @@ def cmd_screenshot(link, a):
     w, h, rows = to_rgb(info, data, a.crop)
     write_png(a.output, w, h, rows, a.scale)
     note = "" if stable else f" (the screen kept changing over {a.tries} reads: may be torn)"
-    print(f"{a.output}: {w}x{h} from {info['width']}x{info['height']}x{info['bpp']}{note}")
+    print(f"{a.output}: {w}x{h} from {info['width']}x{info['height']}x{info.get('native_bpp', info['bpp'])}{note}")
     return 0
 
 
@@ -1705,7 +1789,71 @@ def cmd_reboot(link, a):
     return 0
 
 
+def self_test():
+    """The packed screenshot reader against a simulated radio (the firmware's side is tests/host/debuglinkTest)."""
+    stubtool = stubtool_module()
+    ok = True
+
+    def check(cond, what):
+        nonlocal ok
+        print("%s %s" % ("ok  " if cond else "FAIL", what))
+        ok = ok and cond
+
+    class FakeRadio(DebugLink):
+        """Answers SCREENSHOT as debuglink.md 3.3 says: a 6 x 3 panel of 16 colors, or firmware without the packed
+        form (packed False). redraw_at: the reply at which a new frame is drawn."""
+
+        def __init__(self, packed=True, redraw_at=None, drawing=0):
+            self.packed_shots, self.packed, self.redraw_at, self.drawing = None, packed, redraw_at, drawing
+            self.replies, self.frame = 0, 7
+            self.fb = bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x00] * 1)
+            self.pal = [0x1000 + i for i in range(16)]
+
+        def request(self, cmd, payload=b""):
+            self.replies += 1
+            if self.replies == self.redraw_at:
+                self.frame += 1
+                self.fb = bytes(b ^ 0xFF for b in self.fb)
+            if len(payload) == 5:
+                if not self.packed:
+                    raise DebugLinkError("bad argument", ST_BAD_ARG)
+                off = struct.unpack_from("<I", payload)[0]
+                z = bytes(stubtool.lz4_encode(self.fb))
+                chunk = z[off:off + 4]          # small windows: several replies
+                drawing = self.drawing > 0
+                self.drawing -= 1
+                r = struct.pack("<HHBBBBBBIIIIB", 6, 3, 4, SHOT_LZ4, 1, 0, 0, 0, len(z), off, len(self.fb), self.frame,
+                                drawing) + struct.pack("<16H", *self.pal) + chunk
+                return 0, r
+            rgb = b"".join(struct.pack("<H", self.pal[(self.fb[i // 2] >> (0 if i & 1 else 4)) & 15])
+                           for i in range(18))
+            off, n = struct.unpack_from("<IH", payload) if payload else (0, 0)
+            return 0, struct.pack("<HHBBBBBBII", 6, 3, 16, 1, 1, 0, 0, 0, len(rgb), off) + rgb[off:off + n]
+
+    want = b"".join(struct.pack("<H", 0x1000 + i) for i in range(16)) + struct.pack("<HH", 0x1000, 0x1000)
+    info, data, stable = FakeRadio().screenshot()
+    check(stable and info["packed"] and data == want, "packed: 16 colors decode to RGB565 through the palette")
+    check((info["bpp"], info["format"], info["total"], info["native_bpp"]) == (16, 1, 36, 4), "packed: info as RGB565")
+    check(to_rgb(info, data)[:2] == (6, 3), "packed: to_rgb takes it")
+    r = FakeRadio(redraw_at=2)
+    info, data, stable = r.screenshot()
+    check(stable and r.replies > 2 and data != want, "a frame drawn during a pass: read again")
+    r = FakeRadio(drawing=1)
+    info, data, stable = r.screenshot()
+    check(stable and r.packed_shots, "first chunk during a draw: read again")
+    r = FakeRadio(drawing=99)
+    info, data, stable = r.screenshot(tries=2)
+    check(not stable and data is not None, "always drawing: the last read, not stable")
+    r = FakeRadio(packed=False)
+    info, data, stable = r.screenshot()
+    check(stable and r.packed_shots is False and data == want and "packed" not in info, "old firmware: RGB565 form")
+    print("rfoundry_debug self-test:", "ok" if ok else "FAILED")
+    return 0 if ok else 1
+
+
 def main(argv=None):
+    if (sys.argv[1:] if argv is None else argv) == ["--self-test"]:
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", help="serial port (default: the radio with USB ID 1FC9:0094, or $RFOUNDRY_PORT)")
     ap.add_argument("--timeout", type=float, default=1.0, help="seconds to wait for each answer")
@@ -1723,7 +1871,7 @@ def main(argv=None):
     p.add_argument("-o", "--output", required=True)
     p.add_argument("--scale", type=int, default=1)
     p.add_argument("--crop", action="store_true", help="leave out the insets hidden by the bezel")
-    p.add_argument("--tries", type=int, default=4, help="reads until two agree (1: one read, may tear)")
+    p.add_argument("--tries", type=int, default=4, help="reads until one is whole (old firmware: two agree)")
     p = sub.add_parser("key")
     p.add_argument("name", nargs="?")
     g = p.add_mutually_exclusive_group()

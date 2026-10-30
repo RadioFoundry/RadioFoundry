@@ -644,9 +644,10 @@ run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6
 	else echo "# splitPairTest, dmr_cach selftest: skipped (no python3)"; fi
 .PHONY: run-split
 
-# The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring (core/debuglink)
+# The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring, packed screenshots
+# (core/debuglink)
 DLINK   := debuglinkTest.c $(CORE)/debuglink/dl_frame.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c \
-	$(CORE)/debuglink/dl_chip.c
+	$(CORE)/debuglink/dl_chip.c $(CORE)/debuglink/dl_shot.c $(CORE)/cps/cps_lz4.c
 TESTS   += debuglinkTest
 
 debuglinkTest: $(DLINK) $(wildcard $(CORE)/debuglink/*.h)

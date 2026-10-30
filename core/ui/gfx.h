@@ -55,18 +55,17 @@ color_t gfx_palette(uint8_t i);
 #define GFX_PAPER	RGB565(0xC8, 0xD0, 0xB8)
 #define GFX_INK		RGB565(0x14, 0x18, 0x10)
 
-#if CONFIG_NET_WEBCTL
-// A copy of the screen kept elsewhere (the web control page, core/net/webctl.c), sent the rows that change. The UI
-// task marks each frame's start; gfx_flush its end and the rows it sent the panel. The reader (a higher priority task)
-// reads rows only between frames: gfx_frame_idle gives the frame count when no frame is being drawn, and the same
-// count after the read says the rows were whole
+// Readers of the frame buffer in a higher priority task (screen captures, the web control page): the UI task marks
+// each frame's start, gfx_flush its end. gfx_frame_idle gives the frame count and whether no frame is being drawn; the
+// same count, idle, before and after a read says the read was whole
 void gfx_frame_begin(void);
 bool gfx_frame_idle(uint32_t *frames);
+#if CONFIG_NET_WEBCTL
+// A copy of the screen kept elsewhere (the web control page, core/net/webctl.c), sent the rows that change: gfx_flush
+// marks the rows it sent the panel
 int gfx_row_next(int from);		// the first row from `from` on that changed since it was taken, -1 none
 void gfx_rows_take(int from, int to);	// rows from..to (inclusive) sent: unmarked
 void gfx_rows_mark_all(void);		// a new reader: every row
-#else
-static inline void gfx_frame_begin(void) {}
 #endif
 void gfx_fill(int x, int y, int w, int h, color_t c);
 void gfx_clear(color_t c);

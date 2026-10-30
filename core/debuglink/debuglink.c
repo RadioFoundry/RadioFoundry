@@ -11,6 +11,7 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_chip.h"
+#include "debuglink/dl_shot.h"
 #include "debuglink/dlog.h"
 #include "hostlink/hostlink.h"
 #include "stubentry/stub_entry.h"
@@ -35,7 +36,7 @@
 
 #define SHOT_HOLD_MS		1000	// a screen capture freezes UI redraws at most this long
 #define SHOT_TAIL_MS		250	// after the last chunk: long enough for the host's check pass to start
-#define SHOT_CHUNK_MAX		1000u	// screenshot bytes per reply
+#define SHOT_CHUNK_MAX		1000u	// screenshot bytes per reply (the RGB565 form)
 #define RADIO_OP_GAP_MS		20u	// radio requests at most this often (the radio core's queue holds 16)
 #define REBOOT_DELAY_MS		250u	// the REBOOT reply goes out over USB before the reset
 
@@ -384,15 +385,57 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 
 // --- screenshot: the UI frame buffer, read live (see the doc on tearing) ---
 
+// Hold the UI's redraws while the host reads the chunks, so the capture is one frame. Every chunk extends the hold;
+// redraws resume SHOT_TAIL_MS after the last chunk (not the full hold: a key pressed right after a capture must show
+// up in the next one)
+static void shot_hold(bool last)
+{
+	gfx_hold(hal_millis() + (last ? SHOT_TAIL_MS : SHOT_HOLD_MS));
+}
+
+// The packed form: the frame buffer at the panel's depth, LZ4 (dl_shot.h)
+static size_t shot_packed(const hal_display_t *d, uint32_t offset, uint8_t *out, size_t cap)
+{
+	static dl_shot_t s;	// static: the host link task's stack also holds the encoder's hash table
+	uint32_t stride = d->bpp == 1 ? (d->width + 7u) / 8u : d->bpp == 4 ? (d->width + 1u) / 2u : d->width * 2u;
+
+	s.fb = gfx_framebuffer();
+	s.size = stride * d->height;
+	if (s.size > 0xFFFFu) {
+		return status_only(out, DL_ST_UNAVAILABLE);
+	}
+	s.width = d->width;
+	s.height = d->height;
+	s.bpp = d->bpp;
+	s.insets[0] = d->inset_top;
+	s.insets[1] = d->inset_bottom;
+	s.insets[2] = d->inset_left;
+	s.insets[3] = d->inset_right;
+	s.drawing = !gfx_frame_idle(&s.frame);
+	for (uint8_t i = 0; i < 16; i++) {
+		s.palette[i] = gfx_palette(i);
+	}
+	bool last;
+	size_t n = dl_shot_reply(&s, offset, out, cap, &last);
+	if (n == 0) {
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+	shot_hold(last);
+	return n;
+}
+
 static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
 	const hal_display_t *d = board.display;
 
-	if (len != 0 && len != 6) {
+	if ((len != 0 && len != 5 && len != 6) || (len == 5 && req[4] != DL_SHOT_LZ4)) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
 	if (d == NULL || gfx_width() <= 0 || gfx_framebuffer() == NULL) {
 		return status_only(out, DL_ST_UNAVAILABLE);
+	}
+	if (len == 5) {
+		return shot_packed(d, get32(req), out, cap);
 	}
 	// A 16-color frame (bpp 4) goes out as RGB565, read through its palette
 	bool indexed = GFX_INDEXED && d->bpp == 4;
@@ -426,10 +469,7 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	out[10] = d->inset_right;
 	put32(out + 11, total);
 	put32(out + 15, offset);
-	// Hold the UI's redraws while the host reads the chunks, so the capture is one frame. Every chunk extends the
-	// hold, so the host's check pass sees the same frame; redraws resume SHOT_TAIL_MS after the last chunk (not the
-	// full hold: a key pressed right after a capture must show up in the next one)
-	gfx_hold(hal_millis() + (len == 6 && offset + n >= total ? SHOT_TAIL_MS : SHOT_HOLD_MS));
+	shot_hold(len == 6 && offset + n >= total);
 	if (indexed) {
 		gfx_read_rgb565(offset, out + 19, n);
 	} else {
