@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "rf/fd6818/fd6818.h"
+#include "rf/subaudio/subaudio.h"
 
 // A board's own set, the one other than the driver's default (boards/dm1801pro/rf_tables_dm1801pro.c)
 extern const fd6818_variant_t fd6818_variant_dm1801pro;
@@ -182,9 +183,9 @@ static void test_helpers(void)
 	CHECK(fd6818_band_words(18499999u, &a, &b) && a == 0x3F48);			// the row's own boundary value
 	CHECK(fd6818_band_words(18499998u, &a, &b) && a == 0xAF28);
 	CHECK(!fd6818_band_words(1500000u, &a, &b));					// below 16 MHz: nothing
-	CHECK(fd6818_ctcss_word(885) == 1827);	// 88.5 Hz x 20.64888 (the old port's integer division gave 1651)
-	CHECK(fd6818_ctcss_word(1000) == 2065);
-	CHECK(fd6818_ctcss_word(2541) == 5247);
+	CHECK(subaudio_ctcss_word(885, true) == 1827);	// 88.5 Hz x 20.64888 (the old port's integer division gave 1651)
+	CHECK(subaudio_ctcss_word(1000, true) == 2065);
+	CHECK(subaudio_ctcss_word(2541, true) == 5247);
 	CHECK(fd6818_rssi_raw(0x01FF) == 0xFF && fd6818_rssi_raw(0xFE00) == 0);
 	CHECK(fd6818_rssi_dbm(100) == -110 && fd6818_rssi_dbm(0xFE00) == -160);	// guide: reg / 2 - 160
 	CHECK(fd6818_noise(0xAB08) == 33 && fd6818_noise(0x00FF) == 255);	// low byte only, capped

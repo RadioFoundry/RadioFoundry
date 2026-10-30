@@ -118,13 +118,8 @@ typedef struct {
 static inline int16_t bk4819_rssi_dbm(uint16_t r67) { return (int16_t)((int16_t)((r67 & 0x1FFu) >> 1) - 160); }
 // 0x78 for squelch opening at open_dbm and closing hyst_db lower, in reg 0x67's scale. Clamped to what the bytes hold
 uint16_t bk4819_squelch_rssi(int16_t open_dbm, uint8_t hyst_db);
-// CTCSS frequency word for a tone in Hz x 10 (Hz x 20.64888, as the FD6818)
-uint16_t bk4819_ctcss_word(uint16_t hz_x10);
-// The stock transmitter's word: the same product truncated, not rounded
-uint16_t bk4819_ctcss_word_tx(uint16_t hz_x10);
-
-// Tone 1 frequency word for hz: Hz x 10.32444 (the stock firmware's DTMF table: 697 Hz = 7196, 1633 Hz = 16860)
-uint16_t bk4819_tone_word(uint16_t hz);
+// CTCSS and tone generator words: subaudio_ctcss_word() (the stock transmitter's truncated, the receiver's rounded) and
+// subaudio_tone_word() (the stock DTMF table rounded: 697 Hz = 7196, 1633 Hz = 16860; single tones truncated)
 #define BK4819_TONE_GAIN_MAX	127u
 
 // 0x36 for output level 0..15: 0 is off, anything else level x 63 / 15 with bit 7 set (the LO's formula, 4.3)

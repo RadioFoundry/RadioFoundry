@@ -99,9 +99,8 @@ typedef enum { FD6818_TONE_NONE, FD6818_TONE_CTCSS, FD6818_TONE_DCS, FD6818_TONE
 
 // Band select words (0x1A, 0x40) for a frequency in 10 Hz units; false below 16 MHz (nothing is written then)
 bool fd6818_band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40);
-// CTCSS frequency register for a tone in Hz x 10: Hz x 20.64888, rounded (the old port truncated the tone to whole
-// tens of Hz first, hardware-dm32.md 16 #3)
-uint16_t fd6818_ctcss_word(uint16_t hz_x10);
+// CTCSS frequency register: subaudio_ctcss_word(), rounded (the old port truncated the tone to whole tens of Hz first,
+// hardware-dm32.md 16 #3)
 // Whether a 0x0C reading shows the tone the receiver was set up for (none: always true)
 bool fd6818_tone_found(uint16_t r0c, fd6818_tone_t type);
 // RSSI raw value from reg 0x67 (bits 8:0, halved: 1 dB steps)

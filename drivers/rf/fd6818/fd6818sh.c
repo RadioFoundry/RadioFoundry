@@ -180,23 +180,6 @@ uint16_t fd6818sh_volume_word(uint8_t v)
 	return (uint16_t)(vol_gain[i] << 5 | (i < VOL_COARSE_FROM ? VOL_LOW : VOL_HIGH));
 }
 
-uint16_t fd6818sh_ctcss_word(uint16_t hz_x10)
-{
-	// Hz x 2^27 / 6.5 MHz = (Hz x 10) x 2.064888, truncated as the working firmware does
-	return (uint16_t)(((uint64_t)hz_x10 * 258111u) / 125000u);
-}
-
-uint16_t fd6818sh_tone_word(uint16_t hz)
-{
-	// Hz x 2^21 / 203125 = Hz x 10.3244, truncated
-	return (uint16_t)((uint32_t)hz * 103244u / 10000u);
-}
-
-uint16_t fd6818sh_dtmf_word(uint16_t hz)
-{
-	return (uint16_t)(((uint32_t)hz * 103244u + 5000u) / 10000u);
-}
-
 uint8_t fd6818sh_7813_section(uint32_t hz)
 {
 	uint32_t m = mhz(hz);
@@ -431,7 +414,7 @@ static void subaudio(fd6818sh_t *dev, fd6818sh_tone_t type, uint16_t value)
 {
 	switch (type) {
 	case FD6818SH_TONE_CTCSS:
-		wr(dev, REG_CTCSS, fd6818sh_ctcss_word(value));
+		wr(dev, REG_CTCSS, subaudio_ctcss_word(value, false));
 		wr(dev, REG_CTCSS, CTCSS_SLOT1 | CTCSS_55HZ);
 		wr(dev, REG_SUB, SUB_CTCSS);
 		wr(dev, REG_SUB_DETECT, DETECT_DEF);
@@ -522,7 +505,7 @@ void fd6818sh_tone_start(fd6818sh_t *dev, uint16_t hz, uint8_t gain)
 	if (gain > 0x7F) {
 		gain = 0x7F;
 	}
-	wr(dev, REG_TONE1, fd6818sh_tone_word(hz));
+	wr(dev, REG_TONE1, subaudio_tone_word(hz, false));
 	wr(dev, REG_TONE_CTRL, (uint16_t)(TONE_ON | (uint16_t)gain << 8));
 	if (dev->tone_hz == 0) {
 		wr(dev, FD6818SH_REG_STATE, FD6818SH_STATE_TX_TONE);	// straight from TX, as the working firmware does
@@ -540,8 +523,8 @@ void fd6818sh_dtmf_start(fd6818sh_t *dev, uint16_t low_hz, uint16_t high_hz)
 		return;
 	}
 	wr(dev, REG_TONE_CTRL, DTMF_CTRL);
-	wr(dev, REG_TONE1, fd6818sh_dtmf_word(low_hz));
-	wr(dev, REG_TONE2, fd6818sh_dtmf_word(high_hz));
+	wr(dev, REG_TONE1, subaudio_tone_word(low_hz, true));
+	wr(dev, REG_TONE2, subaudio_tone_word(high_hz, true));
 	if (dev->tone_hz == 0) {
 		wr(dev, FD6818SH_REG_STATE, FD6818SH_STATE_TX_TONE);
 		dev->state = FD6818SH_STATE_TX_TONE;

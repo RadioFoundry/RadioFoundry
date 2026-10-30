@@ -72,11 +72,8 @@ uint16_t fd6818sh_pa_word(uint8_t v);
 uint16_t fd6818sh_mic_word(uint8_t v);
 // 0x53 audio gain word for a volume 0..15
 uint16_t fd6818sh_volume_word(uint8_t v);
-// CTCSS word (0x07) for a tone in Hz x 10; the tone generator word (0x71, 0x72) for Hz, truncated for a tone and
-// rounded for DTMF, as the working firmware's
-uint16_t fd6818sh_ctcss_word(uint16_t hz_x10);
-uint16_t fd6818sh_tone_word(uint16_t hz);
-uint16_t fd6818sh_dtmf_word(uint16_t hz);
+// CTCSS and tone words: subaudio_ctcss_word() (truncated, as the working firmware's) and subaudio_tone_word()
+// (truncated for a tone, rounded for DTMF)
 // The 0x7813 LO's VCO section (0..8) for an LO frequency
 uint8_t fd6818sh_7813_section(uint32_t hz);
 

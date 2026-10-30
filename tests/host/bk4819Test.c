@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "rf/bk4819/bk4819.h"
+#include "rf/subaudio/subaudio.h"
 
 static int failures;
 
@@ -181,11 +182,11 @@ static int find_last(const chip_t *c, uint8_t reg)
 
 static void test_helpers(void)
 {
-	CHECK(bk4819_ctcss_word(885) == 1827);
-	CHECK(bk4819_ctcss_word(1000) == 2065);
-	CHECK(bk4819_ctcss_word(2541) == 5247);
+	CHECK(subaudio_ctcss_word(885, true) == 1827);
+	CHECK(subaudio_ctcss_word(1000, true) == 2065);
+	CHECK(subaudio_ctcss_word(2541, true) == 5247);
 	// The stock transmitter truncates: 100.0 Hz = 2064.888 -> 2064
-	CHECK(bk4819_ctcss_word_tx(1000) == 2064 && bk4819_ctcss_word_tx(885) == 1827 && bk4819_ctcss_word_tx(2541) == 5246);
+	CHECK(subaudio_ctcss_word(1000, false) == 2064 && subaudio_ctcss_word(885, false) == 1827 && subaudio_ctcss_word(2541, false) == 5246);
 	CHECK(bk4819_rssi_dbm(0x0000) == -160);
 	CHECK(bk4819_rssi_dbm(0x0082) == -95);		// 130 half-dB
 	CHECK(bk4819_rssi_dbm(0xFFFF) == 95);		// bits above 8 ignored
@@ -418,8 +419,8 @@ static void test_sequences(void)
 	CHECK(c->log[5].reg == 0x30 && c->log[5].val == BK4819_STATE_TX_MAIN && m.state == BK4819_STATE_TX_MAIN);
 	CHECK(c->log[6].reg == 0x40 && c->log[6].val == 0x34A8 && m.tone_hz == 0);
 	CHECK(bk4819_pa_reg(0) == 0 && bk4819_pa_reg(15) == BK4819_PA_MAX && bk4819_pa_reg(99) == BK4819_PA_MAX);
-	CHECK(bk4819_tone_word(697) == 7196 && bk4819_tone_word(852) == 8796 && bk4819_tone_word(1209) == 12482 &&
-	      bk4819_tone_word(1336) == 13793 && bk4819_tone_word(1477) == 15249 && bk4819_tone_word(1633) == 16860);
+	CHECK(subaudio_tone_word(697, true) == 7196 && subaudio_tone_word(852, true) == 8796 && subaudio_tone_word(1209, true) == 12482 &&
+	      subaudio_tone_word(1336, true) == 13793 && subaudio_tone_word(1477, true) == 15249 && subaudio_tone_word(1633, true) == 16860);
 
 	// Gain changes only the low nibble of the last 0x48 value; out of range clamps
 	chips[0].n = 0;

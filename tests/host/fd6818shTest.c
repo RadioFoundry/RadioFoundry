@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "rf/fd6818/fd6818sh.h"
+#include "rf/subaudio/subaudio.h"
 
 static int failures, checks;
 
@@ -121,18 +122,18 @@ static void test_words(void)
 	CHECK(fd6818sh_volume_word(200) == fd6818sh_volume_word(15));
 
 	// The working firmware's CTCSS words
-	CHECK(fd6818sh_ctcss_word(670) == 0x0567);
-	CHECK(fd6818sh_ctcss_word(885) == 0x0723);
-	CHECK(fd6818sh_ctcss_word(1000) == 0x0810);
-	CHECK(fd6818sh_ctcss_word(1514) == 0x0C36);
-	CHECK(fd6818sh_ctcss_word(2541) == 0x147E);
-	CHECK(fd6818sh_ctcss_word(550) == 0x046F);		// its 55 Hz tail word is a constant, 0x0470
+	CHECK(subaudio_ctcss_word(670, false) == 0x0567);
+	CHECK(subaudio_ctcss_word(885, false) == 0x0723);
+	CHECK(subaudio_ctcss_word(1000, false) == 0x0810);
+	CHECK(subaudio_ctcss_word(1514, false) == 0x0C36);
+	CHECK(subaudio_ctcss_word(2541, false) == 0x147E);
+	CHECK(subaudio_ctcss_word(550, false) == 0x046F);		// its 55 Hz tail word is a constant, 0x0470
 	// Its tone word is truncated, its DTMF table rounded
-	CHECK(fd6818sh_tone_word(1750) == 18067);
-	CHECK(fd6818sh_dtmf_word(697) == 0x1C1C);
-	CHECK(fd6818sh_dtmf_word(941) == 0x25F3);
-	CHECK(fd6818sh_dtmf_word(1209) == 0x30C2);
-	CHECK(fd6818sh_dtmf_word(1633) == 0x41DC);
+	CHECK(subaudio_tone_word(1750, false) == 18067);
+	CHECK(subaudio_tone_word(697, true) == 0x1C1C);
+	CHECK(subaudio_tone_word(941, true) == 0x25F3);
+	CHECK(subaudio_tone_word(1209, true) == 0x30C2);
+	CHECK(subaudio_tone_word(1633, true) == 0x41DC);
 
 	CHECK(fd6818sh_7813_section(32000000) == 0);
 	CHECK(fd6818sh_7813_section(33000000) == 1);

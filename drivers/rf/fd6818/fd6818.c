@@ -115,13 +115,6 @@ int8_t fd6818_rssi_cal_db(const fd6818_rssi_cal_t *t, uint8_t n, uint32_t hz)
 	return t[n - 1].db;
 }
 
-uint16_t fd6818_ctcss_word(uint16_t hz_x10)
-{
-	// Hz x 20.64888 = (Hz x 10) x 2.064888 = (Hz x 10) x 258111 / 125000 (exact; fits 32 bits up to 1664 Hz x 10,
-	// so the product is done in 64 bits for any input)
-	return (uint16_t)(((uint64_t)hz_x10 * 258111u + 62500u) / 125000u);
-}
-
 void fd6818_attach(fd6818_t *dev, rfbus_t *bus)
 {
 	fd6818_attach_variant(dev, bus, &fd6818_variant_default);
@@ -227,7 +220,7 @@ void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10)
 		fd6818_write(dev, FD6818_REG_SUBAUDIO, 0x0000);
 		return;
 	}
-	fd6818_write(dev, FD6818_REG_CTCSS_FREQ, fd6818_ctcss_word(hz_x10));
+	fd6818_write(dev, FD6818_REG_CTCSS_FREQ, subaudio_ctcss_word(hz_x10, true));
 	fd6818_write(dev, FD6818_REG_SUBAUDIO, 0x9045);	// TX CTCSS on, gain 0x45
 }
 
@@ -244,7 +237,7 @@ void fd6818_set_rx_tone(fd6818_t *dev, fd6818_tone_t type, uint16_t value)
 {
 	switch (type) {
 	case FD6818_TONE_CTCSS:
-		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, fd6818_ctcss_word(value));
+		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, subaudio_ctcss_word(value, true));
 		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, CTCSS_WORD_ALT | 0x01CEu);
 		fd6818_write(dev, FD6818_REG_CSS_THRESH, 0x028F);
 		fd6818_write(dev, FD6818_REG_SUBAUDIO, SUBAU_ON | SUBAU_CTCSS | SUBAU_GAIN);
