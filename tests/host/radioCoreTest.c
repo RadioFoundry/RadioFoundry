@@ -3042,7 +3042,7 @@ static void test_ui_glue(void)
 	CHECK(sv.ref_trim_ppb == -2100);
 	ui_svc_apply(UI_SET_REF_TRIM, ui_svc_setting_get(UI_SET_REF_TRIM));
 	CHECK(ref_trim_ppb == -2100);
-	CHECK(ui_svc_setting_set(UI_SET_REF_TRIM, 30000) && ui_svc_setting_get(UI_SET_REF_TRIM) == 25000);
+	CHECK(ui_svc_setting_set(UI_SET_REF_TRIM, 30000) && ui_svc_setting_get(UI_SET_REF_TRIM) == 10000);
 	CHECK(ui_svc_setting_set(UI_SET_REF_TRIM, -2100));
 #if CONFIG_DUAL_WATCH
 	// Dual watch's B, and whether the watch ran and which channel was selected (it comes back at power on)

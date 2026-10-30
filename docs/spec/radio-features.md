@@ -482,7 +482,7 @@ a low fixed value or refuses to transmit; the board's hardware page says which.
 
 ### 6.1 Reference trim
 
-Settings > Talk & listen > Freq trim: a fraction of the reference, -25.0 to +25.0 ppm in 0.1 ppm steps, 0 by default
+Settings > Talk & listen > Freq trim: a fraction of the reference, -10.0 to +10.0 ppm in 0.1 ppm steps, 0 by default
 (`core/radio/ref_trim.c`). It is for a radio whose reference oscillator is off even with its calibration: it moves
 receive and transmit together, FM and DMR. A fraction of the reference moves every carrier by the same fraction, so
 one value holds on every band; the Hz it comes to grows with the frequency.
@@ -491,7 +491,7 @@ one value holds on every band; the Hz it comes to grows with the frequency.
 |---|---|---|
 | 0.1 ppm (one step) | 44 Hz | 14.4 Hz |
 | 4.5 ppm | 1980 Hz | 648 Hz |
-| 25.0 ppm (the limit) | 11 kHz | 3.6 kHz |
+| 10.0 ppm (the limit) | 4.4 kHz | 1.44 kHz |
 
 The value is held in parts per billion (ppb, 100 a step), an int16: `hal_radio_t.ref_trim`, `settings_t.ref_trim_ppb`,
 the debug link. The UI stores it and applies it at start-up and on each change with `radio_set_ref_trim()`, which

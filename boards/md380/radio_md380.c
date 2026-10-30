@@ -85,7 +85,7 @@ static struct {
 	radio_bw_t rx_bw;
 	bool asleep;
 	uint32_t rx_tune_dac;	// DAC1 for the receiver front end at rx_hz (the PA drive shares DAC1)
-	uint8_t ref_tune;	// the calibration's reference tune at rx_hz
+	volatile uint8_t ref_tune;	// the calibration's reference tune at rx_hz
 	volatile int16_t ref_trim_ppb;	// hal_radio_t.ref_trim
 	md380_radio_diag_t diag;
 	uint32_t bus_errors;
@@ -192,12 +192,26 @@ static void dac2_set(uint32_t value)
 }
 
 // DAC2 for the calibration's reference tune plus the user's trim
-static uint32_t ref_dac(uint8_t tune)
+static uint32_t ref_dac(uint8_t tune, int16_t ppb)
 {
-	int32_t num = (int32_t)r.ref_trim_ppb * 10;
+	int32_t num = (int32_t)ppb * 10;
 	int32_t counts = (num + (num < 0 ? -REF_PPB_X10_PER_COUNT / 2 : REF_PPB_X10_PER_COUNT / 2)) / REF_PPB_X10_PER_COUNT;
 	int32_t v = (int32_t)hrc5000_ref_dac(tune) + counts;
 	return v < 0 ? 0u : (uint32_t)v;	// dac2_set clamps the top
+}
+
+// DAC2 from r.ref_tune and r.ref_trim_ppb. The radio task (rx()) and the trim's caller (UI or debug link task) both
+// write it: whoever writes rechecks both inputs afterwards and writes again if one moved, so the last write always
+// matches the current tune and trim
+static void ref_dac_apply(void)
+{
+	uint8_t tune;
+	int16_t ppb;
+	do {
+		tune = r.ref_tune;
+		ppb = r.ref_trim_ppb;
+		dac2_set(ref_dac(tune, ppb));
+	} while (tune != r.ref_tune || ppb != r.ref_trim_ppb);
 }
 
 static volatile bool pa_timer_running;
@@ -314,7 +328,7 @@ static void ref_trim(int16_t ppb)
 {
 	r.ref_trim_ppb = ppb;
 	if (r.rx_valid) {
-		dac2_set(ref_dac(r.ref_tune));
+		ref_dac_apply();
 	}
 }
 
@@ -703,7 +717,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	r.rx_tune_dac = cal.rx_tune_dac;
 	dac1_set(cal.rx_tune_dac);
 	r.ref_tune = cal.ref_tune;
-	dac2_set(ref_dac(cal.ref_tune));
+	ref_dac_apply();
 	count(hrc5000_set_ref(&r.modem, cal.ref_tune));
 	if (r.mode == RADIO_MODE_FM) {
 		count(hrc5000_set_mode_fm_rx(&r.modem));

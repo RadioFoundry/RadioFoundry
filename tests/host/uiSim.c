@@ -264,7 +264,7 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_my_radio", "ok 7 9 ok" },
 	{ "w_codeplug", "ok 7 0 down ok" },
 	{ "w_settings_number", "ok 7 3 ok up" },
-	{ "w_freq_trim", "trim ok 7 3 down down down down down ok ctx 2 5 0 ok" },
+	{ "w_freq_trim", "trim ok 7 3 down down down down down ok ctx 1 0 0 ok" },
 	{ "w_settings_privacy", "ok 7 4 ok ok down ok up" },
 	{ "w_settings_range", "ok 7 7 down down ok 9 9 ok" },
 	{ "w_hotspot", "hotspot:on" },

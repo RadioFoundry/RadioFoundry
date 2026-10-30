@@ -482,7 +482,7 @@ TESTS   += micGainTest
 micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
-# The reference trim setting (core/radio/ref_trim.c): clamped, rounded to 100 Hz, to the board's hook
+# The reference trim setting (core/radio/ref_trim.c): clamped, rounded to 100 ppb, to the board's hook
 TESTS   += refTrimTest
 refTrimTest: refTrimTest.c $(CORE)/radio/ref_trim.c $(CORE)/radio/ref_trim.h $(ROOT)/hal/hal_radio.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ refTrimTest.c $(CORE)/radio/ref_trim.c
