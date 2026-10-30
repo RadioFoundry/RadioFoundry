@@ -495,8 +495,8 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
 - Mic gain acts on FM and DMR where the board sets it in its audio path (`hal_radio_t.mic_gain`), else on DMR only,
   in software before the vocoder (radio-features.md 3.6). The
   GPS options are stored but act on nothing (no GPS owner); they are dimmed on boards without `CAP_GPS`.
-- Freq trim (Talk & listen, after Mic gain) is shown only on a radio whose board has `hal_radio_t.ref_trim`: -3000
-  to +3000 Hz in 100 Hz steps, applied at once (radio-features.md 6.1).
+- Freq trim (Talk & listen, after Mic gain) is shown only on a radio whose board has `hal_radio_t.ref_trim`: -10000
+  to +10000 Hz in 100 Hz steps, applied at once (radio-features.md 6.1).
 - Voice prompts are dimmed ("Voice prompts aren't built yet: no recorded speech").
 - Theme switches the color palette (dark, light, high contrast). Highlight color (Default, Red, Orange, Yellow, Teal,
   Light blue, Purple, Pink) and Filled status bar (Settings > Display, `settings_t.accent`) are for color displays

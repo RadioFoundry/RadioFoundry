@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The reference trim (radio-features.md 6.1) over the debug link's SETTING op 35, RAM only: no RF.
 
-A trim in range is taken, rounded to 100 Hz, and shows as `ref_trim` in the storage section; past +-3000 Hz it is
+A trim in range is taken, rounded to 100 Hz, and shows as `ref_trim` in the storage section; past +-10000 Hz it is
 refused (bad argument) and the trim in effect stays. The stored setting (`settings.ref_trim`) isn't changed, and the
 trim in effect before is put back. Skipped on a radio without the trim (`ref_trim=-`). Whether the carrier moves is
 checked off air (the hardware page's bench notes), not here.
@@ -32,16 +32,16 @@ def test_ref_trim_setting(radio):
         radio.link.setting("ref_trim", -1240)
         time.sleep(0.06)        # the radio request rate limit
         assert trim_view(radio) == ("-1200", stored), "a trim in range is taken, rounded to 100 Hz, not stored"
-        radio.link.setting("ref_trim", 3000)
+        radio.link.setting("ref_trim", 10000)
         time.sleep(0.06)
-        assert trim_view(radio)[0] == "3000"
+        assert trim_view(radio)[0] == "10000"
         with pytest.raises(DebugLinkError):
-            radio.link.setting("ref_trim", 3100)
+            radio.link.setting("ref_trim", 10100)
         time.sleep(0.06)
         with pytest.raises(DebugLinkError):
-            radio.link.setting("ref_trim", -3100)
+            radio.link.setting("ref_trim", -10100)
         time.sleep(0.06)
-        assert trim_view(radio) == ("3000", stored), "a refused trim leaves the one in effect"
+        assert trim_view(radio) == ("10000", stored), "a refused trim leaves the one in effect"
     finally:
         radio.link.setting("ref_trim", before)
         time.sleep(0.06)

@@ -482,7 +482,7 @@ a low fixed value or refuses to transmit; the board's hardware page says which.
 
 ### 6.1 Reference trim
 
-Settings > Talk & listen > Freq trim: Hz at the carrier, -3000 to +3000 in 100 Hz steps, 0 by default
+Settings > Talk & listen > Freq trim: Hz at the carrier, -10000 to +10000 in 100 Hz steps, 0 by default
 (`core/radio/ref_trim.c`). It is for a radio whose reference oscillator is off even with its calibration: it moves
 receive and transmit together, FM and DMR. The UI stores it (`settings_t.ref_trim_hz`) and applies it at start-up and
 on each change with `radio_set_ref_trim()`, which clamps, rounds to the step and calls `hal_radio_t.ref_trim`. The
