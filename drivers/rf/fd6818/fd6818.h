@@ -3,33 +3,18 @@
 // FD6818 single-chip VHF/UHF transceiver: chip driver, independent of the board
 // (docs/spec/hardware-dm32.md 8). No datasheet exists; register values are the ones the working firmware uses.
 //
-// The chip has a three-wire serial port (chip select, clock, bidirectional data) that the board bit-bangs: the board
-// supplies the pin operations and this driver builds the frames (8-bit address, bit 7 = read, then 16 data bits, MSB
-// first, data changed while the clock is low and sampled on the rising edge). One register access is one frame,
-// done inside the board's critical section so that the modem interrupts (DMR per-burst RX/TX switching) can use the
-// same port: crit_enter / crit_exit may be NULL where nothing else touches it.
+// The chip has a three-wire serial port; the board gives the driver its register bus (rf/rfbus/rfbus.h, rfbus_3w_t),
+// whose frames run inside the board's critical section so that the modem interrupts (DMR per-burst RX/TX switching)
+// can use the same port.
 #ifndef FD6818_H
 #define FD6818_H
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "rf/rfbus/rfbus.h"
 
-typedef struct {
-	void (*cs)(bool level);		// chip select pin level (low = selected)
-	void (*clk)(bool level);
-	void (*data_out)(bool level);	// drive the data pin (makes it an output)
-	void (*data_release)(void);	// data pin to input
-	bool (*data_in)(void);
-	void (*delay_us)(uint32_t us);
-	uint32_t (*crit_enter)(void);	// optional
-	void (*crit_exit)(uint32_t saved);
-	void (*delay_ms)(uint32_t ms);	// init only
-} fd6818_bus_t;
 
-typedef struct {
-	uint8_t reg;
-	uint16_t val;
-} fd6818_regval_t;
+typedef rfbus_regval_t fd6818_regval_t;
 
 // What differs between the boards' chip set-ups: the register tables, the 0x30 sequences and the band words. The
 // default set is fd6818_variant_default; a board with other tables defines its own and passes it to
@@ -64,12 +49,11 @@ typedef struct {
 extern const fd6818_variant_t fd6818_variant_default;
 
 typedef struct {
-	const fd6818_bus_t *bus;
+	rfbus_t *bus;
 	const fd6818_variant_t *variant;
 	uint32_t freq_10hz;	// last frequency written, 10 Hz units (0 = none)
 	uint16_t bw_reg;	// last 0x43 value
 	uint16_t state;		// last 0x30 value
-	uint32_t writes;	// frames sent (diagnostics)
 } fd6818_t;
 
 // Registers with a known meaning
@@ -148,8 +132,8 @@ static inline uint8_t fd6818_noise(uint16_t r65)
 
 // --- Register access (one frame each, inside the critical section) ---
 
-void fd6818_attach(fd6818_t *dev, const fd6818_bus_t *bus);	// the default variant
-void fd6818_attach_variant(fd6818_t *dev, const fd6818_bus_t *bus, const fd6818_variant_t *variant);
+void fd6818_attach(fd6818_t *dev, rfbus_t *bus);	// the default variant
+void fd6818_attach_variant(fd6818_t *dev, rfbus_t *bus, const fd6818_variant_t *variant);
 void fd6818_write(fd6818_t *dev, uint8_t reg, uint16_t val);
 uint16_t fd6818_read(fd6818_t *dev, uint8_t reg);
 

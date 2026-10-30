@@ -134,17 +134,32 @@ static void fake_exit(uint32_t s)
 	crit_depth--;
 }
 
-static const bk4819_bus_t bus_main = {
+static const rfbus_3w_pins_t pins_main = {
 	.cs = cs_main, .clk = fake_clk, .data_out = fake_data_out, .data_release = fake_release,
 	.data_in = fake_data_in, .delay_us = fake_delay, .crit_enter = fake_enter, .crit_exit = fake_exit,
 	.delay_ms = fake_delay,
 };
 
-static const bk4819_bus_t bus_lo = {
+static const rfbus_3w_pins_t pins_lo = {
 	.cs = cs_lo, .clk = fake_clk, .data_out = fake_data_out, .data_release = fake_release,
 	.data_in = fake_data_in, .delay_us = fake_delay, .crit_enter = fake_enter, .crit_exit = fake_exit,
 	.delay_ms = fake_delay,
 };
+
+static rfbus_3w_t bus3_main, bus3_lo;
+
+// A fresh bus per attach: its write count starts at 0
+static rfbus_t *main_bus(void)
+{
+	rfbus_3w_attach(&bus3_main, &pins_main);
+	return &bus3_main.bus;
+}
+
+static rfbus_t *lo_bus(void)
+{
+	rfbus_3w_attach(&bus3_lo, &pins_lo);
+	return &bus3_lo.bus;
+}
 
 static void reset_chips(void)
 {
@@ -187,12 +202,12 @@ static void test_frames(void)
 {
 	bk4819_t m, l;
 	reset_chips();
-	bk4819_attach(&m, &bus_main);
-	bk4819_attach(&l, &bus_lo);
+	bk4819_attach(&m, main_bus());
+	bk4819_attach(&l, lo_bus());
 	bk4819_write(&m, 0x30, 0xBFF1);
 	CHECK(chips[0].n == 1 && chips[0].log[0].reg == 0x30 && chips[0].log[0].val == 0xBFF1);
 	CHECK(chips[1].n == 0);		// the other chip's enable stayed high
-	CHECK(m.state == 0xBFF1 && m.writes == 1);
+	CHECK(m.state == 0xBFF1 && m.bus->writes == 1);
 	CHECK(crit_depth == 0 && crit_max == 1);
 
 	bk4819_write(&l, 0x38, 0x1234);
@@ -213,7 +228,7 @@ static void test_init(void)
 {
 	bk4819_t m, l;
 	reset_chips();
-	bk4819_attach(&m, &bus_main);
+	bk4819_attach(&m, main_bus());
 	bk4819_init_main(&m);
 	const chip_t *c = &chips[0];
 	CHECK(c->log[0].reg == 0x00 && c->log[0].val == 0x8000);	// soft reset, then release
@@ -227,7 +242,7 @@ static void test_init(void)
 	CHECK(m.state == 0x0200 && m.idle == 0x0200 && m.af_gain == 0xB3B3);
 	CHECK(chips[1].n == 0);
 
-	bk4819_attach(&l, &bus_lo);
+	bk4819_attach(&l, lo_bus());
 	chips[1].regs[0x73] = 0x0102;
 	bk4819_init_lo(&l, BK4819_LO_PA_MAX);
 	c = &chips[1];
@@ -247,8 +262,8 @@ static void test_sequences(void)
 {
 	bk4819_t m, l;
 	reset_chips();
-	bk4819_attach(&m, &bus_main);
-	bk4819_attach(&l, &bus_lo);
+	bk4819_attach(&m, main_bus());
+	bk4819_attach(&l, lo_bus());
 
 	bk4819_set_freq(&m, 51550000u);
 	const chip_t *c = &chips[0];
@@ -480,7 +495,7 @@ static void test_dmr_rx(void)
 	};
 	bk4819_t m;
 	reset_chips();
-	bk4819_attach(&m, &bus_main);
+	bk4819_attach(&m, main_bus());
 	chips[0].regs[0x27] = 0xA430;
 	bk4819_set_af_gain(&m, 7);		// the FM volume's gain: 0xB3B7
 	chips[0].n = 0;
@@ -522,8 +537,8 @@ static void test_dmr_tx(void)
 {
 	bk4819_t m, l;
 	reset_chips();
-	bk4819_attach(&m, &bus_main);
-	bk4819_attach(&l, &bus_lo);
+	bk4819_attach(&m, main_bus());
+	bk4819_attach(&l, lo_bus());
 	m.idle = BK4819_STATE_IDLE_MAIN;
 	const chip_t *c = &chips[0];
 

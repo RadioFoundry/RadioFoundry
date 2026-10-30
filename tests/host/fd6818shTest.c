@@ -29,8 +29,9 @@ static struct {
 static unsigned nlog;
 static uint32_t waited_ms;
 
-static void w(uint8_t reg, uint16_t val)
+static void w(rfbus_t *b, uint8_t reg, uint16_t val)
 {
+	(void)b;
 	if (nlog < sizeof log_ / sizeof log_[0]) {
 		log_[nlog].reg = (uint16_t)(reg | (page && reg != 0x7F ? 0x100u : 0u));
 		log_[nlog].val = val;
@@ -43,10 +44,10 @@ static void w(uint8_t reg, uint16_t val)
 	}
 }
 
-static uint16_t r(uint8_t reg) { return regs[page][reg & 0x7F]; }
+static uint16_t r(rfbus_t *b, uint8_t reg) { (void)b; return regs[page][reg & 0x7F]; }
 static void d(uint32_t ms) { waited_ms += ms; }
 
-static const fd6818sh_bus_t bus = { .write = w, .read = r, .delay_ms = d };
+static rfbus_t bus = { .write = w, .read = r, .delay_ms = d };
 
 static void reset(void)
 {

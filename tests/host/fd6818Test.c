@@ -123,11 +123,20 @@ static void fake_exit(uint32_t s)
 	chip.crit_depth--;
 }
 
-static const fd6818_bus_t bus = {
+static const rfbus_3w_pins_t pins = {
 	.cs = fake_cs, .clk = fake_clk, .data_out = fake_data_out, .data_release = fake_release,
 	.data_in = fake_data_in, .delay_us = fake_delay, .crit_enter = fake_enter, .crit_exit = fake_exit,
 	.delay_ms = fake_delay,
 };
+
+static rfbus_3w_t bus3;
+
+// A fresh bus per attach: its write count starts at 0
+static rfbus_t *bus(void)
+{
+	rfbus_3w_attach(&bus3, &pins);
+	return &bus3.bus;
+}
 
 static void reset_chip(void)
 {
@@ -188,15 +197,16 @@ static void test_frames(void)
 {
 	fd6818_t dev;
 	reset_chip();
-	fd6818_attach(&dev, &bus);
+	fd6818_attach(&dev, bus());
 	fd6818_write(&dev, 0x30, 0xBFF1);
 	CHECK(chip.n == 1 && chip.log[0].reg == 0x30 && chip.log[0].val == 0xBFF1);
 	CHECK(chip.protocol_errors == 0);
-	CHECK(dev.state == 0xBFF1 && dev.writes == 1);
+	CHECK(dev.state == 0xBFF1 && dev.bus->writes == 1);
 	CHECK(chip.crit_depth == 0 && chip.crit_max == 1);
-	// The address goes out unmasked (bit 7 set is a read cycle on the chip: the sequences never send one)
+	// Bit 7 of the address is the read flag: the bus never sets it in a write (the sequences never ask it to)
 	fd6818_write(&dev, 0xB3, 0xFE00);
-	CHECK(chip.n == 2 && chip.log[1].reg == 0xB3 && chip.log[1].val == 0xFE00);
+	CHECK(chip.n == 2 && chip.log[1].reg == 0x33 && chip.log[1].val == 0xFE00);
+	CHECK(chip.protocol_errors == 0);
 
 	chip.regs[0x67] = 0x0123;
 	uint16_t v = fd6818_read(&dev, 0x67);
@@ -211,7 +221,7 @@ static void test_sequences(void)
 {
 	fd6818_t dev;
 	reset_chip();
-	fd6818_attach(&dev, &bus);
+	fd6818_attach(&dev, bus());
 	fd6818_init(&dev);
 	CHECK(chip.n == 53 + 20);
 	CHECK(chip.log[0].reg == 0x00 && chip.log[0].val == 0x8000);	// soft reset first
@@ -270,7 +280,7 @@ static void test_rx_sleep(void)
 {
 	fd6818_t dev;
 	reset_chip();
-	fd6818_attach(&dev, &bus);
+	fd6818_attach(&dev, bus());
 	fd6818_rx_sleep(&dev, true, FD6818_MODE_FM);
 	CHECK(chip.n == 2 && chip.log[0].reg == 0x30 && chip.log[0].val == 0 && chip.log[1].reg == 0x37 &&
 		chip.log[1].val == 0x1D11);
@@ -288,7 +298,7 @@ static void test_am(void)
 {
 	fd6818_t dev;
 	reset_chip();
-	fd6818_attach(&dev, &bus);
+	fd6818_attach(&dev, bus());
 	fd6818_set_am(&dev, true);
 	CHECK(chip.n == 1 && chip.log[0].reg == FD6818_REG_AF && chip.log[0].val == 0x0740);
 	CHECK((FD6818_AF_AM & ~0x0F00u) == (FD6818_AF_FM & ~0x0F00u));
@@ -305,7 +315,7 @@ static void test_rx_tones(void)
 {
 	fd6818_t dev;
 	reset_chip();
-	fd6818_attach(&dev, &bus);
+	fd6818_attach(&dev, bus());
 
 	fd6818_set_rx_tone(&dev, FD6818_TONE_CTCSS, 1000);	// 100.0 Hz
 	CHECK(chip.n == 4);
@@ -348,7 +358,7 @@ static void test_dm1801pro(void)
 {
 	fd6818_t dev;
 	reset_chip();
-	fd6818_attach_variant(&dev, &bus, &fd6818_variant_dm1801pro);
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_dm1801pro);
 	fd6818_init(&dev);
 	CHECK(chip.log[0].reg == 0x00 && chip.log[0].val == 0x8000);
 	CHECK(chip.log[chip.n - 1].reg == 0x24 && chip.log[chip.n - 1].val == 0x8C7E);
@@ -410,7 +420,7 @@ static void test_burst_tables(void)
 	v.burst_tx_n = 2;
 	fd6818_t dev;
 	reset_chip();
-	fd6818_attach_variant(&dev, &bus, &v);
+	fd6818_attach_variant(&dev, bus(), &v);
 	chip.n = 0;
 	fd6818_dmr_burst(&dev, true, v.bw_dmr);
 	CHECK(chip.n == 2 && chip.log[0].reg == 0x52 && chip.log[0].val == 0x028F && chip.log[1].reg == 0x30 &&
@@ -420,7 +430,7 @@ static void test_burst_tables(void)
 	CHECK(chip.n == 1 && chip.log[0].reg == 0x30 && chip.log[0].val == 0xBFF1);
 	CHECK(chip.protocol_errors == 0);
 	// The DM-32UV's set has none: idle first
-	fd6818_attach_variant(&dev, &bus, &fd6818_variant_default);
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_default);
 	chip.n = 0;
 	fd6818_dmr_burst(&dev, true, FD6818_BW_DMR);
 	CHECK(chip.n >= 2 && chip.log[0].reg == 0x30 && chip.log[0].val == 0);
@@ -435,7 +445,7 @@ static void test_burst_split(void)
 	for (unsigned i = 0; i < 2; i++) {
 		fd6818_t dev;
 		reset_chip();
-		fd6818_attach_variant(&dev, &bus, vars[i]);
+		fd6818_attach_variant(&dev, bus(), vars[i]);
 		fd6818_set_freq(&dev, 443700000u);
 		chip.n = 0;
 		fd6818_dmr_burst_at(&dev, true, FD6818_BW_DMR, 448700000u);

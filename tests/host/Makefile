@@ -333,6 +333,8 @@ run-flash: codeplugTest calCurveTest codeplugPower2Test codeplugPower3Test codep
 TESTS   += at1846sTest subaudioTest
 
 SUBAUDIO := $(ROOT)/drivers/rf/subaudio/subaudio.c
+# The RF chips' register bus (drivers/rf/rfbus): every RF chip driver test links it
+RFBUS    := $(ROOT)/drivers/rf/rfbus/rfbus.c
 
 at1846sTest: at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(ROOT)/drivers/rf/at1846s/at1846s.h $(SUBAUDIO)
 	$(CC) $(CFLAGS) -Wshadow -o $@ at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(SUBAUDIO)
@@ -752,8 +754,8 @@ run-f4stub: f4stubTest f4stubSim
 HRC7    := $(ROOT)/drivers/modem/hrc7000
 TESTS   += fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest hrc7000DmrTest baofengCalTest
 
-fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
-	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(SUBAUDIO)
+fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(SUBAUDIO)
 
 st7567Test: st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c $(ROOT)/drivers/display/st7567/st7567.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c
@@ -829,14 +831,14 @@ TESTS   += at1141Test
 # The FD6818 in a superhet (main transceiver and LO, also the 0x7813 LO): words and write orders
 TESTS   += fd6818shTest
 
-fd6818shTest: fd6818shTest.c $(ROOT)/drivers/rf/fd6818/fd6818sh.c $(ROOT)/drivers/rf/fd6818/fd6818sh.h $(SUBAUDIO)
-	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818shTest.c $(ROOT)/drivers/rf/fd6818/fd6818sh.c $(SUBAUDIO)
+fd6818shTest: fd6818shTest.c $(ROOT)/drivers/rf/fd6818/fd6818sh.c $(RFBUS) $(ROOT)/drivers/rf/fd6818/fd6818sh.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818shTest.c $(ROOT)/drivers/rf/fd6818/fd6818sh.c $(RFBUS) $(SUBAUDIO)
 
-at1141Test: at1141Test.c $(ROOT)/drivers/rf/at1141/at1141.c $(ROOT)/drivers/rf/at1141/at1141.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ at1141Test.c $(ROOT)/drivers/rf/at1141/at1141.c -lm
+at1141Test: at1141Test.c $(ROOT)/drivers/rf/at1141/at1141.c $(RFBUS) $(ROOT)/drivers/rf/at1141/at1141.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ at1141Test.c $(ROOT)/drivers/rf/at1141/at1141.c $(RFBUS) -lm
 
-bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4819.h $(SUBAUDIO)
-	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(SUBAUDIO)
+bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(RFBUS) $(ROOT)/drivers/rf/bk4819/bk4819.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(RFBUS) $(SUBAUDIO)
 
 # The HR_C7000 clock arithmetic (platform/hrc7000/clock_math.h): the PLL words, UART divisor, bit-bang phase length
 TESTS   += hrc7000ClockTest

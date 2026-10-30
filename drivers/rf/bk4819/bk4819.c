@@ -5,15 +5,9 @@
 #include "bk4819.h"
 #include "rf/subaudio/subaudio.h"
 
-#define READ_BIT	0x80u
-#define BIT_US		1u	// clock low and high time
-#define READ_TURN_US	2u	// after releasing the data line, before clocking the reply in
 #define RESET_MS	10u
 
-typedef struct {
-	uint8_t reg;
-	uint16_t val;
-} regval_t;
+typedef rfbus_regval_t regval_t;
 
 // 4.3 power-on table shared by both chips, after the soft reset. Register 0x4F is the one value that differs
 static const regval_t init_common[] = {
@@ -79,13 +73,12 @@ uint16_t bk4819_pa_reg(uint8_t level)
 	return (uint16_t)(0x80u | (uint16_t)(level * 63u / 15u));
 }
 
-void bk4819_attach(bk4819_t *dev, const bk4819_bus_t *bus)
+void bk4819_attach(bk4819_t *dev, rfbus_t *bus)
 {
 	dev->bus = bus;
 	dev->freq_10hz = 0;
 	dev->state = 0;
 	dev->af_gain = 0xB3B3u;
-	dev->writes = 0;
 	dev->digital = false;
 	dev->saved_27 = 0;
 	dev->saved_48 = 0;
@@ -95,39 +88,9 @@ void bk4819_attach(bk4819_t *dev, const bk4819_bus_t *bus)
 	dev->rx_inverted = false;
 }
 
-static uint32_t enter(const bk4819_bus_t *b)
-{
-	return b->crit_enter != NULL ? b->crit_enter() : 0;
-}
-
-static void leave(const bk4819_bus_t *b, uint32_t s)
-{
-	if (b->crit_exit != NULL) {
-		b->crit_exit(s);
-	}
-}
-
-static void send_bits(const bk4819_bus_t *b, uint32_t v, int n)
-{
-	for (int i = n - 1; i >= 0; i--) {
-		b->clk(false);
-		b->data_out(((v >> i) & 1u) != 0);
-		b->delay_us(BIT_US);
-		b->clk(true);	// sampled by the chip on this edge
-		b->delay_us(BIT_US);
-	}
-}
-
 void bk4819_write(bk4819_t *dev, uint8_t reg, uint16_t val)
 {
-	const bk4819_bus_t *b = dev->bus;
-	uint32_t s = enter(b);
-	b->cs(false);
-	send_bits(b, (uint32_t)(reg & 0x7Fu) << 16 | val, 24);
-	b->clk(false);
-	b->cs(true);
-	leave(b, s);
-	dev->writes++;
+	rfbus_write(dev->bus, reg, val);
 	if (reg == BK4819_REG_ENABLES) {
 		dev->state = val;
 	} else if (reg == BK4819_REG_AF_GAIN) {
@@ -137,25 +100,7 @@ void bk4819_write(bk4819_t *dev, uint8_t reg, uint16_t val)
 
 uint16_t bk4819_read(bk4819_t *dev, uint8_t reg)
 {
-	const bk4819_bus_t *b = dev->bus;
-	uint32_t s = enter(b);
-	b->cs(false);
-	send_bits(b, (reg & 0x7Fu) | READ_BIT, 8);
-	b->clk(false);
-	b->data_release();
-	b->delay_us(READ_TURN_US);
-	uint16_t v = 0;
-	for (int i = 0; i < 16; i++) {
-		b->clk(false);
-		b->delay_us(BIT_US);
-		b->clk(true);
-		v = (uint16_t)((v << 1) | (b->data_in() ? 1u : 0u));	// read while the clock is high
-		b->delay_us(BIT_US);
-	}
-	b->clk(false);
-	b->cs(true);
-	leave(b, s);
-	return v;
+	return rfbus_read(dev->bus, reg);
 }
 
 static void write_table(bk4819_t *dev, const regval_t *t, size_t n)
@@ -167,14 +112,9 @@ static void write_table(bk4819_t *dev, const regval_t *t, size_t n)
 
 static void reset(bk4819_t *dev)
 {
-	const bk4819_bus_t *b = dev->bus;
-	b->cs(true);
-	b->clk(false);
 	bk4819_write(dev, BK4819_REG_ID, 0x8000);
 	bk4819_write(dev, BK4819_REG_ID, 0x0000);
-	if (b->delay_ms != NULL) {
-		b->delay_ms(RESET_MS);
-	}
+	rfbus_delay_ms(dev->bus, RESET_MS);
 	write_table(dev, init_common, sizeof(init_common) / sizeof(init_common[0]));
 }
 

@@ -6,35 +6,21 @@
 // the 51.55 MHz IF and transmits, the "LO" chip runs as the superhet's local oscillator. Register meanings are the
 // BK4819's public ones; the init values are the ones the stock firmware writes.
 //
-// The bus is bit-banged by the board: 8-bit address (bit 7 = read), then 16 data bits, MSB first, data changed while
-// the clock is low and sampled on the rising edge (the FD6818's framing). Each frame runs inside the board's critical
-// section so an interrupt can use the bus too; crit_enter / crit_exit may be NULL where nothing else touches it.
+// The board gives each chip its register bus (rf/rfbus/rfbus.h), the 3-wire bus on the radios so far.
 #ifndef BK4819_H
 #define BK4819_H
 
 #include <stdint.h>
 #include <stdbool.h>
-
-typedef struct {
-	void (*cs)(bool level);		// this chip's enable (low = selected)
-	void (*clk)(bool level);
-	void (*data_out)(bool level);	// drive the data pin (makes it an output)
-	void (*data_release)(void);	// data pin to input
-	bool (*data_in)(void);
-	void (*delay_us)(uint32_t us);
-	uint32_t (*crit_enter)(void);	// optional
-	void (*crit_exit)(uint32_t saved);
-	void (*delay_ms)(uint32_t ms);	// init only
-} bk4819_bus_t;
+#include "rf/rfbus/rfbus.h"
 
 typedef enum { BK4819_TONE_NONE, BK4819_TONE_CTCSS, BK4819_TONE_DCS, BK4819_TONE_DCS_INV } bk4819_tone_t;
 
 typedef struct {
-	const bk4819_bus_t *bus;
+	rfbus_t *bus;
 	uint32_t freq_10hz;	// last frequency written, 10 Hz units (0 = none)
 	uint16_t state;		// last 0x30 value
 	uint16_t af_gain;	// last 0x48 value
-	uint32_t writes;	// frames sent (diagnostics)
 	bool digital;		// bk4819_dmr_rx_enter() is in effect
 	uint16_t saved_27, saved_48;	// what it replaced, for bk4819_dmr_rx_end()
 	uint16_t idle;		// this chip's idle value of 0x30: 0 for the LO, 0x0200 for the main chip (bit 9 stays set)
@@ -146,7 +132,7 @@ uint16_t bk4819_pa_reg(uint8_t level);
 
 // --- Register access (one frame each, inside the critical section) ---
 
-void bk4819_attach(bk4819_t *dev, const bk4819_bus_t *bus);
+void bk4819_attach(bk4819_t *dev, rfbus_t *bus);
 void bk4819_write(bk4819_t *dev, uint8_t reg, uint16_t val);
 uint16_t bk4819_read(bk4819_t *dev, uint8_t reg);
 

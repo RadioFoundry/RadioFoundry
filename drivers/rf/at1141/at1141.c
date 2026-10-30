@@ -72,32 +72,30 @@ static const regval_t table_d[] = {
 
 static void wr(at1141_t *c, uint8_t reg, uint16_t val)
 {
-	c->bus->write(reg, val);
-	c->writes++;
+	rfbus_write(c->bus, reg, val);
 }
 
 static void table(at1141_t *c, const regval_t *t, size_t n)
 {
 	for (size_t i = 0; i < n; i++) {
 		if (t[i].reg == WAIT) {
-			c->bus->delay_ms(t[i].val);
+			rfbus_delay_ms(c->bus, t[i].val);
 		} else {
 			wr(c, t[i].reg, t[i].val);
 		}
 	}
 }
 
-void at1141_attach(at1141_t *c, const at1141_bus_t *bus)
+void at1141_attach(at1141_t *c, rfbus_t *bus)
 {
 	c->bus = bus;
 	c->c15 = c->c16 = c->c19 = 0;
 	c->lo_hz = 0;
-	c->writes = 0;
 }
 
 uint16_t at1141_id(at1141_t *c)
 {
-	return c->bus->read(0x00);
+	return rfbus_read(c->bus, 0x00);
 }
 
 // The output divider and multiplier for a frequency: each divider covers an octave, the upper part of it with x2,
@@ -135,15 +133,15 @@ static void band(at1141_t *c, const at1141_plan_t *p)
 void at1141_init(at1141_t *c)
 {
 	table(c, table_a, N(table_a));
-	c->c15 = c->bus->read(REG_MUL);
-	c->c16 = c->bus->read(REG_DIV);
-	c->c19 = c->bus->read(REG_REF);
+	c->c15 = rfbus_read(c->bus, REG_MUL);
+	c->c16 = rfbus_read(c->bus, REG_DIV);
+	c->c19 = rfbus_read(c->bus, REG_REF);
 	at1141_plan_t p;
 	at1141_plan(400000000u, c->c19, &p);
 	band(c, &p);
 	table(c, table_b, N(table_b));
 	table(c, table_c, N(table_c));
-	uint16_t r21 = c->bus->read(REG_21);
+	uint16_t r21 = rfbus_read(c->bus, REG_21);
 	wr(c, REG_21, (uint16_t)((r21 & ~(0x3Fu << 5)) | (10u << 5)));
 	table(c, table_d, N(table_d));
 	wr(c, REG_BANK, 0x0001);
@@ -184,7 +182,7 @@ void at1141_off(at1141_t *c)
 void at1141_restart(at1141_t *c)
 {
 	wr(c, REG_CTRL, CTRL_STANDBY);
-	c->bus->delay_ms(RESTART_MS);
+	rfbus_delay_ms(c->bus, RESTART_MS);
 	at1141_enable(c);
 }
 
@@ -209,7 +207,7 @@ void at1141_gpio(at1141_t *c, uint8_t pin, bool high)
 	}
 	uint8_t reg = pin < 4 ? REG_GPIO_LO : REG_GPIO_HI;
 	unsigned shift = (pin & 3u) * 4u;
-	uint16_t v = c->bus->read(reg);
+	uint16_t v = rfbus_read(c->bus, reg);
 	v = (uint16_t)((v & ~(0xFu << shift)) | ((high ? 0xFu : 0u) << shift));
 	wr(c, reg, v);
 }

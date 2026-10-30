@@ -51,10 +51,7 @@
 #define GPIO_SEL_CSS_CMP	4u	// sub-audio compare result
 #define GPIO_SEL_SQ		2u
 
-typedef struct {
-	uint8_t reg;
-	uint16_t val;
-} regval_t;
+typedef rfbus_regval_t regval_t;
 
 // Power-on table, after the soft reset. Page 1 between the 0x7F writes. The LO's differs in 0x35 and 0x40 and adds 0x53
 static const regval_t init_page0[] = {
@@ -214,30 +211,16 @@ uint8_t fd6818sh_7813_section(uint32_t hz)
 
 static void wr(fd6818sh_t *dev, uint8_t reg, uint16_t val)
 {
-	dev->bus->write(reg, val);
+	rfbus_write(dev->bus, reg, val);
 }
 
-static void write_table(fd6818sh_t *dev, const regval_t *t, size_t n)
-{
-	for (size_t i = 0; i < n; i++) {
-		wr(dev, t[i].reg, t[i].val);
-	}
-}
-
-#define TABLE(dev, t)	write_table(dev, t, sizeof(t) / sizeof(t[0]))
+#define TABLE(dev, t)	rfbus_write_table((dev)->bus, t, sizeof(t) / sizeof(t[0]))
 
 static void page1(fd6818sh_t *dev, uint8_t reg, uint16_t val)
 {
 	wr(dev, FD6818SH_REG_PAGE, PAGE_1);
 	wr(dev, reg, val);
 	wr(dev, FD6818SH_REG_PAGE, 0);
-}
-
-static void wait_ms(fd6818sh_t *dev, uint32_t ms)
-{
-	if (dev->bus->delay_ms != NULL) {
-		dev->bus->delay_ms(ms);
-	}
 }
 
 static void write_freq(fd6818sh_t *dev, uint32_t hz)
@@ -259,7 +242,7 @@ static void gpio_select(fd6818sh_t *dev, uint8_t pin, uint8_t sel)
 {
 	uint8_t reg = pin < 4 ? REG_GPIO_SEL_LO : REG_GPIO_SEL_HI;
 	unsigned shift = (pin & 3u) * 4u;
-	uint16_t v = dev->bus->read(reg);
+	uint16_t v = rfbus_read(dev->bus, reg);
 	wr(dev, reg, (uint16_t)((v & ~(0xFu << shift)) | ((uint16_t)sel << shift)));
 }
 
@@ -281,7 +264,7 @@ void fd6818sh_gpio(fd6818sh_t *dev, uint8_t pin, bool high)
 
 // ---- Main transceiver ----
 
-void fd6818sh_attach(fd6818sh_t *dev, const fd6818sh_bus_t *bus, fd6818sh_role_t role)
+void fd6818sh_attach(fd6818sh_t *dev, rfbus_t *bus, fd6818sh_role_t role)
 {
 	dev->bus = bus;
 	dev->role = role;
@@ -304,7 +287,7 @@ static void reset_and_table(fd6818sh_t *dev, bool lo)
 {
 	wr(dev, 0x00, 0x8000);
 	wr(dev, 0x00, 0x0000);
-	wait_ms(dev, RESET_MS);
+	rfbus_delay_ms(dev->bus, RESET_MS);
 	TABLE(dev, init_page0);
 	if (lo) {
 		wr(dev, 0x35, 0xF608);
@@ -322,7 +305,7 @@ static void offset_cal(fd6818sh_t *dev)
 	wr(dev, FD6818SH_REG_STATE, 0xBDF1);
 	wr(dev, 0x04, 0x0000);
 	wr(dev, 0x04, 0x0300);
-	wait_ms(dev, CAL_MS);
+	rfbus_delay_ms(dev->bus, CAL_MS);
 	wr(dev, FD6818SH_REG_STATE, FD6818SH_STATE_IDLE);
 	dev->state = FD6818SH_STATE_IDLE;
 }
@@ -336,9 +319,9 @@ void fd6818sh_init_main(fd6818sh_t *dev)
 	wr(dev, REG_FREQ_LO, 0x1D38);	// parked at 457.516 MHz for the calibration
 	wr(dev, REG_FREQ_HI, 0x02B7);
 	offset_cal(dev);
-	dev->r7e = (uint16_t)((dev->bus->read(REG_DC) & 0x0FFFu) | 0xB000u);
+	dev->r7e = (uint16_t)((rfbus_read(dev->bus, REG_DC) & 0x0FFFu) | 0xB000u);
 	wr(dev, REG_DC, dev->r7e);
-	dev->r25 = dev->bus->read(REG_GPIO_OUT);
+	dev->r25 = rfbus_read(dev->bus, REG_GPIO_OUT);
 	// GPIO6 squelch, GPIO0 the sub-audio compare result (the working firmware puts the code stream there and decodes
 	// it in software), GPIO3 and GPIO4 plain outputs
 	gpio_select(dev, 6, GPIO_SEL_SQ);
@@ -619,7 +602,7 @@ void fd6818sh_init_lo(fd6818sh_t *dev)
 		wr(dev, REG_DEV, 0x0000);
 	}
 	// Both: no modulation, sub-audio off, AFC off, the full output level, GPIO3 and GPIO4 low
-	dev->r25 = dev->bus->read(REG_GPIO_OUT);
+	dev->r25 = rfbus_read(dev->bus, REG_GPIO_OUT);
 	wr(dev, REG_DEV, 0x0000);
 	wr(dev, REG_SUB, SUB_TX_NONE);
 	wr(dev, REG_AFC, AFC_DIGITAL);

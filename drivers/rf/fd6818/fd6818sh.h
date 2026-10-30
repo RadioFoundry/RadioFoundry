@@ -8,12 +8,13 @@
 // sub-audio 0x07 / 0x08 / 0x51 / 0x52, AF output 0x47, tones 0x70-0x72, RSSI 0x67. The values are the ones a working
 // firmware writes.
 //
-// The board passes its register read and write (8-bit address, bit 7 = read, 16 bits).
+// The board passes the chip's register bus (rf/rfbus/rfbus.h).
 #ifndef FD6818SH_H
 #define FD6818SH_H
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "rf/rfbus/rfbus.h"
 
 #define FD6818SH_ID		0x6818u
 #define FD6818SH_ID_7813	0x7813u		// the sibling part, seen only as an LO
@@ -21,17 +22,11 @@
 #define FD6818SH_REG_STATE	0x03
 #define FD6818SH_REG_PAGE	0x7F		// 1 = page 1, for the registers a table marks so
 
-typedef struct {
-	void (*write)(uint8_t reg, uint16_t val);
-	uint16_t (*read)(uint8_t reg);
-	void (*delay_ms)(uint32_t ms);
-} fd6818sh_bus_t;
-
 typedef enum { FD6818SH_MAIN, FD6818SH_LO, FD6818SH_LO_7813 } fd6818sh_role_t;
 typedef enum { FD6818SH_TONE_NONE, FD6818SH_TONE_CTCSS, FD6818SH_TONE_DCS, FD6818SH_TONE_DCS_INV } fd6818sh_tone_t;
 
 typedef struct {
-	const fd6818sh_bus_t *bus;
+	rfbus_t *bus;
 	fd6818sh_role_t role;
 	uint32_t freq_10hz;	// last frequency written (0 = none)
 	uint16_t state;		// last 0x03 value
@@ -87,7 +82,7 @@ uint8_t fd6818sh_7813_section(uint32_t hz);
 
 // --- Main transceiver ---
 
-void fd6818sh_attach(fd6818sh_t *dev, const fd6818sh_bus_t *bus, fd6818sh_role_t role);
+void fd6818sh_attach(fd6818sh_t *dev, rfbus_t *bus, fd6818sh_role_t role);
 // Power-on table, offset calibration, the GPIO set-up; ends idle. Task level
 void fd6818sh_init_main(fd6818sh_t *dev);
 // The analog mode set (also the end of DMR) and the digital one (DMR receive, the modem drives the modulation).

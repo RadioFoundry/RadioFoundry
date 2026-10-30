@@ -32,6 +32,7 @@
 #define FD_REG_RSSI		0x67u
 
 static fd6818_t fd;
+static rfbus_3w_t fd_bus;
 static hrc7000_t modem;
 
 static radio_mode_t mode = RADIO_MODE_FM;
@@ -70,7 +71,7 @@ static void fd_data_out(bool level) { hrc_pin_out(PIN_FD_DATA, level); }
 static void fd_data_release(void) { hrc_pin_in(PIN_FD_DATA); }
 static bool fd_data_in(void) { return hrc_pin_read(PIN_FD_DATA); }
 
-static const fd6818_bus_t fd_bus = {
+static const rfbus_3w_pins_t fd_bus_pins = {
 	.cs = fd_cs,
 	.clk = fd_clk,
 	.data_out = fd_data_out,
@@ -190,7 +191,8 @@ static void init(void)
 
 	hrc_pin_out(PIN_FD_CS, true);
 	hrc_pin_out(PIN_FD_CLK, false);
-	fd6818_attach(&fd, &fd_bus);
+	rfbus_3w_attach(&fd_bus, &fd_bus_pins);
+	fd6818_attach(&fd, &fd_bus.bus);
 	fd6818_init(&fd);
 	fd6818_set_mode(&fd, FD6818_MODE_FM);
 	mode = RADIO_MODE_FM;
@@ -532,7 +534,7 @@ void dm32_radio_diag(dm32_radio_diag_t *d)
 	d->rssi_raw = last_rssi_raw;
 	d->noise_raw = last_noise_raw;
 	d->fm_noise = hrc7000_fm_noise(&modem);
-	d->fd_writes = fd.writes;
+	d->fd_writes = fd_bus.bus.writes;
 }
 
 // Receiver battery saving (FM receive only, the radio's own sequence: hardware-dm32.md 8.8): FD6818 idle with its
