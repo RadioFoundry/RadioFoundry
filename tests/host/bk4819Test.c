@@ -187,6 +187,8 @@ static void test_helpers(void)
 	CHECK(subaudio_ctcss_word(2541, true) == 5247);
 	// The stock transmitter truncates: 100.0 Hz = 2064.888 -> 2064
 	CHECK(subaudio_ctcss_word(1000, false) == 2064 && subaudio_ctcss_word(885, false) == 1827 && subaudio_ctcss_word(2541, false) == 5246);
+	// Hz x 20.64888, not the exact 2^27 / 6.5 MHz, which rounds 151.8 Hz one higher (3135)
+	CHECK(subaudio_ctcss_word(1518, true) == 3134);
 	CHECK(bk4819_rssi_dbm(0x0000) == -160);
 	CHECK(bk4819_rssi_dbm(0x0082) == -95);		// 130 half-dB
 	CHECK(bk4819_rssi_dbm(0xFFFF) == 95);		// bits above 8 ignored
@@ -378,6 +380,10 @@ static void test_sequences(void)
 	chips[0].n = 0;
 	bk4819_tone_start(&m, 1000, 200);
 	CHECK(c->n == 3 && c->log[0].reg == 0x70 && c->log[0].val == 0xFF00 && c->log[1].reg == 0x71 && c->log[1].val == 10324);
+	// Hz x 10.3244 truncated: 487 Hz (a Morse tone) is 5027, where subaudio_tone_word()'s x 10.32444 gives 5028
+	chips[0].n = 0;
+	bk4819_tone_start(&m, 487, 200);
+	CHECK(c->n == 3 && c->log[1].reg == 0x71 && c->log[1].val == 5027);
 	// Stop: 47, 50, 70, 37, idle, 0xC3FE, 40 = 0x34A8; a second stop and a key do nothing
 	chips[0].n = 0;
 	bk4819_tone_stop(&m);

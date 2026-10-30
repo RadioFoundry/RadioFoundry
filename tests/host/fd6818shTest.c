@@ -130,6 +130,7 @@ static void test_words(void)
 	CHECK(subaudio_ctcss_word(550, false) == 0x046F);		// its 55 Hz tail word is a constant, 0x0470
 	// Its tone word is truncated, its DTMF table rounded
 	CHECK(subaudio_tone_word(1750, false) == 18067);
+	CHECK(subaudio_tone_word(487, false) == 5028 && subaudio_tone_word(2725, false) == 28134);	// as its Hz x 2^21 / 203125
 	CHECK(subaudio_tone_word(697, true) == 0x1C1C);
 	CHECK(subaudio_tone_word(941, true) == 0x25F3);
 	CHECK(subaudio_tone_word(1209, true) == 0x30C2);

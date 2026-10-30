@@ -342,8 +342,9 @@ void bk4819_tone_start(bk4819_t *dev, uint16_t hz, uint8_t gain)
 	}
 	dev->tone_hz = hz;
 	dev->tone_gain = gain;
-	// The stock word is the product truncated: 1750 Hz = 18067
-	bk4819_write(dev, BK4819_REG_TONE1_FREQ, subaudio_tone_word(hz, false));
+	// The stock word is Hz x 10.3244 truncated (1750 Hz = 18067): not subaudio_tone_word(), whose x 10.32444 gives one
+	// more for some tones
+	bk4819_write(dev, BK4819_REG_TONE1_FREQ, (uint16_t)((uint32_t)hz * 103244u / 10000u));
 	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
 }
 

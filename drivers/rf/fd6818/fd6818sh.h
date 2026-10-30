@@ -74,6 +74,7 @@ uint16_t fd6818sh_mic_word(uint8_t v);
 uint16_t fd6818sh_volume_word(uint8_t v);
 // CTCSS and tone words: subaudio_ctcss_word() (truncated, as the working firmware's) and subaudio_tone_word()
 // (truncated for a tone, rounded for DTMF)
+
 // The 0x7813 LO's VCO section (0..8) for an LO frequency
 uint8_t fd6818sh_7813_section(uint32_t hz);
 

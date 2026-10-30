@@ -119,7 +119,8 @@ static inline int16_t bk4819_rssi_dbm(uint16_t r67) { return (int16_t)((int16_t)
 // 0x78 for squelch opening at open_dbm and closing hyst_db lower, in reg 0x67's scale. Clamped to what the bytes hold
 uint16_t bk4819_squelch_rssi(int16_t open_dbm, uint8_t hyst_db);
 // CTCSS and tone generator words: subaudio_ctcss_word() (the stock transmitter's truncated, the receiver's rounded) and
-// subaudio_tone_word() (the stock DTMF table rounded: 697 Hz = 7196, 1633 Hz = 16860; single tones truncated)
+// subaudio_tone_word() for DTMF (the stock table, rounded: 697 Hz = 7196, 1633 Hz = 16860). A single tone's word is the
+// stock's own, Hz x 10.3244 truncated (bk4819_tone_start)
 #define BK4819_TONE_GAIN_MAX	127u
 
 // 0x36 for output level 0..15: 0 is off, anything else level x 63 / 15 with bit 7 set (the LO's formula, 4.3)
