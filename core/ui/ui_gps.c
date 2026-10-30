@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Tools > Position with CONFIG_GPS_SKY (docs/spec/ui.md 2.6): the board GPS on four pages, Up / Down (the knob, the
+// Tools > Position with CONFIG_GPS_SKY (docs/spec/ui.md 2.3): the board GPS on four pages, Up / Down (the knob, the
 // digits 1-4) to turn them. Status: the fix, satellites, position, altitude, speed, dilution, time. Sky: where each
 // satellite is (a polar plot, north up), filled when the fix uses it. Signal: each satellite's signal as a bar. Grid:
 // the Maidenhead locator large, the position in degrees, minutes and seconds. Nothing is kept: every draw reads the

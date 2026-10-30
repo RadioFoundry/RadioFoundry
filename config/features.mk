@@ -237,7 +237,7 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 # APRS iGate rules, RF <-> APRS-IS through the host helper tools/aprs_gate.py (needs APRS_RX and HOSTLINK)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 # the GPS status screen: satellites on a sky plot and signal bars, fix quality, grid locator (core/aprs/nmea_sky.c,
-# core/ui/ui_gps.c, docs/spec/aprs.md 6.1). Needs GPS and APRS; off, Tools > Position is a page of text
+# core/ui/ui_gps.c, docs/spec/aprs.md 7.1). Needs GPS and APRS; off, Tools > Position is a page of text
 CONFIG_GPS_SKY ?= $(if $(and $(filter y,$(CONFIG_GPS)),$(filter y,$(CONFIG_APRS))),y,n)
 
 

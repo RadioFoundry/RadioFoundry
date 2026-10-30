@@ -108,6 +108,21 @@ APRS > Position has three rows: **Source** (press OK to step through Auto, GPS, 
 
 Four decimal places put you within about 11 m. You can also type "latitude" or "position" on Home to find the page.
 
+## GPS status
+
+**Tools > Position** shows what the radio's GPS is doing, on four pages. Press Up or Down (or turn the knob) for the
+next page, or press 1 to 4.
+
+| Page | What it shows |
+|---|---|
+| 1 Status | 3D fix, 2D fix or Searching; satellites used and seen; position, altitude, speed, HDOP (accuracy: good, fair, poor) and UTC time |
+| 2 Sky | where each satellite is: the outer ring is the horizon, the middle ring 45 degrees up, north at the top. A filled dot is used in the fix. The colors and the legend show the system: GPS, GLONASS, Galileo, BeiDou, QZSS |
+| 3 Signal | each satellite's signal strength as a bar; filled bars are used in the fix |
+| 4 Grid | your Maidenhead grid locator (FN42li), and the position in degrees, minutes and seconds |
+
+"No GPS, or it is off" means the radio has no GPS or **Settings > Location > GPS** is off. A first fix outdoors takes
+from a few seconds to a few minutes; indoors there may be none.
+
 ## With a computer (KISS and iGate)
 
 Turn on **KISS on USB**, then run `tools/aprs_gate.py --port <radio port>`:
