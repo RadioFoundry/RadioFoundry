@@ -26,10 +26,20 @@ between TS1 and TS2 (a temporary override, cleared afterwards) unless the scenar
 | long_call | up all along | a 25 s call on each slot |
 | boot | up all along | restarted, keys as soon as the link answers, then again once settled |
 | wake_ts | down at each key-up, answers 0.6 s after it | the timeslot changed 1 s before, 5 calls |
+
+test_dmr_repeater_burst_offset (the same options, and the SDR bench): where in the slot the radio's inbound bursts
+fall. The centers of the inbound and outbound bursts are aligned, the inbound slots 30 ms after the outbound ones (ETSI
+TS 102 361-1 4.1), and the 1 ms the standard allows is for propagation and drift (10.2.3.1.3), not for the radio's own
+error. With the repeater up all along, the SDR bench decodes both sides of an 8 s call (burst start from the sync
+correlation, one sample clock): the median of each inbound burst's offset from the nearest outbound burst plus 30 ms
+must be within OFFSET_MAX_MS, over at least 50 bursts. The HR_C7000 radios set it with tx_pre_on
+(docs/spec/modem-hrc7000.md 2.1).
 """
+import bisect
 import collections
 import json
 import random
+import statistics
 import time
 
 import pytest
@@ -38,6 +48,7 @@ from rfoundry_hil import skip
 from test_dmr_tx import _dmr_tx_setup, _wait_line
 
 VOICE_PER_S = 1 / 0.060         # one voice burst per 60 ms frame on our slot
+OFFSET_MAX_MS = 0.25            # the inbound burst against the outbound + 30 ms (test_dmr_repeater_burst_offset)
 
 
 def _voice_by_slot(rpt, t0, t1):
@@ -254,3 +265,46 @@ SCENARIOS = {"up_ts_changes": _up_ts_changes, "long_idle": _long_idle, "rekey": 
 @pytest.mark.parametrize("scenario", list(SCENARIOS))
 def test_dmr_repeater_slots(radio, sdr_bench, pytestconfig, backup_dir, scenario):
     _session(radio, sdr_bench, pytestconfig, backup_dir, SCENARIOS[scenario])
+
+
+def burst_offsets_ms(inbound, outbound):
+    """Each inbound burst's offset in ms from the nearest outbound burst 30 ms before it (records with `t`, the sync's
+    time in s on one clock). The outbound has a burst every 30 ms while it is up, so an offset is within +-15 ms; one
+    with no outbound burst within 5 ms (the outbound missed one) is left out."""
+    out = sorted(r["t"] for r in outbound)
+    offs = []
+    for r in inbound:
+        t = r["t"] - 0.030
+        k = bisect.bisect_left(out, t)
+        near = [out[j] for j in (k - 1, k) if 0 <= j < len(out)]
+        if near:
+            d = (t - min(near, key=lambda v: abs(v - t))) * 1e3
+            if abs(d) < 5.0:
+                offs.append(d)
+    return offs
+
+
+@pytest.mark.feature("dmr_voice")
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.sdr_rx
+@pytest.mark.codeplug_write
+def test_dmr_repeater_burst_offset(radio, sdr_bench, pytestconfig, backup_dir):
+    def body(s, rnd):
+        for f in (s.split, s.freq):
+            if not s.bench.can_watch(f):
+                skip("bench", f"the SDR bench can't decode bursts on {f} MHz (no shared daemon, or outside its window)")
+        _up_all_along(s, 40)
+        ins = s.bench.bursts_start(s.split, 14, cc=s.cc)
+        outs = s.bench.bursts_start(s.freq, 14, cc=s.cc)
+        s.call(8.0, "burst offset")
+        inbound, _ = s.bench.bursts_result(ins)
+        outbound, _ = s.bench.bursts_result(outs)
+        offs = burst_offsets_ms(inbound, outbound)
+        print(f"inbound {len(inbound)} bursts, outbound {len(outbound)}, matched {len(offs)}")
+        assert len(offs) >= 50, f"only {len(offs)} inbound bursts matched to the outbound (8 s is about 133)"
+        med = statistics.median(offs)
+        print(f"inbound vs outbound + 30 ms: median {med:+.3f} ms, min {min(offs):+.3f}, max {max(offs):+.3f}")
+        assert abs(med) <= OFFSET_MAX_MS, f"the inbound bursts are {med:+.3f} ms off the outbound's (+-{OFFSET_MAX_MS} ms)"
+    _session(radio, sdr_bench, pytestconfig, backup_dir, body)

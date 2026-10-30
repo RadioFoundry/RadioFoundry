@@ -169,7 +169,7 @@ bench daemon is assumed to have both.
 |---|---|---|
 | `sdr_rx` | the RTL-SDR receiver only | the radio transmits and the SDR measures it: `test_fm_tx.py`, `test_audio_probe.py` (the FM TX probes), `test_mic_gain.py`, `test_hotspot_cwid.py`, `test_usrp_fm_tx`, `test_split_tx_half_*`, the three `test_aprs_on_air_*` |
 | `bench_modem` | the bench modem or a bench station only (it transmits to the radio, listens to it or runs as a repeater) | `test_dmr_rx.py`, `test_dmr_voice.py`, `test_dmr_call_features.py`, `test_dmr_data.py`, `test_dmr_emergency.py`, `test_dmr_ip.py`, `test_dmr_ip_burst.py`, `test_control_station.py`, `test_roaming.py` (the bench repeater), `test_hotspot_voice.py`, `test_dmr_gps_tx`, `test_dmr_tx_split_repeater` (its repeater is required, the SDR's view of the radio is optional), `test_dmr_repeater_slots` (the bench repeater only), `test_aprs_dmr_position`, `test_split_rx_half_labels`, `test_net_split_rx_half_labels`, `test_usrp_dmr_rx`, the four scan / battery-save tests in `test_radio_features.py` |
-| `bench_modem` and `sdr_rx` | both | `test_dmr_tx_off_air` (the SDR's waveform and the modem's decode), `test_sfr_repeats_bench_call` (the modem sends the call, the SDR sees the repeat) |
+| `bench_modem` and `sdr_rx` | both | `test_dmr_tx_off_air` (the SDR's waveform and the modem's decode), `test_sfr_repeats_bench_call` (the modem sends the call, the SDR sees the repeat), `test_dmr_repeater_burst_offset` (the bench repeater; the SDR times both sides) |
 | `sdr_or_modem` | either one; the test accepts what one of them heard | `test_dmr_tx_talker_alias`, `test_dmr_privacy_tx` |
 | none (radio only) | neither | everything else |
 
@@ -186,8 +186,8 @@ daemon's `bursts` op when the daemon has it and decodes short captures on the cl
 the daemon, or outside the shared receiver's window, `dmr_watch_start()` falls back to a raw capture and
 `analyze_dmr()`, as before. `RFOUNDRY_HIL_RAW_IQ=1` forces the raw path (to compare the two).
 
-Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr_tx_split_repeater` and
-`test_sfr_repeats_bench_call`. These stay on raw I/Q:
+Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr_tx_split_repeater`,
+`test_sfr_repeats_bench_call` and `test_dmr_repeater_burst_offset`. These stay on raw I/Q:
 
 | Test | Why |
 |---|---|
