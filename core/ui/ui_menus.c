@@ -2849,15 +2849,6 @@ static void sb_volts(sbuf_t *b, uint16_t mv)
 	sb_str(b, " V");
 }
 
-static void sb_deg(sbuf_t *b, int32_t e7, char pos, char neg)
-{
-	uint32_t a = (uint32_t)(e7 < 0 ? -e7 : e7);
-	sb_u32(b, a / 10000000u, 1);
-	sb_chr(b, '.');
-	sb_u32(b, (a % 10000000u) / 1000u, 4);
-	sb_chr(b, e7 < 0 ? neg : pos);
-}
-
 static const char *info_body(void)
 {
 	static char t[200];
@@ -2876,9 +2867,9 @@ static const char *info_body(void)
 			sb_str(&b, "Fix, ");
 			sb_u32(&b, p.sats, 1);
 			sb_str(&b, " satellites\n");
-			sb_deg(&b, p.lat_e7, 'N', 'S');
+			sb_coord(&b, p.lat_e7, 'N', 'S');
 			sb_chr(&b, ' ');
-			sb_deg(&b, p.lon_e7, 'E', 'W');
+			sb_coord(&b, p.lon_e7, 'E', 'W');
 			sb_str(&b, "\nAltitude ");
 			sb_i32(&b, p.alt_m);
 			sb_str(&b, " m");

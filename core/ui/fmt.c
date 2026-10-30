@@ -146,6 +146,17 @@ void sb_degrees(sbuf_t *b, int32_t e7)
 	sb_u32(b, v % 10000u, 4);
 }
 
+void sb_coord(sbuf_t *b, int32_t e7, char pos, char neg)
+{
+	uint32_t v = (uint32_t)(e7 < 0 ? -(int64_t)e7 : e7);
+	v = (v + 5u) / 10u;	// 1e-6 degree
+	sb_u32(b, v / 1000000u, 1);
+	sb_chr(b, '.');
+	sb_u32(b, v % 1000000u, 6);
+	sb_chr(b, ' ');
+	sb_chr(b, e7 < 0 ? neg : pos);
+}
+
 void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing)
 {
 	static const char *const points[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };

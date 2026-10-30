@@ -111,7 +111,8 @@ Four decimal places put you within about 11 m. You can also type "latitude" or "
 ## GPS status
 
 **Tools > Position** shows what the radio's GPS is doing, on four pages. Press Up or Down (or turn the knob) for the
-next page, or press 1 to 4.
+next page, or press 1 to 4. On a radio with a tall screen, Status also shows the grid locator and degrees, minutes and
+seconds, so there are three pages.
 
 | Page | What it shows |
 |---|---|

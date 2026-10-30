@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Tools > Position with CONFIG_GPS_SKY (docs/spec/ui.md 2.3): the board GPS on four pages, Up / Down (the knob, the
 // digits 1-4) to turn them. Status: the fix, satellites, position, altitude, speed, dilution, time. Sky: where each
-// satellite is (a polar plot, north up), filled when the fix uses it. Signal: each satellite's signal as a bar. Grid:
+// satellite is (a polar plot, north up), filled when the fix uses it. Signal: each satellite with a signal as a bar. Grid:
 // the Maidenhead locator large, the position in degrees, minutes and seconds. Nothing is kept: every draw reads the
 // service again, the satellites one at a time.
 #include "config.h"
@@ -19,6 +19,12 @@ static const char *const sys_short[UI_GNSS_COUNT] = { "GPS", "GLO", "GAL", "BDS"
 #define SNR_FULL	50	// dB-Hz for a full bar: a strong satellite under open sky
 
 static uint8_t page;
+
+// A tall panel has room for the grid on Status: three pages, no Grid page
+static uint8_t page_count(void)
+{
+	return gfx_height() >= UI_TALL_PX ? PG_GRID : PG_COUNT;
+}
 
 // A system's color; every one is also named in the legend (P5). Ink on a monochrome panel
 static color_t sys_color(uint8_t sys)
@@ -124,13 +130,6 @@ static void sb_dms(sbuf_t *b, int32_t e7, char pos, char neg)
 	sb_chr(b, e7 < 0 ? neg : pos);
 }
 
-static void sb_deg(sbuf_t *b, int32_t e7, char pos, char neg)
-{
-	sb_degrees(b, e7 < 0 ? -e7 : e7);
-	sb_chr(b, ' ');
-	sb_chr(b, e7 < 0 ? neg : pos);
-}
-
 static void sb_dop(sbuf_t *b, uint16_t d10)
 {
 	sb_u32(b, d10 / 10u, 1);
@@ -177,7 +176,13 @@ static void draw_status(const ui_position_t *p, int y)
 	char buf[32];
 	sbuf_t b;
 	const font_t *big = gfx_width() >= 200 ? ui_layout.large : ui_layout.medium;
+	bool grid = page_count() == PG_GRID && p->fix;	// the Grid page's facts here too
 	gfx_text(big, 0, y, fix_word(p), p->fix ? ui_col.rx : ui_col.warn);
+	if (grid) {
+		char loc[7];
+		locator(loc, p->lat_e7, p->lon_e7);
+		gfx_text(big, gfx_width() - gfx_text_width(big, loc) - 2, y, loc, ui_col.fg);
+	}
 	y += big->h + 1;
 	sb_init(&b, buf, sizeof buf);
 	sb_u32(&b, p->sats, 1);
@@ -188,13 +193,25 @@ static void draw_status(const ui_position_t *p, int y)
 		return;
 	if (p->fix) {
 		sb_init(&b, buf, sizeof buf);
-		sb_deg(&b, p->lat_e7, 'N', 'S');
+		sb_coord(&b, p->lat_e7, 'N', 'S');
 		if (!row(&y, "Lat", buf, ui_col.fg))
 			return;
+		if (grid) {
+			sb_init(&b, buf, sizeof buf);
+			sb_dms(&b, p->lat_e7, 'N', 'S');
+			if (!row(&y, "   ", buf, ui_col.dim))
+				return;
+		}
 		sb_init(&b, buf, sizeof buf);
-		sb_deg(&b, p->lon_e7, 'E', 'W');
+		sb_coord(&b, p->lon_e7, 'E', 'W');
 		if (!row(&y, "Lon", buf, ui_col.fg))
 			return;
+		if (grid) {
+			sb_init(&b, buf, sizeof buf);
+			sb_dms(&b, p->lon_e7, 'E', 'W');
+			if (!row(&y, "   ", buf, ui_col.dim))
+				return;
+		}
 		if (p->alt_ok) {
 			sb_init(&b, buf, sizeof buf);
 			sb_i32(&b, p->alt_m);
@@ -256,6 +273,51 @@ static void legend(int x, int y, int cols, int col_w, const uint8_t used[], cons
 	}
 }
 
+// Where a satellite sits on a sky plot of radius r around cx, cy; false without a known position
+static bool sky_xy(const ui_gps_sat_t *s, int cx, int cy, int r, int *x, int *y)
+{
+	if (s->elev == 0xFFu || s->az == 0xFFFFu)
+		return false;
+	int d = r * (90 - s->elev) / 90;
+	*x = cx + d * isin(s->az) / 256;
+	*y = cy - d * isin(s->az + 90) / 256;
+	return true;
+}
+
+// "G12": the system's letter and the number
+static void sat_label(char lb[4], const ui_gps_sat_t *s)
+{
+	sbuf_t b;
+	lb[0] = sys_letter[s->sys < UI_GNSS_COUNT ? s->sys : 0];
+	sb_init(&b, lb + 1, 3);
+	sb_u32(&b, s->num, 1);
+}
+
+// A label box clear of every other dot and of the labels drawn so far, each found again from its satellite: the stack
+// is too tight for a table of boxes
+static bool label_clear(uint8_t i, uint32_t labeled, uint32_t left, int lx, int ly, int lw, int cx, int cy, int r,
+	int dot)
+{
+	const font_t *t = ui_layout.tiny;
+	ui_gps_sat_t o;
+	for (uint8_t j = 0; ui_svc_gps_sat(j, &o); j++) {
+		int ox, oy;
+		if (j == i || !sky_xy(&o, cx, cy, r, &ox, &oy))
+			continue;
+		if (lx <= ox + dot && ox - dot < lx + lw && ly <= oy + dot && oy - dot < ly + t->h)
+			return false;
+		if (j < 32 && ((labeled >> j) & 1u)) {
+			char ol[4];
+			sat_label(ol, &o);
+			int ow = gfx_text_width(t, ol);
+			int olx = (left >> j) & 1u ? ox - dot - 1 - ow : ox + dot + 1, oly = oy - t->h / 2;
+			if (lx < olx + ow && olx < lx + lw && ly < oly + t->h && oly < ly + t->h)
+				return false;
+		}
+	}
+	return true;
+}
+
 static void draw_sky(const ui_position_t *p, int y)
 {
 	int w = gfx_width(), h = ui_layout.hint_y - y - 1;
@@ -281,22 +343,30 @@ static void draw_sky(const ui_position_t *p, int y)
 	bool labels = r >= 40;
 	ui_gps_sat_t s;
 	uint8_t drawn = 0;
+	uint32_t labeled = 0, left = 0;	// bit i: satellite i has its label, on the left of its dot
+	int right = below ? w : cx + r + 3;	// labels stay off the legend
 	for (uint8_t i = 0; ui_svc_gps_sat(i, &s); i++) {
-		if (s.elev == 0xFFu || s.az == 0xFFFFu)
+		int sx, sy;
+		if (!sky_xy(&s, cx, cy, r, &sx, &sy))
 			continue;
-		int d = r * (90 - s.elev) / 90;
-		int sx = cx + d * isin(s.az) / 256, sy = cy - d * isin(s.az + 90) / 256;
 		color_t c = s.snr == 0 ? ui_col.dim : sys_color(s.sys);
 		if (s.used)
 			disc(sx, sy, dot, c);
 		else
 			circle(sx, sy, dot, c);
-		if (labels) {
-			char lb[4] = { sys_letter[s.sys < UI_GNSS_COUNT ? s.sys : 0], 0, 0, 0 };
-			sbuf_t b;
-			sb_init(&b, lb + 1, sizeof lb - 1);
-			sb_u32(&b, s.num, 1);
-			gfx_text(t, sx + dot + 1, sy - t->h / 2, lb, c);
+		if (labels && i < 32) {
+			char lb[4];
+			sat_label(lb, &s);
+			int lw = gfx_text_width(t, lb), ly = sy - t->h / 2;
+			for (uint32_t on_left = 0; on_left < 2; on_left++) {	// right of the dot, else left
+				int lx = on_left ? sx - dot - 1 - lw : sx + dot + 1;
+				if (lx >= 0 && lx + lw <= right && label_clear(i, labeled, left, lx, ly, lw, cx, cy, r, dot)) {
+					gfx_text(t, lx, ly, lb, c);
+					labeled |= 1u << i;
+					left |= on_left << i;
+					break;
+				}
+			}
 		}
 		drawn++;
 	}
@@ -321,35 +391,44 @@ static void draw_signal(const ui_position_t *p, int y)
 	sb_str(&b, " in the fix");
 	gfx_text(ui_layout.small, 0, y, buf, ui_col.fg);
 	y += ui_layout.small->h + 2;
-	uint8_t n = p->in_view;
+	ui_gps_sat_t s;
+	uint8_t n = 0;		// bars: the satellites with a signal (one without has no bar to show)
+	for (uint8_t i = 0; ui_svc_gps_sat(i, &s); i++)
+		n += s.snr > 0;
 	if (n == 0)
 		return;
 	int pitch = w / n;
-	if (pitch > 16)
-		pitch = 16;
+	if (pitch > 24)
+		pitch = 24;
 	if (pitch < 3)
 		pitch = 3;
-	bool labels = pitch >= t->w * 2 + 3;	// two digits and a gap
-	int base = ui_layout.hint_y - 2 - (labels ? t->h : 0);
+	// The numbers under the bars: one row where two digits fit a bar, else two rows taking turns (each number
+	// then has two bars' width), else none
+	int need = t->w * 2 + 2;
+	int rows = pitch >= need ? 1 : 2 * pitch >= need ? 2 : 0;
+	int base = ui_layout.hint_y - 2 - rows * t->h;
 	int hmax = base - y;
 	if (hmax < 4)
 		return;
-	ui_gps_sat_t s;
-	for (uint8_t i = 0; i < n && (i + 1) * pitch <= w && ui_svc_gps_sat(i, &s); i++) {
-		int x = i * pitch, bw = pitch - 1;
+	uint8_t k = 0;
+	for (uint8_t i = 0; k < n && (k + 1) * pitch <= w && ui_svc_gps_sat(i, &s); i++) {
+		if (s.snr == 0)
+			continue;
+		int x = k++ * pitch, bw = pitch - 1;
 		int bh = s.snr * hmax / SNR_FULL;
 		bh = bh > hmax ? hmax : bh < 1 ? 1 : bh;
 		color_t c = sys_color(s.sys);
 		if (s.used)
 			gfx_fill(x, base - bh, bw, bh, c);
 		else
-			gfx_rect(x, base - bh, bw, bh, s.snr ? c : ui_col.dim);
-		if (labels) {
+			gfx_rect(x, base - bh, bw, bh, c);
+		if (rows > 0) {
 			char lb[4];
 			sbuf_t lbb;
 			sb_init(&lbb, lb, sizeof lb);
 			sb_u32(&lbb, s.num, 1);
-			gfx_text(t, x + (bw - gfx_text_width(t, lb)) / 2, base + 1, lb, c);
+			int lx = x + (bw - gfx_text_width(t, lb)) / 2;
+			gfx_text(t, lx < 0 ? 0 : lx, base + 1 + (rows == 2 && (k & 1) == 0 ? t->h : 0), lb, c);
 		}
 	}
 	gfx_hline(0, base, w, ui_col.line);
@@ -378,11 +457,11 @@ static void draw_grid(const ui_position_t *p, int y)
 	if (!row(&y, "", buf, ui_col.fg))
 		return;
 	sb_init(&b, buf, sizeof buf);
-	sb_deg(&b, p->lat_e7, 'N', 'S');
+	sb_coord(&b, p->lat_e7, 'N', 'S');
 	if (!row(&y, "", buf, ui_col.dim))
 		return;
 	sb_init(&b, buf, sizeof buf);
-	sb_deg(&b, p->lon_e7, 'E', 'W');
+	sb_coord(&b, p->lon_e7, 'E', 'W');
 	row(&y, "", buf, ui_col.dim);
 }
 
@@ -416,7 +495,7 @@ static bool gps_key(const input_event_t *ev)
 			dir = 1;
 		else if (ev->action == ACT_NAV_UP || ev->action == ACT_NAV_LEFT)
 			dir = -1;
-		else if (ev->gesture == GESTURE_PRESS && ev->action >= ACT_DIGIT_1 && ev->action < ACT_DIGIT_1 + PG_COUNT) {
+		else if (ev->gesture == GESTURE_PRESS && ev->action >= ACT_DIGIT_1 && ev->action < ACT_DIGIT_1 + page_count()) {
 			page = (uint8_t)(ev->action - ACT_DIGIT_1);
 			ui_dirty();
 			return true;
@@ -424,7 +503,8 @@ static bool gps_key(const input_event_t *ev)
 	}
 	if (dir == 0)
 		return false;
-	page = (uint8_t)((page + PG_COUNT + dir) % PG_COUNT);
+	uint8_t n = page_count();
+	page = (uint8_t)((page + n + dir) % n);
 	ui_dirty();
 	return true;
 }

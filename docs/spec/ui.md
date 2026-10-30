@@ -235,16 +235,16 @@ they show the change within a fraction of a second.
 
 ### 2.3 GPS screen
 
-With `CONFIG_GPS_SKY`, Tools > Position (`gps`, `ui_gps.c`) has four pages. Up and Down (the knob) turn them and wrap;
-the digits 1 to 4 go to one. It opens on Status. Every draw reads `ui_svc_position` and the satellites one at a time
+With `CONFIG_GPS_SKY`, Tools > Position (`gps`, `ui_gps.c`) has four pages, three on a panel at least `UI_TALL_PX` tall
+(Status takes in Grid there). Up and Down (the knob) turn them and wrap; the digits go to one. It opens on Status. Every draw reads `ui_svc_position` and the satellites one at a time
 (`ui_svc_gps_sat`), so the screen keeps one byte, its page.
 
 | Page | Shows |
 |---|---|
-| Status | the fix in large type (3D fix, 2D fix in the RX color; Searching, No signal in the warning color), then as many rows as fit: satellites used and seen, latitude, longitude, altitude, speed with a compass point, HDOP with good / fair / poor, UTC |
-| Sky | a polar plot, north up: the horizon and 45 degree rings, each satellite with a known position as a dot, filled when the fix uses it, hollow when not, gray when it has no signal. Labeled (G12, C23) where the plot is 80 px or wider. A legend names each system heard with used / seen: full names where they fit, else GPS, GLO, GAL, BDS, QZS. Beside the plot, or under it in two columns on a tall panel |
-| Signal | satellites in the fix of those seen, then one bar per satellite, its height the SNR (50 dB-Hz full), filled when used. Numbers under the bars where each is wide enough for two digits |
-| Grid | the Maidenhead locator (6 characters) large, then the position in degrees, minutes, seconds and in decimal degrees. "No fix yet" without a fix |
+| Status | the fix in large type (3D fix, 2D fix in the RX color; Searching, No signal in the warning color), then as many rows as fit: satellites used and seen, latitude and longitude (6 decimals, `sb_coord`), altitude, speed with a compass point, HDOP with good / fair / poor, UTC. On a tall panel, with a fix, also the locator right of the fix and each coordinate in degrees, minutes, seconds under it, dim |
+| Sky | a polar plot, north up: the horizon and 45 degree rings, each satellite with a known position as a dot, filled when the fix uses it, hollow when not, gray when it has no signal. Labeled (G12, C23) where the plot is 80 px or wider: right of the dot, else left, and left out where it would touch another dot or label. A legend names each system heard with used / seen: full names where they fit, else GPS, GLO, GAL, BDS, QZS. Beside the plot, or under it in two columns on a tall panel |
+| Signal | satellites in the fix of those seen, then one bar per satellite with a signal (SNR above 0), its height the SNR (50 dB-Hz full), filled when used. The satellite numbers under the bars: one row where two digits fit a bar, else two rows taking turns |
+| Grid | the Maidenhead locator (6 characters) large, then the position in degrees, minutes, seconds and in decimal degrees (6 decimals). "No fix yet" without a fix. Not on a tall panel |
 
 Colors name the system (GPS blue, GLONASS red, Galileo yellow, BeiDou green, QZSS purple; darker on the light theme),
 and the legend says them in words (P5). A monochrome panel draws everything in ink. Without a GPS, or with it off, the

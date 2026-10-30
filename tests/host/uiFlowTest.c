@@ -456,7 +456,7 @@ static const flow_t flows[] = {
 	{ "G GPS sky page", "ok 6 2", "down", "screen=gps shows=Sky", 1, false },
 	{ "G GPS signal page", "ok 6 2", "3", "shows=9_of_14_in_the_fix", 1, false },
 	{ "G GPS grid page", "ok 6 2", "4", "shows=FN42li", 1, false },
-	{ "G GPS pages wrap", "ok 6 2", "up", "shows=Grid", 1, false },
+	{ "G GPS pages wrap", "ok 6 2", "up down", "shows=Status", 2, false },
 	{ "A KISS on USB", "ok 6 8", "up up ok", "aprs_kiss=1", 3, false },
 	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
 	{ "A not in this build", "aprs:off", "ok 6 8 2", "toast=APRS:_not aprs_auto=0", 4, false },
