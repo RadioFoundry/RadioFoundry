@@ -55,6 +55,16 @@ static const flow_t flows[] = {
 	{ "6 canned to contact by name", "", "5 6 3 ctx 3 ok", "sent=1 text=OK", 6, false },
 	{ "7 read message, banner up", "msg:3101234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:3101234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
+#if CONFIG_ZONE_SHARE
+	// An offer's banner has no timer: it waits for #, BACK or the offer's end (zone-share.md 5.2)
+	{ "zone offer banner still up a minute later", "zoneoffer:3101234", "wait:60000", "shows=Zone_from", 0, false },
+	{ "zone offer banner opens a minute later", "zoneoffer:3101234 wait:60000", "ctx", "shows=Import", 1, false },
+	{ "zone offer banner hidden with Back", "zoneoffer:3101234", "back", "banner=none screen=home", 1, false },
+	{ "zone offer banner goes with the offer", "zoneoffer:3101234 wait:5000", "zoneexpire", "banner=none", 0, false },
+	{ "zone offer banner hidden with Back on a menu", "zoneoffer:3101234 ok", "back", "banner=none screen=hub", 1, false },
+	{ "zone offer banner goes when Tools opens the offer", "zoneoffer:3101234", "ok 6 0", "banner=none shows=Import", 3,
+	  false },
+#endif
 	{ "8 radio check last caller", CALLER, "ctx 4", "checks=1", 2, false },
 	{ "8 radio check by name", "", "5 6 3 ctx 4", "checks=1", 5, false },
 	{ "9 power one step", "", "quick 1 back", "power=8 screen=home", 3, false },

@@ -30,6 +30,7 @@
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
 //   zoneoffer:<src>[,c] another radio offers its zone "Club net" (,c: one channel); the import and sends always work
+//   zoneexpire          the offer is gone (not opened in time)
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
@@ -1279,6 +1280,7 @@ bool ui_svc_zone_offer(ui_zone_offer_t *out)
 	return true;
 }
 void ui_svc_zone_offer_open(uint32_t which) { (void)which; }
+bool ui_svc_zone_offer_pending(void) { return zs_sim.pending; }
 bool ui_svc_zone_offer_channel(uint32_t which, uint16_t i, ui_zone_offer_ch_t *out)
 {
 	if (!zs_sim.pending || which != zs_sim.serial || i >= (zs_sim.channel ? 1 : ZS_SIM_CHANNELS))
@@ -2440,6 +2442,11 @@ static bool run_token(char *t, char *err, size_t len)
 		strcpy(ev.name, contact_name(ev.id, false));
 		strcpy(ev.text, zs_sim.channel ? "Channel Club rpt" : "Zone Club net, 6 channels");
 		ui_notify(&ev);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "zoneexpire") == 0) {
+		zs_sim.pending = false;
 		advance(200);
 		return true;
 	}

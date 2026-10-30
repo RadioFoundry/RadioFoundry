@@ -472,6 +472,7 @@ static void banner(uint8_t kind, bool warn, uint32_t id, const char *title, cons
 	b->kind = kind;
 	b->warn = warn;
 	b->id = id;
+	b->hold = kind == UI_BANNER_ZONE_OFFER;	// the offer is the user's to answer, not to miss
 	b->until_ms = now + BANNER_MS;
 	strncpy(b->title, title, sizeof b->title - 1);
 	b->title[sizeof b->title - 1] = 0;
@@ -1877,6 +1878,13 @@ void ui_app_key(const input_event_t *ev)
 		banner_open();
 		return;
 	}
+	// A banner that waits for the user is over every screen, not just Home: BACK hides it first, wherever it is
+	if (!typing && ui_st.banner.kind != UI_BANNER_NONE && ui_st.banner.hold && ev->action == ACT_BACK &&
+			ev->gesture == GESTURE_PRESS) {
+		ui_st.banner.kind = UI_BANNER_NONE;
+		dirty = true;
+		return;
+	}
 	// QUICK opens quick settings from any screen; BACK returns to where the user was
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
 	if (ev->action == ACT_QUICK && ev->gesture == GESTURE_PRESS && stack[sp].scr != SCR_QUICK &&
@@ -2076,10 +2084,17 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	if (stack[sp].scr == SCR_VOLUME && now - last_key_ms >= VOLUME_MS) {
 		ui_pop();
 	}
-	if (ui_st.banner.kind != UI_BANNER_NONE && (int32_t)(now - ui_st.banner.until_ms) >= 0) {
+	if (ui_st.banner.kind != UI_BANNER_NONE && !ui_st.banner.hold && (int32_t)(now - ui_st.banner.until_ms) >= 0) {
 		ui_st.banner.kind = UI_BANNER_NONE;
 		dirty = true;
 	}
+#if CONFIG_ZONE_SHARE
+	// An offer's banner goes with the offer: expired, or answered from Tools > Zones/Chs Received
+	if (ui_st.banner.kind == UI_BANNER_ZONE_OFFER && !ui_svc_zone_offer_pending()) {
+		ui_st.banner.kind = UI_BANNER_NONE;
+		dirty = true;
+	}
+#endif
 	if (ui_st.entry && (now - entry_last >= ENTRY_TIMEOUT_MS || !view->vfo))
 		entry_cancel();
 	uint16_t unread = ui_svc_msg_unread();
@@ -2167,7 +2182,8 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	}
 	ui_st.battery_pct = bat;
 	battery_tick(v);
-	bool fast = v->state == RS_TX || stack[sp].scr == SCR_DIAG || ui_st.banner.kind != UI_BANNER_NONE;
+	// A banner's countdown ticks; one that waits for the user has none
+	bool fast = v->state == RS_TX || stack[sp].scr == SCR_DIAG || (ui_st.banner.kind != UI_BANNER_NONE && !ui_st.banner.hold);
 #if CONFIG_HOTSPOT
 	fast = fast || in_hotspot();
 	if (!in_hotspot())

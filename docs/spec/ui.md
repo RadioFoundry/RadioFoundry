@@ -427,6 +427,8 @@ while the radio core's level is still OK) at Settings > Power > Low battery warn
 Inbound events go through `ui_notify()` (a ring of 4, safe from any task) or, for packages the UI polls, through
 `ui_svc_poll()` once per UI pass. They become banners for 8 s: message received, delivered / not delivered, call
 alert, alert answered, radio check answered (with the round trip) or not, private call, emergency, hotspot started.
+A zone share offer's banner has no timer (`ui_banner_t.hold`): it stays over every screen until CONTEXT opens it, BACK
+(on any screen, before anything else) hides it, the offer screen opens from Tools, or the offer ends ([zone-share.md](zone-share.md) 5.2).
 
 ## 5. Build switches
 

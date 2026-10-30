@@ -1914,7 +1914,8 @@ static void data_init(radio_sm_t *sm)
 	dmrDataServiceSetSettings(&set);
 #if CONFIG_ZONE_SHARE
 	zone_share_init();
-	zone_share_set_offers(st->zs_offers);	// Off unless the user chose Ask (docs/spec/zone-share.md 5)
+	// On unless the user turned it off (docs/spec/zone-share.md 5)
+	zone_share_set_offers(settings_zs_accept(st) ? ZS_OFFERS_ASK : ZS_OFFERS_OFF);
 #endif
 	dmr_call_set_data_rx(data_rx, NULL);
 #if CONFIG_DMR_EMERGENCY

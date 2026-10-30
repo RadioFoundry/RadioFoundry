@@ -2191,6 +2191,8 @@ void ui_draw_banner(const ui_state_t *s)
 	const char *act = (bn->kind == UI_BANNER_MESSAGE || bn->kind == UI_BANNER_ZONE_OFFER) ? "# Open" :
 		(bn->kind == UI_BANNER_CALL_ALERT || bn->kind == UI_BANNER_PRIVATE) ? "# Actions" : "Back hide";
 	gfx_text(f, 2, ty, act, gfx_bpp() == 1 ? fg : ui_col.dim);
+	if (bn->hold)
+		return;	// no countdown: it waits for the user
 	char sec[8];
 	sbuf_t b;
 	sb_init(&b, sec, sizeof sec);

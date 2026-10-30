@@ -105,8 +105,10 @@ codeplug is sent: no scan lists, no RX group lists, no privacy keys.
 
 ### 5.1 The setting
 
-**Settings > Connections > Zone offers**: Off (the default) or Ask. With Off, fragments are dropped (`zs.rx_off`) and
-nothing reaches the user. The setting is `zs_offers` in the settings record ([settings-store.md](settings-store.md)).
+**Settings > Connections > Accept zone shares**: On (the default) or Off. With On, a share is offered to the user,
+who imports it or not (5.2); nothing is imported without that. With Off, fragments are dropped (`zs.rx_off`) and
+nothing reaches the user. The setting is `zs_offers` in the settings record: 0 (never set) and 1 are On, 2 is Off
+([settings-store.md](settings-store.md)). In the service and on the debug link, 1 (`ZS_OFFERS_ASK`) is On and 0 Off.
 
 ### 5.2 Offers
 
@@ -117,8 +119,9 @@ nothing reaches the user. The setting is `zs_offers` in the settings record ([se
 | Lifetime | an offer not opened within 10 minutes is dropped (`zs.expired`). Once opened, it waits for the user |
 | Group offers | a record sent to a talkgroup the radio listens to is offered like one sent to it |
 
-The offer shows as a banner, "Zone from <name or ID>" with "Zone <name>, <n> channels". **#** opens it. While it
-waits it is also under **Tools > Zones/Chs Received**. The offer screen (Zone Share Received, or Channel Share Received) reads "Zone <name>, <n> channels, from <ID>" and
+The offer shows as a banner, "Zone from <name or ID>" with "Zone <name>, <n> channels". **#** opens it. The banner
+has no timer: it stays until **#** opens it, **Back** hides it (on any screen), or the offer ends (it expires, or is answered from
+Tools, which also hides it). Another banner can take its place. While it waits it is also under **Tools > Zones/Chs Received**. The offer screen (Zone Share Received, or Channel Share Received) reads "Zone <name>, <n> channels, from <ID>" and
 how many are not in this radio's bands, with three choices:
 
 - **Import** imports it (5.3).
