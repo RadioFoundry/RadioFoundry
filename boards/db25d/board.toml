@@ -28,7 +28,7 @@ gallery = "160x128"
 clock = { rtc = "unknown", note = "the SoC RTC on I2C2; whether a backup supply keeps it through power-off is not known (docs/spec/hardware-db25d.md)" }
 # The stock firmware identifies its RF chips at boot and writes them into its version string, after "909E.D"
 # (hardware-db25d.md 1, 4.2): the Version screen, the vendor CPS identify reply and the console's RAM copy carry it, the
-# program flash only a placeholder. One image serves every variant: the older ones wait for the FD6818 driver
+# program flash only a placeholder. One image serves every variant: it reads the chips at start-up as the stock does (4.8)
 variant_pattern = '909E\.(D[0-9A-Za-z]{1,3})\.EARSAB'
 variant_check = "Open the Version screen in the radio's menu. The version reads like 909E.DBB.EARSAB.020: the letters after 909E. name the hardware."
 
@@ -40,30 +40,30 @@ runs = { board = "db25d" }
 
 [[hardware.variants]]
 code = "D64"
-name = "FD6818 transceiver (2021-2023)"
-level = "bring-up"
-notice = "Not tried on this hardware yet, and its FD6818 transceiver is not driven: FM and DMR don't receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+name = "FD6818 transceiver, 0x7813 LO (2021-2023)"
+level = "testing"
+notice = "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
 runs = { board = "db25d" }
 
 [[hardware.variants]]
 code = "D66"
-name = "FD6818 transceiver (2021-2023)"
-level = "bring-up"
-notice = "Not tried on this hardware yet, and its FD6818 transceiver is not driven: FM and DMR don't receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+name = "FD6818 transceiver and LO (2021-2023)"
+level = "testing"
+notice = "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
 runs = { board = "db25d" }
 
 [[hardware.variants]]
 code = "D6T"
 name = "FD6818 transceiver, AT1141 LO (2021-2023)"
-level = "bring-up"
-notice = "Not tried on this hardware yet, and its FD6818 transceiver is not driven: FM and DMR don't receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+level = "testing"
+notice = "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
 runs = { board = "db25d" }
 
 [status]
 level = "supported"
 summary = """\
 FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings \
-storage work on the radio. Open: the older FD6818 batches and the Retevis RT73."""
+storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73."""
 release = "stable"
 
 # The vendor IAP loader (0x03000000..0x0300BFFF) is never written. RadioFoundry's first stage fills the sector at 0x0300C000

@@ -20,11 +20,9 @@
 #include "dmr_glue.h"
 #include "audio_pcm.h"
 #include "vocoder.h"
-#include "rf/bk4819/bk4819.h"
 
-// Once, from the radio init, with the main chip and the modem (already powered on by the radio init): the shared glue
-// and the PCM audio
-void db25d_dmr_init(bk4819_t *main_chip, hrc7000_t *modem);
+// Once, from the radio init, with the modem (already powered on by the radio init): the shared glue and the PCM audio
+void db25d_dmr_init(hrc7000_t *modem);
 // The main chip to its digital receive set and the modem into DMR; leave undoes both. The radio retunes afterwards
 void db25d_dmr_enter(uint32_t rx_hz);
 void db25d_dmr_leave(void);

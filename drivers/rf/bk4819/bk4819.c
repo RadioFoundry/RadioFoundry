@@ -5,15 +5,9 @@
 #include "bk4819.h"
 #include "rf/subaudio/subaudio.h"
 
-#define READ_BIT	0x80u
-#define BIT_US		1u	// clock low and high time
-#define READ_TURN_US	2u	// after releasing the data line, before clocking the reply in
 #define RESET_MS	10u
 
-typedef struct {
-	uint8_t reg;
-	uint16_t val;
-} regval_t;
+typedef rfbus_regval_t regval_t;
 
 // 4.3 power-on table shared by both chips, after the soft reset. Register 0x4F is the one value that differs
 static const regval_t init_common[] = {
@@ -51,23 +45,6 @@ uint16_t bk4819_squelch_rssi(int16_t open_dbm, uint8_t hyst_db)
 	return (uint16_t)(open << 8 | close);
 }
 
-uint16_t bk4819_ctcss_word(uint16_t hz_x10)
-{
-	// Hz x 20.64888 = (Hz x 10) x 258111 / 125000, in 64 bits for any input
-	return (uint16_t)(((uint64_t)hz_x10 * 258111u + 62500u) / 125000u);
-}
-
-uint16_t bk4819_ctcss_word_tx(uint16_t hz_x10)
-{
-	return (uint16_t)(((uint64_t)hz_x10 * 258111u) / 125000u);
-}
-
-uint16_t bk4819_tone_word(uint16_t hz)
-{
-	// Hz x 10.32444 = Hz x 1290555 / 125000
-	return (uint16_t)(((uint64_t)hz * 1290555u + 62500u) / 125000u);
-}
-
 uint16_t bk4819_pa_reg(uint8_t level)
 {
 	if (level == 0) {
@@ -79,13 +56,12 @@ uint16_t bk4819_pa_reg(uint8_t level)
 	return (uint16_t)(0x80u | (uint16_t)(level * 63u / 15u));
 }
 
-void bk4819_attach(bk4819_t *dev, const bk4819_bus_t *bus)
+void bk4819_attach(bk4819_t *dev, rfbus_t *bus)
 {
 	dev->bus = bus;
 	dev->freq_10hz = 0;
 	dev->state = 0;
 	dev->af_gain = 0xB3B3u;
-	dev->writes = 0;
 	dev->digital = false;
 	dev->saved_27 = 0;
 	dev->saved_48 = 0;
@@ -95,39 +71,9 @@ void bk4819_attach(bk4819_t *dev, const bk4819_bus_t *bus)
 	dev->rx_inverted = false;
 }
 
-static uint32_t enter(const bk4819_bus_t *b)
-{
-	return b->crit_enter != NULL ? b->crit_enter() : 0;
-}
-
-static void leave(const bk4819_bus_t *b, uint32_t s)
-{
-	if (b->crit_exit != NULL) {
-		b->crit_exit(s);
-	}
-}
-
-static void send_bits(const bk4819_bus_t *b, uint32_t v, int n)
-{
-	for (int i = n - 1; i >= 0; i--) {
-		b->clk(false);
-		b->data_out(((v >> i) & 1u) != 0);
-		b->delay_us(BIT_US);
-		b->clk(true);	// sampled by the chip on this edge
-		b->delay_us(BIT_US);
-	}
-}
-
 void bk4819_write(bk4819_t *dev, uint8_t reg, uint16_t val)
 {
-	const bk4819_bus_t *b = dev->bus;
-	uint32_t s = enter(b);
-	b->cs(false);
-	send_bits(b, (uint32_t)(reg & 0x7Fu) << 16 | val, 24);
-	b->clk(false);
-	b->cs(true);
-	leave(b, s);
-	dev->writes++;
+	rfbus_write(dev->bus, reg, val);
 	if (reg == BK4819_REG_ENABLES) {
 		dev->state = val;
 	} else if (reg == BK4819_REG_AF_GAIN) {
@@ -137,25 +83,7 @@ void bk4819_write(bk4819_t *dev, uint8_t reg, uint16_t val)
 
 uint16_t bk4819_read(bk4819_t *dev, uint8_t reg)
 {
-	const bk4819_bus_t *b = dev->bus;
-	uint32_t s = enter(b);
-	b->cs(false);
-	send_bits(b, (reg & 0x7Fu) | READ_BIT, 8);
-	b->clk(false);
-	b->data_release();
-	b->delay_us(READ_TURN_US);
-	uint16_t v = 0;
-	for (int i = 0; i < 16; i++) {
-		b->clk(false);
-		b->delay_us(BIT_US);
-		b->clk(true);
-		v = (uint16_t)((v << 1) | (b->data_in() ? 1u : 0u));	// read while the clock is high
-		b->delay_us(BIT_US);
-	}
-	b->clk(false);
-	b->cs(true);
-	leave(b, s);
-	return v;
+	return rfbus_read(dev->bus, reg);
 }
 
 static void write_table(bk4819_t *dev, const regval_t *t, size_t n)
@@ -167,14 +95,9 @@ static void write_table(bk4819_t *dev, const regval_t *t, size_t n)
 
 static void reset(bk4819_t *dev)
 {
-	const bk4819_bus_t *b = dev->bus;
-	b->cs(true);
-	b->clk(false);
 	bk4819_write(dev, BK4819_REG_ID, 0x8000);
 	bk4819_write(dev, BK4819_REG_ID, 0x0000);
-	if (b->delay_ms != NULL) {
-		b->delay_ms(RESET_MS);
-	}
+	rfbus_delay_ms(dev->bus, RESET_MS);
 	write_table(dev, init_common, sizeof(init_common) / sizeof(init_common[0]));
 }
 
@@ -322,7 +245,7 @@ void bk4819_set_rx_tone(bk4819_t *dev, bk4819_tone_t type, uint16_t value)
 {
 	switch (type) {
 	case BK4819_TONE_CTCSS:
-		bk4819_write(dev, BK4819_REG_CTCSS_FREQ, bk4819_ctcss_word(value));
+		bk4819_write(dev, BK4819_REG_CTCSS_FREQ, subaudio_ctcss_word(value, true));
 		bk4819_write(dev, 0x52, 0x028F);			// detect thresholds (the FD6818's)
 		bk4819_write(dev, BK4819_REG_SUBAUDIO, 0x1000);
 		break;
@@ -383,7 +306,7 @@ void bk4819_tx_prepare(bk4819_t *dev, bk4819_tone_t type, uint16_t value)
 	case BK4819_TONE_CTCSS:
 		bk4819_write(dev, 0x40, BK4819_TX_DEV_CTCSS);
 		bk4819_write(dev, BK4819_REG_SUBAUDIO, BK4819_SUBAUDIO_TX_CTCSS);
-		bk4819_write(dev, BK4819_REG_CTCSS_FREQ, bk4819_ctcss_word_tx(value));
+		bk4819_write(dev, BK4819_REG_CTCSS_FREQ, subaudio_ctcss_word(value, false));
 		break;
 	case BK4819_TONE_DCS:
 	case BK4819_TONE_DCS_INV:
@@ -430,7 +353,8 @@ void bk4819_tone_start(bk4819_t *dev, uint16_t hz, uint8_t gain)
 	}
 	dev->tone_hz = hz;
 	dev->tone_gain = gain;
-	// The stock word is the product truncated: 1750 Hz = 18067
+	// The stock word is Hz x 10.3244 truncated (1750 Hz = 18067): not subaudio_tone_word(), whose x 10.32444 gives one
+	// more for some tones
 	bk4819_write(dev, BK4819_REG_TONE1_FREQ, (uint16_t)((uint32_t)hz * 103244u / 10000u));
 	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
 }
@@ -465,8 +389,8 @@ void bk4819_dtmf_start(bk4819_t *dev, uint16_t low_hz, uint16_t high_hz)
 	dev->tone_hz = low_hz;
 	dev->tone_gain = 0;	// keying (bk4819_tone_key) is for single tones only
 	// The stock DTMF table's words (1633 Hz = 16860; Hz x 10.3244 truncated gave 16859)
-	bk4819_write(dev, BK4819_REG_TONE1_FREQ, bk4819_tone_word(low_hz));
-	bk4819_write(dev, BK4819_REG_TONE2_FREQ, bk4819_tone_word(high_hz));
+	bk4819_write(dev, BK4819_REG_TONE1_FREQ, subaudio_tone_word(low_hz, true));
+	bk4819_write(dev, BK4819_REG_TONE2_FREQ, subaudio_tone_word(high_hz, true));
 	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
 }
 

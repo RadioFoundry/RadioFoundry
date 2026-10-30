@@ -8,7 +8,7 @@ PLATFORM   := hrc7000
 # loader's clocks back before it hands over to the runtime stub or resets (platform/hrc7000/clock.c), as on the other
 # radios with a first stage (boot/README.md)
 MCU_DEFS   := -DHRC_HOST_UART=1 -DHRC_LOADER_CPU_HZ=72000000u
-BOARD_DIRS := boards/gd88 boards/gd88/common drivers/rf/bk4819 drivers/rf/at1141 drivers/rf/subaudio drivers/display/ili9341 drivers/input/keymatrix \
+BOARD_DIRS := boards/gd88 boards/gd88/common drivers/rf/rfbus drivers/rf/bk4819 drivers/rf/at1141 drivers/rf/subaudio drivers/display/ili9341 drivers/input/keymatrix \
 	drivers/input/quadrature drivers/input/sharedptt drivers/flash/spi_nand drivers/audio/afsk_tonegen drivers/modem/hrc7000 \
 	drivers/bcast/rda5807m drivers/bus/i2c_gpio
 # The link to SoC B (core/rx2): the main side runs here

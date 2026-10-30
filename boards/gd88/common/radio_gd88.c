@@ -20,8 +20,12 @@
 #include "radio/radio.h"
 #include "platform.h"
 #include "hal_time.h"
+#include "rf/rfbus/rfbus.h"
 #include "rf/bk4819/bk4819.h"
 #include "rf/at1141/at1141.h"
+#include "rf/superhet/superhet.h"
+#include "rf/bk4819/bk4819_superhet.h"
+#include "rf/at1141/at1141_superhet.h"
 #include "modem/hrc7000/hrc7000.h"
 #include "audio/afsk_tonegen/afsk_tonegen.h"
 #if CONFIG_DMR && GD88_TX && CONFIG_SFR
@@ -80,9 +84,11 @@
 #define CTCSS_MIN_X10		600u
 #define CTCSS_MAX_X10		2600u
 
+static rfbus_3w_t bus_main, bus_lo;
 static bk4819_t rf_main, rf_lo;
-static at1141_t lo_at;		// the LO when it answers as an AT1141: register access through rf_lo's bus
+static at1141_t lo_at;		// the LO when it answers as an AT1141
 static bool lo_is_at1141;
+static superhet_lo_t sh_lo;	// rf_lo or lo_at, bound at init
 static hrc7000_t modem;
 static bool supported;		// the main chip answered as a BK4819, the LO as a BK4819 or an AT1141
 static uint16_t main_id, lo_id;
@@ -136,35 +142,17 @@ static bool rf_data_in(void) { return hrc_pin_read(GD88_PIN_RF_DATA); }
 static void cs_main(bool level) { hrc_pin_write(GD88_PIN_RF_SEN_MAIN, level); }
 static void cs_lo(bool level) { hrc_pin_write(GD88_PIN_RF_SEN_LO, level); }
 
-static const bk4819_bus_t bus_main = {
-	.cs = cs_main,
-	.clk = rf_clk,
-	.data_out = rf_data_out,
-	.data_release = rf_data_release,
-	.data_in = rf_data_in,
-	.delay_us = hal_delay_us,
-	.crit_enter = hrc_irq_save,
-	.crit_exit = hrc_irq_restore,
-	.delay_ms = hal_delay_ms,
+static const rfbus_3w_pins_t pins_main = {
+	.cs = cs_main, .clk = rf_clk, .data_out = rf_data_out, .data_release = rf_data_release, .data_in = rf_data_in,
+	.delay_us = hal_delay_us, .crit_enter = hrc_irq_save, .crit_exit = hrc_irq_restore, .delay_ms = hal_delay_ms,
 };
 
-static const bk4819_bus_t bus_lo = {
-	.cs = cs_lo,
-	.clk = rf_clk,
-	.data_out = rf_data_out,
-	.data_release = rf_data_release,
-	.data_in = rf_data_in,
-	.delay_us = hal_delay_us,
-	.crit_enter = hrc_irq_save,
-	.crit_exit = hrc_irq_restore,
-	.delay_ms = hal_delay_ms,
+static const rfbus_3w_pins_t pins_lo = {
+	.cs = cs_lo, .clk = rf_clk, .data_out = rf_data_out, .data_release = rf_data_release, .data_in = rf_data_in,
+	.delay_us = hal_delay_us, .crit_enter = hrc_irq_save, .crit_exit = hrc_irq_restore, .delay_ms = hal_delay_ms,
 };
 
 // ---- LO chip: a BK4819 or an AT1141 on the LO enable ----
-
-static void at_write(uint8_t reg, uint16_t val) { bk4819_write(&rf_lo, reg, val); }
-static uint16_t at_read(uint8_t reg) { return bk4819_read(&rf_lo, reg); }
-static const at1141_bus_t bus_at = { .write = at_write, .read = at_read, .delay_ms = hal_delay_ms };
 
 static bk4819_tone_t bk_tone(uint8_t type)
 {
@@ -186,43 +174,20 @@ static uint32_t lo_hz_for(uint32_t hz)
 
 static void lo_tune(uint32_t hz)
 {
-	if (lo_is_at1141) {
-		at1141_tune(&lo_at, lo_hz_for(hz));
-	} else {
-		bk4819_lo_tune(&rf_lo, lo_hz_for(hz));
-	}
+	sh_lo.ops->tune(sh_lo.chip, lo_hz_for(hz));
 }
 
 #if GD88_TX || GD88_DMR_TX || CONFIG_BATTERY_SAVE
 static void lo_off(void)
 {
-	if (lo_is_at1141) {
-		at1141_off(&lo_at);
-	} else {
-		bk4819_lo_off(&rf_lo);
-	}
+	sh_lo.ops->off(sh_lo.chip);
 }
 #endif
 
 #if CONFIG_DMR && GD88_DMR_TX
 static void lo_resume(void)
 {
-	if (lo_is_at1141) {
-		at1141_restart(&lo_at);
-	} else {
-		bk4819_lo_resume(&rf_lo);
-	}
-}
-#endif
-
-#if GD88_BAND_LO_GPIO
-static void lo_gpio(uint8_t pin, bool high)
-{
-	if (lo_is_at1141) {
-		at1141_gpio(&lo_at, pin, high);
-	} else {
-		bk4819_gpio(&rf_lo, pin, high);
-	}
+	sh_lo.ops->resume(sh_lo.chip);
 }
 #endif
 
@@ -263,16 +228,17 @@ static void init(void)
 	hrc7000_power_on_init(&modem, gd88_cal_tx_center(), GD88_MIC_GAIN_DB);
 	ref_trim(BIAS_DEFAULT_HZ);
 
-	bk4819_attach(&rf_main, &bus_main);
-	bk4819_attach(&rf_lo, &bus_lo);
+	rfbus_3w_attach(&bus_main, &pins_main);
+	rfbus_3w_attach(&bus_lo, &pins_lo);
+	bk4819_attach(&rf_main, &bus_main.bus);
 #if CONFIG_DMR
 	// Before the chip check: the modem's PCM audio (beeps, DMR voice) needs it attached even on a radio whose RF chips
 	// aren't driven here. A beep on a NULL modem faulted the radio task at every PTT press (LO chip 0x1100, 2026-10-26).
 	// set_mode(), rx() and tx() still refuse to use DMR or RF on such a radio
 	gd88_dmr_init(&rf_main, &modem);
 #endif
-	main_id = bk4819_read(&rf_main, BK4819_REG_ID);
-	lo_id = bk4819_read(&rf_lo, BK4819_REG_ID);
+	main_id = rfbus_read(&bus_main.bus, BK4819_REG_ID);
+	lo_id = rfbus_read(&bus_lo.bus, BK4819_REG_ID);
 	// The original firmware also knows an FD6818 main chip and a 0x7813 LO; only the main BK4819 with a BK4819 or an
 	// AT1141 LO is driven here (a GD-88 A on the bench has the AT1141, 2026-10-26), anything else leaves the radio
 	// receive-less
@@ -283,11 +249,15 @@ static void init(void)
 	}
 	bk4819_init_main(&rf_main);
 	bk4819_write(&rf_main, BK4819_REG_PA, BK4819_PA_MAX);	// 0xBF once, never changed
+	// The AT1141 goes off for a transmission and restarts after it (hardware-gd88.md 11.1)
 	if (lo_is_at1141) {
-		at1141_attach(&lo_at, &bus_at);
+		at1141_attach(&lo_at, &bus_lo.bus);
 		at1141_init(&lo_at);
+		sh_lo = (superhet_lo_t){ &at1141_superhet_lo_restart, &lo_at };
 	} else {
+		bk4819_attach(&rf_lo, &bus_lo.bus);
 		bk4819_init_lo(&rf_lo, BK4819_LO_PA_MAX);
+		sh_lo = (superhet_lo_t){ &bk4819_superhet_lo, &rf_lo };
 	}
 	bk4819_analog_mode(&rf_main);
 #if CONFIG_APRS && GD88_TX
@@ -300,6 +270,16 @@ static void volume_apply(void);
 #if GD88_BAND_LO_GPIO
 #define LO_GPIO_UHF		4u
 #define LO_GPIO_VHF		5u
+// The LO chip's GPIO: the superhet LO ops don't drive a BK4819's, so that one directly
+static void lo_gpio(uint8_t pin, bool high)
+{
+	if (lo_is_at1141) {
+		superhet_lo_gpio(&sh_lo, pin, high);
+	} else {
+		bk4819_gpio(&rf_lo, pin, high);
+	}
+}
+
 // The band's path: VHF = GPIO5 high, GPIO4 low; UHF the reverse
 static void lo_band(uint32_t hz)
 {
@@ -835,7 +815,7 @@ void gd88_radio_diag(gd88_radio_diag_t *d)
 	d->lo_id = lo_id;
 	d->rssi_raw = last_rssi_raw;
 	d->noise_raw = last_noise_raw;
-	d->rf_writes = rf_main.writes + rf_lo.writes + lo_at.writes;
+	d->rf_writes = bus_main.bus.writes + bus_lo.bus.writes;
 	d->hz = rx_hz;
 	d->transmitting = transmitting || dmr_armed;
 	d->supported = supported;
