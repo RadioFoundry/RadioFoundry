@@ -84,8 +84,8 @@ radio; sending a whole zone and receiving are tested only in the host tests so f
 A zone too big for one send goes in part, and the radio says how much ("Sending 40 of 60 channels"). Scan lists,
 group lists and privacy keys are never sent.
 
-**Receive:** set **Settings > Connections > Zone offers** to **Ask**. It is **Off** at first, and with Off the radio
-ignores what others send.
+**Receive:** **Settings > Connections > Accept zone shares** is **On** at first. Nothing is imported until you
+say so. Set it to **Off** to ignore what others send.
 
 <img src="../ux/screens/160x120i5/zone_offer.png" width="200" alt="Zone Share Received: Import, Preview, Reject">
 

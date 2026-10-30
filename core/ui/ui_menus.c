@@ -4180,10 +4180,6 @@ static const int16_t v_msgfmt[] = { 2, 1,	// dmr_sms_format_t: ETSI IP text, ETS
 };
 static const char *const n_msgfmt[] = { "ETSI", "ETSI short", "Motorola" };
 #endif
-#if CONFIG_ZONE_SHARE
-static const int16_t v_zsoffers[] = { 0, 1 };	// ZS_OFFERS_OFF, ZS_OFFERS_ASK
-static const char *const n_zsoffers[] = { "Off", "Ask" };
-#endif
 #if CONFIG_DMR_CONTROL_STATION
 static const int16_t v_netlink[] = { 0, 1 };
 static const char *const n_netlink[] = { "By DMR ID", "192.168.10.x" };
@@ -4279,7 +4275,7 @@ static const set_item_t s_connections[] = {
 	LIST("Message format", "SMS text ETSI TMS", UI_SET_MSG_FORMAT, v_msgfmt, n_msgfmt),
 #endif
 #if CONFIG_ZONE_SHARE
-	LIST("Zone offers", "zone sharing receive import", UI_SET_ZONE_OFFERS, v_zsoffers, n_zsoffers),
+	TOGGLE("Accept zone shares", "zone offers sharing receive import channel", UI_SET_ZONE_OFFERS),
 #endif
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
 	TOGGLE("USB network at start", "dispatch control station", UI_SET_USB_BOOT_NET),

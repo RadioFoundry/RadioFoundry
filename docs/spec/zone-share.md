@@ -105,8 +105,10 @@ codeplug is sent: no scan lists, no RX group lists, no privacy keys.
 
 ### 5.1 The setting
 
-**Settings > Connections > Zone offers**: Off (the default) or Ask. With Off, fragments are dropped (`zs.rx_off`) and
-nothing reaches the user. The setting is `zs_offers` in the settings record ([settings-store.md](settings-store.md)).
+**Settings > Connections > Accept zone shares**: On (the default) or Off. With On, a share is offered to the user,
+who imports it or not (5.2); nothing is imported without that. With Off, fragments are dropped (`zs.rx_off`) and
+nothing reaches the user. The setting is `zs_offers` in the settings record: 0 (never set) and 1 are On, 2 is Off
+([settings-store.md](settings-store.md)). In the service and on the debug link, 1 (`ZS_OFFERS_ASK`) is On and 0 Off.
 
 ### 5.2 Offers
 
