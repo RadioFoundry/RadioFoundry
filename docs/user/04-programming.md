@@ -140,7 +140,7 @@ writes:
 
 | Radio | What the editor does |
 |---|---|
-| Reads the compact format | Writes it. A database in the older format (read from the radio or an old file) is offered for conversion: one full write, then smaller ones |
+| Reads the compact format | Writes it. A database in the older format (read from the radio or an old file) is offered for conversion: one full write, then smaller ones. Declined, the offer comes back after 12 hours |
 | Runs older firmware | Writes the older format. If the names don't all fit, it says how many are left out. Updating the firmware makes room |
 | Older firmware flashed over a compact database | The radio shows no names (never wrong ones). The editor writes the database again in the older format the next time it writes to the radio |
 

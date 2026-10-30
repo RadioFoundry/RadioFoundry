@@ -176,7 +176,7 @@ it reads (`IDDB_COMPACT` in VERSION features). So a newer format never reaches a
 
 | Case | What happens |
 |---|---|
-| The radio reads format C, the database is format N (an old file, or read from the radio) | The editor offers to convert it: a smaller database with room for more names and faster writes after it. Converting is a full write of the database, once |
+| The radio reads format C, the database is format N (an old file, or read from the radio) | The editor offers to convert it: a smaller database with room for more names and faster writes after it. Converting is a full write of the database, once. After a read the offer comes at most once in 12 hours for each radio model |
 | The radio doesn't read format C, the database is format C | Written as format N. Each text keeps up to the length the longest one needs (16, 24, 32 or 48 characters). If they don't all fit the room, the editor says how many are left out and that a firmware update makes room |
 | A format C database on the radio, then older firmware flashed | The older firmware sees no database (3.1, byte 3): no names, nothing wrong. The editor, on reading that radio, marks the database to be written again in format N |
 | Firmware without the fast protocol | Format C is still written, through the open-firmware CPS (`cps-protocol.md`), in full |

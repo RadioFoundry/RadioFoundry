@@ -603,6 +603,19 @@ async function onLine(c) {
 	c.uid = uid;
 }
 
+// The offer to convert a format N database to C, after a read: at most once in 12 hours for each radio model,
+// whatever the answer (a converted database isn't offered again anyway)
+const CONVERT_QUIET = 12 * 3600 * 1000;
+
+function convertDue(radio) {
+	const key = `rfoundry-editor-iddb-convert:${radio}`;
+	try {
+		if (Date.now() - Number(localStorage.getItem(key) || 0) < CONVERT_QUIET) return false;
+		localStorage.setItem(key, String(Date.now()));
+	} catch { /* without storage the offer comes after every read */ }
+	return true;
+}
+
 async function readRadio() {
 	const go = () => exclusive(async () => {
 		try {
@@ -621,7 +634,7 @@ async function readRadio() {
 			if (fmt === "C" && !c.transport.compact) {
 				S.iddbChanged = true;
 				say(t("editor.iddb.old_radio_reads_none"), "warn");
-			} else if (fmt === "N" && c.transport.compact) {
+			} else if (fmt === "N" && c.transport.compact && convertDue(c.radio.id)) {
 				confirmDialog(t("editor.iddb.upgrade", { radio: c.radio.name }), t("editor.iddb.convert"), upgradeIddb,
 					{ onClose: () => offerUpdate(c) });
 				return;
