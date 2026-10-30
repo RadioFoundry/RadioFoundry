@@ -588,6 +588,24 @@
     "APRS"
    ]
   },
+  "gps_sky": {
+   "group": "tools",
+   "needs": [
+    "GPS_SKY"
+   ]
+  },
+  "gps_signal": {
+   "group": "tools",
+   "needs": [
+    "GPS_SKY"
+   ]
+  },
+  "gps_grid": {
+   "group": "tools",
+   "needs": [
+    "GPS_SKY"
+   ]
+  },
   "diagnostics": {
    "group": "tools",
    "needs": [

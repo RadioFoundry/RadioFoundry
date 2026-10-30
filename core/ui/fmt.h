@@ -31,6 +31,10 @@ void sb_age(sbuf_t *b, uint32_t ms);		// text alternates, longest first (font.h)
 void sb_age_long(sbuf_t *b, uint32_t ms);	// "14m ago", no alternates (for wrapped text)
 // Degrees from 1e-7 degree units with 4 decimals: -84.3880
 void sb_degrees(sbuf_t *b, int32_t e7);
+// A latitude or longitude with 6 decimals (0.1 m) and its hemisphere: "33.990512 N"
+void sb_coord(sbuf_t *b, int32_t e7, char pos, char neg);
+// The nearest of the 8 compass points to a bearing in degrees: "NE"
+void sb_compass(sbuf_t *b, uint16_t bearing);
 // A distance and a compass point: "850 m NE", "12.3 km S", "240 km W"
 void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing);
 

@@ -793,6 +793,32 @@ static void test_gps_setting(void)
 	CHECK(v.pos_src == APRS_SRC_GPS);
 }
 
+// The Position screen's view of the board GPS (aprs_gps): nothing before a sentence, then satellites without a fix,
+// then the fix; gone with the setting off and after a minute of silence
+static void test_gps_status(void)
+{
+	const char *nofix = "$GPGGA,123519,,,,,0,05,,,M,,M,,*6E";
+	const char *fix = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
+	aprs_gps_t g;
+
+	reset();
+	configure(0, false);
+	CHECK(!aprs_gps(&g, now));			// never heard
+	aprs_nmea(nofix, strlen(nofix), true, now);
+	CHECK(aprs_gps(&g, now) && !g.fix && g.sats == 5);
+	aprs_nmea(fix, strlen(fix), false, now);	// the host's GPS isn't the board's
+	CHECK(aprs_gps(&g, now) && !g.fix);
+	aprs_nmea(fix, strlen(fix), true, now);
+	CHECK(aprs_gps(&g, now) && g.fix && g.sats == 8 && g.lat == 481173000 && g.lon == 115166666 && g.alt_m == 545);
+	CHECK(!aprs_gps(&g, now + 61000));		// silent for a minute
+	aprs_gps_enable(false);
+	CHECK(!aprs_gps(&g, now));
+	aprs_gps_enable(true);
+	CHECK(!aprs_gps(&g, now));			// until the module speaks again
+	aprs_nmea(nofix, strlen(nofix), true, now);
+	CHECK(aprs_gps(&g, now) && !g.fix);		// the old fix was dropped with the setting
+}
+
 // The configuration kept in the settings (settings_t aprs_*): back exactly after a reload, and a stored record with
 // values out of range (another firmware's, a damaged one) loads field by field with the defaults for the bad ones
 static void test_cfg_store(void)
@@ -1146,6 +1172,7 @@ int main(void)
 	test_messages();
 	test_dmr_position();
 	test_gps_setting();
+	test_gps_status();
 	test_cfg_store();
 	test_codeplug_path();
 	test_rf_failures();

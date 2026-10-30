@@ -28,6 +28,7 @@ typedef enum {
 	SCR_ZCHANNEL, SCR_ZPICK, SCR_ZONEEDIT, SCR_ZONEDEL,	// the zone editor (ui.md 2.2): Channel actions, Add
 								// channel, Zone options, Delete zone
 	SCR_DMR_ID,			// the radio's own DMR ID (Settings > My radio)
+	SCR_GPS,			// Tools > Position's pages (CONFIG_GPS_SKY): status, sky, signal, grid
 	SCR_COUNT
 } ui_scr_t;
 

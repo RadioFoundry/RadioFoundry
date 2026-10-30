@@ -223,7 +223,7 @@ Lock: long `QUICK` (`*`). Banner "Keys locked. Hold * to unlock." PTT, monitor, 
 
 ## 14. Check GPS
 
-Status strip shows a GPS icon: hollow = searching, solid = fix, crossed = off. Details: `SELECT`, `6`, `2` (Tools > Position): fix state, satellites, lat/long, grid locator, altitude, last sent report and next one. `CONTEXT` there: Send position now, Turn GPS off. Position of another station: caller actions `6`.
+Status strip shows a GPS icon: hollow = searching, solid = fix, crossed = off. Details: `SELECT`, `6`, `2` (Tools > Position): fix state, satellites, lat/long, altitude; Up / Down turn to the sky plot, the signal bars and the grid locator (ui.md 2.3). `CONTEXT` there: Send position now, Turn GPS off. Position of another station: caller actions `6`.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|

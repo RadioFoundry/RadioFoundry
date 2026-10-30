@@ -192,7 +192,7 @@ uint32_t ui_svc_feat_radio(void)
 	bool motor = CONFIG_VIBRATE && board.power != NULL && board.power->vibrate != NULL;
 	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0) |
 	       (motor ? UI_FEAT_VIBRATE : 0) | (radio_volume_soft() ? UI_FEAT_VOLUME : 0) |
-	       (radio_bcast_capable() ? UI_FEAT_BCAST : 0);
+	       (radio_bcast_capable() ? UI_FEAT_BCAST : 0) | (CONFIG_APRS && board_has_gps() ? UI_FEAT_GPS : 0);
 }
 
 #if CONFIG_DMR
