@@ -236,6 +236,8 @@ typedef struct {
 // The offer waiting for the user (false: none). Opening it stops it from expiring
 bool ui_svc_zone_offer(ui_zone_offer_t *out);
 void ui_svc_zone_offer_open(uint32_t serial);
+// Cheap, for every UI pass: an offer still waits (the banner about it stays while it does)
+bool ui_svc_zone_offer_pending(void);
 // Row i of the preview: name, receive frequency, DMR or FM, whether the radio can receive it
 typedef struct {
 	char name[17];
@@ -307,7 +309,7 @@ typedef enum {
 	// The VFO's automatic step in the broadcast band (Settings > Talk, CONFIG_BCAST_FM; radio_settings_t.bcast_step) in
 	// kHz: 200 (the odd tenths) or 100
 	UI_SET_BCAST_STEP,
-	UI_SET_ZONE_OFFERS,	// zone share offers from other radios: 0 Off (the default), 1 Ask (settings_t.zs_offers)
+	UI_SET_ZONE_OFFERS,	// accept zone shares from other radios: 1 on (the default), 0 off (settings_t.zs_offers)
 	UI_SET_DMR_ID,		// the radio's own DMR ID in the codeplug, 1..CODEPLUG_DMR_ID_MAX (a set is a codeplug write job)
 	UI_SET_REF_TRIM,	// reference oscillator trim, ppb -10000..+10000 (Settings > Advanced; settings_t.ref_trim_ppb)
 	UI_SET_COUNT

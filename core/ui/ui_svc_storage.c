@@ -248,7 +248,7 @@ int32_t ui_svc_setting_get(uint8_t id)
 #if CONFIG_ZONE_SHARE
 	case UI_SET_ZONE_OFFERS:
 		settings_read(&st);
-		return st.zs_offers == ZS_OFFERS_ASK;
+		return settings_zs_accept(&st);
 #endif
 #if CONFIG_DMR
 	case UI_SET_DMR_ID:
@@ -477,12 +477,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		return true;
 #if CONFIG_ZONE_SHARE
 	case UI_SET_ZONE_OFFERS:
-		if (value != ZS_OFFERS_OFF && value != ZS_OFFERS_ASK)
+		if (value != 0 && value != 1)
 			return false;
 		st = settings_begin();
-		st->zs_offers = (uint8_t)value;
+		st->zs_offers = value ? 1u : SETTINGS_ZS_OFF;
 		settings_end(hal_millis());
-		zone_share_set_offers((uint8_t)value);
+		zone_share_set_offers(value ? ZS_OFFERS_ASK : ZS_OFFERS_OFF);
 		return true;
 #endif
 #if CONFIG_DMR
