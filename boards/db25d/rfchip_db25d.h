@@ -13,6 +13,8 @@
 
 typedef enum { DB25D_AF_MUTE, DB25D_AF_FM, DB25D_AF_DMR } db25d_af_t;
 
+// The bus pins to idle (enables high, clock low) and both chips' buses: first in the radio init, before the RF paths
+void db25d_rf_bus_init(void);
 // Read both chips' IDs and set them up. False: a chip RadioFoundry doesn't drive (nothing else is written then)
 bool db25d_rf_init(void);
 uint16_t db25d_rf_main_id(void);

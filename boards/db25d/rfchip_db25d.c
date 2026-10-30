@@ -86,7 +86,7 @@ static uint16_t identify(rfbus_t *bus, bool lo, chip_t *k)
 	return id;
 }
 
-bool db25d_rf_init(void)
+void db25d_rf_bus_init(void)
 {
 	hrc_pin_out(PIN_RF_SEN_MAIN, true);
 	hrc_pin_out(PIN_RF_SEN_LO, true);
@@ -94,25 +94,28 @@ bool db25d_rf_init(void)
 	hrc_pin_in(PIN_RF_DATA);
 	rfbus_3w_attach(&bus_main, &pins_main);
 	rfbus_3w_attach(&bus_lo, &pins_lo);
+}
+
+bool db25d_rf_init(void)
+{
 	main_id = identify(&bus_main.bus, false, &main_chip);
 	lo_id = identify(&bus_lo.bus, true, &lo_chip);
 	if (main_chip == CHIP_NONE || lo_chip == CHIP_NONE) {
 		return false;
 	}
 
-	// The LO is above the signal (f + 51.55 MHz): DCS arrives inverted (4.7)
+	// The main chip's init, the LO's, then the main chip's analog set, as the stock and the PRO's earlier code. The LO
+	// is above the signal (f + 51.55 MHz): DCS arrives inverted (4.7)
 	if (main_chip == CHIP_BK4819) {
 		bk4819_attach(&bk_main, &bus_main.bus);
 		bk_main.rx_inverted = true;
 		bk4819_init_main(&bk_main);
 		bk4819_write(&bk_main, BK4819_REG_PA, BK4819_PA_MAX);	// stock: once at detection, never changed
-		bk4819_analog_mode(&bk_main);
 		sh_main = (superhet_main_t){ &bk4819_superhet_main, &bk_main };
 	} else {
 		fd6818sh_attach(&fd_main, &bus_main.bus, FD6818SH_MAIN);
 		fd_main.rx_inverted = true;
 		fd6818sh_init_main(&fd_main);
-		fd6818sh_analog_mode(&fd_main);
 		hrc_pin_in(PIN_RF_CSS);
 		sh_main = (superhet_main_t){ &fd6818sh_superhet_main, &fd_main };
 	}
@@ -133,6 +136,11 @@ bool db25d_rf_init(void)
 		fd6818sh_init_lo(&fd_lo);
 		sh_lo = (superhet_lo_t){ &fd6818sh_superhet_lo, &fd_lo };
 		break;
+	}
+	if (main_chip == CHIP_BK4819) {
+		bk4819_analog_mode(&bk_main);
+	} else {
+		fd6818sh_analog_mode(&fd_main);
 	}
 	return true;
 }

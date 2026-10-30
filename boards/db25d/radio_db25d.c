@@ -131,6 +131,7 @@ static void ref_trim(uint32_t hz)
 
 static void init(void)
 {
+	db25d_rf_bus_init();
 	tx_paths_off();
 	// As the stock init, except that the PA control stays powered down until a transmission
 	DAC_PD_MODE_EN = 0;
