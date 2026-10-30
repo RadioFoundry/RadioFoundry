@@ -70,10 +70,10 @@ typedef struct {
 	// start, so any task may call it. NULL = no gain in the board's audio path: DMR then scales the samples before the
 	// vocoder and FM stays as it is
 	void (*mic_gain)(int8_t db);
-	// Optional: the reference oscillator trim, Hz at the carrier (the Freq trim setting, -10000..+10000;
-	// core/radio/ref_trim.h). It moves receive and transmit together, FM and DMR. Any task may call it; the board applies
+	// Optional: the reference oscillator trim, parts per billion (the Freq trim setting, -25000..+25000 in steps of
+	// 100; core/radio/ref_trim.h). Positive raises the reference. It moves receive and transmit together, FM and DMR. Any task may call it; the board applies
 	// it now or at the next rx(). NULL = the radio has no trim
-	void (*ref_trim)(int16_t hz);
+	void (*ref_trim)(int16_t ppb);
 } hal_radio_t;
 
 #endif

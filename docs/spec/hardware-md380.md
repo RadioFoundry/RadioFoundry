@@ -469,9 +469,9 @@ transmit error is from the hotspot's MMDVMCal BER test:
   of the two (the DAC2 base or the register rule) is wrong needs a second radio with a different tune byte measured
   the same way (unverified).
 
-Until then the user's trim corrects it: `hal_radio_t.ref_trim` (radio-features.md 6.1) adds Hz / (f x 36.1 ppb)
-counts to DAC2, at once and at every rx(). -2000 put the first radio's transmit within about 150 Hz (hotspot BER
-0.05 %, four cold wake-ups on alternating slots). `MD380_TX_OFFSET_HZ` (`radio_md380.c`, a build define, default 0)
+Until then the user's trim corrects it: `hal_radio_t.ref_trim` (radio-features.md 6.1) adds ppb / 36.1 counts to
+DAC2 (rounded), at once and at every rx(). A trim of -2000 Hz at 448.7 MHz (-4.5 ppm) put the first radio's transmit
+within about 150 Hz (hotspot BER 0.05 %, four cold wake-ups on alternating slots). `MD380_TX_OFFSET_HZ` (`radio_md380.c`, a build define, default 0)
 still shifts the transmit frequency alone; with the trim it isn't needed.
 
 ### 5.3 Frequency plan

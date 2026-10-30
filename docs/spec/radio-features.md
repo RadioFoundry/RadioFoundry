@@ -482,11 +482,20 @@ a low fixed value or refuses to transmit; the board's hardware page says which.
 
 ### 6.1 Reference trim
 
-Settings > Talk & listen > Freq trim: Hz at the carrier, -10000 to +10000 in 100 Hz steps, 0 by default
+Settings > Talk & listen > Freq trim: a fraction of the reference, -25.0 to +25.0 ppm in 0.1 ppm steps, 0 by default
 (`core/radio/ref_trim.c`). It is for a radio whose reference oscillator is off even with its calibration: it moves
-receive and transmit together, FM and DMR. The UI stores it (`settings_t.ref_trim_hz`) and applies it at start-up and
-on each change with `radio_set_ref_trim()`, which clamps, rounds to the step and calls `hal_radio_t.ref_trim`. The
-debug link's SETTING op 35 sets it in RAM only.
+receive and transmit together, FM and DMR. A fraction of the reference moves every carrier by the same fraction, so
+one value holds on every band; the Hz it comes to grows with the frequency.
+
+| Trim | At 440 MHz | At 144 MHz |
+|---|---|---|
+| 0.1 ppm (one step) | 44 Hz | 14.4 Hz |
+| 4.5 ppm | 1980 Hz | 648 Hz |
+| 25.0 ppm (the limit) | 11 kHz | 3.6 kHz |
+
+The value is held in parts per billion (ppb, 100 a step), an int16: `hal_radio_t.ref_trim`, `settings_t.ref_trim_ppb`,
+the debug link. The UI stores it and applies it at start-up and on each change with `radio_set_ref_trim()`, which
+clamps, rounds to the step and calls `hal_radio_t.ref_trim`. The debug link's SETTING op 35 sets it in RAM only.
 
 | Board | Trim |
 |---|---|
@@ -494,8 +503,8 @@ debug link's SETTING op 35 sets it in RAM only.
 | without it | the row is hidden; nothing changes |
 
 The value is a correction to enter by hand: measure the carrier against a reference (a frequency counter, a service
-monitor, or a hotspot's MMDVMCal BER test) and enter the error with its sign reversed. A radio 2 kHz high takes
--2000. [feature-matrix.md](../feature-matrix.md) lists which radios have the hook.
+monitor, or a hotspot's MMDVMCal BER test) and enter the error with its sign reversed. A radio 2 kHz high at 448.7 MHz
+is 4.5 ppm high and takes -4.5 ppm. [feature-matrix.md](../feature-matrix.md) lists which radios have the hook.
 
 ## 7. Verification status
 

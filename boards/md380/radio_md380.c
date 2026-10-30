@@ -86,7 +86,7 @@ static struct {
 	bool asleep;
 	uint32_t rx_tune_dac;	// DAC1 for the receiver front end at rx_hz (the PA drive shares DAC1)
 	uint8_t ref_tune;	// the calibration's reference tune at rx_hz
-	volatile int16_t ref_trim_hz;	// hal_radio_t.ref_trim
+	volatile int16_t ref_trim_ppb;	// hal_radio_t.ref_trim
 	md380_radio_diag_t diag;
 	uint32_t bus_errors;
 	subtone_t rx_tone;	// the RX sub-audio the detector is set for (CONFIG_SUBTONE)
@@ -191,15 +191,11 @@ static void dac2_set(uint32_t value)
 	DAC->DHR12R2 = value > DAC_MAX ? DAC_MAX : value;
 }
 
-// DAC2 for the calibration's reference tune plus the user's trim at the carrier hz
-static uint32_t ref_dac(uint8_t tune, uint32_t hz)
+// DAC2 for the calibration's reference tune plus the user's trim
+static uint32_t ref_dac(uint8_t tune)
 {
-	int32_t counts = 0;
-	if (r.ref_trim_hz != 0 && hz != 0) {
-		int64_t num = (int64_t)r.ref_trim_hz * 10000000000LL;	// Hz x 1e9 x 10
-		int64_t den = (int64_t)hz * REF_PPB_X10_PER_COUNT;
-		counts = (int32_t)((num + (num < 0 ? -den / 2 : den / 2)) / den);
-	}
+	int32_t num = (int32_t)r.ref_trim_ppb * 10;
+	int32_t counts = (num + (num < 0 ? -REF_PPB_X10_PER_COUNT / 2 : REF_PPB_X10_PER_COUNT / 2)) / REF_PPB_X10_PER_COUNT;
 	int32_t v = (int32_t)hrc5000_ref_dac(tune) + counts;
 	return v < 0 ? 0u : (uint32_t)v;	// dac2_set clamps the top
 }
@@ -314,11 +310,11 @@ static bool pll_tune(uint32_t vco_hz, bool tx, bool wait)
 }
 
 // hal_radio_t.ref_trim: DAC2 at once (one register; receive and transmit share it), and at every rx()
-static void ref_trim(int16_t hz)
+static void ref_trim(int16_t ppb)
 {
-	r.ref_trim_hz = hz;
+	r.ref_trim_ppb = ppb;
 	if (r.rx_valid) {
-		dac2_set(ref_dac(r.ref_tune, r.rx_hz));
+		dac2_set(ref_dac(r.ref_tune));
 	}
 }
 
@@ -707,7 +703,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	r.rx_tune_dac = cal.rx_tune_dac;
 	dac1_set(cal.rx_tune_dac);
 	r.ref_tune = cal.ref_tune;
-	dac2_set(ref_dac(cal.ref_tune, hz));
+	dac2_set(ref_dac(cal.ref_tune));
 	count(hrc5000_set_ref(&r.modem, cal.ref_tune));
 	if (r.mode == RADIO_MODE_FM) {
 		count(hrc5000_set_mode_fm_rx(&r.modem));

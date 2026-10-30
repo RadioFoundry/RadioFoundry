@@ -3138,6 +3138,149 @@ static const ui_scr_def_t dmr_id_screen = {
 };
 #endif
 
+// ======================= Freq trim (Settings > Talk & listen) =======================
+// The reference trim in ppm (radio/ref_trim.h; radio-features.md 6.1) and what it moves a carrier by at 440 and
+// 144 MHz. Up / Down step 0.1 ppm (0.5 held) and take effect at once, so a counter or a hotspot shows each step; #
+// flips the sign. Digits type the size in tenths as a calculator does (4 5 = 4.5), keeping the sign; OK sets it
+
+static int32_t trim_typed;		// tenths of a ppm typed so far
+static bool trim_typing, trim_neg;	// digits typed; the typed value's sign
+
+static int32_t trim_now(void)
+{
+	return trim_typing ? (trim_neg ? -trim_typed : trim_typed) * 100 : ui_svc_setting_get(UI_SET_REF_TRIM);
+}
+
+static void trim_store(int32_t ppb)
+{
+	ppb = ppb > REF_TRIM_MAX_PPB ? REF_TRIM_MAX_PPB : ppb < -REF_TRIM_MAX_PPB ? -REF_TRIM_MAX_PPB : ppb;
+	if (ui_svc_setting_set(UI_SET_REF_TRIM, ppb))
+		ui_svc_apply(UI_SET_REF_TRIM, ppb);
+	else
+		ui_toast("Couldn't save: try again");
+}
+
+static void sb_ppm(sbuf_t *b, int32_t ppb)
+{
+	int32_t t = (ppb < 0 ? -ppb : ppb) / 100;
+	sb_chr(b, ppb < 0 ? '-' : ppb > 0 ? '+' : ' ');
+	sb_u32(b, (uint32_t)t / 10u, 1);
+	sb_chr(b, '.');
+	sb_u32(b, (uint32_t)t % 10u, 1);
+	sb_str(b, " ppm");
+}
+
+static uint16_t trim_count(void) { return 3; }
+
+static void trim_item(uint16_t i, ui_item_t *it)
+{
+	int32_t ppb = trim_now();
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	if (i == 0) {
+		strcpy(it->label, "Trim");
+		sb_ppm(&b, ppb);
+		if (trim_typing && trim_neg && trim_typed == 0)
+			it->value[0] = '-';	// a minus typed, no digits yet
+		if (trim_typing)
+			it->flags |= UI_ITEM_EDIT;
+		return;
+	}
+	uint32_t mhz = i == 1 ? 440u : 144u;
+	strcpy(it->label, i == 1 ? "At 440 MHz" : "At 144 MHz");
+	int32_t hz = ref_trim_hz_at(ppb, mhz);
+	if (hz > 0)
+		sb_chr(&b, '+');
+	sb_i32(&b, hz);
+	sb_str(&b, " Hz");
+}
+
+static const char *trim_body(void)
+{
+	return "Reads high: use minus";	// the error with its sign reversed
+}
+
+static void trim_set_typed(void)
+{
+	trim_typing = false;
+	trim_store((trim_neg ? -trim_typed : trim_typed) * 100);
+}
+
+static void trim_select(uint16_t i, bool hold)
+{
+	(void)i;
+	(void)hold;
+	if (trim_typing)
+		trim_set_typed();
+	else
+		ui_pop();
+	ui_dirty();
+}
+
+static bool trim_key(const input_event_t *ev)
+{
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	int dir = ev->action == ACT_NAV_UP ? 1 : ev->action == ACT_NAV_DOWN ? -1 :
+		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
+	if (dir != 0 && ev->gesture != GESTURE_UP) {
+		if (trim_typing)
+			trim_set_typed();
+		int32_t step = ev->gesture == GESTURE_REPEAT ? 5 * REF_TRIM_STEP_PPB : REF_TRIM_STEP_PPB;
+		trim_store(ui_svc_setting_get(UI_SET_REF_TRIM) + dir * step);
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_CONTEXT && press) {		// #: the other sign
+		int32_t v = ui_svc_setting_get(UI_SET_REF_TRIM);
+		if (trim_typing) {
+			trim_neg = !trim_neg;
+		} else if (v == 0) {
+			trim_typing = true;		// a minus to type after (# 4 5 OK = -4.5)
+			trim_typed = 0;
+			trim_neg = true;
+		} else {
+			trim_store(-v);
+		}
+		ui_dirty();
+		return true;
+	}
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+		if (!trim_typing) {
+			trim_typing = true;
+			trim_typed = 0;
+			trim_neg = ui_svc_setting_get(UI_SET_REF_TRIM) < 0;
+		}
+		int32_t v = trim_typed * 10 + (ev->action - ACT_DIGIT_0);
+		if (v * 100 > REF_TRIM_MAX_PPB) {
+			ui_toast("Up to 25.0 ppm");
+			return true;
+		}
+		trim_typed = v;
+		ui_dirty();
+		return true;
+	}
+	if (trim_typing && ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		if (trim_typed > 0)
+			trim_typed /= 10;	// takes the last digit back
+		else
+			trim_typing = false;
+		ui_dirty();
+		return true;
+	}
+	return false;
+}
+
+static void trim_enter(void)
+{
+	trim_typing = false;
+}
+
+static const ui_scr_def_t trim_screen = {
+	.name = "freq-trim", .flags = SF_LIST | SF_FIELD, .prefix = "Freq Trim", .hint = "Up Down  # +/-  OK done",
+	.count = trim_count, .item = trim_item, .select = trim_select, .key = trim_key, .enter = trim_enter,
+	.body = trim_body,
+};
+
 // ======================= About (Settings > Advanced) =======================
 // A text page, every word shown (nothing shortened), no status strip while idle: the release and the commit, RadioFoundry's license, the
 // authors, the third-party code and fonts in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
@@ -4038,8 +4181,8 @@ static const set_item_t s_talk[] = {
 	LIST("FM broadcast step", "VFO tuning radio station 200 kHz odd", UI_SET_BCAST_STEP, v_bcast_step, n_bcast_step),
 #endif
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
-	NUMBER("Freq trim", "frequency offset reference oscillator calibration", UI_SET_REF_TRIM, -REF_TRIM_MAX_HZ,
-	       REF_TRIM_MAX_HZ, REF_TRIM_STEP_HZ, " Hz"),
+	NUMBER("Freq trim", "frequency offset reference oscillator calibration ppm", UI_SET_REF_TRIM, -REF_TRIM_MAX_PPB,
+	       REF_TRIM_MAX_PPB, REF_TRIM_STEP_PPB, NULL),	// its own page (trim_screen)
 	TOGGLE("Mic AGC", "automatic gain level", UI_SET_MIC_AGC),
 	TOGGLE("Mic noise reduction", "noise suppression background", UI_SET_NOISE_REDUCTION),
 	TOGGLE("Monitor by default", "digital monitor promiscuous hear all", UI_SET_HEAR_ALL_DEFAULT),
@@ -4265,6 +4408,10 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 		sb_i32(&b, v);
 		break;
 	case ST_NUMBER:
+		if (s->id == UI_SET_REF_TRIM) {
+			sb_ppm(&b, v);
+			break;
+		}
 		sb_i32(&b, v);
 		if (s->unit != NULL)
 			sb_str(&b, s->unit);
@@ -4388,6 +4535,10 @@ static void group_select(uint16_t i, bool hold)
 	if (why != NULL) {
 		set_editing = false;
 		ui_toast(why);
+		return;
+	}
+	if (s->id == UI_SET_REF_TRIM && s->type == ST_NUMBER) {
+		ui_push(SCR_REF_TRIM, 0);
 		return;
 	}
 	int32_t v = ui_svc_setting_get(s->id);
@@ -4783,6 +4934,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #if CONFIG_DMR
 	[SCR_DMR_ID] = &dmr_id_screen,
 #endif
+	[SCR_REF_TRIM] = &trim_screen,
 #if CONFIG_CHANNEL_LIST
 	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,
 #if CONFIG_CHANNEL_EDIT

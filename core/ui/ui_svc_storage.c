@@ -176,7 +176,7 @@ int32_t ui_svc_setting_get(uint8_t id)
 		return st.mic_gain <= 10 ? st.mic_gain : 5;
 	case UI_SET_REF_TRIM:
 		settings_read(&st);
-		return ref_trim_clamp(st.ref_trim_hz);
+		return ref_trim_clamp(st.ref_trim_ppb);
 	case UI_SET_VFO_STEP:
 		settings_read(&st);
 		return st.vfo_step_hz >= 1000u && st.vfo_step_hz <= 1000000u ? (int32_t)(st.vfo_step_hz / 10u) : 0;
@@ -413,7 +413,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 #endif
 	case UI_SET_REF_TRIM:
 		st = settings_begin();
-		st->ref_trim_hz = ref_trim_clamp(value);
+		st->ref_trim_ppb = ref_trim_clamp(value);
 		settings_end(hal_millis());
 		return true;
 	case UI_SET_MIC_GAIN:

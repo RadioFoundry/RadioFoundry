@@ -239,7 +239,7 @@ repeater or duplex hotspot, and programming. The VHF image is untested. Installi
 > **Check your frequency.** Two MD-380s measured 2 to 2.5 kHz high on receive and transmit, enough that an MMDVM
 > hotspot never decoded them. Confirm yours against an external reference (a frequency counter, a service monitor, or a
 > hotspot's MMDVMCal BER test), then correct it with **Settings > Talk & listen > Freq trim**: enter the error with the
-> sign reversed (2 kHz high: -2000). With -2000 the first radio decodes on the hotspot at BER under 0.1 %.
+> sign reversed (2 kHz high at 448.7 MHz: -4.5 ppm). With that the first radio decodes on the hotspot at BER under 0.1 %.
 
 ### Installing on the MD-380
 
