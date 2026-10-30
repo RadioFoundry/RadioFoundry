@@ -12,7 +12,7 @@ and what has been checked on it.
 | [Baofeng DM-32UV](#baofeng-dm-32uv) |  | FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and each split duplex half work on air. Open: FM deviation at 12.5 kHz and an outdoor GPS fix. |
 | [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | FM, DMR voice and data, text messages, alerts, emergency, scan, the hotspot, single frequency repeating, each split duplex half and the USB network services work on air. Open: standalone SFR and a two-radio split duplex pair. |
 | [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | Baofeng DM-1801 | FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, single frequency repeating, the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX. |
-| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. Open: the older FD6818 batches and the Retevis RT73. |
+| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
 <!-- end generated -->
@@ -456,7 +456,12 @@ after `909E.` name the hardware.
 | Code | Hardware | RadioFoundry |
 |---|---|---|
 | DBB | DB25-D PRO: two BK4819 (2024 on) | Supported |
-| D64, D66, D6T | FD6818 transceiver (2021 to 2023) | In development: not tried on this hardware yet; FM and DMR don't receive or transmit |
+| D64 | FD6818 transceiver, 0x7813 LO (2021 to 2023) | Testing: the same image, untested on this hardware |
+| D66 | FD6818 transceiver and LO (2021 to 2023) | Testing: the same image, untested on this hardware |
+| D6T | FD6818 transceiver, AT1141 LO (2021 to 2023) | Testing: the same image, untested on this hardware |
+
+One image runs on every batch: it reads which RF chips the radio has when it starts. Tools > Diagnostics shows them
+(`rf` line). If you install it on a D64, D66 or D6T, a report of what works and what doesn't helps the project.
 
 The radio programming utility reads the code from the radio before it writes, and asks for it when only the factory
 update mode answers. On vendor firmware older than the 2025-01-21 build a backup is not proven: the utility offers to

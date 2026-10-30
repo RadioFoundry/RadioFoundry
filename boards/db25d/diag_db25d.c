@@ -74,6 +74,8 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_x(&o, d.main_id, 4);
 		put(&o, " lo ");
 		put_x(&o, d.lo_id, 4);
+		put(&o, " ");
+		put(&o, d.variant);	// the batch code the pair gives (hardware-db25d.md 4.8)
 		break;
 	case 1:
 		// 0x67's 9 bits, 0x65's 7 and the sub-audio status 0x0C (b10 CTCSS, b14 DCS, b15 inverted DCS)

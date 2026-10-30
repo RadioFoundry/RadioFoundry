@@ -35,6 +35,7 @@
 #define GPS_POWER_ON_LEVEL	true
 #define PIN_RF_DATA		0x38	// BK4819 serial data, bidirectional
 #define PIN_RF_SEN_MAIN		0x39	// main BK4819 enable, low = selected
+#define PIN_RF_CSS		0x3B	// PTB27, from the main chip's GPIO0; FD6818: the sub-audio compare result, high = heard
 
 #define PIN_LCD_RESET		0x42	// low = reset
 #define PIN_LCD_CS		0x43
