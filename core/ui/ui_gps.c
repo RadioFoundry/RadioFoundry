@@ -141,7 +141,7 @@ static void sb_dop(sbuf_t *b, uint16_t d10)
 static const char *fix_word(const ui_position_t *p)
 {
 	if (p->fix)
-		return p->mode == 2 ? "2D fix" : "3D fix";
+		return p->mode == 2 ? "2D Fix" : "3D Fix";
 	return p->in_view > 0 ? "Searching" : "No signal";
 }
 

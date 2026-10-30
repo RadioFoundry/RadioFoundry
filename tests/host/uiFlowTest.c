@@ -452,7 +452,7 @@ static const flow_t flows[] = {
 	{ "A latitude BACK leaves unchanged", "ok 6 8 9", "2 1 back back", "aprs_lat=0 screen=aprs-pos", 4, false },
 	{ "A position in DMR calls", "", "ok 6 8 0", "aprs_dmrgps=1 toast=Position_goes_out", 4, false },
 	// Tools > Position's pages (CONFIG_GPS_SKY, ui_gps.c): Up / Down or the digits turn them
-	{ "G GPS status page", "", "ok 6 2", "shows=3D_fix", 3, false },
+	{ "G GPS status page", "", "ok 6 2", "shows=3D_Fix", 3, false },
 	{ "G GPS sky page", "ok 6 2", "down", "screen=gps shows=Sky", 1, false },
 	{ "G GPS signal page", "ok 6 2", "3", "shows=9_of_14_in_the_fix", 1, false },
 	{ "G GPS grid page", "ok 6 2", "4", "shows=FN42li", 1, false },
