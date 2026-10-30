@@ -433,6 +433,15 @@ after the retune, not the switch timing.
 The bench's talker keeps its carrier up through both slots during its call, so our repeat inside the call can't be
 judged off air (the SDR sees the sum of both); the repeat's terminator and the hang's idle bursts after it can.
 
+TX data advance (`hrc7000_t.tx_pre_on`, RF_CONTROL b20:16) **0.6 ms**, not the chip's 0.4 ms. Through a repeater, the
+inbound burst against the outbound (burst start from the sync correlation, alone on TS2, BENCH 2026-10-29,
+[modem-hrc7000.md](modem-hrc7000.md) 2.1):
+
+| tx_pre_on | Inbound vs outbound | Bursts |
+|---|---|---|
+| 4 (before the four-batch RF driver) | +0.166 ms | 142 |
+| 6 | +0.000 ms median, -0.006 ms mean | 136, all decoded |
+
 ### 4.6 Frequency reference: the modem's bias
 
 On the owner's radio both receive and transmit read 23 ppm low (10.6 kHz at 461.4625 MHz) and DAC C changes nothing. The

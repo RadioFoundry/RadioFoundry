@@ -755,6 +755,21 @@ static void test_rf_tx_lead(void)
 	CHECK(REG(C7_RF_CONTROL) == 0x00041F1Au);
 }
 
+// RF_CONTROL b20:16: the board's TX data advance from power-on, the chip's 0.4 ms when it set none, the other fields kept
+static void test_tx_pre_on(void)
+{
+	setup();
+	dev.tx_pre_on = 11;
+	hrc7000_power_on_init(&dev, 128, 20);
+	CHECK(REG(C7_RF_CONTROL) == 0x000B1F1Au);
+	hrc7000_set_rf_tx_lead(&dev, 6);
+	CHECK(REG(C7_RF_CONTROL) == 0x000B061Au);
+	dev.tx_pre_on = 0;
+	hrc7000_power_on_init(&dev, 128, 20);
+	CHECK(REG(C7_RF_CONTROL) == 0x0004061Au);
+	hrc7000_set_rf_tx_lead(&dev, 0);
+}
+
 // FM TX tone: DTMF digit 1 with both tones at the step for hz, the DTMF deviation while it plays, everything back after
 static void test_tx_tone(void)
 {
@@ -1230,6 +1245,7 @@ int main(void)
 	test_audio_lock();
 	test_fm_tx_limit();
 	test_rf_tx_lead();
+	test_tx_pre_on();
 	test_tx_tone();
 	test_subtone();
 	test_fm_rx_audio();

@@ -24,6 +24,9 @@
 // RF TX interrupt 0.4 ms before our burst, not the driver's 3.1 ms: earlier, the per-burst switch cut the tail of the
 // inbound burst an SFR receives before ours (swept 0.4-2.0 ms in hardware-dm32.md 8.5)
 #define RF_TX_LEAD		4u
+// TX data advance (hrc7000_t.tx_pre_on): the chip's 0.4 ms until the inbound burst's offset against the outbound is
+// measured here. The other FD6818 board needed 1.1 ms
+#define TX_PRE_ON		4u
 // FM TX limiter (FM_DEV_COEF b23:16, hrc7000_t.fm_tx_limit) at 12.5 / 25 kHz: the driver's default 4 holds mic audio
 // to about 1.65 kHz peak at 25 kHz (modem-hrc7000.md 8.4). The values measured on the other FD6818 board; at 12.5 kHz a loud whistle and
 // voice peaked at 1.3 kHz (99.9 %) on the SDR bench, so the 12.5 kHz value may still be low. 25 kHz not measured yet
@@ -200,6 +203,7 @@ static const hrc_afsk_board_t afsk_board = {
 static void init(void)
 {
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
+	modem.tx_pre_on = TX_PRE_ON;
 	hrc_modem_analog_init(DAC_C_INIT);
 	pa_off();
 	lna(0, false);
