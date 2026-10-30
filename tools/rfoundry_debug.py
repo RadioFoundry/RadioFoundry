@@ -138,7 +138,7 @@ F4_SECTORS = [(0x08000000 + i * 0x4000, 0x4000) for i in range(4)] + [(0x0801000
     [(0x08020000 + i * 0x20000, 0x20000) for i in range(7)]
 MEM_WHITELIST = [(0x08000000, 0x08100000), (0x1FFF0000, 0x1FFF7800), (0x1FFF7800, 0x1FFF7A10),
                  (0x1FFFC000, 0x1FFFC010)]
-ST_OK, ST_BAD_ARG, ST_BUSY = 0, 2, 3
+ST_OK, ST_BAD_ARG, ST_BUSY, ST_UNAVAILABLE = 0, 2, 3, 4
 SHOT_LZ4 = 3            # SCREENSHOT's packed form (debuglink.md 3.3)
 SHOT_HDR = 28           # its reply bytes before the palette, status included
 
@@ -630,11 +630,18 @@ class DebugLink:
     def screenshot_packed(self):
         """(info, frame buffer at the panel's depth or None, whole) of one pass in the packed form (debuglink.md 3.3):
         LZ4, a tenth of the RGB565 form's bytes or less. whole: no frame was being drawn during the pass, so the
-        chunks are one frame. DebugLinkError with status ST_BAD_ARG from firmware without the packed form."""
+        chunks are one frame. DebugLinkError with status ST_BAD_ARG from firmware without the packed form,
+        ST_UNAVAILABLE from a frame buffer too large for it."""
         stream = bytearray()
         first = last = None
         while first is None or len(stream) < first["stream"]:
-            _, r = self.request(SCREENSHOT, struct.pack("<IB", len(stream), SHOT_LZ4))
+            try:
+                _, r = self.request(SCREENSHOT, struct.pack("<IB", len(stream), SHOT_LZ4))
+            except DebugLinkError as e:
+                if first is None or e.status != ST_BAD_ARG:
+                    raise
+                return first, None, False       # a new frame's stream ends before this offset
+            self.packed_shots = True
             w, h, bpp, fmt, it, ib, il, ir, total, off, size, frame, drawing = struct.unpack_from("<HHBBBBBBIIIIB", r)
             if off != len(stream):
                 raise DebugLinkError(f"screenshot chunk at {off}, expected {len(stream)}")
@@ -663,7 +670,6 @@ class DebugLink:
                 got = None
                 for _ in range(max(1, tries)):
                     info, fb, whole = self.screenshot_packed()
-                    self.packed_shots = True
                     if fb is not None:
                         got = unpack_frame(info, fb)
                         if whole:
@@ -672,9 +678,9 @@ class DebugLink:
                     raise DebugLinkError(f"screenshot: the screen kept changing over {tries} reads")
                 return got[0], got[1], False
             except DebugLinkError as e:
-                if e.status != ST_BAD_ARG or self.packed_shots:
+                if e.status not in (ST_BAD_ARG, ST_UNAVAILABLE) or self.packed_shots:
                     raise
-                self.packed_shots = False       # firmware before the packed form
+                self.packed_shots = False       # firmware before the packed form, or a frame buffer over 64 KB
         info, prev = self.screenshot_raw()
         for _ in range(max(1, tries) - 1):
             info, cur = self.screenshot_raw()
@@ -1800,35 +1806,39 @@ def self_test():
         ok = ok and cond
 
     class FakeRadio(DebugLink):
-        """Answers SCREENSHOT as debuglink.md 3.3 says: a 6 x 3 panel of 16 colors, or firmware without the packed
-        form (packed False). redraw_at: the reply at which a new frame is drawn."""
+        """Answers SCREENSHOT as debuglink.md 3.3 says: a panel of 16 colors, 3 rows of fb, or firmware without the
+        packed form (packed False, or the status it answers). redraw_at: the reply at which a new frame is drawn;
+        shrink: that frame is blank, so its stream is shorter."""
 
-        def __init__(self, packed=True, redraw_at=None, drawing=0):
+        def __init__(self, packed=True, redraw_at=None, drawing=0, shrink=False, fb=None):
             self.packed_shots, self.packed, self.redraw_at, self.drawing = None, packed, redraw_at, drawing
-            self.replies, self.frame = 0, 7
-            self.fb = bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x00] * 1)
+            self.shrink, self.replies, self.frame = shrink, 0, 7
+            self.fb = fb or bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x00])
+            self.w = len(self.fb) * 2 // 3
             self.pal = [0x1000 + i for i in range(16)]
 
         def request(self, cmd, payload=b""):
             self.replies += 1
             if self.replies == self.redraw_at:
                 self.frame += 1
-                self.fb = bytes(b ^ 0xFF for b in self.fb)
+                self.fb = bytes(len(self.fb)) if self.shrink else bytes(b ^ 0xFF for b in self.fb)
             if len(payload) == 5:
-                if not self.packed:
-                    raise DebugLinkError("bad argument", ST_BAD_ARG)
+                if self.packed != True:
+                    raise DebugLinkError("refused", self.packed or ST_BAD_ARG)
                 off = struct.unpack_from("<I", payload)[0]
                 z = bytes(stubtool.lz4_encode(self.fb))
+                if off > len(z):
+                    raise DebugLinkError("bad argument", ST_BAD_ARG)
                 chunk = z[off:off + 4]          # small windows: several replies
                 drawing = self.drawing > 0
                 self.drawing -= 1
-                r = struct.pack("<HHBBBBBBIIIIB", 6, 3, 4, SHOT_LZ4, 1, 0, 0, 0, len(z), off, len(self.fb), self.frame,
+                r = struct.pack("<HHBBBBBBIIIIB", self.w, 3, 4, SHOT_LZ4, 1, 0, 0, 0, len(z), off, len(self.fb), self.frame,
                                 drawing) + struct.pack("<16H", *self.pal) + chunk
                 return 0, r
             rgb = b"".join(struct.pack("<H", self.pal[(self.fb[i // 2] >> (0 if i & 1 else 4)) & 15])
-                           for i in range(18))
+                           for i in range(self.w * 3))
             off, n = struct.unpack_from("<IH", payload) if payload else (0, 0)
-            return 0, struct.pack("<HHBBBBBBII", 6, 3, 16, 1, 1, 0, 0, 0, len(rgb), off) + rgb[off:off + n]
+            return 0, struct.pack("<HHBBBBBBII", self.w, 3, 16, 1, 1, 0, 0, 0, len(rgb), off) + rgb[off:off + n]
 
     want = b"".join(struct.pack("<H", 0x1000 + i) for i in range(16)) + struct.pack("<HH", 0x1000, 0x1000)
     info, data, stable = FakeRadio().screenshot()
@@ -1844,9 +1854,15 @@ def self_test():
     r = FakeRadio(drawing=99)
     info, data, stable = r.screenshot(tries=2)
     check(not stable and data is not None, "always drawing: the last read, not stable")
+    r = FakeRadio(redraw_at=4, shrink=True, fb=bytes(range(0, 252, 7)))
+    info, data, stable = r.screenshot()
+    check(stable and r.packed_shots and r.replies > 4 and data == struct.pack("<H", 0x1000) * 72, "a shorter frame drawn during the first pass: read again")
     r = FakeRadio(packed=False)
     info, data, stable = r.screenshot()
     check(stable and r.packed_shots is False and data == want and "packed" not in info, "old firmware: RGB565 form")
+    r = FakeRadio(packed=ST_UNAVAILABLE)
+    info, data, stable = r.screenshot()
+    check(stable and r.packed_shots is False and data == want, "frame buffer too large to pack: RGB565 form")
     print("rfoundry_debug self-test:", "ok" if ok else "FAILED")
     return 0 if ok else 1
 

@@ -169,8 +169,8 @@ T<terminators> I<idle>`, `C<csbk> D<data> crc<errors> rc<rc>`, ...) and end with
 
 Two forms. The packed form sends the frame buffer at the panel's own depth, LZ4 packed: a tenth to a thirtieth of
 the RGB565 form's bytes on the UI's screens. A 160 x 128 16-color frame is about 2.3 KB instead of 40 KB, and one
-read is enough: 0.2 s instead of 7 s at 115200 baud. The RGB565 form is the original one; firmware before the packed form answers a
-packed request with BAD_ARG, and the host falls back to it.
+read is enough: 0.2 s instead of 7 s at 115200 baud. The RGB565 form is the original one. Firmware before the packed
+form answers a packed request with BAD_ARG, and the host falls back to the RGB565 form.
 
 #### Packed form
 
@@ -204,7 +204,8 @@ bytes, top row first:
 The host asks for offset 0, then each next offset until it has the stream length. The chunks are one frame when the
 frame count is the same in the first and the last reply and neither says a frame is being drawn. Otherwise the host
 reads again (`rfoundry_debug.py screenshot`, `--tries`, default 4). It also starts over when the frame count or the
-stream length changes between replies. A frame buffer over 65535 bytes (no panel today) answers UNAVAILABLE.
+stream length changes between replies, or when an offset past the end of a new frame's stream answers BAD_ARG. A
+frame buffer over 65535 bytes (no panel today) answers UNAVAILABLE, and the host uses the RGB565 form.
 
 #### RGB565 form
 
