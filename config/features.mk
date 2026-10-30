@@ -177,7 +177,7 @@ CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
 CONFIG_DTMF ?= $(CONFIG_FM)
 # FM VOX: voice-operated transmit from the microphone level (needs FM; unverified on the bench)
 CONFIG_VOX ?= $(CONFIG_FM)
-# reference oscillator trim: Settings > Talk & listen > Freq trim moves receive and transmit together (needs the board's
+# reference oscillator trim: Settings > Advanced > Freq trim moves receive and transmit together (needs the board's
 # hal_radio_t.ref_trim; docs/spec/radio-features.md 6.1)
 CONFIG_REF_TRIM ?= y
 # receiver battery saving: FM receiver duty cycling while idle (needs FM)

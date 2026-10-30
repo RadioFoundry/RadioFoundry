@@ -3139,7 +3139,7 @@ static const ui_scr_def_t dmr_id_screen = {
 #endif
 
 #if CONFIG_REF_TRIM
-// ======================= Freq trim (Settings > Talk & listen) =======================
+// ======================= Freq trim (Settings > Advanced) =======================
 // The reference trim (radio/ref_trim.h; radio-features.md 6.1), drawn as a volume-style page: the value in large type
 // over a slider from -10 to +10 ppm, then what it moves a carrier by at 440 and 144 MHz. Up / Down step 0.1 ppm (0.5
 // held) and take effect at once, so a counter or a hotspot shows each step; # flips the sign. Digits type the size in
@@ -4240,10 +4240,6 @@ static const set_item_t s_talk[] = {
 	LIST("FM broadcast step", "VFO tuning radio station 200 kHz odd", UI_SET_BCAST_STEP, v_bcast_step, n_bcast_step),
 #endif
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
-#if CONFIG_REF_TRIM
-	NUMBER("Freq trim", "frequency offset reference oscillator calibration ppm", UI_SET_REF_TRIM, -REF_TRIM_MAX_PPB,
-	       REF_TRIM_MAX_PPB, REF_TRIM_STEP_PPB, NULL),	// its own page (trim_screen)
-#endif
 	TOGGLE("Mic AGC", "automatic gain level", UI_SET_MIC_AGC),
 	TOGGLE("Mic noise reduction", "noise suppression background", UI_SET_NOISE_REDUCTION),
 	TOGGLE("Monitor by default", "digital monitor promiscuous hear all", UI_SET_HEAR_ALL_DEFAULT),
@@ -4343,6 +4339,10 @@ static const set_item_t s_advanced[] = {
 	ACTION("About", "firmware version license authors", SA_FIRMWARE),
 	ACTION("Codeplug", NULL, SA_CODEPLUG),
 	ACTION("Diagnostics", "debug", SA_DIAG),
+#if CONFIG_REF_TRIM
+	NUMBER("Freq trim", "frequency offset reference oscillator calibration ppm", UI_SET_REF_TRIM, -REF_TRIM_MAX_PPB,
+	       REF_TRIM_MAX_PPB, REF_TRIM_STEP_PPB, NULL),	// its own page (trim_screen)
+#endif
 	ACTION("Factory reset", "erase", SA_RESET),
 	// After Factory reset, so its place (and its tests' key presses) stays
 #if CONFIG_CRASH_SCREEN

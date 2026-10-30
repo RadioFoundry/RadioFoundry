@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Reference oscillator trim (Settings > Talk & listen > Freq trim; docs/spec/radio-features.md 6.1): parts per billion
+// Reference oscillator trim (Settings > Advanced > Freq trim; docs/spec/radio-features.md 6.1): parts per billion
 // of the reference, -10000..+10000 (+-10.0 ppm) in 100 ppb (0.1 ppm) steps, for a radio whose reference is off. A
 // fraction of the reference moves every carrier by the same fraction, so one value holds on every band. The board's
 // hal_radio_t.ref_trim moves receive and transmit together; a radio without the hook has no setting.

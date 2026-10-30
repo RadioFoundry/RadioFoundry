@@ -1194,7 +1194,7 @@ static uint16_t n_inbox;
 static bool soft_volume;
 // The broadcast receiver (Settings > Talk & listen > FM broadcast step) only with the "bcast" token, the same way
 static bool bcast_rx;
-// A reference trim (Settings > Talk & listen > Freq trim) only with the "trim" token, the same way
+// A reference trim (Settings > Advanced > Freq trim) only with the "trim" token, the same way
 static bool ref_trim;
 uint32_t ui_svc_features(void)
 {

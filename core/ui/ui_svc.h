@@ -309,7 +309,7 @@ typedef enum {
 	UI_SET_BCAST_STEP,
 	UI_SET_ZONE_OFFERS,	// zone share offers from other radios: 0 Off (the default), 1 Ask (settings_t.zs_offers)
 	UI_SET_DMR_ID,		// the radio's own DMR ID in the codeplug, 1..CODEPLUG_DMR_ID_MAX (a set is a codeplug write job)
-	UI_SET_REF_TRIM,	// reference oscillator trim, ppb -10000..+10000 (Settings > Talk & listen; settings_t.ref_trim_ppb)
+	UI_SET_REF_TRIM,	// reference oscillator trim, ppb -10000..+10000 (Settings > Advanced; settings_t.ref_trim_ppb)
 	UI_SET_COUNT
 } ui_setting_t;
 

@@ -158,14 +158,14 @@ Settings has a search field on top (T9). Groups, in this order:
 |---|---|
 | **Sound** | Key tones, tone volume, talk permit tone, voice prompts (on/off, speed, verbosity), message tone, call alert tone, vibrate (radios with a motor) |
 | **Display** | Brightness, backlight timeout, theme (light/dark/high contrast), highlight color, filled status bar, large text, orientation (240x320 boards), hint row, Home secondary fields |
-| **Talk & listen** | Reply window, TX timeout, default squelch, VOX sensitivity and delay, mic gain, frequency trim, mic AGC, mic noise reduction, hear all default, talker alias show/send, name source (contacts, ID database, alias) |
+| **Talk & listen** | Reply window, TX timeout, default squelch, VOX sensitivity and delay, mic gain, mic AGC, mic noise reduction, hear all default, talker alias show/send, name source (contacts, ID database, alias) |
 | **Privacy** | Basic Privacy keys (per channel and per contact), lock behavior (auto-lock, what stays active when locked: PTT, side keys), PIN for settings |
 | **Location** | GPS on/off, position format, send position (UDT, LRRP, APRS) and interval, reply to position requests |
 | **Connections** | Hotspot defaults, USB network (at power-on, control station: PC answers data, link address; TFTP codeplug write), single frequency repeater role, ARS registration, radio check auto-reply, call alert answer, message format |
 | **Power** | Battery saver, auto power off, low-battery warning level, power level defaults |
 | **Keys** | Programmable key functions (short and long), long-press time, key repeat, Up/Down on Home (channel / zone / talk target), speed dial slots |
 | **My radio** | DMR ID, callsign, name, talker alias text, radio name, region/band limits, time and date |
-| **Advanced** | Calibration view, codeplug info, firmware info, factory reset (confirmed, P7), diagnostics, crash log (send the report, its target, Off/Ask/Auto after a crash) |
+| **Advanced** | Calibration view, codeplug info, firmware info, frequency trim, factory reset (confirmed, P7), diagnostics, crash log (send the report, its target, Off/Ask/Auto after a crash) |
 
 Rule: each setting lives in exactly one group, and Find also reaches it by name and synonyms ("promiscuous" finds Hear all; "RX group" finds Listen lists).
 
