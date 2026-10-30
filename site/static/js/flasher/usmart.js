@@ -38,7 +38,9 @@ export const APP_SIG = [0x0300C000, 0xC001112C];		// the application's first wor
 // series: the version's first three parts, "909E.DBB.EARSAB" when not given. stub: the stub load through this build's
 // console is proven on a radio (its free RAM and command table measured); on the others it is only offered as a try.
 // window ([load, size]) and hijack: where this build takes the stub and which RAM word its console calls for every
-// frame, when not STUB_WINDOW and HIJACK. The proven builds first: a radio on one is told with the fewest reads
+// frame, when not STUB_WINDOW and HIJACK. traced: false, a series whose console route nobody has followed on a radio
+// (its RAM, frame format and command table unchecked): its builds are told and named, but no load is tried through
+// them. The proven builds first: a radio on one is told with the fewest reads
 export const BUILDS = [
 	{ name: "018", date: "2025-01-21", at: 0x03079F3C, ram: 0x18000AF4, stub: true },
 	{ name: "020", date: "2026-01-10", at: 0x0307DCCC, ram: 0x18000B74, stub: true },
@@ -50,8 +52,8 @@ export const BUILDS = [
 	{ name: "018", date: "2022-11-23", at: 0x030759EC, ram: 0x18000A64, stub: false, window: [0x56000, 0x2000], hijack: 0x18000840 },
 	{ name: "017", date: "2022-10-21", at: 0x030759E8, ram: 0x18000A60, stub: false, window: [0x56000, 0x2000], hijack: 0x18000840 },
 	// the GD-88's main SoC (hardware-gd88.md): of the B49E series only 021 has the console. Its route is not traced, so
-	// it takes the window of a build the page doesn't know, and its version's RAM copy is not known
-	{ series: "B49E.D64.EOPSAB", name: "021", date: "2025-01-19", at: 0x0307E66C, stub: false, window: [0x56000, 0x2000] },
+	// no load is tried; the window is that of a build the page doesn't know, and its version's RAM copy is not known
+	{ series: "B49E.D64.EOPSAB", name: "021", date: "2025-01-19", at: 0x0307E66C, stub: false, traced: false, window: [0x56000, 0x2000] },
 ];
 // A build this page doesn't know: the top 8 KB of SRAM, above the heap of every known build (its highest end:
 // 0x554A0, 2022-11-23), and the newer builds' table layout. The pointer check of an untried load still applies
@@ -73,6 +75,10 @@ export function buildsFor(versions) {
 	const words = new Set(versions.map((v) => v.split(".")[2]));
 	return BUILDS.filter((b) => words.has(seriesOf(b).split(".")[2]));
 }
+
+// Whether an untried load may be offered: on a build of a traced series, or on a build the page doesn't know (null)
+// when the board has a traced series at all. A guess at the RAM of an untraced console is never sent to a radio
+export const mayTry = (build, versions) => (build ? build.traced !== false : buildsFor(versions).some((b) => b.traced !== false));
 
 // A build's full version as the board's flash.stock_versions name it ("018" -> "909E.DBB.EARSAB.018"), or the build
 export const stockName = (flash, build) => (flash.stock_versions || []).find((v) => v.endsWith(`.${build}`)) || build;

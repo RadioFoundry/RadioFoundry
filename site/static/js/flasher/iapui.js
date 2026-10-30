@@ -18,7 +18,7 @@
 import { h, t, notice, button, panel, progressBar } from "./dom.js";
 import { sleep } from "./bytes.js";
 import * as c7 from "./c7000.js";
-import { Usmart, stockName, buildsFor, UNKNOWN_BUILD } from "./usmart.js";
+import { Usmart, stockName, buildsFor, mayTry, UNKNOWN_BUILD } from "./usmart.js";
 import { trimTail } from "./iap.js";
 import { variantCode, verdict, writable, groups } from "./variant.js";
 import * as diag from "../diag.js";
@@ -176,7 +176,7 @@ export function makeStockRoutes(host) {
 			failed ? h("details", { class: "small" }, h("summary", {}, t("flash.problem.details")), h("pre", { class: "log" }, failed)) : null,
 			h("ol", { class: "steps" },
 				tryAnyway ? h("li", {}, h("b", {}, t("flash.variant.try_title")), " ", t("flash.variant.try")) : null,
-				h("li", {}, h("b", {}, t("flash.variant.update_first_title")), " ", t("flash.variant.update_first", { versions })),
+				versions ? h("li", {}, h("b", {}, t("flash.variant.update_first_title")), " ", t("flash.variant.update_first", { versions })) : null,
 				onUpdateMode ? h("li", {}, h("b", {}, t("flash.variant.direct_title")), " ", t("flash.variant.direct")) : null),
 			howToCheck(), reportLine());
 		act(tryAnyway ? button(t("flash.variant.try_go"), tryAnyway, { primary: true }) : null,
@@ -240,7 +240,10 @@ export function makeStockRoutes(host) {
 		}
 		const parts = { show, act, onLoaded, onUpdateMode, onAgain };
 		const shown = version || (build && `${stockName(S().radio.flash, build.name)} (${build.date})`);
-		if (!build?.stub) return noBackup(parts, shown, vd, { tryAnyway: () => loadOffer(parts, con, shown, vd, true, build || UNKNOWN_BUILD) });
+		if (!build?.stub) {
+			const tryAnyway = mayTry(build, S().radio.flash.stock_versions) ? () => loadOffer(parts, con, shown, vd, true, build || UNKNOWN_BUILD) : null;
+			return noBackup(parts, shown, vd, { tryAnyway });
+		}
 		return loadOffer(parts, con, version || stockName(S().radio.flash, build.name), vd, false, build);
 	}
 
