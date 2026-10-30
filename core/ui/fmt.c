@@ -157,9 +157,14 @@ void sb_coord(sbuf_t *b, int32_t e7, char pos, char neg)
 	sb_chr(b, e7 < 0 ? neg : pos);
 }
 
-void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing)
+void sb_compass(sbuf_t *b, uint16_t bearing)
 {
 	static const char *const points[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+	sb_str(b, points[((bearing % 360u) * 2u + 45u) / 90u % 8u]);
+}
+
+void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing)
+{
 	if (meters < 1000u) {
 		sb_u32(b, meters, 1);
 		sb_str(b, " m ");
@@ -173,5 +178,5 @@ void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing)
 		sb_u32(b, (meters + 500u) / 1000u, 1);
 		sb_str(b, " km ");
 	}
-	sb_str(b, points[((bearing % 360u) * 2u + 45u) / 90u % 8u]);
+	sb_compass(b, bearing);
 }

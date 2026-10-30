@@ -2860,9 +2860,7 @@ static const char *info_body(void)
 		if (!ui_svc_position(&p)) {
 			sb_str(&b, "No GPS, or it is off (Settings > Location)");
 		} else if (!p.fix) {
-			sb_str(&b, "No fix yet: ");
-			sb_u32(&b, p.sats, 1);
-			sb_str(&b, " satellites seen. Go outside.");
+			sb_str(&b, "No fix yet. Go outside, away from buildings.");	// GGA counts only satellites a fix uses
 		} else {
 			sb_str(&b, "Fix, ");
 			sb_u32(&b, p.sats, 1);
@@ -2870,9 +2868,11 @@ static const char *info_body(void)
 			sb_coord(&b, p.lat_e7, 'N', 'S');
 			sb_chr(&b, ' ');
 			sb_coord(&b, p.lon_e7, 'E', 'W');
-			sb_str(&b, "\nAltitude ");
-			sb_i32(&b, p.alt_m);
-			sb_str(&b, " m");
+			if (p.alt_ok) {
+				sb_str(&b, "\nAltitude ");
+				sb_i32(&b, p.alt_m);
+				sb_str(&b, " m");
+			}
 		}
 		break;
 	}

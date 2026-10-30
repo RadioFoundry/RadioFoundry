@@ -229,11 +229,11 @@ With `CONFIG_GPS_SKY` (needs `GPS` and `APRS`) `nmea_sky.c` also reads the board
 
 | Sentence | What it gives |
 |---|---|
-| GSV (talker GP, GL, GA, BD / GB, GQ, GN) | each satellite in view: number, elevation, azimuth, SNR. A round (messages 1 to N of one talker) replaces that system's satellites; one the round no longer lists is dropped. A GN talker places a satellite by its number (GLONASS 65-96, QZSS 193-202, BeiDou 201-263 and 401-463, Galileo 301-336); SBAS and unknown numbers are skipped |
-| GSA | the fix mode (1 none, 2 2D, 3 3D), PDOP, VDOP and the satellites the fix uses. The GSAs in a row (one per system, or several GN) make one round; the first clears the used set. A GN GSA takes its system from the NMEA 4.1 system ID when present, else from the numbers |
+| GSV (talker GP, GL, GA, BD / GB, GQ, GN) | each satellite in view: number, elevation, azimuth, SNR. A round (messages 1 to N of one talker) replaces that system's satellites; one the round no longer lists is dropped. A receiver that sends a round per signal (the NMEA 4.1 signal ID, e.g. L1 and L5) has only the first signal heard kept per system. A GN talker places a satellite by its number (GLONASS 65-96, QZSS 193-200, BeiDou 201-263 and 401-463, Galileo 301-336); SBAS and unknown numbers are skipped |
+| GSA | the fix mode (1 none, 2 2D, 3 3D) and the satellites the fix uses. The GSAs in a row (one per system, or several GN) make one round; the first clears the used set. A GN GSA takes its system from the NMEA 4.1 system ID when present, else from the numbers |
 
 The table holds 28 satellites of 4 bytes each (number, elevation, system, SNR, azimuth / 2); the used sets are a 64-bit
-mask per system. In all 176 B, kept in the APRS state under its lock; `aprs_gps_sat(i)` copies one satellite out, so a
+mask per system. In all 168 B, kept in the APRS state under its lock; `aprs_gps_sat(i)` copies one satellite out, so a
 reader needs no table of its own. Turning the GPS setting off empties it.
 
 ## 8. Positions over DMR

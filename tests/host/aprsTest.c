@@ -512,7 +512,7 @@ static void test_nmea_sky(void)
 	sky_feed(&k, "GPGSV,2,2,05,29,,,");
 	sky_feed(&k, "BDGSV,1,1,03,06,52,080,36,09,27,190,33,16,13,020,");
 	sky_feed(&k, "GNRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W");
-	CHECK(k.n == 8 && k.mode == 3 && k.pdop10 == 21 && k.vdop10 == 17, "round: %u sats mode %u", k.n, k.mode);
+	CHECK(k.n == 8 && k.mode == 3, "round: %u sats mode %u", k.n, k.mode);
 	const sky_sat_t *s = sky_find(&k, SKY_GPS, 2);
 	CHECK(s && s->elev == 62 && s->az2 == 24 && s->snr == 44 && nmea_sky_used(&k, s), "G2");
 	s = sky_find(&k, SKY_GPS, 18);
@@ -542,8 +542,13 @@ static void test_nmea_sky(void)
 	sky_feed(&k, "GNGSA,A,3,05,,,,,,,,,,,,1.5,0.9,1.2,4");
 	CHECK(nmea_sky_used(&k, sky_find(&k, SKY_GLONASS, 6)) && nmea_sky_used(&k, sky_find(&k, SKY_BEIDOU, 5)),
 	      "GN used, with and without system ID");
+	sky_feed(&k, "GNGSV,1,1,02,201,30,090,28,202,20,100,22");	// BeiDou from 201, not QZSS
+	CHECK(sky_find(&k, SKY_BEIDOU, 1) && sky_find(&k, SKY_BEIDOU, 2) && sky_find(&k, SKY_QZSS, 9) == NULL, "C1 C2");
+	nmea_sky_init(&k);
+	sky_feed(&k, "BDGSV,1,1,02,06,52,080,36,64,27,190,33");	// 64 is past the 64-bit used mask
+	CHECK(k.n == 1 && sky_find(&k, SKY_BEIDOU, 6), "number 64 skipped %u", k.n);
 	sky_feed(&k, "GPGSV,1,1,01,02,62,048,44*00");	// a bad checksum (the body has its own) changes nothing
-	CHECK(k.n == 2, "bad sentence ignored");
+	CHECK(k.n == 1, "bad sentence ignored");
 
 	// a full table keeps what it has
 	nmea_sky_init(&k);
@@ -554,6 +559,15 @@ static void test_nmea_sky(void)
 		sky_feed(&k, b);
 	}
 	CHECK(k.n == NMEA_SKY_MAX, "full table %u", k.n);
+
+	// NMEA 4.1, a round per signal: the L5 round (signal 8) doesn't replace the L1 one (signal 1)
+	nmea_sky_init(&k);
+	sky_feed(&k, "GPGSV,1,1,03,02,62,048,44,05,35,120,40,12,18,210,31,1");
+	sky_feed(&k, "GPGSV,1,1,01,05,35,120,22,8");
+	s = sky_find(&k, SKY_GPS, 5);
+	CHECK(k.n == 3 && s && s->snr == 40, "L5 round ignored: %u sats", k.n);
+	sky_feed(&k, "GPGSV,1,1,02,02,62,048,43,12,18,210,30,1");
+	CHECK(k.n == 2 && sky_find(&k, SKY_GPS, 5) == NULL, "next L1 round %u", k.n);
 }
 
 // --- KISS ---

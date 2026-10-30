@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The satellites a GPS receiver reports (NMEA 0183 GSV and GSA, docs/spec/aprs.md 7.1): where each one is in the sky,
-// its signal and whether the fix uses it, and the fix mode and dilution. For the GPS status screen (CONFIG_GPS_SKY).
+// its signal and whether the fix uses it, and the fix mode. For the GPS status screen (CONFIG_GPS_SKY).
 // Pure: no RTOS; the caller locks. Small on purpose: one satellite is 4 bytes.
 #ifndef RFOUNDRY_NMEA_SKY_H
 #define RFOUNDRY_NMEA_SKY_H
@@ -31,8 +31,8 @@ typedef struct {
 	sky_sat_t sat[NMEA_SKY_MAX];
 	uint8_t n;
 	uint8_t mode;		// GSA: 1 no fix, 2 2D, 3 3D, 0 not heard
-	uint16_t pdop10, vdop10;	// x 10, 0xFFFF unknown
 	uint64_t used[SKY_SYS_COUNT];	// bit num: the fix uses that satellite (GSA)
+	uint8_t sig[SKY_SYS_COUNT];	// NMEA 4.1 signal ID whose GSV rounds are kept, 0 none heard
 	bool gsa_run;		// the last sentence was a GSA: the next one adds to this round's used set
 } nmea_sky_t;
 

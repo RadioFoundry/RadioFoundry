@@ -116,7 +116,7 @@ seconds, so there are three pages.
 
 | Page | What it shows |
 |---|---|
-| 1 Status | 3D Fix, 2D Fix or Searching; satellites used and seen; position, altitude, speed, HDOP (accuracy: good, fair, poor) and UTC time |
+| 1 Status | 3D Fix, 2D Fix (Fix when the receiver doesn't say which) or Searching; satellites used and seen; position, altitude, speed, HDOP (accuracy: good, fair, poor) and the UTC time of the fix |
 | 2 Sky | where each satellite is: the outer ring is the horizon, the middle ring 45 degrees up, north at the top. A filled dot is used in the fix. The colors and the legend show the system: GPS, GLONASS, Galileo, BeiDou, QZSS |
 | 3 Signal | each satellite's signal strength as a bar; filled bars are used in the fix |
 | 4 Grid | your Maidenhead grid locator (FN42li), and the position in degrees, minutes and seconds |

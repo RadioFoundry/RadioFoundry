@@ -29,7 +29,7 @@ static uint8_t talker_sys(const char *t)
 static bool sat_id(uint8_t talker, uint32_t prn, uint8_t *sys, uint8_t *num)
 {
 	static const struct { uint16_t lo, hi; uint8_t sys; } ranges[] = {
-		{ 65, 96, SKY_GLONASS }, { 193, 202, SKY_QZSS }, { 201, 263, SKY_BEIDOU }, { 301, 336, SKY_GALILEO },
+		{ 65, 96, SKY_GLONASS }, { 193, 200, SKY_QZSS }, { 201, 263, SKY_BEIDOU }, { 301, 336, SKY_GALILEO },
 		{ 401, 463, SKY_BEIDOU },
 	};
 	if (prn > 64) {
@@ -42,7 +42,8 @@ static bool sat_id(uint8_t talker, uint32_t prn, uint8_t *sys, uint8_t *num)
 		}
 		return false;
 	}
-	if (prn == 0 || (talker == SYS_ALL && prn > 32) || (talker == SKY_GPS && prn > 32)) {
+	// 63 at most: the used set is a 64-bit mask by number
+	if (prn == 0 || prn > 63 || (talker == SYS_ALL && prn > 32) || (talker == SKY_GPS && prn > 32)) {
 		return false;
 	}
 	*sys = talker == SYS_ALL ? SKY_GPS : talker;
@@ -61,6 +62,14 @@ static void gsv(nmea_sky_t *k, uint8_t talker, const char **f, const uint8_t *fl
 	uint32_t total = num_or(f[1], fl[1], 0), msg = num_or(f[2], fl[2], 0);
 	if (msg == 0 || msg > total) {
 		return;
+	}
+	if (talker != SYS_ALL && (nf - 4u) % 4u == 1u) {	// NMEA 4.1: one round per signal (L1, L5): keep the first heard
+		uint8_t sig = (uint8_t)num_or(f[nf - 1], fl[nf - 1], 0);
+		if (k->sig[talker] == 0) {
+			k->sig[talker] = sig;
+		} else if (sig != k->sig[talker]) {
+			return;
+		}
 	}
 	if (msg == 1) {
 		for (uint8_t i = 0; i < k->n; i++) {
@@ -115,9 +124,6 @@ static void gsa(nmea_sky_t *k, uint8_t talker, const char **f, const uint8_t *fl
 	if (!k->gsa_run) {	// a new round: one GSA per system follows (GP, BD, ...) or several GN
 		memset(k->used, 0, sizeof(k->used));
 		k->mode = 0;
-		uint32_t v;
-		k->pdop10 = nmea_number(f[15], fl[15], 1, &v) && v < 0xFFFFu ? (uint16_t)v : 0xFFFFu;
-		k->vdop10 = nmea_number(f[17], fl[17], 1, &v) && v < 0xFFFFu ? (uint16_t)v : 0xFFFFu;
 	}
 	k->gsa_run = true;
 	if (mode >= 1 && mode <= 3 && mode > k->mode) {
@@ -140,7 +146,6 @@ static void gsa(nmea_sky_t *k, uint8_t talker, const char **f, const uint8_t *fl
 void nmea_sky_init(nmea_sky_t *k)
 {
 	memset(k, 0, sizeof(*k));
-	k->pdop10 = k->vdop10 = 0xFFFFu;
 }
 
 bool nmea_sky_sentence(nmea_sky_t *k, const char *s, size_t n)

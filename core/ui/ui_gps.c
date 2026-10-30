@@ -88,16 +88,10 @@ static void disc(int cx, int cy, int r, color_t c)
 	}
 }
 
-static const char *compass(uint16_t deg)
-{
-	static const char *const pts[8] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
-	return pts[((deg + 22u) / 45u) % 8u];
-}
-
 // The Maidenhead locator to 6 characters ("FN42li")
 static void locator(char out[7], int32_t lat_e7, int32_t lon_e7)
 {
-	uint32_t lo = (uint32_t)(lon_e7 + 1800000000), la = (uint32_t)(lat_e7 + 900000000);
+	uint32_t lo = (uint32_t)lon_e7 + 1800000000u, la = (uint32_t)lat_e7 + 900000000u;	// unsigned: no overflow east of 34.7 E
 	if (lo >= 3600000000u)
 		lo = 3599999999u;
 	if (la >= 1800000000u)
@@ -140,8 +134,8 @@ static void sb_dop(sbuf_t *b, uint16_t d10)
 
 static const char *fix_word(const ui_position_t *p)
 {
-	if (p->fix)
-		return p->mode == 2 ? "2D Fix" : "3D Fix";
+	if (p->fix)	// mode 0: no GSA heard, so the receiver didn't say which
+		return p->mode == 3 ? "3D Fix" : p->mode == 2 ? "2D Fix" : "Fix";
 	return p->in_view > 0 ? "Searching" : "No signal";
 }
 
@@ -225,7 +219,7 @@ static void draw_status(const ui_position_t *p, int y)
 			sb_str(&b, " km/h");
 			if (p->course != 0xFFFFu) {
 				sb_chr(&b, ' ');
-				sb_str(&b, compass(p->course));
+				sb_compass(&b, p->course);
 			}
 			if (!row(&y, "Speed", buf, ui_col.fg))
 				return;
@@ -237,7 +231,7 @@ static void draw_status(const ui_position_t *p, int y)
 		if (!row(&y, "HDOP", buf, ui_col.fg))
 			return;
 	}
-	if (p->utc_hms != 0xFFFFFFFFu) {
+	if (p->fix && p->utc_hms != 0xFFFFFFFFu) {	// the time of the last fix: stale once it's lost
 		sb_init(&b, buf, sizeof buf);
 		sb_u32(&b, p->utc_hms / 10000u, 2);
 		sb_chr(&b, ':');
