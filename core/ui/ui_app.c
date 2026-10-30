@@ -1872,6 +1872,13 @@ void ui_app_key(const input_event_t *ev)
 		banner_open();
 		return;
 	}
+	// A banner that waits for the user is over every screen, not just Home: BACK hides it first, wherever it is
+	if (!typing && ui_st.banner.kind != UI_BANNER_NONE && ui_st.banner.hold && ev->action == ACT_BACK &&
+			ev->gesture == GESTURE_PRESS) {
+		ui_st.banner.kind = UI_BANNER_NONE;
+		dirty = true;
+		return;
+	}
 	// QUICK opens quick settings from any screen; BACK returns to where the user was
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
 	if (ev->action == ACT_QUICK && ev->gesture == GESTURE_PRESS && stack[sp].scr != SCR_QUICK &&

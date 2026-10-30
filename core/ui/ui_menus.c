@@ -1172,6 +1172,8 @@ static void offer_item(uint16_t i, ui_item_t *it)
 
 static void offer_enter(void)
 {
+	if (ui_st.banner.kind == UI_BANNER_ZONE_OFFER)
+		ui_st.banner.kind = UI_BANNER_NONE;	// opened from Tools: the banner about it has done its job
 	if (offer_get())
 		ui_svc_zone_offer_open(offer.serial);	// open: it doesn't expire while the user reads it
 }

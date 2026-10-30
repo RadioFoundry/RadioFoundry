@@ -61,6 +61,9 @@ static const flow_t flows[] = {
 	{ "zone offer banner opens a minute later", "zoneoffer:3101234 wait:60000", "ctx", "shows=Import", 1, false },
 	{ "zone offer banner hidden with Back", "zoneoffer:3101234", "back", "banner=none screen=home", 1, false },
 	{ "zone offer banner goes with the offer", "zoneoffer:3101234 wait:5000", "zoneexpire", "banner=none", 0, false },
+	{ "zone offer banner hidden with Back on a menu", "zoneoffer:3101234 ok", "back", "banner=none screen=hub", 1, false },
+	{ "zone offer banner goes when Tools opens the offer", "zoneoffer:3101234", "ok 6 0", "banner=none shows=Import", 3,
+	  false },
 #endif
 	{ "8 radio check last caller", CALLER, "ctx 4", "checks=1", 2, false },
 	{ "8 radio check by name", "", "5 6 3 ctx 4", "checks=1", 5, false },

@@ -235,9 +235,9 @@ typedef struct {
 } ui_zone_offer_t;
 // The offer waiting for the user (false: none). Opening it stops it from expiring
 bool ui_svc_zone_offer(ui_zone_offer_t *out);
+void ui_svc_zone_offer_open(uint32_t serial);
 // Cheap, for every UI pass: an offer still waits (the banner about it stays while it does)
 bool ui_svc_zone_offer_pending(void);
-void ui_svc_zone_offer_open(uint32_t serial);
 // Row i of the preview: name, receive frequency, DMR or FM, whether the radio can receive it
 typedef struct {
 	char name[17];

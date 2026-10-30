@@ -233,7 +233,7 @@ typedef struct {
 #define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
 #define SETTINGS_ZONE_JRN_ADD		1u
 #define SETTINGS_ZONE_JRN_DELETE	2u
-#define SETTINGS_ZS_OFF		2u	// zs_offers: shares not accepted (0, from a record before or never set, accepts them)
+#define SETTINGS_ZS_OFF		2u	// zs_offers: shares not accepted (settings_zs_accept)
 #define SETTINGS_DUAL_VFO	1025u	// dual_b: 1025 the first VFO, 1026 the second
 #define SETTINGS_DUAL_ON	0x01u	// dual_state: it ran at power off, and comes back at power on
 #define SETTINGS_DUAL_B_SEL	0x02u	// ... with B selected: dual_b is then A's (the radio powers up on B)

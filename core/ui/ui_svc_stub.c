@@ -85,6 +85,7 @@ WEAK uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t ds
 }
 WEAK bool ui_svc_zone_offer(ui_zone_offer_t *out) { (void)out; return false; }
 WEAK void ui_svc_zone_offer_open(uint32_t serial) { (void)serial; }
+WEAK bool ui_svc_zone_offer_pending(void) { return false; }
 WEAK bool ui_svc_zone_offer_channel(uint32_t serial, uint16_t i, ui_zone_offer_ch_t *out) { (void)serial; (void)i; (void)out; return false; }
 WEAK void ui_svc_zone_offer_reject(uint32_t serial) { (void)serial; }
 WEAK bool ui_svc_zone_offer_import(uint32_t serial, uint16_t zone) { (void)serial; (void)zone; return false; }
