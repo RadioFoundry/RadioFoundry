@@ -4,6 +4,9 @@
 #include "config.h"
 #if CONFIG_APRS
 #include "ui_svc_aprs.h"
+#include "aprs/aprs_fmt.h"
+#include "ui_svc.h"
+#include "board.h"
 #include "storage/storage.h"
 #include "hal_time.h"
 
@@ -33,6 +36,21 @@ void ui_svc_aprs_set_cfg(const aprs_cfg_t *c)
 	if (c->path != old.path) {
 		(void)storage_job_post(path_job, NULL);	// busy with another job: the codeplug keeps its path
 	}
+}
+
+// The Position screen reads the board GPS through APRS, the one place its NMEA goes
+bool ui_svc_position(ui_position_t *out)
+{
+	aprs_gps_t g;
+	if (!board_has_gps() || !aprs_gps(&g, hal_millis())) {
+		return false;
+	}
+	out->fix = g.fix;
+	out->sats = g.sats;
+	out->lat_e7 = g.lat;
+	out->lon_e7 = g.lon;
+	out->alt_m = g.alt_m == APRS_ALT_NONE ? 0 : (int16_t)g.alt_m;
+	return true;
 }
 
 bool ui_svc_aprs_send_now(void)

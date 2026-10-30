@@ -78,6 +78,9 @@ static struct {
 	uint32_t now;
 	fix_t host, gps;
 	bool gps_off;		// Settings > Location > GPS is off: the board's fix doesn't count (aprs_gps_enable)
+	bool gps_heard;		// the board GPS has sent a valid sentence (fix or not), last at gps_heard_ms
+	uint32_t gps_heard_ms;
+	uint8_t gps_sats;	// satellites used, from its last GGA
 	qframe_t q[QUEUE_LEN];
 	uint8_t qn;
 	uint8_t taken;		// frames in the transmission under way
@@ -1559,6 +1562,13 @@ void aprs_nmea(const char *s, size_t n, bool gps, uint32_t now_ms)
 		return;
 	}
 	fix_t *f = gps ? &a.gps : &a.host;
+	if (gps) {
+		a.gps_heard = true;
+		a.gps_heard_ms = now_ms;
+		if (x.kind == NMEA_GGA) {
+			a.gps_sats = x.sats;
+		}
+	}
 	if (!x.fix) {
 		f->valid = false;
 	} else {
@@ -1587,8 +1597,24 @@ void aprs_gps_enable(bool on)
 	a.gps_off = !on;
 	if (!on) {
 		a.gps.valid = false;
+		a.gps_heard = false;
 	}
 	UNLOCK();
+}
+
+bool aprs_gps(aprs_gps_t *out, uint32_t now_ms)
+{
+	LOCK();
+	bool on = !a.gps_off && a.gps_heard && now_ms - a.gps_heard_ms < POS_STALE_MS;
+	if (on) {
+		out->fix = a.gps.valid && now_ms - a.gps.ms < POS_STALE_MS;
+		out->sats = a.gps_sats;
+		out->lat = a.gps.lat;
+		out->lon = a.gps.lon;
+		out->alt_m = a.gps.alt_m;
+	}
+	UNLOCK();
+	return on;
 }
 
 size_t aprs_host_output(uint8_t *out, size_t max)

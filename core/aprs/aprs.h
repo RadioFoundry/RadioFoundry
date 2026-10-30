@@ -249,6 +249,14 @@ void aprs_host_is_line(const char *line, size_t n, uint32_t now_ms);
 void aprs_nmea(const char *s, size_t n, bool gps, uint32_t now_ms);
 // Settings > Location > GPS: off drops the board GPS fix and ignores its sentences, so the position falls back at once
 void aprs_gps_enable(bool on);
+// The board GPS as it is now, for the Position screen: false when it is off or has sent nothing for a minute
+typedef struct {
+	bool fix;		// a position under a minute old
+	uint8_t sats;		// satellites used (GGA)
+	int32_t lat, lon;	// 1e-7 degree, with fix
+	int32_t alt_m;		// APRS_ALT_NONE
+} aprs_gps_t;
+bool aprs_gps(aprs_gps_t *out, uint32_t now_ms);
 // KISS-encoded bytes for the host: copies up to max, returns the count (0 = nothing waiting)
 size_t aprs_host_output(uint8_t *out, size_t max);
 // The KISS setting is on (host output allowed in the host link's idle mode)
