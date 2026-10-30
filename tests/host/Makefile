@@ -869,7 +869,7 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
 
 run: run-platform
-run-platform: bk4819Test at1141Test fd6818shTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest
+run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest
 	./bk4819Test
 	./at1141Test
 	./fd6818shTest
