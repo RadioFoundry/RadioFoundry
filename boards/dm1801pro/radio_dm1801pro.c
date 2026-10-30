@@ -56,6 +56,7 @@ static const fd6818_rssi_cal_t rssi_cal[] = {
 };
 
 static fd6818_t fd;
+static rfbus_3w_t rf_bus;
 static hrc7000_t modem;
 
 static radio_mode_t mode = RADIO_MODE_FM;
@@ -89,7 +90,7 @@ static void rf_data_release(void) { hrc_pin_in(PIN_RF_DATA); }
 static bool rf_data_in(void) { return hrc_pin_read(PIN_RF_DATA); }
 static void rf_delay_us(uint32_t us) { hal_delay_us(us * RF_BIT_SCALE_US); }
 
-static const fd6818_bus_t rf_bus = {
+static const rfbus_3w_pins_t rf_bus_pins = {
 	.cs = rf_cs,
 	.clk = rf_clk,
 	.data_out = rf_data_out,
@@ -234,7 +235,8 @@ static void init(void)
 
 	hrc_pin_out(PIN_RF_CS, true);
 	hrc_pin_out(PIN_RF_CLK, false);
-	fd6818_attach_variant(&fd, &rf_bus, &fd6818_variant_dm1801pro);
+	rfbus_3w_attach(&rf_bus, &rf_bus_pins);
+	fd6818_attach_variant(&fd, &rf_bus.bus, &fd6818_variant_dm1801pro);
 	fd6818_init(&fd);
 	fd6818_set_mode(&fd, FD6818_MODE_FM);
 	mode = RADIO_MODE_FM;
@@ -612,7 +614,7 @@ void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d)
 	d->rssi_raw = last_rssi_raw;
 	d->noise_raw = last_noise_raw;
 	d->fm_noise = hrc7000_fm_noise(&modem);
-	d->rf_writes = fd.writes;
+	d->rf_writes = rf_bus.bus.writes;
 	d->c7_audio = hrc7000_rd(&modem, C7_AUDIO_CONTROL);
 	d->c7_rf_mode = hrc7000_rd(&modem, C7_RF_MODE);
 	d->c7_work_mode = (uint8_t)hrc7000_rd(&modem, C7_WORK_MODE);

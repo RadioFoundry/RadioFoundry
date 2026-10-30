@@ -39,6 +39,7 @@ top byte for the MD-446).
 | D13.034 | `D013.034.bin` | UV build | 0x080533A0 | 0x00441334 |
 | D13.14 | `TYT-Vocoder-MD380-D13.14.bin` | UV build | 0x08053014 | 0x00441314 |
 | D13.20 | `TYT-Vocoder-MD380-D13.20.bin` | UV build | 0x080530A8 | 0x00441320 |
+| D14.004 | `D014.004.bin` | UV build | 0x080533B4 | 0x00441404 |
 | D14.07 | `TYT-Vocoder-MD380-D14.07.bin` | UV build | 0x080535D0 | 0x00441407 |
 | D2.24 (upgrade pack) | `Upgraded software for newest version.bin` | D2 build | 0x08051FE8 | 0x00440224 |
 | D2.25 | `MD-380-D2.25.bin` | D2 build | 0x08050A4C | 0x00440225 |

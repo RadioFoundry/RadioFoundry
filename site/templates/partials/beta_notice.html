@@ -1,0 +1,51 @@
+<dialog id="beta-notice" class="confirm beta-notice" aria-labelledby="beta-notice-title">
+	<h2 id="beta-notice-title" tabindex="-1" autofocus>{{t flash.beta.title}}</h2>
+	<p>{{t flash.beta.lead}}</p>
+	<h3>{{t flash.beta.risks_title}}</h3>
+	<ul>
+		<li>{{t flash.beta.risk_stop}}</li>
+		<li>{{t flash.beta.risk_codeplug}}</li>
+		<li>{{t flash.beta.risk_features}}</li>
+	</ul>
+	<div class="notice ok"><p><strong>{{t flash.beta.safe_title}}</strong> {{t flash.beta.safe_text}}</p></div>
+	<h3>{{t flash.beta.help_title}}</h3>
+	<p>{{t flash.beta.help_text}}</p>
+	<p class="beta-links"><a href="{{ community }}" target="_blank" rel="noopener">{{t flash.beta.help_facebook}}</a> · <a href="{{ repo }}/issues" target="_blank" rel="noopener">{{t flash.beta.help_github}}</a></p>
+	<h3>{{t flash.beta.faq_title}}</h3>
+	<details>
+		<summary>{{t flash.beta.faq_testing_q}}</summary>
+		<ul>
+			<li><strong>{{t flash.beta.faq_testing_hw_t}}</strong> {{t flash.beta.faq_testing_hw}}</li>
+			<li><strong>{{t flash.beta.faq_testing_air_t}}</strong> {{t flash.beta.faq_testing_air}}</li>
+			<li><strong>{{t flash.beta.faq_testing_installer_t}}</strong> {{t flash.beta.faq_testing_installer}}</li>
+			<li><strong>{{t flash.beta.faq_testing_ui_t}}</strong> {{t flash.beta.faq_testing_ui}}</li>
+			<li><strong>{{t flash.beta.faq_testing_code_t}}</strong> {{t flash.beta.faq_testing_code}}</li>
+		</ul>
+		<p><a href="{{ home }}docs/testing/index.html" target="_blank" rel="noopener">{{t flash.beta.faq_testing_link}}</a></p>
+	</details>
+	<details>
+		<summary>{{t flash.beta.faq_damage_q}}</summary>
+		<p>{{t flash.beta.faq_damage_a}}</p>
+		<p><a href="{{ home }}docs/user/02-installing.html#if-something-goes-wrong" target="_blank" rel="noopener">{{t flash.beta.faq_damage_link}}</a></p>
+	</details>
+	<details>
+		<summary>{{t flash.beta.faq_codeplug_q}}</summary>
+		<ul>
+			<li><strong>{{t flash.beta.faq_codeplug_backup_t}}</strong> {{t flash.beta.faq_codeplug_backup}}</li>
+			<li><strong>{{t flash.beta.faq_codeplug_convert_t}}</strong> {{t flash.beta.faq_codeplug_convert}}</li>
+			<li><strong>{{t flash.beta.faq_codeplug_update_t}}</strong> {{t flash.beta.faq_codeplug_update}}</li>
+		</ul>
+	</details>
+	<details>
+		<summary>{{t flash.beta.faq_fixes_q}}</summary>
+		<p>{{t flash.beta.faq_fixes_a}}</p>
+	</details>
+	<details>
+		<summary>{{t flash.beta.faq_feedback_q}}</summary>
+		<p>{{t flash.beta.faq_feedback_a}}</p>
+		<p class="beta-links"><a href="{{ repo }}/issues/new/choose" target="_blank" rel="noopener">{{t flash.beta.faq_feedback_github}}</a> · <a href="{{ community }}" target="_blank" rel="noopener">{{t flash.beta.faq_feedback_facebook}}</a></p>
+	</details>
+	<form method="dialog" class="confirm-actions">
+		<button class="btn btn-primary" value="ok">{{t flash.beta.ok}}</button>
+	</form>
+</dialog>

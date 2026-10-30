@@ -48,7 +48,9 @@ test("the DB25-D's data in the flasher tables", () => {
 	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true });
 	assert.deepEqual(b.slot, [0xE8000, 0x100000]);
 	const ps = C.profiles.filter((p) => p.board === "db25d");
-	assert.equal(ps.length, 4);
+	// any number of builds: each with its own tag, and the 020 build among them
+	assert.ok(ps.length > 0);
+	assert.equal(new Set(ps.map((p) => p.tag)).size, ps.length);
 	// the 018 builds come as vendor files; 020 has no vendor file, only a program flash read of the radio
 	assert.ok(ps.filter((p) => p.tag !== 20).every((p) => p.stock_header === 0 && p.stock_file));
 	assert.equal(ps.find((p) => p.tag === 20).stock_file, null);

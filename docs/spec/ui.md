@@ -233,6 +233,24 @@ they show the change within a fraction of a second.
 - The debug link's `zone.edits` counts the zone edits written since start-up and `zone.edit_last` is the last result
   (`zone_edit_result_t`, 0 = OK).
 
+### 2.3 GPS screen
+
+With `CONFIG_GPS_SKY`, Tools > Position (`gps`, `ui_gps.c`) has four pages, three on a panel at least `UI_TALL_PX` tall
+(Status takes in Grid there). Up and Down (the knob) turn them and wrap; the digits go to one. It opens on Status. Every draw reads `ui_svc_position` and the satellites one at a time
+(`ui_svc_gps_sat`), so the screen keeps one byte, its page.
+
+| Page | Shows |
+|---|---|
+| Status | the fix in large type (3D Fix, 2D Fix, or Fix when no GSA gave the mode, in the RX color; Searching, No signal in the warning color), then as many rows as fit: satellites used and seen, latitude and longitude (6 decimals, `sb_coord`), altitude, speed with a compass point, HDOP with good / fair / poor, UTC (with a fix only: it is the fix's time). On a tall panel, with a fix, also the locator right of the fix and each coordinate in degrees, minutes, seconds under it, dim |
+| Sky | a polar plot, north up: the horizon and 45 degree rings, each satellite with a known position as a dot, filled when the fix uses it, hollow when not, gray when it has no signal. Labeled (G12, C23) where the plot is 80 px or wider: right of the dot, else left, and left out where it would touch another dot or label. A legend names each system heard with used / seen: full names where they fit, else GPS, GLO, GAL, BDS, QZS. Beside the plot, or under it in two columns on a tall panel |
+| Signal | satellites in the fix of those seen, then one bar per satellite with a signal (SNR above 0), its height the SNR (50 dB-Hz full), filled when used. The satellite numbers under the bars: one row where two digits fit a bar, else two rows taking turns |
+| Grid | the Maidenhead locator (6 characters) large, then the position in degrees, minutes, seconds and in decimal degrees (6 decimals). "No fix yet" without a fix. Not on a tall panel |
+
+Colors name the system (GPS blue, GLONASS red, Galileo yellow, BeiDou green, QZSS purple; darker on the light theme),
+and the legend says them in words (P5). A monochrome panel draws everything in ink. Without a GPS, or with it off, the
+screen says so and points to Settings > Location. Without `CONFIG_GPS_SKY` the same Tools row opens a page of text
+(fix, satellites, position, altitude).
+
 ## 3. Key meanings
 
 The same on every screen (information-architecture.md, key maps 7.1 to 7.5):
@@ -360,7 +378,7 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | `ui_svc_ptt_block`, `ui_svc_emergency_active` | input / dmr-ext | `ui_svc_radio.c`: `input_set_ptt_block`; `ui_svc_emergency.c`: `dmr_emergency_state` |
 | backlight dim / off | radio-features | `ui.c`: `radio_backlight_pct` (dims on a low battery too); full again on a key, a banner or the emergency screen (`ui_app_take_wake`) and while `radio_view_wakes` (radio-features.md 5.3) |
 | `ui_svc_msg_*`, `ui_svc_radio_check`, `ui_svc_call_alert`, `ui_svc_poll`, `ui_svc_feat_data` | dmr-data | `ui_svc_data.c` on `dmr_data_api.h`; `ui_svc_msg_delete` is `sms_inbox_delete` |
-| `ui_svc_position` | GPS (no owner yet) | stub: "No GPS on this radio"; the GPS settings are dimmed with the same reason on boards without `CAP_GPS` |
+| `ui_svc_position` | APRS (`ui_svc_aprs.c`, `aprs_gps`): the board GPS's last fix and satellite count, false while it is off or silent for a minute | stub (no `CONFIG_APRS`): "No GPS, or it is off"; the GPS settings are dimmed with "No GPS on this radio" on boards without `CAP_GPS` or whose module wasn't heard at start-up |
 | USB mode (Tools > USB network) | hostlink | `hostlink_network_mode`, `hostlink_request_usb_network` (with `CONFIG_USB_NETWORK` and `CONFIG_HOSTLINK`) |
 | talker alias, private call start | dmr-voice | read from `radio_view_t.dmr`; `UI_EV_PRIVATE_CALL` is not raised by anyone yet |
 
@@ -386,6 +404,7 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 | `CONFIG_FONT_AA` | n | the bitmap fonts (Spleen) on color panels; on, the sizes from 6x12 up are anti-aliased (JetBrains Mono Bold, coverage 0..3 a pixel, blended with what is under them; `gfx.c`). Mono radios leave it off. On a 4 bpp panel (every color board) the edge grays share the 16 palette entries with the screen's own colors; a screen that already uses many colors loses some of them, and some font sizes or colors can then be slightly harder to read |
 | `CONFIG_FONT_BIG` | n | on (needs `FONT_AA`), the 240 px class draws lists, labels, the status strip and hints in a 9x18 font instead of 8x16, and its small print in 8x16 instead of 6x12 |
 | `CONFIG_ZONE_EDIT` | = `CHANNEL_EDIT` | a zone's list only goes to its channels: no Add channel, Channel actions or Zone options (2.2). Needs `CONFIG_CHANNEL_EDIT` |
+| `CONFIG_GPS_SKY` | = GPS and APRS | Tools > Position is a page of text instead of the GPS screen (2.3) and the satellite sentences aren't read (about 5.2 KB, 176 B of RAM) |
 | `CONFIG_UI_COLOR` | y (n on a board with a monochrome panel) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_VFO_DMR`, `CONFIG_SCAN`, data features) are

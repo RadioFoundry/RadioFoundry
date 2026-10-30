@@ -34,6 +34,7 @@
 
 extern const ui_scr_def_t ui_find_screen;
 extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen;	// ui_aprs.c
+extern const ui_scr_def_t ui_gps_screen;	// ui_gps.c
 #if CONFIG_DUAL_WATCH
 extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
 #endif
@@ -452,7 +453,7 @@ static void contacts_context(uint16_t i)
 
 static const ui_scr_def_t contacts_screen = {
 	.name = "contacts", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = "Contacts",
-	.hint = "0-9 find  OK talk  # more", .empty = "No contacts: add them in qdmr",
+	.hint = TEXT_ALT_OPEN "0-9 find  OK talk  # more" TEXT_ALT_NEXT "0-9  OK talk  # more" TEXT_ALT_CLOSE, .empty = "No contacts: add them in qdmr",
 	.count = ui_filter_count, .item = contacts_item, .select = contacts_select, .context = contacts_context,
 	.target = contacts_target, .raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
 };
@@ -2849,15 +2850,6 @@ static void sb_volts(sbuf_t *b, uint16_t mv)
 	sb_str(b, " V");
 }
 
-static void sb_deg(sbuf_t *b, int32_t e7, char pos, char neg)
-{
-	uint32_t a = (uint32_t)(e7 < 0 ? -e7 : e7);
-	sb_u32(b, a / 10000000u, 1);
-	sb_chr(b, '.');
-	sb_u32(b, (a % 10000000u) / 1000u, 4);
-	sb_chr(b, e7 < 0 ? neg : pos);
-}
-
 static const char *info_body(void)
 {
 	static char t[200];
@@ -2869,19 +2861,19 @@ static const char *info_body(void)
 		if (!ui_svc_position(&p)) {
 			sb_str(&b, "No GPS, or it is off (Settings > Location)");
 		} else if (!p.fix) {
-			sb_str(&b, "No fix yet: ");
-			sb_u32(&b, p.sats, 1);
-			sb_str(&b, " satellites seen. Go outside.");
+			sb_str(&b, "No fix yet. Go outside, away from buildings.");	// GGA counts only satellites a fix uses
 		} else {
 			sb_str(&b, "Fix, ");
 			sb_u32(&b, p.sats, 1);
 			sb_str(&b, " satellites\n");
-			sb_deg(&b, p.lat_e7, 'N', 'S');
+			sb_coord(&b, p.lat_e7, 'N', 'S');
 			sb_chr(&b, ' ');
-			sb_deg(&b, p.lon_e7, 'E', 'W');
-			sb_str(&b, "\nAltitude ");
-			sb_i32(&b, p.alt_m);
-			sb_str(&b, " m");
+			sb_coord(&b, p.lon_e7, 'E', 'W');
+			if (p.alt_ok) {
+				sb_str(&b, "\nAltitude ");
+				sb_i32(&b, p.alt_m);
+				sb_str(&b, " m");
+			}
 		}
 		break;
 	}
@@ -3836,7 +3828,7 @@ static void tools_select(uint16_t row, bool hold)
 			ui_scan_toggle();	// says what scans: the zone, or the band in the VFO (dual watch ends)
 		}
 		break;
-	case T_POSITION: ui_push(SCR_INFO, INFO_POSITION); break;
+	case T_POSITION: ui_push(CONFIG_GPS_SKY ? SCR_GPS : SCR_INFO, INFO_POSITION); break;
 	case T_HOTSPOT: ui_push(SCR_INFO, INFO_HOTSPOT); break;
 	case T_USB_NET: ui_push(SCR_INFO, INFO_USB_NET); break;
 	case T_SFR: ui_push(SCR_INFO, INFO_SFR); break;
@@ -4803,6 +4795,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_CHPICK] = &chpick_screen,
 #endif
 #endif
+#endif
+#if CONFIG_GPS_SKY
+	[SCR_GPS] = &ui_gps_screen,
 #endif
 #if CONFIG_CRASH_SCREEN
 	[SCR_CRASH] = &crash_screen,

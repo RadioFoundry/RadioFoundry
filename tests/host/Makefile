@@ -112,10 +112,10 @@ SFRSRC  := sfrTest.c $(CORE)/dmr/sfr.c $(DATA) $(FRAME)
 sfrTest: $(SFRSRC) $(CORE)/dmr/sfr.h
 	$(CC) $(CFLAGS) -DHAS_SFR -o $@ $(SFRSRC)
 
-# APRS protocol layers (AX.25, HDLC, AFSK, KISS, formats, NMEA, beacon triggers, iGate rules)
+# APRS protocol layers (AX.25, HDLC, AFSK, KISS, formats, NMEA and its satellites, beacon triggers, iGate rules)
 TESTS   += aprsTest
 APRSLIB := $(CORE)/aprs/ax25.c $(CORE)/aprs/hdlc.c $(CORE)/aprs/afsk.c $(CORE)/aprs/kiss.c $(CORE)/aprs/aprs_fmt.c \
-           $(CORE)/aprs/aprs_nmea.c $(CORE)/aprs/aprs_beacon.c $(CORE)/aprs/aprs_igate.c
+           $(CORE)/aprs/aprs_nmea.c $(CORE)/aprs/nmea_sky.c $(CORE)/aprs/aprs_beacon.c $(CORE)/aprs/aprs_igate.c
 
 aprsTest: aprsTest.c $(APRSLIB) $(wildcard $(CORE)/aprs/*.h)
 	$(CC) $(CFLAGS) -o $@ aprsTest.c $(APRSLIB) -lm
@@ -333,6 +333,8 @@ run-flash: codeplugTest calCurveTest codeplugPower2Test codeplugPower3Test codep
 TESTS   += at1846sTest subaudioTest
 
 SUBAUDIO := $(ROOT)/drivers/rf/subaudio/subaudio.c
+# The RF chips' register bus (drivers/rf/rfbus): every RF chip driver test links it
+RFBUS    := $(ROOT)/drivers/rf/rfbus/rfbus.c
 
 at1846sTest: at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(ROOT)/drivers/rf/at1846s/at1846s.h $(SUBAUDIO)
 	$(CC) $(CFLAGS) -Wshadow -o $@ at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(SUBAUDIO)
@@ -423,7 +425,7 @@ gfxTest: gfxTest.c $(UI) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 # the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/, contact sheets in
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
-UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
+UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
            $(CORE)/radio/radio_bcast.c sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
@@ -648,9 +650,10 @@ run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6
 	else echo "# splitPairTest, dmr_cach selftest: skipped (no python3)"; fi
 .PHONY: run-split
 
-# The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring (core/debuglink)
+# The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring, packed screenshots
+# (core/debuglink)
 DLINK   := debuglinkTest.c $(CORE)/debuglink/dl_frame.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c \
-	$(CORE)/debuglink/dl_chip.c
+	$(CORE)/debuglink/dl_chip.c $(CORE)/debuglink/dl_shot.c $(CORE)/cps/cps_lz4.c
 TESTS   += debuglinkTest
 
 debuglinkTest: $(DLINK) $(wildcard $(CORE)/debuglink/*.h)
@@ -756,10 +759,10 @@ run-f4stub: f4stubTest f4stubSim
 # column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the Baofeng factory calibration decoder
 # (modem-hrc7000.md)
 HRC7    := $(ROOT)/drivers/modem/hrc7000
-TESTS   += fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest
+TESTS   += fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest hrc7000DmrTest baofengCalTest
 
-fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
-	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(SUBAUDIO)
+fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(SUBAUDIO)
 
 st7567Test: st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c $(ROOT)/drivers/display/st7567/st7567.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c
@@ -772,6 +775,8 @@ st7789Test: st7789Test.c $(ROOT)/drivers/display/st7789/st7789.c $(ROOT)/drivers
 
 sharedPttTest: sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c $(ROOT)/drivers/input/sharedptt/shared_ptt.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c
+plugPttTest: plugPttTest.c $(ROOT)/drivers/input/plugptt/plug_ptt.c $(ROOT)/drivers/input/plugptt/plug_ptt.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ plugPttTest.c $(ROOT)/drivers/input/plugptt/plug_ptt.c
 keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROOT)/drivers/input/keymatrix/keymatrix.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c
 
@@ -806,7 +811,7 @@ baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROO
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
 run: run-drivers
-run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
+run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
              lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
 	./hrc7000BsTest
 	./hrc7000DmrTestSplit
@@ -818,6 +823,7 @@ run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPtt
 	./st7789Test
 	./keymatrixTest
 	./sharedPttTest
+	./plugPttTest
 	./hrc7000DmrTest
 	./baofengCalTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --self-test
@@ -826,8 +832,29 @@ run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPtt
 # The BK4819 driver: main and LO chips on one shared three-wire bus (docs/spec/hardware-db25d.md 4)
 TESTS   += bk4819Test
 
-bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4819.h $(SUBAUDIO)
-	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(SUBAUDIO)
+# The AT1141 LO (a superhet's local oscillator on the same bus kind): divider plan, PLL word, init and tune order
+TESTS   += at1141Test
+
+# The FD6818 in a superhet (main transceiver and LO, also the 0x7813 LO): words and write orders
+TESTS   += fd6818shTest
+
+# The superhet chip ops each of those drivers provides: filled in, and the same writes as the driver's own calls
+TESTS   += superhetTest
+
+fd6818shTest: fd6818shTest.c $(ROOT)/drivers/rf/fd6818/fd6818sh.c $(RFBUS) $(ROOT)/drivers/rf/fd6818/fd6818sh.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818shTest.c $(ROOT)/drivers/rf/fd6818/fd6818sh.c $(RFBUS) $(SUBAUDIO)
+
+at1141Test: at1141Test.c $(ROOT)/drivers/rf/at1141/at1141.c $(RFBUS) $(ROOT)/drivers/rf/at1141/at1141.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ at1141Test.c $(ROOT)/drivers/rf/at1141/at1141.c $(RFBUS) -lm
+
+SUPERHET_SRC := $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4819_superhet.c \
+	$(ROOT)/drivers/rf/fd6818/fd6818sh.c $(ROOT)/drivers/rf/fd6818/fd6818sh_superhet.c \
+	$(ROOT)/drivers/rf/at1141/at1141.c $(ROOT)/drivers/rf/at1141/at1141_superhet.c $(RFBUS) $(SUBAUDIO)
+superhetTest: superhetTest.c $(SUPERHET_SRC) $(ROOT)/drivers/rf/superhet/superhet.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ superhetTest.c $(SUPERHET_SRC) -lm
+
+bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(RFBUS) $(ROOT)/drivers/rf/bk4819/bk4819.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(RFBUS) $(SUBAUDIO)
 
 # The HR_C7000 clock arithmetic (platform/hrc7000/clock_math.h): the PLL words, UART divisor, bit-bang phase length
 TESTS   += hrc7000ClockTest
@@ -849,8 +876,11 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
 
 run: run-platform
-run-platform: bk4819Test hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest
+run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest
 	./bk4819Test
+	./at1141Test
+	./fd6818shTest
+	./superhetTest
 	./hrc7000ClockTest
 	./hrc7000UartFormatTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin

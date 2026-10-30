@@ -3840,9 +3840,15 @@ static void test_dmr_data_glue(void)
 	// On air without PTT, the view says TX like a call (#148): the strip's pill, the red LED, Home's activity line
 	bool shown_tx = false, red = false, unkeyed = true, dark = true;
 	uint32_t tx_ms = sm.view.last_tx_ms;
+	uint8_t ts0 = sm.view.ch.timeslot, ts_asked = 0;
 	for (int i = 0; i < 60; i++) {
 		run(10);
 		if (sm.view.state == RS_TX && sm.view.dmr.state == RDMR_TX_DATA) {
+			if (ts_asked == 0) {	// a slot change while it is out waits for its end, not lost
+				ts_asked = (uint8_t)(3 - ts0);
+				req(RREQ_DMR_TS, ts_asked);
+				CHECK(sm.view.ch.timeslot == ts0);
+			}
 			shown_tx = true;
 			red = red || hw.led[LED_RED];
 #if CONFIG_APRS
@@ -3858,6 +3864,9 @@ static void test_dmr_data_glue(void)
 	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT) >= 1 && hw.tx_calls > tx0);
 	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_SENDING && dst == 3101234);
 	CHECK(sm.view.state != RS_TX && !hw.led[LED_RED]);	// back to receive once the list is out
+	CHECK(ts_asked != 0 && sm.view.ch.timeslot == ts_asked);
+	req(RREQ_DMR_TS, ts0);
+	CHECK(sm.view.ch.timeslot == ts0);
 	for (unsigned i = n0; i < sim.air_count; i++) {
 		if (sim.air[i].kind == DMR_BURST_CSBK) {
 			CHECK(sim.air[i].host_crc);

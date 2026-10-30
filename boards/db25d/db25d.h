@@ -28,6 +28,7 @@ enum {
 // --- Radio (radio_db25d.c) ---
 typedef struct {
 	uint16_t main_id, lo_id;	// register 0 of each RF chip (0x4819 on the PRO)
+	char variant[4];		// the batch code they give: "DBB", "D64", "D66", "D6T" (rfchip_db25d.c)
 	uint16_t rssi_raw, noise_raw;	// main chip 0x67 / 0x65 from the last status poll
 	uint16_t css_raw;		// and its sub-audio status, 0x0C
 	uint32_t rf_writes;
@@ -58,6 +59,7 @@ uint32_t db25d_cal_counter(void);
 uint16_t db25d_cal_pa(uint32_t hz, bool high);		// DAC B at the top of the ramp
 uint16_t db25d_cal_rx_tune(uint32_t hz);		// DAC A while receiving
 uint8_t db25d_cal_mod(uint32_t hz);			// modcal for hrc7000_mod_bias_dc
+uint8_t db25d_cal_pa_gain(uint32_t hz);			// 0..15, the FD6818 main chip's PA gain (15 without a page)
 void db25d_cal_tx_delays(uint32_t hz, uint16_t *on_us, uint16_t *off_us);
 uint8_t db25d_cal_tx_center(void);			// 128 without a page
 // What a transmission at hz needs from the page. high = the stock's power level 1 (table 0x045), else the other table
@@ -139,6 +141,7 @@ uint32_t db25d_input_raw(void);		// the last key scan before debouncing
 uint8_t db25d_mic_lines(uint16_t *a9_changes, uint16_t *c11_changes);
 void db25d_mic_lines_reset(void);
 uint32_t db25d_input_ptt_ignored(void);	// key scans with PTA9 low that the shared-line gate took for serial data
+bool db25d_input_mic_armed(void);	// PTC11 has read high since power-on: a mic is in the front jack (3.3)
 // The hand mic's key held now (its key number, 0xFF for none; mic_db25d.c)
 uint8_t db25d_mic_key(void);
 // The hand mic's frames as the host UART receives them (miccap_db25d.c, CONFIG_DIAG builds)

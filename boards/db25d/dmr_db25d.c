@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DB25-D DMR: the HR_C7000's modem on the shared glue (platform/hrc7000/dmr_glue.c) with the main BK4819 as the RF
-// front end (docs/spec/hardware-db25d.md 4.5, 9).
+// DB25-D DMR: the HR_C7000's modem on the shared glue (platform/hrc7000/dmr_glue.c) with the main transceiver (BK4819
+// or FD6818, rfchip_db25d.c) as the RF front end (docs/spec/hardware-db25d.md 4.5, 9).
 //
 // Transmit only with make DB25D_DMR_TX=1 (off by default until checked on air); without it tx() refuses in DMR mode
 // and the glue's RF hooks do nothing. With it the stock firmware's scheme (4.5): the modem's 4FSK goes on the
@@ -13,6 +13,7 @@
 // Compiled only with CONFIG_DMR (off by default on this board).
 #include "db25d.h"
 #include "dmr_db25d.h"
+#include "rfchip_db25d.h"
 #include "config.h"
 #include "pins.h"
 #include "platform.h"
@@ -41,7 +42,6 @@
 #endif
 
 static hrc7000_t *modem;
-static bk4819_t *rf;
 
 #if DB25D_DMR_TX
 static void rf_post(uint32_t ev);
@@ -102,9 +102,8 @@ static void speaker_pcm(bool on)
 static void dmr_tx_init(void);
 #endif
 
-void db25d_dmr_init(bk4819_t *main_chip, hrc7000_t *m)
+void db25d_dmr_init(hrc7000_t *m)
 {
-	rf = main_chip;
 	modem = m;	// attached and powered on by the radio init (modem-hrc7000.md 4 steps 4-32)
 	hrc_dmr_board_init(modem, &dmr_board);
 	hrc_audio_pcm_attach(modem, speaker_pcm);
@@ -115,9 +114,8 @@ void db25d_dmr_init(bk4819_t *main_chip, hrc7000_t *m)
 
 void db25d_dmr_enter(uint32_t rx_hz)
 {
-	bk4819_set_state(rf, BK4819_STATE_IDLE);
-	bk4819_dmr_rx_enter(rf);
-	bk4819_set_af_gain(rf, DB25D_DMR_AF_GAIN);
+	db25d_main_idle();
+	db25d_main_dmr_enter(DB25D_DMR_AF_GAIN);
 	hrc7000_dmr_enter(modem, hrc7000_mod_bias_dc(db25d_cal_tx_center(), db25d_cal_mod(rx_hz)), MIC_GAIN_DB);
 	hrc7000_wr(modem, C7_RF_MODE, DB25D_DMR_RF_MODE);	// the stock writes it once at start-up; it only acts in DMR
 	hrc_dmr_enter();
@@ -127,8 +125,8 @@ void db25d_dmr_leave(void)
 {
 	hrc_dmr_leave();
 	hrc7000_fm_idle(modem);
-	bk4819_set_state(rf, BK4819_STATE_IDLE);
-	bk4819_dmr_rx_end(rf);
+	db25d_main_idle();
+	db25d_main_dmr_leave();
 }
 
 uint32_t db25d_dmr_phase(void)

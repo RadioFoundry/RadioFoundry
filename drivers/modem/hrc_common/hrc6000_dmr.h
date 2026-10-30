@@ -227,6 +227,7 @@ typedef struct {
 	int8_t phase_ts[2];	// slot number of each phase (tick & 1), 0 unknown
 	uint8_t ctl_next;	// 0x41 written for the slot after the current one
 	uint8_t ctl_now;	// ... and the one for the slot now starting
+	uint8_t ctl_ended;	// ... and the one for the slot that ended at the last interrupt
 	// CACH TC tracking (5.3)
 	int8_t own_ts;
 	uint8_t tc_agree, tc_disagree;

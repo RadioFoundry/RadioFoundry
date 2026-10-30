@@ -223,10 +223,13 @@ export async function analyze(progmem, c, boardId) {
 	const app = progmem.subarray(c.app_start, c.boards[boardId].slot[0]);
 	const slotRaw = progmem.subarray(c.boards[boardId].slot[0], c.boards[boardId].slot[1]);
 	const slot = await parseSlot(c, boardId, slotRaw);
-	const codec = await locateCodec(lowPart(c, progmem), c, boardId);
+	const found = await locateCodec(lowPart(c, progmem), c, boardId);
+	// a known stock build whose codec has no map yet can't be put in the slot (slotBytes): the backup still completes, and
+	// the codec step asks for a stock file as for a codec it doesn't know
+	const codec = found && codecMap(c, found) ? found : null;
 	const firmware = app.subarray(0, 4096).every((b) => b === 0xFF) ? "empty"
-		: find(app, RFOUNDRY_MARK) >= 0 || find(app, LEGACY_MARK) >= 0 ? "rfoundry" : codec ? "stock" : "unknown";
-	const otherCodec = firmware === "unknown" && codecSignature(app, c) >= 0;
+		: find(app, RFOUNDRY_MARK) >= 0 || find(app, LEGACY_MARK) >= 0 ? "rfoundry" : found ? "stock" : "unknown";
+	const otherCodec = (firmware === "unknown" && codecSignature(app, c) >= 0) || (!!found && !codec);
 	return { firmware, slot, slotBytes: slot ? slotRaw.slice(0, slot.length) : null, codec, otherCodec };
 }
 
@@ -271,6 +274,15 @@ export function progmemFromFile(c, boardId, data, header = undefined) {
 	const progmem = new Uint8Array(c.progmem_size).fill(0xFF);
 	progmem.set(body, c.app_start);
 	return progmem;
+}
+
+// A whole program flash read of this radio that holds no codec RadioFoundry knows (a stock build without a profile, a
+// radio already on another firmware): the bootloader's ID string in its first 48 KB names the radio, and the application
+// area holds something. Not a source for the codec, but a restore puts it back as it is, as a backup's program memory
+export function isProgmemDump(data, c, boardId) {
+	if (data.length !== totalSize(c, boardId) || bootloaderModel(c, data) !== boardId) return false;
+	const app = data.subarray(c.app_start, Math.min(data.length, c.app_start + 4096));
+	return app.some((b) => b !== 0xFF) && app.some((b) => b !== 0x00);
 }
 
 // A program flash backup put back: the application area and the slot, exactly (the bootloader isn't written)

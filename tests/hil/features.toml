@@ -199,6 +199,12 @@ spec = "docs/spec/aprs.md"
 switch = "APRS_IGATE"
 spec = "docs/spec/aprs.md"
 
+[feature.gps_sky]
+switch = "GPS_SKY"
+hardware = "a GPS receiver"
+spec = "docs/spec/aprs.md"
+source = ["core/aprs/nmea_sky.c", "core/ui/ui_gps.c"]
+
 # ── Host link and USB ──
 
 [feature.usb]

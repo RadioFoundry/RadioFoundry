@@ -154,11 +154,28 @@ bool ui_svc_call_alert(uint32_t id);
 // --- Location ---
 typedef struct {
 	bool fix;
-	uint8_t sats;
+	uint8_t sats;		// used in the fix
 	int32_t lat_e7, lon_e7;	// degrees x 1e7
 	int16_t alt_m;
+	bool alt_ok;
+	uint8_t mode;		// 1 no fix, 2 2D, 3 3D, 0 unknown (CONFIG_GPS_SKY)
+	uint8_t in_view;	// satellites the receiver reports: ui_svc_gps_sat 0 .. in_view - 1
+	uint16_t hdop10;	// horizontal dilution x 10, 0xFFFF unknown
+	uint16_t speed_kmh, course;	// 0xFFFF unknown
+	uint32_t utc_hms;	// hhmmss, 0xFFFFFFFF unknown
 } ui_position_t;
 bool ui_svc_position(ui_position_t *out);	// false: no GPS on this radio (or off)
+// One satellite for the GPS screen's sky plot and signal bars
+enum { UI_GNSS_GPS, UI_GNSS_GLONASS, UI_GNSS_GALILEO, UI_GNSS_BEIDOU, UI_GNSS_QZSS, UI_GNSS_COUNT };
+typedef struct {
+	uint8_t sys;		// UI_GNSS_*
+	uint8_t num;		// its number within the system
+	uint8_t elev;		// degrees 0-90, 0xFF unknown
+	uint8_t snr;		// dB-Hz, 0 not tracked
+	uint16_t az;		// degrees, 0xFFFF unknown
+	bool used;		// in the fix
+} ui_gps_sat_t;
+bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out);	// false past the last
 
 // --- Emergency, reset ---
 // Emergency is dmr-ext's: it defines ui_svc_emergency and reports UI_FEAT_EMERGENCY from ui_svc_feat_ext. Until

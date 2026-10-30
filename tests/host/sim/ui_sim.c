@@ -1609,13 +1609,41 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 }
 bool ui_svc_radio_check(uint32_t id) { sim_rec.radio_checks++; check_id = id; check_due = now_ms + 800; return true; }
 bool ui_svc_call_alert(uint32_t id) { (void)id; sim_rec.call_alerts++; return true; }
+// A GPS + BeiDou receiver near Boston with a 3D fix: 9 of 14 satellites used
+static const ui_gps_sat_t sim_sats[] = {
+	{ UI_GNSS_GPS, 2, 62, 44, 48, true }, { UI_GNSS_GPS, 5, 35, 40, 120, true },
+	{ UI_GNSS_GPS, 12, 18, 31, 210, true }, { UI_GNSS_GPS, 15, 74, 47, 300, true },
+	{ UI_GNSS_GPS, 18, 8, 18, 330, false }, { UI_GNSS_GPS, 24, 41, 38, 260, true },
+	{ UI_GNSS_GPS, 29, 5, 0, 160, false }, { UI_GNSS_BEIDOU, 6, 52, 36, 80, true },
+	{ UI_GNSS_BEIDOU, 9, 27, 33, 190, true }, { UI_GNSS_BEIDOU, 16, 13, 22, 20, false },
+	{ UI_GNSS_BEIDOU, 23, 66, 42, 140, true }, { UI_GNSS_BEIDOU, 35, 30, 29, 240, true },
+	{ UI_GNSS_GLONASS, 7, 22, 0, 100, false }, { UI_GNSS_GALILEO, 11, 15, 15, 280, false },
+};
+#define SIM_SATS	(sizeof(sim_sats) / sizeof(sim_sats[0]))
+
 bool ui_svc_position(ui_position_t *out)
 {
+	memset(out, 0, sizeof(*out));
 	out->fix = true;
 	out->sats = 9;
 	out->lat_e7 = 423601000;
 	out->lon_e7 = -710589000;
 	out->alt_m = 43;
+	out->alt_ok = true;
+	out->mode = 3;
+	out->in_view = SIM_SATS;
+	out->hdop10 = 9;
+	out->speed_kmh = 4;
+	out->course = 45;
+	out->utc_hms = 123519;
+	return true;
+}
+
+bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out)
+{
+	if (i >= SIM_SATS)
+		return false;
+	*out = sim_sats[i];
 	return true;
 }
 static bool emergency_on;

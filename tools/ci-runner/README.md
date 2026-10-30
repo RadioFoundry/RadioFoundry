@@ -4,9 +4,9 @@
 # Self-hosted GitHub Actions runner
 
 A containerized runner for this repository's Linux CI jobs, for a Docker host you own: a fresh container for every
-job, and no way out to the network except HTTPS to GitHub. The workflows use it when the repository variable
-`RFOUNDRY_CI_RUNNER` is set to its label (`rfoundry-ci`); [docs/dev/ci-runners.md](../../docs/dev/ci-runners.md#the-github-self-hosted-runner)
-explains the routing.
+job, and no way out to the network except HTTPS to GitHub. **Retired:** every workflow now runs on GitHub's hosted
+runners and none reads `RFOUNDRY_CI_RUNNER` ([docs/dev/ci-runners.md](../../docs/dev/ci-runners.md#the-github-self-hosted-runner)).
+Bringing it back means adding the routing to the workflows again; the rest of this page is how it was set up.
 
 | File | What |
 |---|---|

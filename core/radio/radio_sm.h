@@ -227,6 +227,7 @@ typedef struct {
 	uint8_t base_ts;
 	uint8_t base_mode;
 	uint8_t temp_ts;		// a timeslot chosen for now (RREQ_DMR_TS), 0 = none
+	uint8_t ts_pending;		// RREQ_DMR_TS that came during a transmission without PTT: applied at its end
 	uint8_t board_mode;		// radio_mode_t the board was last put in
 	uint8_t vol_step;		// the volume step of a radio without a knob
 	int8_t vol_override;		// the debug link's step over the knob, -1 = none

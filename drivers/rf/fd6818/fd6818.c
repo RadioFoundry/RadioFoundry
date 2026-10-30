@@ -5,9 +5,7 @@
 #include "fd6818.h"
 #include "rf/subaudio/subaudio.h"
 
-#define READ_BIT	0x80u
-#define BIT_US		1u	// clock low and high time
-#define READ_TURN_US	2u	// after releasing the data line, before clocking the reply in
+#define RESET_MS	10u
 
 typedef fd6818_regval_t regval_t;
 
@@ -117,62 +115,23 @@ int8_t fd6818_rssi_cal_db(const fd6818_rssi_cal_t *t, uint8_t n, uint32_t hz)
 	return t[n - 1].db;
 }
 
-uint16_t fd6818_ctcss_word(uint16_t hz_x10)
-{
-	// Hz x 20.64888 = (Hz x 10) x 2.064888 = (Hz x 10) x 258111 / 125000 (exact; fits 32 bits up to 1664 Hz x 10,
-	// so the product is done in 64 bits for any input)
-	return (uint16_t)(((uint64_t)hz_x10 * 258111u + 62500u) / 125000u);
-}
-
-void fd6818_attach(fd6818_t *dev, const fd6818_bus_t *bus)
+void fd6818_attach(fd6818_t *dev, rfbus_t *bus)
 {
 	fd6818_attach_variant(dev, bus, &fd6818_variant_default);
 }
 
-void fd6818_attach_variant(fd6818_t *dev, const fd6818_bus_t *bus, const fd6818_variant_t *variant)
+void fd6818_attach_variant(fd6818_t *dev, rfbus_t *bus, const fd6818_variant_t *variant)
 {
 	dev->bus = bus;
 	dev->variant = variant;
 	dev->freq_10hz = 0;
 	dev->bw_reg = 0;
 	dev->state = 0;
-	dev->writes = 0;
-}
-
-static uint32_t enter(const fd6818_bus_t *b)
-{
-	return b->crit_enter != NULL ? b->crit_enter() : 0;
-}
-
-static void leave(const fd6818_bus_t *b, uint32_t s)
-{
-	if (b->crit_exit != NULL) {
-		b->crit_exit(s);
-	}
-}
-
-static void send_bits(const fd6818_bus_t *b, uint32_t v, int n)
-{
-	for (int i = n - 1; i >= 0; i--) {
-		b->clk(false);
-		b->data_out(((v >> i) & 1u) != 0);
-		b->delay_us(BIT_US);
-		b->clk(true);	// sampled by the chip on this edge
-		b->delay_us(BIT_US);
-	}
 }
 
 void fd6818_write(fd6818_t *dev, uint8_t reg, uint16_t val)
 {
-	const fd6818_bus_t *b = dev->bus;
-	uint32_t s = enter(b);
-	b->cs(false);
-	// The address byte goes out as given: bit 7 is the chip's read flag, so callers write registers below 0x80
-	send_bits(b, (uint32_t)reg << 16 | val, 24);
-	b->clk(false);
-	b->cs(true);
-	leave(b, s);
-	dev->writes++;
+	rfbus_write(dev->bus, reg, val);
 	if (reg == FD6818_REG_STATE) {
 		dev->state = val;
 	} else if (reg == FD6818_REG_BANDWIDTH) {
@@ -182,25 +141,7 @@ void fd6818_write(fd6818_t *dev, uint8_t reg, uint16_t val)
 
 uint16_t fd6818_read(fd6818_t *dev, uint8_t reg)
 {
-	const fd6818_bus_t *b = dev->bus;
-	uint32_t s = enter(b);
-	b->cs(false);
-	send_bits(b, (reg & 0x7Fu) | READ_BIT, 8);
-	b->clk(false);
-	b->data_release();
-	b->delay_us(READ_TURN_US);
-	uint16_t v = 0;
-	for (int i = 0; i < 16; i++) {
-		b->clk(false);
-		b->delay_us(BIT_US);
-		b->clk(true);
-		v = (uint16_t)((v << 1) | (b->data_in() ? 1u : 0u));	// read while the clock is high
-		b->delay_us(BIT_US);
-	}
-	b->clk(false);
-	b->cs(true);
-	leave(b, s);
-	return v;
+	return rfbus_read(dev->bus, reg);
 }
 
 static void write_table(fd6818_t *dev, const regval_t *t, size_t n)
@@ -212,14 +153,9 @@ static void write_table(fd6818_t *dev, const regval_t *t, size_t n)
 
 void fd6818_init(fd6818_t *dev)
 {
-	const fd6818_bus_t *b = dev->bus;
-	b->cs(true);
-	b->clk(false);
 	const fd6818_variant_t *v = dev->variant;
 	fd6818_write(dev, v->init[0].reg, v->init[0].val);	// soft reset
-	if (b->delay_ms != NULL) {
-		b->delay_ms(10);
-	}
+	rfbus_delay_ms(dev->bus, RESET_MS);
 	write_table(dev, v->init + 1, (size_t)v->init_n - 1);
 	write_table(dev, v->post_init, v->post_init_n);
 	dev->freq_10hz = v->park_10hz;
@@ -284,7 +220,7 @@ void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10)
 		fd6818_write(dev, FD6818_REG_SUBAUDIO, 0x0000);
 		return;
 	}
-	fd6818_write(dev, FD6818_REG_CTCSS_FREQ, fd6818_ctcss_word(hz_x10));
+	fd6818_write(dev, FD6818_REG_CTCSS_FREQ, subaudio_ctcss_word(hz_x10, true));
 	fd6818_write(dev, FD6818_REG_SUBAUDIO, 0x9045);	// TX CTCSS on, gain 0x45
 }
 
@@ -301,7 +237,7 @@ void fd6818_set_rx_tone(fd6818_t *dev, fd6818_tone_t type, uint16_t value)
 {
 	switch (type) {
 	case FD6818_TONE_CTCSS:
-		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, fd6818_ctcss_word(value));
+		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, subaudio_ctcss_word(value, true));
 		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, CTCSS_WORD_ALT | 0x01CEu);
 		fd6818_write(dev, FD6818_REG_CSS_THRESH, 0x028F);
 		fd6818_write(dev, FD6818_REG_SUBAUDIO, SUBAU_ON | SUBAU_CTCSS | SUBAU_GAIN);

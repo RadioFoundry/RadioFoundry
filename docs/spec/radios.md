@@ -260,6 +260,8 @@ The Retevis RT73 is reported as the same radio (unverified) ([kydera-ham forum](
   51.55 MHz and the other works at the IF in receive. BK4819 support first
   appears in the 2024-05-09 build, so older vendor images must not be loaded on a PRO. Both chips share one
   3-wire bus with separate enables.
+  The FD6818 batches pair an FD6818 main transceiver with a 0x7813 (D64), FD6818 (D66) or AT1141 (D6T) LO;
+  RadioFoundry drives all four from one image, the FD6818 ones untested ([hardware-db25d.md](hardware-db25d.md) 4.8).
 - **Bands and power:** 136–174 / 400–480 MHz, 20 W or 5 W, 13.8 V ([radioddity.com](https://radioddity.com/products/radioddity-db25d)).
   The FCC grant lists 19.7 W conducted. The PA is a discrete RF MOSFET on the TX board (photo). PA power is set
   by DAC B with a ramp at each burst, as on the DM-32.
