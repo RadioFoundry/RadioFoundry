@@ -499,7 +499,7 @@ clamps, rounds to the step and calls `hal_radio_t.ref_trim`. The debug link's SE
 
 | Board | Trim |
 |---|---|
-| with a reference control (`hal_radio_t.ref_trim` sets it) | adds the trim to the control its calibration sets, at once and at every receive tune; its hardware page gives the scale |
+| with a reference control (`hal_radio_t.ref_trim` sets it) | adds the trim to the control its calibration sets, at every tune; its hardware page gives the scale |
 | with synthesizers only (`hal_radio_t.ref_trim` keeps the value) | programs each RF chip at f x (1 + trim) instead of f, at every tune and burst (`ref_trim_tune_hz`). A superhet's LO takes f x (1 + trim) + IF and its IF stays as it is: both chips run from one reference, so the IF's share of the error cancels |
 | without the hook, or built with `CONFIG_REF_TRIM=n` | the row is hidden; nothing changes |
 

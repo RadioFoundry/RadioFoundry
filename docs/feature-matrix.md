@@ -39,7 +39,7 @@ is `tools/bringup.py list --radio <id>`.
 | Feature | DM-32UV | DM-1701 | DM-1801 Pro | DB25-D PRO | MD-380 | MD-UV380 |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
 | `fm` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded |
-| `ref_trim` | not written | not written | not recorded | not recorded | not recorded | not written |
+| `ref_trim` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded |
 | `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded |
 | `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded |
@@ -212,7 +212,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● |
 | `DTMF` | ● | ● | ● | ● | … | ● |
 | `VOX` | … | ● | ● | … | ● | ● |
-| `REF_TRIM` | … | … | ● | ● | ● | … |
+| `REF_TRIM` | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● |
 | `VIBRATE` | ? | ✕ | ● | ✕ | ✕ | ✕ |
 | `GPS` | ● | ● | ✕ | ● | ● | ● |

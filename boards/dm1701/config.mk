@@ -27,7 +27,3 @@ BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (docs/user/23-radios.md, What 
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and the one UART is the GPS line
 # GPS stays on: no module from the factory, but owners fit one on PA10 / PA9 (hardware-dm1701.md 14.2). Detected at run
 # time in the background: a radio without one stops listening after 5 s of silence
-# What the hardware can do but this radio's driver or glue doesn't yet (docs/build-config.md, "Unsupported, not
-# written, unconfirmed"): off by default, and off in ci's maximal configuration too
-CONFIG_REF_TRIM ?= n
-BOARD_NOT_WRITTEN += REF_TRIM	# no hal_radio_t.ref_trim yet: it would add to the calibrated HR_C6000 MOD1 offset
