@@ -42,28 +42,28 @@ runs = { board = "db25d" }
 code = "D64"
 name = "FD6818 transceiver, 0x7813 LO (2021-2023)"
 level = "testing"
-notice = "Not tried on this hardware yet: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+notice = "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
 runs = { board = "db25d" }
 
 [[hardware.variants]]
 code = "D66"
 name = "FD6818 transceiver and LO (2021-2023)"
 level = "testing"
-notice = "Not tried on this hardware yet: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+notice = "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
 runs = { board = "db25d" }
 
 [[hardware.variants]]
 code = "D6T"
 name = "FD6818 transceiver, AT1141 LO (2021-2023)"
 level = "testing"
-notice = "Not tried on this hardware yet: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+notice = "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
 runs = { board = "db25d" }
 
 [status]
 level = "supported"
 summary = """\
 FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings \
-storage work on the radio. The older FD6818 batches run the same image, not yet tried on one. Open: the Retevis RT73."""
+storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73."""
 release = "stable"
 
 # The vendor IAP loader (0x03000000..0x0300BFFF) is never written. RadioFoundry's first stage fills the sector at 0x0300C000
