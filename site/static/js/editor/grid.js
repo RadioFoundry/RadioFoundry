@@ -219,7 +219,11 @@ export class Grid {
 		td.replaceChildren(input);
 		td.classList.add("editing");
 		input.focus();
-		if (input.select && typed === null) input.select();
+		// a value from the attribute leaves the caret at 0 (Chromium), before the key that started the edit: the next
+		// key would land ahead of it ("461" became "614")
+		// (a select has neither)
+		if (typed === null) input.select?.();
+		else input.setSelectionRange?.(typed.length, typed.length);
 		let done = false;
 		const finish = (save, move = null) => {
 			if (done) return;

@@ -138,7 +138,7 @@ the codeplug.
 
 | Item | What it does |
 |---|---|
-| About | "RadioFoundry", the release name (such as v26.11) and the commit it was built from, or only the commit for a build between releases, and the radio model. Then the authors and the license of each part: RadioFoundry (MIT), the third-party libraries, and the AMBE+2 codec. The codec shows as "stock": it comes from your radio's own firmware and isn't part of RadioFoundry. The page is text in small print, with nothing cut short and no status bar. The status bar comes back during a call. **Up**, **Down** or the knob scroll a page longer than the screen |
+| About | "RadioFoundry", the release name (such as v26.11) and the commit it was built from, or only the commit for a build between releases, the firmware's date (the commit's, or the build's for a build with local changes), and the radio model. Then the authors and the license of each part: RadioFoundry (MIT), the third-party libraries, and the AMBE+2 codec. The codec shows as "stock": it comes from your radio's own firmware and isn't part of RadioFoundry. The page is text in small print, with nothing cut short and no status bar. The status bar comes back during a call. **Up**, **Down** or the knob scroll a page longer than the screen |
 | Codeplug | Where the channels come from (built-in or from the CPS), the number of zones and channels |
 | Diagnostics | The diagnostics page (also **OK**, **6**, **7**) |
 | Factory reset | Puts every setting back to its default ([below](#factory-reset)) |

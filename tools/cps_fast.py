@@ -121,13 +121,14 @@ class FastLink:
             return b + (port.read(n) if n else b"")
         return b + self.t.read(4096, 0.002)
 
-    def request(self, op, payload=b"", timeout=None, tries=3):
+    def request(self, op, payload=b"", timeout=None, tries=3, cmd=CMD):
         """(status, data after the status) of one CODEPLUG request. Repeated when no answer comes (every op is safe to
-        repeat: READ and SUMS change nothing, DATA takes a repeat as a repeat, BLOCK starts the block again)"""
-        body = bytes([op]) + bytes(payload)
+        repeat: READ and SUMS change nothing, DATA takes a repeat as a repeat, BLOCK starts the block again). Another
+        cmd with op None sends payload alone"""
+        body = (b"" if op is None else bytes([op])) + bytes(payload)
         for attempt in range(tries):
             self.seq = (self.seq + 1) & 0xFF
-            f = rfoundry_debug.frame(CMD, self.seq, body)
+            f = rfoundry_debug.frame(cmd, self.seq, body)
             self.t.write(f)
             self.requests += 1
             self.wire += len(f)
@@ -136,14 +137,14 @@ class FastLink:
                 r = self._frame(deadline)
                 if r is None:
                     break
-                cmd, seq, data = r
+                got, seq, data = r
                 if seq != self.seq:
                     continue
                 self.wire += 8 + len(data)
-                if cmd == rfoundry_debug.CMD_ERROR:
+                if got == rfoundry_debug.CMD_ERROR:
                     raise FastError(f"op {op}: frame error {data[:1].hex()}", data[0] if data else None)
-                if cmd != (CMD | 0x80) or not data:
-                    raise FastError(f"op {op}: unexpected reply {cmd:#x}")
+                if got != (cmd | 0x80) or not data:
+                    raise FastError(f"op {op}: unexpected reply {got:#x}")
                 return data[0], bytes(data[1:])
         raise FastError(f"op {op}: no answer")
 
@@ -252,6 +253,14 @@ class FastLink:
 
     def abort(self):
         self.request(OP_ABORT)
+
+    def iddb(self, dmr_id=0):
+        """The radio's DMR ID database lookup on the same link (DL_CMD_IDDB, debuglink.md 3.23): {format, records, found,
+        text}, to check what a write left against what the radio shows"""
+        st, d = self.request(None, struct.pack("<I", dmr_id), cmd=rfoundry_debug.IDDB)
+        if st != 0:
+            raise FastError(f"IDDB: {rfoundry_debug.STATUS.get(st, st)}", st)
+        return rfoundry_debug.decode_iddb(d)
 
     # ── images ──
     def read_image(self, regions, cache=None, image=None, progress=None):

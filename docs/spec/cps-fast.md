@@ -15,14 +15,16 @@ bytes: the open-firmware image of `open-firmware-cps.md` 7, as the CPS shows it.
 - At the end the radio re-reads its codeplug, as after a CPS `C 5`. No restart.
 
 The CPS stays: qdmr and the open-firmware CPS speak it. The fast protocol is for our own tools: `tools/cps_fast.py`
-now, the web Codeplug Editor later (section 12).
+and the web Codeplug Editor (`site/static/js/codeplug/fastlink.js`), which use it when the radio's VERSION features
+list `CPS_FAST`.
 
 - Firmware: `core/cps/cps_fast.c` (the engine, no RTOS), `core/cps/cps_lz4.c` (the codec), the hook in
   `core/debuglink/debuglink.c`, the tick in `core/hostlink/hostlink.c`, the boot resume in `core/app/app.c`.
 - Switch: `CONFIG_CPS_FAST` (`docs/build-config.md`), on by default with `CONFIG_CPS_OPENFW` and `CONFIG_DEBUGLINK`.
   Built without it, the command answers status 4 (unavailable).
-- Host: `tools/cps_fast.py`.
-- Tests: `tests/host/cpsFastTest.c` (the engine), `tests/host/cpsFastClientTest.py` (the client against `cpsSim`).
+- Hosts: `tools/cps_fast.py`, the editor's `fastlink.js` and `transport.js`.
+- Tests: `tests/host/cpsFastTest.c` (the engine), `tests/host/cpsFastClientTest.py` (the client against `cpsSim`),
+  `site/tests/codeplug.test.mjs` (the editor's client against `cpsSim`).
 
 ## 1. Transport
 
@@ -41,7 +43,8 @@ Why the debug link and not a mode of the CPS port:
 
 The debug link's limits shape the operations: a request carries at most 64 payload bytes, a reply at most 1024. Both
 come from buffers the firmware already has, so the protocol adds none. Writes therefore move in pieces of 61 stream
-bytes, which costs little: the flash, not the link, is the slow part of a write (section 10).
+bytes. One piece per round trip would make the link the slow part on a programming cable, where a round trip costs
+several milliseconds beyond the bytes; hosts send DATA pipelined instead (section 3.6).
 
 ## 2. The image and its blocks
 
@@ -73,7 +76,7 @@ the bytes after it.
 |---|---|---|---|
 | 0 | INFO | none | the layout and limits (3.1) |
 | 1 | SUMS | addr u32, count u8 (1 to 16) | addr u32, count u8, blank mask u16, CRC-32 u32 x count |
-| 2 | READ | addr u32, offset u16 | addr u32, format u8, length u16, CRC-32 u32, offset u16, up to 1000 stream bytes |
+| 2 | READ | addr u32, offset u16 | addr u32, format u8, length u16, CRC-32 u32, offset u16, a reserved byte (0), up to 1000 stream bytes |
 | 3 | BEGIN | mode u8: 0 direct, 1 staged | stage_max u16 (0 for direct) |
 | 4 | BLOCK | addr u32, format u8, length u16, CRC-32 u32 | none |
 | 5 | DATA | offset u16, 1 to 61 stream bytes | received u16 |
@@ -167,6 +170,17 @@ bytes is skipped by the journal; a staged one reuses the block's slot.
 The debug link's `storage` view section has `cpsf.state`, `cpsf.read`, `cpsf.written`, `cpsf.commits` and
 `cpsf.refused` (`debuglink.md` 3.7).
 
+### 3.6 Pipelined DATA
+
+A host may send up to 8 DATA requests of one block before reading their answers. Nothing on the radio changes for it:
+the requests queue and are answered in order. 8 frames are at most 576 bytes: a UART host port's 1 KB receive ring
+holds them all, and USB holds back what its 512-byte CDC buffer can't take yet (an OUT packet isn't acknowledged
+until there is room), so nothing is lost on either. BLOCK and END are still sent alone, and END's answer waited for, since END writes the flash.
+
+A window that goes wrong (an answer missing, a refusal: a frame lost to an overrun leaves a gap, and the requests
+after it are refused with reason 8) is not repaired piece by piece: the host sends the block again from BLOCK, one
+DATA at a time. Every operation is safe to repeat (3.4), so this needs no state on the host beyond the block.
+
 ## 4. The hash: CRC-32
 
 The block hash is CRC-32 (IEEE 802.3, reflected, the zlib `crc32`), over the 4096 bytes of the block as the image shows
@@ -245,8 +259,9 @@ Each block is written at END through the sector journal (`storage_sector_write`,
 the new block and a header go to the journal first, so a power cut during the erase or the program is finished at the
 next boot. Each block is old or new after a cut. A session cut halfway leaves some blocks new and some old, as a CPS
 write cut halfway does. Boards without a staging area write this way, and every radio
-uses it for writes larger than the staging area (a DMR ID database: write its header block last, so a cut leaves the
-old header pointing at old records).
+uses it for writes larger than the staging area. A DMR ID database goes in a direct session of its own, the block
+holding its header sent first with the header erased and again last, so a cut leaves no database rather than a mix
+(`iddb-compact.md` 4.3).
 
 ### 7.2 Staged mode
 
@@ -332,7 +347,7 @@ channel 3 and writes the block back staged. Payloads in hex; each travels in a d
 | > | `01 00 30 00 00 01` | SUMS 0x3000, 1 block |
 | < | `00 00 30 00 00 01 00 00 15 dd 07 05` | OK, not blank, CRC-32 0x0507DD15 |
 | > | `02 00 30 00 00 00 00` | READ 0x3000 from offset 0 |
-| < | `00 00 30 00 00 01 99 03 15 dd 07 05 00 00 ...` (936 bytes) | OK, LZ4, 921 stream bytes, the CRC, offset 0, the whole stream |
+| < | `00 00 30 00 00 01 99 03 15 dd 07 05 00 00 00 ...` (936 bytes) | OK, LZ4, 921 stream bytes, the CRC, offset 0, the reserved byte, the whole stream |
 | > | `03 01` | BEGIN staged |
 | < | `00 3f 00` | OK, 63 slots |
 | > | `04 00 30 00 00 01 d7 02 1b d9 60 28` | BLOCK 0x3000, LZ4, 727 bytes, CRC-32 0x2860D91B |
@@ -362,6 +377,7 @@ What a transfer costs, on a 33-block codeplug (the bench radio's, 135 KB in bloc
 | fast, full read | about 5 KB: 3 SUMS, 33 READs | about 0.5 s plus 36 round trips | about 0.1 s |
 | fast, read from a cache, nothing changed | 3 SUMS, about 0.3 KB | a few round trips | a few ms |
 | fast, write one changed channel | one block: about 0.8 KB of stream | under 0.1 s on the wire | |
+| fast, verify after a write | SUMS of the written blocks, 72 bytes per 16 | a few round trips | a few ms |
 
 Writes are limited by the flash, not the link. A 4 KB sector erase and program take some 60 ms on a
 W25Q128 SPI NOR (the erase alone up to 400 ms at worst). A direct block costs two of them (journal and target), a staged block
@@ -388,9 +404,6 @@ The stub stays the tool for firmware and whole-flash work.
 ## 12. Open points
 
 - Not yet run on a radio: the HIL test (a read against the CPS, a staged write, a power cut during a commit) is to be
-  written once the owner flashes a build with the switch.
-- The web Codeplug Editor's transport (`site/static/js/codeplug/transport.js`) doesn't speak the protocol yet. It
-  would sit beside `cps-serial` and fall back to it when INFO answers status 1 or 4; `link.js` and
-  `flasher/lz4.js` already have the framing and the codec.
-- A host's write of the DMR ID database through the protocol: direct mode works today; ordering the header block
-  last is the host's job.
+  written once the owner flashes a build with the switch. The web editor speaks the protocol
+  (`site/static/js/codeplug/fastlink.js`) and is tested against the host simulator only; it keeps the CPS for
+  radios that don't list `CPS_FAST`.

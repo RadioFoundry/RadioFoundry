@@ -31,6 +31,9 @@
 #ifndef RFOUNDRY_RELEASE
 #define RFOUNDRY_RELEASE ""
 #endif
+#ifndef RFOUNDRY_GIT_DATE
+#define RFOUNDRY_GIT_DATE ""
+#endif
 
 extern const ui_scr_def_t ui_find_screen;
 extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen;	// ui_aprs.c
@@ -3675,16 +3678,23 @@ static const char *about_text(void)
 	static char t[400];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
-	sb_str(&b, "RadioFoundry ");
-	// a release: its name, then the commit it was built from
+	// every line "Label: value" (ui_draw_text_page shows labels dim). A release: its name, then the commit it was built
+	// from
+	sb_str(&b, "Firmware: RadioFoundry ");
 	if (RFOUNDRY_RELEASE[0] != '\0') {
 		sb_str(&b, RFOUNDRY_RELEASE);
-		sb_str(&b, "\nBuild ");
+		sb_str(&b, "\nBuild: ");
 	}
 	sb_str(&b, RFOUNDRY_GIT);
+	// the commit's date (UTC; a dirty build's: the build's), which the web editor's update notice compares with a
+	// release's
+	if (RFOUNDRY_GIT_DATE[0] != '\0') {
+		sb_str(&b, "\nDate: ");
+		sb_str(&b, RFOUNDRY_GIT_DATE);
+	}
 	sb_str(&b, "\nRadio: ");
 	sb_str(&b, board.name);
-	sb_str(&b, "\nMIT License, (c) 2026 The RadioFoundry Authors\n");
+	sb_str(&b, "\nLicense: MIT, (c) 2026 The RadioFoundry Authors\n");
 	// one author per line, in AUTHORS order: a comma-joined list wraps mid-name on every display
 	sb_str(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? "Authors:" : "Author:");
 	for (unsigned i = 0; i < RFOUNDRY_ABOUT_AUTHOR_COUNT; i++) {

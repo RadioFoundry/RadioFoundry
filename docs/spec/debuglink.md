@@ -109,6 +109,8 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1B` | CRASH | operation u8 + arguments (3.19); `CONFIG_CRASH_LOG` builds, else status 4 | none (3.19) |
 | `0x1C` | CODEPLUG | operation u8 + arguments (3.20); `CONFIG_CPS_FAST` builds, else status 4 | layout, block sums, an LZ4 stream, or a reason (3.20) |
 | `0x1D` | WATCHDOG | operation u8 + arguments (3.21); `CONFIG_WATCHDOG` builds, else status 4 | none (3.21) |
+| `0x1E` | RX2 | operation u8 + arguments (3.22) | flags, or none (3.22) |
+| `0x1F` | IDDB | DMR ID u32 (3.23); `CONFIG_DMR` builds, else status 4 | format u8, records u32, found u8, text (3.23) |
 
 ### 3.1 VERSION
 
@@ -118,6 +120,7 @@ Example from an STM32F4 radio (`<profile>` stands for the codec profile id):
 proto=1                 protocol version (this document)
 view=4                  GET_VIEW record version (3.7)
 git=5277f73a            firmware git hash
+git_time=1761840000     the commit's time (a dirty build's: the build's), Unix seconds; absent without git
 release=v26.11          release name; only in a build of a release tag
 board=XR-100UV
 features=FM,SUBTONE,DMR,DMR_PRIVACY,...,USB,HOSTLINK,DEBUGLINK
@@ -132,6 +135,8 @@ inject_max_ms=10000     longest hold of an injected key, PTT included
 
 `release=` is the release name (`RFOUNDRY_RELEASE`, [release.md](../dev/release.md#release-names)), present only when
 the image was built from a release tag; `git=` is always the commit. A host shows the release name when there is one.
+`git_time=` is the commit's committer time (`RFOUNDRY_GIT_TIME`), so a clean build stays reproducible; a build with
+local changes (`-dirty`) carries its build time instead, since its code is newer than the commit. A host compares it with a release's `git_time` to tell whether a build that isn't a release is older than that release.
 
 `codec=` is the board's own check of the codec in flash, the same one that decides whether DMR voice runs: a
 profile id (`<profile>-s11` on an STM32F4 radio: the descriptor is valid and the signature word and the CRC-32 of
@@ -703,6 +708,20 @@ a radio with one SoC, INFO answers no flags and the rest `DL_ST_UNAVAILABLE`.
 The token is `'BRDG'` (`0x47445242`, little endian in the payload); another value, or a transmitting radio, is
 answered refused (7). The bridge is dropped if PTT went down between the reply and its start.
 `rfoundry_debug.py rx2 [info|restart]`; `stubtool.py --board gd88b` uses BRIDGE.
+
+### 3.23 IDDB
+
+The DMR ID database as the radio reads it ([open-firmware-cps.md](open-firmware-cps.md) 7.5,
+[iddb-compact.md](iddb-compact.md)), and the text the radio shows for an ID that isn't a contact. Read only; the same
+lookup as a received call's name, without the cut to the screen's name length. `CONFIG_DMR` builds, else
+`DL_ST_UNAVAILABLE`.
+
+| Request | Reply after the status |
+|---|---|
+| DMR ID u32 (0: the database only) | format u8 (the header's letter: `N`, `n`, `C`; 0 for no database or one the build doesn't read), records u32, found u8, the text (up to 48 characters, no terminator) |
+
+`rfoundry_debug.py iddb [ID ...]`, `tools/cps_fast.py`'s `FastLink.iddb()`. `tests/hil/test_iddb.py` compares the
+radio's answers with records read from the database by `tools/iddb_read.py`.
 
 ## 4. Safety
 

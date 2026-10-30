@@ -8,8 +8,10 @@ import { h, t, ROOT, button, notice, download, progressBar } from "../flasher/do
 import { SerialStream, serialSupported, RFOUNDRY_USB, browserErrorKey } from "../flasher/link.js";
 import { CodeplugImage } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
-import { LIMITS } from "../codeplug/records.js";
-import { CpsSerial, TransportError, estimate } from "../codeplug/transport.js";
+import { LIMITS, decodeGeneral } from "../codeplug/records.js";
+import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY } from "../codeplug/transport.js";
+import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
+import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
@@ -19,6 +21,7 @@ import { extensions } from "./extensions.js";
 import "./parts.js";
 import * as diag from "../diag.js";
 import { initReporting, reportedLine } from "../report.js";
+import { updateFor } from "../flasher/version.js";
 
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
 const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "iddb", "problems"];
@@ -54,7 +57,7 @@ function load(model, name, { fromRadio = false } = {}) {
 	S.history.reset();
 	S.dirty = false;
 	S.iddbChanged = false;
-	if (!fromRadio && S.conn) S.conn.image = S.conn.image || null;
+	if (!fromRadio && S.conn) S.conn.dbKnown = false;
 	refresh();
 	draftSoon();
 }
@@ -446,7 +449,7 @@ function saveFile(kind) {
 	if (errors.length) return say(t("editor.err.fix_first", { n: errors.length }), "bad");
 	const img = encode(S.model);
 	if (kind === "tftp") {
-		download("codeplug.bin", tftpBytes(img));
+		download("codeplug.bin", tftpBytes(img, iddbEnd(S.conn?.radio)));
 		say(t("editor.saved_tftp"), "info");
 		return;
 	}
@@ -471,7 +474,12 @@ async function connect() {
 	if (S.conn) return S.conn;
 	let stream, cable = false;
 	if (S.sim) {
-		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes, foreign: location.hash === "#sim-foreign" });
+		// #sim-compact: firmware that reads a format C ID database; &release=vYY.M: a radio that runs that release;
+		// &git_time=N: a build of a commit from that time (Unix seconds)
+		const hash = location.hash;
+		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes, foreign: hash === "#sim-foreign",
+			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
+			gitTime: Number(hash.match(/[#&]git_time=(\d+)/)?.[1]) || 0 });
 		stream = S.fake.stream();
 	} else {
 		if (!serialSupported()) throw new TransportError("no_serial");
@@ -486,7 +494,8 @@ async function connect() {
 	try {
 		const { radio, probe } = await tr.identify(S.radios);
 		diag.note("radio found", { radio: radio.id, board: probe.board, git: probe.git, features: probe.features });
-		S.conn = { transport: tr, radio, probe, image: null, cable };
+		// dbKnown: the radio's ID database is the model's (read or written since the model was loaded)
+		S.conn = { transport: tr, radio, probe, image: null, uid: null, cable, dbKnown: false };
 		return S.conn;
 	} catch (e) {
 		await tr.close();
@@ -580,23 +589,100 @@ async function exclusive(fn) {
 	}
 }
 
+// The radio on the line now. A write sends only the bytes that differ from c.image, so c.image must be this radio's:
+// a programming cable stays open while one radio is swapped for the next, and the bytes the last one had are not the
+// new one's. A different chip UID, or none (firmware that doesn't say), drops c.image and the write reads first
+async function onLine(c) {
+	const uid = await c.transport.who(S.radios);
+	c.radio = c.transport.radio;
+	if (c.image && (!uid || uid !== c.uid)) {
+		diag.note("radio changed: read before write", { was: c.uid, now: uid });
+		c.image = null;
+		c.dbKnown = false;
+	}
+	c.uid = uid;
+}
+
+// The offer to convert a format N database to C, after a read: at most once in 12 hours for each radio model,
+// whatever the answer (a converted database isn't offered again anyway)
+const CONVERT_QUIET = 12 * 3600 * 1000;
+
+function convertDue(radio) {
+	const key = `rfoundry-editor-iddb-convert:${radio}`;
+	try {
+		if (Date.now() - Number(localStorage.getItem(key) || 0) < CONVERT_QUIET) return false;
+		localStorage.setItem(key, String(Date.now()));
+	} catch { /* without storage the offer comes after every read */ }
+	return true;
+}
+
 async function readRadio() {
 	const go = () => exclusive(async () => {
 		try {
 			const c = await connect();
 			if (!c) return;
+			await onLine(c);
 			const img = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
-				c.transport.read({ signal, progress: (n, total) => bar.set(n, total) }));
+				c.transport.read({ signal, cache: c.image, progress: (n, total) => bar.set(n, total) }));
 			diag.note("read done", { bytes: img.bytes.length });
 			c.image = img.clone();
 			load(decode(img), `${c.radio.id}-codeplug`, { fromRadio: true });
+			c.dbKnown = true;
 			say(t("editor.read_done", { radio: c.radio.name, channels: S.model.channels.length, contacts: S.model.contacts.length }), "ok");
+			// the database's format against what this radio's firmware reads (iddb-compact.md 6)
+			const fmt = S.model.iddb?.format;
+			if (fmt === "C" && !c.transport.compact) {
+				S.iddbChanged = true;
+				say(t("editor.iddb.old_radio_reads_none"), "warn");
+			} else if (fmt === "N" && c.transport.compact && convertDue(c.radio.id)) {
+				confirmDialog(t("editor.iddb.upgrade", { radio: c.radio.name }), t("editor.iddb.convert"), upgradeIddb,
+					{ onClose: () => offerUpdate(c) });
+				return;
+			}
+			offerUpdate(c);
 		} catch (e) {
 			await fail("read codeplug", e);
 		}
 	});
 	if (S.dirty) confirmDialog(t("editor.read_confirm"), t("editor.read"), go);
 	else go();
+}
+
+// Features a newer release may add that change what the editor can do with the radio, with what each gains
+const UPDATE_GAINS = ["CPS_FAST", "IDDB_COMPACT"];
+let releaseList = null;
+
+// After a read: a newer release for this radio (releases.json, updateFor), offered once per tab for each radio, running
+// build and release
+async function offerUpdate(c) {
+	const v = c.transport.probe?.version || {};
+	const gitTime = Number(v.git_time) || 0;
+	if (!v.release && !gitTime) return;
+	if (!releaseList) {
+		try {
+			releaseList = (await (await fetch(`${ROOT}data/releases.json`)).json()).releases || [];
+		} catch {
+			return;
+		}
+	}
+	const rel = updateFor(releaseList, c.radio.id, v.release, gitTime);
+	if (!rel) return;
+	// a release by its name, any other build by its commit and that commit's date
+	const running = v.release || t("editor.update.build", { git: v.git, date: new Date(gitTime * 1000).toLocaleDateString() });
+	const key = `rfoundry-editor-update:${c.radio.id}:${v.release || v.git}:${rel.version}`;
+	try {
+		if (sessionStorage.getItem(key)) return;
+		sessionStorage.setItem(key, "1");
+	} catch { /* without storage the offer comes after every read */ }
+	const has = String(c.transport.probe.features || "").split(",");
+	const gains = UPDATE_GAINS.filter((f) => String(rel.features || "").split(",").includes(f) && !has.includes(f));
+	diag.note("update offered", { running: v.release || v.git, release: rel.version, gains });
+	const body = [h("p", {}, t("editor.update.text", { radio: c.radio.name, version: rel.version, running }))];
+	if (gains.length) body.push(h("p", {}, t("editor.update.gains")), h("ul", {}, ...gains.map((f) => h("li", {}, t(`editor.update.gain.${f}`)))));
+	dialog(t("editor.update.title"), body, t("editor.update.go"), (close) => {
+		window.open(`${ROOT}flash/index.html#radio=${encodeURIComponent(c.radio.id)}`, "_blank", "noopener");
+		close();
+	}, () => {}, { cancel: t("editor.update.later") });
 }
 
 function writeRadio() {
@@ -616,46 +702,116 @@ async function planWrite() {
 		stage = "prepare radio";
 		if (!await ensureStorage(c)) return;
 		stage = "encode codeplug";
-		const want = encode(S.model);
+		const file = encode(S.model);
+		stage = "check radio";
+		await onLine(c);
 		if (!c.image) {
 			stage = "read before write";
 			c.image = await withProgress(t("editor.comparing", { radio: c.radio.name }), (bar, signal) =>
 				c.transport.read({ iddb: false, signal, progress: (n, total) => bar.set(n, total) }));
 		}
-		const iddb = S.iddbChanged;
+		// the ID database goes when it was edited, or when this radio's may differ: a file or draft opened since, or
+		// another radio on the cable. The fast protocol then sends only its blocks that differ
+		const iddb = S.iddbChanged || (!!dbHeader(file.bytes) && !c.dbKnown);
+		// a compact database to a radio that reads only format N goes as format N (iddb-compact.md 6)
+		let older = null;
+		if (iddb && dbHeader(file.bytes)?.format === "C" && !c.transport.compact) older = convertDb(file, "N", { end: c.transport.end });
 		stage = "plan write";
-		const { plan, bytes } = c.transport.plan(want, c.image, { iddb });
-		diag.note("write plan", { bytes, sectors: plan.length, iddb });
+		// the same codeplug with this radio's own name, ID and boot text kept, and what each would send
+		// (compared byte for byte: two plans can send the same number of bytes. The second is planned only when there
+		// is something to keep: each plan is a pass over every block's CRC)
+		const kept = keepIdentity(file, c.image);
+		const differs = IDENTITY.some(([a, b]) => kept.bytes.subarray(a, b).some((x, i) => x !== file.bytes[a + i]));
+		const plans = { file: await c.transport.plan(file, c.image, { iddb }) };
+		plans.kept = differs ? await c.transport.plan(kept, c.image, { iddb }) : plans.file;
+		let keep = keepPref() && differs;
+		const choice = () => (keep ? { want: kept, ...plans.kept } : { want: file, ...plans.file });
+		diag.note("write plan", { bytes: choice().bytes, sectors: choice().plan.length, iddb, keep });
 		const prepared = c.prepared ? `${t("editor.storage.done", { radio: c.radio.name })} ` : "";
 		c.prepared = false;
-		if (!bytes) return say(prepared + t("editor.write_nothing", { radio: c.radio.name }), "ok");
-		const text = [t("editor.write_summary", { radio: c.radio.name, bytes: bytes.toLocaleString(), seconds: estimate(bytes, c.cable) })];
-		if (iddb) text.push(t("editor.write_iddb", { n: S.model.iddb?.count || 0 }));
-		confirmDialog(text.join(" "), t("editor.write"), () => exclusive(async () => {
-			let step = "write codeplug";
-			try {
-				const res = await withProgress(t("editor.writing", { radio: c.radio.name }), async (bar, signal) => {
-					const r = await c.transport.write(want, iddb ? null : c.image, { iddb, signal, progress: (n, total) => bar.set(n, total, t("editor.progress.write")) });
-					step = "verify codeplug";
-					await c.transport.verify(want, r.plan, { progress: (n, total) => bar.set(n, total, t("editor.progress.verify")) });
-					step = "finish write";
-					await c.transport.finish();
-					return r;
-				});
-				diag.note("write done", { bytes: res.bytes, sectors: res.sectors });
-				c.image = want.clone();
-				S.iddbChanged = false;
-				S.model.base = want;
-				S.dirty = false;
-				refresh();
-				say(prepared + t("editor.write_done", { radio: c.radio.name, bytes: res.bytes.toLocaleString() }), "ok");
-			} catch (e) {
-				await fail(step, e);
-			}
-		}), { primary: true });
+		// by the plan, not its bytes: a block written blank counts no bytes
+		if (!choice().plan.length) return say(prepared + t("editor.write_nothing", { radio: c.radio.name }), "ok");
+		const summary = h("p", {});
+		const summarize = () => {
+			const { bytes } = choice();
+			const text = [t("editor.write_summary", { radio: c.radio.name, bytes: bytes.toLocaleString(), seconds: estimate(bytes, c.cable, choice().blocks) })];
+			if (iddb) text.push(t(c.transport.fast ? "editor.write_iddb_fast" : "editor.write_iddb", { n: (dbHeader(file.bytes)?.count ?? 0).toLocaleString() }));
+			if (older) text.push(t("editor.write_iddb_older"));
+			if (older?.dropped) text.push(t("editor.write_iddb_cut", { dropped: older.dropped.toLocaleString() }));
+			summary.textContent = text.join(" ");
+		};
+		summarize();
+		const body = [summary];
+		// offered only when the radio's identity differs from the file's: otherwise there's nothing to keep
+		if (differs) {
+			const g = decodeGeneral(c.image.bytes), none = t("editor.keep_identity_none");
+			const box = h("input", { type: "checkbox", checked: keep, onchange: () => {
+				keep = box.checked;
+				keepPref(keep);
+				summarize();
+			} });
+			body.push(h("label", {}, box, " ", t("editor.keep_identity")),
+				h("p", { class: "small muted" }, t("editor.keep_identity_help", { name: g.radioName || none, id: g.dmrId || none })));
+		}
+		dialog(t("editor.write"), body, t("editor.write"), (close) => {
+			close();
+			writeChosen(c, choice(), iddb, prepared);
+		});
 	} catch (e) {
 		await fail(stage, e);
 	}
+}
+
+// The ID database rewritten in format C for a radio that reads it, as one undoable change; Write to Radio sends it
+function upgradeIddb() {
+	let r = null;
+	change(t("editor.iddb.convert"), () => {
+		r = convertIddb(S.model, "C", iddbEnd(S.conn?.radio));
+		return r ? undefined : false;
+	});
+	if (!r) return;
+	S.iddbChanged = true;
+	say(t("editor.iddb.converted", { n: r.count.toLocaleString() }), "ok");
+}
+
+// Whether the last write kept the radio's own identity: remembered in this browser for the next radio
+function keepPref(v) {
+	const k = "rfoundry-editor-keep-identity";
+	try {
+		if (v === undefined) return localStorage.getItem(k) === "1";
+		localStorage.setItem(k, v ? "1" : "0");
+	} catch {
+		// private mode: not remembered
+	}
+	return !!v;
+}
+
+function writeChosen(c, { want }, iddb, prepared) {
+	return exclusive(async () => {
+		let step = "write codeplug";
+		try {
+			const res = await withProgress(t("editor.writing", { radio: c.radio.name }), async (bar, signal) => {
+				// the CPS rewrites the whole codeplug with a database; the fast protocol checks every block's CRC itself
+				const r = await c.transport.write(want, iddb && !c.transport.fast ? null : c.image, { iddb, signal, progress: (n, total) => bar.set(n, total, t("editor.progress.write")) });
+				step = "verify codeplug";
+				await c.transport.verify(want, r.plan, { progress: (n, total) => bar.set(n, total, t("editor.progress.verify")) });
+				step = "finish write";
+				await c.transport.finish();
+				return r;
+			});
+			diag.note("write done", { bytes: res.bytes, sectors: res.sectors });
+			c.image = want.clone();
+			if (iddb) c.dbKnown = true;
+			S.iddbChanged = false;
+			S.model.base = want;
+			S.model.iddb = dbHeader(want.bytes);	// format N when it went to a radio that reads only that
+			S.dirty = false;
+			refresh();
+			say(prepared + t("editor.write_done", { radio: c.radio.name, bytes: res.bytes.toLocaleString() }), "ok");
+		} catch (e) {
+			await fail(step, e);
+		}
+	});
 }
 
 async function dropConnection() {
@@ -713,11 +869,11 @@ function dialog(title, body, okLabel, onOk, onClose = () => {}, { cancel = t("ed
 	return d;
 }
 
-function confirmDialog(text, okLabel, onOk, opts = {}) {
+function confirmDialog(text, okLabel, onOk, { onClose = () => {}, ...opts } = {}) {
 	return dialog(okLabel, [h("p", {}, text)], okLabel, (close) => {
 		close();
 		onOk();
-	}, () => {}, opts);
+	}, onClose, opts);
 }
 
 // --- What other modules (CSV, YAML, contacts) get from the page ---
@@ -730,6 +886,9 @@ function api() {
 		get tab() { return S.tab; },
 		show,
 		get radio() { return S.conn?.radio || null; },
+		// whether the connected radio reads a format C ID database; null without a radio
+		get compact() { return S.conn ? S.conn.transport.compact : null; },
+		upgradeIddb,
 		get radios() { return S.radios; },
 		root: ROOT,
 		markIddb() {

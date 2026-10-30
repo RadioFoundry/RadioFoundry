@@ -31,6 +31,20 @@ server: files, the codeplug and your RadioID API key stay on your computer.
    changed. It shows how many bytes and about how long it takes, then writes and verifies them. The radio loads the
    new codeplug without restarting.
 
+After a read, the editor says when a newer RadioFoundry release is out for the radio, and what it adds to reading and
+writing (faster transfers, the compact ID database). **Update Firmware** opens the [web installer](02-installing.md#updating-radiofoundry)
+in a new tab. The codeplug and settings stay on the radio through the update.
+
+### Programming several radios
+
+To put one codeplug into several radios, write it to each in turn. Before each write the editor checks which radio is
+connected. A radio swapped on the programming cable is read again before anything is written, so the write is
+compared with that radio's codeplug, not the last one's.
+
+The write dialog offers **Keep this radio's name, DMR ID and boot text** when the radio's differ from the file's. With
+it on, each radio keeps its own and gets everything else from the file. The editor remembers the choice for the next
+radio.
+
 The first write to a radio that came straight from its original firmware may ask to **Prepare Radio**. The original
 firmware's data is still in the area where RadioFoundry keeps its settings, and until that area is erased the radio
 can't store a codeplug or keep its settings when turned off. The [web installer](02-installing.md) does this by itself
@@ -119,6 +133,18 @@ Then choose:
 The page previews the records, and shows the database size against the radio's room. **Write ID Database** puts it in
 the codeplug; **Write to Radio** then sends it. **Add as Contacts** adds the users as private-call contacts instead,
 skipping IDs that are already contacts. The editor remembers these choices in the browser.
+
+Current firmware reads a **compact database**, about half the size, so the same room holds about twice the names.
+After a refresh from RadioID.net, a write sends only the parts that changed. The editor picks the format when it
+writes:
+
+| Radio | What the editor does |
+|---|---|
+| Reads the compact format | Writes it. A database in the older format (read from the radio or an old file) is offered for conversion: one full write, then smaller ones. Declined, the offer comes back after 12 hours |
+| Runs older firmware | Writes the older format. If the names don't all fit, it says how many are left out. Updating the firmware makes room |
+| Older firmware flashed over a compact database | The radio shows no names (never wrong ones). The editor writes the database again in the older format the next time it writes to the radio |
+
+TFTP (USB network mode) and other CPS programs use the older format.
 
 ## What the radio uses from the codeplug
 

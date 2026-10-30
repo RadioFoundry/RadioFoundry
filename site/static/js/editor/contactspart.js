@@ -9,7 +9,7 @@ import { register } from "./extensions.js";
 import * as diag from "../diag.js";
 import { h, button, progressBar } from "../flasher/dom.js";
 import * as radioid from "../codeplug/sources/radioid.js";
-import { writeIddb, eraseIddb, addContacts, iddbEnd, iddbSize } from "../codeplug/sources/output.js";
+import { writeIddb, eraseIddb, convertIddb, addContacts, iddbEnd, iddbSize, iddbRecords } from "../codeplug/sources/output.js";
 import { TEXT_LENGTHS } from "../codeplug/iddb.js";
 
 const PREFS = "rfoundry-editor-radioid";
@@ -211,7 +211,12 @@ function update() {
 	const pr = B.prefs;
 	// current database
 	const db = api.model.iddb;
-	P.current.replaceChildren(...[h("p", {}, db ? t("editor.iddb.present", { n: db.count.toLocaleString(), len: db.textLen }) : t("editor.iddb.none")),
+	const present = db?.format === "C" ? "editor.iddb.present_compact" : "editor.iddb.present";
+	// a database in format N for a radio that reads format C: the offer to convert (iddb-compact.md 6)
+	const upgrade = db?.format === "N" && api.compact === true;
+	P.current.replaceChildren(...[h("p", {}, db ? t(present, { n: db.count.toLocaleString(), len: db.textLen }) : t("editor.iddb.none")),
+		upgrade ? h("p", { class: "notice" }, t("editor.iddb.upgrade", { radio: api.radio.name }), " ",
+			button(t("editor.iddb.convert"), () => api.upgradeIddb(), { primary: true })) : null,
 		db ? button(t("editor.rid.remove_db"), () => api.confirmDialog(t("editor.rid.remove_confirm"), t("editor.rid.remove_db"), () => {
 			api.change(t("editor.rid.undo_remove"), () => eraseIddb(api.model));
 			api.markIddb();
@@ -244,6 +249,25 @@ function selection() {
 	});
 }
 
+// The database format to write: C (iddb-compact.md) unless the connected radio can't read it. Without a radio, C: a
+// write to a radio without it converts (iddb-compact.md 6)
+function idFormat() {
+	return B.api.compact === false ? "N" : "C";
+}
+
+// The database's size for the selection, kept until the selection or the text settings change: a format C estimate
+// lays every record out (about 0.3 s for 130,000)
+let sizeMemo = { key: "", size: null };
+function selectionSize(sel, end) {
+	const pr = B.prefs, fmt = idFormat();
+	if (fmt === "N") return iddbSize(sel, pr.textLen, end, fmt);
+	// every ID in the key: two selections of one length with the same first and last ID can differ in between
+	const ids = sel.reduce((s, u) => (Math.imul(s, 31) + u.id) | 0, 0);
+	const key = [sel.length, ids, pr.template, pr.upper, pr.textLen, end].join("|");
+	if (sizeMemo.key !== key) sizeMemo = { key, size: iddbSize(iddbRecords(sel, pr), pr.textLen, end, fmt) };
+	return sizeMemo.size;
+}
+
 function targetRadio() {
 	const api = B.api;
 	return api.radio || api.radios.find((r) => r.id === B.prefs.radio) || null;
@@ -255,7 +279,7 @@ function renderOutput() {
 	const pr = B.prefs;
 	const sel = selection();
 	const radio = targetRadio();
-	const size = iddbSize(sel.length, pr.textLen, iddbEnd(radio));
+	const size = selectionSize(sel, iddbEnd(radio));
 	const parts = [];
 	if (!B.users) parts.push(t(pr.mode === "file" ? "editor.rid.need_file" : "editor.rid.need_fetch"));
 	else {
@@ -399,7 +423,7 @@ function output(kind) {
 		const go = () => {
 			let r = null;
 			api.change(t("editor.rid.undo_db"), () => {
-				r = writeIddb(api.model, sel, { template: pr.template, upper: pr.upper, textLen: pr.textLen, end: iddbEnd(targetRadio()) });
+				r = writeIddb(api.model, sel, { template: pr.template, upper: pr.upper, textLen: pr.textLen, end: iddbEnd(targetRadio()), fmt: idFormat() });
 			});
 			api.markIddb();
 			api.say(t("editor.rid.db_done", { n: r.count.toLocaleString() }) + (r.dropped ? " " + t("editor.rid.db_dropped", { n: r.dropped.toLocaleString() }) : ""), r.dropped ? "warn" : "ok");

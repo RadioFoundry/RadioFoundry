@@ -215,6 +215,15 @@ RFOUNDRY_VERSION := $(GITVERSION)$(GITDIRTY)
 RFOUNDRY_GIT_HEAD := $(firstword $(subst -, ,$(RFOUNDRY_VERSION)))
 RFOUNDRY_GIT_ID := $(if $(shell printf '%s' '$(RFOUNDRY_GIT_HEAD)' | grep -Eqx '[0-9a-fA-F]{1,8}' && echo y),0x$(RFOUNDRY_GIT_HEAD)u,0u)
 RFOUNDRY_GIT_DIRTY := $(if $(findstring -dirty,$(RFOUNDRY_VERSION)),1,0)
+# The commit's time (committer date, Unix seconds): the debug link's git_time=, which the web editor compares with a
+# release's to offer an update to a build that isn't a release. A clean tree uses the commit's, so its builds stay
+# reproducible; a dirty one the build's, since its code is newer than the commit (the version objects then rebuild on
+# every make). Empty without git (a tree copied elsewhere: pass it as RFOUNDRY_GIT_TIME=), and then left out
+RFOUNDRY_GIT_TIME := $(if $(filter unknown,$(GITVERSION)),,$(if $(GITDIRTY),$(shell date +%s),$(shell git log -1 --format=%ct HEAD \
+	2>/dev/null)))
+# Its UTC date, YYYY-MM-DD, for the About page
+RFOUNDRY_GIT_DATE := $(if $(RFOUNDRY_GIT_TIME),$(shell python3 -c 'import sys, time; print(time.strftime("%Y-%m-%d", \
+	time.gmtime(int(sys.argv[1]))))' '$(RFOUNDRY_GIT_TIME)'))
 # The release name the radio shows (splash, About, the debug link's release=): the newest release tag on this commit
 # (tools/release_version.py: vYY.M[.N][bN]), none for a dirty tree or an untagged commit. RELEASE= sets it
 # (tools/release_build.sh passes the tag) and RELEASE= alone leaves it out. RFOUNDRY_GIT stays the commit: the crash
@@ -288,7 +297,7 @@ ifeq ($(filter clean test print-config print-cc print-unsupported print-not-writ
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
 	rm -f $(OBJ); })
-$(shell echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE)' | cmp -s - $(BUILD)/version || { echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE)' > $(BUILD)/version; \
+$(shell echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME)' | cmp -s - $(BUILD)/version || { echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME)' > $(BUILD)/version; \
 	rm -f $(VERSION_OBJ); })
 # The About page's authors and third-party list (tools/gen_about.py), and the objects that include it when it changed
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
@@ -311,7 +320,8 @@ endif
 $(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
 $(VERSION_OBJ): $(BUILD)/version
 $(VERSION_OBJ): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY) \
-	-DRFOUNDRY_RELEASE=\"$(RFOUNDRY_RELEASE)\"
+	-DRFOUNDRY_RELEASE=\"$(RFOUNDRY_RELEASE)\" -DRFOUNDRY_GIT_TIME=$(or $(RFOUNDRY_GIT_TIME),0)u \
+	-DRFOUNDRY_GIT_DATE=\"$(RFOUNDRY_GIT_DATE)\"
 ifeq ($(LTO),1)
 $(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += -fno-lto
 endif

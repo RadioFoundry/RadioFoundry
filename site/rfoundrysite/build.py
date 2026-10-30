@@ -193,11 +193,18 @@ class Site:
 				html.escape(self.i18n.t(lang, "footer.firmware", version=self.release)), line)
 		return line
 
+	def commit_time(self, commit):
+		"""A commit's time (Unix seconds) for manifests from before they carried git_time; None when the clone
+		doesn't have it"""
+		t = repo.git("show", "-s", "--format=%ct", commit, default="") if commit else ""
+		return int(t) if t.isdigit() else None
+
 	def release_list(self):
 		out = []
 		for m, img in self.releases:
 			out.append({"board": m["board"], "variant": m.get("variant", "full"), "version": m["version"],
-				    "git": m.get("git"), "features": m.get("features", ""),
+				    "git": m.get("git"), "git_time": m.get("git_time") or self.commit_time(m.get("git_full")),
+				    "features": m.get("features", ""),
 				    "image": "firmware/%s/%s" % (m["board"], m["image"]["file"]),
 				    "manifest": "firmware/%s/%s" % (m["board"], os.path.basename(img)[:-4] + ".json"),
 				    "size": m["image"]["size"], "sha256": m["image"]["sha256"]})

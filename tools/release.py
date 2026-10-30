@@ -127,6 +127,12 @@ def main(argv=None):
     except mf.ManifestError as e:
         raise SystemExit("release: %s" % e)
     man["variant"] = variant or "full"
+    # the commit's time, which the web editor compares with a radio's git_time= to offer this release to a build that
+    # isn't one (docs/dev/codeplug-editor.md)
+    try:
+        man["git_time"] = int(git("show", "-s", "--format=%ct", commit))
+    except (subprocess.CalledProcessError, ValueError):
+        pass
     if options:
         man["build_options"] = dict(options)
     whole = image

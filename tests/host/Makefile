@@ -308,6 +308,12 @@ TESTS   += codeplugTest
 codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
 	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
 
+# The same without format C (CONFIG_IDDB_COMPACT=0): a format C database is no database (iddb-compact.md 3.1)
+TESTS   += codeplugNoCompactTest
+
+codeplugNoCompactTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
+	$(CC) $(CFLAGS) $(FLASH_HAL) -DCONFIG_IDDB_COMPACT=0 -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
+
 # The power byte on 2-, 3- and 9-level radios
 TESTS   += codeplugPower2Test codeplugPower3Test codeplugPower9Test
 
@@ -321,11 +327,12 @@ calCurveTest: calCurveTest.c $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ calCurveTest.c
 
 run: run-flash
-run-flash: codeplugTest calCurveTest codeplugPower2Test codeplugPower3Test codeplugPower9Test
+run-flash: codeplugTest codeplugNoCompactTest calCurveTest codeplugPower2Test codeplugPower3Test codeplugPower9Test
 	./codeplugPower2Test
 	./codeplugPower3Test
 	./codeplugPower9Test
 	./codeplugTest
+	./codeplugNoCompactTest
 	./calCurveTest
 .PHONY: run-flash
 
@@ -1065,10 +1072,10 @@ run-cpsfast: cpsFastTest
 .PHONY: run-cpsfast
 
 # tools/cps_client.py against the shim on stdin / stdout (cpsSim), when python3 is there; the sim also answers the
-# debug link's VERSION and CODEPLUG, for tools/cps_fast.py (cpsFastClientTest.py)
+# debug link's VERSION, CODEPLUG and IDDB, for tools/cps_fast.py (cpsFastClientTest.py)
 PYTHON  ?= $(shell command -v python3)
 TESTS   += cpsSim
-SIMDL   := $(CPSF) $(CORE)/debuglink/dl_frame.c
+SIMDL   := $(CPSF) $(CORE)/debuglink/dl_frame.c $(CORE)/debuglink/debuglink_iddb.c
 
 cpsSim: cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_TFTP=0 -o $@ cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c
@@ -1078,8 +1085,9 @@ run-cpsclient: cpsSim
 ifneq ($(PYTHON),)
 	$(PYTHON) -B cpsClientTest.py
 	$(PYTHON) -B cpsFastClientTest.py
+	$(PYTHON) -B iddbLookupClientTest.py
 else
-	@echo "# cpsClientTest, cpsFastClientTest skipped (no python3)"
+	@echo "# cpsClientTest, cpsFastClientTest, iddbLookupClientTest skipped (no python3)"
 endif
 .PHONY: run-cpsclient
 

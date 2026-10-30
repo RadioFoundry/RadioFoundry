@@ -2292,22 +2292,27 @@ int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *ti
 		*first = (uint16_t)max_first;
 	const char *t = text;
 	for (int i = 0; *t; i++) {
+		// a label only where a line of the text starts, never on a wrapped value's next line
+		bool starts = t == text || t[-1] == '\n';
 		t = wrap_line(f, t, w, line, sizeof line);
 		int r = i - *first;
 		if (r < 0)
 			continue;
 		if (r >= rows)
 			break;
-		// "Label: value" lines show the label dim
-		const char *colon = strstr(line, ": ");
-		int x = 0;
+		// "Label: value" shows the label dim, and so does a line that is only "Label:" (a list follows)
+		const char *colon = starts ? strstr(line, ": ") : NULL;
+		size_t len = strlen(line);
+		color_t dim = gfx_bpp() == 1 ? ui_col.fg : ui_col.dim;
 		if (colon != NULL && colon - line < 20) {
 			char label[24];
 			size_t n = (size_t)(colon - line) + 1;
 			memcpy(label, line, n);
 			label[n] = 0;
-			x = gfx_text(f, 0, y + r * f->h, label, gfx_bpp() == 1 ? ui_col.fg : ui_col.dim);
+			int x = gfx_text(f, 0, y + r * f->h, label, dim);
 			gfx_text(f, x, y + r * f->h, colon + 1, ui_col.fg);
+		} else if (starts && len > 0 && len < 20 && line[len - 1] == ':' && *t != 0 && t[-1] == '\n') {
+			gfx_text(f, 0, y + r * f->h, line, dim);
 		} else {
 			gfx_text(f, 0, y + r * f->h, line, ui_col.fg);
 		}
