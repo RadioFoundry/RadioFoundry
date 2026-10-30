@@ -69,6 +69,12 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "find_name", "5 6 3" },
 	{ "find_number", "3 1 0 0" },
 	{ "find_channel", "1 2" },
+	{ "find_frequency", "4 6 1 4 6 2" },	// Tune VFO to 461.462
+	{ "find_new_contact", "3 1 0 9 8 7 6 down down" },	// Create contact 3109876
+#if CONFIG_CONTACT_EDIT
+	{ "contact_edit", "3 1 0 9 8 7 6 down down ok" },
+	{ "contact_edit_save", "call:3101999,91,g wait:11000 ctx 7" },	// Save as contact from a caller's actions
+#endif
 	{ "caller_actions", "call:3101234,91,g wait:11000 ctx" },
 	{ "compose", "call:3101234,91,g wait:11000 ctx 3" },
 	{ "hub", "ok" },
@@ -94,6 +100,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "zone_channels", "ok 4 ctx" },
 #if CONFIG_ZONE_EDIT
 	{ "zone_share_to", "ok 4 ctx down down ctx 5" },	// Channel actions' Share channel to...
+	{ "zone_share_to_id", "ok 4 ctx down down ctx 5 3 1 0 9 8 7 6" },	// a typed ID that isn't a contact
+	{ "zone_share_sending", "ok 4 ctx down down ctx 5 2 ok" },	// "Sending channel to ... via ..."
 #else
 	{ "zone_share", "ok 4 ctx down down ctx" },
 	{ "zone_share_to", "ok 4 ctx down down ctx 1" },

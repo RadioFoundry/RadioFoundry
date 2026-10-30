@@ -762,8 +762,32 @@ bool ui_svc_zone_edit(const zone_op_t *op)
 
 uint32_t codeplug_dmr_id(void) { return 3101276; }
 
+// Contacts the contact editor saved (ui_svc_write_contact): at the numbers past the built-in ones
+#define SIM_CONTACT_EDITS	4
+static struct { uint16_t index; contact_t c; } sim_ct_edits[SIM_CONTACT_EDITS];
+static uint8_t n_ct_edits;
+
+#if CONFIG_CONTACT_EDIT
+bool ui_svc_write_contact(uint16_t index, const contact_t *c)
+{
+	if (n_ct_edits == SIM_CONTACT_EDITS)
+		return false;
+	sim_ct_edits[n_ct_edits].index = index;
+	sim_ct_edits[n_ct_edits].c = *c;
+	n_ct_edits++;
+	sim_rec.codeplug_writes++;
+	return true;
+}
+#endif
+
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
+	for (uint8_t i = 0; i < n_ct_edits; i++) {
+		if (sim_ct_edits[i].index == index) {
+			*out = sim_ct_edits[i].c;
+			return true;
+		}
+	}
 	if (worst) {
 		if (index < 1 || index > N_WORST)
 			return false;
@@ -992,7 +1016,16 @@ void radio_req_vfo_step(int8_t dir)
 	view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = view.ch.rx_hz + dir * view.vfo_step_hz;
 	changed();
 }
-void radio_req_vfo_set(uint32_t hz) { retune(); view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = hz; changed(); }
+// As the radio core: off the VFO, the VFO opens on the frequency (Find's Tune VFO)
+void radio_req_vfo_set(uint32_t hz)
+{
+	retune();
+	vfo_rx_hz = vfo_tx_hz = hz;
+	if (!view.vfo)
+		sim_vfo(true);
+	view.ch.rx_hz = view.ch.tx_hz = hz;
+	changed();
+}
 // Copy to VFO as the radio core does (core/radio/radio_sm.c vfo_copy): what is in effect now is the VFO's own
 uint8_t ui_svc_vfo_copy(const radio_view_t *v)
 {
@@ -1818,6 +1851,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.netif = &sim_netif;
 	aprs_sim_reset();
 	n_edits = 0;
+	n_ct_edits = 0;
 	sim_cp_serial = 0;
 	sim_cp_insert = false;
 	sim_cp_deleted = 0;

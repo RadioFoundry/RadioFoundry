@@ -74,6 +74,11 @@ bool ui_svc_save_channel(void);
 // Store a whole channel (the channel editor, ui.md 2.1) at number 1..CODEPLUG_CHANNELS_MAX, as a storage job like
 // ui_svc_save_channel. false: a write is still going on, or no codeplug storage in this build
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch);
+#if CONFIG_CONTACT_EDIT
+// Store a contact (the contact editor, ui.md 2.4) at index 1..CODEPLUG_CONTACTS_MAX, as a storage job. false: a write
+// is still going on, or no codeplug storage in this build
+bool ui_svc_write_contact(uint16_t index, const contact_t *c);
+#endif
 // The zone editor (ui.md 2.2): op is queued and runs as a storage job (zone_edit_apply), in order; the radio follows
 // zone indexes it moves. A refusal in the job raises UI_EV_SAVE_FAILED and drops what was queued after it. false:
 // the queue is full, or no codeplug storage in this build. ui_svc_zone_poll (every UI tick) starts the job when

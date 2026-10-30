@@ -698,19 +698,25 @@ bool ui_freq_entry_digit(char *digits, uint8_t *len, char d)
 	return false;
 }
 
+uint32_t ui_freq_parse(const char *digits, uint8_t len)
+{
+	if (len < UI_ENTRY_MHZ || len > UI_ENTRY_MAX)
+		return 0;
+	uint32_t lo, hi;
+	entry_range(digits, len, &lo, &hi);
+	return board_in_band(lo, false) ? lo : 0;
+}
+
 uint32_t ui_freq_entry_hz(const char *digits, uint8_t len)
 {
 	if (len < UI_ENTRY_MHZ) {
 		ui_toast("Type at least the MHz digits");
 		return 0;
 	}
-	uint32_t lo, hi;
-	entry_range(digits, len, &lo, &hi);
-	if (!board_in_band(lo, false)) {
+	uint32_t hz = ui_freq_parse(digits, len);
+	if (hz == 0)
 		ui_toast("Not in a band: type more digits");
-		return 0;
-	}
-	return lo;
+	return hz;
 }
 
 static void entry_digit(char d)

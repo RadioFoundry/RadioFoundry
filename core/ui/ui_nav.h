@@ -30,6 +30,7 @@ typedef enum {
 	SCR_DMR_ID,			// the radio's own DMR ID (Settings > My radio)
 	SCR_REF_TRIM,			// the reference trim (Settings > Advanced > Freq trim)
 	SCR_GPS,			// Tools > Position's pages (CONFIG_GPS_SKY): status, sky, signal, grid
+	SCR_CONTACT_EDIT,		// the contact editor (CONFIG_CONTACT_EDIT): a new contact, from ui_target
 	SCR_COUNT
 } ui_scr_t;
 
@@ -93,6 +94,10 @@ void ui_dirty(void);
 void ui_focus_changed(void);
 // Open the actions for a target (SCR_ACTIONS)
 void ui_open_actions(const ui_target_t *t);
+#if CONFIG_CONTACT_EDIT
+// The contact editor on a new contact for t: its ID, type and name (a talkgroup or ID as its name when it has none)
+void ui_new_contact(const ui_target_t *t);
+#endif
 // Talk to a target: temporary (SELECT) or permanent (long SELECT); goes Home and says what happened
 void ui_talk(const ui_target_t *t, bool permanent);
 // The board has a key for this action (as a short or a long press)

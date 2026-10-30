@@ -258,6 +258,8 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 bool ui_freq_entry_digit(char *digits, uint8_t *len, char d);
 // The typed frequency, or 0 with a toast saying why (fewer than the MHz digits, not in a band)
 uint32_t ui_freq_entry_hz(const char *digits, uint8_t len);
+// The same without a toast: 0 for too few or too many digits, or outside the receive bands (Find's Tune VFO row)
+uint32_t ui_freq_parse(const char *digits, uint8_t len);
 // Text for the board's bands ("136-174 400-480"), for hints
 void ui_bands_text(char *out, size_t len);
 // The board's power level name

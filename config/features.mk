@@ -169,6 +169,9 @@ CONFIG_CHANNEL_EDIT ?= $(CONFIG_CHANNEL_LIST)
 # the zone editor in a zone's list: add, move, copy here, remove channels; rename, copy, delete zones (docs/spec/ui.md
 # 2.2): with the channel editor
 CONFIG_ZONE_EDIT ?= $(CONFIG_CHANNEL_EDIT)
+# the contact editor: a new contact from Find, a call's actions or a typed number, its name, ID, type and timeslot
+# (docs/spec/ui.md 2.4): with the channel editor (its text entry) and DMR
+CONFIG_CONTACT_EDIT ?= $(if $(and $(filter y,$(CONFIG_CHANNEL_EDIT)),$(filter y,$(CONFIG_DMR))),y,n)
 # beeps and alert tones as PCM through the speaker (needs the board's PCM audio, which some radios have only with DMR)
 CONFIG_BEEP ?= y
 # FM transmit tones: roger beep and the 1750 Hz repeater access burst (needs FM)
@@ -246,7 +249,7 @@ CONFIG_GPS_SKY ?= $(if $(and $(filter y,$(CONFIG_GPS)),$(filter y,$(CONFIG_APRS)
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP FM_TX_TONES DTMF \
-	VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT
+	VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -265,6 +268,11 @@ endif
 ifneq ($(call feature_on,ZONE_EDIT),)
   ifeq ($(call feature_on,CHANNEL_EDIT),)
     $(error CONFIG_ZONE_EDIT=y needs CONFIG_CHANNEL_EDIT=y)
+  endif
+endif
+ifneq ($(call feature_on,CONTACT_EDIT),)
+  ifeq ($(and $(call feature_on,CHANNEL_EDIT),$(call feature_on,DMR)),)
+    $(error CONFIG_CONTACT_EDIT=y needs CONFIG_CHANNEL_EDIT=y and CONFIG_DMR=y)
   endif
 endif
 ifneq ($(call feature_on,DUAL_WATCH),)

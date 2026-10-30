@@ -687,6 +687,30 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 	return storage_job_post(write_channel_job, NULL);
 }
 
+#if CONFIG_CONTACT_EDIT
+// The contact editor's contact (ui.md 2.4). The radio core's name cache follows codeplug_serial()
+static uint16_t job_contact;
+static contact_t job_ct;
+
+static void write_contact_job(void *ctx)
+{
+	(void)ctx;
+	if (!codeplug_set_contact(job_contact, &job_ct)) {
+		save_failed("Couldn't write the codeplug: not saved");
+	}
+}
+
+bool ui_svc_write_contact(uint16_t index, const contact_t *c)
+{
+	if (index == 0 || index > CODEPLUG_CONTACTS_MAX || storage_job_busy()) {
+		return false;
+	}
+	job_contact = index;
+	job_ct = *c;
+	return storage_job_post(write_contact_job, NULL);
+}
+#endif
+
 #if CONFIG_ZONE_EDIT
 // The zone editor's changes (ui.md 2.2), queued: Move up pressed again while the last move is still being written
 // waits its turn instead of being refused. The UI task adds at zq_head, the job takes from zq_tail. A new zone ahead
