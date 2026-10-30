@@ -39,7 +39,7 @@ is `tools/bringup.py list --radio <id>`.
 | Feature | DM-32UV | DM-1701 | DM-1801 Pro | DB25-D PRO | MD-380 | MD-UV380 |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
 | `fm` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded |
-| `ref_trim` | pass (seed), needs re-run | pass (seed) | pass (seed), needs re-run | pass (seed), needs re-run | pass (seed), needs re-run | not recorded |
+| `ref_trim` | pass (seed), needs re-run | pass (seed), needs re-run | pass (seed), needs re-run | pass (seed), needs re-run | pass (seed), needs re-run | not recorded |
 | `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded |
 | `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded |
 | `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded |
