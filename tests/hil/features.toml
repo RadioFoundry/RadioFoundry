@@ -30,8 +30,9 @@ spec = "docs/spec/radio-features.md"
 source = ["core/radio", "drivers/rf", "hal/hal_radio.h", "hal/hal_audio.h"]
 
 [feature.ref_trim]
+switch = "REF_TRIM"
+hardware = "a reference oscillator the board can trim (hal_radio_t.ref_trim)"
 spec = "docs/spec/radio-features.md"
-source = ["core/radio/ref_trim.c", "core/radio/ref_trim.h", "hal/hal_radio.h"]
 
 [feature.subtone]
 switch = "SUBTONE"

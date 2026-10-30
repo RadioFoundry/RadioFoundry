@@ -449,6 +449,16 @@ nothing else on the page trims the frequency. RadioFoundry powers the modem
 
 `make BOARD=db25d DB25D_TX_CENTER=N` replaces c, to sweep it on the radio: a few ppm per step is expected.
 
+The user's reference trim ([radio-features.md](radio-features.md) 6.1) leaves this bias alone: it is the factory's tune
+and the DMR modulation rides on it. RadioFoundry retunes the BK4819s instead. Receive: the LO at f x (1 + trim) + IF,
+which leaves the signal on the main chip's IF. Transmit: the main chip at f x (1 + trim), FM and every DMR burst. The next
+tune applies a new trim. Measured on the SDR bench at 461.4625 MHz (2026-10-30): +5.0 ppm moved the carrier +2309 Hz and
+-5.0 ppm -2311 Hz (2307 Hz expected). The trim covers +-10 ppm, less than the 23 ppm this radio read before the bias
+was set, so a radio that far off needs the bias first.
+
+A key-up now and then restarts the radio (`reset.cause` warm, no fault trace): a supply dip at TX on, also without the
+trim (1 of 3 plain key-ups on 2026-10-30). The HIL trim test waits 3 s after each trim before it keys, and may need a rerun.
+
 ### 4.7 DCS
 
 The main chip sends and detects DCS itself, with the code as the 23-bit Golay word (code bits first,

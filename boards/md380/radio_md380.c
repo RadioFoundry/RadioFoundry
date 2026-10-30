@@ -323,6 +323,7 @@ static bool pll_tune(uint32_t vco_hz, bool tx, bool wait)
 	return !wait || r.diag.pll_locked;
 }
 
+#if CONFIG_REF_TRIM
 // hal_radio_t.ref_trim: DAC2 at once (one register; receive and transmit share it), and at every rx()
 static void ref_trim(int16_t ppb)
 {
@@ -331,6 +332,7 @@ static void ref_trim(int16_t ppb)
 		ref_dac_apply();
 	}
 }
+#endif
 
 // --- Helpers ---
 
@@ -855,7 +857,9 @@ const hal_radio_t md380_radio = {
 	.status = status,
 	.audio = audio,
 	.rx_sleep = rx_sleep,
+#if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
+#endif
 };
 
 void md380_radio_diag(md380_radio_diag_t *d)

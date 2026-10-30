@@ -72,7 +72,8 @@ typedef struct {
 	void (*mic_gain)(int8_t db);
 	// Optional: the reference oscillator trim, parts per billion (the Freq trim setting, -10000..+10000 in steps of
 	// 100; core/radio/ref_trim.h). Positive raises the reference. It moves receive and transmit together, FM and DMR. Any task may call it; the board applies
-	// it now or at the next rx(). NULL = the radio has no trim
+	// it now or at the next tune (the caller then asks the radio task for one: radio_req_retune). NULL = the radio has
+	// no trim
 	void (*ref_trim)(int16_t ppb);
 } hal_radio_t;
 

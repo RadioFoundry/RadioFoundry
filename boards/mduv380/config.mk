@@ -26,3 +26,7 @@ BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-bro
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is a 16 MB SPI NOR (docs/spec/hardware-mduv380.md, the overview)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (docs/user/23-radios.md, What the MD-UV380 lacks)
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and the one UART is the G models' GPS line
+# What the hardware can do but this radio's driver or glue doesn't yet (docs/build-config.md, "Unsupported, not
+# written, unconfirmed"): off by default, and off in ci's maximal configuration too
+CONFIG_REF_TRIM ?= n
+BOARD_NOT_WRITTEN += REF_TRIM	# no hal_radio_t.ref_trim yet: it would add to the calibrated HR_C6000 MOD1 offset

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Reference oscillator trim (ref_trim.h; docs/spec/radio-features.md 6.1)
 #include "radio/ref_trim.h"
+#if CONFIG_REF_TRIM
 
 static volatile int16_t trim_ppb;
 
@@ -17,3 +18,4 @@ int16_t radio_ref_trim(void)
 {
 	return trim_ppb;
 }
+#endif

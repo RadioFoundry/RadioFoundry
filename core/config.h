@@ -190,6 +190,9 @@
 #ifndef CONFIG_VOX
 #define CONFIG_VOX			CONFIG_FM
 #endif
+#ifndef CONFIG_REF_TRIM
+#define CONFIG_REF_TRIM			1
+#endif
 #ifndef CONFIG_BATTERY_SAVE
 #define CONFIG_BATTERY_SAVE		CONFIG_FM
 #endif

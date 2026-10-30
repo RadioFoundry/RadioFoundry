@@ -499,8 +499,13 @@ clamps, rounds to the step and calls `hal_radio_t.ref_trim`. The debug link's SE
 
 | Board | Trim |
 |---|---|
-| with `hal_radio_t.ref_trim` | the board adds the trim to the reference control its calibration sets, at once and at every receive tune; its hardware page gives the scale |
-| without it | the row is hidden; nothing changes |
+| with a reference control (`hal_radio_t.ref_trim` sets it) | adds the trim to the control its calibration sets, at once and at every receive tune; its hardware page gives the scale |
+| with synthesizers only (`hal_radio_t.ref_trim` keeps the value) | programs each RF chip at f x (1 + trim) instead of f, at every tune and burst (`ref_trim_tune_hz`). A superhet's LO takes f x (1 + trim) + IF and its IF stays as it is: both chips run from one reference, so the IF's share of the error cancels |
+| without the hook, or built with `CONFIG_REF_TRIM=n` | the row is hidden; nothing changes |
+
+After each change the caller (the UI, the debug link) asks the radio task to tune again (`radio_req_retune`, the
+`RREQ_RETUNE` request): at once when idle, at the end of a transmission or the hotspot otherwise. The RF chips' bus
+stays the radio task's.
 
 The value is a correction to enter by hand: measure the carrier against a reference (a frequency counter, a service
 monitor, or a hotspot's MMDVMCal BER test) and enter the error with its sign reversed. A radio 2 kHz high at 448.7 MHz

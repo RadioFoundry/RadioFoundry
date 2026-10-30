@@ -5024,6 +5024,13 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			changed(sm);
 		}
 		break;
+	case RREQ_RETUNE:	// a board that applies its reference trim when it tunes (hal_radio_t.ref_trim)
+		if (busy) {
+			sm->retune_pending = true;
+		} else {
+			tune(sm, now_ms);
+		}
+		break;
 	case RREQ_BANDWIDTH:
 		if (busy || sm->view.ch.mode != RADIO_MODE_FM || (req->arg != RADIO_BW_12K5 && req->arg != RADIO_BW_25K) ||
 				req->arg == sm->view.ch.bw) {

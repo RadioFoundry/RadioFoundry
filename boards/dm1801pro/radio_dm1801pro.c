@@ -18,6 +18,7 @@
 #include "dmr_glue.h"
 #include "audio_pcm.h"
 #include "hrc_afsk.h"
+#include "radio/ref_trim.h"
 
 // DAC C biases the modem's AF input. The radio's own value: with the other HR_C7000 boards' 0x06E2 the modem missed the sync of
 // about half of the DMR senders (bench, strong and weak signal); with 0x067E it took every burst
@@ -174,6 +175,23 @@ static void write_mod_bias(uint32_t hz)
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, mod_bias(hz));
 }
 
+// The reference trim (hal_radio_t.ref_trim): the FD6818 is programmed f x (1 + trim), at every tune and burst
+static volatile int16_t trim_ppb;
+
+static uint32_t synth_hz(uint32_t hz)
+{
+	return ref_trim_tune_hz(hz, trim_ppb);
+}
+
+#if CONFIG_REF_TRIM
+// Taken at the next tune: the core asks the radio task for one (radio_req_retune), so the RF chip's bus stays the
+// radio task's
+static void ref_trim(int16_t ppb)
+{
+	trim_ppb = ppb;
+}
+#endif
+
 // ---- From the DMR interrupts ----
 
 // RF TX interrupt (tx): RX path off, FD6818 straight to TX (no idle) and the TX aux word, TX path on. After the burst:
@@ -184,13 +202,13 @@ static void dmr_rf_switch(bool tx)
 {
 	if (tx) {
 		rx_path(rx_hz, false);
-		fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, tx_hz);
+		fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, synth_hz(tx_hz));
 		fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
 		tx_path(tx_hz, true);
 	} else {
 		DAC_DATA_B = 0;
 		tx_path(tx_hz, false);
-		fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, rx_hz);
+		fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, synth_hz(rx_hz));
 		rx_path(rx_hz, true);
 	}
 }
@@ -279,7 +297,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 	}
 	DAC_DATA_B = 0;
 	tx_path(hz, false);
-	fd6818_set_freq(&fd, hz);
+	fd6818_set_freq(&fd, synth_hz(hz));
 	if (mode == RADIO_MODE_DMR) {
 		fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);
 		fd6818_set_bandwidth(&fd, fd.variant->bw_dmr);
@@ -347,7 +365,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	write_mod_bias(hz);
 	// DMR keeps listening on the RX frequency until a burst (dmr_rf_switch retunes per burst); on a split channel the
 	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
-	fd6818_set_freq(&fd, mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz);
+	fd6818_set_freq(&fd, synth_hz(mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz));
 	fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the HR_C7000's
 	hrc_dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
@@ -648,4 +666,7 @@ const hal_radio_t dm1801pro_radio = {
 	.rx_am = rx_am,
 #endif
 	.mic_gain = mic_gain,
+#if CONFIG_REF_TRIM
+	.ref_trim = ref_trim,
+#endif
 };

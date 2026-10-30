@@ -20,6 +20,7 @@
 #include "config.h"
 #include "hal_dtmf.h"
 #include "radio/radio.h"
+#include "radio/ref_trim.h"
 #include "pins.h"
 #include "platform.h"
 #include "hal_time.h"
@@ -119,10 +120,30 @@ static void apc_ramp(uint16_t target, bool up)
 	}
 }
 
+// The reference trim (hal_radio_t.ref_trim): both BK4819s run from the TCXO, so the trim retunes them instead of
+// moving its control voltage. Receive: the LO at f x (1 + trim) + IF, which leaves the signal on the main chip's IF
+// (the IF's own share of the error cancels, both chips running from the TCXO). Transmit: the main chip at f x (1 + trim)
+static volatile int16_t trim_ppb;
+
+static uint32_t synth_hz(uint32_t hz)
+{
+	return ref_trim_tune_hz(hz, trim_ppb);
+}
+
+#if CONFIG_REF_TRIM
+// Taken at the next tune: the core asks the radio task for one (radio_req_retune), so the RF chips' bus stays the radio
+// task's
+static void ref_trim(int16_t ppb)
+{
+	trim_ppb = ppb;
+}
+#endif
+
 // The C7000 modem's DC bias, as the stock firmware writes it at every receive set-up, in FM too (4.6): the TX center byte
 // of the page in SIG_CENTER and the two-point bias level with the modulation balance in RF_MOD_BIAS_CTRL. It is the
-// voltage on the TCXO's control pin, so it sets the frequency of both RF chips
-static void ref_trim(uint32_t hz)
+// voltage on the TCXO's control pin, so it sets the frequency of both RF chips (the factory's tune; the user's trim
+// retunes instead: synth_hz)
+static void write_bias(uint32_t hz)
 {
 	uint8_t c = db25d_cal_tx_center();
 	hrc7000_wr(&modem, C7_SIG_CENTER, hrc7000_sig_center_dc(c));
@@ -144,7 +165,7 @@ static void init(void)
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
 	hrc7000_set_dac_gain(&modem, vol_dac);	// before the init, which writes it: a volume given before init() holds
 	hrc7000_power_on_init(&modem, db25d_cal_tx_center(), DB25D_MIC_GAIN_DB);
-	ref_trim(BIAS_DEFAULT_HZ);
+	write_bias(BIAS_DEFAULT_HZ);
 
 	supported = db25d_rf_init();
 	if (!supported) {
@@ -238,10 +259,10 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
 	have_rx = true;
 
-	ref_trim(hz);
+	write_bias(hz);
 	tx_paths_off();
 	db25d_main_idle();
-	db25d_lo_tune(hz + IF_HZ);
+	db25d_lo_tune(synth_hz(hz) + IF_HZ);	// the LO carries the trim; the main chip stays on the IF
 	db25d_main_to_if();
 	if (mode != RADIO_MODE_DMR) {	// DMR: the bandwidth and sub-audio are the digital set's (4.5)
 		db25d_main_bandwidth(bw);
@@ -307,7 +328,7 @@ void db25d_burst_on(db25d_wait_fn wait)
 	hrc_pin_write(PIN_UHF_RX, false);
 	hrc_pin_write(PIN_VHF_RX, false);
 	wait(TX_RX_OFF_US);
-	db25d_main_burst(tx_hz, true);
+	db25d_main_burst(synth_hz(tx_hz), true);
 	db25d_lo_off();
 	wait(tx_on_us);
 	DAC_DATA_B = 0;
@@ -381,7 +402,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	hrc_pin_write(PIN_UHF_RX, false);
 	hrc_pin_write(PIN_VHF_RX, false);
 	hal_delay_us(TX_RX_OFF_US);
-	db25d_main_tx_tune(hz);
+	db25d_main_tx_tune(synth_hz(hz));
 	db25d_lo_off();
 	hal_delay_ms(TX_SETTLE_MS);
 	hal_delay_us(plan.on_us);
@@ -578,5 +599,8 @@ const hal_radio_t db25d_radio = {
 	.tx_tone_key = tx_tone_key,
 #if CONFIG_DTMF
 	.tx_dtmf = tx_dtmf,
+#endif
+#if CONFIG_REF_TRIM
+	.ref_trim = ref_trim,
 #endif
 };

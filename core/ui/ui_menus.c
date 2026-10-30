@@ -3138,6 +3138,7 @@ static const ui_scr_def_t dmr_id_screen = {
 };
 #endif
 
+#if CONFIG_REF_TRIM
 // ======================= Freq trim (Settings > Talk & listen) =======================
 // The reference trim (radio/ref_trim.h; radio-features.md 6.1), drawn as a volume-style page: the value in large type
 // over a slider from -10 to +10 ppm, then what it moves a carrier by at 440 and 144 MHz. Up / Down step 0.1 ppm (0.5
@@ -3337,6 +3338,7 @@ static void trim_enter(void)
 static const ui_scr_def_t trim_screen = {
 	.name = "freq-trim", .flags = SF_FIELD, .key = trim_key, .draw = trim_draw, .enter = trim_enter,
 };
+#endif
 
 // ======================= About (Settings > Advanced) =======================
 // A text page, every word shown (nothing shortened), no status strip while idle: the release and the commit, RadioFoundry's license, the
@@ -4238,8 +4240,10 @@ static const set_item_t s_talk[] = {
 	LIST("FM broadcast step", "VFO tuning radio station 200 kHz odd", UI_SET_BCAST_STEP, v_bcast_step, n_bcast_step),
 #endif
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
+#if CONFIG_REF_TRIM
 	NUMBER("Freq trim", "frequency offset reference oscillator calibration ppm", UI_SET_REF_TRIM, -REF_TRIM_MAX_PPB,
 	       REF_TRIM_MAX_PPB, REF_TRIM_STEP_PPB, NULL),	// its own page (trim_screen)
+#endif
 	TOGGLE("Mic AGC", "automatic gain level", UI_SET_MIC_AGC),
 	TOGGLE("Mic noise reduction", "noise suppression background", UI_SET_NOISE_REDUCTION),
 	TOGGLE("Monitor by default", "digital monitor promiscuous hear all", UI_SET_HEAR_ALL_DEFAULT),
@@ -4465,10 +4469,12 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 		sb_i32(&b, v);
 		break;
 	case ST_NUMBER:
+#if CONFIG_REF_TRIM
 		if (s->id == UI_SET_REF_TRIM) {
 			sb_ppm(&b, v);
 			break;
 		}
+#endif
 		sb_i32(&b, v);
 		if (s->unit != NULL)
 			sb_str(&b, s->unit);
@@ -4594,10 +4600,12 @@ static void group_select(uint16_t i, bool hold)
 		ui_toast(why);
 		return;
 	}
+#if CONFIG_REF_TRIM
 	if (s->id == UI_SET_REF_TRIM && s->type == ST_NUMBER) {
 		ui_push(SCR_REF_TRIM, 0);
 		return;
 	}
+#endif
 	int32_t v = ui_svc_setting_get(s->id);
 	switch (s->type) {
 	case ST_TOGGLE:
@@ -4991,7 +4999,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #if CONFIG_DMR
 	[SCR_DMR_ID] = &dmr_id_screen,
 #endif
+#if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,
+#endif
 #if CONFIG_CHANNEL_LIST
 	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,
 #if CONFIG_CHANNEL_EDIT
