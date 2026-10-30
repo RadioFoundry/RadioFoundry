@@ -12,9 +12,9 @@ static int clip_x0, clip_y0, clip_x1, clip_y1;	// panel coordinates, x1, y1 excl
 static int ox, oy, vw, vh;
 static uint32_t row_hash[GFX_MAX_ROWS];
 static bool all_dirty;
+static volatile uint32_t frames_begun, frames_done;
 #if CONFIG_NET_WEBCTL
 static uint8_t row_new[(GFX_MAX_ROWS + 7u) / 8u];	// bit y: row y changed since the reader took it
-static volatile uint32_t frames_begun, frames_done;
 #endif
 #if GFX_INDEXED
 // bpp 4: the colors the indexes stand for. An entry is only given a new color once nothing drawn since the last clear
@@ -668,12 +668,9 @@ void gfx_flush(void)
 	if (band >= 0)
 		send(band, height);
 	all_dirty = false;
-#if CONFIG_NET_WEBCTL
 	frames_done = frames_begun;
-#endif
 }
 
-#if CONFIG_NET_WEBCTL
 void gfx_frame_begin(void)
 {
 	frames_begun++;
@@ -686,6 +683,7 @@ bool gfx_frame_idle(uint32_t *frames)
 	return b == frames_done;
 }
 
+#if CONFIG_NET_WEBCTL
 int gfx_row_next(int from)
 {
 	for (int y = from < 0 ? 0 : from; y < height; y++)

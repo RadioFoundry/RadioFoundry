@@ -8,6 +8,8 @@
 #include "debuglink/dl_fmt.h"
 #include "debuglink/dlog.h"
 #include "debuglink/dl_chip.h"
+#include "debuglink/dl_shot.h"
+#include "cps/cps_lz4.h"
 
 static int failures, checks;
 
@@ -260,6 +262,79 @@ static void test_dlog(void)
 	CHECK(n == 2 + DLOG_LINE_MAX + 1, "long line cut to DLOG_LINE_MAX: %zu", n);
 }
 
+static uint32_t get32le(const uint8_t *p)
+{
+	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+// Read a packed screenshot in replies of at most cap bytes, as the host does, and decode it
+static void shot_read(const dl_shot_t *s, size_t cap, const char *what)
+{
+	static uint8_t out[DL_REPLY_MAX], fb[0x10000];
+	cps_lz4_dec_t dec;
+	uint32_t offset = 0, total = 0;
+	size_t hdr = DL_SHOT_HDR + (s->bpp == 4 ? 32u : 0u);
+	bool last = false;
+	int replies = 0;
+
+	cps_lz4_dec_init(&dec, fb, s->size);
+	while (!last && replies < 1000) {
+		size_t n = dl_shot_reply(s, offset, out, cap, &last);
+		CHECK(n > hdr && n <= cap, "%s: reply of %zu bytes", what, n);
+		if (n <= hdr || n > cap)
+			return;
+		CHECK(out[0] == DL_ST_OK && out[5] == s->bpp && out[6] == DL_SHOT_LZ4, "%s: header", what);
+		CHECK((out[1] | out[2] << 8) == s->width && (out[3] | out[4] << 8) == s->height && out[7] == s->insets[0] &&
+		      out[10] == s->insets[3], "%s: geometry", what);
+		CHECK(get32le(out + 15) == offset && get32le(out + 19) == s->size && get32le(out + 23) == s->frame &&
+		      out[27] == s->drawing, "%s: offset, size, frame", what);
+		if (s->bpp == 4)
+			CHECK((out[DL_SHOT_HDR + 2] | out[DL_SHOT_HDR + 3] << 8) == s->palette[1], "%s: palette", what);
+		total = get32le(out + 11);
+		CHECK(cps_lz4_dec_feed(&dec, out + hdr, (uint32_t)(n - hdr)), "%s: stream at %u", what, (unsigned)offset);
+		offset += (uint32_t)(n - hdr);
+		replies++;
+	}
+	CHECK(last && offset == total && cps_lz4_dec_done(&dec), "%s: whole stream (%u of %u)", what, (unsigned)offset,
+	      (unsigned)total);
+	CHECK(memcmp(fb, s->fb, s->size) == 0, "%s: decodes to the frame buffer", what);
+	CHECK(dl_shot_reply(s, total + 1u, out, cap, &last) == 0, "%s: offset past the end", what);
+}
+
+static void test_shot(void)
+{
+	static uint8_t fb[240 * 320 / 2];
+	dl_shot_t s = { .fb = fb, .size = 80 * 128, .width = 160, .height = 128, .bpp = 4, .insets = { 8, 0, 0, 0 },
+			.frame = 0x12345678u, .drawing = true };
+	for (int i = 0; i < 16; i++)
+		s.palette[i] = (uint16_t)(0x1111u * (unsigned)i);
+	// A screen-like frame: a background, a title bar, text-like noise in a few rows
+	memset(fb, 0x00, sizeof fb);
+	memset(fb, 0x33, 80 * 16);
+	uint32_t r = 1;
+	for (int y = 40; y < 60; y++)
+		for (int x = 4; x < 76; x++) {
+			r = r * 1103515245u + 12345u;
+			fb[y * 80 + x] = (uint8_t)(r >> 24);
+		}
+	shot_read(&s, DL_REPLY_MAX, "4 bpp");
+	shot_read(&s, DL_SHOT_HDR + 32u + 7u, "4 bpp, 7-byte windows");
+	// The largest panel: 38400 bytes, one LZ4 block
+	s.width = 240;
+	s.height = 320;
+	s.size = 120 * 320;
+	s.drawing = false;
+	shot_read(&s, DL_REPLY_MAX, "240 x 320");
+	s.bpp = 1;
+	s.width = 128;
+	s.height = 64;
+	s.size = 16 * 64;
+	shot_read(&s, DL_REPLY_MAX, "1 bpp");
+	uint8_t out[DL_SHOT_HDR];
+	bool last;
+	CHECK(dl_shot_reply(&s, 0, out, sizeof out, &last) == 0, "no room for a byte");
+}
+
 static void test_chip(void)
 {
 	// Option bytes: RDP levels, write protection, BOR, user bits
@@ -316,6 +391,7 @@ int main(void)
 	test_parser();
 	test_dlog();
 	test_chip();
+	test_shot();
 	printf("# debuglinkTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

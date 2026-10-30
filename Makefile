@@ -115,6 +115,10 @@ endif
 # The fast codeplug protocol (core/cps is globbed with CPS_OPENFW): only with its own switch
 ifneq ($(CONFIG_CPS_FAST),y)
 APP_SRC := $(filter-out core/cps/cps_fast.c core/cps/cps_lz4.c,$(APP_SRC))
+# Its LZ4 encoder also packs the debug link's screenshots
+ifeq ($(CONFIG_DEBUGLINK),y)
+APP_SRC += core/cps/cps_lz4.c
+endif
 endif
 # The task table behind the debug link's tasks view (core/app is always globbed): only with its switch, which also
 # turns on the kernel's trace hooks in the platforms' FreeRTOSConfig.h

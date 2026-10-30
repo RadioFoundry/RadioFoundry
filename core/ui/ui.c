@@ -97,6 +97,7 @@ static void ui_task(void *arg)
 		char line1[17], line2[17];
 		ui_svc_boot_text(line1, line2);
 		// the release name when this is one (v26.11), else the commit
+		gfx_frame_begin();
 		ui_draw_splash(board.name, RFOUNDRY_RELEASE[0] != '\0' ? RFOUNDRY_RELEASE : RFOUNDRY_GIT, line1, line2);
 		gfx_flush();
 	}

@@ -90,7 +90,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x02` | VERSION | none | key=value text (3.1) |
 | `0x03` | GET_DIAG | [first line u8], default 0 | ms u32, next u8, text lines (3.2) |
 | `0x04` | RESET_COUNTERS | none | ms u32: the firmware clock at the reset |
-| `0x05` | SCREENSHOT | none, or offset u32 + length u16 | the frame buffer header and a chunk (3.3) |
+| `0x05` | SCREENSHOT | offset u32 + format u8 (packed); none, or offset u32 + length u16 (RGB565) | the frame buffer header and a chunk (3.3) |
 | `0x06` | KEY | kind u8 + arguments (3.4) | none |
 | `0x07` | PTT | down u8 [+ max ms u16] | the time-out applied, ms u16 (3.5) |
 | `0x08` | GET_LOG | none | dropped u32, more u8, text lines (3.6) |
@@ -167,6 +167,48 @@ T<terminators> I<idle>`, `C<csbk> D<data> crc<errors> rc<rc>`, ...) and end with
 
 ### 3.3 SCREENSHOT
 
+Two forms. The packed form sends the frame buffer at the panel's own depth, LZ4 packed: a tenth to a thirtieth of
+the RGB565 form's bytes on the UI's screens. A 160 x 128 16-color frame is about 2.3 KB instead of 40 KB, and one
+read is enough: 0.2 s instead of 7 s at 115200 baud. The RGB565 form is the original one. Firmware before the packed
+form answers a packed request with BAD_ARG, and the host falls back to the RGB565 form.
+
+#### Packed form
+
+Request: offset u32 into the stream, format u8 = 3. Reply after the status:
+
+| Offset | Size | Field |
+|---|---|---|
+| 1 | 2 | width (the whole panel, insets included) |
+| 3 | 2 | height |
+| 5 | 1 | bpp: 1, 4 or 16, the frame buffer's own |
+| 6 | 1 | format: 3 |
+| 7 | 4 | insets: top, bottom, left, right |
+| 11 | 4 | stream length |
+| 15 | 4 | offset of this chunk in the stream |
+| 19 | 4 | frame buffer bytes the stream decodes to |
+| 23 | 4 | frame count: frames the UI has started drawing |
+| 27 | 1 | flags: bit 0, a frame is being drawn |
+| 28 | 32 | bpp 4 only: the palette, 16 RGB565 colors (0 for an entry not set) |
+| 28 or 60 | n | the chunk, at most 1000 bytes |
+
+The stream is one LZ4 block (the public LZ4 block format) of the whole frame buffer, encoded again for each request
+by the encoder of the fast codeplug protocol ([cps-fast.md](cps-fast.md) 5). The frame buffer is rows of stride
+bytes, top row first:
+
+| bpp | Stride | Pixels |
+|---|---|---|
+| 1 | (width + 7) / 8 | MSB left, 1 = ink |
+| 4 | (width + 1) / 2 | high nibble left, a palette index |
+| 16 | width x 2 | RGB565 little endian |
+
+The host asks for offset 0, then each next offset until it has the stream length. The chunks are one frame when the
+frame count is the same in the first and the last reply and neither says a frame is being drawn. Otherwise the host
+reads again (`rfoundry_debug.py screenshot`, `--tries`, default 4). It also starts over when the frame count or the
+stream length changes between replies, or when an offset past the end of a new frame's stream answers BAD_ARG. A
+frame buffer over 65535 bytes (no panel today) answers UNAVAILABLE, and the host uses the RGB565 form.
+
+#### RGB565 form
+
 Request: none (header only), or offset u32 and length u16 (at most 1000 bytes per reply). Reply after the status:
 
 | Offset | Size | Field |
@@ -181,14 +223,16 @@ Request: none (header only), or offset u32 and length u16 (at most 1000 bytes pe
 | 19 | n | the chunk |
 
 A 16-color frame buffer (bpp 4) is converted through its palette as each chunk is read, so the host sees
-an RGB565 frame of width x height x 2 bytes. The chunks are read live from the UI's frame buffer, without a lock (the UI task owns it, and a 38 KB copy would
-not fit in RAM). A redraw while the host reads the chunks can tear the image. `rfoundry_debug.py screenshot` reads the
-whole buffer twice and repeats until two reads agree (`--tries`, default 4), which gives a consistent image unless
-the screen changes continuously (a running timer); it says so when it gives up.
+an RGB565 frame of width x height x 2 bytes. The chunks carry no frame count, so a host reads the whole buffer twice
+and repeats until two reads agree, which gives a consistent image unless the screen changes continuously (a running
+timer).
 
-While a capture is read the UI does not redraw: every SCREENSHOT request holds redraws for 1 s, and the request that
-returns the last chunk for 250 ms, long enough for the host's check pass to start. A key or radio request in that
-time changes the UI's state (`ui.screen` in GET_VIEW) at once, but its screen is drawn only when the hold lapses, so
+#### Both forms
+
+The chunks are read live from the UI's frame buffer, without a lock (the UI task owns it, and a 38 KB copy would not
+fit in RAM). While a capture is read the UI does not redraw: every SCREENSHOT request holds redraws for 1 s, and the
+request that returns the last chunk for 250 ms, long enough for a second read to start. A key or radio request in
+that time changes the UI's state (`ui.screen` in GET_VIEW) at once, but its screen is drawn only when the hold lapses, so
 a host that captures a new screen waits for the hold to end (`tests/hil/rfoundry_hil.py`: `Radio.screenshot` and
 `shot_until`). Firmware before this rule held for 1 s after the last chunk too.
 
