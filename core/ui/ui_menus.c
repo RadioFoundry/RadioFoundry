@@ -4182,7 +4182,7 @@ static bool set_hidden(const set_item_t *s)
 	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
 		return !(feats() & UI_FEAT_BCAST);
 	if (s->type != ST_ACTION && s->id == UI_SET_REF_TRIM)
-		return !ref_trim_available();	// only a radio whose board has the trim
+		return !(feats() & UI_FEAT_REF_TRIM);	// only a radio whose board has the trim
 	return !board_has_battery() && s->type != ST_ACTION &&
 	       (s->id == UI_SET_BATTERY_SAVER || s->id == UI_SET_LOW_BATTERY);
 }
