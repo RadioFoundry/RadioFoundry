@@ -33,6 +33,7 @@
 
 extern const ui_scr_def_t ui_find_screen;
 extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen;	// ui_aprs.c
+extern const ui_scr_def_t ui_gps_screen;	// ui_gps.c
 #if CONFIG_DUAL_WATCH
 extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
 #endif
@@ -3835,7 +3836,7 @@ static void tools_select(uint16_t row, bool hold)
 			ui_scan_toggle();	// says what scans: the zone, or the band in the VFO (dual watch ends)
 		}
 		break;
-	case T_POSITION: ui_push(SCR_INFO, INFO_POSITION); break;
+	case T_POSITION: ui_push(CONFIG_GPS_SKY ? SCR_GPS : SCR_INFO, INFO_POSITION); break;
 	case T_HOTSPOT: ui_push(SCR_INFO, INFO_HOTSPOT); break;
 	case T_USB_NET: ui_push(SCR_INFO, INFO_USB_NET); break;
 	case T_SFR: ui_push(SCR_INFO, INFO_SFR); break;
@@ -4798,6 +4799,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_CHPICK] = &chpick_screen,
 #endif
 #endif
+#endif
+#if CONFIG_GPS_SKY
+	[SCR_GPS] = &ui_gps_screen,
 #endif
 #if CONFIG_CRASH_SCREEN
 	[SCR_CRASH] = &crash_screen,

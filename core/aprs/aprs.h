@@ -15,6 +15,9 @@
 #include <stddef.h>
 #include "config.h"
 #include "aprs/ax25.h"
+#if CONFIG_GPS_SKY
+#include "aprs/nmea_sky.h"
+#endif
 
 #define APRS_TOCALL		"APZRDF"	// destination: the experimental APZ block (docs/spec/aprs.md 4.2)
 #define APRS_SSID_DEFAULT	7		// handheld
@@ -255,8 +258,17 @@ typedef struct {
 	uint8_t sats;		// satellites used (GGA)
 	int32_t lat, lon;	// 1e-7 degree, with fix
 	int32_t alt_m;		// APRS_ALT_NONE
+	uint16_t hdop10;	// x 10, 0xFFFF unknown
+	uint16_t speed_kmh, course;	// 0xFFFF unknown
+	uint32_t utc_hms;	// hhmmss of the last fix, 0xFFFFFFFF
+	uint8_t mode;		// GSA (CONFIG_GPS_SKY): 1 no fix, 2 2D, 3 3D, 0 unknown
+	uint8_t in_view;	// satellites in the table (aprs_gps_sat)
 } aprs_gps_t;
 bool aprs_gps(aprs_gps_t *out, uint32_t now_ms);
+#if CONFIG_GPS_SKY
+// Satellite i of the board GPS's table (0 .. in_view - 1) and whether the fix uses it; false past the end
+bool aprs_gps_sat(uint8_t i, sky_sat_t *out, bool *used);
+#endif
 // KISS-encoded bytes for the host: copies up to max, returns the count (0 = nothing waiting)
 size_t aprs_host_output(uint8_t *out, size_t max);
 // The KISS setting is on (host output allowed in the host link's idle mode)

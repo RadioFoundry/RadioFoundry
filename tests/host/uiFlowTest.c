@@ -292,7 +292,7 @@ static const flow_t flows[] = {
 	{ "12 446.000 in the VFO", "ok 4 up ok", "4 4 6 0 0 0 ok", "freq=446000000", 7, false },
 	{ "13 lock", "", "long:quick", "locked=1", 1, false },
 	{ "13 unlock", "long:quick", "long:quick", "locked=0", 1, false },
-	{ "14 GPS details", "", "ok 6 2", "screen=info", 3, false },
+	{ "14 GPS details", "", "ok 6 2", "screen=gps", 3, false },
 	{ "15 hotspot page", "", "ok 6 3", "screen=info", 4, false },
 	{ "15 stop hotspot", "hotspot:on", "ok", "hotspot=0", 2, false },
 	// Tile 4 on a channel copies it to the VFO (docs/spec/dmr-voice.md 2.2); the VFO's own tile 4 stays Mode
@@ -451,6 +451,12 @@ static const flow_t flows[] = {
 	{ "A latitude BACK takes a digit back", "ok 6 8 9", "2 3 9 back 3 ok", "aprs_lat=330000000", 6, false },
 	{ "A latitude BACK leaves unchanged", "ok 6 8 9", "2 1 back back", "aprs_lat=0 screen=aprs-pos", 4, false },
 	{ "A position in DMR calls", "", "ok 6 8 0", "aprs_dmrgps=1 toast=Position_goes_out", 4, false },
+	// Tools > Position's pages (CONFIG_GPS_SKY, ui_gps.c): Up / Down or the digits turn them
+	{ "G GPS status page", "", "ok 6 2", "shows=3D_fix", 3, false },
+	{ "G GPS sky page", "ok 6 2", "down", "screen=gps shows=Sky", 1, false },
+	{ "G GPS signal page", "ok 6 2", "3", "shows=9_of_14_in_the_fix", 1, false },
+	{ "G GPS grid page", "ok 6 2", "4", "shows=FN42li", 1, false },
+	{ "G GPS pages wrap", "ok 6 2", "up", "shows=Grid", 1, false },
 	{ "A KISS on USB", "ok 6 8", "up up ok", "aprs_kiss=1", 3, false },
 	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
 	{ "A not in this build", "aprs:off", "ok 6 8 2", "toast=APRS:_not aprs_auto=0", 4, false },

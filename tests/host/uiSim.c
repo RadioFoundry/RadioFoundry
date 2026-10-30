@@ -118,6 +118,9 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 	{ "tools", "ok 6" },
 	{ "position", "ok 6 2" },
+	{ "gps_sky", "ok 6 2 2" },
+	{ "gps_signal", "ok 6 2 3" },
+	{ "gps_grid", "ok 6 2 4" },
 	{ "hotspot_info", "ok 6 3" },
 	{ "diagnostics", "ok 6 7" },
 	{ "roaming", "ok 6 6 1 wait:4000" },
