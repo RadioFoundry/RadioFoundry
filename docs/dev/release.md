@@ -204,7 +204,7 @@ never handles the key. Updates of a radio that runs RadioFoundry need no stock f
 Pull requests that touch `tools/rfoundry/`, `tools/release.py`, the serial flashing tools, the registry (`board.toml`,
 `board.mk`, `platform.toml`, `tools/boards.py`), the toolchain scripts, the toolchain action or the workflow build
 everything as workflow artifacts and publish nothing, without the release gate (the pull request's own checks run the
-same tests), and rfoundry for Linux only when the self-hosted runner is set up. A manual run on a tag rebuilds and
+same tests), rfoundry included. A manual run on a tag rebuilds and
 replaces the assets.
 
 The executables are not code-signed. macOS marks downloads as quarantined: `xattr -d com.apple.quarantine
