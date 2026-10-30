@@ -44,7 +44,6 @@
   },
   "ref_trim": {
    "result": "pass",
-   "commit": "b22325861",
    "source": "docs/spec/hardware-dm32.md",
    "note": "10 ppm moved the carrier 4400 Hz at 440 MHz"
   }

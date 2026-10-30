@@ -30,7 +30,6 @@
   },
   "ref_trim": {
    "result": "pass",
-   "commit": "e933ad15c",
    "source": "docs/spec/hardware-md380.md",
    "note": "-4.5 ppm put transmit within about 150 Hz (hotspot BER 0.05 %)"
   }

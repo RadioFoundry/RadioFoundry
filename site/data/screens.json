@@ -660,6 +660,25 @@
    "group": "settings",
    "needs": []
   },
+  "settings_freq_trim": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS",
+    "REF_TRIM"
+   ]
+  },
+  "freq_trim": {
+   "group": "settings",
+   "needs": [
+    "REF_TRIM"
+   ]
+  },
+  "freq_trim_typing": {
+   "group": "settings",
+   "needs": [
+    "REF_TRIM"
+   ]
+  },
   "crash_log": {
    "group": "settings",
    "needs": [
