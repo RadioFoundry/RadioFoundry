@@ -301,8 +301,12 @@ def test_dmr_repeater_burst_offset(radio, sdr_bench, pytestconfig, backup_dir):
         s.call(8.0, "burst offset")
         inbound, _ = s.bench.bursts_result(ins)
         outbound, _ = s.bench.bursts_result(outs)
+        print(f"inbound {len(inbound)} bursts, outbound {len(outbound)}")
+        if not outbound:
+            # The radio heard the outbound (wait_up), so the SDR bench missed it: no reference to time against
+            skip("bench", f"the SDR bench decoded none of the repeater's outbound on {s.freq} MHz")
         offs = burst_offsets_ms(inbound, outbound)
-        print(f"inbound {len(inbound)} bursts, outbound {len(outbound)}, matched {len(offs)}")
+        print(f"matched {len(offs)}")
         assert len(offs) >= 50, f"only {len(offs)} inbound bursts matched to the outbound (8 s is about 133)"
         med = statistics.median(offs)
         print(f"inbound vs outbound + 30 ms: median {med:+.3f} ms, min {min(offs):+.3f}, max {max(offs):+.3f}")
