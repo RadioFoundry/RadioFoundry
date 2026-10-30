@@ -1153,9 +1153,9 @@ static bool share_raw_label(uint16_t raw, char *buf, uint8_t len)
 
 static bool share_target(uint16_t i, ui_target_t *t)
 {
-	uint16_t raw = ui_filter_raw(i);
 	if (i >= ui_filter_count())
 		return false;
+	uint16_t raw = ui_filter_raw(i);
 	if (raw < SHARE_TYPED)
 		return contacts_target(i, t);
 	memset(t, 0, sizeof *t);
@@ -2544,6 +2544,7 @@ static contact_t ct;			// the contact being made
 static uint8_t ct_edit = CT_NONE;	// the row whose editor is open (the ID)
 // The ID being typed goes in the channel editor's ced_digits, ced_len and ced_val: the two editors are never open at
 // once, and RAM is short
+_Static_assert(CT_ID_DIGITS <= CE_DIGITS, "the ID's digits fit ced_digits");
 
 void ui_new_contact(const ui_target_t *t)
 {
