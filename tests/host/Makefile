@@ -1072,10 +1072,10 @@ run-cpsfast: cpsFastTest
 .PHONY: run-cpsfast
 
 # tools/cps_client.py against the shim on stdin / stdout (cpsSim), when python3 is there; the sim also answers the
-# debug link's VERSION and CODEPLUG, for tools/cps_fast.py (cpsFastClientTest.py)
+# debug link's VERSION, CODEPLUG and IDDB, for tools/cps_fast.py (cpsFastClientTest.py)
 PYTHON  ?= $(shell command -v python3)
 TESTS   += cpsSim
-SIMDL   := $(CPSF) $(CORE)/debuglink/dl_frame.c
+SIMDL   := $(CPSF) $(CORE)/debuglink/dl_frame.c $(CORE)/debuglink/debuglink_iddb.c
 
 cpsSim: cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_TFTP=0 -o $@ cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c
@@ -1085,8 +1085,9 @@ run-cpsclient: cpsSim
 ifneq ($(PYTHON),)
 	$(PYTHON) -B cpsClientTest.py
 	$(PYTHON) -B cpsFastClientTest.py
+	$(PYTHON) -B iddbLookupClientTest.py
 else
-	@echo "# cpsClientTest, cpsFastClientTest skipped (no python3)"
+	@echo "# cpsClientTest, cpsFastClientTest, iddbLookupClientTest skipped (no python3)"
 endif
 .PHONY: run-cpsclient
 

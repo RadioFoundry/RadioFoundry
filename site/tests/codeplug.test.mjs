@@ -254,6 +254,7 @@ test("longer database text is kept up to 48 characters", () => {
 import { CpsSerial, changes, writeRanges, TransportError, keepIdentity } from "../static/js/codeplug/transport.js";
 import { concat } from "../static/js/flasher/bytes.js";
 import { FakeCpsRadio } from "../static/js/codeplug/fakecps.js";
+import { updateFor } from "../static/js/flasher/version.js";
 
 const RADIOS = [
 	{ id: "dm1701", codeplug: { base: 0, end: 0xE00000, names: ["DM-1701", "dm1701"] } },
@@ -318,6 +319,22 @@ test("a radio with its codeplug at a base reads and writes at that base", async 
 	assert.equal(radio.reloads, 1);
 	assert.ok(radio.spi.subarray(0x700000 + 0x604B, 0x700000 + 0x6100).every((x) => x === 0x5A), "settings block kept");
 	assert.equal(detail(decode(await tr.read())), detail(m));
+});
+
+test("the radio's release reaches the editor, which offers a newer one (editor update notice)", async () => {
+	const tr = new CpsSerial(new FakeCpsRadio({ board: "DM-1701", release: "v26.8" }).stream());
+	await tr.identify(RADIOS);
+	assert.equal(tr.probe.version.release, "v26.8");
+	const releases = [{ board: tr.radio.id, version: "v26.10", variant: "full" }, { board: tr.radio.id, version: "v26.11", variant: "fm" }];
+	assert.equal(updateFor(releases, tr.radio.id, tr.probe.version.release)?.version, "v26.10");
+	const dev = new CpsSerial(new FakeCpsRadio({ board: "DM-1701" }).stream());
+	await dev.identify(RADIOS);
+	assert.equal(dev.probe.version.release, undefined, "a developer's build names no release");
+	const built = new CpsSerial(new FakeCpsRadio({ board: "DM-1701", gitTime: 1000 }).stream());
+	await built.identify(RADIOS);
+	assert.equal(built.probe.version.git_time, "1000");
+	assert.equal(updateFor([{ board: built.radio.id, version: "v26.10", git_time: 2000 }], built.radio.id, built.probe.version.release,
+		Number(built.probe.version.git_time))?.version, "v26.10");
 });
 
 test("an ID database goes to the radio and nothing past its room", async () => {

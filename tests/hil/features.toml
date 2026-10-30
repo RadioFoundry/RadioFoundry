@@ -349,6 +349,11 @@ spec = "docs/spec/tftp.md"
 switch = "TFTP_IDDB"
 spec = "docs/spec/tftp.md"
 
+[feature.dmr_iddb]
+# The DMR ID database a CPS writes (format N): the names the radio shows for IDs that aren't contacts
+spec = "docs/spec/open-firmware-cps.md"
+source = ["core/codeplug/dmr_iddb.c", "core/codeplug/dmr_iddb.h", "core/debuglink/debuglink_iddb.c"]
+
 [feature.iddb_compact]
 switch = "IDDB_COMPACT"
 spec = "docs/spec/iddb-compact.md"

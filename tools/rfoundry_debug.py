@@ -91,6 +91,7 @@ RX2 = 0x1E                          # the second receiver's SoC: info, update br
 RX2_OP_INFO, RX2_OP_BRIDGE, RX2_OP_RESTART = range(3)
 RX2_TOKEN = 0x47445242              # 'BRDG'
 RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart"}
+IDDB = 0x1F                         # the DMR ID database: format, records, an ID looked up (docs/spec/debuglink.md 3.23)
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
 SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
@@ -563,6 +564,10 @@ class DebugLink:
 
     def rx2_restart(self):
         self.request(RX2, struct.pack("<BI", RX2_OP_RESTART, RX2_TOKEN))
+
+    def iddb(self, dmr_id=0):
+        """The DMR ID database as the radio sees it, and the text it shows for dmr_id: {format, records, found, text}"""
+        return decode_iddb(self.request(IDDB, struct.pack("<I", dmr_id))[1])
 
     def version(self):
         return parse_kv(self.request(VERSION)[1].decode("ascii", "replace"))
@@ -1470,6 +1475,13 @@ def decode_chip(r):
             "wrp_sectors": [i for i in range(12) if wrp & (1 << i)], "bor": bor, "user": user}
 
 
+def decode_iddb(r):
+    """IDDB's reply after the status (debuglink.md 3.23): format is the header's letter ('N', 'n', 'C'), '' for none"""
+    fmt, records, found = struct.unpack_from("<BIB", r)
+    return {"format": chr(fmt) if fmt else "", "records": records, "found": bool(found),
+            "text": r[6:].decode("ascii", "replace") if found else None}
+
+
 def mem_allowed(addr, n):
     return n > 0 and any(lo <= addr and addr + n <= hi for lo, hi in MEM_WHITELIST)
 
@@ -1951,6 +1963,9 @@ def main(argv=None):
     p = sub.add_parser("rx2", help="the second receiver's SoC: info, restart (the update bridge is stubtool's, "
                        "docs/spec/debuglink.md 3.22)")
     p.add_argument("op", nargs="?", default="info", choices=["info", "restart"])
+    p = sub.add_parser("iddb", help="the DMR ID database: its format and records, and the text for each ID given "
+                       "(docs/spec/debuglink.md 3.23)")
+    p.add_argument("ids", nargs="*", type=int)
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
@@ -2018,6 +2033,12 @@ def main(argv=None):
                 else:
                     flags = link.rx2_info()
                     print("rx2: " + (", ".join(n for n in RX2_FLAGS.values() if n in flags) or "none"))
+            elif a.cmd == "iddb":
+                d = link.iddb()
+                print(f"format={d['format'] or 'none'} records={d['records']}")
+                for i in a.ids:
+                    r = link.iddb(i)
+                    print(f"{i} {r['text']!r}" if r["found"] else f"{i} -")
             elif a.cmd == "aprobe":
                 return cmd_aprobe(link, a)
             elif a.cmd == "split":

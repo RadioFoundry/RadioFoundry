@@ -21,6 +21,7 @@ import { extensions } from "./extensions.js";
 import "./parts.js";
 import * as diag from "../diag.js";
 import { initReporting, reportedLine } from "../report.js";
+import { updateFor } from "../flasher/version.js";
 
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
 const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "iddb", "problems"];
@@ -56,7 +57,7 @@ function load(model, name, { fromRadio = false } = {}) {
 	S.history.reset();
 	S.dirty = false;
 	S.iddbChanged = false;
-	if (!fromRadio && S.conn) S.conn.image = S.conn.image || null;
+	if (!fromRadio && S.conn) S.conn.dbKnown = false;
 	refresh();
 	draftSoon();
 }
@@ -473,8 +474,12 @@ async function connect() {
 	if (S.conn) return S.conn;
 	let stream, cable = false;
 	if (S.sim) {
-		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes, foreign: location.hash === "#sim-foreign",
-			features: location.hash === "#sim-compact" ? "FM,DMR,IDDB_COMPACT" : "FM,DMR" });
+		// #sim-compact: firmware that reads a format C ID database; &release=vYY.M: a radio that runs that release;
+		// &git_time=N: a build of a commit from that time (Unix seconds)
+		const hash = location.hash;
+		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes, foreign: hash === "#sim-foreign",
+			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
+			gitTime: Number(hash.match(/[#&]git_time=(\d+)/)?.[1]) || 0 });
 		stream = S.fake.stream();
 	} else {
 		if (!serialSupported()) throw new TransportError("no_serial");
@@ -489,7 +494,8 @@ async function connect() {
 	try {
 		const { radio, probe } = await tr.identify(S.radios);
 		diag.note("radio found", { radio: radio.id, board: probe.board, git: probe.git, features: probe.features });
-		S.conn = { transport: tr, radio, probe, image: null, uid: null, cable };
+		// dbKnown: the radio's ID database is the model's (read or written since the model was loaded)
+		S.conn = { transport: tr, radio, probe, image: null, uid: null, cable, dbKnown: false };
 		return S.conn;
 	} catch (e) {
 		await tr.close();
@@ -592,6 +598,7 @@ async function onLine(c) {
 	if (c.image && (!uid || uid !== c.uid)) {
 		diag.note("radio changed: read before write", { was: c.uid, now: uid });
 		c.image = null;
+		c.dbKnown = false;
 	}
 	c.uid = uid;
 }
@@ -607,6 +614,7 @@ async function readRadio() {
 			diag.note("read done", { bytes: img.bytes.length });
 			c.image = img.clone();
 			load(decode(img), `${c.radio.id}-codeplug`, { fromRadio: true });
+			c.dbKnown = true;
 			say(t("editor.read_done", { radio: c.radio.name, channels: S.model.channels.length, contacts: S.model.contacts.length }), "ok");
 			// the database's format against what this radio's firmware reads (iddb-compact.md 6)
 			const fmt = S.model.iddb?.format;
@@ -614,14 +622,54 @@ async function readRadio() {
 				S.iddbChanged = true;
 				say(t("editor.iddb.old_radio_reads_none"), "warn");
 			} else if (fmt === "N" && c.transport.compact) {
-				confirmDialog(t("editor.iddb.upgrade", { radio: c.radio.name }), t("editor.iddb.convert"), upgradeIddb);
+				confirmDialog(t("editor.iddb.upgrade", { radio: c.radio.name }), t("editor.iddb.convert"), upgradeIddb,
+					{ onClose: () => offerUpdate(c) });
+				return;
 			}
+			offerUpdate(c);
 		} catch (e) {
 			await fail("read codeplug", e);
 		}
 	});
 	if (S.dirty) confirmDialog(t("editor.read_confirm"), t("editor.read"), go);
 	else go();
+}
+
+// Features a newer release may add that change what the editor can do with the radio, with what each gains
+const UPDATE_GAINS = ["CPS_FAST", "IDDB_COMPACT"];
+let releaseList = null;
+
+// After a read: a newer release for this radio (releases.json, updateFor), offered once per tab for each radio, running
+// build and release
+async function offerUpdate(c) {
+	const v = c.transport.probe?.version || {};
+	const gitTime = Number(v.git_time) || 0;
+	if (!v.release && !gitTime) return;
+	if (!releaseList) {
+		try {
+			releaseList = (await (await fetch(`${ROOT}data/releases.json`)).json()).releases || [];
+		} catch {
+			return;
+		}
+	}
+	const rel = updateFor(releaseList, c.radio.id, v.release, gitTime);
+	if (!rel) return;
+	// a release by its name, any other build by its commit and that commit's date
+	const running = v.release || t("editor.update.build", { git: v.git, date: new Date(gitTime * 1000).toLocaleDateString() });
+	const key = `rfoundry-editor-update:${c.radio.id}:${v.release || v.git}:${rel.version}`;
+	try {
+		if (sessionStorage.getItem(key)) return;
+		sessionStorage.setItem(key, "1");
+	} catch { /* without storage the offer comes after every read */ }
+	const has = String(c.transport.probe.features || "").split(",");
+	const gains = UPDATE_GAINS.filter((f) => String(rel.features || "").split(",").includes(f) && !has.includes(f));
+	diag.note("update offered", { running: v.release || v.git, release: rel.version, gains });
+	const body = [h("p", {}, t("editor.update.text", { radio: c.radio.name, version: rel.version, running }))];
+	if (gains.length) body.push(h("p", {}, t("editor.update.gains")), h("ul", {}, ...gains.map((f) => h("li", {}, t(`editor.update.gain.${f}`)))));
+	dialog(t("editor.update.title"), body, t("editor.update.go"), (close) => {
+		window.open(`${ROOT}flash/index.html#radio=${encodeURIComponent(c.radio.id)}`, "_blank", "noopener");
+		close();
+	}, () => {}, { cancel: t("editor.update.later") });
 }
 
 function writeRadio() {
@@ -649,7 +697,9 @@ async function planWrite() {
 			c.image = await withProgress(t("editor.comparing", { radio: c.radio.name }), (bar, signal) =>
 				c.transport.read({ iddb: false, signal, progress: (n, total) => bar.set(n, total) }));
 		}
-		const iddb = S.iddbChanged;
+		// the ID database goes when it was edited, or when this radio's may differ: a file or draft opened since, or
+		// another radio on the cable. The fast protocol then sends only its blocks that differ
+		const iddb = S.iddbChanged || (!!dbHeader(file.bytes) && !c.dbKnown);
 		// a compact database to a radio that reads only format N goes as format N (iddb-compact.md 6)
 		let older = null;
 		if (iddb && dbHeader(file.bytes)?.format === "C" && !c.transport.compact) older = convertDb(file, "N", { end: c.transport.end });
@@ -672,7 +722,7 @@ async function planWrite() {
 		const summarize = () => {
 			const { bytes } = choice();
 			const text = [t("editor.write_summary", { radio: c.radio.name, bytes: bytes.toLocaleString(), seconds: estimate(bytes, c.cable, choice().blocks) })];
-			if (iddb) text.push(t("editor.write_iddb", { n: (dbHeader(file.bytes)?.count ?? 0).toLocaleString() }));
+			if (iddb) text.push(t(c.transport.fast ? "editor.write_iddb_fast" : "editor.write_iddb", { n: (dbHeader(file.bytes)?.count ?? 0).toLocaleString() }));
 			if (older) text.push(t("editor.write_iddb_older"));
 			if (older?.dropped) text.push(t("editor.write_iddb_cut", { dropped: older.dropped.toLocaleString() }));
 			summary.textContent = text.join(" ");
@@ -738,6 +788,7 @@ function writeChosen(c, { want }, iddb, prepared) {
 			});
 			diag.note("write done", { bytes: res.bytes, sectors: res.sectors });
 			c.image = want.clone();
+			if (iddb) c.dbKnown = true;
 			S.iddbChanged = false;
 			S.model.base = want;
 			S.model.iddb = dbHeader(want.bytes);	// format N when it went to a radio that reads only that
@@ -805,11 +856,11 @@ function dialog(title, body, okLabel, onOk, onClose = () => {}, { cancel = t("ed
 	return d;
 }
 
-function confirmDialog(text, okLabel, onOk, opts = {}) {
+function confirmDialog(text, okLabel, onOk, { onClose = () => {}, ...opts } = {}) {
 	return dialog(okLabel, [h("p", {}, text)], okLabel, (close) => {
 		close();
 		onOk();
-	}, () => {}, opts);
+	}, onClose, opts);
 }
 
 // --- What other modules (CSV, YAML, contacts) get from the page ---

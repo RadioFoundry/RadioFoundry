@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include "cps/cps_openfw.h"
 #include "cps/cps_fast.h"
+#include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/dmr_iddb.h"
@@ -234,7 +235,7 @@ static void detail(const uint32_t *ids, unsigned id_count)
 #endif
 }
 
-// --- the debug link: VERSION and CODEPLUG ---
+// --- the debug link: VERSION, CODEPLUG and IDDB ---
 
 static dl_parser_t dl;
 static uint8_t dl_reply[DL_HDR + DL_REPLY_MAX + 2u];
@@ -255,6 +256,8 @@ static size_t dl_handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *
 	}
 	case DL_CMD_CODEPLUG:
 		return cps_fast_cmd(req, len, o, cap, millis());
+	case DL_CMD_IDDB:
+		return debuglink_cmd_iddb(req, len, o, cap);
 	default:
 		o[0] = DL_ST_UNKNOWN_CMD;
 		return 1;

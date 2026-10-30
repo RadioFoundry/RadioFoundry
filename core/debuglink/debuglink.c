@@ -33,6 +33,9 @@
 #ifndef RFOUNDRY_RELEASE
 #define RFOUNDRY_RELEASE ""
 #endif
+#ifndef RFOUNDRY_GIT_TIME
+#define RFOUNDRY_GIT_TIME 0u
+#endif
 
 #define SHOT_HOLD_MS		1000	// a screen capture freezes UI redraws at most this long
 #define SHOT_TAIL_MS		250	// after the last chunk: long enough for the host's check pass to start
@@ -371,6 +374,9 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	dl_text_init(&t, (char *)out + 1, cap - 1);
 	dl_text(&t, "proto=%u\nview=%u\n", DL_PROTO_VERSION, DL_VIEW_VERSION);
 	dl_text_kv_str(&t, "git", RFOUNDRY_GIT);
+	if (RFOUNDRY_GIT_TIME != 0u) {
+		dl_text(&t, "git_time=%u\n", (unsigned)RFOUNDRY_GIT_TIME);
+	}
 	if (RFOUNDRY_RELEASE[0] != '\0') {
 		dl_text_kv_str(&t, "release", RFOUNDRY_RELEASE);
 	}
@@ -983,6 +989,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_watchdog(req, len, out, cap);
 	case DL_CMD_RX2:
 		return debuglink_cmd_rx2(req, len, out, cap);
+	case DL_CMD_IDDB:
+		return debuglink_cmd_iddb(req, len, out, cap);
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST
 		return cps_fast_cmd(req, len, out, cap, hal_millis());

@@ -28,6 +28,7 @@ static struct {
 	bool checked;
 	uint32_t serial;	// codeplug_serial() when checked: a codeplug write (CPS, TFTP) re-reads the header
 	bool valid;
+	char format;		// header byte 2
 	bool packed;		// formats 'N' / 'n': 3-byte LE IDs, 6-bit text
 	uint8_t rec;		// record size
 	uint32_t count;
@@ -323,6 +324,7 @@ bool dmr_iddb_init(void)
 	if (!rd(IDDB_AREA1, h, sizeof(h)) || h[0] != 'I' || h[1] != 'd') {
 		return false;
 	}
+	db.format = (char)h[2];
 #if CONFIG_IDDB_COMPACT
 	if (h[2] == 'C' && h[3] == 0u) {
 		return compact_init();
@@ -351,6 +353,11 @@ uint32_t dmr_iddb_count(void)
 		dmr_iddb_init();
 	}
 	return db.valid ? db.count : 0;
+}
+
+char dmr_iddb_format(void)
+{
+	return dmr_iddb_count() != 0u ? db.format : '\0';
 }
 
 static uint32_t rec_addr(uint32_t i)

@@ -34,7 +34,16 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `editor/csvpart.js`, `qdmrpart.js`, `contactspart.js` | The CSV, qdmr YAML and RadioID parts |
 
 Add `#sim` to the page's address to read and write a simulated radio (`fakecps.js`), `#sim-compact` for one that
-reads format C ID databases.
+reads format C ID databases. Append `&release=vYY.M` for a radio that runs that release, or `&git_time=N` for a build
+of a commit from that time, which brings up the update notice when `releases.json` lists a newer one.
+
+After a read, the radio is offered the newest release for its board from `releases.json` when that is newer
+(`updateFor` in `flasher/version.js`). A radio that runs a release (`release=` in VERSION) is compared by release name,
+and is offered pre-releases only when it runs one. Any other build (a developer's, one from a version link) is
+compared by commit time (`git_time=` against the release's `git_time`) and is offered only final releases. Firmware
+from before `git_time=` that isn't a release gets no offer. The dialog lists what the editor gains (`CPS_FAST`,
+`IDDB_COMPACT`, when the release has them and the radio doesn't) and opens the installer for the radio. It comes once
+per tab for each radio, running release and new release, after the compact database offer when both apply.
 
 ## Transports
 
