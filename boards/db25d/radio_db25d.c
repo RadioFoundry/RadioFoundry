@@ -124,10 +124,13 @@ static void apc_ramp(uint16_t target, bool up)
 // moving its control voltage. Receive: the LO at f x (1 + trim) + IF, which leaves the signal on the main chip's IF
 // (the IF's own share of the error cancels, both chips running from the TCXO). Transmit: the main chip at f x (1 + trim)
 static volatile int16_t trim_ppb;
+// The trim the LO was tuned with at the last rx(): DMR bursts use it too, so a change during the hotspot moves
+// transmit and receive together, at the next tune
+static int16_t tuned_ppb;
 
 static uint32_t synth_hz(uint32_t hz)
 {
-	return ref_trim_tune_hz(hz, trim_ppb);
+	return ref_trim_tune_hz(hz, tuned_ppb);
 }
 
 #if CONFIG_REF_TRIM
@@ -262,6 +265,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	write_bias(hz);
 	tx_paths_off();
 	db25d_main_idle();
+	tuned_ppb = trim_ppb;
 	db25d_lo_tune(synth_hz(hz) + IF_HZ);	// the LO carries the trim; the main chip stays on the IF
 	db25d_main_to_if();
 	if (mode != RADIO_MODE_DMR) {	// DMR: the bandwidth and sub-audio are the digital set's (4.5)
