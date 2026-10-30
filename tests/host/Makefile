@@ -831,11 +831,20 @@ TESTS   += at1141Test
 # The FD6818 in a superhet (main transceiver and LO, also the 0x7813 LO): words and write orders
 TESTS   += fd6818shTest
 
+# The superhet chip ops each of those drivers provides: filled in, and the same writes as the driver's own calls
+TESTS   += superhetTest
+
 fd6818shTest: fd6818shTest.c $(ROOT)/drivers/rf/fd6818/fd6818sh.c $(RFBUS) $(ROOT)/drivers/rf/fd6818/fd6818sh.h $(SUBAUDIO)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818shTest.c $(ROOT)/drivers/rf/fd6818/fd6818sh.c $(RFBUS) $(SUBAUDIO)
 
 at1141Test: at1141Test.c $(ROOT)/drivers/rf/at1141/at1141.c $(RFBUS) $(ROOT)/drivers/rf/at1141/at1141.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ at1141Test.c $(ROOT)/drivers/rf/at1141/at1141.c $(RFBUS) -lm
+
+SUPERHET_SRC := $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4819_superhet.c \
+	$(ROOT)/drivers/rf/fd6818/fd6818sh.c $(ROOT)/drivers/rf/fd6818/fd6818sh_superhet.c \
+	$(ROOT)/drivers/rf/at1141/at1141.c $(ROOT)/drivers/rf/at1141/at1141_superhet.c $(RFBUS) $(SUBAUDIO)
+superhetTest: superhetTest.c $(SUPERHET_SRC) $(ROOT)/drivers/rf/superhet/superhet.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ superhetTest.c $(SUPERHET_SRC) -lm
 
 bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(RFBUS) $(ROOT)/drivers/rf/bk4819/bk4819.h $(SUBAUDIO)
 	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(RFBUS) $(SUBAUDIO)
@@ -864,6 +873,7 @@ run-platform: bk4819Test at1141Test fd6818shTest hrc7000ClockTest hrc7000UartFor
 	./bk4819Test
 	./at1141Test
 	./fd6818shTest
+	./superhetTest
 	./hrc7000ClockTest
 	./hrc7000UartFormatTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin

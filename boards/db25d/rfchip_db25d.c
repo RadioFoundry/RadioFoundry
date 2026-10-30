@@ -11,6 +11,10 @@
 #include "rf/bk4819/bk4819.h"
 #include "rf/fd6818/fd6818sh.h"
 #include "rf/at1141/at1141.h"
+#include "rf/superhet/superhet.h"
+#include "rf/bk4819/bk4819_superhet.h"
+#include "rf/fd6818/fd6818sh_superhet.h"
+#include "rf/at1141/at1141_superhet.h"
 
 #define IF_HZ		51550000u
 #define VHF_BELOW_HZ	280000000u	// the band split of the RF paths
@@ -28,6 +32,8 @@ static fd6818sh_t fd_main, fd_lo;
 static at1141_t at_lo;
 static chip_t main_chip, lo_chip;
 static uint16_t main_id, lo_id;
+static superhet_main_t sh_main;
+static superhet_lo_t sh_lo;
 
 // ---- 3-wire bus: clock and data shared, one enable per chip ----
 
@@ -100,33 +106,33 @@ bool db25d_rf_init(void)
 		bk_main.rx_inverted = true;
 		bk4819_init_main(&bk_main);
 		bk4819_write(&bk_main, BK4819_REG_PA, BK4819_PA_MAX);	// stock: once at detection, never changed
+		bk4819_analog_mode(&bk_main);
+		sh_main = (superhet_main_t){ &bk4819_superhet_main, &bk_main };
 	} else {
 		fd6818sh_attach(&fd_main, &bus_main.bus, FD6818SH_MAIN);
 		fd_main.rx_inverted = true;
 		fd6818sh_init_main(&fd_main);
+		fd6818sh_analog_mode(&fd_main);
+		hrc_pin_in(PIN_RF_CSS);
+		sh_main = (superhet_main_t){ &fd6818sh_superhet_main, &fd_main };
 	}
 	switch (lo_chip) {
 	case CHIP_BK4819:
 		bk4819_attach(&bk_lo, &bus_lo.bus);
 		bk4819_init_lo(&bk_lo, BK4819_LO_PA_MAX);
+		sh_lo = (superhet_lo_t){ &bk4819_superhet_lo, &bk_lo };
 		break;
 	case CHIP_AT1141:
 		at1141_attach(&at_lo, &bus_lo.bus);
 		at1141_init(&at_lo);
 		at1141_disable(&at_lo);
+		sh_lo = (superhet_lo_t){ &at1141_superhet_lo, &at_lo };
 		break;
 	default:
 		fd6818sh_attach(&fd_lo, &bus_lo.bus, lo_chip == CHIP_7813 ? FD6818SH_LO_7813 : FD6818SH_LO);
 		fd6818sh_init_lo(&fd_lo);
+		sh_lo = (superhet_lo_t){ &fd6818sh_superhet_lo, &fd_lo };
 		break;
-	}
-	if (main_chip == CHIP_FD6818) {
-		hrc_pin_in(PIN_RF_CSS);
-	}
-	if (main_chip == CHIP_BK4819) {
-		bk4819_analog_mode(&bk_main);
-	} else {
-		fd6818sh_analog_mode(&fd_main);
 	}
 	return true;
 }
@@ -158,12 +164,17 @@ uint32_t db25d_rf_writes(void)
 	return bus_main.bus.writes + bus_lo.bus.writes;
 }
 
-static bool fd(void)
-{
-	return main_chip == CHIP_FD6818;
-}
+// ---- Main transceiver: the board's steps around the chip's ops ----
 
-// ---- Main transceiver ----
+static superhet_tone_t sh_tone(uint8_t type)
+{
+	switch (type) {
+	case TONE_CTCSS: return SUPERHET_TONE_CTCSS;
+	case TONE_DCS: return SUPERHET_TONE_DCS;
+	case TONE_DCS_INV: return SUPERHET_TONE_DCS_INV;
+	default: return SUPERHET_TONE_NONE;
+	}
+}
 
 static bk4819_tone_t bk_tone(uint8_t type)
 {
@@ -175,88 +186,28 @@ static bk4819_tone_t bk_tone(uint8_t type)
 	}
 }
 
-static fd6818sh_tone_t fd_tone(uint8_t type)
+static superhet_af_t sh_af(db25d_af_t af)
 {
-	switch (type) {
-	case TONE_CTCSS: return FD6818SH_TONE_CTCSS;
-	case TONE_DCS: return FD6818SH_TONE_DCS;
-	case TONE_DCS_INV: return FD6818SH_TONE_DCS_INV;
-	default: return FD6818SH_TONE_NONE;
-	}
+	return af == DB25D_AF_FM ? SUPERHET_AF_FM : af == DB25D_AF_DMR ? SUPERHET_AF_DMR : SUPERHET_AF_MUTE;
 }
 
-void db25d_main_idle(void)
-{
-	if (fd()) {
-		fd6818sh_set_state(&fd_main, FD6818SH_STATE_IDLE);
-	} else {
-		bk4819_set_state(&bk_main, BK4819_STATE_IDLE);
-	}
-}
-
-void db25d_main_rx_state(void)
-{
-	if (fd()) {
-		fd6818sh_set_state(&fd_main, FD6818SH_STATE_RX);
-	} else {
-		bk4819_set_state(&bk_main, BK4819_STATE_RX);
-	}
-}
-
-void db25d_main_to_if(void)
-{
-	if (fd()) {
-		fd6818sh_set_state(&fd_main, FD6818SH_STATE_IDLE);
-		fd6818sh_tune(&fd_main, IF_HZ);
-	} else {
-		bk4819_set_freq(&bk_main, IF_HZ);
-	}
-}
-
-void db25d_main_bandwidth(radio_bw_t bw)
-{
-	if (fd()) {
-		fd6818sh_set_bandwidth(&fd_main, bw == RADIO_BW_25K);
-	} else {
-		bk4819_set_bandwidth(&bk_main, bw == RADIO_BW_25K ? BK4819_BW_25K : BK4819_BW_12K5);
-	}
-}
-
-void db25d_main_rx_tone(uint8_t type, uint16_t value)
-{
-	if (fd()) {
-		fd6818sh_set_rx_tone(&fd_main, fd_tone(type), value);
-	} else {
-		bk4819_set_rx_tone(&bk_main, bk_tone(type), value);
-	}
-}
+void db25d_main_idle(void) { sh_main.ops->idle(sh_main.chip); }
+void db25d_main_rx_state(void) { sh_main.ops->rx(sh_main.chip); }
+void db25d_main_to_if(void) { sh_main.ops->to_if(sh_main.chip, IF_HZ); }
+void db25d_main_bandwidth(radio_bw_t bw) { sh_main.ops->bandwidth(sh_main.chip, bw == RADIO_BW_25K); }
+void db25d_main_rx_tone(uint8_t type, uint16_t value) { sh_main.ops->rx_tone(sh_main.chip, sh_tone(type), value); }
 
 bool db25d_main_tone_heard(uint16_t r0c, uint8_t type)
 {
-	if (fd()) {
+	if (main_chip == CHIP_FD6818) {
 		// The FD6818 has no status bit for it: its GPIO0 carries the compare result to PTB27
 		return type == TONE_NONE || hrc_pin_read(PIN_RF_CSS);
 	}
 	return bk4819_heard(&bk_main, r0c, bk_tone(type));
 }
 
-void db25d_main_af(db25d_af_t af)
-{
-	if (fd()) {
-		fd6818sh_set_af(&fd_main, af == DB25D_AF_FM ? FD6818SH_AF_RX : af == DB25D_AF_DMR ? FD6818SH_AF_DMR : FD6818SH_AF_MUTE);
-	} else {
-		bk4819_set_af(&bk_main, af == DB25D_AF_FM ? BK4819_AF_FM : af == DB25D_AF_DMR ? BK4819_AF_DMR : BK4819_AF_MUTE);
-	}
-}
-
-void db25d_main_af_gain(uint8_t gain)
-{
-	if (fd()) {
-		fd6818sh_set_af_gain(&fd_main, gain);
-	} else {
-		bk4819_set_af_gain(&bk_main, gain);
-	}
-}
+void db25d_main_af(db25d_af_t af) { sh_main.ops->af(sh_main.chip, sh_af(af)); }
+void db25d_main_af_gain(uint8_t gain) { sh_main.ops->af_gain(sh_main.chip, gain); }
 
 void db25d_main_status(uint16_t *r67, uint16_t *r65, uint16_t *r0c)
 {
@@ -269,175 +220,35 @@ void db25d_main_status(uint16_t *r67, uint16_t *r65, uint16_t *r0c)
 void db25d_main_tx_prepare(uint8_t type, uint16_t value, uint32_t hz, radio_bw_t bw)
 {
 	(void)bw;	// neither chip's deviation is switched by bandwidth: the FD6818's goes by band and sub-audio
-	if (fd()) {
-		fd6818sh_gpio(&fd_main, GPIO_BAND, hz < VHF_BELOW_HZ);
-		fd6818sh_tx_prepare(&fd_main, fd_tone(type), value, hz, db25d_cal_pa_gain(hz));
-	} else {
-		// The BK4819's: the stock words (4.4)
-		bk4819_tx_prepare(&bk_main, bk_tone(type), value);
-	}
+	superhet_main_gpio(&sh_main, GPIO_BAND, hz < VHF_BELOW_HZ);
+	sh_main.ops->tx_prepare(sh_main.chip, sh_tone(type), value, hz, db25d_cal_pa_gain(hz));
 }
 
-void db25d_main_tx_tune(uint32_t hz)
-{
-	if (fd()) {
-		fd6818sh_tx_tune(&fd_main, hz);
-	} else {
-		bk4819_tx_tune(&bk_main, hz);
-	}
-}
-
-void db25d_main_tx_end(void)
-{
-	if (fd()) {
-		fd6818sh_tx_end(&fd_main);
-	} else {
-		bk4819_tx_end(&bk_main);
-	}
-}
-
-bool db25d_main_tail(bool on)
-{
-	if (fd()) {
-		return fd6818sh_tx_tail(&fd_main, on);
-	}
-	if (on) {
-		return bk4819_tx_tail_start(&bk_main);
-	}
-	bk4819_tx_tail_end(&bk_main);
-	return true;
-}
-
-void db25d_main_tone(uint16_t hz, uint8_t gain)
-{
-	if (fd()) {
-		fd6818sh_tone_start(&fd_main, hz, gain);
-	} else {
-		bk4819_tone_start(&bk_main, hz, gain);
-	}
-}
-
-bool db25d_main_tone_on(void)
-{
-	return fd() ? fd_main.tone_hz != 0 : bk_main.tone_hz != 0;
-}
-
-void db25d_main_tone_key(bool down)
-{
-	if (fd()) {
-		fd6818sh_tone_key(&fd_main, down);
-	} else {
-		bk4819_tone_key(&bk_main, down);
-	}
-}
-
-void db25d_main_dtmf(uint16_t low_hz, uint16_t high_hz)
-{
-	if (fd()) {
-		fd6818sh_dtmf_start(&fd_main, low_hz, high_hz);
-	} else {
-		bk4819_dtmf_start(&bk_main, low_hz, high_hz);
-	}
-}
-
-void db25d_main_dmr_enter(uint8_t af_gain)
-{
-	if (fd()) {
-		fd6818sh_dmr_mode(&fd_main);
-		fd6818sh_set_af_gain(&fd_main, af_gain);
-	} else {
-		bk4819_dmr_rx_enter(&bk_main);
-		bk4819_set_af_gain(&bk_main, af_gain);
-	}
-}
-
-void db25d_main_dmr_leave(void)
-{
-	if (fd()) {
-		fd6818sh_analog_mode(&fd_main);
-	} else {
-		bk4819_dmr_rx_end(&bk_main);
-	}
-}
+void db25d_main_tx_tune(uint32_t hz) { sh_main.ops->tx_tune(sh_main.chip, hz); }
+void db25d_main_tx_end(void) { sh_main.ops->tx_end(sh_main.chip); }
+bool db25d_main_tail(bool on) { return sh_main.ops->tail(sh_main.chip, on); }
+void db25d_main_tone(uint16_t hz, uint8_t gain) { sh_main.ops->tone(sh_main.chip, hz, gain); }
+bool db25d_main_tone_on(void) { return sh_main.ops->tone_on(sh_main.chip); }
+void db25d_main_tone_key(bool down) { sh_main.ops->tone_key(sh_main.chip, down); }
+void db25d_main_dtmf(uint16_t low_hz, uint16_t high_hz) { sh_main.ops->dtmf(sh_main.chip, low_hz, high_hz); }
+void db25d_main_dmr_enter(uint8_t af_gain) { sh_main.ops->dmr_enter(sh_main.chip, af_gain); }
+void db25d_main_dmr_leave(void) { sh_main.ops->dmr_leave(sh_main.chip); }
 
 void db25d_main_dmr_tx_prepare(uint32_t hz)
 {
-	if (fd()) {
-		fd6818sh_gpio(&fd_main, GPIO_BAND, hz < VHF_BELOW_HZ);
-		fd6818sh_dmr_tx_prepare(&fd_main, db25d_cal_pa_gain(hz));
-	} else {
-		bk4819_dmr_tx_prepare(&bk_main);
-	}
+	superhet_main_gpio(&sh_main, GPIO_BAND, hz < VHF_BELOW_HZ);
+	sh_main.ops->dmr_tx_prepare(sh_main.chip, db25d_cal_pa_gain(hz));
 }
 
-void db25d_main_burst(uint32_t hz, bool tx)
-{
-	if (fd()) {
-		fd6818sh_burst_tune(&fd_main, hz, tx);
-	} else {
-		bk4819_burst_tune(&bk_main, hz, tx ? BK4819_STATE_TX_MAIN : BK4819_STATE_RX);
-	}
-}
+void db25d_main_burst(uint32_t hz, bool tx) { sh_main.ops->burst(sh_main.chip, hz, tx); }
 
 // ---- LO ----
 
 void db25d_lo_tune(uint32_t hz)
 {
-	bool vhf = hz - IF_HZ < VHF_BELOW_HZ;
-	switch (lo_chip) {
-	case CHIP_BK4819:
-		bk4819_lo_tune(&bk_lo, hz);
-		break;
-	case CHIP_AT1141:
-		at1141_gpio(&at_lo, GPIO_BAND, vhf);
-		if (at_lo.lo_hz != hz) {
-			at1141_tune(&at_lo, hz);	// enables too
-		} else {
-			at1141_enable(&at_lo);
-		}
-		break;
-	case CHIP_FD6818:
-	case CHIP_7813:
-		fd6818sh_gpio(&fd_lo, GPIO_BAND, vhf);
-		fd6818sh_lo_tune(&fd_lo, hz);
-		break;
-	default:
-		break;
-	}
+	superhet_lo_gpio(&sh_lo, GPIO_BAND, hz - IF_HZ < VHF_BELOW_HZ);
+	sh_lo.ops->tune(sh_lo.chip, hz);
 }
 
-void db25d_lo_off(void)
-{
-	switch (lo_chip) {
-	case CHIP_BK4819:
-		bk4819_lo_off(&bk_lo);
-		break;
-	case CHIP_AT1141:
-		at1141_disable(&at_lo);	// stock TX: standby only
-		break;
-	case CHIP_FD6818:
-	case CHIP_7813:
-		fd6818sh_lo_off(&fd_lo);
-		break;
-	default:
-		break;
-	}
-}
-
-void db25d_lo_resume(void)
-{
-	switch (lo_chip) {
-	case CHIP_BK4819:
-		bk4819_lo_resume(&bk_lo);
-		break;
-	case CHIP_AT1141:
-		at1141_enable(&at_lo);	// stock RX: no wait, no retune
-		break;
-	case CHIP_FD6818:
-	case CHIP_7813:
-		fd6818sh_lo_resume(&fd_lo);
-		break;
-	default:
-		break;
-	}
-}
+void db25d_lo_off(void) { sh_lo.ops->off(sh_lo.chip); }
+void db25d_lo_resume(void) { sh_lo.ops->resume(sh_lo.chip); }
