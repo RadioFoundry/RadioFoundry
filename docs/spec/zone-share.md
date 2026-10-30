@@ -177,7 +177,7 @@ after "Go to it" ([ui.md](ui.md) 2.1); it sends the stored channel, so unsaved c
 carry a share icon, and the offer's title and banner a download icon. Then the contact list (Share To): a private contact gets confirmed packets, a talkgroup unconfirmed ones. Digits that make an ID add two rows after the contacts,
 "Private ID 3101234" and "TG 3101234", so a station that isn't a contact can be sent to. The send works only on a DMR
 channel: on another, OK says "Go to a DMR channel to send" and sends nothing. The send's toast names the frequency:
-"Sending zone to K1ABC Joe via 442.375". It is the channel's receive frequency, which on a repeater is its output.
+"Sending to K1ABC Joe via 442.375" ("Sending via 442.375" where that doesn't fit). It is the channel's receive frequency, which on a repeater is its output.
 The banner says "Sent to <name>" or "Not sent to <name>". One send at a time.
 
 ## 8. Limits

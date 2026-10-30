@@ -614,7 +614,7 @@ static const flow_t flows[] = {
 	// Share To a station that isn't a contact: the digits typed as an ID, private first (zone-share.md 7)
 	{ "Z share to a typed ID", "ok 4 ctx ctx 5", "3 1 0 9 8 7 6", "shows=Private_ID_3109876 shows=TG_3109876", 7, false },
 	{ "Z the channel goes to the typed ID, via the channel's frequency", "ok 4 ctx ctx 5 3 1 0 9 8 7 6", "ok",
-	  "screen=zone zs_sends=1 toast=Sending_channel_to_3109876_via_467.375", 1, false },
+	  "screen=zone zs_sends=1 toast=Sending_to_3109876_via_467.375", 1, false },
 	{ "Z after a send by name the zone's list isn't filtered", "ok 4 ctx ctx 5 2 2 5 4", "ok",
 	  "screen=zone zs_sends=1 hides=Find:_2254", 1, false },
 	{ "Z a share from an FM channel is refused", "up ok 4 ctx ctx 5", "ok", "zs_sends=0 toast=Go_to_a_DMR", 1, false },

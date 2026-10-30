@@ -1041,6 +1041,12 @@ static const char *zone_title(void)
 	return zone_of_frame()->name;
 }
 
+#if CONFIG_ZONE_SHARE || CONFIG_CONTACT_EDIT
+// The toast text of Share To's sending and of the contact editor, one buffer as one toast shows at a time (the toast
+// keeps the pointer). The longest: the sending toast and its narrow form, "Sending to <name> via <freq>"
+static char toast_msg[84];
+#endif
+
 #if CONFIG_ZONE_SHARE
 // ======================= Zone sharing (docs/spec/zone-share.md; docs/user/07-channels-zones-vfo.md) =======================
 // CONTEXT in a zone: send the zone, or the channel focused, to a contact or talkgroup (with the zone editor: from
@@ -1187,7 +1193,6 @@ static void share_to_select(uint16_t i, bool hold)
 		return;
 	}
 	uint8_t n = ui_svc_zone_send(share_zone, share_pos, share_one, t.id, t.group, &total);
-	static char msg[112];	// the toast keeps the pointer
 	char to[24], via[16];
 	sbuf_t b;
 	if (n == 0) {
@@ -1202,7 +1207,7 @@ static void share_to_select(uint16_t i, bool hold)
 	sb_init(&b, via, sizeof via);
 	sb_str(&b, " via ");
 	sb_freq(&b, v->ch.rx_hz);
-	sb_init(&b, msg, sizeof msg);
+	sb_init(&b, toast_msg, sizeof toast_msg);
 	sb_str(&b, TEXT_ALT_OPEN);
 	if (!share_one && n < total) {
 		// The record holds what fits (zone-share.md 4): say how much goes
@@ -1212,21 +1217,18 @@ static void share_to_select(uint16_t i, bool hold)
 		sb_u32(&b, total, 1);
 		sb_str(&b, " channels");
 	} else {
-		sb_str(&b, share_one ? "Sending channel to " : "Sending zone to ");
+		sb_str(&b, "Sending to ");
 		sb_str(&b, to);
 	}
 	sb_str(&b, via);
-	sb_str(&b, TEXT_ALT_NEXT "Sending to ");	// the narrow displays: to whom, and where
-	sb_str(&b, to);
-	sb_str(&b, via);
-	sb_str(&b, TEXT_ALT_NEXT "Sending");
+	sb_str(&b, TEXT_ALT_NEXT "Sending");	// the narrow displays: where
 	sb_str(&b, via);
 	sb_str(&b, TEXT_ALT_CLOSE);
 	ui_filter_reset();	// the keys typed here aren't the list's under it
 	ui_pop();
 	if (share_zone != UI_ZONE_NONE)
 		ui_pop();	// and the menu it came from; the channel editor stays
-	ui_toast(msg);
+	ui_toast(toast_msg);
 }
 
 static const ui_scr_def_t share_to_screen = {
@@ -2538,9 +2540,8 @@ enum { CT_NAME, CT_ID, CT_TYPE, CT_TS, CT_SAVE, CT_COUNT, CT_NONE = 0xFF };
 
 static contact_t ct;			// the contact being made
 static uint8_t ct_edit = CT_NONE;	// the row whose editor is open (the ID)
-static char ct_digits[CT_ID_DIGITS + 1];
-static uint8_t ct_len;
-static uint32_t ct_val;
+// The ID being typed goes in the channel editor's ced_digits, ced_len and ced_val: the two editors are never open at
+// once, and RAM is short
 
 void ui_new_contact(const ui_target_t *t)
 {
@@ -2577,7 +2578,7 @@ static void ct_item(uint16_t i, ui_item_t *it)
 	case CT_ID:
 		if (ct_edit == CT_ID) {
 			it->flags |= UI_ITEM_EDIT;
-			sb_str(&b, ct_digits);
+			sb_str(&b, ced_digits);
 			sb_chr(&b, '_');
 		} else {
 			sb_u32(&b, ct.id, 1);
@@ -2603,8 +2604,7 @@ static void ct_item(uint16_t i, ui_item_t *it)
 // contact index. Reads every contact (the duplicate and the free slot)
 static const char *ct_problem(uint16_t *slot)
 {
-	static char msg[40];
-	static contact_t c;
+	contact_t c;
 	bool group = ct.type != CONTACT_PRIVATE;
 	if (ct.name[0] == 0)
 		return "Give it a name first";
@@ -2623,10 +2623,10 @@ static const char *ct_problem(uint16_t *slot)
 		}
 		if (c.id == ct.id && (c.type != CONTACT_PRIVATE) == group) {
 			sbuf_t b;
-			sb_init(&b, msg, sizeof msg);
+			sb_init(&b, toast_msg, sizeof toast_msg);
 			sb_str(&b, "Already a contact: ");
 			sb_str(&b, c.name);
-			return msg;
+			return toast_msg;
 		}
 	}
 	return *slot == 0 ? "No room for more contacts" : NULL;
@@ -2634,7 +2634,6 @@ static const char *ct_problem(uint16_t *slot)
 
 static void ct_save(void)
 {
-	static char msg[40];
 	uint16_t slot = 0;
 	const char *why = ct_problem(&slot);
 	if (why != NULL) {
@@ -2646,7 +2645,7 @@ static void ct_save(void)
 		return;
 	}
 	sbuf_t b;
-	sb_init(&b, msg, sizeof msg);
+	sb_init(&b, toast_msg, sizeof toast_msg);
 	sb_str(&b, "Saved contact ");
 	sb_str(&b, ct.name);
 	ui_pop();
@@ -2656,7 +2655,7 @@ static void ct_save(void)
 	} else {
 		ui_go_home();	// Find: its rows are the number's, not the contact (written by the storage job, later)
 	}
-	ui_toast(msg);
+	ui_toast(toast_msg);
 }
 
 static void ct_select(uint16_t i, bool hold)
@@ -2671,9 +2670,9 @@ static void ct_select(uint16_t i, bool hold)
 		break;
 	case CT_ID:
 		ct_edit = CT_ID;
-		ct_len = 0;
-		ct_val = 0;
-		ct_digits[0] = 0;
+		ced_len = 0;
+		ced_val = 0;
+		ced_digits[0] = 0;
 		break;
 	case CT_TYPE:
 		ct.type = ct.type == CONTACT_PRIVATE ? CONTACT_GROUP : CONTACT_PRIVATE;
@@ -2704,21 +2703,21 @@ static bool ct_key(const input_event_t *ev)
 	// The ID being typed: digits append (refused past the largest talkgroup), Back takes one back or closes it, OK
 	// keeps it; the knob can't move the focus under it
 	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
-		uint32_t v = ct_val * 10u + (uint32_t)(ev->action - ACT_DIGIT_0);
-		if (ct_len >= CT_ID_DIGITS || v > CT_GROUP_MAX) {
+		uint32_t v = (uint32_t)ced_val * 10u + (uint32_t)(ev->action - ACT_DIGIT_0);
+		if (ced_len >= CT_ID_DIGITS || v > CT_GROUP_MAX) {
 			ui_toast("IDs go up to 16777214");
 		} else {
-			ct_val = v;
-			ct_digits[ct_len++] = (char)('0' + ev->action - ACT_DIGIT_0);
-			ct_digits[ct_len] = 0;
+			ced_val = (int32_t)v;
+			ced_digits[ced_len++] = (char)('0' + ev->action - ACT_DIGIT_0);
+			ced_digits[ced_len] = 0;
 		}
 		ui_dirty();
 		return true;
 	}
 	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
-		if (ct_len > 0) {
-			ct_digits[--ct_len] = 0;
-			ct_val /= 10u;
+		if (ced_len > 0) {
+			ced_digits[--ced_len] = 0;
+			ced_val /= 10;
 		} else {
 			ct_edit = CT_NONE;
 		}
@@ -2726,8 +2725,8 @@ static bool ct_key(const input_event_t *ev)
 		return true;
 	}
 	if (ev->action == ACT_SELECT && press) {
-		if (ct_val != 0)
-			ct.id = ct_val;		// nothing typed (or 0): unchanged
+		if (ced_val != 0)
+			ct.id = (uint32_t)ced_val;		// nothing typed (or 0): unchanged
 		ct_edit = CT_NONE;
 		ui_dirty();
 		return true;

@@ -101,7 +101,7 @@ static const struct { const char *name, *script; } gallery[] = {
 #if CONFIG_ZONE_EDIT
 	{ "zone_share_to", "ok 4 ctx down down ctx 5" },	// Channel actions' Share channel to...
 	{ "zone_share_to_id", "ok 4 ctx down down ctx 5 3 1 0 9 8 7 6" },	// a typed ID that isn't a contact
-	{ "zone_share_sending", "ok 4 ctx down down ctx 5 2 ok" },	// "Sending channel to ... via ..."
+	{ "zone_share_sending", "ok 4 ctx down down ctx 5 2 ok" },	// "Sending to ... via ..."
 #else
 	{ "zone_share", "ok 4 ctx down down ctx" },
 	{ "zone_share_to", "ok 4 ctx down down ctx 1" },
