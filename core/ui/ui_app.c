@@ -782,15 +782,25 @@ static int digit_of(const input_event_t *ev)
 	return ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 ? ev->action - ACT_DIGIT_0 : -1;
 }
 
-static void save_channel(void)
+bool ui_try_save_channel(void)
 {
-	if (!view->temporary && !ui_st.privacy) {
+	if (view->vfo) {
+		ui_toast("VFO settings save automatically");
+	} else if (view->hotspot) {
+		ui_toast("Stop hotspot to save");
+	} else if (!view->temporary && !ui_st.privacy) {
 		ui_toast("Nothing to save");
+	} else if (view->channel_number == 0) {
+		ui_toast("Pick a saved channel");
+	} else if (!(ui_svc_features() & UI_FEAT_SAVE_CHANNEL)) {
+		ui_toast("Channel saving unavailable");
 	} else if (ui_svc_save_channel()) {
 		ui_toast("Saved to channel");
+		return true;
 	} else {
-		ui_toast("Can't save here: use qdmr");
+		ui_toast("Save busy: try again");
 	}
+	return false;
 }
 
 // --- Home (information-architecture.md 3) ---
@@ -990,7 +1000,7 @@ bool ui_home_key(const input_event_t *ev)
 			if (!has_quick_key)
 				ui_push(SCR_QUICK, 0);	// few-key boards: long SELECT is QUICK
 			else
-				save_channel();
+				ui_try_save_channel();
 			return true;
 		}
 		return false;
@@ -1297,7 +1307,7 @@ bool ui_quick_key(const input_event_t *ev)
 		if (ev->gesture == GESTURE_LONG) {
 			if (ui_st.quick_edit)
 				quick_close_editor();
-			save_channel();
+			ui_try_save_channel();
 		} else if (press && ui_st.quick_edit) {
 			quick_close_editor();
 		} else if (press) {

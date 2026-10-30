@@ -102,6 +102,8 @@ Settings also answer to other names. For example, "promiscuous" finds Digital mo
 Changes you make while operating (power, squelch, tone, timeslot, color code, mode, talk target) are temporary. They
 last until you change the channel or press **Back** on Home. Home marks the changed fields. To keep a change in the
 channel, hold **OK** on Home or in quick settings. The radio shows "Saved to channel".
+In the VFO, changes are kept automatically, so a hold says "VFO settings save automatically". If another
+write is in progress, it says "Save busy: try again"; wait a moment and hold **OK** again.
 
 **Back** on Home clears one thing per press, in this order:
 
