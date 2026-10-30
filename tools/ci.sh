@@ -16,8 +16,9 @@
 #                                     default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
 #   RFOUNDRY_CI_SANITIZE=1 tools/ci.sh   the host step also runs the host tests under ASan and UBSan (make SANITIZE=1)
-#   RFOUNDRY_CI_PRUNE=1 tools/ci.sh  remove each build tree once its size is in the report (the log and the .bin stay;
-#                               the matrix otherwise leaves about 65 MB per configuration)
+#   RFOUNDRY_CI_PRUNE=0 tools/ci.sh  keep every build tree (about 65 MB per configuration). By default each tree is
+#                               removed once its size is in the report and it built clean (the log and the .bin stay;
+#                               a configuration that failed keeps its tree to debug)
 #
 # The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps registry,python,licenses`, the host tests and
 # `--quick --steps firmware --toolchain <t>` for each toolchain; nightly `--matrix --steps firmware --toolchain <t>`.
@@ -356,6 +357,7 @@ build() {
 	b=$1; name=$2; shift 2
 	dir="$OUT/$b-$name"
 	log="$dir.log"
+	failed_before=$FAILED
 	target=$(make -s BOARD="$b" BUILD="$dir" "$@" print-vars VARS=TARGET | sed 's/^TARGET=//')	# build options name it
 	rm -f "$target.elf"		# always relink: the size report reads the linker's memory-usage lines
 	if ! make BOARD="$b" BUILD="$dir" -j"$JOBS" "$@" > "$log" 2>&1; then
@@ -398,7 +400,8 @@ build() {
 	fi
 	echo "| $b | $name | $bytes | $delta | $free | $pct % |" >> "$REPORT"
 	ok "$b $name: $bytes bytes, $free bytes free in the app region"
-	if [ "${RFOUNDRY_CI_PRUNE:-0}" = 1 ]; then
+	# a tree that failed (warnings, stack check) stays for debugging
+	if [ "${RFOUNDRY_CI_PRUNE:-1}" != 0 ] && [ "$FAILED" = "$failed_before" ]; then
 		cp "$bin" "$dir.bin" && rm -rf "$dir"
 	fi
 }
