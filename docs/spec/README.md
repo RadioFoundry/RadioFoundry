@@ -47,6 +47,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [debuglink.md](debuglink.md) | The debug link: commands, the view, key injection |
 | [cps-protocol.md](cps-protocol.md) | The host port's protocols and how they share it; the CPS protocol |
 | [cps-fast.md](cps-fast.md) | The fast codeplug protocol: block sums, LZ4, staged commit |
+| [iddb-compact.md](iddb-compact.md) | The compact DMR ID database (format C): dictionary, pages, compatibility |
 | [mmdvm-protocol.md](mmdvm-protocol.md) | The MMDVM modem protocol (hotspot mode) |
 | [usb-network.md](usb-network.md) | USB network personality, the IP gateway, control station mode |
 | [ppp.md](ppp.md) | PPP on the serial host link |

@@ -345,6 +345,10 @@ spec = "docs/spec/tftp.md"
 switch = "TFTP_IDDB"
 spec = "docs/spec/tftp.md"
 
+[feature.iddb_compact]
+switch = "IDDB_COMPACT"
+spec = "docs/spec/iddb-compact.md"
+
 [feature.snmp]
 switch = "SNMP"
 spec = "docs/spec/snmp.md"

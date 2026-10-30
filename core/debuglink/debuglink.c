@@ -165,6 +165,9 @@ static const char features[] = "features="
 #if CONFIG_TFTP_IDDB
 	"TFTP_IDDB,"
 #endif
+#if CONFIG_IDDB_COMPACT
+	"IDDB_COMPACT,"
+#endif
 #if CONFIG_SNMP
 	"SNMP,"
 #endif

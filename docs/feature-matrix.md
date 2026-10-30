@@ -110,6 +110,7 @@ is `tools/bringup.py list --radio <id>`.
 | `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -182,6 +183,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `MDNS` | ● | ● | ● | ● | ● | ● |
 | `TFTP` | ● | ● | ● | ● | ● | ● |
 | `TFTP_IDDB` | ● | ● | ● | ● | ● | ● |
+| `IDDB_COMPACT` | ● | ● | ● | ● | ● | ● |
 | `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● | ● |
 | `SNMP` | ● | ● | ● | ● | ● | ● |
 | `SFR` | ● | ● | ● | ● | ✕ | ● |
@@ -327,6 +329,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | mDNS / DNS-SD (rfoundry-<id>.local) | `MDNS` | 6,744 | 6,504 |  |
 | TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | Without the ID database below |
 | DMR ID database over TFTP (`iddb.bin`, combined `codeplug.bin`) | `TFTP_IDDB` | 2,184 | 2,264 | Follows `TFTP` |
+| Compact DMR ID database (format C) read beside format N | `IDDB_COMPACT` | 988 | 992 | Follows `DMR` ([iddb-compact.md](spec/iddb-compact.md)) |
 | SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 |  |
 | PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,368* | 3,816* | Interop tested with pppd; checked on the DB25-D PRO and the DM-1801 Pro (`docs/spec/ppp.md` 8). Fits neither default image as it is when measured (DM-1701 688 B short, MD-380 1,588 B short of its 275 KB then; DM-1701 with LTO: +3,948, fits). DM-32: its only IP link, on by default with the gateway and every service (Whole images, DM-32UV) |
 

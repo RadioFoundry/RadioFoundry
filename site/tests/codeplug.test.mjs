@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawnSync, spawn } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -53,6 +53,25 @@ function detail(m, ids = [], db = []) {
 	const byId = new Map(db.map((r) => [r.id, r.text]));
 	for (const id of ids) out.push(byId.has(id) ? `iddb ${id} "${byId.get(id)}"` : `iddb ${id} -`);
 	return out.join("\n") + "\n";
+}
+
+// cpsSim on a flash image a simulated radio left (simRadio's close)
+function simDetailFlash(flash, ids = []) {
+	return simDetail({ bytes: flash }, ids);
+}
+
+function simRadioFrom(flash) {
+	const d = mkdtempSync(join(tmpdir(), "rfoundry-img-"));
+	const f = join(d, "flash.bin");
+	writeFileSync(f, flash);
+	const s = simRadio(["--image", f]);
+	const close = s.close;
+	s.close = async () => {
+		const out = await close();
+		rmSync(d, { recursive: true, force: true });
+		return out;
+	};
+	return s;
 }
 
 function simDetail(image, ids = []) {
@@ -232,13 +251,49 @@ test("longer database text is kept up to 48 characters", () => {
 
 // --- Reaching the radio (transport.js) against a simulated radio ---
 
-import { CpsSerial, changes, writeRanges, TransportError } from "../static/js/codeplug/transport.js";
+import { CpsSerial, changes, writeRanges, TransportError, keepIdentity } from "../static/js/codeplug/transport.js";
+import { concat } from "../static/js/flasher/bytes.js";
 import { FakeCpsRadio } from "../static/js/codeplug/fakecps.js";
 
 const RADIOS = [
 	{ id: "dm1701", codeplug: { base: 0, end: 0xE00000, names: ["DM-1701", "dm1701"] } },
 	{ id: "dm32", codeplug: { base: 0x700000, end: 0xF00000, names: ["DM-32UV", "dm32"] } },
+	{ id: "sim", codeplug: { base: 0, end: 0xE00000, names: ["sim"] } },
 ];
+
+// cpsSim as a radio on a serial port: its stdin and stdout as a stream (buf, clear, take, write, close). The flash is
+// dumped to a file when the stream closes. drop(frame bytes) -> true loses that write on the way, as an overrun would
+function simRadio(args = [], { drop = null } = {}) {
+	const d = mkdtempSync(join(tmpdir(), "rfoundry-fast-"));
+	const dump = join(d, "flash.bin");
+	const p = spawn(fx.cpssim, [...args, "--dump", dump], { stdio: ["pipe", "pipe", "inherit"] });
+	const s = {
+		buf: new Uint8Array(0),
+		clear() { s.buf = new Uint8Array(0); },
+		take(n) {
+			const o = s.buf.slice(0, n);
+			s.buf = s.buf.slice(n);
+			return o;
+		},
+		async write(data) {
+			if (drop?.(data)) return;
+			p.stdin.write(data);
+		},
+		// the flash as the radio left it
+		async close() {
+			const done = new Promise((r) => p.on("close", r));
+			p.stdin.end();
+			await done;
+			const flash = new Uint8Array(readFileSync(dump));
+			rmSync(d, { recursive: true, force: true });
+			return flash;
+		},
+	};
+	p.stdout.on("data", (b) => { s.buf = concat(s.buf, new Uint8Array(b)); });
+	return s;
+}
+
+const flashImage = (flash) => CodeplugImage.from(flash.slice(0, CODEPLUG_SPAN));
 
 test("a radio with its codeplug at a base reads and writes at that base", async () => {
 	const start = encode(rich());
@@ -279,6 +334,142 @@ test("an ID database goes to the radio and nothing past its room", async () => {
 	const tiny = new CpsSerial(new FakeCpsRadio({ board: "dm1701" }).stream());
 	await tiny.identify([{ id: "x", codeplug: { base: 0, end: 0xD9000, names: ["dm1701"] } }]);
 	await assert.rejects(tiny.write(img, null, { iddb: true }), (e) => e instanceof TransportError && e.code === "iddb_too_big");
+});
+
+test("a radio swapped on the cable is told apart by its chip UID", async () => {
+	// one cable, two radios: the stream answers for whichever is plugged in
+	const a = new FakeCpsRadio({ board: "DM-1701", image: encode(rich()).bytes, uid: 0x11 });
+	const other = rich();
+	other.channels[0].name = "Other radio";
+	const b = new FakeCpsRadio({ board: "DM-1701", image: encode(other).bytes, uid: 0x22 });
+	let on = a;
+	const sa = a.stream(), sb = b.stream();
+	const cable = {
+		get buf() { return (on === a ? sa : sb).buf; },
+		clear() { (on === a ? sa : sb).clear(); },
+		take(n) { return (on === a ? sa : sb).take(n); },
+		write(d) { return (on === a ? sa : sb).write(d); },
+		async close() {},
+	};
+	const tr = new CpsSerial(cable);
+	const uidA = await tr.who(RADIOS);
+	const seen = await tr.read({ iddb: false });
+	on = b;
+	const uidB = await tr.who(RADIOS);
+	assert.ok(uidA && uidB && uidA !== uidB);
+	// what a write against the first radio's bytes would leave on the second: the channel it never sent
+	const want = encode(rich());
+	const stale = await tr.plan(want, seen);
+	assert.equal(stale.bytes, 0, "nothing differs from the first radio's bytes");
+	const res = await tr.write(want, await tr.read({ iddb: false }));
+	assert.ok(res.bytes > 0);
+	assert.equal(detail(decode(await tr.read({ iddb: false }))), detail(decode(want)));
+});
+
+test("one codeplug into several radios keeps each radio's name, DMR ID and boot text", async () => {
+	const own = rich();
+	Object.assign(own.general, { radioName: "N0CALL", dmrId: 3101234, bootLine1: "Unit 7", bootLine2: "Fleet" });
+	const radio = new FakeCpsRadio({ board: "DM-1701", image: encode(own).bytes });
+	const tr = new CpsSerial(radio.stream());
+	await tr.identify(RADIOS);
+	const have = await tr.read({ iddb: false });
+	const fleet = rich();
+	Object.assign(fleet.general, { radioName: "BASE", dmrId: 3100001, bootLine1: "Base", bootLine2: "" });
+	fleet.channels[0].name = "Fleet ch 1";
+	const file = encode(fleet), want = keepIdentity(file, have);
+	assert.ok((await tr.plan(want, have)).bytes < (await tr.plan(file, have)).bytes);
+	const res = await tr.write(want, have);
+	await tr.verify(want, res.plan);
+	const back = decode(await tr.read({ iddb: false }));
+	assert.deepEqual([back.general.radioName, back.general.dmrId, back.general.bootLine1, back.general.bootLine2],
+		["N0CALL", 3101234, "Unit 7", "Fleet"]);
+	assert.equal(back.channels[0].name, "Fleet ch 1");
+	assert.equal(back.general.groupHang, fleet.general.groupHang);
+});
+
+test("the fast protocol reads what the CPS reads, and writes only the blocks that changed", async () => {
+	const s = simRadio(["--populate"]);
+	const tr = new CpsSerial(s);
+	await tr.identify(RADIOS);
+	assert.ok(tr.fast && tr.fast.stageMax > 0, "INFO");
+	assert.ok(tr.compact, "IDDB_COMPACT listed");
+	const fast = await tr.read({ iddb: false });
+	tr.fast = null;
+	const cps = await tr.read({ iddb: false });
+	await tr.identify(RADIOS);
+	assert.equal(detail(decode(fast)), detail(decode(cps)));
+	const before = tr.fl.wire;
+	const again = await tr.read({ iddb: false, cache: fast });		// nothing changed: SUMS only
+	assert.ok(tr.fl.wire - before < 1000, `cached read moved ${tr.fl.wire - before} bytes`);
+	assert.deepEqual(again.bytes, fast.bytes);
+
+	const m = decode(fast);
+	m.channels[0].name = "Fast 1";
+	const want = encode(m);
+	const plan = await tr.plan(want, fast);
+	assert.equal(plan.blocks, 1, "one channel: one block");
+	const res = await tr.write(want, fast);
+	await tr.verify(want, res.plan);
+	await tr.finish();
+	assert.equal(simDetailFlash(await s.close()), detail(m));
+});
+
+test("a DATA frame lost in a window sends the block again", async () => {
+	let lost = 0;
+	const s = simRadio(["--populate"], { drop: (f) => f.length > 64 * 3 && lost++ === 0 });	// a window of DATA frames
+	const tr = new CpsSerial(s);
+	await tr.identify(RADIOS);
+	const have = await tr.read({ iddb: false });
+	const m = decode(have);
+	for (const c of m.channels) c.name = `Again ${c.number}`;
+	const want = encode(m);
+	const res = await tr.write(want, have);
+	await tr.verify(want, res.plan);
+	await tr.finish();
+	assert.equal(lost, 1);
+	assert.equal(simDetailFlash(await s.close()), detail(m));
+});
+
+test("a format C database written fast is read by the radio; an older radio gets the CPS", async () => {
+	const recs = Array.from({ length: 30000 }, (_, i) => ({ id: 3100000 + 3 * i, text: `K${i} ${["Bob", "Ann", "Joe"][i % 3]} Atlanta GA` }));
+	const s = simRadio(["--populate"]);
+	const tr = new CpsSerial(s);
+	await tr.identify(RADIOS);
+	const have = await tr.read({ iddb: false });
+	const want = have.clone();
+	iddb.write(want, recs, { format: "C" });
+	const res = await tr.write(want, have, { iddb: true });
+	await tr.verify(want, res.plan);
+	await tr.finish();
+	const flash = await s.close();
+	const ids = [3100000, 3100000 + 3 * 29999, 3100001];
+	const got = simDetailFlash(flash, ids).split("\n").filter((l) => l.startsWith("iddb"));
+	assert.deepEqual(got, ["iddb count 30000", 'iddb 3100000 "K0 Bob Atlanta GA"', `iddb ${3100000 + 3 * 29999} "K29999 Joe Atlanta GA"`, "iddb 3100001 -"]);
+
+	// refreshed: one record more near the start changes few pages
+	const again = flashImage(flash);
+	const more = again.clone();
+	iddb.write(more, [...recs, { id: 3100001, text: "N0NEW New" }], { format: "C" });
+	const s3 = simRadioFrom(flash);
+	const tr3 = new CpsSerial(s3);
+	await tr3.identify(RADIOS);
+	const p = await tr3.plan(more, again, { iddb: true });
+	assert.ok(p.blocks <= 4, `blocks for one new record: ${p.blocks}`);
+	await s3.close();
+
+	const old = simRadio(["--populate", "--features", "FM,DMR"]);
+	const tr2 = new CpsSerial(old);
+	await tr2.identify(RADIOS);
+	assert.equal(tr2.fast, null);
+	assert.equal(tr2.compact, false);
+	const h2 = await tr2.read({ iddb: false });
+	const m2 = decode(h2);
+	m2.channels[0].name = "Old radio";
+	const w2 = encode(m2);
+	const r2 = await tr2.write(w2, h2);
+	await tr2.verify(w2, r2.plan);
+	await tr2.finish();
+	assert.equal(simDetailFlash(await old.close()), detail(m2));
 });
 
 test("a refused write and an unknown radio are reported", async () => {
@@ -357,4 +548,77 @@ test("codeplug.bin for USB network mode carries the ID database when there is on
 	const small = CodeplugImage.from(new Uint8Array(0));
 	iddb.write(small, recs.slice(0, 10), { textLen: 16 });
 	assert.equal(tftpBytes(small).length, TFTP_SIZE);
+});
+
+test("a format C database is read by the radio's lookup: codes, literals, empty tokens, both areas", () => {
+	const first = ["Bob", "Ann", "Joe", "Sue"], cities = Array.from({ length: 300 }, (_, k) => `City${k} GA`);
+	const recs = [];
+	for (let i = 0; i < 90000; i++) recs.push({ id: 1000000 + 11 * i, text: `K${i} ${first[i % 4]} ${cities[i % 300]}` });
+	recs.push({ id: 7, text: "W1AW" }, { id: 8, text: "N0CALL  Spaced" }, { id: 9, text: "X".repeat(60) }, { id: 10, text: "" });
+	const img = CodeplugImage.blank();
+	const r = iddb.write(img, recs, { format: "C" });
+	assert.equal(r.format, "C");
+	assert.equal(r.count, 90004);
+	assert.ok(iddb.extent(img.bytes) > iddb.AREA2, "area 2 in use");
+	const h = iddb.readHeader(img.bytes);
+	assert.equal(h.format, "C");
+	assert.ok(h.dict > 128, "2-byte codes in use");
+	const last = 1000000 + 11 * 89999;
+	const ids = [7, 8, 9, 10, 1000000, 1000000 + 11 * 45000, last, 1000001, last + 1];
+	const got = simDetail(img, ids).split("\n").filter((l) => l.startsWith("iddb"));
+	assert.deepEqual(got, [
+		"iddb count 90004", 'iddb 7 "W1AW"', 'iddb 8 "N0CALL Spaced"', `iddb 9 "${"X".repeat(48)}"`, 'iddb 10 ""',
+		'iddb 1000000 "K0 Bob City0 GA"', `iddb ${1000000 + 11 * 45000} "K45000 Bob City0 GA"`,
+		`iddb ${last} "K89999 Sue City299 GA"`, "iddb 1000001 -", `iddb ${last + 1} -`,
+	]);
+	const back = iddb.read(img.bytes);
+	assert.equal(back.length, 90004);
+	assert.deepEqual(back.find((x) => x.id === 8), { id: 8, text: "N0CALL Spaced" });
+
+	// written again against itself with one record more: the dictionary and most pages stay as they were
+	const again = img.clone();
+	iddb.write(again, [...recs, { id: 1000001, text: "N0NEW Bob City5 GA" }], { format: "C" });
+	let pages = 0;
+	for (let a = iddb.AREA1; a < iddb.extent(again.bytes); a += 4096) {
+		if (a >= iddb.AREA1 + iddb.AREA1_SIZE && a < iddb.AREA2) continue;
+		if (!again.bytes.subarray(a, a + 4096).every((x, k) => x === img.bytes[a + k])) pages++;
+	}
+	assert.ok(pages <= 4, `pages changed by one record: ${pages}`);
+	assert.deepEqual(simDetail(again, [1000001]).split("\n").filter((l) => l.startsWith("iddb 1")), ['iddb 1000001 "N0NEW Bob City5 GA"']);
+
+	// the size estimate is close to the size written
+	const est = iddb.estimateCompact(recs);
+	const size = iddb.extent(img.bytes) - iddb.AREA1 - (iddb.AREA2 - iddb.AREA1 - iddb.AREA1_SIZE);
+	assert.ok(Math.abs(est.bytes - size) / size < 0.1, `estimate ${est.bytes}, written ${size}`);
+});
+
+test("a format C database goes to an older radio as format N, and to TFTP as format N", () => {
+	const recs = Array.from({ length: 300000 }, (_, i) => ({ id: 1000000 + i, text: `K${i} Name ${i % 7 ? "Short" : "A much longer city name here"}` }));
+	const img = CodeplugImage.blank();
+	iddb.write(img, recs, { format: "C" });
+	const end = 0xE00000;	// a radio's room
+	const n = img.clone();
+	const r = iddb.convert(n, "N", { end });
+	assert.equal(iddb.readHeader(n.bytes).format, "N");
+	assert.equal(iddb.readHeader(n.bytes).textLen, 48);
+	assert.equal(r.count + r.dropped, 300000);
+	// a tighter room: records left out, counted
+	const tight = img.clone();
+	const t2 = iddb.convert(tight, "N", { end: iddb.AREA2 + 0x100000 });
+	assert.ok(t2.dropped > 0 && t2.count + t2.dropped === 300000);
+	const out = tftpBytes(img);
+	assert.equal(iddb.readHeader(out).format, "N");
+	assert.equal(iddb.readHeader(img.bytes).format, "C", "the editor's image is left as it was");
+	assert.equal(iddb.convert(n, "N"), null, "already format N");
+	// a format the editor can't read back (n: area 2 in the voice prompts) is left alone, never rewritten empty
+	const vp = CodeplugImage.blank();
+	iddb.write(vp, recs.slice(0, 10), { textLen: 16 });
+	vp.bytes[iddb.AREA1 + 2] = 0x6E;
+	const before = vp.bytes.slice();
+	assert.equal(iddb.convert(vp, "C"), null);
+	assert.equal(iddb.convert(vp, "N"), null);
+	assert.deepEqual(tftpBytes(vp).subarray(iddb.AREA1, iddb.AREA1 + 64), before.subarray(iddb.AREA1, iddb.AREA1 + 64));
+	// TFTP: cut to the radio's room like a write
+	const capped = tftpBytes(img, iddb.AREA2 + 0x100000);
+	assert.ok(capped.length <= iddb.AREA2 + 0x100000 && iddb.readHeader(capped).count === t2.count);
 });
