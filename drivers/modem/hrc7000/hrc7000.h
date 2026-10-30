@@ -164,12 +164,16 @@ typedef struct {
 	// The RF TX interrupt's lead on each TX burst, RF_CONTROL b13:8 in 100 us steps: the board's time to switch its RF
 	// chip to TX. Set with hrc7000_set_rf_tx_lead; 0 = HRC7000_RF_TX_LEAD_DEF (3.1 ms)
 	uint8_t rf_tx_lead;
+	// How far the modem advances its TX data, RF_CONTROL b20:16 in 100 us steps: the board's RF TX path delay. A larger
+	// value puts the inbound burst earlier against the outbound. Set before power_on_init; 0 = HRC7000_TX_PRE_ON_DEF
+	uint8_t tx_pre_on;
 	// The speaker line out gain, GCR_DACL bits 5:0 (hrc7000_set_dac_gain; 0 = 0 dB). Power-on init and FM receive write
 	// this one, so a board's soft volume on the PCM path survives them
 	uint8_t dac_gain;
 } hrc7000_t;
 
 #define HRC7000_RF_TX_LEAD_DEF	31u	// 3.1 ms (gotchas 2.4)
+#define HRC7000_TX_PRE_ON_DEF	4u	// 0.4 ms, the chip's reset value
 
 static inline void hrc7000_wr(hrc7000_t *d, uint32_t off, uint32_t v) { d->regs[off / 4u] = v; }
 static inline uint32_t hrc7000_rd(hrc7000_t *d, uint32_t off) { return d->regs[off / 4u]; }

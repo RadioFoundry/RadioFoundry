@@ -776,6 +776,9 @@ the switch timing.
 
 Band for PA/LNA purposes: VHF below 280 MHz, UHF from 280 MHz (the 220 MHz range shares the VHF path).
 
+TX data advance (`hrc7000_t.tx_pre_on`, RF_CONTROL b20:16): the chip's 0.4 ms. The inbound burst's offset against the
+outbound through a repeater is not measured on this radio yet ([modem-hrc7000.md](modem-hrc7000.md) 2.1).
+
 ### 8.6 DMR PA timer
 
 | Item | Value |

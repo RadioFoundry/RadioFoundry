@@ -278,6 +278,21 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   whole from the header (no late entry, no lost frame). The same build at 2.0 ms: the same headers and ramps, burst
   on-time 31.83-31.94 ms. The bench's MMDVM modem decoded none of these overs at either lead (it decodes the DM-1701's),
   so its check fails on this radio for a reason other than the lead.
+- **TX data advance 1.1 ms** (`hrc7000_t.tx_pre_on` = 11, RF_CONTROL b20:16), not the chip's 0.4 ms. Through a
+  repeater at 0.4 ms the inbound burst came 0.67-0.71 ms late against the outbound (issue 268; the requirement is
+  centers aligned, ETSI TS 102 361-1 4.1, with 1 ms for propagation and drift, 10.2.3.1.3). Burst start from the
+  sync correlation, alone on TS1, 142-143 bursts per run, all decoded (BENCH 2026-10-29):
+
+  | Setting | Inbound vs outbound |
+  |---|---|
+  | tx_pre_on 4, RF_RECV_DELAY 0x36B0 (two runs) | +0.708, +0.709 ms |
+  | tx_pre_on 11 (register write; the firmware's value, a second run) | -0.042 ms, -0.042 ms |
+  | RF_RECV_DELAY 21000 | +0.021 ms |
+  | RF TX interrupt lead 2.0 ms | +0.688 ms |
+
+  Each tx_pre_on step moves the burst about 0.107 ms. The RF TX interrupt's lead moves only the carrier, not the
+  data. RF_RECV_DELAY also moves the burst but shifts the receive compensation too, and late entry was not tested
+  with it, so it stays at 0x36B0.
 - **PA key:** the TX path switches on and off with each burst. With it on for the whole transmission, a hotspot (keyed
   while it listens) received nothing (2026-10-16). Per burst, `test_dmr_tx_off_air` passes: ramps up 1.44 ms, down
   0.31 ms, slot spacing 60.00 ms. The DAC B drive is set 28 ms after each burst is armed (the DM-32UV's "DMR PA"
