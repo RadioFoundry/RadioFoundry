@@ -111,6 +111,7 @@ is `tools/bringup.py list --radio <id>`.
 | `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off |
