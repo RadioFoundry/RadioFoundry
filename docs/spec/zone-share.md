@@ -119,8 +119,9 @@ nothing reaches the user. The setting is `zs_offers` in the settings record: 0 (
 | Lifetime | an offer not opened within 10 minutes is dropped (`zs.expired`). Once opened, it waits for the user |
 | Group offers | a record sent to a talkgroup the radio listens to is offered like one sent to it |
 
-The offer shows as a banner, "Zone from <name or ID>" with "Zone <name>, <n> channels". **#** opens it. While it
-waits it is also under **Tools > Zones/Chs Received**. The offer screen (Zone Share Received, or Channel Share Received) reads "Zone <name>, <n> channels, from <ID>" and
+The offer shows as a banner, "Zone from <name or ID>" with "Zone <name>, <n> channels". **#** opens it. The banner
+has no timer: it stays until **#** opens it, **Back** hides it, or the offer ends (it expires, or is answered from
+Tools). Another banner can take its place. While it waits it is also under **Tools > Zones/Chs Received**. The offer screen (Zone Share Received, or Channel Share Received) reads "Zone <name>, <n> channels, from <ID>" and
 how many are not in this radio's bands, with three choices:
 
 - **Import** imports it (5.3).
