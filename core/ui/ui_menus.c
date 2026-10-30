@@ -128,6 +128,8 @@ static uint8_t act_list(uint8_t *out)
 		out[n++] = A_TALK;
 		out[n++] = A_MAKE_DEFAULT;
 		out[n++] = A_MESSAGE;
+		if (CONFIG_CONTACT_EDIT && !ui_target.saved && ui_target.id != 0xFFFFFFu)
+			out[n++] = A_SAVE_CONTACT;
 	} else {
 		static const uint8_t person[] = { A_TALK, A_PRIVATE, A_MESSAGE, A_CHECK, A_ALERT, A_POSITION,
 						  A_SAVE_CONTACT, A_SPEAK };
@@ -211,7 +213,8 @@ static void act_item(uint16_t i, ui_item_t *it)
 		break;
 	case A_SAVE_CONTACT:
 		sb_str(&b, ui_target.saved ? "In contacts" : "Save as contact");
-		it->flags |= UI_ITEM_DIM;
+		if (ui_target.saved || !CONFIG_CONTACT_EDIT)
+			it->flags |= UI_ITEM_DIM;
 		break;
 	case A_SPEAK:
 		sb_str(&b, "Speak status");
@@ -288,6 +291,12 @@ static void act_select(uint16_t i, bool hold)
 		ui_toast("Position requests: not in this build");
 		break;
 	case A_SAVE_CONTACT:
+#if CONFIG_CONTACT_EDIT
+		if (!ui_target.saved) {
+			ui_new_contact(&ui_target);
+			break;
+		}
+#endif
 		ui_toast(ui_target.saved ? "Already in your contacts" : "Add contacts in qdmr");
 		break;
 	case A_SPEAK:
@@ -1032,6 +1041,12 @@ static const char *zone_title(void)
 	return zone_of_frame()->name;
 }
 
+#if CONFIG_ZONE_SHARE || CONFIG_CONTACT_EDIT
+// The toast text of Share To's sending and of the contact editor, one buffer as one toast shows at a time (the toast
+// keeps the pointer). The longest: the sending toast and its narrow form, "Sending to <name> via <freq>"
+static char toast_msg[84];
+#endif
+
 #if CONFIG_ZONE_SHARE
 // ======================= Zone sharing (docs/spec/zone-share.md; docs/user/07-channels-zones-vfo.md) =======================
 // CONTEXT in a zone: send the zone, or the channel focused, to a contact or talkgroup (with the zone editor: from
@@ -1105,22 +1120,95 @@ static const ui_scr_def_t share_screen = {
 };
 #endif
 
-// Share To: the codeplug's contacts, private or group (type to find, as Contacts)
+// Share To: the codeplug's contacts, private or group (type to find, as Contacts). Digits that make an ID add two rows
+// after them, the ID as a private call and as a talkgroup, so a station that isn't a contact can be sent to
+#define SHARE_TYPED	CODEPLUG_CONTACTS_MAX	// raw rows past the contacts: the typed ID, private then talkgroup
+
+// The digits typed as an ID, 0 when they aren't one (letters typed by name match the contacts only)
+static uint32_t share_typed_id(void)
+{
+	const char *k = ui_filter_text();
+	uint32_t id = 0;
+	for (; *k; k++) {
+		if (id > 1677721u)
+			return 0;
+		id = id * 10u + (uint32_t)(*k - '0');
+	}
+	return id <= 0xFFFFFEu ? id : 0;
+}
+
+static uint16_t share_raw_count(void) { return SHARE_TYPED + 2u; }
+
+static bool share_raw_label(uint16_t raw, char *buf, uint8_t len)
+{
+	if (raw < SHARE_TYPED)
+		return contacts_raw_label(raw, buf, len);
+	uint32_t id = share_typed_id();
+	if (id == 0 || (raw == SHARE_TYPED && id > CODEPLUG_DMR_ID_MAX))
+		return false;
+	strncpy(buf, ui_filter_text(), len - 1u);	// matches the keys typed
+	buf[len - 1u] = 0;
+	return true;
+}
+
+static bool share_target(uint16_t i, ui_target_t *t)
+{
+	if (i >= ui_filter_count())
+		return false;
+	uint16_t raw = ui_filter_raw(i);
+	if (raw < SHARE_TYPED)
+		return contacts_target(i, t);
+	memset(t, 0, sizeof *t);
+	t->id = share_typed_id();
+	t->group = raw != SHARE_TYPED;
+	return t->id != 0;
+}
+
+static void share_to_item(uint16_t i, ui_item_t *it)
+{
+	ui_target_t t;
+	if (ui_filter_raw(i) < SHARE_TYPED) {
+		contacts_item(i, it);
+		return;
+	}
+	if (!share_target(i, &t))
+		return;
+	sbuf_t b;
+	sb_init(&b, it->label, sizeof it->label);
+	sb_str(&b, t.group ? "TG " : "Private ID ");
+	sb_u32(&b, t.id, 1);
+	strcpy(it->value, TEXT_ALT_OPEN "Not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+}
+
 static void share_to_select(uint16_t i, bool hold)
 {
 	(void)hold;
 	ui_target_t t;
 	uint8_t total = 0;
-	if (!contacts_target(i, &t))
+	const radio_view_t *v = ui_view();
+	if (!share_target(i, &t))
 		return;
+	if (v->ch.mode != RADIO_MODE_DMR) {
+		ui_toast("Go to a DMR channel to send");	// it goes as DMR data on the channel in use (zone-share.md 7)
+		return;
+	}
 	uint8_t n = ui_svc_zone_send(share_zone, share_pos, share_one, t.id, t.group, &total);
-	static char msg[48];	// the toast keeps the pointer
+	char to[24], via[16];
 	sbuf_t b;
-	sb_init(&b, msg, sizeof msg);
 	if (n == 0) {
 		ui_toast("Can't send now: try again");
 		return;
 	}
+	if (t.name[0] != 0)
+		strcpy(to, t.name);
+	else
+		ui_sb_target(to, sizeof to, &t);
+	// The frequency it goes on: the channel's receive frequency, which is a repeater's output
+	sb_init(&b, via, sizeof via);
+	sb_str(&b, " via ");
+	sb_freq(&b, v->ch.rx_hz);
+	sb_init(&b, toast_msg, sizeof toast_msg);
+	sb_str(&b, TEXT_ALT_OPEN);
 	if (!share_one && n < total) {
 		// The record holds what fits (zone-share.md 4): say how much goes
 		sb_str(&b, "Sending ");
@@ -1129,20 +1217,26 @@ static void share_to_select(uint16_t i, bool hold)
 		sb_u32(&b, total, 1);
 		sb_str(&b, " channels");
 	} else {
-		sb_str(&b, share_one ? "Sending channel to " : "Sending zone to ");
-		sb_str(&b, t.name[0] ? t.name : "this contact");
+		sb_str(&b, "Sending to ");
+		sb_str(&b, to);
 	}
+	sb_str(&b, via);
+	sb_str(&b, TEXT_ALT_NEXT "Sending");	// the narrow displays: where
+	sb_str(&b, via);
+	sb_str(&b, TEXT_ALT_CLOSE);
+	ui_filter_reset();	// the keys typed here aren't the list's under it
 	ui_pop();
 	if (share_zone != UI_ZONE_NONE)
 		ui_pop();	// and the menu it came from; the channel editor stays
-	ui_toast(msg);
+	ui_toast(toast_msg);
 }
 
 static const ui_scr_def_t share_to_screen = {
 	.name = "zone_share_to", .flags = SF_LIST | SF_FILTER, .prefix = "Share To",
-	.hint = "0-9 find  OK send  Back", .empty = "No contacts: add them in qdmr",
-	.count = ui_filter_count, .item = contacts_item, .select = share_to_select,
-	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
+	.hint = TEXT_ALT_OPEN "0-9 find or ID  OK send  Back" TEXT_ALT_NEXT "0-9 find or ID  OK send" TEXT_ALT_CLOSE,
+	.empty = "No contacts: type an ID",
+	.count = ui_filter_count, .item = share_to_item, .select = share_to_select,
+	.raw_count = share_raw_count, .raw_label = share_raw_label,
 };
 
 // --- An offer from another radio ---
@@ -1911,6 +2005,7 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 
 #if CONFIG_CHANNEL_EDIT
 static void ui_text_open(char *target, uint8_t max);
+static bool discard_contact;	// Unsaved Changes asks about the contact editor's new contact (else a channel)
 
 // The first problem that keeps the copy from being saved, as a toast; NULL when it can be saved
 static const char *ced_problem(void)
@@ -2094,6 +2189,7 @@ static bool chinfo_key(const input_event_t *ev)
 	if (ced_edit == CE_NONE) {
 		if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS && ced_num != 0 &&
 				(ced_new || ced_changed(CE_COUNT))) {
+			discard_contact = false;
 			ui_push(SCR_DISCARD, 0);
 			return true;
 		}
@@ -2255,7 +2351,10 @@ static void discard_select(uint16_t i, bool hold)
 		ui_pop();	// and the channel
 }
 
-static const char *discard_body(void) { return "Discard the changes to this channel?"; }
+static const char *discard_body(void)
+{
+	return discard_contact ? "Discard this new contact?" : "Discard the changes to this channel?";
+}
 
 static const ui_scr_def_t discard_screen = {
 	.name = "discard", .flags = SF_LIST, .prefix = "Unsaved Changes", .hint = TEXT_ALT_OPEN "OK choose  Back keep editing" TEXT_ALT_NEXT "OK choose  Back" TEXT_ALT_CLOSE,
@@ -2430,6 +2529,222 @@ static const ui_scr_def_t text_screen = {
 	.hint = TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE,
 	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
 };
+
+#if CONFIG_CONTACT_EDIT
+// ======================= The contact editor (ui.md 2.4) =======================
+// A new contact: from Find's "Create contact" on a typed number, or a station's actions (Save as contact). Name (text
+// entry), ID (typed), type (talkgroup / private, flips on OK), timeslot (the channel's, 1, 2), Save. Long OK saves too
+
+enum { CT_NAME, CT_ID, CT_TYPE, CT_TS, CT_SAVE, CT_COUNT, CT_NONE = 0xFF };
+#define CT_ID_DIGITS	8
+#define CT_GROUP_MAX	0xFFFFFEu	// 0xFFFFFF is all call
+#define CT_PRIVATE_MAX	((uint32_t)CODEPLUG_DMR_ID_MAX)
+
+static contact_t ct;			// the contact being made
+static uint8_t ct_edit = CT_NONE;	// the row whose editor is open (the ID)
+// The ID being typed goes in the channel editor's ced_digits, ced_len and ced_val: the two editors are never open at
+// once, and RAM is short
+_Static_assert(CT_ID_DIGITS <= CE_DIGITS, "the ID's digits fit ced_digits");
+
+void ui_new_contact(const ui_target_t *t)
+{
+	memset(&ct, 0, sizeof ct);
+	ct.id = t->id;
+	ct.type = t->group ? CONTACT_GROUP : CONTACT_PRIVATE;
+	sbuf_t b;
+	sb_init(&b, ct.name, sizeof ct.name);
+	if (t->name[0] != 0) {
+		sb_str(&b, t->name);
+	} else {
+		if (t->group)
+			sb_str(&b, "TG ");
+		sb_u32(&b, t->id, 1);	// "TG 3100", "3101234": a name to save with, or to type over
+	}
+	ct_edit = CT_NONE;
+	ui_push(SCR_CONTACT_EDIT, 0);
+}
+
+static uint16_t ct_count(void) { return CT_COUNT; }
+
+static void ct_item(uint16_t i, ui_item_t *it)
+{
+	static const char *const labels[CT_COUNT] = { "Name", "ID", "Type", "Timeslot", "Save" };
+	if (i >= CT_COUNT)
+		return;
+	strcpy(it->label, labels[i]);
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	switch (i) {
+	case CT_NAME:
+		sb_str(&b, ct.name);
+		break;
+	case CT_ID:
+		if (ct_edit == CT_ID) {
+			it->flags |= UI_ITEM_EDIT;
+			sb_str(&b, ced_digits);
+			sb_chr(&b, '_');
+		} else {
+			sb_u32(&b, ct.id, 1);
+		}
+		break;
+	case CT_TYPE:
+		sb_str(&b, ct.type == CONTACT_PRIVATE ? "Private" : "Talkgroup");
+		break;
+	case CT_TS:
+		if (ct.timeslot == 0) {
+			sb_str(&b, "Channel's");
+		} else {
+			sb_str(&b, "TS ");
+			sb_u32(&b, ct.timeslot, 1);
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+// The first problem that keeps the contact from being saved, as a toast; NULL when it can be saved. *slot: a free
+// contact index. Reads every contact (the duplicate and the free slot)
+static const char *ct_problem(uint16_t *slot)
+{
+	contact_t c;
+	bool group = ct.type != CONTACT_PRIVATE;
+	if (ct.name[0] == 0)
+		return "Give it a name first";
+	if (ct.id == 0)
+		return "Type its ID first";
+	if (!group && ct.id > CT_PRIVATE_MAX)
+		return "Private IDs go up to 16776415";
+	if (group && ct.id > CT_GROUP_MAX)
+		return "Talkgroups go up to 16777214";
+	*slot = 0;
+	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
+		if (!codeplug_contact(i, &c)) {
+			if (*slot == 0)
+				*slot = i;
+			continue;
+		}
+		if (c.id == ct.id && (c.type != CONTACT_PRIVATE) == group) {
+			sbuf_t b;
+			sb_init(&b, toast_msg, sizeof toast_msg);
+			sb_str(&b, "Already a contact: ");
+			sb_str(&b, c.name);
+			return toast_msg;
+		}
+	}
+	return *slot == 0 ? "No room for more contacts" : NULL;
+}
+
+static void ct_save(void)
+{
+	uint16_t slot = 0;
+	const char *why = ct_problem(&slot);
+	if (why != NULL) {
+		ui_toast(why);
+		return;
+	}
+	if (!ui_svc_write_contact(slot, &ct)) {
+		ui_toast("Couldn't save now: try again");
+		return;
+	}
+	sbuf_t b;
+	sb_init(&b, toast_msg, sizeof toast_msg);
+	sb_str(&b, "Saved contact ");
+	sb_str(&b, ct.name);
+	ui_pop();
+	if (ui_frame()->scr == SCR_ACTIONS && ui_target.id == ct.id && ui_target.group == (ct.type != CONTACT_PRIVATE)) {
+		ui_target.saved = true;		// the actions it came from: In contacts, under its new name
+		strcpy(ui_target.name, ct.name);
+	} else {
+		ui_go_home();	// Find: its rows are the number's, not the contact (written by the storage job, later)
+	}
+	ui_toast(toast_msg);
+}
+
+static void ct_select(uint16_t i, bool hold)
+{
+	if (hold) {
+		ct_save();
+		return;
+	}
+	switch (i) {
+	case CT_NAME:
+		ui_text_open(ct.name, CODEPLUG_NAME_LEN);
+		break;
+	case CT_ID:
+		ct_edit = CT_ID;
+		ced_len = 0;
+		ced_val = 0;
+		ced_digits[0] = 0;
+		break;
+	case CT_TYPE:
+		ct.type = ct.type == CONTACT_PRIVATE ? CONTACT_GROUP : CONTACT_PRIVATE;
+		break;
+	case CT_TS:
+		ct.timeslot = (uint8_t)((ct.timeslot + 1u) % 3u);
+		break;
+	case CT_SAVE:
+		ct_save();
+		break;
+	default:
+		break;
+	}
+	ui_dirty();
+}
+
+static bool ct_key(const input_event_t *ev)
+{
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	if (ct_edit == CT_NONE) {
+		if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+			discard_contact = true;
+			ui_push(SCR_DISCARD, 0);
+			return true;
+		}
+		return false;
+	}
+	// The ID being typed: digits append (refused past the largest talkgroup), Back takes one back or closes it, OK
+	// keeps it; the knob can't move the focus under it
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+		uint32_t v = (uint32_t)ced_val * 10u + (uint32_t)(ev->action - ACT_DIGIT_0);
+		if (ced_len >= CT_ID_DIGITS || v > CT_GROUP_MAX) {
+			ui_toast("IDs go up to 16777214");
+		} else {
+			ced_val = (int32_t)v;
+			ced_digits[ced_len++] = (char)('0' + ev->action - ACT_DIGIT_0);
+			ced_digits[ced_len] = 0;
+		}
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		if (ced_len > 0) {
+			ced_digits[--ced_len] = 0;
+			ced_val /= 10;
+		} else {
+			ct_edit = CT_NONE;
+		}
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_SELECT && press) {
+		if (ced_val != 0)
+			ct.id = (uint32_t)ced_val;		// nothing typed (or 0): unchanged
+		ct_edit = CT_NONE;
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_NAV_UP || ev->action == ACT_NAV_DOWN || ev->action == ACT_ENC_STEP)
+		return true;
+	return false;
+}
+
+static const ui_scr_def_t contact_edit_screen = {
+	.name = "contactedit", .flags = SF_LIST | SF_FIELD, .prefix = "New Contact",
+	.hint = TEXT_ALT_OPEN "OK change  hold OK save  Back" TEXT_ALT_NEXT "OK change  hold OK save" TEXT_ALT_CLOSE,
+	.count = ct_count, .item = ct_item, .select = ct_select, .key = ct_key,
+};
+#endif
 
 #if CONFIG_ZONE_EDIT
 // ======================= The zone editor (ui.md 2.2) =======================
@@ -5005,6 +5320,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,
 #if CONFIG_CHANNEL_EDIT
 	[SCR_TEXT] = &text_screen, [SCR_DISCARD] = &discard_screen,
+#if CONFIG_CONTACT_EDIT
+	[SCR_CONTACT_EDIT] = &contact_edit_screen,
+#endif
 #if CONFIG_ZONE_EDIT
 	[SCR_ZCHANNEL] = &zchan_screen, [SCR_ZPICK] = &zpick_screen, [SCR_ZONEEDIT] = &zopt_screen,
 	[SCR_ZONEDEL] = &zdel_screen,

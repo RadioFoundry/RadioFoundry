@@ -404,6 +404,18 @@
     "ZONE_SHARE"
    ]
   },
+  "zone_share_to_id": {
+   "group": "channels",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
+  "zone_share_sending": {
+   "group": "channels",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
   "zone_imported": {
    "group": "channels",
    "needs": [
@@ -422,6 +434,30 @@
    "group": "channels",
    "needs": [
     "DMR"
+   ]
+  },
+  "find_frequency": {
+   "group": "channels",
+   "needs": [
+    "VFO"
+   ]
+  },
+  "find_new_contact": {
+   "group": "channels",
+   "needs": [
+    "CONTACT_EDIT"
+   ]
+  },
+  "contact_edit": {
+   "group": "channels",
+   "needs": [
+    "CONTACT_EDIT"
+   ]
+  },
+  "contact_edit_save": {
+   "group": "channels",
+   "needs": [
+    "CONTACT_EDIT"
    ]
   },
   "contacts": {

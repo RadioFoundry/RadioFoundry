@@ -118,11 +118,11 @@ On Home, **#** opens the actions for the current or last caller. A digit picks a
 | 4 | Radio check | Checks that their radio is on and in range |
 | 5 | Call alert | Pages their radio |
 | 6 | Position | Not built yet |
-| 7 | Save as contact | Not built yet. Add contacts in qdmr |
+| 7 | Save as contact | Opens New Contact with their ID and name ([Contacts](#contacts)). "In contacts" when they are one |
 | 8 | Speak status | Not built yet |
 | 9 | Save to channel | Shown only when the channel has temporary changes |
 
-For a talkgroup the actions are Talk to, Make channel default and Message.
+For a talkgroup the actions are Talk to, Make channel default and Message, and 4 Save as contact when it isn't a contact.
 
 Without anyone heard yet, **#** shows "No calls heard yet".
 
@@ -146,7 +146,27 @@ it permanent. **#** opens its actions.
 <img src="../ux/screens/160x120i5/contacts.png" width="200" alt="Contacts">
 <img src="../ux/screens/160x120i5/contact_actions.png" width="200" alt="Actions for a contact">
 
-Contacts can't be added or edited on the radio yet. Use qdmr.
+### New contact
+
+Make a contact on the radio from a number or a call:
+
+- On Home, type the ID or talkgroup. Find's last row is "Create contact 3100" when no contact has that number. Press
+  **OK**. Up to 6 digits start as a talkgroup, 7 and more as a person.
+- In a caller's or talkgroup's actions (**#**), pick **Save as contact**.
+
+<img src="../ux/screens/160x120i5/contact_edit.png" width="200" alt="New Contact">
+
+| Row | **OK** does |
+|---|---|
+| Name | Type the name with the keypad ([text entry](07-channels-zones-vfo.md#text-entry)) |
+| ID | Type the ID. **Back** takes back a digit, **OK** keeps it |
+| Type | Talkgroup or Private |
+| Timeslot | Channel's, TS 1 or TS 2 |
+| Save | Saves it. Holding **OK** on any row saves too |
+
+The radio refuses a contact that is already there ("Already a contact: ..."). Editing or deleting a stored contact is
+not built yet: use qdmr. A codeplug write from a CPS replaces the contacts you made on the radio, so read the codeplug
+into the CPS first.
 
 ## Private calls
 

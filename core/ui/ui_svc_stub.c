@@ -34,6 +34,9 @@ WEAK bool ui_svc_monitor(bool on) { (void)on; return false; }
 WEAK bool ui_svc_vox(bool on) { (void)on; return false; }
 WEAK bool ui_svc_save_channel(void) { return false; }
 WEAK bool ui_svc_write_channel(uint16_t number, const channel_t *ch) { (void)number; (void)ch; return false; }
+#if CONFIG_CONTACT_EDIT
+WEAK bool ui_svc_write_contact(uint16_t index, const contact_t *c) { (void)index; (void)c; return false; }
+#endif
 WEAK bool ui_svc_zone_edit(const zone_op_t *op) { (void)op; return false; }
 WEAK void ui_svc_zone_poll(void) { }
 WEAK bool ui_svc_zone_pending(void) { return false; }

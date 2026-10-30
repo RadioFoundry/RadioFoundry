@@ -595,7 +595,10 @@ static struct {
 	uint8_t temp;
 	uint8_t power;
 	uint8_t squelch;
-	channel_t now;		// the channel as the radio has it now (temporary changes included)
+	union {
+		channel_t now;		// the channel as the radio has it now (temporary changes included)
+		contact_t contact;	// the contact editor's, at index channel (one job at a time: RAM is short)
+	};
 	uint32_t id;
 	bool private_call;
 } job;
@@ -686,6 +689,28 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 	job.now = *ch;
 	return storage_job_post(write_channel_job, NULL);
 }
+
+#if CONFIG_CONTACT_EDIT
+// The contact editor's contact (ui.md 2.4). The radio core's name cache follows codeplug_serial()
+
+static void write_contact_job(void *ctx)
+{
+	(void)ctx;
+	if (!codeplug_set_contact(job.channel, &job.contact)) {
+		save_failed("Couldn't write the codeplug: not saved");
+	}
+}
+
+bool ui_svc_write_contact(uint16_t index, const contact_t *c)
+{
+	if (index == 0 || index > CODEPLUG_CONTACTS_MAX || storage_job_busy()) {
+		return false;
+	}
+	job.channel = index;
+	job.contact = *c;
+	return storage_job_post(write_contact_job, NULL);
+}
+#endif
 
 #if CONFIG_ZONE_EDIT
 // The zone editor's changes (ui.md 2.2), queued: Move up pressed again while the last move is still being written
