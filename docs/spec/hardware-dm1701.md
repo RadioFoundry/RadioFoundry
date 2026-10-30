@@ -1132,9 +1132,13 @@ sign-extended to 10 bits, so receive and transmit sit at the same level.
 
 The user's reference trim ([radio-features.md](radio-features.md) 6.1) adds to this offset at every tune:
 `uvf_ref_trimmed` turns ppb into steps at 160 ppb a step and clamps to -128..127. The scale comes from the direct
-keying measurement in section 6 (41 and 43 steps put the carrier 149 Hz apart at 461.1375 MHz, about 74 Hz a step);
-the trim itself is not measured on the radio yet. A step is 0.16 ppm, so the 0.1 ppm trim steps round to it. With a
-blank band (12.1) the offset is 0 and the trim still applies.
+keying measurement in section 6 (41 and 43 steps put the carrier 149 Hz apart at 461.1375 MHz, about 74 Hz a step).
+A step is 0.16 ppm, so the 0.1 ppm trim steps round to it. With a blank band (12.1) the offset is 0 and the trim still
+applies.
+
+Checked on the radio (2026-10-30): DMR at 438.5 MHz, lowest power, read by an SDR's AFC once settled. +-5 ppm is 31
+steps (4.96 ppm, 2175 Hz); the carrier moved +2155 and -2120 Hz from trim 0, after taking out the 86 Hz drift between
+the trim-0 readings before and after, as linear in time. That is within 3% of the scale, and the sign is right.
 
 ### 12.5 FM deviation (fixed, not from the table)
 
