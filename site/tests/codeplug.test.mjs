@@ -345,6 +345,11 @@ test("an ID database goes to the radio and nothing past its room", async () => {
 	const recs = Array.from({ length: 20000 }, (_, i) => ({ id: 3100000 + i, text: `W${i} Name` }));
 	iddb.write(img, recs, { textLen: 32 });
 	await tr.write(img, null, { iddb: true });
+	// its header erased before anything else of it and its sector written last (iddb-compact.md 4.3): a write cut
+	// short leaves no database, never a new header over old records
+	const db = radio.writes.filter(([a]) => a >= iddb.AREA1);
+	assert.deepEqual(db[0], [iddb.AREA1, 32], "the header erased first");
+	assert.ok(db[db.length - 1][0] < iddb.AREA1 + 4096, "the header's sector last");
 	const back = await tr.read();
 	assert.equal(iddb.read(back.bytes).length, 20000);
 	assert.deepEqual(iddb.read(back.bytes)[19999], { id: 3119999, text: "W19999 Name" });

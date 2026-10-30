@@ -183,15 +183,7 @@ export class CpsSerial {
 	// The codeplug's regions read into a fresh image (the rest erased); with iddb, the whole ID database too. cache: an
 	// image read before; with the fast protocol its blocks whose CRC still matches aren't read again
 	async read({ iddb = true, progress = () => {}, signal, cache = null } = {}) {
-		if (this.fast) {
-			try {
-				return await this.fastRead({ iddb, progress, signal, cache });
-			} catch (e) {
-				if (!(e instanceof FastError && e.reason === REASON.RANGE)) throw e;
-				note("fast read refused a block: reading through the CPS", { error: e.message });
-			}
-		}
-		return this.cpsRead({ iddb, progress, signal });
+		return this.fastOr(() => this.fastRead({ iddb, progress, signal, cache }), () => this.cpsRead({ iddb, progress, signal }));
 	}
 
 	async cpsRead({ iddb, progress, signal }) {
@@ -222,7 +214,21 @@ export class CpsSerial {
 	// read, trusted for a block only where its CRC matches). CPS: the codeplug's bytes that differ from have (null:
 	// everything), and with iddb the whole ID database (never read back first: it can be megabytes)
 	async plan(want, have, { iddb = false } = {}) {
-		return this.fast ? this.fastPlan(want, have, { iddb }) : this.cpsPlan(want, have, { iddb });
+		return this.fastOr(() => this.fastPlan(want, have, { iddb }), () => this.cpsPlan(want, have, { iddb }));
+	}
+
+	// fast() with the fast protocol, else cps(); cps() too when the radio refuses a block as out of range. SUMS, READ and
+	// BLOCK share that check, so a read or a plan meets it before anything is written
+	async fastOr(fast, cps) {
+		if (this.fast) {
+			try {
+				return await fast();
+			} catch (e) {
+				if (!(e instanceof FastError && e.reason === REASON.RANGE)) throw e;
+				note("fast protocol refused a block: the CPS takes over", { error: e.message });
+			}
+		}
+		return cps();
 	}
 
 	cpsPlan(want, have, { iddb = false } = {}) {
@@ -269,10 +275,21 @@ export class CpsSerial {
 	// Write the plan; throws when the radio refuses a sector
 	async write(want, have, { iddb = false, progress = () => {}, signal } = {}) {
 		if (iddb && idDbEnd(want.bytes) > this.end) throw new TransportError("iddb_too_big");
-		if (this.fast) return this.fastWrite(want, have, { iddb, progress, signal });
+		return this.fastOr(() => this.fastWrite(want, have, { iddb, progress, signal }), () => this.cpsWrite(want, have, { iddb, progress, signal }));
+	}
+
+	async cpsWrite(want, have, { iddb, progress, signal }) {
 		const { plan, bytes: total } = this.cpsPlan(want, have, { iddb });
+		// the ID database's header erased before the rest of it and its sector written last (iddb-compact.md 4.3), so a
+		// write cut short leaves no database rather than a new header over old records
+		let order = plan;
+		const head = iddb ? plan.find(([s]) => s === AREA1) : null;
+		if (head) {
+			await this.writeSector(AREA1, [[AREA1, new Uint8Array(IDDB_HEADER[1] - AREA1).fill(0xFF)]]);
+			order = [...plan.filter((p) => p !== head), head];
+		}
 		let done = 0;
-		for (const [sector, runs] of plan) {
+		for (const [sector, runs] of order) {
 			if (signal?.aborted) throw new TransportError("stopped");
 			await this.writeSector(sector, runs);
 			done += runs.reduce((m, [, d]) => m + d.length, 0);

@@ -5,7 +5,7 @@
 // stock TYT-family codeplug, docs/spec/codeplug-stock-tyt.md) is converted, or reported as foreign.
 
 import { CodeplugImage, CODEPLUG_SPAN, TFTP_SIZE } from "../codeplug/image.js";
-import { recordSize, extent, convert } from "../codeplug/iddb.js";
+import { recordSize, extent, convert, readHeader } from "../codeplug/iddb.js";
 import { openBundle, bundleFolder } from "../flasher/backup.js";
 import { unzip } from "../flasher/zip.js";
 import { startsWith, toHex } from "../flasher/bytes.js";
@@ -93,7 +93,7 @@ export function saveBytes(image) {
 // file as format N, cut to end (an image address, iddbEnd) as a write to the radio would be
 export function tftpBytes(image, end = Infinity) {
 	let img = image;
-	if (extent(img.bytes)) {
+	if (readHeader(img.bytes)?.format === "C") {
 		img = image.clone();
 		convert(img, "N", { end });
 	}
