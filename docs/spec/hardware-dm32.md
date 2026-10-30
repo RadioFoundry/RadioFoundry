@@ -715,6 +715,10 @@ Band select by frequency (f in 10 Hz units; first matching row wins):
 
 Below 16 MHz nothing is written.
 
+Reference trim ([radio-features.md](radio-features.md) 6.1): the modem's DC bias stays the factory's tune. RadioFoundry
+programs the FD6818 at f x (1 + trim), in receive, FM transmit and every DMR burst; the next tune applies a new trim.
+Checked on the radio by hand (2026-10-30): 10 ppm moved the carrier 4400 Hz, as expected at 440 MHz.
+
 ### 8.4 RSSI, noise, sub-audio
 
 | Item | Register | Use |

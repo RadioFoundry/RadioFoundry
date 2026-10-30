@@ -363,6 +363,7 @@ void radio_req_monitor_held_up(void);
 void radio_req_power(int8_t dir);		// temporary change of power level, wraps
 void radio_req_squelch(int8_t dir);
 void radio_req_clear_temporary(void);		// BACK on Home: revert temporary changes
+void radio_req_retune(void);			// tune again now, or after the transmission (the reference trim changed)
 void radio_req_reload(void);			// the settings' preferences changed (squelch, master power, DMR ID)
 // FM bandwidth and sub-audio. On a channel these are temporary changes (P7); in the VFO they change the VFO itself.
 // Refused on DMR channels, while transmitting, and for tones tones_valid() rejects

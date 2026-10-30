@@ -81,7 +81,8 @@ The AT1846S register tables of [hardware-dm1701.md](hardware-dm1701.md) apply, w
 HR_C6000: as the DM-1701, including the calibration-driven reference oscillator and modulation. The register sequences
 in the images equal the DM-1701's except: extra 0xE4 = 0x27 writes in the FM TX setup; no 0xE4 = 0x24 / 0x23 writes in
 two other setups; a few page-4 0x10 = 0x6C / 0x40 writes in a different order; different page-4 0x35 and 0x37 table
-values (images). Which of these matter on air is open.
+values (images). Which of these matter on air is open. The user's reference trim adds to the calibrated MOD1 offset as
+on the DM-1701 (`boards/uv380_family`, hardware-dm1701.md 12.4); unchecked on this radio.
 
 ---
 

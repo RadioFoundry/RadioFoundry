@@ -109,9 +109,11 @@ static bool r_tx_tone_key(bool down)
 }
 static char dtmf_on;		// tx_dtmf: the digit sounding
 static bool r_tx_dtmf(char digit) { dtmf_on = digit; return true; }
+static int16_t ref_trim_ppb = 1;	// ref_trim: the last trim (1: never called)
+static bool r_ref_trim(int16_t ppb) { ref_trim_ppb = ppb; return true; }
 static hal_radio_t fake_radio = { .init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off,
 					.status = r_status, .audio = r_audio, .tx_tone = r_tx_tone,
-					.tx_tone_key = r_tx_tone_key, .tx_dtmf = r_tx_dtmf };
+					.tx_tone_key = r_tx_tone_key, .tx_dtmf = r_tx_dtmf, .ref_trim = r_ref_trim };
 
 // (fake_radio.volume is set by test_soft_volume only)
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
@@ -853,6 +855,27 @@ static void test_temp_bw_tone(void)
 	CHECK(hw.rx_calls == calls && sm.view.ch.bw == RADIO_BW_12K5);
 	req(RREQ_PTT, 0);
 	CHECK(hw.rx_calls == calls + 1 && hw.rx_bw == RADIO_BW_12K5);
+
+	// A reference trim change (RREQ_RETUNE): one tune once it has held still RADIO_RETUNE_SETTLE_MS, not one a step;
+	// during TX, at the release
+	calls = hw.rx_calls;
+	req(RREQ_RETUNE, 0);
+	poll_for(RADIO_RETUNE_SETTLE_MS / 2);
+	req(RREQ_RETUNE, 0);
+	poll_for(RADIO_RETUNE_SETTLE_MS - RADIO_POLL_MS);
+	CHECK(hw.rx_calls == calls);
+	poll_for(2 * RADIO_POLL_MS);
+	CHECK(hw.rx_calls == calls + 1);
+	poll_for(RADIO_RETUNE_SETTLE_MS);
+	CHECK(hw.rx_calls == calls + 1);
+	req(RREQ_RETUNE, 0);
+	req(RREQ_PTT, 1);
+	poll_for(RADIO_RETUNE_SETTLE_MS + RADIO_POLL_MS);
+	CHECK(hw.rx_calls == calls + 1);
+	req(RREQ_PTT, 0);
+	CHECK(hw.rx_calls == calls + 2);
+	poll_for(RADIO_RETUNE_SETTLE_MS);
+	CHECK(hw.rx_calls == calls + 2);
 
 	// A channel change drops them
 	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_BOTH, t100));
@@ -2532,6 +2555,7 @@ void radio_req_reload(void) { req(RREQ_RELOAD, 0); }
 void radio_req_volume(uint8_t step) { req(RREQ_VOLUME, step); }
 void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
+void radio_req_retune(void) { req(RREQ_RETUNE, 0); }
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
 void radio_req_scan_dual(uint16_t pos) { (void)pos; }
 void radio_req_zone_pos(uint16_t pos) { req(RREQ_ZONE_POS, pos); }
@@ -3034,6 +3058,14 @@ static void test_ui_glue(void)
 	settings_t sv;
 	settings_read(&sv);
 	CHECK(sv.auto_lock_s == 60 && sv.mic_gain == 8 && sv.long_press_ms == 900 && sv.gps == 1 && sv.pos_send_s == 300);
+	// The reference trim (radio-features.md 6.1): stored rounded to 0.1 ppm, and applying it reaches the board
+	CHECK(ui_svc_setting_set(UI_SET_REF_TRIM, -2140) && ui_svc_setting_get(UI_SET_REF_TRIM) == -2100);
+	settings_read(&sv);
+	CHECK(sv.ref_trim_ppb == -2100);
+	ui_svc_apply(UI_SET_REF_TRIM, ui_svc_setting_get(UI_SET_REF_TRIM));
+	CHECK(ref_trim_ppb == -2100);
+	CHECK(ui_svc_setting_set(UI_SET_REF_TRIM, 30000) && ui_svc_setting_get(UI_SET_REF_TRIM) == 10000);
+	CHECK(ui_svc_setting_set(UI_SET_REF_TRIM, -2100));
 #if CONFIG_DUAL_WATCH
 	// Dual watch's B, and whether the watch ran and which channel was selected (it comes back at power on)
 	CHECK(ui_svc_setting_set(UI_SET_DUAL_B, 37) && ui_svc_setting_get(UI_SET_DUAL_B) == 37);
@@ -3198,6 +3230,7 @@ static void test_ui_glue(void)
 	storage_job_poll();
 	settings_read(&sv);
 	CHECK(sv.auto_lock_s == 0 && sv.mic_gain == 5 && sv.privacy_type[1] == 0 && sv.rs_stored == 0);
+	CHECK(sv.ref_trim_ppb == 0);
 	run(100);
 	CHECK(sm.set.reply_s == RADIO_REPLY_CODEPLUG && sm.set.vox == RADIO_VOX_OFF);
 }

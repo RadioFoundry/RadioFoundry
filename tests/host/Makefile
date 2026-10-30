@@ -163,7 +163,7 @@ TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
 
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
-           $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
+           $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
            $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c
 RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
@@ -482,6 +482,11 @@ TESTS   += micGainTest
 micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
+# The reference trim setting (core/radio/ref_trim.c): clamped, rounded to 100 ppb, to the board's hook
+TESTS   += refTrimTest
+refTrimTest: refTrimTest.c $(CORE)/radio/ref_trim.c $(CORE)/radio/ref_trim.h $(ROOT)/hal/hal_radio.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ refTrimTest.c $(CORE)/radio/ref_trim.c
+
 # The crash log's record, its start-up side on a fake store, the packed report (core/crash/crash.c), and the UI's side
 # of it with the report (core/ui/ui_svc_crash.c), the debug link's (core/debuglink/debuglink_crash.c)
 TESTS   += crashTest
@@ -507,10 +512,11 @@ run-crash: crashTest crashCaptureTest
 .PHONY: run-crash
 
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest micGainTest
+run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest
 	./ambeFecTest
 	./ambeVoiceTest
 	./micGainTest
+	./refTrimTest
 .PHONY: run-ambe
 
 # The DMR voice call stack (core/dmr/call) against a simulated modem; LC coding cross-checked with sfr.c and dmrData.c

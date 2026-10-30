@@ -147,6 +147,12 @@ bool uvf_cal_at(uint32_t hz, uvf_cal_point_t *out);
 // value would overflow the register, and the burst then goes through idle
 bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int8_t *out);
 
+// The user's reference trim (hal_radio_t.ref_trim) in MOD1 offset steps, added to the calibrated offset. The offset
+// pulls the reference, so a step is the same share of any carrier: about 74 Hz at 461.1375 MHz from the direct keying
+// measurement above (41 and 43 steps 149 Hz apart), 160 ppb. Clamped to the register's -128..127
+#define UVF_REF_TRIM_PPB_PER_STEP	160
+int8_t uvf_ref_trimmed(int8_t ref_offset, int32_t ppb);
+
 // A DMA stream's memory address must be in main SRAM (0x2000_0000): the DMA controllers can't reach the CCM, where
 // RFOUNDRY_CPU_RAM state and every task stack live. Stops here, at set-up, instead of a silent transfer error later
 #define DMA_RAM_OK(p)	configASSERT(((uintptr_t)(p) >> 24) == 0x20u)

@@ -14,6 +14,7 @@
 #include "hal_time.h"
 #include "radio/tones.h"
 #include "radio/mic_gain.h"
+#include "radio/ref_trim.h"
 #include "radio/radio_am.h"
 #include "input/keyassign.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
@@ -3137,6 +3138,209 @@ static const ui_scr_def_t dmr_id_screen = {
 };
 #endif
 
+#if CONFIG_REF_TRIM
+// ======================= Freq trim (Settings > Advanced) =======================
+// The reference trim (radio/ref_trim.h; radio-features.md 6.1), drawn as a volume-style page: the value in large type
+// over a slider from -10 to +10 ppm, then what it moves a carrier by at 440 and 144 MHz. Up / Down step 0.1 ppm (0.5
+// held) and are saved at once (a board that retunes for it does so once the trim holds still), so a counter or a
+// hotspot shows each step; # flips the sign. Digits type the size in tenths as a calculator does (4 5 = 4.5), keeping
+// the sign; OK sets it, OK with nothing typed leaves
+
+static int32_t trim_typed;		// tenths of a ppm typed so far
+static bool trim_typing, trim_neg;	// digits typed; the typed value's sign
+
+static int32_t trim_now(void)
+{
+	return trim_typing ? (trim_neg ? -trim_typed : trim_typed) * 100 : ui_svc_setting_get(UI_SET_REF_TRIM);
+}
+
+static void trim_store(int32_t ppb)
+{
+	ppb = ref_trim_clamp(ppb);
+	if (ui_svc_setting_set(UI_SET_REF_TRIM, ppb))
+		ui_svc_apply(UI_SET_REF_TRIM, ppb);
+	else
+		ui_toast("Couldn't save: try again");
+}
+
+// "-4.5", "+1.2", "0.0": the sign always shown but on 0 (a typed minus with no digits yet shows "-0.0")
+static void sb_ppm_num(sbuf_t *b, int32_t ppb, bool minus)
+{
+	int32_t t = (ppb < 0 ? -ppb : ppb) / 100;
+	if (ppb < 0 || minus)
+		sb_chr(b, '-');
+	else if (ppb > 0)
+		sb_chr(b, '+');
+	sb_u32(b, (uint32_t)t / 10u, 1);
+	sb_chr(b, '.');
+	sb_u32(b, (uint32_t)t % 10u, 1);
+}
+
+static void sb_ppm(sbuf_t *b, int32_t ppb)
+{
+	sb_ppm_num(b, ppb, false);
+	sb_str(b, " ppm");
+}
+
+// One line: the label at the left (dim), the value at the right
+static void trim_line(const font_t *f, int y, const char *label, const char *value)
+{
+	int w = gfx_width();
+	gfx_text(f, 2, y, label, ui_col.dim);
+	gfx_text(f, w - 2 - gfx_text_width(f, value), y, value, ui_col.fg);
+}
+
+static void trim_draw(void)
+{
+	const ui_layout_t *L = &ui_layout;
+	int w = gfx_width();
+	int32_t ppb = trim_now();
+	char buf[24];
+	sbuf_t b;
+	gfx_clear(ui_col.bg);
+	int y = ui_draw_top(ui_view(), &ui_st, "Freq Trim", NULL) + 2;
+	bool roomy = L->hint_y - y >= L->large->h + 3 * L->medium->h + 24;	// room for the scale and the hint line
+
+	// The value, centered: the number large, " ppm" smaller on its baseline; typing shows a cursor
+	sb_init(&b, buf, sizeof buf);
+	sb_ppm_num(&b, ppb, trim_typing && trim_neg && trim_typed == 0);
+	if (trim_typing)
+		sb_chr(&b, '_');
+	const font_t *big = L->large, *unit = L->medium;
+	int nw = gfx_text_width(big, buf), uw = gfx_text_width(unit, " ppm");
+	int x = (w - nw - uw) / 2;
+	gfx_text(big, x, y, buf, trim_typing ? ui_col.focus : ui_col.fg);
+	gfx_text(unit, x + nw, y + big->h - unit->h, " ppm", ui_col.dim);
+	y += big->h + (roomy ? 6 : 3);
+
+	// The slider: a track from -max to +max, a tick at 0, the span from 0 to the value filled, a knob at the value
+	int x0 = 6, x1 = w - 7, cx = (x0 + x1) / 2, half = (x1 - x0) / 2;
+	int th = roomy ? 6 : 4, kh = th + (roomy ? 8 : 4), ty = y + (kh - th) / 2;
+	int kx = cx + (int)((int32_t)half * ppb / REF_TRIM_MAX_PPB);
+	gfx_rect(x0, ty, x1 - x0 + 1, th, ui_col.line);
+	if (kx != cx)
+		gfx_fill(kx < cx ? kx : cx, ty, (kx < cx ? cx - kx : kx - cx) + 1, th, ui_col.focus);
+	gfx_vline(cx, y, kh, ui_col.dim);
+	gfx_vline(x0, y + 1, kh - 2, ui_col.line);
+	gfx_vline(x1, y + 1, kh - 2, ui_col.line);
+	int kw = roomy ? 6 : 3;
+	gfx_round_fill(kx - kw / 2, y, kw, kh, ui_col.fg);
+	y += kh + 1;
+	if (roomy) {		// the scale under it
+		const font_t *t = L->small;
+		gfx_text(t, x0, y, "-10", ui_col.dim);
+		gfx_text(t, cx - gfx_text_width(t, "0") / 2, y, "0", ui_col.dim);
+		gfx_text(t, x1 + 1 - gfx_text_width(t, "+10"), y, "+10", ui_col.dim);
+		y += t->h + 4;
+	}
+
+	// What it comes to at the two bands' calling frequencies
+	const font_t *f = roomy ? L->medium : L->small;
+	static const uint16_t mhz[2] = { 440, 144 };
+	for (int i = 0; i < 2 && y + f->h <= L->hint_y; i++) {
+		int32_t hz = ref_trim_hz_at(ppb, mhz[i]);
+		sb_init(&b, buf, sizeof buf);
+		if (hz > 0)
+			sb_chr(&b, '+');
+		sb_i32(&b, hz);
+		sb_str(&b, " Hz");
+		// "At 440 MHz" wherever it fits beside the widest value (-4400 Hz), "@ 440 MHz" where it doesn't
+		char label[12];
+		sb_init(&b, label, sizeof label);
+		sb_str(&b, gfx_text_width(f, "At 440 MHz -4400 Hz") + 4 <= w ? "At " : "@ ");
+		sb_u32(&b, mhz[i], 1);
+		sb_str(&b, " MHz");
+		trim_line(f, y, label, buf);
+		y += f->h;
+	}
+	const char *how = "+ to increase frequency";	// which way the sign goes, shortened only where it must be
+	if (gfx_text_width(L->small, how) > w)
+		how = "+ to increase freq";
+	if (y + 2 + L->small->h <= L->hint_y && gfx_text_width(L->small, how) <= w)
+		gfx_text(L->small, (w - gfx_text_width(L->small, how)) / 2, L->hint_y - L->small->h - 1, how, ui_col.dim);
+	ui_draw_bottom(&ui_st, trim_typing ? "0-9 type  # +/-  OK set" : "Up Down  # +/-  OK done");
+}
+
+static void trim_set_typed(void)
+{
+	trim_typing = false;
+	trim_store((trim_neg ? -trim_typed : trim_typed) * 100);
+}
+
+static bool trim_key(const input_event_t *ev)
+{
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	int dir = ev->action == ACT_NAV_UP || ev->action == ACT_NAV_RIGHT ? 1 :
+		ev->action == ACT_NAV_DOWN || ev->action == ACT_NAV_LEFT ? -1 :
+		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
+	if (dir != 0 && (press || ev->gesture == GESTURE_REPEAT || ev->action == ACT_ENC_STEP)) {
+		if (trim_typing)
+			trim_set_typed();
+		// A held key steps 0.5 ppm; a knob event carries its detents (up to 8, as the other number editors)
+		int n = ev->action != ACT_ENC_STEP ? 1 : ev->value < -8 || ev->value > 8 ? 8 : ev->value < 0 ? -ev->value : ev->value;
+		int32_t step = ev->gesture == GESTURE_REPEAT ? 5 * REF_TRIM_STEP_PPB : n * REF_TRIM_STEP_PPB;
+		trim_store(ui_svc_setting_get(UI_SET_REF_TRIM) + dir * step);
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_CONTEXT && press) {		// #: the other sign
+		int32_t v = ui_svc_setting_get(UI_SET_REF_TRIM);
+		if (trim_typing) {
+			trim_neg = !trim_neg;
+		} else if (v == 0) {
+			trim_typing = true;		// a minus to type after (# 4 5 OK = -4.5)
+			trim_typed = 0;
+			trim_neg = true;
+		} else {
+			trim_store(-v);
+		}
+		ui_dirty();
+		return true;
+	}
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+		if (!trim_typing) {
+			trim_typing = true;
+			trim_typed = 0;
+			trim_neg = ui_svc_setting_get(UI_SET_REF_TRIM) < 0;
+		}
+		int32_t v = trim_typed * 10 + (ev->action - ACT_DIGIT_0);
+		if (v * 100 > REF_TRIM_MAX_PPB) {
+			ui_toast("Up to 10.0 ppm");
+			return true;
+		}
+		trim_typed = v;
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_SELECT && press) {
+		if (trim_typing)
+			trim_set_typed();
+		else
+			ui_pop();
+		ui_dirty();
+		return true;
+	}
+	if (trim_typing && ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		if (trim_typed > 0)
+			trim_typed /= 10;	// takes the last digit back
+		else
+			trim_typing = false;
+		ui_dirty();
+		return true;
+	}
+	return false;
+}
+
+static void trim_enter(void)
+{
+	trim_typing = false;
+}
+
+static const ui_scr_def_t trim_screen = {
+	.name = "freq-trim", .flags = SF_FIELD, .key = trim_key, .draw = trim_draw, .enter = trim_enter,
+};
+#endif
+
 // ======================= About (Settings > Advanced) =======================
 // A text page, every word shown (nothing shortened), no status strip while idle: the release and the commit, RadioFoundry's license, the
 // authors, the third-party code and fonts in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
@@ -4141,6 +4345,10 @@ static const set_item_t s_advanced[] = {
 #if CONFIG_CRASH_SCREEN
 	ACTION("Crash log", "crash report fault debug", SA_CRASH),
 #endif
+#if CONFIG_REF_TRIM
+	NUMBER("Freq trim", "frequency offset reference oscillator calibration ppm", UI_SET_REF_TRIM, -REF_TRIM_MAX_PPB,
+	       REF_TRIM_MAX_PPB, REF_TRIM_STEP_PPB, NULL),	// its own page (trim_screen); last: Up from the top
+#endif
 };
 
 #define GROUP(nm, a)		{ nm, nm, a, sizeof a / sizeof a[0] }
@@ -4170,6 +4378,8 @@ static bool set_hidden(const set_item_t *s)
 		return !(feats() & UI_FEAT_VOLUME);	// a knob sets the volume on the other radios
 	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
 		return !(feats() & UI_FEAT_BCAST);
+	if (s->type != ST_ACTION && s->id == UI_SET_REF_TRIM)
+		return !(feats() & UI_FEAT_REF_TRIM);	// only a radio whose board has the trim
 	return !board_has_battery() && s->type != ST_ACTION &&
 	       (s->id == UI_SET_BATTERY_SAVER || s->id == UI_SET_LOW_BATTERY);
 }
@@ -4260,6 +4470,12 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 		sb_i32(&b, v);
 		break;
 	case ST_NUMBER:
+#if CONFIG_REF_TRIM
+		if (s->id == UI_SET_REF_TRIM) {
+			sb_ppm(&b, v);
+			break;
+		}
+#endif
 		sb_i32(&b, v);
 		if (s->unit != NULL)
 			sb_str(&b, s->unit);
@@ -4385,6 +4601,12 @@ static void group_select(uint16_t i, bool hold)
 		ui_toast(why);
 		return;
 	}
+#if CONFIG_REF_TRIM
+	if (s->id == UI_SET_REF_TRIM && s->type == ST_NUMBER) {
+		ui_push(SCR_REF_TRIM, 0);
+		return;
+	}
+#endif
 	int32_t v = ui_svc_setting_get(s->id);
 	switch (s->type) {
 	case ST_TOGGLE:
@@ -4777,6 +4999,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_VOLUME] = &volume_screen,
 #if CONFIG_DMR
 	[SCR_DMR_ID] = &dmr_id_screen,
+#endif
+#if CONFIG_REF_TRIM
+	[SCR_REF_TRIM] = &trim_screen,
 #endif
 #if CONFIG_CHANNEL_LIST
 	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,

@@ -10,6 +10,7 @@
 #include "radio/beep.h"
 #include "radio/vibe.h"
 #include "radio/mic_gain.h"
+#include "radio/ref_trim.h"
 #include "radio/radio_cwid.h"
 #include "radio/radio_bcast.h"
 #include "input/input.h"
@@ -192,7 +193,8 @@ uint32_t ui_svc_feat_radio(void)
 	bool motor = CONFIG_VIBRATE && board.power != NULL && board.power->vibrate != NULL;
 	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0) |
 	       (motor ? UI_FEAT_VIBRATE : 0) | (radio_volume_soft() ? UI_FEAT_VOLUME : 0) |
-	       (radio_bcast_capable() ? UI_FEAT_BCAST : 0) | (CONFIG_APRS && board_has_gps() ? UI_FEAT_GPS : 0);
+	       (radio_bcast_capable() ? UI_FEAT_BCAST : 0) | (CONFIG_APRS && board_has_gps() ? UI_FEAT_GPS : 0) |
+	       (ref_trim_available() ? UI_FEAT_REF_TRIM : 0);
 }
 
 #if CONFIG_DMR
@@ -408,6 +410,10 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		return;
 	case UI_SET_MIC_GAIN:		// the board's gain (FM and DMR) or DMR's sample scaling (radio/mic_gain.h)
 		apply_mic_gain(value, ui_svc_setting_get(UI_SET_MIC_AGC) != 0);
+		return;
+	case UI_SET_REF_TRIM:		// the board's reference, receive and transmit (radio/ref_trim.h)
+		if (radio_set_ref_trim(value))
+			radio_req_retune();	// a board that applies it when it tunes
 		return;
 #if CONFIG_DMR
 	case UI_SET_MIC_AGC:

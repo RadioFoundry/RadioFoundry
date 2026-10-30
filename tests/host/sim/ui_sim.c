@@ -1194,9 +1194,12 @@ static uint16_t n_inbox;
 static bool soft_volume;
 // The broadcast receiver (Settings > Talk & listen > FM broadcast step) only with the "bcast" token, the same way
 static bool bcast_rx;
+// A reference trim (Settings > Advanced > Freq trim) only with the "trim" token, the same way
+static bool ref_trim;
 uint32_t ui_svc_features(void)
 {
-	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST);
+	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
+	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM);
 }
 void ui_svc_boot_text(char line1[17], char line2[17])
 {
@@ -1829,12 +1832,14 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	load_channel();
 	soft_volume = false;
 	bcast_rx = false;
+	ref_trim = false;
 	ui_svc_setting_set(UI_SET_VOLUME, RADIO_VOLUME_DEFAULT);
 	ui_svc_setting_set(UI_SET_HINTS, 1);
 	ui_svc_setting_set(UI_SET_LARGE_TEXT, 0);
 	ui_svc_setting_set(UI_SET_BRIGHTNESS, 100);
 	ui_svc_setting_set(UI_SET_TOT_S, 180);
 	ui_svc_setting_set(UI_SET_BACKLIGHT_S, 30);
+	ui_svc_setting_set(UI_SET_REF_TRIM, 0);
 	ui_svc_setting_set(UI_SET_LONG_PRESS_MS, 600);	// settings a flow changes start from their defaults
 	ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
@@ -2515,6 +2520,10 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver
 		bcast_rx = true;
+		return true;
+	}
+	if (strcmp(t, "trim") == 0) {		// this radio has a reference trim (hal_radio_t.ref_trim)
+		ref_trim = true;
 		return true;
 	}
 	if (strcmp(t, "worst") == 0) {		// worst-case codeplug content from here on (sim_worst)

@@ -127,6 +127,9 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "settings", "ok 7" },
 	{ "settings_display", "ok 7 2" },
 	{ "settings_editor", "ok 7 2 ok up" },
+	{ "settings_freq_trim", "trim ok 7 0 up" },	// on a radio with a reference trim (radio-features.md 6.1)
+	{ "freq_trim", "trim ok 7 0 up ok ctx 4 5 ok" },
+	{ "freq_trim_typing", "trim ok 7 0 up ok 1 2" },
 	{ "settings_advanced", "ok 7 0" },
 	{ "factory_reset", "ok 7 0 down down down ok" },
 	{ "about", "ok 7 0 ok" },
@@ -261,6 +264,7 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_my_radio", "ok 7 9 ok" },
 	{ "w_codeplug", "ok 7 0 down ok" },
 	{ "w_settings_number", "ok 7 3 ok up" },
+	{ "w_freq_trim", "trim ok 7 0 up ok ctx 1 0 0 ok" },
 	{ "w_settings_privacy", "ok 7 4 ok ok down ok up" },
 	{ "w_settings_range", "ok 7 7 down down ok 9 9 ok" },
 	{ "w_hotspot", "hotspot:on" },
