@@ -3496,11 +3496,13 @@ static void sb_ppm_num(sbuf_t *b, int32_t ppb, bool minus)
 	sb_u32(b, (uint32_t)t % 10u, 1);
 }
 
+#if CONFIG_UI_SETTINGS
 static void sb_ppm(sbuf_t *b, int32_t ppb)
 {
 	sb_ppm_num(b, ppb, false);
 	sb_str(b, " ppm");
 }
+#endif
 
 // One line: the label at the left (dim), the value at the right
 static void trim_line(const font_t *f, int y, const char *label, const char *value)

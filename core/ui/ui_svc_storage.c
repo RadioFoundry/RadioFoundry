@@ -597,7 +597,9 @@ static struct {
 	uint8_t squelch;
 	union {
 		channel_t now;		// the channel as the radio has it now (temporary changes included)
+#if CONFIG_CONTACT_EDIT
 		contact_t contact;	// the contact editor's, at index channel (one job at a time: RAM is short)
+#endif
 	};
 	uint32_t id;
 	bool private_call;
