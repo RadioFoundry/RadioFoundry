@@ -850,7 +850,7 @@ function updateView() {
 		}, { quiet: true });
 		const asks = plan.ask.length ? h("div", { class: "notice action" },
 			h("p", {}, h("b", {}, t("flash.update.new_title")), " ", t("flash.update.new_custom")),
-			...plan.ask.map((n) => h("div", { class: "toggle" },
+			...plan.ask.map((n) => h("div", { class: "update-new" },
 				h("span", {}, h("b", {}, title(n)), h("span", { class: "why" }, plainHelp(S.selection.byName[n]?.help || ""))),
 				h("span", { class: "update-pick" }, ...[true, false].map((on) => h("label", {},
 					h("input", { type: "radio", name: `new-${n}`, checked: S.decided[n] === on, onchange: () => { S.decided[n] = on; draw(); } }),
