@@ -71,6 +71,7 @@ BOARD_NOT_WRITTEN += NET_TCP	# an IP service: waits for the DMR IP gateway (abov
 BOARD_NOT_WRITTEN += NET_KISS	# an IP service: waits for the DMR IP gateway (above)
 BOARD_NOT_WRITTEN += NET_HTTP	# an IP service: waits for the DMR IP gateway (above)
 BOARD_NOT_WRITTEN += NET_HTTP_GZIP	# needs NET_HTTP (above)
+BOARD_NOT_WRITTEN += NET_WEBCTL	# needs NET_HTTP (above)
 BOARD_NOT_WRITTEN += NET_RIGCTL	# an IP service: waits for the DMR IP gateway (above)
 BOARD_NOT_WRITTEN += NET_APRSIS	# an IP service: waits for the DMR IP gateway (above)
 BOARD_NOT_WRITTEN += NET_USRP	# an IP service: waits for the DMR IP gateway (above)

@@ -88,6 +88,9 @@ CONFIG_TFTP ?= $(CONFIG_DMR_IP_GATEWAY)
 # DMR ID database over TFTP: iddb.bin read and written in place, and the database part of a combined codeplug.bin
 # (needs TFTP; core/net/tftp_iddb.c, docs/spec/tftp.md 5)
 CONFIG_TFTP_IDDB ?= $(CONFIG_TFTP)
+# the compact DMR ID database (format C): dictionary-coded names, IDs as gaps, pages with room to grow, read beside
+# format N (needs DMR; core/codeplug/dmr_iddb.c, docs/spec/iddb-compact.md)
+CONFIG_IDDB_COMPACT ?= $(CONFIG_DMR)
 # control station mode for PC dispatch software on the USB network link: the PC as the endpoint of the radio's own
 # data ports (passthrough) and a fixed private link address pair (needs DMR_IP_GATEWAY; docs/spec/usb-network.md 5)
 CONFIG_DMR_CONTROL_STATION ?= $(CONFIG_DMR_IP_GATEWAY)
@@ -132,9 +135,10 @@ CONFIG_TASK_STACKS ?= $(CONFIG_DEBUGLINK)
 # the open-firmware CPS protocol shim on the host port, so qdmr and the open-firmware CPS can read and write the
 # codeplug (docs/spec/open-firmware-cps.md; needs HOSTLINK)
 CONFIG_CPS_OPENFW ?= $(CONFIG_HOSTLINK)
-# the fast codeplug protocol on the debug link: blank blocks skipped, CRC-32 compare so only changed blocks move, LZ4
-# both ways, staged writes with a power-cut safe commit (docs/spec/cps-fast.md; needs CPS_OPENFW and DEBUGLINK)
-CONFIG_CPS_FAST ?= $(if $(filter y,$(CONFIG_CPS_OPENFW)),$(CONFIG_DEBUGLINK),n)
+# the fast codeplug protocol on the debug link's framing: blank blocks skipped, CRC-32 compare so only changed blocks
+# move, LZ4 both ways, staged writes with a power-cut safe commit (docs/spec/cps-fast.md; needs CPS_OPENFW, and
+# DEBUGLINK or STUB_ENTRY, whose own listener carries it without the debug link)
+CONFIG_CPS_FAST ?= $(if $(filter y,$(CONFIG_CPS_OPENFW)),$(if $(filter y,$(CONFIG_DEBUGLINK) $(CONFIG_STUB_ENTRY)),y,n),n)
 # the diagnostics page
 CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
@@ -147,6 +151,17 @@ CONFIG_FONT_AA ?= n
 # larger text on 240 px and wider color panels: lists, labels and the status strip in a 9x18 font instead of 8x16
 # (12% larger, 24 characters a line on a 240 px panel instead of 27). About 3 KB more flash (needs FONT_AA)
 CONFIG_FONT_BIG ?= n
+# Spanish on the radio (Settings > Display > Language; core/ui/lang/es.po, docs/dev/translating.md). About 30 KB with
+# the lookup and the accented letters of every font (7.5 KB), which the first language brings; each further one adds
+# its text only (about 22 KB)
+CONFIG_LANG_ES ?= y
+# Italian on the radio (core/ui/lang/it.po): off by default, listed dimmed; the web flasher offers it to Italian
+# browsers. About 22 KB with Spanish on
+CONFIG_LANG_IT ?= n
+# the language the radio starts in, until the user picks one in Settings > Display > Language: one switch per language,
+# at most one on (with more, the first listed wins), off = English. Needs that language's switch. No flash cost
+CONFIG_LANG_DEFAULT_ES ?= n
+CONFIG_LANG_DEFAULT_IT ?= n
 # color screen settings: theme, highlight color, filled status bar (off: the dark theme only; for radios whose only
 # screen is monochrome)
 CONFIG_UI_COLOR ?= y
@@ -169,6 +184,9 @@ CONFIG_CHANNEL_EDIT ?= $(CONFIG_CHANNEL_LIST)
 # the zone editor in a zone's list: add, move, copy here, remove channels; rename, copy, delete zones (docs/spec/ui.md
 # 2.2): with the channel editor
 CONFIG_ZONE_EDIT ?= $(CONFIG_CHANNEL_EDIT)
+# the contact editor: a new contact from Find, a call's actions or a typed number, its name, ID, type and timeslot
+# (docs/spec/ui.md 2.4): with the channel editor (its text entry) and DMR
+CONFIG_CONTACT_EDIT ?= $(if $(and $(filter y,$(CONFIG_CHANNEL_EDIT)),$(filter y,$(CONFIG_DMR))),y,n)
 # beeps and alert tones as PCM through the speaker (needs the board's PCM audio, which some radios have only with DMR)
 CONFIG_BEEP ?= y
 # FM transmit tones: roger beep and the 1750 Hz repeater access burst (needs FM)
@@ -177,6 +195,9 @@ CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
 CONFIG_DTMF ?= $(CONFIG_FM)
 # FM VOX: voice-operated transmit from the microphone level (needs FM; unverified on the bench)
 CONFIG_VOX ?= $(CONFIG_FM)
+# reference oscillator trim: Settings > Advanced > Freq trim moves receive and transmit together (needs the board's
+# hal_radio_t.ref_trim; docs/spec/radio-features.md 6.1)
+CONFIG_REF_TRIM ?= y
 # receiver battery saving: FM receiver duty cycling while idle (needs FM)
 CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
 # vibration alerts on the board's motor (hal_power_t.vibrate) for messages, call alerts, private calls and emergencies,
@@ -236,11 +257,14 @@ CONFIG_APRS ?= $(CONFIG_FM)
 CONFIG_APRS_RX ?= $(CONFIG_APRS)
 # APRS iGate rules, RF <-> APRS-IS through the host helper tools/aprs_gate.py (needs APRS_RX and HOSTLINK)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
+# the GPS status screen: satellites on a sky plot and signal bars, fix quality, grid locator (core/aprs/nmea_sky.c,
+# core/ui/ui_gps.c, docs/spec/aprs.md 7.1). Needs GPS and APRS; off, Tools > Position is a page of text
+CONFIG_GPS_SKY ?= $(if $(and $(filter y,$(CONFIG_GPS)),$(filter y,$(CONFIG_APRS))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
-	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP FM_TX_TONES DTMF \
-	VOX BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
+	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG LANG_ES LANG_IT LANG_DEFAULT_ES LANG_DEFAULT_IT UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP FM_TX_TONES DTMF \
+	VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -249,7 +273,9 @@ ifneq ($(call feature_on,SUBTONE),)
     $(error CONFIG_SUBTONE=y needs CONFIG_FM=y)
   endif
 endif
-$(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+$(foreach f,IDDB_COMPACT DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+$(if $(and $(call feature_on,LANG_DEFAULT_ES),$(if $(call feature_on,LANG_ES),,x)),$(error CONFIG_LANG_DEFAULT_ES=y needs CONFIG_LANG_ES=y))
+$(if $(and $(call feature_on,LANG_DEFAULT_IT),$(if $(call feature_on,LANG_IT),,x)),$(error CONFIG_LANG_DEFAULT_IT=y needs CONFIG_LANG_IT=y))
 $(foreach f,SFR_DUALPATH_RX SFR_CWID,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,SFR),,x)),$(error CONFIG_$(f)=y needs CONFIG_SFR=y)))
 ifneq ($(call feature_on,CHANNEL_EDIT),)
   ifeq ($(call feature_on,CHANNEL_LIST),)
@@ -259,6 +285,11 @@ endif
 ifneq ($(call feature_on,ZONE_EDIT),)
   ifeq ($(call feature_on,CHANNEL_EDIT),)
     $(error CONFIG_ZONE_EDIT=y needs CONFIG_CHANNEL_EDIT=y)
+  endif
+endif
+ifneq ($(call feature_on,CONTACT_EDIT),)
+  ifeq ($(and $(call feature_on,CHANNEL_EDIT),$(call feature_on,DMR)),)
+    $(error CONFIG_CONTACT_EDIT=y needs CONFIG_CHANNEL_EDIT=y and CONFIG_DMR=y)
   endif
 endif
 ifneq ($(call feature_on,DUAL_WATCH),)
@@ -297,9 +328,11 @@ ifneq ($(call feature_on,CPS_OPENFW),)
   endif
 endif
 ifneq ($(call feature_on,CPS_FAST),)
-  ifeq ($(call feature_on,CPS_OPENFW)$(call feature_on,DEBUGLINK),yy)
-  else
-    $(error CONFIG_CPS_FAST=y needs CONFIG_CPS_OPENFW=y and CONFIG_DEBUGLINK=y)
+  ifeq ($(call feature_on,CPS_OPENFW),)
+    $(error CONFIG_CPS_FAST=y needs CONFIG_CPS_OPENFW=y)
+  endif
+  ifeq ($(call feature_on,DEBUGLINK)$(call feature_on,STUB_ENTRY),)
+    $(error CONFIG_CPS_FAST=y needs CONFIG_DEBUGLINK=y or CONFIG_STUB_ENTRY=y)
   endif
 endif
 ifneq ($(call feature_on,USB_NETWORK),)
@@ -391,6 +424,11 @@ endif
 ifneq ($(call feature_on,APRS_IGATE),)
   ifeq ($(and $(call feature_on,APRS_RX),$(call feature_on,HOSTLINK)),)
     $(error CONFIG_APRS_IGATE=y needs CONFIG_APRS_RX=y and CONFIG_HOSTLINK=y)
+  endif
+endif
+ifneq ($(call feature_on,GPS_SKY),)
+  ifeq ($(and $(call feature_on,GPS),$(call feature_on,APRS)),)
+    $(error CONFIG_GPS_SKY=y needs CONFIG_GPS=y and CONFIG_APRS=y)
   endif
 endif
 ifeq ($(call feature_on,FM)$(call feature_on,DMR),)

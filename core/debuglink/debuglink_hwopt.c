@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The board's hardware options on the debug link (DL_CMD_HWOPT, docs/spec/debuglink.md 3.23, hal/hal_hwopt.h): list
+// The board's hardware options on the debug link (DL_CMD_HWOPT, docs/spec/debuglink.md 3.25, hal/hal_hwopt.h): list
 // them with their choices and stored values, or store one. A radio without options answers an empty list.
 #include "board.h"
 #include "debuglink/debuglink.h"

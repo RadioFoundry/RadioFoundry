@@ -25,11 +25,31 @@ server: files, the codeplug and your RadioID API key stay on your computer.
 
 1. Turn the radio on with RadioFoundry running and connect it: the USB cable on a radio with USB, otherwise the
    programming cable. The radio must be in USB serial mode, not USB network mode.
-2. Choose **Read from Radio**, then **USB Cable** or **Programming Cable**. The browser asks which port to use.
+2. Choose **Read from Radio**. The browser lists the radio's USB port and any programming cable; choose the radio's.
+   The editor tells from the port which of the two it is.
+   When the radio's DMR ID database would take 20 seconds or more to read (megabytes over the programming cable), the
+   editor first says how long and asks whether to read it too. Skip it unless you want
+   to edit the database or keep it in a saved file: a write then leaves the radio's database as it is. The
+   **DMR ID Database** tab can read it later.
 3. Edit the codeplug.
 4. Choose **Write to Radio**. The editor compares the codeplug with the radio's and writes only the bytes that
    changed. It shows how many bytes and about how long it takes, then writes and verifies them. The radio loads the
    new codeplug without restarting.
+
+After a read, the editor says when a newer RadioFoundry release is out for the radio, and what it adds to reading and
+writing (faster transfers, the compact ID database). **Update Firmware** opens the [web installer's Update](02-installing.md#updating-radiofoundry)
+in a new tab and lets go of the radio's port, so the installer can connect. The codeplug and settings stay on the radio
+through the update.
+
+### Programming several radios
+
+To put one codeplug into several radios, write it to each in turn. Before each write the editor checks which radio is
+connected. A radio swapped on the programming cable is read again before anything is written, so the write is
+compared with that radio's codeplug, not the last one's.
+
+The write dialog offers **Keep this radio's name, DMR ID and boot text** when the radio's differ from the file's. With
+it on, each radio keeps its own and gets everything else from the file. The editor remembers the choice for the next
+radio.
 
 The first write to a radio that came straight from its original firmware may ask to **Prepare Radio**. The original
 firmware's data is still in the area where RadioFoundry keeps its settings, and until that area is erased the radio
@@ -58,7 +78,8 @@ TFTP ([USB network](15-usb-network.md#programming-over-the-network)).
 | Problems | Errors and warnings, each with a link to the record |
 
 In a table, double-click a cell or type on it to edit it in place. Click a column heading to sort, and type in the
-filter to narrow the rows. Check rows and choose **Bulk Edit** to set one field on all of them. **Undo** and **Redo**
+filter to narrow the rows. Check rows and choose **Bulk Edit** to set one field on all of them (not on Zones or RX Lists, whose members are
+edited in their own dialog). **Undo** and **Redo**
 cover every change, including an import.
 
 The page keeps the working codeplug in the browser, so closing or reloading the page doesn't lose edits. **New** starts
@@ -119,6 +140,18 @@ Then choose:
 The page previews the records, and shows the database size against the radio's room. **Write ID Database** puts it in
 the codeplug; **Write to Radio** then sends it. **Add as Contacts** adds the users as private-call contacts instead,
 skipping IDs that are already contacts. The editor remembers these choices in the browser.
+
+Current firmware reads a **compact database**, about half the size, so the same room holds about twice the names.
+After a refresh from RadioID.net, a write sends only the parts that changed. The editor picks the format when it
+writes:
+
+| Radio | What the editor does |
+|---|---|
+| Reads the compact format | Writes it. A database in the older format (read from the radio or an old file) is offered for conversion: one full write, then smaller ones. Declined, the offer comes back after 12 hours |
+| Runs older firmware | Writes the older format. If the names don't all fit, it says how many are left out. Updating the firmware makes room |
+| Older firmware flashed over a compact database | The radio shows no names (never wrong ones). The editor writes the database again in the older format the next time it writes to the radio |
+
+TFTP (USB network mode) and other CPS programs use the older format.
 
 ## What the radio uses from the codeplug
 

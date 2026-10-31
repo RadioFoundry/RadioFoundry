@@ -96,11 +96,14 @@ The manifest (`format` `rfoundry-release/1`, written and checked by `tools/rfoun
                         {"addr": "0x080FFF80", "size": 128}],
             "keep_supported": true},
   "features": "FM,SUBTONE,DMR,...",
-  "toolchain": "arm-none-eabi-gcc (Arm GNU Toolchain 13.3.Rel1 (Build arm-13.24)) 13.3.1 20240614"
+  "toolchain": "arm-none-eabi-gcc (Arm GNU Toolchain 13.3.Rel1 (Build arm-13.24)) 13.3.1 20240614",
+  "variant": "full", "git_time": 1761840000
 }
 ```
 
-`ranges` says where the `.bin` goes: one range, the application at the board's base. `sectors` are the flash sectors
+`git_time` is the commit's time, which the codeplug editor compares with a radio's `git_time=` (debug link VERSION) to
+offer the release to a build that isn't one. Manifests from before it have none; the site's build then looks the
+commit up in its clone. `ranges` says where the `.bin` goes: one range, the application at the board's base. `sectors` are the flash sectors
 the image covers. `codec.windows` are where the merge puts the codec: on an STM32F4 radio the code, the tables and the
 descriptor ([codec-placement.md](../spec/codec-placement.md), "STM32 radios"). `codec.profile` is the id the firmware
 reports for a matching codec (`codec=` in the debug link's VERSION, [debuglink.md](../spec/debuglink.md) 3.1).
@@ -204,7 +207,7 @@ never handles the key. Updates of a radio that runs RadioFoundry need no stock f
 Pull requests that touch `tools/rfoundry/`, `tools/release.py`, the serial flashing tools, the registry (`board.toml`,
 `board.mk`, `platform.toml`, `tools/boards.py`), the toolchain scripts, the toolchain action or the workflow build
 everything as workflow artifacts and publish nothing, without the release gate (the pull request's own checks run the
-same tests), and rfoundry for Linux only when the self-hosted runner is set up. A manual run on a tag rebuilds and
+same tests), rfoundry included. A manual run on a tag rebuilds and
 replaces the assets.
 
 The executables are not code-signed. macOS marks downloads as quarantined: `xattr -d com.apple.quarantine

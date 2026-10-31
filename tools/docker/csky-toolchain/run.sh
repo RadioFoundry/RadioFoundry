@@ -50,6 +50,6 @@ echo "csky run: $IMG ($(docker image inspect -f '{{.Id}}' "$IMG" | cut -c1-19)) 
 # safe.directory: the tree may belong to another user than the container's (git only reads it for version strings)
 # shellcheck disable=SC2086
 exec docker run --rm $MOUNT $USER_OPT -w "$ROOT" -e HOME=/tmp \
-	-e JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}" -e RFOUNDRY_CI_PRUNE="${RFOUNDRY_CI_PRUNE:-0}" \
+	-e JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}" -e RFOUNDRY_CI_PRUNE="${RFOUNDRY_CI_PRUNE:-1}" \
 	-e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
 	"$IMG" "$@"

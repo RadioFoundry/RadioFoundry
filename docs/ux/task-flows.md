@@ -213,6 +213,9 @@ On Home in VFO, digits enter a frequency directly: `4`,`4`,`6`,`0`,`0`,`0` is 44
 | Into VFO | 3 | 3 | 3 | 3 | 3 |
 | 446.000 in VFO | 7 (6 digits,`SELECT`) | 7 | 7 | n/a (step with encoder) | 7 |
 
+From a channel, the same digits on Home open Find, whose first row (after a channel at that position) is "Tune VFO to
+446.000". `SELECT` opens the VFO on it: 7 presses, the same budget, without entering the VFO first.
+
 ## 13. Lock and unlock keys
 
 Lock: long `QUICK` (`*`). Banner "Keys locked. Hold * to unlock." PTT, monitor, volume and emergency stay active (configurable). Any other press shows the hint with the invalid tone. Unlock: long `*` again.
@@ -223,7 +226,7 @@ Lock: long `QUICK` (`*`). Banner "Keys locked. Hold * to unlock." PTT, monitor, 
 
 ## 14. Check GPS
 
-Status strip shows a GPS icon: hollow = searching, solid = fix, crossed = off. Details: `SELECT`, `6`, `2` (Tools > Position): fix state, satellites, lat/long, grid locator, altitude, last sent report and next one. `CONTEXT` there: Send position now, Turn GPS off. Position of another station: caller actions `6`.
+Status strip shows a GPS icon: hollow = searching, solid = fix, crossed = off. Details: `SELECT`, `6`, `2` (Tools > Position): fix state, satellites, lat/long, altitude; Up / Down turn to the sky plot, the signal bars and the grid locator (ui.md 2.3). `CONTEXT` there: Send position now, Turn GPS off. Position of another station: caller actions `6`.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -387,6 +390,18 @@ Zone writes run as storage jobs, so the screen never waits for a flash erase; th
 fraction of a second. When a new zone takes a free slot ahead of the zone in use, or a zone ahead of it is deleted,
 the radio follows its zone to the new position and stays on its channel.
 
+## 27. Create a contact from a typed number
+
+1. On Home type the ID or talkgroup: Find's last row is "Create contact 3109876" when no contact has that number.
+2. Focus it, `SELECT`: New Contact opens with the ID, the type (a person for 7 digits and more) and the number as its
+   name. From a caller's or talkgroup's actions it is Save as contact (`7` for a person), filled from the call.
+3. Change the name or type if needed, long `SELECT` saves.
+
+| | K | M | V | F | Budget |
+|---|---|---|---|---|---|
+| Typed ID, saved as it is | 11 (7 digits, `NAV_DOWN` x2, `SELECT`, long `SELECT`) | 11 | 11 | n/a (no keypad) | 11 |
+| Last caller, saved | 3 (`CONTEXT`, `7`, long `SELECT`) | 3 | 3 | 3+n | 3 |
+
 ---
 
 ## Summary
@@ -421,5 +436,6 @@ the radio follows its zone to the new position and stays on its channel.
 | Add a channel to a zone (typed number) | 8 | yes |
 | Copy / delete a zone | 5+n / 7+n | yes |
 | TS / CC | 3 / 4 | yes |
+| Create a contact (typed ID / last caller) | 11 / 3 | yes |
 
 Every task except typed entries (IDs, frequencies, free text) and deleting a zone (its confirmation, P7) completes in six presses or fewer, inside the NHTSA six-input guideline.

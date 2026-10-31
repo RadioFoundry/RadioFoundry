@@ -14,8 +14,10 @@
 #include <string.h>
 #include "board.h"
 #include "ui_svc.h"
+#include "i18n.h"
 #include "radio/radio.h"
 #include "settings/settings.h"
+#include "radio/ref_trim.h"
 #include "storage/storage.h"
 #include "codeplug/codeplug.h"
 #include "hal_time.h"
@@ -173,6 +175,9 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_MIC_GAIN:
 		settings_read(&st);
 		return st.mic_gain <= 10 ? st.mic_gain : 5;
+	case UI_SET_REF_TRIM:
+		settings_read(&st);
+		return ref_trim_clamp(st.ref_trim_ppb);
 	case UI_SET_VFO_STEP:
 		settings_read(&st);
 		return st.vfo_step_hz >= 1000u && st.vfo_step_hz <= 1000000u ? (int32_t)(st.vfo_step_hz / 10u) : 0;
@@ -203,6 +208,9 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_POS_SEND_S:
 		settings_read(&st);
 		return st.pos_send_s;
+	case UI_SET_LANGUAGE:
+		settings_read(&st);
+		return (int32_t)((uint8_t)st.lang[0] << 8 | (uint8_t)st.lang[1]);
 	case UI_SET_LARGE_TEXT:
 	case UI_SET_HINTS:
 	case UI_SET_MESSAGE_TONE:
@@ -244,7 +252,7 @@ int32_t ui_svc_setting_get(uint8_t id)
 #if CONFIG_ZONE_SHARE
 	case UI_SET_ZONE_OFFERS:
 		settings_read(&st);
-		return st.zs_offers == ZS_OFFERS_ASK;
+		return settings_zs_accept(&st);
 #endif
 #if CONFIG_DMR
 	case UI_SET_DMR_ID:
@@ -407,6 +415,11 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		settings_end(hal_millis());
 		return true;
 #endif
+	case UI_SET_REF_TRIM:
+		st = settings_begin();
+		st->ref_trim_ppb = ref_trim_clamp(value);
+		settings_end(hal_millis());
+		return true;
 	case UI_SET_MIC_GAIN:
 	case UI_SET_AUTO_LOCK_S:
 	case UI_SET_LONG_PRESS_MS:
@@ -430,6 +443,14 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		} else {
 			st->pos_send_s = clamp16(value, 0, 0xFFFF);
 		}
+		settings_end(hal_millis());
+		return true;
+	case UI_SET_LANGUAGE:
+		if (value < 0 || value > 0xFFFF)
+			return false;
+		st = settings_begin();
+		st->lang[0] = (char)(value >> 8);
+		st->lang[1] = (char)value;
 		settings_end(hal_millis());
 		return true;
 	case UI_SET_VOLUME:
@@ -468,12 +489,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		return true;
 #if CONFIG_ZONE_SHARE
 	case UI_SET_ZONE_OFFERS:
-		if (value != ZS_OFFERS_OFF && value != ZS_OFFERS_ASK)
+		if (value != 0 && value != 1)
 			return false;
 		st = settings_begin();
-		st->zs_offers = (uint8_t)value;
+		st->zs_offers = value ? 1u : SETTINGS_ZS_OFF;
 		settings_end(hal_millis());
-		zone_share_set_offers((uint8_t)value);
+		zone_share_set_offers(value ? ZS_OFFERS_ASK : ZS_OFFERS_OFF);
 		return true;
 #endif
 #if CONFIG_DMR
@@ -549,7 +570,9 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 
 // --- Codeplug writes, on the housekeeping task (storage_job_post) ---
 
-static void save_failed(const char *text)
+// text: English, marked TRN. The UI translates it when it shows it (tr), so a translation longer than the event's 40
+// bytes isn't cut, and this task needs no language. The English must fit: a cut text never matches its translation
+static void save_failed_text(const char *text)
 {
 	ui_event_t ev;
 	memset(&ev, 0, sizeof ev);
@@ -557,6 +580,11 @@ static void save_failed(const char *text)
 	strncpy(ev.text, text, sizeof ev.text - 1);
 	ui_notify(&ev);
 }
+
+#define save_failed(s)	do { \
+	_Static_assert(sizeof(s) <= sizeof((ui_event_t){0}.text), "the text fits ui_event_t.text"); \
+	save_failed_text(s); \
+} while (0)
 
 #if CONFIG_DMR
 // The radio's own DMR ID, written into the codeplug (Settings > My radio): the radio core takes it when
@@ -567,7 +595,7 @@ static void dmr_id_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_dmr_id(job_dmr_id))
-		save_failed("Couldn't write the codeplug: not saved");
+		save_failed(TRN("Couldn't write the codeplug: not saved"));
 }
 
 static bool dmr_id_post(uint32_t id)
@@ -586,7 +614,13 @@ static struct {
 	uint8_t temp;
 	uint8_t power;
 	uint8_t squelch;
-	channel_t now;		// the channel as the radio has it now (temporary changes included)
+	union {
+		channel_t now;		// the channel as the radio has it now (temporary changes included)
+#if CONFIG_CONTACT_EDIT
+		contact_t contact;	// the contact editor's, at index channel (one job at a time: RAM is short)
+#endif
+		char name[CODEPLUG_NAME_LEN + 1];	// a name field's new text, UI_NAME_* in channel
+	};
 	uint32_t id;
 	bool private_call;
 } job;
@@ -599,7 +633,7 @@ static void save_channel_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_channel(job.channel, &job_ch)) {
-		save_failed("Couldn't read the channel: not saved");
+		save_failed(TRN("Couldn't read the channel: not saved"));
 		return;
 	}
 	if (job.temp & RADIO_TEMP_POWER)
@@ -617,7 +651,7 @@ static void save_channel_job(void *ctx)
 	if (job.temp & RADIO_TEMP_TS)
 		job_ch.timeslot = job.now.timeslot;
 	if (!codeplug_set_channel(job.channel, &job_ch)) {
-		save_failed("Couldn't write the codeplug: not saved");
+		save_failed(TRN("Couldn't write the codeplug: not saved"));
 		return;
 	}
 	if (job.temp & RADIO_TEMP_SQUELCH) {
@@ -658,7 +692,7 @@ static void write_channel_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_channel(job.channel, &job.now)) {
-		save_failed("Couldn't write the codeplug: not saved");
+		save_failed(TRN("Couldn't write the codeplug: not saved"));
 		return;
 	}
 	if (job.temp != 0) {
@@ -678,6 +712,28 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 	return storage_job_post(write_channel_job, NULL);
 }
 
+#if CONFIG_CONTACT_EDIT
+// The contact editor's contact (ui.md 2.4). The radio core's name cache follows codeplug_serial()
+
+static void write_contact_job(void *ctx)
+{
+	(void)ctx;
+	if (!codeplug_set_contact(job.channel, &job.contact)) {
+		save_failed(TRN("Couldn't write the codeplug: not saved"));
+	}
+}
+
+bool ui_svc_write_contact(uint16_t index, const contact_t *c)
+{
+	if (index == 0 || index > CODEPLUG_CONTACTS_MAX || storage_job_busy()) {
+		return false;
+	}
+	job.channel = index;
+	job.contact = *c;
+	return storage_job_post(write_contact_job, NULL);
+}
+#endif
+
 #if CONFIG_ZONE_EDIT
 // The zone editor's changes (ui.md 2.2), queued: Move up pressed again while the last move is still being written
 // waits its turn instead of being refused. The UI task adds at zq_head, the job takes from zq_tail. A new zone ahead
@@ -690,15 +746,15 @@ static volatile uint8_t zq_head, zq_tail;
 static const char *zone_edit_text(zone_edit_result_t r)
 {
 	switch (r) {
-	case ZONE_EDIT_FULL: return "Zone full: not saved";
-	case ZONE_EDIT_ZONES_FULL: return "No room for another zone";
-	case ZONE_EDIT_IN_ZONE: return "Already in this zone";
-	case ZONE_EDIT_NO_FREE: return "No free channel";
-	case ZONE_EDIT_NO_NAME: return "Give it a name first";
-	case ZONE_EDIT_EDGE: return "Already at the end";
-	case ZONE_EDIT_NO_ZONE: return "That zone is gone";
-	case ZONE_EDIT_NO_CHANNEL: return "That channel is gone";
-	default: return "Couldn't write the codeplug: not saved";
+	case ZONE_EDIT_FULL: return TRN("Zone full: not saved");
+	case ZONE_EDIT_ZONES_FULL: return TRN("No room for another zone");
+	case ZONE_EDIT_IN_ZONE: return TRN("Already in this zone");
+	case ZONE_EDIT_NO_FREE: return TRN("No free channel");
+	case ZONE_EDIT_NO_NAME: return TRN("Give it a name first");
+	case ZONE_EDIT_EDGE: return TRN("Already at the end");
+	case ZONE_EDIT_NO_ZONE: return TRN("That zone is gone");
+	case ZONE_EDIT_NO_CHANNEL: return TRN("That channel is gone");
+	default: return TRN("Couldn't write the codeplug: not saved");
 	}
 }
 
@@ -755,7 +811,7 @@ static void save_target_job(void *ctx)
 	(void)ctx;
 	contact_t c;
 	if (!codeplug_channel(job.channel, &job_ch)) {
-		save_failed("Couldn't read the channel: for now only");
+		save_failed(TRN("Couldn't read the channel: for now only"));
 		return;
 	}
 	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
@@ -763,13 +819,13 @@ static void save_target_job(void *ctx)
 			continue;
 		job_ch.contact = i;
 		if (!codeplug_set_channel(job.channel, &job_ch)) {
-			save_failed("Couldn't write the codeplug: for now only");
+			save_failed(TRN("Codeplug not written: for now only"));
 			return;
 		}
 		radio_req_dmr_target_clear();	// the channel's own target is this one now
 		return;
 	}
-	save_failed("Not a stored contact: for now only");
+	save_failed(TRN("Not a stored contact: for now only"));
 }
 
 bool ui_svc_save_talk_target(uint32_t id, bool private_call)
@@ -807,11 +863,11 @@ static void factory_reset_job(void *ctx)
 	bool saved = settings_flush();
 	storage_native_t n = storage_native_erase();
 	if (!saved && storage_ready()) {
-		save_failed("Reset: the settings couldn't be saved");
+		save_failed(TRN("Reset: the settings couldn't be saved"));
 		return;
 	}
 	if (n == STORAGE_NATIVE_FAILED && storage_ready()) {
-		save_failed("Reset: the native area couldn't be erased");
+		save_failed(TRN("Reset: native area couldn't be erased"));
 		return;
 	}
 	if (board.system != NULL && board.system->reboot != NULL) {
@@ -828,6 +884,46 @@ bool ui_svc_factory_reset(void)
 void ui_svc_boot_text(char line1[17], char line2[17])
 {
 	codeplug_boot_text(line1, line2);
+}
+
+void ui_svc_name_get(uint8_t which, char out[17])
+{
+	char other[CODEPLUG_NAME_LEN + 1];
+	if (which == UI_NAME_RADIO)
+		codeplug_radio_name(out);
+	else if (which == UI_NAME_BOOT1)
+		codeplug_boot_text(out, other);
+	else if (which == UI_NAME_BOOT2)
+		codeplug_boot_text(other, out);
+	else
+		out[0] = '\0';
+}
+
+// The boot lines are one record: the line not changed is read again here, so a CPS write since stays
+static void name_job(void *ctx)
+{
+	(void)ctx;
+	char l1[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
+	bool ok;
+	if (job.channel == UI_NAME_RADIO) {
+		ok = codeplug_set_radio_name(job.name);
+	} else {
+		codeplug_boot_text(l1, l2);
+		ok = codeplug_set_boot_text(job.channel == UI_NAME_BOOT1 ? job.name : l1,
+					    job.channel == UI_NAME_BOOT2 ? job.name : l2);
+	}
+	if (!ok)
+		save_failed("Couldn't write the codeplug: not saved");
+}
+
+bool ui_svc_name_set(uint8_t which, const char *text)
+{
+	if (which >= UI_NAME_COUNT || storage_job_busy())
+		return false;
+	job.channel = which;
+	strncpy(job.name, text, CODEPLUG_NAME_LEN);
+	job.name[CODEPLUG_NAME_LEN] = '\0';
+	return storage_job_post(name_job, NULL);
 }
 
 #if CONFIG_KEY_ASSIGN
@@ -861,7 +957,7 @@ static void key_write_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_quick_keys(key_job_slots)) {
-		save_failed("Couldn't save the keys: for now only");
+		save_failed(TRN("Couldn't save the keys: for now only"));
 	}
 }
 

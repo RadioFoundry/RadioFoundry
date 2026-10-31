@@ -78,6 +78,13 @@ static struct {
 	uint32_t now;
 	fix_t host, gps;
 	bool gps_off;		// Settings > Location > GPS is off: the board's fix doesn't count (aprs_gps_enable)
+	bool gps_heard;		// the board GPS has sent a valid sentence (fix or not), last at gps_heard_ms
+	uint32_t gps_heard_ms;
+	uint8_t gps_sats;	// satellites used, from its last GGA
+	uint16_t gps_hdop10;	// ... and its dilution x 10, 0xFFFF unknown
+#if CONFIG_GPS_SKY
+	nmea_sky_t sky;		// the satellites (GSV, GSA) for the GPS screen
+#endif
 	qframe_t q[QUEUE_LEN];
 	uint8_t qn;
 	uint8_t taken;		// frames in the transmission under way
@@ -1067,6 +1074,10 @@ void aprs_init(uint32_t now_ms)
 	a.host.alt_m = a.gps.alt_m = APRS_ALT_NONE;
 	a.host.speed_kmh = a.gps.speed_kmh = 0xFFFFu;
 	a.host.course = a.gps.course = 0xFFFFu;
+	a.gps_hdop10 = 0xFFFFu;
+#if CONFIG_GPS_SKY
+	nmea_sky_init(&a.sky);
+#endif
 	a.host_tokens = HOST_BURST;
 	a.host_refill_ms = now_ms;
 	a.msg_seq = (uint16_t)(now_ms % 900u);
@@ -1550,7 +1561,8 @@ void aprs_host_is_line(const char *line, size_t n, uint32_t now_ms)
 void aprs_nmea(const char *s, size_t n, bool gps, uint32_t now_ms)
 {
 	nmea_fix_t x;
-	if (!nmea_parse(s, n, &x)) {
+	bool pos = nmea_parse(s, n, &x);
+	if (!pos && !(CONFIG_GPS_SKY && gps)) {
 		return;
 	}
 	LOCK();
@@ -1558,7 +1570,25 @@ void aprs_nmea(const char *s, size_t n, bool gps, uint32_t now_ms)
 		UNLOCK();
 		return;
 	}
+#if CONFIG_GPS_SKY
+	if (gps && nmea_sky_sentence(&a.sky, s, n)) {
+		a.gps_heard = true;
+		a.gps_heard_ms = now_ms;
+	}
+#endif
+	if (!pos) {
+		UNLOCK();
+		return;
+	}
 	fix_t *f = gps ? &a.gps : &a.host;
+	if (gps) {
+		a.gps_heard = true;
+		a.gps_heard_ms = now_ms;
+		if (x.kind == NMEA_GGA) {
+			a.gps_sats = x.sats;
+			a.gps_hdop10 = x.hdop10;
+		}
+	}
 	if (!x.fix) {
 		f->valid = false;
 	} else {
@@ -1587,9 +1617,53 @@ void aprs_gps_enable(bool on)
 	a.gps_off = !on;
 	if (!on) {
 		a.gps.valid = false;
+		a.gps_heard = false;
+#if CONFIG_GPS_SKY
+		nmea_sky_init(&a.sky);
+#endif
 	}
 	UNLOCK();
 }
+
+bool aprs_gps(aprs_gps_t *out, uint32_t now_ms)
+{
+	LOCK();
+	bool on = !a.gps_off && a.gps_heard && now_ms - a.gps_heard_ms < POS_STALE_MS;
+	if (on) {
+		out->fix = a.gps.valid && now_ms - a.gps.ms < POS_STALE_MS;
+		out->sats = a.gps_sats;
+		out->lat = a.gps.lat;
+		out->lon = a.gps.lon;
+		out->alt_m = a.gps.alt_m;
+		out->hdop10 = a.gps_hdop10;
+		out->speed_kmh = a.gps.speed_kmh;
+		out->course = a.gps.course;
+		out->utc_hms = a.gps.utc_hms;
+#if CONFIG_GPS_SKY
+		out->mode = a.sky.mode;
+		out->in_view = a.sky.n;
+#else
+		out->mode = 0;
+		out->in_view = 0;
+#endif
+	}
+	UNLOCK();
+	return on;
+}
+
+#if CONFIG_GPS_SKY
+bool aprs_gps_sat(uint8_t i, sky_sat_t *out, bool *used)
+{
+	LOCK();
+	bool ok = i < a.sky.n;
+	if (ok) {
+		*out = a.sky.sat[i];
+		*used = nmea_sky_used(&a.sky, out);
+	}
+	UNLOCK();
+	return ok;
+}
+#endif
 
 size_t aprs_host_output(uint8_t *out, size_t max)
 {

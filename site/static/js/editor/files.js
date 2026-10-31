@@ -5,7 +5,7 @@
 // stock TYT-family codeplug, docs/spec/codeplug-stock-tyt.md) is converted, or reported as foreign.
 
 import { CodeplugImage, CODEPLUG_SPAN, TFTP_SIZE } from "../codeplug/image.js";
-import { readHeader, recordSize, AREA1, AREA1_SIZE, HEADER, AREA2 } from "../codeplug/iddb.js";
+import { recordSize, extent, convert, readHeader } from "../codeplug/iddb.js";
 import { openBundle, bundleFolder } from "../flasher/backup.js";
 import { unzip } from "../flasher/zip.js";
 import { startsWith, toHex } from "../flasher/bytes.js";
@@ -29,12 +29,7 @@ const extOf = (name) => (/\.([^./]{1,8})$/.exec(name || "")?.[1] || "").toLowerC
 const fileFacts = (name, bytes, more = {}) => ({ ext: extOf(name), size: bytes.length, head: toHex(bytes.subarray(0, 8)), ...more });
 
 // How far a dump must be kept so the DMR ID database in it stays whole
-function idDbTop(b) {
-	const hd = readHeader(b);
-	if (!hd) return 0;
-	const per1 = Math.floor((AREA1_SIZE - HEADER) / hd.rec);
-	return hd.count <= per1 ? AREA1 + HEADER + hd.count * hd.rec : AREA2 + (hd.count - per1) * hd.rec;
-}
+const idDbTop = extent;
 
 export function imageFrom(bytes) {
 	const keep = Math.max(CODEPLUG_SPAN, Math.min(bytes.length, idDbTop(bytes)));
@@ -94,9 +89,15 @@ export function saveBytes(image) {
 
 // codeplug.bin for the radio's TFTP server (USB network mode, docs/spec/tftp.md 5.2): the codeplug, and the ID database
 // in its image layout when there is one, so one file carries both. The radio takes the database part only when the
-// client announces the file's size
-export function tftpBytes(image) {
-	return image.bytes.slice(0, Math.max(TFTP_SIZE, idDbTop(image.bytes)));
+// client announces the file's size, and only format N below the radio's openfw_end: a format C database goes in the
+// file as format N, cut to end (an image address, iddbEnd) as a write to the radio would be
+export function tftpBytes(image, end = Infinity) {
+	let img = image;
+	if (readHeader(img.bytes)?.format === "C") {
+		img = image.clone();
+		convert(img, "N", { end });
+	}
+	return img.bytes.slice(0, Math.max(TFTP_SIZE, idDbTop(img.bytes)));
 }
 
 export { recordSize };

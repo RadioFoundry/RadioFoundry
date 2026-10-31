@@ -264,7 +264,8 @@ row (the HR_C6000 layout, `core/dmr/ambe/ambeFec.h`), but only while the decoder
 
 The calibration's reference tune byte t (section 11) sets regs 0x47 = 0x04 = 0x7F - t, 0x48 = 0x00 if t < 0x80
 else 0x03, and DAC2 = t x 4 + 0x600 bench. `hrc5000_set_ref()` and `hrc5000_ref_dac()`; the stored tune is
-re-applied by every full mode set-up.
+re-applied by every full mode set-up. The user's reference trim adds to DAC2 (5.2, "Carrier offset"). This mapping
+leaves two radios 2-2.5 kHz high (5.2), so it is not right yet (unverified).
 
 ### 4.6 Power and start-up
 
@@ -444,12 +445,34 @@ board picks the smallest reference divider that keeps N in the fractional range 
 detector gain at its maximum (the loop filter was designed for a value that is unknown) and Mux_out = the
 oscillator. The lock detect output's configuration isn't in our copy of the data sheet (unverified).
 
-**TX carrier offset (issue 108).** One MD-380 UHF measured about +1.9 kHz high at 448.700 MHz (an MMDVM hotspot's
+**Carrier offset (issue 108).** One MD-380 UHF measured about +1.9 kHz high at 448.700 MHz (an MMDVM hotspot's
 DMR BER test decoded it only from 448.70175 to 448.70200 MHz, BER 0.14-0.28 %; a DM-32UV measured the same way sat
 within 50 Hz of 448.700). Hotspot modems (ADF7021) decode only about +-250 Hz around the carrier, so that radio never
-woke a duplex hotspot. `MD380_TX_OFFSET_HZ` (`radio_md380.c`, a build define) corrects it; -1900 put it within 250 Hz.
-Whether the offset is the unit's own error, which the calibration's reference tune (11) should take out, or the way
-RadioFoundry applies that tune, is open (unverified): measure a second radio before setting a default.
+woke a duplex hotspot. A second MD-380 (reference tune 0x72) measured 2-2.5 kHz high on a service monitor, on FM too.
+
+Bench, 2026-10-28, the first radio (reference tune t = 0x51), with test builds that changed one control each. The
+receive error is the center of the band a DM-32UV's DMR is decoded in as the MD-380's VFO steps 250 Hz at a time; the
+transmit error is from the hotspot's MMDVMCal BER test:
+
+| Build | DAC2 | 0x47 / 0x48 | Receive | Transmit |
+|---|---|---|---|---|
+| as in 4.5 | 0x744 | 0x2E / 0x00 | +2.0 kHz | +2.0 kHz |
+| register sign as the HR_C6000's (t - 128) | 0x744 | 0xD1 / 0x03 | -0.75 kHz | -1.0 to -1.5 kHz |
+| DAC2 fixed | 0x600 | 0x2E / 0x00 | -3.25 kHz | no clean decode |
+| DAC2 fixed | 0xA00 | 0x2E / 0x00 | none within +-9 kHz (about +11 kHz) | no clean decode |
+
+- Receive and transmit are off by the same amount, so the error is in the shared 16.8 MHz reference (about 4.5 ppm),
+  not in the synthesizer's divide ratios.
+- DAC2 moves the reference about 16.2 Hz a count at 448.7 MHz (36.1 ppb), higher = higher. The HR_C5000 register
+  moves it about 31 Hz a step.
+- The mapping in 4.5 lands this radio 2 kHz high, and flipping the register's sign overshoots to about -1 kHz. Which
+  of the two (the DAC2 base or the register rule) is wrong needs a second radio with a different tune byte measured
+  the same way (unverified).
+
+Until then the user's trim corrects it: `hal_radio_t.ref_trim` (radio-features.md 6.1) adds ppb / 36.1 counts to
+DAC2 (rounded), at once and at every rx(). A trim of -2000 Hz at 448.7 MHz (-4.5 ppm) put the first radio's transmit
+within about 150 Hz (hotspot BER 0.05 %, four cold wake-ups on alternating slots). `MD380_TX_OFFSET_HZ` (`radio_md380.c`, a build define, default 0)
+still shifts the transmit frequency alone; with the trim it isn't needed.
 
 ### 5.3 Frequency plan
 

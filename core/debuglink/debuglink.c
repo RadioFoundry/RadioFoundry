@@ -11,7 +11,9 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_chip.h"
+#include "debuglink/dl_shot.h"
 #include "debuglink/dlog.h"
+#include "hostlink/build_info.h"
 #include "hostlink/hostlink.h"
 #include "stubentry/stub_entry.h"
 #if CONFIG_HOTSPOT
@@ -32,10 +34,13 @@
 #ifndef RFOUNDRY_RELEASE
 #define RFOUNDRY_RELEASE ""
 #endif
+#ifndef RFOUNDRY_GIT_TIME
+#define RFOUNDRY_GIT_TIME 0u
+#endif
 
 #define SHOT_HOLD_MS		1000	// a screen capture freezes UI redraws at most this long
 #define SHOT_TAIL_MS		250	// after the last chunk: long enough for the host's check pass to start
-#define SHOT_CHUNK_MAX		1000u	// screenshot bytes per reply
+#define SHOT_CHUNK_MAX		1000u	// screenshot bytes per reply (the RGB565 form)
 #define RADIO_OP_GAP_MS		20u	// radio requests at most this often (the radio core's queue holds 16)
 #define REBOOT_DELAY_MS		250u	// the REBOOT reply goes out over USB before the reset
 
@@ -64,155 +69,6 @@ static bool reboot_pending;
 static uint8_t reboot_mode;
 static uint32_t reboot_token;
 
-static const char features[] = "features="
-#if CONFIG_FM
-	"FM,"
-#endif
-#if CONFIG_SUBTONE
-	"SUBTONE,"
-#endif
-#if CONFIG_DMR
-	"DMR,"
-#endif
-#if CONFIG_DMR_PRIVACY
-	"DMR_PRIVACY,"
-#endif
-#if CONFIG_DMR_TALKER_ALIAS
-	"DMR_TALKER_ALIAS,"
-#endif
-#if CONFIG_DMR_GPS
-	"DMR_GPS,"
-#endif
-#if CONFIG_APRS
-	"APRS,"
-#endif
-#if CONFIG_APRS_RX
-	"APRS_RX,"
-#endif
-#if CONFIG_APRS_IGATE
-	"APRS_IGATE,"
-#endif
-#if CONFIG_DMR_DATA_CORE
-	"DMR_DATA_CORE,"
-#endif
-#if CONFIG_DMR_SMS
-	"DMR_SMS,"
-#endif
-#if CONFIG_DMR_ARS
-	"DMR_ARS,"
-#endif
-#if CONFIG_DMR_LRRP
-	"DMR_LRRP,"
-#endif
-#if CONFIG_DMR_SIGNALING
-	"DMR_SIGNALING,"
-#endif
-#if CONFIG_DMR_ROAMING
-	"DMR_ROAMING,"
-#endif
-#if CONFIG_SFR
-	"SFR,"
-#endif
-#if CONFIG_HOTSPOT
-	"HOTSPOT,"
-#endif
-#if CONFIG_HOTSPOT_SPLIT
-	"HOTSPOT_SPLIT,"
-#endif
-#if CONFIG_USB_NETWORK
-	"USB_NETWORK,"
-#endif
-#if CONFIG_DMR_IP_GATEWAY
-	"DMR_IP_GATEWAY,"
-#endif
-#if CONFIG_DMR_UDP_COMPRESS && CONFIG_DMR_DATA_CORE
-	"DMR_UDP_COMPRESS,"
-#endif
-#if CONFIG_DMR_CONFIRMED && CONFIG_DMR_DATA_CORE
-	"DMR_CONFIRMED,"
-#endif
-#if CONFIG_NET_TCP
-	"NET_TCP,"
-#endif
-#if CONFIG_NET_PPP
-	"NET_PPP,"
-#endif
-#if CONFIG_NET_KISS
-	"NET_KISS,"
-#endif
-#if CONFIG_NET_HTTP
-	"NET_HTTP,"
-#endif
-#if CONFIG_NET_HTTP_GZIP
-	"NET_HTTP_GZIP,"
-#endif
-#if CONFIG_NET_RIGCTL
-	"NET_RIGCTL,"
-#endif
-#if CONFIG_NET_APRSIS
-	"NET_APRSIS,"
-#endif
-#if CONFIG_NET_USRP
-	"NET_USRP,"
-#endif
-#if CONFIG_MDNS
-	"MDNS,"
-#endif
-#if CONFIG_TFTP
-	"TFTP,"
-#endif
-#if CONFIG_TFTP_IDDB
-	"TFTP_IDDB,"
-#endif
-#if CONFIG_SNMP
-	"SNMP,"
-#endif
-#if CONFIG_VFO
-	"VFO,"
-#endif
-#if CONFIG_VFO_FM
-	"VFO_FM,"
-#endif
-#if CONFIG_VFO_DMR
-	"VFO_DMR,"
-#endif
-#if CONFIG_AM_RX
-	"AM_RX,"
-#endif
-#if CONFIG_BCAST_FM
-	"BCAST_FM,"
-#endif
-#if CONFIG_DIAG
-	"DIAG,"
-#endif
-#if CONFIG_CRASH_LOG
-	"CRASH_LOG,"
-#endif
-#if CONFIG_SCAN
-	"SCAN,"
-#endif
-#if CONFIG_BEEP
-	"BEEP,"
-#endif
-#if CONFIG_FM_TX_TONES
-	"FM_TX_TONES,"
-#endif
-#if CONFIG_DTMF
-	"DTMF,"
-#endif
-#if CONFIG_VOX
-	"VOX,"
-#endif
-#if CONFIG_BATTERY_SAVE
-	"BATTERY_SAVE,"
-#endif
-#if CONFIG_CPS_FAST
-	"CPS_FAST,"
-#endif
-#if CONFIG_USB
-	"USB,"
-#endif
-	"HOSTLINK,DEBUGLINK\n";	// the debug link always runs on the host link (USB CDC or a UART)
 
 // --- little endian helpers ---
 
@@ -367,11 +223,14 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	dl_text_init(&t, (char *)out + 1, cap - 1);
 	dl_text(&t, "proto=%u\nview=%u\n", DL_PROTO_VERSION, DL_VIEW_VERSION);
 	dl_text_kv_str(&t, "git", RFOUNDRY_GIT);
+	if (RFOUNDRY_GIT_TIME != 0u) {
+		dl_text(&t, "git_time=%u\n", (unsigned)RFOUNDRY_GIT_TIME);
+	}
 	if (RFOUNDRY_RELEASE[0] != '\0') {
 		dl_text_kv_str(&t, "release", RFOUNDRY_RELEASE);
 	}
 	dl_text_kv_str(&t, "board", board.name);
-	dl_text(&t, "%s", features);
+	dl_text(&t, "features=%s\n", build_features);
 	dl_text_kv_str(&t, "codec", debuglink_codec_id(board.vocoder));
 	if (d != NULL) {
 		dl_text(&t, "display=%ux%ux%u\ninset=%u,%u,%u,%u\n", d->width, d->height, d->bpp, d->inset_top,
@@ -379,20 +238,66 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	}
 	dl_text(&t, "uptime_ms=%u\nreq_max=%u\nreply_max=%u\ninject_max_ms=%u\n", (unsigned)hal_millis(), DL_REQ_MAX,
 		DL_REPLY_MAX, INPUT_INJECT_MAX_MS);
+	// last: a long list that doesn't fit drops only itself (a host then treats the build as unknown). dl_text, not
+	// dl_text_kv_str: that cuts a value at 39 characters, and a cut off= list would read as complete
+	dl_text(&t, "preset=%s\n", build_preset);
+	dl_text(&t, "off=%s\n", build_off);	// may be empty: present, it says the build is known in full
 	return 1 + t.len;
 }
 
 // --- screenshot: the UI frame buffer, read live (see the doc on tearing) ---
 
+// Hold the UI's redraws while the host reads the chunks, so the capture is one frame. Every chunk extends the hold;
+// redraws resume SHOT_TAIL_MS after the last chunk (not the full hold: a key pressed right after a capture must show
+// up in the next one)
+static void shot_hold(bool last)
+{
+	gfx_hold(hal_millis() + (last ? SHOT_TAIL_MS : SHOT_HOLD_MS));
+}
+
+// The packed form: the frame buffer at the panel's depth, LZ4 (dl_shot.h)
+static size_t shot_packed(const hal_display_t *d, uint32_t offset, uint8_t *out, size_t cap)
+{
+	static dl_shot_t s;	// static: the host link task's stack also holds the encoder's hash table
+	uint32_t stride = d->bpp == 1 ? (d->width + 7u) / 8u : d->bpp == 4 ? (d->width + 1u) / 2u : d->width * 2u;
+
+	s.fb = gfx_framebuffer();
+	s.size = stride * d->height;
+	if (s.size > 0xFFFFu) {
+		return status_only(out, DL_ST_UNAVAILABLE);
+	}
+	s.width = d->width;
+	s.height = d->height;
+	s.bpp = d->bpp;
+	s.insets[0] = d->inset_top;
+	s.insets[1] = d->inset_bottom;
+	s.insets[2] = d->inset_left;
+	s.insets[3] = d->inset_right;
+	s.drawing = !gfx_frame_idle(&s.frame);
+	for (uint8_t i = 0; i < 16; i++) {
+		s.palette[i] = gfx_palette(i);
+	}
+	bool last;
+	size_t n = dl_shot_reply(&s, offset, out, cap, &last);
+	if (n == 0) {
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+	shot_hold(last);
+	return n;
+}
+
 static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
 	const hal_display_t *d = board.display;
 
-	if (len != 0 && len != 6) {
+	if ((len != 0 && len != 5 && len != 6) || (len == 5 && req[4] != DL_SHOT_LZ4)) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
 	if (d == NULL || gfx_width() <= 0 || gfx_framebuffer() == NULL) {
 		return status_only(out, DL_ST_UNAVAILABLE);
+	}
+	if (len == 5) {
+		return shot_packed(d, get32(req), out, cap);
 	}
 	// A 16-color frame (bpp 4) goes out as RGB565, read through its palette
 	bool indexed = GFX_INDEXED && d->bpp == 4;
@@ -426,10 +331,7 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	out[10] = d->inset_right;
 	put32(out + 11, total);
 	put32(out + 15, offset);
-	// Hold the UI's redraws while the host reads the chunks, so the capture is one frame. Every chunk extends the
-	// hold, so the host's check pass sees the same frame; redraws resume SHOT_TAIL_MS after the last chunk (not the
-	// full hold: a key pressed right after a capture must show up in the next one)
-	gfx_hold(hal_millis() + (len == 6 && offset + n >= total ? SHOT_TAIL_MS : SHOT_HOLD_MS));
+	shot_hold(len == 6 && offset + n >= total);
 	if (indexed) {
 		gfx_read_rgb565(offset, out + 19, n);
 	} else {
@@ -725,8 +627,6 @@ static size_t cmd_info_chip(uint8_t *out)
 
 static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
-	hal_chip_t c;
-
 	if (len != 6) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
@@ -735,11 +635,11 @@ static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	if (n == 0 || n > DL_MEM_READ_MAX || 5u + n > cap) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
-	// The address windows are the STM32F4's
-	if (board.system == NULL || board.system->read == NULL || !read_chip(&c) || c.family != HAL_CHIP_STM32F4) {
+	// The address windows are the platform's
+	if (board.system == NULL || board.system->read == NULL || board.system->mem_window == NULL) {
 		return status_only(out, DL_ST_UNAVAILABLE);
 	}
-	if (!dl_mem_allowed(addr, n, c.flash_kb)) {
+	if (!dl_mem_allowed(addr, n, board.system->mem_window)) {
 		return status_only(out, DL_ST_REFUSED);
 	}
 	out[0] = DL_ST_OK;
@@ -940,6 +840,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_watchdog(req, len, out, cap);
 	case DL_CMD_RX2:
 		return debuglink_cmd_rx2(req, len, out, cap);
+	case DL_CMD_IDDB:
+		return debuglink_cmd_iddb(req, len, out, cap);
 	case DL_CMD_HWOPT:
 		return debuglink_cmd_hwopt(req, len, out, cap);
 	case DL_CMD_CODEPLUG:

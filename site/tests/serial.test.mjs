@@ -8,7 +8,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import * as diag from "../static/js/diag.js";
-import { SerialStream, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, browserErrorKey } from "../static/js/flasher/link.js";
+import { SerialStream, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, browserErrorKey, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
 import { CpsSerial, TransportError } from "../static/js/codeplug/transport.js";
 import { openFile, FileError } from "../static/js/editor/files.js";
 
@@ -123,6 +123,31 @@ test("a port this page left open is closed and opened again", async () => {
 	await new Promise((r) => setTimeout(r, 10));
 	assert.equal(live.received, 1);
 	await live.close();
+});
+
+// A port the site was granted before: its USB ID, and a cable with no radio answering on it
+class GrantedPort extends FakePort {
+	constructor(usbVendorId, usbProductId) {
+		super();
+		this.info = { usbVendorId, usbProductId };
+		this.writable = { getWriter: () => ({ write: async () => {}, releaseLock() {} }) };
+	}
+
+	getInfo() { return this.info; }
+}
+
+test("the ports granted before are tried as the chooser would list them; a silent one is closed and passed over", async (t) => {
+	const cable = new GrantedPort(0x0403, 0x6001), other = new GrantedPort(0x05AC, 0x1234);
+	// Node's navigator is a getter without a setter: replaced for this test and put back
+	const was = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [other, cable] } }, configurable: true });
+	t.after(() => Object.defineProperty(globalThis, "navigator", was));
+	const filters = [{ usbVendorId: 0x0403 }];
+	assert.deepEqual(await grantedPorts(filters), [cable]);
+	assert.equal(await knownRadioPort(filters), null, "nothing answered: the chooser opens");
+	assert.equal(cable.opens, 1);
+	assert.equal(cable.isOpen, false, "closed again for the chooser to hand out");
+	assert.equal(other.opens, 0);
 });
 
 // A stream with nothing behind it, or with another firmware's bytes coming back to every request

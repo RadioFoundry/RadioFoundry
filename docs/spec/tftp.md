@@ -105,7 +105,8 @@ is foreign. They are not refused while transmitting, as codeplug.bin's aren't: t
 like every other writer. A put isn't power-cut safe beyond that rule: a cut mid-transfer leaves no database.
 
 Accepted headers: `Id`, a record size the radio reads (more than the ID, at most `DMR_IDDB_RECORD_MAX`), at most
-0x400000 records, any format but `n` (whose area 2 sits in the voice prompts). The records must fit below
+0x400000 records, any format but `n` (whose area 2 sits in the voice prompts). Format `C` ([iddb-compact.md](iddb-compact.md))
+fails the record size check and is refused: hosts send format `N` over TFTP. The records must fit below
 `openfw_end`. A header that fails these is refused before anything is erased.
 
 ### 5.1 iddb.bin

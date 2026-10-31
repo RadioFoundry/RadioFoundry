@@ -1,7 +1,9 @@
 {
-  "_about": "Site languages. The default lives at the site root, every other under /<code>/. Add a language: copy en.json to <code>.json, translate what you can (missing keys fall back to the default), add it here.",
+  "_about": "Site languages. The default lives at the site root, every other under /<code>/. Add a language: copy en.json to <code>.json, translate what you can (missing keys fall back to the default), add it here: code (the URL prefix and <html lang>), name (in the language itself), dir (ltr or rtl), locale (og:locale).",
   "default": "en",
   "languages": [
-    {"code": "en", "name": "English", "dir": "ltr"}
+    {"code": "en", "name": "English", "dir": "ltr", "locale": "en-US"},
+    {"code": "es", "name": "Español", "dir": "ltr", "locale": "es-ES"},
+    {"code": "it", "name": "Italiano", "dir": "ltr", "locale": "it-IT"}
   ]
 }

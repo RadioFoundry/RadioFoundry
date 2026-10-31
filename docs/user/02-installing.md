@@ -34,12 +34,16 @@ backup. The web installer's own backup (below) holds it too.
 
 ## Install with the web installer
 
-Open the [web installer](https://radiofoundry.org/flash/index.html), choose **Install**, and follow the steps:
+Open the [web installer](https://radiofoundry.org/flash/index.html), choose **Install**, and follow the steps (a radio
+that runs RadioFoundry already: [Updating RadioFoundry](#updating-radiofoundry)):
 
 1. **Radio.** Pick your radio.
 2. **Build.** Pick **Full** (every feature the radio supports), **Amateur**, **Commercial**, or **Custom** to choose
    features one by one. Features the radio can't have are marked. A custom build is made when you continue and takes
-   under a minute.
+   under a minute. When your browser asks for a language the radio can show but the build leaves out, the page offers
+   to include it (Settings > Display > Language on the radio, [Settings](17-settings.md)). **Radio language** picks
+   the language the radio starts in: English or one the build includes, preset to the page's language. You can
+   change it on the radio later.
 3. **Current firmware.** Say what the radio runs now:
 
    | Choice | When |
@@ -114,9 +118,21 @@ This path has not been tested on a real radio yet. Keep your stock firmware file
 
 ### Updating RadioFoundry
 
-Start the radio normally with RadioFoundry running, connect it and run **Install** again. The installer asks the radio
-whether its codec is in place. If it is, it writes only the new firmware and needs no stock file. The codeplug and the
-settings stay: they live in separate flash that installing never touches.
+Start the radio normally with RadioFoundry running and choose **Update** in the web installer:
+
+1. Connect the radio and press **Connect**. One port list shows the radio's USB port and programming cables.
+2. The installer shows the radio, the installed version, the new version and the radio's build (Full, Amateur,
+   Commercial or Custom). The update installs the same build of the new release.
+   - **Edit Build** opens the build step, to change features before the update.
+   - A preset build lists the features the new release adds to it.
+   - A custom build lists the features added since it was made. Choose **On** or **Off** for each before updating.
+   - Firmware too old to report its build gets the build step, starting from the closest match.
+3. **Save a backup first** is optional and off. An update keeps the channels, settings, calibration and codec.
+4. Press **Update**. The installer builds the image, writes it and checks the version.
+
+The radio goes straight from RadioFoundry into the loader: no keys to hold, no stock file. The codeplug and the settings
+stay: they live in flash that updating never touches. **Install** still works on a radio that runs RadioFoundry, with
+every question asked.
 
 ### Backing up and restoring
 
@@ -305,12 +321,12 @@ with an FTDI, CP210x or PL2303 chip. The installer warns when it sees a CH340 ca
 
 **When the cable can't prepare the radio:** a radio installed over its programming cable first gets a small loader in
 its memory. When the radio turns on, it waits only about 1/20 of a second for the installer's answer, and some cables
-and USB hubs are slower than that. If the load fails ("Preparing the radio failed"), the radio starts normally instead,
-or it never answers, the installer offers **Try Slow Cable Mode**: turn the radio off, select **Radio Is Off**, then
-turn it on, and the installer keeps sending its answer while the radio starts. Select Radio Is Off only once the radio is
-off: the installer then sends to the cable, and the firmware of a radio that is still on would receive it.
+and USB hubs are slower than that. So the installer keeps sending its answer while the radio starts (this used to be the
+separate **Slow Cable Mode**; it is now always on). Turn the radio off, select **Radio Is Off**, then turn it on.
+A radio already running RadioFoundry skips that step.
 
-If the slow cable mode fails too, the installer offers **Use Factory Update Mode**: the radio's own update mode, entered by holding keys while you turn the radio
+If the load fails ("Preparing the radio failed"), the radio starts normally instead, or it never answers, the installer
+offers **Use Factory Update Mode**: the radio's own update mode, entered by holding keys while you turn the radio
 on (your radio's "Installing" section in the [Radio reference](23-radios.md)). Nothing can be read from the radio that
 way, so no backup is taken and the voice codec comes from a file: the stock firmware file, or a program memory backup
 of the radio where the installer knows no stock file for it. Troubleshooting offers the same route ("Reinstall in

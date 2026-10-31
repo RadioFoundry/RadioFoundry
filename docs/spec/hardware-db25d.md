@@ -30,7 +30,7 @@ radio or in a datasheet.
 | SoC | One HR_C7000 (CK803S core), marked "HR_C7000 D56323MP1" |
 | Boards (PRO) | Control "CDR300UV-MCU-BT-AI-TDA-1.0", display "C7DR300UV-TFT-51M-FD-2.0", RX "C7DR300UV-RX-BT-AD-3.0", TX "C7DR300UV-TX-RD35-BT-AD-3.5" |
 | One image for every board | The firmware identifies both RF chips at boot (section 4.2) and writes two letters after the "D" of its version string |
-| Batch codes | D64, D66, D6T: FD6818 main transceiver (2021-2023). **DBB: two BK4819, the PRO** |
+| Batch codes | D64, D66, D6T: FD6818 main transceiver (2021-2023), LO 0x7813, FD6818 or AT1141 (4.8). **DBB: two BK4819, the PRO** |
 | Minimum vendor firmware on a PRO | The 2024-05-09 build is the first that knows the BK4819. Older vendor firmware must never be loaded on a PRO |
 
 ## 2. Memory and image
@@ -114,7 +114,7 @@ the radio stopped before the display was lit, until a power cycle; that fault is
 | PTB9, PTB10, PTB11 (41-43) | Key matrix sense lines, low = closed. PTB9 and PTB10 also carry one key each wired straight to ground (low with every drive line high) |
 | PTA9 (9) | Also read as a GPIO by the key code: the mic connector's line that carries PTT and the radio's RXD. RadioFoundry counts a low PTA9 as PTT only 50 ms or more after the last good UART byte and held low that way for 20 ms (`drivers/input/sharedptt`, [gotchas](gotchas.md) 16.2), then on three scans in a row; the diagnostics line `mic` ends with `ign N`, the low scans ignored. The three-scan filter alone let debug link polling key the radio; with the gate, 30 s of polling gave `ign 5` and no PTT press (2026-10-19, measured) |
 | PTC11 (75) | Hand mic PTT: high at idle, low while held. With no mic in the front jack it reads low from power-on and never changes (0 edges in 25 s, cable in or out), which keyed the radio at every start without a mic (issue #230). RadioFoundry counts a low PTC11 as PTT only once the line has read high for 100 ms since power-on, a mic plugged in (`drivers/input/plugptt`); the diagnostics line `mic` ends with `mic` once armed, `nomic` before. Plugging the mic in later arms it then. Pulling the mic out while armed reads as a held PTT, which the transmit timeout ends (with TX timeout Off, nothing ends it until power-off). On the radio (2026-10-27): no mic at power-on, no key-up (`nomic`); mic plugged in, `mic`, PTT keys and releases. The mic's digit and P keys change neither PTA9 nor PTC11 at a 10 ms scan; how they reach the radio is open (measured) |
-| PTB5 / PTB8 (37 / 40) | Rotary encoder A / B, GPIO B interrupt |
+| PTB5 / PTB8 (37 / 40) | Rotary encoder A / B, GPIO B interrupt. The key scan watches it for a lost interrupt and serves the bank itself if one is lost (`platform/hrc7000/gpio_watch.c`, [gotchas.md](gotchas.md) 16.4; state in the debug link view, [debuglink.md](debuglink.md) 3.7) |
 | PTB12 (44) | Power key sense, low = pressed |
 | PTB13 (45) | Power latch: set at start-up, cleared to switch off |
 | PTA16 (16) | LCD backlight: PWM1 output (IO_DIPLEX0 bit 18 clear) (datasheet) |
@@ -187,7 +187,7 @@ The firmware reads register 0 of each chip at boot and writes the letters into i
 | Register 0 | Main transceiver (letter) | LO (letter) |
 |---|---|---|
 | 0x6818 (FD6818) | '6' | '6' |
-| 0x7813 (unverified) | '4' | '4' |
+| 0x7813 (seen only as the LO, 4.8) | '4' | '4' |
 | 0x1846 | 'A' | - |
 | 0x1100 (AT1141 PLL) | - | 'T' |
 | 0x4819 (BK4819) | 'B' | 'B' |
@@ -449,6 +449,16 @@ nothing else on the page trims the frequency. RadioFoundry powers the modem
 
 `make BOARD=db25d DB25D_TX_CENTER=N` replaces c, to sweep it on the radio: a few ppm per step is expected.
 
+The user's reference trim ([radio-features.md](radio-features.md) 6.1) leaves this bias alone: it is the factory's tune
+and the DMR modulation rides on it. RadioFoundry retunes the BK4819s instead. Receive: the LO at f x (1 + trim) + IF,
+which leaves the signal on the main chip's IF. Transmit: the main chip at f x (1 + trim), FM and every DMR burst. The next
+tune applies a new trim. Measured on the SDR bench at 461.4625 MHz (2026-10-30): +5.0 ppm moved the carrier +2309 Hz and
+-5.0 ppm -2311 Hz (2307 Hz expected). The trim covers +-10 ppm, less than the 23 ppm this radio read before the bias
+was set, so a radio that far off needs the bias first.
+
+A key-up now and then restarts the radio (`reset.cause` warm, no fault trace): a supply dip at TX on, also without the
+trim (1 of 3 plain key-ups on 2026-10-30). The HIL trim test waits 3 s after each trim before it keys, and may need a rerun.
+
 ### 4.7 DCS
 
 The main chip sends and detects DCS itself, with the code as the 23-bit Golay word (code bits first,
@@ -478,6 +488,93 @@ At the end of a DCS transmission 0x52 = 0x828F is written, then, after 300 ms, 0
 DCS turn-off. RadioFoundry does the same through the core's tail (`radio-features.md` 3.3a; `bk4819_tx_tail_start` / `_end`;
 the end of the transmission writes 0x028F back if a tail is still on). On the SDR bench: D023N, then 134.4 Hz for
 0.30 s up to the carrier's end (measured).
+
+### 4.8 Older batches: FD6818 main, three LO kinds
+
+D64, D66 and D6T have an FD6818 as the main transceiver and differ in the LO. The architecture is the PRO's (4.1): the
+same 51.55 MHz IF, the LO above the signal, the same 3-wire bus and pins (3.1). The values here are what the
+2023-07-06 vendor build writes; the 2022 builds differ only where noted. RadioFoundry drives every batch from one
+image (`drivers/rf/fd6818/fd6818sh.c`, `drivers/rf/at1141/at1141.c`): untested on an FD6818 radio.
+
+| Batch | Main | LO |
+|---|---|---|
+| DBB | BK4819 | BK4819 (4.1-4.7) |
+| D64 | FD6818 | 0x7813, a part of the FD6818 family (same bus, page select and state register) |
+| D66 | FD6818 | FD6818 |
+| D6T | FD6818 | AT1141 PLL synthesizer |
+
+**Main FD6818 registers.** The map is the datasheet's, not the DM-32's (`fd6818.h` drives the part through another
+map, [hardware-dm32.md](hardware-dm32.md) 8). Page select 0x7F (1 = page 1).
+
+| Register | Use |
+|---|---|
+| 0x03 | State: 0x0000 idle, 0xBFF1 RX, 0xC3FE TX, 0xC3FA TX with the microphone ADC off (tones), 0xC1FA an LO's output. Every change goes through 0x0000 |
+| 0x1A | Band word by the integer MHz: the first edge at or above it of 23 33 46 66 93 132 185 263 371 560 740 1120, words DF21 6F41 CF22 5F42 BF24 4F44 AF28 3F48 9F30 2F50 0000 1F80; above 1120: 0. The IF gives 5F42, VHF AF28, UHF 2F50 |
+| 0x38 / 0x39 | Frequency in 10 Hz units (truncated), low and high word |
+| 0x40 | TX deviation, by the same band index and whether the transmission has sub-audio: VHF 0x375C (none) / 0x3732 (with), UHF 0x39D0 / 0x3998. The bandwidth doesn't change it |
+| 0x43 | Bandwidth: 25 kHz 0x3028; 12.5 kHz 0x6648 and 0x4D = 0x348D |
+| 0x07 / 0x08 | Sub-audio words. CTCSS: `subaudio_ctcss_word`, truncated, in slot 0, then 0x2000 \| 0x0470 (55 Hz, the tail tone) in slot 1. DCS: 0x0AD7 (134.4 Hz) in both slots, then the code in two 0x08 writes as on the BK4819 (4.7) |
+| 0x51 | Sub-audio control: 0x90C5 CTCSS, 0x80B8 DCS, 0xA0B8 DCS inverted, 0x1050 a transmission without sub-audio, 0 before a mode set |
+| 0x52 | 0x028F normal; 0x828F the tail (bit 15) |
+| 0x28 | PA gain: `(v >> 3 ? 0x38 : 0) \| (v & 7)`, v 0..15 from the calibration (0x09B, 6.3) |
+| 0x47 | AF output: 0x7040 mute, 0x7140 FM receive, 0x6140 DMR receive, 0x7840 the sidetone (a tone) |
+| 0x53 | Volume: `(T[v] << 5) \| (v < 9 ? 0x941D : 0xF41D)`, T = 0 1 3 6 10 14 17 19 21 4 7 9 11 13 15 17 19 21 23 25; 0x957D in the digital set |
+| 0x70 / 0x71 / 0x72 | Tones: 0x70 = 0x8000 \| gain << 8 (one tone) or 0x8989 (DTMF), 0x71 / 0x72 = `subaudio_tone_word` (truncated for one tone, rounded for DTMF) |
+| 0x25 / 0x26 / 0x27 | GPIO outputs; output selects, a nibble per pin |
+| 0x65 / 0x67 | Noise / RSSI, as on the BK4819 (4.3) |
+
+**Mode sets.** Each leaves the chip at the IF (`1a`, `38`, `39`, then `03` = 0, 0xBFF1).
+
+| Set | Writes |
+|---|---|
+| Analog | 0x73 = 0x4E42, 0x04 = 0x0300, page 1 0x1C = 0x04D7 0x1D = 0x39FD 0x27 = 0x885B, 0x50 = 0x073C, 0x70 = 0, 0x7E = 0x341E, 0x44 = 0x4ACC, microphone page 1 0x17 = 0x3006, 0x18 = 0x2125, then the bandwidth |
+| Digital (DMR) | 0x73 = 0x4E52, microphone page 1 0x17 = 0x1B06, 0x18 = 0x2125, 0x51 = 0x1050, 0x04 = 0x0300, page 1 0x1C = 0x04D3 0x1D = 0x29A1 0x27 = 0x891B, 0x50 = 0x073C, 0x70 = 0, 0x7E = (0x7E after init) \| 0x0080, 0x43 = 0x7E48, 0x40 = 0, 0x44 = 0x52CC, 0x53 = 0x957D |
+
+**Sequences.**
+
+| Step | Main | LO |
+|---|---|---|
+| Channel set (receive) | Mode set, at the IF; GPIO3 = the TX band (high = VHF) | GPIO3 = the RX band (high = VHF); tune to f + 51.55 MHz and run |
+| FM TX prepare | 0x40, then the TX sub-audio (or 0x51 = 0x1050), 0x28 | - |
+| TX | `1a`, `38`, `39`, `03` = 0, 0xC3FE (DMR: `28` before `38`) | Off |
+| Back to RX | `1a` = 0x5F42, IF `38` / `39`, `03` = 0, 0xBFF1 | Running again, not retuned |
+| FM TX end | 0x51 = 0x90C5, 0x52 = 0x828F (the tail), 150 + 200 ms, 0x03 = 0, 0x52 = 0x028F | - |
+| Tone | 0x71, 0x70, 0x03 = 0xC3FA, 0x47 = 0x7840; stop 0x70 = 0, 0x47 = 0x7040 | - |
+
+**LO kinds.**
+
+| LO | Tune | Off | Running again |
+|---|---|---|---|
+| FD6818 | `1a` by LO MHz, `38` / `39`, `03` = 0, 0xC1FA | `03` = 0 | `03` = 0, 0xC1FA |
+| 0x7813 | 0x3A = 0x00E0, 0x40 = 0x38D0, 0x43 = 0x5009, 0x4D = 0x347D, page 1 0x16 = 0x02FE; a VCO section (below); `38` / `39`; 0x40 = 0; `03` = 0, 0xC1FA | `03` = 0 | `03` = 0, 0xC1FA |
+| AT1141 | Band split and PLL words (`at1141.h`), 0x30 = 0x4006, 0x4046 | 0x30 = 0x4006 | 0x30 = 0x4006, 0x4046, no wait |
+
+The 0x7813's section is the first of 32 44 63 88 126 176 251 353 at or above the LO's integer MHz (else 8); each
+writes 0x3C, 0x3D, 0x40, 0x1A, 0x2A:
+
+| Section | 0x3C | 0x3D | 0x40 | 0x1A | 0x2A |
+|---|---|---|---|---|---|
+| 0 | 1009 | D89E | 34DA | 1F41 | 62F2 |
+| 1 | 1007 | 6276 | 345C | 1F22 | C2F2 |
+| 2 | 1004 | EC4F | 35D0 | 1F42 | 52F2 |
+| 3 | 1003 | B13B | 355C | 1F24 | B2F2 |
+| 4 | 1002 | 7627 | 36D0 | 1F44 | 42F2 |
+| 5 | 1001 | D89E | 366C | 1F28 | A2F2 |
+| 6 (VHF LO) | 1001 | 3B14 | 37D0 | 1F48 | 32F2 |
+| 7 | 1000 | EC4F | 375C | 1F30 | 92F2 |
+| 8 (UHF LO) | 1000 | 9D8A | 38D0 | 1F50 | 22F2 |
+
+FD6818 and 0x7813 LOs end their init with 0x40 = 0, 0x51 = 0x1050, 0x73 = 0x4E52, 0x28 = 0x003F, GPIO3 and GPIO4 low.
+The AT1141's GPIO3 is the same RX band flag. The 2022 builds use 0xC1FE for an LO's output and 0xC3FE for a tone.
+
+**Sub-audio detect.** The FD6818 has no found bits in 0x0C. The vendor firmware routes the code stream to GPIO0 (output
+select 5), which reaches PTB27, and decodes it in software. RadioFoundry selects the chip's own compare result instead
+(output select 4) and reads PTB27 as the tone-heard flag (`PIN_RF_CSS`): high = the tone or code set for receive is
+heard (untested).
+
+**PA gain.** 0x09B (6.3) holds the FD6818's PA gain per point. The value for a frequency is the entry of the last
+calibration point at or below it (point 1's below the first), not interpolated, capped at 15. The BK4819 batch doesn't
+use it.
 
 ## 5. Display
 
@@ -554,7 +651,7 @@ upper edge belongs to the next segment.
 | 0x045 | 1 + 8 × u16 | **PA drive, power level 1** (H, unverified), per point. DAC B value: the APC ramp's end value | TX power |
 | 0x056 | 1 + 8 × u16 | **PA drive, every other power level** (L, unverified), per point | TX power |
 | 0x067 | 1 + 8 × (u8, u8) + 1 | Modulation, per point. The first byte of each pair goes to the modem (6.4). The second is read but then cleared before use | TX modulation level |
-| 0x09B | 1 + 8 × u8 | A per-point value capped at 15, written into the RF chip driver's state (use not traced). The leading byte is read on its own and kept with the channel's RF parameters | ? |
+| 0x09B | 1 + 8 × u8 | Per point, capped at 15: the FD6818's PA gain (register 0x28), looked up, not interpolated (4.8). The leading byte is read on its own and kept with the channel's RF parameters | FD6818 batches: PA gain |
 | 0x0AE | 1 + 8 × (u16, u16) | TX timing in µs, per point: the delay between tuning the transmitter and selecting the PA, and the delay at TX end before the ramp down. A value above 2000 counts as 0 | TX switching |
 | 0x0CF | 1 + 8 × 9 × u16 | **Squelch**, per segment: one value for each squelch level 1–9 (level 0 doesn't use the table) | RF chip squelch, 6.4 |
 | 0x160, 0x1B1 | 1 + 8 × 5 × u16 each | Five values for each of 8 ranges: up to point 2, then between points (2–3 … 7–8), then above point 8. No interpolation. Two variants chosen by channel mode (use not traced) | ? |
@@ -745,7 +842,7 @@ static analysis; UART DMA set up at run time was not traced.
 |---|---|
 | Version in RAM | The `.data` copy of the version string. The boot code finds its first `.` and writes the main chip's letter 2 bytes after it and the LO's 3 bytes after it (4.2). Six words cover the string and its terminator |
 | Identify | The vendor programming software sends `Flash Read ` + u32 BE 0x3C + u32 BE 0x37 + 12 zero bytes; the IAP probe's 19-byte `Flash Read ` + 0 + 1 has the same prefix. The application answers `  Read_2M_`, a NUL, a few binary bytes, then the RAM version string, its build date and time and `+DRS-300UV+136-480MHZ+`. The loader's answer starts `Read_2M_V1.08B` instead. The screen then shows "Flash Read" and the console stays silent until a power cycle. Read only (measured with the vendor software on a PRO; the reply to the 19-byte form is unverified) |
-| Variants in the registry | `[hardware] variants` in `board.toml`: DBB supported; D64, D66 and D6T run the same image at `bring-up` (the FD6818 has no driver yet) |
+| Variants in the registry | `[hardware] variants` in `board.toml`: DBB supported; D64, D66 and D6T run the same image at `testing`: their chips are driven (4.8), untested on a radio |
 | Web flasher | Console answers on a build with a proven stub load: the variant from `ram`, then the backup and install. Other builds: the variant from `ram`; an unknown build, or a `ram` that doesn't read as a version: found by reading 0x18000A00-0x18000BFF (never the identify, which silences the console). The page then offers three ways: try the stub load anyway (refused before any write unless the build's hijack word, table above, holds an application address; a failure is reported as expected, and a power cycle recovers it), update the vendor firmware to a proven build first, or install through the IAP loader without a backup. A backup made by the try offers its program memory read to the project with a problem report, from the install's check step and the backup task's done screen alike. Console silent: the identify. Only the IAP loader answers: the user picks the variant from the Version screen, or says it can't be read. A variant no image runs stops an install before any write; the backup task goes on, since it only reads |
 
 ## 8. Codec
@@ -894,7 +991,7 @@ State on a radio:
 | GPS | `CAP_GPS`, reported once the module is heard. `platform/hrc7000/gps_hrc.c` (shared with the DM-32UV, [hardware-dm32.md](hardware-dm32.md) 12) powers it in `board_init`, listens 5 s on UART2 for one checksum-valid sentence, feeds every sentence to the APRS position source, and powers it off again when nothing is heard. Once heard, the module is powered only while Settings > Location > GPS is on (`board_t.gps_enable` = `hrc_gps_enable`, applied at start-up and on each change). The diagnostics page line `gps yes` (or `gps no`) `GOOD/BAD bBYTES on|off` (after the storage lines) shows valid and bad sentences, bytes received and whether the module is powered now. Run on the radio 2026-10-17: module heard, `gps yes 171/0 b7735` (171 good, 0 bad sentences); the switch turned it off and on again live, and the setting held across a restart. `b0` with the module fitted would mean the RXD mux (PTA11) or the power level is wrong |
 | SFR | `CONFIG_SFR`, `CONFIG_SFR_DUALPATH_RX` and `CONFIG_SFR_CWID` follow the default (on). Standalone SFR on the SDR bench (2026-10-25, 461.0875 MHz, CC 2): `test_sfr_standalone.py` repeater quality (0 inbound frames lost per 72, 170-194 bits), TX inhibit, CW ID and user receive modes pass; dual-path RX receive mode not run on air. Burst timing and measurements: 4.5 |
 | Left off | `CONFIG_APRS_RX` and `CONFIG_APRS_IGATE` (no FM receive PCM), USB and USB network (no data port), broadcast FM (not wired), air band AM (no air band receive), `FONT_XL` and `AUDIO_PROBE` |
-| Older batches (FD6818 main) | Not driven (the chips don't identify as BK4819) |
+| Older batches (FD6818 main) | Driven from the same image (4.8): the chips are identified at start-up and the diagnostics page shows the batch code. Untested on a radio |
 
 **DMR receive check** (passed on the owner's radio, 4.5): build with the vendor firmware file in `codecs/` and `make BOARD=db25d`; flash `rfoundry_db25d_codec.bin`; with a DMR repeater or the SDR bench's DMR source on a channel of the zone, read the
 diagnostics page. In order: the codec line shows `db25d-...` and a non-zero tag; the sync counters move (the AF phase range isn't a level check on this board, 4.5; if nothing syncs, try the AF gain
@@ -914,7 +1011,7 @@ carrier: try `DB25D_DMR_TX_INVERT=1`. Low deviation: compare the page's modulati
 | 1 | Firmware version in Device Info (expect 909E.DBB...) | Yes, menu only |
 | 2 | Program flash part and size; JTAG and UART0 pads | Yes, photos of the control board |
 | 3 | Panel size and which bus mode the PRO uses (ADC 2) | Yes |
-| 4 | Calibration page: the 0x09B / 0x160 / 0x1B1 / 0x2xx items (6.3). Real values are known: 0x045 is the higher DAC value, so the high level; that this is more output needs a power measurement | A power meter or the SDR bench |
+| 4 | Calibration page: the 0x160 / 0x1B1 / 0x2xx items (6.3). Real values are known: 0x045 is the higher DAC value, so the high level; that this is more output needs a power measurement | A power meter or the SDR bench |
 | 5 | Can the vendor CPS read back the calibration page (a backup path)? | Yes, serial capture of a CPS read |
 | 6 | Any model check in the IAP loader (the protocol is in 7) | A foreign image sent through it |
 | 7 | Hand-mic key protocol on RJ-45 pin 2 | Yes, logic analyzer |
@@ -926,3 +1023,4 @@ carrier: try `DB25D_DMR_TX_INVERT=1`. Low deviation: compare the page's modulati
 | 13 | The modem's input is the main chip's AF output (4.5, decodes on the radio). The voice output's speaker route (PTC18 low) still needs a listen | Yes, a listen |
 | 14 | Answered (4.5): single-point modulation on the TCXO, the per-burst sequence, decoded on the SDR bench; deviation 101 % of nominal at 461.4625 MHz | - |
 | 15 | The 020 codec's windows, entry points and a RAM layout for its run address (a separate compile at 0x030C142C, 8.1) | A 020 vendor firmware file, or a read of 0x0300C000-0x0300CFFF |
+| 16 | The FD6818 batches (4.8) on a radio: FM receive and transmit, the PTB27 tone-heard flag, the PA gain from 0x09B, DMR | Yes, a D64, D66 or D6T radio |

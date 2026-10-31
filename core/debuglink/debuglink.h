@@ -136,13 +136,17 @@ void debuglink_crash_service(void);
 size_t debuglink_cmd_rx2(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_rx2_service(void);
 
+// The DMR ID database (debuglink_iddb.c, docs/spec/debuglink.md 3.23): DL_CMD_IDDB, id u32 -> format, records, found,
+// text. Without CONFIG_DMR, unavailable
+size_t debuglink_cmd_iddb(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+
 // The hardware watchdog (debuglink_watchdog.c, docs/spec/debuglink.md 3.21): the watchdog section, DL_CMD_WATCHDOG's
 // bench tests and the service hook that starts them after the reply. Without CONFIG_WATCHDOG: "watchdog.built=0",
 // unavailable, empty
 void debuglink_view_watchdog(dl_text_t *t);
 size_t debuglink_cmd_watchdog(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_watchdog_service(void);
-// The board's hardware options (debuglink_hwopt.c, docs/spec/debuglink.md 3.23, hal_hwopt.h): DL_CMD_HWOPT
+// The board's hardware options (debuglink_hwopt.c, docs/spec/debuglink.md 3.25, hal_hwopt.h): DL_CMD_HWOPT
 size_t debuglink_cmd_hwopt(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 
 // The debug link's own counters: frames answered, bad CRC, too long, timed out (debuglink.c)
