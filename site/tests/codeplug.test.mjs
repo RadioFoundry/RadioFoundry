@@ -350,7 +350,10 @@ test("an ID database goes to the radio and nothing past its room", async () => {
 	const db = radio.writes.filter(([a]) => a >= iddb.AREA1);
 	assert.deepEqual(db[0], [iddb.AREA1, 32], "the header erased first");
 	assert.ok(db[db.length - 1][0] < iddb.AREA1 + 4096, "the header's sector last");
-	const back = await tr.read();
+	const steps = [];
+	const back = await tr.read({ progress: (n, total) => steps.push([n, total]) });
+	assert.ok(steps.every(([n, t], i) => t === steps[0][1] && (!i || n >= steps[i - 1][0])), "CPS read progress");
+	assert.equal(steps.at(-1)[0], steps[0][1]);
 	assert.equal(iddb.read(back.bytes).length, 20000);
 	assert.deepEqual(iddb.read(back.bytes)[19999], { id: 3119999, text: "W19999 Name" });
 	// the codeplug first, the database after it (a read that offers the database): the same bytes
@@ -477,7 +480,11 @@ test("a format C database written fast is read by the radio; an older radio gets
 	const s4 = simRadioFrom(flash);
 	const tr4 = new CpsSerial(s4);
 	await tr4.identify(RADIOS);
-	const whole = await tr4.read();
+	// one pass: the total known from the start, never going back
+	const steps = [];
+	const whole = await tr4.read({ progress: (n, total) => steps.push([n, total]) });
+	assert.ok(steps.length > 10 && steps.every(([n, t], i) => t === steps[0][1] && n <= t && (!i || n >= steps[i - 1][0])), "fast read progress");
+	assert.equal(steps.at(-1)[0], steps[0][1]);
 	const part = await tr4.read({ iddb: false });
 	assert.ok(tr4.iddbBytes(part) > 0);
 	await tr4.readIddb(part);

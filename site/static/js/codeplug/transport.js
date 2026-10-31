@@ -192,6 +192,11 @@ export class CpsSerial {
 		return this.fastOr(() => this.fastReadIddb(img, { progress, signal, cache }), () => this.cpsReadIddb(img, { progress, signal }));
 	}
 
+	// What a read of the codeplug without the database reads, in bytes
+	get codeplugBytes() {
+		return REGIONS.reduce((n, [a, b]) => n + b - a, 0);
+	}
+
 	// What readIddb() reads, in bytes (0 without a database)
 	iddbBytes(img) {
 		return readHeader(img.bytes) ? this.iddbRest(img).reduce((n, [a, b]) => n + b - a, 0) : 0;
@@ -202,28 +207,20 @@ export class CpsSerial {
 		return iddbRanges(img).map(([a, b]) => [Math.max(a, IDDB_HEADER[1]), Math.min(b, this.end)]).filter(([a, b]) => b > a);
 	}
 
+	// The database's header first, so the progress covers the whole read, database too
 	async cpsRead({ iddb, progress, signal }) {
-		const img = CodeplugImage.from(new Uint8Array(0));
-		const ranges = [...REGIONS, IDDB_HEADER];
-		let total = ranges.reduce((n, [a, b]) => n + b - a, 0), done = 0;
-		const get = async (a, b) => {
-			const r = await this.link.cpsDump(1, this.base + a, b - a, {
-				chunk: this.chunk, signal, progress: (n) => progress(done + n, total),
-			});
-			if (!r.complete) throw new TransportError("read_refused", { addr: a });
-			img.ensure(b);
-			img.bytes.set(r.data, a);
-			done += b - a;
-		};
-		for (const [a, b] of ranges) await get(a, b);
-		if (iddb) await this.cpsReadIddb(img, { signal, progress: (n, all) => progress(total + n, total + all) });
-		return img;
+		const img = await this.cpsGet(CodeplugImage.from(new Uint8Array(0)), [IDDB_HEADER], { signal });
+		return this.cpsGet(img, [...REGIONS, ...(iddb ? this.iddbRest(img) : [])], { signal, progress });
 	}
 
-	async cpsReadIddb(img, { progress, signal }) {
-		const parts = this.iddbRest(img), total = parts.reduce((n, [a, b]) => n + b - a, 0);
+	cpsReadIddb(img, { progress, signal }) {
+		return this.cpsGet(img, this.iddbRest(img), { progress, signal });
+	}
+
+	async cpsGet(img, ranges, { signal, progress = () => {} }) {
+		const total = ranges.reduce((n, [a, b]) => n + b - a, 0);
 		let done = 0;
-		for (const [a, b] of parts) {
+		for (const [a, b] of ranges) {
 			const r = await this.link.cpsDump(1, this.base + a, b - a, {
 				chunk: this.chunk, signal, progress: (n) => progress(done + n, total),
 			});
@@ -233,6 +230,12 @@ export class CpsSerial {
 			done += b - a;
 		}
 		return img;
+	}
+
+	// The ID database's header alone (iddbBytes() then says what reading the rest takes)
+	async readIddbHeader({ signal } = {}) {
+		const img = CodeplugImage.from(new Uint8Array(0));
+		return this.fastOr(() => this.fastBlocks(img, [IDDB_HEADER], { signal }).then(() => img), () => this.cpsGet(img, [IDDB_HEADER], { signal }));
 	}
 
 	// What a write sends. Fast: the blocks whose CRC on the radio differs from want's (have: the radio's bytes as last
@@ -340,7 +343,7 @@ export class CpsSerial {
 	// --- The fast protocol (cps-fast.md) ---
 
 	// The blocks of ranges into img: blank ones filled, ones whose CRC matches cache copied from it, the rest read
-	async fastBlocks(img, ranges, { cache, progress, signal, done = 0, total = 0 }) {
+	async fastBlocks(img, ranges, { cache, progress = () => {}, signal, done = 0, total = 0 }) {
 		const blocks = blocksOf(ranges);
 		const sums = await this.fastSums(blocks.map(([a]) => a));
 		for (const [a] of blocks) {
@@ -372,18 +375,15 @@ export class CpsSerial {
 	// header): a later read or write matches a block's CRC against it. Nothing writes them back
 	async fastRead({ iddb, progress, signal, cache }) {
 		const img = CodeplugImage.from(new Uint8Array(0));
-		const ranges = [...REGIONS, IDDB_HEADER];
-		const total = blocksOf(ranges).length * BLOCK;
-		await this.fastBlocks(img, ranges, { cache, progress, signal, total });
-		if (iddb && readHeader(img.bytes)) {
-			await this.fastReadIddb(img, { cache, signal, progress: (n, all) => progress(total + n, total + all) });
-		}
-		return img;
+		await this.fastBlocks(img, [IDDB_HEADER], { cache, signal });
+		return this.fastReadIddb(img, { cache, progress, signal, regions: true, iddb });
 	}
 
-	// Whole blocks after the header's, which the codeplug's read took whole
-	async fastReadIddb(img, { cache, progress, signal }) {
-		const ranges = blocksOf(this.iddbRest(img)).filter(([a]) => a >= IDDB_HEADER[0] + BLOCK).map(([a]) => [a, a + BLOCK]);
+	// Whole blocks of the database after its header's block (read whole with the header), and with regions the
+	// codeplug's too, in one pass
+	async fastReadIddb(img, { cache, progress, signal, regions = false, iddb = true }) {
+		const ranges = blocksOf([...(regions ? REGIONS : []), ...(iddb ? this.iddbRest(img) : [])])
+			.filter(([a]) => a < IDDB_HEADER[0] || a >= IDDB_HEADER[0] + BLOCK).map(([a]) => [a, a + BLOCK]);
 		await this.fastBlocks(img, ranges, { cache, progress, signal, total: ranges.length * BLOCK });
 		return img;
 	}

@@ -620,11 +620,11 @@ function convertDue(radio) {
 // A read of the ID database expected to take this long or longer (seconds) is offered, not made
 const IDDB_ASK = 20;
 
-function askIddb(c, db, bytes, seconds) {
+function askIddb(c, db, bytes, seconds, rest) {
 	return new Promise((done) => {
 		let yes = false;
 		dialog(t("editor.iddb_read.title"), [h("p", {}, t("editor.iddb_read.text", { radio: c.radio.name, n: db.count.toLocaleString(),
-			size: kb(bytes), time: duration(seconds) })), h("p", {}, t("editor.iddb_read.skip_help"))],
+			size: kb(bytes), time: duration(seconds), rest: duration(rest) })), h("p", {}, t("editor.iddb_read.skip_help"))],
 		t("editor.iddb_read.read"), (close) => {
 			yes = true;
 			close();
@@ -674,21 +674,21 @@ async function readRadio() {
 			const c = await connect();
 			if (!c) return;
 			await onLine(c);
-			// the codeplug, then the ID database: that can be megabytes, so a long read of it is offered, not made
+			// the ID database can be megabytes: its header first, and a long read of it offered, not made. Then one read
+			// (one progress bar) of the codeplug and, when wanted, the database
 			const cached = !!c.image && c.dbKnown;
+			const head = await c.transport.readIddbHeader();
+			const db = dbHeader(head.bytes);
+			const dbBytes = c.transport.iddbBytes(head);
+			const rate = c.rate || (c.cable ? 9000 : 30000);
+			const seconds = cached ? 0 : Math.ceil(dbBytes / rate);
+			const readDb = dbBytes > 0 && (seconds < IDDB_ASK || await askIddb(c, db, dbBytes, seconds, c.transport.codeplugBytes / rate));
 			const t0 = performance.now();
 			let got = 0;
 			const img = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
-				c.transport.read({ iddb: false, signal, cache: c.image, progress: (n, total) => bar.set(got = n, total) }));
+				c.transport.read({ iddb: readDb, signal, cache: c.image, progress: (n, total) => bar.set(got = n, total) }));
+			// how fast this radio and cable read, for the next estimate (a read from the cache says nothing)
 			if (!c.image) c.rate = got / Math.max(0.25, (performance.now() - t0) / 1000);
-			const dbBytes = c.transport.iddbBytes(img);
-			const seconds = cached || !c.rate ? 0 : Math.ceil(dbBytes / c.rate);
-			const db = dbHeader(img.bytes);
-			const readDb = dbBytes > 0 && (seconds < IDDB_ASK || await askIddb(c, db, dbBytes, seconds));
-			if (readDb) {
-				await withProgress(t("editor.reading_iddb", { radio: c.radio.name }), (bar, signal) =>
-					c.transport.readIddb(img, { signal, cache: c.image, progress: (n, total) => bar.set(n, total) }));
-			}
 			diag.note("read done", { bytes: img.bytes.length, iddb: readDb, dbBytes, seconds });
 			c.image = img.clone();
 			if (db && !readDb) {
