@@ -34,6 +34,7 @@ static struct {
 	uint32_t busy_after;		// polls a reset or page read stays busy
 	bool stuck_busy, bus_fail, floating;
 	uint8_t id[2];
+	bool gd;			// GigaDevice: read from cache takes a 3-byte address; ecc[] holds its 3-bit field
 	uint8_t lock, config;		// features 0xA0, 0xB0
 	uint8_t id_page[PAGE];		// what page 0 reads with IDR_E (0xB0 bit 6) set
 	uint16_t next[BLOCKS];		// the next page that may be programmed in each block
@@ -164,7 +165,14 @@ static uint8_t clock_byte(uint8_t in)
 		}
 		return 0x00;
 	case 0x03:
-		if (i >= 4) {
+		if (chip.gd && i >= 5) {
+			CHECK(chip.hdr[1] == 0x00);
+			uint32_t col = (uint32_t)(chip.hdr[2] & 0x1F) << 8 | chip.hdr[3];
+			uint32_t at = col + (i - 5);
+			CHECK((chip.status & SPI_NAND_STATUS_OIP) == 0);
+			return at < sizeof(chip.cache) ? chip.cache[at] : 0xFF;
+		}
+		if (!chip.gd && i >= 4) {
 			uint32_t col = (uint32_t)(chip.hdr[1] & 0x1F) << 8 | chip.hdr[2];
 			uint32_t at = col + (i - 4);
 			CHECK((chip.status & SPI_NAND_STATUS_OIP) == 0);
@@ -318,6 +326,31 @@ static void test_ecc(void)
 	chip.ecc[8] = SPI_NAND_ECC_FAILED;
 	uint8_t span[PAGE + 4];
 	CHECK(!spi_nand_read(&n, 7 * PAGE + 4, span, sizeof(span)));
+}
+
+// GigaDevice parts: the read from cache's 3-byte address and the 3-bit ECC field (0 clean, 7 uncorrectable)
+static void test_gigadevice(void)
+{
+	chip_reset();
+	chip.gd = true;
+	chip.id[0] = SPI_NAND_MFR_GIGADEVICE;
+	chip.id[1] = 0x52;
+	spi_nand_t n = fresh();
+	CHECK(spi_nand_probe(&n) && n.manufacturer == SPI_NAND_MFR_GIGADEVICE);
+	uint8_t buf[8];
+
+	CHECK(spi_nand_read(&n, 2 * PAGE + 9, buf, sizeof(buf)) && buf[0] == chip.array[2][9] &&
+	      buf[7] == chip.array[2][16] && n.ecc == SPI_NAND_ECC_OK);
+	chip.array[3][PAGE + 1] = 0xA5;
+	CHECK(spi_nand_read_page(&n, 3, PAGE + 1, buf, 1) && buf[0] == 0xA5);
+
+	chip.ecc[5] = 3;	// corrected, 3 bits
+	CHECK(spi_nand_read(&n, 5 * PAGE, buf, 4) && n.ecc == SPI_NAND_ECC_CORRECTED && n.corrected == 1);
+	chip.ecc[6] = 2;	// on a 2-bit part this would be the uncorrectable code
+	CHECK(spi_nand_read(&n, 6 * PAGE, buf, 4) && n.ecc == SPI_NAND_ECC_CORRECTED && n.corrected == 2);
+	chip.ecc[7] = 7;
+	CHECK(!spi_nand_read(&n, 7 * PAGE, buf, 4) && n.ecc == SPI_NAND_ECC_FAILED && n.cached == SPI_NAND_NO_PAGE);
+	CHECK(chip.violations == 0);
 }
 
 static void test_bad_blocks(void)
@@ -475,6 +508,7 @@ int main(void)
 	test_probe();
 	test_read();
 	test_ecc();
+	test_gigadevice();
 	test_bad_blocks();
 	test_program();
 	test_uid();

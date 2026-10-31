@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""f4stub: the host side of the STM32F4 flash stub (every STM32F4 board). docs/spec/stub-stm32f4.md.
+"""f4stub: the host side of the Cortex-M flash stubs that share the protocol engine (stub/common): the STM32F4 stub
+(stub/stm32f4, docs/spec/stub-stm32f4.md), the GD32F30x stub (stub/gd32f30x, docs/spec/stub-gd32f30x.md) and the
+AT32F43x stub (stub/at32f43x, docs/spec/stub-at32f43x.md).
 
-The stub (stub/stm32f4, built with `make -C stub/stm32f4`) is loaded by a running RadioFoundry built with CONFIG_STUB_ENTRY=y
+A stub (built with `make -C stub/<target>`) is loaded by a running RadioFoundry built with CONFIG_STUB_ENTRY=y
 through the debug link's STUB command, over the radio's USB serial port. It then answers on the same port (or, if it
-had to enumerate again, on a port with the same serial number). stubtool.py hands STM32 radios to this module:
+had to enumerate again, on a port with the same serial number). stubtool.py hands the radios in BOARDS to it:
 
     stubtool.py PORT --rfoundry-enter --write-app build/dm1701/rfoundry_dm1701.bin   install a build
     stubtool.py PORT --rfoundry-enter --write-app build/dm1701/rfoundry_dm1701_codec.bin   a build merged with the codec
@@ -18,21 +20,26 @@ had to enumerate again, on a port with the same serial number). stubtool.py hand
     stubtool.py PORT --attach --board md380 --boot reset                  restart into the firmware
     f4stub.py --self-test                                                 against a simulated radio, no hardware
     f4stub.py --embed build/stub-stm32f4/f4stub.bin                       put a new stub build into this file
+    f4stub.py --embed build/stub-gd32f30x/gd32stub.bin                    (each target's image has its own place)
+    f4stub.py --embed build/stub-at32f43x/at32stub.bin
     f4stub.py --check-embedded build/stub-stm32f4/f4stub.bin              exit 1 when the build differs from it
 
-The tool sends the stub embedded below (checked by its SHA-256), so the host tools and the web flasher send the same
-bytes; `--rfoundry-stub FILE` sends another build instead. After a change to stub/stm32f4, rebuild and run --embed; CI
-fails while the embedded copy and a fresh build differ.
+The tool sends the stubs embedded below (checked by their SHA-256), so the host tools and the web flasher send the same
+bytes; `--rfoundry-stub FILE` sends another build instead. After a change to a stub, rebuild and run --embed; CI fails
+while an embedded copy and a fresh build differ.
 
 Framing and the debug link loader are stubtool.Radio's; what differs is here: the ops (ERASE / PROGRAM / RESET are
-new, SUMS and READ take a flash address), 4 KB blocks inside coarse erase sectors (16 to 128 KB), the sector 3
-interlock and the update order that goes with it, and the bytes a sector shares with other data, which are read back
-and kept (no radio has such a sector since the codec moved).
+new, SUMS and READ take a flash address), 4 KB blocks inside the target's erase sectors, the interlock on the sector
+that holds the application base and the update order that goes with it, and the bytes a sector shares with other data,
+which are read back and kept (no radio has such a sector since the codec moved).
 
-One stub image serves every radio. The board facts (SPI flash wiring, crystal, bootloader end) come from the board
-registry (board.toml [flash.stub], pins.h, board.mk; tools/boards.py) into BOARDS below and go to the stub as a CONFIG
-record (config_record) right after HELLO; the stub writes nothing until it has one, and the
-tool checks its echo in the next HELLO. The board comes from the running RadioFoundry's VERSION reply, or from --board.
+The target (TARGETS) is a property of the image and of the chip, never of a radio: an image says which it is by its
+header's magic, a running stub by HELLO's name, and a board by its platform's stub (platform.toml stubs). One image
+per target serves every radio on it. The board facts (bootloader end; on the STM32F4 the SPI flash wiring and the
+crystal) come from the board registry (board.toml [flash.stub], pins.h, board.mk; tools/boards.py) into BOARDS below
+and go to the stub as a CONFIG record (config_record) right after HELLO; the stub writes nothing until it has one, and
+the tool checks its echo in the next HELLO. The board comes from the running RadioFoundry's VERSION reply, or from
+--board.
 """
 import base64
 import hashlib
@@ -139,8 +146,168 @@ F4STUB_B64 = (
     "FsLzUzGIXShD7C2oH4pF7NsqxKZJEPu1GrEPJkAfFFkc+WkJsf8PJcr1zw=="
 )
 # --- F4STUB end
+# --- GDSTUB begin (f4stub.py --embed rewrites everything up to the end marker)
+GDSTUB_SHA256 = "25fd5365e30b63de11e8eb4f7e020228de562a6bf6850c1bee0615eb10c6fc1b"
+GDSTUB_B64 = (
+    "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"
+    "/eFPgdD/AgG6qeg="
+)
+# --- GDSTUB end
+# --- ATSTUB begin (f4stub.py --embed rewrites everything up to the end marker)
+ATSTUB_SHA256 = "6c63a2288bec52ae49a6eb5dccfb09a4909367d5c443f71e5d18c1a1852c829f"
+ATSTUB_B64 = (
+    "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"
+)
+# --- ATSTUB end
 
-MAGIC = 0x46345342                     # 'F4SB': ERASE and RESET (stub/stm32f4/f4stub.h)
+MAGIC = 0x46345342                     # 'F4SB': the STM32F4 stub's ERASE and RESET (stub/stm32f4/f4stub.h)
 OP_HELLO, OP_PEEK, OP_SUMS, OP_READ, OP_RESET, OP_ERASE, OP_PROGRAM = 0x01, 0x02, 0x07, 0x09, 0x0D, 0x10, 0x11
 OP_XERASE, OP_XPROGRAM, OP_CONFIG = 0x12, 0x13, 0x14
 OP_SREAD, OP_SWRITE = 0x15, 0x16       # the SPI flash's security registers (stub version 5)
@@ -166,26 +333,110 @@ ERASE_TIMEOUT = 6.0                    # 128 KB: 2 s worst case in the data shee
 RUN_ADDR = 0x20000000                  # the stub's link address, which RadioFoundry reports as STUB INFO's load_addr
 SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the stack use all of it after the jump
 
+
+
+def f405_sectors(flash_kb=1024):
+    """[(index, addr, size)] of a single-bank STM32F4: 4 x 16 KB, 64 KB, then 128 KB each."""
+    out = []
+    addr = FLASH_BASE
+    i = 0
+    while addr < FLASH_BASE + flash_kb * 1024 and i < 12:
+        size = 0x4000 if i < 4 else (0x10000 if i == 4 else 0x20000)
+        out.append((i, addr, size))
+        addr += size
+        i += 1
+    return out
+
+
+GD32_SECTOR, GD32_SECTORS = 0x1000, 256  # stub/gd32f30x/gd32stub.h: 4 KB logical sectors over the first 1 MB
+
+
+def gd32_sectors(flash_kb=1024):
+    """[(index, addr, size)] the GD32F30x stub's engine sees: 4 KB sectors over the chip's flash, cut to 1 MB (ERASE
+    carries the sector as one byte; docs/spec/stub-gd32f30x.md 2)."""
+    n = min(flash_kb * 1024 // GD32_SECTOR, GD32_SECTORS)
+    return [(i, FLASH_BASE + i * GD32_SECTOR, GD32_SECTOR) for i in range(n)]
+
+
+AT32_SECTOR, AT32_SECTORS = 0x1000, 256  # stub/at32f43x/at32stub.h: 4 KB logical sectors over the first 1 MB
+
+
+def at32_sectors(flash_kb=1024):
+    """[(index, addr, size)] the AT32F43x stub's engine sees: 4 KB sectors over the chip's flash, cut to 1 MB (ERASE
+    carries the sector as one byte; the stub erases the 2 KB or 4 KB physical sectors each holds;
+    docs/spec/stub-at32f43x.md 2)."""
+    n = min(flash_kb * 1024 // AT32_SECTOR, AT32_SECTORS)
+    return [(i, FLASH_BASE + i * AT32_SECTOR, AT32_SECTOR) for i in range(n)]
+
+
+class Target:
+    """A stub target: its image (embedded in this file as <var>_B64), the header that names it, its HELLO name and op
+    magic, the protocol versions, the flash map its engine sees, the board record CONFIG takes, and where RadioFoundry
+    runs the image (run, the link address; ram, what the stub may use from there, its stack top included)."""
+
+    def __init__(self, key, label, hello, magic, hdr_magic, hdr_min_version, version, config_version, rec_len, run, ram,
+                 sectors, var, watchdog):
+        self.key, self.label, self.hello, self.magic = key, label, hello, magic
+        self.hdr_magic, self.hdr_min_version, self.version, self.config_version = (hdr_magic, hdr_min_version, version,
+                                                                                    config_version)
+        self.rec_len, self.run, self.ram, self.sectors, self.var, self.watchdog = (rec_len, run, ram, sectors, var,
+                                                                                    watchdog)
+
+    @property
+    def stub_dir(self):
+        return "stub/" + self.key
+
+
+# The targets, by their directory under stub/ (a platform.toml stubs entry names it). The STM32F4 header's version and
+# feed flag: a watchdog build of RadioFoundry enters only an image of version 3 or later with the flag; the GD32F30x
+# and AT32F43x headers exist from their first version (stub/*/..._header.h)
+TARGETS = {
+    "stm32f4": Target("stm32f4", "STM32F4", b"F4STUB", MAGIC, 0x48533446, 3, VERSION, CONFIG_VERSION, REC_LEN, RUN_ADDR,
+                      SRAM_SIZE, f405_sectors, "F4STUB", "IWDG"),
+    "gd32f30x": Target("gd32f30x", "GD32F30x", b"GDSTUB", 0x47445342, 0x48534447, 1, 1, 1, 8, 0x20000000, 32 * 1024,
+                       gd32_sectors, "GDSTUB", "FWDGT"),
+    "at32f43x": Target("at32f43x", "AT32F43x", b"ATSTUB", 0x41545342, 0x48535441, 1, 1, 1, 8, 0x20000000, 32 * 1024,
+                       at32_sectors, "ATSTUB", "WDT"),
+}
+
+
+def board_target(b):
+    """The target of a registry board: the one its platform builds (platform.toml stubs), None if none."""
+    return next((k for k, t in TARGETS.items() if t.stub_dir in b.platform_stubs), None)
+
+
 # Flash the firmware owns on each radio: the application region of its linker script (the board registry,
 # tools/boards.py). Everything else in a sector that is rewritten is read back from the radio and written again
 # unchanged (no radio shares a sector with the codec any more, since it moved; the rule stays for one that does).
 # Sectors with no owned byte are never erased, except "codec": the flash from the application's end to the end of
-# flash, the codec's own sectors, written only from an image merged with the codec (docs/spec/codec-placement.md),
-# which carries all of them. The radios: every board whose platform builds this stub.
+# flash, the codec's own sectors (or slot), written only from an image merged with it (docs/spec/codec-placement.md),
+# which carries all of them. The radios: every board whose platform's stub takes this tool's profiles.
 #
 # The rest of a profile is the stub's board record (record()), from the registry's [flash.stub] (tools/boards.py
-# Board.stub): "id" (echoed by HELLO), the crystal ("hse"), the bootloader's end ("boot_end"), and the SPI flash ("spi"):
-# SPI block, mode, the fastest clock, SCK / MISO / MOSI and their alternate function, the chip select, and other chip
-# selects on that bus to hold high ("idle").
+# Board.stub): "id" (echoed by HELLO), the bootloader's end ("boot_end", where the image starts), the target, and on the
+# STM32F4 the crystal ("hse") and the SPI flash ("spi"): SPI block, mode, the fastest clock, SCK / MISO / MOSI and their
+# alternate function, the chip select, and other chip selects on that bus to hold high ("idle").
 BOARDS = {b.id: {"name": b.name, "names": tuple(b.debuglink_names), "owned": [b.app_region],
-                 "codec": (b.app_region[1], b.flash_end), "id": b.stub["id"], "hse": b.stub["hse"],
-                 "boot_end": b.stub["boot_end"], "spi": b.stub["spi"], "protect": b.protect}
+                 "codec": (b.app_region[1], b.flash_end), "id": b.stub["id"], "target": board_target(b),
+                 "hse": b.stub.get("hse"), "boot_end": b.stub["boot_end"], "spi": b.stub.get("spi"),
+                 "protect": b.protect}
           for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "f4stub"}
-# The tool installs at one application base, which every profile's record must give
+
+
+def sector_of(sectors, addr):
+    """The (index, addr, size) of the sector starting at addr, or None"""
+    return next((s for s in sectors if s[1] == addr), None)
+
+
+# Every profile's image starts on a sector of its target's map above the first (the engine refuses anything else)
 for _bid, _b in BOARDS.items():
-    if _b["boot_end"] != APP_BASE:
-        raise ImportError("f4stub: the %s's image starts at 0x%08X, the stub's tools know 0x%08X only"
-                          % (_bid, _b["boot_end"], APP_BASE))
+    if _b["target"] not in TARGETS:
+        raise ImportError("f4stub: the %s's platform builds none of the stubs this tool drives (%s)"
+                          % (_bid, ", ".join(t.stub_dir for t in TARGETS.values())))
+    _s = sector_of(TARGETS[_b["target"]].sectors(1024), _b["boot_end"])
+    if _s is None or _s[0] == 0:
+        raise ImportError("f4stub: the %s's image starts at 0x%08X, not on a sector of the %s stub's map above the first"
+                          % (_bid, _b["boot_end"], TARGETS[_b["target"]].label))
 # The wiring a stub before protocol 4 has built in, as the record after its board id byte: SPI1 mode 0 at 4.5 MHz,
 # PB3-PB5 (AF5), chip select PD7, nothing held high, an 8 MHz crystal. Such a stub serves only a board whose record
 # matches it
@@ -203,7 +454,13 @@ def pin_byte(name):
 
 
 def record(b):
-    """The 24-byte board record the stub's CONFIG takes (stub/stm32f4/f4stub.h), from a profile's fields (BOARDS)"""
+    """The board record the stub's CONFIG takes, from a profile's fields (BOARDS): the GD32F30x and AT32F43x stubs' 8
+    bytes (stub/gd32f30x/gd32stub.h, stub/at32f43x/at32stub.h: board id, layout, 0, the bootloader's end) or the
+    STM32F4 stub's 24 (stub/stm32f4/f4stub.h)"""
+    if b.get("target", "stm32f4") != "stm32f4":
+        rec = bytes([b["id"], 1, 0, 0]) + b["boot_end"].to_bytes(4, "big")
+        assert len(rec) == TARGETS[b["target"]].rec_len
+        return rec
     spi = b["spi"]
     if spi and len(spi["idle"]) > 2:
         raise ValueError("the board record holds at most two chip selects to keep high")
@@ -225,7 +482,7 @@ TEST_BOARD = "spi2test"
 
 def test_board():
     return {"name": "SPI2 test board", "names": (), "owned": [(APP_BASE, 0x08080000)], "codec": (0x08080000, 0x08100000),
-            "id": 0xFE, "hse": 8000000, "boot_end": APP_BASE,
+            "id": 0xFE, "target": "stm32f4", "hse": 8000000, "boot_end": APP_BASE,
             "spi": {"bus": 2, "mode": 3, "hz": 4500000, "sck": "PB13", "miso": "PB14", "mosi": "PB15", "af": 5,
                     "cs": "PB12", "idle": ["PD14"]}}
 
@@ -235,8 +492,9 @@ def config_record(board_id):
     return record(BOARDS[board_id])
 
 
-def board_by_id(num):
-    return next((bid for bid, b in BOARDS.items() if b["id"] == num), None)
+def board_by_id(num, target=None):
+    """The board whose stub id is num (among target's boards when given: ids are unique per tool, the check is cheap)"""
+    return next((bid for bid, b in BOARDS.items() if b["id"] == num and target in (None, b["target"])), None)
 
 
 class F4Error(stubtool.DumpError):
@@ -315,19 +573,6 @@ class PortFollower:
         return self.serial.serial_for_url(path, self.baud, timeout=0.1)
 
 
-def f405_sectors(flash_kb=1024):
-    """[(index, addr, size)] of a single-bank STM32F4: 4 x 16 KB, 64 KB, then 128 KB each."""
-    out = []
-    addr = FLASH_BASE
-    i = 0
-    while addr < FLASH_BASE + flash_kb * 1024 and i < 12:
-        size = 0x4000 if i < 4 else (0x10000 if i == 4 else 0x20000)
-        out.append((i, addr, size))
-        addr += size
-        i += 1
-    return out
-
-
 def board_for(name):
     for bid, b in BOARDS.items():
         if name == bid or name in b["names"]:
@@ -349,26 +594,29 @@ def inside_git_tree(path):
 
 
 def load_segments(path, board_id):
-    """[(addr, bytes)] for a build: the application .bin at 0x0800C000, and for an image merged with the codec
-    (rfoundry_<board>_codec.bin, which runs to the end of flash) the codec sectors as a second segment."""
+    """[(addr, bytes)] for a build: the application .bin at the board's application base, and for an image merged with
+    the codec (rfoundry_<board>_codec.bin, which runs to the end of flash) the codec sectors as a second segment."""
     data = open(path, "rb").read()
+    base = BOARDS[board_id]["boot_end"]
     codec = BOARDS[board_id]["codec"]
-    if codec is None or APP_BASE + len(data) <= codec[0]:
-        return [(APP_BASE, data)]
-    if APP_BASE + len(data) != codec[1]:
+    if codec is None or base + len(data) <= codec[0]:
+        return [(base, data)]
+    if base + len(data) != codec[1]:
         raise F4Error("%s runs to 0x%08X: a build merged with the codec runs to 0x%08X, a plain build ends before "
-                      "0x%08X" % (path, APP_BASE + len(data), codec[1], codec[0]))
-    cut = codec[0] - APP_BASE
-    return [(APP_BASE, data[:cut].rstrip(b"\xff")), (codec[0], data[cut:])]
+                      "0x%08X" % (path, base + len(data), codec[1], codec[0]))
+    cut = codec[0] - base
+    return [(base, data[:cut].rstrip(b"\xff")), (codec[0], data[cut:])]
 
 
 class F4Radio(stubtool.Radio):
-    """A radio running the STM32F4 stub. port: a pyserial-like object; reopen: a callable that opens the port again
-    (after the stub enumerated afresh) and returns it, or None."""
+    """A radio running one of the stubs in TARGETS. port: a pyserial-like object; reopen: a callable that opens the port
+    again (after the stub enumerated afresh) and returns it, or None. target: the TARGETS key the stub to load is (set by
+    run() before the hand-over, so a wrong image is refused before it is sent), then the one HELLO names."""
 
-    def __init__(self, port, log=print, retries=3, reopen=None):
+    def __init__(self, port, log=print, retries=3, reopen=None, target=None):
         super().__init__(port, log=log, retries=retries)
         self.reopen = reopen
+        self.target = target
         self.flash_kb = 0
         self.rdp = 0
         self.adopted = False
@@ -377,13 +625,26 @@ class F4Radio(stubtool.Radio):
         self.record = b""          # the board record HELLO echoes
 
     def check_stub(self, image, load, size):
-        check_stub_fits(image, load, size)
+        check_stub_fits(image, load, size, self.target)
+
+    @property
+    def t(self):
+        """The Target of the stub this radio runs (the STM32F4 one until a HELLO or the caller says otherwise)"""
+        return TARGETS[self.target or "stm32f4"]
+
+    def sectors(self):
+        return self.t.sectors(self.flash_kb)
 
     # ---- talking to the stub
     def hello(self):
         r = self.request(OP_HELLO, retries=0, timeout=0.5)
-        if r[:6] != b"F4STUB" or len(r) < 17:
-            raise F4Error("unexpected hello %r: not the STM32F4 stub" % r[:16])
+        t = next((t for t in TARGETS.values() if r[:6] == t.hello), None)
+        if t is None or len(r) < 17:
+            raise F4Error("unexpected hello %r: not a stub this tool drives (%s)" % (
+                r[:16], ", ".join(t.label for t in TARGETS.values())))
+        if self.target is not None and t.key != self.target:
+            raise F4Error("the %s stub answers, but this radio needs the %s stub" % (t.label, self.t.label))
+        self.target = t.key
         self.version = r[6]
         self.max_payload = (r[7] << 8) | r[8]
         self.flash_kb = (r[9] << 8) | r[10]
@@ -392,11 +653,11 @@ class F4Radio(stubtool.Radio):
         self.app_base = int.from_bytes(r[13:17], "big")
         self.spi_size = int.from_bytes(r[17:21], "big") if len(r) >= 24 else 0
         self.spi_id = r[21:24].hex() if len(r) >= 24 else ""
-        if self.version >= CONFIG_VERSION:
+        if self.version >= t.config_version:
             if len(r) < HELLO_LEN or len(r) != HELLO_LEN + r[25]:
                 raise F4Error("HELLO v%d is %d bytes: malformed" % (self.version, len(r)))
             self.record = bytes(r[HELLO_LEN:])
-            self.board = board_by_id(r[24]) if r[12] & HELLO_CONFIGURED else None
+            self.board = board_by_id(r[24], t.key) if r[12] & HELLO_CONFIGURED else None
         elif self.app_base != APP_BASE:
             raise F4Error("the stub reports the application at 0x%08X, this tool knows 0x%08X" % (self.app_base, APP_BASE))
         return self.version, self.max_payload
@@ -407,10 +668,13 @@ class F4Radio(stubtool.Radio):
         already configured with exactly this record is left as it is. board_id None: keep what a configured stub has
         (an --attach without --board), else stay unconfigured (reads of the internal flash only). A stub before version
         4 (2, or 3 with only the image header) has no CONFIG: its wiring is built in (V2_WIRING), so it is refused for a
-        radio whose record differs."""
+        radio whose record differs. A board of another target than the running stub's is refused."""
         if board_id is not None and board_id not in BOARDS:
-            raise F4Error("%s is not an STM32F4 radio this stub knows (%s)" % (board_id, ", ".join(BOARDS)))
-        if self.version < CONFIG_VERSION:
+            raise F4Error("%s is not a radio these stubs know (%s)" % (board_id, ", ".join(BOARDS)))
+        if board_id is not None and BOARDS[board_id]["target"] != self.t.key:
+            raise F4Error("the %s takes the %s stub, but the %s stub runs: nothing written" % (
+                BOARDS[board_id]["name"], TARGETS[BOARDS[board_id]["target"]].label, self.t.label))
+        if self.version < self.t.config_version:
             if board_id is not None and config_record(board_id)[1:] != V2_WIRING:
                 raise F4Error("this stub (protocol %d) drives the SPI flash wiring built into it and can't serve "
                               "the %s: restart the radio and enter again" % (self.version, BOARDS[board_id]["name"]))
@@ -425,7 +689,7 @@ class F4Radio(stubtool.Radio):
             return
         self.request(OP_CONFIG, rec, retries=0)
         self.hello()
-        if self.board != board_id or self.record != rec or self.app_base != APP_BASE:
+        if self.board != board_id or self.record != rec or self.app_base != BOARDS[board_id]["boot_end"]:
             self.board = None
             raise F4Error("the stub did not take the %s's board record (HELLO echoes %s): nothing written"
                           % (BOARDS[board_id]["name"], self.record.hex() or "none"))
@@ -468,11 +732,11 @@ class F4Radio(stubtool.Radio):
                         raise F4Error("the stub's USB port did not come back within %d s: power-cycle the radio "
                                       "(RadioFoundry starts again) and check the cable" % PORT_WAIT_S)
                     time.sleep(0.3)
-        self.log("STM32F4 stub v%d: %d KB flash, RDP byte 0x%02X, %s, USB %s" % (
-            self.version, self.flash_kb, self.rdp,
+        self.log("%s stub v%d: %d KB flash, security byte 0x%02X, %s, USB %s" % (
+            self.t.label, self.version, self.flash_kb, self.rdp,
             "configured for the %s" % BOARDS[self.board]["name"] if self.board else
             ("SPI flash %d KB (JEDEC %s)" % (self.spi_size // 1024, self.spi_id) if self.spi_size else
-             "not configured yet" if self.version >= CONFIG_VERSION else "no SPI flash"),
+             "not configured yet" if self.version >= self.t.config_version else "no SPI flash"),
             "adopted from RadioFoundry" if self.adopted else "enumerated again"))
 
     def peek(self, addr, n):
@@ -484,8 +748,9 @@ class F4Radio(stubtool.Radio):
 
     def need_spi(self):
         if not self.spi_size:
-            raise F4Error("the stub found no SPI flash (stub version %d%s)" % (
-                self.version, ", not configured: pass --board" if self.version >= CONFIG_VERSION and self.board is None else ""))
+            raise F4Error("the %s stub found no SPI flash (stub version %d%s)" % (
+                self.t.label, self.version,
+                ", not configured: pass --board" if self.version >= self.t.config_version and self.board is None else ""))
 
     def sums(self, addr, count, mem=MEM_INTERNAL):
         """[(crc32, blank)] per 4 KB block from addr (internal flash, or the SPI flash from 0)."""
@@ -547,10 +812,10 @@ class F4Radio(stubtool.Radio):
             raise F4Error(str(e))
 
     def erase(self, sector):
-        sec = {i: (a, n) for i, a, n in f405_sectors(self.flash_kb)}
+        sec = {i: (a, n) for i, a, n in self.sectors()}
         if sector in sec:
             self.guard("progmem", sec[sector][0] - FLASH_BASE, sum(sec[sector]) - FLASH_BASE, "erase")
-        self.request(OP_ERASE, bytes([sector]) + MAGIC.to_bytes(4, "big"), retries=0, timeout=ERASE_TIMEOUT)
+        self.request(OP_ERASE, bytes([sector]) + self.t.magic.to_bytes(4, "big"), retries=0, timeout=ERASE_TIMEOUT)
 
     def program(self, addr, data):
         """Program data (a multiple of 4 bytes) at addr in pieces of up to 4 KB, skipping all-0xFF pieces (erased)."""
@@ -563,18 +828,38 @@ class F4Radio(stubtool.Radio):
                 self.request(OP_PROGRAM, (addr + off).to_bytes(4, "big") + piece, retries=0, timeout=2.0)
 
     def reset_chip(self):
-        """System reset: the bootloader runs, then the application (or stays in DFU if sector 3 is blank)."""
-        self.request(OP_RESET, MAGIC.to_bytes(4, "big"), retries=0)
+        """System reset: the bootloader runs, then the application (or stays in its update mode if the application's
+        first word is blank)."""
+        self.request(OP_RESET, self.t.magic.to_bytes(4, "big"), retries=0)
 
     # ---- whole-image work
-    def check_board(self):
-        if self.flash_kb != 1024:
-            raise F4Error("the chip reports %d KB of flash; every radio in BOARDS has 1024" % self.flash_kb)
+    def check_board(self, board_id=None):
+        """The flash the stub reports must hold the board's (the application and its codec), on the map of the board's
+        target"""
+        if not self.flash_kb:
+            raise F4Error("the chip reports no flash")
+        if board_id is None:
+            return
+        b = BOARDS[board_id]
+        end = max(hi for _, hi in b["owned"] + ([b["codec"]] if b["codec"] else []))
+        have = self.sectors()
+        if not have or have[-1][1] + have[-1][2] < end:
+            raise F4Error("the %s stub sees %d KB of flash; the %s's runs to 0x%08X" % (
+                self.t.label, self.flash_kb, b["name"], end))
+
+    def commit_sector(self, board_id):
+        """The sector holding the board's application base: erased first, its first word programmed last (the commit)"""
+        s = sector_of(self.sectors(), BOARDS[board_id]["boot_end"])
+        if s is None:
+            raise F4Error("the %s's application base 0x%08X is not a sector start of the %s stub's map" % (
+                BOARDS[board_id]["name"], BOARDS[board_id]["boot_end"], self.t.label))
+        return s[0]
 
     def plan(self, board_id, segments):
         """{sector index: new content} for every sector that holds firmware-owned flash, and which of those differ
         from the radio. Owned bytes come from the segments (0xFF where they have none); the rest is read back. A
         segment that covers the codec sectors whole (load_segments) makes them owned too."""
+        base = BOARDS[board_id]["boot_end"]
         owned = list(BOARDS[board_id]["owned"])
         codec = BOARDS[board_id]["codec"]
         if codec and any(a == codec[0] and len(d) == codec[1] - codec[0] for a, d in segments):
@@ -584,13 +869,13 @@ class F4Radio(stubtool.Radio):
                 raise F4Error("image data at 0x%08X..0x%08X is outside the flash the firmware owns on the %s (%s): a "
                               "wrong board?" % (addr, addr + len(data) - 1, BOARDS[board_id]["name"],
                               ", ".join("0x%08X..0x%08X" % (lo, hi - 1) for lo, hi in owned)))
-        if not segments or segments[0][0] != APP_BASE or len(segments[0][1]) < 8:
-            raise F4Error("the image must start at 0x%08X with the vector table" % APP_BASE)
+        if not segments or segments[0][0] != base or len(segments[0][1]) < 8:
+            raise F4Error("the image must start at 0x%08X with the vector table" % base)
         sp = int.from_bytes(segments[0][1][:4], "little")
         if sp & 0x2FFE0000 != 0x20000000:
             raise F4Error("the image's first word 0x%08X is not a RAM stack pointer: the bootloader would not start it" % sp)
         new, changed, kept = {}, [], {}
-        for idx, saddr, size in f405_sectors(self.flash_kb):
+        for idx, saddr, size in self.sectors():
             parts = [(max(lo, saddr), min(hi, saddr + size)) for lo, hi in owned if lo < saddr + size and hi > saddr]
             if not parts:
                 continue
@@ -611,13 +896,16 @@ class F4Radio(stubtool.Radio):
         return new, changed, kept
 
     def write_image(self, board_id, segments, backup_dir=None, progress=None):
-        """Install a build. Order (the stub's interlock enforces it): erase sector 3 first, so the bootloader stays in
-        DFU from here until the end; erase and program every other changed sector; program sector 3 except its first
-        word; verify everything by CRC; program the first word (the commit); verify it. Returns (written, unchanged)."""
-        self.check_board()
+        """Install a build. Order (the stub's interlock enforces it): erase the commit sector (the one holding the
+        application base) first, so the bootloader stays in its update mode from here until the end; erase and program
+        every other changed sector; program the commit sector except its first word; verify everything by CRC; program
+        the first word (the commit); verify it. Returns (written, unchanged)."""
+        self.check_board(board_id)
         self.need_board(board_id)
+        base = BOARDS[board_id]["boot_end"]
+        first = self.commit_sector(board_id)
         new, changed, kept = self.plan(board_id, segments)
-        sec = {i: (a, s) for i, a, s in f405_sectors(self.flash_kb)}
+        sec = {i: (a, s) for i, a, s in self.sectors()}
         for idx in changed:			# refused before the first erase, not halfway through
             self.guard("progmem", sec[idx][0] - FLASH_BASE, sum(sec[idx]) - FLASH_BASE, "erase")
         if not changed:
@@ -633,9 +921,9 @@ class F4Radio(stubtool.Radio):
                 with open(path, "wb") as f:
                     f.write(kept[idx])
                 self.log("sector %d's current content saved to %s (it holds codec bytes)" % (idx, path))
-        order = [3] + [i for i in changed if i != 3]
+        order = [first] + [i for i in changed if i != first]
         steps = len(order)
-        self.erase(3)
+        self.erase(first)
         for n, idx in enumerate(order[1:], 1):
             if progress:
                 progress(n, steps)
@@ -644,15 +932,15 @@ class F4Radio(stubtool.Radio):
             self.program(a, new[idx])
         if progress:
             progress(steps, steps)
-        self.program(APP_BASE + 4, new[3][4:])
+        self.program(base + 4, new[first][4:])
         expect = {i: new[i] for i in order}
-        expect[3] = b"\xff\xff\xff\xff" + new[3][4:]
+        expect[first] = b"\xff\xff\xff\xff" + new[first][4:]
         bad = [i for i in order if self.differs(sec[i][0], expect[i])]
         if bad:
             raise F4Error("verify before the commit: sector(s) %s differ. The application is not committed: the radio "
-                          "starts in its bootloader (DFU) until an install finishes" % bad)
-        self.program(APP_BASE, new[3][:4])
-        if self.differs(APP_BASE, new[3][:BLOCK]):
+                          "starts in its bootloader until an install finishes" % bad)
+        self.program(base, new[first][:4])
+        if self.differs(base, new[first][:BLOCK]):
             raise F4Error("the commit word did not verify")
         return len(order), len(new) - len(order)
 
@@ -669,7 +957,7 @@ class F4Radio(stubtool.Radio):
 
     def spi_erase(self, addr):
         self.guard("data", addr, addr + BLOCK, "erase")
-        self.request(OP_XERASE, addr.to_bytes(4, "big") + MAGIC.to_bytes(4, "big"), retries=0, timeout=2.0)
+        self.request(OP_XERASE, addr.to_bytes(4, "big") + self.t.magic.to_bytes(4, "big"), retries=0, timeout=2.0)
 
     def spi_write(self, data, start=0, progress=None):
         """Write data (whole 4 KB sectors) into the SPI flash from start: only the sectors whose CRC differs are erased
@@ -781,7 +1069,7 @@ class F4Radio(stubtool.Radio):
         self.log("security registers' current content saved to %s" % path)
         for reg in todo:
             try:
-                self.request(OP_SWRITE, bytes([reg]) + MAGIC.to_bytes(4, "big") + self.sreg_slice(data, reg),
+                self.request(OP_SWRITE, bytes([reg]) + self.t.magic.to_bytes(4, "big") + self.sreg_slice(data, reg),
                              retries=0, timeout=SREG_TIMEOUT)
             except stubtool.DumpError as e:
                 raise F4Error("security register %d: %s (0x0F: refused, locked; 0x10: did not read back as written). "
@@ -821,9 +1109,12 @@ def board_from_version(radio):
 
 
 def stub_stack_top(image):
-    """The initial stack pointer the image's entry code loads, or None if the image does not start with f4stub_entry
-    (stub/stm32f4/f4stub_main.c): `ldr r1, [pc, #imm]` and `mov sp, r1`, the literal in the pool after the branch."""
-    if len(image) < 8 or image[1] != 0x49 or image[2:4] != b"\x8d\x46":
+    """The initial stack pointer the image's entry code loads, or None if the image does not start with a stub's entry
+    (f4stub_entry, gd32stub_entry, at32stub_entry): `ldr rN, [pc, #imm]` and `mov sp, rN`, the literal in the pool after the branch."""
+    if len(image) < 8 or image[1] & 0xF8 != 0x48:
+        return None
+    rn = image[1] & 7
+    if int.from_bytes(image[2:4], "little") != 0x4685 | (rn << 3):
         return None
     lit = 4 + image[0] * 4                     # Thumb LDR literal: Align(PC, 4) + imm8 * 4, PC = 4 here
     if lit + 4 > len(image):
@@ -831,90 +1122,134 @@ def stub_stack_top(image):
     return int.from_bytes(image[lit:lit + 4], "little")
 
 
-def check_stub_fits(image, load, size):
-    """Refuse an image that is not the STM32F4 stub, or a span RadioFoundry reports that is not where the stub runs. RadioFoundry stages
-    the image in an 8 KB buffer and copies it to its link address before the jump (docs/spec/debuglink.md 3.18), so
-    the HR_C7000 rule (bss and stack inside the span) does not apply: after the jump the stub owns all of SRAM."""
-    top = stub_stack_top(image)
-    if top is None or b"F4STUB" not in image:
-        raise F4Error("this does not look like the STM32F4 stub image (no f4stub_entry code at its start)")
-    if load != RUN_ADDR:
-        raise F4Error("RadioFoundry reports its stub span at 0x%X; the STM32F4 stub runs at 0x%X" % (load, RUN_ADDR))
-    if not RUN_ADDR + len(image) < top <= RUN_ADDR + SRAM_SIZE:
-        raise F4Error("this stub image's stack top 0x%X is outside the SRAM it runs in (0x%X-0x%X)"
-                      % (top, RUN_ADDR, RUN_ADDR + SRAM_SIZE))
-
-
-# The image header (stub/stm32f4/f4stub_header.h, docs/spec/stub-stm32f4.md 3.1): 16 bytes at offset 0x10, little
-# endian. RadioFoundry started with CONFIG_WATCHDOG enters only a stub whose header has the magic, a version of at least
-# HDR_VERSION_FEEDS_IWDG and the feed flag. --self-test checks these numbers against f4stub_header.h
+# The image header (stub/stm32f4/f4stub_header.h, stub/gd32f30x/gd32stub_header.h, stub/at32f43x/at32stub_header.h;
+# docs/spec/stub-stm32f4.md 3.1, stub-gd32f30x.md 3, stub-at32f43x.md 3): 16 bytes at offset 0x10, little endian, the magic naming the target. RadioFoundry started with
+# CONFIG_WATCHDOG enters only a stub whose header has the magic, a version of at least the target's hdr_min_version and
+# the feed flag. --self-test checks these numbers against the headers
 HDR_OFFSET, HDR_MAGIC, HDR_LAYOUT, HDR_SIZE = 0x10, 0x48533446, 1, 16
 HDR_VERSION_FEEDS_IWDG, HDR_FLAG_FEEDS_IWDG = 3, 0x1
+HDR_FLAG_FEEDS = HDR_FLAG_FEEDS_IWDG           # bit 0 on every target: feeds the watchdog the target has
 
 
 def stub_header(image):
-    """The image header as a dict (layout, size, version, flags, feeds_iwdg), or None when the image has none (every
-    stub before version 3)."""
+    """The image header as a dict (target, layout, size, version, flags, feeds: it feeds its target's watchdog;
+    feeds_iwdg: the same for an STM32F4 image), or None when the image has none (every STM32F4 stub before version 3)
+    or names no target."""
     if len(image) < HDR_OFFSET + HDR_SIZE:
         return None
     magic, layout, size, version, flags = struct.unpack_from("<IHHII", image, HDR_OFFSET)
-    if magic != HDR_MAGIC or layout < HDR_LAYOUT or size < HDR_SIZE:
+    t = next((t for t in TARGETS.values() if t.hdr_magic == magic), None)
+    if t is None or layout < HDR_LAYOUT or size < HDR_SIZE:
         return None
-    return {"layout": layout, "size": size, "version": version, "flags": flags,
-            "feeds_iwdg": version >= HDR_VERSION_FEEDS_IWDG and bool(flags & HDR_FLAG_FEEDS_IWDG)}
+    feeds = version >= t.hdr_min_version and bool(flags & HDR_FLAG_FEEDS)
+    return {"target": t.key, "layout": layout, "size": size, "version": version, "flags": flags, "feeds": feeds,
+            "feeds_iwdg": feeds and t.key == "stm32f4"}
+
+
+def image_target(image):
+    """The target a stub image is built for: its header's, or for a header-less image (STM32F4 before version 3) the
+    target whose HELLO name it carries. None when neither tells."""
+    h = stub_header(image)
+    if h is not None:
+        return h["target"]
+    if len(image) >= HDR_OFFSET + 4 and struct.unpack_from("<I", image, HDR_OFFSET)[0] in [
+            t.hdr_magic for t in TARGETS.values()]:
+        return None                            # a header too short or of an unknown layout
+    return next((t.key for t in TARGETS.values() if t.hdr_magic == HDR_MAGIC and t.hello in image), None)
+
+
+def check_stub_fits(image, load, size, target=None):
+    """Refuse an image that is not a stub of the target (None: any target), or a span RadioFoundry reports that is not
+    where that stub runs. RadioFoundry stages the image in a buffer and copies it to its link address before the jump
+    (docs/spec/debuglink.md 3.18), so the HR_C7000 rule (bss and stack inside the span) does not apply: after the jump
+    the stub owns its RAM."""
+    top = stub_stack_top(image)
+    key = image_target(image)
+    want = TARGETS[target].label if target else "a flash stub"
+    if top is None or key is None or TARGETS[key].hello not in image:
+        raise F4Error("this does not look like %s image (no stub entry code or header at its start)" % (
+            "the %s stub" % want if target else want))
+    t = TARGETS[key]
+    if target is not None and key != target:
+        raise F4Error("this is the %s stub image; this radio takes the %s stub" % (t.label, TARGETS[target].label))
+    if load != t.run:
+        raise F4Error("RadioFoundry reports its stub span at 0x%X; the %s stub runs at 0x%X" % (load, t.label, t.run))
+    if not t.run + len(image) < top <= t.run + t.ram:
+        raise F4Error("this stub image's stack top 0x%X is outside the RAM it runs in (0x%X-0x%X)"
+                      % (top, t.run, t.run + t.ram))
 
 
 def describe_stub(image):
+    key = image_target(image)
+    t = TARGETS.get(key)
     h = stub_header(image)
+    if t is None:
+        return "stub image of no known target (%d bytes)" % len(image)
     if h is None:
-        return "STM32F4 stub image (%d bytes, no header: older than version %d, which a watchdog build refuses)" % (
-            len(image), HDR_VERSION_FEEDS_IWDG)
-    return "STM32F4 stub image v%d (%d bytes%s)" % (h["version"], len(image),
-                                                    ", feeds the IWDG" if h["feeds_iwdg"] else "")
+        return "%s stub image (%d bytes, no header: older than version %d, which a watchdog build refuses)" % (
+            t.label, len(image), t.hdr_min_version)
+    return "%s stub image v%d (%d bytes%s)" % (t.label, h["version"], len(image),
+                                               ", feeds the %s" % t.watchdog if h["feeds"] else "")
 
 
-def stub_image():
-    """The embedded stub build, checked against its SHA-256"""
-    blob = zlib.decompress(base64.b64decode("".join(F4STUB_B64)))
-    if hashlib.sha256(blob).hexdigest() != F4STUB_SHA256:
-        raise F4Error("the embedded STM32F4 stub fails its own checksum")
+def embedded(target):
+    """(sha256, base64 lines) of the target's embedded build, () when none is embedded yet"""
+    var = TARGETS[target].var
+    return globals()[var + "_SHA256"], globals()[var + "_B64"]
+
+
+def stub_image(target="stm32f4"):
+    """The target's embedded stub build, checked against its SHA-256"""
+    sha, b64 = embedded(target)
+    if not b64:
+        raise F4Error("no %s stub is embedded in this tool" % TARGETS[target].label)
+    blob = zlib.decompress(base64.b64decode("".join(b64)))
+    if hashlib.sha256(blob).hexdigest() != sha:
+        raise F4Error("the embedded %s stub fails its own checksum" % TARGETS[target].label)
     return blob
 
 
 def embed(path):
-    """Rewrite the embedded stub in this file from a build"""
+    """Rewrite the embedded stub of the build's target (its header says which) in this file from a build"""
     blob = open(path, "rb").read()
+    key = image_target(blob)
+    if key is None or stub_stack_top(blob) is None:
+        raise F4Error("%s is not a stub build of a known target" % path)
+    var = TARGETS[key].var
     b64 = base64.b64encode(zlib.compress(blob, 9)).decode()
-    lines = ["# --- F4STUB begin (f4stub.py --embed rewrites everything up to the end marker)",
-             'F4STUB_SHA256 = "%s"' % hashlib.sha256(blob).hexdigest(), "F4STUB_B64 = ("]
+    lines = ["# --- %s begin (f4stub.py --embed rewrites everything up to the end marker)" % var,
+             '%s_SHA256 = "%s"' % (var, hashlib.sha256(blob).hexdigest()), "%s_B64 = (" % var]
     lines += ['    "%s"' % b64[i:i + 104] for i in range(0, len(b64), 104)]
-    lines += [")", "# --- F4STUB end"]
+    lines += [")", "# --- %s end" % var]
     me = os.path.abspath(__file__)
     text = open(me).read()
-    a = text.index("# --- F4STUB begin")
-    b = text.index("# --- F4STUB end") + len("# --- F4STUB end")
+    a = text.index("# --- %s begin" % var)
+    b = text.index("# --- %s end" % var) + len("# --- %s end" % var)
     open(me, "w").write(text[:a] + "\n".join(lines) + text[b:])
-    print("embedded %s: %d bytes, sha256 %s" % (path, len(blob), hashlib.sha256(blob).hexdigest()))
+    print("embedded %s (%s): %d bytes, sha256 %s" % (path, TARGETS[key].label, len(blob),
+                                                     hashlib.sha256(blob).hexdigest()))
 
 
 def run(a, port, reopen, log=print):
-    """stubtool.py's STM32 branch: a is its parsed arguments, port the open serial port."""
-    radio = F4Radio(port, log=log, retries=a.retries, reopen=reopen)
+    """stubtool.py's branch for the radios in BOARDS: a is its parsed arguments, port the open serial port."""
     board = a.board
+    radio = F4Radio(port, log=log, retries=a.retries, reopen=reopen,
+                    target=BOARDS[board]["target"] if board in BOARDS else None)
     if a.rfoundry_enter:
         found = board_from_version(radio)
         if board is None:
             board = found
         elif found is not None and found != board:
             raise F4Error("the radio says it is a %s, not a %s" % (found, board))
-        image = open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else stub_image()
+        radio.target = BOARDS[board]["target"] if board else "stm32f4"     # a radio that names no board: as before
+        image = open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else stub_image(radio.target)
         log(describe_stub(image))
-        radio.rfoundry_enter(image, RUN_ADDR, board=board)
+        radio.rfoundry_enter(image, radio.t.run, board=board)
     else:
         radio.attach()
         if board is None and radio.board is not None:
             board = radio.board            # a stub configured by an earlier run
-    radio.check_board()
+    radio.check_board(board)
     radio.configure(board)
     if a.write_app:
         if board is None:
@@ -987,9 +1322,9 @@ def run(a, port, reopen, log=print):
                         if done else "all three registers already hold it, nothing written"))
     if a.boot:
         if a.boot != "reset":
-            raise F4Error("on the STM32 radios --boot takes only reset")
+            raise F4Error("with these stubs --boot takes only reset")
         radio.reset_chip()
-        log("reset sent: the bootloader starts the application (or stays in DFU if none is committed)")
+        log("reset sent: the bootloader starts the application (or stays in its update mode if none is committed)")
     return 0
 
 
@@ -998,9 +1333,10 @@ def run(a, port, reopen, log=print):
 class FakeF4:
     """The stub's protocol and safety rules (stub/common/stubeng.c) on a simulated 1 MB flash."""
 
-    def __init__(self, flash, flash_kb=1024, fail_after=None, spi=None, version=VERSION):
-        self.version = version
-        self.record = b"" if version >= CONFIG_VERSION else bytes([1]) + V2_WIRING     # version 2: wiring built in
+    def __init__(self, flash, flash_kb=1024, fail_after=None, spi=None, version=None, target="stm32f4"):
+        self.t = TARGETS[target]
+        self.version = version = self.t.version if version is None else version
+        self.record = b"" if version >= self.t.config_version else bytes([1]) + V2_WIRING     # version 2: wiring built in
         self.configs = 0
         self.flash = bytearray(flash)
         self.spi = bytearray(spi) if spi is not None else None
@@ -1057,22 +1393,43 @@ class FakeF4:
         o = addr - FLASH_BASE
         return int.from_bytes(self.flash[o:o + 4], "little")
 
+    def app_base(self, rec=None):
+        """The configured application base (0 for none): the record's u32, at byte 8 (STM32F4) or 4 (GD32F30x,
+        AT32F43x)"""
+        rec = self.record if rec is None else rec
+        at = 8 if self.t.key == "stm32f4" else 4
+        return int.from_bytes(rec[at:at + 4], "big") if rec else 0
+
+    def commit(self):
+        """(index, addr, size) of the commit sector, the one holding the application base"""
+        return sector_of(self.t.sectors(self.flash_kb), self.app_base())
+
+    def base_ok(self, base):
+        """CONFIG's application base rule: the STM32F4 stub takes only sector 3; the GD32F30x and AT32F43x stubs any
+        sector start from their MIN_APP_BASE (0x08001000) inside the map"""
+        if self.t.key == "stm32f4":
+            return base == APP_BASE
+        s = sector_of(self.t.sectors(self.flash_kb), base)
+        return s is not None and base >= 0x08001000
+
     def handle(self, op, p):
         if op in (OP_ERASE, OP_PROGRAM, OP_XERASE, OP_XPROGRAM, OP_SWRITE) and not self.record:
             return self.frame(NOCONFIG)
         if op == OP_HELLO:
             rec = self.record
-            on = bool(rec) and self.version >= CONFIG_VERSION
-            body = (b"F4STUB" + bytes([self.version]) + (4104).to_bytes(2, "big") + self.flash_kb.to_bytes(2, "big")
+            on = bool(rec) and self.version >= self.t.config_version
+            body = (self.t.hello + bytes([self.version]) + (4104).to_bytes(2, "big")
+                    + (self.flash_kb if self.t.key == "stm32f4" else min(self.flash_kb, 1024)).to_bytes(2, "big")
                     + bytes([0x55, 1 | (HELLO_CONFIGURED if on else 0)])
-                    + (int.from_bytes(rec[8:12], "big") if rec else 0).to_bytes(4, "big")
+                    + self.app_base().to_bytes(4, "big")
                     + (len(self.spi) if self.spi and rec else 0).to_bytes(4, "big") + self.jedec)
-            if self.version >= CONFIG_VERSION:
+            if self.version >= self.t.config_version:
                 body += bytes([rec[0] if on else 0, len(rec)]) + rec
             self.frame(OK, body)
-        elif op == OP_CONFIG and self.version >= CONFIG_VERSION:
+        elif op == OP_CONFIG and self.version >= self.t.config_version:
             self.configs += 1
-            ok = len(p) == REC_LEN and p[0] != 0 and p[1] == REC_LAYOUT and int.from_bytes(p[8:12], "big") == APP_BASE
+            ok = (len(p) == self.t.rec_len and p[0] != 0 and p[1] == REC_LAYOUT
+                  and self.base_ok(self.app_base(p)) and (self.t.key == "stm32f4" or p[2:4] == b"\0\0"))
             self.record = bytes(p) if ok else b""
             self.frame(OK if ok else BADARG)
         elif op == OP_SUMS:
@@ -1098,15 +1455,20 @@ class FakeF4:
             self.frame(OK, bytes(self.flash[a - FLASH_BASE:a - FLASH_BASE + n]))
         elif op == OP_ERASE:
             s = p[0]
-            if int.from_bytes(p[1:5], "big") != MAGIC or s < 3 or (s != 3 and self.w(APP_BASE) != 0xFFFFFFFF):
+            c, base = self.commit()[0], self.app_base()
+            sec = self.t.sectors(self.flash_kb)
+            if (int.from_bytes(p[1:5], "big") != self.t.magic or s < c or s >= len(sec)
+                    or (s != c and self.w(base) != 0xFFFFFFFF)):
                 return self.frame(REFUSED)
-            _, a, size = f405_sectors()[s]
+            _, a, size = sec[s]
             self.flash[a - FLASH_BASE:a - FLASH_BASE + size] = b"\xff" * size
             self.erased.append(s)
             self.frame(OK)
         elif op == OP_PROGRAM:
             a, data = int.from_bytes(p[:4], "big"), p[4:]
-            if a < APP_BASE or (a + len(data) > 0x08010000 and self.w(APP_BASE) != 0xFFFFFFFF):
+            _, ca, cn = self.commit()
+            base = self.app_base()
+            if a < base or (a + len(data) > ca + cn and self.w(base) != 0xFFFFFFFF):
                 return self.frame(REFUSED)
             o = a - FLASH_BASE
             if self.flash[o:o + len(data)] != b"\xff" * len(data):
@@ -1116,7 +1478,7 @@ class FakeF4:
             self.frame(OK)
         elif op == OP_XERASE:
             a = int.from_bytes(p[:4], "big")
-            if int.from_bytes(p[4:8], "big") != MAGIC:
+            if int.from_bytes(p[4:8], "big") != self.t.magic:
                 return self.frame(REFUSED)
             self.spi[a:a + BLOCK] = b"\xff" * BLOCK
             self.spi_erases = getattr(self, "spi_erases", 0) + 1
@@ -1133,7 +1495,7 @@ class FakeF4:
             if (len(p) != (5 + SREG_LEN if write else 1) or not (1 if write else 0) <= reg <= SREG_COUNT
                     or not (self.spi and self.record) or self.jedec[0] != SREG_MFR):
                 return self.frame(BADARG)
-            if write and int.from_bytes(p[1:5], "big") != MAGIC:
+            if write and int.from_bytes(p[1:5], "big") != self.t.magic:
                 return self.frame(REFUSED)
             if write:
                 if self.sr2 & (SR2_LB1 << (reg - 1)):
@@ -1654,6 +2016,127 @@ def self_test():
     check("/dev/ttyACM1" in FakeSerial.opened and "/dev/ttyACM0" in FakeSerial.opened,
           "follower: after 10 s it alternates between the original and the look-alike (%s)" % FakeSerial.opened)
 
+    # The GD32F30x and AT32F43x stubs (stub/gd32f30x, stub/at32f43x): their numbers match the headers, the embedded
+    # image is that target's, and an install on a board of that target commits the sector at the board's application
+    # base. The board: any registry board whose platform builds that stub (none: these checks are skipped)
+    for gkey, gpfx, gsector, other in (("gd32f30x", "GD32", GD32_SECTOR, "at32f43x"),
+                                       ("at32f43x", "AT32", AT32_SECTOR, "gd32f30x")):
+        gt = TARGETS[gkey]
+        if hdr_src is not None:
+            try:
+                gd_src = open(os.path.join(root, gt.stub_dir, gt.key[:2] + "32stub_header.h")).read() + open(
+                    os.path.join(root, gt.stub_dir, gt.key[:2] + "32stub.h")).read()
+            except OSError:
+                gd_src = ""
+            gdefs = dict((m.group(1), int(m.group(2), 0)) for m in
+                         re.finditer(r"#define\s+(" + gpfx + r"\w+)\s+\(?(0x[0-9A-Fa-f]+|\d+)u", gd_src))
+            names = (("STUB_HDR_OFFSET", HDR_OFFSET), ("STUB_HDR_MAGIC", gt.hdr_magic), ("STUB_HDR_LAYOUT", HDR_LAYOUT),
+                     ("STUB_HDR_SIZE", HDR_SIZE), ("STUB_VERSION", gt.version),
+                     ("STUB_FLAG_FEEDS_" + gt.watchdog, HDR_FLAG_FEEDS), ("STUB_RUN_ADDR", gt.run),
+                     ("STUB_MAGIC", gt.magic), ("_SECTOR_SIZE", gsector), ("_REC_LEN", gt.rec_len),
+                     ("_REC_LAYOUT", REC_LAYOUT))
+            for name, mine in ((gpfx + n, v) for n, v in names):
+                check(gdefs.get(name) == mine, "f4stub.py's %s matches the %s stub's headers (%r, %r)" % (
+                    name, gt.label, mine, gdefs.get(name)))
+            check('"%s"' % gt.hello.decode() in gd_src, "the %s stub's HELLO name is %s" % (gt.label, gt.hello))
+        gimg = stub_image(gt.key)
+        gh = stub_header(gimg)
+        check(gh is not None and gh["target"] == gt.key and gh["feeds"] and not gh["feeds_iwdg"],
+              "the embedded %s stub has its header and feeds the %s (%r)" % (gt.label, gt.watchdog, gh))
+        check(image_target(stub_image()) == "stm32f4" and image_target(gimg) == gt.key, "images name their target")
+        check(stub_stack_top(gimg) == gt.run + gt.ram if hdr_src is not None else stub_stack_top(gimg) is not None,
+              "the %s entry code loads the stack top (0x%X)" % (gt.label, stub_stack_top(gimg) or 0))
+        check_stub_fits(gimg, gt.run, 8192, gt.key)
+        for img, load, tgt, what in ((gimg, RUN_ADDR, "stm32f4", "the %s image offered to an STM32F4 radio" % gt.label),
+                                     (stub_image(), RUN_ADDR, gt.key, "the STM32F4 image offered to a %s radio" % gt.label),
+                                     (stub_image(other), gt.run, gt.key, "the %s image offered to a %s radio" % (
+                                         TARGETS[other].label, gt.label)),
+                                     (gimg, gt.run + 0x1000, gt.key, "the %s image at another span" % gt.label)):
+            try:
+                check_stub_fits(img, load, 8192, tgt)
+                check(False, "%s: refused" % what)
+            except F4Error:
+                pass
+        check(gt.label in describe_stub(gimg) and gt.watchdog in describe_stub(gimg), describe_stub(gimg))
+        gboards = sorted(k for k, b in BOARDS.items() if b["target"] == gt.key)
+        if gboards:
+            gb = gboards[0]
+            B = BOARDS[gb]
+            base = B["boot_end"]
+            end = B["owned"][-1][1]
+            gboot = bytes((i * 11 + 5) & 0xFF for i in range(base - FLASH_BASE))
+            slot = bytes((i * 13 + 1) & 0xFF for i in range(0x100000 - (end - FLASH_BASE)))
+
+            def gstock():
+                g = bytearray((i * 3 + 7) & 0xFF for i in range(0x100000))
+                g[:len(gboot)] = gboot
+                g[end - FLASH_BASE:] = slot
+                return g
+
+            gf = FakeF4(gstock(), target=gt.key)
+            r = F4Radio(gf, log=quiet)
+            r.hello()
+            check(r.target == gt.key and r.version == gt.version and r.board is None,
+                  "%s: the %s stub answers, unconfigured" % (gb, gt.label))
+            r.configure(gb)
+            check(r.board == gb and r.app_base == base and r.record == record(B), "%s: configured, echo checked" % gb)
+            image = app(300000, 3)
+            nw, nk = r.write_image(gb, [(base, image)], backup_dir=tmp)
+            first = sector_of(gt.sectors(1024), base)[0]
+            nsec = (end - base) // gsector
+            check(gf.erased[0] == first and sorted(gf.erased) == list(range(first, first + nsec)),
+                  "%s: the commit sector %d erased first, only owned sectors (%d erased)" % (gb, first, len(gf.erased)))
+            check(nw == nsec and nk == 0, "%s: %d sectors written (%d, %d)" % (gb, nsec, nw, nk))
+            o = base - FLASH_BASE
+            check(bytes(gf.flash[:o]) == gboot, "%s: bootloader untouched" % gb)
+            check(bytes(gf.flash[end - FLASH_BASE:]) == slot, "%s: the slot after the application untouched" % gb)
+            check(bytes(gf.flash[o:o + len(image)]) == image and gf.flash[o + len(image):end - FLASH_BASE] ==
+                  b"\xff" * (end - FLASH_BASE - o - len(image)), "%s: the image in place, the rest erased" % gb)
+            nw, nk = r.write_image(gb, [(base, image)], backup_dir=tmp)
+            check(nw == 0, "%s: the same image again writes nothing (%d)" % (gb, nw))
+            # an interrupted install leaves the application uncommitted
+            gf = FakeF4(gstock(), target=gt.key, fail_after=3)
+            r = F4Radio(gf, log=quiet)
+            r.hello()
+            r.configure(gb)
+            try:
+                r.write_image(gb, [(base, app(200000, 9))], backup_dir=tmp)
+                check(False, "%s: a pulled cable fails the install" % gb)
+            except (OSError, F4Error, stubtool.DumpError):
+                pass
+            check(gf.w(base) == 0xFFFFFFFF, "%s: interrupted: the application is not committed" % gb)
+            # the bootloader's sectors: the protect list refuses them before the stub sees the request
+            gf = FakeF4(gstock(), target=gt.key)
+            r = F4Radio(gf, log=quiet)
+            r.hello()
+            r.configure(gb)
+            try:
+                r.erase(0)
+                check(False, "%s: erasing the bootloader refused" % gb)
+            except F4Error as e:
+                check(gf.erased == [] and ("protected" in str(e) or not B["protect"]),
+                      "%s: erasing the bootloader refused by the protect list (%s)" % (gb, e))
+            # a board of the other target is refused by this stub, and the other way round
+            try:
+                r.configure("dm1701")
+                check(False, "a %s stub refuses an STM32F4 board" % gt.label)
+            except F4Error:
+                pass
+            f = FakeF4(stock(5))
+            r = F4Radio(f, log=quiet)
+            r.hello()
+            try:
+                r.configure(gb)
+                check(False, "an STM32F4 stub refuses the %s" % gb)
+            except F4Error:
+                pass
+            r = F4Radio(FakeF4(gstock(), target=gt.key), log=quiet, target="stm32f4")
+            try:
+                r.hello()
+                check(False, "a %s stub answering where the STM32F4 one was sent is refused" % gt.label)
+            except F4Error:
+                pass
+
     tmpdir.cleanup()
     print("f4stub self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                   "" if len(fails) == 1 else "s"))
@@ -1667,8 +2150,13 @@ if __name__ == "__main__":
         embed(sys.argv[2])
         sys.exit(0)
     if len(sys.argv) == 3 and sys.argv[1] == "--check-embedded":
-        same = open(sys.argv[2], "rb").read() == stub_image()
-        print("the embedded STM32F4 stub %s %s" % ("matches" if same else "differs from", sys.argv[2]))
+        built = open(sys.argv[2], "rb").read()
+        key = image_target(built)
+        if key is None:
+            print("%s is not a stub build of a known target" % sys.argv[2])
+            sys.exit(1)
+        same = bool(embedded(key)[1]) and built == stub_image(key)
+        print("the embedded %s stub %s %s" % (TARGETS[key].label, "matches" if same else "differs from", sys.argv[2]))
         sys.exit(0 if same else 1)
     print(__doc__)
     sys.exit(2)

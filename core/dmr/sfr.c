@@ -87,8 +87,8 @@ uint8_t sfrResolveFraming(uint8_t role, uint8_t framing)
 		case SFR_ROLE_USER_ERDM:
 			return SFR_FRAMING_BS;
 		default:
-			// The ETSI direct mode sync of the outbound slot: what the AnyTone D578 relay (DCDM) and, most likely, the
-			// Hytera ones send, and the hotspot's host needs the slot in the burst
+			// The ETSI direct mode sync of the outbound slot: what dual capacity direct mode (DCDM) relays in mobiles
+			// send, and the hotspot's host needs the slot in the burst
 			return SFR_FRAMING_TS;
 	}
 }

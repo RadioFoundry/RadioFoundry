@@ -112,15 +112,12 @@ static bool key_set(uint8_t id, int32_t value);
 static bool dmr_id_post(uint32_t id);	// a job: the codeplug write is the housekeeping task's
 #endif
 
-int32_t ui_svc_setting_get(uint8_t id)
+// Apart from ui_svc_setting_get so the paths that go deep from there (the keys, the reply time's codeplug read, both
+// under the crash report's screen) don't carry this frame's settings_t
+__attribute__((noinline)) static int32_t stored_get(uint8_t id)
 {
 	radio_settings_t rs;
 	settings_t st;
-#if CONFIG_KEY_ASSIGN
-	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {
-		return key_get(id);
-	}
-#endif
 	switch (id) {
 	case UI_SET_KEY_TONES:
 	case UI_SET_TONE_VOLUME:
@@ -149,9 +146,6 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_HOTSPOT_AUTO:
 		settings_read(&st);
 		return st.hotspot_allowed != 0;
-	case UI_SET_REPLY_S:
-		radio_get_settings(&rs);
-		return ui_svc_reply_shown(&rs);
 #if CONFIG_SFR
 	case UI_SET_SFR_RX:
 		radio_get_settings(&rs);
@@ -316,6 +310,21 @@ int32_t ui_svc_setting_get(uint8_t id)
 	default:
 		return ui_svc_ram_get(id);
 	}
+}
+
+int32_t ui_svc_setting_get(uint8_t id)
+{
+#if CONFIG_KEY_ASSIGN
+	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {
+		return key_get(id);
+	}
+#endif
+	if (id == UI_SET_REPLY_S) {
+		radio_settings_t rs;
+		radio_get_settings(&rs);
+		return ui_svc_reply_shown(&rs);
+	}
+	return stored_get(id);
 }
 
 bool ui_svc_setting_set(uint8_t id, int32_t value)

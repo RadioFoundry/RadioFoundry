@@ -341,6 +341,18 @@ static void link_section(dl_text_t *t)
 		}
 	}
 	dl_text(t, "input.enc_deferred=%u\n", (unsigned)deferred);
+	hal_hand_mic_stats_t hm;
+	if (input_hand_mic_stats(&hm)) {
+		dl_text(t, "input.hmic_present=%u\ninput.hmic_ptt=%u\ninput.hmic_key=%u\n", (unsigned)hm.present,
+			(unsigned)hm.ptt, (unsigned)hm.key);
+		dl_text(t, "input.hmic_frames=%u\ninput.hmic_errors=%u\n", (unsigned)hm.frames, (unsigned)hm.errors);
+	}
+	hal_bt_stats_t bt;
+	if (input_bt_stats(&bt)) {
+		dl_text(t, "input.bt_present=%u\ninput.bt_ptt=%u\ninput.bt_key=%u\ninput.bt_keys=%u\n", (unsigned)bt.present,
+			(unsigned)bt.ptt, (unsigned)bt.key, (unsigned)bt.keys);
+		dl_text(t, "input.bt_lines=%u\ninput.bt_errors=%u\n", (unsigned)bt.lines, (unsigned)bt.errors);
+	}
 	dl_text(t, "input.long_ms=%u\ninput.ptt_downs=%u\n", (unsigned)input_long_ms(), (unsigned)input_ptt_downs());
 	if (board.system != NULL && board.system->irq_unhandled != NULL) {
 		// Interrupts with no handler, each masked for good by the platform's fallback: any count here is a bug

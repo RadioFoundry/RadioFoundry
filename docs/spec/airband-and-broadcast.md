@@ -21,10 +21,12 @@ audio path, open questions, bring-up checks) are on its hardware and bring-up pa
 | FD6818 | yes (inferred) | BK4819 class: the AF output type in 0x47 bits 11:8, type 7 = AM on the BK4819 (Apache-2.0 UV-K5 firmware). Unconfirmed on the FD6818 until a radio's bring-up |
 | BK4819 | yes | the same register, documented |
 | AT1846S | no | FM and the DMR baseband modes only (datasheet, our driver) |
+| KTMicro AM/FM receiver | yes | an I2C receiver chip (ID "KT" in registers 0x02/0x03), behind a mixer: tuned in AM to the IF. No public register map; `drivers/bcast/ktamfm` replays a stock firmware's writes (AM and broadcast FM) |
 
 | Broadcast tuner | Driver |
 |---|---|
 | RDA5807M | `drivers/bcast/rda5807m` (4.2) |
+| KTMicro AM/FM receiver | `drivers/bcast/ktamfm` in its FM mode (4.6) |
 | RDA5802N | none checked yet; the RDA5807M driver may serve it after a bring-up check |
 
 ## 3. Air band AM
@@ -64,7 +66,8 @@ radio uses, and the Problems list warns about a DMR channel there or a TX freque
 `rx_am(hz, bw)` tunes and receives AM; the board leaves AM at the next `rx()` or `set_mode()`. `status()` gives an
 RSSI in dBm (noise isn't used in AM) and `tone_ok = true`. `tx()` is never called while AM is on. NULL = no AM.
 On an FD6818 `rx_am` is `rx` plus the AF output type AM (`fd6818_set_am`, 0x47 = 0x0740; inferred, section 2);
-`rx()` and `set_mode()` write FM back.
+`rx()` and `set_mode()` write FM back. With an AM receiver chip behind a mixer, `rx_am` tunes the mixer's LO to
+hz plus the IF and the chip to the IF, and `status()` turns the chip's level reading into the RSSI.
 
 ## 4. Broadcast FM
 
@@ -130,6 +133,27 @@ are on its hardware page.
 The board decides how the broadcast reaches the speaker. The core keeps the channel receiver's audio off while the
 broadcast plays, so the two never ask for the speaker at once (hal_bcast.h `audio`).
 
+A board whose air band and broadcast receivers are one chip in two modes keeps one owner for it. The core's `tune()`
+calls `rx_am()` before it powers the broadcast receiver off, and powers the broadcast receiver on without a channel
+receiver call in between. So `power(true)` takes the chip back from AM, and `power(false)` leaves an AM set-up made
+since alone. The chip's level follows whichever mode owns it.
+
+### 4.6 KTMicro AM/FM receiver, FM mode (drivers/bcast/ktamfm)
+
+No public register map: the values are a stock firmware's, their roles inferred.
+
+| Item | Value |
+|---|---|
+| Mode | 0x88 bit 6 clear (set: AM). The AM mode's other values stay, as in the stock firmware |
+| Tune | channel = kHz / 50 (12 bits): 0x2F bit 1 clear; 0x87 bit 3 clear; 0x89 = bits 7:0; 0x88 bits 3:0 = bits 11:8 with bit 7 (tune) set |
+| Set-apart channels | 0x699, 0x81A, 0x840 (84.45, 103.70, 105.60 MHz) set 0x87 bit 3 instead and 0x85 bits 3:0 to 3 (0x699) or 8 |
+| Readings | 0xE6 bits 6:0 (signal strength), 0xE2 bits 5:0, 0x79 bits 6:0 and 0xE9 |
+| Station | 0xE6 > 14, 0xE2 >= 12 and \|2 x 0x79 - 0xE9\| < 12; the stock firmware debounces it over 3 polls |
+| Level | 0x0F bits 4:0, 0x1A while it plays, 1 muted |
+
+The driver has no seek, tune-done flag or stereo reading: none is known. The RSSI's scale against dBuV isn't known, so
+the core's squelch levels (4.3) may not match it.
+
 ## 5. Build switches
 
 | Switch | Default | Covers |
@@ -146,5 +170,6 @@ The board must also set the capability bits; without them the code does nothing 
 |---|---|
 | `tests/host/radioListenBandsTest.c` | AM and broadcast channels and VFO, TX refusal, squelch, the steps, a dead receiver |
 | `tests/host/fd6818Test.c` | the AF output word for AM and back to FM |
+| `tests/host/ktamfmTest.c` | the KTMicro receiver's set-up, AM mode, AM tune word, FM mode, FM tune word and set-apart channels, level, readings and the FM station test |
 | `tests/host/uiFlowTest.c` | the FM broadcast step row on a radio with the receiver |
 | `tests/hil/test_listen_bands.py` | the VFO at 118.0 MHz gives `am=1`; at 100.1 MHz `bcast=1` and `bcast_fault=0`. Nothing keys |

@@ -1463,7 +1463,7 @@ def cmd_data(link, a):
     return 0
 
 
-CHIP_STM32F4, CHIP_HRC7000 = 0, 1   # INFO_CHIP's family byte (debuglink.md 3.9)
+CHIP_STM32F4, CHIP_HRC7000, CHIP_GD32F30X, CHIP_AT32F43X = 0, 1, 2, 3   # INFO_CHIP's family byte (debuglink.md 3.9)
 
 
 def decode_chip(r):
@@ -1540,8 +1540,13 @@ def dump_path_ok(path):
 
 def print_chip(c):
     if c["family"] != CHIP_STM32F4:
-        name = {CHIP_HRC7000: "HR_C7000"}.get(c["family"], f"family {c['family']}")
+        name = {CHIP_HRC7000: "HR_C7000", CHIP_GD32F30X: "GD32F30x", CHIP_AT32F43X: "AT32F43x"}.get(
+            c["family"], f"family {c['family']}")
         print(f"chip     {name} (no ID or option byte registers)")
+        if c["family"] in (CHIP_GD32F30X, CHIP_AT32F43X):
+            print(f"flash    {c['flash_kb']} KB")
+            print(f"uid      {c['uid'][2]:08X}{c['uid'][1]:08X}{c['uid'][0]:08X} (token 0x{c['token']:08X})")
+            return
         print(f"uid      {c['uid'][2]:08X}{c['uid'][1]:08X}{c['uid'][0]:08X} (token 0x{c['token']:08X}; the data flash's unique ID)")
         return
     rdp_names = {0: "level 0 (0xAA, no protection)", 1: f"LEVEL 1 (0x{c['rdp_byte']:02X}: read protection)",
