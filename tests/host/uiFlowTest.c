@@ -118,6 +118,9 @@ static const flow_t flows[] = {
 	{ "S language list", "", "ok 7 2 up ok", "screen=language shows=English", 5, false },
 #if CONFIG_LANG_ES
 	{ "S language: Spanish", "", "ok 7 2 up ok down ok", "set78=25971 screen=group shows=Idioma", 7, false },
+	// A long banner title breaks before the station's name, also at a name that holds the word (" de ")
+	{ "S language: a banner keeps the name whole", "ok 7 2 up ok down ok back back back", "privcall:3101500,Maria_de_la_Cruz",
+	  "shows=Llamada_privada shows=Maria_de_la_Cruz", 0, false },
 	{ "S language: back to English", "ok 7 2 up ok down ok", "ok up ok", "set78=25966 shows=Language", 3, false },
 #else
 	{ "S language not in this build: dimmed", "", "ok 7 2 up ok down ok",

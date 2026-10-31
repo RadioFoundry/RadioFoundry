@@ -421,7 +421,9 @@ run-subaudio: subaudioTest subaudioDspTest
 
 # The language tables, as the firmware build makes them (tools/i18n.py)
 LANG_H := out/gen/lang_tables.h
-$(shell python3 $(ROOT)/tools/i18n.py --gen $(LANG_H) >/dev/null)
+ifneq ($(filter i18n-failed,$(shell python3 $(ROOT)/tools/i18n.py --gen $(LANG_H) || echo i18n-failed)),)
+$(error tools/i18n.py --gen failed (above))
+endif
 # UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)
 UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/i18n.c $(CORE)/ui/ui_screens.c $(CORE)/ui/ui_svc_stub.c
 TESTS   += gfxTest

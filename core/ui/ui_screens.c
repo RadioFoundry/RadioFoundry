@@ -2212,17 +2212,14 @@ void ui_draw_banner(const ui_state_t *s)
 	int w = gfx_width();
 	char title[2][64], text[2][64];
 	int nt;
-	// The last " from " (or its translation): the title's own words may hold the translated word too ("de" in Spanish)
-	const char *sep = TR(" from "), *from = NULL;
-	size_t sl = strlen(sep);
-	for (const char *p = strstr(bn->title, sep); sl > 1 && p != NULL; p = strstr(p + 1, sep))
-		from = p;
-	if (gfx_text_width(f, bn->title) > w - 4 && from != NULL && (size_t)(from - bn->title) + sl - 1 < sizeof title[0]) {
+	if (gfx_text_width(f, bn->title) > w - 4 && bn->name_at > 0 && bn->name_at < sizeof title[0]) {
 		// "Call alert from" / "Jodi Ruiz": the station's name together on the second line
-		size_t n = (size_t)(from - bn->title) + sl - 1;
+		size_t n = bn->name_at;
+		while (n > 0 && bn->title[n - 1] == ' ')
+			n--;
 		memcpy(title[0], bn->title, n);
 		title[0][n] = 0;
-		nt = 1 + wrap_lines(f, from + sl, w - 4, 1, &title[1], false);
+		nt = 1 + wrap_lines(f, bn->title + bn->name_at, w - 4, 1, &title[1], false);
 	} else {
 		nt = wrap_lines(f, bn->title, w - 4, 2, title, false);
 	}

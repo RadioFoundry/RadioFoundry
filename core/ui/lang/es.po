@@ -28,6 +28,14 @@ msgstr "No"
 msgid " ago"
 msgstr " atrás"
 
+#: core/ui/ui_app.c core/ui/ui_screens.c
+msgid "OK Menu  * Quick"
+msgstr "OK Menú  * Rápido"
+
+#: core/ui/ui_app.c
+msgid "OK Menu  Hold OK Quick"
+msgstr "OK Menú  Mantener OK Rápido"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "All call"
 msgstr "Llamada a todos"
@@ -411,14 +419,6 @@ msgstr "Buscar: "
 #: core/ui/ui_app.c core/ui/ui_find.c
 msgid "No match: Back deletes a key"
 msgstr "Sin coincidencia: Atrás borra"
-
-#: core/ui/ui_app.c core/ui/ui_screens.c
-msgid "OK Menu  * Quick"
-msgstr "OK Menú  * Rápido"
-
-#: core/ui/ui_app.c
-msgid "OK Menu  Hold OK Quick"
-msgstr "OK Menú  Mantener OK Rápido"
 
 #: core/ui/ui_app.c
 msgid "Emergency: not in this build"
@@ -2473,8 +2473,8 @@ msgid "Crash report not sent"
 msgstr "Informe de fallo no enviado"
 
 #: core/ui/ui_menus.c
-msgid "1-9 open  Back"
-msgstr "1-9 abrir  Atrás"
+msgid " open  Back"
+msgstr " abrir  Atrás"
 
 #: core/ui/ui_menus.c
 msgid "USB network"
@@ -3417,10 +3417,6 @@ msgid "# options  Back stop"
 msgstr "# opciones  Atrás parar"
 
 #: core/ui/ui_screens.c
-msgid " from "
-msgstr " de "
-
-#: core/ui/ui_screens.c
 msgid "# Open"
 msgstr "# Abrir"
 
@@ -3605,7 +3601,7 @@ msgid "Couldn't read the channel: for now only"
 msgstr "Error al leer el canal: solo por ahora"
 
 #: core/ui/ui_svc_storage.c
-msgid "Couldn't write the codeplug: for now only"
+msgid "Codeplug not written: for now only"
 msgstr "Error al escribir codeplug: solo por ahora"
 
 #: core/ui/ui_svc_storage.c
@@ -3617,7 +3613,7 @@ msgid "Reset: the settings couldn't be saved"
 msgstr "Restablecer: no se guardaron los ajustes"
 
 #: core/ui/ui_svc_storage.c
-msgid "Reset: the native area couldn't be erased"
+msgid "Reset: native area couldn't be erased"
 msgstr "Restablecer: no se borró el área nativa"
 
 #: core/ui/ui_svc_storage.c

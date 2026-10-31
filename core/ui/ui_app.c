@@ -55,6 +55,12 @@ static bool dirty = true;
 static uint32_t draws;
 static bool has_quick_key, has_context_key;
 static char home_hint[32];
+
+// The hint's keys part, in the language in use: the quick settings key, or holding OK on a radio without it
+static const char *home_hint_keys(void)
+{
+	return has_quick_key ? TR("OK Menu  * Quick") : TR("OK Menu  Hold OK Quick");
+}
 #if CONFIG_HOTSPOT
 static bool hs_diag;	// hotspot mode: the diagnostics page instead of the Hotspot screen
 #endif
@@ -467,9 +473,16 @@ bool ui_notify(const ui_event_t *ev)
 	return ok;
 }
 
+// Where station() last put a name: the banner's title breaks there, not at a word that a name or a translation may
+// also hold (" de " in Spanish)
+static const char *name_mark;
+
 static void banner(uint8_t kind, bool warn, uint32_t id, const char *title, const char *text)
 {
 	ui_banner_t *b = &ui_st.banner;
+	uintptr_t at = (uintptr_t)name_mark - (uintptr_t)title;
+	b->name_at = name_mark != NULL && at < strlen(title) ? (uint8_t)at : 0;
+	name_mark = NULL;
 	b->kind = kind;
 	b->warn = warn;
 	b->id = id;
@@ -493,6 +506,7 @@ bool ui_app_take_wake(void)
 
 static void station(sbuf_t *b, const ui_event_t *ev)
 {
+	name_mark = b->p;
 	if (ev->name[0])
 		sb_str(b, ev->name);
 	else
@@ -512,6 +526,7 @@ static void handle_event(const ui_event_t *ev)
 	char title[UI_BANNER_TEXT];
 	sbuf_t b;
 	sb_init(&b, title, sizeof title);
+	name_mark = NULL;	// a mark from an earlier event would point into this same buffer
 	switch (ev->kind) {
 	case UI_EV_MESSAGE:
 		sb_str(&b, TR("Message from "));
@@ -1731,7 +1746,7 @@ void ui_app_init(void)
 	has_quick_key = ui_has_action(ACT_QUICK);
 	has_context_key = ui_has_action(ACT_CONTEXT);
 	// ui_app_tick builds it again each tick, in the language in use then
-	str_copy(home_hint, sizeof home_hint, has_quick_key ? TR("OK Menu  * Quick") : TR("OK Menu  Hold OK Quick"));
+	str_copy(home_hint, sizeof home_hint, home_hint_keys());
 	ui_st.home_hint = home_hint;
 #if CONFIG_CRASH_SCREEN
 	ui_crash_reset();
@@ -2261,7 +2276,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	char name[12];
 	sbuf_t b;
 	sb_init(&b, home_hint, sizeof home_hint);
-	sb_str(&b, has_quick_key ? TR("OK Menu  * Quick") : TR("OK Menu  Hold OK Quick"));
+	sb_str(&b, home_hint_keys());
 	if (has_context_key && recent_n && caller_target(&t)) {
 		sb_str(&b, "  # ");
 		if (t.name[0]) {

@@ -79,5 +79,7 @@ extern const font_t font_9x18;
 // Rows of a glyph from row *top of the cell, *rows of them (0 for a space), or NULL for a byte the font can't draw
 // (shown as a box) or a missing extra
 const uint8_t *font_glyph(const font_t *f, uint8_t c, int *top, int *rows);
+// A Latin-1 byte (0xA0..0xFF) as plain ASCII, the letter without its accent ("\xF3" is 'o'); any other byte as it is
+char font_fold(char c);
 
 #endif

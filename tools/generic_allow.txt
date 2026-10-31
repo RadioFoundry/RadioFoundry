@@ -45,7 +45,9 @@ tools/rfoundry/tests/test_rfoundry.py per-radio flash routes, stock formats and 
 tools/rfoundry/tests/test_serialflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
 
 # Web flasher and editor: per-radio routes and stock formats; to read from the generated registry.
-site/i18n/*.json per-radio route or stock format data (every language has en.json's keys)
+site/i18n/en.json per-radio route or stock format data
+site/i18n/es.json per-radio route or stock format data (en.json's keys, translated)
+site/i18n/it.json per-radio route or stock format data (en.json's keys, translated)
 site/static/js/codeplug/detect.js per-radio route or stock format data
 site/static/js/codeplug/fakecps.js per-radio route or stock format data
 site/static/js/codeplug/image.js per-radio route or stock format data

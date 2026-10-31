@@ -4526,7 +4526,8 @@ static bool tool_shown(uint16_t i)
 }
 
 // The hint names the last number ("1-9 open"): the highest tool this radio has. Built in the language in use on each
-// count (the list draws its hint through tr(), which leaves text it doesn't know as it is)
+// count from the keys and the translated rest (the list draws its hint through tr(), which leaves text it doesn't know
+// as it is)
 static char tools_hint[24] = "1-9 open  Back";
 
 static uint16_t tools_count(void)
@@ -4538,9 +4539,11 @@ static uint16_t tools_count(void)
 			last = (uint16_t)(i + 1u);
 		}
 	}
-	str_copy(tools_hint, sizeof tools_hint, TR("1-9 open  Back"));
-	if (tools_hint[0] == '1' && tools_hint[1] == '-' && tools_hint[2] == '9')
-		tools_hint[2] = (char)('0' + (last < 9 ? last : 9));	// "1-9": the zone offer's 0 isn't named
+	sbuf_t b;
+	sb_init(&b, tools_hint, sizeof tools_hint);
+	sb_str(&b, "1-");
+	sb_chr(&b, (char)('0' + (last < 9 ? last : 9)));	// "1-9": the zone offer's 0 isn't named
+	sb_str(&b, TR(" open  Back"));
 	return n;
 }
 

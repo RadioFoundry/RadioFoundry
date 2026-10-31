@@ -571,8 +571,8 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 // --- Codeplug writes, on the housekeeping task (storage_job_post) ---
 
 // text: English, marked TRN. The UI translates it when it shows it (tr), so a translation longer than the event's 40
-// bytes isn't cut, and this task needs no language
-static void save_failed(const char *text)
+// bytes isn't cut, and this task needs no language. The English must fit: a cut text never matches its translation
+static void save_failed_text(const char *text)
 {
 	ui_event_t ev;
 	memset(&ev, 0, sizeof ev);
@@ -580,6 +580,11 @@ static void save_failed(const char *text)
 	strncpy(ev.text, text, sizeof ev.text - 1);
 	ui_notify(&ev);
 }
+
+#define save_failed(s)	do { \
+	_Static_assert(sizeof(s) <= sizeof((ui_event_t){0}.text), "the text fits ui_event_t.text"); \
+	save_failed_text(s); \
+} while (0)
 
 #if CONFIG_DMR
 // The radio's own DMR ID, written into the codeplug (Settings > My radio): the radio core takes it when
@@ -814,7 +819,7 @@ static void save_target_job(void *ctx)
 			continue;
 		job_ch.contact = i;
 		if (!codeplug_set_channel(job.channel, &job_ch)) {
-			save_failed(TRN("Couldn't write the codeplug: for now only"));
+			save_failed(TRN("Codeplug not written: for now only"));
 			return;
 		}
 		radio_req_dmr_target_clear();	// the channel's own target is this one now
@@ -862,7 +867,7 @@ static void factory_reset_job(void *ctx)
 		return;
 	}
 	if (n == STORAGE_NATIVE_FAILED && storage_ready()) {
-		save_failed(TRN("Reset: the native area couldn't be erased"));
+		save_failed(TRN("Reset: native area couldn't be erased"));
 		return;
 	}
 	if (board.system != NULL && board.system->reboot != NULL) {

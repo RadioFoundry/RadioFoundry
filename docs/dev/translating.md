@@ -78,7 +78,6 @@ msgstr "Retroiluminación"
 | Keep `{a\|b}` groups as groups, with the same number of choices | A text alternate: the radio shows the first choice that fits, longest first. Write each choice shorter than the one before |
 | Use only ASCII and Latin-1 letters (á é í ó ú ñ ü ç ß ...) and `… · → ° ⤒ ⤓` | The radio draws one byte a character; `--check` rejects anything else |
 | Start every hint group that names the Back key with exactly your translation of `"Back"` | Hints keep the Back group at the right edge by matching that word: change it and every Back group must change with it |
-| Translate `" from "` the same way everywhere it ends a banner title ("Call alert from ") | The banner breaks its title at that word |
 | Status strip words (IDLE, NO TX, SCAN, DUAL, ROAM) and chips (Lock, DMon, Priv) no longer than the English; keep the English when nothing fits | They sit in fixed slots of the status strip |
 | Don't translate the standard abbreviations the source leaves unmarked (TG, TS, CC, RX, TX, VFO, DMR, FM) | Radio operators know them; they aren't in the catalog |
 
@@ -153,7 +152,8 @@ text, about the size of the catalog's translations. Measure a language like any 
 1. Copy `site/i18n/en.json` to `site/i18n/<code>.json` and translate the values. Keep its format (one space of
    indent, UTF-8 as is: `json.dumps(data, ensure_ascii=False, indent=1)`). A key left out shows the English, but CI
    fails until every key is there (`python3 -m rfoundrysite.i18n` from `site/` lists them).
-2. Add the language to `site/i18n/languages.json` (`code`, `name`, `dir`, `locale`).
+2. Add the language to `site/i18n/languages.json` (`code`, `name`, `dir`, `locale`), and its catalog to
+   `tools/generic_allow.txt` next to `en.json`: it carries the same per-radio texts.
 3. If its plural rule differs from English's, add it to `PLURAL_RULES` in `site/rfoundrysite/i18n.py`.
 4. `python3 site/build.py --strict` checks the catalog. `python3 site/build.py --serve` and
    `http://localhost:8000/<code>/` shows it.

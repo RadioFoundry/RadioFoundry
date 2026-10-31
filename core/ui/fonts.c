@@ -60,6 +60,11 @@ static const char fold[] = " !cLoY|S ca<--r-o+23'uP.,1o>///?"
 			     "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYPs"
 			     "aaaaaaaceeeeiiiidnooooo/ouuuuypy";
 
+char font_fold(char c)
+{
+	return (uint8_t)c >= FONT_LATIN1_FIRST ? fold[(uint8_t)c - FONT_LATIN1_FIRST] : c;
+}
+
 const uint8_t *font_glyph(const font_t *f, uint8_t c, int *top, int *rows)
 {
 	unsigned slot;

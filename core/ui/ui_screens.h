@@ -36,6 +36,7 @@ typedef struct {
 	uint8_t kind;		// ui_banner_kind_t
 	bool warn;		// a failure: amber
 	bool hold;		// stays until opened, hidden with BACK or what it is about is gone (until_ms unused)
+	uint8_t name_at;	// where the station's name starts in title (0: none): a title too long breaks there
 	uint32_t until_ms;
 	uint32_t id;		// the station it is about (0 = none)
 	uint16_t msg;		// UI_BANNER_MESSAGE: the message's index in the inbox

@@ -16,6 +16,7 @@
 #include "ui_nav.h"
 #include "ui_svc.h"
 #include "fmt.h"
+#include "font.h"
 #include "i18n.h"
 #include "codeplug/codeplug.h"
 #include "config.h"
@@ -65,15 +66,9 @@ void ui_open_setting(uint8_t g, uint8_t i);
 uint8_t ui_t9_key(char c)
 {
 	static const char keys[] = "22233344455566677778889999";
-	// Latin-1 0xC0-0xFF (a translation's accented letters) as the plain letter: the o key types the o of
-	// "Configuraci\xF3n". 0 where there is none (the multiplication and division signs)
-	static const char latin1[] = "aaaaaaaceeeeiiiidnooooo\0ouuuuyts" "aaaaaaaceeeeiiiidnooooo\0ouuuuyty";
-	uint8_t u = (uint8_t)c;
-	if (u >= 0xC0u) {
-		c = latin1[u - 0xC0u];
-		if (c == 0)
-			return 0xFF;
-	}
+	// A translation's accented letter as the plain one (Latin-1, as the fonts fold it): the o key types the o of
+	// "Configuraci\xF3n"
+	c = font_fold(c);
 	if (c >= 'a' && c <= 'z')
 		return (uint8_t)(keys[c - 'a'] - '0');
 	if (c >= 'A' && c <= 'Z')
