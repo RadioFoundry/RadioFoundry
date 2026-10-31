@@ -1,0 +1,38 @@
+{
+  "pr": 259,
+  "base_sha": "0d028dbaeb994cc16e5890760e83ad530738072b",
+  "head_sha": "16a5b46dbfd5b70db3c46f7b5adc4657aa1e30c9",
+  "generated": "2026-10-30T00:04:37Z",
+  "counts": {
+    "changed": 2,
+    "added": 0,
+    "removed": 0,
+    "unchanged": 635
+  },
+  "images": [
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 2,
+      "screens": [
+        "contacts",
+        "contacts_find"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "240x320i10x5",
+      "screen": "contacts",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "contacts_find",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    }
+  ]
+}
