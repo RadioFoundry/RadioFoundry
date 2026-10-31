@@ -563,6 +563,17 @@ DMR voice transmission; no line errors (`ue 0`) and no overruns.
 A = GPIO 0x27, B = 0x26, inputs with GPIO B interrupts (vector 46). On every change of B: direction = −1 if A == B
 else +1. One count per B edge.
 
+**Lost interrupt (2026-10-30).** After a while on one radio the encoder stopped and every key still worked. GPIO B
+showed both encoder bits pending in INTSTATUS, enabled and unmasked, with PIC_MODE level: the bank asked for the
+interrupt and the handler never ran, so PIC source 14 had most likely been masked (cause not found). RadioFoundry
+watches for it (`platform/hrc7000/gpio_watch.c`): the 10 ms key scan counts the handler's entries, and the encoder bits
+pending on two scans running with no entry between them is a stall. The first stall's PIC masks and request record,
+GPIO B's INTSTATUS, INTEN and INTMASK, and whether the vector still pointed at the handler are kept; then, with
+interrupts off, the scan serves the bank as the handler would (sample, ack) and unmasks source 14. Steps turned in the
+10-20 ms before the scan saw the stall may be lost: the scan samples once. The debug link shows
+the count and that state (`input.enc_stalls`, `input.enc_stall_*`), and `irq.unhandled` counts sources the fallback
+handler masked ([debuglink.md](debuglink.md) 3.7). READ_MEM reads GPIO B and the PIC live (debuglink.md 3.10).
+
 ### 6.4 LEDs and backlights
 
 Two LEDs, red and green, active high on GPIO 0x20/0x21 (which is which: see the pin map conflict). LCD backlight GPIO

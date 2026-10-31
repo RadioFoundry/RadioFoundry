@@ -29,6 +29,12 @@ Changing the channel ends temporary changes, the reply window, digital monitor a
 
 The Zones list shows the VFO first, then every zone with its number of channels. Type letters to filter it.
 
+## Making a zone
+
+**OK**, **4** (Zones), then the last row, **Create New Zone**. Type the name and press **OK**. The radio saves the empty zone
+and focuses it in the list. Press **#** to open it and add channels with **Add channel**. A channel's own page can
+also put it in zones (**Zones** row, [Editing a channel](#editing-a-channel)).
+
 ## Editing a zone
 
 A zone's list (**OK**, **4**, focus the zone, **#**) also edits the zone. Each change is saved at once: there is
@@ -134,8 +140,10 @@ Focus a row and press **OK**:
 | Row | What OK does |
 |---|---|
 | Two choices (mode, timeslot, bandwidth, RX only, scan, VOX, direct mode, beeps, talker alias, battery saver) | switches to the other one |
-| Power, RX tone, TX tone, color code, TX time-out | opens a picker: turn the knob (or Up / Down) to the value, **OK** keeps it, **Back** cancels. Color code and time-out also take digits |
-| RX, TX, own ID | type the digits, **OK** keeps them, **Back** takes the last digit back. Digits outside the radio's bands are refused as you type. A new RX moves TX with it, so a repeater keeps its offset. If that would put TX outside the radio's bands, TX is set to the new RX |
+| Power, RX CTCSS/DCS, TX CTCSS/DCS, color code, TX time-out | opens a picker: turn the knob (or Up / Down) to the value, **OK** keeps it, **Back** cancels. Color code and time-out also take digits |
+| RX CTCSS/DCS, TX CTCSS/DCS, typed | type a CTCSS tone with its tenths digit: **8 8 5** is 88.5, **1 3 1 8** is 131.8. Under 60 the digits are whole Hz: **6 7** is 67.0, **1 0 0** is 100.0. Start with **0** for a DCS code: **0 2 3** is D023N. **Back** takes the last digit back. For an inverted DCS code, turn the knob |
+| Zones | opens every zone, marked "In" where the channel is. **OK** puts the channel in a zone or takes it out, saved at once. A new channel shows the row once saved |
+| RX, TX, own ID | type the digits, **OK** keeps them, **Back** takes the last digit back. Digits outside the radio's bands are refused as you type. A new RX moves TX with it, so a repeater keeps its offset. If the new RX is in another band (UHF to VHF), or TX would land outside the band, TX is set to the new RX |
 | Name | opens text entry (below) |
 | TX contact, RX group list | opens the list of contacts or group lists; type letters to find one |
 
@@ -150,7 +158,7 @@ The radio won't save a channel without a name, with RX outside its bands, with T
 instead), or a DMR channel without a TX contact. It says which.
 
 **Save as new channel** stores the edited copy at the lowest free number and leaves the original as it was.
-**Go to it** tunes the channel and **Share channel to...** sends it to another radio ([Sharing a zone](#sharing-a-zone));
+**Tune to this ch** tunes the channel and **Share channel to...** sends it to another radio ([Sharing a zone](#sharing-a-zone));
 save or discard your changes first.
 
 ### Text entry
@@ -244,6 +252,35 @@ what you typed as you go.
 default, **Auto**, follows the width: 25 kHz at 25K (and in AM), 12.5 kHz at 12.5K, and the FM broadcast step in the
 broadcast band. The step is in the status strip.
 
+### Split (repeater offset)
+
+In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **TX freq** (the split): TX against RX, "Off" or the offset ("+600k",
+"-5M").
+
+<img src="../ux/screens/160x120i5/quick_vfo_split.png" width="200" alt="Typing a TX frequency in TX freq">
+
+- **Up** and **Down** step through the band's usual offsets, at once. **Up** goes +, **Down** goes -, the most common
+  first, and stop at the last one:
+
+  | Band | Offsets |
+  |---|---|
+  | 2 m (below 200 MHz) | 600 kHz, then 1 MHz |
+  | 1.25 m (200-300 MHz) | 1.6 MHz |
+  | 70 cm (above 300 MHz) | 5 MHz, then 7.6 MHz, then 1.6 MHz |
+
+  On 70 cm, **Up** from Off is +5M, again +7.6M, again +1.6M; **Down** from +5M goes back to Off, then -5M.
+- The bottom row says what the keys do ("Up/Dn +/-  0-9 TX freq") and, while you type, shows the whole TX frequency
+  so far ("TX 147.02___").
+- Any other split (a custom one): type the TX frequency as you type a VFO frequency (**1 4 7 0 0** is 147.000) and
+  press **OK**. **Back** takes the last digit back. Any frequency the radio can transmit on is accepted.
+- A new RX frequency keeps the offset within the same band. A move to another band (UHF to VHF, say) makes the VFO simplex.
+- Monitor stays on its key in the VFO, and privacy is for channels.
+- Home shows the TX frequency: on FM after **PTT→**; on DMR in the top row ("TX 147.120"), or as the offset beside the
+  power on displays without that row. While you transmit, the large frequency turns red and shows the TX frequency
+  (on DMR, the call screen has a "TX" line).
+
+<img src="../ux/screens/160x120i5/home_vfo_dmr_tx.png" width="200" alt="Transmitting from a split DMR VFO">
+
 ### DMR in the VFO
 
 **\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"). In DMR the quick settings are the
@@ -281,9 +318,11 @@ no mode to pick and no menu: the frequency decides.
 | 108 to 137 MHz | Air band, in AM. Home shows "Air Band AM" and the squelch level, and "AM" in place of "FM" |
 | The broadcast band (65 to 108 MHz on most receivers) | FM broadcast, on the radio's broadcast receiver. Home shows "Broadcast FM" |
 
-Tune there in the VFO (type **1** **1** **8** **1**, or **0** **8** **8** **1**, and press **OK**), or program an FM
-channel on the frequency in the codeplug. Both are receive only: PTT shows "Air band: receive only" or "Broadcast: receive
-only" and the radio doesn't transmit. Sub-audio tones are ignored.
+Tune there in the VFO (type **1** **1** **8** **1**, or **0** **8** **8** **1**, and press **OK**). A DMR VFO switches to
+FM there and stays FM; DMR can't be picked in these bands. To keep a station, use **New from current** in the channel
+list (or type the RX frequency in the channel editor): the channel becomes FM and RX only, ready to save. A channel
+programmed on the frequency in the codeplug works too, even one stored as DMR. Both bands are receive only: PTT shows
+"Air band: receive only" or "Broadcast: receive only" and the radio doesn't transmit. Sub-audio tones are ignored.
 
 In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a
 fading station isn't cut, and the screen and LED show it is receiving. The squelch only stops a scan on a station:

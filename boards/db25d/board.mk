@@ -11,6 +11,8 @@ PLATFORM   := hrc7000
 # the stock codec's RAM window with DMR (memory.ld), and 128 KB above the bss without it (fm_only.ld keeps it free)
 DB25D_FULL_CLOCK ?= 1
 MCU_DEFS   := -DHRC_HOST_UART=1 -DHRC_LOADER_CPU_HZ=72000000u
+# 2 MB program flash (hardware-db25d.md 2): the debug link's READ_MEM window over it (platform/hrc7000/mem_window.h)
+MCU_DEFS   += -DHRC_XIP_FLASH_SIZE=0x200000u
 ifeq ($(DB25D_FULL_CLOCK),1)
 MCU_DEFS   += -DHRC_CPU_HZ=168000000u
 else

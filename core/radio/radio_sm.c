@@ -472,6 +472,22 @@ static void bcast_status(radio_sm_t *sm, radio_status_t *st)
 }
 #endif
 
+// The air band (on a radio with AM receive) and the broadcast receiver's range: receive only, and never DMR
+// (docs/spec/airband-and-broadcast.md 2)
+static bool listen_band(uint32_t hz)
+{
+#if CONFIG_AM_RX
+	if (radio_am_tx_refused(hz))
+		return true;
+#endif
+#if CONFIG_BCAST_FM
+	if (radio_bcast_band(hz))
+		return true;
+#endif
+	(void)hz;
+	return false;
+}
+
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->retune_pending = sm->retune_due = false;	// this tune is the one they wait for
@@ -479,6 +495,16 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	cw_cancel(sm);		// the repeater's ID: the board is set up for the channel below
 #endif
 	end_reception(sm, now_ms);
+	if (listen_band(sm->view.ch.rx_hz)) {
+		// AM or broadcast there, whatever the channel says; the VFO stays FM when it leaves the band. The channel's
+		// own mode follows, so FM there is not a temporary change (dual watch brings a pane back already FM)
+		sm->view.ch.mode = RADIO_MODE_FM;
+		if (sm->view.vfo)
+			sm->vfo_ch.mode = RADIO_MODE_FM;
+		else
+			sm->base_mode = RADIO_MODE_FM;
+		set_temporary(sm);
+	}
 #if CONFIG_AM_RX
 	sm->view.am = radio_am_channel(&sm->view.ch);	// an FM channel in the air band: AM, no sub-audio
 #endif
@@ -588,14 +614,19 @@ static uint32_t vfo_default_hz(void)
 	return board.band_count > 0 ? board.bands[0].lo_hz : 0;
 }
 
+// A new RX frequency. A split VFO keeps its offset within one transmit band (board_offset_carries); otherwise it is
+// simplex
 static void vfo_set_hz(radio_sm_t *sm, uint32_t hz)
 {
+	uint32_t tx = sm->vfo_ch.tx_hz - sm->vfo_ch.rx_hz + hz;
+	if (!sm->vfo_seeded || !board_offset_carries(sm->vfo_ch.rx_hz, hz, tx))
+		tx = hz;
 	sm->vfo_ch.rx_hz = hz;
-	sm->vfo_ch.tx_hz = hz;
+	sm->vfo_ch.tx_hz = tx;
 	sm->vfo_seeded = true;
 	if (sm->view.vfo) {
 		sm->view.ch.rx_hz = hz;
-		sm->view.ch.tx_hz = hz;
+		sm->view.ch.tx_hz = tx;
 	}
 }
 
@@ -1789,7 +1820,7 @@ static void data_save_settings(uint32_t now_ms)
 				 (cur.radioCheckEtsi ? SETTINGS_DS_RADIO_CHECK_ETSI : 0) |
 				 (cur.udpCompress == DMR_UDPC_OFF ? SETTINGS_DS_UDPC_OFF : 0) |
 				 (cur.udpCompress == DMR_UDPC_ALL ? SETTINGS_DS_UDPC_ALL : 0));
-	st->ds_ip_cnf = (uint8_t)((cur.ipConfirmedTries & 0x0F) |
+	st->ds_ip_cnf = (uint8_t)((cur.ipConfirmedTries & 0x0F) | SETTINGS_DS_CHECK_SET |
 				  ((cur.ipConfirmed == DMR_IPC_OFF ? SETTINGS_DS_IPC_OFF :
 				    cur.ipConfirmed == DMR_IPC_ALL ? SETTINGS_DS_IPC_ALL : 0u) << SETTINGS_DS_IPC_SHIFT));
 	memcpy(st->ds_ip_rule, cur.ipConfirmedRule, sizeof(st->ds_ip_rule));
@@ -1880,18 +1911,20 @@ static void data_init(radio_sm_t *sm)
 	env.packet = hostlink_net_air_packet;
 	hostlink_net_air_start();
 #endif
-	// No auto-transmit features until the user turns them on (docs/ux/principles.md): no ARS server, no radio
-	// check auto-reply. Call alerts are acknowledged (that is what makes them work); LRRP answers "no fix" without
-	// a position source
+	// No ARS server until the user sets one (docs/ux/principles.md). Radio checks are answered and call alerts
+	// acknowledged (that is what makes them work for the radio asking); LRRP answers "no fix" without a position
+	// source
 	// IP packets: compressed headers where the ports allow, confirmed only for the rules the user sets
-	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = false, .callAlertAck = true, .lrrpReply = true,
+	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
 				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 	settings_t *st = &st_copy;
 	settings_read(st);
 	if (st->ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
 		set.arsServer = st->ds_ars_server <= 0xFFFFFFu ? st->ds_ars_server : 0;
-		set.radioCheckReply = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
+		// A record from before the default became On answers too (as zone shares, docs/spec/dmr-data.md 8)
+		set.radioCheckReply = !(st->ds_ip_cnf & SETTINGS_DS_CHECK_SET) ||
+				      (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
 		set.callAlertAck = (st->ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
 		set.lrrpReply = (st->ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
 		// A record from before ETSI IP text has neither format bit: TMS, as that firmware sent (only the default
@@ -4780,7 +4813,7 @@ static bool retunes(uint8_t type)
 {
 	switch (type) {
 	case RREQ_CH_STEP: case RREQ_ZONE_POS: case RREQ_ZONE: case RREQ_VFO: case RREQ_VFO_STEP: case RREQ_VFO_SET:
-	case RREQ_BANDWIDTH: case RREQ_TONE: case RREQ_MODE: case RREQ_DMR_TS: case RREQ_DMR_CC: case RREQ_VFO_COPY:
+	case RREQ_VFO_TX: case RREQ_BANDWIDTH: case RREQ_TONE: case RREQ_MODE: case RREQ_DMR_TS: case RREQ_DMR_CC: case RREQ_VFO_COPY:
 		return true;
 	default:
 		return false;
@@ -4905,6 +4938,22 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			enter_vfo(sm, now_ms);
 		}
 		break;
+	case RREQ_VFO_TX: {
+		// The receiver stays as it is: TX is set up at the next key-up. DMR works out repeater or direct from the
+		// split, so the call stack is set up again (it publishes the view)
+		uint32_t tx = req->arg > 0 ? (uint32_t)req->arg : sm->vfo_ch.rx_hz;
+		if (busy || !sm->view.vfo || req->arg < 0 || !board_in_band(tx, true)) {
+			break;
+		}
+		sm->vfo_ch.tx_hz = tx;
+		sm->view.ch.tx_hz = tx;
+#if CONFIG_DMR
+		dmr_reconfigure(sm);
+#else
+		changed(sm);
+#endif
+		break;
+	}
 #if CONFIG_AM_RX
 	case RREQ_VFO_STEP_SIZE:
 		if ((req->arg == 0 || (req->arg >= 1000 && req->arg <= 1000000)) && (uint32_t)req->arg != sm->vfo_step_set) {
@@ -5123,7 +5172,8 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_MODE:
 		if (busy || (req->arg != RADIO_MODE_FM && req->arg != RADIO_MODE_DMR) || req->arg == sm->view.ch.mode ||
 				(req->arg == RADIO_MODE_FM && !(sm->view.vfo ? CONFIG_VFO_FM : CONFIG_FM)) ||
-				(req->arg == RADIO_MODE_DMR && sm->view.vfo && !CONFIG_VFO_DMR)) {
+				(req->arg == RADIO_MODE_DMR && (listen_band(sm->view.ch.rx_hz) ||
+								(sm->view.vfo && !CONFIG_VFO_DMR)))) {
 			break;
 		}
 		sm->view.ch.mode = (uint8_t)req->arg;

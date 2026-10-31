@@ -663,7 +663,8 @@ DLINK   := debuglinkTest.c $(CORE)/debuglink/dl_frame.c $(CORE)/debuglink/dl_fmt
 	$(CORE)/debuglink/dl_chip.c $(CORE)/debuglink/dl_shot.c $(CORE)/cps/cps_lz4.c
 TESTS   += debuglinkTest
 
-debuglinkTest: $(DLINK) $(wildcard $(CORE)/debuglink/*.h)
+debuglinkTest: $(DLINK) $(wildcard $(CORE)/debuglink/*.h) $(ROOT)/platform/stm32f4/mem_window.h \
+		$(ROOT)/platform/hrc7000/mem_window.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDLOG_NO_RTOS -o $@ $(DLINK)
 
 run: run-debuglink
@@ -875,6 +876,12 @@ TESTS   += hrc7000UartFormatTest
 hrc7000UartFormatTest: hrc7000UartFormatTest.c $(ROOT)/platform/hrc7000/uart_format.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000UartFormatTest.c
 
+# The GPIO interrupt watch's lost-interrupt test (platform/hrc7000/irq_stall.h)
+TESTS   += hrc7000IrqStallTest
+
+hrc7000IrqStallTest: hrc7000IrqStallTest.c $(ROOT)/platform/hrc7000/irq_stall.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000IrqStallTest.c
+
 # The HR_C7000 codec slot (platform/hrc7000/codec_slot.h): versions 1 and 2, the move, the refusals, and the slot
 # tools/hrc7000_codec.py writes (docs/spec/codec-placement.md)
 TESTS   += hrc7000CodecSlotTest
@@ -883,13 +890,15 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
 
 run: run-platform
-run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest
+run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest \
+		hrc7000IrqStallTest
 	./bk4819Test
 	./at1141Test
 	./fd6818shTest
 	./superhetTest
 	./hrc7000ClockTest
 	./hrc7000UartFormatTest
+	./hrc7000IrqStallTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-platform
