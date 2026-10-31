@@ -258,7 +258,7 @@ class FakeRadio:
     """A simulated update mode for tests: answers the handshake and the identity, keeps what is written. nak_every:
     refuse every n-th frame once; silent_after: stop answering after that many frames"""
 
-    def __init__(self, model="D578UV", nak_every=0, silent_after=None):
+    def __init__(self, model="MODEL1", nak_every=0, silent_after=None):
         self.model = model
         self.out = b""
         self.inbuf = b""

@@ -349,14 +349,24 @@ static void test_tx_tones(void)
 	qa4818_tone_gen(&c, true);
 	SEQ(&f, n, { 0x70, 0 }, { 0x70, 0xA000 });
 
-	// The microphone again: 0x1B, 0x17, the generator off, then the voice drive with 0x51's level (read-modify-write)
+	// The microphone again: 0x1B, the microphone's level (0x18, page 1 0x17), the generator off, then the voice drive
+	// with 0x51's level (read-modify-write)
 	f.regs[0x51] = 0x90C5;
 	n = f.n;
 	int reads = f.reads;
-	qa4818_tx_mic(&c, 0x3980, 0x12);
+	qa4818_tx_mic(&c, 0x3980, 0x12, QA4818_MIC_GAIN_DEFAULT, 0x37);
 	SEQ(&f, n,
-	    { 0x7F, 1 }, { 0x1B, 0x0004 }, { 0x17, 0x03B8 }, { 0x7F, 0 }, { 0x70, 0 }, { 0x40, 0x3980 }, { 0x51, 0x9092 });
+	    { 0x7F, 1 }, { 0x1B, 0x0004 }, { 0x7F, 0 }, { 0x18, 0x2125 }, { 0x7F, 1 }, { 0x17, 0x03B8 }, { 0x7F, 0 },
+	    { 0x70, 0 }, { 0x40, 0x3980 }, { 0x51, 0x9092 });
 	CHECK(f.reads == reads + 1);
+
+	// The microphone's level: the stock arithmetic, both fields masked to their width
+	n = f.n;
+	qa4818_mic_level(&c, 7, 0x15);
+	SEQ(&f, n, { 0x18, 0x3925 }, { 0x7F, 1 }, { 0x17, 0x02A8 }, { 0x7F, 0 });
+	n = f.n;
+	qa4818_mic_level(&c, 2, 0xFF);
+	SEQ(&f, n, { 0x18, 0x1125 }, { 0x7F, 1 }, { 0x17, 0x03F8 }, { 0x7F, 0 });
 
 	// The audio input pin (the stock DTMF): 0x18 and page 1 0x17 bit 0 as well
 	n = f.n;

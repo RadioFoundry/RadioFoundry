@@ -159,7 +159,7 @@ clean:
 
 # The radio core's state machine and the input gesture engine, against a fake board and codeplug (no RTOS)
 CORE_HAL := -I$(ROOT)/hal -Wshadow
-TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
+TESTS   += radioCoreTest inputTest quadratureTest serialmicTest anytoneMicTest
 
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
@@ -262,6 +262,10 @@ quadratureTest: quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c $
 serialmicTest: serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c $(ROOT)/drivers/input/serialmic/serialmic.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c
 
+# A serial keypad hand mic's frames (drivers/input/anytone_mic, header only)
+anytoneMicTest: anytoneMicTest.c $(ROOT)/drivers/input/anytone_mic/anytone_mic.h
+	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ anytoneMicTest.c
+
 # The VOX mic level (drivers/audio/miclevel): the boards' analog-tap scale and the level from PCM blocks
 # The second receiver's link (core/rx2): frames and both ends back to back
 TESTS   += rx2LinkTest
@@ -286,7 +290,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest anytoneMicTest miclevelTest \
           adcPcmTest rx2LinkTest keyassignTest powerSwitchTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
@@ -298,6 +302,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTes
 	./inputTest
 	./quadratureTest
 	./serialmicTest
+	./anytoneMicTest
 	./miclevelTest
 	./adcPcmTest
 	./rx2LinkTest

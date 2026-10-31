@@ -31,6 +31,7 @@ Most checks read the diagnostics lines (`tools/rfoundry_debug.py diag`, `boards/
 | `gps` | whether the module was heard (`yes`/`no`), NMEA sentences with a good / a bad checksum, bytes received (`b`) |
 | `kt` | whether the KTMicro receiver answered on its I2C bus |
 | `rssi` | chip 0's raw RSSI and noise as the radio task last read them, and its signal flag (`sig`) |
+| `hmic` | the serial keypad microphone: present (`yes`/`no`), frames accepted / bytes dropped, the key code held (`k`, hex) |
 
 The `gps` and `rssi` lines have the shape the generic health tests read (`tests/hil/test_health.py`).
 
@@ -79,7 +80,9 @@ high and nothing keys the transmitter. Transmit only from stage 7 on, at the low
 | --- | --- | --- |
 | Each key moves `keys` into one window (below 500, 1500, 2500, 3500) | one ladder value per key, 4095 with none | the windows in `input_d578uv.c` (`ladder`). Record which printed key gives which value in hardware-d578uv.md 3.2, then name the keys in `d578uv.h` and `board.c` |
 | Encoder: one count per detent, clockwise is the next channel | the debug link's encoder counters | the decoder table in `drivers/input/quadrature`; swap PC8/PC9 in `pins.h` for the direction |
-| The plain microphone's PTT, Up and Down | `keys` mic bits; PTT shows as `KEY_PTT` with the RF off (no channel or a receive-only band) | `mic_key_decode` in `front_io.h`; a serial keypad microphone isn't read ("Hand Type" in the stock CPS) |
+| The plain microphone's PTT, Up and Down | `keys` mic bits; PTT shows as `KEY_PTT` with the RF off (no channel or a receive-only band); `hmic no` | `mic_key_decode` in `front_io.h` |
+| The serial keypad microphone: present, PTT, each key | `hmic yes`, frames rising and few dropped bytes; each key's code in `k` while held; PTT as above | `drivers/input/anytone_mic` (the frame layout, `ANYTONE_MIC_TIMEOUT_MS`), the USART set-up in `input_d578uv.c`. Record the digit, `*` and `#` codes in hardware-d578uv.md 3.2 |
+| Unplugging the serial microphone with PTT held | the transmission ends within 3 s; `hmic no` | `ANYTONE_MIC_TIMEOUT_MS` |
 | `sup` within 0.2 V of a meter | the 11:1 divider | `supply_mv` in `power_d578uv.c` |
 | `vol` moves end to end with each knob | raw 0-4095 | PC2/PC5 channels in `power_d578uv.c` |
 | Turning the radio off saves and powers down | | PA0 with PA6 below 1.33 V (`switch_on`), PC3 |
@@ -125,9 +128,10 @@ The lowest power first, `tests/hil` FM transmit cases with `--allow-rf`.
 | --- | --- | --- |
 | Carrier on frequency | within a few hundred Hz | a constant error in ppm on both bands: Settings > Advanced > Freq trim (each synthesizer at f x (1 + trim), `synth_hz` in `radio_d578uv.c`); an error that differs by band: the QA4818's frequency words (`drivers/rf/qa4818`) |
 | Power per level rises; the lowest is low | a power meter at each level, both bands | the PA DAC (PA4) values from the calibration |
-| Deviation and microphone gain | the bench's FM check, `test_mic_gain_deviation` | QA4818 deviation and mic gain registers |
+| Deviation and microphone gain | the bench's FM check, `test_mic_gain_deviation` | QA4818 deviation (0x40) and the microphone level (0x18, page 1 0x17 from the calibration's MIC byte, 5.7) |
 | CTCSS, the 1750 Hz burst, DTMF on the air | `tests/hil` tone cases | 5.3: TIMER3 PWM on PB9, chip 0's 0x25 bit 0 (microphone mute) |
 | An APRS beacon decodes (ham band, `--aprs-test-mhz`) | `tests/hil` APRS transmit cases; the bench's decoder | the tones' level, `AFSK_AMP_NOMINAL` in `tone_d578uv.c` against the deviation; the DTMF drive (5.3) |
+| The microphone level follows a voice, and VOX keys on it (FM, VOX on) | the debug link's `vox.level` (about 0 in silence, rising with speech); a VOX transmission ends after the tail | chip 0's 0x64 and its scale (`MIC_AMP_BITS` in `radio_d578uv.c`, 5.6); the mute bit 0x25 bit 0 in receive |
 | The PA off and receive back on PTT release | no carrier after release | `d578uv_rf_safe`, PE6, the shift register's 0x10 |
 
 ## 8. DMR receive

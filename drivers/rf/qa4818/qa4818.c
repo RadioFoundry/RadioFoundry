@@ -64,7 +64,7 @@ static const uint16_t ctcss_detect[CTCSS_TONES + 1] = {
 #define TONE_LATCH	0x2000u
 #define TX_NO_TONE	0x0473u		// 0x07 transmitting without sub-audio (55.2 Hz, latched off with 0x51)
 #define TONE_GEN_ON	0xA000u		// 0x70: the tone generator on
-#define TX_AUDIO_MIC	0x03B8u		// page 1 0x17 in FM TX: the microphone
+#define TX_AUDIO_MIC	0x03B8u		// page 1 0x17 in the FM TX table (qa4818_mic_level then sets it)
 #define TX_AUDIO_LINE	0x03B9u		// ... bit 0 set: the audio input pin (the stock DTMF, inferred)
 #define TX_PATH_VOICE	0x0004u		// page 1 0x1B in FM TX
 #define TX_PATH_TONE	0x0005u		// ... while a tone sends (inferred: the microphone's path off)
@@ -285,13 +285,14 @@ void qa4818_init_trx(qa4818_t *c, uint16_t gpio, uint16_t r49)
 	qa4818_tune(c, 0, INIT_HZ);
 	vco_cal(c, 0x0044, 0x0344, false);
 	qa4818_out(c, QA4818_OUT_RX);
-	// AGC steps (0x09, one per index, inferred) and two page 1 values
+	// 0x09: the DTMF detector's symbol coefficients (bits 15:12 the symbol, 7:0 its coefficient, as in the BK4819
+	// map; inferred), then two page 1 values
 	wr(c, 0x04, 0x0302);
-	static const uint16_t agc[] = {
+	static const uint16_t dtmf_coef[] = {
 		0x0000, 0x105B, 0x205F, 0x3056, 0x4061, 0x5054, 0x604C, 0x7067, 0x807B, 0x9076,
 	};
-	for (size_t i = 0; i < sizeof(agc) / sizeof(agc[0]); i++) {
-		wr(c, 0x09, agc[i]);
+	for (size_t i = 0; i < sizeof(dtmf_coef) / sizeof(dtmf_coef[0]); i++) {
+		wr(c, 0x09, dtmf_coef[i]);
 	}
 	page(c, 1);
 	wr(c, 0x11, 0x06FF);
@@ -509,6 +510,14 @@ void qa4818_tx_drive_off(qa4818_t *c)
 	drive(c, 0, 0);
 }
 
+void qa4818_mic_level(qa4818_t *c, uint8_t gain, uint8_t cal)
+{
+	wr(c, 0x18, (uint16_t)(0x0125u | (uint16_t)(gain & 7u) << 11));
+	page(c, 1);
+	wr(c, 0x17, (uint16_t)(0x0200u | (uint16_t)(cal & 0x3Fu) << 3));
+	page(c, 0);
+}
+
 void qa4818_tx_aux(qa4818_t *c, bool line, uint16_t r40)
 {
 	page(c, 1);
@@ -537,14 +546,14 @@ void qa4818_tone_gen(qa4818_t *c, bool on)
 	wr(c, QA4818_REG_TONE_GEN, on ? TONE_GEN_ON : 0);
 }
 
-// The stock firmware ends its burst with page 1 0x1B, 0x70 and the drive; its DTMF end rewrites 0x17 (through a
-// routine that also sets a calibrated 0x18, not followed here: 0x18 stays the TX value 0x4125)
-void qa4818_tx_mic(qa4818_t *c, uint16_t r40, uint8_t level)
+// The stock firmware ends its burst with page 1 0x1B, 0x70 and the drive; its DTMF end runs the microphone level's
+// routine between 0x1B and the drive, which puts back 0x18 and 0x17 after the audio input pin's values
+void qa4818_tx_mic(qa4818_t *c, uint16_t r40, uint8_t level, uint8_t gain, uint8_t cal)
 {
 	page(c, 1);
 	wr(c, 0x1B, TX_PATH_VOICE);
-	wr(c, 0x17, TX_AUDIO_MIC);
 	page(c, 0);
+	qa4818_mic_level(c, gain, cal);
 	wr(c, QA4818_REG_TONE_GEN, 0);
 	drive(c, r40, level);
 }
@@ -555,4 +564,9 @@ void qa4818_status(qa4818_t *c, qa4818_status_t *st)
 	st->noise = (uint8_t)(rfbus_read(c->bus, QA4818_REG_NOISE) & 0x7Fu);
 	st->rssi = (uint16_t)(rfbus_read(c->bus, QA4818_REG_RSSI) & 0x1FFu);
 	st->tone_flags = rfbus_read(c->bus, QA4818_REG_TONE_FLAGS);
+}
+
+uint16_t qa4818_voice(qa4818_t *c)
+{
+	return rfbus_read(c->bus, QA4818_REG_VOICE);
 }

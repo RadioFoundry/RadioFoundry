@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# AnyTone AT-D578UV (mobile), GD32F303 builds: GD32F303VK + SCT3258 DMR baseband + four AT1846S-class RF chips +
+# AnyTone AT-D578UV (mobile), GD32F303 builds: GD32F303VK + SCT3258 DMR baseband + four QA4818N RF chips (BK4819-class) +
 # ST7735S 160x128 on an 8080 bus (docs/spec/hardware-d578uv.md). Radios built from mid-2022 carry an Artery AT32F43x
 # instead, which this image doesn't run on (hardware-d578uv.md 1)
 PLATFORM   := gd32f30x

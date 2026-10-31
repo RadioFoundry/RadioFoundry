@@ -61,7 +61,12 @@
 #define PIN_BT_TX		GPIOC, MCU_PIN(10)
 #define PIN_BT_RX		GPIOC, MCU_PIN(11)
 // The hand microphone. A plain microphone pulls these two lines low (pull-ups; front_io.h): PA10 alone is PTT. The
-// serial keypad microphone uses the same pins as USART0 (PA9 TX, PA10 RX, 115200); RadioFoundry doesn't speak it
+// serial keypad microphone uses the same pins as the USART the manuals call USART1 (the GD32's USART0): PA9 the radio's
+// TX, PA10 its RX, 115200 (input_d578uv.c)
+#define MIC_USART		MCU_USART1
+#define MIC_USART_IRQn		MCU_USART1_IRQn
+#define MIC_USART_HANDLER	MCU_USART1_HANDLER
+#define MIC_TX_AF		7u	// PA9 as USART1 TX (the AT32's multiplexed function; the GD32 has one per pin)
 #define PIN_MIC_LINE9		GPIOA, MCU_PIN(9)
 #define PIN_MIC_LINE10		GPIOA, MCU_PIN(10)
 

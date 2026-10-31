@@ -677,10 +677,20 @@ The front keys are read, but which printed key sends which code isn't known yet.
 **Up**, **Down**, **OK** and **Back**; the others carry **A/B**, **Monitor**, **Talk target** and jobs you can set in
 **Settings > Keys**, until a radio shows where they are. The front knob steps the channel.
 
-PTT is on the hand microphone. RadioFoundry reads the plain microphone: its PTT, and its **Up** and **Down** keys, which
-act as the front **Up** and **Down**. The serial keypad microphone isn't supported: its keys, PTT included, do nothing.
-In the vendor firmware the type is the **Hand Type** setting; RadioFoundry has no such setting, so use a plain
-microphone.
+PTT is on the hand microphone. Both kinds work without a setting: the radio tells the keypad microphone from the plain
+one by the messages it sends. (The vendor firmware's **Hand Type** setting chooses between them.) Untested on a radio.
+
+| Microphone key | Role |
+|---|---|
+| **PTT** | **PTT** |
+| **Up**, **Down** (both microphones) | as the front **Up** and **Down** |
+| **0**-**9** (keypad microphone) | digits |
+| **\*** / **#** | **\*** / **#**, and **Down** / **Up** in lists |
+| **Menu**, **Exit** | as the front **OK** and **Back** |
+| **A/B** | **A/B** |
+| **PA**, **PB**, **PC**, **PD** | **OK**, zone up, zone down, **Back** (the vendor firmware's defaults) |
+
+A keypad microphone unplugged while the radio is on stops its PTT within 3 seconds.
 
 ### What the AT-D578UV lacks today
 
@@ -696,8 +706,8 @@ microphone.
   pauses: the air band uses the second receiver's parts. FM broadcast receive (87.5-108 MHz) is written and untested;
   stereo isn't, and the signal level's scale is a guess, so a scan may stop on the wrong stations.
 - Bluetooth isn't written. The built-in GPS is written and untested.
-- VOX isn't written: the microphone's level doesn't reach the processor, and the RF chips' own detector, if they
-  have one, isn't known. The vendor firmware has no VOX either.
+- VOX is written and untested. The vendor firmware has no VOX; RadioFoundry reads the microphone's level from the RF
+  chip, and how loud a voice must be to key it may need a different **VOX level** than on other radios.
 - APRS receive is written and untested, but this image leaves it out: it needs more memory than the GD32F303 has
   left with DMR on. The Artery image has it. RadioFoundry decodes the receive audio itself; the vendor's APRS comes
   from an add-on board, which RadioFoundry doesn't use.

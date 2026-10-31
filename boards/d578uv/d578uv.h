@@ -23,15 +23,23 @@ extern const hal_bcast_t d578uv_bcast;	// the KTMicro receiver's broadcast FM (r
 // Key map bits (input_d578uv.c), named for what the stock firmware does with them (hardware-d578uv.md 3.2). Ladder 0
 // from the lowest voltage up gives the stock key codes 0x14, 0x15, 0x16, 0x0E, ladder 1 0x17, 0x18, 0x19, 0x0F; PA1 is
 // 0x1E. In menus the stock firmware takes 0x14 and 0x16 as up and down, 0x0E confirms and 0x0F exits. Which printed key
-// each is isn't traced, so the others keep their stock code. PTT and the microphone's Up and Down are the plain hand
-// microphone's lines (front_io.h)
+// each is isn't traced, so the others keep their stock code. PTT and the microphone's Up and Down come from the plain
+// hand microphone's lines (front_io.h) or the serial microphone's frames, which add its keypad (the KEY_MIC_ digits,
+// '*', '#', A/B and the programmable PA..PD; drivers/input/anytone_mic). The serial microphone's Menu and Exit are the
+// front panel's
 enum {
 	KEY_UP, KEY_C15, KEY_DOWN, KEY_MENU,
 	KEY_C17, KEY_C18, KEY_C19, KEY_EXIT,
 	KEY_C1E,
 	KEY_PTT, KEY_MIC_UP, KEY_MIC_DOWN,
+	KEY_MIC_0, KEY_MIC_1, KEY_MIC_2, KEY_MIC_3, KEY_MIC_4, KEY_MIC_5, KEY_MIC_6, KEY_MIC_7, KEY_MIC_8, KEY_MIC_9,
+	KEY_MIC_STAR, KEY_MIC_HASH, KEY_MIC_AB, KEY_MIC_PA, KEY_MIC_PB, KEY_MIC_PC, KEY_MIC_PD,
 	KEY_COUNT
 };
+_Static_assert(KEY_COUNT <= 32, "the key scan is a 32-bit mask");
+
+// The serial hand microphone (input_d578uv.c): heard, its accepted frames, bytes dropped and the key it holds
+void d578uv_hand_mic(bool *present, uint32_t *frames, uint32_t *errors, uint8_t *key);
 
 // LCD backlight, 0..100 %: register 8 of the PA5 device (radio_d578uv.c, front_io.h). Any task
 void d578uv_backlight(uint8_t percent);
@@ -67,6 +75,9 @@ void d578uv_afsk_tx_stop(void);
 #endif
 #if CONFIG_AM_RX || CONFIG_BCAST_FM
 bool d578uv_kt_present(void);		// the KTMicro receiver answered at the radio's init (5.4)
+#endif
+#if CONFIG_VOX
+uint8_t d578uv_mic_level(void);	// hal_power_t.mic_level: chip 0's voice amplitude, 0..100 (radio_d578uv.c)
 #endif
 // Side A's last raw RSSI, noise and signal flag (the radio task's status poll), for the diagnostics
 void d578uv_rx_raw(uint16_t *rssi, uint16_t *noise, bool *signal);

@@ -80,13 +80,32 @@ chips on the same lines, so each frame on the bus holds the scheduler (not the i
 | PA1, pull-up, low = pressed | 0x1E | |
 | Encoder PC8 / PC9, pull-ups | 0x12 / 0x13 | both edges (EXTI 8 and 9) |
 | Microphone PA10 low, PA9 high | 0x1F press, 0x20 release: PTT | plain microphone only (below) |
-| Microphone PA9 low, PA10 high | 0x10: microphone Up (inferred) | |
-| Microphone PA9 and PA10 low | 0x11: microphone Down (inferred) | |
+| Microphone PA9 low, PA10 high | 0x10: channel +1 (the microphone's Up) | |
+| Microphone PA9 and PA10 low | 0x11: channel -1 (Down) | |
+| Serial microphone frames | 0x01-0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x1A-0x1D, PTT | serial microphone only (below) |
 
-- In menus the stock firmware takes 0x14 and 0x16 as up and down (they auto-repeat there); 0x0E confirms, 0x0F
-  exits (inferred).
-- 0x14-0x19 have long presses: six codes for the six programmable keys P1-P6. Which code is which printed key was
-  not resolved.
+What the stock firmware does with each code:
+
+| Code | Firmware's name | Idle screen | Menus |
+| --- | --- | --- | --- |
+| 0x14-0x16 | P1-P3 (PB0 keys 1-3) | programmable function | 0x14 and 0x16 are list up and down; 0x15 its function |
+| 0x17-0x19 | P4-P6 (PB1 keys 1-3) | programmable function | its function |
+| 0x0E | (PB0 key 4) | opens the menu | confirm |
+| 0x0F | (PB1 key 4) | long: key lock on and off | back |
+| 0x1E | PUSH (PA1) | programmable function | confirm |
+| 0x12 / 0x13 | encoder | channel +1 / -1 | list keys |
+| 0x1A-0x1D | PA-PD (serial microphone only) | programmable function | |
+| 0x0D | (serial microphone only) | the main side, A or B | |
+| 0x01-0x0C | (serial microphone keypad) | digits and direct entry | |
+
+- Every programmable key has a short and a long function ("Key Func"), a function id from a list of 58. First-boot
+  defaults: P1 VFO/MR, P2 Tx Power, P3 TalkAround, P4 Speaker Mode, P5 APRS Set, P6 Switch ChType; PA Key Menu, PB
+  Zone Up, PC Zone Dn, PD Key Exit; PUSH and every long press Off. The programming software sets its own.
+- The firmware names keys only by code (P1-P6, PA-PD, PUSH). Which printed key is P1, and whether PUSH is the
+  encoder's switch, is not in the image. The digit codes 0x01-0x0A as 1-9 and 0, 0x0B as `*` and 0x0C as `#` are
+  inferred from the code range and the unlock message ("Push * To Unlock Key").
+- Encoder: an edge on PC8 with PC9 equal to PC8 afterwards is 0x12 (+1), unequal 0x13. Which is clockwise depends
+  on the wiring, which isn't known.
 - Power-on combinations, read by the stock application in its reset init (PA1 and the ladders, PA1 debounced twice
   10 ms apart):
 
@@ -103,22 +122,44 @@ chips on the same lines, so each frame on the bus holds the scheduler (not the i
   (0x08000000-0x08005FFF, not in the firmware files) reads it (unverified). With RadioFoundry installed only the
   bootloader's combination is left.
 
-- PTT is on the hand microphone. The stock firmware has two microphone types (its "Hand Type" setting):
-  - **Plain** (any nonzero setting): PA9 and PA10 are GPIO inputs with pull-ups and the microphone pulls them low:
-    PA10 alone is PTT, PA9 alone the microphone's Up, both its Down (table above; Up and Down are inferred from the
-    stock key codes).
-  - **Serial keypad** (setting 0): PA9/PA10 are USART0 at 115200 baud and a small MCU in the microphone sends its
-    keys (PTT included) as frames. The frame format is not decoded.
+- PTT is on the hand microphone. The stock firmware has two microphone types, its "Hand Type" setting:
+  - **Enhance Type** (1): the plain microphone. PA9 and PA10 are GPIO inputs with pull-ups and the microphone pulls
+    them low: PA10 alone is PTT, PA9 alone 0x10, both 0x11 (table above).
+  - **Normal Type** (0, the default): the serial keypad microphone. PA9 (TX) and PA10 (RX) are USART0, 115200 8N1.
 
   Bluetooth PTT and the CPS's remote PTT post the same key events. PD0, once taken for PTT, is a transmit burst line
   from the baseband (section 5.1).
 
-  RadioFoundry reads the plain microphone only (`boards/d578uv/front_io.h`): pull-ups on PA9 and PA10, so without a
-  microphone both lines are high and nothing keys the transmitter; the core debounces them as the other keys.
+The serial microphone's frames, as the stock firmware reads them:
 
-RadioFoundry's key names (`d578uv.h`): `KEY_UP`, `KEY_DOWN`, `KEY_MENU`, `KEY_EXIT` for the four with a known menu
-role, `KEY_C15`, `KEY_C17`, `KEY_C18`, `KEY_C19`, `KEY_C1E` (the stock code) for the others, `KEY_PTT`,
-`KEY_MIC_UP` and `KEY_MIC_DOWN` for the microphone. The microphone's Up and Down act as the front Up and Down.
+| Item | Value |
+| --- | --- |
+| Frame types | the first byte gives the length: `A` (0x41) 8 bytes, the microphone's; `F` 7; `+` 31 (the PC link's); 0x06 one byte (an acknowledgement) |
+| Accepted | an `A` frame whose byte 7 is 0x06 |
+| Byte 4 = 0x82 | the microphone identifying itself: present, nothing else |
+| Otherwise | byte 1 PTT (nonzero = pressed), byte 2 a key state, byte 3 the key-valid flag, byte 4 the key code (the codes above). Bytes 5 and 6 unused |
+| Answer | the radio sends 0xAA for each accepted frame |
+| Presence | a countdown from 250 ticks, restarted by each accepted frame; at 0 the microphone is gone (the tick's length is not known) |
+
+Byte 2's role is partly inferred: the firmware posts a press or release of code 0x0D from byte 3, and any other code
+unchanged.
+
+RadioFoundry reads both microphones without a setting (`boards/d578uv/input_d578uv.c`,
+`drivers/input/anytone_mic`). Pull-ups on PA9 and PA10, so without a microphone both lines are high and nothing keys
+the transmitter. The USART receives on PA10 all the time. Once a frame is accepted the keys and PTT come from the
+frames and PA9 becomes the USART's transmit line for the answers. After 3 s without a frame the microphone counts as
+gone, with its PTT and key, and PA9 is an input again (the 3 s is RadioFoundry's choice). For 50 ms after any byte the
+two lines aren't read as keys, so a frame's bits never look like PTT; a plain microphone's PTT is a break to the USART,
+which counts as no byte. A key is held while the last frame had byte 3 set. The core debounces all of them as the other
+keys. The diagnostics line `hmic` shows whether a serial microphone is present, its frames and dropped bytes and the
+key code held.
+
+RadioFoundry's key names (`d578uv.h`): `KEY_UP`, `KEY_DOWN`, `KEY_MENU`, `KEY_EXIT` for 0x14, 0x16, 0x0E and 0x0F,
+`KEY_C15`, `KEY_C17`, `KEY_C18`, `KEY_C19`, `KEY_C1E` (the stock code) for the others, `KEY_PTT`, `KEY_MIC_UP`,
+`KEY_MIC_DOWN` and `KEY_MIC_0`-`KEY_MIC_9`, `KEY_MIC_STAR`, `KEY_MIC_HASH`, `KEY_MIC_AB`, `KEY_MIC_PA`-`KEY_MIC_PD`
+for the microphones. The microphone's Up and Down act as the front Up and Down, its Menu and Exit as the front ones,
+its digits enter digits, `*` and `#` act as down and up, A/B switches the side, and PA-PD follow the stock defaults
+(menu, zone up, zone down, back).
 
 ### 3.3 Power
 
@@ -158,7 +199,7 @@ Audio into the MCU (stock firmware, static analysis):
 | Signal | Path | Stock use |
 | --- | --- | --- |
 | Receive audio | PC0, ADC channel 10 (rank 4 of the DMA scan), biased at mid-scale | DTMF, 2-Tone and 5-Tone decoding in software: TIMER5 samples it only while receiving, at about 9.02 kHz for DTMF (8 bits), 4 times the tone for 2-Tone (8 bits), 11.2 kHz for 5-Tone (a zero-crossing slicer on the 12-bit value). That it carries the selected side's demodulated audio is inferred |
-| Microphone | none: no ADC rank carries it | the stock firmware has no VOX (no VOX function or string; the key slots other AnyTone models give VOX hold the AM and FM squelch levels here) |
+| Microphone | none: no ADC rank carries it; chip 0 measures it (5.6) | the stock firmware has no VOX (no VOX function or string; the key slots other AnyTone models give VOX hold the AM and FM squelch levels here) |
 | APRS | the APRS add-on board on the Bluetooth UART (PC10 / PC11) | the board decodes AFSK itself and reports `+APRS:` lines; the MCU never sees the audio |
 
 RadioFoundry's APRS receive (`CONFIG_APRS_RX`, `boards/d578uv/afsk_d578uv.c`) samples PC0 itself and doesn't use the
@@ -286,8 +327,22 @@ sharing are off with DMR on.
 Four chips of one type on a 3-wire bus: PB3 clock, PB4 data, one enable each (low = selected): chip 0 PB5, chip 1
 PB2, chip 2 PC13, chip 3 PE1. Frame: register (bit 7 = read), then 16 data bits, MSB first. Register 0x7F selects
 page 0 or 1; writing 0x8000 then 0 to register 0x00 is a soft reset. The parts are marked QA4818N or WX4818N
-(public photos); no data sheet was found. Their register use is BK4819-like (frequency, sub-audio and RSSI
-registers) with differences (enable register, pages, gain), so the meanings below come from the stock firmware.
+(public photos); no data sheet was found. The register map follows Beken's BK4819 (V3 register list, 2020) outside
+the paged range 0x10-0x3F; the meanings below come from the stock firmware, and the BK4819 list names some more:
+
+| Register | Stock use | BK4819 meaning |
+| --- | --- | --- |
+| 0x03 | the enable word (0xBFF5, 0xC1FE) | not listed; the same word is the BK4819's 0x30 (bit 2 the microphone ADC, 1 TX DSP, 0 RX DSP, 3 PA gain, 7:4 PLL, 13:10 RX chain, 15 VCO calibration), which the QA4818 uses otherwise |
+| 0x09 | ten writes at init, 0x0000 to 0x9076 | DTMF/SelCall detector coefficients: bits 15:12 the symbol, 7:0 its coefficient |
+| 0x10-0x13 | 0x0038, 0x025A, 0x035B, 0x0396 | RX AGC gain table (defaults 0x0038, 0x025A, 0x037B, 0x03DE) |
+| 0x40 | the "drive": 0x3600-0x3900 by band + the level << 1, less 0x100 on a narrow channel | TX deviation: bit 12 on, 11:0 the amount (default 0x4D0) |
+| 0x47 | 0x6140 | AF output: bits 11:8 = 1 normal audio, bit 13 inverted |
+| 0x51 | bit 15 on, low 7 bits a calibrated level | sub-audio TX on, bits 6:0 its gain |
+| 0x64 | not read | voice amplitude, the VOX detector's input (5.6) |
+| 0x78 | the gain code << 8 \| 0xFF | RSSI squelch thresholds (the stock firmware decides the squelch itself) |
+
+Where the two agree the BK4819 meaning is likely but inferred. 0x40 as the deviation, not the PA drive, fits the
+stock arithmetic (one step less on a narrow channel) and the factory items MODU (modulation) whose bytes feed it.
 
 | Chip | Role |
 | --- | --- |
@@ -445,7 +500,8 @@ path isn't traced and isn't written.
 
 The stock AM set-up (part of side B's): chips 1 and 3 off, chip 1 0x70 = 0 and 0x52 = 0x028A, chip 3 0x25 bit 6 set,
 the receiver set up, AM mode and tuned to 29250 kHz, chip 3 tuned to f - 29.25 MHz (f + 29.25 MHz by the "AM Offset" setting;
-below is its default) in sub-band 3 at or above 140 MHz, 4 at or above 85 MHz, else 5, then chip 3 0x03 = 0xC1FE. Chip 0's
+below is its default, 1, likely labeled "Negative"; 0 "Positive" puts it above. The labels are inferred from the
+only two-entry sign list in the image) in sub-band 3 at or above 140 MHz, 4 at or above 85 MHz, else 5, then chip 3 0x03 = 0xC1FE. Chip 0's
 side B pair is bits 4/7 = 1/0 (the VHF sense) and shift register bit 0x04 is set. Either side in AM uses this
 hardware; chip 1 stays off.
 
@@ -510,6 +566,36 @@ tables in RAM). Side B is only a second receiver, never the main channel or keye
 and register 2 is 0 outside AM and broadcast FM. Turbo is not lowered with dual receive. Without a calibration block
 the start-up's 0s stay. Host tested against the factory defaults' tables and lookups worked out apart from the code;
 untested on the radio.
+
+### 5.6 Microphone level (VOX)
+
+The stock firmware has no VOX, and no ADC input carries the microphone. Chip 0 has it: its enable word turns the
+microphone ADC on in receive as well as in transmit (bit 2 of 0xBFF5 and 0xC1FE), and in the BK4819 map register
+0x64 is the voice amplitude its VOX detector compares (thresholds 0x46 and 0x79, 11 bits).
+
+RadioFoundry (`hal_power_t.mic_level`, `radio_d578uv.c`): while a reader has asked for the level within the last
+second, the radio task reads chip 0's 0x64 at each status poll, in FM receive and on an FM transmission, and gives
+the core `miclevel_log(min(value, 0x7FF), 11)`. In receive it clears chip 0's 0x25 bit 0 (the microphone mute) while
+the meter runs and sets it again after. The chip's own VOX detector isn't used: the core decides. Inferred: the
+register, its scale, that the mute bit is the only gate between the microphone and chip 0, and that unmuting in
+receive has no side effect. Written, untested on the radio.
+
+### 5.7 Analog microphone gain
+
+At each FM key-up the stock firmware writes the FM TX table (page 1 0x17 = 0x03B8 among others), then chip 0's
+microphone level, which overrides 0x17:
+
+| Register | Value |
+| --- | --- |
+| 0x18 | 0x0125 \| g << 11; g = 2, 3, 4, 5, 6, 7 for the six levels of a user setting (default g = 4) |
+| page 1 0x17 | 0x0200 \| k << 3; k = the UHF calibration block's byte 0x19 (factory item "MIC", 0..0x3F), adjusted by the setting: -2, 0 or +1 |
+
+DMR transmit and the audio input pin (DTMF, 5.3) use fixed values instead: 0x18 = 0x4125, page 1 0x17 = 0x0AA8 and
+0x03B9. The end of a DTMF sequence runs the microphone level again. The setting's menu name isn't tied to it in the
+code ("AnaMic Level" is likely). The 0x03B8 in the table is the same formula with k = 0x37.
+
+RadioFoundry writes the default level (g = 4, k the calibration byte) at each FM key-up and after each tone
+(`qa4818_mic_level`). The core's Mic gain setting isn't mapped to g: the dB per step isn't known.
 
 ## 6. SPI NAND
 
@@ -616,7 +702,7 @@ The order to check it in on a radio, with the diagnostics lines and what to chan
 | Display, keys, encoder | written, untested; the key names are not known |
 | Backlight | register 8 of the PA5 device, the five stock levels (3.1); written, untested |
 | PA5 trims | registers 1, 2, 4, 6, 0xA, 0xC from the calibration after each retune and key-up (5.5); written, host tested, untested on the radio |
-| Microphone | the plain microphone's PTT, Up and Down on PA9/PA10 (3.2); written, untested. The serial keypad microphone isn't read |
+| Microphone | the plain microphone on PA9/PA10 and the serial keypad microphone on USART0, told apart by its frames (3.2); written, the frame parser host tested, untested on the radio. The analog microphone level from the calibration (5.7); written, untested |
 | NAND, core storage | written, untested |
 | Crash log | the platform's ([crash-log.md](crash-log.md) 2.4), untested: whether the record at the top of SRAM survives the bootloader |
 | DMR baseband | driver, voice set-up and DMR start as the stock firmware sends them (4.4) with the squelch levels and digital mode gains, every LC header and terminator reported, the headphone mute while transmitting; written and host tested, untested on the radio |
@@ -628,7 +714,7 @@ The order to check it in on a radio, with the diagnostics lines and what to chan
 | Broadcast FM | the KTMicro receiver's FM mode (5.4); written, host tested (the receiver's sequences), untested on the radio. No stereo, no seek |
 | Bluetooth | not written |
 | DMR on side B | not written: what is missing is listed below |
-| VOX | not written: no microphone level reaches the MCU (3.4); an RF chip's own detector, if any, isn't known |
+| VOX | chip 0's voice amplitude as the microphone level (5.6); written, untested on the radio. The register and its scale are inferred from the BK4819 map |
 | APRS receive | PC0 sampled at 9600 Hz into the core's demodulator (3.4); written, the sample path host tested with the demodulator, untested on the radio. Off on the GD32 builds: it takes about 11.6 KB of RAM (the demodulator, the station list, the iGate and the 2 KB sample ring) and about 2.8 KB is free with DMR on. On in the Artery builds (section 10) |
 | APRS transmit | the tones on PB9 into chip 0's audio input with the DTMF set-up (5.3); written, the tones host tested through the core's demodulator, untested on the radio. The deviation per APRS level is inferred |
 | Artery variant | `boards/d578uva` on the AT32F43x platform (section 10): builds, untested on the radio |
@@ -654,13 +740,16 @@ DMR on side B needs facts not in the stock code's static analysis or the documen
 
 Open on the radio:
 
-- PTT on PA10 and the microphone's Up and Down (3.2), and which "Hand Type" value is which microphone.
-- The serial keypad microphone's frame format.
+- PTT on PA10 and the plain microphone's Up and Down (3.2).
+- The serial microphone (3.2): its frames against the stock reading, how often it sends one (RadioFoundry's 3 s
+  timeout), byte 2's role, the digit, `*` and `#` codes, and whether it needs anything at power-on.
 - The backlight levels' brightness, and the part behind PA5.
 - The LED's colors: where the second color is switched.
-- Which printed key each ladder position is (PA1 is the key common to every power-on combination); the encoder's
-  direction.
-- FM bandwidth, deviation and mic gain registers; the audio routing to the speaker (shift register 0x08/0x40, PA7,
+- Which printed key each ladder position is (PA1 is PUSH, the key common to every power-on combination; whether it is
+  the encoder's switch); the encoder's direction.
+- The deviation per 0x40 step (5) and the dB per microphone gain step (5.7); the microphone level's register and
+  scale (5.6); the
+  audio routing to the speaker (shift register 0x08/0x40, PA7,
   the volume device).
 - Air band (5.4): the receiver's audio path to the speaker, chip 3's output bit 6, the
   RSSI scale against the core's AM squelch levels, and that chip 0's outputs (the GPS supply, the band pairs) hold

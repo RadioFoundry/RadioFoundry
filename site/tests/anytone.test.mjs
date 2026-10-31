@@ -53,9 +53,9 @@ test("anytone: a frame is the address, 32 bytes and the 16-bit sum, byte for byt
 });
 
 test("anytone: the identity answer", () => {
-	assert.deepEqual(at.parseIdentify(enc("ID578UV\0\u0001V100\0\0\u0006")), { model: "D578UV", hw: 1, version: "V100" });
-	assert.deepEqual(Object.values(at.parseIdentify(enc("I578UV2A\u0002V101\0\0\u0006"))).slice(0, 2), ["578UV2A", 2]);
-	for (const bad of ["", "X".repeat(16), "ID578UV\0\u0001V100\0\0\u0015"]) assert.throws(() => at.parseIdentify(enc(bad)), at.AnytoneError);
+	assert.deepEqual(at.parseIdentify(enc("IMODEL1\0\u0001V100\0\0\u0006")), { model: "MODEL1", hw: 1, version: "V100" });
+	assert.deepEqual(Object.values(at.parseIdentify(enc("IMODEL2A\u0002V101\0\0\u0006"))).slice(0, 2), ["MODEL2A", 2]);
+	for (const bad of ["", "X".repeat(16), "IMODEL1\0\u0001V100\0\0\u0015"]) assert.throws(() => at.parseIdentify(enc(bad)), at.AnytoneError);
 });
 
 test("anytone: the host sends exactly the bytes rfoundry's anytone.Radio sends, NAKed frames again", async () => {
