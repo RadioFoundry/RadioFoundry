@@ -319,9 +319,8 @@ with an FTDI, CP210x or PL2303 chip. The installer warns when it sees a CH340 ca
 **When the cable can't prepare the radio:** a radio installed over its programming cable first gets a small loader in
 its memory. When the radio turns on, it waits only about 1/20 of a second for the installer's answer, and some cables
 and USB hubs are slower than that. So the installer keeps sending its answer while the radio starts (this used to be the
-separate **Slow Cable Mode**; it is now always on). Turn the radio off, select **Radio Is Off**, then turn it on. Select
-Radio Is Off only once the radio is off: the installer then sends to the cable, and the firmware of a radio that is still
-on would receive it. A radio already running RadioFoundry skips that step.
+separate **Slow Cable Mode**; it is now always on). Turn the radio off, select **Radio Is Off**, then turn it on.
+A radio already running RadioFoundry skips that step.
 
 If the load fails ("Preparing the radio failed"), the radio starts normally instead, or it never answers, the installer
 offers **Use Factory Update Mode**: the radio's own update mode, entered by holding keys while you turn the radio
