@@ -154,6 +154,15 @@
 #ifndef CONFIG_FONT_BIG
 #define CONFIG_FONT_BIG			CONFIG_FONT_AA
 #endif
+// Languages the radio can show besides English (core/ui/lang/<code>.po, docs/dev/translating.md): one switch each.
+// CONFIG_LANG_ANY: at least one is built (the translation lookup, the Latin-1 glyphs); add each new switch to it
+#ifndef CONFIG_LANG_ES
+#define CONFIG_LANG_ES			1
+#endif
+#ifndef CONFIG_LANG_IT
+#define CONFIG_LANG_IT			0
+#endif
+#define CONFIG_LANG_ANY			(CONFIG_LANG_ES || CONFIG_LANG_IT)
 #ifndef CONFIG_UI_COLOR
 #define CONFIG_UI_COLOR			1
 #endif

@@ -1,0 +1,3645 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+#
+# The radio's strings in Español (es; docs/dev/translating.md). Kept in step with the source by
+# tools/i18n.py --sync: translate the empty msgstr lines; an empty one shows the English.
+msgid ""
+msgstr ""
+"Project-Id-Version: RadioFoundry\n"
+"Language: es\n"
+"X-Language-Name: Español\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: core/stubentry/stub_entry.h
+msgid "PC Loader Connected"
+msgstr "PC Loader conectado"
+
+#: core/stubentry/stub_entry.h
+msgid "Power-cycle to exit"
+msgstr "Reinicie para salir"
+
+#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Off"
+msgstr "No"
+
+#: core/ui/fmt.c
+msgid " ago"
+msgstr " atrás"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "All call"
+msgstr "Llamada a todos"
+
+#: core/ui/ui_app.c
+msgid "For now only: save it in qdmr"
+msgstr "Por ahora: guárdelo en qdmr"
+
+#: core/ui/ui_app.c
+msgid "Talk target: not in this build"
+msgstr "Destino: no disponible"
+
+#: core/ui/ui_app.c
+msgid "Default now: "
+msgstr "Predet. ahora: "
+
+#: core/ui/ui_app.c
+msgid "Talking to "
+msgstr "Hablando a "
+
+#: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "No calls heard yet"
+msgstr "Aún no se oyen llamadas"
+
+#: core/ui/ui_app.c
+msgid "Message from "
+msgstr "Mensaje de "
+
+#: core/ui/ui_app.c
+msgid "Sent to "
+msgstr "Enviado a "
+
+#: core/ui/ui_app.c
+msgid "Delivered to "
+msgstr "Entregado a "
+
+#: core/ui/ui_app.c
+msgid "No answer from "
+msgstr "Sin respuesta de "
+
+#: core/ui/ui_app.c
+msgid "Not delivered: send again"
+msgstr "No entregado: reenviar"
+
+#: core/ui/ui_app.c
+msgid "Call alert from "
+msgstr "Alerta de "
+
+#: core/ui/ui_app.c core/ui/ui_screens.c
+msgid "PTT replies"
+msgstr "PTT responde"
+
+#: core/ui/ui_app.c
+msgid "Private call from "
+msgstr "Llamada privada de "
+
+#: core/ui/ui_app.c
+msgid "answered ("
+msgstr "respondió ("
+
+#: core/ui/ui_app.c
+msgid "Off or out of range: try later"
+msgstr "Apagada o fuera de alcance"
+
+#: core/ui/ui_app.c
+msgid "Hotspot started by host"
+msgstr "Hotspot iniciado por host"
+
+#: core/ui/ui_app.c
+msgid "OK stops it"
+msgstr "OK lo detiene"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgid "Couldn't save: try again"
+msgstr "No se guardó: reintente"
+
+#: core/ui/ui_app.c
+msgid " answered the alert"
+msgstr " respondió la alerta"
+
+#: core/ui/ui_app.c
+msgid "Couldn't switch off"
+msgstr "No se pudo apagar"
+
+#: core/ui/ui_app.c
+msgid "Turn the knob off"
+msgstr "Apague con la perilla"
+
+#: core/ui/ui_app.c
+msgid "⤓ Channel from "
+msgstr "⤓ Canal de "
+
+#: core/ui/ui_app.c
+msgid "⤓ Zone from "
+msgstr "⤓ Zona de "
+
+#: core/ui/ui_app.c
+msgid "Not sent to "
+msgstr "No enviado a "
+
+#: core/ui/ui_app.c
+msgid "Try again on a DMR channel"
+msgstr "Reintente en canal DMR"
+
+#: core/ui/ui_app.c
+msgid "Updated "
+msgstr "Actualizado "
+
+#: core/ui/ui_app.c
+msgid "Imported "
+msgstr "Importado "
+
+#: core/ui/ui_app.c
+msgid " channel, receive only"
+msgstr " canal, solo RX"
+
+#: core/ui/ui_app.c
+msgid " channels, receive only"
+msgstr " canales, solo RX"
+
+#: core/ui/ui_app.c
+msgid "Zone not imported"
+msgstr "Zona no importada"
+
+#: core/ui/ui_app.c
+msgid "Bands: "
+msgstr "Bandas: "
+
+#: core/ui/ui_app.c
+msgid "Type at least the MHz digits"
+msgstr "Teclee al menos los MHz"
+
+#: core/ui/ui_app.c
+msgid "Not in a band: type more digits"
+msgstr "Fuera de banda: más dígitos"
+
+#: core/ui/ui_app.c
+msgid "All digits typed: OK or # tunes"
+msgstr "Completo: OK o # sintoniza"
+
+#: core/ui/ui_app.c
+msgid "Digital monitor on"
+msgstr "Monitor digital sí"
+
+#: core/ui/ui_app.c
+msgid "Digital monitor off"
+msgstr "Monitor digital no"
+
+#: core/ui/ui_app.c core/ui/ui_screens.c
+msgid "{Keys locked: hold * to unlock|Locked: hold * to unlock}"
+msgstr "{Teclas bloq.: mantener * para abrir|Bloq.: mantener * para abrir}"
+
+#: core/ui/ui_app.c
+msgid "{Keys locked: hold Back to unlock|Locked: hold Back to unlock}"
+msgstr "{Teclas bloq.: mantener Atrás para abrir|Bloq.: mantener Atrás para abrir}"
+
+#: core/ui/ui_app.c
+msgid "Nothing to save"
+msgstr "Nada que guardar"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Saved to channel"
+msgstr "Guardado en canal"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Can't save here: use qdmr"
+msgstr "No se puede aquí: use qdmr"
+
+#: core/ui/ui_app.c
+msgid "Home zone: "
+msgstr "Zona base: "
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Zone: "
+msgstr "Zona: "
+
+#: core/ui/ui_app.c core/ui/ui_dual.c
+msgid "Only one zone"
+msgstr "Solo una zona"
+
+#: core/ui/ui_app.c
+msgid "Copied to VFO"
+msgstr "Copiado a VFO"
+
+#: core/ui/ui_app.c
+msgid "Already in VFO"
+msgstr "Ya está en VFO"
+
+#: core/ui/ui_app.c
+msgid "VFO: no DMR in this build"
+msgstr "VFO: sin DMR en esta versión"
+
+#: core/ui/ui_app.c
+msgid "VFO: no FM in this build"
+msgstr "VFO: sin FM en esta versión"
+
+#: core/ui/ui_app.c
+msgid "VFO: frequency outside its bands"
+msgstr "VFO: frec. fuera de bandas"
+
+#: core/ui/ui_app.c
+msgid "VFO: not in this build"
+msgstr "VFO: no disponible"
+
+#: core/ui/ui_app.c core/ui/ui_dual.c core/ui/ui_menus.c
+msgid "Back to channels"
+msgstr "Volver a canales"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Scan: not in this build"
+msgstr "Escaneo: no disponible"
+
+#: core/ui/ui_app.c
+msgid "Scan stopped"
+msgstr "Escaneo detenido"
+
+#: core/ui/ui_app.c
+msgid "Scanning the band"
+msgstr "Escaneando la banda"
+
+#: core/ui/ui_app.c
+msgid "Scanning this zone"
+msgstr "Escaneando esta zona"
+
+#: core/ui/ui_app.c
+msgid "Default: "
+msgstr "Predet.: "
+
+#: core/ui/ui_app.c
+msgid "Speed dial "
+msgstr "Marcado rápido "
+
+#: core/ui/ui_app.c
+msgid " is empty: set it in qdmr"
+msgstr " vacío: defínalo en qdmr"
+
+#: core/ui/ui_app.c
+msgid "Reply ended"
+msgstr "Fin de respuesta"
+
+#: core/ui/ui_app.c
+msgid "Changes undone"
+msgstr "Cambios deshechos"
+
+#: core/ui/ui_app.c
+msgid "Can't transmit there"
+msgstr "No se puede transmitir ahí"
+
+#: core/ui/ui_app.c
+msgid "Color code: not in this build"
+msgstr "Código color: no disponible"
+
+#: core/ui/ui_app.c
+msgid "FM only: this is a DMR channel"
+msgstr "Solo FM: es un canal DMR"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Not in this build"
+msgstr "No incluido en esta versión"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Privacy: not in this build"
+msgstr "Privacidad: no disponible"
+
+#: core/ui/ui_app.c
+msgid "VFO: one mode in this build"
+msgstr "VFO: un modo en esta versión"
+
+#: core/ui/ui_app.c
+msgid "VOX: not on this radio yet"
+msgstr "VOX: aún no en esta radio"
+
+#: core/ui/ui_app.c
+msgid "Bandwidth 25 kHz"
+msgstr "Ancho de banda 25 kHz"
+
+#: core/ui/ui_app.c
+msgid "Bandwidth 12.5 kHz"
+msgstr "Ancho de banda 12.5 kHz"
+
+#: core/ui/ui_app.c
+msgid "Up/Dn tone  # TX/RX"
+msgstr "Arr/Ab tono  # TX/RX"
+
+#: core/ui/ui_app.c
+msgid "AM only in the air band"
+msgstr "Solo AM en banda aérea"
+
+#: core/ui/ui_app.c
+msgid "FM only in the broadcast band"
+msgstr "Solo FM en banda comercial"
+
+#: core/ui/ui_app.c
+msgid "VOX off"
+msgstr "VOX no"
+
+#: core/ui/ui_app.c
+msgid "VOX on: speak to transmit"
+msgstr "VOX sí: hable para transmitir"
+
+#: core/ui/ui_app.c
+msgid "Timeslot 1"
+msgstr "Timeslot 1"
+
+#: core/ui/ui_app.c
+msgid "Timeslot 2"
+msgstr "Timeslot 2"
+
+#: core/ui/ui_app.c
+msgid "Timeslot 1 for now"
+msgstr "Timeslot 1 por ahora"
+
+#: core/ui/ui_app.c
+msgid "Timeslot 2 for now"
+msgstr "Timeslot 2 por ahora"
+
+#: core/ui/ui_app.c
+msgid "Privacy on for now"
+msgstr "Privacidad sí por ahora"
+
+#: core/ui/ui_app.c
+msgid "Privacy off"
+msgstr "Privacidad no"
+
+#: core/ui/ui_app.c
+msgid "No privacy key: set one in Settings > Privacy"
+msgstr "Sin clave: defínala en Ajustes > Privacidad"
+
+#: core/ui/ui_app.c
+msgid "Power "
+msgstr "Potencia "
+
+#: core/ui/ui_app.c
+msgid "All digits typed: OK sets TX"
+msgstr "Cifras completas: OK fija TX"
+
+#: core/ui/ui_app.c
+msgid "Tone for RX and TX"
+msgstr "Tono en RX y TX"
+
+#: core/ui/ui_app.c
+msgid "Tone for TX only"
+msgstr "Tono solo en TX"
+
+#: core/ui/ui_app.c
+msgid "Tone for RX only"
+msgstr "Tono solo en RX"
+
+#: core/ui/ui_app.c
+msgid "No actions here"
+msgstr "Sin acciones aquí"
+
+#: core/ui/ui_app.c
+msgid "Emergency acknowledged"
+msgstr "Emergencia confirmada"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Hotspot stopped"
+msgstr "Hotspot detenido"
+
+#: core/ui/ui_app.c
+msgid "Hotspot on: OK stops it"
+msgstr "Hotspot sí: OK lo detiene"
+
+#: core/ui/ui_app.c
+msgid "No item with that number"
+msgstr "Ningún elemento con ese número"
+
+#: core/ui/ui_app.c
+msgid "Nothing to save here"
+msgstr "Nada que guardar aquí"
+
+#: core/ui/ui_app.c
+msgid "Nothing to open"
+msgstr "Nada que abrir"
+
+#: core/ui/ui_app.c
+msgid "Find: "
+msgstr "Buscar: "
+
+#: core/ui/ui_app.c core/ui/ui_find.c
+msgid "No match: Back deletes a key"
+msgstr "Sin coincidencia: Atrás borra"
+
+#: core/ui/ui_app.c core/ui/ui_screens.c
+msgid "OK Menu  * Quick"
+msgstr "OK Menú  * Rápido"
+
+#: core/ui/ui_app.c
+msgid "OK Menu  Hold OK Quick"
+msgstr "OK Menú  Mantener OK Rápido"
+
+#: core/ui/ui_app.c
+msgid "Emergency: not in this build"
+msgstr "Emergencia: no disponible"
+
+#: core/ui/ui_app.c
+msgid "Emergency needs a DMR channel and ID"
+msgstr "Emergencia requiere canal DMR e ID"
+
+#: core/ui/ui_app.c
+msgid "EMERGENCY sent: hold again to cancel"
+msgstr "EMERGENCIA enviada: mantener para cancelar"
+
+#: core/ui/ui_app.c
+msgid "Emergency canceled"
+msgstr "Emergencia cancelada"
+
+#: core/ui/ui_app.c
+msgid "Call back: DMR only"
+msgstr "Rellamar: solo DMR"
+
+#: core/ui/ui_app.c
+msgid "PTT is off while locked: hold * to unlock"
+msgstr "PTT inactivo bloqueado: mantener * para abrir"
+
+#: core/ui/ui_app.c
+msgid "PTT is off while locked: hold Back to unlock"
+msgstr "PTT inactivo bloqueado: mantener Atrás para abrir"
+
+#: core/ui/ui_app.c
+msgid "Keys unlocked"
+msgstr "Teclas desbloq."
+
+#: core/ui/ui_app.c
+msgid "Talk target: DMR channels only"
+msgstr "Destino: solo canales DMR"
+
+#: core/ui/ui_app.c
+msgid "Volume: use the knob"
+msgstr "Volumen: use la perilla"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Voice prompts: not in this build"
+msgstr "Voz: no disponible"
+
+#: core/ui/ui_app.c
+msgid "Not used here"
+msgstr "No se usa aquí"
+
+#: core/ui/ui_app.c
+msgid "Switching off in 1 min"
+msgstr "Apagado en 1 min"
+
+#: core/ui/ui_app.c
+msgid "Any key keeps it on"
+msgstr "Una tecla la mantiene"
+
+#: core/ui/ui_app.c
+msgid "Battery "
+msgstr "Batería "
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "%: charge soon"
+msgstr "%: cargar pronto"
+
+#: core/ui/ui_app.c
+msgid "That zone was deleted"
+msgstr "Esa zona fue borrada"
+
+#: core/ui/ui_app.c
+msgid "Moved to "
+msgstr "Movido a "
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "1 min"
+msgstr "1 min"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "2 min"
+msgstr "2 min"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "5 min"
+msgstr "5 min"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "10 min"
+msgstr "10 min"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "30 min"
+msgstr "30 min"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "None"
+msgstr "Ninguno"
+
+#: core/ui/ui_aprs.c
+msgid "Both"
+msgstr "Ambos"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "Auto"
+msgstr "Auto"
+
+#: core/ui/ui_aprs.c
+msgid "Computer"
+msgstr "PC"
+
+#: core/ui/ui_aprs.c
+msgid "Fixed"
+msgstr "Fija"
+
+#: core/ui/ui_aprs.c
+msgid "N America"
+msgstr "N América"
+
+#: core/ui/ui_aprs.c
+msgid "Europe"
+msgstr "Europa"
+
+#: core/ui/ui_aprs.c
+msgid "Australia"
+msgstr "Australia"
+
+#: core/ui/ui_aprs.c
+msgid "New Zealand"
+msgstr "N Zelanda"
+
+#: core/ui/ui_aprs.c
+msgid "Japan"
+msgstr "Japón"
+
+#: core/ui/ui_aprs.c
+msgid "China"
+msgstr "China"
+
+#: core/ui/ui_aprs.c
+msgid "Custom"
+msgstr "Propio"
+
+#: core/ui/ui_aprs.c
+msgid "Set your callsign (the radio name) in qdmr."
+msgstr "Defina su indicativo (nombre de radio) en qdmr."
+
+#: core/ui/ui_aprs.c
+msgid "No APRS frequency: pick a region."
+msgstr "Sin frecuencia APRS: elija una región."
+
+#: core/ui/ui_aprs.c
+msgid "Pick a frequency in a ham band this radio sends on."
+msgstr "Elija una frec. de radioaficionado que esta radio emita."
+
+#: core/ui/ui_aprs.c
+msgid "No APRS tones on this radio; DMR positions work."
+msgstr "Sin tonos APRS en esta radio; posición DMR sí."
+
+#: core/ui/ui_aprs.c
+msgid "APRS: not in this build"
+msgstr "APRS: no disponible"
+
+#: core/ui/ui_aprs.c
+msgid "No callsign"
+msgstr "Sin indicativo"
+
+#: core/ui/ui_aprs.c
+msgid " on "
+msgstr " en "
+
+#: core/ui/ui_aprs.c
+msgid " (sending)"
+msgstr " (enviando)"
+
+#: core/ui/ui_aprs.c
+msgid "No position"
+msgstr "Sin posición"
+
+#: core/ui/ui_aprs.c
+msgid "Next in "
+msgstr "Próx. en "
+
+#: core/ui/ui_aprs.c
+msgid "  Sent "
+msgstr "  Env. "
+
+#: core/ui/ui_aprs.c
+msgid "Send position now"
+msgstr "Enviar posición ya"
+
+#: core/ui/ui_aprs.c
+msgid "Automatic beacons"
+msgstr "Balizas automáticas"
+
+#: core/ui/ui_aprs.c
+msgid "Frequency"
+msgstr "Frecuencia"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Power"
+msgstr "Pot."
+
+#: core/ui/ui_aprs.c
+msgid "Path"
+msgstr "Ruta"
+
+#: core/ui/ui_aprs.c
+msgid "Interval"
+msgstr "Intervalo"
+
+#: core/ui/ui_aprs.c
+msgid "SmartBeaconing"
+msgstr "SmartBeaconing"
+
+#: core/ui/ui_aprs.c
+msgid "Send via"
+msgstr "Enviar por"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "Position"
+msgstr "Posición"
+
+#: core/ui/ui_aprs.c
+msgid "Position in DMR calls"
+msgstr "Posición en llamadas DMR"
+
+#: core/ui/ui_aprs.c
+msgid "KISS on USB"
+msgstr "KISS por USB"
+
+#: core/ui/ui_aprs.c
+msgid "Stations heard"
+msgstr "Estaciones oídas"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "On"
+msgstr "Sí"
+
+#: core/ui/ui_aprs.c
+msgid "As channel"
+msgstr "Como canal"
+
+#: core/ui/ui_aprs.c
+msgid "Sending position"
+msgstr "Enviando posición"
+
+#: core/ui/ui_aprs.c
+msgid "Set your callsign first"
+msgstr "Defina su indicativo"
+
+#: core/ui/ui_aprs.c
+msgid "Can't send now"
+msgstr "No se puede enviar"
+
+#: core/ui/ui_aprs.c
+msgid "Beacons on"
+msgstr "Balizas sí"
+
+#: core/ui/ui_aprs.c
+msgid "Beacons off"
+msgstr "Balizas no"
+
+#: core/ui/ui_aprs.c
+msgid "DMR position: not in this build"
+msgstr "Posición DMR: no disponible"
+
+#: core/ui/ui_aprs.c
+msgid "Position goes out in DMR calls"
+msgstr "Posición va en llamadas DMR"
+
+#: core/ui/ui_aprs.c
+msgid "No position in DMR calls"
+msgstr "Sin posición en llamadas DMR"
+
+#: core/ui/ui_aprs.c
+msgid "This radio can't receive APRS"
+msgstr "Esta radio no recibe APRS"
+
+#: core/ui/ui_aprs.c
+msgid "Source"
+msgstr "Origen"
+
+#: core/ui/ui_aprs.c
+msgid "Latitude"
+msgstr "Latitud"
+
+#: core/ui/ui_aprs.c
+msgid "Longitude"
+msgstr "Longitud"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "Not set"
+msgstr "Sin definir"
+
+#: core/ui/ui_aprs.c
+msgid "Up to 90 N/S, 180 E/W"
+msgstr "Hasta 90 N/S, 180 E/W"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "OK change  Back"
+msgstr "OK cambiar  Atrás"
+
+#: core/ui/ui_aprs.c
+msgid "0-9 pick  Back"
+msgstr "0-9 elegir  Atrás"
+
+#: core/ui/ui_aprs.c
+msgid "Heard"
+msgstr "Oídas"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Back"
+msgstr "Atrás"
+
+#: core/ui/ui_aprs.c
+msgid "Nothing heard yet"
+msgstr "Aún nada oído"
+
+#: core/ui/ui_dual.c core/ui/ui_screens.c
+msgid "No tone"
+msgstr "Sin tono"
+
+#: core/ui/ui_dual.c
+msgid "{Can't watch that channel: pick another|Can't watch that channel}"
+msgstr "{No se puede escuchar ese canal: elija otro|No se puede escuchar ese canal}"
+
+#: core/ui/ui_dual.c
+msgid "B is the channel you are on: pick another"
+msgstr "B es su canal actual: elija otro"
+
+#: core/ui/ui_dual.c
+msgid "Dual watch on"
+msgstr "Doble escucha sí"
+
+#: core/ui/ui_dual.c
+msgid "Dual watch off: on B"
+msgstr "Doble escucha no: en B"
+
+#: core/ui/ui_dual.c
+msgid "Dual watch off: on A"
+msgstr "Doble escucha no: en A"
+
+#: core/ui/ui_dual.c
+msgid "{Press Back again to stop dual watch|Back again: stop watch}"
+msgstr "{Pulse Atrás otra vez para parar doble escucha|Atrás otra vez: parar}"
+
+#: core/ui/ui_dual.c
+msgid "Talking on B"
+msgstr "Hablando en B"
+
+#: core/ui/ui_dual.c
+msgid "Talking on A"
+msgstr "Hablando en A"
+
+#: core/ui/ui_dual.c
+msgid "Talk back on B"
+msgstr "Responder en B"
+
+#: core/ui/ui_dual.c
+msgid "Talk back on A"
+msgstr "Responder en A"
+
+#: core/ui/ui_dual.c
+msgid "That is A: pick another"
+msgstr "Ese es A: elija otro"
+
+#: core/ui/ui_dual.c
+msgid "That is B: pick another"
+msgstr "Ese es B: elija otro"
+
+#: core/ui/ui_dual.c
+msgid "{Only one channel in this zone|One channel in zone}"
+msgstr "{Solo un canal en esta zona|Un canal en zona}"
+
+#: core/ui/ui_dual.c
+msgid "{No other channel here: A has it|A has the other channel}"
+msgstr "{No hay otro canal: lo tiene A|A tiene el otro canal}"
+
+#: core/ui/ui_dual.c
+msgid "{No other channel here: B has it|B has the other channel}"
+msgstr "{No hay otro canal: lo tiene B|B tiene el otro canal}"
+
+#: core/ui/ui_dual.c
+msgid "{Turn on dual watch first|Dual watch is off}"
+msgstr "{Active primero doble escucha|Doble escucha no}"
+
+#: core/ui/ui_dual.c
+msgid "B zone: "
+msgstr "Zona B: "
+
+#: core/ui/ui_dual.c
+msgid "A zone: "
+msgstr "Zona A: "
+
+#: core/ui/ui_dual.c
+msgid "No other zone"
+msgstr "No hay otra zona"
+
+#: core/ui/ui_dual.c
+msgid "{No other channel to watch|No other channel}"
+msgstr "{No hay otro canal para escuchar|No hay otro canal}"
+
+#: core/ui/ui_dual.c
+msgid "DMR call"
+msgstr "Llamada DMR"
+
+#: core/ui/ui_dual.c
+msgid "FM signal"
+msgstr "Señal FM"
+
+#: core/ui/ui_dual.c
+msgid " to you"
+msgstr " a usted"
+
+#: core/ui/ui_dual.c
+msgid "Dual watch off: on "
+msgstr "Doble escucha no: en "
+
+#: core/ui/ui_dual.c
+msgid "Dual watch off: scanning"
+msgstr "Doble escucha no: escaneo"
+
+#: core/ui/ui_dual.c
+msgid "B: VFO"
+msgstr "B: VFO"
+
+#: core/ui/ui_dual.c
+msgid "A: VFO"
+msgstr "A: VFO"
+
+#: core/ui/ui_dual.c
+msgid "Talk on B"
+msgstr "TX en B"
+
+#: core/ui/ui_dual.c
+msgid "Talk on A"
+msgstr "Hablar en A"
+
+#: core/ui/ui_dual.c
+msgid "Change A"
+msgstr "Cambiar A"
+
+#: core/ui/ui_dual.c
+msgid "Change B"
+msgstr "Cambiar B"
+
+#: core/ui/ui_dual.c
+msgid "Caller"
+msgstr "Origen"
+
+#: core/ui/ui_dual.c
+msgid "Stop, stay on B"
+msgstr "Parar, quedar en B"
+
+#: core/ui/ui_dual.c
+msgid "Stop, stay on A"
+msgstr "Parar, quedar en A"
+
+#: core/ui/ui_dual.c
+msgid "Dual Watch"
+msgstr "Doble escucha"
+
+#: core/ui/ui_dual.c core/ui/ui_menus.c
+msgid "1-5 pick  Back"
+msgstr "1-5 elegir  Atrás"
+
+#: core/ui/ui_dual.c core/ui/ui_menus.c
+msgid "Zone"
+msgstr "Zona"
+
+#: core/ui/ui_dual.c
+msgid "Watch on"
+msgstr "Escuchar"
+
+#: core/ui/ui_dual.c
+msgid "{OK watch  0-9 find  Back|OK watch  Back}"
+msgstr "{OK escuchar  0-9 buscar  Atrás|OK escuchar  Atrás}"
+
+#: core/ui/ui_dual.c
+msgid "Zone for"
+msgstr "Zona para"
+
+#: core/ui/ui_dual.c core/ui/ui_menus.c
+msgid "OK pick  Back"
+msgstr "OK elegir  Atrás"
+
+#: core/ui/ui_find.c core/ui/ui_menus.c
+msgid "Contacts"
+msgstr "Contactos"
+
+#: core/ui/ui_find.c core/ui/ui_menus.c
+msgid "Messages"
+msgstr "Mensajes"
+
+#: core/ui/ui_find.c core/ui/ui_menus.c
+msgid "Recent"
+msgstr "Recientes"
+
+#: core/ui/ui_find.c core/ui/ui_menus.c
+msgid "Channels"
+msgstr "Canales"
+
+#: core/ui/ui_find.c core/ui/ui_menus.c
+msgid "Tools"
+msgstr "Herramientas"
+
+#: core/ui/ui_find.c core/ui/ui_menus.c
+msgid "Settings"
+msgstr "Ajustes"
+
+#: core/ui/ui_find.c core/ui/ui_menus.c
+msgid "Roaming"
+msgstr "Roaming"
+
+#: core/ui/ui_find.c
+msgid "APRS position"
+msgstr "Posición APRS"
+
+#: core/ui/ui_find.c
+msgid "Ch "
+msgstr "Can "
+
+#: core/ui/ui_find.c
+msgid "{Channel|}"
+msgstr "{Canal|}"
+
+#: core/ui/ui_find.c
+msgid "{Zone|}"
+msgstr "{Zona|}"
+
+#: core/ui/ui_find.c
+msgid "{Contact|}"
+msgstr "{Contacto|}"
+
+#: core/ui/ui_find.c
+msgid "Talk to TG "
+msgstr "Hablar a TG "
+
+#: core/ui/ui_find.c core/ui/ui_menus.c
+msgid "{Not saved|}"
+msgstr "{No guardado|}"
+
+#: core/ui/ui_find.c
+msgid "Private call "
+msgstr "Llamada privada "
+
+#: core/ui/ui_find.c
+msgid "Tune VFO to "
+msgstr "VFO a "
+
+#: core/ui/ui_find.c
+msgid "Create contact "
+msgstr "Crear contacto "
+
+#: core/ui/ui_find.c
+msgid "Menu"
+msgstr "Menú"
+
+#: core/ui/ui_find.c
+msgid "No actions for this result"
+msgstr "Sin acciones para esto"
+
+#: core/ui/ui_find.c
+msgid "PTT talk  OK open  # more"
+msgstr "PTT hablar  OK abrir  # más"
+
+#: core/ui/ui_gps.c
+msgid "Status"
+msgstr "Estado"
+
+#: core/ui/ui_gps.c
+msgid "Sky"
+msgstr "Cielo"
+
+#: core/ui/ui_gps.c
+msgid "Signal"
+msgstr "Señal"
+
+#: core/ui/ui_gps.c core/ui/ui_menus.c
+msgid "Grid"
+msgstr "Cuadrícula"
+
+#: core/ui/ui_gps.c
+msgid " good"
+msgstr " buena"
+
+#: core/ui/ui_gps.c
+msgid " fair"
+msgstr " regular"
+
+#: core/ui/ui_gps.c
+msgid " poor"
+msgstr " mala"
+
+#: core/ui/ui_gps.c
+msgid "3D Fix"
+msgstr "Fijo 3D"
+
+#: core/ui/ui_gps.c
+msgid "2D Fix"
+msgstr "Fijo 2D"
+
+#: core/ui/ui_gps.c
+msgid "Fix"
+msgstr "Fijo"
+
+#: core/ui/ui_gps.c
+msgid "Searching"
+msgstr "Buscando"
+
+#: core/ui/ui_gps.c
+msgid "No signal"
+msgstr "Sin señal"
+
+#: core/ui/ui_gps.c
+msgid " used, "
+msgstr " usados, "
+
+#: core/ui/ui_gps.c
+msgid " seen"
+msgstr " vistos"
+
+#: core/ui/ui_gps.c
+msgid "Sats"
+msgstr "Sats"
+
+#: core/ui/ui_gps.c
+msgid "Lat"
+msgstr "Lat"
+
+#: core/ui/ui_gps.c
+msgid "Lon"
+msgstr "Lon"
+
+#: core/ui/ui_gps.c
+msgid "Alt"
+msgstr "Alt"
+
+#: core/ui/ui_gps.c
+msgid "Speed"
+msgstr "Velocidad"
+
+#: core/ui/ui_gps.c
+msgid "No positions yet"
+msgstr "Aún sin posiciones"
+
+#: core/ui/ui_gps.c
+msgid "No satellites yet"
+msgstr "Aún sin satélites"
+
+#: core/ui/ui_gps.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgid " of "
+msgstr " de "
+
+#: core/ui/ui_gps.c
+msgid " in the fix"
+msgstr " en el fijo"
+
+#: core/ui/ui_gps.c
+msgid "No fix yet"
+msgstr "Aún sin fijo"
+
+#: core/ui/ui_gps.c
+msgid "No GPS, or it is off"
+msgstr "Sin GPS, o apagado"
+
+#: core/ui/ui_gps.c
+msgid "Settings > Location"
+msgstr "Ajustes > Ubicación"
+
+#: core/ui/ui_gps.c
+msgid "Up Down page  Back"
+msgstr "Arr Ab página  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "Last caller"
+msgstr "Último llamante"
+
+#: core/ui/ui_menus.c
+msgid "Zones"
+msgstr "Zonas"
+
+#: core/ui/ui_menus.c
+msgid " new"
+msgstr " nuevos"
+
+#: core/ui/ui_menus.c
+msgid "Scanning"
+msgstr "Escaneando"
+
+#: core/ui/ui_menus.c
+msgid "Channels: not in this build"
+msgstr "Canales: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "1-7 open  Back"
+msgstr "1-7 abrir  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "Talk to "
+msgstr "Hablar a "
+
+#: core/ui/ui_menus.c
+msgid "Private call"
+msgstr "Llamada privada"
+
+#: core/ui/ui_menus.c
+msgid "Message"
+msgstr "Mensaje"
+
+#: core/ui/ui_menus.c
+msgid "Radio check"
+msgstr "Prueba de radio"
+
+#: core/ui/ui_menus.c
+msgid "Call alert"
+msgstr "Alerta"
+
+#: core/ui/ui_menus.c
+msgid "In contacts"
+msgstr "En contactos"
+
+#: core/ui/ui_menus.c
+msgid "Save as contact"
+msgstr "Guardar contacto"
+
+#: core/ui/ui_menus.c
+msgid "Speak status"
+msgstr "Decir estado"
+
+#: core/ui/ui_menus.c
+msgid "Save to channel"
+msgstr "Guardar en canal"
+
+#: core/ui/ui_menus.c
+msgid "Make channel default"
+msgstr "Hacer canal predet."
+
+#: core/ui/ui_menus.c
+msgid "Messages: not in this build"
+msgstr "Mensajes: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Checking "
+msgstr "Probando "
+
+#: core/ui/ui_menus.c
+msgid "Radio check: not in this build"
+msgstr "Prueba radio: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Call alert to "
+msgstr "Alerta a "
+
+#: core/ui/ui_menus.c
+msgid "Call alert: not in this build"
+msgstr "Alerta: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Position requests: not in this build"
+msgstr "Pedir posición: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Already in your contacts"
+msgstr "Ya está en sus contactos"
+
+#: core/ui/ui_menus.c
+msgid "Add contacts in qdmr"
+msgstr "Añada contactos en qdmr"
+
+#: core/ui/ui_menus.c
+msgid "1-9 pick  PTT talk  Back"
+msgstr "1-9 elegir  PTT hablar  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "OK"
+msgstr "OK"
+
+#: core/ui/ui_menus.c
+msgid "On my way"
+msgstr "En camino"
+
+#: core/ui/ui_menus.c
+msgid "Call me"
+msgstr "Llámame"
+
+#: core/ui/ui_menus.c
+msgid "Can't talk now"
+msgstr "No puedo hablar"
+
+#: core/ui/ui_menus.c
+msgid "Write..."
+msgstr "Escribir..."
+
+#: core/ui/ui_menus.c
+msgid "Couldn't send: try again"
+msgstr "No se envió: reintente"
+
+#: core/ui/ui_menus.c
+msgid "Sending to "
+msgstr "Enviando a "
+
+#: core/ui/ui_menus.c
+msgid "Typing: not in this build"
+msgstr "Teclado: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "To"
+msgstr "Para"
+
+#: core/ui/ui_menus.c
+msgid "OK send  Back"
+msgstr "OK enviar  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "(no name)"
+msgstr "(sin nombre)"
+
+#: core/ui/ui_menus.c
+msgid "{0-9 find  OK talk  # more|0-9  OK talk  # more}"
+msgstr "{0-9 buscar  OK hablar  # más|0-9  OK hablar  # más}"
+
+#: core/ui/ui_menus.c
+msgid "No contacts: add them in qdmr"
+msgstr "Sin contactos: añádalos en qdmr"
+
+#: core/ui/ui_menus.c
+msgid "Contacts: not in this build"
+msgstr "Contactos: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "OK open  # reply  Back"
+msgstr "OK abrir  # responder  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "No messages yet"
+msgstr "Sin mensajes aún"
+
+#: core/ui/ui_menus.c
+msgid "Reply \"OK\""
+msgstr "Responder \"OK\""
+
+#: core/ui/ui_menus.c
+msgid "Reply \"On my way\""
+msgstr "Responder \"En camino\""
+
+#: core/ui/ui_menus.c
+msgid "Call"
+msgstr "Llamar"
+
+#: core/ui/ui_menus.c
+msgid "Delete"
+msgstr "Borrar"
+
+#: core/ui/ui_menus.c
+msgid "Message deleted"
+msgstr "Mensaje borrado"
+
+#: core/ui/ui_menus.c
+msgid "Couldn't delete: try again"
+msgstr "No se pudo borrar: reintente"
+
+#: core/ui/ui_menus.c
+msgid "To "
+msgstr "A "
+
+#: core/ui/ui_menus.c
+msgid "From "
+msgstr "De "
+
+#: core/ui/ui_menus.c
+msgid "OK choose  # more  Back"
+msgstr "OK elegir  # más  Atrás"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "To you"
+msgstr "A usted"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Private"
+msgstr "Privada"
+
+#: core/ui/ui_menus.c
+msgid "PTT talk  # more  Back"
+msgstr "PTT hablar  # más  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "Create New Zone"
+msgstr "Crear zona nueva"
+
+#: core/ui/ui_menus.c
+msgid "Here, "
+msgstr "Actual, "
+
+#: core/ui/ui_menus.c
+msgid "Here"
+msgstr "Actual"
+
+#: core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgid " channel"
+msgstr " canal"
+
+#: core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgid " channels"
+msgstr " canales"
+
+#: core/ui/ui_menus.c
+msgid " ch"
+msgstr " can."
+
+#: core/ui/ui_menus.c
+msgid "VFO: type a frequency"
+msgstr "VFO: teclee una frec."
+
+#: core/ui/ui_menus.c
+msgid "The VFO has no channel list"
+msgstr "El VFO no tiene lista de canales"
+
+#: core/ui/ui_menus.c
+msgid "{OK go  # channels  0-9 find|OK go  # channels}"
+msgstr "{OK ir  # canales  0-9 buscar|OK ir  # canales}"
+
+#: core/ui/ui_menus.c
+msgid "No zones"
+msgstr "Sin zonas"
+
+#: core/ui/ui_menus.c
+msgid "Couldn't save now: try again"
+msgstr "No se pudo guardar: reintente"
+
+#: core/ui/ui_menus.c
+msgid "Add channel"
+msgstr "Añadir canal"
+
+#: core/ui/ui_menus.c
+msgid "Zone options"
+msgstr "Opciones zona"
+
+#: core/ui/ui_menus.c
+msgid "⤒ Share zone to..."
+msgstr "⤒ Compartir zona..."
+
+#: core/ui/ui_menus.c
+msgid "⤒ Share channel to..."
+msgstr "⤒ Compartir canal..."
+
+#: core/ui/ui_menus.c
+msgid "Zone sharing: not in this build"
+msgstr "Compartir zonas: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Saving the zone: try again"
+msgstr "Guardando la zona: reintente"
+
+#: core/ui/ui_menus.c
+msgid "Private ID "
+msgstr "ID privado "
+
+#: core/ui/ui_menus.c
+msgid "Go to a DMR channel to send"
+msgstr "Vaya a un canal DMR para enviar"
+
+#: core/ui/ui_menus.c
+msgid "Can't send now: try again"
+msgstr "No se puede enviar: reintente"
+
+#: core/ui/ui_menus.c
+msgid " via "
+msgstr " por "
+
+#: core/ui/ui_menus.c
+msgid "Sending "
+msgstr "Enviando "
+
+#: core/ui/ui_menus.c
+msgid "Sending"
+msgstr "Enviando"
+
+#: core/ui/ui_menus.c
+msgid "Share To"
+msgstr "Enviar a"
+
+#: core/ui/ui_menus.c
+msgid "{0-9 find or ID  OK send  Back|0-9 find or ID  OK send}"
+msgstr "{0-9 buscar o ID  OK enviar  Atrás|0-9 buscar o ID  OK enviar}"
+
+#: core/ui/ui_menus.c
+msgid "No contacts: type an ID"
+msgstr "Sin contactos: teclee un ID"
+
+#: core/ui/ui_menus.c
+msgid "Import"
+msgstr "Importar"
+
+#: core/ui/ui_menus.c
+msgid "Preview"
+msgstr "Revisar"
+
+#: core/ui/ui_menus.c
+msgid "Reject"
+msgstr "Rechazar"
+
+#: core/ui/ui_menus.c
+msgid "Busy saving: try again"
+msgstr "Guardando: reintente"
+
+#: core/ui/ui_menus.c
+msgid "Importing..."
+msgstr "Importando..."
+
+#: core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgid "No channel in this radio's bands"
+msgstr "Sin canales en bandas de la radio"
+
+#: core/ui/ui_menus.c
+msgid "Offer rejected"
+msgstr "Oferta rechazada"
+
+#: core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgid "Channel "
+msgstr "Canal "
+
+#: core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgid "Zone "
+msgstr "Zona "
+
+#: core/ui/ui_menus.c
+msgid ", from "
+msgstr ", de "
+
+#: core/ui/ui_menus.c
+msgid " not in band"
+msgstr " fuera de banda"
+
+#: core/ui/ui_menus.c
+msgid "{Channel Share Received ⤓|Ch Share Received ⤓|Ch Received ⤓|Ch Received}"
+msgstr "{Canal compartido recibido ⤓|Canal recibido ⤓|Can. recibido ⤓|Can. recibido}"
+
+#: core/ui/ui_menus.c
+msgid "{Zone Share Received ⤓|Zone Received ⤓|Zone Received}"
+msgstr "{Zona compartida recibida ⤓|Zona recibida ⤓|Zona recibida}"
+
+#: core/ui/ui_menus.c
+msgid "No share waiting"
+msgstr "Nada pendiente"
+
+#: core/ui/ui_menus.c
+msgid "{Not in band|Out}"
+msgstr "{Fuera de banda|Fuera}"
+
+#: core/ui/ui_menus.c
+msgid "OK or Back returns"
+msgstr "OK o Atrás vuelve"
+
+#: core/ui/ui_menus.c
+msgid "No zone offer waiting"
+msgstr "Ninguna zona pendiente"
+
+#: core/ui/ui_menus.c
+msgid "{ channels| ch}"
+msgstr "{ canales| can.}"
+
+#: core/ui/ui_menus.c
+msgid "Add to Zone"
+msgstr "Añadir a zona"
+
+#: core/ui/ui_menus.c
+msgid "OK add  Back"
+msgstr "OK añadir  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "{OK go  # edit  0-9 find|OK go  # edit}"
+msgstr "{OK ir  # editar  0-9 buscar|OK ir  # editar}"
+
+#: core/ui/ui_menus.c
+msgid "{OK go  # share  0-9 find|OK go  # share}"
+msgstr "{OK ir  # enviar  0-9 buscar|OK ir  # enviar}"
+
+#: core/ui/ui_menus.c
+msgid "OK go  0-9 find  Back"
+msgstr "OK ir  0-9 buscar  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "Empty zone"
+msgstr "Zona vacía"
+
+#: core/ui/ui_menus.c
+msgid "New from current"
+msgstr "Nuevo desde actual"
+
+#: core/ui/ui_menus.c
+msgid "Not in any zone: add it to one to use it"
+msgstr "En ninguna zona: añádalo a una para usarlo"
+
+#: core/ui/ui_menus.c core/ui/ui_svc_storage.c
+msgid "No free channel"
+msgstr "Ningún canal libre"
+
+#: core/ui/ui_menus.c
+msgid "{OK details  # go  0-9 find|OK details  # go}"
+msgstr "{OK detalles  # ir  0-9 buscar|OK detalles  # ir}"
+
+#: core/ui/ui_menus.c
+msgid "No channels"
+msgstr "Sin canales"
+
+#: core/ui/ui_menus.c
+msgid "New Channel"
+msgstr "Canal nuevo"
+
+#: core/ui/ui_menus.c
+msgid " zone"
+msgstr " zona"
+
+#: core/ui/ui_menus.c
+msgid " zones"
+msgstr " zonas"
+
+#: core/ui/ui_menus.c
+msgid "Radio's"
+msgstr "De radio"
+
+#: core/ui/ui_menus.c
+msgid "Name"
+msgstr "Nombre"
+
+#: core/ui/ui_menus.c
+msgid "Number"
+msgstr "Número"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Mode"
+msgstr "Modo"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "RX only"
+msgstr "Solo RX"
+
+#: core/ui/ui_menus.c
+msgid "Bandwidth"
+msgstr "Ancho banda"
+
+#: core/ui/ui_menus.c
+msgid "RX CTCSS/DCS"
+msgstr "CTCSS/DCS RX"
+
+#: core/ui/ui_menus.c
+msgid "TX CTCSS/DCS"
+msgstr "CTCSS/DCS TX"
+
+#: core/ui/ui_menus.c
+msgid "Color code"
+msgstr "Código color"
+
+#: core/ui/ui_menus.c
+msgid "Timeslot"
+msgstr "Timeslot"
+
+#: core/ui/ui_menus.c
+msgid "TX contact"
+msgstr "Contacto TX"
+
+#: core/ui/ui_menus.c
+msgid "RX group list"
+msgstr "Lista grupos RX"
+
+#: core/ui/ui_menus.c
+msgid "Own ID"
+msgstr "ID propio"
+
+#: core/ui/ui_menus.c
+msgid "Direct mode"
+msgstr "Modo directo"
+
+#: core/ui/ui_menus.c
+msgid "Talk permit beeps"
+msgstr "Tono permiso habla"
+
+#: core/ui/ui_menus.c
+msgid "Talker alias TS1"
+msgstr "Alias TS1"
+
+#: core/ui/ui_menus.c
+msgid "Talker alias TS2"
+msgstr "Alias TS2"
+
+#: core/ui/ui_menus.c
+msgid "TX time-out"
+msgstr "Límite TX"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Scan"
+msgstr "Escanear"
+
+#: core/ui/ui_menus.c
+msgid "Battery saver"
+msgstr "Ahorro batería"
+
+#: core/ui/ui_menus.c
+msgid "Tune to this ch"
+msgstr "Ir a este canal"
+
+#: core/ui/ui_menus.c
+msgid "Save"
+msgstr "Guardar"
+
+#: core/ui/ui_menus.c
+msgid "Save as new channel"
+msgstr "Guardar como nuevo"
+
+#: core/ui/ui_menus.c
+msgid "Yes"
+msgstr "Sí"
+
+#: core/ui/ui_menus.c
+msgid "No"
+msgstr "No"
+
+#: core/ui/ui_menus.c
+msgid "Skipped"
+msgstr "Omitido"
+
+#: core/ui/ui_menus.c
+msgid "Scanned"
+msgstr "Escaneado"
+
+#: core/ui/ui_menus.c core/ui/ui_svc_storage.c
+msgid "Give it a name first"
+msgstr "Póngale un nombre antes"
+
+#: core/ui/ui_menus.c
+msgid "RX is outside the radio's bands"
+msgstr "RX fuera de las bandas de la radio"
+
+#: core/ui/ui_menus.c
+msgid "TX can't transmit there: set RX only"
+msgstr "No se puede transmitir ahí: ponga Solo RX"
+
+#: core/ui/ui_menus.c
+msgid "Receive only band: set FM"
+msgstr "Banda solo RX: ponga FM"
+
+#: core/ui/ui_menus.c
+msgid "Pick a TX contact first"
+msgstr "Elija antes un contacto TX"
+
+#: core/ui/ui_menus.c
+msgid "No changes to save"
+msgstr "Sin cambios que guardar"
+
+#: core/ui/ui_menus.c
+msgid "Saved as channel "
+msgstr "Guardado como canal "
+
+#: core/ui/ui_menus.c
+msgid "Saved channel "
+msgstr "Guardado canal "
+
+#: core/ui/ui_menus.c
+msgid "IDs go up to 16776415"
+msgstr "ID hasta 16776415"
+
+#: core/ui/ui_menus.c
+msgid "DCS codes use digits 0-7"
+msgstr "Códigos DCS: dígitos 0-7"
+
+#: core/ui/ui_menus.c
+msgid "Not changed: 0 to 495, steps of 15"
+msgstr "Sin cambio: 0 a 495, pasos de 15"
+
+#: core/ui/ui_menus.c
+msgid "Not a DCS code"
+msgstr "No es un código DCS"
+
+#: core/ui/ui_menus.c
+msgid "CTCSS goes 60.0 to 260.0"
+msgstr "CTCSS va de 60.0 a 260.0"
+
+#: core/ui/ui_menus.c
+msgid "Save first: hold OK"
+msgstr "Guarde: mant. OK"
+
+#: core/ui/ui_menus.c
+msgid "Tones: not in this build"
+msgstr "Tonos: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Save as new channel to use another number"
+msgstr "Guarde como canal nuevo para usar otro número"
+
+#: core/ui/ui_menus.c
+msgid "Zones: change them with qdmr for now"
+msgstr "Zonas: por ahora cámbielas con qdmr"
+
+#: core/ui/ui_menus.c
+msgid "Empty channel"
+msgstr "Canal vacío"
+
+#: core/ui/ui_menus.c
+msgid "{OK change  hold OK save  Back|OK change  hold OK save}"
+msgstr "{OK cambiar  mant. OK guardar  Atrás|OK cambiar  mant. OK guardar}"
+
+#: core/ui/ui_menus.c
+msgid "OK tunes to it  Back"
+msgstr "OK ir  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "No, keep editing"
+msgstr "No, seguir editando"
+
+#: core/ui/ui_menus.c
+msgid "Yes, discard"
+msgstr "Sí, descartar"
+
+#: core/ui/ui_menus.c
+msgid "Discard this new contact?"
+msgstr "¿Descartar este contacto nuevo?"
+
+#: core/ui/ui_menus.c
+msgid "Discard the changes to this channel?"
+msgstr "¿Descartar los cambios de este canal?"
+
+#: core/ui/ui_menus.c
+msgid "Unsaved Changes"
+msgstr "Cambios sin guardar"
+
+#: core/ui/ui_menus.c
+msgid "{OK choose  Back keep editing|OK choose  Back}"
+msgstr "{OK elegir  Atrás seguir editando|OK elegir  Atrás}"
+
+#: core/ui/ui_menus.c
+msgid "That's the most it can hold"
+msgstr "No caben más"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
+msgstr "{Atrás borrar  # ABC/123/abc  OK listo|Atrás borr.  # modo  OK}"
+
+#: core/ui/ui_menus.c
+msgid "Type"
+msgstr "Tipo"
+
+#: core/ui/ui_menus.c
+msgid "Talkgroup"
+msgstr "Grupo"
+
+#: core/ui/ui_menus.c
+msgid "Channel's"
+msgstr "Del canal"
+
+#: core/ui/ui_menus.c
+msgid "Type its ID first"
+msgstr "Teclee antes su ID"
+
+#: core/ui/ui_menus.c
+msgid "Private IDs go up to 16776415"
+msgstr "ID privados hasta 16776415"
+
+#: core/ui/ui_menus.c
+msgid "Talkgroups go up to 16777214"
+msgstr "Grupos hasta 16777214"
+
+#: core/ui/ui_menus.c
+msgid "Already a contact: "
+msgstr "Ya es contacto: "
+
+#: core/ui/ui_menus.c
+msgid "No room for more contacts"
+msgstr "No caben más contactos"
+
+#: core/ui/ui_menus.c
+msgid "Saved contact "
+msgstr "Guardado contacto "
+
+#: core/ui/ui_menus.c
+msgid "IDs go up to 16777214"
+msgstr "ID hasta 16777214"
+
+#: core/ui/ui_menus.c
+msgid "New Contact"
+msgstr "Contacto nuevo"
+
+#: core/ui/ui_menus.c
+msgid "Move up"
+msgstr "Subir"
+
+#: core/ui/ui_menus.c
+msgid "Move down"
+msgstr "Bajar"
+
+#: core/ui/ui_menus.c
+msgid "Copy here"
+msgstr "Copiar aquí"
+
+#: core/ui/ui_menus.c
+msgid "Edit channel"
+msgstr "Editar canal"
+
+#: core/ui/ui_menus.c
+msgid "Remove from zone"
+msgstr "Quitar de la zona"
+
+#: core/ui/ui_menus.c
+msgid "Already first"
+msgstr "Ya es el primero"
+
+#: core/ui/ui_menus.c
+msgid "Already last"
+msgstr "Ya es el último"
+
+#: core/ui/ui_menus.c
+msgid "Position "
+msgstr "Posición "
+
+#: core/ui/ui_menus.c
+msgid "Zone full"
+msgstr "Zona llena"
+
+#: core/ui/ui_menus.c
+msgid "Removed from "
+msgstr "Quitado de "
+
+#: core/ui/ui_menus.c
+msgid "1-6 pick  Back"
+msgstr "1-6 elegir  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "Added to "
+msgstr "Añadido a "
+
+#: core/ui/ui_menus.c
+msgid "Add Channel"
+msgstr "Añadir canal"
+
+#: core/ui/ui_menus.c
+msgid "{OK add  0-9 find  Back|OK add  Back}"
+msgstr "{OK añadir  0-9 buscar  Atrás|OK añadir  Atrás}"
+
+#: core/ui/ui_menus.c
+msgid "Every channel is in it"
+msgstr "Ya tiene todos los canales"
+
+#: core/ui/ui_menus.c
+msgid "In"
+msgstr "Sí"
+
+#: core/ui/ui_menus.c
+msgid "Rename"
+msgstr "Renombrar"
+
+#: core/ui/ui_menus.c
+msgid "Copy as new zone"
+msgstr "Copiar como nueva"
+
+#: core/ui/ui_menus.c
+msgid "Delete zone"
+msgstr "Borrar zona"
+
+#: core/ui/ui_menus.c
+msgid "Renamed"
+msgstr "Renombrada"
+
+#: core/ui/ui_menus.c
+msgid "Added "
+msgstr "Añadida "
+
+#: core/ui/ui_menus.c core/ui/ui_svc_storage.c core/ui/ui_svc_zone.c
+msgid "No room for another zone"
+msgstr "No cabe otra zona"
+
+#: core/ui/ui_menus.c
+msgid "Copied as "
+msgstr "Copiada como "
+
+#: core/ui/ui_menus.c
+msgid "Empty zone: nothing to send"
+msgstr "Zona vacía: nada que enviar"
+
+#: core/ui/ui_menus.c
+msgid "It holds every channel: it stays"
+msgstr "Tiene todos los canales: se queda"
+
+#: core/ui/ui_menus.c
+msgid "1-4 pick  Back"
+msgstr "1-4 elegir  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "1-3 pick  Back"
+msgstr "1-3 elegir  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "No, keep it"
+msgstr "No, conservar"
+
+#: core/ui/ui_menus.c
+msgid "Yes, delete"
+msgstr "Sí, borrar"
+
+#: core/ui/ui_menus.c
+msgid "Deleted "
+msgstr "Borrada "
+
+#: core/ui/ui_menus.c
+msgid "Delete "
+msgstr "¿Borrar "
+
+#: core/ui/ui_menus.c
+msgid "? Channels stay."
+msgstr "? Canales quedan."
+
+#: core/ui/ui_menus.c
+msgid "Delete Zone"
+msgstr "Borrar zona"
+
+#: core/ui/ui_menus.c
+msgid "OK choose  Back cancel"
+msgstr "OK elegir  Atrás cancelar"
+
+#: core/ui/ui_menus.c
+msgid "TX Contact"
+msgstr "Contacto TX"
+
+#: core/ui/ui_menus.c
+msgid "RX Group List"
+msgstr "Lista grupos RX"
+
+#: core/ui/ui_menus.c
+msgid "OK pick  0-9 find  Back"
+msgstr "OK elegir  0-9 buscar  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "None stored"
+msgstr "Nada guardado"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Hotspot"
+msgstr "Hotspot"
+
+#: core/ui/ui_menus.c
+msgid "Battery"
+msgstr "Batería"
+
+#: core/ui/ui_menus.c
+msgid "About"
+msgstr "Acerca de"
+
+#: core/ui/ui_menus.c
+msgid "Codeplug"
+msgstr "Codeplug"
+
+#: core/ui/ui_menus.c
+msgid "USB Network"
+msgstr "Red USB"
+
+#: core/ui/ui_menus.c
+msgid "Single-Freq Repeater"
+msgstr "Repetidor 1 frec."
+
+#: core/ui/ui_menus.c
+msgid "Supply"
+msgstr "Fuente ext."
+
+#: core/ui/ui_menus.c
+msgid "No GPS, or it is off (Settings > Location)"
+msgstr "Sin GPS, o apagado (Ajustes > Ubicación)"
+
+#: core/ui/ui_menus.c
+msgid "No fix yet. Go outside, away from buildings."
+msgstr "Aún sin fijo. Salga al exterior, lejos de edificios."
+
+#: core/ui/ui_menus.c
+msgid "Fix, "
+msgstr "Fijo, "
+
+#: core/ui/ui_menus.c
+msgid " satellites"
+msgstr " satélites"
+
+#: core/ui/ui_menus.c
+msgid "Altitude "
+msgstr "Altitud "
+
+#: core/ui/ui_menus.c
+msgid "Start MMDVMHost or Pi-Star on a computer on USB: hotspot mode starts by itself."
+msgstr "Inicie MMDVMHost o Pi-Star en un ordenador por USB: el modo hotspot se activa solo."
+
+#: core/ui/ui_menus.c
+msgid "Hotspot: not in this build"
+msgstr "Hotspot: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "None: built-in channels"
+msgstr "Ninguno: canales internos"
+
+#: core/ui/ui_menus.c
+msgid "Built-in channels"
+msgstr "Canales internos"
+
+#: core/ui/ui_menus.c
+msgid "Written by the CPS"
+msgstr "Escrito por el CPS"
+
+#: core/ui/ui_menus.c
+msgid "Zones: "
+msgstr "Zonas: "
+
+#: core/ui/ui_menus.c
+msgid "Channels: up to "
+msgstr "Canales: hasta "
+
+#: core/ui/ui_menus.c
+msgid "USB is a network adapter: IP over DMR. qdmr and the hotspot are off until you switch back."
+msgstr "USB es un adaptador de red: IP sobre DMR. qdmr y el hotspot quedan inactivos hasta volver."
+
+#: core/ui/ui_menus.c
+msgid "USB is a serial port: qdmr, hotspot. As a network adapter it carries IP over DMR."
+msgstr "USB es un puerto serie: qdmr, hotspot. Como adaptador de red lleva IP sobre DMR."
+
+#: core/ui/ui_menus.c
+msgid "USB network: not in this build"
+msgstr "Red USB: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "This channel has no SFR role. Set Repeater or User in the Codeplug Editor, on a channel with one frequency."
+msgstr "Este canal no tiene función SFR. Elija Repetidor o Usuario en el Codeplug Editor, en un canal de una frecuencia."
+
+#: core/ui/ui_menus.c
+msgid "Repeater (ERDM style)"
+msgstr "Repetidor (estilo ERDM)"
+
+#: core/ui/ui_menus.c
+msgid "Repeater"
+msgstr "Repetidor"
+
+#: core/ui/ui_menus.c
+msgid "In TS"
+msgstr "Entra TS"
+
+#: core/ui/ui_menus.c
+msgid ", out TS"
+msgstr ", sale TS"
+
+#: core/ui/ui_menus.c
+msgid "Off: transmit not allowed now"
+msgstr "No: transmisión no permitida ahora"
+
+#: core/ui/ui_menus.c
+msgid "Sending its CW ID"
+msgstr "Enviando su ID CW"
+
+#: core/ui/ui_menus.c
+msgid "Repeating a call"
+msgstr "Repitiendo llamada"
+
+#: core/ui/ui_menus.c
+msgid "Hang time"
+msgstr "Retención"
+
+#: core/ui/ui_menus.c
+msgid "Listening"
+msgstr "Escuchando"
+
+#: core/ui/ui_menus.c
+msgid "User of an ERDM repeater"
+msgstr "Usuario de repetidor ERDM"
+
+#: core/ui/ui_menus.c
+msgid "User of a repeater"
+msgstr "Usuario de repetidor"
+
+#: core/ui/ui_menus.c
+msgid "Talk on TS"
+msgstr "Habla en TS"
+
+#: core/ui/ui_menus.c
+msgid ", hear TS"
+msgstr ", oye TS"
+
+#: core/ui/ui_menus.c
+msgid " and TS"
+msgstr " y TS"
+
+#: core/ui/ui_menus.c
+msgid "Single-freq repeater: not in this build"
+msgstr "Repetidor 1 frec.: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Switch USB to serial"
+msgstr "Pasar USB a serie"
+
+#: core/ui/ui_menus.c
+msgid "Switch USB to network"
+msgstr "Pasar USB a red"
+
+#: core/ui/ui_menus.c
+msgid "Stop hotspot"
+msgstr "Parar hotspot"
+
+#: core/ui/ui_menus.c
+msgid "No USB network on this radio"
+msgstr "Esta radio no tiene red USB"
+
+#: core/ui/ui_menus.c
+msgid "USB is a network adapter now"
+msgstr "USB es ahora adaptador de red"
+
+#: core/ui/ui_menus.c
+msgid "USB is a serial port again"
+msgstr "USB vuelve a ser puerto serie"
+
+#: core/ui/ui_menus.c
+msgid "DMR ID"
+msgstr "ID DMR"
+
+#: core/ui/ui_menus.c
+msgid "Radio name"
+msgstr "Nombre de radio"
+
+#: core/ui/ui_menus.c
+msgid "Boot 1"
+msgstr "Inicio 1"
+
+#: core/ui/ui_menus.c
+msgid "Boot 2"
+msgstr "Inicio 2"
+
+#: core/ui/ui_menus.c
+msgid "Saved in the codeplug"
+msgstr "Guardado en el codeplug"
+
+#: core/ui/ui_menus.c
+msgid "Radio: "
+msgstr "Radio: "
+
+#: core/ui/ui_menus.c
+msgid "Saved"
+msgstr "Guardado"
+
+#: core/ui/ui_menus.c
+msgid "IDs start at 1"
+msgstr "ID desde 1"
+
+#: core/ui/ui_menus.c
+msgid "DMR ID saved"
+msgstr "ID DMR guardado"
+
+#: core/ui/ui_menus.c
+msgid "My Radio"
+msgstr "Mi radio"
+
+#: core/ui/ui_menus.c
+msgid "0-9 type  OK edit/save  Back"
+msgstr "0-9  OK guardar  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "OK edit  Back"
+msgstr "OK editar  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "Freq Trim"
+msgstr "Ajuste frec."
+
+#: core/ui/ui_menus.c
+msgid "At "
+msgstr "En "
+
+#: core/ui/ui_menus.c
+msgid "+ to increase frequency"
+msgstr "+ para subir la frecuencia"
+
+#: core/ui/ui_menus.c
+msgid "+ to increase freq"
+msgstr "+ para subir frec."
+
+#: core/ui/ui_menus.c
+msgid "0-9 type  # +/-  OK set"
+msgstr "0-9 teclear  # +/-  OK fijar"
+
+#: core/ui/ui_menus.c
+msgid "Up Down  # +/-  OK done"
+msgstr "Arriba Abajo  # +/-  OK listo"
+
+#: core/ui/ui_menus.c
+msgid "Up to 10.0 ppm"
+msgstr "Hasta 10.0 ppm"
+
+#: core/ui/ui_menus.c
+msgid "Firmware: "
+msgstr "Firmware: "
+
+#: core/ui/ui_menus.c
+msgid "Build: "
+msgstr "Versión: "
+
+#: core/ui/ui_menus.c
+msgid "Date: "
+msgstr "Fecha: "
+
+#: core/ui/ui_menus.c
+msgid "License: "
+msgstr "Licencia: "
+
+#: core/ui/ui_menus.c
+msgid "Authors:"
+msgstr "Autores:"
+
+#: core/ui/ui_menus.c
+msgid "Author:"
+msgstr "Autor:"
+
+#: core/ui/ui_menus.c
+msgid "Spleen font: BSD-2-Clause"
+msgstr "Fuente Spleen: BSD-2-Clause"
+
+#: core/ui/ui_menus.c
+msgid "JetBrains Mono font: OFL-1.1"
+msgstr "Fuente JetBrains Mono: OFL-1.1"
+
+#: core/ui/ui_menus.c
+msgid "AMBE+2 codec: DVSI (stock)"
+msgstr "Códec AMBE+2: DVSI (original)"
+
+#: core/ui/ui_menus.c
+msgid "Synced"
+msgstr "Sincron."
+
+#: core/ui/ui_menus.c
+msgid "Per site"
+msgstr "Por sitio"
+
+#: core/ui/ui_menus.c
+msgid "Roaming works on channels, not the VFO."
+msgstr "El roaming funciona en canales, no en el VFO."
+
+#: core/ui/ui_menus.c
+msgid "Off in this zone. On, the radio moves between the zone's repeaters."
+msgstr "Desactivado en esta zona. Activado, la radio cambia entre los repetidores de la zona."
+
+#: core/ui/ui_menus.c
+msgid "This channel is not a repeater site."
+msgstr "Este canal no es un sitio repetidor."
+
+#: core/ui/ui_menus.c
+msgid "Needs two sites in the zone with the same talkgroup."
+msgstr "Requiere dos sitios en la zona con el mismo grupo."
+
+#: core/ui/ui_menus.c
+msgid "Searching sites..."
+msgstr "Buscando sitios..."
+
+#: core/ui/ui_menus.c
+msgid "Site "
+msgstr "Sitio "
+
+#: core/ui/ui_menus.c
+msgid "Signal "
+msgstr "Señal "
+
+#: core/ui/ui_menus.c
+msgid " dBm, weak"
+msgstr " dBm, débil"
+
+#: core/ui/ui_menus.c
+msgid "Locked to this site"
+msgstr "Fijado a este sitio"
+
+#: core/ui/ui_menus.c
+msgid "Beacons: surveying"
+msgstr "Balizas: sondeando"
+
+#: core/ui/ui_menus.c
+msgid "Beacons: learning"
+msgstr "Balizas: aprendiendo"
+
+#: core/ui/ui_menus.c
+msgid "Roaming: not in this build"
+msgstr "Roaming: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Roam in this zone"
+msgstr "Roaming zona"
+
+#: core/ui/ui_menus.c
+msgid "Roam now"
+msgstr "Roaming ya"
+
+#: core/ui/ui_menus.c
+msgid "Lock to this site"
+msgstr "Fijar a este sitio"
+
+#: core/ui/ui_menus.c
+msgid "Site survey"
+msgstr "Sondeo sitios"
+
+#: core/ui/ui_menus.c
+msgid "Beacon interval"
+msgstr "Intervalo baliza"
+
+#: core/ui/ui_menus.c
+msgid "Beacon length"
+msgstr "Duración baliza"
+
+#: core/ui/ui_menus.c
+msgid "Wake probe"
+msgstr "Sonda desp."
+
+#: core/ui/ui_menus.c
+msgid "Must match the repeaters"
+msgstr "Debe coincidir con repetidores"
+
+#: core/ui/ui_menus.c
+msgid "Wake probe on: transmits on silent sites"
+msgstr "Sonda activa: transmite en sitios mudos"
+
+#: core/ui/ui_menus.c
+msgid "Wake probe off: listening only"
+msgstr "Sonda inactiva: solo escucha"
+
+#: core/ui/ui_menus.c
+msgid "Roaming works on channels"
+msgstr "Roaming solo en canales"
+
+#: core/ui/ui_menus.c
+msgid "Roaming on for "
+msgstr "Roaming activo en "
+
+#: core/ui/ui_menus.c
+msgid "Roaming off"
+msgstr "Sin roaming"
+
+#: core/ui/ui_menus.c
+msgid "Turn roaming on first"
+msgstr "Active antes el roaming"
+
+#: core/ui/ui_menus.c
+msgid "Can't roam on this channel"
+msgstr "Sin roaming en este canal"
+
+#: core/ui/ui_menus.c
+msgid "Already searching"
+msgstr "Ya buscando"
+
+#: core/ui/ui_menus.c
+msgid "Searching sites"
+msgstr "Buscando sitios"
+
+#: core/ui/ui_menus.c
+msgid "Locked to "
+msgstr "Fijado a "
+
+#: core/ui/ui_menus.c
+msgid "Roaming again"
+msgstr "Roaming de nuevo"
+
+#: core/ui/ui_menus.c
+msgid "1-7 pick  Back"
+msgstr "1-7 elegir  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "Ask"
+msgstr "Preguntar"
+
+#: core/ui/ui_menus.c
+msgid "No crash recorded."
+msgstr "Sin fallos registrados."
+
+#: core/ui/ui_menus.c
+msgid "Restarted after a crash. Send the report to "
+msgstr "Reiniciada tras un fallo. ¿Enviar el informe a "
+
+#: core/ui/ui_menus.c
+msgid "Report sent"
+msgstr "Informe enviado"
+
+#: core/ui/ui_menus.c
+msgid " crashes in a row"
+msgstr " fallos seguidos"
+
+#: core/ui/ui_menus.c
+msgid "Ran for "
+msgstr "Activo "
+
+#: core/ui/ui_menus.c
+msgid ", build "
+msgstr ", versión "
+
+#: core/ui/ui_menus.c
+msgid "Send report"
+msgstr "Enviar informe"
+
+#: core/ui/ui_menus.c
+msgid "Send to"
+msgstr "Enviar a"
+
+#: core/ui/ui_menus.c
+msgid "After a crash"
+msgstr "Tras un fallo"
+
+#: core/ui/ui_menus.c
+msgid "Clear"
+msgstr "Borrar"
+
+#: core/ui/ui_menus.c
+msgid "Not now"
+msgstr "Ahora no"
+
+#: core/ui/ui_menus.c
+msgid "No crash recorded"
+msgstr "Ningún fallo registrado"
+
+#: core/ui/ui_menus.c
+msgid "Pick Send to first"
+msgstr "Elija Enviar a primero"
+
+#: core/ui/ui_menus.c
+msgid "Sending crash report"
+msgstr "Enviando informe de fallo"
+
+#: core/ui/ui_menus.c
+msgid "Pick Send to as well"
+msgstr "Elija también Enviar a"
+
+#: core/ui/ui_menus.c
+msgid "Crash record cleared"
+msgstr "Registro de fallo borrado"
+
+#: core/ui/ui_menus.c
+msgid "Crash Log"
+msgstr "Reg. de fallos"
+
+#: core/ui/ui_menus.c
+msgid "Crash reports to "
+msgstr "Informes de fallo a "
+
+#: core/ui/ui_menus.c
+msgid "this contact"
+msgstr "este contacto"
+
+#: core/ui/ui_menus.c
+msgid "Send To"
+msgstr "Enviar a"
+
+#: core/ui/ui_menus.c
+msgid "0-9 find  OK pick  Back"
+msgstr "0-9 buscar  OK elegir  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "Crash report sent"
+msgstr "Informe de fallo enviado"
+
+#: core/ui/ui_menus.c
+msgid "Crash report not sent"
+msgstr "Informe de fallo no enviado"
+
+#: core/ui/ui_menus.c
+msgid "1-9 open  Back"
+msgstr "1-9 abrir  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "USB network"
+msgstr "Red USB"
+
+#: core/ui/ui_menus.c
+msgid "Single-freq repeater"
+msgstr "Repetidor de 1 frec."
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Diagnostics"
+msgstr "Diagnóstico"
+
+#: core/ui/ui_menus.c
+msgid "Zones/Chs Received"
+msgstr "Zonas/Can. recibidos"
+
+#: core/ui/ui_menus.c
+msgid "Dual watch"
+msgstr "Doble escucha"
+
+#: core/ui/ui_menus.c
+msgid "Network"
+msgstr "Red"
+
+#: core/ui/ui_menus.c
+msgid "Serial"
+msgstr "Serie"
+
+#: core/ui/ui_menus.c
+msgid "Never"
+msgstr "Nunca"
+
+#: core/ui/ui_menus.c
+msgid "Dark"
+msgstr "Oscuro"
+
+#: core/ui/ui_menus.c
+msgid "Light"
+msgstr "Claro"
+
+#: core/ui/ui_menus.c
+msgid "High contrast"
+msgstr "Alto contraste"
+
+#: core/ui/ui_menus.c
+msgid "Default"
+msgstr "Predet."
+
+#: core/ui/ui_menus.c
+msgid "Red"
+msgstr "Rojo"
+
+#: core/ui/ui_menus.c
+msgid "Orange"
+msgstr "Naranja"
+
+#: core/ui/ui_menus.c
+msgid "Yellow"
+msgstr "Amarillo"
+
+#: core/ui/ui_menus.c
+msgid "Teal"
+msgstr "Turquesa"
+
+#: core/ui/ui_menus.c
+msgid "Light blue"
+msgstr "Celeste"
+
+#: core/ui/ui_menus.c
+msgid "Purple"
+msgstr "Morado"
+
+#: core/ui/ui_menus.c
+msgid "Pink"
+msgstr "Rosa"
+
+#: core/ui/ui_menus.c
+msgid "3 min"
+msgstr "3 min"
+
+#: core/ui/ui_menus.c
+msgid "Degrees"
+msgstr "Grados"
+
+#: core/ui/ui_menus.c
+msgid "Deg min sec"
+msgstr "Gr. min. seg."
+
+#: core/ui/ui_menus.c
+msgid "15 min"
+msgstr "15 min"
+
+#: core/ui/ui_menus.c
+msgid "Nothing"
+msgstr "Nada"
+
+#: core/ui/ui_menus.c
+msgid "Monitor"
+msgstr "Monitor"
+
+#: core/ui/ui_menus.c
+msgid "Talk target"
+msgstr "Destino"
+
+#: core/ui/ui_menus.c
+msgid "Power level"
+msgstr "Potencia"
+
+#: core/ui/ui_menus.c
+msgid "Next zone"
+msgstr "Zona siguiente"
+
+#: core/ui/ui_menus.c
+msgid "Previous zone"
+msgstr "Zona anterior"
+
+#: core/ui/ui_menus.c
+msgid "Key lock"
+msgstr "Bloq. teclas"
+
+#: core/ui/ui_menus.c
+msgid "Home zone"
+msgstr "Zona de inicio"
+
+#: core/ui/ui_menus.c
+msgid "Copy to VFO"
+msgstr "Copiar a VFO"
+
+#: core/ui/ui_menus.c
+msgid "Call back"
+msgstr "Rellamar"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Emergency"
+msgstr "Emergencia"
+
+#: core/ui/ui_menus.c
+msgid "Channel"
+msgstr "Canal"
+
+#: core/ui/ui_menus.c
+msgid "ETSI short"
+msgstr "ETSI corto"
+
+#: core/ui/ui_menus.c
+msgid "By DMR ID"
+msgstr "Por ID DMR"
+
+#: core/ui/ui_menus.c
+msgid "First copy"
+msgstr "Primera copia"
+
+#: core/ui/ui_menus.c
+msgid "Dual-path RX"
+msgstr "RX doble vía"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Volume"
+msgstr "Volumen"
+
+#: core/ui/ui_menus.c
+msgid "Key tones"
+msgstr "Tonos de tecla"
+
+#: core/ui/ui_menus.c
+msgid "Tone volume"
+msgstr "Volumen de tonos"
+
+#: core/ui/ui_menus.c
+msgid "Talk permit tone"
+msgstr "Tono de permiso"
+
+#: core/ui/ui_menus.c
+msgid "Voice prompts"
+msgstr "Avisos de voz"
+
+#: core/ui/ui_menus.c
+msgid "Message tone"
+msgstr "Tono de mensaje"
+
+#: core/ui/ui_menus.c
+msgid "Vibrate"
+msgstr "Vibrar"
+
+#: core/ui/ui_menus.c
+msgid "Brightness"
+msgstr "Brillo"
+
+#: core/ui/ui_menus.c
+msgid "Backlight Dim/Off"
+msgstr "Luz tenue/apagada"
+
+#: core/ui/ui_menus.c
+msgid "Theme"
+msgstr "Tema"
+
+#: core/ui/ui_menus.c
+msgid "Highlight color"
+msgstr "Color de resalte"
+
+#: core/ui/ui_menus.c
+msgid "Filled status bar"
+msgstr "Barra de estado llena"
+
+#: core/ui/ui_menus.c
+msgid "Large text"
+msgstr "Texto grande"
+
+#: core/ui/ui_menus.c
+msgid "Hint row"
+msgstr "Fila ayuda"
+
+#: core/ui/ui_menus.c
+msgid "Language"
+msgstr "Idioma/Language"
+
+#: core/ui/ui_menus.c
+msgid "Reply window"
+msgstr "Ventana resp."
+
+#: core/ui/ui_menus.c
+msgid "TX timeout"
+msgstr "Tiempo límite TX"
+
+#: core/ui/ui_menus.c
+msgid "Default squelch"
+msgstr "Silenciador predet."
+
+#: core/ui/ui_menus.c
+msgid "VFO step"
+msgstr "Paso VFO"
+
+#: core/ui/ui_menus.c
+msgid "FM broadcast step"
+msgstr "Paso FM comercial"
+
+#: core/ui/ui_menus.c
+msgid "Mic gain"
+msgstr "Ganancia mic."
+
+#: core/ui/ui_menus.c
+msgid "Mic AGC"
+msgstr "CAG mic."
+
+#: core/ui/ui_menus.c
+msgid "Mic noise reduction"
+msgstr "Reducción ruido mic."
+
+#: core/ui/ui_menus.c
+msgid "Monitor by default"
+msgstr "Monitor por defecto"
+
+#: core/ui/ui_menus.c
+msgid "Show talker alias"
+msgstr "Ver alias del emisor"
+
+#: core/ui/ui_menus.c
+msgid "Dual watch talk back"
+msgstr "Resp. doble esc."
+
+#: core/ui/ui_menus.c
+msgid "Dual watch delay"
+msgstr "Retardo doble esc."
+
+#: core/ui/ui_menus.c
+msgid "SFR receive"
+msgstr "Recepción SFR"
+
+#: core/ui/ui_menus.c
+msgid "SFR CW ID"
+msgstr "ID CW SFR"
+
+#: core/ui/ui_menus.c
+msgid "Key type"
+msgstr "Tipo clave"
+
+#: core/ui/ui_menus.c
+msgid "Key"
+msgstr "Clave"
+
+#: core/ui/ui_menus.c
+msgid "Auto lock"
+msgstr "Bloqueo auto"
+
+#: core/ui/ui_menus.c
+msgid "PTT when locked"
+msgstr "PTT si bloqueado"
+
+#: core/ui/ui_menus.c
+msgid "Position format"
+msgstr "Formato posición"
+
+#: core/ui/ui_menus.c
+msgid "Send position"
+msgstr "Enviar posición"
+
+#: core/ui/ui_menus.c
+msgid "Answer GPS requests"
+msgstr "Responder pet. GPS"
+
+#: core/ui/ui_menus.c
+msgid "Hotspot allowed"
+msgstr "Hotspot permitido"
+
+#: core/ui/ui_menus.c
+msgid "Answer radio checks"
+msgstr "Responder radio check"
+
+#: core/ui/ui_menus.c
+msgid "Answer call alerts"
+msgstr "Responder alertas"
+
+#: core/ui/ui_menus.c
+msgid "TFTP codeplug write"
+msgstr "Escribir TFTP"
+
+#: core/ui/ui_menus.c
+msgid "Message format"
+msgstr "Formato mensaje"
+
+#: core/ui/ui_menus.c
+msgid "Accept zone shares"
+msgstr "Aceptar zonas"
+
+#: core/ui/ui_menus.c
+msgid "USB network at start"
+msgstr "Red USB al iniciar"
+
+#: core/ui/ui_menus.c
+msgid "PC answers data"
+msgstr "El PC responde datos"
+
+#: core/ui/ui_menus.c
+msgid "USB address"
+msgstr "Dirección USB"
+
+#: core/ui/ui_menus.c
+msgid "Auto power off"
+msgstr "Apagado automático"
+
+#: core/ui/ui_menus.c
+msgid "Low battery warning"
+msgstr "Aviso batería baja"
+
+#: core/ui/ui_menus.c
+msgid "Key "
+msgstr "Tecla "
+
+#: core/ui/ui_menus.c
+msgid " hold"
+msgstr " mant."
+
+#: core/ui/ui_menus.c
+msgid "Long press time"
+msgstr "Pulsación larga"
+
+#: core/ui/ui_menus.c
+msgid "Key repeat"
+msgstr "Repetir tecla"
+
+#: core/ui/ui_menus.c
+msgid "Up/Down on Home"
+msgstr "Arr/Ab en Inicio"
+
+#: core/ui/ui_menus.c
+msgid "DMR ID and name"
+msgstr "ID DMR y nombre"
+
+#: core/ui/ui_menus.c
+msgid "Factory reset"
+msgstr "Restablecer"
+
+#: core/ui/ui_menus.c
+msgid "Crash log"
+msgstr "Reg. de fallos"
+
+#: core/ui/ui_menus.c
+msgid "Freq trim"
+msgstr "Ajuste frec."
+
+#: core/ui/ui_menus.c
+msgid "Sound"
+msgstr "Sonido"
+
+#: core/ui/ui_menus.c
+msgid "Display"
+msgstr "Pantalla"
+
+#: core/ui/ui_menus.c
+msgid "Talk & listen"
+msgstr "Hablar y escuchar"
+
+#: core/ui/ui_menus.c
+msgid "Talk & Listen"
+msgstr "Hablar y escuchar"
+
+#: core/ui/ui_menus.c
+msgid "Privacy"
+msgstr "Privacidad"
+
+#: core/ui/ui_menus.c
+msgid "Location"
+msgstr "Ubicación"
+
+#: core/ui/ui_menus.c
+msgid "Connections"
+msgstr "Conexiones"
+
+#: core/ui/ui_menus.c
+msgid "Keys"
+msgstr "Teclas"
+
+#: core/ui/ui_menus.c
+msgid "My radio"
+msgstr "Mi radio"
+
+#: core/ui/ui_menus.c
+msgid "Advanced"
+msgstr "Avanzado"
+
+#: core/ui/ui_menus.c
+msgid "0-9 open  Back"
+msgstr "0-9 abrir  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "Talk permit tone: not in this build"
+msgstr "Tono de permiso: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "This radio has no vibration motor"
+msgstr "Esta radio no tiene vibrador"
+
+#: core/ui/ui_menus.c
+msgid "Colors are for color screens"
+msgstr "Colores solo en pantallas color"
+
+#: core/ui/ui_menus.c
+msgid "Mic gain: not in this build"
+msgstr "Ganancia mic.: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Mic AGC sets the level"
+msgstr "El CAG mic. fija el nivel"
+
+#: core/ui/ui_menus.c
+msgid "Noise reduction: not in this build"
+msgstr "Reducción ruido: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Not on this radio"
+msgstr "No en esta radio"
+
+#: core/ui/ui_menus.c
+msgid "Mic AGC: not in this build"
+msgstr "CAG mic.: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Digital monitor: not in this build"
+msgstr "Monitor digital: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Talker alias: not in this build"
+msgstr "Alias del emisor: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Pick a key type first"
+msgstr "Elija un tipo de clave antes"
+
+#: core/ui/ui_menus.c
+msgid "No GPS on this radio"
+msgstr "Sin GPS en esta radio"
+
+#: core/ui/ui_menus.c
+msgid "Diagnostics: not in this build"
+msgstr "Diagnóstico: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Settings are saved as you change them"
+msgstr "Los ajustes se guardan al cambiarlos"
+
+#: core/ui/ui_menus.c
+msgid "Not changed: "
+msgstr "Sin cambio: "
+
+#: core/ui/ui_menus.c
+msgid " to "
+msgstr " a "
+
+#: core/ui/ui_menus.c
+msgid ", steps of "
+msgstr ", pasos de "
+
+#: core/ui/ui_menus.c
+msgid "No, keep settings"
+msgstr "No, mantener ajustes"
+
+#: core/ui/ui_menus.c
+msgid "Yes, reset"
+msgstr "Sí, restablecer"
+
+#: core/ui/ui_menus.c
+msgid "Factory settings restored"
+msgstr "Ajustes de fábrica restaurados"
+
+#: core/ui/ui_menus.c
+msgid "Reset: not in this build"
+msgstr "Restablecer: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "Reset all settings to factory defaults? Channels stay. This can't be undone."
+msgstr "¿Restablecer todos los ajustes de fábrica? Los canales se mantienen. No se puede deshacer."
+
+#: core/ui/ui_menus.c
+msgid "Factory Reset"
+msgstr "Restablecer"
+
+#: core/ui/ui_menus.c
+msgid "Set them with qdmr"
+msgstr "Configúrelos con qdmr"
+
+#: core/ui/ui_menus.c
+msgid "Current"
+msgstr "Actual"
+
+#: core/ui/ui_menus.c
+msgid "Reply"
+msgstr "Responder"
+
+#: core/ui/ui_menus.c
+msgid "Listen"
+msgstr "Escuchar"
+
+#: core/ui/ui_menus.c
+msgid "Type a number..."
+msgstr "Escriba un número..."
+
+#: core/ui/ui_menus.c
+msgid "Talk to"
+msgstr "Hablar a"
+
+#: core/ui/ui_menus.c
+msgid "{PTT once  OK use  Hold OK set|OK use  Hold OK set}"
+msgstr "{PTT una vez  OK usar  Mant. OK fijar|OK usar  Mant. OK fijar}"
+
+#: core/ui/ui_menus.c
+msgid "Skip channel for now"
+msgstr "Saltar canal por ahora"
+
+#: core/ui/ui_menus.c
+msgid "Stay here"
+msgstr "Quedarse aquí"
+
+#: core/ui/ui_menus.c
+msgid "Always skip"
+msgstr "Saltar siempre"
+
+#: core/ui/ui_menus.c
+msgid "Skipped until the scan stops"
+msgstr "Saltado hasta parar escaneo"
+
+#: core/ui/ui_menus.c
+msgid "Nothing to skip yet"
+msgstr "Nada que saltar aún"
+
+#: core/ui/ui_menus.c
+msgid "Scan stopped here"
+msgstr "Escaneo detenido aquí"
+
+#: core/ui/ui_menus.c
+msgid "Edit scan lists in qdmr"
+msgstr "Edite listas de escaneo en qdmr"
+
+#: core/ui/ui_menus.c
+msgid "In use"
+msgstr "En uso"
+
+#: core/ui/ui_screens.c
+msgid "IDLE"
+msgstr "LIBRE"
+
+#: core/ui/ui_screens.c
+msgid "NO TX"
+msgstr "NO TX"
+
+#: core/ui/ui_screens.c
+msgid "DUAL"
+msgstr "DUAL"
+
+#: core/ui/ui_screens.c
+msgid "SCAN"
+msgstr "ESC."
+
+#: core/ui/ui_screens.c
+msgid "ROAM"
+msgstr "ROAM"
+
+#: core/ui/ui_screens.c
+msgid "Step "
+msgstr "Paso "
+
+#: core/ui/ui_screens.c
+msgid "DMR: not in this build"
+msgstr "DMR: no disponible"
+
+#: core/ui/ui_screens.c
+msgid "No TX frequency"
+msgstr "Sin frecuencia TX"
+
+#: core/ui/ui_screens.c
+msgid "Air Band AM"
+msgstr "Banda aérea AM"
+
+#: core/ui/ui_screens.c
+msgid "Broadcast FM"
+msgstr "FM comercial"
+
+#: core/ui/ui_screens.c
+msgid "This channel is RX only"
+msgstr "Este canal es solo RX"
+
+#: core/ui/ui_screens.c
+msgid "Bands "
+msgstr "Bandas "
+
+#: core/ui/ui_screens.c
+msgid "TX time-out reached"
+msgstr "Tiempo límite TX alcanzado"
+
+#: core/ui/ui_screens.c
+msgid "No TX frequency set"
+msgstr "Sin frecuencia TX fijada"
+
+#: core/ui/ui_screens.c
+msgid "Mode: not in this build"
+msgstr "Modo: no disponible"
+
+#: core/ui/ui_screens.c
+msgid "No codec: voice off"
+msgstr "Sin códec: voz apagada"
+
+#: core/ui/ui_screens.c
+msgid "DMR modem not running"
+msgstr "Módem DMR detenido"
+
+#: core/ui/ui_screens.c
+msgid "Channel busy"
+msgstr "Canal ocupado"
+
+#: core/ui/ui_screens.c
+msgid "No repeater answered"
+msgstr "Ningún repetidor respondió"
+
+#: core/ui/ui_screens.c
+msgid "Modem refused to send"
+msgstr "El módem rechazó enviar"
+
+#: core/ui/ui_screens.c
+msgid "Hotspot mode: PTT off"
+msgstr "Modo hotspot: sin PTT"
+
+#: core/ui/ui_screens.c
+msgid "No DMR ID in codeplug"
+msgstr "Sin ID DMR en codeplug"
+
+#: core/ui/ui_screens.c
+msgid "Air band: receive only"
+msgstr "Banda aérea: solo RX"
+
+#: core/ui/ui_screens.c
+msgid "Broadcast: receive only"
+msgstr "Comercial: solo RX"
+
+#: core/ui/ui_screens.c
+msgid "Repeater channel: PTT off"
+msgstr "Canal repetidor: sin PTT"
+
+#: core/ui/ui_screens.c
+msgid "Not allowed here"
+msgstr "No permitido aquí"
+
+#: core/ui/ui_screens.c
+msgid "Tune into a band, then PTT"
+msgstr "Sintonice una banda y PTT"
+
+#: core/ui/ui_screens.c
+msgid "Pick another channel"
+msgstr "Elija otro canal"
+
+#: core/ui/ui_screens.c
+msgid "Release PTT to talk again"
+msgstr "Suelte PTT para hablar"
+
+#: core/ui/ui_screens.c
+msgid "Add codec with rfoundry"
+msgstr "Añada el códec con rfoundry"
+
+#: core/ui/ui_screens.c
+msgid "Wait for the call to end"
+msgstr "Espere a que acabe la llamada"
+
+#: core/ui/ui_screens.c
+msgid "Check CC and range"
+msgstr "Revise CC y alcance"
+
+#: core/ui/ui_screens.c
+msgid "Release PTT, try again"
+msgstr "Suelte PTT y reintente"
+
+#: core/ui/ui_screens.c
+msgid "OK stop hotspot"
+msgstr "OK parar hotspot"
+
+#: core/ui/ui_screens.c
+msgid "Set your DMR ID in qdmr"
+msgstr "Fije su ID DMR en qdmr"
+
+#: core/ui/ui_screens.c
+msgid "Tune out of the band"
+msgstr "Salga de la banda"
+
+#: core/ui/ui_screens.c
+msgid "Pick a user channel to talk"
+msgstr "Elija un canal de usuario"
+
+#: core/ui/ui_screens.c
+msgid "Private to you"
+msgstr "Privada para usted"
+
+#: core/ui/ui_screens.c
+msgid "Private to "
+msgstr "Privada a "
+
+#: core/ui/ui_screens.c
+msgid "Reply→ "
+msgstr "Resp.→ "
+
+#: core/ui/ui_screens.c
+msgid "Sending ID"
+msgstr "Enviando ID"
+
+#: core/ui/ui_screens.c
+msgid "Repeating"
+msgstr "Repitiendo"
+
+#: core/ui/ui_screens.c
+msgid "SFR repeater"
+msgstr "Repetidor SFR"
+
+#: core/ui/ui_screens.c
+msgid "DMR modem off"
+msgstr "Módem DMR apagado"
+
+#: core/ui/ui_screens.c
+msgid "Lock"
+msgstr "Bloq"
+
+#: core/ui/ui_screens.c
+msgid "Roam?"
+msgstr "Roam?"
+
+#: core/ui/ui_screens.c
+msgid "Roam"
+msgstr "Roam"
+
+#: core/ui/ui_screens.c
+msgid "DMon"
+msgstr "DMon"
+
+#: core/ui/ui_screens.c
+msgid "Priv"
+msgstr "Priv"
+
+#: core/ui/ui_screens.c
+msgid "Private "
+msgstr "Privada "
+
+#: core/ui/ui_screens.c
+msgid "TALKING"
+msgstr "HABLANDO"
+
+#: core/ui/ui_screens.c
+msgid "WAKING RPT"
+msgstr "DESP. REP."
+
+#: core/ui/ui_screens.c
+msgid "WAITING"
+msgstr "ESPERA"
+
+#: core/ui/ui_screens.c
+msgid "ENDING"
+msgstr "CERRANDO"
+
+#: core/ui/ui_screens.c
+msgid " Private"
+msgstr " Privada"
+
+#: core/ui/ui_screens.c
+msgid " Group"
+msgstr " Grupo"
+
+#: core/ui/ui_screens.c
+msgid "Finishing the call"
+msgstr "Terminando la llamada"
+
+#: core/ui/ui_screens.c
+msgid "Release PTT to stop"
+msgstr "Suelte PTT para parar"
+
+#: core/ui/ui_screens.c
+msgid " late"
+msgstr " tarde"
+
+#: core/ui/ui_screens.c
+msgid " EMERGENCY"
+msgstr " EMERGENCIA"
+
+#: core/ui/ui_screens.c
+msgid "Encrypted: not played"
+msgstr "Cifrada: no se oye"
+
+#: core/ui/ui_screens.c
+msgid "Other TG: not played"
+msgstr "Otro TG: no se oye"
+
+#: core/ui/ui_screens.c
+msgid "MON: digital monitor"
+msgstr "MON: monitor digital"
+
+#: core/ui/ui_screens.c
+msgid "Squelch open"
+msgstr "Silenc. abierto"
+
+#: core/ui/ui_screens.c
+msgid "Receiving"
+msgstr "Recibiendo"
+
+#: core/ui/ui_screens.c
+msgid "SENDING"
+msgstr "ENVIANDO"
+
+#: core/ui/ui_screens.c
+msgid " left of "
+msgstr " de "
+
+#: core/ui/ui_screens.c
+msgid "No time limit"
+msgstr "Sin tiempo límite"
+
+#: core/ui/ui_screens.c
+msgid "Can't transmit"
+msgstr "No puede transmitir"
+
+#: core/ui/ui_screens.c
+msgid "Last activity "
+msgstr "Últ. actividad "
+
+#: core/ui/ui_screens.c
+msgid "No activity yet"
+msgstr "Sin actividad aún"
+
+#: core/ui/ui_screens.c
+msgid "OK tune  Back delete"
+msgstr "OK ir  Atrás borrar"
+
+#: core/ui/ui_screens.c
+msgid "# skip  Back stop scan"
+msgstr "# saltar  Atrás parar"
+
+#: core/ui/ui_screens.c
+msgid "# caller  Back end reply"
+msgstr "# origen  Atrás fin resp."
+
+#: core/ui/ui_screens.c
+msgid "Digital monitor  Back off"
+msgstr "Monitor dig.  Atrás apagar"
+
+#: core/ui/ui_screens.c
+msgid "Back undo  Hold OK save"
+msgstr "Atrás anular  Mant. OK guardar"
+
+#: core/ui/ui_screens.c
+msgid "{Back: VFO's talk target|Back default target}"
+msgstr "{Atrás: destino del VFO|Atrás destino predet.}"
+
+#: core/ui/ui_screens.c
+msgid "{Back: channel's talkgroup|Back default target}"
+msgstr "{Atrás: grupo del canal|Atrás destino predet.}"
+
+#: core/ui/ui_screens.c
+msgid "0-9 freq  * Quick  Up/Dn"
+msgstr "0-9 frec.  * Rápido  Arr/Ab"
+
+#: core/ui/ui_screens.c
+msgid "Heard "
+msgstr "Oído "
+
+#: core/ui/ui_screens.c
+msgid "Busy"
+msgstr "Ocupado"
+
+#: core/ui/ui_screens.c
+msgid "SENDING on "
+msgstr "ENVIANDO en "
+
+#: core/ui/ui_screens.c
+msgid "TALKING on "
+msgstr "HABLANDO en "
+
+#: core/ui/ui_screens.c
+msgid "Receiving on A and B"
+msgstr "Recibiendo en A y B"
+
+#: core/ui/ui_screens.c
+msgid "Receiving on "
+msgstr "Recibiendo en "
+
+#: core/ui/ui_screens.c
+msgid ", muted"
+msgstr ", mudo"
+
+#: core/ui/ui_screens.c
+msgid "{# 1 back to B  Back stop|# 1 back to B}"
+msgstr "{# 1 volver a B  Atrás parar|# 1 volver a B}"
+
+#: core/ui/ui_screens.c
+msgid "{# 1 back to A  Back stop|# 1 back to A}"
+msgstr "{# 1 volver a A  Atrás parar|# 1 volver a A}"
+
+#: core/ui/ui_screens.c
+msgid "{# 1 talk on B  Back stop|# 1 talk on B}"
+msgstr "{# 1 hablar en B  Atrás parar|# 1 hablar en B}"
+
+#: core/ui/ui_screens.c
+msgid "{# 1 talk on A  Back stop|# 1 talk on A}"
+msgstr "{# 1 hablar en A  Atrás parar|# 1 hablar en A}"
+
+#: core/ui/ui_screens.c
+msgid "# options  Back stop"
+msgstr "# opciones  Atrás parar"
+
+#: core/ui/ui_screens.c
+msgid " from "
+msgstr " de "
+
+#: core/ui/ui_screens.c
+msgid "# Open"
+msgstr "# Abrir"
+
+#: core/ui/ui_screens.c
+msgid "# Actions"
+msgstr "# Acciones"
+
+#: core/ui/ui_screens.c
+msgid "Back hide"
+msgstr "Atrás"
+
+#: core/ui/ui_screens.c
+msgid "Up/Dn more  Back"
+msgstr "Arr/Ab más  Atrás"
+
+#: core/ui/ui_screens.c
+msgid "EMERGENCY"
+msgstr "EMERGENCIA"
+
+#: core/ui/ui_screens.c
+msgid "OK acknowledge  Back hide"
+msgstr "OK aceptar  Atrás"
+
+#: core/ui/ui_screens.c
+msgid "Muted"
+msgstr "Silenciado"
+
+#: core/ui/ui_screens.c
+msgid "Up Down change  OK done"
+msgstr "Arr Ab cambiar  OK listo"
+
+#: core/ui/ui_screens.c
+msgid "STARTING"
+msgstr "INICIANDO"
+
+#: core/ui/ui_screens.c
+msgid "TX NET"
+msgstr "TX NET"
+
+#: core/ui/ui_screens.c
+msgid "RX RF"
+msgstr "RX RF"
+
+#: core/ui/ui_screens.c
+msgid "READY"
+msgstr "LISTO"
+
+#: core/ui/ui_screens.c
+msgid "No frequency yet"
+msgstr "Sin frecuencia aún"
+
+#: core/ui/ui_screens.c
+msgid "Net "
+msgstr "Red "
+
+#: core/ui/ui_screens.c
+msgid "No calls yet"
+msgstr "Sin llamadas aún"
+
+#: core/ui/ui_screens.c
+msgid "{Squelch|SQL}"
+msgstr "{Silenciador|SQL}"
+
+#: core/ui/ui_screens.c
+msgid "Tone"
+msgstr "Tono"
+
+#: core/ui/ui_screens.c
+msgid "{Monitor|MON}"
+msgstr "{Monitor|MON}"
+
+#: core/ui/ui_screens.c
+msgid "{Dual watch|Dual}"
+msgstr "{Doble escucha|Doble}"
+
+#: core/ui/ui_screens.c
+msgid "Width"
+msgstr "Ancho"
+
+#: core/ui/ui_screens.c
+msgid "Bright"
+msgstr "Brillo"
+
+#: core/ui/ui_screens.c
+msgid "{Timeslot|Slot}"
+msgstr "{Ranura|Slot}"
+
+#: core/ui/ui_screens.c
+msgid "Color"
+msgstr "Color"
+
+#: core/ui/ui_screens.c
+msgid "{Digital monitor|DMon}"
+msgstr "{Monitor digital|DMon}"
+
+#: core/ui/ui_screens.c
+msgid "{Privacy|Priv}"
+msgstr "{Privacidad|Priv}"
+
+#: core/ui/ui_screens.c
+msgid "{Talk to|Talk}"
+msgstr "{Hablar a|Hablar}"
+
+#: core/ui/ui_screens.c
+msgid "{Copy to VFO|To VFO}"
+msgstr "{Copiar a VFO|A VFO}"
+
+#: core/ui/ui_screens.c
+msgid "{TX freq|TXFreq}"
+msgstr "{Frec. TX|FrecTX}"
+
+#: core/ui/ui_screens.c
+msgid "Tone TX"
+msgstr "Tono TX"
+
+#: core/ui/ui_screens.c
+msgid "Tone RX"
+msgstr "Tono RX"
+
+#: core/ui/ui_screens.c
+msgid "Copy"
+msgstr "Copiar"
+
+#: core/ui/ui_screens.c
+msgid "All"
+msgstr "Todos"
+
+#: core/ui/ui_screens.c
+msgid "{Up/Dn: +/- offset  Type: TX freq|Up/Dn +/- offset  0-9 TX freq|Up/Dn offset  0-9 TX freq|Up/Dn +/-  0-9 TX freq}"
+msgstr "{Arr/Ab: +/- desplaz.  Teclee: frec. TX|Arr/Ab +/- desplaz.  0-9 frec. TX|Arr/Ab despl.  0-9 frec. TX|Arr/Ab +/-  0-9 frec. TX}"
+
+#: core/ui/ui_screens.c
+msgid "  OK sets"
+msgstr "  OK fija"
+
+#: core/ui/ui_screens.c
+msgid "Quick"
+msgstr "Rápido"
+
+#: core/ui/ui_screens.c
+msgid "1-9 change  Hold OK save"
+msgstr "1-9 cambiar  Mant. OK guardar"
+
+#: core/ui/ui_screens.c
+msgid "0 All settings  Hold OK save"
+msgstr "0 Ajustes  Mant. OK guardar"
+
+#: core/ui/ui_screens.c
+msgid "* more  Back"
+msgstr "* más  Atrás"
+
+#: core/ui/ui_svc_storage.c
+msgid "Couldn't write the codeplug: not saved"
+msgstr "Error al escribir codeplug: no guardado"
+
+#: core/ui/ui_svc_storage.c
+msgid "Couldn't read the channel: not saved"
+msgstr "Error al leer el canal: no guardado"
+
+#: core/ui/ui_svc_storage.c
+msgid "Zone full: not saved"
+msgstr "Zona llena: no guardado"
+
+#: core/ui/ui_svc_storage.c
+msgid "Already in this zone"
+msgstr "Ya está en esta zona"
+
+#: core/ui/ui_svc_storage.c
+msgid "Already at the end"
+msgstr "Ya está al final"
+
+#: core/ui/ui_svc_storage.c
+msgid "That zone is gone"
+msgstr "Esa zona ya no existe"
+
+#: core/ui/ui_svc_storage.c
+msgid "That channel is gone"
+msgstr "Ese canal ya no existe"
+
+#: core/ui/ui_svc_storage.c
+msgid "Couldn't read the channel: for now only"
+msgstr "Error al leer el canal: solo por ahora"
+
+#: core/ui/ui_svc_storage.c
+msgid "Couldn't write the codeplug: for now only"
+msgstr "Error al escribir codeplug: solo por ahora"
+
+#: core/ui/ui_svc_storage.c
+msgid "Not a stored contact: for now only"
+msgstr "Contacto no guardado: solo por ahora"
+
+#: core/ui/ui_svc_storage.c
+msgid "Reset: the settings couldn't be saved"
+msgstr "Restablecer: no se guardaron los ajustes"
+
+#: core/ui/ui_svc_storage.c
+msgid "Reset: the native area couldn't be erased"
+msgstr "Restablecer: no se borró el área nativa"
+
+#: core/ui/ui_svc_storage.c
+msgid "Couldn't save the keys: for now only"
+msgstr "Error al guardar las claves: solo por ahora"
+
+#: core/ui/ui_svc_zone.c
+msgid "That zone is full"
+msgstr "Esa zona está llena"
+
+#: core/ui/ui_svc_zone.c
+msgid "Not enough free channels"
+msgstr "Faltan canales libres"
+
+#: core/ui/ui_svc_zone.c
+msgid "Not enough free contacts"
+msgstr "Faltan contactos libres"
+
+#: core/ui/ui_svc_zone.c
+msgid "Not a zone this radio reads"
+msgstr "Zona no legible por esta radio"
+
+#: core/ui/ui_svc_zone.c
+msgid "The offer is gone"
+msgstr "La oferta ya no existe"

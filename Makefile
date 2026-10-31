@@ -303,6 +303,8 @@ $(shell echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME)' | cm
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
 $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
+# The language tables (tools/i18n.py, core/ui/lang/*.po); i18n.o is rebuilt when they changed
+$(shell python3 tools/i18n.py --gen $(BUILD)/gen/lang_tables.h | grep -q changed && rm -f $(BUILD)/core/ui/i18n.o)
 # The HTTP status server's static files (core/net/http_assets/*, tools/gen_http_assets.py): a table in the gen
 # directory, gzip compressed with CONFIG_NET_HTTP_GZIP; http.o is rebuilt when it changed
 ifeq ($(CONFIG_NET_HTTP),y)

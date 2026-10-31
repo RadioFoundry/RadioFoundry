@@ -113,6 +113,15 @@ static const flow_t flows[] = {
 	{ "S freq trim: past 10.0 ppm is refused", "trim ok 7 0 up ok 1 0", "1", "toast=Up_to_10.0", 1, false },
 	{ "S freq trim: OK leaves", "trim ok 7 0 up ok", "ok", "screen=group shows=Freq_trim", 1, false },
 	{ "S no freq trim without the hook", "", "ok 7 0", "hides=Freq_trim", 3, false },
+	// Settings > Display > Language, the last row (i18n.h; set78 = UI_SET_LANGUAGE, 'e' << 8 | 's' = 25971 Spanish)
+	{ "S language list", "", "ok 7 2 up ok", "screen=language shows=English", 5, false },
+#if CONFIG_LANG_ES
+	{ "S language: Spanish", "", "ok 7 2 up ok down ok", "set78=25971 screen=group shows=Idioma", 7, false },
+	{ "S language: back to English", "ok 7 2 up ok down ok", "ok up ok", "set78=0 shows=Language", 3, false },
+#else
+	{ "S language not in this build: dimmed", "", "ok 7 2 up ok down ok",
+	  "set78=0 toast=Not_in_this_build screen=language", 7, false },
+#endif
 	{ "S FM broadcast step on a radio with the receiver", "bcast", "ok 7 3 down down down down", "shows=FM_broadcast_step",
 	  7, false },
 	{ "11 dual watch talk back on", "", "ok 7 3 down down down down down down down down down ok", "shows=Dual_watch_talk_back", 13,
