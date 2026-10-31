@@ -13,7 +13,8 @@
 #   switch          the CONFIG_ switch without the prefix; left out for a feature without one
 #   hardware        what the switch needs that some radios physically lack. tools/boards.py check fails on a board
 #                   that neither builds the switch by default nor lists it with the reason in BOARD_UNSUPPORTED or
-#                   BOARD_NOT_WRITTEN (or, while the fact isn't known, in board.toml [hardware] unconfirmed): never
+#                   BOARD_NOT_WRITTEN (or, while the fact isn't known, in board.toml [hardware] unconfirmed; or, when
+#                   it is written but doesn't fit beside the radio's other features, in MAXIMAL_SKIP): never
 #                   "off by default"
 #   spec            the doc that defines the feature
 #   source          paths whose change makes a recorded result stale (default: the files and directories the

@@ -6,8 +6,9 @@ still missing. The survey entry is in [radios.md](radios.md). The AT-D868UV pin 
 
 **Summary.** These radios are a GD32F303 (or, on late D578UVs, an Artery AT32F43x) MCU driving a Sicomm SCT3258 DMR
 baseband over an 8-bit parallel host port. The SCT3258 runs DMR layers 1 and 2 and the AMBE+2 vocoder itself, and
-voice audio goes codec ↔ SCT3258 over I2S without passing through the MCU. The RF chip is the AT1846S (or a
-compatible QA4818N), which RadioFoundry already drives. On the AT-D868UV, every bus (the SCT3258 host port, the LCD, the SPI
+voice audio goes codec ↔ SCT3258 over I2S without passing through the MCU. The handhelds' RF chip is the AT1846S,
+which RadioFoundry already drives; the AT-D578UV has four QA4818N / WX4818N chips with a different register set
+([hardware-d578uv.md](hardware-d578uv.md) 5). On the AT-D868UV, every bus (the SCT3258 host port, the LCD, the SPI
 NAND, the AT1846S and I2C) is bit-banged on GPIO: the vendor firmware uses no SPI, I2C or EXMC peripheral. Loading our firmware looks possible: native USB, a documented vendor
 update mode, and SWD pads with no read-out protection on the units documented so far. The cost is the baseband.
 RadioFoundry's burst-level modem and vocoder interfaces don't map onto it directly, and features that need the AMBE bits
@@ -25,7 +26,7 @@ A value marked `(datasheet)` is from the Sicomm CT3258 / SCT3258 datasheet and "
 | DMR baseband | Sicomm SCT3258 (CML Microcircuits sells it as SCT3258TD) | SCT3258 | SCT3258 |
 | Vocoder | AMBE+2 inside the SCT3258. No separate DVSI chip | same | same |
 | Audio codec | TI TLV320AIC3204, I2S to the SCT3258 | same | same |
-| RF transceiver | AT1846S, 26 MHz TCXO | AT1846S | 4× QA4818N (pin-compatible with the AT1846S): two as the VFO A/B local oscillators, two as receivers. True dual receive |
+| RF transceiver | AT1846S, 26 MHz TCXO | AT1846S | 4× QA4818N / WX4818N, the same 3-wire bus as the AT1846S but BK4819-like registers: two as the side A/B local oscillators, two as receivers. True dual receive |
 | External flash | 1 Gbit SPI NAND, Toshiba TC58CVG0S3HRAIG (V2) | 1 Gbit; 878UVII: 2 Gbit (the vendor firmware won't boot on 1 Gbit) | 2 Gbit TC58CVG1S3HRAIG |
 | FM broadcast | RDA5802N | RDA5802N | RDA5802N |
 | PA | 2× NXP AFT05MS006 | same | 2× AFT05MP075N |
@@ -130,7 +131,7 @@ confirm on the radio: the `CHAN_D` frame format in DMR mode and its timing again
 | --- | --- |
 | PC link | Native USB on the MCU, a CDC serial port (`/dev/ttyACM*`). The cable is a plain USB cable; the baud setting makes no difference |
 | MCU update mode, 868/878 | Hold PTT + PF3 (top key) at power-on; the red LED blinks |
-| MCU update mode, 578 | Hold MENU + EXIT at power-on (or while switching off); the status LED blinks. The radio stays in update mode until an update is written |
+| MCU update mode, 578 | Hold MENU + EXIT at power-on (or while switching off); the status LED blinks. The radio stays in update mode until an update is written. The application image reads no such combination, so the bootloader does ([hardware-d578uv.md](hardware-d578uv.md) 3.2) |
 | Vendor tool | CPS → Tool → Firmware and Icon Update ("QX_Firmware_Update"): opens a `.spi` file, shows model and version, 921600 baud, a "Duplex" option and a grayed-out "Encrypt" option |
 | Update files | Three per update: `.spi` (14 or 51 bytes, the file the user opens), `.CDI` (278 bytes for firmware, about 11 KB for icon sets), `.CDD` (the payload). The icon (graphics) update uses the same tool and file set |
 | Image sizes (.CDD) | D878UV 3.08n: 939,168 bytes. D878UVII 3.08n: 939,240. D578UV2 GD 2.08: 1,020,408. D578UV2 AT 2.08: 1,040,008. Icon sets: 3.7 MB (878), 2.1–7.3 MB (578) |
@@ -216,25 +217,29 @@ the user's radio and its calibration.
 
 ## 5. What a port needs
 
+The AT-D578UV port has the GD32F30x platform, the SCT driver, the SPI NAND storage and the update tool; its bring-up
+state is in [hardware-d578uv.md](hardware-d578uv.md) 9. The rest of this table is what the handhelds still need.
+
 | Part | RadioFoundry has | New work |
 |---|---|---|
 | MCU | `platform/stm32f4` (a different family) | `platform/gd32f30x` (clock tree, GPIO, timers, DAC, ADC, USART, USB FS device). The AT32F43x for late 578s is a second platform |
-| Baseband | none | `drivers/modem/sct3258`: bit-banged HPI on GPIO, reset and boot block load, packet framing, layer 2 mode, 60 ms pacing, calibration |
-| Boot block | none | A tool that finds the 2048-byte block in the user's vendor image by its hash (2.2) and puts it where our firmware reads it, like the codec tools |
-| RF | `drivers/rf/at1846s` | A bit-banged 3-wire transport; per-radio tuning tables; QA4818N compatibility on the 578 |
+| Baseband | `drivers/modem/sct` ([modem-sct.md](modem-sct.md)): packets, boot, layer 2, 60 ms pacing | Per radio: the bit-banged HPI on GPIO, the reset sequence, calibration |
+| Boot block | `rfoundry` takes the 2048-byte block from the user's vendor image by its hash (2.2) for the board's modem boot slot | The slot address per radio |
+| RF | `drivers/rf/at1846s` | A bit-banged 3-wire transport; per-radio tuning tables; on the 578 a driver for the QA4818N, whose registers differ |
 | Audio codec | none | Codec setup sent through the SCT3258 (codec-bypass packets or `I2C_OPERATION`); register values to work out from the TLV320AIC3204 datasheet |
-| Storage | SPI NOR drivers | SPI NAND driver (bit-banged, dual-output read) with bad-block handling; two vendors (also needed by the DB25-D and GD-88) |
+| Storage | `spi_nand` (Toshiba and GigaDevice) and `nand_sectors` | Per radio: the bit-banged bus and a NAND range RadioFoundry may use |
 | Display | `st7735`, `st7789` | An 8080 parallel transport for `st7735`, sharing its data lines with the keypad scan |
-| Flashing | rfoundry (DFU, UART loaders) | The Anytone update protocol over USB CDC, or SWD under reset for the first bring-up |
+| Flashing | The AnyTone update protocol (`tools/anytone_update.py`) | The handhelds' model names; SWD under reset for a first bring-up |
 | Calibration | per-radio readers | A reader for the NAND calibration block (4.4), read-only |
-| Core | — | A capability for "voice frames stay in the modem", in case `CHAN_D` pass-through turns out unusable in DMR |
+| Core | `CAP_MODEM_VOICE`: the voice stays in the modem ([modem-sct.md](modem-sct.md) 7) | — |
 
 ## 6. Open questions
 
 1. **Board version**: the 868UV's version and MCU (VET6 with 64 KB RAM, or VGT6). Read the MCU marking, or read the
    ID code over SWD. The 868 images of both lines fit 64 KB RAM.
 2. **The unidentified 868 outputs** (4.3) and the DAC and PWM roles. Next step: confirm on the radio with a meter.
-3. **878 and 578 pin maps**: not yet recorded. The 878 has a larger display.
+3. **878 pin map**: not yet recorded. The 878 has a larger display. The 578's (GD32F303 radios) is in
+   [hardware-d578uv.md](hardware-d578uv.md).
 4. **The .CDD format**: plain, a Cortex-M image linked at 0x08004000 (868/878) or 0x08006000 (578). Still open:
    the 878 trailer after the stated length, how the identity check works, and whether the vendor update mode loads
    any image. The update protocol lives in the bootloader, which isn't in the update files.

@@ -391,18 +391,18 @@ bool aprs_path_to_codeplug(void)
 
 // Who we are: the debug link's test call, the settings' radio name, the codeplug's callsign; its first word, upper
 // case, without an SSID (ours comes from the configuration). Reads storage: outside the lock
-static void load_identity(void)
+// From settings the caller has read: reload_cfg passes its copy down, so the radio task's stack holds one settings_t,
+// not two
+static void identity_from(const settings_t *st)
 {
 	char name[CODEPLUG_NAME_LEN + 1];
-	settings_t st;
 	codeplug_aprs_t cp;
-	settings_read(&st);
 	bool have_cp = codeplug_aprs(1, &cp);
 	LOCK();
 	memcpy(name, a.test_call, sizeof(a.test_call));
 	UNLOCK();
 	if (name[0] == '\0') {
-		memcpy(name, st.radio_name, SETTINGS_NAME_LEN);
+		memcpy(name, st->radio_name, SETTINGS_NAME_LEN);
 		name[SETTINGS_NAME_LEN] = '\0';
 	}
 	if (name[0] == '\0') {
@@ -436,8 +436,15 @@ static void load_identity(void)
 	UNLOCK();
 	a.cp_serial = codeplug_serial();
 	if (have_cp) {
-		take_codeplug_path(&st, &cp);
+		take_codeplug_path(st, &cp);
 	}
+}
+
+static void load_identity(void)
+{
+	settings_t st;
+	settings_read(&st);
+	identity_from(&st);
 }
 
 static void reload_cfg(void)
@@ -450,7 +457,7 @@ static void reload_cfg(void)
 	a.cfg = c;
 	apply_cfg();
 	UNLOCK();
-	load_identity();
+	identity_from(&st);
 }
 
 // --- Small helpers (lock held) ---

@@ -112,6 +112,31 @@ channels and settings are not. Write them with that firmware's own programming s
 
 This path has not been tested on a real radio yet. Keep your stock firmware file at hand.
 
+### Radios installed through the manufacturer's update mode
+
+Some radios are installed through the manufacturer's own update mode, over the radio's USB cable, instead of a
+bootloader the installer controls. Your radio's section in the [Radio reference](23-radios.md) says whether yours is
+one of them, and which keys start the update mode. The steps differ from the list above:
+
+1. **Radio** and **Build** as above.
+2. **Connect.** Turn the radio off, connect the USB cable, hold the update mode keys and turn the radio on. Choose
+   **Connect** and pick the radio's serial port. The installer asks the radio for its model, as the manufacturer's
+   updater does, and tells which hardware variant it is. If you know the variant, you can pick it first; the installer
+   stops if the radio reports another one. A variant RadioFoundry has no image for is refused: nothing is written, and
+   its original firmware can still be written back (below).
+3. **Boot Block.** The radio's DMR chip needs a small boot block from the manufacturer's firmware at every power-up.
+   RadioFoundry doesn't ship it. Pick your copy of the radio's original firmware file (`.CDD`, any version for the
+   radio). The installer finds the block in it and checks it; the file stays on your computer, and the browser keeps
+   only the block for the next install.
+4. **Install.** The installer writes the image in small frames, each confirmed by the radio, and takes a minute or two.
+   If the write stops (a cable pulled, **Stop**), the radio stays in update mode: choose **Write Again**.
+5. **Done.** The radio installs the image on its own and restarts. Don't turn it off while it does.
+
+These radios have no backup in the installer: back up the codeplug with the manufacturer's CPS first. To put the
+original firmware back, choose **Help**, pick the radio and the original firmware, and select the three files of one
+manufacturer firmware version at once (`.CDD`, `.CDI` and `.spi`). The installer writes them only if the `.spi` names
+the model the radio reports, as the manufacturer's updater checks.
+
 ### Updating RadioFoundry
 
 Start the radio normally with RadioFoundry running, connect it and run **Install** again. The installer asks the radio
@@ -252,6 +277,22 @@ uses it. FM works, and DMR calls show "No codec: voice off". Flash again with `-
 rfoundry flash --release latest
 ```
 
+### Radios with the manufacturer's update mode
+
+On a radio installed through the manufacturer's update mode (above), rfoundry speaks that mode over the radio's USB
+serial port. Put the radio in update mode first. `--stock` is the radio's original firmware file (`.CDD`), which
+gives the DMR boot block:
+
+```
+rfoundry detect --board BOARD                                      # the model and variant the radio reports
+rfoundry flash --release latest --board BOARD --stock FIRMWARE.CDD  # install
+rfoundry restore-stock FIRMWARE.CDD --board BOARD                   # the original firmware back (.CDI, .spi beside it)
+```
+
+`--port` names the serial port when there is more than one. `--variant` refuses the write if the radio reports
+another variant than the one you name. rfoundry refuses a variant without a RadioFoundry image, and a firmware set
+whose `.spi` doesn't name the radio's model.
+
 ### Building it yourself
 
 Developers build with `make BOARD=<board>` and flash the result with
@@ -324,5 +365,8 @@ Factory Update Mode"), and Restore uses it too.
    (see your radio's section), load that backup; without one, load the manufacturer's firmware file. Or run the manufacturer's firmware
    upgrade tool and load the stock file.
 3. Write your codeplug backup with the manufacturer's CPS. The stock firmware can't read the codeplug RadioFoundry used.
+
+A radio installed through the manufacturer's update mode goes back from the update mode itself, with the three files
+of a manufacturer firmware version ([above](#radios-installed-through-the-manufacturers-update-mode)).
 
 Your radio's section in the [Radio reference](23-radios.md) says which way applies.

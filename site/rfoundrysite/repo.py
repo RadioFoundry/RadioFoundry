@@ -258,7 +258,7 @@ def flash_boards():
 	"""rfoundry's boards.py and stockfw.py as JSON, so the web flasher and rfoundry can't disagree."""
 	sys.path.insert(0, path("tools", "rfoundry"))
 	try:
-		from rfoundry import boards as ob, codecmap, stockfw, manifest
+		from rfoundry import boards as ob, codecmap, stockfw, manifest, modemboot
 	finally:
 		sys.path.pop(0)
 	out = {"format": "rfoundry-flash-boards/1", "manifest_format": manifest.FORMAT, "boards": {}, "profiles": {},
@@ -279,7 +279,11 @@ def flash_boards():
 			"dfu_product": b.dfu_product,
 			"protected": [list(p) for p in b.protected], "protect": b.protect,
 			# for a backup over another open firmware's CPS (openfw.js): area 5's base and the radio types
-			"rom_base": b.rom_base, "cps_radio_types": list(b.cps_radio_types)}
+			"rom_base": b.rom_base, "cps_radio_types": list(b.cps_radio_types),
+			# the anytone-update family (anytone.js): the model names its update mode answers, per [hardware]
+			# variants code; the slot the DMR baseband's boot block goes in (codec_tool modem_boot)
+			"anytone_models": {k: list(v) for k, v in getattr(b, "anytone_models", {}).items()},
+			"codec_tool": b.codec_tool, "codec_slot": list(b.codec_slot) if b.codec_slot else None}
 	for sha, p in stockfw.PROFILES.items():
 		q = dict(p)
 		q["segments"] = [list(s) for s in p["segments"]]
@@ -289,6 +293,9 @@ def flash_boards():
 		out["profiles"][sha] = q
 	# the codec maps, normalized (every address a number), for codecmap.js
 	out["codec_maps"] = codecmap.load_maps()
+	# the DMR baseband's boot block a modem_boot board's image takes from the user's stock file (modemboot.py): found by
+	# its first bytes, checked by its hash, never shipped
+	out["modem_boot"] = {"len": modemboot.BOOT_LEN, "sha256": modemboot.BOOT_SHA256, "prefix": modemboot.BOOT_PREFIX.hex()}
 	out["c7000"] = c7000_flash()
 	out["f4stub"] = f4_flash()
 	return out
@@ -363,26 +370,34 @@ def c7000_stub():
 
 
 def f4_flash():
-	"""What the web flasher's loader route needs per STM32F4 radio (stub/f4stub.py BOARDS), on a radio that already
-	runs RadioFoundry: the flash its firmware owns, and the board record the stub takes in CONFIG (config_record(), as hex), so
-	the page and f4stub.py send the same bytes. v2_wiring: the radio has the wiring a protocol 2 stub had built in
-	(f4stub.V2_WIRING), so an older stub left running can still serve it. The stub image goes to f4-stub.json (f4_stub()),
-	loaded only when it is used."""
+	"""What the web flasher's loader route needs per radio on a Cortex-M stub (stub/f4stub.py BOARDS), on a radio that
+	already runs RadioFoundry: the stub's target and the application base, the flash its firmware owns, and the board record
+	the stub takes in CONFIG (config_record(), as hex), so the page and f4stub.py send the same bytes. v2_wiring: the radio
+	has the wiring an STM32F4 protocol 2 stub had built in (f4stub.V2_WIRING), so an older stub left running can still
+	serve it. The stub images go to f4-stub.json (f4_stub()), loaded only when one is used. app_base, protocol and
+	record_len at the top are the STM32F4 stub's."""
 	f4 = _tool("stub", "f4stub.py")
 	v2 = f4.V2_WIRING
 	return {"app_base": f4.APP_BASE, "protocol": f4.VERSION, "record_len": f4.REC_LEN,
-		"boards": {bid: {"owned": [list(r) for r in b["owned"]], "codec": list(b["codec"]) if b["codec"] else None,
+		"boards": {bid: {"target": b["target"], "app_base": b["boot_end"],
+				 "owned": [list(r) for r in b["owned"]], "codec": list(b["codec"]) if b["codec"] else None,
 				 "name": b["name"], "stub_id": b["id"], "record": f4.config_record(bid).hex(),
-				 "v2_wiring": f4.config_record(bid)[1:] == v2, "protect": b["protect"]}
+				 "v2_wiring": b["target"] == "stm32f4" and f4.config_record(bid)[1:] == v2, "protect": b["protect"]}
 			   for bid, b in f4.BOARDS.items()}}
 
 
 def f4_stub():
-	"""The STM32F4 stub f4stub.py embeds, checked against its SHA-256 by f4stub itself, as base64 for the page."""
+	"""The stubs f4stub.py embeds, each checked against its SHA-256 by f4stub itself, as base64 for the page: targets.<key>
+	per target with an embedded image, the STM32F4 one also at the top (the page before targets reads it there)."""
 	import base64
 	f4 = _tool("stub", "f4stub.py")
-	return {"format": "rfoundry-f4-stub/1", "sha256": f4.F4STUB_SHA256, "run": f4.RUN_ADDR, "protocol": f4.VERSION,
-		"data": base64.b64encode(f4.stub_image()).decode()}
+	targets = {}
+	for key, t in f4.TARGETS.items():
+		sha, b64 = f4.embedded(key)
+		if b64:
+			targets[key] = {"sha256": sha, "run": t.run, "protocol": t.version,
+					"data": base64.b64encode(f4.stub_image(key)).decode()}
+	return {"format": "rfoundry-f4-stub/1", **targets["stm32f4"], "targets": targets}
 
 
 # ---------------------------------------------------------------------------------------------------------------

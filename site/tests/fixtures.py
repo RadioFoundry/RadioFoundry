@@ -17,6 +17,7 @@ Python it was ported from (site/tests/flasher.test.mjs):
     made-up addresses, its profile, what hrc7000_codec.locate() finds and the slot hrc7000_codec.merge() builds from it
   - for the Baofeng updater: the bytes tools/serial_loader.py's Flasher sends to its FakeBootloader for a small image
     (block numbers wrapping, three blocks damaged on the line), so bfloader.js is checked byte for byte against it
+  - for the AnyTone update mode: frames and the bytes rfoundry's anytone.Radio sends its FakeRadio for a small write
   - for the STM32F4 loader: each radio's board record from stub/f4stub.py config_record(), and the HELLO replies its
     simulated stub (FakeF4) gives before and after CONFIG, so f4stub.js sends and parses the Python tool's bytes; and
     f4stub's test profile, a board with other SPI wiring
@@ -61,7 +62,8 @@ def codec_map_vectors(out):
 
 
 def f4_vectors(out):
-	"""stub/f4stub.py's board records, and HELLO from its FakeF4 before and after each radio's CONFIG"""
+	"""stub/f4stub.py's board records, and HELLO from its FakeF4 (of the board's target) before and after each radio's
+	CONFIG"""
 	f4 = repo._tool("stub", "f4stub.py")
 	st = f4.stubtool
 
@@ -71,11 +73,14 @@ def f4_vectors(out):
 		fake.out.clear()
 		return {"status": r[1], "body": r[6:].hex()}
 
-	doc = {"protocol": f4.VERSION, "records": {}, "hello": {}}
+	doc = {"protocol": f4.VERSION, "records": {}, "hello": {},
+	       "targets": {k: {"protocol": t.version, "rec_len": t.rec_len, "hello": t.hello.decode()}
+			   for k, t in f4.TARGETS.items()}}
 	for bid in f4.BOARDS:
 		rec = f4.config_record(bid)
 		doc["records"][bid] = rec.hex()
-		fake = f4.FakeF4(b"\xff" * 0x100000, spi=b"\xff" * 0x10000)
+		target = f4.BOARDS[bid]["target"]
+		fake = f4.FakeF4(b"\xff" * 0x100000, spi=b"\xff" * 0x10000 if target == "stm32f4" else None, target=target)
 		doc["hello"][bid] = {"before": ask(fake, f4.OP_HELLO), "config": ask(fake, f4.OP_CONFIG, rec),
 				     "after": ask(fake, f4.OP_HELLO)}
 	# a profile with other wiring than any board's (f4stub.test_board), in data/flash-boards.json's shape
@@ -205,6 +210,32 @@ def no_codec(out, rng):
 	return {"sha256": sha, "real_sha256": real, "message": msg}
 
 
+def anytone(out):
+	"""The AnyTone update mode's frames and the bytes rfoundry's anytone.Radio sends to its FakeRadio for a small
+	write, so anytone.js is checked byte for byte against the Python (site/tests/anytone.test.mjs)"""
+	from rfoundry import anytone as at
+
+	class Rec(at.FakeRadio):
+		def __init__(self, **k):
+			super().__init__(**k)
+			self.sent = b""
+
+		def write(self, b):
+			self.sent += bytes(b)
+			super().write(b)
+	data = bytes(random.Random(578).getrandbits(8) for _ in range(200))
+	fake = Rec(nak_every=3)
+	r = at.Radio(fake, log=lambda m: None, timeout=0.01)
+	r.hello()
+	ident = r.identify()
+	r.write(0x08006000, data)
+	doc = {"frames": [[a, c.hex(), at.frame(a, c).hex()] for a, c in
+			  ((0x08006000, b"\x01\x02"), (0xFFFFFFE0, b"\xff" * 32), (0x0800C000, bytes(range(32))))],
+	       "data": data.hex(), "addr": 0x08006000, "host": fake.sent.hex(), "identify": list(ident), "model": fake.model}
+	with open(os.path.join(out, "anytone.json"), "w") as f:
+		json.dump(doc, f, indent=1)
+
+
 def main(out):
 	os.makedirs(out, exist_ok=True)
 	codec_map_vectors(out)
@@ -254,6 +285,7 @@ def main(out):
 	# the synthetic codecs' maps go into the flash-boards data, as a real build's would (docs/spec/codec-placement.md)
 	test_maps = {**c7000(out, rng), **db25d(out, rng)}
 	bfloader(out)
+	anytone(out)
 	codeplug(out)
 	fb = repo.flash_boards()
 	fb["codec_maps"].update(test_maps)
