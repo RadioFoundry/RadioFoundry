@@ -5,17 +5,18 @@
 // bug report (report.js). The working codeplug is kept in this browser (IndexedDB) so a reload doesn't lose edits.
 
 import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum, date as fmtDate } from "../flasher/dom.js";
-import { SerialStream, serialSupported, RFOUNDRY_USB, browserErrorKey } from "../flasher/link.js";
-import { CodeplugImage } from "../codeplug/image.js";
+import { equal } from "../flasher/bytes.js";
+import { SerialStream, serialSupported, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
+import { CodeplugImage, IDDB_HEADER, REGIONS } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
-import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY } from "../codeplug/transport.js";
+import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
 import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
-import { columns, channelForm, formDialog, membersDialog, refLabel } from "./views.js";
+import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel } from "./views.js";
 import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
@@ -57,6 +58,7 @@ function load(model, name, { fromRadio = false } = {}) {
 	S.history.reset();
 	S.dirty = false;
 	S.iddbChanged = false;
+	S.iddbSkipped = null;
 	if (!fromRadio && S.conn) S.conn.dbKnown = false;
 	refresh();
 	draftSoon();
@@ -205,14 +207,14 @@ function tableActions(tab, g) {
 	const full = S.model[tab].length >= TABLE_MAX[tab];
 	const numbered = tab !== "zones";
 	const out = [
-		// first, so it sits above the row checkboxes it acts on
-		button(sel.length ? t("editor.bulk_edit_n", { n: sel.length }) : t("editor.bulk_edit"), () => bulkSet(tab, g), { disabled: sel.length < 2 }),
+		// first, so it sits above the row checkboxes it acts on; not on a table with nothing it can set (zones, RX lists)
+		bulkColumns(tab, S.model, t).length ? button(sel.length ? t("editor.bulk_edit_n", { n: sel.length }) : t("editor.bulk_edit"), () => bulkSet(tab, g), { disabled: sel.length < 2 }) : null,
 		button(t("editor.add"), () => addRecord(tab, g), { disabled: full }),
 		button(t("editor.duplicate"), () => duplicate(tab, g), { disabled: full || !g.targets().length }),
 		button(t("editor.delete"), () => del(tab, g), { disabled: !g.targets().length, danger: true }),
 		button(t("editor.move_up"), () => move(tab, g, -1), { disabled: !g.targets().length, quiet: true }),
 		button(t("editor.move_down"), () => move(tab, g, 1), { disabled: !g.targets().length, quiet: true }),
-	];
+	].filter(Boolean);
 	if (numbered) out.push(button(t("editor.renumber"), () => renumber(tab), { quiet: true }));
 	out.push(...extensions.tableActions(tab, api()));
 	return out;
@@ -306,7 +308,8 @@ function renumber(tab) {
 
 function bulkSet(tab, g) {
 	const rows = g.selection();
-	const cols = columns(tab, S.model, t).filter((c) => c.readOnly !== true && c.key !== "name" && c.key !== "number");
+	const cols = bulkColumns(tab, S.model, t);
+	if (!cols.length) return;
 	const pickCol = h("select", {}, ...cols.map((c, i) => h("option", { value: String(i) }, c.label)));
 	const slot = h("div");
 	const errs = h("p", { class: "notice bad", hidden: true });
@@ -483,12 +486,23 @@ async function connect() {
 		stream = S.fake.stream();
 	} else {
 		if (!serialSupported()) throw new TransportError("no_serial");
-		const choice = await chooseLink();
-		if (!choice) return null;
-		cable = choice === "cable";
-		const port = await navigator.serial.requestPort(cable ? { filters: CABLES } : { filters: [RFOUNDRY_USB] });
-		diag.note("port chosen", { cable, ...port.getInfo?.() });
-		stream = await SerialStream.open(port);
+		// one chooser for both links: the radio's own USB port, or a programming cable, told apart by the port's USB ID.
+		// A port granted before where RadioFoundry answers needs no chooser
+		const known = await knownRadioPort([RFOUNDRY_USB, ...CABLES]);
+		let port = known?.port;
+		if (!port) {
+			try {
+				port = await navigator.serial.requestPort({ filters: [RFOUNDRY_USB, ...CABLES] });
+			} catch (e) {
+				if (e?.name !== "NotFoundError") throw e;
+				say(t("editor.connect.none"), "warn");
+				return null;
+			}
+		}
+		const info = port.getInfo?.() || {};
+		cable = !(info.usbVendorId === RFOUNDRY_USB.usbVendorId && info.usbProductId === RFOUNDRY_USB.usbProductId);
+		diag.note(known ? "port known" : "port chosen", { cable, ...info });
+		stream = known?.stream || await SerialStream.open(port);
 	}
 	const tr = new CpsSerial(stream, { cable });
 	try {
@@ -501,21 +515,6 @@ async function connect() {
 		await tr.close();
 		throw e;
 	}
-}
-
-function chooseLink() {
-	return new Promise((resolve) => {
-		let picked = null;
-		const d = dialog(t("editor.connect.title"), [
-			h("p", {}, t("editor.connect.text")),
-			h("div", { class: "choice-grid" },
-				h("button", { type: "button", class: "choice", onclick: () => { picked = "usb"; d.close(); } },
-					h("b", {}, t("editor.connect.usb")), h("span", { class: "small muted" }, t("editor.connect.usb_help"))),
-				h("button", { type: "button", class: "choice", onclick: () => { picked = "cable"; d.close(); } },
-					h("b", {}, t("editor.connect.cable")), h("span", { class: "small muted" }, t("editor.connect.cable_help")))),
-			h("details", { class: "small" }, h("summary", {}, t("editor.connect.network")), h("p", {}, t("editor.connect.network_help"))),
-		], null, null, () => resolve(picked));
-	});
 }
 
 function radioError(e) {
@@ -616,18 +615,109 @@ function convertDue(radio) {
 	return true;
 }
 
+// A read of the ID database expected to take this long or longer (seconds) is offered, not made
+const IDDB_ASK = 20;
+
+function askIddb(c, db, bytes, seconds) {
+	return new Promise((done) => {
+		let yes = false;
+		dialog(t("editor.iddb_read.title"), [h("p", {}, t("editor.iddb_read.text", { radio: c.radio.name, n: db.count,
+			size: kb(bytes), time: duration(seconds) })), h("p", {}, t("editor.iddb_read.skip_help"))],
+		t("editor.iddb_read.read"), (close) => {
+			yes = true;
+			close();
+		}, () => done(yes), { cancel: t("editor.iddb_read.skip") });
+	});
+}
+
+const kb = (n) => n >= 1e6 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`;
+
+function duration(s) {
+	return s < 90 ? t("editor.about_seconds", { n: Math.ceil(s / 5) * 5 }) : t("editor.about_minutes", { n: Math.round(s / 60) });
+}
+
+// The ID database a read skipped, read now into the codeplug (the DMR ID Database tab's button)
+// The radio on the line holds the codeplug last read from it (img): its regions read again and compared
+async function sameCodeplug(c, img) {
+	const now = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
+		c.transport.read({ iddb: false, signal, cache: img, progress: (n, total) => bar.set(n, total) }));
+	const at = (x, a, b) => x.bytes.subarray(a, Math.min(b, x.bytes.length));
+	return REGIONS.every(([a, b]) => equal(at(now, a, b), at(img, a, b)));
+}
+
+function readSkippedIddb() {
+	return exclusive(async () => {
+		const c = S.conn;
+		try {
+			if (!c?.image || !S.iddbSkipped || S.iddbChanged) return;
+			const [was, known] = [c.image, c.dbKnown];
+			await onLine(c);
+			// firmware that doesn't give its chip UID: the codeplug read again (with the fast protocol only the blocks that
+			// changed move) and unchanged is the same radio
+			if (!c.image && !c.uid && await sameCodeplug(c, was)) {
+				c.image = was;
+				c.dbKnown = known;
+			}
+			if (!c.image) return say(t("editor.iddb_read.swapped"), "warn");
+			// the header from the radio, not from c.image: a write since the read left the model's erased header there
+			const img = await withProgress(t("editor.reading_iddb", { radio: c.radio.name }), async (bar, signal) =>
+				c.transport.readIddb(await c.transport.readIddbHeader({ signal }), { signal, cache: c.image,
+					progress: (n, total) => bar.set(n, total) }));
+			// the database's bytes into the codeplug being edited (its other edits kept) and into the radio's as last read
+			if (dbHeader(img.bytes)) {
+				for (const [a, b] of iddbRanges(img)) {
+					for (const dst of [S.model.base, c.image]) {
+						dst.ensure(b);
+						dst.bytes.set(img.bytes.subarray(a, b), a);
+					}
+				}
+			}
+			S.model.iddb = dbHeader(S.model.base.bytes);
+			c.dbKnown = true;
+			S.iddbSkipped = null;
+			diag.note("iddb read", { bytes: img.bytes.length });
+			refresh();
+			draftSoon();
+		} catch (e) {
+			await fail("read ID database", e);
+		}
+	});
+}
+
 async function readRadio() {
 	const go = () => exclusive(async () => {
 		try {
 			const c = await connect();
 			if (!c) return;
 			await onLine(c);
+			// the ID database can be megabytes: its header first, and a long read of it offered, not made. Then one read
+			// (one progress bar) of the codeplug and, when wanted, the database
+			const cached = !!c.image && c.dbKnown;
+			const head = await c.transport.readIddbHeader();
+			const db = dbHeader(head.bytes);
+			const dbBytes = c.transport.iddbBytes(head);
+			const rate = c.rate || (c.cable ? 9000 : 30000);
+			const seconds = cached ? 0 : Math.ceil(dbBytes / rate);
+			const readDb = dbBytes > 0 && (seconds < IDDB_ASK || await askIddb(c, db, dbBytes, seconds));
+			const t0 = performance.now(), moved = c.transport.moved;
+			// the header just read serves as the cache for its own block on a first read
 			const img = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
-				c.transport.read({ signal, cache: c.image, progress: (n, total) => bar.set(n, total) }));
-			diag.note("read done", { bytes: img.bytes.length });
+				c.transport.read({ iddb: readDb, signal, cache: c.image || head, progress: (n, total) => bar.set(n, total) }));
+			// how fast this radio and cable read, for the next estimate (a read from the cache says nothing): by the bytes
+			// that crossed the link, not the progress, which also counts blank blocks the fast protocol skips. A read of a
+			// few blocks is mostly round trips: too few to tell
+			const took = c.transport.moved - moved;
+			if (!c.image && took >= 65536) c.rate = took / Math.max(0.25, (performance.now() - t0) / 1000);
+			diag.note("read done", { bytes: img.bytes.length, iddb: readDb, dbBytes, seconds });
 			c.image = img.clone();
+			if (db && !readDb) {
+				// the model without the database (its header erased): a write leaves the radio's as it is
+				img.bytes.fill(0xFF, IDDB_HEADER[0], IDDB_HEADER[1]);
+			}
 			load(decode(img), `${c.radio.id}-codeplug`, { fromRadio: true });
-			c.dbKnown = true;
+			c.dbKnown = !db || readDb;
+			S.iddbSkipped = db && !readDb ? { count: db.count, bytes: dbBytes, seconds } : null;
+			if (S.iddbSkipped) refresh();
 			say(t("editor.read_done", { radio: c.radio.name, channels: S.model.channels.length, contacts: S.model.contacts.length }), "ok");
 			// the database's format against what this radio's firmware reads (iddb-compact.md 6)
 			const fmt = S.model.iddb?.format;
@@ -679,9 +769,11 @@ async function offerUpdate(c) {
 	diag.note("update offered", { running: v.release || v.git, release: rel.version, gains });
 	const body = [h("p", {}, t("editor.update.text", { radio: c.radio.name, version: rel.version, running }))];
 	if (gains.length) body.push(h("p", {}, t("editor.update.gains")), h("ul", {}, ...gains.map((f) => h("li", {}, t(`editor.update.gain.${f}`)))));
-	dialog(t("editor.update.title"), body, t("editor.update.go"), (close) => {
-		window.open(`${HOME}flash/index.html#radio=${encodeURIComponent(c.radio.id)}`, "_blank", "noopener");
+	dialog(t("editor.update.title"), body, t("editor.update.go"), async (close) => {
+		// the flasher's tab needs the port: this one lets go of it (opened first, in the click, so no popup blocker stops it)
+		window.open(`${HOME}flash/index.html#update`, "_blank", "noopener");
 		close();
+		if (S.conn === c) await dropConnection();
 	}, () => {}, { cancel: t("editor.update.later") });
 }
 
@@ -893,7 +985,11 @@ function api() {
 		root: ROOT,
 		markIddb() {
 			S.iddbChanged = true;
+			S.iddbSkipped = null;
 		},
+		// the radio's ID database when a read skipped it ({count, bytes, seconds}), and reading it now
+		get iddbSkipped() { return S.iddbSkipped; },
+		readSkippedIddb,
 		encode: () => encode(S.model),
 		decode, numberAll,
 	};

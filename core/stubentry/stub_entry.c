@@ -13,6 +13,7 @@
 #include "stubentry/stub_load.h"
 #include "stubentry/stub_link.h"
 #include "debuglink/dlog.h"
+#include "hostlink/build_info.h"
 #include "hostlink/hostlink.h"
 #include "ui/gfx.h"
 #include "ui/ui_screens.h"
@@ -20,12 +21,18 @@
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
+#if CONFIG_CPS_FAST && !CONFIG_DEBUGLINK
+#include "cps/cps_fast.h"
+#endif
 
 #ifndef RFOUNDRY_GIT
 #define RFOUNDRY_GIT "unknown"
 #endif
 #ifndef RFOUNDRY_RELEASE
 #define RFOUNDRY_RELEASE ""
+#endif
+#ifndef RFOUNDRY_GIT_TIME
+#define RFOUNDRY_GIT_TIME 0u
 #endif
 
 #define STUB_ENTER_DELAY_MS	100u	// let the ENTER reply leave the UART before interrupts are masked
@@ -158,6 +165,14 @@ static const char *codec_id(void)
 	return hal_vocoder_id(board.vocoder);
 }
 
+#if CONFIG_CPS_FAST
+// The fast codeplug protocol: the web Codeplug Editor's reads and writes, which a build without the debug link keeps
+static size_t codeplug(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+{
+	return cps_fast_cmd(req, len, out, cap, hal_millis());
+}
+#endif
+
 static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
 	return stub_link_handle(&ident, cmd, req, len, out, cap);
@@ -192,8 +207,16 @@ void stub_entry_start(void)
 	parser.reply_cap = STUB_LINK_REPLY_MAX;
 	ident.board = board.name;
 	ident.git = RFOUNDRY_GIT;
+	ident.git_time = RFOUNDRY_GIT_TIME;
+	ident.release = RFOUNDRY_RELEASE;
+	ident.features = build_features;
+	ident.preset = build_preset;
+	ident.off = build_off;
 	ident.codec = codec_id;
 	ident.stub = stub_entry_request;
+#if CONFIG_CPS_FAST
+	ident.codeplug = codeplug;
+#endif
 	hostlink_set_side_protocol(&side);
 }
 #endif

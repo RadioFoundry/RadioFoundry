@@ -214,7 +214,11 @@ function update() {
 	const present = db?.format === "C" ? "editor.iddb.present_compact" : "editor.iddb.present";
 	// a database in format N for a radio that reads format C: the offer to convert (iddb-compact.md 6)
 	const upgrade = db?.format === "N" && api.compact === true;
-	P.current.replaceChildren(...[h("p", {}, db ? t(present, { n: db.count, len: db.textLen }) : t("editor.iddb.none")),
+	// a read that skipped the radio's database: it stays on the radio as it is, until read here or replaced
+	const skipped = api.iddbSkipped;
+	P.current.replaceChildren(...[skipped ? h("p", { class: "notice" }, t("editor.iddb_read.skipped", { n: skipped.count }), " ",
+		button(t("editor.iddb_read.read"), () => api.readSkippedIddb(), { primary: true }))
+		: h("p", {}, db ? t(present, { n: db.count, len: db.textLen }) : t("editor.iddb.none")),
 		upgrade ? h("p", { class: "notice" }, t("editor.iddb.upgrade", { radio: api.radio.name }), " ",
 			button(t("editor.iddb.convert"), () => api.upgradeIddb(), { primary: true })) : null,
 		db ? button(t("editor.rid.remove_db"), () => api.confirmDialog(t("editor.rid.remove_confirm"), t("editor.rid.remove_db"), () => {

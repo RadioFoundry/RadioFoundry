@@ -324,6 +324,10 @@ list (or type the RX frequency in the channel editor): the channel becomes FM an
 programmed on the frequency in the codeplug works too, even one stored as DMR. Both bands are receive only: PTT shows
 "Air band: receive only" or "Broadcast: receive only" and the radio doesn't transmit. Sub-audio tones are ignored.
 
+In the Codeplug Editor, a channel whose RX frequency is in one of these bands is set to **RX Only** when you type the
+frequency, its TX frequency follows RX, and its mode shows as "AM (air band)" or "FM broadcast". The Problems list warns about a channel there that
+isn't RX Only or is DMR.
+
 In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a
 fading station isn't cut, and the screen and LED show it is receiving. The squelch only stops a scan on a station:
 while a scan runs, the broadcast band is quiet between stations.

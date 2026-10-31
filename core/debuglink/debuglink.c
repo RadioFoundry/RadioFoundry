@@ -13,6 +13,7 @@
 #include "debuglink/dl_chip.h"
 #include "debuglink/dl_shot.h"
 #include "debuglink/dlog.h"
+#include "hostlink/build_info.h"
 #include "hostlink/hostlink.h"
 #include "stubentry/stub_entry.h"
 #if CONFIG_HOTSPOT
@@ -68,158 +69,6 @@ static bool reboot_pending;
 static uint8_t reboot_mode;
 static uint32_t reboot_token;
 
-static const char features[] = "features="
-#if CONFIG_FM
-	"FM,"
-#endif
-#if CONFIG_SUBTONE
-	"SUBTONE,"
-#endif
-#if CONFIG_DMR
-	"DMR,"
-#endif
-#if CONFIG_DMR_PRIVACY
-	"DMR_PRIVACY,"
-#endif
-#if CONFIG_DMR_TALKER_ALIAS
-	"DMR_TALKER_ALIAS,"
-#endif
-#if CONFIG_DMR_GPS
-	"DMR_GPS,"
-#endif
-#if CONFIG_APRS
-	"APRS,"
-#endif
-#if CONFIG_APRS_RX
-	"APRS_RX,"
-#endif
-#if CONFIG_APRS_IGATE
-	"APRS_IGATE,"
-#endif
-#if CONFIG_DMR_DATA_CORE
-	"DMR_DATA_CORE,"
-#endif
-#if CONFIG_DMR_SMS
-	"DMR_SMS,"
-#endif
-#if CONFIG_DMR_ARS
-	"DMR_ARS,"
-#endif
-#if CONFIG_DMR_LRRP
-	"DMR_LRRP,"
-#endif
-#if CONFIG_DMR_SIGNALING
-	"DMR_SIGNALING,"
-#endif
-#if CONFIG_DMR_ROAMING
-	"DMR_ROAMING,"
-#endif
-#if CONFIG_SFR
-	"SFR,"
-#endif
-#if CONFIG_HOTSPOT
-	"HOTSPOT,"
-#endif
-#if CONFIG_HOTSPOT_SPLIT
-	"HOTSPOT_SPLIT,"
-#endif
-#if CONFIG_USB_NETWORK
-	"USB_NETWORK,"
-#endif
-#if CONFIG_DMR_IP_GATEWAY
-	"DMR_IP_GATEWAY,"
-#endif
-#if CONFIG_DMR_UDP_COMPRESS && CONFIG_DMR_DATA_CORE
-	"DMR_UDP_COMPRESS,"
-#endif
-#if CONFIG_DMR_CONFIRMED && CONFIG_DMR_DATA_CORE
-	"DMR_CONFIRMED,"
-#endif
-#if CONFIG_NET_TCP
-	"NET_TCP,"
-#endif
-#if CONFIG_NET_PPP
-	"NET_PPP,"
-#endif
-#if CONFIG_NET_KISS
-	"NET_KISS,"
-#endif
-#if CONFIG_NET_HTTP
-	"NET_HTTP,"
-#endif
-#if CONFIG_NET_HTTP_GZIP
-	"NET_HTTP_GZIP,"
-#endif
-#if CONFIG_NET_RIGCTL
-	"NET_RIGCTL,"
-#endif
-#if CONFIG_NET_APRSIS
-	"NET_APRSIS,"
-#endif
-#if CONFIG_NET_USRP
-	"NET_USRP,"
-#endif
-#if CONFIG_MDNS
-	"MDNS,"
-#endif
-#if CONFIG_TFTP
-	"TFTP,"
-#endif
-#if CONFIG_TFTP_IDDB
-	"TFTP_IDDB,"
-#endif
-#if CONFIG_IDDB_COMPACT
-	"IDDB_COMPACT,"
-#endif
-#if CONFIG_SNMP
-	"SNMP,"
-#endif
-#if CONFIG_VFO
-	"VFO,"
-#endif
-#if CONFIG_VFO_FM
-	"VFO_FM,"
-#endif
-#if CONFIG_VFO_DMR
-	"VFO_DMR,"
-#endif
-#if CONFIG_AM_RX
-	"AM_RX,"
-#endif
-#if CONFIG_BCAST_FM
-	"BCAST_FM,"
-#endif
-#if CONFIG_DIAG
-	"DIAG,"
-#endif
-#if CONFIG_CRASH_LOG
-	"CRASH_LOG,"
-#endif
-#if CONFIG_SCAN
-	"SCAN,"
-#endif
-#if CONFIG_BEEP
-	"BEEP,"
-#endif
-#if CONFIG_FM_TX_TONES
-	"FM_TX_TONES,"
-#endif
-#if CONFIG_DTMF
-	"DTMF,"
-#endif
-#if CONFIG_VOX
-	"VOX,"
-#endif
-#if CONFIG_BATTERY_SAVE
-	"BATTERY_SAVE,"
-#endif
-#if CONFIG_CPS_FAST
-	"CPS_FAST,"
-#endif
-#if CONFIG_USB
-	"USB,"
-#endif
-	"HOSTLINK,DEBUGLINK\n";	// the debug link always runs on the host link (USB CDC or a UART)
 
 // --- little endian helpers ---
 
@@ -381,7 +230,7 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 		dl_text_kv_str(&t, "release", RFOUNDRY_RELEASE);
 	}
 	dl_text_kv_str(&t, "board", board.name);
-	dl_text(&t, "%s", features);
+	dl_text(&t, "features=%s\n", build_features);
 	dl_text_kv_str(&t, "codec", debuglink_codec_id(board.vocoder));
 	if (d != NULL) {
 		dl_text(&t, "display=%ux%ux%u\ninset=%u,%u,%u,%u\n", d->width, d->height, d->bpp, d->inset_top,
@@ -389,6 +238,10 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	}
 	dl_text(&t, "uptime_ms=%u\nreq_max=%u\nreply_max=%u\ninject_max_ms=%u\n", (unsigned)hal_millis(), DL_REQ_MAX,
 		DL_REPLY_MAX, INPUT_INJECT_MAX_MS);
+	// last: a long list that doesn't fit drops only itself (a host then treats the build as unknown). dl_text, not
+	// dl_text_kv_str: that cuts a value at 39 characters, and a cut off= list would read as complete
+	dl_text(&t, "preset=%s\n", build_preset);
+	dl_text(&t, "off=%s\n", build_off);	// may be empty: present, it says the build is known in full
 	return 1 + t.len;
 }
 

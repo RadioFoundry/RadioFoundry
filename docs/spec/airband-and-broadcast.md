@@ -40,6 +40,10 @@ received in AM too: `tune()` sets `view.ch.mode` to FM in the air band and the b
 `radio_sm.c`), the VFO's own mode with it, and RREQ_MODE refuses DMR there. The codeplug keeps the stored mode. Against a stored AM flag: it would need the native codeplug first, and an AM
 channel outside the air band has no use on these radios.
 
+The Codeplug Editor follows the same rule (`listenBand()` in `site/static/js/codeplug/model.js`, with the air band and
+65-108 MHz for broadcast): an RX frequency typed in either band turns on RX Only, the channel list shows the mode the
+radio uses, and the Problems list warns about a DMR channel there or a TX frequency there without RX Only.
+
 ### 3.2 Behavior
 
 | Item | Behavior |
