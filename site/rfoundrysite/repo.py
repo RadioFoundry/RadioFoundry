@@ -89,14 +89,20 @@ def strip_md(text):
 FEATURE_LINE = re.compile(r"^CONFIG_(\w+)\s*\?=\s*(.*)$")
 
 
+def feature_names(text=None):
+	"""The FEATURES list of config/features.mk, in its order"""
+	text = text if text is not None else read("config/features.mk")
+	m = re.search(r"^FEATURES\s*:=\s*((?:.*\\\n)*.*)$", text, re.M)
+	if not m:
+		raise SourceError("config/features.mk: no FEATURES list")
+	return m.group(1).replace("\\\n", " ").split()
+
+
 def features():
 	"""Every switch in config/features.mk, in its order: name, help text (the comment above it), default expression,
 	what it needs (from the dependency checks), and the feature matrix's group, title, sizes and notes."""
 	text = read("config/features.mk")
-	m = re.search(r"^FEATURES\s*:=\s*((?:.*\\\n)*.*)$", text, re.M)
-	if not m:
-		raise SourceError("config/features.mk: no FEATURES list")
-	names = m.group(1).replace("\\\n", " ").split()
+	names = feature_names(text)
 	out, comment = {}, []
 	for line in text.splitlines():
 		if line.startswith("##"):
@@ -408,4 +414,5 @@ def reported_features():
 	with open(path("core", "hostlink", "build_info.c"), encoding="utf-8") as f:
 		src = f.read()
 	block = re.search(r'const char build_features\[\] =(.*?);', src, re.S)
-	return sorted(set(re.findall(r'"([A-Z0-9_]+),?"', block.group(1)))) if block else []
+	# switches only: a derived name in the list (DMR_DATA_CORE) is in no release's features, so it would match none
+	return sorted(set(re.findall(r'"([A-Z0-9_]+),?"', block.group(1))) & set(feature_names())) if block else []

@@ -36,12 +36,21 @@ def git(*a):
     return subprocess.run(["git", "-C", ROOT] + list(a), capture_output=True, text=True, check=True).stdout.strip()
 
 
-def features(board_id, variant=None, options=(), value="y"):
-    """The switches the build has at value (y: on, n: off) as a comma list (make print-config)"""
-    cmd = (["make", "-s", "-C", ROOT, "BOARD=" + board_id, "print-config"] + (["VARIANT=" + variant] if variant else [])
+def make_print(board_id, goal, variant=None, options=()):
+    """The words a make print-* goal prints for the build"""
+    cmd = (["make", "-s", "-C", ROOT, "BOARD=" + board_id, goal] + (["VARIANT=" + variant] if variant else [])
            + ["%s=%s" % o for o in sorted(dict(options).items())])
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    return ",".join(kv.split("=")[0] for kv in r.stdout.split() if kv.endswith("=" + value))
+    return subprocess.run(cmd, capture_output=True, text=True).stdout.split()
+
+
+def features(board_id, variant=None, options=(), value="y"):
+    """The switches the build has at value (y: on, n: off) as a comma list (make print-config). Off leaves out what the
+    board can't have (BOARD_UNSUPPORTED, BOARD_NOT_WRITTEN), as the radio's VERSION off= does (Makefile RFOUNDRY_OFF)"""
+    names = [kv.split("=")[0] for kv in make_print(board_id, "print-config", variant, options) if kv.endswith("=" + value)]
+    if value == "n":
+        never = {n for goal in ("print-unsupported", "print-not-written") for n in make_print(board_id, goal, variant, options)}
+        names = [n for n in names if n not in never]
+    return ",".join(names)
 
 
 def toolchain(board_id):

@@ -38,7 +38,8 @@ export function currentBuild(probe, radio, releases, reported) {
 	}
 	// older firmware: its features= list against each variant, by the names it can report
 	const rep = new Set(reported);
-	const have = new Set(split(probe.features));
+	// only the switches: features= also names derived ones (DMR_DATA_CORE) that no variant lists
+	const have = new Set(split(probe.features).filter((n) => rep.has(n)));
 	const candidates = old.length ? old.map((e) => ({ id: e.variant, on: split(e.features) }))
 		: Object.entries(radio.config).map(([id, on]) => ({ id, on }));
 	const miss = (c) => {

@@ -238,9 +238,10 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	}
 	dl_text(&t, "uptime_ms=%u\nreq_max=%u\nreply_max=%u\ninject_max_ms=%u\n", (unsigned)hal_millis(), DL_REQ_MAX,
 		DL_REPLY_MAX, INPUT_INJECT_MAX_MS);
-	// last: a long list that doesn't fit drops only itself (a host then treats the build as unknown)
-	dl_text_kv_str(&t, "preset", build_preset);
-	dl_text_kv_str(&t, "off", build_off);	// may be empty: present, it says the build is known in full
+	// last: a long list that doesn't fit drops only itself (a host then treats the build as unknown). dl_text, not
+	// dl_text_kv_str: that cuts a value at 39 characters, and a cut off= list would read as complete
+	dl_text(&t, "preset=%s\n", build_preset);
+	dl_text(&t, "off=%s\n", build_off);	// may be empty: present, it says the build is known in full
 	return 1 + t.len;
 }
 

@@ -90,4 +90,11 @@ test("older firmware: a features= list that fits one variant is that preset, els
 	const s = sel();
 	assert.deepEqual(planUpdate(odd, s), { preset: null, added: [], ask: [], ready: true });
 	assert.equal(s.matches(), "full");
+	// a derived name features= carries (DMR_DATA_CORE) is no switch: it doesn't count against a variant
+	assert.deepEqual([old("A,B,C,DMR_DATA_CORE").kind, old("A,B,C,DMR_DATA_CORE").preset], ["preset", "full"]);
+});
+
+test("a custom build equal to a variant, from releases with off lists", () => {
+	const cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "D" }), RADIO, WITH_OFF, REPORTED);
+	assert.deepEqual([cur.kind, cur.preset], ["preset", "full"]);
 });
