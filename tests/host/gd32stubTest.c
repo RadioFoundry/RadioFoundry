@@ -117,7 +117,9 @@ static uint8_t request(uint8_t op, const uint8_t *payload, uint16_t n)
 	buf[3] = (uint8_t)n;
 	buf[4] = sum;
 	buf[5] = 0x03;
-	memcpy(buf + 6, payload, n);
+	if (n != 0) {
+		memcpy(buf + 6, payload, n);
+	}
 	sent_len = 0;
 	stubeng_feed(&eng, buf, 6u + n);
 	return sent_len >= 6 ? sent[1] : 0xFF;
