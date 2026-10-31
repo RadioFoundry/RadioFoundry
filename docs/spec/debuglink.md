@@ -111,6 +111,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1D` | WATCHDOG | operation u8 + arguments (3.21); `CONFIG_WATCHDOG` builds, else status 4 | none (3.21) |
 | `0x1E` | RX2 | operation u8 + arguments (3.22) | flags, or none (3.22) |
 | `0x1F` | IDDB | DMR ID u32 (3.23); `CONFIG_DMR` builds, else status 4 | format u8, records u32, found u8, text (3.23) |
+| `0x21` | HWOPT | operation u8 + arguments (3.25) | the options as key=value text, or none (3.25) |
 
 ### 3.1 VERSION
 
@@ -337,6 +338,7 @@ short. Each request takes a fresh snapshot
 | 24 | `air` | the data TX queue ([dmr-data.md](dmr-data.md) 12): `airq.built airq.depth` (packets queued, the one being sent included) `airq.bytes` (their octets with record headers and padding) `airq.high airq.high_bytes` (the most of each since start) `airq.capacity` (`CONFIG_DMR_AIR_QUEUE_BYTES`) `airq.queued airq.full` (refused: no room) `airq.sent airq.failed airq.gave_up` (the service never took it) `airq.aged` (queued too long) `airq.other` (no DMR ID, too long for a list, canceled) `airq.waits` (ticks the oldest packet waited for the service); `airq.chained` (packets that went in the transmission of the one before them); `data.tx_guarded` (lists held back by the guard) `data.tx_guard_ms data.tx_chain` (the spacing in force, op 11 of 3.12) `ip.chains` (transmissions with more than one IP packet) `ip.chained` (the packets after the first in them); zone sharing ([zone-share.md](zone-share.md)): `zs.built zs.offers` (0 off, 1 ask) `zs.send_state` (0 idle, 1 sending, 2 sent, 3 failed) `zs.offer_pending zs.offer_src zs.rx_messages zs.rx_bad zs.rx_busy zs.rx_off zs.offered zs.rate_limited zs.expired zs.sends zs.sent zs.send_failed zs.requests zs.refusals zs.last_refusal`. Built without the queue: `airq.built=0`; without zone sharing: `zs.built=0` |
 | 25 | `net_svc` | the radio's UDP services on the USB network link: with mDNS `mdns.state mdns.name mdns.queries mdns.answered mdns.sent mdns.busy mdns.conflicts mdns.bad` (`mdns.md` 5), with TFTP `tftp.state tftp.reads tftp.writes tftp.errors tftp.timeouts tftp.retransmits tftp.last_size tftp.blksize tftp.write_allowed` (`tftp.md` 6); `net_svc.built=0` without either |
 | 26 | `net_link` | the host link's MTUs ([usb-network.md](usb-network.md) 3.2), with the IP gateway: `net.mtu` (the link's, DHCP option 26) `net.air_mtu` (one transmission's) and the drops `net.air_too_big net.frag_needed net.up_too_big`; `CONFIG_NET_PPP` builds `ppp.running ppp.ip_up ppp.lcp ppp.ipcp` (RFC 1661 state numbers, 9 = opened) `ppp.rx_frames ppp.tx_frames ppp.rx_errors ppp.mru ppp.peer_mru` ([ppp.md](ppp.md)); `net_link.built=0` without either |
+| 27 | `board` | `board.name`, then the board's own keys, each as `board.<key>` (`board.view_line`): bring-up readings such as pin levels, raw ADC values, the clock that started and the flash ID. The keys are listed in the radio's hardware spec; a board without its own keys sends only `board.name` |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -760,6 +762,19 @@ lookup as a received call's name, without the cut to the screen's name length. `
 `rfoundry_debug.py iddb [ID ...]`, `tools/cps_fast.py`'s `FastLink.iddb()`. `tests/hil/test_iddb.py` compares the
 radio's answers with records read from the database by `tools/iddb_read.py`.
 
+### 3.25 HWOPT
+
+The board's hardware options (`hal/hal_hwopt.h`): facts a person states because software can't read them, such as
+a board revision. The board stores them outside the settings record. Settings > Advanced > Hardware shows
+the same list; a radio without options has no such row and answers an empty list here.
+
+| Op | Name | Arguments | Reply after the status |
+|---|---|---|---|
+| 0 | LIST | none | key=value text: `hwopt.count`, then per option i `hwopt.<i>.value` (the stored choice, -1 none), `hwopt.<i>.restart` (1: applies from the next start-up), `hwopt.<i>.name`, `hwopt.<i>.choices` (labels separated by `\|`) |
+| 1 | SET | option u8, choice u8 | none. Refused (7) while transmitting or when the board doesn't store it; bad argument (2) for an unknown option or choice |
+
+`rfoundry_debug.py hwopt` lists them; `rfoundry_debug.py hwopt "Board revision" V4A/V5` sets one.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -775,6 +790,7 @@ radio's answers with records read from the database by `tools/iddb_read.py`.
 - WATCHDOG TEST and LOAD need their token and are refused while transmitting; each ends in a reset (3.21).
 - RX2 BRIDGE and RESTART need their token and are refused while transmitting. The bridge keeps the transmitter off
   and ends in a restart (3.22).
+- HWOPT SET is refused while transmitting (3.25).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the vendor bootloader is proprietary).

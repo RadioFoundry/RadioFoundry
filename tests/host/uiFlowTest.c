@@ -877,6 +877,20 @@ static const flow_t flows_f[] = {
 #endif
 };
 
+// The MD-9600's front panel alone on its 128x64 screen (information-architecture.md 7.4): no digits, P1 / P2 as QUICK /
+// CONTEXT and named so in the hints, the encoder, P3 / P4 / the orange key as side keys
+static const flow_t flows_p[] = {
+	{ "P next channel", "", "up", "pos=4", 1, false },
+	{ "P next channel by the knob", "", "enc+", "pos=4", 1, false },
+	{ "P hints name P1, not *", "", "", "shows=P1_Quick", 0, false },
+	{ "P quick settings on P1", "", "quick", "screen=quick", 1, false },
+	{ "P key lock on a long P1", "", "long:quick", "locked=1", 1, false },
+	{ "P key unlock on a long P1", "long:quick", "long:quick", "locked=0", 1, false },
+	{ "P call back on P2", CALLER, "ctx ptt", "txid=91", 2, false },
+	{ "P radio check last caller", CALLER, "ctx down down down ok", "checks=1", 5, false },
+	{ "P one-shot talk group on P4", "", "tt down ptt", "txid=91 txpriv=0", 3, false },
+};
+
 static void run_flow(const flow_t *f, const sim_geom_t *g, sim_map_t map, const char *mapname)
 {
 	char err[300];
@@ -1264,7 +1278,7 @@ int main(void)
 	static const struct { sim_map_t map; const char *name, *geom; } runs[] = {
 		{ SIM_MAP_K, "K DM-1701", "160x120i5" },
 		{ SIM_MAP_M, "M GD-77", "128x64" },
-		{ SIM_MAP_V, "V MD-9600", "160x128" },
+		{ SIM_MAP_V, "V MD-9600 + mic", "128x64" },
 		{ SIM_MAP_K, "K 240x320", "240x320" },
 	};
 	for (size_t r = 0; r < sizeof runs / sizeof runs[0]; r++) {
@@ -1276,6 +1290,8 @@ int main(void)
 		run_flow(&flows_mono[i], sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");
 	for (size_t i = 0; i < sizeof flows_k / sizeof flows_k[0]; i++)
 		run_flow(&flows_k[i], sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
+	for (size_t i = 0; i < sizeof flows_p / sizeof flows_p[0]; i++)
+		run_flow(&flows_p[i], sim_geom_find("128x64"), SIM_MAP_P, "P MD-9600 panel");
 	const sim_geom_t *gf = sim_geom_find("160x128");
 	for (size_t i = 0; i < sizeof flows_f / sizeof flows_f[0]; i++)
 		run_flow(&flows_f[i], gf, SIM_MAP_F, "F few keys");
@@ -1289,6 +1305,7 @@ int main(void)
 	crawl(sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
 	crawl(sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");
 	crawl(gf, SIM_MAP_F, "F few keys");
+	crawl(sim_geom_find("128x64"), SIM_MAP_P, "P MD-9600 panel");
 
 	printf(fails ? "# FAILED uiFlowTest: %d\n" : "# PASSED uiFlowTest\n", fails);
 	return fails != 0;

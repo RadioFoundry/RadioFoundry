@@ -145,6 +145,7 @@ the codeplug.
 | Factory reset | Puts every setting back to its default ([below](#factory-reset)) |
 | Crash log | What the last crash left, and sending it to the developers ([below](#crash-log)) |
 | Freq trim | Moves the radio's receive and transmit frequency together, for a radio that is off frequency. Measure the error (a frequency counter, a service monitor, or a hotspot's BER test) and enter it with the sign reversed. The page shows what the trim comes to in Hz at 440 MHz and 144 MHz: a radio 2 kHz high at 440 MHz takes about -4.5 ppm (-1980 Hz). The page shows the trim in large type over a slider from -10 to +10, with "+ to increase frequency" under it where the display has room. Up and Down (or the knob) step 0.1 ppm, # flips the sign, digits type it (# 4 5 OK is -4.5 ppm). Takes effect once you stop changing it. Only on radios that have it ([which radios](../feature-matrix.md)). Range -10.0 to +10.0 ppm in 0.1 ppm steps, default 0 |
+| Hardware | Only on radios that need it: facts about the radio the firmware can't read, such as a board revision. **OK** steps through the choices, holding **OK** stores the one shown. "Not set" shows until one is stored. A revision applies from the next start-up |
 
 <img src="../ux/screens/160x120i5/about.png" width="200" alt="Settings > Advanced > About">
 

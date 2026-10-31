@@ -23,6 +23,7 @@
 #include "hal_bcast.h"
 #include "hal_afsk.h"
 #include "hal_rx2.h"
+#include "hal_hwopt.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -65,6 +66,10 @@ typedef struct {
 	const uint8_t *side_keys;
 	const char *const *side_key_names;
 	uint8_t side_key_count;
+	// Optional: what the screen hints call the keys that send QUICK and CONTEXT on a radio without * and # keys
+	// ("P1", "P2"; docs/spec/ui.md 1); NULL: "*" and "#"
+	const char *quick_label;
+	const char *context_label;
 	const hal_radio_t *radio;
 	const hal_power_t *power;
 	const hal_flash_t *flash;
@@ -76,6 +81,9 @@ typedef struct {
 	bool (*diag_line)(uint8_t i, char *buf, uint8_t len);
 	// Optional: zero the counters behind diag_line (the debug link's RESET_COUNTERS)
 	void (*diag_reset)(void);
+	// Optional: line i of the board's own debug link view keys as "key=value" (the debug link's `board` section adds
+	// the "board." prefix; the keys are listed in the radio's hardware spec); false past the last line
+	bool (*view_line)(uint8_t i, char *buf, uint8_t len);
 	// Optional: chip identity, raw memory reads, reboot modes (hal_system.h)
 	const hal_system_t *system;
 	// Battery warnings (the radio core's battery monitor): below battery_low_mv the radio warns, below
@@ -102,6 +110,11 @@ typedef struct {
 	void (*gps_enable)(bool on);
 	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
 	const hal_rx2_t *rx2;
+
+	// Optional: hardware options a person states because software can't read them (hal_hwopt.h): Settings >
+	// Advanced > Hardware and the debug link's HWOPT. NULL / 0 = none
+	const hal_hwopt_t *hwopts;
+	uint8_t hwopt_count;
 } board_t;
 
 extern const board_t board;
