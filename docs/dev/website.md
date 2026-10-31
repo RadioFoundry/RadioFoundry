@@ -194,16 +194,75 @@ identifiers with digits or underscores are skipped). Add an entry for each one t
 
 ## Translating
 
-`site/i18n/languages.json` lists the languages. The default (English) is at the site root, others under `/<code>/`.
-Each language has a flat catalog `site/i18n/<code>.json`; a missing key falls back to English. The flasher and the
-Tools page get their strings from the same catalog (embedded in the page). Text that comes from the repository
-(feature help, variant reasons) is English at its source; a catalog can override it with `feature.<SWITCH>.title`,
-`feature.<SWITCH>.help`, `variant.<id>.title`, `variant.<id>.summary` or `group.<slug>`.
+How to add a language, radio and site: [translating.md](translating.md). `site/i18n/languages.json` lists the languages. The default (English) is at the site root, others under `/<code>/`.
+The header's language menu (`details.lang-switch`) links the page in every language. On a first visit, when the browser's first language the site has isn't the page's, a bar under the header offers it, in that language (`static/js/langhint.js`; the words come from each catalog's `nav.lang_*` keys). It never redirects. Picking a language or dismissing the bar is remembered (`localStorage` `rfoundry-lang`).
+Each language has a flat catalog `site/i18n/<code>.json`; a missing key falls back to English, key by key. The
+flasher, the Codeplug Editor and the Tools page get their strings from the same catalog, embedded in the page
+(`<script id="i18n">`, read by `static/js/i18n.js`). Text that comes from the repository (feature help, variant
+reasons) is English at its source; a catalog can override it with `feature.<SWITCH>.title`, `feature.<SWITCH>.help`,
+`variant.<id>.title`, `variant.<id>.summary` or `group.<slug>`.
+
+| `languages.json` field | Meaning |
+|---|---|
+| `code` | The URL prefix and `<html lang>`: `es`, `pt-BR` |
+| `name` | The language's name in itself (`Español`): the switcher's label |
+| `dir` | `ltr` or `rtl`: `<html dir>` |
+| `locale` | `og:locale` for link previews (`es-ES`); the code when left out |
+
+With more than one language, every page gets a language switcher in the header (a link to the same page in each
+language), `<link rel="alternate" hreflang>` for each language plus `x-default`, and its own `404.html` in each
+language's tree. Links between pages use `{{home}}` (templates) or `HOME` (`flasher/dom.js`), so they stay in the
+visitor's language. With one language there is no switcher and no alternate links.
 
 A translated documentation page goes in `docs/i18n/<code>/<path under docs>`. Pages without one are shown in
-English with a notice.
+English with a notice, the text marked `lang="en"`.
 
-To add a language: copy `en.json` to `<code>.json`, translate, add the language to `languages.json`.
+### Plurals, numbers and dates
+
+| Need | How |
+|---|---|
+| A count in the text | Plural forms: `key.one`, `key.other` (and `key.zero`, `key.two`, `key.few`, `key.many` where the language has them). Pass the count as the number `n`: `t("key", { n: 3 })`, `self.t(lang, "key", n=3)` |
+| Which form | The scripts: `Intl.PluralRules` of the page's language. The generator: `PLURAL_RULES` in `site/rfoundrysite/i18n.py`; a language whose rule differs from English's gets an entry there |
+| A language's forms | It uses its own forms when its catalog has the family (`key.other`), never a mix with English's |
+| Numbers | `n` is written in the page's language (`1,200`, `1.200`). Any other number: `num(x)` from `flasher/dom.js`, with `Intl.NumberFormat` options for decimals |
+| Dates | `date(d, options)` and `localTime(iso)` from `flasher/dom.js`: the page's language, the visitor's time zone |
+
+To give an English string plural forms, replace its key with `key.one` and `key.other` in `en.json`, then the
+translations.
+
+### The check
+
+Every build checks the catalogs (`i18n.check()` in `site/rfoundrysite/i18n.py`) and warns, an error with `--strict`:
+
+- each file is valid JSON with no key twice;
+- `languages.json` names its default among the languages, each with a code, a name and `ltr` or `rtl`;
+- a catalog other than English has only keys `en.json` has. A plural form counts when `en.json` has the family;
+- each string keeps the English placeholders (`{name}`, `{{...}}`) and HTML tags. A plural form other than `other`
+  may leave `{n}` out ("one file").
+
+`python3 -m rfoundrysite.i18n` (from `site/`) runs the check alone, and also fails on a key a language lacks
+(`i18n.missing()`): the site works without it, but a pull request leaves none ([translating.md](translating.md)). `site/tests/i18n_test.py` tests the check and
+builds the site with a made-up second language: pages under `/es/`, the switcher, alternate links, English where the
+catalog has no string. `site/tests/i18n.test.mjs` tests the scripts' side. `tools/ci.sh` runs both.
+
+### Adding a language
+
+1. Copy `en.json` to `<code>.json` and translate. Leave a string out rather than copy it: English fills in.
+2. Add the language to `languages.json`.
+3. If its plural rule differs from English's, add it to `PLURAL_RULES` in `site/rfoundrysite/i18n.py`.
+4. Build and look: `python3 site/build.py --serve`, then `http://localhost:8000/<code>/`. `--strict` shows any
+   catalog problem.
+
+### What stays English
+
+| Text | Why |
+|---|---|
+| Radio facts from `board.toml`: bootloader key steps, build options, notices, bands, variant checks | Repository data, one per radio. A catalog can translate a radio's summary (`radio.note.<radio>`) |
+| A variant's reason for leaving a feature out (`config/variants/*.mk`) | Repository data |
+| Error messages from the protocol modules (`stub.js`, `dfu.js`, `link.js`, ...) shown after a translated explanation | The exact words for the technical details and the bug report. The page maps the common ones to catalog strings (`errorText` in `flasher/app.js`) |
+| The flasher's log box and diagnostic notes | Technical log, read with a bug report |
+| `README.txt` of the manual install kit and of a backup bundle | Files that go with the tool, like the documentation |
+| Glossary definitions | `docs/glossary.json`, part of the documentation |
 
 ## Radio images
 

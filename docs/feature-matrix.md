@@ -123,6 +123,10 @@ is `tools/bringup.py list --radio <id>`.
 | `font_xl` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `font_aa` | not recorded | off | off | off | off | off |
 | `font_big` | not recorded | off | off | off | off | off |
+| `lang_es` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `lang_it` | off | off | off | off | off | off |
+| `lang_default_es` | off | off | off | off | off | off |
+| `lang_default_it` | off | off | off | off | off | off |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ |
@@ -208,6 +212,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FONT_XL` | ● | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `FONT_AA` | ● | ○ | ○ | ○ | ○ | ○ |
 | `FONT_BIG` | ● | ○ | ○ | ○ | ○ | ○ |
+| `LANG_ES` | ● | ● | ● | ● | ● | ● |
+| `LANG_IT` | ○ | ○ | ○ | ○ | ○ | ○ |
+| `LANG_DEFAULT_ES` | ○ | ○ | ○ | ○ | ○ | ○ |
+| `LANG_DEFAULT_IT` | ○ | ○ | ○ | ○ | ○ | ○ |
 | `UI_COLOR` | ● | ● | ✕ | ● | ● | ● |
 | `UI_SETTINGS` | ● | ● | ● | ● | ● | ● |
 | `SCAN` | ● | ● | ● | ● | ● | ● |
@@ -347,6 +355,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | 16x32 font | `FONT_XL` | 6,352* | — | Only useful at 240 px and wider (MD-380 is 160 px). Anti-aliased on the DM-32 (7.4 KB of glyphs) |
 | Anti-aliased fonts | `FONT_AA` | 3,004* | — | Smooth text on color panels (measured 2026-10-17); the DM-32's image grew 9.5 KB with it and `FONT_XL` |
 | Larger text | `FONT_BIG` | — | — | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 (measured 2026-10-17) |
+| Spanish on the radio | `LANG_ES` | 29,964 | 29,692 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
+| Italian on the radio | `LANG_IT` | 22,464 | 22,456 | Off by default; measured with Spanish on (its text only). Alone it costs about as much as Spanish |
+| Start in Spanish | `LANG_DEFAULT_ES` | 0 | 0 | The language the radio starts in until the user picks one (needs `LANG_ES`); the web flasher sets it from its Radio language choice |
+| Start in Italian | `LANG_DEFAULT_IT` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_IT`) |
 
 ## Storage
 

@@ -9,6 +9,7 @@
 #include "hostlink/hostlink.h"
 #include "input/input.h"
 #include "ui/ui.h"
+#include "ui/i18n.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/zone_edit.h"
 #include "settings/settings.h"
@@ -391,6 +392,8 @@ static void storage_section(dl_text_t *t)
 	unsigned privacy_type = sv->privacy_type[0], privacy_active = sv->privacy_active;
 	// bit 0 noise reduction off, bit 1 AGC on (settings_t.accent bits 6-7)
 	unsigned audio_flags = (unsigned)((sv->accent & SETTINGS_AUDIO_MASK) >> SETTINGS_AUDIO_SHIFT);
+	// The UI's language: its two code letters, "en" when none is stored (HIL tests read English text)
+	char lang[3] = { sv->lang[0], sv->lang[1], 0 };
 
 	settings_end(hal_millis());	// nothing changed: nothing to save
 	dl_text(t, "settings.auto_lock_s=%u\nsettings.long_press_ms=%u\nsettings.repeat_ms=%u\nsettings.mic_gain=%u\n",
@@ -399,7 +402,9 @@ static void storage_section(dl_text_t *t)
 		theme, ui_flags, updown_home, low_batt_pct);
 	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", auto_off_min,
 		privacy_type, privacy_active);
-	dl_text(t, "settings.audio_flags=%u\n", audio_flags);
+	// the stored language, or for an empty one (never picked) the build's default
+	dl_text(t, "settings.audio_flags=%u\nsettings.lang=%s\n", audio_flags,
+		lang[0] ? lang : lang_code(lang_find(0)));
 	// The reference trim: stored, and in effect (the SETTING op's, or - on a radio without one)
 	dl_text(t, "settings.ref_trim=%d\n", ref_trim);
 	if (ref_trim_available()) {

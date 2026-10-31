@@ -57,7 +57,7 @@ DOC_ORDER = ("hardware", "install", "codec", "bringup")
 
 
 class Site:
-	def __init__(self, out, repo_url, ref, firmware=None, strict=False, log=print, beta=""):
+	def __init__(self, out, repo_url, ref, firmware=None, strict=False, log=print, beta="", i18n_dir=None):
 		self.out = out
 		self.repo_url = repo_url.rstrip("/")
 		self.ref = ref
@@ -66,7 +66,8 @@ class Site:
 		self.strict = strict
 		self.log = log
 		self.warnings = []
-		self.i18n = i18n.load()
+		self.i18n_dir = i18n_dir	# site/i18n unless given (a test's languages)
+		self.i18n = i18n.load(i18n_dir)
 		self.tpl = tmpl.Templates(repo.path("site", "templates"), self.i18n.t)
 		self.shots = shots.Shots()
 		self.git = repo.git("rev-parse", "--short=8", "HEAD", default="unknown")
@@ -227,15 +228,29 @@ class Site:
 		depth = full.count("/")
 		root = "../" * depth
 		meta = next(l for l in self.i18n.languages if l["code"] == lang)
-		langs = "".join(
-			'<a href="%s%s%s"%s lang="%s">%s</a>' % (root, self.i18n.prefix(l["code"]), rel,
-								  ' aria-current="true"' if l["code"] == lang else "",
-								  l["code"], html.escape(l["name"]))
-			for l in self.i18n.languages) if len(self.i18n.languages) > 1 else ""
+		# the switcher and the alternate links only when there is another language: each names this page in it
+		many = len(self.i18n.languages) > 1
+		# a compact menu (details: works without script). Each link carries its language's own words for the
+		# first-visit hint (static/js/langhint.js), which offers that language in that language
+		langs = ('<details class="lang-switch"><summary aria-label="%s" title="%s">%s</summary><nav aria-label="%s">%s</nav>'
+			 '</details>' % (html.escape(self.t(lang, "nav.languages")), html.escape(self.t(lang, "nav.languages")),
+					 html.escape(meta["code"].upper()), html.escape(self.t(lang, "nav.languages")), "".join(
+			'<a href="%s%s%s"%s lang="%s" hreflang="%s" data-hint="%s" data-go="%s" data-no="%s">%s</a>' % (
+				root, self.i18n.prefix(l["code"]), rel, ' aria-current="true"' if l["code"] == lang else "",
+				l["code"], l["code"], html.escape(self.t(l["code"], "nav.lang_hint")),
+				html.escape(self.t(l["code"], "nav.lang_go")), html.escape(self.t(l["code"], "nav.lang_no")),
+				html.escape(l["name"]))
+			for l in self.i18n.languages))) if many else ""
+		page_url = lambda code: SITE_URL + self.i18n.prefix(code) + (rel[:-len("index.html")] if rel.endswith("index.html") else rel)
+		alternates = "".join('<link rel="alternate" hreflang="%s" href="%s">\n' % (l["code"], html.escape(page_url(l["code"])))
+				     for l in self.i18n.languages) if many else ""
+		if many:
+			alternates += '<link rel="alternate" hreflang="x-default" href="%s">\n' % html.escape(page_url(self.i18n.default))
 		ctx = {"lang": lang, "dir": meta.get("dir", "ltr"), "title": title, "root": root,
 		       "home": root + prefix, "content": content, "page_class": page_class,
 		       "description": description or self.i18n.t(lang, "site.tagline"), "scripts": scripts, "footer": footer,
-		       "languages": langs, "git": self.git, "assets": self.asset_version, "version": self.version, "built": self.built,
+		       "languages": langs, "alternates": alternates, "og_locale": meta.get("locale", lang).replace("-", "_"),
+		       "git": self.git, "assets": self.asset_version, "version": self.version, "built": self.built,
 		       "built_at": self.built_at, "built_iso": self.built_iso, "git_full": self.git_full,
 		       "git_stamp": self.git + ("-dirty" if self.git_dirty else ""), "firmware_release": self.firmware_line(lang),
 		       "repo": self.repo_url, "community": COMMUNITY_URL, "nav_current": nav,
@@ -372,6 +387,8 @@ class Site:
 		self.write(".nojekyll", "")
 		self.check_screenshots()
 		self.check_links()
+		for problem in i18n.check(self.i18n_dir):
+			self.warn(problem)
 		missing = self.i18n.unused_check()
 		if missing:
 			self.warn("keys missing from the %s catalog: %s" % (self.i18n.default, ", ".join(missing)))
@@ -487,7 +504,7 @@ class Site:
 		out = "".join('<li><span class="dev-name" title="%s">%s</span> %s</li>' % (html.escape(full), n, bd) for _, n, bd, full in rows[:limit])
 		if len(rows) > limit:	# say it isn't the whole list
 			out += '<li class="dev-more"><a href="radios/index.html">%s</a></li>' % html.escape(
-				self.t(lang, "home.dev_more").replace("{n}", str(len(rows) - limit)))
+				self.t(lang, "home.dev_more", n=len(rows) - limit))
 		return out
 
 	def home(self, lang):
@@ -698,7 +715,7 @@ class Site:
 		for b in self.boards:
 			self.drawn(b, b["frame_geometry"], shots.css_px(".rt-pic", "max-width"))
 		# the beta notice's text is in the page itself (beta_notice.html), not needed by the scripts
-		subset = {k: v for k, v in self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "report.", "editor.qdmr.note.")).items()
+		subset = {k: v for k, v in self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "feature.", "report.", "editor.qdmr.note.")).items()
 			  if not k.startswith("flash.beta.")}
 		strings = json.dumps(subset, ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
@@ -768,8 +785,10 @@ class Site:
 				       "source": "%s/blob/%s/%s" % (self.repo_url, self.ref, p["src"]), "prev_next": prev_next,
 				       "fallback": ('<p class="notice">%s</p>' % html.escape(self.t(lang, "docs.fallback")))
 				       if fallback else ""}
+				if fallback:	# the default language's text on another language's page: say so to browsers and readers
+					ctx["body"] = '<div lang="%s">%s</div>' % (self.i18n.default, body)
 				self.page(lang, p["out"], p["title"], self.tpl.render("doc", ctx, lang), "doc", nav="docs")
 
 	def not_found(self, lang):
-		if lang == self.i18n.default:
-			self.page(lang, "404.html", self.t(lang, "notfound.title"), self.tpl.render("notfound", {}, lang), "404")
+		"""404.html in each language's tree: Pages serves the one nearest the missing address (/es/x: es/404.html)."""
+		self.page(lang, "404.html", self.t(lang, "notfound.title"), self.tpl.render("notfound", {}, lang), "404")

@@ -401,6 +401,22 @@ spec = "docs/spec/ui.md"
 switch = "FONT_BIG"
 spec = "docs/spec/ui.md"
 
+[feature.lang_es]
+switch = "LANG_ES"
+spec = "docs/spec/ui.md"
+
+[feature.lang_it]
+switch = "LANG_IT"
+spec = "docs/spec/ui.md"
+
+[feature.lang_default_es]
+switch = "LANG_DEFAULT_ES"
+spec = "docs/spec/ui.md"
+
+[feature.lang_default_it]
+switch = "LANG_DEFAULT_IT"
+spec = "docs/spec/ui.md"
+
 # ── Radio core, storage and codec ──
 
 [feature.radio_controls]

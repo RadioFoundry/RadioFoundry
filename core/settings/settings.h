@@ -217,7 +217,9 @@ typedef struct {
 	uint16_t zone_jrn_index;	// the index the zone was added at or deleted from
 	uint16_t zone_jrn_count;	// the stored zone count before it (0: only the built-in zone)
 	uint8_t zone_jrn_kind;		// SETTINGS_ZONE_JRN_*
-	uint8_t reserved8b[3];
+	char lang[2];			// the radio's language, its ISO 639-1 code (i18n.h lang_value), "\0\0" = never picked: the build's default
+					// (was reserved8b: older records read English)
+	uint8_t reserved8c;
 	// Zone share: the zones imported last, so the same zone sent again updates its import instead of adding a copy
 	// (docs/spec/zone-share.md 5.4); key 0 = unused, the oldest replaced first
 	settings_zs_import_t zs_import[SETTINGS_ZS_IMPORTS];

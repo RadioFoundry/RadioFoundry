@@ -29,6 +29,7 @@
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
+//                       (each also <src>,<name>: the station's name, _ = space, for one not in the contacts)
 //   zoneoffer:<src>[,c] another radio offers its zone "Club net" (,c: one channel); the import and sends always work
 //   zoneexpire          the offer is gone (not opened in time)
 //   hotspot:on|off      the host link enters / leaves hotspot mode
@@ -1954,6 +1955,9 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_ROAM_PROBE, 0);
 	ui_svc_setting_set(UI_SET_CRASH_MODE, UI_CRASH_SEND_OFF);
 	ui_svc_setting_set(UI_SET_CRASH_CONTACT, 0);
+	// English, or the language UI_LANG names ("es": a gallery in that language, docs/dev/translating.md)
+	const char *lang = getenv("UI_LANG");
+	ui_svc_setting_set(UI_SET_LANGUAGE, lang != NULL && strlen(lang) == 2 ? (uint8_t)lang[0] << 8 | (uint8_t)lang[1] : 0);
 #if CONFIG_DUAL_WATCH
 	ui_svc_setting_set(UI_SET_DUAL_TALK_BACK, 0);
 	ui_svc_setting_set(UI_SET_DUAL_B, 0);
@@ -2476,7 +2480,11 @@ static bool run_token(char *t, char *err, size_t len)
 		memset(&ev, 0, sizeof ev);
 		ev.kind = t[0] == 'a' ? UI_EV_CALL_ALERT : t[0] == 'e' ? UI_EV_EMERGENCY : UI_EV_PRIVATE_CALL;
 		ev.id = (uint32_t)atoi(arg);
-		strcpy(ev.name, contact_name(ev.id, false));
+		const char *name = strchr(arg, ',');
+		strncpy(ev.name, name != NULL ? name + 1 : contact_name(ev.id, false), sizeof ev.name - 1);
+		for (char *p = ev.name; *p; p++)
+			if (*p == '_')
+				*p = ' ';
 		ui_notify(&ev);
 		advance(200);
 		return true;

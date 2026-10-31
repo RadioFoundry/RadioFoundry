@@ -61,8 +61,26 @@ pre code { background: none; padding: 0; }
 .site-nav a:hover { background: var(--surface-2); }
 .site-nav a[aria-current] { background: var(--accent-soft); color: var(--accent); }
 .header-tools { display: flex; align-items: center; gap: var(--space-3); }
-.lang-switch a { margin-left: var(--space-2); }
-.lang-switch a[aria-current] { font-weight: 700; text-decoration: none; color: var(--text); }
+/* the language menu: the page's code, the languages under it */
+.lang-switch { position: relative; }
+.lang-switch summary {
+	list-style: none; cursor: pointer; min-width: 44px; min-height: 40px; display: grid; place-items: center;
+	background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm);
+	font-size: 0.85rem; font-weight: 600;
+}
+.lang-switch summary::-webkit-details-marker { display: none; }
+.lang-switch nav {
+	position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column;
+	min-width: 10rem; padding: var(--space-2) 0; background: var(--surface); border: 1px solid var(--border);
+	border-radius: var(--radius-sm); box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+}
+.lang-switch nav a { padding: var(--space-2) var(--space-4); text-decoration: none; color: var(--text); }
+.lang-switch nav a:hover { background: var(--surface-2); }
+.lang-switch nav a[aria-current] { font-weight: 700; }
+/* the first-visit language hint under the header */
+.lang-hint { background: var(--info-soft); border-bottom: 1px solid var(--border); }
+.lang-hint .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding-block: var(--space-3); }
+.lang-hint p { margin: 0; flex: 1 1 16rem; }
 .theme-toggle, .nav-toggle {
 	background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm);
 	min-width: 44px; min-height: 40px; font: inherit; cursor: pointer;
