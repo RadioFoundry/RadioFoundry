@@ -1684,6 +1684,7 @@ static uint8_t ced_edit = CE_NONE;	// the row whose editor is open
 static int32_t ced_val;			// spinner: power level (power_count = the radio's), color code, time-out
 static bool ced_typed;
 static subtone_t ced_tone;		// spinner: a tone
+static bool ced_typed_tone(subtone_t *t);
 static char ced_digits[CE_DIGITS + 1];	// typed frequency or ID
 static uint8_t ced_len;
 
@@ -1901,9 +1902,9 @@ static int32_t ced_val_or(int32_t stored)
 static void chinfo_item(uint16_t i, ui_item_t *it)
 {
 	static const char *const labels[CE_COUNT] = { "Name", "Number", "Mode", "RX", "TX", "Power", "RX only",
-		"Bandwidth", "RX tone", "TX tone", "VOX", "Color code", "Timeslot", "TX contact", "RX group list", "Own ID",
+		"Bandwidth", "RX CTCSS/DCS", "TX CTCSS/DCS", "VOX", "Color code", "Timeslot", "TX contact", "RX group list", "Own ID",
 		"Direct mode", "Talk permit beeps", "Talker alias TS1", "Talker alias TS2", "TX time-out", "Scan",
-		"Battery saver", "Zones", "Go to it", GLYPH_SHARE " Share channel to...", "Save", "Save as new channel" };
+		"Battery saver", "Zones", "Tune to it", GLYPH_SHARE " Share channel to...", "Save", "Save as new channel" };
 	const channel_t *ch = &ced_ch;
 	if (i >= ced_n)
 		return;
@@ -1978,8 +1979,18 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 	case CE_TX_TONE: {
 		const subtone_t *t = r == CE_RX_TONE ? &ch->rx_tone : &ch->tx_tone;
 #if CONFIG_CHANNEL_EDIT
-		if (editing)
+		if (editing) {
+			static subtone_t typed;	// static: the UI task's stack has 8 bytes to spare
 			t = &ced_tone;
+			if (ced_typed_tone(&typed)) {
+				t = &typed;
+				if (typed.type == TONE_DCS) {	// the digits as typed: "D02"
+					sb_chr(&b, 'D');
+					sb_str(&b, ced_digits + 1);
+					break;
+				}
+			}
+		}
 #endif
 		sb_tone(&b, t);
 		break;
@@ -2115,6 +2126,25 @@ static void ced_save(bool as_new)
 	ui_toast(msg);
 }
 
+// The tone typed so far. CTCSS in Hz with the last digit the tenths ("885" 88.5); under 60 Hz it reads as whole Hz
+// ("67" 67.0, "100" 100.0). A leading 0 types a DCS code ("023" D023N). False: nothing typed
+static bool ced_typed_tone(subtone_t *t)
+{
+	if (ced_len == 0)
+		return false;
+	uint16_t v = 0;
+	if (ced_digits[0] == '0') {
+		for (uint8_t i = 1; i < ced_len; i++)
+			v = (uint16_t)(v * 8u + (uint16_t)(ced_digits[i] - '0'));
+		*t = (subtone_t){ TONE_DCS, v };
+	} else {
+		for (uint8_t i = 0; i < ced_len; i++)
+			v = (uint16_t)(v * 10u + (uint16_t)(ced_digits[i] - '0'));
+		*t = (subtone_t){ TONE_CTCSS, v < 600u ? (uint16_t)(v * 10u) : v };
+	}
+	return true;
+}
+
 static void ced_spin(int dir)
 {
 	switch (ced_edit) {
@@ -2132,6 +2162,9 @@ static void ced_spin(int dir)
 		break;
 	case CE_RX_TONE:
 	case CE_TX_TONE:
+		if (ced_len > 0)
+			(void)ced_typed_tone(&ced_tone);	// steps on from what was typed
+		ced_len = 0;
 		ced_tone = tones_step(&ced_tone, dir);
 		break;
 	default:
@@ -2158,6 +2191,17 @@ static void ced_digit(char d)
 			break;
 		}
 		ced_val = v;
+		ced_digits[ced_len++] = d;
+		ced_digits[ced_len] = 0;
+		break;
+	case CE_RX_TONE:
+	case CE_TX_TONE:
+		if (ced_len >= 4)
+			break;		// 4 digits: "1318", "0754"
+		if (ced_len > 0 && ced_digits[0] == '0' && d > '7') {
+			ui_toast("DCS codes use digits 0-7");
+			break;
+		}
 		ced_digits[ced_len++] = d;
 		ced_digits[ced_len] = 0;
 		break;
@@ -2215,10 +2259,15 @@ static void ced_commit(void)
 		c->tot_s = (uint16_t)ced_val;
 		break;
 	case CE_RX_TONE:
-		c->rx_tone = ced_tone;
-		break;
 	case CE_TX_TONE:
-		c->tx_tone = ced_tone;
+		if (ced_typed_tone(&ced_tone)) {
+			if (ced_tone.type == TONE_DCS ? !tones_standard(&ced_tone) : !tones_valid(&ced_tone)) {
+				ui_toast(ced_tone.type == TONE_DCS ? "Not a DCS code" : "CTCSS goes 60.0 to 260.0");
+				return;
+			}
+			ced_len = 0;
+		}
+		*(ced_edit == CE_RX_TONE ? &c->rx_tone : &c->tx_tone) = ced_tone;
 		break;
 	default:
 		break;
@@ -2252,7 +2301,8 @@ static bool chinfo_key(const input_event_t *ev)
 		return true;
 	}
 	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
-		if ((ced_edit == CE_RX || ced_edit == CE_TX || ced_edit == CE_ID) && ced_len > 0) {
+		if ((ced_edit == CE_RX || ced_edit == CE_TX || ced_edit == CE_ID || ced_edit == CE_RX_TONE ||
+		     ced_edit == CE_TX_TONE) && ced_len > 0) {
 			ced_digits[--ced_len] = 0;	// takes the last digit back
 			ced_val /= 10;
 		} else {
@@ -2319,6 +2369,7 @@ static void chinfo_select(uint16_t i, bool hold)
 		}
 		ced_edit = r;
 		ced_tone = r == CE_RX_TONE ? c->rx_tone : c->tx_tone;
+		ced_len = 0;
 		break;
 	case CE_VOX: c->vox = !c->vox; break;
 	case CE_CC:

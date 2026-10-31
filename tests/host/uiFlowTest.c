@@ -216,7 +216,7 @@ static const flow_t flows[] = {
 	// task-flows.md 12 says 3: the VFO row is first but Channels opens on the current zone (flow 2), so one Up
 	{ "C channels: every channel", "", "ok 5", "screen=channels focus=3_", 2, false },
 	{ "C a channel's settings", "", "ok 5 ok", "screen=channel", 3, false },
-	// The channel's last rows are Go to it, Share channel to... (with zone sharing) and Save as new channel: Ups from
+	// The channel's last rows are Tune to it, Share channel to... (with zone sharing) and Save as new channel: Ups from
 	// the first row (lists wrap)
 #if CONFIG_ZONE_SHARE
 #define CE_SHARE_UP	" up"
@@ -286,6 +286,17 @@ static const flow_t flows[] = {
 	  "shows=103.5 hides=100.0", 3, false },
 	{ "E TX tone spinner, Down", "ok 5 up up ok down down down down down down down down down", "ok down ok",
 	  "shows=97.4", 3, false },
+	// Digits type the tone: CTCSS with the last digit the tenths, whole Hz under 60; a leading 0 types a DCS code
+	{ "E RX tone typed, tenths", "ok 5 up up ok down down down down down down down down", "ok 8 8 5 ok", "shows=88.5 writes=0", 5, false },
+	{ "E RX tone typed, whole Hz", "ok 5 up up ok down down down down down down down down", "ok 6 7 ok", "shows=67.0", 4, false },
+	{ "E TX tone typed over the stored one", "ok 5 up up ok down down down down down down down down down", "ok 1 3 1 8 ok", "shows=131.8 hides=100.0", 6, false },
+	{ "E TX tone shows the digits as typed", "ok 5 up up ok down down down down down down down down down", "ok 8 8", "shows=88.0", 3, false },
+	{ "E RX tone typed DCS", "ok 5 up up ok down down down down down down down down", "ok 0 2 3 ok", "shows=D023N", 5, false },
+	{ "E DCS refuses digits past 7", "ok 5 up up ok down down down down down down down down", "ok 0 2 8", "toast=DCS_codes_use shows=D2", 4, false },
+	{ "E DCS not on the list is refused", "ok 5 up up ok down down down down down down down down", "ok 0 7 7 7 ok", "toast=Not_a_DCS_code", 6, false },
+	{ "E CTCSS out of range is refused", "ok 5 up up ok down down down down down down down down", "ok 9 9 9 9 ok", "toast=CTCSS_goes", 6, false },
+	{ "E BACK takes a tone digit back", "ok 5 up up ok down down down down down down down down", "ok 8 8 5 back ok", "shows=88.0", 6, false },
+	{ "E the knob steps on from a typed tone", "ok 5 up up ok down down down down down down down down", "ok 8 8 5 up ok", "shows=91.5", 6, false },
 #endif
 	{ "E DMR needs a TX contact to save", "ok 5 ok down down down down down down down down down", "ok up ok long:ok",
 	  "toast=Pick_a_TX writes=0", 4, false },
