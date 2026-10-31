@@ -3,34 +3,22 @@
 // The debug link's chip commands, the portable parts (dl_chip.h)
 #include "debuglink/dl_chip.h"
 
-typedef struct {
-	uint32_t lo, hi;	// inclusive
-} range_t;
-
 static bool inside(uint32_t addr, uint32_t len, uint32_t lo, uint32_t hi)
 {
 	// len >= 1; no overflow: addr <= hi and len - 1 <= hi - addr
 	return addr >= lo && addr <= hi && (len - 1u) <= (hi - addr);
 }
 
-bool dl_mem_allowed(uint32_t addr, uint32_t len, uint16_t flash_kb)
+bool dl_mem_allowed(uint32_t addr, uint32_t len, bool (*window)(unsigned i, hal_mem_window_t *w))
 {
-	static const range_t fixed[] = {
-		{ 0x1FFF0000u, 0x1FFF77FFu },	// system memory (ROM bootloader)
-		{ 0x1FFF7800u, 0x1FFF7A0Fu },	// OTP and its lock bytes
-		{ 0x1FFFC000u, 0x1FFFC00Fu },	// option bytes
-	};
-	uint32_t flash_bytes = (flash_kb >= 16u && flash_kb <= 1024u) ? (uint32_t)flash_kb * 1024u : 0x100000u;
+	hal_mem_window_t w;
 
-	if (len == 0) {
+	if (len == 0 || window == NULL) {
 		return false;
 	}
-	if (inside(addr, len, 0x08000000u, 0x08000000u + flash_bytes - 1u)) {
-		return true;
-	}
-	for (unsigned i = 0; i < sizeof(fixed) / sizeof(fixed[0]); i++) {
-		if (inside(addr, len, fixed[i].lo, fixed[i].hi)) {
-			return true;
+	for (unsigned i = 0; window(i, &w); i++) {
+		if (inside(addr, len, w.lo, w.hi)) {
+			return !w.words || ((addr | len) & 3u) == 0;
 		}
 	}
 	return false;

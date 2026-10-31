@@ -334,7 +334,8 @@ void radio_req_zone_pos(uint16_t pos);		// jump to a position in the zone
 void radio_req_zone(uint16_t index);
 void radio_req_vfo(bool on);
 void radio_req_vfo_step(int8_t dir);
-void radio_req_vfo_set(uint32_t hz);		// rx and tx frequency (simplex)
+void radio_req_vfo_set(uint32_t hz);		// RX frequency; TX keeps a split's offset where it can transmit, else = RX
+void radio_req_vfo_tx(uint32_t hz);		// the VFO's TX frequency (split), 0 = simplex; in the VFO only
 // Copy to VFO: what is in effect on the channel now (temporary changes too) becomes the VFO's own settings and the VFO
 // opens; the channel is unchanged (docs/spec/dmr-voice.md 2.2). Nothing changes when radio_vfo_copy_check refuses
 void radio_req_vfo_copy(void);

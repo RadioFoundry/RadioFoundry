@@ -175,7 +175,7 @@ class Site:
 				      "branch": self.branch, "repo": self.repo_url, "community": COMMUNITY_URL, "languages": self.i18n.languages, "default_language": self.i18n.default,
 				      "reports": {"sentry_dsn": self.sentry_dsn}, "tool": self.tool},
 			"radios.json": {"radios": radios, "planned": planned},
-			"features.json": {"groups": self.groups, "features": features},
+			"features.json": {"groups": self.groups, "features": features, "reported": repo.reported_features()},
 			"variants.json": {"variants": self.variants},
 			"flash-boards.json": self.flash,
 			"c7000-stub.json": repo.c7000_stub(),
@@ -204,7 +204,7 @@ class Site:
 		for m, img in self.releases:
 			out.append({"board": m["board"], "variant": m.get("variant", "full"), "version": m["version"],
 				    "git": m.get("git"), "git_time": m.get("git_time") or self.commit_time(m.get("git_full")),
-				    "features": m.get("features", ""),
+				    "features": m.get("features", ""), "off": m.get("off"),
 				    "image": "firmware/%s/%s" % (m["board"], m["image"]["file"]),
 				    "manifest": "firmware/%s/%s" % (m["board"], os.path.basename(img)[:-4] + ".json"),
 				    "size": m["image"]["size"], "sha256": m["image"]["sha256"]})

@@ -394,7 +394,7 @@ test("the flasher page awaits noAnswer and explains an open-firmware answer", ()
 	for (const m of calls) assert.equal(m[1], "await", `noAnswer() not awaited: ${m[0]}`);
 	// the connect failures outside the current firmware step go through connectHelp, with a key that exists
 	const helps = [...src.matchAll(/connectHelp\(e, "([\w.]+)"\)/g)].map((m) => m[1]);
-	assert.deepEqual(helps.sort(), ["flash.backup.openfw_next", "flash.done.openfw_next", "flash.radio.openfw_next"]);
+	assert.deepEqual(helps.sort(), ["flash.backup.openfw_next", "flash.done.openfw_next", "flash.radio.openfw_next", "flash.update.not_rfoundry"]);
 	for (const k of [...helps, "flash.err.rfoundry_nodebug_next", "flash.now.openfw_switch", "flash.now.openfw_use",
 		"flash.problem.unmapped.also", "flash.problem.unmapped.only"]) assert.ok(en[k], k);
 	// the done step names the build it just wrote, so RadioFoundry without the debug link is told apart

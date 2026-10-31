@@ -609,6 +609,7 @@ static struct {
 #if CONFIG_CONTACT_EDIT
 		contact_t contact;	// the contact editor's, at index channel (one job at a time: RAM is short)
 #endif
+		char name[CODEPLUG_NAME_LEN + 1];	// a name field's new text, UI_NAME_* in channel
 	};
 	uint32_t id;
 	bool private_call;
@@ -873,6 +874,46 @@ bool ui_svc_factory_reset(void)
 void ui_svc_boot_text(char line1[17], char line2[17])
 {
 	codeplug_boot_text(line1, line2);
+}
+
+void ui_svc_name_get(uint8_t which, char out[17])
+{
+	char other[CODEPLUG_NAME_LEN + 1];
+	if (which == UI_NAME_RADIO)
+		codeplug_radio_name(out);
+	else if (which == UI_NAME_BOOT1)
+		codeplug_boot_text(out, other);
+	else if (which == UI_NAME_BOOT2)
+		codeplug_boot_text(other, out);
+	else
+		out[0] = '\0';
+}
+
+// The boot lines are one record: the line not changed is read again here, so a CPS write since stays
+static void name_job(void *ctx)
+{
+	(void)ctx;
+	char l1[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
+	bool ok;
+	if (job.channel == UI_NAME_RADIO) {
+		ok = codeplug_set_radio_name(job.name);
+	} else {
+		codeplug_boot_text(l1, l2);
+		ok = codeplug_set_boot_text(job.channel == UI_NAME_BOOT1 ? job.name : l1,
+					    job.channel == UI_NAME_BOOT2 ? job.name : l2);
+	}
+	if (!ok)
+		save_failed("Couldn't write the codeplug: not saved");
+}
+
+bool ui_svc_name_set(uint8_t which, const char *text)
+{
+	if (which >= UI_NAME_COUNT || storage_job_busy())
+		return false;
+	job.channel = which;
+	strncpy(job.name, text, CODEPLUG_NAME_LEN);
+	job.name[CODEPLUG_NAME_LEN] = '\0';
+	return storage_job_post(name_job, NULL);
 }
 
 #if CONFIG_KEY_ASSIGN

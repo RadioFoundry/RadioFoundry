@@ -44,8 +44,11 @@ void hrc_irq_enable(uint8_t source, bool on)
 	hrc_irq_restore(psr);
 }
 
-// A source with no handler fired: mask it so it can't storm
+// A source with no handler fired: mask it so it can't storm. Counted, with the last source, for the debug link
+// (hal_system_t.irq_unhandled): a source that went quiet this way stays quiet until it is enabled again
 static void unhandled(void);
+static uint32_t unhandled_count;
+static uint8_t unhandled_source;
 
 static uint8_t current_source(void)
 {
@@ -56,7 +59,18 @@ static uint8_t current_source(void)
 
 static void unhandled(void)
 {
-	hrc_irq_enable(current_source(), false);
+	uint8_t source = current_source();
+	unhandled_count++;
+	unhandled_source = source;
+	hrc_irq_enable(source, false);
+}
+
+void hrc_irq_unhandled(uint32_t *count, uint32_t *last_source)
+{
+	uint32_t psr = hrc_irq_save();	// a pair from the same interrupt
+	*count = unhandled_count;
+	*last_source = unhandled_source;
+	hrc_irq_restore(psr);
 }
 
 void hrc_irq_register(uint8_t source, hrc_irq_fn fn)

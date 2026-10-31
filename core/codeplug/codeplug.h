@@ -104,10 +104,12 @@ uint16_t codeplug_zone_add_index(void);
 // Channels one zone can hold: CODEPLUG_ZONE_MAX, or 16 in a codeplug with the older 16-channel zone records
 uint16_t codeplug_zone_capacity(void);
 // The radio name (the open-firmware callsign field, 8 characters), "" if none
+#define CODEPLUG_RADIO_NAME_LEN	8
 void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]);
 bool codeplug_set_radio_name(const char *name);
 // The two boot screen text lines the CPS writes (empty when unset or not in this codeplug)
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]);
+bool codeplug_set_boot_text(const char *line1, const char *line2);
 // The quick-key slots (EEPROM 0x7524, 10 x 2 bytes LE): RadioFoundry keeps the side key assignment there
 // (core/input/keyassign.h). Read: all 0 and false without an open-firmware codeplug. Write: the first edit stores the
 // built-in set, as other edits do
@@ -182,8 +184,6 @@ bool codeplug_delete_listen_list(uint16_t index);
 // The first contact with this ID: group true finds a talkgroup (or all call for 0xFFFFFF), false a private contact.
 // Reads every contact record (24 KB of flash) in the worst case: cache the answer
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out);
-
-#define CODEPLUG_RADIO_NAME_LEN	8
 
 // General DMR settings (open-firmware general settings, docs/spec/open-firmware-cps.md 7.3.2)
 typedef struct {
