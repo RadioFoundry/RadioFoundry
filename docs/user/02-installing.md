@@ -39,7 +39,8 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
 1. **Radio.** Pick your radio.
 2. **Build.** Pick **Full** (every feature the radio supports), **Amateur**, **Commercial**, or **Custom** to choose
    features one by one. Features the radio can't have are marked. A custom build is made when you continue and takes
-   under a minute.
+   under a minute. When your browser asks for a language the radio can show but the build leaves out, the page offers
+   to include it (Settings > Display > Language on the radio, [Settings](17-settings.md)).
 3. **Current firmware.** Say what the radio runs now:
 
    | Choice | When |

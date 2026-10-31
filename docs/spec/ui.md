@@ -119,6 +119,7 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Freq Trim | `freq-trim` | Settings > Advanced > Freq trim (radio-features.md 6.1): the trim in ppm (-10.0..+10.0) in large type, a slider under it from -10 to +10 (filled from 0 to the value; the -10 / 0 / +10 scale where there's room), then what it moves a carrier by at 440 MHz and at 144 MHz, in Hz ("At 440 MHz" where it fits beside -4400 Hz, else "@ 440 MHz"), and "+ to increase frequency" ("+ to increase freq" where the full line doesn't fit) above the hint where there's room. Up / Right / Down / Left (or the knob, one step a detent) step 0.1 ppm, 0.5 ppm a repeat while held, and are saved at once. A board that applies the trim when it tunes retunes once the value has held still for 400 ms
 (radio-features.md 6.1), so a counter or a hotspot shows each step without a reception dropped at every press. # flips the sign; on 0 it starts a negative entry (a radio without CONTEXT gets a minus by stepping below 0, and typed digits keep it). Digits type the size in tenths as a calculator does (4 5 = 4.5 ppm), keeping the sign; a digit past 10.0 is refused ("Up to 10.0 ppm"); BACK takes the last digit back and with none left drops the entry; OK sets it. OK with nothing typed leaves the page |
 | My Radio | `dmr-id` | Settings > My radio > DMR ID and name: the radio model above the rows DMR ID (`CONFIG_DMR`), Radio name, Boot 1 and Boot 2, from the codeplug. On DMR ID, digits type an ID as the channel editor's Own ID (2.1): the first digit replaces the shown one, a digit that would take it past `CODEPLUG_DMR_ID_MAX` (16776415) is refused, BACK takes the last digit back and with none typed leaves the ID as it was, OK writes it into the codeplug (with nothing typed, leaves it; 0 is refused: "IDs start at 1"). OK on a name row opens Text entry (2.1, `CONFIG_CHANNEL_EDIT`; without it "Typing: not in this build"); OK there writes the radio name (`codeplug_set_radio_name`) or the boot line (`codeplug_set_boot_text`) as a storage job (`ui_svc_name_set`), "Saved" |
+| Language | `language` | Settings > Display > Language (the last row; its value is the language in use): every language the firmware has a catalog for, each in its own name ("English", "Español"), the one in use marked "In use". OK switches at once and goes back; a language this image was built without is dimmed and OK says "Not in this build" (2.5) |
 | About | `about` | Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
 
 The gallery (section 7) shows every screen at every display class.
@@ -288,6 +289,23 @@ The name starts as the target's name, else "TG 3100" for a talkgroup or the ID f
 - Editing or deleting a stored contact is not built yet (#74). A CPS write afterwards replaces contacts made on the
   radio.
 
+### 2.5 Languages
+
+The UI's text is English in the source, marked for translation (`core/ui/i18n.h`): `TR("...")` returns the text in
+the language in use, `TRN("...")` marks a static table's entry that is translated where it is shown (screen
+titles, hints and empty texts are translated in `list_draw`). A lookup hashes the English (FNV-1a) and searches the
+language's sorted table; text without a translation, and anything that isn't marked (names, numbers, the standard
+abbreviations), is shown as it is. The tables are built by `tools/i18n.py` from `core/ui/lang/<code>.po`
+([translating.md](../dev/translating.md)).
+
+| Rule | |
+|---|---|
+| Which languages | Every catalog is listed in Settings > Display > Language. Each has a build switch, `CONFIG_LANG_<CODE>` (section 5); one built without is dimmed |
+| Switching | At once, no restart; nothing caches translated text. Stored in `settings_t.lang` ([settings-store.md](settings-store.md) 3); a stored language the image lacks reads as English |
+| Characters | One byte a character: ASCII, the glyph bytes of `font.h`, and Latin-1 0xA0..0xFF. The fonts carry the Latin-1 glyphs only in a build with a language (`CONFIG_LANG_ANY`); the 5x8 font has none. Without them a Latin-1 byte is drawn as its letter without the accent ("Espanol"), so names stay readable |
+| Lengths | A translation may be longer than its English. Text goes into fixed buffers through `str_copy` or `sb_str`, which cut it; a row too long for the screen is shortened as any row is (`gfx_text_fit`, text alternates) |
+| Not translated | Search words of the settings (Find matches the English words and the shown name), debug link names and values, protocol text sent off the radio (APRS, the debug link). The canned text messages are the exception: sent in the language in use |
+
 ## 3. Key meanings
 
 The same on every screen (information-architecture.md, key maps 7.1 to 7.5):
@@ -445,6 +463,7 @@ A zone share offer's banner has no timer (`ui_banner_t.hold`): it stays over eve
 | `CONFIG_ZONE_EDIT` | = `CHANNEL_EDIT` | a zone's list only goes to its channels: no Add channel, Channel actions or Zone options (2.2). Needs `CONFIG_CHANNEL_EDIT` |
 | `CONFIG_CONTACT_EDIT` | = `CHANNEL_EDIT` and `DMR` | no contact editor (2.4): Find has no Create contact row and Save as contact stays dimmed. Needs `CONFIG_CHANNEL_EDIT` and `CONFIG_DMR` |
 | `CONFIG_GPS_SKY` | = GPS and APRS | Tools > Position is a page of text instead of the GPS screen (2.3) and the satellite sentences aren't read (about 5.2 KB, 176 B of RAM) |
+| `CONFIG_LANG_ES` | y | Spanish is listed dimmed in Settings > Display > Language (2.5); without any language the lookup and the fonts' Latin-1 glyphs are left out |
 | `CONFIG_UI_COLOR` | y (n on a board with a monochrome panel) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_VFO_DMR`, `CONFIG_SCAN`, data features) are
@@ -578,7 +597,7 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   between steps is refused with the range. Only key slot 1 is reachable from the menu.
 - Switching USB to network has no confirmation (P7: reversible); the info page says what stops and how to get back.
 - A failed message isn't kept for a retry: the banner says "Not delivered: send it again".
-- Compose offers canned texts only ("OK", "On my way", "Call me", "Can't talk now"); free text is dimmed.
+- Compose offers canned texts only ("OK", "On my way", "Call me", "Can't talk now"), sent in the language in use (2.5); free text is dimmed.
 - Deleting a message has no undo (`sms_inbox_delete` removes it from the RAM inbox).
 - Save to channel and the permanent talk target write the codeplug as a storage job on the housekeeping task, so the
   UI no longer stalls for the flash write. A permanent target must be a stored contact: a typed ID is set for now at

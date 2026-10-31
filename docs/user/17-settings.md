@@ -54,6 +54,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Filled status bar | On, Off | On | Fills the top status line with the highlight color (light gray with Default, white in the high-contrast theme) and draws its text black. Not on radios with a monochrome screen | Works |
 | Large text | On, Off | Off | Home shows only the status line, the channel and the talk target, large | Works |
 | Hint row | On, Off | On | The bottom line with key hints | Works |
+| Language | English, Español | English | The language of the menus and messages. The list shows every language RadioFoundry has; one that isn't in your firmware is dimmed. Pick it when you install with the web flasher to get it ([Installing](02-installing.md)). Names, callsigns and the standard radio abbreviations (TG, CC, VFO) stay as they are | Works |
 
 ### Talk & listen (key 3)
 
