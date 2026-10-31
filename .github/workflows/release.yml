@@ -8,9 +8,11 @@
 # the GitHub release (created when missing; the user manual workflow attaches its PDF to the same release). The AMBE
 # codec is never part of any of it.
 #
-# Pull requests touching the release tooling build everything as workflow artifacts and publish nothing; the release
-# gate (tools/ci.sh) runs for a tag only, since a pull request's own checks already ran it. Every job runs on GitHub's
-# hosted runners (docs/dev/ci-runners.md).
+# Pull requests touching rfoundry or what it bundles build rfoundry as workflow artifacts and publish nothing. The
+# firmware packaging runs on a pull request only when this file or the toolchain action changes: otherwise
+# pr-tests.yml's firmware jobs run tools/release_build.sh for a pull request that changes the packaging or a board, in
+# a job they run anyway. The release gate (tools/ci.sh) runs for a tag only, since a pull request's own checks already
+# ran it. Every job runs on GitHub's hosted runners (docs/dev/ci-runners.md).
 name: Release
 
 on:
@@ -18,20 +20,9 @@ on:
     tags: ["v*"]
   pull_request:
     paths:
-      - "tools/rfoundry/**"
-      - "tools/release.py"
+      - "tools/rfoundry/**"   # a board.toml change rfoundry sees comes with its registry.json
       - "tools/serial_loader.py"
       - "tools/hrc7000_codec.py"
-      - "tools/boards.py"
-      - "tools/registry_docs.py"
-      - "tools/rfoundry_python.sh"
-      - "tools/platform_toolchain.sh"
-      - "tools/install-arm-toolchain.sh"
-      - "tools/release_build.sh"
-      - "tools/docker/csky-toolchain/run.sh"
-      - "boards/*/board.toml"
-      - "boards/*/board.mk"
-      - "platform/*/platform.toml"
       - "stub/stubtool.py"
       - ".github/actions/**"
       - ".github/workflows/release.yml"
@@ -51,10 +42,12 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       publish: ${{ steps.v.outputs.publish }}
       rfoundry: ${{ steps.v.outputs.rfoundry }}
+      firmware: ${{ steps.v.outputs.firmware }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           submodules: false
+          fetch-depth: 2   # a pull request's merge commit and main, its first parent
           sparse-checkout: tools/release_version.py   # the tag's check
           sparse-checkout-cone-mode: false
       - id: v
@@ -72,6 +65,12 @@ jobs:
             echo "version=dev-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
             echo "publish=false" >> "$GITHUB_OUTPUT"
           fi
+          # a pull request runs the firmware jobs only for a change to them; pr-tests.yml packages the rest
+          fw=true
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            git diff --name-only HEAD^1 HEAD | grep -qE '^\.github/(actions/|workflows/release\.yml)' || fw=false
+          fi
+          echo "firmware=$fw" >> "$GITHUB_OUTPUT"
 
   firmware:
     # one job per toolchain: every releasable board built with it (board.toml [status] release = "stable") and each of
@@ -79,6 +78,7 @@ jobs:
     # with no edit here. One artifact per toolchain
     name: firmware (${{ matrix.name }})
     needs: version
+    if: needs.version.outputs.firmware == 'true'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false

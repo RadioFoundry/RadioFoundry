@@ -37,6 +37,7 @@ jobs:
     outputs:
       src: ${{ steps.files.outputs.src }}
       docs: ${{ steps.files.outputs.docs }}
+      release: ${{ steps.files.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
@@ -48,16 +49,19 @@ jobs:
         run: |
           set -eu
           git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/files"
-          src=false; docs=false
+          src=false; docs=false; release=false
           # ci.yml's paths
           grep -qE '^(Makefile|AUTHORS|\.gitmodules|REUSE\.toml|\.github/actions/|(boards|boot|config|core|drivers|hal|platform|tests|third_party|tools|LICENSES)/)' \
             "$RUNNER_TEMP/files" && src=true
           # manual.yml's paths
           grep -qE '^(docs/|README\.md$|tools/build_manual\.sh$|tools/manual/|tools/check_doc_links\.py$)' \
             "$RUNNER_TEMP/files" && docs=true
-          echo "src=$src" >> "$GITHUB_OUTPUT"
-          echo "docs=$docs" >> "$GITHUB_OUTPUT"
-          echo "source: $src, docs: $docs"
+          # what the release packaging reads (tools/release_build.sh): release.yml's firmware jobs no longer run it on a
+          # pull request
+          grep -qE '^(boards/[^/]+/board\.(toml|mk)$|platform/[^/]+/platform\.toml$|tools/(release\.py|release_build\.sh|boards\.py|registry_docs\.py|rfoundry_python\.sh|platform_toolchain\.sh|install-arm-toolchain\.sh|docker/csky-toolchain/run\.sh)$|\.github/workflows/pr-tests\.yml$)' \
+            "$RUNNER_TEMP/files" && release=true
+          { echo "src=$src"; echo "docs=$docs"; echo "release=$release"; } >> "$GITHUB_OUTPUT"
+          echo "source: $src, docs: $docs, release packaging: $release"
 
   unit-tests:
     name: unit tests
@@ -146,6 +150,20 @@ jobs:
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+      - name: Release packaging (every stable board, as a tag would; publishes nothing)
+        if: needs.changes.outputs.release == 'true'
+        env:
+          RUN: ${{ steps.tc.outputs.run }}
+          TOOLCHAIN: ${{ matrix.toolchain }}
+        run: |
+          set -u
+          rc=0
+          $RUN tools/release_build.sh --toolchain "$TOOLCHAIN" --version "dev-${GITHUB_SHA::8}" --out build/dist || rc=$?
+          if [ "$rc" = 3 ]; then
+            echo "::notice::$TOOLCHAIN packaging skipped: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+            exit 0
+          fi
           exit "$rc"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         if: always()

@@ -18,7 +18,7 @@ so one set serves the self-hosted Gitea runner and GitHub.
 | `ui-gallery.yml` | `ubuntu-24.04` | a pull request that changes the UI (`core/ui/`, the simulator, `uiSim`) | renders the screen gallery at the base and at the pull request, and makes the side-by-side artifact |
 | `ui-gallery-comment.yml` | `ubuntu-24.04` | when `ui-gallery.yml` finishes on a pull request | posts the pull request's gallery comment with the changed screens attached |
 | `manual.yml` | `ubuntu-24.04` | docs changes pushed to `main`, `v*` tags | the user manual PDF ([manual-pdf.md](manual-pdf.md)) |
-| `release.yml` | `ubuntu-24.04`, and for rfoundry the hosted macOS / Windows runners | `v*` tags; pull requests that change the release tooling (packaging only, no release gate) | release images and rfoundry ([release.md](release.md)) |
+| `release.yml` | `ubuntu-24.04`, and for rfoundry the hosted macOS / Windows runners | `v*` tags; pull requests that change rfoundry or this workflow (no release gate; `pr-tests.yml` runs the firmware packaging) | release images and rfoundry ([release.md](release.md)) |
 
 On GitHub, `ci.yml` and `nightly.yml` run only when the repository variable `RFOUNDRY_CI_GITHUB` is `true` (on a
 private copy, hosted runners use paid minutes). On Gitea they always run.
@@ -78,7 +78,9 @@ the network. A new submodule also goes in the Dockerfile's `SUBMODULE_URLS`.
 Every pull request runs `ci.yml`'s jobs (`unit tests`, `firmware (Arm)` and `firmware (C-SKY)` for every board
 built with each toolchain) and `checks` on its merge commit. The first job,
 `changes`, looks at the files the pull request changes and skips what they don't touch: source changes (`ci.yml`'s
-paths) run the build and test jobs. `checks` runs on every pull request: the Python and license checks (doc links
+paths) run the build and test jobs. When a board's `board.toml` or `board.mk`, a `platform.toml` or the release
+tooling changes, the firmware jobs also run `tools/release_build.sh`: every stable board packaged as a release tag
+would ([release.md](release.md)). `checks` runs on every pull request: the Python and license checks (doc links
 among them) always, and the PDF manual build (as `manual.yml` does) when docs change (`manual.yml`'s paths). The last
 job, `PR checks`, always runs and fails when any job failed or was canceled. It is the one check the `main` ruleset
 requires, so a skipped job never holds a pull request up, and a new job only has to be added to its `needs` list.
