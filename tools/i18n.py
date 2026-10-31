@@ -460,25 +460,26 @@ def tables():
     translates; each language has its translations in that order, "" where it has none (or the English itself), and
     where every LANG_STRIDE-th one starts. Flash per string: 4 bytes once, the text and its NUL per language, plus 2
     bytes per LANG_STRIDE strings. Returns (keys, [(code, name, switch, translations by hash, text, offsets)])"""
-    langs, owner = [], {}
+    langs, owner, seen = [], set(), {}
     for code, path in catalogs().items():
         headers, body = read_po(path)
         name = headers.get("X-Language-Name", code)
         pairs = {}
         for msgid, msgstr, fz in body:
+            where = "%s: %r" % (os.path.relpath(path, ROOT), msgid)
+            en = text_to_bytes(msgid, where)
+            h = fnv1a(en)
+            # every English the UI marks, translated or not: one that collides would be shown the other's translation
+            if seen.setdefault(h, en) != en:
+                raise I18nError("%s: hash collides with %r: reword one of them" % (where, seen[h]))
             if not msgstr or fz:
                 continue
-            where = "%s: %r" % (os.path.relpath(path, ROOT), msgid)
             if check_translation(msgid, msgstr, where):
                 continue    # --check reports it; the build shows the English
-            en = text_to_bytes(msgid, where)
             tr = text_to_bytes(msgstr, where)
             if tr == en:
                 continue    # the English is shown anyway
-            h = fnv1a(en)
-            if h in owner and owner[h] != en:
-                raise I18nError("%s: hash collides with %r: reword one of them" % (where, owner[h]))
-            owner[h] = en
+            owner.add(h)
             pairs[h] = tr
         langs.append((code, name, "CONFIG_LANG_" + code.upper(), pairs))
     keys = sorted(owner)

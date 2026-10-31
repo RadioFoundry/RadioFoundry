@@ -113,7 +113,7 @@ jobs:
     # (tools/ci.sh --toolchain takes them from the registry, so a new radio joins with no edit here); 4 cores each
     name: firmware (${{ matrix.name }})
     needs: changes
-    if: needs.changes.outputs.src == 'true'
+    if: needs.changes.outputs.src == 'true' || needs.changes.outputs.release == 'true'   # the packaging step: this file too
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
