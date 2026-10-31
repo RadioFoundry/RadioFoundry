@@ -10,7 +10,7 @@ ENTRY(Reset_Handler)
 
 /* The initial stack pointer: the top of the board's RAM region, which ends where KEPT starts */
 _estack = ORIGIN(RAM) + LENGTH(RAM);
-_Min_Heap_Size = 0x1000;
+_Min_Heap_Size = 0;	/* no C heap: _sbrk refuses (syscalls.c); FreeRTOS has its own */
 _Min_Stack_Size = 0x800;	/* main stack: start-up and interrupts */
 
 SECTIONS
