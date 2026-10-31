@@ -17,6 +17,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from rfoundrysite import repo, shots  # noqa: E402
 
 
+def galleries():
+	"""The UI gallery's directories: each has a boot screen."""
+	return sorted(os.path.basename(os.path.dirname(p)) for p in glob.glob(repo.path("docs", "ux", "screens", "*", "boot.png")))
+
+
 def paeth(a, b, c):
 	"""The PNG specification's predictor, written out apart from shots.py's so a mistake there shows."""
 	p = a + b - c
@@ -84,9 +89,7 @@ class Upscale(unittest.TestCase):
 
 	def test_gallery_screens(self):
 		"""One screen of each gallery, as tests/host/sim/ui_png.c writes them."""
-		for g in sorted(os.listdir(repo.path("docs", "ux", "screens"))):
-			if g == "sheets":
-				continue
+		for g in galleries():
 			with self.subTest(gallery=g), open(repo.path("docs", "ux", "screens", g, "boot.png"), "rb") as f:
 				png = f.read()
 				w, h, rows = decode(shots.upscale(png, 1))
@@ -103,10 +106,20 @@ class Upscale(unittest.TestCase):
 		with self.assertRaises(repo.SourceError):
 			shots.upscale(gray, 2)
 
+	def test_chunks(self):
+		"""Color space chunks come along, text goes, an unknown critical chunk fails."""
+		png = encode([bytes(3)], 1, 8, 2, [0])
+		end = png.index(b"IDAT") - 4
+		extra = shots._chunk(b"sRGB", b"\0") + shots._chunk(b"gAMA", struct.pack(">I", 45455)) + shots._chunk(b"tEXt", b"a\0b")
+		kinds = [t for t, _ in shots._chunks(shots.upscale(png[:end] + extra + png[end:], 2))]
+		self.assertEqual(kinds, [b"IHDR", b"sRGB", b"gAMA", b"IDAT", b"IEND"])
+		with self.assertRaises(repo.SourceError):
+			shots.upscale(png[:end] + shots._chunk(b"XYZW", b"") + png[end:], 2)
+
 
 class Factor(unittest.TestCase):
 	def test_largest_use_at_dpr(self):
-		g = os.path.basename(sorted(glob.glob(repo.path("docs", "ux", "screens", "*", "boot.png")))[0][:-len("/boot.png")])
+		g = galleries()[0]
 		w, _ = shots.size(g)
 		s = shots.Shots()
 		s.use(g, w / 4)

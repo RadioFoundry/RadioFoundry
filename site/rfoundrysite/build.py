@@ -499,14 +499,15 @@ class Site:
 		content = self.tpl.render("home", ctx, lang)
 		# the carousel's screens, all one height (site.css --shot-h)
 		shot_h = shots.css_px(".carousel", "--shot-h")
-		for g in set(re.findall(r'static/img/screens/([^/"]+)/', content)):
+		for g in set(re.findall(r'<figure class="carousel-slide"><img src="[^"]*static/img/screens/([^/"]+)/', content)):
 			w, h = shots.size(g)
 			self.shots.use(g, w * shot_h / h)
-		# the drawing with the boot screen: the flagship's in the hero, every one on a card
+		# the drawings with the boot screen: the flagship's own in the hero, every one (looks too) on a card
 		hero_h, card_h = shots.css_px(".hero-device img", "max-height"), shots.css_px(".radio-card img", "height")
+		self.drawn(flagship, flagship["frame_geometry"], hero_h * flagship["frame_geometry"]["aspect"])
 		for b in self.boards:
 			for img in [b["render"]] + list(b["look_renders"].values()):
-				self.drawn(b, img["geometry"], (hero_h if b is flagship else card_h) * img["geometry"]["aspect"])
+				self.drawn(b, img["geometry"], card_h * img["geometry"]["aspect"])
 		self.page(lang, "index.html", self.t(lang, "home.title"), content, "home")
 
 	def drawn(self, b, geometry, frame_w):

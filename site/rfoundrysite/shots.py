@@ -12,13 +12,14 @@ Each place that shows a screenshot reports the CSS width it draws it at (use());
 static/img/screens/<gallery>/<name>.png, every gallery screen of every gallery shown.
 """
 import concurrent.futures
+import functools
 import math
 import os
 import re
 import struct
 import zlib
 
-from . import repo
+from . import device, repo
 
 # the device pixel ratio the copies cover without being scaled up: most laptops and phones (a higher one scales the
 # copy up a little, smoothly: slightly soft, never uneven)
@@ -34,15 +35,21 @@ def url(gallery, name):
 def css_px(selector, prop):
 	"""The largest px value site/static/css/site.css gives prop in a rule whose selector list contains selector, so
 	the copies' sizes follow the stylesheet. A rule that is gone or changed its unit fails the build."""
-	with open(repo.path("site", "static", "css", "site.css"), encoding="utf-8") as f:
-		css = re.sub(r"/\*.*?\*/", "", f.read(), flags=re.S)
 	found = []
-	for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
-		if selector in (s.strip() for s in sel.split(",")):
+	for sels, body in _css_rules():
+		if selector in sels:
 			found += [int(v) for v in re.findall(r"(?:^|;)\s*%s\s*:\s*(\d+)px" % re.escape(prop), body)]
 	if not found:
 		raise repo.SourceError("site.css: no %s: <n>px in a %s rule (site/rfoundrysite/shots.py)" % (prop, selector))
 	return max(found)
+
+
+@functools.lru_cache(maxsize=None)
+def _css_rules():
+	"""site.css as (selectors, body) per rule, comments dropped (an @media block's rules count like the others)."""
+	with open(repo.path("site", "static", "css", "site.css"), encoding="utf-8") as f:
+		css = re.sub(r"/\*.*?\*/", "", f.read(), flags=re.S)
+	return [(tuple(s.strip() for s in sel.split(",")), body) for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)]
 
 
 def _chunks(png):
@@ -103,7 +110,12 @@ def upscale(png, k):
 		# the row's first copy unfiltered, the others filter Up: all zeros, next to nothing compressed
 		out.append(b"\0" + big + (b"\2" + bytes(len(big))) * (k - 1))
 	head = struct.pack(">IIBBBBB", w * k, h * k, 8, ctype, 0, 0, 0)
-	keep = [(t, d) for t, d in chunks if t in (b"PLTE", b"tRNS")]
+	# what the pixels mean comes along (palette, transparency, color space); other ancillary chunks (text, time)
+	# may go, an unknown critical one (an upper case first letter) fails
+	keep = [(t, d) for t, d in chunks if t in (b"PLTE", b"tRNS", b"sRGB", b"gAMA", b"cHRM", b"iCCP")]
+	other = {t for t, _ in chunks if t[:1].isupper()} - {b"IHDR", b"PLTE", b"IDAT", b"IEND"}
+	if other:
+		raise repo.SourceError("PNG chunk %s: not a gallery screenshot" % b", ".join(sorted(other)).decode())
 	return SIGNATURE + b"".join(_chunk(t, d) for t, d in
 				    [(b"IHDR", head)] + keep + [(b"IDAT", zlib.compress(b"".join(out), 9)), (b"IEND", b"")])
 
@@ -112,18 +124,17 @@ def _chunk(kind, data):
 	return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
 
+@functools.lru_cache(maxsize=None)
 def size(gallery):
 	"""A gallery's screen size in its own pixels (every screen of a gallery is one size)."""
 	with open(repo.path("docs", "ux", "screens", gallery, "boot.png"), "rb") as f:
-		head = f.read(24)
-	if head[:8] != SIGNATURE:
-		raise repo.SourceError("docs/ux/screens/%s/boot.png: not a PNG" % gallery)
-	return struct.unpack(">II", head[16:24])
+		return device.png_size(f.read(24))
 
 
 class Shots:
 	def __init__(self):
 		self.widths = {}	# gallery: the largest CSS width a page draws it at
+		self.done = {}		# (gallery, name, factor): the copy, for the drawings' boot screen and write()
 
 	def use(self, gallery, css_w):
 		"""A page draws gallery's screens css_w CSS pixels wide (at most)."""
@@ -134,9 +145,12 @@ class Shots:
 		return max(1, math.ceil(DPR * self.widths[gallery] / size(gallery)[0] - 1e-9))
 
 	def scaled(self, gallery, name):
-		"""One screen's copy (PNG bytes)."""
-		with open(repo.path("docs", "ux", "screens", gallery, name + ".png"), "rb") as f:
-			return upscale(f.read(), self.factor(gallery))
+		"""One screen's copy (PNG bytes). Call it once every page has reported (use())."""
+		key = (gallery, name, self.factor(gallery))
+		if key not in self.done:
+			with open(repo.path("docs", "ux", "screens", gallery, name + ".png"), "rb") as f:
+				self.done[key] = upscale(f.read(), key[2])
+		return self.done[key]
 
 	def write(self, out):
 		"""The copies of every screen of every gallery a page reported. {gallery: factor}."""
