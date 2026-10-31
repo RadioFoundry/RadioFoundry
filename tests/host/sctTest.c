@@ -63,8 +63,8 @@ static void test_build(void)
 	CHECK(!sct_fields_begin(&it, p.buf, n, true));
 
 	uint8_t bcd[4];
-	sct_id_bcd(3101276, bcd);
-	CHECK(bcd[0] == 0x03 && bcd[1] == 0x10 && bcd[2] == 0x12 && bcd[3] == 0x76);
+	sct_id_bcd(1234567, bcd);
+	CHECK(bcd[0] == 0x01 && bcd[1] == 0x23 && bcd[2] == 0x45 && bcd[3] == 0x67);
 	sct_id_bcd(16777215, bcd);
 	CHECK(bcd[0] == 0x16 && bcd[3] == 0x15);
 }
@@ -493,7 +493,7 @@ static const hal_dmr_modem_t *m = &sct_dmr_modem;
 
 static void start(void)
 {
-	dmr_config_t cfg = { .own_id = 3101276, .cc = 2, .access = DMR_ACCESS_IMPOLITE };
+	dmr_config_t cfg = { .own_id = 1234567, .cc = 2, .access = DMR_ACCESS_IMPOLITE };
 
 	sct_dmr_init(&port);
 	nsent = nev = 0;
@@ -525,7 +525,7 @@ static void test_dmr_start(void)
 	d = sent_field(0, SCT_F_DMR_CC, NULL);
 	CHECK(d != NULL && d[0] == 2);
 	d = sent_field(0, SCT_F_DMR_OWN_ID, &n);
-	CHECK(d != NULL && n == 4 && d[0] == 0x03 && d[3] == 0x76);
+	CHECK(d != NULL && n == 4 && d[0] == 0x01 && d[3] == 0x67);
 	// Byte 0's traffic mode is the engine's (1, whatever the board gave); the rest is the board's
 	d = sent_field(0, SCT_F_DMR_CALL_OPTION, &n);
 	CHECK(d != NULL && n == 5 && d[0] == 0x41 && d[1] == 0x00 && d[2] == 0x31 && d[3] == 0x07 && d[4] == 0x00);
@@ -732,7 +732,7 @@ static int codec_count(const sct_codec_write_t *w)
 
 static void test_dmr_options(void)
 {
-	dmr_config_t cfg = { .own_id = 3101276, .cc = 1, .access = DMR_ACCESS_IMPOLITE };
+	dmr_config_t cfg = { .own_id = 1234567, .cc = 1, .access = DMR_ACCESS_IMPOLITE };
 	const uint8_t *d;
 	uint8_t n;
 	uint32_t t = 2000;
@@ -809,7 +809,7 @@ static void test_dmr_options(void)
 	// REPORT_FIELD 0xFF: called and own ID reports with a frame are walked, the frame reported
 	CHECK(m->start(&cfg, on_event, NULL));
 	nev = 0;
-	uint8_t r[32] = { 0x7D, 0x00, 0x00, 0x00, 0x09, 0x7E, 0x03, 0x10, 0x12, 0x76,
+	uint8_t r[32] = { 0x7D, 0x00, 0x00, 0x00, 0x09, 0x7E, 0x01, 0x23, 0x45, 0x67,
 			  0x43, DMR_BURST_CSBK, 10, 0xBD, 0x00, 0x80, 0x00, 0x00, 0x01, 0x00, 0x00, 0x02, 0x03 };
 	chip_packet(r, 23, 0x30, t + 500);
 	CHECK(nev == 1 && ev_bursts[0].kind == DMR_BURST_CSBK);
