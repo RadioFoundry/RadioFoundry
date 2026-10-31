@@ -18,7 +18,8 @@
     rfoundry_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     rfoundry_debug.py log [--follow]                 the firmware's dlog() ring
     rfoundry_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
-    rfoundry_debug.py dump --addr A --len N -o F     read internal flash / system memory / OTP / option bytes to a file
+    rfoundry_debug.py dump --addr A --len N -o F     read flash or another readable window to a file (debuglink.md 3.10)
+    rfoundry_debug.py peek ADDR[:LEN]                hex dump of LEN bytes (default 4) at ADDR, in words where aligned
                                                 outside any git tree
     rfoundry_debug.py reboot [--rom-dfu]             reset; --rom-dfu: into ST's ROM USB DFU (RDP level 0 only)
     rfoundry_debug.py crash [show|clear|test trap|test assert|test hang]
@@ -137,8 +138,6 @@ REBOOT_REASONS = {1: "wrong confirmation token (not the chip UID's low word)",
 # STM32F405 sectors: (start, size)
 F4_SECTORS = [(0x08000000 + i * 0x4000, 0x4000) for i in range(4)] + [(0x08010000, 0x10000)] + \
     [(0x08020000 + i * 0x20000, 0x20000) for i in range(7)]
-MEM_WHITELIST = [(0x08000000, 0x08100000), (0x1FFF0000, 0x1FFF7800), (0x1FFF7800, 0x1FFF7A10),
-                 (0x1FFFC000, 0x1FFFC010)]
 ST_OK, ST_BAD_ARG, ST_BUSY, ST_UNAVAILABLE = 0, 2, 3, 4
 SHOT_LZ4 = 3            # SCREENSHOT's packed form (debuglink.md 3.3)
 SHOT_HDR = 28           # its reply bytes before the palette, status included
@@ -1482,8 +1481,39 @@ def decode_iddb(r):
             "text": r[6:].decode("ascii", "replace") if found else None}
 
 
-def mem_allowed(addr, n):
-    return n > 0 and any(lo <= addr and addr + n <= hi for lo, hi in MEM_WHITELIST)
+# READ_MEM's windows by chip family (debuglink.md 3.10): (start, end exclusive, aligned words only). The radio decides;
+# these only give a clear message first. Flash ends at the largest part's size: the radio knows its own
+MEM_WINDOWS = {
+    CHIP_STM32F4: [(0x08000000, 0x08100000, False), (0x1FFF0000, 0x1FFF7800, False), (0x1FFF7800, 0x1FFF7A10, False),
+                   (0x1FFFC000, 0x1FFFC010, False)],
+    CHIP_HRC7000: [(0x03000000, 0x03200000, False), (0x00010000, 0x00058000, False), (0x18000000, 0x18008000, False),
+                   (0x11000000, 0x11000060, True), (0x14020000, 0x14020080, True), (0x14100000, 0x14100080, True),
+                   (0x14110000, 0x14110080, True), (0x17000000, 0x17000090, True)],
+}
+
+
+def mem_allowed(addr, n, family=CHIP_STM32F4):
+    for lo, hi, words in MEM_WINDOWS.get(family, []):
+        if n > 0 and lo <= addr and addr + n <= hi:
+            return not words or (addr | n) % 4 == 0
+    return False
+
+
+def chip_family(link):
+    """INFO_CHIP's family, or None while the radio can't say (an HR_C7000 before its UID is read)"""
+    try:
+        return link.chip()["family"]
+    except DebugLinkError:
+        return None
+
+
+def mem_precheck(link, addr, n):
+    """An error message if the range is outside the radio's windows, else None"""
+    family = chip_family(link)
+    if family is None or family not in MEM_WINDOWS or mem_allowed(addr, n, family):
+        return None
+    return (f"0x{addr:08X}+0x{n:X} is outside the readable ranges (register blocks: whole aligned words only; "
+            "docs/spec/debuglink.md 3.10)")
 
 
 def git_toplevel(path):
@@ -1544,8 +1574,9 @@ def print_chip(c):
 
 def cmd_dump(link, a):
     addr, n = int(a.addr, 0), int(a.len, 0)
-    if not mem_allowed(addr, n):
-        print(f"rfoundry_debug: 0x{addr:08X}+0x{n:X} is outside the readable ranges", file=sys.stderr)
+    why = mem_precheck(link, addr, n)
+    if why:
+        print(f"rfoundry_debug: {why}", file=sys.stderr)
         return 2
     out = a.output
     ok, why = dump_path_ok(out)
@@ -1561,6 +1592,46 @@ def cmd_dump(link, a):
     print(f"{out}: {len(data)} bytes from 0x{addr:08X}, sha256 {hashlib.sha256(data).hexdigest()}")
     if addr < 0x0800C000 and addr >= 0x08000000:
         print("note: this holds the proprietary stock bootloader: never commit or publish it")
+    return 0
+
+
+def format_peek(addr, data):
+    """Hex dump lines: little-endian words, four to a line, when addr and the length are word aligned; else bytes,
+    sixteen to a line"""
+    lines = []
+    if (addr | len(data)) % 4 == 0:
+        for i in range(0, len(data), 16):
+            words = struct.unpack_from(f"<{min(16, len(data) - i) // 4}I", data, i)
+            lines.append(f"0x{addr + i:08X}: " + " ".join(f"{w:08x}" for w in words))
+    else:
+        for i in range(0, len(data), 16):
+            lines.append(f"0x{addr + i:08X}: " + " ".join(f"{b:02x}" for b in data[i:i + 16]))
+    return lines
+
+
+def cmd_peek(link, a):
+    spec = a.where.split(":", 1)
+    addr = int(spec[0], 0)
+    n = int(spec[1], 0) if len(spec) > 1 else 4
+    if n <= 0 or n > 64 * 1024:
+        print("rfoundry_debug: LEN is 1..65536", file=sys.stderr)
+        return 2
+    why = mem_precheck(link, addr, n)
+    if why:
+        print(f"rfoundry_debug: {why}", file=sys.stderr)
+        return 2
+    try:
+        data = link.dump(addr, n)
+    except DebugLinkError as e:
+        if e.status == ST_REFUSED:
+            print(f"rfoundry_debug: the radio refused 0x{addr:08X}+0x{n:X} (outside its readable ranges)",
+                  file=sys.stderr)
+            return 1
+        if e.status == ST_UNAVAILABLE:
+            print("rfoundry_debug: this firmware has no READ_MEM on this radio", file=sys.stderr)
+            return 1
+        raise
+    print("\n".join(format_peek(addr, data)))
     return 0
 
 
@@ -1875,6 +1946,12 @@ def self_test():
     r = FakeRadio(packed=ST_UNAVAILABLE)
     info, data, stable = r.screenshot()
     check(stable and r.packed_shots is False and data == want, "frame buffer too large to pack: RGB565 form")
+    check(format_peek(0x14100040, struct.pack("<5I", 0xC0, 0, 0xC0, 0xC0, 1)) ==
+          ["0x14100040: 000000c0 00000000 000000c0 000000c0", "0x14100050: 00000001"], "peek: words")
+    check(format_peek(0x00010001, b"\x01\x02\x03") == ["0x00010001: 01 02 03"], "peek: bytes")
+    check(mem_allowed(0x14100040, 4, CHIP_HRC7000) and not mem_allowed(0x14100042, 4, CHIP_HRC7000) and
+          not mem_allowed(0x14030000, 4, CHIP_HRC7000) and not mem_allowed(0x00010000, 4, CHIP_STM32F4),
+          "READ_MEM windows by family")
     print("rfoundry_debug self-test:", "ok" if ok else "FAILED")
     return 0 if ok else 1
 
@@ -1951,6 +2028,9 @@ def main(argv=None):
     p.add_argument("--addr", required=True)
     p.add_argument("--len", required=True)
     p.add_argument("-o", "--output", required=True, help="file outside any git tree")
+    p = sub.add_parser("peek", help="hex dump of a few bytes: RAM, flash, or the registers READ_MEM allows "
+                       "(docs/spec/debuglink.md 3.10)")
+    p.add_argument("where", metavar="ADDR[:LEN]", help="e.g. 0x14100040 or 0x17000000:0x90 (LEN default 4)")
     p = sub.add_parser("reboot")
     p.add_argument("--rom-dfu", action="store_true", help="into ST's ROM USB DFU (refused unless RDP level 0)")
     p = sub.add_parser("crash", help="the crash log: show, clear, test trap|assert (docs/spec/crash-log.md)")
@@ -2018,6 +2098,8 @@ def main(argv=None):
                 print_chip(link.chip())
             elif a.cmd == "dump":
                 return cmd_dump(link, a)
+            elif a.cmd == "peek":
+                return cmd_peek(link, a)
             elif a.cmd == "reboot":
                 return cmd_reboot(link, a)
             elif a.cmd == "crash":

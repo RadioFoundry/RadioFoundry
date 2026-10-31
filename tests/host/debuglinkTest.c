@@ -10,6 +10,8 @@
 #include "debuglink/dl_chip.h"
 #include "debuglink/dl_shot.h"
 #include "cps/cps_lz4.h"
+#include "../../platform/stm32f4/mem_window.h"
+#include "../../platform/hrc7000/mem_window.h"
 
 static int failures, checks;
 
@@ -335,6 +337,27 @@ static void test_shot(void)
 	CHECK(dl_shot_reply(&s, 0, out, sizeof out, &last) == 0, "no room for a byte");
 }
 
+static bool stm1024(unsigned i, hal_mem_window_t *w)
+{
+	return stm32_mem_window_for(i, w, 1024);
+}
+static bool stm512(unsigned i, hal_mem_window_t *w)
+{
+	return stm32_mem_window_for(i, w, 512);
+}
+static bool stm0(unsigned i, hal_mem_window_t *w)
+{
+	return stm32_mem_window_for(i, w, 0);
+}
+static bool hrc1m(unsigned i, hal_mem_window_t *w)
+{
+	return hrc_mem_window_for(i, w, 0x100000u);
+}
+static bool hrc2m(unsigned i, hal_mem_window_t *w)
+{
+	return hrc_mem_window_for(i, w, 0x200000u);
+}
+
 static void test_chip(void)
 {
 	// Option bytes: RDP levels, write protection, BOR, user bits
@@ -345,22 +368,46 @@ static void test_chip(void)
 	CHECK(dl_wrp_mask(0x0FF8AAEDu) == 0x007, "WRP sectors 0-2: 0x%03X", dl_wrp_mask(0x0FF8AAEDu));
 	CHECK(dl_bor_level(0x0FFFAAEDu) == 3 && dl_user_bits(0x0FFFAAEDu) == 7, "BOR off, user bits");
 
-	// READ_MEM whitelist
-	CHECK(dl_mem_allowed(0x08000000u, 1000, 1024), "stock bootloader start");
-	CHECK(dl_mem_allowed(0x080FFC18u, 1000, 1024), "flash end exact");
-	CHECK(!dl_mem_allowed(0x080FFC19u, 1000, 1024), "past the flash end");
-	CHECK(!dl_mem_allowed(0x0807FFFFu, 2, 512), "a 512 KB part ends at 0x0807FFFF");
-	CHECK(dl_mem_allowed(0x080FFFFFu, 1, 0), "flash size unreadable: 1 MB");
-	CHECK(!dl_mem_allowed(0x08000000u, 0, 1024), "zero length");
-	CHECK(!dl_mem_allowed(0x07FFFFFFu, 2, 1024), "below flash");
-	CHECK(dl_mem_allowed(0x1FFF0000u, 1000, 1024) && dl_mem_allowed(0x1FFF7400u, 0x400, 1024), "system memory");
-	CHECK(!dl_mem_allowed(0x1FFF7700u, 0x200, 1024), "across system memory and OTP: refused");
-	CHECK(dl_mem_allowed(0x1FFF7800u, 0x210, 1024) && !dl_mem_allowed(0x1FFF7800u, 0x211, 1024), "OTP");
-	CHECK(!dl_mem_allowed(0x1FFF7A10u, 12, 1024), "UID is INFO_CHIP's, not READ_MEM's");
-	CHECK(dl_mem_allowed(0x1FFFC000u, 16, 1024) && !dl_mem_allowed(0x1FFFC000u, 17, 1024), "option bytes");
-	CHECK(!dl_mem_allowed(0x20000000u, 4, 1024) && !dl_mem_allowed(0x10000000u, 4, 1024), "RAM, CCM refused");
-	CHECK(!dl_mem_allowed(0x40023C00u, 4, 1024) && !dl_mem_allowed(0xE0042000u, 4, 1024), "peripherals refused");
-	CHECK(!dl_mem_allowed(0xFFFFFFF0u, 0x20, 1024) && !dl_mem_allowed(0x08000010u, 0xFFFFFFF8u, 1024),
+	// READ_MEM windows: the STM32F4's
+	CHECK(dl_mem_allowed(0x08000000u, 1000, stm1024), "stock bootloader start");
+	CHECK(dl_mem_allowed(0x080FFC18u, 1000, stm1024), "flash end exact");
+	CHECK(!dl_mem_allowed(0x080FFC19u, 1000, stm1024), "past the flash end");
+	CHECK(!dl_mem_allowed(0x0807FFFFu, 2, stm512), "a 512 KB part ends at 0x0807FFFF");
+	CHECK(dl_mem_allowed(0x080FFFFFu, 1, stm0), "flash size unreadable: 1 MB");
+	CHECK(!dl_mem_allowed(0x08000000u, 0, stm1024), "zero length");
+	CHECK(!dl_mem_allowed(0x07FFFFFFu, 2, stm1024), "below flash");
+	CHECK(dl_mem_allowed(0x1FFF0000u, 1000, stm1024) && dl_mem_allowed(0x1FFF7400u, 0x400, stm1024), "system memory");
+	CHECK(!dl_mem_allowed(0x1FFF7700u, 0x200, stm1024), "across system memory and OTP: refused");
+	CHECK(dl_mem_allowed(0x1FFF7800u, 0x210, stm1024) && !dl_mem_allowed(0x1FFF7800u, 0x211, stm1024), "OTP");
+	CHECK(!dl_mem_allowed(0x1FFF7A10u, 12, stm1024), "UID is INFO_CHIP's, not READ_MEM's");
+	CHECK(dl_mem_allowed(0x1FFFC000u, 16, stm1024) && !dl_mem_allowed(0x1FFFC000u, 17, stm1024), "option bytes");
+	CHECK(!dl_mem_allowed(0x20000000u, 4, stm1024) && !dl_mem_allowed(0x10000000u, 4, stm1024), "RAM, CCM refused");
+	CHECK(!dl_mem_allowed(0x40023C00u, 4, stm1024) && !dl_mem_allowed(0xE0042000u, 4, stm1024), "peripherals refused");
+	CHECK(!dl_mem_allowed(0xFFFFFFF0u, 0x20, stm1024) && !dl_mem_allowed(0x08000010u, 0xFFFFFFF8u, stm1024),
+	      "wrap-around refused");
+
+	CHECK(!dl_mem_allowed(0x08000000u, 4, NULL), "no windows");
+
+	// The HR_C7000's: memory byte by byte, register blocks in aligned words only
+	CHECK(dl_mem_allowed(0x00010000u, 1000, hrc1m) && dl_mem_allowed(0x00057C18u, 1000, hrc1m), "main SRAM");
+	CHECK(!dl_mem_allowed(0x00057C19u, 1000, hrc1m) && !dl_mem_allowed(0x0000FFFFu, 2, hrc1m), "past main SRAM");
+	CHECK(dl_mem_allowed(0x00010001u, 3, hrc1m), "SRAM: any alignment");
+	CHECK(dl_mem_allowed(0x18000000u, 1000, hrc1m) && !dl_mem_allowed(0x18007FFFu, 2, hrc1m), "shared SRAM");
+	CHECK(dl_mem_allowed(0x030FFC18u, 1000, hrc1m) && !dl_mem_allowed(0x030FFC19u, 1000, hrc1m), "1 MB flash end");
+	CHECK(dl_mem_allowed(0x031FFC18u, 1000, hrc2m) && !dl_mem_allowed(0x03100000u, 4, hrc1m), "2 MB flash");
+	CHECK(dl_mem_allowed(0x14100040u, 4, hrc1m) && dl_mem_allowed(0x14100000u, 0x80, hrc1m), "GPIO B words");
+	CHECK(dl_mem_allowed(0x14020000u, 0x80, hrc1m) && dl_mem_allowed(0x14110000u, 0x80, hrc1m), "GPIO A, C");
+	CHECK(!dl_mem_allowed(0x14100040u, 2, hrc1m) && !dl_mem_allowed(0x14100042u, 4, hrc1m) &&
+	      !dl_mem_allowed(0x14100041u, 1, hrc1m), "GPIO: unaligned or partial words refused");
+	CHECK(!dl_mem_allowed(0x1410007Cu, 8, hrc1m), "past the GPIO block");
+	CHECK(dl_mem_allowed(0x17000000u, 0x90, hrc1m) && dl_mem_allowed(0x17000068u, 4, hrc1m), "PIC");
+	CHECK(dl_mem_allowed(0x1100003Cu, 4, hrc1m) && !dl_mem_allowed(0x11000060u, 4, hrc1m), "system block, not the modem");
+	CHECK(!dl_mem_allowed(0x14000000u, 4, hrc1m) && !dl_mem_allowed(0x1400000Cu, 4, hrc1m), "timers refused (EOI)");
+	CHECK(!dl_mem_allowed(0x14010000u, 4, hrc1m), "watchdog refused");
+	CHECK(!dl_mem_allowed(0x14030000u, 4, hrc1m) && !dl_mem_allowed(0x14040000u, 4, hrc1m), "UARTs refused");
+	CHECK(!dl_mem_allowed(0x140A0060u, 4, hrc1m), "SPI data register refused");
+	CHECK(!dl_mem_allowed(0x16000980u, 4, hrc1m) && !dl_mem_allowed(0x11000100u, 4, hrc1m), "modem refused");
+	CHECK(!dl_mem_allowed(0xFFFFFFFCu, 8, hrc1m) && !dl_mem_allowed(0x00010000u, 0xFFFFFFF0u, hrc1m),
 	      "wrap-around refused");
 
 	// REBOOT gate

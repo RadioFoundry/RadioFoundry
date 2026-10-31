@@ -412,9 +412,17 @@ Example (an STM32F4 radio on the bench): idcode `0x0009A413`, 1024 KB, `FLASH_OP
 
 ### 3.10 READ_MEM
 
-Request: address u32, length u16 (1 to 1000). Reply after the status: the address u32, then the bytes. STM32F4 only
-(INFO_CHIP family 0): any other chip answers UNAVAILABLE. The whole range must lie inside one of these, otherwise the
-answer is refused (7):
+Request: address u32, length u16 (1 to 1000). Reply after the status: the address u32, then the bytes. The readable
+windows are the platform's (`hal_system_t.mem_window`); the core checks that the whole range lies inside one of them
+(`dl_mem_allowed`), otherwise the answer is refused (7). Firmware without windows for its chip answers UNAVAILABLE (4).
+Only memory, and register blocks where a read changes nothing, are windows. A read elsewhere can have side effects:
+clearing a status flag or an interrupt (read-to-clear registers), popping a FIFO.
+
+A window is either memory (any address and length inside it) or registers. A register window takes only whole aligned
+32-bit words (address and length multiples of 4); anything else is refused. The firmware reads it one 32-bit load per
+word: a byte or unaligned access to a peripheral can fault the bus.
+
+STM32F4 (INFO_CHIP family 0; `platform/stm32f4/mem_window.h`):
 
 | Range | Contents |
 |---|---|
@@ -423,8 +431,26 @@ answer is refused (7):
 | `0x1FFF7800-0x1FFF7A0F` | OTP and its lock bytes |
 | `0x1FFFC000-0x1FFFC00F` | option bytes |
 
-RAM, CCM and peripheral addresses are always refused: a read there can have side effects (clearing a status flag,
-popping a FIFO). The UID and the flash size register come through INFO_CHIP instead.
+RAM, CCM and peripheral addresses are always refused on the STM32F4. The UID and the flash size register come through
+INFO_CHIP instead.
+
+HR_C7000 (family 1; `platform/hrc7000/mem_window.h`). READ_MEM works before INFO_CHIP has a UID:
+
+| Range | Kind | Contents |
+|---|---|---|
+| `0x03000000` up to the program flash size (1 MB, or the board's `HRC_XIP_FLASH_SIZE`) | memory | program flash through XIP: loader, application, codec slot |
+| `0x00010000-0x00057FFF` | memory | main SRAM: data, stacks, the interrupt table, the codec and stub windows |
+| `0x18000000-0x18007FFF` | memory | SRAM shared with the modem: PCM buffers, the codec's tables |
+| `0x11000000-0x1100005F` | registers | system block: soft reset, clock manager, IO mux, XIP mode (not the modem registers above it) |
+| `0x14020000-0x1402007F`, `0x14100000-0x1410007F`, `0x14110000-0x1411007F` | registers | GPIO A, B, C: levels, directions, interrupt enable, mask, type, status (the EOI register is write-only) |
+| `0x17000000-0x1700008F` | registers | PIC: modes, polarities, masks, priorities, the request record (cleared by writing 1, not by a read) |
+
+Refused on the HR_C7000: the timers and the watchdog (their EOI registers clear on read), UARTs, SPI, I2C, the modem
+registers and the modem buffer RAM at `0x16000000` (FIFOs, read-to-clear status), and the LCD and USB controllers.
+
+`rfoundry_debug.py peek ADDR[:LEN]` prints LEN bytes (default 4) at ADDR as little-endian words, four to a line, when
+both are word aligned, else as bytes. For example `peek 0x14100040` is GPIO B's INTSTATUS and `peek 0x17000000:0x90`
+the whole PIC.
 
 RDP and reads: read protection level 1 does **not** stop the application from reading flash. Level 1 blocks flash
 access only while a debugger (SWD/JTAG) is connected and when the chip boots from SRAM or system memory (the BOOT
@@ -729,8 +755,10 @@ radio's answers with records read from the database by `tools/iddb_read.py`.
   core's own TX time-out and transmit checks still apply.
 - Every injected key hold is capped at 10 s, one injected key at a time, 40 ms between them.
 - Radio requests are rate limited (20 ms).
-- INFO_CHIP and READ_MEM only read. READ_MEM reads flash, system memory, OTP and option bytes only, never RAM or
-  peripherals. Nothing in the debug link writes or erases internal flash or the option bytes.
+- INFO_CHIP and READ_MEM only read. READ_MEM reads only the platform's windows (3.10): flash, ROM, OTP and option bytes
+  on the STM32F4 (never RAM or peripherals); program flash, SRAM and a few register blocks without read side effects
+  (system block, GPIO, PIC), in aligned words only, on the HR_C7000. Nothing in the debug link writes or erases
+  internal flash or the option bytes.
 - STUB ENTER is refused while transmitting, and the transmitter is switched to receive before the jump (3.18).
 - CRASH TEST needs its token and is refused while transmitting (3.19).
 - WATCHDOG TEST and LOAD need their token and are refused while transmitting; each ends in a reset (3.21).

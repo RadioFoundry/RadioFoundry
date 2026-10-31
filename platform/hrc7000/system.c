@@ -8,6 +8,7 @@
 #include "platform.h"
 #include "board.h"
 #include "vocoder.h"
+#include "mem_window.h"
 #include "modem/hrc7000/hrc7000.h"
 
 #define SOFT_RESET_SPINS	1000000u
@@ -46,9 +47,24 @@ static bool chip(hal_chip_t *c)
 	return true;
 }
 
+// Whole aligned words are read one 32-bit load at a time: that is what a register block needs (mem_window.h refuses
+// anything else there), and memcpy may use byte loads
 static void rd(uint32_t addr, void *dst, size_t n)
 {
-	memcpy(dst, (const void *)(uintptr_t)addr, n);
+	if (((addr | n) & 3u) != 0) {
+		memcpy(dst, (const void *)(uintptr_t)addr, n);
+		return;
+	}
+	uint8_t *d = dst;
+	for (size_t i = 0; i < n; i += 4u) {
+		uint32_t v = REG32(addr + i);
+		memcpy(d + i, &v, 4u);
+	}
+}
+
+static bool mem_window(unsigned i, hal_mem_window_t *w)
+{
+	return hrc_mem_window_for(i, w, HRC_XIP_FLASH_SIZE);
 }
 
 #define TXRX_NONE		0x00u	// LAYER2_TXRX_CTRL: neither slot direction (modem-hrc7000.md; hrc7000_dmr.c)
@@ -153,6 +169,7 @@ HRC_RAMFUNC static bool enter_stub(uint32_t entry)
 const hal_system_t hrc_system = {
 	.chip = chip,
 	.read = rd,
+	.mem_window = mem_window,
 	.reboot = reboot,
 #if CONFIG_STUB_ENTRY
 	.stub_region = stub_region,

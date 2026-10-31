@@ -663,7 +663,8 @@ DLINK   := debuglinkTest.c $(CORE)/debuglink/dl_frame.c $(CORE)/debuglink/dl_fmt
 	$(CORE)/debuglink/dl_chip.c $(CORE)/debuglink/dl_shot.c $(CORE)/cps/cps_lz4.c
 TESTS   += debuglinkTest
 
-debuglinkTest: $(DLINK) $(wildcard $(CORE)/debuglink/*.h)
+debuglinkTest: $(DLINK) $(wildcard $(CORE)/debuglink/*.h) $(ROOT)/platform/stm32f4/mem_window.h \
+		$(ROOT)/platform/hrc7000/mem_window.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDLOG_NO_RTOS -o $@ $(DLINK)
 
 run: run-debuglink
