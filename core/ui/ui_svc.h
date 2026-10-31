@@ -35,6 +35,7 @@
 #define UI_FEAT_VOLUME		(1u << 17)	// the volume is the radio's to set: no knob (radio_volume_soft), VOL key + Settings
 #define UI_FEAT_BCAST		(1u << 18)	// a broadcast FM receiver (radio_bcast_capable): its VFO step setting
 #define UI_FEAT_ZONE_SHARE	(1u << 19)	// ui_svc_zone_* (zone sharing over DMR data, CONFIG_ZONE_SHARE)
+#define UI_FEAT_REF_TRIM	(1u << 20)	// a reference trim (hal_radio_t.ref_trim, radio/ref_trim.h): Freq trim setting
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -73,6 +74,11 @@ bool ui_svc_save_channel(void);
 // Store a whole channel (the channel editor, ui.md 2.1) at number 1..CODEPLUG_CHANNELS_MAX, as a storage job like
 // ui_svc_save_channel. false: a write is still going on, or no codeplug storage in this build
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch);
+#if CONFIG_CONTACT_EDIT
+// Store a contact (the contact editor, ui.md 2.4) at index 1..CODEPLUG_CONTACTS_MAX, as a storage job. false: a write
+// is still going on, or no codeplug storage in this build
+bool ui_svc_write_contact(uint16_t index, const contact_t *c);
+#endif
 // The zone editor (ui.md 2.2): op is queued and runs as a storage job (zone_edit_apply), in order; the radio follows
 // zone indexes it moves. A refusal in the job raises UI_EV_SAVE_FAILED and drops what was queued after it. false:
 // the queue is full, or no codeplug storage in this build. ui_svc_zone_poll (every UI tick) starts the job when
@@ -153,11 +159,28 @@ bool ui_svc_call_alert(uint32_t id);
 // --- Location ---
 typedef struct {
 	bool fix;
-	uint8_t sats;
+	uint8_t sats;		// used in the fix
 	int32_t lat_e7, lon_e7;	// degrees x 1e7
 	int16_t alt_m;
+	bool alt_ok;
+	uint8_t mode;		// 1 no fix, 2 2D, 3 3D, 0 unknown (CONFIG_GPS_SKY)
+	uint8_t in_view;	// satellites the receiver reports: ui_svc_gps_sat 0 .. in_view - 1
+	uint16_t hdop10;	// horizontal dilution x 10, 0xFFFF unknown
+	uint16_t speed_kmh, course;	// 0xFFFF unknown
+	uint32_t utc_hms;	// hhmmss, 0xFFFFFFFF unknown
 } ui_position_t;
 bool ui_svc_position(ui_position_t *out);	// false: no GPS on this radio (or off)
+// One satellite for the GPS screen's sky plot and signal bars
+enum { UI_GNSS_GPS, UI_GNSS_GLONASS, UI_GNSS_GALILEO, UI_GNSS_BEIDOU, UI_GNSS_QZSS, UI_GNSS_COUNT };
+typedef struct {
+	uint8_t sys;		// UI_GNSS_*
+	uint8_t num;		// its number within the system
+	uint8_t elev;		// degrees 0-90, 0xFF unknown
+	uint8_t snr;		// dB-Hz, 0 not tracked
+	uint16_t az;		// degrees, 0xFFFF unknown
+	bool used;		// in the fix
+} ui_gps_sat_t;
+bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out);	// false past the last
 
 // --- Emergency, reset ---
 // Emergency is dmr-ext's: it defines ui_svc_emergency and reports UI_FEAT_EMERGENCY from ui_svc_feat_ext. Until
@@ -218,6 +241,8 @@ typedef struct {
 // The offer waiting for the user (false: none). Opening it stops it from expiring
 bool ui_svc_zone_offer(ui_zone_offer_t *out);
 void ui_svc_zone_offer_open(uint32_t serial);
+// Cheap, for every UI pass: an offer still waits (the banner about it stays while it does)
+bool ui_svc_zone_offer_pending(void);
 // Row i of the preview: name, receive frequency, DMR or FM, whether the radio can receive it
 typedef struct {
 	char name[17];
@@ -289,8 +314,10 @@ typedef enum {
 	// The VFO's automatic step in the broadcast band (Settings > Talk, CONFIG_BCAST_FM; radio_settings_t.bcast_step) in
 	// kHz: 200 (the odd tenths) or 100
 	UI_SET_BCAST_STEP,
-	UI_SET_ZONE_OFFERS,	// zone share offers from other radios: 0 Off (the default), 1 Ask (settings_t.zs_offers)
+	UI_SET_ZONE_OFFERS,	// accept zone shares from other radios: 1 on (the default), 0 off (settings_t.zs_offers)
 	UI_SET_DMR_ID,		// the radio's own DMR ID in the codeplug, 1..CODEPLUG_DMR_ID_MAX (a set is a codeplug write job)
+	UI_SET_REF_TRIM,	// reference oscillator trim, ppb -10000..+10000 (Settings > Advanced; settings_t.ref_trim_ppb)
+	UI_SET_LANGUAGE,	// the UI's language, i18n.h lang_value: "en" English, 0 never picked (Settings > Display; settings_t.lang)
 	UI_SET_COUNT
 } ui_setting_t;
 
@@ -341,6 +368,11 @@ typedef struct {
 } ui_event_t;
 // The owner's two boot screen lines from the codeplug (storage-cps); empty strings when there are none
 void ui_svc_boot_text(char line1[17], char line2[17]);
+// The codeplug's name fields (Settings > My radio): the radio name (8 characters; APRS takes its first word as the
+// callsign) and the two boot screen lines (16 each). Set is a storage job: false while another one is pending
+enum { UI_NAME_RADIO, UI_NAME_BOOT1, UI_NAME_BOOT2, UI_NAME_COUNT };
+void ui_svc_name_get(uint8_t which, char out[17]);
+bool ui_svc_name_set(uint8_t which, const char *text);
 
 // Queue an event for the UI (copies it). False when the queue is full (the event is dropped)
 bool ui_notify(const ui_event_t *ev);

@@ -18,7 +18,8 @@
     rfoundry_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     rfoundry_debug.py log [--follow]                 the firmware's dlog() ring
     rfoundry_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
-    rfoundry_debug.py dump --addr A --len N -o F     read internal flash / system memory / OTP / option bytes to a file
+    rfoundry_debug.py dump --addr A --len N -o F     read flash or another readable window to a file (debuglink.md 3.10)
+    rfoundry_debug.py peek ADDR[:LEN]                hex dump of LEN bytes (default 4) at ADDR, in words where aligned
                                                 outside any git tree
     rfoundry_debug.py reboot [--rom-dfu]             reset; --rom-dfu: into ST's ROM USB DFU (RDP level 0 only)
     rfoundry_debug.py crash [show|clear|test trap|test assert|test hang]
@@ -91,6 +92,7 @@ RX2 = 0x1E                          # the second receiver's SoC: info, update br
 RX2_OP_INFO, RX2_OP_BRIDGE, RX2_OP_RESTART = range(3)
 RX2_TOKEN = 0x47445242              # 'BRDG'
 RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart"}
+IDDB = 0x1F                         # the DMR ID database: format, records, an ID looked up (docs/spec/debuglink.md 3.23)
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
 SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
@@ -136,9 +138,9 @@ REBOOT_REASONS = {1: "wrong confirmation token (not the chip UID's low word)",
 # STM32F405 sectors: (start, size)
 F4_SECTORS = [(0x08000000 + i * 0x4000, 0x4000) for i in range(4)] + [(0x08010000, 0x10000)] + \
     [(0x08020000 + i * 0x20000, 0x20000) for i in range(7)]
-MEM_WHITELIST = [(0x08000000, 0x08100000), (0x1FFF0000, 0x1FFF7800), (0x1FFF7800, 0x1FFF7A10),
-                 (0x1FFFC000, 0x1FFFC010)]
-ST_OK, ST_BUSY = 0, 3
+ST_OK, ST_BAD_ARG, ST_BUSY, ST_UNAVAILABLE = 0, 2, 3, 4
+SHOT_LZ4 = 3            # SCREENSHOT's packed form (debuglink.md 3.3)
+SHOT_HDR = 28           # its reply bytes before the palette, status included
 
 ACTIONS = {"up": 1, "down": 2, "left": 3, "right": 4, "select": 5, "ok": 5, "green": 5, "back": 6, "exit": 6,
            "red": 6, "quick": 7, "star": 7, "context": 8, "hash": 8, "ptt": 19, "monitor": 20, "tt": 21,
@@ -180,7 +182,7 @@ SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit"
             "battery_off_s": 18, "scan_beep": 19, "reply_s": 20, "roam_rssi_dbm": 21, "roam_hyst_db": 22,
             "roam_probe": 23, "roam_check_s": 24, "roam_beacon_s": 25, "roam_beacon_len_s": 26, "roam_survey": 27,
             "rpt_beacon": 28, "mic_gain": 29, "dual_delay_ms": 30, "enc_options": 31,
-            "zs_offers": 32, "sfr_cwid": 33, "sfr_rx": 34}
+            "zs_offers": 32, "sfr_cwid": 33, "sfr_rx": 34, "ref_trim": 35}
 
 
 class DebugLinkError(Exception):
@@ -284,6 +286,7 @@ class DebugLink:
         self.port = pick_port(port)
         self.timeout = timeout
         self.seq = 0
+        self.packed_shots = None                # packed screenshots: None until the firmware says
         if self.port.startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
             host, _, udp_port = self.port[4:].partition(":")
             self.s = UdpPort(host, int(udp_port or 3334))
@@ -561,6 +564,10 @@ class DebugLink:
     def rx2_restart(self):
         self.request(RX2, struct.pack("<BI", RX2_OP_RESTART, RX2_TOKEN))
 
+    def iddb(self, dmr_id=0):
+        """The DMR ID database as the radio sees it, and the text it shows for dmr_id: {format, records, found, text}"""
+        return decode_iddb(self.request(IDDB, struct.pack("<I", dmr_id))[1])
+
     def version(self):
         return parse_kv(self.request(VERSION)[1].decode("ascii", "replace"))
 
@@ -624,8 +631,60 @@ class DebugLink:
             data += chunk
         return info, bytes(data)
 
+    def screenshot_packed(self):
+        """(info, frame buffer at the panel's depth or None, whole) of one pass in the packed form (debuglink.md 3.3):
+        LZ4, a tenth of the RGB565 form's bytes or less. whole: no frame was being drawn during the pass, so the
+        chunks are one frame. DebugLinkError with status ST_BAD_ARG from firmware without the packed form,
+        ST_UNAVAILABLE from a frame buffer too large for it."""
+        stream = bytearray()
+        first = last = None
+        while first is None or len(stream) < first["stream"]:
+            try:
+                _, r = self.request(SCREENSHOT, struct.pack("<IB", len(stream), SHOT_LZ4))
+            except DebugLinkError as e:
+                if first is None or e.status != ST_BAD_ARG:
+                    raise
+                return first, None, False       # a new frame's stream ends before this offset
+            self.packed_shots = True
+            w, h, bpp, fmt, it, ib, il, ir, total, off, size, frame, drawing = struct.unpack_from("<HHBBBBBBIIIIB", r)
+            if off != len(stream):
+                raise DebugLinkError(f"screenshot chunk at {off}, expected {len(stream)}")
+            last = {"width": w, "height": h, "bpp": bpp, "insets": (it, ib, il, ir), "size": size, "stream": total,
+                    "frame": frame, "drawing": bool(drawing)}
+            hdr = SHOT_HDR - 1 + (32 if bpp == 4 else 0)       # r: the payload after the status byte
+            if first is None:
+                first = dict(last, palette=struct.unpack_from("<16H", r, SHOT_HDR - 1) if bpp == 4 else None)
+            elif (total, frame) != (first["stream"], first["frame"]):
+                return first, None, False       # a frame was drawn since the first chunk: the stream changed
+            if len(r) <= hdr:
+                raise DebugLinkError("screenshot: empty chunk")
+            stream += r[hdr:]
+        try:
+            fb = lz4_block(bytes(stream), first["size"])
+        except (ValueError, IndexError):
+            return first, None, False           # chunks of a frame being drawn
+        return first, fb, not first["drawing"] and not last["drawing"]
+
     def screenshot(self, tries=4):
-        """(info, bytes, stable): reads until two passes agree (stable False if they never did)."""
+        """(info, bytes, stable) in the form to_rgb takes (RGB565, or 1 bpp rows). The packed form when the firmware
+        has it, read until one pass is whole; else the RGB565 form, read until two passes agree. stable False if
+        none did."""
+        if self.packed_shots is not False:
+            try:
+                got = None
+                for _ in range(max(1, tries)):
+                    info, fb, whole = self.screenshot_packed()
+                    if fb is not None:
+                        got = unpack_frame(info, fb)
+                        if whole:
+                            return got[0], got[1], True
+                if got is None:
+                    raise DebugLinkError(f"screenshot: the screen kept changing over {tries} reads")
+                return got[0], got[1], False
+            except DebugLinkError as e:
+                if e.status not in (ST_BAD_ARG, ST_UNAVAILABLE) or self.packed_shots:
+                    raise
+                self.packed_shots = False       # firmware before the packed form, or a frame buffer over 64 KB
         info, prev = self.screenshot_raw()
         for _ in range(max(1, tries) - 1):
             info, cur = self.screenshot_raw()
@@ -856,7 +915,7 @@ class DebugLink:
     def radio_check(self, dst):
         self.data_request(DATA_OP_RADIO_CHECK, struct.pack("<I", int(dst) & 0xFFFFFF))
 
-    def data_settings(self, ars_server=0, radio_check_reply=False, call_alert_ack=True, lrrp_reply=True,
+    def data_settings(self, ars_server=0, radio_check_reply=True, call_alert_ack=True, lrrp_reply=True,
                       sms_etsi=False, radio_check_etsi=False, sms_format=None):
         """The data service settings: ARS server ID (0 off), the answer switches, the ETSI forms. sms_format: the
         default text message format, "etsi_ip" (the radio's default), "etsi" or "tms"; None: "etsi" when sms_etsi,
@@ -977,6 +1036,41 @@ class DebugLink:
 
 
 # ── pictures ────────────────────────────────────────────────────────────────
+
+def stubtool_module():
+    """stub/stubtool.py, for its LZ4 block codec (imported when first needed: it is large)"""
+    stub_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stub")
+    if stub_dir not in sys.path:
+        sys.path.insert(0, stub_dir)
+    import stubtool
+    return stubtool
+
+
+def lz4_block(src, size):
+    """Decode an LZ4 block to exactly size bytes (stub/stubtool.py's decoder). ValueError if it is corrupt."""
+    stubtool = stubtool_module()
+    try:
+        return stubtool.lz4_block(src, size)
+    except stubtool.DumpError as e:
+        raise ValueError(str(e))
+
+
+def unpack_frame(info, fb):
+    """(info, bytes) in the RGB565 form's terms from a packed screenshot's frame buffer: a 16-color frame through its
+    palette, a 1 bpp or RGB565 frame as it is. info keeps the panel's depth as native_bpp."""
+    w, h, bpp = info["width"], info["height"], info["bpp"]
+    out = {"width": w, "height": h, "insets": info["insets"], "native_bpp": bpp, "packed": True}
+    if bpp == 4:
+        pal = [struct.pack("<H", c) for c in info["palette"]]
+        pair = [pal[b >> 4] + pal[b & 15] for b in range(256)]
+        stride = (w + 1) // 2
+        data = b"".join(b"".join(pair[b] for b in fb[y * stride:(y + 1) * stride])[:w * 2] for y in range(h))
+        bpp = 16
+    else:
+        data = fb
+    out.update(bpp=bpp, format=2 if bpp == 1 else 1, total=len(data))
+    return out, data
+
 
 def to_rgb(info, data, crop=False):
     """(width, height, RGB888 rows as bytes) from the frame buffer"""
@@ -1102,7 +1196,7 @@ def cmd_screenshot(link, a):
     w, h, rows = to_rgb(info, data, a.crop)
     write_png(a.output, w, h, rows, a.scale)
     note = "" if stable else f" (the screen kept changing over {a.tries} reads: may be torn)"
-    print(f"{a.output}: {w}x{h} from {info['width']}x{info['height']}x{info['bpp']}{note}")
+    print(f"{a.output}: {w}x{h} from {info['width']}x{info['height']}x{info.get('native_bpp', info['bpp'])}{note}")
     return 0
 
 
@@ -1380,8 +1474,47 @@ def decode_chip(r):
             "wrp_sectors": [i for i in range(12) if wrp & (1 << i)], "bor": bor, "user": user}
 
 
-def mem_allowed(addr, n):
-    return n > 0 and any(lo <= addr and addr + n <= hi for lo, hi in MEM_WHITELIST)
+def decode_iddb(r):
+    """IDDB's reply after the status (debuglink.md 3.23): format is the header's letter ('N', 'n', 'C'), '' for none"""
+    fmt, records, found = struct.unpack_from("<BIB", r)
+    return {"format": chr(fmt) if fmt else "", "records": records, "found": bool(found),
+            "text": r[6:].decode("ascii", "replace") if found else None}
+
+
+# READ_MEM's windows by chip family (debuglink.md 3.10): (start, end exclusive, aligned words only). The radio decides;
+# these only give a clear message first. Flash ends at the largest part's size: the radio knows its own
+MEM_WINDOWS = {
+    CHIP_STM32F4: [(0x08000000, 0x08100000, False), (0x1FFF0000, 0x1FFF7800, False), (0x1FFF7800, 0x1FFF7A10, False),
+                   (0x1FFFC000, 0x1FFFC010, False)],
+    CHIP_HRC7000: [(0x03000000, 0x03200000, False), (0x00010000, 0x00058000, False), (0x18000000, 0x18008000, False),
+                   (0x11000000, 0x11000060, True), (0x14020000, 0x14020080, True), (0x14100000, 0x14100080, True),
+                   (0x14110000, 0x14110080, True), (0x17000000, 0x17000034, True), (0x1700003C, 0x17000040, True),
+                   (0x17000044, 0x1700004C, True), (0x17000060, 0x17000090, True)],
+}
+
+
+def mem_allowed(addr, n, family=CHIP_STM32F4):
+    for lo, hi, words in MEM_WINDOWS.get(family, []):
+        if n > 0 and lo <= addr and addr + n <= hi:
+            return not words or (addr | n) % 4 == 0
+    return False
+
+
+def chip_family(link):
+    """INFO_CHIP's family, or None while the radio can't say (an HR_C7000 before its UID is read)"""
+    try:
+        return link.chip()["family"]
+    except DebugLinkError:
+        return None
+
+
+def mem_precheck(link, addr, n):
+    """An error message if the range is outside the radio's windows, else None"""
+    family = chip_family(link)
+    if family is None or family not in MEM_WINDOWS or mem_allowed(addr, n, family):
+        return None
+    return (f"0x{addr:08X}+0x{n:X} is outside the readable ranges (register blocks: whole aligned words only; "
+            "docs/spec/debuglink.md 3.10)")
 
 
 def git_toplevel(path):
@@ -1442,8 +1575,9 @@ def print_chip(c):
 
 def cmd_dump(link, a):
     addr, n = int(a.addr, 0), int(a.len, 0)
-    if not mem_allowed(addr, n):
-        print(f"rfoundry_debug: 0x{addr:08X}+0x{n:X} is outside the readable ranges", file=sys.stderr)
+    why = mem_precheck(link, addr, n)
+    if why:
+        print(f"rfoundry_debug: {why}", file=sys.stderr)
         return 2
     out = a.output
     ok, why = dump_path_ok(out)
@@ -1459,6 +1593,58 @@ def cmd_dump(link, a):
     print(f"{out}: {len(data)} bytes from 0x{addr:08X}, sha256 {hashlib.sha256(data).hexdigest()}")
     if addr < 0x0800C000 and addr >= 0x08000000:
         print("note: this holds the proprietary stock bootloader: never commit or publish it")
+    return 0
+
+
+def format_peek(addr, data):
+    """Hex dump lines: little-endian words, four to a line, when addr and the length are word aligned; else bytes,
+    sixteen to a line"""
+    lines = []
+    if (addr | len(data)) % 4 == 0:
+        for i in range(0, len(data), 16):
+            words = struct.unpack_from(f"<{min(16, len(data) - i) // 4}I", data, i)
+            lines.append(f"0x{addr + i:08X}: " + " ".join(f"{w:08x}" for w in words))
+    else:
+        for i in range(0, len(data), 16):
+            lines.append(f"0x{addr + i:08X}: " + " ".join(f"{b:02x}" for b in data[i:i + 16]))
+    return lines
+
+
+def peek_spec(text):
+    """ADDR[:LEN] for peek, checked before the radio is opened"""
+    import argparse
+    spec = text.split(":", 1)
+    try:
+        addr = int(spec[0], 0)
+        n = int(spec[1], 0) if len(spec) > 1 else 4
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r}: ADDR[:LEN] in decimal or 0x hex, e.g. 0x14100040:0x10")
+    if not 0 <= addr <= 0xFFFFFFFF:
+        raise argparse.ArgumentTypeError("ADDR is 0..0xFFFFFFFF")
+    if n <= 0 or n > 64 * 1024:
+        raise argparse.ArgumentTypeError("LEN is 1..65536")
+    return addr, n
+
+
+def cmd_peek(link, a):
+    addr, n = a.where
+    why = mem_precheck(link, addr, n)
+    if why:
+        print(f"rfoundry_debug: {why}", file=sys.stderr)
+        return 2
+    try:
+        data = link.dump(addr, n)
+    except DebugLinkError as e:
+        if e.status == ST_REFUSED:
+            print(f"rfoundry_debug: the radio refused 0x{addr:08X}+0x{n:X} (outside its readable ranges)",
+                  file=sys.stderr)
+            return 1
+        if e.status == ST_UNAVAILABLE:
+            print("rfoundry_debug: this firmware has no READ_MEM on this radio", file=sys.stderr)
+            return 1
+        print(f"rfoundry_debug: peek failed: {e}", file=sys.stderr)
+        return 1
+    print("\n".join(format_peek(addr, data)))
     return 0
 
 
@@ -1705,7 +1891,87 @@ def cmd_reboot(link, a):
     return 0
 
 
+def self_test():
+    """The packed screenshot reader against a simulated radio (the firmware's side is tests/host/debuglinkTest)."""
+    stubtool = stubtool_module()
+    ok = True
+
+    def check(cond, what):
+        nonlocal ok
+        print("%s %s" % ("ok  " if cond else "FAIL", what))
+        ok = ok and cond
+
+    class FakeRadio(DebugLink):
+        """Answers SCREENSHOT as debuglink.md 3.3 says: a panel of 16 colors, 3 rows of fb, or firmware without the
+        packed form (packed False, or the status it answers). redraw_at: the reply at which a new frame is drawn;
+        shrink: that frame is blank, so its stream is shorter."""
+
+        def __init__(self, packed=True, redraw_at=None, drawing=0, shrink=False, fb=None):
+            self.packed_shots, self.packed, self.redraw_at, self.drawing = None, packed, redraw_at, drawing
+            self.shrink, self.replies, self.frame = shrink, 0, 7
+            self.fb = fb or bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x00])
+            self.w = len(self.fb) * 2 // 3
+            self.pal = [0x1000 + i for i in range(16)]
+
+        def request(self, cmd, payload=b""):
+            self.replies += 1
+            if self.replies == self.redraw_at:
+                self.frame += 1
+                self.fb = bytes(len(self.fb)) if self.shrink else bytes(b ^ 0xFF for b in self.fb)
+            if len(payload) == 5:
+                if self.packed != True:
+                    raise DebugLinkError("refused", self.packed or ST_BAD_ARG)
+                off = struct.unpack_from("<I", payload)[0]
+                z = bytes(stubtool.lz4_encode(self.fb))
+                if off > len(z):
+                    raise DebugLinkError("bad argument", ST_BAD_ARG)
+                chunk = z[off:off + 4]          # small windows: several replies
+                drawing = self.drawing > 0
+                self.drawing -= 1
+                r = struct.pack("<HHBBBBBBIIIIB", self.w, 3, 4, SHOT_LZ4, 1, 0, 0, 0, len(z), off, len(self.fb), self.frame,
+                                drawing) + struct.pack("<16H", *self.pal) + chunk
+                return 0, r
+            rgb = b"".join(struct.pack("<H", self.pal[(self.fb[i // 2] >> (0 if i & 1 else 4)) & 15])
+                           for i in range(self.w * 3))
+            off, n = struct.unpack_from("<IH", payload) if payload else (0, 0)
+            return 0, struct.pack("<HHBBBBBBII", self.w, 3, 16, 1, 1, 0, 0, 0, len(rgb), off) + rgb[off:off + n]
+
+    want = b"".join(struct.pack("<H", 0x1000 + i) for i in range(16)) + struct.pack("<HH", 0x1000, 0x1000)
+    info, data, stable = FakeRadio().screenshot()
+    check(stable and info["packed"] and data == want, "packed: 16 colors decode to RGB565 through the palette")
+    check((info["bpp"], info["format"], info["total"], info["native_bpp"]) == (16, 1, 36, 4), "packed: info as RGB565")
+    check(to_rgb(info, data)[:2] == (6, 3), "packed: to_rgb takes it")
+    r = FakeRadio(redraw_at=2)
+    info, data, stable = r.screenshot()
+    check(stable and r.replies > 2 and data != want, "a frame drawn during a pass: read again")
+    r = FakeRadio(drawing=1)
+    info, data, stable = r.screenshot()
+    check(stable and r.packed_shots, "first chunk during a draw: read again")
+    r = FakeRadio(drawing=99)
+    info, data, stable = r.screenshot(tries=2)
+    check(not stable and data is not None, "always drawing: the last read, not stable")
+    r = FakeRadio(redraw_at=4, shrink=True, fb=bytes(range(0, 252, 7)))
+    info, data, stable = r.screenshot()
+    check(stable and r.packed_shots and r.replies > 4 and data == struct.pack("<H", 0x1000) * 72, "a shorter frame drawn during the first pass: read again")
+    r = FakeRadio(packed=False)
+    info, data, stable = r.screenshot()
+    check(stable and r.packed_shots is False and data == want and "packed" not in info, "old firmware: RGB565 form")
+    r = FakeRadio(packed=ST_UNAVAILABLE)
+    info, data, stable = r.screenshot()
+    check(stable and r.packed_shots is False and data == want, "frame buffer too large to pack: RGB565 form")
+    check(format_peek(0x14100040, struct.pack("<5I", 0xC0, 0, 0xC0, 0xC0, 1)) ==
+          ["0x14100040: 000000c0 00000000 000000c0 000000c0", "0x14100050: 00000001"], "peek: words")
+    check(format_peek(0x00010001, b"\x01\x02\x03") == ["0x00010001: 01 02 03"], "peek: bytes")
+    check(mem_allowed(0x14100040, 4, CHIP_HRC7000) and not mem_allowed(0x14100042, 4, CHIP_HRC7000) and
+          not mem_allowed(0x14030000, 4, CHIP_HRC7000) and not mem_allowed(0x00010000, 4, CHIP_STM32F4),
+          "READ_MEM windows by family")
+    print("rfoundry_debug self-test:", "ok" if ok else "FAILED")
+    return 0 if ok else 1
+
+
 def main(argv=None):
+    if (sys.argv[1:] if argv is None else argv) == ["--self-test"]:
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", help="serial port (default: the radio with USB ID 1FC9:0094, or $RFOUNDRY_PORT)")
     ap.add_argument("--timeout", type=float, default=1.0, help="seconds to wait for each answer")
@@ -1723,7 +1989,7 @@ def main(argv=None):
     p.add_argument("-o", "--output", required=True)
     p.add_argument("--scale", type=int, default=1)
     p.add_argument("--crop", action="store_true", help="leave out the insets hidden by the bezel")
-    p.add_argument("--tries", type=int, default=4, help="reads until two agree (1: one read, may tear)")
+    p.add_argument("--tries", type=int, default=4, help="reads until one is whole (old firmware: two agree)")
     p = sub.add_parser("key")
     p.add_argument("name", nargs="?")
     g = p.add_mutually_exclusive_group()
@@ -1775,6 +2041,9 @@ def main(argv=None):
     p.add_argument("--addr", required=True)
     p.add_argument("--len", required=True)
     p.add_argument("-o", "--output", required=True, help="file outside any git tree")
+    p = sub.add_parser("peek", help="hex dump of a few bytes: RAM, flash, or the registers READ_MEM allows "
+                       "(docs/spec/debuglink.md 3.10)")
+    p.add_argument("where", metavar="ADDR[:LEN]", type=peek_spec, help="e.g. 0x14100040 or 0x17000060:0x30 (LEN default 4)")
     p = sub.add_parser("reboot")
     p.add_argument("--rom-dfu", action="store_true", help="into ST's ROM USB DFU (refused unless RDP level 0)")
     p = sub.add_parser("crash", help="the crash log: show, clear, test trap|assert (docs/spec/crash-log.md)")
@@ -1787,6 +2056,9 @@ def main(argv=None):
     p = sub.add_parser("rx2", help="the second receiver's SoC: info, restart (the update bridge is stubtool's, "
                        "docs/spec/debuglink.md 3.22)")
     p.add_argument("op", nargs="?", default="info", choices=["info", "restart"])
+    p = sub.add_parser("iddb", help="the DMR ID database: its format and records, and the text for each ID given "
+                       "(docs/spec/debuglink.md 3.23)")
+    p.add_argument("ids", nargs="*", type=int)
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
@@ -1839,6 +2111,8 @@ def main(argv=None):
                 print_chip(link.chip())
             elif a.cmd == "dump":
                 return cmd_dump(link, a)
+            elif a.cmd == "peek":
+                return cmd_peek(link, a)
             elif a.cmd == "reboot":
                 return cmd_reboot(link, a)
             elif a.cmd == "crash":
@@ -1854,6 +2128,12 @@ def main(argv=None):
                 else:
                     flags = link.rx2_info()
                     print("rx2: " + (", ".join(n for n in RX2_FLAGS.values() if n in flags) or "none"))
+            elif a.cmd == "iddb":
+                d = link.iddb()
+                print(f"format={d['format'] or 'none'} records={d['records']}")
+                for i in a.ids:
+                    r = link.iddb(i)
+                    print(f"{i} {r['text']!r}" if r["found"] else f"{i} -")
             elif a.cmd == "aprobe":
                 return cmd_aprobe(link, a)
             elif a.cmd == "split":

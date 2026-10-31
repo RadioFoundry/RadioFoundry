@@ -1,30 +1,22 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 #
-# CI on every pull request (docs/dev/ci.md "Pull request checks"), from this file as it is on main: a pull request's
-# own copy of the workflows never runs here, so a change to them takes the owner's review first (.github/CODEOWNERS).
-# The jobs are ci.yml's and the manual check, run on the pull request's merge commit; `changes` skips the ones its
-# files don't touch, except `checks` (Python and license checks), which runs on every pull request. A branch with a pull request gets its CI only from here (ci.yml runs on main). The last job
-# always runs and sets the `PR checks` commit status on the pull request's head commit: failure when any job failed or
-# was canceled, success otherwise. That status is the one check the main ruleset
-# requires, so a skipped job never holds a pull request up. It is posted by hand because a pull_request_target run's
-# own checks belong to main's commit, not the pull request's.
+# CI on every pull request (docs/dev/ci.md "Pull request checks"). The jobs are ci.yml's and the manual check, run on
+# the pull request's merge commit; `changes` skips the ones its files don't touch, except `checks` (Python and license
+# checks), which runs on every pull request. A branch with a pull request gets its CI only from here (ci.yml runs on
+# main). The last job, `PR checks`, always runs and fails when any job failed or was canceled: it is the one check the
+# main ruleset requires, so a skipped job never holds a pull request up.
 #
-# The pull request's code gets a read-only token that isn't stored in the checkout, no secrets and no cache: nothing
-# a fork couldn't have. The C-SKY job logs in to the image registry with the job's own token, pulls the image and logs
-# out before any of the pull request's code runs, in main's copy of .github/actions/toolchain. The status job is the only one with a write permission (statuses), and it checks out
-# nothing. Never add secrets, another write permission, actions/cache or the pull request's text (title, body, branch
-# name) in a run step to this file.
-#
-# Runners: with the repository variable RFOUNDRY_CI_RUNNER set, a pull request from a branch of this repository runs on
-# that self-hosted runner (tools/ci-runner/); one from a fork always runs on GitHub's hosted runners, since this
-# workflow runs every pull request's code without approval. Keep that condition in every job's runs-on. The public
-# repository has no self-hosted runner at all (docs/dev/ci-runners.md): a fork's pull_request workflows pick their
-# own runner.
+# A plain pull_request run: the pull request's own copy of this file, a read-only token, no secrets, no cache scope of
+# main's, on GitHub's hosted runners only. A fork's run waits for a maintainer's approval (the repository's fork policy
+# is "all external contributors"). A pull request can change this file, and with it its own `PR checks`, so a change
+# under .github/ takes the owner's review (.github/CODEOWNERS). Never add secrets, a write permission, a self-hosted
+# runner, actions/cache or the pull request's text (title, body, branch name) in a run step to this file. Nothing here
+# reads a repository variable: a fork's run may not get them.
 name: PR tests
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -37,11 +29,10 @@ concurrency:
 env:
   PANDOC_VERSION: "3.6.4"        # manual.yml's
   TYPST_VERSION: "0.13.1"
-  MERGE_REF: refs/pull/${{ github.event.pull_request.number }}/merge   # the pull request merged into main
 
 jobs:
   changes:
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       src: ${{ steps.files.outputs.src }}
@@ -49,8 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
-          ref: ${{ env.MERGE_REF }}
-          fetch-depth: 2   # the merge commit and main, its first parent
+          fetch-depth: 2   # the merge commit (pull_request's default ref) and main, its first parent
           persist-credentials: false
           submodules: false
       - name: What the pull request changes
@@ -73,12 +63,11 @@ jobs:
     name: unit tests
     needs: changes
     if: needs.changes.outputs.src == 'true'
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
-          ref: ${{ env.MERGE_REF }}
           persist-credentials: false
           submodules: false   # the host tests use none of third_party
       - name: Install gcovr, tshark, numpy, pytest, pyserial
@@ -121,7 +110,7 @@ jobs:
     name: firmware (${{ matrix.name }})
     needs: changes
     if: needs.changes.outputs.src == 'true'
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -131,32 +120,17 @@ jobs:
         include:
           - { toolchain: arm, name: Arm }
           - { toolchain: csky, name: C-SKY }
-    permissions:
-      contents: read
-      packages: read   # pulling the private csky-elf image with the job token
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
-          ref: ${{ env.MERGE_REF }}
           persist-credentials: false
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
-      # main's copy of the toolchain action, never the pull request's: it gets the registry token, and it runs before
-      # any of the pull request's code, so the image is pulled and the registry logged out of first
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
-        with:
-          ref: ${{ github.sha }}   # main's commit, the one this workflow comes from
-          path: .ci-main
-          persist-credentials: false
-          sparse-checkout: .github/actions
+      # the csky-elf image is public (platform.toml [toolchain] image): pulled without logging in
       - name: Toolchain (platform.toml [toolchain])
         id: tc
-        uses: ./.ci-main/.github/actions/toolchain
+        uses: ./.github/actions/toolchain
         with:
           toolchain: ${{ matrix.toolchain }}
-          image: ${{ vars.RFOUNDRY_CSKY_IMAGE }}
-          registry: ${{ vars.RFOUNDRY_CSKY_REGISTRY }}
-          registry-user: ${{ github.actor }}
-          registry-token: ${{ github.token }}
       - name: third_party submodules
         run: tools/checkout-submodules.sh
       - name: Default builds, warnings, size and app region fit
@@ -186,21 +160,22 @@ jobs:
   checks:
     name: checks   # every pull request: Python and license checks (doc links among them), the manual when docs change
     needs: changes
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
-          ref: ${{ env.MERGE_REF }}
           persist-credentials: false
           submodules: false
-      - name: Install numpy, pytest, pyserial
+      - name: Install numpy, pytest, pyserial, the site's packages
         run: |
           set -eu
           if [ "${RFOUNDRY_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
             sudo apt-get update -qq
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
               python3-numpy python3-pytest python3-serial
+            # without them ci.sh skips the strict site build, which Cloudflare Pages then fails on
+            python3 -m pip install -q --user --break-system-packages -r site/requirements.txt
           fi
       - name: Python checks, license checks
         run: tools/ci.sh --steps registry,python,licenses
@@ -232,30 +207,20 @@ jobs:
           if-no-files-found: error
 
   pr-checks:
-    name: PR checks status
+    # the check the main ruleset requires; it runs none of the pull request's code
+    name: PR checks
     needs: [changes, unit-tests, firmware, checks]
     if: always()
-    # a few seconds of gh at the end
-    runs-on: ubuntu-24.04   # a write token: GitHub's runners only (docs/dev/ci-runners.md)
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions:
-      statuses: write   # the PR checks status on the head commit; this job runs none of the pull request's code
     steps:
-      - name: Set PR checks on the head commit
+      - name: Every job passed or was skipped
         env:
-          GH_TOKEN: ${{ github.token }}
           FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
           RESULTS: ${{ toJSON(needs.*.result) }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          set -eu
           echo "results: $RESULTS"
-          if [ "$FAILED" = false ]; then
-            state=success; text="every job passed or was skipped"
-          else
-            state=failure; text="a job failed or was canceled"
+          if [ "$FAILED" != false ]; then
+            echo "::error::a job failed or was canceled"
+            exit 1
           fi
-          # The status carries the failure (merge stays blocked); this job exits 0 so the failed job is the only red check
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" -f state="$state" -f context="PR checks" \
-            -f description="$text" -f target_url="$RUN_URL" > /dev/null

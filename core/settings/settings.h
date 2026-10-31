@@ -99,7 +99,7 @@ typedef struct {
 	uint32_t ds_ars_server;		// ARS server ID, 0 = ARS off
 	uint8_t ds_flags;		// SETTINGS_DS_* bits
 	uint8_t ds_stored;		// 1 = the ds_ fields hold the data service's settings
-	uint8_t ds_ip_cnf;		// confirmed IP packets: bits 0-3 tries (0 = the default), bits 4-5 SETTINGS_DS_IPC_*
+	uint8_t ds_ip_cnf;		// confirmed IP packets: bits 0-3 tries (0 = the default), bits 4-5 SETTINGS_DS_IPC_*, bit 6 SETTINGS_DS_CHECK_SET
 	uint8_t snmp_flags;		// SNMP: SNMP_CFG_* bits (was reserved4; 0 = the defaults)
 	// Appended for the UI's settings (docs/spec/ui.md 4). The radio core's DMR reply window belongs with the rs_
 	// fields (taken only when rs_stored is 1); the others are the UI's
@@ -206,8 +206,9 @@ typedef struct {
 	uint8_t vfo2_tx_tone_type;
 	uint8_t rs_dual_delay;		// radio_settings_t.dual_delay_ms: n - 1 steps of 100 ms, 0 = the default
 	uint8_t rs_bcast_step;		// radio_settings_t.bcast_step + 1, 0 = the default (200 kHz on the odd tenths)
-	uint8_t zs_offers;		// zone share offers: 0 Off (the default), 1 Ask (docs/spec/zone-share.md 5)
-	uint8_t reserved8[2];
+	uint8_t zs_offers;		// zone shares accepted: 0 the default (yes), 1 yes, 2 no (docs/spec/zone-share.md 5)
+	int16_t ref_trim_ppb;		// reference oscillator trim, ppb, -10000..+10000 (radio/ref_trim.h; was reserved8,
+					// so older records read 0 = none)
 	// The IP gateway's off-net route (dmrDataSettings_t.ipGatewayId, docs/spec/usb-network.md 3.1; appended for
 	// ip-addr), taken with the other ds_ fields: the gateway radio's DMR ID, 0 = off-net packets dropped
 	uint32_t ds_ip_gateway;
@@ -216,7 +217,9 @@ typedef struct {
 	uint16_t zone_jrn_index;	// the index the zone was added at or deleted from
 	uint16_t zone_jrn_count;	// the stored zone count before it (0: only the built-in zone)
 	uint8_t zone_jrn_kind;		// SETTINGS_ZONE_JRN_*
-	uint8_t reserved8b[3];
+	char lang[2];			// the radio's language, its ISO 639-1 code (i18n.h lang_value), "\0\0" = never picked: the build's default
+					// (was reserved8b: older records read English)
+	uint8_t reserved8c;
 	// Zone share: the zones imported last, so the same zone sent again updates its import instead of adding a copy
 	// (docs/spec/zone-share.md 5.4); key 0 = unused, the oldest replaced first
 	settings_zs_import_t zs_import[SETTINGS_ZS_IMPORTS];
@@ -232,9 +235,14 @@ typedef struct {
 #define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
 #define SETTINGS_ZONE_JRN_ADD		1u
 #define SETTINGS_ZONE_JRN_DELETE	2u
+#define SETTINGS_ZS_OFF		2u	// zs_offers: shares not accepted (settings_zs_accept)
 #define SETTINGS_DUAL_VFO	1025u	// dual_b: 1025 the first VFO, 1026 the second
 #define SETTINGS_DUAL_ON	0x01u	// dual_state: it ran at power off, and comes back at power on
 #define SETTINGS_DUAL_B_SEL	0x02u	// ... with B selected: dual_b is then A's (the radio powers up on B)
+
+// Zone shares are accepted unless the user turned them off: 0 (a record from before, or never set) and the old Ask
+// (1) both accept
+static inline bool settings_zs_accept(const settings_t *s) { return s->zs_offers != SETTINGS_ZS_OFF; }
 
 // The DMR VFO's talk target (docs/spec/settings-store.md 3): a 24-bit ID and a private call flag, packed into bytes
 // that were reserved or held a small value, so the record stays 236 bytes and an older record reads as "none" (0).
@@ -352,6 +360,9 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 #define SETTINGS_DS_IPC_SHIFT		4
 #define SETTINGS_DS_IPC_OFF		1u
 #define SETTINGS_DS_IPC_ALL		2u
+// settings_t.ds_ip_cnf bit 6: ds_flags' radio check reply bit is the user's choice. A record saved before the default
+// became On lacks it and answers radio checks
+#define SETTINGS_DS_CHECK_SET		0x40u
 #define SETTINGS_DS_SMS_ETSI_IP		0x80u	// sms_send's default format is ETSI IP text (neither ETSI bit: Motorola TMS)
 
 // settings_t.em_flags

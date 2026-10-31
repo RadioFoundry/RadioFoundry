@@ -11,20 +11,21 @@
 <meta property="og:title" content="{{ title }} · RadioFoundry">
 <meta property="og:description" content="{{ description }}">
 <meta property="og:url" content="{{ url }}">
+<meta property="og:locale" content="{{ og_locale }}">
 <meta property="og:image" content="{{ og_image }}">
 <meta property="og:image:width" content="{{ og_width }}">
 <meta property="og:image:height" content="{{ og_height }}">
 <meta property="og:image:alt" content="{{t site.preview_alt}}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="generator" content="site/build.py {{ git }}">
-<link rel="icon" href="{{root}}static/img/icon.svg?v={{ assets }}" type="image/svg+xml">
+{{{ alternates }}}<link rel="icon" href="{{root}}static/img/icon.svg?v={{ assets }}" type="image/svg+xml">
 <link rel="icon" href="{{root}}static/img/icon-32.png?v={{ assets }}" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="{{root}}static/img/apple-touch-icon.png?v={{ assets }}">
 <link rel="stylesheet" href="{{root}}static/css/tokens.css?v={{ assets }}">
 <link rel="stylesheet" href="{{root}}static/css/site.css?v={{ assets }}">
 <script>try{var t=localStorage.getItem("rfoundry-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
-<body class="page-{{ page_class }}" data-root="{{root}}" data-home="{{ home }}">
+<body class="page-{{ page_class }}" data-root="{{root}}" data-home="{{ home }}" data-gl-more="{{t glossary.more}}">
 <a class="skip" href="#main">{{t nav.skip}}</a>
 <header class="site-header">
 	<div class="wrap header-row">
@@ -35,7 +36,7 @@
 		<button class="nav-toggle" aria-expanded="false" aria-controls="site-nav">{{t nav.menu}}</button>
 		<nav id="site-nav" class="site-nav" aria-label="{{t nav.label}}">{{{ nav }}}</nav>
 		<div class="header-tools">
-			<span class="lang-switch">{{{ languages }}}</span>
+			{{{ languages }}}
 			<button class="theme-toggle" type="button" aria-label="{{t nav.theme}}" title="{{t nav.theme}}">◐</button>
 		</div>
 	</div>

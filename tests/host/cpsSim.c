@@ -5,13 +5,15 @@
 // and the fast codeplug protocol (CODEPLUG, docs/spec/cps-fast.md; tools/cps_fast.py --exec):
 //
 //   cpsSim [--populate] [--image FILE] [--dump FILE] [--list] [--detail] [--iddb ID]... [--no-staging]
+//          [--features LIST]
 //
 // --populate stores a small codeplug first, --image loads a flash image (file offset = flash address), --dump
 // writes the flash to FILE when stdin closes, --list prints the stored channels, contacts and zones and exits.
 // --detail prints every record the radio reads, with all its fields, and the ID database's text for each --iddb ID
 // (the web codeplug editor's tests compare their decoder with it, site/tests/codeplug.test.mjs). A "reboot" (C 6 0 /
 // 1) re-reads the settings and the codeplug, as the radio would after its restart. --no-staging takes the staging area
-// out of the map (a radio whose fast protocol writes go through the journal block by block).
+// out of the map (a radio whose fast protocol writes go through the journal block by block). --features sets the
+// VERSION features list, so a host can be shown an older radio (without CPS_FAST or IDDB_COMPACT).
 #include <errno.h>
 #include <poll.h>
 #include <stdio.h>
@@ -21,6 +23,7 @@
 #include <unistd.h>
 #include "cps/cps_openfw.h"
 #include "cps/cps_fast.h"
+#include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/dmr_iddb.h"
@@ -232,21 +235,29 @@ static void detail(const uint32_t *ids, unsigned id_count)
 #endif
 }
 
-// --- the debug link: VERSION and CODEPLUG ---
+// --- the debug link: VERSION, CODEPLUG and IDDB ---
 
 static dl_parser_t dl;
 static uint8_t dl_reply[DL_HDR + DL_REPLY_MAX + 2u];
 
+static const char *features = "FM,DMR,CPS_FAST,"
+#if CONFIG_IDDB_COMPACT
+	"IDDB_COMPACT,"
+#endif
+	"HOSTLINK,DEBUGLINK";
+
 static size_t dl_handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *o, size_t cap)
 {
-	static const char version[] = "proto=1\nboard=sim\nfeatures=FM,DMR,CPS_FAST,HOSTLINK,DEBUGLINK\n";
 	switch (cmd) {
-	case DL_CMD_VERSION:
+	case DL_CMD_VERSION: {
+		int n = snprintf((char *)o + 1, cap - 1, "proto=1\nboard=sim\nfeatures=%s\n", features);
 		o[0] = DL_ST_OK;
-		memcpy(o + 1, version, sizeof(version) - 1);
-		return sizeof(version);
+		return 1u + (size_t)(n < 0 ? 0 : n < (int)cap - 1 ? n : (int)cap - 2);
+	}
 	case DL_CMD_CODEPLUG:
 		return cps_fast_cmd(req, len, o, cap, millis());
+	case DL_CMD_IDDB:
+		return debuglink_cmd_iddb(req, len, o, cap);
 	default:
 		o[0] = DL_ST_UNKNOWN_CMD;
 		return 1;
@@ -299,9 +310,11 @@ int main(int argc, char **argv)
 			dump = argv[++i];
 		} else if (strcmp(argv[i], "--no-staging") == 0) {
 			map.staging_addr = map.staging_size = 0;
+		} else if (strcmp(argv[i], "--features") == 0 && i + 1 < argc) {
+			features = argv[++i];
 		} else {
 			fprintf(stderr, "usage: cpsSim [--populate] [--image FILE] [--dump FILE] [--list] [--detail] [--iddb ID]... "
-				"[--no-staging]\n");
+				"[--no-staging] [--features LIST]\n");
 			return 2;
 		}
 	}

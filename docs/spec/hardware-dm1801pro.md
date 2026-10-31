@@ -126,6 +126,10 @@ radio; the per-burst switch (5.6) needs the speed.
 - Bandwidth register 0x43: 0x3048 for DMR and for 12.5 kHz FM, 0x3028 for 25 kHz FM. The radio's channel set-up picks
   0x3048 for a digital channel, and for an analog one by the channel's Narrow / Wide bit (Narrow 0x3048, Wide 0x3028).
   Its bandwidth table also holds 0x2028 and 0x205C, but nothing selects them.
+- Reference trim ([radio-features.md](radio-features.md) 6.1): RadioFoundry doesn't move the reference. It tunes
+  the FD6818 to f x (1 + trim), in receive, FM transmit and every DMR burst, and the next tune applies a new trim.
+  Measured on the SDR bench at 461.4625 MHz (2026-10-30): +5.0 ppm moved the carrier +2309 Hz and -5.0 ppm -2310 Hz
+  (2307 Hz expected).
 
 ### 5.3 Register tables
 
@@ -733,6 +737,7 @@ confirmed data with its response, SMS and ETSI SMS received and acknowledged. FM
 beep) pass. The bandwidth test passes too: the CTCSS 100.0 tone deviates 298 Hz at 12.5 kHz (word 0x3048) and 597 Hz at
 25 kHz (0x3028), a ratio of 2.00 (2026-10-16).
 The MMDVM hotspot on the programming cable works both ways on air (2026-10-16: the four `test_hotspot_on_air` cases).
+The reference trim passes `test_ref_trim.py` (2026-10-30, 5.2).
 Not checked on the radio yet: the air band and the broadcast tuner ([airband-and-broadcast.md](airband-and-broadcast.md)). Not in: USB (the radio has none).
 
 Further measurements and notes:

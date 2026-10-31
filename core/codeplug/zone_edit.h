@@ -41,6 +41,8 @@ void zone_copy_name(char out[CODEPLUG_NAME_LEN + 1], const char *name);
 // --- The codeplug ---
 // A new zone holding z's channels. *index (may be NULL): where it landed, which need not be last
 zone_edit_result_t zone_edit_create(const zone_t *z, uint16_t *index);
+// A new empty zone named name. *index (may be NULL): where it landed
+zone_edit_result_t zone_edit_new(const char *name, uint16_t *index);
 zone_edit_result_t zone_edit_insert(uint16_t zone, uint16_t pos, uint16_t channel);
 zone_edit_result_t zone_edit_remove(uint16_t zone, uint16_t pos);
 zone_edit_result_t zone_edit_move(uint16_t zone, uint16_t pos, int dir);
@@ -55,6 +57,7 @@ zone_edit_result_t zone_edit_delete(uint16_t zone);
 // One of the calls above as data, for a caller that hands the work to another task (the storage job)
 typedef enum {
 	ZONE_OP_INSERT, ZONE_OP_REMOVE, ZONE_OP_MOVE, ZONE_OP_ADD_NEW, ZONE_OP_COPY, ZONE_OP_RENAME, ZONE_OP_DELETE,
+	ZONE_OP_NEW,
 } zone_op_kind_t;
 
 typedef struct {
@@ -63,11 +66,11 @@ typedef struct {
 	uint16_t zone;		// the zone's index
 	uint16_t pos;		// INSERT, REMOVE, MOVE, ADD_NEW: the position
 	uint16_t channel;	// INSERT: the channel; ADD_NEW: the new channel's number
-	char name[CODEPLUG_NAME_LEN + 1];	// RENAME
+	char name[CODEPLUG_NAME_LEN + 1];	// RENAME, NEW
 	channel_t ch;		// ADD_NEW
 } zone_op_t;
 
-// Run op. *index (may be NULL): COPY, the new zone's index; others, op->zone
+// Run op. *index (may be NULL): COPY and NEW, the new zone's index; others, op->zone
 zone_edit_result_t zone_edit_apply(const zone_op_t *op, uint16_t *index);
 // Calls zone_edit_apply ran since start-up that wrote (OK), and the last one's result (the debug link's zone.edits,
 // zone.edit_last)

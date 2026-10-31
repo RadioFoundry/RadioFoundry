@@ -39,6 +39,14 @@ platform calls `board_rf_safe` first in `main()`, in its fault handlers and befo
 of the application; the crash capture in `core/crash` calls it too. It must work with interrupts off, without the
 RTOS and before the clocks are set up ([crash-log.md](../spec/crash-log.md) 8).
 
+RF chip drivers share three interfaces in `drivers/rf`:
+
+| Interface | What it is |
+|---|---|
+| `rfbus` | A chip's register bus: write, read, a millisecond wait and a write count. `rfbus_3w_t` is the bit-banged 3-wire bus; a board fills its pin functions. A driver takes an `rfbus_t *` and never touches pins |
+| `subaudio` | The CTCSS, tone and DCS words every chip family uses, rounded or truncated as the caller needs |
+| `superhet` | The two roles of a superheterodyne: main transceiver and LO, as tables of ops. A driver that can fill a role exports its ops; the board detects its chips, binds each to its ops and calls only those. Steps that depend on the board (band pins, calibration lookups) stay in the board |
+
 ## Tasks
 
 FreeRTOS tasks, created by [core/app/app.c](../../core/app/app.c) (its header comment has the priorities and stack

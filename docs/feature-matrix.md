@@ -39,6 +39,7 @@ is `tools/bringup.py list --radio <id>`.
 | Feature | DM-32UV | DM-1701 | DM-1801 Pro | DB25-D PRO | MD-380 | MD-UV380 | GD-77 |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | `fm` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded |
+| `ref_trim` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded |
 | `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | not recorded |
 | `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded | not written |
 | `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not written |
@@ -59,6 +60,7 @@ is `tools/bringup.py list --radio <id>`.
 | `channel_list` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `channel_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `zone_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `contact_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `key_assign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `scan` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -78,6 +80,7 @@ is `tools/bringup.py list --radio <id>`.
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written | not recorded | not written |
 | `aprs_igate` | not recorded | off | not recorded | not written | not written | off | not written |
+| `gps_sky` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ |
 | `usb` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | not recorded |
 | `hostlink` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded | not written |
@@ -101,13 +104,15 @@ is `tools/bringup.py list --radio <id>`.
 | `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
-| `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
+| `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not written |
 | `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
+| `dmr_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | not written |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -118,6 +123,10 @@ is `tools/bringup.py list --radio <id>`.
 | `font_xl` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `font_aa` | not recorded | off | off | off | off | off | ✕ |
 | `font_big` | not recorded | off | off | off | off | off | ✕ |
+| `lang_es` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
+| `lang_it` | off | off | off | off | off | off | off |
+| `lang_default_es` | off | off | off | off | off | off | off |
+| `lang_default_it` | off | off | off | off | off | off | off |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | ✕ |
@@ -132,10 +141,10 @@ What the records don't hold yet: limits and known problems from the bring-up pag
 | DM-1701 | Not yet checked: split duplex with a real pair of radios, standalone SFR, roaming to a repeater, IP over DMR end to end, VOX with a voice, privacy scrambling against another radio | [on-air-coverage](testing/on-air-coverage.md) |
 | DM-32UV | GPS data seen, no fix yet. The transmit half of a split duplex pair not checked. FM transmit deviation at 12.5 kHz, both slots through a duplex hotspot. A DMR receive fault after hours of uptime (2026-10-16, cause unknown). USB not available | [dm32-bringup](testing/dm32-bringup.md) |
 | DM-1801 Pro | The receive half of a split duplex pair, VHF transmit, VOX and APRS receive not checked | [hardware-dm1801pro](spec/hardware-dm1801pro.md) |
-| DB25-D PRO | Split duplex not built. Standalone and MMDVM SFR checked on the SDR bench (experimental). DMR audio from the speaker, a GPS fix and settings kept across power off not confirmed | [hardware-db25d](spec/hardware-db25d.md) |
+| DB25-D PRO | The older FD6818 batches (D64, D66, D6T) are driven by the same image, untested on a radio. Split duplex not built. Standalone and MMDVM SFR checked on the SDR bench (experimental). DMR audio from the speaker, a GPS fix and settings kept across power off not confirmed | [hardware-db25d](spec/hardware-db25d.md) |
 | MD-380 | Fully operational (UHF)¹. DCS, the VHF image, tone deviation and data from a DMR VFO not checked. Split duplex and SFR not available (HR_C5000) | [md380-bringup](testing/md380-bringup.md) |
 
-¹ TX frequency accuracy depends on each radio's factory calibration: confirm it against an external reference (frequency counter, service monitor, or a hotspot's MMDVMCal BER test). One MD-380 measured +1.9 kHz high, outside an MMDVM hotspot's decode window; `MD380_TX_OFFSET_HZ` corrects it at build time ([hardware-md380](spec/hardware-md380.md)).
+¹ Frequency accuracy depends on each radio's factory calibration: confirm it against an external reference (frequency counter, service monitor, or a hotspot's MMDVMCal BER test). Two MD-380s measured 2-2.5 kHz high, outside an MMDVM hotspot's decode window; Settings > Advanced > Freq trim corrects receive and transmit together ([radio-features](spec/radio-features.md) 6.1, [hardware-md380](spec/hardware-md380.md)). The `ref_trim` row above lists the radios that have the trim.
 
 ## Built by default on each radio
 
@@ -173,13 +182,14 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_KISS` | ● | ● | ● | ● | ● | ● | … |
 | `NET_HTTP` | ● | ● | ● | ● | ● | ● | … |
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | ● | … |
-| `NET_WEBCTL` | ● | ● | ● | ● | ● | ● | ○ |
+| `NET_WEBCTL` | ● | ● | ● | ● | ● | ● | … |
 | `NET_RIGCTL` | ● | ● | ● | ● | ● | ● | … |
 | `NET_APRSIS` | ● | ● | ● | ● | ● | ● | … |
 | `NET_USRP` | ● | ● | ● | … | ● | ● | … |
 | `MDNS` | ● | ● | ● | ● | ● | ● | … |
 | `TFTP` | ● | ● | ● | ● | ● | ● | … |
 | `TFTP_IDDB` | ● | ● | ● | ● | ● | ● | … |
+| `IDDB_COMPACT` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● | ● | … |
 | `SNMP` | ● | ● | ● | ● | ● | ● | … |
 | `SFR` | ● | ● | ● | ● | ✕ | ● | ● |
@@ -202,6 +212,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FONT_XL` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `FONT_AA` | ● | ○ | ○ | ○ | ○ | ○ | ✕ |
 | `FONT_BIG` | ● | ○ | ○ | ○ | ○ | ○ | ✕ |
+| `LANG_ES` | ● | ● | ● | ● | ● | ● | ○ |
+| `LANG_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `LANG_DEFAULT_ES` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `LANG_DEFAULT_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `UI_COLOR` | ● | ● | ✕ | ● | ● | ● | ✕ |
 | `UI_SETTINGS` | ● | ● | ● | ● | ● | ● | ● |
 | `SCAN` | ● | ● | ● | ● | ● | ● | ● |
@@ -210,6 +224,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | … |
 | `DTMF` | ● | ● | ● | ● | … | ● | … |
 | `VOX` | … | ● | ● | … | ● | ● | … |
+| `REF_TRIM` | ● | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● |
 | `VIBRATE` | ? | ✕ | ● | ✕ | ✕ | ✕ | ✕ |
 | `GPS` | ● | ● | ✕ | ● | ● | ● | ✕ |
@@ -226,10 +241,12 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `APRS` | ● | ● | ● | ● | ● | ● | … |
 | `APRS_RX` | ● | ● | ● | … | … | ● | … |
 | `APRS_IGATE` | ● | ○ | ● | … | … | ○ | … |
+| `GPS_SKY` | ● | ● | ✕ | ● | ● | ● | ✕ |
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● | ● | ● |
 | `ZONE_EDIT` | ● | ● | ● | ● | ● | ● | ● |
+| `CONTACT_EDIT` | ● | ● | ● | ● | ● | ● | ● |
 | Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery | Battery | Battery |
 | Clock kept through power-off (board, no switch) | Yes | ? | Yes | ? | ? | ? | ? |
 <!-- end generated -->
@@ -244,6 +261,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | DTMF transmit from the keys | `DTMF` | 920 | — | MD-380: TX tone path not written |
 | FM VOX | `VOX` | 496 | 1,064 |  |
 | Receiver battery saver | `BATTERY_SAVE` | 296 | 740 |  |
+| Frequency trim, Settings > Advanced | `REF_TRIM` | 2,156 | 2,232 | Figures from tools/ci.sh (2026-10-30); the hook on each radio, the page and the setting |
 | Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | Needs a receiver that does AM; DM-32 board glue not written yet, so nothing runs |
 | Broadcast FM receiver | `BCAST_FM` | ~0* | — | Needs a second receiver chip (DM-32's RDA5807M); glue not written yet |
 | DMR Tier II voice (modem, call stack, AMBE FEC, vocoder) | `DMR` | 175,856 | 134,308 | Includes every DMR feature and everything on IP over DMR |
@@ -259,6 +277,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Channels list: every channel by number, a channel's settings (hub 5) | `CHANNEL_LIST` | 1,536 | 2,140 |  |
 | Channel editor: edit a channel, New channel from current settings, text entry | `CHANNEL_EDIT` | 4,656 | 4,252 | Needs `CHANNEL_LIST`. Without it a channel's settings are read only. Measured 2026-10-17 |
 | Zone editor: move, add, copy and remove channels in a zone; rename, copy and delete a zone | `ZONE_EDIT` | 6,580 | 6,928 | Needs `CHANNEL_EDIT`. Measured 2026-10-24 on the default builds, LTO as each has it; also about 1.3 KB of RAM |
+| Contact editor: a new contact from Find or a call's actions (name, ID, type, timeslot) | `CONTACT_EDIT` | 1,580 | 1,580 | Needs `CHANNEL_EDIT` and `DMR`. Measured 2026-10-30 on the default builds |
 | Key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 2,120 | 2,188 | Up to 9 keys. Measured 2026-10-24 |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 |  |
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
@@ -276,12 +295,13 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | LRRP location | `DMR_LRRP` | 8,548 | 2,048 |  |
 | Compressed UDP/IP headers on transmit (SAP 3) | `DMR_UDP_COMPRESS` | 408 | 356 | Auto: not for ports 4000-4099 or ETSI IP text |
 | Confirmed packet data | `DMR_CONFIRMED` | 2,880 | 2,920 |  |
-| Zone and channel sharing: send a zone or a channel, import an offered one | `ZONE_SHARE` | 12,240 | 12,388 | Includes its screens and the import; about 4 KB of RAM. Receiving is off until the user sets Ask ([zone-share.md](spec/zone-share.md)). Measured 2026-10-24 with LTO, on the zone share branch |
+| Zone and channel sharing: send a zone or a channel, import an offered one | `ZONE_SHARE` | 12,240 | 12,388 | Includes its screens and the import; about 4 KB of RAM. Received shares are offered by default, imported only when the user says so ([zone-share.md](spec/zone-share.md)). Measured 2026-10-24 with LTO, on the zone share branch |
 | Single frequency repeater: MMDVM SFR, and the standalone SFR (experimental) | `SFR` | 6,884 | — | MD-380: HR_C5000 lacks what the SFR glue uses |
 | Experimental: SFR user receive "dual-path RX": a voice frame whose FEC failed comes from the other copy | `SFR_DUALPATH_RX` | 696 | — | Needs `SFR`. DM-1701 figure with LTO (2026-10-22) |
 | Experimental: standalone SFR repeater's periodic CW ID (callsign in Morse, FM) | `SFR_CWID` | 900 | — | Needs `SFR`. DM-1701 figure with LTO (2026-10-22) |
 | APRS: AFSK positions, status, messages; DMR positions; KISS TNC | `APRS` | 26,568 | 26,628 | Includes APRS receive, KISS over TCP and APRS-IS where built. MD-380: AFSK TX needs the tone path (not written), DMR positions work |
 | APRS receive: demodulator, station list, digipeater | `APRS_RX` | 8,892 | — | DM-1701: FM receive audio on the I2S stream, squelch gated ([aprs](spec/aprs.md) 5.3). MD-380: not written |
+| GPS screen: sky plot, signal bars, grid locator (Tools > Position) | `GPS_SKY` | — | 5,244 | Needs GPS and APRS. 176 B of RAM. MD-380 measured 2026-10-29 (LTO) |
 | APRS iGate rules (with tools/aprs_gate.py) | `APRS_IGATE` | 1,820* | — | Needs APRS receive. DM-1701: off by default |
 
 ## Host link and USB
@@ -321,6 +341,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | mDNS / DNS-SD (rfoundry-<id>.local) | `MDNS` | 6,744 | 6,504 |  |
 | TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | Without the ID database below |
 | DMR ID database over TFTP (`iddb.bin`, combined `codeplug.bin`) | `TFTP_IDDB` | 2,184 | 2,264 | Follows `TFTP` |
+| Compact DMR ID database (format C) read beside format N | `IDDB_COMPACT` | 988 | 992 | Follows `DMR` ([iddb-compact.md](spec/iddb-compact.md)) |
 | SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 |  |
 | PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,368* | 3,816* | Interop tested with pppd; checked on the DB25-D PRO and the DM-1801 Pro (`docs/spec/ppp.md` 8). Fits neither default image as it is when measured (DM-1701 688 B short, MD-380 1,588 B short of its 275 KB then; DM-1701 with LTO: +3,948, fits). DM-32: its only IP link, on by default with the gateway and every service (Whole images, DM-32UV) |
 
@@ -334,6 +355,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | 16x32 font | `FONT_XL` | 6,352* | — | Only useful at 240 px and wider (MD-380 is 160 px). Anti-aliased on the DM-32 (7.4 KB of glyphs) |
 | Anti-aliased fonts | `FONT_AA` | 3,004* | — | Smooth text on color panels (measured 2026-10-17); the DM-32's image grew 9.5 KB with it and `FONT_XL` |
 | Larger text | `FONT_BIG` | — | — | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 (measured 2026-10-17) |
+| Spanish on the radio | `LANG_ES` | 29,964 | 29,692 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
+| Italian on the radio | `LANG_IT` | 22,464 | 22,456 | Off by default; measured with Spanish on (its text only). Alone it costs about as much as Spanish |
+| Start in Spanish | `LANG_DEFAULT_ES` | 0 | 0 | The language the radio starts in until the user picks one (needs `LANG_ES`); the web flasher sets it from its Radio language choice |
+| Start in Italian | `LANG_DEFAULT_IT` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_IT`) |
 
 ## Storage
 

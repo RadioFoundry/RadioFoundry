@@ -331,6 +331,28 @@ class Radio:
         self.go_home()
         return True
 
+
+    def language_english(self):
+        """Settings > Display > Language back to English. The tests match the English text the debug link reports
+        (screens, toasts, banners), so a radio left in another language fails them as if the firmware were wrong. The
+        session does this before the first test. Returns the language it found when it had to change it, else None
+        (firmware without languages has no settings.lang)."""
+        lang = self.view(["storage"]).get("settings.lang")
+        if lang in (None, "en"):
+            return None
+        self.go_home()
+        for k in ("ok", "7", "2", "up", "ok"):  # Language is the Display group's last row
+            self.press(k)
+        self.wait_for(lambda v: v.get("ui.screen") == "language", sections=("link",), what="the Language screen")
+        for _ in range(16):  # English is the list's first row
+            if as_int(self.view(["link"]).get("ui.focus"), 0) == 0:
+                break
+            self.press("up")
+        self.press("ok")
+        self.wait_for(lambda v: v.get("settings.lang") == "en", sections=("storage",), what="language English")
+        self.go_home()
+        return lang
+
     def ptt_for(self, seconds):
         self.link.ptt_for(seconds)
 

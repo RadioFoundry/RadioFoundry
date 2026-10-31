@@ -9,4 +9,5 @@
 !/sim/
 !/stubs/
 !/*.sh
+!/*.py
 !/watchdog_stub/

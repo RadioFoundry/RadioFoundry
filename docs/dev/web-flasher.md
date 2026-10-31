@@ -27,6 +27,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `backup.js`, `zip.js` | Backup bundles | |
 | `restore.js` | What a bundle can put back, and the plans for it | |
 | `select.js` | À la carte feature selection with the dependencies, matching prebuilt variants | |
+| `update.js` | The Update task's build: which build a radio runs (below) and the build its update installs | |
 | `codeplug.js` | Codeplug formats and the converter registry | |
 | `migrate.js` | The original firmware's channels after an install: a stock codeplug found, converted, written and read back (below) | `tools/codeplug_port.py` |
 | `fake.js` | A simulated radio: bootloader with a flash model, RadioFoundry's serial port, a synthetic stock file | `rfoundry/fakedfu.py` |
@@ -46,7 +47,7 @@ through the loader hand-over). `#sim` alone is the first radio on stock firmware
 (`fakeC7000Options()` and `c7000Simulation()` in `fakec7000.js`, `simulation()` in `fake.js`): a radio with a stock
 console gets one, with its first stock version. `#sim=<radio>-romfail` is an HR_C7000 radio on stock firmware whose boot
 ROM refuses the load, to practice the factory update mode; `#sim=<radio>-slowcable` one on a cable too slow for the
-boot ROM's 48 ms window, to practice the slow cable mode; a radio with the Baofeng updater enters it when switched on
+boot ROM's 48 ms window, to check that the page's answer sent ahead gets through; a radio with the Baofeng updater enters it when switched on
 with "Hold the Keys and Turn On".
 
 ## The beta notice
@@ -174,7 +175,8 @@ bytes:
 | `decision` | The codec decision (mode, source) or the task (`restore`) |
 | `problem` | The problem, the other radio, the exact message (300 characters at most) |
 
-The start page's privacy text says that a report names the stock firmware file, never its contents.
+The start page's privacy text says that a report names the stock firmware file, never its contents, and that the
+flash log includes the browser's language setting.
 
 ### The flash log and the vendor file
 
@@ -197,10 +199,12 @@ failed install can be traced to a file. Only lengths, SHA-256 hashes and a short
 backend keeps a field the PATCH leaves out. Opting out (`?reporting=0`) and simulations send nothing, as for the rest of
 the log. A backend without these columns ignores the extra fields.
 
-Both requests also carry `adapter`, and the PATCH carries `trail`:
+The POST and the build request (`POST /v1/builds`, when it carries the use's id) also carry `languages`; the PATCH
+and the events don't. Both requests carry `adapter`, and the PATCH carries `trail`:
 
 | Field | Content |
 |---|---|
+| `languages` | The browser's language preferences (`navigator.languages`, the first 5; else `navigator.language`), such as `["en-US", "en"]`. The backend keeps at most 10 tags of 35 characters and an older one ignores the field |
 | `adapter` | `{vid, pid, chip, product}` of the USB device in use (`adapter.js`). `chip` from the vendor id: `FTDI` (0403), `CH340` (1a86), `CP210x` (10c4), `PL2303` (067b), `radio USB` (the radio's own port), `DFU bootloader`, else `other`. `product` only from WebUSB. Never a serial number |
 | `trail` | The newest 200 breadcrumbs (`diag.trail()`, scrubbed, 300 characters each), the oldest dropped to keep the keepalive request under 64 KB |
 
@@ -246,6 +250,33 @@ locally (`practiceFetch`) and sends nothing.
 
 Where it is offered: the button under every failure notice (`errorNotice()`, `problemNotice()`), the failed checks of
 the install, cable radio and loader routes, and the quiet "Something wrong? Report a Problem" link on Verify.
+
+## The Update task
+
+**Update** reaches a radio that runs RadioFoundry with one port chooser (its USB port and the programming cables),
+probes it, and lets the radio's backend take the connection: the STM32 radios keep the debug link (`S.link`), the
+HR_C7000 radios hand the open cable to their connect step (`c7000ui.js` `adoptCable`), which enters the stub without
+asking for the port again. The steps are `update`, then the backend's: `write`, `done` on the STM32 radios (the loader
+route when it can, the bootloader otherwise), `connect`, `check`, `write`, `done` on the HR_C7000 radios, whose check
+reads only the codec slot unless the user asked for a backup. **Edit Build** (or a build the radio can't name) puts
+`build` after `update`. On the HR_C7000 radios an update that keeps the codec runs from the check to the write without
+another click, once per cable session; a failed write, and the step reached by **Back**, wait for the button.
+
+Which build runs (`update.js` `currentBuild`), from VERSION ([debuglink.md](../spec/debuglink.md) 3.1):
+
+| Radio says | Build | The update |
+|---|---|---|
+| `preset=` a variant, `off=` | that variant | the same variant; features it gained since are listed |
+| `preset=custom`, `off=` equal to a variant's | that variant | as above |
+| `preset=custom`, `off=` | custom | every switch as it was; each feature added since is asked, On or Off, before Update |
+| neither (older firmware) | its `features=` against the variants of its release, by the names `features=` can carry (`features.json` `reported`) | one exact match: that variant; else the build step, from the closest |
+
+The release a radio's build came from is the one with its commit, else the newest one older than its `git_time`. What
+that release knew is its variants' features and its manifests' `off` lists (`tools/release.py`): a switch in neither
+is new. A release from before manifests carried `off` names only its variants' features, so a switch a custom build had
+on in no variant reads as new, once.
+
+The Codeplug Editor's **Update Firmware** opens `flash/index.html#update` and closes its own connection.
 
 ## Radio access backends
 
@@ -417,13 +448,15 @@ chip.
 
 The boot ROM waits about 48 ms for the answer to its greeting (measured; the radio pages have the timing), and
 the greeting in and the answer out both cross the cable and the browser's read loop. When the load fails, the ROM says
-it stopped waiting (`00 10 00 03`, error code `rom-late`, or `rom-booted` when no greeting was seen), or nothing is
-heard for 25 s, the page offers the **slow cable mode** (`slowCable()` in `c7000ui.js`). After the user selects
-"Radio Is Off", `waitForRom({ repeat: ROM_REPEAT })` sends the answer every 30 ms, and on for 150 ms after the greeting,
-so one leaves within 30 ms of it whatever the cable's latency. The page then waits for the line to go quiet (the ROM
-NAKs the extra answers) before block 0. It never starts with the radio possibly on: the firmware of a radio left on
-would get the answers too (RadioFoundry ignores them; stock firmware is untested). Once the slow cable mode failed too,
-the factory update mode is the main action. `stubtool.py --slow-cable` does the same.
+it stopped waiting (`00 10 00 03`, error code `rom-late`, or `rom-booted` when no greeting was seen). Answering only
+after the greeting arrived failed often on the first try, so every wait for the ROM uses the **slow cable mode**
+(`powerCycle()` in `c7000ui.js`; it was once a choice offered after a failure, and a collapsed note on these panels
+says where it went): `waitForRom({ repeat: ROM_REPEAT })` sends the answer every 30 ms, and on for 150 ms after the
+greeting, so one leaves within 30 ms of it whatever the cable's latency. The page then waits for the line to go quiet
+(the ROM NAKs the extra answers) before block 0. The firmware of a radio left on gets the answers too: RadioFoundry
+ignores them, stock firmware is untested. So on a radio not known to run RadioFoundry the sending starts only after the
+user selects "Radio Is Off"; RadioFoundry's soft reset and a power cycle of a radio it found running RadioFoundry start
+at once. When the load fails, the factory update mode is the main action. `stubtool.py --slow-cable` does the same.
 
 ### The factory update mode
 
@@ -437,7 +470,7 @@ no steps.
 | `iap` | `iap.js` | Erase, then 2 KB pages with an additive checksum the loader reports back. The install image starts with the first stage. A radio without a complete application stays in this mode at every power-on, so the page probes for it when nothing else answers |
 | `baofeng` | `bfloader.js` | The Baofeng updater (the protocol `tools/serial_loader.py` names, on the radio pages of the boards that use it): steps 1-3 identify the loader by the board's `bootloader_id`, step 7 erases the whole application area (the codec slot included), then 1 KB blocks, each acknowledged by its CRC-16/XMODEM. A port of `tools/serial_loader.py`'s `Flasher`; `site/tests/bfloader.test.mjs` checks the bytes it sends against the Python tool's (`fixtures.py`) and runs it against `FakeBfLoader` |
 
-The page offers it once the slow cable mode failed too (above), in Troubleshooting
+The page offers it when the boot ROM load fails (above), in Troubleshooting
 (`recovery.extra`, "Reinstall in Factory Update Mode"), and where the stock console and the first stage routes offer it.
 Nothing is read from the radio this way, so the check step takes the codec from a file (`factoryRoute()` in
 `c7000ui.js`): the stock firmware file where a profile of the board names one, else a program memory backup (or a slot
@@ -582,6 +615,13 @@ A radio whose image depends on more than the feature switches lists the choices 
 before it builds, or takes it from a connected radio's debug link name (`board_name`), sends it with the request, and
 refuses an image whose manifest doesn't carry it (`build_options`). The current-firmware step refuses a radio whose name
 says another value.
+
+The firmware's language packs are feature switches named `LANG_<CODE>` (`CONFIG_LANG_ES`, the code upper-cased). When
+the browser's languages (`navigator.languages`, primary subtag) include one the radio can have a pack for and the
+selection leaves it out, the build step offers it under the build cards: one button turns the switch on, another
+dismisses the offer until the page reloads. Only the first language the browser asks for that has a pack counts, and
+English (the firmware's own) never does. The code comes from the switch name alone (`flasher/langsuggest.js`), so a new
+pack needs no flasher change. Strings: `flash.build.pack_*`.
 
 ## Version links
 

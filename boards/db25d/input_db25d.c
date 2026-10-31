@@ -106,6 +106,14 @@ static void gpiob_isr(void)
 	}
 }
 
+// The interrupt watch serves the bank from the scan if the interrupt is ever lost (hardware-db25d.md 3.3)
+static const hrc_gpio_watch_t enc_watch = {
+	.bank = GPIOB_BASE,
+	.bits = (1u << (PIN_ENC_A & 31u)) | (1u << (PIN_ENC_B & 31u)),
+	.isr = gpiob_isr,
+	.source = IRQ_GPIOB,
+};
+
 static void init(void)
 {
 	for (uint8_t r = 0; r < KEY_DRIVES; r++) {
@@ -121,7 +129,7 @@ static void init(void)
 	enc_taken = 0;
 	ptt_low = 0;
 	mic_levels = (uint8_t)((hrc_pin_read(PIN_MIC_RXD) ? 1u : 0u) | (hrc_pin_read(PIN_PTT2) ? 2u : 0u));
-	hrc_irq_register(IRQ_GPIOB, gpiob_isr);
+	hrc_gpio_watch_register(&enc_watch);
 	hrc_pin_irq(PIN_ENC_A, true, true, false);
 	hrc_pin_irq(PIN_ENC_B, true, true, false);
 	hrc_irq_enable(IRQ_GPIOB, true);
@@ -174,6 +182,7 @@ static void sample_mic_lines(void)
 // Called every 10 ms: a change is reported once two scans in a row agree
 static uint32_t scan(void)
 {
+	hrc_gpio_watch_scan();
 	uint32_t raw = scan_matrix();
 	uint8_t mic = mic_bit(db25d_mic_key());
 	if (mic != N) {
@@ -214,6 +223,7 @@ static void encoder_stats(hal_encoder_stats_t *st)
 	st->illegal = enc.illegal;
 	st->reversals = enc.reversals;
 	st->steps_per_detent = ENC_STEPS;
+	hrc_gpio_watch_stats(st);
 }
 
 const hal_input_t db25d_input = {

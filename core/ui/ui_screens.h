@@ -35,6 +35,8 @@ typedef enum {
 typedef struct {
 	uint8_t kind;		// ui_banner_kind_t
 	bool warn;		// a failure: amber
+	bool hold;		// stays until opened, hidden with BACK or what it is about is gone (until_ms unused)
+	uint8_t name_at;	// where the station's name starts in title (0: none): a title too long breaks there
 	uint32_t until_ms;
 	uint32_t id;		// the station it is about (0 = none)
 	uint16_t msg;		// UI_BANNER_MESSAGE: the message's index in the inbox
@@ -133,6 +135,7 @@ enum {
 	QT_POWER, QT_SQUELCH, QT_TONE, QT_MODE, QT_MONITOR, QT_VOX, QT_SCAN, QT_BANDWIDTH, QT_BRIGHTNESS,
 	QT_TIMESLOT, QT_CC, QT_HEAR_ALL, QT_PRIVACY, QT_TALK_TO,
 	QT_TO_VFO,		// on a channel, in place of QT_MODE: copy the channel to the VFO
+	QT_SPLIT,		// in the VFO, in place of QT_MONITOR (FM) / QT_PRIVACY (DMR): the TX frequency or offset
 
 };
 // The tile kind at position 0..8 (keys 1..9) for this channel or the VFO
@@ -258,6 +261,8 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 bool ui_freq_entry_digit(char *digits, uint8_t *len, char d);
 // The typed frequency, or 0 with a toast saying why (fewer than the MHz digits, not in a band)
 uint32_t ui_freq_entry_hz(const char *digits, uint8_t len);
+// The same without a toast: 0 for too few or too many digits, or outside the receive bands (Find's Tune VFO row)
+uint32_t ui_freq_parse(const char *digits, uint8_t len);
 // Text for the board's bands ("136-174 400-480"), for hints
 void ui_bands_text(char *out, size_t len);
 // The board's power level name

@@ -8,6 +8,10 @@
 CONFIG_GD77_TX ?= n
 MCU_DEFS += -DCONFIG_GD77_TX=$(if $(filter y,$(CONFIG_GD77_TX)),1,0)
 # USB serial (CDC-ACM) with the host link, the debug link and the open-firmware CPS (docs/spec/hardware-gd77.md 13)
+# The radio's languages: off, as the image doesn't fit the flash below the codec slot with them (11 KB over with
+# Spanish); the maximal configuration leaves them off too
+CONFIG_LANG_ES ?= n
+MAXIMAL_SKIP := LANG_ES LANG_IT LANG_DEFAULT_ES LANG_DEFAULT_IT
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): off by default, and off in ci's maximal configuration
 CONFIG_AM_RX ?= n
@@ -19,6 +23,7 @@ CONFIG_UI_COLOR ?= n
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver: the AT1846S is FM only (docs/spec/airband-and-broadcast.md)
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/hardware-gd77.md 1)
 BOARD_UNSUPPORTED += GPS	# no GPS receiver (docs/spec/hardware-gd77.md 1)
+BOARD_UNSUPPORTED += GPS_SKY	# no GPS receiver (above)
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is a SPI NOR (docs/spec/hardware-gd77.md 6.2)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (docs/spec/hardware-gd77.md 3.1)
 BOARD_UNSUPPORTED += FONT_XL	# the 128x64 panel is too small for the large font (it is for 240 px and wider)
@@ -48,6 +53,7 @@ BOARD_NOT_WRITTEN += NET_TCP	# a service of the USB network adapter (above)
 BOARD_NOT_WRITTEN += NET_KISS	# a service of the USB network adapter (above)
 BOARD_NOT_WRITTEN += NET_HTTP	# a service of the USB network adapter (above)
 BOARD_NOT_WRITTEN += NET_HTTP_GZIP	# a service of the USB network adapter (above)
+BOARD_NOT_WRITTEN += NET_WEBCTL	# a service of the USB network adapter (above)
 BOARD_NOT_WRITTEN += NET_RIGCTL	# a service of the USB network adapter (above)
 BOARD_NOT_WRITTEN += NET_APRSIS	# a service of the USB network adapter (above)
 BOARD_NOT_WRITTEN += NET_USRP	# a service of the USB network adapter (above)

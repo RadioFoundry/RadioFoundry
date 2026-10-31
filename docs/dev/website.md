@@ -65,7 +65,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Feature names, help, dependencies | `config/features.mk` (the comment above each switch, the `needs` checks) |
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
-| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has. The Screenshots page (`/screenshots/`) shows every screen each radio's build has, a section per board, under the `groups` headings of `screens.json`, in its order. The home page's carousel lists its screens in `site/templates/home.html`, from every gallery, one height |
+| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has. The Screenshots page (`/screenshots/`) shows every screen each radio's build has, a section per board, under the `groups` headings of `screens.json`, in its order. The home page's carousel lists its screens in `site/templates/home.html`, from every gallery, one height. Every page shows the scaled copies ([Screenshot copies](#screenshot-copies)) |
 | Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/rfoundry/rfoundry/registry.json`, read through `boards.py`) and `stockfw.py` (the USB HID update route: `k22fcodec.py`, `updatefile.py`, `hidboot.py`), exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
@@ -83,7 +83,7 @@ links to a file the build didn't write.
 `/screenshots/` has a section per board, from the registry in its order, and a link per board at the top. Each section
 shows every shot in the board's gallery whose `screens.json` entry needs only switches the board's full build has (the
 radio page's six use the same test). A board's screens are one width: a gallery 160 pixels wide or less at twice its
-size (`image-rendering: pixelated`), a wider one as it is. A color page's shots in other highlight colors and themes
+size, a wider one as it is. A color page's shots in other highlight colors and themes
 (`<page>__<color>`) follow the page, hidden until the visitor ticks "Also show other highlight colors and themes" (CSS
 `:has()`, no script). `site.js` switches sections without reloading and keeps the address `#<radio>`, so a link can
 name a radio (each radio page links to its own). Without the script, CSS shows the section the address names
@@ -97,6 +97,25 @@ Nothing on the page names a screen, a group or a radio:
 | A group | `groups` in `screens.json` and its heading `screens.group.<group>` in `en.json` |
 | A radio | `boards/<radio>/` as [Adding a radio](adding-a-radio.md) says; `board.toml` `hardware.gallery` must name a display class the gallery has (`tools/boards.py check`) |
 
+## Screenshot copies
+
+The gallery holds each screen at its panel's size. The pages draw screens larger, at sizes that are rarely a whole
+multiple of it, on displays whose device pixel ratio may be fractional (125 %, 150 %). Nearest-neighbor scaling
+(`image-rendering: pixelated`) then makes some pixel rows wider than others, and a browser that ignores the property
+blurs them. So `site/rfoundrysite/shots.py` writes a copy of every gallery screen, `static/img/screens/<gallery>/`,
+scaled up a whole number of times with hard pixel edges, and the browser scales it down smoothly: every pixel keeps
+one width, at any size.
+
+| What sets it | How |
+|---|---|
+| The factor, per gallery | `ceil(2 × largest CSS width a page draws it at ÷ its width)`: enough for a device pixel ratio of 2 |
+| The widths | Each page reports where it draws a screen. The CSS sizes come from `site.css` (`--shot-h` of `.carousel`, `--shot-col` of `.shots`, the `max-width` of `.device-frame` and `.rt-pic`, the heights of `.hero-device img` and `.radio-card img`), the drawings' screen position from `frame_geometry` |
+| The drawings | `<radio>.svg` and a look's drawing embed the boot screen's copy |
+
+The build fails when one of those rules is gone from `site.css`. The copies carry no `image-rendering`. The docs
+pages still link the gallery's own files, shown with `image-rendering: pixelated`. A higher pixel ratio than 2 scales
+a copy up a little, smoothly. `site/tests/shots_test.py` checks the scaling.
+
 ## Layout
 
 | Path | What |
@@ -106,6 +125,7 @@ Nothing on the page names a screen, a group or a radio:
 | `site/rfoundrysite/build.py` | Assembles the pages and data files |
 | `site/rfoundrysite/docs.py` | `docs/` to HTML: GitHub heading ids, `.md` links to `.html`, links out of `docs/` to the repository |
 | `site/rfoundrysite/device.py` | Radio images: frame, overlay geometry, boot screen composite |
+| `site/rfoundrysite/shots.py` | The gallery screens' scaled copies ([Screenshot copies](#screenshot-copies)) |
 | `site/rfoundrysite/toolzip.py` | `downloads/rfoundry-tool.zip`: rfoundry from the site's commit for the flasher's manual install kit, with a launcher; `data/site.json` `tool` gives its path, size and SHA-256 ([web-flasher.md](web-flasher.md#the-manual-install-kit)). `site/tests/toolzip_test.py` runs it unpacked |
 | `site/rfoundrysite/social.py` | The link preview image (`static/img/social.png`, every page's `og:image`): each radio with a different screen, rasterized with resvg |
 | `site/rfoundrysite/tmpl.py`, `site/templates/` | Page markup (below) |
@@ -174,16 +194,75 @@ identifiers with digits or underscores are skipped). Add an entry for each one t
 
 ## Translating
 
-`site/i18n/languages.json` lists the languages. The default (English) is at the site root, others under `/<code>/`.
-Each language has a flat catalog `site/i18n/<code>.json`; a missing key falls back to English. The flasher and the
-Tools page get their strings from the same catalog (embedded in the page). Text that comes from the repository
-(feature help, variant reasons) is English at its source; a catalog can override it with `feature.<SWITCH>.title`,
-`feature.<SWITCH>.help`, `variant.<id>.title`, `variant.<id>.summary` or `group.<slug>`.
+How to add a language, radio and site: [translating.md](translating.md). `site/i18n/languages.json` lists the languages. The default (English) is at the site root, others under `/<code>/`.
+The header's language menu (`details.lang-switch`) links the page in every language. On a first visit, when the browser's first language the site has isn't the page's, a bar under the header offers it, in that language (`static/js/langhint.js`; the words come from each catalog's `nav.lang_*` keys). It never redirects. Picking a language or dismissing the bar is remembered (`localStorage` `rfoundry-lang`).
+Each language has a flat catalog `site/i18n/<code>.json`; a missing key falls back to English, key by key. The
+flasher, the Codeplug Editor and the Tools page get their strings from the same catalog, embedded in the page
+(`<script id="i18n">`, read by `static/js/i18n.js`). Text that comes from the repository (feature help, variant
+reasons) is English at its source; a catalog can override it with `feature.<SWITCH>.title`, `feature.<SWITCH>.help`,
+`variant.<id>.title`, `variant.<id>.summary` or `group.<slug>`.
+
+| `languages.json` field | Meaning |
+|---|---|
+| `code` | The URL prefix and `<html lang>`: `es`, `pt-BR` |
+| `name` | The language's name in itself (`Español`): the switcher's label |
+| `dir` | `ltr` or `rtl`: `<html dir>` |
+| `locale` | `og:locale` for link previews (`es-ES`); the code when left out |
+
+With more than one language, every page gets a language switcher in the header (a link to the same page in each
+language), `<link rel="alternate" hreflang>` for each language plus `x-default`, and its own `404.html` in each
+language's tree. Links between pages use `{{home}}` (templates) or `HOME` (`flasher/dom.js`), so they stay in the
+visitor's language. With one language there is no switcher and no alternate links.
 
 A translated documentation page goes in `docs/i18n/<code>/<path under docs>`. Pages without one are shown in
-English with a notice.
+English with a notice, the text marked `lang="en"`.
 
-To add a language: copy `en.json` to `<code>.json`, translate, add the language to `languages.json`.
+### Plurals, numbers and dates
+
+| Need | How |
+|---|---|
+| A count in the text | Plural forms: `key.one`, `key.other` (and `key.zero`, `key.two`, `key.few`, `key.many` where the language has them). Pass the count as the number `n`: `t("key", { n: 3 })`, `self.t(lang, "key", n=3)` |
+| Which form | The scripts: `Intl.PluralRules` of the page's language. The generator: `PLURAL_RULES` in `site/rfoundrysite/i18n.py`; a language whose rule differs from English's gets an entry there |
+| A language's forms | It uses its own forms when its catalog has the family (`key.other`), never a mix with English's |
+| Numbers | `n` is written in the page's language (`1,200`, `1.200`). Any other number: `num(x)` from `flasher/dom.js`, with `Intl.NumberFormat` options for decimals |
+| Dates | `date(d, options)` and `localTime(iso)` from `flasher/dom.js`: the page's language, the visitor's time zone |
+
+To give an English string plural forms, replace its key with `key.one` and `key.other` in `en.json`, then the
+translations.
+
+### The check
+
+Every build checks the catalogs (`i18n.check()` in `site/rfoundrysite/i18n.py`) and warns, an error with `--strict`:
+
+- each file is valid JSON with no key twice;
+- `languages.json` names its default among the languages, each with a code, a name and `ltr` or `rtl`;
+- a catalog other than English has only keys `en.json` has. A plural form counts when `en.json` has the family;
+- each string keeps the English placeholders (`{name}`, `{{...}}`) and HTML tags. A plural form other than `other`
+  may leave `{n}` out ("one file").
+
+`python3 -m rfoundrysite.i18n` (from `site/`) runs the check alone, and also fails on a key a language lacks
+(`i18n.missing()`): the site works without it, but a pull request leaves none ([translating.md](translating.md)). `site/tests/i18n_test.py` tests the check and
+builds the site with a made-up second language: pages under `/es/`, the switcher, alternate links, English where the
+catalog has no string. `site/tests/i18n.test.mjs` tests the scripts' side. `tools/ci.sh` runs both.
+
+### Adding a language
+
+1. Copy `en.json` to `<code>.json` and translate. Leave a string out rather than copy it: English fills in.
+2. Add the language to `languages.json`.
+3. If its plural rule differs from English's, add it to `PLURAL_RULES` in `site/rfoundrysite/i18n.py`.
+4. Build and look: `python3 site/build.py --serve`, then `http://localhost:8000/<code>/`. `--strict` shows any
+   catalog problem.
+
+### What stays English
+
+| Text | Why |
+|---|---|
+| Radio facts from `board.toml`: bootloader key steps, build options, notices, bands, variant checks | Repository data, one per radio. A catalog can translate a radio's summary (`radio.note.<radio>`) |
+| A variant's reason for leaving a feature out (`config/variants/*.mk`) | Repository data |
+| Error messages from the protocol modules (`stub.js`, `dfu.js`, `link.js`, ...) shown after a translated explanation | The exact words for the technical details and the bug report. The page maps the common ones to catalog strings (`errorText` in `flasher/app.js`) |
+| The flasher's log box and diagnostic notes | Technical log, read with a bug report |
+| `README.txt` of the manual install kit and of a backup bundle | Files that go with the tool, like the documentation |
+| Glossary definitions | `docs/glossary.json`, part of the documentation |
 
 ## Radio images
 

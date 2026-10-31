@@ -55,6 +55,16 @@ static const flow_t flows[] = {
 	{ "6 canned to contact by name", "", "5 6 3 ctx 3 ok", "sent=1 text=OK", 6, false },
 	{ "7 read message, banner up", "msg:3101234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:3101234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
+#if CONFIG_ZONE_SHARE
+	// An offer's banner has no timer: it waits for #, BACK or the offer's end (zone-share.md 5.2)
+	{ "zone offer banner still up a minute later", "zoneoffer:3101234", "wait:60000", "shows=Zone_from", 0, false },
+	{ "zone offer banner opens a minute later", "zoneoffer:3101234 wait:60000", "ctx", "shows=Import", 1, false },
+	{ "zone offer banner hidden with Back", "zoneoffer:3101234", "back", "banner=none screen=home", 1, false },
+	{ "zone offer banner goes with the offer", "zoneoffer:3101234 wait:5000", "zoneexpire", "banner=none", 0, false },
+	{ "zone offer banner hidden with Back on a menu", "zoneoffer:3101234 ok", "back", "banner=none screen=hub", 1, false },
+	{ "zone offer banner goes when Tools opens the offer", "zoneoffer:3101234", "ok 6 0", "banner=none shows=Import", 3,
+	  false },
+#endif
 	{ "8 radio check last caller", CALLER, "ctx 4", "checks=1", 2, false },
 	{ "8 radio check by name", "", "5 6 3 ctx 4", "checks=1", 5, false },
 	{ "9 power one step", "", "quick 1 back", "power=8 screen=home", 3, false },
@@ -93,6 +103,29 @@ static const flow_t flows[] = {
 	{ "11 dual watch: Tools > Scan, a zone scan instead", "quick 7 ctx 3 5 ok", "ok 6 1", "dual=0 scanning=1", 3, false },
 	{ "11 dual watch: the last B after power off", "quick 7 ctx 3 5 ok back back reboot", "quick 7", "dual=1 sel=A bpos=5",
 	  2, false },
+	{ "S freq trim opens its page", "trim", "ok 7 0 up ok", "screen=freq-trim shows=440_MHz shows=144_MHz", 9, false },
+	{ "S freq trim: Down steps 0.1 ppm at once", "trim ok 7 0 up ok", "down down",
+	  "set77=-200 shows=-0.2 shows=-88_Hz", 2, false },
+	{ "S freq trim: # 4 5 OK types -4.5 ppm", "trim ok 7 0 up ok", "ctx 4 5 ok",
+	  "set77=-4500 shows=-1980_Hz screen=freq-trim", 4, false },
+	{ "S freq trim: # flips the sign", "trim ok 7 0 up ok up up", "ctx", "set77=-200", 1, false },
+	{ "S freq trim: BACK takes a digit back", "trim ok 7 0 up ok 1 2", "back ok", "set77=100", 2, false },
+	{ "S freq trim: past 10.0 ppm is refused", "trim ok 7 0 up ok 1 0", "1", "toast=Up_to_10.0", 1, false },
+	{ "S freq trim: OK leaves", "trim ok 7 0 up ok", "ok", "screen=group shows=Freq_trim", 1, false },
+	{ "S no freq trim without the hook", "", "ok 7 0", "hides=Freq_trim", 3, false },
+	// Settings > Display > Language, the last row (i18n.h; set78 = UI_SET_LANGUAGE, 'e' << 8 | 's' = 25971 Spanish,
+	// 'e' << 8 | 'n' = 25966 English picked; 0 never picked)
+	{ "S language list", "", "ok 7 2 up ok", "screen=language shows=English", 5, false },
+#if CONFIG_LANG_ES
+	{ "S language: Spanish", "", "ok 7 2 up ok down ok", "set78=25971 screen=group shows=Idioma", 7, false },
+	// A long banner title breaks before the station's name, also at a name that holds the word (" de ")
+	{ "S language: a banner keeps the name whole", "ok 7 2 up ok down ok back back back", "privcall:3101500,Maria_de_la_Cruz",
+	  "shows=Llamada_privada shows=Maria_de_la_Cruz", 0, false },
+	{ "S language: back to English", "ok 7 2 up ok down ok", "ok up ok", "set78=25966 shows=Language", 3, false },
+#else
+	{ "S language not in this build: dimmed", "", "ok 7 2 up ok down ok",
+	  "set78=0 toast=Not_in_this_build screen=language", 7, false },
+#endif
 	{ "S FM broadcast step on a radio with the receiver", "bcast", "ok 7 3 down down down down", "shows=FM_broadcast_step",
 	  7, false },
 	{ "11 dual watch talk back on", "", "ok 7 3 down down down down down down down down down ok", "shows=Dual_watch_talk_back", 13,
@@ -196,7 +229,7 @@ static const flow_t flows[] = {
 	// task-flows.md 12 says 3: the VFO row is first but Channels opens on the current zone (flow 2), so one Up
 	{ "C channels: every channel", "", "ok 5", "screen=channels focus=3_", 2, false },
 	{ "C a channel's settings", "", "ok 5 ok", "screen=channel", 3, false },
-	// The channel's last rows are Go to it, Share channel to... (with zone sharing) and Save as new channel: Ups from
+	// The channel's last rows are Tune to this ch, Share channel to... (with zone sharing) and Save as new channel: Ups from
 	// the first row (lists wrap)
 #if CONFIG_ZONE_SHARE
 #define CE_SHARE_UP	" up"
@@ -243,8 +276,16 @@ static const flow_t flows[] = {
 	// simplex; on channel 3 the own ID is row 12 and the TX time-out row 17
 	{ "E new RX keeps the repeater offset", "ok 5 up up ok down down down", "ok 1 4 7 0 0 ok",
 	  "shows=147.000 shows=146.4 shows=600_kHz", 7, false },
+	{ "E new RX in another band: simplex", "ok 5 up up ok down down down", "ok 4 4 6 0 0 0 ok",
+	  "shows=446.000 hides=445.4 hides=-600", 8, false },
 	{ "E new RX: an offset off the bands makes it simplex", "ok 5 up up ok down down down", "ok 1 3 6 0 0 ok",
 	  "shows=136.000 hides=135.4 hides=-600", 7, false },
+	{ "E RX in a receive-only band: RX only, saved", "ok 5 up up ok down down down", "ok 1 2 1 5 0 0 ok long:ok",
+	  "writes=1", 9, true },
+	{ "E RX in a receive-only band: RX only and FM before the save", "ok 5 up up ok down down down", "ok 1 2 1 5 0 0 ok down down down",
+	  "shows=FM shows=RX_only shows=Yes", 11, false },
+	{ "E a DMR channel's RX in a receive-only band: FM", "ok 5 ok down down down", "ok 1 2 1 5 0 0 ok",
+	  "shows=121.500 shows=FM hides=Color_code", 8, false },
 	{ "E RX refuses a digit no band starts with", "ok 5 up up ok down down down", "ok 2", "toast=Bands:", 2, false },
 	{ "E RX needs the MHz digits", "ok 5 up up ok down down down", "ok 1 4 ok", "toast=Type_at_least screen=channel",
 	  4, false },
@@ -266,6 +307,17 @@ static const flow_t flows[] = {
 	  "shows=103.5 hides=100.0", 3, false },
 	{ "E TX tone spinner, Down", "ok 5 up up ok down down down down down down down down down", "ok down ok",
 	  "shows=97.4", 3, false },
+	// Digits type the tone: CTCSS with the last digit the tenths, whole Hz under 60; a leading 0 types a DCS code
+	{ "E RX tone typed, tenths", "ok 5 up up ok down down down down down down down down", "ok 8 8 5 ok", "shows=88.5 writes=0", 5, false },
+	{ "E RX tone typed, whole Hz", "ok 5 up up ok down down down down down down down down", "ok 6 7 ok", "shows=67.0", 4, false },
+	{ "E TX tone typed over the stored one", "ok 5 up up ok down down down down down down down down down", "ok 1 3 1 8 ok", "shows=131.8 hides=100.0", 6, false },
+	{ "E TX tone shows the digits as typed", "ok 5 up up ok down down down down down down down down down", "ok 8 8", "shows=88.0", 3, false },
+	{ "E RX tone typed DCS", "ok 5 up up ok down down down down down down down down", "ok 0 2 3 ok", "shows=D023N", 5, false },
+	{ "E DCS refuses digits past 7", "ok 5 up up ok down down down down down down down down", "ok 0 2 8", "toast=DCS_codes_use shows=D2", 4, false },
+	{ "E DCS not on the list is refused", "ok 5 up up ok down down down down down down down down", "ok 0 7 7 7 ok", "toast=Not_a_DCS_code", 6, false },
+	{ "E CTCSS out of range is refused", "ok 5 up up ok down down down down down down down down", "ok 9 9 9 9 ok", "toast=CTCSS_goes", 6, false },
+	{ "E BACK takes a tone digit back", "ok 5 up up ok down down down down down down down down", "ok 8 8 5 back ok", "shows=88.0", 6, false },
+	{ "E the knob steps on from a typed tone", "ok 5 up up ok down down down down down down down down", "ok 8 8 5 up ok", "shows=91.5", 6, false },
 #endif
 	{ "E DMR needs a TX contact to save", "ok 5 ok down down down down down down down down down", "ok up ok long:ok",
 	  "toast=Pick_a_TX writes=0", 4, false },
@@ -292,10 +344,44 @@ static const flow_t flows[] = {
 	{ "12 446.000 in the VFO", "ok 4 up ok", "4 4 6 0 0 0 ok", "freq=446000000", 7, false },
 	{ "13 lock", "", "long:quick", "locked=1", 1, false },
 	{ "13 unlock", "long:quick", "long:quick", "locked=0", 1, false },
-	{ "14 GPS details", "", "ok 6 2", "screen=info", 3, false },
+	{ "14 GPS details", "", "ok 6 2", "screen=gps", 3, false },
 	{ "15 hotspot page", "", "ok 6 3", "screen=info", 4, false },
 	{ "15 stop hotspot", "hotspot:on", "ok", "hotspot=0", 2, false },
 	// Tile 4 on a channel copies it to the VFO (docs/spec/dmr-voice.md 2.2); the VFO's own tile 4 stays Mode
+	// The VFO's TX freq tile (5 on FM, 6 on DMR, where a channel has Monitor / Privacy): Up / Down walk the band's
+	// usual offsets out from Off; digits a TX frequency; a new RX in the same band keeps the offset
+	{ "18 VFO split: Up adds the repeater offset", "ok 4 up ok", "quick 5 up ok",
+	  "freq=146520000 txfreq=147120000 shows=+600k", 4, false },
+	{ "18 VFO split: Down from Off subtracts it", "ok 4 up ok", "quick 5 down ok", "txfreq=145920000", 4, false },
+	{ "18 VFO split: back to Off", "ok 4 up ok quick 5 up ok", "5 down ok", "txfreq=146520000 shows=Off", 3, false },
+	{ "18 VFO split: a typed TX frequency", "ok 4 up ok", "quick 5 1 4 7 0 0 ok", "freq=146520000 txfreq=147000000",
+	  8, false },
+	{ "18 VFO split: BACK takes a digit back", "ok 4 up ok quick 5 1 4 7", "back", "screen=quick shows=14", 1, false },
+	{ "18 VFO split: too few digits keep the editor", "ok 4 up ok quick 5 1 4", "ok",
+	  "screen=quick toast=Type_at_least txfreq=146520000", 1, false },
+	{ "18 VFO split: a new RX keeps the offset", "ok 4 up ok quick 5 up ok back", "1 4 6 0 0 0 ok",
+	  "freq=146000000 txfreq=146600000", 7, false },
+	{ "18 VFO split on 2 m: Up again 1 MHz", "ok 4 up ok", "quick 5 up up ok", "txfreq=147520000 shows=+1M", 5,
+	  false },
+	{ "18 VFO split: the hint says Up/Dn and the digits", "ok 4 up ok", "quick 5", "shows=Up/Dn shows=0-9", 2,
+	  false },
+	{ "18 VFO split: the typed TX frequency whole in the hint", "ok 4 up ok", "quick 5 1 4 7 0 2",
+	  "shows=TX_147.02 shows=<TX>", 7, false },
+	{ "18 VFO split on 70 cm: Up 5 MHz first", "ok 4 up ok 4 4 6 0 0 0 0 ok", "quick 5 up ok", "txfreq=451000000 shows=+5M", 4, false },
+	{ "18 VFO split on 70 cm: Up again 7.6 MHz", "ok 4 up ok 4 4 6 0 0 0 0 ok", "quick 5 up up ok", "txfreq=453600000 shows=+7.6M", 5, false },
+	{ "18 VFO split on 70 cm: Down twice -7.6 MHz", "ok 4 up ok 4 4 6 0 0 0 0 ok", "quick 5 down down ok", "txfreq=438400000", 5, false },
+	{ "18 VFO split on 70 cm: the line stops at 1.6 MHz", "ok 4 up ok 4 4 6 0 0 0 0 ok", "quick 5 up up up up up ok",
+	  "txfreq=447600000 shows=+1.6M", 8, false },
+	{ "18 VFO split: a typed TX goes to the usual offset its way", "ok 4 up ok 4 4 6 0 0 0 0 ok quick 5 4 4 7 0 0 0 0 ok", "5 down ok",
+	  "txfreq=441000000", 3, false },
+	{ "18 VFO split: a new RX in another band is simplex", "ok 4 up ok quick 5 up ok back", "4 4 6 0 0 0 0 ok",
+	  "freq=446000000 txfreq=446000000", 8, false },
+	{ "18 VFO split: Home digits start fresh after Split", "ok 4 up ok quick 5 1 4 7 long:back", "1 4 6 0 0 0 ok",
+	  "freq=146000000", 7, false },
+	{ "18 VFO split on DMR: tile 6", "ok 4 up ok quick 4", "6 up ok", "mode=dmr txfreq=147120000", 3, false },
+	{ "18 VFO split: transmitting shows the TX frequency", "ok 4 up ok quick 5 up ok back", "pttdown",
+	  "shows=147.120", 1, false },
+	{ "18 a channel keeps Monitor", "down", "quick 5", "hides=TX_freq hides=TXFreq txfreq=147660000", 2, false },
 	{ "18 Copy to VFO from a DMR channel", "", "quick 4", "vfo=1 mode=dmr screen=home toast=Copied_to_VFO temporary=0",
 	  2, false },
 	{ "18 Copy to VFO from an FM channel", "down", "quick 4", "vfo=1 mode=fm freq=147060000 toast=Copied_to_VFO", 2,
@@ -368,6 +454,13 @@ static const flow_t flows[] = {
 	{ "S DMR ID: past the last is refused", "ok 7 9 ok", "1 6 7 7 6 4 1 6", "toast=IDs_go_up", 8, false },
 	{ "S DMR ID: the refused digit isn't kept", "ok 7 9 ok", "1 6 7 7 6 4 1 6 ok", "set76=1677641", 9, false },
 	{ "S DMR ID 0 is refused", "ok 7 9 ok 3 1 ok", "0 ok", "set76=31 toast=IDs_start screen=dmr-id", 2, false },
+	// My radio's names (the codeplug's radio name and boot lines): OK types the row's text, OK saves it
+	{ "S radio name opens text entry", "ok 7 9 ok", "down ok", "screen=text", 2, false },
+	{ "S radio name typed and saved", "ok 7 9 ok down ok", "2 ok", "screen=dmr-id toast=Saved writes=1 shows=N0CALLA", 2, true },
+	{ "S boot line 2 typed and saved", "ok 7 9 ok down down down ok", "2 ok", "screen=dmr-id toast=Saved writes=1 shows=Jamie_ThompsonA", 2,
+	  true },
+	{ "S digits on a name row type no ID", "ok 7 9 ok down", "3 1",
+	  "screen=dmr-id focus=Radio_name toast=No_item_with_that_number", 2, false },
 	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
 	{ "S vibrate on a message", "", "msg:3101234,Hi", "vibes=1 vibe=0", 0, false },
 	{ "S vibrate on a call alert", "", "alert:91", "vibes=1 vibe=1", 0, false },
@@ -451,6 +544,12 @@ static const flow_t flows[] = {
 	{ "A latitude BACK takes a digit back", "ok 6 8 9", "2 3 9 back 3 ok", "aprs_lat=330000000", 6, false },
 	{ "A latitude BACK leaves unchanged", "ok 6 8 9", "2 1 back back", "aprs_lat=0 screen=aprs-pos", 4, false },
 	{ "A position in DMR calls", "", "ok 6 8 0", "aprs_dmrgps=1 toast=Position_goes_out", 4, false },
+	// Tools > Position's pages (CONFIG_GPS_SKY, ui_gps.c): Up / Down or the digits turn them
+	{ "G GPS status page", "", "ok 6 2", "shows=3D_Fix", 3, false },
+	{ "G GPS sky page", "ok 6 2", "down", "screen=gps shows=Sky", 1, false },
+	{ "G GPS signal page", "ok 6 2", "3", "shows=9_of_14_in_the_fix", 1, false },
+	{ "G GPS grid page", "ok 6 2", "4", "shows=FN42li", 1, false },
+	{ "G GPS pages wrap", "ok 6 2", "up down", "shows=Status", 2, false },
 	{ "A KISS on USB", "ok 6 8", "up up ok", "aprs_kiss=1", 3, false },
 	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
 	{ "A not in this build", "aprs:off", "ok 6 8 2", "toast=APRS:_not aprs_auto=0", 4, false },
@@ -536,13 +635,28 @@ static const flow_t flows[] = {
 	{ "25 add channel offers only what the zone doesn't hold", "ok 4 ctx 2", "ok", "screen=zpick count=24", 1, false },
 	{ "25 remove from zone", "ok 4 ctx ctx", ZC_REMOVE_KEY, "screen=zone writes=1 toast=Removed_from_Local", 1, true },
 	{ "26 copy the zone in use", "", "ok 4 ctx up up up up ok 2",
-	  "screen=zones count=5 writes=1 toast=Copied_as_Local_repeater_2", 9, true },
+	  "screen=zones count=6 writes=1 toast=Copied_as_Local_repeater_2", 9, true },
 	{ "26 rename a zone", "ok 4 ctx up up up up ok 1", "back 2 ok", "screen=zoneedit writes=1 toast=Renamed shows=repeaterA",
 	  3, true },
 	{ "26 delete asks first, No focused", "ok 4 ctx up up up up ok", ZO_DELETE_KEY, "screen=zonedel focus=No writes=0", 1, false },
 	{ "26 delete: No keeps it", "ok 4 ctx up up up up ok " ZO_DELETE_KEY, "ok", "screen=zoneedit writes=0", 1, false },
 	{ "26 delete a zone ahead of the zone in use: the radio follows", "ok 4 down down ok",
-	  "ok 4 up ctx up ok " ZO_DELETE_KEY " down ok", "screen=zones count=3 zone=1 writes=1 toast=Deleted_Simplex", 9, true },
+	  "ok 4 up ctx up ok " ZO_DELETE_KEY " down ok", "screen=zones count=4 zone=1 writes=1 toast=Deleted_Simplex", 9, true },
+	// The channel editor's Zones row: every zone, OK puts the channel in or takes it out
+	{ "26 channel editor: Zones opens every zone", "ok 5 ok up up up up", "ok", "screen=chzones count=3 shows=In", 1,
+	  false },
+	{ "26 channel editor: Zones adds it to a zone", "", "ok 5 ok up up up up ok down ok",
+	  "screen=chzones writes=1 toast=Added_to_Simplex", 10, true },
+	{ "26 channel editor: Zones takes it out of one", "ok 5 ok up up up up ok", "ok",
+	  "screen=chzones writes=1 toast=Removed_from_Local_repeaters", 1, true },
+	{ "26 channel editor: back on the Zones row", "ok 5 ok up up up up ok down ok", "back", "screen=channel focus=Zones",
+	  1, false },
+	// Zones > Create New Zone (the last row): named, written empty, then focused on Zones; OK opens it
+	{ "26 new zone: the last row of Zones", "ok 4", "down down down", "screen=zones focus=Create_New_Zone", 3, false },
+	{ "26 new zone: named, then focused on Zones", "", "ok 4 down down down ok 2 ok",
+	  "screen=zones writes=1 toast=Added_A focus=A count=6", 8, true },
+	{ "26 new zone: an empty name makes none", "ok 4 down down down ok", "back", "screen=zones writes=0", 1, false },
+	{ "26 new zone: its list adds channels", "ok 4 down down down ok 2 ok", "ctx", "screen=zone shows=A count=2 focus=Add_channel", 1, false },
 	// Another task's zone delete (an import, through the same storage job) with a zone's screens open
 	{ "26 another task deletes the open zone: its screens close", "ok 4 down ctx", "zonejob:1",
 	  "screen=zones toast=That_zone_was_deleted", 0, true },
@@ -554,6 +668,54 @@ static const flow_t flows[] = {
 	  "ok 4 up ctx up ok " ZO_DELETE_KEY " down ok back wait:500", "dual=1 azone=0 bzone=1 writes=1", 11, true },
 	{ "26 delete dual watch's B zone: B's channel is in no other zone, the watch ends", "quick 7 ctx 1 zone+",
 	  "ok 4 ctx up up ok " ZO_DELETE_KEY " down ok back wait:500", "dual=0 zone=1 writes=1 toast=Dual_watch_off", 11, true },
+#endif
+#if CONFIG_VFO_FM || CONFIG_VFO_DMR
+	// Find's Tune VFO row (#275): the digits as VFO entry reads them, inside a band only, first after a channel number
+	{ "12 a frequency typed on Home tunes the VFO", "", "4 6 1 4 6 2 ok", "vfo=1 freq=461462000 screen=home", 7, false },
+	{ "F the Tune VFO row", "", "1 4 6 5 2", "screen=find focus=Tune_VFO_to_146.520", 5, false },
+	{ "F no Tune VFO row outside the bands", "", "5 2 3 4 5 6", "screen=find hides=Tune_VFO", 6, false },
+	{ "F no Tune VFO row for too few digits", "", "4 4", "screen=find hides=Tune_VFO", 2, false },
+	{ "F a channel number still comes first", "", "1 2", "screen=find focus=Ch_12 hides=Tune_VFO", 2, false },
+#endif
+#if CONFIG_CONTACT_EDIT
+	// The contact editor (ui.md 2.4). 3109876 is no contact: Find lists the talkgroup, the private call, then Create
+	// contact; 7 digits start it on a person
+	{ "C create a contact from Find", "", "3 1 0 9 8 7 6 down down ok",
+	  "screen=contactedit shows=New_Contact shows=Private shows=3109876", 10, false },
+	{ "C a contact's ID in Find: no create row", "", "3 1 0 1 2 3 4", "screen=find hides=Create_contact", 7, false },
+	{ "27 a typed ID saved as a contact", "", "3 1 0 9 8 7 6 down down ok long:ok",
+	  "screen=home writes=1 toast=Saved_contact_3109876", 11, true },
+	{ "27 the last caller saved as a contact", "call:3101999,91,g wait:11000", "ctx 7 long:ok",
+	  "screen=actions writes=1 toast=Saved_contact_3101999", 3, true },
+	{ "C the saved contact is found", "3 1 0 9 8 7 6 down down ok long:ok", "3 1 0 9 8 7 6",
+	  "screen=find focus=3109876_3109876 hides=Create_contact", 7, true },
+	{ "C the type flips", "3 1 0 9 8 7 6 down down ok", "down down ok", "shows=Talkgroup hides=Private", 3, false },
+	{ "C a short number starts as a talkgroup", "", "9 9 9 9 down down ok", "screen=contactedit shows=TG_9999 shows=Talkgroup",
+	  7, false },
+	{ "C the timeslot steps", "3 1 0 9 8 7 6 down down ok", "up up ok", "shows=TS_1", 3, false },
+	{ "C an ID typed in", "3 1 0 9 8 7 6 down down ok", "down ok 5 5 5 ok", "shows=555 hides=3109876_", 6, false },
+	{ "C a contact twice is refused", "3 1 0 9 8 7 6 down down ok", "down ok 3 1 0 1 2 3 4 ok long:ok",
+	  "toast=Already_a_contact:_K1ABC_Joe writes=0", 11, false },
+	{ "C Back asks before discarding", "3 1 0 9 8 7 6 down down ok", "back", "screen=discard shows=new_contact", 1, false },
+	{ "C discard goes back to Find", "3 1 0 9 8 7 6 down down ok back", "down ok", "screen=find writes=0", 2, false },
+	{ "C the name by text entry", "3 1 0 9 8 7 6 down down ok", "ok", "screen=text", 1, false },
+	// A caller who isn't a contact: Save as contact is item 7 of the actions, and they show In contacts after
+	{ "C save a caller as a contact", "call:3101999,91,g wait:11000 ctx", "7", "screen=contactedit shows=3101999", 1,
+	  false },
+	{ "C saved from the actions, back on them", "call:3101999,91,g wait:11000 ctx 7", "long:ok",
+	  "screen=actions shows=In_contacts writes=1", 1, true },
+	// A talkgroup not saved: Save as contact is item 4
+	{ "C save a talkgroup as a contact", "3 1 0 9 8 7 6 ctx", "4", "screen=contactedit shows=TG_3109876 shows=Talkgroup",
+	  1, false },
+#endif
+#if CONFIG_ZONE_EDIT && CONFIG_ZONE_SHARE
+	// Share To a station that isn't a contact: the digits typed as an ID, private first (zone-share.md 7)
+	{ "Z share to a typed ID", "ok 4 ctx ctx 5", "3 1 0 9 8 7 6", "shows=Private_ID_3109876 shows=TG_3109876", 7, false },
+	{ "Z the channel goes to the typed ID, via the channel's frequency", "ok 4 ctx ctx 5 3 1 0 9 8 7 6", "ok",
+	  "screen=zone zs_sends=1 toast=Sending_to_3109876_via_467.375", 1, false },
+	{ "Z after a send by name the zone's list isn't filtered", "ok 4 ctx ctx 5 2 2 5 4", "ok",
+	  "screen=zone zs_sends=1 hides=Find:_2254", 1, false },
+	{ "Z a share from an FM channel is refused", "up ok 4 ctx ctx 5", "ok", "zs_sends=0 toast=Go_to_a_DMR", 1, false },
 #endif
 };
 
@@ -990,6 +1152,24 @@ static void call_screen_checks(void)
 // warning, and no Battery page, Battery saver or Low battery warning in the lists (Tools keep their numbers, Battery
 // is the last one; in Settings the other rows move up). With a
 // battery they are all there
+// A split DMR VFO on Home, at every display class: the whole TX frequency in the top row, or the whole offset among
+// the chips where there is no top row; never shortened (the step gives way first)
+static void vfo_split_dmr_checks(void)
+{
+	char err[300];
+	for (int g = 0; g < sim_geom_count; g++) {
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		bool ok = sim_run("ok 4 up ok quick 4 6 1 4 7 0 1 2 5 0 ok back", err, sizeof err);
+		if (ok)
+			ok = sim_run(ui_layout.zone_y >= 0 ? "expect:txfreq=147012500 expect:shows=VFO__TX_147.0125" :
+				     "expect:txfreq=147012500 expect:shows=+492.5k", err, sizeof err);
+		if (!ok) {
+			printf("FAIL VFO split on DMR [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+	}
+}
+
 static void no_battery_checks(void)
 {
 	static const struct { const char *name, *script, *expect; } cases[] = {
@@ -1102,6 +1282,7 @@ int main(void)
 	printf("# %d flows run\n", flows_run);
 	about_checks();
 	call_screen_checks();
+	vfo_split_dmr_checks();
 	no_battery_checks();
 	title_row_checks();
 

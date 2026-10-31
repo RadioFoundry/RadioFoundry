@@ -144,7 +144,31 @@
     "VFO"
    ]
   },
+  "quick_vfo_split": {
+   "group": "home",
+   "needs": [
+    "VFO"
+   ]
+  },
+  "home_vfo_tx": {
+   "group": "home",
+   "needs": [
+    "VFO"
+   ]
+  },
   "quick_vfo_dmr": {
+   "group": "home",
+   "needs": [
+    "VFO_DMR"
+   ]
+  },
+  "home_vfo_split_dmr": {
+   "group": "home",
+   "needs": [
+    "VFO_DMR"
+   ]
+  },
+  "home_vfo_dmr_tx": {
    "group": "home",
    "needs": [
     "VFO_DMR"
@@ -294,6 +318,14 @@
    "group": "channels",
    "needs": []
   },
+  "zones_new": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT",
+    "ZONE_EDIT"
+   ]
+  },
   "channels": {
    "group": "channels",
    "needs": [
@@ -325,6 +357,21 @@
    "needs": [
     "CHANNEL_LIST",
     "CHANNEL_EDIT"
+   ]
+  },
+  "channel_tone_entry": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_zones": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT",
+    "ZONE_EDIT"
    ]
   },
   "channel_name": {
@@ -404,6 +451,18 @@
     "ZONE_SHARE"
    ]
   },
+  "zone_share_to_id": {
+   "group": "channels",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
+  "zone_share_sending": {
+   "group": "channels",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
   "zone_imported": {
    "group": "channels",
    "needs": [
@@ -422,6 +481,30 @@
    "group": "channels",
    "needs": [
     "DMR"
+   ]
+  },
+  "find_frequency": {
+   "group": "channels",
+   "needs": [
+    "VFO"
+   ]
+  },
+  "find_new_contact": {
+   "group": "channels",
+   "needs": [
+    "CONTACT_EDIT"
+   ]
+  },
+  "contact_edit": {
+   "group": "channels",
+   "needs": [
+    "CONTACT_EDIT"
+   ]
+  },
+  "contact_edit_save": {
+   "group": "channels",
+   "needs": [
+    "CONTACT_EDIT"
    ]
   },
   "contacts": {
@@ -588,6 +671,24 @@
     "APRS"
    ]
   },
+  "gps_sky": {
+   "group": "tools",
+   "needs": [
+    "GPS_SKY"
+   ]
+  },
+  "gps_signal": {
+   "group": "tools",
+   "needs": [
+    "GPS_SKY"
+   ]
+  },
+  "gps_grid": {
+   "group": "tools",
+   "needs": [
+    "GPS_SKY"
+   ]
+  },
   "diagnostics": {
    "group": "tools",
    "needs": [
@@ -641,6 +742,25 @@
   "factory_reset": {
    "group": "settings",
    "needs": []
+  },
+  "settings_freq_trim": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS",
+    "REF_TRIM"
+   ]
+  },
+  "freq_trim": {
+   "group": "settings",
+   "needs": [
+    "REF_TRIM"
+   ]
+  },
+  "freq_trim_typing": {
+   "group": "settings",
+   "needs": [
+    "REF_TRIM"
+   ]
   },
   "crash_log": {
    "group": "settings",

@@ -43,7 +43,8 @@ The radio keeps the last 4 messages received, in memory. They are lost when the 
 
 1. Open the actions for the person or talkgroup. Press **#** on Home for the last caller, or **#** on a contact.
 2. Press **3** (Message).
-3. Pick a text ("OK", "On my way", "Call me" or "Can't talk now"). Press **OK** to send.
+3. Pick a text ("OK", "On my way", "Call me" or "Can't talk now"). Press **OK** to send. The texts are sent in the
+   radio's language (Settings > Display > Language).
 
 <img src="../ux/screens/160x120i5/compose.png" width="200" alt="The message composer">
 
@@ -101,8 +102,8 @@ range.
 
 <img src="../ux/screens/160x120i5/banner_radio_check.png" width="200" alt="A radio check result">
 
-Your radio answers radio checks from others only when **Settings > Connections > Answer radio checks** is on. It is off
-by default, because an answer makes the radio transmit without you asking.
+Your radio answers radio checks from others while **Settings > Connections > Answer radio checks** is on, the default.
+An answer is a short transmission the radio makes without you pressing PTT; turn the setting off if you don't want that.
 
 ## Registration (ARS) and location (LRRP)
 
