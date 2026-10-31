@@ -247,6 +247,9 @@ bool codeplug_set_dmr_id(uint32_t id)
 	return true;
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]) { line1[0] = line2[0] = 0; }
+void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = 0; }
+bool codeplug_set_radio_name(const char *name) { (void)name; return false; }
+bool codeplug_set_boot_text(const char *line1, const char *line2) { (void)line1; (void)line2; return false; }
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
 	if (index < 1 || index > sizeof(contacts) / sizeof(contacts[0])) {

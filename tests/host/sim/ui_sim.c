@@ -1235,10 +1235,31 @@ uint32_t ui_svc_features(void)
 	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
 	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM);
 }
+// My radio's names (ui_svc_name_*): placeholders, as the user's own would be; a save writes at once
+static char sim_names[UI_NAME_COUNT][17];
+static void sim_names_reset(void)
+{
+	strcpy(sim_names[UI_NAME_RADIO], "N0CALL");
+	strcpy(sim_names[UI_NAME_BOOT1], "N0CALL");
+	strcpy(sim_names[UI_NAME_BOOT2], "Jamie Thompson");
+}
+void ui_svc_name_get(uint8_t which, char out[17])
+{
+	strcpy(out, which < UI_NAME_COUNT ? sim_names[which] : "");
+}
+bool ui_svc_name_set(uint8_t which, const char *text)
+{
+	if (which >= UI_NAME_COUNT)
+		return false;
+	strncpy(sim_names[which], text, 16);
+	sim_names[which][16] = '\0';
+	sim_rec.codeplug_writes++;
+	return true;
+}
 void ui_svc_boot_text(char line1[17], char line2[17])
 {
-	strcpy(line1, "N0CALL");
-	strcpy(line2, "Jamie Thompson");	// placeholders: the codeplug's boot text is the user's own
+	strcpy(line1, sim_names[UI_NAME_BOOT1]);
+	strcpy(line2, sim_names[UI_NAME_BOOT2]);
 }
 // Zone sharing (ui_svc.h): one offer of 6 channels, one of them outside the radio's bands
 static struct {
@@ -1854,6 +1875,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	aprs_sim_reset();
 	n_edits = 0;
 	n_ct_edits = 0;
+	sim_names_reset();
 	sim_cp_serial = 0;
 	sim_cp_insert = false;
 	sim_cp_deleted = 0;

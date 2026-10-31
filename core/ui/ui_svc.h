@@ -367,6 +367,11 @@ typedef struct {
 } ui_event_t;
 // The owner's two boot screen lines from the codeplug (storage-cps); empty strings when there are none
 void ui_svc_boot_text(char line1[17], char line2[17]);
+// The codeplug's name fields (Settings > My radio): the radio name (8 characters; APRS takes its first word as the
+// callsign) and the two boot screen lines (16 each). Set is a storage job: false while another one is pending
+enum { UI_NAME_RADIO, UI_NAME_BOOT1, UI_NAME_BOOT2, UI_NAME_COUNT };
+void ui_svc_name_get(uint8_t which, char out[17]);
+bool ui_svc_name_set(uint8_t which, const char *text);
 
 // Queue an event for the UI (copies it). False when the queue is full (the event is dropped)
 bool ui_notify(const ui_event_t *ev);
