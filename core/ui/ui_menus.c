@@ -1730,6 +1730,17 @@ static bool ced_changed(uint8_t r)
 	return memcmp(a, b, ced_fields[r].len) != 0;
 }
 
+// RX in a receive-only band (the air band, broadcast FM: docs/spec/airband-and-broadcast.md 2): the copy becomes RX
+// only and FM (AM there), which is all the radio does there
+static void ced_rx_band(channel_t *c)
+{
+	if (!board_in_band(c->rx_hz, false) || board_in_band(c->rx_hz, true))
+		return;
+	c->rx_only = true;
+	c->tx_hz = c->rx_hz;
+	c->mode = RADIO_MODE_FM;
+}
+
 // A copy of what the radio uses now (temporary changes included), named after it: "Name 2", or the frequency
 static void ced_from_view(void)
 {
@@ -1747,6 +1758,7 @@ static void ced_from_view(void)
 		zone_copy_name(name, ced_ch.name);	// "Name 2", cut to fit
 	}
 	strcpy(ced_ch.name, name);
+	ced_rx_band(&ced_ch);
 }
 #endif
 
@@ -2071,6 +2083,8 @@ static const char *ced_problem(void)
 		return "RX is outside the radio's bands";
 	if (!c->rx_only && !board_in_band(c->tx_hz, true))
 		return "TX can't transmit there: set RX only";
+	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !board_in_band(c->rx_hz, true))
+		return "Receive only band: set FM";
 	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && c->contact == 0)
 		return "Pick a TX contact first";
 	return NULL;
@@ -2231,11 +2245,12 @@ static void ced_commit(void)
 		if (hz == 0)
 			return;
 		if (ced_edit == CE_RX) {
-			// TX moves with RX, keeping a repeater's offset; where that lands outside every band (or the channel
-			// had no TX frequency) TX becomes RX
+			// TX moves with RX, keeping a repeater's offset; where that lands outside the transmit bands (or the
+			// channel had no TX frequency) TX becomes RX
 			uint32_t tx = c->tx_hz - c->rx_hz + hz;
-			c->tx_hz = board_in_band(tx, false) ? tx : hz;
+			c->tx_hz = board_in_band(tx, true) ? tx : hz;
 			c->rx_hz = hz;
+			ced_rx_band(c);
 		} else {
 			c->tx_hz = hz;
 		}

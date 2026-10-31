@@ -354,7 +354,9 @@ static uint8_t p_battery(void) { return battery; }
 static uint16_t p_supply(void) { return 13800; }	// the sim's view carries the reading (supply:<mv>)
 static hal_power_t power = { .battery_pct = p_battery };
 
-static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
+// The air band receive only, as on radios that have it (docs/spec/airband-and-broadcast.md 3.2)
+static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true },
+				{ 108000000, 136000000, false } };
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
 static bool afsk_tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mark, uint16_t space, uint8_t level)
@@ -372,7 +374,7 @@ static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_O
 static const hal_vocoder_t vocoder = { .options = v_options };
 
 board_t board = {
-	.name = "Simulator", .bands = bands, .band_count = 2, .power_count = 9, .power_names = power_names,
+	.name = "Simulator", .bands = bands, .band_count = 3, .power_count = 9, .power_names = power_names,
 	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk, .vocoder = &vocoder,
 };
 

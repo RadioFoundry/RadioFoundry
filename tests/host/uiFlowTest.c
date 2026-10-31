@@ -265,6 +265,10 @@ static const flow_t flows[] = {
 	  "shows=147.000 shows=146.4 shows=600_kHz", 7, false },
 	{ "E new RX: an offset off the bands makes it simplex", "ok 5 up up ok down down down", "ok 1 3 6 0 0 ok",
 	  "shows=136.000 hides=135.4 hides=-600", 7, false },
+	{ "E RX in a receive-only band: RX only, saved", "ok 5 up up ok down down down", "ok 1 2 1 5 0 0 ok long:ok",
+	  "writes=1", 9, true },
+	{ "E a DMR channel's RX in a receive-only band: FM", "ok 5 ok down down down", "ok 1 2 1 5 0 0 ok",
+	  "shows=121.500 shows=FM hides=Color_code", 8, false },
 	{ "E RX refuses a digit no band starts with", "ok 5 up up ok down down down", "ok 2", "toast=Bands:", 2, false },
 	{ "E RX needs the MHz digits", "ok 5 up up ok down down down", "ok 1 4 ok", "toast=Type_at_least screen=channel",
 	  4, false },
@@ -635,7 +639,7 @@ static const flow_t flows[] = {
 	// Find's Tune VFO row (#275): the digits as VFO entry reads them, inside a band only, first after a channel number
 	{ "12 a frequency typed on Home tunes the VFO", "", "4 6 1 4 6 2 ok", "vfo=1 freq=461462000 screen=home", 7, false },
 	{ "F the Tune VFO row", "", "1 4 6 5 2", "screen=find focus=Tune_VFO_to_146.520", 5, false },
-	{ "F no Tune VFO row outside the bands", "", "1 2 3 4 5 6", "screen=find hides=Tune_VFO", 6, false },
+	{ "F no Tune VFO row outside the bands", "", "5 2 3 4 5 6", "screen=find hides=Tune_VFO", 6, false },
 	{ "F no Tune VFO row for too few digits", "", "4 4", "screen=find hides=Tune_VFO", 2, false },
 	{ "F a channel number still comes first", "", "1 2", "screen=find focus=Ch_12 hides=Tune_VFO", 2, false },
 #endif

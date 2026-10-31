@@ -223,8 +223,8 @@ static void add(uint16_t n, const char *name, uint32_t rx, uint32_t tx, uint8_t 
 }
 
 // Positions: 0 Tower 118.100 (an FM channel in the standard codeplug, TX allowed by the codeplug), 1 ATIS 127.850
-// with an RX tone set, 2 Simplex 146.520, 3 AirDMR 120.000 as DMR, 4 Split RX 146.520 TX 136.500, 5 Edge 136.975,
-// 6 WXYZ 101.100 (broadcast, with an RX tone), 7 BcDMR 99.900 as DMR
+// with an RX tone set, 2 Simplex 146.520, 3 AirDMR 120.000 stored as DMR, 4 Split RX 146.520 TX 136.500, 5 Edge
+// 136.975, 6 WXYZ 101.100 (broadcast, with an RX tone), 7 BcDMR 99.900 stored as DMR
 static void setup_codeplug(void)
 {
 	add(1, "Tower", 118100000, 118100000, RADIO_MODE_FM);
@@ -396,9 +396,12 @@ static void test_fm_and_dmr(void)
 	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1);
 	ptt(false);
 
-	req(RREQ_ZONE_POS, 3);	// AirDMR 120.000: a DMR channel is not AM, but it may not transmit in the air band
+	req(RREQ_ZONE_POS, 3);	// AirDMR 120.000: no DMR in the air band, AM whatever the channel says
 	run(100);
-	CHECK(!sm.view.am);
+	CHECK(sm.view.am && hw.am && sm.view.ch.mode == RADIO_MODE_FM && !sm.view.temporary);
+	req(RREQ_MODE, RADIO_MODE_DMR);	// and no switching it to DMR there
+	run(30);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && sm.view.am);
 	ptt(true);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AM);
 	ptt(false);
@@ -514,10 +517,10 @@ static void test_bcast_channel(void)
 	run(50);
 	CHECK(!sm.view.bcast && !bc.on && !bc.audio && hw.rx_hz == 146520000 && hw.rx_calls == rx + 1);
 
-	// A DMR channel in the broadcast band stays DMR on the channel receiver, and doesn't transmit there
+	// A DMR channel in the broadcast band plays on the broadcast receiver too, and doesn't transmit there
 	req(RREQ_ZONE_POS, 7);
 	run(100);
-	CHECK(!sm.view.bcast && !bc.on);
+	CHECK(sm.view.bcast && bc.on && bc.khz == 99900 && sm.view.ch.mode == RADIO_MODE_FM);
 	ptt(true);
 	CHECK(sm.view.tx_deny == TXDENY_BCAST && hw.tx_calls == 0);
 	ptt(false);
@@ -607,6 +610,28 @@ static void test_bcast_vfo(void)
 	ptt(true);
 	CHECK(sm.view.tx_deny == TXDENY_BCAST && hw.tx_calls == 0);
 	ptt(false);
+
+	// The DMR VFO tuned to a station: FM on the broadcast receiver, and the VFO stays FM after it
+	req(RREQ_VFO_SET, 146520000);
+	run(30);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(30);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && !sm.view.bcast);
+	req(RREQ_VFO_SET, 99900000);
+	run(50);
+	CHECK(sm.view.bcast && bc.khz == 99900 && sm.view.ch.mode == RADIO_MODE_FM);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(30);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && sm.view.bcast);
+	req(RREQ_VFO_SET, 146520000);
+	run(30);
+	CHECK(!sm.view.bcast && sm.view.ch.mode == RADIO_MODE_FM);
+	// ... and into the air band: AM
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(30);
+	req(RREQ_VFO_SET, 121500000);
+	run(50);
+	CHECK(sm.view.am && sm.view.ch.mode == RADIO_MODE_FM);
 }
 
 int main(void)

@@ -1223,6 +1223,10 @@ static void quick_activate(int tile)
 		break;
 	case QT_MODE: {
 		bool to_dmr = view->ch.mode != RADIO_MODE_DMR;	// the view may change at once (the host simulator)
+		if (to_dmr && (view->am || view->bcast)) {
+			ui_toast(view->am ? "AM only in the air band" : "FM only in the broadcast band");
+			break;
+		}
 		if (ui_svc_mode(to_dmr ? RADIO_MODE_DMR : RADIO_MODE_FM))
 			ui_toast(to_dmr ? "VFO: DMR" : "VFO: FM");	// the VFO keeps its mode
 		else

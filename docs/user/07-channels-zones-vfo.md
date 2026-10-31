@@ -308,9 +308,11 @@ no mode to pick and no menu: the frequency decides.
 | 108 to 137 MHz | Air band, in AM. Home shows "Air Band AM" and the squelch level, and "AM" in place of "FM" |
 | The broadcast band (65 to 108 MHz on most receivers) | FM broadcast, on the radio's broadcast receiver. Home shows "Broadcast FM" |
 
-Tune there in the VFO (type **1** **1** **8** **1**, or **0** **8** **8** **1**, and press **OK**), or program an FM
-channel on the frequency in the codeplug. Both are receive only: PTT shows "Air band: receive only" or "Broadcast: receive
-only" and the radio doesn't transmit. Sub-audio tones are ignored.
+Tune there in the VFO (type **1** **1** **8** **1**, or **0** **8** **8** **1**, and press **OK**). A DMR VFO switches to
+FM there and stays FM; DMR can't be picked in these bands. To keep a station, use **New from current** in the channel
+list (or type the RX frequency in the channel editor): the channel becomes FM and RX only, ready to save. A channel
+programmed on the frequency in the codeplug works too, even one stored as DMR. Both bands are receive only: PTT shows
+"Air band: receive only" or "Broadcast: receive only" and the radio doesn't transmit. Sub-audio tones are ignored.
 
 In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a
 fading station isn't cut, and the screen and LED show it is receiving. The squelch only stops a scan on a station:

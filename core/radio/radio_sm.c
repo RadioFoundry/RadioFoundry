@@ -472,6 +472,22 @@ static void bcast_status(radio_sm_t *sm, radio_status_t *st)
 }
 #endif
 
+// The air band (on a radio with AM receive) and the broadcast receiver's range: receive only, and never DMR
+// (docs/spec/airband-and-broadcast.md 2)
+static bool listen_band(uint32_t hz)
+{
+#if CONFIG_AM_RX
+	if (radio_am_tx_refused(hz))
+		return true;
+#endif
+#if CONFIG_BCAST_FM
+	if (radio_bcast_band(hz))
+		return true;
+#endif
+	(void)hz;
+	return false;
+}
+
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->retune_pending = sm->retune_due = false;	// this tune is the one they wait for
@@ -479,6 +495,14 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	cw_cancel(sm);		// the repeater's ID: the board is set up for the channel below
 #endif
 	end_reception(sm, now_ms);
+	if (sm->view.ch.mode == RADIO_MODE_DMR && listen_band(sm->view.ch.rx_hz)) {
+		// AM or broadcast there, whatever the channel says; the VFO stays FM when it leaves the band
+		sm->view.ch.mode = RADIO_MODE_FM;
+		if (sm->view.vfo)
+			sm->vfo_ch.mode = RADIO_MODE_FM;
+		else
+			sm->base_mode = RADIO_MODE_FM;	// not a temporary change: the channel's mode there
+	}
 #if CONFIG_AM_RX
 	sm->view.am = radio_am_channel(&sm->view.ch);	// an FM channel in the air band: AM, no sub-audio
 #endif
@@ -5139,7 +5163,8 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_MODE:
 		if (busy || (req->arg != RADIO_MODE_FM && req->arg != RADIO_MODE_DMR) || req->arg == sm->view.ch.mode ||
 				(req->arg == RADIO_MODE_FM && !(sm->view.vfo ? CONFIG_VFO_FM : CONFIG_FM)) ||
-				(req->arg == RADIO_MODE_DMR && sm->view.vfo && !CONFIG_VFO_DMR)) {
+				(req->arg == RADIO_MODE_DMR && (listen_band(sm->view.ch.rx_hz) ||
+								(sm->view.vfo && !CONFIG_VFO_DMR)))) {
 			break;
 		}
 		sm->view.ch.mode = (uint8_t)req->arg;
