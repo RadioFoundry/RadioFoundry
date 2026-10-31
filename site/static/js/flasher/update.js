@@ -26,6 +26,7 @@ export function releaseOf(probe, releases) {
 //   {kind: "preset", preset, off, old}   a release variant (off: null on firmware that doesn't say)
 //   {kind: "custom", off, old}           a build of its own, every switch known
 //   {kind: "unknown", guess, old}        older firmware whose features= list fits no one variant; guess: the closest
+// start: on a variant the service built, the start-language switches it had on (planUpdate keeps them)
 // old: the release entries it came from (releaseOf); each also carries the probe. reported: the names features= can carry (features.json reported)
 export function currentBuild(probe, radio, releases, reported) {
 	const v = probe.version || {};
@@ -34,9 +35,12 @@ export function currentBuild(probe, radio, releases, reported) {
 	if (v.preset && v.off !== undefined) {
 		const off = split(v.off);
 		if (v.preset !== "custom") return { ...said, kind: "preset", preset: v.preset, off, old };
-		// the build service names every build custom: one equal to a variant is that variant
+		// the build service names every build custom: one equal to a variant is that variant. The start language
+		// (langsuggest.js) is left out of the comparison and kept: Full in Spanish is still Full
 		const preset = variantOf(radio, off, old);
-		return preset ? { ...said, kind: "preset", preset, off, old } : { ...said, kind: "custom", off, old };
+		if (!preset) return { ...said, kind: "custom", off, old };
+		const start = [...new Set(old.flatMap((e) => [...split(e.features), ...split(e.off)]))].filter((n) => startCode(n) && !off.includes(n));
+		return { ...said, kind: "preset", preset, off, old, start };
 	}
 	// older firmware: its features= list against each variant, by the names it can report
 	const rep = new Set(reported);
@@ -57,7 +61,7 @@ export function currentBuild(probe, radio, releases, reported) {
 // A custom build that is a variant after all: its off list equals the variant's (in the release it came from, else now)
 function variantOf(radio, off, old) {
 	const offSet = new Set(off);
-	const universe = new Set([...off, ...old.flatMap((e) => [...split(e.features), ...split(e.off)])]);
+	const universe = new Set([...off, ...old.flatMap((e) => [...split(e.features), ...split(e.off)])].filter((n) => !startCode(n)));
 	for (const e of old) {
 		const on = new Set(split(e.features));
 		if ([...universe].every((n) => on.has(n) !== offSet.has(n))) return e.variant;
@@ -88,6 +92,7 @@ export function planUpdate(cur, sel, decided = {}) {
 	}
 	if (cur.kind === "preset" && variants.includes(cur.preset)) {
 		sel.useVariant(cur.preset);
+		for (const n of cur.start || []) sel.set(n, true);
 		return { preset: cur.preset, added: fresh(sel.radio.config[cur.preset]), ask: [], ready: true };
 	}
 	// a custom build (or a variant this release no longer has): every switch as it was, the new ones as decided. A

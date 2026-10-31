@@ -868,7 +868,7 @@ function updateView() {
 		}
 		const p = S.now.probe, cur = S.current;
 		// the radio's own build, unless the build step has the selection (edits kept when the user comes back)
-		const plan = S.editBuild ? { preset: S.selection.matches(), added: [], ask: [], ready: true } : planUpdate(cur, S.selection, S.decided);
+		const plan = S.editBuild ? { preset: S.selection.matches(startCode), added: [], ask: [], ready: true } : planUpdate(cur, S.selection, S.decided);
 		// an image built for another selection no longer applies
 		if (S.firmware?.selection && S.firmware.selection !== selectionKey(S.selection)) S.firmware = null;
 		const vtitle = (id) => (t(`variant.${id}.title`) !== `variant.${id}.title` ? t(`variant.${id}.title`) : S.data.variants.find((v) => v.id === id)?.title || id);
@@ -1233,7 +1233,7 @@ async function requestBuild(redraw) {
 		if (!current()) return;
 		// variant: the prebuilt choice this is, for the flash log (the service names every image it builds "custom")
 		S.firmware = { manifest: m, image: img, source: t("flash.build.built", { version: m.version }), origin: "custom",
-			variant: sel.matches() || "custom", build: b.id, selection: key, pinned: !!VERSION_REF };
+			variant: sel.matches(startCode) || "custom", build: b.id, selection: key, pinned: !!VERSION_REF };
 		S.build = null;
 	} catch (e) {
 		if (S.build?.selection === key) S.build.error = { text: t("flash.build.unavailable", { error: errorText(e) }), rec: diag.currentError() };
