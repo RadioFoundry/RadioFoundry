@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The language tables (built by tools/i18n.py from core/ui/lang/*.po into the build's gen directory) and the lookup:
-// each built language keeps the FNV-1a hashes of the English it translates, sorted, and where each translation starts
-// in its text. A lookup hashes the English and searches; anything not found is shown as it is
+// one sorted array of the FNV-1a hashes of the English any catalog translates (lang_hash), shared by the languages;
+// each built language keeps its translations in that order, "" for none, and where every LANG_STRIDE-th one starts. A
+// lookup hashes the English, searches, and steps over at most LANG_STRIDE - 1 strings; anything not found, or without
+// a translation, is shown as it is
 #include <stddef.h>
 #include <string.h>
 #include "i18n.h"
 
 typedef struct {
-	const uint32_t *hash;	// sorted
-	const uint16_t *off;	// into text, per hash
-	const char *text;
-	uint16_t count;
+	const uint16_t *off;	// into text, for every LANG_STRIDE-th string
+	const char *text;	// a NUL-terminated string per hash, "" for none
 } lang_table_t;
 
 typedef struct {
@@ -32,19 +32,25 @@ const char *tr(const char *en)
 	const lang_table_t *t = langs[cur].table;
 	if (t == NULL || en == NULL || en[0] == 0)
 		return en;
+#ifdef LANG_STRINGS
 	uint32_t h = 2166136261u;
 	for (const char *p = en; *p; p++)
 		h = (h ^ (uint8_t)*p) * 16777619u;
-	uint16_t lo = 0, hi = t->count;
+	uint16_t lo = 0, hi = LANG_STRINGS;
 	while (lo < hi) {
 		uint16_t mid = (uint16_t)((lo + hi) / 2u);
-		if (t->hash[mid] == h)
-			return t->text + t->off[mid];
-		if (t->hash[mid] < h)
+		if (lang_hash[mid] == h) {
+			const char *s = t->text + t->off[mid / LANG_STRIDE];
+			for (uint16_t i = mid % LANG_STRIDE; i > 0; i--)
+				s += strlen(s) + 1u;
+			return s[0] ? s : en;
+		}
+		if (lang_hash[mid] < h)
 			lo = (uint16_t)(mid + 1u);
 		else
 			hi = mid;
 	}
+#endif
 	return en;
 }
 #endif

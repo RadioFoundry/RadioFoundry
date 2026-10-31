@@ -2122,6 +2122,35 @@ static const char *dual_hint(const radio_view_t *v, const ui_state_t *s)
 	return TR("# options  Back stop");
 }
 
+// The richest layout that fits avail rows: names in the large font first, then fewer rows, never a smaller font for a
+// row than the single-channel Home uses for it (P5). noinline: inlined, the table sits in the frame every pane is
+// drawn from, on the UI task's deepest path
+static void __attribute__((noinline)) dual_choose(int avail, int gap, dual_fit_t *out, int *pad)
+{
+	const ui_layout_t *L = &ui_layout;
+	const font_t *lg = L->large, *md = L->medium, *sm = L->small;
+	const dual_fit_t fits[] = {
+		{ lg, md, sm, true, 2 }, { lg, md, sm, false, 2 }, { lg, md, sm, false, 1 },
+		{ lg, md, NULL, false, 1 }, { lg, sm, NULL, false, 1 }, { md, sm, NULL, false, 1 },
+		{ md, sm, NULL, false, 0 }, { sm, sm, NULL, false, 0 },
+	};
+	bool tall = gfx_height() >= UI_TALL_PX;
+	const dual_fit_t *ft = &fits[sizeof fits / sizeof fits[0] - 1];
+	int used = 0;
+	for (unsigned k = 0; k < sizeof fits / sizeof fits[0]; k++) {
+		used = 2 * dual_pane_h(&fits[k]) + gap + fits[k].act * sm->h + (fits[k].act ? 2 : 0);
+		if (used <= avail) {
+			ft = &fits[k];
+			break;
+		}
+	}
+	int extra = avail - used;
+	*pad = extra / 4 < (tall ? 5 : 1) ? extra / 4 : (tall ? 5 : 1);
+	if (*pad < 0)
+		*pad = 0;
+	*out = *ft;
+}
+
 void ui_draw_home_dual(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -2131,30 +2160,11 @@ void ui_draw_home_dual(const radio_view_t *v, const ui_state_t *s)
 	if (s->large_text) {
 		dual_large(v, s);
 	} else {
-		// The richest layout that fits: names in the large font first, then fewer rows, never a smaller font for a
-		// row than the single-channel Home uses for it (P5)
-		const font_t *lg = L->large, *md = L->medium, *sm = L->small;
-		const dual_fit_t fits[] = {
-			{ lg, md, sm, true, 2 }, { lg, md, sm, false, 2 }, { lg, md, sm, false, 1 },
-			{ lg, md, NULL, false, 1 }, { lg, sm, NULL, false, 1 }, { md, sm, NULL, false, 1 },
-			{ md, sm, NULL, false, 0 }, { sm, sm, NULL, false, 0 },
-		};
-		int top = L->strip_h, avail = L->hint_y - top;
-		bool tall = gfx_height() >= UI_TALL_PX;
-		int gap = tall ? 6 : 2;
-		const dual_fit_t *ft = &fits[sizeof fits / sizeof fits[0] - 1];
-		int used = 0;
-		for (unsigned k = 0; k < sizeof fits / sizeof fits[0]; k++) {
-			used = 2 * dual_pane_h(&fits[k]) + gap + fits[k].act * sm->h + (fits[k].act ? 2 : 0);
-			if (used <= avail) {
-				ft = &fits[k];
-				break;
-			}
-		}
-		int extra = avail - used;
-		int pad = extra / 4 < (tall ? 5 : 1) ? extra / 4 : (tall ? 5 : 1);
-		if (pad < 0)
-			pad = 0;
+		int top = L->strip_h, gap = gfx_height() >= UI_TALL_PX ? 6 : 2, pad;
+		dual_fit_t fit;
+		dual_choose(L->hint_y - top, gap, &fit, &pad);
+		const dual_fit_t *ft = &fit;
+		const font_t *sm = L->small;
 		int ph = dual_pane_h(ft) + 2 * pad;
 		const font_t *f0 = dual_name_font(&s->dual, 0, ft->name), *f1 = dual_name_font(&s->dual, 1, ft->name);
 		dual_nf = f0->h < f1->h ? f0 : f1;

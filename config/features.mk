@@ -151,12 +151,12 @@ CONFIG_FONT_AA ?= n
 # larger text on 240 px and wider color panels: lists, labels and the status strip in a 9x18 font instead of 8x16
 # (12% larger, 24 characters a line on a 240 px panel instead of 27). About 3 KB more flash (needs FONT_AA)
 CONFIG_FONT_BIG ?= n
-# Spanish on the radio (Settings > Display > Language; core/ui/lang/es.po, docs/dev/translating.md). About 30 KB with
+# Spanish on the radio (Settings > Display > Language; core/ui/lang/es.po, docs/dev/translating.md). About 28 KB with
 # the lookup and the accented letters of every font (7.5 KB), which the first language brings; each further one adds
-# its text only (about 22 KB)
+# its text only (about 17 KB)
 CONFIG_LANG_ES ?= y
 # Italian on the radio (core/ui/lang/it.po): off by default, listed dimmed; the web flasher offers it to Italian
-# browsers. About 22 KB with Spanish on
+# browsers. About 17 KB with Spanish on
 CONFIG_LANG_IT ?= n
 # the language the radio starts in, until the user picks one in Settings > Display > Language: one switch per language,
 # at most one on (with more, the first listed wins), off = English. Needs that language's switch. No flash cost

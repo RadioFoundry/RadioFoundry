@@ -49,6 +49,10 @@ int main(void)
 	CHECK(strcmp(TR("Settings"), "Ajustes") == 0);
 	CHECK(strcmp(TR("Language"), "Idioma/Language") == 0);
 	CHECK(strcmp(TR("On my way"), "En camino") == 0);	// a canned text message: sent in the language in use
+	// Strings at other places in a stride of the table: the lookup steps over the ones before them
+	CHECK(strcmp(TR("Status"), "Estado") == 0);
+	CHECK(strcmp(TR("Zone for"), "Zona para") == 0);
+	CHECK(strcmp(TR("No USB network on this radio"), "Esta radio no tiene red USB") == 0);
 	const char *unknown = "Not a string the UI marks";
 	CHECK(tr(unknown) == unknown);		// shown as it is
 	CHECK(tr("") != NULL && tr("")[0] == 0);
