@@ -229,9 +229,19 @@ def anytone(out):
 	r.hello()
 	ident = r.identify()
 	r.write(0x08006000, data)
+	# the stock firmware's PC mode: a read of 40 bytes across a record the fake holds, then END
+	pc = Rec(memory={0x02600008: data[:24]})
+	p = at.Program(pc, log=lambda m: None, timeout=0.01)
+	p.hello()
+	got = p.read(0x02600000, 40)
+	p.end()
 	doc = {"frames": [[a, c.hex(), at.frame(a, c).hex()] for a, c in
 			  ((0x08006000, b"\x01\x02"), (0xFFFFFFE0, b"\xff" * 32), (0x0800C000, bytes(range(32))))],
-	       "data": data.hex(), "addr": 0x08006000, "host": fake.sent.hex(), "identify": list(ident), "model": fake.model}
+	       "data": data.hex(), "addr": 0x08006000, "host": fake.sent.hex(), "identify": list(ident), "model": fake.model,
+	       "program": {"addr": 0x02600000, "n": 40, "memory": [0x02600008, data[:24].hex()], "host": pc.sent.hex(),
+			   "read": got.hex(),
+			   "replies": [[a, d.hex(), at.read_reply(a, d).hex()] for a, d in ((0x02540000, b"\x01\x02"),
+											 (0xFFFFFFF0, bytes(range(16))))]}}
 	with open(os.path.join(out, "anytone.json"), "w") as f:
 		json.dump(doc, f, indent=1)
 

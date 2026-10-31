@@ -152,16 +152,14 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 	default: {
 		// The serial hand microphone: present, its frames accepted, bytes dropped and the key code held (hex)
-		bool present;
-		uint32_t frames, errors;
-		uint8_t key;
-		d578uv_hand_mic(&present, &frames, &errors, &key);
-		put(&o, present ? "hmic yes " : "hmic no ");
-		put_u(&o, frames);
+		hal_hand_mic_stats_t hm;
+		d578uv_hand_mic(&hm);
+		put(&o, hm.present ? "hmic yes " : "hmic no ");
+		put_u(&o, hm.frames);
 		put(&o, "/");
-		put_u(&o, errors);
+		put_u(&o, hm.errors);
 		put(&o, " k");
-		put_x(&o, key, 2);
+		put_x(&o, hm.key, 2);
 		break;
 	}
 	}

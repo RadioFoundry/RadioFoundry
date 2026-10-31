@@ -189,17 +189,55 @@ test("anytone: a frame refused every time, a radio gone silent and a stop all en
 	assert.equal(await slow.u.write(BOARD.app_base, rand(64)), 2);
 });
 
-test("anytone backend: install and restore steps, no backup, Web Serial for the connect step", async () => {
+test("anytone: the stock PC mode's reads and answers, byte for byte as anytone.py sends and builds them", async () => {
+	const pg = fx.program;
+	for (const [a, d, want] of pg.replies) {
+		assert.equal(toHex(at.readReply(a, fromHex(d))), want);
+		assert.equal(toHex(at.parseRead(a, fromHex(d).length, fromHex(want))), d);
+	}
+	assert.throws(() => at.readRequest(0, at.READ_MAX + 1), RangeError);
+	const fake = new FakeAnytone({ memory: [[pg.memory[0], fromHex(pg.memory[1])]] });
+	const sent = [];
+	const write = fake.stream.write;
+	fake.stream.write = async (b) => { sent.push(b); return write(b); };
+	const p = new at.AnytoneProgram(fake.stream, { timeout: 50 });
+	await p.hello();
+	const steps = [];
+	assert.equal(toHex(await p.read(pg.addr, pg.n, { onBytes: (d) => steps.push(d) })), pg.read);
+	assert.ok(await p.end());
+	assert.equal(toHex(concat(...sent)), pg.host);
+	assert.deepEqual(steps, [16, 32, 40]);
+	assert.ok(fake.ended);
+});
+
+test("anytone: a bad answer to a read is asked again, then refused; no PROGRAM answer means no stock firmware", async () => {
+	const good = at.readReply(0x100, new Uint8Array(4));
+	for (const [bad, why] of [[good.slice(0, -1), /malformed/], [Uint8Array.from(good, (b, i) => (i === 10 ? 0 : b)), /sum/],
+		[at.readReply(0x110, new Uint8Array(4)), /answered/]]) assert.throws(() => at.parseRead(0x100, 4, bad), why);
+	const fake = new FakeAnytone({ memory: [[0x100, Uint8Array.of(9, 8, 7, 6)]] });
+	let n = 0;
+	const write = fake.stream.write;
+	fake.stream.write = async (b) => { if (b[0] === at.READ && n++ === 0) return; return write(b); };	// the first read is lost
+	const p = new at.AnytoneProgram(fake.stream, { timeout: 20 });
+	await p.hello();
+	assert.deepEqual([...await p.read(0x100, 4)], [9, 8, 7, 6]);
+	fake.stream.write = async () => {};
+	await assert.rejects(p.read(0x100, 4), at.AnytoneError);
+	await assert.rejects(new at.AnytoneProgram(fake.stream, { timeout: 20 }).hello(), /PROGRAM/);
+});
+
+test("anytone backend: install and restore steps, no backup, Web Serial for the channels and connect steps", async () => {
 	await import("../static/js/flasher/anytoneui.js");
 	const b = backendOf(RADIO);
 	assert.equal(b.id, "anytone-update");
 	assert.ok(b.available(RADIO, FB, "install"));
 	assert.ok(!b.available(RADIO, FB, "backup"));
-	assert.deepEqual(b.steps("install", { recovering: false }), ["radio", "build", "connect", "at_boot", "write", "done"]);
+	assert.deepEqual(b.steps("install", { recovering: false }), ["radio", "build", "at_channels", "connect", "at_boot", "write", "done"]);
 	assert.deepEqual(b.steps("install", { recovering: true }), ["build", "connect", "at_boot", "write", "done"]);
 	assert.deepEqual(b.steps("restore", { recovering: false }), ["at_files", "connect", "restore"]);
-	for (const s of ["connect", "at_boot", "write", "done", "at_files", "restore"]) assert.equal(typeof b.views[s], "function", s);
+	for (const s of ["at_channels", "connect", "at_boot", "write", "done", "at_files", "restore"]) assert.equal(typeof b.views[s], "function", s);
 	assert.equal(missingApi(RADIO, "install", "connect", { usb: true, serial: false }), "serial");
+	assert.equal(missingApi(RADIO, "install", "at_channels", { usb: true, serial: false }), "serial");
 	assert.equal(missingApi(RADIO, "install", "connect", { usb: true, serial: true }), null);
 });
 

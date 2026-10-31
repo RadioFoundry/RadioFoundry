@@ -161,5 +161,8 @@ static inline bool mcu_clock_init(uint32_t hxtal_hz, uint32_t sys_hz)
 #define MCU_USART1		USART0
 #define MCU_USART1_IRQn		USART0_IRQn
 #define MCU_USART1_HANDLER	USART0_IRQHandler
+#define MCU_UART4		UART3		// the manuals' UART4 (this part's UART3), on PC10 / PC11
+#define MCU_UART4_IRQn		UART3_IRQn
+#define MCU_UART4_HANDLER	UART3_IRQHandler
 
 #endif

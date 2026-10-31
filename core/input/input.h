@@ -24,6 +24,10 @@ uint32_t input_ptt_downs(void);
 // The board's encoder decoder counts (false: none) and how often the UI's queue was full and detents waited for the
 // next scan (debug link: input.enc_*)
 bool input_encoder_stats(hal_encoder_stats_t *st, uint32_t *deferred);
+// The serial hand mic's decoder state; false when the radio has none
+bool input_hand_mic_stats(hal_hand_mic_stats_t *st);
+// The Bluetooth module's PTT and keys; false when the radio has none
+bool input_bt_stats(hal_bt_stats_t *st);
 // Gesture timing (Settings > Keys): the long press threshold and the repeat period in ms, 0 = the defaults above.
 // Clamped to 200..3000 and 40..1000; in effect from the next scan
 void input_set_timing(uint16_t long_ms, uint16_t repeat_ms);

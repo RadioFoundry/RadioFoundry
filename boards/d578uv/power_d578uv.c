@@ -6,7 +6,7 @@
 // boot and never clears it, even when it switches off, so whether dropping it cuts the supply is to be checked on the
 // radio. The stock firmware's "off" is a standby it wakes from on a one second hold of the power key. The supply is
 // read on PC1 through an 11:1 divider. The backlight is on the RF bus (radio_d578uv.c). The one LED output found is an
-// RF chip's GPIO bit, which radio_d578uv.c lights on transmit, so led() does nothing here. The microphone level for VOX
+// RF chip's GPIO bit: radio_d578uv.c lights it on transmit, and led() passes the core's receive LED on to it. The microphone level for VOX
 // comes from RF chip 0 (radio_d578uv.c): no ADC input carries the microphone.
 #include "d578uv.h"
 #include "pins.h"
@@ -68,8 +68,9 @@ static bool switch_on(void)
 
 static void led(uint8_t which, bool on)
 {
-	(void)which;
-	(void)on;
+	if (which == LED_GREEN) {
+		d578uv_led_rx(on);
+	}
 }
 
 static uint16_t supply_mv(void)

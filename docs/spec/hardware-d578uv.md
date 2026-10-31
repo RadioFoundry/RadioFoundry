@@ -221,7 +221,7 @@ audio while side B also receives, and whether it is there with the squelch close
 | Port | Pins | Use |
 | --- | --- | --- |
 | USART1 | PA2 (TX) / PA3 (RX), 9600 baud 8N1 | GPS (NMEA); the module's supply is RF chip 0's register 0x25 bit 2 (section 5) |
-| UART3 | PC10 / PC11, 115200 baud | Bluetooth module (PLUS) |
+| UART3 (the Artery's UART4) | PC10 / PC11, 115200 baud 8N1 | the Bluetooth module, or the APRS add-on board (3.7) |
 | USART0 | PA9 / PA10, 115200 baud | the serial keypad microphone (section 3.2); GPIO inputs with a plain microphone |
 | USB | PA11 / PA12 | native USB, the host link and the update mode |
 | I2C (bit-banged) | PB6 SDA / PB7 SCL | the KTMicro AM/FM receiver (5.4). The stock firmware drives SDA push-pull and reads it as an input with pull-up |
@@ -241,6 +241,39 @@ Settings > Location > GPS switches the supply and the receive path together once
 sentence goes out as `$`, the body, `*`, the XOR checksum in two upper-case hex digits and CR LF, back to back. The
 `$PCAS03` field order (GGA, GLL, GSA, GSV, RMC, VTG, ZDA, ANT) is from the CASIC protocol; the stock firmware's use
 of fields 1, 4 and 5 agrees with it.
+
+### 3.7 Bluetooth module
+
+The module speaks text lines on PC10 / PC11 (`drivers/input/bt_at`, `bt_d578uv.c`, `CONFIG_BT_PTT`). Its own firmware
+answers `+VER:ET12_AQQX_V10043`; the chip isn't named in the image. All of it is from the stock firmware's code and
+untested on a radio.
+
+| Item | Stock firmware | RadioFoundry |
+| --- | --- | --- |
+| UART | 8N1, no flow control, receive interrupt (IRQ 52) | the same |
+| Supply | the shift register's bit 0x02, 1 = on; PE15 driven low with 150 ms waits around it (its role isn't known) | bit 0x02 on from boot; PE15 untouched |
+| Detection | no pin. At start `AT+VER?` CR LF up to 5 times, 200 ms apart; any line back (even `ERR`) is the module. No answer costs about 1 s of start-up | the same probe from the key scan, without holding up the start |
+| APRS board | a `+VER` answer starting `APRS` is the APRS add-on board on the same UART; `+APRS:` starts its binary frames | known by its answer and left alone |
+| Set-up | `PIN?`, `LENAME?`, `CONN?`, `AGHF=0`, the gains, `SPKEN=0`, each sent up to four times | none: the module keeps the pairings it has (inferred) |
+| Frames | `AT+` text CR LF to the module; lines back start with `+`, `O` or `E` and end with LF; 300 bytes without a line end restarts the line | lines over 64 bytes are dropped whole |
+
+Lines the radio acts on:
+
+| Line | Meaning | RadioFoundry |
+| --- | --- | --- |
+| `+PTTKEY=1` / `=0` | the PTT button (key fob) pressed, released | PTT |
+| `+HFREQ:1` / `:0` | the hands-free button: 1 toggles a PTT latch, 0 clears it | PTT |
+| `+ADATA:nn,len` | the next `len` bytes are the Bluetooth hand mic's own lines: `+PTT=P`, `+PTT=R`, `+KEY=NN` | PTT; keys below |
+| `+CONN=<12 hex>,<name>` | a link: name `PTT...` the key fob, `HOST...` a host, else an audio device; the all-zero address is a disconnect | the disconnect releases PTT |
+| `+DISC=<12 hex>,<name>` | a link ended | releases PTT |
+| `+READY` | the module restarted | releases PTT |
+| `+AUDIO=`, `+PTTBATT=`, `+SCAN:`, `+VER`, `+PIN`, `+LENAME`, `OK`, `ERR` | audio state, the fob's battery, a scan result, replies | counted, not used |
+
+`+KEY=NN` takes two decimal digits; the stock firmware acts on 01-04 only: 01 and 02 post two key codes it also uses
+for the encoder, 03 and 04 two it uses for Monitor (both inferred). RadioFoundry gives 01 and 02 the microphone's Up
+and Down keys for 150 ms each and counts 03 and 04 (`input.bt_key`, `input.bt_keys`). The key fob's "PTT Hold"
+setting (a press toggles) and audio (`AUDIO`, `MICEN`, `SPKEN` at each transmission) aren't written. The stock
+firmware also turns the module off while dual receive is on; RadioFoundry doesn't.
 
 ## 4. DMR baseband (SCT3258)
 
@@ -373,7 +406,8 @@ mute (inferred from where the stock firmware sets it). It also drives the only L
 0x3E0 and above, off at 0x364 and below) or either, by a user setting. One bit serves both, so the two colors are
 switched elsewhere or in hardware; which is not known. Bit 2 is the GPS module's enable, not an LED: the firmware
 sets it with the GPS setting on, together with the GPS UART, and clears it in standby and at power-off (inferred from
-the code). RadioFoundry lights bit 1 while transmitting and sets bit 2 while the GPS module is powered (section 3.6).
+the code). RadioFoundry lights bit 1 while transmitting and while the core's receive LED is on (a signal or a call: the
+stock "either" choice), and sets bit 2 while the GPS module is powered (section 3.6).
 
 ### 5.1 DMR
 
@@ -618,10 +652,18 @@ differs only in the read path:
 | --- | --- |
 | 0x00000000 (block 0) | bad block table: 0x1F8-byte copies at each 0x400; signature "CHECK 2G BLOCK FOR VALID." at 0x1FF00 |
 | 0x00020000-0x0047FFFF | fonts and icons (the resource update) |
+| 0x00800000-0x00FFFFFF | channels, 32 pairs of 128 |
+| 0x01000000 / 0x01020000 | zone members (a pair) |
+| 0x01080000-0x0147FFFF | scan lists, 16 pairs of 16 |
+| 0x024C0000 / 0x024E0000 | settings and the zone, ID, scan list and channel bitmaps (a pair) |
 | 0x02500000 / 0x02520000 | settings (a pair) |
-| 0x02540000 / 0x02560000 | zones (a pair) |
+| 0x02540000 / 0x02560000 | zone names (a pair) |
 | 0x02580000 / 0x025A0000 | radio IDs (a pair) |
-| 0x02680000, 0x02900000 | contacts, digital contact list |
+| 0x025C0000 / 0x025E0000 | the RX group list bitmap at 0x025C0B10 (a pair) |
+| 0x02640000 / 0x02660000 | the contact bitmap (a pair) |
+| 0x02680000-0x028FFFFF | contacts, 10 pairs of 1000 |
+| 0x02900000, 0x02940000 | digital contact list headers (role not known) |
+| 0x02980000 / 0x029A0000 | RX group lists (a pair) |
 | 0x02F60000 / 0x02F80000 | calibration and its backup (markers in the last 12 bytes of each block) |
 | 0x03000000-0x03FFFFFF | spare blocks for the bad block table |
 | 0x05500000-0x0D1FFFFF | a list of 500 records of 100 bytes |
@@ -632,6 +674,8 @@ differs only in the read path:
   must never be erased or rewritten.
 - "Initialize radio" clears the codeplug, contacts, the record index and the ring; it doesn't reach 0x0E000000.
 - The stock firmware replaces bad blocks from its spare pool by its own table, not by spare-area marks.
+- The codeplug's tables, their block pairs and records: [codeplug-stock-anytone.md](codeplug-stock-anytone.md). The web
+  flasher reads them through the stock firmware's PC mode before an install and writes them converted afterwards.
 
 ### 6.3 RadioFoundry's range
 
@@ -712,7 +756,7 @@ The order to check it in on a radio, with the diagnostics lines and what to chan
 | Flash stub | `CONFIG_STUB_ENTRY` on: the GD32F30x stub ([stub-gd32f30x.md](stub-gd32f30x.md)) with board record id 6, application base 0x08006000; `stub/stubtool.py --board d578uv` drives it. Host tested, untested on the radio |
 | Air band AM | side B's chips and the KTMicro receiver (5.4); written, host tested (the receiver's sequences), untested on the radio |
 | Broadcast FM | the KTMicro receiver's FM mode (5.4); written, host tested (the receiver's sequences), untested on the radio. No stereo, no seek |
-| Bluetooth | not written |
+| Bluetooth | PTT and keys from the module's lines (3.7, `CONFIG_BT_PTT`); written, the line parser host tested, untested on the radio. Pairing, audio and the module's settings not written |
 | DMR on side B | not written: what is missing is listed below |
 | VOX | chip 0's voice amplitude as the microphone level (5.6); written, untested on the radio. The register and its scale are inferred from the BK4819 map |
 | APRS receive | PC0 sampled at 9600 Hz into the core's demodulator (3.4); written, the sample path host tested with the demodulator, untested on the radio. Off on the GD32 builds: it takes about 11.6 KB of RAM (the demodulator, the station list, the iGate and the 2 KB sample ring) and about 2.8 KB is free with DMR on. On in the Artery builds (section 10) |
@@ -741,6 +785,8 @@ DMR on side B needs facts not in the stock code's static analysis or the documen
 Open on the radio:
 
 - PTT on PA10 and the plain microphone's Up and Down (3.2).
+- The Bluetooth module (3.7): whether it answers the probe, keeps its pairings without the stock set-up, and what
+  `+KEY=01`-`04` are on the hand mic.
 - The serial microphone (3.2): its frames against the stock reading, how often it sends one (RadioFoundry's 3 s
   timeout), byte 2's role, the digit, `*` and `#` codes, and whether it needs anything at power-on.
 - The backlight levels' brightness, and the part behind PA5.

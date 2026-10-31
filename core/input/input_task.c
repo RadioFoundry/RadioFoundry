@@ -244,6 +244,22 @@ bool input_encoder_stats(hal_encoder_stats_t *st, uint32_t *deferred)
 	return true;
 }
 
+bool input_hand_mic_stats(hal_hand_mic_stats_t *st)
+{
+	if (board.input == NULL || board.input->hand_mic_stats == NULL)
+		return false;
+	board.input->hand_mic_stats(st);
+	return true;
+}
+
+bool input_bt_stats(hal_bt_stats_t *st)
+{
+	if (board.input == NULL || board.input->bt_stats == NULL)
+		return false;
+	board.input->bt_stats(st);
+	return true;
+}
+
 // --- Injection ---
 
 static const keymap_entry_t *key_for(uint8_t action, bool long_action)
