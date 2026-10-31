@@ -830,6 +830,11 @@ export function checkView() {
 			c.progmem ? h("p", { class: "small" }, h("a", { href: "#", onclick: (e) => { e.preventDefault(); saveBundle(); } }, t("flash.c7.check.download_again"))) : null,
 			h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		forward(button(t("flash.nav.to_write"), () => ctx.next(), { primary: true, disabled: !d }));
+		// an update that keeps the codec has nothing to decide here: on to the write, once (Back still shows this step)
+		if (update && d?.mode === "keep" && !c.autoNext) {
+			c.autoNext = true;
+			ctx.next();
+		}
 	}
 
 
@@ -981,6 +986,11 @@ export function writeView() {
 			prog.el, status, map.el),
 		top.el), h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 	S().forward(go);
+	// an update was asked for with its button: it writes at once, once per cable session (a failed write retries by hand)
+	if (S().task === "update" && d.mode === "keep" && !c.autoWrite) {
+		c.autoWrite = true;
+		setTimeout(() => write(), 0);
+	}
 
 	async function write() {
 		go.disabled = true;

@@ -259,7 +259,8 @@ HR_C7000 radios hand the open cable to their connect step (`c7000ui.js` `adoptCa
 asking for the port again. The steps are `update`, then the backend's: `write`, `done` on the STM32 radios (the loader
 route when it can, the bootloader otherwise), `connect`, `check`, `write`, `done` on the HR_C7000 radios, whose check
 reads only the codec slot unless the user asked for a backup. **Edit Build** (or a build the radio can't name) puts
-`build` after `update`.
+`build` after `update`. On the HR_C7000 radios an update that keeps the codec runs from the check to the write without
+another click, once per cable session; a failed write, and the step reached by **Back**, wait for the button.
 
 Which build runs (`update.js` `currentBuild`), from VERSION ([debuglink.md](../spec/debuglink.md) 3.1):
 
