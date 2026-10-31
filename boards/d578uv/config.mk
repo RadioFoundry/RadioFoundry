@@ -26,8 +26,8 @@ CONFIG_BT_PTT ?= y
 # Air band AM and broadcast FM receive run on the KTMicro receiver on PB6/PB7, AM behind side B's chips
 # (hardware-d578uv.md 5.4)
 # APRS receive samples the receive audio on PC0 (afsk_d578uv.c, hardware-d578uv.md 3.4). It doesn't fit with DMR on:
-# it takes about 11.6 KB (the demodulator, the station list and the 2 KB sample ring) and about 2.8 KB is free. With
-# DMR off it fits with under 1 KB to spare, so it stays off there too unless asked for
+# it takes about 11.6 KB (the demodulator, the station list and the 2 KB sample ring) and about 6.4 KB is free. With
+# DMR off it fits with about 3.9 KB to spare, so it stays off there too unless asked for
 CONFIG_APRS_RX ?= n
 # USRP needs PCM both ways (below)
 CONFIG_NET_USRP ?= n

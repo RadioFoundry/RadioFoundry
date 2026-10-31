@@ -759,7 +759,7 @@ The order to check it in on a radio, with the diagnostics lines and what to chan
 | Bluetooth | PTT and keys from the module's lines (3.7, `CONFIG_BT_PTT`); written, the line parser host tested, untested on the radio. Pairing, audio and the module's settings not written |
 | DMR on side B | not written: what is missing is listed below |
 | VOX | chip 0's voice amplitude as the microphone level (5.6); written, untested on the radio. The register and its scale are inferred from the BK4819 map |
-| APRS receive | PC0 sampled at 9600 Hz into the core's demodulator (3.4); written, the sample path host tested with the demodulator, untested on the radio. Off on the GD32 builds: it takes about 11.6 KB of RAM (the demodulator, the station list, the iGate and the 2 KB sample ring) and about 2.8 KB is free with DMR on. On in the Artery builds (section 10) |
+| APRS receive | PC0 sampled at 9600 Hz into the core's demodulator (3.4); written, the sample path host tested with the demodulator, untested on the radio. Off on the GD32 builds: it takes about 11.6 KB of RAM (the demodulator, the station list, the iGate and the 2 KB sample ring) and about 6.4 KB is free with DMR on. On in the Artery builds (section 10) |
 | APRS transmit | the tones on PB9 into chip 0's audio input with the DTMF set-up (5.3); written, the tones host tested through the core's demodulator, untested on the radio. The deviation per APRS level is inferred |
 | Artery variant | `boards/d578uva` on the AT32F43x platform (section 10): builds, untested on the radio |
 
@@ -779,7 +779,7 @@ DMR on side B needs facts not in the stock code's static analysis or the documen
 - The core. `hal_rx2_t` is a second receiver that decodes DMR itself, matches the groups and plays the call, as the
   GD-88's second SoC does. Here both sides' bursts would come through the one baseband and the one `hal_dmr_modem_t`
   that the core's DMR stack owns. Side B's calls would need either their own LC decoding and call matching in the
-  board, which repeats the stack, or a second DMR receive path in the core. Neither exists, and about 1.4 KB of RAM
+  board, which repeats the stack, or a second DMR receive path in the core. Neither exists, and about 6.4 KB of RAM
   is free.
 
 Open on the radio:
@@ -857,7 +857,7 @@ The 128 KB take what the GD32 builds leave out for RAM (`boards/d578uva/config.m
 | The control station mode | under 0.1 KB |
 | Zone sharing | about 4.7 KB |
 
-That leaves about 4.7 KB of static RAM free. TCP and the services on it (the HTTP server, the web control, rigctld,
+That leaves about 8.4 KB of static RAM free. TCP and the services on it (the HTTP server, the web control, rigctld,
 KISS and APRS-IS) are off: TCP alone takes about 4.7 KB. USRP isn't written on either build: it needs PCM both ways,
 and the voice stays in the baseband.
 

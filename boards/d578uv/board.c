@@ -12,6 +12,13 @@
 #if CONFIG_GPS
 #include "gps_uart/gps_uart.h"
 #endif
+#if CONFIG_USB
+#include "usb/usb_device.h"
+#include "usb/usb_ncm.h"
+#endif
+#if CONFIG_NET_PPP
+#include "hostlink/hostlink_ppp.h"
+#endif
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
@@ -99,6 +106,14 @@ const board_t board = {
 	.afsk = &d578uv_afsk,
 #endif
 	.power = &d578uv_power,
+#if CONFIG_USB
+	.host_port = &usb_cdc_stream,	// the debug link, CPS and the hotspot's MMDVM on the USB serial port
+#if CONFIG_NET_PPP
+	.netif = &hostlink_ppp_netif,	// PPP on the USB serial port, the network adapter under it (board_init)
+#elif CONFIG_USB_NETWORK
+	.netif = &usb_ncm_netif,
+#endif
+#endif
 	.system = &mcu_system,
 #if CONFIG_NAND_STORAGE
 	.flash = &d578uv_flash,
