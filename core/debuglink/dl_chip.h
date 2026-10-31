@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The debug link's chip commands, the portable parts (host tested): option byte decoding, the READ_MEM address
-// whitelist, the REBOOT safety gate (docs/spec/debuglink.md 3.9-3.11). STM32F4 memory map.
+// window check, the REBOOT safety gate (docs/spec/debuglink.md 3.9-3.11). The windows themselves are the platform's
+// (hal_system_t.mem_window).
 #ifndef DL_CHIP_H
 #define DL_CHIP_H
 
@@ -39,10 +40,10 @@ static inline uint8_t dl_user_bits(uint32_t optcr)
 	return (uint8_t)((optcr >> 5) & 7u);	// bit 0 WDG_SW, 1 nRST_STOP, 2 nRST_STDBY
 }
 
-// READ_MEM: the whole range [addr, addr + len) inside one of internal flash (0x08000000, up to flash_kb, at most
-// 1 MB; flash_kb 0 or out of range counts as 1 MB), system memory 0x1FFF0000-0x1FFF77FF, OTP 0x1FFF7800-0x1FFF7A0F,
-// option bytes 0x1FFFC000-0x1FFFC00F. Never RAM or peripherals (reads there can have side effects)
-bool dl_mem_allowed(uint32_t addr, uint32_t len, uint16_t flash_kb);
+// READ_MEM: the whole range [addr, addr + len) inside one of the platform's windows (window(i, &w) for i = 0, 1, ...
+// until it returns false); in a words window (peripheral registers) only whole aligned words. len 0 or no windows:
+// refused
+bool dl_mem_allowed(uint32_t addr, uint32_t len, bool (*window)(unsigned i, hal_mem_window_t *w));
 
 // REBOOT refusal reasons (the reply's second byte when the status is DL_ST_REFUSED)
 enum {

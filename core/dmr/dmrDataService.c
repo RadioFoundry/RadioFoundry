@@ -61,9 +61,9 @@ _Static_assert(IP_PREAMBLES + 1 + ((DMR_DATA_IP_MTU + 4 + 9) / 10) + 1 <= DMR_DA
 #define CNF_PEERS				4		// radios whose N(S) we keep (ours to them, theirs to us)
 
 static dmrDataEnv_t env;
-static dmrDataSettings_t settings = { .callAlertAck = true, .lrrpReply = true, .smsFormat = DMR_SMS_FORMAT_ETSI_IP,
-										.udpCompress = DMR_UDPC_AUTO, .ipConfirmed = DMR_IPC_RULES,
-										.ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
+static dmrDataSettings_t settings = { .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
+										.smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
+										.ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 static bool passthrough;				// control station: IP based packets to us belong to the PC
 static dmrDataChannel_t channel;
 static uint32_t now;

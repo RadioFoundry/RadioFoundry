@@ -105,13 +105,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           submodules: false
-      - name: Install numpy, pytest, pyserial
+      - name: Install numpy, pytest, pyserial, the site's packages
         run: |
           set -eu
           if [ "${RFOUNDRY_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
             sudo apt-get update -qq
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
               python3-numpy python3-pytest python3-serial
+            # without them ci.sh skips the strict site build, which Cloudflare Pages then fails on
+            python3 -m pip install -q --user --break-system-packages -r site/requirements.txt
           fi
           # reuse lint only when the tree is expected to pass it (repository variable RFOUNDRY_CI_REUSE=true)
           if [ "${{ vars.RFOUNDRY_CI_REUSE }}" = true ]; then

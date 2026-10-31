@@ -240,6 +240,7 @@ bool input_encoder_stats(hal_encoder_stats_t *st, uint32_t *deferred)
 	*deferred = enc_deferred;
 	if (board.input == NULL || board.input->encoder_stats == NULL)
 		return false;
+	memset(st, 0, sizeof(*st));	// a board fills only the fields it has
 	board.input->encoder_stats(st);
 	return true;
 }

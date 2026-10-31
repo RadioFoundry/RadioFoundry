@@ -815,8 +815,21 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 			sb_u32(&b, v->zone_size, 1);
 		}
 		int rw = gfx_text_width(L->small, right);
-		gfx_text(L->small, w - rw, L->zone_y, right, ui_col.dim);
 		const char *left = v->vfo ? "VFO" : v->zone_name;
+		if (v->vfo && v->ch.mode == RADIO_MODE_DMR && !v->ch.rx_only && v->ch.tx_hz != v->ch.rx_hz) {
+			// A split VFO on DMR: the talk row names the target, so the TX frequency goes here (FM's talk row
+			// already shows it). A frequency is never cut short: the step gives way, then "VFO"
+			sb_init(&b, buf, sizeof buf);
+			sb_str(&b, "VFO  TX ");
+			sb_freq(&b, v->ch.tx_hz);
+			left = buf;
+			if (gfx_text_width(L->small, buf) + L->small->w + rw > w)
+				rw = 0;
+			if (gfx_text_width(L->small, buf) > w)
+				left = buf + 5;	// "TX 433.5375"
+		}
+		if (rw)
+			gfx_text(L->small, w - rw, L->zone_y, right, ui_col.dim);
 		gfx_text_fit(L->small, left, w - rw - L->small->w, fit, sizeof fit);
 		gfx_text(L->small, 0, L->zone_y, fit, v->vfo ? ui_col.warn : ui_col.fg);
 	}
@@ -824,7 +837,9 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 	int y = L->channel_y;
 	int base = y + L->large->ascent;
 	if (v->vfo || s->entry) {
-		// The frequency large; while typing, the digits so far and blanks for the rest
+		// The frequency large, the TX frequency in red while transmitting; while typing, the digits so far and
+		// blanks for the rest
+		bool tx = v->state == RS_TX && v->vfo;
 		sb_init(&b, buf, sizeof buf);
 		if (s->entry) {
 			int dec = s->entry_len > UI_ENTRY_MHZ ? s->entry_len - UI_ENTRY_MHZ : 0;
@@ -835,9 +850,9 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 				sb_chr(&b, i < s->entry_len ? s->entry_digits[i] : '_');
 			}
 		} else {
-			sb_freq(&b, v->ch.rx_hz);
+			sb_freq(&b, tx ? v->ch.tx_hz : v->ch.rx_hz);
 		}
-		int x = gfx_text(L->large, 0, y, buf, s->entry ? ui_col.warn : ui_col.fg);
+		int x = gfx_text(L->large, 0, y, buf, s->entry ? ui_col.warn : tx ? ui_col.tx : ui_col.fg);
 		if (x + L->small->w / 2 + gfx_text_width(L->small, "MHz") <= w)	// 5 decimals leave no room on 120 px
 			gfx_text(L->small, x + L->small->w / 2, base - L->small->ascent, "MHz", ui_col.dim);
 		if (L->zone_y < 0 && !s->entry)
@@ -1240,6 +1255,13 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 	if (pw_temp)
 		x = gfx_text(f, x, L->chips_y, GLYPH_DOT, ui_col.warn);
 	x = gfx_text(f, x, L->chips_y, ui_power_name(v->power), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+	if (L->zone_y < 0 && v->vfo && !v->ch.rx_only && v->ch.tx_hz != v->ch.rx_hz) {
+		// A split VFO with no top row for its TX frequency: the offset here ("+600k")
+		sb_init(&b, buf, sizeof buf);
+		sb_split(&b, v->ch.rx_hz, v->ch.tx_hz);
+		if (x + gfx_text_width(f, buf) <= gfx_width())
+			x = gfx_text(f, x, L->chips_y, buf, ui_col.warn) + f->w;
+	}
 	if ((v->dmr.hear_all || s->hear_all) && x + 4 * f->w <= gfx_width())
 		x = gfx_text(f, x, L->chips_y, "DMon", ui_col.warn) + f->w;	// digital monitor (FM's is "Mon")
 	if ((s->privacy || v->dmr.privacy) && x + 4 * f->w <= gfx_width())
@@ -1334,6 +1356,13 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		sb_init(&b, buf, sizeof buf);
 		sb_target_alts(&b, d->target_id, d->target_private, d->target_name, "");
 		y = call_line(L->medium, y, buf, ui_col.fg);
+		if (v->vfo) {	// a channel has its name in the codeplug; the VFO has only its TX frequency
+			sb_init(&b, buf, sizeof buf);
+			sb_str(&b, "TX ");
+			sb_freq(&b, v->ch.tx_hz);
+			sb_str(&b, " MHz");
+			y = call_line(L->small, y, buf, ui_col.tx);
+		}
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, "TS");
 		sb_u32(&b, d->ts, 1);
@@ -1569,13 +1598,14 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 	int room = (L->hint_y - y) / 2;
 	char form[48];
 	sb_init(&b, buf, sizeof buf);
+	bool tx = v->state == RS_TX && v->vfo;
 	if (v->vfo)
-		sb_freq(&b, v->ch.rx_hz);
+		sb_freq(&b, tx ? v->ch.tx_hz : v->ch.rx_hz);
 	else
 		sb_str(&b, v->ch.name);
 	const font_t *f = large_font(buf, room, form, sizeof form);
 	gfx_text_fit(f, form, w, fit, sizeof fit);
-	gfx_text(f, 0, y, fit, ui_col.fg);
+	gfx_text(f, 0, y, fit, tx ? ui_col.tx : ui_col.fg);
 	y += room;
 	sb_init(&b, buf, sizeof buf);
 #if CONFIG_DMR
@@ -1839,8 +1869,12 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 			mf->w / 2;
 	}
 	dual_name(p, buf, sizeof buf);
+	if (tx && p->vfo) {	// the VFO transmitting: its TX frequency (the view's channel is the selected pane's)
+		sb_init(&b, buf, sizeof buf);
+		sb_freq(&b, v->ch.tx_hz);
+	}
 	gfx_text_fit(f, buf, rx_end - x, fit, sizeof fit);
-	x = gfx_text(f, x, base - f->ascent, fit, rx ? ui_col.rx : fg);
+	x = gfx_text(f, x, base - f->ascent, fit, tx && p->vfo ? ui_col.tx : rx ? ui_col.rx : fg);
 	if (p->vfo && x + sm->w / 2 + gfx_text_width(sm, "MHz") <= rx_end) {
 		gfx_text(sm, x + sm->w / 2, base - sm->ascent, "MHz", ui_col.dim);
 		x += sm->w / 2 + gfx_text_width(sm, "MHz");
@@ -2269,6 +2303,17 @@ static int wrap_text(const font_t *f, const char *t, int y, int y_end, bool draw
 	return y;
 }
 
+// The length of a text line's "Label:" (colon included) when the line starts with one: a colon within its first 20
+// characters followed by a space or the line's end. 0 when it has none
+static size_t label_len(const char *t)
+{
+	for (size_t n = 0; n < 20 && t[n] != 0 && t[n] != '\n'; n++) {
+		if (t[n] == ':')
+			return t[n + 1] == ' ' || t[n + 1] == '\n' || t[n + 1] == 0 ? n + 1 : 0;
+	}
+	return 0;
+}
+
 int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *title, const char *text,
 	uint16_t *first)
 {
@@ -2294,24 +2339,24 @@ int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *ti
 	for (int i = 0; *t; i++) {
 		// a label only where a line of the text starts, never on a wrapped value's next line
 		bool starts = t == text || t[-1] == '\n';
+		size_t lab = starts ? label_len(t) : 0;
 		t = wrap_line(f, t, w, line, sizeof line);
 		int r = i - *first;
 		if (r < 0)
 			continue;
 		if (r >= rows)
 			break;
-		// "Label: value" shows the label dim, and so does a line that is only "Label:" (a list follows)
-		const char *colon = starts ? strstr(line, ": ") : NULL;
+		// "Label: value" shows the label dim, and so does a line that is only "Label:" (a list follows). The label is
+		// found in the text, not the wrapped line: a wrap right after the colon drops the space
 		size_t len = strlen(line);
 		color_t dim = gfx_bpp() == 1 ? ui_col.fg : ui_col.dim;
-		if (colon != NULL && colon - line < 20) {
+		if (lab > 0 && lab < len) {
 			char label[24];
-			size_t n = (size_t)(colon - line) + 1;
-			memcpy(label, line, n);
-			label[n] = 0;
+			memcpy(label, line, lab);
+			label[lab] = 0;
 			int x = gfx_text(f, 0, y + r * f->h, label, dim);
-			gfx_text(f, x, y + r * f->h, colon + 1, ui_col.fg);
-		} else if (starts && len > 0 && len < 20 && line[len - 1] == ':' && *t != 0 && t[-1] == '\n') {
+			gfx_text(f, x, y + r * f->h, line + lab, ui_col.fg);
+		} else if (lab > 0 && lab == len) {
 			gfx_text(f, 0, y + r * f->h, line, dim);
 		} else {
 			gfx_text(f, 0, y + r * f->h, line, ui_col.fg);
@@ -2618,7 +2663,10 @@ uint8_t ui_quick_kind(int pos, const radio_view_t *v)
 		return QT_POWER;
 	if (!v->vfo && pos == 3)
 		return QT_TO_VFO;	// a channel's tile 4 copies it to the VFO; the VFO's stays Mode
-	return v->ch.mode == RADIO_MODE_DMR ? dmr[pos] : fm[pos];
+	uint8_t kind = v->ch.mode == RADIO_MODE_DMR ? dmr[pos] : fm[pos];
+	if (v->vfo && (kind == QT_MONITOR || kind == QT_PRIVACY))
+		return QT_SPLIT;	// the VFO's TX frequency; Monitor stays on its key, privacy on channels
+	return kind;
 }
 
 static bool feat(uint32_t f)
@@ -2643,6 +2691,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		[QT_BRIGHTNESS] = "Bright", [QT_TIMESLOT] = QT_NAME("Timeslot", "Slot"), [QT_CC] = "Color",
 		[QT_HEAR_ALL] = QT_NAME("Digital monitor", "DMon"), [QT_PRIVACY] = QT_NAME("Privacy", "Priv"),
 		[QT_TALK_TO] = QT_NAME("Talk to", "Talk"), [QT_TO_VFO] = QT_NAME("Copy to VFO", "To VFO"),
+		[QT_SPLIT] = QT_NAME("TX freq", "TXFreq"),
 	};
 #undef QT_NAME
 	uint8_t kind = ui_quick_kind(tile, v);
@@ -2699,6 +2748,13 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	case QT_TO_VFO:
 		sb_str(&b, "Copy");
 		return CONFIG_VFO_FM || CONFIG_VFO_DMR;	// a channel the VFO can't hold is refused on the press, with the reason
+	case QT_SPLIT:
+		if (editing && s->entry_len > 0) {
+			sb_str(&b, "TX");	// the typed frequency is too wide for a tile: the hint row has it whole
+		} else {
+			sb_split(&b, v->ch.rx_hz, v->ch.tx_hz);
+		}
+		return v->vfo && (CONFIG_VFO_FM || CONFIG_VFO_DMR);
 	case QT_MONITOR:
 		sb_str(&b, v->monitor ? "On" : "Off");
 		return feat(UI_FEAT_MONITOR_LATCH);
@@ -2766,28 +2822,55 @@ static void quick_list_item(uint16_t i, ui_item_t *it)
 		it->flags |= UI_ITEM_EDIT;
 }
 
-void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
+// The hint while the TX freq tile edits: what Up / Down and the digits do, or the TX frequency typed so far, whole
+// (blanks for the digits to come); NULL when that tile isn't editing
+static const char *quick_split_hint(const radio_view_t *v, const ui_state_t *s, char *buf, size_t len)
+{
+	if (!s->quick_edit || ui_quick_kind(s->quick_focus, v) != QT_SPLIT)
+		return NULL;
+	if (s->entry_len == 0)
+		return TEXT_ALT_OPEN "Up/Dn: +/- offset  Type: TX freq" TEXT_ALT_NEXT "Up/Dn +/- offset  0-9 TX freq"
+			TEXT_ALT_NEXT "Up/Dn offset  0-9 TX freq" TEXT_ALT_NEXT "Up/Dn +/-  0-9 TX freq" TEXT_ALT_CLOSE;
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	sb_str(&b, "TX ");
+	for (uint8_t i = 0; i < UI_ENTRY_MAX; i++) {
+		if (i == UI_ENTRY_MHZ)
+			sb_chr(&b, '.');
+		sb_chr(&b, i < s->entry_len ? s->entry_digits[i] : '_');
+	}
+	sb_str(&b, "  OK sets");
+	return buf;
+}
+
+// 128x64: a numbered list with the same numbers (wireframe 128x64). The list and the tiles each have their own
+// frame, so the list's deep draw doesn't sit on the tiles' (the ui task's stack is tight)
+static void __attribute__((noinline)) draw_quick_list(const radio_view_t *v, const ui_state_t *s)
+{
+	static uint16_t top;
+	char hint[24];
+	const char *split_hint = quick_split_hint(v, s, hint, sizeof hint);
+	quick_v = v;
+	quick_s = s;
+	quick_list_focus = s->quick_focus;
+	ui_list_t l = { "Quick", v->vfo ? "VFO" : v->ch.name, NULL, NULL, UI_QUICK_TILES, quick_list_focus, &top,
+			quick_list_item, NULL, split_hint != NULL ? split_hint : "1-9 change  Hold OK save" };
+	ui_draw_list(v, s, &l);
+}
+
+static void __attribute__((noinline)) draw_quick_tiles(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
 	int w = gfx_width(), h = gfx_height();
 	const char *name = v->vfo ? "VFO" : v->ch.name;
+	char label[24];	// a tile's label, and the hint's text after the tiles (one buffer: the ui task's stack is tight)
+	const char *split_hint = quick_split_hint(v, s, label, sizeof label);
 
-	if (w < 150) {
-		// 128x64: a numbered list with the same numbers (wireframe 128x64)
-		static uint16_t top;
-		quick_v = v;
-		quick_s = s;
-		quick_list_focus = s->quick_focus;
-		ui_list_t l = { "Quick", name, NULL, NULL, UI_QUICK_TILES, quick_list_focus, &top, quick_list_item, NULL,
-				"1-9 change  Hold OK save" };
-		ui_draw_list(v, s, &l);
-		return;
-	}
 	gfx_clear(ui_col.bg);
 	// Title row keeps the state pill (P2)
 	int top = ui_draw_top(v, s, "Quick", name);
 	int bottom = h;
-	if (s->toast != NULL || h >= UI_TALL_PX)
+	if (s->toast != NULL || split_hint != NULL || h >= UI_TALL_PX)
 		bottom = L->hint_y;
 	int gh = bottom - top;
 	const font_t *lf = L->small;
@@ -2800,7 +2883,7 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
 		int cx = i % 3, cy = i / 3;
 		int x0 = w * cx / 3, x1 = w * (cx + 1) / 3 - (cx == 2 ? 1 : 0);
 		int y0 = top + gh * cy / 3, y1 = top + gh * (cy + 1) / 3 - (cy == 2 ? 1 : 0);
-		char label[24], value[12], fit[12];	// label: "5" and the name's alternates
+		char value[12], fit[12];	// label: "5" and the name's alternates
 		bool ok = ui_quick_tile(i, v, s, label, sizeof label, value, sizeof value);
 		bool focus = i == s->quick_focus;
 		color_t fg = ok ? ui_col.fg : ui_col.line, bg = ui_col.bg;
@@ -2841,8 +2924,18 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
 	ui_draw_banner(s);
 	if (s->toast != NULL)
 		ui_draw_hint(s->toast, true);
+	else if (split_hint != NULL)
+		ui_draw_hint(quick_split_hint(v, s, label, sizeof label), false);	// the tiles used label
 	else if (h >= UI_TALL_PX)
 		ui_draw_hint("0 All settings  Hold OK save", false);
+}
+
+void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
+{
+	if (gfx_width() < 150)
+		draw_quick_list(v, s);
+	else
+		draw_quick_tiles(v, s);
 }
 
 #if CONFIG_DIAG

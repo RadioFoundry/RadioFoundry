@@ -101,8 +101,8 @@ range.
 
 <img src="../ux/screens/160x120i5/banner_radio_check.png" width="200" alt="A radio check result">
 
-Your radio answers radio checks from others only when **Settings > Connections > Answer radio checks** is on. It is off
-by default, because an answer makes the radio transmit without you asking.
+Your radio answers radio checks from others while **Settings > Connections > Answer radio checks** is on, the default.
+An answer is a short transmission the radio makes without you pressing PTT; turn the setting off if you don't want that.
 
 ## Registration (ARS) and location (LRRP)
 

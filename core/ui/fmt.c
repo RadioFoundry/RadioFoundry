@@ -85,6 +85,29 @@ void sb_tone(sbuf_t *b, const subtone_t *t)
 	}
 }
 
+void sb_split(sbuf_t *b, uint32_t rx_hz, uint32_t tx_hz)
+{
+	if (tx_hz == rx_hz) {
+		sb_str(b, "Off");
+		return;
+	}
+	sb_chr(b, tx_hz > rx_hz ? '+' : '-');
+	uint32_t d = tx_hz > rx_hz ? tx_hz - rx_hz : rx_hz - tx_hz;
+	// Below 1 MHz in kHz, else in MHz; three decimals at most, trailing zeros dropped: "+600k", "+12.5k", "-7.6M"
+	bool mhz = d >= 1000000u;
+	uint32_t unit = mhz ? 1000000u : 1000u;
+	sb_u32(b, d / unit, 1);
+	uint32_t frac = d % unit / (unit / 1000u);
+	if (frac != 0) {
+		sb_chr(b, '.');
+		for (uint32_t div = 100u; frac != 0; div /= 10u) {
+			sb_chr(b, (char)('0' + frac / div));
+			frac %= div;
+		}
+	}
+	sb_chr(b, mhz ? 'M' : 'k');
+}
+
 void sb_mmss(sbuf_t *b, uint32_t seconds)
 {
 	sb_u32(b, seconds / 60u, 1);

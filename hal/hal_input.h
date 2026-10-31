@@ -61,6 +61,19 @@ typedef struct {
 	uint32_t illegal;	// samples with both lines changed (a missed sample; ignored)
 	uint32_t reversals;	// steps opposite to the one before (contact bounce, or a turn back)
 	uint32_t steps_per_detent;
+	// The interrupt watch, on a board whose encoder runs on one interrupt the platform watches for a lost one
+	// (irq_watch false and the rest 0 elsewhere). A stall: the interrupt pending on two scans running with none taken
+	// in between; the scan then serves it and enables it again
+	bool irq_watch;
+	bool stall_handler_ok;		// at the first stall: the source's vector still pointed at the board's handler
+	uint32_t irqs;			// encoder interrupts taken
+	uint32_t stalls;
+	// At the first stall: when (uptime ms), the interrupt controller's mask words (1 = masked) and request record,
+	// and the GPIO bank's pending, enabled and masked bits
+	uint32_t stall_ms;
+	uint32_t stall_irq_mask[2];
+	uint32_t stall_irq_pending;
+	uint32_t stall_gpio_pending, stall_gpio_enabled, stall_gpio_masked;
 } hal_encoder_stats_t;
 
 // A serial hand mic's decoder (a mic with its own MCU that sends its keys as frames), for the debug link

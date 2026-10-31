@@ -247,6 +247,9 @@ bool codeplug_set_dmr_id(uint32_t id)
 	return true;
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]) { line1[0] = line2[0] = 0; }
+void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = 0; }
+bool codeplug_set_radio_name(const char *name) { (void)name; return false; }
+bool codeplug_set_boot_text(const char *line1, const char *line2) { (void)line1; (void)line2; return false; }
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
 	if (index < 1 || index > sizeof(contacts) / sizeof(contacts[0])) {
@@ -683,6 +686,41 @@ static void test_vfo(void)
 	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 440000000);
 	req(RREQ_ZONE_POS, 1);			// picking a channel leaves it
 	CHECK(!sm.view.vfo && sm.view.channel_number == 2);
+
+	// Split (RREQ_VFO_TX): the VFO only; TX where it may transmit; a new RX keeps the offset where TX still can
+	req(RREQ_VFO_TX, 445000000);		// on a channel: refused
+	CHECK(sm.view.ch.tx_hz != 445000000);
+	req(RREQ_VFO_SET, 440000000);
+	uint32_t rx_before = hw.rx_hz;
+	req(RREQ_VFO_TX, 445000000);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 440000000 && sm.view.ch.tx_hz == 445000000);
+	CHECK(hw.rx_hz == rx_before);		// the receiver stays where it is
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 445000000);
+	req(RREQ_VFO_TX, 446000000);		// not while transmitting
+	CHECK(sm.view.ch.tx_hz == 445000000);
+	req(RREQ_PTT, 0);
+	req(RREQ_VFO_TX, 120000000);		// a receive-only band: refused
+	CHECK(sm.view.ch.tx_hz == 445000000);
+	req(RREQ_VFO_STEP, 1);			// the offset moves with RX
+	CHECK(sm.view.ch.tx_hz - sm.view.ch.rx_hz == 5000000);
+	req(RREQ_VFO_SET, 446000000);
+	CHECK(sm.view.ch.tx_hz == 451000000);
+	req(RREQ_VFO_SET, 146520000);		// another band: simplex, though 151.52 could transmit
+	CHECK(sm.view.ch.rx_hz == 146520000 && sm.view.ch.tx_hz == 146520000);
+	req(RREQ_VFO_TX, 147120000);		// back to UHF with a VHF split: simplex too
+	req(RREQ_VFO_SET, 446000000);
+	CHECK(sm.view.ch.tx_hz == 446000000);
+	req(RREQ_VFO_TX, 451000000);
+	req(RREQ_VFO_SET, 478000000);		// TX would leave the band: simplex
+	CHECK(sm.view.ch.tx_hz == 478000000);
+	req(RREQ_VFO_TX, 473000000);
+	req(RREQ_VFO_TX, 0);			// 0: simplex again
+	CHECK(sm.view.ch.tx_hz == 478000000);
+	uint32_t serial = sm.serial;		// the UI sees a new split at once
+	req(RREQ_VFO_TX, 473000000);
+	CHECK(sm.serial != serial);
+	req(RREQ_VFO_TX, 0);
 }
 
 static void test_no_codeplug(void)
@@ -1286,6 +1324,14 @@ static void test_vfo_dmr(void)
 	CHECK(!sm.view.temporary && sm.view.temp == 0 && d->active && d->own_id == 3101276);
 	CHECK(d->cc == 1 && d->ts == 1 && d->target_id == 9 && !d->target_private && !d->target_manual);
 	CHECK(hw.rx_tone.type == TONE_NONE);
+	// A split: through a repeater, set up again at once (no retune); simplex again: direct
+	CHECK(!d->rmo);
+	req(RREQ_VFO_TX, 451000000);
+	run(50);
+	CHECK(d->rmo && hw.rx_hz == 446000000);
+	req(RREQ_VFO_TX, 0);
+	run(50);
+	CHECK(!d->rmo);
 	// Receive filtering as a DMR channel with no RX group list: the talk target's group (9) and nothing else
 	hear_call(true, 9, 3105555, 1, 1, true);
 	CHECK(d->last_ms != 0 && d->last.dst == 9 && d->last.src == 3105555);
@@ -1996,7 +2042,7 @@ static void test_persist(void)
 	// The DMR data service's settings: saved when they change, back after a reboot
 	dmrDataSettings_t ds;
 	dmrDataServiceGetSettings(&ds);
-	CHECK(ds.arsServer == 0 && !ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
 	ds.arsServer = 3100999;
 	ds.radioCheckReply = true;
 	ds.callAlertAck = false;
@@ -2024,16 +2070,29 @@ static void test_persist(void)
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.ipGatewayId == 0);
 	// A record from before ETSI IP text (no format bit) keeps TMS: only the default changed
-	settings_begin()->ds_flags = SETTINGS_DS_CALL_ALERT_ACK | SETTINGS_DS_LRRP_REPLY;
+	settings_t *old = settings_begin();
+	old->ds_flags = SETTINGS_DS_CALL_ALERT_ACK | SETTINGS_DS_LRRP_REPLY;
+	old->ds_ip_cnf = 0;
 	settings_end(now);
 	boot();
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.smsFormat == DMR_SMS_FORMAT_TMS && ds.callAlertAck);
+	// ... and, saved before radio check answers became the default (no SETTINGS_DS_CHECK_SET), answers them
+	CHECK(ds.radioCheckReply);
+	// Turned off by the user: saved with the mark, off after a reboot
+	ds.radioCheckReply = false;
+	dmr_data_set_settings(&ds);
+	run(50);
+	settings_read(&cur);
+	CHECK((cur.ds_ip_cnf & SETTINGS_DS_CHECK_SET) && !(cur.ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY));
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(!ds.radioCheckReply);
 	settings_begin()->ds_stored = 0;
 	settings_end(now);
 	boot();
 	dmrDataServiceGetSettings(&ds);
-	CHECK(ds.arsServer == 0 && !ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
 
 	// Power off: nothing to deregister, so the radio core is done at once
 	req(RREQ_POWER_OFF, 0);

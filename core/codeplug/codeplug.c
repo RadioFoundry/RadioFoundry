@@ -1019,6 +1019,20 @@ bool codeplug_set_radio_name(const char *name)
 	return ok;
 }
 
+bool codeplug_set_boot_text(const char *line1, const char *line2)
+{
+	uint8_t b[2u * CODEPLUG_NAME_LEN];
+	put_name(b, line1, CODEPLUG_NAME_LEN);
+	put_name(b + CODEPLUG_NAME_LEN, line2, CODEPLUG_NAME_LEN);
+	storage_lock();
+	bool ok = materialize() && flash_write(BOOT_TEXT, b, sizeof(b));
+	if (ok) {
+		serial++;
+	}
+	storage_unlock();
+	return ok;
+}
+
 #if CONFIG_DMR
 // DMR ID or talkgroup: 8 BCD digits, bytes in reading order; 0 if malformed or out of the 24-bit range
 static uint32_t bcd_id(const uint8_t *p)

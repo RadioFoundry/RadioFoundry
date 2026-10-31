@@ -354,7 +354,9 @@ static uint8_t p_battery(void) { return battery; }
 static uint16_t p_supply(void) { return 13800; }	// the sim's view carries the reading (supply:<mv>)
 static hal_power_t power = { .battery_pct = p_battery };
 
-static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
+// The air band receive only, as on radios that have it (docs/spec/airband-and-broadcast.md 3.2)
+static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true },
+				{ 108000000, 136000000, false } };
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
 static bool afsk_tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mark, uint16_t space, uint8_t level)
@@ -372,7 +374,7 @@ static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_O
 static const hal_vocoder_t vocoder = { .options = v_options };
 
 board_t board = {
-	.name = "Simulator", .bands = bands, .band_count = 2, .power_count = 9, .power_names = power_names,
+	.name = "Simulator", .bands = bands, .band_count = 3, .power_count = 9, .power_names = power_names,
 	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk, .vocoder = &vocoder,
 };
 
@@ -1011,20 +1013,47 @@ static void sim_vfo(bool on)
 		load_channel();
 	}
 }
+// board_tx_band on this file's writable board (board.h's inline one reads the const declaration)
+static int sim_tx_band(uint32_t hz)
+{
+	for (uint8_t i = 0; i < board.band_count; i++)
+		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz && board.bands[i].tx)
+			return i;
+	return -1;
+}
+// As the radio core (vfo_set_hz): a split keeps its offset within one transmit band, else it is simplex
+static void sim_vfo_rx(uint32_t hz)
+{
+	uint32_t tx = vfo_tx_hz - vfo_rx_hz + hz;
+	int band = sim_tx_band(hz);
+	bool carries = band >= 0 && sim_tx_band(vfo_rx_hz) == band && sim_tx_band(tx) == band;
+	vfo_rx_hz = hz;
+	vfo_tx_hz = carries ? tx : hz;
+}
 void radio_req_vfo_step(int8_t dir)
 {
 	retune();
-	view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = view.ch.rx_hz + dir * view.vfo_step_hz;
+	sim_vfo_rx(view.ch.rx_hz + dir * view.vfo_step_hz);
+	view.ch.rx_hz = vfo_rx_hz;
+	view.ch.tx_hz = vfo_tx_hz;
 	changed();
 }
 // As the radio core: off the VFO, the VFO opens on the frequency (Find's Tune VFO)
 void radio_req_vfo_set(uint32_t hz)
 {
 	retune();
-	vfo_rx_hz = vfo_tx_hz = hz;
+	sim_vfo_rx(hz);
 	if (!view.vfo)
 		sim_vfo(true);
-	view.ch.rx_hz = view.ch.tx_hz = hz;
+	view.ch.rx_hz = vfo_rx_hz;
+	view.ch.tx_hz = vfo_tx_hz;
+	changed();
+}
+void radio_req_vfo_tx(uint32_t hz)
+{
+	if (!view.vfo || sim_tx_band(hz ? hz : vfo_rx_hz) < 0)
+		return;
+	vfo_tx_hz = view.ch.tx_hz = hz ? hz : vfo_rx_hz;
 	changed();
 }
 // Copy to VFO as the radio core does (core/radio/radio_sm.c vfo_copy): what is in effect now is the VFO's own
@@ -1235,10 +1264,31 @@ uint32_t ui_svc_features(void)
 	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
 	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM);
 }
+// My radio's names (ui_svc_name_*): placeholders, as the user's own would be; a save writes at once
+static char sim_names[UI_NAME_COUNT][17];
+static void sim_names_reset(void)
+{
+	strcpy(sim_names[UI_NAME_RADIO], "N0CALL");
+	strcpy(sim_names[UI_NAME_BOOT1], "N0CALL");
+	strcpy(sim_names[UI_NAME_BOOT2], "Jamie Thompson");
+}
+void ui_svc_name_get(uint8_t which, char out[17])
+{
+	strcpy(out, which < UI_NAME_COUNT ? sim_names[which] : "");
+}
+bool ui_svc_name_set(uint8_t which, const char *text)
+{
+	if (which >= UI_NAME_COUNT)
+		return false;
+	strncpy(sim_names[which], text, 16);
+	sim_names[which][16] = '\0';
+	sim_rec.codeplug_writes++;
+	return true;
+}
 void ui_svc_boot_text(char line1[17], char line2[17])
 {
-	strcpy(line1, "N0CALL");
-	strcpy(line2, "Jamie Thompson");	// placeholders: the codeplug's boot text is the user's own
+	strcpy(line1, sim_names[UI_NAME_BOOT1]);
+	strcpy(line2, sim_names[UI_NAME_BOOT2]);
 }
 // Zone sharing (ui_svc.h): one offer of 6 channels, one of them outside the radio's bands
 static struct {
@@ -1855,6 +1905,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	aprs_sim_reset();
 	n_edits = 0;
 	n_ct_edits = 0;
+	sim_names_reset();
 	sim_cp_serial = 0;
 	sim_cp_insert = false;
 	sim_cp_deleted = 0;
@@ -2040,6 +2091,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "pos") == 0) snprintf(got, sizeof got, "%u", view.zone_pos + 1u);
 	else if (strcmp(key, "vfo") == 0) snprintf(got, sizeof got, "%u", view.vfo);
 	else if (strcmp(key, "freq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.rx_hz);
+	else if (strcmp(key, "txfreq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.tx_hz);
 	else if (strcmp(key, "mode") == 0) snprintf(got, sizeof got, "%s", view.ch.mode == RADIO_MODE_DMR ? "dmr" : "fm");
 	else if (strcmp(key, "tx") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_count);
 	else if (strcmp(key, "txid") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_id);

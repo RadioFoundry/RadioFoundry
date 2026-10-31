@@ -79,6 +79,16 @@ static const char *codec_id(void)
 	return "board-2501";
 }
 
+// A CODEPLUG handler: echoes the operation byte after a marker
+static size_t fake_codeplug(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+{
+	(void)cap;
+	out[0] = DL_ST_OK;
+	out[1] = 0xC0;
+	out[2] = len ? req[0] : 0;
+	return 3;
+}
+
 static const stub_link_t ident = { .board = "Board", .git = "0123abcd", .codec = codec_id, .stub = entry_request };
 
 static size_t own_handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
@@ -209,7 +219,7 @@ static void test_own_listener(void)
 	CHECK(n == 1u + sizeof(buf) && pl[0] == DL_ST_OK && memcmp(pl + 1, buf, sizeof(buf)) == 0, "PING echo %zu", n);
 
 	// Every other debug link command: unknown, so a host learns the debug link isn't built
-	static const uint8_t others[] = { 0x03, 0x05, 0x06, 0x07, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0F, 0x1C, 0x7E };
+	static const uint8_t others[] = { 0x03, 0x05, 0x06, 0x07, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0F, 0x1F, 0x7E };
 	for (unsigned i = 0; i < sizeof(others); i++) {
 		n = own_request(&p, reply, others[i], NULL, 0, &pl);
 		CHECK(n == 1 && pl[0] == DL_ST_UNKNOWN_CMD && sent[2] == (others[i] | DL_REPLY_FLAG),
@@ -253,6 +263,24 @@ static void test_own_listener(void)
 	      "no stub: unavailable");
 	n = stub_link_handle(&none, DL_CMD_VERSION, NULL, 0, out, sizeof(out));
 	CHECK(n > 1 && memcmp(out + 1, "proto=1\ngit=g\nboard=X\ncodec=none\n", 33) == 0, "no codec: codec=none");
+
+	// CODEPLUG: unavailable without the fast codeplug protocol, its handler's reply with it
+	CHECK(stub_link_handle(&none, DL_CMD_CODEPLUG, &info, 1, out, sizeof(out)) == 1 && out[0] == DL_ST_UNAVAILABLE,
+	      "no CPS_FAST: CODEPLUG unavailable");
+	const stub_link_t fast = { .board = "X", .git = "g", .codeplug = fake_codeplug };
+	n = stub_link_handle(&fast, DL_CMD_CODEPLUG, &info, 1, out, sizeof(out));
+	CHECK(n == 3 && out[0] == DL_ST_OK && out[1] == 0xC0 && out[2] == info, "CODEPLUG goes to its handler");
+
+	// VERSION with the build's keys (build_info.h): preset= and off= last, and a key that doesn't fit left out whole
+	const stub_link_t full = { .board = "X", .git = "g", .git_time = 1793318400u, .release = "v26.10", .features = "FM,DMR",
+				   .preset = "custom", .off = "APRS_IGATE,FONT_AA" };
+	n = stub_link_handle(&full, DL_CMD_VERSION, NULL, 0, out, sizeof(out));
+	out[n] = '\0';
+	CHECK(strcmp((char *)out + 1, "proto=1\ngit=g\ngit_time=1793318400\nrelease=v26.10\nboard=X\nfeatures=FM,DMR\n"
+				      "codec=none\nstub=1\npreset=custom\noff=APRS_IGATE,FONT_AA\n") == 0,
+	      "VERSION with the build's keys: %s", (char *)out + 1);
+	size_t cut = n - strlen("off=APRS_IGATE,FONT_AA\n") + 4u;
+	CHECK(stub_link_handle(&full, DL_CMD_VERSION, NULL, 0, out, cut) == cut - 4u, "a list that doesn't fit is left out");
 
 	// A reply buffer too short for INFO is never written past
 	CHECK(stub_load_request(&stub, &info, 1, out, STUB_REPLY_MAX - 1u, &(bool){ false }, &(uint32_t){ 0 }) == 1 &&

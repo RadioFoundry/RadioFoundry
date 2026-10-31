@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { CodeplugImage, CODEPLUG_SPAN } from "../static/js/codeplug/image.js";
-import { decode, encode, empty, remove, validate, newChannel, newContact, refNumber } from "../static/js/codeplug/model.js";
+import { decode, encode, empty, remove, validate, newChannel, newContact, refNumber, listenBand } from "../static/js/codeplug/model.js";
 import { getTone, putTone, parseTone, parseFreq, mhz, getCoord, coordBytes } from "../static/js/codeplug/fields.js";
 import * as iddb from "../static/js/codeplug/iddb.js";
 import { targets } from "../static/js/flasher/restore.js";
@@ -196,6 +196,15 @@ test("validation finds the problems the radio would refuse", () => {
 	assert.deepEqual(codes, ["bad_freq", "bad_tone", "id_range", "too_many"]);
 });
 
+test("the air band and broadcast FM are receive only: a TX frequency there without RX Only, or a DMR channel, is warned", () => {
+	assert.deepEqual([64990000, 65000000, 107990000, 108000000, 136990000, 137000000].map(listenBand), [null, "bcast", "bcast", "air", "air", null]);
+	const m = empty();
+	const ch = (name, rxHz, mode, rxOnly) => newChannel({ name, rxHz, txHz: rxHz, mode, rxOnly });
+	m.channels.push(ch("c0", 118100000, "fm", true), ch("c1", 98500000, "fm", false), ch("c2", 121500000, "dmr", true), ch("c3", 146520000, "fm", false));
+	const warned = validate(m).filter((p) => p.code.startsWith("listen_")).map((p) => [p.item.name, p.code]);
+	assert.deepEqual(warned, [["c1", "listen_tx_bcast"], ["c2", "listen_dmr_air"]]);
+});
+
 test("the DMR ID database is found by the radio across both areas", () => {
 	const img = CodeplugImage.blank();
 	const records = [];
@@ -350,9 +359,17 @@ test("an ID database goes to the radio and nothing past its room", async () => {
 	const db = radio.writes.filter(([a]) => a >= iddb.AREA1);
 	assert.deepEqual(db[0], [iddb.AREA1, 32], "the header erased first");
 	assert.ok(db[db.length - 1][0] < iddb.AREA1 + 4096, "the header's sector last");
-	const back = await tr.read();
+	const steps = [];
+	const back = await tr.read({ progress: (n, total) => steps.push([n, total]) });
+	assert.ok(steps.every(([n, t], i) => t === steps[0][1] && (!i || n >= steps[i - 1][0])), "CPS read progress");
+	assert.equal(steps.at(-1)[0], steps[0][1]);
 	assert.equal(iddb.read(back.bytes).length, 20000);
 	assert.deepEqual(iddb.read(back.bytes)[19999], { id: 3119999, text: "W19999 Name" });
+	// the codeplug first, the database after it (a read that offers the database): the same bytes
+	const part = await tr.read({ iddb: false });
+	assert.ok(tr.iddbBytes(part) > 20000 * 24, `database bytes ${tr.iddbBytes(part)}`);
+	await tr.readIddb(part);
+	assert.deepEqual(part.bytes, back.bytes);
 	const tiny = new CpsSerial(new FakeCpsRadio({ board: "dm1701" }).stream());
 	await tiny.identify([{ id: "x", codeplug: { base: 0, end: 0xD9000, names: ["dm1701"] } }]);
 	await assert.rejects(tiny.write(img, null, { iddb: true }), (e) => e instanceof TransportError && e.code === "iddb_too_big");
@@ -467,6 +484,21 @@ test("a format C database written fast is read by the radio; an older radio gets
 	const ids = [3100000, 3100000 + 3 * 29999, 3100001];
 	const got = simDetailFlash(flash, ids).split("\n").filter((l) => l.startsWith("iddb"));
 	assert.deepEqual(got, ["iddb count 30000", 'iddb 3100000 "K0 Bob Atlanta GA"', `iddb ${3100000 + 3 * 29999} "K29999 Joe Atlanta GA"`, "iddb 3100001 -"]);
+
+	// the codeplug first, the database after it, fast: the same bytes as one read
+	const s4 = simRadioFrom(flash);
+	const tr4 = new CpsSerial(s4);
+	await tr4.identify(RADIOS);
+	// one pass: the total known from the start, never going back
+	const steps = [];
+	const whole = await tr4.read({ progress: (n, total) => steps.push([n, total]) });
+	assert.ok(steps.length > 10 && steps.every(([n, t], i) => t === steps[0][1] && n <= t && (!i || n >= steps[i - 1][0])), "fast read progress");
+	assert.equal(steps.at(-1)[0], steps[0][1]);
+	const part = await tr4.read({ iddb: false });
+	assert.ok(tr4.iddbBytes(part) > 0);
+	await tr4.readIddb(part);
+	assert.deepEqual(part.bytes, whole.bytes);
+	await s4.close();
 
 	// refreshed: one record more near the start changes few pages
 	const again = flashImage(flash);

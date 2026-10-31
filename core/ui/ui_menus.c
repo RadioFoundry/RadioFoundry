@@ -709,13 +709,22 @@ static const ui_scr_def_t recent_screen = {
 #define CH_VFO	((CONFIG_VFO_FM || CONFIG_VFO_DMR) ? 1u : 0u)	// raw row 0 is the VFO when it is built
 
 static bool chans_is_vfo(uint16_t raw) { return (CONFIG_VFO_FM || CONFIG_VFO_DMR) && raw == 0; }
-static uint16_t chans_raw_count(void) { return (uint16_t)(CH_VFO + codeplug_zone_count()); }
+// With the zone editor the last row makes a new zone (named first, then empty: its list adds channels)
+static bool chans_is_new(uint16_t raw) { return CONFIG_ZONE_EDIT && raw == CH_VFO + codeplug_zone_count(); }
+static uint16_t chans_raw_count(void) { return (uint16_t)(CH_VFO + codeplug_zone_count() + (CONFIG_ZONE_EDIT ? 1u : 0u)); }
+#if CONFIG_ZONE_EDIT
+static void zones_new(void);
+#endif
 
 static bool chans_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
 	static zone_t z;
 	if (chans_is_vfo(raw)) {
 		strncpy(buf, "VFO", len);
+		return true;
+	}
+	if (chans_is_new(raw)) {
+		strncpy(buf, "Create New Zone", len);
 		return true;
 	}
 	if (!codeplug_zone((uint16_t)(raw - CH_VFO), &z))
@@ -746,6 +755,10 @@ static void chans_item(uint16_t i, ui_item_t *it)
 		strcpy(it->label, "VFO");
 		if (v->vfo)
 			sb_str(&vb, "On");
+		return;
+	}
+	if (chans_is_new(raw)) {
+		strcpy(it->label, "Create New Zone");
 		return;
 	}
 	uint16_t zi = (uint16_t)(raw - CH_VFO);
@@ -781,6 +794,12 @@ static void chans_select(uint16_t i, bool hold)
 	}
 	const radio_view_t *v = ui_view();
 	uint16_t raw = ui_filter_raw(i);
+#if CONFIG_ZONE_EDIT
+	if (chans_is_new(raw)) {
+		zones_new();
+		return;
+	}
+#endif
 	if (chans_is_vfo(raw)) {
 		bool was = v->vfo;	// the view may change at once (the host simulator)
 		radio_req_vfo(!was);
@@ -807,6 +826,12 @@ static void chans_context(uint16_t i)
 		ui_toast("The VFO has no channel list");
 		return;
 	}
+#if CONFIG_ZONE_EDIT
+	if (chans_is_new(raw)) {
+		zones_new();
+		return;
+	}
+#endif
 	ui_push(SCR_ZONE, (uint16_t)(raw - CH_VFO));
 }
 
@@ -868,6 +893,7 @@ static uint16_t zone_focus_num;		// the channel the zone's list focuses when it 
 static uint16_t ze_zone;		// the zone the editor's screens work on (the zone list's index)
 static zone_op_t ze_op;			// the change handed to the storage job (ui_svc_zone_edit)
 static char ze_msg[CODEPLUG_NAME_LEN + 24];	// the editor's toasts
+static char ze_name[CODEPLUG_NAME_LEN + 1];	// a zone name being typed (Rename, Create New Zone)
 
 static zone_op_t *ze_op_new(uint8_t kind, uint16_t pos)
 {
@@ -970,12 +996,27 @@ static void zone_enter(void)
 #if CONFIG_ZONE_EDIT
 // The list shows again (a menu above it closed) or the codeplug changed under it: the rows are read again
 // (ui_filter_rebuild), and the focus follows the channel just moved or added
+static bool zones_new_pending;	// Zones focuses the zone named ze_name once its write has landed
+
 void ui_menus_resume(void)
 {
 	if (ui_frame()->scr == SCR_ZONE && zone_focus_num != 0)
 		zone_focus(zone_focus_num);
+	if (zones_new_pending && !ui_svc_zone_pending()) {
+		// A new zone takes the lowest free record, which can be ahead of others: found by its name. Once written
+		// the flag goes, whatever screen is up, so a later visit to Zones isn't moved
+		char name[CODEPLUG_NAME_LEN + 1];
+		for (uint16_t i = 0; ui_frame()->scr == SCR_ZONES && i < ui_filter_count(); i++) {
+			uint16_t raw = ui_filter_raw(i);
+			if (!chans_is_vfo(raw) && !chans_is_new(raw) && chans_raw_label(raw, name, sizeof name) &&
+			    strcmp(name, ze_name) == 0)
+				ui_frame()->focus = i;
+		}
+		zones_new_pending = false;
+	}
 }
 #endif
+
 
 static void zone_item(uint16_t i, ui_item_t *it)
 {
@@ -1645,6 +1686,7 @@ static uint8_t ced_edit = CE_NONE;	// the row whose editor is open
 static int32_t ced_val;			// spinner: power level (power_count = the radio's), color code, time-out
 static bool ced_typed;
 static subtone_t ced_tone;		// spinner: a tone
+static bool ced_typed_tone(subtone_t *t);
 static char ced_digits[CE_DIGITS + 1];	// typed frequency or ID
 static uint8_t ced_len;
 
@@ -1690,6 +1732,17 @@ static bool ced_changed(uint8_t r)
 	return memcmp(a, b, ced_fields[r].len) != 0;
 }
 
+// RX in a receive-only band (the air band, broadcast FM: docs/spec/airband-and-broadcast.md 2): the copy becomes RX
+// only and FM (AM there), which is all the radio does there
+static void ced_rx_band(channel_t *c)
+{
+	if (!board_in_band(c->rx_hz, false) || board_in_band(c->rx_hz, true))
+		return;
+	c->rx_only = true;
+	c->tx_hz = c->rx_hz;
+	c->mode = RADIO_MODE_FM;
+}
+
 // A copy of what the radio uses now (temporary changes included), named after it: "Name 2", or the frequency
 static void ced_from_view(void)
 {
@@ -1707,6 +1760,7 @@ static void ced_from_view(void)
 		zone_copy_name(name, ced_ch.name);	// "Name 2", cut to fit
 	}
 	strcpy(ced_ch.name, name);
+	ced_rx_band(&ced_ch);
 }
 #endif
 
@@ -1787,25 +1841,26 @@ static const char *chinfo_title(void)
 	return ced_ch.name[0] != 0 ? ced_ch.name : "New Channel";
 }
 
+static zone_t chz_z;	// a zone read to find a channel in it (the Zones row, the channel editor's Zones)
+
 // The zones holding the channel, as much as fits: "Fav, Local, Ga" / "Fav +2" / "3 zones" (text alternates)
 static void sb_chinfo_zones(sbuf_t *b, uint16_t num)
 {
-	static zone_t z;
 	char all[24], first[CODEPLUG_NAME_LEN + 1] = "";
 	sbuf_t ab;
 	sb_init(&ab, all, sizeof all);
 	uint16_t found = 0;
 	for (uint16_t zi = 0; zi < codeplug_zone_count(); zi++) {
-		if (!codeplug_zone(zi, &z))
+		if (!codeplug_zone(zi, &chz_z))
 			continue;
-		for (uint16_t pos = 0; pos < z.count; pos++) {
-			if (z.channels[pos] != num)
+		for (uint16_t pos = 0; pos < chz_z.count; pos++) {
+			if (chz_z.channels[pos] != num)
 				continue;
 			if (found++)
 				sb_str(&ab, ", ");
 			else
-				strcpy(first, z.name);
-			sb_str(&ab, z.name);
+				strcpy(first, chz_z.name);
+			sb_str(&ab, chz_z.name);
 			break;
 		}
 	}
@@ -1861,9 +1916,9 @@ static int32_t ced_val_or(int32_t stored)
 static void chinfo_item(uint16_t i, ui_item_t *it)
 {
 	static const char *const labels[CE_COUNT] = { "Name", "Number", "Mode", "RX", "TX", "Power", "RX only",
-		"Bandwidth", "RX tone", "TX tone", "VOX", "Color code", "Timeslot", "TX contact", "RX group list", "Own ID",
+		"Bandwidth", "RX CTCSS/DCS", "TX CTCSS/DCS", "VOX", "Color code", "Timeslot", "TX contact", "RX group list", "Own ID",
 		"Direct mode", "Talk permit beeps", "Talker alias TS1", "Talker alias TS2", "TX time-out", "Scan",
-		"Battery saver", "Zones", "Go to it", GLYPH_SHARE " Share channel to...", "Save", "Save as new channel" };
+		"Battery saver", "Zones", "Tune to this ch", GLYPH_SHARE " Share channel to...", "Save", "Save as new channel" };
 	const channel_t *ch = &ced_ch;
 	if (i >= ced_n)
 		return;
@@ -1938,8 +1993,18 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 	case CE_TX_TONE: {
 		const subtone_t *t = r == CE_RX_TONE ? &ch->rx_tone : &ch->tx_tone;
 #if CONFIG_CHANNEL_EDIT
-		if (editing)
+		if (editing) {
+			static subtone_t typed;	// static: the UI task's stack has 8 bytes to spare
 			t = &ced_tone;
+			if (ced_typed_tone(&typed)) {
+				t = &typed;
+				if (typed.type == TONE_DCS) {	// the digits as typed: "D02"
+					sb_chr(&b, 'D');
+					sb_str(&b, ced_digits + 1);
+					break;
+				}
+			}
+		}
 #endif
 		sb_tone(&b, t);
 		break;
@@ -2020,6 +2085,8 @@ static const char *ced_problem(void)
 		return "RX is outside the radio's bands";
 	if (!c->rx_only && !board_in_band(c->tx_hz, true))
 		return "TX can't transmit there: set RX only";
+	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !board_in_band(c->rx_hz, true))
+		return "Receive only band: set FM";
 	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && c->contact == 0)
 		return "Pick a TX contact first";
 	return NULL;
@@ -2075,6 +2142,25 @@ static void ced_save(bool as_new)
 	ui_toast(msg);
 }
 
+// The tone typed so far. CTCSS in Hz with the last digit the tenths ("885" 88.5); under 60 Hz it reads as whole Hz
+// ("67" 67.0, "100" 100.0). A leading 0 types a DCS code ("023" D023N). False: nothing typed
+static bool ced_typed_tone(subtone_t *t)
+{
+	if (ced_len == 0)
+		return false;
+	uint16_t v = 0;
+	if (ced_digits[0] == '0') {
+		for (uint8_t i = 1; i < ced_len; i++)
+			v = (uint16_t)(v * 8u + (uint16_t)(ced_digits[i] - '0'));
+		*t = (subtone_t){ TONE_DCS, v };
+	} else {
+		for (uint8_t i = 0; i < ced_len; i++)
+			v = (uint16_t)(v * 10u + (uint16_t)(ced_digits[i] - '0'));
+		*t = (subtone_t){ TONE_CTCSS, v < 600u ? (uint16_t)(v * 10u) : v };
+	}
+	return true;
+}
+
 static void ced_spin(int dir)
 {
 	switch (ced_edit) {
@@ -2092,6 +2178,9 @@ static void ced_spin(int dir)
 		break;
 	case CE_RX_TONE:
 	case CE_TX_TONE:
+		if (ced_len > 0)
+			(void)ced_typed_tone(&ced_tone);	// steps on from what was typed
+		ced_len = 0;
 		ced_tone = tones_step(&ced_tone, dir);
 		break;
 	default:
@@ -2121,6 +2210,17 @@ static void ced_digit(char d)
 		ced_digits[ced_len++] = d;
 		ced_digits[ced_len] = 0;
 		break;
+	case CE_RX_TONE:
+	case CE_TX_TONE:
+		if (ced_len >= 4)
+			break;		// 4 digits: "1318", "0754"
+		if (ced_len > 0 && ced_digits[0] == '0' && d > '7') {
+			ui_toast("DCS codes use digits 0-7");
+			break;
+		}
+		ced_digits[ced_len++] = d;
+		ced_digits[ced_len] = 0;
+		break;
 	case CE_CC:
 	case CE_TOT: {
 		int32_t hi = ced_edit == CE_CC ? 15 : CE_TOT_MAX;
@@ -2147,11 +2247,12 @@ static void ced_commit(void)
 		if (hz == 0)
 			return;
 		if (ced_edit == CE_RX) {
-			// TX moves with RX, keeping a repeater's offset; where that lands outside every band (or the channel
-			// had no TX frequency) TX becomes RX
+			// TX moves with RX, keeping a repeater's offset within one transmit band; a move to another band (or a
+			// channel with no TX frequency) makes TX RX
 			uint32_t tx = c->tx_hz - c->rx_hz + hz;
-			c->tx_hz = board_in_band(tx, false) ? tx : hz;
+			c->tx_hz = board_offset_carries(c->rx_hz, hz, tx) ? tx : hz;
 			c->rx_hz = hz;
+			ced_rx_band(c);
 		} else {
 			c->tx_hz = hz;
 		}
@@ -2175,10 +2276,15 @@ static void ced_commit(void)
 		c->tot_s = (uint16_t)ced_val;
 		break;
 	case CE_RX_TONE:
-		c->rx_tone = ced_tone;
-		break;
 	case CE_TX_TONE:
-		c->tx_tone = ced_tone;
+		if (ced_typed_tone(&ced_tone)) {
+			if (ced_tone.type == TONE_DCS ? !tones_standard(&ced_tone) : !tones_valid(&ced_tone)) {
+				ui_toast(ced_tone.type == TONE_DCS ? "Not a DCS code" : "CTCSS goes 60.0 to 260.0");
+				return;
+			}
+			ced_len = 0;
+		}
+		*(ced_edit == CE_RX_TONE ? &c->rx_tone : &c->tx_tone) = ced_tone;
 		break;
 	default:
 		break;
@@ -2212,7 +2318,8 @@ static bool chinfo_key(const input_event_t *ev)
 		return true;
 	}
 	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
-		if ((ced_edit == CE_RX || ced_edit == CE_TX || ced_edit == CE_ID) && ced_len > 0) {
+		if ((ced_edit == CE_RX || ced_edit == CE_TX || ced_edit == CE_ID || ced_edit == CE_RX_TONE ||
+		     ced_edit == CE_TX_TONE) && ced_len > 0) {
 			ced_digits[--ced_len] = 0;	// takes the last digit back
 			ced_val /= 10;
 		} else {
@@ -2279,6 +2386,7 @@ static void chinfo_select(uint16_t i, bool hold)
 		}
 		ced_edit = r;
 		ced_tone = r == CE_RX_TONE ? c->rx_tone : c->tx_tone;
+		ced_len = 0;
 		break;
 	case CE_VOX: c->vox = !c->vox; break;
 	case CE_CC:
@@ -2300,7 +2408,7 @@ static void chinfo_select(uint16_t i, bool hold)
 	case CE_ECO: c->no_eco = !c->no_eco; break;
 	case CE_NUMBER: ui_toast("Save as new channel to use another number"); break;
 #if CONFIG_ZONE_EDIT
-	case CE_ZONES: ui_toast("Zones: add it from a zone's list"); break;
+	case CE_ZONES: ui_push(SCR_CHZONES, ced_num); break;
 #else
 	case CE_ZONES: ui_toast("Zones: change them with qdmr for now"); break;
 #endif
@@ -2328,7 +2436,7 @@ static const ui_scr_def_t chinfo_screen = {
 	.hint = TEXT_ALT_OPEN "OK change  hold OK save  Back" TEXT_ALT_NEXT "OK change  hold OK save" TEXT_ALT_CLOSE,
 	.key = chinfo_key,
 #else
-	.hint = "OK go to it  Back",
+	.hint = "OK tunes to it  Back",
 #endif
 	.count = chinfo_count, .item = chinfo_item, .select = chinfo_select, .title = chinfo_title,
 	.enter = chinfo_enter,
@@ -2926,13 +3034,54 @@ static const ui_scr_def_t zpick_screen = {
 	.raw_count = zpick_raw_count, .raw_label = zpick_raw_label,
 };
 
+// --- The channel editor's Zones: every zone, and whether the channel is in it; OK puts it in or takes it out ---
+static int chz_pos(uint16_t zi)
+{
+	if (!codeplug_zone(zi, &chz_z))
+		return -2;
+	return zone_list_find(&chz_z, ui_frame()->arg);
+}
+
+static uint16_t chz_count(void) { return codeplug_zone_count(); }
+
+static void chz_item(uint16_t i, ui_item_t *it)
+{
+	int at = chz_pos(i);
+	if (at == -2)
+		return;
+	strcpy(it->label, chz_z.name);
+	strcpy(it->value, at >= 0 ? "In" : "-");
+}
+
+static void chz_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	int at = chz_pos(i);
+	if (at == -2)
+		return;
+	if (at < 0 && chz_z.count >= codeplug_zone_capacity()) {
+		ui_toast("Zone full");
+		return;
+	}
+	// The zone screens' op, for this zone (ze_zone stays the open zone's: this editor may sit on its list)
+	zone_op_t *op = ze_op_new(at >= 0 ? ZONE_OP_REMOVE : ZONE_OP_INSERT, at >= 0 ? (uint16_t)at : chz_z.count);
+	op->zone = i;
+	op->channel = ui_frame()->arg;
+	if (ze_post())
+		ze_toast(at >= 0 ? "Removed from " : "Added to ", chz_z.name);
+}
+
+static const ui_scr_def_t chz_screen = {
+	.name = "chzones", .flags = SF_LIST, .prefix = "In Zones", .hint = "OK in/out  Back", .empty = "No zones",
+	.count = chz_count, .item = chz_item, .select = chz_select,
+};
+
 // --- Zone options ---
 enum { ZO_RENAME, ZO_COPY,
 #if CONFIG_ZONE_SHARE
 	ZO_SEND,	// zone sharing (zone-share.md 7)
 #endif
 	ZO_DELETE, ZO_COUNT };
-static char ze_name[CODEPLUG_NAME_LEN + 1];
 
 static uint16_t zopt_count(void) { return ZO_COUNT; }
 
@@ -2965,6 +3114,32 @@ static void ze_renamed(void)
 		strcpy(ze_z.name, ze_name);
 		ui_toast("Renamed");
 	}
+}
+
+// Zones > Create New Zone: named in the text entry, then written empty; Zones focuses it, and its list's first row adds
+// channels
+static void zones_new_named(void)
+{
+	if (ze_name[0] == 0) {
+		ui_toast("Give it a name first");
+		return;
+	}
+	strcpy(ze_op_new(ZONE_OP_NEW, 0)->name, ze_name);
+	if (!ze_post())
+		return;
+	zones_new_pending = true;
+	ze_toast("Added ", ze_name);
+}
+
+static void zones_new(void)
+{
+	if (codeplug_zone_count() >= CODEPLUG_ZONES_MAX && codeplug_zones_stored()) {
+		ui_toast("No room for another zone");
+		return;
+	}
+	ze_name[0] = 0;
+	ui_text_open(ze_name, CODEPLUG_NAME_LEN);
+	text_done = zones_new_named;
 }
 
 static void zopt_select(uint16_t i, bool hold)
@@ -3145,10 +3320,10 @@ static const ui_scr_def_t chpick_screen = {
 
 // ======================= Info pages =======================
 
-enum { INFO_POSITION, INFO_HOTSPOT, INFO_BATTERY, INFO_FIRMWARE, INFO_CODEPLUG, INFO_MY_RADIO, INFO_USB_NET,
+enum { INFO_POSITION, INFO_HOTSPOT, INFO_BATTERY, INFO_FIRMWARE, INFO_CODEPLUG, INFO_USB_NET,
        INFO_SFR };
 
-static const char *const info_titles[] = { "Position", "Hotspot", "Battery", "About", "Codeplug", "My Radio",
+static const char *const info_titles[] = { "Position", "Hotspot", "Battery", "About", "Codeplug",
 					   "USB Network", "Single-Freq Repeater" };
 
 // The USB personality can be switched here (the host link's network adapter, CONFIG_USB_NETWORK)
@@ -3222,18 +3397,6 @@ static const char *info_body(void)
 		sb_u32(&b, codeplug_channel_count(), 1);
 		break;
 	}
-	case INFO_MY_RADIO:
-#if CONFIG_DMR
-		sb_str(&b, "DMR ID: ");
-		if (codeplug_dmr_id())
-			sb_u32(&b, codeplug_dmr_id(), 1);
-		else
-			sb_str(&b, "not set (set it in qdmr)");
-		sb_chr(&b, '\n');
-#endif
-		sb_str(&b, "Radio: ");
-		sb_str(&b, board.name);
-		break;
 	case INFO_USB_NET:
 #if USB_NET_UI
 		if (hostlink_network_mode())
@@ -3333,37 +3496,73 @@ static const ui_scr_def_t info_screen = {
 	.select = info_select, .title = info_title, .body = info_body,
 };
 
-#if CONFIG_DMR
-// ======================= DMR ID (Settings > My radio) =======================
-// One row: the radio's own DMR ID, the codeplug's (a CPS read shows it). Digits type a new one, OK writes it into the
-// codeplug. Typed as the channel editor's Own ID (ui.md 2.1): a digit past CODEPLUG_DMR_ID_MAX is refused, BACK takes
-// the last digit back and with none typed leaves the ID unchanged
+// ======================= My radio: DMR ID and names (Settings > My radio) =======================
+// The radio's own DMR ID (CONFIG_DMR) and the codeplug's name fields: the radio name and the two boot screen lines,
+// all saved in the codeplug (a CPS read shows them). On the ID row digits type a new one, OK writes it. Typed as the
+// channel editor's Own ID (ui.md 2.1): a digit past CODEPLUG_DMR_ID_MAX is refused, BACK takes the last digit back and
+// with none typed leaves the ID unchanged. OK on a name row opens the text entry; keeping it writes the name
 
+enum {
+#if CONFIG_DMR
+	MY_ID,
+#endif
+	MY_NAME, MY_BOOT1, MY_BOOT2, MY_COUNT };
+static const uint8_t my_names[] = { [MY_NAME] = UI_NAME_RADIO, [MY_BOOT1] = UI_NAME_BOOT1, [MY_BOOT2] = UI_NAME_BOOT2 };
+static char my_text[CODEPLUG_NAME_LEN + 1];	// the name being typed, then shown until the codeplug's serial moves on
+static uint8_t my_text_row = MY_COUNT;		// the row my_text belongs to (MY_COUNT: none)
+static uint32_t my_text_serial;
+
+#if CONFIG_DMR
 static uint32_t dmr_id_value;
 static uint8_t dmr_id_len;		// digits typed
 static bool dmr_id_editing;
 static uint32_t dmr_id_saved, dmr_id_serial;	// the ID just saved, shown until the codeplug's serial moves on
+#endif
 
-static uint16_t dmr_id_count(void) { return 1; }
+static uint16_t dmr_id_count(void) { return MY_COUNT; }
+
+void ui_menus_save_failed(void)
+{
+#if CONFIG_ZONE_EDIT
+	zones_new_pending = false;	// nothing to focus
+#endif
+	my_text_row = MY_COUNT;		// the stored name shows again
+#if CONFIG_DMR
+	dmr_id_saved = 0;
+#endif
+}
 
 static void dmr_id_item(uint16_t i, ui_item_t *it)
 {
-	(void)i;
-	strcpy(it->label, "DMR ID");
-	uint32_t v = dmr_id_editing ? dmr_id_value : dmr_id_saved != 0 && codeplug_serial() == dmr_id_serial ?
-		     dmr_id_saved : (uint32_t)ui_svc_setting_get(UI_SET_DMR_ID);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
-	if (dmr_id_editing) {
-		if (dmr_id_len > 0)
+#if CONFIG_DMR
+	if (i == MY_ID) {
+		strcpy(it->label, "DMR ID");
+		uint32_t v = dmr_id_editing ? dmr_id_value : dmr_id_saved != 0 && codeplug_serial() == dmr_id_serial ?
+			     dmr_id_saved : (uint32_t)ui_svc_setting_get(UI_SET_DMR_ID);
+		if (dmr_id_editing) {
+			if (dmr_id_len > 0)
+				sb_u32(&b, v, 1);
+			sb_chr(&b, '_');		// what is typed so far, as the channel editor: "3101_"
+			it->flags |= UI_ITEM_EDIT;
+		} else if (v != 0) {
 			sb_u32(&b, v, 1);
-		sb_chr(&b, '_');		// what is typed so far, as the channel editor: "3101_"
-		it->flags |= UI_ITEM_EDIT;
-	} else if (v != 0) {
-		sb_u32(&b, v, 1);
-	} else {
-		sb_str(&b, "Not set");	// DMR transmit is refused until there is one
+		} else {
+			sb_str(&b, "Not set");	// DMR transmit is refused until there is one
+		}
+		return;
 	}
+#endif
+	static const char *const labels[] = { [MY_NAME] = "Radio name", [MY_BOOT1] = "Boot 1",
+		[MY_BOOT2] = "Boot 2" };
+	strcpy(it->label, labels[i]);
+	char name[CODEPLUG_NAME_LEN + 1];
+	if (my_text_row == i && codeplug_serial() == my_text_serial)
+		strcpy(name, my_text);
+	else
+		ui_svc_name_get(my_names[i], name);
+	sb_str(&b, name[0] != 0 ? name : "None");
 }
 
 static const char *dmr_id_body(void)
@@ -3376,6 +3575,20 @@ static const char *dmr_id_body(void)
 	return t;
 }
 
+#if CONFIG_CHANNEL_EDIT
+static void my_text_kept(void)
+{
+	my_text_serial = codeplug_serial();	// before the job: the storage task may finish it before we look again
+	if (!ui_svc_name_set(my_names[my_text_row], my_text)) {
+		my_text_row = MY_COUNT;
+		ui_toast("Couldn't save: try again");
+		return;
+	}
+	ui_toast("Saved");
+}
+#endif
+
+#if CONFIG_DMR
 static void dmr_id_begin(void)
 {
 	dmr_id_editing = true;
@@ -3403,21 +3616,38 @@ static void dmr_id_save(void)
 	dmr_id_serial = serial;
 	ui_toast("DMR ID saved");
 }
+#endif
 
 static void dmr_id_select(uint16_t i, bool hold)
 {
-	(void)i;
 	(void)hold;
-	if (dmr_id_editing)
-		dmr_id_save();
-	else
-		dmr_id_begin();
+#if CONFIG_DMR
+	if (i == MY_ID) {
+		if (dmr_id_editing)
+			dmr_id_save();
+		else
+			dmr_id_begin();
+		return;
+	}
+#endif
+	if (i >= MY_COUNT)
+		return;
+#if CONFIG_CHANNEL_EDIT
+	ui_svc_name_get(my_names[i], my_text);
+	my_text_row = (uint8_t)i;
+	my_text_serial = codeplug_serial() - 1u;	// shown from the codeplug until it is kept
+	ui_text_open(my_text, my_names[i] == UI_NAME_RADIO ? CODEPLUG_RADIO_NAME_LEN : CODEPLUG_NAME_LEN);
+	text_done = my_text_kept;
+#else
+	ui_toast("Typing: not in this build");
+#endif
 }
 
 static bool dmr_id_key(const input_event_t *ev)
 {
+#if CONFIG_DMR
 	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
-	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press && ui_frame()->focus == MY_ID) {
 		if (!dmr_id_editing)
 			dmr_id_begin();
 		uint32_t v = dmr_id_value * 10u + (uint32_t)(ev->action - ACT_DIGIT_0);
@@ -3442,21 +3672,33 @@ static bool dmr_id_key(const input_event_t *ev)
 		ui_dirty();
 		return true;
 	}
+	// Another row while typing: the ID typed so far is dropped, as BACK with none typed
+	if (ev->action == ACT_NAV_UP || ev->action == ACT_NAV_DOWN || ev->action == ACT_ENC_STEP)
+		dmr_id_editing = false;
+#else
+	(void)ev;
+#endif
 	return false;
 }
 
 static void dmr_id_enter(void)
 {
+#if CONFIG_DMR
 	dmr_id_editing = false;
 	dmr_id_saved = 0;
+#endif
 }
 
 static const ui_scr_def_t dmr_id_screen = {
-	.name = "dmr-id", .flags = SF_LIST | SF_FIELD, .prefix = "My Radio", .hint = "0-9 type  OK save  Back",
+	.name = "dmr-id", .flags = SF_LIST | SF_FIELD, .prefix = "My Radio",
+#if CONFIG_DMR
+	.hint = "0-9 type  OK edit/save  Back",
+#else
+	.hint = "OK edit  Back",
+#endif
 	.count = dmr_id_count, .item = dmr_id_item, .select = dmr_id_select, .key = dmr_id_key, .enter = dmr_id_enter,
 	.body = dmr_id_body,
 };
-#endif
 
 #if CONFIG_REF_TRIM
 // ======================= Freq trim (Settings > Advanced) =======================
@@ -4964,13 +5206,7 @@ static void group_select(uint16_t i, bool hold)
 			break;
 		case SA_FIRMWARE: ui_push(SCR_ABOUT, 0); break;
 		case SA_CODEPLUG: ui_push(SCR_INFO, INFO_CODEPLUG); break;
-		case SA_MY_RADIO:
-#if CONFIG_DMR
-			ui_push(SCR_DMR_ID, 0);
-#else
-			ui_push(SCR_INFO, INFO_MY_RADIO);
-#endif
-			break;
+		case SA_MY_RADIO: ui_push(SCR_DMR_ID, 0); break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
 #if CONFIG_CRASH_SCREEN
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
@@ -5322,9 +5558,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
 	[SCR_VOLUME] = &volume_screen,
-#if CONFIG_DMR
 	[SCR_DMR_ID] = &dmr_id_screen,
-#endif
 #if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,
 #endif
@@ -5337,7 +5571,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_ZONE_EDIT
 	[SCR_ZCHANNEL] = &zchan_screen, [SCR_ZPICK] = &zpick_screen, [SCR_ZONEEDIT] = &zopt_screen,
-	[SCR_ZONEDEL] = &zdel_screen,
+	[SCR_ZONEDEL] = &zdel_screen, [SCR_CHZONES] = &chz_screen,
 #endif
 #if CONFIG_DMR
 	[SCR_CHPICK] = &chpick_screen,

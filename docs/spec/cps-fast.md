@@ -18,9 +18,10 @@ The CPS stays: qdmr and the open-firmware CPS speak it. The fast protocol is for
 and the web Codeplug Editor (`site/static/js/codeplug/fastlink.js`), which use it when the radio's VERSION features
 list `CPS_FAST`.
 
-- Firmware: `core/cps/cps_fast.c` (the engine, no RTOS), `core/cps/cps_lz4.c` (the codec), the hook in
-  `core/debuglink/debuglink.c`, the tick in `core/hostlink/hostlink.c`, the boot resume in `core/app/app.c`.
-- Switch: `CONFIG_CPS_FAST` (`docs/build-config.md`), on by default with `CONFIG_CPS_OPENFW` and `CONFIG_DEBUGLINK`.
+- Firmware: `core/cps/cps_fast.c` (the engine, no RTOS), `core/cps/cps_lz4.c` (the codec), the hooks in
+  `core/debuglink/debuglink.c` and `core/stubentry/stub_entry.c`, the tick in `core/hostlink/hostlink.c`, the boot resume in `core/app/app.c`.
+- Switch: `CONFIG_CPS_FAST` (`docs/build-config.md`), on by default with `CONFIG_CPS_OPENFW` and either listener:
+  the debug link, or the stub entry's own listener in a build without it (`stub-entry.md` 2).
   Built without it, the command answers status 4 (unavailable).
 - Hosts: `tools/cps_fast.py`, the editor's `fastlink.js` and `transport.js`.
 - Tests: `tests/host/cpsFastTest.c` (the engine), `tests/host/cpsFastClientTest.py` (the client against `cpsSim`),
@@ -28,7 +29,8 @@ list `CPS_FAST`.
 
 ## 1. Transport
 
-The protocol is a debug link command: `CODEPLUG`, command byte `0x1C` (`debuglink.md` 3.20). Each request is one debug
+The protocol is a debug link command: `CODEPLUG`, command byte `0x1C` (`debuglink.md` 3.20). A build without the debug
+link answers it with the stub entry's own listener, on the same framing (`stub-entry.md` 2). Each request is one debug
 link frame, each answer one reply frame (`debuglink.md` 2). The first payload byte is the operation.
 
 Why the debug link and not a mode of the CPS port:

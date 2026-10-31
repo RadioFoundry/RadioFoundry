@@ -311,16 +311,9 @@ static void sr_pause(void)
 	}
 }
 
-// force: from board_rf_safe (no RTOS, any clock), the lines stay outputs
-static void sr_shift(uint8_t v, bool force)
+// The 8 clocks, the lines already outputs. A leaf of its own: board_rf_safe sits under every task's deepest chain
+static void sr_clock(uint8_t v)
 {
-	if (force) {
-		mcu_pin_force(PIN_SR_DATA, false);
-		mcu_pin_force(PIN_SR_CLK, false);
-	} else {
-		mcu_pin_out(PIN_SR_DATA, false, false);
-		mcu_pin_out(PIN_SR_CLK, false, false);
-	}
 	for (int i = 0; i < 8; i++) {
 		mcu_pin_write(PIN_SR_CLK, false);
 		mcu_pin_write(PIN_SR_DATA, ((v >> i) & 1u) != 0);
@@ -329,10 +322,15 @@ static void sr_shift(uint8_t v, bool force)
 		sr_pause();
 	}
 	mcu_pin_write(PIN_SR_CLK, false);
-	if (!force) {
-		mcu_pin_in(PIN_SR_DATA, MCU_PULL_DOWN);
-		mcu_pin_in(PIN_SR_CLK, MCU_PULL_DOWN);
-	}
+}
+
+static void sr_shift(uint8_t v)
+{
+	mcu_pin_out(PIN_SR_DATA, false, false);
+	mcu_pin_out(PIN_SR_CLK, false, false);
+	sr_clock(v);
+	mcu_pin_in(PIN_SR_DATA, MCU_PULL_DOWN);
+	mcu_pin_in(PIN_SR_CLK, MCU_PULL_DOWN);
 }
 
 static void sr_set(uint8_t set, uint8_t clear)
@@ -340,7 +338,7 @@ static void sr_set(uint8_t set, uint8_t clear)
 	uint8_t v = (uint8_t)((sr & ~clear) | set);
 	if (v != sr) {
 		sr = v;
-		sr_shift(v, false);
+		sr_shift(v);
 	}
 }
 
@@ -1305,7 +1303,7 @@ static void init(void)
 	mcu_pin_out(PIN_SPK_MUTE, true, false);
 	mcu_pin_out(PIN_SR_LATCH, true, false);
 	sr = SR_BOOT | SR_RF_AUDIO;
-	sr_shift(sr, false);
+	sr_shift(sr);
 
 	d578uv_bus_init();
 
@@ -1745,7 +1743,10 @@ void d578uv_rf_safe(void)
 		mcu_dac_write(0, 0);
 	}
 	sr = (uint8_t)(sr & ~SR_TX);
-	sr_shift(sr, true);
+	// no RTOS, any clock: the lines stay outputs
+	mcu_pin_force(PIN_SR_DATA, false);
+	mcu_pin_force(PIN_SR_CLK, false);
+	sr_clock(sr);
 }
 
 const hal_radio_t d578uv_radio = {

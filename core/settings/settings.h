@@ -99,7 +99,7 @@ typedef struct {
 	uint32_t ds_ars_server;		// ARS server ID, 0 = ARS off
 	uint8_t ds_flags;		// SETTINGS_DS_* bits
 	uint8_t ds_stored;		// 1 = the ds_ fields hold the data service's settings
-	uint8_t ds_ip_cnf;		// confirmed IP packets: bits 0-3 tries (0 = the default), bits 4-5 SETTINGS_DS_IPC_*
+	uint8_t ds_ip_cnf;		// confirmed IP packets: bits 0-3 tries (0 = the default), bits 4-5 SETTINGS_DS_IPC_*, bit 6 SETTINGS_DS_CHECK_SET
 	uint8_t snmp_flags;		// SNMP: SNMP_CFG_* bits (was reserved4; 0 = the defaults)
 	// Appended for the UI's settings (docs/spec/ui.md 4). The radio core's DMR reply window belongs with the rs_
 	// fields (taken only when rs_stored is 1); the others are the UI's
@@ -358,6 +358,9 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 #define SETTINGS_DS_IPC_SHIFT		4
 #define SETTINGS_DS_IPC_OFF		1u
 #define SETTINGS_DS_IPC_ALL		2u
+// settings_t.ds_ip_cnf bit 6: ds_flags' radio check reply bit is the user's choice. A record saved before the default
+// became On lacks it and answers radio checks
+#define SETTINGS_DS_CHECK_SET		0x40u
 #define SETTINGS_DS_SMS_ETSI_IP		0x80u	// sms_send's default format is ETSI IP text (neither ETSI bit: Motorola TMS)
 
 // settings_t.em_flags

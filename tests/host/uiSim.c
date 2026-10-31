@@ -64,6 +64,10 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "quick_cc_editor", "quick 3 7" },
 	{ "quick_vfo_fm", "ok 4 up ok quick" },
 	{ "home_copy_to_vfo", "down quick 4" },
+	{ "quick_vfo_split", "ok 4 up ok quick 5 1 4 6 1" },
+	{ "home_vfo_split_dmr", "ok 4 up ok quick 4 6 up ok back wait:5000" },	// the TX frequency in the top row
+	{ "home_vfo_tx", "ok 4 up ok quick 5 up ok back pttdown" },	// FM: the TX frequency large, in red
+	{ "home_vfo_dmr_tx", "ok 4 up ok quick 4 6 up ok back pttdown" },	// the call screen's TX line
 	{ "quick_vfo_dmr", "ok 4 up ok quick 4" },
 	{ "quick_vfo_cc_editor", "ok 4 up ok quick 4 3 7" },
 	{ "find_name", "5 6 3" },
@@ -94,6 +98,9 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "channel_contact", "ok 5 ok down down down down down down down down down ok" },
 	{ "channel_discard", "ok 5 ok down down down down down ok enc+ ok back" },
 	{ "channel_new", "ok 5 up up up ok" },
+	{ "channel_tone_entry", "ok 5 up up ok down down down down down down down down ok 8 8 5" },
+	{ "channel_zones", "ok 5 ok up up up up ok" },
+	{ "zones_new", "ok 4 down down down" },
 #if CONFIG_ZONE_SHARE
 	{ "channel_share", "ok 5 ok up up" },	// the channel editor's Share channel to...
 #endif

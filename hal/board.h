@@ -128,6 +128,26 @@ static inline bool board_in_band(uint32_t hz, bool need_tx)
 	return false;
 }
 
+// The transmit band hz is in (an index into board.bands), or -1
+static inline int board_tx_band(uint32_t hz)
+{
+	for (uint8_t i = 0; i < board.band_count; i++) {
+		const band_t *b = &board.bands[i];
+		if (b->tx && hz >= b->lo_hz && hz <= b->hi_hz) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+// A repeater offset carries to a new RX frequency only within one transmit band: RX before and after and the TX it
+// gives all in it (a UHF offset means nothing on VHF, even where TX would land in a band)
+static inline bool board_offset_carries(uint32_t old_rx, uint32_t new_rx, uint32_t new_tx)
+{
+	int band = board_tx_band(new_rx);
+	return band >= 0 && board_tx_band(old_rx) == band && board_tx_band(new_tx) == band;
+}
+
 // The voltage the radio measures: its battery, its DC input (no battery, hal_power_t.supply_mv set), or neither
 typedef enum { BOARD_VOLTS_NONE, BOARD_VOLTS_BATTERY, BOARD_VOLTS_SUPPLY } board_volts_t;
 

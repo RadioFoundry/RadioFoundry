@@ -487,7 +487,7 @@ export class FakeC7000 {
 		if (fw !== "rfoundry") return 1;			// stock firmware doesn't speak the debug link
 		const reply = (st, p = new Uint8Array(0)) => this.send(frame(f.cmd | 0x80, f.seq, concat(new Uint8Array([st]), p)));
 		if (f.cmd === 0x02) {
-			reply(0, new TextEncoder().encode(`proto=1\ngit=sim1234\nboard=${this.boardName}\nfeatures=FM,DMR\ncodec=${this.codecReport()}\n`));
+			reply(0, new TextEncoder().encode(`proto=1\ngit=sim1234\nboard=${this.boardName}\nfeatures=FM,DMR\ncodec=${this.codecReport()}\npreset=full\noff=\n`));
 		} else if (f.cmd === 0x1A) {
 			if (!this.stubEntry) return reply(3), 1;
 			const p = f.payload, op = p[0];

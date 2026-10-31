@@ -135,9 +135,10 @@ CONFIG_TASK_STACKS ?= $(CONFIG_DEBUGLINK)
 # the open-firmware CPS protocol shim on the host port, so qdmr and the open-firmware CPS can read and write the
 # codeplug (docs/spec/open-firmware-cps.md; needs HOSTLINK)
 CONFIG_CPS_OPENFW ?= $(CONFIG_HOSTLINK)
-# the fast codeplug protocol on the debug link: blank blocks skipped, CRC-32 compare so only changed blocks move, LZ4
-# both ways, staged writes with a power-cut safe commit (docs/spec/cps-fast.md; needs CPS_OPENFW and DEBUGLINK)
-CONFIG_CPS_FAST ?= $(if $(filter y,$(CONFIG_CPS_OPENFW)),$(CONFIG_DEBUGLINK),n)
+# the fast codeplug protocol on the debug link's framing: blank blocks skipped, CRC-32 compare so only changed blocks
+# move, LZ4 both ways, staged writes with a power-cut safe commit (docs/spec/cps-fast.md; needs CPS_OPENFW, and
+# DEBUGLINK or STUB_ENTRY, whose own listener carries it without the debug link)
+CONFIG_CPS_FAST ?= $(if $(filter y,$(CONFIG_CPS_OPENFW)),$(if $(filter y,$(CONFIG_DEBUGLINK) $(CONFIG_STUB_ENTRY)),y,n),n)
 # the diagnostics page
 CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
@@ -318,9 +319,11 @@ ifneq ($(call feature_on,CPS_OPENFW),)
   endif
 endif
 ifneq ($(call feature_on,CPS_FAST),)
-  ifeq ($(call feature_on,CPS_OPENFW)$(call feature_on,DEBUGLINK),yy)
-  else
-    $(error CONFIG_CPS_FAST=y needs CONFIG_CPS_OPENFW=y and CONFIG_DEBUGLINK=y)
+  ifeq ($(call feature_on,CPS_OPENFW),)
+    $(error CONFIG_CPS_FAST=y needs CONFIG_CPS_OPENFW=y)
+  endif
+  ifeq ($(call feature_on,DEBUGLINK)$(call feature_on,STUB_ENTRY),)
+    $(error CONFIG_CPS_FAST=y needs CONFIG_DEBUGLINK=y or CONFIG_STUB_ENTRY=y)
   endif
 endif
 ifneq ($(call feature_on,USB_NETWORK),)

@@ -482,7 +482,7 @@ export class FakeRadio {
 			const f = parseFrames(req)[0];
 			const ok = (p) => frame(f.cmd | 0x80, f.seq, concat(new Uint8Array([0]), p));
 			if (f.cmd === 0x02) {
-				const text = `proto=1\ngit=${this.git}\nboard=${this.board.debuglink_names[0]}\nfeatures=FM,DMR\ncodec=${this.codecReport()}\ndisplay=160x120x16\n`;
+				const text = `proto=1\ngit=${this.git}\nboard=${this.board.debuglink_names[0]}\nfeatures=FM,DMR\ncodec=${this.codecReport()}\ndisplay=160x120x16\npreset=full\noff=\n`;
 				return ok(new TextEncoder().encode(text));
 			}
 			if (f.cmd === 0x0B) {

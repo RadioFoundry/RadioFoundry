@@ -377,6 +377,34 @@ export async function probe(link) {
 	}
 }
 
+// Ports this site was granted before and that are plugged in now (the browser's chooser marks them paired), as a
+// chooser with these filters would list them
+export async function grantedPorts(filters) {
+	if (!navigator.serial?.getPorts) return [];
+	return (await navigator.serial.getPorts()).filter((p) => {
+		const i = p.getInfo();
+		return filters.some((f) => i.usbVendorId === f.usbVendorId && (f.usbProductId === undefined || i.usbProductId === f.usbProductId));
+	});
+}
+
+// A granted port (grantedPorts) whose radio answers, so the page needs no chooser: want(probe) says whether it's the
+// radio expected. {stream, port, probe}, or null (none answered, the page shows the chooser). The probe is short: the
+// chooser opens only within a few seconds of the click that asked for it
+export async function knownRadioPort(filters, want = () => true) {
+	for (const port of await grantedPorts(filters)) {
+		let stream;
+		try {
+			stream = await SerialStream.open(port);
+		} catch {
+			continue;	// held by another tab or program
+		}
+		const p = await probe(new Link(stream, { timeout: 700 }));
+		if (p && want(p)) return { stream, port, probe: p };
+		try { await stream.close(); } catch { /* gone */ }
+	}
+	return null;
+}
+
 // Why a probe got no answer, for the message and the error report: what failed, and what the port gave meanwhile.
 // kind "silent": nothing at all (the wrong port, a radio that is off, a cable not plugged in fully); "link": debug
 // link frames that weren't the reply (RadioFoundry, but the exchange failed); "other": bytes that aren't the debug

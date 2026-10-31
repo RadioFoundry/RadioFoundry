@@ -167,13 +167,15 @@ jobs:
         with:
           persist-credentials: false
           submodules: false
-      - name: Install numpy, pytest, pyserial
+      - name: Install numpy, pytest, pyserial, the site's packages
         run: |
           set -eu
           if [ "${RFOUNDRY_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
             sudo apt-get update -qq
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
               python3-numpy python3-pytest python3-serial
+            # without them ci.sh skips the strict site build, which Cloudflare Pages then fails on
+            python3 -m pip install -q --user --break-system-packages -r site/requirements.txt
           fi
       - name: Python checks, license checks
         run: tools/ci.sh --steps registry,python,licenses
