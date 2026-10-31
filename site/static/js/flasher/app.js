@@ -266,6 +266,8 @@ async function noAnswer(link, { written = null } = {}) {
 
 // One id per use: the custom build requests and the write that follows share it; each write ends the use
 const useId = () => (FLASH_LOG && !S.sim ? (S.useId ||= crypto.randomUUID()) : undefined);
+// The browser's language preferences, for the flash log only (the backend keeps at most 10 tags of 35 characters)
+const browserLanguages = () => (navigator.languages?.length ? [...navigator.languages].slice(0, 5) : (navigator.language ? [navigator.language] : []));
 
 // The vendor firmware involved in this use, as the flash log takes it: lengths, SHA-256 and a short id, never bytes.
 // stock: the file used (the inner one for a zip); readout: the internal flash read from the radio
@@ -292,7 +294,7 @@ function flashStarted(what) {
 	if (!id) return null;
 	S.useId = null;
 	const sent = fetch(new URL("flashes", API), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ id, tool: "web", tool_version: S.data.site.version || "", ...stockLog(), ...(S.adapter ? { adapter: S.adapter } : {}), ...what }) }).catch(() => {});
+		body: JSON.stringify({ id, tool: "web", tool_version: S.data.site.version || "", languages: browserLanguages(), ...stockLog(), ...(S.adapter ? { adapter: S.adapter } : {}), ...what }) }).catch(() => {});
 	S.lastFlashId = id;
 	return (S.lastStarted = { id, sent, marked: new Set() });
 }
@@ -1149,8 +1151,9 @@ async function requestBuild(redraw) {
 	try {
 		const rels = S.data.releases.filter((x) => x.board === S.radio.id);
 		if (VERSION_REF && !validRef(VERSION_REF)) throw new Error(t("flash.version.bad", { ref: VERSION_REF }));
+		const id = useId();
 		let b = await api("POST", "builds", { board: S.radio.id, ref: VERSION_REF || (rels.length ? rels[rels.length - 1].version : defaultRef(S.data.site.branch)), features: [...sel.on].sort(),
-			options: S.buildOptions || {}, tool: "web", tool_version: S.data.site.version || "", task: "install", id: useId() });
+			options: S.buildOptions || {}, tool: "web", tool_version: S.data.site.version || "", task: "install", id, ...(id ? { languages: browserLanguages() } : {}) });
 		while (b.status === "queued" || b.status === "running") {
 			if (!current()) return;
 			S.build.text = b.status === "queued" && b.position ? t("flash.build.queued", { n: b.position }) : t("flash.build.building");

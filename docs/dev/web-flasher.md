@@ -175,7 +175,8 @@ bytes:
 | `decision` | The codec decision (mode, source) or the task (`restore`) |
 | `problem` | The problem, the other radio, the exact message (300 characters at most) |
 
-The start page's privacy text says that a report names the stock firmware file, never its contents.
+The start page's privacy text says that a report names the stock firmware file, never its contents, and that the
+flash log includes the browser's language setting.
 
 ### The flash log and the vendor file
 
@@ -198,10 +199,12 @@ failed install can be traced to a file. Only lengths, SHA-256 hashes and a short
 backend keeps a field the PATCH leaves out. Opting out (`?reporting=0`) and simulations send nothing, as for the rest of
 the log. A backend without these columns ignores the extra fields.
 
-Both requests also carry `adapter`, and the PATCH carries `trail`:
+The POST and the build request (`POST /v1/builds`, when it carries the use's id) also carry `languages`; the PATCH
+and the events don't. Both requests carry `adapter`, and the PATCH carries `trail`:
 
 | Field | Content |
 |---|---|
+| `languages` | The browser's language preferences (`navigator.languages`, the first 5; else `navigator.language`), such as `["en-US", "en"]`. The backend keeps at most 10 tags of 35 characters and an older one ignores the field |
 | `adapter` | `{vid, pid, chip, product}` of the USB device in use (`adapter.js`). `chip` from the vendor id: `FTDI` (0403), `CH340` (1a86), `CP210x` (10c4), `PL2303` (067b), `radio USB` (the radio's own port), `DFU bootloader`, else `other`. `product` only from WebUSB. Never a serial number |
 | `trail` | The newest 200 breadcrumbs (`diag.trail()`, scrubbed, 300 characters each), the oldest dropped to keep the keepalive request under 64 KB |
 
