@@ -1002,10 +1002,11 @@ void ui_menus_resume(void)
 {
 	if (ui_frame()->scr == SCR_ZONE && zone_focus_num != 0)
 		zone_focus(zone_focus_num);
-	if (ui_frame()->scr == SCR_ZONES && zones_new_pending && !ui_svc_zone_pending()) {
-		// A new zone takes the lowest free record, which can be ahead of others: found by its name
+	if (zones_new_pending && !ui_svc_zone_pending()) {
+		// A new zone takes the lowest free record, which can be ahead of others: found by its name. Once written
+		// the flag goes, whatever screen is up, so a later visit to Zones isn't moved
 		char name[CODEPLUG_NAME_LEN + 1];
-		for (uint16_t i = 0; i < ui_filter_count(); i++) {
+		for (uint16_t i = 0; ui_frame()->scr == SCR_ZONES && i < ui_filter_count(); i++) {
 			uint16_t raw = ui_filter_raw(i);
 			if (!chans_is_vfo(raw) && !chans_is_new(raw) && chans_raw_label(raw, name, sizeof name) &&
 			    strcmp(name, ze_name) == 0)
@@ -1015,6 +1016,7 @@ void ui_menus_resume(void)
 	}
 }
 #endif
+
 
 static void zone_item(uint16_t i, ui_item_t *it)
 {
@@ -2434,7 +2436,7 @@ static const ui_scr_def_t chinfo_screen = {
 	.hint = TEXT_ALT_OPEN "OK change  hold OK save  Back" TEXT_ALT_NEXT "OK change  hold OK save" TEXT_ALT_CLOSE,
 	.key = chinfo_key,
 #else
-	.hint = "OK go to it  Back",
+	.hint = "OK tunes to it  Back",
 #endif
 	.count = chinfo_count, .item = chinfo_item, .select = chinfo_select, .title = chinfo_title,
 	.enter = chinfo_enter,
@@ -3519,6 +3521,17 @@ static uint32_t dmr_id_saved, dmr_id_serial;	// the ID just saved, shown until t
 
 static uint16_t dmr_id_count(void) { return MY_COUNT; }
 
+void ui_menus_save_failed(void)
+{
+#if CONFIG_ZONE_EDIT
+	zones_new_pending = false;	// nothing to focus
+#endif
+	my_text_row = MY_COUNT;		// the stored name shows again
+#if CONFIG_DMR
+	dmr_id_saved = 0;
+#endif
+}
+
 static void dmr_id_item(uint16_t i, ui_item_t *it)
 {
 	sbuf_t b;
@@ -3565,12 +3578,12 @@ static const char *dmr_id_body(void)
 #if CONFIG_CHANNEL_EDIT
 static void my_text_kept(void)
 {
+	my_text_serial = codeplug_serial();	// before the job: the storage task may finish it before we look again
 	if (!ui_svc_name_set(my_names[my_text_row], my_text)) {
 		my_text_row = MY_COUNT;
 		ui_toast("Couldn't save: try again");
 		return;
 	}
-	my_text_serial = codeplug_serial();
 	ui_toast("Saved");
 }
 #endif

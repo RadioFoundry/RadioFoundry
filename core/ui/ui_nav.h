@@ -135,6 +135,7 @@ uint16_t ui_filter_raw(uint16_t i);
 const char *ui_filter_text(void);
 void ui_filter_reset(void);
 void ui_filter_rebuild(void);
+void ui_menus_save_failed(void);	// a codeplug write failed: what waited for it is dropped (ui_menus.c)
 #if CONFIG_ZONE_EDIT
 // A list shows again, or the codeplug changed under it (ui_menus.c): the zone editor's focus follows its change
 void ui_menus_resume(void);

@@ -584,6 +584,7 @@ static void handle_event(const ui_event_t *ev)
 		memcpy(msg, ev->text, sizeof msg);
 		msg[sizeof msg - 1] = 0;
 		ui_toast(msg[0] ? msg : "Couldn't save: try again");
+		ui_menus_save_failed();
 		break;
 	}
 	case UI_EV_CALL_ALERT_RESULT:
@@ -1325,7 +1326,10 @@ bool ui_quick_key(const input_event_t *ev)
 				radio_req_squelch(n > 0 ? 1 : -1);
 			ui_st.quick_edit = false;
 		} else if (ui_st.quick_edit && kind == QT_SPLIT) {
-			(void)ui_freq_entry_digit(ui_st.entry_digits, &ui_st.entry_len, (char)('0' + d));
+			if (ui_st.entry_len >= UI_ENTRY_MAX)
+				ui_toast("All digits typed: OK sets TX");
+			else
+				(void)ui_freq_entry_digit(ui_st.entry_digits, &ui_st.entry_len, (char)('0' + d));
 		} else if (ui_st.quick_edit && kind == QT_CC) {
 			int c = ui_st.cc_edit * 10 + d;
 			ui_st.cc_edit = (uint8_t)(ui_st.cc_edit < 2 && c <= 15 && ui_st.cc_edit != 0 ? c : d);
@@ -1359,7 +1363,8 @@ bool ui_quick_key(const input_event_t *ev)
 		if (ev->gesture == GESTURE_LONG) {
 			if (ui_st.quick_edit)
 				quick_close_editor();
-			save_channel();
+			if (!ui_st.quick_edit)	// a value the editor refused (Split's TX) keeps it open, unsaved
+				save_channel();
 		} else if (press && ui_st.quick_edit) {
 			quick_close_editor();
 		} else if (press) {

@@ -93,23 +93,19 @@ void sb_split(sbuf_t *b, uint32_t rx_hz, uint32_t tx_hz)
 	}
 	sb_chr(b, tx_hz > rx_hz ? '+' : '-');
 	uint32_t d = tx_hz > rx_hz ? tx_hz - rx_hz : rx_hz - tx_hz;
-	if (d < 1000000u) {
-		sb_u32(b, d / 1000u, 1);	// below 1 MHz in kHz, to the kHz
-		sb_chr(b, 'k');
-		return;
-	}
-	sb_u32(b, d / 1000000u, 1);
-	uint32_t frac = d % 1000000u / 1000u;	// MHz, then the kHz without trailing zeros
+	// Below 1 MHz in kHz, else in MHz; three decimals at most, trailing zeros dropped: "+600k", "+12.5k", "-7.6M"
+	bool mhz = d >= 1000000u;
+	uint32_t unit = mhz ? 1000000u : 1000u;
+	sb_u32(b, d / unit, 1);
+	uint32_t frac = d % unit / (unit / 1000u);
 	if (frac != 0) {
 		sb_chr(b, '.');
-		uint32_t div = 100u;
-		while (frac != 0) {
+		for (uint32_t div = 100u; frac != 0; div /= 10u) {
 			sb_chr(b, (char)('0' + frac / div));
 			frac %= div;
-			div /= 10u;
 		}
 	}
-	sb_chr(b, 'M');
+	sb_chr(b, mhz ? 'M' : 'k');
 }
 
 void sb_mmss(sbuf_t *b, uint32_t seconds)
