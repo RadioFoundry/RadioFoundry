@@ -78,10 +78,16 @@ static void reset_levels(void)
 
 	stm32_pin_out(PIN_PORT(PIN_RX_UHF_5V), PIN_MASK(PIN_RX_UHF_5V), false, false);
 	stm32_pin_out(PIN_PORT(PIN_RX_VHF_5V), PIN_MASK(PIN_RX_VHF_5V), false, false);
+#ifdef PIN_RX2_UHF_5V
+	stm32_pin_out(PIN_PORT(PIN_RX2_UHF_5V), PIN_MASK(PIN_RX2_UHF_5V), false, false);
+	stm32_pin_out(PIN_PORT(PIN_RX2_VHF_5V), PIN_MASK(PIN_RX2_VHF_5V), false, false);
+#endif
 	stm32_pin_out(PIN_PORT(PIN_KEY_ROW0), PIN_MASK(PIN_KEY_ROW0), false, false);
 	stm32_pin_out(PIN_PORT(PIN_KEY_ROW1), PIN_MASK(PIN_KEY_ROW1), false, false);
 	stm32_pin_out(PIN_PORT(PIN_KEY_ROW2), PIN_MASK(PIN_KEY_ROW2), false, false);
+#ifdef PIN_MIC_POWER
 	stm32_pin_out(PIN_PORT(PIN_MIC_POWER), PIN_MASK(PIN_MIC_POWER), false, false);
+#endif
 	stm32_pin_out(PIN_PORT(PIN_GPS_POWER), PIN_MASK(PIN_GPS_POWER), false, false);
 
 	stm32_pin_out(PIN_PORT(PIN_PA_EN1), PIN_MASK(PIN_PA_EN1), false, false);
@@ -93,6 +99,9 @@ static void reset_levels(void)
 	stm32_pin_out(PIN_PORT(PIN_AMP_EN), PIN_MASK(PIN_AMP_EN), true, false);
 	stm32_pin_out(PIN_PORT(PIN_LCD_BACKLIGHT), PIN_MASK(PIN_LCD_BACKLIGHT), false, false);
 	stm32_pin_out(PIN_PORT(PIN_RX_AUDIO_MUX), PIN_MASK(PIN_RX_AUDIO_MUX), true, false);
+#ifdef PIN_RX2_AUDIO_MUX
+	stm32_pin_out(PIN_PORT(PIN_RX2_AUDIO_MUX), PIN_MASK(PIN_RX2_AUDIO_MUX), false, false);
+#endif
 	stm32_pin_out(PIN_PORT(PIN_FLASH_CS), PIN_MASK(PIN_FLASH_CS), true, false);
 	stm32_pin_out(PIN_PORT(PIN_CTCSS_PWM), PIN_MASK(PIN_CTCSS_PWM), true, true);
 }

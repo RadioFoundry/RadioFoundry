@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// UV380 family radio: AT1846S (I2C3) + HR_C6000 (bit-banged config SPI, voice SPI2) + RF path GPIOs + APC DAC +
-// calibration. FM receive and transmit (docs/spec/hardware-dm1701.md 4-8, 12; docs/spec/modem-hrc6000.md 3, 8), and the
-// RF side of DMR (modem-hrc6000.md 3.1, 4.3; hardware-dm1701.md 5.3, 6): set_mode(DMR) puts both chips in DMR and starts
-// the slot engine (platform/stm32f4/hrc/dmr_glue.c); tx() in DMR only arms the per-burst keying (TX frequency and PA drive) and the PA
-// then follows the bursts from the modem interrupts through uvf_rf_dmr_switch(), which writes AT1846S reg 0x30
-// directly over I2C3 (never through the task-level driver and its cache, which is resynced when DMR TX ends).
+// UV380 family radio: AT1846S (and a second receiver's: UVF_RF_CHIPS) + HR_C6000 (bit-banged config SPI, voice SPI2) +
+// RF path GPIOs + APC DAC + calibration. FM receive and transmit (docs/spec/hardware-dm1701.md 4-8, 12;
+// docs/spec/modem-hrc6000.md 3, 8), and the RF side of DMR (modem-hrc6000.md 3.1, 4.3; hardware-dm1701.md 5.3, 6):
+// set_mode(DMR) puts the AT1846S and the HR_C6000 in DMR and starts the slot engine (platform/stm32f4/hrc/dmr_glue.c);
+// tx() in DMR only arms the per-burst keying (TX frequency and PA drive) and the PA then follows the bursts from the
+// modem interrupts through uvf_rf_dmr_switch(), which writes AT1846S reg 0x30 directly over the RF I2C (never through
+// the task-level driver and its cache, which is resynced when DMR TX ends).
 // tx_off() in DMR belongs after DMR_EV_TX_DONE; called while a transmission runs it drops it.
 //
 // TX switching sequence (gotchas 3.5): the TX frequency is written with the receiver off (reg 0x30 idle, then the
@@ -52,7 +53,8 @@
 
 
 static struct {
-	at1846s_t rf;
+	at1846s_t chip[UVF_RF_CHIPS];	// the AT1846S that receives and transmits, then a second receiver's (rf_addr)
+	at1846s_t *rf;		// chip[0]
 	hrc_t modem;
 	radio_mode_t mode;
 	bool tx_on;
@@ -68,7 +70,7 @@ static struct {
 	uint16_t saved_59, saved_79;	// AT1846S tone deviation and tone select before the tone
 	uint16_t saved_3a, saved_7a;	// AT1846S voice source (0x3A bits 14:12) and single tone enable before the tone
 	bool asleep;			// rx_sleep(true): receiver off
-	volatile bool afsk;		// APRS AFSK running (afsk_uvf.c): the TIM6 interrupt owns I2C3
+	volatile bool afsk;		// APRS AFSK running (afsk_uvf.c): the TIM6 interrupt owns the RF I2C bus
 	bool inject;			// FM TX audio from the MCU (fm_tx_inject) instead of the microphone
 
 	// DMR per-burst keying (shared with the modem ISRs)
@@ -79,14 +81,14 @@ static struct {
 	volatile uint32_t rf_tuned_hz;	// what the AT1846S synthesizer holds, 0 unknown
 	volatile bool rf_isr_dirty;	// the ISR wrote the AT1846S behind the task-level driver
 	volatile bool rf_rx_pending;	// a back-to-RX write was skipped: retry at the next timeslot interrupt
-	volatile uint8_t rf_page;	// AT1846S page last written to reg 0x7F, 0xFF unknown
+	volatile uint8_t rf_page[UVF_RF_CHIPS];	// each AT1846S's page last written to reg 0x7F, 0xFF unknown
 	volatile int8_t rf_ref;		// calibrated HR_C6000 MOD1 offset (4:0x04) for the RX frequency
 	volatile bool rf_direct;	// this burst was keyed without the idle step: 4:0x04 raised, the receiver not retuned
 	volatile bool rf_key_pending;	// TIM7 keys this burst at its expiry
 	uint32_t rf_skipped, rf_unarmed, rf_rx_retries;
-} r = { .rf_page = 0xFF };
+} r = { .rf = &r.chip[0] };
 
-static I2C_HandleTypeDef i2c3;
+static I2C_HandleTypeDef i2c;
 static DAC_HandleTypeDef dac;
 
 static bool in_isr(void)
@@ -101,38 +103,47 @@ static void count(bool ok)
 	}
 }
 
-// --- AT1846S bus: I2C3 (hardware-dm1701.md 5.1) ---
+// --- AT1846S bus: the RF I2C (pins.h; hardware-dm1701.md 5.1), one or two chips on it ---
+
+// Each chip's bus context: its index in r.chip[]
+static const uint8_t chip_index[2] = { 0, 1 };
+
+static uint8_t chip_addr(uint8_t i)
+{
+	return uvf_variant.rf_addr[i];
+}
 
 static void i2c_setup(void)
 {
-	__HAL_RCC_I2C3_CLK_ENABLE();
-	stm32_pin_af(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), GPIO_AF4_I2C3, true, GPIO_PULLUP);
-	stm32_pin_af(PIN_PORT(PIN_I2C3_SDA), PIN_MASK(PIN_I2C3_SDA), GPIO_AF4_I2C3, true, GPIO_PULLUP);
-	i2c3.Instance = I2C3;
-	i2c3.Init.ClockSpeed = 400000;
-	i2c3.Init.DutyCycle = I2C_DUTYCYCLE_2;
-	i2c3.Init.OwnAddress1 = 0;
-	i2c3.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-	i2c3.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-	i2c3.Init.OwnAddress2 = 0;
-	i2c3.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-	i2c3.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-	HAL_I2C_Init(&i2c3);
+	UVF_RF_I2C_CLK_ENABLE();
+	stm32_pin_af(PIN_PORT(PIN_RF_I2C_SCL), PIN_MASK(PIN_RF_I2C_SCL), UVF_RF_I2C_AF, true, GPIO_PULLUP);
+	stm32_pin_af(PIN_PORT(PIN_RF_I2C_SDA), PIN_MASK(PIN_RF_I2C_SDA), UVF_RF_I2C_AF, true, GPIO_PULLUP);
+	i2c.Instance = UVF_RF_I2C;
+	i2c.Init.ClockSpeed = 400000;
+	i2c.Init.DutyCycle = I2C_DUTYCYCLE_2;
+	i2c.Init.OwnAddress1 = 0;
+	i2c.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+	i2c.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+	i2c.Init.OwnAddress2 = 0;
+	i2c.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+	i2c.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+	HAL_I2C_Init(&i2c);
 }
 
 // One register transfer. Task context: up to 3 tries 1 ms apart, then the peripheral is reset. ISR context: one
 // try, and none at all while a task transfer owns the bus (skip, never wait)
-static bool i2c_xfer(uint8_t reg, uint8_t *buf, bool write)
+static bool i2c_xfer(uint8_t chip, uint8_t reg, uint8_t *buf, bool write)
 {
+	uint16_t addr = (uint16_t)(chip_addr(chip) << 1);
 	bool isr = in_isr();
 	int tries = isr ? 1 : I2C_TRIES;
 	for (int i = 0; i < tries; i++) {
-		if (isr && HAL_I2C_GetState(&i2c3) != HAL_I2C_STATE_READY) {
+		if (isr && HAL_I2C_GetState(&i2c) != HAL_I2C_STATE_READY) {
 			return false;
 		}
 		HAL_StatusTypeDef st = write
-			? HAL_I2C_Mem_Write(&i2c3, AT1846S_I2C_ADDR << 1, reg, I2C_MEMADD_SIZE_8BIT, buf, 2, I2C_TIMEOUT_MS)
-			: HAL_I2C_Mem_Read(&i2c3, AT1846S_I2C_ADDR << 1, reg, I2C_MEMADD_SIZE_8BIT, buf, 2, I2C_TIMEOUT_MS);
+			? HAL_I2C_Mem_Write(&i2c, addr, reg, I2C_MEMADD_SIZE_8BIT, buf, 2, I2C_TIMEOUT_MS)
+			: HAL_I2C_Mem_Read(&i2c, addr, reg, I2C_MEMADD_SIZE_8BIT, buf, 2, I2C_TIMEOUT_MS);
 		if (st == HAL_OK) {
 			return true;
 		}
@@ -142,7 +153,7 @@ static bool i2c_xfer(uint8_t reg, uint8_t *buf, bool write)
 	}
 	r.bus_errors++;
 	if (!isr) {
-		HAL_I2C_DeInit(&i2c3);
+		HAL_I2C_DeInit(&i2c);
 		i2c_setup();
 	}
 	return false;
@@ -150,49 +161,57 @@ static bool i2c_xfer(uint8_t reg, uint8_t *buf, bool write)
 
 static bool rf_write(void *ctx, uint8_t reg, uint16_t val)
 {
+	uint8_t chip = *(const uint8_t *)ctx;
 	uint8_t buf[2] = { (uint8_t)(val >> 8), (uint8_t)val };
 	if (reg == 0x7F) {
-		r.rf_page = 0xFF;	// unknown until the write is through (the modem ISRs only write on page 0)
+		r.rf_page[chip] = 0xFF;	// unknown until the write is through (the modem ISRs only write on page 0)
 	}
-	bool ok = i2c_xfer(reg, buf, true);
+	bool ok = i2c_xfer(chip, reg, buf, true);
 	if (ok && reg == 0x7F) {
-		r.rf_page = (uint8_t)val;
+		r.rf_page[chip] = (uint8_t)val;
 	}
 	return ok;
 }
 
-// One AT1846S page 0 register write from a modem ISR (or with them masked): a single try, skipped when a task-level
-// transfer owns I2C3 or the chip is on another page. Never touches the task-level driver's cache
+// One page 0 register write to the main AT1846S from a modem ISR (or with them masked): a single try, skipped when
+// a task-level transfer owns the bus or the chip is on another page. Never touches the task-level driver's cache
 static bool rf_isr_write(uint8_t reg, uint16_t val)
 {
-	if (r.rf_page != 0 || HAL_I2C_GetState(&i2c3) != HAL_I2C_STATE_READY) {
+	if (r.rf_page[0] != 0 || HAL_I2C_GetState(&i2c) != HAL_I2C_STATE_READY) {
 		return false;
 	}
 	uint8_t buf[2] = { (uint8_t)(val >> 8), (uint8_t)val };
-	return HAL_I2C_Mem_Write(&i2c3, AT1846S_I2C_ADDR << 1, reg, I2C_MEMADD_SIZE_8BIT, buf, 2, RF_ISR_I2C_TIMEOUT_MS)
-		== HAL_OK;
+	return HAL_I2C_Mem_Write(&i2c, (uint16_t)(chip_addr(0) << 1), reg, I2C_MEMADD_SIZE_8BIT, buf, 2,
+		RF_ISR_I2C_TIMEOUT_MS) == HAL_OK;
 }
 
 static bool rf_read(void *ctx, uint8_t reg, uint16_t *val)
 {
 	uint8_t buf[2];
-	if (!i2c_xfer(reg, buf, false)) {
+	if (!i2c_xfer(*(const uint8_t *)ctx, reg, buf, false)) {
 		return false;
 	}
 	*val = (uint16_t)((buf[0] << 8) | buf[1]);
 	return true;
 }
 
-static const at1846s_bus_t rf_bus = { .write = rf_write, .read = rf_read, .delay_ms = hal_delay_ms, .ctx = NULL };
+static const at1846s_bus_t rf_bus[UVF_RF_CHIPS] = {
+	{ .write = rf_write, .read = rf_read, .delay_ms = hal_delay_ms, .ctx = (void *)&chip_index[0] },
+#if UVF_RF_CHIPS > 1
+	{ .write = rf_write, .read = rf_read, .delay_ms = hal_delay_ms, .ctx = (void *)&chip_index[1] },
+#endif
+};
 
-// --- HR_C6000 bus: bit-banged config SPI on PE2-PE5 (hardware-dm1701.md 4.2) ---
 
-// The configuration port on PE2-PE5 and the voice port on SPI2 (PB13-PB15, AF5, chip select PIN_C6000_VCS): mode 2,
-// PCLK1 / 8 = 4.5 MHz. The shared transfers (platform/stm32f4/hrc/hrc_bus.c) mask the modem interrupts around each
+// --- HR_C6000 bus: bit-banged config SPI (hardware-dm1701.md 4.2) ---
+
+// The configuration port on port E (the MD-2017's clock on PC13) and the voice port on SPI2 (PB13-PB15, AF5, chip
+// select PIN_C6000_VCS): mode 2, PCLK1 / 8 = 4.5 MHz. The shared transfers (platform/stm32f4/hrc/hrc_bus.c) mask
+// the modem interrupts around each
 static const stm32_hrc_bus_cfg_t modem_cfg = {
-	.port = GPIOE,
+	.port = PIN_PORT(PIN_C6000_CS),	// MOSI and MISO too (pins.h)
 	.cs = PIN_MASK(PIN_C6000_CS), .clk = PIN_MASK(PIN_C6000_CLK), .mosi = PIN_MASK(PIN_C6000_MOSI),
-	.miso = PIN_MASK(PIN_C6000_MISO),
+	.miso = PIN_MASK(PIN_C6000_MISO), .clk_port = PIN_PORT(PIN_C6000_CLK),
 	.voice_spi = SPI2, .voice_br = 2,
 	.voice_cs_port = PIN_PORT(PIN_C6000_VCS), .voice_cs = PIN_MASK(PIN_C6000_VCS),
 };
@@ -301,7 +320,7 @@ static void apply_rx_tone(void)
 {
 	uint16_t value;
 	at1846s_tone_t type = rf_tone(&r.rx_tone, &value);
-	count(at1846s_set_rx_tone(&r.rf, type, value));
+	count(at1846s_set_rx_tone(r.rf, type, value));
 }
 
 // --- DMR per-burst RF switching (modem-hrc6000.md 4.3, hardware-dm1701.md 6): modem ISR context ---
@@ -389,12 +408,12 @@ pa:
 	rx_supply(false, false);	// the RX pre-amps off while the PA is up (hardware-dm1701.md 6)
 	apc_set(r.dmr_drive);
 	PIN_WRITE(PIN_PA_EN1, true);
-	PIN_WRITE(PIN_PA_BAND, r.dmr_uhf);
+	PIN_WRITE(PIN_PA_BAND, r.dmr_uhf == PA_BAND_UHF);
 	PIN_WRITE(PIN_PA_EN2, true);
 	return true;
 }
 
-// TIM7: one-shot at 1 MHz for the key delay, at the modem interrupts' priority (they share I2C3 and never preempt
+// TIM7: one-shot at 1 MHz for the key delay, at the modem interrupts' priority (they share the RF bus and never preempt
 // each other)
 static void key_timer_setup(void)
 {
@@ -492,10 +511,10 @@ static void rf_resync(void)
 		count(hrc_write(&r.modem, 4, 0x04, (uint8_t)r.rf_ref));
 	}
 	if (r.rx_valid) {
-		count(at1846s_set_freq(&r.rf, r.rx_hz));	// forced writes of 0x30 (idle), 0x29, 0x2A
+		count(at1846s_set_freq(r.rf, r.rx_hz));	// forced writes of 0x30 (idle), 0x29, 0x2A
 		r.rf_tuned_hz = r.rx_hz;
 	}
-	count(at1846s_set_state(&r.rf, r.rx_valid ? AT1846S_STATE_RX : AT1846S_STATE_IDLE));	// forced
+	count(at1846s_set_state(r.rf, r.rx_valid ? AT1846S_STATE_RX : AT1846S_STATE_IDLE));	// forced
 }
 
 // HR_C6000 into DMR (modem-hrc6000.md 3.1) with the DMR modulation pair for the frequency, then the slot engine
@@ -587,7 +606,9 @@ static void init(void)
 	if (speaker_lock == NULL) {
 		speaker_lock = xSemaphoreCreateMutex();
 	}
+#ifdef PIN_MIC_POWER
 	PIN_WRITE(PIN_MIC_POWER, true);		// kept on in RX and TX (4.5: some speaker-mics see false PTT without bias)
+#endif
 	rx_supply(false, false);
 	dac_setup();
 	pa_off();
@@ -597,18 +618,27 @@ static void init(void)
 	PIN_WRITE(PIN_C6000_PWD, false);	// the HR_C6000 wakes while the AT1846S initializes
 	uint32_t pwd_ms = hal_millis();
 
-	at1846s_attach(&r.rf, &rf_bus);
-	count(at1846s_init(&r.rf));
+	for (uint8_t i = 0; i < UVF_RF_CHIPS; i++) {
+		r.rf_page[i] = 0xFF;
+		at1846s_attach(&r.chip[i], &rf_bus[i]);
+		count(at1846s_init(&r.chip[i]));
+	}
 
 	while ((uint32_t)(hal_millis() - pwd_ms) < C6000_PWD_WAIT_MS) {
 		hal_delay_ms(1);
 	}
 	hrc6000_attach(&r.modem, &modem_bus);
 	count(hrc6000_power_on_init(&r.modem, DMR_MIC_GAIN));
-	count(at1846s_init_finish(&r.rf));
+	for (uint8_t i = 0; i < UVF_RF_CHIPS; i++) {
+		count(at1846s_init_finish(&r.chip[i]));
+		count(at1846s_set_mode(&r.chip[i], AT1846S_MODE_FM));
+	}
+#if UVF_RF_CHIPS > 1
+	// The second receiver rests: one receiver at a time until the core receives two channels at once
+	count(at1846s_set_state(&r.chip[1], AT1846S_STATE_IDLE));
+#endif
 
 	r.mode = RADIO_MODE_FM;
-	count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	audio(false);
 	r.diag.c6000_ok = hrc_read(&r.modem, 4, 0x10, &r.diag.c6000_r10);
@@ -621,7 +651,7 @@ static void set_mode(radio_mode_t mode)
 	radio_mode_t prev = r.mode;
 	r.mode = mode;
 	if (mode == RADIO_MODE_DMR) {
-		count(at1846s_set_mode(&r.rf, AT1846S_MODE_DMR));
+		count(at1846s_set_mode(r.rf, AT1846S_MODE_DMR));
 		if (prev != RADIO_MODE_DMR) {
 			dmr_enter();
 		}
@@ -632,7 +662,7 @@ static void set_mode(radio_mode_t mode)
 			rf_resync();
 			r.tx_on = false;
 		}
-		count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
+		count(at1846s_set_mode(r.rf, AT1846S_MODE_FM));
 		if (!r.tx_on) {
 			count(hrc6000_set_mode_fm_rx(&r.modem));
 		}
@@ -647,10 +677,10 @@ static void tone_restore(void)
 		return;
 	}
 	uint8_t e0;
-	count(at1846s_modify(&r.rf, 0, 0x3A, 0x8FFF, (uint16_t)(r.saved_3a & 0x7000u)));	// voice source back
-	count(at1846s_write(&r.rf, 0, 0x7A, r.saved_7a));
-	count(at1846s_write(&r.rf, 0, 0x59, r.saved_59));
-	count(at1846s_write(&r.rf, 0, 0x79, r.saved_79));
+	count(at1846s_modify(r.rf, 0, 0x3A, 0x8FFF, (uint16_t)(r.saved_3a & 0x7000u)));	// voice source back
+	count(at1846s_write(r.rf, 0, 0x7A, r.saved_7a));
+	count(at1846s_write(r.rf, 0, 0x59, r.saved_59));
+	count(at1846s_write(r.rf, 0, 0x79, r.saved_79));
 	if (hrc_read(&r.modem, 4, 0xE0, &e0)) {
 		count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)(e0 | 0x40u)));
 	}
@@ -735,11 +765,11 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 
 	pa_off();
 	rx_supply(true, uhf);
-	count(at1846s_set_bandwidth(&r.rf, rf_bw(bw)));
-	count(at1846s_set_mode(&r.rf, r.mode == RADIO_MODE_DMR ? AT1846S_MODE_DMR : AT1846S_MODE_FM));
-	count(at1846s_set_freq(&r.rf, hz));
+	count(at1846s_set_bandwidth(r.rf, rf_bw(bw)));
+	count(at1846s_set_mode(r.rf, r.mode == RADIO_MODE_DMR ? AT1846S_MODE_DMR : AT1846S_MODE_FM));
+	count(at1846s_set_freq(r.rf, hz));
 	apply_rx_tone();
-	count(at1846s_set_state(&r.rf, AT1846S_STATE_RX));
+	count(at1846s_set_state(r.rf, AT1846S_STATE_RX));
 	r.rf_tuned_hz = hz;
 	r.rf_isr_dirty = false;
 	r.rf_rx_pending = false;
@@ -814,15 +844,15 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	};
 	count(hrc6000_set_mode_fm_tx(&r.modem, &fm));
 
-	count(at1846s_set_bandwidth(&r.rf, rf_bw(bw)));
-	count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
-	count(at1846s_set_tx_tone(&r.rf, tone, tone_value));
-	count(at1846s_set_freq(&r.rf, (uint32_t)((int32_t)hz + offset)));
-	count(at1846s_set_state(&r.rf, AT1846S_STATE_FM_TX));
+	count(at1846s_set_bandwidth(r.rf, rf_bw(bw)));
+	count(at1846s_set_mode(r.rf, AT1846S_MODE_FM));
+	count(at1846s_set_tx_tone(r.rf, tone, tone_value));
+	count(at1846s_set_freq(r.rf, (uint32_t)((int32_t)hz + offset)));
+	count(at1846s_set_state(r.rf, AT1846S_STATE_FM_TX));
 
 	apc_set(drive);
 	PIN_WRITE(PIN_PA_EN1, true);
-	PIN_WRITE(PIN_PA_BAND, uhf);
+	PIN_WRITE(PIN_PA_BAND, uhf == PA_BAND_UHF);
 	PIN_WRITE(PIN_PA_EN2, true);
 	r.tx_on = true;
 	return true;
@@ -842,8 +872,8 @@ static void tx_off(void)
 		rx(r.rx_hz, r.rx_bw, &tone);
 		return;
 	}
-	count(at1846s_set_tx_tone(&r.rf, AT1846S_TONE_NONE, 0));
-	count(at1846s_set_state(&r.rf, AT1846S_STATE_IDLE));
+	count(at1846s_set_tx_tone(r.rf, AT1846S_TONE_NONE, 0));
+	count(at1846s_set_state(r.rf, AT1846S_STATE_IDLE));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	r.tx_on = false;
 }
@@ -851,13 +881,13 @@ static void tx_off(void)
 static void status(radio_status_t *st)
 {
 	if (stm32_hrc_dmr_tx_active() || r.afsk) {
-		*st = r.last_status;	// keep I2C3 free for the per-burst switching / the AFSK tone switching
+		*st = r.last_status;	// keep the RF bus free for the per-burst switching / the AFSK tone switching
 		return;
 	}
 	uint8_t rssi, noise;
 	uint16_t flags, value;
 	at1846s_tone_t type = rf_tone(&r.rx_tone, &value);
-	if (!at1846s_read_signal(&r.rf, &rssi, &noise) || !at1846s_read_flags(&r.rf, &flags)) {
+	if (!at1846s_read_signal(r.rf, &rssi, &noise) || !at1846s_read_flags(r.rf, &flags)) {
 		st->rssi_dbm = -140;
 		st->noise = 255;
 		st->carrier = false;
@@ -904,7 +934,7 @@ static bool tx_tail(bool on)
 	if (!r.tx_on || r.mode != RADIO_MODE_FM) {
 		return false;
 	}
-	return at1846s_tx_tail(&r.rf, on);
+	return at1846s_tx_tail(r.rf, on);
 }
 
 // voice_sel selects tone1; with voice_sel left at "nothing" the carrier was unmodulated (gotchas 3.10). high != 0:
@@ -920,27 +950,27 @@ static bool tone_start(uint16_t hz, uint16_t high, uint16_t dev)
 		bool ok = hrc_read(&r.modem, 4, 0xE0, &e0);
 		if (r.tone_hz == 0) {
 			uint16_t v;
-			r.saved_59 = at1846s_read(&r.rf, 0, 0x59, &v) ? v : 0;
-			r.saved_79 = at1846s_read(&r.rf, 0, 0x79, &v) ? v : 0;
-			r.saved_3a = at1846s_read(&r.rf, 0, 0x3A, &v) ? v : 0;
-			r.saved_7a = at1846s_read(&r.rf, 0, 0x7A, &v) ? v : 0;
+			r.saved_59 = at1846s_read(r.rf, 0, 0x59, &v) ? v : 0;
+			r.saved_79 = at1846s_read(r.rf, 0, 0x79, &v) ? v : 0;
+			r.saved_3a = at1846s_read(r.rf, 0, 0x3A, &v) ? v : 0;
+			r.saved_7a = at1846s_read(r.rf, 0, 0x7A, &v) ? v : 0;
 		}
 		if (ok) {
 			count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)(e0 & ~0x40u)));	// microphone muted
 		}
-		count(at1846s_write(&r.rf, 0, 0x35, (uint16_t)(hz * 10u)));		// tone1 = Hz x 10
+		count(at1846s_write(r.rf, 0, 0x35, (uint16_t)(hz * 10u)));		// tone1 = Hz x 10
 		if (high != 0) {
-			count(at1846s_write(&r.rf, 0, 0x36, (uint16_t)(high * 10u)));	// tone2 = Hz x 10
+			count(at1846s_write(r.rf, 0, 0x36, (uint16_t)(high * 10u)));	// tone2 = Hz x 10
 		}
 		// Single tone mode (0x79 bits 15:14: direct, tone generator; 0x7A bit 14) sends tone1 and tone2 for as
 		// long as it is on, where the chip's DTMF mode (0x7A bit 15) would time each digit itself
-		count(at1846s_write(&r.rf, 0, 0x79, 0xC000));
-		count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((dev << 6) | (r.saved_59 & 0x3Fu))));	// tone deviation
-		count(at1846s_modify(&r.rf, 0, 0x7A, 0xBFFF, 0x4000));			// single tone enable
+		count(at1846s_write(r.rf, 0, 0x79, 0xC000));
+		count(at1846s_write(r.rf, 0, 0x59, (uint16_t)((dev << 6) | (r.saved_59 & 0x3Fu))));	// tone deviation
+		count(at1846s_modify(r.rf, 0, 0x7A, 0xBFFF, 0x4000));			// single tone enable
 		// voice_sel, 0x3A bits 14:12 = 001: TX the tone1 frequency, 011: tone1 and tone2 (AT1846S programming guide,
 		// TX voice channel select). Bits 6:4 are squelch and sub-audio detect enables, not the voice source: writing
 		// the tone there left voice_sel at 000 (TX nothing), an unmodulated carrier
-		count(at1846s_modify(&r.rf, 0, 0x3A, 0x8FFF, high != 0 ? 0x3000 : 0x1000));
+		count(at1846s_modify(r.rf, 0, 0x3A, 0x8FFF, high != 0 ? 0x3000 : 0x1000));
 		r.tone_hz = hz;
 	} else {
 		tone_restore();
@@ -974,14 +1004,14 @@ static bool tx_tone_key(bool down)
 		return false;
 	}
 	uint16_t dev = down ? TONE_DEV : 0x00u;
-	count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((dev << 6) | (r.saved_59 & 0x3Fu))));
+	count(at1846s_write(r.rf, 0, 0x59, (uint16_t)((dev << 6) | (r.saved_59 & 0x3Fu))));
 	return true;
 }
 
 #if CONFIG_APRS
 // APRS AFSK (afsk_uvf.c, docs/spec/aprs.md 5.2): the FM TX tone generator as for tx_tone, at hz with the deviation
 // from level (50 = the tone deviation tx_tone uses), then the TIM6 interrupt retunes tone1 (reg 0x35) every symbol
-// with single I2C3 writes. status() keeps off I2C3 meanwhile. Unverified on the bench, like tx_tone
+// with single RF bus writes. status() keeps off the bus meanwhile. Unverified on the bench, like tx_tone
 bool uvf_afsk_begin(uint16_t hz, uint8_t level)
 {
 	if (!tx_tone(hz)) {
@@ -991,7 +1021,7 @@ bool uvf_afsk_begin(uint16_t hz, uint8_t level)
 	if (dev > 0x3FFu) {
 		dev = 0x3FFu;
 	}
-	count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((dev << 6) | (r.saved_59 & 0x3Fu))));
+	count(at1846s_write(r.rf, 0, 0x59, (uint16_t)((dev << 6) | (r.saved_59 & 0x3Fu))));
 	r.afsk = true;		// the last writes were on page 0, as rf_isr_write needs
 	return true;
 }
@@ -1006,7 +1036,7 @@ void uvf_afsk_end(void)
 {
 	if (r.afsk) {
 		r.afsk = false;
-		count(at1846s_write_force(&r.rf, 0, 0x35, (uint16_t)(r.tone_hz * 10u)));	// the interrupt wrote it behind
+		count(at1846s_write_force(r.rf, 0, 0x35, (uint16_t)(r.tone_hz * 10u)));	// the interrupt wrote it behind
 											// the driver's cache
 		tone_restore();
 	}
@@ -1020,7 +1050,7 @@ static void rx_sleep(bool sleep)
 		return;
 	}
 	if (sleep) {
-		count(at1846s_set_state(&r.rf, AT1846S_STATE_IDLE));
+		count(at1846s_set_state(r.rf, AT1846S_STATE_IDLE));
 		rx_supply(false, false);
 		r.asleep = true;
 	} else {
