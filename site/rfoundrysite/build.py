@@ -21,7 +21,7 @@ import posixpath
 import re
 import shutil
 
-from . import device, docs as docsmod, i18n, repo, social, tmpl, toolzip
+from . import device, docs as docsmod, i18n, repo, shots, social, tmpl, toolzip
 
 
 def _release_version():
@@ -69,6 +69,7 @@ class Site:
 		self.i18n_dir = i18n_dir	# site/i18n unless given (a test's languages)
 		self.i18n = i18n.load(i18n_dir)
 		self.tpl = tmpl.Templates(repo.path("site", "templates"), self.i18n.t)
+		self.shots = shots.Shots()
 		self.git = repo.git("rev-parse", "--short=8", "HEAD", default="unknown")
 		# where the web tools send error reports (report.js); unset: none are sent
 		self.sentry_dsn = os.environ.get("RFOUNDRY_SENTRY_DSN", "")
@@ -349,15 +350,13 @@ class Site:
 		shutil.copytree(repo.path("site", "static"), os.path.join(self.out, "static"))
 		self.version_imports(os.path.join(self.out, "static", "js"))
 		shutil.rmtree(os.path.join(self.out, "static", "img", "radios", "src"), ignore_errors=True)
+		# the drawings with the boot screen in them follow the pages: its copy's scale depends on where they show it
 		for b in self.boards:
 			img = device.render(b, b["name"])
-			self.write("static/img/radios/%s.svg" % b["id"], img["boot"])
 			self.write("static/img/radios/%s-frame.svg" % b["id"], img["frame"])
 			b["frame_geometry"] = img["geometry"]
 			b["render"] = img
-			for lk in b["looks"]:
-				limg = device.render(b, lk["name"], lk["id"])
-				self.write("static/img/radios/%s-%s.svg" % (b["id"], lk["id"]), limg["boot"])
+			b["look_renders"] = {lk["id"]: device.render(b, lk["name"], lk["id"]) for lk in b["looks"]}
 		with open(os.path.join(self.out, "static", "img", "social.png"), "wb") as f:
 			f.write(social.png(social.card(self.boards)))
 		self.tool = toolzip.write(os.path.join(self.out, "downloads"))
@@ -378,6 +377,13 @@ class Site:
 			self.codeplug_page(lang)
 			self.docs_pages(lang)
 			self.not_found(lang)
+		for b in self.boards:
+			boot = self.shots.scaled(b["gallery"], "boot")
+			self.write("static/img/radios/%s.svg" % b["id"], device.boot(b["render"], boot))
+			for look, img in b["look_renders"].items():
+				self.write("static/img/radios/%s-%s.svg" % (b["id"], look), device.boot(img, boot))
+		scales = self.shots.write(self.out)
+		self.log("screenshots: " + ", ".join("%s x%d" % gk for gk in scales.items()))
 		self.write(".nojekyll", "")
 		self.check_screenshots()
 		self.check_links()
@@ -400,7 +406,7 @@ class Site:
 			if sec is None:
 				self.warn("screenshots page: no section for %s" % b["id"])
 				continue
-			shown = set(re.findall(r'docs/ux/screens/%s/([^"/]+)\.png' % re.escape(b["gallery"]), sec))
+			shown = set(re.findall(r'static/img/screens/%s/([^"/]+)\.png' % re.escape(b["gallery"]), sec))
 			want = {n for n in repo.screens(b["gallery"]) if self.has_screen(b, n)}
 			if shown != want:
 				self.warn("screenshots page, %s: missing %s; unexpected %s" % (
@@ -507,7 +513,23 @@ class Site:
 		       "cards": "".join(self.radio_card(lang, b) for b in self.boards),
 		       "dev_rows": self.dev_rows(lang), "request_card": self.request_card(lang), "variants": self.variant_cards(lang),
 		       "radio_count": str(len(self.boards)), "feature_count": str(len(self.features))}
-		self.page(lang, "index.html", self.t(lang, "home.title"), self.tpl.render("home", ctx, lang), "home")
+		content = self.tpl.render("home", ctx, lang)
+		# the carousel's screens, all one height (site.css --shot-h)
+		shot_h = shots.css_px(".carousel", "--shot-h")
+		for g in set(re.findall(r'<figure class="carousel-slide"><img src="[^"]*static/img/screens/([^/"]+)/', content)):
+			w, h = shots.size(g)
+			self.shots.use(g, w * shot_h / h)
+		# the drawings with the boot screen: the flagship's own in the hero, every one (looks too) on a card
+		hero_h, card_h = shots.css_px(".hero-device img", "max-height"), shots.css_px(".radio-card img", "height")
+		self.drawn(flagship, flagship["frame_geometry"], hero_h * flagship["frame_geometry"]["aspect"])
+		for b in self.boards:
+			for img in [b["render"]] + list(b["look_renders"].values()):
+				self.drawn(b, img["geometry"], card_h * img["geometry"]["aspect"])
+		self.page(lang, "index.html", self.t(lang, "home.title"), content, "home")
+
+	def drawn(self, b, geometry, frame_w):
+		"""A page shows b's drawing frame_w CSS pixels wide (at most), a screenshot in its display."""
+		self.shots.use(b["gallery"], frame_w * geometry["screen_pct"]["width"] / 100)
 
 	def variant_cards(self, lang):
 		out = []
@@ -558,24 +580,25 @@ class Site:
 				groups.append('<tbody><tr class="group"><th colspan="%d" scope="rowgroup">%s</th></tr>%s</tbody>'
 					      % (len(self.variants) + 1, html.escape(self.group_title(lang, g)), "".join(rows)))
 		na = [f for f in self.features if self.feature_state(b, f["name"]) == "na" and f["group"] not in BENCH_ONLY]
-		# screenshots: six that show the look and the main features, the first featured ones this radio has, at twice
-		# their pixel size (crisp: pixelated), in two rows of three
-		with open(repo.path("docs", "ux", "screens", b["gallery"], "boot.png"), "rb") as fh:
-			sw, sh = device.png_size(fh.read(32))
+		# screenshots: six that show the look and the main features, the first featured ones this radio has, in two
+		# rows of three; a click lays one over the drawing's display
+		sw, sh = shots.size(b["gallery"])
+		self.shots.use(b["gallery"], shots.css_px(".shots", "--shot-col"))
+		self.drawn(b, b["frame_geometry"], shots.css_px(".device-frame", "max-width"))
 		items = []
 		for n in self.screens["featured"]:
 			if not self.has_screen(b, n):
 				continue
 			cap = self.screen_caption(lang, n)
-			items.append('<figure class="shot"><button type="button" class="shot-show" title="%s" data-src="{{root}}docs/'
-				     'ux/screens/%s/%s.png"><img src="{{root}}docs/ux/screens/%s/%s.png" alt="%s" width="%d" '
-				     'height="%d" loading="lazy"></button><figcaption>%s</figcaption></figure>'
-				     % (html.escape(self.t(lang, "radio.show_on_radio")), b["gallery"], n, b["gallery"], n,
-					html.escape(cap), 2 * sw, 2 * sh, html.escape(cap)))
+			items.append('<figure class="shot"><button type="button" class="shot-show" title="%s" data-src="{{root}}%s">'
+				     '<img src="{{root}}%s" alt="%s" width="%d" height="%d" loading="lazy"></button><figcaption>%s'
+				     '</figcaption></figure>'
+				     % (html.escape(self.t(lang, "radio.show_on_radio")), shots.url(b["gallery"], n),
+					shots.url(b["gallery"], n), html.escape(cap), 2 * sw, 2 * sh, html.escape(cap)))
 			if len(items) == 6:
 				break
-		shots = ['<div class="shots">%s</div>' % "".join(items)] if items else []
-		shots.append('<p class="shots-all"><a href="{{home}}screenshots/index.html#%s">%s →</a></p>'
+		shot_list = ['<div class="shots">%s</div>' % "".join(items)] if items else []
+		shot_list.append('<p class="shots-all"><a href="{{home}}screenshots/index.html#%s">%s →</a></p>'
 			     % (b["id"], html.escape(self.t(lang, "radio.screens_all"))))
 		docs_links = "".join('<li><a href="{{home}}%s">%s</a></li>'
 				     % (docsmod.site_path(p), html.escape(self.t(lang, "radio.doc." + k)))
@@ -595,7 +618,7 @@ class Site:
 		       "variants": self.variants_html(lang, b),
 		       "variant_head": vhead, "feature_groups": "".join(groups),
 		       "na_list": ", ".join(html.escape(self.ftitle(lang, f)) for f in na) or "—",
-		       "shots": "".join(shots), "docs_links": docs_links, "gallery": b["gallery"],
+		       "shots": "".join(shot_list), "docs_links": docs_links, "boot_src": shots.url(b["gallery"], "boot"),
 		       "flash_cta": self.tpl.partial("flash_cta" if can_flash else "flash_soon",
 						     {"id": b["id"], "name": b["name"]}, lang),
 		       # the C7000 radios need no keys held: the page meets the chip's boot ROM when the radio is switched on
@@ -612,10 +635,10 @@ class Site:
 		order = list(self.screens["screens"])
 		picks, sections = [], []
 		for b in self.boards:
-			with open(repo.path("docs", "ux", "screens", b["gallery"], "boot.png"), "rb") as fh:
-				sw, sh = device.png_size(fh.read(32))
-			# a small display at twice its pixels, kept square; a QVGA one as it is
+			sw, sh = shots.size(b["gallery"])
+			# a small display at twice its pixels; a QVGA one as it is
 			scale = 2 if sw <= 160 else 1
+			self.shots.use(b["gallery"], scale * sw)
 			names = [n for n in b["screens"] if self.has_screen(b, n)]
 			names.sort(key=lambda n: (order.index(n.partition("__")[0]), n.partition("__")[2]))
 			groups = []
@@ -625,10 +648,10 @@ class Site:
 					if self.screen(n)["group"] != g:
 						continue
 					cap = html.escape(self.screen_caption(lang, n))
-					items.append('<figure class="gshot%s"><img src="{{root}}docs/ux/screens/%s/%s.png" alt="%s" width="%d" '
-						     'height="%d" loading="lazy"%s><figcaption>%s</figcaption></figure>'
-						     % (" gshot-variant" if "__" in n else "", b["gallery"], n, cap, scale * sw, scale * sh,
-							' class="px"' if scale > 1 else "", cap))
+					items.append('<figure class="gshot%s"><img src="{{root}}%s" alt="%s" width="%d" height="%d" '
+						     'loading="lazy"><figcaption>%s</figcaption></figure>'
+						     % (" gshot-variant" if "__" in n else "", shots.url(b["gallery"], n), cap, scale * sw,
+							scale * sh, cap))
 				if items:
 					groups.append('<h3>%s</h3><div class="gshots">%s</div>'
 						      % (html.escape(self.t(lang, "screens.group." + g)), "".join(items)))
@@ -688,6 +711,9 @@ class Site:
 			  self.tpl.render("features", ctx, lang), "features", nav="features")
 
 	def flash_page(self, lang):
+		# the radio's picture with its screen laid over it (static/js/flasher/radiotop.js)
+		for b in self.boards:
+			self.drawn(b, b["frame_geometry"], shots.css_px(".rt-pic", "max-width"))
 		# the beta notice's text is in the page itself (beta_notice.html), not needed by the scripts
 		subset = {k: v for k, v in self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "feature.", "report.", "editor.qdmr.note.")).items()
 			  if not k.startswith("flash.beta.")}

@@ -142,7 +142,9 @@ details.notice > summary { font-weight: 600; }
 .hero { background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%); border-bottom: 1px solid var(--border); }
 .hero-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: var(--space-6); align-items: center; padding-top: var(--space-5); padding-bottom: var(--space-5); }
 /* the home page's screenshot carousel: a row that scrolls and snaps by itself (touch, trackpad, arrow keys on the
-   focused row); site.js adds the buttons and the position. Every screen is one height, whatever its display. */
+   focused row); site.js adds the buttons and the position. Every screen is one height, whatever its display.
+   Screenshots here and on the radio and Screenshots pages are copies the build scaled up (site/rfoundrysite/shots.py,
+   which reads the sizes in px below): smooth scaling, no image-rendering. */
 .carousel { --shot-h: 176px; min-width: 0; }
 .carousel-track {
 	display: flex; gap: var(--space-4); overflow-x: auto; overscroll-behavior-x: contain;
@@ -151,8 +153,6 @@ details.notice > summary { font-weight: 600; }
 }
 .carousel-slide { flex: none; margin: 0; width: min-content; scroll-snap-align: start; }
 .carousel-slide img { display: block; height: var(--shot-h); width: auto; max-width: none; border: 1px solid var(--border); border-radius: 6px; }
-/* small displays are scaled up: keep their pixels square instead of blurred */
-.carousel-slide img.px { image-rendering: pixelated; }
 .carousel-slide figcaption {
 	margin-top: var(--space-1); font-size: var(--text-xs); color: var(--muted); line-height: 1.35;
 	display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -234,7 +234,7 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .radio-head { display: grid; grid-template-columns: minmax(220px, 360px) 1fr; gap: var(--space-6); align-items: start; }
 .device-frame { position: relative; margin: 0 auto; width: 100%; max-width: 260px; filter: drop-shadow(0 14px 24px rgb(0 0 0 / 22%)); }
 .device-frame .device-body { display: block; width: 100%; height: 100%; }
-.device-frame .device-screen { position: absolute; image-rendering: pixelated; }
+.device-frame .device-screen { position: absolute; }
 @media (max-width: 860px) { .device-frame { max-width: 260px; } }
 .radio-device figcaption { text-align: center; margin-top: var(--space-2); }
 .specs { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); margin: var(--space-4) 0; }
@@ -242,13 +242,11 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .specs dd { margin: 0; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
 @media (max-width: 860px) { .radio-head, .two-col { grid-template-columns: 1fr; } }
-.shots { display: grid; grid-template-columns: repeat(3, minmax(0, 240px)); gap: var(--space-4); }
+.shots { --shot-col: 240px; display: grid; grid-template-columns: repeat(3, minmax(0, var(--shot-col))); gap: var(--space-4); }
 .shot { margin: 0; text-align: center; }
 .shot-show { padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; display: block; width: 100%; }
 .shot-show:hover, .shot-show[aria-pressed="true"] { border-color: var(--accent); }
-.shot img { width: 100%; box-sizing: border-box;
-	image-rendering: pixelated; border-radius: 6px; background: #000; padding: 6px; display: block; height: auto;
-}
+.shot img { width: 100%; box-sizing: border-box; border-radius: 6px; background: #000; padding: 6px; display: block; height: auto; }
 .shot figcaption { font-size: var(--text-sm); color: var(--muted); max-width: 22ch; margin: var(--space-1) auto 0; }
 .shots-all { margin-top: var(--space-4); }
 .steps li, .links li { margin-bottom: var(--space-2); }
@@ -277,7 +275,6 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .gshots { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--shot-w)), var(--shot-w))); gap: var(--space-5) var(--space-4); }
 .gshot { margin: 0; }
 .gshot img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; background: #000; }
-.gshot img.px { image-rendering: pixelated; }
 .gshot figcaption { margin-top: var(--space-1); font-size: var(--text-sm); color: var(--muted); line-height: 1.35; }
 /* a color page's shots in other highlight colors and themes: only when asked for (no script needed) */
 .gshot-variant { display: none; }
@@ -420,7 +417,7 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .rt-img { width: 100%; max-width: 220px; height: auto; display: block; margin: 0 auto; }
 .rt-screen { position: absolute; display: grid; place-content: stretch; overflow: hidden; }
 /* the radio's own screen from the UI gallery, its pixels kept sharp */
-.rt-shot { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; background: #000; }
+.rt-shot { width: 100%; height: 100%; object-fit: contain; background: #000; }
 /* a key to hold, ringed where the picture shows it (frame_geometry.keys): bright on the dark radio, a dark halo for the
    page around it; the caption under the picture names the keys */
 .rt-key { position: absolute; border-radius: 4px; pointer-events: none; outline: 3px solid #ffb020; outline-offset: 2px;
