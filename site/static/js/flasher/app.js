@@ -1936,7 +1936,7 @@ function doneView() {
 			diag.note(...crumbs.verify(p, good));
 			flashMark(S.lastStarted, "verify", { ok: good, reason: good ? "" : `codec ${p.codec || "none"}` });
 			S.reportResult = good ? "problem" : "failed";
-			intro.replaceChildren();	// "the radio restarts" is over: what it says now replaces it
+			intro.replaceChildren();	// "the radio is restarting" is over: what it says now replaces it
 			status.replaceChildren(h("dl", { class: "kv-list" },
 				h("dt", {}, t("flash.now.firmware")), h("dd", {}, firmwareName(p)),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, codecText(p.codec))),
