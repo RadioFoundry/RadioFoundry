@@ -915,7 +915,7 @@ class DebugLink:
     def radio_check(self, dst):
         self.data_request(DATA_OP_RADIO_CHECK, struct.pack("<I", int(dst) & 0xFFFFFF))
 
-    def data_settings(self, ars_server=0, radio_check_reply=False, call_alert_ack=True, lrrp_reply=True,
+    def data_settings(self, ars_server=0, radio_check_reply=True, call_alert_ack=True, lrrp_reply=True,
                       sms_etsi=False, radio_check_etsi=False, sms_format=None):
         """The data service settings: ARS server ID (0 off), the answer switches, the ETSI forms. sms_format: the
         default text message format, "etsi_ip" (the radio's default), "etsi" or "tms"; None: "etsi" when sms_etsi,
