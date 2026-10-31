@@ -399,26 +399,32 @@ def pending(rel, entries):
 
 
 def check_switches(code):
-    """The language's build switch is in the places a switch must be (docs/dev/translating.md)"""
+    """The language's build switches (CONFIG_LANG_<CODE>, CONFIG_LANG_DEFAULT_<CODE>) are in the places a switch must
+    be (docs/dev/translating.md)"""
     sw = "LANG_" + code.upper()
+    dflt = "LANG_DEFAULT_" + code.upper()
     errs = []
     with open(os.path.join(ROOT, "config", "features.mk"), encoding="utf-8") as f:
         mk = f.read()
-    if not re.search(r"^CONFIG_%s \?=" % sw, mk, re.M):
-        errs.append("config/features.mk: no CONFIG_%s default" % sw)
     m = re.search(r"^FEATURES :=((?:.*\\\n)*.*)$", mk, re.M)
-    if not m or sw not in m.group(1).split():
-        errs.append("config/features.mk: %s is not in FEATURES" % sw)
     with open(os.path.join(ROOT, "core", "config.h"), encoding="utf-8") as f:
         h = f.read()
-    if "#define CONFIG_%s" % sw not in h:
-        errs.append("core/config.h: no CONFIG_%s default" % sw)
+    with open(os.path.join(ROOT, "docs", "build-config.md"), encoding="utf-8") as f:
+        doc = f.read()
+    for s in (sw, dflt):
+        if not re.search(r"^CONFIG_%s \?=" % s, mk, re.M):
+            errs.append("config/features.mk: no CONFIG_%s default" % s)
+        if not m or s not in m.group(1).split():
+            errs.append("config/features.mk: %s is not in FEATURES" % s)
+        if "#define CONFIG_%s" % s not in h:
+            errs.append("core/config.h: no CONFIG_%s default" % s)
+        if "`CONFIG_%s`" % s not in doc:
+            errs.append("docs/build-config.md: CONFIG_%s isn't listed" % s)
+    if "$(error CONFIG_%s=y needs CONFIG_%s=y)" % (dflt, sw) not in mk:
+        errs.append("config/features.mk: no check that CONFIG_%s needs CONFIG_%s" % (dflt, sw))
     m = re.search(r"#define CONFIG_LANG_ANY\s+\(([^)]*)\)", h)
     if not m or "CONFIG_" + sw not in m.group(1):
         errs.append("core/config.h: CONFIG_LANG_ANY doesn't include CONFIG_%s" % sw)
-    with open(os.path.join(ROOT, "docs", "build-config.md"), encoding="utf-8") as f:
-        if "`CONFIG_%s`" % sw not in f.read():
-            errs.append("docs/build-config.md: CONFIG_%s isn't listed" % sw)
     return errs
 
 
@@ -510,6 +516,15 @@ def generate(out_path):
         lines.append("\t{ \"%s\", %s, %s, LANG_%s_TABLE }, \\" % (code, c_bytes(text_to_bytes(name, code)), sw,
                                        code.upper()))
     lines.append("}")
+    lines.append("// The language an empty setting means: the first CONFIG_LANG_DEFAULT_<CODE> on, else English")
+    for i, (code, _, _) in enumerate(langs):
+        lines.append("#%s CONFIG_LANG_DEFAULT_%s" % ("if" if i == 0 else "elif", code.upper()))
+        lines.append("#define LANG_DEFAULT\t%d" % (i + 1))
+    if langs:
+        lines.append("#else")
+    lines.append("#define LANG_DEFAULT\tLANG_ENGLISH")
+    if langs:
+        lines.append("#endif")
     text = "\n".join(lines) + "\n"
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     old = None
@@ -544,8 +559,9 @@ def main():
                     "MIME-Version": "1.0", "Content-Type": "text/plain; charset=UTF-8",
                     "Content-Transfer-Encoding": "8bit"},
                  [(t, "", False) for t, _ in source], dict(source))
-            print("wrote %s; next: add the build switch CONFIG_LANG_%s (docs/dev/translating.md, step 2)"
-                  % (os.path.relpath(path, ROOT), code.upper()))
+            print("wrote %s; next: add the build switches CONFIG_LANG_%s and CONFIG_LANG_DEFAULT_%s "
+                  "(docs/dev/translating.md, step 2)"
+                  % (os.path.relpath(path, ROOT), code.upper(), code.upper()))
             return 0
         if args[:1] in (["--sync"], ["--check"], ["--stats"]):
             only = [a for a in args[1:] if not a.startswith("--")]

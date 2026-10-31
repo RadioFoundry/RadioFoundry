@@ -32,8 +32,9 @@ bool lang_built(uint8_t i);
 // The language in use; lang_set takes only a built one (false otherwise)
 uint8_t lang_current(void);
 bool lang_set(uint8_t i);
-// A language as the settings store keeps it: its two code letters ('e' << 8 | 's'), 0 = English. lang_find returns the
-// index of a stored value, LANG_ENGLISH for 0 or a language not in the list
+// A language as the settings store keeps it: its two code letters ('e' << 8 | 's'; English 'e' << 8 | 'n'). lang_find
+// returns the index of a stored value: for 0 (never picked) the build's default (CONFIG_LANG_DEFAULT_<CODE>, else
+// English), for a language not in the list English
 int32_t lang_value(uint8_t i);
 uint8_t lang_find(int32_t value);
 

@@ -24,7 +24,7 @@ typedef struct {
 #include "lang_tables.h"
 
 static const lang_info_t langs[LANG_KNOWN] = LANG_LIST;
-static uint8_t cur = LANG_ENGLISH;
+static uint8_t cur = LANG_DEFAULT;	// until the settings are applied
 
 #if CONFIG_LANG_ANY
 const char *tr(const char *en)
@@ -65,14 +65,16 @@ bool lang_set(uint8_t i)
 
 int32_t lang_value(uint8_t i)
 {
-	if (i == LANG_ENGLISH || i >= LANG_KNOWN)
+	if (i >= LANG_KNOWN)
 		return 0;
 	return (int32_t)((uint8_t)langs[i].code[0] << 8 | (uint8_t)langs[i].code[1]);
 }
 
 uint8_t lang_find(int32_t value)
 {
-	for (uint8_t i = 1; i < LANG_KNOWN; i++)
+	if (value == 0)
+		return LANG_DEFAULT;
+	for (uint8_t i = 0; i < LANG_KNOWN; i++)
 		if (lang_value(i) == value)
 			return i;
 	return LANG_ENGLISH;

@@ -163,6 +163,14 @@
 #define CONFIG_LANG_IT			0
 #endif
 #define CONFIG_LANG_ANY			(CONFIG_LANG_ES || CONFIG_LANG_IT)
+// The language the radio starts in until the user picks one (CONFIG_LANG_DEFAULT_<CODE>, needs its CONFIG_LANG_<CODE>):
+// all 0 = English
+#ifndef CONFIG_LANG_DEFAULT_ES
+#define CONFIG_LANG_DEFAULT_ES		0
+#endif
+#ifndef CONFIG_LANG_DEFAULT_IT
+#define CONFIG_LANG_DEFAULT_IT		0
+#endif
 #ifndef CONFIG_UI_COLOR
 #define CONFIG_UI_COLOR			1
 #endif

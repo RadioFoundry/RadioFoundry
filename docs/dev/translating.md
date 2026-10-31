@@ -12,7 +12,7 @@ source of both. This page is the how-to; the rules are in [ui.md 2.5](../spec/ui
 | Catalog | `core/ui/lang/<code>.po` (gettext) | `site/i18n/<code>.json` (flat JSON) |
 | Language list | The catalogs that exist | `site/i18n/languages.json` |
 | Tool | `tools/i18n.py` | `python3 -m rfoundrysite.i18n` (from `site/`) |
-| Build switch | `CONFIG_LANG_<CODE>`, one per language | None: every language is on the site |
+| Build switch | `CONFIG_LANG_<CODE>`, one per language; `CONFIG_LANG_DEFAULT_<CODE>` to start in it | None: every language is on the site |
 | Missing string | Shown in English; fails CI | Shown in English; fails CI |
 | Characters | ASCII and Latin-1 (U+00A0 to U+00FF) | Any Unicode |
 
@@ -35,15 +35,18 @@ With every language switched off, `TR()` is the text itself and the lookup is go
 
 1. Start the catalog: `python3 tools/i18n.py --new <code> <name>`. `<code>` is the ISO 639-1 code (`fr`), `<name>`
    the language's own name (`Français`). This writes `core/ui/lang/<code>.po` with every marked string, untranslated.
-2. Add the build switch (`CONFIG_LANG_FR` for `fr`):
+2. Add the build switches: `CONFIG_LANG_FR` builds the language in, `CONFIG_LANG_DEFAULT_FR` makes it the one the
+   radio starts in (for `fr`):
 
    | File | Change |
    |---|---|
-   | `config/features.mk` | `CONFIG_LANG_FR ?= n`, next to the other `CONFIG_LANG_*`, and `LANG_FR` in `FEATURES` |
-   | `core/config.h` | The `#ifndef CONFIG_LANG_FR` default (0), and the switch added to `CONFIG_LANG_ANY` |
-   | `docs/build-config.md` | A row in the user interface table |
-   | `docs/feature-matrix.md` | A row in the user interface table, with the measured bytes |
-   | `tests/hil/features.toml` | A `[feature.lang_fr]` entry, `switch = "LANG_FR"` |
+   | `config/features.mk` | `CONFIG_LANG_FR ?= n` and `CONFIG_LANG_DEFAULT_FR ?= n`, next to the others; both in `FEATURES`; the `$(error CONFIG_LANG_DEFAULT_FR=y needs CONFIG_LANG_FR=y)` line, as the other languages have |
+   | `core/config.h` | The `#ifndef` defaults (0) of both, and `CONFIG_LANG_FR` added to `CONFIG_LANG_ANY` |
+   | `docs/build-config.md` | A row for each in the user interface table |
+   | `docs/feature-matrix.md` | A row for each in the user interface table, with the measured bytes (the default costs none) |
+   | `tests/hil/features.toml` | `[feature.lang_fr]`, `switch = "LANG_FR"`, and `[feature.lang_default_fr]`, `switch = "LANG_DEFAULT_FR"` |
+
+   `python3 tools/boards.py docs` then adds the switches to the generated tables of the feature matrix.
 
    `tools/i18n.py --check` fails until every one of these is there.
 3. Translate (below), then run `python3 tools/i18n.py --check` and the host tests (`make -C tests/host`).
@@ -52,7 +55,8 @@ With every language switched off, `TR()` is the text itself and the lookup is go
 
 A new language is off by default. It is turned on by default only when it is widely used and the radios have the
 flash for it ([build-config.md](../build-config.md)): Spanish is, Italian isn't. A language that is off is still listed on the
-radio, dimmed, and the web flasher offers to turn it on for a visitor whose browser asks for it.
+radio, dimmed, and the web flasher offers to turn it on for a visitor whose browser asks for it. The web flasher also
+asks which language the radio starts in (preset to the page's) and sets `CONFIG_LANG_DEFAULT_<CODE>` from it.
 
 ### Translating the catalog
 

@@ -9,6 +9,7 @@
 #include "hostlink/hostlink.h"
 #include "input/input.h"
 #include "ui/ui.h"
+#include "ui/i18n.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/zone_edit.h"
 #include "settings/settings.h"
@@ -401,7 +402,9 @@ static void storage_section(dl_text_t *t)
 		theme, ui_flags, updown_home, low_batt_pct);
 	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", auto_off_min,
 		privacy_type, privacy_active);
-	dl_text(t, "settings.audio_flags=%u\nsettings.lang=%s\n", audio_flags, lang[0] ? lang : "en");
+	// the stored language, or for an empty one (never picked) the build's default
+	dl_text(t, "settings.audio_flags=%u\nsettings.lang=%s\n", audio_flags,
+		lang[0] ? lang : lang_code(lang_find(0)));
 	// The reference trim: stored, and in effect (the SETTING op's, or - on a radio without one)
 	dl_text(t, "settings.ref_trim=%d\n", ref_trim);
 	if (ref_trim_available()) {

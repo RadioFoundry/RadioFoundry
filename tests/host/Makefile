@@ -429,13 +429,16 @@ TESTS   += gfxTest
 gfxTest: gfxTest.c $(UI) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iout/gen -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -o $@ gfxTest.c $(UI)
 
-# The language lookup and the fonts' Latin-1 glyphs, with Spanish and without (core/ui/i18n.c, docs/spec/ui.md 2.5)
-TESTS   += i18nTest i18nTestNoLang
+# The language lookup and the fonts' Latin-1 glyphs, with Spanish, without, and with Spanish the default (core/ui/i18n.c,
+# docs/spec/ui.md 2.5)
+TESTS   += i18nTest i18nTestNoLang i18nTestDefault
 I18N    := $(CORE)/ui/i18n.c $(CORE)/ui/fonts.c
 i18nTest: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 	$(CC) $(CFLAGS) -Iout/gen -Wshadow -DCONFIG_FONT_XL=1 -DFONT_BOTH -o $@ i18nTest.c $(I18N)
 i18nTestNoLang: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 	$(CC) $(CFLAGS) -Iout/gen -Wshadow -DCONFIG_FONT_XL=1 -DFONT_BOTH -DCONFIG_LANG_ES=0 -o $@ i18nTest.c $(I18N)
+i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
+	$(CC) $(CFLAGS) -Iout/gen -Wshadow -DCONFIG_FONT_XL=1 -DFONT_BOTH -DCONFIG_LANG_DEFAULT_ES=1 -o $@ i18nTest.c $(I18N)
 
 # The UI host simulator (tests/host/sim/ui_sim.c): the whole of core/ui against a simulated radio, codeplug and
 # board at any display geometry and key map. uiFlowTest runs the task flows of docs/ux/task-flows.md against their
@@ -478,10 +481,11 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest i18nTest i18nTestNoLang uiFlowTest uiFlowTestNoColor uiSim
+run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim
 	./gfxTest
 	./i18nTest
 	./i18nTestNoLang
+	./i18nTestDefault
 	./uiFlowTest
 	./uiFlowTestNoColor
 	./uiSim --layout

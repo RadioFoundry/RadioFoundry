@@ -302,6 +302,7 @@ abbreviations), is shown as it is. The tables are built by `tools/i18n.py` from 
 |---|---|
 | Which languages | Every catalog is listed in Settings > Display > Language. Each has a build switch, `CONFIG_LANG_<CODE>` (section 5); one built without is dimmed |
 | Switching | At once, no restart; nothing caches translated text. Stored in `settings_t.lang` ([settings-store.md](settings-store.md) 3); a stored language the image lacks reads as English |
+| Default | Until the user picks one (the setting empty, also after a factory reset), the build's default: the language whose `CONFIG_LANG_DEFAULT_<CODE>` is on, else English. Picking English stores `en`, so it stays English in any build. The web flasher sets the switch from its Radio language choice |
 | Characters | One byte a character: ASCII, the glyph bytes of `font.h`, and Latin-1 0xA0..0xFF. The fonts carry the Latin-1 glyphs only in a build with a language (`CONFIG_LANG_ANY`); the 5x8 font has none. Without them a Latin-1 byte is drawn as its letter without the accent ("Espanol"), so names stay readable |
 | Lengths | A translation may be longer than its English. Text goes into fixed buffers through `str_copy` or `sb_str`, which cut it; a row too long for the screen is shortened as any row is (`gfx_text_fit`, text alternates) |
 | Not translated | Search words of the settings (Find matches the English words and the shown name), debug link names and values, protocol text sent off the radio (APRS, the debug link). The canned text messages are the exception: sent in the language in use |

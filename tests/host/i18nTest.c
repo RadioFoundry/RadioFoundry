@@ -26,9 +26,18 @@ int main(void)
 	uint8_t es = lang_find('e' << 8 | 's');
 	CHECK(es != LANG_ENGLISH && strcmp(lang_code(es), "es") == 0);
 	CHECK(strcmp(lang_name(es), "Espa\xF1" "ol") == 0);
-	CHECK(lang_value(es) == ('e' << 8 | 's') && lang_value(LANG_ENGLISH) == 0);
-	CHECK(lang_find(0) == LANG_ENGLISH && lang_find('x' << 8 | 'x') == LANG_ENGLISH);
-	CHECK(strcmp(lang_code(200), "") == 0 && !lang_built(200) && !lang_set(200));
+	CHECK(lang_value(es) == ('e' << 8 | 's') && lang_value(LANG_ENGLISH) == ('e' << 8 | 'n'));
+	CHECK(lang_find('e' << 8 | 'n') == LANG_ENGLISH && lang_find('x' << 8 | 'x') == LANG_ENGLISH);
+	CHECK(strcmp(lang_code(200), "") == 0 && !lang_built(200) && !lang_set(200) && lang_value(200) == 0);
+
+	// An empty setting (never picked) is the build's default, and so is the language before the settings are applied;
+	// English picked is stored as "en", so it stays English whatever the default
+#if CONFIG_LANG_DEFAULT_ES
+	CHECK(lang_find(0) == es && lang_current() == es);
+	CHECK(lang_set(LANG_ENGLISH));
+#else
+	CHECK(lang_find(0) == LANG_ENGLISH);
+#endif
 
 	// English: every lookup is the text itself
 	CHECK(lang_current() == LANG_ENGLISH);

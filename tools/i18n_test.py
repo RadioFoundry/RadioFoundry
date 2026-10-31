@@ -57,6 +57,11 @@ class Generate(unittest.TestCase):
         for text in ("Borroso", "Volumen"):
             self.assertNotIn(text, self.h)
 
+    def test_default_language_switch(self):
+        # an empty language setting is the language whose CONFIG_LANG_DEFAULT_<CODE> is on, else English
+        self.assertIn("#if CONFIG_LANG_DEFAULT_XX\n#define LANG_DEFAULT\t1\n#else\n#define LANG_DEFAULT\tLANG_ENGLISH\n#endif",
+                      self.h)
+
     def test_bad_translations_found(self):
         _, body = i18n.read_po(os.path.join(self.dir.name, "xx.po"))
         for msgid, msgstr, _ in body:
