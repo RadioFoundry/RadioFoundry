@@ -31,7 +31,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `migrate.js` | The original firmware's channels after an install: a stock codeplug found, converted, written and read back (below) | `tools/codeplug_port.py` |
 | `fake.js` | A simulated radio: bootloader with a flash model, RadioFoundry's serial port, a synthetic stock file | `rfoundry/fakedfu.py` |
 | `stub.js`, `lz4.js` | The HR_C7000 boot stub: loaded through the boot ROM or handed over by RadioFoundry, then reads, sector writes and the LED | `stub/stubtool.py` |
-| `f4stub.js` | The STM32F4 loader: handed over by RadioFoundry, the board record (CONFIG) and its echo, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
+| `f4stub.js` | The Cortex-M loaders (the STM32F4, GD32F30x and AT32F43x stubs, one target table): handed over by RadioFoundry, the board record (CONFIG) and its echo, then the install in the interlock's order and SPI flash writes. The target comes from the board's `f4stub.boards.<id>.target`; `data/f4-stub.json` carries each target's image under `targets`. Only the `anyroad-dfu` backend offers a loader route; none offers the GD32F30x or AT32F43x one yet | `stub/f4stub.py` |
 | `c7000v1.js` | Rebuilds a version 1 codec slot (from before the codec moved) as version 2 | |
 | `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/hrc7000_codec.py` |
 | `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, RadioFoundry's debug link (VERSION, 0x1A), the stub, both flash chips and the Baofeng updater (`FakeBfLoader`) | `tools/serial_loader.py` `FakeBootloader` |
@@ -272,6 +272,7 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 |---|---|---|
 | `anyroad-dfu` | `usb-dfu` family (STM32F4 radios) | `app.js` (`dfu.js`, `f4stub.js`) |
 | `c7000-stub` | `serial-loader` and `serial-iap` families (HR_C7000 radios) | `c7000ui.js` (`stub.js`, `c7000.js`) |
+| `anytone-update` | `anytone-update` family (the vendor update mode on the radio's USB serial port) | `anytoneui.js` (`anytone.js`; `fakeanytone.js` for tests) |
 | `none` | any other | none: the radio is listed but grayed out |
 
 A radio without a backend the page knows gets `none`, so a family can come before its module. The

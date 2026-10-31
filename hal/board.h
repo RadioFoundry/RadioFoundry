@@ -44,6 +44,10 @@ enum {
 	// The radio has no battery (a mobile on a fixed supply). The core shows no battery icon, percentage, menu item or
 	// warning, never refuses to transmit for a battery, and reports no battery level. Unset: a battery radio
 	CAP_NO_BATTERY	= 1u << 7,
+	// The DMR modem encodes and plays the voice itself (a baseband with its own vocoder and codec path): voice bits
+	// never reach the MCU, so DMR voice needs no board.vocoder, and what works on the voice bits (privacy, recording,
+	// a hotspot's voice) has nothing to work on. The modem still takes and reports bursts in their slots
+	CAP_MODEM_VOICE	= 1u << 8,
 };
 
 typedef struct {

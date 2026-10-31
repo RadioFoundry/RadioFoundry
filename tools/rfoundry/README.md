@@ -117,6 +117,25 @@ The serial route loads `tools/serial_loader.py`, `tools/hrc7000_codec.py` and `s
 rfoundry executable carries them. A `pipx` install from the subdirectory doesn't, and says so. Neither route of rfoundry
 has flashed a radio yet; the tools it wraps have.
 
+### The vendor update mode (family `anytone-update`)
+
+These radios are written through the manufacturer's own update mode on the radio's USB serial port (921600 baud;
+`rfoundry/anytone.py`, the same code as `tools/anytone_update.py`). Start the update mode with the board's keys held at
+power-on, then:
+
+```
+rfoundry detect --board BOARD                                  the model the radio reports, and its variant
+rfoundry flash IMAGE --board BOARD --stock FIRMWARE.CDD        install (the DMR boot block from the stock file)
+rfoundry restore-stock FIRMWARE.CDD --board BOARD              the stock firmware back (its .CDI and .spi beside it)
+```
+
+The radio answers its model, and the model differs by MCU (board.toml `[flash.anytone] models`, per `[hardware]`
+variants code). rfoundry writes RadioFoundry only to a variant that runs the board's image, a stock set only to a radio
+whose model the set's `.spi` names (as the vendor's updater does), and with `--variant CODE` only when the radio is that
+variant. The image always carries the DMR baseband's boot block in the board's slot: from the image (`tools/modem_boot.py`
+merged it) or from `--stock`; `--codec keep` is refused. A frame the radio refuses is sent again (3 times); a failed or
+stopped write leaves the radio in update mode, and the same command writes again.
+
 ### USB access
 
 | System | Once |
@@ -139,6 +158,7 @@ has flashed a radio yet; the tools it wraps have.
 | `rfoundry/bootkey.py` | the bootloader key from a radio that runs RadioFoundry, found in its bootloader by the key's hash |
 | `rfoundry/fakedfu.py` | a fake bootloader with a flash model, for the tests and `--simulate` |
 | `rfoundry/serialflash.py` | the HR_C7000 radios over the programming cable: the route choice, the codec slot, and the calls into `stub/stubtool.py` and `tools/serial_loader.py` |
+| `rfoundry/anytone.py` | the vendor update mode: frames, the identity, the variant checks, the vendor firmware set, a simulated radio |
 | `rfoundry/release.py`, `state.py`, `cli.py` | GitHub downloads, the remembered probe, the commands |
 
 Tests: `python3 -m unittest discover -s tools/rfoundry/tests -v` (no USB, no serial port; `tools/ci.sh` runs them).

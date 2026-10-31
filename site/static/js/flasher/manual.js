@@ -25,6 +25,7 @@ export function missingApi(radio, task, step, { usb, serial, stub = false }) {
 	const backend = radio?.flash?.backend;
 	if (backend === "anyroad-dfu" && step === "write") return stub ? (serial ? null : "serial") : usb ? null : "usb";
 	if (backend === "c7000-stub" && step === "connect") return serial ? null : "serial";
+	if (backend === "anytone-update" && step === "connect") return serial ? null : "serial";
 	return null;
 }
 

@@ -1582,8 +1582,9 @@ static void sim_tune(int pane)
 static uint8_t sim_receivers = 1;
 static ui_dual_rx_t sim_drx[2];
 uint8_t ui_svc_receivers(void) { return sim_receivers; }
-bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out)
+bool ui_svc_dual_rx(const radio_view_t *v, uint8_t pane, ui_dual_rx_t *out)
 {
+	(void)v;
 	if (sim_receivers < 2 || pane > 1)
 		return false;
 	*out = sim_drx[pane];

@@ -87,6 +87,14 @@ class Board:
         self.codec = CodecProfile(c["id"], [tuple(w) for w in c["windows"]], c["installed"], c["sources"] or [])
 
     @property
+    def variant_boards(self):
+        """{variant code: the board id whose image it runs, or None}"""
+        return {c: v[1] for c, v in self.variants.items()}
+
+    def variant_name(self, code):
+        return self.variants[code][0] if code in self.variants else code
+
+    @property
     def releasable(self):
         return self.release == "stable"
 

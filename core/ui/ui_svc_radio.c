@@ -282,31 +282,28 @@ uint8_t ui_svc_receivers(void)
 }
 
 // Each pane's own receiver: the main one on the selected pane, the second on the other. False while the second
-// receiver doesn't have its channel (down, or not yet): the screens then show the main receiver alone
-bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out)
+// receiver doesn't have its channel (down, or not yet): the screens then show the main receiver alone. The main
+// receiver's state comes from the UI task's own copy of the view (v), not a fresh one: a second copy here is 700 bytes
+// of RAM, and the UI's is renewed at every view change
+bool ui_svc_dual_rx(const radio_view_t *v, uint8_t pane, ui_dual_rx_t *out)
 {
-	static radio_view_t v;	// the UI task's only; too big for its stack
 	radio_dual_ref_t ref[2];
 	uint8_t sel, at;
 	memset(out, 0, sizeof(*out));
-	if (board.rx2 == NULL || pane > 1 || !radio_get_dual(ref, &sel, &at)) {
-		return false;
-	}
-	radio_get_view(&v);
-	if (!v.rx2) {
+	if (board.rx2 == NULL || pane > 1 || !radio_get_dual(ref, &sel, &at) || !v->rx2) {
 		return false;
 	}
 	if (pane == sel) {
-		out->active = out->heard = v.state == RS_RX;
-		out->rssi_dbm = v.rssi_dbm;
-		out->dmr = v.ch.mode == RADIO_MODE_DMR;
+		out->active = out->heard = v->state == RS_RX;
+		out->rssi_dbm = v->rssi_dbm;
+		out->dmr = v->ch.mode == RADIO_MODE_DMR;
 #if CONFIG_DMR
 		if (out->dmr) {
-			out->active = out->heard = v.state == RS_RX && v.dmr.state == RDMR_RX;
-			out->src = v.dmr.call.src;
-			out->dst = v.dmr.call.dst;
-			out->group = v.dmr.call.group;
-			strncpy(out->src_name, v.dmr.call.src_name, sizeof out->src_name - 1);
+			out->active = out->heard = v->state == RS_RX && v->dmr.state == RDMR_RX;
+			out->src = v->dmr.call.src;
+			out->dst = v->dmr.call.dst;
+			out->group = v->dmr.call.group;
+			strncpy(out->src_name, v->dmr.call.src_name, sizeof out->src_name - 1);
 		}
 #endif
 		return true;

@@ -153,12 +153,14 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 per-model XOR key's hash and first bytes, never the key).
 
 `[flash.stub]` (a board on a platform with `board_stub`): `id` (the board id the stub echoes, unique per stub; 0xFE is reserved for the stub tools' test profiles) and
-`tested` (flashed through the stub on a radio), then the keys the platform's `board_stub` names:
+`tested` (flashed through the stub on a radio), then the keys the platform's `board_stub` names. The `f4stub` tool serves
+all of its targets; the platform's `stubs` entry says which stub a board's record is for:
 
 | Platform stub | Required | Optional |
 |---|---|---|
 | `stubtool` (HR_C7000) | `hold_power` (the stub drives the power latch), `progmem` (program flash size) | `stock_console` (the stock firmware answers a console the web flasher reads), `read_rate` |
 | `f4stub` (STM32F4) | `spi = { bus, mode, hz }` (the SPI flash's bus 1-3, SPI mode 0-3, fastest clock) | `idle_cs` (up to two `pins.h` names of other chip selects on that bus, held high) |
+| `f4stub` (GD32F30x, AT32F43x) | none: the record is the board id and the application base, from the linker script | none |
 
 A key of another platform's stub fails the check.
 

@@ -177,6 +177,45 @@ registers, and the host tool against the real engine through a pipe). Protocol 2
 ([stub-stm32f4.md](../docs/spec/stub-stm32f4.md) 11); protocol 4 (the board record), protocol 5 (the security registers)
 and the MD-380 have not run on a radio yet.
 
+## GD32F30x radios
+
+A third target of the same engine, for the GD32F30x radios behind a vendor bootloader. Spec:
+[docs/spec/stub-gd32f30x.md](../docs/spec/stub-gd32f30x.md).
+
+| File | What |
+|---|---|
+| `gd32f30x/` | entry, the USBD core (polled CDC-ACM, adopts RadioFoundry's device when it can), the FMC (both banks, 4 KB logical sectors over the first 1 MB), the board record check (the bootloader's end only), linker script and Makefile: `make -C stub/gd32f30x` writes `build/stub-gd32f30x/gd32stub.bin` (about 7.2 KB, at most 8 KB); `make check` fails while the copy `f4stub.py` embeds differs |
+| `f4stub.py` | the host side of every target. The target is the chip's: an image names it by its header's magic, a running stub by HELLO's name (`GDSTUB`), a board by its platform's stub (`platform.toml` `stubs`). The board record is 8 bytes (board id, layout, the bootloader's end); everything else is the STM32F4 flow: install with the interlock on the sector at the application base, backup, verify, the protect list |
+
+The RadioFoundry side (`platform/gd32f30x/stub_entry.c`) stages the image in the display's frame buffer, copies it to the
+SRAM base and jumps. The image header (`gd32f30x/gd32stub_header.h`) has its own magic, so neither RadioFoundry nor a host
+takes one target's image for the other's.
+
+`stubtool.py PORT --rfoundry-enter --write-app build/<board>/rfoundry_<board>.bin` installs a build on a GD32F30x radio
+as on an STM32F4 one; `--progmem`, `--verify-progmem`, `--peek` and `--boot reset` work too, the SPI flash options don't (the
+target has none). The web flasher's stub driver (`f4stub.js`) takes every target, but no flasher route offers it on a
+GD32F30x radio yet.
+
+Status (2026-10-31): built and host tested (`tests/host/gd32stubTest.c`, and `f4stub_wire_check.py --gd32`: the host tool
+against the real engine through a pipe). `CONFIG_STUB_ENTRY` is on for the platform. Nothing has run on a radio.
+
+## AT32F43x radios
+
+A fourth target of the same engine, for the AT32F43x radios behind a vendor bootloader: the GD32F30x stub's record,
+4 KB sectors, staging and host flow on this chip's flash controller, watchdog and USB core. Spec:
+[docs/spec/stub-at32f43x.md](../docs/spec/stub-at32f43x.md).
+
+| File | What |
+|---|---|
+| `at32f43x/` | entry, the OTGFS1 core (the STM32F4 stub's polled CDC-ACM on this chip's addresses, adopts RadioFoundry's device when it can), the flash controller (both banks, 4 KB logical sectors over the first 1 MB, each erased as its 2 KB or 4 KB physical sectors), the board record check (the bootloader's end only), linker script and Makefile: `make -C stub/at32f43x` writes `build/stub-at32f43x/at32stub.bin` (about 7.1 KB, at most 8 KB); `make check` fails while the copy `f4stub.py` embeds differs |
+
+The RadioFoundry side (`platform/at32f43x/stub_entry.c`) is the GD32F30x one: frame buffer staging, the copy to the SRAM
+base, the jump. HELLO's name is `ATSTUB`; the image header (`at32f43x/at32stub_header.h`) has its own magic. `stubtool.py`
+takes the same options as on a GD32F30x radio.
+
+Status (2026-10-31): built and host tested (`tests/host/at32stubTest.c`, and `f4stub_wire_check.py --at32`: the host tool
+against the real engine through a pipe). `CONFIG_STUB_ENTRY` is on for the platform. Nothing has run on a radio.
+
 ## HR_C7000 status
 
 Status (2026-10-17), universal stub, entry from a running RadioFoundry: on the DM-1801 Pro and the DM-32UV (its first stub run),

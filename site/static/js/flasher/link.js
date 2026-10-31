@@ -135,6 +135,7 @@ export class SerialStream {
 					if (done) break;
 					this.buf = concat(this.buf, value);
 					this.received += value.length;
+					this.wake();
 					if (this.first.length < 16) this.first = concat(this.first, value.subarray(0, 16 - this.first.length));
 				}
 			} catch (e) {
@@ -160,6 +161,20 @@ export class SerialStream {
 	}
 
 	clear() { this.buf = new Uint8Array(0); }
+
+	// Resolves when bytes arrive or after ms, whichever is first: a protocol that waits for a one-byte answer per
+	// frame (anytone.js) waits for the data, not for a timer's 4 ms clamp
+	arrived(ms) {
+		return new Promise((ok) => {
+			const done = () => { clearTimeout(timer); this.waiters = (this.waiters || []).filter((w) => w !== done); ok(); };
+			const timer = setTimeout(done, ms);
+			(this.waiters ||= []).push(done);
+		});
+	}
+
+	wake() {
+		for (const w of this.waiters || []) w();
+	}
 
 	take(n) {
 		const out = this.buf.slice(0, n);

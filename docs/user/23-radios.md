@@ -15,6 +15,8 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
+| [AnyTone AT-D578UV](#anytone-at-d578uv) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | Written from an analysis of the manufacturer's firmware for the GD32F303 radios; nothing has run on a radio yet. Open: every function on the radio, DMR. The Artery radios take their own image. |
+| [AnyTone AT-D578UV (Artery)](#anytone-at-d578uv-artery) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | The GD32 builds' code on the Artery AT32F435, written from an analysis of the manufacturer's firmware; nothing has run on a radio yet. Open: every function on the radio, DMR. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -89,8 +91,8 @@ DM-1801 Pro's A/B key does both: a press switches A / B, a hold starts and stops
 A and B can be any channel of any zone, or the VFO ([how the core does it](../spec/radio-features.md#21-dual-watch)).
 Nothing about this dual watch has been checked on the air on any radio.
 
-The Anytone AT-D578UV is the radio the two-receiver case is for: its hardware has two receiver chips
-([Anytone hardware notes](../spec/hardware-anytone.md)). RadioFoundry has no board for it, so there is no support.
+The AnyTone AT-D578UV has two receivers: when the other channel is FM, its second receiver stays on it, so dual watch
+hears both channels at once instead of in turn ([AT-D578UV](#what-the-at-d578uv-lacks-today)). Untested on a radio.
 
 ## Setting the volume from a PC
 
@@ -641,6 +643,96 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
 
+## AnyTone AT-D578UV
+
+A mobile radio for 136-174 and 400-480 MHz with a color screen, a front knob, front keys and a hand microphone.
+This section is the radios with a GigaDevice GD32F303 processor; the radios with an Artery processor take their own
+image ([AT-D578UV (Artery)](#anytone-at-d578uv-artery)). Nothing has run on a radio yet: this port is written from
+the hardware notes ([hardware-d578uv.md](../spec/hardware-d578uv.md)) and waits for its first test.
+
+**Which AT-D578UV.** Open the radio's version screen. A radio that shows `GD_Ver` has the GD32F303 and takes the
+`d578uv` image. A radio that shows `AT_Ver` has the Artery processor and takes the `d578uva` image. The installer
+reads which one the radio has and refuses the other image.
+
+### Installing on the AT-D578UV
+
+The radio's own update mode takes the image over its USB cable, so the vendor's loader stays and the vendor firmware
+can go back the same way ([installing](02-installing.md#radios-installed-through-the-manufacturers-update-mode)). To
+start it, turn the radio on while holding **MENU** and **EXIT** (unconfirmed), then connect the cable. The vendor
+firmware's other power-on screens, such as its own **UPDATE MODE**, are for fonts and icons, not the firmware: don't
+install from them.
+
+| Task | Web installer | rfoundry |
+|---|---|---|
+| Check the radio, write nothing | **Connect**: the page asks the radio its model | `rfoundry detect --board d578uv` |
+| Install | **Install**, **Connect**, pick your vendor firmware's `.CDD` (for the DMR chip's boot block), **Install** | `rfoundry flash IMAGE --board d578uv --stock FW.CDD` |
+| Back to the vendor firmware | **Help**, restore, pick the vendor's `.CDD`, `.CDI` and `.spi` | `rfoundry restore-stock FW.CDD --board d578uv` |
+
+The installer refuses a radio whose model doesn't match, and an Artery radio (`AT_Ver`) given this image: it names
+the `d578uva` image instead. Neither route has written to a radio yet.
+
+### AT-D578UV keys
+
+The front keys are read, but which printed key sends which code isn't known yet. The menus use four of them as
+**Up**, **Down**, **OK** and **Back**; the others carry **A/B**, **Monitor**, **Talk target** and jobs you can set in
+**Settings > Keys**, until a radio shows where they are. The front knob steps the channel.
+
+PTT is on the hand microphone. RadioFoundry reads the plain microphone: its PTT, and its **Up** and **Down** keys, which
+act as the front **Up** and **Down**. The serial keypad microphone isn't supported: its keys, PTT included, do nothing.
+In the vendor firmware the type is the **Hand Type** setting; RadioFoundry has no such setting, so use a plain
+microphone.
+
+### What the AT-D578UV lacks today
+
+- Every function is untested on a radio.
+- DMR is written (the DMR chip and its voice set-up, receive, and transmit switched on and off per burst) and on in
+  the default build.
+- Dual watch hears both channels at once only when the other channel is FM: the second receiver has no DMR. With a
+  DMR channel there, the radio switches between the two as other radios do.
+- FM transmit sends the 1750 Hz burst, DTMF and APRS; all are written and untested. How loud the APRS tones are is a
+  guess until measured, so other stations may not decode the first beacons.
+- Air band receive (108-137 MHz, AM) is written and untested
+  ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)). While it plays, dual watch
+  pauses: the air band uses the second receiver's parts. FM broadcast receive (87.5-108 MHz) is written and untested;
+  stereo isn't, and the signal level's scale is a guess, so a scan may stop on the wrong stations.
+- Bluetooth isn't written. The built-in GPS is written and untested.
+- VOX isn't written: the microphone's level doesn't reach the processor, and the RF chips' own detector, if they
+  have one, isn't known. The vendor firmware has no VOX either.
+- APRS receive is written and untested, but this image leaves it out: it needs more memory than the GD32F303 has
+  left with DMR on. The Artery image has it. RadioFoundry decodes the receive audio itself; the vendor's APRS comes
+  from an add-on board, which RadioFoundry doesn't use.
+- The backlight has only the vendor firmware's five levels: **Brightness** picks one per 20 % (10-20 % the dimmest,
+  90-100 % the brightest). The status light shows transmit only, not a busy channel.
+- The hotspot, single frequency repeating, privacy, the USB network and zone sharing are left out: the
+  radio's memory is too small for all of them, and the vocoder runs in the DMR chip, out of the processor's reach.
+
+## AnyTone AT-D578UV (Artery)
+
+The AT-D578UV with an Artery AT32F435 or AT32F437 processor (version screen `AT_Ver`). The radio around it is the
+same as on the GD32F303 radios, and so is RadioFoundry's code for it: keys, functions and what is missing are as in
+[AnyTone AT-D578UV](#anytone-at-d578uv). Only the image differs, and the Artery processor's larger memory leaves
+room for what the GD32F303 image leaves out:
+
+- Zone sharing.
+- APRS receive ([Receiving](13-aprs.md#receiving)). The radio decodes the receive audio while you listen on the APRS
+  frequency, whether or not the squelch is open.
+- The USB network ([USB network mode](15-usb-network.md)) with IP over DMR, finding the radio by name, TFTP
+  programming, SNMP and the control station mode. The TCP services (the status page, rig control, KISS over TCP and
+  APRS-IS) don't fit beside them and are left out, and network audio (AllStarLink, DVSwitch) isn't written: the
+  voice stays in the DMR chip.
+
+Nothing has run on an Artery radio yet, and its processor set-up (clock, USB) is written from the vendor firmware
+alone ([hardware-d578uv.md](../spec/hardware-d578uv.md)).
+
+Installing works as on the GD32F303 radios ([Installing on the AT-D578UV](#installing-on-the-at-d578uv)), with the
+`d578uva` image: `rfoundry detect --board d578uva`, `rfoundry flash IMAGE --board d578uva --stock FW.CDD` and
+`rfoundry restore-stock FW.CDD --board d578uva`. The vendor `.CDD` must be an Artery build. The installer refuses
+a GD32F303 radio given this image.
+
+Updating a radio that already runs RadioFoundry also needs the keys held at power-on. The GD32F303 radios can skip
+that (the installer loads its own flash helper over the cable), but that helper isn't written for the Artery
+processor yet.
+
 ## Planned radios
 
 These radios aren't built in a release yet. An in-progress port is on its own branch. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
@@ -656,7 +748,6 @@ models it covers.
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |
 | TYT MD-2017 / Retevis RT82 | Planned. The DM-1701's STM32 and HR_C6000 pair with two receivers, so it should reuse the STM32F4 platform. The hardware can receive two channels at once. |
 | BTECH DMR-6X2 PRO | Planned. Built on the AT-D878UVII Plus, so it should follow the Anytone port. |
-| Anytone AT-D578UV (mobile) | Planned. The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | BridgeCom Maverick | Planned. Sold as an upgraded AT-D878UV, so it likely follows the Anytone port. |
 | Retevis RT10 (902-928 MHz) | Planned. A DMR and FM handheld for 902-928 MHz, a band no other radio here covers; the chips aren't known yet. |
 <!-- end generated -->

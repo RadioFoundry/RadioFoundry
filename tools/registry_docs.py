@@ -131,10 +131,12 @@ def ordered(boards):
 
 
 def names_board(radio, boards):
-    """The board a survey row names (its model, as a whole word, among the row's radios), or None."""
+    """The boards a survey row names (its model, as a whole word, among the row's radios). A board that is part_of
+    another one the row names is that radio's other build, not a second radio: the row is the radio's."""
     hits = [b for b in boards.values()
             if re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(b.data["model"]), plain(radio))]
-    return hits
+    ids = {b.id for b in hits}
+    return [b for b in hits if b.data.get("part_of") not in ids]
 
 
 # ── the survey ──────────────────────────────────────────────────────────────
@@ -285,12 +287,20 @@ def feature_mark(b, s, cfg):
     return "?" if s in b.data["hardware"].get("unconfirmed", {}) else "○"
 
 
+def column(b, bs):
+    """A board's column heading: its model, and its CPU too where another board has the same model (the builds of one
+    radio for two processors, board.toml part_of)."""
+    if sum(o.data["model"] == b.data["model"] for o in bs) > 1:
+        return "%s (%s)" % (b.data["model"], b.data["hardware"]["cpu"])
+    return b.data["model"]
+
+
 def feature_defaults(root, boards):
     """The feature matrix's table of every switch on every board: on by default, off, not written yet, or not available."""
     bs = ordered(boards)
     cfg = {b.id: dict(print_config(root, b.id)) for b in bs}
     order = [s for s, _ in print_config(root, bs[0].id)] if bs else []
-    out = ["| Feature switch | %s |" % " | ".join(b.data["model"] for b in bs),
+    out = ["| Feature switch | %s |" % " | ".join(column(b, bs) for b in bs),
            "|---|" + ":-:|" * len(bs)]
     for s in order:
         marks = [feature_mark(b, s, cfg[b.id]) for b in bs]
@@ -316,8 +326,8 @@ def issue_radios(boards):
 
 
 def pr_radios(boards):
-    """The pull request template's list of radios, by model."""
-    return [", ".join(b.data["model"] for b in ordered(boards))]
+    """The pull request template's list of radios, by model (a radio built for two processors once)."""
+    return [", ".join(dict.fromkeys(b.data["model"] for b in ordered(boards)))]
 
 
 VOLTS_WORD = {"battery": "Battery", "supply": "Supply", "none": "None"}
@@ -349,7 +359,7 @@ def checked_on_radio(root, boards):
     feats = bringup.load_features(os.path.join(root, "tests", "hil", "features.toml"))
     records = bringup.load_records(os.path.join(root, "docs", "testing", "results"))
     bs = ordered(boards)
-    out = ["| Feature | %s |" % " | ".join(b.data["model"] for b in bs), "|---|" + ":-:|" * len(bs)]
+    out = ["| Feature | %s |" % " | ".join(column(b, bs) for b in bs), "|---|" + ":-:|" * len(bs)]
     for e in feats:
         cells = []
         for b in bs:

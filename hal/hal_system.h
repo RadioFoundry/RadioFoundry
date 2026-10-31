@@ -10,8 +10,8 @@
 #include <stdint.h>
 
 // Which chip the fields describe. Only the STM32F4 has the ID, flash size and option byte registers; the others fill in
-// the UID and leave the rest 0
-enum { HAL_CHIP_STM32F4 = 0, HAL_CHIP_HRC7000 = 1 };
+// the UID (and the GD32F30x its flash size) and leave the rest 0
+enum { HAL_CHIP_STM32F4 = 0, HAL_CHIP_HRC7000 = 1, HAL_CHIP_GD32F30X = 2, HAL_CHIP_AT32F43X = 3 };
 
 typedef struct {
 	uint32_t idcode;	// DBGMCU IDCODE (may read 0 without a debugger on some STM32F40x revisions)
@@ -44,6 +44,11 @@ typedef struct {
 	uint32_t stub_run_addr;		// last, so a file built without config.h sees the same layout before it
 	// Optional (NULL: any image): the loaded image may run here. The STM32 refuses one that doesn't feed the IWDG
 	bool (*stub_image_ok)(const uint8_t *img, uint32_t len);
+	// Optional, for a platform with no RAM to spare for the image (stub_region and enter_stub NULL then): the core
+	// stages the image in the display's frame buffer, holding the UI while it loads (core/stubentry), and calls this
+	// at ENTER with it. It copies len bytes to stub_run_addr, quiesces as enter_stub does and jumps; it does not return
+	// on success, and returns false only if it could not jump
+	bool (*enter_stub_staged)(const uint8_t *img, uint32_t len, uint32_t entry);
 #endif
 } hal_system_t;
 

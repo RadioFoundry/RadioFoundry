@@ -2840,12 +2840,14 @@ def main(argv=None):
     ap.add_argument("--force", action="store_true",
                     help="write even when the radio's firmware or the image names another board than the one targeted. Two "
                          "cables with one serial number can swap port names, so a refusal usually means the wrong port")
+    import f4stub
     ap.add_argument("--board", choices=sorted(b.id for b in rfoundryboards.BOARDS.values()
-                                              if b.stub or "stub/stm32f4" in b.platform_stubs),
-                    help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (%s: the board profile the "
+                                              if b.stub or b.id in f4stub.BOARDS),
+                    help="the radio: a Cortex-M one (%s: stub/f4stub.py, the STM32F4, GD32F30x or AT32F43x stub) "
+                         "or an HR_C7000 one (%s: the board profile the "
                          "universal stub gets). Found from the radio's VERSION reply with --rfoundry-enter; give it at "
                          "power-on and with --attach (without it the stub gets a profile that drives no board pins)"
-                         % ", ".join(sorted(C7_BOARDS)))
+                         % (", ".join(sorted(f4stub.BOARDS)), ", ".join(sorted(C7_BOARDS))))
     ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
                     "is saved before it is erased (default the home directory, never a git tree)")
     ap.add_argument("--self-test", action="store_true")
@@ -2892,8 +2894,7 @@ def main(argv=None):
             import f4stub
             reopen = f4stub.PortFollower(serial, a.port)
         radio = Radio(port, retries=a.retries)
-        # The STM32 radios (DM-1701, MD-380) run their own stub over USB: stub/f4stub.py
-        import f4stub
+        # The Cortex-M radios (STM32F4, GD32F30x, AT32F43x) run their own stub over USB: stub/f4stub.py
         if a.board is None and a.rfoundry_enter:
             name = version_board(radio)
             a.board = f4stub.board_for(name) if name else None

@@ -36,13 +36,14 @@ import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
 import { t, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
+import * as atui from "./anytoneui.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
 import { groups as variantGroups } from "./variant.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
 import { APP_ENTRY } from "./iap.js";
 import { slotBytes, locateCodec } from "./c7000.js";
 import { Stub, StubError } from "./stub.js";
-import { F4Stub, f4Image } from "./f4stub.js";
+import { F4Stub, f4Image, f4StubEntry } from "./f4stub.js";
 import { f4LoaderReader } from "./readers.js";
 import * as openfw from "./openfw.js";
 import { register, backendOf, bundleBackend, allBackends } from "./backends.js";
@@ -1760,7 +1761,7 @@ function stubPanel(fallback, onDone, what) {
 			const json = await f4StubJson();
 			stub = new F4Stub(link.s, { log: log.add, reopen: reopenRFoundryPort, board: f4Board() });
 			S.link = null;		// the port belongs to the loader from here
-			await stub.enterFromRFoundry(f4Image(json), (d, n) => prog.set(d, n, t("flash.f4.sending")), { entry: json.run });
+			await stub.enterFromRFoundry(f4Image(json, stub.t.key), (d, n) => prog.set(d, n, t("flash.f4.sending")), { entry: f4StubEntry(json, stub.t.key).run });
 		} catch (e) {
 			if (stub?.jumped && !S.fakeRadio) return repick();
 			await dropSerial();
@@ -2327,9 +2328,12 @@ function fixChooser(st, go) {
 	// a backend's own ways back (the DB25-D's update mode) come after the reinstall
 	const extra = rec.extra?.(S.radio, fb()) || [];
 	for (const x of extra) opts[x.id] = [t(x.title), t(x.text)];
-	const order = { novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"],
+	let order = { novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"],
 		iap: ["updatemode", "backup"] }[st.symptom]
 		|| ["again", ...extra.map((x) => x.id), "backup", "stock"];
+	// a radio the page can't back up has no backup to go back to (board.toml [flash] backup, both "none")
+	const noBackups = S.radio?.backup?.stock === "none" && S.radio?.backup?.rfoundry === "none";
+	if (noBackups && order.some((id) => id !== "backup")) order = order.filter((id) => id !== "backup");
 	const start = () => {
 		const pick = st.pick;
 		const own = extra.find((x) => x.id === pick);
@@ -2450,8 +2454,10 @@ async function main() {
 		app.replaceChildren(notice(t("flash.err.load"), "bad"), reportLine());
 		return;
 	}
-	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, flashMark, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
-		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
+	const backendCtx = { S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, flashMark, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
+		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) };
+	c7ui.init(backendCtx);
+	atui.init(backendCtx);
 	// #sim=<board>[-stock|-romfail|-slowcable|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
 	// open firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file
 	// fallback); -romfail: an HR_C7000 radio on stock firmware whose boot ROM refuses the load, for the factory update

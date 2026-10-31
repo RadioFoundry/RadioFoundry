@@ -21,6 +21,8 @@
 #define SPI_NAND_STATUS_P_FAIL		0x08u
 #define SPI_NAND_STATUS_ECC_SHIFT	4u	// 2 bits: SPI_NAND_ECC_*
 
+#define SPI_NAND_MFR_GIGADEVICE		0xC8u	// its ECC status is 3 bits and its read from cache takes a 3-byte address
+
 // ECC result of a page read. 3: corrected, at or above the chip's bit-flip threshold (Kioxia; feature 0x10)
 enum { SPI_NAND_ECC_OK, SPI_NAND_ECC_CORRECTED, SPI_NAND_ECC_FAILED, SPI_NAND_ECC_CORRECTED_MANY };
 

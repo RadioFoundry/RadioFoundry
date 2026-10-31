@@ -135,7 +135,9 @@ Received FM audio comes from one of two places (`aprs.c`, `rx_service`):
 1. The board's own AFSK receive path: `hal_afsk_t.rx_start`, `rx_read`, `rx_stop` at `rx_rate_hz`. The HR_C7000 boards
    have one (shared `hrc_afsk`): the modem's FM receive audio at 8 kHz, not squelch gated
    ([modem-hrc7000.md](modem-hrc7000.md) 8.5). While it runs the
-   speaker plays FM through the HR_C7000 instead of straight from the RF chip.
+   speaker plays FM through the HR_C7000 instead of straight from the RF chip. A board whose receive audio reaches an
+   MCU ADC pin samples it from a timer interrupt into `drivers/audio/adc_pcm`, a ring that `rx_read` returns as
+   signed PCM with the pin's bias tracked out; such a path is not squelch gated either.
 2. Otherwise FM receive audio on the board's PCM stream, when its audio tap has `AUDIO_TAP_FM_RX` (`hal_audio_tap.h`):
    8 kHz, de-emphasized, squelch gated. An HR_C6000 puts it on I2S; that stream exists only while the FM
    feed-through is on, so the volume knob at zero mutes the amp but leaves the feed-through and the RX gain alone. The
@@ -339,7 +341,8 @@ writes `aprs_test_44k1.wav` with three frames) and `aprsRadioTest` (the engine w
 air decoded back, the minimum interval, CSMA on a busy channel, PTT cutting a transmission, the not-amateur block,
 manual and after-PTT triggers, KISS and NMEA from the host, messages with acks, the station list, digipeating and
 the iGate both ways, the DMR position source, a packet as AFSK audio through the PCM stream into the station list
-only on the APRS frequency). `usrpNetTest` checks the stream's APRS ring. `tests/host/aprs_wav_check.sh` feeds the WAV to Direwolf's `atest`
+only on the APRS frequency). `usrpNetTest` checks the stream's APRS ring. `adcPcmTest` checks the ADC ring and a
+packet sampled as 12-bit readings off mid-scale, decoded by the demodulator at 9600 Hz. `tests/host/aprs_wav_check.sh` feeds the WAV to Direwolf's `atest`
 when it is installed (a black-box check).
 
 HIL (opt-in, `tests/hil/test_aprs.py`, README there): `--allow-rf --allow-service-stop --aprs-call CALL` (a licensed

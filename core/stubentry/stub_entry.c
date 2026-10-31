@@ -29,6 +29,8 @@
 #endif
 
 #define STUB_ENTER_DELAY_MS	100u	// let the ENTER reply leave the UART before interrupts are masked
+#define STUB_HOLD_MS		5000u	// frame buffer staging: the UI stays held this long after each STUB request
+#define STUB_FRAME_WAIT_MS	200u	// and a frame it is drawing gets this long to finish first
 
 static stub_load_t stub;
 static bool ready;		// the RAM span has been fetched from the platform
@@ -70,11 +72,50 @@ static bool on_air(void)
 	return false;
 }
 
+// A platform that has a RAM span of its own, or one that takes the image staged in the frame buffer
 static const hal_system_t *sys(void)
 {
-	return (board.system != NULL && board.system->stub_region != NULL && board.system->enter_stub != NULL)
-		       ? board.system
-		       : NULL;
+	const hal_system_t *s = board.system;
+	if (s == NULL) {
+		return NULL;
+	}
+	if (s->stub_region != NULL && s->enter_stub != NULL) {
+		return s;
+	}
+	return s->enter_stub_staged != NULL && s->stub_run_addr != 0 ? s : NULL;
+}
+
+static bool staged(const hal_system_t *s)
+{
+	return s->stub_region == NULL;
+}
+
+// Frame buffer staging (hal_system_t.enter_stub_staged): the image goes where the UI draws, so the UI is held from the
+// first STUB request to the jump and the banner goes up first: the panel keeps showing it from its own memory while
+// the image overwrites the buffer. A host that stops part way lets the hold run out and the UI draws again; the image
+// is then damaged, and ENTER's CRC check refuses it. The span is NULL when there is no display to borrow from
+static uint8_t *frame_buffer_span(uint32_t *size)
+{
+	if (board.display == NULL || gfx_framebuffer() == NULL || gfx_width() <= 0) {
+		return NULL;
+	}
+	*size = GFX_FB_BYTES;
+	return (uint8_t *)(uintptr_t)gfx_framebuffer();	// gfx owns it; nothing draws while the hold lasts
+}
+
+static void hold_frame_buffer(void)
+{
+	uint32_t now = hal_millis();
+	bool was_held = gfx_held(now);
+	gfx_hold(now + STUB_HOLD_MS);
+	if (was_held) {
+		return;		// the banner is up already (or a screen capture holds the frame: the CRC check guards)
+	}
+	uint32_t frames;
+	for (uint32_t waited = 0; !gfx_frame_idle(&frames) && waited < STUB_FRAME_WAIT_MS; waited += 10u) {
+		hal_delay_ms(10);	// the UI task, below this one, finishes the frame it was drawing
+	}
+	show_banner();
 }
 
 size_t stub_entry_request(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
@@ -92,9 +133,12 @@ size_t stub_entry_request(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 		out[0] = DL_ST_BUSY;
 		return 1;
 	}
+	if (staged(s)) {
+		hold_frame_buffer();
+	}
 	if (!ready) {
 		uint32_t size = 0;
-		uint8_t *region = s->stub_region(&size);
+		uint8_t *region = staged(s) ? frame_buffer_span(&size) : s->stub_region(&size);
 		if (region == NULL || size == 0) {
 			out[0] = DL_ST_UNAVAILABLE;
 			return 1;
@@ -139,8 +183,13 @@ void stub_entry_service(void)
 	if (board.radio != NULL && board.radio->tx_off != NULL) {
 		board.radio->tx_off();
 	}
-	show_banner();				// tell the user, flushed to the panel before the jump
-	s->enter_stub(enter_addr);		// does not return on success
+	if (staged(s)) {
+		// The banner is up since the load began, and drawing it now would land on the image
+		s->enter_stub_staged(stub.region, stub.total_len, enter_addr);
+	} else {
+		show_banner();			// tell the user, flushed to the panel before the jump
+		s->enter_stub(enter_addr);	// does not return on success
+	}
 	dlog("stub: entry failed");		// only reached if the jump was refused
 }
 

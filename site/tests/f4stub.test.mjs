@@ -13,8 +13,8 @@ import { join } from "node:path";
 
 import { crc32, equal, fromHex, toHex } from "../static/js/flasher/bytes.js";
 import { FakeRadio, simulation, randomBytes, rng } from "../static/js/flasher/fake.js";
-import { F4Stub, f4Image, f4StubHeader, HDR, APP_BASE, MEM_SPI, OP } from "../static/js/flasher/f4stub.js";
-import { Stub, StubError } from "../static/js/flasher/stub.js";
+import { F4Stub, f4Image, f4StubHeader, gd32Sectors, at32Sectors, HDR, APP_BASE, GD32_MAGIC, AT32_MAGIC, MEM_SPI, OP, TARGETS } from "../static/js/flasher/f4stub.js";
+import { OK, Stub, StubError } from "../static/js/flasher/stub.js";
 import { Link } from "../static/js/flasher/link.js";
 import { readRadio } from "../static/js/flasher/backup.js";
 import { f4LoaderReader } from "../static/js/flasher/readers.js";
@@ -27,6 +27,9 @@ const vectors = json("f4-vectors.json");
 // the registry's boards and f4stub.py's test profile, a board with other SPI wiring than any of them
 const boards = { ...fb.f4stub.boards, [vectors.test_board.id]: vectors.test_board };
 const OTHER = vectors.test_board.id;
+// the boards the fake radio simulates (fake.js: the STM32F4 stub); the GD32F30x and AT32F43x stubs have their own small
+// simulation below
+const f4Boards = Object.keys(fb.f4stub.boards).filter((id) => fb.f4stub.boards[id].target === "stm32f4");
 const image = f4Image(stubJson);
 const quiet = () => {};
 const at = (radio, addr, n) => radio.flash.subarray(addr - 0x08000000, addr - 0x08000000 + n);
@@ -190,7 +193,7 @@ async function backupVia(radio, sim, what, { patch = () => {} } = {}) {
 }
 
 test("backup through the loader, every loader board: the security registers over the debug link, both memories through the loader, then RadioFoundry again", async () => {
-	for (const [id, adopt] of Object.keys(fb.f4stub.boards).flatMap((id) => [[id, true], [id, false]])) {
+	for (const [id, adopt] of f4Boards.flatMap((id) => [[id, true], [id, false]])) {
 		const { sim, radio } = await running(id, { adopt });
 		const b = await backupVia(radio, sim, {});
 		assert.ok(b.loader.used && b.handedOver);
@@ -210,7 +213,7 @@ test("backup through the loader, every loader board: the security registers over
 });
 
 test("security registers: a build without them in the codeplug protocol gets them through the loader's SREAD", async () => {
-	for (const id of Object.keys(fb.f4stub.boards)) {
+	for (const id of f4Boards) {
 		const { sim, radio } = await running(id, { cpsSecurity: false });
 		const b = await backupVia(radio, sim, { internal: false, spi: "none" });
 		assert.ok(b.loader.used, "the loader opened for the calibration alone");
@@ -318,11 +321,16 @@ function replay(answers, sent = []) {
 test("board records: the page sends stub/f4stub.py's bytes for every radio", () => {
 	assert.equal(fb.f4stub.protocol, vectors.protocol);
 	assert.equal(stubJson.protocol, vectors.protocol, "the embedded stub speaks the protocol the records are for");
+	for (const [k, t] of Object.entries(vectors.targets)) {
+		assert.ok(TARGETS[k] && TARGETS[k].hello === t.hello, `the page knows the ${k} stub`);
+		assert.equal(stubJson.targets[k].protocol, t.protocol, `the ${k} image speaks its protocol`);
+	}
 	assert.deepEqual(Object.keys(fb.f4stub.boards).sort(), Object.keys(vectors.records).sort());
 	for (const [bid, rec] of Object.entries(vectors.records)) {
-		assert.equal(fb.f4stub.boards[bid].record, rec, bid);
-		assert.equal(fromHex(rec).length, fb.f4stub.record_len);
-		assert.equal(fromHex(rec)[0], fb.f4stub.boards[bid].stub_id);
+		const b = fb.f4stub.boards[bid];
+		assert.equal(b.record, rec, bid);
+		assert.equal(fromHex(rec).length, vectors.targets[b.target].rec_len, `${bid}: the ${b.target} record length`);
+		assert.equal(fromHex(rec)[0], b.stub_id);
 	}
 	assert.ok(fb.f4stub.boards.dm1701.v2_wiring && fb.f4stub.boards.md380.v2_wiring && !vectors.test_board.v2_wiring);
 });
@@ -330,9 +338,10 @@ test("board records: the page sends stub/f4stub.py's bytes for every radio", () 
 test("CONFIG against stub/f4stub.py's simulated stub: the record goes out byte for byte and the echo is accepted", async () => {
 	for (const [bid, h] of Object.entries(vectors.hello)) {
 		const sent = [];
-		const s = new F4Stub(replay({ [OP.HELLO]: [h.before, h.after], [OP.CONFIG]: [h.config] }, sent), { log: quiet, board: fb.f4stub.boards[bid] });
+		const b = fb.f4stub.boards[bid];
+		const s = new F4Stub(replay({ [OP.HELLO]: [h.before, h.after], [OP.CONFIG]: [h.config] }, sent), { log: quiet, board: b });
 		const before = await s.hello();
-		assert.equal(before.version, vectors.protocol);
+		assert.equal(before.version, vectors.targets[b.target].protocol);
 		assert.equal(before.appBase, 0, "no application base before a record");
 		assert.equal(before.spiSize, 0);
 		assert.ok(!s.configured);
@@ -340,13 +349,13 @@ test("CONFIG against stub/f4stub.py's simulated stub: the record goes out byte f
 		assert.ok(s.configured, bid);
 		assert.equal(sent[1][1], OP.CONFIG);
 		assert.equal(toHex(sent[1].subarray(6)), vectors.records[bid], `${bid}: CONFIG payload`);
-		assert.equal(s.info.appBase, APP_BASE);
-		assert.equal(s.info.boardId, fb.f4stub.boards[bid].stub_id);
+		assert.equal(s.info.appBase, b.app_base);
+		assert.equal(s.info.boardId, b.stub_id);
 	}
 });
 
 test("the fake radio's stub answers HELLO as stub/f4stub.py's does, before and after CONFIG", async () => {
-	for (const [bid, h] of Object.entries(vectors.hello)) {
+	for (const [bid, h] of Object.entries(vectors.hello).filter(([bid]) => f4Boards.includes(bid))) {
 		const { radio } = await running(bid);
 		radio.spi = new Uint8Array(0x10000).fill(0xFF);	// FakeF4's SPI flash size
 		radio.mode = "stub";
@@ -457,3 +466,150 @@ test("protected regions: an SPI restore keeps the radio's bytes there, erases an
 	await assert.rejects(s.writeImage(fb.f4stub.boards.dm1701.owned, [[APP_BASE, app(2, 0x30000)]]), /protected region/);
 	assert.ok(equal(radio.flash, flash), "nothing erased");
 });
+
+
+// ---- the GD32F30x and AT32F43x stubs (docs/spec/stub-gd32f30x.md, stub-at32f43x.md): the same driver with each
+// target's name, magic, sectors and 8 byte record. pfx: their headers' prefix; other: the other such target
+const SHORT = [
+	{ key: "gd32f30x", pfx: "GD32", header: "stub/gd32f30x/gd32stub_header.h", defs: "stub/gd32f30x/gd32stub.h", sectors: gd32Sectors, magic: GD32_MAGIC, other: "at32f43x" },
+	{ key: "at32f43x", pfx: "AT32", header: "stub/at32f43x/at32stub_header.h", defs: "stub/at32f43x/at32stub.h", sectors: at32Sectors, magic: AT32_MAGIC, other: "gd32f30x" },
+];
+const boardsOf = (key) => Object.keys(fb.f4stub.boards).filter((id) => fb.f4stub.boards[id].target === key);
+
+// A short-record stub's engine rules (stub/common/stubeng.c): 4 KB sectors, CONFIG's 8-byte record, nothing written
+// before it, the interlock on the sector at the record's application base. A stream as replay()'s
+class ShortSim {
+	constructor(flash, t = SHORT[0]) {
+		this.flash = flash;
+		this.t = t;
+		this.rec = null;
+		this.erased = [];
+		this.buf = new Uint8Array(0);
+	}
+	clear() { this.buf = new Uint8Array(0); }
+	take(n) { const o = this.buf.slice(0, n); this.buf = this.buf.slice(n); return o; }
+	reply(st, body = new Uint8Array(0)) {
+		const sum = body.reduce((x, y) => (x + y) & 0xFF, 0);
+		this.buf = new Uint8Array([...this.buf, 0x02, st, body.length >> 8, body.length & 0xFF, sum, 0x03, ...body]);
+	}
+	base() { return this.rec ? ((this.rec[4] << 24) | (this.rec[5] << 16) | (this.rec[6] << 8) | this.rec[7]) >>> 0 : 0; }
+	word(a) { const o = a - 0x08000000; return (this.flash[o] | (this.flash[o + 1] << 8) | (this.flash[o + 2] << 16) | (this.flash[o + 3] << 24)) >>> 0; }
+	async write(f) {
+		const op = f[1], p = f.subarray(6, 6 + ((f[2] << 8) | f[3]));
+		const u32 = (o) => ((p[o] << 24) | (p[o + 1] << 16) | (p[o + 2] << 8) | p[o + 3]) >>> 0;
+		const be = (n, k) => Array.from({ length: k }, (_, i) => (n >>> (8 * (k - 1 - i))) & 0xFF);
+		const base = this.base(), secs = this.t.sectors(1024);
+		const commit = secs.find((s) => s.addr === base);
+		if ([OP.ERASE, OP.PROGRAM].includes(op) && !this.rec) return this.reply(0x11);
+		if (op === OP.HELLO) {
+			const rec = this.rec || new Uint8Array(0);
+			return this.reply(OK, new Uint8Array([...new TextEncoder().encode(TARGETS[this.t.key].hello), 1, ...be(4104, 2), ...be(1024, 2), 0xAA,
+				1 | (this.rec ? 0x80 : 0), ...be(base, 4), 0, 0, 0, 0, 0, 0, 0, this.rec ? rec[0] : 0, rec.length, ...rec]));
+		}
+		if (op === OP.CONFIG) {
+			const ok = p.length === 8 && p[0] && p[1] === 1 && !p[2] && !p[3];
+			this.rec = ok ? p.slice() : null;
+			return this.reply(ok ? OK : 0x0D);
+		}
+		if (op === OP.SUMS) {
+			const a = u32(0), k = (p[4] << 8) | p[5], out = [];
+			for (let i = 0; i < k; i++) {
+				const o = a - 0x08000000 + i * 4096, blk = this.flash.subarray(o, o + 4096);
+				out.push(...be(crc32(blk), 4), blk.every((x) => x === 0xFF) ? 1 : 0);
+			}
+			return this.reply(OK, new Uint8Array(out));
+		}
+		if (op === OP.ERASE) {
+			const s = secs[p[0]];
+			if (u32(1) !== this.t.magic || !s || p[0] < commit.index || (p[0] !== commit.index && this.word(base) !== 0xFFFFFFFF)) return this.reply(0x0F);
+			this.flash.fill(0xFF, s.addr - 0x08000000, s.addr - 0x08000000 + s.size);
+			this.erased.push(p[0]);
+			return this.reply(OK);
+		}
+		if (op === OP.PROGRAM) {
+			const a = u32(0), d = p.subarray(4), o = a - 0x08000000;
+			if (a < base || (a + d.length > commit.addr + commit.size && this.word(base) !== 0xFFFFFFFF)) return this.reply(0x0F);
+			if (!this.flash.subarray(o, o + d.length).every((x) => x === 0xFF)) return this.reply(0x0F);
+			this.flash.set(d, o);
+			return this.reply(OK);
+		}
+		return this.reply(0x0B);
+	}
+}
+
+for (const st of SHORT) {
+	const t = TARGETS[st.key], label = t.label;
+	const tImage = f4Image(stubJson, st.key);
+	const tBoards = boardsOf(st.key);
+
+	test(`the embedded ${label} stub: its checksum, its header, the numbers of ${st.header} and ${st.defs}`, async () => {
+		const { createHash } = await import("node:crypto");
+		const e = stubJson.targets[st.key];
+		assert.equal(createHash("sha256").update(tImage).digest("hex"), e.sha256);
+		assert.ok(tImage.length <= 8192);
+		const h = f4StubHeader(tImage);
+		assert.ok(h && h.target === st.key && h.feeds && !h.feedsIwdg, `the header names the ${label} and feeds the ${t.watchdog}`);
+		assert.equal(f4StubHeader(image).target, "stm32f4");
+		const src = readFileSync(st.header, "utf8") + readFileSync(st.defs, "utf8");
+		const def = (n) => Number(new RegExp(`#define\\s+${n}\\s+\\(?(0x[0-9A-Fa-f]+|\\d+)u`).exec(src)[1]);
+		assert.equal(t.hdrMagic, def(`${st.pfx}STUB_HDR_MAGIC`));
+		assert.equal(t.magic, def(`${st.pfx}STUB_MAGIC`));
+		assert.equal(st.magic, t.magic);
+		assert.equal(e.run, def(`${st.pfx}STUB_RUN_ADDR`));
+		assert.equal(e.protocol, def(`${st.pfx}STUB_VERSION`));
+		assert.equal(st.sectors()[1].addr - st.sectors()[0].addr, def(`${st.pfx}_SECTOR_SIZE`));
+		assert.ok(src.includes(`"${t.hello}"`), "HELLO's name");
+	});
+
+	test(`${label}: a loader image of another target is refused before anything is sent`, async () => {
+		const dead = { buf: new Uint8Array(0), clear() {}, take: () => new Uint8Array(0), write: async () => { throw new Error("sent"); } };
+		const otherLabel = TARGETS[st.other].label;
+		for (const gb of tBoards) {
+			const s = new F4Stub(dead, { log: quiet, board: fb.f4stub.boards[gb] });
+			await assert.rejects(s.enterFromRFoundry(image, () => {}, { entry: stubJson.run }), new RegExp(`STM32F4 loader; this radio takes the ${label}`));
+			await assert.rejects(s.enterFromRFoundry(f4Image(stubJson, st.other), () => {}, { entry: stubJson.run }),
+				new RegExp(`${otherLabel} loader; this radio takes the ${label}`));
+		}
+		const s = new F4Stub(dead, { log: quiet, board: fb.f4stub.boards.dm1701 });
+		await assert.rejects(s.enterFromRFoundry(tImage, () => {}, { entry: stubJson.run }), new RegExp(`${label} loader; this radio takes the STM32F4`));
+	});
+
+	test(`${label} install: the sector at the application base erased first and committed last, bootloader and slot untouched`, async () => {
+		for (const gb of tBoards) {
+			const b = fb.f4stub.boards[gb];
+			const flash = randomBytes(rng(3), 0x100000);
+			const before = flash.slice();
+			const sim = new ShortSim(flash, st);
+			const s = new F4Stub(sim, { log: quiet, board: b });
+			await s.hello();
+			assert.ok(!s.configured);
+			await s.configure();
+			assert.ok(s.configured && s.info.appBase === b.app_base, `${gb}: configured, the echo checked`);
+			const end = b.owned[b.owned.length - 1][1];
+			const img = app(5, 0x30000);
+			const r = await s.writeImage(b.owned, [[b.app_base, img]]);
+			const first = st.sectors().find((x) => x.addr === b.app_base).index;
+			assert.equal(sim.erased[0], first, "the commit sector first");
+			assert.equal(r.written, (end - b.app_base) / 0x1000);
+			const o = b.app_base - 0x08000000;
+			assert.ok(equal(flash.subarray(0, o), before.subarray(0, o)), "the bootloader untouched");
+			assert.ok(equal(flash.subarray(end - 0x08000000), before.subarray(end - 0x08000000)), "the flash after the application untouched");
+			assert.ok(equal(flash.subarray(o, o + img.length), img));
+			assert.deepEqual(await s.writeImage(b.owned, [[b.app_base, img]]), { written: 0, same: r.written }, "the same image again writes nothing");
+			await assert.rejects(s.erase(0), /protected region/);
+		}
+	});
+
+	test(`${label} board: refuses the HELLO of the STM32F4 and ${TARGETS[st.other].label} stubs, and the other way round`, async () => {
+		const otherSt = SHORT.find((x) => x.key === st.other);
+		for (const gb of tBoards) {
+			const h = vectors.hello.dm1701;
+			const s = new F4Stub(replay({ [OP.HELLO]: [h.before] }), { log: quiet, board: fb.f4stub.boards[gb] });
+			await assert.rejects(s.hello(), new RegExp(`STM32F4 loader answers; this radio takes the ${label}`));
+			const g = new F4Stub(new ShortSim(new Uint8Array(0x100000), otherSt), { log: quiet, board: fb.f4stub.boards[gb] });
+			await assert.rejects(g.hello(), new RegExp(`${TARGETS[st.other].label} loader answers; this radio takes the ${label}`));
+			const f = new F4Stub(new ShortSim(new Uint8Array(0x100000), st), { log: quiet, board: fb.f4stub.boards.dm1701 });
+			await assert.rejects(f.hello(), new RegExp(`${label} loader answers; this radio takes the STM32F4`));
+		}
+	});
+}

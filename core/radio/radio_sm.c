@@ -343,7 +343,11 @@ static bool bcast_listening(const radio_sm_t *sm)
 #if CONFIG_APRS
 	own_rx = sm->aprs_phase == APRS_RF_OFF;
 #endif
-	return own_rx && sm->view.bcast && !sm->view.bcast_fault && !scan_on(&sm->scan);
+	bool scanning = false;
+#if CONFIG_SCAN
+	scanning = scan_on(&sm->scan);
+#endif
+	return own_rx && sm->view.bcast && !sm->view.bcast_fault && !scanning;
 #else
 	(void)sm;
 	return false;
@@ -1244,6 +1248,29 @@ static bool sfr_rpt_begin(radio_sm_t *sm)
 	return true;
 }
 #endif
+
+// A modem with its own voice (CAP_MODEM_VOICE): the stack still paces the call's bursts, but nothing it gives the
+// modem is voiced and nothing it hears is played. The modem keys its vocoder and speaker path itself
+static bool modem_voice_next(uint8_t ambe72[DMR_AMBE_FRAME_BYTES], void *ctx)
+{
+	(void)ctx;
+	memset(ambe72, 0, DMR_AMBE_FRAME_BYTES);
+	return true;
+}
+
+static void modem_voice_frame(const uint8_t ambe72[DMR_AMBE_FRAME_BYTES], void *ctx)
+{
+	(void)ambe72;
+	(void)ctx;
+}
+
+static void modem_voice_lost(void *ctx)
+{
+	(void)ctx;
+}
+
+static const dmr_voice_source_t modem_voice_source = { .next = modem_voice_next };
+static const dmr_voice_sink_t modem_voice_sink = { .frame = modem_voice_frame, .lost = modem_voice_lost };
 
 // On a DMR channel, after set_mode(DMR) and rx(): configure, and start the stack if it isn't running
 static void dmr_begin(radio_sm_t *sm)
@@ -4703,12 +4730,17 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	board.radio->set_mode(RADIO_MODE_FM);
 
 #if CONFIG_DMR
-	sm->codec = board.vocoder != NULL && board.vocoder->present != NULL && board.vocoder->present();
+	bool modem_voice = (board.caps & CAP_MODEM_VOICE) != 0;
+	sm->codec = modem_voice || (board.vocoder != NULL && board.vocoder->present != NULL && board.vocoder->present());
 	sm->view.dmr.codec = sm->codec;
 	sm->hs_power = default_power();
 	dmr_call_init(board.dmr);	// board.dmr NULL: DMR channels receive nothing and refuse PTT
 	ambeVoiceInit(pcm_audio(), board.vocoder);
-	dmr_call_set_voice(ambeVoiceSink(), ambeVoiceSource());
+	if (modem_voice) {
+		dmr_call_set_voice(&modem_voice_sink, &modem_voice_source);
+	} else {
+		dmr_call_set_voice(ambeVoiceSink(), ambeVoiceSource());
+	}
 #if CONFIG_BEEP
 	ambeVoiceSetMixer(beep_mix);	// beeps while the voice stream owns the PCM audio
 #endif

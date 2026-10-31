@@ -387,6 +387,8 @@ modes below are the STM32F4 platform's (`platform/stm32f4/sysboot.c`) unless the
 |---|---|---|
 | 0 | STM32F4 (`platform/stm32f4/sysboot.c`) | every field below |
 | 1 | HR_C7000 (`platform/hrc7000/system.c`) | the UID only. idcode, flash size and `FLASH_OPTCR` are 0, offsets 23-28 are `0xFF`. The SoC has no readable ID register (its eFuse is not mapped out), so the UID is the data flash's 128-bit unique ID, read once at boot: the SPI NOR's (0x4B, four dummy bytes) or, on a board whose data flash is SPI NAND, the NAND's ID page. Words 0-2 of it, with word 3 XORed into word 0. Until the flash has answered, INFO_CHIP answers UNAVAILABLE |
+| 2 | GD32F30x (`platform/gd32f30x/system.c`) | the UID (the chip's 96-bit unique ID) and the flash size. idcode and `FLASH_OPTCR` are 0, offsets 23-28 are `0xFF`. REBOOT mode 1 is refused |
+| 3 | AT32F43x (`platform/at32f43x/system.c`) | as family 2: the UID and the flash size, read where the platform's header puts the device signature (not yet checked on a radio). REBOOT mode 1 is refused |
 
 Read-only. Reply after the status (30 bytes in all; firmware before the family byte sent 29, and was STM32F4 only):
 

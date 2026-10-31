@@ -14,7 +14,7 @@
 //   close()                    give the radio back (restart it into RadioFoundry, end the session)
 //   abort()                    the same after a failure, best effort
 
-import { F4Stub, f4Image, MEM_INTERNAL, MEM_SPI } from "./f4stub.js";
+import { F4Stub, f4Image, f4StubEntry, MEM_INTERNAL, MEM_SPI } from "./f4stub.js";
 
 const CPS_SPI = 1, CPS_MCU = 5, MCU_BASE = 0x08000000;
 
@@ -47,7 +47,7 @@ export function f4LoaderReader(link, { stubJson, reopen, board, log = () => {}, 
 			try {
 				const json = await stubJson();
 				stub = new F4Stub(link.s, { log, reopen, board });
-				await stub.enterFromRFoundry(f4Image(json), progress, { entry: json.run });
+				await stub.enterFromRFoundry(f4Image(json, stub.t.key), progress, { entry: f4StubEntry(json, stub.t.key).run });
 			} catch (e) {
 				if (!stub?.jumped) {
 					log(`the loader did not start (${e.message}); reading over the debug link`);

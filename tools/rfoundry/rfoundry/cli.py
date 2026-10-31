@@ -16,6 +16,8 @@ from . import __version__, boards, bootkey, codecsave, debuglink, manifest as mf
 from . import dfu as dfumod
 from . import release as relmod
 from . import serialflash
+from . import anytone as atmod
+from . import modemboot
 
 EPILOG = """\
 examples:
@@ -251,6 +253,14 @@ def load_image(args, board_hint):
                os.path.basename(man_path)))
         return board, m, image, None
     hint = boards.get(board_hint) if board_hint else None
+    if hint is not None and hint.family == "anytone-update":
+        # a local build: rfoundry_<board>.bin, or one with the modem boot block merged in (tools/modem_boot.py)
+        app, block = atmod.split_image(hint, image)
+        m = mf.for_dev_build(hint, app)
+        mf.verify(m, app, hint.id)
+        say("image    %s: a local %s build, application %d bytes%s" % (
+            os.path.basename(img_path), hint.name, len(app), ", modem boot block merged in" if block else ""))
+        return hint, m, app, block
     if hint is not None and hint.family == "serial-loader":
         # a local HR_C7000 build: rfoundry_<board>.bin, or the build's _codec.bin with the codec slot merged in
         app, slot = serialflash.split_slot(hint, image)
@@ -534,6 +544,8 @@ def cmd_flash(args):
     board, man, image, merged = load_image(args, args.board)
     if board.family == "serial-loader":
         return cmd_flash_serial(args, board, man, image, merged)
+    if board.family == "anytone-update":
+        return cmd_flash_anytone(args, board, man, image, merged)
     if board.family == "serial-iap":
         raise UsageError("%s is installed with the web flasher or stub/stubtool.py, not with rfoundry" % board.name)
     if args.route != serialflash.AUTO:
@@ -765,6 +777,91 @@ def cmd_flash_serial(args, board, man, app, slot):
     return verify_serial(dev, board, man, expect_codec)
 
 
+def _anytone_connect(args, board):
+    """The radio in update mode: (Radio, model, variant code). Nothing is written."""
+    for line in bootloader_steps_lines(board):
+        say(line)
+    radio = atmod.Radio(atmod.open_port(args.port), log=say)
+    radio.hello()
+    model, hw, ver = radio.identify()
+    got = atmod.variant_of(board, model)
+    say("radio    update mode, model %s (hardware %d, protocol %s): %s"
+        % (model, hw, ver, "%s, %s" % (got, board.variant_name(got)) if got else "not a %s" % board.name))
+    return radio, model
+
+
+def bootloader_steps_lines(board):
+    return ["update mode: " + s for s in board.bootloader_steps]
+
+
+def _anytone_write(args, board, man, radio, addr, data, what):
+    if not args.yes and not ask_yes("Write %s (%d bytes) now?" % (what, len(data)), default=True):
+        say("nothing done")
+        return 1
+    started = flash_started(args, board, man) if man else None
+    try:
+        n = radio.write(addr, data, progress=_progress("frames"))
+    except BaseException as e:
+        flash_finished(started, e)
+        raise
+    flash_finished(started)
+    say("done     %d frames written and acknowledged; the radio installs %s and restarts" % (n, what))
+    return 0
+
+
+def cmd_flash_anytone(args, board, man, app, block):
+    """The AnyTone update mode (anytone.py): the radio is identified as the vendor's updater does, and an image for
+    another MCU is refused. The image goes with the DMR baseband's boot block, from the image (merged by
+    tools/modem_boot.py) or from --stock (the radio's own .CDD or a program flash read)."""
+    if args.simulate or args.key or args.stock_installed or args.route != serialflash.AUTO:
+        raise UsageError("the %s takes none of --simulate, --key, --stock-installed, --route" % board.name)
+    if args.codec == planmod.KEEP:
+        raise UsageError("the update mode writes the whole application area: the boot block can't be kept, it is "
+                         "written from the image or --stock")
+    if block is None:
+        if not args.stock:
+            raise UsageError("the %s needs the DMR baseband's boot block, which is never in a release: pass --stock "
+                             "with the radio's stock firmware (.CDD, %s)" % (board.name, ", ".join(board.codec.sources)))
+        with open(os.path.expanduser(args.stock), "rb") as f:
+            block = modemboot.find(f.read())
+        say("stock    %s: modem boot block found (SHA-256 checked)" % os.path.basename(args.stock))
+    data = atmod.install_image(board, app, block)
+    atmod.check_fits(board, board.app_base, data)
+    say("")
+    say("plan:")
+    say("  write %d bytes at 0x%08X through the update mode (%d frames): the application, then the modem boot block "
+        "at 0x%08X" % (len(data), board.app_base, atmod.frames_needed(len(data)), board.codec_slot[0]))
+    say("")
+    if args.dry_run:
+        say("dry run: nothing was written")
+        return 0
+    radio, model = _anytone_connect(args, board)
+    atmod.check_install(board, model, args.variant)
+    rc = _anytone_write(args, board, man, radio, board.app_base, data, "RadioFoundry %s" % man.get("version"))
+    if rc == 0:
+        state.forget_probe()
+    return rc
+
+
+def cmd_restore_stock(args):
+    """A vendor firmware set back through the update mode, for the radio whose model its .spi names"""
+    board = pick_board(args.board, "restore-stock", boards.by(family="anytone-update"))
+    if board.family != "anytone-update":
+        raise UsageError("restore-stock is for the radios with a vendor update mode (%s); the others go back to "
+                         "stock with the manufacturer's tool or a backup" % ", ".join(
+                             b.name for b in boards.by(family="anytone-update")))
+    addr, data, models = atmod.read_stock(os.path.expanduser(args.cdd))
+    atmod.check_fits(board, addr, data)
+    say("stock    %s: %d bytes at 0x%08X, for model %s" % (os.path.basename(args.cdd), len(data), addr,
+                                                         " or ".join(sorted(models))))
+    if args.dry_run:
+        say("dry run: nothing was written")
+        return 0
+    radio, model = _anytone_connect(args, board)
+    atmod.check_restore(board, model, models, args.variant)
+    return _anytone_write(args, board, None, radio, addr, data, "the stock firmware")
+
+
 def verify_serial(dev, board, man, expect_codec, wait_s=25, probe_fn=None, sleep=time.sleep):
     """After the restart: RadioFoundry's VERSION over the cable, compared with what was flashed."""
     say("checking the radio after the restart (up to %d s; --no-verify skips this)..." % wait_s)
@@ -860,6 +957,16 @@ def cmd_probe(args):
 
 
 def cmd_detect(args):
+    if args.board and boards.get(args.board).family == "anytone-update":
+        board = boards.get(args.board)
+        radio, model = _anytone_connect(args, board)
+        got = atmod.variant_of(board, model)
+        if got is None:
+            return 1
+        runs = board.variant_boards.get(got)
+        say("         %s" % ("RadioFoundry installs on it" if runs == board.id else
+                            "no RadioFoundry image for this variant: only its stock firmware can be written"))
+        return 0
     p = debuglink.probe(args.port, log=say) if not args.no_probe else None
     if p:
         say("RadioFoundry      %s on %s: git %s, codec %s" % (p.get("board"), p["port"], p.get("git"), p.get("codec")))
@@ -1002,6 +1109,8 @@ def build_parser():
     f.add_argument("--route", choices=serialflash.ROUTES, default=serialflash.AUTO,
                    help="DM-1801 Pro, DM-32UV: auto (default): the stub when the radio runs RadioFoundry with stub entry, else "
                         "Baofeng's update mode; stub; bootloader (update mode, PTT and SK1 at power-on)")
+    f.add_argument("--variant", metavar="CODE", help="radios with a vendor update mode: the hardware variant you know "
+                   "the radio is (board.toml [hardware] variants); refused if the radio says otherwise")
     f.add_argument("--no-verify", action="store_true", help="don't check the radio after it restarts")
     f.add_argument("--no-reporting", action="store_true",
                    help="don't send the RadioFoundry project the radio model, build and result of this flash")
@@ -1035,6 +1144,17 @@ def build_parser():
     m.add_argument("--board")
     m.set_defaults(fn=cmd_merge)
 
+    r = sub.add_parser("restore-stock", help="write a vendor firmware set back through the radio's update mode "
+                       "(radios with a vendor update mode)")
+    r.add_argument("cdd", help="the vendor firmware .CDD, with its .CDI and .spi beside it")
+    r.add_argument("--board")
+    r.add_argument("--port", help="the radio's USB serial port (found when it is the only one)")
+    r.add_argument("--variant", metavar="CODE", help="the hardware variant you know the radio is")
+    r.add_argument("--dry-run", action="store_true", help="check the files, touch nothing")
+    r.add_argument("--yes", "-y", action="store_true", help="don't ask")
+    r.add_argument("--no-reporting", action="store_true", help="don't send the RadioFoundry project the result")
+    r.set_defaults(fn=cmd_restore_stock)
+
     g = sub.add_parser("download", help="download a release image and manifest, verified")
     g.add_argument("--release", default="latest")
     g.add_argument("--repo", default=relmod.DEFAULT_REPO)
@@ -1054,7 +1174,7 @@ def main(argv=None):
     try:
         return args.fn(args)
     except (UsageError, mf.ManifestError, planmod.PlanError, dfumod.DfuError, relmod.ReleaseError,
-            stockfw.StockError, serialflash.SerialError, KeyError) as e:
+            stockfw.StockError, serialflash.SerialError, atmod.UpdateError, modemboot.ModemBootError, KeyError) as e:
         print("error: %s" % (e.args[0] if isinstance(e, KeyError) and e.args else e), file=sys.stderr)
         return 2
     except OSError as e:
