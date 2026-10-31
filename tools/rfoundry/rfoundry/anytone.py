@@ -219,8 +219,10 @@ class Radio:
         self.retries = retries
 
     def _read(self, n):
+        # Read before the first deadline check: on a coarse clock (Windows, about 15.6 ms) a short timeout can pass
+        # before the loop starts, and an answer left unread puts every later one a frame behind
         end = time.monotonic() + self.timeout
-        out = b""
+        out = self.port.read(n)
         while len(out) < n and time.monotonic() < end:
             out += self.port.read(n - len(out))
         return out
