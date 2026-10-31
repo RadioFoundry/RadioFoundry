@@ -2269,6 +2269,17 @@ static int wrap_text(const font_t *f, const char *t, int y, int y_end, bool draw
 	return y;
 }
 
+// The length of a text line's "Label:" (colon included) when the line starts with one: a colon within its first 20
+// characters followed by a space or the line's end. 0 when it has none
+static size_t label_len(const char *t)
+{
+	for (size_t n = 0; n < 20 && t[n] != 0 && t[n] != '\n'; n++) {
+		if (t[n] == ':')
+			return t[n + 1] == ' ' || t[n + 1] == '\n' || t[n + 1] == 0 ? n + 1 : 0;
+	}
+	return 0;
+}
+
 int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *title, const char *text,
 	uint16_t *first)
 {
@@ -2294,24 +2305,24 @@ int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *ti
 	for (int i = 0; *t; i++) {
 		// a label only where a line of the text starts, never on a wrapped value's next line
 		bool starts = t == text || t[-1] == '\n';
+		size_t lab = starts ? label_len(t) : 0;
 		t = wrap_line(f, t, w, line, sizeof line);
 		int r = i - *first;
 		if (r < 0)
 			continue;
 		if (r >= rows)
 			break;
-		// "Label: value" shows the label dim, and so does a line that is only "Label:" (a list follows)
-		const char *colon = starts ? strstr(line, ": ") : NULL;
+		// "Label: value" shows the label dim, and so does a line that is only "Label:" (a list follows). The label is
+		// found in the text, not the wrapped line: a wrap right after the colon drops the space
 		size_t len = strlen(line);
 		color_t dim = gfx_bpp() == 1 ? ui_col.fg : ui_col.dim;
-		if (colon != NULL && colon - line < 20) {
+		if (lab > 0 && lab < len) {
 			char label[24];
-			size_t n = (size_t)(colon - line) + 1;
-			memcpy(label, line, n);
-			label[n] = 0;
+			memcpy(label, line, lab);
+			label[lab] = 0;
 			int x = gfx_text(f, 0, y + r * f->h, label, dim);
-			gfx_text(f, x, y + r * f->h, colon + 1, ui_col.fg);
-		} else if (starts && len > 0 && len < 20 && line[len - 1] == ':' && *t != 0 && t[-1] == '\n') {
+			gfx_text(f, x, y + r * f->h, line + lab, ui_col.fg);
+		} else if (lab > 0 && lab == len) {
 			gfx_text(f, 0, y + r * f->h, line, dim);
 		} else {
 			gfx_text(f, 0, y + r * f->h, line, ui_col.fg);
