@@ -35,8 +35,9 @@ The open-firmware CPS codeplug has no AM modulation, and RadioFoundry keeps the 
 stored: **an FM channel or the VFO tuned inside 108-137 MHz is received in AM** on a radio that can. This is how
 most radios with an air band behave, it needs no CPS change, and qdmr can program air channels today (as FM
 channels in that range). The band is an ITU allocation, the same everywhere, so the range is a core constant
-(`RADIO_AM_LO_HZ` / `RADIO_AM_HI_HZ` in `core/radio/radio_am.h`), not a board value. A DMR channel in the range stays
-DMR (and can't transmit there). Against a stored AM flag: it would need the native codeplug first, and an AM
+(`RADIO_AM_LO_HZ` / `RADIO_AM_HI_HZ` in `core/radio/radio_am.h`), not a board value. A DMR channel in the range is
+received in AM too: `tune()` sets `view.ch.mode` to FM in the air band and the broadcast range (`listen_band()` in
+`radio_sm.c`), the VFO's own mode with it, and RREQ_MODE refuses DMR there. The codeplug keeps the stored mode. Against a stored AM flag: it would need the native codeplug first, and an AM
 channel outside the air band has no use on these radios.
 
 The Codeplug Editor follows the same rule (`listenBand()` in `site/static/js/codeplug/model.js`, with the air band and
@@ -47,13 +48,15 @@ radio uses, and the Problems list warns about a DMR channel there or a TX freque
 
 | Item | Behavior |
 |---|---|
-| When | `CONFIG_AM_RX`, the board has `CAP_AM_RX` and `board.radio->rx_am`, the channel is FM and its RX frequency is in [108, 137) MHz |
+| When | `CONFIG_AM_RX`, the board has `CAP_AM_RX` and `board.radio->rx_am`, and the channel's or the VFO's RX frequency is in [108, 137) MHz, whatever its stored mode (3.1) |
 | Tuning | `tune()` calls `rx_am(hz, bw)` instead of `rx()`; if the board refuses, FM as before. `view.am` says AM is on |
 | Transmit | refused with `TXDENY_AM` whenever `view.am`, and for any TX frequency in the air band on an AM radio (split channels, DMR channels, the VFO, the data service, the hotspot's frequencies) |
 | Squelch | on the RSSI: `radio_am_noise()` maps dBm onto the FM noise scale (-18 dBm = 0, 1 dB per step), so the levels and hysteresis are the FM ones: level 1 opens above -82 dBm, 5 above -70, 9 above -58. The boards' AM RSSI isn't calibrated: empty air band channels read -76 to -86 dBm on a radio (2026-10-22), so level 5 sits about 8 dB above that. `view.noise` holds that value in AM. Scan uses the same value |
 | Sub-audio | ignored in AM (`tone_needed()` is false, the tone counts as heard) |
 | Steps | `radio_req_vfo_step_size()` (RREQ_VFO_STEP_SIZE, stored in `settings_t.vfo_step_hz`; 0 is auto, the default: 25 kHz at width 25K or in AM, else `RADIO_VFO_STEP_HZ`, recomputed on every view change, with `view.vfo_step_auto` set; Settings › Talk › VFO step); 8333 means the exact 8.33 kHz grid (n x 25/3 kHz, `radio_am_step()` snaps and steps without drift); 25 kHz is a plain step |
 | Band table | the board lists the air band as an RX-only band ({108000000, 136000000, false} after the VHF TX band) |
+| Saving | the channel editor makes a copy whose RX lands in an RX-only band of the table (New from current, a typed RX) RX only and FM, so it saves as is; a DMR copy there is refused ("Receive only band: set FM"). The codeplug stores it as an FM channel |
+| Mode tile | DMR is refused: "AM only in the air band" |
 | Screen | "AM" in place of "FM" for the mode on Home, in the strip, on the mode tile and in the channel list. Home's chips are "Air Band AM" and the squelch level (no tone, width or power). PTT shows "Air band: receive only" |
 
 ### 3.3 Board contract (hal_radio.h)
@@ -93,7 +96,7 @@ push-pull SCL, no clock stretching).
 
 | Item | Behavior |
 |---|---|
-| When | `CONFIG_BCAST_FM`, the board has `CAP_BCAST_FM` and `board.bcast`, the channel is FM and its RX frequency is in the receiver's range. `view.bcast` says the broadcast receiver plays |
+| When | `CONFIG_BCAST_FM`, the board has `CAP_BCAST_FM` and `board.bcast`, and the channel's or the VFO's RX frequency is in the receiver's range, whatever its stored mode (3.1). `view.bcast` says the broadcast receiver plays |
 | Tuning | the receiver is powered and tuned to the nearest point of its grid (`radio_bcast_khz`). Leaving the range powers it off. If the chip doesn't answer, `view.bcast_fault` is set and the radio stays idle |
 | Transmit | refused with `TXDENY_BCAST` whenever `view.bcast`, and for any TX frequency in the range on a radio with the receiver (split channels, DMR channels, the VFO, the hotspot's frequencies) |
 | Squelch | on the receiver's RSSI (about dBuV): noise = 97 - RSSI on the FM noise scale, so level 5 opens above 45 dBuV, 1 above 33, 9 above 57. Set from a receiver without an antenna (2026-10-22): empty frequencies read 22 to 37, stations 50 and up. The signal meter shows RSSI - 107 dBm. Only a scan uses it (to stop on stations): otherwise the state stays RX, the LED stays on, the screen shows the level and the audio plays whatever the signal (`bcast_listening()`) |
@@ -101,6 +104,7 @@ push-pull SCL, no clock stretching).
 | Volume | the radio's own volume where it has one (`radio_volume_soft`), mapped onto the receiver's 0-15; a fixed 12 where a knob after the amplifier sets the level |
 | Steps | the VFO's automatic step is the broadcast step setting (4.4). An explicit VFO step (Settings › Talk › VFO step) is used as set |
 | Power | battery save is off while the receiver plays; hotspot mode powers it off |
+| Saving, mode tile | as the air band (3.2): the board lists the range as an RX-only band; the mode tile says "FM only in the broadcast band" |
 | Screen | Home's chips are "Broadcast FM" alone (no tone, width, power or squelch level). The mode word stays "FM". PTT shows "Broadcast: receive only" |
 | APRS | a beacon's carrier sense reads the channel receiver on the APRS frequency, as on any channel |
 

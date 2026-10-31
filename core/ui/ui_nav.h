@@ -27,6 +27,7 @@ typedef enum {
 	SCR_SHARE, SCR_SHARE_TO, SCR_OFFER, SCR_OFFER_PREVIEW, SCR_OFFER_ZONE,
 	SCR_ZCHANNEL, SCR_ZPICK, SCR_ZONEEDIT, SCR_ZONEDEL,	// the zone editor (ui.md 2.2): Channel actions, Add
 								// channel, Zone options, Delete zone
+	SCR_CHZONES,			// the channel editor's Zones: in which zones the channel is (arg = its number)
 	SCR_DMR_ID,			// the radio's own DMR ID (Settings > My radio)
 	SCR_REF_TRIM,			// the reference trim (Settings > Advanced > Freq trim)
 	SCR_GPS,			// Tools > Position's pages (CONFIG_GPS_SKY): status, sky, signal, grid
@@ -134,6 +135,7 @@ uint16_t ui_filter_raw(uint16_t i);
 const char *ui_filter_text(void);
 void ui_filter_reset(void);
 void ui_filter_rebuild(void);
+void ui_menus_save_failed(void);	// a codeplug write failed: what waited for it is dropped (ui_menus.c)
 #if CONFIG_ZONE_EDIT
 // A list shows again, or the codeplug changed under it (ui_menus.c): the zone editor's focus follows its change
 void ui_menus_resume(void);
