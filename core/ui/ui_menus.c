@@ -2247,10 +2247,10 @@ static void ced_commit(void)
 		if (hz == 0)
 			return;
 		if (ced_edit == CE_RX) {
-			// TX moves with RX, keeping a repeater's offset; where that lands outside the transmit bands (or the
-			// channel had no TX frequency) TX becomes RX
+			// TX moves with RX, keeping a repeater's offset within one transmit band; a move to another band (or a
+			// channel with no TX frequency) makes TX RX
 			uint32_t tx = c->tx_hz - c->rx_hz + hz;
-			c->tx_hz = board_in_band(tx, true) ? tx : hz;
+			c->tx_hz = board_offset_carries(c->rx_hz, hz, tx) ? tx : hz;
 			c->rx_hz = hz;
 			ced_rx_band(c);
 		} else {

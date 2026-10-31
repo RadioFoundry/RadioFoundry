@@ -614,11 +614,12 @@ static uint32_t vfo_default_hz(void)
 	return board.band_count > 0 ? board.bands[0].lo_hz : 0;
 }
 
-// A new RX frequency. A split VFO keeps its offset where TX still lands in a transmit band; otherwise it is simplex
+// A new RX frequency. A split VFO keeps its offset within one transmit band (board_offset_carries); otherwise it is
+// simplex
 static void vfo_set_hz(radio_sm_t *sm, uint32_t hz)
 {
 	uint32_t tx = sm->vfo_ch.tx_hz - sm->vfo_ch.rx_hz + hz;
-	if (!sm->vfo_seeded || !board_in_band(tx, true))
+	if (!sm->vfo_seeded || !board_offset_carries(sm->vfo_ch.rx_hz, hz, tx))
 		tx = hz;
 	sm->vfo_ch.rx_hz = hz;
 	sm->vfo_ch.tx_hz = tx;

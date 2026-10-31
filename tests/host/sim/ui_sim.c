@@ -1013,20 +1013,22 @@ static void sim_vfo(bool on)
 		load_channel();
 	}
 }
-// board_in_band on this file's writable board (board.h's inline one reads the const declaration)
-static bool sim_tx_band(uint32_t hz)
+// board_tx_band on this file's writable board (board.h's inline one reads the const declaration)
+static int sim_tx_band(uint32_t hz)
 {
 	for (uint8_t i = 0; i < board.band_count; i++)
 		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz && board.bands[i].tx)
-			return true;
-	return false;
+			return i;
+	return -1;
 }
-// As the radio core (vfo_set_hz): a split keeps its offset where TX can still transmit, else it is simplex
+// As the radio core (vfo_set_hz): a split keeps its offset within one transmit band, else it is simplex
 static void sim_vfo_rx(uint32_t hz)
 {
 	uint32_t tx = vfo_tx_hz - vfo_rx_hz + hz;
+	int band = sim_tx_band(hz);
+	bool carries = band >= 0 && sim_tx_band(vfo_rx_hz) == band && sim_tx_band(tx) == band;
 	vfo_rx_hz = hz;
-	vfo_tx_hz = sim_tx_band(tx) ? tx : hz;
+	vfo_tx_hz = carries ? tx : hz;
 }
 void radio_req_vfo_step(int8_t dir)
 {
@@ -1049,7 +1051,7 @@ void radio_req_vfo_set(uint32_t hz)
 }
 void radio_req_vfo_tx(uint32_t hz)
 {
-	if (!view.vfo || !sim_tx_band(hz ? hz : vfo_rx_hz))
+	if (!view.vfo || sim_tx_band(hz ? hz : vfo_rx_hz) < 0)
 		return;
 	vfo_tx_hz = view.ch.tx_hz = hz ? hz : vfo_rx_hz;
 	changed();

@@ -111,7 +111,7 @@ back the channel as it was, without the temporary changes, as any channel change
 
 | Channel | VFO |
 |---|---|
-| RX and TX frequency | Both, so a repeater offset stays (the VFO is then a split VFO; a new RX frequency, typed or stepped, keeps the offset where TX still lands in a transmit band, else the VFO becomes simplex). Direct-mode channels (DMO) copy RX only |
+| RX and TX frequency | Both, so a repeater offset stays (the VFO is then a split VFO; a new RX frequency, typed or stepped, keeps the offset while RX stays in its transmit band and TX lands there too, `board_offset_carries`; a move to another band, or TX off the band, makes the VFO simplex). Direct-mode channels (DMO) copy RX only |
 | Mode, bandwidth | Both |
 | Power | The level in effect; a channel on "default" stays on the radio's default |
 | CTCSS / DCS, RX and TX (FM) | Both. A DMR channel has none: the VFO keeps its own for its FM mode |

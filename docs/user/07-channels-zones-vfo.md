@@ -143,7 +143,7 @@ Focus a row and press **OK**:
 | Power, RX CTCSS/DCS, TX CTCSS/DCS, color code, TX time-out | opens a picker: turn the knob (or Up / Down) to the value, **OK** keeps it, **Back** cancels. Color code and time-out also take digits |
 | RX CTCSS/DCS, TX CTCSS/DCS, typed | type a CTCSS tone with its tenths digit: **8 8 5** is 88.5, **1 3 1 8** is 131.8. Under 60 the digits are whole Hz: **6 7** is 67.0, **1 0 0** is 100.0. Start with **0** for a DCS code: **0 2 3** is D023N. **Back** takes the last digit back. For an inverted DCS code, turn the knob |
 | Zones | opens every zone, marked "In" where the channel is. **OK** puts the channel in a zone or takes it out, saved at once. A new channel shows the row once saved |
-| RX, TX, own ID | type the digits, **OK** keeps them, **Back** takes the last digit back. Digits outside the radio's bands are refused as you type. A new RX moves TX with it, so a repeater keeps its offset. If that would put TX outside the radio's bands, TX is set to the new RX |
+| RX, TX, own ID | type the digits, **OK** keeps them, **Back** takes the last digit back. Digits outside the radio's bands are refused as you type. A new RX moves TX with it, so a repeater keeps its offset. If the new RX is in another band (UHF to VHF), or TX would land outside the band, TX is set to the new RX |
 | Name | opens text entry (below) |
 | TX contact, RX group list | opens the list of contacts or group lists; type letters to find one |
 
@@ -263,7 +263,7 @@ In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **Split**: TX agains
   VFO's own once it has one.
 - Or type the TX frequency as you type a VFO frequency (**1 4 7 0 0** is 147.000) and press **OK**. **Back** takes the
   last digit back.
-- A new RX frequency keeps the offset, as long as TX stays where the radio can transmit.
+- A new RX frequency keeps the offset within the same band. A move to another band (UHF to VHF, say) makes the VFO simplex.
 - Monitor stays on its key in the VFO, and privacy is for channels.
 - Home shows the TX frequency: on FM after **PTT→**; on DMR in the top row ("TX 147.120"), or as the offset beside the
   power on displays without that row. While you transmit, the large frequency turns red and shows the TX frequency

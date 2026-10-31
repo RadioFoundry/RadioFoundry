@@ -706,6 +706,12 @@ static void test_vfo(void)
 	CHECK(sm.view.ch.tx_hz - sm.view.ch.rx_hz == 5000000);
 	req(RREQ_VFO_SET, 446000000);
 	CHECK(sm.view.ch.tx_hz == 451000000);
+	req(RREQ_VFO_SET, 146520000);		// another band: simplex, though 151.52 could transmit
+	CHECK(sm.view.ch.rx_hz == 146520000 && sm.view.ch.tx_hz == 146520000);
+	req(RREQ_VFO_TX, 147120000);		// back to UHF with a VHF split: simplex too
+	req(RREQ_VFO_SET, 446000000);
+	CHECK(sm.view.ch.tx_hz == 446000000);
+	req(RREQ_VFO_TX, 451000000);
 	req(RREQ_VFO_SET, 478000000);		// TX would leave the band: simplex
 	CHECK(sm.view.ch.tx_hz == 478000000);
 	req(RREQ_VFO_TX, 473000000);

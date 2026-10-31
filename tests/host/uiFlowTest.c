@@ -263,6 +263,8 @@ static const flow_t flows[] = {
 	// simplex; on channel 3 the own ID is row 12 and the TX time-out row 17
 	{ "E new RX keeps the repeater offset", "ok 5 up up ok down down down", "ok 1 4 7 0 0 ok",
 	  "shows=147.000 shows=146.4 shows=600_kHz", 7, false },
+	{ "E new RX in another band: simplex", "ok 5 up up ok down down down", "ok 4 4 6 0 0 0 ok",
+	  "shows=446.000 hides=445.4 hides=-600", 8, false },
 	{ "E new RX: an offset off the bands makes it simplex", "ok 5 up up ok down down down", "ok 1 3 6 0 0 ok",
 	  "shows=136.000 hides=135.4 hides=-600", 7, false },
 	{ "E RX in a receive-only band: RX only, saved", "ok 5 up up ok down down down", "ok 1 2 1 5 0 0 ok long:ok",
@@ -346,6 +348,8 @@ static const flow_t flows[] = {
 	  "screen=quick toast=Type_at_least txfreq=146520000", 1, false },
 	{ "18 VFO split: a new RX keeps the offset", "ok 4 up ok quick 5 up ok back", "1 4 6 0 0 0 ok",
 	  "freq=146000000 txfreq=146600000", 7, false },
+	{ "18 VFO split: a new RX in another band is simplex", "ok 4 up ok quick 5 up ok back", "4 4 6 0 0 0 0 ok",
+	  "freq=446000000 txfreq=446000000", 8, false },
 	{ "18 VFO split: Home digits start fresh after Split", "ok 4 up ok quick 5 1 4 7 long:back", "1 4 6 0 0 0 ok",
 	  "freq=146000000", 7, false },
 	{ "18 VFO split on DMR: tile 6", "ok 4 up ok quick 4", "6 up ok", "mode=dmr txfreq=147120000", 3, false },
