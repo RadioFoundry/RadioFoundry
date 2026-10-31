@@ -7,7 +7,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { catalog } from "../static/js/i18n.js";
-import { packCode, browserCodes, suggestPack } from "../static/js/flasher/langsuggest.js";
+import { packCode, browserCodes, suggestPack, startCode, startLanguages, startLanguage, setStartLanguage } from "../static/js/flasher/langsuggest.js";
+import { Selection } from "../static/js/flasher/select.js";
 
 const en = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url), "utf8"));
 
@@ -76,4 +77,71 @@ test("the build step shows the offer with a button that turns the pack on", () =
 	assert.match(src, /suggestPack\(S\.data\.features, globalThis\.navigator\?\.languages, sel, S\.packsDismissed\)/);
 	assert.match(src, /button\(t\("flash\.build\.pack_on"[^)]*\)[^)]*\), \(\) => change\(pack\.name, true\)/);
 	assert.match(src, /S\.packsDismissed\.add\(pack\.code\)/);
+});
+
+// The language the radio starts in: LANG_DEFAULT_<CODE>, needing its pack (features.json needs), at most one on
+const startFeatures = [{ name: "FM" }, { name: "LANG_ES" }, { name: "LANG_IT" },
+	{ name: "LANG_DEFAULT_ES", needs: { all: ["LANG_ES"], any: [] } }, { name: "LANG_DEFAULT_IT", needs: { all: ["LANG_IT"], any: [] } }];
+const startRadio = { unsupported: [], required: [], config: { full: ["FM", "LANG_ES"] } };
+
+test("the start-language switches are LANG_DEFAULT_<CODE>, not packs", () => {
+	assert.equal(startCode("LANG_DEFAULT_ES"), "es");
+	assert.equal(startCode("LANG_ES"), null);
+	assert.equal(packCode("LANG_DEFAULT_ES"), null);
+	assert.equal(suggestPack(startFeatures, ["es"], sel(["LANG_DEFAULT_ES"], [])), null);
+});
+
+test("the radio starts in one language: English or a pack that is on", () => {
+	const s = new Selection(startRadio, startFeatures, [{ id: "full" }]);
+	s.useVariant("full");
+	assert.deepEqual(startLanguages(startFeatures, s).map((l) => l.code), ["en", "es"]);
+	assert.equal(startLanguage(startFeatures, s), "en");
+	assert.equal(setStartLanguage(startFeatures, s, "es"), "es");
+	assert.ok(s.on.has("LANG_DEFAULT_ES"));
+	assert.equal(s.matches(), null);
+	assert.equal(s.matches(startCode), "full");	// still Full, in Spanish
+	// a pack that is off can't be the start language: English
+	assert.equal(setStartLanguage(startFeatures, s, "it"), "en");
+	assert.ok(!s.on.has("LANG_DEFAULT_ES") && !s.on.has("LANG_DEFAULT_IT") && !s.on.has("LANG_IT"));
+	// the pack turned off takes its start switch with it
+	setStartLanguage(startFeatures, s, "es");
+	s.set("LANG_ES", false);
+	assert.equal(startLanguage(startFeatures, s), "en");
+	// two packs on, one start language
+	s.set("LANG_ES", true);
+	s.set("LANG_IT", true);
+	setStartLanguage(startFeatures, s, "es");
+	setStartLanguage(startFeatures, s, "it");
+	assert.ok(s.on.has("LANG_DEFAULT_IT") && !s.on.has("LANG_DEFAULT_ES"));
+});
+
+test("the build step offers the start language, preset to the page's on an installation only", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	assert.match(src, /const want = S\.startLang \?\? \(S\.task === "install" \? LANG : null\);/);
+	assert.match(src, /S\.data\.features\.filter\(\(f\) => f\.group === g && f\.name !== "AUDIO_PROBE" && !startCode\(f\.name\)\)/);
+	for (const lang of ["en", "es", "it"]) {
+		const cat = JSON.parse(readFileSync(new URL(`../i18n/${lang}.json`, import.meta.url), "utf8"));
+		for (const k of ["flash.build.start_lang", "flash.build.start_lang_help"]) assert.ok(cat[k], `${lang}: ${k}`);
+	}
+});
+
+// The site's first-visit language hint (static/js/langhint.js)
+test("the site offers the browser's first language it has, unless the page is in it or a choice is remembered", async () => {
+	const { suggestLanguage } = await import("../static/js/langhint.js");
+	const site = ["en", "es", "it"];
+	assert.equal(suggestLanguage(["es-MX", "en"], site, "en", null), "es");
+	assert.equal(suggestLanguage(["en-US", "es"], site, "en", null), null);	// the page is in the first one
+	assert.equal(suggestLanguage(["fr", "it"], site, "en", null), "it");		// one the site lacks, then one it has
+	assert.equal(suggestLanguage(["fr", "de"], site, "en", null), null);
+	assert.equal(suggestLanguage(["es"], site, "en", "en"), null);			// dismissed or picked: never again
+	assert.equal(suggestLanguage(undefined, site, "en", null), null);
+});
+
+test("the header's language menu carries each language's hint words", () => {
+	const src = readFileSync(new URL("../rfoundrysite/build.py", import.meta.url), "utf8");
+	assert.match(src, /data-hint="%s" data-go="%s" data-no="%s"/);
+	for (const lang of ["en", "es", "it"]) {
+		const cat = JSON.parse(readFileSync(new URL(`../i18n/${lang}.json`, import.meta.url), "utf8"));
+		for (const k of ["nav.lang_hint", "nav.lang_go", "nav.lang_no"]) assert.ok(cat[k], `${lang}: ${k}`);
+	}
 });

@@ -32,7 +32,7 @@ import { readRadio, makeBundle, openBundle, bundleFolder, bundleName, describeFi
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
 import { decideCodec, DecisionError } from "./decide.js";
-import { suggestPack } from "./langsuggest.js";
+import { suggestPack, startCode, startLanguages, startLanguage, setStartLanguage } from "./langsuggest.js";
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
@@ -124,6 +124,7 @@ const initialState = () => ({
 	bundle: null, restoreTarget: null,
 	link: null,
 	packsDismissed: new Set(),	// language packs the user said no to on the build step (langsuggest.js)
+	startLang: null,	// the Radio language picked on the build step; null: on an installation the page's (langsuggest.js)
 	customPicked: false,	// the Custom card picked before any feature changed
 	build: null,		// a custom build in progress: {selection, text, error}
 	useId: null,		// the flash log's id for this use (see useId)
@@ -982,7 +983,7 @@ function buildView() {
 	const wrap = h("div", { class: "flasher" });
 	const vtitle = (v) => (t(`variant.${v.id}.title`) !== `variant.${v.id}.title` ? t(`variant.${v.id}.title`) : v.title);
 	const gtitle = (g) => (t(`group.${slug(g)}`) !== `group.${slug(g)}` ? t(`group.${slug(g)}`) : g);
-	const supportedCount = S.data.features.filter((f) => sel.supported(f.name)).length;
+	const supportedCount = S.data.features.filter((f) => sel.supported(f.name) && !startCode(f.name)).length;
 	// The build type follows the checkboxes: a selection equal to a prebuilt variant is that variant, anything else is
 	// custom. The Custom card can also be picked by hand before any change (it opens the groups).
 	const change = (name, value) => {
@@ -1013,8 +1014,23 @@ function buildView() {
 				button(t("flash.build.pack_on", { language: languageName(pack.code) }), () => change(pack.name, true), { primary: true }),
 				button(t("flash.build.pack_no"), () => { S.packsDismissed.add(pack.code); draw(); }, { quiet: true })));
 	};
+	// the language the radio starts in (LANG_DEFAULT_<CODE>): a choice of its own, not a feature in the groups. Picked,
+	// or on an installation the page's language when its pack is on; an update keeps the radio's
+	const startChoice = () => {
+		const langs = startLanguages(S.data.features, sel);
+		if (langs.length < 2) return null;
+		const cur = startLanguage(S.data.features, sel);
+		return h("div", { class: "start-lang" },
+			h("label", {}, h("b", {}, t("flash.build.start_lang")), " ",
+				h("select", { onchange: (e) => { S.startLang = e.target.value; S.customPicked = false; draw(); } },
+					langs.map((l) => h("option", { value: l.code, selected: l.code === cur }, languageName(l.code))))),
+			h("p", { class: "small muted" }, t("flash.build.start_lang_help")));
+	};
 	const draw = () => {
-		const match = S.customPicked ? null : sel.matches();
+		const want = S.startLang ?? (S.task === "install" ? LANG : null);
+		if (want) setStartLanguage(S.data.features, sel, want);
+		// the variant cards and the summary don't count the start language: Full in Spanish is still Full
+		const match = S.customPicked ? null : sel.matches(startCode);
 		// an image built for another selection no longer applies
 		if (S.firmware?.selection && S.firmware.selection !== selectionKey(sel)) S.firmware = null;
 		const card = (checked, onclick, ...body) => h("button", { class: "choice", type: "button", role: "radio",
@@ -1035,11 +1051,11 @@ function buildView() {
 		},
 		h("strong", {}, t("flash.build.custom")),
 		h("span", { class: "small" }, t("flash.build.custom_card_text")),
-		h("span", { class: "small muted" }, t("flash.build.count", { n: sel.on.size, total: supportedCount }))));
+		h("span", { class: "small muted" }, t("flash.build.count", { n: [...sel.on].filter((n) => !startCode(n)).length, total: supportedCount }))));
 		// every feature this radio supports, one collapsible group per feature-matrix group, each with its count
 		const groups = S.data.groups.map((g) => {
 			// what this radio can't run is listed too, grayed out, so nobody wonders where it went
-			const all = S.data.features.filter((f) => f.group === g && f.name !== "AUDIO_PROBE");
+			const all = S.data.features.filter((f) => f.group === g && f.name !== "AUDIO_PROBE" && !startCode(f.name));
 			const items = all.filter((f) => sel.supported(f.name));
 			if (!all.length) return null;
 			const on = items.filter((f) => sel.on.has(f.name)).length;
@@ -1078,6 +1094,7 @@ function buildView() {
 		});
 		const building = S.build && S.build.selection === selectionKey(sel);
 		const d = sel.diff(match || sel.base);
+		d.added = d.added.filter((n) => !startCode(n));
 		const baseTitle = vtitle(S.data.variants.find((v) => v.id === sel.base));
 		const summary = h("div", {}, match ? h("b", {}, t("flash.build.prebuilt", { variant: vtitle(S.data.variants.find((v) => v.id === match)) }))
 			: h("span", {}, h("b", {}, t("flash.build.custom")), " ",
@@ -1107,6 +1124,7 @@ function buildView() {
 				h("p", {}, t("flash.build.lead")),
 				h("div", { class: "choice-grid", role: "radiogroup" }, cards),
 				packNotice(),
+				startChoice(),
 				h("h3", {}, t("flash.build.features_title")),
 				h("div", { class: "feature-groups" }, groups),
 				image));

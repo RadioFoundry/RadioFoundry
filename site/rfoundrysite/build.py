@@ -229,10 +229,16 @@ class Site:
 		meta = next(l for l in self.i18n.languages if l["code"] == lang)
 		# the switcher and the alternate links only when there is another language: each names this page in it
 		many = len(self.i18n.languages) > 1
-		langs = ('<nav class="lang-switch" aria-label="%s">%s</nav>' % (html.escape(self.t(lang, "nav.languages")), "".join(
-			'<a href="%s%s%s"%s lang="%s" hreflang="%s">%s</a>' % (root, self.i18n.prefix(l["code"]), rel,
-									  ' aria-current="true"' if l["code"] == lang else "",
-									  l["code"], l["code"], html.escape(l["name"]))
+		# a compact menu (details: works without script). Each link carries its language's own words for the
+		# first-visit hint (static/js/langhint.js), which offers that language in that language
+		langs = ('<details class="lang-switch"><summary aria-label="%s" title="%s">%s</summary><nav aria-label="%s">%s</nav>'
+			 '</details>' % (html.escape(self.t(lang, "nav.languages")), html.escape(self.t(lang, "nav.languages")),
+					 html.escape(meta["code"].upper()), html.escape(self.t(lang, "nav.languages")), "".join(
+			'<a href="%s%s%s"%s lang="%s" hreflang="%s" data-hint="%s" data-go="%s" data-no="%s">%s</a>' % (
+				root, self.i18n.prefix(l["code"]), rel, ' aria-current="true"' if l["code"] == lang else "",
+				l["code"], l["code"], html.escape(self.t(l["code"], "nav.lang_hint")),
+				html.escape(self.t(l["code"], "nav.lang_go")), html.escape(self.t(l["code"], "nav.lang_no")),
+				html.escape(l["name"]))
 			for l in self.i18n.languages))) if many else ""
 		page_url = lambda code: SITE_URL + self.i18n.prefix(code) + (rel[:-len("index.html")] if rel.endswith("index.html") else rel)
 		alternates = "".join('<link rel="alternate" hreflang="%s" href="%s">\n' % (l["code"], html.escape(page_url(l["code"])))

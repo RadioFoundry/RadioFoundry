@@ -6,6 +6,8 @@
 //   currentBuild(probe, radio, releases, reported)   what runs: {kind: "preset" | "custom" | "unknown", ...}
 //   planUpdate(cur, sel, decided)                    the update's selection, and what it adds or must ask
 
+import { startCode } from "./langsuggest.js";
+
 const split = (s) => String(s || "").split(",").filter(Boolean);
 
 // The release entries (releases.json, this board's) of the build on the radio: its commit's, else the newest release
@@ -88,9 +90,11 @@ export function planUpdate(cur, sel, decided = {}) {
 		sel.useVariant(cur.preset);
 		return { preset: cur.preset, added: fresh(sel.radio.config[cur.preset]), ask: [], ready: true };
 	}
-	// a custom build (or a variant this release no longer has): every switch as it was, the new ones as decided
-	const off = new Set(cur.off || []);
-	const ask = fresh(sel.features.map((f) => f.name));
+	// a custom build (or a variant this release no longer has): every switch as it was, the new ones as decided. A
+	// new start-language switch (langsuggest.js) is no feature to ask about: off, the radio keeps the language it has
+	const news = fresh(sel.features.map((f) => f.name));
+	const off = new Set([...(cur.off || []), ...news.filter((n) => startCode(n))]);
+	const ask = news.filter((n) => !startCode(n));
 	sel.useVariant("full");
 	for (const f of sel.features) if (sel.supported(f.name) && !off.has(f.name) && !ask.includes(f.name)) sel.enable(f.name);
 	for (const n of off) sel.set(n, false);

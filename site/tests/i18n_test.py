@@ -164,9 +164,12 @@ class SecondLanguage(unittest.TestCase):
 
 	def test_switcher_and_alternates(self):
 		page = self.read("es/radios/index.html")
-		sw = re.search(r'<nav class="lang-switch"[^>]*>(.*?)</nav>', page).group(1)
-		self.assertIn('href="../../radios/index.html" lang="en" hreflang="en">English</a>', sw)
-		self.assertIn('href="../../es/radios/index.html" aria-current="true" lang="es" hreflang="es">Español</a>', sw)
+		sw = re.search(r'<details class="lang-switch">(.*?)</details>', page).group(1)
+		self.assertIn('>ES</summary>', sw)	# the menu shows the page's language
+		self.assertRegex(sw, r'href="\.\./\.\./radios/index\.html" lang="en" hreflang="en" data-hint="[^"]+" data-go="[^"]+" '
+				 r'data-no="[^"]+">English</a>')
+		self.assertRegex(sw, r'href="\.\./\.\./es/radios/index\.html" aria-current="true" lang="es" hreflang="es" '
+				 r'data-hint="[^"]+"[^>]*>Español</a>')
 		self.assertIn('<link rel="alternate" hreflang="en" href="https://radiofoundry.org/radios/">', page)
 		self.assertIn('<link rel="alternate" hreflang="es" href="https://radiofoundry.org/es/radios/">', page)
 		self.assertIn('<link rel="alternate" hreflang="x-default" href="https://radiofoundry.org/radios/">', page)

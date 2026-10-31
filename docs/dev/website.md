@@ -175,6 +175,7 @@ identifiers with digits or underscores are skipped). Add an entry for each one t
 ## Translating
 
 How to add a language, radio and site: [translating.md](translating.md). `site/i18n/languages.json` lists the languages. The default (English) is at the site root, others under `/<code>/`.
+The header's language menu (`details.lang-switch`) links the page in every language. On a first visit, when the browser's first language the site has isn't the page's, a bar under the header offers it, in that language (`static/js/langhint.js`; the words come from each catalog's `nav.lang_*` keys). It never redirects. Picking a language or dismissing the bar is remembered (`localStorage` `rfoundry-lang`).
 Each language has a flat catalog `site/i18n/<code>.json`; a missing key falls back to English, key by key. The
 flasher, the Codeplug Editor and the Tools page get their strings from the same catalog, embedded in the page
 (`<script id="i18n">`, read by `static/js/i18n.js`). Text that comes from the repository (feature help, variant

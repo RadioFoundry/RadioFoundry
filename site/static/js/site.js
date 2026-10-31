@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Shared page behavior: theme toggle, the narrow-screen menu, the features filter, the home page's carousel, the
+// Shared page behavior: the language hint (langhint.js), theme toggle, the narrow-screen menu, the features filter, the home page's carousel, the
 // screenshots page's radio picker.
 
+import { initLanguageHint } from "./langhint.js";
+
 const root = document.documentElement;
+
+initLanguageHint();
 
 document.querySelector(".theme-toggle")?.addEventListener("click", () => {
 	const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;

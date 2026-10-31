@@ -62,11 +62,12 @@ export class Selection {
 		}
 	}
 
-	// The prebuilt variant this selection is, or null
-	matches() {
+	// The prebuilt variant this selection is, or null. skip(name): switches left out of the comparison
+	matches(skip = () => false) {
+		const on = [...this.on].filter((n) => !skip(n));
 		for (const v of this.variants) {
-			const cfg = this.radio.config[v.id];
-			if (cfg.length === this.on.size && cfg.every((n) => this.on.has(n))) return v.id;
+			const cfg = this.radio.config[v.id].filter((n) => !skip(n));
+			if (cfg.length === on.length && cfg.every((n) => this.on.has(n))) return v.id;
 		}
 		return null;
 	}

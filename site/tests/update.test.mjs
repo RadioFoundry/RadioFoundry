@@ -62,6 +62,15 @@ test("a custom build keeps its switches and must decide the features added since
 	assert.deepEqual([...s.on].sort(), ["A", "B", "D"]);
 });
 
+test("a start-language switch added since is not asked about: off, the radio keeps its language", () => {
+	const feats = [...FEATURES, { name: "LANG_DEFAULT_ES", needs: { all: [], any: [] } }];
+	const cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "C" }), RADIO, WITH_OFF, REPORTED);
+	const s = new Selection(RADIO, feats, [{ id: "full" }, { id: "amateur" }]);
+	const plan = planUpdate(cur, s);
+	assert.deepEqual(plan.ask, ["NEW"]);
+	assert.ok(!s.on.has("LANG_DEFAULT_ES"));
+});
+
 test("from a release without off lists, a switch on in no variant is asked about too", () => {
 	const cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "C" }, "A,B"), RADIO, RELEASES, REPORTED);
 	assert.deepEqual(planUpdate(cur, sel()).ask, ["D", "NEW"]);
