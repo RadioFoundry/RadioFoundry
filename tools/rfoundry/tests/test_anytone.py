@@ -160,6 +160,22 @@ class Protocol(unittest.TestCase):
         with self.assertRaisesRegex(at.UpdateError, "NAK"):
             at.Radio(always, log=lambda m: None, timeout=0.01).write(B.app_base, data)
 
+    def test_coarse_clock_reads_every_answer(self):
+        # A clock that has passed the deadline by the first check (a 15.6 ms tick, a 10 ms timeout): an answer
+        # already there is still read, so the answers stay in step with the frames
+        t = [0.0]
+
+        def tick():
+            t[0] += 0.0156
+            return t[0]
+        fake = at.FakeRadio(model=model_of(runs_here()[0]), nak_every=5)
+        with mock.patch.object(at.time, "monotonic", tick):
+            r = at.Radio(fake, log=lambda m: None, timeout=0.01)
+            r.hello()
+            data = app_image(1000)
+            r.write(B.app_base, data)
+        self.assertEqual(fake.image()[:len(data)], data)
+
     def test_hello_needs_update_mode(self):
         class Mute(at.FakeRadio):
             def write(self, b):
