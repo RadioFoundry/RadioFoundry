@@ -112,8 +112,9 @@ def test_find_by_digits(home, shots):
     r = home
     for k in "563":
         r.press(k)
-    s = wait_screen(r, "find", "Find on a digit")
-    assert s["ui.query"] == "563", s
+    wait_screen(r, "find", "Find on a digit")
+    # The screen shows on the first digit; the UI may still be taking the others (a slow panel's redraw)
+    r.wait_for(lambda v: v.get("ui.query") == "563", sections=("link",), what="the query 563")
     info, data = r.shot_until(lambda d: True, what="Find")
     r.save_screenshot(f"{shots}/ui_find.png", data=data, info=info)
     r.press("back")
@@ -683,8 +684,8 @@ def test_delete_message(home):
 def test_factory_reset(home):
     """Settings > Advanced (0) > Factory reset > Yes: the settings go back to their defaults, the native area is erased
     (never the codeplug or calibration), and the radio restarts. The channel position survives only as the default."""
-    from test_cps import reconnect
     r = home
+    r.version()     # known before the restart: reconnect() checks a radio on another port against it
     zone_size = r.core().get("zone_size")
     for k in ("ok", "6", "0", "down", "down", "down", "ok"):
         r.press(k)
@@ -693,7 +694,7 @@ def test_factory_reset(home):
     r.press("down")
     r.press("ok", settle=0)
     time.sleep(2.0)
-    reconnect(r)
+    r.reconnect(20.0)
     s = r.view(["storage", "link"])
     assert as_int(s.get("settings.long_press_ms")) in (0, 600) and s.get("settings.auto_lock_s") == "0", s
     assert as_int(s.get("settings.failures"), 0) == 0, s

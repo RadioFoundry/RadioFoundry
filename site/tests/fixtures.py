@@ -252,7 +252,7 @@ def main(out):
 	variants = repo.variants()
 	radios, _ = repo.boards([f["name"] for f in feats], [v["id"] for v in variants])
 	# the synthetic codecs' maps go into the flash-boards data, as a real build's would (docs/spec/codec-placement.md)
-	test_maps = {**c7000(out, rng), **db25d(out, rng)}
+	test_maps = {**c7000(out, rng), **db25d(out, rng), **gd88(out, rng)}
 	bfloader(out)
 	codeplug(out)
 	fb = repo.flash_boards()
@@ -282,8 +282,12 @@ def c7000(out, rng):
 	image = bytes(rng.getrandbits(8) for _ in range(300 * 1024 + 5))
 	maps = dc.synthetic_map(found, bytes(code))
 	merged = dc.merge(image, found, *dc.carve(bytes(dump), found), maps)
+	univ = st.stub_univ_image()
 	for name, data in (("lz4_plain.bin", sector), ("lz4_block.bin", st.lz4_encode(sector)), ("c7000_progmem.bin", dump),
-			   ("c7000_image.bin", image), ("c7000_merged.bin", merged)):
+			   ("c7000_image.bin", image), ("c7000_merged.bin", merged),
+			   # the stub image as stubtool patches it for the GD-88's two SoCs
+			   ("c7000_stub_gd88.bin", st.patch_univ(univ, st.C7_BOARDS["gd88"])),
+			   ("c7000_stub_gd88b.bin", st.patch_univ(univ, st.C7_BOARDS["gd88b"]))):
 		with open(os.path.join(out, name), "wb") as f:
 			f.write(data)
 	doc = {"profile": {"name": "synthetic", "board": "dm1801pro", "tag": prof["tag"], "code_len": len(code), "run": prof["code"][2],
@@ -333,6 +337,35 @@ def db25d(out, rng):
 			f.write(data)
 	with open(os.path.join(out, "db25d.json"), "w") as f:
 		json.dump(doc, f, indent=1)
+	return maps
+
+
+def gd88(out, rng):
+	"""The GD-88: a synthetic A file (plain, A's 021 profile's addresses, random codec bytes) and the slots
+	hrc7000_codec.py merges from it for SoC A (gd88) and SoC B (gd88b, which runs A's codec, [codec] from): the two must
+	be the same bytes, and the web flasher's the same again."""
+	import struct
+	dc = repo._tool("tools", "hrc7000_codec.py")
+	real = next(p for p in dc.PROFILES.values() if p["board"] == "gd88" and p["tag"] == 2501)
+	(caddr, clen, _), (taddr, tlen, _) = real["code"], real["tables"]
+	plain = bytearray(rng.getrandbits(8) for _ in range(real["size"]))
+	struct.pack_into("<2I", plain, dc.file_offset(caddr, 0), *dc.CODEC_SIG)
+	plain = bytes(plain)
+	code = plain[dc.file_offset(caddr, 0):dc.file_offset(caddr, 0) + clen]
+	tables = plain[dc.file_offset(taddr, 0):dc.file_offset(taddr, 0) + tlen]
+	prof = dict(real, code_sha256=dc.sha256(code), tables_sha256=dc.sha256(tables))
+	maps = dc.synthetic_map(prof, code)
+	slots = {}
+	for board in ("gd88", "gd88b"):
+		found, c, t = dc.extract(plain, {dc.sha256(plain): prof}, board=board)
+		slots[board] = dc.slot_bytes(found, c, t, maps)
+	assert slots["gd88"] == slots["gd88b"], "A's codec packs the same for both SoCs"
+	for name, data in (("gd88a_stock.bin", plain), ("gd88_slot.bin", slots["gd88"]), ("gd88b_slot.bin", slots["gd88b"])):
+		with open(os.path.join(out, name), "wb") as f:
+			f.write(data)
+	with open(os.path.join(out, "gd88.json"), "w") as f:
+		json.dump({"sha256": dc.sha256(plain), "tag": real["tag"], "code_sha256": prof["code_sha256"],
+			   "tables_sha256": prof["tables_sha256"]}, f, indent=1)
 	return maps
 
 

@@ -135,6 +135,12 @@ deaf until a power cycle (bench 2026-10-22; quiet resets came back every time): 
 low divisor byte went out as data. So every HR_C7000 UART set-up (`platform/hrc7000/uart_format.h`) drains the RX FIFO, writes,
 reads LCR, DLL and DLH back, and tries again until they stick (about 100 ms at most).
 
+**2.9 Don't spin on a full UART TX FIFO in a task.** At 115200 a 1 KB debug link reply takes about 90 ms, and a writer
+that spins keeps the CPU the whole time. A host polling the debug link through a 3 s DMR transmission (an emergency
+call's hot mic) kept the idle task out for about 3 s, and the watchdog's hang check reset the radio. `hrc_uart_write`
+sleeps a tick while the FIFO is full when called from a task with interrupts on, and spins only in an interrupt, a
+fault handler or a section with interrupts off. A CPS read is no slower.
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,
@@ -545,7 +551,8 @@ from the call's LC; hold data calls and repeat them whole after 130 ms quiet.
 
 **14.2 Own echo and phantom voice.** The chip reports voice in empty inbound slots with what we sent. Drop voice or
 data matching anything we sent in the last 250 ms; voice counts only within a voice call; after a terminator, ignore
-headerless voice for 10 s; a stale voice A after F with recent AMBE is dropped.
+headerless voice for 10 s; a stale voice A after F with recent AMBE is dropped. Only the sending chip echoes: with
+the repeat on a second transmitter (`tx_split`) there is no check, else a call of silence repeated 180 ms late is lost.
 
 **14.3 Repeat timing.** A burst is ready just after the timeslot interrupt that sets up the next outbound slot, so the
 repeat goes out 90 ms later (measured 90.02-90.05 ms). Read bursts at their Sys interrupt (deferred reads found reg 0x51

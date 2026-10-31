@@ -52,6 +52,9 @@ typedef struct {
 	// enter_stub copies the span there first (the STM32: SRAM base, which RadioFoundry's own data holds until the jump)
 	uint8_t *(*stub_region)(uint32_t *size);
 	bool (*enter_stub)(uint32_t entry);
+	// Optional (NULL: none): a GPIO pin by the platform's index, for the debug link's peek and poke (DL_MEM_PIN_*
+	// action, DL_MEM_PS_* state after it, debuglink.md 3.24). False: no such pin
+	bool (*pin)(uint8_t pin, uint8_t action, uint8_t *state);
 	// Optional (NULL: none): interrupts the platform's fallback handler took for a source with no handler (it masks the
 	// source so it can't storm), and the last such source. A count above 0 means some interrupt went quiet for good
 	void (*irq_unhandled)(uint32_t *count, uint32_t *last_source);

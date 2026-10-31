@@ -10,9 +10,9 @@ db25dCalTest: $(HERE)db25dCalTest.c $(HERE)../calibration_db25d.c $(HERE)../db25
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)
 
 # The first stage in front of the application (boot/db25d): the stub load, dropped frames, the window, a cold UART.
-# The test includes boot.c
+# The test includes boot.c, which includes the shared protocol (boot/hrc7000/stage.c)
 TESTS   += bootDb25dTest
-bootDb25dTest: $(HERE)bootDb25dTest.c $(ROOT)/boot/db25d/boot.c
+bootDb25dTest: $(HERE)bootDb25dTest.c $(ROOT)/boot/db25d/boot.c $(ROOT)/boot/hrc7000/stage.c
 	$(CC) $(CFLAGS) -Wshadow -o $@ $<
 
 run-boards:: db25dCalTest bootDb25dTest

@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, find_ports, skip
+from rfoundry_hil import DebugLink, DebugLinkError, find_ports, need_radio_tx, skip
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 FIXED_RADIO = "192.168.10.1"     # IPGW_FIXED_LINK_DEFAULT
@@ -262,6 +262,7 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
 def test_passthrough_reply(radio, sdr_bench, pytestconfig):
     """The PC's datagram to the bench's ID goes over the air from the radio's own DMR ID; a confirmed packet from the
     bench still gets the radio's ETSI response in passthrough."""
+    need_radio_tx(radio)
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     udp, own, host_ip, radio_ip = _passthrough_session(radio, pytestconfig)
     try:

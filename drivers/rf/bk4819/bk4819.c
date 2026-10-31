@@ -273,6 +273,17 @@ bool bk4819_tone_found(uint16_t r0c, bk4819_tone_t type)
 	}
 }
 
+void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool level)
+{
+	if (pin > 6) {
+		return;
+	}
+	uint16_t data = (uint16_t)(0x40u >> pin);
+	uint16_t v = bk4819_read(dev, BK4819_REG_GPIO) & (uint16_t)~(data << 8);	// output enabled
+	v = level ? (uint16_t)(v | data) : (uint16_t)(v & ~data);
+	bk4819_write(dev, BK4819_REG_GPIO, v);
+}
+
 bool bk4819_heard(const bk4819_t *dev, uint16_t r0c, bk4819_tone_t type)
 {
 	if (dev->rx_inverted && type == BK4819_TONE_DCS) {
@@ -346,6 +357,17 @@ void bk4819_tone_start(bk4819_t *dev, uint16_t hz, uint8_t gain)
 	// more for some tones
 	bk4819_write(dev, BK4819_REG_TONE1_FREQ, (uint16_t)((uint32_t)hz * 103244u / 10000u));
 	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
+}
+
+void bk4819_tone_freq(bk4819_t *dev, uint16_t hz)
+{
+	dev->tone_hz = hz;
+	bk4819_write(dev, BK4819_REG_TONE1_FREQ, (uint16_t)((uint32_t)hz * 103244u / 10000u));
+}
+
+void bk4819_tone_deviation(bk4819_t *dev, uint16_t scale)
+{
+	bk4819_write(dev, 0x40, (uint16_t)(0x3000u | (scale & 0x0FFFu)));
 }
 
 // 4.4 DTMF: the tone start with both generators at the stock DTMF level and the stock DTMF deviation (0x40)

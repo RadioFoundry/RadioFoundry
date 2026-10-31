@@ -35,7 +35,7 @@ static void send_recv(const uint8_t *b, uint16_t n)
 // The receiver's radio
 static rx2_tune_t b_tune;
 static int b_tunes, b_stops, b_stubs, b_resets;
-static bool b_audio, b_active, b_refuse;
+static bool b_audio, b_active, b_refuse, b_off_settings;
 static uint8_t b_volume;
 
 static bool b_do_tune(const rx2_tune_t *t)
@@ -51,7 +51,7 @@ static void b_do_stop(void) { b_stops++; }
 static void b_do_audio(bool on, uint8_t volume) { b_audio = on; b_volume = volume; }
 static void b_do_status(rx2_status_t *st)
 {
-	st->tuned = true;
+	st->tuned = !b_off_settings;
 	st->active = b_active;
 	st->dmr = b_active;
 	st->group = true;
@@ -63,8 +63,65 @@ static void b_do_stub(void) { b_stubs++; }
 static void b_do_reset(void) { b_resets++; }
 static uint8_t b_leds = 0xFF;
 static void b_do_led(uint8_t leds) { b_leds = leds; }
+static bool b_path_on = true;
+static uint32_t b_path_hz, b_paths;
+static void b_do_path(bool on, uint32_t hz)
+{
+	b_path_on = on;
+	b_path_hz = hz;
+	b_paths++;
+}
+static bool b_speaker;
+static uint32_t b_speakers;
+static void b_do_speaker(bool on)
+{
+	b_speaker = on;
+	b_speakers++;
+}
+// The PA for the main SoC's transmitter: refused above 4095 (a DAC's range)
+static uint32_t b_tx_hz = 1;
+static uint16_t b_tx_pa, b_tx_on, b_tx_off;
+static bool b_do_tx(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
+{
+	if (pa > 4095u) {
+		return false;
+	}
+	b_tx_hz = hz;
+	b_tx_pa = pa;
+	b_tx_on = on_us;
+	b_tx_off = off_us;
+	return true;
+}
 
-static const rx2_ops_t b_ops = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset, b_do_led };
+// The receiver's debug link server: 0x01 echoes its payload; 0x40 answers n bytes (u16 n), status included
+static uint8_t b_dl_cmd;
+static size_t b_do_dl(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+{
+	b_dl_cmd = cmd;
+	if (cmd == 0x01) {
+		out[0] = 0;
+		memcpy(out + 1, req, len);
+		return 1u + len;
+	}
+	if (cmd == 0x40 && len == 2) {
+		size_t n = (size_t)(req[0] | req[1] << 8);
+		if (n > cap) {
+			n = cap;
+		}
+		out[0] = 0;
+		for (size_t i = 1; i < n; i++) {
+			out[i] = (uint8_t)(i * 7u);
+		}
+		return n;
+	}
+	out[0] = 1;
+	return 1;
+}
+
+static const rx2_ops_t b_ops = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset, b_do_led,
+				 b_do_dl, b_do_path, b_do_tx, NULL, b_do_speaker };
+static const rx2_ops_t b_ops_no_dl = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset, b_do_led,
+				       NULL, NULL, NULL, NULL, NULL };
 
 static void pump(uint32_t now_ms)
 {
@@ -197,7 +254,7 @@ static void test_payloads(void)
 static void test_link(void)
 {
 	rx2_main_init(&m, send_main);
-	rx2_recv_init(&r, send_recv, &b_ops, RX2_HELLO_DMR, "rfoundry-gd88b 1.2");
+	rx2_recv_init(&r, send_recv, &b_ops, RX2_HELLO_DMR, "rfoundry-rx2 1.2");
 	rx2_status_t st;
 
 	// Down until the receiver answers; tune() refused meanwhile (the core alternates)
@@ -208,7 +265,7 @@ static void test_link(void)
 	CHECK(!rx2_main_tune(&m, &t, 0));
 	uint32_t now = run(0, 100, true);
 	rx2_main_status(&m, &st);
-	CHECK(m.up && st.up && !st.tuned && m.flags == RX2_HELLO_DMR && strcmp(m.fw, "rfoundry-gd88b 1.2") == 0);
+	CHECK(m.up && st.up && !st.tuned && m.flags == RX2_HELLO_DMR && strcmp(m.fw, "rfoundry-rx2 1.2") == 0);
 
 	// Tune: acknowledged, tuned
 	CHECK(rx2_main_tune(&m, &t, now));
@@ -255,6 +312,16 @@ static void test_link(void)
 	rx2_main_tune(&m, &t, now);
 	now = run(now, 100, true);
 
+	// Accepted, but the board says it isn't on the settings: not tuned until it says it is (the status op's word)
+	b_off_settings = true;
+	now = run(now, RX2_STATUS_EVERY_MS + 100u, true);
+	rx2_main_status(&m, &st);
+	CHECK(!st.tuned);
+	b_off_settings = false;
+	now = run(now, RX2_STATUS_EVERY_MS + 100u, true);
+	rx2_main_status(&m, &st);
+	CHECK(st.tuned);
+
 	// The receiver goes silent: down after RX2_ALIVE_MS, nothing active
 	now = run(now, RX2_ALIVE_MS + 100u, false);
 	rx2_main_status(&m, &st);
@@ -265,15 +332,57 @@ static void test_link(void)
 	int tunes = b_tunes;
 	rx2_main_audio(&m, true, 70);
 	rx2_main_led(&m, 2);	// while it is down: kept, sent when it is back
-	rx2_recv_init(&r, send_recv, &b_ops, RX2_HELLO_DMR, "rfoundry-gd88b 1.3");
+	rx2_main_path(&m, true, 461462500u);
+	rx2_main_speaker(&m, true);
+	rx2_recv_init(&r, send_recv, &b_ops, RX2_HELLO_DMR, "rfoundry-rx2 1.3");
 	b_audio = false;
 	now = run(now, RX2_HELLO_EVERY_MS + 200u, true);
 	rx2_main_status(&m, &st);
-	CHECK(st.up && st.tuned && b_tunes == tunes + 1 && b_audio && b_volume == 70 && strcmp(m.fw, "rfoundry-gd88b 1.3") == 0);
+	CHECK(st.up && st.tuned && b_tunes == tunes + 1 && b_audio && b_volume == 70 && strcmp(m.fw, "rfoundry-rx2 1.3") == 0);
 	CHECK(b_leds == 2);
 	rx2_main_led(&m, 3);
 	now = run(now, 40, true);
 	CHECK(b_leds == 3);
+	CHECK(b_path_on && b_path_hz == 461462500u);
+	uint32_t paths = b_paths;
+	rx2_main_path(&m, true, 461462500u);	// no change: nothing sent
+	now = run(now, 40, true);
+	CHECK(b_paths == paths);
+	rx2_main_path(&m, true, 162475000u);
+	now = run(now, 40, true);
+	CHECK(b_path_on && b_path_hz == 162475000u && b_paths == paths + 1);
+
+	// The speaker switch: sent again when the receiver came back, then only on a change
+	CHECK(b_speaker);	// it was off before the receiver went down
+	uint32_t speakers = b_speakers;
+	rx2_main_speaker(&m, true);
+	now = run(now, 40, true);
+	CHECK(b_speakers == speakers);
+	rx2_main_speaker(&m, false);
+	now = run(now, 40, true);
+	CHECK(!b_speaker && b_speakers == speakers + 1);
+	rx2_main_speaker(&m, true);
+	now = run(now, 40, true);
+	CHECK(b_speaker);
+
+	// TX: armed with the drive and delays, acknowledged; a refused one isn't; disarmed; HELLO_REQ disarms
+	CHECK(rx2_main_tx(&m, 461462500u, 1234, 300, 150) && !m.tx_acked);
+	now = run(now, 40, true);
+	CHECK(m.tx_acked && b_tx_hz == 461462500u && b_tx_pa == 1234 && b_tx_on == 300 && b_tx_off == 150);
+	CHECK(rx2_main_tx(&m, 461462500u, 5000, 300, 150));
+	now = run(now, 40, true);
+	CHECK(!m.tx_acked && b_tx_pa == 1234);
+	CHECK(rx2_main_tx(&m, 0, 0, 0, 0));
+	now = run(now, 40, true);
+	CHECK(m.tx_acked && b_tx_hz == 0);
+	b_tx_hz = 1;
+	{
+		uint8_t hf[RX2_FRAME_MAX];
+		uint16_t hn = rx2_frame(hf, RX2_HELLO_REQ, 0, NULL, 0);
+		send_main(hf, hn);
+		now = run(now, 40, true);
+	}
+	CHECK(b_tx_hz == 0 && !b_speaker);	// HELLO_REQ: the switch open too
 
 	// Stop
 	int stops = b_stops;
@@ -291,7 +400,13 @@ static void test_link(void)
 	now = run(now, 40, true);
 	CHECK(b_stubs == 1 && b_resets == 1);
 
-	// The main side restarting (HELLO_REQ while tuned): the receiver stops and mutes
+	// The main side leaving for its flash stub: the stub bit reaches the receiver's LEDs (it blinks them)
+	rx2_main_led(&m, RX2_LED_STUB);
+	now = run(now, 40, true);
+	CHECK(b_leds == RX2_LED_STUB);
+
+	// The main side restarting (HELLO_REQ while tuned): the receiver stops and mutes, its LEDs off (the stub's blink
+	// ends)
 	rx2_main_tune(&m, &t, now);
 	rx2_main_audio(&m, true, 50);
 	now = run(now, 100, true);
@@ -299,8 +414,208 @@ static void test_link(void)
 	stops = b_stops;
 	rx2_main_init(&m, send_main);
 	now = run(now, 100, true);
-	CHECK(b_stops == stops + 1 && !b_audio && m.up && b_leds == 0);
+	CHECK(b_stops == stops + 1 && !b_audio && m.up && b_leds == 0 && !b_path_on);
 	(void)now;
+}
+
+// A reply of n bytes from the receiver's server, through the link: the main side's state and reply afterwards
+static uint32_t dl_ask(uint32_t now, uint16_t n)
+{
+	uint8_t req[3] = { 0x40, (uint8_t)n, (uint8_t)(n >> 8) };
+	CHECK(rx2_main_dl_send(&m, req, sizeof req, now));
+	CHECK(m.dl_state == RX2_DL_WAIT);
+	return run(now, 40, true);
+}
+
+static bool reply_is(uint16_t n)
+{
+	if (m.dl_state != RX2_DL_DONE || m.dl_len != n || m.dl_reply[0] != 0) {
+		return false;
+	}
+	for (uint16_t i = 1; i < n; i++) {
+		if (m.dl_reply[i] != (uint8_t)(i * 7u)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// The debug link through the main SoC (rx2-link.md 2.3)
+static void test_dl(void)
+{
+	n_to_recv = n_to_main = 0;
+	drop_to_recv = false;
+	rx2_main_init(&m, send_main);
+	rx2_recv_init(&r, send_recv, &b_ops, 0, "rx2");
+	uint8_t ping[4] = { 0x01, 'a', 'b', 'c' };
+	CHECK(!rx2_main_dl_send(&m, ping, sizeof ping, 0));	// down: nothing sent
+	uint32_t now = run(0, 200, true);
+	CHECK(m.up);
+
+	CHECK(rx2_main_dl_send(&m, ping, sizeof ping, now));
+	now = run(now, 40, true);
+	CHECK(m.dl_state == RX2_DL_DONE && m.dl_len == 4 && m.dl_reply[0] == 0 && memcmp(&m.dl_reply[1], "abc", 3) == 0);
+	CHECK(b_dl_cmd == 0x01 && r.dl_requests == 1);
+
+	// One part, two parts at the boundary, the largest reply (11 parts)
+	now = dl_ask(now, 1);
+	CHECK(reply_is(1));
+	now = dl_ask(now, RX2_DL_PIECE);
+	CHECK(reply_is(RX2_DL_PIECE));
+	now = dl_ask(now, RX2_DL_PIECE + 1u);
+	CHECK(reply_is(RX2_DL_PIECE + 1u));
+	now = dl_ask(now, 2u * RX2_DL_PIECE);
+	CHECK(reply_is(2u * RX2_DL_PIECE));
+	now = dl_ask(now, RX2_DL_REPLY_MAX);
+	CHECK(reply_is(RX2_DL_REPLY_MAX));
+	CHECK(m.dl_failed == 0 && m.up);
+
+	// Too long a request, or an empty one: refused, nothing in flight
+	uint8_t big[RX2_DL_REQ_MAX + 1] = { 0x01 };
+	CHECK(!rx2_main_dl_send(&m, big, sizeof big, now));
+	CHECK(!rx2_main_dl_send(&m, big, 0, now));
+	CHECK(rx2_main_dl_send(&m, big, RX2_DL_REQ_MAX, now));
+	now = run(now, 40, true);
+	CHECK(m.dl_state == RX2_DL_DONE && m.dl_len == RX2_DL_REQ_MAX);
+
+	// No answer: failed after the timeout, not before
+	drop_to_recv = true;
+	CHECK(rx2_main_dl_send(&m, ping, sizeof ping, now));
+	uint32_t t = run(now, RX2_DL_TIMEOUT_MS - 40u, true);
+	CHECK(m.dl_state == RX2_DL_WAIT);
+	t = run(t, 60, true);
+	CHECK(m.dl_state == RX2_DL_FAILED && m.dl_failed == 1);
+	drop_to_recv = false;
+	now = run(t, 200, true);
+
+	// A reply to an older request (another tag) is ignored; a part out of order fails the request
+	CHECK(rx2_main_dl_send(&m, ping, sizeof ping, now));
+	uint8_t f[RX2_FRAME_MAX];
+	uint8_t stale[3] = { (uint8_t)(m.dl_tag - 1u), RX2_DL_LAST, 0 };
+	uint16_t fn = rx2_frame(f, RX2_DL_REPLY, 0, stale, sizeof stale);
+	for (uint16_t i = 0; i < fn; i++) {
+		rx2_main_rx(&m, f[i], now);
+	}
+	CHECK(m.dl_state == RX2_DL_WAIT);
+	uint8_t skip[3] = { m.dl_tag, (uint8_t)(1u | RX2_DL_LAST), 0 };
+	fn = rx2_frame(f, RX2_DL_REPLY, 0, skip, sizeof skip);
+	for (uint16_t i = 0; i < fn; i++) {
+		rx2_main_rx(&m, f[i], now);
+	}
+	CHECK(m.dl_state == RX2_DL_FAILED);
+	now = run(now, 40, true);		// the receiver's real reply comes late: ignored
+	CHECK(m.dl_state == RX2_DL_FAILED);
+
+	// The receiver going down fails the request in flight at once
+	CHECK(rx2_main_dl_send(&m, ping, sizeof ping, now));
+	n_to_recv = 0;
+	run(now, RX2_ALIVE_MS + 100u, false);
+	CHECK(!m.up && m.dl_state == RX2_DL_FAILED);
+
+	// A receiver without a server answers every command DL_ST_UNKNOWN_CMD
+	n_to_recv = n_to_main = 0;
+	rx2_main_init(&m, send_main);
+	rx2_recv_init(&r, send_recv, &b_ops_no_dl, 0, "rx2");
+	now = run(0, 200, true);
+	CHECK(rx2_main_dl_send(&m, ping, sizeof ping, now));
+	run(now, 40, true);
+	CHECK(m.dl_state == RX2_DL_DONE && m.dl_len == 1 && m.dl_reply[0] == 1);
+}
+
+// Feed bytes at the given times (us) through the exit detector, checking idle every 100 us up to end_us. Returns true
+// when it asked to end; *passed gets every byte passed on, in order
+static uint8_t ex_out[256];
+static size_t ex_n;
+static bool ex_run(const uint8_t *b, const uint32_t *at, size_t n, uint32_t end_us)
+{
+	rx2_exit_t x;
+	uint8_t o[RX2_EXIT_LEN + 1u];
+	uint8_t k;
+	size_t i = 0;
+	ex_n = 0;
+	rx2_exit_init(&x, 0);
+	for (uint32_t t = 0; t <= end_us; t += 100) {
+		for (; i < n && at[i] <= t; i++) {
+			k = rx2_exit_byte(&x, b[i], at[i], o);
+			CHECK(k <= RX2_EXIT_LEN + 1u);
+			memcpy(&ex_out[ex_n], o, k);
+			ex_n += k;
+		}
+		if (rx2_exit_idle(&x, t, o, &k)) {
+			return true;
+		}
+		memcpy(&ex_out[ex_n], o, k);
+		ex_n += k;
+	}
+	return false;
+}
+
+// The update bridge's exit sequence (rx2-link.md 4.1)
+static void test_exit(void)
+{
+	const uint8_t *q = rx2_exit_seq;
+	CHECK(q[0] == 0x7E && q[1] == 0xE7 && q[2] == 0x81 && q[3] == 0x18);
+	const uint32_t G = RX2_EXIT_GUARD_US;
+	uint32_t at[16];
+
+	// Data, quiet, the sequence (87 us a byte at 115200), quiet: the end, the data passed on, the sequence not
+	uint8_t a[7] = { 1, 2, 3, q[0], q[1], q[2], q[3] };
+	for (int i = 0; i < 3; i++) at[i] = 1000u + 87u * (uint32_t)i;
+	for (int i = 3; i < 7; i++) at[i] = 1174u + G + 87u * (uint32_t)(i - 3);
+	CHECK(ex_run(a, at, 7, 20000));
+	CHECK(ex_n == 3 && ex_out[0] == 1 && ex_out[2] == 3);
+
+	// The sequence alone at the start (the host's first bytes): the end too
+	for (int i = 0; i < 4; i++) at[i] = G + 87u * (uint32_t)i;
+	CHECK(ex_run(q, at, 4, 20000) && ex_n == 0);
+
+	// Not quiet before it (the tail of a longer message): passed on, no end
+	for (int i = 0; i < 7; i++) at[i] = 3000u + 87u * (uint32_t)i;
+	CHECK(!ex_run(a, at, 7, 20000));
+	CHECK(ex_n == 7 && memcmp(ex_out, a, 7) == 0);
+
+	// Not quiet after it (the start of a longer message): passed on in order, no end
+	uint8_t b[6] = { q[0], q[1], q[2], q[3], 9, 10 };
+	for (int i = 0; i < 6; i++) at[i] = 3000u + 87u * (uint32_t)i;
+	CHECK(!ex_run(b, at, 6, 20000));
+	CHECK(ex_n == 6 && memcmp(ex_out, b, 6) == 0);
+
+	// A byte just inside the guard after it still counts as the same burst
+	at[4] = 3000u + 3u * 87u + G - 1u;
+	CHECK(!ex_run(b, at, 5, 20000) && ex_n == 5 && memcmp(ex_out, b, 5) == 0);
+
+	// Part of the sequence, then quiet: the held bytes go on once the burst has ended
+	for (int i = 0; i < 3; i++) at[i] = 3000u + 87u * (uint32_t)i;
+	CHECK(!ex_run(q, at, 3, 20000));
+	CHECK(ex_n == 3 && memcmp(ex_out, q, 3) == 0);
+
+	// A near miss (one byte wrong) and the sequence split by a quiet gap: never the end, every byte passed on
+	uint8_t c[4] = { q[0], q[1], (uint8_t)(q[2] ^ 1u), q[3] };
+	for (int i = 0; i < 4; i++) at[i] = 3000u + 87u * (uint32_t)i;
+	CHECK(!ex_run(c, at, 4, 20000) && ex_n == 4 && memcmp(ex_out, c, 4) == 0);
+	at[0] = 3000u; at[1] = 3087u; at[2] = 3087u + G + 10u; at[3] = at[2] + 87u;
+	CHECK(!ex_run(q, at, 4, 20000) && ex_n == 4 && memcmp(ex_out, q, 4) == 0);
+
+	// Two sequences back to back are 8 bytes in one burst: not the end
+	uint8_t d[8] = { q[0], q[1], q[2], q[3], q[0], q[1], q[2], q[3] };
+	for (int i = 0; i < 8; i++) at[i] = 3000u + 87u * (uint32_t)i;
+	CHECK(!ex_run(d, at, 8, 20000) && ex_n == 8 && memcmp(ex_out, d, 8) == 0);
+
+	// The end waits for the quiet after it
+	for (int i = 0; i < 4; i++) at[i] = 3000u + 87u * (uint32_t)i;
+	CHECK(!ex_run(q, at, 4, 3261u + G - 100u));
+	CHECK(ex_run(q, at, 4, 3261u + G + 100u));
+
+	// The time base wraps (a 32-bit microsecond count)
+	rx2_exit_t x;
+	uint8_t o[RX2_EXIT_LEN + 1u], k;
+	uint32_t t0 = 0xFFFFFF00u;
+	rx2_exit_init(&x, t0 - G);
+	for (uint32_t i = 0; i < 4; i++) {
+		CHECK(rx2_exit_byte(&x, q[i], t0 + 87u * i, o) == 0);
+	}
+	CHECK(!rx2_exit_idle(&x, t0 + 300u, o, &k) && k == 0);
+	CHECK(rx2_exit_idle(&x, t0 + 261u + G, o, &k));
 }
 
 int main(void)
@@ -308,6 +623,8 @@ int main(void)
 	test_frames();
 	test_payloads();
 	test_link();
+	test_dl();
+	test_exit();
 	printf("rx2LinkTest: %s (%d failures)\n", failures ? "FAILED" : "passed", failures);
 	return failures ? 1 : 0;
 }

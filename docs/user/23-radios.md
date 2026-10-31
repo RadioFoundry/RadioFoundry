@@ -15,6 +15,7 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
+| [Radioddity GD-88](#radioddity-gd-88) | Kydera DR-880UV | Written from the hardware notes: analog FM and DMR receive, dual watch on the second SoC, settings on the SPI NAND and the host link build. Open: a first run on the radio, and transmit. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -641,6 +642,36 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
 
+## Radioddity GD-88
+
+A dual band handheld (136-174 and 400-480 MHz) with a 320x240 color display. It has two HR_C7000 chips. The first
+runs the display, keys, PTT, transmitter, GPS and FM broadcast receiver. The second is a second receiver that listens
+at the same time as the first, so both VFOs can receive at once. **In development:** RadioFoundry doesn't run on this radio
+yet and there is no release for it.
+
+When it is ready, the web installer will put the first chip's image on through the programming cable. The second
+chip's image follows on the same cable, as the installer's next step. The first time, the second chip still runs its
+original firmware, so the installer writes it in the radio's update mode (`IAP_B`). After that it goes through the
+first chip.
+
+To start the radio's update mode, turn it off and connect the programming cable. Hold **SK1** (the side key above **PTT**) and turn the radio
+on with the volume knob. When the LED lights red and the top line shows `IAP_A` or `IAP_B`, release **SK1**. Hold **SK1** to
+switch between them: `IAP_A` updates the first chip, `IAP_B` the second.
+
+### GD-88 keys
+
+| Key | Role |
+|---|---|
+| Left soft key (under the display) | **OK** |
+| Right soft key | **Back** |
+| Green | **A/B** |
+| Red | **VFO** |
+| Up, Down | **Up**, **Down** |
+| SK1 (the side key above **PTT**) | **Monitor**. Held at power-on, it starts the update mode |
+| SK2 (the side key below **PTT**) | Talk target |
+| SOS (the orange top key) | User key 3 |
+| **PTT** | **PTT** |
+
 ## Planned radios
 
 These radios aren't built in a release yet. An in-progress port is on its own branch. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
@@ -651,7 +682,6 @@ models it covers.
 |---|---|
 | TYT MD-9600, Retevis RT90 (mobile) | In progress ([#112](https://github.com/radiofoundry/radiofoundry/pull/112)). Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD. |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/radiofoundry/radiofoundry/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
-| Radioddity GD-88 | In progress ([#132](https://github.com/radiofoundry/radiofoundry/pull/132)). Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
 | Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | Planned. A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |
 | TYT MD-2017 / Retevis RT82 | Planned. The DM-1701's STM32 and HR_C6000 pair with two receivers, so it should reuse the STM32F4 platform. The hardware can receive two channels at once. |

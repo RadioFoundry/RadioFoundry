@@ -75,6 +75,7 @@
    ],
    "codec_tool": "hrc7000_codec",
    "codec_stock": [],
+   "codec_from": [],
    "codec": {
     "id": "db25d-018",
     "windows": [
@@ -257,6 +258,7 @@
     "2522008737d7845e43ab47a307d38498ee783c788a377fac855dff94dea53af0",
     "d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f"
    ],
+   "codec_from": [],
    "codec": {
     "id": null,
     "windows": null,
@@ -361,6 +363,7 @@
    "first_stage": null,
    "codec_tool": "hrc7000_codec",
    "codec_stock": [],
+   "codec_from": [],
    "codec": {
     "id": "dm1801pro-049",
     "windows": [
@@ -477,6 +480,7 @@
    "first_stage": null,
    "codec_tool": "hrc7000_codec",
    "codec_stock": [],
+   "codec_from": [],
    "codec": {
     "id": "dm32-049",
     "windows": [
@@ -532,6 +536,285 @@
      "area": 823296,
      "page_id": 2
     }
+   },
+   "build_options": [],
+   "cps_radio_types": []
+  },
+  "gd88": {
+   "id": "gd88",
+   "name": "Radioddity GD-88",
+   "model": "GD-88",
+   "part_of": null,
+   "platform": "hrc7000",
+   "platform_stubs": [],
+   "family": "serial-iap",
+   "link": "serial-cable",
+   "release": "testing",
+   "debuglink_names": [
+    "GD-88",
+    "gd88"
+   ],
+   "rom_base": 50331648,
+   "app_base": 50380800,
+   "flash_end": 51380224,
+   "app_region": [
+    50384896,
+    51281920
+   ],
+   "sectors": [
+    [
+     0,
+     50380800,
+     901120
+    ],
+    [
+     1,
+     51281920,
+     98304
+    ]
+   ],
+   "protected": [
+    [
+     50331648,
+     50380800
+    ]
+   ],
+   "protect": [
+    {
+     "mem": "progmem",
+     "start": 2084864,
+     "end": 2093056,
+     "what": "the display record and the factory calibration's program flash copy (hardware-gd88.md 7)"
+    },
+    {
+     "mem": "nand",
+     "start": 0,
+     "end": 131072,
+     "what": "the stock block map (LUT0) in physical block 0 (hardware-gd88.md 7, spi-nand-lut.md)"
+    },
+    {
+     "mem": "nand",
+     "start": 2621440,
+     "end": 3670016,
+     "what": "factory calibration, the NAND copy (logical 0x280000): physical block 20 plus one block up for each unusable block below it; up to 7 covered, as the web flasher's search (hardware-gd88.md 7: block 21 on the bench's A)"
+    },
+    {
+     "mem": "nand",
+     "start": 261881856,
+     "end": 268435456,
+     "what": "the stock firmware's spare pool, the top 10 usable blocks: blocks 1998-2047 hold them with up to 40 unusable blocks (hardware-gd88.md 7, spi-nand-lut.md)"
+    }
+   ],
+   "keep_codec_supported": false,
+   "first_stage": [
+    4096,
+    "2c1101c0"
+   ],
+   "codec_tool": "hrc7000_codec",
+   "codec_stock": [],
+   "codec_from": [],
+   "codec": {
+    "id": "gd88-2501",
+    "windows": [
+     [
+      51281920,
+      98304
+     ]
+    ],
+    "installed": [],
+    "sources": [
+     "GD-88 A B49E.D64.EOPSAB.013 to .021 update files",
+     "a program flash read of SoC A"
+    ]
+   },
+   "codec_code": 51281920,
+   "codec_slot": [
+    51281920,
+    51380224
+   ],
+   "codec_run": [
+    282112,
+    360448
+   ],
+   "codec_tables": [
+    402657796,
+    402670372
+   ],
+   "loader_id": null,
+   "loader_keys": null,
+   "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold SK1 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release SK1. It can take more than one try.",
+    "If the top line shows IAP_B, hold SK1 until it shows IAP_A."
+   ],
+   "stock_download": null,
+   "key_sha256": null,
+   "key_prefix": null,
+   "dfu_ids": null,
+   "dfu_string1": null,
+   "dfu_product": null,
+   "stub": {
+    "tool": "stubtool",
+    "id": 4,
+    "tested": false,
+    "latch": 45,
+    "key": 44,
+    "nand": true,
+    "progmem": 2097152,
+    "stock_console": "usmart",
+    "calibration": {
+     "progmem": 2088960,
+     "nand": 2621440,
+     "magic": "TUNE"
+    },
+    "leds": [
+     255,
+     255
+    ]
+   },
+   "build_options": [],
+   "cps_radio_types": [
+    6
+   ]
+  },
+  "gd88b": {
+   "id": "gd88b",
+   "name": "Radioddity GD-88 (second receiver)",
+   "model": "GD-88 receiver B",
+   "part_of": "gd88",
+   "platform": "hrc7000",
+   "platform_stubs": [],
+   "family": "serial-iap",
+   "link": "serial-cable",
+   "release": "testing",
+   "debuglink_names": [
+    "GD-88 B",
+    "gd88b"
+   ],
+   "rom_base": 50331648,
+   "app_base": 50380800,
+   "flash_end": 51380224,
+   "app_region": [
+    50384896,
+    51281920
+   ],
+   "sectors": [
+    [
+     0,
+     50380800,
+     901120
+    ],
+    [
+     1,
+     51281920,
+     98304
+    ]
+   ],
+   "protected": [
+    [
+     50331648,
+     50380800
+    ]
+   ],
+   "protect": [
+    {
+     "mem": "progmem",
+     "start": 2084864,
+     "end": 2093056,
+     "what": "SoC B: the display record and the factory calibration's program flash copy (hardware-gd88.md 7)"
+    },
+    {
+     "mem": "nand",
+     "start": 0,
+     "end": 131072,
+     "what": "SoC B: the stock block map (LUT0) in physical block 0 (hardware-gd88.md 7, spi-nand-lut.md)"
+    },
+    {
+     "mem": "nand",
+     "start": 2621440,
+     "end": 3670016,
+     "what": "SoC B: factory calibration, the NAND copy (logical 0x280000): physical block 20 plus one block up for each unusable block below it; up to 7 covered, as the web flasher's search (hardware-gd88.md 7: block 21 on the bench's A)"
+    },
+    {
+     "mem": "nand",
+     "start": 261881856,
+     "end": 268435456,
+     "what": "SoC B: the stock firmware's spare pool, the top 10 usable blocks: blocks 1998-2047 hold them with up to 40 unusable blocks (hardware-gd88.md 7, spi-nand-lut.md)"
+    }
+   ],
+   "keep_codec_supported": false,
+   "first_stage": [
+    4096,
+    "2c1101c0"
+   ],
+   "codec_tool": "hrc7000_codec",
+   "codec_stock": [],
+   "codec_from": [
+    "gd88"
+   ],
+   "codec": {
+    "id": "gd88b-2501",
+    "windows": [
+     [
+      51281920,
+      98304
+     ]
+    ],
+    "installed": [],
+    "sources": [
+     "GD-88 A B49E.D64.EOPSAB.013 to .021 update files (the A file, as for SoC A)",
+     "a program flash read of SoC A",
+     "GD-88 B B49C.D64.EHRNAB.005 to .012 update files"
+    ]
+   },
+   "codec_code": 51281920,
+   "codec_slot": [
+    51281920,
+    51380224
+   ],
+   "codec_run": [
+    282112,
+    360448
+   ],
+   "codec_tables": [
+    402656064,
+    402670372
+   ],
+   "loader_id": null,
+   "loader_keys": null,
+   "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold SK1 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release SK1. It can take more than one try.",
+    "If the top line shows IAP_A, hold SK1 until it shows IAP_B."
+   ],
+   "stock_download": null,
+   "key_sha256": null,
+   "key_prefix": null,
+   "dfu_ids": null,
+   "dfu_string1": null,
+   "dfu_product": null,
+   "stub": {
+    "tool": "stubtool",
+    "id": 5,
+    "tested": false,
+    "latch": 255,
+    "key": 255,
+    "nand": true,
+    "progmem": 2097152,
+    "stock_console": null,
+    "calibration": {
+     "progmem": 2088960,
+     "nand": 2621440,
+     "magic": "TUNE"
+    },
+    "leds": [
+     16,
+     49
+    ],
+    "uart": 336134144,
+    "bridge": true
    },
    "build_options": [],
    "cps_radio_types": []
@@ -650,6 +933,7 @@
     "0897e946bb123a5942f1458d3d2be8f759befe769c6aeaad4fe093ad3a40ac01",
     "0c954b0fa8426352cf9c99544be4811115f4102fc4ae491269d1cdaef3edd54a"
    ],
+   "codec_from": [],
    "codec": {
     "id": null,
     "windows": null,
@@ -852,6 +1136,7 @@
     "bf98dc6ca9d888712924af75dd5eff7495de4ab82848f0701616e29eb9d5e5a2",
     "e6c696a3f1a6ac3d622559d7422efc97399b748aac8923a7440239b28c03a5c1"
    ],
+   "codec_from": [],
    "codec": {
     "id": null,
     "windows": null,

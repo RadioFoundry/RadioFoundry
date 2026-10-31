@@ -955,6 +955,24 @@ function radioView() {
 		S.task === "help" ? null : h("p", { class: "small muted detect" }, t("flash.radio.detect_hint"), " ", detect), status);
 }
 
+// A radio's second chip (radios.json flash.second, a board that is part_of this one): its own image, board and flash
+// entry, reached through RadioFoundry on the first chip (c7000ui.js), so it is installed as a radio of its own with the first
+// one's other data
+function secondRadio(r) {
+	const s = r?.flash.second;
+	return s ? { ...r, id: s.board, name: t("flash.second.name", { name: r.name }), second_of: r.id,
+		flash: { ...s, via: r.flash.board } } : null;
+}
+
+async function installSecond() {
+	const r = secondRadio(S.radio);
+	if (!r) return;
+	selectRadio(r);
+	S.task = "install";
+	S.step = 1;
+	render();
+}
+
 // A radio card's hardware variants (board.toml [hardware] variants): which codes are supported, which in development,
 // which not yet; nothing for a radio that lists none
 function variantLines(r) {
@@ -2454,10 +2472,16 @@ function answers(items, pick, chosen = null) {
 			h("strong", {}, title), text ? h("span", { class: "small muted" }, text) : null)));
 }
 
+// A symptom's title and text; the update-mode one describes the screen, in the radio's own form (recovery.iapSuffix)
+function symptomText(id) {
+	const k = id === "iap" ? `${id}${backend().recovery.iapSuffix?.(S.radio) || ""}` : id;
+	return [t(`flash.help.s.${k}`), t(`flash.help.s.${k}_text`)];
+}
+
 function symptomView() {
 	S.forward(null);
 	return h("div", { class: "flasher" }, reassure(),
-		panel(t("flash.help.symptom_title"), answers(symptoms().map((id) => [id, t(`flash.help.s.${id}`), t(`flash.help.s.${id}_text`)]),
+		panel(t("flash.help.symptom_title"), answers(symptoms().map((id) => [id, ...symptomText(id)]),
 			(id) => { S.help = { symptom: id, stage: id === "dark" ? "battery" : id === "iap" ? "fix" : ["stuck", "stopped"].includes(id) ? backend().recovery.first : "fix" }; next(); })));
 }
 
@@ -2649,13 +2673,13 @@ async function main() {
 		return;
 	}
 	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, flashMark, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
-		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
-	// #sim=<board>[-stock|-romfail|-slowcable|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
+		installSecond, stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
+	// #sim=<board>[-stock|-romfail|-slowcable|-openfw|-openfw-nocodec][-bstock]: that board, running RadioFoundry, its stock firmware or another
 	// open firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file
 	// fallback); -romfail: an HR_C7000 radio on stock firmware whose boot ROM refuses the load, for the factory update
 	// mode; -slowcable: one on a cable too slow for the boot ROM's answer window, which the answer sent ahead gets through; #sim: the first
-	// radio on stock firmware
-	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-romfail|-slowcable|-openfw(?:-nocodec)?)?)?(?:&|$)/);
+	// radio on stock firmware. -bstock: a second receiver behind it (flash.second) still on its original firmware
+	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-romfail|-slowcable|-openfw(?:-nocodec)?)?(-bstock)?)?(?:&|$)/);
 	const simRadio = simAsk && (simAsk[1] ? S.data.radios.find((r) => r.id === simAsk[1]) : S.data.radios[0]);
 	const simOpen = !!simAsk?.[2]?.startsWith("-openfw") && openfw.supported(S.data.fb.boards[simRadio?.flash.board]);
 	const simStock = !!simAsk && (!simAsk[1] || (!!simAsk[2] && !simOpen));
@@ -2663,12 +2687,15 @@ async function main() {
 		// on its cable: stock firmware (a stock console answers if the board has one), or RadioFoundry with the stub hand-over
 		const board = simRadio.id;
 		const sim = await c7000Simulation(S.data.fb.c7000, board, 7000, simRadio);
-		S.sim = { fb: { ...S.data.fb, c7000: sim.c } };
+		// a second receiver behind RadioFoundry on it (flash.second): its own flash, with its own codec build
+		const second = simRadio.flash.second;
+		const simB = second ? await c7000Simulation(sim.c, second.board, 7001) : null;
+		S.sim = { fb: { ...S.data.fb, c7000: (simB || sim).c } };
 		// -slowcable: the radio's own 48 ms window, and a cable that takes 80 ms
 		const slow = simAsk[2] === "-slowcable";
 		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: slow ? 48 : 600,
 			faults: { silentAfterReset: true, romNak: simAsk[2] === "-romfail", slowCable: slow ? 80 : 0 },
-			...fakeC7000Options(simRadio, S.data.fb) });
+			...fakeC7000Options(simRadio, S.data.fb), ...(simB ? { rx2: { progmem: simB.progmem, stock: !!simAsk[3] } } : {}) });
 		if (!simStock) {
 			const img = randomBytes(rng(98), 180 * 1024);
 			img.set(new TextEncoder().encode("RadioFoundry"), 0x1000);

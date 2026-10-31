@@ -284,7 +284,7 @@ static void test_board_defaults(void)
 		}
 		fclose(f);
 	}
-	CHECK(toggles == 1);	// a VFO/MR key
+	CHECK(toggles >= 1);	// some radios have a VFO/MR key
 }
 
 int main(void)

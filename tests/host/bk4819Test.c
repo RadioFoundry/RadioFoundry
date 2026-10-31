@@ -380,6 +380,11 @@ static void test_sequences(void)
 	chips[0].n = 0;
 	bk4819_tone_start(&m, 1000, 200);
 	CHECK(c->n == 3 && c->log[0].reg == 0x70 && c->log[0].val == 0xFF00 && c->log[1].reg == 0x71 && c->log[1].val == 10324);
+	// The tone's deviation: 0x40 bits 11:0, bits 15:12 as stock (the stop below puts 0x34A8 back)
+	chips[0].n = 0;
+	bk4819_tone_deviation(&m, 0x423);
+	bk4819_tone_deviation(&m, 0x1FFF);
+	CHECK(c->n == 2 && c->log[0].reg == 0x40 && c->log[0].val == 0x3423 && c->log[1].val == 0x3FFF);
 	// Hz x 10.3244 truncated: 487 Hz (a Morse tone) is 5027, where subaudio_tone_word()'s x 10.32444 gives 5028
 	chips[0].n = 0;
 	bk4819_tone_start(&m, 487, 200);
@@ -583,6 +588,27 @@ static void test_dmr_tx(void)
 	CHECK(chips[0].protocol_errors == 0 && chips[1].protocol_errors == 0);
 }
 
+// GPIO on register 0x33: data bit 6 - pin, output-disable bit 14 - pin; the other pins' bits are kept (the GD-88's
+// band path: VHF = GPIO5 high / GPIO4 low on the LO chip)
+static void test_gpio(void)
+{
+	reset_chips();
+	bk4819_t l;
+	bk4819_attach(&l, lo_bus());
+	chip_t *c = &chips[1];
+	c->regs[0x33] = 0x0606;		// GPIO4, GPIO5 outputs disabled, both data bits set
+	bk4819_gpio(&l, 5, true);
+	CHECK(c->regs[0x33] == 0x0406);
+	bk4819_gpio(&l, 4, false);
+	CHECK(c->regs[0x33] == 0x0002);
+	bk4819_gpio(&l, 4, true);
+	bk4819_gpio(&l, 5, false);
+	CHECK(c->regs[0x33] == 0x0004);
+	bk4819_gpio(&l, 7, true);	// no such pin: nothing written
+	CHECK(c->regs[0x33] == 0x0004);
+	CHECK(c->protocol_errors == 0);
+}
+
 int main(void)
 {
 	test_helpers();
@@ -591,6 +617,7 @@ int main(void)
 	test_sequences();
 	test_dmr_rx();
 	test_dmr_tx();
+	test_gpio();
 	if (failures) {
 		printf("bk4819Test: %d failures\n", failures);
 		return 1;

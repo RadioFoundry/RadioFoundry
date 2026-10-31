@@ -306,7 +306,7 @@ static bool label_clear(uint8_t i, uint32_t labeled, uint32_t left, int lx, int 
 			sat_label(ol, &o);
 			int ow = gfx_text_width(t, ol);
 			int olx = (left >> j) & 1u ? ox - dot - 1 - ow : ox + dot + 1, oly = oy - t->h / 2;
-			if (lx < olx + ow && olx < lx + lw && ly < oly + t->h && oly < ly + t->h)
+			if (lx <= olx + ow && olx <= lx + lw && ly <= oly + t->h && oly <= ly + t->h)	// a pixel apart
 				return false;
 		}
 	}

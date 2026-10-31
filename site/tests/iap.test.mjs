@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { equal, sha256, be32, concat } from "../static/js/flasher/bytes.js";
 import { stubImages, univFits, StubError } from "../static/js/flasher/stub.js";
 import * as c7 from "../static/js/flasher/c7000.js";
-import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS, STUB_WINDOW, stubTarget, UNKNOWN_BUILD } from "../static/js/flasher/usmart.js";
+import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS, STUB_WINDOW, stubTarget, UNKNOWN_BUILD, versionOf, buildsFor } from "../static/js/flasher/usmart.js";
 import {
 	Iap, iapPlan, readPacket, checkInstallImage as checkInstall, checkRestoreImage as checkRestore, trimTail, erasePacket,
 	IapError,
@@ -37,12 +37,14 @@ test("the DB25-D's data in the flasher tables", () => {
 	assert.equal(radio.flash.update_mode, "iap");
 	assert.deepEqual(FS, { size: 0x1000, head: "2c1101c0" });
 	assert.equal(radio.flash.read_rate, 46000);
-	// every build the stub goes in through is a stock version of the board, by which the page names it; every build
-	// known has its version string inside the application and its RAM copy in the console's RAM
-	for (const b of BUILDS.filter((x) => x.stub)) assert.equal(stockName(radio.flash, b.name), `909E.DBB.EARSAB.${b.name}`);
+	// every build the console route knows of this board's series is a stock version of it or an older build, the ones the
+	// stub goes in through by the board's names; every build known has its version string inside the application, and
+	// those whose RAM copy is known have it in the console's RAM
+	for (const v of radio.flash.stock_versions) assert.ok(BUILDS.some((b) => versionOf(b) === v), `the console knows ${v}`);
+	for (const b of buildsFor(radio.flash.stock_versions).filter((x) => x.stub)) assert.equal(stockName(radio.flash, b.name), `909E.DBB.EARSAB.${b.name}`);
 	for (const b of BUILDS) {
 		assert.ok(b.at >= 0x0300C000 && b.at < 0x03090000 && b.at % 4 === 0, b.date);
-		assert.ok(b.ram >= 0x18000000 && b.ram < 0x18001000 && b.ram % 4 === 0, b.date);
+		assert.ok(b.ram === undefined || (b.ram >= 0x18000000 && b.ram < 0x18001000 && b.ram % 4 === 0), b.date);
 	}
 	assert.equal(new Set(BUILDS.map((b) => b.date)).size, BUILDS.length);
 	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true });
@@ -245,6 +247,31 @@ test("USMART: the build comes from the version string; an unknown build is repor
 	assert.deepEqual([b.name, b.date, b.stub], ["018", "2025-01-21", true]);
 	r.progmem.fill(0x20, 0x79F30, 0x79F50);
 	assert.equal(await new Usmart(r.stream).build(), null);
+});
+
+test("GD-88: its main SoC's console build 021 is found by its own version string, and takes the stub as the DB25-D's", { timeout: 120000 }, async (t) => {
+	const { FakeC7000, c7000Simulation } = await import("../static/js/flasher/fakec7000.js");
+	const { Stub, patchUniv, boardLed } = await import("../static/js/flasher/stub.js");
+	const gd88 = json("radios.json").radios.find((x) => x.id === "gd88");
+	const sim = await c7000Simulation(C, "gd88", 7000, gd88);
+	assert.equal(stockVersion(sim.progmem, gd88.flash.stock_versions), "B49E.D64.EOPSAB.021");
+	assert.equal(stockVersion(sim.progmem, radio.flash.stock_versions), null, "not a DB25-D version");
+	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 50, bootTime: 50, board: "GD-88",
+		usmart: "021" });
+	t.after(() => r.stop());
+	r.powerOn();
+	await new Promise((ok) => setTimeout(ok, 300));
+	assert.equal((await new Usmart(r.stream, { versions: gd88.flash.stock_versions }).build())?.name, "021");
+	assert.equal(await new Usmart(r.stream, { versions: radio.flash.stock_versions }).build(), null,
+		"the DB25-D's builds are not looked for on a GD-88");
+	const image = patchUniv(stubImages(json("c7000-stub.json")).image, C.boards.gd88.stub_board);
+	await new Usmart(r.stream, { quiet: 2 }).loadStub(image);
+	assert.equal(r.state, "stub");
+	assert.ok(equal(r.loaded.subarray(0, image.length), image), "the patched image");
+	const s = new Stub(r.stream, { log: () => {} });
+	await s.helloWithin(3000, "no stub");
+	await s.configure(C.boards.gd88.stub_board, boardLed(C, "gd88"));
+	assert.equal(r.stubCfg.board, 4);
 });
 
 test("USMART: the version comes from its RAM copy, which carries the variant the flash copy leaves out", async (t) => {

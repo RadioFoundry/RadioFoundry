@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include "hal_system.h"
 #include "hal_flash.h"
 #include "hal_input.h"
@@ -45,6 +46,7 @@
 #define UART0_BASE		0x14030000u
 #define UART1_BASE		0x14040000u
 #define UART2_BASE		0x14050000u
+#define UART3_BASE		0x14090000u	// a link between two SoCs on one board (link_uart.c)
 #define SPI0_BASE		0x140A0000u
 #define SPI2_BASE		0x140E0000u
 #define PWM_BASE		0x140C0000u
@@ -275,6 +277,10 @@ void hrc_timer_oneshot(uint8_t n, uint32_t us);
 void hrc_timer_stop(uint8_t n);
 // Periodic: an interrupt every us microseconds until hrc_timer_stop (the handler reads EOI)
 void hrc_timer_periodic(uint8_t n, uint32_t us);
+// The AFSK symbol clock on timer 4 (afsk_tonegen.h's timer hooks): fn every us from its interrupt, until the stop.
+// Not with hrc_afsk.c, which has timer 4 for its FIFO
+void hrc_symbol_timer_start(uint32_t us, void (*fn)(void));
+void hrc_symbol_timer_stop(void);
 // Clear a timer's interrupt (read EOI)
 static inline void hrc_timer_ack(uint8_t n)
 {
@@ -378,6 +384,27 @@ void hrc_uart_setup(uint32_t base, uint32_t baud);
 void hrc_uart_rx_irq(uint32_t base, bool on);
 void hrc_uart_rx_clear(uint32_t base);	// drain the RX FIFO, clear line status and busy-detect
 uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged));
+bool hrc_uart_poll_rx(uint32_t base, uint8_t *c);	// a character waiting: taken. No interrupts needed
+bool hrc_uart_poll_tx(uint32_t base, uint8_t c);	// false: the TX FIFO is full
+// Write through the TX FIFO: a task with interrupts on sleeps a tick while it is full, other callers spin. A FIFO full
+// for 20 ticks (or the spin limit) counts a stall and ends the write; returns the bytes written
+size_t hrc_uart_write(uint32_t base, const uint8_t *buf, size_t len, volatile uint32_t *stalls);
+
+// A link to another SoC on a UART (link_uart.c), on a board with two SoCs. Receive by
+// interrupt into a ring, transmit by polling the TX FIFO; one writer at a time (the caller serializes). The board muxes
+// the pins first. read takes what has come (never waits); wait blocks the calling task until a byte is there or
+// timeout_ms passes (true: bytes waiting)
+typedef struct {
+	uint32_t rx_bytes, tx_bytes;
+	uint32_t overruns;	// bytes lost because the ring was full
+	uint32_t line_errors;	// characters the UART flagged
+	uint32_t tx_stalls;	// writes cut short: the TX FIFO stayed full
+} hrc_link_uart_stats_t;
+void hrc_link_uart_init(uint32_t base, uint8_t irq, uint32_t baud);
+size_t hrc_link_uart_read(uint8_t *buf, size_t max);
+bool hrc_link_uart_wait(uint32_t timeout_ms);
+size_t hrc_link_uart_write(const uint8_t *buf, size_t len);
+void hrc_link_uart_stats(hrc_link_uart_stats_t *st);
 
 // A GPS module's NMEA output on one of the UARTs, 9600 8N1, receive only (gps_hrc.c; hardware-dm32.md 12, hardware-db25d.md
 // 3.1). The module is powered and listened for for 5 s at start-up; one checksum-valid sentence makes it present (and

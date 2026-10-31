@@ -69,7 +69,10 @@ MCU_DEFS += $(OPTION_DEFS)
 BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))$(OPTION_SUFFIX)
 TARGET := $(BUILD)/rfoundry_$(BOARD)$(OPTION_SUFFIX)
 
-CORE_DIRS := core/app core/radio core/ui core/input core/codeplug core/settings core/storage
+# The radio core every radio runs. A board that runs none of it (a receiver-only second SoC with its own start-up in
+# its board directory, boards/gd88b) sets CORE_BASE_DIRS empty in its board.mk
+CORE_BASE_DIRS ?= core/app core/radio core/ui core/input core/codeplug core/settings core/storage
+CORE_DIRS := $(CORE_BASE_DIRS)
 ifeq ($(CONFIG_DMR),y)
 CORE_DIRS += core/dmr/call core/dmr/ambe core/dmr/fec
 endif
@@ -100,6 +103,8 @@ endif
 ifeq ($(CONFIG_CRASH_LOG),y)
 CORE_DIRS += core/crash
 endif
+# Core directories only some boards use (BOARD_CORE_DIRS in their board.mk: core/rx2 on a radio with two SoCs)
+CORE_DIRS += $(BOARD_CORE_DIRS)
 # The storage layer over SPI NAND, for the boards that list it (BOARD_NAND_DIRS in their board.mk)
 ifeq ($(CONFIG_NAND_STORAGE),y)
 BOARD_DIRS += $(BOARD_NAND_DIRS)
@@ -195,8 +200,11 @@ ifneq ($(CONFIG_DEBUGLINK),y)
 APP_SRC += core/debuglink/dl_fmt.c
 endif
 endif
+# Single core files a board takes without their whole directory (BOARD_CORE_FILES in its board.mk: the debug link's
+# text, log and crash view files for a second SoC's server, which runs without the debug link)
+APP_SRC += $(sort $(filter-out $(APP_SRC),$(BOARD_CORE_FILES)))	# after every other list: none twice
 
-INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC)
+INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) $(addprefix -I,$(BOARD_INC)) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC)
 
 # Firmware version: the commit, with -dirty when tracked files differ from it or untracked sources sit in the built
 # directories (both end up in the image). Only the files that use RFOUNDRY_GIT or RFOUNDRY_RELEASE get it, through

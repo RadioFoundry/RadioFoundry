@@ -128,6 +128,16 @@ typedef struct {
 enum { DMR_BS_CACH_NONE, DMR_BS_CACH_OURS, DMR_BS_CACH_CHIP, DMR_BS_CACH_UNKNOWN };
 #endif
 
+// The second transmitter's state (tx_split_stats), for the debug view
+typedef struct {
+	bool ready;		// the other transmitter is armed and in the role: a transmission begun now goes out there
+	bool remote;		// the transmission begun last went out there
+	uint32_t events;	// its events heard back
+	uint32_t bursts;	// bursts sent to it
+	uint32_t ends_forced;	// transmissions ended here because it went quiet
+	uint32_t fallbacks;	// splits given up (never ready): this modem transmitted instead
+} dmr_split_stats_t;
+
 typedef struct {
 	// Chip on and in DMR mode (after the board's RF side is in DMR mode); events start flowing to cb
 	bool (*start)(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx);
@@ -151,6 +161,12 @@ typedef struct {
 	// entries come after it, -1 when none is left (an SFR's repeat then goes out 90 ms after the inbound burst instead
 	// of behind the placeholders queued for the gap)
 	int8_t (*tx_fill)(const dmr_tx_burst_t *b);
+	// Optional (NULL: one transmitter). A radio with a second transmitter (another SoC's): on, the transmissions begun
+	// from here go out on that one while this modem goes on receiving, so the receiver never turns around for our
+	// bursts (an SFR's repeat, sfr.md 3 item 7). The tx_* calls and their events are the same. False: no second
+	// transmitter now (down). Off: back to this modem's own
+	bool (*tx_split)(bool on);
+	void (*tx_split_stats)(dmr_split_stats_t *s);	// optional, with tx_split
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 	// Split duplex (docs/spec/split-duplex.md), all optional (NULL: the driver can't; the role is not offered).
 	// The modem clock: free-running microseconds (wraps), the clock slot_clock is stamped in. RX half and TIME

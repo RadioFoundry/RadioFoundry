@@ -37,7 +37,7 @@ on the radio`, any of the three. The README marks each ◐ until the board merge
 | TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG | HR_C6000 | 2x SKY72310 (V1-V3), "PLL1590" (V4), LMX2571 (V4A/V5, unverified) PLLs; AK2365A IF x2 on V1-V4 | 128x64 mono, ST7567 | 25Q128FV, 16 MB | optional, JS-M710 (unverified) | USB DFU on the MCU | In progress, #112, builds, host tests. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
 | TYT MD-380 / MD-390, Retevis RT3 | STM32F405VGT6 (unverified) | HR_C5000 (unverified) | SKY72310 PLL + GT3136 receiver (unverified) | 160x128 color, HX8302A (unverified, controller ?) | W25Q128FV 16 MB; some early VHF 1 MB (unverified) | optional "G" models (unverified, module ?) | USB DFU, encrypted images (unverified) | Supported ([md380-bringup.md](../testing/md380-bringup.md)) |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | NXP MK22FN512 (unverified) | HR_C6000 (unverified) | AT1846S (unverified) | 128x64 mono, UC1701 (unverified) | 25Q80BV 1 MB + AT24C512 64 KB EEPROM (unverified) | none (unverified) | USB HID bootloader, .sgl files (unverified) | In progress, #111, builds, host tests, on the radio. A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated |
-| Radioddity GD-88 | HR_C7000 class SoC (unverified) | HR_C7000 (unverified) | ? (two transceivers, unverified) | 2" color TFT, controller ? | ? | yes, module ? | Radioddity updater over K-plug cable | In progress, #132, builds, host tests. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port |
+| Radioddity GD-88 | two HR_C7000 class SoCs, A and B | HR_C7000 on each SoC | an RF pair on each SoC, BK4819 likely | 320x240 color, 8080 bus, four init variants | SPI NAND on each SoC; 2 MB program flash each | yes, on SoC A, module ? | IAP loader over the K-plug cable | Bring-up ([gd88-bringup.md](../testing/gd88-bringup.md)) |
 | Baofeng DM-32UV | HR_C7000 SoC, C-SKY CK803S core (unverified) | HR_C7000 (unverified) | FD6818 (unverified) | 240x320 color, ST7789 class | 16 MB data flash (unverified); program flash size ? | yes, ATGM336H | Baofeng bootloader over UART cable (unverified) | Supported ([dm32-bringup.md](../testing/dm32-bringup.md)) |
 | Baofeng DM-1801 Pro, DM-1801 (current) | HR_C7000 class SoC (the HR_C7000 from the FCC photo; the MCU part ?) | HR_C7000 (FCC photo) | ? | 1.77", type and controller ? | ? | none | ? | Supported ([dm1801pro-bringup.md](../testing/dm1801pro-bringup.md)) |
 | Baofeng DR-1801 / DR-1801UV | ? (inside the AM6102 module ?) | Auctus AM6102 module (FCC photo) | ? | ? | ? | ? | ? | Not planned. Looks like a DM-1801 |
@@ -172,9 +172,10 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - Shares a CPS with the Retevis RT73 / Kydera CDR-300UV / Radioddity DB25-D and DB40-D, which points to one OEM
   platform (unverified) ([codeplugs.rats.net](https://codeplugs.rats.net/help/cps)).
 - Programming and updates go over a USB-serial cable (FTDI-class chip in the cable) into the K1 jack, to SoC A's
-  UART1 at 115200. The radio has no USB port ([hardware-gd88.md](hardware-gd88.md)).
-- **RadioFoundry:** reuses `platform/hrc7000` and `drivers/modem/hrc7000` from the DM-32UV. New: the RF chip(s), the display,
-  and core support for two simultaneous receivers if the hardware really has two independent DMR paths.
+  UART1 at 115200. The radio has no USB port, and neither stock image uses the HR_C7000 USB core ([hardware-gd88.md](hardware-gd88.md)).
+- **RadioFoundry:** in development (`make BOARD=gd88`, `boards/gd88`). It reuses `platform/hrc7000` and `drivers/modem/hrc7000`
+  from the DM-32UV. New: the RF chip(s), the display, and core support for two simultaneous receivers (SoC B is a real
+  second receiver; the link is in [rx2-link.md](rx2-link.md)). Not yet run on a radio.
 
 ### Baofeng DM-32UV
 

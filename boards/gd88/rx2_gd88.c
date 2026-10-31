@@ -1,0 +1,424 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+// GD-88 SoC A: SoC B as the second receiver (hal_rx2_t, docs/spec/rx2-link.md) over UART3 at 115200 (PTA13 / PTA14).
+// The link's main side is core/rx2/rx2_link.c; this file moves its bytes, runs it from a task of its own, and routes
+// B's audio to the speaker. Text B sends (RX2_LOG) goes to the debug link's log.
+//
+// A's status LEDs are on B too: led() sends them over the link (RX2_LED). So is A's PA (hardware-gd88.md 10):
+// gd88_pa_arm() hands B the drive and delays before a transmission (RX2_TX) and waits for B to take them; B then keys
+// the PA on A's TX line.
+//
+// B's update route (rx2-link.md 4): bridge() sends B to its first stage, then copies bytes between the PC cable
+// (UART1) and the link (UART3) in a polled loop with interrupts off and the transmitter off, until the host sends the
+// exit sequence (4.1) or has been quiet 10 s (90 s if it never sent anything), then restarts A. Not a break: the
+// cable's RX line is also the PTT line, so a press or a loose plug would end a write half done.
+//
+// B's debug link server (rx2-link.md 2.3): forward() sends one command over the link and waits for the reply, which
+// the link task collects.
+//
+// B as the second DMR transmitter (CONFIG_SFR, core/rx2/rx2_dmr.h): gd88_dmr is the modem the core gets, hrc_dmr with
+// the transmit calls sent to B while an SFR's split is on. B's events come back through the link task.
+#include <string.h>
+#include "gd88.h"
+#include "gd88_rf.h"
+#include "config.h"
+#include "pins.h"
+#include "platform.h"
+#include "hal_time.h"
+#include "rx2/rx2_link.h"
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+#include "rx2/rx2_dmr.h"
+#endif
+#include "debuglink/dlog.h"
+#include "FreeRTOS.h"
+#include "semphr.h"
+#include "task.h"
+#if CONFIG_WATCHDOG
+#include "hal_watchdog.h"
+#endif
+
+#define LINK_BAUD		115200u
+#define DIPLEX0_UART3		0x6000u		// IO_DIPLEX0 bits 13 / 14 set: UART3 on PTA13 / PTA14
+#define TASK_STACK		256		// words
+#define TASK_PRIORITY		2
+#define POLL_MS			20u
+#define STUB_SEND_MS		20u		// the STUB frame (11 bytes, 1 ms on the wire) leaves the FIFO
+#define BRIDGE_HOST_QUIET_MS	10000u
+#define BRIDGE_NO_HOST_MS	90000u
+#define BRIDGE_RING		256u		// power of two, per direction
+#define BRIDGE_FEED_MS		500u
+#define FORWARD_WAIT_MS		1500u		// the link times the request out at RX2_DL_TIMEOUT_MS; this is a backstop
+#define FORWARD_POLL_MS		2u
+#define PA_ARM_WAIT_MS		150u		// RX2_TX and its ACK: 2 ms on the wire, the rest B's task
+#define SPK_HOLD_MS		1000u		// the speaker switch stays closed this long after the last sound: key beeps
+						// and squelch tails in a row don't each wait for it
+
+static rx2_main_t link;
+static SemaphoreHandle_t lock;
+static TaskHandle_t task;
+
+static void send(const uint8_t *buf, uint16_t len)
+{
+	hrc_link_uart_write(buf, len);
+}
+
+static void take(void)
+{
+	xSemaphoreTake(lock, portMAX_DELAY);
+}
+
+static void give(void)
+{
+	xSemaphoreGive(lock);
+}
+
+// After a frame completes, the parser still holds it: RX2_LOG text goes to the log
+static void log_frame(void)
+{
+	const rx2_parser_t *p = &link.parser;
+	char line[48];
+	uint8_t n = p->len < sizeof(line) - 1u ? p->len : (uint8_t)(sizeof(line) - 1u);
+	memcpy(line, p->buf, n);
+	line[n] = '\0';
+	dlog("rx2: %s", line);
+}
+
+static void task_fn(void *arg)
+{
+	(void)arg;
+	uint8_t buf[32];
+	uint32_t polled = 0, spk_ms = 0;
+	bool spk_hold = false;
+	for (;;) {
+		hrc_link_uart_wait(POLL_MS);
+		size_t n;
+		while ((n = hrc_link_uart_read(buf, sizeof(buf))) != 0) {
+			take();
+			for (size_t i = 0; i < n; i++) {
+				uint32_t frames = link.frames;
+				rx2_main_rx(&link, buf[i], hal_millis());
+				if (link.frames != frames && link.parser.type == RX2_LOG) {
+					log_frame();
+				}
+			}
+			give();
+		}
+		uint32_t now = hal_millis();
+		if (gd88_path_speaker_wanted()) {
+			spk_ms = now;
+			spk_hold = true;
+		} else if (spk_hold && now - spk_ms >= SPK_HOLD_MS) {
+			spk_hold = false;
+		}
+		if (spk_hold != link.speaker) {
+			take();
+			rx2_main_speaker(&link, spk_hold);
+			give();
+		}
+		if (now - polled >= POLL_MS) {
+			polled = now;
+			uint32_t hz;
+			bool on = gd88_path_wanted(&hz);
+			take();
+			rx2_main_path(&link, on, hz);
+			rx2_main_poll(&link, now);
+			bool up = link.up;
+			give();
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+			rx2_dmr_main_poll(up, now);
+#else
+			(void)up;
+#endif
+		}
+	}
+}
+
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+hal_dmr_modem_t gd88_dmr;
+
+// From the link task, the lock held
+static void dmr_ev(const uint8_t *p, uint8_t len)
+{
+	rx2_dmr_main_event(p, len, hal_millis());
+}
+
+static bool dmr_send(const uint8_t *p, uint8_t len)
+{
+	if (lock == NULL) {
+		return false;
+	}
+	take();
+	bool ok = rx2_main_dmr(&link, p, len);
+	give();
+	return ok;
+}
+#endif
+
+void gd88_rx2_init(void)
+{
+	if (lock == NULL) {
+		lock = xSemaphoreCreateMutex();
+	}
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+	static const rx2_dmr_main_cfg_t dmr_cfg = { &hrc_dmr, dmr_send, gd88_dmr_split, gd88_dmr_listen };
+	rx2_dmr_main_init(&dmr_cfg, &gd88_dmr);
+#endif
+	uint32_t s = hrc_irq_save();
+	IO_DIPLEX0 |= DIPLEX0_UART3;
+	hrc_irq_restore(s);
+	rx2_main_init(&link, send);
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+	link.dmr_ev = dmr_ev;
+#endif
+	hrc_link_uart_init(UART3_BASE, IRQ_UART3, LINK_BAUD);
+	if (task == NULL) {
+		xTaskCreate(task_fn, "rx2", TASK_STACK, NULL, TASK_PRIORITY, &task);
+	}
+}
+
+static bool tune(const rx2_tune_t *t)
+{
+	take();
+	bool ok = rx2_main_tune(&link, t, hal_millis());
+	give();
+	return ok;
+}
+
+static void stop(void)
+{
+	take();
+	rx2_main_stop(&link);
+	give();
+	gd88_audio_b(false, false);
+}
+
+// Never waits on the link: the copy is taken under the lock, which the task holds only for a few bytes
+static void status(rx2_status_t *st)
+{
+	take();
+	rx2_main_status(&link, st);
+	give();
+}
+
+static void audio(bool on)
+{
+	take();
+	rx2_main_audio(&link, on, gd88_radio_volume());
+	bool up = link.up;
+	bool dmr = link.tune.mode == RADIO_MODE_DMR;
+	give();
+	gd88_audio_b(on && up, dmr);
+}
+
+// A's status LEDs, which are wired to B: LED 1 (PTA16 on B) for TX, LED 2 (PTB17) for receive
+void gd88_rx2_led(uint8_t which, bool on)
+{
+	if (lock == NULL) {
+		return;
+	}
+	uint8_t b = (uint8_t)(1u << (which == LED_RED ? 0 : 1));
+	take();
+	rx2_main_led(&link, on ? (uint8_t)(link.leds | b) : (uint8_t)(link.leds & ~b));
+	give();
+}
+
+#if CONFIG_STUB_ENTRY
+// board.stub_entering: A's stub has no LEDs and no link, so B blinks them until A's next start says hello
+void gd88_rx2_stub_entering(void)
+{
+	if (lock == NULL) {
+		return;
+	}
+	take();
+	rx2_main_led(&link, RX2_LED_STUB);
+	give();
+}
+#endif
+
+static size_t forward(const uint8_t *req, uint8_t len, uint8_t *out, size_t cap)
+{
+	take();
+	bool sent = rx2_main_dl_send(&link, req, len, hal_millis());
+	give();
+	if (!sent) {
+		return 0;
+	}
+	uint32_t start = hal_millis();
+	for (;;) {
+		vTaskDelay(pdMS_TO_TICKS(FORWARD_POLL_MS));
+		size_t n = 0;
+		take();
+		uint8_t st = link.dl_state;
+		if (st == RX2_DL_WAIT && hal_millis() - start >= FORWARD_WAIT_MS) {
+			st = RX2_DL_FAILED;
+		}
+		if (st == RX2_DL_DONE) {
+			n = link.dl_len < cap ? link.dl_len : cap;
+			memcpy(out, link.dl_reply, n);
+		}
+		if (st != RX2_DL_WAIT) {
+			link.dl_state = RX2_DL_IDLE;
+		}
+		give();
+		if (st != RX2_DL_WAIT) {
+			return n;
+		}
+	}
+}
+
+#if GD88_TX
+bool gd88_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
+{
+	if (lock == NULL) {
+		return false;
+	}
+	take();
+	bool sent = rx2_main_tx(&link, hz, pa, on_us, off_us);
+	give();
+	if (!sent) {
+		return false;
+	}
+	for (uint32_t t = 0; t < PA_ARM_WAIT_MS; t += FORWARD_POLL_MS) {
+		vTaskDelay(pdMS_TO_TICKS(FORWARD_POLL_MS));
+		take();
+		bool ok = link.tx_acked;
+		give();
+		if (ok) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Not waited for: B also stops keying when A's TX line stays low, and HELLO_REQ disarms it
+void gd88_pa_disarm(void)
+{
+	if (lock == NULL) {
+		return;
+	}
+	take();
+	rx2_main_tx(&link, 0, 0, 0, 0);
+	give();
+}
+#endif
+
+static void restart(void)
+{
+	take();
+	rx2_main_command(&link, RX2_RESET);
+	give();
+}
+
+// The bridge's rings: one per direction, so neither side's FIFO filling stalls the other
+typedef struct {
+	uint8_t b[BRIDGE_RING];
+	uint32_t head, tail;
+} ring_t;
+
+static ring_t to_b, to_host;
+
+static void ring_put(ring_t *r, uint8_t c)
+{
+	uint32_t next = (r->head + 1u) & (BRIDGE_RING - 1u);
+	if (next != r->tail) {
+		r->b[r->head] = c;
+		r->head = next;
+	}
+}
+
+static void ring_drain(ring_t *r, uint32_t base)
+{
+	while (r->tail != r->head && hrc_uart_poll_tx(base, r->b[r->tail])) {
+		r->tail = (r->tail + 1u) & (BRIDGE_RING - 1u);
+	}
+}
+
+static void bridge(void) __attribute__((noreturn));
+static void bridge(void)
+{
+	// A receiver that can't reach its stage's long window (one installed before RX2_HELLO_STAY) restarts instead: its
+	// stage then offers the handshake ten times at start-up, at the right speed, and the host is already listening
+	take();
+	rx2_main_command(&link, (link.flags & RX2_HELLO_STAY) ? RX2_STUB : RX2_RESET);
+	give();
+	hal_delay_ms(STUB_SEND_MS);
+
+	__asm__ volatile ("psrclr ie");		// interrupts off: the scheduler and every driver stop here
+	hrc_rf_safe();				// transmitter off: chain all zero, PTC20 low, PA drive off
+	PIC_MASK = 0xFFFFFFFFu;
+	PIC_MASK_1 = 0xFFFFFFFFu;
+	hrc_pin_force(PIN_SPK_AMP, false);
+
+	to_b.head = to_b.tail = 0;
+	to_host.head = to_host.tail = 0;
+	uint32_t start = hal_millis();
+	uint32_t host_ms = 0, fed = start;
+	bool host_seen = false;
+	rx2_exit_t ex;
+	rx2_exit_init(&ex, hal_micros());
+	uint8_t pass[RX2_EXIT_LEN + 1u];
+	for (;;) {
+		uint8_t c, n;
+		while (hrc_uart_poll_rx(UART1_BASE, &c)) {
+			n = rx2_exit_byte(&ex, c, hal_micros(), pass);
+			for (uint8_t i = 0; i < n; i++) {
+				ring_put(&to_b, pass[i]);
+			}
+			host_seen = true;
+			host_ms = hal_millis();
+		}
+		if (rx2_exit_idle(&ex, hal_micros(), pass, &n)) {
+			break;		// the host's exit sequence (rx2-link.md 4.1)
+		}
+		for (uint8_t i = 0; i < n; i++) {
+			ring_put(&to_b, pass[i]);
+		}
+		while (hrc_uart_poll_rx(UART3_BASE, &c)) {
+			ring_put(&to_host, c);	// B's bytes don't count: its handshake offers go on until the host answers
+		}
+		ring_drain(&to_b, UART3_BASE);
+		ring_drain(&to_host, UART1_BASE);
+		uint32_t now = hal_millis();
+		if (now - fed >= BRIDGE_FEED_MS) {
+			fed = now;
+#if CONFIG_WATCHDOG
+			hal_watchdog_feed();
+#endif
+		}
+		if (host_seen ? now - host_ms >= BRIDGE_HOST_QUIET_MS : now - start >= BRIDGE_NO_HOST_MS) {
+			break;
+		}
+	}
+	// What is still on its way out
+	for (uint32_t t = hal_millis(); hal_millis() - t < 50u;) {
+		ring_drain(&to_b, UART3_BASE);
+		ring_drain(&to_host, UART1_BASE);
+	}
+	hrc_soft_reset();
+}
+
+void gd88_rx2_diag(gd88_rx2_diag_t *d)
+{
+	take();
+	d->up = link.up;
+	d->version = link.version;
+	d->flags = link.flags;
+	d->fw = link.fw;
+	d->frames = link.frames;
+	d->bad = link.parser.bad;
+	d->tunes = link.tunes;
+	d->resent = link.resent;
+	d->st = link.st;
+	give();
+	hrc_link_uart_stats(&d->uart);
+}
+
+const hal_rx2_t gd88_rx2 = {
+	.tune = tune,
+	.stop = stop,
+	.status = status,
+	.audio = audio,
+	.bridge = bridge,
+	.restart = restart,
+	.forward = forward,
+};

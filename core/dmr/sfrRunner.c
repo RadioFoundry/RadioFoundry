@@ -126,12 +126,17 @@ void sfrRunnerStart(sfrRunner_t *r, const hal_dmr_modem_t *modem, const sfrConfi
 		r->up_ops = *up;
 	}
 	r->state = SFR_RUN_IDLE;
+	r->stats.tx_split = (modem->tx_split != NULL) && modem->tx_split(true);
 }
 
 void sfrRunnerStop(sfrRunner_t *r)
 {
 	if ((r->state == SFR_RUN_KEYED) || (r->state == SFR_RUN_ENDING)) {
 		r->modem->tx_abort();
+	}
+	if (r->stats.tx_split) {
+		r->modem->tx_split(false);
+		r->stats.tx_split = false;
 	}
 	r->state = SFR_RUN_OFF;
 	r->in_modem = 0;
@@ -468,7 +473,9 @@ static void rx_burst(sfrRunner_t *r, const dmr_burst_t *b, uint32_t now_ms)
 	// not our echo (HIL 2026-10-12: 2 of the bench's 8 headers repeated; the SFR glue never echo-checked them)
 	bool lc_copy = r->eng.rfCall && (s.kind == SFR_BURST_DATA) &&
 		       ((s.type == DT_VOICE_LC_HEADER) || (s.type == DT_TERMINATOR_WITH_LC));
-	if (!lc_copy && is_echo(r, &s, now_ms)) {
+	// The echo is the sending chip's (gotchas 14.2): with a second transmitter (tx_split) the receiving one sends nothing,
+	// and its repeat runs late enough that a call of silence matched its own copy from the superframe before
+	if (!lc_copy && !r->stats.tx_split && is_echo(r, &s, now_ms)) {
 		r->stats.rx_echo++;
 		return;
 	}

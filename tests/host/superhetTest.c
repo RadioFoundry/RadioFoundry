@@ -75,12 +75,12 @@ static void test_filled(void)
 		      m[i]->tone_on && m[i]->tone_key && m[i]->dtmf && m[i]->dmr_enter && m[i]->dmr_leave &&
 		      m[i]->dmr_tx_prepare && m[i]->burst);
 	}
-	const superhet_lo_ops_t *l[] = { &bk4819_superhet_lo, &fd6818sh_superhet_lo, &at1141_superhet_lo };
-	for (unsigned i = 0; i < 3; i++) {
+	const superhet_lo_ops_t *l[] = { &bk4819_superhet_lo, &fd6818sh_superhet_lo, &at1141_superhet_lo, &at1141_superhet_lo_restart };
+	for (unsigned i = 0; i < sizeof l / sizeof l[0]; i++) {
 		CHECK(l[i]->tune && l[i]->off && l[i]->resume);
 	}
 	CHECK(bk4819_superhet_main.gpio == NULL && fd6818sh_superhet_main.gpio != NULL);
-	CHECK(at1141_superhet_lo.gpio != NULL);
+	CHECK(at1141_superhet_lo.gpio != NULL && at1141_superhet_lo_restart.gpio != NULL);
 }
 
 static void test_fd6818_main(void)
@@ -182,6 +182,36 @@ static void test_at1141_lo(void)
 	CHECK(same(&off, &cur));
 }
 
+// The restart variant: every tune writes the whole tuning, off for TX, then the restart (with its wait)
+static void test_at1141_lo_restart(void)
+{
+	at1141_t a;
+	reset();
+	at1141_attach(&a, &bus);
+	superhet_lo_t lo = { &at1141_superhet_lo_restart, &a };
+	lo.ops->tune(lo.chip, 497550000u);
+	cur.n = 0;
+	lo.ops->tune(lo.chip, 497550000u);
+	wlog_t again = cur;
+	cur.n = 0;
+	at1141_tune(&a, 497550000u);
+	CHECK(same(&again, &cur) && a.lo_hz == 497550000u);
+
+	cur.n = 0;
+	lo.ops->off(lo.chip);
+	wlog_t off = cur;
+	cur.n = 0;
+	at1141_off(&a);
+	CHECK(same(&off, &cur));
+
+	cur.n = 0;
+	lo.ops->resume(lo.chip);
+	wlog_t on = cur;
+	cur.n = 0;
+	at1141_restart(&a);
+	CHECK(same(&on, &cur));
+}
+
 int main(void)
 {
 	test_filled();
@@ -189,6 +219,7 @@ int main(void)
 	test_fd6818_dmr_volume();
 	test_bk4819_main();
 	test_at1141_lo();
+	test_at1141_lo_restart();
 	printf("superhetTest: %d/%d checks passed\n", checks - failures, checks);
 	return failures != 0;
 }

@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "tools", "bench"))
 
 from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_ports, parse_counters,  # noqa: E402
-                       to_rgb, write_png, ACTIONS, PRESS, LONG)
+                       to_rgb, write_png, PRESS, LONG)
 
 
 # ── skips ───────────────────────────────────────────────────────────────────
@@ -55,6 +55,14 @@ def skip(kind, reason):
     e = pytest.skip.Exception(skip_reason(kind, reason))  # hil-skip: the helper
     e.kind = kind
     raise e
+
+
+def need_radio_tx(radio):
+    """Skip (not_built) when the radio can't transmit at all: its view's can_tx is 0 (no band may, a transmitter not
+    written yet). A test that also checks what the radio received calls this after those checks."""
+    __tracebackhide__ = True
+    if radio.view(["core"]).get("can_tx") == "0":
+        skip("not_built", "the radio can't transmit (can_tx 0: its transmitter isn't written yet)")
 
 
 def skip_mark(kind, reason):
@@ -163,6 +171,7 @@ class Radio:
         self.port = self.link.port
         self._version = None
         self._last_shot = 0.0
+        self._last_key = 0.0     # when this host last pressed a key (ensure_awake is asked only after a pause)
 
     def close(self):
         self.link.close()
@@ -180,6 +189,33 @@ class Radio:
                     break
                 except DebugLinkError:
                     time.sleep(0.25)
+
+    def reconnect(self, timeout=30.0, what="the restart"):
+        """Open the link again after the radio restarted. Its own port first; another radio port (a USB radio can come
+        back under a new name) only when it reports the same board and build, so a restart test never carries on with
+        another radio on the same computer."""
+        was = self._version or {}     # read before the restart (the link may be closed now)
+        same = (was.get("board"), was.get("git")) if was else None
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            for port in [self.port] + [p for p in find_ports() if p != self.port]:
+                link = None
+                try:
+                    link = DebugLink(port, timeout=1.5)
+                    link.ping()
+                    if port != self.port:
+                        v = link.version()
+                        if (v.get("board"), v.get("git")) != same:
+                            link.close()
+                            continue
+                    self.link, self.port = link, port
+                    return
+                except (DebugLinkError, OSError):
+                    # A serial hub takes one client per port: a link left open would lock out every later try.
+                    if link is not None:
+                        link.close()
+                    time.sleep(0.5)
+        raise AssertionError(f"the radio did not come back after {what}")
 
     # ── reading ──
     def ping(self):
@@ -287,8 +323,13 @@ class Radio:
             time.sleep(1.2)
 
     def press(self, name, gesture=PRESS, value=0, settle=0.15):
+        # A pause long enough for the backlight to go off (a screenshot of a large screen takes over 30 s at 115200
+        # baud) would let the UI eat this key: ask whether it needs waking, after a pause only, so a sequence stays fast
+        if time.monotonic() - self._last_key > 15:
+            self.ensure_awake()
         self.link.key(name, gesture, value)
         self.link.wait_keys_idle()
+        self._last_key = time.monotonic()
         time.sleep(settle)
 
     def long_press(self, name):

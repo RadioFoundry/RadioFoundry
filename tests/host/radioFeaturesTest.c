@@ -1899,6 +1899,85 @@ static void test_dual_rx2(void)
 	r2.active = false;
 	board.rx2 = NULL;
 }
+
+// Talking on either channel when the second receiver only receives (radio-features.md 2.2): PTT always goes out on the
+// selected channel, where the main receiver already is, and the second receiver is never asked to transmit (hal_rx2_t
+// has no transmit call). A new selection, the user's or talk back's after a call on the other channel, moves the main
+// receiver there and gives the second the old one. With the second receiver down, the main one alternates (2.1) and
+// PTT still goes out on the selected channel
+static void test_dual_rx2_talk(void)
+{
+	start();
+	chans[2].tx_hz = 146340000;	// Tone: a repeater pair, so its transmit frequency is its own
+	memset(&r2, 0, sizeof(r2));
+	r2.up = true;
+	board.rx2 = &fake_rx2;
+	const radio_dual_ref_t home = { false, 0, 0 }, tone = { false, 0, 1 };
+
+	dual(home, tone, 0);
+	CHECK(sm.view.rx2 && on_ref(home) && r2.t.rx_hz == 146940000);
+
+	// A call on the second receiver's channel: it has the speaker while the selected channel is quiet
+	r2.active = true;
+	run(100);
+	CHECK(r2.audio && !hw.audio && on_ref(home));
+	// The call ends and the selection moves to its channel (talk back, or the user): the main receiver retunes there
+	// and the second receiver gets the old channel
+	r2.active = false;
+	run(100);
+	int rx = hw.rx_calls;
+	dual(home, tone, 1);
+	CHECK(on_ref(tone) && hw.rx_calls > rx && hw.rx_hz == 146940000 && sm.view.rx2);
+	CHECK(r2.on && r2.t.rx_hz == 146520000);
+	// PTT answers there, on that channel's transmit frequency. The second receiver is muted and stays on its channel
+	r2.active = true;
+	run(100);
+	CHECK(r2.audio);
+	int tunes = r2.tunes, stops = r2.stops;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 146340000 && !r2.audio && r2.on && r2.t.rx_hz == 146520000);
+	run(1000);
+	CHECK(sm.view.state == RS_TX && !r2.audio && r2.tunes == tunes && r2.stops == stops && sm.view.rx2);
+	req(RREQ_PTT, 0);
+	run(100);
+	CHECK(sm.view.state != RS_TX && on_ref(tone) && r2.audio && sm.view.rx2 && r2.t.rx_hz == 146520000);
+	r2.active = false;
+	run(100);
+
+	// The selection goes back (talk back's time is up): the receivers swap again and PTT goes out on the first channel
+	dual(home, tone, 0);
+	CHECK(on_ref(home) && r2.t.rx_hz == 146940000 && sm.view.rx2);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 146520000);
+	req(RREQ_PTT, 0);
+	run(100);
+
+	// The second receiver goes down with the other channel selected: the main receiver alternates, and PTT taken
+	// while it is on the first channel goes back to the selected one
+	dual(home, tone, 1);
+	CHECK(sm.view.rx2 && on_ref(tone));
+	r2.up = false;
+	r2.on = false;
+	run(100);
+	CHECK(!sm.view.rx2 && sm.view.scan == SCAN_DUAL);
+	CHECK(wait_on(home, 1500));
+	req(RREQ_PTT, 1);
+	CHECK(on_ref(tone) && sm.view.state == RS_TX && hw.tx_hz == 146340000 && sm.view.scan == SCAN_DUAL);
+	req(RREQ_PTT, 0);
+	// ... and a new selection while it alternates: PTT on the first channel
+	dual(home, tone, 0);
+	CHECK(wait_on(tone, 2500));
+	req(RREQ_PTT, 1);
+	CHECK(on_ref(home) && sm.view.state == RS_TX && hw.tx_hz == 146520000);
+	req(RREQ_PTT, 0);
+	// Back up: it has the other channel again
+	r2.up = true;
+	run(RADIO_RX2_RETRY_MS + 200);
+	CHECK(sm.view.rx2 && on_ref(home) && r2.on && r2.t.rx_hz == 146940000);
+	dual_stop();
+	CHECK(!sm.view.rx2 && !r2.on);
+	board.rx2 = NULL;
+}
 #else
 // Without it: the debug link's dual watch in the current zone, which PTT ends as any scan; radio_req_dual does nothing
 static void test_dual_watch(void)
@@ -2775,6 +2854,7 @@ int main(void)
 	test_dual_wait();
 	test_dual_requests();
 	test_dual_rx2();
+	test_dual_rx2_talk();
 #endif
 	test_tot_and_beeps();
 	test_beep_follows_volume();

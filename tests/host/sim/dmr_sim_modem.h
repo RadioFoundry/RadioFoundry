@@ -41,6 +41,9 @@ typedef struct {
 	int8_t last_ts;
 	dmr_access_t last_access;
 	unsigned tx_ends, tx_aborts, underflows;
+	bool split_offer;		// tx_split(true) answers true (a second transmitter)
+	bool split;			// on and not off since
+	unsigned split_ons, split_offs;	// tx_split calls
 	uint8_t emb_lc[9];
 	bool emb_lc_set;
 
@@ -50,6 +53,7 @@ typedef struct {
 	bool reject_next;	// send DMR_EV_TX_REJECTED at the next slot
 	bool repeater;		// emit slot ticks with the slot number alternating (a repeater's CACH)
 	bool wake_repeater_on_csbk;	// a BS_Dwn_Act on air starts the repeater (repeater = true)
+	bool no_fill;		// tx_fill finds no placeholder (a modem without one, as a second transmitter)
 	bool stalled;		// no slot timing: no ticks, nothing sent, no tx_done (a modem chip that doesn't answer)
 
 	// State

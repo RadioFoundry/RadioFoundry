@@ -18,7 +18,7 @@
 import { h, t, notice, button, panel, progressBar } from "./dom.js";
 import { sleep } from "./bytes.js";
 import * as c7 from "./c7000.js";
-import { Usmart, stockName, BUILDS, UNKNOWN_BUILD } from "./usmart.js";
+import { Usmart, stockName, buildsFor, mayTry, UNKNOWN_BUILD } from "./usmart.js";
 import { trimTail } from "./iap.js";
 import { variantCode, verdict, writable, groups } from "./variant.js";
 import * as diag from "../diag.js";
@@ -82,6 +82,17 @@ function variantNote(vd) {
 export function makeStockRoutes(host) {
 	const { S, ctx, C, boardId, session, busy, loader: makeLoader, fill, stubImage, cableBanner = () => null } = host;
 	const protocol = () => S().radio.flash.update_mode;
+	// a text in the radio's own words where en.json has one (<key>_<radio id>, what its update mode shows), else the
+	// common one. A second SoC takes its own board's text first, then its radio's
+	const own = (key) => {
+		const r = S().radio;
+		for (const id of [r.id, r.second_of]) {
+			const k = `${key}_${id}`;
+			if (id && t(k) !== k) return k;
+		}
+		return key;
+	};
+
 	const radioName = (id) => S().data?.radios?.find((r) => r.flash.board === id)?.name || id;
 
 	// ---- the hardware variant (board.toml [hardware] variants)
@@ -156,7 +167,7 @@ export function makeStockRoutes(host) {
 	// doesn't know); failed: the error of such a try, which this firmware made likely
 	function noBackup({ show, act, onUpdateMode, onAgain }, version, vd, { tryAnyway = null, failed = null } = {}) {
 		// the builds whose console takes the stub, by the board's names for them
-		const versions = BUILDS.filter((b) => b.stub).map((b) => `${stockName(S().radio.flash, b.name)} (${b.date})`).join(" or ");
+		const versions = buildsFor(S().radio.flash.stock_versions).filter((b) => b.stub).map((b) => `${stockName(S().radio.flash, b.name)} (${b.date})`).join(" or ");
 		show({ led: "off", screen: "on" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.usmart.found"))),
 			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.usmart.version")), h("dd", {}, version)) : null,
@@ -165,7 +176,7 @@ export function makeStockRoutes(host) {
 			failed ? h("details", { class: "small" }, h("summary", {}, t("flash.problem.details")), h("pre", { class: "log" }, failed)) : null,
 			h("ol", { class: "steps" },
 				tryAnyway ? h("li", {}, h("b", {}, t("flash.variant.try_title")), " ", t("flash.variant.try")) : null,
-				h("li", {}, h("b", {}, t("flash.variant.update_first_title")), " ", t("flash.variant.update_first", { versions })),
+				versions ? h("li", {}, h("b", {}, t("flash.variant.update_first_title")), " ", t("flash.variant.update_first", { versions })) : null,
 				onUpdateMode ? h("li", {}, h("b", {}, t("flash.variant.direct_title")), " ", t("flash.variant.direct")) : null),
 			howToCheck(), reportLine());
 		act(tryAnyway ? button(t("flash.variant.try_go"), tryAnyway, { primary: true }) : null,
@@ -197,7 +208,7 @@ export function makeStockRoutes(host) {
 	async function stockFound({ show, act, onLoaded, onUpdateMode, onAgain }) {
 		const c = session();
 		// the simulated radio answers at once: no need to wait for the original firmware's log lines
-		const con = new Usmart(c.stream, { log: (l) => c.log.add(l), quiet: S().fakeC7 ? 2 : 80 });
+		const con = new Usmart(c.stream, { log: (l) => c.log.add(l), quiet: S().fakeC7 ? 2 : 80, versions: S().radio.flash.stock_versions });
 		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.usmart.found"))),
 			h("p", { class: "muted" }, t("flash.usmart.checking")));
 		const other = onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode, { quiet: true });
@@ -228,8 +239,11 @@ export function makeStockRoutes(host) {
 			return act(button(t("flash.iap.none.again"), onAgain, { primary: true }));
 		}
 		const parts = { show, act, onLoaded, onUpdateMode, onAgain };
-		const shown = version || (build && `${build.name} (${build.date})`);
-		if (!build?.stub) return noBackup(parts, shown, vd, { tryAnyway: () => loadOffer(parts, con, shown, vd, true, build || UNKNOWN_BUILD) });
+		const shown = version || (build && `${stockName(S().radio.flash, build.name)} (${build.date})`);
+		if (!build?.stub) {
+			const tryAnyway = mayTry(build, S().radio.flash.stock_versions) ? () => loadOffer(parts, con, shown, vd, true, build || UNKNOWN_BUILD) : null;
+			return noBackup(parts, shown, vd, { tryAnyway });
+		}
 		return loadOffer(parts, con, version || stockName(S().radio.flash, build.name), vd, false, build);
 	}
 
@@ -301,7 +315,7 @@ export function makeStockRoutes(host) {
 	function nothing({ show, act, onUpdateMode, onPowerOn, onAgain }) {
 		show({ led: "off", screen: "any" },
 			notice(t("flash.iap.none.lead"), "info"),
-			h("ul", {}, h("li", {}, t("flash.iap.none.on")), h("li", {}, t("flash.iap.none.cable")), h("li", {}, t("flash.iap.none.stock"))),
+			h("ul", {}, h("li", {}, t("flash.iap.none.on")), h("li", {}, t("flash.iap.none.cable")), h("li", {}, t(own("flash.iap.none.stock")))),
 			h("p", { class: "small muted" }, t("flash.iap.none.rfoundry")), howToCheck());
 		act(button(t("flash.iap.none.again"), onAgain, { primary: true }), onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode),
 			button(t("flash.iap.none.power_on"), onPowerOn, { quiet: true }));
@@ -313,7 +327,7 @@ export function makeStockRoutes(host) {
 		show({ led: "off", screen: "on" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.iap.um.found"))),
 			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.iap.um.loader")), h("dd", {}, version)) : null,
-			h("p", {}, t("flash.iap.um.text")), h("p", { class: "small muted" }, t("flash.iap.um.safe")),
+			h("p", {}, t(own("flash.iap.um.text"))), h("p", { class: "small muted" }, t("flash.iap.um.safe")),
 			S().radio.variants?.length ? h("p", { class: "small" }, t("flash.variant.not_read")) : null, howToCheck());
 		act(onUpdateMode ? button(t("flash.iap.um.go"), onUpdateMode, { primary: true }) : button(t("flash.iap.none.again"), onAgain, { primary: true }));
 	}
@@ -383,7 +397,7 @@ export function makeStockRoutes(host) {
 			h("p", {}, lead || t(restore ? "flash.iap.restore_lead" : "flash.iap.lead")),
 			withPicture(h("ol", { class: "steps c7-big" }, h("li", {}, t(restore ? "flash.iap.restore_step_go" : "flash.iap.step_go")), ...steps.map((x) => h("li", {}, x)))),
 			simKeys(),
-			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t(TEXTS[protocol()].careful))),
+			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t(own(TEXTS[protocol()].careful)))),
 			prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		prog.el.hidden = true;
 		S().forward(go);

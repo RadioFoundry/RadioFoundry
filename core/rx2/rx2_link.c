@@ -106,6 +106,17 @@ static uint32_t get32(const uint8_t *p)
 	return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
 }
 
+static void put16(uint8_t *p, uint16_t v)
+{
+	p[0] = (uint8_t)v;
+	p[1] = (uint8_t)(v >> 8);
+}
+
+static uint16_t get16(const uint8_t *p)
+{
+	return (uint16_t)(p[0] | p[1] << 8);
+}
+
 // rx_hz 4, mode, bw, squelch, tone type, tone value 2, cc, ts, own_id 4, talk_group 4, count, reserved 4 = 25
 uint8_t rx2_pack_tune(const rx2_tune_t *t, uint8_t *out)
 {
@@ -217,11 +228,50 @@ static void main_send_led(rx2_main_t *m)
 	main_send(m, RX2_LED, &m->leds, 1);
 }
 
+static void main_send_path(rx2_main_t *m)
+{
+	uint8_t p[5] = { m->path_on ? 1u : 0u };
+	put32(&p[1], m->path_hz);
+	main_send(m, RX2_PATH, p, 5);
+}
+
+static void main_send_speaker(rx2_main_t *m)
+{
+	uint8_t on = m->speaker ? 1u : 0u;
+	main_send(m, RX2_SPEAKER, &on, 1);
+}
+
 void rx2_main_init(rx2_main_t *m, rx2_send_fn send)
 {
 	memset(m, 0, sizeof(*m));
 	m->send = send;
 	rx2_parser_init(&m->parser);
+}
+
+static void main_dl_fail(rx2_main_t *m)
+{
+	m->dl_state = RX2_DL_FAILED;
+	m->dl_failed++;
+}
+
+// A part of the reply in flight: in order, from index 0, until the one marked last
+static void main_dl_part(rx2_main_t *m, const rx2_parser_t *p)
+{
+	if (m->dl_state != RX2_DL_WAIT || p->len < 2u || p->buf[0] != m->dl_tag) {
+		return;		// late, or another request's
+	}
+	uint8_t idx = (uint8_t)(p->buf[1] & ~RX2_DL_LAST);
+	uint16_t n = (uint16_t)(p->len - 2u);
+	if (idx != m->dl_next || m->dl_len + n > RX2_DL_REPLY_MAX) {
+		main_dl_fail(m);
+		return;
+	}
+	memcpy(&m->dl_reply[m->dl_len], &p->buf[2], n);
+	m->dl_len = (uint16_t)(m->dl_len + n);
+	m->dl_next++;
+	if (p->buf[1] & RX2_DL_LAST) {
+		m->dl_state = m->dl_len > 0 ? RX2_DL_DONE : RX2_DL_FAILED;
+	}
 }
 
 void rx2_main_rx(rx2_main_t *m, uint8_t b, uint32_t now_ms)
@@ -254,6 +304,12 @@ void rx2_main_rx(rx2_main_t *m, uint8_t b, uint32_t now_ms)
 				if (m->leds != 0) {
 					main_send_led(m);
 				}
+				if (m->path_on) {
+					main_send_path(m);
+				}
+				if (m->speaker) {
+					main_send_speaker(m);
+				}
 			}
 		}
 		break;
@@ -266,6 +322,17 @@ void rx2_main_rx(rx2_main_t *m, uint8_t b, uint32_t now_ms)
 		if (p->len >= 2 && p->buf[0] == m->tune_seq) {
 			m->tune_acked = p->buf[1] == 0;
 		}
+		if (p->len >= 2 && p->buf[0] == m->tx_seq) {
+			m->tx_acked = p->buf[1] == 0;
+		}
+		break;
+	case RX2_DL_REPLY:
+		main_dl_part(m, p);
+		break;
+	case RX2_DMR_EV:
+		if (m->up && m->dmr_ev != NULL) {
+			m->dmr_ev(p->buf, p->len);
+		}
 		break;
 	default:
 		break;	// RX2_LOG: the board reads it from the parser before calling here, if it wants it
@@ -277,6 +344,9 @@ void rx2_main_poll(rx2_main_t *m, uint32_t now_ms)
 	if (m->up && now_ms - m->heard_ms > RX2_ALIVE_MS) {
 		m->up = false;
 		memset(&m->st, 0, sizeof(m->st));
+	}
+	if (m->dl_state == RX2_DL_WAIT && (!m->up || now_ms - m->dl_sent_ms >= RX2_DL_TIMEOUT_MS)) {
+		main_dl_fail(m);
 	}
 	if (!m->up) {
 		if (now_ms - m->asked_ms >= RX2_HELLO_EVERY_MS || m->asked_ms == 0) {
@@ -350,11 +420,132 @@ void rx2_main_led(rx2_main_t *m, uint8_t leds)
 	}
 }
 
+void rx2_main_path(rx2_main_t *m, bool on, uint32_t hz)
+{
+	if (!on) {
+		hz = 0;
+	}
+	if (on == m->path_on && hz == m->path_hz) {
+		return;
+	}
+	m->path_on = on;
+	m->path_hz = hz;
+	if (m->up) {
+		main_send_path(m);
+	}
+}
+
+void rx2_main_speaker(rx2_main_t *m, bool on)
+{
+	if (on == m->speaker) {
+		return;
+	}
+	m->speaker = on;
+	if (m->up) {
+		main_send_speaker(m);
+	}
+}
+
+bool rx2_main_tx(rx2_main_t *m, uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
+{
+	m->tx_acked = false;
+	if (!m->up) {
+		return false;
+	}
+	uint8_t p[10];
+	put32(&p[0], hz);
+	put16(&p[4], pa);
+	put16(&p[6], on_us);
+	put16(&p[8], off_us);
+	m->tx_seq = m->seq;
+	main_send(m, RX2_TX, p, 10);
+	return true;
+}
+
+bool rx2_main_dmr(rx2_main_t *m, const uint8_t *p, uint8_t len)
+{
+	if (!m->up || (m->flags & RX2_HELLO_DMR_TX) == 0 || len > RX2_PAYLOAD_MAX) {
+		return false;
+	}
+	main_send(m, RX2_DMR, p, len);
+	return true;
+}
+
 void rx2_main_command(rx2_main_t *m, uint8_t type)
 {
 	uint8_t p[4];
 	put32(p, RX2_STUB_MAGIC);
 	main_send(m, type, p, 4);
+}
+
+bool rx2_main_dl_send(rx2_main_t *m, const uint8_t *req, uint8_t len, uint32_t now_ms)
+{
+	uint8_t p[RX2_PAYLOAD_MAX];
+	if (!m->up || len == 0 || len > RX2_DL_REQ_MAX) {
+		return false;
+	}
+	m->dl_tag++;
+	m->dl_state = RX2_DL_WAIT;
+	m->dl_next = 0;
+	m->dl_len = 0;
+	m->dl_sent_ms = now_ms;
+	m->dl_requests++;
+	p[0] = m->dl_tag;
+	p[1] = RX2_DL_LAST;
+	memcpy(&p[2], req, len);
+	main_send(m, RX2_DL, p, (uint8_t)(len + 2u));
+	return true;
+}
+
+// --- The update bridge's exit sequence ---
+
+const uint8_t rx2_exit_seq[RX2_EXIT_LEN] = { 0x7E, 0xE7, 0x81, 0x18 };
+
+void rx2_exit_init(rx2_exit_t *x, uint32_t now_us)
+{
+	x->held = 0;
+	x->ok = false;
+	x->last_us = now_us;
+}
+
+static uint8_t exit_release(rx2_exit_t *x, uint8_t *out)
+{
+	uint8_t n = x->held;
+	memcpy(out, rx2_exit_seq, n);
+	x->held = 0;
+	return n;
+}
+
+uint8_t rx2_exit_byte(rx2_exit_t *x, uint8_t c, uint32_t now_us, uint8_t *out)
+{
+	uint8_t n = 0;
+	if (now_us - x->last_us >= RX2_EXIT_GUARD_US) {
+		n = exit_release(x, out);	// a new burst: what the last one held goes first
+		x->ok = true;
+	}
+	x->last_us = now_us;
+	if (x->ok && x->held < RX2_EXIT_LEN && c == rx2_exit_seq[x->held]) {
+		x->held++;
+		return n;
+	}
+	n = (uint8_t)(n + exit_release(x, out + n));
+	x->ok = false;
+	out[n++] = c;
+	return n;
+}
+
+bool rx2_exit_idle(rx2_exit_t *x, uint32_t now_us, uint8_t *out, uint8_t *n)
+{
+	*n = 0;
+	if (x->held == 0 || now_us - x->last_us < RX2_EXIT_GUARD_US) {
+		return false;
+	}
+	if (x->held == RX2_EXIT_LEN) {
+		return true;
+	}
+	*n = exit_release(x, out);
+	x->ok = false;
+	return false;
 }
 
 // --- Receiver side ---
@@ -409,6 +600,35 @@ void rx2_recv_init(rx2_recv_t *r, rx2_send_fn send, const rx2_ops_t *ops, uint8_
 	rx2_parser_init(&r->parser);
 }
 
+// RX2_DL: run the command, then send the reply in parts, in order. DL_ST_UNKNOWN_CMD (1) without a server
+static void recv_dl(rx2_recv_t *r, const rx2_parser_t *p)
+{
+	if (p->len < 3u || p->buf[1] != RX2_DL_LAST) {
+		return;		// a request is one part with at least its command
+	}
+	uint8_t tag = p->buf[0];
+	size_t n = 1;
+	r->dl_requests++;
+	if (r->ops->dl != NULL) {
+		n = r->ops->dl(p->buf[2], &p->buf[3], (uint16_t)(p->len - 3u), r->dl_out, sizeof(r->dl_out));
+	} else {
+		r->dl_out[0] = 1;
+	}
+	if (n == 0 || n > sizeof(r->dl_out)) {
+		n = 1;
+		r->dl_out[0] = 1;
+	}
+	uint8_t f[RX2_PAYLOAD_MAX];
+	for (size_t off = 0, idx = 0; off < n; idx++) {
+		size_t k = n - off < RX2_DL_PIECE ? n - off : RX2_DL_PIECE;
+		f[0] = tag;
+		f[1] = (uint8_t)(idx | (off + k == n ? RX2_DL_LAST : 0u));
+		memcpy(&f[2], &r->dl_out[off], k);
+		recv_send(r, RX2_DL_REPLY, f, (uint8_t)(k + 2u));
+		off += k;
+	}
+}
+
 static bool magic_ok(const rx2_parser_t *p)
 {
 	return p->len == 4 && get32(p->buf) == RX2_STUB_MAGIC;
@@ -434,6 +654,18 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 		}
 		if (r->ops->led != NULL) {
 			r->ops->led(0);
+		}
+		if (r->ops->path != NULL) {
+			r->ops->path(false, 0);
+		}
+		if (r->ops->tx != NULL) {
+			r->ops->tx(0, 0, 0, 0);
+		}
+		if (r->ops->dmr != NULL) {
+			r->ops->dmr(NULL, 0);
+		}
+		if (r->ops->speaker != NULL) {
+			r->ops->speaker(false);
 		}
 		recv_hello(r);
 		break;
@@ -466,6 +698,26 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 			r->ops->led(p->buf[0]);
 		}
 		break;
+	case RX2_PATH:
+		if (p->len >= 5 && r->ops->path != NULL) {
+			r->ops->path(p->buf[0] != 0, get32(&p->buf[1]));
+		}
+		break;
+	case RX2_SPEAKER:
+		if (p->len >= 1 && r->ops->speaker != NULL) {
+			r->ops->speaker(p->buf[0] != 0);
+		}
+		break;
+	case RX2_TX: {
+		uint8_t res = 1;
+		if (p->len >= 10 && r->ops->tx != NULL &&
+		    r->ops->tx(get32(&p->buf[0]), get16(&p->buf[4]), get16(&p->buf[6]), get16(&p->buf[8]))) {
+			res = 0;
+		}
+		uint8_t a[2] = { p->seq, res };
+		recv_send(r, RX2_ACK, a, 2);
+		break;
+	}
 	case RX2_STUB:
 		if (magic_ok(p) && r->ops->stub != NULL) {
 			r->ops->stub();
@@ -474,6 +726,14 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 	case RX2_RESET:
 		if (magic_ok(p) && r->ops->reset != NULL) {
 			r->ops->reset();
+		}
+		break;
+	case RX2_DL:
+		recv_dl(r, p);
+		break;
+	case RX2_DMR:
+		if (p->len > 0 && r->ops->dmr != NULL) {
+			r->ops->dmr(p->buf, p->len);
 		}
 		break;
 	default:
@@ -508,4 +768,9 @@ void rx2_recv_log(rx2_recv_t *r, const char *text)
 		n = RX2_PAYLOAD_MAX;
 	}
 	recv_send(r, RX2_LOG, (const uint8_t *)text, (uint8_t)n);
+}
+
+void rx2_recv_dmr_ev(rx2_recv_t *r, const uint8_t *p, uint8_t len)
+{
+	recv_send(r, RX2_DMR_EV, p, len);
 }

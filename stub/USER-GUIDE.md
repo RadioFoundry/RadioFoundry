@@ -150,6 +150,9 @@ The radio restarts into its normal firmware. If neither works, remove and refit 
 
 Yellow is the red and the green LED both full on, so it looks the same on every model (red = PTB1, green = PTB0, active high, the same pins on the DM-1801 Pro and the DM-32UV).
 
+On the GD-88 the LED isn't a guide yet: what it shows during an installation is still changing. Follow the tool's
+messages and the screen.
+
 ## Transfer speed
 
 With a current loader (protocol 7), writes and backups pick the fastest serial speed your cable and radio manage, by

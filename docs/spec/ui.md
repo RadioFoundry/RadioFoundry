@@ -514,9 +514,9 @@ status bar), RX, TX, the Channels list and Settings > Display are also drawn in 
 
 
 Geometries: `160x120i5` (160x120 visible, 5 px inset left and right), `160x128` (both 160 px classes render through the 4 bpp frame buffer, as the boards do),
-`240x320i10x5` (16 colors, insets 10 px left and right, 5 px top and bottom), `128x64` (mono), `240x320`, or any
+`240x320i10x5` (16 colors, insets 10 px left and right, 5 px top and bottom), `128x64` (mono), `240x320`, `320x240` (landscape, 16 colors), or any
 `WxH`, `WxHiN` (inset N all round), `WxHiNxM` (N left and right, M top and bottom), `WxHm` (mono). The 240 px classes
-draw the anti-aliased fonts (`CONFIG_FONT_AA`), and `240x320i10x5` the larger text too
+draw the anti-aliased fonts (`CONFIG_FONT_AA`), and `240x320i10x5` and `320x240` the larger text too
 (`CONFIG_FONT_BIG`); the others the bitmap ones. Script tokens:
 
 | Token | Meaning |

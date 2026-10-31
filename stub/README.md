@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-# stub: flash access for the HR_C7000 radios (DM-32UV, DM-1801 Pro, DB25-D)
+# stub: flash access for the HR_C7000 radios (DM-32UV, DM-1801 Pro, DB25-D, GD-88)
 
 A small RAM monitor and the host tool that drives it. The tool loads the monitor into the radio's RAM through the chip's
 serial boot ROM (radio switched on with the cable in), through the DB25-D's first stage, or, with `CONFIG_STUB_ENTRY=y`,
@@ -101,6 +101,7 @@ rule, and that the load lies in IRAM, before it sends the image (`check_univ_loa
 |---|---|---|---|
 | Boot ROM, power-on (all three radios) | 0x10000 (28 blocks of 256 B) | Nothing: the ROM uses no RAM (registers only) | All IRAM is free |
 | DB25-D first stage, power-on | 0x10000 | The first stage (accepts blocks below 0x4E000) | It is never returned to |
+| GD-88 A or B first stage | 0x10000 | As the DB25-D's | As the DB25-D's |
 | Running RadioFoundry, DM-32UV, DM-1801 Pro | 0x17000 (span 96 KB) | RadioFoundry, about to be dropped | RadioFoundry is not returned to; the reset restarts it |
 | Running RadioFoundry, DB25-D without DMR | 0x30000 (span 128 KB) | RadioFoundry | Loaded at the run address, no copy |
 | Running RadioFoundry, DB25-D with DMR | 0x1D000 (span 72 KB, codec window) | RadioFoundry | The copy goes up to 0x30000, which does not overlap the source |
@@ -117,10 +118,30 @@ On the stock routes the stub hands the program flash back from execute-in-place 
 controller before it touches the flash. The clocks are left as stock set them; the host measures timer 2 and sends the
 rates in CONFIG, so the same `db25d` profile serves stock and RadioFoundry (both use UART1 on the K1 jack).
 
+### GD-88
+
+The GD-88 has two HR_C7000 SoCs, each with its own program flash. `--board gd88` is A, the one on the cable: the DB25-D's
+routes and pins (latch PTB13, key PTB12, the NAND). `--board gd88b` is B, the second receiver. B has no cable, so the
+tool reaches it through RadioFoundry on A ([rx2-link.md](../docs/spec/rx2-link.md) 4): it asks A for the bridge
+(`DL_CMD_RX2`), then loads the stub into B's first stage through it. That route takes no `--rfoundry-enter` and no `--baud`.
+When it is done with B, after `--boot reset` or on an error, the tool ends the bridge with the exit sequence
+`7E E7 81 18`, sent alone with 20 ms of quiet before and after ([rx2-link.md](../docs/spec/rx2-link.md) 4.1): A
+restarts at once instead of 10 s after the tool's last byte. Without `--boot reset`, B stays in the stub until the radio
+is power-cycled; `--attach` works only within those 10 s of an older run that ended without the sequence.
+
+The radio's two LEDs are on B (PTA16, PTB17), and on A the default LED pins (PTB0 / PTB1) clock and feed its serial
+output chain. So the tool patches the image's parameter block before it sends it: no LEDs and the latch and key on A;
+B's own LEDs and UART3 only on B, from each board's `[flash.stub]` `leds` and `uart` in `board.toml`. The DB25-D, DM-32UV and DM-1801 Pro get the image unchanged.
+
+```sh
+stubtool.py PORT --board gd88 --write-app build/gd88/rfoundry_gd88_install.bin --boot reset     # A at power-on
+stubtool.py PORT --board gd88b --write-app build/gd88b/rfoundry_gd88b_install.bin --boot reset  # B, A running RadioFoundry
+```
+
 ### The first stage
 
-On the DB25-D, 0xC000 holds RadioFoundry's first stage and the application starts at 0xD000. `--write-app` writes at 0xC000,
-so the DB25-D takes the `_install.bin`, which starts with the stage. The tool reads the radio's word at 0xC000 first.
+On the DB25-D and the GD-88, 0xC000 holds RadioFoundry's first stage and the application starts at 0xD000. `--write-app` writes at 0xC000,
+so these radios take the `_install.bin`, which starts with the stage. The tool reads the radio's word at 0xC000 first.
 When it is the stage's and the image does not start with it, the write is refused: the application alone there leaves
 the radio in its update loader (white screen, red LED) until an IAP install. No board list is involved, so any radio
 with the stage is covered, and a radio whose stage is already gone takes either image. `--replace-stage` overrides

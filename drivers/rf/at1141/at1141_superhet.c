@@ -22,3 +22,13 @@ static void gpio(void *c, uint8_t pin, bool high) { at1141_gpio(c, pin, high); }
 const superhet_lo_ops_t at1141_superhet_lo = {
 	.tune = tune, .off = off, .resume = resume, .gpio = gpio,
 };
+
+// The off-and-restart variant (docs/spec/hardware-gd88.md 11.1): off for a transmission, then standby, the restart
+// wait and on again; every tune writes the whole tuning
+static void tune_full(void *c, uint32_t hz) { at1141_tune(c, hz); }
+static void off_full(void *c) { at1141_off(c); }
+static void restart(void *c) { at1141_restart(c); }
+
+const superhet_lo_ops_t at1141_superhet_lo_restart = {
+	.tune = tune_full, .off = off_full, .resume = restart, .gpio = gpio,
+};

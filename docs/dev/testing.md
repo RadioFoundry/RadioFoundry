@@ -70,7 +70,7 @@ The UI runs unchanged on the host. Three tools use it:
 
 The display classes are `160x120i5` (160x120 with 5 px hidden left and right), `160x128`,
 `240x320i10x5` (16 colors, anti-aliased fonts one size up, 10 px hidden left and right and 5 px top and bottom),
-`128x64` and `240x320`; [the wireframes README](../ux/wireframes/README.md) says which radio uses which.
+`128x64`, `240x320` and `320x240` (landscape); [the wireframes README](../ux/wireframes/README.md) says which radio uses which.
 The user manual uses the `160x120i5` images.
 
 After a UI change, run `ui-gallery` and commit the PNGs with the change, so the review shows the difference. The

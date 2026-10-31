@@ -7,6 +7,14 @@
 // stub/stubtool.py's FakeRadio. Bytes reach the host no faster than a 115200 baud cable would carry them (times
 // `speed`).
 //
+// rx2: the radio has a second SoC behind RadioFoundry (a board's flash.second): DL_CMD_RX2 answers, and its BRIDGE
+// hands the cable to the second SoC's first stage, which this model plays with the same stub. rx2: {progmem} gives the
+// second SoC its own program flash, in place while the bridge is up; the first SoC's RadioFoundry answers again after the stub's
+// reset (standing in for the first SoC's restart after a quiet spell). The exit sequence (BRIDGE_EXIT alone, with 2 ms
+// of quiet before and after: docs/spec/rx2-link.md 4.1) ends the bridge at once: the first SoC restarts, and the event
+// "bridge exit" records it. rx2: {stock} is a second SoC still on its original firmware: it does not answer the first,
+// and the bridge reaches nothing.
+//
 // A stock firmware with a USMART console (usmart: its build) also answers the debug console the page loads the stub
 // through (usmart.js): framed read_addr / write_addr over a model of its RAM, and the hijack word that starts what was
 // written. Its version string is in RAM as the firmware fills it in at boot (variant: the hardware code after "909E."),
@@ -24,8 +32,8 @@ import { concat, crc32, le32, sha256, sleep, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
 import { ACK, NAK, CRC_REQ, STX, EOT, BLOCK, HEADER_BLOCK, xmodem } from "./bfloader.js";
 import { encodeBlock } from "./lz4.js";
-import { CRASH_BOOT_SOFT, CRASH_SOFT_MARK, STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
-import { HIJACK, STUB_WINDOW, BUILDS, FLASH_BASE } from "./usmart.js";
+import { BRIDGE_EXIT, CRASH_BOOT_SOFT, CRASH_SOFT_MARK, STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
+import { HIJACK, STUB_WINDOW, BUILDS, FLASH_BASE, buildTail, seriesOf } from "./usmart.js";
 import { rng, randomBytes } from "./fake.js";
 import { sigBytes } from "./c7000.js";
 
@@ -40,8 +48,12 @@ const LEGACY_MARK = new TextEncoder().encode("OpenDigitalRadio");
 const consoleBuild = (radio) => (radio?.flash.stock_console ? radio.flash.stock_versions[0]?.slice(-3) || null : null);
 // A build by its number: the first BUILDS entry, the one whose console load is proven
 const buildNamed = (name) => BUILDS.find((b) => b.name === name) || null;
-// The version string a build's firmware writes at boot, with the variant code filled in ("909E.DBB.EARSAB.018")
-const runtimeVersion = (build, variant) => `909E.${variant}.EARSAB.${build.name}`;
+// The version string a build's firmware writes at boot, with the variant code filled in ("909E.DBB.EARSAB.018"); a
+// build without a RAM copy keeps its series' model code
+const runtimeVersion = (build, variant) => {
+	const [chip, model, word] = seriesOf(build).split(".");
+	return `${chip}.${build.ram ? variant : model}.${word}.${build.name}`;
+};
 
 // A 256 MB SPI NAND that keeps only its used sectors: subarray() of a sector gives its bytes, or the one shared blank
 // sector, so the simulated radio answers a whole-chip read without holding the chip
@@ -239,7 +251,7 @@ export async function c7000Simulation(cReal, boardId, seed = 7000, radio = null)
 	if (build) {	// the version string the console's build check reads: "EARSAB.<build>" just after the build's word, with
 			// the placeholder where the firmware writes the variant into its RAM copy
 		const version = runtimeVersion(build, "D6x");
-		progmem.set(new TextEncoder().encode(`${version}\0Jan 21 2025\0`), build.at - FLASH_BASE + 1 - version.indexOf("EARSAB"));
+		progmem.set(new TextEncoder().encode(`${version}\0Jan 21 2025\0`), build.at - FLASH_BASE + 1 - version.indexOf(buildTail(build)));
 	}
 	c.profiles = c.profiles.filter((p) => p.board !== boardId);
 	c.profiles.push({ ...real, name: `simulated ${real.name}`, code_sha256: await sha256(code), tables_sha256: await sha256(tables),
@@ -257,8 +269,9 @@ export class FakeC7000 {
 	// nand: the data bus holds an SPI NAND (a sparse 256 MB chip with a few used areas) instead of the data flash, and
 	// nand.calibration ({progmem, nand, magic}, the board profile's) where its two calibration copies go
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
-		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, loaderId = null, nand = null,
-		stubWrite = true, variant = "DBB" } = {}) {
+		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, loaderId = null,
+		rx2 = false, nand = null, stubWrite = true, variant = "DBB" } = {}) {
+		this.rx2 = rx2;
 		this.stubWrite = stubWrite;		// the universal stub is protocol 7, with op 0x0E (WRITE); false: protocol 6
 		this.usmart = usmart;			// a stock firmware build with the USMART console ("018")
 		this.variant = variant;			// the hardware code the stock firmware reports ("DBB", "D6T")
@@ -373,13 +386,24 @@ export class FakeC7000 {
 
 	powerOff() {
 		this.state = "off";
+		this.bridgeUp = false;
 		this.softReset = false;
 		this.led = "off";
 		this.gen = (this.gen || 0) + 1;
 		this.events.push("off");
 	}
 
+	// the second SoC's flash in place of the first's (on), or back (off)
+	swapSecond(on) {
+		if (!this.rx2?.progmem || !!this.onSecond === on) return;
+		[this.progmem, this.rx2.progmem] = [this.rx2.progmem, this.progmem];
+		this.onSecond = on;
+		this.fwKind = null;
+	}
+
 	boot() {
+		this.swapSecond(false);
+		this.onB = false;
 		this.state = "rom";
 		this.ram = new Map();
 		this.flashRead = false;			// the stock firmware answered an identify and waits for the read to go on
@@ -431,6 +455,19 @@ export class FakeC7000 {
 
 	// ---- what arrives from the host
 	receive(data) {
+		const now = performance.now(), gap = now - (this.lastRx ?? -Infinity);
+		this.lastRx = now;
+		if (this.exitPending) {			// more came within 2 ms: the 4 bytes were not a burst of their own
+			clearTimeout(this.exitPending);
+			this.exitPending = null;
+		}
+		if (this.bridgeUp && gap >= 2 && data.length === BRIDGE_EXIT.length && BRIDGE_EXIT.every((b, i) => data[i] === b)) {
+			this.exitPending = setTimeout(() => {
+				this.exitPending = null;
+				this.endBridge();
+			}, 2);
+			return;
+		}
 		if (this.state === "off" || this.state === "booting") return;
 		if (this.state === "bfloader") return this.bf.feed(data);
 		if (this.state === "firmware" && this.softReset && this.faults.silentAfterReset) return;
@@ -509,8 +546,31 @@ export class FakeC7000 {
 					this.events.push("stub (from RadioFoundry)");
 				}, 100);
 			}
+		} else if (f.cmd === 0x1E && this.rx2) {
+			const p = f.payload;
+			if (p[0] === 0) return reply(0, new Uint8Array([this.rx2.stock ? 0x0D : 0x0F])), 1;	// present, (up), bridge, restart
+			if (p.length !== 5 || u32le(p, 1) !== 0x47445242) return reply(7), 1;
+			reply(0);
+			if (p[0] === 1) this.bridgeUp = true;
+			if (p[0] === 1 && !this.rx2.stock) setTimeout(() => {				// the second SoC's first stage, through the bridge
+				this.swapSecond(true);
+				this.state = "rom";
+				this.inb = new Uint8Array(0);
+				this.loaded = new Uint8Array(0);
+				this.events.push("bridge");
+				this.onB = true;		// what answers on the cable is the second SoC, until the first restarts
+				this.send(new Uint8Array([0x02, 0x24, 0x00, 0x03]));
+			}, 100);
 		} else reply(3);
 		return 1;
+	}
+
+	// The exit sequence: the first SoC restarts at once (unless the second SoC's reset brought it back already)
+	endBridge() {
+		this.bridgeUp = false;
+		this.events.push("bridge exit");
+		if (!this.onB || this.state === "off") return;
+		this.boot();
 	}
 
 	// The original firmware's debug console: "@AT", a filler byte, the text, CR LF. The reply, then the application's
@@ -571,6 +631,7 @@ export class FakeC7000 {
 	// A word of the RAM copy of the version string (the build's ram address), else 0
 	versionWord(a) {
 		const build = this.build || buildNamed(this.usmart);
+		if (!build?.ram) return 0;
 		const text = new TextEncoder().encode(`${runtimeVersion(build, this.variant)}\0`);
 		const o = a - build.ram;
 		if (o < 0 || o >= text.length) return 0;

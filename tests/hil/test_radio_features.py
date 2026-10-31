@@ -190,6 +190,8 @@ def test_beep_counts(radio):
         skip("not_built", "built without CONFIG_BEEP")
     if as_int(f0.get("set.beep_level"), 0) == 0:
         skip("state", "beep level 0")
+    if as_int(f0.get("volume.sent"), -1) == 0:
+        skip("state", "volume 0 (a knob turned down): the beep follows it and is dropped before it is counted")
     played0, none0, blocks0 = (as_int(f0.get(k), 0) for k in ("beep.played", "beep.no_stream", "beep.blocks"))
     radio.link.beep("error")
     f = wait_features(radio, lambda v: as_int(v.get("beep.played"), 0) + as_int(v.get("beep.no_stream"), 0)
@@ -328,7 +330,9 @@ def test_dual_watch(radio):
         seen, f = collect(radio, "zone_pos", 3.0)
         print("positions:", seen, "phase:", f.get("scan_phase"))
         assert set(seen) <= {str(a), str(b)}, seen
-        assert len(set(seen)) == 2 or f.get("scan_phase") in ("probe", "hold", "resume"), (seen, f)
+        # Alternating, or a second receiver has B and the main one stays on A (test_dual_watch_both_receivers)
+        both = features(radio).get("dual.both") == "1"
+        assert len(set(seen)) == 2 or both or f.get("scan_phase") in ("probe", "hold", "resume"), (seen, f)
         if "dual.at" in f:      # where the receiver is: A or B, never neither
             ats, _ = collect(radio, "dual.at", 2.0, sections=("features",))
             print("receiver on:", ats)
@@ -336,6 +340,25 @@ def test_dual_watch(radio):
     finally:
         scan_off(radio)
     radio.wait_for(lambda v: v.get("zone_pos") == str(a), 1.0, what="back on the first channel")
+
+
+@pytest.mark.feature("dual_watch")
+def test_dual_watch_both_receivers(radio):
+    """A radio with a second receiver gives it the channel not selected (dual.both), and keeps it: the main receiver
+    stays on the selected one instead of alternating (radio-features.md 2.1)."""
+    need_scan(radio)
+    if features(radio).get("dual.receivers") != "2":
+        skip("no_hw", "one receiver: dual watch alternates")
+    size = on_channel(radio, 2)
+    a = as_int(radio.core()["zone_pos"], 0)
+    radio.link.scan("dual", (a + 1) % size)
+    try:
+        wait_features(radio, lambda v: v.get("dual.both") == "1", 12.0, "the second receiver on the other channel (the core tries it every 10 s)")
+        ats, f = collect(radio, "dual.at", 4.0, sections=("features",))   # past the core's 1.5 s tune deadline
+        assert f.get("dual.both") == "1" and set(ats) == {"a"}, (ats, f)
+    finally:
+        scan_off(radio)
+    radio.link.zone_pos(a)
 
 
 @pytest.mark.feature("dual_watch")
@@ -352,6 +375,10 @@ def test_dual_watch_debug_link(radio):
     radio.link.scan("dual", b)
     try:
         wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+        # The UI takes over a watch the link started (its toast) once 0.5 s have passed since its last one ended; a
+        # channel change before that ends the watch for good, as the UI never had it
+        radio.wait_for(lambda v: v.get("ui.toast") == "Dual watch on", 3.0, sections=("link",),
+                       what="the UI took the watch")
         radio.link.scan("select", 1)
         wait_features(radio, lambda v: v.get("dual.sel") == "b", 1.0, "B selected")
         radio.link.zone_pos(c)
@@ -587,6 +614,8 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
+    """A bench call on the channel not selected: one receiver holds there; a second receiver hears it while the main
+    one stays on the selected channel (radio-features.md 2.2)."""
     need_scan(radio)
     hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
     radio.go_home()
@@ -603,10 +632,22 @@ def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
         radio.link.scan("dual", pos)
         try:
             wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
-            seen, _ = _bench_call_watch(radio, sdr_bench, pytestconfig)
+            two = features(radio).get("dual.receivers") == "2"
+            if two:
+                wait_features(radio, lambda v: v.get("dual.both") == "1", 12.0,
+                              "the second receiver on the test channel (the core tries it every 10 s)")
+            seen, _ = _bench_call_watch(radio, sdr_bench, pytestconfig,
+                                       keys=("core", "channel") if two else ("core", "features"))
         finally:
             scan_off(radio)
     positions = {v.get("zone_pos") for _, v in seen}
+    if two:
+        calls = [v for _, v in seen if v.get("rx2.active") == "1"]
+        print(f"positions {sorted(positions)}, the second receiver heard the call in {len(calls)} views")
+        assert positions == {str(other)}, f"the main receiver left the selected channel: {sorted(positions)}"
+        assert calls, "the second receiver never reported the bench call"
+        assert all(v.get("rx2.src") not in ("0", None) for v in calls), calls[:3]
+        return
     held = [v.get("zone_pos") for _, v in seen if v.get("scan_phase") == "hold"]
     print(f"positions {sorted(positions)}, held on {sorted(set(held))} ({len(held)} views)")
     assert positions <= {str(pos), str(other)}, positions

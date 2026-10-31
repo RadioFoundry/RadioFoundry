@@ -507,6 +507,22 @@ The first stage is the only way into the stub from a radio that runs RadioFoundr
 `site/tests/iap.test.mjs` runs the console stub load and the IAP write against simulated radios (`fakec7000.js`) and
 compares the codec carve with `tools/hrc7000_codec.py`.
 
+### A radio with a second chip
+
+A radio with a second receiver on another chip has that chip as a board of its own, `part_of` the radio in its
+`board.toml` with `[flash.stub] bridge`; the site's radio entry carries it as `flash.second`. The cable doesn't reach
+that chip. Once RadioFoundry runs on the first chip, the page's done step offers to install the second one: the same
+steps, as a radio with the second board's id (its releases and builds), reached through the first chip. RadioFoundry
+on the first chip hands the cable over to the second chip's first stage (`DL_CMD_RX2` BRIDGE,
+[rx2-link.md](../spec/rx2-link.md) 4), the stub loads and writes as usual, and the first chip restarts by itself
+afterwards; the done step asks it whether the second chip answers. A second chip that still runs its original firmware
+has no first stage and no link: the first chip reports it down (`DL_CMD_RX2` flags), so the page offers the factory
+update mode instead (`IAP_B`, steps from the second board's `[flash.bootloader]`), with the same write as any other
+factory update mode install. The page's `#sim=` simulation has a case for that second chip on its original firmware.
+The update-mode texts that describe the screen take the radio's form where `site/i18n/en.json` has a `<key>_<board id>`
+text (`iapui.js` `own`): the second chip's board id first, then its radio's. A board is listed with
+`[flash.stub] tested = false` until the stub has run on a radio.
+
 The codec decision (`decide()` in `c7000.js`), first match wins:
 
 | Source | When |

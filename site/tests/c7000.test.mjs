@@ -9,9 +9,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { crc32, equal, sha256 } from "../static/js/flasher/bytes.js";
+import { crc32, equal, sha256, sleep } from "../static/js/flasher/bytes.js";
 import { decodeBlock, encodeBlock } from "../static/js/flasher/lz4.js";
-import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout } from "../static/js/flasher/stub.js";
+import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout, patchUniv, boardLed, RX2_F, BRIDGE_EXIT } from "../static/js/flasher/stub.js";
 import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
@@ -28,6 +28,21 @@ const bin = (n) => new Uint8Array(readFileSync(join(DIR, n)));
 const C = json("flash-boards.json").c7000;
 const stubs = stubImages(json("c7000-stub.json"));
 const quiet = () => {};
+
+test("the GD-88's stub images are patched as stubtool patches them; other radios get the image unchanged", () => {
+	for (const id of ["gd88", "gd88b"]) {
+		const got = patchUniv(stubs.image, C.boards[id].stub_board);
+		assert.ok(equal(got, bin(`c7000_stub_${id}.bin`)), id);
+	}
+	assert.deepEqual(boardLed(C, "gd88"), { red: 255, green: 255 });
+	assert.deepEqual(boardLed(C, "gd88b"), { red: 16, green: 49 });
+	assert.equal(C.boards.gd88b.stub_board.uart, 0x14090000);
+	assert.equal(C.boards.gd88b.stub_board.bridge, true);
+	for (const id of ["dm32", "dm1801pro", "db25d"]) {
+		assert.equal(patchUniv(stubs.image, C.boards[id].stub_board), stubs.image, id);
+		assert.deepEqual(boardLed(C, id), C.led);
+	}
+});
 
 test("the universal stub decodes to its SHA-256 and fits every way in", async () => {
 	assert.equal(await sha256(stubs.image), stubs.sha);
@@ -97,6 +112,20 @@ test("#sim=<board>: every C7 stub radio's fake comes from its data", async () =>
 	}
 });
 
+test("a second receiver (a board part_of another) is its radio's flash.second, reached through the radio", () => {
+	const radios = json("radios.json").radios;
+	const FB = json("flash-boards.json");
+	const withSecond = radios.filter((r) => r.flash.second);
+	assert.ok(withSecond.length > 0);
+	for (const r of withSecond) {
+		const s = r.flash.second;
+		assert.ok(!radios.some((x) => x.id === s.board), `${s.board} is not listed as a radio`);
+		assert.ok(FB.boards[s.board], `${s.board}: its own image and codec data`);
+		assert.equal(C.boards[s.board].stub_board.bridge, true, `${s.board}: the stub goes through the radio`);
+		assert.ok(s.bootloader.length > 0 && s.bootloader.join() !== r.flash.bootloader.join(), `${s.board}: its own update-mode steps`);
+	}
+});
+
 async function radio(firmware = "stock", opts = {}) {
 	const sim = await c7000Simulation(C, "dm1801pro");
 	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 400, bootTime: 200, ...opts });
@@ -109,6 +138,77 @@ async function radio(firmware = "stock", opts = {}) {
 	}
 	return { sim, r };
 }
+
+test("GD-88 receiver B: RadioFoundry on the first SoC hands the cable over, the stub loads through the bridge", async (t) => {
+	const { r } = await radio("rfoundry", { rx2: true, board: "GD-88" });
+	t.after(() => r.stop());
+	r.powerOn();
+	await sleep(800);
+	const link = new Link(r.stream, { timeout: 1000 });
+	assert.equal((await probe(link)).board, "GD-88");
+	assert.equal(await Stub.bridgeFromRFoundry(link), 0x0F);
+	const s = new Stub(r.stream, { log: quiet });
+	await s.waitForRom(3000);
+	const image = patchUniv(stubs.image, C.boards.gd88b.stub_board);
+	await s.loadThroughRom(image, stubs.load);
+	assert.ok(r.events.includes("bridge") && r.state === "stub");
+	assert.ok(equal(r.loaded.subarray(0, image.length), image), "B got the patched image");
+	await s.configure(C.boards.gd88b.stub_board, boardLed(C, "gd88b"));
+	assert.equal(r.stubCfg.board, 5, "the gd88b profile reached the stub");
+	// a refused token, and a radio without a second receiver
+	const plain = await radio("rfoundry");
+	t.after(() => plain.r.stop());
+	plain.r.powerOn();
+	await sleep(800);
+	await assert.rejects(Stub.bridgeFromRFoundry(new Link(plain.r.stream, { timeout: 300 })), /route to the second receiver/);
+});
+
+test("the bridge to a second SoC ends on the exit sequence alone, with quiet around it; the first SoC restarts at once", async (t) => {
+	const { r } = await radio("rfoundry", { rx2: true, board: "GD-88" });
+	t.after(() => r.stop());
+	r.powerOn();
+	await sleep(800);
+	await Stub.bridgeFromRFoundry(new Link(r.stream, { timeout: 1000 }));
+	const s = new Stub(r.stream, { log: quiet });
+	await s.waitForRom(3000);
+	await s.loadThroughRom(patchUniv(stubs.image, C.boards.gd88b.stub_board), stubs.load);
+	// the 4 bytes with more after them, or right after other bytes, are not the exit sequence
+	const write = r.stream.write.bind(r.stream);
+	await sleep(10);
+	await write(new Uint8Array([...BRIDGE_EXIT, 0x00]));
+	await sleep(10);
+	await write(new Uint8Array([0x00]));
+	await write(new Uint8Array(BRIDGE_EXIT));
+	await write(new Uint8Array([0x00]));
+	await sleep(20);
+	assert.ok(!r.events.includes("bridge exit") && r.onB, "no exit: the bytes were not a burst of their own");
+	// the page's exit: one write of exactly those bytes, quiet before and after
+	const wire = [];
+	r.stream.write = async (d) => (wire.push([performance.now(), d.slice()]), write(d));
+	await sleep(10);
+	const t0 = performance.now();
+	await s.bridgeExit();
+	const t1 = performance.now();
+	assert.equal(wire.length, 1);
+	assert.deepEqual([...wire[0][1]], [0x7E, 0xE7, 0x81, 0x18]);
+	assert.ok(wire[0][0] - t0 >= 5 && t1 - wire[0][0] >= 5, "at least 5 ms of quiet on each side");
+	assert.ok(r.events.includes("bridge exit") && !r.onB, "the bridge ended: the first SoC restarts");
+	await sleep(800);
+	assert.equal((await probe(new Link(r.stream, { timeout: 1000 })))?.board, "GD-88", "the first SoC's RadioFoundry answers again");
+});
+
+test("GD-88 receiver B on its original firmware: the first SoC reports it down and the bridge reaches nothing", async (t) => {
+	const { r } = await radio("rfoundry", { rx2: { stock: true }, board: "GD-88" });
+	t.after(() => r.stop());
+	r.powerOn();
+	await sleep(800);
+	const link = new Link(r.stream, { timeout: 1000 });
+	const flags = await Stub.secondState(link);
+	assert.ok(flags & RX2_F.present && !(flags & RX2_F.up), "present, not up: the page offers update mode (IAP_B)");
+	await Stub.bridgeFromRFoundry(link);
+	await assert.rejects(new Stub(r.stream, { log: quiet }).waitForRom(600));
+	assert.ok(!r.events.includes("bridge"));
+});
 
 test("firmware flashed before the project was renamed is still recognized as RadioFoundry", async () => {
 	const sim = await c7000Simulation(C, "dm1801pro");
@@ -534,7 +634,7 @@ test("a codec from a stock file or a program memory backup", async () => {
 	const fromImage = await c7.decide(sim.c, "dm1801pro", { fileCodec: slot });
 	assert.equal(fromImage.source, "image");
 	const text = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url)));
-	for (const src of ["radio", "browser", "file", "image"]) assert.ok(text[`flash.c7.codec.from_${src}`], src);
+	for (const src of ["radio", "browser", "file", "image", "first", "moved"]) assert.ok(text[`flash.c7.codec.from_${src}`], src);
 	assert.ok(!text["flash.c7.codec.from_image"].includes("{name}"));
 	assert.equal(await c7.decide(sim.c, "dm1801pro", {}), null);
 	assert.equal((await c7.decide(sim.c, "dm1801pro", { allowNone: true })).mode, "none");
@@ -721,6 +821,82 @@ test("trail of a cable radio run: the boot ROM load (an echoing cable), the choi
 	assert.ok(tr.some((l) => /cable radio check \{"progmem":true,"cal":true,"q128":false,"skipFirmware":false,"firstInstall":true,"how":"rom"\}/.test(l)));
 	assert.ok(tr.some((l) => /cable radio codec decision \{"mode":"[a-z]+"/.test(l)));
 	assert.ok(tr.some((l) => /cable radio codec decision \{"mode":null,"firmware":"stock","notRead":true,"file":false\}/.test(l)));
+});
+
+// The GD-88: SoC B (gd88b) runs SoC A's codec, packed as on A (board.toml [codec] from). The synthetic A file of
+// fixtures.py gd88(): its profile with the synthetic file's hashes, so the page knows it as it knows the real one
+const gx = json("gd88.json");
+function gd88Data() {
+	const fb = json("flash-boards.json");
+	const c = fb.c7000;
+	const a = c.profiles.find((p) => p.board === "gd88" && p.tag === gx.tag);
+	Object.assign(a, { code_sha256: gx.code_sha256, tables_sha256: gx.tables_sha256, stock_file: { ...a.stock_file, sha256: gx.sha256 } });
+	return { fb, c, a };
+}
+
+test("GD-88: B takes A's codec first, and B's window holds every A build's tables", () => {
+	assert.deepEqual(C.boards.gd88b.codec_boards, ["gd88", "gd88b"]);
+	assert.deepEqual(C.boards.gd88.codec_boards, ["gd88"]);
+	assert.deepEqual(c7.codecDonors(C, "gd88b"), ["gd88"]);
+	assert.deepEqual(C.boards.gd88b.tables, [0x18000B40, 0x18004324], "the union of A's and B's builds");
+	assert.deepEqual(C.boards.gd88b.slot, C.boards.gd88.slot);
+	assert.equal(C.boards.gd88b.run[0], C.boards.gd88.run[0]);
+	const forB = c7.profilesFor(C, "gd88b");
+	assert.ok(forB.some((p) => p.board === "gd88") && forB.some((p) => p.board === "gd88b"), "A's files and B's own");
+	assert.ok(!c7.profilesFor(C, "gd88").some((p) => p.board === "gd88b"), "B's files never for A");
+	for (const p of C.profiles.filter((p) => p.board === "gd88")) {
+		const t = C.boards.gd88b.tables;
+		assert.ok(t[0] <= p.tables_ram && p.tables_ram + p.tables_len <= t[1], `${p.name}: tables inside B's window`);
+	}
+});
+
+test("GD-88: an A file gives B the slot it gives A, byte for byte, as hrc7000_codec.py does", async () => {
+	const { c } = gd88Data();
+	const file = bin("gd88a_stock.bin");
+	const forA = await c7.codecFromFile(file, c, "gd88");
+	const forB = await c7.codecFromFile(file, c, "gd88b");
+	assert.equal(forB.profile.board, "gd88", "A's profile");
+	const slotA = c7.slotBytes(c, "gd88", forA), slotB = c7.slotBytes(c, "gd88b", forB);
+	assert.ok(equal(slotA, bin("gd88_slot.bin")), "A's slot as hrc7000_codec.py makes it");
+	assert.ok(equal(slotB, bin("gd88b_slot.bin")) && equal(slotB, slotA), "B's slot: A's bytes");
+	const parsed = await c7.parseSlot(c, "gd88b", slotA);
+	assert.equal(parsed?.name, forA.profile.name, "A's slot is a valid slot for B, its codec known");
+	assert.equal(await c7.parseSlot({ ...c, boards: { ...c.boards, gd88b: { ...c.boards.gd88b, tables: [0x18000B40, 0x18003B10] } } }, "gd88b", slotA),
+		null, "B's old window (its own builds only) refuses A's tables");
+});
+
+test("GD-88: B is installed with the slot this browser kept from A's install, before B's own stock codec", async () => {
+	const { c } = gd88Data();
+	const slotA = bin("gd88_slot.bin");
+	const own = { profile: c.profiles.find((p) => p.board === "gd88b") };
+	const d = await c7.decide(c, "gd88b", { donorSlot: slotA, flashCodec: own });
+	assert.equal(d.mode, "write");
+	assert.equal(d.source, "first");
+	assert.equal(d.tag, gx.tag);
+	assert.ok(equal(d.slot, slotA), "written as A has it");
+	assert.equal((await c7.decide(c, "gd88b", { slotInFlash: slotA, donorSlot: slotA })).mode, "keep", "a slot B already has stays");
+	// a slot whose codec no profile knows (one practice mode left under A's name) is never taken
+	const unknown = { ...c, profiles: c.profiles.filter((p) => p.board !== "gd88") };
+	assert.equal(await c7.decide(unknown, "gd88b", { donorSlot: slotA }), null);
+	assert.equal(await c7.decide(c, "gd88", { donorSlot: slotA }), null, "A takes no other board's slot");
+});
+
+test("GD-88: the A file picked for B is B's codec source, never B's original firmware", async () => {
+	const { fb, c } = gd88Data();
+	const file = bin("gd88a_stock.bin");
+	const forB = await openVendorFile("B49E.D64.EOPSAB.021.bin", file, fb, "gd88b");
+	assert.equal(forB.best?.match.board, "gd88b");
+	assert.equal(forB.best.match.kind, "codec");
+	assert.equal(forB.best.match.codecFrom, "gd88");
+	assert.ok(equal(c7.slotBytes(c, "gd88b", forB.best.match.codec), bin("gd88b_slot.bin")));
+	const forA = await openVendorFile("B49E.D64.EOPSAB.021.bin", file, fb, "gd88");
+	assert.equal(forA.best?.match.board, "gd88");
+	assert.equal(forA.best.match.codecFrom, undefined);
+	assert.throws(() => vendorBundle({ id: "gd88b", name: "GD-88, receiver B", flash: { board: "gd88b" } }, forB.best, c), (e) => e.code === "unmapped",
+		"A's firmware is never put back on B");
+	assert.ok(hasC7Backup(vendorBundle({ id: "gd88", name: "GD-88", flash: { board: "gd88" } }, forA.best, c)), "but on A it is");
+	const listed = explain.supportedFiles(fb, "gd88b").files;
+	assert.ok(listed[0].startsWith("GD-88 A"), "B's list names A's files first");
 });
 
 test("protected regions: the stub refuses a write over one, a restore leaves it as the radio has it", async (t) => {

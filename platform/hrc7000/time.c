@@ -111,6 +111,31 @@ void hrc_timer_stop(uint8_t n)
 	hrc_timer_ack(n);
 }
 
+static void (*volatile symbol_fn)(void);
+
+static void symbol_isr(void)
+{
+	hrc_timer_ack(TIMER_AFSK);
+	void (*fn)(void) = symbol_fn;
+	if (fn != NULL) {
+		fn();
+	}
+}
+
+void hrc_symbol_timer_start(uint32_t us, void (*fn)(void))
+{
+	symbol_fn = fn;
+	hrc_irq_register(IRQ_TIMER4, symbol_isr);
+	hrc_irq_enable(IRQ_TIMER4, true);
+	hrc_timer_periodic(TIMER_AFSK, us);
+}
+
+void hrc_symbol_timer_stop(void)
+{
+	hrc_timer_stop(TIMER_AFSK);
+	hrc_irq_enable(IRQ_TIMER4, false);
+}
+
 void vApplicationTickHook(void)
 {
 	(void)cycles_now();

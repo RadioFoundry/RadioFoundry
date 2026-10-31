@@ -102,6 +102,9 @@ typedef struct {
 	void (*gps_enable)(bool on);
 	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
 	const hal_rx2_t *rx2;
+	// Optional: the radio is about to jump to the RAM monitor (CONFIG_STUB_ENTRY), past the transmit checks and
+	// tx_off, interrupts still on. For what the monitor can't do itself: status LEDs on another SoC show it is running
+	void (*stub_entering)(void);
 } board_t;
 
 extern const board_t board;
@@ -118,6 +121,17 @@ static inline bool board_in_band(uint32_t hz, bool need_tx)
 	for (uint8_t i = 0; i < board.band_count; i++) {
 		const band_t *b = &board.bands[i];
 		if (hz >= b->lo_hz && hz <= b->hi_hz && (b->tx || !need_tx)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Some band may transmit: false on a radio whose transmitter isn't written yet
+static inline bool board_can_tx(void)
+{
+	for (uint8_t i = 0; i < board.band_count; i++) {
+		if (board.bands[i].tx) {
 			return true;
 		}
 	}

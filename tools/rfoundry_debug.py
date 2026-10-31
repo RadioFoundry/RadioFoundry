@@ -30,6 +30,12 @@
                                                 stop the feeds (docs/spec/watchdog.md 5): the radio resets. starve polls
                                                 until the link goes quiet and prints how long it lasted
     rfoundry_debug.py watchdog load H L [RST]        HR_C7000: re-arm with raw OT_LOAD_H / OT_LOAD_L (RST_LOAD), then starve
+    rfoundry_debug.py mem read ADDR [N] [-w 1|2|4]   peek: N values of the width (CONFIG_DEBUG_MEM; debuglink.md 3.24)
+    rfoundry_debug.py --dangerous mem write|set|clear ADDR VALUE [-w 1|2|4]
+                                                poke: the value, or its bits set or cleared; prints the read back
+    rfoundry_debug.py pin PIN [--dangerous in|low|high]
+                                                a pin's direction and level (PIN: the platform's index, or PTB9
+                                                on the HR_C7000); with --dangerous make it an input or drive it
     rfoundry_debug.py storage info                   the settings / journal region: ours or foreign, its addresses
     rfoundry_debug.py storage dump --out DIR         the region and the calibration copy (SPI flash) to files outside git
     rfoundry_debug.py storage claim --out DIR        dump first, then let the firmware erase a foreign region and use it
@@ -40,6 +46,10 @@
                                                 mod MS HZ STEPS [PAGE REG] |
                                                 music MS HZ AMP [le]
     rfoundry_debug.py split view                     the split duplex view (role, epoch, offset, buffers, underruns, CACH)
+    rfoundry_debug.py rx2 [info|restart]             the second SoC of a radio with two (debuglink.md 3.22)
+    rfoundry_debug.py --rx2 COMMAND ...              any command above sent to the second SoC through the first
+                                                (RX2 FORWARD): --rx2 version, --rx2 log, --rx2 view, --rx2 dump ...
+    rfoundry_debug.py --self-test                    the request layer against a fake port (no radio)
     rfoundry_debug.py split variant N [REG=VAL ...]  the BS framing experiment's variant for the next TX half key-up
                                                 (docs/spec/split-duplex.md 10.1; raw page 4 pairs with N = 255)
 
@@ -87,11 +97,20 @@ WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFI
 WDT_OP_CLEAR_GAP, WDT_OP_TEST, WDT_OP_LOAD = range(3)
 WDT_TESTS = {"starve": 1, "spin": 2, "irq-off": 3}
 WDT_TOKEN = 0x474F4457              # 'WDOG'
+MEM = 0x20                          # peek and poke (CONFIG_DEBUG_MEM; docs/spec/debuglink.md 3.24)
+MEM_OP_READ, MEM_OP_WRITE, MEM_OP_SET, MEM_OP_CLEAR, MEM_OP_ARM, MEM_OP_DISARM, MEM_OP_PIN = range(7)
+MEM_WRITE_OPS = {"write": MEM_OP_WRITE, "set": MEM_OP_SET, "clear": MEM_OP_CLEAR}
+MEM_PIN_ACTIONS = {"read": 0, "in": 1, "low": 2, "high": 3}
+MEM_PS_OUTPUT, MEM_PS_LEVEL, MEM_PS_LATCH = 1, 2, 4
+MEM_READ_MAX = 64
+MEM_KEY = 0x454B4F50                # 'POKE': sent only with --dangerous
 WDT_LEAVE = 0xFFFFFFFF              # load: keep RST_LOAD
 RX2 = 0x1E                          # the second receiver's SoC: info, update bridge, restart (docs/spec/debuglink.md 3.22)
-RX2_OP_INFO, RX2_OP_BRIDGE, RX2_OP_RESTART = range(3)
+RX2_OP_INFO, RX2_OP_BRIDGE, RX2_OP_RESTART, RX2_OP_FORWARD = range(4)
+RX2_FORWARD_WAIT_S = 1.5             # a forwarded request: the first SoC waits up to 1 s for the second's answer
 RX2_TOKEN = 0x47445242              # 'BRDG'
-RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart"}
+RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart", 16: "forward"}
+RX2_FORWARD_MAX = REQ_MAX - 2        # a forwarded command's payload: the first SoC's request cap less op and command
 IDDB = 0x1F                         # the DMR ID database: format, records, an ID looked up (docs/spec/debuglink.md 3.23)
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
@@ -280,13 +299,20 @@ class UdpPort:
 class DebugLink:
     """One open debug link. All methods raise DebugLinkError on an error status or a time-out."""
 
-    def __init__(self, port=None, timeout=1.0):
+    def __init__(self, port=None, timeout=1.0, rx2=False, s=None):
+        """rx2: every request goes to the second SoC through the first (RX2 FORWARD). s: an open port-like object
+        (read, write, in_waiting, close) instead of opening one: tests."""
+        self.timeout = timeout
+        self.rx2 = rx2
+        self.seq = 0
+        self.buf = bytearray()
+        self.packed_shots = None                # packed screenshots: None until the firmware says
+        if s is not None:
+            self.port, self.s = str(port or "test"), s
+            return
         if serial is None and not str(port or "").startswith("udp:"):
             raise DebugLinkError("needs pyserial: pip install pyserial")
         self.port = pick_port(port)
-        self.timeout = timeout
-        self.seq = 0
-        self.packed_shots = None                # packed screenshots: None until the firmware says
         if self.port.startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
             host, _, udp_port = self.port[4:].partition(":")
             self.s = UdpPort(host, int(udp_port or 3334))
@@ -295,7 +321,6 @@ class DebugLink:
                 self.s = serial.serial_for_url(self.port, 115200, timeout=0.02)	# a device, or a URL such as rfc2217://host:port
             except serial.SerialException as e:
                 raise DebugLinkError(f"can't open {self.port}: {e}")
-        self.buf = bytearray()
 
     def close(self):
         self.s.close()
@@ -333,37 +358,65 @@ class DebugLink:
                 return f[2], f[3], f[HDR:HDR + n]
         return None
 
+    def _exchange(self, cmd, payload, timeout):
+        """One request frame out, its answer's payload (status byte first) back. Raises on a time-out and on an
+        error frame."""
+        self.seq = (self.seq + 1) & 0xFF
+        seq = self.seq
+        self.s.write(frame(cmd, seq, payload))
+        deadline = time.monotonic() + timeout
+        while True:
+            r = self._read_frame(deadline)
+            if r is None:
+                raise DebugLinkError(f"no answer to command 0x{cmd:02X} within {timeout} s on {self.port} "
+                                     "(firmware without the debug link? another program has the port?)")
+            rcmd, rseq, data = r
+            if rseq != seq:
+                continue                # a late answer to an earlier request
+            if rcmd == CMD_ERROR:
+                st = data[0] if data else None
+                raise DebugLinkError(f"command 0x{cmd:02X}: {STATUS.get(st, st)}", st)
+            if rcmd == (cmd | 0x80):
+                return data
+
+    def _forward(self, cmd, payload, timeout):
+        """cmd sent to the second SoC through the first's RX2 FORWARD (debuglink.md 3.22): the second SoC's answer,
+        its own status first, with the first SoC's status taken off."""
+        if cmd == RX2:
+            raise DebugLinkError("RX2 can't be forwarded: the second SoC has no SoC behind it")
+        if len(payload) > RX2_FORWARD_MAX:
+            raise DebugLinkError(f"command 0x{cmd:02X}: a payload of {len(payload)} bytes can't be forwarded to the "
+                                 f"second SoC (at most {RX2_FORWARD_MAX})")
+        # The first SoC waits up to 1 s for the second's last reply part: our wait covers that and the cable
+        data = self._exchange(RX2, bytes([RX2_OP_FORWARD, cmd]) + bytes(payload), max(timeout, RX2_FORWARD_WAIT_S) + 1.0)
+        st = data[0] if data else None
+        if st == ST_BUSY:
+            return bytes([ST_BUSY])         # the first SoC is busy: request() retries as for any busy answer
+        if st == ST_UNAVAILABLE:
+            raise DebugLinkError(f"command 0x{cmd:02X}: the second SoC did not answer through the first (it is down, "
+                                 "missing, or took more than 1 s)", st)
+        if st != ST_OK:
+            raise DebugLinkError(f"RX2 FORWARD of command 0x{cmd:02X}: {STATUS.get(st, st)}", st, bytes(data[1:]))
+        if len(data) < 2:
+            raise DebugLinkError(f"RX2 FORWARD of command 0x{cmd:02X}: an empty answer from the second SoC")
+        return data[1:]
+
     def request(self, cmd, payload=b"", timeout=None, busy_wait=2.0):
         """(status, data) of a command; retries a busy answer for up to busy_wait seconds. Raises on errors other
-        than busy after the wait."""
+        than busy after the wait. With self.rx2 set, the command goes to the second SoC (RX2 FORWARD)."""
         if len(payload) > REQ_MAX:
             raise DebugLinkError(f"request payload {len(payload)} > {REQ_MAX}")
         timeout = self.timeout if timeout is None else timeout
         end_busy = time.monotonic() + busy_wait
         while True:
-            self.seq = (self.seq + 1) & 0xFF
-            seq = self.seq
-            self.s.write(frame(cmd, seq, payload))
-            deadline = time.monotonic() + timeout
-            while True:
-                r = self._read_frame(deadline)
-                if r is None:
-                    raise DebugLinkError(f"no answer to command 0x{cmd:02X} within {timeout} s on {self.port} "
-                                         "(firmware without the debug link? another program has the port?)")
-                rcmd, rseq, data = r
-                if rseq != seq:
-                    continue                # a late answer to an earlier request
-                if rcmd == CMD_ERROR:
-                    st = data[0] if data else None
-                    raise DebugLinkError(f"command 0x{cmd:02X}: {STATUS.get(st, st)}", st)
-                if rcmd == (cmd | 0x80):
-                    break
+            data = self._forward(cmd, payload, timeout) if self.rx2 else self._exchange(cmd, payload, timeout)
             st = data[0] if data else None
             if st == ST_BUSY and time.monotonic() < end_busy:
                 time.sleep(0.03)
                 continue
             if st != ST_OK:
-                raise DebugLinkError(f"command 0x{cmd:02X}: {STATUS.get(st, st)}", st, bytes(data[1:]))
+                raise DebugLinkError(f"command 0x{cmd:02X}{' (second SoC)' if self.rx2 else ''}: {STATUS.get(st, st)}",
+                                     st, bytes(data[1:]))
             return st, data[1:]
 
     # ── commands ──
@@ -551,6 +604,29 @@ class DebugLink:
         """HR_C7000: re-arm the watchdog with raw loads, then starve it (the bench measurement of its clock)."""
         self.request(WATCHDOG, struct.pack("<BIIII", WDT_OP_LOAD, hi, lo, rst, WDT_TOKEN))
 
+    def mem_read(self, addr, width=4, count=1):
+        """count values of width bytes from addr (aligned), as ints."""
+        _, r = self.request(MEM, struct.pack("<BBIB", MEM_OP_READ, width, addr, count))
+        return [int.from_bytes(r[i * width:(i + 1) * width], "little") for i in range(len(r) // width)]
+
+    def mem_arm(self):
+        """Allow writes and pin changes for the next minute (the radio refuses them otherwise)."""
+        self.request(MEM, struct.pack("<BI", MEM_OP_ARM, MEM_KEY))
+
+    def mem_disarm(self):
+        self.request(MEM, bytes([MEM_OP_DISARM]))
+
+    def mem_write(self, addr, value, width=4, op="write"):
+        """Write value (op 'write'), or set or clear its bits, at addr; returns the value read back. Needs mem_arm()."""
+        _, r = self.request(MEM, struct.pack("<BBII", MEM_WRITE_OPS[op], width, addr, value & 0xFFFFFFFF))
+        return struct.unpack_from("<I", r)[0]
+
+    def pin(self, pin, action="read"):
+        """A pin's state after the action ('read', or with mem_arm(): 'in', 'low', 'high'): dict output, level, latch."""
+        _, r = self.request(MEM, bytes([MEM_OP_PIN, pin, MEM_PIN_ACTIONS[action]]))
+        return {"output": bool(r[0] & MEM_PS_OUTPUT), "level": int(bool(r[0] & MEM_PS_LEVEL)),
+                "latch": int(bool(r[0] & MEM_PS_LATCH))}
+
     def rx2_info(self):
         """The second receiver's SoC: a set of RX2_FLAGS names (empty on a radio with one SoC)."""
         flags = self.request(RX2, bytes([RX2_OP_INFO]))[1][0]
@@ -558,7 +634,8 @@ class DebugLink:
 
     def rx2_bridge(self):
         """Hand the cable to the second SoC: about 100 ms after the reply, the port carries its first stage's handshake
-        (stub/stubtool.py --board gd88b). The radio restarts once the host has been quiet for a while."""
+        (stub/stubtool.py --board <the second SoC's board>). The radio restarts once the host has been quiet for a
+        while."""
         self.request(RX2, struct.pack("<BI", RX2_OP_BRIDGE, RX2_TOKEN))
 
     def rx2_restart(self):
@@ -1591,7 +1668,7 @@ def cmd_dump(link, a):
         f.write(data)
     import hashlib
     print(f"{out}: {len(data)} bytes from 0x{addr:08X}, sha256 {hashlib.sha256(data).hexdigest()}")
-    if addr < 0x0800C000 and addr >= 0x08000000:
+    if family in (None, CHIP_STM32F4) and addr < 0x0800C000 and addr >= 0x08000000:
         print("note: this holds the proprietary stock bootloader: never commit or publish it")
     return 0
 
@@ -1840,6 +1917,54 @@ def watchdog_poll(link, limit_s=120.0):
     return 0
 
 
+def pin_index(text):
+    """A pin by the platform's index, or PTA0-PTC31 as the HR_C7000 numbers them (bank * 32 + bit)."""
+    t = text.upper()
+    if len(t) >= 4 and t.startswith("PT") and t[2] in "ABC" and t[3:].isdigit() and int(t[3:]) < 32:
+        return "ABC".index(t[2]) * 32 + int(t[3:])
+    return int(text, 0)
+
+
+def cmd_mem(link, a):
+    width = a.width
+    addr = int(a.addr, 0)
+    if addr % width:
+        print(f"0x{addr:08X} is not a multiple of the width {width}", file=sys.stderr)
+        return 2
+    if a.op == "read":
+        n = int(a.value, 0) if a.value else 1
+        if not 1 <= n <= MEM_READ_MAX:
+            print(f"N must be 1..{MEM_READ_MAX}", file=sys.stderr)
+            return 2
+        vals = link.mem_read(addr, width, n)
+        per = 16 // width
+        for i in range(0, len(vals), per):
+            print(f"{addr + i * width:08X}: " + " ".join(f"{v:0{2 * width}X}" for v in vals[i:i + per]))
+        return 0
+    if not a.dangerous:
+        print(f"mem {a.op} changes the radio's memory or registers: add --dangerous to send the key", file=sys.stderr)
+        return 2
+    if a.value is None:
+        print(f"mem {a.op} ADDR VALUE", file=sys.stderr)
+        return 2
+    link.mem_arm()
+    back = link.mem_write(addr, int(a.value, 0), width, a.op)
+    print(f"{addr:08X} {a.op} 0x{int(a.value, 0):X}: reads 0x{back:0{2 * width}X}")
+    return 0
+
+
+def cmd_pin(link, a):
+    p = pin_index(a.pin)
+    if a.action != "read":
+        if not a.dangerous:
+            print(f"pin {a.action} changes a pin: add --dangerous to send the key", file=sys.stderr)
+            return 2
+        link.mem_arm()
+    s = link.pin(p, a.action)
+    print(f"pin {a.pin} ({p}): {'output' if s['output'] else 'input'}, level {s['level']}, latch {s['latch']}")
+    return 0
+
+
 def cmd_watchdog(link, a):
     if a.op == "clear-gap":
         link.watchdog_clear_gap()
@@ -1870,9 +1995,17 @@ def cmd_watchdog(link, a):
 
 
 def cmd_reboot(link, a):
-    c = link.chip()
-    print_chip(c)
     mode = REBOOT_ROM_DFU if a.rom_dfu else REBOOT_NORMAL
+    try:
+        c = link.chip()
+    except DebugLinkError as e:
+        # a SoC without a chip UID may not answer INFO_CHIP: a plain restart then takes RX2_TOKEN (rx2_dl.c)
+        if mode == REBOOT_ROM_DFU or e.status != ST_UNAVAILABLE:
+            raise
+        print("no chip info (INFO_CHIP unavailable): restarting with the second SoC's token", file=sys.stderr)
+        c = {"family": None, "token": RX2_TOKEN}
+    else:
+        print_chip(c)
     if mode == REBOOT_ROM_DFU and (c["family"] != CHIP_STM32F4 or c["rdp"] != 0):
         print("rfoundry_debug: refusing ROM DFU: not an STM32F4 at RDP level 0", file=sys.stderr)
         return 1
@@ -1889,6 +2022,118 @@ def cmd_reboot(link, a):
     else:
         print("rebooting")
     return 0
+
+
+class _FakeLink:
+    """The self-test's radio: takes request frames, answers each with the next queued reply payload (status first)."""
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.sent = []
+        self.out = bytearray()
+
+    @property
+    def in_waiting(self):
+        return len(self.out)
+
+    def read(self, n=1):
+        r = bytes(self.out[:n])
+        del self.out[:n]
+        return r
+
+    def write(self, b):
+        b = bytes(b)
+        self.sent.append(b)
+        if self.replies:
+            body = bytes([b[2] | 0x80, b[3]]) + struct.pack("<H", len(self.replies[0])) + self.replies.pop(0)
+            self.out += bytes([SOF1, SOF2]) + body + struct.pack("<H", crc16(body))
+        return len(b)
+
+    def close(self):
+        pass
+
+
+def self_test_rx2():
+    """The request layer against a fake port, no radio: RX2 FORWARD wrapping and unwrapping."""
+    import binascii
+    import contextlib
+    import io
+    fails = []
+
+    def check(c, what):
+        print(("ok   " if c else "FAIL ") + what)
+        if not c:
+            fails.append(what)
+
+    def expect(cmd, seq, payload):
+        # an independent CRC-16/CCITT-FALSE (binascii's XMODEM CRC from 0xFFFF) over cmd..payload end
+        body = bytes([cmd, seq, len(payload) & 0xFF, len(payload) >> 8]) + bytes(payload)
+        return bytes([0xA5, 0x5A]) + body + binascii.crc_hqx(body, 0xFFFF).to_bytes(2, "little")
+
+    check(crc16(b"123456789") == 0x29B1, "CRC-16/CCITT-FALSE check value")
+    # a plain request: unchanged
+    f = _FakeLink([b"\x00board=X\n"])
+    link = DebugLink(s=f)
+    check(link.version() == {"board": "X"} and f.sent == [expect(VERSION, 1, b"")], "a plain VERSION frame")
+    # VERSION through FORWARD: RX2 [3, VERSION] out; A's status, then B's status and its payload back
+    f = _FakeLink([b"\x00\x00board=B\ngit=abc\n"])
+    link = DebugLink(s=f, rx2=True)
+    check(link.version() == {"board": "B", "git": "abc"}, "forwarded VERSION unwrapped (both statuses off)")
+    check(f.sent == [expect(RX2, 1, bytes([3, VERSION]))], "forwarded VERSION frame: " + f.sent[0].hex(" "))
+    # READ_MEM with its payload: the command's payload follows the command byte
+    f = _FakeLink([b"\x00\x00" + struct.pack("<I", 0x0300C000) + bytes([0x2C, 0x11, 0x01, 0xC0])])
+    link = DebugLink(s=f, rx2=True)
+    check(link.read_mem(0x0300C000, 4) == bytes([0x2C, 0x11, 0x01, 0xC0]), "forwarded READ_MEM data")
+    check(f.sent == [expect(RX2, 1, bytes([3, READ_MEM]) + struct.pack("<IH", 0x0300C000, 4))],
+          "forwarded READ_MEM frame: " + f.sent[0].hex(" "))
+    # the largest inner payload: 62 bytes, the outer one 64; one more is refused before anything is sent
+    f = _FakeLink([b"\x00\x00" + bytes(range(62))])
+    link = DebugLink(s=f, rx2=True)
+    link.ping(bytes(range(62)))
+    check(f.sent == [expect(RX2, 1, bytes([3, PING]) + bytes(range(62)))], "forwarded PING of 62 bytes")
+    f = _FakeLink([])
+    try:
+        DebugLink(s=f, rx2=True).ping(bytes(63))
+        check(False, "a 63-byte forwarded payload refused")
+    except DebugLinkError as e:
+        check("at most 62" in str(e) and not f.sent, f"a 63-byte forwarded payload refused: {e}")
+    # the longest answer: B's 1023 bytes (status first) plus A's status, one frame of 1024
+    f = _FakeLink([b"\x00\x00" + struct.pack("<IB", 0, 0) + b"x" * 1017])
+    link = DebugLink(s=f, rx2=True)
+    check(len(link.request(GET_LOG)[1]) == 1022, "a 1024-byte FORWARD answer read")
+    # the first SoC answers UNAVAILABLE: B down or silent
+    link = DebugLink(s=_FakeLink([b"\x04"]), rx2=True)
+    try:
+        link.version()
+        check(False, "UNAVAILABLE raises")
+    except DebugLinkError as e:
+        check(e.status == ST_UNAVAILABLE and "did not answer through the first" in str(e), f"UNAVAILABLE: {e}")
+    # B's own error status
+    link = DebugLink(s=_FakeLink([b"\x00\x01"]), rx2=True)
+    try:
+        link.screenshot_raw()
+        check(False, "B's error status raises")
+    except DebugLinkError as e:
+        check(e.status == 1 and "second SoC" in str(e), f"B's status: {e}")
+    # busy from A, then from B, then the answer: retried
+    f = _FakeLink([b"\x03", b"\x00\x03", b"\x00\x00\x00\x00\x00\x00"])
+    link = DebugLink(s=f, rx2=True)
+    check(link.reset() == 0 and len(f.sent) == 3, "busy answers retried")
+    # nothing nested
+    link = DebugLink(s=_FakeLink([]), rx2=True)
+    try:
+        link.rx2_info()
+        check(False, "RX2 through FORWARD refused")
+    except DebugLinkError as e:
+        check("can't be forwarded" in str(e) and not link.s.sent, "RX2 through FORWARD refused before sending")
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            main(["--rx2", "rx2", "info"])
+        check(False, "--rx2 rx2 refused")
+    except SystemExit as e:
+        check(e.code == 2, "--rx2 rx2 refused by the command line")
+    print(f"rfoundry_debug RX2 self-test {'PASSED' if not fails else 'FAILED'} ({len(fails)} failures)")
+    return not fails
 
 
 def self_test():
@@ -1965,6 +2210,7 @@ def self_test():
     check(mem_allowed(0x14100040, 4, CHIP_HRC7000) and not mem_allowed(0x14100042, 4, CHIP_HRC7000) and
           not mem_allowed(0x14030000, 4, CHIP_HRC7000) and not mem_allowed(0x00010000, 4, CHIP_STM32F4),
           "READ_MEM windows by family")
+    ok = self_test_rx2() and ok
     print("rfoundry_debug self-test:", "ok" if ok else "FAILED")
     return 0 if ok else 1
 
@@ -1975,6 +2221,10 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", help="serial port (default: the radio with USB ID 1FC9:0094, or $RFOUNDRY_PORT)")
     ap.add_argument("--timeout", type=float, default=1.0, help="seconds to wait for each answer")
+    ap.add_argument("--rx2", action="store_true", help="send every request to the second SoC of a radio with two, "
+                    "through the first (RX2 FORWARD, docs/spec/debuglink.md 3.22): --rx2 version, --rx2 log, ...")
+    ap.add_argument("--dangerous", action="store_true", help="allow mem write|set|clear and pin in|low|high: sends the "
+                    "radio the key that arms them (they can switch on a transmitter or damage the hardware)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("ping")
     sub.add_parser("version")
@@ -2053,6 +2303,15 @@ def main(argv=None):
                        "(docs/spec/watchdog.md)")
     p.add_argument("op", nargs="?", default="show", choices=["show", "clear-gap", "test", "load"])
     p.add_argument("args", nargs="*")
+    p = sub.add_parser("mem", help="peek and poke: read, or with --dangerous write|set|clear (docs/spec/debuglink.md "
+                       "3.24)")
+    p.add_argument("op", choices=["read", "write", "set", "clear"])
+    p.add_argument("addr")
+    p.add_argument("value", nargs="?", help="read: how many values (default 1); write, set, clear: the value or bits")
+    p.add_argument("-w", "--width", type=int, choices=[1, 2, 4], default=4)
+    p = sub.add_parser("pin", help="a pin's direction and level; with --dangerous: in, low or high")
+    p.add_argument("pin", help="the platform's index, or PTA0-PTC31 (HR_C7000)")
+    p.add_argument("action", nargs="?", default="read", choices=list(MEM_PIN_ACTIONS))
     p = sub.add_parser("rx2", help="the second receiver's SoC: info, restart (the update bridge is stubtool's, "
                        "docs/spec/debuglink.md 3.22)")
     p.add_argument("op", nargs="?", default="info", choices=["info", "restart"])
@@ -2072,10 +2331,12 @@ def main(argv=None):
     p.add_argument("-o", "--output", help="samples: also write the block as raw 16-bit stereo; ram: the bytes")
     a = ap.parse_args(argv)
 
+    if a.rx2 and a.cmd == "rx2":
+        ap.error("--rx2 rx2: the second SoC has no SoC behind it (rx2 info|restart go to the first)")
     if a.cmd == "ptt" and not 0 < a.seconds <= INJECT_MAX_S:
         ap.error(f"--seconds must be > 0 and <= {INJECT_MAX_S:g}")
     try:
-        with DebugLink(a.port, a.timeout) as link:
+        with DebugLink(a.port, a.timeout, rx2=a.rx2) as link:
             if a.cmd == "ping":
                 print(f"{link.port}: pong in {link.ping() * 1000:.1f} ms")
             elif a.cmd == "version":
@@ -2119,6 +2380,10 @@ def main(argv=None):
                 return cmd_crash(link, a)
             elif a.cmd == "watchdog":
                 return cmd_watchdog(link, a)
+            elif a.cmd == "mem":
+                return cmd_mem(link, a)
+            elif a.cmd == "pin":
+                return cmd_pin(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
             elif a.cmd == "rx2":

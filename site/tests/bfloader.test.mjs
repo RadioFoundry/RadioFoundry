@@ -247,8 +247,9 @@ test("the connect step always sends ahead and offers the factory update mode to 
 	const connects = [...src.matchAll(/(?<!function )connectPanel\(([^\n]*)\)/g)].map((m) => m[1]);
 	assert.equal(connects.filter((x) => /onUpdateMode/.test(x)).length, 2, "install and restore pass the factory way in");
 	assert.equal(connects.filter((x) => !/onUpdateMode/.test(x)).length, 1, "only the backup goes without: nothing can be read in update mode");
-	// every wait for the boot ROM sends the answer ahead
-	const waits = [...src.matchAll(/waitForRom\(([^)]*)\)/g)].map((m) => m[1]);
+	// every wait for the boot ROM sends the answer ahead. Not the bridge's: a second SoC's first stage is RadioFoundry's,
+	// reached through the first SoC with no power cycle
+	const waits = [...src.matchAll(/waitForRom\(([^\n]*?)\);/g)].map((m) => m[1]).filter((w) => !/BRIDGE_ROM_WAIT/.test(w));
 	assert.ok(waits.length >= 2 && waits.every((w) => /repeat: ROM_REPEAT/.test(w)), waits.join(" | "));
 	const failed = src.slice(src.indexOf("const romFailed"), src.indexOf("const factoryWay"));
 	assert.match(failed, /factoryWay\(\)/);

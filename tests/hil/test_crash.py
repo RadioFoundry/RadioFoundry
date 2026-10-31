@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, as_int, find_ports, skip
+from rfoundry_hil import DebugLinkError, as_int, skip
 
 CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG = 1, 4, 5
 
@@ -14,24 +14,6 @@ CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG = 1, 4, 5
 def _need(radio):
     if "CRASH_LOG" not in radio.features():
         skip("not_built", "built without CONFIG_CRASH_LOG")
-
-
-def _reconnect(radio, timeout=30.0):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        for port in [radio.port] + find_ports():
-            link = None
-            try:
-                link = DebugLink(port, timeout=1.5)
-                link.ping()
-                radio.link, radio.port = link, port
-                return
-            except (DebugLinkError, OSError):
-                # A serial hub takes one client per port: a link left open would lock out every later try.
-                if link is not None:
-                    link.close()
-                time.sleep(0.5)
-    raise AssertionError("the radio did not come back after the crash")
 
 
 def _crash(radio, kind):
@@ -42,9 +24,9 @@ def _crash(radio, kind):
     radio.link.crash_test(kind)
     radio.link.close()
     time.sleep(2.0)
-    _reconnect(radio)
+    radio.reconnect(30.0, "the crash")
     up_after = as_int(radio.view(["link"])["uptime_ms"])
-    assert up_after < up_before or up_after < 30000, "the radio didn't restart"
+    assert up_after < up_before, f"the radio didn't restart (uptime {up_before} ms, then {up_after})"
     return radio.view(["crash"])
 
 
@@ -118,7 +100,9 @@ def test_crash_hang_kept(radio):
     if tasks_built:
         n = as_int(v["crash.tasks"])
         others = dict(v[f"crash.t{k}"].rsplit(",", 1) for k in range(n))
-        assert n >= 2 and "ui" in others and "radi" in others, v
+        # The record has room for a few (crash-log.md 1.2): a radio with more tasks lists the first and says so
+        more = as_int(v.get("crash.tasks_more"), 0) != 0
+        assert n >= 2 and all(t in others or more for t in ("ui", "radi")), v
         assert "host" not in others and "IDLE" not in others, v
         where = [int(w, 16) for w in others.values()]
         assert all(where) and any(w & 1 for w in where), others

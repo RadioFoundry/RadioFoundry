@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The link to a second receiver on another SoC (the GD-88's B, over UART3): RadioFoundry's own protocol, RadioFoundry on both ends
+// The link to a second receiver on another SoC (over a UART): RadioFoundry's own protocol, RadioFoundry on both ends
 // (docs/spec/rx2-link.md). Portable: the board moves the bytes and calls the poll functions; nothing here waits or
 // calls the RTOS, so the host tests run both ends back to back.
 //
@@ -28,16 +28,36 @@ enum {
 	RX2_AUDIO	= 0x04,	// u8 on, u8 volume percent
 	RX2_STUB	= 0x05,	// u32 magic RX2_STUB_MAGIC: enter the flash stub on the link UART (stub/README.md)
 	RX2_RESET	= 0x06,	// u32 magic RX2_STUB_MAGIC: restart
-	RX2_LED		= 0x07,	// u8: the receiver's LEDs that are on (bit 0 LED 1, bit 1 LED 2)
+	RX2_LED		= 0x07,	// u8: the receiver's LEDs that are on (bit 0 LED 1, bit 1 LED 2), or RX2_LED_STUB
+	RX2_DL		= 0x08,	// u8 tag, u8 part, a debug link request: command u8, its payload (rx2-link.md 2.3)
+	RX2_PATH	= 0x09,	// u8 on, u32 Hz: the main SoC's own receiver, whose path runs through the receiver's SoC
+	RX2_TX		= 0x0A,	// u32 Hz (0: disarm), u16 PA drive, u16 on us, u16 off us: the main SoC's transmitter,
+				// whose PA the receiver's SoC keys on the main SoC's TX line (acknowledged)
+	RX2_DMR		= 0x0B,	// the receiver's transmitter as the main SoC's second one (rx2_dmr.h): its request
+	RX2_SPEAKER	= 0x0C,	// u8 on: the main SoC's loudspeaker is in use, on a board whose speaker path has a switch
+				// on the receiver's SoC
 	RX2_HELLO	= 0x81,	// u8 protocol version, u8 flags, text: the firmware version
 	RX2_STATUS	= 0x82,	// rx2 status, packed (rx2_pack_status)
 	RX2_ACK		= 0x83,	// u8 seq acknowledged, u8 result (0 ok, else refused)
 	RX2_LOG		= 0x84,	// text, for the main SoC's log
+	RX2_DL_REPLY	= 0x85,	// u8 tag, u8 part, a piece of the debug link reply payload (status first)
+	RX2_DMR_EV	= 0x86,	// the receiver's transmitter (rx2_dmr.h): its event
 };
 #define RX2_STUB_MAGIC		0x53545542u	// "STUB"
 
 // HELLO flags
 #define RX2_HELLO_DMR		0x01u	// the receiver decodes DMR (codec merged: also its voice)
+#define RX2_HELLO_STAY		0x02u	// RX2_STUB reaches the first stage's long window (rx2-link.md 4); else the main SoC
+				// restarts the receiver for the update
+#define RX2_HELLO_DMR_TX	0x04u	// the receiver transmits DMR for the main SoC (RX2_DMR, rx2-link.md 2.4)
+
+// The debug link through the main SoC (rx2-link.md 2.3)
+#define RX2_DL_LAST		0x80u	// part: the last one; bits 0-6 its index
+#define RX2_DL_PIECE		(RX2_PAYLOAD_MAX - 2u)	// reply bytes a part carries
+#define RX2_DL_REQ_MAX		RX2_DL_PIECE		// a request: command and payload, one part
+#define RX2_DL_REPLY_MAX	1023u	// a reply payload, status included (the main SoC's reply adds its own status)
+#define RX2_DL_TIMEOUT_MS	1000u
+enum { RX2_DL_IDLE = 0, RX2_DL_WAIT, RX2_DL_DONE, RX2_DL_FAILED };
 
 // --- Frames ---
 // Build a frame into out (RX2_FRAME_MAX bytes). Returns its length, 0 when len is too long
@@ -89,8 +109,22 @@ typedef struct {
 	bool audio;		// the core gives it the speaker
 	uint8_t volume;
 	uint8_t leds;		// RX2_LED: the main SoC's status LEDs, which are on the receiver's SoC
+	bool path_on;		// RX2_PATH: the main SoC's receiver, as last asked
+	bool speaker;		// RX2_SPEAKER, as last asked
+	uint32_t path_hz;
+	uint8_t tx_seq;		// RX2_TX in flight, and whether the receiver took it
+	bool tx_acked;
 	rx2_status_t st;	// its last STATUS
+	// RX2_DMR_EV payloads, from rx2_main_rx (the board's link task); NULL: dropped
+	void (*dmr_ev)(const uint8_t *p, uint8_t len);
 	uint32_t frames, tunes, resent;
+	// The debug link request in flight (rx2_main_dl_send): its tag, RX2_DL_* state, the next part expected, the
+	// reply so far
+	uint8_t dl_tag, dl_state, dl_next;
+	uint16_t dl_len;
+	uint32_t dl_sent_ms;
+	uint32_t dl_requests, dl_failed;
+	uint8_t dl_reply[RX2_DL_REPLY_MAX];
 } rx2_main_t;
 
 void rx2_main_init(rx2_main_t *m, rx2_send_fn send);
@@ -103,20 +137,72 @@ bool rx2_main_tune(rx2_main_t *m, const rx2_tune_t *t, uint32_t now_ms);
 void rx2_main_stop(rx2_main_t *m);
 void rx2_main_status(const rx2_main_t *m, rx2_status_t *st);
 void rx2_main_audio(rx2_main_t *m, bool on, uint8_t volume);
+// RX2_LED: the main SoC is jumping to its flash stub, which has no link: the receiver blinks its LEDs until the main
+// SoC's next HELLO_REQ or LED
+#define RX2_LED_STUB		0x80u
 // The LEDs on the receiver's SoC (RX2_LED bits): sent on a change and again when it comes back
 void rx2_main_led(rx2_main_t *m, uint8_t leds);
+// The main SoC's own receiver (RX2_PATH): sent on a change and again when the receiver comes back
+void rx2_main_path(rx2_main_t *m, bool on, uint32_t hz);
+// The main SoC's loudspeaker in use (RX2_SPEAKER): sent on a change and again when the receiver comes back
+void rx2_main_speaker(rx2_main_t *m, bool on);
+// RX2_TX: arm the receiver's SoC to key the PA for the main SoC's transmission on hz with drive pa and the delays
+// (hz 0: disarm). tx_acked turns true when the receiver took it. False when the receiver is down
+bool rx2_main_tx(rx2_main_t *m, uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
+// RX2_DMR: a request to the receiver's transmitter (rx2_dmr.h). False when it is down or doesn't offer one
+bool rx2_main_dmr(rx2_main_t *m, const uint8_t *p, uint8_t len);
 // Send RX2_STUB or RX2_RESET (the receiver's update route through the main SoC)
 void rx2_main_command(rx2_main_t *m, uint8_t type);
+// A debug link request to the receiver: command, payload (len <= RX2_DL_REQ_MAX). False when it is down or the request
+// too long. A request still in flight is dropped. The reply arrives through rx2_main_rx: dl_state goes to
+// RX2_DL_DONE (dl_reply, dl_len) or RX2_DL_FAILED (a part missing, too long, or nothing within RX2_DL_TIMEOUT_MS,
+// which rx2_main_poll checks)
+bool rx2_main_dl_send(rx2_main_t *m, const uint8_t *req, uint8_t len, uint32_t now_ms);
+
+// --- The update bridge's exit sequence (rx2-link.md 4.1) ---
+// The host's bytes, with the time each was read: a burst of exactly RX2_EXIT_SEQ, with RX2_EXIT_GUARD_US of quiet
+// before and after it, ends the bridge. Bytes that only start like it are held back until they can't be it, then
+// passed on in order, so nothing else is lost or reordered
+#define RX2_EXIT_GUARD_US	2000u
+#define RX2_EXIT_LEN		4u
+extern const uint8_t rx2_exit_seq[RX2_EXIT_LEN];
+typedef struct {
+	uint8_t held;		// bytes of the sequence matched in this burst, not yet passed on
+	bool ok;		// this burst can still be the sequence
+	uint32_t last_us;	// the last byte's time
+} rx2_exit_t;
+void rx2_exit_init(rx2_exit_t *x, uint32_t now_us);
+// A byte from the host: the bytes to pass on now go into out (at most RX2_EXIT_LEN + 1); returns how many
+uint8_t rx2_exit_byte(rx2_exit_t *x, uint8_t c, uint32_t now_us, uint8_t *out);
+// No byte now: true when the whole sequence came and the guard has passed. Otherwise *n held bytes of a burst that
+// ended short go into out (at most RX2_EXIT_LEN), to pass on
+bool rx2_exit_idle(rx2_exit_t *x, uint32_t now_us, uint8_t *out, uint8_t *n);
 
 // --- Receiver side (B) ---
 typedef struct {
 	bool (*tune)(const rx2_tune_t *t);	// false: refused
 	void (*stop)(void);
 	void (*audio)(bool on, uint8_t volume);
-	void (*status)(rx2_status_t *st);	// the receiver's state now (up, tuned and heard are filled in here)
+	// The receiver's state now. tuned: on the last tune's settings (the link also needs a tune it accepted); up and
+	// heard are filled in by the link
+	void (*status)(rx2_status_t *st);
 	void (*stub)(void);			// RX2_STUB: never returns on the radio
 	void (*reset)(void);			// RX2_RESET
 	void (*led)(uint8_t leds);		// RX2_LED; NULL: no LEDs
+	// RX2_DL: one debug link command (cmd, its payload) into out, status first, at most cap bytes; returns the
+	// length (>= 1). NULL: every command is answered DL_ST_UNKNOWN_CMD
+	size_t (*dl)(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+	// RX2_PATH: the main SoC's receiver on hz (on) or off; off again at HELLO_REQ. NULL: the board has no shared path
+	void (*path)(bool on, uint32_t hz);
+	// RX2_TX: arm (hz != 0) or disarm the PA for the main SoC's transmitter; false refuses. Disarmed again at
+	// HELLO_REQ. NULL: refused
+	bool (*tx)(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
+	// RX2_DMR: a request to its transmitter (rx2_dmr.h); (NULL, 0) at HELLO_REQ: the main SoC restarted, all off.
+	// NULL: dropped (offer it with RX2_HELLO_DMR_TX)
+	void (*dmr)(const uint8_t *p, uint8_t len);
+	// RX2_SPEAKER: close (on) or open the switch in the main SoC's speaker path; open again at HELLO_REQ. NULL: the
+	// board has none
+	void (*speaker)(bool on);
 } rx2_ops_t;
 
 #define RX2_STATUS_EVERY_MS	500u
@@ -132,6 +218,8 @@ typedef struct {
 	rx2_status_t last;	// last STATUS sent
 	uint32_t sent_ms;
 	uint32_t frames;
+	uint32_t dl_requests;
+	uint8_t dl_out[RX2_DL_REPLY_MAX];
 } rx2_recv_t;
 
 void rx2_recv_init(rx2_recv_t *r, rx2_send_fn send, const rx2_ops_t *ops, uint8_t flags, const char *fw);
@@ -140,5 +228,7 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms);
 void rx2_recv_poll(rx2_recv_t *r, uint32_t now_ms);
 // Text to the main SoC's log
 void rx2_recv_log(rx2_recv_t *r, const char *text);
+// RX2_DMR_EV: an event of its transmitter (rx2_dmr.h)
+void rx2_recv_dmr_ev(rx2_recv_t *r, const uint8_t *p, uint8_t len);
 
 #endif

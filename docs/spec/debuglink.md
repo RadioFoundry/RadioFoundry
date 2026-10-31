@@ -109,8 +109,9 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1B` | CRASH | operation u8 + arguments (3.19); `CONFIG_CRASH_LOG` builds, else status 4 | none (3.19) |
 | `0x1C` | CODEPLUG | operation u8 + arguments (3.20); `CONFIG_CPS_FAST` builds, else status 4 | layout, block sums, an LZ4 stream, or a reason (3.20) |
 | `0x1D` | WATCHDOG | operation u8 + arguments (3.21); `CONFIG_WATCHDOG` builds, else status 4 | none (3.21) |
-| `0x1E` | RX2 | operation u8 + arguments (3.22) | flags, or none (3.22) |
+| `0x1E` | RX2 | operation u8 + arguments (3.22) | flags, or the second SoC's reply (3.22) |
 | `0x1F` | IDDB | DMR ID u32 (3.23); `CONFIG_DMR` builds, else status 4 | format u8, records u32, found u8, text (3.23) |
+| `0x20` | MEM | operation u8 + arguments (3.24); `CONFIG_DEBUG_MEM` builds, else unknown | values, the value read back, or a pin's state (3.24) |
 
 ### 3.1 VERSION
 
@@ -310,8 +311,8 @@ short. Each request takes a fresh snapshot
 
 | # | Section | Keys |
 |---|---|---|
-| 0 | `core` | `view state tx_deny mode am bcast bcast_fault bcast_khz vfo vfo_index` (`am` 1: received in AM, the air band; `bcast` 1: heard on the broadcast receiver, `bcast_fault` 1 when it didn't answer, `bcast_khz` the frequency the receiver reports; [airband-and-broadcast.md](airband-and-broadcast.md)) (which VFO: 0, or 1 the second; `radio-features.md` 2.1) `zone_index zone_pos zone_size zone_count zone_name channel_number channel_name rx_hz tx_hz power power_name power_count temporary temp squelch monitor tone_ok rssi_dbm noise tx_elapsed_ms tot_s last_rx_ms last_tx_ms tx_auto wakes vfo_step_hz codeplug hotspot`, `last_tx_ms` when the last transmission began (0 none), `tx_auto` 1 when that transmission is the radio's own (a data list such as ARS, a roaming probe, an APRS beacon), `wakes` 1 while the radio state lights the screen (`radio_view_wakes`, [ui.md](ui.md)), `rssi_dbm` is the raw reading in FM and idle, and the peak of the last `RADIO_RSSI_HOLD_MS` (120 ms, two TDMA frames) while the DMR stack runs; `call.rssi_dbm` is the modem's per-burst level, else the held one; `req_handled req_dropped` (radio requests taken by the radio task; lost to a full queue), `ch_read_errors` (reads of a used channel that failed: flash read or record decode), `serial` |
-| 1 | `channel` | `ch.name ch.rx_hz ch.tx_hz ch.mode ch.bw ch.rx_tone ch.tx_tone ch.power ch.rx_only ch.color_code ch.timeslot ch.contact ch.listen_list ch.dmr_id ch.dmo` |
+| 0 | `core` | `view state tx_deny can_tx mode am bcast bcast_fault bcast_khz vfo vfo_index` (`am` 1: received in AM, the air band; `bcast` 1: heard on the broadcast receiver, `bcast_fault` 1 when it didn't answer, `bcast_khz` the frequency the receiver reports; [airband-and-broadcast.md](airband-and-broadcast.md)) (which VFO: 0, or 1 the second; `radio-features.md` 2.1) `zone_index zone_pos zone_size zone_count zone_name channel_number channel_name rx_hz tx_hz power power_name power_count temporary temp squelch monitor tone_ok rssi_dbm noise tx_elapsed_ms tot_s last_rx_ms last_tx_ms tx_auto wakes vfo_step_hz codeplug hotspot`, `last_tx_ms` when the last transmission began (0 none), `can_tx` 0 when no band may transmit (a radio whose transmitter isn't written yet: tests that need the radio's own transmission skip), `tx_auto` 1 when that transmission is the radio's own (a data list such as ARS, a roaming probe, an APRS beacon), `wakes` 1 while the radio state lights the screen (`radio_view_wakes`, [ui.md](ui.md)), `rssi_dbm` is the raw reading in FM and idle, and the peak of the last `RADIO_RSSI_HOLD_MS` (120 ms, two TDMA frames) while the DMR stack runs; `call.rssi_dbm` is the modem's per-burst level, else the held one; `req_handled req_dropped` (radio requests taken by the radio task; lost to a full queue), `ch_read_errors` (reads of a used channel that failed: flash read or record decode), `serial` |
+| 1 | `channel` | `ch.name ch.rx_hz ch.tx_hz ch.mode ch.bw ch.rx_tone ch.tx_tone ch.power ch.rx_only ch.color_code ch.timeslot ch.contact ch.listen_list ch.dmr_id ch.dmo rx2.active rx2.src`; the last two are the second receiver's while it has dual watch's other channel (`dual.both` 1): a signal or a call for us there, and the DMR call's source ID; 0 otherwise |
 | 2 | `dmr` | `dmr.built dmr.active dmr.codec dmr.state dmr.phase dmr.tx_error dmr.own_id dmr.cc dmr.ts dmr.rmo dmr.repeater_up dmr.sfr_role dmr.sfr_rpt dmr.sfr_rx dmr.sfr_cwid dmr.sfr_cw dmr.sfr_cwid_sent dmr.sfr_cwid_cut dmr.target_id dmr.target_private dmr.target_name dmr.reply_active dmr.reply_s dmr.hear_all dmr.hear_all_latch dmr.focus_id dmr.focus_private dmr.one_shot dmr.underruns dmr.target_manual dmr.privacy dmr.alias_tx dmr.tx_alias voice.tx_mic_level_db voice.tx_mic_spread_db voice.tx_mic_zc voice.tx_mic_blocks` (`dmr.tx_alias`: the alias text our calls send, empty when none; `voice.tx_mic_*`: the latest transmission's mic blocks (20 ms each, the board's samples before the gain scaling) as content, which a peak can't show: the 90th percentile block's level from the sample-to-sample differences (a high pass, so hum doesn't count; dB re 1 LSB rms in 3 dB steps), that minus the 10th percentile's (speech 20 dB and more, a floor or a hum a few), the median zero crossings a block (speech 5-40, white noise about 80) and the blocks counted; a cut mic reads as the ADC's floor: low level, no spread; in this section because `dmr_stats` is near the reply size) |
 | 3 | `dmr_call` | `call.src call.dst call.group call.to_us call.encrypted call.emergency call.pi_header call.src_name call.dst_name call.late_entry call.alias_complete call.fid call.svc call.pi_alg call.pi_key call.alias call.rssi_dbm call.ms`, the same with `last.` (`src` to `dst_name`) and `last.ms`. The caller's ETSI GPS Info ([dmr-voice.md](dmr-voice.md) GPS Info): `call.gps_valid` (and `last.`), when 1 `call.gps_lat call.gps_lon` (degrees, 7 decimals) `call.gps_err` (position error code 0-7), when our own position is known `call.gps_dist_m call.gps_bearing` (degrees from north) |
 | 4 | `dmr_stats` | call stack (`call.rx_calls rx_calls_played rx_late_entries rx_voice_bursts rx_lost_frames rx_dup_dropped rx_enc_dropped rx_term_dropped rx_sfr_dup rx_sfr_direct rx_sfr_held rx_sfr_fixed tx_calls tx_denied tx_underruns evq_overflows rx_private_calls rx_emergency_calls rx_encrypted_calls rx_pi_headers rx_alias_complete tx_alias_lcs rx_gps tx_gps_lcs`), AMBE voice (`voice.rx_in rx_frames rx_concealed rx_silence rx_calls rx_queue_max rx_bad rx_lost rx_underruns rx_underrun_at rx_overflows rx_bit_errors tx_frames tx_overflows rx_peak rx_repeats tx_repeats`; `rx_underrun_at`: frames the call had played at its latest underrun; `rx_peak`: the largest decoded sample of the latest call that played, near 0 when the decoder is fed the wrong bits; `rx_repeats`: good frames equal to the call's previous good frame, near `rx_in` when the modem hands over the same stale voice bytes every burst; `tx_repeats`: encoded frames equal to the transmission's previous one (a stuck encoder, or a silent mic: the vocoder's silence frame again and again)). The vocoder's TX state is in the `dmr` section (2), as these counters fill most of a reply: `voice.tx_mic_peak`, the largest mic sample the board delivered in the latest transmission, 0 when the mic path gives nothing; `voice.tx_test`, RADIO op 33's test signal on; the encode options (`voice.enc_options` in force and `voice.enc_supported`, `VOCODER_OPT_*` bits in hex: 0x1 noise reduction, 0x2 tone frames, 0x4 AGC; `voice.enc_flags`, the flags word the codec was last given, only on boards that report it (the options reach the codec before the next frame it encodes, so after a change the word follows `voice.enc_options` from the next transmission), e.g. 0x1840 on the AMBE+2 hosts with both on; `dmr-voice.md` 6) |
@@ -329,7 +330,7 @@ short. Each request takes a fresh snapshot
 | 16 | `net` | the radio's own services on the USB network link: with TCP (`tcp-services.md`) `tcp.open tcp.segs_in tcp.segs_out tcp.retransmits tcp.rst_out tcp.bad_checksum tcp.accepted tcp.refused tcp.no_slot tcp.timeouts` and the TCP services' keys, `net.link_up` and the netif counters; `net.built=0` without any of them (mDNS and TFTP moved to section 25 in view version 4) |
 | 17 | `snmp` | the SNMP agent ([snmp.md](snmp.md) 7): `snmp.built snmp.flags snmp.write_set snmp.trap_port`, counters `snmp.rf_requests rf_answers rf_dropped traps_usb traps_rf traps_dropped` (the protocol counters and the other settings: the MIB). Built without the agent: `snmp.built=0` |
 | 18 | `usrp` | USRP voice over UDP ([usb-audio.md](usb-audio.md) 9.1): `usrp.peer` (the address that last sent a valid frame, 0.0.0.0 = none: the host's address is used) `usrp.keyed` (the peer's keyup) `usrp.tx` (we asked the radio to transmit) `usrp.cos` (the last frame sent had keyup 1) `usrp.rx_on` (the receive audio goes to the host: network mode is up), counters `usrp.frames voice lost out_of_order bad keys timeouts tx_limits sent send_busy refused ptt_downs`, the shared stream `mux.blocks rx_samples rx_overflow tx_blocks fm_pulls starts start_fails tx_fill`, the jitter buffer `slip.pushed underruns drops repeats primes`. Built without it: `usrp.built=0` |
-| 19 | `sfr` | The SFR runner (`docs/spec/sfr.md`): a channel's repeater role when it runs, else the MMDVM hotspot's SFR mode: `sfr.on sfr.mode sfr.keyed sfr.busy sfr.slots sfr.rx sfr.repeated sfr.ignored sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost sfr.tx_beacons sfr.tx_gaps sfr.evq_drops sfr.ignored_slot sfr.ignored_cc sfr.last_ignored sfr.rx_fec` (frames/bits/lost: the repeated voice's AMBE FEC as heard) `sfr.rx_fec_pos` (its bits by the frame's place in the burst). Built without it: `sfr.built=0` |
+| 19 | `sfr` | The SFR runner (`docs/spec/sfr.md`): a channel's repeater role when it runs, else the MMDVM hotspot's SFR mode: `sfr.on sfr.mode sfr.keyed sfr.busy sfr.slots sfr.rx sfr.repeated sfr.ignored sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost sfr.tx_beacons sfr.tx_gaps sfr.evq_drops` `sfr.split` (1: the repeat goes out on the radio's second transmitter, sfr.md 3 item 7) `sfr.split_ready sfr.split_remote sfr.split_events sfr.split_bursts sfr.split_ends_forced sfr.split_fallbacks` (the second transmitter: armed and in the role, the last transmission went there, its events heard, bursts sent, transmissions ended for its silence, splits given up; 0 with one transmitter) `sfr.ignored_slot sfr.ignored_cc sfr.last_ignored sfr.rx_fec` (frames/bits/lost: the repeated voice's AMBE FEC as heard) `sfr.rx_fec_pos` (its bits by the frame's place in the burst). Built without it: `sfr.built=0` |
 | 20 | `tasks` | Every FreeRTOS task's least free stack since it started, in bytes (the kernel's high water mark, in creation order): `tasks.count tasks.untracked` (tasks created while the table of 16 was full) `tasks.min_free tasks.min_task` (the task with the least, the first of a tie), then `tasks.free.<name>` per task, then the RTOS heap that holds the stacks: `tasks.heap_free tasks.heap_min_free` (free now and the least since start, in bytes). A name's characters other than letters, digits and `_` become `_` (`tasks.free.Tmr_Svc`), an empty name is `_`. The kernel's task create and delete trace hooks keep the table (`core/app/task_stack.c`); each stack is walked with the scheduler suspended, one task at a time. Measured on the radio; `make stack-check` computes the worst case ([stack-check.md](../dev/stack-check.md)). Built without it (`CONFIG_TASK_STACKS=n`): `tasks.built=0` |
 | 21 | `crash` | the crash log's record from before this start ([crash-log.md](crash-log.md) 3): `crash.built crash.valid`; when valid `crash.arch` (1 CM4, 2 CK803) `crash.kind` (1 fault, 2 stack overflow, 3 out of heap, 4 assert, 5 hang) `crash.cause crash.flags crash.count crash.pc crash.lr crash.sp crash.psr crash.status` (four words) `crash.task crash.uptime_ms crash.build` (the commit's first 8 hex digits, 00000000 unknown) `crash.r0` .. `crash.r13`, `crash.stack` (the 16 words at `sp`, comma separated hex) when the flags have bit 2, then `crash.tasks crash.tasks_more` and `crash.t0` .. for each other task `<name>,<where>` (4-letter name, a comma in it shown as `_`; `where` 8 hex digits, [crash-log.md](crash-log.md) 1.2). Built without the crash log: `crash.built=0` |
 | 22 | `watchdog` | the hardware watchdog ([watchdog.md](watchdog.md)): `watchdog.built watchdog.timeout_ms` (the nominal timeout; 0 stopped or re-armed by a bench LOAD) `watchdog.feeds` (by the idle task since start) `watchdog.starving` `watchdog.idle_age_ms` (since the idle task last ran) `watchdog.max_gap_ms` (the longest the idle task stayed out since start or CLEAR_GAP) `watchdog.regs` (the platform's raw registers, comma separated hex: HR_C7000 LOCK, OT_LOAD_H, OT_LOAD_L, RST_LOAD, EN, KNOCK; STM32 IWDG PR, RLR, SR), and while a test starves it `watchdog.starved_ms` (since the feeds stopped). Built without the watchdog: `watchdog.built=0` |
@@ -733,18 +734,21 @@ view's `watchdog.starved_ms` counts from the last feed; its last value before th
 
 ### 3.22 RX2
 
-The second receiver's SoC, on a radio with two (`board.rx2`, the GD-88; [rx2-link.md](rx2-link.md)). Always built. On
+The second receiver's SoC, on a radio with two (`board.rx2`; [rx2-link.md](rx2-link.md)). Always built. On
 a radio with one SoC, INFO answers no flags and the rest `DL_ST_UNAVAILABLE`.
 
 | Op | Name | Arguments | Reply / effect |
 |---|---|---|---|
-| 0 | INFO | none | flags u8: bit 0 a second receiver, 1 it answers, 2 the update bridge is there, 3 so is RESTART |
+| 0 | INFO | none | flags u8: bit 0 a second receiver, 1 it answers, 2 the update bridge is there, 3 so is RESTART, 4 so is FORWARD |
 | 1 | BRIDGE | token u32 | about 100 ms after the reply: the second SoC is sent to its first stage, and the cable is bridged to it ([rx2-link.md](rx2-link.md) 4). Never returns; the radio restarts when the host has been quiet for a while |
 | 2 | RESTART | token u32 | the second SoC restarts |
+| 3 | FORWARD | command u8, its payload (at most 62 bytes: the request's 64 less the op and the command) | status OK (0), then the second SoC's reply payload, its own status first ([rx2-link.md](rx2-link.md) 2.3). `DL_ST_UNAVAILABLE` (4) when it is down or did not answer within 1 s. No token: the second SoC never transmits |
 
 The token is `'BRDG'` (`0x47445242`, little endian in the payload); another value, or a transmitting radio, is
 answered refused (7). The bridge is dropped if PTT went down between the reply and its start.
-`rfoundry_debug.py rx2 [info|restart]`; `stubtool.py --board gd88b` uses BRIDGE.
+`rfoundry_debug.py rx2 [info|restart]`; `stubtool.py` uses BRIDGE for a board that is part of a radio.
+`rfoundry_debug.py --rx2 <command>` sends any command through FORWARD (`--rx2 version`, `--rx2 log`, `--rx2 view`,
+`--rx2 dump ...`).
 
 ### 3.23 IDDB
 
@@ -760,6 +764,33 @@ lookup as a received call's name, without the cut to the screen's name length. `
 `rfoundry_debug.py iddb [ID ...]`, `tools/cps_fast.py`'s `FastLink.iddb()`. `tests/hil/test_iddb.py` compares the
 radio's answers with records read from the database by `tools/iddb_read.py`.
 
+### 3.24 MEM
+
+Peek and poke for the bench (`CONFIG_DEBUG_MEM`, on with the debug link, and on a second SoC with its own server,
+[rx2-link.md](rx2-link.md) 2.3): any address at 1, 2 or 4 bytes, and the SoC's GPIO pins. For what no view key shows
+yet: a peripheral's registers after a fault, a chip's settings, which pin does what. The handler is portable
+(`core/debuglink/dl_mem.c`); the platform gives the pin hook (`hal_system_t.pin`). u32 values are little endian; the
+address is a multiple of the width.
+
+| Op | Name | Arguments | Reply after the status |
+|---|---|---|---|
+| 0 | READ | width u8, address u32, count u8 (1 to 64) | count values, width bytes each |
+| 1 | WRITE | width u8, address u32, value u32 | the value read back u32. Armed only |
+| 2 | SET | the same | the value's bits set (read, or, write); the value read back. Armed only |
+| 3 | CLEAR | the same | the value's bits cleared; the value read back. Armed only |
+| 4 | ARM | key u32 | none: writes and pin changes allowed for 60 s. A wrong key disarms and is refused |
+| 5 | DISARM | none | none |
+| 6 | PIN | pin u8, action u8: 0 read, 1 input, 2 drive low, 3 drive high | state u8 after it: bit 0 an output, bit 1 the level at the pin, bit 2 the level it drives. Actions other than read armed only. No hook: status 4 |
+
+The key is `'POKE'` (`0x454B4F50`). Unarmed writes and pin changes are refused (7) before any access. A pin is the
+platform's index; on the HR_C7000 PTA0 to PTC31 are 0 to 95, and the action leaves the pad's function alone.
+
+- `rfoundry_debug.py mem read ADDR [N] [-w 1|2|4]`
+- `rfoundry_debug.py --dangerous mem write|set|clear ADDR VALUE [-w 1|2|4]`
+- `rfoundry_debug.py pin PIN [in|low|high]` (PIN a number or `PTB9`); a change needs `--dangerous`
+
+The tool sends the key only with `--dangerous`. With `--rx2` every request goes to the second SoC.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -769,7 +800,11 @@ radio's answers with records read from the database by `tools/iddb_read.py`.
 - INFO_CHIP and READ_MEM only read. READ_MEM reads only the platform's windows (3.10): flash, ROM, OTP and option bytes
   on the STM32F4 (never RAM or peripherals); program flash, SRAM and a few register blocks without read side effects
   (system block, GPIO, PIC), in aligned words only, on the HR_C7000. Nothing in the debug link writes or erases
-  internal flash or the option bytes.
+  internal flash or the option bytes, except a MEM write to a flash controller's registers, which the person at the
+  bench chooses.
+- MEM reads any address; a read can clear a status flag or pop a FIFO. Its writes and pin changes can key the
+  transmitter, short a driven pin or hang the SoC: they need the key, last 60 s, and the host tool sends the key only
+  with `--dangerous` (3.24).
 - STUB ENTER is refused while transmitting, and the transmitter is switched to receive before the jump (3.18).
 - CRASH TEST needs its token and is refused while transmitting (3.19).
 - WATCHDOG TEST and LOAD need their token and are refused while transmitting; each ends in a reset (3.21).
@@ -778,8 +813,8 @@ radio's answers with records read from the database by `tools/iddb_read.py`.
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the vendor bootloader is proprietary).
-- AUDIO_PROBE (diagnostic builds only) writes audio chip registers as asked; nothing else in the debug link writes
-  chip registers.
+- AUDIO_PROBE (diagnostic builds only) writes audio chip registers as asked; apart from it, only an armed MEM writes
+  registers.
 - STUB (bench builds only) writes arbitrary RAM and then runs it, giving the host full control: it is gated by a magic
   key, the exact length and a CRC-32, loads only into the platform's declared free RAM span, is refused while
   transmitting, and never returns (recover by a power cycle). Off in a release. The stub, not the debug link, is

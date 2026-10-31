@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// A second receiver: radios with a receiver per dual watch channel (the GD-88's SoC B). The radio core keeps it on the
+// A second receiver: radios with a receiver per dual watch channel (a second SoC). The radio core keeps it on the
 // dual watch channel that isn't selected, so both channels are heard at once instead of in turn; the main receiver
 // (hal_radio_t) stays on the selected one, which is also the one PTT transmits on. Without it (board.rx2 NULL, or
 // tune() refused) dual watch alternates the main receiver as on every other radio (docs/spec/radio-features.md 2.1).
@@ -58,6 +58,10 @@ typedef struct {
 	void (*bridge)(void);
 	// Optional: restart the second SoC (RX2_RESET)
 	void (*restart)(void);
+	// Optional: one debug link command to the second SoC's own server (docs/spec/rx2-link.md 2.3): req is the command
+	// and its payload. Waits for the whole reply, up to about a second. Returns the reply payload's length in out (its
+	// status first), 0 when it is down or did not answer. One caller at a time (the debug link's task)
+	size_t (*forward)(const uint8_t *req, uint8_t len, uint8_t *out, size_t cap);
 } hal_rx2_t;
 
 #endif

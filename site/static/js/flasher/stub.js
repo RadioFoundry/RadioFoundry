@@ -36,10 +36,18 @@ export const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, SPITIMEOUT = 0x0C, TOOLONG 
 export const WRITE_VERSION = 7;	// the stub has op 0x0E (WRITE): a sector erased, programmed and read back in one request
 export const SSI_PROG = 0x04000000, SSI_DATA = 0x140A0000;
 export const QUAD_ENABLE = 0x1100005C, LCSFC_BAUDR = 0x11000030, SYS_SOFT_RSTN = 0x11000000, TIMER2_VALUE = 0x14000018;
+// After a no-reply request, before the caller may close the port: a USB-serial cable holds a write up to its latency
+// timer (16 ms on an FTDI) before it sends it; closing at once lost a GD-88's reset (2026-10-26)
+const NOREPLY_DRAIN_MS = 100;
 export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
 // RadioFoundry's restart-cause mark (docs/spec/crash-log.md 1.3; stubtool.py CRASH_SOFT_MARK): the reset was asked for
 export const CRASH_SOFT_MARK = 0x18007EF4, CRASH_BOOT_SOFT = 0x54464F53;
 export const STUB_MAGIC = 0x42533743, DL_STUB = 0x1A;
+// DL_CMD_RX2: the second SoC of a radio with two (the GD-88), reached through the first (docs/spec/debuglink.md 3.22)
+export const DL_RX2 = 0x1E, RX2_TOKEN = 0x47445242, RX2_F = { present: 1, up: 2, bridge: 4, restart: 8, forward: 16 };
+// The end of the bridge: these 4 bytes alone, with quiet on the cable before and after (docs/spec/rx2-link.md 4.1; the
+// spec asks for 2 ms or more). The first SoC restarts at once instead of 10 s after the page's last byte
+export const BRIDGE_EXIT = [0x7E, 0xE7, 0x81, 0x18], BRIDGE_QUIET_MS = 20;
 const ROM_HELLO = [0x02, 0x24, 0x00, 0x03], ROM_ACK = [0x02, 0x05, 0x00, 0x03], ROM_REPLY = [0x02, 0x14, 0x00, 0x03];
 // The boot ROM's two other frames: it stops waiting (about 48 ms after its greeting when no answer came) and starts the
 // firmware; and its NAK (BADSUM), which is also how it answers a repeated greeting reply once it took the first one
@@ -58,8 +66,6 @@ export const MEM = {
 	nand: { base: SSI_DATA, cs: 18, size: 0x10000000, name: "NAND", nand: true },
 };
 const NAND_FLAG = 4;
-// A USB-serial cable holds a write up to its latency timer (16 ms on an FTDI) before it sends it
-const NOREPLY_DRAIN_MS = 50;
 // played when a run finishes: three green flashes, then the slow yellow blink resumes
 export const DONE_LED = [[0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150]];
 
@@ -88,6 +94,24 @@ export function stubImages(json) {
 	const image = Uint8Array.from(atob(json.univ.data), (c) => c.charCodeAt(0));
 	return { image, sha: json.univ.sha256, load: json.univ.load, run: json.univ.run, end: json.univ.end };
 }
+
+// The universal stub with the board's pins in its parameter block (stubtool's patch_univ), for the part of the run
+// before CONFIG: the UART it listens on, the power latch and key, the LED pins. Only a board that needs it (LEDs or a
+// UART in its profile: the GD-88, whose default LED pins are its RF chain's clock and data) gets a patched copy
+export function patchUniv(image, board) {
+	if (!board || !(board.leds || board.uart) || !univLayout(image)) return image;
+	const out = image.slice();
+	const leds = board.leds || [33, 32];
+	for (const [off, v] of [[0x8C, board.uart || 0], [0x9C, board.latch], [0xA0, board.key], [0xA8, leds[0]], [0xAC, leds[1]]])
+		for (let k = 0; k < 4; k++) out[off + k] = (v >>> (8 * k)) & 0xFF;
+	return out;
+}
+
+// The LED pins the stub drives on a board: its own (255 = none), else the HR_C7000 radios' usual PTB1 / PTB0
+export const boardLed = (C, id) => {
+	const l = C.boards[id]?.stub_board?.leds;
+	return l ? { red: l[0], green: l[1] } : C.led;
+};
 
 // [run, end) from a universal stub's parameter block ('UCFG' at 0x80, layout 2 or later), or null
 export function univLayout(image) {
@@ -310,6 +334,44 @@ export class Stub {
 		return { load: u32le(r, 4), size: u32le(r, 8), chunk: Math.min(r[12] | (r[13] << 8), 59) };
 	}
 
+	// The second SoC (docs/spec/rx2-link.md 4): RadioFoundry on the first hands the cable over, and about 100 ms later the port
+	// carries the second SoC's first stage, which offers the boot ROM's handshake for up to a minute (waitForRom,
+	// loadThroughRom). Throws when there is no bridge or RadioFoundry refuses it (transmitting)
+	static async bridgeFromRFoundry(link) {
+		let flags;
+		try {
+			flags = (await link.request(DL_RX2, new Uint8Array([0])))[0];
+		} catch (e) {
+			throw new StubError("this RadioFoundry build has no route to the second receiver");
+		}
+		if (!(flags & RX2_F.present)) throw new StubError("this radio has no second receiver");
+		if (!(flags & RX2_F.bridge)) throw new StubError("this RadioFoundry build has no route to the second receiver");
+		const p = new Uint8Array([1, RX2_TOKEN & 0xFF, (RX2_TOKEN >>> 8) & 0xFF, (RX2_TOKEN >>> 16) & 0xFF, RX2_TOKEN >>> 24]);
+		try {
+			await link.request(DL_RX2, p);
+		} catch (e) {
+			throw new StubError(/status 7/.test(e.message) ? "the radio is transmitting: release PTT and try again"
+				: `RadioFoundry refused the hand-over (${e.message})`);
+		}
+		return flags;
+	}
+
+	// End the first SoC's bridge (bridgeFromRFoundry): the exit sequence in a write of its own between two quiet spells
+	async bridgeExit() {
+		await sleep(BRIDGE_QUIET_MS);
+		await this.s.write(new Uint8Array(BRIDGE_EXIT));
+		await sleep(BRIDGE_QUIET_MS);
+	}
+
+	// The second SoC's state, from RadioFoundry on the first: RX2_F flags, or null when it doesn't say
+	static async secondState(link) {
+		try {
+			return (await link.request(DL_RX2, new Uint8Array([0])))[0];
+		} catch (e) {
+			return null;
+		}
+	}
+
 	// entry: where RadioFoundry jumps (the offered load address unless the stub runs elsewhere, as the STM32F4 one does)
 	async enterFromRFoundry(image, progress = () => {}, { entry = null } = {}) {
 		const link = new Link(this.s);
@@ -376,8 +438,9 @@ export class Stub {
 		throw new StubError(`op 0x${op.toString(16)}: no clean reply after ${retries + 1} tries (${why})`);
 	}
 
-	// The write resolves once the bytes are handed to the cable, not once they are on the line: wait out the frame at the
-	// line rate and the cable's latency, or a port closed next (Restart Radio) discards it and the radio stays in the stub
+	// A request the radio won't answer (a reset, a jump). The write resolves once the bytes are handed to the cable, not
+	// once they are on the line: wait out the frame at the line rate and the cable's latency, or a port closed next
+	// (Restart Radio) discards it and the radio stays in the stub (a GD-88 reset was lost that way, 2026-10-26)
 	async sendNoReply(op, payload) {
 		this.s.clear();
 		const frame = concat(new Uint8Array([0x02, op, payload.length >> 8, payload.length & 0xFF, sum8(payload), 0x03]), payload);

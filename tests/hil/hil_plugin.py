@@ -8,7 +8,8 @@ import os
 import pytest
 
 import bringup_plugin
-from rfoundry_hil import DebugLinkError, Radio, SdrBench, board_id, find_ports, skip, skip_kind, skip_mark
+from rfoundry_hil import (DebugLinkError, Radio, SdrBench, board_id, find_ports, need_radio_tx, skip, skip_kind,
+                          skip_mark)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
@@ -93,11 +94,19 @@ def only_on(bid, radio):
 
 
 @pytest.fixture(autouse=True)
+def radio_can_tx(request):
+    """A radio_tx test on a radio that can't transmit: not_built."""
+    if "radio_tx" in request.keywords and "radio" in request.fixturenames:
+        need_radio_tx(request.getfixturevalue("radio"))
+
+
+@pytest.fixture(autouse=True)
 def restore_radio(request):
     """Every test that uses the radio leaves it as it found it (channel / VFO, zone, power, squelch, monitor)."""
     # test_tcp_services.py's module fixture "net" has the radio on the network (its serial link closed) for the whole
-    # module and puts it back on serial itself: nothing to snapshot over serial then
-    if "radio" not in request.fixturenames or "net" in request.fixturenames:
+    # module and puts it back on serial itself: nothing to snapshot over serial then. test_ppp_link.py's "ppp" has PPP
+    # on the serial port, which a debug link frame there would end (ppp.md 4); its tests change nothing
+    if "radio" not in request.fixturenames or "net" in request.fixturenames or "ppp" in request.fixturenames:
         yield
         return
     r = request.getfixturevalue("radio")

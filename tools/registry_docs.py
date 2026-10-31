@@ -127,12 +127,14 @@ def also_names(b):
 
 
 def ordered(boards):
-    return sorted(boards.values(), key=lambda b: b.data["order"])
+    """The radios in the site's order. A board that is part_of another (a second SoC's firmware) is that radio's, not
+    a radio of its own."""
+    return sorted((b for b in boards.values() if b.data.get("part_of") is None), key=lambda b: b.data["order"])
 
 
 def names_board(radio, boards):
     """The board a survey row names (its model, as a whole word, among the row's radios), or None."""
-    hits = [b for b in boards.values()
+    hits = [b for b in boards.values() if b.data.get("part_of") is None
             if re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(b.data["model"]), plain(radio))]
     return hits
 
