@@ -252,6 +252,20 @@ what you typed as you go.
 default, **Auto**, follows the width: 25 kHz at 25K (and in AM), 12.5 kHz at 12.5K, and the FM broadcast step in the
 broadcast band. The step is in the status strip.
 
+### Split (repeater offset)
+
+In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **Split**: TX against RX, "Off" or the offset ("+600k",
+"-5M").
+
+<img src="../ux/screens/160x120i5/quick_vfo_split.png" width="200" alt="Typing a TX frequency in Split">
+
+- **Up** and **Down** go Off, + offset, - offset, at once. The offset is 600 kHz below 300 MHz and 5 MHz above, or the
+  VFO's own once it has one.
+- Or type the TX frequency as you type a VFO frequency (**1 4 7 0 0** is 147.000) and press **OK**. **Back** takes the
+  last digit back.
+- A new RX frequency keeps the offset, as long as TX stays where the radio can transmit.
+- Monitor stays on its key in the VFO, and privacy is for channels.
+
 ### DMR in the VFO
 
 **\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"). In DMR the quick settings are the

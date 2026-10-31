@@ -191,7 +191,7 @@ On a DMR channel, **\*** opens these tiles:
 | **3** | Color | Opens the color code editor |
 | **4** | Mode | Shows DMR. Press it to listen and talk in FM on the same frequencies, for now |
 | **5** | DMon | Digital monitor on or off |
-| **6** | Privacy | Privacy on or off |
+| **6** | Privacy | Privacy on or off. In the VFO this tile is Split ([Split](07-channels-zones-vfo.md#split-repeater-offset)) |
 | **7** | Dual | Dual watch on or off |
 | **8** | Talk to | Opens the talk target picker |
 | **9** | Bright | Opens the brightness editor |

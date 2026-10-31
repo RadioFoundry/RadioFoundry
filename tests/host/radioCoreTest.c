@@ -686,6 +686,31 @@ static void test_vfo(void)
 	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 440000000);
 	req(RREQ_ZONE_POS, 1);			// picking a channel leaves it
 	CHECK(!sm.view.vfo && sm.view.channel_number == 2);
+
+	// Split (RREQ_VFO_TX): the VFO only; TX where it may transmit; a new RX keeps the offset where TX still can
+	req(RREQ_VFO_TX, 445000000);		// on a channel: refused
+	CHECK(sm.view.ch.tx_hz != 445000000);
+	req(RREQ_VFO_SET, 440000000);
+	uint32_t rx_before = hw.rx_hz;
+	req(RREQ_VFO_TX, 445000000);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 440000000 && sm.view.ch.tx_hz == 445000000);
+	CHECK(hw.rx_hz == rx_before);		// the receiver stays where it is
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 445000000);
+	req(RREQ_VFO_TX, 446000000);		// not while transmitting
+	CHECK(sm.view.ch.tx_hz == 445000000);
+	req(RREQ_PTT, 0);
+	req(RREQ_VFO_TX, 120000000);		// a receive-only band: refused
+	CHECK(sm.view.ch.tx_hz == 445000000);
+	req(RREQ_VFO_STEP, 1);			// the offset moves with RX
+	CHECK(sm.view.ch.tx_hz - sm.view.ch.rx_hz == 5000000);
+	req(RREQ_VFO_SET, 446000000);
+	CHECK(sm.view.ch.tx_hz == 451000000);
+	req(RREQ_VFO_SET, 478000000);		// TX would leave the band: simplex
+	CHECK(sm.view.ch.tx_hz == 478000000);
+	req(RREQ_VFO_TX, 473000000);
+	req(RREQ_VFO_TX, 0);			// 0: simplex again
+	CHECK(sm.view.ch.tx_hz == 478000000);
 }
 
 static void test_no_codeplug(void)

@@ -64,6 +64,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "quick_cc_editor", "quick 3 7" },
 	{ "quick_vfo_fm", "ok 4 up ok quick" },
 	{ "home_copy_to_vfo", "down quick 4" },
+	{ "quick_vfo_split", "ok 4 up ok quick 5 1 4 6 1" },
 	{ "quick_vfo_dmr", "ok 4 up ok quick 4" },
 	{ "quick_vfo_cc_editor", "ok 4 up ok quick 4 3 7" },
 	{ "find_name", "5 6 3" },

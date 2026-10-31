@@ -96,6 +96,8 @@ it, and the VFO's FM bandwidth and tones come back. No sub-audio squelch is set 
 holds. A build with only `CONFIG_VFO_DMR` has a DMR VFO and no mode change; one with only `CONFIG_VFO_FM` is as
 before.
 
+A split VFO's TX frequency is set by `radio_req_vfo_tx` (`RREQ_VFO_TX`, the quick tile Split, [information-architecture.md](../ux/information-architecture.md) 5): any frequency in a transmit band, 0 for simplex, in the VFO only and not while transmitting. The receiver isn't retuned. It is saved with the VFO's settings (`vfo_tx_hz`).
+
 ### 2.2 Copy to VFO
 
 From a channel (FM or DMR), Copy to VFO (`radio_req_vfo_copy`, `RREQ_VFO_COPY`) makes the channel's settings the VFO's
@@ -109,7 +111,7 @@ back the channel as it was, without the temporary changes, as any channel change
 
 | Channel | VFO |
 |---|---|
-| RX and TX frequency | Both, so a repeater offset stays (the VFO is then a split VFO; its first step makes it simplex again). Direct-mode channels (DMO) copy RX only |
+| RX and TX frequency | Both, so a repeater offset stays (the VFO is then a split VFO; a new RX frequency, typed or stepped, keeps the offset where TX still lands in a transmit band, else the VFO becomes simplex). Direct-mode channels (DMO) copy RX only |
 | Mode, bandwidth | Both |
 | Power | The level in effect; a channel on "default" stays on the radio's default |
 | CTCSS / DCS, RX and TX (FM) | Both. A DMR channel has none: the VFO keeps its own for its FM mode |

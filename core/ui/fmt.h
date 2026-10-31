@@ -24,6 +24,8 @@ void sb_i32(sbuf_t *b, int32_t v);
 void sb_freq(sbuf_t *b, uint32_t hz);
 // CTCSS 100.0, DCS D023N / D023I, empty for none
 void sb_tone(sbuf_t *b, const subtone_t *t);
+// TX against RX: "Off" when they are the same, else the signed offset, "+600k", "-5M", "+7.6M"
+void sb_split(sbuf_t *b, uint32_t rx_hz, uint32_t tx_hz);
 // m:ss
 void sb_mmss(sbuf_t *b, uint32_t seconds);
 // Elapsed time as a short age: 45s, 14m, 3h, 2d

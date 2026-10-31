@@ -588,14 +588,18 @@ static uint32_t vfo_default_hz(void)
 	return board.band_count > 0 ? board.bands[0].lo_hz : 0;
 }
 
+// A new RX frequency. A split VFO keeps its offset where TX still lands in a transmit band; otherwise it is simplex
 static void vfo_set_hz(radio_sm_t *sm, uint32_t hz)
 {
+	uint32_t tx = sm->vfo_ch.tx_hz - sm->vfo_ch.rx_hz + hz;
+	if (!sm->vfo_seeded || !board_in_band(tx, true))
+		tx = hz;
 	sm->vfo_ch.rx_hz = hz;
-	sm->vfo_ch.tx_hz = hz;
+	sm->vfo_ch.tx_hz = tx;
 	sm->vfo_seeded = true;
 	if (sm->view.vfo) {
 		sm->view.ch.rx_hz = hz;
-		sm->view.ch.tx_hz = hz;
+		sm->view.ch.tx_hz = tx;
 	}
 }
 
@@ -4780,7 +4784,7 @@ static bool retunes(uint8_t type)
 {
 	switch (type) {
 	case RREQ_CH_STEP: case RREQ_ZONE_POS: case RREQ_ZONE: case RREQ_VFO: case RREQ_VFO_STEP: case RREQ_VFO_SET:
-	case RREQ_BANDWIDTH: case RREQ_TONE: case RREQ_MODE: case RREQ_DMR_TS: case RREQ_DMR_CC: case RREQ_VFO_COPY:
+	case RREQ_VFO_TX: case RREQ_BANDWIDTH: case RREQ_TONE: case RREQ_MODE: case RREQ_DMR_TS: case RREQ_DMR_CC: case RREQ_VFO_COPY:
 		return true;
 	default:
 		return false;
@@ -4905,6 +4909,16 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			enter_vfo(sm, now_ms);
 		}
 		break;
+	case RREQ_VFO_TX: {
+		// The receiver stays as it is: TX is set up at the next key-up
+		uint32_t tx = req->arg > 0 ? (uint32_t)req->arg : sm->vfo_ch.rx_hz;
+		if (busy || !sm->view.vfo || req->arg < 0 || !board_in_band(tx, true)) {
+			break;
+		}
+		sm->vfo_ch.tx_hz = tx;
+		sm->view.ch.tx_hz = tx;
+		break;
+	}
 #if CONFIG_AM_RX
 	case RREQ_VFO_STEP_SIZE:
 		if ((req->arg == 0 || (req->arg >= 1000 && req->arg <= 1000000)) && (uint32_t)req->arg != sm->vfo_step_set) {

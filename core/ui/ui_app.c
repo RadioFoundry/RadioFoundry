@@ -722,6 +722,8 @@ uint32_t ui_freq_entry_hz(const char *digits, uint8_t len)
 
 static void entry_digit(char d)
 {
+	if (!ui_st.entry)
+		ui_st.entry_len = 0;	// digits Split left behind (quick settings type into the same buffer)
 	if (ui_st.entry_len >= UI_ENTRY_MAX) {
 		ui_toast("All digits typed: OK or # tunes");
 		return;
@@ -1088,6 +1090,43 @@ void ui_quick_enter(void)
 	entry_cancel();
 }
 
+// The VFO's split (quick tile Split): Up / Down go Off, +offset, -offset at once, the offset the VFO's own or the
+// usual repeater one (600 kHz below 300 MHz, 5 MHz above). Digits type a TX frequency into Home's entry digits (free
+// while quick settings are open), OK sets it
+static void split_step(int8_t dir)
+{
+	uint32_t rx = view->ch.rx_hz, tx = view->ch.tx_hz;
+	uint32_t off = tx > rx ? tx - rx : rx - tx;
+	if (off == 0)
+		off = rx < 300000000u ? 600000u : 5000000u;
+	int at = tx == rx ? 0 : tx > rx ? 1 : 2;	// Off, +, -
+	for (int n = 0; n < 3; n++) {
+		at = (at + dir + 3) % 3;
+		uint32_t hz = at == 0 ? rx : at == 1 ? rx + off : rx - off;
+		if (at == 0 || board_in_band(hz, true)) {
+			radio_req_vfo_tx(at == 0 ? 0 : hz);
+			break;
+		}
+	}
+	entry_cancel();
+}
+
+static bool split_commit(void)
+{
+	if (ui_st.entry_len == 0)
+		return true;	// nothing typed: as Up / Down left it
+	uint32_t hz = ui_freq_entry_hz(ui_st.entry_digits, ui_st.entry_len);
+	if (hz == 0)
+		return false;
+	if (!board_in_band(hz, true)) {
+		ui_toast("Can't transmit there");
+		return false;
+	}
+	radio_req_vfo_tx(hz);
+	entry_cancel();
+	return true;
+}
+
 static void quick_change(uint8_t kind, int8_t dir)
 {
 	switch (kind) {
@@ -1101,6 +1140,9 @@ static void quick_change(uint8_t kind, int8_t dir)
 	case QT_TONE:
 		ui_st.tone_edit = tones_step(&ui_st.tone_edit, dir);
 		radio_req_tone(ui_st.tone_target, ui_st.tone_edit);
+		break;
+	case QT_SPLIT:
+		split_step(dir);
 		break;
 	case QT_CC: {
 		int c = ui_st.cc_edit + dir;
@@ -1121,6 +1163,8 @@ static void quick_change(uint8_t kind, int8_t dir)
 static void quick_close_editor(void)
 {
 	uint8_t kind = ui_quick_kind(ui_st.quick_focus, view);
+	if (kind == QT_SPLIT && ui_st.quick_edit && !split_commit())
+		return;		// the editor stays open on what was typed
 	if (kind == QT_CC && ui_st.quick_edit && !ui_svc_dmr_color_code(ui_st.cc_edit))
 		ui_toast("Color code: not in this build");
 	if (kind == QT_BRIGHTNESS)
@@ -1171,6 +1215,11 @@ static void quick_activate(int tile)
 	}
 	case QT_TO_VFO:
 		copy_to_vfo();
+		break;
+	case QT_SPLIT:
+		entry_cancel();
+		ui_st.quick_edit = true;
+		ui_toast("0-9 TX  Up/Dn offset");
 		break;
 	case QT_MODE: {
 		bool to_dmr = view->ch.mode != RADIO_MODE_DMR;	// the view may change at once (the host simulator)
@@ -1271,6 +1320,8 @@ bool ui_quick_key(const input_event_t *ev)
 			for (int n = d - view->squelch; n != 0; n += n > 0 ? -1 : 1)
 				radio_req_squelch(n > 0 ? 1 : -1);
 			ui_st.quick_edit = false;
+		} else if (ui_st.quick_edit && kind == QT_SPLIT) {
+			(void)ui_freq_entry_digit(ui_st.entry_digits, &ui_st.entry_len, (char)('0' + d));
 		} else if (ui_st.quick_edit && kind == QT_CC) {
 			int c = ui_st.cc_edit * 10 + d;
 			ui_st.cc_edit = (uint8_t)(ui_st.cc_edit < 2 && c <= 15 && ui_st.cc_edit != 0 ? c : d);
@@ -1312,8 +1363,12 @@ bool ui_quick_key(const input_event_t *ev)
 		}
 		return true;
 	case ACT_BACK:
-		// BACK closes quick settings, an open editor included (its value is already in effect)
-		if (press) {
+		// BACK closes quick settings, an open editor included (its value is already in effect); in Split it first
+		// takes back the TX digits typed
+		if (press && ui_st.quick_edit && kind == QT_SPLIT && ui_st.entry_len > 0) {
+			ui_st.entry_digits[--ui_st.entry_len] = 0;
+			dirty = true;
+		} else if (press) {
 			if (ui_st.quick_edit)
 				quick_close_editor();
 			ui_pop();

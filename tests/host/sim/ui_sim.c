@@ -1011,20 +1011,45 @@ static void sim_vfo(bool on)
 		load_channel();
 	}
 }
+// board_in_band on this file's writable board (board.h's inline one reads the const declaration)
+static bool sim_tx_band(uint32_t hz)
+{
+	for (uint8_t i = 0; i < board.band_count; i++)
+		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz && board.bands[i].tx)
+			return true;
+	return false;
+}
+// As the radio core (vfo_set_hz): a split keeps its offset where TX can still transmit, else it is simplex
+static void sim_vfo_rx(uint32_t hz)
+{
+	uint32_t tx = vfo_tx_hz - vfo_rx_hz + hz;
+	vfo_rx_hz = hz;
+	vfo_tx_hz = sim_tx_band(tx) ? tx : hz;
+}
 void radio_req_vfo_step(int8_t dir)
 {
 	retune();
-	view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = view.ch.rx_hz + dir * view.vfo_step_hz;
+	sim_vfo_rx(view.ch.rx_hz + dir * view.vfo_step_hz);
+	view.ch.rx_hz = vfo_rx_hz;
+	view.ch.tx_hz = vfo_tx_hz;
 	changed();
 }
 // As the radio core: off the VFO, the VFO opens on the frequency (Find's Tune VFO)
 void radio_req_vfo_set(uint32_t hz)
 {
 	retune();
-	vfo_rx_hz = vfo_tx_hz = hz;
+	sim_vfo_rx(hz);
 	if (!view.vfo)
 		sim_vfo(true);
-	view.ch.rx_hz = view.ch.tx_hz = hz;
+	view.ch.rx_hz = vfo_rx_hz;
+	view.ch.tx_hz = vfo_tx_hz;
+	changed();
+}
+void radio_req_vfo_tx(uint32_t hz)
+{
+	if (!view.vfo || !sim_tx_band(hz ? hz : vfo_rx_hz))
+		return;
+	vfo_tx_hz = view.ch.tx_hz = hz ? hz : vfo_rx_hz;
 	changed();
 }
 // Copy to VFO as the radio core does (core/radio/radio_sm.c vfo_copy): what is in effect now is the VFO's own
@@ -2061,6 +2086,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "pos") == 0) snprintf(got, sizeof got, "%u", view.zone_pos + 1u);
 	else if (strcmp(key, "vfo") == 0) snprintf(got, sizeof got, "%u", view.vfo);
 	else if (strcmp(key, "freq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.rx_hz);
+	else if (strcmp(key, "txfreq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.tx_hz);
 	else if (strcmp(key, "mode") == 0) snprintf(got, sizeof got, "%s", view.ch.mode == RADIO_MODE_DMR ? "dmr" : "fm");
 	else if (strcmp(key, "tx") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_count);
 	else if (strcmp(key, "txid") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_id);

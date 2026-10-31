@@ -2629,7 +2629,10 @@ uint8_t ui_quick_kind(int pos, const radio_view_t *v)
 		return QT_POWER;
 	if (!v->vfo && pos == 3)
 		return QT_TO_VFO;	// a channel's tile 4 copies it to the VFO; the VFO's stays Mode
-	return v->ch.mode == RADIO_MODE_DMR ? dmr[pos] : fm[pos];
+	uint8_t kind = v->ch.mode == RADIO_MODE_DMR ? dmr[pos] : fm[pos];
+	if (v->vfo && (kind == QT_MONITOR || kind == QT_PRIVACY))
+		return QT_SPLIT;	// the VFO's TX frequency; Monitor stays on its key, privacy on channels
+	return kind;
 }
 
 static bool feat(uint32_t f)
@@ -2654,6 +2657,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		[QT_BRIGHTNESS] = "Bright", [QT_TIMESLOT] = QT_NAME("Timeslot", "Slot"), [QT_CC] = "Color",
 		[QT_HEAR_ALL] = QT_NAME("Digital monitor", "DMon"), [QT_PRIVACY] = QT_NAME("Privacy", "Priv"),
 		[QT_TALK_TO] = QT_NAME("Talk to", "Talk"), [QT_TO_VFO] = QT_NAME("Copy to VFO", "To VFO"),
+		[QT_SPLIT] = "Split",
 	};
 #undef QT_NAME
 	uint8_t kind = ui_quick_kind(tile, v);
@@ -2710,6 +2714,18 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	case QT_TO_VFO:
 		sb_str(&b, "Copy");
 		return CONFIG_VFO_FM || CONFIG_VFO_DMR;	// a channel the VFO can't hold is refused on the press, with the reason
+	case QT_SPLIT:
+		if (editing && s->entry_len > 0) {
+			// The TX frequency as typed: MHz digits, then the decimals
+			for (uint8_t i = 0; i < s->entry_len; i++) {
+				if (i == UI_ENTRY_MHZ)
+					sb_chr(&b, '.');
+				sb_chr(&b, s->entry_digits[i]);
+			}
+		} else {
+			sb_split(&b, v->ch.rx_hz, v->ch.tx_hz);
+		}
+		return v->vfo && (CONFIG_VFO_FM || CONFIG_VFO_DMR);
 	case QT_MONITOR:
 		sb_str(&b, v->monitor ? "On" : "Off");
 		return feat(UI_FEAT_MONITOR_LATCH);
