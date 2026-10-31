@@ -1488,7 +1488,8 @@ MEM_WINDOWS = {
                    (0x1FFFC000, 0x1FFFC010, False)],
     CHIP_HRC7000: [(0x03000000, 0x03200000, False), (0x00010000, 0x00058000, False), (0x18000000, 0x18008000, False),
                    (0x11000000, 0x11000060, True), (0x14020000, 0x14020080, True), (0x14100000, 0x14100080, True),
-                   (0x14110000, 0x14110080, True), (0x17000000, 0x17000090, True)],
+                   (0x14110000, 0x14110080, True), (0x17000000, 0x17000034, True), (0x1700003C, 0x17000040, True),
+                   (0x17000044, 0x1700004C, True), (0x17000060, 0x17000090, True)],
 }
 
 
@@ -1609,13 +1610,24 @@ def format_peek(addr, data):
     return lines
 
 
-def cmd_peek(link, a):
-    spec = a.where.split(":", 1)
-    addr = int(spec[0], 0)
-    n = int(spec[1], 0) if len(spec) > 1 else 4
+def peek_spec(text):
+    """ADDR[:LEN] for peek, checked before the radio is opened"""
+    import argparse
+    spec = text.split(":", 1)
+    try:
+        addr = int(spec[0], 0)
+        n = int(spec[1], 0) if len(spec) > 1 else 4
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r}: ADDR[:LEN] in decimal or 0x hex, e.g. 0x14100040:0x10")
+    if not 0 <= addr <= 0xFFFFFFFF:
+        raise argparse.ArgumentTypeError("ADDR is 0..0xFFFFFFFF")
     if n <= 0 or n > 64 * 1024:
-        print("rfoundry_debug: LEN is 1..65536", file=sys.stderr)
-        return 2
+        raise argparse.ArgumentTypeError("LEN is 1..65536")
+    return addr, n
+
+
+def cmd_peek(link, a):
+    addr, n = a.where
     why = mem_precheck(link, addr, n)
     if why:
         print(f"rfoundry_debug: {why}", file=sys.stderr)
@@ -1630,7 +1642,8 @@ def cmd_peek(link, a):
         if e.status == ST_UNAVAILABLE:
             print("rfoundry_debug: this firmware has no READ_MEM on this radio", file=sys.stderr)
             return 1
-        raise
+        print(f"rfoundry_debug: peek failed: {e}", file=sys.stderr)
+        return 1
     print("\n".join(format_peek(addr, data)))
     return 0
 
@@ -2030,7 +2043,7 @@ def main(argv=None):
     p.add_argument("-o", "--output", required=True, help="file outside any git tree")
     p = sub.add_parser("peek", help="hex dump of a few bytes: RAM, flash, or the registers READ_MEM allows "
                        "(docs/spec/debuglink.md 3.10)")
-    p.add_argument("where", metavar="ADDR[:LEN]", help="e.g. 0x14100040 or 0x17000000:0x90 (LEN default 4)")
+    p.add_argument("where", metavar="ADDR[:LEN]", type=peek_spec, help="e.g. 0x14100040 or 0x17000060:0x30 (LEN default 4)")
     p = sub.add_parser("reboot")
     p.add_argument("--rom-dfu", action="store_true", help="into ST's ROM USB DFU (refused unless RDP level 0)")
     p = sub.add_parser("crash", help="the crash log: show, clear, test trap|assert (docs/spec/crash-log.md)")

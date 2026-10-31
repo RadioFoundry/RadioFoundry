@@ -327,7 +327,8 @@ static void link_section(dl_text_t *t)
 	dl_text(t, "input.encoder_total=%d\n", (int)input_encoder_total());
 	hal_encoder_stats_t es;
 	uint32_t deferred;
-	if (input_encoder_stats(&es, &deferred)) {
+	bool stats = input_encoder_stats(&es, &deferred);
+	if (stats) {
 		// The decoder's view, before the UI: transitions / detents should be enc_steps; illegal stays near 0
 		dl_text(t, "input.enc_detents=%d\ninput.enc_transitions=%u\ninput.enc_illegal=%u\n", (int)es.detents,
 			(unsigned)es.transitions, (unsigned)es.illegal);
@@ -336,16 +337,6 @@ static void link_section(dl_text_t *t)
 		if (es.irq_watch) {
 			// Lost encoder interrupts the scan found and served; the state is the first stall's (0 until one)
 			dl_text(t, "input.enc_irqs=%u\ninput.enc_stalls=%u\n", (unsigned)es.irqs, (unsigned)es.stalls);
-		}
-		if (es.stalls != 0) {
-			// Three words each, hex: the interrupt controller's two mask words and request record, the GPIO bank's
-			// pending, enabled and masked bits (one line each: the link section is near the reply size)
-			dl_text(t, "input.enc_stall_ms=%u\ninput.enc_stall_handler=%u\n", (unsigned)es.stall_ms,
-				(unsigned)es.stall_handler_ok);
-			dl_text(t, "input.enc_stall_pic=%08x,%08x,%08x\n", (unsigned)es.stall_irq_mask[0],
-				(unsigned)es.stall_irq_mask[1], (unsigned)es.stall_irq_pending);
-			dl_text(t, "input.enc_stall_gpio=%08x,%08x,%08x\n", (unsigned)es.stall_gpio_pending,
-				(unsigned)es.stall_gpio_enabled, (unsigned)es.stall_gpio_masked);
 		}
 	}
 	dl_text(t, "input.enc_deferred=%u\n", (unsigned)deferred);
@@ -361,6 +352,17 @@ static void link_section(dl_text_t *t)
 	}
 	dl_text(t, "dl.frames=%u\ndl.bad_crc=%u\ndl.too_long=%u\ndl.timeouts=%u\n", (unsigned)c[0], (unsigned)c[1],
 		(unsigned)c[2], (unsigned)c[3]);
+	if (stats && es.stalls != 0) {
+		// Last, as the section is near the reply size: a full reply drops this detail, never the counters above.
+		// Three words each, hex: the interrupt controller's two mask words and request record, the GPIO bank's
+		// pending, enabled and masked bits
+		dl_text(t, "input.enc_stall_ms=%u\ninput.enc_stall_handler=%u\n", (unsigned)es.stall_ms,
+			(unsigned)es.stall_handler_ok);
+		dl_text(t, "input.enc_stall_pic=%08x,%08x,%08x\n", (unsigned)es.stall_irq_mask[0],
+			(unsigned)es.stall_irq_mask[1], (unsigned)es.stall_irq_pending);
+		dl_text(t, "input.enc_stall_gpio=%08x,%08x,%08x\n", (unsigned)es.stall_gpio_pending,
+			(unsigned)es.stall_gpio_enabled, (unsigned)es.stall_gpio_masked);
+	}
 }
 
 static void storage_section(dl_text_t *t)

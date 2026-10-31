@@ -680,7 +680,7 @@ GPIO bank had both encoder bits pending, enabled and unmasked, and the handler n
 had most likely masked the source; a fallback handler that masks a source it has no handler for is one way. Rule: on a
 board whose encoder runs on one level interrupt, the key scan checks that a pending encoder interrupt is taken. Pending
 on two scans running with no handler entry between them, keep the controller and bank state for the debug link, serve
-the bank from the scan and unmask the source. Count every source the fallback handler masks. Radios: the HR_C7000
+the bank from the scan and unmask the source (the steps of the stall window may be lost). Count every source the fallback handler masks. Radios: the HR_C7000
 boards with an interrupt-driven encoder; one confirmed.
 
 ## 17. Scan

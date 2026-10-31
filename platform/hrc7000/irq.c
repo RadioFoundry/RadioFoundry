@@ -67,8 +67,10 @@ static void unhandled(void)
 
 void hrc_irq_unhandled(uint32_t *count, uint32_t *last_source)
 {
+	uint32_t psr = hrc_irq_save();	// a pair from the same interrupt
 	*count = unhandled_count;
 	*last_source = unhandled_source;
+	hrc_irq_restore(psr);
 }
 
 void hrc_irq_register(uint8_t source, hrc_irq_fn fn)

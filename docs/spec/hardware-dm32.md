@@ -569,7 +569,8 @@ interrupt and the handler never ran, so PIC source 14 had most likely been maske
 watches for it (`platform/hrc7000/gpio_watch.c`): the 10 ms key scan counts the handler's entries, and the encoder bits
 pending on two scans running with no entry between them is a stall. The first stall's PIC masks and request record,
 GPIO B's INTSTATUS, INTEN and INTMASK, and whether the vector still pointed at the handler are kept; then, with
-interrupts off, the scan serves the bank as the handler would (sample, ack) and unmasks source 14. The debug link shows
+interrupts off, the scan serves the bank as the handler would (sample, ack) and unmasks source 14. Steps turned in the
+10-20 ms before the scan saw the stall may be lost: the scan samples once. The debug link shows
 the count and that state (`input.enc_stalls`, `input.enc_stall_*`), and `irq.unhandled` counts sources the fallback
 handler masked ([debuglink.md](debuglink.md) 3.7). READ_MEM reads GPIO B and the PIC live (debuglink.md 3.10).
 

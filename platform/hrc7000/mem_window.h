@@ -27,7 +27,12 @@ static inline bool hrc_mem_window_for(unsigned i, hal_mem_window_t *w, uint32_t 
 		{ 0x14020000u, 0x1402007Fu, true },	// GPIO A
 		{ 0x14100000u, 0x1410007Fu, true },	// GPIO B
 		{ 0x14110000u, 0x1411007Fu, true },	// GPIO C
-		{ 0x17000000u, 0x1700008Fu, true },	// PIC: modes, polarities, masks, priorities, request record
+		// PIC, only the registers hardware-dm32.md 4.1 documents (what the gaps hold is unknown): mode, polarity,
+		// mask, vector, EOI, priorities; fast select; the request record; the _1 set
+		{ 0x17000000u, 0x17000033u, true },
+		{ 0x1700003Cu, 0x1700003Fu, true },
+		{ 0x17000044u, 0x1700004Bu, true },
+		{ 0x17000060u, 0x1700008Fu, true },
 	};
 	if (i == 0) {
 		*w = (hal_mem_window_t){ 0x03000000u, 0x03000000u + flash_size - 1u, false };	// program flash (XIP)

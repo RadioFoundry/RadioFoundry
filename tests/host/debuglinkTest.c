@@ -400,7 +400,10 @@ static void test_chip(void)
 	CHECK(!dl_mem_allowed(0x14100040u, 2, hrc1m) && !dl_mem_allowed(0x14100042u, 4, hrc1m) &&
 	      !dl_mem_allowed(0x14100041u, 1, hrc1m), "GPIO: unaligned or partial words refused");
 	CHECK(!dl_mem_allowed(0x1410007Cu, 8, hrc1m), "past the GPIO block");
-	CHECK(dl_mem_allowed(0x17000000u, 0x90, hrc1m) && dl_mem_allowed(0x17000068u, 4, hrc1m), "PIC");
+	CHECK(dl_mem_allowed(0x17000000u, 0x34, hrc1m) && dl_mem_allowed(0x17000044u, 8, hrc1m) &&
+	      dl_mem_allowed(0x17000060u, 0x30, hrc1m), "PIC");
+	CHECK(!dl_mem_allowed(0x17000000u, 0x90, hrc1m) && !dl_mem_allowed(0x17000034u, 4, hrc1m) &&
+	      !dl_mem_allowed(0x17000040u, 4, hrc1m) && !dl_mem_allowed(0x1700004Cu, 4, hrc1m), "PIC: undocumented gaps refused");
 	CHECK(dl_mem_allowed(0x1100003Cu, 4, hrc1m) && !dl_mem_allowed(0x11000060u, 4, hrc1m), "system block, not the modem");
 	CHECK(!dl_mem_allowed(0x14000000u, 4, hrc1m) && !dl_mem_allowed(0x1400000Cu, 4, hrc1m), "timers refused (EOI)");
 	CHECK(!dl_mem_allowed(0x14010000u, 4, hrc1m), "watchdog refused");
