@@ -259,10 +259,18 @@ In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **Split**: TX agains
 
 <img src="../ux/screens/160x120i5/quick_vfo_split.png" width="200" alt="Typing a TX frequency in Split">
 
-- **Up** and **Down** go Off, + offset, - offset, at once. The offset is 600 kHz below 300 MHz and 5 MHz above, or the
-  VFO's own once it has one.
-- Or type the TX frequency as you type a VFO frequency (**1 4 7 0 0** is 147.000) and press **OK**. **Back** takes the
-  last digit back.
+- **Up** and **Down** step through the band's usual offsets, at once. **Up** goes +, **Down** goes -, the most common
+  first, and stop at the last one:
+
+  | Band | Offsets |
+  |---|---|
+  | 2 m (below 200 MHz) | 600 kHz |
+  | 1.25 m (200-300 MHz) | 1.6 MHz |
+  | 70 cm (above 300 MHz) | 5 MHz, then 7.6 MHz, then 1.6 MHz |
+
+  On 70 cm, **Up** from Off is +5M, again +7.6M, again +1.6M; **Down** from +5M goes back to Off, then -5M.
+- Any other split (a custom one): type the TX frequency as you type a VFO frequency (**1 4 7 0 0** is 147.000) and
+  press **OK**. **Back** takes the last digit back. Any frequency the radio can transmit on is accepted.
 - A new RX frequency keeps the offset within the same band. A move to another band (UHF to VHF, say) makes the VFO simplex.
 - Monitor stays on its key in the VFO, and privacy is for channels.
 - Home shows the TX frequency: on FM after **PTT→**; on DMR in the top row ("TX 147.120"), or as the offset beside the

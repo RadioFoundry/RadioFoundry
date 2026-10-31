@@ -1091,20 +1091,45 @@ void ui_quick_enter(void)
 	entry_cancel();
 }
 
-// The VFO's split (quick tile Split): Up / Down go Off, +offset, -offset at once, the offset the VFO's own or the
-// usual repeater one (600 kHz below 300 MHz, 5 MHz above). Digits type a TX frequency into Home's entry digits (free
+// The usual repeater offsets of rx's band, most common first (ARRL, IARU Region 1, RSGB, WIA and NZART band plans):
+// 2 m 600 kHz; 1.25 m 1.6 MHz; 70 cm 5 MHz (the Americas, Japan, Oceania, GMRS, land mobile), then 7.6 and 1.6 MHz
+// (Europe). Others are typed as a TX frequency
+static uint8_t split_offsets(uint32_t rx, uint32_t *off)
+{
+	if (rx < 200000000u) {
+		off[0] = 600000u;
+		return 1;
+	}
+	if (rx < 300000000u) {
+		off[0] = 1600000u;
+		return 1;
+	}
+	off[0] = 5000000u;
+	off[1] = 7600000u;
+	off[2] = 1600000u;
+	return 3;
+}
+
+// The VFO's split (quick tile Split): Up / Down walk a line out from Off, the usual offsets most common first:
+// ... -7.6M, -5M, Off, +5M, +7.6M ..., stopping at the ends and skipping a TX outside RX's transmit band. A split not
+// on the line (typed) goes to the first offset its way. Digits type a TX frequency into Home's entry digits (free
 // while quick settings are open), OK sets it
 static void split_step(int8_t dir)
 {
 	uint32_t rx = view->ch.rx_hz, tx = view->ch.tx_hz;
-	uint32_t off = tx > rx ? tx - rx : rx - tx;
-	if (off == 0)
-		off = rx < 300000000u ? 600000u : 5000000u;
-	int at = tx == rx ? 0 : tx > rx ? 1 : 2;	// Off, +, -
-	for (int n = 0; n < 3; n++) {
-		at = (at + dir + 3) % 3;
-		uint32_t hz = at == 0 ? rx : at == 1 ? rx + off : rx - off;
-		if (at == 0 || board_in_band(hz, true)) {
+	uint32_t off[3];
+	int n = split_offsets(rx, off);
+	int at = 0;			// Off; +k for +off[k - 1], -k for -off[k - 1]
+	if (tx != rx) {
+		uint32_t cur = tx > rx ? tx - rx : rx - tx;
+		for (int k = 0; k < n; k++) {
+			if (off[k] == cur)
+				at = tx > rx ? k + 1 : -(k + 1);
+		}
+	}
+	for (at += dir; at >= -n && at <= n; at += dir) {
+		uint32_t hz = at == 0 ? rx : at > 0 ? rx + off[at - 1] : rx - off[-at - 1];
+		if (at == 0 || (board_tx_band(rx) >= 0 && board_tx_band(hz) == board_tx_band(rx))) {
 			radio_req_vfo_tx(at == 0 ? 0 : hz);
 			break;
 		}
