@@ -7,7 +7,7 @@
 import { h, button } from "../flasher/dom.js";
 import { parseFreq, parseTone, mhz } from "../codeplug/fields.js";
 import { LIMITS, POWER_NAMES } from "../codeplug/records.js";
-import { refNumber } from "../codeplug/model.js";
+import { refNumber, listenBand } from "../codeplug/model.js";
 
 // --- Parsers shared by the columns and the forms ---
 
@@ -42,6 +42,16 @@ const freq = (t) => (r, k, v) => {
 	if (hz === null) return t("editor.err.bad_freq");
 	r[k] = hz;
 };
+
+// An RX frequency in a receive-only band (model.js listenBand) makes the channel RX only
+const rxFreq = (t) => (r, k, v) => {
+	const err = freq(t)(r, k, v);
+	if (!err && listenBand(r.rxHz)) r.rxOnly = true;
+	return err;
+};
+
+// The mode as the radio shows it: an FM channel in the air band is received in AM
+const modeText = (r, t) => (r.mode === "dmr" ? "DMR" : listenBand(r.rxHz) ? t(`editor.mode.${listenBand(r.rxHz)}`) : "FM");
 
 const tone = (t) => (r, k, v) => {
 	const s = parseTone(v);
@@ -103,11 +113,11 @@ export function columns(table, m, t) {
 		return [
 			num,
 			col("name", "editor.col.name", "text", name(LIMITS.name)(t)),
-			col("mode", "editor.col.mode", "select", pick, { options: () => [["fm", "FM"], ["dmr", "DMR"]] }),
+			col("mode", "editor.col.mode", "select", pick, { options: () => [["fm", "FM"], ["dmr", "DMR"]], format: (v, r) => modeText(r, t) }),
 			col("rxHz", "editor.col.rx", "text", (r, k, v) => {
 				// a simplex channel stays simplex: TX follows RX when they were the same
 				const was = r.rxHz;
-				const err = freq(t)(r, k, v);
+				const err = rxFreq(t)(r, k, v);
 				if (!err && r.txHz === was) r.txHz = r.rxHz;
 				return err;
 			}, { format: mhz, numeric: true }),
@@ -209,11 +219,15 @@ export function channelForm(m, t) {
 		txt("name", "editor.col.name", name(LIMITS.name)(t)),
 		sel("mode", "editor.col.mode", () => [["fm", "FM"], ["dmr", "DMR"]]),
 		sel("power", "editor.col.power", () => powerOptions(t)),
-		{ type: "pair", key: "freqs", fields: [txt("rxHz", "editor.col.rx", freq(t), mhz), txt("txHz", "editor.col.tx", freq(t), mhz)], buttons: [
+		{ type: "pair", key: "freqs", fields: [txt("rxHz", "editor.col.rx", rxFreq(t), mhz), txt("txHz", "editor.col.tx", freq(t), mhz)], buttons: [
 			["→", t("editor.freq.rx_to_tx"), ([rx]) => [rx, rx]],
 			["⇄", t("editor.freq.swap"), ([rx, tx]) => [tx, rx]],
 			["←", t("editor.freq.tx_to_rx"), ([, tx]) => [tx, tx]],
 		] },
+		{ type: "note", key: "band", text: (value) => {
+			const band = listenBand(parseFreq(value("rxHz")));
+			return band ? t(`editor.band.${band}`) : "";
+		} },
 		txt("tot", "editor.col.tot", tot(t), (v) => (v ? String(v) : t("editor.tot.default"))),
 		chk("rxOnly", "editor.col.rx_only"),
 		fm({ group: t("editor.form.analog") }),
@@ -294,6 +308,11 @@ export function formDialog(title, fields, record, t, onSave) {
 			const row = h("h3", { class: "form-group" }, f.group);
 			rows.push({ f: { key: null, type: "group", show: f.show }, input: null, row });
 			body.append(row);
+		} else if (f.type === "note") {
+			// a line of text from the inputs as they are typed
+			const row = h("p", { class: "form-note small muted", hidden: true });
+			rows.push({ f, input: null, row });
+			body.append(row);
 		} else if (f.type === "pair") {
 			// two fields side by side with small buttons between them that act on both inputs
 			const a = field(f.fields[0]), b = field(f.fields[1]);
@@ -322,6 +341,11 @@ export function formDialog(title, fields, record, t, onSave) {
 				if (f.show) row.hidden = !f.show(work);
 				continue;
 			}
+			if (f.type === "note") {
+				row.textContent = f.text((k) => byKey(k).input.value);
+				row.hidden = !row.textContent;
+				continue;
+			}
 			if (f.type === "select") {
 				const v = input._opts[input.selectedIndex]?.[0];
 				f.set ? f.set(work, v) : (work[f.key] = v);
@@ -342,7 +366,7 @@ export function formDialog(title, fields, record, t, onSave) {
 	const save = () => {
 		const bad = [];
 		for (const { f, input } of rows) {
-			if (f.type === "bool" || f.type === "pair" || f.type === "group") continue;
+			if (f.type === "bool" || f.type === "pair" || f.type === "group" || f.type === "note") continue;
 			if (f.type === "select") {
 				const v = input._opts[input.selectedIndex]?.[0];
 				f.set ? f.set(work, v) : (work[f.key] = v);

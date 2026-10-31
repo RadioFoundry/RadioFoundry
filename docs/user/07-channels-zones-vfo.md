@@ -285,6 +285,10 @@ Tune there in the VFO (type **1** **1** **8** **1**, or **0** **8** **8** **1**,
 channel on the frequency in the codeplug. Both are receive only: PTT shows "Air band: receive only" or "Broadcast: receive
 only" and the radio doesn't transmit. Sub-audio tones are ignored.
 
+In the Codeplug Editor, a channel whose RX frequency is in one of these bands is set to **RX Only** when you type the
+frequency, and its mode shows as "AM (air band)" or "FM broadcast". The Problems list warns about a channel there that
+isn't RX Only or is DMR.
+
 In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a
 fading station isn't cut, and the screen and LED show it is receiving. The squelch only stops a scan on a station:
 while a scan runs, the broadcast band is quiet between stations.

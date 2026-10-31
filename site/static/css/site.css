@@ -581,6 +581,7 @@ table.grid tr.selected td { background: var(--accent-soft); }
 .badge-bad { background: var(--bad-soft); color: var(--bad); }
 dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflow: auto; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--space-2) var(--space-4); align-items: start; }
+.form-note { grid-column: 1 / -1; margin: 0; }
 .form-grid .form-group { grid-column: 1 / -1; margin: var(--space-3) 0 0; font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .form-row { display: grid; gap: var(--space-1); }
 .form-row label { font-size: var(--text-sm); font-weight: 600; }

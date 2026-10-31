@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { CodeplugImage, CODEPLUG_SPAN } from "../static/js/codeplug/image.js";
-import { decode, encode, empty, remove, validate, newChannel, newContact, refNumber } from "../static/js/codeplug/model.js";
+import { decode, encode, empty, remove, validate, newChannel, newContact, refNumber, listenBand } from "../static/js/codeplug/model.js";
 import { getTone, putTone, parseTone, parseFreq, mhz, getCoord, coordBytes } from "../static/js/codeplug/fields.js";
 import * as iddb from "../static/js/codeplug/iddb.js";
 import { targets } from "../static/js/flasher/restore.js";
@@ -194,6 +194,15 @@ test("validation finds the problems the radio would refuse", () => {
 	m.zones[0].channels = Array(81).fill(m.channels[0]);
 	const codes = validate(m).filter((p) => p.level === "error").map((p) => p.code).sort();
 	assert.deepEqual(codes, ["bad_freq", "bad_tone", "id_range", "too_many"]);
+});
+
+test("the air band and broadcast FM are receive only: a TX frequency there without RX Only, or a DMR channel, is warned", () => {
+	assert.deepEqual([64990000, 65000000, 107990000, 108000000, 136990000, 137000000].map(listenBand), [null, "bcast", "bcast", "air", "air", null]);
+	const m = empty();
+	const ch = (name, rxHz, mode, rxOnly) => newChannel({ name, rxHz, txHz: rxHz, mode, rxOnly });
+	m.channels.push(ch("c0", 118100000, "fm", true), ch("c1", 98500000, "fm", false), ch("c2", 121500000, "dmr", true), ch("c3", 146520000, "fm", false));
+	const warned = validate(m).filter((p) => p.code.startsWith("listen_")).map((p) => [p.item.name, p.code]);
+	assert.deepEqual(warned, [["c1", "listen_tx_bcast"], ["c2", "listen_dmr_air"]]);
 });
 
 test("the DMR ID database is found by the radio across both areas", () => {
