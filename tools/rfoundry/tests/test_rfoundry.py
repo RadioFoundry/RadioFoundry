@@ -823,6 +823,16 @@ class StockLibrary(unittest.TestCase):
         k = stockfw.derive_key(bytes(s), hashlib.sha256(KEY).hexdigest())
         self.assertEqual(k, KEY)
 
+    def test_derive_key_ff_padding(self):
+        """A file mostly 0xFF (erased flash padding, as Retevis's RT82 EXXT_V2) votes key ^ 0xFF: the flipped vote."""
+        stock, _, _, _ = synthetic_stock()
+        s = bytearray(stock)
+        total = sum(n for _, n in stockfw.parse_container(stock))
+        for i in range(total * 3 // 5):
+            s[stockfw.HEADER_LEN + i] = 0xFF ^ KEY[i % 1024]
+        k = stockfw.derive_key(bytes(s), hashlib.sha256(KEY).hexdigest())
+        self.assertEqual(k, KEY)
+
     def test_single_segment_container(self):
         """The MD-380 files: count word 0xFFFFFFFF, one segment in the first table entry."""
         hdr = bytearray(stockfw.HEADER_LEN)
