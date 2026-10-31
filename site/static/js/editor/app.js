@@ -484,11 +484,18 @@ async function connect() {
 		stream = S.fake.stream();
 	} else {
 		if (!serialSupported()) throw new TransportError("no_serial");
-		const choice = await chooseLink();
-		if (!choice) return null;
-		cable = choice === "cable";
-		const port = await navigator.serial.requestPort(cable ? { filters: CABLES } : { filters: [RFOUNDRY_USB] });
-		diag.note("port chosen", { cable, ...port.getInfo?.() });
+		// one chooser for both links: the radio's own USB port, or a programming cable, told apart by the port's USB ID
+		let port;
+		try {
+			port = await navigator.serial.requestPort({ filters: [RFOUNDRY_USB, ...CABLES] });
+		} catch (e) {
+			if (e?.name !== "NotFoundError") throw e;
+			say(t("editor.connect.none"), "warn");
+			return null;
+		}
+		const info = port.getInfo?.() || {};
+		cable = !(info.usbVendorId === RFOUNDRY_USB.usbVendorId && info.usbProductId === RFOUNDRY_USB.usbProductId);
+		diag.note("port chosen", { cable, ...info });
 		stream = await SerialStream.open(port);
 	}
 	const tr = new CpsSerial(stream, { cable });
@@ -502,21 +509,6 @@ async function connect() {
 		await tr.close();
 		throw e;
 	}
-}
-
-function chooseLink() {
-	return new Promise((resolve) => {
-		let picked = null;
-		const d = dialog(t("editor.connect.title"), [
-			h("p", {}, t("editor.connect.text")),
-			h("div", { class: "choice-grid" },
-				h("button", { type: "button", class: "choice", onclick: () => { picked = "usb"; d.close(); } },
-					h("b", {}, t("editor.connect.usb")), h("span", { class: "small muted" }, t("editor.connect.usb_help"))),
-				h("button", { type: "button", class: "choice", onclick: () => { picked = "cable"; d.close(); } },
-					h("b", {}, t("editor.connect.cable")), h("span", { class: "small muted" }, t("editor.connect.cable_help")))),
-			h("details", { class: "small" }, h("summary", {}, t("editor.connect.network")), h("p", {}, t("editor.connect.network_help"))),
-		], null, null, () => resolve(picked));
-	});
 }
 
 function radioError(e) {
