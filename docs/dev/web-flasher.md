@@ -27,6 +27,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `backup.js`, `zip.js` | Backup bundles | |
 | `restore.js` | What a bundle can put back, and the plans for it | |
 | `select.js` | À la carte feature selection with the dependencies, matching prebuilt variants | |
+| `update.js` | The Update task's build: which build a radio runs (below) and the build its update installs | |
 | `codeplug.js` | Codeplug formats and the converter registry | |
 | `migrate.js` | The original firmware's channels after an install: a stock codeplug found, converted, written and read back (below) | `tools/codeplug_port.py` |
 | `fake.js` | A simulated radio: bootloader with a flash model, RadioFoundry's serial port, a synthetic stock file | `rfoundry/fakedfu.py` |
@@ -246,6 +247,32 @@ locally (`practiceFetch`) and sends nothing.
 
 Where it is offered: the button under every failure notice (`errorNotice()`, `problemNotice()`), the failed checks of
 the install, cable radio and loader routes, and the quiet "Something wrong? Report a Problem" link on Verify.
+
+## The Update task
+
+**Update** reaches a radio that runs RadioFoundry with one port chooser (its USB port and the programming cables),
+probes it, and lets the radio's backend take the connection: the STM32 radios keep the debug link (`S.link`), the
+HR_C7000 radios hand the open cable to their connect step (`c7000ui.js` `adoptCable`), which enters the stub without
+asking for the port again. The steps are `update`, then the backend's: `write`, `done` on the STM32 radios (the loader
+route when it can, the bootloader otherwise), `connect`, `check`, `write`, `done` on the HR_C7000 radios, whose check
+reads only the codec slot unless the user asked for a backup. **Edit Build** (or a build the radio can't name) puts
+`build` after `update`.
+
+Which build runs (`update.js` `currentBuild`), from VERSION ([debuglink.md](../spec/debuglink.md) 3.1):
+
+| Radio says | Build | The update |
+|---|---|---|
+| `preset=` a variant, `off=` | that variant | the same variant; features it gained since are listed |
+| `preset=custom`, `off=` equal to a variant's | that variant | as above |
+| `preset=custom`, `off=` | custom | every switch as it was; each feature added since is asked, On or Off, before Update |
+| neither (older firmware) | its `features=` against the variants of its release, by the names `features=` can carry (`features.json` `reported`) | one exact match: that variant; else the build step, from the closest |
+
+The release a radio's build came from is the one with its commit, else the newest one older than its `git_time`. What
+that release knew is its variants' features and its manifests' `off` lists (`tools/release.py`): a switch in neither
+is new. A release from before manifests carried `off` names only its variants' features, so a switch a custom build had
+on in no variant reads as new, once.
+
+The Codeplug Editor's **Update Firmware** opens `flash/index.html#update` and closes its own connection.
 
 ## Radio access backends
 

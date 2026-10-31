@@ -37,8 +37,9 @@ server: files, the codeplug and your RadioID API key stay on your computer.
    new codeplug without restarting.
 
 After a read, the editor says when a newer RadioFoundry release is out for the radio, and what it adds to reading and
-writing (faster transfers, the compact ID database). **Update Firmware** opens the [web installer](02-installing.md#updating-radiofoundry)
-in a new tab. The codeplug and settings stay on the radio through the update.
+writing (faster transfers, the compact ID database). **Update Firmware** opens the [web installer's Update](02-installing.md#updating-radiofoundry)
+in a new tab and lets go of the radio's port, so the installer can connect. The codeplug and settings stay on the radio
+through the update.
 
 ### Programming several radios
 

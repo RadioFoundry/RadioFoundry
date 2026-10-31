@@ -38,7 +38,7 @@ import { fromSerialInfo, isCh340 } from "./adapter.js";
 import * as crumbs from "./trail.js";
 
 // USB-serial chips found in programming cables (tools/serial_loader.py USB_SERIAL), for the port chooser
-const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
+export const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
 const CH340 = 0x1A86;
 const ROM_WAIT = 180000;		// how long the page listens for the boot ROM per try
 const BOOT_MS = 9000;			// a soft reset to RadioFoundry answering its debug link (bench 2026-10-15: 8-9 s)
@@ -148,6 +148,16 @@ async function openCable(any = false) {
 	ctx.useAdapter?.(fromSerialInfo(c.portInfo));
 	c.stream = await SerialStream.open(port);
 	return c.stream;
+}
+
+// The update task's connection: the cable it opened and RadioFoundry's answer on it. The connect step goes on from there
+// without asking for the port again
+export function adoptCable(stream, portInfo, probe) {
+	const c = session();
+	c.stream = stream;
+	c.portInfo = portInfo;
+	c.rfoundry = probe;
+	ctx.useAdapter?.(fromSerialInfo(portInfo));
 }
 
 // A CH340 cable (adapter.js): the warning on every step that works through it
@@ -473,7 +483,8 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 	if (c.stub && c.stream) {
 		// already connected (back from a later step): check the stub still answers
 		quiet(c).then(() => c.stub.attach()).then((ok) => (ok ? ready(t("flash.c7.connect.still")) : cableStep()), () => cableStep());
-	} else cableStep();
+	} else if (c.stream) find();	// the update task opened the cable and met RadioFoundry already (adoptCable)
+	else cableStep();
 	return box;
 }
 
@@ -622,7 +633,9 @@ export function checkView() {
 	// through the factory update mode nothing of the stub runs: the radio is off until the install's own step
 	const top = radioTop(S().radio, viaIap() ? { led: "off", screen: "any" } : { led: "wait", screen: screenNow() });
 	const firstInstall = !c.rfoundry;
-	const want = (S().c7want ||= backupChoices(firstInstall, hasCal()));
+	// an update reads nothing but the codec slot unless the user asked for a backup (S.updateBackup)
+	const update = S().task === "update" && !S().updateBackup;
+	const want = (S().c7want ||= update ? { progmem: false, cal: false, q128: false } : backupChoices(firstInstall, hasCal()));
 	if (viaIap() && !c.analysis) c.analysis = { firmware: "unknown", slot: null, codec: null };
 	const items = {};
 	const item = (key, title) => (items[key] = h("li", { "data-state": "" }, h("span", {}, h("b", {}, title), h("span", { class: "small muted" }))));
@@ -667,8 +680,10 @@ export function checkView() {
 		if (skip) skip.hidden = true;
 	};
 	forward(run);
+	// an update without a backup has nothing to choose: the codec slot is read at once
+	if (update && !c.analysis) setTimeout(() => go(), 0);
 	// this radio's own times for the choices, counted while the user reads them
-	if (!c.analysis) sizeUp(c).then(() => { options.refresh(); if (skip) refreshSkip(); });
+	else if (!c.analysis) sizeUp(c).then(() => { options.refresh(); if (skip) refreshSkip(); });
 
 	async function go({ skipFirmware = false } = {}) {
 		run.disabled = true;
@@ -1272,11 +1287,12 @@ export async function splitOwnImage(c, board, data) {
 // skips the radio step. Stock firmware comes back through the restore task: from a backup, or from the radio's
 // original firmware file (vendorBundle).
 const INSTALL = ["radio", "build", "connect", "check", "write", "done"], RECOVER = ["build", "connect", "check", "write", "done"];
+const UPDATE = ["update", "connect", "check", "write", "done"];
 register({
 	id: "c7000-stub",
 	available: (radio, fb) => isC7000(radio, fb),		// install and backup, stock firmware or RadioFoundry
-	steps: (task, { recovering }) => (task === "install" ? (recovering ? RECOVER : INSTALL) : null),
-	stepLabel: (step, task) => (task === "install" && step === "done" ? "c7_done" : step),
+	steps: (task, { recovering }) => (task === "install" ? (recovering ? RECOVER : INSTALL) : task === "update" ? UPDATE : null),
+	stepLabel: (step, task) => (task !== "backup" && step === "done" ? "c7_done" : step),
 	views: { connect: connectView, check: checkView, write: writeView, done: doneView, backup: backupView, restore: restoreView },
 	recovery: { first: "fix", stock: "restore", reach: "flash.help.c7_reach", stockText: "flash.help.fix.stock_c7",
 		// the factory update mode: a reinstall that needs nothing to answer on the cable but the radio's own loader. stuck:

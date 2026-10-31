@@ -742,9 +742,11 @@ async function offerUpdate(c) {
 	diag.note("update offered", { running: v.release || v.git, release: rel.version, gains });
 	const body = [h("p", {}, t("editor.update.text", { radio: c.radio.name, version: rel.version, running }))];
 	if (gains.length) body.push(h("p", {}, t("editor.update.gains")), h("ul", {}, ...gains.map((f) => h("li", {}, t(`editor.update.gain.${f}`)))));
-	dialog(t("editor.update.title"), body, t("editor.update.go"), (close) => {
-		window.open(`${ROOT}flash/index.html#radio=${encodeURIComponent(c.radio.id)}`, "_blank", "noopener");
+	dialog(t("editor.update.title"), body, t("editor.update.go"), async (close) => {
+		// the flasher's tab needs the port: this one lets go of it (opened first, in the click, so no popup blocker stops it)
+		window.open(`${ROOT}flash/index.html#update`, "_blank", "noopener");
 		close();
+		if (S.conn === c) await dropConnection();
 	}, () => {}, { cancel: t("editor.update.later") });
 }
 

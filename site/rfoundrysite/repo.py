@@ -400,3 +400,12 @@ def releases(dist):
 		if m.get("format", "").startswith("rfoundry-release/") and os.path.isfile(img):
 			out.append((m, img))
 	return out
+
+
+def reported_features():
+	"""The switches a radio running RadioFoundry names in its VERSION features= list (core/hostlink/build_info.c): an
+	installer matches that list against the releases to tell which build an older radio runs."""
+	with open(path("core", "hostlink", "build_info.c"), encoding="utf-8") as f:
+		src = f.read()
+	block = re.search(r'const char build_features\[\] =(.*?);', src, re.S)
+	return sorted(set(re.findall(r'"([A-Z0-9_]+),?"', block.group(1)))) if block else []

@@ -34,7 +34,8 @@ backup. The web installer's own backup (below) holds it too.
 
 ## Install with the web installer
 
-Open the [web installer](https://radiofoundry.org/flash/index.html), choose **Install**, and follow the steps:
+Open the [web installer](https://radiofoundry.org/flash/index.html), choose **Install**, and follow the steps (a radio
+that runs RadioFoundry already: [Updating RadioFoundry](#updating-radiofoundry)):
 
 1. **Radio.** Pick your radio.
 2. **Build.** Pick **Full** (every feature the radio supports), **Amateur**, **Commercial**, or **Custom** to choose
@@ -114,9 +115,21 @@ This path has not been tested on a real radio yet. Keep your stock firmware file
 
 ### Updating RadioFoundry
 
-Start the radio normally with RadioFoundry running, connect it and run **Install** again. The installer asks the radio
-whether its codec is in place. If it is, it writes only the new firmware and needs no stock file. The codeplug and the
-settings stay: they live in separate flash that installing never touches.
+Start the radio normally with RadioFoundry running and choose **Update** in the web installer:
+
+1. Connect the radio and press **Connect**. One port list shows the radio's USB port and programming cables.
+2. The installer shows the radio, the installed version, the new version and the radio's build (Full, Amateur,
+   Commercial or Custom). The update installs the same build of the new release.
+   - **Edit Build** opens the build step, to change features before the update.
+   - A preset build lists the features the new release adds to it.
+   - A custom build lists the features added since it was made. Choose **On** or **Off** for each before updating.
+   - Firmware too old to report its build gets the build step, starting from the closest match.
+3. **Save a backup first** is optional and off. An update keeps the channels, settings, calibration and codec.
+4. Press **Update**. The installer builds the image, writes it and checks the version.
+
+The radio goes straight from RadioFoundry into the loader: no keys to hold, no stock file. The codeplug and the settings
+stay: they live in flash that updating never touches. **Install** still works on a radio that runs RadioFoundry, with
+every question asked.
 
 ### Backing up and restoring
 
