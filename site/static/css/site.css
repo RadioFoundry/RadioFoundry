@@ -556,7 +556,7 @@ table.grid td.c-ro { color: var(--muted); }
 table.grid tr.selected td { background: var(--accent-soft); }
 .grid-check { width: 2rem; text-align: center; }
 .grid-open { width: 2rem; }
-.grid-open .icon { width: 0.95rem; height: 0.95rem; max-width: none; vertical-align: -0.1rem; }
+.grid-open .pencil { display: inline-block; width: 0.95rem; height: 0.95rem; max-width: none; vertical-align: -0.1rem; }
 .ed-csv-problems { max-height: 50vh; overflow: auto; }
 .rid { display: grid; gap: var(--space-4); max-width: 60rem; }
 .rid-current { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }

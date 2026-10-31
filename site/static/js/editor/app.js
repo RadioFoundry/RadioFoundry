@@ -5,8 +5,9 @@
 // bug report (report.js). The working codeplug is kept in this browser (IndexedDB) so a reload doesn't lose edits.
 
 import { h, t, ROOT, button, notice, download, progressBar } from "../flasher/dom.js";
+import { equal } from "../flasher/bytes.js";
 import { SerialStream, serialSupported, RFOUNDRY_USB, browserErrorKey } from "../flasher/link.js";
-import { CodeplugImage, IDDB_HEADER } from "../codeplug/image.js";
+import { CodeplugImage, IDDB_HEADER, REGIONS } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
@@ -612,11 +613,11 @@ function convertDue(radio) {
 // A read of the ID database expected to take this long or longer (seconds) is offered, not made
 const IDDB_ASK = 20;
 
-function askIddb(c, db, bytes, seconds, rest) {
+function askIddb(c, db, bytes, seconds) {
 	return new Promise((done) => {
 		let yes = false;
 		dialog(t("editor.iddb_read.title"), [h("p", {}, t("editor.iddb_read.text", { radio: c.radio.name, n: db.count.toLocaleString(),
-			size: kb(bytes), time: duration(seconds), rest: duration(rest) })), h("p", {}, t("editor.iddb_read.skip_help"))],
+			size: kb(bytes), time: duration(seconds) })), h("p", {}, t("editor.iddb_read.skip_help"))],
 		t("editor.iddb_read.read"), (close) => {
 			yes = true;
 			close();
@@ -631,12 +632,27 @@ function duration(s) {
 }
 
 // The ID database a read skipped, read now into the codeplug (the DMR ID Database tab's button)
+// The radio on the line holds the codeplug last read from it (img): its regions read again and compared
+async function sameCodeplug(c, img) {
+	const now = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
+		c.transport.read({ iddb: false, signal, cache: img, progress: (n, total) => bar.set(n, total) }));
+	const at = (x, a, b) => x.bytes.subarray(a, Math.min(b, x.bytes.length));
+	return REGIONS.every(([a, b]) => equal(at(now, a, b), at(img, a, b)));
+}
+
 function readSkippedIddb() {
 	return exclusive(async () => {
 		const c = S.conn;
 		try {
 			if (!c?.image || !S.iddbSkipped || S.iddbChanged) return;
+			const [was, known] = [c.image, c.dbKnown];
 			await onLine(c);
+			// firmware that doesn't give its chip UID: the codeplug read again (with the fast protocol only the blocks that
+			// changed move) and unchanged is the same radio
+			if (!c.image && !c.uid && await sameCodeplug(c, was)) {
+				c.image = was;
+				c.dbKnown = known;
+			}
 			if (!c.image) return say(t("editor.iddb_read.swapped"), "warn");
 			// the header from the radio, not from c.image: a write since the read left the model's erased header there
 			const img = await withProgress(t("editor.reading_iddb", { radio: c.radio.name }), async (bar, signal) =>
@@ -677,7 +693,7 @@ async function readRadio() {
 			const dbBytes = c.transport.iddbBytes(head);
 			const rate = c.rate || (c.cable ? 9000 : 30000);
 			const seconds = cached ? 0 : Math.ceil(dbBytes / rate);
-			const readDb = dbBytes > 0 && (seconds < IDDB_ASK || await askIddb(c, db, dbBytes, seconds, c.transport.codeplugBytes / rate));
+			const readDb = dbBytes > 0 && (seconds < IDDB_ASK || await askIddb(c, db, dbBytes, seconds));
 			const t0 = performance.now(), moved = c.transport.moved;
 			// the header just read serves as the cache for its own block on a first read
 			const img = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>

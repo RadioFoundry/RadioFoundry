@@ -193,11 +193,6 @@ export class CpsSerial {
 		return this.fastOr(() => this.fastReadIddb(img, { progress, signal, cache }), () => this.cpsReadIddb(img, { progress, signal }));
 	}
 
-	// What a read of the codeplug without the database reads, in bytes
-	get codeplugBytes() {
-		return REGIONS.reduce((n, [a, b]) => n + b - a, 0);
-	}
-
 	// What readIddb() reads, in bytes (0 without a database)
 	iddbBytes(img) {
 		return readHeader(img.bytes) ? this.iddbRest(img).reduce((n, [a, b]) => n + b - a, 0) : 0;

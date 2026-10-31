@@ -1609,7 +1609,7 @@
  "editor.about_seconds": "about {n} seconds",
  "editor.about_minutes": "about {n} minutes",
  "editor.iddb_read.title": "Read the DMR ID Database Too?",
- "editor.iddb_read.text": "The {radio} holds a DMR ID database of {n} names ({size}). Reading it takes {time}, the rest of the codeplug {rest}.",
+ "editor.iddb_read.text": "This connected {radio} holds a DMR ID database of {n} names ({size}). Reading it takes {time}.",
  "editor.iddb_read.skip_help": "You need it only to edit or remove the database, or to keep it in a saved file. Skipped, it stays on the radio as it is: a write leaves it alone. You can read it later on the DMR ID Database tab.",
  "editor.iddb_read.read": "Read ID Database",
  "editor.iddb_read.skip": "Skip",
