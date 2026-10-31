@@ -33,6 +33,13 @@ FRAME_LEN = 40
 BAUD = 921600
 RETRIES = 3
 TIMEOUT = 2.0			# seconds for each answer
+# The stock firmware's PC mode (programming mode), with the radio on and running its stock firmware: the codeplug is
+# read before the install, since RadioFoundry no longer reads the stock tables (docs/spec/codeplug-stock-anytone.md)
+PROGRAM = b"PROGRAM"
+END = b"END"
+READ = 0x52			# 'R' + address (4 B big-endian) + count (1 B)
+READ_REPLY = 0x57		# 'W' + address + count + data + sum + 06
+READ_MAX = 16			# bytes per read, as the vendor's programming software asks for them
 SPI_HEADER = 14			# chunk size, block count, payload length, 0
 SPI_MODEL_LEN = 8
 SPI_MODEL2 = SPI_HEADER + 12	# the second model name: after the first and its 4-byte version
@@ -254,12 +261,83 @@ class Radio:
         return n
 
 
+def read_request(addr, n):
+    """One read: 'R', the memory address (big-endian), the count"""
+    if not 0 < n <= READ_MAX:
+        raise ValueError("a read asks for 1 to %d bytes" % READ_MAX)
+    return bytes([READ]) + struct.pack(">IB", addr, n)
+
+
+def read_sum(b):
+    """The 8-bit sum of the bytes after the command byte (address, count, data)"""
+    return sum(b) & 0xFF
+
+
+def read_reply(addr, data):
+    """The radio's answer to a read (the fake's, and the tests')"""
+    body = struct.pack(">IB", addr, len(data)) + bytes(data)
+    return bytes([READ_REPLY]) + body + bytes([read_sum(body), ACK])
+
+
+def parse_read(addr, n, r):
+    """The data of the answer to read_request(addr, n), or UpdateError"""
+    if len(r) != n + 8 or r[0] != READ_REPLY or r[-1] != ACK:
+        raise UpdateError("the radio's answer to a read at 0x%08X is malformed: %s" % (addr, r.hex() or "nothing"))
+    got, cnt = struct.unpack_from(">IB", r, 1)
+    if got != addr or cnt != n:
+        raise UpdateError("the radio answered a read at 0x%08X with 0x%08X" % (addr, got))
+    if read_sum(r[1:-2]) != r[-2]:
+        raise UpdateError("bad sum in the answer to a read at 0x%08X" % addr)
+    return r[6:-2]
+
+
+class Program(Radio):
+    """The stock firmware's PC mode on a serial port: read its memory, then END (the radio restarts)"""
+
+    def hello(self):
+        self.port.reset_input_buffer()
+        self.port.write(PROGRAM)
+        r = self._read(len(HELLO_REPLY))
+        if r != HELLO_REPLY:
+            raise UpdateError("no answer to PROGRAM (%s): is the radio on, running its original firmware?"
+                              % (r.hex() or "nothing"))
+
+    def read(self, addr, n, progress=None):
+        out = bytearray()
+        while len(out) < n:
+            k = min(READ_MAX, n - len(out))
+            a = addr + len(out)
+            r = b""
+            for _ in range(self.retries):
+                self.port.reset_input_buffer()
+                self.port.write(read_request(a, k))
+                r = self._read(k + 8)
+                try:
+                    out += parse_read(a, k, r)
+                    break
+                except UpdateError:
+                    continue
+            else:
+                parse_read(a, k, r)
+            if progress:
+                progress(len(out), n)
+        return bytes(out)
+
+    def end(self):
+        """Leave the PC mode; the radio answers, then restarts"""
+        self.port.write(END)
+        return self._read(len(HELLO_REPLY)) == HELLO_REPLY
+
+
 class FakeRadio:
     """A simulated update mode for tests: answers the handshake and the identity, keeps what is written. nak_every:
     refuse every n-th frame once; silent_after: stop answering after that many frames"""
 
-    def __init__(self, model="MODEL1", nak_every=0, silent_after=None):
+    def __init__(self, model="MODEL1", nak_every=0, silent_after=None, memory=None):
         self.model = model
+        self.memory = memory or {}	# the PC mode's memory: {address: bytes}, unset bytes read 0xFF
+        self.program = False
+        self.ended = False
         self.out = b""
         self.inbuf = b""
         self.mem = {}
@@ -286,10 +364,32 @@ class FakeRadio:
             out[a - lo:a - lo + CHUNK] = d
         return bytes(out)
 
+    def peek(self, addr, n):
+        out = bytearray(b"\xff" * n)
+        for a, d in self.memory.items():
+            lo, hi = max(a, addr), min(a + len(d), addr + n)
+            if lo < hi:
+                out[lo - addr:hi - addr] = d[lo - a:hi - a]
+        return bytes(out)
+
     def write(self, b):
         self.inbuf += bytes(b)
         while self.inbuf:
-            if self.inbuf.startswith(HELLO):
+            if self.inbuf.startswith(PROGRAM):
+                self.inbuf = self.inbuf[len(PROGRAM):]
+                self.program = True
+                self.out += HELLO_REPLY
+            elif self.program and self.inbuf.startswith(END):
+                self.inbuf = self.inbuf[len(END):]
+                self.ended = True
+                self.out += HELLO_REPLY
+            elif self.program and self.inbuf[:1] == bytes([READ]):
+                if len(self.inbuf) < 6:
+                    return
+                addr, n = struct.unpack_from(">IB", self.inbuf, 1)
+                self.inbuf = self.inbuf[6:]
+                self.out += read_reply(addr, self.peek(addr, n))
+            elif self.inbuf.startswith(HELLO):
                 self.inbuf = self.inbuf[len(HELLO):]
                 self.out += HELLO_REPLY
             elif self.inbuf[:1] == IDENTIFY:

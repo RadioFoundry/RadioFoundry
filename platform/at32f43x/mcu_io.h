@@ -154,5 +154,8 @@ static inline bool mcu_clock_init(uint32_t hxtal_hz, uint32_t sys_hz)
 #define MCU_USART1		USART1
 #define MCU_USART1_IRQn		USART1_IRQn
 #define MCU_USART1_HANDLER	USART1_IRQHandler
+#define MCU_UART4		UART4
+#define MCU_UART4_IRQn		UART4_IRQn
+#define MCU_UART4_HANDLER	UART4_IRQHandler
 
 #endif

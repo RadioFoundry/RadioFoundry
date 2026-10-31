@@ -1836,8 +1836,10 @@ function doneView() {
 // settings area, write the sectors that change and read them back. With a backup from this visit that holds the
 // original codeplug it runs at once; without one it waits for the user, since on some radios the write replaces the
 // original bytes. Any failure stops the step and leaves the radio as RadioFoundry, without channels. An update, a move
-// from another open firmware and a radio whose backup shows no stock codeplug skip it (channelsWanted)
-async function bringChannels(status, { finish }) {
+// from another open firmware and a radio whose backup shows no stock codeplug skip it (channelsWanted). converted: a
+// codeplug a backend already read and converted before the install ({image, counts, notes}, as convertStock gives it;
+// anytoneui.js reads it from the original firmware's PC mode), written at once: the radio still holds its original
+async function bringChannels(status, { finish, converted = null }) {
 	const saved = S.backupDone ? S.backupParts?.find((x) => x.what === "spi-flash")?.data : null;
 	let m;
 	try {
@@ -1845,7 +1847,7 @@ async function bringChannels(status, { finish }) {
 	} catch (e) {
 		diag.error("flash/channels load", e);
 	}
-	if (!m?.channelsWanted({ before: nowChoice(S.now), spiSize: S.radio?.backup?.spi_size, saved })) {
+	if (!m || (!converted && !m.channelsWanted({ before: nowChoice(S.now), spiSize: S.radio?.backup?.spi_size, saved }))) {
 		S.forward(finish());
 		return;
 	}
@@ -1864,7 +1866,7 @@ async function bringChannels(status, { finish }) {
 		// this visit took one (migrate.js stockSource)
 		read = await link.cpsDump(1, 0, m.readSpan(null), { progress: reading });
 		if (!read.complete) throw new Error(`memory chip read stopped at ${read.data.length}`);
-		src = m.stockSource(read.data, saved);
+		src = converted ? { layout: "converted", from: "backup" } : m.stockSource(read.data, saved);
 		// the stock tables reach past RadioFoundry's codeplug span on some families
 		if (src.from === "radio" && src.layout && m.readSpan(src.layout) > read.data.length) {
 			const more = await link.cpsDump(1, read.data.length, m.readSpan(src.layout) - read.data.length, { progress: reading });
@@ -1877,7 +1879,7 @@ async function bringChannels(status, { finish }) {
 	} catch (e) {
 		diag.error("flash/channels read", e);
 		prog.el.remove();
-		say(notice(failed("flash.channels.read_failed", !!m.savedStock(saved)), "bad"), reportLine());
+		say(notice(failed("flash.channels.read_failed", !!converted || !!m.savedStock(saved)), "bad"), reportLine());
 		S.forward(finish());
 		return;
 	}
@@ -1889,9 +1891,9 @@ async function bringChannels(status, { finish }) {
 		S.forward(finish());
 		return;
 	}
-	let conv;
+	let conv = converted;
 	try {
-		conv = m.convertStock(src.bytes, layout);
+		conv ||= m.convertStock(src.bytes, layout);
 	} catch (e) {
 		diag.error("flash/channels convert", e);
 		say(notice(failed("flash.channels.convert_failed", copy), "bad"), reportLine());
@@ -2454,7 +2456,7 @@ async function main() {
 		app.replaceChildren(notice(t("flash.err.load"), "bad"), reportLine());
 		return;
 	}
-	const backendCtx = { S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, flashMark, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
+	const backendCtx = { S, next, render, reset, helpLink, bringChannels, manualKitLine, fb, flashStarted, flashFinished, flashMark, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) };
 	c7ui.init(backendCtx);
 	atui.init(backendCtx);

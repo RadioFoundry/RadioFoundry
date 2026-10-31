@@ -205,6 +205,9 @@
 #ifndef CONFIG_VIBRATE
 #define CONFIG_VIBRATE			1
 #endif
+#ifndef CONFIG_BT_PTT
+#define CONFIG_BT_PTT			0
+#endif
 #ifndef CONFIG_GPS
 #define CONFIG_GPS			1
 #endif

@@ -87,8 +87,8 @@
 #define GPIO_B_INIT		0x0033u
 // Chip 0 GPIO bits: 3/6 side A's complementary band pair (UHF sets 3, VHF 6), 7/4 side B's (UHF sets 7, VHF 4; both
 // clear with side B off, as the stock firmware leaves them in some single-receiver cases); 5 set while transmitting
-// above 300 MHz, cleared at TX end (inferred); 1 an LED, which the stock firmware lights on transmit by default (which
-// color is not known); 2 the GPS module's supply, high = on (d578uv_gps_power, hardware-d578uv.md 3.6); 0 set in
+// above 300 MHz, cleared at TX end (inferred); 1 the one LED (which color is not known): lit while transmitting and
+// while the core's receive LED is on (d578uv_led_rx), the stock firmware's "either" choice; 2 the GPS module's supply, high = on (d578uv_gps_power, hardware-d578uv.md 3.6); 0 set in
 // receive and while a TX tone sounds, clear for the microphone: a microphone mute (inferred)
 #define GPIO_BAND_A_MASK	0x0048u
 #define GPIO_BAND_A_UHF		0x0008u
@@ -104,7 +104,7 @@
 #define GPIO_LO_B_AM		0x0040u
 
 // Shift register bits (roles inferred from the stock firmware's use)
-#define SR_BOOT			0x02u	// set at boot
+#define SR_BOOT			0x02u	// the Bluetooth module's supply, on from boot (bt_d578uv.c)
 #define SR_ANALOG		0x04u	// analog channel on the main side (INF)
 #define SR_RF_AUDIO		0x08u	// speaker from the RF chip, 0 for the DMR codec (INF)
 #define SR_TX			0x10u	// transmit path
@@ -645,8 +645,20 @@ static void chip0_gpio(uint16_t mask, uint16_t val)
 	bus_unlock(s);
 }
 
-#if CONFIG_GPS
 static bool chips_ready;	// init() has set chip 0 up: its output register can be written
+static bool led_rx;		// the core's receive LED (hal_power_t.led, LED_GREEN)
+
+void d578uv_led_rx(bool on)
+{
+	uint32_t s = bus_lock();
+	led_rx = on;
+	if (chips_ready && !transmitting) {
+		qa4818_gpio(&chip_if, GPIO_LED_TX, on ? GPIO_LED_TX : 0);
+	}
+	bus_unlock(s);
+}
+
+#if CONFIG_GPS
 static bool gps_power;		// the GPS module's enable as last asked, applied once the chips are ready
 
 void d578uv_gps_power(bool on)
@@ -1320,13 +1332,14 @@ static void init(void)
 	qa4818_init_lo(c3);
 	qa4818_init_trx(c1, GPIO_B_INIT, R49);
 	qa4818_init_trx(&chip_if, GPIO_A_INIT, R49);
-#if CONFIG_GPS
-	// The GPS task may have asked for the module's power before the chip was set up (gps_d578uv.c)
+	// The GPS task may have asked for the module's power, and the core for the LED, before the chip was set up
 	uint32_t s = bus_lock();
 	chips_ready = true;
+#if CONFIG_GPS
 	qa4818_gpio(&chip_if, GPIO_GPS, gps_power ? GPIO_GPS : 0);
-	bus_unlock(s);
 #endif
+	qa4818_gpio(&chip_if, GPIO_LED_TX, led_rx ? GPIO_LED_TX : 0);
+	bus_unlock(s);
 	qa4818_enable(c1, QA4818_ENABLE_OFF);
 	qa4818_enable(c3, QA4818_ENABLE_OFF);
 
@@ -1602,7 +1615,7 @@ static void tx_off(void)
 	}
 	sr_set(0, SR_RX_AUDIO);
 	qa4818_tx_drive_off(&chip_if);
-	chip0_gpio(GPIO_TX_UHF | GPIO_LED_TX | GPIO_MIC_MUTE, GPIO_MIC_MUTE);
+	chip0_gpio(GPIO_TX_UHF | GPIO_LED_TX | GPIO_MIC_MUTE, GPIO_MIC_MUTE | (led_rx ? GPIO_LED_TX : 0));
 	chips_off();
 	transmitting = false;
 	if (have_rx) {

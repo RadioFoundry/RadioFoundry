@@ -159,7 +159,7 @@ clean:
 
 # The radio core's state machine and the input gesture engine, against a fake board and codeplug (no RTOS)
 CORE_HAL := -I$(ROOT)/hal -Wshadow
-TESTS   += radioCoreTest inputTest quadratureTest serialmicTest anytoneMicTest
+TESTS   += radioCoreTest inputTest quadratureTest serialmicTest anytoneMicTest btAtTest
 
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
@@ -266,6 +266,9 @@ serialmicTest: serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c $(ROO
 anytoneMicTest: anytoneMicTest.c $(ROOT)/drivers/input/anytone_mic/anytone_mic.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ anytoneMicTest.c
 
+btAtTest: btAtTest.c $(ROOT)/drivers/input/bt_at/bt_at.h
+	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ btAtTest.c
+
 # The VOX mic level (drivers/audio/miclevel): the boards' analog-tap scale and the level from PCM blocks
 # The second receiver's link (core/rx2): frames and both ends back to back
 TESTS   += rx2LinkTest
@@ -290,7 +293,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest anytoneMicTest miclevelTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest anytoneMicTest btAtTest miclevelTest \
           adcPcmTest rx2LinkTest keyassignTest powerSwitchTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
@@ -303,6 +306,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTes
 	./quadratureTest
 	./serialmicTest
 	./anytoneMicTest
+	./btAtTest
 	./miclevelTest
 	./adcPcmTest
 	./rx2LinkTest

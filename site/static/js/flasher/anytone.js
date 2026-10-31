@@ -22,6 +22,10 @@ export const FINISH = Uint8Array.of(0x18);
 export const CHUNK = 32, FRAME_LEN = 40;
 export const RETRIES = 3;
 export const TIMEOUT = 2000;			// ms for each answer
+// The stock firmware's PC mode, with the radio on and running its stock firmware: the codeplug is read before the
+// install (docs/spec/codeplug-stock-anytone.md)
+export const PROGRAM = new TextEncoder().encode("PROGRAM"), END = new TextEncoder().encode("END");
+export const READ = 0x52, READ_REPLY = 0x57, READ_MAX = 16;
 const SPI_HEADER = 14, SPI_MODEL_LEN = 8, SPI_MODEL2 = SPI_HEADER + 12;
 const CDI_ENTRY = 278;
 
@@ -44,6 +48,35 @@ export function frame(addr, chunk) {
 }
 
 export const framesNeeded = (n) => Math.ceil(n / CHUNK);
+
+// One read: 'R', the memory address (big-endian), the count
+export function readRequest(addr, n) {
+	if (!(n > 0 && n <= READ_MAX)) throw new RangeError(`a read asks for 1 to ${READ_MAX} bytes`);
+	return Uint8Array.of(READ, (addr >>> 24) & 0xFF, (addr >>> 16) & 0xFF, (addr >>> 8) & 0xFF, addr & 0xFF, n);
+}
+
+const sum8 = (b) => b.reduce((a, x) => (a + x) & 0xFF, 0);
+
+// The radio's answer to a read: 'W', address, count, data, the 8-bit sum of those, 06 (the fake's, and the tests')
+export function readReply(addr, data) {
+	const r = new Uint8Array(data.length + 8);
+	r.set(readRequest(addr, data.length));
+	r[0] = READ_REPLY;
+	r.set(data, 6);
+	r[r.length - 2] = sum8(r.subarray(1, r.length - 2));
+	r[r.length - 1] = ACK;
+	return r;
+}
+
+// The data of the answer to readRequest(addr, n), or AnytoneError
+export function parseRead(addr, n, r) {
+	const at = `0x${(addr >>> 0).toString(16)}`;
+	if (r?.length !== n + 8 || r[0] !== READ_REPLY || r[r.length - 1] !== ACK) throw new AnytoneError(`the radio's answer to a read at ${at} is malformed: ${hexs(r)}`);
+	const got = ((r[1] << 24) | (r[2] << 16) | (r[3] << 8) | r[4]) >>> 0;
+	if (got !== addr >>> 0 || r[5] !== n) throw new AnytoneError(`the radio answered a read at ${at} with 0x${got.toString(16)}`);
+	if (sum8(r.subarray(1, r.length - 2)) !== r[r.length - 2]) throw new AnytoneError(`bad sum in the answer to a read at ${at}`);
+	return r.slice(6, r.length - 2);
+}
 
 // {model, hw, version} from the 16-byte answer to 02: 'I', the model (7 bytes, NUL padded), the hardware byte, the
 // version (4 bytes), 00 00 06
@@ -224,3 +257,45 @@ export class AnytoneUpdate {
 	}
 }
 
+// The stock firmware's PC mode on a stream: read its memory, then END (the radio restarts)
+export class AnytoneProgram extends AnytoneUpdate {
+	async hello() {
+		this.s.clear();
+		await this.s.write(PROGRAM);
+		const r = await this.readExact(HELLO_REPLY.length);
+		if (r.length !== 3 || r.some((b, i) => b !== HELLO_REPLY[i]))
+			throw new AnytoneError(`no answer to PROGRAM (${hexs(r)}): is the radio on, running its original firmware?`);
+	}
+
+	// n bytes from addr, READ_MAX at a time, each read asked again on a bad answer. onBytes(done, n); signal stops it
+	async read(addr, n, { onBytes = () => {}, signal } = {}) {
+		const out = new Uint8Array(n);
+		for (let done = 0; done < n;) {
+			if (signal?.aborted) throw new AnytoneError("stopped");
+			const k = Math.min(READ_MAX, n - done), a = addr + done;
+			let err = null;
+			for (let i = 0; i < this.retries; i++) {
+				this.s.clear();
+				await this.s.write(readRequest(a, k));
+				try {
+					out.set(parseRead(a, k, await this.readExact(k + 8)), done);
+					err = null;
+					break;
+				} catch (e) {
+					err = e;
+				}
+			}
+			if (err) throw err;
+			done += k;
+			onBytes(done, n);
+		}
+		return out;
+	}
+
+	// Leave the PC mode; the radio answers, then restarts
+	async end() {
+		await this.s.write(END);
+		const r = await this.readExact(HELLO_REPLY.length);
+		return r.length === 3 && r.every((b, i) => b === HELLO_REPLY[i]);
+	}
+}

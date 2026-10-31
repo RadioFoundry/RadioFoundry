@@ -4,12 +4,15 @@
 // an install"). A radio installed from its stock firmware still holds the stock codeplug in its memory chip, in a
 // layout RadioFoundry does not read, so the radio would start without channels. The install converts it into the
 // open-firmware layout (codeplug/stock_tyt.js, the same conversion as the Codeplug Editor's), writes the sectors that
-// change through the CPS, and reads them back. Only TYT-family stock codeplugs convert in the browser so far.
+// change through the CPS, and reads them back. TYT-family stock codeplugs are read from the memory chip after the
+// install; AnyTone ones before it, through the stock firmware's PC mode (anytoneui.js), since RadioFoundry can't
+// read them afterwards (codeplug/stock_anytone.js).
 
 import { CODEPLUG_SPAN } from "./backup.js";
 import { codeplugSectors } from "./restore.js";
 import { classify } from "../codeplug/detect.js";
 import { STOCK, detectStock, importStock } from "../codeplug/stock_tyt.js";
+import { readAnytone, importAnytone } from "../codeplug/stock_anytone.js";
 import { empty, encode, decode } from "../codeplug/model.js";
 import { CodeplugImage } from "../codeplug/image.js";
 import { writeRanges, VFOS } from "../codeplug/transport.js";
@@ -56,6 +59,15 @@ export function convertStock(bytes, layout) {
 	if (!layout || detectStock(bytes) !== layout) throw new Error("no stock codeplug this page can read");
 	const m = empty();
 	const { counts, notes } = importStock(m, bytes, layout);
+	return { image: encode(m).bytes.slice(0, CODEPLUG_SPAN), counts, notes };
+}
+
+export { readAnytone };
+
+// The codeplug readAnytone read, converted: {image, counts, notes} as convertStock gives them
+export function convertAnytone(tables) {
+	const m = empty();
+	const { counts, notes } = importAnytone(m, tables);
 	return { image: encode(m).bytes.slice(0, CODEPLUG_SPAN), counts, notes };
 }
 

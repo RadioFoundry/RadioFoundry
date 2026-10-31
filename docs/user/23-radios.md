@@ -705,14 +705,16 @@ A keypad microphone unplugged while the radio is on stops its PTT within 3 secon
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)). While it plays, dual watch
   pauses: the air band uses the second receiver's parts. FM broadcast receive (87.5-108 MHz) is written and untested;
   stereo isn't, and the signal level's scale is a guess, so a scan may stop on the wrong stations.
-- Bluetooth isn't written. The built-in GPS is written and untested.
+- A Bluetooth PTT button or Bluetooth hand mic paired with the original firmware keys the radio, and the hand
+  mic's channel keys should work too. This is written and untested. Pairing and Bluetooth audio aren't written: the microphone
+  and speaker stay the radio's own. The built-in GPS is written and untested.
 - VOX is written and untested. The vendor firmware has no VOX; RadioFoundry reads the microphone's level from the RF
   chip, and how loud a voice must be to key it may need a different **VOX level** than on other radios.
 - APRS receive is written and untested, but this image leaves it out: it needs more memory than the GD32F303 has
   left with DMR on. The Artery image has it. RadioFoundry decodes the receive audio itself; the vendor's APRS comes
   from an add-on board, which RadioFoundry doesn't use.
 - The backlight has only the vendor firmware's five levels: **Brightness** picks one per 20 % (10-20 % the dimmest,
-  90-100 % the brightest). The status light shows transmit only, not a busy channel.
+  90-100 % the brightest). The status light shows both transmit and a busy channel; its color may not tell them apart.
 - The hotspot, single frequency repeating, privacy, the USB network and zone sharing are left out: the
   radio's memory is too small for all of them, and the vocoder runs in the DMR chip, out of the processor's reach.
 

@@ -6,7 +6,9 @@
 // against it, and a variant without a RadioFoundry image is refused for the install (its original firmware may still go
 // back). docs/dev/web-flasher.md "Radio access backends".
 //
-//   install   radio, build, connect, at_boot (the DMR baseband's boot block from the user's stock file), write, done
+//   install   radio, build, at_channels (optional: the original firmware's codeplug, read in its PC mode and converted),
+//             connect, at_boot (the DMR baseband's boot block from the user's stock file), write, done (the channels
+//             written through RadioFoundry's CPS once it runs: app.js bringChannels)
 //   restore   at_files (the .CDD, .CDI and .spi), connect, restore (reached from the help task, the radio known)
 
 import { h, t, notice, button, panel, progressBar, logBox } from "./dom.js";
@@ -16,12 +18,12 @@ import { putBlob, getBlob } from "./codecsave.js";
 import { radioPicture, holdKeys } from "./radiotop.js";
 import { errorNotice } from "../report.js";
 import * as diag from "../diag.js";
-import { AnytoneUpdate, AnytoneError, BAUD, judge, variantOf, variantLabel, stockSet, sortSet, checkFits, findBootBlock,
+import { AnytoneUpdate, AnytoneProgram, AnytoneError, BAUD, judge, variantOf, variantLabel, stockSet, sortSet, checkFits, findBootBlock,
 	installImage, splitImage, framesNeeded } from "./anytone.js";
-import { FakeAnytone } from "./fakeanytone.js";
+import { FakeAnytone, stockAnytone, SAMPLE_ANYTONE } from "./fakeanytone.js";
 
 export const BACKEND = "anytone-update";
-export const INSTALL = ["radio", "build", "connect", "at_boot", "write", "done"];
+export const INSTALL = ["radio", "build", "at_channels", "connect", "at_boot", "write", "done"];
 export const RECOVER = ["build", "connect", "at_boot", "write", "done"];
 export const RESTORE = ["at_files", "connect", "restore"];
 
@@ -43,7 +45,8 @@ export function init(context) {
 
 // This backend's state for the visit: the port, what the radio answered, the boot block, the vendor set
 function session() {
-	return (S().at ||= { stream: null, radio: null, ident: null, verdict: null, block: null, blockFrom: null, set: null, log: logBox() });
+	return (S().at ||= { stream: null, radio: null, ident: null, verdict: null, block: null, blockFrom: null, set: null, channels: null,
+		log: logBox() });
 }
 
 export async function release() {
@@ -74,7 +77,7 @@ async function openPort() {
 	const a = session();
 	if (a.stream && !a.stream.lost) return a.stream;
 	if (S().sim) {
-		S().fakeAnytone ||= new FakeAnytone({ model: fakeModel() });
+		S().fakeAnytone ||= new FakeAnytone({ model: fakeModel(), memory: stockAnytone(SAMPLE_ANYTONE), pairs: true });
 		return (a.stream = S().fakeAnytone.stream);
 	}
 	if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
@@ -135,6 +138,55 @@ export function connectView() {
 			await release();
 			fill(status, errorNotice(e instanceof AnytoneError ? t("flash.at.no_update_mode", { why: e.message }) : errText(e)));
 		}
+		draw();
+	}
+	draw();
+	return box;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// at_channels: the original firmware's codeplug, read in its PC mode before the install (migrate.js readAnytone), so
+// the channels can be written once RadioFoundry runs. RadioFoundry keeps its own codeplug elsewhere in the radio's
+// memory and can't read the original's (docs/spec/codeplug-stock-anytone.md)
+
+export function channelsView() {
+	const a = session();
+	const box = h("div", { class: "flasher" });
+	const bar = progressBar();
+	const status = h("div");
+	const draw = () => {
+		const c = a.channels;
+		fill(box, panel(t("flash.at.ch_title"), h("p", {}, t("flash.at.ch_lead")),
+			h("ol", { class: "steps" }, h("li", {}, t("flash.at.ch_step_on")), h("li", {}, t("flash.at.ch_step_connect"))),
+			c ? notice(t("flash.at.ch_have", { counts: t("flash.channels.counts", c.counts) }), "ok") : null,
+			c?.notes.length ? h("ul", { class: "small" }, c.notes.map((x) => h("li", {}, t(`editor.qdmr.note.${x.code}`, { n: x.n })))) : null,
+			bar.el, status, a.log.el));
+		S().forward([button(t(c ? "flash.at.continue" : "flash.at.ch_skip"), () => ctx.next(), { quiet: !c, primary: !!c }),
+			c ? null : button(t("flash.at.ch_read"), read, { primary: true })].filter(Boolean));
+	};
+	async function read() {
+		S().forward(null);
+		fill(status, notice(t("flash.at.ch_reading"), "info"));
+		let p = null;
+		try {
+			const m = await import("./migrate.js");
+			await release();
+			const stream = await openPort();
+			p = new AnytoneProgram(stream, { log: (l) => a.log.add(l) });
+			await p.hello();
+			const tables = await m.readAnytone((addr, n) => p.read(addr, n), (d, n) => bar.set(d, n, t("flash.channels.reading")));
+			a.channels = m.convertAnytone(tables);
+			diag.note("anytone channels", { ...a.channels.counts, notes: a.channels.notes.map((x) => `${x.code}:${x.n}`).join(" ") });
+			fill(status, a.channels.counts.channels ? null : notice(t("flash.channels.none"), "info"));
+			if (!a.channels.counts.channels) a.channels = null;
+		} catch (e) {
+			diag.error("anytone channels", e);
+			a.channels = null;
+			fill(status, errorNotice(e instanceof AnytoneError ? t("flash.at.ch_failed", { why: e.message }) : errText(e)));
+		}
+		// the radio restarts on END; it is turned off for the update mode next anyway
+		try { await p?.end(); } catch (e) { /* already gone */ }
+		await release();
 		draw();
 	}
 	draw();
@@ -237,9 +289,21 @@ export function writeView() {
 }
 
 export function doneView() {
+	const a = session();
 	S().forward(null);
+	const status = h("div");
+	const finish = () => button(t("flash.nav.finish"), () => ctx.reset(), { primary: true });
+	// the channels read before the install: written through RadioFoundry's CPS once it has started
+	if (a.channels && ctx.bringChannels) {
+		S().forward(button(t("flash.at.ch_write"), async () => {
+			S().forward(null);
+			await release();
+			await ctx.bringChannels(status, { finish, converted: a.channels });
+		}, { primary: true }));
+	}
 	return h("div", { class: "flasher" }, panel(t("flash.at.done_title"), h("p", {}, t("flash.at.done_text")),
-		h("p", { class: "small muted" }, t("flash.at.done_dark"))));
+		a.channels ? h("p", {}, t("flash.at.ch_after", { counts: t("flash.channels.counts", a.channels.counts) })) : null,
+		h("p", { class: "small muted" }, t("flash.at.done_dark")), status));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -295,14 +359,14 @@ async function ownImage(fbd, boardId, data) {
 	return image;
 }
 
-const LABELS = { at_boot: "at_boot", at_files: "at_files", done: "at_done" };
+const LABELS = { at_channels: "at_channels", at_boot: "at_boot", at_files: "at_files", done: "at_done" };
 register({
 	id: BACKEND,
 	// install where the board's models are known; nothing is read back, so no backup
 	available: (radio, fbd, tk) => tk === "install" && !!Object.keys(fbd.boards[radio.flash.board]?.anytone_models || {}).length,
 	steps: (tk, { recovering }) => (tk === "install" ? (recovering ? RECOVER : INSTALL) : tk === "restore" ? RESTORE : null),
 	stepLabel: (step) => LABELS[step] || step,
-	views: { connect: connectView, at_boot: bootView, write: writeView, done: doneView, at_files: filesView, restore: restoreView },
+	views: { at_channels: channelsView, connect: connectView, at_boot: bootView, write: writeView, done: doneView, at_files: filesView, restore: restoreView },
 	recovery: { first: "fix", stock: "restore", reach: "flash.help.at_reach", stockText: "flash.help.fix.stock_at" },
 	ownImage,
 	release,

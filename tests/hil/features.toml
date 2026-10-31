@@ -143,6 +143,12 @@ switch = "VIBRATE"
 hardware = "a vibration motor"
 spec = "docs/spec/radio-features.md"
 
+[feature.bt_ptt]
+switch = "BT_PTT"
+hardware = "a Bluetooth module on a UART"
+spec = "docs/spec/radio-features.md"
+source = ["drivers/input/bt_at", "hal/hal_input.h"]
+
 [feature.gps]
 switch = "GPS"
 hardware = "a GPS receiver"
@@ -376,6 +382,10 @@ source = ["core/ui", "core/input"]
 [feature.channel_knob]
 spec = "docs/spec/ui.md"
 source = ["drivers/input/quadrature"]
+
+[feature.hand_mic]
+spec = "docs/spec/debuglink.md"
+source = ["drivers/input/anytone_mic", "drivers/input/serialmic", "hal/hal_input.h"]
 
 [feature.ui_settings]
 switch = "UI_SETTINGS"

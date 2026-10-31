@@ -344,6 +344,14 @@ The boards whose stock codeplug the browser converts are those in the TYT family
 The HR_C7000 backend has no conversion: its stock codeplug stays in the data flash and in the backup
 (`original-channels.bin`), and `tools/backup_codeplug.py` ports it.
 
+The AnyTone update mode backend (`anytoneui.js`) reads before the install instead: RadioFoundry keeps its codeplug in
+its own NAND blocks and can't read the stock tables once it runs. Its optional `at_channels` step, before Connect,
+asks for the radio on in normal mode, reads what the zones reach through the stock firmware's PC mode
+(`AnytoneProgram`, `readAnytone`; [codeplug-stock-anytone.md](../spec/codeplug-stock-anytone.md)), converts it
+(`convertAnytone`) and ends the PC mode (the radio restarts). The done page then offers **Write Channels**, which runs
+steps 1 and 4-6 above with that converted image (`bringChannels` with `converted`): the original stays in the radio's
+NAND, so it runs without asking.
+
 ## Another open firmware (`openfw.js`)
 
 A radio whose port answers the debug link probe with `-` and gives a valid radio info is on another open firmware

@@ -5,7 +5,8 @@
 // one key has a pin of its own (PA1), low when pressed. The encoder's lines are PC8 and PC9, sampled on every edge of
 // either (EXTI 8 and 9). PTT and the microphone's Up and Down keys come from the plain hand microphone's two lines,
 // PA9 and PA10, read as the stock firmware reads them when its "Hand Type" isn't the serial microphone (front_io.h).
-// Pull-ups hold both lines high without a microphone, so nothing keys the transmitter at power-on.
+// Pull-ups hold both lines high without a microphone, so nothing keys the transmitter at power-on. The Bluetooth
+// module's PTT and keys join the scan with CONFIG_BT_PTT (bt_d578uv.c).
 //
 // The serial keypad microphone (the stock default "Hand Type") sends frames on PA10 at 115200 (anytone_mic.h). The
 // USART listens on PA10 all the time, so either microphone works without a setting: once a frame is accepted the keys
@@ -91,12 +92,13 @@ void MIC_USART_HANDLER(void)
 	}
 }
 
-void d578uv_hand_mic(bool *present, uint32_t *frames, uint32_t *errors, uint8_t *key)
+void d578uv_hand_mic(hal_hand_mic_stats_t *st)
 {
-	*present = mic.present;
-	*frames = mic.frames;
-	*errors = mic.errors;
-	*key = mic.key;
+	st->present = mic.present;
+	st->ptt = mic.ptt;
+	st->key = mic.key;
+	st->frames = mic.frames;
+	st->errors = mic.errors;
 }
 
 static uint8_t enc_ab(void)
@@ -124,6 +126,9 @@ static void init(void)
 	NVIC_SetPriority(MIC_USART_IRQn, MIC_IRQ_PRIORITY);
 	NVIC_EnableIRQ(MIC_USART_IRQn);
 	mcu_adc_init();
+#if CONFIG_BT_PTT
+	d578uv_bt_init();
+#endif
 	// Two steps per detent, resting where the lines are equal: the stock decoder counts once per edge of A (to be
 	// checked on the radio)
 	quad_init(&enc, 2, QUAD_REST_EQUAL, enc_ab());
@@ -201,6 +206,9 @@ static uint32_t scan(void)
 	if (!mcu_pin_read(PIN_KEY_SINGLE)) {
 		m |= 1u << KEY_C1E;
 	}
+#if CONFIG_BT_PTT
+	m |= d578uv_bt_scan();
+#endif
 	return m | mic_scan();
 }
 
@@ -223,4 +231,8 @@ const hal_input_t d578uv_input = {
 	.scan = scan,
 	.encoder = encoder,
 	.encoder_stats = encoder_stats,
+	.hand_mic_stats = d578uv_hand_mic,
+#if CONFIG_BT_PTT
+	.bt_stats = d578uv_bt_stats,
+#endif
 };

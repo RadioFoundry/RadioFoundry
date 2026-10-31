@@ -66,6 +66,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `beep` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `vibrate` | off | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ |
+| `bt_ptt` | off | ✕ | ✕ | off | ✕ | ✕ | not recorded | not recorded |
 | `gps` | pass (seed) | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_data_rx` | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_sms` | not recorded | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | not recorded | not recorded |
@@ -117,6 +118,7 @@ is `tools/bringup.py list --radio <id>`.
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | off | off |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `hand_mic` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -219,6 +221,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `REF_TRIM` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `VIBRATE` | ? | ✕ | ● | ✕ | ✕ | ✕ | ✕ | ✕ |
+| `BT_PTT` | ? | ✕ | ✕ | ? | ✕ | ✕ | ● | ● |
 | `GPS` | ● | ● | ✕ | ● | ● | ● | ● | ● |
 | `AUDIO_PROBE` | … | ○ | … | … | … | ○ | … | … |
 | `STUB_ENTRY` | ● | ● | ● | ● | ● | ● | ● | ● |
@@ -275,6 +278,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 |  |
 | Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one RadioFoundry drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
+| Bluetooth PTT and keys: a Bluetooth module's PTT and mic keys on a UART | `BT_PTT` | — | — | Needs a Bluetooth module the radio talks to over a UART; none on these two. 1,620 B on the AT-D578UV (GD32F303), measured 2026-10-31 with tools/ci.sh |
 | GPS receiver: the module driver and its NMEA input (Settings > Location > GPS) | `GPS` | — | 1,196 | Needs a GPS receiver. Off, DMR GPS, LRRP and APRS keep the fixed position and report no fix. MD-380 measured 2026-10-22 (LTO, 58f2cebe). The DM-1701 has none from the factory but listens for an owner-fitted one (1,308 B, LTO) |
 
 ## DMR data

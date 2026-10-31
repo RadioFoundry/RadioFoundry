@@ -168,6 +168,36 @@ class Protocol(unittest.TestCase):
             at.Radio(Mute(), log=lambda m: None, timeout=0.01).hello()
 
 
+class ProgramMode(unittest.TestCase):
+    """The stock firmware's PC mode: reads in pieces of at most READ_MAX, the answer's checks, END"""
+
+    def test_request_and_answer(self):
+        self.assertEqual(at.read_request(0x02540000, 16).hex(), "520254000010")
+        self.assertRaises(ValueError, at.read_request, 0, 17)
+        r = at.read_reply(0x02540000, b"\x01\x02")
+        self.assertEqual(r.hex(), "57025400000201025b06")
+        self.assertEqual(at.parse_read(0x02540000, 2, r), b"\x01\x02")
+        for bad in (r[:-1], r[:-2] + b"\x00\x06", at.read_reply(0x02540010, b"\x01\x02"), b""):
+            self.assertRaises(at.UpdateError, at.parse_read, 0x02540000, 2, bad)
+
+    def test_read_across_records(self):
+        data = bytes(random.Random(3).getrandbits(8) for _ in range(100))
+        fake = at.FakeRadio(memory={0x02600010: data})
+        p = at.Program(fake, log=lambda m: None, timeout=0.01)
+        p.hello()
+        seen = []
+        self.assertEqual(p.read(0x02600000, 120, progress=lambda d, n: seen.append(d)),
+                         b"\xff" * 16 + data + b"\xff" * 4)
+        self.assertEqual(seen, [16, 32, 48, 64, 80, 96, 112, 120])
+        self.assertTrue(p.end())
+        self.assertTrue(fake.ended)
+
+    def test_needs_the_stock_firmware(self):
+        p = at.Program(at.FakeRadio(), log=lambda m: None, timeout=0.01)
+        p.port.write = lambda b: None
+        self.assertRaisesRegex(at.UpdateError, "PROGRAM", p.hello)
+
+
 @unittest.skipIf(B is None, "no board on the anytone-update family")
 class Commands(unittest.TestCase):
     """rfoundry flash and restore-stock against the simulated radio on the port"""

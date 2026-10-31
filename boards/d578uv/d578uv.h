@@ -39,7 +39,9 @@ enum {
 _Static_assert(KEY_COUNT <= 32, "the key scan is a 32-bit mask");
 
 // The serial hand microphone (input_d578uv.c): heard, its accepted frames, bytes dropped and the key it holds
-void d578uv_hand_mic(bool *present, uint32_t *frames, uint32_t *errors, uint8_t *key);
+void d578uv_hand_mic(hal_hand_mic_stats_t *st);
+// The core's receive LED: the one LED lights for it as well as on transmit (radio_d578uv.c)
+void d578uv_led_rx(bool on);
 
 // LCD backlight, 0..100 %: register 8 of the PA5 device (radio_d578uv.c, front_io.h). Any task
 void d578uv_backlight(uint8_t percent);
@@ -111,6 +113,13 @@ void d578uv_nand_unlock(void);
 extern const nand_dev_t d578uv_nand_dev;
 extern hal_flash_t d578uv_flash;		// flash_d578uv.c
 bool d578uv_flash_init(void);
+#endif
+
+// --- Bluetooth PTT and keys (bt_d578uv.c, hardware-d578uv.md 3.7), with CONFIG_BT_PTT. Input task ---
+#if CONFIG_BT_PTT
+void d578uv_bt_init(void);
+uint32_t d578uv_bt_scan(void);		// key bits from the module, the probe while nothing has answered
+void d578uv_bt_stats(hal_bt_stats_t *st);
 #endif
 
 // --- GPS (gps_d578uv.c, hardware-d578uv.md 3.6) ---

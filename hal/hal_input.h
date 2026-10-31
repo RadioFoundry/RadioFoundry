@@ -63,6 +63,26 @@ typedef struct {
 	uint32_t steps_per_detent;
 } hal_encoder_stats_t;
 
+// A serial hand mic's decoder (a mic with its own MCU that sends its keys as frames), for the debug link
+// (core/input, input_hand_mic_stats)
+typedef struct {
+	bool present;		// frames are arriving
+	bool ptt;		// PTT held, from the frames
+	uint8_t key;		// the key held, in the mic's own codes; 0 for none
+	uint32_t frames;	// frames accepted since start
+	uint32_t errors;	// bytes dropped (no frame, broken frames, UART errors)
+} hal_hand_mic_stats_t;
+
+// A Bluetooth module's PTT and keys (its PTT button, its hand mic), for the debug link (core/input, input_bt_stats)
+typedef struct {
+	bool present;		// the module has answered
+	bool ptt;		// PTT held, from any of the module's sources
+	uint8_t key;		// the last key event, in the module's own codes; 0 for none yet
+	uint32_t keys;		// key events since start
+	uint32_t lines;		// lines taken since start
+	uint32_t errors;	// bytes or lines dropped
+} hal_bt_stats_t;
+
 typedef struct {
 	void (*init)(void);
 	// Bit mask of physical keys held now (bits defined by the board, matching its key map)
@@ -72,6 +92,10 @@ typedef struct {
 	int8_t (*encoder)(void);
 	// The decoder's counts (NULL: none)
 	void (*encoder_stats)(hal_encoder_stats_t *st);
+	// The serial hand mic's decoder state (NULL: no serial hand mic)
+	void (*hand_mic_stats)(hal_hand_mic_stats_t *st);
+	// The Bluetooth module's state (NULL: no module, or CONFIG_BT_PTT off)
+	void (*bt_stats)(hal_bt_stats_t *st);
 } hal_input_t;
 
 #endif
