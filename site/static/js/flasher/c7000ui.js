@@ -680,12 +680,18 @@ export function checkView() {
 		if (skip) skip.hidden = true;
 	};
 	forward(run);
-	// an update without a backup has nothing to choose: the codec slot is read at once
-	if (update && !c.analysis) setTimeout(() => go(), 0);
+	// an update without a backup has nothing to choose: the codec slot is read at once, once per cable session (after a
+	// failed read the button retries; go() refuses a second read while one runs)
+	if (update && !c.analysis) {
+		if (!c.autoRead) setTimeout(() => go(), 0);
+		c.autoRead = true;
+	}
 	// this radio's own times for the choices, counted while the user reads them
 	else if (!c.analysis) sizeUp(c).then(() => { options.refresh(); if (skip) refreshSkip(); });
 
 	async function go({ skipFirmware = false } = {}) {
+		if (c.reading) return;	// a read started from an earlier drawing of this step still runs on the cable
+		c.reading = true;
 		run.disabled = true;
 		diag.note(...crumbs.c7Check(want, { skipFirmware, firstInstall, how: c.how || null, rate: c.rate ? Math.round(c.rate) : null }));
 		started();
@@ -772,6 +778,7 @@ export function checkView() {
 			fill(status, errorNotice(t("flash.c7.check.failed", { error: ctx.errorText(e) })), retryHelp());
 			run.disabled = false;
 		} finally {
+			c.reading = false;
 			await busy(false);
 		}
 	}

@@ -638,17 +638,20 @@ function readSkippedIddb() {
 			if (!c?.image || !S.iddbSkipped || S.iddbChanged) return;
 			await onLine(c);
 			if (!c.image) return say(t("editor.iddb_read.swapped"), "warn");
-			const img = c.image.clone();
-			await withProgress(t("editor.reading_iddb", { radio: c.radio.name }), (bar, signal) =>
-				c.transport.readIddb(img, { signal, progress: (n, total) => bar.set(n, total) }));
-			// the database's bytes into the codeplug being edited, its other edits kept
-			const base = S.model.base;
-			for (const [a, b] of iddbRanges(img)) {
-				base.ensure(b);
-				base.bytes.set(img.bytes.subarray(a, b), a);
+			// the header from the radio, not from c.image: a write since the read left the model's erased header there
+			const img = await withProgress(t("editor.reading_iddb", { radio: c.radio.name }), async (bar, signal) =>
+				c.transport.readIddb(await c.transport.readIddbHeader({ signal }), { signal, cache: c.image,
+					progress: (n, total) => bar.set(n, total) }));
+			// the database's bytes into the codeplug being edited (its other edits kept) and into the radio's as last read
+			if (dbHeader(img.bytes)) {
+				for (const [a, b] of iddbRanges(img)) {
+					for (const dst of [S.model.base, c.image]) {
+						dst.ensure(b);
+						dst.bytes.set(img.bytes.subarray(a, b), a);
+					}
+				}
 			}
-			S.model.iddb = dbHeader(base.bytes);
-			c.image = img;
+			S.model.iddb = dbHeader(S.model.base.bytes);
 			c.dbKnown = true;
 			S.iddbSkipped = null;
 			diag.note("iddb read", { bytes: img.bytes.length });
@@ -675,12 +678,15 @@ async function readRadio() {
 			const rate = c.rate || (c.cable ? 9000 : 30000);
 			const seconds = cached ? 0 : Math.ceil(dbBytes / rate);
 			const readDb = dbBytes > 0 && (seconds < IDDB_ASK || await askIddb(c, db, dbBytes, seconds, c.transport.codeplugBytes / rate));
-			const t0 = performance.now();
-			let got = 0;
+			const t0 = performance.now(), moved = c.transport.moved;
+			// the header just read serves as the cache for its own block on a first read
 			const img = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
-				c.transport.read({ iddb: readDb, signal, cache: c.image, progress: (n, total) => bar.set(got = n, total) }));
-			// how fast this radio and cable read, for the next estimate (a read from the cache says nothing)
-			if (!c.image) c.rate = got / Math.max(0.25, (performance.now() - t0) / 1000);
+				c.transport.read({ iddb: readDb, signal, cache: c.image || head, progress: (n, total) => bar.set(n, total) }));
+			// how fast this radio and cable read, for the next estimate (a read from the cache says nothing): by the bytes
+			// that crossed the link, not the progress, which also counts blank blocks the fast protocol skips. A read of a
+			// few blocks is mostly round trips: too few to tell
+			const took = c.transport.moved - moved;
+			if (!c.image && took >= 65536) c.rate = took / Math.max(0.25, (performance.now() - t0) / 1000);
 			diag.note("read done", { bytes: img.bytes.length, iddb: readDb, dbBytes, seconds });
 			c.image = img.clone();
 			if (db && !readDb) {

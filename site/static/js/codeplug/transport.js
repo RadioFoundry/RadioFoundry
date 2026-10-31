@@ -132,6 +132,7 @@ export class CpsSerial {
 		this.base = 0;
 		this.fast = null;	// the fast protocol's INFO, when the radio speaks it
 		this.compact = false;	// the radio reads a format C ID database (iddb-compact.md)
+		this.moved = 0;		// bytes the reads took from the radio (not blank or cached blocks): its read rate
 	}
 
 	// Which radio answers, matched by the board name it reports to radios.json's codeplug.names. No answer is told
@@ -228,6 +229,7 @@ export class CpsSerial {
 			img.ensure(b);
 			img.bytes.set(r.data, a);
 			done += b - a;
+			this.moved += b - a;
 		}
 		return img;
 	}
@@ -353,7 +355,10 @@ export class CpsSerial {
 			const c = cache?.bytes.length >= a + BLOCK ? cache.bytes.subarray(a, a + BLOCK) : null;
 			if (s.blank) img.bytes.fill(0xFF, a, a + BLOCK);
 			else if (c && crc32(c) === s.crc) img.bytes.set(c, a);
-			else img.bytes.set(await this.fl.read(a), a);
+			else {
+				img.bytes.set(await this.fl.read(a), a);
+				this.moved += BLOCK;
+			}
 			progress(done += BLOCK, total);
 		}
 		return done;

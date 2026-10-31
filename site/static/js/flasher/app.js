@@ -785,10 +785,18 @@ async function connectForUpdate(status) {
 		link = new Link(stream, { timeout: 1200 });
 	}
 	status.replaceChildren(h("p", { class: "muted" }, t("flash.now.connecting")));
-	const p = await probe(link);
-	if (!p) throw await noAnswer(link);
-	const r = S.data.radios.find((x) => S.data.fb.boards[x.flash.board]?.debuglink_names.includes(p.board));
-	if (!r) throw new Error(t("flash.err.unknown_board", { board: p.board }));
+	let p, r;
+	try {
+		p = await probe(link);
+		if (!p) throw await noAnswer(link);
+		r = S.data.radios.find((x) => S.data.fb.boards[x.flash.board]?.debuglink_names.includes(p.board));
+		if (!r) throw new Error(t("flash.err.unknown_board", { board: p.board }));
+	} catch (e) {
+		// the port isn't S.link's or the cable session's yet, so dropSerial and dropC7 can't close it: the next Connect
+		// would find it open
+		if (stream && !S.fakeC7) try { await stream.close(); } catch { /* gone */ }
+		throw e;
+	}
 	selectRadio(r);
 	optionsFromProbe(p);
 	if (c7ui.isC7000(r, fb())) {
