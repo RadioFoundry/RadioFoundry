@@ -583,6 +583,13 @@ before it builds, or takes it from a connected radio's debug link name (`board_n
 refuses an image whose manifest doesn't carry it (`build_options`). The current-firmware step refuses a radio whose name
 says another value.
 
+The firmware's language packs are feature switches named `LANG_<CODE>` (`CONFIG_LANG_ES`, the code upper-cased). When
+the browser's languages (`navigator.languages`, primary subtag) include one the radio can have a pack for and the
+selection leaves it out, the build step offers it under the build cards: one button turns the switch on, another
+dismisses the offer until the page reloads. Only the first language the browser asks for that has a pack counts, and
+English (the firmware's own) never does. The code comes from the switch name alone (`flasher/langsuggest.js`), so a new
+pack needs no flasher change. Strings: `flash.build.pack_*`.
+
 ## Version links
 
 To have someone install a version that isn't a release (a commit to try out), send them the flasher with

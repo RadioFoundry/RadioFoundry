@@ -137,7 +137,7 @@ if (terms.length) {
 	pop.hidden = true;
 	const text = document.createElement("span");
 	const more = document.createElement("a");
-	more.textContent = "More";
+	more.textContent = document.body.dataset.glMore || "More";
 	pop.append(text, " ", more);
 	document.body.append(pop);
 

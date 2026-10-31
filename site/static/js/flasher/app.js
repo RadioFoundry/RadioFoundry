@@ -30,11 +30,12 @@ import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNo
 import { readRadio, makeBundle, openBundle, bundleFolder, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
-import { decideCodec } from "./decide.js";
+import { decideCodec, DecisionError } from "./decide.js";
+import { suggestPack } from "./langsuggest.js";
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
-import { t, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames } from "./dom.js";
+import { t, tOr, num, LANG, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
 import { groups as variantGroups } from "./variant.js";
@@ -69,6 +70,7 @@ class ApiError extends Error {}
 function errorText(e) {
 	diag.error(`${S.task || "start"}/${stepsFor()?.[S.step] ?? S.step}`, e);
 	const raw = e?.message || String(e);
+	if (e instanceof DecisionError && e.key) return said(e.key, e.args) + (e.hint ? " " + t("flash.codec.why_not.hint") : "");
 	const withRaw = (key) => `${t(key)} (${raw})`;
 	if (e instanceof NetworkModeError) return t("flash.net.found");
 	const browser = browserErrorKey(e);
@@ -80,6 +82,20 @@ function errorText(e) {
 	// fetch's own failure: offline, blocked, or the server unreachable
 	if (e instanceof TypeError && /fetch/i.test(raw)) return withRaw("flash.err.download");
 	return raw;
+}
+
+// A catalog string whose args may themselves be catalog strings ({key, args}: decide.js)
+function said(key, args = {}) {
+	return t(key, Object.fromEntries(Object.entries(args).map(([k, v]) => [k, v?.key ? said(v.key, v.args) : v])));
+}
+
+// A language's name in the page's language ("es": "Spanish" on an English page), else its code
+function languageName(code) {
+	try {
+		return new Intl.DisplayNames([LANG], { type: "language" }).of(code) || code;
+	} catch (e) {
+		return code;
+	}
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -105,6 +121,7 @@ const initialState = () => ({
 	backupParts: [], backupDone: false,
 	bundle: null, restoreTarget: null,
 	link: null,
+	packsDismissed: new Set(),	// language packs the user said no to on the build step (langsuggest.js)
 	customPicked: false,	// the Custom card picked before any feature changed
 	build: null,		// a custom build in progress: {selection, text, error}
 	useId: null,		// the flash log's id for this use (see useId)
@@ -343,7 +360,10 @@ async function loadData() {
 	const get = async (name) => (await fetch(`${ROOT}data/${name}`)).json();
 	const [radios, features, variants, fb, releases, site] = await Promise.all(
 		["radios.json", "features.json", "variants.json", "flash-boards.json", "releases.json", "site.json"].map(get));
-	return { radios: radios.radios, features: features.features, groups: features.groups, variants: variants.variants, fb, releases: releases.releases, site };
+	// repository texts in the page's language where the catalog overrides them (feature.<SWITCH>.*, variant.<id>.*)
+	const feats = features.features.map((f) => ({ ...f, title: tOr(`feature.${f.name}.title`, f.title), help: tOr(`feature.${f.name}.help`, f.help) }));
+	const vars = variants.variants.map((v) => ({ ...v, title: tOr(`variant.${v.id}.title`, v.title), summary: tOr(`variant.${v.id}.summary`, v.summary) }));
+	return { radios: radios.radios, features: feats, groups: features.groups, variants: vars, fb, releases: releases.releases, site };
 }
 
 const fb = () => (S.sim ? S.sim.fb : S.data.fb);
@@ -836,6 +856,17 @@ function buildView() {
 		if (S.firmware || S.sim) next();
 	};
 	const forward = S.forward;
+	// the browser asks for a language the radio has a pack for and the build leaves it out: offer it (langsuggest.js)
+	const packNotice = () => {
+		const pack = suggestPack(S.data.features, globalThis.navigator?.languages, sel, S.packsDismissed);
+		if (!pack) return null;
+		const title = sel.byName[pack.name]?.title || pack.name;
+		return h("div", { class: "notice pack-suggest", role: "status" },
+			h("p", {}, t("flash.build.pack_text", { language: languageName(pack.code), feature: title })),
+			h("div", { class: "actions" },
+				button(t("flash.build.pack_on", { language: languageName(pack.code) }), () => change(pack.name, true), { primary: true }),
+				button(t("flash.build.pack_no"), () => { S.packsDismissed.add(pack.code); draw(); }, { quiet: true })));
+	};
 	const draw = () => {
 		const match = S.customPicked ? null : sel.matches();
 		// an image built for another selection no longer applies
@@ -929,6 +960,7 @@ function buildView() {
 				...options,
 				h("p", {}, t("flash.build.lead")),
 				h("div", { class: "choice-grid", role: "radiogroup" }, cards),
+				packNotice(),
 				h("h3", {}, t("flash.build.features_title")),
 				h("div", { class: "feature-groups" }, groups),
 				image));
@@ -1428,7 +1460,7 @@ async function measureRate() {
 
 function estimate(bytes, s) {
 	const mb = bytes / 1048576;
-	const size = mb >= 1 ? `${mb.toFixed(mb >= 10 ? 0 : 1)} MB` : `${Math.round(bytes / 1024)} KB`;
+	const size = mb >= 1 ? `${num(mb, { maximumFractionDigits: mb >= 10 ? 0 : 1, minimumFractionDigits: mb >= 10 ? 0 : 1 })} MB` : `${num(Math.round(bytes / 1024))} KB`;
 	if (s == null) return t("flash.backup.time_unknown", { size });
 	return s < 60 ? t("flash.backup.time_lt1", { size }) : t("flash.backup.time_min", { size, n: Math.round(s / 60) });
 }
@@ -1468,7 +1500,7 @@ function codecView() {
 			});
 		} catch (e) {
 			S.decision = null;
-			err = e.reason || e.message;
+			err = e.key ? said(e.key, e.args) : e.reason || e.message;
 		}
 		noteDecision(err);
 		// The stock file is needed when the codec has to come from it, or the bootloader key can't come from anywhere
@@ -1485,7 +1517,7 @@ function codecView() {
 		const ready = S.decision && (keyKnown || stockKey);
 		// a merge from the copy saved from the radio isn't one from the stock file: its own label
 		const modeKey = S.decision?.mode === MERGE && S.decision.source === "saved" ? "merge_saved" : S.decision?.mode;
-		const plan = S.decision ? `${t(`flash.codec.mode.${modeKey}`)}: ${S.decision.why}.` : null;
+		const plan = S.decision ? `${t(`flash.codec.mode.${modeKey}`)}: ${S.decision.whyKey ? said(S.decision.whyKey, S.decision.args) : S.decision.why}.` : null;
 		const keyLine = S.keyFromRadio ? t("flash.codec.key_from_radio") : keyStored && !S.sim ? t("flash.codec.key_saved") : null;
 		const fromSaved = S.decision?.source === "saved";
 		const codecLine = !fromSaved ? null : S.savedCodec.from === "browser" ? t("flash.codec.codec_saved")
@@ -1527,7 +1559,8 @@ function codecView() {
 			if (problem) parts.push(...loaded.filter(Boolean));
 			if (keeping) parts.push(h("div", { class: `notice ${keeping === "ok" ? "info" : keeping === "none" ? "bad" : "warn"}` },
 				h("strong", {}, t(`flash.codec.keep_${keeping}.title`)), h("p", {}, t(`flash.codec.keep_${keeping}.text`))));
-			if (S.decision.risk) parts.push(h("p", { class: "small muted" }, S.decision.risk[0].toUpperCase() + S.decision.risk.slice(1) + "."));
+			if (S.decision.risk) parts.push(h("p", { class: "small muted" }, S.decision.riskKey ? t(S.decision.riskKey)
+				: S.decision.risk[0].toUpperCase() + S.decision.risk.slice(1) + "."));
 		}
 		// writing the codec from the stock file anyway, or forcing a mode: always there, never in the way
 		parts.push(h("details", { class: "small" }, h("summary", {}, t("flash.codec.advanced")),
