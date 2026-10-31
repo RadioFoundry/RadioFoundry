@@ -254,21 +254,23 @@ broadcast band. The step is in the status strip.
 
 ### Split (repeater offset)
 
-In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **Split**: TX against RX, "Off" or the offset ("+600k",
+In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **TX freq** (the split): TX against RX, "Off" or the offset ("+600k",
 "-5M").
 
-<img src="../ux/screens/160x120i5/quick_vfo_split.png" width="200" alt="Typing a TX frequency in Split">
+<img src="../ux/screens/160x120i5/quick_vfo_split.png" width="200" alt="Typing a TX frequency in TX freq">
 
 - **Up** and **Down** step through the band's usual offsets, at once. **Up** goes +, **Down** goes -, the most common
   first, and stop at the last one:
 
   | Band | Offsets |
   |---|---|
-  | 2 m (below 200 MHz) | 600 kHz |
+  | 2 m (below 200 MHz) | 600 kHz, then 1 MHz |
   | 1.25 m (200-300 MHz) | 1.6 MHz |
   | 70 cm (above 300 MHz) | 5 MHz, then 7.6 MHz, then 1.6 MHz |
 
   On 70 cm, **Up** from Off is +5M, again +7.6M, again +1.6M; **Down** from +5M goes back to Off, then -5M.
+- The bottom row says what the keys do ("Up/Dn +/-  0-9 TX freq") and, while you type, shows the whole TX frequency
+  so far ("TX 147.02___").
 - Any other split (a custom one): type the TX frequency as you type a VFO frequency (**1 4 7 0 0** is 147.000) and
   press **OK**. **Back** takes the last digit back. Any frequency the radio can transmit on is accepted.
 - A new RX frequency keeps the offset within the same band. A move to another band (UHF to VHF, say) makes the VFO simplex.

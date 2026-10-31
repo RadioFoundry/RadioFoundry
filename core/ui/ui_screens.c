@@ -2691,7 +2691,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		[QT_BRIGHTNESS] = "Bright", [QT_TIMESLOT] = QT_NAME("Timeslot", "Slot"), [QT_CC] = "Color",
 		[QT_HEAR_ALL] = QT_NAME("Digital monitor", "DMon"), [QT_PRIVACY] = QT_NAME("Privacy", "Priv"),
 		[QT_TALK_TO] = QT_NAME("Talk to", "Talk"), [QT_TO_VFO] = QT_NAME("Copy to VFO", "To VFO"),
-		[QT_SPLIT] = "Split",
+		[QT_SPLIT] = QT_NAME("TX freq", "TXFreq"),
 	};
 #undef QT_NAME
 	uint8_t kind = ui_quick_kind(tile, v);
@@ -2750,12 +2750,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		return CONFIG_VFO_FM || CONFIG_VFO_DMR;	// a channel the VFO can't hold is refused on the press, with the reason
 	case QT_SPLIT:
 		if (editing && s->entry_len > 0) {
-			// The TX frequency as typed: MHz digits, then the decimals
-			for (uint8_t i = 0; i < s->entry_len; i++) {
-				if (i == UI_ENTRY_MHZ)
-					sb_chr(&b, '.');
-				sb_chr(&b, s->entry_digits[i]);
-			}
+			sb_str(&b, "TX");	// the typed frequency is too wide for a tile: the hint row has it whole
 		} else {
 			sb_split(&b, v->ch.rx_hz, v->ch.tx_hz);
 		}
@@ -2827,28 +2822,55 @@ static void quick_list_item(uint16_t i, ui_item_t *it)
 		it->flags |= UI_ITEM_EDIT;
 }
 
-void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
+// The hint while the TX freq tile edits: what Up / Down and the digits do, or the TX frequency typed so far, whole
+// (blanks for the digits to come); NULL when that tile isn't editing
+static const char *quick_split_hint(const radio_view_t *v, const ui_state_t *s, char *buf, size_t len)
+{
+	if (!s->quick_edit || ui_quick_kind(s->quick_focus, v) != QT_SPLIT)
+		return NULL;
+	if (s->entry_len == 0)
+		return TEXT_ALT_OPEN "Up/Dn: +/- offset  Type: TX freq" TEXT_ALT_NEXT "Up/Dn +/- offset  0-9 TX freq"
+			TEXT_ALT_NEXT "Up/Dn offset  0-9 TX freq" TEXT_ALT_NEXT "Up/Dn +/-  0-9 TX freq" TEXT_ALT_CLOSE;
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	sb_str(&b, "TX ");
+	for (uint8_t i = 0; i < UI_ENTRY_MAX; i++) {
+		if (i == UI_ENTRY_MHZ)
+			sb_chr(&b, '.');
+		sb_chr(&b, i < s->entry_len ? s->entry_digits[i] : '_');
+	}
+	sb_str(&b, "  OK sets");
+	return buf;
+}
+
+// 128x64: a numbered list with the same numbers (wireframe 128x64). The list and the tiles each have their own
+// frame, so the list's deep draw doesn't sit on the tiles' (the ui task's stack is tight)
+static void __attribute__((noinline)) draw_quick_list(const radio_view_t *v, const ui_state_t *s)
+{
+	static uint16_t top;
+	char hint[24];
+	const char *split_hint = quick_split_hint(v, s, hint, sizeof hint);
+	quick_v = v;
+	quick_s = s;
+	quick_list_focus = s->quick_focus;
+	ui_list_t l = { "Quick", v->vfo ? "VFO" : v->ch.name, NULL, NULL, UI_QUICK_TILES, quick_list_focus, &top,
+			quick_list_item, NULL, split_hint != NULL ? split_hint : "1-9 change  Hold OK save" };
+	ui_draw_list(v, s, &l);
+}
+
+static void __attribute__((noinline)) draw_quick_tiles(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
 	int w = gfx_width(), h = gfx_height();
 	const char *name = v->vfo ? "VFO" : v->ch.name;
+	char label[24];	// a tile's label, and the hint's text after the tiles (one buffer: the ui task's stack is tight)
+	const char *split_hint = quick_split_hint(v, s, label, sizeof label);
 
-	if (w < 150) {
-		// 128x64: a numbered list with the same numbers (wireframe 128x64)
-		static uint16_t top;
-		quick_v = v;
-		quick_s = s;
-		quick_list_focus = s->quick_focus;
-		ui_list_t l = { "Quick", name, NULL, NULL, UI_QUICK_TILES, quick_list_focus, &top, quick_list_item, NULL,
-				"1-9 change  Hold OK save" };
-		ui_draw_list(v, s, &l);
-		return;
-	}
 	gfx_clear(ui_col.bg);
 	// Title row keeps the state pill (P2)
 	int top = ui_draw_top(v, s, "Quick", name);
 	int bottom = h;
-	if (s->toast != NULL || h >= UI_TALL_PX)
+	if (s->toast != NULL || split_hint != NULL || h >= UI_TALL_PX)
 		bottom = L->hint_y;
 	int gh = bottom - top;
 	const font_t *lf = L->small;
@@ -2861,7 +2883,7 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
 		int cx = i % 3, cy = i / 3;
 		int x0 = w * cx / 3, x1 = w * (cx + 1) / 3 - (cx == 2 ? 1 : 0);
 		int y0 = top + gh * cy / 3, y1 = top + gh * (cy + 1) / 3 - (cy == 2 ? 1 : 0);
-		char label[24], value[12], fit[12];	// label: "5" and the name's alternates
+		char value[12], fit[12];	// label: "5" and the name's alternates
 		bool ok = ui_quick_tile(i, v, s, label, sizeof label, value, sizeof value);
 		bool focus = i == s->quick_focus;
 		color_t fg = ok ? ui_col.fg : ui_col.line, bg = ui_col.bg;
@@ -2902,8 +2924,18 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
 	ui_draw_banner(s);
 	if (s->toast != NULL)
 		ui_draw_hint(s->toast, true);
+	else if (split_hint != NULL)
+		ui_draw_hint(quick_split_hint(v, s, label, sizeof label), false);	// the tiles used label
 	else if (h >= UI_TALL_PX)
 		ui_draw_hint("0 All settings  Hold OK save", false);
+}
+
+void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
+{
+	if (gfx_width() < 150)
+		draw_quick_list(v, s);
+	else
+		draw_quick_tiles(v, s);
 }
 
 #if CONFIG_DIAG

@@ -1092,13 +1092,14 @@ void ui_quick_enter(void)
 }
 
 // The usual repeater offsets of rx's band, most common first (ARRL, IARU Region 1, RSGB, WIA and NZART band plans):
-// 2 m 600 kHz; 1.25 m 1.6 MHz; 70 cm 5 MHz (the Americas, Japan, Oceania, GMRS, land mobile), then 7.6 and 1.6 MHz
-// (Europe). Others are typed as a TX frequency
+// 2 m 600 kHz, then 1 MHz (some DMR repeaters, QST 2026-10); 1.25 m 1.6 MHz; 70 cm 5 MHz (the Americas, Japan,
+// Oceania, GMRS, land mobile), then 7.6 and 1.6 MHz (Europe). Others are typed as a TX frequency
 static uint8_t split_offsets(uint32_t rx, uint32_t *off)
 {
 	if (rx < 200000000u) {
 		off[0] = 600000u;
-		return 1;
+		off[1] = 1000000u;
+		return 2;
 	}
 	if (rx < 300000000u) {
 		off[0] = 1600000u;
@@ -1244,8 +1245,7 @@ static void quick_activate(int tile)
 		break;
 	case QT_SPLIT:
 		entry_cancel();
-		ui_st.quick_edit = true;
-		ui_toast("0-9 TX  Up/Dn offset");
+		ui_st.quick_edit = true;	// the hint row says what Up / Down and the digits do
 		break;
 	case QT_MODE: {
 		bool to_dmr = view->ch.mode != RADIO_MODE_DMR;	// the view may change at once (the host simulator)
