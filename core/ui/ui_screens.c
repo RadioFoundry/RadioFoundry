@@ -817,6 +817,14 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		int rw = gfx_text_width(L->small, right);
 		gfx_text(L->small, w - rw, L->zone_y, right, ui_col.dim);
 		const char *left = v->vfo ? "VFO" : v->zone_name;
+		if (v->vfo && v->ch.mode == RADIO_MODE_DMR && !v->ch.rx_only && v->ch.tx_hz != v->ch.rx_hz) {
+			// A split VFO on DMR: the talk row names the target, so the TX frequency goes here (FM's talk row
+			// already shows it)
+			sb_init(&b, buf, sizeof buf);
+			sb_str(&b, "VFO  TX ");
+			sb_freq(&b, v->ch.tx_hz);
+			left = buf;
+		}
 		gfx_text_fit(L->small, left, w - rw - L->small->w, fit, sizeof fit);
 		gfx_text(L->small, 0, L->zone_y, fit, v->vfo ? ui_col.warn : ui_col.fg);
 	}
@@ -824,7 +832,9 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 	int y = L->channel_y;
 	int base = y + L->large->ascent;
 	if (v->vfo || s->entry) {
-		// The frequency large; while typing, the digits so far and blanks for the rest
+		// The frequency large, the TX frequency in red while transmitting; while typing, the digits so far and
+		// blanks for the rest
+		bool tx = v->state == RS_TX && v->vfo;
 		sb_init(&b, buf, sizeof buf);
 		if (s->entry) {
 			int dec = s->entry_len > UI_ENTRY_MHZ ? s->entry_len - UI_ENTRY_MHZ : 0;
@@ -835,9 +845,9 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 				sb_chr(&b, i < s->entry_len ? s->entry_digits[i] : '_');
 			}
 		} else {
-			sb_freq(&b, v->ch.rx_hz);
+			sb_freq(&b, tx ? v->ch.tx_hz : v->ch.rx_hz);
 		}
-		int x = gfx_text(L->large, 0, y, buf, s->entry ? ui_col.warn : ui_col.fg);
+		int x = gfx_text(L->large, 0, y, buf, s->entry ? ui_col.warn : tx ? ui_col.tx : ui_col.fg);
 		if (x + L->small->w / 2 + gfx_text_width(L->small, "MHz") <= w)	// 5 decimals leave no room on 120 px
 			gfx_text(L->small, x + L->small->w / 2, base - L->small->ascent, "MHz", ui_col.dim);
 		if (L->zone_y < 0 && !s->entry)
@@ -1240,6 +1250,13 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 	if (pw_temp)
 		x = gfx_text(f, x, L->chips_y, GLYPH_DOT, ui_col.warn);
 	x = gfx_text(f, x, L->chips_y, ui_power_name(v->power), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+	if (L->zone_y < 0 && v->vfo && !v->ch.rx_only && v->ch.tx_hz != v->ch.rx_hz) {
+		// A split VFO with no top row for its TX frequency: the offset here ("+600k")
+		sb_init(&b, buf, sizeof buf);
+		sb_split(&b, v->ch.rx_hz, v->ch.tx_hz);
+		if (x + gfx_text_width(f, buf) <= gfx_width())
+			x = gfx_text(f, x, L->chips_y, buf, ui_col.warn) + f->w;
+	}
 	if ((v->dmr.hear_all || s->hear_all) && x + 4 * f->w <= gfx_width())
 		x = gfx_text(f, x, L->chips_y, "DMon", ui_col.warn) + f->w;	// digital monitor (FM's is "Mon")
 	if ((s->privacy || v->dmr.privacy) && x + 4 * f->w <= gfx_width())
@@ -1334,6 +1351,13 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		sb_init(&b, buf, sizeof buf);
 		sb_target_alts(&b, d->target_id, d->target_private, d->target_name, "");
 		y = call_line(L->medium, y, buf, ui_col.fg);
+		if (v->vfo) {	// a channel has its name in the codeplug; the VFO has only its TX frequency
+			sb_init(&b, buf, sizeof buf);
+			sb_str(&b, "TX ");
+			sb_freq(&b, v->ch.tx_hz);
+			sb_str(&b, " MHz");
+			y = call_line(L->small, y, buf, ui_col.tx);
+		}
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, "TS");
 		sb_u32(&b, d->ts, 1);
@@ -1569,13 +1593,14 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 	int room = (L->hint_y - y) / 2;
 	char form[48];
 	sb_init(&b, buf, sizeof buf);
+	bool tx = v->state == RS_TX && v->vfo;
 	if (v->vfo)
-		sb_freq(&b, v->ch.rx_hz);
+		sb_freq(&b, tx ? v->ch.tx_hz : v->ch.rx_hz);
 	else
 		sb_str(&b, v->ch.name);
 	const font_t *f = large_font(buf, room, form, sizeof form);
 	gfx_text_fit(f, form, w, fit, sizeof fit);
-	gfx_text(f, 0, y, fit, ui_col.fg);
+	gfx_text(f, 0, y, fit, tx ? ui_col.tx : ui_col.fg);
 	y += room;
 	sb_init(&b, buf, sizeof buf);
 #if CONFIG_DMR
@@ -1839,8 +1864,12 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 			mf->w / 2;
 	}
 	dual_name(p, buf, sizeof buf);
+	if (tx && p->vfo) {	// the VFO transmitting: its TX frequency (the view's channel is the selected pane's)
+		sb_init(&b, buf, sizeof buf);
+		sb_freq(&b, v->ch.tx_hz);
+	}
 	gfx_text_fit(f, buf, rx_end - x, fit, sizeof fit);
-	x = gfx_text(f, x, base - f->ascent, fit, rx ? ui_col.rx : fg);
+	x = gfx_text(f, x, base - f->ascent, fit, tx && p->vfo ? ui_col.tx : rx ? ui_col.rx : fg);
 	if (p->vfo && x + sm->w / 2 + gfx_text_width(sm, "MHz") <= rx_end) {
 		gfx_text(sm, x + sm->w / 2, base - sm->ascent, "MHz", ui_col.dim);
 		x += sm->w / 2 + gfx_text_width(sm, "MHz");

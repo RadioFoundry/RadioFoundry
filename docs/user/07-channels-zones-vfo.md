@@ -265,6 +265,11 @@ In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **Split**: TX agains
   last digit back.
 - A new RX frequency keeps the offset, as long as TX stays where the radio can transmit.
 - Monitor stays on its key in the VFO, and privacy is for channels.
+- Home shows the TX frequency: on FM after **PTT→**; on DMR in the top row ("TX 147.120"), or as the offset beside the
+  power on displays without that row. While you transmit, the large frequency turns red and shows the TX frequency
+  (on DMR, the call screen has a "TX" line).
+
+<img src="../ux/screens/160x120i5/home_vfo_dmr_tx.png" width="200" alt="Transmitting from a split DMR VFO">
 
 ### DMR in the VFO
 

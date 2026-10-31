@@ -145,6 +145,7 @@ Contacts, Recent and Messages are the "people" side, Zones, Channels and Tools t
 - Every change is temporary on a channel (dot on Home). Long `SELECT` on a tile makes it permanent. In VFO, changes apply to the VFO directly.
 - Tile 4 depends on where you are. On a channel it is "To VFO": the channel's settings in effect now (temporary changes included) become the VFO's own and the VFO opens ("Copied to VFO"); the channel is unchanged, and a channel the VFO can't hold is refused with a toast. In the VFO, tile 4 is Mode (FM / DMR), kept like the VFO's other settings. A channel has no temporary mode change.
 - In the VFO, the tile that is Monitor on FM (5) and Privacy on DMR (6) is Split: the VFO's TX frequency against RX ("Off", "+600k", "-5M"). Up / Down step Off, +offset, -offset at once, the offset the VFO's own, else 600 kHz below 300 MHz and 5 MHz above; digits type a TX frequency, OK sets it (refused outside the transmit bands: "Can't transmit there"), BACK takes a digit back. Monitor stays on its key; privacy is for channels.
+- Home shows a split VFO's TX frequency: on FM after PTT→; on DMR in the top row ("VFO  TX 147.120"), or as the offset among the chips on displays without that row. While transmitting, the large frequency is the TX frequency, in the TX color; the DMR call screen has a "TX 147.120 MHz" line under the target.
 - Each tile shows its current value. The voice prompt reads "Power, high" etc.
 - `BACK` or `QUICK` again closes and returns to where the user was.
 

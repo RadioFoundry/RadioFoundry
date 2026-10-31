@@ -65,6 +65,9 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "quick_vfo_fm", "ok 4 up ok quick" },
 	{ "home_copy_to_vfo", "down quick 4" },
 	{ "quick_vfo_split", "ok 4 up ok quick 5 1 4 6 1" },
+	{ "home_vfo_split_dmr", "ok 4 up ok quick 4 6 up ok back wait:5000" },	// the TX frequency in the top row
+	{ "home_vfo_tx", "ok 4 up ok quick 5 up ok back pttdown" },	// FM: the TX frequency large, in red
+	{ "home_vfo_dmr_tx", "ok 4 up ok quick 4 6 up ok back pttdown" },	// the call screen's TX line
 	{ "quick_vfo_dmr", "ok 4 up ok quick 4" },
 	{ "quick_vfo_cc_editor", "ok 4 up ok quick 4 3 7" },
 	{ "find_name", "5 6 3" },
