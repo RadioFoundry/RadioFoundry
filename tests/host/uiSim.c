@@ -94,6 +94,9 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "channel_contact", "ok 5 ok down down down down down down down down down ok" },
 	{ "channel_discard", "ok 5 ok down down down down down ok enc+ ok back" },
 	{ "channel_new", "ok 5 up up up ok" },
+	{ "channel_tone_entry", "ok 5 up up ok down down down down down down down down ok 8 8 5" },
+	{ "channel_zones", "ok 5 ok up up up up ok" },
+	{ "zones_new", "ok 4 down down down" },
 #if CONFIG_ZONE_SHARE
 	{ "channel_share", "ok 5 ok up up" },	// the channel editor's Share channel to...
 #endif
