@@ -95,7 +95,7 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Find | `find` | a digit on Home |
 | Actions | `actions` | CONTEXT (`#`) on a person, a talkgroup, the last caller, a message |
 | Recent | `recent` | Hub 3 |
-| Zones | `zones` | Hub 4: the VFO, then every zone with its channel count, then "New zone" with `CONFIG_ZONE_EDIT` (2.2). OK goes to the zone, CONTEXT opens its channels (`zone`; long OK on a radio without CONTEXT) |
+| Zones | `zones` | Hub 4: the VFO, then every zone with its channel count, then "Create New Zone" with `CONFIG_ZONE_EDIT` (2.2). OK goes to the zone, CONTEXT opens its channels (`zone`; long OK on a radio without CONTEXT) |
 | Zone | `zone` | CONTEXT in Zones: the zone's channels in order, OK goes to one. With `CONFIG_ZONE_EDIT` also the zone's editor (2.2): "Add channel" first, "Zone options" last, CONTEXT on a channel opens Channel actions |
 | Channel actions | `zchannel` | CONTEXT (long OK without CONTEXT) on a channel in a zone's list (2.2) |
 | Add Channel | `zpick` | "Add channel" in a zone's list: the stored channels the zone doesn't hold, T9 filtered (2.2) |
@@ -139,7 +139,7 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 | Pick | opens the List picker | TX contact, RX group list |
 | Read only | nothing | Number; Zones without `CONFIG_ZONE_EDIT` |
 | Zones | opens In Zones (`chzones`) with `CONFIG_ZONE_EDIT` | Zones (a stored channel only) |
-| Action | runs it | Tune to it, Share channel to... (with `CONFIG_ZONE_SHARE`: Share To for the stored channel; with unsaved changes "Save first: hold OK"), Save, Save as new channel |
+| Action | runs it | Tune to this ch, Share channel to... (with `CONFIG_ZONE_SHARE`: Share To for the stored channel; with unsaved changes "Save first: hold OK"), Save, Save as new channel |
 
 - A changed row shows the temporary mark (`UI_ITEM_TEMP`, the dot Home uses).
 - Long SELECT anywhere saves, as long SELECT makes a quick setting permanent. The Save row does the same.
@@ -193,7 +193,7 @@ they show the change within a fraction of a second.
 | | a channel, OK | goes to it (as before) |
 | | a channel, CONTEXT (long OK without CONTEXT) | opens Channel actions (`zchannel`) on it |
 | | "Zone options" (last row) | opens Zone options (`zoneedit`) |
-| Zones | "New zone" (last row) | Text entry on the name; OK writes an empty zone with it (`ZONE_OP_NEW`, the lowest free slot, as Copy as new zone), "Added <name>", and Zones focuses it once written. An empty name makes none. Its list then starts with Add channel |
+| Zones | "Create New Zone" (last row) | Text entry on the name; OK writes an empty zone with it (`ZONE_OP_NEW`, the lowest free slot, as Copy as new zone), "Added <name>", and Zones focuses it once written. An empty name makes none. Its list then starts with Add channel |
 | Channel actions | 1 Move up, 2 Move down | swaps it with its neighbor. The menu stays open, so the digit again moves it on; the toast gives the position ("Position 4 of 16"), and "Already first" / "Already last" at the ends |
 | | 3 Copy here | the channel editor (2.1) on an unsaved copy at the lowest free number, named with " 2" appended (a copy of the channel in use keeps its temporary changes). Save writes it and inserts it after its source in one job (`ZONE_OP_ADD_NEW`); BACK asks as for any unsaved channel. Refused first with "No free channel" or "Zone full" |
 | | 4 Edit channel | the channel editor on the channel |

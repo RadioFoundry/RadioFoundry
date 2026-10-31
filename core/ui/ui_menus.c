@@ -724,7 +724,7 @@ static bool chans_raw_label(uint16_t raw, char *buf, uint8_t len)
 		return true;
 	}
 	if (chans_is_new(raw)) {
-		strncpy(buf, "New zone", len);
+		strncpy(buf, "Create New Zone", len);
 		return true;
 	}
 	if (!codeplug_zone((uint16_t)(raw - CH_VFO), &z))
@@ -758,7 +758,7 @@ static void chans_item(uint16_t i, ui_item_t *it)
 		return;
 	}
 	if (chans_is_new(raw)) {
-		strcpy(it->label, "New zone");
+		strcpy(it->label, "Create New Zone");
 		return;
 	}
 	uint16_t zi = (uint16_t)(raw - CH_VFO);
@@ -893,7 +893,7 @@ static uint16_t zone_focus_num;		// the channel the zone's list focuses when it 
 static uint16_t ze_zone;		// the zone the editor's screens work on (the zone list's index)
 static zone_op_t ze_op;			// the change handed to the storage job (ui_svc_zone_edit)
 static char ze_msg[CODEPLUG_NAME_LEN + 24];	// the editor's toasts
-static char ze_name[CODEPLUG_NAME_LEN + 1];	// a zone name being typed (Rename, New zone)
+static char ze_name[CODEPLUG_NAME_LEN + 1];	// a zone name being typed (Rename, Create New Zone)
 
 static zone_op_t *ze_op_new(uint8_t kind, uint16_t pos)
 {
@@ -1916,7 +1916,7 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 	static const char *const labels[CE_COUNT] = { "Name", "Number", "Mode", "RX", "TX", "Power", "RX only",
 		"Bandwidth", "RX CTCSS/DCS", "TX CTCSS/DCS", "VOX", "Color code", "Timeslot", "TX contact", "RX group list", "Own ID",
 		"Direct mode", "Talk permit beeps", "Talker alias TS1", "Talker alias TS2", "TX time-out", "Scan",
-		"Battery saver", "Zones", "Tune to it", GLYPH_SHARE " Share channel to...", "Save", "Save as new channel" };
+		"Battery saver", "Zones", "Tune to this ch", GLYPH_SHARE " Share channel to...", "Save", "Save as new channel" };
 	const channel_t *ch = &ced_ch;
 	if (i >= ced_n)
 		return;
@@ -3114,7 +3114,7 @@ static void ze_renamed(void)
 	}
 }
 
-// Zones > New zone: named in the text entry, then written empty; Zones focuses it, and its list's first row adds
+// Zones > Create New Zone: named in the text entry, then written empty; Zones focuses it, and its list's first row adds
 // channels
 static void zones_new_named(void)
 {

@@ -216,7 +216,7 @@ static const flow_t flows[] = {
 	// task-flows.md 12 says 3: the VFO row is first but Channels opens on the current zone (flow 2), so one Up
 	{ "C channels: every channel", "", "ok 5", "screen=channels focus=3_", 2, false },
 	{ "C a channel's settings", "", "ok 5 ok", "screen=channel", 3, false },
-	// The channel's last rows are Tune to it, Share channel to... (with zone sharing) and Save as new channel: Ups from
+	// The channel's last rows are Tune to this ch, Share channel to... (with zone sharing) and Save as new channel: Ups from
 	// the first row (lists wrap)
 #if CONFIG_ZONE_SHARE
 #define CE_SHARE_UP	" up"
@@ -617,8 +617,8 @@ static const flow_t flows[] = {
 	  "screen=chzones writes=1 toast=Removed_from_Local_repeaters", 1, true },
 	{ "26 channel editor: back on the Zones row", "ok 5 ok up up up up ok down ok", "back", "screen=channel focus=Zones",
 	  1, false },
-	// Zones > New zone (the last row): named, written empty, then focused on Zones; OK opens it
-	{ "26 new zone: the last row of Zones", "ok 4", "down down down", "screen=zones focus=New_zone", 3, false },
+	// Zones > Create New Zone (the last row): named, written empty, then focused on Zones; OK opens it
+	{ "26 new zone: the last row of Zones", "ok 4", "down down down", "screen=zones focus=Create_New_Zone", 3, false },
 	{ "26 new zone: named, then focused on Zones", "", "ok 4 down down down ok 2 ok",
 	  "screen=zones writes=1 toast=Added_A focus=A count=6", 8, true },
 	{ "26 new zone: an empty name makes none", "ok 4 down down down ok", "back", "screen=zones writes=0", 1, false },

@@ -196,7 +196,7 @@ static void test_codeplug(void)
 	z.name[0] = 0;
 	CHECK(zone_edit_create(&z, &at) == ZONE_EDIT_NO_NAME);
 
-	// A new empty zone (Zones > New zone), then a channel added to it
+	// A new empty zone (Zones > Create New Zone), then a channel added to it
 	zone_op_t op;
 	memset(&op, 0, sizeof op);
 	op.kind = ZONE_OP_NEW;

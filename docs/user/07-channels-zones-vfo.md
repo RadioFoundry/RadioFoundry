@@ -31,7 +31,7 @@ The Zones list shows the VFO first, then every zone with its number of channels.
 
 ## Making a zone
 
-**OK**, **4** (Zones), then the last row, **New zone**. Type the name and press **OK**. The radio saves the empty zone
+**OK**, **4** (Zones), then the last row, **Create New Zone**. Type the name and press **OK**. The radio saves the empty zone
 and focuses it in the list. Press **#** to open it and add channels with **Add channel**. A channel's own page can
 also put it in zones (**Zones** row, [Editing a channel](#editing-a-channel)).
 
@@ -158,7 +158,7 @@ The radio won't save a channel without a name, with RX outside its bands, with T
 instead), or a DMR channel without a TX contact. It says which.
 
 **Save as new channel** stores the edited copy at the lowest free number and leaves the original as it was.
-**Tune to it** tunes the channel and **Share channel to...** sends it to another radio ([Sharing a zone](#sharing-a-zone));
+**Tune to this ch** tunes the channel and **Share channel to...** sends it to another radio ([Sharing a zone](#sharing-a-zone));
 save or discard your changes first.
 
 ### Text entry
