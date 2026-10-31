@@ -2024,7 +2024,7 @@ static void test_persist(void)
 	// The DMR data service's settings: saved when they change, back after a reboot
 	dmrDataSettings_t ds;
 	dmrDataServiceGetSettings(&ds);
-	CHECK(ds.arsServer == 0 && !ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
 	ds.arsServer = 3100999;
 	ds.radioCheckReply = true;
 	ds.callAlertAck = false;
@@ -2052,16 +2052,29 @@ static void test_persist(void)
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.ipGatewayId == 0);
 	// A record from before ETSI IP text (no format bit) keeps TMS: only the default changed
-	settings_begin()->ds_flags = SETTINGS_DS_CALL_ALERT_ACK | SETTINGS_DS_LRRP_REPLY;
+	settings_t *old = settings_begin();
+	old->ds_flags = SETTINGS_DS_CALL_ALERT_ACK | SETTINGS_DS_LRRP_REPLY;
+	old->ds_ip_cnf = 0;
 	settings_end(now);
 	boot();
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.smsFormat == DMR_SMS_FORMAT_TMS && ds.callAlertAck);
+	// ... and, saved before radio check answers became the default (no SETTINGS_DS_CHECK_SET), answers them
+	CHECK(ds.radioCheckReply);
+	// Turned off by the user: saved with the mark, off after a reboot
+	ds.radioCheckReply = false;
+	dmr_data_set_settings(&ds);
+	run(50);
+	settings_read(&cur);
+	CHECK((cur.ds_ip_cnf & SETTINGS_DS_CHECK_SET) && !(cur.ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY));
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(!ds.radioCheckReply);
 	settings_begin()->ds_stored = 0;
 	settings_end(now);
 	boot();
 	dmrDataServiceGetSettings(&ds);
-	CHECK(ds.arsServer == 0 && !ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
 
 	// Power off: nothing to deregister, so the radio core is done at once
 	req(RREQ_POWER_OFF, 0);

@@ -1793,7 +1793,7 @@ static void data_save_settings(uint32_t now_ms)
 				 (cur.radioCheckEtsi ? SETTINGS_DS_RADIO_CHECK_ETSI : 0) |
 				 (cur.udpCompress == DMR_UDPC_OFF ? SETTINGS_DS_UDPC_OFF : 0) |
 				 (cur.udpCompress == DMR_UDPC_ALL ? SETTINGS_DS_UDPC_ALL : 0));
-	st->ds_ip_cnf = (uint8_t)((cur.ipConfirmedTries & 0x0F) |
+	st->ds_ip_cnf = (uint8_t)((cur.ipConfirmedTries & 0x0F) | SETTINGS_DS_CHECK_SET |
 				  ((cur.ipConfirmed == DMR_IPC_OFF ? SETTINGS_DS_IPC_OFF :
 				    cur.ipConfirmed == DMR_IPC_ALL ? SETTINGS_DS_IPC_ALL : 0u) << SETTINGS_DS_IPC_SHIFT));
 	memcpy(st->ds_ip_rule, cur.ipConfirmedRule, sizeof(st->ds_ip_rule));
@@ -1884,18 +1884,20 @@ static void data_init(radio_sm_t *sm)
 	env.packet = hostlink_net_air_packet;
 	hostlink_net_air_start();
 #endif
-	// No auto-transmit features until the user turns them on (docs/ux/principles.md): no ARS server, no radio
-	// check auto-reply. Call alerts are acknowledged (that is what makes them work); LRRP answers "no fix" without
-	// a position source
+	// No ARS server until the user sets one (docs/ux/principles.md). Radio checks are answered and call alerts
+	// acknowledged (that is what makes them work for the radio asking); LRRP answers "no fix" without a position
+	// source
 	// IP packets: compressed headers where the ports allow, confirmed only for the rules the user sets
-	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = false, .callAlertAck = true, .lrrpReply = true,
+	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
 				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 	settings_t *st = &st_copy;
 	settings_read(st);
 	if (st->ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
 		set.arsServer = st->ds_ars_server <= 0xFFFFFFu ? st->ds_ars_server : 0;
-		set.radioCheckReply = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
+		// A record from before the default became On answers too (as zone shares, docs/spec/dmr-data.md 8)
+		set.radioCheckReply = !(st->ds_ip_cnf & SETTINGS_DS_CHECK_SET) ||
+				      (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
 		set.callAlertAck = (st->ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
 		set.lrrpReply = (st->ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
 		// A record from before ETSI IP text has neither format bit: TMS, as that firmware sent (only the default
