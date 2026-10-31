@@ -229,7 +229,8 @@ export function channelForm(m, t) {
 			return band ? t(`editor.band.${band}`) : "";
 		} },
 		txt("tot", "editor.col.tot", tot(t), (v) => (v ? String(v) : t("editor.tot.default"))),
-		chk("rxOnly", "editor.col.rx_only"),
+		// a receive-only band makes the channel RX only on save (rxFreq): the box shows it as the RX frequency is typed
+		{ ...chk("rxOnly", "editor.col.rx_only"), implied: (value) => !!listenBand(parseFreq(value("rxHz"))) },
 		fm({ group: t("editor.form.analog") }),
 		fm(sel("bw", "editor.col.bw", () => [[12.5, "12.5 kHz"], [25, "25 kHz"]])),
 		fm(txt("rxTone", "editor.col.rx_tone", tone(t), (v) => v)),
@@ -349,6 +350,11 @@ export function formDialog(title, fields, record, t, onSave) {
 			if (f.type === "select") {
 				const v = input._opts[input.selectedIndex]?.[0];
 				f.set ? f.set(work, v) : (work[f.key] = v);
+			}
+			if (f.implied) {
+				const on = f.implied((k) => byKey(k).input.value);
+				if (on) input.checked = true;
+				input.disabled = on;
 			}
 			if (f.type === "bool") (f.set ? f.set(work, input.checked) : (work[f.key] = input.checked));
 			if (f.show) row.hidden = !f.show(work);

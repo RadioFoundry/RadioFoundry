@@ -6,7 +6,7 @@
 
 import { h, t, ROOT, button, notice, download, progressBar } from "../flasher/dom.js";
 import { equal } from "../flasher/bytes.js";
-import { SerialStream, serialSupported, RFOUNDRY_USB, browserErrorKey } from "../flasher/link.js";
+import { SerialStream, serialSupported, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
 import { CodeplugImage, IDDB_HEADER, REGIONS } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
@@ -485,19 +485,23 @@ async function connect() {
 		stream = S.fake.stream();
 	} else {
 		if (!serialSupported()) throw new TransportError("no_serial");
-		// one chooser for both links: the radio's own USB port, or a programming cable, told apart by the port's USB ID
-		let port;
-		try {
-			port = await navigator.serial.requestPort({ filters: [RFOUNDRY_USB, ...CABLES] });
-		} catch (e) {
-			if (e?.name !== "NotFoundError") throw e;
-			say(t("editor.connect.none"), "warn");
-			return null;
+		// one chooser for both links: the radio's own USB port, or a programming cable, told apart by the port's USB ID.
+		// A port granted before where RadioFoundry answers needs no chooser
+		const known = await knownRadioPort([RFOUNDRY_USB, ...CABLES]);
+		let port = known?.port;
+		if (!port) {
+			try {
+				port = await navigator.serial.requestPort({ filters: [RFOUNDRY_USB, ...CABLES] });
+			} catch (e) {
+				if (e?.name !== "NotFoundError") throw e;
+				say(t("editor.connect.none"), "warn");
+				return null;
+			}
 		}
 		const info = port.getInfo?.() || {};
 		cable = !(info.usbVendorId === RFOUNDRY_USB.usbVendorId && info.usbProductId === RFOUNDRY_USB.usbProductId);
-		diag.note("port chosen", { cable, ...info });
-		stream = await SerialStream.open(port);
+		diag.note(known ? "port known" : "port chosen", { cable, ...info });
+		stream = known?.stream || await SerialStream.open(port);
 	}
 	const tr = new CpsSerial(stream, { cable });
 	try {

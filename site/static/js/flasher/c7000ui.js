@@ -17,7 +17,7 @@
 
 import { h, t, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames } from "./dom.js";
 import { hex, sha256, sleep } from "./bytes.js";
-import { SerialStream, Link, probe, serialSupported } from "./link.js";
+import { SerialStream, Link, probe, serialSupported, knownRadioPort, grantedPorts } from "./link.js";
 import { Stub, stubImages, StubError, DONE_LED, MEM, ROM_REPEAT } from "./stub.js";
 import * as c7 from "./c7000.js";
 import { openVendorFile, describe as describeVendorFile, analysisCandidate, whyNot } from "./vendorfile.js";
@@ -143,10 +143,14 @@ async function openCable(any = false) {
 	if (c.stream) return c.stream;
 	if (S().fakeC7) return (c.stream = S().fakeC7.stream);
 	if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
-	const port = await navigator.serial.requestPort(any ? {} : { filters: CABLES });
+	// no chooser for a cable granted before: the one where this radio answers as RadioFoundry, else the only one plugged
+	// in (the radio may be off or on its original firmware: the connect step finds out)
+	const known = any ? null : await knownRadioPort(CABLES, (p) => S().board.debuglink_names.includes(p.board));
+	const granted = any || known ? [] : await grantedPorts(CABLES);
+	const port = known?.port || (granted.length === 1 ? granted[0] : await navigator.serial.requestPort(any ? {} : { filters: CABLES }));
 	c.portInfo = port.getInfo();
 	ctx.useAdapter?.(fromSerialInfo(c.portInfo));
-	c.stream = await SerialStream.open(port);
+	c.stream = known?.stream || await SerialStream.open(port);
 	return c.stream;
 }
 

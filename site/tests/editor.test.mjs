@@ -36,6 +36,9 @@ test("an RX frequency in the air band or the broadcast band makes the channel RX
 	assert.deepEqual(["118.1", "98.5", "136.975", "145.5", "107.9"].map(typed), [true, true, true, false, true]);
 	const note = channelForm(empty(), t).find((f) => f.key === "band");
 	assert.deepEqual(["121.5", "88.1", "462.5625", "x"].map((v) => note.text(() => v)), ["editor.band.air", "editor.band.bcast", "", ""]);
+	// the form's RX Only box follows the RX frequency as it is typed
+	const rxOnly = field("rxOnly");
+	assert.deepEqual(["121.5", "88.1", "462.5625", "x"].map((v) => rxOnly.implied(() => v)), [true, true, false, false]);
 });
 
 test("the channel table shows the mode the radio uses in a receive-only band", () => {
