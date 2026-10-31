@@ -32,7 +32,8 @@ import { readRadio, makeBundle, openBundle, bundleFolder, bundleName, describeFi
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
 import { decideCodec, DecisionError } from "./decide.js";
-import { suggestPack, startCode, startLanguages, startLanguage, setStartLanguage } from "./langsuggest.js";
+import { tooBig } from "./buildfit.js";
+import { suggestPack, packCode, startCode, startLanguages, startLanguage, setStartLanguage } from "./langsuggest.js";
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
@@ -65,6 +66,10 @@ class NetworkModeError extends Error {}
 // A refusal from the backend (its "detail", or a build's error): a feature or option the build doesn't know means
 // the page and the version it builds are out of step
 class ApiError extends Error {}
+// a build the service couldn't fit in the radio (buildfit.js): told as what to change, not as a fault to report
+class FitError extends Error {
+	constructor(fit) { super(`too big: ${fit.region}`); this.fit = fit; }
+}
 
 // Every error shown goes through here: it is logged once (console, bug report) with the step it happened in. The
 // browser's own USB and serial errors say little ("Failed to open serial port."): they get what to do, with the
@@ -125,6 +130,7 @@ const initialState = () => ({
 	link: null,
 	packsDismissed: new Set(),	// language packs the user said no to on the build step (langsuggest.js)
 	startLang: null,	// the Radio language picked on the build step; null: on an installation the page's (langsuggest.js)
+	langAdded: null,	// the language pack that pick put in the build, taken out again when the pick changes
 	customPicked: false,	// the Custom card picked before any feature changed
 	build: null,		// a custom build in progress: {selection, text, error}
 	useId: null,		// the flash log's id for this use (see useId)
@@ -888,7 +894,7 @@ function updateView() {
 		const added = plan.added.length ? notice(t("flash.update.new_preset", { names: plan.added.map(title).join(", ") }), "info") : null;
 		const building = S.build && S.build.selection === selectionKey(S.selection);
 		const image = S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
-			: building && S.build.error ? (S.build.error.el ||= errorNotice(S.build.error.text, S.build.error.rec))
+			: building && S.build.error ? buildErrorNotice(S.build.error)
 			: building ? h("p", { class: "muted", role: "status" }, spinner(), S.build.text) : null;
 		const backup = h("label", { class: "toggle" },
 			h("input", { type: "checkbox", checked: !!S.updateBackup, onchange: (e) => { S.updateBackup = e.target.checked; S.c7want = null; draw(); } }),
@@ -969,6 +975,7 @@ function selectRadio(r) {
 	S.board = fb().boards[r.flash.board];
 	S.selection = new Selection(r, S.data.features, S.data.variants);
 	S.selection.useVariant("full");
+	S.langAdded = null;
 	S.firmware = null;
 	S.buildOptions = {};
 	S.variant = null;	// the hardware variant is read from the radio again
@@ -988,6 +995,8 @@ function buildView() {
 	// custom. The Custom card can also be picked by hand before any change (it opens the groups).
 	const change = (name, value) => {
 		sel.set(name, value);
+		if (!value && name === S.langAdded) S.langAdded = null;
+		if (!value && packCode(name) && packCode(name) === S.startLang) S.startLang = "en";	// its language left out by hand
 		S.customPicked = false;
 		draw();
 	};
@@ -1022,13 +1031,26 @@ function buildView() {
 		const cur = startLanguage(S.data.features, sel);
 		return h("div", { class: "start-lang" },
 			h("label", {}, h("b", {}, t("flash.build.start_lang")), " ",
-				h("select", { onchange: (e) => { S.startLang = e.target.value; S.customPicked = false; draw(); } },
-					langs.map((l) => h("option", { value: l.code, selected: l.code === cur }, languageName(l.code))))),
+				h("select", { onchange: (e) => pickStart(e.target.value) },
+					langs.map((l) => h("option", { value: l.code, selected: l.code === cur },
+						l.included ? languageName(l.code) : t("flash.build.start_lang_adds", { language: languageName(l.code) }))))),
 			h("p", { class: "small muted" }, t("flash.build.start_lang_help")));
+	};
+	// a Radio language picked by hand is built in: its pack goes in with it, and out again when the pick changes
+	const pickStart = (code) => {
+		if (S.langAdded && S.langAdded !== `LANG_${code.toUpperCase()}`) sel.set(S.langAdded, false);
+		S.langAdded = null;
+		S.startLang = code;
+		S.customPicked = false;
+		draw();
 	};
 	const draw = () => {
 		const want = S.startLang ?? (S.task === "install" ? LANG : null);
-		if (want) setStartLanguage(S.data.features, sel, want);
+		if (want) {
+			const before = new Set(sel.on);
+			setStartLanguage(S.data.features, sel, want, { include: S.startLang != null });
+			S.langAdded = [...sel.on].find((n) => packCode(n) && !before.has(n)) || S.langAdded;
+		}
 		// the variant cards and the summary don't count the start language: Full in Spanish is still Full
 		const match = S.customPicked ? null : sel.matches(startCode);
 		// an image built for another selection no longer applies
@@ -1040,7 +1062,7 @@ function buildView() {
 			h("div", { class: "choice-grid", role: "radiogroup" }, o.values.map((v) =>
 				card(S.buildOptions?.[o.name] === v.id, () => { S.buildOptions = { ...S.buildOptions, [o.name]: v.id }; draw(); },
 					h("strong", {}, v.title), v.text ? h("span", { class: "small muted" }, v.text) : null)))));
-		const cards = S.data.variants.map((v) => card(match === v.id, () => { sel.useVariant(v.id); S.customPicked = false; draw(); },
+		const cards = S.data.variants.map((v) => card(match === v.id, () => { sel.useVariant(v.id); S.langAdded = null; S.customPicked = false; draw(); },
 			h("strong", {}, vtitle(v)),
 			h("span", { class: "small" }, v.summary),
 			h("span", { class: "small muted" }, t("flash.build.count", { n: S.radio.config[v.id].length, total: supportedCount }))));
@@ -1109,7 +1131,7 @@ function buildView() {
 		// the image's state, then building it yourself: one line and a fold under the features, not a card of its own
 		const image = h("div", { class: "build-image" },
 			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
-				: building && S.build.error ? (S.build.error.el ||= errorNotice(S.build.error.text, S.build.error.rec))
+				: building && S.build.error ? buildErrorNotice(S.build.error)
 				: building ? h("p", { class: "muted", role: "status" }, spinner(), S.build.text)
 				: h("p", { class: "small muted" }, t(S.sim ? "flash.sim.image" : VERSION_REF ? "flash.build.version_on_request" : "flash.build.on_request", { ref: versionShort() })),
 			h("details", { class: "small" }, h("summary", {}, t("flash.build.self_title")),
@@ -1222,6 +1244,8 @@ async function requestBuild(redraw) {
 		}
 		if (b.status !== "done") {
 			const why = b.error || b.status;
+			const fit = tooBig(why);
+			if (fit) throw new FitError(fit);
 			// a feature or option the built version doesn't have: explained by errorText, not as a failed compile
 			throw /^unknown (feature|option)/i.test(why) ? new ApiError(why) : new Error(t("flash.build.failed", { error: why }));
 		}
@@ -1236,10 +1260,20 @@ async function requestBuild(redraw) {
 			variant: sel.matches(startCode) || "custom", build: b.id, selection: key, pinned: !!VERSION_REF };
 		S.build = null;
 	} catch (e) {
-		if (S.build?.selection === key) S.build.error = { text: t("flash.build.unavailable", { error: errorText(e) }), rec: diag.currentError() };
+		if (S.build?.selection === key) S.build.error = e instanceof FitError ? { text: fitText(e.fit), fit: e.fit }
+			: { text: t("flash.build.unavailable", { error: errorText(e) }), rec: diag.currentError() };
 	}
 	redraw();
 }
+
+// What to do about a build too big for the radio: turn things off, and a Radio language picked into the build is one
+function fitText(fit) {
+	const text = t(fit.memory === "flash" ? "flash.build.too_big" : "flash.build.too_big_ram", { kb: fit.kb });
+	return S.langAdded ? `${text} ${t("flash.build.too_big_lang", { language: languageName(packCode(S.langAdded)) })}` : text;
+}
+
+// The build step's notice for a failed build: one too big is a plain notice, any other an error with its report
+const buildErrorNotice = (err) => (err.el ||= err.fit ? notice(err.text, "bad") : errorNotice(err.text, err.rec));
 
 async function loadOwnImage(f, redraw) {
 	try {
