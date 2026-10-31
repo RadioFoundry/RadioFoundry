@@ -16,7 +16,7 @@ import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
-import { columns, channelForm, formDialog, membersDialog, refLabel } from "./views.js";
+import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel } from "./views.js";
 import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
@@ -207,14 +207,14 @@ function tableActions(tab, g) {
 	const full = S.model[tab].length >= TABLE_MAX[tab];
 	const numbered = tab !== "zones";
 	const out = [
-		// first, so it sits above the row checkboxes it acts on
-		button(sel.length ? t("editor.bulk_edit_n", { n: sel.length }) : t("editor.bulk_edit"), () => bulkSet(tab, g), { disabled: sel.length < 2 }),
+		// first, so it sits above the row checkboxes it acts on; not on a table with nothing it can set (zones, RX lists)
+		bulkColumns(tab, S.model, t).length ? button(sel.length ? t("editor.bulk_edit_n", { n: sel.length }) : t("editor.bulk_edit"), () => bulkSet(tab, g), { disabled: sel.length < 2 }) : null,
 		button(t("editor.add"), () => addRecord(tab, g), { disabled: full }),
 		button(t("editor.duplicate"), () => duplicate(tab, g), { disabled: full || !g.targets().length }),
 		button(t("editor.delete"), () => del(tab, g), { disabled: !g.targets().length, danger: true }),
 		button(t("editor.move_up"), () => move(tab, g, -1), { disabled: !g.targets().length, quiet: true }),
 		button(t("editor.move_down"), () => move(tab, g, 1), { disabled: !g.targets().length, quiet: true }),
-	];
+	].filter(Boolean);
 	if (numbered) out.push(button(t("editor.renumber"), () => renumber(tab), { quiet: true }));
 	out.push(...extensions.tableActions(tab, api()));
 	return out;
@@ -308,7 +308,8 @@ function renumber(tab) {
 
 function bulkSet(tab, g) {
 	const rows = g.selection();
-	const cols = columns(tab, S.model, t).filter((c) => c.readOnly !== true && c.key !== "name" && c.key !== "number");
+	const cols = bulkColumns(tab, S.model, t);
+	if (!cols.length) return;
 	const pickCol = h("select", {}, ...cols.map((c, i) => h("option", { value: String(i) }, c.label)));
 	const slot = h("div");
 	const errs = h("p", { class: "notice bad", hidden: true });

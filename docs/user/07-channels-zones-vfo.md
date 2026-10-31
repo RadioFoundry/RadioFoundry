@@ -286,7 +286,7 @@ channel on the frequency in the codeplug. Both are receive only: PTT shows "Air 
 only" and the radio doesn't transmit. Sub-audio tones are ignored.
 
 In the Codeplug Editor, a channel whose RX frequency is in one of these bands is set to **RX Only** when you type the
-frequency, and its mode shows as "AM (air band)" or "FM broadcast". The Problems list warns about a channel there that
+frequency, its TX frequency follows RX, and its mode shows as "AM (air band)" or "FM broadcast". The Problems list warns about a channel there that
 isn't RX Only or is DMR.
 
 In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a

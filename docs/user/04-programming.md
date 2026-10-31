@@ -78,7 +78,8 @@ TFTP ([USB network](15-usb-network.md#programming-over-the-network)).
 | Problems | Errors and warnings, each with a link to the record |
 
 In a table, double-click a cell or type on it to edit it in place. Click a column heading to sort, and type in the
-filter to narrow the rows. Check rows and choose **Bulk Edit** to set one field on all of them. **Undo** and **Redo**
+filter to narrow the rows. Check rows and choose **Bulk Edit** to set one field on all of them (not on Zones or RX Lists, whose members are
+edited in their own dialog). **Undo** and **Redo**
 cover every change, including an import.
 
 The page keeps the working codeplug in the browser, so closing or reloading the page doesn't lose edits. **New** starts

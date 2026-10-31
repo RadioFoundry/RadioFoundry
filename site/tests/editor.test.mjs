@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { channelForm, columns } from "../static/js/editor/views.js";
+import { bulkColumns, channelForm, columns } from "../static/js/editor/views.js";
 import { empty } from "../static/js/codeplug/model.js";
 
 const t = (k) => (k === "editor.tot.default" ? "Radio Default" : k);
@@ -34,6 +34,18 @@ test("an RX frequency in the air band or the broadcast band makes the channel RX
 		return r.rxOnly;
 	};
 	assert.deepEqual(["118.1", "98.5", "136.975", "145.5", "107.9"].map(typed), [true, true, true, false, true]);
+	// TX goes to RX there, so no stray TX frequency stays behind; elsewhere TX is left as it was
+	const tx = (s) => {
+		const r = { rxHz: 446006250, txHz: 446006250, rxOnly: false };
+		rx.parse(r, "rxHz", s);
+		return r.txHz;
+	};
+	assert.deepEqual(["118.1", "145.5"].map(tx), [118100000, 446006250]);
+	// the form's TX box and the RX/TX buttons are locked to RX while RX is in such a band
+	const txField = freqs.find((f) => f.key === "txHz");
+	const pair = channelForm(empty(), t).find((f) => f.key === "freqs");
+	assert.equal(txField.follows, "rxHz");
+	assert.deepEqual(["121.5", "462.5625"].map((v) => [txField.disabled(null, () => v), pair.disabled(null, () => v)]), [[true, true], [false, false]]);
 	const note = channelForm(empty(), t).find((f) => f.key === "band");
 	assert.deepEqual(["121.5", "88.1", "462.5625", "x"].map((v) => note.text(() => v)), ["editor.band.air", "editor.band.bcast", "", ""]);
 	// the form's RX Only box follows the RX frequency as it is typed
@@ -45,4 +57,12 @@ test("the channel table shows the mode the radio uses in a receive-only band", (
 	const mode = columns("channels", empty(), t).find((c) => c.key === "mode");
 	assert.deepEqual([[118100000, "fm"], [98500000, "fm"], [146520000, "fm"], [118100000, "dmr"]].map(([rxHz, m]) => mode.format(m, { rxHz, mode: m })),
 		["editor.mode.air", "editor.mode.bcast", "FM", "DMR"]);
+});
+
+test("Bulk Edit sets no names or numbers, and has nothing to set on zones and RX lists", () => {
+	const keys = (table) => bulkColumns(table, empty(), t).map((c) => c.key);
+	assert.deepEqual([keys("zones"), keys("rxLists")], [[], []]);
+	assert.ok(keys("channels").includes("power"));
+	assert.ok(!keys("channels").includes("name") && !keys("contacts").includes("number"));
+	assert.ok(keys("contacts").includes("type"));
 });
