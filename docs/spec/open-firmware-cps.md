@@ -242,7 +242,7 @@ The structure is little endian, packed, 46 bytes in struct version 3.
 | 6 | UV380 family. Also what a board reports when it sets no radio type, such as the HR_C7000 boards | qdmr (UV380 driver) |
 | 7 | the HR_C5000 radio and its sibling model | qdmr (UV380 driver) |
 | 8 | a UV380-class radio with a BGR panel | qdmr (UV380 driver) |
-| 9 | MD-2017 / RT-82 | qdmr (UV380 driver) |
+| 9 | the UV380 family's radio with two receivers | qdmr (UV380 driver) |
 | 10 | the same radio as 8 with an RGB panel (the type follows the detected panel color order) | qdmr (UV380 driver) |
 | 11 | an HR_C7000 radio (known to the open-firmware CPS since E2026.07.13) | **not known to qdmr**: it fails with an "Unknown ... variant" error |
 

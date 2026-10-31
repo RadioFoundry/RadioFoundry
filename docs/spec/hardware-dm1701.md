@@ -1418,27 +1418,28 @@ USB gotchas found on the DM-1701:
 
 ## 17. Variants
 
-Build variants: DM1701, RT84, MDUV380, MDUV380_10W_PLUS. The MD-2017 is not built: its pins are not defined.
+Build variants: DM1701, RT84, MDUV380, MDUV380_10W_PLUS, MD2017. The MD-2017's differences are in
+[hardware-md2017.md](hardware-md2017.md).
 
-| Aspect | DM-1701 | RT84 | MD-UV380 / UV390 5 W | MD-UV390 Plus 10 W | MD-2017 (partial code only) |
+| Aspect | DM-1701 | RT84 | MD-UV380 / UV390 5 W | MD-UV390 Plus 10 W | MD-2017 |
 |---|---|---|---|---|---|
 | Visible LCD rows | 120 (8-row offset) | 128 | 128 | 128 | 128 |
-| LCD type source | sec. reg 3 byte 0x1D, DM-1701 table (9.2) | as DM-1701 (unverified) | sec. reg 3 byte 0x1D, MD-UV380 table, always RGB | as MD-UV380 | fixed: type 3, RGB |
-| Keypad matrix | 10.1 DM-1701 table | same as DM-1701 | 10.1 MD-UV380 table | as MD-UV380 | different (P1/P2 on row 1, up/down on row 2) |
-| Side keys on row 2 | D5 top orange, D6 side 2, D7 side 1 | same | D7 side 1, D6 side 2, no orange | same | D5 trackball press, D7 side 2, extra orange button on its own GPIO (active low) |
-| Navigation | rotary encoder | rotary encoder | rotary encoder | rotary encoder | trackball (4 direction pulse inputs) |
-| PA band select / backlight | PC6 / PD8 | PC6 / PD8 | PC6 / PD8 | **PD8 / PC6 (swapped)** | as MD-UV380 (unverified) |
+| LCD type source | sec. reg 3 byte 0x1D, DM-1701 table (9.2) | as DM-1701 (unverified) | sec. reg 3 byte 0x1D, MD-UV380 table, always RGB | as MD-UV380 | as MD-UV380 |
+| Keypad matrix | 10.1 DM-1701 table | same as DM-1701 | 10.1 MD-UV380 table | as MD-UV380 | own table: P1 / P2 on row 1, SK3 and the ring center on row 2 |
+| Side keys on row 2 | D5 top orange, D6 side 2, D7 side 1 | same | D7 side 1, D6 side 2, no orange | same | D7 SK1, D6 SK2, D4 SK3, D5 ring center; orange top key on PE13 (active low) |
+| Navigation | rotary encoder | rotary encoder | rotary encoder | rotary encoder | four-way ring, one polled input per direction |
+| PA band select / backlight | PC6 / PD8 | PC6 / PD8 | PC6 / PD8 | **PD8 / PC6 (swapped)** | PC6, high = VHF / PB2 |
 | Battery ADC divisor | 37.5 | 37.5 | 40.3 | 40.3 | 37.5 (unverified) |
 | Volume pot range | 29..2075, break 318 | as DM-1701 | 22..2070 / 309 (RT3S 23..2020 / 317) | 19..2054 / 308 | 32..2048 / 321 |
-| Max power | 5 W | 5 W | 5 W (a 10 W radio can be forced by setting) | 10 W | |
-| Power fractions | 7, 12.1 DM-1701 rows | same | 5 W rows | 10 W rows | |
-| AT1846S count | 1 | 1 | 1 | 1 | 2 (two independent receivers) |
+| Max power | 5 W | 5 W | 5 W (a 10 W radio can be forced by setting) | 10 W | 5 W |
+| Power fractions | 7, 12.1 DM-1701 rows | same | 5 W rows | 10 W rows | DM-1701 rows (unverified) |
+| AT1846S count | 1 | 1 | 1 | 1 | 2 on I2C1 PB6 / PB7: 0x2E main, 0x71 receive only |
 | DFU key | DM-1701 key | DM-1701 key (unverified) | MD-UV380 key | MD-UV380 key | MD-UV380 key |
 | 10 W identification | n/a | n/a | sec. reg 3 byte 0x1C = 0xF4 means Plus 10 W | | |
 | Soft volume (volume shown on screen) | yes | yes | yes | yes | no |
 
-Everything else (MCU pins for RF, HR_C6000, AT1846S, SPI flash, USB, clocks, flash layout, codec address) is the same
-across the family.
+Everything else (SPI flash, USB, clocks, flash layout) is the same across the family. The MD-2017 also moves the
+AT1846S bus, the RX supply pins and the HR_C6000 config SPI clock (hardware-md2017.md 3).
 
 
 ---
