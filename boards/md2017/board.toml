@@ -73,8 +73,8 @@ steps = [
 	"Release the keys.",
 ]
 
-# The TYT bootloader takes the same DFU protocol and sector order as the other STM32 radios', with the MD-UV380's key
-# (hardware-md2017.md 11)
+# The TYT bootloader takes the same DFU protocol and sector order as the other STM32 radios', with the key the
+# family's other TYT radios use (hardware-md2017.md 11)
 [flash.dfu]
 vid = 0x0483
 pid = 0xDF11

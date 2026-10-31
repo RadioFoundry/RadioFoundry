@@ -20,8 +20,8 @@
 #include "hostlink/hostlink_ppp.h"
 #endif
 
-// Matrix positions, [row][column D0..D7] (hardware-md2017.md 5): the MD-UV380's digits, MENU and BACK where it has up
-// and down, P1 and P2 where it has green and red, SK3 and the ring's center on row 2. The ring's four directions and
+// Matrix positions, [row][column D0..D7] (hardware-md2017.md 5): the family's digit positions, MENU and BACK where the
+// others have up and down, P1 and P2 where they have green and red, SK3 and the ring's center on row 2. The ring's four directions and
 // the orange top key have their own lines (input_uvf.c)
 const uint8_t uvf_key_matrix[3][8] = {
 	{ KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_0, KEY_STAR },
@@ -37,9 +37,9 @@ static void init(void)
 #endif
 }
 
-// hardware-md2017.md: 2 (the main AT1846S at 0x2E, the second receiver's at 0x71), 4 (the MD-UV380's panel table: the
-// TYT images run the same init), 7 (battery and volume pot: the DM-1701's divider and the MD-2017 pot ends, both
-// unconfirmed), 8 (the DM-1701's calibration layout; the power fractions and k factors are the DM-1701's until measured)
+// hardware-md2017.md: 2 (the main AT1846S at 0x2E, the second receiver's at 0x71), 4 (the family's panel table: the
+// TYT images run the same init), 7 (battery and volume pot: the family's divider and this radio's pot ends, both
+// unconfirmed), 8 (the family's calibration layout; the power fractions and k factors are the family's until measured)
 const uvf_variant_t uvf_variant = {
 	.rf_addr = { 0x2E, 0x71 },
 	.panel_type = { 0, 1, 2, 3 },
