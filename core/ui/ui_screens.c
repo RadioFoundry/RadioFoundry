@@ -815,16 +815,21 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 			sb_u32(&b, v->zone_size, 1);
 		}
 		int rw = gfx_text_width(L->small, right);
-		gfx_text(L->small, w - rw, L->zone_y, right, ui_col.dim);
 		const char *left = v->vfo ? "VFO" : v->zone_name;
 		if (v->vfo && v->ch.mode == RADIO_MODE_DMR && !v->ch.rx_only && v->ch.tx_hz != v->ch.rx_hz) {
 			// A split VFO on DMR: the talk row names the target, so the TX frequency goes here (FM's talk row
-			// already shows it)
+			// already shows it). A frequency is never cut short: the step gives way, then "VFO"
 			sb_init(&b, buf, sizeof buf);
 			sb_str(&b, "VFO  TX ");
 			sb_freq(&b, v->ch.tx_hz);
 			left = buf;
+			if (gfx_text_width(L->small, buf) + L->small->w + rw > w)
+				rw = 0;
+			if (gfx_text_width(L->small, buf) > w)
+				left = buf + 5;	// "TX 433.5375"
 		}
+		if (rw)
+			gfx_text(L->small, w - rw, L->zone_y, right, ui_col.dim);
 		gfx_text_fit(L->small, left, w - rw - L->small->w, fit, sizeof fit);
 		gfx_text(L->small, 0, L->zone_y, fit, v->vfo ? ui_col.warn : ui_col.fg);
 	}

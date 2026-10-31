@@ -1122,6 +1122,24 @@ static void call_screen_checks(void)
 // warning, and no Battery page, Battery saver or Low battery warning in the lists (Tools keep their numbers, Battery
 // is the last one; in Settings the other rows move up). With a
 // battery they are all there
+// A split DMR VFO on Home, at every display class: the whole TX frequency in the top row, or the whole offset among
+// the chips where there is no top row; never shortened (the step gives way first)
+static void vfo_split_dmr_checks(void)
+{
+	char err[300];
+	for (int g = 0; g < sim_geom_count; g++) {
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		bool ok = sim_run("ok 4 up ok quick 4 6 1 4 7 0 1 2 5 0 ok back", err, sizeof err);
+		if (ok)
+			ok = sim_run(ui_layout.zone_y >= 0 ? "expect:txfreq=147012500 expect:shows=VFO__TX_147.0125" :
+				     "expect:txfreq=147012500 expect:shows=+492.5k", err, sizeof err);
+		if (!ok) {
+			printf("FAIL VFO split on DMR [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+	}
+}
+
 static void no_battery_checks(void)
 {
 	static const struct { const char *name, *script, *expect; } cases[] = {
@@ -1234,6 +1252,7 @@ int main(void)
 	printf("# %d flows run\n", flows_run);
 	about_checks();
 	call_screen_checks();
+	vfo_split_dmr_checks();
 	no_battery_checks();
 	title_row_checks();
 
