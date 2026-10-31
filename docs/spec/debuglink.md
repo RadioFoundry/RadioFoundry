@@ -131,12 +131,23 @@ uptime_ms=123456
 req_max=64
 reply_max=1024
 inject_max_ms=10000     longest hold of an injected key, PTT included
+preset=amateur          the build's preset: full, a release variant, or custom
+off=AUDIO_PROBE,FONT_AA  the switches the radio could have that this build left off; may be empty
 ```
 
 `release=` is the release name (`RFOUNDRY_RELEASE`, [release.md](../dev/release.md#release-names)), present only when
 the image was built from a release tag; `git=` is always the commit. A host shows the release name when there is one.
 `git_time=` is the commit's committer time (`RFOUNDRY_GIT_TIME`), so a clean build stays reproducible; a build with
 local changes (`-dirty`) carries its build time instead, since its code is newer than the commit. A host compares it with a release's `git_time` to tell whether a build that isn't a release is older than that release.
+
+`features=` names only some of the build's switches. `off=` lists every switch in `config/features.mk` `FEATURES`
+that the build left off, except those the board can't have or hasn't written (`BOARD_UNSUPPORTED`,
+`BOARD_NOT_WRITTEN`). With it a host knows the whole build: the web installer's update keeps a custom build's choices
+by it. `preset=` is the release variant the image was built as (`VARIANT`, `full` without one), or `custom` when a
+switch was set on the make command line, as a custom build from the build service is. They come last, so a list
+too long for the reply drops only itself. Older builds send neither. Both come from `core/hostlink/build_info.c`, as
+does `features=`, and a build without the debug link sends them too, from the stub entry's listener
+([stub-entry.md](stub-entry.md) 2).
 
 `codec=` is the board's own check of the codec in flash, the same one that decides whether DMR voice runs: a
 profile id (`<profile>-s11` on an STM32F4 radio: the descriptor is valid and the signature word and the CRC-32 of

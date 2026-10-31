@@ -318,6 +318,16 @@ $(shell python3 tools/gen_http_assets.py $(if $(filter y,$(CONFIG_NET_HTTP_GZIP)
 endif
 endif
 $(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
+# The switches this radio could have that the build left off (neither BOARD_UNSUPPORTED nor BOARD_NOT_WRITTEN): the
+# VERSION off= (either listener), so an installer updating the radio knows its exact build (features= names only some). A
+# change of configuration changes the flags, so build_info.o follows it
+RFOUNDRY_EMPTY :=
+RFOUNDRY_OFF := $(subst $(RFOUNDRY_EMPTY) ,$(strip ,),$(sort $(foreach f,$(filter-out $(BOARD_UNSUPPORTED) $(BOARD_NOT_WRITTEN),$(FEATURES)),\
+	$(if $(call feature_on,$(f)),,$(f)))))
+# The build's preset, VERSION preset=: the release variant (VARIANT, full without one), or custom when a
+# switch is set on the command line (a custom build: the build service sets every one)
+RFOUNDRY_PRESET := $(if $(strip $(foreach v,$(filter CONFIG_%,$(.VARIABLES)),$(filter command line,$(origin $(v))))),custom,$(or $(VARIANT),full))
+$(BUILD)/core/hostlink/build_info.o: CFLAGS_APP += -DRFOUNDRY_FEATURES_OFF=\"$(RFOUNDRY_OFF)\" -DRFOUNDRY_PRESET=\"$(RFOUNDRY_PRESET)\"
 $(VERSION_OBJ): $(BUILD)/version
 $(VERSION_OBJ): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY) \
 	-DRFOUNDRY_RELEASE=\"$(RFOUNDRY_RELEASE)\" -DRFOUNDRY_GIT_TIME=$(or $(RFOUNDRY_GIT_TIME),0)u \

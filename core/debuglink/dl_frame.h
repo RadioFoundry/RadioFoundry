@@ -26,11 +26,13 @@
 #define DL_REPLY_FLAG		0x80u
 #define DL_CMD_ERROR		0xFFu	// reply to a request that could not be decoded (bad CRC, too long)
 
-// The commands every listener answers: the flashing tools' identify and hand-over (the rest are debuglink_proto.h's)
+// The commands every listener answers: the flashing and web tools' identify, hand-over and codeplug (the rest are
+// debuglink_proto.h's)
 enum {
 	DL_CMD_PING		= 0x01,
 	DL_CMD_VERSION		= 0x02,
 	DL_CMD_STUB		= 0x1A,	// load and enter the RAM-monitor stub (CONFIG_STUB_ENTRY; core/stubentry, 3.18)
+	DL_CMD_CODEPLUG		= 0x1C,	// the fast codeplug protocol (CONFIG_CPS_FAST; core/cps/cps_fast.c, 3.20, cps-fast.md)
 };
 
 // Reply status (the first payload byte)

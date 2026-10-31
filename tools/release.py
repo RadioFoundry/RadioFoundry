@@ -36,11 +36,12 @@ def git(*a):
     return subprocess.run(["git", "-C", ROOT] + list(a), capture_output=True, text=True, check=True).stdout.strip()
 
 
-def features(board_id, variant=None, options=()):
+def features(board_id, variant=None, options=(), value="y"):
+    """The switches the build has at value (y: on, n: off) as a comma list (make print-config)"""
     cmd = (["make", "-s", "-C", ROOT, "BOARD=" + board_id, "print-config"] + (["VARIANT=" + variant] if variant else [])
            + ["%s=%s" % o for o in sorted(dict(options).items())])
     r = subprocess.run(cmd, capture_output=True, text=True)
-    return ",".join(kv.split("=")[0] for kv in r.stdout.split() if kv.endswith("=y"))
+    return ",".join(kv.split("=")[0] for kv in r.stdout.split() if kv.endswith("=" + value))
 
 
 def toolchain(board_id):
@@ -127,6 +128,10 @@ def main(argv=None):
     except mf.ManifestError as e:
         raise SystemExit("release: %s" % e)
     man["variant"] = variant or "full"
+    # every switch the build has off: with features, the switches this release knew, so the web flasher's update tells
+    # a feature added since from one a custom build left on (site/static/js/flasher/update.js)
+    if args.features is None:
+        man["off"] = features(board.id, variant, options, "n")
     # the commit's time, which the web editor compares with a radio's git_time= to offer this release to a build that
     # isn't one (docs/dev/codeplug-editor.md)
     try:
