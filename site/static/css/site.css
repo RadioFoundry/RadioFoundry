@@ -349,6 +349,13 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .toggle { padding-left: calc(var(--depth, 0) * 1.6rem); }
 .toggle input { width: 1.1rem; height: 1.1rem; margin: 0; align-self: start; margin-top: 0.3rem; accent-color: var(--accent); }
 .toggle .why { display: block; color: var(--muted); font-size: var(--text-sm); line-height: 1.35; }
+/* Update task: a new feature of a custom build, its On / Off choice in one column at the right */
+.update-new { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); align-items: center; padding: var(--space-1) 0; }
+.update-new .why { display: block; color: var(--muted); font-size: var(--text-sm); line-height: 1.35; }
+.update-pick { display: flex; gap: var(--space-3); }
+.update-pick label { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; white-space: nowrap; }
+.update-pick input { width: 1.1rem; height: 1.1rem; margin: 0; accent-color: var(--accent); }
+@media (max-width: 30rem) { .update-new { grid-template-columns: 1fr; } }
 .toggle code { color: var(--muted); background: none; }
 .toggle.changed { background: var(--accent-soft); border-radius: 6px; }
 .toggle.na { opacity: 0.55; }
@@ -549,7 +556,7 @@ table.grid td.c-ro { color: var(--muted); }
 table.grid tr.selected td { background: var(--accent-soft); }
 .grid-check { width: 2rem; text-align: center; }
 .grid-open { width: 2rem; }
-.grid-open .icon { width: 0.95rem; height: 0.95rem; max-width: none; vertical-align: -0.1rem; }
+.grid-open .pencil { display: inline-block; width: 0.95rem; height: 0.95rem; max-width: none; vertical-align: -0.1rem; }
 .ed-csv-problems { max-height: 50vh; overflow: auto; }
 .rid { display: grid; gap: var(--space-4); max-width: 60rem; }
 .rid-current { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
@@ -581,6 +588,7 @@ table.grid tr.selected td { background: var(--accent-soft); }
 .badge-bad { background: var(--bad-soft); color: var(--bad); }
 dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflow: auto; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--space-2) var(--space-4); align-items: start; }
+.form-note { grid-column: 1 / -1; margin: 0; }
 .form-grid .form-group { grid-column: 1 / -1; margin: var(--space-3) 0 0; font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .form-row { display: grid; gap: var(--space-1); }
 .form-row label { font-size: var(--text-sm); font-weight: 600; }

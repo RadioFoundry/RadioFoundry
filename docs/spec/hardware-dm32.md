@@ -1139,7 +1139,7 @@ Timing, measured 2026-10-26 on a DM-32UV through an FTDI FT232R cable at 115200 
 
 The window is tight for a cable that holds received bytes before passing them on (an FTDI chip's latency timer is
 16 ms by default on Windows), behind a USB hub, or in a busy browser. The slow cable mode (`stub.js` `waitForRom`
-`repeat`, `stubtool.py --slow-cable`) sends the answer every 30 ms from before power-on until 150 ms after the
+`repeat`, always used by the web flasher; `stubtool.py --slow-cable`) sends the answer every 30 ms from before power-on until 150 ms after the
 greeting, so one leaves within 30 ms of it, and drains the NAKs of the rest before block 0. It worked on the same radio
 with the host answering 100 ms late (2026-10-26). RadioFoundry ignored 30 s of these answers while running (881 frames,
 no reply, still answering afterwards).

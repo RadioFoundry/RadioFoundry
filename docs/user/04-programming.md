@@ -25,15 +25,21 @@ server: files, the codeplug and your RadioID API key stay on your computer.
 
 1. Turn the radio on with RadioFoundry running and connect it: the USB cable on a radio with USB, otherwise the
    programming cable. The radio must be in USB serial mode, not USB network mode.
-2. Choose **Read from Radio**, then **USB Cable** or **Programming Cable**. The browser asks which port to use.
+2. Choose **Read from Radio**. The browser lists the radio's USB port and any programming cable; choose the radio's.
+   The editor tells from the port which of the two it is.
+   When the radio's DMR ID database would take 20 seconds or more to read (megabytes over the programming cable), the
+   editor first says how long and asks whether to read it too. Skip it unless you want
+   to edit the database or keep it in a saved file: a write then leaves the radio's database as it is. The
+   **DMR ID Database** tab can read it later.
 3. Edit the codeplug.
 4. Choose **Write to Radio**. The editor compares the codeplug with the radio's and writes only the bytes that
    changed. It shows how many bytes and about how long it takes, then writes and verifies them. The radio loads the
    new codeplug without restarting.
 
 After a read, the editor says when a newer RadioFoundry release is out for the radio, and what it adds to reading and
-writing (faster transfers, the compact ID database). **Update Firmware** opens the [web installer](02-installing.md#updating-radiofoundry)
-in a new tab. The codeplug and settings stay on the radio through the update.
+writing (faster transfers, the compact ID database). **Update Firmware** opens the [web installer's Update](02-installing.md#updating-radiofoundry)
+in a new tab and lets go of the radio's port, so the installer can connect. The codeplug and settings stay on the radio
+through the update.
 
 ### Programming several radios
 
@@ -72,7 +78,8 @@ TFTP ([USB network](15-usb-network.md#programming-over-the-network)).
 | Problems | Errors and warnings, each with a link to the record |
 
 In a table, double-click a cell or type on it to edit it in place. Click a column heading to sort, and type in the
-filter to narrow the rows. Check rows and choose **Bulk Edit** to set one field on all of them. **Undo** and **Redo**
+filter to narrow the rows. Check rows and choose **Bulk Edit** to set one field on all of them (not on Zones or RX Lists, whose members are
+edited in their own dialog). **Undo** and **Redo**
 cover every change, including an import.
 
 The page keeps the working codeplug in the browser, so closing or reloading the page doesn't lose edits. **New** starts

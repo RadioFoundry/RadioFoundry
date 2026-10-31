@@ -12,7 +12,7 @@ function pencil() {
 	const svg = document.createElementNS(SVG, "svg");
 	svg.setAttribute("viewBox", "0 0 16 16");
 	svg.setAttribute("aria-hidden", "true");
-	svg.setAttribute("class", "icon");
+	svg.setAttribute("class", "pencil");
 	const path = document.createElementNS(SVG, "path");
 	path.setAttribute("d", "M11.5 1.5l3 3L5 14H2v-3l9.5-9.5zM10 3l3 3");
 	path.setAttribute("fill", "none");
