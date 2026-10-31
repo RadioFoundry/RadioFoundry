@@ -335,8 +335,8 @@ static const flow_t flows[] = {
 	{ "15 hotspot page", "", "ok 6 3", "screen=info", 4, false },
 	{ "15 stop hotspot", "hotspot:on", "ok", "hotspot=0", 2, false },
 	// Tile 4 on a channel copies it to the VFO (docs/spec/dmr-voice.md 2.2); the VFO's own tile 4 stays Mode
-	// The VFO's Split tile (5 on FM, 6 on DMR, where a channel has Monitor / Privacy): Up / Down Off, +offset,
-	// -offset; digits a TX frequency; a new RX keeps the offset
+	// The VFO's TX freq tile (5 on FM, 6 on DMR, where a channel has Monitor / Privacy): Up / Down walk the band's
+	// usual offsets out from Off; digits a TX frequency; a new RX in the same band keeps the offset
 	{ "18 VFO split: Up adds the repeater offset", "ok 4 up ok", "quick 5 up ok",
 	  "freq=146520000 txfreq=147120000 shows=+600k", 4, false },
 	{ "18 VFO split: Down from Off subtracts it", "ok 4 up ok", "quick 5 down ok", "txfreq=145920000", 4, false },

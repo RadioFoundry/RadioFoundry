@@ -134,8 +134,8 @@ Contacts, Recent and Messages are the "people" side, Zones, Channels and Tools t
 | 2 | Timeslot 1/2 | Squelch level |
 | 3 | Color code | Tone (CTCSS/DCS, RX and TX) |
 | 4 | To VFO (copy the channel to the VFO and open it) | To VFO |
-| 5 | Hear all (promiscuous) on/off | Monitor latch on/off (Split in the VFO) |
-| 6 | Privacy on/off (Split in the VFO) | VOX on/off |
+| 5 | Hear all (promiscuous) on/off | Monitor latch on/off (TX freq in the VFO) |
+| 6 | Privacy on/off (TX freq in the VFO) | VOX on/off |
 | 7 | Dual watch (On / Off; a zone scan is in Tools > Scan) | Dual watch (On / Off; a zone scan is in Tools > Scan) |
 | 8 | Talk target | Bandwidth 12.5/25 kHz |
 | 9 | Brightness | Brightness |

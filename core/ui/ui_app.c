@@ -1111,7 +1111,7 @@ static uint8_t split_offsets(uint32_t rx, uint32_t *off)
 	return 3;
 }
 
-// The VFO's split (quick tile Split): Up / Down walk a line out from Off, the usual offsets most common first:
+// The VFO's split (quick tile TX freq): Up / Down walk a line out from Off, the usual offsets most common first:
 // ... -7.6M, -5M, Off, +5M, +7.6M ..., stopping at the ends and skipping a TX outside RX's transmit band. A split not
 // on the line (typed) goes to the first offset its way. Digits type a TX frequency into Home's entry digits (free
 // while quick settings are open), OK sets it
