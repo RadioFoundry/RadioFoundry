@@ -83,9 +83,9 @@ class Protocol(unittest.TestCase):
             at.frame(0, bytes(33))
 
     def test_identify(self):
-        self.assertEqual(at.parse_identify(b"ID578UV\x00\x01V100\x00\x00\x06"), ("D578UV", 1, "V100"))
-        self.assertEqual(at.parse_identify(b"I578UV2A\x02V101\x00\x00\x06")[0], "578UV2A")
-        for bad in (b"", b"X" * 16, b"ID578UV\x00\x01V100\x00\x00\x15", b"ID578UV\x00\x01V100\x00\x06"):
+        self.assertEqual(at.parse_identify(b"IMODEL1\x00\x01V100\x00\x00\x06"), ("MODEL1", 1, "V100"))
+        self.assertEqual(at.parse_identify(b"IMODEL2A\x02V101\x00\x00\x06")[0], "MODEL2A")
+        for bad in (b"", b"X" * 16, b"IMODEL1\x00\x01V100\x00\x00\x15", b"IMODEL1\x00\x01V100\x00\x06"):
             with self.assertRaises(at.UpdateError):
                 at.parse_identify(bad)
 

@@ -9,7 +9,7 @@ import { concat } from "./bytes.js";
 import { HELLO, HELLO_REPLY, FINISH, ACK, NAK, DATA, CHUNK, FRAME_LEN } from "./anytone.js";
 
 export class FakeAnytone {
-	constructor({ model = "D578UV", nakEvery = 0, silentAfter = null, delay = 0 } = {}) {
+	constructor({ model = "MODEL1", nakEvery = 0, silentAfter = null, delay = 0 } = {}) {
 		Object.assign(this, { model, nakEvery, silentAfter, delay });
 		this.inbuf = new Uint8Array(0);
 		this.mem = new Map();

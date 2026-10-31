@@ -21,8 +21,7 @@ CONFIG_FONT_XL ?= n
 # The core's storage in RadioFoundry's own NAND block range (hardware-d578uv.md 6.3)
 CONFIG_NAND_STORAGE ?= y
 # Air band AM and broadcast FM receive run on the KTMicro receiver on PB6/PB7, AM behind side B's chips
-# (hardware-d578uv.md 5.4). Off until written: VOX (BOARD_NOT_WRITTEN below)
-CONFIG_VOX ?= n
+# (hardware-d578uv.md 5.4)
 # APRS receive samples the receive audio on PC0 (afsk_d578uv.c, hardware-d578uv.md 3.4). It doesn't fit with DMR on:
 # it takes about 11.6 KB (the demodulator, the station list and the 2 KB sample ring) and about 2.8 KB is free. With
 # DMR off it fits with under 1 KB to spare, so it stays off there too unless asked for
@@ -44,7 +43,6 @@ BOARD_NOT_WRITTEN += SFR	# needs the voice frames on the MCU (above)
 BOARD_NOT_WRITTEN += SFR_DUALPATH_RX	# needs SFR (above)
 BOARD_NOT_WRITTEN += SFR_CWID	# needs SFR (above)
 BOARD_NOT_WRITTEN += DMR_PRIVACY	# scrambles the voice frames on the MCU (above)
-BOARD_NOT_WRITTEN += VOX	# no microphone level reaches the MCU (no ADC input); the RF chips' own detector isn't known
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe taps an audio chip's PCM path; the voice stays in the baseband here
 BOARD_NOT_WRITTEN += NET_USRP	# needs an audio tap (PCM both ways): the voice stays in the baseband, only receive audio reaches the MCU
 BOARD_REQUIRED := FM

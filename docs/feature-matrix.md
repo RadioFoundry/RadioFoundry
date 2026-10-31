@@ -43,7 +43,7 @@ is `tools/bringup.py list --radio <id>`.
 | `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | not recorded | not recorded |
 | `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
-| `vox` | not written | not recorded | not recorded | not written | not recorded | not recorded | not written | not written |
+| `vox` | not written | not recorded | not recorded | not written | not recorded | not recorded | not recorded | not recorded |
 | `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | not recorded | not recorded |
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | not recorded | not recorded |
@@ -215,7 +215,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `BEEP` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | ● | ● |
 | `DTMF` | ● | ● | ● | ● | … | ● | ● | ● |
-| `VOX` | … | ● | ● | … | ● | ● | … | … |
+| `VOX` | … | ● | ● | … | ● | ● | ● | ● |
 | `REF_TRIM` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `VIBRATE` | ? | ✕ | ● | ✕ | ✕ | ✕ | ✕ | ✕ |

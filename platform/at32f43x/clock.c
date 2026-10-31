@@ -22,7 +22,7 @@ static bool wait_set(volatile uint32_t *reg, uint32_t bit)
 }
 
 // MS, NS and FR for sys_hz from the crystal, as the stock firmware sets them: the reference (crystal / MS) at the
-// highest whole-MHz rate up to 16 MHz, FR /2, NS what is left (12 MHz x 20 / 2 = 120 MHz on the AT-D578UV). Zero
+// highest whole-MHz rate up to 16 MHz, FR /2, NS what is left (12 MHz x 20 / 2 = 120 MHz from a 12 MHz crystal). Zero
 // when sys_hz is not a whole multiple of the reference
 static uint32_t pll_cfg(uint32_t hext_hz, uint32_t sys_hz)
 {

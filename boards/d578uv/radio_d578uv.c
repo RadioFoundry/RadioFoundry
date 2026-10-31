@@ -47,6 +47,9 @@
 #include "pins.h"
 #include "mcu_io.h"
 #include "hal_time.h"
+#if CONFIG_VOX
+#include "audio/miclevel/miclevel.h"
+#endif
 #include "rf/rfbus/rfbus.h"
 #include "rf/qa4818/qa4818.h"
 #include "front_io.h"
@@ -138,6 +141,7 @@
 #define BLK_AGC_B		9u
 #define BLK_DTMF_UHF		0x17u		// the 0x40 level for DTMF above 200 MHz (the UHF block's, as both below)
 #define BLK_DTMF_VHF		0x18u
+#define BLK_MIC			0x19u		// the analog microphone's level (the UHF block's, on both bands)
 // Without calibration: the receive gain code (no stock default found, INF)
 #define GAIN_DEFAULT		0x50u
 
@@ -605,6 +609,33 @@ static bool ref_trim(int16_t ppb)
 }
 #endif
 
+#if CONFIG_VOX
+// The microphone meter for VOX (hal_power_t.mic_level): chip 0's voice amplitude (0x64), the input of the chip's own
+// VOX detector in the BK4819 register map the QA4818 follows (hardware-d578uv.md 5.6; inferred, the stock firmware has
+// no VOX). Its scale is taken as 11 bits, the detector's thresholds' width. The radio task reads it while a reader has
+// asked within MIC_METER_MS, with chip 0 on in FM; in receive the microphone mute (GPIO bit 0) is lifted for it. Any
+// task reads the last level
+#define MIC_METER_MS		1000u
+#define MIC_AMP_MAX		0x7FFu
+#define MIC_AMP_BITS		11u
+static volatile uint32_t mic_asked_ms;
+static volatile uint8_t mic_lvl;
+static bool mic_rx_open;		// receiving with the microphone mute lifted for the meter
+
+uint8_t d578uv_mic_level(void)
+{
+	uint32_t now = hal_millis();
+	mic_asked_ms = now != 0 ? now : 1;
+	return mic_lvl;
+}
+
+static bool mic_meter(void)
+{
+	uint32_t t = mic_asked_ms;
+	return t != 0 && hal_millis() - t < MIC_METER_MS;
+}
+#endif
+
 // The radio task and the GPS task both change chip 0's output register: each read-modify-write of its shadow runs
 // under the bus lock, so neither loses the other's bits
 static void chip0_gpio(uint16_t mask, uint16_t val)
@@ -798,6 +829,9 @@ static void rx_setup(void)
 	band_bits(rx_hz);
 	trims_a(rx_hz);
 	chip0_gpio(GPIO_MIC_MUTE, GPIO_MIC_MUTE);
+#if CONFIG_VOX
+	mic_rx_open = false;
+#endif
 	pa_off();
 	mcu_pin_write(PIN_RF_SPLIT, false);
 	sr_set((uint8_t)(digital ? (SR_RX & ~(SR_ANALOG | SR_RF_AUDIO)) : SR_RX),
@@ -1425,6 +1459,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	qa4818_tune(&chip_if, qa4818_tx_subband(hz), synth_hz(hz));
 	qa4818_path(&chip_if, true, false, narrow, R49);
 	qa4818_fm_tx(&chip_if, hz);
+	qa4818_mic_level(&chip_if, QA4818_MIC_GAIN_DEFAULT, cal_uhf[BLK_MIC]);
 	qa4818_tone_gen(&chip_if, false);	// the stock analog TX-on: no burst left on from a previous key-up
 	qa4818_tx_tone(&chip_if, tone, t != NULL ? t->value : 0, lvl_ctcss, lvl_dcs);
 	qa4818_tx_drive(&chip_if, hz, narrow, drive, tx_level);
@@ -1453,7 +1488,7 @@ static void mic_again(void)
 		d578uv_tone_stop();
 	}
 #endif
-	qa4818_tx_mic(&chip_if, tx_r40, tx_level);
+	qa4818_tx_mic(&chip_if, tx_r40, tx_level, QA4818_MIC_GAIN_DEFAULT, cal_uhf[BLK_MIC]);
 	chip0_gpio(GPIO_MIC_MUTE, 0);
 	aux = AUX_NONE;
 }
@@ -1587,8 +1622,31 @@ void d578uv_rx_raw(uint16_t *rssi, uint16_t *noise, bool *signal)
 	*signal = (v >> 31) != 0;
 }
 
+#if CONFIG_VOX
+// The meter's reading, each poll: on an FM transmission (the microphone live unless a tone replaces it) or in FM
+// receive, which lifts the microphone mute while the meter runs and puts it back after
+static void mic_poll(void)
+{
+	bool rx = have_rx && !transmitting && mode == RADIO_MODE_FM && !AM_ON;
+	bool on = mic_meter() && (fm_keyed() || rx);
+	if (rx && on != mic_rx_open) {
+		chip0_gpio(GPIO_MIC_MUTE, on ? 0 : GPIO_MIC_MUTE);
+		mic_rx_open = on;
+	}
+	if (!on) {
+		mic_lvl = 0;
+		return;
+	}
+	uint16_t v = qa4818_voice(&chip_if);
+	mic_lvl = miclevel_log(v > MIC_AMP_MAX ? MIC_AMP_MAX : v, MIC_AMP_BITS);
+}
+#endif
+
 static void status(radio_status_t *st)
 {
+#if CONFIG_VOX
+	mic_poll();
+#endif
 	if (transmitting || !have_rx) {
 		st->rssi_dbm = -160;
 		st->noise = 127;

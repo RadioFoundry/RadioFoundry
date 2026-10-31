@@ -5,11 +5,11 @@
 (boards with [flash] family = "anytone-update"). The protocol is docs/spec/hardware-d578uv.md 8; the logic is
 rfoundry's (tools/rfoundry/rfoundry/anytone.py), which `rfoundry flash` uses too.
 
-    anytone_update.py --board d578uv IMAGE --stock FILE.CDD     RadioFoundry (the boot block merged from the stock file)
-    anytone_update.py --board d578uv IMAGE_modem.bin            an image with the boot block merged in already
-    anytone_update.py --board d578uv --restore FILE.CDD         back to the stock firmware (its .CDI and .spi beside it)
-    anytone_update.py --board d578uv --probe                    ask the radio which model and MCU it is, write nothing
-    anytone_update.py --board d578uv IMAGE --dry-run            check the image and print the plan, touch nothing
+    anytone_update.py --board BOARD IMAGE --stock FILE.CDD      RadioFoundry (the boot block merged from the stock file)
+    anytone_update.py --board BOARD IMAGE_modem.bin             an image with the boot block merged in already
+    anytone_update.py --board BOARD --restore FILE.CDD          back to the stock firmware (its .CDI and .spi beside it)
+    anytone_update.py --board BOARD --probe                     ask the radio which model and MCU it is, write nothing
+    anytone_update.py --board BOARD IMAGE --dry-run             check the image and print the plan, touch nothing
     anytone_update.py --self-test                               against a simulated radio, no radio
 
 The radio names its model when asked (byte 02), and the name differs by MCU: a GD32 radio and an Artery radio of the
@@ -29,8 +29,8 @@ from rfoundry import anytone as at, boards as rfoundryboards, modemboot  # noqa:
 def self_test():
     f = at.frame(0x08006000, b"\x01\x02")
     assert len(f) == at.FRAME_LEN and f[0] == 1 and f[-1] == at.ACK and f[1:5] == bytes.fromhex("00600008"), f.hex()
-    assert at.parse_identify(b"ID578UV\x00\x01V100\x00\x00\x06") == ("D578UV", 1, "V100")
-    for bad in (b"", b"X" * 16, b"ID578UV\x00\x01V100\x00\x00\x15"):
+    assert at.parse_identify(b"IMODEL1\x00\x01V100\x00\x00\x06") == ("MODEL1", 1, "V100")
+    for bad in (b"", b"X" * 16, b"IMODEL1\x00\x01V100\x00\x00\x15"):
         try:
             at.parse_identify(bad)
         except at.UpdateError:
@@ -40,30 +40,12 @@ def self_test():
     fake = at.FakeRadio(nak_every=7)
     r = at.Radio(fake, log=lambda m: None, timeout=0.01)
     r.hello()
-    assert r.identify()[0] == "D578UV"
+    assert r.identify()[0] == "MODEL1"
     data = bytes(range(256)) * 3 + b"\xab"
     r.write(0x08006000, data)
     got = b"".join(fake.mem[a] for a in sorted(fake.mem))
     assert fake.finished and got[:len(data)] == data and len(fake.mem) == (len(data) + 31) // 32, len(fake.mem)
-    b = rfoundryboards.get("d578uv")
-    assert at.variant_of(b, "D578UV") == "GD" and at.variant_of(b, "D578UVA") == "AT" and at.variant_of(b, "X") is None
-    assert at.check_install(b, "D578UV") == "GD"
-    for model, chosen in (("D578UVA", None), ("D578UV", "AT"), ("X", None)):
-        try:
-            at.check_install(b, model, chosen)
-        except at.UpdateError:
-            pass
-        else:
-            raise AssertionError("installed on %s (%s)" % (model, chosen))
-    assert at.check_restore(b, "D578UVA", {"D578UVA", "578UV2A"}) == "AT"
-    ba = rfoundryboards.get("d578uva")  # the Artery radios' own image refuses a GD32 radio
-    assert at.check_install(ba, "D578UVA") == "AT"
-    try:
-        at.check_install(ba, "D578UV")
-    except at.UpdateError:
-        pass
-    else:
-        raise AssertionError("installed the d578uva image on a GD32 radio")
+    # The variant checks against each board of the family: tools/rfoundry/tests/test_anytone.py
     print("anytone_update self-test passed")
 
 

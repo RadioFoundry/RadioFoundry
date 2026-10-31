@@ -149,4 +149,17 @@ static inline bool mcu_clock_init(uint32_t hxtal_hz, uint32_t sys_hz)
 #define MCU_USART2_IRQn		USART1_IRQn
 #define MCU_USART2_HANDLER	USART1_IRQHandler
 
+// --- A USART a byte at a time (uart.c), for a board's serial device. MCU_USART1 is the reference manuals' USART1
+// (this part's USART0) ---
+#define mcu_uart_t		gd32_usart_t
+#define MCU_UART_NONE		GD32_UART_NONE
+#define MCU_UART_ERROR		GD32_UART_ERROR
+#define mcu_uart_start		gd32_uart_start
+#define mcu_uart_stop		gd32_uart_stop
+#define mcu_uart_take		gd32_uart_take
+#define mcu_uart_put		gd32_uart_put
+#define MCU_USART1		USART0
+#define MCU_USART1_IRQn		USART0_IRQn
+#define MCU_USART1_HANDLER	USART0_IRQHandler
+
 #endif

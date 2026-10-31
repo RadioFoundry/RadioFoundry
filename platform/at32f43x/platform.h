@@ -75,6 +75,16 @@ void at32_adc_sample_init(uint8_t ch);
 void at32_dac_init(uint8_t ch);
 void at32_dac_write(uint8_t ch, uint16_t value);
 
+// A USART a byte at a time (uart.c): 8N1, receive and its interrupt on, transmit too when tx. The board sets the pins
+// and calls at32_uart_take from its handler: the byte, AT32_UART_ERROR (overrun, framing, noise) or AT32_UART_NONE.
+// put waits for room
+#define AT32_UART_NONE		(-1)
+#define AT32_UART_ERROR		(-2)
+void at32_uart_start(at32_usart_t *u, uint32_t baud, bool tx);
+void at32_uart_stop(at32_usart_t *u);
+int32_t at32_uart_take(at32_usart_t *u);
+void at32_uart_put(at32_usart_t *u, uint8_t c);
+
 // USB identity (a board's board_usb_ids): the pair every RadioFoundry radio enumerates with (platform/stm32f4 has the
 // reasons), so the host tools find this one too
 #define AT32_USB_VID		0x1FC9

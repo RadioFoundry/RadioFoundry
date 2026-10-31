@@ -19,7 +19,7 @@ codec_symbols = []
 flash_base = 0x08000000
 # The geometry a board's [flash] sectors names unless it says otherwise
 default_sectors = "at32f435"
-# Flash geometries: [index, address, size]. 2 KB sectors, the unit the AT-D578UV's stock firmware erases in
+# Flash geometries: [index, address, size]. 2 KB sectors, the unit a radio's stock firmware on this MCU erases in
 # (docs/spec/hardware-d578uv.md 10; not checked against the manual). Listed up to 1 MB, the most an image and its
 # modem boot slot use
 [sectors]

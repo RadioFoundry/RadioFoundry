@@ -36,12 +36,13 @@ typedef struct {
 #define QA4818_REG_GPIO		0x25	// output pins (the radio's band switches)
 #define QA4818_REG_FREQ_LO	0x38	// 10 Hz units, low 16 bits
 #define QA4818_REG_FREQ_HI	0x39
-#define QA4818_REG_DRIVE	0x40	// TX drive: band base + level
+#define QA4818_REG_DRIVE	0x40	// TX drive: band base + level (the BK4819 map's TX deviation: bit 12 on, 11:0 the amount)
 #define QA4818_REG_SUBAUDIO	0x51	// sub-audio mode; low 7 bits a calibrated TX level
 #define QA4818_REG_CSS_DETECT	0x52	// CTCSS detector thresholds
 #define QA4818_REG_TONE_FLAGS	0x60	// bit 0 CTCSS found, bit 1 DCS found
 #define QA4818_REG_TONE_GEN	0x70	// the TX tone generator: 0xA000 on, 0 off (the only values the stock firmware writes)
 #define QA4818_REG_TONE_FREQ	0x71	// its tone: Hz x 10.32, halved (qa4818_tone_word)
+#define QA4818_REG_VOICE	0x64	// voice amplitude, the VOX detector's input (BK4819 map; not read by the stock firmware)
 #define QA4818_REG_NOISE	0x65	// bits 6:0
 #define QA4818_REG_RSSI		0x67	// bits 8:0, half dB + 160 (inferred)
 #define QA4818_REG_SQ		0x78	// gain code << 8 | 0xFF
@@ -132,6 +133,11 @@ void qa4818_fm_tx(qa4818_t *c, uint32_t hz);
 void qa4818_dmr_tx(qa4818_t *c, uint32_t hz);
 void qa4818_tx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value, uint8_t cal_ctcss, uint8_t cal_dcs);
 void qa4818_tx_drive(qa4818_t *c, uint32_t hz, bool narrow, uint8_t drive, uint8_t level);
+// The analog microphone's level, after qa4818_fm_tx() (the stock order): 0x18 = 0x125 | gain << 11 and page 1 0x17 =
+// 0x200 | cal << 3. gain is one of the stock levels 2..7 (QA4818_MIC_GAIN_DEFAULT its default), cal the factory MIC
+// byte 0..0x3F. Digital transmit has fixed values (qa4818_dmr_tx)
+#define QA4818_MIC_GAIN_DEFAULT	4u
+void qa4818_mic_level(qa4818_t *c, uint8_t gain, uint8_t cal);
 // Drive off (0x40 = 0, 0x51 level 0), at the end of a transmission
 void qa4818_tx_drive_off(qa4818_t *c);
 
@@ -144,9 +150,9 @@ void qa4818_tx_aux(qa4818_t *c, bool line, uint16_t r40);
 void qa4818_tone_start(qa4818_t *c, uint16_t hz);
 // The tone generator on (the tone set last) or off, the rest unchanged: keying a tone
 void qa4818_tone_gen(qa4818_t *c, bool on);
-// The microphone again after either: page 1 0x1B = 4 and 0x17 the voice value, the tone generator off, the voice
-// drive r40 and its 0x51 level
-void qa4818_tx_mic(qa4818_t *c, uint16_t r40, uint8_t level);
+// The microphone again after either: page 1 0x1B = 4, the microphone's level (qa4818_mic_level), the tone generator
+// off, the voice drive r40 and its 0x51 level
+void qa4818_tx_mic(qa4818_t *c, uint16_t r40, uint8_t level, uint8_t gain, uint8_t cal);
 
 typedef struct {
 	bool signal;		// 0x0C bit 1
@@ -156,5 +162,7 @@ typedef struct {
 } qa4818_status_t;
 
 void qa4818_status(qa4818_t *c, qa4818_status_t *st);
+// The microphone's amplitude (0x64), with the chip transmitting or receiving and its microphone ADC on
+uint16_t qa4818_voice(qa4818_t *c);
 
 #endif

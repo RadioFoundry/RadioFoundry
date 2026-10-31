@@ -19,14 +19,6 @@ from rfoundry.modemboot import BOOT_LEN, ModemBootError, find, merge  # noqa: E4
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# The stock files checked to carry the block (any other stock file or flash read that holds it works too: identify)
-PROFILES = {
-    "8efad950169f332c8c60d340722a2ceee84ce41d7d8fabb0ebf19482973ceca2": {"board": "d578uv", "name": "D578UV2 GD V2.08"},
-    "146b7cdada21912295992b1b4596c2ebf3d87710d129e5124e9847f067327f34": {"board": "d578uva", "name": "D578UV2 AT V2.08"},
-    "02b2a3b56bd57c7ada581eb52b9b6f41c5d51aaec1b068d37585efd58dff9c9a": {"board": "d578uv", "name": "D578UV PRO GD V1.21"},
-    "dc31140121b65de112be863a4dd6d95464b19c1002fd66637201cef77add344d": {"board": "d578uva", "name": "D578UV PRO AT V1.21"},
-}
-
 
 def identify(data, board=None):
     """The block when the file carries it, else None (codec_auto.py: any file with the block will do)"""
@@ -70,7 +62,7 @@ def self_test():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--stock", help="the radio's stock firmware (.CDD) or a read of its program flash")
-    ap.add_argument("--board", default="d578uv", help="the board whose image this is (default d578uv)")
+    ap.add_argument("--board", help="the board whose image this is (boards/<board>)")
     ap.add_argument("--image", help="built RadioFoundry image (default: build/<board>/rfoundry_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image to write (default: <image>_modem.bin next to the image)")
     ap.add_argument("--self-test", action="store_true", help="check the tool's logic on synthetic data")
@@ -78,8 +70,8 @@ def main():
     if a.self_test:
         self_test()
         return 0
-    if not a.stock:
-        ap.error("--stock is required")
+    if not a.stock or not a.board:
+        ap.error("--stock and --board are required")
     image = a.image or os.path.join(ROOT, "build", a.board, "rfoundry_%s.bin" % a.board)
     out = a.output or os.path.splitext(image)[0] + "_modem.bin"
     try:

@@ -2,8 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT-D578UV diagnostics page lines: the raw readings the bring-up needs (docs/testing/d578uv-bringup.md): the
 // baseband's boot result, the key ladders and microphone lines (to place the keys), the supply and volume pots, the
-// NAND's ID, the DMR PA gate's bursts, the GPS receiver's sentences, whether the KTMicro receiver answered and side A's
-// raw RSSI. Each line keeps its number whatever is built. The gps and rssi lines are in the shape the HIL health tests
+// NAND's ID, the DMR PA gate's bursts, the GPS receiver's sentences, whether the KTMicro receiver answered, side A's
+// raw RSSI and the serial hand microphone's frames. Each line keeps its number whatever is built. The gps and rssi lines are in the shape the HIL health tests
 // read on every radio (tests/hil/test_health.py)
 #include <stddef.h>
 #include "d578uv.h"
@@ -16,7 +16,7 @@
 
 #if CONFIG_DIAG
 
-#define DIAG_LINES	9u
+#define DIAG_LINES	10u
 
 typedef struct {
 	char *p, *end;
@@ -138,7 +138,7 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, "-");
 #endif
 		break;
-	default: {
+	case 8: {
 		// Chip 0's raw RSSI and noise as the radio task last read them, and its signal flag; a dead bus reads a constant
 		uint16_t rssi, noise;
 		bool signal;
@@ -148,6 +148,20 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " nz ");
 		put_u(&o, noise);
 		put(&o, signal ? " sig" : " -");
+		break;
+	}
+	default: {
+		// The serial hand microphone: present, its frames accepted, bytes dropped and the key code held (hex)
+		bool present;
+		uint32_t frames, errors;
+		uint8_t key;
+		d578uv_hand_mic(&present, &frames, &errors, &key);
+		put(&o, present ? "hmic yes " : "hmic no ");
+		put_u(&o, frames);
+		put(&o, "/");
+		put_u(&o, errors);
+		put(&o, " k");
+		put_x(&o, key, 2);
 		break;
 	}
 	}

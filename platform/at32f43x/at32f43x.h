@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT32F435/437 registers: only what the platform and its boards use, written from the AT32F435/437 reference manual
-// (register names and offsets as the manual gives them) and checked against what the AT-D578UV's stock firmware writes
+// (register names and offsets as the manual gives them) and checked against what a radio's stock firmware on this MCU writes
 // (docs/spec/hardware-d578uv.md 10). The core is a Cortex-M4 with the FPU; CMSIS core_cm4.h supplies NVIC, SysTick, SCB
 // and DWT. Most peripherals keep the STM32F4's register layout: the GPIO, timers, USART, DAC, EXINT and the watchdog.
 // The ADC and the clock unit (CRM) are Artery's own.

@@ -87,6 +87,16 @@ void gd32_adc_sample_init(uint8_t ch);
 void gd32_dac_init(uint8_t ch);
 void gd32_dac_write(uint8_t ch, uint16_t value);
 
+// A USART a byte at a time (uart.c): 8N1, receive and its interrupt on, transmit too when tx. The board sets the pins
+// and calls gd32_uart_take from its handler: the byte, GD32_UART_ERROR (overrun, framing, noise) or GD32_UART_NONE.
+// put waits for room
+#define GD32_UART_NONE		(-1)
+#define GD32_UART_ERROR		(-2)
+void gd32_uart_start(gd32_usart_t *u, uint32_t baud, bool tx);
+void gd32_uart_stop(gd32_usart_t *u);
+int32_t gd32_uart_take(gd32_usart_t *u);
+void gd32_uart_put(gd32_usart_t *u, uint8_t c);
+
 // USB identity (a board's board_usb_ids): the pair every RadioFoundry radio enumerates with (platform/stm32f4 has the
 // reasons), so the host tools find this one too
 #define GD32_USB_VID		0x1FC9
