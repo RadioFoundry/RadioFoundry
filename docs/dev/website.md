@@ -65,7 +65,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Feature names, help, dependencies | `config/features.mk` (the comment above each switch, the `needs` checks) |
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
-| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has. The Screenshots page (`/screenshots/`) shows every screen each radio's build has, a section per board, under the `groups` headings of `screens.json`, in its order. The home page's carousel lists its screens in `site/templates/home.html`, from every gallery, one height |
+| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has. The Screenshots page (`/screenshots/`) shows every screen each radio's build has, a section per board, under the `groups` headings of `screens.json`, in its order. The home page's carousel lists its screens in `site/templates/home.html`, from every gallery, one height. Every page shows the scaled copies ([Screenshot copies](#screenshot-copies)) |
 | Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/rfoundry/rfoundry/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
@@ -83,7 +83,7 @@ links to a file the build didn't write.
 `/screenshots/` has a section per board, from the registry in its order, and a link per board at the top. Each section
 shows every shot in the board's gallery whose `screens.json` entry needs only switches the board's full build has (the
 radio page's six use the same test). A board's screens are one width: a gallery 160 pixels wide or less at twice its
-size (`image-rendering: pixelated`), a wider one as it is. A color page's shots in other highlight colors and themes
+size, a wider one as it is. A color page's shots in other highlight colors and themes
 (`<page>__<color>`) follow the page, hidden until the visitor ticks "Also show other highlight colors and themes" (CSS
 `:has()`, no script). `site.js` switches sections without reloading and keeps the address `#<radio>`, so a link can
 name a radio (each radio page links to its own). Without the script, CSS shows the section the address names
@@ -97,6 +97,25 @@ Nothing on the page names a screen, a group or a radio:
 | A group | `groups` in `screens.json` and its heading `screens.group.<group>` in `en.json` |
 | A radio | `boards/<radio>/` as [Adding a radio](adding-a-radio.md) says; `board.toml` `hardware.gallery` must name a display class the gallery has (`tools/boards.py check`) |
 
+## Screenshot copies
+
+The gallery holds each screen at its panel's size. The pages draw screens larger, at sizes that are rarely a whole
+multiple of it, on displays whose device pixel ratio may be fractional (125 %, 150 %). Nearest-neighbor scaling
+(`image-rendering: pixelated`) then makes some pixel rows wider than others, and a browser that ignores the property
+blurs them. So `site/rfoundrysite/shots.py` writes a copy of every gallery screen, `static/img/screens/<gallery>/`,
+scaled up a whole number of times with hard pixel edges, and the browser scales it down smoothly: every pixel keeps
+one width, at any size.
+
+| What sets it | How |
+|---|---|
+| The factor, per gallery | `ceil(2 × largest CSS width a page draws it at ÷ its width)`: enough for a device pixel ratio of 2 |
+| The widths | Each page reports where it draws a screen. The CSS sizes come from `site.css` (`--shot-h` of `.carousel`, `--shot-col` of `.shots`, the `max-width` of `.device-frame` and `.rt-pic`, the heights of `.hero-device img` and `.radio-card img`), the drawings' screen position from `frame_geometry` |
+| The drawings | `<radio>.svg` and a look's drawing embed the boot screen's copy |
+
+The build fails when one of those rules is gone from `site.css`. The copies carry no `image-rendering`. The docs
+pages still link the gallery's own files, shown with `image-rendering: pixelated`. A higher pixel ratio than 2 scales
+a copy up a little, smoothly. `site/tests/shots_test.py` checks the scaling.
+
 ## Layout
 
 | Path | What |
@@ -106,6 +125,7 @@ Nothing on the page names a screen, a group or a radio:
 | `site/rfoundrysite/build.py` | Assembles the pages and data files |
 | `site/rfoundrysite/docs.py` | `docs/` to HTML: GitHub heading ids, `.md` links to `.html`, links out of `docs/` to the repository |
 | `site/rfoundrysite/device.py` | Radio images: frame, overlay geometry, boot screen composite |
+| `site/rfoundrysite/shots.py` | The gallery screens' scaled copies ([Screenshot copies](#screenshot-copies)) |
 | `site/rfoundrysite/toolzip.py` | `downloads/rfoundry-tool.zip`: rfoundry from the site's commit for the flasher's manual install kit, with a launcher; `data/site.json` `tool` gives its path, size and SHA-256 ([web-flasher.md](web-flasher.md#the-manual-install-kit)). `site/tests/toolzip_test.py` runs it unpacked |
 | `site/rfoundrysite/social.py` | The link preview image (`static/img/social.png`, every page's `og:image`): each radio with a different screen, rasterized with resvg |
 | `site/rfoundrysite/tmpl.py`, `site/templates/` | Page markup (below) |
