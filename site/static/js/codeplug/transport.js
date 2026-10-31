@@ -186,6 +186,22 @@ export class CpsSerial {
 		return this.fastOr(() => this.fastRead({ iddb, progress, signal, cache }), () => this.cpsRead({ iddb, progress, signal }));
 	}
 
+	// The ID database's records into img, a read() without iddb (it holds the header): iddbBytes(img) bytes
+	async readIddb(img, { progress = () => {}, signal, cache = null } = {}) {
+		if (!readHeader(img.bytes)) return img;
+		return this.fastOr(() => this.fastReadIddb(img, { progress, signal, cache }), () => this.cpsReadIddb(img, { progress, signal }));
+	}
+
+	// What readIddb() reads, in bytes (0 without a database)
+	iddbBytes(img) {
+		return readHeader(img.bytes) ? this.iddbRest(img).reduce((n, [a, b]) => n + b - a, 0) : 0;
+	}
+
+	// The database's ranges after its header, cut at the end of the radio's flash
+	iddbRest(img) {
+		return iddbRanges(img).map(([a, b]) => [Math.max(a, IDDB_HEADER[1]), Math.min(b, this.end)]).filter(([a, b]) => b > a);
+	}
+
 	async cpsRead({ iddb, progress, signal }) {
 		const img = CodeplugImage.from(new Uint8Array(0));
 		const ranges = [...REGIONS, IDDB_HEADER];
@@ -200,12 +216,21 @@ export class CpsSerial {
 			done += b - a;
 		};
 		for (const [a, b] of ranges) await get(a, b);
-		if (iddb && readHeader(img.bytes)) {
-			const top = Math.min(idDbEnd(img.bytes), this.end);
-			const parts = [[IDDB_HEADER[1], Math.min(top, AREA1 + AREA1_SIZE)]];
-			if (top > AREA2) parts.push([AREA2, top]);
-			total += parts.reduce((n, [a, b]) => n + Math.max(0, b - a), 0);
-			for (const [a, b] of parts) if (b > a) await get(a, b);
+		if (iddb) await this.cpsReadIddb(img, { signal, progress: (n, all) => progress(total + n, total + all) });
+		return img;
+	}
+
+	async cpsReadIddb(img, { progress, signal }) {
+		const parts = this.iddbRest(img), total = parts.reduce((n, [a, b]) => n + b - a, 0);
+		let done = 0;
+		for (const [a, b] of parts) {
+			const r = await this.link.cpsDump(1, this.base + a, b - a, {
+				chunk: this.chunk, signal, progress: (n) => progress(done + n, total),
+			});
+			if (!r.complete) throw new TransportError("read_refused", { addr: a });
+			img.ensure(b);
+			img.bytes.set(r.data, a);
+			done += b - a;
 		}
 		return img;
 	}
@@ -348,13 +373,18 @@ export class CpsSerial {
 	async fastRead({ iddb, progress, signal, cache }) {
 		const img = CodeplugImage.from(new Uint8Array(0));
 		const ranges = [...REGIONS, IDDB_HEADER];
-		let total = blocksOf(ranges).length * BLOCK;
-		let done = await this.fastBlocks(img, ranges, { cache, progress, signal, total });
+		const total = blocksOf(ranges).length * BLOCK;
+		await this.fastBlocks(img, ranges, { cache, progress, signal, total });
 		if (iddb && readHeader(img.bytes)) {
-			const rest = iddbRanges(img).map(([a, b]) => [a, Math.min(b, this.end)]).filter(([a, b]) => b > a);
-			total += blocksOf(rest).length * BLOCK;
-			await this.fastBlocks(img, rest, { cache, progress, signal, done, total });
+			await this.fastReadIddb(img, { cache, signal, progress: (n, all) => progress(total + n, total + all) });
 		}
+		return img;
+	}
+
+	// Whole blocks after the header's, which the codeplug's read took whole
+	async fastReadIddb(img, { cache, progress, signal }) {
+		const ranges = blocksOf(this.iddbRest(img)).filter(([a]) => a >= IDDB_HEADER[0] + BLOCK).map(([a]) => [a, a + BLOCK]);
+		await this.fastBlocks(img, ranges, { cache, progress, signal, total: ranges.length * BLOCK });
 		return img;
 	}
 

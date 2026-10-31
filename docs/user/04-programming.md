@@ -26,6 +26,10 @@ server: files, the codeplug and your RadioID API key stay on your computer.
 1. Turn the radio on with RadioFoundry running and connect it: the USB cable on a radio with USB, otherwise the
    programming cable. The radio must be in USB serial mode, not USB network mode.
 2. Choose **Read from Radio**, then **USB Cable** or **Programming Cable**. The browser asks which port to use.
+   The editor reads the codeplug first. When the radio's DMR ID database would take 20 seconds or more to read
+   (megabytes over the programming cable), it says how long and asks whether to read it too. Skip it unless you want
+   to edit the database or keep it in a saved file: a write then leaves the radio's database as it is. The
+   **DMR ID Database** tab can read it later.
 3. Edit the codeplug.
 4. Choose **Write to Radio**. The editor compares the codeplug with the radio's and writes only the bytes that
    changed. It shows how many bytes and about how long it takes, then writes and verifies them. The radio loads the

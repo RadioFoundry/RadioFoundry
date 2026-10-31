@@ -53,7 +53,10 @@ today: the open-firmware CPS ([cps-protocol.md](../spec/cps-protocol.md) 2) over
 programming cable (Web Serial). It identifies the radio by the board name the debug link reports, matched against
 `codeplug.names` in `data/radios.json`. The registry (`tools/boards.py` `Board.codeplug()`) fills that entry from the
 board's flash map: the base (the CPS address offset, nonzero on some radios), the end of the room for the codeplug and ID database, and whether
-the radio has a TFTP staging area. A read takes the codeplug's regions and the ID database. A write compares with the
+the radio has a TFTP staging area. A read takes the codeplug's regions, then the ID database
+(`readIddb`). The time the codeplug took sets the database's estimate: at `IDDB_ASK` (20 s) or more the editor asks
+first. A skipped database stays out of the model (its header erased there, kept in `S.conn.image`), so no write
+touches it; the DMR ID Database tab reads it later into the model. A write compares with the
 radio and sends only the changed bytes inside the codeplug's regions, never whole sectors, since a sector can hold the
 radio's own settings (0x6000). It verifies, then ends with `C 5` so the radio reloads the codeplug without a restart.
 

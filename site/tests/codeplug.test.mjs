@@ -353,6 +353,11 @@ test("an ID database goes to the radio and nothing past its room", async () => {
 	const back = await tr.read();
 	assert.equal(iddb.read(back.bytes).length, 20000);
 	assert.deepEqual(iddb.read(back.bytes)[19999], { id: 3119999, text: "W19999 Name" });
+	// the codeplug first, the database after it (a read that offers the database): the same bytes
+	const part = await tr.read({ iddb: false });
+	assert.ok(tr.iddbBytes(part) > 20000 * 24, `database bytes ${tr.iddbBytes(part)}`);
+	await tr.readIddb(part);
+	assert.deepEqual(part.bytes, back.bytes);
 	const tiny = new CpsSerial(new FakeCpsRadio({ board: "dm1701" }).stream());
 	await tiny.identify([{ id: "x", codeplug: { base: 0, end: 0xD9000, names: ["dm1701"] } }]);
 	await assert.rejects(tiny.write(img, null, { iddb: true }), (e) => e instanceof TransportError && e.code === "iddb_too_big");
@@ -467,6 +472,17 @@ test("a format C database written fast is read by the radio; an older radio gets
 	const ids = [3100000, 3100000 + 3 * 29999, 3100001];
 	const got = simDetailFlash(flash, ids).split("\n").filter((l) => l.startsWith("iddb"));
 	assert.deepEqual(got, ["iddb count 30000", 'iddb 3100000 "K0 Bob Atlanta GA"', `iddb ${3100000 + 3 * 29999} "K29999 Joe Atlanta GA"`, "iddb 3100001 -"]);
+
+	// the codeplug first, the database after it, fast: the same bytes as one read
+	const s4 = simRadioFrom(flash);
+	const tr4 = new CpsSerial(s4);
+	await tr4.identify(RADIOS);
+	const whole = await tr4.read();
+	const part = await tr4.read({ iddb: false });
+	assert.ok(tr4.iddbBytes(part) > 0);
+	await tr4.readIddb(part);
+	assert.deepEqual(part.bytes, whole.bytes);
+	await s4.close();
 
 	// refreshed: one record more near the start changes few pages
 	const again = flashImage(flash);

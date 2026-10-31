@@ -6,10 +6,10 @@
 
 import { h, t, ROOT, button, notice, download, progressBar } from "../flasher/dom.js";
 import { SerialStream, serialSupported, RFOUNDRY_USB, browserErrorKey } from "../flasher/link.js";
-import { CodeplugImage } from "../codeplug/image.js";
+import { CodeplugImage, IDDB_HEADER } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
-import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY } from "../codeplug/transport.js";
+import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
 import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
@@ -57,6 +57,7 @@ function load(model, name, { fromRadio = false } = {}) {
 	S.history.reset();
 	S.dirty = false;
 	S.iddbChanged = false;
+	S.iddbSkipped = null;
 	if (!fromRadio && S.conn) S.conn.dbKnown = false;
 	refresh();
 	draftSoon();
@@ -616,18 +617,88 @@ function convertDue(radio) {
 	return true;
 }
 
+// A read of the ID database expected to take this long or longer (seconds) is offered, not made
+const IDDB_ASK = 20;
+
+function askIddb(c, db, bytes, seconds) {
+	return new Promise((done) => {
+		let yes = false;
+		dialog(t("editor.iddb_read.title"), [h("p", {}, t("editor.iddb_read.text", { radio: c.radio.name, n: db.count.toLocaleString(),
+			size: kb(bytes), time: duration(seconds) })), h("p", {}, t("editor.iddb_read.skip_help"))],
+		t("editor.iddb_read.read"), (close) => {
+			yes = true;
+			close();
+		}, () => done(yes), { cancel: t("editor.iddb_read.skip") });
+	});
+}
+
+const kb = (n) => n >= 1e6 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`;
+
+function duration(s) {
+	return s < 90 ? t("editor.about_seconds", { n: Math.ceil(s / 5) * 5 }) : t("editor.about_minutes", { n: Math.round(s / 60) });
+}
+
+// The ID database a read skipped, read now into the codeplug (the DMR ID Database tab's button)
+function readSkippedIddb() {
+	return exclusive(async () => {
+		const c = S.conn;
+		try {
+			if (!c?.image || !S.iddbSkipped || S.iddbChanged) return;
+			await onLine(c);
+			if (!c.image) return say(t("editor.iddb_read.swapped"), "warn");
+			const img = c.image.clone();
+			await withProgress(t("editor.reading_iddb", { radio: c.radio.name }), (bar, signal) =>
+				c.transport.readIddb(img, { signal, progress: (n, total) => bar.set(n, total) }));
+			// the database's bytes into the codeplug being edited, its other edits kept
+			const base = S.model.base;
+			for (const [a, b] of iddbRanges(img)) {
+				base.ensure(b);
+				base.bytes.set(img.bytes.subarray(a, b), a);
+			}
+			S.model.iddb = dbHeader(base.bytes);
+			c.image = img;
+			c.dbKnown = true;
+			S.iddbSkipped = null;
+			diag.note("iddb read", { bytes: img.bytes.length });
+			refresh();
+			draftSoon();
+		} catch (e) {
+			await fail("read ID database", e);
+		}
+	});
+}
+
 async function readRadio() {
 	const go = () => exclusive(async () => {
 		try {
 			const c = await connect();
 			if (!c) return;
 			await onLine(c);
+			// the codeplug, then the ID database: that can be megabytes, so a long read of it is offered, not made
+			const cached = !!c.image && c.dbKnown;
+			const t0 = performance.now();
+			let got = 0;
 			const img = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
-				c.transport.read({ signal, cache: c.image, progress: (n, total) => bar.set(n, total) }));
-			diag.note("read done", { bytes: img.bytes.length });
+				c.transport.read({ iddb: false, signal, cache: c.image, progress: (n, total) => bar.set(got = n, total) }));
+			if (!c.image) c.rate = got / Math.max(0.25, (performance.now() - t0) / 1000);
+			const dbBytes = c.transport.iddbBytes(img);
+			const seconds = cached || !c.rate ? 0 : Math.ceil(dbBytes / c.rate);
+			const db = dbHeader(img.bytes);
+			const readDb = dbBytes > 0 && (seconds < IDDB_ASK || await askIddb(c, db, dbBytes, seconds));
+			if (readDb) {
+				await withProgress(t("editor.reading_iddb", { radio: c.radio.name }), (bar, signal) =>
+					c.transport.readIddb(img, { signal, cache: c.image, progress: (n, total) => bar.set(n, total) }));
+			}
+			diag.note("read done", { bytes: img.bytes.length, iddb: readDb, dbBytes, seconds });
 			c.image = img.clone();
+			if (db && !readDb) {
+				// the model without the database (its header erased): a write leaves the radio's as it is
+				img.bytes.fill(0xFF, IDDB_HEADER[0], IDDB_HEADER[1]);
+			}
 			load(decode(img), `${c.radio.id}-codeplug`, { fromRadio: true });
-			c.dbKnown = true;
+			c.dbKnown = !db || readDb;
+			S.iddbSkipped = db && !readDb ? { count: db.count, bytes: dbBytes, seconds } : null;
+			if (S.iddbSkipped) refresh();
 			say(t("editor.read_done", { radio: c.radio.name, channels: S.model.channels.length, contacts: S.model.contacts.length }), "ok");
 			// the database's format against what this radio's firmware reads (iddb-compact.md 6)
 			const fmt = S.model.iddb?.format;
@@ -893,7 +964,11 @@ function api() {
 		root: ROOT,
 		markIddb() {
 			S.iddbChanged = true;
+			S.iddbSkipped = null;
 		},
+		// the radio's ID database when a read skipped it ({count, bytes, seconds}), and reading it now
+		get iddbSkipped() { return S.iddbSkipped; },
+		readSkippedIddb,
 		encode: () => encode(S.model),
 		decode, numberAll,
 	};
