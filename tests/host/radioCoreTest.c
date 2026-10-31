@@ -711,6 +711,10 @@ static void test_vfo(void)
 	req(RREQ_VFO_TX, 473000000);
 	req(RREQ_VFO_TX, 0);			// 0: simplex again
 	CHECK(sm.view.ch.tx_hz == 478000000);
+	uint32_t serial = sm.serial;		// the UI sees a new split at once
+	req(RREQ_VFO_TX, 473000000);
+	CHECK(sm.serial != serial);
+	req(RREQ_VFO_TX, 0);
 }
 
 static void test_no_codeplug(void)
@@ -1314,6 +1318,14 @@ static void test_vfo_dmr(void)
 	CHECK(!sm.view.temporary && sm.view.temp == 0 && d->active && d->own_id == 3101276);
 	CHECK(d->cc == 1 && d->ts == 1 && d->target_id == 9 && !d->target_private && !d->target_manual);
 	CHECK(hw.rx_tone.type == TONE_NONE);
+	// A split: through a repeater, set up again at once (no retune); simplex again: direct
+	CHECK(!d->rmo);
+	req(RREQ_VFO_TX, 451000000);
+	run(50);
+	CHECK(d->rmo && hw.rx_hz == 446000000);
+	req(RREQ_VFO_TX, 0);
+	run(50);
+	CHECK(!d->rmo);
 	// Receive filtering as a DMR channel with no RX group list: the talk target's group (9) and nothing else
 	hear_call(true, 9, 3105555, 1, 1, true);
 	CHECK(d->last_ms != 0 && d->last.dst == 9 && d->last.src == 3105555);

@@ -424,6 +424,25 @@ static void test_fm_and_dmr(void)
 	run(50);
 	CHECK(!sm.view.am && !hw.am && hw.rx_calls == rx + 1);
 
+#if CONFIG_DUAL_WATCH
+	// Dual watch back and forth with AirDMR: it comes back FM each time, never a temporary change
+	const radio_dual_ref_t a = { false, 0, 3 }, b = { false, 0, 2 };
+	radio_req_t r = { RREQ_DUAL, (int32_t)radio_dual_arg(&a, true), radio_dual_arg(&b, false) };
+	radio_sm_request(&sm, &r, now);
+	int visits = 0;
+	for (int i = 0; i < 300; i++) {
+		run(10);
+		if (sm.view.zone_pos == 3) {
+			visits++;
+			CHECK(sm.view.am && sm.view.ch.mode == RADIO_MODE_FM && !sm.view.temporary);
+		}
+	}
+	CHECK(visits > 10);
+	r = (radio_req_t){ RREQ_DUAL, 0, 0 };
+	radio_sm_request(&sm, &r, now);
+	run(50);
+#endif
+
 	// The hotspot never transmits in the air band
 	CHECK(!radio_sm_hotspot_freq_ok(118100000, 118100000));
 	CHECK(!radio_sm_hotspot_freq_ok(438500000, 136500000));

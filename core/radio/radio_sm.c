@@ -495,13 +495,15 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	cw_cancel(sm);		// the repeater's ID: the board is set up for the channel below
 #endif
 	end_reception(sm, now_ms);
-	if (sm->view.ch.mode == RADIO_MODE_DMR && listen_band(sm->view.ch.rx_hz)) {
-		// AM or broadcast there, whatever the channel says; the VFO stays FM when it leaves the band
+	if (listen_band(sm->view.ch.rx_hz)) {
+		// AM or broadcast there, whatever the channel says; the VFO stays FM when it leaves the band. The channel's
+		// own mode follows, so FM there is not a temporary change (dual watch brings a pane back already FM)
 		sm->view.ch.mode = RADIO_MODE_FM;
 		if (sm->view.vfo)
 			sm->vfo_ch.mode = RADIO_MODE_FM;
 		else
-			sm->base_mode = RADIO_MODE_FM;	// not a temporary change: the channel's mode there
+			sm->base_mode = RADIO_MODE_FM;
+		set_temporary(sm);
 	}
 #if CONFIG_AM_RX
 	sm->view.am = radio_am_channel(&sm->view.ch);	// an FM channel in the air band: AM, no sub-audio
@@ -4936,13 +4938,19 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 		break;
 	case RREQ_VFO_TX: {
-		// The receiver stays as it is: TX is set up at the next key-up
+		// The receiver stays as it is: TX is set up at the next key-up. DMR works out repeater or direct from the
+		// split, so the call stack is set up again (it publishes the view)
 		uint32_t tx = req->arg > 0 ? (uint32_t)req->arg : sm->vfo_ch.rx_hz;
 		if (busy || !sm->view.vfo || req->arg < 0 || !board_in_band(tx, true)) {
 			break;
 		}
 		sm->vfo_ch.tx_hz = tx;
 		sm->view.ch.tx_hz = tx;
+#if CONFIG_DMR
+		dmr_reconfigure(sm);
+#else
+		changed(sm);
+#endif
 		break;
 	}
 #if CONFIG_AM_RX
