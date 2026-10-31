@@ -114,7 +114,7 @@ the radio stopped before the display was lit, until a power cycle; that fault is
 | PTB9, PTB10, PTB11 (41-43) | Key matrix sense lines, low = closed. PTB9 and PTB10 also carry one key each wired straight to ground (low with every drive line high) |
 | PTA9 (9) | Also read as a GPIO by the key code: the mic connector's line that carries PTT and the radio's RXD. RadioFoundry counts a low PTA9 as PTT only 50 ms or more after the last good UART byte and held low that way for 20 ms (`drivers/input/sharedptt`, [gotchas](gotchas.md) 16.2), then on three scans in a row; the diagnostics line `mic` ends with `ign N`, the low scans ignored. The three-scan filter alone let debug link polling key the radio; with the gate, 30 s of polling gave `ign 5` and no PTT press (2026-10-19, measured) |
 | PTC11 (75) | Hand mic PTT: high at idle, low while held. With no mic in the front jack it reads low from power-on and never changes (0 edges in 25 s, cable in or out), which keyed the radio at every start without a mic (issue #230). RadioFoundry counts a low PTC11 as PTT only once the line has read high for 100 ms since power-on, a mic plugged in (`drivers/input/plugptt`); the diagnostics line `mic` ends with `mic` once armed, `nomic` before. Plugging the mic in later arms it then. Pulling the mic out while armed reads as a held PTT, which the transmit timeout ends (with TX timeout Off, nothing ends it until power-off). On the radio (2026-10-27): no mic at power-on, no key-up (`nomic`); mic plugged in, `mic`, PTT keys and releases. The mic's digit and P keys change neither PTA9 nor PTC11 at a 10 ms scan; how they reach the radio is open (measured) |
-| PTB5 / PTB8 (37 / 40) | Rotary encoder A / B, GPIO B interrupt |
+| PTB5 / PTB8 (37 / 40) | Rotary encoder A / B, GPIO B interrupt. The key scan watches it for a lost interrupt and serves the bank itself if one is lost (`platform/hrc7000/gpio_watch.c`, [gotchas.md](gotchas.md) 16.4; state in the debug link view, [debuglink.md](debuglink.md) 3.7) |
 | PTB12 (44) | Power key sense, low = pressed |
 | PTB13 (45) | Power latch: set at start-up, cleared to switch off |
 | PTA16 (16) | LCD backlight: PWM1 output (IO_DIPLEX0 bit 18 clear) (datasheet) |
@@ -448,6 +448,16 @@ nothing else on the page trims the frequency. RadioFoundry powers the modem
 | 106 (owner's radio) | 489 (0x1E9) | 0x6A6AE9E9 | 0x01E90021 |
 
 `make BOARD=db25d DB25D_TX_CENTER=N` replaces c, to sweep it on the radio: a few ppm per step is expected.
+
+The user's reference trim ([radio-features.md](radio-features.md) 6.1) leaves this bias alone: it is the factory's tune
+and the DMR modulation rides on it. RadioFoundry retunes the BK4819s instead. Receive: the LO at f x (1 + trim) + IF,
+which leaves the signal on the main chip's IF. Transmit: the main chip at f x (1 + trim), FM and every DMR burst. The next
+tune applies a new trim. Measured on the SDR bench at 461.4625 MHz (2026-10-30): +5.0 ppm moved the carrier +2309 Hz and
+-5.0 ppm -2311 Hz (2307 Hz expected). The trim covers +-10 ppm, less than the 23 ppm this radio read before the bias
+was set, so a radio that far off needs the bias first.
+
+A key-up now and then restarts the radio (`reset.cause` warm, no fault trace): a supply dip at TX on, also without the
+trim (1 of 3 plain key-ups on 2026-10-30). The HIL trim test waits 3 s after each trim before it keys, and may need a rerun.
 
 ### 4.7 DCS
 

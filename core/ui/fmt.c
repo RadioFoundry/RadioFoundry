@@ -3,6 +3,7 @@
 // Small text builders for the UI
 #include "fmt.h"
 #include "font.h"
+#include "i18n.h"
 
 void sb_init(sbuf_t *b, char *buf, size_t len)
 {
@@ -10,6 +11,13 @@ void sb_init(sbuf_t *b, char *buf, size_t len)
 	b->end = buf + (len ? len - 1 : 0);
 	if (len)
 		*buf = 0;
+}
+
+void str_copy(char *dst, size_t cap, const char *src)
+{
+	sbuf_t b;
+	sb_init(&b, dst, cap);
+	sb_str(&b, src);
 }
 
 void sb_chr(sbuf_t *b, char c)
@@ -85,6 +93,29 @@ void sb_tone(sbuf_t *b, const subtone_t *t)
 	}
 }
 
+void sb_split(sbuf_t *b, uint32_t rx_hz, uint32_t tx_hz)
+{
+	if (tx_hz == rx_hz) {
+		sb_str(b, TR("Off"));
+		return;
+	}
+	sb_chr(b, tx_hz > rx_hz ? '+' : '-');
+	uint32_t d = tx_hz > rx_hz ? tx_hz - rx_hz : rx_hz - tx_hz;
+	// Below 1 MHz in kHz, else in MHz; three decimals at most, trailing zeros dropped: "+600k", "+12.5k", "-7.6M"
+	bool mhz = d >= 1000000u;
+	uint32_t unit = mhz ? 1000000u : 1000u;
+	sb_u32(b, d / unit, 1);
+	uint32_t frac = d % unit / (unit / 1000u);
+	if (frac != 0) {
+		sb_chr(b, '.');
+		for (uint32_t div = 100u; frac != 0; div /= 10u) {
+			sb_chr(b, (char)('0' + frac / div));
+			frac %= div;
+		}
+	}
+	sb_chr(b, mhz ? 'M' : 'k');
+}
+
 void sb_mmss(sbuf_t *b, uint32_t seconds)
 {
 	sb_u32(b, seconds / 60u, 1);
@@ -117,7 +148,7 @@ void sb_age_long(sbuf_t *b, uint32_t ms)
 	char unit;
 	sb_u32(b, age_unit(ms, &unit), 1);
 	sb_chr(b, unit);
-	sb_str(b, " ago");
+	sb_str(b, TR(" ago"));
 }
 
 // "14m ago", "14m" as text alternates: the drawing keeps the longest that fits (font.h). One unit style everywhere,
@@ -129,7 +160,8 @@ void sb_age(sbuf_t *b, uint32_t ms)
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_u32(b, v, 1);
 	sb_chr(b, unit);
-	sb_str(b, " ago" TEXT_ALT_NEXT);
+	sb_str(b, TR(" ago"));
+	sb_str(b, TEXT_ALT_NEXT);
 	sb_u32(b, v, 1);
 	sb_chr(b, unit);
 	sb_str(b, TEXT_ALT_CLOSE);
@@ -146,9 +178,25 @@ void sb_degrees(sbuf_t *b, int32_t e7)
 	sb_u32(b, v % 10000u, 4);
 }
 
-void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing)
+void sb_coord(sbuf_t *b, int32_t e7, char pos, char neg)
+{
+	uint32_t v = (uint32_t)(e7 < 0 ? -(int64_t)e7 : e7);
+	v = (v + 5u) / 10u;	// 1e-6 degree
+	sb_u32(b, v / 1000000u, 1);
+	sb_chr(b, '.');
+	sb_u32(b, v % 1000000u, 6);
+	sb_chr(b, ' ');
+	sb_chr(b, e7 < 0 ? neg : pos);
+}
+
+void sb_compass(sbuf_t *b, uint16_t bearing)
 {
 	static const char *const points[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+	sb_str(b, points[((bearing % 360u) * 2u + 45u) / 90u % 8u]);
+}
+
+void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing)
+{
 	if (meters < 1000u) {
 		sb_u32(b, meters, 1);
 		sb_str(b, " m ");
@@ -162,5 +210,5 @@ void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing)
 		sb_u32(b, (meters + 500u) / 1000u, 1);
 		sb_str(b, " km ");
 	}
-	sb_str(b, points[((bearing % 360u) * 2u + 45u) / 90u % 8u]);
+	sb_compass(b, bearing);
 }

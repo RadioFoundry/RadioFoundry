@@ -83,6 +83,9 @@
 #ifndef CONFIG_TFTP_IDDB
 #define CONFIG_TFTP_IDDB		CONFIG_TFTP
 #endif
+#ifndef CONFIG_IDDB_COMPACT
+#define CONFIG_IDDB_COMPACT		CONFIG_DMR
+#endif
 #ifndef CONFIG_DMR_CONTROL_STATION
 #define CONFIG_DMR_CONTROL_STATION	CONFIG_DMR_IP_GATEWAY
 #endif
@@ -129,7 +132,7 @@
 #ifndef CONFIG_RX2_DL_SERVER
 #define CONFIG_RX2_DL_SERVER		0
 #endif
-// Peek and poke on the debug link (core/debuglink/dl_mem.c, debuglink.md 3.23): the debug link's, or a second SoC's
+// Peek and poke on the debug link (core/debuglink/dl_mem.c, debuglink.md 3.24): the debug link's, or a second SoC's
 // server's
 #ifndef CONFIG_DEBUG_MEM
 #define CONFIG_DEBUG_MEM		(CONFIG_DEBUGLINK || CONFIG_RX2_DL_SERVER)
@@ -142,7 +145,7 @@
 #define CONFIG_CPS_OPENFW		CONFIG_HOSTLINK
 #endif
 #ifndef CONFIG_CPS_FAST
-#define CONFIG_CPS_FAST			(CONFIG_CPS_OPENFW && CONFIG_DEBUGLINK)
+#define CONFIG_CPS_FAST			(CONFIG_CPS_OPENFW && (CONFIG_DEBUGLINK || CONFIG_STUB_ENTRY))
 #endif
 #ifndef CONFIG_VFO
 #define CONFIG_VFO			1
@@ -164,6 +167,23 @@
 #endif
 #ifndef CONFIG_FONT_BIG
 #define CONFIG_FONT_BIG			CONFIG_FONT_AA
+#endif
+// Languages the radio can show besides English (core/ui/lang/<code>.po, docs/dev/translating.md): one switch each.
+// CONFIG_LANG_ANY: at least one is built (the translation lookup, the Latin-1 glyphs); add each new switch to it
+#ifndef CONFIG_LANG_ES
+#define CONFIG_LANG_ES			1
+#endif
+#ifndef CONFIG_LANG_IT
+#define CONFIG_LANG_IT			0
+#endif
+#define CONFIG_LANG_ANY			(CONFIG_LANG_ES || CONFIG_LANG_IT)
+// The language the radio starts in until the user picks one (CONFIG_LANG_DEFAULT_<CODE>, needs its CONFIG_LANG_<CODE>):
+// all 0 = English
+#ifndef CONFIG_LANG_DEFAULT_ES
+#define CONFIG_LANG_DEFAULT_ES		0
+#endif
+#ifndef CONFIG_LANG_DEFAULT_IT
+#define CONFIG_LANG_DEFAULT_IT		0
 #endif
 #ifndef CONFIG_UI_COLOR
 #define CONFIG_UI_COLOR			1
@@ -189,6 +209,9 @@
 #ifndef CONFIG_ZONE_EDIT
 #define CONFIG_ZONE_EDIT		CONFIG_CHANNEL_EDIT
 #endif
+#ifndef CONFIG_CONTACT_EDIT
+#define CONFIG_CONTACT_EDIT		(CONFIG_CHANNEL_EDIT && CONFIG_DMR)
+#endif
 // Zone writes that move zone indexes (core/codeplug/zone_edit.h): the zone editor's, and zone sharing's import of a
 // new zone. Whoever keeps a zone index (the radio core, dual watch, the open zone screens) follows them
 #define CONFIG_ZONE_WRITE		(CONFIG_ZONE_EDIT || CONFIG_ZONE_SHARE)
@@ -203,6 +226,9 @@
 #endif
 #ifndef CONFIG_VOX
 #define CONFIG_VOX			CONFIG_FM
+#endif
+#ifndef CONFIG_REF_TRIM
+#define CONFIG_REF_TRIM			1
 #endif
 #ifndef CONFIG_BATTERY_SAVE
 #define CONFIG_BATTERY_SAVE		CONFIG_FM
@@ -251,6 +277,11 @@
 #endif
 #ifndef CONFIG_APRS_IGATE
 #define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
+#endif
+// The GPS status screen: the satellites (NMEA GSV / GSA) on a sky plot and signal bars, the fix's quality, the grid
+// locator (core/aprs/nmea_sky.c, core/ui/ui_gps.c). Needs GPS and APRS, whose NMEA input it shares
+#ifndef CONFIG_GPS_SKY
+#define CONFIG_GPS_SKY			(CONFIG_GPS && CONFIG_APRS)
 #endif
 #ifndef CONFIG_NET_KISS
 #define CONFIG_NET_KISS			(CONFIG_NET_TCP && CONFIG_APRS)
@@ -331,8 +362,8 @@
 #if CONFIG_CPS_OPENFW && !CONFIG_HOSTLINK
 #error "CONFIG_CPS_OPENFW needs CONFIG_HOSTLINK"
 #endif
-#if CONFIG_CPS_FAST && !(CONFIG_CPS_OPENFW && CONFIG_DEBUGLINK)
-#error "CONFIG_CPS_FAST needs CONFIG_CPS_OPENFW and CONFIG_DEBUGLINK"
+#if CONFIG_CPS_FAST && !(CONFIG_CPS_OPENFW && (CONFIG_DEBUGLINK || CONFIG_STUB_ENTRY))
+#error "CONFIG_CPS_FAST needs CONFIG_CPS_OPENFW, and CONFIG_DEBUGLINK or CONFIG_STUB_ENTRY"
 #endif
 #if CONFIG_DMR_EMERGENCY && !CONFIG_DMR_DATA_CORE
 #error "CONFIG_DMR_EMERGENCY needs CONFIG_DMR_DATA_CORE (the alarm is a CSBK)"
@@ -354,6 +385,9 @@
 #endif
 #if (CONFIG_MDNS || CONFIG_TFTP) && !CONFIG_DMR_IP_GATEWAY
 #error "CONFIG_MDNS and CONFIG_TFTP need CONFIG_DMR_IP_GATEWAY (the IP stack they run on)"
+#endif
+#if CONFIG_IDDB_COMPACT && !CONFIG_DMR
+#error "CONFIG_IDDB_COMPACT needs CONFIG_DMR"
 #endif
 #if CONFIG_TFTP_IDDB && !CONFIG_TFTP
 #error "CONFIG_TFTP_IDDB needs CONFIG_TFTP"
@@ -390,6 +424,9 @@
 #endif
 #if CONFIG_APRS && !CONFIG_FM
 #error "CONFIG_APRS needs CONFIG_FM"
+#endif
+#if CONFIG_GPS_SKY && !(CONFIG_GPS && CONFIG_APRS)
+#error "CONFIG_GPS_SKY needs CONFIG_GPS and CONFIG_APRS"
 #endif
 #if (CONFIG_APRS_RX && !CONFIG_APRS) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
 #error "an APRS sub-feature is on without its parent (APRS_RX needs APRS; APRS_IGATE needs APRS_RX and HOSTLINK)"

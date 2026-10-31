@@ -4,21 +4,25 @@
 // written back to the radio. Everything runs in the page; the codeplug never leaves it unless the user puts it in a
 // bug report (report.js). The working codeplug is kept in this browser (IndexedDB) so a reload doesn't lose edits.
 
-import { h, t, ROOT, button, notice, download, progressBar } from "../flasher/dom.js";
-import { SerialStream, serialSupported, RFOUNDRY_USB, browserErrorKey } from "../flasher/link.js";
-import { CodeplugImage } from "../codeplug/image.js";
+import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum, date as fmtDate } from "../flasher/dom.js";
+import { equal } from "../flasher/bytes.js";
+import { SerialStream, serialSupported, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
+import { CodeplugImage, IDDB_HEADER, REGIONS } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
-import { LIMITS } from "../codeplug/records.js";
-import { CpsSerial, TransportError, estimate } from "../codeplug/transport.js";
+import { LIMITS, decodeGeneral } from "../codeplug/records.js";
+import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
+import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
+import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
-import { columns, channelForm, formDialog, membersDialog, refLabel } from "./views.js";
+import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel } from "./views.js";
 import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
 import * as diag from "../diag.js";
 import { initReporting, reportedLine } from "../report.js";
+import { updateFor } from "../flasher/version.js";
 
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
 const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "iddb", "problems"];
@@ -54,7 +58,8 @@ function load(model, name, { fromRadio = false } = {}) {
 	S.history.reset();
 	S.dirty = false;
 	S.iddbChanged = false;
-	if (!fromRadio && S.conn) S.conn.image = S.conn.image || null;
+	S.iddbSkipped = null;
+	if (!fromRadio && S.conn) S.conn.dbKnown = false;
 	refresh();
 	draftSoon();
 }
@@ -202,14 +207,14 @@ function tableActions(tab, g) {
 	const full = S.model[tab].length >= TABLE_MAX[tab];
 	const numbered = tab !== "zones";
 	const out = [
-		// first, so it sits above the row checkboxes it acts on
-		button(sel.length ? t("editor.bulk_edit_n", { n: sel.length }) : t("editor.bulk_edit"), () => bulkSet(tab, g), { disabled: sel.length < 2 }),
+		// first, so it sits above the row checkboxes it acts on; not on a table with nothing it can set (zones, RX lists)
+		bulkColumns(tab, S.model, t).length ? button(sel.length ? t("editor.bulk_edit_n", { n: sel.length }) : t("editor.bulk_edit"), () => bulkSet(tab, g), { disabled: sel.length < 2 }) : null,
 		button(t("editor.add"), () => addRecord(tab, g), { disabled: full }),
 		button(t("editor.duplicate"), () => duplicate(tab, g), { disabled: full || !g.targets().length }),
 		button(t("editor.delete"), () => del(tab, g), { disabled: !g.targets().length, danger: true }),
 		button(t("editor.move_up"), () => move(tab, g, -1), { disabled: !g.targets().length, quiet: true }),
 		button(t("editor.move_down"), () => move(tab, g, 1), { disabled: !g.targets().length, quiet: true }),
-	];
+	].filter(Boolean);
 	if (numbered) out.push(button(t("editor.renumber"), () => renumber(tab), { quiet: true }));
 	out.push(...extensions.tableActions(tab, api()));
 	return out;
@@ -303,7 +308,8 @@ function renumber(tab) {
 
 function bulkSet(tab, g) {
 	const rows = g.selection();
-	const cols = columns(tab, S.model, t).filter((c) => c.readOnly !== true && c.key !== "name" && c.key !== "number");
+	const cols = bulkColumns(tab, S.model, t);
+	if (!cols.length) return;
 	const pickCol = h("select", {}, ...cols.map((c, i) => h("option", { value: String(i) }, c.label)));
 	const slot = h("div");
 	const errs = h("p", { class: "notice bad", hidden: true });
@@ -446,7 +452,7 @@ function saveFile(kind) {
 	if (errors.length) return say(t("editor.err.fix_first", { n: errors.length }), "bad");
 	const img = encode(S.model);
 	if (kind === "tftp") {
-		download("codeplug.bin", tftpBytes(img));
+		download("codeplug.bin", tftpBytes(img, iddbEnd(S.conn?.radio)));
 		say(t("editor.saved_tftp"), "info");
 		return;
 	}
@@ -471,42 +477,44 @@ async function connect() {
 	if (S.conn) return S.conn;
 	let stream, cable = false;
 	if (S.sim) {
-		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes, foreign: location.hash === "#sim-foreign" });
+		// #sim-compact: firmware that reads a format C ID database; &release=vYY.M: a radio that runs that release;
+		// &git_time=N: a build of a commit from that time (Unix seconds)
+		const hash = location.hash;
+		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes, foreign: hash === "#sim-foreign",
+			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
+			gitTime: Number(hash.match(/[#&]git_time=(\d+)/)?.[1]) || 0 });
 		stream = S.fake.stream();
 	} else {
 		if (!serialSupported()) throw new TransportError("no_serial");
-		const choice = await chooseLink();
-		if (!choice) return null;
-		cable = choice === "cable";
-		const port = await navigator.serial.requestPort(cable ? { filters: CABLES } : { filters: [RFOUNDRY_USB] });
-		diag.note("port chosen", { cable, ...port.getInfo?.() });
-		stream = await SerialStream.open(port);
+		// one chooser for both links: the radio's own USB port, or a programming cable, told apart by the port's USB ID.
+		// A port granted before where RadioFoundry answers needs no chooser
+		const known = await knownRadioPort([RFOUNDRY_USB, ...CABLES]);
+		let port = known?.port;
+		if (!port) {
+			try {
+				port = await navigator.serial.requestPort({ filters: [RFOUNDRY_USB, ...CABLES] });
+			} catch (e) {
+				if (e?.name !== "NotFoundError") throw e;
+				say(t("editor.connect.none"), "warn");
+				return null;
+			}
+		}
+		const info = port.getInfo?.() || {};
+		cable = !(info.usbVendorId === RFOUNDRY_USB.usbVendorId && info.usbProductId === RFOUNDRY_USB.usbProductId);
+		diag.note(known ? "port known" : "port chosen", { cable, ...info });
+		stream = known?.stream || await SerialStream.open(port);
 	}
 	const tr = new CpsSerial(stream, { cable });
 	try {
 		const { radio, probe } = await tr.identify(S.radios);
 		diag.note("radio found", { radio: radio.id, board: probe.board, git: probe.git, features: probe.features });
-		S.conn = { transport: tr, radio, probe, image: null, cable };
+		// dbKnown: the radio's ID database is the model's (read or written since the model was loaded)
+		S.conn = { transport: tr, radio, probe, image: null, uid: null, cable, dbKnown: false };
 		return S.conn;
 	} catch (e) {
 		await tr.close();
 		throw e;
 	}
-}
-
-function chooseLink() {
-	return new Promise((resolve) => {
-		let picked = null;
-		const d = dialog(t("editor.connect.title"), [
-			h("p", {}, t("editor.connect.text")),
-			h("div", { class: "choice-grid" },
-				h("button", { type: "button", class: "choice", onclick: () => { picked = "usb"; d.close(); } },
-					h("b", {}, t("editor.connect.usb")), h("span", { class: "small muted" }, t("editor.connect.usb_help"))),
-				h("button", { type: "button", class: "choice", onclick: () => { picked = "cable"; d.close(); } },
-					h("b", {}, t("editor.connect.cable")), h("span", { class: "small muted" }, t("editor.connect.cable_help")))),
-			h("details", { class: "small" }, h("summary", {}, t("editor.connect.network")), h("p", {}, t("editor.connect.network_help"))),
-		], null, null, () => resolve(picked));
-	});
 }
 
 function radioError(e) {
@@ -580,23 +588,193 @@ async function exclusive(fn) {
 	}
 }
 
+// The radio on the line now. A write sends only the bytes that differ from c.image, so c.image must be this radio's:
+// a programming cable stays open while one radio is swapped for the next, and the bytes the last one had are not the
+// new one's. A different chip UID, or none (firmware that doesn't say), drops c.image and the write reads first
+async function onLine(c) {
+	const uid = await c.transport.who(S.radios);
+	c.radio = c.transport.radio;
+	if (c.image && (!uid || uid !== c.uid)) {
+		diag.note("radio changed: read before write", { was: c.uid, now: uid });
+		c.image = null;
+		c.dbKnown = false;
+	}
+	c.uid = uid;
+}
+
+// The offer to convert a format N database to C, after a read: at most once in 12 hours for each radio model,
+// whatever the answer (a converted database isn't offered again anyway)
+const CONVERT_QUIET = 12 * 3600 * 1000;
+
+function convertDue(radio) {
+	const key = `rfoundry-editor-iddb-convert:${radio}`;
+	try {
+		if (Date.now() - Number(localStorage.getItem(key) || 0) < CONVERT_QUIET) return false;
+		localStorage.setItem(key, String(Date.now()));
+	} catch { /* without storage the offer comes after every read */ }
+	return true;
+}
+
+// A read of the ID database expected to take this long or longer (seconds) is offered, not made
+const IDDB_ASK = 20;
+
+function askIddb(c, db, bytes, seconds) {
+	return new Promise((done) => {
+		let yes = false;
+		dialog(t("editor.iddb_read.title"), [h("p", {}, t("editor.iddb_read.text", { radio: c.radio.name, n: db.count,
+			size: kb(bytes), time: duration(seconds) })), h("p", {}, t("editor.iddb_read.skip_help"))],
+		t("editor.iddb_read.read"), (close) => {
+			yes = true;
+			close();
+		}, () => done(yes), { cancel: t("editor.iddb_read.skip") });
+	});
+}
+
+const kb = (n) => n >= 1e6 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`;
+
+function duration(s) {
+	return s < 90 ? t("editor.about_seconds", { n: Math.ceil(s / 5) * 5 }) : t("editor.about_minutes", { n: Math.round(s / 60) });
+}
+
+// The ID database a read skipped, read now into the codeplug (the DMR ID Database tab's button)
+// The radio on the line holds the codeplug last read from it (img): its regions read again and compared
+async function sameCodeplug(c, img) {
+	const now = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
+		c.transport.read({ iddb: false, signal, cache: img, progress: (n, total) => bar.set(n, total) }));
+	const at = (x, a, b) => x.bytes.subarray(a, Math.min(b, x.bytes.length));
+	return REGIONS.every(([a, b]) => equal(at(now, a, b), at(img, a, b)));
+}
+
+function readSkippedIddb() {
+	return exclusive(async () => {
+		const c = S.conn;
+		try {
+			if (!c?.image || !S.iddbSkipped || S.iddbChanged) return;
+			const [was, known] = [c.image, c.dbKnown];
+			await onLine(c);
+			// firmware that doesn't give its chip UID: the codeplug read again (with the fast protocol only the blocks that
+			// changed move) and unchanged is the same radio
+			if (!c.image && !c.uid && await sameCodeplug(c, was)) {
+				c.image = was;
+				c.dbKnown = known;
+			}
+			if (!c.image) return say(t("editor.iddb_read.swapped"), "warn");
+			// the header from the radio, not from c.image: a write since the read left the model's erased header there
+			const img = await withProgress(t("editor.reading_iddb", { radio: c.radio.name }), async (bar, signal) =>
+				c.transport.readIddb(await c.transport.readIddbHeader({ signal }), { signal, cache: c.image,
+					progress: (n, total) => bar.set(n, total) }));
+			// the database's bytes into the codeplug being edited (its other edits kept) and into the radio's as last read
+			if (dbHeader(img.bytes)) {
+				for (const [a, b] of iddbRanges(img)) {
+					for (const dst of [S.model.base, c.image]) {
+						dst.ensure(b);
+						dst.bytes.set(img.bytes.subarray(a, b), a);
+					}
+				}
+			}
+			S.model.iddb = dbHeader(S.model.base.bytes);
+			c.dbKnown = true;
+			S.iddbSkipped = null;
+			diag.note("iddb read", { bytes: img.bytes.length });
+			refresh();
+			draftSoon();
+		} catch (e) {
+			await fail("read ID database", e);
+		}
+	});
+}
+
 async function readRadio() {
 	const go = () => exclusive(async () => {
 		try {
 			const c = await connect();
 			if (!c) return;
+			await onLine(c);
+			// the ID database can be megabytes: its header first, and a long read of it offered, not made. Then one read
+			// (one progress bar) of the codeplug and, when wanted, the database
+			const cached = !!c.image && c.dbKnown;
+			const head = await c.transport.readIddbHeader();
+			const db = dbHeader(head.bytes);
+			const dbBytes = c.transport.iddbBytes(head);
+			const rate = c.rate || (c.cable ? 9000 : 30000);
+			const seconds = cached ? 0 : Math.ceil(dbBytes / rate);
+			const readDb = dbBytes > 0 && (seconds < IDDB_ASK || await askIddb(c, db, dbBytes, seconds));
+			const t0 = performance.now(), moved = c.transport.moved;
+			// the header just read serves as the cache for its own block on a first read
 			const img = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
-				c.transport.read({ signal, progress: (n, total) => bar.set(n, total) }));
-			diag.note("read done", { bytes: img.bytes.length });
+				c.transport.read({ iddb: readDb, signal, cache: c.image || head, progress: (n, total) => bar.set(n, total) }));
+			// how fast this radio and cable read, for the next estimate (a read from the cache says nothing): by the bytes
+			// that crossed the link, not the progress, which also counts blank blocks the fast protocol skips. A read of a
+			// few blocks is mostly round trips: too few to tell
+			const took = c.transport.moved - moved;
+			if (!c.image && took >= 65536) c.rate = took / Math.max(0.25, (performance.now() - t0) / 1000);
+			diag.note("read done", { bytes: img.bytes.length, iddb: readDb, dbBytes, seconds });
 			c.image = img.clone();
+			if (db && !readDb) {
+				// the model without the database (its header erased): a write leaves the radio's as it is
+				img.bytes.fill(0xFF, IDDB_HEADER[0], IDDB_HEADER[1]);
+			}
 			load(decode(img), `${c.radio.id}-codeplug`, { fromRadio: true });
+			c.dbKnown = !db || readDb;
+			S.iddbSkipped = db && !readDb ? { count: db.count, bytes: dbBytes, seconds } : null;
+			if (S.iddbSkipped) refresh();
 			say(t("editor.read_done", { radio: c.radio.name, channels: S.model.channels.length, contacts: S.model.contacts.length }), "ok");
+			// the database's format against what this radio's firmware reads (iddb-compact.md 6)
+			const fmt = S.model.iddb?.format;
+			if (fmt === "C" && !c.transport.compact) {
+				S.iddbChanged = true;
+				say(t("editor.iddb.old_radio_reads_none"), "warn");
+			} else if (fmt === "N" && c.transport.compact && convertDue(c.radio.id)) {
+				confirmDialog(t("editor.iddb.upgrade", { radio: c.radio.name }), t("editor.iddb.convert"), upgradeIddb,
+					{ onClose: () => offerUpdate(c) });
+				return;
+			}
+			offerUpdate(c);
 		} catch (e) {
 			await fail("read codeplug", e);
 		}
 	});
 	if (S.dirty) confirmDialog(t("editor.read_confirm"), t("editor.read"), go);
 	else go();
+}
+
+// Features a newer release may add that change what the editor can do with the radio, with what each gains
+const UPDATE_GAINS = ["CPS_FAST", "IDDB_COMPACT"];
+let releaseList = null;
+
+// After a read: a newer release for this radio (releases.json, updateFor), offered once per tab for each radio, running
+// build and release
+async function offerUpdate(c) {
+	const v = c.transport.probe?.version || {};
+	const gitTime = Number(v.git_time) || 0;
+	if (!v.release && !gitTime) return;
+	if (!releaseList) {
+		try {
+			releaseList = (await (await fetch(`${ROOT}data/releases.json`)).json()).releases || [];
+		} catch {
+			return;
+		}
+	}
+	const rel = updateFor(releaseList, c.radio.id, v.release, gitTime);
+	if (!rel) return;
+	// a release by its name, any other build by its commit and that commit's date
+	const running = v.release || t("editor.update.build", { git: v.git, date: fmtDate(new Date(gitTime * 1000), { dateStyle: "medium" }) });
+	const key = `rfoundry-editor-update:${c.radio.id}:${v.release || v.git}:${rel.version}`;
+	try {
+		if (sessionStorage.getItem(key)) return;
+		sessionStorage.setItem(key, "1");
+	} catch { /* without storage the offer comes after every read */ }
+	const has = String(c.transport.probe.features || "").split(",");
+	const gains = UPDATE_GAINS.filter((f) => String(rel.features || "").split(",").includes(f) && !has.includes(f));
+	diag.note("update offered", { running: v.release || v.git, release: rel.version, gains });
+	const body = [h("p", {}, t("editor.update.text", { radio: c.radio.name, version: rel.version, running }))];
+	if (gains.length) body.push(h("p", {}, t("editor.update.gains")), h("ul", {}, ...gains.map((f) => h("li", {}, t(`editor.update.gain.${f}`)))));
+	dialog(t("editor.update.title"), body, t("editor.update.go"), async (close) => {
+		// the flasher's tab needs the port: this one lets go of it (opened first, in the click, so no popup blocker stops it)
+		window.open(`${HOME}flash/index.html#update`, "_blank", "noopener");
+		close();
+		if (S.conn === c) await dropConnection();
+	}, () => {}, { cancel: t("editor.update.later") });
 }
 
 function writeRadio() {
@@ -616,46 +794,116 @@ async function planWrite() {
 		stage = "prepare radio";
 		if (!await ensureStorage(c)) return;
 		stage = "encode codeplug";
-		const want = encode(S.model);
+		const file = encode(S.model);
+		stage = "check radio";
+		await onLine(c);
 		if (!c.image) {
 			stage = "read before write";
 			c.image = await withProgress(t("editor.comparing", { radio: c.radio.name }), (bar, signal) =>
 				c.transport.read({ iddb: false, signal, progress: (n, total) => bar.set(n, total) }));
 		}
-		const iddb = S.iddbChanged;
+		// the ID database goes when it was edited, or when this radio's may differ: a file or draft opened since, or
+		// another radio on the cable. The fast protocol then sends only its blocks that differ
+		const iddb = S.iddbChanged || (!!dbHeader(file.bytes) && !c.dbKnown);
+		// a compact database to a radio that reads only format N goes as format N (iddb-compact.md 6)
+		let older = null;
+		if (iddb && dbHeader(file.bytes)?.format === "C" && !c.transport.compact) older = convertDb(file, "N", { end: c.transport.end });
 		stage = "plan write";
-		const { plan, bytes } = c.transport.plan(want, c.image, { iddb });
-		diag.note("write plan", { bytes, sectors: plan.length, iddb });
+		// the same codeplug with this radio's own name, ID and boot text kept, and what each would send
+		// (compared byte for byte: two plans can send the same number of bytes. The second is planned only when there
+		// is something to keep: each plan is a pass over every block's CRC)
+		const kept = keepIdentity(file, c.image);
+		const differs = IDENTITY.some(([a, b]) => kept.bytes.subarray(a, b).some((x, i) => x !== file.bytes[a + i]));
+		const plans = { file: await c.transport.plan(file, c.image, { iddb }) };
+		plans.kept = differs ? await c.transport.plan(kept, c.image, { iddb }) : plans.file;
+		let keep = keepPref() && differs;
+		const choice = () => (keep ? { want: kept, ...plans.kept } : { want: file, ...plans.file });
+		diag.note("write plan", { bytes: choice().bytes, sectors: choice().plan.length, iddb, keep });
 		const prepared = c.prepared ? `${t("editor.storage.done", { radio: c.radio.name })} ` : "";
 		c.prepared = false;
-		if (!bytes) return say(prepared + t("editor.write_nothing", { radio: c.radio.name }), "ok");
-		const text = [t("editor.write_summary", { radio: c.radio.name, bytes: bytes.toLocaleString(), seconds: estimate(bytes, c.cable) })];
-		if (iddb) text.push(t("editor.write_iddb", { n: S.model.iddb?.count || 0 }));
-		confirmDialog(text.join(" "), t("editor.write"), () => exclusive(async () => {
-			let step = "write codeplug";
-			try {
-				const res = await withProgress(t("editor.writing", { radio: c.radio.name }), async (bar, signal) => {
-					const r = await c.transport.write(want, iddb ? null : c.image, { iddb, signal, progress: (n, total) => bar.set(n, total, t("editor.progress.write")) });
-					step = "verify codeplug";
-					await c.transport.verify(want, r.plan, { progress: (n, total) => bar.set(n, total, t("editor.progress.verify")) });
-					step = "finish write";
-					await c.transport.finish();
-					return r;
-				});
-				diag.note("write done", { bytes: res.bytes, sectors: res.sectors });
-				c.image = want.clone();
-				S.iddbChanged = false;
-				S.model.base = want;
-				S.dirty = false;
-				refresh();
-				say(prepared + t("editor.write_done", { radio: c.radio.name, bytes: res.bytes.toLocaleString() }), "ok");
-			} catch (e) {
-				await fail(step, e);
-			}
-		}), { primary: true });
+		// by the plan, not its bytes: a block written blank counts no bytes
+		if (!choice().plan.length) return say(prepared + t("editor.write_nothing", { radio: c.radio.name }), "ok");
+		const summary = h("p", {});
+		const summarize = () => {
+			const { bytes } = choice();
+			const text = [t("editor.write_summary", { radio: c.radio.name, bytes: fmtNum(bytes), seconds: estimate(bytes, c.cable, choice().blocks) })];
+			if (iddb) text.push(t(c.transport.fast ? "editor.write_iddb_fast" : "editor.write_iddb", { n: dbHeader(file.bytes)?.count ?? 0 }));
+			if (older) text.push(t("editor.write_iddb_older"));
+			if (older?.dropped) text.push(t("editor.write_iddb_cut", { dropped: fmtNum(older.dropped) }));
+			summary.textContent = text.join(" ");
+		};
+		summarize();
+		const body = [summary];
+		// offered only when the radio's identity differs from the file's: otherwise there's nothing to keep
+		if (differs) {
+			const g = decodeGeneral(c.image.bytes), none = t("editor.keep_identity_none");
+			const box = h("input", { type: "checkbox", checked: keep, onchange: () => {
+				keep = box.checked;
+				keepPref(keep);
+				summarize();
+			} });
+			body.push(h("label", {}, box, " ", t("editor.keep_identity")),
+				h("p", { class: "small muted" }, t("editor.keep_identity_help", { name: g.radioName || none, id: g.dmrId || none })));
+		}
+		dialog(t("editor.write"), body, t("editor.write"), (close) => {
+			close();
+			writeChosen(c, choice(), iddb, prepared);
+		});
 	} catch (e) {
 		await fail(stage, e);
 	}
+}
+
+// The ID database rewritten in format C for a radio that reads it, as one undoable change; Write to Radio sends it
+function upgradeIddb() {
+	let r = null;
+	change(t("editor.iddb.convert"), () => {
+		r = convertIddb(S.model, "C", iddbEnd(S.conn?.radio));
+		return r ? undefined : false;
+	});
+	if (!r) return;
+	S.iddbChanged = true;
+	say(t("editor.iddb.converted", { n: r.count }), "ok");
+}
+
+// Whether the last write kept the radio's own identity: remembered in this browser for the next radio
+function keepPref(v) {
+	const k = "rfoundry-editor-keep-identity";
+	try {
+		if (v === undefined) return localStorage.getItem(k) === "1";
+		localStorage.setItem(k, v ? "1" : "0");
+	} catch {
+		// private mode: not remembered
+	}
+	return !!v;
+}
+
+function writeChosen(c, { want }, iddb, prepared) {
+	return exclusive(async () => {
+		let step = "write codeplug";
+		try {
+			const res = await withProgress(t("editor.writing", { radio: c.radio.name }), async (bar, signal) => {
+				// the CPS rewrites the whole codeplug with a database; the fast protocol checks every block's CRC itself
+				const r = await c.transport.write(want, iddb && !c.transport.fast ? null : c.image, { iddb, signal, progress: (n, total) => bar.set(n, total, t("editor.progress.write")) });
+				step = "verify codeplug";
+				await c.transport.verify(want, r.plan, { progress: (n, total) => bar.set(n, total, t("editor.progress.verify")) });
+				step = "finish write";
+				await c.transport.finish();
+				return r;
+			});
+			diag.note("write done", { bytes: res.bytes, sectors: res.sectors });
+			c.image = want.clone();
+			if (iddb) c.dbKnown = true;
+			S.iddbChanged = false;
+			S.model.base = want;
+			S.model.iddb = dbHeader(want.bytes);	// format N when it went to a radio that reads only that
+			S.dirty = false;
+			refresh();
+			say(prepared + t("editor.write_done", { radio: c.radio.name, bytes: fmtNum(res.bytes) }), "ok");
+		} catch (e) {
+			await fail(step, e);
+		}
+	});
 }
 
 async function dropConnection() {
@@ -713,11 +961,11 @@ function dialog(title, body, okLabel, onOk, onClose = () => {}, { cancel = t("ed
 	return d;
 }
 
-function confirmDialog(text, okLabel, onOk, opts = {}) {
+function confirmDialog(text, okLabel, onOk, { onClose = () => {}, ...opts } = {}) {
 	return dialog(okLabel, [h("p", {}, text)], okLabel, (close) => {
 		close();
 		onOk();
-	}, () => {}, opts);
+	}, onClose, opts);
 }
 
 // --- What other modules (CSV, YAML, contacts) get from the page ---
@@ -730,11 +978,18 @@ function api() {
 		get tab() { return S.tab; },
 		show,
 		get radio() { return S.conn?.radio || null; },
+		// whether the connected radio reads a format C ID database; null without a radio
+		get compact() { return S.conn ? S.conn.transport.compact : null; },
+		upgradeIddb,
 		get radios() { return S.radios; },
 		root: ROOT,
 		markIddb() {
 			S.iddbChanged = true;
+			S.iddbSkipped = null;
 		},
+		// the radio's ID database when a read skipped it ({count, bytes, seconds}), and reading it now
+		get iddbSkipped() { return S.iddbSkipped; },
+		readSkippedIddb,
 		encode: () => encode(S.model),
 		decode, numberAll,
 	};
@@ -777,7 +1032,7 @@ async function start() {
 		load(decode(imageFrom(draft.bytes)), draft.name || "codeplug");
 		S.dirty = !!draft.dirty;
 		refresh();
-		say(t("editor.draft_restored", { time: new Date(draft.at).toLocaleString() }), "info");
+		say(t("editor.draft_restored", { time: fmtDate(new Date(draft.at), { dateStyle: "medium", timeStyle: "short" }) }), "info");
 	} else load(empty(), "codeplug");
 	if (!serialSupported() && !S.sim) say(t("editor.no_serial"), "info");
 	if (S.sim) say(t("editor.sim"), "info");

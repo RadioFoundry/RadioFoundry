@@ -29,13 +29,14 @@ enum {
 	DL_CMD_SNMP		= 0x19,	// the SNMP agent: settings, communities, notification port, test (debuglink_snmp.c, 3.17)
 	// 0x1A STUB: dl_frame.h (core/stubentry, CONFIG_STUB_ENTRY, 3.18)
 	DL_CMD_CRASH		= 0x1B,	// the crash log: clear, crash on purpose (CONFIG_CRASH_LOG; debuglink_crash.c, 3.19)
-	DL_CMD_CODEPLUG		= 0x1C,	// the fast codeplug protocol (CONFIG_CPS_FAST; core/cps/cps_fast.c, 3.20, cps-fast.md)
+	// 0x1C CODEPLUG: dl_frame.h (core/cps/cps_fast.c, CONFIG_CPS_FAST, 3.20)
 	DL_CMD_WATCHDOG		= 0x1D,	// the hardware watchdog's bench tests (CONFIG_WATCHDOG; debuglink_watchdog.c, 3.21)
 	DL_CMD_RX2		= 0x1E,	// the second receiver's SoC: state, the update bridge, restart (debuglink_rx2.c, 3.22)
-	DL_CMD_MEM		= 0x1F,	// peek and poke: memory, registers and pins (CONFIG_DEBUG_MEM; dl_mem.c, 3.23)
+	DL_CMD_IDDB		= 0x1F,	// the DMR ID database: its format, records and an ID looked up (debuglink_iddb.c, 3.23)
+	DL_CMD_MEM		= 0x20,	// peek and poke: memory, registers and pins (CONFIG_DEBUG_MEM; dl_mem.c, 3.24)
 };
 
-// DL_CMD_MEM operations (first payload byte; docs/spec/debuglink.md 3.23). u32 little endian. Width is 1, 2 or 4 bytes
+// DL_CMD_MEM operations (first payload byte; docs/spec/debuglink.md 3.24). u32 little endian. Width is 1, 2 or 4 bytes
 // and the address a multiple of it. Everything but READ, ARM and PIN's read is refused unless armed
 enum {
 	DL_MEM_OP_READ = 0,	// width u8, address u32, count u8 (1..DL_MEM_PEEK_MAX) -> status, the values (width each)

@@ -14,6 +14,7 @@
 #include "modem/hrc7000/hrc7000.h"
 #include "fm_rx_audio.h"
 #include "hrc_afsk.h"
+#include "radio/ref_trim.h"
 
 #define DAC_C_INIT		0x06E2u
 
@@ -137,6 +138,24 @@ static void write_mod_bias(uint32_t hz)
 
 // ---- From the DMR interrupts ----
 
+// The reference trim (hal_radio_t.ref_trim): the FD6818 is programmed f x (1 + trim), at every tune and burst. The
+// modem's DC bias stays the factory's tune
+static volatile int16_t trim_ppb;
+
+static uint32_t synth_hz(uint32_t hz)
+{
+	return ref_trim_tune_hz(hz, trim_ppb);
+}
+
+#if CONFIG_REF_TRIM
+// Taken at the next tune, so the RF chips' bus stays the radio task's: true asks the core for one
+static bool ref_trim(int16_t ppb)
+{
+	trim_ppb = ppb;
+	return true;
+}
+#endif
+
 // RF TX interrupt (tx): LNA off, FD6818 idle then TX for our burst. After the burst: PA off, FD6818 and the LNA back
 // to RX, so the radio hears the other slot (the hotspot listens while keyed)
 static void dmr_rf_switch(bool tx)
@@ -147,7 +166,7 @@ static void dmr_rf_switch(bool tx)
 		lna(tx_hz, false);
 	}
 	// A split channel (repeater, duplex hotspot): the one synthesizer moves to the TX frequency for the burst and back
-	fd6818_dmr_burst_at(&fd, tx, FD6818_BW_DMR, tx ? tx_hz : rx_hz);
+	fd6818_dmr_burst_at(&fd, tx, FD6818_BW_DMR, synth_hz(tx ? tx_hz : rx_hz));
 	if (!tx) {
 		lna(rx_hz, true);
 	}
@@ -247,7 +266,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 	wake();
 	pa_off();
 	lna(hz, true);
-	fd6818_set_freq(&fd, hz);
+	fd6818_set_freq(&fd, synth_hz(hz));
 	if (mode == RADIO_MODE_DMR) {
 		fd6818_set_bandwidth(&fd, FD6818_BW_DMR);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
@@ -308,7 +327,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	write_mod_bias(hz);
 	// DMR keeps listening on the RX frequency until a burst (dmr_rf_switch retunes per burst); on a split channel the
 	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
-	fd6818_set_freq(&fd, mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz);
+	fd6818_set_freq(&fd, synth_hz(mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz));
 	hrc_dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
 		// 8.5 "Enter DMR TX": the PA select and drive wait for the PA one-shot of each burst. Between bursts the radio
@@ -572,4 +591,7 @@ const hal_radio_t dm32_radio = {
 	.status = status,
 	.audio = audio,
 	.volume = NULL,
+#if CONFIG_REF_TRIM
+	.ref_trim = ref_trim,
+#endif
 };

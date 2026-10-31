@@ -237,23 +237,26 @@ test("every HR_C7000 radio has a factory update mode with steps into it, offered
 	for (const k of ["file", "backup"]) assert.ok(text[`flash.help.fix.factory_text_${k}`], k);
 });
 
-// The cable page's connect step is one panel for every task. A ROM load that fails offers the slow cable mode, and once
-// that failed too the factory update mode (c7000ui.js romFailed). The tasks that write take the factory mode's way in;
-// the backup can't (nothing can be read through update mode). A task that stopped passing it would leave a radio with a
-// slow cable and a damaged application without the way that works
-test("the connect step offers the slow cable mode and the factory update mode to the install and the restore", () => {
+// The cable page's connect step is one panel for every task. Every power cycle sends the answer to the boot ROM's
+// greeting ahead (the slow cable mode, no longer a choice), and a ROM load that fails offers the factory update mode
+// (c7000ui.js romFailed). The tasks that write take the factory mode's way in; the backup can't (nothing can be read
+// through update mode). A task that stopped passing it would leave a radio with a damaged application without the way
+// that works
+test("the connect step always sends ahead and offers the factory update mode to the install and the restore", () => {
 	const src = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
 	const connects = [...src.matchAll(/(?<!function )connectPanel\(([^\n]*)\)/g)].map((m) => m[1]);
 	assert.equal(connects.filter((x) => /onUpdateMode/.test(x)).length, 2, "install and restore pass the factory way in");
 	assert.equal(connects.filter((x) => !/onUpdateMode/.test(x)).length, 1, "only the backup goes without: nothing can be read in update mode");
-	// the failure offers: first the slow mode, then (after the slow mode failed) the factory mode
+	// every wait for the boot ROM sends the answer ahead. Not the bridge's: a second SoC's first stage is RadioFoundry's,
+	// reached through the first SoC with no power cycle
+	const waits = [...src.matchAll(/waitForRom\(([^\n]*?)\);/g)].map((m) => m[1]).filter((w) => !/BRIDGE_ROM_WAIT/.test(w));
+	assert.ok(waits.length >= 2 && waits.every((w) => /repeat: ROM_REPEAT/.test(w)), waits.join(" | "));
 	const failed = src.slice(src.indexOf("const romFailed"), src.indexOf("const factoryWay"));
-	assert.match(failed, /slow \? factoryWay\(\) : slowWay\(\)/);
-	assert.match(failed, /slowButton\(\)/);
+	assert.match(failed, /factoryWay\(\)/);
 	assert.match(failed, /factoryButton\(/);
-	// and the restore's own text for it
+	assert.match(failed, /slowNote\(\)/, "users who knew the slow cable mode are told where it went");
 	const text = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url)));
-	assert.ok(text["flash.factory.offer_restore"] && text["flash.c7.slow.button"]);
+	assert.ok(text["flash.factory.offer_restore"] && text["flash.c7.connect.slow_title"]);
 });
 
 test("a program memory backup gives the codec where the radio has no stock file", async () => {

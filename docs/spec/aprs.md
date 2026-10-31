@@ -220,6 +220,22 @@ Triggers (`aprs_beacon.c`), all under the hard minimum:
 
 Without a known speed SmartBeaconing falls back to the interval. The defaults are an open decision (section 14).
 
+### 7.1 The board GPS's state and satellites
+
+`aprs_gps()` gives the UI the board GPS as it is now: false while Settings > Location > GPS is off or no valid sentence
+came for 60 s, else the last fix (60 s old at most), satellites used and HDOP (GGA), speed, course and time (RMC).
+
+With `CONFIG_GPS_SKY` (needs `GPS` and `APRS`) `nmea_sky.c` also reads the board GPS's satellite sentences:
+
+| Sentence | What it gives |
+|---|---|
+| GSV (talker GP, GL, GA, BD / GB, GQ, GN) | each satellite in view: number, elevation, azimuth, SNR. A round (messages 1 to N of one talker) replaces that system's satellites; one the round no longer lists is dropped. A receiver that sends a round per signal (the NMEA 4.1 signal ID, e.g. L1 and L5) has only the first signal heard kept per system. A GN talker places a satellite by its number (GLONASS 65-96, QZSS 193-200, BeiDou 201-263 and 401-463, Galileo 301-336); SBAS and unknown numbers are skipped |
+| GSA | the fix mode (1 none, 2 2D, 3 3D) and the satellites the fix uses. The GSAs in a row (one per system, or several GN) make one round; the first clears the used set. A GN GSA takes its system from the NMEA 4.1 system ID when present, else from the numbers |
+
+The table holds 28 satellites of 4 bytes each (number, elevation, system, SNR, azimuth / 2); the used sets are a 64-bit
+mask per system. In all 168 B, kept in the APRS state under its lock; `aprs_gps_sat(i)` copies one satellite out, so a
+reader needs no table of its own. Turning the GPS setting off empties it.
+
 ## 8. Positions over DMR
 
 Send via (AFSK / DMR / Both): DMR positions go out when the radio is on a DMR channel with the call stack running,

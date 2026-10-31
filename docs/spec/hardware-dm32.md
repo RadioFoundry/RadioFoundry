@@ -563,6 +563,17 @@ DMR voice transmission; no line errors (`ue 0`) and no overruns.
 A = GPIO 0x27, B = 0x26, inputs with GPIO B interrupts (vector 46). On every change of B: direction = −1 if A == B
 else +1. One count per B edge.
 
+**Lost interrupt (2026-10-30).** After a while on one radio the encoder stopped and every key still worked. GPIO B
+showed both encoder bits pending in INTSTATUS, enabled and unmasked, with PIC_MODE level: the bank asked for the
+interrupt and the handler never ran, so PIC source 14 had most likely been masked (cause not found). RadioFoundry
+watches for it (`platform/hrc7000/gpio_watch.c`): the 10 ms key scan counts the handler's entries, and the encoder bits
+pending on two scans running with no entry between them is a stall. The first stall's PIC masks and request record,
+GPIO B's INTSTATUS, INTEN and INTMASK, and whether the vector still pointed at the handler are kept; then, with
+interrupts off, the scan serves the bank as the handler would (sample, ack) and unmasks source 14. Steps turned in the
+10-20 ms before the scan saw the stall may be lost: the scan samples once. The debug link shows
+the count and that state (`input.enc_stalls`, `input.enc_stall_*`), and `irq.unhandled` counts sources the fallback
+handler masked ([debuglink.md](debuglink.md) 3.7). READ_MEM reads GPIO B and the PIC live (debuglink.md 3.10).
+
 ### 6.4 LEDs and backlights
 
 Two LEDs, red and green, active high on GPIO 0x20/0x21 (which is which: see the pin map conflict). LCD backlight GPIO
@@ -714,6 +725,10 @@ Band select by frequency (f in 10 Hz units; first matching row wins):
 | 1 599 999 (16 MHz) | DF21 | 345C |
 
 Below 16 MHz nothing is written.
+
+Reference trim ([radio-features.md](radio-features.md) 6.1): the modem's DC bias stays the factory's tune. RadioFoundry
+programs the FD6818 at f x (1 + trim), in receive, FM transmit and every DMR burst; the next tune applies a new trim.
+Checked on the radio by hand (2026-10-30): 10 ppm moved the carrier 4400 Hz, as expected at 440 MHz.
 
 ### 8.4 RSSI, noise, sub-audio
 
@@ -1124,7 +1139,7 @@ Timing, measured 2026-10-26 on a DM-32UV through an FTDI FT232R cable at 115200 
 
 The window is tight for a cable that holds received bytes before passing them on (an FTDI chip's latency timer is
 16 ms by default on Windows), behind a USB hub, or in a busy browser. The slow cable mode (`stub.js` `waitForRom`
-`repeat`, `stubtool.py --slow-cable`) sends the answer every 30 ms from before power-on until 150 ms after the
+`repeat`, always used by the web flasher; `stubtool.py --slow-cable`) sends the answer every 30 ms from before power-on until 150 ms after the
 greeting, so one leaves within 30 ms of it, and drains the NAKs of the rest before block 0. It worked on the same radio
 with the host answering 100 ms late (2026-10-26). RadioFoundry ignored 30 s of these answers while running (881 frames,
 no reply, still answering afterwards).

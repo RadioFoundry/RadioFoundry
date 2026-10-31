@@ -48,7 +48,14 @@ static bool chip(hal_chip_t *c)
 }
 
 // One window: 0x1000-0x10FF reads as the low byte of its address
-static bool readable(uint32_t addr, uint32_t n) { return addr >= 0x1000u && addr + n <= 0x1100u; }
+static bool mem_window(unsigned i, hal_mem_window_t *w)
+{
+	if (i != 0) {
+		return false;
+	}
+	*w = (hal_mem_window_t){ 0x1000u, 0x10FFu, false };
+	return true;
+}
 static void readmem(uint32_t addr, void *dst, size_t n)
 {
 	for (size_t i = 0; i < n; i++) {
@@ -57,7 +64,7 @@ static void readmem(uint32_t addr, void *dst, size_t n)
 }
 static bool reboot(uint8_t mode) { (void)mode; reboots++; return true; }
 
-static hal_system_t sys = { .chip = chip, .read = readmem, .readable = readable, .reboot = reboot };
+static hal_system_t sys = { .chip = chip, .read = readmem, .mem_window = mem_window, .reboot = reboot };
 
 static bool diag_line(uint8_t i, char *buf, uint8_t len)
 {
@@ -97,7 +104,7 @@ static void setup(void)
 	board.name = "testb";
 	board.system = &sys;
 	board.diag_line = diag_line;
-	sys.readable = readable;
+	sys.mem_window = mem_window;
 	have_chip = true;
 	reboots = 0;
 	link.frames = 12;
@@ -158,7 +165,7 @@ static void test_read_mem(void)
 	r[4] = (uint8_t)(DL_MEM_READ_MAX + 1u); r[5] = (uint8_t)((DL_MEM_READ_MAX + 1u) >> 8);
 	CHECK(cmd(DL_CMD_READ_MEM, r, 6) == 1 && out[0] == DL_ST_BAD_ARG);
 	CHECK(cmd(DL_CMD_READ_MEM, r, 5) == 1 && out[0] == DL_ST_BAD_ARG);
-	sys.readable = NULL;				// no windows: never read
+	sys.mem_window = NULL;				// no windows: never read
 	r[0] = 0x10; r[4] = 4; r[5] = 0;
 	CHECK(cmd(DL_CMD_READ_MEM, r, 6) == 1 && out[0] == DL_ST_UNAVAILABLE);
 }

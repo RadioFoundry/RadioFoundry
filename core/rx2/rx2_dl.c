@@ -197,10 +197,10 @@ static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	if (n == 0 || n > DL_MEM_READ_MAX || 5u + n > cap) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
-	if (board.system == NULL || board.system->read == NULL || board.system->readable == NULL) {
+	if (board.system == NULL || board.system->read == NULL || board.system->mem_window == NULL) {
 		return status_only(out, DL_ST_UNAVAILABLE);
 	}
-	if (!board.system->readable(addr, n)) {
+	if (!dl_mem_allowed(addr, n, board.system->mem_window)) {
 		return status_only(out, DL_ST_REFUSED);
 	}
 	out[0] = DL_ST_OK;

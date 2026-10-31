@@ -8,7 +8,7 @@ CONFIG_FM ?= y
 CONFIG_SUBTONE ?= y
 CONFIG_DMR ?= y
 CONFIG_WATCHDOG ?= y
-# Peek and poke through A (debuglink.md 3.23), with B's debug link server (board.mk, GD88B_DEBUG)
+# Peek and poke through A (debuglink.md 3.24), with B's debug link server (board.mk, GD88B_DEBUG)
 CONFIG_DEBUG_MEM ?= $(if $(filter 0,$(GD88B_DEBUG)),n,y)
 BOARD_UNSUPPORTED += DMR_PRIVACY	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
 BOARD_UNSUPPORTED += DMR_TALKER_ALIAS	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
@@ -75,6 +75,7 @@ BOARD_UNSUPPORTED += BCAST_FM	# the air band, broadcast tuner and APRS are SoC A
 BOARD_UNSUPPORTED += APRS	# the air band, broadcast tuner and APRS are SoC A's
 BOARD_UNSUPPORTED += APRS_RX	# the air band, broadcast tuner and APRS are SoC A's
 BOARD_UNSUPPORTED += APRS_IGATE	# the air band, broadcast tuner and APRS are SoC A's
+BOARD_UNSUPPORTED += GPS_SKY	# the GPS receiver and APRS are SoC A's
 # Every unsupported switch defaults off, read before the platform's defaults (CONFIG_HOSTLINK among them)
 $(foreach f,$(BOARD_UNSUPPORTED),$(eval CONFIG_$(f) ?= n))
 # The receiver is the board: FM always (a configuration without DMR is still a receiver)

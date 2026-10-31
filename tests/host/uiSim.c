@@ -64,11 +64,21 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "quick_cc_editor", "quick 3 7" },
 	{ "quick_vfo_fm", "ok 4 up ok quick" },
 	{ "home_copy_to_vfo", "down quick 4" },
+	{ "quick_vfo_split", "ok 4 up ok quick 5 1 4 6 1" },
+	{ "home_vfo_split_dmr", "ok 4 up ok quick 4 6 up ok back wait:5000" },	// the TX frequency in the top row
+	{ "home_vfo_tx", "ok 4 up ok quick 5 up ok back pttdown" },	// FM: the TX frequency large, in red
+	{ "home_vfo_dmr_tx", "ok 4 up ok quick 4 6 up ok back pttdown" },	// the call screen's TX line
 	{ "quick_vfo_dmr", "ok 4 up ok quick 4" },
 	{ "quick_vfo_cc_editor", "ok 4 up ok quick 4 3 7" },
 	{ "find_name", "5 6 3" },
 	{ "find_number", "3 1 0 0" },
 	{ "find_channel", "1 2" },
+	{ "find_frequency", "4 6 1 4 6 2" },	// Tune VFO to 461.462
+	{ "find_new_contact", "3 1 0 9 8 7 6 down down" },	// Create contact 3109876
+#if CONFIG_CONTACT_EDIT
+	{ "contact_edit", "3 1 0 9 8 7 6 down down ok" },
+	{ "contact_edit_save", "call:3101999,91,g wait:11000 ctx 7" },	// Save as contact from a caller's actions
+#endif
 	{ "caller_actions", "call:3101234,91,g wait:11000 ctx" },
 	{ "compose", "call:3101234,91,g wait:11000 ctx 3" },
 	{ "hub", "ok" },
@@ -88,12 +98,17 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "channel_contact", "ok 5 ok down down down down down down down down down ok" },
 	{ "channel_discard", "ok 5 ok down down down down down ok enc+ ok back" },
 	{ "channel_new", "ok 5 up up up ok" },
+	{ "channel_tone_entry", "ok 5 up up ok down down down down down down down down ok 8 8 5" },
+	{ "channel_zones", "ok 5 ok up up up up ok" },
+	{ "zones_new", "ok 4 down down down" },
 #if CONFIG_ZONE_SHARE
 	{ "channel_share", "ok 5 ok up up" },	// the channel editor's Share channel to...
 #endif
 	{ "zone_channels", "ok 4 ctx" },
 #if CONFIG_ZONE_EDIT
 	{ "zone_share_to", "ok 4 ctx down down ctx 5" },	// Channel actions' Share channel to...
+	{ "zone_share_to_id", "ok 4 ctx down down ctx 5 3 1 0 9 8 7 6" },	// a typed ID that isn't a contact
+	{ "zone_share_sending", "ok 4 ctx down down ctx 5 2 ok" },	// "Sending to ... via ..."
 #else
 	{ "zone_share", "ok 4 ctx down down ctx" },
 	{ "zone_share_to", "ok 4 ctx down down ctx 1" },
@@ -102,7 +117,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "zone_offer", "zoneoffer:3101234 ctx" },
 	{ "zone_offer_preview", "zoneoffer:3101234 ctx 2" },
 	{ "zone_offer_ch", "zoneoffer:3101234,c ctx" },
-	{ "tools_zone_offer", "zoneoffer:3101234 wait:9000 ok 6 down down down down down down down down down" },	// Tools > Zones/Chs Received
+	{ "tools_zone_offer", "zoneoffer:3101234 back ok 6 down down down down down down down down down" },	// Tools > Zones/Chs Received
 	{ "zone_offer_channel", "zoneoffer:3101234,c ctx 1" },
 	{ "zone_imported", "zoneoffer:3101234 ctx 1 wait:300" },
 #if CONFIG_ZONE_EDIT
@@ -118,12 +133,18 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 	{ "tools", "ok 6" },
 	{ "position", "ok 6 2" },
+	{ "gps_sky", "ok 6 2 2" },
+	{ "gps_signal", "ok 6 2 3" },
+	{ "gps_grid", "ok 6 2 4" },
 	{ "hotspot_info", "ok 6 3" },
 	{ "diagnostics", "ok 6 7" },
 	{ "roaming", "ok 6 6 1 wait:4000" },
 	{ "settings", "ok 7" },
 	{ "settings_display", "ok 7 2" },
 	{ "settings_editor", "ok 7 2 ok up" },
+	{ "settings_freq_trim", "trim ok 7 0 up" },	// on a radio with a reference trim (radio-features.md 6.1)
+	{ "freq_trim", "trim ok 7 0 up ok ctx 4 5 ok" },
+	{ "freq_trim_typing", "trim ok 7 0 up ok 1 2" },
 	{ "settings_advanced", "ok 7 0" },
 	{ "factory_reset", "ok 7 0 down down down ok" },
 	{ "about", "ok 7 0 ok" },
@@ -258,6 +279,7 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_my_radio", "ok 7 9 ok" },
 	{ "w_codeplug", "ok 7 0 down ok" },
 	{ "w_settings_number", "ok 7 3 ok up" },
+	{ "w_freq_trim", "trim ok 7 0 up ok ctx 1 0 0 ok" },
 	{ "w_settings_privacy", "ok 7 4 ok ok down ok up" },
 	{ "w_settings_range", "ok 7 7 down down ok 9 9 ok" },
 	{ "w_hotspot", "hotspot:on" },

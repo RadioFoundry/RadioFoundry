@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Peek and poke (dl_mem.h, docs/spec/debuglink.md 3.23). A read can still have an effect (a status flag cleared, a FIFO
+// Peek and poke (dl_mem.h, docs/spec/debuglink.md 3.24). A read can still have an effect (a status flag cleared, a FIFO
 // popped): the person asking picks the address. Writes need the arming key first and stop DL_MEM_ARM_MS later.
 #include "debuglink/dl_mem.h"
 #include "debuglink/debuglink_proto.h"

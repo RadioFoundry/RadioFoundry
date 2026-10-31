@@ -70,6 +70,9 @@ def radio(pytestconfig):
     bringup_plugin.remember_firmware(pytestconfig, r)
     if r.auto_lock_off():
         print("rfoundry-hil: auto lock was on (a run cut short in test_auto_lock?): set back to Off")
+    lang = r.language_english()
+    if lang:
+        print(f"rfoundry-hil: the radio's language was {lang}: set back to English (the tests read English text)")
     yield r
     r.close()
 

@@ -8,6 +8,7 @@
 #include "platform.h"
 #include "board.h"
 #include "vocoder.h"
+#include "mem_window.h"
 #include "modem/hrc7000/hrc7000.h"
 #if CONFIG_DEBUG_MEM
 #include "debuglink/debuglink_proto.h"
@@ -49,29 +50,24 @@ static bool chip(hal_chip_t *c)
 	return true;
 }
 
+// Whole aligned words are read one 32-bit load at a time: that is what a register block needs (mem_window.h refuses
+// anything else there), and memcpy may use byte loads
 static void rd(uint32_t addr, void *dst, size_t n)
 {
-	memcpy(dst, (const void *)(uintptr_t)addr, n);
+	if (((addr | n) & 3u) != 0) {
+		memcpy(dst, (const void *)(uintptr_t)addr, n);
+		return;
+	}
+	uint8_t *d = dst;
+	for (size_t i = 0; i < n; i += 4u) {
+		uint32_t v = REG32(addr + i);
+		memcpy(d + i, &v, 4u);
+	}
 }
 
-// Memory read() may copy (hardware-dm32.md 2): main SRAM, the program flash through the XIP window (2 MB, the largest
-// part fitted), the SRAM shared with the modem (the crash record's). Not the boot ROM, the modem buffers or registers
-static bool readable(uint32_t addr, uint32_t n)
+static bool mem_window(unsigned i, hal_mem_window_t *w)
 {
-	static const uint32_t win[][2] = {
-		{ 0x00010000u, 0x00057FFFu },
-		{ 0x03000000u, 0x031FFFFFu },
-		{ 0x18000000u, 0x18007FFFu },
-	};
-	if (n == 0) {
-		return false;
-	}
-	for (unsigned i = 0; i < sizeof(win) / sizeof(win[0]); i++) {
-		if (addr >= win[i][0] && addr <= win[i][1] && n - 1u <= win[i][1] - addr) {
-			return true;
-		}
-	}
-	return false;
+	return hrc_mem_window_for(i, w, HRC_XIP_FLASH_SIZE);
 }
 
 #define TXRX_NONE		0x00u	// LAYER2_TXRX_CTRL: neither slot direction (modem-hrc7000.md; hrc7000_dmr.c)
@@ -196,7 +192,7 @@ static bool pin(uint8_t p, uint8_t action, uint8_t *state)
 const hal_system_t hrc_system = {
 	.chip = chip,
 	.read = rd,
-	.readable = readable,
+	.mem_window = mem_window,
 	.reboot = reboot,
 #if CONFIG_DEBUG_MEM
 	.pin = pin,
@@ -205,4 +201,5 @@ const hal_system_t hrc_system = {
 	.stub_region = stub_region,
 	.enter_stub = enter_stub,
 #endif
+	.irq_unhandled = hrc_irq_unhandled,
 };

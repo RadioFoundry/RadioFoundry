@@ -18,7 +18,7 @@ image never has to be the job's own container (it has no Node.js for the JavaScr
 Things to know:
 
 - The root disk is small and holds Docker's storage (the job containers, workspaces and the runner's cache). The trimmed
-  toolchain and `RFOUNDRY_CI_PRUNE` in the matrix keep the jobs small; check `df -h /` before adding jobs. `/scratch` is
+  toolchain and the pruning of build trees (the default in `tools/ci.sh`) keep the jobs small; check `df -h /` before adding jobs. `/scratch` is
   where `build.sh` builds the toolchain.
 - The VM's virtual CPU lacks x86-64-v2, which current NumPy wheels from PyPI require (they stop with "NumPy was built
   with baseline optimizations (X86_V2)"). The workflows install NumPy from Ubuntu's packages instead, which works;

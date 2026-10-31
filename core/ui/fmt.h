@@ -15,6 +15,9 @@ typedef struct {
 } sbuf_t;
 
 void sb_init(sbuf_t *b, char *buf, size_t len);
+// Copies src into a buffer of cap bytes, truncated and always terminated: for text that may be a translation
+// (i18n.h), whose length isn't known when the code is written
+void str_copy(char *dst, size_t cap, const char *src);
 void sb_str(sbuf_t *b, const char *s);
 void sb_chr(sbuf_t *b, char c);
 // Unsigned decimal with at least min_digits digits (zero padded)
@@ -24,6 +27,8 @@ void sb_i32(sbuf_t *b, int32_t v);
 void sb_freq(sbuf_t *b, uint32_t hz);
 // CTCSS 100.0, DCS D023N / D023I, empty for none
 void sb_tone(sbuf_t *b, const subtone_t *t);
+// TX against RX: "Off" when they are the same, else the signed offset, "+600k", "-5M", "+7.6M"
+void sb_split(sbuf_t *b, uint32_t rx_hz, uint32_t tx_hz);
 // m:ss
 void sb_mmss(sbuf_t *b, uint32_t seconds);
 // Elapsed time as a short age: 45s, 14m, 3h, 2d
@@ -31,6 +36,10 @@ void sb_age(sbuf_t *b, uint32_t ms);		// text alternates, longest first (font.h)
 void sb_age_long(sbuf_t *b, uint32_t ms);	// "14m ago", no alternates (for wrapped text)
 // Degrees from 1e-7 degree units with 4 decimals: -84.3880
 void sb_degrees(sbuf_t *b, int32_t e7);
+// A latitude or longitude with 6 decimals (0.1 m) and its hemisphere: "33.990512 N"
+void sb_coord(sbuf_t *b, int32_t e7, char pos, char neg);
+// The nearest of the 8 compass points to a bearing in degrees: "NE"
+void sb_compass(sbuf_t *b, uint16_t bearing);
 // A distance and a compass point: "850 m NE", "12.3 km S", "240 km W"
 void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing);
 

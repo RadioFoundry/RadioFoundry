@@ -5,7 +5,7 @@
 Scan, the FM transmit extras, beeps and power management in the radio core. Code: `core/radio/scan.c` (the scan
 engine, pure), `core/radio/beep.c` (beep patterns and synthesis), `core/radio/vibe.c` (vibration patterns),
 `core/radio/battery.c` (battery levels, the backlight helper), all glued into `core/radio/radio_sm.c`; board hooks in
-`hal/hal_radio.h` (`tx_tone`, `tx_dtmf`, `rx_sleep`, `mic_gain`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
+`hal/hal_radio.h` (`tx_tone`, `tx_dtmf`, `rx_sleep`, `mic_gain`, `ref_trim`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
 and RADIO ops 20-24 (`docs/spec/debuglink.md` 3.7, 3.8). Host tests: `tests/host/radioFeaturesTest.c`; HIL tests:
 `tests/hil/test_radio_features.py`.
 
@@ -480,6 +480,41 @@ the network or the user sets it, the radio shows "no time", and records keep usi
 Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,
 and refuses a TX frequency outside the board's bands (`tx_deny=band`). Without a calibration the board either drives
 a low fixed value or refuses to transmit; the board's hardware page says which.
+
+### 6.1 Reference trim
+
+Settings > Advanced > Freq trim: a fraction of the reference, -10.0 to +10.0 ppm in 0.1 ppm steps, 0 by default
+(`core/radio/ref_trim.c`). It is for a radio whose reference oscillator is off even with its calibration: it moves
+receive and transmit together, FM and DMR. A fraction of the reference moves every carrier by the same fraction, so
+one value holds on every band; the Hz it comes to grows with the frequency.
+
+| Trim | At 440 MHz | At 144 MHz |
+|---|---|---|
+| 0.1 ppm (one step) | 44 Hz | 14.4 Hz |
+| 4.5 ppm | 1980 Hz | 648 Hz |
+| 10.0 ppm (the limit) | 4.4 kHz | 1.44 kHz |
+
+The value is held in parts per billion (ppb, 100 a step), an int16: `hal_radio_t.ref_trim`, `settings_t.ref_trim_ppb`,
+the debug link. The UI stores it and applies it at start-up and on each change with `radio_set_ref_trim()`, which
+clamps, rounds to the step and calls `hal_radio_t.ref_trim` when the value differs from the one the board has (the
+board starts at 0, so a start-up with no trim calls nothing). The debug link's SETTING op 35 sets it in RAM only.
+
+| Board | Trim |
+|---|---|
+| with a reference control (`hal_radio_t.ref_trim` sets it) | adds the trim to the control its calibration sets, at every tune; its hardware page gives the scale |
+| with synthesizers only (`hal_radio_t.ref_trim` keeps the value) | programs each RF chip at f x (1 + trim) instead of f, at every tune and burst (`ref_trim_tune_hz`). A superhet's LO takes f x (1 + trim) + IF and its IF stays as it is: both chips run from one reference, so the IF's share of the error cancels |
+| without the hook, or built with `CONFIG_REF_TRIM=n` | the row is hidden; nothing changes |
+
+The hook returns whether the board takes the trim at the next tune. A board that applies it at once returns false;
+one that applies it when it tunes returns true, and the caller (the UI, the debug link) then asks the radio task to
+tune again (`radio_req_retune`, the `RREQ_RETUNE` request). A tune ends a reception in progress, so the radio task tunes
+once the trim has held still `RADIO_RETUNE_SETTLE_MS` (400 ms), not at each step: when idle, after an APRS
+transmission, or at the end of a transmission or the hotspot. Until then the hotspot or a transmission in progress
+keeps the trim it started with on receive. The RF chips' bus stays the radio task's.
+
+The value is a correction to enter by hand: measure the carrier against a reference (a frequency counter, a service
+monitor, or a hotspot's MMDVMCal BER test) and enter the error with its sign reversed. A radio 2 kHz high at 448.7 MHz
+is 4.5 ppm high and takes -4.5 ppm. [feature-matrix.md](../feature-matrix.md) lists which radios have the hook.
 
 ## 7. Verification status
 

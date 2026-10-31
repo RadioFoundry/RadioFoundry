@@ -334,7 +334,8 @@ void radio_req_zone_pos(uint16_t pos);		// jump to a position in the zone
 void radio_req_zone(uint16_t index);
 void radio_req_vfo(bool on);
 void radio_req_vfo_step(int8_t dir);
-void radio_req_vfo_set(uint32_t hz);		// rx and tx frequency (simplex)
+void radio_req_vfo_set(uint32_t hz);		// RX frequency; TX keeps a split's offset where it can transmit, else = RX
+void radio_req_vfo_tx(uint32_t hz);		// the VFO's TX frequency (split), 0 = simplex; in the VFO only
 // Copy to VFO: what is in effect on the channel now (temporary changes too) becomes the VFO's own settings and the VFO
 // opens; the channel is unchanged (docs/spec/dmr-voice.md 2.2). Nothing changes when radio_vfo_copy_check refuses
 void radio_req_vfo_copy(void);
@@ -363,6 +364,7 @@ void radio_req_monitor_held_up(void);
 void radio_req_power(int8_t dir);		// temporary change of power level, wraps
 void radio_req_squelch(int8_t dir);
 void radio_req_clear_temporary(void);		// BACK on Home: revert temporary changes
+void radio_req_retune(void);			// tune again now, or after the transmission (the reference trim changed)
 void radio_req_reload(void);			// the settings' preferences changed (squelch, master power, DMR ID)
 // FM bandwidth and sub-audio. On a channel these are temporary changes (P7); in the VFO they change the VFO itself.
 // Refused on DMR channels, while transmitting, and for tones tones_valid() rejects

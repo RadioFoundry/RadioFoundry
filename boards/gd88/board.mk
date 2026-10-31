@@ -8,6 +8,8 @@ PLATFORM   := hrc7000
 # loader's clocks back before it hands over to the runtime stub or resets (platform/hrc7000/clock.c), as on the other
 # radios with a first stage (boot/README.md)
 MCU_DEFS   := -DHRC_HOST_UART=1 -DHRC_LOADER_CPU_HZ=72000000u
+# 2 MB program flash (hardware-gd88.md 8): the debug link's READ_MEM window over it (platform/hrc7000/mem_window.h)
+MCU_DEFS   += -DHRC_XIP_FLASH_SIZE=0x200000u
 BOARD_DIRS := boards/gd88 boards/gd88/common drivers/rf/rfbus drivers/rf/bk4819 drivers/rf/at1141 drivers/rf/subaudio drivers/display/ili9341 drivers/input/keymatrix \
 	drivers/input/quadrature drivers/input/sharedptt drivers/flash/spi_nand drivers/audio/afsk_tonegen drivers/modem/hrc7000 \
 	drivers/bcast/rda5807m drivers/bus/i2c_gpio

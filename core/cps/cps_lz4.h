@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// LZ4 blocks (the public LZ4 block format) for the fast codeplug protocol (docs/spec/cps-fast.md 5): a greedy encoder
-// with a 64-entry hash table on the stack, for blocks the radio sends, and a streaming decoder that takes the
-// compressed bytes in any pieces and writes straight into the output block, for blocks the host sends. Neither needs a
-// buffer of its own. No RTOS, no board: the host tests run both.
+// LZ4 blocks (the public LZ4 block format) for the fast codeplug protocol (docs/spec/cps-fast.md 5) and the debug
+// link's packed screenshots (docs/spec/debuglink.md 3.3): a greedy encoder with a 64-entry hash table on the stack,
+// for blocks the radio sends, and a streaming decoder that takes the compressed bytes in any pieces and writes straight
+// into the output block, for blocks the host sends. Neither needs a buffer of its own. No RTOS, no board: the host
+// tests run both.
 #ifndef RFOUNDRY_CPS_LZ4_H
 #define RFOUNDRY_CPS_LZ4_H
 

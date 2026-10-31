@@ -40,7 +40,7 @@ push runs only the manual workflow. A newer push cancels the run in progress (`c
 | Job | Command |
 |---|---|
 | `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), then the UI screen gallery (`uiSim --gallery`) |
-| `checks` | `tools/ci.sh --steps registry,python,licenses` (doc links among the Python checks) |
+| `checks` | `tools/ci.sh --steps registry,python,licenses` (doc links and the strict web site build among the Python checks; the job installs `site/requirements.txt` for the site) |
 | `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --toolchain arm`: every board built with the Arm toolchain, in one job |
 | `firmware (C-SKY)` | `tools/ci.sh --quick --steps firmware --toolchain csky`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) unless the runner has csky-elf GCC; skipped where the image isn't available |
 
@@ -157,7 +157,7 @@ support it, so check the first run on the Gitea runner before relying on the com
 
 | Job | Command |
 |---|---|
-| `matrix (Arm)` | `RFOUNDRY_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --toolchain arm`: for each board, each switch off alone, fm-minimal, maximal |
+| `matrix (Arm)` | `tools/ci.sh --matrix --steps firmware --toolchain arm`: for each board, each switch off alone, fm-minimal, maximal |
 | `matrix (C-SKY)` | the same for every board built with csky-elf GCC, in the csky-elf image unless the runner has csky-elf GCC |
 | `reuse` | `reuse lint`, a warning until it passes |
 
@@ -171,9 +171,9 @@ One job per toolchain runs its boards one after another (artifacts `matrix-arm`,
 repeats the checkout, the submodules and the toolchain set-up for every board, and a 4-core runner is kept busy by
 one board's builds anyway. Nobody waits on the nightly, so the fewer jobs win.
 
-`--matrix` leaves out the default builds the per-push run already made; `RFOUNDRY_CI_PRUNE=1` removes each build tree
-once its size is recorded (the logs and images stay), which keeps the runner's disk from filling with a lot of disk
-per configuration.
+`--matrix` leaves out the default builds the per-push run already made. Each build tree is removed once its size is
+recorded and it built clean (the logs and images stay; a configuration that failed keeps its tree), so a run holds one
+tree at a time, not about 65 MB per configuration. `RFOUNDRY_CI_PRUNE=0` keeps them all.
 
 **Only when something changed.** A successful run saves a cache entry named `nightly-ok-<commit>` that holds its
 commit. A scheduled run restores the newest such entry and diffs the default branch against that commit:
@@ -201,7 +201,7 @@ tools/ci.sh --quick --steps firmware --board <id>
 tools/ci.sh --quick --steps firmware --toolchain arm         # a firmware CI job: every board on the toolchain
 tools/ci.sh --quick --steps firmware --platform stm32f4      # every board on one platform
 make BOARD=<id> stack-check                  # the stack check alone, after a build (stack-check.md)
-RFOUNDRY_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --toolchain arm    # a nightly matrix job
+tools/ci.sh --matrix --steps firmware --toolchain arm    # a nightly matrix job
 tools/coverage.sh                             # build/coverage/index.html
 tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board <id>   # on a host with the image
 ```

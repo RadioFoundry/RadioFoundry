@@ -95,26 +95,31 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Find | `find` | a digit on Home |
 | Actions | `actions` | CONTEXT (`#`) on a person, a talkgroup, the last caller, a message |
 | Recent | `recent` | Hub 3 |
-| Zones | `zones` | Hub 4: the VFO, then every zone with its channel count. OK goes to the zone, CONTEXT opens its channels (`zone`; long OK on a radio without CONTEXT) |
+| Zones | `zones` | Hub 4: the VFO, then every zone with its channel count, then "Create New Zone" with `CONFIG_ZONE_EDIT` (2.2). OK goes to the zone, CONTEXT opens its channels (`zone`; long OK on a radio without CONTEXT) |
 | Zone | `zone` | CONTEXT in Zones: the zone's channels in order, OK goes to one. With `CONFIG_ZONE_EDIT` also the zone's editor (2.2): "Add channel" first, "Zone options" last, CONTEXT on a channel opens Channel actions |
 | Channel actions | `zchannel` | CONTEXT (long OK without CONTEXT) on a channel in a zone's list (2.2) |
 | Add Channel | `zpick` | "Add channel" in a zone's list: the stored channels the zone doesn't hold, T9 filtered (2.2) |
+| In Zones | `chzones` | the channel editor's Zones row (2.1, `CONFIG_ZONE_EDIT`): every zone, "In" where it holds the channel. OK puts the channel in (at the end) or takes it out, at once, as the zone editor's changes (2.2) |
 | Zone options | `zoneedit` | "Zone options" in a zone's list: Rename, Copy as new zone, Share zone to... (with `CONFIG_ZONE_SHARE`), Delete zone (2.2) |
 | Delete Zone | `zonedel` | Delete zone in Zone options: the confirmation, "No, keep it" first (P7) |
 | Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). The first row is "New from current", New channel from current settings (2.1). OK opens the channel (`channel`), CONTEXT goes to it |
 | Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), share it (with `CONFIG_ZONE_SHARE`), save, and save as a new channel |
 | Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
-| Unsaved Changes | `discard` | BACK in the channel editor with unsaved changes (2.1) |
+| Unsaved Changes | `discard` | BACK in the channel editor with unsaved changes (2.1), or in the contact editor (2.4) |
+| New Contact | `contactedit` | Find's "Create contact 3100", or Save as contact in a station's or talkgroup's actions (`CONFIG_CONTACT_EDIT`): the contact editor (2.4) |
 | List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered |
 | Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (a side key set to it), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
 | Share | `zone_share` | without `CONFIG_ZONE_EDIT`: CONTEXT in a zone's channels (`zone`): Share zone to..., Share channel to... ([zone-share.md](zone-share.md) 7). With the zone editor these are rows of Zone options and Channel actions (2.2) |
-| Share To | `zone_share_to` | a pick in Share, Channel actions, Zone options or the channel editor: the contacts, T9 filtered; OK sends and returns to the zone's list (to the channel editor from there) |
+| Share To | `zone_share_to` | a pick in Share, Channel actions, Zone options or the channel editor: the contacts, T9 filtered. Digits that make an ID add "Private ID 3101234" and "TG 3101234" after the contacts ("Not saved"), so a station that isn't a contact can be sent to. OK sends and returns to the zone's list (to the channel editor from there) |
 | Zone Share Received | `zone_offer` | CONTEXT on the offer's banner, or Tools > Zones/Chs Received while one waits; titled Channel Share Received (shorter where it doesn't fit) for one channel: the offer's text, then Import, Preview, Reject ([zone-share.md](zone-share.md) 5.2) |
 | Offer preview | `zone_offer_preview` | Preview in Zone Share Received: the offered channels, "Not in band" dimmed |
 | Add to zone | `zone_offer_zone` | Import of a one-channel offer: the zone it goes in |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
-| DMR ID | `dmr-id` | Settings > My radio > DMR ID and name (`CONFIG_DMR`; without it the row opens the read-only My Radio info page): one row, the radio's own DMR ID from the codeplug ("Not set" without one), and the radio model above it. Digits type an ID as the channel editor's Own ID (2.1): the first digit replaces the shown one, a digit that would take it past `CODEPLUG_DMR_ID_MAX` (16776415) is refused, BACK takes the last digit back and with none typed leaves the ID as it was, OK writes it into the codeplug (with nothing typed, leaves it; 0 is refused: "IDs start at 1") |
+| Freq Trim | `freq-trim` | Settings > Advanced > Freq trim (radio-features.md 6.1): the trim in ppm (-10.0..+10.0) in large type, a slider under it from -10 to +10 (filled from 0 to the value; the -10 / 0 / +10 scale where there's room), then what it moves a carrier by at 440 MHz and at 144 MHz, in Hz ("At 440 MHz" where it fits beside -4400 Hz, else "@ 440 MHz"), and "+ to increase frequency" ("+ to increase freq" where the full line doesn't fit) above the hint where there's room. Up / Right / Down / Left (or the knob, one step a detent) step 0.1 ppm, 0.5 ppm a repeat while held, and are saved at once. A board that applies the trim when it tunes retunes once the value has held still for 400 ms
+(radio-features.md 6.1), so a counter or a hotspot shows each step without a reception dropped at every press. # flips the sign; on 0 it starts a negative entry (a radio without CONTEXT gets a minus by stepping below 0, and typed digits keep it). Digits type the size in tenths as a calculator does (4 5 = 4.5 ppm), keeping the sign; a digit past 10.0 is refused ("Up to 10.0 ppm"); BACK takes the last digit back and with none left drops the entry; OK sets it. OK with nothing typed leaves the page |
+| My Radio | `dmr-id` | Settings > My radio > DMR ID and name: the radio model above the rows DMR ID (`CONFIG_DMR`), Radio name, Boot 1 and Boot 2, from the codeplug. On DMR ID, digits type an ID as the channel editor's Own ID (2.1): the first digit replaces the shown one, a digit that would take it past `CODEPLUG_DMR_ID_MAX` (16776415) is refused, BACK takes the last digit back and with none typed leaves the ID as it was, OK writes it into the codeplug (with nothing typed, leaves it; 0 is refused: "IDs start at 1"). OK on a name row opens Text entry (2.1, `CONFIG_CHANNEL_EDIT`; without it "Typing: not in this build"); OK there writes the radio name (`codeplug_set_radio_name`) or the boot line (`codeplug_set_boot_text`) as a storage job (`ui_svc_name_set`), "Saved" |
+| Language | `language` | Settings > Display > Language (the last row; its value is the language in use): every language the firmware has a catalog for, each in its own name ("English", "Español"), the one in use marked "In use". OK switches at once and goes back; a language this image was built without is dimmed and OK says "Not in this build" (2.5) |
 | About | `about` | Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
 
 The gallery (section 7) shows every screen at every display class.
@@ -129,12 +134,13 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 | Kind | OK does | Rows |
 |---|---|---|
 | Toggle | the other value, at once | Mode (FM / DMR, with `CONFIG_DMR`), RX only, Bandwidth (FM), Timeslot (DMR), VOX (FM), Direct mode (DMR), Talk permit beeps (DMR), Talker alias TS1 / TS2 (DMR), Scan, Battery saver |
-| Spin | opens the spinner: the knob or Up / Down step through the values, shown as they change; digits type where the value is a number; OK keeps, BACK cancels (the quick-tile and Settings-number editor) | Power (the board's levels, then "Radio's"), Color code (0-15), TX time-out (0 = "Radio's", 15-495 s in steps of 15), RX tone and TX tone (None, the CTCSS (PL) tones, the DCS codes normal then inverted; in a build without `CONFIG_SUBTONE`, such as a small-flash board's, the tone rows only show the stored tone and OK toasts "Tones: not in this build") |
+| Spin | opens the spinner: the knob or Up / Down step through the values, shown as they change; digits type where the value is a number; OK keeps, BACK cancels (the quick-tile and Settings-number editor) | Power (the board's levels, then "Radio's"), Color code (0-15), TX time-out (0 = "Radio's", 15-495 s in steps of 15), RX CTCSS/DCS and TX CTCSS/DCS (None, the CTCSS (PL) tones, the DCS codes normal then inverted. Digits type a tone: CTCSS in Hz with the last digit the tenths, "885" 88.5, and a value under 60 Hz read as whole Hz, "67" 67.0; a leading 0 types a DCS code, "023" D023N, digits 8 and 9 refused. OK refuses a CTCSS tone outside 60.0-260.0 Hz and a DCS code not on the standard list; a step of the knob goes on from the typed tone. In a build without `CONFIG_SUBTONE`, such as a small-flash board's, the tone rows only show the stored tone and OK toasts "Tones: not in this build") |
 | Direct entry | opens an editor that takes digits | RX and TX frequency (as VFO entry: MHz digits, then decimals, refused out of band as typed), Own ID (0 = "Radio's", up to 16776415, `CODEPLUG_DMR_ID_MAX`) |
 | Text | opens Text entry | Name |
 | Pick | opens the List picker | TX contact, RX group list |
-| Read only | nothing | Number, Zones |
-| Action | runs it | Go to it, Share channel to... (with `CONFIG_ZONE_SHARE`: Share To for the stored channel; with unsaved changes "Save first: hold OK"), Save, Save as new channel |
+| Read only | nothing | Number; Zones without `CONFIG_ZONE_EDIT` |
+| Zones | opens In Zones (`chzones`) with `CONFIG_ZONE_EDIT` | Zones (a stored channel only) |
+| Action | runs it | Tune to this ch, Share channel to... (with `CONFIG_ZONE_SHARE`: Share To for the stored channel; with unsaved changes "Save first: hold OK"), Save, Save as new channel |
 
 - A changed row shows the temporary mark (`UI_ITEM_TEMP`, the dot Home uses).
 - Long SELECT anywhere saves, as long SELECT makes a quick setting permanent. The Save row does the same.
@@ -147,7 +153,7 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   use when `codeplug_serial()` changes, so any save drops its temporary changes, whichever channel was written.
   Whether the written channel is the one in use is decided when the job is posted, on the UI task.
 - Save as new channel writes the copy to the lowest free number (`codeplug_free_channel`) and opens that channel.
-  "No free channel" when all 1024 are used. The new channel is in no zone until a zone's Add channel takes it (2.2);
+  "No free channel" when all 1024 are used. The new channel is in no zone until its Zones row or a zone's Add channel puts it in one (2.2);
   Copy here makes a copy that goes in a zone as it is saved.
 - New from current (the first row in Channels: New channel from current settings) fills a copy from what the radio uses now: the channel in use
   with its temporary changes, or the VFO. It opens as an unsaved channel at the lowest free number, named after the
@@ -188,6 +194,7 @@ they show the change within a fraction of a second.
 | | a channel, OK | goes to it (as before) |
 | | a channel, CONTEXT (long OK without CONTEXT) | opens Channel actions (`zchannel`) on it |
 | | "Zone options" (last row) | opens Zone options (`zoneedit`) |
+| Zones | "Create New Zone" (last row) | Text entry on the name; OK writes an empty zone with it (`ZONE_OP_NEW`, the lowest free slot, as Copy as new zone), "Added <name>", and Zones focuses it once written. An empty name makes none. Its list then starts with Add channel |
 | Channel actions | 1 Move up, 2 Move down | swaps it with its neighbor. The menu stays open, so the digit again moves it on; the toast gives the position ("Position 4 of 16"), and "Already first" / "Already last" at the ends |
 | | 3 Copy here | the channel editor (2.1) on an unsaved copy at the lowest free number, named with " 2" appended (a copy of the channel in use keeps its temporary changes). Save writes it and inserts it after its source in one job (`ZONE_OP_ADD_NEW`); BACK asks as for any unsaved channel. Refused first with "No free channel" or "Zone full" |
 | | 4 Edit channel | the channel editor on the channel |
@@ -232,6 +239,73 @@ they show the change within a fraction of a second.
   the zone in use keeps the radio on its channel at its new position.
 - The debug link's `zone.edits` counts the zone edits written since start-up and `zone.edit_last` is the last result
   (`zone_edit_result_t`, 0 = OK).
+
+### 2.3 GPS screen
+
+With `CONFIG_GPS_SKY`, Tools > Position (`gps`, `ui_gps.c`) has four pages, three on a panel at least `UI_TALL_PX` tall
+(Status takes in Grid there). Up and Down (the knob) turn them and wrap; the digits go to one. It opens on Status. Every draw reads `ui_svc_position` and the satellites one at a time
+(`ui_svc_gps_sat`), so the screen keeps one byte, its page.
+
+| Page | Shows |
+|---|---|
+| Status | the fix in large type (3D Fix, 2D Fix, or Fix when no GSA gave the mode, in the RX color; Searching, No signal in the warning color), then as many rows as fit: satellites used and seen, latitude and longitude (6 decimals, `sb_coord`), altitude, speed with a compass point, HDOP with good / fair / poor, UTC (with a fix only: it is the fix's time). On a tall panel, with a fix, also the locator right of the fix and each coordinate in degrees, minutes, seconds under it, dim |
+| Sky | a polar plot, north up: the horizon and 45 degree rings, each satellite with a known position as a dot, filled when the fix uses it, hollow when not, gray when it has no signal. Labeled (G12, C23) where the plot is 80 px or wider: right of the dot, else left, and left out where it would touch another dot or label. A legend names each system heard with used / seen: full names where they fit, else GPS, GLO, GAL, BDS, QZS. Beside the plot, or under it in two columns on a tall panel |
+| Signal | satellites in the fix of those seen, then one bar per satellite with a signal (SNR above 0), its height the SNR (50 dB-Hz full), filled when used. The satellite numbers under the bars: one row where two digits fit a bar, else two rows taking turns |
+| Grid | the Maidenhead locator (6 characters) large, then the position in degrees, minutes, seconds and in decimal degrees (6 decimals). "No fix yet" without a fix. Not on a tall panel |
+
+Colors name the system (GPS blue, GLONASS red, Galileo yellow, BeiDou green, QZSS purple; darker on the light theme),
+and the legend says them in words (P5). A monochrome panel draws everything in ink. Without a GPS, or with it off, the
+screen says so and points to Settings > Location. Without `CONFIG_GPS_SKY` the same Tools row opens a page of text
+(fix, satellites, position, altitude).
+
+### 2.4 Contact editor
+
+With `CONFIG_CONTACT_EDIT` (DMR and the channel editor), New Contact (`contactedit`) makes a contact on the radio. It
+opens from:
+
+- Find: "Create contact 3100", the last row for a typed number no contact has as its ID. Up to 6 digits start it as a
+  talkgroup, 7 and more (a DMR ID) as a person.
+- Actions: Save as contact (item 7 for a person, item 4 for a talkgroup), for a target that isn't a contact. Its ID,
+  type and name come with it.
+
+The name starts as the target's name, else "TG 3100" for a talkgroup or the ID for a person.
+
+| Row | OK does |
+|---|---|
+| Name | opens Text entry (2.1) |
+| ID | opens an editor that takes digits, as the channel editor's Own ID: the first digit starts a new ID, a digit past 16777214 is refused, BACK takes back a digit and with none typed closes it, OK keeps (nothing typed: unchanged) |
+| Type | Talkgroup / Private, flips |
+| Timeslot | Channel's / TS 1 / TS 2: the contact's timeslot override |
+| Save | saves |
+
+- Long SELECT anywhere saves. BACK opens Unsaved Changes ("Discard this new contact?"), "No, keep editing" first.
+- Save checks first and names the first problem in a toast: an empty name, a private ID past 16776415
+  (`CODEPLUG_DMR_ID_MAX`), a contact with the same ID and type ("Already a contact: K1ABC Joe"), no free contact
+  ("No room for more contacts", 1024).
+- Save writes the lowest free contact with `codeplug_set_contact` as a storage job (`ui_svc_write_contact`). A failed
+  write raises `UI_EV_SAVE_FAILED`. The radio core's name cache follows `codeplug_serial()`.
+- After a save the editor closes. From actions they show again, "In contacts" and under the new name; from Find the
+  radio goes Home, since Find's rows are the number's.
+- Editing or deleting a stored contact is not built yet (#74). A CPS write afterwards replaces contacts made on the
+  radio.
+
+### 2.5 Languages
+
+The UI's text is English in the source, marked for translation (`core/ui/i18n.h`): `TR("...")` returns the text in
+the language in use, `TRN("...")` marks a static table's entry that is translated where it is shown (screen
+titles, hints and empty texts are translated in `list_draw`). A lookup hashes the English (FNV-1a) and searches the
+language's sorted table; text without a translation, and anything that isn't marked (names, numbers, the standard
+abbreviations), is shown as it is. The tables are built by `tools/i18n.py` from `core/ui/lang/<code>.po`
+([translating.md](../dev/translating.md)).
+
+| Rule | |
+|---|---|
+| Which languages | Every catalog is listed in Settings > Display > Language. Each has a build switch, `CONFIG_LANG_<CODE>` (section 5); one built without is dimmed |
+| Switching | At once, no restart; nothing caches translated text. Stored in `settings_t.lang` ([settings-store.md](settings-store.md) 3); a stored language the image lacks reads as English |
+| Default | Until the user picks one (the setting empty, also after a factory reset), the build's default: the language whose `CONFIG_LANG_DEFAULT_<CODE>` is on, else English. Picking English stores `en`, so it stays English in any build. The web flasher sets the switch from its Radio language choice |
+| Characters | One byte a character: ASCII, the glyph bytes of `font.h`, and Latin-1 0xA0..0xFF. The fonts carry the Latin-1 glyphs only in a build with a language (`CONFIG_LANG_ANY`); the 5x8 font has none. Without them a Latin-1 byte is drawn as its letter without the accent ("Espanol"), so names stay readable |
+| Lengths | A translation may be longer than its English. Text goes into fixed buffers through `str_copy` or `sb_str`, which cut it; a row too long for the screen is shortened as any row is (`gfx_text_fit`, text alternates) |
+| Not translated | Search words of the settings (Find matches the English words and the shown name), debug link names and values, protocol text sent off the radio (APRS, the debug link). The canned text messages are the exception: sent in the language in use |
 
 ## 3. Key meanings
 
@@ -343,7 +417,7 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | Calls | Owner | State in this branch |
 |---|---|---|
 | `ui_svc_talk_to` temporary / default | dmr-voice (radio core) | `ui_svc_radio.c`: `radio_req_dmr_target`, `radio_req_dmr_target_clear` |
-| `ui_svc_talk_to` permanent (`ui_svc_save_talk_target`), `ui_svc_save_channel`, `ui_svc_setting_get/set`, `ui_svc_feat_storage` | storage-cps | `ui_svc_storage.c`: the channel is rewritten with `codeplug_set_channel` (power, bandwidth, tones; a temporary squelch goes to the default squelch preference); settings are read from where they are kept: the radio core's settings (`radio_get_settings`, saved by the radio core), `settings_t` (brightness, default squelch, hotspot allowed), the data service's answers (`dmr_data_get_settings`); the reply window, mic gain, mic AGC and mic noise reduction (`accent` bits 6-7), auto lock, long press and repeat times, the GPS options, theme, Up/Down on Home, low battery level, auto power off and the `ui_flags` bits (large text, hint row, message tone, talker alias, PTT when locked, hear all by default, vibrate as an off bit) have `settings_t` fields (appended, settings-store.md); the talk permit tone is the radio core's (`radio_settings_t.talk_permit`); the privacy key type and key (Settings > Privacy) are key slot 1 of the key store (`privacy_type[0]`, `privacy_key[0]`, `privacy_active`), and a change while privacy is on goes to the radio core at once (`radio_req_dmr_privacy`); only the ones without a field stay in RAM (voice prompts). Both saves run as a storage job on the housekeeping task (`storage_job_post`), not on the UI task: the change takes effect for now at once, the temporary mark goes when the write lands, and a failed write raises `UI_EV_SAVE_FAILED` ("Couldn't save: still for now only"). Save to channel also writes the temporary mode, color code and timeslot |
+| `ui_svc_talk_to` permanent (`ui_svc_save_talk_target`), `ui_svc_save_channel`, `ui_svc_setting_get/set`, `ui_svc_feat_storage` | storage-cps | `ui_svc_storage.c`: the channel is rewritten with `codeplug_set_channel` (power, bandwidth, tones; a temporary squelch goes to the default squelch preference); settings are read from where they are kept: the radio core's settings (`radio_get_settings`, saved by the radio core), `settings_t` (brightness, default squelch, hotspot allowed), the data service's answers (`dmr_data_get_settings`); the reply window, mic gain, the reference trim (`ref_trim_ppb`), mic AGC and mic noise reduction (`accent` bits 6-7), auto lock, long press and repeat times, the GPS options, theme, Up/Down on Home, low battery level, auto power off and the `ui_flags` bits (large text, hint row, message tone, talker alias, PTT when locked, hear all by default, vibrate as an off bit) have `settings_t` fields (appended, settings-store.md); the talk permit tone is the radio core's (`radio_settings_t.talk_permit`); the privacy key type and key (Settings > Privacy) are key slot 1 of the key store (`privacy_type[0]`, `privacy_key[0]`, `privacy_active`), and a change while privacy is on goes to the radio core at once (`radio_req_dmr_privacy`); only the ones without a field stay in RAM (voice prompts). Both saves run as a storage job on the housekeeping task (`storage_job_post`), not on the UI task: the change takes effect for now at once, the temporary mark goes when the write lands, and a failed write raises `UI_EV_SAVE_FAILED` ("Couldn't save: still for now only"). Save to channel also writes the temporary mode, color code and timeslot |
 | `ui_svc_factory_reset` | storage-cps | `ui_svc_storage.c`, as a storage job: `settings_t` back to its defaults and saved, then `storage_native_erase` (the native area, only when it carries the native magic or is already blank; never the open-firmware codeplug, calibration or a foreign region), then a restart (`board.system->reboot`), or a radio core reload where the board can't restart |
 | `ui_svc_focus_target` (one-shot PTT to the focused row), `ui_svc_dmr_timeslot`, `ui_svc_dmr_color_code`, `ui_svc_mode`, `ui_svc_hear_all` | dmr-voice / radio core | `ui_svc_radio.c` on the new requests `radio_req_dmr_focus`, `radio_req_dmr_timeslot`, `radio_req_dmr_color_code`, `radio_req_mode`, `radio_req_dmr_hear_all` (radio-features.md, dmr-voice.md). Timeslot, color code and mode are temporary changes (temp bits 0x20, 0x40, 0x80) that BACK on Home undoes and Save to channel keeps; the hear-all latch ends with the channel, a mode change or BACK on Home (not with the call) |
 | `ui_svc_privacy`, `ui_svc_monitor`, `ui_svc_vox` | radio core | `ui_svc_radio.c`: `radio_req_dmr_privacy` on the active privacy slot (else the first set one), `radio_req_monitor` as a latch, the `vox` setting (all / off) with `radio_view_t.vox_on` for the tile |
@@ -352,7 +426,7 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | `ui_svc_roam` (`UI_FEAT_ROAMING`); roaming state from `radio_view_t.roam` (the Home chip, `ROAM` in the strip, Tools > Roaming, the "Moved to" toast) | radio core (CONFIG_DMR_ROAMING) | `ui_svc_radio.c`: `radio_req_roam` |
 | `hostlink_network_mode`, `board.netif->up`: the strip's USB word (`ui_state_t.usb_net`, polled in `ui_app_tick` so a change without a key press redraws): `IP` while USB is a network adapter, and right after it an up and a down arrow standing close (as U+21C5, a phone's data link mark) once the computer has brought the adapter up (the debug link's `usb.net_up`, [usb-network.md](usb-network.md) 1); after SCAN / ROAM / MON, which win while they last; not on screens that merge their title into the strip | host link and the board's netif (CONFIG_USB_NETWORK, CONFIG_HOSTLINK) | direct calls; Tools > USB network uses the first too |
 | `ui_svc_beep` | radio-features | `ui_svc_radio.c`: `radio_req_beep(BEEP_KEY)` on every press and long press |
-| `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain, mic AGC, mic noise reduction) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; mic gain goes to `radio_set_mic_gain` (2 dB a step, 5 = the board's levels: the board's FM and DMR mic gain where it has `hal_radio_t.mic_gain`, else DMR scales the samples before the vocoder; radio-features.md 3.6); mic AGC and mic noise reduction to `ambeVoiceSetEncodeOptions` (tone frames always, plus each option that is on; `dmr-voice.md` 6), and with AGC on the mic gain is step 5 |
+| `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain, reference trim, mic AGC, mic noise reduction) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; the reference trim goes to `radio_set_ref_trim` (radio-features.md 6.1); mic gain goes to `radio_set_mic_gain` (2 dB a step, 5 = the board's levels: the board's FM and DMR mic gain where it has `hal_radio_t.mic_gain`, else DMR scales the samples before the vocoder; radio-features.md 3.6); mic AGC and mic noise reduction to `ambeVoiceSetEncodeOptions` (tone frames always, plus each option that is on; `dmr-voice.md` 6), and with AGC on the mic gain is step 5 |
 | `ui_svc_beep` kinds (key, error, message, battery low) | radio-features | `ui_svc_radio.c`: a table from `UI_BEEP_*` to `BEEP_*` (`BEEP_MESSAGE` is the new-message tone) |
 | `UI_FEAT_VOLUME`, `UI_SET_VOLUME` | radio-features | `ui_svc_radio.c`: the feature bit when `radio_volume_soft()` (no knob, a board volume hook); `ui_svc_storage.c`: the step in `settings_t.volume`, and `radio_req_volume` so it is in force at once. The UI side is the volume screen (`SCR_VOLUME`, opened by `ACT_VOLUME`) and Settings > Sound > Volume, both only with the feature (`radio-features.md` 4.2) |
 | `UI_SET_DMR_ID` | storage-cps | `ui_svc_storage.c`: the codeplug's own DMR ID (`codeplug_dmr_id`); a set (1..`CODEPLUG_DMR_ID_MAX`) posts a storage job that calls `codeplug_set_dmr_id`, and the radio core takes the new ID when `codeplug_serial()` changes. A CPS read shows it |
@@ -360,7 +434,7 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | `ui_svc_ptt_block`, `ui_svc_emergency_active` | input / dmr-ext | `ui_svc_radio.c`: `input_set_ptt_block`; `ui_svc_emergency.c`: `dmr_emergency_state` |
 | backlight dim / off | radio-features | `ui.c`: `radio_backlight_pct` (dims on a low battery too); full again on a key, a banner or the emergency screen (`ui_app_take_wake`) and while `radio_view_wakes` (radio-features.md 5.3) |
 | `ui_svc_msg_*`, `ui_svc_radio_check`, `ui_svc_call_alert`, `ui_svc_poll`, `ui_svc_feat_data` | dmr-data | `ui_svc_data.c` on `dmr_data_api.h`; `ui_svc_msg_delete` is `sms_inbox_delete` |
-| `ui_svc_position` | GPS (no owner yet) | stub: "No GPS on this radio"; the GPS settings are dimmed with the same reason on boards without `CAP_GPS` |
+| `ui_svc_position` | APRS (`ui_svc_aprs.c`, `aprs_gps`): the board GPS's last fix and satellite count, false while it is off or silent for a minute | stub (no `CONFIG_APRS`): "No GPS, or it is off"; the GPS settings are dimmed with "No GPS on this radio" on boards without `CAP_GPS` or whose module wasn't heard at start-up |
 | USB mode (Tools > USB network) | hostlink | `hostlink_network_mode`, `hostlink_request_usb_network` (with `CONFIG_USB_NETWORK` and `CONFIG_HOSTLINK`) |
 | talker alias, private call start | dmr-voice | read from `radio_view_t.dmr`; `UI_EV_PRIVATE_CALL` is not raised by anyone yet |
 
@@ -375,6 +449,8 @@ while the radio core's level is still OK) at Settings > Power > Low battery warn
 Inbound events go through `ui_notify()` (a ring of 4, safe from any task) or, for packages the UI polls, through
 `ui_svc_poll()` once per UI pass. They become banners for 8 s: message received, delivered / not delivered, call
 alert, alert answered, radio check answered (with the round trip) or not, private call, emergency, hotspot started.
+A zone share offer's banner has no timer (`ui_banner_t.hold`): it stays over every screen until CONTEXT opens it, BACK
+(on any screen, before anything else) hides it, the offer screen opens from Tools, or the offer ends ([zone-share.md](zone-share.md) 5.2).
 
 ## 5. Build switches
 
@@ -386,6 +462,9 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 | `CONFIG_FONT_AA` | n | the bitmap fonts (Spleen) on color panels; on, the sizes from 6x12 up are anti-aliased (JetBrains Mono Bold, coverage 0..3 a pixel, blended with what is under them; `gfx.c`). Mono radios leave it off. On a 4 bpp panel (every color board) the edge grays share the 16 palette entries with the screen's own colors; a screen that already uses many colors loses some of them, and some font sizes or colors can then be slightly harder to read |
 | `CONFIG_FONT_BIG` | n | on (needs `FONT_AA`), the 240 px class draws lists, labels, the status strip and hints in a 9x18 font instead of 8x16, and its small print in 8x16 instead of 6x12 |
 | `CONFIG_ZONE_EDIT` | = `CHANNEL_EDIT` | a zone's list only goes to its channels: no Add channel, Channel actions or Zone options (2.2). Needs `CONFIG_CHANNEL_EDIT` |
+| `CONFIG_CONTACT_EDIT` | = `CHANNEL_EDIT` and `DMR` | no contact editor (2.4): Find has no Create contact row and Save as contact stays dimmed. Needs `CONFIG_CHANNEL_EDIT` and `CONFIG_DMR` |
+| `CONFIG_GPS_SKY` | = GPS and APRS | Tools > Position is a page of text instead of the GPS screen (2.3) and the satellite sentences aren't read (about 5.2 KB, 176 B of RAM) |
+| `CONFIG_LANG_ES` | y | Spanish is listed dimmed in Settings > Display > Language (2.5); without any language the lookup and the fonts' Latin-1 glyphs are left out |
 | `CONFIG_UI_COLOR` | y (n on a board with a monochrome panel) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_VFO_DMR`, `CONFIG_SCAN`, data features) are
@@ -495,6 +574,8 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
 - Mic gain acts on FM and DMR where the board sets it in its audio path (`hal_radio_t.mic_gain`), else on DMR only,
   in software before the vocoder (radio-features.md 3.6). The
   GPS options are stored but act on nothing (no GPS owner); they are dimmed on boards without `CAP_GPS`.
+- Freq trim (Advanced, the last row: Up from the top) is shown only on a radio whose board has `hal_radio_t.ref_trim`
+  (`UI_FEAT_REF_TRIM`). The row shows the trim in ppm and opens the Freq Trim page (`freq-trim`, section 2).
 - Voice prompts are dimmed ("Voice prompts aren't built yet: no recorded speech").
 - Theme switches the color palette (dark, light, high contrast). Highlight color (Default, Red, Orange, Yellow, Teal,
   Light blue, Purple, Pink) and Filled status bar (Settings > Display, `settings_t.accent`) are for color displays
@@ -517,7 +598,7 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   between steps is refused with the range. Only key slot 1 is reachable from the menu.
 - Switching USB to network has no confirmation (P7: reversible); the info page says what stops and how to get back.
 - A failed message isn't kept for a retry: the banner says "Not delivered: send it again".
-- Compose offers canned texts only ("OK", "On my way", "Call me", "Can't talk now"); free text is dimmed.
+- Compose offers canned texts only ("OK", "On my way", "Call me", "Can't talk now"), sent in the language in use (2.5); free text is dimmed.
 - Deleting a message has no undo (`sms_inbox_delete` removes it from the RAM inbox).
 - Save to channel and the permanent talk target write the codeplug as a storage job on the housekeeping task, so the
   UI no longer stalls for the flash write. A permanent target must be a stored contact: a typed ID is set for now at

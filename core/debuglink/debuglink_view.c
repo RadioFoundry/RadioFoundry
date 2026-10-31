@@ -10,9 +10,11 @@
 #include "hostlink/hostlink.h"
 #include "input/input.h"
 #include "ui/ui.h"
+#include "ui/i18n.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/zone_edit.h"
 #include "settings/settings.h"
+#include "radio/ref_trim.h"
 #include "storage/storage.h"
 #if CONFIG_APRS
 #include "aprs/aprs.h"
@@ -346,17 +348,42 @@ static void link_section(dl_text_t *t)
 	dl_text(t, "input.encoder_total=%d\n", (int)input_encoder_total());
 	hal_encoder_stats_t es;
 	uint32_t deferred;
-	if (input_encoder_stats(&es, &deferred)) {
+	bool stats = input_encoder_stats(&es, &deferred);
+	if (stats) {
 		// The decoder's view, before the UI: transitions / detents should be enc_steps; illegal stays near 0
 		dl_text(t, "input.enc_detents=%d\ninput.enc_transitions=%u\ninput.enc_illegal=%u\n", (int)es.detents,
 			(unsigned)es.transitions, (unsigned)es.illegal);
 		dl_text(t, "input.enc_reversals=%u\ninput.enc_steps=%u\n", (unsigned)es.reversals,
 			(unsigned)es.steps_per_detent);
+		if (es.irq_watch) {
+			// Lost encoder interrupts the scan found and served; the state is the first stall's (0 until one)
+			dl_text(t, "input.enc_irqs=%u\ninput.enc_stalls=%u\n", (unsigned)es.irqs, (unsigned)es.stalls);
+		}
 	}
 	dl_text(t, "input.enc_deferred=%u\n", (unsigned)deferred);
 	dl_text(t, "input.long_ms=%u\ninput.ptt_downs=%u\n", (unsigned)input_long_ms(), (unsigned)input_ptt_downs());
+	if (board.system != NULL && board.system->irq_unhandled != NULL) {
+		// Interrupts with no handler, each masked for good by the platform's fallback: any count here is a bug
+		uint32_t n, src;
+		board.system->irq_unhandled(&n, &src);
+		dl_text(t, "irq.unhandled=%u\n", (unsigned)n);
+		if (n != 0) {
+			dl_text(t, "irq.unhandled_src=%u\n", (unsigned)src);
+		}
+	}
 	dl_text(t, "dl.frames=%u\ndl.bad_crc=%u\ndl.too_long=%u\ndl.timeouts=%u\n", (unsigned)c[0], (unsigned)c[1],
 		(unsigned)c[2], (unsigned)c[3]);
+	if (stats && es.stalls != 0) {
+		// Last, as the section is near the reply size: a full reply drops this detail, never the counters above.
+		// Three words each, hex: the interrupt controller's two mask words and request record, the GPIO bank's
+		// pending, enabled and masked bits
+		dl_text(t, "input.enc_stall_ms=%u\ninput.enc_stall_handler=%u\n", (unsigned)es.stall_ms,
+			(unsigned)es.stall_handler_ok);
+		dl_text(t, "input.enc_stall_pic=%08x,%08x,%08x\n", (unsigned)es.stall_irq_mask[0],
+			(unsigned)es.stall_irq_mask[1], (unsigned)es.stall_irq_pending);
+		dl_text(t, "input.enc_stall_gpio=%08x,%08x,%08x\n", (unsigned)es.stall_gpio_pending,
+			(unsigned)es.stall_gpio_enabled, (unsigned)es.stall_gpio_masked);
+	}
 }
 
 static void storage_section(dl_text_t *t)
@@ -380,10 +407,13 @@ static void storage_section(dl_text_t *t)
 	const settings_t *sv = settings_begin();
 	unsigned auto_lock_s = sv->auto_lock_s, long_press_ms = sv->long_press_ms, repeat_ms = sv->repeat_ms;
 	unsigned mic_gain = sv->mic_gain, theme = settings_theme(sv), ui_flags = sv->ui_flags;
+	int ref_trim = sv->ref_trim_ppb;
 	unsigned updown_home = settings_updown_home(sv), low_batt_pct = sv->low_batt_pct, auto_off_min = sv->auto_off_min;
 	unsigned privacy_type = sv->privacy_type[0], privacy_active = sv->privacy_active;
 	// bit 0 noise reduction off, bit 1 AGC on (settings_t.accent bits 6-7)
 	unsigned audio_flags = (unsigned)((sv->accent & SETTINGS_AUDIO_MASK) >> SETTINGS_AUDIO_SHIFT);
+	// The UI's language: its two code letters, "en" when none is stored (HIL tests read English text)
+	char lang[3] = { sv->lang[0], sv->lang[1], 0 };
 
 	settings_end(hal_millis());	// nothing changed: nothing to save
 	dl_text(t, "settings.auto_lock_s=%u\nsettings.long_press_ms=%u\nsettings.repeat_ms=%u\nsettings.mic_gain=%u\n",
@@ -392,7 +422,16 @@ static void storage_section(dl_text_t *t)
 		theme, ui_flags, updown_home, low_batt_pct);
 	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", auto_off_min,
 		privacy_type, privacy_active);
-	dl_text(t, "settings.audio_flags=%u\n", audio_flags);
+	// the stored language, or for an empty one (never picked) the build's default
+	dl_text(t, "settings.audio_flags=%u\nsettings.lang=%s\n", audio_flags,
+		lang[0] ? lang : lang_code(lang_find(0)));
+	// The reference trim: stored, and in effect (the SETTING op's, or - on a radio without one)
+	dl_text(t, "settings.ref_trim=%d\n", ref_trim);
+	if (ref_trim_available()) {
+		dl_text(t, "ref_trim=%d\n", (int)radio_ref_trim());
+	} else {
+		dl_text(t, "ref_trim=-\n");
+	}
 	dl_text(t, "storage.job_busy=%u\n", storage_job_busy());
 	dl_text(t, "storage.sector_writes=%u\nstorage.sector_skips=%u\n", (unsigned)st.sector_writes,
 		(unsigned)st.sector_skips);

@@ -116,7 +116,6 @@ jobs:
           registry-token: ${{ secrets.RFOUNDRY_CSKY_REGISTRY_TOKEN || github.token }}
       - name: Feature matrix of every board on the toolchain
         env:
-          RFOUNDRY_CI_PRUNE: "1"   # keep the logs and images, not the build trees (about 65 MB each)
           RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
           TOOLCHAIN: ${{ matrix.toolchain }}
         run: |

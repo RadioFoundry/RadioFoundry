@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The debug link's peek and poke (core/debuglink/dl_mem.c, docs/spec/debuglink.md 3.23) on a 64-byte buffer: widths,
+// The debug link's peek and poke (core/debuglink/dl_mem.c, docs/spec/debuglink.md 3.24) on a 64-byte buffer: widths,
 // alignment, the arming key and its time-out, set and clear, the pin action
 #include <stdio.h>
 #include <string.h>

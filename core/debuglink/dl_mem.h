@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Peek and poke on the debug link (CONFIG_DEBUG_MEM, DL_CMD_MEM, docs/spec/debuglink.md 3.23): memory and register
+// Peek and poke on the debug link (CONFIG_DEBUG_MEM, DL_CMD_MEM, docs/spec/debuglink.md 3.24): memory and register
 // reads of 1, 2 or 4 bytes, and, once armed with the key, writes, bit sets and clears and pin changes. For the bench:
 // the register state a fault leaves, a chip's settings, a pin's role. Portable: the accesses go through dl_mem_io_t,
 // so the host tests run it on a buffer.

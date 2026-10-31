@@ -120,6 +120,10 @@ endif
 # The fast codeplug protocol (core/cps is globbed with CPS_OPENFW): only with its own switch
 ifneq ($(CONFIG_CPS_FAST),y)
 APP_SRC := $(filter-out core/cps/cps_fast.c core/cps/cps_lz4.c,$(APP_SRC))
+# Its LZ4 encoder also packs the debug link's screenshots
+ifeq ($(CONFIG_DEBUGLINK),y)
+APP_SRC += core/cps/cps_lz4.c
+endif
 endif
 # The task table behind the debug link's tasks view (core/app is always globbed): only with its switch, which also
 # turns on the kernel's trace hooks in the platforms' FreeRTOSConfig.h
@@ -219,6 +223,15 @@ RFOUNDRY_VERSION := $(GITVERSION)$(GITDIRTY)
 RFOUNDRY_GIT_HEAD := $(firstword $(subst -, ,$(RFOUNDRY_VERSION)))
 RFOUNDRY_GIT_ID := $(if $(shell printf '%s' '$(RFOUNDRY_GIT_HEAD)' | grep -Eqx '[0-9a-fA-F]{1,8}' && echo y),0x$(RFOUNDRY_GIT_HEAD)u,0u)
 RFOUNDRY_GIT_DIRTY := $(if $(findstring -dirty,$(RFOUNDRY_VERSION)),1,0)
+# The commit's time (committer date, Unix seconds): the debug link's git_time=, which the web editor compares with a
+# release's to offer an update to a build that isn't a release. A clean tree uses the commit's, so its builds stay
+# reproducible; a dirty one the build's, since its code is newer than the commit (the version objects then rebuild on
+# every make). Empty without git (a tree copied elsewhere: pass it as RFOUNDRY_GIT_TIME=), and then left out
+RFOUNDRY_GIT_TIME := $(if $(filter unknown,$(GITVERSION)),,$(if $(GITDIRTY),$(shell date +%s),$(shell git log -1 --format=%ct HEAD \
+	2>/dev/null)))
+# Its UTC date, YYYY-MM-DD, for the About page
+RFOUNDRY_GIT_DATE := $(if $(RFOUNDRY_GIT_TIME),$(shell python3 -c 'import sys, time; print(time.strftime("%Y-%m-%d", \
+	time.gmtime(int(sys.argv[1]))))' '$(RFOUNDRY_GIT_TIME)'))
 # The release name the radio shows (splash, About, the debug link's release=): the newest release tag on this commit
 # (tools/release_version.py: vYY.M[.N][bN]), none for a dirty tree or an untagged commit. RELEASE= sets it
 # (tools/release_build.sh passes the tag) and RELEASE= alone leaves it out. RFOUNDRY_GIT stays the commit: the crash
@@ -282,6 +295,16 @@ codec: $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin)
 	@python3 tools/codec_auto.py --board $(BOARD) --image $(if $(BOOT_STAGE),$(TARGET)_install.bin,$(TARGET).bin) \
 		$(if $(BOOT_STAGE),-o $(TARGET)_codec.bin)
 
+# The switches this radio could have that the build left off (neither BOARD_UNSUPPORTED nor BOARD_NOT_WRITTEN): the
+# VERSION off= (either listener), so an installer updating the radio knows its exact build (features= names only some). A
+# change of either rebuilds build_info.o (the preset can change while the flags stay: a switch set to its default)
+RFOUNDRY_EMPTY :=
+RFOUNDRY_OFF := $(subst $(RFOUNDRY_EMPTY) ,$(strip ,),$(sort $(foreach f,$(filter-out $(BOARD_UNSUPPORTED) $(BOARD_NOT_WRITTEN),$(FEATURES)),\
+	$(if $(call feature_on,$(f)),,$(f)))))
+# The build's preset, VERSION preset=: the release variant (VARIANT, full without one), or custom when a
+# switch is set on the command line (a custom build: the build service sets every one)
+RFOUNDRY_PRESET := $(if $(strip $(foreach v,$(filter CONFIG_%,$(.VARIABLES)),$(filter command line,$(origin $(v))))),custom,$(or $(VARIANT),full))
+
 # Rebuild everything when the compile flags change (feature switches and build values), and the objects that carry
 # the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects
 # are removed outright, because make's 1 s timestamps can't order a stamp written in the same second as an object
@@ -292,12 +315,23 @@ ifeq ($(filter clean test print-config print-cc print-unsupported print-not-writ
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
 	rm -f $(OBJ); })
-$(shell echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE)' | cmp -s - $(BUILD)/version || { echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE)' > $(BUILD)/version; \
+$(shell echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME)' | cmp -s - $(BUILD)/version || { echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME)' > $(BUILD)/version; \
 	rm -f $(VERSION_OBJ); })
+$(shell echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' | cmp -s - $(BUILD)/build_info || { echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' > $(BUILD)/build_info; \
+	rm -f $(BUILD)/core/hostlink/build_info.o; })
 # The About page's authors and third-party list (tools/gen_about.py), and the objects that include it when it changed
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
 $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
+# The language tables (tools/i18n.py, core/ui/lang/*.po); i18n.o is rebuilt when they changed. A failure stops the
+# build: the old tables would link without a word
+I18N_GEN := $(shell python3 tools/i18n.py --gen $(BUILD)/gen/lang_tables.h || echo i18n-failed)
+ifneq ($(filter i18n-failed,$(I18N_GEN)),)
+$(error tools/i18n.py --gen failed (above))
+endif
+ifneq ($(filter changed,$(I18N_GEN)),)
+$(shell rm -f $(BUILD)/core/ui/i18n.o)
+endif
 # The HTTP status server's static files (core/net/http_assets/*, tools/gen_http_assets.py): a table in the gen
 # directory, gzip compressed with CONFIG_NET_HTTP_GZIP; http.o is rebuilt when it changed
 ifeq ($(CONFIG_NET_HTTP),y)
@@ -313,9 +347,11 @@ $(shell python3 tools/gen_http_assets.py $(if $(filter y,$(CONFIG_NET_HTTP_GZIP)
 endif
 endif
 $(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
+$(BUILD)/core/hostlink/build_info.o: CFLAGS_APP += -DRFOUNDRY_FEATURES_OFF=\"$(RFOUNDRY_OFF)\" -DRFOUNDRY_PRESET=\"$(RFOUNDRY_PRESET)\"
 $(VERSION_OBJ): $(BUILD)/version
 $(VERSION_OBJ): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY) \
-	-DRFOUNDRY_RELEASE=\"$(RFOUNDRY_RELEASE)\"
+	-DRFOUNDRY_RELEASE=\"$(RFOUNDRY_RELEASE)\" -DRFOUNDRY_GIT_TIME=$(or $(RFOUNDRY_GIT_TIME),0)u \
+	-DRFOUNDRY_GIT_DATE=\"$(RFOUNDRY_GIT_DATE)\"
 ifeq ($(LTO),1)
 $(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += -fno-lto
 endif
