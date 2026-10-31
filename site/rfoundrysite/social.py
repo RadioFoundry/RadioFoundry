@@ -6,12 +6,11 @@ drawn as an SVG and rasterized to a PNG, since Facebook and most chat apps don't
 The rasterizer is resvg (resvg_py, MIT; a wheel, no system libraries). The card has no text or logo: link previews print the
 page title and domain next to it, and fonts would make the image depend on the build machine.
 """
-import base64
 import re
 import struct
 import zlib
 
-from . import device, repo
+from . import device, repo, shots
 
 W, H = 1200, 630	# the size Facebook, LinkedIn and X ask for (1.91:1)
 ZOOM = 2	# rasterized at twice that: the screens' text stays legible on high-density displays
@@ -66,22 +65,11 @@ def columns(png_bytes):
 SCREEN_UPSCALE = 12
 
 
-def sharp(png, k=SCREEN_UPSCALE):
-	"""A screenshot blown up k times with hard pixel edges. The card draws a screen at no whole multiple of its
-	size, and nearest-neighbor there makes some pixel rows twice as thick as others; scaled smoothly from k times
-	its size, every pixel keeps the same width and its edges stay sharp."""
-	w, h = struct.unpack(">II", png[16:24])
-	svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d"><image href="data:image/png;base64,%s" '
-	       'width="%d" height="%d" image-rendering="optimizeSpeed"/></svg>' % (w * k, h * k, base64.b64encode(png).decode(), w * k, h * k))
-	return rasterize(svg)
-
-
 def with_screen(frame, geometry, png):
-	"""The radio's drawing with a screenshot in its display."""
-	s = geometry["screen"]
-	image = ('<image href="data:image/png;base64,%s" x="%g" y="%g" width="%g" height="%g" image-rendering="optimizeQuality" '
-		 'preserveAspectRatio="none"/>' % (base64.b64encode(sharp(png)).decode(), s["x"], s["y"], s["w"], s["h"]))
-	return device.SCREEN_RECT.sub(image, frame, count=1)
+	"""The radio's drawing with a screenshot in its display. The card draws a screen at no whole multiple of its size,
+	and nearest-neighbor there makes some pixel rows twice as thick as others; scaled smoothly from k times its size
+	(shots.py), every pixel keeps the same width and its edges stay sharp."""
+	return device.boot({"frame": frame, "geometry": geometry}, shots.upscale(png, SCREEN_UPSCALE))
 
 
 def card(boards):

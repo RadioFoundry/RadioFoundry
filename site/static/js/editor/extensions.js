@@ -22,6 +22,6 @@ export const extensions = {
 		if (p) return p.iddbTab(api);
 		const { h, t, model } = api;
 		const db = model.iddb;
-		return h("p", {}, db ? t("editor.iddb.present", { n: db.count.toLocaleString(), len: db.textLen }) : t("editor.iddb.none"));
+		return h("p", {}, db ? t("editor.iddb.present", { n: db.count, len: db.textLen }) : t("editor.iddb.none"));
 	},
 };

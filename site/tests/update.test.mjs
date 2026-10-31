@@ -62,6 +62,15 @@ test("a custom build keeps its switches and must decide the features added since
 	assert.deepEqual([...s.on].sort(), ["A", "B", "D"]);
 });
 
+test("a start-language switch added since is not asked about: off, the radio keeps its language", () => {
+	const feats = [...FEATURES, { name: "LANG_DEFAULT_ES", needs: { all: [], any: [] } }];
+	const cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "C" }), RADIO, WITH_OFF, REPORTED);
+	const s = new Selection(RADIO, feats, [{ id: "full" }, { id: "amateur" }]);
+	const plan = planUpdate(cur, s);
+	assert.deepEqual(plan.ask, ["NEW"]);
+	assert.ok(!s.on.has("LANG_DEFAULT_ES"));
+});
+
 test("from a release without off lists, a switch on in no variant is asked about too", () => {
 	const cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "C" }, "A,B"), RADIO, RELEASES, REPORTED);
 	assert.deepEqual(planUpdate(cur, sel()).ask, ["D", "NEW"]);
@@ -97,4 +106,15 @@ test("older firmware: a features= list that fits one variant is that preset, els
 test("a custom build equal to a variant, from releases with off lists", () => {
 	const cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "D" }), RADIO, WITH_OFF, REPORTED);
 	assert.deepEqual([cur.kind, cur.preset], ["preset", "full"]);
+});
+
+test("a variant built to start in another language is still that variant, and its update keeps the language", () => {
+	const feats = [...FEATURES, { name: "LANG_DEFAULT_ES", needs: { all: [], any: [] } }];
+	const off = (variant, list) => ({ ...rel("v26.9", "aaaa111", 1000, variant, list[0]), off: list[1].join(",") });
+	const releases = [off("full", [["A", "B", "C"], ["D", "LANG_DEFAULT_ES"]]), off("amateur", [["A", "C"], ["B", "D", "LANG_DEFAULT_ES"]])];
+	const cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "D" }), RADIO, releases, REPORTED);
+	assert.deepEqual([cur.kind, cur.preset, cur.start], ["preset", "full", ["LANG_DEFAULT_ES"]]);
+	const s = new Selection(RADIO, feats, [{ id: "full" }, { id: "amateur" }]);
+	assert.equal(planUpdate(cur, s).preset, "full");
+	assert.ok(s.on.has("LANG_DEFAULT_ES"));
 });

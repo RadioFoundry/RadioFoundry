@@ -10,30 +10,36 @@
 //  3. the number itself as a talkgroup and as a private call ("TG 3100 (not saved)", "Private call 3100"), so a
 //     number that isn't in the codeplug is still usable (P6), and with the contact editor "Create contact 3100" when
 //     no contact has that ID.
+// Names match as the user reads them (the translation, i18n.h) and as written in English, so a setting is found by
+// either; accented Latin-1 letters count as their plain letter on the keys.
 #include <string.h>
 #include "ui_nav.h"
 #include "ui_svc.h"
 #include "fmt.h"
+#include "font.h"
+#include "i18n.h"
 #include "codeplug/codeplug.h"
 #include "config.h"
 
 #define FIND_KEYS	12
 #define FIND_MAX	16
 
-// Places Find opens by name or synonym; the Tools pages hold settings of their own that aren't in Settings
+// Places Find opens by name or synonym; the Tools pages hold settings of their own that aren't in Settings. The
+// synonyms are English search words, not shown
 static const struct {
 	const char *name, *syn;
 	uint8_t scr;
 } places[] = {
-	{ "Contacts", NULL, SCR_CONTACTS }, { "Messages", NULL, SCR_MESSAGES }, { "Recent", NULL, SCR_RECENT },
-	{ "Channels", NULL, SCR_ZONES }, { "Tools", NULL, SCR_TOOLS }, { "Settings", NULL, SCR_SETTINGS },
+	{ TRN("Contacts"), NULL, SCR_CONTACTS }, { TRN("Messages"), NULL, SCR_MESSAGES },
+	{ TRN("Recent"), NULL, SCR_RECENT }, { TRN("Channels"), NULL, SCR_ZONES }, { TRN("Tools"), NULL, SCR_TOOLS },
+	{ TRN("Settings"), NULL, SCR_SETTINGS },
 	{ "VFO", NULL, SCR_ZONES },
 #if CONFIG_DMR_ROAMING
-	{ "Roaming", "roam site survey beacon interval length wake probe lock", SCR_ROAM },
+	{ TRN("Roaming"), "roam site survey beacon interval length wake probe lock", SCR_ROAM },
 #endif
 #if CONFIG_APRS
 	{ "APRS", "beacon smartbeaconing symbol path kiss tnc gps", SCR_APRS },
-	{ "APRS position", "fixed latitude longitude coordinates", SCR_APRS_POS },
+	{ TRN("APRS position"), "fixed latitude longitude coordinates", SCR_APRS_POS },
 #endif
 };
 #define PLACES_N	((uint8_t)(sizeof places / sizeof places[0]))
@@ -60,6 +66,9 @@ void ui_open_setting(uint8_t g, uint8_t i);
 uint8_t ui_t9_key(char c)
 {
 	static const char keys[] = "22233344455566677778889999";
+	// A translation's accented letter as the plain one (Latin-1, as the fonts fold it): the o key types the o of
+	// "Configuraci\xF3n"
+	c = font_fold(c);
 	if (c >= 'a' && c <= 'z')
 		return (uint8_t)(keys[c - 'a'] - '0');
 	if (c >= 'A' && c <= 'Z')
@@ -188,14 +197,16 @@ void ui_find_run(void)
 	}
 	// Places and settings by name (and synonyms: "promiscuous" finds Hear all)
 	for (uint8_t i = 0; i < PLACES_N; i++)
-		if (len >= 2 && (ui_t9_match(places[i].name, query) || (places[i].syn && ui_t9_match(places[i].syn, query))))
+		if (len >= 2 && (ui_t9_match(tr(places[i].name), query) || ui_t9_match(places[i].name, query) ||
+				 (places[i].syn && ui_t9_match(places[i].syn, query))))
 			add(FR_PLACE, (uint32_t)i << 8 | places[i].scr);
 	found = 0;
 	for (uint8_t g = 0; g < ui_set_group_count() && len >= 2; g++) {
 		for (uint8_t i = 0; i < ui_set_item_count(g) && found < 3; i++) {
 			const char *syn = NULL;
 			const char *name = ui_set_item_name(g, i, &syn);
-			if (ui_t9_match(name, query) || (syn != NULL && ui_t9_match(syn, query))) {
+			if (ui_t9_match(tr(name), query) || ui_t9_match(name, query) ||
+			    (syn != NULL && ui_t9_match(syn, query))) {
 				add(FR_SETTING, (uint32_t)g << 8 | i);
 				found++;
 			}
@@ -276,19 +287,19 @@ static void find_item(uint16_t i, ui_item_t *it)
 	switch (r->kind) {
 	case FR_CHANNEL: {
 		const radio_view_t *v = ui_view();
-		sb_str(&b, "Ch ");
+		sb_str(&b, TR("Ch "));
 		sb_u32(&b, r->ref + 1u, 1);
 		if (codeplug_zone(v->zone_index, &z) && r->ref < z.count && codeplug_channel(z.channels[r->ref], &ch)) {
 			sb_chr(&b, ' ');
 			sb_str(&b, ch.name);
 		}
-		sb_str(&vb, TEXT_ALT_OPEN "Channel" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+		sb_str(&vb, TR(TEXT_ALT_OPEN "Channel" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 		break;
 	}
 	case FR_ZONE:
 		if (codeplug_zone((uint16_t)r->ref, &z))
 			sb_str(&b, z.name);
-		sb_str(&vb, TEXT_ALT_OPEN "Zone" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+		sb_str(&vb, TR(TEXT_ALT_OPEN "Zone" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 		break;
 	case FR_CONTACT:
 		if (find_target(i, &t)) {
@@ -301,16 +312,16 @@ static void find_item(uint16_t i, ui_item_t *it)
 				sb_chr(&b, ' ');
 				sb_u32(&b, t.id, 1);
 			}
-			sb_str(&vb, TEXT_ALT_OPEN "Contact" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+			sb_str(&vb, TR(TEXT_ALT_OPEN "Contact" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 		}
 		break;
 	case FR_TG:
-		sb_str(&b, "Talk to TG ");
+		sb_str(&b, TR("Talk to TG "));
 		sb_u32(&b, r->ref, 1);
-		sb_str(&vb, TEXT_ALT_OPEN "Not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+		sb_str(&vb, TR(TEXT_ALT_OPEN "Not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 		break;
 	case FR_PRIVATE:
-		sb_str(&b, "Private call ");
+		sb_str(&b, TR("Private call "));
 		sb_u32(&b, r->ref, 1);
 		if (find_target(i, &t) && t.name[0]) {
 			sb_chr(&b, ' ');
@@ -318,25 +329,25 @@ static void find_item(uint16_t i, ui_item_t *it)
 		}
 		break;
 	case FR_FREQ:
-		sb_str(&b, "Tune VFO to ");
+		sb_str(&b, TR("Tune VFO to "));
 		sb_freq(&b, r->ref);
 		sb_str(&vb, TEXT_ALT_OPEN "VFO" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 		break;
 	case FR_NEW_CONTACT:
-		sb_str(&b, "Create contact ");
+		sb_str(&b, TR("Create contact "));
 		sb_u32(&b, r->ref, 1);
 		break;
 	case FR_SETTING: {
 		const char *syn;
-		sb_str(&b, ui_set_item_name((uint8_t)(r->ref >> 8), (uint8_t)r->ref, &syn));
+		sb_str(&b, tr(ui_set_item_name((uint8_t)(r->ref >> 8), (uint8_t)r->ref, &syn)));
 		sb_str(&vb, TEXT_ALT_OPEN);	// the group, left out where the setting's name needs the room
-		sb_str(&vb, ui_set_group_name((uint8_t)(r->ref >> 8)));
+		sb_str(&vb, tr(ui_set_group_name((uint8_t)(r->ref >> 8))));
 		sb_str(&vb, TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 		break;
 	}
 	case FR_PLACE: {
-		sb_str(&b, places[(r->ref >> 8) % PLACES_N].name);
-		sb_str(&vb, "Menu");
+		sb_str(&b, tr(places[(r->ref >> 8) % PLACES_N].name));
+		sb_str(&vb, TR("Menu"));
 		break;
 	}
 	default:
@@ -398,7 +409,7 @@ static void find_context(uint16_t i)
 	if (find_target(i, &t))
 		ui_open_actions(&t);
 	else
-		ui_toast("No actions for this result");
+		ui_toast(TR("No actions for this result"));
 }
 
 static bool find_key(const input_event_t *ev)
@@ -429,7 +440,7 @@ static bool find_key(const input_event_t *ev)
 
 const ui_scr_def_t ui_find_screen = {
 	.name = "find", .flags = SF_LIST | SF_FIND | SF_FIELD,
-	.hint = "PTT talk  OK open  # more", .empty = "No match: Back deletes a key",
+	.hint = TRN("PTT talk  OK open  # more"), .empty = TRN("No match: Back deletes a key"),
 	.count = find_count, .item = find_item, .select = find_select, .context = find_context, .target = find_target,
 	.key = find_key,
 };

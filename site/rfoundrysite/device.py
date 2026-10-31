@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""Each radio as an SVG with our real boot screen in its display (docs/ux/screens/<gallery>/boot.png, embedded, so
-the file stands alone in an <img>).
+"""Each radio as an SVG with our real boot screen in its display (docs/ux/screens/<gallery>/boot.png at the site's
+scale, shots.py, embedded, so the file stands alone in an <img>).
 
 An illustration of the radio in site/static/img/radios/src/<id>.svg is used when there is one: its
 <rect id="screen" .../> marks the display and is replaced by the boot screen (docs/dev/website.md "Radio images").
@@ -18,7 +18,7 @@ import struct
 
 from . import repo
 
-SCALE = 2	# panel pixels to drawing units: the boot screen shows at twice its size, crisp (pixelated)
+SCALE = 2	# panel pixels to drawing units in a generic drawing: its display twice the panel's size
 
 
 def png_size(data):
@@ -52,8 +52,8 @@ def attr(tag, name):
 
 
 def render(radio, label, look=None):
-	"""{"frame": the drawing with its screen black, "boot": the same with the boot screen in it, "geometry": where the
-	screen and the keys are}. geometry: {"viewbox": [x, y, w, h], "screen": {x, y, w, h} in viewBox units,
+	"""{"frame": the drawing with its screen black, "geometry": where the screen and the keys are} (boot() puts a
+	screen in it). geometry: {"viewbox": [x, y, w, h], "screen": {x, y, w, h} in viewBox units,
 	"screen_pct": {left, top, width, height} as percentages of the image, "keys": {name: {left, top, width, height}}
 	as percentages, for each key the drawing shows}, so any screenshot can be laid over the frame (data/radios.json,
 	the radio pages) and the flasher can mark a key (radiotop.js)."""
@@ -91,12 +91,19 @@ def render(radio, label, look=None):
 	pct = lambda x0, y0, x1, y1: {"left": round(100 * (x0 - vx) / vw, 3), "top": round(100 * (y0 - vy) / vh, 3),
 				      "width": round(100 * (x1 - x0) / vw, 3), "height": round(100 * (y1 - y0) / vh, 3)}
 	frame = re.sub(r"<svg\b", '<svg role="img" aria-label="%s"' % label, frame, count=1)
-	image = ('<image href="data:image/png;base64,%s" x="%g" y="%g" width="%g" height="%g" '
-		 'style="image-rendering:pixelated" preserveAspectRatio="none"/>' % (base64.b64encode(png).decode(), x, y, w, h))
 	geometry = {"viewbox": [vx, vy, vw, vh], "screen": {"x": x, "y": y, "w": w, "h": h},
 		    "screen_pct": pct(x, y, x + w, y + h), "aspect": round(vw / vh, 5),
 		    "keys": {k: pct(*b) for k, b in sorted(svg_keys().key_boxes(frame).items())}}
-	return {"frame": frame, "boot": frame.replace(r, image), "geometry": geometry}
+	return {"frame": frame, "geometry": geometry}
+
+
+def boot(img, png):
+	"""render()'s drawing with png in its display: the boot screen's copy at the site's scale (shots.py), which
+	the browser scales down smoothly, so it carries no image-rendering."""
+	s = img["geometry"]["screen"]
+	image = ('<image href="data:image/png;base64,%s" x="%g" y="%g" width="%g" height="%g" preserveAspectRatio="none"/>'
+		 % (base64.b64encode(png).decode(), s["x"], s["y"], s["w"], s["h"]))
+	return SCREEN_RECT.sub(image, img["frame"], count=1)
 
 
 def generic(radio, png, label):

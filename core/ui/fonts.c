@@ -6,7 +6,8 @@
 // LICENSES/OFL-1.1.txt). Both converted by tools/fontconv.py.
 #include "font.h"
 
-#define FONT(var, n, N, bpp) const font_t var = { N##_W, N##_H, N##_ASCENT, N##_MISSING, bpp, n##_bits, n##_index }
+#define FONT(var, n, N, bpp) \
+	const font_t var = { N##_W, N##_H, N##_ASCENT, N##_MISSING, bpp, FONT_LATIN1 && N##_LATIN1, n##_bits, n##_index }
 
 #include "fonts/spleen_5x8.inc"
 FONT(font_5x8, spleen_5x8, SPLEEN_5X8, 1);
@@ -54,6 +55,16 @@ FONT(font_16x32, spleen_16x32, SPLEEN_16X32, 1);
 #endif
 #endif
 
+// Latin-1 0xA0..0xFF as plain ASCII, for a font or a build without those glyphs
+static const char fold[] = " !cLoY|S ca<--r-o+23'uP.,1o>///?"
+			     "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYPs"
+			     "aaaaaaaceeeeiiiidnooooo/ouuuuypy";
+
+char font_fold(char c)
+{
+	return (uint8_t)c >= FONT_LATIN1_FIRST ? fold[(uint8_t)c - FONT_LATIN1_FIRST] : c;
+}
+
 const uint8_t *font_glyph(const font_t *f, uint8_t c, int *top, int *rows)
 {
 	unsigned slot;
@@ -63,6 +74,10 @@ const uint8_t *font_glyph(const font_t *f, uint8_t c, int *top, int *rows)
 		if (f->missing & (1u << (c - GLYPH_FIRST_EXTRA)))
 			return NULL;
 		slot = 95u + (c - GLYPH_FIRST_EXTRA);
+	} else if (c >= FONT_LATIN1_FIRST && f->latin1) {
+		slot = 95u + GLYPH_EXTRA_COUNT + (c - FONT_LATIN1_FIRST);
+	} else if (c >= FONT_LATIN1_FIRST) {
+		slot = (unsigned)fold[c - FONT_LATIN1_FIRST] - 0x20u;	// the letter without its accent
 	} else {
 		return NULL;
 	}

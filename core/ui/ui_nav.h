@@ -11,6 +11,7 @@
 #include "radio/radio.h"
 #include "ui_screens.h"
 #include "ui_svc.h"
+#include "i18n.h"
 
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
@@ -32,6 +33,7 @@ typedef enum {
 	SCR_REF_TRIM,			// the reference trim (Settings > Advanced > Freq trim)
 	SCR_GPS,			// Tools > Position's pages (CONFIG_GPS_SKY): status, sky, signal, grid
 	SCR_CONTACT_EDIT,		// the contact editor (CONFIG_CONTACT_EDIT): a new contact, from ui_target
+	SCR_LANGUAGE,			// Settings > Display > Language: every language, those not built dimmed
 	SCR_COUNT
 } ui_scr_t;
 

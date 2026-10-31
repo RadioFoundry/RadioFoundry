@@ -7,8 +7,9 @@
     tools/fontconv.py FONT.bdf NAME LICENSE_FILE SPDX_ID > core/ui/fonts/NAME.inc
     tools/fontconv.py --ttf WxH:ASCENT FONT.ttf NAME LICENSE_FILE SPDX_ID > core/ui/fonts/NAME.inc
 
-Output: `NAME_bits[]`, glyphs in the order 0x20..0x7E then the extra code points below, and `NAME_index[]`, where
-each glyph starts in it. A glyph is its first inked row, its number of rows from there to the last inked one, then
+Output: `NAME_bits[]`, glyphs in the order 0x20..0x7E, the extra code points below, then Latin-1 0xA0..0xFF (inside
+`#if FONT_LATIN1`: only a build with a translation links them, core/ui/fonts.c), and `NAME_index[]`, where each
+glyph starts in it. A glyph is its first inked row, its number of rows from there to the last inked one, then
 those rows of `ceil(width * bpp / 8)` bytes, MSB = leftmost pixel: the blank rows above and below are not stored. A BDF font gives 1 bit a
 pixel. A TrueType font is scaled so its advance is the cell width, drawn anti-aliased with its baseline ASCENT rows
 from the top, and kept as 2 bits a pixel (coverage 0..3; four levels look the same as more on the panels, and 16-color
@@ -21,6 +22,8 @@ import sys
 
 # Extra glyphs after ASCII, in slot order (core/ui/font.h GLYPH_*)
 EXTRAS = [0x2026, 0x00B7, 0x2192, 0x00B0]
+# The accented letters and signs of Western European languages, after the extras (core/ui/font.h FONT_LATIN1_FIRST)
+LATIN1 = list(range(0xA0, 0x100))
 
 
 def parse(path):
@@ -103,7 +106,7 @@ def ttf_glyphs(path, cw, ch, ascent):
     except ImportError:
         cmap = None
     glyphs = {}
-    for code in list(range(0x20, 0x7F)) + EXTRAS:
+    for code in list(range(0x20, 0x7F)) + EXTRAS + LATIN1:
         if cmap is not None and code not in cmap:
             continue
         img = Image.new("L", (cw, ch), 0)
@@ -150,19 +153,30 @@ def main():
     with open(license_path, encoding="utf-8") as f:
         license_text = f.read().strip().splitlines()
 
-    codes = list(range(0x20, 0x7F)) + EXTRAS
+    # A font without any Latin-1 letter (Spleen 5x8) leaves the range out: the UI shows the letters without accents
+    def cell_of(code):
+        if code not in glyphs:
+            return None
+        return pack(glyphs[code], 2) if ttf else render(props, glyphs[code])
+    has_l1 = any(any(cell_of(c) or []) for c in LATIN1)
+    codes = list(range(0x20, 0x7F)) + EXTRAS + (LATIN1 if has_l1 else [])
     missing = 0
     data = []
     for slot, code in enumerate(codes):
-        cell = None
-        if code in glyphs:
-            cell = pack(glyphs[code], 2) if ttf else render(props, glyphs[code])
+        cell = cell_of(code)
         if cell is not None and (any(cell) or code < 0x7F):
             data.append(cell)
         else:
             # Not in the font, or an extra drawn blank (Spleen 5x8's middle dot and degree): gfx.c draws it
             if code < 0x7F:
                 raise SystemExit("font lacks ASCII 0x%02X" % code)
+            if slot >= 95 + len(EXTRAS):
+                # No-break space and soft hyphen may be blank; so may the degree sign and middle dot, which text
+                # reaches through the extras (GLYPH_DEGREE, GLYPH_DOT) instead
+                if code not in (0xA0, 0xAD, 0xB0, 0xB7):
+                    raise SystemExit("font lacks Latin-1 0x%02X" % code)
+                data.append(cell or [0] * (((cw * bpp + 7) // 8) * ch))
+                continue
             missing |= 1 << (slot - 95)
             data.append([0] * (((cw * bpp + 7) // 8) * ch))
 
@@ -188,8 +202,10 @@ def main():
     for l in license_text:
         w(("//   %s" % l).rstrip() + "\n")
     w("\n")
-    w("#define %s_W %d\n#define %s_H %d\n#define %s_ASCENT %d\n#define %s_MISSING 0x%02Xu\n#define %s_BPP %d\n\n"
-      % (name.upper(), cw, name.upper(), ch, name.upper(), props["ascent"], name.upper(), missing, name.upper(), bpp))
+    w("#define %s_W %d\n#define %s_H %d\n#define %s_ASCENT %d\n#define %s_MISSING 0x%02Xu\n#define %s_BPP %d\n"
+      "#define %s_LATIN1 %d\n\n"
+      % (name.upper(), cw, name.upper(), ch, name.upper(), props["ascent"], name.upper(), missing, name.upper(), bpp,
+         name.upper(), 1 if has_l1 else 0))
     stride = (cw * bpp + 7) // 8
     index, offset, glyphs_out = [], 0, []
     for g in data:
@@ -202,14 +218,22 @@ def main():
         glyphs_out.append(glyph)
     if offset > 0xFFFF:
         raise SystemExit("font too large for 16-bit offsets")
+    first_l1 = len(codes) - len(LATIN1) if has_l1 else len(codes) + 1
     w("static const uint8_t %s_bits[] = {\n" % name)
     for slot, (code, g) in enumerate(zip(codes, glyphs_out)):
+        if slot == first_l1:
+            w("#if FONT_LATIN1\n")
         label = chr(code) if 0x20 < code < 0x7F and chr(code) not in "\\" else "U+%04X" % code
+        if slot >= first_l1 and code not in (0xA0, 0xAD):
+            label += " " + chr(code)
         w("\t" + ",".join("0x%02X" % v for v in g) + ",\t// %s\n" % label)
-    w("};\n\n")
+    w("#endif\n};\n\n" if has_l1 else "};\n\n")
     w("static const uint16_t %s_index[] = {\n" % name)
-    for i in range(0, len(index), 12):
-        w("\t" + ",".join("%d" % v for v in index[i:i + 12]) + ",\n")
+    parts = ((index[:first_l1], "#if FONT_LATIN1\n"), (index[first_l1:], "#endif\n")) if has_l1 else ((index, ""),)
+    for part, close in parts:
+        for i in range(0, len(part), 12):
+            w("\t" + ",".join("%d" % v for v in part[i:i + 12]) + ",\n")
+        w(close)
     w("};\n")
     return 0
 

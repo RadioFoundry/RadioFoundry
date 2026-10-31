@@ -3492,7 +3492,7 @@ static void test_ui_settings(void)
 	n_ev = 0;
 	CHECK(ui_svc_save_talk_target(9, false));
 	storage_job_poll();
-	CHECK(n_ev == 1 && strstr(last_ev.text, "write the codeplug") != NULL);
+	CHECK(n_ev == 1 && strcmp(last_ev.text, "Codeplug not written: for now only") == 0);	// whole: tr() finds it
 	cp_write_fails = false;
 	CHECK(cp_writes == w);
 	// The squelch saved with the channel goes to the default squelch preference

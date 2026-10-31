@@ -3,6 +3,7 @@
 // Small text builders for the UI
 #include "fmt.h"
 #include "font.h"
+#include "i18n.h"
 
 void sb_init(sbuf_t *b, char *buf, size_t len)
 {
@@ -10,6 +11,13 @@ void sb_init(sbuf_t *b, char *buf, size_t len)
 	b->end = buf + (len ? len - 1 : 0);
 	if (len)
 		*buf = 0;
+}
+
+void str_copy(char *dst, size_t cap, const char *src)
+{
+	sbuf_t b;
+	sb_init(&b, dst, cap);
+	sb_str(&b, src);
 }
 
 void sb_chr(sbuf_t *b, char c)
@@ -88,7 +96,7 @@ void sb_tone(sbuf_t *b, const subtone_t *t)
 void sb_split(sbuf_t *b, uint32_t rx_hz, uint32_t tx_hz)
 {
 	if (tx_hz == rx_hz) {
-		sb_str(b, "Off");
+		sb_str(b, TR("Off"));
 		return;
 	}
 	sb_chr(b, tx_hz > rx_hz ? '+' : '-');
@@ -140,7 +148,7 @@ void sb_age_long(sbuf_t *b, uint32_t ms)
 	char unit;
 	sb_u32(b, age_unit(ms, &unit), 1);
 	sb_chr(b, unit);
-	sb_str(b, " ago");
+	sb_str(b, TR(" ago"));
 }
 
 // "14m ago", "14m" as text alternates: the drawing keeps the longest that fits (font.h). One unit style everywhere,
@@ -152,7 +160,8 @@ void sb_age(sbuf_t *b, uint32_t ms)
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_u32(b, v, 1);
 	sb_chr(b, unit);
-	sb_str(b, " ago" TEXT_ALT_NEXT);
+	sb_str(b, TR(" ago"));
+	sb_str(b, TEXT_ALT_NEXT);
 	sb_u32(b, v, 1);
 	sb_chr(b, unit);
 	sb_str(b, TEXT_ALT_CLOSE);

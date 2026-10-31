@@ -4,7 +4,7 @@
 // written back to the radio. Everything runs in the page; the codeplug never leaves it unless the user puts it in a
 // bug report (report.js). The working codeplug is kept in this browser (IndexedDB) so a reload doesn't lose edits.
 
-import { h, t, ROOT, button, notice, download, progressBar } from "../flasher/dom.js";
+import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum, date as fmtDate } from "../flasher/dom.js";
 import { equal } from "../flasher/bytes.js";
 import { SerialStream, serialSupported, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
 import { CodeplugImage, IDDB_HEADER, REGIONS } from "../codeplug/image.js";
@@ -621,7 +621,7 @@ const IDDB_ASK = 20;
 function askIddb(c, db, bytes, seconds) {
 	return new Promise((done) => {
 		let yes = false;
-		dialog(t("editor.iddb_read.title"), [h("p", {}, t("editor.iddb_read.text", { radio: c.radio.name, n: db.count.toLocaleString(),
+		dialog(t("editor.iddb_read.title"), [h("p", {}, t("editor.iddb_read.text", { radio: c.radio.name, n: db.count,
 			size: kb(bytes), time: duration(seconds) })), h("p", {}, t("editor.iddb_read.skip_help"))],
 		t("editor.iddb_read.read"), (close) => {
 			yes = true;
@@ -758,7 +758,7 @@ async function offerUpdate(c) {
 	const rel = updateFor(releaseList, c.radio.id, v.release, gitTime);
 	if (!rel) return;
 	// a release by its name, any other build by its commit and that commit's date
-	const running = v.release || t("editor.update.build", { git: v.git, date: new Date(gitTime * 1000).toLocaleDateString() });
+	const running = v.release || t("editor.update.build", { git: v.git, date: fmtDate(new Date(gitTime * 1000), { dateStyle: "medium" }) });
 	const key = `rfoundry-editor-update:${c.radio.id}:${v.release || v.git}:${rel.version}`;
 	try {
 		if (sessionStorage.getItem(key)) return;
@@ -771,7 +771,7 @@ async function offerUpdate(c) {
 	if (gains.length) body.push(h("p", {}, t("editor.update.gains")), h("ul", {}, ...gains.map((f) => h("li", {}, t(`editor.update.gain.${f}`)))));
 	dialog(t("editor.update.title"), body, t("editor.update.go"), async (close) => {
 		// the flasher's tab needs the port: this one lets go of it (opened first, in the click, so no popup blocker stops it)
-		window.open(`${ROOT}flash/index.html#update`, "_blank", "noopener");
+		window.open(`${HOME}flash/index.html#update`, "_blank", "noopener");
 		close();
 		if (S.conn === c) await dropConnection();
 	}, () => {}, { cancel: t("editor.update.later") });
@@ -826,10 +826,10 @@ async function planWrite() {
 		const summary = h("p", {});
 		const summarize = () => {
 			const { bytes } = choice();
-			const text = [t("editor.write_summary", { radio: c.radio.name, bytes: bytes.toLocaleString(), seconds: estimate(bytes, c.cable, choice().blocks) })];
-			if (iddb) text.push(t(c.transport.fast ? "editor.write_iddb_fast" : "editor.write_iddb", { n: (dbHeader(file.bytes)?.count ?? 0).toLocaleString() }));
+			const text = [t("editor.write_summary", { radio: c.radio.name, bytes: fmtNum(bytes), seconds: estimate(bytes, c.cable, choice().blocks) })];
+			if (iddb) text.push(t(c.transport.fast ? "editor.write_iddb_fast" : "editor.write_iddb", { n: dbHeader(file.bytes)?.count ?? 0 }));
 			if (older) text.push(t("editor.write_iddb_older"));
-			if (older?.dropped) text.push(t("editor.write_iddb_cut", { dropped: older.dropped.toLocaleString() }));
+			if (older?.dropped) text.push(t("editor.write_iddb_cut", { dropped: fmtNum(older.dropped) }));
 			summary.textContent = text.join(" ");
 		};
 		summarize();
@@ -863,7 +863,7 @@ function upgradeIddb() {
 	});
 	if (!r) return;
 	S.iddbChanged = true;
-	say(t("editor.iddb.converted", { n: r.count.toLocaleString() }), "ok");
+	say(t("editor.iddb.converted", { n: r.count }), "ok");
 }
 
 // Whether the last write kept the radio's own identity: remembered in this browser for the next radio
@@ -899,7 +899,7 @@ function writeChosen(c, { want }, iddb, prepared) {
 			S.model.iddb = dbHeader(want.bytes);	// format N when it went to a radio that reads only that
 			S.dirty = false;
 			refresh();
-			say(prepared + t("editor.write_done", { radio: c.radio.name, bytes: res.bytes.toLocaleString() }), "ok");
+			say(prepared + t("editor.write_done", { radio: c.radio.name, bytes: fmtNum(res.bytes) }), "ok");
 		} catch (e) {
 			await fail(step, e);
 		}
@@ -1032,7 +1032,7 @@ async function start() {
 		load(decode(imageFrom(draft.bytes)), draft.name || "codeplug");
 		S.dirty = !!draft.dirty;
 		refresh();
-		say(t("editor.draft_restored", { time: new Date(draft.at).toLocaleString() }), "info");
+		say(t("editor.draft_restored", { time: fmtDate(new Date(draft.at), { dateStyle: "medium", timeStyle: "short" }) }), "info");
 	} else load(empty(), "codeplug");
 	if (!serialSupported() && !S.sim) say(t("editor.no_serial"), "info");
 	if (S.sim) say(t("editor.sim"), "info");

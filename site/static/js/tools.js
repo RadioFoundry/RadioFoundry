@@ -4,8 +4,9 @@
 
 import { detect, convertersFor } from "./flasher/codeplug.js";
 
-const STRINGS = JSON.parse(document.getElementById("i18n")?.textContent || "{}");
-const t = (key, fmt = {}) => (STRINGS[key] || key).replace(/\{(\w+)\}/g, (_, k) => fmt[k] ?? `{${k}}`);
+import { page } from "./i18n.js";
+
+const { t, opt } = page;
 const input = document.getElementById("convert-file");
 const out = document.getElementById("convert-result");
 
@@ -23,7 +24,7 @@ input?.addEventListener("change", async () => {
 	const fmt = detect(data, f.name);
 	out.replaceChildren();
 	if (!fmt) return out.append(el("p", t("tools.convert.unknown"), "notice"));
-	out.append(el("p", t("tools.convert.format", { format: fmt.name })));
+	out.append(el("p", t("tools.convert.format", { format: opt(`tools.format.${fmt.id}`, fmt.name) })));
 	const convs = convertersFor(fmt.id);
 	if (!convs.length) return out.append(el("p", t("tools.convert.none"), "muted"));
 	out.append(el("p", t("tools.convert.available")));
@@ -31,7 +32,7 @@ input?.addEventListener("change", async () => {
 	for (const c of convs) {
 		const li = el("li");
 		if (c.status === "ready") {
-			const b = el("button", c.name, "btn");
+			const b = el("button", opt(`tools.conv.${c.id}`, c.name), "btn");
 			b.type = "button";
 			b.addEventListener("click", async () => {
 				try {
@@ -41,12 +42,12 @@ input?.addEventListener("change", async () => {
 					a.click();
 					setTimeout(() => URL.revokeObjectURL(url), 10000);
 				} catch (e) {
-					li.append(el("p", e.message, "notice bad"));
+					li.append(el("p", e.code ? t(`tools.convert.err.${e.code}`, e.params || {}) : e.message, "notice bad"));
 				}
 			});
 			li.append(b);
 		} else {
-			li.append(el("span", c.name + " "), el("span", t("tools.convert.planned"), "badge badge-planned"));
+			li.append(el("span", opt(`tools.conv.${c.id}`, c.name) + " "), el("span", t("tools.convert.planned"), "badge badge-planned"));
 		}
 		ul.append(li);
 	}

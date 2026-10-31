@@ -166,13 +166,18 @@ below are for an STM32F4 radio.
 | `CONFIG_FONT_XL` | n (y on a 240 px color radio) | 16x32 font, for 240 px and wider displays |
 | `CONFIG_FONT_AA` | n (y on a color radio) | the fonts from 6x12 up anti-aliased (JetBrains Mono Bold, 2 bits a pixel) on color panels instead of the bitmap ones; a mono panel would draw them as plain ink, so mono radios leave it off. Glyphs: 15.6 KB with `FONT_XL` (8.2 KB without) in place of 9.2 KB (5.3 KB) of bitmap ones (`core/ui/fonts.c`). On a 4 bpp panel (every color board) the edge grays share the 16 palette entries with the screen's own colors; a screen that already uses many colors loses some of them, and some font sizes or colors can then be slightly harder to read (`docs/spec/ui.md` 5) |
 | `CONFIG_FONT_BIG` | n (y on a 240 px color radio) | larger text on 240 px and wider color panels: lists, labels, the status strip and hints in a 9x18 font instead of 8x16 (24 characters a line instead of 27 on a 240 px panel; the 8x16 one takes the small print). Needs `FONT_AA`; 3.5 KB of flash |
+| `CONFIG_LANG_ES` | y | Spanish on the radio: Settings > Display > Language (`docs/spec/ui.md` 2.5, `core/ui/lang/es.po`). The first language also brings the accented letters of every font (`CONFIG_LANG_ANY`); each further language adds only its text. Off: Spanish is listed but dimmed. One switch per language, [translating.md](dev/translating.md) |
+| `CONFIG_LANG_IT` | n | Italian on the radio (`core/ui/lang/it.po`), as `CONFIG_LANG_ES`. Off: Italian is listed but dimmed |
+| `CONFIG_LANG_DEFAULT_ES` | n | The radio starts in Spanish until the user picks a language (an empty language setting means the build's default). Needs `CONFIG_LANG_ES`. Off, for every `CONFIG_LANG_DEFAULT_*`: English. With more than one on, the first in `config/features.mk` wins. No flash cost |
+| `CONFIG_LANG_DEFAULT_IT` | n | The radio starts in Italian, as `CONFIG_LANG_DEFAULT_ES`. Needs `CONFIG_LANG_IT` |
 | `CONFIG_UI_COLOR` | y (n on a monochrome radio) | color screen settings: Theme, Highlight color and Filled status bar in Settings > Display (`docs/spec/ui.md` 5, 8). Off: no such rows, the dark theme's colors. About 600 B; off for radios whose only screen is monochrome |
 | `CONFIG_AUDIO_PROBE` | n | diagnostics: debug link command 0x10 reads / writes the audio chip's registers and measures the PCM stream, for the USB audio bench tests (`docs/spec/debuglink.md` 3.14); needs DEBUGLINK and DMR; about 2 KB RAM and 2.2 KB flash. Never for a release; CI builds it in one board's `audio-probe` configuration (with `LTO=1`: the default image has no room for it without), not in maximal. A bench image without LTO: add `CONFIG_SNMP=n` |
 | `CONFIG_UI_SETTINGS` | y | the Settings menu on the radio; off: settings keep their stored values and are set with qdmr (`docs/spec/ui.md` 5) |
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
 `CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
-`CONFIG_ZONE_SHARE`.
+`CONFIG_ZONE_SHARE`. `CONFIG_LANG_ANY` (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the
+fonts' Latin-1 glyphs.
 
 ## Values
 

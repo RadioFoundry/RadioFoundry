@@ -31,11 +31,12 @@ import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNo
 import { readRadio, makeBundle, openBundle, bundleFolder, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
-import { decideCodec } from "./decide.js";
+import { decideCodec, DecisionError } from "./decide.js";
+import { suggestPack, startCode, startLanguages, startLanguage, setStartLanguage } from "./langsuggest.js";
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
-import { t, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames } from "./dom.js";
+import { t, tOr, num, LANG, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
 import * as atui from "./anytoneui.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
@@ -72,6 +73,7 @@ class ApiError extends Error {}
 function errorText(e) {
 	diag.error(`${S.task || "start"}/${stepsFor()?.[S.step] ?? S.step}`, e);
 	const raw = e?.message || String(e);
+	if (e instanceof DecisionError && e.key) return said(e.key, e.args) + (e.hint ? " " + t("flash.codec.why_not.hint") : "");
 	const withRaw = (key) => `${t(key)} (${raw})`;
 	if (e instanceof NetworkModeError) return t("flash.net.found");
 	const browser = browserErrorKey(e);
@@ -83,6 +85,20 @@ function errorText(e) {
 	// fetch's own failure: offline, blocked, or the server unreachable
 	if (e instanceof TypeError && /fetch/i.test(raw)) return withRaw("flash.err.download");
 	return raw;
+}
+
+// A catalog string whose args may themselves be catalog strings ({key, args}: decide.js)
+function said(key, args = {}) {
+	return t(key, Object.fromEntries(Object.entries(args).map(([k, v]) => [k, v?.key ? said(v.key, v.args) : v])));
+}
+
+// A language's name in the page's language ("es": "Spanish" on an English page), else its code
+function languageName(code) {
+	try {
+		return new Intl.DisplayNames([LANG], { type: "language" }).of(code) || code;
+	} catch (e) {
+		return code;
+	}
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -108,6 +124,8 @@ const initialState = () => ({
 	backupParts: [], backupDone: false,
 	bundle: null, restoreTarget: null,
 	link: null,
+	packsDismissed: new Set(),	// language packs the user said no to on the build step (langsuggest.js)
+	startLang: null,	// the Radio language picked on the build step; null: on an installation the page's (langsuggest.js)
 	customPicked: false,	// the Custom card picked before any feature changed
 	build: null,		// a custom build in progress: {selection, text, error}
 	useId: null,		// the flash log's id for this use (see useId)
@@ -354,8 +372,11 @@ async function loadData() {
 	const get = async (name) => (await fetch(`${ROOT}data/${name}`)).json();
 	const [radios, features, variants, fb, releases, site] = await Promise.all(
 		["radios.json", "features.json", "variants.json", "flash-boards.json", "releases.json", "site.json"].map(get));
-	return { radios: radios.radios, features: features.features, groups: features.groups, reported: features.reported || [],
-		variants: variants.variants, fb, releases: releases.releases, site };
+	// repository texts in the page's language where the catalog overrides them (feature.<SWITCH>.*, variant.<id>.*)
+	const feats = features.features.map((f) => ({ ...f, title: tOr(`feature.${f.name}.title`, f.title), help: tOr(`feature.${f.name}.help`, f.help) }));
+	const vars = variants.variants.map((v) => ({ ...v, title: tOr(`variant.${v.id}.title`, v.title), summary: tOr(`variant.${v.id}.summary`, v.summary) }));
+	return { radios: radios.radios, features: feats, groups: features.groups, reported: features.reported || [],
+		variants: vars, fb, releases: releases.releases, site };
 }
 
 const fb = () => (S.sim ? S.sim.fb : S.data.fb);
@@ -848,7 +869,7 @@ function updateView() {
 		}
 		const p = S.now.probe, cur = S.current;
 		// the radio's own build, unless the build step has the selection (edits kept when the user comes back)
-		const plan = S.editBuild ? { preset: S.selection.matches(), added: [], ask: [], ready: true } : planUpdate(cur, S.selection, S.decided);
+		const plan = S.editBuild ? { preset: S.selection.matches(startCode), added: [], ask: [], ready: true } : planUpdate(cur, S.selection, S.decided);
 		// an image built for another selection no longer applies
 		if (S.firmware?.selection && S.firmware.selection !== selectionKey(S.selection)) S.firmware = null;
 		const vtitle = (id) => (t(`variant.${id}.title`) !== `variant.${id}.title` ? t(`variant.${id}.title`) : S.data.variants.find((v) => v.id === id)?.title || id);
@@ -963,7 +984,7 @@ function buildView() {
 	const wrap = h("div", { class: "flasher" });
 	const vtitle = (v) => (t(`variant.${v.id}.title`) !== `variant.${v.id}.title` ? t(`variant.${v.id}.title`) : v.title);
 	const gtitle = (g) => (t(`group.${slug(g)}`) !== `group.${slug(g)}` ? t(`group.${slug(g)}`) : g);
-	const supportedCount = S.data.features.filter((f) => sel.supported(f.name)).length;
+	const supportedCount = S.data.features.filter((f) => sel.supported(f.name) && !startCode(f.name)).length;
 	// The build type follows the checkboxes: a selection equal to a prebuilt variant is that variant, anything else is
 	// custom. The Custom card can also be picked by hand before any change (it opens the groups).
 	const change = (name, value) => {
@@ -983,8 +1004,34 @@ function buildView() {
 		if (S.firmware || S.sim) next();
 	};
 	const forward = S.forward;
+	// the browser asks for a language the radio has a pack for and the build leaves it out: offer it (langsuggest.js)
+	const packNotice = () => {
+		const pack = suggestPack(S.data.features, globalThis.navigator?.languages, sel, S.packsDismissed);
+		if (!pack) return null;
+		const title = sel.byName[pack.name]?.title || pack.name;
+		return h("div", { class: "notice pack-suggest", role: "status" },
+			h("p", {}, t("flash.build.pack_text", { language: languageName(pack.code), feature: title })),
+			h("div", { class: "actions" },
+				button(t("flash.build.pack_on", { language: languageName(pack.code) }), () => change(pack.name, true), { primary: true }),
+				button(t("flash.build.pack_no"), () => { S.packsDismissed.add(pack.code); draw(); }, { quiet: true })));
+	};
+	// the language the radio starts in (LANG_DEFAULT_<CODE>): a choice of its own, not a feature in the groups. Picked,
+	// or on an installation the page's language when its pack is on; an update keeps the radio's
+	const startChoice = () => {
+		const langs = startLanguages(S.data.features, sel);
+		if (langs.length < 2) return null;
+		const cur = startLanguage(S.data.features, sel);
+		return h("div", { class: "start-lang" },
+			h("label", {}, h("b", {}, t("flash.build.start_lang")), " ",
+				h("select", { onchange: (e) => { S.startLang = e.target.value; S.customPicked = false; draw(); } },
+					langs.map((l) => h("option", { value: l.code, selected: l.code === cur }, languageName(l.code))))),
+			h("p", { class: "small muted" }, t("flash.build.start_lang_help")));
+	};
 	const draw = () => {
-		const match = S.customPicked ? null : sel.matches();
+		const want = S.startLang ?? (S.task === "install" ? LANG : null);
+		if (want) setStartLanguage(S.data.features, sel, want);
+		// the variant cards and the summary don't count the start language: Full in Spanish is still Full
+		const match = S.customPicked ? null : sel.matches(startCode);
 		// an image built for another selection no longer applies
 		if (S.firmware?.selection && S.firmware.selection !== selectionKey(sel)) S.firmware = null;
 		const card = (checked, onclick, ...body) => h("button", { class: "choice", type: "button", role: "radio",
@@ -1005,11 +1052,11 @@ function buildView() {
 		},
 		h("strong", {}, t("flash.build.custom")),
 		h("span", { class: "small" }, t("flash.build.custom_card_text")),
-		h("span", { class: "small muted" }, t("flash.build.count", { n: sel.on.size, total: supportedCount }))));
+		h("span", { class: "small muted" }, t("flash.build.count", { n: [...sel.on].filter((n) => !startCode(n)).length, total: supportedCount }))));
 		// every feature this radio supports, one collapsible group per feature-matrix group, each with its count
 		const groups = S.data.groups.map((g) => {
 			// what this radio can't run is listed too, grayed out, so nobody wonders where it went
-			const all = S.data.features.filter((f) => f.group === g && f.name !== "AUDIO_PROBE");
+			const all = S.data.features.filter((f) => f.group === g && f.name !== "AUDIO_PROBE" && !startCode(f.name));
 			const items = all.filter((f) => sel.supported(f.name));
 			if (!all.length) return null;
 			const on = items.filter((f) => sel.on.has(f.name)).length;
@@ -1048,6 +1095,7 @@ function buildView() {
 		});
 		const building = S.build && S.build.selection === selectionKey(sel);
 		const d = sel.diff(match || sel.base);
+		d.added = d.added.filter((n) => !startCode(n));
 		const baseTitle = vtitle(S.data.variants.find((v) => v.id === sel.base));
 		const summary = h("div", {}, match ? h("b", {}, t("flash.build.prebuilt", { variant: vtitle(S.data.variants.find((v) => v.id === match)) }))
 			: h("span", {}, h("b", {}, t("flash.build.custom")), " ",
@@ -1076,6 +1124,8 @@ function buildView() {
 				...options,
 				h("p", {}, t("flash.build.lead")),
 				h("div", { class: "choice-grid", role: "radiogroup" }, cards),
+				packNotice(),
+				startChoice(),
 				h("h3", {}, t("flash.build.features_title")),
 				h("div", { class: "feature-groups" }, groups),
 				image));
@@ -1184,7 +1234,7 @@ async function requestBuild(redraw) {
 		if (!current()) return;
 		// variant: the prebuilt choice this is, for the flash log (the service names every image it builds "custom")
 		S.firmware = { manifest: m, image: img, source: t("flash.build.built", { version: m.version }), origin: "custom",
-			variant: sel.matches() || "custom", build: b.id, selection: key, pinned: !!VERSION_REF };
+			variant: sel.matches(startCode) || "custom", build: b.id, selection: key, pinned: !!VERSION_REF };
 		S.build = null;
 	} catch (e) {
 		if (S.build?.selection === key) S.build.error = { text: t("flash.build.unavailable", { error: errorText(e) }), rec: diag.currentError() };
@@ -1576,7 +1626,7 @@ async function measureRate() {
 
 function estimate(bytes, s) {
 	const mb = bytes / 1048576;
-	const size = mb >= 1 ? `${mb.toFixed(mb >= 10 ? 0 : 1)} MB` : `${Math.round(bytes / 1024)} KB`;
+	const size = mb >= 1 ? `${num(mb, { maximumFractionDigits: mb >= 10 ? 0 : 1, minimumFractionDigits: mb >= 10 ? 0 : 1 })} MB` : `${num(Math.round(bytes / 1024))} KB`;
 	if (s == null) return t("flash.backup.time_unknown", { size });
 	return s < 60 ? t("flash.backup.time_lt1", { size }) : t("flash.backup.time_min", { size, n: Math.round(s / 60) });
 }
@@ -1616,7 +1666,7 @@ function codecView() {
 			});
 		} catch (e) {
 			S.decision = null;
-			err = e.reason || e.message;
+			err = e.key ? said(e.key, e.args) : e.reason || e.message;
 		}
 		noteDecision(err);
 		// The stock file is needed when the codec has to come from it, or the bootloader key can't come from anywhere
@@ -1633,7 +1683,7 @@ function codecView() {
 		const ready = S.decision && (keyKnown || stockKey);
 		// a merge from the copy saved from the radio isn't one from the stock file: its own label
 		const modeKey = S.decision?.mode === MERGE && S.decision.source === "saved" ? "merge_saved" : S.decision?.mode;
-		const plan = S.decision ? `${t(`flash.codec.mode.${modeKey}`)}: ${S.decision.why}.` : null;
+		const plan = S.decision ? `${t(`flash.codec.mode.${modeKey}`)}: ${S.decision.whyKey ? said(S.decision.whyKey, S.decision.args) : S.decision.why}.` : null;
 		const keyLine = S.keyFromRadio ? t("flash.codec.key_from_radio") : keyStored && !S.sim ? t("flash.codec.key_saved") : null;
 		const fromSaved = S.decision?.source === "saved";
 		const codecLine = !fromSaved ? null : S.savedCodec.from === "browser" ? t("flash.codec.codec_saved")
@@ -1675,7 +1725,8 @@ function codecView() {
 			if (problem) parts.push(...loaded.filter(Boolean));
 			if (keeping) parts.push(h("div", { class: `notice ${keeping === "ok" ? "info" : keeping === "none" ? "bad" : "warn"}` },
 				h("strong", {}, t(`flash.codec.keep_${keeping}.title`)), h("p", {}, t(`flash.codec.keep_${keeping}.text`))));
-			if (S.decision.risk) parts.push(h("p", { class: "small muted" }, S.decision.risk[0].toUpperCase() + S.decision.risk.slice(1) + "."));
+			if (S.decision.risk) parts.push(h("p", { class: "small muted" }, S.decision.riskKey ? t(S.decision.riskKey)
+				: S.decision.risk[0].toUpperCase() + S.decision.risk.slice(1) + "."));
 		}
 		// writing the codec from the stock file anyway, or forcing a mode: always there, never in the way
 		parts.push(h("details", { class: "small" }, h("summary", {}, t("flash.codec.advanced")),
