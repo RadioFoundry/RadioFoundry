@@ -7,7 +7,7 @@
 
 import { register } from "./extensions.js";
 import * as diag from "../diag.js";
-import { h, button, progressBar } from "../flasher/dom.js";
+import { h, button, progressBar, num as fmtNum } from "../flasher/dom.js";
 import * as radioid from "../codeplug/sources/radioid.js";
 import { writeIddb, eraseIddb, convertIddb, addContacts, iddbEnd, iddbSize, iddbRecords } from "../codeplug/sources/output.js";
 import { TEXT_LENGTHS } from "../codeplug/iddb.js";
@@ -123,7 +123,7 @@ function build(api) {
 			if (B.apiClient) B.apiClient.key = B.key;
 		} });
 	P.apiBox = h("div", {},
-		h("p", { class: "small" }, t("editor.rid.api_note", { max: (radioid.MAX_PAGES * radioid.PER_PAGE).toLocaleString() })),
+		h("p", { class: "small" }, t("editor.rid.api_note", { max: fmtNum(radioid.MAX_PAGES * radioid.PER_PAGE) })),
 		field(t("editor.rid.key"), keyInput, t("editor.rid.key_help")),
 		h("p", { class: "small muted" }, t("editor.rid.proxy_note")));
 
@@ -216,9 +216,9 @@ function update() {
 	const upgrade = db?.format === "N" && api.compact === true;
 	// a read that skipped the radio's database: it stays on the radio as it is, until read here or replaced
 	const skipped = api.iddbSkipped;
-	P.current.replaceChildren(...[skipped ? h("p", { class: "notice" }, t("editor.iddb_read.skipped", { n: skipped.count.toLocaleString() }), " ",
+	P.current.replaceChildren(...[skipped ? h("p", { class: "notice" }, t("editor.iddb_read.skipped", { n: skipped.count }), " ",
 		button(t("editor.iddb_read.read"), () => api.readSkippedIddb(), { primary: true }))
-		: h("p", {}, db ? t(present, { n: db.count.toLocaleString(), len: db.textLen }) : t("editor.iddb.none")),
+		: h("p", {}, db ? t(present, { n: db.count, len: db.textLen }) : t("editor.iddb.none")),
 		upgrade ? h("p", { class: "notice" }, t("editor.iddb.upgrade", { radio: api.radio.name }), " ",
 			button(t("editor.iddb.convert"), () => api.upgradeIddb(), { primary: true })) : null,
 		db ? button(t("editor.rid.remove_db"), () => api.confirmDialog(t("editor.rid.remove_confirm"), t("editor.rid.remove_db"), () => {
@@ -231,7 +231,7 @@ function update() {
 	P.apiBox.hidden = pr.mode !== "api";
 	P.fetch.hidden = pr.mode !== "api";
 	P.fetch.disabled = !pr.regions.length;
-	P.loadStatus.textContent = B.users ? t("editor.rid.loaded", { n: B.users.length.toLocaleString(), name: B.source }) : "";
+	P.loadStatus.textContent = B.users ? t("editor.rid.loaded", { n: B.users.length, name: B.source }) : "";
 	if (B.users && B.parts.counted !== B.users) renderCountries();
 	renderChosen();
 	// radio for the room check
@@ -287,10 +287,10 @@ function renderOutput() {
 	const parts = [];
 	if (!B.users) parts.push(t(pr.mode === "file" ? "editor.rid.need_file" : "editor.rid.need_fetch"));
 	else {
-		parts.push(t("editor.rid.selected", { n: sel.length.toLocaleString(), of: B.users.length.toLocaleString() }));
-		if (sel.length) parts.push(t("editor.rid.size", { kb: Math.ceil(size.bytes / 1024).toLocaleString() }));
-		if (radio && sel.length > size.fit) parts.push(t("editor.rid.too_many", { fit: size.fit.toLocaleString(), radio: radio.name }));
-		else if (radio && size.fit !== Infinity && sel.length) parts.push(t("editor.rid.room", { fit: size.fit.toLocaleString(), radio: radio.name }));
+		parts.push(t("editor.rid.selected", { n: sel.length, of: fmtNum(B.users.length) }));
+		if (sel.length) parts.push(t("editor.rid.size", { kb: fmtNum(Math.ceil(size.bytes / 1024)) }));
+		if (radio && sel.length > size.fit) parts.push(t("editor.rid.too_many", { fit: fmtNum(size.fit), radio: radio.name }));
+		else if (radio && size.fit !== Infinity && sel.length) parts.push(t("editor.rid.room", { fit: fmtNum(size.fit), radio: radio.name }));
 	}
 	P.summary.textContent = parts.join(" ");
 	P.summary.classList.toggle("bad", !!(radio && sel.length > size.fit));
@@ -318,7 +318,7 @@ function renderCountries() {
 		...radioid.COUNTRIES.map((c) => {
 			const n = counts?.get(c.name.toLowerCase())?.count;
 			if (counts && !n) return null;
-			return h("option", { value: c.name, selected: c.name === pick }, n ? `${c.name} (${n.toLocaleString()})` : c.name);
+			return h("option", { value: c.name, selected: c.name === pick }, n ? `${c.name} (${fmtNum(n)})` : c.name);
 		}));
 	renderStates();
 }
@@ -334,7 +334,7 @@ function renderStates() {
 	const n = (s) => counts?.states.find((x) => x.name.toLowerCase() === s.toLowerCase())?.count;
 	P.states.replaceChildren(h("p", { class: "small muted" }, t("editor.rid.states_help")),
 		h("div", { class: "rid-state-list" }, ...c.states.map((s) => h("label", {}, h("input", { type: "checkbox", value: s }),
-			n(s) ? `${s} (${n(s).toLocaleString()})` : s))));
+			n(s) ? `${s} (${fmtNum(n(s))})` : s))));
 }
 
 function addRegion() {
@@ -392,7 +392,7 @@ async function fetchUsers() {
 		}
 		if (pages > radioid.MAX_PAGES) {
 			d.close();
-			return api.say(t("editor.rid.too_big", { n: count.toLocaleString(), max: (radioid.MAX_PAGES * radioid.PER_PAGE).toLocaleString() }), "bad");
+			return api.say(t("editor.rid.too_big", { n: count, max: fmtNum(radioid.MAX_PAGES * radioid.PER_PAGE) }), "bad");
 		}
 		const users = [];
 		let done = 0;
@@ -430,9 +430,9 @@ function output(kind) {
 				r = writeIddb(api.model, sel, { template: pr.template, upper: pr.upper, textLen: pr.textLen, end: iddbEnd(targetRadio()), fmt: idFormat() });
 			});
 			api.markIddb();
-			api.say(t("editor.rid.db_done", { n: r.count.toLocaleString() }) + (r.dropped ? " " + t("editor.rid.db_dropped", { n: r.dropped.toLocaleString() }) : ""), r.dropped ? "warn" : "ok");
+			api.say(t("editor.rid.db_done", { n: r.count }) + (r.dropped ? " " + t("editor.rid.db_dropped", { n: r.dropped }) : ""), r.dropped ? "warn" : "ok");
 		};
-		if (api.model.iddb) api.confirmDialog(t("editor.rid.replace_confirm", { n: api.model.iddb.count.toLocaleString() }), t("editor.rid.write_db"), go);
+		if (api.model.iddb) api.confirmDialog(t("editor.rid.replace_confirm", { n: api.model.iddb.count }), t("editor.rid.write_db"), go);
 		else go();
 		return;
 	}

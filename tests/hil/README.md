@@ -367,6 +367,9 @@ SDR clips, and the bench modem's tries counted with a minimum of one. An attenua
   channel). The session puts the VFO in FM and puts its frequency and mode back afterwards; `vfo_session(mode=None)`
   keeps the mode. The VFO's mode, color code, slot and talk target are its own settings and outlive a power cycle,
   so a test that changes them (Copy to VFO does) puts them back itself.
+- Before the first test the session sets auto lock back to Off and the radio's language back to English
+  (`settings.lang`, Settings > Display > Language) and says so: tests match the English text in the view (`ui.toast`,
+  `ui.banner`, screen texts). A test that changes the language puts it back itself.
 - Drive the radio with `radio.press("up")`, `radio.long_press("back")`, `radio.link.key_hold("monitor", 2000)`,
   radio requests (`radio.link.vfo_set(hz)`, `radio.link.zone_pos(n)`, ...) and `radio.ptt_for(seconds)` (at most 10 s;
   the firmware releases PTT by itself at its time-out). Call `radio.go_home()` first for UI tests.

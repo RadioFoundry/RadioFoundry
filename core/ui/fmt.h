@@ -15,6 +15,9 @@ typedef struct {
 } sbuf_t;
 
 void sb_init(sbuf_t *b, char *buf, size_t len);
+// Copies src into a buffer of cap bytes, truncated and always terminated: for text that may be a translation
+// (i18n.h), whose length isn't known when the code is written
+void str_copy(char *dst, size_t cap, const char *src);
 void sb_str(sbuf_t *b, const char *s);
 void sb_chr(sbuf_t *b, char c);
 // Unsigned decimal with at least min_digits digits (zero padded)

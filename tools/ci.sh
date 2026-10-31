@@ -290,6 +290,21 @@ for f in sys.argv[1:]:
 		head -20 "$OUT/glossary.log"
 		bad "glossary (see $OUT/glossary.log)"
 	fi
+	# translations (docs/dev/translating.md): the radio's catalogs in step with the source, every translation drawable,
+	# none missing or fuzzy, on the radio or the site
+	if python3 tools/i18n.py --check > "$OUT/i18n.log" 2>&1 && python3 tools/i18n_test.py >> "$OUT/i18n.log" 2>&1 &&
+		(cd site && python3 -m rfoundrysite.i18n) >> "$OUT/i18n.log" 2>&1; then
+		ok "translations: $(grep '^i18n: [0-9]' "$OUT/i18n.log" | sed 's/^i18n: //'); $(python3 tools/i18n.py --stats |
+			sed -E 's/^([a-z]+) .* \(([0-9]+%)\)$/\1 \2/' | paste -sd ' ' -)"
+	else
+		grep -v '^changed$' "$OUT/i18n.log" | head -30
+		bad "translations (see $OUT/i18n.log)"
+	fi
+	# English this branch changed while a translation didn't: often right, so a warning (a pull request annotation in
+	# GitHub Actions) for the reviewer, never a failure
+	python3 tools/i18n_changes.py > "$OUT/i18n-changes.log" 2>&1 || true
+	grep -v '^i18n changes: ' "$OUT/i18n-changes.log" || true
+	ok "$(grep '^i18n changes: ' "$OUT/i18n-changes.log" || echo "i18n changes: not run")"
 	# the web site (docs/dev/website.md): its generator with site/requirements.txt, from the environment or through uv
 	if python3 -c "import markdown_it, resvg_py" 2> /dev/null; then SITE_PY="python3"
 	elif command -v uv > /dev/null; then SITE_PY="uv run --no-project -q --with-requirements site/requirements.txt python3"
@@ -312,6 +327,12 @@ for f in sys.argv[1:]:
 		else
 			tail -20 "$OUT/release-site.log"
 			bad "site release and beta tests (see $OUT/release-site.log)"
+		fi
+		if $SITE_PY site/tests/i18n_test.py > "$OUT/i18n-site.log" 2>&1; then
+			ok "site catalogs and second language: $(tail -3 "$OUT/i18n-site.log" | head -1)"
+		else
+			tail -20 "$OUT/i18n-site.log"
+			bad "site catalogs and second language (see $OUT/i18n-site.log)"
 		fi
 	else
 		skip "web site build: site/requirements.txt not installed (pip install -r site/requirements.txt, or install uv)"

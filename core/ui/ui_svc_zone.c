@@ -8,6 +8,8 @@
 #if CONFIG_ZONE_SHARE
 #include <string.h>
 #include "ui_svc.h"
+#include "fmt.h"
+#include "i18n.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/zone_import.h"
 #include "dmr/zone_share_api.h"
@@ -141,7 +143,8 @@ static struct {
 // The import list's copy: the settings aren't held while the codeplug is written
 static settings_zs_import_t job_imports[SETTINGS_ZS_IMPORTS];
 
-// ok: name the zone's name here, index the channels written, id 1 when it updated an earlier import; else text why
+// ok: name the zone's name here, index the channels written, id 1 when it updated an earlier import; else text why, in
+// English (TRN): the UI translates it when it shows it, so a longer translation isn't cut to the event's 40 bytes
 static void import_done(bool ok, const char *text, const zone_import_result_t *r)
 {
 	ui_event_t ev;
@@ -161,13 +164,13 @@ static void import_done(bool ok, const char *text, const zone_import_result_t *r
 static const char *import_failure(zone_import_status_t st)
 {
 	switch (st) {
-	case ZI_NONE_IN_BAND: return "No channel in this radio's bands";
-	case ZI_NO_ZONE: return "No room for another zone";
-	case ZI_ZONE_FULL: return "That zone is full";
-	case ZI_NO_CHANNELS: return "Not enough free channels";
-	case ZI_NO_CONTACTS: return "Not enough free contacts";
-	case ZI_FLASH: return "Couldn't save: try again";
-	default: return "Not a zone this radio reads";
+	case ZI_NONE_IN_BAND: return TRN("No channel in this radio's bands");
+	case ZI_NO_ZONE: return TRN("No room for another zone");
+	case ZI_ZONE_FULL: return TRN("That zone is full");
+	case ZI_NO_CHANNELS: return TRN("Not enough free channels");
+	case ZI_NO_CONTACTS: return TRN("Not enough free contacts");
+	case ZI_FLASH: return TRN("Couldn't save: try again");
+	default: return TRN("Not a zone this radio reads");
 	}
 }
 
@@ -178,7 +181,7 @@ static void import_job(void *ctx)
 	zone_share_offer_t o;
 	const uint8_t *data;
 	if (!zone_share_offer(&o, &data) || o.serial != job.serial) {
-		import_done(false, "The offer is gone", NULL);
+		import_done(false, TRN("The offer is gone"), NULL);
 		return;
 	}
 	zone_import_status_t st;
@@ -234,23 +237,18 @@ bool ui_svc_zone_event(uint8_t kind, uint32_t id, ui_event_t *ev)
 	ev->kind = UI_EV_ZONE_OFFER;
 	ev->index = o.channel;
 	strcpy(ev->name, o.from);
-	// "Zone Club, 24 channels" / "Channel Repeater 1"
-	char *t = ev->text;
-	size_t n = 0;
-	const char *what = o.channel ? "Channel " : "Zone ";
-	strcpy(t, what);
-	n = strlen(what);
-	size_t nl = strnlen(o.name, 16);
-	memcpy(t + n, o.name, nl);
-	n += nl;
-	t[n] = 0;
+	// "Zone Club, 24 channels" / "Channel Repeater 1", in the user's language (bounded: a translation is longer)
+	char name[sizeof o.name];
+	memcpy(name, o.name, sizeof name - 1);	// as sent: 16 characters, perhaps without the terminator
+	name[sizeof name - 1] = 0;
+	sbuf_t b;
+	sb_init(&b, ev->text, sizeof ev->text);
+	sb_str(&b, o.channel ? TR("Channel ") : TR("Zone "));
+	sb_str(&b, name);
 	if (!o.channel) {
-		t[n++] = ',';
-		t[n++] = ' ';
-		if (o.channels >= 10)
-			t[n++] = (char)('0' + o.channels / 10);
-		t[n++] = (char)('0' + o.channels % 10);
-		strcpy(t + n, o.channels == 1 ? " channel" : " channels");
+		sb_str(&b, ", ");
+		sb_u32(&b, o.channels, 1);
+		sb_str(&b, o.channels == 1 ? TR(" channel") : TR(" channels"));
 	}
 	return true;
 }
