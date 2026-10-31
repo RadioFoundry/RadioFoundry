@@ -16,6 +16,7 @@ from . import __version__, boards, bootkey, codecsave, debuglink, manifest as mf
 from . import dfu as dfumod
 from . import release as relmod
 from . import serialflash
+from . import k22fcodec, hidboot, stubroute, updatefile
 
 EPILOG = """\
 examples:
@@ -534,10 +535,17 @@ def cmd_flash(args):
     board, man, image, merged = load_image(args, args.board)
     if board.family == "serial-loader":
         return cmd_flash_serial(args, board, man, image, merged)
+    if board.family == "usb-hid-sgl":
+        if args.route == serialflash.STUB:
+            return cmd_flash_stub(args, board, image, merged)
+        return cmd_flash_hid(args, board, image)
     if board.family == "serial-iap":
         raise UsageError("%s is installed with the web flasher or stub/stubtool.py, not with rfoundry" % board.name)
+    if args.route == serialflash.STUB:
+        return cmd_flash_stub(args, board, image, merged)
     if args.route != serialflash.AUTO:
-        raise UsageError("--route is for the radios flashed over a programming cable (DM-1801 Pro, DM-32UV)")
+        raise UsageError("--route is for the radios flashed over a programming cable (DM-1801 Pro, DM-32UV) and "
+                         "--route stub (radios running RadioFoundry with stub entry)")
     stock = load_stock(args)
     if merged and stock is not None:
         say("stock    the image carries the codec, so the stock file only gives the bootloader key")
@@ -679,6 +687,96 @@ def _progress(unit):
             sys.stdout.write("writing  %d/%d %s (%d%%)\n" % (done, total, unit, pct))
         sys.stdout.flush()
     return progress
+
+
+def hid_update_file(args, board, image):
+    """(update file bytes, donor, flat image, codec profile or None): the image with the codec merged in, written into
+    a copy of the stock update file --stock (its header is the donor's)."""
+    if not args.stock:
+        raise UsageError("the %s update needs --stock FILE: one of the radio's own update files (.sgl). It supplies the "
+                         "file header the radio's loader expects and, unless --codec keep, the AMBE codec" % board.name)
+    with open(os.path.expanduser(args.stock), "rb") as f:
+        donor = f.read()
+    try:
+        u = updatefile.UpdateFile(donor)
+        flat = updatefile.unpack(u)
+        spec = k22fcodec.find_spec(flat, board=board.id)
+        if args.codec == planmod.KEEP:
+            out, prof = image, None
+        else:
+            if spec is None:
+                raise UsageError("%s is not one of the supported %s stock builds (%s), so its codec cannot be placed. "
+                                 "Use --codec keep to flash without voice" % (u.label(), board.name, ", ".join(sorted(k22fcodec.load_specs(board=board.id)))))
+            out, prof = k22fcodec.merge(image, k22fcodec.pack(flat, spec)), spec["profile"]
+        if len(out) > u.room:
+            raise UsageError("the image is %d bytes, the stock update file has room for %d" % (len(out), u.room))
+        return updatefile.pack(out, u), u, out, prof
+    except (updatefile.UpdateFileError, k22fcodec.PackError) as e:
+        raise UsageError(str(e))
+
+
+def cmd_flash_stub(args, board, image, merged):
+    """The STM32F4 and K22F radios through the flash stub (stubroute.py): RadioFoundry must be running with stub entry."""
+    if board.id not in stubroute.BOARDS:
+        raise UsageError("the %s has no flash stub; use the bootloader route" % board.name)
+    if args.simulate:
+        raise UsageError("--simulate does not cover the stub route")
+    if board.family == "usb-hid-sgl":
+        if args.stock:
+            _, _, image, prof = hid_update_file(args, board, image)
+            say("codec    %s" % ("MERGED: %s placed at 0x%X" % (prof, k22fcodec.CODE_BASE) if prof else "none"))
+        else:
+            say("codec    the radio keeps the one it has (no --stock given)")
+    else:
+        if merged:
+            warn("the codec in this image is ignored: the stub route keeps the radio's own codec")
+        if args.codec == "merge" or (args.stock and args.codec == "auto"):
+            warn("the stub route never writes a codec; --stock is ignored (use the bootloader route to write one)")
+    say("route    stub: the radio must be ON and run RadioFoundry built with CONFIG_STUB_ENTRY=y")
+    if args.dry_run:
+        say("dry run: %d bytes would be written (changed sectors only)" % len(image))
+        return 0
+    if not args.yes and not ask_yes("Write the changed sectors now?", default=True):
+        return 1
+    try:
+        rc = stubroute.run(board, image, args.port, log=say)
+    except stubroute.StubRouteError as e:
+        raise UsageError(str(e))
+    return rc
+
+
+def cmd_flash_hid(args, board, image):
+    """A radio whose loader takes a stock update file over USB HID (hidboot.py): untested on a radio."""
+    if args.route not in (serialflash.AUTO, serialflash.BOOTLOADER):
+        raise UsageError("--route %s does not apply to the %s" % (args.route, board.name))
+    new, donor, out, prof = hid_update_file(args, board, image)
+    say("stock    %s: header and codec source" % donor.label())
+    say("codec    %s" % ("MERGED: %s placed at 0x%X" % (prof, k22fcodec.CODE_BASE) if prof else "none: the image has no voice"))
+    say("image    %d bytes of flash from 0x%X written into an update file of %d bytes" % (len(out), updatefile.FLASH_BASE, len(new)))
+    warn("not yet tried on a radio: if the loader refuses the file, nothing is erased before the names are checked")
+    if args.dry_run:
+        say("dry run: nothing was sent")
+        return 0
+    u2 = updatefile.UpdateFile(new)
+    if args.simulate:
+        link = hidboot.FakeBootloader(u2)
+    else:
+        say("radio    switch it off, hold both side keys, switch it on and connect the USB cable (update mode)")
+        link = hidboot.HidLink()
+    if not args.yes and not args.simulate and not ask_yes("Erase and write the radio's application now?", default=True):
+        return 1
+    last = [-1]
+
+    def progress(done, total):
+        pct = 100 * done // total
+        if pct != last[0] and pct % 10 == 0:
+            last[0] = pct
+            say("write    %d%%" % pct)
+    hidboot.Updater(link).flash(u2, progress=progress)
+    if args.simulate and link.received() != u2.body[:u2.length]:
+        raise UsageError("simulation: the model loader received something else than the file's body")
+    say("done     the radio restarts by itself")
+    return 0
 
 
 def cmd_flash_serial(args, board, man, app, slot):
@@ -931,6 +1029,16 @@ def cmd_key(args):
 
 
 def cmd_merge(args):
+    if args.board and boards.get(args.board).family == "usb-hid-sgl":
+        board = boards.get(args.board)
+        with open(os.path.expanduser(args.image), "rb") as f:
+            image = f.read()
+        new, donor, out, prof = hid_update_file(args, board, image)
+        with open(args.output, "wb") as f:
+            f.write(new)
+        say("wrote    %s (%d bytes, an update file%s: keep it to yourself)"
+            % (args.output, len(new), " containing the proprietary codec" if prof else ""))
+        return 0
     with open(os.path.expanduser(args.image), "rb") as f:
         image = f.read()
     with open(os.path.expanduser(args.stock), "rb") as f:
@@ -1033,6 +1141,7 @@ def build_parser():
     m.add_argument("--key")
     m.add_argument("-o", "--output", required=True)
     m.add_argument("--board")
+    m.add_argument("--codec", choices=("auto", "keep", "merge"), default="auto", help="a USB HID update file (--board): keep: no codec in the file")
     m.set_defaults(fn=cmd_merge)
 
     g = sub.add_parser("download", help="download a release image and manifest, verified")

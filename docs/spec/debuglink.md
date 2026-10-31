@@ -337,6 +337,7 @@ short. Each request takes a fresh snapshot
 | 24 | `air` | the data TX queue ([dmr-data.md](dmr-data.md) 12): `airq.built airq.depth` (packets queued, the one being sent included) `airq.bytes` (their octets with record headers and padding) `airq.high airq.high_bytes` (the most of each since start) `airq.capacity` (`CONFIG_DMR_AIR_QUEUE_BYTES`) `airq.queued airq.full` (refused: no room) `airq.sent airq.failed airq.gave_up` (the service never took it) `airq.aged` (queued too long) `airq.other` (no DMR ID, too long for a list, canceled) `airq.waits` (ticks the oldest packet waited for the service); `airq.chained` (packets that went in the transmission of the one before them); `data.tx_guarded` (lists held back by the guard) `data.tx_guard_ms data.tx_chain` (the spacing in force, op 11 of 3.12) `ip.chains` (transmissions with more than one IP packet) `ip.chained` (the packets after the first in them); zone sharing ([zone-share.md](zone-share.md)): `zs.built zs.offers` (0 off, 1 ask) `zs.send_state` (0 idle, 1 sending, 2 sent, 3 failed) `zs.offer_pending zs.offer_src zs.rx_messages zs.rx_bad zs.rx_busy zs.rx_off zs.offered zs.rate_limited zs.expired zs.sends zs.sent zs.send_failed zs.requests zs.refusals zs.last_refusal`. Built without the queue: `airq.built=0`; without zone sharing: `zs.built=0` |
 | 25 | `net_svc` | the radio's UDP services on the USB network link: with mDNS `mdns.state mdns.name mdns.queries mdns.answered mdns.sent mdns.busy mdns.conflicts mdns.bad` (`mdns.md` 5), with TFTP `tftp.state tftp.reads tftp.writes tftp.errors tftp.timeouts tftp.retransmits tftp.last_size tftp.blksize tftp.write_allowed` (`tftp.md` 6); `net_svc.built=0` without either |
 | 26 | `net_link` | the host link's MTUs ([usb-network.md](usb-network.md) 3.2), with the IP gateway: `net.mtu` (the link's, DHCP option 26) `net.air_mtu` (one transmission's) and the drops `net.air_too_big net.frag_needed net.up_too_big`; `CONFIG_NET_PPP` builds `ppp.running ppp.ip_up ppp.lcp ppp.ipcp` (RFC 1661 state numbers, 9 = opened) `ppp.rx_frames ppp.tx_frames ppp.rx_errors ppp.mru ppp.peer_mru` ([ppp.md](ppp.md)); `net_link.built=0` without either |
+| 27 | `board` | the board's own readings for bring-up and its HIL tests, from `board.view_line` (`hal/board.h`): `board.built` (0 = the board has none), then the board's keys under `board.`. Read only: no pin or chip changes. Each board lists its keys in its hardware page |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -636,8 +637,8 @@ The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP e
 ### 3.18 STUB
 
 Load the host's flash-access RAM monitor into a free RAM span and hand the SoC to it at run time, no power cycle
-(`CONFIG_STUB_ENTRY`, its own feature: [stub-entry.md](stub-entry.md); a build without the debug link answers this command with its own listener, byte for byte the same). Two platforms have it: the HR_C7000 (the "C7 stub", [stub-entry.md](stub-entry.md)) and the
-STM32F4 ([stub-stm32f4.md](stub-stm32f4.md)). Built without the switch, or on a
+(`CONFIG_STUB_ENTRY`, its own feature: [stub-entry.md](stub-entry.md); a build without the debug link answers this command with its own listener, byte for byte the same). Three platforms have it: the HR_C7000 (the "C7 stub", [stub-entry.md](stub-entry.md)), the
+STM32F4 ([stub-stm32f4.md](stub-stm32f4.md)) and the K22F ([stub-k22f.md](stub-k22f.md), unverified). Built without the switch, or on a
 board whose platform has no `hal_system_t.enter_stub`, every operation answers `DL_ST_UNAVAILABLE`. All u32 are little
 endian. The guard is a 32-bit magic key `'C7SB'` (`0x42533743`) on BEGIN and ENTER, plus the exact length and a CRC-32
 of the whole image checked before the jump.
@@ -660,8 +661,10 @@ the same UART at the same baud. Recover the radio with a power cycle.
 Where the image runs: INFO's load_addr is the address the image is linked for, and the host builds BEGIN's entry from
 it. On the HR_C7000 that is the span itself. On the STM32F4 the span is a staging buffer in RadioFoundry's own RAM and
 load_addr is the SRAM base (0x20000000, `hal_system_t.stub_run_addr`): `enter_stub` stops the DMA controllers,
-copies the buffer there and jumps with a handoff flag in r0 ([stub-stm32f4.md](stub-stm32f4.md) 3). The STM32F4
-stub then answers on the USB serial port, with the same framing as the C7 stub. ENTER is answered busy (3) while the
+copies the buffer there and jumps with a handoff flag in r0 ([stub-stm32f4.md](stub-stm32f4.md) 3). The K22F does
+the same with SRAM_L's base (0x1FFF0000), after parking the USB controller on a table in SRAM_U, and passes the USB
+data toggles in r1 and the core clock in r2 ([stub-k22f.md](stub-k22f.md) 2). Either stub then answers on the USB
+serial port, with the same framing as the C7 stub. ENTER is answered busy (3) while the
 radio transmits.
 
 The monitor never touches the RF chips, so the transmitter stays as RadioFoundry left it for the whole session. ENTER is

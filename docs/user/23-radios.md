@@ -15,6 +15,7 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
+| [Radioddity GD-77](#radioddity-gd-77) | TYT MD-760 | Bring-up: the UI on the 128x64 display, keys, power and FM receive; DMR carries data and signaling but no voice yet. Open: transmit, the codec and a first run of the update path on a radio. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -641,6 +642,35 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
 
+## Radioddity GD-77
+
+Covers the Radioddity GD-77 and the TYT MD-760. A handheld for 136-174 and 400-470 MHz with a keypad, direction keys and
+a 128 x 64 monochrome screen. **In bring-up**: the screens, the keys, power and FM receive. DMR carries data and
+signaling but no voice yet.
+
+### Installing on the GD-77
+
+Builds go in through the radio's own update mode, so the stock loader stays. Follow [Installing](02-installing.md)
+with these values. The update path has not run on a radio yet.
+
+| Item | GD-77 |
+|---|---|
+| Stock firmware file | One of the radio's own update files (`.sgl`) from the manufacturer's download. rfoundry writes the build into a copy of it and takes the voice codec from it |
+| Update mode | Switch the radio off, hold both side keys below **PTT** and switch it on, with the USB cable connected |
+| Command line | `rfoundry flash IMAGE --board gd77 --stock FILE.sgl` |
+| Board name | `gd77` |
+
+### GD-77 keys
+
+The keys follow the DM-1801 Pro's roles: the green key is **OK**, the red key is **Back**, and the arrows move the
+focus. Which matrix position is which key is still to be checked on a radio, so a key may do another key's job.
+
+### What the GD-77 lacks today
+
+- No transmit, FM or DMR.
+- No DMR voice: the codec isn't placed yet.
+- The update path, the keys and the battery reading haven't been checked on a radio.
+
 ## Planned radios
 
 These radios aren't built in a release yet. An in-progress port is on its own branch. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
@@ -650,7 +680,6 @@ models it covers.
 | Radio | Status |
 |---|---|
 | TYT MD-9600, Retevis RT90 (mobile) | In progress ([#112](https://github.com/radiofoundry/radiofoundry/pull/112)). Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD. |
-| Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/radiofoundry/radiofoundry/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
 | Radioddity GD-88 | In progress ([#132](https://github.com/radiofoundry/radiofoundry/pull/132)). Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
 | Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | Planned. A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |

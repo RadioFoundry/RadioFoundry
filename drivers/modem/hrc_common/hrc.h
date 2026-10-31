@@ -61,9 +61,15 @@ typedef struct {
 	void (*rx_decode)(hrc_t *dev, bool on);
 } hrc_chip_t;
 
+// The codec input the microphone is wired to (0xE0 bits, hrc6000-registers.md 3.20): a board choice
+#define HRC_MIC_LINEIN1		0x40u	// the default
+#define HRC_MIC_MIC_P		0x02u
+
 struct hrc {
 	const hrc_bus_t *bus;
 	const hrc_chip_t *chip;
+	uint8_t mic_input;	// HRC_MIC_*: set in 0xE0 whenever the microphone is on
+	uint8_t mic_gain_base;	// HR_C6000 0xE4 = this + the mic gain: the LINEOUT gain and mic stages a board wants (0x20)
 };
 
 // Bind a chip driver's description to a bus. Called by hrc6000_attach and hrc5000_attach, not by the boards

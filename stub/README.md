@@ -168,14 +168,20 @@ written, never a reset part way through. `--rfoundry-enter` prints the version i
 
 | File | What |
 |---|---|
-| `common/` | the protocol engine every stub target shares (`stubeng.h` documents the port a target supplies): framing, ops, safety rules, SUMS and READ. Host tested |
-| `stm32f4/` | the STM32F4 target: entry, USB, flash controller, SPI flash, the board record check, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (8,072 bytes, at most 8 KB, built with `-flto`) |
+| `common/` | what every stub target shares: the protocol engine (`stubeng.h` documents the port a target supplies: framing, ops, safety rules, SUMS and READ; host tested), the runtime and main loop (`stubrt`), the CDC-ACM device's descriptors and requests (`stubcdc`), the SPI NOR commands (`stubnor`) |
+| `stm32f4/` | the STM32F4 target: entry, USB, flash controller, SPI flash, the board record check, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (8,184 bytes, at most 8 KB, built with `-flto`) |
+| `k22f/` | the Kinetis K22F target, the same shape: `make -C stub/k22f` writes `build/stub-k22f/k22stub.bin` (at most 8 KB). Spec: [docs/spec/stub-k22f.md](../docs/spec/stub-k22f.md) |
+| `k22stub.py` | the K22F host side on top of `f4stub.py`'s radio class, with its build embedded the same way; `stubtool.py` hands every board with a `k22stub` `[flash.stub]` to it (`--rfoundry-enter`, or `--attach --board <id>`); `--self-test` runs without a radio |
 | `f4stub.py` | its host side, with the stub build embedded (checked by SHA-256; `--embed` puts a new build in, and CI fails while a fresh build differs); `stubtool.py` hands every board with an `f4stub` `[flash.stub]` to it (`--rfoundry-enter`, or `--attach --board md380`); the board profiles come from the board registry (`board.toml` `[flash.stub]` and `pins.h`, [board-registry.md](../docs/dev/board-registry.md)); `--self-test` runs without a radio |
 
 Status (2026-10-25): built and host tested (`tests/host`: the protocol engine with the board record and the security
 registers, and the host tool against the real engine through a pipe). Protocol 2 ran on the DM-1701
 ([stub-stm32f4.md](../docs/spec/stub-stm32f4.md) 11); protocol 4 (the board record), protocol 5 (the security registers)
 and the MD-380 have not run on a radio yet.
+
+The K22F stub works the same way: one stub image, the board record sent with CONFIG, the same install order. Its record
+also limits the writable flash (the application base up to the board's protected last sector) and keeps the SPI NOR
+below the board's write floor read only. Built and host tested; not run on a radio.
 
 ## HR_C7000 status
 

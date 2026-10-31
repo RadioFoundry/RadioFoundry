@@ -13,6 +13,8 @@ void hrc_attach(hrc_t *dev, const hrc_bus_t *bus, const hrc_chip_t *chip)
 {
 	dev->bus = bus;
 	dev->chip = chip;
+	dev->mic_input = HRC_MIC_LINEIN1;
+	dev->mic_gain_base = 0x20u;
 }
 
 static uint8_t page_of(const hrc_t *dev, uint8_t page)

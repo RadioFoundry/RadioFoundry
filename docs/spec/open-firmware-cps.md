@@ -2,13 +2,13 @@
 
 # Open-firmware CPS interoperability
 
-This spec describes the serial protocol and the codeplug memory layout that the open-firmware CPS and qdmr's GD-77/UV380
+This spec describes the serial protocol and the codeplug memory layout that the open-firmware CPS and qdmr's MK22 and UV380
 open-firmware drivers use. A new implementation can use it to build an interop shim, so that existing PC tools can
 read and write our radios. It covers wire formats and stored data formats only. How the new firmware stores its own data internally
 is a separate decision. The shim can translate between the image described here and our own storage, or it can keep
 this image as the storage.
 
-Sources: qdmr's open-firmware drivers for the GD-77 and the UV380 family (GPL-3, github.com/hmatuschek/qdmr; only protocol
+Sources: qdmr's open-firmware drivers for the MK22 and the UV380 families (GPL-3, github.com/hmatuschek/qdmr; only protocol
 facts were taken from it) and the behavior of RadioFoundry's own implementation (`core/cps/cps_openfw.c`,
 `core/codeplug/`). The open-firmware CPS is closed source. What it reads and writes is what the radio accepts and what
 qdmr does.
@@ -88,7 +88,7 @@ The first byte of a request selects the command.
 | 0xE0 | First byte of an MMDVM frame: switches to hotspot mode (section 6) | all, when a hotspot type is set |
 | anything else | Answered with `-` | |
 
-qdmr sends `W` to the MK22 family (its variant "GD77": radio types 0-4) and `X` to the STM32 family (its variant
+qdmr sends `W` to the MK22 family (its first variant: radio types 0-4) and `X` to the STM32 family (its variant
 "UV380": radio types 5-10). It reads and writes in 32 byte blocks.
 
 ### 2.1 `R`: read
@@ -137,7 +137,7 @@ Special cases the radio applies to sub commands 1-3 (and 4 on the MK22). An inte
 
 | Case | Behavior |
 | --- | --- |
-| Calibration window, flash image 0x10000..0x101FF (STM32 and HR_C7000 radios) | Preparing sector 0x10 succeeds without reading flash. Data inside the window goes to the radio's working calibration copy. The commit saves that copy. Reads of the window are served from the copy (2.1). On an HR_C7000 radio the copy is the UV380-format table: the radio's own factory calibration is not exposed, and the CPS has no calibration window of its own (the sector is plain data). The GD-77 has no window: its calibration is plain flash at 0xF000 (working copy) and 0x8F000 (factory) |
+| Calibration window, flash image 0x10000..0x101FF (STM32 and HR_C7000 radios) | Preparing sector 0x10 succeeds without reading flash. Data inside the window goes to the radio's working calibration copy. The commit saves that copy. Reads of the window are served from the copy (2.1). On an HR_C7000 radio the copy is the UV380-format table: the radio's own factory calibration is not exposed, and the CPS has no calibration window of its own (the sector is plain data). The MK22 family has no window: its calibration is plain flash at 0xF000 (working copy) and 0x8F000 (factory) |
 | Quick-key slots, EEPROM image 0x7524..0x7537 (10 entries of 2 bytes) | Written like the rest of the codeplug. RadioFoundry keeps the key assignment there (`ui.md` 3.1); values another firmware left are ignored |
 | Channel bank 0 rewritten (a write that falls entirely inside EEPROM image 0x3780..0x538F) | Remembered. At "save and reboot" (`C` 6 0) the radio re-reads the zones and channels, selects the All Channels zone, and points it at its last used channel, or else the first channel in use |
 | LUCZ rewritten (a write inside 0x6000..0x6049) | Remembered. The radio then doesn't overwrite the LUCZ with its own copy at "save and reboot" |
@@ -228,13 +228,13 @@ The structure is little endian, packed, 46 bytes in struct version 3.
 | 4 | 4 | radioType (table below) |
 | 8 | 16 | Git revision, ASCII, NUL padded |
 | 24 | 16 | Build date and time, ASCII `YYYYMMDDhhmmss`, NUL padded |
-| 40 | 4 | Flash chip JEDEC capacity / part id: 0x4014 for an 8 Mbit (GD-77), 0x4018 for a 128 Mbit (STM32 radios), 0x4017 for a 64 Mbit (modified GD-77s) |
+| 40 | 4 | Flash chip JEDEC capacity / part id: 0x4014 for an 8 Mbit (MK22 radios), 0x4018 for a 128 Mbit (STM32 radios), 0x4017 for a 64 Mbit (modified MK22 radios) |
 | 44 | 2 | Features, bit field: bit 0 inverted (night) display; bit 1 the DMR ID database extends into the voice prompt area (header format byte `n`, section 7.5); bit 2 voice prompts are loaded |
 
 | radioType | Radio | qdmr's driver |
 | --- | --- | --- |
-| 0 | GD-77 | qdmr (MK22 driver) |
-| 1 | GD-77S | qdmr (MK22 driver) |
+| 0 | first MK22 type | qdmr (MK22 driver) |
+| 1 | second MK22 type | qdmr (MK22 driver) |
 | 2 | MK22 radio (DM-860 family) | qdmr (MK22 driver) |
 | 3 | RD-5R / DM-5R Tier2 | qdmr (MK22 driver) |
 | 4 | MK22 radio (single band) | qdmr (MK22 driver) |
@@ -304,7 +304,7 @@ The MMDVM protocol itself is public and is specified separately. The switch work
 
 ## 7. The codeplug image
 
-The PC tools see two images, "EEPROM" and "flash", in the GD-77's terms. The GD-77 has a 64 KB I2C EEPROM and a 1 MB
+The PC tools see two images, "EEPROM" and "flash", in the MK22 radios' terms. They have a 64 KB I2C EEPROM and a 1 MB
 SPI flash. The STM32 radios and the HR_C7000 radios have no EEPROM: both images live in one large SPI flash. The tools address
 it with the per-family offsets below. A new firmware can store the data any way it likes, as long as the shim
 presents these addresses.
@@ -313,7 +313,7 @@ presents these addresses.
 
 | Family | EEPROM image | Flash image (codeplug regions, DMR ID DB, voice prompts) | Wire commands used for the EEPROM image |
 | --- | --- | --- | --- |
-| MK22 (GD-77 etc.) | Real EEPROM, address = EEPROM image address | Flash address = flash image address (offset 0) | `R` 2 / `W` 4 |
+| MK22 | Real EEPROM, address = EEPROM image address | Flash address = flash image address (offset 0) | `R` 2 / `W` 4 |
 | STM32 (radio types 5-10) | Flash address = EEPROM image address (offset 0; this occupies flash 0x00000..0x0FFFF) | Flash address = flash image address + 0x20000 (the "128 KB offset") | `R` 1 or 2 / `X` 1-3 (flash sector writes). qdmr's OpenUV380 driver puts everything in its flash bank |
 | HR_C7000 | As STM32 at the physical offset EEPROM image + 0x700000 (7.4) | flash image + 0x20000 + 0x700000, the STM32 mapping | `R` 1 or 2 / `X` 1-3 |
 
@@ -579,7 +579,7 @@ Flash image 0x00000 holds the custom data area:
 A block's length can't change once written; the firmware rewrites a block only when the length is the same.
 
 Calibration: on the STM32 and HR_C7000 radios, the window at flash image 0x10000..0x101FF is the working calibration
-copy (2.2). This address is physical, not offset. On the GD-77, calibration is at 0xF000 (working copy) and 0x8F000
+copy (2.2). This address is physical, not offset. On an MK22 radio, calibration is at 0xF000 (working copy) and 0x8F000
 (factory; 0x6F000 on type 2), read raw.
 
 HR_C7000 specifics:
@@ -618,7 +618,7 @@ in 256 KB minus the header. The rest continue at the start of area 2. Each recor
   significant first. The 64-character alphabet is, in order: space, `0`-`9`, `A`-`Z`, `a`-`z`, `.` (codes 0-63).
   Trailing spaces are trimmed after unpacking. The text is "callsign name [city state country]" (qdmr's
   convention). The record size is 3 + 3/4 of the text length. qdmr's default text length is 16 characters (15 byte
-  records) on the GD-77 and 32 (27 byte records) on the UV380 family.
+  records) on the MK22 family and 32 (27 byte records) on the UV380 family.
 
 The radio looks IDs up by binary search, using a cache of 14 evenly spaced IDs once there are more than 40 records.
 

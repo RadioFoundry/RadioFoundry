@@ -226,16 +226,18 @@ scroll wheel does; Home and editors follow the number. (Until 2026-10-10 the kno
 | Green key | `SELECT` / save |
 | Red key | `BACK` / Home |
 | Up / Down arrows | `NAV_UP` / `NAV_DOWN` |
-| Left / Right arrows (if present on the model) | `NAV_LEFT` / `NAV_RIGHT` |
+| Left / Right arrows (if present on the model) | `NAV_LEFT` / `NAV_RIGHT`, long: zone down / up (`USER_1` / `USER_4`) |
 | `*` | `QUICK` / lock |
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
 | SK1 | `MONITOR` |
 | SK2 | `AB` / Dual watch |
-| Top orange key (if present) | assignable (default Power cycle / Speak status) |
+| Top orange key (if present) | assignable. Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built, else speak status |
 | PTT | `PTT` |
 
 128x64 has no room for a 3x3 grid; quick settings are a numbered list with the same numbers. Home uses two text sizes only.
+Which matrix position is which navigation key, and which direct input is which side key, isn't confirmed yet
+([hardware-gd77.md](../spec/hardware-gd77.md) 9.1); the board's table is `boards/gd77/keymap_gd77.h`.
 
 ### 7.4 TYT MD-9600 (mobile): front panel encoder and a few keys, hand mic with keypad, 160x128 color
 
