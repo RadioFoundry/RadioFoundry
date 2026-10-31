@@ -328,13 +328,13 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		show({ led: "off", screen: "rfoundry" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.rfoundry_found", { git: c.rfoundry.git }))),
 			h("p", {}, t("flash.c7.connect.rfoundry_restart")));
 		const stub = mkStub();
-		const waiting = stub.waitForRom(5000);
 		await c.stream.write(new Uint8Array([0x43, 0x00]));
 		await sleep(100);
 		await c.stream.write(new Uint8Array([0x43, 0x06, 0x01]));
 		try {
-			await waiting;
-			await load(stub);
+			// the answers go out from now on (powerCycle): the ROM greets 0.6 s or more after the reset at the earliest
+			const { answered } = await stub.waitForRom(5000, { repeat: ROM_REPEAT });
+			await load(stub, answered);
 		} catch (e) {
 			powerCycle(t("flash.c7.connect.rfoundry_restart_failed"));
 		}
@@ -344,73 +344,61 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 	const simPower = ({ off = false } = {}) => S().fakeC7 ? h("div", { class: "actions" },
 		button(t("flash.sim.c7_off"), () => S().fakeC7.powerOff()), off ? null : button(t("flash.sim.c7_on"), () => S().fakeC7.powerOn(), { primary: true })) : null;
 
-	// Wait for the boot ROM while the user switches the radio off and on. slow: the slow cable mode, the radio already off
-	// (slowCable below)
-	const powerCycle = async (why = null, { slow = false } = {}) => {
+	// Wait for the boot ROM while the user switches the radio off and on. The boot ROM waits only about 48 ms for the
+	// answer to its greeting, and a slow cable or USB hub can take longer than that, so the page sends the answer every
+	// ROM_REPEAT ms all along (stub.js waitForRom repeat). The firmware of a radio still on gets it too: RadioFoundry
+	// ignores it (hardware-dm32.md 13.3), other firmware might not, so on any other radio the sending starts only once
+	// the user says the radio is off
+	const powerCycle = (why = null) => (c.rfoundry ? listen(why, true) : turnOff(why));
+	const turnOff = (why) => {
+		abort?.abort();
+		show({ led: "off", screen: "off" }, why ? notice(why, "info") : null,
+			h("ol", { class: "steps c7-big" }, h("li", {}, t("flash.c7.connect.step_off"))),
+			notice(t("flash.c7.connect.why_off"), "info"), simPower({ off: true }), slowNote());
+		act(button(t("flash.c7.connect.cancel"), () => cableStep(), { quiet: true }),
+			button(t("flash.c7.connect.is_off"), () => listen(null, false), { primary: true }));
+	};
+	// Users knew the slow cable mode as a choice offered after a failed try; it is now how every try works
+	const slowNote = () => h("details", { class: "small" }, h("summary", {}, t("flash.c7.connect.slow_title")), h("p", {}, t("flash.c7.connect.slow_text")));
+	// on: the radio may still be on (the off step is listed here)
+	const listen = async (why, on) => {
 		abort?.abort();
 		const ac = (abort = new AbortController());
 		const t0 = Date.now();
 		const hints = h("div");
 		const clock = h("span", { class: "muted" });
-		const cancel = button(t("flash.c7.connect.cancel"), () => { ac.abort(); clearInterval(tick); cableStep(); }, { quiet: true });
 		const tick = setInterval(() => {
 			if (ac.signal.aborted) return clearInterval(tick);
 			const s = Math.round((Date.now() - t0) / 1000);
 			clock.textContent = t("flash.c7.connect.listening", { s });
-			if (s === 25) {
-				hints.replaceChildren(powerHints(), slow ? null : slowWay());
-				// nothing heard yet: the slow cable mode is offered next to Cancel
-				if (!slow) act(cancel, slowButton());
-			}
+			if (s === 25) hints.replaceChildren(powerHints());
 		}, 1000);
-		show({ led: "off", screen: "off", knob: slow ? "on" : "cycle" },
+		show({ led: "off", screen: "off", knob: on ? "cycle" : "on" },
 			why ? notice(why, "info") : null,
-			slow ? h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.slow.title"))) : null,
 			h("ol", { class: "steps c7-big" },
-				slow ? null : h("li", {}, t("flash.c7.connect.step_off")),
-				h("li", {}, t(slow ? "flash.c7.slow.step_on" : "flash.c7.connect.step_on"))),
-			h("p", {}, t("flash.c7.connect.no_keys")), simPower(), h("p", { class: "small" }, clock), hints);
-		act(cancel);
+				on ? h("li", {}, t("flash.c7.connect.step_off")) : null,
+				h("li", {}, t("flash.c7.connect.step_on"))),
+			h("p", {}, t("flash.c7.connect.no_keys")), simPower(), h("p", { class: "small" }, clock), hints, slowNote());
+		act(button(t("flash.c7.connect.cancel"), () => { ac.abort(); clearInterval(tick); cableStep(); }, { quiet: true }));
 		const stub = mkStub();
 		try {
-			const { answered } = await stub.waitForRom(ROM_WAIT, { signal: ac.signal, repeat: slow ? ROM_REPEAT : 0 });
+			const { answered } = await stub.waitForRom(ROM_WAIT, { signal: ac.signal, repeat: ROM_REPEAT });
 			clearInterval(tick);
 			if (gone()) return;
 			await load(stub, answered);
 		} catch (e) {
 			clearInterval(tick);
 			if (ac.signal.aborted && e.message === "stopped") return;
-			const what = e?.code === "rom-booted" ? "flash.c7.connect.rom_booted" : slow ? "flash.c7.slow.no_rom" : "flash.c7.connect.no_rom";
-			romFailed(slow, notice(t(what), "bad"), reportLine());
+			romFailed(notice(t(e?.code === "rom-booted" ? "flash.c7.connect.rom_booted" : "flash.c7.connect.no_rom"), "bad"), reportLine());
 		}
 	};
 
-	// Slow cable mode (stub.js waitForRom repeat): the boot ROM waits only about 48 ms for the answer to its greeting, and
-	// a slow cable or USB hub can take longer than that, so the page sends the answer every ROM_REPEAT ms while the
-	// radio is switched on. It starts only once the user says the radio is off: the firmware of a radio still on would
-	// get it too (RadioFoundry ignores it; other firmware might not)
-	const slowCable = () => {
-		abort?.abort();
-		show({ led: "off", screen: "off" },
-			h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.slow.title"))),
-			h("p", {}, t("flash.c7.slow.intro")),
-			h("ol", { class: "steps c7-big" }, h("li", {}, t("flash.c7.slow.step_off"))),
-			notice(t("flash.c7.slow.why_off"), "info"), simPower({ off: true }));
-		act(button(t("flash.c7.connect.cancel"), () => cableStep(), { quiet: true }),
-			button(t("flash.c7.slow.is_off"), () => powerCycle(null, { slow: true }), { primary: true }));
-	};
-	const slowWay = () => h("div", { class: "notice action" }, h("p", {}, h("b", {}, t("flash.c7.slow.offer_title"))), h("p", {}, t("flash.c7.slow.intro")));
-	const slowButton = () => button(t("flash.c7.slow.button"), slowCable, { primary: true });
-
-	// The boot ROM load failed or never started. Next comes the slow cable mode; once that failed too, the radio's
-	// factory update mode, or the slow cable mode again on a radio without one. slow: this was the slow cable mode
-	const romFailed = (slow, ...parts) => {
-		show({ led: "off", screen: "off" }, ...parts, powerHints(), slow ? factoryWay() : slowWay(), ctx.manualKitLine?.());
-		if (!slow) return act(button(t("flash.c7.connect.try_again"), () => powerCycle(), { quiet: true }), slowButton());
+	// The boot ROM load failed or never started: try again, or the radio's factory update mode where it has one
+	const romFailed = (...parts) => {
+		show({ led: "off", screen: "off" }, ...parts, powerHints(), factoryWay(), ctx.manualKitLine?.(), slowNote());
 		const factory = factoryButton({ primary: true });
-		const again = button(t("flash.c7.slow.again"), slowCable, { primary: !factory, quiet: !!factory });
-		// [alternative, main]: the factory update mode is the main action once both cable ways failed
-		act(again, factory);
+		// [alternative, main]: the factory update mode is the main action where there is one
+		act(button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: !factory, quiet: !!factory }), factory);
 	};
 
 	// When the boot ROM load fails or never starts: the radio's own update mode, which needs no load over the cable.
@@ -430,7 +418,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 				h("li", {}, t("flash.c7.connect.hint_battery")), ch340 ? h("li", {}, t("flash.c7.connect.hint_ch340")) : null));
 	};
 
-	// answered: the slow cable mode's answer reached the boot ROM already
+	// answered: an answer sent ahead (waitForRom repeat) reached the boot ROM already
 	const load = async (stub, answered = false) => {
 		const prog = progressBar();
 		show({ led: "off", screen: "off" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.rom_found"))), prog.el);
@@ -441,7 +429,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			c.how = answered ? "rom-slow" : "rom";
 			await ready(t("flash.c7.connect.found_rom"));
 		} catch (e) {
-			romFailed(answered, errorNotice(t("flash.c7.connect.load_failed", { error: ctx.errorText(e) })));
+			romFailed(errorNotice(t("flash.c7.connect.load_failed", { error: ctx.errorText(e) })));
 		}
 	};
 
