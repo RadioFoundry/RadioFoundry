@@ -333,9 +333,32 @@ static void link_section(dl_text_t *t)
 			(unsigned)es.transitions, (unsigned)es.illegal);
 		dl_text(t, "input.enc_reversals=%u\ninput.enc_steps=%u\n", (unsigned)es.reversals,
 			(unsigned)es.steps_per_detent);
+		if (es.irq_watch) {
+			// Lost encoder interrupts the scan found and served; the state is the first stall's (0 until one)
+			dl_text(t, "input.enc_irqs=%u\ninput.enc_stalls=%u\n", (unsigned)es.irqs, (unsigned)es.stalls);
+		}
+		if (es.stalls != 0) {
+			// Three words each, hex: the interrupt controller's two mask words and request record, the GPIO bank's
+			// pending, enabled and masked bits (one line each: the link section is near the reply size)
+			dl_text(t, "input.enc_stall_ms=%u\ninput.enc_stall_handler=%u\n", (unsigned)es.stall_ms,
+				(unsigned)es.stall_handler_ok);
+			dl_text(t, "input.enc_stall_pic=%08x,%08x,%08x\n", (unsigned)es.stall_irq_mask[0],
+				(unsigned)es.stall_irq_mask[1], (unsigned)es.stall_irq_pending);
+			dl_text(t, "input.enc_stall_gpio=%08x,%08x,%08x\n", (unsigned)es.stall_gpio_pending,
+				(unsigned)es.stall_gpio_enabled, (unsigned)es.stall_gpio_masked);
+		}
 	}
 	dl_text(t, "input.enc_deferred=%u\n", (unsigned)deferred);
 	dl_text(t, "input.long_ms=%u\ninput.ptt_downs=%u\n", (unsigned)input_long_ms(), (unsigned)input_ptt_downs());
+	if (board.system != NULL && board.system->irq_unhandled != NULL) {
+		// Interrupts with no handler, each masked for good by the platform's fallback: any count here is a bug
+		uint32_t n, src;
+		board.system->irq_unhandled(&n, &src);
+		dl_text(t, "irq.unhandled=%u\n", (unsigned)n);
+		if (n != 0) {
+			dl_text(t, "irq.unhandled_src=%u\n", (unsigned)src);
+		}
+	}
 	dl_text(t, "dl.frames=%u\ndl.bad_crc=%u\ndl.too_long=%u\ndl.timeouts=%u\n", (unsigned)c[0], (unsigned)c[1],
 		(unsigned)c[2], (unsigned)c[3]);
 }

@@ -175,4 +175,5 @@ const hal_system_t hrc_system = {
 	.stub_region = stub_region,
 	.enter_stub = enter_stub,
 #endif
+	.irq_unhandled = hrc_irq_unhandled,
 };

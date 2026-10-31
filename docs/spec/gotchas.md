@@ -674,6 +674,15 @@ start-up, something plugged in (`drivers/input/plugptt`). Pulling the plug while
 the transmit timeout ends it, and with TX timeout Off nothing does until power-off. Radios: one confirmed. Check every
 radio with a mic jack: power on with the jack empty and watch the raw PTT pin (adding-a-radio.md, bring-up order).
 
+**16.4 Encoder interrupt lost for good.**
+Symptom: the encoder stopped after a while; every key still worked (RadioFoundry, 2026-10-30). Cause: not found. The
+GPIO bank had both encoder bits pending, enabled and unmasked, and the handler never ran, so the interrupt controller
+had most likely masked the source; a fallback handler that masks a source it has no handler for is one way. Rule: on a
+board whose encoder runs on one level interrupt, the key scan checks that a pending encoder interrupt is taken. Pending
+on two scans running with no handler entry between them, keep the controller and bank state for the debug link, serve
+the bank from the scan and unmask the source. Count every source the fallback handler masks. Radios: the HR_C7000
+boards with an interrupt-driven encoder; one confirmed.
+
 ## 17. Scan
 
 **17.1 Scanning DMR direct mode: the carrier is on air every other slot.**
