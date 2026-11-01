@@ -79,8 +79,9 @@ static void test_filled(void)
 	for (unsigned i = 0; i < 3; i++) {
 		CHECK(l[i]->tune && l[i]->off && l[i]->resume);
 	}
-	CHECK(bk4819_superhet_main.gpio == NULL && fd6818sh_superhet_main.gpio != NULL);
-	CHECK(at1141_superhet_lo.gpio != NULL);
+	// Every chip drives its band flags (a board without one would hear only one band)
+	CHECK(bk4819_superhet_main.gpio != NULL && fd6818sh_superhet_main.gpio != NULL);
+	CHECK(bk4819_superhet_lo.gpio != NULL && fd6818sh_superhet_lo.gpio != NULL && at1141_superhet_lo.gpio != NULL);
 }
 
 static void test_fd6818_main(void)

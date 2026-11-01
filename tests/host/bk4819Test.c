@@ -583,6 +583,37 @@ static void test_dmr_tx(void)
 	CHECK(chips[0].protocol_errors == 0 && chips[1].protocol_errors == 0);
 }
 
+// GPIO outputs (0x33): pin p = level bit 6 - p and output disable bit 14 - p. The DB25-D PRO's
+// receive band flag is pin 2 of the main chip, 0x0010 for VHF (hardware-db25d.md 4.5)
+static void test_gpio(void)
+{
+	bk4819_t m;
+	reset_chips();
+	bk4819_attach(&m, main_bus());
+	bk4819_init_main(&m);
+	const chip_t *c = &chips[0];
+	CHECK(m.gpio == 0x0000);		// the init's last 0x33 write
+	chips[0].n = 0;
+	bk4819_gpio(&m, 2, true);
+	CHECK(c->n == 1 && c->log[0].reg == BK4819_REG_GPIO && c->log[0].val == 0x0010);
+	bk4819_gpio(&m, 2, true);		// unchanged: not written again
+	CHECK(c->n == 1);
+	bk4819_gpio(&m, 0, true);		// another pin keeps pin 2
+	CHECK(c->log[c->n - 1].val == 0x0050);
+	bk4819_gpio(&m, 2, false);
+	CHECK(c->log[c->n - 1].val == 0x0040 && m.gpio == 0x0040);
+	// A pin with its output disabled is turned on
+	bk4819_write(&m, BK4819_REG_GPIO, 0x7F00);
+	bk4819_gpio(&m, 2, true);
+	CHECK(c->log[c->n - 1].val == 0x6F10);
+	chips[0].n = 0;
+	bk4819_gpio(&m, 7, true);		// no such pin: nothing written
+	CHECK(c->n == 0 && m.gpio == 0x6F10);
+	bk4819_gpio(&m, 2, false);		// a pin turned on stays on when it goes low
+	CHECK(c->n == 1 && c->log[0].val == 0x6F00);
+	CHECK(c->protocol_errors == 0);
+}
+
 int main(void)
 {
 	test_helpers();
@@ -591,6 +622,7 @@ int main(void)
 	test_sequences();
 	test_dmr_rx();
 	test_dmr_tx();
+	test_gpio();
 	if (failures) {
 		printf("bk4819Test: %d failures\n", failures);
 		return 1;
