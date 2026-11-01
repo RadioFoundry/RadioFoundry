@@ -7,9 +7,9 @@
 
 import { be32, concat, le32, sleep, u16be, u16le, u32le, toHex } from "./bytes.js";
 import { wire, note } from "../diag.js";
-import { serialApi, usbSerialNeeded } from "./usbserial.js";
+import { serialApi, usbSerialNeeded, showPhoneNotes } from "./usbserial.js";
 
-export { serialApi };
+export { serialApi, showPhoneNotes };
 
 export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network

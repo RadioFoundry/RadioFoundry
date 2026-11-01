@@ -18,7 +18,7 @@ firmware and has a migration chapter is covered in [Moving from the stock firmwa
 
 | Item | Where it comes from |
 |---|---|
-| A computer with Windows, macOS or Linux | |
+| A computer with Windows, macOS or Linux, or an Android phone or tablet | Android: Chrome, and a USB OTG adapter for the cable ([FAQ](21-faq.md)) |
 | A Chromium-based browser | For the web installer |
 | Your radio's stock firmware file | The manufacturer's file, in a version the installer recognizes. Your radio's "Installing" section names it and where to find it |
 | The radio's USB or programming cable | The cable that came with the radio |

@@ -78,6 +78,23 @@ Yes. The Codeplug Editor on the project's web site reads and writes the radio fr
 Edge, Opera) and builds the DMR ID database from RadioID.net
 ([The Codeplug Editor](04-programming.md#the-codeplug-editor)).
 
+**Can I use a phone?**
+
+Android, yes: Chrome on Android runs the web installer and the Codeplug Editor. Plug the radio's USB cable or the
+programming cable into the phone through a USB OTG adapter.
+
+**Stay on the page with the screen on until a backup, a codeplug read or write or an install has finished.** Switching
+to another app or letting the screen turn off slows the transfer to a crawl and can make it fail. The pages show this
+warning on a phone and keep the screen on while the radio is connected.
+
+| Point | Why |
+|---|---|
+| Cables with an FTDI chip and radios with their own USB port work. Other USB-serial cables (CH340, CP210x, PL2303) don't yet | Chrome on Android reaches USB serial devices only through WebUSB, and the page brings its own driver for each kind |
+| Close any app that opens when the radio or cable is plugged in, and don't pick it in Android's "open with" prompt | An app holding the cable takes the radio's replies; the page then reports that the radio didn't answer |
+| Keep Chrome in front and the screen on (above) | Android slows a page in the background to about one step a second |
+
+iPhone and iPad: no. iOS has no WebUSB or Web Serial.
+
 **Is basic privacy secure?**
 
 No. Basic privacy scrambles voice with a fixed key. It keeps casual listeners out, nothing more.

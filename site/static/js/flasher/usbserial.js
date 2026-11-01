@@ -32,6 +32,39 @@ export function usbSerialNeeded(nav = globalThis.navigator) {
 	return !!nav?.usb && /Android/i.test(nav.userAgentData?.platform || nav.userAgent || "");
 }
 
+// The pages' "keep this page in front" notice (.phone-note), shown where the WebUSB port is used: Android slows a
+// background tab's timers to about one a second, and a transfer that waits on them slows to a crawl
+export function showPhoneNotes(doc = globalThis.document, nav = globalThis.navigator) {
+	if (!usbSerialNeeded(nav)) return;
+	for (const n of doc?.querySelectorAll(".phone-note") || []) n.hidden = false;
+}
+
+// The screen stays on while a port is open: a phone that turns it off puts the page in the background. A wake lock
+// ends when the page is hidden, so it is taken again when the page comes back.
+let wakeLock = null, openPorts = 0;
+async function holdScreen() {
+	if (!openPorts || wakeLock || globalThis.document?.visibilityState !== "visible") return;
+	try {
+		wakeLock = await navigator.wakeLock?.request("screen");
+		wakeLock?.addEventListener("release", () => { wakeLock = null; });
+	} catch { /* refused (battery saver): the notice still says it */ }
+}
+let watching = false;
+function portOpened() {
+	if (!watching && typeof globalThis.document?.addEventListener === "function") {
+		document.addEventListener("visibilitychange", holdScreen);
+		watching = true;
+	}
+	openPorts++;
+	holdScreen();
+}
+function portClosed() {
+	if (--openPorts > 0) return;
+	openPorts = 0;
+	wakeLock?.release().catch(() => {});
+	wakeLock = null;
+}
+
 // FTDI's baud divisor (AN232B-05): 3 MHz over the rate in eighths, the fraction coded in 3 bits split over wValue
 // bits 14-15 and wIndex bit 0. 3 and 2 Mbaud have their own codes.
 export function ftdiDivisor(baud) {
@@ -111,6 +144,7 @@ export class UsbSerialPort {
 				if (r.status !== "ok") throw new DOMException(`USB write ${r.status}`, "NetworkError");
 			},
 		});
+		portOpened();
 	}
 
 	async acmSetup(l, baud) {
@@ -131,7 +165,7 @@ export class UsbSerialPort {
 	}
 
 	// Bulk IN transfers stay queued on the device whether or not the page is reading: an FTDI chip keeps 256 bytes,
-	// 22 ms at 115200 baud, and drops the rest when no transfer is pending (frame checksum errors on a DM-32 backup
+	// 22 ms at 115200 baud, and drops the rest when no transfer is pending (frame checksum errors in a backup over a cable
 	// from a phone whose tab went to the background, 2026-11-01). Transfers on one endpoint complete in order. An empty
 	// result (an FTDI status-only packet) is skipped; a stall is cleared and read on, anything else ends the stream.
 	makeReadable(l) {
@@ -160,6 +194,7 @@ export class UsbSerialPort {
 
 	// Releasing the interfaces ends a pending transferIn, which closes the readable (closing set first)
 	async close() {
+		if (this.readable) portClosed();
 		this.closing = true;
 		const d = this.device;
 		for (const n of this.layout?.claim || []) { try { await d.releaseInterface(n); } catch { /* gone */ } }
