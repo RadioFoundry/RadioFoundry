@@ -19,7 +19,7 @@
 #define ROW_DMR_Q	0x140u
 #define ROW_FM_I	0x170u
 #define ROW_FM_Q	0x180u
-#define ROW_FIRST	0x010u	// rows whose odd points are not stored: 0x010-0x180 but 0x0E0
+#define ROW_FIRST	0x010u	// rows whose odd points are filled in: 0x010-0x180 but 0x0E0
 #define ROW_LAST	0x180u
 #define ROW_NONE	0x0E0u
 #define BAND_LO		0x1B2u	// band ends, 4 BCD digits in 100 kHz units, least significant byte first
