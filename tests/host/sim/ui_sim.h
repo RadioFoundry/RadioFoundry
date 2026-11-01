@@ -51,6 +51,10 @@ bool sim_sheet_add(const char *label);
 bool sim_sheet_save(const char *path);
 // The out directory for "shot:" in scripts (NULL: shots are skipped)
 void sim_set_shot_dir(const char *dir, const char *prefix);
+// For a program that records a run (tests/host/beepReel.c), at the simulated time (NULL: none): after every tick, with
+// the screen as now drawn; and on every beep the UI asks for (ui_beep_t)
+void sim_set_tick_hook(void (*hook)(uint32_t now_ms));
+void sim_set_beep_hook(void (*hook)(uint8_t beep, uint32_t now_ms));
 
 // Every text gfx_text_fit shortens (with an ellipsis) goes to this hook (NULL: none); sim_rec.shortened counts them
 void sim_set_fit_hook(void (*hook)(const char *src, const char *out));
