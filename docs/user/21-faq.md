@@ -83,9 +83,9 @@ Edge, Opera) and builds the DMR ID database from RadioID.net
 Android, yes: Chrome on Android runs the web installer and the Codeplug Editor. Plug the radio's USB cable or the
 programming cable into the phone through a USB OTG adapter.
 
-**Stay on the page with the screen on until a backup, a codeplug read or write or an install has finished.** Switching
-to another app or letting the screen turn off slows the transfer to a crawl and can make it fail. The pages show this
-warning on a phone and keep the screen on while the radio is connected.
+**Do not switch to another app or let the screen time out while the radio is connected.** Android slows a page in the
+background, and a backup or an install then takes much longer and can fail. The pages keep the screen on while the
+radio is connected.
 
 | Point | Why |
 |---|---|

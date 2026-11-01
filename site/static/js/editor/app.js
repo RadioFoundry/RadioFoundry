@@ -6,7 +6,7 @@
 
 import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum, date as fmtDate } from "../flasher/dom.js";
 import { equal } from "../flasher/bytes.js";
-import { SerialStream, serialSupported, serialApi, showPhoneNotes, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
+import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
 import { CodeplugImage, IDDB_HEADER, REGIONS } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
@@ -1035,7 +1035,6 @@ async function start() {
 		say(t("editor.draft_restored", { time: fmtDate(new Date(draft.at), { dateStyle: "medium", timeStyle: "short" }) }), "info");
 	} else load(empty(), "codeplug");
 	if (!serialSupported() && !S.sim) say(t("editor.no_serial"), "info");
-	showPhoneNotes();
 	if (S.sim) say(t("editor.sim"), "info");
 }
 

@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ftdiDivisor, lineCoding, ftdiPayload, serialLayout, usbFilters, usbSerialNeeded, showPhoneNotes, UsbSerialPort, FTDI } from "../static/js/flasher/usbserial.js";
+import { ftdiDivisor, lineCoding, ftdiPayload, serialLayout, usbFilters, usbSerialNeeded, UsbSerialPort, FTDI } from "../static/js/flasher/usbserial.js";
 import { SerialStream } from "../static/js/flasher/link.js";
 
 const ep = (endpointNumber, direction, type = "bulk", packetSize = 64) => ({ endpointNumber, direction, type, packetSize });
@@ -138,11 +138,3 @@ test("reads stay queued on the device while the page isn't reading, and nothing 
 	await port.close();
 });
 
-test("the keep-in-front notice shows where the WebUSB port is used, only there", () => {
-	const notes = [{ hidden: true }, { hidden: true }];
-	const doc = { querySelectorAll: (sel) => (sel === ".phone-note" ? notes : []) };
-	showPhoneNotes(doc, { usb: {}, userAgent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/156" });
-	assert.deepEqual(notes.map((n) => n.hidden), [true, true]);
-	showPhoneNotes(doc, { usb: {}, userAgent: "Mozilla/5.0 (Linux; Android 16) Chrome/156 Mobile" });
-	assert.deepEqual(notes.map((n) => n.hidden), [false, false]);
-});

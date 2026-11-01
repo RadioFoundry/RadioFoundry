@@ -32,13 +32,6 @@ export function usbSerialNeeded(nav = globalThis.navigator) {
 	return !!nav?.usb && /Android/i.test(nav.userAgentData?.platform || nav.userAgent || "");
 }
 
-// The pages' "keep this page in front" notice (.phone-note), shown where the WebUSB port is used: Android slows a
-// background tab's timers to about one a second, and a transfer that waits on them slows to a crawl
-export function showPhoneNotes(doc = globalThis.document, nav = globalThis.navigator) {
-	if (!usbSerialNeeded(nav)) return;
-	for (const n of doc?.querySelectorAll(".phone-note") || []) n.hidden = false;
-}
-
 // The screen stays on while a port is open: a phone that turns it off puts the page in the background. A wake lock
 // ends when the page is hidden, so it is taken again when the page comes back.
 let wakeLock = null, openPorts = 0;
