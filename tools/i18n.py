@@ -119,7 +119,7 @@ def source_files():
     for d in SOURCE_DIRS:
         for ext in ("c", "h"):
             files += glob.glob(os.path.join(ROOT, d, "**", "*." + ext), recursive=True)
-    return sorted(os.path.relpath(f, ROOT) for f in files)
+    return sorted(os.path.relpath(f, ROOT).replace(os.sep, "/") for f in files)
 
 
 def extract():
