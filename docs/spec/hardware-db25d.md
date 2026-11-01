@@ -97,7 +97,7 @@ The DM-32's programming cable is on UART0. The DB25-D never uses UART0.
 
 To TX: RX paths off, 50 us, tune, the page's TX-on delay, PA select of the band (UHF PTA26 high and PTB3 low, VHF the
 reverse) with PTA23 low, 200 us, the band's TX supply, then the PA ramp up (4.4). To RX: the main chip to its RX state, the page's TX-off delay, the ramp down, both supplies and both PA selects low, PTA23 high, 300 us, the retune, the RX path of
-the band, 200 us.
+the band, the band flags (4.3, register 0x33), 200 us.
 
 Transmitter safe state (`board_rf_safe`, [crash-log.md](crash-log.md) 8), at every fault, reset and stub entry and first
 in `main()`: TX supplies PTA27 and PTB2 low, PA selects PTA26 and PTB3 low, DAC B 0 and powered down, PTA23 high; on
@@ -126,7 +126,7 @@ the radio stopped before the display was lit, until a power cycle; that fault is
 | PTA19 (19) | FM broadcast audio enable |
 | ADC 2 | Board ID: display bus mode |
 | ADC 6 | RSSI (squelch and channel busy) |
-| ADC 0, ADC 7 | Neither is shown to be the supply, and no supply-voltage read is known. ADC 7 is a hysteresis input (below 465 / above 527) that sets a GPIO of the LO BK4819; its source is unknown (unverified). At a 13.5 V supply: ADC 0 reads 0, ADC 2 about 0, ADC 6 594 (no signal), ADC 7 742 (measured) |
+| ADC 0, ADC 7 | Neither is shown to be the supply, and no supply-voltage read is known. ADC 7 is a hysteresis input that drives an output of the LO chip (register 0x33, 4.3): below 465 the output goes high, above 527 low, in between it stays. The pin is 2 on a BK4819 LO, 4 on the FD6818 and AT1141. What ADC 7 measures and what the output drives are unknown (unverified). At a 13.5 V supply: ADC 0 reads 0, ADC 2 about 0, ADC 6 594 (no signal), ADC 7 742 (measured). ADC 7 follows the transmitter's load, not a slow temperature curve: keyed into a dummy load at the lowest power it fell from 726 to 559 in 1 s, below 465 in 3 s and to 425 by 10 s, and was back at 670 about 1 s after the transmission ended (measured). RadioFoundry reads it at every status poll, transmitting too (`radio_db25d.c`, `db25d_lo_aux`) |
 
 **Speaker volume.** The BK4819 init (table in 4.3) writes register 0x48 as 0xB3BF and then 0xB3B3 near the end, so the AF
 DAC gain nibble ends at 3. Neither ADC 0 nor ADC 7 is a volume knob, and the VOL/SQL key may be a squelch key rather than
@@ -201,6 +201,7 @@ The register meanings are the BK4819's public ones; the values are what the vend
 |---|---|
 | 0x00 | bit 15 soft reset |
 | 0x30 | Enables. **Main chip** (bit 9 set in every state): 0x0200 idle, 0xBFF1 RX, 0xC3FE TX (VCO calibration, PLL / VCO, PA gain, mic ADC, TX DSP), 0xC3FA TX with the mic ADC (bit 2) off for a tone, 0x0302 during init. **LO chip** (bit 9 never set): 0x0000 idle, 0xC1FE its carrier-only transmitter stage |
+| 0x33 | GPIO outputs: bits 14:8 disable an output, bits 6:0 its level. Pin p is bits 14 - p and 6 - p; written only when the value changes. The band flags, high for VHF (as GPIO3 on the older batches, 4.8): **LO chip pin 1 is the RX band** (bits 13 and 5), set before every LO tune; **main chip pin 2 is the TX band** (bits 12 and 4), set at every receive set-up and TX prepare. With the LO flag low, VHF receive is about 45 dB deaf: builds that never drove it read -124 dBm on 2 m with UHF working (issue #299). On the bench a 146.535 MHz carrier read -119 dBm without the LO flag and -75 dBm with it, and the VHF noise floor rose from -124 to -105 dBm (UHF, unchanged, -53 dBm from the same source). The main flag alone changed nothing on receive. RadioFoundry: `db25d_lo_tune`, `db25d_main_band` |
 | 0x36 | PA bias and gain. Both chips: 0xBF (level 15 of 15), written once at detection / init and never changed, in TX too: the main chip drives the PA at 0xBF |
 | 0x37 | Power-up of the LDOs, bandgap and crystal (0x1D0F normal, 0x1D00 off) |
 | 0x38 / 0x39 | Frequency, 10 Hz units, low / high 16 bits |
@@ -303,7 +304,7 @@ the modem's WORK_MODE bit 7 cleared, the DMR microphone gain from the settings),
 | 2 | Modem SIG_CENTER and RF_MOD_BIAS_CTRL from the page (4.6), DAC A = RX tune, DAC C = 1780 |
 | 3 | Main chip: 30:0200, 52:028F, then **the digital mode set** (only when the previous channel was analog): 2A:4711, 51:0000, 73 bit 4 set (AFC off), 52:028F, 47:6943, 7E:3006, 43:4444, 40:0000, 27:0430, 2B:8707, 48:B174, 47:6143 |
 | 4 | Main chip RX tune as for FM: 38 / 39 = 51.55 MHz, 37:1D0F, 30:0200, 30:BFF1 |
-| 5 | LO tune to f + 51.55 MHz (4.3), RX path of the band, main chip GPIO 0x33 band bit (VHF only) |
+| 5 | LO band flag, LO tune to f + 51.55 MHz (4.3), RX path of the band, the main chip's band flag (0x33, 4.3) |
 
 Nothing on the LO chip changes for digital. No switch pin moves for receive; the only audio pins are the speaker ones below.
 

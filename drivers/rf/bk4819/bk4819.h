@@ -21,6 +21,7 @@ typedef struct {
 	uint32_t freq_10hz;	// last frequency written, 10 Hz units (0 = none)
 	uint16_t state;		// last 0x30 value
 	uint16_t af_gain;	// last 0x48 value
+	uint16_t gpio;		// last 0x33 value
 	bool digital;		// bk4819_dmr_rx_enter() is in effect
 	uint16_t saved_27, saved_48;	// what it replaced, for bk4819_dmr_rx_end()
 	uint16_t idle;		// this chip's idle value of 0x30: 0 for the LO, 0x0200 for the main chip (bit 9 stays set)
@@ -40,6 +41,7 @@ typedef struct {
 #define BK4819_REG_CSS_STATUS	0x0C	// b10 CTCSS found, b14 DCS found, b15 inverted DCS found (as the FD6818)
 #define BK4819_REG_CSS_DETECT	0x52	// b15 sub-audio tail; CTCSS found / lost thresholds (as the FD6818)
 #define BK4819_REG_ENABLES	0x30
+#define BK4819_REG_GPIO		0x33	// GPIO outputs: bits 14:8 output disable, bits 6:0 level (bk4819_gpio)
 #define BK4819_REG_PA		0x36	// PA bias and gain (the LO's output level)
 #define BK4819_REG_POWER	0x37
 #define BK4819_REG_FREQ_LO	0x38	// 10 Hz units, low 16 bits
@@ -148,6 +150,10 @@ void bk4819_set_state(bk4819_t *dev, uint16_t state);
 // 0x52 detect thresholds, then the bandwidth word (BK4819_BW_*) and its 0x4F, as the stock channel set
 void bk4819_set_bandwidth(bk4819_t *dev, uint16_t bw_reg);
 void bk4819_set_af(bk4819_t *dev, uint16_t af);
+// Drive one of the chip's GPIO outputs: pin p (0..6) is 0x33 bit 6 - p, its output
+// disable bit 14 - p (cleared: the output on). The other pins keep their value; 0x33 is written only when it changes.
+// A board wires them to its own uses
+void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool high);
 // AF DAC gain 0..15 (the received audio level)
 void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain);
 // DMR receive (hardware-db25d.md 4.5): the stock firmware's digital mode set for the main chip, written when it enters a

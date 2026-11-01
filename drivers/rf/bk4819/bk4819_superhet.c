@@ -67,12 +67,13 @@ static void dmr_tx_prepare(void *c, uint8_t pa_gain)
 }
 
 static void burst(void *c, uint32_t hz, bool tx) { bk4819_burst_tune(c, hz, tx ? BK4819_STATE_TX_MAIN : BK4819_STATE_RX); }
+static void gpio(void *c, uint8_t pin, bool high) { bk4819_gpio(c, pin, high); }
 
 const superhet_main_ops_t bk4819_superhet_main = {
 	.idle = idle, .rx = rx, .to_if = to_if, .bandwidth = bandwidth, .rx_tone = rx_tone, .af = af, .af_gain = af_gain,
 	.tx_prepare = tx_prepare, .tx_tune = tx_tune, .tx_end = tx_end, .tail = tail, .tone = tone_start,
 	.tone_on = tone_on, .tone_key = tone_key, .dtmf = dtmf, .dmr_enter = dmr_enter, .dmr_leave = dmr_leave,
-	.dmr_tx_prepare = dmr_tx_prepare, .burst = burst, .gpio = NULL,
+	.dmr_tx_prepare = dmr_tx_prepare, .burst = burst, .gpio = gpio,
 };
 
 static void lo_tune(void *c, uint32_t hz) { bk4819_lo_tune(c, hz); }
@@ -80,5 +81,5 @@ static void lo_off(void *c) { bk4819_lo_off(c); }
 static void lo_resume(void *c) { bk4819_lo_resume(c); }
 
 const superhet_lo_ops_t bk4819_superhet_lo = {
-	.tune = lo_tune, .off = lo_off, .resume = lo_resume, .gpio = NULL,
+	.tune = lo_tune, .off = lo_off, .resume = lo_resume, .gpio = gpio,
 };
