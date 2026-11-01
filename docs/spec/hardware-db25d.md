@@ -126,7 +126,7 @@ the radio stopped before the display was lit, until a power cycle; that fault is
 | PTA19 (19) | FM broadcast audio enable |
 | ADC 2 | Board ID: display bus mode |
 | ADC 6 | RSSI (squelch and channel busy) |
-| ADC 0, ADC 7 | Neither is shown to be the supply, and no supply-voltage read is known. ADC 7 is a hysteresis input (below 465 / above 527) that sets a GPIO of the LO BK4819; its source is unknown (unverified). At a 13.5 V supply: ADC 0 reads 0, ADC 2 about 0, ADC 6 594 (no signal), ADC 7 742 (measured) |
+| ADC 0, ADC 7 | Neither is shown to be the supply, and no supply-voltage read is known. ADC 7 is a hysteresis input that drives an output of the LO chip (register 0x33, 4.3): below 465 the output goes high, above 527 low, in between it stays. The pin is 2 on a BK4819 LO, 4 on the FD6818 and AT1141. What ADC 7 measures and what the output drives are unknown (unverified). At a 13.5 V supply: ADC 0 reads 0, ADC 2 about 0, ADC 6 594 (no signal), ADC 7 742 (measured). ADC 7 follows the transmitter's load, not a slow temperature curve: keyed into a dummy load at the lowest power it fell from 726 to 559 in 1 s, below 465 in 3 s and to 425 by 10 s, and was back at 670 about 1 s after the transmission ended (measured). RadioFoundry reads it at every status poll, transmitting too (`radio_db25d.c`, `db25d_lo_aux`) |
 
 **Speaker volume.** The BK4819 init (table in 4.3) writes register 0x48 as 0xB3BF and then 0xB3B3 near the end, so the AF
 DAC gain nibble ends at 3. Neither ADC 0 nor ADC 7 is a volume knob, and the VOL/SQL key may be a squelch key rather than

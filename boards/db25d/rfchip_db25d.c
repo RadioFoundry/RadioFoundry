@@ -22,6 +22,9 @@
 #define GPIO_BAND	3u		// FD6818 and AT1141, main and LO
 #define BK_MAIN_BAND	2u		// BK4819 main (PRO)
 #define BK_LO_BAND	1u		// BK4819 LO (PRO). Low, VHF hears nothing
+// The LO's output that follows ADC 7 (hardware-db25d.md 3.3); what it drives is unknown
+#define GPIO_LO_AUX	4u		// FD6818 and AT1141 LO
+#define BK_LO_AUX	2u		// BK4819 LO (PRO)
 #define ID_TRIES	3u
 #define ID_RESET_MS	100u		// stock: soft reset, this long, release, this long, read again
 #define REG_ID		0x00
@@ -35,6 +38,7 @@ static fd6818sh_t fd_main, fd_lo;
 static at1141_t at_lo;
 static chip_t main_chip, lo_chip;
 static uint8_t main_band, lo_band;	// the band flags' GPIO pins
+static uint8_t lo_aux;
 static uint16_t main_id, lo_id;
 static superhet_main_t sh_main;
 static superhet_lo_t sh_lo;
@@ -112,6 +116,7 @@ bool db25d_rf_init(void)
 	// is above the signal (f + 51.55 MHz): DCS arrives inverted (4.7)
 	main_band = main_chip == CHIP_BK4819 ? BK_MAIN_BAND : GPIO_BAND;
 	lo_band = lo_chip == CHIP_BK4819 ? BK_LO_BAND : GPIO_BAND;
+	lo_aux = lo_chip == CHIP_BK4819 ? BK_LO_AUX : GPIO_LO_AUX;
 	if (main_chip == CHIP_BK4819) {
 		bk4819_attach(&bk_main, &bus_main.bus);
 		bk_main.rx_inverted = true;
@@ -268,3 +273,4 @@ void db25d_lo_tune(uint32_t hz)
 
 void db25d_lo_off(void) { sh_lo.ops->off(sh_lo.chip); }
 void db25d_lo_resume(void) { sh_lo.ops->resume(sh_lo.chip); }
+void db25d_lo_aux(bool high) { superhet_lo_gpio(&sh_lo, lo_aux, high); }
