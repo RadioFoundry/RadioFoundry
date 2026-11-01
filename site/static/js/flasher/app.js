@@ -27,7 +27,7 @@ import { radioPicture, holdKeys } from "./radiotop.js";
 import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, browserErrorKey, knownRadioPort } from "./link.js";
+import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, knownRadioPort } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -436,7 +436,7 @@ async function rfoundryNow(link, p) {
 	return { kind: "rfoundry", probe: p, stubOffer: f4Board() ? await Stub.rfoundryOffer(link) : null };
 }
 
-const grantedRFoundryPorts = async () => (await navigator.serial.getPorts()).filter((p) => {
+const grantedRFoundryPorts = async () => (await serialApi().getPorts()).filter((p) => {
 	const i = p.getInfo();
 	return i.usbVendorId === RFOUNDRY_USB.usbVendorId && i.usbProductId === RFOUNDRY_USB.usbProductId;
 });
@@ -809,7 +809,7 @@ async function connectForUpdate(status) {
 		if (await networkModeSeen()) throw new NetworkModeError();
 		// a port granted before where RadioFoundry answers needs no chooser
 		const known = await knownRadioPort([RFOUNDRY_USB, ...c7ui.CABLES]);
-		stream = known?.stream || await SerialStream.open(await navigator.serial.requestPort({ filters: [RFOUNDRY_USB, ...c7ui.CABLES] }));
+		stream = known?.stream || await SerialStream.open(await serialApi().requestPort({ filters: [RFOUNDRY_USB, ...c7ui.CABLES] }));
 		link = new Link(stream, { timeout: 1200 });
 	}
 	status.replaceChildren(h("p", { class: "muted" }, t("flash.now.connecting")));
