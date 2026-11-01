@@ -778,7 +778,7 @@ RadioFoundry reads exactly two. Read only: RadioFoundry never writes them.
 
 ### 11.2 Layout
 
-Assumed to follow the MD-UV380 family's first rows (the same factory tool), single band, 9 points per row (unverified):
+Single band, 9 points per row:
 
 | Offset | Content |
 |---|---|
@@ -788,15 +788,29 @@ Assumed to follow the MD-UV380 family's first rows (the same factory tool), sing
 | 0x030-0x038 | Receiver front-end tuning, per point |
 | 0x130-0x138 / 0x140-0x148 | DMR modulation pair (0x45 / 0x46) |
 | 0x170-0x178 / 0x180-0x188 | FM modulation pair |
-| 0x1B0-0x1D3 | The 9 calibration frequencies, 4-byte BCD, least significant byte first, 10 Hz units |
+| 0x1B0-0x1F7 | Frequency list: 9 entries of 8 bytes, two 4-byte BCD frequencies each, least significant byte first, 10 Hz units |
+| 0x1B2-0x1B3 | Band low end: the upper half of the first frequency, 4 BCD digits in 100 kHz units (0x4010 = 401.0 MHz) |
+| 0x1F2-0x1F3 | Band high end, the same from the last entry (0x4799 = 479.9 MHz) |
 
-Byte values are taken x 16 to the 12-bit DACs (unverified). `calibration_md380.c` accepts the table when the power rows are
-neither erased nor zero and low < high at every point, and no tuning or modulation row is erased. If the frequency list
-is not BCD, ascending and in band, it uses an even grid over the band instead and says so ("factory/grid").
+Only the even points (0, 2, 4, 6, 8) of a row are used. Each odd point is the mean of its neighbors, rounded down,
+whatever the flash holds there. That holds for every row from 0x010 to 0x180 except 0x0E0. The rest of the frequency
+list is not used: on the radios seen, the first frequencies run 401.035, 411.035 ... 471.035, 479.995 MHz, close to
+the points below but not the same.
+
+`calibration_md380.c` accepts the table when the power rows are neither erased nor zero and low < high at every point,
+and no tuning or modulation row is erased. If the band ends are not BCD, out of band or not ascending, it uses
+400.0-470.0 MHz (UHF) or 136.0-174.0 MHz (VHF) instead and says so ("factory/grid").
 
 ### 11.3 Interpolation
 
-Linear between the two neighboring points, clamped at the ends.
+The nine points split the band by halving, in 100 kHz units with integer halves: point 0 and 8 are the band ends,
+point 4 the middle of those, points 2 and 6 the middles of the halves, and the odd points the middles between. For
+401.0-479.9 MHz: 4010, 4108, 4207, 4305, 4404, 4502, 4601, 4700, 4799.
+
+The channel frequency is taken in 100 kHz units, truncated (TX frequency for the power rows, RX frequency for the
+tuning row). The value is linear between the two neighboring points, truncated toward the lower point's value, and
+clamped to the first and last point outside them. Power and tuning bytes go to the 12-bit DAC as (b x 255) >> 4
+(b x 255 in its left-aligned register).
 
 ---
 

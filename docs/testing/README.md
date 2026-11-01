@@ -20,7 +20,7 @@ repeatable and skips cleanly what it can't reach. What each level is for and whe
 
 ```
 tools/ci.sh                    # everything below
-tools/ci.sh --quick            # each board's default build only (no feature matrix)
+tools/ci.sh --quick            # each board's default and maximal builds (no feature matrix)
 tools/ci.sh --board <b>        # one board, for example dm1701
 tools/ci.sh --matrix           # only the feature matrix (no default builds)
 tools/ci.sh --steps host,python   # only some steps: host, python, firmware, licenses, similarity
