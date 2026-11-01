@@ -50,7 +50,7 @@
 #define PIN_FM_MUTE		GPIOE, GPIO_PIN_13	// FM receive audio: high = through, low = muted (bench, hardware-md380.md 6.1)
 #define PIN_LED_GREEN		GPIOE, GPIO_PIN_0	// RX LED
 #define PIN_LED_RED		GPIOE, GPIO_PIN_1	// TX LED
-#define PIN_CTCSS_PWM		GPIOC, GPIO_PIN_7	// CTC/DCS_OUT, TIM3_CH2 (AF2) PWM while a sub-audio tone is sent (subtone_md380.c)
+#define PIN_CTCSS_PWM		GPIOC, GPIO_PIN_7	// CTC/DCS_OUT, TIM3_CH2 (AF2) PWM while a sub-audio tone is sent (subtone_md380.c), else released
 #define PIN_BEEP_PWM		GPIOC, GPIO_PIN_8	// BEEP, TIM8_CH3 (unused: beeps go through the HR_C5000)
 #define PIN_LCD_BACKLIGHT	GPIOC, GPIO_PIN_6	// LAMP, TIM8_CH1 PWM
 
