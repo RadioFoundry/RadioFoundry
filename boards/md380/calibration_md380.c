@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 factory calibration reader (docs/spec/hardware-md380.md section 11).
-// The radio is single band: the table in SPI flash security registers 1-2 (512 bytes) holds one band. The row layout
-// is assumed to be the one hardware-mduv380.md 8 gives (the same factory tool) and is not confirmed on an MD-380, so the reader is
+// The radio is single band: the table in SPI flash security registers 1-2 (512 bytes) holds one band. The reader is
 // read only, checks every row before use, and the radio refuses to transmit when the table is not accepted.
 #include <string.h>
 #include "md380.h"
@@ -11,7 +10,7 @@
 #define CAL_SIZE	512u
 #define POINTS		9u
 
-// Row offsets (hardware-md380.md 11.2, all ?)
+// Row offsets (hardware-md380.md 11.2)
 #define REF_TUNE	0x009u	// reference oscillator tune byte
 #define ROW_HIGH	0x010u	// TX power, high (5 W)
 #define ROW_LOW		0x020u	// TX power, low (1 W)
@@ -20,7 +19,11 @@
 #define ROW_DMR_Q	0x140u
 #define ROW_FM_I	0x170u
 #define ROW_FM_Q	0x180u
-#define FREQ_LIST	0x1B0u	// 9 calibration frequencies, 4-byte BCD, least significant byte first, 10 Hz units
+#define ROW_FIRST	0x010u	// rows whose odd points are not stored: 0x010-0x180 but 0x0E0
+#define ROW_LAST	0x180u
+#define ROW_NONE	0x0E0u
+#define BAND_LO		0x1B2u	// band ends, 4 BCD digits in 100 kHz units, least significant byte first
+#define BAND_HI		0x1F2u
 
 // Without a table: a low APC reference (a guess, and TX is refused anyway), gains at mid scale, the receiver tuned
 // to mid band, no reference correction
@@ -29,20 +32,24 @@
 #define SAFE_GAIN	0x80u
 #define SAFE_REF	0x80u
 
-// Used when the frequency list is unreadable: the band split in eight equal steps
+// Band ends (100 kHz units) used when the table's are unreadable, and the range they must fall in
 #if RFOUNDRY_BAND_VHF
-#define GRID_FIRST	13600000u	// 10 Hz units
-#define GRID_STEP	475000u
+#define DEFAULT_LO	1360u
+#define DEFAULT_HI	1740u
+#define BAND_MIN	1300u
+#define BAND_MAX	1800u
 #else
-#define GRID_FIRST	40000000u
-#define GRID_STEP	1000000u
+#define DEFAULT_LO	4000u
+#define DEFAULT_HI	4700u
+#define BAND_MIN	3900u
+#define BAND_MAX	4900u
 #endif
 
 typedef enum { CAL_NONE, CAL_FACTORY } cal_source_t;
 
 static uint8_t table[CAL_SIZE];
-static uint32_t freq10[POINTS];	// calibration points, 10 Hz units
-static bool freq_from_table;
+static uint32_t points[POINTS];	// calibration points, 100 kHz units
+static bool points_from_table;
 static cal_source_t source;
 static const char *why = "not read";
 
@@ -56,11 +63,11 @@ static bool all_same(const uint8_t *p, uint32_t n, uint8_t v)
 	return true;
 }
 
-// 4 BCD bytes, least significant first; 0 if a nibble is not a digit
-static uint32_t bcd32(const uint8_t *p)
+// 2 BCD bytes, least significant first; 0 if a nibble is not a digit
+static uint32_t bcd16(const uint8_t *p)
 {
 	uint32_t v = 0;
-	for (int i = 3; i >= 0; i--) {
+	for (int i = 1; i >= 0; i--) {
 		uint8_t hi = p[i] >> 4, lo = p[i] & 0xFu;
 		if (hi > 9 || lo > 9) {
 			return 0;
@@ -70,26 +77,35 @@ static uint32_t bcd32(const uint8_t *p)
 	return v;
 }
 
-static void load_frequencies(void)
+// The points split the band by halving: the ends, the middle, then the middles between, so they are only as even as
+// integer halves allow. The frequency list's other entries are not used
+static void load_points(void)
 {
-	uint32_t prev = 0;
-	freq_from_table = true;
-	for (uint32_t i = 0; i < POINTS; i++) {
-		uint32_t f = bcd32(&table[FREQ_LIST + i * 4u]);
-#if RFOUNDRY_BAND_VHF
-		bool in_band = f >= 13000000u && f <= 18000000u;
-#else
-		bool in_band = f >= 39000000u && f <= 49000000u;
-#endif
-		if (!in_band || f <= prev) {
-			freq_from_table = false;
-			break;
-		}
-		freq10[i] = prev = f;
+	uint32_t lo = bcd16(&table[BAND_LO]), hi = bcd16(&table[BAND_HI]);
+	points_from_table = lo >= BAND_MIN && hi <= BAND_MAX && lo < hi;
+	if (!points_from_table) {
+		lo = DEFAULT_LO;
+		hi = DEFAULT_HI;
 	}
-	if (!freq_from_table) {
-		for (uint32_t i = 0; i < POINTS; i++) {
-			freq10[i] = GRID_FIRST + i * GRID_STEP;
+	points[0] = lo;
+	points[POINTS - 1] = hi;
+	for (uint32_t step = (POINTS - 1) / 2; step > 0; step /= 2) {
+		for (uint32_t i = step; i < POINTS - 1; i += 2 * step) {
+			points[i] = (points[i - step] + points[i + step]) / 2u;
+		}
+	}
+}
+
+// Only the even points of a row are used: each odd one is the mean of its neighbors, rounded down, whatever the flash
+// holds there
+static void fill_odd_points(void)
+{
+	for (uint32_t row = ROW_FIRST; row <= ROW_LAST; row += 0x10u) {
+		if (row == ROW_NONE) {
+			continue;
+		}
+		for (uint32_t i = 1; i < POINTS; i += 2) {
+			table[row + i] = (uint8_t)((table[row + i - 1] + table[row + i + 1]) / 2u);
 		}
 	}
 }
@@ -130,41 +146,37 @@ bool md380_cal_load(void)
 	if (!stm32_spi_flash_read_security(1, 0, &table[0], 256) || !stm32_spi_flash_read_security(2, 0, &table[256], 256)) {
 		why = "read failed";
 		memset(table, 0xFF, sizeof(table));
-		load_frequencies();
+		load_points();
 		return false;
 	}
-	load_frequencies();
+	fill_odd_points();
+	load_points();
 	if (table_sane()) {
 		source = CAL_FACTORY;
 	}
 	return source != CAL_NONE;
 }
 
-// Linear over the points (radio/cal_curve.h): clamped below the first and above the last, truncated
-static int32_t interpolate(uint16_t row, uint32_t f10, int32_t mul)
+// Linear over the points (radio/cal_curve.h): clamped below the first and above the last, truncated toward the
+// lower point's value. f in 100 kHz units, truncated
+static uint8_t byte_at(uint16_t row, uint32_t f)
 {
 	int32_t v[POINTS];
 	for (uint32_t i = 0; i < POINTS; i++) {
-		v[i] = table[row + i] * mul;
+		v[i] = table[row + i];
 	}
-	return cal_curve_at(freq10, v, POINTS, f10, 0);
+	return (uint8_t)cal_curve_at(points, v, POINTS, f, 0);	// between two bytes, so a byte
 }
 
-static uint16_t dac_at(uint16_t row, uint32_t f10)
+// The byte x 255 in the 12-bit DAC's left-aligned register: (b x 255) >> 4 counts
+static uint16_t dac_at(uint16_t row, uint32_t f)
 {
-	int32_t v = interpolate(row, f10, 16);	// 8-bit table value to the 12-bit DAC (?)
-	return (uint16_t)(v < 0 ? 0 : (v > 4095 ? 4095 : v));
-}
-
-static uint8_t byte_at(uint16_t row, uint32_t f10)
-{
-	int32_t v = interpolate(row, f10, 1);
-	return (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
+	return (uint16_t)((byte_at(row, f) * 255u) >> 4);
 }
 
 bool md380_cal_at(uint32_t hz, md380_cal_point_t *out)
 {
-	uint32_t f10 = hz / 10u;
+	uint32_t f = hz / 100000u;
 	if (source == CAL_NONE) {
 		*out = (md380_cal_point_t){
 			.valid = false,
@@ -176,20 +188,20 @@ bool md380_cal_at(uint32_t hz, md380_cal_point_t *out)
 		return false;
 	}
 	out->valid = true;
-	out->power_dac[0] = dac_at(ROW_LOW, f10);
-	out->power_dac[1] = dac_at(ROW_HIGH, f10);
-	out->rx_tune_dac = dac_at(ROW_RX_TUNE, f10);
-	out->fm_i = byte_at(ROW_FM_I, f10);
-	out->fm_q = byte_at(ROW_FM_Q, f10);
-	out->dmr_i = byte_at(ROW_DMR_I, f10);
-	out->dmr_q = byte_at(ROW_DMR_Q, f10);
+	out->power_dac[0] = dac_at(ROW_LOW, f);
+	out->power_dac[1] = dac_at(ROW_HIGH, f);
+	out->rx_tune_dac = dac_at(ROW_RX_TUNE, f);
+	out->fm_i = byte_at(ROW_FM_I, f);
+	out->fm_q = byte_at(ROW_FM_Q, f);
+	out->dmr_i = byte_at(ROW_DMR_I, f);
+	out->dmr_q = byte_at(ROW_DMR_Q, f);
 	out->ref_tune = table[REF_TUNE];
 	return true;
 }
 
 const char *md380_cal_source(void)
 {
-	return source == CAL_FACTORY ? (freq_from_table ? "factory" : "factory/grid") : "none";
+	return source == CAL_FACTORY ? (points_from_table ? "factory" : "factory/grid") : "none";
 }
 
 const char *md380_cal_why(void)
