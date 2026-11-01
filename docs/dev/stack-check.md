@@ -4,8 +4,8 @@
 
 `make BOARD=<b> stack-check` computes the worst-case stack depth of every FreeRTOS task in a build and fails when a
 task's deepest call chain doesn't fit its stack. `tools/ci.sh` runs it on each board's default and maximal
-configuration. It exists because an overflow is invisible elsewhere: the host tests run the same code on large pthread
-stacks, and on the radio FreeRTOS' overflow hook spins without a word. A 768-byte buffer in `codeplug_contact_find` once overflowed the start task at boot; the check reported that chain
+configuration, `--quick` too, so every pull request's firmware jobs check both. It exists because an overflow is
+invisible elsewhere: the host tests run the same code on large pthread stacks, and on the radio FreeRTOS' overflow hook spins without a word. A 768-byte buffer in `codeplug_contact_find` once overflowed the start task at boot; the check reported that chain
 424 bytes over.
 
 On the radio, the debug link's `tasks` view section shows what each task has really used: its least free stack since
