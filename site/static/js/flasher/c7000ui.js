@@ -17,7 +17,7 @@
 
 import { h, t, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames } from "./dom.js";
 import { hex, sha256, sleep } from "./bytes.js";
-import { SerialStream, Link, probe, serialSupported, knownRadioPort, grantedPorts } from "./link.js";
+import { SerialStream, Link, probe, serialSupported, serialApi, knownRadioPort, grantedPorts } from "./link.js";
 import { Stub, stubImages, StubError, DONE_LED, MEM, ROM_REPEAT } from "./stub.js";
 import * as c7 from "./c7000.js";
 import { openVendorFile, describe as describeVendorFile, analysisCandidate, whyNot } from "./vendorfile.js";
@@ -147,7 +147,7 @@ async function openCable(any = false) {
 	// in (the radio may be off or on its original firmware: the connect step finds out)
 	const known = any ? null : await knownRadioPort(CABLES, (p) => S().board.debuglink_names.includes(p.board));
 	const granted = any || known ? [] : await grantedPorts(CABLES);
-	const port = known?.port || (granted.length === 1 ? granted[0] : await navigator.serial.requestPort(any ? {} : { filters: CABLES }));
+	const port = known?.port || (granted.length === 1 ? granted[0] : await serialApi().requestPort(any ? {} : { filters: CABLES }));
 	c.portInfo = port.getInfo();
 	ctx.useAdapter?.(fromSerialInfo(c.portInfo));
 	c.stream = known?.stream || await SerialStream.open(port);

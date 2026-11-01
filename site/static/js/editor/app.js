@@ -6,7 +6,7 @@
 
 import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum, date as fmtDate } from "../flasher/dom.js";
 import { equal } from "../flasher/bytes.js";
-import { SerialStream, serialSupported, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
+import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
 import { CodeplugImage, IDDB_HEADER, REGIONS } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
@@ -492,7 +492,7 @@ async function connect() {
 		let port = known?.port;
 		if (!port) {
 			try {
-				port = await navigator.serial.requestPort({ filters: [RFOUNDRY_USB, ...CABLES] });
+				port = await serialApi().requestPort({ filters: [RFOUNDRY_USB, ...CABLES] });
 			} catch (e) {
 				if (e?.name !== "NotFoundError") throw e;
 				say(t("editor.connect.none"), "warn");

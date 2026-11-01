@@ -7,6 +7,9 @@
 
 import { be32, concat, le32, sleep, u16be, u16le, u32le, toHex } from "./bytes.js";
 import { wire, note } from "../diag.js";
+import { serialApi, usbSerialNeeded } from "./usbserial.js";
+
+export { serialApi };
 
 export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network
@@ -33,7 +36,8 @@ export function browserErrorKey(e) {
 	}
 }
 
-export const serialSupported = () => typeof navigator !== "undefined" && "serial" in navigator;
+// Web Serial, or WebUSB standing in for it where Web Serial reaches no USB device (usbserial.js)
+export const serialSupported = () => typeof navigator !== "undefined" && ("serial" in navigator || usbSerialNeeded());
 
 // CRC-16/CCITT-FALSE
 export function crc16(data, crc = 0xFFFF) {
@@ -95,13 +99,13 @@ export class SerialStream {
 	}
 
 	static async request() {
-		const port = await navigator.serial.requestPort({ filters: [RFOUNDRY_USB] });
+		const port = await serialApi().requestPort({ filters: [RFOUNDRY_USB] });
 		return SerialStream.open(port);
 	}
 
 	// Any serial port (USB-serial programming cables on radios without USB)
 	static async requestAny() {
-		return SerialStream.open(await navigator.serial.requestPort());
+		return SerialStream.open(await serialApi().requestPort());
 	}
 
 	// Chrome's default 255 byte buffer stops the USB reads whenever the page is busy for a moment; the radio gives up
@@ -365,8 +369,8 @@ export async function probe(link) {
 // Ports this site was granted before and that are plugged in now (the browser's chooser marks them paired), as a
 // chooser with these filters would list them
 export async function grantedPorts(filters) {
-	if (!navigator.serial?.getPorts) return [];
-	return (await navigator.serial.getPorts()).filter((p) => {
+	if (!serialSupported()) return [];
+	return (await serialApi().getPorts()).filter((p) => {
 		const i = p.getInfo();
 		return filters.some((f) => i.usbVendorId === f.usbVendorId && (f.usbProductId === undefined || i.usbProductId === f.usbProductId));
 	});
