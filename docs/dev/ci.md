@@ -221,7 +221,8 @@ tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board 
 
 Every step but `host` needs Python 3.11 or later for the registry's TOML. `tools/rfoundry_python.sh` finds it:
 `$RFOUNDRY_PYTHON`, else the newest `python3.N` on `PATH`. A board whose compiler is missing is skipped with the command
-that installs it (its platform's `toolchain.build`). `--quick` builds each board's default and maximal configurations, `--matrix` the feature matrix.
+that installs it (its platform's `toolchain.build`). `--quick` builds each board's default and maximal configurations,
+`--matrix` the feature matrix.
 
 The `python` step also checks the HIL tests without a radio:
 
