@@ -18,7 +18,7 @@ so one set serves the self-hosted Gitea runner and GitHub.
 | `ui-gallery.yml` | `ubuntu-24.04` | a pull request that changes the UI (`core/ui/`, the simulator, `uiSim`) | renders the screen gallery at the base and at the pull request, and makes the side-by-side artifact |
 | `ui-gallery-comment.yml` | `ubuntu-24.04` | when `ui-gallery.yml` finishes on a pull request | posts the pull request's gallery comment with the changed screens attached |
 | `manual.yml` | `ubuntu-24.04` | docs changes pushed to `main`, `v*` tags | the user manual PDF ([manual-pdf.md](manual-pdf.md)) |
-| `release.yml` | `ubuntu-24.04`, and for rfoundry the hosted macOS / Windows runners | `v*` tags; pull requests that change the release tooling (packaging only, no release gate) | release images and rfoundry ([release.md](release.md)) |
+| `release.yml` | `ubuntu-24.04`, and for rfoundry the hosted macOS / Windows runners | `v*` tags; pull requests that change rfoundry or this workflow (no release gate; `pr-tests.yml` runs the firmware packaging) | release images and rfoundry ([release.md](release.md)) |
 
 On GitHub, `ci.yml` and `nightly.yml` run only when the repository variable `RFOUNDRY_CI_GITHUB` is `true` (on a
 private copy, hosted runners use paid minutes). On Gitea they always run.
@@ -41,7 +41,7 @@ push runs only the manual workflow. A newer push cancels the run in progress (`c
 |---|---|
 | `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), then the UI screen gallery (`uiSim --gallery`) |
 | `checks` | `tools/ci.sh --steps registry,python,licenses` (doc links and the strict web site build among the Python checks; the job installs `site/requirements.txt` for the site) |
-| `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --toolchain arm`: every board built with the Arm toolchain, in one job |
+| `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --toolchain arm`: every board built with the Arm toolchain, default and maximal (with the stack check), in one job |
 | `firmware (C-SKY)` | `tools/ci.sh --quick --steps firmware --toolchain csky`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) unless the runner has csky-elf GCC; skipped where the image isn't available |
 
 There is one firmware job per toolchain, not one per radio or per platform: a job's checkout and start take longer
@@ -78,7 +78,9 @@ the network. A new submodule also goes in the Dockerfile's `SUBMODULE_URLS`.
 Every pull request runs `ci.yml`'s jobs (`unit tests`, `firmware (Arm)` and `firmware (C-SKY)` for every board
 built with each toolchain) and `checks` on its merge commit. The first job,
 `changes`, looks at the files the pull request changes and skips what they don't touch: source changes (`ci.yml`'s
-paths) run the build and test jobs. `checks` runs on every pull request: the Python and license checks (doc links
+paths) run the build and test jobs. When a board's `board.toml` or `board.mk`, a `platform.toml` or the release
+tooling changes, the firmware jobs also run `tools/release_build.sh`: every stable board packaged as a release tag
+would ([release.md](release.md)). `checks` runs on every pull request: the Python and license checks (doc links
 among them) always, and the PDF manual build (as `manual.yml` does) when docs change (`manual.yml`'s paths). The last
 job, `PR checks`, always runs and fails when any job failed or was canceled. It is the one check the `main` ruleset
 requires, so a skipped job never holds a pull request up, and a new job only has to be added to its `needs` list.
@@ -219,7 +221,8 @@ tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board 
 
 Every step but `host` needs Python 3.11 or later for the registry's TOML. `tools/rfoundry_python.sh` finds it:
 `$RFOUNDRY_PYTHON`, else the newest `python3.N` on `PATH`. A board whose compiler is missing is skipped with the command
-that installs it (its platform's `toolchain.build`). `--quick` and `--matrix` choose the firmware configurations.
+that installs it (its platform's `toolchain.build`). `--quick` builds each board's default and maximal configurations,
+`--matrix` the feature matrix.
 
 The `python` step also checks the HIL tests without a radio:
 

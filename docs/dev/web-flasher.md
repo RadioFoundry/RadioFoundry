@@ -623,6 +623,16 @@ dismisses the offer until the page reloads. Only the first language the browser 
 English (the firmware's own) never does. The code comes from the switch name alone (`flasher/langsuggest.js`), so a new
 pack needs no flasher change. Strings: `flash.build.pack_*`.
 
+**Radio language** (`LANG_DEFAULT_<CODE>`) lists English and every pack the radio can have; one the build leaves out
+reads "(adds it to the build)". Picking it turns its pack on, and the pick holds across the build cards until the pack
+is turned off by hand (the radio then starts in English). Picking another language takes out a pack the pick added. On
+an installation it is preset to the page's language only when the build has that pack.
+
+A build too big for the radio fails at the build service with `too big: <region> overflowed by <N> bytes` (the
+linker's region, flash first). The build step shows it as a notice, not an error to report: how many KB too big for
+the program memory (or the RAM), to turn features off in Custom or pick a smaller build, and, when the Radio language
+added a pack, that English leaves it out again (`flasher/buildfit.js`; strings `flash.build.too_big*`).
+
 ## Version links
 
 To have someone install a version that isn't a release (a commit to try out), send them the flasher with

@@ -204,10 +204,15 @@ never handles the key. Updates of a radio that runs RadioFoundry need no stock f
 | `rfoundry` | On Ubuntu 22.04, macOS 14 (arm64), macOS 13 (x86_64) and Windows 2022: installs the package, runs its tests, builds a single-file executable with PyInstaller 6.11.1 (libusb from the `libusb-package` wheel, the `certifi` CA bundle, and `serial_loader`, `hrc7000_codec` and `stubtool` for the serial route inside) and runs `--version` on it |
 | `publish` | On a `v*` tag only, after every toolchain's job and every rfoundry build passed: one `SHA256SUMS` over everything, checks every manifest against its image and that none includes the codec, creates the release if the manual workflow hasn't, uploads with `--clobber` |
 
-Pull requests that touch `tools/rfoundry/`, `tools/release.py`, the serial flashing tools, the registry (`board.toml`,
-`board.mk`, `platform.toml`, `tools/boards.py`), the toolchain scripts, the toolchain action or the workflow build
-everything as workflow artifacts and publish nothing, without the release gate (the pull request's own checks run the
-same tests), rfoundry included. A manual run on a tag rebuilds and
+On a pull request nothing is published and the release gate doesn't run (the pull request's own checks run the same
+tests):
+
+| What the pull request changes | What builds |
+|---|---|
+| `tools/rfoundry/` (with the `registry.json` a `board.toml` change regenerates), the serial flashing tools, `stub/stubtool.py` | `release.yml`: `version` and `rfoundry`, as artifacts |
+| `release.yml` or the toolchain action | `release.yml`: everything, as artifacts |
+| A `board.toml`, `board.mk` or `platform.toml`, `tools/release.py`, `tools/release_build.sh`, `tools/boards.py`, the toolchain scripts | `pr-tests.yml`: its `firmware (<toolchain>)` jobs run `tools/release_build.sh` after their builds, so every stable board is packaged as a tag would package it |
+ A manual run on a tag rebuilds and
 replaces the assets.
 
 The executables are not code-signed. macOS marks downloads as quarantined: `xattr -d com.apple.quarantine

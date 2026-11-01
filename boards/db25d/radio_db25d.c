@@ -64,6 +64,10 @@
 #define TX_END_PATH_US		300u		// 3.2: PA select off and PTA23 high, then this long before the receiver is retuned
 #define TX_END_RX_US		200u		// after the RX path is switched on again
 #define BIAS_DEFAULT_HZ		450000000u	// the modulation balance's frequency before one is known
+// ADC 7 below the low mark sets the LO's aux output, above the high mark clears it, in between it stays (3.3)
+#define ADC7_CH			7u
+#define ADC7_LOW		465u
+#define ADC7_HIGH		527u
 #define CTCSS_MIN_X10		600u
 #define CTCSS_MAX_X10		2600u
 
@@ -278,6 +282,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 		hal_delay_us(TX_END_PATH_US);	// stock TX end: the retune, this long, then the RX path
 	}
 	rx_paths(hz, true);
+	db25d_main_band(hz);	// every receive set-up; TX prepare sets the transmit band's (4.3)
 	db25d_main_rx_state();
 	if (from_tx) {
 		hal_delay_us(TX_END_RX_US);
@@ -512,6 +517,13 @@ static void status(radio_status_t *st)
 		st->carrier = false;
 		st->tone_ok = false;
 		return;
+	}
+	// Every poll, transmitting too: ADC 7 falls below the low mark within seconds of a key-up (3.3)
+	uint16_t a7 = hrc_adc_read(ADC7_CH);
+	if (a7 < ADC7_LOW) {
+		db25d_lo_aux(true);
+	} else if (a7 > ADC7_HIGH) {
+		db25d_lo_aux(false);
 	}
 	// 0x0C on every poll, tone or not: the diagnostics page shows it (which sub-audio the chip hears)
 	db25d_main_status(&last_rssi_raw, &last_noise_raw, &last_css_raw);

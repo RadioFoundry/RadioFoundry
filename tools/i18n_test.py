@@ -57,6 +57,23 @@ class Generate(unittest.TestCase):
         for text in ("Borroso", "Volumen"):
             self.assertNotIn(text, self.h)
 
+    def test_languages_share_the_hashes(self):
+        # A second catalog: one hash array for both; a translation equal to the English is left out ("" in its text)
+        with open(os.path.join(self.dir.name, "yy.po"), "w", encoding="utf-8") as f:
+            f.write(PO.replace("Language: xx", "Language: yy").replace('"Hecho"', '"Done"')
+                    + '\nmsgid "Only here"\nmsgstr "Solo qui"\n')
+        out = os.path.join(self.dir.name, "tables.h")
+        i18n.generate(out)
+        with open(out, encoding="utf-8") as f:
+            h = f.read()
+        self.assertEqual(h.count("static const uint32_t"), 1)
+        self.assertIn("#define LANG_STRINGS\t2", h)     # "Done" (xx) and "Only here" (yy)
+        self.assertNotIn('"Done"', h)
+        keys, built = i18n.tables()
+        got = {code: [i18n.lookup(keys, blob, offs, en) for en in (b"Done", b"Only here", b"Fuzzy")]
+               for code, _, _, _, blob, offs in built}
+        self.assertEqual(got, {"xx": [b"Hecho", None, None], "yy": [None, b"Solo qui", None]})
+
     def test_default_language_switch(self):
         # an empty language setting is the language whose CONFIG_LANG_DEFAULT_<CODE> is on, else English
         self.assertIn("#if CONFIG_LANG_DEFAULT_XX\n#define LANG_DEFAULT\t1\n#else\n#define LANG_DEFAULT\tLANG_ENGLISH\n#endif",
@@ -89,6 +106,20 @@ class Generate(unittest.TestCase):
         i18n.write_po(path, {"Language": "xx"}, entries, {})
         self.assertEqual(i18n.read_po(path)[1], entries)
         self.assertIn("made for 'Done'", "\n".join(i18n.pending("xx.po", entries)))
+
+class Catalogs(unittest.TestCase):
+    def test_every_translation_found(self):
+        # The radio's catalogs through the lookup the firmware does: each usable translation at its place in the
+        # stride, the rest the English
+        keys, built = i18n.tables()
+        for code, _, _, _, blob, offs in built:
+            _, body = i18n.read_po(i18n.catalogs()[code])
+            for msgid, msgstr, fz in body:
+                en = i18n.text_to_bytes(msgid, msgid)
+                usable = msgstr and not fz and not i18n.check_translation(msgid, msgstr, msgid)
+                want = i18n.text_to_bytes(msgstr, msgid) if usable else None
+                self.assertEqual(i18n.lookup(keys, blob, offs, en), None if want == en else want, (code, msgid))
+
 
 if __name__ == "__main__":
     unittest.main()

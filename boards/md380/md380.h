@@ -84,7 +84,7 @@ typedef struct {
 bool md380_cal_load(void);
 // Calibration values at a frequency (Hz); false if no usable calibration is loaded (safe defaults filled)
 bool md380_cal_at(uint32_t hz, md380_cal_point_t *out);
-const char *md380_cal_source(void);	// "factory" or "none"
+const char *md380_cal_source(void);	// "factory", "factory/grid" (band ends unreadable) or "none"
 const char *md380_cal_why(void);	// why the table was refused, for the diagnostics page
 uint8_t md380_cal_byte(uint16_t offset);
 
