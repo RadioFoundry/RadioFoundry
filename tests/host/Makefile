@@ -470,6 +470,28 @@ uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
 uiSim: uiSim.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -o $@ uiSim.c $(UIAPP) -lz
 
+# The beep reel (tools/beep_reel.py): every beep on the simulated screen, with beep.c's sound. BEEP_DIR is where
+# beep.c and beep.h come from: another commit's for a before / after comparison. Its beep.h goes first on the include
+# path, and beep_names.h lists its beeps, so the reel needs nothing of it but beep.h. beep_dir notes the BEEP_DIR built
+# from (rewritten only when it changes), so a build from another one is never taken for this one
+BEEP_DIR ?= $(CORE)/radio
+BEEPINC := out/beep
+TESTS   += beepReel
+
+$(BEEPINC)/beep_dir: FORCE
+	@mkdir -p $(BEEPINC)
+	@echo '$(BEEP_DIR)' | cmp -s - $@ || echo '$(BEEP_DIR)' > $@
+FORCE:
+.PHONY: FORCE
+
+beepReel: beepReel.c $(UIDEPS) $(BEEP_DIR)/beep.c $(BEEP_DIR)/beep.h $(BEEPINC)/beep_dir
+	mkdir -p $(BEEPINC)/radio
+	cp $(BEEP_DIR)/beep.h $(BEEPINC)/radio/beep.h
+	awk '/typedef enum/ { e = 1 } e && match($$0, /^[ \t]*BEEP_[A-Z0-9_]+/) { n = substr($$0, RSTART, RLENGTH); \
+		sub(/^[ \t]*/, "", n); if (n != "BEEP_NONE" && n != "BEEP_COUNT") printf "\t{ \"%s\", %s },\n", substr(n, 6), n } \
+		/} beep_t;/ { e = 0 }' $(BEEP_DIR)/beep.h > $(BEEPINC)/beep_names.h
+	$(CC) -I$(BEEPINC) $(UIFLAGS) -o $@ beepReel.c $(UIAPP) $(BEEP_DIR)/beep.c -lz
+
 # The highlight colors the gallery shows its color pages in: the list in .github/workflows/ui-gallery.yml, so the
 # committed gallery and a pull request's before / after pictures show the same colors
 UI_GALLERY_COLORS ?= $(shell sed -n 's/^ *UI_GALLERY_COLORS: *"\([^"]*\)".*/\1/p' $(ROOT)/.github/workflows/ui-gallery.yml)
@@ -483,7 +505,7 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim
+run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim beepReel
 	./gfxTest
 	./i18nTest
 	./i18nTestNoLang
@@ -491,6 +513,7 @@ run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoC
 	./uiFlowTest
 	./uiFlowTestNoColor
 	./uiSim --layout
+	./beepReel --out out/beep-reel > /dev/null	# every beep has a scene, and the scenes still run
 .PHONY: run-ui ui-gallery ui-sheets
 
 # AMBE+2 3600x2450 air frame FEC and interleaving (core/dmr/ambe), with vectors from the stock DM-1701 codec's FEC

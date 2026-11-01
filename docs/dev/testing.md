@@ -65,6 +65,7 @@ The UI runs unchanged on the host. Three tools use it:
 |---|---|
 | `make -C tests/host run-ui` | `gfxTest` (drawing) and `uiFlowTest`: replays every task flow of [task-flows.md](../ux/task-flows.md) against the press budgets of [usability-tests.md](../ux/usability-tests.md) on four display and key map pairs, and crawls every screen for the rules in [ui.md](../spec/ui.md) 7 |
 | `tests/host/uiSim --geom 160x120i5 --script "ok 4" --out f.png` | Renders one screen after a key script. The options are in the header comment of `tests/host/uiSim.c`, the script tokens in `tests/host/sim/ui_sim.c` |
+| `tools/beep_reel.py` | Makes `build/beep-reel/beep_reel.mp4`: every beep in the scene that sounds it, on the simulated screen, captioned. Needs ffmpeg. `make -C tests/host run-ui` runs its checks without the video ([radio-features.md](../spec/radio-features.md) 4) |
 | `make -C tests/host ui-gallery` | Renders every gallery screen at every display class into `docs/ux/screens/<class>/`, and one contact sheet per class into `docs/ux/screens/sheets/<class>.png` |
 | `make -C tests/host ui-sheets [GEOM=128x64]` | The contact sheets only, into `tests/host/out/sheets/` (not committed): every gallery screen at 2x under its name on one page, to audit a layout change at a glance. `GEOM` takes any geometry `--geom` does |
 
