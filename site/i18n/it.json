@@ -179,7 +179,7 @@
  "notfound.text": "La pagina richiesta non è qui. Potrebbe essere stata spostata.",
  "notfound.home": "Home",
  "flash.title": "Installa e fai il backup",
- "flash.lead": "Installa, fai il backup e ripristina il firmware della radio via USB. Richiede Chrome o Edge su un computer desktop.",
+ "flash.lead": "Installa, fai il backup e ripristina il firmware della radio via USB. Richiede Chrome o Edge su un computer desktop, oppure Chrome su Android.",
  "flash.beta.title": "RadioFoundry è software beta",
  "flash.beta.lead": "Il firmware RadioFoundry e questo installatore web sono ancora in sviluppo attivo. Finora oltre 200 installazioni sono andate a buon fine, ma potresti comunque incontrare qualche problema. Ecco cosa aspettarti prima di iniziare.",
  "flash.beta.risks_title": "Cosa può andare storto",

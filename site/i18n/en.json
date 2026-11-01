@@ -179,7 +179,7 @@
  "notfound.text": "The page you asked for isn't here. It may have moved.",
  "notfound.home": "Home",
  "flash.title": "Install and Back Up",
- "flash.lead": "Install, back up and restore radio firmware over USB. Requires Chrome or Edge on a desktop computer.",
+ "flash.lead": "Install, back up and restore radio firmware over USB. Requires Chrome or Edge on a desktop computer, or Chrome on Android.",
  "flash.beta.title": "RadioFoundry Is Beta Software",
  "flash.beta.lead": "The RadioFoundry firmware and this web installer are still under active development. More than 200 installations have completed successfully so far, but you may still run into the occasional problem. Here is what to expect before you start.",
  "flash.beta.risks_title": "What Can Go Wrong",
