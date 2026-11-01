@@ -26,25 +26,27 @@ const NCM_CONFIG = { interfaces: [
 
 class FakeDevice {
 	constructor(vendorId, productId, config, replies = []) {
-		Object.assign(this, { vendorId, productId, opened: false, configuration: null, config, replies, claimed: [], control: [], sent: [] });
+		Object.assign(this, { vendorId, productId, opened: false, configuration: null, config, replies, claimed: [], control: [], sent: [], waiting: [], reads: 0 });
 	}
 	async open() { this.opened = true; }
-	async close() { this.opened = false; this.wake?.(); }
+	async close() { this.opened = false; this.cancelReads(); }
 	async selectConfiguration() { this.configuration = this.config; }
 	async claimInterface(n) { this.claimed.push(n); }
-	async releaseInterface(n) { this.claimed = this.claimed.filter((c) => c !== n); this.wake?.(); }
+	async releaseInterface(n) { this.claimed = this.claimed.filter((c) => c !== n); this.cancelReads(); }
+	cancelReads() { for (const w of this.waiting.splice(0)) w(); }
+	// data from the device while transfers wait: the oldest waiting transfer gets it, as on the bus
+	arrive(bytes) { const w = this.waiting.shift(); if (w) w(bytes); else this.replies.push(bytes); }
 	async selectAlternateInterface() {}
 	async controlTransferOut(setup, data) { this.control.push({ ...setup, data: data && [...data] }); return { status: "ok" }; }
 	async transferOut(epn, data) { this.sent.push([...data]); return { status: "ok", bytesWritten: data.length }; }
 	async clearHalt() {}
-	// queued replies first, then a read that waits until the interface is released (as a real one does)
+	// queued replies first, then a read that waits for arrive() or until the interface is released (as a real one does)
 	async transferIn() {
-		if (this.replies.length) {
-			const b = Uint8Array.from(this.replies.shift());
-			return { status: "ok", data: new DataView(b.buffer) };
-		}
-		await new Promise((r) => { this.wake = r; });
-		throw new Error("transfer cancelled");
+		this.reads++;
+		const got = this.replies.length ? this.replies.shift() : await new Promise((r) => this.waiting.push(r));
+		if (!got) throw new Error("transfer cancelled");
+		const b = Uint8Array.from(got);
+		return { status: "ok", data: new DataView(b.buffer) };
 	}
 }
 
@@ -116,4 +118,22 @@ test("an FTDI cable: baud, 8N1, DTR and RTS set; status bytes dropped; reopen af
 	assert.deepEqual([...s.buf], [0xAA, 0x55]);
 	await s.close();
 	await assert.doesNotReject(SerialStream.open(port).then((s2) => s2.close()));
+});
+
+test("reads stay queued on the device while the page isn't reading, and nothing is lost", async () => {
+	const dev = new FakeDevice(FTDI, 0x6001, FTDI_CONFIG);
+	const port = new UsbSerialPort(dev);
+	await port.open({ baudRate: 115200 });
+	await new Promise((r) => setTimeout(r, 5));
+	assert.ok(dev.waiting.length >= 2, `transfers waiting on the device: ${dev.waiting.length}`);
+	// the page takes nothing while 20 packets come in
+	for (let i = 0; i < 20; i++) dev.arrive([0x31, 0x60, i]);
+	await new Promise((r) => setTimeout(r, 5));
+	assert.ok(dev.waiting.length >= 2, "still waiting after the burst");
+	const reader = port.readable.getReader();
+	const got = [];
+	while (got.length < 20) got.push(...(await reader.read()).value);
+	assert.deepEqual(got, [...Array(20).keys()]);
+	reader.releaseLock();
+	await port.close();
 });

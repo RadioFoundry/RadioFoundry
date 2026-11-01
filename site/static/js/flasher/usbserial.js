@@ -23,6 +23,8 @@ const FTDI_DTR_RTS_ON = 0x0303;		// high byte: which lines to change, low byte: 
 const FTDI_8N1 = 0x0008;
 
 const READ_SIZE = 4096;			// bytes asked per bulk IN transfer
+const READS_IN_FLIGHT = 4;		// bulk IN transfers kept queued on the device
+const READ_AHEAD = 64;			// chunks read ahead of a page that is slow to take them
 
 // Web Serial on Android can't reach a USB device; WebUSB can. Desktop Chrome keeps its own Web Serial (the OS driver,
 // vendor chips this file doesn't know).
@@ -128,27 +130,32 @@ export class UsbSerialPort {
 		await out(SIO_MODEM_CTRL, FTDI_DTR_RTS_ON);
 	}
 
-	// One bulk IN transfer per pull. An empty result (an FTDI status-only packet, a short idle read) asks again
-	// rather than handing the reader nothing; a stall is cleared and read on, anything else ends the stream.
+	// Bulk IN transfers stay queued on the device whether or not the page is reading: an FTDI chip keeps 256 bytes,
+	// 22 ms at 115200 baud, and drops the rest when no transfer is pending (frame checksum errors on a DM-32 backup
+	// from a phone whose tab went to the background, 2026-11-01). Transfers on one endpoint complete in order. An empty
+	// result (an FTDI status-only packet) is skipped; a stall is cleared and read on, anything else ends the stream.
 	makeReadable(l) {
 		const d = this.device;
+		const pending = [];
+		const submit = () => pending.push(d.transferIn(l.in.endpointNumber, READ_SIZE).then((r) => ({ r }), (e) => ({ e })));
 		return new ReadableStream({
+			start: () => { for (let i = 0; i < READS_IN_FLIGHT; i++) submit(); },
 			pull: async (ctl) => {
 				for (;;) {
-					let r;
-					try {
-						r = await d.transferIn(l.in.endpointNumber, READ_SIZE);
-					} catch (e) {
+					const { r, e } = await pending.shift();
+					if (e) {
 						if (this.closing) return ctl.close();
 						return ctl.error(new DOMException(String(e?.message || e), "NetworkError"));
 					}
-					if (r.status === "stall") { await d.clearHalt("in", l.in.endpointNumber); continue; }
+					if (r.status === "stall") await d.clearHalt("in", l.in.endpointNumber);
+					submit();
+					if (r.status !== "ok" || !r.data) continue;
 					let data = new Uint8Array(r.data.buffer, r.data.byteOffset, r.data.byteLength);
 					if (l.kind === "ftdi") data = ftdiPayload(data, l.in.packetSize);
 					if (data.length) return ctl.enqueue(data.slice());
 				}
 			},
-		});
+		}, { highWaterMark: READ_AHEAD });
 	}
 
 	// Releasing the interfaces ends a pending transferIn, which closes the readable (closing set first)
