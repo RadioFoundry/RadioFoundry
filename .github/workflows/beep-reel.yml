@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+#
+# The beep reel before and after a pull request that changes the beeps (docs/dev/ci.md "Beep reel"). This job makes the
+# reel twice with the pull request's tool, simulator and scenes: once with the base commit's beep.c and beep.h, once
+# with the pull request's. The `beep-reel` artifact holds the two videos and, for each beep whose sound changed, that
+# beep alone before and after as WAV.
+#
+# This job runs the pull request's code, so it is a plain pull_request run: a read-only token, no secrets, no cache,
+# on GitHub's runners; a fork's run waits for a maintainer's approval. It never writes to the repository.
+name: Beep reel
+
+on:
+  pull_request:
+    paths:
+      - "core/radio/beep.c"
+      - "core/radio/beep.h"
+      - "hal/hal_audio.h"
+      - "tests/host/beepReel.c"
+      - "tests/host/Makefile"
+      - "tests/host/sim/**"
+      - "tools/beep_reel.py"
+      - ".github/workflows/beep-reel.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beep-reel-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    # a public repository always (a fork's run may not get repository variables); a private copy when it opts in
+    if: (github.server_url != 'https://github.com' || !github.event.repository.private || vars.RFOUNDRY_CI_GITHUB == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false   # the host tests use none of third_party
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+          submodules: false
+
+      - name: Install ffmpeg
+        run: |
+          set -eu
+          if ! command -v ffmpeg > /dev/null; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ffmpeg fonts-dejavu-core
+          fi
+
+      - name: Make the reel with the base's beeps and with the pull request's
+        run: |
+          set -eu
+          # --lenient: the scenes are the pull request's, and may name a beep the base doesn't have yet
+          python3 tools/beep_reel.py --beep-dir base/core/radio --lenient --out build/beep-reel/before
+          python3 tools/beep_reel.py --out build/beep-reel/after
+          python3 tools/beep_reel.py --compare build/beep-reel/before build/beep-reel/after \
+            --artifact build/beep-reel/artifact | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: beep-reel
+          path: build/beep-reel/artifact
+          if-no-files-found: error
+          retention-days: 30

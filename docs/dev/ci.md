@@ -17,6 +17,7 @@ so one set serves the self-hosted Gitea runner and GitHub.
 | `hil.yml` | `rfoundry-hil` (the bench Mac) | by hand; nightly only when `RFOUNDRY_HIL_SCHEDULE=true` | `tests/hil` against the radio and the SDR bench |
 | `ui-gallery.yml` | `ubuntu-24.04` | a pull request that changes the UI (`core/ui/`, the simulator, `uiSim`) | renders the screen gallery at the base and at the pull request, and makes the side-by-side artifact |
 | `ui-gallery-comment.yml` | `ubuntu-24.04` | when `ui-gallery.yml` finishes on a pull request | posts the pull request's gallery comment with the changed screens attached |
+| `beep-reel.yml` | `ubuntu-24.04` | a pull request that changes the beeps (`core/radio/beep.c`, `beep.h`, the reel) | makes the beep reel with the base's beeps and with the pull request's, and uploads both videos and the changed beeps |
 | `manual.yml` | `ubuntu-24.04` | docs changes pushed to `main`, `v*` tags | the user manual PDF ([manual-pdf.md](manual-pdf.md)) |
 | `release.yml` | `ubuntu-24.04`, and for rfoundry the hosted macOS / Windows runners | `v*` tags; pull requests that change the release tooling (packaging only, no release gate) | release images and rfoundry ([release.md](release.md)) |
 
@@ -153,7 +154,24 @@ see the pull request; the first run on a UI pull request confirms that and that 
 job's token. `workflow_run` runs only from the default branch's copy of the workflow, and Gitea Actions may not
 support it, so check the first run on the Gitea runner before relying on the comment there.
 
-## Nightly: `nightly.yml`
+## Beep reel: `beep-reel.yml`
+
+A pull request that touches `core/radio/beep.c`, `core/radio/beep.h`, `hal/hal_audio.h`, the simulator or the reel
+(`tests/host/beepReel.c`, `tools/beep_reel.py`) gets the beep reel before and after as the `beep-reel` artifact. It's
+advisory: no required check waits on it, and nothing is posted to the pull request.
+
+Both reels are made with the pull request's tool, simulator and scenes. Only `beep.c` and `beep.h` differ: the base
+commit's for the first (`--beep-dir base/core/radio --lenient`: the scenes may name a beep the base doesn't have),
+the pull request's for the second. GitHub serves the artifact as a zip:
+
+| File | What |
+|---|---|
+| `before.mp4` | the reel with the base commit's beeps |
+| `after.mp4` | the reel with the pull request's |
+| `beeps/<name>.before.wav`, `beeps/<name>.after.wav` | only for a beep whose sound changed: that beep alone, as `beep.c` made it (one side only for a beep new or gone) |
+
+The job summary lists the changed beeps. A video is about 240 KB; a beep's WAV 2 to 17 KB.
+
 
 | Job | Command |
 |---|---|
