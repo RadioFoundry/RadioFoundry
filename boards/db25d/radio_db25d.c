@@ -278,6 +278,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 		hal_delay_us(TX_END_PATH_US);	// stock TX end: the retune, this long, then the RX path
 	}
 	rx_paths(hz, true);
+	db25d_main_band(hz);	// every receive set-up, by the channel's band (4.8)
 	db25d_main_rx_state();
 	if (from_tx) {
 		hal_delay_us(TX_END_RX_US);

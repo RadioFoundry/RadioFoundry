@@ -18,7 +18,10 @@
 
 #define IF_HZ		51550000u
 #define VHF_BELOW_HZ	280000000u	// the band split of the RF paths
-#define GPIO_BAND	3u		// on the FD6818 and AT1141: high for VHF (main: the TX band, LO: the RX band)
+// The band flags, high for VHF: the main chip's carries the TX band, the LO's the RX band (hardware-db25d.md 4.8)
+#define GPIO_BAND	3u		// FD6818 and AT1141, main and LO
+#define BK_MAIN_BAND	2u		// BK4819 main (PRO)
+#define BK_LO_BAND	1u		// BK4819 LO (PRO). Low, VHF hears nothing
 #define ID_TRIES	3u
 #define ID_RESET_MS	100u		// stock: soft reset, this long, release, this long, read again
 #define REG_ID		0x00
@@ -31,6 +34,7 @@ static bk4819_t bk_main, bk_lo;
 static fd6818sh_t fd_main, fd_lo;
 static at1141_t at_lo;
 static chip_t main_chip, lo_chip;
+static uint8_t main_band, lo_band;	// the band flags' GPIO pins
 static uint16_t main_id, lo_id;
 static superhet_main_t sh_main;
 static superhet_lo_t sh_lo;
@@ -106,6 +110,8 @@ bool db25d_rf_init(void)
 
 	// The main chip's init, the LO's, then the main chip's analog set, as the stock and the PRO's earlier code. The LO
 	// is above the signal (f + 51.55 MHz): DCS arrives inverted (4.7)
+	main_band = main_chip == CHIP_BK4819 ? BK_MAIN_BAND : GPIO_BAND;
+	lo_band = lo_chip == CHIP_BK4819 ? BK_LO_BAND : GPIO_BAND;
 	if (main_chip == CHIP_BK4819) {
 		bk4819_attach(&bk_main, &bus_main.bus);
 		bk_main.rx_inverted = true;
@@ -201,6 +207,8 @@ static superhet_af_t sh_af(db25d_af_t af)
 
 void db25d_main_idle(void) { sh_main.ops->idle(sh_main.chip); }
 void db25d_main_rx_state(void) { sh_main.ops->rx(sh_main.chip); }
+
+void db25d_main_band(uint32_t hz) { superhet_main_gpio(&sh_main, main_band, hz < VHF_BELOW_HZ); }
 void db25d_main_to_if(void) { sh_main.ops->to_if(sh_main.chip, IF_HZ); }
 void db25d_main_bandwidth(radio_bw_t bw) { sh_main.ops->bandwidth(sh_main.chip, bw == RADIO_BW_25K); }
 void db25d_main_rx_tone(uint8_t type, uint16_t value) { sh_main.ops->rx_tone(sh_main.chip, sh_tone(type), value); }
@@ -228,7 +236,7 @@ void db25d_main_status(uint16_t *r67, uint16_t *r65, uint16_t *r0c)
 void db25d_main_tx_prepare(uint8_t type, uint16_t value, uint32_t hz, radio_bw_t bw)
 {
 	(void)bw;	// neither chip's deviation is switched by bandwidth: the FD6818's goes by band and sub-audio
-	superhet_main_gpio(&sh_main, GPIO_BAND, hz < VHF_BELOW_HZ);
+	db25d_main_band(hz);
 	sh_main.ops->tx_prepare(sh_main.chip, sh_tone(type), value, hz, db25d_cal_pa_gain(hz));
 }
 
@@ -244,7 +252,7 @@ void db25d_main_dmr_leave(void) { sh_main.ops->dmr_leave(sh_main.chip); }
 
 void db25d_main_dmr_tx_prepare(uint32_t hz)
 {
-	superhet_main_gpio(&sh_main, GPIO_BAND, hz < VHF_BELOW_HZ);
+	db25d_main_band(hz);
 	sh_main.ops->dmr_tx_prepare(sh_main.chip, db25d_cal_pa_gain(hz));
 }
 
@@ -254,7 +262,7 @@ void db25d_main_burst(uint32_t hz, bool tx) { sh_main.ops->burst(sh_main.chip, h
 
 void db25d_lo_tune(uint32_t hz)
 {
-	superhet_lo_gpio(&sh_lo, GPIO_BAND, hz - IF_HZ < VHF_BELOW_HZ);
+	superhet_lo_gpio(&sh_lo, lo_band, hz - IF_HZ < VHF_BELOW_HZ);
 	sh_lo.ops->tune(sh_lo.chip, hz);
 }
 
