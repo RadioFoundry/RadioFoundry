@@ -41,7 +41,7 @@ push runs only the manual workflow. A newer push cancels the run in progress (`c
 |---|---|
 | `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), then the UI screen gallery (`uiSim --gallery`) |
 | `checks` | `tools/ci.sh --steps registry,python,licenses` (doc links and the strict web site build among the Python checks; the job installs `site/requirements.txt` for the site) |
-| `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --toolchain arm`: every board built with the Arm toolchain, in one job |
+| `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --toolchain arm`: every board built with the Arm toolchain, default and maximal (with the stack check), in one job |
 | `firmware (C-SKY)` | `tools/ci.sh --quick --steps firmware --toolchain csky`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) unless the runner has csky-elf GCC; skipped where the image isn't available |
 
 There is one firmware job per toolchain, not one per radio or per platform: a job's checkout and start take longer
@@ -221,7 +221,8 @@ tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board 
 
 Every step but `host` needs Python 3.11 or later for the registry's TOML. `tools/rfoundry_python.sh` finds it:
 `$RFOUNDRY_PYTHON`, else the newest `python3.N` on `PATH`. A board whose compiler is missing is skipped with the command
-that installs it (its platform's `toolchain.build`). `--quick` and `--matrix` choose the firmware configurations.
+that installs it (its platform's `toolchain.build`). `--quick` builds each board's default and maximal configurations,
+`--matrix` the feature matrix.
 
 The `python` step also checks the HIL tests without a radio:
 
