@@ -66,6 +66,7 @@ static void init(void)
 // 7 counts of margin, where the RT3S reads unsteadily, the lower top so both reach 100 %, the break between), 7 and 8
 // (the 5 W rows; the Plus 10 W's: its pot 19..2054 / 308 and its own rows)
 const uvf_variant_t uvf_variant = {
+	.rf_addr = { 0x2E },	// one AT1846S
 	.panel_type = { 0, 1, 2, 3 },
 	.panel_rgb = { true, true, true, true },
 	.bat_mul = 1000, .bat_div = 403,

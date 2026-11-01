@@ -15,6 +15,7 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
+| [TYT MD-2017](#tyt-md-2017) | Retevis RT82 | Built on the UV380 family code with the MD-2017's own pins, keys, navigation ring and second AT1846S; nothing has run on a radio yet. One receiver at a time: the second receiver rests. Open: every function on air. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -23,23 +24,23 @@ and what has been checked on it.
 
 The manual names keys by the job they do. Each radio puts those jobs on its own keys:
 
-| Name in this manual | Job (press / hold) | DM-1701 | MD-380 | MD-UV380 | DM-32UV | DB25-D PRO | DM-1801 Pro |
-|---|---|---|---|---|---|---|---|
-| **OK** | Open or choose / save, make permanent | Green Menu key | Green Menu key | Green Menu key | Green Menu / OK key | Menu / OK key, or push the knob | Menu key |
-| **Back** | Back one level / Home | Red Back key | Red Back key | Red Back key | Red Back key | B/E key | Back key |
-| **Up**, **Down** | Move the focus / repeat | Arrow keys | Arrow keys | Arrow keys | Up and Down keys | None: turn the knob | Up and Down keys |
-| **\*** | Quick settings / lock or unlock the keys | **\*** | **\*** | **\*** | **\*** | P1 | **\*** |
-| **#** | Actions / Recent | **#** | **#** | **#** | **#** | P2 | **#** |
-| **0** to **9** | Number keys | Number keys | Number keys | Number keys | Number keys | None | Number keys |
-| **Monitor** | FM: squelch open while held. DMR: digital monitor on / off | SK1 | SK1 | SK1 | SK1 | P3 | SK1 |
-| **Talk target** | Talk target picker | Hold **#** | Hold **#** | Hold **#** | Hold **#** | Hold **P2** | Hold **#** |
-| **A/B** | Dual watch: the other channel / dual watch on or off | SK2 | SK2 | SK2 | SK2 | TONE/T.SEL | A/B key, SK2 |
-| **Power level** | Next power level / emergency (held 1.5 s) | SK3 | None | None | None | None | None |
-| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | None | Left, Right | None | Left, Right |
-| **VFO** | Between the channel and the VFO / copy the channel to the VFO | None | None | None | None | None | VFO/MR key |
-| **Volume** | Open the volume editor. Radios without a volume knob only | None: the knob | None: the knob | None: the knob | None: the knob | VOL/SQL | None: the knob |
-| **PTT** | Transmit | PTT | PTT | PTT | PTT | PTT on the microphone | PTT |
-| Channel knob | One step per click | Channel knob | Channel switch (16 positions) | Channel knob | Channel knob | Front knob | None: Up and Down |
+| Name in this manual | Job (press / hold) | DM-1701 | MD-380 | MD-UV380 | MD-2017 | DM-32UV | DB25-D PRO | DM-1801 Pro |
+|---|---|---|---|---|---|---|---|---|
+| **OK** | Open or choose / save, make permanent | Green Menu key | Green Menu key | Green Menu key | MENU key, or press the ring | Green Menu / OK key | Menu / OK key, or push the knob | Menu key |
+| **Back** | Back one level / Home | Red Back key | Red Back key | Red Back key | BACK key | Red Back key | B/E key | Back key |
+| **Up**, **Down** | Move the focus / repeat | Arrow keys | Arrow keys | Arrow keys | Ring up and down | Up and Down keys | None: turn the knob | Up and Down keys |
+| **\*** | Quick settings / lock or unlock the keys | **\*** | **\*** | **\*** | **\*** | **\*** | P1 | **\*** |
+| **#** | Actions / Recent | **#** | **#** | **#** | **#** | **#** | P2 | **#** |
+| **0** to **9** | Number keys | Number keys | Number keys | Number keys | Number keys | Number keys | None | Number keys |
+| **Monitor** | FM: squelch open while held. DMR: digital monitor on / off | SK1 | SK1 | SK1 | SK1 | SK1 | P3 | SK1 |
+| **Talk target** | Talk target picker | Hold **#** | Hold **#** | Hold **#** | Hold **#** | Hold **#** | Hold **P2** | Hold **#** |
+| **A/B** | Dual watch: the other channel / dual watch on or off | SK2 | SK2 | SK2 | SK2 | SK2 | TONE/T.SEL | A/B key, SK2 |
+| **Power level** | Next power level / emergency (held 1.5 s) | SK3 | None | None | SK3; emergency: hold the orange top key | None | None | None |
+| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | None | P1, P2 | Left, Right | None | Left, Right |
+| **VFO** | Between the channel and the VFO / copy the channel to the VFO | None | None | None | None | None | None | VFO/MR key |
+| **Volume** | Open the volume editor. Radios without a volume knob only | None: the knob | None: the knob | None: the knob | None: the knob | None: the knob | VOL/SQL | None: the knob |
+| **PTT** | Transmit | PTT | PTT | PTT | PTT | PTT | PTT on the microphone | PTT |
+| Channel knob | One step per click | Channel knob | Channel switch (16 positions) | Channel knob | None: the ring | Channel knob | Front knob | None: Up and Down |
 
 These are the defaults. **Settings > Keys** can give other jobs to every key the menus don't need
 ([Settings](17-settings.md#keys-key-8)):
@@ -49,6 +50,7 @@ These are the defaults. **Settings > Keys** can give other jobs to every key the
 | DM-1701 | SK1, SK2, SK3, P1, P2 |
 | MD-380 | SK1, SK2 |
 | MD-UV380 | SK1, SK2 |
+| MD-2017 | SK1, SK2, SK3, P1, P2, the orange top key |
 | DM-32UV | SK1, SK2 |
 | DB25-D PRO | P3, TONE/T.SEL, the microphone's P4 and P5 |
 | DM-1801 Pro | SK1, SK2, SOS, A/B, VFO/MR |
@@ -68,7 +70,7 @@ On a radio without a key for a job, the menus reach it:
 
 ## Dual watch on each radio
 
-[Dual watch](12-scan.md#dual-watch) listens on two channels, A and B. Every radio built today has one receiver, so
+[Dual watch](12-scan.md#dual-watch) listens on two channels, A and B. Every radio built today uses one receiver, so
 on every radio it is pseudo dual watch: the radio alternates between A and B. A call on one channel can be missed
 while the radio is on the other. A radio with two receivers would hear both and show a call on each at once. The UI is ready for that (`ui_svc_receivers()` above 1), but no radio reports two receivers
 yet, and the core doesn't use them.
@@ -78,6 +80,7 @@ yet, and the core doesn't use them.
 | DM-1701 | Pseudo, one receiver. The core's alternation between two channels of one zone is checked on air; the new dual watch (any zone, the VFO, the screens) is not yet | **\***, **7**, or hold **SK2** | **SK2** (a press), **#**, **1** |
 | MD-380 | Pseudo, one receiver. Not checked on air | **\***, **7**, or hold **SK2** | **SK2** (a press), **#**, **1** |
 | MD-UV380 | Pseudo, one receiver (one AT1846S for both bands). Not checked on air | **\***, **7**, or hold **SK2** | **SK2** (a press), **#**, **1** |
+| MD-2017 | Pseudo for now: the radio has a second receiver, which RadioFoundry keeps off. Not checked on air | **\***, **7**, or hold **SK2** | **SK2** (a press), **#**, **1** |
 | DM-32UV | Pseudo, one receiver. Not checked on air (scan isn't checked on this radio yet) | **\***, **7**, or hold **SK2** | **SK2** (a press), **Left** / **Right** |
 | DB25-D PRO | Pseudo, one receiver. Not checked on air. Its second BK4819 chip is a local oscillator for the receive chain, not a second receiver | Hold the **TONE/T.SEL** key | A press of **TONE/T.SEL** |
 | DM-1801 Pro | Pseudo, one receiver. Not checked on air | Hold the **A/B** key, **\***, **7**, or hold **SK2** | The **A/B** key or **SK2** (a press), **Left** / **Right** |
@@ -89,8 +92,8 @@ DM-1801 Pro's A/B key does both: a press switches A / B, a hold starts and stops
 A and B can be any channel of any zone, or the VFO ([how the core does it](../spec/radio-features.md#21-dual-watch)).
 Nothing about this dual watch has been checked on the air on any radio.
 
-The Anytone AT-D578UV is the radio the two-receiver case is for: its hardware has two receiver chips
-([Anytone hardware notes](../spec/hardware-anytone.md)). RadioFoundry has no board for it, so there is no support.
+The MD-2017 has a second receiver, which RadioFoundry keeps off for now. The Anytone AT-D578UV has two receiver chips
+too ([Anytone hardware notes](../spec/hardware-anytone.md)); RadioFoundry has no board for it.
 
 ## Setting the volume from a PC
 
@@ -103,6 +106,7 @@ of 16 (0 is mute), and `rfoundry_debug.py volume knob` gives the knob back (over
 | DM-1701 | Yes. The radio reads the knob and sets the audio gain itself, so the PC's level replaces the knob's until you send `knob` or restart the radio. It is not saved |
 | MD-380 | No. The knob works on the audio path directly; the radio answers "not supported" |
 | MD-UV380 | Yes, as on the DM-1701 (the same audio path). Not checked on a radio |
+| MD-2017 | Yes, as on the DM-1701. Not checked on a radio |
 | DM-32UV | No. The knob works on the audio amplifier directly; the radio answers "not supported" |
 | DB25-D PRO | Yes. There is no knob: the level is the radio's own volume setting, so the PC changes that setting and it is saved, as if you had set it on the radio. `knob` puts it back to the default (step 8) |
 
@@ -115,6 +119,7 @@ port and addresses its driver knows.
 |---|---|---|
 | DM-1701 | USB | Radio type 8 (10 on the other screen variant). qdmr's driver for the UV380 family |
 | MD-380 | USB | Radio type 7 |
+| MD-2017 | USB | Radio type 9. Not tried |
 | DM-32UV | Programming cable (no USB) | Can't program it directly. RadioFoundry keeps the codeplug 7 MB into the radio's data flash, so the addresses qdmr's driver uses land in the stock area, where RadioFoundry refuses writes. Edit the codeplug in qdmr, save it as YAML, and write it with `dm32_migrate.py restore --yaml FILE` ([Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md)), which adds the offset. The radio reports radio type 6 (MD-UV380) for now |
 | DB25-D PRO | Programming cable, K1 jack ([below](#programming-the-db25-d-pro-over-the-cable)) | Reports type 6. The codeplug sits at the DM-1701's addresses, so qdmr's MD-UV380 driver should work. Not tried |
 | DM-1801 Pro | Programming cable | Not listed |
@@ -362,6 +367,64 @@ A 160 x 128 color screen, every row visible.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 - GPS only on the G models. The radio powers the module for 5 s at start-up and hides the GPS features if it hears
   nothing; then the module is switched off again.
+- Nothing is checked on a radio yet: treat every function as untested.
+
+## TYT MD-2017
+
+Covers the TYT MD-2017 and the Retevis RT82, with or without GPS. **In bring-up: nothing has run on a radio yet.** It
+is the DM-1701's board design with a second receiver, a navigation ring instead of a channel knob, and more keys
+([bring-up checklist](../testing/md2017-bringup.md)).
+
+### Installing on the MD-2017
+
+Follow [Installing](02-installing.md) with these values.
+
+| Item | MD-2017 |
+|---|---|
+| Stock firmware file | Any supported TYT or Retevis file ([the list](../spec/codec-md2017.md#stock-files)). It gives the bootloader key and the voice codec |
+| Bootloader keys | Hold **PTT** and the orange top key while you turn the radio on (TYT's instructions; not checked) |
+| Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) (assumed the same as the DM-1701's) |
+| Board name | `md2017` |
+
+### MD-2017 keys
+
+| Key | Role |
+|---|---|
+| MENU key, or a press on the ring | **OK** |
+| BACK key | **Back** |
+| Ring up and down | **Up**, **Down** |
+| Ring left and right | Left and right in the menus and editors |
+| SK1 (upper side key) | **Monitor** |
+| SK2 (middle side key) | **A/B** |
+| SK3 (lower side key) | **Power level** |
+| P1, P2 | **Previous zone**, **Next zone** |
+| Orange top key | Emergency, held, where the image has it; a press does nothing until you give it a job |
+| **PTT** | **PTT** |
+
+The side key order is from the stock firmware, not checked on a radio.
+
+### MD-2017 power levels
+
+Nine levels as on the DM-1701, 50 mW to 5 W. A channel without a power in the codeplug uses 1 W. The radio refuses to
+transmit without a valid factory calibration.
+
+### MD-2017 battery
+
+A 2-cell Li-ion pack, with the DM-1701's percentage curve, thresholds and voltage scale, unchecked on this radio.
+
+### MD-2017 power switch
+
+As on the DM-1701: the switch is on the volume knob, and RadioFoundry sees it turn off through the battery line.
+
+### MD-2017 display
+
+A 160 x 128 color screen, every row visible.
+
+### What the MD-2017 lacks
+
+- No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
+- The second receiver is off: dual watch alternates as on the other radios.
+- GPS only on the GPS models.
 - Nothing is checked on a radio yet: treat every function as untested.
 
 ## Baofeng DM-32UV
@@ -654,7 +717,6 @@ models it covers.
 | Radioddity GD-88 | In progress ([#132](https://github.com/radiofoundry/radiofoundry/pull/132)). Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
 | Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | Planned. A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |
-| TYT MD-2017 / Retevis RT82 | Planned. The DM-1701's STM32 and HR_C6000 pair with two receivers, so it should reuse the STM32F4 platform. The hardware can receive two channels at once. |
 | BTECH DMR-6X2 PRO | Planned. Built on the AT-D878UVII Plus, so it should follow the Anytone port. |
 | Anytone AT-D578UV (mobile) | Planned. The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | BridgeCom Maverick | Planned. Sold as an upgraded AT-D878UV, so it likely follows the Anytone port. |

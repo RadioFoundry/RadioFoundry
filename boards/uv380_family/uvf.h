@@ -14,8 +14,16 @@
 #include "board.h"
 #include "spi_flash/spi_flash.h"
 
+// AT1846S chips: one, or two where a second receiver has its own (board.mk MCU_DEFS -DUVF_RF_CHIPS=2). The first
+// receives and transmits on both bands; the second rests
+#ifndef UVF_RF_CHIPS
+#define UVF_RF_CHIPS	1
+#endif
+
 // What the family's radios differ in (hardware-mduv380.md 1), one const table in each board's board.c
 typedef struct {
+	// AT1846S 7-bit I2C addresses: the main chip, the second receiver's (UVF_RF_CHIPS 2)
+	uint8_t rf_addr[2];
 	// Factory panel type (SPI flash security register 3 byte 0x1D, low two bits) -> the ST7735 type the driver runs
 	// and whether it is driven in RGB order (hardware-dm1701.md 9.2). The visible rows are UVF_LCD_HIDDEN_ROWS (board.mk)
 	uint8_t panel_type[4];
@@ -78,11 +86,13 @@ bool uvf_modem_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t len
 #endif
 
 // Physical key bits returned by uvf_input.scan(), the family's keys: a radio's matrix (uvf_key_matrix, hardware-dm1701.md
-// 10.1) uses the ones it has (the MD-UV380 has no P1/P2 and no SK3)
+// 10.1) uses the ones it has (the MD-UV380 has no P1/P2 and no SK3). The MD-2017's ring adds left and right (and drives
+// up and down), its ring center is OK and its orange top key TOP (hardware-md2017.md 5)
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
 	KEY_STAR, KEY_HASH, KEY_UP, KEY_DOWN, KEY_GREEN, KEY_RED,
 	KEY_FN_LEFT, KEY_FN_RIGHT, KEY_SK1, KEY_SK2, KEY_SK3, KEY_PTT,	// side keys top to bottom
+	KEY_LEFT, KEY_RIGHT, KEY_OK, KEY_TOP,
 	KEY_COUNT
 };
 

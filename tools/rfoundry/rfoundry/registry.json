@@ -536,6 +536,161 @@
    "build_options": [],
    "cps_radio_types": []
   },
+  "md2017": {
+   "id": "md2017",
+   "name": "TYT MD-2017",
+   "model": "MD-2017",
+   "part_of": null,
+   "platform": "stm32f4",
+   "platform_stubs": [
+    "stub/stm32f4"
+   ],
+   "family": "usb-dfu",
+   "link": "usb",
+   "release": "testing",
+   "debuglink_names": [
+    "MD-2017",
+    "md2017"
+   ],
+   "rom_base": 134217728,
+   "app_base": 134266880,
+   "flash_end": 135266304,
+   "app_region": [
+    134266880,
+    135004160
+   ],
+   "sectors": [
+    [
+     3,
+     134266880,
+     16384
+    ],
+    [
+     4,
+     134283264,
+     65536
+    ],
+    [
+     5,
+     134348800,
+     131072
+    ],
+    [
+     6,
+     134479872,
+     131072
+    ],
+    [
+     7,
+     134610944,
+     131072
+    ],
+    [
+     8,
+     134742016,
+     131072
+    ],
+    [
+     9,
+     134873088,
+     131072
+    ],
+    [
+     10,
+     135004160,
+     131072
+    ],
+    [
+     11,
+     135135232,
+     131072
+    ]
+   ],
+   "protected": [
+    [
+     134217728,
+     134266880
+    ]
+   ],
+   "protect": [
+    {
+     "mem": "secreg",
+     "start": 0,
+     "end": 512,
+     "what": "factory calibration in security registers 1 and 2 (hardware-md2017.md 8)"
+    },
+    {
+     "mem": "secreg",
+     "start": 512,
+     "end": 768,
+     "what": "factory flags in security register 3: panel type, band limits (hardware-md2017.md 4, 8)"
+    }
+   ],
+   "keep_codec_supported": true,
+   "first_stage": null,
+   "codec_tool": "codec_extract",
+   "codec_stock": [
+    "51944821b12066654101d3c9889472fd111525c2ed114ebeeb67bf1ff1bfc871",
+    "25ee8be1643381fabb12c8139decb82a177c21c20089856fe9fdfa9574dd2264",
+    "95e299ed9419278f32779da1e10af0c7c1270c70374141b465cdb21a718566f6",
+    "4e4ba370b81b02c27f75e814e07ef0ef0a417d439a3a79824061ca3171c325bc",
+    "16c8ce5cabdac8c0f4642aa57411fd270e42558550ad91eae453b06a27747e67",
+    "cd2e310562b8ad9bb78e9b87ea9499eafef4ab4e3539f81b49e308749e8d65ca",
+    "7eb8d28fa1251fdbc19c58c364b3e252d4176f972f326c37e4af12329cccebb4",
+    "14d90ee24ccd6c5217ada3c0290c9eb7901853905bf565ef1c56b7276f33fbde",
+    "ebd8bc4b75c03498cc0092daa5594400ad2eb3ebead48e57247bfb772c981c41"
+   ],
+   "codec": {
+    "id": null,
+    "windows": null,
+    "installed": [],
+    "sources": null
+   },
+   "codec_code": null,
+   "codec_slot": null,
+   "codec_run": null,
+   "codec_tables": null,
+   "loader_id": null,
+   "loader_keys": null,
+   "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the USB cable.",
+    "Hold PTT and the orange key on top.",
+    "Turn the radio on with the volume knob while you hold both keys. The LED blinks.",
+    "Release the keys."
+   ],
+   "stock_download": "https://www.qsl.net/on5mu/Download/DMR/",
+   "key_sha256": "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991",
+   "key_prefix": "00AA8989",
+   "dfu_ids": [
+    1155,
+    57105
+   ],
+   "dfu_string1": "AnyRoad Technology",
+   "dfu_product": "Digital Radio in USB mode",
+   "stub": {
+    "tool": "f4stub",
+    "id": 6,
+    "tested": false,
+    "hse": 8000000,
+    "boot_end": 134266880,
+    "spi": {
+     "bus": 1,
+     "mode": 0,
+     "hz": 4500000,
+     "af": 5,
+     "sck": "PB3",
+     "miso": "PB4",
+     "mosi": "PB5",
+     "cs": "PD7",
+     "idle": []
+    }
+   },
+   "build_options": [],
+   "cps_radio_types": [
+    9
+   ]
+  },
   "md380": {
    "id": "md380",
    "name": "TYT MD-380",
