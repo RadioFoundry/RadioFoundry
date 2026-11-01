@@ -583,8 +583,7 @@ static void test_dmr_tx(void)
 	CHECK(chips[0].protocol_errors == 0 && chips[1].protocol_errors == 0);
 }
 
-// GPIO outputs (0x33): pin p = level bit 6 - p and output disable bit 14 - p. The DB25-D PRO's
-// receive band flag is pin 2 of the main chip, 0x0010 for VHF (hardware-db25d.md 4.5)
+// GPIO outputs (0x33): pin p = level bit 6 - p and output disable bit 14 - p, written only on a change
 static void test_gpio(void)
 {
 	bk4819_t m;
