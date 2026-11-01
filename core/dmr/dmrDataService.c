@@ -1991,10 +1991,20 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 			stats.txGuarded++;
 		}
 
-		if (clear && (env.txStart != NULL) && env.txStart(txBursts, txBurstCount, env.ctx))
+		bool started = false;
+		if (clear && (env.txStart != NULL))
+		{
+			// The modem may complete a refused start synchronously through TxDone.
+			txRunning = true;
+			started = env.txStart(txBursts, txBurstCount, env.ctx);
+			if (!started)
+			{
+				txRunning = false;
+			}
+		}
+		if (started)
 		{
 			txPending = false;
-			txRunning = true;
 			stats.txLists++;
 			stats.txLastKind = txKind;
 			stats.txLastMs = (now != 0) ? now : 1;

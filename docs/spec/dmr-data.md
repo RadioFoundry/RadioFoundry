@@ -49,7 +49,9 @@ dmr_data_api.h (UI, debug link)                  sms_inbox_*, sms_send, dmr_sign
 
 - The service runs only in the radio task (`radio_sm_tick`: `dmr_call_poll`, then `dmrDataServiceTick` every
   10 ms). It never touches the modem: it hands burst lists to its host (`dmrDataEnv_t.txStart`) and gets the
-  result back (`dmrDataServiceTxDone`).
+  result back (`dmrDataServiceTxDone`). An accepted start may complete synchronously, including a modem
+  refusal. The service marks the list running before calling the host so that completion is not lost. A start
+  that returns false must not call `dmrDataServiceTxDone`.
 - `dmr_data_api.h` may be called from any task. Requests go into a mailbox the radio task empties at its next tick;
   reads are copies under the lock given to `dmrDataServiceSetLock` (the firmware: scheduler suspend, a few
   microseconds).
