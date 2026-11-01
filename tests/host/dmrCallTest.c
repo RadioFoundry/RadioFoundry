@@ -709,6 +709,35 @@ static void test_tx_modem_stalled(void)
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->tx_error == DMR_TX_OK && sim.tx_ends == 1);
 }
 
+static void test_rmo_air_slot_alignment(void)
+{
+	for (uint8_t ts = 1; ts <= 2; ts++) {
+		for (uint8_t phase = 0; phase < 2; phase++) {
+			dmr_call_config_t c = base_cfg();
+			c.rmo = true;
+			c.ts = ts;
+			setup(&c);
+			sim.repeater = true;
+			sim.slot = phase;
+			run_ms(180);
+			CHECK(V()->repeater_up);
+			dmr_call_ptt(true);
+			run_ms(600);
+			CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);
+			dmr_call_ptt(false);
+			run_ms(600);
+			CHECK(V()->phase == DMR_CALL_PHASE_IDLE && sim.air_count > 0);
+			bool voice = false;
+			for (unsigned i = 0; i < sim.air_count; i++) {
+				// The ts recorded at tx_begin says nothing about which slot the bursts used
+				CHECK(1 + (sim.air[i].slot & 1) == ts);
+				voice |= sim.air[i].kind == DMR_BURST_VOICE;
+			}
+			CHECK(voice);
+		}
+	}
+}
+
 static void test_rmo_wakeup(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -2116,6 +2145,7 @@ int main(void)
 	test_tx_refused();
 	test_tx_modem_stalled();
 	test_rmo_wakeup();
+	test_rmo_air_slot_alignment();
 	test_rx_call();
 	test_rx_filters();
 	test_rx_recheck_on_configure();
