@@ -476,6 +476,7 @@ the Q605 tripler, the second LO, so receive and transmit share it. Its VC pin is
 | Inverting (pin 6) | CTC/DCS_OUT, PC7 | R641 560K |
 | Non-inverting (pin 5) | MOD2_BIAS, DAC2 (PA5) | R605 15K, R615 22K |
 | Feedback | | R644 100K, C678 100 pF |
+| Output (pin 7) | X601 VC (pin 1) | R646 4K7, C640 3.3 nF to ground |
 
 Any DC on PC7 moves the reference, at -100K / 560K = -0.18 V per volt at the amplifier's output. RadioFoundry used to
 drive PC7 push-pull low whenever no tone was sent, which raises the non-inverting gain from 2 to 2.18: the same as
