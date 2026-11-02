@@ -24,7 +24,7 @@ First radio: a V1-V3 board (its original firmware reported version 06.09), on a 
 |---|---|
 | Boot, USB, debug link, CPS | Work |
 | Display | Works after turning it 180 degrees (segments reversed, COM normal, column offset 4; unknown 22) |
-| Keys, key lock, encoder | Work (HIL; the encoder by hand: one step per click both ways, a wobble counts none). Mic keypad not checked yet |
+| Keys, key lock, encoder, hand mic | Work (HIL; by hand: the encoder one step per click both ways, a wobble counts none; all 19 mic keys and the mic PTT each read as the right key) |
 | Data flash, calibration, option block | Read: `cal factory`, `opt factory`, band edges from the option block |
 | Board revision | Stored by hand as V1-V3 before the installers learned to read it |
 | FM receive, VHF | Works: a NOAA station through the dummy load, at 25 kHz |
