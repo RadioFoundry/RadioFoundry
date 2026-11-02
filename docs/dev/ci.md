@@ -172,6 +172,7 @@ the pull request's for the second. GitHub serves the artifact as a zip:
 
 The job summary lists the changed beeps. A video is about 240 KB; a beep's WAV 2 to 17 KB.
 
+## Nightly: `nightly.yml`
 
 | Job | Command |
 |---|---|
