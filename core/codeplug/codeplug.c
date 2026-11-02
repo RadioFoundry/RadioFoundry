@@ -79,6 +79,8 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define LIST_COUNTS	FL(0x8D620u)
 #define LIST_BASE	FL(0x8D6A0u)
 #define LIST_SIZE	80u
+#define CONTACT_COUNT	1024u	// CODEPLUG_CONTACTS_MAX, CODEPLUG_LISTS_MAX: the layout's, built with DMR or not
+#define LIST_COUNT	76u
 
 // Zones (7.2, 7.3.4)
 #define ZONE_SLOTS	CODEPLUG_ZONES_MAX
@@ -90,6 +92,8 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 
 static codeplug_source_t source = CODEPLUG_NONE;
 static uint32_t serial;
+static bool foreign;			// the area holds another layout's bytes (codeplug_foreign)
+static uint16_t ev_good, ev_bad;	// open-firmware evidence (codeplug-stock-tyt.md 2, step 1)
 
 // Open-firmware codeplug index
 static uint8_t used[CH_MAX / 8];	// bit set = channel record passed the checks
@@ -165,6 +169,17 @@ static bool bcd(uint32_t word, uint8_t digits, uint32_t *out)
 	}
 	*out = v;
 	return true;
+}
+
+// DMR ID or talkgroup: 8 BCD digits, bytes in reading order; 0 if malformed or out of the 24-bit range
+static uint32_t bcd_id(const uint8_t *p)
+{
+	uint32_t word = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+	uint32_t v;
+	if (!bcd(word, 8, &v) || v > 0xFFFFFFu) {
+		return 0;
+	}
+	return v;
 }
 
 static uint32_t to_bcd(uint32_t v, uint8_t digits)
@@ -289,6 +304,62 @@ static void set_used(uint16_t number, bool on)
 	}
 }
 
+// A Latin-1 name field (codeplug-stock-tyt.md 2): printable text (0x20-0x7E, 0xA0-0xFE) up to the first 0x00 or
+// 0xFF, only 0x00 or 0xFF after it. A UTF-16 name fails: its second byte is 0x00 and printable bytes follow
+static bool latin_name(const uint8_t *p, unsigned len, bool *empty)
+{
+	unsigned n = 0;
+	while (n < len && p[n] != 0x00 && p[n] != 0xFF) {
+		if (p[n] < 0x20u || (p[n] > 0x7Eu && p[n] < 0xA0u)) {
+			return false;
+		}
+		n++;
+	}
+	*empty = n == 0;
+	for (unsigned i = n; i < len; i++) {
+		if (p[i] != 0x00 && p[i] != 0xFF) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// A record that counts by its name: good when the name is valid and not empty
+static void named(const uint8_t *p)
+{
+	bool empty;
+	if (latin_name(p, CODEPLUG_NAME_LEN, &empty) && !empty) {
+		ev_good++;
+	} else {
+		ev_bad++;
+	}
+}
+
+static bool all_ff(const uint8_t *p, unsigned len)
+{
+	while (len > 0 && p[len - 1u] == 0xFF) {
+		len--;
+	}
+	return len == 0;
+}
+
+// Erased flash (all 0xFF), read in pieces; a read that fails counts as erased (the record isn't counted)
+static bool erased(uint32_t addr, unsigned len, uint8_t *buf, unsigned size)
+{
+	while (len > 0) {
+		unsigned n = len < size ? len : size;
+		if (!flash_read(addr, buf, n)) {
+			return true;
+		}
+		if (!all_ff(buf, n)) {
+			return false;
+		}
+		addr += n;
+		len -= n;
+	}
+	return true;
+}
+
 static void find_max(void)
 {
 	channel_max = 0;
@@ -300,9 +371,12 @@ static void find_max(void)
 	}
 }
 
-// In-use bitmaps, then the frequencies of every marked record: an erased bank (all 0xFF) fails the BCD check
+// In-use bitmaps, then the frequencies of every marked record: an erased bank (all 0xFF) fails the BCD check. Counts
+// the channels' evidence on the way: a marked record that isn't erased is good with valid frequencies and name
 static void index_channels(void)
 {
+	uint8_t r[CH_SIZE];
+
 	for (unsigned bank = 0; bank < CH_BANKS; bank++) {
 		uint8_t *bits = &used[bank * (CH_PER_BANK / 8u)];
 		if (!flash_read(bank_bitmap(bank), bits, CH_PER_BANK / 8u)) {
@@ -314,10 +388,14 @@ static void index_channels(void)
 			if (!is_used(number)) {
 				continue;
 			}
-			uint8_t f[8];
 			uint32_t rx, tx;
-			if (!flash_read(channel_addr(number) + CH_RX, f, sizeof(f)) || !freq(&f[0], &rx) || !freq(&f[4], &tx)) {
+			if (!flash_read(channel_addr(number), r, sizeof(r))) {
 				set_used(number, false);
+			} else if (!freq(&r[CH_RX], &rx) || !freq(&r[CH_TX], &tx)) {
+				set_used(number, false);
+				ev_bad += all_ff(r, sizeof(r)) ? 0u : 1u;
+			} else {
+				named(&r[CH_NAME]);
 			}
 		}
 	}
@@ -346,6 +424,54 @@ static void index_zones(void)
 	}
 }
 
+// The rest of the open-firmware evidence (codeplug-stock-tyt.md 2, step 1, the same rule as the web editor's
+// site/static/js/codeplug/detect.js): the general settings, the zones, the contacts and the RX group lists
+static void index_evidence(void)
+{
+	uint8_t r[CH_SIZE];
+	bool empty;
+
+	// General settings: the callsign, then the DMR ID
+	if (flash_read(GEN_CALLSIGN, r, GEN_NAME_LEN + 4u)) {
+		if (!latin_name(r, GEN_NAME_LEN, &empty)) {
+			ev_bad++;
+		} else if (!empty && bcd_id(&r[GEN_NAME_LEN]) != 0) {
+			ev_good++;
+		}
+	}
+	// Zones whose in-use bit is set and whose record isn't erased
+	uint8_t layout, bits[(ZONE_SLOTS + 7u) / 8u];
+	if (flash_read(ZONE_LAYOUT, &layout, 1) && flash_read(ZONE_BITMAP, bits, sizeof(bits))) {
+		uint32_t rec = ZONE_NAME_LEN + 2u * (layout <= 0x04 ? 80u : 16u);
+		for (unsigned slot = 0; slot < ZONE_SLOTS; slot++) {
+			uint32_t a = ZONE_DATA + slot * rec;
+			if ((bits[slot / 8u] & (1u << (slot % 8u))) != 0 && !erased(a, rec, r, sizeof(r)) &&
+			    flash_read(a, r, ZONE_NAME_LEN)) {
+				named(r);
+			}
+		}
+	}
+	// Contacts that decode
+	for (unsigned i = 0; i < CONTACT_COUNT; i++) {
+		if (flash_read(CONTACT_BASE + i * CONTACT_SIZE, r, CONTACT_SIZE) && r[0] != 0xFF && r[0x14] <= 2u &&
+		    (r[0x14] == 2u || bcd_id(&r[0x10]) != 0)) {
+			named(r);
+		}
+	}
+	// RX group lists whose count is set: a count past 32 members is bad
+	for (unsigned i = 0; i < LIST_COUNT; i++) {
+		uint8_t n;
+		if (!flash_read(LIST_COUNTS + i, &n, 1) || n == 0 || n == 0xFF) {
+			continue;
+		}
+		if (n > 33u) {
+			ev_bad++;
+		} else if (flash_read(LIST_BASE + i * LIST_SIZE, r, CODEPLUG_NAME_LEN)) {
+			named(r);
+		}
+	}
+}
+
 static void index_builtin(void)
 {
 	builtin_count = 0;
@@ -365,9 +491,18 @@ static codeplug_source_t index_all(void)
 	memset(used, 0, sizeof(used));
 	channel_max = 0;
 	zone_count = 0;
+	ev_good = ev_bad = 0;
 	index_builtin();
 	if (have_flash()) {
 		index_channels();
+		index_evidence();
+	}
+	// At least one good record and at most one bad one for every four good: the open-firmware layout. Records in use
+	// that fail it are another firmware's codeplug: shown as none (the built-in set), the bytes left alone
+	foreign = ev_bad != 0 && (uint32_t)ev_bad * 4u > ev_good;
+	if (foreign) {
+		memset(used, 0, sizeof(used));
+		channel_max = 0;
 	}
 	if (channel_max > 0) {
 		index_zones();
@@ -398,6 +533,17 @@ codeplug_source_t codeplug_reload(void)
 codeplug_source_t codeplug_source(void)
 {
 	return source;
+}
+
+bool codeplug_foreign(void)
+{
+	return foreign;
+}
+
+void codeplug_evidence(uint16_t *good, uint16_t *bad)
+{
+	*good = ev_good;
+	*bad = ev_bad;
 }
 
 uint32_t codeplug_serial(void)
@@ -642,7 +788,9 @@ bool codeplug_zone(uint16_t index, zone_t *out)
 // --- Editing ---
 
 // A codeplug to edit: the built-in set first becomes a stored one (its channels written, the bitmaps, zones and
-// lists that may hold junk from other firmware cleared)
+// lists that may hold junk from other firmware cleared). Over another firmware's codeplug (foreign) also the rest the
+// evidence reads (the callsign and DMR ID, the contacts) and what the radio reads (boot text, quick keys), so the
+// codeplug made is a clean one and the next start-up finds it ours
 static bool materialize(void)
 {
 	if (source == CODEPLUG_OPENFW) {
@@ -656,13 +804,14 @@ static bool materialize(void)
 	for (unsigned bank = 0; bank < CH_BANKS && ok; bank++) {
 		ok = flash_write(bank_bitmap(bank), zero, CH_PER_BANK / 8u);
 	}
-	ok = ok && flash_write(ZONE_BITMAP, zero, sizeof(zero));
-#if CONFIG_DMR
-	for (unsigned off = 0; off < CODEPLUG_LISTS_MAX && ok; off += sizeof(zero)) {
-		uint32_t n = CODEPLUG_LISTS_MAX - off < sizeof(zero) ? CODEPLUG_LISTS_MAX - off : sizeof(zero);
-		ok = flash_write(LIST_COUNTS + off, zero, n);
+	ok = ok && flash_write(ZONE_BITMAP, zero, sizeof(zero)) && storage_fill(LIST_COUNTS, 0x00, LIST_COUNT);
+	if (foreign) {
+		ok = ok && storage_fill(GEN_CALLSIGN, 0xFF, GEN_NAME_LEN + 4u) &&
+		     storage_fill(BOOT_TEXT, 0xFF, 2u * CODEPLUG_NAME_LEN) &&
+		     flash_write(QUICK_KEYS, zero, CODEPLUG_QUICK_KEYS * 2u) &&
+		     storage_fill(CONTACT_BASE, 0xFF, CONTACT_COUNT * CONTACT_SIZE);
+		foreign = false;	// a failure re-reads it (index_all below)
 	}
-#endif
 	memset(used, 0, sizeof(used));
 	channel_max = 0;
 	zone_count = 0;
@@ -706,6 +855,9 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 	storage_lock();
 	bool ok = materialize() && flash_read(channel_addr(number), r, sizeof(r));
 	if (ok) {
+		if (!is_used(number)) {
+			blank_channel(r);	// a free slot's bytes aren't ours to keep (another firmware's, or deleted)
+		}
 		codeplug_openfw_encode(ch, r);
 		ok = flash_write(channel_addr(number), r, sizeof(r));
 	}
@@ -1034,17 +1186,6 @@ bool codeplug_set_boot_text(const char *line1, const char *line2)
 }
 
 #if CONFIG_DMR
-// DMR ID or talkgroup: 8 BCD digits, bytes in reading order; 0 if malformed or out of the 24-bit range
-static uint32_t bcd_id(const uint8_t *p)
-{
-	uint32_t word = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
-	uint32_t v;
-	if (!bcd(word, 8, &v) || v > 0xFFFFFFu) {
-		return 0;
-	}
-	return v;
-}
-
 static void put_bcd_id(uint8_t *p, uint32_t id)
 {
 	uint32_t w = to_bcd(id, 8);

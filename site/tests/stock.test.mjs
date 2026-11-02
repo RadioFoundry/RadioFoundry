@@ -47,6 +47,8 @@ test("classify: a stock MD-UV380 codeplug, an MD-380 image and .rdt, blank, unkn
 	let x = 12345;
 	const noise = new Uint8Array(0x1A0000).map(() => (x = (x * 1103515245 + 12345) >>> 0) >>> 24);
 	assert.equal(classify(noise).layout, "unknown");
+	// the radio applies the same rule at start-up: tests/host/codeplugTest.c counts the same records in these bytes
+	assert.deepEqual(openfwEvidence(noise), { good: 0, bad: 624 });
 });
 
 test("classify: a RadioFoundry codeplug wins over stock bytes it hasn't overwritten", () => {

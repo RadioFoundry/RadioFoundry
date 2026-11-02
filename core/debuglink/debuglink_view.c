@@ -423,6 +423,9 @@ static void storage_section(dl_text_t *t)
 		st.foreign_slots, (unsigned)st.foreign_refusals, st.claim_pending);
 	dl_text(t, "codeplug.source=%s\ncodeplug.serial=%u\n", (unsigned)src < 3 ? sources[src] : "?",
 		(unsigned)codeplug_serial());
+	uint16_t ev_good, ev_bad;
+	codeplug_evidence(&ev_good, &ev_bad);
+	dl_text(t, "codeplug.foreign=%u\ncodeplug.evidence=%u,%u\n", codeplug_foreign(), ev_good, ev_bad);
 	uint32_t zone_edits;
 	uint8_t zone_last;
 	zone_edit_stats(&zone_edits, &zone_last);

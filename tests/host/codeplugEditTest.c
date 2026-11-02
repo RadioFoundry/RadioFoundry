@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Codeplug editing on a simulated NOR flash with the DM-1701 map: the open-firmware record encoder against the decoder,
 // bytes the model doesn't own kept, the built-in set turned into a stored codeplug by the first edit, zones,
-// contacts and RX group lists, and the round trip read -> write -> read (model and image), with power cuts.
+// contacts and RX group lists, and the round trip read -> write -> read (model and image), with power cuts. Another
+// firmware's codeplug in the open-firmware area: left alone, the first edit starts a clean codeplug.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -533,6 +534,72 @@ static void test_quick_keys(void)
 	CHECK(sim_flash_data[EE + 0x7523] == 0xFF && sim_flash_data[EE + 0x7538] == 0xFF);	// nothing around them
 }
 
+// Another firmware's codeplug where the open-firmware images go (codeplug-stock-tyt.md 2): pseudo-random bytes over
+// both images, clear of the settings, the journal and the calibration
+static void foreign_image(void)
+{
+	uint32_t x = 99;
+	for (uint32_t a = 0; a < 0xB0000u; a++) {
+		x = x * 1103515245u + 12345u;
+		if (a < 0x10000u || a >= FL) {
+			sim_flash_data[a] = (uint8_t)(x >> 24);
+		}
+	}
+}
+
+static void test_foreign(void)
+{
+	channel_t c = make("Added", 145550000, 145550000), back;
+	uint16_t good, bad;
+
+	sim_flash_create(FLASH_SIZE, &map);
+	foreign_image();
+	uint8_t *before = malloc(FLASH_SIZE);
+	memcpy(before, sim_flash_data, FLASH_SIZE);
+	CHECK(storage_init());
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign() && codeplug_channel_count() == 6);
+	// Reading writes nothing
+	CHECK(codeplug_channel(1, &back) && codeplug_reload() == CODEPLUG_BUILTIN);
+	CHECK(memcmp(before, sim_flash_data, 0x10000u) == 0 && memcmp(before + FL, sim_flash_data + FL, 0x90000u) == 0);
+
+	// The first edit starts a clean codeplug: the built-in set and the edit, nothing of the old bytes the radio reads
+	CHECK(codeplug_set_channel(10, &c));
+	CHECK(codeplug_source() == CODEPLUG_OPENFW && !codeplug_foreign() && codeplug_channel_count() == 10);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && !codeplug_foreign());
+	codeplug_evidence(&good, &bad);
+	CHECK(good == 7 && bad == 0);
+	CHECK(codeplug_channel(10, &back) && same_channel(&c, &back) && !back.roam && back.sfr_flag1 == 0);
+	CHECK(codeplug_zone_count() == 1 && !codeplug_zones_stored());
+	char name[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
+	codeplug_radio_name(name);
+	CHECK(name[0] == '\0');
+	codeplug_boot_text(name, l2);
+	CHECK(name[0] == '\0' && l2[0] == '\0');
+	uint16_t keys[CODEPLUG_QUICK_KEYS];
+	CHECK(codeplug_quick_keys(keys) && keys[0] == 0 && keys[9] == 0);
+#if CONFIG_DMR
+	contact_t ct;
+	listen_list_t ll;
+	CHECK(codeplug_dmr_id() == 0 && !codeplug_contact(1, &ct) && !codeplug_contact(1024, &ct));
+	CHECK(!codeplug_listen_list(1, &ll) && !codeplug_listen_list(76, &ll));
+#endif
+	CHECK(sim_flash_violations() == 0);
+
+	// A CPS write over the foreign bytes (here, the image of a fresh codeplug put underneath) flips it on reload
+	uint8_t *ours = malloc(FLASH_SIZE);
+	memcpy(ours, sim_flash_data, FLASH_SIZE);
+	memcpy(sim_flash_data, before, FLASH_SIZE);
+	sim_flash_power_on();
+	CHECK(storage_init() && codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign());
+	uint32_t ser = codeplug_serial();
+	memcpy(sim_flash_data, ours, 0x10000u);
+	memcpy(sim_flash_data + FL, ours + FL, 0x90000u);
+	CHECK(codeplug_reload() == CODEPLUG_OPENFW && !codeplug_foreign() && codeplug_serial() != ser);
+	CHECK(codeplug_channel(10, &back) && same_channel(&c, &back));
+	free(ours);
+	free(before);
+}
+
 int main(void)
 {
 	test_encode();
@@ -545,6 +612,7 @@ int main(void)
 	test_aprs_path();
 #endif
 	test_quick_keys();
+	test_foreign();
 	test_round_trip();
 	test_edit_cuts();
 	sim_flash_free();

@@ -66,6 +66,13 @@ typedef enum { CODEPLUG_NONE, CODEPLUG_BUILTIN, CODEPLUG_OPENFW } codeplug_sourc
 // Find and check the stored codeplug. Call once the board's flash works
 codeplug_source_t codeplug_init(void);
 codeplug_source_t codeplug_source(void);
+// The open-firmware area holds records in use that aren't an open-firmware codeplug: another firmware's own
+// codeplug, left there when RadioFoundry was installed over it. Decided at every index (start-up, codeplug_reload) by
+// the rule the web editor uses (docs/spec/codeplug-stock-tyt.md 2, step 1). The radio then shows no codeplug (the
+// built-in set, source CODEPLUG_BUILTIN) and writes nothing there until an edit, which starts a clean codeplug
+bool codeplug_foreign(void);
+// The evidence counts behind it: the good and bad open-firmware records found
+void codeplug_evidence(uint16_t *good, uint16_t *bad);
 
 // Highest channel number that may be in use (channels are 1..count, some may be empty)
 uint16_t codeplug_channel_count(void);
