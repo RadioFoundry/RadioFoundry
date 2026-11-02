@@ -95,7 +95,17 @@ fake board whose AFSK output is demodulated back to frames.
   comment if any). Position ambiguity 0-4 blanks digits as APRS101 chapter 8 says.
 - Status: `>text` (40 characters).
 - Messages: `:ADDRESSEE:text{NN` (67 characters), acks `:ADDRESSEE:ackNN`; ours retried at 30, 60 and 120 s
-  (3 tries) until the ack.
+  (3 tries) until the ack. The composer can omit the message number (one transmission, no retry or acknowledgment)
+  and append a position snapshot as ` @DD.DDDDN DDD.DDDDW` in the message text. Both are per-message choices; requesting
+  an acknowledgment is on and including position is off when the composer opens. A position needs a current GPS, host
+  or fixed source. Its text counts toward the 67-character limit; a message that cannot fit is refused.
+- Settings > Connections > Message format can select APRS on a board with an AFSK transmit path. Messages > New APRS
+  message asks for an AX.25 callsign with optional SSID, then sends a localized preset or a typed message through
+  `aprs_send_message`. Presets fold accented letters to printable ASCII; typed text uses the keypad editor and holds
+  at most 67 characters. The callsign editor holds at most nine characters (six for the call, a hyphen and up to two
+  for the SSID). The APRS selection is `settings_t.msg_aprs` (0: the DMR format, 1: APRS); it does not change the DMR data
+  service's saved format. An inbox reply to a DMR message uses DMR. `aprs_send_message` refuses a message when the
+  RF path is blocked, so a message cannot sit waiting forever on a board without AFSK transmit.
 - Path: none, WIDE1-1, WIDE1-1,WIDE2-1 (the default), WIDE2-1, WIDE2-2. Set on the APRS page (section 10), over the
   debug link, or in the codeplug's APRS record (section 11).
 

@@ -57,6 +57,14 @@ static const flow_t flows[] = {
 	{ "5 private call by ID", "", "9 9 9 9 9 9 9 down ptt", "txid=9999999 txpriv=1", 9, false },
 	{ "6 canned reply to last caller", CALLER, "ctx 3 ok", "sent=1 text=OK", 4, false },
 	{ "6 canned to contact by name", "", "5 6 3 ctx 3 ok", "sent=1 text=OK", 6, false },
+	{ "6 custom message opens editor", "", "5 6 3 ctx 3 down down down down ok",
+	  "screen=message-text", 10, false },
+	{ "6 custom message sends typed text", "", "5 6 3 ctx 3 down down down down ok 4 4 wait:1100 4 4 4 ok",
+	  "sent=1 text=HI screen=home", 16, false },
+#if CONFIG_LANG_ES
+	{ "6 preset sends in selected language", "ok 7 2 up ok down ok long:back", "5 6 3 ctx 3 down ok",
+	  "sent=1 text=En_camino", 7, false },
+#endif
 	{ "7 read message, banner up", "msg:9991234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:9991234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
 #if CONFIG_ZONE_SHARE
@@ -765,6 +773,26 @@ static const flow_t flows_mono[] = {
 
 // DM-1701 key map only: the top side key, long waits
 static const flow_t flows_k[] = {
+#if CONFIG_APRS && CONFIG_DMR_SMS && CONFIG_DMR_TMS && CONFIG_TFTP
+	{ "APRS format adds a message composer", "ok 7 6 down down down down ok ok ok long:back ok 2",
+	  "ok", "screen=compose shows=To_callsign", 1, false },
+	{ "APRS destination opens its callsign editor", "ok 7 6 down down down down ok ok ok long:back ok 2 ok",
+	  "ok", "screen=aprs-to", 1, false },
+	{ "APRS message sends to a typed callsign", "ok 7 6 down down down down ok ok ok long:back ok 2 ok",
+	  "ok 5 5 long:1 2 wait:1100 2 2 wait:1100 2 2 2 ok down ok",
+	  "sent=1 text=OK aprs_to=K1ABC screen=home", 13, false },
+	{ "APRS custom message sends typed text", "ok 7 6 down down down down ok ok ok long:back ok 2 ok",
+	  "ok 5 5 long:1 2 wait:1100 2 2 wait:1100 2 2 2 ok down down down down down ok 4 4 wait:1100 4 4 4 ok",
+	  "sent=1 text=HI aprs_to=K1ABC screen=home", 24, false },
+	{ "APRS message choices set per-send flags", "ok 7 6 down down down down ok ok ok long:back ok 2 ok",
+	  "ok 5 5 long:1 2 wait:1100 2 2 wait:1100 2 2 2 ok down down down down down down ok down ok up up up up up up ok",
+	  "sent=1 text=OK aprs_to=K1ABC aprs_flags=2 screen=home", 30, false },
+#if CONFIG_LANG_ES
+	{ "APRS preset sends localized ASCII", "ok 7 2 up ok down ok long:back ok 7 6 down down down down ok ok ok long:back ok 2 ok",
+	  "ok 5 5 long:1 2 wait:1100 2 2 wait:1100 2 2 2 ok down down down ok",
+	  "sent=1 text=Llamame aprs_to=K1ABC", 15, false },
+#endif
+#endif
 	// Dual watch on the side keys: SK2 is A/B pressed, Dual watch held; P1 / P2 (zones) and the knob act on the
 	// selected channel
 	{ "11 dual watch: SK2 pressed is A/B", "quick 7 ctx 3 5 ok", "sk2", "dual=1 sel=B", 1, false },

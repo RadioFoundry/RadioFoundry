@@ -101,7 +101,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Answer radio checks | On, Off | On | Answer radio checks from other radios ([Radio check](10-messages-and-signaling.md#radio-check)) | Works |
 | Answer call alerts | On, Off | On | Acknowledge call alerts, so the caller knows the page arrived | Works |
 | TFTP codeplug write | On, Off | On | Lets a computer write the codeplug over TFTP in USB network mode ([USB network](15-usb-network.md#programming-over-the-network)). Reading is always possible | Works |
-| Message format | ETSI, ETSI short, Motorola | ETSI | The format of the text messages you send ([Messages](10-messages-and-signaling.md#message-formats)). Messages in any format are received | Works |
+| Message format | ETSI, ETSI short, Motorola, APRS (where built) | ETSI | The format of new text messages you send ([Messages](10-messages-and-signaling.md#message-formats)). APRS sends to a callsign over FM; receiving remains DMR only in the shared inbox | Works |
 | Accept zone shares | On, Off | On | On shows a zone or channel another radio sends you, to import or reject ([Sharing a zone](07-channels-zones-vfo.md#sharing-a-zone)). Off ignores them | Works |
 | USB network at start | On, Off | Off | The radio starts as a USB network adapter instead of a serial port ([USB network](15-usb-network.md#starting-in-network-mode)) | Works |
 | PC answers data | On, Off | Off | Control station mode: while the computer is connected in USB network mode, it answers the data sent to your radio instead of the radio ([USB network](15-usb-network.md#control-station-for-dispatch-software)) | Works |

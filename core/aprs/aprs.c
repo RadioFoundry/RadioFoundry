@@ -99,6 +99,7 @@ static struct {
 		uint8_t tries;
 		uint32_t next_ms;
 		bool acked;
+		bool want_ack;
 	} out;
 	uint16_t msg_seq;
 	uint8_t ring[OUT_RING];
@@ -735,6 +736,8 @@ static void message_service(void)
 		own_to_is(a.info, n);
 		a.out.tries++;
 		a.out.next_ms = a.now + (MSG_RETRY_MS << (a.out.tries - 1u));
+		if (!a.out.want_ack)
+			a.out.active = false;
 		changed();
 	}
 }
@@ -1426,38 +1429,87 @@ bool aprs_send_status(const char *text)
 	return ok;
 }
 
-bool aprs_send_message(const char *to, const char *text)
+static char *message_coord(char *p, int32_t value, bool lon)
+{
+	uint32_t n = (uint32_t)(value < 0 ? -(int64_t)value : value);
+	uint32_t d = (n + 500u) / 1000u;
+	uint32_t degrees = d / 10000u;
+	uint32_t fraction = d % 10000u;
+	if (lon)
+		*p++ = (char)('0' + degrees / 100u % 10u);
+	*p++ = (char)('0' + degrees / 10u % 10u);
+	*p++ = (char)('0' + degrees % 10u);
+	*p++ = '.';
+	for (uint32_t div = 1000u; div != 0; div /= 10u)
+		*p++ = (char)('0' + fraction / div % 10u);
+	*p++ = lon ? (value < 0 ? 'W' : 'E') : (value < 0 ? 'S' : 'N');
+	return p;
+}
+
+bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags)
 {
 	ax25_addr_t x;
 	size_t tl = strlen(to), xl = strlen(text);
-	if (!ax25_addr_parse(to, tl, &x) || xl == 0 || xl > APRS_MSG_TEXT_MAX) {
+	if (!ax25_addr_parse(to, tl, &x) || xl == 0 || xl > APRS_MSG_TEXT_MAX ||
+	    (flags & ~(APRS_MSG_ACK | APRS_MSG_POSITION)) != 0) {
 		return false;
 	}
+	char composed[APRS_MSG_TEXT_MAX + 1];
+	if (flags & APRS_MSG_POSITION) {
+		int32_t lat, lon;
+		uint32_t err_m;
+		bool dmr_gps;
+		if (!aprs_position_now(&lat, &lon, &err_m, &dmr_gps))
+			return false;
+		char coord[24];
+		char *end = coord;
+		*end++ = ' ';
+		*end++ = '@';
+		end = message_coord(end, lat, false);
+		*end++ = ' ';
+		end = message_coord(end, lon, true);
+		size_t cn = (size_t)(end - coord);
+		if (xl + cn > APRS_MSG_TEXT_MAX)
+			return false;
+		memcpy(composed, text, xl);
+		memcpy(composed + xl, coord, cn);
+		composed[xl + cn] = '\0';
+		text = composed;
+		xl += cn;
+	}
 	LOCK();
-	if ((a.out.active && !a.out.acked && a.out.tries < APRS_MSG_TRIES) || !a.me_ok) {
+	if ((a.out.active && !a.out.acked && a.out.tries < APRS_MSG_TRIES) || rf_block() != APRS_OK) {
 		UNLOCK();
 		return false;
 	}
 	memset(&a.out, 0, sizeof(a.out));
 	a.out.active = true;
+	a.out.want_ack = (flags & APRS_MSG_ACK) != 0;
 	ax25_addr_format(&x, false, a.out.to);
 	memcpy(a.out.text, text, xl + 1u);
-	a.msg_seq = (uint16_t)(a.msg_seq % 999u + 1u);
-	uint16_t s = a.msg_seq;
-	char d[4];
-	uint8_t k = 0;
-	do {
-		d[k++] = (char)('0' + s % 10u);
-		s = (uint16_t)(s / 10u);
-	} while (s != 0);
-	for (uint8_t i = 0; i < k; i++) {
-		a.out.msgno[i] = d[k - 1u - i];
+	if (a.out.want_ack) {
+		a.msg_seq = (uint16_t)(a.msg_seq % 999u + 1u);
+		uint16_t s = a.msg_seq;
+		char d[4];
+		uint8_t k = 0;
+		do {
+			d[k++] = (char)('0' + s % 10u);
+			s = (uint16_t)(s / 10u);
+		} while (s != 0);
+		for (uint8_t i = 0; i < k; i++) {
+			a.out.msgno[i] = d[k - 1u - i];
+		}
+		a.out.msgno[k] = '\0';
 	}
-	a.out.msgno[k] = '\0';
 	a.out.next_ms = a.now;
 	changed();
 	UNLOCK();
 	return true;
+}
+
+bool aprs_send_message(const char *to, const char *text)
+{
+	return aprs_send_message_opts(to, text, APRS_MSG_ACK);
 }
 
 void aprs_set_test_call(const char *call)

@@ -83,6 +83,11 @@ bool ui_svc_aprs_send_now(void)
 	return aprs_send_now();
 }
 
+bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t flags)
+{
+	return aprs_send_message_opts(to, text, flags);
+}
+
 #if CONFIG_APRS_RX
 uint8_t ui_svc_aprs_station_count(void)
 {

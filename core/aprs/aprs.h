@@ -228,8 +228,12 @@ void aprs_set_cfg(const aprs_cfg_t *c, uint32_t now_ms);
 bool aprs_send_now(void);
 // A status packet (">text")
 bool aprs_send_status(const char *text);
+// Message options. Position appends a coordinate snapshot to the text; ACK adds a message number and retries.
+#define APRS_MSG_ACK		0x01u
+#define APRS_MSG_POSITION	0x02u
 // A message with acks and retries; false when one is still waiting or the text is unusable
 bool aprs_send_message(const char *to, const char *text);
+bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags);
 // The position in use now (GPS, host or fixed, as the beacons use it) for DMR: false when there is none. err_m is the
 // error estimate in meters (position ambiguity included), dmr_gps the "send position in DMR calls" setting
 bool aprs_position_now(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *dmr_gps);

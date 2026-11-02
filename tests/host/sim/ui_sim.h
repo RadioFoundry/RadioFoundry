@@ -77,6 +77,8 @@ typedef struct {
 	uint32_t codeplug_writes;	// save to channel, make default
 	uint32_t radio_checks, call_alerts, messages_sent;
 	char last_text[48];
+	char last_aprs_to[11];	// destination callsign of the last APRS message
+	uint8_t last_aprs_flags;
 	uint32_t beeps;			// beeps asked of the radio (any kind)
 	uint8_t last_beep;		// ui_beep_t of the last one
 	uint32_t vibes;			// vibrations asked of the radio (any pattern)

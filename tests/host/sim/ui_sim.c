@@ -1819,6 +1819,16 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 	sim_rec.tx_id = dst;
 	return true;
 }
+bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t flags)
+{
+	if (to[0] == '\0')
+		return false;
+	sim_rec.messages_sent++;
+	strncpy(sim_rec.last_aprs_to, to, sizeof(sim_rec.last_aprs_to) - 1);
+	strncpy(sim_rec.last_text, text, sizeof(sim_rec.last_text) - 1);
+	sim_rec.last_aprs_flags = flags;
+	return true;
+}
 bool ui_svc_radio_check(uint32_t id) { sim_rec.radio_checks++; check_id = id; check_due = now_ms + 800; return true; }
 bool ui_svc_call_alert(uint32_t id) { (void)id; sim_rec.call_alerts++; return true; }
 // A GPS + BeiDou receiver near Boston with a 3D fix: 9 of 14 satellites used
@@ -2079,6 +2089,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_STRIP, 1);
 	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
+	ui_svc_setting_set(UI_SET_MSG_FORMAT, 2);
 	ui_svc_setting_set(UI_SET_VIBRATE, 1);
 	ui_svc_setting_set(UI_SET_PRIVACY_TYPE, 0);
 	ui_svc_setting_set(UI_SET_PRIVACY_KEY, 0);
@@ -2247,6 +2258,8 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "checks") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.radio_checks);
 	else if (strcmp(key, "sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.messages_sent);
 	else if (strcmp(key, "text") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_text);
+	else if (strcmp(key, "aprs_to") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_aprs_to);
+	else if (strcmp(key, "aprs_flags") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_aprs_flags);
 	else if (strcmp(key, "scanning") == 0) snprintf(got, sizeof got, "%u", view.scan != 0 && view.scan != 3);
 #if CONFIG_DUAL_WATCH
 	else if (strcmp(key, "dual") == 0) snprintf(got, sizeof got, "%u", ui_st.dual.on && view.scan == 3);
