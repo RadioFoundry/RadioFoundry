@@ -286,8 +286,8 @@ test("a Sentry event's context is scrubbed value by value: an ID in a list stays
 });
 
 test("a Sentry event keeps a file's size: a picked stock file's size is not taken for a DMR ID", () => {
-	const ev = scrubEvent({ contexts: { rfoundry: { vendor_file: { picked: { name: "DM-1701(CSV)-V02.06.bin", size: 1048832 }, id: 3101276 },
-		trail: ['113.6s file picked {"name":"DM-1701(CSV)-V02.06.bin","size":1048832}'] } } });
+	const ev = scrubEvent({ contexts: { rfoundry: { vendor_file: { picked: { name: "Stock-V02.06.bin", size: 1048832 }, id: 3101276 },
+		trail: ['113.6s file picked {"name":"Stock-V02.06.bin","size":1048832}'] } } });
 	assert.equal(ev.contexts.rfoundry.vendor_file.picked.size, 1048832);
 	assert.equal(ev.contexts.rfoundry.vendor_file.id, "[id]");
 	const line = ev.contexts.rfoundry.trail[0];
@@ -298,11 +298,11 @@ test("an error with a catalog key is grouped by the key, so a translated message
 	const rec = { stage: "update/update", params: { kind: "silent" } };
 	const es = Object.assign(new Error("La radio no respondió."), { key: "flash.err.no_answer" });
 	const en = Object.assign(new Error("The radio did not respond."), { key: "flash.err.no_answer" });
-	const a = captureOptions(rec, es, { radio: "dm1701" }), b = captureOptions(rec, en, { radio: "dm1701" });
+	const a = captureOptions(rec, es, { radio: "r1" }), b = captureOptions(rec, en, { radio: "r1" });
 	assert.deepEqual(a.fingerprint, ["msg_key", "flash.err.no_answer"]);
 	assert.deepEqual(a.fingerprint, b.fingerprint);
 	assert.equal(a.tags.msg_key, "flash.err.no_answer");
-	assert.deepEqual(a.contexts.rfoundry, { radio: "dm1701", params: { kind: "silent" } });
+	assert.deepEqual(a.contexts.rfoundry, { radio: "r1", params: { kind: "silent" } });
 	// any other error keeps Sentry's own grouping
 	const plain = captureOptions({ stage: "x", code: 5 }, new Error("boom"), {});
 	assert.equal(plain.fingerprint, undefined);
