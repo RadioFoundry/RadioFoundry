@@ -577,9 +577,15 @@ static void test_foreign(void)
 	CHECK(name[0] == '\0' && l2[0] == '\0');
 	uint16_t keys[CODEPLUG_QUICK_KEYS];
 	CHECK(codeplug_quick_keys(keys) && keys[0] == 0 && keys[9] == 0);
+	// Only what the radio reads is cleared: the general settings past the hang times and the bytes between the quick
+	// keys and the boot text keep the old bytes
+	CHECK(memcmp(&sim_flash_data[EE + 0xE0 + 0x1A], &before[EE + 0xE0 + 0x1A], 0x28 - 0x1A) == 0);
+	CHECK(memcmp(&sim_flash_data[EE + 0x7538], &before[EE + 0x7538], 8) == 0);
 #if CONFIG_DMR
 	contact_t ct;
 	listen_list_t ll;
+	codeplug_dmr_settings_t ds;
+	CHECK(codeplug_dmr_settings(&ds) && ds.group_hang_ms == 0 && ds.private_hang_ms == 0);	// not the old bytes
 	CHECK(codeplug_dmr_id() == 0 && !codeplug_contact(1, &ct) && !codeplug_contact(1024, &ct));
 	CHECK(!codeplug_listen_list(1, &ll) && !codeplug_listen_list(76, &ll));
 #endif

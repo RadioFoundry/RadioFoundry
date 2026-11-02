@@ -70,6 +70,7 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define GEN_DMR_ID	EE(0x00E8u)
 #define GEN_GROUP_HANG	0x18u	// offsets in the block
 #define GEN_PRIV_HANG	0x19u
+#define GEN_CLEAR	0x1Au	// the bytes up to the hang times: what the radio reads of the block
 #define GEN_HANG_UNIT_MS 500u	// assumed, not confirmed: no unit in the interop spec, the ref notes or the vendor
 				// guide (docs/spec/dmr-voice.md 8); check with the vendor CPS on the bench
 
@@ -783,8 +784,7 @@ static bool materialize(void)
 	}
 	ok = ok && flash_write(ZONE_BITMAP, zero, sizeof(zero)) && flash_write(LIST_COUNTS, NULL, LIST_COUNT);
 	if (codeplug_foreign()) {
-		ok = ok && flash_write(GEN_CALLSIGN, NULL, GEN_NAME_LEN + 4u) &&
-		     flash_write(BOOT_TEXT, NULL, 2u * CODEPLUG_NAME_LEN) &&
+		ok = ok && flash_write(GEN_BASE, NULL, GEN_CLEAR) && flash_write(BOOT_TEXT, NULL, 2u * CODEPLUG_NAME_LEN) &&
 		     flash_write(QUICK_KEYS, zero, CODEPLUG_QUICK_KEYS * 2u) &&
 		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE);
 		ev_bad = 0;	// cleared: ours from now on (a failure re-reads it, index_all below)
