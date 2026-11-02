@@ -102,3 +102,17 @@ def test_knob_counts_detents(home):
                    timeout=6.0)
     print(f"    {d}")
     assert d["input.enc_detents"] == 0, f"a wobble counted {d['input.enc_detents']}: {d}"
+
+
+@pytest.mark.feature("channel_knob")
+def test_encoder_interrupt_not_lost(radio):
+    """The interrupt watch (gotchas.md 16.4): on a board that has it, no encoder interrupt has been found lost since
+    start-up, and no interrupt source was masked by the fallback handler. A failure prints the first stall's state."""
+    v = link(radio)
+    if "input.enc_stalls" not in v:
+        skip("not_built", "no encoder interrupt watch: another platform, or older firmware")
+    state = {k: v[k] for k in v if k.startswith("input.enc_stall") or k.startswith("irq.") or k == "input.enc_irqs"}
+    print(f"    {state}")
+    assert as_int(v["input.enc_stalls"]) == 0, f"encoder interrupt lost and recovered: {state}"
+    if "irq.unhandled" in v:
+        assert as_int(v["irq.unhandled"]) == 0, f"the fallback handler masked a source: {state}"

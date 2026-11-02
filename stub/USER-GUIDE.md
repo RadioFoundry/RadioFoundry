@@ -83,6 +83,8 @@ for a stub built elsewhere; the tool refuses one that does not match the running
 
 The DB25-D also has a 256 MB NAND chip (recordings, and RadioFoundry's own area at 0xF000000). Read part of it with
 `--nand nand.bin --nand-range START:END` and compare with `--verify-nand nand.bin`. The NAND is only read, never written.
+Some of its blocks fail the chip's ECC (factory-bad blocks read all 0x00). The tool reads those sectors as the chip
+holds them, twice, and lists them after the read; `--verify-nand` names them and doesn't compare them.
 
 Factory data is never written either. Each radio's `board.toml` lists it (`[[flash.protect]]`: the calibration, and on
 the DB25-D the NAND's bad-block table and reserve blocks). The tool refuses any write or erase that would touch it, and

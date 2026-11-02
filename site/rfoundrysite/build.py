@@ -21,7 +21,7 @@ import posixpath
 import re
 import shutil
 
-from . import device, docs as docsmod, i18n, repo, social, tmpl, toolzip
+from . import device, docs as docsmod, i18n, repo, shots, social, tmpl, toolzip
 
 
 def _release_version():
@@ -57,7 +57,7 @@ DOC_ORDER = ("hardware", "install", "codec", "bringup")
 
 
 class Site:
-	def __init__(self, out, repo_url, ref, firmware=None, strict=False, log=print, beta=""):
+	def __init__(self, out, repo_url, ref, firmware=None, strict=False, log=print, beta="", i18n_dir=None):
 		self.out = out
 		self.repo_url = repo_url.rstrip("/")
 		self.ref = ref
@@ -66,8 +66,10 @@ class Site:
 		self.strict = strict
 		self.log = log
 		self.warnings = []
-		self.i18n = i18n.load()
+		self.i18n_dir = i18n_dir	# site/i18n unless given (a test's languages)
+		self.i18n = i18n.load(i18n_dir)
 		self.tpl = tmpl.Templates(repo.path("site", "templates"), self.i18n.t)
+		self.shots = shots.Shots()
 		self.git = repo.git("rev-parse", "--short=8", "HEAD", default="unknown")
 		# where the web tools send error reports (report.js); unset: none are sent
 		self.sentry_dsn = os.environ.get("RFOUNDRY_SENTRY_DSN", "")
@@ -175,7 +177,7 @@ class Site:
 				      "branch": self.branch, "repo": self.repo_url, "community": COMMUNITY_URL, "languages": self.i18n.languages, "default_language": self.i18n.default,
 				      "reports": {"sentry_dsn": self.sentry_dsn}, "tool": self.tool},
 			"radios.json": {"radios": radios, "planned": planned},
-			"features.json": {"groups": self.groups, "features": features},
+			"features.json": {"groups": self.groups, "features": features, "reported": repo.reported_features()},
 			"variants.json": {"variants": self.variants},
 			"flash-boards.json": self.flash,
 			"c7000-stub.json": repo.c7000_stub(),
@@ -193,11 +195,18 @@ class Site:
 				html.escape(self.i18n.t(lang, "footer.firmware", version=self.release)), line)
 		return line
 
+	def commit_time(self, commit):
+		"""A commit's time (Unix seconds) for manifests from before they carried git_time; None when the clone
+		doesn't have it"""
+		t = repo.git("show", "-s", "--format=%ct", commit, default="") if commit else ""
+		return int(t) if t.isdigit() else None
+
 	def release_list(self):
 		out = []
 		for m, img in self.releases:
 			out.append({"board": m["board"], "variant": m.get("variant", "full"), "version": m["version"],
-				    "git": m.get("git"), "features": m.get("features", ""),
+				    "git": m.get("git"), "git_time": m.get("git_time") or self.commit_time(m.get("git_full")),
+				    "features": m.get("features", ""), "off": m.get("off"),
 				    "image": "firmware/%s/%s" % (m["board"], m["image"]["file"]),
 				    "manifest": "firmware/%s/%s" % (m["board"], os.path.basename(img)[:-4] + ".json"),
 				    "size": m["image"]["size"], "sha256": m["image"]["sha256"]})
@@ -219,15 +228,29 @@ class Site:
 		depth = full.count("/")
 		root = "../" * depth
 		meta = next(l for l in self.i18n.languages if l["code"] == lang)
-		langs = "".join(
-			'<a href="%s%s%s"%s lang="%s">%s</a>' % (root, self.i18n.prefix(l["code"]), rel,
-								  ' aria-current="true"' if l["code"] == lang else "",
-								  l["code"], html.escape(l["name"]))
-			for l in self.i18n.languages) if len(self.i18n.languages) > 1 else ""
+		# the switcher and the alternate links only when there is another language: each names this page in it
+		many = len(self.i18n.languages) > 1
+		# a compact menu (details: works without script). Each link carries its language's own words for the
+		# first-visit hint (static/js/langhint.js), which offers that language in that language
+		langs = ('<details class="lang-switch"><summary aria-label="%s" title="%s">%s</summary><nav aria-label="%s">%s</nav>'
+			 '</details>' % (html.escape(self.t(lang, "nav.languages")), html.escape(self.t(lang, "nav.languages")),
+					 html.escape(meta["code"].upper()), html.escape(self.t(lang, "nav.languages")), "".join(
+			'<a href="%s%s%s"%s lang="%s" hreflang="%s" data-hint="%s" data-go="%s" data-no="%s">%s</a>' % (
+				root, self.i18n.prefix(l["code"]), rel, ' aria-current="true"' if l["code"] == lang else "",
+				l["code"], l["code"], html.escape(self.t(l["code"], "nav.lang_hint")),
+				html.escape(self.t(l["code"], "nav.lang_go")), html.escape(self.t(l["code"], "nav.lang_no")),
+				html.escape(l["name"]))
+			for l in self.i18n.languages))) if many else ""
+		page_url = lambda code: SITE_URL + self.i18n.prefix(code) + (rel[:-len("index.html")] if rel.endswith("index.html") else rel)
+		alternates = "".join('<link rel="alternate" hreflang="%s" href="%s">\n' % (l["code"], html.escape(page_url(l["code"])))
+				     for l in self.i18n.languages) if many else ""
+		if many:
+			alternates += '<link rel="alternate" hreflang="x-default" href="%s">\n' % html.escape(page_url(self.i18n.default))
 		ctx = {"lang": lang, "dir": meta.get("dir", "ltr"), "title": title, "root": root,
 		       "home": root + prefix, "content": content, "page_class": page_class,
 		       "description": description or self.i18n.t(lang, "site.tagline"), "scripts": scripts, "footer": footer,
-		       "languages": langs, "git": self.git, "assets": self.asset_version, "version": self.version, "built": self.built,
+		       "languages": langs, "alternates": alternates, "og_locale": meta.get("locale", lang).replace("-", "_"),
+		       "git": self.git, "assets": self.asset_version, "version": self.version, "built": self.built,
 		       "built_at": self.built_at, "built_iso": self.built_iso, "git_full": self.git_full,
 		       "git_stamp": self.git + ("-dirty" if self.git_dirty else ""), "firmware_release": self.firmware_line(lang),
 		       "repo": self.repo_url, "community": COMMUNITY_URL, "nav_current": nav,
@@ -327,15 +350,13 @@ class Site:
 		shutil.copytree(repo.path("site", "static"), os.path.join(self.out, "static"))
 		self.version_imports(os.path.join(self.out, "static", "js"))
 		shutil.rmtree(os.path.join(self.out, "static", "img", "radios", "src"), ignore_errors=True)
+		# the drawings with the boot screen in them follow the pages: its copy's scale depends on where they show it
 		for b in self.boards:
 			img = device.render(b, b["name"])
-			self.write("static/img/radios/%s.svg" % b["id"], img["boot"])
 			self.write("static/img/radios/%s-frame.svg" % b["id"], img["frame"])
 			b["frame_geometry"] = img["geometry"]
 			b["render"] = img
-			for lk in b["looks"]:
-				limg = device.render(b, lk["name"], lk["id"])
-				self.write("static/img/radios/%s-%s.svg" % (b["id"], lk["id"]), limg["boot"])
+			b["look_renders"] = {lk["id"]: device.render(b, lk["name"], lk["id"]) for lk in b["looks"]}
 		with open(os.path.join(self.out, "static", "img", "social.png"), "wb") as f:
 			f.write(social.png(social.card(self.boards)))
 		self.tool = toolzip.write(os.path.join(self.out, "downloads"))
@@ -356,9 +377,18 @@ class Site:
 			self.codeplug_page(lang)
 			self.docs_pages(lang)
 			self.not_found(lang)
+		for b in self.boards:
+			boot = self.shots.scaled(b["gallery"], "boot")
+			self.write("static/img/radios/%s.svg" % b["id"], device.boot(b["render"], boot))
+			for look, img in b["look_renders"].items():
+				self.write("static/img/radios/%s-%s.svg" % (b["id"], look), device.boot(img, boot))
+		scales = self.shots.write(self.out)
+		self.log("screenshots: " + ", ".join("%s x%d" % gk for gk in scales.items()))
 		self.write(".nojekyll", "")
 		self.check_screenshots()
 		self.check_links()
+		for problem in i18n.check(self.i18n_dir):
+			self.warn(problem)
 		missing = self.i18n.unused_check()
 		if missing:
 			self.warn("keys missing from the %s catalog: %s" % (self.i18n.default, ", ".join(missing)))
@@ -376,7 +406,7 @@ class Site:
 			if sec is None:
 				self.warn("screenshots page: no section for %s" % b["id"])
 				continue
-			shown = set(re.findall(r'docs/ux/screens/%s/([^"/]+)\.png' % re.escape(b["gallery"]), sec))
+			shown = set(re.findall(r'static/img/screens/%s/([^"/]+)\.png' % re.escape(b["gallery"]), sec))
 			want = {n for n in repo.screens(b["gallery"]) if self.has_screen(b, n)}
 			if shown != want:
 				self.warn("screenshots page, %s: missing %s; unexpected %s" % (
@@ -474,7 +504,7 @@ class Site:
 		out = "".join('<li><span class="dev-name" title="%s">%s</span> %s</li>' % (html.escape(full), n, bd) for _, n, bd, full in rows[:limit])
 		if len(rows) > limit:	# say it isn't the whole list
 			out += '<li class="dev-more"><a href="radios/index.html">%s</a></li>' % html.escape(
-				self.t(lang, "home.dev_more").replace("{n}", str(len(rows) - limit)))
+				self.t(lang, "home.dev_more", n=len(rows) - limit))
 		return out
 
 	def home(self, lang):
@@ -483,7 +513,23 @@ class Site:
 		       "cards": "".join(self.radio_card(lang, b) for b in self.boards),
 		       "dev_rows": self.dev_rows(lang), "request_card": self.request_card(lang), "variants": self.variant_cards(lang),
 		       "radio_count": str(len(self.boards)), "feature_count": str(len(self.features))}
-		self.page(lang, "index.html", self.t(lang, "home.title"), self.tpl.render("home", ctx, lang), "home")
+		content = self.tpl.render("home", ctx, lang)
+		# the carousel's screens, all one height (site.css --shot-h)
+		shot_h = shots.css_px(".carousel", "--shot-h")
+		for g in set(re.findall(r'<figure class="carousel-slide"><img src="[^"]*static/img/screens/([^/"]+)/', content)):
+			w, h = shots.size(g)
+			self.shots.use(g, w * shot_h / h)
+		# the drawings with the boot screen: the flagship's own in the hero, every one (looks too) on a card
+		hero_h, card_h = shots.css_px(".hero-device img", "max-height"), shots.css_px(".radio-card img", "height")
+		self.drawn(flagship, flagship["frame_geometry"], hero_h * flagship["frame_geometry"]["aspect"])
+		for b in self.boards:
+			for img in [b["render"]] + list(b["look_renders"].values()):
+				self.drawn(b, img["geometry"], card_h * img["geometry"]["aspect"])
+		self.page(lang, "index.html", self.t(lang, "home.title"), content, "home")
+
+	def drawn(self, b, geometry, frame_w):
+		"""A page shows b's drawing frame_w CSS pixels wide (at most), a screenshot in its display."""
+		self.shots.use(b["gallery"], frame_w * geometry["screen_pct"]["width"] / 100)
 
 	def variant_cards(self, lang):
 		out = []
@@ -534,24 +580,25 @@ class Site:
 				groups.append('<tbody><tr class="group"><th colspan="%d" scope="rowgroup">%s</th></tr>%s</tbody>'
 					      % (len(self.variants) + 1, html.escape(self.group_title(lang, g)), "".join(rows)))
 		na = [f for f in self.features if self.feature_state(b, f["name"]) == "na" and f["group"] not in BENCH_ONLY]
-		# screenshots: six that show the look and the main features, the first featured ones this radio has, at twice
-		# their pixel size (crisp: pixelated), in two rows of three
-		with open(repo.path("docs", "ux", "screens", b["gallery"], "boot.png"), "rb") as fh:
-			sw, sh = device.png_size(fh.read(32))
+		# screenshots: six that show the look and the main features, the first featured ones this radio has, in two
+		# rows of three; a click lays one over the drawing's display
+		sw, sh = shots.size(b["gallery"])
+		self.shots.use(b["gallery"], shots.css_px(".shots", "--shot-col"))
+		self.drawn(b, b["frame_geometry"], shots.css_px(".device-frame", "max-width"))
 		items = []
 		for n in self.screens["featured"]:
 			if not self.has_screen(b, n):
 				continue
 			cap = self.screen_caption(lang, n)
-			items.append('<figure class="shot"><button type="button" class="shot-show" title="%s" data-src="{{root}}docs/'
-				     'ux/screens/%s/%s.png"><img src="{{root}}docs/ux/screens/%s/%s.png" alt="%s" width="%d" '
-				     'height="%d" loading="lazy"></button><figcaption>%s</figcaption></figure>'
-				     % (html.escape(self.t(lang, "radio.show_on_radio")), b["gallery"], n, b["gallery"], n,
-					html.escape(cap), 2 * sw, 2 * sh, html.escape(cap)))
+			items.append('<figure class="shot"><button type="button" class="shot-show" title="%s" data-src="{{root}}%s">'
+				     '<img src="{{root}}%s" alt="%s" width="%d" height="%d" loading="lazy"></button><figcaption>%s'
+				     '</figcaption></figure>'
+				     % (html.escape(self.t(lang, "radio.show_on_radio")), shots.url(b["gallery"], n),
+					shots.url(b["gallery"], n), html.escape(cap), 2 * sw, 2 * sh, html.escape(cap)))
 			if len(items) == 6:
 				break
-		shots = ['<div class="shots">%s</div>' % "".join(items)] if items else []
-		shots.append('<p class="shots-all"><a href="{{home}}screenshots/index.html#%s">%s →</a></p>'
+		shot_list = ['<div class="shots">%s</div>' % "".join(items)] if items else []
+		shot_list.append('<p class="shots-all"><a href="{{home}}screenshots/index.html#%s">%s →</a></p>'
 			     % (b["id"], html.escape(self.t(lang, "radio.screens_all"))))
 		docs_links = "".join('<li><a href="{{home}}%s">%s</a></li>'
 				     % (docsmod.site_path(p), html.escape(self.t(lang, "radio.doc." + k)))
@@ -571,7 +618,7 @@ class Site:
 		       "variants": self.variants_html(lang, b),
 		       "variant_head": vhead, "feature_groups": "".join(groups),
 		       "na_list": ", ".join(html.escape(self.ftitle(lang, f)) for f in na) or "—",
-		       "shots": "".join(shots), "docs_links": docs_links, "gallery": b["gallery"],
+		       "shots": "".join(shot_list), "docs_links": docs_links, "boot_src": shots.url(b["gallery"], "boot"),
 		       "flash_cta": self.tpl.partial("flash_cta" if can_flash else "flash_soon",
 						     {"id": b["id"], "name": b["name"]}, lang),
 		       # the C7000 radios need no keys held: the page meets the chip's boot ROM when the radio is switched on
@@ -588,10 +635,10 @@ class Site:
 		order = list(self.screens["screens"])
 		picks, sections = [], []
 		for b in self.boards:
-			with open(repo.path("docs", "ux", "screens", b["gallery"], "boot.png"), "rb") as fh:
-				sw, sh = device.png_size(fh.read(32))
-			# a small display at twice its pixels, kept square; a QVGA one as it is
+			sw, sh = shots.size(b["gallery"])
+			# a small display at twice its pixels; a QVGA one as it is
 			scale = 2 if sw <= 160 else 1
+			self.shots.use(b["gallery"], scale * sw)
 			names = [n for n in b["screens"] if self.has_screen(b, n)]
 			names.sort(key=lambda n: (order.index(n.partition("__")[0]), n.partition("__")[2]))
 			groups = []
@@ -601,10 +648,10 @@ class Site:
 					if self.screen(n)["group"] != g:
 						continue
 					cap = html.escape(self.screen_caption(lang, n))
-					items.append('<figure class="gshot%s"><img src="{{root}}docs/ux/screens/%s/%s.png" alt="%s" width="%d" '
-						     'height="%d" loading="lazy"%s><figcaption>%s</figcaption></figure>'
-						     % (" gshot-variant" if "__" in n else "", b["gallery"], n, cap, scale * sw, scale * sh,
-							' class="px"' if scale > 1 else "", cap))
+					items.append('<figure class="gshot%s"><img src="{{root}}%s" alt="%s" width="%d" height="%d" '
+						     'loading="lazy"><figcaption>%s</figcaption></figure>'
+						     % (" gshot-variant" if "__" in n else "", shots.url(b["gallery"], n), cap, scale * sw,
+							scale * sh, cap))
 				if items:
 					groups.append('<h3>%s</h3><div class="gshots">%s</div>'
 						      % (html.escape(self.t(lang, "screens.group." + g)), "".join(items)))
@@ -664,8 +711,11 @@ class Site:
 			  self.tpl.render("features", ctx, lang), "features", nav="features")
 
 	def flash_page(self, lang):
+		# the radio's picture with its screen laid over it (static/js/flasher/radiotop.js)
+		for b in self.boards:
+			self.drawn(b, b["frame_geometry"], shots.css_px(".rt-pic", "max-width"))
 		# the beta notice's text is in the page itself (beta_notice.html), not needed by the scripts
-		subset = {k: v for k, v in self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "report.", "editor.qdmr.note.")).items()
+		subset = {k: v for k, v in self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "feature.", "report.", "editor.qdmr.note.")).items()
 			  if not k.startswith("flash.beta.")}
 		strings = json.dumps(subset, ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
@@ -735,8 +785,10 @@ class Site:
 				       "source": "%s/blob/%s/%s" % (self.repo_url, self.ref, p["src"]), "prev_next": prev_next,
 				       "fallback": ('<p class="notice">%s</p>' % html.escape(self.t(lang, "docs.fallback")))
 				       if fallback else ""}
+				if fallback:	# the default language's text on another language's page: say so to browsers and readers
+					ctx["body"] = '<div lang="%s">%s</div>' % (self.i18n.default, body)
 				self.page(lang, p["out"], p["title"], self.tpl.render("doc", ctx, lang), "doc", nav="docs")
 
 	def not_found(self, lang):
-		if lang == self.i18n.default:
-			self.page(lang, "404.html", self.t(lang, "notfound.title"), self.tpl.render("notfound", {}, lang), "404")
+		"""404.html in each language's tree: Pages serves the one nearest the missing address (/es/x: es/404.html)."""
+		self.page(lang, "404.html", self.t(lang, "notfound.title"), self.tpl.render("notfound", {}, lang), "404")

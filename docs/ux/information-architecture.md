@@ -97,6 +97,7 @@ Large-text mode (accessibility, or chosen by the user) shows only the status str
 - Group call heard: Activity region shows it; no focus change on any screen. Outside Home, the status strip shows `RX TG 91 · K1ABC`.
 - Text message: tone, banner "Message from K1ABC: first words…", `CONTEXT` while the banner is visible opens it; the banner goes away after 8 s and the message waits in Messages with an unread count on the status strip.
 - Private call to me, call alert, radio check request: banner with tone; Home shows the caller with "PTT to reply". A private call does not take over a screen the user is editing; it shows in the status strip and the reply is one `CONTEXT` away.
+- Zone or channel share offered: banner with tone; it has no timer and stays until `CONTEXT` opens the offer, `BACK` hides it (on any screen) or the offer ends. The offer also waits under Tools.
 - Emergency received: full-screen, alert tone, repeated until acknowledged with `SELECT` or dismissed with `BACK`.
 
 ---
@@ -133,8 +134,8 @@ Contacts, Recent and Messages are the "people" side, Zones, Channels and Tools t
 | 2 | Timeslot 1/2 | Squelch level |
 | 3 | Color code | Tone (CTCSS/DCS, RX and TX) |
 | 4 | To VFO (copy the channel to the VFO and open it) | To VFO |
-| 5 | Hear all (promiscuous) on/off | Monitor latch on/off |
-| 6 | Privacy on/off | VOX on/off |
+| 5 | Hear all (promiscuous) on/off | Monitor latch on/off (TX freq in the VFO) |
+| 6 | Privacy on/off (TX freq in the VFO) | VOX on/off |
 | 7 | Dual watch (On / Off; a zone scan is in Tools > Scan) | Dual watch (On / Off; a zone scan is in Tools > Scan) |
 | 8 | Talk target | Bandwidth 12.5/25 kHz |
 | 9 | Brightness | Brightness |
@@ -143,6 +144,8 @@ Contacts, Recent and Messages are the "people" side, Zones, Channels and Tools t
 - Toggle tiles change on one press; cycle tiles (power, timeslot, bandwidth) advance one value per press; value tiles (CC, squelch, tone, brightness) open an inline editor (`NAV_UP`/`NAV_DOWN` or digits, `SELECT` or `QUICK` to close).
 - Every change is temporary on a channel (dot on Home). Long `SELECT` on a tile makes it permanent. In VFO, changes apply to the VFO directly.
 - Tile 4 depends on where you are. On a channel it is "To VFO": the channel's settings in effect now (temporary changes included) become the VFO's own and the VFO opens ("Copied to VFO"); the channel is unchanged, and a channel the VFO can't hold is refused with a toast. In the VFO, tile 4 is Mode (FM / DMR), kept like the VFO's other settings. A channel has no temporary mode change.
+- In the VFO, the tile that is Monitor on FM (5) and Privacy on DMR (6) is TX freq ("TXFreq" on a tile): the VFO's split, its TX frequency against RX ("Off", "+600k", "-5M"). Up / Down walk a line out from Off at once, Up +, Down -, through the band's usual offsets most common first and stopping at the ends (2 m 600 kHz, then 1 MHz; 1.25 m 1.6 MHz; 70 cm 5, 7.6, then 1.6 MHz, from the ARRL, IARU Region 1, RSGB and WIA band plans), skipping a TX outside RX's transmit band; a typed split goes to the first offset its way. While it edits, the hint row says what Up / Down and the digits do, and while digits are typed shows the whole TX frequency so far ("TX 147.02___"; the tile says "TX"). Any other split is typed: digits type a TX frequency, OK sets it (refused outside the transmit bands: "Can't transmit there"), BACK takes a digit back. Monitor stays on its key; privacy is for channels.
+- Home shows a split VFO's TX frequency: on FM after PTT→; on DMR in the top row ("VFO  TX 147.120"), or as the offset among the chips on displays without that row. While transmitting, the large frequency is the TX frequency, in the TX color; the DMR call screen has a "TX 147.120 MHz" line under the target.
 - Each tile shows its current value. The voice prompt reads "Power, high" etc.
 - `BACK` or `QUICK` again closes and returns to where the user was.
 
@@ -165,7 +168,7 @@ Settings has a search field on top (T9). Groups, in this order:
 | **Power** | Battery saver, auto power off, low-battery warning level, power level defaults |
 | **Keys** | Programmable key functions (short and long), long-press time, key repeat, Up/Down on Home (channel / zone / talk target), speed dial slots |
 | **My radio** | DMR ID, callsign, name, talker alias text, radio name, region/band limits, time and date |
-| **Advanced** | Calibration view, codeplug info, firmware info, factory reset (confirmed, P7), diagnostics, crash log (send the report, its target, Off/Ask/Auto after a crash) |
+| **Advanced** | Calibration view, codeplug info, firmware info, frequency trim, factory reset (confirmed, P7), diagnostics, crash log (send the report, its target, Off/Ask/Auto after a crash) |
 
 Rule: each setting lives in exactly one group, and Find also reaches it by name and synonyms ("promiscuous" finds Hear all; "RX group" finds Listen lists).
 

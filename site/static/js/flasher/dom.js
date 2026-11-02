@@ -3,10 +3,16 @@
 // The flasher page's DOM helpers and strings, shared by app.js and the views beside it (c7000ui.js).
 
 import { note } from "../diag.js";
+import { page, LANG } from "../i18n.js";
 
-const STRINGS = JSON.parse(globalThis.document?.getElementById("i18n")?.textContent || "{}");
-export const t = (key, fmt = {}) => (STRINGS[key] || key).replace(/\{(\w+)\}/g, (_, k) => (k in fmt ? fmt[k] : `{${k}}`));
+// the page's strings (../i18n.js): t(key, fmt), tOr(key, repository text), num(n) and date(d, options) in its language
+export const { t, num } = page;
+export const tOr = page.opt;
+export const date = page.date;
+export { LANG };
 export const ROOT = globalThis.document?.body.dataset.root || "";
+// the root of the page's language (data-home): links to other pages, so they stay in the visitor's language
+export const HOME = globalThis.document?.body.dataset.home ?? ROOT;
 
 export function h(tag, attrs = {}, ...children) {
 	const el = document.createElement(tag);
@@ -40,7 +46,7 @@ export function download(name, bytes, type = "application/octet-stream") {
 // A bundle's ISO time as people read it, in their own time zone
 export function localTime(iso) {
 	const d = new Date(iso);
-	return isNaN(d) ? String(iso || "") : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+	return isNaN(d) ? String(iso || "") : date(d, { dateStyle: "medium", timeStyle: "short" });
 }
 
 // What a backup holds, in words: one name per part, its file name when there's no word for it

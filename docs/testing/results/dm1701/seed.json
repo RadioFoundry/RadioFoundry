@@ -73,6 +73,11 @@
   },
   "debuglink": {
    "result": "pass"
+  },
+  "ref_trim": {
+   "result": "pass",
+   "source": "docs/spec/hardware-dm1701.md",
+   "note": "+-5 ppm moved DMR at 438.5 MHz +2155 / -2120 Hz (2175 expected)"
   }
  }
 }

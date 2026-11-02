@@ -2,7 +2,7 @@
 	<figure class="radio-device">
 		<div class="device-frame" style="aspect-ratio: {{ frame_aspect }}">
 			<img class="device-body" src="{{root}}static/img/radios/{{ id }}-frame.svg" alt="{{ name }}">
-			<img class="device-screen" id="device-screen" src="{{root}}docs/ux/screens/{{ gallery }}/boot.png" alt="" style="{{ screen_style }}">
+			<img class="device-screen" id="device-screen" src="{{root}}{{ boot_src }}" alt="" style="{{ screen_style }}">
 		</div>
 		<figcaption class="muted small">{{t radio.image_note}}</figcaption>
 	</figure>

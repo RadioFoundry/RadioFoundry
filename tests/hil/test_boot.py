@@ -36,6 +36,7 @@ def test_screenshot_geometry(radio, shots):
     stride = w * 2 if bpp == 16 else (w + 7) // 8
     assert len(data) == info["total"] == stride * h
     assert stable, "the screen kept changing during the capture"
+    assert info.get("packed"), "the firmware sent only the RGB565 form, not the packed one (debuglink.md 3.3)"
     radio.save_screenshot(f"{shots}/boot.png")
 
 

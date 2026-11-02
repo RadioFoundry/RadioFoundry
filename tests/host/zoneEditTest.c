@@ -196,9 +196,20 @@ static void test_codeplug(void)
 	z.name[0] = 0;
 	CHECK(zone_edit_create(&z, &at) == ZONE_EDIT_NO_NAME);
 
+	// A new empty zone (Zones > Create New Zone), then a channel added to it
+	zone_op_t op;
+	memset(&op, 0, sizeof op);
+	op.kind = ZONE_OP_NEW;
+	strcpy(op.name, "Empty");
+	CHECK(zone_edit_apply(&op, &at) == ZONE_EDIT_OK && at == 3 && named(3, "Empty"));
+	CHECK(codeplug_zone(3, &z) && z.count == 0);
+	CHECK(zone_edit_insert(3, 0, 6) == ZONE_EDIT_OK && holds(3, (const uint16_t[]){ 6 }, 1));
+	CHECK(zone_edit_new("", &at) == ZONE_EDIT_NO_NAME && codeplug_zone_count() == 4);
+
 	// The same after a reboot
 	CHECK(codeplug_init() == CODEPLUG_OPENFW);
-	CHECK(codeplug_zone_count() == 3 && holds(1, (const uint16_t[]){ 21, 7, 20, 2, 3 }, 5));
+	CHECK(codeplug_zone_count() == 4 && holds(1, (const uint16_t[]){ 21, 7, 20, 2, 3 }, 5));
+	CHECK(named(3, "Empty") && holds(3, (const uint16_t[]){ 6 }, 1));
 	CHECK(codeplug_zone_capacity() == CODEPLUG_ZONE_MAX);
 	CHECK(sim_flash_violations() == 0);
 }

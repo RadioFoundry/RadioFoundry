@@ -85,6 +85,14 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
   `tools/ci.sh --board <b> --matrix --steps firmware` for all of them. Remove the `build/t-*` trees afterwards.
 - Match the file you're editing: tabs, naming, comment density. Comments say why.
 - Keep RTOS calls and blocking waits out of protocol engines and UI behavior code, so the host tests can run them.
+- **Languages.** The radio and the site are translated ([docs/dev/translating.md](docs/dev/translating.md)). Mark text
+  a user reads with `TR()` (`TRN()` in a static table, `tr()` where it is shown), never debug link or protocol text,
+  and run `python3 tools/i18n.py --sync`. Code must work with any translation missing: `tr()` returns the English, a
+  site key falls back to `en.json`; build text with `sbuf_t`/`str_copy` (a translation can be longer) and never
+  compare shown text. Translate new or rewritten strings into every catalog (`core/ui/lang/*.po`,
+  `site/i18n/*.json`) when you can; otherwise add an open task to the PR description (`- [ ] translations: es, it`).
+  CI fails on a missing translation, so they are done before the merge. English you changed with a translation left
+  the same is a CI warning (`tools/i18n_changes.py`): say in the PR whether each language still fits.
 - Docs read like technical documentation: short sentences, tables, no filler.
 
 ## Git

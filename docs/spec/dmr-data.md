@@ -233,7 +233,7 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 | Setting | Default | Why |
 |---|---|---|
 | `arsServer` | 0 (off) | no transmission the user didn't ask for (`docs/ux/principles.md`) |
-| `radioCheckReply` | off | the same: a radio check answer keys the radio |
+| `radioCheckReply` | on | a radio check is how another user finds out whether this radio is on and in range; the answer is one short CSBK. A settings record saved before this default (no `SETTINGS_DS_CHECK_SET` in `ds_ip_cnf`, `settings-store.md` 3) answers too |
 | `callAlertAck` | on | the ack is what makes a call alert work for the caller |
 | `lrrpReply` | on | answers only a dispatcher's request; without GPS it says "no fix" |
 | `hasGps` | false | the radio core sets it false on every radio today, GPS models included (`data_init` in `core/radio/radio_sm.c`) |

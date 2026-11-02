@@ -124,7 +124,7 @@ void md380_subtone_tx_stop(void)
 	TIM3->CR1 = 0;
 	TIM3->DIER = 0;
 	TIM3->SR = 0;
-	stm32_pin_out(PIN_PORT(PIN_CTCSS_PWM), PIN_MASK(PIN_CTCSS_PWM), false, false);	// back to the idle level
+	stm32_pin_out(PIN_PORT(PIN_CTCSS_PWM), PIN_MASK(PIN_CTCSS_PWM), true, true);	// released, as board.c leaves it
 }
 
 bool md380_subtone_tx_tail(bool on)

@@ -8,7 +8,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import * as diag from "../static/js/diag.js";
-import { SerialStream, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, browserErrorKey } from "../static/js/flasher/link.js";
+import { SerialStream, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, browserErrorKey, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
 import { CpsSerial, TransportError } from "../static/js/codeplug/transport.js";
 import { openFile, FileError } from "../static/js/editor/files.js";
 
@@ -100,13 +100,37 @@ test("a framing error or a break doesn't end the reading: the bytes after it sti
 	assert.equal(s.received, 1, "the acknowledgement after the glitches is read");
 	assert.ok(diag.report().log.some((e) => /reading on/.test(e.text)));
 	assert.equal(s.lost, false, "glitches don't lose the device");
+	const tr = new CpsSerial(s);
+	assert.equal(tr.lost, false);
 	lineError(port, "NetworkError");
 	await new Promise((r) => setTimeout(r, 5));
 	assert.ok(diag.report().log.some((e) => /read stopped/.test(e.text)));
 	assert.equal(s.lost, true, "the page drops this stream and connects afresh (app.js connectSerial)");
+	assert.equal(tr.lost, true, "the editor connects again before its next read or write (editor/app.js connect)");
 	port.readable.push(new Uint8Array([1]));
 	await new Promise((r) => setTimeout(r, 5));
 	assert.equal(s.received, 1, "nothing read after a fatal error");
+});
+
+// Field (Sentry OPENDIGITALRADIO-M): a radio switched off and on with the cable in gave break after break; 50 of them
+// once stopped the reading for good, the radio still there, and every stub request after it failed "no reply header"
+test("a radio power-cycled with the cable in: hundreds of breaks in a row never stop the reading", async () => {
+	const port = new FakePort();
+	const s = await SerialStream.open(port);
+	const before = diag.report().log.length;
+	for (let i = 0; i < 300; i++) {
+		await new Promise((r) => setTimeout(r, 0));
+		lineError(port, "BreakError");
+	}
+	await new Promise((r) => setTimeout(r, 60));
+	port.readable.push(new Uint8Array([0x02, 0x05]));
+	await new Promise((r) => setTimeout(r, 60));
+	assert.equal(s.received, 2, "the stub's reply after the breaks is read");
+	assert.equal(s.lost, false, "the device is still there");
+	const noted = diag.report().log.slice(before).filter((e) => /serial read/.test(e.text));
+	assert.ok(noted.length < 30, `a burst is noted sparingly (${noted.length} lines)`);
+	assert.ok(!noted.some((e) => /read stopped/.test(e.text)));
+	await s.close();
 });
 
 test("a port this page left open is closed and opened again", async () => {
@@ -123,6 +147,31 @@ test("a port this page left open is closed and opened again", async () => {
 	await new Promise((r) => setTimeout(r, 10));
 	assert.equal(live.received, 1);
 	await live.close();
+});
+
+// A port the site was granted before: its USB ID, and a cable with no radio answering on it
+class GrantedPort extends FakePort {
+	constructor(usbVendorId, usbProductId) {
+		super();
+		this.info = { usbVendorId, usbProductId };
+		this.writable = { getWriter: () => ({ write: async () => {}, releaseLock() {} }) };
+	}
+
+	getInfo() { return this.info; }
+}
+
+test("the ports granted before are tried as the chooser would list them; a silent one is closed and passed over", async (t) => {
+	const cable = new GrantedPort(0x0403, 0x6001), other = new GrantedPort(0x05AC, 0x1234);
+	// Node's navigator is a getter without a setter: replaced for this test and put back
+	const was = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [other, cable] } }, configurable: true });
+	t.after(() => Object.defineProperty(globalThis, "navigator", was));
+	const filters = [{ usbVendorId: 0x0403 }];
+	assert.deepEqual(await grantedPorts(filters), [cable]);
+	assert.equal(await knownRadioPort(filters), null, "nothing answered: the chooser opens");
+	assert.equal(cable.opens, 1);
+	assert.equal(cable.isOpen, false, "closed again for the chooser to hand out");
+	assert.equal(other.opens, 0);
 });
 
 // A stream with nothing behind it, or with another firmware's bytes coming back to every request
@@ -293,6 +342,8 @@ test("the browser's own serial and USB errors get what to do", () => {
 	// Windows without the WinUSB driver, or another program holding the radio: not the page's origin
 	assert.equal(browserErrorKey(err("SecurityError", "Failed to execute 'open' on 'USBDevice': Access denied.")), "flash.err.usb_busy");
 	assert.equal(browserErrorKey(err("SecurityError", "Access to the feature \"usb\" is disallowed by permissions policy.")), "flash.err.security");
+	// a chooser asked for after the click's activation ran out: click again, not an HTTPS problem (OPENDIGITALRADIO-1Q)
+	assert.equal(browserErrorKey(err("SecurityError", "Failed to execute 'requestPort' on 'Serial': Must be handling a user gesture to show a permission request.")), "flash.err.gesture");
 	assert.equal(browserErrorKey(err("NotFoundError", "The device has been disconnected.")), "flash.err.disconnected");
 	assert.equal(browserErrorKey(err("BreakError", "Break received")), "flash.err.connection_lost");
 	assert.equal(browserErrorKey(new Error("anything else")), null);

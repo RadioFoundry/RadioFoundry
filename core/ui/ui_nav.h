@@ -11,6 +11,7 @@
 #include "radio/radio.h"
 #include "ui_screens.h"
 #include "ui_svc.h"
+#include "i18n.h"
 
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
@@ -27,7 +28,12 @@ typedef enum {
 	SCR_SHARE, SCR_SHARE_TO, SCR_OFFER, SCR_OFFER_PREVIEW, SCR_OFFER_ZONE,
 	SCR_ZCHANNEL, SCR_ZPICK, SCR_ZONEEDIT, SCR_ZONEDEL,	// the zone editor (ui.md 2.2): Channel actions, Add
 								// channel, Zone options, Delete zone
+	SCR_CHZONES,			// the channel editor's Zones: in which zones the channel is (arg = its number)
 	SCR_DMR_ID,			// the radio's own DMR ID (Settings > My radio)
+	SCR_REF_TRIM,			// the reference trim (Settings > Advanced > Freq trim)
+	SCR_GPS,			// Tools > Position's pages (CONFIG_GPS_SKY): status, sky, signal, grid
+	SCR_CONTACT_EDIT,		// the contact editor (CONFIG_CONTACT_EDIT): a new contact, from ui_target
+	SCR_LANGUAGE,			// Settings > Display > Language: every language, those not built dimmed
 	SCR_COUNT
 } ui_scr_t;
 
@@ -91,6 +97,10 @@ void ui_dirty(void);
 void ui_focus_changed(void);
 // Open the actions for a target (SCR_ACTIONS)
 void ui_open_actions(const ui_target_t *t);
+#if CONFIG_CONTACT_EDIT
+// The contact editor on a new contact for t: its ID, type and name (a talkgroup or ID as its name when it has none)
+void ui_new_contact(const ui_target_t *t);
+#endif
 // Talk to a target: temporary (SELECT) or permanent (long SELECT); goes Home and says what happened
 void ui_talk(const ui_target_t *t, bool permanent);
 // The board has a key for this action (as a short or a long press)
@@ -127,6 +137,7 @@ uint16_t ui_filter_raw(uint16_t i);
 const char *ui_filter_text(void);
 void ui_filter_reset(void);
 void ui_filter_rebuild(void);
+void ui_menus_save_failed(void);	// a codeplug write failed: what waited for it is dropped (ui_menus.c)
 #if CONFIG_ZONE_EDIT
 // A list shows again, or the codeplug changed under it (ui_menus.c): the zone editor's focus follows its change
 void ui_menus_resume(void);

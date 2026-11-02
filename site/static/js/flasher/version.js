@@ -42,3 +42,36 @@ export function betaLink(beta, href, versionRef) {
 	u.searchParams.set("version", beta);
 	return u.pathname + u.search + u.hash;
 }
+
+// A release name's sort key (newer is larger), or null when it isn't one: tools/release_version.py's parse(). vYY.M,
+// vYY.M.N, either with bN for a pre-release, which sorts before its final
+const RELEASE_RE = /^v(2[6-9]|[3-9][0-9])\.(1[0-2]|[1-9])(?:\.([1-9][0-9]{0,2}))?(?:b([1-9][0-9]{0,2}))?$/;
+
+export function releaseKey(name) {
+	const m = RELEASE_RE.exec(name || "");
+	if (!m) return null;
+	return [+m[1], +m[2], +(m[3] || 0), m[4] ? 0 : 1, +(m[4] || 0)];
+}
+
+const newer = (a, b) => {
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i];
+	return false;
+};
+
+// The release to offer a radio: the newest of the board's full releases (releases.json) when it is newer than what
+// the radio runs, else null. A radio that runs a release (VERSION's release) is compared by name, and gets
+// pre-releases only when it runs one. Any other build (a developer's, one from a version link) is compared by commit
+// time (VERSION's git_time against the release's) and gets only final releases. A build that says neither gets none
+export function updateFor(releases, board, running, gitTime = 0) {
+	const now = releaseKey(running);
+	if (!now && !(gitTime > 0)) return null;
+	const beta = now?.[3] === 0;
+	let best = null, bestKey = null;
+	for (const r of releases || []) {
+		const k = releaseKey(r.version);
+		if (r.board !== board || (r.variant && r.variant !== "full") || !k || (k[3] === 0 && !beta)) continue;
+		if (!bestKey || newer(k, bestKey)) [best, bestKey] = [r, k];
+	}
+	if (!best) return null;
+	return (now ? newer(bestKey, now) : best.git_time > gitTime) ? best : null;
+}

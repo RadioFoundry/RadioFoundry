@@ -7,7 +7,7 @@
 import { h, button } from "../flasher/dom.js";
 import { parseFreq, parseTone, mhz } from "../codeplug/fields.js";
 import { LIMITS, POWER_NAMES } from "../codeplug/records.js";
-import { refNumber } from "../codeplug/model.js";
+import { refNumber, listenBand } from "../codeplug/model.js";
 
 // --- Parsers shared by the columns and the forms ---
 
@@ -42,6 +42,21 @@ const freq = (t) => (r, k, v) => {
 	if (hz === null) return t("editor.err.bad_freq");
 	r[k] = hz;
 };
+
+// An RX frequency in a receive-only band (model.js listenBand) makes the channel RX only, with TX on RX (no stray TX
+// frequency left from before)
+const rxFreq = (t) => (r, k, v) => {
+	const err = freq(t)(r, k, v);
+	if (!err && listenBand(r.rxHz)) {
+		r.rxOnly = true;
+		r.txHz = r.rxHz;
+	}
+	return err;
+};
+const listening = (value) => !!listenBand(parseFreq(value("rxHz")));
+
+// The mode as the radio shows it: an FM channel in the air band is received in AM
+const modeText = (r, t) => (r.mode === "dmr" ? "DMR" : listenBand(r.rxHz) ? t(`editor.mode.${listenBand(r.rxHz)}`) : "FM");
 
 const tone = (t) => (r, k, v) => {
 	const s = parseTone(v);
@@ -84,6 +99,10 @@ const refLabel = (v, t) => (v == null ? "" : typeof v === "number" ? t("editor.m
 
 // --- Columns per table ---
 
+// The columns Bulk Edit can set: every editable one but the name and number, which must differ per record. None on a
+// table whose members are edited in its own dialog (zones, RX lists): Bulk Edit isn't offered there
+export const bulkColumns = (table, m, t) => columns(table, m, t).filter((c) => c.readOnly !== true && c.key !== "name" && c.key !== "number");
+
 export function columns(table, m, t) {
 	const col = (key, label, type, parse, extra = {}) => ({
 		key, label: t(label), type,
@@ -103,11 +122,11 @@ export function columns(table, m, t) {
 		return [
 			num,
 			col("name", "editor.col.name", "text", name(LIMITS.name)(t)),
-			col("mode", "editor.col.mode", "select", pick, { options: () => [["fm", "FM"], ["dmr", "DMR"]] }),
+			col("mode", "editor.col.mode", "select", pick, { options: () => [["fm", "FM"], ["dmr", "DMR"]], format: (v, r) => modeText(r, t) }),
 			col("rxHz", "editor.col.rx", "text", (r, k, v) => {
 				// a simplex channel stays simplex: TX follows RX when they were the same
 				const was = r.rxHz;
-				const err = freq(t)(r, k, v);
+				const err = rxFreq(t)(r, k, v);
 				if (!err && r.txHz === was) r.txHz = r.rxHz;
 				return err;
 			}, { format: mhz, numeric: true }),
@@ -209,13 +228,20 @@ export function channelForm(m, t) {
 		txt("name", "editor.col.name", name(LIMITS.name)(t)),
 		sel("mode", "editor.col.mode", () => [["fm", "FM"], ["dmr", "DMR"]]),
 		sel("power", "editor.col.power", () => powerOptions(t)),
-		{ type: "pair", key: "freqs", fields: [txt("rxHz", "editor.col.rx", freq(t), mhz), txt("txHz", "editor.col.tx", freq(t), mhz)], buttons: [
+		// in a receive-only band TX follows RX, locked (rxFreq)
+		{ type: "pair", key: "freqs", disabled: (w, value) => listening(value),
+			fields: [txt("rxHz", "editor.col.rx", rxFreq(t), mhz), { ...txt("txHz", "editor.col.tx", freq(t), mhz), disabled: (w, value) => listening(value), follows: "rxHz" }], buttons: [
 			["→", t("editor.freq.rx_to_tx"), ([rx]) => [rx, rx]],
 			["⇄", t("editor.freq.swap"), ([rx, tx]) => [tx, rx]],
 			["←", t("editor.freq.tx_to_rx"), ([, tx]) => [tx, tx]],
 		] },
+		{ type: "note", key: "band", text: (value) => {
+			const band = listenBand(parseFreq(value("rxHz")));
+			return band ? t(`editor.band.${band}`) : "";
+		} },
 		txt("tot", "editor.col.tot", tot(t), (v) => (v ? String(v) : t("editor.tot.default"))),
-		chk("rxOnly", "editor.col.rx_only"),
+		// a receive-only band makes the channel RX only on save (rxFreq): the box shows it as the RX frequency is typed
+		{ ...chk("rxOnly", "editor.col.rx_only"), implied: listening },
 		fm({ group: t("editor.form.analog") }),
 		fm(sel("bw", "editor.col.bw", () => [[12.5, "12.5 kHz"], [25, "25 kHz"]])),
 		fm(txt("rxTone", "editor.col.rx_tone", tone(t), (v) => v)),
@@ -294,6 +320,11 @@ export function formDialog(title, fields, record, t, onSave) {
 			const row = h("h3", { class: "form-group" }, f.group);
 			rows.push({ f: { key: null, type: "group", show: f.show }, input: null, row });
 			body.append(row);
+		} else if (f.type === "note") {
+			// a line of text from the inputs as they are typed
+			const row = h("p", { class: "form-note small muted", hidden: true });
+			rows.push({ f, input: null, row });
+			body.append(row);
 		} else if (f.type === "pair") {
 			// two fields side by side with small buttons between them that act on both inputs
 			const a = field(f.fields[0]), b = field(f.fields[1]);
@@ -312,25 +343,36 @@ export function formDialog(title, fields, record, t, onSave) {
 		} else body.append(field(f));
 	}
 	const byKey = (k) => rows.find((r) => r.f.key === k);
+	const value = (k) => byKey(k).input.value;
 	const sync = () => {
 		for (const { f, input, row, label, tools } of rows) {
 			if (f.type === "pair") {
-				for (const b of tools) b.disabled = !!f.disabled?.(work);
+				for (const b of tools) b.disabled = !!f.disabled?.(work, value);
 				continue;
 			}
 			if (f.type === "group") {
 				if (f.show) row.hidden = !f.show(work);
 				continue;
 			}
+			if (f.type === "note") {
+				row.textContent = f.text(value);
+				row.hidden = !row.textContent;
+				continue;
+			}
 			if (f.type === "select") {
 				const v = input._opts[input.selectedIndex]?.[0];
 				f.set ? f.set(work, v) : (work[f.key] = v);
+			}
+			if (f.implied) {
+				const on = f.implied(value);
+				if (on) input.checked = true;
+				input.disabled = on;
 			}
 			if (f.type === "bool") (f.set ? f.set(work, input.checked) : (work[f.key] = input.checked));
 			if (f.show) row.hidden = !f.show(work);
 			if (typeof f.label === "function") label.textContent = f.label(work);
 			if (f.disabled) {
-				input.disabled = f.disabled(work);
+				input.disabled = f.disabled(work, value);
 				if (input.disabled && f.follows) input.value = byKey(f.follows).input.value;
 			}
 		}
@@ -342,7 +384,7 @@ export function formDialog(title, fields, record, t, onSave) {
 	const save = () => {
 		const bad = [];
 		for (const { f, input } of rows) {
-			if (f.type === "bool" || f.type === "pair" || f.type === "group") continue;
+			if (f.type === "bool" || f.type === "pair" || f.type === "group" || f.type === "note") continue;
 			if (f.type === "select") {
 				const v = input._opts[input.selectedIndex]?.[0];
 				f.set ? f.set(work, v) : (work[f.key] = v);

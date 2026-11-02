@@ -383,6 +383,7 @@ static size_t op_read(const uint8_t *a, uint16_t len, uint8_t *out, size_t cap)
 	put16(&out[6], total);
 	put32(&out[8], crc);
 	put16(&out[12], offset);
+	out[14] = 0;	// reserved
 	if (offset + n == total) {
 		stats.blocks_read++;
 	}

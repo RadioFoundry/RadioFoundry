@@ -442,6 +442,169 @@ static void test_iddb(void)
 	CHECK(!dmr_iddb_init());
 }
 
+// Format C (iddb-compact.md): written by hand, so the radio's reading is checked apart from the editor's encoder
+static uint8_t *c_at(uint32_t off)
+{
+	return off < 0x40000u ? &image[FL + 0x30000u + off] : &image[FL + 0xB8000u + off - 0x40000u];
+}
+
+static void put_le(uint8_t *p, uint32_t v, unsigned n)
+{
+	for (unsigned i = 0; i < n; i++) {
+		p[i] = (uint8_t)(v >> (8u * i));
+	}
+}
+
+// The characters of t packed at 6 bits, most significant first; the bytes written
+static unsigned c_pack(uint8_t *p, const char *t)
+{
+	unsigned n = (unsigned)strlen(t), bits = 0, out = 0;
+	uint32_t acc = 0;
+	for (unsigned i = 0; i < n; i++) {
+		acc = (acc << 6) | (uint32_t)pack6(t[i]);
+		bits += 6u;
+		while (bits >= 8u) {
+			bits -= 8u;
+			p[out++] = (uint8_t)(acc >> bits);
+		}
+	}
+	if (bits > 0u) {
+		p[out++] = (uint8_t)(acc << (8u - bits));
+	}
+	return out;
+}
+
+static unsigned c_literal(uint8_t *p, const char *t)
+{
+	p[0] = (uint8_t)(0xC0u + strlen(t));
+	return 1u + c_pack(p + 1, t);
+}
+
+static unsigned c_leb(uint8_t *p, uint32_t v)
+{
+	unsigned n = 0;
+	do {
+		p[n] = (uint8_t)(v & 0x7Fu);
+		v >>= 7;
+		if (v != 0u) {
+			p[n] |= 0x80u;
+		}
+		n++;
+	} while (v != 0u);
+	return n;
+}
+
+static void test_iddb_compact(void)
+{
+	char text[DMR_IDDB_TEXT_MAX + 1];
+	char word[16];
+	const char *long48 = "KH7Y Frederic Pine Grove CA abcdefghijklmnopqrst";
+
+	build_openfw();
+	memset(c_at(0), 0xFF, 0x40000);
+	memset(c_at(0x40000), 0xFF, 0x2000);
+
+	// Dictionary: 130 entries (page 2 the table, page 3 the strings), so entry 129 takes a 2-byte code
+	uint32_t so = 0;
+	for (uint32_t k = 0; k < 130u; k++) {
+		snprintf(word, sizeof(word), "Name%u", (unsigned)k);
+		const char *w = k == 0u ? "Spencer" : k == 129u ? "Pine Grove CA" : word;
+		put_le(c_at(0x2000u + 3u * k), so, 3);
+		uint8_t *sp = c_at(0x3000u + so);
+		sp[0] = (uint8_t)strlen(w);
+		so += 1u + c_pack(sp + 1, w);
+	}
+
+	// Page 4: three records. Page 64 (the first in area 2): two, the second with a token no format has
+	uint8_t *p = c_at(0x4000);
+	unsigned o = 2;
+	put_le(p, 3, 2);
+	o += c_leb(p + o, 3101234);
+	o += c_literal(p + o, "N0CALL");
+	p[o++] = 0x00;
+	p[o++] = 0x80;
+	p[o++] = 0x01;			// 128 + 1
+	o += c_leb(p + o, 6);		// 3101240
+	o += c_literal(p + o, "W1AW");
+	p[o++] = 0xC0;
+	p[o++] = 0xC0;
+	o += c_leb(p + o, 260);		// 3101500: two LEB128 bytes
+	p[o++] = 0xC0;
+	p[o++] = 0x00;
+	p[o++] = 0xC0;
+	p = c_at(0x40000);
+	o = 2;
+	put_le(p, 2, 2);
+	o += c_leb(p + o, 3200000);
+	o += c_literal(p + o, long48);
+	p[o++] = 0xC0;
+	p[o++] = 0x05;
+	o += c_leb(p + o, 1);
+	p[o++] = 0xF5;
+	p[o++] = 0xC0;
+	p[o++] = 0xC0;
+
+	uint8_t *ix = c_at(0x1000);
+	put_le(ix, 3101234, 3);
+	put_le(ix + 3, 4, 2);
+	put_le(ix + 5, 3200000, 3);
+	put_le(ix + 8, 64, 2);
+
+	uint8_t *h = c_at(0);
+	h[0] = 'I';
+	h[1] = 'd';
+	h[2] = 'C';
+	h[3] = 0;
+	h[4] = 1;
+	h[5] = 48;
+	put_le(h + 6, 4, 2);
+	put_le(h + 8, 5, 4);
+	put_le(h + 12, 0x41000, 4);
+	put_le(h + 16, 0x1000, 4);
+	put_le(h + 20, 2, 2);
+	put_le(h + 22, 130, 2);
+	put_le(h + 24, 0x2000, 4);
+	put_le(h + 28, 0x3000, 4);
+
+#if CONFIG_IDDB_COMPACT
+	CHECK(dmr_iddb_init() && dmr_iddb_count() == 5);
+	CHECK(dmr_iddb_lookup(3101234, text, sizeof(text)) && strcmp(text, "N0CALL Spencer Pine Grove CA") == 0);
+	CHECK(dmr_iddb_lookup(3101240, text, sizeof(text)) && strcmp(text, "W1AW") == 0);
+	CHECK(dmr_iddb_lookup(3101500, text, sizeof(text)) && strcmp(text, "Spencer") == 0);
+	CHECK(dmr_iddb_lookup(3200000, text, sizeof(text)) && strcmp(text, long48) == 0);
+	CHECK(!dmr_iddb_lookup(3101235, text, sizeof(text)));		// between two records
+	CHECK(!dmr_iddb_lookup(3101233, text, sizeof(text)));		// before the first page
+	CHECK(!dmr_iddb_lookup(3101600, text, sizeof(text)));		// past a page's last record
+	CHECK(!dmr_iddb_lookup(3200001, text, sizeof(text)));		// an unused token: the page stops there
+	char small[10];
+	CHECK(dmr_iddb_lookup(3101234, small, sizeof(small)) && strcmp(small, "N0CALL Sp") == 0);
+
+	// A header that doesn't hold together is no database
+	h[4] = 2;
+	CHECK(!dmr_iddb_init());
+	h[4] = 1;
+	put_le(h + 12, 0x41001, 4);		// not whole pages
+	CHECK(!dmr_iddb_init());
+	put_le(h + 12, 0x2000, 4);		// the index past the end
+	CHECK(!dmr_iddb_init());
+	put_le(h + 12, 0x41000, 4);
+	put_le(h + 22, 16513, 2);		// more dictionary entries than codes
+	CHECK(!dmr_iddb_init());
+	put_le(h + 22, 130, 2);
+	put_le(h + 16, 0xFFFFFFFEu, 4);		// an offset whose sum with its section's length wraps
+	CHECK(!dmr_iddb_init());
+	put_le(h + 16, 0x1000, 4);
+	put_le(h + 24, 0xFFFFF000u, 4);
+	CHECK(!dmr_iddb_init());
+	put_le(h + 24, 0x2000, 4);
+	CHECK(dmr_iddb_init());
+#else
+	// A build without the format sees no database, never a wrong one (iddb-compact.md 3.1)
+	CHECK(!dmr_iddb_init() && dmr_iddb_count() == 0 && !dmr_iddb_lookup(3101234, text, sizeof(text)));
+#endif
+	memset(c_at(0), 0xFF, 32);
+}
+
 #if CONFIG_APRS
 // The APRS configuration records a CPS writes (open-firmware-cps.md 7.3.8, 0x40 bytes each at EEPROM 0x1588):
 // the two magic numbers (the older one keeps the ambiguity one bit lower), and whatever is out of range in a
@@ -516,6 +679,7 @@ int main(void)
 #endif
 	test_dmr_records();
 	test_iddb();
+	test_iddb_compact();
 	test_erased();
 	test_no_flash();
 	free(image);

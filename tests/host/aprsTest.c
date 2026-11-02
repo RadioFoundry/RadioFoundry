@@ -19,6 +19,7 @@
 #include "aprs/kiss.h"
 #include "aprs/aprs_fmt.h"
 #include "aprs/aprs_nmea.h"
+#include "aprs/nmea_sky.h"
 #include "aprs/aprs_beacon.h"
 #include "aprs/aprs_igate.h"
 #include "fuzz.h"
@@ -477,6 +478,96 @@ static void test_nmea(void)
 	const char *ws = "$GPRMC,010203,A,3352.1300,S,15112.5600,W,0.0,,010125,,*3B";
 	ok = nmea_parse(ws, strlen(ws), &f);
 	CHECK(ok && f.lat < 0 && f.lon < -1500000000, "south west ok=%d %d %d", ok, f.lat, f.lon);
+}
+
+// GSV / GSA (nmea_sky.c): a GPS + BeiDou receiver's round, satellites dropped when a round no longer lists them, a
+// mixed GN talker with and without the NMEA 4.1 system ID, the used set rebuilt each round
+static void sky_feed(nmea_sky_t *k, const char *body)
+{
+	char s[96];
+	uint8_t sum = 0;
+	for (const char *c = body; *c; c++)
+		sum ^= (uint8_t)*c;
+	snprintf(s, sizeof s, "$%s*%02X", body, sum);
+	nmea_sky_sentence(k, s, strlen(s));
+}
+
+static const sky_sat_t *sky_find(const nmea_sky_t *k, uint8_t sys, uint8_t num)
+{
+	for (uint8_t i = 0; i < k->n; i++)
+		if (k->sat[i].sys == sys && k->sat[i].num == num)
+			return &k->sat[i];
+	return NULL;
+}
+
+static void test_nmea_sky(void)
+{
+	nmea_sky_t k;
+	nmea_sky_init(&k);
+	CHECK(sizeof(sky_sat_t) == 4, "sky_sat_t is %u bytes", (unsigned)sizeof(sky_sat_t));
+	sky_feed(&k, "GNGGA,123519,4807.038,N,01131.000,E,1,05,1.2,545.4,M,46.9,M,,");
+	sky_feed(&k, "GPGSA,A,3,02,05,12,,,,,,,,,,2.1,1.2,1.7");
+	sky_feed(&k, "BDGSA,A,3,06,09,,,,,,,,,,,2.1,1.2,1.7");
+	sky_feed(&k, "GPGSV,2,1,05,02,62,048,44,05,35,120,40,12,18,210,31,18,08,331,18");
+	sky_feed(&k, "GPGSV,2,2,05,29,,,");
+	sky_feed(&k, "BDGSV,1,1,03,06,52,080,36,09,27,190,33,16,13,020,");
+	sky_feed(&k, "GNRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W");
+	CHECK(k.n == 8 && k.mode == 3, "round: %u sats mode %u", k.n, k.mode);
+	const sky_sat_t *s = sky_find(&k, SKY_GPS, 2);
+	CHECK(s && s->elev == 62 && s->az2 == 24 && s->snr == 44 && nmea_sky_used(&k, s), "G2");
+	s = sky_find(&k, SKY_GPS, 18);
+	CHECK(s && s->az2 == 165 && !nmea_sky_used(&k, s), "G18 az 331 unused");
+	s = sky_find(&k, SKY_GPS, 29);
+	CHECK(s && s->elev == SKY_ELEV_NONE && s->az2 == SKY_AZ_NONE && s->snr == 0, "G29 no position");
+	s = sky_find(&k, SKY_BEIDOU, 9);
+	CHECK(s && nmea_sky_used(&k, s), "C9 used");
+	s = sky_find(&k, SKY_BEIDOU, 16);
+	CHECK(s && s->snr == 0 && !nmea_sky_used(&k, s), "C16 not tracked");
+
+	// next round: G18 set, BeiDou unchanged; the used set is the new GSA's only
+	sky_feed(&k, "GPGSA,A,2,02,12,,,,,,,,,,,3.0,2.0,2.2");
+	sky_feed(&k, "BDGSA,A,1,,,,,,,,,,,,,3.0,2.0,2.2");
+	sky_feed(&k, "GPGSV,1,1,04,02,63,049,45,05,35,121,41,12,19,211,30,29,02,100,12");
+	CHECK(k.n == 7 && sky_find(&k, SKY_GPS, 18) == NULL && sky_find(&k, SKY_BEIDOU, 16) != NULL, "G18 dropped %u", k.n);
+	CHECK(k.mode == 2 && !nmea_sky_used(&k, sky_find(&k, SKY_GPS, 5)) && !nmea_sky_used(&k, sky_find(&k, SKY_BEIDOU, 6)),
+	      "used rebuilt");
+	sky_feed(&k, "BDGSV,1,1,00");
+	CHECK(k.n == 4 && sky_find(&k, SKY_BEIDOU, 6) == NULL, "BeiDou gone %u", k.n);
+
+	// GN talker: extended numbers (GLONASS 65-96, BeiDou 201+), then a 4.1 system ID; SBAS and junk are skipped
+	nmea_sky_init(&k);
+	sky_feed(&k, "GNGSV,1,1,04,70,40,100,30,205,20,200,25,40,30,150,35,00,10,10,10");
+	CHECK(k.n == 2 && sky_find(&k, SKY_GLONASS, 6) && sky_find(&k, SKY_BEIDOU, 5), "GN extended %u", k.n);
+	sky_feed(&k, "GNGSA,A,3,70,,,,,,,,,,,,1.5,0.9,1.2");
+	sky_feed(&k, "GNGSA,A,3,05,,,,,,,,,,,,1.5,0.9,1.2,4");
+	CHECK(nmea_sky_used(&k, sky_find(&k, SKY_GLONASS, 6)) && nmea_sky_used(&k, sky_find(&k, SKY_BEIDOU, 5)),
+	      "GN used, with and without system ID");
+	sky_feed(&k, "GNGSV,1,1,02,201,30,090,28,202,20,100,22");	// BeiDou from 201, not QZSS
+	CHECK(sky_find(&k, SKY_BEIDOU, 1) && sky_find(&k, SKY_BEIDOU, 2) && sky_find(&k, SKY_QZSS, 9) == NULL, "C1 C2");
+	nmea_sky_init(&k);
+	sky_feed(&k, "BDGSV,1,1,02,06,52,080,36,64,27,190,33");	// 64 is past the 64-bit used mask
+	CHECK(k.n == 1 && sky_find(&k, SKY_BEIDOU, 6), "number 64 skipped %u", k.n);
+	sky_feed(&k, "GPGSV,1,1,01,02,62,048,44*00");	// a bad checksum (the body has its own) changes nothing
+	CHECK(k.n == 1, "bad sentence ignored");
+
+	// a full table keeps what it has
+	nmea_sky_init(&k);
+	for (int m = 1; m <= 8; m++) {
+		char b[80];
+		snprintf(b, sizeof b, "BDGSV,8,%d,32,%02d,10,010,20,%02d,10,010,20,%02d,10,010,20,%02d,10,010,20", m,
+			 m * 4 - 3, m * 4 - 2, m * 4 - 1, m * 4);
+		sky_feed(&k, b);
+	}
+	CHECK(k.n == NMEA_SKY_MAX, "full table %u", k.n);
+
+	// NMEA 4.1, a round per signal: the L5 round (signal 8) doesn't replace the L1 one (signal 1)
+	nmea_sky_init(&k);
+	sky_feed(&k, "GPGSV,1,1,03,02,62,048,44,05,35,120,40,12,18,210,31,1");
+	sky_feed(&k, "GPGSV,1,1,01,05,35,120,22,8");
+	s = sky_find(&k, SKY_GPS, 5);
+	CHECK(k.n == 3 && s && s->snr == 40, "L5 round ignored: %u sats", k.n);
+	sky_feed(&k, "GPGSV,1,1,02,02,62,048,43,12,18,210,30,1");
+	CHECK(k.n == 2 && sky_find(&k, SKY_GPS, 5) == NULL, "next L1 round %u", k.n);
 }
 
 // --- KISS ---
@@ -981,6 +1072,7 @@ int main(int argc, char **argv)
 	test_parse_fuzz();
 	test_geo();
 	test_nmea();
+	test_nmea_sky();
 	test_kiss();
 	test_beacon();
 	test_igate();

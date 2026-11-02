@@ -11,6 +11,8 @@
 // What each package provides, ORed; a package defines its own ui_svc_feat_* when it connects its calls
 WEAK uint32_t ui_svc_feat_voice(void) { return 0; }
 WEAK void ui_svc_boot_text(char line1[17], char line2[17]) { line1[0] = line2[0] = '\0'; }
+WEAK void ui_svc_name_get(uint8_t which, char out[17]) { (void)which; out[0] = '\0'; }
+WEAK bool ui_svc_name_set(uint8_t which, const char *text) { (void)which; (void)text; return false; }
 WEAK uint32_t ui_svc_feat_data(void) { return 0; }
 WEAK uint32_t ui_svc_feat_storage(void) { return 0; }
 WEAK uint32_t ui_svc_feat_radio(void) { return 0; }
@@ -34,6 +36,9 @@ WEAK bool ui_svc_monitor(bool on) { (void)on; return false; }
 WEAK bool ui_svc_vox(bool on) { (void)on; return false; }
 WEAK bool ui_svc_save_channel(void) { return false; }
 WEAK bool ui_svc_write_channel(uint16_t number, const channel_t *ch) { (void)number; (void)ch; return false; }
+#if CONFIG_CONTACT_EDIT
+WEAK bool ui_svc_write_contact(uint16_t index, const contact_t *c) { (void)index; (void)c; return false; }
+#endif
 WEAK bool ui_svc_zone_edit(const zone_op_t *op) { (void)op; return false; }
 WEAK void ui_svc_zone_poll(void) { }
 WEAK bool ui_svc_zone_pending(void) { return false; }
@@ -65,6 +70,7 @@ WEAK bool ui_svc_radio_check(uint32_t id) { (void)id; return false; }
 WEAK bool ui_svc_call_alert(uint32_t id) { (void)id; return false; }
 
 WEAK bool ui_svc_position(ui_position_t *out) { (void)out; return false; }
+WEAK bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out) { (void)i; (void)out; return false; }
 WEAK bool ui_svc_emergency(bool on) { (void)on; return false; }
 WEAK void ui_svc_emergency_dismiss(void) { }
 WEAK bool ui_svc_emergency_active(void) { return false; }
@@ -84,6 +90,7 @@ WEAK uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t ds
 }
 WEAK bool ui_svc_zone_offer(ui_zone_offer_t *out) { (void)out; return false; }
 WEAK void ui_svc_zone_offer_open(uint32_t serial) { (void)serial; }
+WEAK bool ui_svc_zone_offer_pending(void) { return false; }
 WEAK bool ui_svc_zone_offer_channel(uint32_t serial, uint16_t i, ui_zone_offer_ch_t *out) { (void)serial; (void)i; (void)out; return false; }
 WEAK void ui_svc_zone_offer_reject(uint32_t serial) { (void)serial; }
 WEAK bool ui_svc_zone_offer_import(uint32_t serial, uint16_t zone) { (void)serial; (void)zone; return false; }

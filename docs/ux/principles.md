@@ -78,7 +78,7 @@ The top 20 tasks (`task-flows.md`) each show their first useful result within tw
 
 - Changes made while operating (TG, TS, CC, power, squelch, tone, privacy on/off) apply immediately and are **temporary**: they last until the channel changes or the user returns to the channel's default. Home marks a changed channel ("edited" dot and the changed field highlighted).
 - Making a change permanent is a deliberate act: long `SELECT` on the changed field, or "Save to channel" in `CONTEXT`. The codeplug is never written silently.
-- Defaults are safe: low power on first boot, no auto-transmit features (VOX, GPS reports, ARS, auto radio-check reply) enabled until the user enables them, privacy off, promiscuous on for RX only.
+- Defaults are safe: low power on first boot, no auto-transmit features (VOX, GPS reports, ARS) enabled until the user enables them (the radio-check reply is on: it answers a check another station asked for), privacy off, promiscuous on for RX only.
 - Reversible actions don't ask; they offer **Undo** for 5 s (delete message, remove contact from a list, clear last heard).
 - Only destructive, irreversible actions ask for confirmation (factory reset, erase codeplug, delete a whole zone, overwrite calibration). The confirmation names the thing and the consequence ("Erase all 1,024 channels? This can't be undone.") and defaults to No.
 - Emergency is hold-to-activate (about 1.5 s) instead of a confirmation dialog, and cancel is the same hold.

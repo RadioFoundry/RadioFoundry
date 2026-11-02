@@ -52,10 +52,11 @@ export function radioPicture(radio, { keys = [] } = {}) {
 }
 
 // What RadioFoundry's own screens look like on this radio: the UI gallery's picture of a screen for the radio's display
-// class (radios.json gallery; docs/ux/screens/<gallery>/<name>.png, made by the host tests' ui-gallery), so the
-// picture shows the radio's real boot screen and the stub entry's splash, at any display size
+// class (radios.json gallery; docs/ux/screens/<gallery>/<name>.png, made by the host tests' ui-gallery, as the site
+// serves it: static/img/screens/, scaled up, site/rfoundrysite/shots.py), so the picture shows the radio's real boot
+// screen and the stub entry's splash, at any display size
 const SCREEN_SHOTS = { rfoundry: "boot", loader: "stub_entry" };
-const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}docs/ux/screens/${radio.gallery}/${SCREEN_SHOTS[sc]}.png` : null);
+const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}static/img/screens/${radio.gallery}/${SCREEN_SHOTS[sc]}.png` : null);
 
 // led: off | wait (slow yellow) | busy (fast yellow) | done (three green flashes) | green (steady)
 // screen: off (dark: a power-on stub load or the factory loader) | loader (RadioFoundry handed over to the stub: its

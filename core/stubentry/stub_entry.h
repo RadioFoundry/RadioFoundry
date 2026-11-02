@@ -17,11 +17,15 @@
 #include <stdint.h>
 #include "config.h"
 #include "debuglink/dl_frame.h"
+#include "ui/i18n.h"
 
 // The two lines of the boot splash the radio shows while the monitor has it (show_banner); the UI gallery draws the
-// same screen (stub_entry.png), which the web flasher shows for this state
-#define STUB_ENTRY_LINE1 "PC Loader Connected"
-#define STUB_ENTRY_LINE2 "Power-cycle to exit"
+// same screen (stub_entry.png), which the web flasher shows for this state. In English here; the radio shows them
+// translated (tr). The marks sit on lines of their own: tools/i18n.py passes over a line that starts with #define
+#define STUB_ENTRY_LINE1 \
+	TRN("PC Loader Connected")
+#define STUB_ENTRY_LINE2 \
+	TRN("Power-cycle to exit")
 
 #if CONFIG_STUB_ENTRY
 #if !CONFIG_DEBUGLINK

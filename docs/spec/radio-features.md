@@ -5,7 +5,7 @@
 Scan, the FM transmit extras, beeps and power management in the radio core. Code: `core/radio/scan.c` (the scan
 engine, pure), `core/radio/beep.c` (beep patterns and synthesis), `core/radio/vibe.c` (vibration patterns),
 `core/radio/battery.c` (battery levels, the backlight helper), all glued into `core/radio/radio_sm.c`; board hooks in
-`hal/hal_radio.h` (`tx_tone`, `tx_dtmf`, `rx_sleep`, `mic_gain`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
+`hal/hal_radio.h` (`tx_tone`, `tx_dtmf`, `rx_sleep`, `mic_gain`, `ref_trim`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
 and RADIO ops 20-24 (`docs/spec/debuglink.md` 3.7, 3.8). Host tests: `tests/host/radioFeaturesTest.c`; HIL tests:
 `tests/hil/test_radio_features.py`.
 
@@ -69,13 +69,17 @@ tuned channel or frequency is the core view's as usual.
 Each stop: 50 ms settle (readings from the previous frequency are ignored), then `scan_dwell_ms` listening. A signal
 is "active" when FM squelch opens (with the RX tone if the channel needs one) or DMR plays a call (`dmr.state` rx).
 A carrier that isn't active yet earns a probe: 350 ms on FM channels that need a tone (CTCSS detection takes 100 to
-250 ms), 700 ms on DMR; other FM channels move on at once. On DMR a carrier seen in the last 150 ms still counts (direct
+250 ms), 700 ms on DMR; other FM channels move on at once. On DMR a carrier is the noise reading at the squelch level
+or the signal strength at the DMR scale (level 1 above -112 dBm, 3 dB a level: -100 dBm at the default level; some
+receivers' noise reading doesn't follow a DMR signal, [gotchas](gotchas.md) 17.3). A carrier seen in the last 150 ms still counts (direct
 mode is on air 30 ms in every 60, and the noise reading drops between bursts), and once the modem delivers bursts with
 the channel's color code since the stop's settle ("sync", from `dmr_call_last_activity`, a late entry still waiting for
 its LC included) the probe lasts up to 1.5 s: a call already in progress is taken from its embedded LC, which needs the
 next complete superframe at best and the one after it when the modem's sticky LC equals this call's (about 1.1 s from
-the retune). A call known not to be for us (another talkgroup) ends the probe. Empty channels still move on after the
-dwell. The view counts the stops probed (`scan_probes`) and those with sync (`scan_synced`) for each scan. Active: the scan holds
+the retune). Each DMR stop on a new frequency restarts the modem's receiver, so it searches from the retune and not on the
+last transmitter's slot timing ([gotchas](gotchas.md) 17.2). A call known not to be for us (another talkgroup) ends
+the probe. Empty channels still move on after the dwell.
+The view counts the stops probed (`scan_probes`) and those with sync (`scan_synced`) for each scan. Active: the scan holds
 (`scan_phase=hold`), then follows `scan_resume`; after the signal ends it waits `scan_delay_ms` (`resume`) and picks
 up again if the signal comes back. MONITOR held pauses the scan (`paused`).
 
@@ -113,7 +117,7 @@ VFO during the watch copies into a VFO the other channel isn't on: the one last 
 | Each hop | The channel the receiver leaves keeps its changes for now (power, squelch, bandwidth, mode, color code, timeslot, tones, the manual talk target, hear all; `dual_keep[]`), and the channel it tunes gets its own back. A pair with a new channel drops that channel's; a stop drops both |
 | A channel, zone, VFO, tone, bandwidth, mode, timeslot or color code change | Ends the watch on the selected channel, then applies the change there. The UI then asks for the watch again with the new channel (dual-watch.md 5) |
 | Hotspot mode | Ends it where the receiver is |
-| `radio_req_scan` stop, cancel or toggle (the debug link) | Ends it on the selected channel and counts it in the view's `dual_stops`: the UI takes it as the user's stop and doesn't start the watch again |
+| `radio_req_scan` stop, cancel or toggle (the debug link) | Ends it on the selected channel and counts it in the view's `dual_stops`: the UI takes it as the user's stop and doesn't start the watch again. The radio has stopped already, so the UI asks for nothing and takes on a watch started right after it at once |
 | `radio_req_dual` with the same pair and the other selected (the debug link's select) | The view's `dual_sel` changes; the UI follows a change it didn't ask for, so the next channel, zone or VFO request changes that channel |
 | A VFO request, a frequency or Copy to VFO with a channel selected | The selected channel goes into a VFO the other channel isn't on: the one last used, else the other one |
 | Power off | The saved position is the selected channel's, wherever the receiver is: the radio powers up there |
@@ -479,6 +483,41 @@ the network or the user sets it, the radio shows "no time", and records keep usi
 Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,
 and refuses a TX frequency outside the board's bands (`tx_deny=band`). Without a calibration the board either drives
 a low fixed value or refuses to transmit; the board's hardware page says which.
+
+### 6.1 Reference trim
+
+Settings > Advanced > Freq trim: a fraction of the reference, -10.0 to +10.0 ppm in 0.1 ppm steps, 0 by default
+(`core/radio/ref_trim.c`). It is for a radio whose reference oscillator is off even with its calibration: it moves
+receive and transmit together, FM and DMR. A fraction of the reference moves every carrier by the same fraction, so
+one value holds on every band; the Hz it comes to grows with the frequency.
+
+| Trim | At 440 MHz | At 144 MHz |
+|---|---|---|
+| 0.1 ppm (one step) | 44 Hz | 14.4 Hz |
+| 4.5 ppm | 1980 Hz | 648 Hz |
+| 10.0 ppm (the limit) | 4.4 kHz | 1.44 kHz |
+
+The value is held in parts per billion (ppb, 100 a step), an int16: `hal_radio_t.ref_trim`, `settings_t.ref_trim_ppb`,
+the debug link. The UI stores it and applies it at start-up and on each change with `radio_set_ref_trim()`, which
+clamps, rounds to the step and calls `hal_radio_t.ref_trim` when the value differs from the one the board has (the
+board starts at 0, so a start-up with no trim calls nothing). The debug link's SETTING op 35 sets it in RAM only.
+
+| Board | Trim |
+|---|---|
+| with a reference control (`hal_radio_t.ref_trim` sets it) | adds the trim to the control its calibration sets, at every tune; its hardware page gives the scale |
+| with synthesizers only (`hal_radio_t.ref_trim` keeps the value) | programs each RF chip at f x (1 + trim) instead of f, at every tune and burst (`ref_trim_tune_hz`). A superhet's LO takes f x (1 + trim) + IF and its IF stays as it is: both chips run from one reference, so the IF's share of the error cancels |
+| without the hook, or built with `CONFIG_REF_TRIM=n` | the row is hidden; nothing changes |
+
+The hook returns whether the board takes the trim at the next tune. A board that applies it at once returns false;
+one that applies it when it tunes returns true, and the caller (the UI, the debug link) then asks the radio task to
+tune again (`radio_req_retune`, the `RREQ_RETUNE` request). A tune ends a reception in progress, so the radio task tunes
+once the trim has held still `RADIO_RETUNE_SETTLE_MS` (400 ms), not at each step: when idle, after an APRS
+transmission, or at the end of a transmission or the hotspot. Until then the hotspot or a transmission in progress
+keeps the trim it started with on receive. The RF chips' bus stays the radio task's.
+
+The value is a correction to enter by hand: measure the carrier against a reference (a frequency counter, a service
+monitor, or a hotspot's MMDVMCal BER test) and enter the error with its sign reversed. A radio 2 kHz high at 448.7 MHz
+is 4.5 ppm high and takes -4.5 ppm. [feature-matrix.md](../feature-matrix.md) lists which radios have the hook.
 
 ## 7. Verification status
 

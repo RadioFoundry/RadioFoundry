@@ -78,16 +78,19 @@ On Home (not in the VFO), a number key opens Find. Find searches everything at o
 this order:
 
 1. The channel at that position in the current zone. "12" lists channel 12.
-2. Channels in the zone, contacts and talkgroups, zones, places (Contacts, Messages and so on) and settings whose
+2. The digits as a frequency in one of the radio's bands, read as in the VFO: "461462" lists "Tune VFO to 461.462".
+   **OK** opens the VFO on it. The VFO's mode, power and tones stay as they were.
+3. Channels in the zone, contacts and talkgroups, zones, places (Contacts, Messages and so on) and settings whose
    names match the keys as letters.
-3. Contacts whose DMR ID starts with the number, from three digits on.
-4. The number itself, as a talkgroup ("Talk to TG 3100", "not saved") and as a private call ("Private call 3100").
+4. Contacts whose DMR ID starts with the number, from three digits on.
+5. The number itself, as a talkgroup ("Talk to TG 3100", "not saved") and as a private call ("Private call 3100").
+6. "Create contact 3100" when no contact has that ID. **OK** opens New Contact ([Contacts](09-dmr.md#contacts)).
 
 Then:
 
 | Key | Does |
 |---|---|
-| **OK** | Go to the channel or zone, open the place or setting, or talk to the talkgroup or person for now |
+| **OK** | Go to the channel or zone, tune the VFO, open the place or setting, talk to the talkgroup or person for now, or create the contact |
 | **PTT** | Talk to the focused talkgroup or person once |
 | **#** | Actions for the focused talkgroup or person |
 | **Back** | Delete the last digit. With one digit left, leave Find |

@@ -123,6 +123,18 @@ checklist and owner actions, then `tools/bringup.py run --radio <id> -- <HIL opt
 link. The run takes the radio lock, counts unexcused skips as failures and writes a record to
 `docs/testing/results/<id>/`. Commit the record. Failures are allowed in a record: they are the to-do list.
 
+## Text the radio or the site shows
+
+The radio and the site are translated ([Translating](translating.md)). Text a user reads is marked (`TR()`, `TRN()`
+on the radio; a catalog key on the site), and the code works when its translation is missing: the English shows.
+
+- Mark new text, run `python3 tools/i18n.py --sync`, and commit the catalogs with the code.
+- Translate new and rewritten strings into every language when you can (radio `core/ui/lang/*.po`, site
+  `site/i18n/*.json`). When you can't, list them as an open task in the pull request
+  (`- [ ] translations: es, it`); CI fails on a missing translation, and they are done before the merge.
+- English you changed while a translation stayed the same is a CI warning, not a failure: check each language and
+  update it when the meaning changed.
+
 ## Documentation
 
 - A behavior change updates its spec in `docs/spec/` and, if users see it, the user manual in `docs/user/`.

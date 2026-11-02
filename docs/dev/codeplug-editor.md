@@ -23,6 +23,8 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `codeplug/detect.js`, `codeplug/stock_tyt.js` | Telling the open-firmware layout from a vendor codeplug, and converting that to the editing model ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
 | `codeplug/transport.js` | How the page reaches a radio (below) |
 | `codeplug/fakecps.js` | A simulated RadioFoundry radio: VERSION, CPS reads, sector writes and `C 5`, writes refused outside the codeplug as the radio refuses them |
+| `codeplug/fastlink.js` | The fast codeplug protocol ([cps-fast.md](../spec/cps-fast.md)): block CRCs, LZ4 reads and pipelined writes |
+| `codeplug/iddb.js` | The DMR ID database in format N and format C ([iddb-compact.md](../spec/iddb-compact.md)): write, read, convert, size |
 | `codeplug/sources/` | Contacts sources: `radioid.js` (RadioID.net's `user.csv` and API), `regions.js` (generated region names), `output.js` (users to the ID database or contacts) |
 | `editor/app.js` | The page: tabs, the file menu, radio read and write, the draft |
 | `editor/grid.js`, `views.js` | The table (in-place edit, sort, filter, selection, keyboard) and each record kind's columns, form and membership editor |
@@ -31,7 +33,17 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `editor/extensions.js`, `parts.js` | Optional parts register their Save items, table actions, text file openers and DMR ID Database views. `parts.js` lists them, so a part is added without touching `app.js` |
 | `editor/csvpart.js`, `qdmrpart.js`, `contactspart.js` | The CSV, qdmr YAML and RadioID parts |
 
-Add `#sim` to the page's address to read and write a simulated radio (`fakecps.js`).
+Add `#sim` to the page's address to read and write a simulated radio (`fakecps.js`), `#sim-compact` for one that
+reads format C ID databases. Append `&release=vYY.M` for a radio that runs that release, or `&git_time=N` for a build
+of a commit from that time, which brings up the update notice when `releases.json` lists a newer one.
+
+After a read, the radio is offered the newest release for its board from `releases.json` when that is newer
+(`updateFor` in `flasher/version.js`). A radio that runs a release (`release=` in VERSION) is compared by release name,
+and is offered pre-releases only when it runs one. Any other build (a developer's, one from a version link) is
+compared by commit time (`git_time=` against the release's `git_time`) and is offered only final releases. Firmware
+from before `git_time=` that isn't a release gets no offer. The dialog lists what the editor gains (`CPS_FAST`,
+`IDDB_COMPACT`, when the release has them and the radio doesn't) and opens the installer for the radio. It comes once
+per tab for each radio, running release and new release, after the compact database offer when both apply.
 
 ## Transports
 
@@ -41,13 +53,32 @@ today: the open-firmware CPS ([cps-protocol.md](../spec/cps-protocol.md) 2) over
 programming cable (Web Serial). It identifies the radio by the board name the debug link reports, matched against
 `codeplug.names` in `data/radios.json`. The registry (`tools/boards.py` `Board.codeplug()`) fills that entry from the
 board's flash map: the base (the CPS address offset, nonzero on some radios), the end of the room for the codeplug and ID database, and whether
-the radio has a TFTP staging area. A read takes the codeplug's regions and the ID database. A write compares with the
+the radio has a TFTP staging area. A read takes the ID database's header first
+(`readIddbHeader`), then the codeplug's regions and the database in one pass, so one progress bar covers it. The
+database's size and the last read's speed (a guess on a radio's first read) give its time: at `IDDB_ASK` (20 s) or
+more the editor asks before reading. A skipped database stays out of the model (its header erased there, kept in `S.conn.image`), so no write
+touches it; the DMR ID Database tab reads it later into the model. A write compares with the
 radio and sends only the changed bytes inside the codeplug's regions, never whole sectors, since a sector can hold the
 radio's own settings (0x6000). It verifies, then ends with `C 5` so the radio reloads the codeplug without a restart.
 
+The radio's bytes a write compares with (`S.conn.image`) belong to one radio. A programming cable stays open while the
+radio on it is swapped, so before every read and write the page asks `who(radios)`: the board again and the chip UID
+(INFO_CHIP). A different UID, or none, drops the image and the write reads the radio first. `keepIdentity(want, have)`
+copies the radio's name, DMR ID and boot text (`IDENTITY`) into the image it writes, for one codeplug written to
+several radios.
+
 A browser can't reach the radio's UDP port or its http server (see USB network mode above), so for a radio in USB
-network mode the editor saves `codeplug.bin` for `tftp put` instead. A faster transport (the loader's CRC-compared
-sector writes) can register beside `cps-serial` later.
+network mode the editor saves `codeplug.bin` for `tftp put` instead.
+
+A radio that lists `CPS_FAST` in its features is read and written with the fast protocol (`fastlink.js`) on the
+same port: SUMS compares 4 KB blocks by CRC, so a read with a cached image moves only blocks that differ, and a
+write sends only changed blocks, LZ4 coded. The codeplug goes in one staged session when it fits the staging area.
+The ID database goes in its own direct session, its header block first with the header erased and again last.
+Blocks the radio refuses as out of range fall back to CPS sector writes; `tr.noFast` turns the protocol off.
+
+The ID database is kept as records and written in the format the radio reads: format C when it lists
+`IDDB_COMPACT`, else format N. A format N database read from a radio that reads C is offered for conversion; a format
+C database written to a radio that doesn't is converted to N, with a warning when records don't fit.
 
 ## RadioID.net
 

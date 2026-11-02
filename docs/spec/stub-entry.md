@@ -31,24 +31,35 @@ The host link has one side protocol slot (`hostlink_side_t`, first byte `0xA5`).
 | Build | Listener | Commands answered |
 |---|---|---|
 | `DEBUGLINK=y`, `STUB_ENTRY=y` (the default) | the debug link. Its dispatcher hands `0x1A` to `stub_entry_request` and calls `stub_entry_service` after every frame | every debug link command |
-| `DEBUGLINK=n`, `STUB_ENTRY=y` | the stub entry's own (`stub_entry_start`, `stub_link.c`), on the same framing | PING (echo), VERSION (short), STUB; anything else `DL_ST_UNKNOWN_CMD` |
+| `DEBUGLINK=n`, `STUB_ENTRY=y` | the stub entry's own (`stub_entry_start`, `stub_link.c`), on the same framing | PING (echo), VERSION (the build's keys), STUB, CODEPLUG (with `CPS_FAST`; else `DL_ST_UNAVAILABLE`); anything else `DL_ST_UNKNOWN_CMD` |
 | `STUB_ENTRY=n` | the debug link, or none | STUB answers `DL_ST_UNAVAILABLE` |
 
 So with the debug link on, nothing changes on the wire and no code is duplicated: the debug link's parser is the
-listener. With it off, the stub entry brings the parser (`dl_frame.c`, about 0.4 KB) and an 89-byte reply buffer.
+listener. With it off, the stub entry brings the parser (`dl_frame.c`, about 0.4 KB) and a reply buffer the size of
+the debug link's (1 KB): the VERSION text and a fast codeplug protocol block fit.
 
-The own listener's VERSION carries the keys the flashing tools read, then `stub=1`:
+The debug link is the first thing a build short of flash drops. What the web tools need stays: identifying the radio
+and its build (VERSION), the hand-over to the stub for updates and backups (STUB), and the Codeplug Editor's reads and
+writes (CODEPLUG, [cps-fast.md](cps-fast.md)).
+
+The own listener's VERSION carries the keys the flashing and web tools read, then `stub=1`, then the build's preset and
+off list ([debuglink.md](debuglink.md) 3.1, `core/hostlink/build_info.c`, shared with the debug link):
 
 ```
 proto=1
 git=5277f73a
+git_time=1793318400
 board=XR-100UV
+features=FM,DMR,...,CPS_FAST,USB,HOSTLINK
 codec=xr100uv-2501
 stub=1
+preset=full
+off=APRS_IGATE,FONT_AA
 ```
 
 `stubtool.py` and `f4stub.py` take `board=` from it to pick the stub's profile, `rfoundry` and the web flasher's probe
-take `board=`, `git=` and `codec=`. Their INFO_CHIP request gets `DL_ST_UNKNOWN_CMD`, which every tool already treats
+take `board=`, `git=` and `codec=`, the web flasher's update `preset=` and `off=`, the Codeplug Editor `features=`
+(`CPS_FAST`). A key that doesn't fit the reply is left out whole. Their INFO_CHIP request gets `DL_ST_UNKNOWN_CMD`, which every tool already treats
 as "older firmware" and goes on without the chip UID.
 
 ## 3. Coexistence on the host port

@@ -674,6 +674,15 @@ start-up, something plugged in (`drivers/input/plugptt`). Pulling the plug while
 the transmit timeout ends it, and with TX timeout Off nothing does until power-off. Radios: one confirmed. Check every
 radio with a mic jack: power on with the jack empty and watch the raw PTT pin (adding-a-radio.md, bring-up order).
 
+**16.4 Encoder interrupt lost for good.**
+Symptom: the encoder stopped after a while; every key still worked (RadioFoundry, 2026-10-30). Cause: not found. The
+GPIO bank had both encoder bits pending, enabled and unmasked, and the handler never ran, so the interrupt controller
+had most likely masked the source; a fallback handler that masks a source it has no handler for is one way. Rule: on a
+board whose encoder runs on one level interrupt, the key scan checks that a pending encoder interrupt is taken. Pending
+on two scans running with no handler entry between them, keep the controller and bank state for the debug link, serve
+the bank from the scan and unmask the source (the steps of the stall window may be lost). Count every source the fallback handler masks. Radios: the HR_C7000
+boards with an interrupt-driven encoder; one confirmed.
+
 ## 17. Scan
 
 **17.1 Scanning DMR direct mode: the carrier is on air every other slot.**
@@ -682,3 +691,20 @@ the 30 ms bursts, so the reading at the end of the dwell, or any poll of the pro
 the probe ended at once; and a 700 ms probe was shorter than a late entry that has to wait for a second superframe's LC
 (about 1.1 s from the retune). Rule: a carrier seen in the last 150 ms counts; bursts with the channel's color code
 extend the probe to 1.5 s (`docs/spec/radio-features.md` 2).
+
+**17.2 A DMR retune without a receiver restart keeps the last transmitter's slot timing.**
+Symptom: a field report (build b0b69d2) on an HR_C7000 radio: the scan never stopped on a DMR transmission; FM
+scanning worked. Cause: the HR_C6000 boards restart the DMR receiver in their own `rx()` on a new frequency; the
+HR_C7000 boards didn't, and that chip keeps the slot timing it took from the last DMR signal it heard. On the next
+channel it then decodes nothing from another transmitter until its own stale restart, 390-600 ms later
+(`modem-hrc7000.md` 5.3), longer than the 150 ms dwell. With a noise reading that shows the DMR carrier the probe
+outlasts it, only later; without one, the stop ends at the dwell on every visit (`radioFeaturesTest`,
+`test_scan_dmr_kept_timing`). Rule: the radio core calls `hal_dmr_modem_t.rx_restart` at every new DMR frequency while
+the stack runs.
+
+**17.3 A noise reading that doesn't follow a DMR carrier.**
+Symptom: with 17.2 fixed, the same radio still never held on a DMR call: on the radio (2026-11-01) the noise reading
+stayed at its idle 65-103 during a call at -41 dBm, where the signal strength rose from -117 dBm. The DMR scan probed
+only on the noise reading, so it never saw a carrier within the dwell. Rule: on a DMR channel the scan also counts the
+signal strength, past the settle, against its own squelch scale (`RADIO_DMR_SQL_L1_DBM`, 3 dB a level: -100 dBm at the
+default level), so a stop probes whichever reading shows the signal (`test_scan_dmr_noise_deaf`).

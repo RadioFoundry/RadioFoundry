@@ -21,6 +21,7 @@ typedef struct {
 	uint16_t course10;	// RMC: degrees x 10 (0..3599), 0xFFFF unknown
 	int32_t alt_dm;		// GGA: decimeters above mean sea level, INT32_MIN unknown
 	uint8_t sats;		// GGA: satellites used
+	uint16_t hdop10;	// GGA: horizontal dilution of precision x 10, 0xFFFF unknown
 	uint32_t utc_hms;	// hhmmss
 	uint32_t date;		// RMC: ddmmyy, 0 unknown
 } nmea_fix_t;
@@ -28,5 +29,11 @@ typedef struct {
 // One sentence ("$GPRMC,...*hh", trailing CR / LF allowed). False for a bad checksum, another sentence or a malformed
 // field
 bool nmea_parse(const char *s, size_t n, nmea_fix_t *out);
+
+// Check a sentence's checksum and split it at the commas: f[0] is the address ("GPGSV"), each field's length in fl.
+// Returns the field count (at most max), 0 for a bad sentence
+uint8_t nmea_fields(const char *s, size_t n, const char **f, uint8_t *fl, uint8_t max);
+// A decimal field ("12.5") x 10^scale; false when empty or malformed
+bool nmea_number(const char *s, size_t n, uint8_t scale, uint32_t *out);
 
 #endif

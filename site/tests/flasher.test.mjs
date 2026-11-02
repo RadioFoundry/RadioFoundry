@@ -12,14 +12,14 @@ import { fromHex, toHex, sha256, crc32, u32le } from "../static/js/flasher/bytes
 import * as stockfw from "../static/js/flasher/stockfw.js";
 import { makePlan, KEEP, MERGE, RESTORE, PlanError } from "../static/js/flasher/plan.js";
 import { verify, segments, ManifestError } from "../static/js/flasher/manifest.js";
-import { Dfu } from "../static/js/flasher/dfu.js";
+import { Dfu, NormalModeError, WebUsbTransport, dfuRegion, normalMode } from "../static/js/flasher/dfu.js";
 import { Link, crc16, frame, parseFrames, probe } from "../static/js/flasher/link.js";
 import { FakeRadio, simulation } from "../static/js/flasher/fake.js";
 import { zip, unzip } from "../static/js/flasher/zip.js";
 import * as vendorfile from "../static/js/flasher/vendorfile.js";
 import * as explain from "../static/js/flasher/explain.js";
 import { pictureSrc } from "../static/js/flasher/radiotop.js";
-import { readRadio, makeBundle, openBundle, bundleFolder, bundleName } from "../static/js/flasher/backup.js";
+import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, CODEPLUG_SPAN } from "../static/js/flasher/backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "../static/js/flasher/restore.js";
 import { Selection } from "../static/js/flasher/select.js";
 import { decideCodec, DecisionError } from "../static/js/flasher/decide.js";
@@ -394,7 +394,7 @@ test("the flasher page awaits noAnswer and explains an open-firmware answer", ()
 	for (const m of calls) assert.equal(m[1], "await", `noAnswer() not awaited: ${m[0]}`);
 	// the connect failures outside the current firmware step go through connectHelp, with a key that exists
 	const helps = [...src.matchAll(/connectHelp\(e, "([\w.]+)"\)/g)].map((m) => m[1]);
-	assert.deepEqual(helps.sort(), ["flash.backup.openfw_next", "flash.done.openfw_next", "flash.radio.openfw_next"]);
+	assert.deepEqual(helps.sort(), ["flash.backup.openfw_next", "flash.done.openfw_next", "flash.radio.openfw_next", "flash.update.not_rfoundry"]);
 	for (const k of [...helps, "flash.err.rfoundry_nodebug_next", "flash.now.openfw_switch", "flash.now.openfw_use",
 		"flash.problem.unmapped.also", "flash.problem.unmapped.only"]) assert.ok(en[k], k);
 	// the done step names the build it just wrote, so RadioFoundry without the debug link is told apart
@@ -868,4 +868,61 @@ test("a backup unpacked and zipped again (one folder, macOS's __MACOSX/) still o
 	assert.deepEqual(bundle.parts.get("c7000-progmem").data, data);
 	assert.equal(bundleFolder(await unzip(await zip([{ name: "a/firmware.bin", data }]))), null);
 	await assert.rejects(openBundle(await zip([{ name: "a/firmware.bin", data }])), /no backup\.json/);
+	// the unpacked folder zipped inside another folder (Windows "Send to compressed folder" on its parent)
+	const deeper = await zip([...made].map(([n, d]) => ({ name: `Backups/DM1701_Backup_2026-10-28/${n}`, data: d })));
+	assert.equal(bundleFolder(await unzip(deeper)), "Backups/DM1701_Backup_2026-10-28/");
+	assert.deepEqual((await openBundle(deeper)).parts.get("c7000-progmem").data, data);
+	// two backups in one zip: not guessed
+	const two = await zip([...made].flatMap(([n, d]) => [{ name: `a/${n}`, data: d }, { name: `b/${n}`, data: d }]));
+	assert.equal(bundleFolder(await unzip(two)), null);
+});
+
+test("a file picked as a backup that isn't one is named, so the restore says what to pick instead", async () => {
+	const data = Uint8Array.from({ length: 4096 }, (_, i) => i & 0xFF);
+	const made = await unzip(await makeBundle({ radio: { board: "dm32", name: "x" }, firmware_now: { kind: "stock" } },
+		[{ file: "program-memory.bin", what: "c7000-progmem", addr: 0, data, complete: true }]));
+	// one file from the unpacked backup, a browser's second copy of it too
+	assert.deepEqual(notBundle("program-memory.bin", data, null), { kind: "part", file: "program-memory.bin" });
+	assert.deepEqual(notBundle("spi-flash (1).bin", data, null), { kind: "part", file: "spi-flash (1).bin" });
+	// its parts zipped again without backup.json
+	const parts = new Map([...made].filter(([n]) => n !== "backup.json"));
+	assert.deepEqual(notBundle("again.zip", new Uint8Array(0), parts), { kind: "parts" });
+	// the Codeplug Editor's file (the open-firmware layout) and a CPS codeplug
+	assert.deepEqual(notBundle("codeplug.bin", new Uint8Array(CODEPLUG_SPAN), null), { kind: "codeplug" });
+	assert.deepEqual(notBundle("mine.rdt", data, null), { kind: "codeplug" });
+	// anything else: the restore asks vendorfile.js whether it is a radio's original firmware
+	assert.deepEqual(notBundle("DM-32 firmware.zip", data, new Map([["DM32_V1.20.bin", data], ["readme.txt", data]])), { kind: "other" });
+	assert.deepEqual(notBundle("firmware.bin", data, null), { kind: "other" });
+});
+
+// The radio switched on normally is a DFU device with the bootloader's IDs and strings; writing through it can erase
+// the bootloader. The transport refuses it before claiming the interface or sending any DFU request.
+test("WebUSB transport refuses the radio switched on normally", async () => {
+	const NORMAL = ["@Internal Flash   /0x08000000/03*016Kg", "@SPI Flash Memory /0x00000000/16*064Kg"];
+	const LOADER = ["@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg", "@SPI Flash Memory /0x00000000/16*064Kg"];
+	const board = { dfu_ids: [0x0483, 0xDF11], dfu_layout: null };
+	assert.equal(normalMode(NORMAL, board), true);
+	assert.equal(normalMode(LOADER, board), false);
+	assert.equal(normalMode([undefined], board), false);
+	// a bootloader that showed the whole flash, not only the application area, is no normal mode
+	assert.equal(normalMode(["@Internal Flash  /0x08000000/03*016Kg,01*016Kg,01*064Kg,07*128Kg"], board), false);
+	assert.deepEqual(dfuRegion("@SPI Flash Memory /0x00000000/16*064Kg"), [0, 0x100000]);
+	const declared = { ...board, dfu_layout: "@Internal Flash /0x0800C000/01*016Kg,01*064Kg,07*128Kg" };
+	assert.equal(normalMode(LOADER, declared), false);
+	assert.equal(normalMode(["@Internal Flash /0x0800C000/01*016Kg"], declared), true);
+	const device = (names) => {
+		const calls = [];
+		const no = (what) => async () => { calls.push(what); return { status: "ok", data: new DataView(new ArrayBuffer(6)), bytesWritten: 0 }; };
+		return { calls, configuration: { interfaces: [{ interfaceNumber: 0, alternates: names.map((n) =>
+				({ interfaceClass: 0xFE, interfaceSubclass: 0x01, interfaceName: n })) }] },
+			open: async () => { calls.push("open"); }, close: async () => { calls.push("close"); },
+			selectConfiguration: no("selectConfiguration"), claimInterface: no("claimInterface"),
+			controlTransferOut: no("controlTransferOut"), controlTransferIn: no("controlTransferIn") };
+	};
+	const normal = device(NORMAL);
+	await assert.rejects(WebUsbTransport.open(normal, board), NormalModeError);
+	assert.deepEqual(normal.calls, ["open", "close"]);
+	const loader = device(LOADER);
+	await WebUsbTransport.open(loader, board);
+	assert.deepEqual(loader.calls, ["open", "claimInterface"]);
 });

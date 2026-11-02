@@ -263,6 +263,18 @@ export function remove(m, table, items) {
 	}
 }
 
+// --- Receive-only bands ---
+
+// The bands an FM channel only listens on (docs/spec/airband-and-broadcast.md): the air band, received in AM, and
+// broadcast FM, played on the broadcast receiver. The frequency decides; the codeplug stores an FM channel. A radio
+// without the receiver for one hears nothing there, and none transmits there. "air", "bcast" or null
+export const AIR_HZ = [108000000, 137000000], BCAST_HZ = [65000000, 108000000];
+export function listenBand(hz) {
+	if (hz >= AIR_HZ[0] && hz < AIR_HZ[1]) return "air";
+	if (hz >= BCAST_HZ[0] && hz < BCAST_HZ[1]) return "bcast";
+	return null;
+}
+
 // --- Validation ---
 
 // Problems as {level: "error" | "warning", table, item, field, code, params}; the page words them
@@ -289,6 +301,10 @@ export function validate(m, { bands = null } = {}) {
 		for (const f of ["rxTone", "txTone"]) if (parseTone(c[f]) === null) err("channels", c, f, "bad_tone");
 		if (c.colorCode < 0 || c.colorCode > 15) err("channels", c, "colorCode", "range", { min: 0, max: 15 });
 		if (c.mode === "dmr" && !c.contact && !c.rxOnly) warn("channels", c, "contact", "no_contact");
+		const band = listenBand(c.rxHz);
+		if (band && c.mode === "dmr") warn("channels", c, "mode", `listen_dmr_${band}`);
+		const txBand = listenBand(c.txHz);
+		if (txBand && !c.rxOnly) warn("channels", c, "rxOnly", `listen_tx_${txBand}`);
 		for (const k of REFS) if (typeof c[k] === "number") warn("channels", c, k, "dangling", { number: c[k] });
 		if (c.dmrId > 0xFFFFFF) err("channels", c, "dmrId", "id_range");
 	}

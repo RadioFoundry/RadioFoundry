@@ -17,8 +17,9 @@ export const REGIONS = [
 	[FL + 0x00000, FL + 0x011A0],
 	[FL + 0x7B000, FL + 0x8EE60],
 ];
-// The DMR ID database header (7.5): enough to tell whether one is there and how big it is
-export const IDDB_HEADER = [FL + 0x30000, FL + 0x3000C];
+// The DMR ID database header (7.5; format C's is 32 bytes, iddb-compact.md 3.1): enough to tell whether one is there,
+// its format and how big it is
+export const IDDB_HEADER = [FL + 0x30000, FL + 0x30020];
 
 // The file the radio's TFTP server takes as codeplug.bin (docs/spec/tftp.md): the image up to the end of the flash
 // codeplug

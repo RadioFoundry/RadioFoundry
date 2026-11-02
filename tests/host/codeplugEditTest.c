@@ -256,6 +256,13 @@ static void test_dmr(void)
 	CHECK(codeplug_set_radio_name("N0CALL-LONGER"));
 	codeplug_radio_name(name);
 	CHECK(strcmp(name, "N0CALL-L") == 0);
+	char l1[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
+	CHECK(codeplug_set_boot_text("Spencer Fowler", "N0CALL and more text"));
+	codeplug_boot_text(l1, l2);
+	CHECK(strcmp(l1, "Spencer Fowler") == 0 && strcmp(l2, "N0CALL and more ") == 0);
+	CHECK(codeplug_set_boot_text("", "Line two"));
+	codeplug_boot_text(l1, l2);
+	CHECK(l1[0] == 0 && strcmp(l2, "Line two") == 0);
 	CHECK(sim_flash_violations() == 0);
 }
 #endif

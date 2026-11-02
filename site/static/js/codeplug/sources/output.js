@@ -16,20 +16,39 @@ export function iddbEnd(radio) {
 	return cp && cp.end > cp.base ? cp.end - cp.base : Infinity;
 }
 
-// The ID database's size for n users at textLen characters, and how many fit before end
-export function iddbSize(n, textLen, end) {
+// The ID database's size for these records ([{id, text}]) and how many fit before end. Format N: textLen characters
+// each; format C (iddb-compact.md): measured by laying the records out, so its size depends on the names
+export function iddbSize(records, textLen, end, fmt = "N") {
+	if (fmt === "C") return iddb.estimateCompact(records, end);
 	const rec = iddb.recordSize(textLen);
 	const fit = iddb.capacity(rec, end);
-	return { rec, bytes: iddb.HEADER + Math.min(n, fit) * rec, fit };
+	return { rec, bytes: iddb.HEADER + Math.min(records.length, fit) * rec, fit };
 }
 
-// Replace the model's ID database with these users. Returns {count, dropped (no room), top}
-export function writeIddb(m, users, { template, upper = false, textLen = 32, end = Infinity }) {
+// The records a database of these users holds
+export function iddbRecords(users, { template, upper = false, textLen = 32 }) {
+	return users.map((u) => ({ id: u.id, text: format(u, template, { upper, max: textLen }) }));
+}
+
+// Replace the model's ID database with these users, in format fmt ("C" for a radio that reads it, iddb-compact.md 6).
+// Returns {count, dropped (no room), top}
+export function writeIddb(m, users, { template, upper = false, textLen = 32, end = Infinity, fmt = "N" }) {
 	const img = m.base.clone();
-	const res = iddb.write(img, users.map((u) => ({ id: u.id, text: format(u, template, { upper, max: textLen }) })), { textLen, end });
+	const res = iddb.write(img, iddbRecords(users, { template, upper, textLen }), { format: fmt, textLen, end });
 	m.base = img;
 	m.iddb = iddb.readHeader(img.bytes);
 	return res;
+}
+
+// The model's ID database written again in format fmt (iddb-compact.md 6): convert()'s answer ({count, dropped}),
+// or null when there is none or it is in that format already
+export function convertIddb(m, fmt, end = Infinity) {
+	const img = m.base.clone();
+	const r = iddb.convert(img, fmt, { end });
+	if (!r) return null;
+	m.base = img;
+	m.iddb = iddb.readHeader(img.bytes);
+	return r;
 }
 
 export function eraseIddb(m) {
