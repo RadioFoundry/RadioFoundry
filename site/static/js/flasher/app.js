@@ -1280,8 +1280,17 @@ function fitText(fit) {
 const buildErrorNotice = (err) => (err.el ||= err.fit ? notice(err.text, "bad") : errorNotice(err.text, err.rec));
 
 async function loadOwnImage(f, redraw) {
+	// The radio's original firmware file, picked where the RadioFoundry image goes (OPENDIGITALRADIO-15: a backup's
+	// stock-firmware.bin): not an error but the codec step's file. One for this radio is kept for that step; either way
+	// the user is told to choose a build here
+	if (startsWith(f.data, fb().magic)) {
+		const st = await pickedStock(f);
+		const kept = stockForRadio(st) && !st.problem;
+		if (kept) S.stock = st;
+		alert(t(kept ? "flash.build.stock_kept" : "flash.err.stock_as_image", { radio: S.radio.name }));
+		return redraw();
+	}
 	try {
-		if (startsWith(f.data, fb().magic)) throw new Error(t("flash.err.stock_as_image"));
 		// an image merged with its codec (tools/hrc7000_codec.py): the backend keeps the codec, the rest is the image
 		if (backend().ownImage) f = { ...f, data: await backend().ownImage(fb(), S.radio.flash.board, f.data) };
 		const m = S.ownManifest || await forDevBuild(S.board, f.data);
