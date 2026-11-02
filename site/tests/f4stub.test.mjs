@@ -180,12 +180,12 @@ test("SPI flash: only changed sectors are written, then verified; outside the ch
 });
 
 // A backup through the loader the way the backup step runs it
-async function backupVia(radio, sim, what, { patch = () => {} } = {}) {
+async function backupVia(radio, sim, what, { patch = () => {}, spiSize = radio.spi.length } = {}) {
 	const link = new Link(radio.serialStream());
 	patch(link);
 	let handedOver = false;
 	const loader = f4LoaderReader(link, { stubJson: async () => stubJson, reopen: async () => radio.serialStream(), board: fb.f4stub.boards[radio.board.id], onHandOver: () => { handedOver = true; } });
-	const parts = await readRadio(link, sim.board, { backup: { spi_size: radio.spi.length } }, { what, readers: [loader] });
+	const parts = await readRadio(link, sim.board, { backup: { spi_size: spiSize } }, { what, readers: [loader] });
 	return { parts, loader, handedOver, get: (w) => parts.find((x) => x.what === w) };
 }
 
@@ -321,6 +321,29 @@ test("a codeplug-only backup with no reader reads over the debug link", async ()
 	const parts = await readRadio(new Link(radio.serialStream()), sim.board, { backup: { spi_size: radio.spi.length } }, { what: { internal: false, spi: "codeplug" } });
 	assert.deepEqual(radio.events, []);
 	assert.equal(parts.find((x) => x.what === "spi-flash").data.length, 0x120000);
+});
+
+// Some radios of a model came with a smaller memory chip than the board's (1 MB where radios.json says 16 MB): RadioFoundry
+// then has no flash map for it. A read past the chip's end is refused, so the backup reads the chip the radio has
+test("a backup of a radio with a smaller memory chip reads that chip, through the loader and over the debug link", async () => {
+	const BOARD_SPI = 0x1000000;
+	// the loader's own probe (HELLO) gives the size, with no radio info to say it
+	let { sim, radio } = await running("dm1701", { spiSize: 0x100000, noMap: true, radioInfo: false });
+	radio.spi.set(randomBytes(rng(4), 0x1000), 0xFF000);
+	const b = await backupVia(radio, sim, {}, { spiSize: BOARD_SPI });
+	assert.ok(b.loader.used);
+	assert.ok(b.get("spi-flash").complete);
+	assert.deepEqual(b.get("spi-flash").data, radio.spi);
+	// over the debug link: the radio info gives it
+	({ sim, radio } = await running("dm1701", { spiSize: 0x100000, noMap: true }));
+	for (const spi of ["full", "codeplug"]) {
+		const parts = await readRadio(new Link(radio.serialStream()), sim.board, { backup: { spi_size: BOARD_SPI } }, { what: { internal: false, spi } });
+		const got = parts.find((x) => x.what === "spi-flash");
+		assert.deepEqual(got.data, radio.spi, spi);
+		assert.equal(got.complete, spi === "full");
+		assert.ok(parts.some((x) => x.what === "radio-info"));
+	}
+	assert.equal((await new Link(radio.serialStream()).storageInfo()).region, "none", "no settings region on that chip");
 });
 
 test("a read that fails inside the loader restarts the radio before the error goes up", async () => {

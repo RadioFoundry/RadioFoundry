@@ -7,6 +7,7 @@
 import { openBundle, CODEPLUG_SPAN } from "./backup.js";
 import { startsWith } from "./bytes.js";
 import { classify } from "../codeplug/detect.js";
+import { CodeplugImage, TFTP_SIZE } from "../codeplug/image.js";
 import { STOCK, RDT_MD380, RDT_UV380 } from "../codeplug/stock_tyt.js";
 
 // A stock TYT-family codeplug in a dump or memory image (docs/spec/codeplug-stock-tyt.md): its family, or null
@@ -39,13 +40,14 @@ export const CONVERTERS = [
 		async convert(bytes) {
 			const { meta, parts } = await openBundle(bytes);
 			const spi = parts.get("spi-flash");
-			if (!spi || spi.data.length < CODEPLUG_SPAN) throw fail("no_spi", "this backup has no SPI flash read covering the codeplug");
+			// a radio with a smaller memory chip gives a shorter read: enough when it covers the codeplug's regions
+			if (!spi || spi.data.length < TFTP_SIZE) throw fail("no_spi", "this backup has no SPI flash read covering the codeplug");
 			const name = `codeplug-${meta.radio.board}.bin`;
 			const { layout } = classify(spi.data);
 			// a backup taken right after RadioFoundry replaced the stock firmware still holds the stock codeplug
 			if (STOCK[layout]) return { name, data: await fromStock(spi.data, layout) };
 			if (layout === "unknown") throw fail("unknown_layout", "the codeplug in this backup is in a layout this page cannot read");
-			return { name, data: spi.data.slice(0, CODEPLUG_SPAN) };
+			return { name, data: CodeplugImage.from(spi.data.subarray(0, CODEPLUG_SPAN)).bytes.slice(0, CODEPLUG_SPAN) };
 		},
 	},
 	{

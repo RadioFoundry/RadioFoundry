@@ -8,7 +8,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import * as diag from "../static/js/diag.js";
-import { SerialStream, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, browserErrorKey, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
+import { SerialStream, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, flashBytes, browserErrorKey, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
 import { CpsSerial, TransportError } from "../static/js/codeplug/transport.js";
 import { openFile, FileError } from "../static/js/editor/files.js";
 
@@ -242,6 +242,15 @@ const openFw = (info = radioInfo()) => ({
 		this.received += answer.length;
 		if (!this.first.length) this.first = answer.slice(0, 16);
 	},
+});
+
+test("the memory chip's size from the radio info's flash part id", () => {
+	assert.equal(flashBytes(0x4018), 0x1000000, "RadioFoundry's id, 16 MB");
+	assert.equal(flashBytes(0x4014), 0x100000, "1 MB");
+	assert.equal(flashBytes(0xEF4018), 0x1000000, "a full JEDEC id");
+	assert.equal(flashBytes(0), null, "no chip");
+	assert.equal(flashBytes(null), null);
+	assert.equal(flashBytes(0x40FF), null, "no capacity code");
 });
 
 test("the radio info is read only when it has that structure", () => {
