@@ -18,7 +18,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `plan.js` | Sector plans: keep, merge, and restore (a whole image put back exactly) | `rfoundry/plan.py` |
 | `manifest.js` | Release manifest checks | `rfoundry/manifest.py` |
 | `decide.js` | Keep or merge the codec | `rfoundry/cli.py` `decide_codec` |
-| `dfu.js` | The AnyRoad DFU bootloader over WebUSB | `rfoundry/dfu.py` |
+| `dfu.js` | The AnyRoad DFU bootloader over WebUSB. `WebUsbTransport.open` refuses the radio switched on normally (`normalMode`: the board's `dfu_layout`, else a layout of only the bootloader's sectors) before it claims the interface | `rfoundry/dfu.py` |
 | `codecsave.js` | The codec read back from a radio that runs RadioFoundry (where stock keeps it, or where the merge placed it), checked against the profile's hashes, and a copy kept in IndexedDB: before every update that erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `rfoundry/codecsave.py` |
 | `bootkey.js` | The bootloader key from a radio that runs RadioFoundry: the bootloader read over READ_MEM, the block with the key's SHA-256 | `rfoundry/bootkey.py` |
 | `link.js` | The debug link and open-firmware CPS reads and writes over Web Serial | `rfoundry/debuglink.py`, [open-firmware-cps.md](../spec/open-firmware-cps.md) |
@@ -457,6 +457,18 @@ greeting, so one leaves within 30 ms of it whatever the cable's latency. The pag
 ignores them, stock firmware is untested. So on a radio not known to run RadioFoundry the sending starts only after the
 user selects "Radio Is Off"; RadioFoundry's soft reset and a power cycle of a radio it found running RadioFoundry start
 at once. When the load fails, the factory update mode is the main action. `stubtool.py --slow-cable` does the same.
+
+The session holds a stub only once it answered HELLO. A cable whose reading stopped (the device lost) is dropped
+before a step uses it, and after a failed backup, restore or check read the page asks the stub for HELLO: one that
+no longer answers (the radio switched off or reset) is dropped too, and Try Again goes to the connect step, which says
+why. Breaks and framing errors never stop the reading: a radio switched off with the cable in gives one after another
+for as long as it is off.
+
+A page of an SPI NAND whose bit errors its ECC can't correct reads the same every time: the stub answers status 0x0D
+for its sector, in a read (op 09) or a checksum (op 07). The page then reads that sector's two pages itself with SPI
+requests (page read, status, read from cache), twice, and keeps them as the chip holds them. The final checksum pass
+sums a window that holds one sector by sector and leaves it out, and `backup.json` lists those sectors as `nand_ecc`.
+`stub/stubtool.py` reads a NAND the same way (`Radio.nand_raw`) and prints the list after a `--nand` read.
 
 ### The factory update mode
 

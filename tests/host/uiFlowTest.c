@@ -178,6 +178,9 @@ static const flow_t flows[] = {
 	  "dual=1 sel=B bpos=7", 0, false },
 	{ "11 dual watch: started by the debug link, then its stop", "dldual:5 wait:1000", "dlstop wait:1500", "dual=0", 0,
 	  false },
+	// Started again right after its stop (before START_GRACE_MS): the UI takes it on, so the B change goes on watching
+	{ "11 dual watch: the debug link's stop, then its start", "dldual:5 wait:1000 dlstop wait:100",
+	  "dldual:5 dlsel:b wait:100 dlpos:7 wait:1000", "dual=1 sel=B bpos=7", 0, false },
 	{ "11 dual watch: stopped by the debug link", "quick 7 ctx 3 5 ok", "dlstop wait:1500",
 	  "dual=0 pos=3 toast=Dual_watch_off:_on_A", 0, false },
 	{ "11 dual watch: stopped by the debug link on B", "quick 7 ctx 3 5 ok ctx 1", "dlstop wait:1500",

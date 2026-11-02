@@ -171,7 +171,7 @@ export class FakeRadio {
 			async in(req, length) { return radio.dfuIn(req, length); },
 			async fingerprint() {
 				return { string1: radio.board.dfu_string1, manufacturer: "STMicroelectronics", product: "Digital Radio in USB mode",
-					serial: "SIMULATED", version: "2.0.0", interfaces: ["@Internal Flash  /0x08000000/03*016Kg,01*016Kg,01*064Kg,07*128Kg"] };
+					serial: "SIMULATED", version: "2.0.0", interfaces: ["@Internal Flash  /0x0800C000/01*016Kg,01*064Kg,07*128Kg"] };
 			},
 			async close() {},
 		};
