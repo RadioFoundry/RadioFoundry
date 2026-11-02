@@ -339,6 +339,8 @@ test("the browser's own serial and USB errors get what to do", () => {
 	// Windows without the WinUSB driver, or another program holding the radio: not the page's origin
 	assert.equal(browserErrorKey(err("SecurityError", "Failed to execute 'open' on 'USBDevice': Access denied.")), "flash.err.usb_busy");
 	assert.equal(browserErrorKey(err("SecurityError", "Access to the feature \"usb\" is disallowed by permissions policy.")), "flash.err.security");
+	// a chooser asked for after the click's activation ran out: click again, not an HTTPS problem (OPENDIGITALRADIO-1Q)
+	assert.equal(browserErrorKey(err("SecurityError", "Failed to execute 'requestPort' on 'Serial': Must be handling a user gesture to show a permission request.")), "flash.err.gesture");
 	assert.equal(browserErrorKey(err("NotFoundError", "The device has been disconnected.")), "flash.err.disconnected");
 	assert.equal(browserErrorKey(err("BreakError", "Break received")), "flash.err.connection_lost");
 	assert.equal(browserErrorKey(new Error("anything else")), null);

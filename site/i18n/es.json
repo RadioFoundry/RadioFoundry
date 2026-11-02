@@ -848,6 +848,7 @@
  "flash.err.connection_lost": "Se perdió la conexión con la radio. Revise el cable y que la radio esté encendida, y vuelva a intentarlo.",
  "flash.err.download": "Una descarga no se completó. Revise la conexión a internet y recargue la página; una extensión del navegador que bloquea solicitudes también puede causarlo.",
  "flash.err.security": "El navegador bloqueó el acceso USB. Abra la utilidad de programación de radios mediante HTTPS.",
+ "flash.err.gesture": "El navegador muestra la lista de puertos solo justo después de un clic, y este tardó demasiado. Haga clic en el botón otra vez.",
  "flash.err.no_serial": "Este navegador no puede comunicarse con la radio. Use Chrome o Edge.",
  "flash.err.no_usb": "Este navegador no puede instalar firmware. Use Chrome o Edge.",
  "flash.err.no_answer": "La radio no respondió. Verifique que esté encendida y ejecutando RadioFoundry, y cierre cualquier otro programa que use la radio.",
