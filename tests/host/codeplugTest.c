@@ -262,12 +262,14 @@ static void put_contact(uint16_t n, const char *name, uint32_t id, uint8_t type,
 
 // The pseudo-random bytes site/tests/stock.test.mjs classifies, from the same generator in JavaScript's arithmetic (a
 // double product, then ToUint32): the web editor counts 0 good and 624 bad open-firmware records in them, the radio
-// the same less the general settings and the contacts it doesn't count
+// the same less the general settings and the contacts it doesn't count. The product is rounded on its own (volatile):
+// a compiler that fuses the multiply and add (clang on arm64 does) gives other bytes
 static void fill_noise(void)
 {
 	uint32_t x = 12345;
 	for (uint32_t a = 0; a < IMAGE_SIZE; a++) {
-		x = (uint32_t)fmod((double)x * 1103515245.0 + 12345.0, 4294967296.0);
+		volatile double product = (double)x * 1103515245.0;
+		x = (uint32_t)fmod(product + 12345.0, 4294967296.0);
 		image[a] = (uint8_t)(x >> 24);
 	}
 }
