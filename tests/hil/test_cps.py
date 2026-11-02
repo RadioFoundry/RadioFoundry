@@ -292,3 +292,21 @@ def test_storage_region(radio):
     with pytest.raises(DebugLinkError) as e:
         radio.link.storage_read(addr - 16, 16)        # just before the ring: outside the window
     assert e.value.status == 7
+
+
+@pytest.mark.feature("codeplug_foreign")
+def test_codeplug_foreign(radio):
+    """The open-firmware codeplug check (docs/spec/codeplug-native.md 2): the radio uses the codeplug it holds only when
+    the records in use look like an open-firmware codeplug, by the rule the web editor uses. Read only"""
+    s = storage(radio)
+    if "codeplug.foreign" not in s:
+        skip("not_built", "older firmware: no codeplug.foreign")
+    good, bad = (int(v) for v in s["codeplug.evidence"].split(","))
+    foreign = s["codeplug.foreign"] == "1"
+    assert foreign == (bad > 0 and bad * 4 > good), s
+    if foreign:
+        assert s.get("codeplug.source") == "builtin", s
+        skip("state", f"the radio holds another firmware's codeplug ({good} good, {bad} bad records): it shows the "
+                      "built-in channels until a codeplug is written")
+    if s.get("codeplug.source") == "open-firmware":
+        assert good > 0, s
