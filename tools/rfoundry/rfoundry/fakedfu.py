@@ -146,9 +146,81 @@ class FakeUsb:
 class FakeUsbDevice(FakeAnyRoad):
     """A FakeAnyRoad that also looks like a pyusb device (descriptors, strings, one DFU interface)."""
     iManufacturer, iProduct, iSerialNumber = 2, 3, 4
+    bus, address = 1, 9		# where it enumerated: the bootloader is a new device after the radio restarts
 
     class _Intf:
         bInterfaceClass, bInterfaceSubClass, bInterfaceNumber, iInterface = 0xFE, 0x01, 0, 5
+
+    def __iter__(self):
+        return iter([[self._Intf()]])
+
+    def string_by_index(self, i):
+        return {1: self.strings["string1"], 2: self.strings["manufacturer"], 3: self.strings["product"],
+                4: self.strings["serial"], 5: self.strings["interfaces"][0]}.get(i)
+
+    def is_kernel_driver_active(self, intf):
+        return False
+
+    def set_configuration(self):
+        pass
+
+
+class Stall(Exception):
+    """What a device does with a request it doesn't take (pyusb raises USBError: Pipe error)."""
+
+
+class FakeOriginalFirmware:
+    """A radio's original firmware running normally, as origversion.py's dfu-info read sees it: a DFU device with the
+    bootloader's USB IDs (docs/spec/hardware-md9600.md 15.1). answer: the 4 bytes UPLOAD block 0 returns after `A2 02`,
+    or None for a device that stalls that command (a bootloader). A request the read must never send fails the test;
+    every request is kept in `requests`."""
+    iManufacturer, iProduct, iSerialNumber = 2, 3, 4
+    bus = 1
+
+    class _Intf:
+        bInterfaceClass, bInterfaceSubClass, bInterfaceNumber, iInterface = 0xFE, 0x01, 0, 5
+
+    def __init__(self, board, answer=b"\x56\x00\x60\x09", state=dfumod.ST_IDLE, address=7):
+        self.board = board
+        self.answer = answer
+        self.state = state
+        self.address = address
+        self.selected = False
+        self.requests = []
+        self.strings = {"string1": board.dfu_string1, "manufacturer": board.dfu_string1, "product": board.dfu_product,
+                        "serial": "00000000010C", "interfaces": ["@Internal Flash   /0x08000000/03*016Kg",
+                                                                 "@SPI Flash Memory /0x00000000/16*064Kg"]}
+
+    def ctrl_transfer(self, rtype, req, value, intf, data, timeout=None):
+        self.requests.append((rtype, req, value, bytes(data) if isinstance(data, (bytes, bytearray)) else data))
+        assert intf == 0 and value == 0, "wIndex %r / wValue %r" % (intf, value)
+        if rtype == 0xA1 and req == dfumod.DFU_GETSTATUS:
+            assert data == 6
+            st = self.state
+            if st == 3:		# dfuDNLOAD-SYNC: the command runs after this reply, the next one finds it done
+                self.state = 5
+                st = 4
+            return bytes([0, 0, 0, 0, st, 0])
+        if rtype == 0xA1 and req == 2:		# UPLOAD
+            assert data == 1024 and self.state == dfumod.ST_IDLE and self.selected, "UPLOAD out of sequence"
+            self.selected = False
+            return self.answer
+        assert rtype == 0x21, "request type 0x%02X" % rtype
+        if req == dfumod.DFU_CLRSTATUS:
+            self.state = dfumod.ST_IDLE if self.state == dfumod.ST_ERROR else dfumod.ST_ERROR
+            return 0
+        if req == dfumod.DFU_ABORT:
+            assert not data
+            self.state = dfumod.ST_IDLE
+            return 0
+        assert req == dfumod.DFU_DNLOAD, "request %d" % req
+        assert bytes(data or b"") == b"\xA2\x02", "DNLOAD %r: only A2 02 may be sent" % (data,)
+        assert self.state == dfumod.ST_IDLE
+        if self.answer is None:
+            raise Stall("Pipe error")
+        self.state = 3
+        self.selected = True
+        return 2
 
     def __iter__(self):
         return iter([[self._Intf()]])
