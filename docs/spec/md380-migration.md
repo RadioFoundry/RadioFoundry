@@ -80,9 +80,9 @@ Every step stops on failure. The work directory (`~/RadioFoundry-MD380-migration
 ## 5. Open points (need a radio)
 
 - Does `dmrconf read --radio md390` read an MD-380 and an RT3?
-- The USB strings of the TYT bootloader compared with normal programming mode, on an MD-380. The MD-9600's differ
-  only in alt 0's layout ([hardware-dm1701.md](hardware-dm1701.md) 15.1). Until the MD-380's are read, the tool
-  refuses a layout from 0x08000000 (the radio switched on normally).
+- The USB strings of an MD-380's original firmware switched on normally. Its bootloader's were read
+  ([hardware-md380.md](hardware-md380.md) 14.3), and the tool accepts only that alt 0 layout. On an MD-9600 the two
+  modes differ only in alt 0 ([hardware-dm1701.md](hardware-dm1701.md) 15.1).
 - Whether qdmr's OpenUV380 driver accepts radio type 7 from RadioFoundry without `--radio`. The tool always passes it.
 - How long `write-db` takes over RadioFoundry's shim with a full database. Expect minutes.
 - Windows: dmrconf's TyT access, and Zadig's WinUSB binding for the bootloader.

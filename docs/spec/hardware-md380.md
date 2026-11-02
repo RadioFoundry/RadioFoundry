@@ -884,8 +884,17 @@ tool encrypts it for the loader. rfoundry knows the board (`boards/md380/board.t
 sectors 3-7 and keeps the codec).
 
 Switched on normally, the original firmware is also a DFU device with the same IDs. The flashers tell it from the
-bootloader by alt 0's layout and refuse it ([hardware-dm1701.md](hardware-dm1701.md) 15.1). The MD-380's strings in
-either mode have not been read on a radio (?), so the generic rule applies: a layout from 0x08000000 is refused.
+bootloader by alt 0's layout and refuse it ([hardware-dm1701.md](hardware-dm1701.md) 15.1). The MD-380's bootloader,
+read on a radio (2026-11-02): manufacturer and string 1 "AnyRoad Technology", product "Digital Radio in USB mode", serial
+"00000000010C", bcdDevice 0x0200, one DFU interface with two alternate settings:
+
+| Alt | Layout |
+|---|---|
+| 0 | `@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg` (the application area only) |
+| 1 | `@SPI Flash Memory /0x00000000/16*064Kg` |
+
+`boards/md380/board.toml` declares alt 0 (`[flash.dfu] layout`), so the flashers accept only that device. The
+original firmware switched on normally has not been read on an MD-380 (?).
 
 ### 14.4 The codec
 

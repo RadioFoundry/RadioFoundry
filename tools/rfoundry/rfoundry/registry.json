@@ -682,7 +682,7 @@
    ],
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
-   "dfu_layout": null,
+   "dfu_layout": "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg",
    "stub": {
     "tool": "f4stub",
     "id": 2,

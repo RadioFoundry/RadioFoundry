@@ -1271,8 +1271,8 @@ before any DFU request. A board whose bootloader layout was read on a radio decl
 [board-registry.md](../dev/board-registry.md)), and then only that alt 0 string is accepted. Without a declaration,
 the flashers refuse any layout from 0x08000000, the whole flash.
 
-The DM-1701's own strings in either mode have not been read on a radio (?). Its bootloader shows the application area
-only, as the MD-9600's does (?).
+An MD-380's bootloader shows the same alt 0 string as the MD-9600's (measured). The DM-1701's own strings in either
+mode have not been read on a radio (?).
 
 ### 15.2 Flashing protocol (DfuSe-style, as the loader drives it)
 
