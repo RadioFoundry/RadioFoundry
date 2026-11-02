@@ -434,15 +434,16 @@ static void storage_section(dl_text_t *t)
 	cps_stats_t c;
 
 	cps_get_stats(&c);
-	dl_text(t, "cps.built=1\ncps.requests=%u\ncps.reads=%u\ncps.commits=%u\n", (unsigned)c.requests,
-		(unsigned)c.reads, (unsigned)c.commits);
+	// Where the image starts in the flash: what a CPS client adds to its addresses (0 on the STM32 radios). Ahead of
+	// the counters: this view is close to the reply's 1 KB, and a cut drops the last keys (truncated=1)
+	const hal_flash_map_t *fm = storage_map();
+	dl_text(t, "cps.built=1\ncps.openfw_eeprom=0x%x\n", fm != NULL ? (unsigned)fm->openfw_eeprom : 0u);
+	dl_text(t, "cps.requests=%u\ncps.reads=%u\ncps.commits=%u\n", (unsigned)c.requests, (unsigned)c.reads,
+		(unsigned)c.commits);
 	dl_text(t, "cps.refused=%u\ncps.overflows=%u\ncps.last=0x%02x\n", (unsigned)c.refused, (unsigned)c.overflows,
 		c.last);
 	dl_text(t, "cps.session=%u\ncps.pending=%u\ncps.junk=%u\n", c.session, c.pending, (unsigned)c.junk);
 	dl_text(t, "cps.reboots_ignored=%u\n", (unsigned)c.reboots_ignored);
-	// Where the image starts in the flash: what a CPS client adds to its addresses (0 on the STM32 radios)
-	const hal_flash_map_t *fm = storage_map();
-	dl_text(t, "cps.openfw_eeprom=0x%x\n", fm != NULL ? (unsigned)fm->openfw_eeprom : 0u);
 #else
 	dl_text(t, "cps.built=0\n");
 #endif
