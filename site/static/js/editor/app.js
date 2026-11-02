@@ -475,6 +475,12 @@ function newCodeplug() {
 // --- Radio ---
 
 async function connect() {
+	// a connection whose port went away (a radio unplugged, or restarted after a write) is made again: kept, every
+	// later read or write went to nothing and failed with no answer
+	if (S.conn?.transport.lost) {
+		diag.note("radio connection lost: connecting again");
+		await dropConnection();
+	}
 	if (S.conn) return S.conn;
 	let stream, cable = false;
 	if (S.sim) {

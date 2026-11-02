@@ -513,6 +513,12 @@ export class CpsSerial {
 			// already gone
 		}
 	}
+
+	// The radio's port went away since it was opened (unplugged, or the radio restarted and came back as a new port):
+	// nothing sent on this transport reaches it any more
+	get lost() {
+		return !!this.stream.lost;
+	}
 }
 
 // LZ4 stream bytes for a block (what the fast protocol sends)

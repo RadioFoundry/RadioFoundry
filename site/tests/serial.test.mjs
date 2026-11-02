@@ -100,10 +100,13 @@ test("a framing error or a break doesn't end the reading: the bytes after it sti
 	assert.equal(s.received, 1, "the acknowledgement after the glitches is read");
 	assert.ok(diag.report().log.some((e) => /reading on/.test(e.text)));
 	assert.equal(s.lost, false, "glitches don't lose the device");
+	const tr = new CpsSerial(s);
+	assert.equal(tr.lost, false);
 	lineError(port, "NetworkError");
 	await new Promise((r) => setTimeout(r, 5));
 	assert.ok(diag.report().log.some((e) => /read stopped/.test(e.text)));
 	assert.equal(s.lost, true, "the page drops this stream and connects afresh (app.js connectSerial)");
+	assert.equal(tr.lost, true, "the editor connects again before its next read or write (editor/app.js connect)");
 	port.readable.push(new Uint8Array([1]));
 	await new Promise((r) => setTimeout(r, 5));
 	assert.equal(s.received, 1, "nothing read after a fatal error");
