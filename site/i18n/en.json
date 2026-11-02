@@ -1748,6 +1748,7 @@
  "editor.radio_err.storage_foreign": "The radio has not been prepared for RadioFoundry yet, so it cannot store a codeplug. Choose Write to Radio again, then Prepare Radio.",
  "editor.radio_err.storage_claim_failed": "The radio did not finish preparing its settings area. Turn it off and on again, then choose Write to Radio again.",
  "editor.radio_err.verify_failed": "The radio's codeplug does not match what was written (at {addr}). Write it again.",
+ "editor.radio_err.verify_incomplete": "The radio stopped returning the codeplug while the write was checked (at {addr}). Check that the radio is turned on and the cable is connected, then write it again.",
  "editor.storage.title": "Prepare the Radio",
  "editor.storage.text": "The {radio} still holds data from its original firmware in the area where RadioFoundry stores its settings. Until that area is prepared, the radio cannot store a codeplug, and it does not keep its settings when turned off.",
  "editor.storage.text2": "Preparing erases that area (40 KB of the memory chip), which holds part of the original firmware's zones and RX group lists. RadioFoundry does not use them. The backup taken when RadioFoundry was installed holds a complete copy: to keep the original channels, open that backup in the Codeplug Editor, which converts them. The calibration is not changed. Preparing takes a few seconds.",

@@ -576,6 +576,17 @@ test("a sector left pending by an interrupted write is retried; verify skips the
 	await assert.rejects(tr.verify(want, res.plan), (e) => e.code === "verify_failed" && e.params.addr === 0x7600);
 });
 
+test("a read-back the radio refuses part way is reported as such, not as a mismatch", async () => {
+	const radio = new FakeCpsRadio({ board: "DM-1701" });
+	const tr = new CpsSerial(radio.stream());
+	await tr.identify(RADIOS);
+	const want = encode(rich());
+	const res = await tr.write(want, null);
+	const answer = radio.answer.bind(radio);
+	radio.answer = (req) => (req[0] === 0x52 ? new Uint8Array([0x2D]) : answer(req));
+	await assert.rejects(tr.verify(want, res.plan), (e) => e.code === "verify_incomplete" && e.params.addr === res.plan[0][1][0][0]);
+});
+
 test("a backup's codeplug is offered for restore only in RadioFoundry's layout", () => {
 	const bundle = (data) => ({ meta: { firmware_now: { kind: "rfoundry" } }, parts: new Map([["spi-flash", { data }]]) });
 	assert.deepEqual(targets(bundle(encode(rich()).bytes)), ["codeplug"]);

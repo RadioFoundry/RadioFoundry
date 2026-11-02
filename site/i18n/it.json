@@ -1748,6 +1748,7 @@
  "editor.radio_err.storage_foreign": "La radio non è ancora stata preparata per RadioFoundry, quindi non può memorizzare un codeplug. Scegli di nuovo Scrivi sulla radio, poi Prepara la radio.",
  "editor.radio_err.storage_claim_failed": "La radio non ha finito di preparare la sua area impostazioni. Spegnila e riaccendila, poi scegli di nuovo Scrivi sulla radio.",
  "editor.radio_err.verify_failed": "Il codeplug della radio non corrisponde a quanto scritto (a {addr}). Scrivilo di nuovo.",
+ "editor.radio_err.verify_incomplete": "La radio ha smesso di restituire il codeplug durante il controllo della scrittura (a {addr}). Controlla che la radio sia accesa e il cavo collegato, poi scrivilo di nuovo.",
  "editor.storage.title": "Prepara la radio",
  "editor.storage.text": "{radio} contiene ancora dati del suo firmware originale nell'area in cui RadioFoundry memorizza le impostazioni. Finché quell'area non è preparata, la radio non può memorizzare un codeplug e non conserva le impostazioni da spenta.",
  "editor.storage.text2": "La preparazione cancella quell'area (40 KB del chip di memoria), che contiene parte delle zone e delle liste gruppi RX del firmware originale. RadioFoundry non le usa. Il backup fatto all'installazione di RadioFoundry ne contiene una copia completa: per conservare i canali originali, apri quel backup nell'Editor codeplug, che li converte. La calibrazione non viene modificata. La preparazione richiede pochi secondi.",

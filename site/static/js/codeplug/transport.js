@@ -330,8 +330,10 @@ export class CpsSerial {
 		for (const [, runs] of plan) {
 			for (const [a, d] of runs) {
 				const r = await this.link.cpsDump(1, this.base + a, d.length, { chunk: this.chunk });
-				const bad = !r.complete ? 0 : r.data.findIndex((x, i) => x !== d[i] && !(a + i >= VFOS[0] && a + i < VFOS[1]));
+				const bad = r.data.findIndex((x, i) => x !== d[i] && !(a + i >= VFOS[0] && a + i < VFOS[1]));
 				if (bad >= 0) throw new TransportError("verify_failed", { addr: a + bad });
+				// a read the radio refused part way is no mismatch: say where the read-back stopped
+				if (!r.complete) throw new TransportError("verify_incomplete", { addr: a + r.data.length });
 			}
 			progress(++done, plan.length);
 		}
