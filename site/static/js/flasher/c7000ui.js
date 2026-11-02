@@ -642,6 +642,10 @@ function sizeUp(c) {
 	})());
 }
 
+// After sizeUp: whether the step that asked still has its radio. Start over during the count (a lost cable makes it
+// slow) clears the radio and the session, and the late refresh threw on the radio's read rate (OPENDIGITALRADIO-39)
+const sizedFor = (c) => S().c7 === c && !!S().radio;
+
 // Before anything else talks to the stub: the count stops after the window it is on
 async function quiet(c) {
 	c.stopSizing = true;
@@ -711,7 +715,7 @@ export function checkView() {
 		c.autoRead = true;
 	}
 	// this radio's own times for the choices, counted while the user reads them
-	else if (!c.analysis) sizeUp(c).then(() => { options.refresh(); if (skip) refreshSkip(); });
+	else if (!c.analysis) sizeUp(c).then(() => { if (!sizedFor(c)) return; options.refresh(); if (skip) refreshSkip(); });
 
 	async function go({ skipFirmware = false } = {}) {
 		if (c.reading) return;	// a read started from an earlier drawing of this step still runs on the cable
@@ -1228,7 +1232,7 @@ export function backupView() {
 	out.append(panel(t("flash.backup.task_title", { name: S().radio.name }), h("div", { class: "c7-grid" },
 		h("div", {}, cableBanner(), h("p", {}, t("flash.c7.backup.lead")), options, prog.el, status), top.el)));
 	S().forward(go);
-	sizeUp(c).then(() => options.refresh());
+	sizeUp(c).then(() => { if (sizedFor(c)) options.refresh(); });
 	return out;
 }
 

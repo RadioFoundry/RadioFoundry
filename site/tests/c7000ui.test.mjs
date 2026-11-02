@@ -269,6 +269,26 @@ test("install: Back from a check that reads stops the read before the connect st
 	assert.deepEqual(order, ["read", "read stopped", "attach"], "the stub is asked only once the read has ended");
 });
 
+test("backup: Start over while the blank sectors are counted: the late count draws nothing and throws nothing", async (t) => {
+	const thrown = [];
+	const catcher = (e) => thrown.push(e);
+	process.on("unhandledRejection", catcher);
+	t.after(() => process.off("unhandledRejection", catcher));
+	let lose;
+	const state = { radio, task: "backup", forward() {}, data: { fb } };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, noteReadout() {} });
+	state.c7 = { log: { add() {}, el: new El("div") }, stream: null, size: {},
+		stub: { size: {}, sums: () => new Promise((_, no) => { lose = () => no(new Error("The device has been lost.")); }) } };
+	c7ui.backupView();
+	assert.ok(lose, "the count is under way");
+	// what reset() leaves (OPENDIGITALRADIO-39): no radio, no cable session
+	state.radio = null;
+	delete state.c7;
+	lose();
+	await sleep(50);
+	assert.deepEqual(thrown.map(String), []);
+});
+
 test("restore: the write logs its range and that the bootloader is unchanged, as an install does", async () => {
 	globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
 	const C = fb.c7000;
