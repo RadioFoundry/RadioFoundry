@@ -72,7 +72,7 @@ static void row_drive(uint8_t r, bool low)
 
 static uint8_t enc_ab(void)
 {
-	return QUAD_AB(PIN_READ(PIN_ENC_A), PIN_READ(PIN_ENC_B));
+	return QUAD_AB(PIN_READ(PIN_ENC_B), PIN_READ(PIN_ENC_A));	// B leads A clockwise (first radio, 2026-11-02)
 }
 
 void EXTI15_10_IRQHandler(void)
@@ -90,10 +90,10 @@ static void init(void)
 	stm32_pin_in(PIN_PORT(PIN_PTT), PIN_MASK(PIN_PTT), GPIO_PULLUP);
 	adckeys_init(&mic_state);
 
-	// Encoder: pull-ups (the board's own are not known), EXTI10 / EXTI11 on port B, both edges. Two steps per detent
-	// resting where both lines agree (unverified)
+	// Encoder: pull-ups (the board's own are not known), EXTI10 / EXTI11 on port B, both edges. Two steps per detent,
+	// resting where the lines differ: the first radio (2026-11-02) counted 9 of every 10 clicks with the A == B mask
 	stm32_pin_in(GPIOB, PIN_MASK(PIN_ENC_A) | PIN_MASK(PIN_ENC_B), GPIO_PULLUP);
-	quad_init(&enc, 2, QUAD_REST_EQUAL, enc_ab());
+	quad_init(&enc, 2, QUAD_REST_DIFFER, enc_ab());
 	RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
 	(void)RCC->APB2ENR;
 	SYSCFG->EXTICR[2] = (SYSCFG->EXTICR[2] & ~(SYSCFG_EXTICR3_EXTI10 | SYSCFG_EXTICR3_EXTI11)) |

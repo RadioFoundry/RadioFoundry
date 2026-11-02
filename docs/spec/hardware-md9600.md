@@ -386,6 +386,10 @@ Rows K0 PE0, K1 PE1, K2 PD0, K3 PD1 (open drain, idle high, driven low one at a 
 Quadrature on PB10 (A, interrupt on both edges) and PB11 (B); one step per A edge, direction = (A != B).
 No pull-ups configured (?: external).
 
+On a V1-V3 radio (2026-11-02): two steps per detent, resting where A and B differ (01 or 10), and B leads A turning
+clockwise. RadioFoundry samples (B, A) with the rest mask for 01 and 10: 10 clicks each way count 10, a wobble counts
+none. With the A = B mask, every run lost its first click.
+
 ### 9.3 Hand-mic keypad
 
 20 positions as two analog levels: row = 4 - (PA6 raw / 800), column = PA7 raw / 1000 (12-bit raw); row < 5 and
@@ -713,7 +717,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 | 20 | Calibration record layout (11.2) and the hardware option block beyond the band edges | Dump security registers 1-3 |
 | 21 | The CPS command set inside the DFU transfers (the version read is known, 15.1) | USB capture of TYT's CPS |
 | 22 | Display orientation and column offset | Settled (2026-11-02): segments reversed, COM normal, column offset 4 (segments normal and COM reversed showed the picture upside down) |
-| 23 | Encoder steps per detent and rest state (RadioFoundry: 2, resting where A = B) | Turn the knob, read the debug link's encoder counts |
+| 23 | Encoder steps per detent and rest state | Settled (2026-11-02): 2 steps, resting where A != B, B leads clockwise (9.2) |
 | 24 | The V1-V3 per-channel reference divider setting (5.3) | Retune across a band on V1-V3 |
 | 25 | Receiver probe thresholds per revision (section 19.3) | Noise readings per revision with the probe words |
 | 26 | Synthesizer settle times, the APC ramp, the PA drive rows and the squelch thresholds as RadioFoundry uses them (19.8) | Scope the synthesizer and PA lines on a retune and a key-up; power meter per level |
