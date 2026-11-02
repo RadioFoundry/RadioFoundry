@@ -11,11 +11,11 @@
 #include "pins.h"
 #include "periph_md9600.h"
 #include "hal_time.h"
+#include "radio/power_key.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
 #define STANDBY_MAGIC		0x5B1E9600u	// in RTC_BKP18R: switched off, wait for the power key
-#define POWER_OFF_POLLS		20u		// switch_on runs every 100 ms: held 2 s switches off
 #define SCANS			8u
 
 // Supply divider (hardware-md9600.md 10.3, unverified): tenths of a volt = raw / 21.3
@@ -29,8 +29,7 @@ static const uint8_t channels[MD9600_ADC_COUNT] = {
 static volatile uint16_t samples[SCANS * MD9600_ADC_COUNT];
 static bool adc_ok;
 static volatile bool key_down;
-static bool key_released;
-static uint16_t held;
+static pwrkey_t pwrkey;
 
 uint16_t md9600_adc_raw(uint8_t ch)
 {
@@ -104,8 +103,7 @@ static void init(void)
 	stm32_pin_analog(PIN_PORT(PIN_NOISE_V), PIN_MASK(PIN_NOISE_V));
 	DMA_RAM_OK(samples);
 	adc_ok = stm32_adc1_scan_start(channels, MD9600_ADC_COUNT, samples, SCANS);
-	key_released = false;
-	held = 0;
+	pwrkey_init(&pwrkey);
 }
 
 // Power_Control is the radio code's (it powers the receivers); the MCU itself can't switch off. latch(false) is the
@@ -129,16 +127,10 @@ static int8_t volume(void)
 	return -1;	// the knob is analog only
 }
 
-// The key that switched the radio on is still down at first: it counts once it has been seen released
+// Held 2 s switches off; the press that switched it on doesn't count (core/radio/power_key.c)
 static bool switch_on(void)
 {
-	if (!key_down) {
-		key_released = true;
-		held = 0;
-	} else if (key_released && held < POWER_OFF_POLLS) {
-		held++;
-	}
-	return held < POWER_OFF_POLLS;
+	return pwrkey_on(&pwrkey, key_down);
 }
 
 // No LED lines are known (hardware-md9600.md 8)

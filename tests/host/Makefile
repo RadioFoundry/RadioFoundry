@@ -215,6 +215,10 @@ TESTS   += powerSwitchTest
 powerSwitchTest: powerSwitchTest.c $(CORE)/radio/power_switch.c $(CORE)/radio/power_switch.h
 	$(CC) $(CFLAGS) -o $@ powerSwitchTest.c $(CORE)/radio/power_switch.c
 
+TESTS   += powerKeyTest
+powerKeyTest: powerKeyTest.c $(CORE)/radio/power_key.c $(CORE)/radio/power_key.h
+	$(CC) $(CFLAGS) -o $@ powerKeyTest.c $(CORE)/radio/power_key.c
+
 # DMR repeater roaming: the engine, and through the radio core against fake repeaters on the simulated modem
 TESTS   += roamTest
 ROAMT   := roamTest.c $(filter-out radioFeaturesTest.c,$(RFTEST))
@@ -282,7 +286,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 
 run: run-core
 run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest \
-          rx2LinkTest keyassignTest powerSwitchTest boardBandTest batteryTest
+          rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
@@ -297,6 +301,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTes
 	./rx2LinkTest
 	./keyassignTest
 	./powerSwitchTest
+	./powerKeyTest
 	./boardBandTest
 	./batteryTest
 .PHONY: run-core

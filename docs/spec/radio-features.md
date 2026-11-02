@@ -460,6 +460,10 @@ doesn't. The boards ignore it for the first 1.5 s after power-up while the readi
 `switch_on()` and powers off (settings saved, latch released). 5.5 V sits well under a flat 2S pack (critical
 6.0 V), so a weak battery never reads as the switch.
 
+Boards with a power key instead (mobiles) feed the key's level to `core/radio/power_key.c` from their `switch_on()`.
+The press that switched the radio on is usually still held at start-up, so the key counts only once it has been seen
+released; then 20 polls held in a row (2 s at the 100 ms poll) mean off. A shorter press doesn't count toward the next.
+
 ### 5.6 Time of day
 
 RadioFoundry keeps no wall clock. `hal_time.h` gives only time since start-up, and that is what every record uses: the crash
