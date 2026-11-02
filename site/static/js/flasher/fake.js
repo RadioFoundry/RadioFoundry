@@ -104,8 +104,11 @@ export class FakeRadio {
 	// wiring built in); stubConfig: what the stub does with a record it would accept ("ok", "refuse": answers bad
 	// argument, "garble": accepts it but HELLO echoes different bytes). cpsSecurity false: a build whose codeplug
 	// protocol doesn't serve the security registers (area 10).
-	// state "openfw": another open firmware runs (installOpenFirmware; await radio.ready before using it), options in openfw
-	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {}, flashKb = 1024, cpsSecurity = true } = {}) {
+	// state "openfw": another open firmware runs (installOpenFirmware; await radio.ready before using it), options in openfw.
+	// On a board with original_version (origversion.js): originalVersion, the 4 bytes the original firmware's version read
+	// answers while it runs (null: it stalls the read), and hwoptValue, the choice RadioFoundry's board record holds (-1 none)
+	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {}, flashKb = 1024, cpsSecurity = true,
+		originalVersion = new Uint8Array([0x56, 0x00, 0x60, 0x09]), hwoptValue = -1 } = {}) {
 		this.sim = sim;
 		this.board = sim.board;
 		this.key = sim.key;
@@ -136,6 +139,10 @@ export class FakeRadio {
 		this.events = [];
 		this.port = 0;
 		this.resetDfu();
+		const ov = this.board.original_version;
+		this.originalVersion = ov ? originalVersion : null;
+		this.hwopt = ov ? { name: ov.hwopt, choices: [...new Set(Object.values(ov.major))], value: hwoptValue } : null;
+		this.dfuRequests = [];	// what the version read sent the original firmware
 		this.log = [];
 		this.ready = state === "openfw" ? this.installOpenFirmware(openfw) : Promise.resolve();
 	}
@@ -149,6 +156,7 @@ export class FakeRadio {
 		this.blocks = 0;
 		this.violations = [];
 		this.exited = false;
+		this.info = false;
 	}
 
 	enterBootloader() { this.mode = "bootloader"; this.resetDfu(); }
@@ -170,21 +178,61 @@ export class FakeRadio {
 			async out(req, value, data) { return radio.dfuOut(req, value, data || new Uint8Array(0)); },
 			async in(req, length) { return radio.dfuIn(req, length); },
 			async fingerprint() {
+				// the original firmware running normally shows its own interface strings (origversion.js runsOriginal)
+				const interfaces = radio.runsOriginal() ? [radio.board.original_version.interface, "@SPI Flash Memory /0x00000000/16*064Kg"]
+					: ["@Internal Flash  /0x08000000/03*016Kg,01*016Kg,01*064Kg,07*128Kg"];
 				return { string1: radio.board.dfu_string1, manufacturer: "STMicroelectronics", product: "Digital Radio in USB mode",
-					serial: "SIMULATED", version: "2.0.0", interfaces: ["@Internal Flash  /0x08000000/03*016Kg,01*016Kg,01*064Kg,07*128Kg"] };
+					serial: "SIMULATED", version: "2.0.0", interfaces };
 			},
 			async close() {},
 		};
 	}
 
-	dfuIn(req) {
+	// The original firmware running normally, as the version read sees it (origversion.js): GETSTATUS, CLRSTATUS, ABORT,
+	// DNLOAD block 0 `A2 02` and UPLOAD block 0; any other request fails the test
+	runsOriginal() { return this.mode === "normal" && this.running === "stock" && !!this.board.original_version; }
+
+	originalIn(req, length) {
+		this.dfuRequests.push(["in", req, length]);
+		if (req === 3) {
+			let st = this.state;
+			if (st === 3) { this.state = 5; st = 4; }	// the command runs after this reply
+			return new Uint8Array([0, 0, 0, 0, st, 0]);
+		}
+		if (req === 2 && length === 1024 && this.state === 2 && this.selected) {
+			this.selected = false;
+			return this.originalVersion.slice();
+		}
+		throw new Error(`unexpected IN request ${req} (${length})`);
+	}
+
+	originalOut(req, value, data) {
+		this.dfuRequests.push(["out", req, value, Array.from(data)]);
+		if (value !== 0) throw new Error(`wValue ${value} sent to the original firmware`);
+		if (req === 4) { this.state = this.state === 10 ? 2 : 10; return 0; }
+		if (req === 6 && !data.length) { this.state = 2; return 0; }
+		if (req !== 1 || data.length !== 2 || data[0] !== 0xA2 || data[1] !== 0x02) throw new Error(`request ${req} [${Array.from(data)}] sent to the original firmware`);
+		if (!this.originalVersion) throw new Error("USB transfer stall");
+		this.state = 3;
+		this.selected = true;
+		return 2;
+	}
+
+	dfuIn(req, length) {
+		if (this.runsOriginal()) return this.originalIn(req, length);
 		if (this.mode !== "bootloader") throw new Error("the radio is not in its bootloader");
+		if (req === 2) {
+			if (!this.info || this.busy || this.state !== 2) throw new Error("USB transfer stall");
+			this.info = false;
+			return new Uint8Array([0x54, 0x02, 0x10, 0x06]);
+		}
 		let st = this.state;
 		if (this.busy) { this.busy--; st = 4; }
 		return new Uint8Array([0, 1, 0, 0, st, 0]);
 	}
 
 	dfuOut(req, value, data) {
+		if (this.runsOriginal()) return this.originalOut(req, value, data);
 		if (this.mode !== "bootloader") throw new Error("the radio is not in its bootloader");
 		if (req === 4 || req === 6) { this.state = 2; return 0; }
 		if (req !== 1) throw new Error(`unexpected request ${req}`);
@@ -211,6 +259,8 @@ export class FakeRadio {
 				this.erased.push(a);
 			} else if (data[0] === 0x21) {
 				this.addr = u32le(data, 1);
+			} else if (data[0] === 0xA2 && data.length === 2) {
+				this.info = true;	// the next UPLOAD block 0 answers the bootloader's 'T' record
 			} else throw new Error("unknown command");
 		} else {
 			if (value < FIRST_BLOCK || data.length !== BLOCK) throw new Error("bad block");
@@ -515,6 +565,20 @@ export class FakeRadio {
 					this.spi.fill(0xFF, 0x11000, 0x1B000);
 					this.storageOurs = true;
 					this.events.push("storage claimed");
+					return ok(new Uint8Array(0));
+				}
+			}
+			if (f.cmd === 0x21) {
+				// HWOPT (debuglink.md 3.25): the option the board's original_version names, choices in its table's order
+				if (f.payload[0] === 0 && f.payload.length === 1) {
+					const o = this.hwopt;
+					const text = o ? `hwopt.count=1\nhwopt.0.value=${o.value}\nhwopt.0.restart=1\nhwopt.0.name=${o.name}\nhwopt.0.choices=${o.choices.join("|")}\n` : "hwopt.count=0\n";
+					return ok(new TextEncoder().encode(text));
+				}
+				if (f.payload[0] === 1 && f.payload.length === 3) {
+					if (!this.hwopt || f.payload[1] !== 0 || f.payload[2] >= this.hwopt.choices.length) return frame(f.cmd | 0x80, f.seq, new Uint8Array([2]));
+					this.hwopt.value = f.payload[2];
+					this.events.push(`hwopt ${this.hwopt.choices[f.payload[2]]}`);
 					return ok(new Uint8Array(0));
 				}
 			}
