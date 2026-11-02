@@ -468,6 +468,7 @@ A page of an SPI NAND whose bit errors its ECC can't correct reads the same ever
 for its sector, in a read (op 09) or a checksum (op 07). The page then reads that sector's two pages itself with SPI
 requests (page read, status, read from cache), twice, and keeps them as the chip holds them. The final checksum pass
 sums a window that holds one sector by sector and leaves it out, and `backup.json` lists those sectors as `nand_ecc`.
+`stub/stubtool.py` reads a NAND the same way (`Radio.nand_raw`) and prints the list after a `--nand` read.
 
 ### The factory update mode
 
