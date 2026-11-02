@@ -767,6 +767,10 @@ static void test_tx_pre_on(void)
 	dev.tx_pre_on = 0;
 	hrc7000_power_on_init(&dev, 128, 20);
 	CHECK(REG(C7_RF_CONTROL) == 0x0004061Au);
+	dev.tx_pre_on = 0xFF;			// out of range: held to the 5-bit field, nothing above b20 set
+	hrc7000_set_rf_tx_lead(&dev, 6);
+	CHECK(REG(C7_RF_CONTROL) == 0x001F061Au);
+	dev.tx_pre_on = 0;
 	hrc7000_set_rf_tx_lead(&dev, 0);
 }
 
