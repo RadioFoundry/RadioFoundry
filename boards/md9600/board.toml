@@ -81,6 +81,18 @@ interface = "@Internal Flash   /0x08000000/03*016Kg"
 hwopt = "Board revision"
 major = { "06" = "V1-V3", "16" = "V4", "26" = "V4A/V5" }
 
+# What the web flasher backs up before the install, from the original firmware running normally or from the bootloader
+# (hardware-md9600.md 15.2): the info blocks (A2 ss), one snapshot of the internal flash from 0x08000000 before program
+# mode, then the SPI flash in program mode: all of it from the original firmware, the first 1 MB from the bootloader.
+# quick: the codeplug areas only
+[flash.original_backup]
+info = ["02", "01", "03", "04", "05", "07", "08", "32", "33", "50"]
+mirror = 0xFFFF
+spi = 0x1000000
+quick = 0x200000
+loader_interface = "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg"
+loader_spi = 0x100000
+
 # The codec where the merge puts it (docs/spec/codec-md9600.md "Hosting"): the tables stay in sector 9 at the stock
 # build's address, the code moves to the start of sector 11 and the descriptor to its end. The application has sectors
 # 3-7, so an update leaves the codec sectors alone. The 06.09 and 16.45 builds keep their tables at different addresses

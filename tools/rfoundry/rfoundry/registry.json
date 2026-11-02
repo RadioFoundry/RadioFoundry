@@ -116,6 +116,7 @@
    "dfu_string1": null,
    "dfu_product": null,
    "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "stubtool",
     "id": 3,
@@ -287,6 +288,7 @@
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
    "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "f4stub",
     "id": 1,
@@ -405,6 +407,7 @@
    "dfu_string1": null,
    "dfu_product": null,
    "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "stubtool",
     "id": 2,
@@ -523,6 +526,7 @@
    "dfu_string1": null,
    "dfu_product": null,
    "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "stubtool",
     "id": 1,
@@ -683,6 +687,7 @@
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
    "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "f4stub",
     "id": 2,
@@ -848,6 +853,25 @@
      "16": "V4",
      "26": "V4A/V5"
     }
+   },
+   "original_backup": {
+    "info": [
+     "02",
+     "01",
+     "03",
+     "04",
+     "05",
+     "07",
+     "08",
+     "32",
+     "33",
+     "50"
+    ],
+    "mirror": 65535,
+    "spi": 16777216,
+    "quick": 2097152,
+    "loader_interface": "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg",
+    "loader_spi": 1048576
    },
    "stub": {
     "tool": "f4stub",
@@ -1034,6 +1058,7 @@
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
    "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "f4stub",
     "id": 5,

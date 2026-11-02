@@ -200,6 +200,12 @@ BOARD_SCHEMA = {
         # interface: the DFU interface string that marks the original firmware running (not the bootloader)
         "original_version": _opt({"read": _req(ORIGINAL_VERSION_READS), "interface": _req(str), "hwopt": _req(str),
                                   "major": _req(("map", str))}),
+        # a backup before the install through the original firmware's or the bootloader's DFU device
+        # (site/static/js/flasher/origbackup.js; docs/dev/board-registry.md "Backup before the install"): the info blocks
+        # (A2 ss, two hex digits), the most of the internal flash mirror to ask for, the SPI bytes the original firmware
+        # reads (spi) and the quick read's (quick), the bootloader's interface string and the SPI bytes it reads
+        "original_backup": _opt({"info": _req(STR_LIST), "mirror": _req(int), "spi": _req(int), "quick": _req(int),
+                                 "loader_interface": _req(str), "loader_spi": _req(int)}),
         # flash no tool may erase or write (PROTECT_MEMS): the factory calibration and other factory data that can't
         # be made again. start and end (exclusive) are offsets in the memory, on its erase boundaries; what says
         # what it is and where the spec says so (docs/dev/board-registry.md, "Protected regions")
@@ -1141,6 +1147,18 @@ def check(root=ROOT):
             for label in [ov["hwopt"]] + sorted(set(ov["major"].values())):
                 if '"%s"' % label not in text:
                     bad("flash.original_version: %r is no hardware option or choice in boards/%s/*.c" % (label, bid))
+        ob = fl.get("original_backup")
+        if ob is not None:
+            if ov is None:
+                bad("flash.original_backup tells the devices apart by [flash.original_version] interface: it needs it")
+            if not ob["info"] or any(not re.fullmatch(r"[0-9A-F]{2}", c, re.I) for c in ob["info"]):
+                bad("flash.original_backup info lists two-digit hex block codes")
+            if not 0 < ob["mirror"] <= 0xFFFF:
+                bad("flash.original_backup mirror is one control transfer: 1..0xFFFF")
+            if ob["spi"] % 1024 or ob["quick"] % 1024 or ob["loader_spi"] % 1024 or not 0 < ob["quick"] <= ob["spi"]:
+                bad("flash.original_backup spi, quick and loader_spi are whole 1 KB blocks, quick at most spi")
+            if ob["spi"] > fl["backup"]["spi_size"]:
+                bad("flash.original_backup spi is more than the board's SPI flash (backup.spi_size)")
         stub = fl.get("stub")
         bs = b.platform.data.get("board_stub")
         if stub is not None:
@@ -1275,6 +1293,8 @@ def rfoundry_view(boards):
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
             # a hardware option the original firmware's version settles (rfoundry/origversion.py), or None
             "original_version": fl.get("original_version"),
+            # the backup before the install (origbackup.js), or None
+            "original_backup": fl.get("original_backup"),
             "stub": b.stub(),
             "build_options": d.get("build_options", []),		# rfoundry asks with the same words as the site
             # the radio types another open firmware's CPS radio info reports for this radio (board.toml [cps])
