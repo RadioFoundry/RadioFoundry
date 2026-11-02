@@ -700,5 +700,11 @@ channel it then decodes nothing from another transmitter until its own stale res
 (`modem-hrc7000.md` 5.3), longer than the 150 ms dwell. With a noise reading that shows the DMR carrier the probe
 outlasts it, only later; without one, the stop ends at the dwell on every visit (`radioFeaturesTest`,
 `test_scan_dmr_kept_timing`). Rule: the radio core calls `hal_dmr_modem_t.rx_restart` at every new DMR frequency while
-the stack runs. Whether the RF chip's noise reading follows a DMR carrier in DMR mode is a board fact to check on the
-radio: the DMR scan relies on it to probe within the dwell.
+the stack runs.
+
+**17.3 A noise reading that doesn't follow a DMR carrier.**
+Symptom: with 17.2 fixed, the same radio still never held on a DMR call: on the radio (2026-11-01) the noise reading
+stayed at its idle 65-103 during a call at -41 dBm, where the signal strength rose from -117 dBm. The DMR scan probed
+only on the noise reading, so it never saw a carrier within the dwell. Rule: on a DMR channel the scan also counts the
+signal strength, past the settle, against its own squelch scale (`RADIO_DMR_SQL_L1_DBM`, 3 dB a level: -100 dBm at the
+default level), so a stop probes whichever reading shows the signal (`test_scan_dmr_noise_deaf`).

@@ -1419,6 +1419,45 @@ static void test_scan_dmr_kept_timing(void)
 	hw.sig[0].hz = 0;
 }
 
+static void test_scan_dmr_noise_deaf(void)
+{
+	// A receiver whose noise reading stays at its idle level on a DMR signal (gotchas 17.3): the signal strength
+	// alone makes the stop probe, and the call holds the scan
+	uint32_t bound = AIR_LOCK_MS + 360u * 2u + 100u;
+	for (uint32_t phase = 0; phase < 360; phase += 30) {
+		start();
+		all_dmr();
+		signal_on(0, 438500000, 120, no_tone);	// 120: the idle reading, as on an empty channel
+		hw.sig[0].tdma = true;
+		air.on = true;
+		air.hz = 438500000;
+		air.t0 = now + 300 + phase;
+		air.dst = 9;
+		air.lc_at = 1;
+		req(RREQ_ZONE_POS, 6);
+		req(RREQ_SCAN, RSCAN_ZONE);
+		uint32_t arrived = 0, held_ms = 0;
+		bool left = false;
+		for (int i = 0; i < 400 && held_ms == 0; i++) {
+			run(25);
+			if (sm.view.zone_pos == 5 && arrived == 0) {
+				arrived = now;
+			}
+			left |= arrived != 0 && sm.view.zone_pos != 5;
+			if (sm.view.zone_pos == 5 && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX) {
+				held_ms = now - arrived;
+			}
+		}
+		if (held_ms == 0 || left || held_ms > bound) {
+			printf("  noise-deaf DMR scan: phase %u ms: held %u ms after arriving, left %d\n", (unsigned)phase,
+			       (unsigned)held_ms, left);
+		}
+		CHECK(arrived != 0 && held_ms != 0 && !left && held_ms <= bound);
+		req(RREQ_SCAN, RSCAN_STOP);
+	}
+	hw.sig[0].hz = 0;
+}
+
 // ---- Dual watch (CONFIG_DUAL_WATCH): two channels of any zone or the VFO, PTT on the selected one ----
 #if CONFIG_DUAL_WATCH
 static void dual(radio_dual_ref_t a, radio_dual_ref_t b, uint8_t sel)
@@ -2871,6 +2910,7 @@ int main(void)
 	test_mixed_scan();
 	test_scan_dmr_mid_call();
 	test_scan_dmr_kept_timing();
+	test_scan_dmr_noise_deaf();
 	test_dual_watch();
 #if CONFIG_DUAL_WATCH
 	test_dual_wait();

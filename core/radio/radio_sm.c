@@ -2678,6 +2678,18 @@ static bool dual_wait_service(radio_sm_t *sm, const radio_status_t *st, uint32_t
 }
 #endif
 
+#if CONFIG_DMR
+// A DMR carrier by its signal strength at the squelch level (the default level when the squelch is open)
+static bool dmr_strength_heard(const radio_sm_t *sm, int16_t rssi_dbm)
+{
+	uint8_t sq = sm->view.squelch != 0 ? sm->view.squelch : RADIO_SQUELCH_DEFAULT;
+	if (sq > RADIO_SQUELCH_MAX) {
+		sq = RADIO_SQUELCH_MAX;
+	}
+	return rssi_dbm > RADIO_DMR_SQL_L1_DBM + (sq - 1) * RADIO_SQL_DB_PER_STEP;
+}
+#endif
+
 // Every poll while scanning: pause on the monitor, what the receiver hears, move on
 static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_ms)
 {
@@ -2699,6 +2711,9 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 #if CONFIG_DMR
 	if (dmr) {
 		active = sm->view.dmr.state == RDMR_RX;
+		// Some receivers' noise reading stays put on a DMR signal while its strength rises: either one is a
+		// carrier, the strength once the settle has passed (a reading just after the retune is the last stop's)
+		carrier = carrier || (now_ms - sc->tuned_ms >= SCAN_SETTLE_MS && dmr_strength_heard(sm, st->rssi_dbm));
 		// Sync: bursts with the channel's color code since this stop's settle, a call or a late entry still
 		// waiting for its LC. A call known not to be for us (another group, a private call) holds nothing
 		uint32_t heard_ms;
