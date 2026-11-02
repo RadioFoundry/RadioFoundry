@@ -115,6 +115,7 @@
    "dfu_ids": null,
    "dfu_string1": null,
    "dfu_product": null,
+   "original_version": null,
    "stub": {
     "tool": "stubtool",
     "id": 3,
@@ -285,6 +286,7 @@
    ],
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
+   "original_version": null,
    "stub": {
     "tool": "f4stub",
     "id": 1,
@@ -402,6 +404,7 @@
    "dfu_ids": null,
    "dfu_string1": null,
    "dfu_product": null,
+   "original_version": null,
    "stub": {
     "tool": "stubtool",
     "id": 2,
@@ -519,6 +522,7 @@
    "dfu_ids": null,
    "dfu_string1": null,
    "dfu_product": null,
+   "original_version": null,
    "stub": {
     "tool": "stubtool",
     "id": 1,
@@ -678,6 +682,7 @@
    ],
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
+   "original_version": null,
    "stub": {
     "tool": "f4stub",
     "id": 2,
@@ -834,6 +839,15 @@
    ],
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
+   "original_version": {
+    "read": "dfu-info",
+    "hwopt": "Board revision",
+    "major": {
+     "06": "V1-V3",
+     "16": "V4",
+     "26": "V4A/V5"
+    }
+   },
    "stub": {
     "tool": "f4stub",
     "id": 3,
@@ -1018,6 +1032,7 @@
    ],
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
+   "original_version": null,
    "stub": {
     "tool": "f4stub",
     "id": 5,

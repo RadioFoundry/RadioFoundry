@@ -72,6 +72,9 @@ FAMILIES = {
 # loads the stub through it before RadioFoundry is installed: site/static/js/flasher/usmart.js)
 STOCK_CONSOLES = ("usmart",)
 CODEC_TOOLS = ("codec_extract", "hrc7000_codec")
+# [flash.original_version] read: how the installers read the original firmware's version (rfoundry/origversion.py,
+# site/static/js/flasher/origversion.js)
+ORIGINAL_VERSION_READS = ("dfu-info",)
 RFOUNDRY_JSON = "tools/rfoundry/rfoundry/registry.json"	# the flashing tools' view, generated and committed
 # hal_flash_map_t fields the site reads (the codeplug editor): the open-firmware image's data flash address, the end of
 # the room for it and the DMR ID database, the TFTP staging area. The open-firmware flash image follows the EEPROM image
@@ -191,6 +194,11 @@ BOARD_SCHEMA = {
                             "hold": _opt(STR_LIST)}),
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
                      "key_sha256": _req(str), "key_prefix": _req(str)}),
+        # a hardware option the radio can't detect, settled by the version its original firmware reports before the
+        # install (rfoundry/origversion.py; docs/dev/board-registry.md "Original firmware version"): how the version is
+        # read, the option's name (hal_hwopt_t) and its choice for each major version
+        "original_version": _opt({"read": _req(ORIGINAL_VERSION_READS), "hwopt": _req(str),
+                                  "major": _req(("map", str))}),
         # flash no tool may erase or write (PROTECT_MEMS): the factory calibration and other factory data that can't
         # be made again. start and end (exclusive) are offsets in the memory, on its erase boundaries; what says
         # what it is and where the spec says so (docs/dev/board-registry.md, "Protected regions")
@@ -1121,6 +1129,17 @@ def check(root=ROOT):
         if "dfu" in fl and (not re.fullmatch(r"[0-9a-f]{64}", fl["dfu"]["key_sha256"])
                             or not re.fullmatch(r"[0-9A-F]{8}", fl["dfu"]["key_prefix"])):
             bad("flash.dfu key_sha256 is 64 lower-case hex digits, key_prefix 8 upper-case")
+        ov = fl.get("original_version")
+        if ov is not None:
+            if "dfu" not in fl:
+                bad("flash.original_version read %s talks to the DFU device: it needs [flash.dfu]" % ov["read"])
+            if not ov["major"] or any(not re.fullmatch(r"[0-9]{2}", m) for m in ov["major"]):
+                bad('flash.original_version major is a table of two-digit major versions ("06" = "<choice>")')
+            # the option and its choices are the board's hal_hwopt_t labels, as the debug link lists them
+            text = "".join(t for _, t in _c_sources(os.path.join(root, "boards", bid)))
+            for label in [ov["hwopt"]] + sorted(set(ov["major"].values())):
+                if '"%s"' % label not in text:
+                    bad("flash.original_version: %r is no hardware option or choice in boards/%s/*.c" % (label, bid))
         stub = fl.get("stub")
         bs = b.platform.data.get("board_stub")
         if stub is not None:
@@ -1253,6 +1272,8 @@ def rfoundry_view(boards):
             "key_sha256": dfu["key_sha256"] if dfu else None, "key_prefix": dfu["key_prefix"] if dfu else None,
             "dfu_ids": [dfu["vid"], dfu["pid"]] if dfu else None,
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
+            # a hardware option the original firmware's version settles (rfoundry/origversion.py), or None
+            "original_version": fl.get("original_version"),
             "stub": b.stub(),
             "build_options": d.get("build_options", []),		# rfoundry asks with the same words as the site
             # the radio types another open firmware's CPS radio info reports for this radio (board.toml [cps])
