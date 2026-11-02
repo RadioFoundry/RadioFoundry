@@ -67,11 +67,15 @@ static bool power_key_now(void)
 	return down;
 }
 
-// A debounced level: the same reading for 50 ms
+// A debounced level: the same reading for 50 ms. The IWDG is fed here directly (hal_watchdog_feed only feeds one this
+// start-up started): on the first radio it was running in this wait, after the software reset into it, and reset the
+// "off" radio every few seconds (reset flags SFTRST then IWDGRST, 2026-11-02). The feed key does nothing to an IWDG
+// that isn't running
 static void wait_key(bool down)
 {
 	uint32_t same = 0;
 	while (same < 50u) {
+		IWDG->KR = 0xAAAAu;
 		same = power_key_now() == down ? same + 1u : 0u;
 		hal_delay_us(1000);
 	}
@@ -84,7 +88,9 @@ void md9600_standby_check(void)
 	if (RTC->BKP18R != STANDBY_MAGIC) {
 		return;
 	}
-	// Everything is off (board.c reset levels); the backlight and the display stay dark
+	// Everything is off (board.c reset levels); the backlight and the display stay dark. The long press that switched
+	// it off is usually still held: its release must not count as the press that switches it on again
+	wait_key(false);
 	wait_key(true);
 	wait_key(false);
 	backup_write(0);
