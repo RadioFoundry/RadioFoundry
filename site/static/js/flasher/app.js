@@ -22,6 +22,7 @@ import { unzip } from "./zip.js";
 import * as stockfw from "./stockfw.js";
 import { openVendorFile, describe as describeVendorFile, analysisCandidate, offerFile, logId, whyNot } from "./vendorfile.js";
 import { pickProblem, errorProblem, vendorContext, supportedFiles, foldSupported, keepNote, nowFor, nowChoice, OFFER } from "./explain.js";
+import { confirmNoCodec } from "./nocodec.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
 import { radioPicture, holdKeys } from "./radiotop.js";
 import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
@@ -1843,7 +1844,7 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 	const log = logBox();
 	const prog = progressBar();
 	const status = h("div");
-	let plan = null, transport = null;
+	let plan = null, transport = null, noCodecOk = false;
 	const place = (btn) => (inline ? slot.replaceChildren(btn) : S.forward(btn));
 	const slot = h("div", { class: "actions" });
 	const draw = async () => {
@@ -1877,6 +1878,13 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 		}, { primary: true });
 		const winHelp = onWindows() ? h("div", {}, windowsDriverHelp()) : null;
 		const write = button(t("flash.write.go"), async () => {
+			// an install that keeps a codec known to be missing: asked once more (not again on a retry), with the way back
+			// to the codec step
+			if (what?.task === "install" && S.decision?.expectCodec === false && !noCodecOk) {
+				const back = stepsFor()[S.step - 1] === "codec" ? () => { S.step--; render(); } : null;
+				if (!(await confirmNoCodec(back))) return;
+				noCodecOk = true;
+			}
 			write.disabled = true;
 			box.append(prog.el, log.el);
 			let started = null;
