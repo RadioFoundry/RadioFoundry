@@ -533,6 +533,31 @@ void storage_buffer_release(void)
 	storage_unlock();
 }
 
+// Each sector [addr, addr + len) touches: read into b, the range copied from p (or set to value when p is NULL),
+// rewritten through the journal
+static bool sectors(uint32_t addr, const uint8_t *p, uint8_t value, uint32_t len, uint8_t *b)
+{
+	bool ok = true;
+	while (ok && len > 0) {
+		uint32_t base = addr & ~(STORAGE_SECTOR - 1u);
+		uint32_t off = addr - base;
+		uint32_t n = STORAGE_SECTOR - off < len ? STORAGE_SECTOR - off : len;
+		ok = rd(base, b, STORAGE_SECTOR);
+		if (ok) {
+			if (p != NULL) {
+				memcpy(b + off, p, n);
+				p += n;
+			} else {
+				memset(b + off, value, n);
+			}
+			ok = storage_sector_write(base, b);
+		}
+		addr += n;
+		len -= n;
+	}
+	return ok;
+}
+
 bool storage_write(uint32_t addr, const void *buf, uint32_t len)
 {
 	const hal_flash_map_t *m = storage_map();
@@ -563,19 +588,25 @@ bool storage_write(uint32_t addr, const void *buf, uint32_t len)
 		}
 		len = 0;
 	}
-	while (ok && len > 0) {
-		uint32_t base = addr & ~(STORAGE_SECTOR - 1u);
-		uint32_t off = addr - base;
-		uint32_t n = STORAGE_SECTOR - off < len ? STORAGE_SECTOR - off : len;
-		ok = rd(base, b, STORAGE_SECTOR);
-		if (ok) {
-			memcpy(b + off, p, n);
-			ok = storage_sector_write(base, b);
-		}
-		addr += n;
-		p += n;
-		len -= n;
+	ok = ok && sectors(addr, p, 0, len, b);
+	if (b != NULL) {
+		storage_buffer_release();
 	}
+	storage_unlock();
+	return ok;
+}
+
+bool storage_fill(uint32_t addr, uint8_t value, uint32_t len)
+{
+	if (!storage_ready()) {
+		return refused();
+	}
+	if (len == 0 || addr + len < addr || addr + len > board.flash->size) {
+		return len == 0;
+	}
+	storage_lock();
+	uint8_t *b = storage_buffer_acquire();
+	bool ok = b != NULL && sectors(addr, NULL, value, len, b);
 	if (b != NULL) {
 		storage_buffer_release();
 	}
