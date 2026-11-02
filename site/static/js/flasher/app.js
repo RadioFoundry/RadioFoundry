@@ -81,7 +81,7 @@ function errorText(e) {
 	const withRaw = (key) => `${t(key)} (${raw})`;
 	if (e instanceof NetworkModeError) return t("flash.net.found");
 	const browser = browserErrorKey(e);
-	if (browser) return browser === "flash.err.no_device" || browser === "flash.err.security" ? t(browser) : withRaw(browser);
+	if (browser) return ["flash.err.no_device", "flash.err.security", "flash.err.gesture"].includes(browser) ? t(browser) : withRaw(browser);
 	if (e instanceof DfuError && /^USB transfer/.test(raw)) return withRaw("flash.err.connection_lost");
 	if (e instanceof LinkError && /^no answer/.test(raw)) return withRaw("flash.err.no_answer");
 	if (e instanceof StubError && /not acknowledged/.test(raw)) return withRaw("flash.err.rom_no_ack");
@@ -283,7 +283,9 @@ function failureNotice(e, file = null) {
 // manifest of the build just written, so that a RadioFoundry build without the debug link is named as that
 async function noAnswer(link, { written = null } = {}) {
 	const why = await whyNoAnswer(link, { written });
-	const e = new Error(t(noAnswerKey(why)));
+	const key = noAnswerKey(why);
+	const e = new Error(t(key));
+	e.key = key;	// the report groups by it, not by the translated message (report.js captureOptions)
 	e.params = why;
 	return e;
 }

@@ -79,6 +79,18 @@ export function scrubEvent(ev) {
 	return ev;
 }
 
+// What goes with an error to Sentry. An error whose message is a catalog string carries its key (e.key): the message is
+// in the page's language, so the key is the event's fingerprint and a tag, and the same failure is one issue in every
+// language (OPENDIGITALRADIO-35 was a Spanish copy of an English one)
+export function captureOptions(rec, e, context) {
+	const key = typeof e?.key === "string" ? e.key : null;
+	return {
+		tags: { stage: rec.stage, ...(rec.code ? { code: String(rec.code) } : {}), ...(key ? { msg_key: key } : {}) },
+		...(key ? { fingerprint: ["msg_key", key] } : {}),
+		contexts: { rfoundry: { ...context, ...(rec.params ? { params: rec.params } : {}) } },
+	};
+}
+
 async function startSentry(dsn, tool) {
 	await loadScript(SENTRY_JS, SENTRY_SRI);
 	const S = globalThis.Sentry;
@@ -106,11 +118,7 @@ async function startSentry(dsn, tool) {
 		if (rec.expected) return;
 		const err = e instanceof Error ? e : new Error(rec.message);
 		// the id ties the details the user may add (reportedLine) to this event
-		rec.eventId = sentry.captureException(err, {
-			tags: { stage: rec.stage, ...(rec.code ? { code: String(rec.code) } : {}) },
-			contexts: { rfoundry: { ...diag.context(), ...(rec.params ? { params: rec.params } : {}), ...(adapterNow ? { adapter: adapterNow } : {}),
-				trail: diag.trail(40) } },
-		});
+		rec.eventId = sentry.captureException(err, captureOptions(rec, e, { ...diag.context(), ...(adapterNow ? { adapter: adapterNow } : {}), trail: diag.trail(40) }));
 	});
 	diag.note("error reporting on");
 }

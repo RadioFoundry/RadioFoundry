@@ -53,7 +53,7 @@ console.debug = () => {};
 process.on("exit", () => { console.debug = quiet; });
 const en = JSON.parse(strings);
 
-const { initReporting, reportDialog, scrubEvent } = await import("../static/js/report.js");
+const { initReporting, reportDialog, scrubEvent, captureOptions } = await import("../static/js/report.js");
 const { cableBanner } = await import("../static/js/flasher/c7000ui.js");
 const diag = await import("../static/js/diag.js");
 
@@ -292,6 +292,21 @@ test("a Sentry event keeps a file's size: a picked stock file's size is not take
 	assert.equal(ev.contexts.rfoundry.vendor_file.id, "[id]");
 	const line = ev.contexts.rfoundry.trail[0];
 	assert.equal(JSON.parse(line.slice(line.indexOf("{"))).size, 1048832);
+});
+
+test("an error with a catalog key is grouped by the key, so a translated message is the same issue as the English one", () => {
+	const rec = { stage: "update/update", params: { kind: "silent" } };
+	const es = Object.assign(new Error("La radio no respondió."), { key: "flash.err.no_answer" });
+	const en = Object.assign(new Error("The radio did not respond."), { key: "flash.err.no_answer" });
+	const a = captureOptions(rec, es, { radio: "dm1701" }), b = captureOptions(rec, en, { radio: "dm1701" });
+	assert.deepEqual(a.fingerprint, ["msg_key", "flash.err.no_answer"]);
+	assert.deepEqual(a.fingerprint, b.fingerprint);
+	assert.equal(a.tags.msg_key, "flash.err.no_answer");
+	assert.deepEqual(a.contexts.rfoundry, { radio: "dm1701", params: { kind: "silent" } });
+	// any other error keeps Sentry's own grouping
+	const plain = captureOptions({ stage: "x", code: 5 }, new Error("boom"), {});
+	assert.equal(plain.fingerprint, undefined);
+	assert.deepEqual(plain.tags, { stage: "x", code: "5" });
 });
 
 test("the report line under a failure links the community group and the GitHub issues, when the site names them", async () => {
