@@ -2,22 +2,23 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 #
-# The beep reel: one video of the simulated screen in which every beep in core/radio/beep.h sounds, in the scene that
-# sounds it on a radio, captioned (tests/host/beepReel.c has the scenes). Made to hear a change to beep.c in context;
-# beep.c may be rewritten in any way that keeps beep.h's functions (docs/spec/radio-features.md 4).
+# Makes the beep reel, a video of the UI simulator in which every beep in core/radio/beep.h plays in the situation
+# where a radio would play it, with captions naming each beep. It's for hearing what a change to beep.c sounds like in
+# context. The scenes are in tests/host/beepReel.c; see also docs/spec/radio-features.md section 4.
 #
+# Usage:
 #   tools/beep_reel.py [--out build/beep-reel] [--beep-dir core/radio] [--lenient] [--geom 160x128] [--scale 4]
-#       builds tests/host/beepReel with beep.c and beep.h from --beep-dir (another commit's: --lenient, see
-#       beepReel.c), runs it, and makes OUT/beep_reel.mp4 with ffmpeg. OUT/beeps/<name>.wav is each beep alone; the
-#       rest of OUT (frames, the reel's WAV, the captions) is what the video is made from
+#       Builds tests/host/beepReel with the beep.c and beep.h in --beep-dir, runs it, and encodes OUT/beep_reel.mp4
+#       with ffmpeg. Each beep on its own goes to OUT/beeps/<name>.wav. Pass --lenient when --beep-dir is from
+#       another commit (beepReel.c explains why).
 #   tools/beep_reel.py --compare BEFORE AFTER --artifact DIR
-#       the pull request's artifact (.github/workflows/beep-reel.yml): DIR/before.mp4, DIR/after.mp4 and, for each
-#       beep whose sound changed, DIR/beeps/<name>.before.wav and <name>.after.wav (one of them for a beep only one
-#       side has)
+#       Puts together the pull request artifact for .github/workflows/beep-reel.yml: DIR/before.mp4, DIR/after.mp4,
+#       and DIR/beeps/<name>.before.wav and <name>.after.wav for each beep whose sound changed. A beep that only
+#       exists on one side gets just that side's WAV.
 #
-# MP4, H.264 and AAC: it plays in browsers, on GitHub and on phones. The scale must be even, so the screen's pixels
-# line up with 4:2:0 chroma and its colors don't bleed. The captions need ffmpeg's subtitles filter, which only an
-# ffmpeg built with libass has; the tool checks for it before it starts.
+# The video is MP4 with H.264 and AAC because that plays in browsers, on GitHub and on phones. The scale has to be
+# even so the screen's pixels line up with the 4:2:0 chroma grid, or colors bleed at the edges. The captions use
+# ffmpeg's subtitles filter, which needs an ffmpeg built with libass, so we check for it before doing any work.
 import argparse
 import filecmp
 import os
@@ -28,8 +29,8 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOST = os.path.join(ROOT, "tests", "host")
-FPS = 20        # the sim's 50 ms tick
-BAND = 24       # caption band, px per scale step
+FPS = 20        # one frame per 50 ms sim tick
+BAND = 24       # height of the caption strip in pixels, per step of --scale
 
 
 def make(args):
@@ -59,7 +60,7 @@ def make(args):
                                f"pad=iw:ih+{band}:0:0:color=0x101010,subtitles=reel.ass",
                         "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-tune", "animation", "-pix_fmt", "yuv420p",
                         "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-movflags", "+faststart", "-shortest",
-                        "beep_reel.mp4"], cwd=out)    # cwd: the subtitles filter takes no path escaping
+                        "beep_reel.mp4"], cwd=out)    # in OUT, because the subtitles filter can't take an escaped path
     if ffmpeg.returncode != 0:
         sys.exit("beep_reel: ffmpeg failed (above)")
     print(os.path.relpath(os.path.join(out, "beep_reel.mp4")))

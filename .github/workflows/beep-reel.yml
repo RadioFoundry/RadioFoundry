@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 #
-# The beep reel before and after a pull request that changes the beeps (docs/dev/ci.md "Beep reel"). This job makes the
-# reel twice with the pull request's tool, simulator and scenes: once with the base commit's beep.c and beep.h, once
-# with the pull request's. The `beep-reel` artifact holds the two videos and, for each beep whose sound changed, that
-# beep alone before and after as WAV.
+# Makes the beep reel before and after a pull request that touches the beeps (see docs/dev/ci.md, "Beep reel"). Both
+# reels use the pull request's tool, simulator and scenes. The only difference is beep.c and beep.h: the first reel
+# uses the base commit's and the second uses the pull request's. The `beep-reel` artifact has both videos, plus before
+# and after WAVs of each beep whose sound changed.
 #
-# This job runs the pull request's code, so it is a plain pull_request run: a read-only token, no secrets, no cache,
-# on GitHub's runners; a fork's run waits for a maintainer's approval. It never writes to the repository.
+# This runs code from the pull request, so it's a plain pull_request job with a read-only token, no secrets and no
+# cache, on GitHub's runners. A run from a fork waits for a maintainer to approve it. It never writes to the repository.
 name: Beep reel
 
 on:
@@ -60,7 +60,7 @@ jobs:
       - name: Make the reel with the base's beeps and with the pull request's
         run: |
           set -eu
-          # --lenient: the scenes are the pull request's, and may name a beep the base doesn't have yet
+          # --lenient because the pull request's scenes may use a beep the base commit doesn't have yet
           python3 tools/beep_reel.py --beep-dir base/core/radio --lenient --out build/beep-reel/before
           python3 tools/beep_reel.py --out build/beep-reel/after
           python3 tools/beep_reel.py --compare build/beep-reel/before build/beep-reel/after \

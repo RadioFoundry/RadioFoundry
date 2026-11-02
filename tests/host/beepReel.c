@@ -1,30 +1,35 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The beep reel (tools/beep_reel.py makes the video): every beep in core/radio/beep.h, sounded in a scene of the UI
-// simulator that sounds it on a radio. Writes the screen as frames, the sound as a WAV, the captions as ASS
-// subtitles, and each beep alone as a WAV.
+// Records the beep reel, a video of the UI simulator in which every beep in core/radio/beep.h plays once, in the
+// situation where a radio would play it. This program writes the pieces (PNG frames, the audio as a WAV, the captions
+// as ASS subtitles, and a WAV of each beep on its own) and tools/beep_reel.py encodes them into an MP4 with ffmpeg.
 //
-// beep.c is a black box here: only beep_init, beep_play and beep_service, behind a hal_audio_t that acts like a
-// board's (the callback every 20 ms between start and stop) and a beep_service every radio poll. Everything known
-// about a beep is measured from the audio it made, so beep.c may be rewritten in any way that keeps beep.h's
-// functions. The beeps come from beep_names.h, which the Makefile generates from the beep.h in use, so another
-// commit's beep.c and beep.h build here too (BEEP_DIR).
+// We treat beep.c as a black box and only call beep_init, beep_play and beep_service. The fake hal_audio_t below calls
+// the audio callback every 20 ms like a board does, and we call beep_service every 25 ms like the radio task. Beep
+// lengths and timings are measured from the audio that comes out, never read from beep.c, so beep.c can be rewritten
+// any way you like as long as beep.h keeps its functions. BEEP_DIR in the Makefile builds against another commit's
+// beep.c and beep.h, which is how CI makes the "before" reel.
 //
-// The sim's radio core is fake and asks for no beeps: the scenes below say which beep the radio core sounds where, as
-// core/radio/radio_sm.c does. The beeps the UI asks for (key, error, message, battery low) come from the real UI code.
-// Before each step that may sound, the reel waits until 1 s after the last beep ended, so a longer beep moves the rest
-// of the reel back.
+// The sim has no real radio core, so nothing in it plays the radio core's beeps (talk permit, call end and so on).
+// The scenes below play those by hand. The UI's own beeps (key, error, message, battery low) come from the real UI
+// code through the sim's beep hook.
 //
+// Before any step that can beep, we wait until 1 s after the previous beep ended, so a longer beep pushes the rest of
+// the reel later.
+//
+// Usage:
 //   beepReel --out DIR [--geom 160x128] [--map K] [--scale 4] [--band 96] [--lenient] [--no-frames]
-//     DIR/frames/NNNNN.png   the screen every 50 ms tick (20 fps), at scale 1 (not with --no-frames: the checks only)
-//     DIR/reel.wav           8 kHz 16-bit mono, starting with the first frame
-//     DIR/reel.ass           captions for the video scaled by --scale, with a --band px band under the screen
-//     DIR/beeps/<name>.wav   each beep alone
 //
-// Exit status 1: beep_names.h doesn't list every beep between BEEP_NONE and BEEP_COUNT, a beep never stops, two beeps
-// are less than 1 s apart (two key beeps may be closer: a run of presses), the reel has more than EVENTS_MAX beeps, a
-// beep in beep.h has no scene, or a scene's beep isn't in beep.h. --lenient (another commit's beep.h, for a before /
-// after comparison) only warns about the last two.
+// Output:
+//   DIR/frames/NNNNN.png   one frame per 50 ms sim tick, unscaled (skipped with --no-frames)
+//   DIR/reel.wav           the reel's audio, 8 kHz 16-bit mono, starting at the first frame
+//   DIR/reel.ass           the captions, sized for the video at --scale with a --band pixel strip under the screen
+//   DIR/beeps/<name>.wav   each beep played on its own
+//
+// Exits with 1 if beep_names.h is missing a beep, a beep never stops or makes no sound, two beeps are less than 1 s
+// apart (key beeps in a run of presses may be closer), there are more than EVENTS_MAX beeps, a beep has no scene, or
+// a scene uses a beep that beep.h doesn't have. With --lenient, which is for building against another commit's
+// beep.h, the last two are only warnings.
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,47 +41,46 @@
 #include "ui/gfx.h"
 #include "radio/beep.h"
 
-#define LEVEL		50	// the radio's default beep_level (Settings > Sound > Tone volume)
-#define POLL_MS		25	// the radio task's poll (RADIO_POLL_MS): beep_service
-#define BLOCK_MS	20	// AUDIO_BLOCK_SAMPLES at AUDIO_RATE_HZ
-#define TICK_MS		50	// the sim's tick: one frame
-#define GAP_MS		1000	// silence before a beep
-#define PACE_MS		250	// a run of key presses, start to start
-#define STOP_MS		5000	// a beep that hasn't stopped by then never will
+#define LEVEL		50	// the radio's default tone volume
+#define POLL_MS		25	// how often the radio task calls beep_service (RADIO_POLL_MS)
+#define BLOCK_MS	20	// length of one audio block
+#define TICK_MS		50	// one sim tick, one video frame
+#define GAP_MS		1000	// minimum silence between beeps
+#define PACE_MS		250	// time between key presses in a run
+#define STOP_MS		5000	// give up on a beep still playing after this long
 #define SAMPLES_PER_MS	(AUDIO_RATE_HZ / 1000)
 
 static const struct {
-	const char *name;	// beep_t without BEEP_
+	const char *name;	// "TX_PERMIT" for BEEP_TX_PERMIT
 	beep_t b;
 } beeps[] = {
 #include "beep_names.h"
 };
 #define BEEPS	((int)(sizeof beeps / sizeof beeps[0]))
 
-// The UI's beeps as the radio plays them (core/ui/ui_svc_radio.c)
+// The UI's beep codes and the beeps they play. This has to match ui_svc_beep() in core/ui/ui_svc_radio.c
 static const char *const ui_beeps[] = {
 	[UI_BEEP_KEY] = "KEY", [UI_BEEP_ERROR] = "ERROR", [UI_BEEP_MESSAGE] = "MESSAGE",
 	[UI_BEEP_BATTERY_LOW] = "BATTERY_LOW",
 };
 
-// A scene is a few steps. Each step waits for the gap (unless quiet), sounds the radio core's beep if it has one,
-// runs its script and holds
+// One step of a scene. A step waits out the gap unless it's quiet, plays its radio core beep if it has one, runs its
+// script, then leaves the screen up for hold_ms.
 typedef struct {
-	const char *caption;	// the scene's caption from here (NULL: the last one stays)
-	const char *script;	// sim tokens (ui_sim.c)
-	const char *beep;	// the beep the radio core sounds as the script starts (beep_t without BEEP_), or NULL
-	bool keys;		// the script is a run of key presses, PACE_MS apart
-	bool quiet;		// sounds nothing: no gap first
-	uint16_t hold_ms;	// then the screen stays this long
+	const char *caption;	// starts a new scene with this caption; NULL continues the current one
+	const char *script;	// sim script tokens, see ui_sim.c
+	const char *beep;	// radio core beep to play as the script starts, like "CALL_END", or NULL
+	bool keys;		// the script is a run of key presses, to be spaced PACE_MS apart
+	bool quiet;		// the step makes no sound, so it doesn't wait for the gap
+	uint16_t hold_ms;	// how long to leave the screen up afterwards
 } step_t;
 
-// From what a user hears most to what they hear least. Map K, zone 0 channel 1 (DMR), key beep on. The TX time-out
-// and the battery are faster than on a radio: the warning, the cut and the levels come when the reel is ready.
+// The scenes go from the beeps people hear most to the ones they hear least. The sim starts on key map K, zone 0,
+// channel 1 (DMR), with key beep on. The TX timeout and the battery drain are sped up so the reel doesn't sit waiting.
 //
-// Nothing checks a step's beep against the radio core: after a change to when core/radio/radio_sm.c sounds one, change
-// its step here. The calls are in dmr_follow (TX_PERMIT on air, CALL_END when a call heard ends), tx_timer (TOT_WARN),
-// deny (TX_DENY: PTT refused or the time-out), battery_poll (BATTERY_CRIT), scan_service (SCAN_HOLD) and
-// emergency_tick (EMERGENCY)
+// Nothing ties these steps to the radio core. If you change when core/radio/radio_sm.c plays a beep, update the
+// matching step here. The calls are in dmr_follow() (TX_PERMIT, CALL_END), tx_timer() (TOT_WARN), deny() (TX_DENY),
+// battery_poll() (BATTERY_CRIT), scan_service() (SCAN_HOLD) and emergency_tick() (EMERGENCY).
 static const step_t steps[] = {
 	{ "Browse the menu", "ok down down back", NULL, true, false, 0 },
 	{ "Group call heard", "rx:3101234,91,g,K1ABC_Joe", NULL, false, true, 700 },
@@ -89,7 +93,7 @@ static const step_t steps[] = {
 	{ NULL, "back", NULL, false, false, 0 },
 	{ "Battery runs down", "battery:14", NULL, false, false, 0 },
 	{ NULL, "battery:3", "BATTERY_CRIT", false, false, 0 },
-	{ NULL, "back", NULL, false, false, 0 },	// hides the battery banner
+	{ NULL, "back", NULL, false, false, 0 },	// close the battery warning, or it covers the scan
 	{ "Scan", "ok 6 1", NULL, true, false, 700 },
 	{ NULL, "fmrx", "SCAN_HOLD", false, false, 0 },
 	{ NULL, "fmrxend", NULL, false, true, 0 },
@@ -126,7 +130,7 @@ static int find_beep(const char *name)
 	return -1;
 }
 
-// ---- the board's audio, and the audio made ----
+// ---- Fake board audio and the recorded PCM ----
 
 static audio_block_cb_t cb;
 static void *cb_ctx;
@@ -137,7 +141,7 @@ static const hal_audio_t audio = { a_start, a_stop, a_pcm };
 
 static int16_t *pcm;
 static uint32_t pcm_len, pcm_cap;
-static uint32_t audio_ms, audio_t0;	// rendered up to; time of sample 0
+static uint32_t audio_ms, audio_t0;	// audio is rendered up to audio_ms; pcm[0] is at audio_t0
 
 static void pump_to(uint32_t ms)
 {
@@ -170,7 +174,7 @@ static void audio_restart(uint32_t t0)
 	audio_ms = audio_t0 = t0;
 }
 
-// The first and last sample with sound in [from, to) (ms from sample 0); false: none
+// Finds the first and last nonzero sample between from and to, in ms from pcm[0]. False if it's all silence
 static bool sound_in(uint32_t from, uint32_t to, uint32_t *first, uint32_t *last)
 {
 	uint32_t a = from * SAMPLES_PER_MS, b = to * SAMPLES_PER_MS;
@@ -209,13 +213,13 @@ static bool write_wav(const char *path)
 	fwrite(&bits, 2, 1, f);
 	fwrite("data", 1, 4, f);
 	fwrite(&bytes, 4, 1, f);
-	fwrite(pcm, 2, pcm_len, f);	// the host is little-endian, as WAV is
+	fwrite(pcm, 2, pcm_len, f);	// WAV is little-endian, and so are the hosts we build on
 	return fclose(f) == 0;
 }
 
-// ---- each beep alone ----
+// ---- Measuring each beep on its own ----
 
-static uint32_t beep_end_ms[sizeof beeps / sizeof beeps[0]];	// from beep_play to the last sound
+static uint32_t beep_end_ms[sizeof beeps / sizeof beeps[0]];	// ms from beep_play to the beep's last sound
 
 static void measure(const char *dir)
 {
@@ -247,15 +251,15 @@ static void measure(const char *dir)
 	}
 }
 
-// ---- the reel ----
+// ---- Recording the reel ----
 
 #define EVENTS_MAX	64
 static struct {
-	int beep;		// beeps[] index
-	uint32_t at;		// beep_play, sim time
+	int beep;		// index into beeps[]
+	uint32_t at;		// sim time of the beep_play call
 } events[EVENTS_MAX];
 static int event_n;
-static uint32_t scene_at[sizeof steps / sizeof steps[0]];	// when each captioned step started, sim time
+static uint32_t scene_at[sizeof steps / sizeof steps[0]];	// sim time each captioned step started
 static uint32_t frame_n;
 static const char *out_dir;
 static bool recording;
@@ -326,7 +330,7 @@ static void wait_ms(uint32_t ms)
 	run(t);
 }
 
-// Until GAP_MS after the end of the last beep
+// Waits until GAP_MS after the last beep ended
 static void gap(void)
 {
 	if (event_n == 0)
@@ -364,7 +368,7 @@ static void play_steps(void)
 	}
 }
 
-// The beep's name for a caption: TX_PERMIT -> "TX permit"
+// Turns a beep's name into its caption, so TX_PERMIT becomes "TX permit"
 static void beep_title(int i, char *out, size_t len)
 {
 	snprintf(out, len, "%s", beeps[i].name);
@@ -390,7 +394,8 @@ static void ass_time(FILE *f, uint32_t ms)
 		(unsigned)(ms % 1000 / 10));
 }
 
-// Captions in a band under the screen: the scene, and the beep just heard with the length it sounded
+// Writes the captions shown in the strip under the screen: the scene's name on top, and below it the beep that just
+// played and how long it lasted.
 static bool write_captions(const char *path, int w, int h, int band, const uint32_t *start, const uint32_t *end,
 			   uint32_t total)
 {
@@ -484,7 +489,8 @@ int main(int argc, char **argv)
 	if (out_dir == NULL || g == NULL || scale < 1 || band < 0)
 		return usage();
 
-	// The Makefile reads the beeps from beep.h's text: a layout it doesn't expect must fail here, not drop a beep
+	// beep_names.h comes from a rough parse of beep.h (beep_names.awk). If it missed a beep or picked up something that
+	// isn't one, stop now instead of quietly leaving a beep out of the reel.
 	bool listed[BEEP_COUNT] = { false };
 	for (int i = 0; i < BEEPS; i++) {
 		if (beeps[i].b <= BEEP_NONE || beeps[i].b >= BEEP_COUNT || listed[beeps[i].b]) {
@@ -513,7 +519,7 @@ int main(int argc, char **argv)
 	sim_reset(g, map);
 	sim_set_tick_hook(on_tick);
 	sim_set_beep_hook(on_ui_beep);
-	run("wait:500");		// the start screen settles
+	run("wait:500");		// let the start screen settle
 	audio_restart(sim_now());
 	cb = NULL;
 	recording = true;
@@ -524,7 +530,8 @@ int main(int argc, char **argv)
 	uint32_t total = sim_now() - audio_t0;
 	pump_to(sim_now());
 
-	// What actually sounded, from the audio: each beep from its beep_play to the next one's
+	// Work out from the recorded audio when each beep really started and stopped. A beep's window runs from its
+	// beep_play to the next one's.
 	uint32_t start[EVENTS_MAX], end[EVENTS_MAX];
 	for (int e = 0; e < event_n; e++) {
 		uint32_t from = events[e].at - audio_t0, to = e + 1 < event_n ? events[e + 1].at - audio_t0 : total;

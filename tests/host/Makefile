@@ -470,10 +470,11 @@ uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
 uiSim: uiSim.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -o $@ uiSim.c $(UIAPP) -lz
 
-# The beep reel (tools/beep_reel.py): every beep on the simulated screen, with beep.c's sound. BEEP_DIR is where
-# beep.c and beep.h come from: another commit's for a before / after comparison. Its beep.h goes first on the include
-# path, and beep_names.h lists its beeps (beep_names.awk), so the reel needs nothing of it but beep.h. beep_dir notes
-# the BEEP_DIR built from (rewritten only when it changes), so a build from another one is never taken for this one
+# The beep reel (tools/beep_reel.py). BEEP_DIR picks the beep.c and beep.h to build with, so CI can build the base
+# commit's beeps for a before and after comparison. We copy that beep.h into out/beep/radio/ and put out/beep first on
+# the include path, so beep.c and beepReel.c both use it instead of core/radio/beep.h, and beep_names.awk makes the
+# list of beep names from it. The beep_dir file holds the last BEEP_DIR built and only changes when BEEP_DIR does, so
+# switching to another directory forces a rebuild.
 BEEP_DIR ?= $(CORE)/radio
 BEEPINC := out/beep
 TESTS   += beepReel
@@ -511,7 +512,7 @@ run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoC
 	./uiFlowTest
 	./uiFlowTestNoColor
 	./uiSim --layout
-	./beepReel --out out/beep-reel --no-frames > /dev/null	# every beep has a scene, and the scenes still run
+	./beepReel --out out/beep-reel --no-frames > /dev/null	# checks every beep has a scene and the scenes still run
 .PHONY: run-ui ui-gallery ui-sheets
 
 # AMBE+2 3600x2450 air frame FEC and interleaving (core/dmr/ambe), with vectors from the stock DM-1701 codec's FEC

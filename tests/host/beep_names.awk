@@ -1,27 +1,30 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 #
-# beep.h's beeps as a table for tests/host/beepReel.c, which needs each one's name for its captions and WAV files and
-# can't get it from C. For each BEEP_X in the first enum, but BEEP_NONE and BEEP_COUNT, one line:
+# Generates beep_names.h for tests/host/beepReel.c from beep.h. beepReel needs each beep's name for its captions and
+# WAV file names, and C can't list an enum's names, so we pull them out of the header's text. For every BEEP_X in the
+# first enum, except BEEP_NONE and BEEP_COUNT, this prints:
 #
 #	{ "X", BEEP_X },
 #
-# beepReel checks the table against BEEP_COUNT when it starts, so a beep.h this misreads fails there.
+# This is a rough parse, not a C parser. beepReel checks the result against BEEP_COUNT when it starts, so a beep.h
+# this can't handle gives a clear error instead of a missing beep.
 #
-#   awk -f beep_names.awk beep.h > beep_names.h
+# Usage: awk -f beep_names.awk beep.h > beep_names.h
 
-# comments out, so a beep named in one isn't taken for a beep
+# Strip comments so a beep mentioned in one isn't picked up. This only handles /* */ comments that open and close on
+# the same line; beep.h uses // comments.
 {
 	sub(/\/\/.*/, "")
 	gsub(/\/\*[^*]*\*\//, "")
 }
 
-# the enum's body: from the line with "enum" to the line with "}"
+# Start collecting at the first line that says "enum"
 /enum/ {
 	in_enum = 1
 }
 
-# every BEEP_ name on the line (there may be several)
+# Print every BEEP_ name on the line. There can be more than one
 in_enum {
 	rest = $0
 	while (match(rest, /BEEP_[A-Z0-9_]+/)) {
@@ -32,6 +35,7 @@ in_enum {
 	}
 }
 
+# Stop at the closing brace
 in_enum && /}/ {
 	in_enum = 0
 }
