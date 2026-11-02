@@ -56,13 +56,14 @@ static const st7567_bus_t bus = {
 	.delay_ms = hal_delay_ms,
 };
 
-// Segments normal, COM reversed, bias 1/9, regulator ratio 4, electronic volume 0x28 (hardware-md9600.md 7.2). The
-// orientation and the column offset are unverified: the first boot shows whether the picture is mirrored or shifted
+// Segments reversed, COM normal, bias 1/9, regulator ratio 4, electronic volume 0x28 (hardware-md9600.md 7.2). The
+// first boot with segments normal and COM reversed showed the picture upside down (2026-11-02). With the segments
+// reversed the panel's 128 columns are the controller's last 128 of 132, hence the offset of 4
 static const st7567_t panel = {
 	.bus = &bus,
-	.col_offset = 0,
-	.seg_reverse = false,
-	.com_reverse = true,
+	.col_offset = 4,
+	.seg_reverse = true,
+	.com_reverse = false,
 	.regulator = 4,
 	.contrast = 0x28,
 	.bias = 0,
