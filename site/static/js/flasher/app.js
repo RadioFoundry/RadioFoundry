@@ -388,7 +388,9 @@ async function loadData() {
 
 const fb = () => (S.sim ? S.sim.fb : S.data.fb);
 // Every image comes from the build service, so a radio needs only a backend the page has for it (backends.js)
-const available = (r, task) => backendOf(r).available(r, fb(), task);
+// In the practice mode only the simulated radio: S.sim (its key, stock file, fake radio) is that radio's, and another
+// one picked on the radio step met a missing stock file at the codec step (OPENDIGITALRADIO-22)
+const available = (r, task) => (!S.sim?.radio || r.id === S.sim.radio) && backendOf(r).available(r, fb(), task);
 
 // The STM32 radios: stock firmware is reached through the AnyRoad bootloader (dfu.js), which takes
 // the key from the stock file; a radio running RadioFoundry with stub entry also updates and backs up through the STM32F4
@@ -2699,7 +2701,7 @@ async function main() {
 		// on its cable: stock firmware (a stock console answers if the board has one), or RadioFoundry with the stub hand-over
 		const board = simRadio.id;
 		const sim = await c7000Simulation(S.data.fb.c7000, board, 7000, simRadio);
-		S.sim = { fb: { ...S.data.fb, c7000: sim.c } };
+		S.sim = { fb: { ...S.data.fb, c7000: sim.c }, radio: simRadio.id };
 		// -slowcable: the radio's own 48 ms window, and a cable that takes 80 ms
 		const slow = simAsk[2] === "-slowcable";
 		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: slow ? 48 : 600,
@@ -2713,7 +2715,7 @@ async function main() {
 		}
 		S.fakeC7.powerOn();
 	} else if (simRadio) {
-		S.sim = await simulation(S.data.fb, simRadio.id);
+		S.sim = { ...(await simulation(S.data.fb, simRadio.id)), radio: simRadio.id };
 		S.fakeRadio = new FakeRadio(S.sim, { state: simOpen ? "openfw" : simStock ? "stock" : "rfoundry", spiSize: 0x400000,
 			openfw: { codec: simAsk[2] !== "-openfw-nocodec" } });
 		await S.fakeRadio.ready;
