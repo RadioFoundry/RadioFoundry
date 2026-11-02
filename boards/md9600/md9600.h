@@ -100,6 +100,10 @@ void md9600_diag_reset(void);
 
 // HR_C6000, PCM audio and the speaker routing (c6000_md9600.c). Radio task, after md9600_radio_early
 void md9600_c6000_init(void);
+#if CONFIG_AUDIO_PROBE
+// The audio probe's view (debuglink.md 3.14): HR_C6000 register access only
+extern const hal_audio_tap_t md9600_audio_tap;
+#endif
 void md9600_c6000_mode(bool dmr, uint32_t hz);	// set_mode: into or out of DMR at the receive frequency
 void md9600_c6000_retune(uint32_t hz);		// after every receiver retune: reference offset, DMR receiver restart
 void md9600_speaker_fm(bool on, bool vhf);	// the core's FM squelch (hal_radio_t.audio)

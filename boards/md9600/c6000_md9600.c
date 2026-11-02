@@ -281,3 +281,16 @@ static void speaker_pcm(bool on)
 
 const hal_audio_t md9600_audio = { .start = audio_start, .stop = stm32_i2s_pcm_stop, .speaker_pcm = speaker_pcm };
 #endif
+
+#if CONFIG_AUDIO_PROBE
+// The audio probe's register access (hal_audio_tap_t.modem_reg): one HR_C6000 register, any task. It can change
+// state under the driver, which is what a bench probe is for
+static bool probe_reg(uint8_t page, uint8_t reg, uint8_t *val, bool write)
+{
+	return write ? hrc_write(&modem, page, reg, *val) : hrc_read(&modem, page, reg, val);
+}
+
+const hal_audio_tap_t md9600_audio_tap = {
+	.modem_reg = probe_reg,
+};
+#endif

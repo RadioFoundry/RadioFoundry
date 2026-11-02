@@ -121,6 +121,9 @@ const board_t board = {
 	.dmr = &stm32_hrc_dmr,
 	.audio = &md9600_audio,
 	.vocoder = &stm32_vocoder,
+#if CONFIG_AUDIO_PROBE
+	.audio_tap = &md9600_audio_tap,
+#endif
 #endif
 #if CONFIG_GPS
 	.gps_present = stm32_gps_present,
