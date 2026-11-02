@@ -2736,6 +2736,10 @@ static void scan_stop_asked(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 	if (dual_running(sm)) {
 		cancel = true;
 		sm->view.dual_stops++;
+#if CONFIG_DUAL_WATCH
+		// The user's stop, as dual_request's: the UI asks for nothing after it, so the other's go here
+		sm->dual_keep[0].valid = sm->dual_keep[1].valid = false;
+#endif
 	}
 	scan_stop(sm, cancel, now_ms);
 }

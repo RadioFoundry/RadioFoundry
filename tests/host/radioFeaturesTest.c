@@ -1545,6 +1545,15 @@ static void test_dual_watch(void)
 	CHECK(on_ref(home) && sm.view.temp == RADIO_TEMP_SQUELCH);
 	dual(home, far, 0);
 	CHECK(wait_on(far, 2500) && sm.view.temp == 0 && sm.view.ch.bw != bw);
+	// The same for a stop over the debug link (the UI asks for nothing after it)
+	dual(home, far, 1);
+	req(RREQ_POWER, 1);
+	CHECK(on_ref(far) && (sm.view.temp & RADIO_TEMP_POWER));
+	CHECK(wait_on(home, 2500));
+	req(RREQ_SCAN, RSCAN_STOP);
+	CHECK(sm.view.scan != SCAN_DUAL);
+	dual(home, far, 0);
+	CHECK(wait_on(far, 2500) && sm.view.temp == 0);
 	// A new channel in a pane doesn't inherit the old one's
 	dual(home, far, 1);
 	req(RREQ_POWER, 1);
