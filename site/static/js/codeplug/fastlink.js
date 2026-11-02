@@ -70,6 +70,9 @@ export class FastLink {
 			this.requests++;
 			await this.s.write(f);
 			const [r] = await this.answers([seq], timeout);
+			// a radio that went away while it was asked (unplugged, restarted) is a lost connection, as a write to it
+			// would say (link.js SerialStream.write), not a radio that won't answer
+			if (!r && this.s.lost) throw new DOMException("The device has been lost.", "NetworkError");
 			if (!r) throw new FastError(what, "no answer");
 			if (r.status === 3 && Date.now() < until) {
 				await sleep(20);

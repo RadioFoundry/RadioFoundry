@@ -11,6 +11,7 @@ import { CodeplugImage, IDDB_HEADER, REGIONS } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
+import { FastError } from "../codeplug/fastlink.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
 import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
@@ -523,6 +524,7 @@ function radioError(e) {
 		if (typeof p.addr === "number") p.addr = `0x${p.addr.toString(16).toUpperCase()}`;
 		return t(`editor.radio_err.${e.code}`, p);
 	}
+	if (e instanceof FastError && e.status === "no answer") return t("editor.radio_err.no_answer");
 	if (e?.name === "NotFoundError" && !/disconnect/i.test(e.message || "")) return null;	// the user closed the port chooser
 	// the browser's own serial errors (a port another program holds, a radio unplugged): what to do, then its words
 	const key = browserErrorKey(e);
