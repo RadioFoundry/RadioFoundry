@@ -472,8 +472,8 @@ uiSim: uiSim.c $(UIDEPS)
 
 # The beep reel (tools/beep_reel.py): every beep on the simulated screen, with beep.c's sound. BEEP_DIR is where
 # beep.c and beep.h come from: another commit's for a before / after comparison. Its beep.h goes first on the include
-# path, and beep_names.h lists its beeps, so the reel needs nothing of it but beep.h. beep_dir notes the BEEP_DIR built
-# from (rewritten only when it changes), so a build from another one is never taken for this one
+# path, and beep_names.h lists its beeps (beep_names.awk), so the reel needs nothing of it but beep.h. beep_dir notes
+# the BEEP_DIR built from (rewritten only when it changes), so a build from another one is never taken for this one
 BEEP_DIR ?= $(CORE)/radio
 BEEPINC := out/beep
 TESTS   += beepReel
@@ -484,12 +484,10 @@ $(BEEPINC)/beep_dir: FORCE
 FORCE:
 .PHONY: FORCE
 
-beepReel: beepReel.c $(UIDEPS) $(BEEP_DIR)/beep.c $(BEEP_DIR)/beep.h $(BEEPINC)/beep_dir
+beepReel: beepReel.c beep_names.awk $(UIDEPS) $(BEEP_DIR)/beep.c $(BEEP_DIR)/beep.h $(BEEPINC)/beep_dir
 	mkdir -p $(BEEPINC)/radio
 	cp $(BEEP_DIR)/beep.h $(BEEPINC)/radio/beep.h
-	awk '/typedef enum/ { e = 1 } e && match($$0, /^[ \t]*BEEP_[A-Z0-9_]+/) { n = substr($$0, RSTART, RLENGTH); \
-		sub(/^[ \t]*/, "", n); if (n != "BEEP_NONE" && n != "BEEP_COUNT") printf "\t{ \"%s\", %s },\n", substr(n, 6), n } \
-		/} beep_t;/ { e = 0 }' $(BEEP_DIR)/beep.h > $(BEEPINC)/beep_names.h
+	awk -f beep_names.awk $(BEEP_DIR)/beep.h > $(BEEPINC)/beep_names.h
 	$(CC) -I$(BEEPINC) $(UIFLAGS) -o $@ beepReel.c $(UIAPP) $(BEEP_DIR)/beep.c -lz
 
 # The highlight colors the gallery shows its color pages in: the list in .github/workflows/ui-gallery.yml, so the
@@ -513,7 +511,7 @@ run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoC
 	./uiFlowTest
 	./uiFlowTestNoColor
 	./uiSim --layout
-	./beepReel --out out/beep-reel > /dev/null	# every beep has a scene, and the scenes still run
+	./beepReel --out out/beep-reel --no-frames > /dev/null	# every beep has a scene, and the scenes still run
 .PHONY: run-ui ui-gallery ui-sheets
 
 # AMBE+2 3600x2450 air frame FEC and interleaving (core/dmr/ambe), with vectors from the stock DM-1701 codec's FEC

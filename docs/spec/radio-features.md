@@ -329,10 +329,10 @@ mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep
 `beep.busy`.
 
 To hear the beeps in context, `tools/beep_reel.py` makes a video of the UI simulator's screen in which every beep sounds
-in a scene that sounds it on a radio, captioned (`build/beep-reel/beep_reel.mp4`; needs ffmpeg). It uses `beep.c` only
-through `beep_init`, `beep_play` and `beep_service`, so the patterns and their synthesis can change freely. The scenes
-are in `tests/host/beepReel.c`; a new beep needs one there, or the host tests fail. A pull request that changes the
-beeps gets the reel before and after (`beep-reel.yml`, [ci.md](../dev/ci.md) "Beep reel").
+in a scene that sounds it on a radio, captioned (`build/beep-reel/beep_reel.mp4`; needs ffmpeg built with libass). It
+uses `beep.c` only through `beep_init`, `beep_play` and `beep_service`, so the patterns and their synthesis can change
+freely. The scenes are in `tests/host/beepReel.c`; a new beep needs one there, or the host tests fail. A pull request
+that changes the beeps gets the reel before and after (`beep-reel.yml`, [ci.md](../dev/ci.md) "Beep reel").
 
 ### 4.1 Vibration (CONFIG_VIBRATE)
 

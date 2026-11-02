@@ -17,6 +17,7 @@ on:
       - "core/radio/beep.h"
       - "hal/hal_audio.h"
       - "tests/host/beepReel.c"
+      - "tests/host/beep_names.awk"
       - "tests/host/Makefile"
       - "tests/host/sim/**"
       - "tools/beep_reel.py"

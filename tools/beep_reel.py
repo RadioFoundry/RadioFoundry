@@ -16,10 +16,12 @@
 #       side has)
 #
 # MP4, H.264 and AAC: it plays in browsers, on GitHub and on phones. The scale must be even, so the screen's pixels
-# line up with 4:2:0 chroma and its colors don't bleed.
+# line up with 4:2:0 chroma and its colors don't bleed. The captions need ffmpeg's subtitles filter, which only an
+# ffmpeg built with libass has; the tool checks for it before it starts.
 import argparse
 import filecmp
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -37,6 +39,9 @@ def make(args):
         sys.exit("beep_reel: --scale must be even (2, 4, ...)")
     if shutil.which("ffmpeg") is None:
         sys.exit("beep_reel: needs ffmpeg")
+    filters = subprocess.run(["ffmpeg", "-hide_banner", "-filters"], capture_output=True, text=True).stdout
+    if not re.search(r"^\s*\S+\s+subtitles\s", filters, re.M):
+        sys.exit("beep_reel: this ffmpeg has no subtitles filter for the captions: it needs one built with libass")
     subprocess.run(["make", "-s", "-C", HOST, "beepReel", f"BEEP_DIR={beep_dir}"], check=True)
     if os.path.isdir(out):
         shutil.rmtree(out)
@@ -48,13 +53,15 @@ def make(args):
         cmd.append("--lenient")
     if subprocess.run(cmd).returncode != 0:
         sys.exit("beep_reel: the reel failed its checks (above)")
-    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-                    "-framerate", str(FPS), "-i", os.path.join("frames", "%05d.png"), "-i", "reel.wav",
-                    "-vf", f"scale=iw*{args.scale}:ih*{args.scale}:flags=neighbor,"
-                           f"pad=iw:ih+{band}:0:0:color=0x101010,subtitles=reel.ass",
-                    "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-tune", "animation", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-movflags", "+faststart", "-shortest",
-                    "beep_reel.mp4"], cwd=out, check=True)    # cwd: the subtitles filter takes no path escaping
+    ffmpeg = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                        "-framerate", str(FPS), "-i", os.path.join("frames", "%05d.png"), "-i", "reel.wav",
+                        "-vf", f"scale=iw*{args.scale}:ih*{args.scale}:flags=neighbor,"
+                               f"pad=iw:ih+{band}:0:0:color=0x101010,subtitles=reel.ass",
+                        "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-tune", "animation", "-pix_fmt", "yuv420p",
+                        "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-movflags", "+faststart", "-shortest",
+                        "beep_reel.mp4"], cwd=out)    # cwd: the subtitles filter takes no path escaping
+    if ffmpeg.returncode != 0:
+        sys.exit("beep_reel: ffmpeg failed (above)")
     print(os.path.relpath(os.path.join(out, "beep_reel.mp4")))
 
 

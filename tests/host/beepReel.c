@@ -15,15 +15,16 @@
 // Before each step that may sound, the reel waits until 1 s after the last beep ended, so a longer beep moves the rest
 // of the reel back.
 //
-//   beepReel --out DIR [--geom 160x128] [--map K] [--scale 4] [--band 96] [--lenient]
-//     DIR/frames/NNNNN.png   the screen every 50 ms tick (20 fps), at scale 1
+//   beepReel --out DIR [--geom 160x128] [--map K] [--scale 4] [--band 96] [--lenient] [--no-frames]
+//     DIR/frames/NNNNN.png   the screen every 50 ms tick (20 fps), at scale 1 (not with --no-frames: the checks only)
 //     DIR/reel.wav           8 kHz 16-bit mono, starting with the first frame
 //     DIR/reel.ass           captions for the video scaled by --scale, with a --band px band under the screen
 //     DIR/beeps/<name>.wav   each beep alone
 //
-// Exit status 1: a beep never stops, two beeps are less than 1 s apart (two key beeps may be closer: a run of
-// presses), a beep in beep.h has no scene, or a scene's beep isn't in beep.h. --lenient (another commit's beep.h, for
-// a before / after comparison) only warns about the last two.
+// Exit status 1: beep_names.h doesn't list every beep between BEEP_NONE and BEEP_COUNT, a beep never stops, two beeps
+// are less than 1 s apart (two key beeps may be closer: a run of presses), the reel has more than EVENTS_MAX beeps, a
+// beep in beep.h has no scene, or a scene's beep isn't in beep.h. --lenient (another commit's beep.h, for a before /
+// after comparison) only warns about the last two.
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -70,7 +71,12 @@ typedef struct {
 } step_t;
 
 // From what a user hears most to what they hear least. Map K, zone 0 channel 1 (DMR), key beep on. The TX time-out
-// and the battery are faster than on a radio: the warning, the cut and the levels come when the reel is ready
+// and the battery are faster than on a radio: the warning, the cut and the levels come when the reel is ready.
+//
+// Nothing checks a step's beep against the radio core: after a change to when core/radio/radio_sm.c sounds one, change
+// its step here. The calls are in dmr_follow (TX_PERMIT on air, CALL_END when a call heard ends), tx_timer (TOT_WARN),
+// deny (TX_DENY: PTT refused or the time-out), battery_poll (BATTERY_CRIT), scan_service (SCAN_HOLD) and
+// emergency_tick (EMERGENCY)
 static const step_t steps[] = {
 	{ "Browse the menu", "ok down down back", NULL, true, false, 0 },
 	{ "Group call heard", "rx:3101234,91,g,K1ABC_Joe", NULL, false, true, 700 },
@@ -97,7 +103,7 @@ static const step_t steps[] = {
 };
 #define STEPS	((int)(sizeof steps / sizeof steps[0]))
 
-static bool lenient;
+static bool lenient, no_frames;
 static int failures;
 
 static void fail(bool hard, const char *fmt, ...)
@@ -265,11 +271,17 @@ static void sound(const char *name, uint32_t now)
 	pump_to(now);
 	beep_play(beeps[i].b, LEVEL, false);
 	sounded[i] = true;
-	if (event_n < EVENTS_MAX) {
-		events[event_n].beep = i;
-		events[event_n].at = now;
-		event_n++;
+	if (event_n == EVENTS_MAX) {
+		static bool said;
+		if (!said)
+			fail(true, "more than %d beeps in the reel: BEEP_%s and later ones aren't checked or captioned "
+			     "(EVENTS_MAX)", EVENTS_MAX, name);
+		said = true;
+		return;
 	}
+	events[event_n].beep = i;
+	events[event_n].at = now;
+	event_n++;
 }
 
 static void on_ui_beep(uint8_t b, uint32_t now)
@@ -282,7 +294,7 @@ static void save_frame(void)
 {
 	char path[512];
 	snprintf(path, sizeof path, "%s/frames/%05u.png", out_dir, (unsigned)frame_n++);
-	if (!sim_save_png(path, 1)) {
+	if (!no_frames && !sim_save_png(path, 1)) {
 		fprintf(stderr, "beepReel: can't write %s\n", path);
 		exit(1);
 	}
@@ -433,7 +445,7 @@ static bool write_captions(const char *path, int w, int h, int band, const uint3
 static int usage(void)
 {
 	fprintf(stderr, "usage: beepReel --out DIR [--geom 160x128] [--map K|M|V|F] [--scale 4] [--band 96] "
-		"[--lenient]\n");
+		"[--lenient] [--no-frames]\n");
 	return 2;
 }
 
@@ -446,6 +458,10 @@ int main(int argc, char **argv)
 		const char *a = argv[i], *v = i + 1 < argc ? argv[i + 1] : NULL;
 		if (strcmp(a, "--lenient") == 0) {
 			lenient = true;
+			continue;
+		}
+		if (strcmp(a, "--no-frames") == 0) {
+			no_frames = true;
 			continue;
 		}
 		if (v == NULL)
@@ -468,10 +484,26 @@ int main(int argc, char **argv)
 	if (out_dir == NULL || g == NULL || scale < 1 || band < 0)
 		return usage();
 
+	// The Makefile reads the beeps from beep.h's text: a layout it doesn't expect must fail here, not drop a beep
+	bool listed[BEEP_COUNT] = { false };
+	for (int i = 0; i < BEEPS; i++) {
+		if (beeps[i].b <= BEEP_NONE || beeps[i].b >= BEEP_COUNT || listed[beeps[i].b]) {
+			fprintf(stderr, "beepReel: beep_names.h: BEEP_%s isn't a beep, or is listed twice\n", beeps[i].name);
+			return 1;
+		}
+		listed[beeps[i].b] = true;
+	}
+	for (int b = BEEP_NONE + 1; b < BEEP_COUNT; b++)
+		if (!listed[b]) {
+			fprintf(stderr, "beepReel: beep %d of beep.h isn't in beep_names.h (the Makefile's awk missed it)\n", b);
+			return 1;
+		}
+
 	char path[512];
 	mkdir(out_dir, 0777);
 	snprintf(path, sizeof path, "%s/frames", out_dir);
-	mkdir(path, 0777);
+	if (!no_frames)
+		mkdir(path, 0777);
 	snprintf(path, sizeof path, "%s/beeps", out_dir);
 	mkdir(path, 0777);
 
