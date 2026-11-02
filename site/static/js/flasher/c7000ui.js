@@ -502,7 +502,8 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 	if (c.stub && c.stream) {
 		// already connected (back from a later step): check the stub still answers
 		const st = c.stub;
-		quiet(c).then(() => st.attach()).then((ok) => (ok ? ready(t("flash.c7.connect.still"), st) : cableStep()), () => cableStep());
+		c.leaveRead?.abort();	// Back from the check step while it reads: that read stops first
+		Promise.resolve(c.readDone).then(() => quiet(c)).then(() => st.attach()).then((ok) => (ok ? ready(t("flash.c7.connect.still"), st) : cableStep()), () => cableStep());
 	} else if (c.stream) find();	// the update task opened the cable and met RadioFoundry already (adoptCable)
 	else {
 		cableStep(c.dropped ? { text: t("flash.c7.connect.lost") } : null);
@@ -720,6 +721,11 @@ export function checkView() {
 			return ctx.render();
 		}
 		c.reading = true;
+		// Back to the connect step while this read runs: that step stops it (leaveRead) and waits for it (readDone)
+		// before it talks to the stub. Both on the cable at once broke each other's frames (Sentry OPENDIGITALRADIO-1F)
+		const left = (c.leaveRead = new AbortController());
+		let ended;
+		c.readDone = new Promise((r) => { ended = r; });
 		run.disabled = true;
 		diag.note(...crumbs.c7Check(want, { skipFirmware, firstInstall, how: c.how || null, rate: c.rate ? Math.round(c.rate) : null }));
 		started();
@@ -737,14 +743,15 @@ export function checkView() {
 			if (want.progmem && !skipFirmware) {
 				say("progmem", "run", t("flash.c7.check.reading"));
 				reading = canSkip ? new AbortController() : null;
+				if (reading) left.signal.addEventListener("abort", () => reading?.abort(), { once: true });
 				if (stopRead) stopRead.hidden = false;
 				try {
-					c.progmem = await st.dump("progmem", 0, progSize(), { signal: reading?.signal, onRetry: retrying, progress: (d, n, s) => {
+					c.progmem = await st.dump("progmem", 0, progSize(), { signal: reading?.signal || left.signal, onRetry: retrying, progress: (d, n, s) => {
 						bar(t("flash.c7.check.progmem"))(d, n);
 						c.rate = s.wire / Math.max(0.5, (performance.now() - t0) / 1000);
 					} });
 				} catch (e) {
-					if (!reading?.signal.aborted) throw e;
+					if (!reading?.signal.aborted || left.signal.aborted) throw e;
 					skipFirmware = true;	// stopped by the user: on to the stock file
 					diag.note("firmware read stopped for the stock file");
 					c.progmem = null;
@@ -760,13 +767,13 @@ export function checkView() {
 				say("progmem", "ok", t("flash.c7.check.progmem_done", { sha: (await sha256(c.progmem)).slice(0, 12) }));
 			} else {
 				say("progmem", "run", t("flash.c7.check.reading_slot"));
-				c.slot = await st.dump("progmem", lay.slot[0], lay.slot[1], { onRetry: retrying, progress: bar(t("flash.c7.check.slot")) });
+				c.slot = await st.dump("progmem", lay.slot[0], lay.slot[1], { signal: left.signal, onRetry: retrying, progress: bar(t("flash.c7.check.slot")) });
 				say("progmem", "skip", t(skipFirmware ? "flash.c7.check.progmem_stock" : "flash.c7.check.progmem_skipped"));
 			}
 			if (want.q128) {
 				say("q128", "run", t("flash.c7.check.reading"));
 				t0 = performance.now();
-				c.q128 = await st.dump(dataMem(), 0, dataSize(), { onRetry: retrying, progress: bar(t("flash.c7.check.q128")) });
+				c.q128 = await st.dump(dataMem(), 0, dataSize(), { signal: left.signal, onRetry: retrying, progress: bar(t("flash.c7.check.q128")) });
 				c.nandEcc = st.ecc;
 				say("q128", "ok", t("flash.c7.check.q128_done", { sha: (await sha256(c.q128)).slice(0, 12) }));
 			} else say("q128", "skip", t("flash.c7.check.q128_skipped"));
@@ -803,13 +810,16 @@ export function checkView() {
 			} else say("saved", c.slotBytes ? "ok" : "skip", c.slotBytes ? t("flash.c7.check.saved_slot") : "");
 			await decideView();
 		} catch (e) {
+			if (left.signal.aborted) return;	// the user left the step: nothing to say here, and the stub is the connect step's
 			say("progmem", items.progmem.dataset.state === "run" ? "bad" : items.progmem.dataset.state);
 			fill(status, errorNotice(t("flash.c7.check.failed", { error: ctx.errorText(e) })), retryHelp());
 			if (!viaIap()) await stale(c, { ask: true });	// Try Again then starts at the connect step
 			run.disabled = false;
 		} finally {
 			c.reading = false;
+			c.leaveRead = null;
 			await busy(false);
+			ended();
 		}
 	}
 

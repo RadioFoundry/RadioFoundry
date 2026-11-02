@@ -31,6 +31,16 @@ class El {
 	get textContent() { return this.children.map((c) => (c instanceof El ? c.textContent : c.text)).join(""); }
 	set textContent(v) { this.children = [{ text: String(v) }]; }
 	get firstChild() { return this.children[0]; }
+	// ".class" only
+	querySelector(sel) {
+		for (const c of this.children) {
+			if (!(c instanceof El)) continue;
+			if (String(c.className || c.attrs.class || "").split(" ").includes(sel.slice(1))) return c;
+			const deeper = c.querySelector(sel);
+			if (deeper) return deeper;
+		}
+		return null;
+	}
 }
 const strings = readFileSync(fileURLToPath(new URL("../i18n/en.json", import.meta.url)), "utf8");
 globalThis.Node = El;
@@ -229,6 +239,34 @@ test("backup: a failed read whose loader no longer answers sends Try Again to th
 	for (let i = 0; i < 50 && !rendered; i++) await sleep(10);
 	assert.equal(rendered, 1, "Try Again draws the step again: the connect step");
 	assert.equal(dumps, 1, "the dead loader was not asked again");
+});
+
+// Field (Sentry OPENDIGITALRADIO-1F): Back from the check step while it read; the connect step's stub check ran on the
+// same cable at once, and both failed on each other's frames
+test("install: Back from a check that reads stops the read before the connect step asks the stub", async () => {
+	globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
+	const forwards = [];
+	const state = { radio, task: "install", forward: (b) => forwards.push(b), data: { fb, site: { git: "test" } } };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, render() {}, noteReadout: async () => {}, errorText: (e) => e.message });
+	const order = [];
+	let signal = null;
+	state.c7 = { log: { add() {}, el: new El("div") }, stream: { lost: false, close: async () => {} }, how: "rom",
+		stub: { size: {}, sums: async () => { throw new Error("no count"); },
+			dump: (mem, a, b, opts) => new Promise((ok, fail) => {
+				signal = opts.signal;
+				order.push("read");
+				opts.signal.addEventListener("abort", () => setTimeout(() => { order.push("read stopped"); fail(new Error("stopped")); }, 30));
+			}),
+			drain: async () => {},
+			attach: async () => { order.push("attach"); return null; } } };
+	c7ui.checkView();
+	forwards.at(-1).click();
+	for (let i = 0; i < 50 && !signal; i++) await sleep(10);
+	assert.ok(signal, "the read runs");
+	c7ui.connectView();
+	for (let i = 0; i < 50 && !order.includes("attach"); i++) await sleep(10);
+	assert.ok(signal.aborted, "leaving the check step stops its read");
+	assert.deepEqual(order, ["read", "read stopped", "attach"], "the stub is asked only once the read has ended");
 });
 
 test("restore: the write logs its range and that the bootloader is unchanged, as an install does", async () => {
