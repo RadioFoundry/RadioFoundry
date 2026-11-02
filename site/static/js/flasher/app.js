@@ -56,6 +56,7 @@ import { missingApi, kitPanel, kitLine } from "./manual.js";
 import { showBetaNotice } from "./beta.js";
 import { currentBuild, planUpdate } from "./update.js";
 import { readDfuInfo, choiceFor, hwoptAction, runsOriginal, BOOTLOADER } from "./origversion.js";
+import { readOriginal, deviceKind, spiSeconds, Guard } from "./origbackup.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
@@ -1312,7 +1313,10 @@ function nowView() {
 		} else if (openfwShown()) {
 			detail.append(openfwDetail({ draw, check: checkRFoundry, setRun: (b) => { runBackup = b; } }));
 		}
-		if (S.board.original_version && (S.now?.kind === "stock" || (S.now?.kind === "unknown" && !openfwShown()))) detail.append(originalVersionPanel());
+		if (S.board.original_version && (S.now?.kind === "stock" || (S.now?.kind === "unknown" && !openfwShown()))) {
+			if (S.board.original_backup) detail.append(originalBackupPanel());
+			detail.append(originalVersionPanel());
+		}
 		out.replaceChildren(panel(t("flash.now.title"), opts, detail, status));
 		// on RadioFoundry the backup comes first: saving it is the main action, skipping it the quiet one beside it
 		const skip = (S.now?.kind === "rfoundry" || openfwRecognizedNow()) && !S.backupDone && runBackup;
@@ -1380,7 +1384,7 @@ function originalVersionPanel() {
 			}
 			// the interface strings tell the original firmware from the bootloader: nothing is sent to the bootloader
 			const fp = await tr.fingerprint?.();
-			const r = runsOriginal(spec, fp?.interfaces) ? await readDfuInfo(tr, { log: (m) => diag.note("original version", { m }) })
+			const r = runsOriginal(spec, fp?.interfaces) ? await readDfuInfo(new Guard(tr, { original: true }), { log: (m) => diag.note("original version", { m }) })
 				: { kind: fp?.interfaces?.length ? BOOTLOADER : null, version: null };	// no strings: unknown, nothing sent
 			diag.note("original version", r);
 			S.learned = { version: r.version, choice: choiceFor(spec, r.version), bootloader: r.kind === BOOTLOADER,
@@ -1396,6 +1400,80 @@ function originalVersionPanel() {
 		}
 	});
 	draw();
+	return box;
+}
+
+// The bootloader session a backup put in program mode (origbackup.js): its USB device (the fake radio in a simulation).
+// The bootloader takes 91 01 once, so the write in that session starts at 91 31; a radio switched off and on is a new
+// device and gets the whole sequence
+let loaderProgramMode = null;
+
+// A board with [flash.original_backup] (origbackup.js): back up what the original firmware (or, in update mode, the
+// bootloader) lets a host read, before anything is written. Recommended, never required. The bundle is saved on this
+// computer only: it holds the radio's calibration and the start of its program memory (its bootloader), so it is kept
+// out of S.lastBackup and every report
+function originalBackupPanel() {
+	const spec = S.board.original_backup;
+	const box = h("div", { class: "notice info" });
+	const status = h("div");
+	const prog = progressBar();
+	let choice = "full", abort = null;
+	const mins = (n) => Math.max(1, Math.round(spiSeconds(n) / 60));
+	const radio = (value, text) => h("label", { class: "small" }, h("input", { type: "radio", name: "orig-backup", value, checked: choice === value,
+		onchange: () => { choice = value; } }), " ", text);
+	const stop = button(t("flash.origbackup.stop"), () => abort?.abort(), { quiet: true });
+	const run = button(t("flash.origbackup.run"), async () => {
+		run.disabled = true;
+		status.replaceChildren(h("p", { class: "muted" }, t("flash.now.connecting")));
+		let tr = null;
+		abort = new AbortController();
+		try {
+			if (S.fakeRadio) tr = S.fakeRadio.dfuTransport();
+			else {
+				if (!usbSupported()) throw new Error(t("flash.err.no_usb"));
+				tr = await WebUsbTransport.request(S.board);
+				useAdapter(adapter.fromUsbDevice(tr.device));
+			}
+			const kind = deviceKind(S.board, await tr.fingerprint?.());
+			if (!kind) throw new Error(t("flash.origbackup.unknown_device"));
+			status.replaceChildren(prog.el, h("p", {}, stop),
+				kind === "bootloader" ? notice(t("flash.origbackup.loader_note", { mb: spec.loader_spi / 0x100000 })) : null);
+			const res = await readOriginal(tr, S.board, kind, { spi: choice, signal: abort.signal,
+				log: (m) => diag.note("original backup", { m }),
+				progress: (what, d, n) => prog.set(d, n, t(`flash.origbackup.reading_${what}`)) });
+			if (res.programMode) loaderProgramMode = S.fakeRadio || tr.device;
+			if (res.version && !S.learned?.version) {
+				const L = { version: res.version, choice: choiceFor(S.board.original_version, res.version), bootloader: false, device: null, stored: false };
+				S.learned = L;
+			}
+			const before = res.version ? { kind: "stock", version: res.version } : null;
+			const meta = { radio: { board: S.board.id, name: S.board.name, model: S.radio.model, uid: res.uid },
+				firmware_now: before || { kind: kind === "bootloader" ? "bootloader" : "unknown" }, firmware_before: before,
+				original_backup: { device: kind, version: res.version, loader_version: res.loaderVersion, spi: choice,
+					restarted: res.restarted, browser: navigator.userAgent } };
+			const bytes = await makeBundle(meta, res.parts, { git: S.data.site.git, url: location.origin });
+			const name = bundleName(meta);
+			download(name, bytes, "application/zip");
+			diag.note("original backup", { kind, parts: res.parts.length, size: bytes.length });
+			S.originalBackup = { name, size: bytes.length, kind };
+			const spi = res.parts.find((x) => x.what === "spi-flash");
+			status.replaceChildren(notice(t("flash.origbackup.saved", { name, size: num(Math.round(bytes.length / 1024)) }), "ok"),
+				spi && !spi.complete && choice === "full" ? notice(t(kind === "bootloader" ? "flash.origbackup.loader_partial" : "flash.origbackup.stopped")) : null,
+				notice(t(kind === "bootloader" ? "flash.origbackup.loader_after" : res.restarted ? "flash.origbackup.restarting" : "flash.origbackup.done_normal"), "info"));
+		} catch (e) {
+			status.replaceChildren(e?.name === "NotFoundError" ? h("div") : errorNotice(errorText(e)));
+		} finally {
+			run.disabled = false;
+			abort = null;
+			if (!S.fakeRadio) await tr?.close?.();
+		}
+	}, { primary: true });
+	box.append(h("p", {}, h("b", {}, t("flash.origbackup.title"))), h("p", {}, t("flash.origbackup.lead")),
+		h("p", {}, radio("full", t("flash.origbackup.full", { min: mins(spec.spi) }))),
+		h("p", {}, radio("quick", t("flash.origbackup.quick", { s: spiSeconds(spec.quick) }))),
+		h("p", { class: "small muted" }, t("flash.origbackup.private")),
+		S.originalBackup ? notice(t("flash.origbackup.have", { name: S.originalBackup.name }), "ok") : null,
+		h("p", {}, run), status);
 	return box;
 }
 
@@ -1908,10 +1986,12 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 			try {
 				await dropSerial();
 				started = flashStarted(what);
+				const programMode = !!loaderProgramMode && loaderProgramMode === (S.fakeRadio || transport.device);
 				await new Dfu(transport, { log: log.add }).run(plan, S.key, (d, total) => {
 					if (d > 0) flashMark(started, "first_byte");
 					prog.set(d, total, t("flash.write.writing"));
-				});
+				}, { programMode });
+				loaderProgramMode = null;
 				flashMark(started, "last_byte");
 				flashFinished(started);
 				log.add(t("flash.write.finished"));

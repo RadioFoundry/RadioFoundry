@@ -58,7 +58,7 @@ test("the declared boards: a known read, two-digit majors, the bootloader's USB 
 test("the read sends exactly its requests to the original firmware and gets the version", async () => {
 	const r = await radio();
 	assert.deepEqual(await readDfuInfo(r.dfuTransport()), { kind: "original", version: "06.09" });
-	assert.deepEqual(r.dfuRequests, [["in", 3, 6], ["out", 1, 0, [0xA2, 0x02]], ["in", 3, 6], ["in", 3, 6], ["out", 6, 0, []], ["in", 2, 1024]]);
+	assert.deepEqual(r.dfuRequests, [["in", 3, 6, 0], ["out", 1, 0, [0xA2, 0x02]], ["in", 3, 6, 0], ["in", 3, 6, 0], ["out", 6, 0, []], ["in", 2, 1024, 0]]);
 	const r2 = await radio({ originalVersion: v(0x56, 0x01, 0x60, 0x45) });
 	assert.deepEqual(await readDfuInfo(r2.dfuTransport()), { kind: "original", version: "16.45" });
 });
@@ -67,18 +67,18 @@ test("a state left from before is cleared first", async () => {
 	const r = await radio();
 	r.state = 10;
 	assert.deepEqual(await readDfuInfo(r.dfuTransport()), { kind: "original", version: "06.09" });
-	assert.deepEqual(r.dfuRequests.slice(0, 2), [["in", 3, 6], ["out", 4, 0, []]]);
+	assert.deepEqual(r.dfuRequests.slice(0, 2), [["in", 3, 6, 0], ["out", 4, 0, []]]);
 	const r2 = await radio();
 	r2.state = 9;
 	assert.deepEqual(await readDfuInfo(r2.dfuTransport()), { kind: "original", version: "06.09" });
-	assert.deepEqual(r2.dfuRequests.slice(0, 2), [["in", 3, 6], ["out", 6, 0, []]]);
+	assert.deepEqual(r2.dfuRequests.slice(0, 2), [["in", 3, 6, 0], ["out", 6, 0, []]]);
 });
 
 test("a stall (the bootloader, another device) is no version, and nothing more is sent", async () => {
 	const r = await radio({ originalVersion: null });
 	const log = [];
 	assert.deepEqual(await readDfuInfo(r.dfuTransport(), { log: (m) => log.push(m) }), { kind: null, version: null });
-	assert.deepEqual(r.dfuRequests, [["in", 3, 6], ["out", 1, 0, [0xA2, 0x02]]]);
+	assert.deepEqual(r.dfuRequests, [["in", 3, 6, 0], ["out", 1, 0, [0xA2, 0x02]]]);
 	assert.match(log[0], /no version/);
 	// the bootloader itself answers 'T': in update mode already, no version, nothing written
 	const loader = await radio({ state: "bootloader" });
@@ -123,9 +123,9 @@ test("HWOPT over the debug link: list, store, and a mismatch left alone", async 
 	await assert.rejects(link.hwoptSet(0, choices.length), /status 2/);
 });
 
-test("the original firmware's device is not the bootloader: flashing it is refused", async () => {
+test("the original firmware refuses what the bootloader would take for a write", async () => {
 	const r = await radio();
-	await assert.rejects(Promise.resolve().then(() => r.dfuTransport().out(1, 0, v(0x91, 0x01))), /sent to the original firmware/);
+	await assert.rejects(Promise.resolve().then(() => r.dfuTransport().out(1, 0, v(0x41, 0, 0xC0, 0, 8))), /sent to the original firmware/);
 	r.enterBootloader();
 	assert.deepEqual(Array.from(await r.dfuTransport().in(3, 6)).slice(4, 5), [2]);
 });
