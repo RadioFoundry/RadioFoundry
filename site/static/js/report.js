@@ -56,7 +56,7 @@ function loadScript(src, integrity) {
 }
 
 // Every string and number in a value, scrubbed one by one: scrubbing its JSON text instead turns a number (a DMR ID
-// in a list) into [id] without quotes, the parse throws and Sentry drops the event
+// in a list) into [id] without quotes, the parse throws and Sentry drops the event. A size (diag.SIZE_KEYS) stays a number
 function scrubDeep(x) {
 	if (typeof x === "string") return diag.scrub(x);
 	if (typeof x === "number") {
@@ -64,7 +64,7 @@ function scrubDeep(x) {
 		return t === String(x) ? x : t;
 	}
 	if (Array.isArray(x)) return x.map(scrubDeep);
-	if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, scrubDeep(v)]));
+	if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, typeof v === "number" && diag.SIZE_KEYS.has(k) ? v : scrubDeep(v)]));
 	return x;
 }
 
@@ -77,6 +77,18 @@ export function scrubEvent(ev) {
 	if (ev.contexts?.rfoundry) ev.contexts.rfoundry = scrubDeep(ev.contexts.rfoundry);
 	ev.user = undefined;
 	return ev;
+}
+
+// What goes with an error to Sentry. An error whose message is a catalog string carries its key (e.key): the message is
+// in the page's language, so the key is the event's fingerprint and a tag, and the same failure is one issue in every
+// language (OPENDIGITALRADIO-35 was a Spanish copy of an English one)
+export function captureOptions(rec, e, context) {
+	const key = typeof e?.key === "string" ? e.key : null;
+	return {
+		tags: { stage: rec.stage, ...(rec.code ? { code: String(rec.code) } : {}), ...(key ? { msg_key: key } : {}) },
+		...(key ? { fingerprint: ["msg_key", key] } : {}),
+		contexts: { rfoundry: { ...context, ...(rec.params ? { params: rec.params } : {}) } },
+	};
 }
 
 async function startSentry(dsn, tool) {
@@ -106,11 +118,7 @@ async function startSentry(dsn, tool) {
 		if (rec.expected) return;
 		const err = e instanceof Error ? e : new Error(rec.message);
 		// the id ties the details the user may add (reportedLine) to this event
-		rec.eventId = sentry.captureException(err, {
-			tags: { stage: rec.stage, ...(rec.code ? { code: String(rec.code) } : {}) },
-			contexts: { rfoundry: { ...diag.context(), ...(rec.params ? { params: rec.params } : {}), ...(adapterNow ? { adapter: adapterNow } : {}),
-				trail: diag.trail(40) } },
-		});
+		rec.eventId = sentry.captureException(err, captureOptions(rec, e, { ...diag.context(), ...(adapterNow ? { adapter: adapterNow } : {}), trail: diag.trail(40) }));
 	});
 	diag.note("error reporting on");
 }

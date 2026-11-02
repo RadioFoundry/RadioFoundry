@@ -328,6 +328,7 @@ typedef struct {
 	bool sfr_rpt;			// the channel's SFR repeater role has the modem (radio_sfr.c), not the call stack
 	bool sfr_denied;		// a repeater channel kept ordinary because the radio may not transmit or a scan
 					// runs: the role starts once it may (TX inhibit cleared, the scan stopped)
+	uint32_t dmr_rx_hz;		// the frequency the call stack's receiver searched for slot timing on
 	uint32_t own_id;		// the radio's DMR ID (codeplug, else RADIO_DMR_ID_DEFAULT)
 	uint32_t dmr_serial;		// call stack view serial last copied
 	uint32_t talk_id;		// the channel's talk target

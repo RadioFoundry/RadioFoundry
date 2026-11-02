@@ -30,9 +30,16 @@ export class StubError extends Error {
 }
 // A damaged, short or missing frame, or a sector that failed its CRC: worth asking again
 export class FrameError extends StubError {}
+// The NAND's ECC failed on the sector being read (status ECC): not worth asking again
+class EccError extends StubError {}
 
 export const SECTOR = 4096, PAGE = 256, WINDOW = 16, PACK = 16, CHUNK = 1024, ROM_BLOCK = 256;
 export const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, SPITIMEOUT = 0x0C, TOOLONG = 0x0E, NOWEL = 0x0F;
+// A sector read or checksum of the SPI NAND (NAND_FLAG): a page of it has more bit errors than the chip's ECC corrects
+// (its status feature reads ECC 2). It reads the same every time, so it is never asked for again: Stub.nandRaw takes
+// the page as the chip holds it instead
+export const ECC = 0x0D;
+const NAND_PAGE = 2048;
 export const WRITE_VERSION = 7;	// the stub has op 0x0E (WRITE): a sector erased, programmed and read back in one request
 export const SSI_PROG = 0x04000000, SSI_DATA = 0x140A0000;
 export const QUAD_ENABLE = 0x1100005C, LCSFC_BAUDR = 0x11000030, SYS_SOFT_RSTN = 0x11000000, TIMER2_VALUE = 0x14000018;
@@ -478,16 +485,29 @@ export class Stub {
 		return Array.from({ length: count }, (_, i) => ({ crc: u32be(r, i * 5), blank: r[i * 5 + 4] === 1 }));
 	}
 
-	// Sector addresses in [start, start + data.length) where the flash differs from data, by CRC
-	async verify(mem, data, start = 0, progress = () => {}) {
+	// Sector addresses in [start, start + data.length) where the flash differs from data, by CRC. ecc: a NAND's sectors
+	// whose ECC fails (Stub.dump), which have no CRC of the radio's: a window holding one is summed sector by sector
+	// without them, and a sector that fails its ECC only now counts as differing (read again, it joins them)
+	async verify(mem, data, start = 0, progress = () => {}, { ecc = null } = {}) {
 		if (start % SECTOR || data.length % SECTOR) throw new StubError("verify needs whole 4 KB sectors");
 		const bad = [];
 		const end = start + data.length;
 		for (let w = start; w < end; w += WINDOW * SECTOR) {
 			const count = Math.min(WINDOW, (end - w) / SECTOR);
-			(await this.sums(mem, w, count)).forEach(({ crc }, i) => {
+			let sums;
+			try {
+				sums = await this.sums(mem, w, count);
+			} catch (e) {
+				if (!ecc || e.status !== ECC) throw e;
+				sums = [];
+				for (let a = w; a < w + count * SECTOR; a += SECTOR) {
+					if (ecc.has(a)) sums.push(null);
+					else sums.push(await this.sums(mem, a, 1).then((r) => r[0], (e1) => { if (e1.status !== ECC) throw e1; return { crc: -1 }; }));
+				}
+			}
+			sums.forEach((sum, i) => {
 				const off = w + i * SECTOR - start;
-				if (crc32(data.subarray(off, off + SECTOR)) !== crc) bad.push(w + i * SECTOR);
+				if (sum && crc32(data.subarray(off, off + SECTOR)) !== sum.crc) bad.push(w + i * SECTOR);
 			});
 			progress(Math.min(w + WINDOW * SECTOR, end) - start, data.length);
 		}
@@ -507,7 +527,8 @@ export class Stub {
 	// Read [start, end) of a memory. The radio sends each sector blank (a flag), LZ4-compressed or raw with its CRC-32;
 	// a sector that doesn't match is asked for again, uncompressed from the second try. A record carries no address, so
 	// one left over from a request cut short could pass for another sector: at the end every sector is checked against
-	// the radio's own CRCs (op 07) and read again until it matches. progress(done, total, stats)
+	// the radio's own CRCs (op 07) and read again until it matches. A NAND sector whose ECC fails is taken as the chip
+	// holds it (nandRaw), without a CRC to check it by; this.ecc lists them after the read. progress(done, total, stats)
 	async dump(mem, start, end, { progress = () => {}, onRetry = () => {}, signal, compress = true } = {}) {
 		const m = MEM[mem];
 		const size = this.size[mem] || m.size;
@@ -516,23 +537,25 @@ export class Stub {
 		const lo = Math.floor(start / SECTOR) * SECTOR, hi = Math.ceil(end / SECTOR) * SECTOR;
 		const full = new Uint8Array(hi - lo);
 		const stats = { blank: 0, packed: 0, wire: 0 };
-		await this.readSectors(m, full, lo, lo, hi, { compress, signal, stats,
+		const ecc = m.nand ? new Set() : null;
+		await this.readSectors(m, full, lo, lo, hi, { compress, signal, stats, ecc,
 			progress: (sa) => progress(Math.min(sa, end) - start, end - start, stats), onRetry });
 		for (let pass = 0; ; pass++) {
-			const bad = await this.verify(mem, full, lo);
+			const bad = await this.verify(mem, full, lo, () => {}, { ecc });
 			if (!bad.length) break;
 			if (pass >= this.retries) throw new StubError(`0x${bad[0].toString(16)}: the read does not match the radio's checksum after ${pass + 1} tries`);
 			this.log(`${bad.length} sector(s) read wrong (first 0x${bad[0].toString(16)}), reading them again`);
 			this.retried += bad.length;
-			for (const sa of bad) await this.readSectors(m, full, lo, sa, sa + SECTOR, { compress: false, signal, stats, onRetry });
+			for (const sa of bad) await this.readSectors(m, full, lo, sa, sa + SECTOR, { compress: false, signal, stats, ecc, onRetry });
 		}
 		this.stats = stats;
+		this.ecc = ecc ? [...ecc].sort((a, b) => a - b) : [];
 		// a whole memory is returned as read: a NAND's copy would hold its size twice
 		return start === lo && end === hi ? full : full.slice(start - lo, end - lo);
 	}
 
 	// Sectors [from, to) into full (which starts at base), resuming where a damaged frame stopped
-	async readSectors(m, full, base, from, to, { compress, signal, stats, progress = () => {}, onRetry = () => {} }) {
+	async readSectors(m, full, base, from, to, { compress, signal, stats, ecc = null, progress = () => {}, onRetry = () => {} }) {
 		let sa = from, fails = 0, want = compress;
 		while (sa < to) {
 			if (signal?.aborted) throw new StubError("stopped");
@@ -545,6 +568,7 @@ export class Stub {
 					const [status, r] = await this.readFrame(i === 0 ? 3000 : 1500);
 					if (status !== OK) {
 						if (status === BADOP || status === TOOLONG) throw new StubError(`stub op 0x09 refused: status 0x${status.toString(16)}`);
+						if (status === ECC && ecc) throw new EccError(`0x${sa.toString(16)}: the NAND's ECC fails`);
 						throw new FrameError(`stub op 0x09: status 0x${status.toString(16)}`);
 					}
 					if (r.length < 7 || r.length !== 7 + ((r[5] << 8) | r[6])) throw new FrameError("sector record malformed");
@@ -560,6 +584,17 @@ export class Stub {
 					progress(sa);
 				}
 			} catch (e) {
+				if (e instanceof EccError) {
+					// the frames before it came through; the stub sends nothing after its error
+					full.set(await this.nandRaw(sa), sa - base);
+					ecc.add(sa);
+					this.log(`0x${sa.toString(16)}: the NAND's ECC can't correct this sector; kept as the chip holds it`);
+					sa += SECTOR;
+					fails = 0;
+					want = compress;
+					progress(sa);
+					continue;
+				}
 				if (!(e instanceof FrameError)) throw e;
 				fails++;
 				this.retried++;
@@ -571,6 +606,30 @@ export class Stub {
 				want = compress && fails < 2;
 			}
 		}
+	}
+
+	// The 4 KB at addr of the SPI NAND as the chip holds it, whatever its ECC says, by generic SPI requests: for each 2 KB
+	// page a page read (0x13 and the page), the status feature (0x0F 0xC0) until it is not busy, then the cache (0x03, a
+	// column, a dummy byte) in halves that fit a reply: the standard SPI NAND commands, as the stub's own NAND reads use
+	// them. Read twice; both must be the same
+	async nandRaw(addr) {
+		const once = async () => {
+			const out = new Uint8Array(SECTOR);
+			for (let h = 0; h < SECTOR / NAND_PAGE; h++) {
+				const pg = (addr + h * NAND_PAGE) / NAND_PAGE;
+				await this.spi("nand", new Uint8Array([0x13, (pg >> 16) & 0xFF, (pg >> 8) & 0xFF, pg & 0xFF]), 0);
+				for (let n = 0; (await this.spi("nand", new Uint8Array([0x0F, 0xC0]), 1))[0] & 1; n++)
+					if (n >= 50) throw new StubError(`0x${addr.toString(16)}: the NAND stays busy after a page read`);
+				for (let col = 0; col < NAND_PAGE; col += 1024)
+					out.set(await this.spi("nand", new Uint8Array([0x03, col >> 8, col & 0xFF, 0]), 1024), h * NAND_PAGE + col);
+			}
+			return out;
+		};
+		for (let i = 0; i <= this.retries; i++) {
+			const a = await once(), b = await once();
+			if (a.every((x, k) => x === b[k])) return a;
+		}
+		throw new StubError(`0x${addr.toString(16)}: the NAND's ECC fails here and the page reads differently each time`);
 	}
 
 	// ---- writes (generic SPI flash ops: write enable 06, status 05, sector erase 20, page program 02)

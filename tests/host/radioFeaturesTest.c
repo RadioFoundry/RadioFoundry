@@ -374,6 +374,7 @@ static void req(uint8_t type, int32_t arg) { req2(type, arg, 0); }
 static int16_t spk[AUDIO_BLOCK_SAMPLES];
 static int16_t mic[AUDIO_BLOCK_SAMPLES];
 static void air_burst(void);
+static void kept_timing(void);
 static struct {
 	bool on;		// a DMR voice call in progress (no header: it started before the radio came by)
 	uint32_t hz;
@@ -393,6 +394,7 @@ static void run(uint32_t ms)
 		if (now % 30 == 0) {
 			sim_slot();
 		}
+		kept_timing();
 		if (air.on && now >= air.t0 && (now - air.t0) % 60u == 0) {
 			air_burst();
 		}
@@ -1205,11 +1207,43 @@ static void test_mixed_scan(void)
 // The modem on the call's frequency (as the HR_C6000 slot engine does it): nothing for AIR_LOCK_MS after a retune
 // (the receiver restarts and searches), then voice from the first burst A on, with the embedded LC at the lc_at-th F
 #define AIR_LOCK_MS	90
+
+// A modem that keeps the slot timing it took (the HR_C7000, modem-hrc7000.md 5.3): on a frequency with a DMR signal
+// the chip takes that transmitter's timing, and it keeps it over a retune until the receiver is restarted
+// (hal_dmr_modem_t.rx_restart). Meanwhile another transmitter's bursts don't decode. The engine drops a timing it takes
+// nothing from after 600 ms (RX_IDLE_TICKS); kept.hz's signal is in a color code no channel has, so nothing is taken
+static struct {
+	bool on;
+	uint32_t hz;		// the DMR signal in the other color code
+	bool held;		// the chip has its slot timing
+	uint32_t since;		// taken then
+	unsigned restarts;	// sim.rx_restarts when last looked at
+} kept;
+
+static void kept_timing(void)
+{
+	if (!kept.on) {
+		return;
+	}
+	if (sim.rx_restarts != kept.restarts) {
+		kept.restarts = sim.rx_restarts;
+		kept.held = false;
+	}
+	if (kept.held && now - kept.since >= 600) {
+		kept.held = false;
+	}
+	bool dmr = sm.view.ch.mode == RADIO_MODE_DMR && sim.started;
+	if (!kept.held && dmr && hw.rx_hz == kept.hz && now >= hw.rx_ms + AIR_LOCK_MS) {
+		kept.held = true;
+		kept.since = now;
+	}
+}
+
 static void air_burst(void)
 {
 	uint8_t idx = (uint8_t)(((now - air.t0) / 60u) % 6u);
 	bool tuned = hw.rx_hz == air.hz && sm.view.ch.mode == RADIO_MODE_DMR && sim.started;
-	if (!tuned || now < hw.rx_ms + AIR_LOCK_MS) {
+	if (!tuned || now < hw.rx_ms + AIR_LOCK_MS || (kept.held && kept.hz != air.hz)) {
 		air.joined = false;
 		return;
 	}
@@ -1316,6 +1350,72 @@ static void test_scan_dmr_mid_call(void)
 	}
 	CHECK(!held && max5 > 0 && max5 <= 1300);
 	req(RREQ_SCAN, RSCAN_STOP);
+	hw.sig[0].hz = 0;
+}
+
+// Field report on an HR_C7000 radio (build b0b69d2): "the scan does not stop on DMR channels, even with a
+// transmission". The chip keeps the slot timing of the last DMR signal it heard over a retune (kept_timing), and a
+// retune to another DMR frequency did not restart the receiver: the HR_C6000 boards restart it in their own rx(), the
+// HR_C7000 ones did not. Here the stop before the call carries DMR in a color code no channel has: the chip takes its
+// timing there and, on the call's channel, decodes nothing until its own stale restart, up to 600 ms of the stop.
+// The core now restarts DMR reception at every new frequency: the modem searches from the retune, and the call holds
+// the scan by the LC's superframe after the first burst A (gotchas 17.2). With the noise reading showing the carrier
+// the probe outlasted the stale timing anyway, only later; a noise reading blind to the DMR carrier left the stop at
+// the dwell on every visit
+static void test_scan_dmr_kept_timing(void)
+{
+	// Every stop on a DMR frequency restarts the receiver; the same frequency again doesn't (a repeater's timing stays)
+	start();
+	all_dmr();
+	req(RREQ_ZONE_POS, 0);
+	unsigned r0 = sim.rx_restarts;
+	req(RREQ_ZONE_POS, 1);
+	CHECK(sim.rx_restarts == r0 + 1);
+	req(RREQ_ZONE_POS, 1);
+	CHECK(sim.rx_restarts == r0 + 1);
+
+	for (uint8_t lc_at = 1; lc_at <= 2; lc_at++) {
+		// The restart, the lock, burst A at most a superframe later, then lc_at superframes to the LC, and a poll
+		uint32_t bound = AIR_LOCK_MS + 360u * (1u + lc_at) + 100u;
+		for (uint32_t phase = 0; phase < 360; phase += 30) {
+			start();
+			all_dmr();
+			signal_on(0, 438500000, 30, no_tone);
+			hw.sig[0].tdma = true;
+			signal_on(1, 145500000, 30, no_tone);	// the stop before: DMR in another color code
+			hw.sig[1].tdma = true;
+			memset(&kept, 0, sizeof(kept));
+			kept.on = true;
+			kept.hz = 145500000;
+			air.on = true;
+			air.hz = 438500000;
+			air.t0 = now + 300 + phase;
+			air.dst = 9;
+			air.lc_at = lc_at;
+			req(RREQ_ZONE_POS, 6);
+			req(RREQ_SCAN, RSCAN_ZONE);
+			uint32_t arrived = 0, held_ms = 0;
+			bool left = false;
+			for (int i = 0; i < 400 && held_ms == 0; i++) {
+				run(25);
+				if (sm.view.zone_pos == 5 && arrived == 0) {
+					arrived = now;
+				}
+				left |= arrived != 0 && sm.view.zone_pos != 5;
+				if (sm.view.zone_pos == 5 && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX) {
+					held_ms = now - arrived;
+				}
+			}
+			if (held_ms == 0 || left || held_ms > bound) {
+				printf("  kept-timing DMR scan: LC at F %u, phase %u ms: held %u ms after arriving, left %d\n",
+				       lc_at, (unsigned)phase, (unsigned)held_ms, left);
+			}
+			CHECK(arrived != 0 && held_ms != 0 && !left && held_ms <= bound);
+			req(RREQ_SCAN, RSCAN_STOP);
+			kept.on = false;
+			hw.sig[1].hz = 0;
+		}
+	}
 	hw.sig[0].hz = 0;
 }
 
@@ -2770,6 +2870,7 @@ int main(void)
 	test_vfo_scan();
 	test_mixed_scan();
 	test_scan_dmr_mid_call();
+	test_scan_dmr_kept_timing();
 	test_dual_watch();
 #if CONFIG_DUAL_WATCH
 	test_dual_wait();

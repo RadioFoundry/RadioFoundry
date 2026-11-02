@@ -263,6 +263,8 @@ test("longer database text is kept up to 48 characters", () => {
 import { CpsSerial, changes, writeRanges, TransportError, keepIdentity } from "../static/js/codeplug/transport.js";
 import { concat } from "../static/js/flasher/bytes.js";
 import { FakeCpsRadio } from "../static/js/codeplug/fakecps.js";
+import { FastLink, FastError } from "../static/js/codeplug/fastlink.js";
+import { Link, browserErrorKey } from "../static/js/flasher/link.js";
 import { updateFor } from "../static/js/flasher/version.js";
 
 const RADIOS = [
@@ -453,6 +455,16 @@ test("the fast protocol reads what the CPS reads, and writes only the blocks tha
 	assert.equal(simDetailFlash(await s.close()), detail(m));
 });
 
+test("a fast request to a radio that went away is a lost connection, not a radio that won't answer", async () => {
+	// a stream nobody answers on; lost as SerialStream's pump sets it when the USB device disappears
+	const s = { buf: new Uint8Array(0), lost: false, clear() {}, take() {}, async write() {} };
+	const fl = new FastLink(new Link(s, { timeout: 20 }));
+	fl.limits = { sums: 16 };
+	await assert.rejects(fl.sums(0, 1), (e) => e instanceof FastError && e.status === "no answer");
+	s.lost = true;
+	await assert.rejects(fl.sums(0, 1), (e) => e.name === "NetworkError" && browserErrorKey(e) === "flash.err.connection_lost");
+});
+
 test("a DATA frame lost in a window sends the block again", async () => {
 	let lost = 0;
 	const s = simRadio(["--populate"], { drop: (f) => f.length > 64 * 3 && lost++ === 0 });	// a window of DATA frames
@@ -562,6 +574,17 @@ test("a sector left pending by an interrupted write is retried; verify skips the
 	await tr.verify(want, res.plan);
 	radio.spi[0x7600] ^= 0xFF;
 	await assert.rejects(tr.verify(want, res.plan), (e) => e.code === "verify_failed" && e.params.addr === 0x7600);
+});
+
+test("a read-back the radio refuses part way is reported as such, not as a mismatch", async () => {
+	const radio = new FakeCpsRadio({ board: "DM-1701" });
+	const tr = new CpsSerial(radio.stream());
+	await tr.identify(RADIOS);
+	const want = encode(rich());
+	const res = await tr.write(want, null);
+	const answer = radio.answer.bind(radio);
+	radio.answer = (req) => (req[0] === 0x52 ? new Uint8Array([0x2D]) : answer(req));
+	await assert.rejects(tr.verify(want, res.plan), (e) => e.code === "verify_incomplete" && e.params.addr === res.plan[0][1][0][0]);
 });
 
 test("a backup's codeplug is offered for restore only in RadioFoundry's layout", () => {

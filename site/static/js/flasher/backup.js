@@ -59,11 +59,13 @@ export async function readRadio(link, board, radio, { what = {}, progress = () =
 	}
 	// A loader bounds the MCU flash by the chip's own size register, which on some parts reads less than the board's
 	// flash (512 KB on a 1 MB chip whose top sectors hold the codec): the loader refuses the top. RadioFoundry reads
-	// the board's whole flash in place, so then it reads the internal flash, before any hand-over
+	// the board's whole flash in place, so then it reads the internal flash, before any hand-over. A size it didn't
+	// give (no answer twice) is taken as short too: the read in place is slower, but a loader that refuses the top
+	// fails the whole backup (seen in the field)
 	let internalFirst = false;
 	if (want.internal && readers.length) {
-		const chip = await link.chip().catch(() => null);
-		internalFirst = !!chip?.flashKb && MCU_BASE + chip.flashKb * 1024 < board.flash_end;
+		const chip = await link.chip().catch(() => null) || await link.chip().catch(() => null);
+		internalFirst = !chip?.flashKb || MCU_BASE + chip.flashKb * 1024 < board.flash_end;
 	}
 	if (internalFirst) {
 		const base = board.app_base, size = board.flash_end - board.app_base;
@@ -148,11 +150,32 @@ export function bundleName(meta, when = new Date()) {
 }
 
 // Where a zip's files (name -> bytes) keep backup.json: "" at the top, "name/" for a backup unpacked and zipped again
-// (macOS opens a downloaded zip by itself; Compress then adds its folder and __MACOSX/), null when it isn't a backup
+// (macOS opens a downloaded zip by itself; Compress then adds its folder and __MACOSX/), "a/b/" for a folder zipped
+// with the unpacked one inside, null when it isn't a backup (none, or several backups in one zip)
 export function bundleFolder(files) {
 	if (files.has("backup.json")) return "";
-	const found = [...files.keys()].filter((k) => !k.startsWith("__MACOSX/") && /^[^/]+\/backup\.json$/.test(k));
+	const found = [...files.keys()].filter((k) => !k.startsWith("__MACOSX/") && /\/backup\.json$/.test(k));
 	return found.length === 1 ? found[0].slice(0, -"backup.json".length) : null;
+}
+
+// The files a backup holds (readRadio's parts, the cable radios' in c7000ui.js saveBundle, the stock file, the index
+// and its README), as a picked file is named: a browser saves a second download as "name (1).bin"
+const BUNDLE_FILES = new Set(["backup.json", "README.txt", "internal-flash.bin", "spi-flash.bin", "security-registers.bin",
+	"security-registers-codeplug-protocol.bin", "radio-info.bin", "stock-firmware.bin", "program-memory.bin", "data-memory.bin",
+	"nand.bin", "original-channels.bin", "calibration.bin", "calibration-program-memory.bin"]);
+const bundleFile = (path) => BUNDLE_FILES.has(path.split("/").pop().replace(/ \(\d+\)(?=\.\w+$)/, ""));
+const CODEPLUG_EXT = /\.(rdt|dat|ya?ml|csv)$/i;
+
+// What a file picked as a backup is when it isn't one (no zip, or a zip without backup.json), so the restore can say what
+// to pick instead (OPENDIGITALRADIO-12, -1S): {kind: "part", file}: one file from inside a backup (it was unpacked);
+// "parts": a zip of a backup's files without its backup.json; "codeplug": the Codeplug Editor's file (the open-firmware
+// layout's size) or a CPS one; "other": anything else, which may be an original firmware file (vendorfile.js decides).
+// files: the zip's entries, or null when it is no zip
+export function notBundle(name, bytes, files) {
+	if (!files && bundleFile(name)) return { kind: "part", file: name };
+	if (files && [...files.keys()].some((k) => !k.startsWith("__MACOSX/") && bundleFile(k) && !k.endsWith("README.txt"))) return { kind: "parts" };
+	if (!files && (bytes.length === CODEPLUG_SPAN || CODEPLUG_EXT.test(name))) return { kind: "codeplug" };
+	return { kind: "other" };
 }
 
 // Read a bundle back; every part checked against its SHA-256. Returns {meta, parts: Map(what -> {..., data})}

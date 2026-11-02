@@ -19,7 +19,7 @@ import { zip, unzip } from "../static/js/flasher/zip.js";
 import * as vendorfile from "../static/js/flasher/vendorfile.js";
 import * as explain from "../static/js/flasher/explain.js";
 import { pictureSrc } from "../static/js/flasher/radiotop.js";
-import { readRadio, makeBundle, openBundle, bundleFolder, bundleName } from "../static/js/flasher/backup.js";
+import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, CODEPLUG_SPAN } from "../static/js/flasher/backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "../static/js/flasher/restore.js";
 import { Selection } from "../static/js/flasher/select.js";
 import { decideCodec, DecisionError } from "../static/js/flasher/decide.js";
@@ -868,4 +868,29 @@ test("a backup unpacked and zipped again (one folder, macOS's __MACOSX/) still o
 	assert.deepEqual(bundle.parts.get("c7000-progmem").data, data);
 	assert.equal(bundleFolder(await unzip(await zip([{ name: "a/firmware.bin", data }]))), null);
 	await assert.rejects(openBundle(await zip([{ name: "a/firmware.bin", data }])), /no backup\.json/);
+	// the unpacked folder zipped inside another folder (Windows "Send to compressed folder" on its parent)
+	const deeper = await zip([...made].map(([n, d]) => ({ name: `Backups/DM1701_Backup_2026-10-28/${n}`, data: d })));
+	assert.equal(bundleFolder(await unzip(deeper)), "Backups/DM1701_Backup_2026-10-28/");
+	assert.deepEqual((await openBundle(deeper)).parts.get("c7000-progmem").data, data);
+	// two backups in one zip: not guessed
+	const two = await zip([...made].flatMap(([n, d]) => [{ name: `a/${n}`, data: d }, { name: `b/${n}`, data: d }]));
+	assert.equal(bundleFolder(await unzip(two)), null);
+});
+
+test("a file picked as a backup that isn't one is named, so the restore says what to pick instead", async () => {
+	const data = Uint8Array.from({ length: 4096 }, (_, i) => i & 0xFF);
+	const made = await unzip(await makeBundle({ radio: { board: "dm32", name: "x" }, firmware_now: { kind: "stock" } },
+		[{ file: "program-memory.bin", what: "c7000-progmem", addr: 0, data, complete: true }]));
+	// one file from the unpacked backup, a browser's second copy of it too
+	assert.deepEqual(notBundle("program-memory.bin", data, null), { kind: "part", file: "program-memory.bin" });
+	assert.deepEqual(notBundle("spi-flash (1).bin", data, null), { kind: "part", file: "spi-flash (1).bin" });
+	// its parts zipped again without backup.json
+	const parts = new Map([...made].filter(([n]) => n !== "backup.json"));
+	assert.deepEqual(notBundle("again.zip", new Uint8Array(0), parts), { kind: "parts" });
+	// the Codeplug Editor's file (the open-firmware layout) and a CPS codeplug
+	assert.deepEqual(notBundle("codeplug.bin", new Uint8Array(CODEPLUG_SPAN), null), { kind: "codeplug" });
+	assert.deepEqual(notBundle("mine.rdt", data, null), { kind: "codeplug" });
+	// anything else: the restore asks vendorfile.js whether it is a radio's original firmware
+	assert.deepEqual(notBundle("DM-32 firmware.zip", data, new Map([["DM32_V1.20.bin", data], ["readme.txt", data]])), { kind: "other" });
+	assert.deepEqual(notBundle("firmware.bin", data, null), { kind: "other" });
 });
