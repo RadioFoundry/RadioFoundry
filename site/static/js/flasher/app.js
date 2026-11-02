@@ -26,7 +26,7 @@ import { makePlan, KEEP, MERGE } from "./plan.js";
 import { radioPicture, holdKeys } from "./radiotop.js";
 import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
-import { Dfu, DfuError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
+import { Dfu, DfuError, NormalModeError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
 import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, browserErrorKey, knownRadioPort } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
@@ -559,7 +559,13 @@ async function connectBootloader() {
 		return S.fakeRadio.dfuTransport();
 	}
 	if (!usbSupported()) throw new Error(t("flash.err.no_usb"));
-	const tr = await WebUsbTransport.request(S.board);
+	let tr;
+	try {
+		tr = await WebUsbTransport.request(S.board);
+	} catch (e) {
+		if (e instanceof NormalModeError) throw new Error(t("flash.err.normal_mode"));
+		throw e;
+	}
 	useAdapter(adapter.fromUsbDevice(tr.device));
 	return tr;
 }

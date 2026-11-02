@@ -12,7 +12,7 @@ import { fromHex, toHex, sha256, crc32, u32le } from "../static/js/flasher/bytes
 import * as stockfw from "../static/js/flasher/stockfw.js";
 import { makePlan, KEEP, MERGE, RESTORE, PlanError } from "../static/js/flasher/plan.js";
 import { verify, segments, ManifestError } from "../static/js/flasher/manifest.js";
-import { Dfu } from "../static/js/flasher/dfu.js";
+import { Dfu, NormalModeError, WebUsbTransport, normalMode } from "../static/js/flasher/dfu.js";
 import { Link, crc16, frame, parseFrames, probe } from "../static/js/flasher/link.js";
 import { FakeRadio, simulation } from "../static/js/flasher/fake.js";
 import { zip, unzip } from "../static/js/flasher/zip.js";
@@ -893,4 +893,33 @@ test("a file picked as a backup that isn't one is named, so the restore says wha
 	// anything else: the restore asks vendorfile.js whether it is a radio's original firmware
 	assert.deepEqual(notBundle("DM-32 firmware.zip", data, new Map([["DM32_V1.20.bin", data], ["readme.txt", data]])), { kind: "other" });
 	assert.deepEqual(notBundle("firmware.bin", data, null), { kind: "other" });
+});
+
+// The radio switched on normally is a DFU device with the bootloader's IDs and strings; writing through it can erase
+// the bootloader. The transport refuses it before claiming the interface or sending any DFU request.
+test("WebUSB transport refuses the radio switched on normally", async () => {
+	const NORMAL = ["@Internal Flash   /0x08000000/03*016Kg", "@SPI Flash Memory /0x00000000/16*064Kg"];
+	const LOADER = ["@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg", "@SPI Flash Memory /0x00000000/16*064Kg"];
+	const board = { dfu_ids: [0x0483, 0xDF11], dfu_layout: null };
+	assert.equal(normalMode(NORMAL, board), true);
+	assert.equal(normalMode(LOADER, board), false);
+	assert.equal(normalMode([undefined], board), false);
+	const declared = { ...board, dfu_layout: "@Internal Flash /0x0800C000/01*016Kg,01*064Kg,07*128Kg" };
+	assert.equal(normalMode(LOADER, declared), false);
+	assert.equal(normalMode(["@Internal Flash /0x0800C000/01*016Kg"], declared), true);
+	const device = (names) => {
+		const calls = [];
+		const no = (what) => async () => { calls.push(what); return { status: "ok", data: new DataView(new ArrayBuffer(6)), bytesWritten: 0 }; };
+		return { calls, configuration: { interfaces: [{ interfaceNumber: 0, alternates: names.map((n) =>
+				({ interfaceClass: 0xFE, interfaceSubclass: 0x01, interfaceName: n })) }] },
+			open: async () => { calls.push("open"); }, close: async () => { calls.push("close"); },
+			selectConfiguration: no("selectConfiguration"), claimInterface: no("claimInterface"),
+			controlTransferOut: no("controlTransferOut"), controlTransferIn: no("controlTransferIn") };
+	};
+	const normal = device(NORMAL);
+	await assert.rejects(WebUsbTransport.open(normal, board), NormalModeError);
+	assert.deepEqual(normal.calls, ["open", "close"]);
+	const loader = device(LOADER);
+	await WebUsbTransport.open(loader, board);
+	assert.deepEqual(loader.calls, ["open", "claimInterface"]);
 });

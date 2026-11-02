@@ -201,6 +201,25 @@ def _string(usb, dev, index):
         return None
 
 
+def _layout(name):
+    return " ".join((name or "").split())
+
+
+def normal_mode(interfaces, board=None):
+    """True when the DFU device is the radio's own firmware switched on normally, not its bootloader
+    (hardware-dm1701.md 15.1). The normal-mode firmware has the bootloader's USB IDs and strings, but erasing or writing
+    through it can reach the bootloader's sectors. A board that declares its bootloader's layout ([flash.dfu] layout)
+    accepts only that alt 0 string; any other board refuses a layout from 0x08000000, the whole flash, since the
+    bootloader shows only the application area. No layout string at all: nothing to go by, accepted."""
+    names = [_layout(n) for n in interfaces if n]
+    if not names:
+        return False
+    want = getattr(board, "dfu_layout", None)
+    if want:
+        return names[0] != _layout(want)
+    return any("/0x08000000/" in n for n in names)
+
+
 def fingerprint(usb, dev):
     """The strings a bootloader shows: string 1, manufacturer, product, serial, DFU interface names."""
     fp = {"string1": _string(usb, dev, 1), "manufacturer": _string(usb, dev, dev.iManufacturer),

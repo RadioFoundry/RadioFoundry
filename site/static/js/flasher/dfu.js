@@ -117,6 +117,27 @@ export class Dfu {
 // ---------------------------------------------------------------------------------------------------------------
 // WebUSB
 
+// The radio's own firmware, switched on normally, is a DFU device with the bootloader's IDs and strings, but erasing
+// or writing through it can reach the bootloader's sectors (hardware-dm1701.md 15.1). names: the DFU interface strings,
+// alt 0 first. A board with a declared bootloader layout (dfu_layout) accepts only that; any other refuses a layout
+// from 0x08000000, the whole flash, since the bootloader shows only the application area. The same rule as rfoundry's
+// dfu.normal_mode.
+export function normalMode(names, board) {
+	const norm = (n) => (n || "").split(/\s+/).filter(Boolean).join(" ");
+	const got = names.filter(Boolean).map(norm);
+	if (!got.length) return false;
+	if (board?.dfu_layout) return got[0] !== norm(board.dfu_layout);
+	return got.some((n) => n.includes("/0x08000000/"));
+}
+
+export class NormalModeError extends DfuError {
+	constructor(layout) {
+		super(`the radio is switched on normally, not in its bootloader (layout ${layout})`);
+		this.name = "NormalModeError";
+		this.layout = layout;
+	}
+}
+
 export const usbSupported = () => typeof navigator !== "undefined" && "usb" in navigator;
 
 export class WebUsbTransport {
@@ -128,12 +149,21 @@ export class WebUsbTransport {
 	static async request(board) {
 		const [vendorId, productId] = board.dfu_ids;
 		const device = await navigator.usb.requestDevice({ filters: [{ vendorId, productId }] });
-		return WebUsbTransport.open(device);
+		return WebUsbTransport.open(device, board);
 	}
 
-	static async open(device) {
+	// board: refuse the radio switched on normally before claiming anything or sending a DFU request
+	static async open(device, board = null) {
 		await device.open();
 		if (device.configuration === null) await device.selectConfiguration(1);
+		const names = [];
+		for (const i of device.configuration.interfaces)
+			for (const alt of i.alternates)
+				if (alt.interfaceClass === 0xFE && alt.interfaceSubclass === 0x01) names.push(alt.interfaceName);
+		if (board && normalMode(names, board)) {
+			try { await device.close(); } catch (e) { /* gone */ }
+			throw new NormalModeError(names[0]);
+		}
 		let intf = null;
 		for (const i of device.configuration.interfaces)
 			for (const alt of i.alternates)

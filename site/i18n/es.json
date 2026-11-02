@@ -868,6 +868,7 @@
  "flash.err.unknown_board": "Radio desconocida “{board}”.",
  "flash.err.wrong_board": "La radio indica que es una {board}, no una {name}.",
  "flash.err.not_in_bootloader": "La radio no está en modo de actualización.",
+ "flash.err.normal_mode": "La radio está encendida en modo normal, no en modo de actualización. Escribir ahora podría dañar su bootloader, así que no se ha enviado nada. Apáguela, póngala en modo de actualización como indican los pasos y vuelva a intentarlo.",
  "flash.err.need_stock_for_key": "Seleccione primero su archivo de firmware original. La utilidad de programación de radios lo necesita para desbloquear el modo de actualización.",
  "flash.err.codec_only_key": "{file} es firmware de {radio}. Aporta el códec de esta radio, pero no su clave de bootloader, que necesita el modo de actualización. Lea primero el firmware de la radio (copia de seguridad de \"otro firmware abierto\"), o seleccione en su lugar un archivo de firmware de {board}, que aporta ambos.",
  "flash.err.stock_as_image": "Ese es un archivo de firmware original, no una imagen de RadioFoundry. Elija una compilación arriba; el paso del códec pide el archivo de firmware original cuando lo necesita.",

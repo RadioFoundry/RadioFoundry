@@ -883,6 +883,10 @@ image with `tools/stm32_dfu.py --model md380 --key KEY rfoundry_md380.bin`. The 
 tool encrypts it for the loader. rfoundry knows the board (`boards/md380/board.toml`: release `stable`, an update writes
 sectors 3-7 and keeps the codec).
 
+Switched on normally, the original firmware is also a DFU device with the same IDs. The flashers tell it from the
+bootloader by alt 0's layout and refuse it ([hardware-dm1701.md](hardware-dm1701.md) 15.1). The MD-380's strings in
+either mode have not been read on a radio (?), so the generic rule applies: a layout from 0x08000000 is refused.
+
 ### 14.4 The codec
 
 The AMBE+2 codec is inside the manufacturer's application: the same library as the
