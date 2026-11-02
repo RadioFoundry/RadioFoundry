@@ -893,8 +893,13 @@ read on a radio (2026-11-02): manufacturer and string 1 "AnyRoad Technology", pr
 | 0 | `@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg` (the application area only) |
 | 1 | `@SPI Flash Memory /0x00000000/16*064Kg` |
 
-`boards/md380/board.toml` declares alt 0 (`[flash.dfu] layout`), so the flashers accept only that device. The
-original firmware switched on normally has not been read on an MD-380 (?).
+`boards/md380/board.toml` declares alt 0 (`[flash.dfu] layout`), so the flashers accept only that device.
+
+The same radio switched on normally, running a patched build of the original firmware (2026-11-02): 0483:DF11,
+bcdDevice 0x0200, serial "00000000010C", alt 0 `@Internal Flash   /0x08000000/03*016Kg`, alt 1 as in the bootloader.
+String 1 and the manufacturer read "@00000004 : ffffffff" and the product "Patched MD380", which the patch may have
+changed; the unpatched firmware's strings are not known (?). Alt 0 is the MD-9600's normal-mode layout, so either rule
+refuses it.
 
 ### 14.4 The codec
 
