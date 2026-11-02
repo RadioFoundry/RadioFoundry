@@ -232,7 +232,8 @@ static void reset_levels(void)
 	PIN_OUT(PIN_FM_MUTE, false);
 	PIN_OUT(PIN_FM_SW, false);
 	PIN_OUT(PIN_AF_BAND, false);
-	PIN_OUT(PIN_TONE_PWM, false);
+	// The tone line released (open drain high): driven low it pulls the reference oscillator (hardware-md9600.md 2.6)
+	stm32_pin_out(PIN_PORT(PIN_TONE_PWM), PIN_MASK(PIN_TONE_PWM), true, true);
 	PIN_OUT(PIN_BEEP_PWM, false);
 	PIN_OUT(PIN_BACKLIGHT, false);
 	PIN_OUT(PIN_MIC_GPS_POWER, true);	// hand mic and GPS powered while the radio runs

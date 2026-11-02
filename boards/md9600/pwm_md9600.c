@@ -3,7 +3,8 @@
 // MD-9600 TIM8 PWM outputs besides the backlight (docs/spec/hardware-md9600.md 3, 19.9): CH2 on PC7 is the sub-audio
 // tone into the modulator, CH3 on PC8 the beep. TIM8 runs for the backlight (display_md9600.c: / 10 / 256, about
 // 28 kHz); these only add a compare channel. A tone or beep generator changes the duty at its sample rate. Duty 0 hands
-// the pin back as a GPIO driven low, the reset level.
+// the pin back as a GPIO: the beep low, the tone released (open drain high). The tone line goes to the reference
+// oscillator's modulation input: driven low it pulls the reference far enough that DMR never syncs (2.6, 19.9).
 #include "md9600.h"
 #include "pins.h"
 
@@ -17,7 +18,7 @@ void md9600_pwm_out(uint8_t ch, uint8_t duty)
 	uint16_t pin = tone ? PIN_MASK(PIN_TONE_PWM) : PIN_MASK(PIN_BEEP_PWM);
 	if (duty == 0 || !(RCC->APB2ENR & RCC_APB2ENR_TIM8EN)) {
 		TIM8->CCER &= tone ? ~TIM_CCER_CC2E : ~TIM_CCER_CC3E;
-		stm32_pin_out(port, pin, false, false);
+		stm32_pin_out(port, pin, tone, tone);	// the tone pin released, the beep pin low
 		return;
 	}
 	if (tone) {

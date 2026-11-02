@@ -206,6 +206,7 @@ void md9600_c6000_init(void)
 	count(hrc6000_set_mode_fm_rx(&modem));
 	count(hrc6000_fm_audio(&modem, false));		// FM audio never passes through this chip
 	count(hrc6000_set_rx_gain(&modem, RX_GAIN_DB));
+	count(hrc6000_tones_off(&modem));	// with the init's 0x80 the chip never syncs on DMR (hardware-md9600.md 4.2)
 	diag.up = hrc_read(&modem, 4, 0x10, &diag.r10);
 	stm32_hrc_dmr_init(&modem, &dmr_board);
 	speaker_apply();

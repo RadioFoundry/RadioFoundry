@@ -193,6 +193,7 @@ register behavior is the DM-1701's ([modem-hrc6000.md](modem-hrc6000.md)).
 | MOD2 routing | U_V_MOD_SW (PB7) sends the MOD2 output to the active band's VCO; set with every synthesizer write |
 | Reference / MOD2 offset | per band byte t from calibration (11.2); signed c = t - 128; 4:0x47 = c, 4:0x48 = 0x03 if c < 0 else 0x00, 4:0x04 = c. Rewritten at every RX entry (otherwise an RX offset is reported after TX) |
 | DMR sync detection | 4:0x5F = 0xF0 (MS, BS, TDMA1, TDMA2) |
+| Tone engine | **4:0xA1 = 0x00** after the power-on init. With the init's 0x80 the chip never syncs on DMR, though its RSSI (4:0x43 / 0x44) follows the signal (first radio, 2026-11-02; found by setting the register live during a call) |
 
 ### 4.3 Voice port and I2S
 
@@ -824,7 +825,8 @@ owner's decision; v5 stands until then.
 | PE15 | in, out on V1-V4 | high after the reset pulse | AK2365A reset | unverified |
 | PB2, PB6, PC13, PE7 | out | low, PB6 high (muted) | FM stages, amplifier mute, audio band, FM mute | unverified |
 | PC6 | TIM8 CH1 | off | backlight | unverified |
-| PC7, PC8 | out, TIM8 CH2 / CH3 when driven | low | sub-audio tone and beep PWM (19.9) | unverified |
+| PC7 | open drain, TIM8 CH2 when driven | released (high) | sub-audio tone PWM into the reference oscillator's modulation input (19.9). Driven low it pulls the reference: FM still receives, DMR never syncs (first radio, 2026-11-02) | checked |
+| PC8 | out, TIM8 CH3 when driven | low | beep PWM (19.9) | unverified |
 | PA9 | out | high | mic and GPS supply | unverified |
 | PB12, PD14, PD13, PD12 | out | high, high, low, low then high | flash CS, LCD CS, A0, reset | unverified |
 | PB13-PB15 | SPI2 AF5 | - | flash and LCD | unverified |
@@ -961,7 +963,7 @@ arm and the last refusal.
 |---|---|
 | PA2, ADC3 IN2 (QT_DQT_IN) | one software-started conversion for the diagnostics page ("qt"). No sub-audio decoder runs on it yet |
 | PC3, ADC2 IN13 (discriminator audio) | not sampled yet. The software CTCSS / DCS detector (`drivers/rf/subaudio`) is the intended consumer; the sample rate and DMA set-up are open |
-| PC7, TIM8 CH2 | sub-audio tone PWM (`md9600_pwm_out`), on the backlight's 28 kHz timebase. No tone generator drives it yet |
+| PC7, TIM8 CH2 | sub-audio tone PWM (`md9600_pwm_out`), on the backlight's 28 kHz timebase, into the reference oscillator's modulation input. Without a tone the pin is released (open drain high), as at start-up: driven low it pulls the reference and DMR never syncs. No tone generator drives it yet |
 | PC8, TIM8 CH3 | beep PWM, same helper |
 | PA temperature, fan | no sensor or fan line is known on any revision (?) |
 

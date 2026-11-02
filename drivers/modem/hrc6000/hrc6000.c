@@ -225,6 +225,11 @@ bool hrc6000_fm_audio(hrc_t *dev, bool on)
 	return hrc_write(dev, 4, 0x36, on ? 0x02 : 0x00);
 }
 
+bool hrc6000_tones_off(hrc_t *dev)
+{
+	return hrc_write(dev, 4, 0xA1, 0x00);
+}
+
 bool hrc6000_set_mode_fm_rx(hrc_t *dev)
 {
 	return write_rows(dev, ROWS(fm_rx_rows));

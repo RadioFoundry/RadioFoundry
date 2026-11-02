@@ -44,6 +44,9 @@ bool hrc6000_set_mode_fm_tx(hrc_t *dev, const hrc6000_fm_tx_t *cfg);
 bool hrc6000_fm_audio(hrc_t *dev, bool on);
 // Reference oscillator offset (hardware-dm1701.md 12.4). fm_tx: the FM TX form (0x48 = 0)
 bool hrc6000_set_ref_offset(hrc_t *dev, int8_t offset, bool fm_tx);
+// The tone engine fully off (4:0xA1 = 0x00; modem-hrc6000.md 8). The power-on init leaves 0x80, the engine on with no
+// tone, which receives DMR on most boards; on a board that feeds the chip a 450 kHz IF it stops every DMR sync
+bool hrc6000_tones_off(hrc_t *dev);
 // RX audio gain, -31..+31 dB (4:0x37 = 0x80 + 0x40 if positive + the low 5 bits of the gain, modem-hrc6000.md 2)
 bool hrc6000_set_rx_gain(hrc_t *dev, int8_t db);
 
