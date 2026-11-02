@@ -47,7 +47,7 @@ export const CONVERTERS = [
 			// a backup taken right after RadioFoundry replaced the stock firmware still holds the stock codeplug
 			if (STOCK[layout]) return { name, data: await fromStock(spi.data, layout) };
 			if (layout === "unknown") throw fail("unknown_layout", "the codeplug in this backup is in a layout this page cannot read");
-			return { name, data: CodeplugImage.from(spi.data.subarray(0, CODEPLUG_SPAN)).bytes.slice(0, CODEPLUG_SPAN) };
+			return { name, data: CodeplugImage.from(spi.data.subarray(0, CODEPLUG_SPAN)).bytes };
 		},
 	},
 	{

@@ -56,7 +56,7 @@ board's flash map: the base (the CPS address offset, nonzero on some radios), th
 the radio has a TFTP staging area. The radio can say it has less room: the fast protocol's image end, or a memory
 chip smaller than the board's usual one (the radio info's flash part id, `flashBytes`); `tr.end` is the smallest of
 the three, and the ID database is sized for it. A radio whose STORAGE INFO answers unavailable has no settings region
-(a chip too small for the board's flash map): it stores no codeplug and refuses every codeplug read, so `identify`
+(a chip too small for the board's flash map): it stores no codeplug and refuses every codeplug write, so `identify`
 stops with `no_storage`, which says so, before anything is read. A read takes the ID database's header first
 (`readIddbHeader`), then the codeplug's regions and the database in one pass, so one progress bar covers it. The
 database's size and the last read's speed (a guess on a radio's first read) give its time: at `IDDB_ASK` (20 s) or

@@ -343,7 +343,7 @@ test("a backup of a radio with a smaller memory chip reads that chip, through th
 		assert.equal(got.complete, spi === "full");
 		assert.ok(parts.some((x) => x.what === "radio-info"));
 	}
-	assert.equal((await new Link(radio.serialStream()).storageInfo()).region, "none", "no settings region on that chip");
+	assert.equal((await new Link(radio.serialStream()).storageInfo()).region, "nomap", "no settings region on that chip");
 });
 
 test("a read that fails inside the loader restarts the radio before the error goes up", async () => {

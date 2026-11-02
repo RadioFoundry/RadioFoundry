@@ -608,6 +608,10 @@ test("the codeplug editor turns a radio without a settings region away before re
 	const none = new FakeCpsRadio({ board: "DM-1701", size: 0x100000, noMap: true, radioInfo: true });
 	await assert.rejects(new CpsSerial(none.stream()).identify(RADIOS), (e) => e.code === "no_storage" && e.params.flash === 0x100000);
 	assert.equal(none.readBytes, 0, "nothing read");
+	// a map whose flash didn't start answers INFO with region 0: not a small chip
+	const dead = new CpsSerial(new FakeCpsRadio({ board: "DM-1701", region: 0 }).stream());
+	await dead.identify(RADIOS);
+	assert.equal((await dead.storage()).region, "none");
 	// a chip with a map, smaller than the board's usual one: the room ends with the chip
 	const small = new FakeCpsRadio({ board: "DM-1701", size: 0x100000, end: 0x100000, radioInfo: true });
 	const tr = new CpsSerial(small.stream());

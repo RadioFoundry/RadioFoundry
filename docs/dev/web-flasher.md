@@ -324,7 +324,7 @@ base; the bootloader is never read or written), `spi-flash.bin`, `security-regis
 
 `spi-flash.bin` is the radio's own memory chip: `backup.spi_size`, or less when the radio reports a smaller chip
 (`spiBytes`: the radio info's flash part id, or the loader's SPI flash size from HELLO). Some radios of a model came
-with a smaller chip, and a read past its end is refused or wraps round. A backup over another open firmware sizes its
+with a smaller chip, and a read past its end is refused or wraps around. A backup over another open firmware sizes its
 read the same way (`newState`). Restoring the codeplug and opening the backup in the Codeplug Editor need only the
 codeplug's regions (`TFTP_SIZE`), not the whole open-firmware span.
 

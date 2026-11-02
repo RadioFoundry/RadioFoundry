@@ -139,7 +139,7 @@ export class CpsSerial {
 	// Which radio answers, matched by the board name it reports to radios.json's codeplug.names. No answer is told
 	// apart by what the port gave (link.js whyNoAnswer()): another open firmware that gives its radio info, or bytes
 	// that aren't the debug link (another firmware). A radio without a settings region (a memory chip too small for its
-	// board's flash map) stores no codeplug and refuses every read: it is no_storage, before anything is read
+	// board's flash map) stores no codeplug and refuses every write: it is no_storage, before anything is read
 	async identify(radios) {
 		const p = await probe(this.link);
 		if (!p) {
@@ -166,7 +166,7 @@ export class CpsSerial {
 		}
 		this.flash = await this.link.flashSize();
 		note("transport", { fast: !!this.fast, compact: this.compact, staging: this.fast?.stageMax || 0, flash: this.flash });
-		if ((await this.storage())?.region === "none") throw new TransportError("no_storage", { flash: this.flash });
+		if ((await this.storage())?.region === "nomap") throw new TransportError("no_storage", { flash: this.flash });
 		return { radio, probe: p };
 	}
 

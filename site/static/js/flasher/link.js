@@ -241,15 +241,15 @@ export class Link {
 	}
 
 	// STORAGE INFO (debuglink.md 3.13): whether the settings and journal region is ours, or still holds another
-	// firmware's data ("foreign": the radio then refuses every settings save and codeplug write). "none": the radio has
-	// no such region (a memory chip too small for the board's flash map: nothing is stored, every codeplug read is
-	// refused). null from a build without the command
+	// firmware's data ("foreign": the radio then refuses every settings save and codeplug write). "none": the region
+	// didn't start (unusable flash). "nomap": the radio has no such region (a memory chip too small for the board's flash
+	// map: nothing is stored, no codeplug is there and every write is refused). null from a build without the command
 	async storageInfo() {
 		let r;
 		try {
 			r = await this.request(CMD.STORAGE, new Uint8Array([0]));
 		} catch (e) {
-			if (e instanceof LinkError && e.status === DL_UNAVAILABLE) return { region: "none", pending: false, settings: null, journal: null, calibration: null };
+			if (e instanceof LinkError && e.status === DL_UNAVAILABLE) return { region: "nomap", pending: false, settings: null, journal: null, calibration: null };
 			if (e instanceof LinkError && !/no answer/.test(e.message)) return null;
 			throw e;
 		}
