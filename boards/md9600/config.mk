@@ -89,3 +89,6 @@ BOARD_NOT_WRITTEN += SNMP	# needs the DMR IP gateway (above)
 BOARD_REQUIRED := FM
 # CONFIG_STUB_ENTRY is on with the host link (config/features.mk): the STM32F4 flash stub serves this radio through its
 # board record (board.toml [flash.stub], docs/spec/stub-stm32f4.md)
+# Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
+# radios (docs/spec/ppp.md), and this one has the adapter
+MAXIMAL_SKIP := NET_PPP
