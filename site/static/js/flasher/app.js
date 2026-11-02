@@ -28,7 +28,7 @@ import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./versio
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
 import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, browserErrorKey, knownRadioPort } from "./link.js";
-import { readRadio, makeBundle, openBundle, bundleFolder, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
+import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
 import { decideCodec, DecisionError } from "./decide.js";
@@ -2268,7 +2268,11 @@ function bundleView() {
 	return panel(t("flash.restore.title"), h("p", {}, t(vendor ? "flash.restore.lead_or_file" : "flash.restore.lead", { radio: S.radio?.name })),
 		filePicker(t(vendor ? "flash.restore.pick_or_file" : "flash.restore.pick"), vendor ? ".zip,.bin" : ".zip", async (f) => {
 			try {
-				if (vendor && bundleFolder((await unzip(f.data).catch(() => null)) || new Map()) === null) return await vendorRestoreFile(f, status);
+				const files = await unzip(f.data).catch(() => null);
+				if (!files || bundleFolder(files) === null) {
+					if (vendor) return await vendorRestoreFile(f, status);
+					return await notABackup(f, files, status);
+				}
 				S.bundle = await openBundle(f.data);
 				const r = S.data.radios.find((x) => x.id === S.bundle.meta.radio.board);
 				if (!r) throw new Error(t("flash.err.unknown_board", { board: S.bundle.meta.radio.board }));
@@ -2281,6 +2285,29 @@ function bundleView() {
 				status.replaceChildren(failureNotice(e, vendor ? f : null));
 			}
 		}), status);
+}
+
+// A file that isn't a backup, picked before any radio was chosen (OPENDIGITALRADIO-12, -1S: a backup's unpacked files,
+// a codeplug, the manufacturer's firmware zip). An original firmware file of one radio whose backend restores from it
+// goes on as if that radio had been chosen; anything else is named, with what to select instead. What was picked goes
+// into the trail, which before said only that it wasn't a backup
+async function notABackup(f, files, status) {
+	const what = notBundle(f.name, f.data, files);
+	let radios = [];
+	if (what.kind === "other" || /^stock-firmware/.test(what.file || "")) {
+		const opened = await openVendorFile(f.name, f.data, fb(), null);
+		const boards = new Set(opened.files.map((x) => x.match.board).filter(Boolean));
+		radios = S.data.radios.filter((r) => boards.has(r.flash.board));
+	}
+	diag.note("restore file", { name: f.name, size: f.data.length, zip: files ? files.size : null, kind: what.kind, radios: radios.map((r) => r.id).join(",") || null });
+	if (radios.length === 1 && backendOf(radios[0]).vendorRestore) {
+		selectRadio(radios[0]);
+		return vendorRestoreFile(f, status);
+	}
+	const key = radios.length ? "flash.restore.err.firmware" : `flash.restore.err.${what.kind}`;
+	const e = new Error(t(key, { file: f.name, radio: radios.map((r) => r.name).join(", ") }));
+	e.key = key;
+	status.replaceChildren(errorNotice(errorText(e)));
 }
 
 // The original firmware file for the restore: any build for this radio does (no codec is taken from it). Anything
