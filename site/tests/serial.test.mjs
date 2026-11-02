@@ -109,7 +109,7 @@ test("a framing error or a break doesn't end the reading: the bytes after it sti
 	assert.equal(s.received, 1, "nothing read after a fatal error");
 });
 
-// Field (Sentry OPENDIGITALRADIO-M): a DM-32 switched off and on with the cable in gave break after break; 50 of them
+// Field (Sentry OPENDIGITALRADIO-M): a radio switched off and on with the cable in gave break after break; 50 of them
 // once stopped the reading for good, the radio still there, and every stub request after it failed "no reply header"
 test("a radio power-cycled with the cable in: hundreds of breaks in a row never stop the reading", async () => {
 	const port = new FakePort();
