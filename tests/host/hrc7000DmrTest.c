@@ -410,6 +410,105 @@ static dmr_tx_burst_t voice(uint8_t idx, uint8_t fill)
 	return b;
 }
 
+static void test_tx_color_code(void)
+{
+	setup();
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE };
+	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_run(&eng);
+	hrc7000_dmr_set_cc_filter(&eng, -1);
+	for (int i = 0; i < 16; i++) {
+		tick(false);
+	}
+	CHECK(REG(C7_LOCAL_CC) == 5);
+	uint32_t steps = eng.st.cc_scan_steps;
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	dmr_tx_burst_t h = { .kind = DMR_BURST_VOICE_LC_HEADER, .len = 9 };
+	dmr_tx_burst_t a = voice(0, 0x11);
+	CHECK(hrc7000_dmr_tx_queue(&eng, &h) && hrc7000_dmr_tx_queue(&eng, &a));
+	for (int i = 0; i < 68; i++) {
+		tick(false);	// a receive interrupt must not change CC during TX
+		tick(true);
+		if (REG(C7_LAYER2_TXRX_CTRL) == 0x80) {
+			CHECK(REG(C7_LOCAL_CC) == 1);
+		}
+		count_kind(0xFF, NULL);
+	}
+	CHECK(eng.st.cc_scan_steps == steps);
+	dmr_tx_burst_t term = { .kind = DMR_BURST_TERMINATOR_LC, .len = 9 };
+	CHECK(hrc7000_dmr_tx_queue(&eng, &term));
+	hrc7000_dmr_tx_end(&eng);
+	tick(true);
+	CHECK(REG(C7_LAYER2_SEND_TYPE) == 0x20 && REG(C7_LOCAL_CC) == 1);
+	for (int i = 0; i < 3; i++) {
+		tick(true);
+	}
+	CHECK(!hrc7000_dmr_is_transmitting(&eng));
+	CHECK(eng.cc_filter == -1 && REG(C7_LOCAL_CC) == 5);
+	for (int i = 0; i < 4; i++) {
+		tick(false);
+	}
+	CHECK(REG(C7_LOCAL_CC) == 6 && eng.st.cc_scan_steps == steps + 1);
+}
+
+static void test_cc_restore(void)
+{
+	for (int end = 0; end < 4; end++) {
+		setup();
+		const dmr_config_t cfg = { .cc = 1 };
+		hrc7000_dmr_configure(&eng, &cfg);
+		hrc7000_dmr_run(&eng);
+		hrc7000_dmr_set_cc_filter(&eng, 5);
+		hrc7000_dmr_set_cc_filter(&eng, -1);
+		CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+		CHECK(REG(C7_LOCAL_CC) == 1);
+		// A new receive filter takes effect after TX; it never changes the current transmission's CC.
+		if (end == 0)
+			hrc7000_dmr_set_cc_filter(&eng, 7);
+		CHECK(REG(C7_LOCAL_CC) == 1);
+		if (end == 0) {
+			hrc7000_dmr_tx_end(&eng);	// no queued bursts
+		} else if (end == 1) {
+			hrc7000_dmr_tx_abort(&eng);
+			tick(true);
+		} else if (end == 2) {
+			now += 250000;
+			hrc7000_dmr_poll(&eng);
+		} else {
+			hrc7000_dmr_halt(&eng);
+			hrc7000_dmr_run(&eng);
+		}
+		CHECK(!hrc7000_dmr_is_transmitting(&eng));
+		CHECK(REG(C7_LOCAL_CC) == (end == 0 ? 7u : 5u));
+		CHECK(eng.cc_filter == (end == 0 ? 7 : -1));
+		hrc7000_dmr_rx_restart(&eng);
+		CHECK(REG(C7_LOCAL_CC) == (end == 0 ? 7u : 5u));
+		deframe(rti(0, DMR_BURST_IDLE, end == 0 ? 7 : 5, 0, 0, 0));
+		dmr_burst_t b;
+		CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.cc == (end == 0 ? 7 : 5));
+	}
+
+	// An aligned start still runs receive ticks while waiting for TC: no scan may change its TX code.
+	setup();
+	const dmr_config_t cfg = { .cc = 1, .repeater = true };
+	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_run(&eng);
+	hrc7000_dmr_set_cc_filter(&eng, -1);
+	deframe(rti(0, DMR_BURST_IDLE, 1, 1, 0, 0));
+	for (int i = 0; i < 166; i++) {
+		tick(false);
+		count_kind(0xFF, NULL);
+	}
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_IMPOLITE));
+	for (int i = 0; i < 4; i++) {
+		tick(false);
+		CHECK(REG(C7_LOCAL_CC) == 1 && eng.st.cc_scan_steps == 0);
+	}
+	hrc7000_dmr_tx_abort(&eng);
+	tick(false);
+	CHECK(!hrc7000_dmr_is_transmitting(&eng));
+}
+
 static void test_tx(void)
 {
 	setup();
@@ -1403,6 +1502,8 @@ int main(void)
 	test_bs_mode_cleared();
 	test_rx_resync();
 	test_cc_scan();
+	test_tx_color_code();
+	test_cc_restore();
 	test_tx();
 	test_tx_end_hold();
 	test_tx_edges();
