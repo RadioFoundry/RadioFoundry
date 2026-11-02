@@ -59,11 +59,13 @@ export async function readRadio(link, board, radio, { what = {}, progress = () =
 	}
 	// A loader bounds the MCU flash by the chip's own size register, which on some parts reads less than the board's
 	// flash (512 KB on a 1 MB chip whose top sectors hold the codec): the loader refuses the top. RadioFoundry reads
-	// the board's whole flash in place, so then it reads the internal flash, before any hand-over
+	// the board's whole flash in place, so then it reads the internal flash, before any hand-over. A size it didn't
+	// give (no answer twice) is taken as short too: the read in place is slower, but a loader that refuses the top
+	// fails the whole backup (seen in the field)
 	let internalFirst = false;
 	if (want.internal && readers.length) {
-		const chip = await link.chip().catch(() => null);
-		internalFirst = !!chip?.flashKb && MCU_BASE + chip.flashKb * 1024 < board.flash_end;
+		const chip = await link.chip().catch(() => null) || await link.chip().catch(() => null);
+		internalFirst = !chip?.flashKb || MCU_BASE + chip.flashKb * 1024 < board.flash_end;
 	}
 	if (internalFirst) {
 		const base = board.app_base, size = board.flash_end - board.app_base;

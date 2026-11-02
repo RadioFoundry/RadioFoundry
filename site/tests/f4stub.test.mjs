@@ -265,6 +265,20 @@ test("the loader refuses a read past the chip's register size (what the debug li
 	await assert.rejects(s.readFlash(0x0807C000, 0x10000), /refused: status 0xd/);
 });
 
+test("a register that reads short: a backup whose INFO_CHIP goes unanswered still reads the internal flash in place", async () => {
+	// OPENDIGITALRADIO-17 on a build with the size check: the loader read the internal flash and refused the top
+	const { sim, radio } = await running("dm1701", { flashKb: 512 });
+	radio.flash.set(randomBytes(rng(5), 0x4000), 0x0F0000);
+	let asked = 0;
+	const b = await backupVia(radio, sim, {}, { patch: (link) => { link.chip = async () => { asked++; throw new Error("no answer to command 0xb"); }; } });
+	assert.equal(asked, 2, "asked twice");
+	const internal = b.get("internal-flash");
+	assert.ok(internal.complete);
+	assert.deepEqual(internal.data, radio.flash.subarray(APP_BASE - 0x08000000));
+	assert.deepEqual(b.get("spi-flash").data, radio.spi, "the loader reads the SPI flash");
+	assert.equal(radio.mode, "normal");
+});
+
 test("hand-over on a port that went away: says so, not \"built without CONFIG_STUB_ENTRY\"", async () => {
 	const dead = { buf: new Uint8Array(0), clear() {}, take: () => new Uint8Array(0), write: async () => {} };
 	const s = new F4Stub(dead, { log: quiet });
