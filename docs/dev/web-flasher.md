@@ -21,6 +21,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `dfu.js` | The AnyRoad DFU bootloader over WebUSB | `rfoundry/dfu.py` |
 | `codecsave.js` | The codec read back from a radio that runs RadioFoundry (where stock keeps it, or where the merge placed it), checked against the profile's hashes, and a copy kept in IndexedDB: before every update that erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `rfoundry/codecsave.py` |
 | `bootkey.js` | The bootloader key from a radio that runs RadioFoundry: the bootloader read over READ_MEM, the block with the key's SHA-256 | `rfoundry/bootkey.py` |
+| `origversion.js` | The original firmware's version read before an install, and the hardware option it settles (below) | `rfoundry/origversion.py` |
 | `link.js` | The debug link and open-firmware CPS reads and writes over Web Serial | `rfoundry/debuglink.py`, [open-firmware-cps.md](../spec/open-firmware-cps.md) |
 | `backends.js` | The radio access backend registry: which steps and views a radio's family uses (below) | |
 | `readers.js` | Bulk memory readers for backups: the debug link and the STM32F4 loader (below) | |
@@ -277,6 +278,25 @@ is new. A release from before manifests carried `off` names only its variants' f
 on in no variant reads as new, once.
 
 The Codeplug Editor's **Update Firmware** opens `flash/index.html#update` and closes its own connection.
+
+## The original firmware version
+
+A board with `[flash.original_version]` ([board-registry.md](board-registry.md#original-firmware-version)) has a
+hardware option RadioFoundry can't detect but its original firmware's version settles. The install learns it before
+the write and stores it after the first start, so nobody picks it. The web flasher (`origversion.js`) and rfoundry
+(`origversion.py`) do the same steps:
+
+| Step | Web flasher | rfoundry `flash` |
+|---|---|---|
+| 1. Read | Current firmware step, under **Original firmware** and **Other / Not sure**: **Read Firmware Version** opens the WebUSB chooser on the bootloader's USB IDs; a device showing `interface` gets the read, any other (the bootloader) gets nothing. Optional | Before it asks for the bootloader, when no RadioFoundry answered the probe: reads a device with the bootloader's IDs that is connected and shows `interface`, or asks to connect the radio switched on normally (`--yes`: only one already there). `--no-version-read` skips it |
+| 2. Map | `major` gives the choice. The bootloader (by its strings, or its 0x54 answer) is told as "in update mode already"; a version not listed or no answer (a stall) is unknown. None of them settles anything, and none is an alarm | The same, as a `version` line |
+| 3. Bootloader | **Connect** refuses a device showing `interface` (and the very WebUSB device that answered): the original firmware has the bootloader's USB IDs | `check_bootloader` refuses a device showing `interface`; `wait_for_dfu` passes over the device that answered (its bus and address) and waits for the bootloader |
+| 4. Store | After the install, once the check reads the radio: HWOPT LIST, then SET when no choice is stored. A stored choice that differs is shown and kept: a person set it | The same, after `verify_after`'s probe. `--no-verify` (or no debug link) prints how to set it on the radio instead |
+
+Only the requests of the read are sent: GETSTATUS, CLRSTATUS or ABORT to reach dfuIDLE, DNLOAD block 0 `A2 02`, two
+GETSTATUS, ABORT, UPLOAD block 0 of 1024 bytes. The fakes (`fake.js` with `originalVersion`, rfoundry's
+`fakedfu.FakeOriginalFirmware`) fail on any other request; `site/tests/origversion.test.mjs` and
+`tools/rfoundry/tests/test_origversion.py` check the sequence, the parse, the table and the store.
 
 ## Radio access backends
 

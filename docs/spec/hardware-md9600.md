@@ -596,8 +596,35 @@ bootloader then stays in DFU on its own, as the DM-1701's does, is unverified. I
 OTG_FS on PA11 / PA12, mini-USB on the rear, straight to the MCU (no UART bridge). The bootloader's DFU device is
 separate (14.2). No VBUS sensing: PA9, the OTG_FS VBUS pin, is the mic and GPS supply switch (unverified), so the core
 must run with VBUS sensing off. The stock application's device is DFU class with two alternate settings, the internal
-flash and the SPI flash, self powered (unverified). TYT's CPS reads and writes the radio through it; the commands
-inside its transfers are not known (17 #21).
+flash and the SPI flash, self powered. TYT's CPS reads and writes the radio through it; most of the commands inside
+its transfers are not known (17 #21).
+
+### 15.1 The original firmware's version over USB
+
+Checked on a radio (V06.09, 2026-11-02). Running normally, the original firmware enumerates as USB 0483:DF11,
+manufacturer "AnyRoad Technology", product "Digital Radio in USB mode": the same IDs and strings as the bootloader.
+Its interface's alternate settings are "@Internal Flash   /0x08000000/03*016Kg" and
+"@SPI Flash Memory /0x00000000/16*064Kg"; wTransferSize is 1024. It starts in dfuIDLE. The bootloader's first
+interface string is "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg" (seen on a radio): the strings tell the
+two apart without a request, and the installers send the requests below only to a device showing the original
+firmware's string.
+
+It reports its version, and nothing on the radio changes, with these requests on interface 0 (wIndex 0, wValue 0):
+
+| Step | Request | Expect |
+|---|---|---|
+| 1 | GETSTATUS (IN 0xA1, request 3, 6 bytes) | bState 2. In 10: CLRSTATUS (OUT 0x21, request 4); in any other: ABORT (OUT 0x21, request 6) |
+| 2 | DNLOAD (OUT 0x21, request 1, block 0), data `A2 02` | accepted |
+| 3 | GETSTATUS, GETSTATUS | bState 4 (the command runs after this reply), then 5 |
+| 4 | ABORT | dfuIDLE |
+| 5 | UPLOAD (IN 0xA1, request 2, block 0, 1024 bytes) | 4 bytes `56 0M m0 mm`: version Mm.mm, decimal digits (`56 00 60 09` = 06.09, `56 01 60 45` = 16.45) |
+
+A block 0 command is matched on its first byte and its exact length; an unknown one stalls. The bootloader answers the
+same sequence too, with `54 02 10 06` (first byte 0x54, 'T'; from its code, not yet sent to a radio): only a first byte
+0x56 ('V') is the original firmware's version. 0x54 means the bootloader; a stall or any other answer, unknown. The other block 0
+commands, DNLOAD with block 2 and above, and a zero-length DNLOAD (its manifest step writes the SPI flash and resets the
+radio) are never sent by RadioFoundry's tools. The version's leading digit is the board family (16), so the installers
+read it to learn the board revision (19.3).
 
 ---
 
@@ -617,6 +644,10 @@ TYT's V4 firmware are V4 or later.
 
 No part of the radio reports its board revision, and TYT ships one firmware per revision (14.3). The GPS and recording
 models use the same pins as the others (unverified).
+
+The original firmware does report its version over USB (15.1), and its major version follows the revision: 06.xx
+V1-V3, 16.xx V4, 26.xx V4A/V5. Any other major says nothing about the revision. A radio someone moved to another
+revision's firmware would report that firmware's line (unverified whether that boots, 14.3).
 
 **Detection:** no ID pin or register is known. A run-time probe is possible because the families differ in the bus
 they need, but every candidate needs a radio: for example, program the V1/V2 SKY72310 words and watch RSSI / noise on
@@ -653,7 +684,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 | 18 | The crystal: 8 MHz crystal or an oscillator | RadioFoundry reports which mode started (diagnostics); board photos |
 | 19 | LMX2571 registers beyond the documented set (R60, R58, R53 and the rest), the DEN = 0 reading | Lock and spur check on V5 |
 | 20 | Calibration record layout (11.2) and the hardware option block beyond the band edges | Dump security registers 1-3 |
-| 21 | The CPS command set inside the DFU transfers | USB capture of TYT's CPS |
+| 21 | The CPS command set inside the DFU transfers (the version read is known, 15.1) | USB capture of TYT's CPS |
 | 22 | Display orientation and column offset (RadioFoundry: segments normal, COM reversed, offset 0) | First boot |
 | 23 | Encoder steps per detent and rest state (RadioFoundry: 2, resting where A = B) | Turn the knob, read the debug link's encoder counts |
 | 24 | The V1-V3 per-channel reference divider setting (5.3) | Retune across a band on V1-V3 |
@@ -730,7 +761,11 @@ All three are on by default; a build with fewer drives only those boards. The re
 
 A stored revision this image can't drive leaves the receiver off rather than programming the wrong chip. The record
 is set with Settings > Advanced > Hardware > Board revision or the debug link's HWOPT (`rfoundry_debug.py hwopt "Board
-revision" V4A/V5`); it applies from the next start-up. The open-firmware CPS has no item for it. Until a record is
+revision" V4A/V5`); it applies from the next start-up. The installers set it themselves: before the install they read
+the original firmware's version (15.1, 16), and after the first start they store the revision it gives when the
+radio holds none (board.toml `[flash.original_version]`, [web-flasher.md](../dev/web-flasher.md#the-original-firmware-version)).
+A stored revision that differs is reported and kept. A version read by the installer counts as a person's statement:
+the record it stores confirms the revision like one set by hand. The open-firmware CPS has no item for it. Until a record is
 stored the radio receives with the probe's or the default's revision and never transmits, and the diagnostics page
 asks for one ("Set rev: Adv>Hardware"). Its first three lines show the revision and its source ("unbuilt" for a
 stored revision this image doesn't drive), that prompt or "rev confirmed", and the probe ("off" when not built).

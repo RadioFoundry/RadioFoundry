@@ -152,6 +152,24 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 `[flash.dfu]` (`usb-dfu`): `vid`, `pid`, `string1`, `product` (the USB identity) and `key_sha256`, `key_prefix` (the
 per-model XOR key's hash and first bytes, never the key).
 
+#### Original firmware version
+
+`[flash.original_version]` (optional): a hardware option (`board_t.hwopts`, [debuglink.md](../spec/debuglink.md#325-hwopt))
+that RadioFoundry can't detect but that the version of the radio's original firmware settles, such as a board revision
+when the manufacturer ships one firmware line per revision. The installers read that version before they ask for the
+bootloader, and store the choice over the debug link once RadioFoundry runs (rfoundry's `origversion.py`, the web
+flasher's `origversion.js`; [web-flasher.md](web-flasher.md#the-original-firmware-version)).
+
+| Key | Meaning |
+|---|---|
+| `read` | How the version is read. `dfu-info`: the original firmware, running normally, is a DFU device with the bootloader's USB IDs (`[flash.dfu]` required); block 0 command `A2 02`, then UPLOAD, answers the version (first byte 0x56; the bootloader answers 0x54). The request sequence is in the radio's hardware page |
+| `interface` | The DFU interface string the original firmware shows while it runs (spaces not counted). The installers send the read only to a device showing it, and refuse to write to one |
+| `hwopt` | The option's name, as `hal_hwopt_t` names it |
+| `major` | The choice for each major version: `{ "06" = "<choice>", ... }`, two digits each, every choice one of the option's labels |
+
+`tools/boards.py check` refuses a choice or option name that doesn't appear in the board's sources. A version whose
+major isn't listed settles nothing: the radio then uses its own fallback.
+
 `[flash.stub]` (a board on a platform with `board_stub`): `id` (the board id the stub echoes, unique per stub; 0xFE is reserved for the stub tools' test profiles) and
 `tested` (flashed through the stub on a radio), then the keys the platform's `board_stub` names:
 
