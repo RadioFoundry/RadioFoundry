@@ -29,7 +29,8 @@ clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal; the backup
 level = "bring-up"
 summary = """\
 Builds for every board revision (SKY72310, "PLL1590" and LMX2571 synthesizers) and is offered to testers through the \
-bootloader and the flash stub. Open: everything on a radio; nothing has run on an MD-9600 yet, and transmit is off."""
+bootloader and the flash stub. On a V1-V3 radio, the display, keys, debug link, programming and VHF FM receive work. \
+Open: FM receive audio level, UHF and DMR receive, the encoder, and transmit (off in the build)."""
 release = "testing"
 
 # This board's own switches (config.mk, config_md9600.h) aren't feature switches, so ci's per-switch builds don't cover

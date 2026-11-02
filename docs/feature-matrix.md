@@ -130,7 +130,7 @@ is `tools/bringup.py list --radio <id>`.
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | partial |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | partial |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | ✕ |
-| `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
+| `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `audio_probe` | not written | off | not written | not written | not written | off | off |
 <!-- end generated -->
 
