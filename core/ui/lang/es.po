@@ -193,16 +193,32 @@ msgid "{Keys locked: hold Back to unlock|Locked: hold Back to unlock}"
 msgstr "{Teclas bloq.: mantener Atrás para abrir|Bloq.: mantener Atrás para abrir}"
 
 #: core/ui/ui_app.c
+msgid "VFO settings save automatically"
+msgstr "Los ajustes del VFO se guardan solos"
+
+#: core/ui/ui_app.c
+msgid "Stop hotspot to save"
+msgstr "Detenga el hotspot para guardar"
+
+#: core/ui/ui_app.c
 msgid "Nothing to save"
 msgstr "Nada que guardar"
 
-#: core/ui/ui_app.c core/ui/ui_menus.c
+#: core/ui/ui_app.c
+msgid "Pick a saved channel"
+msgstr "Elija un canal guardado"
+
+#: core/ui/ui_app.c
+msgid "Channel saving unavailable"
+msgstr "No se puede guardar el canal"
+
+#: core/ui/ui_app.c
 msgid "Saved to channel"
 msgstr "Guardado en canal"
 
-#: core/ui/ui_app.c core/ui/ui_menus.c
-msgid "Can't save here: use qdmr"
-msgstr "No se puede aquí: use qdmr"
+#: core/ui/ui_app.c
+msgid "Save busy: try again"
+msgstr "Guardado ocupado: reintente"
 
 #: core/ui/ui_app.c
 msgid "Home zone: "
