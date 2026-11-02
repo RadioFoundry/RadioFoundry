@@ -8,6 +8,9 @@
 #include "spi_flash/spi_flash.h"
 #include "config.h"
 #include "rfseq_md9600.h"
+#if CONFIG_DMR
+#include "hrc/dmr_glue.h"
+#endif
 
 #if CONFIG_DIAG
 
@@ -49,6 +52,9 @@ static void put_mhz(out_t *o, uint32_t hz)
 	put(o, ".");
 	put_u(o, (hz / 100000u) % 10u);
 }
+
+// Lines up to the last case below; the DMR modem's follow
+#define MD9600_DIAG_BOARD_LINES	18u
 
 bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
 {
@@ -157,6 +163,12 @@ bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, md9600_adc3_qt());
 		break;
 	default:
+#if CONFIG_DMR
+		// Then the DMR modem counters (bring-up: slot ticks, interrupts, bursts by type, the last CC and sync)
+		if (i >= MD9600_DIAG_BOARD_LINES && i - MD9600_DIAG_BOARD_LINES < STM32_HRC_DMR_DIAG_LINES) {
+			return stm32_hrc_dmr_stats_line((uint8_t)(i - MD9600_DIAG_BOARD_LINES), buf, len);
+		}
+#endif
 		return false;
 	}
 	*o.p = '\0';
@@ -165,6 +177,9 @@ bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
 
 void md9600_diag_reset(void)
 {
+#if CONFIG_DMR
+	stm32_hrc_dmr_stats_reset();
+#endif
 }
 
 #endif

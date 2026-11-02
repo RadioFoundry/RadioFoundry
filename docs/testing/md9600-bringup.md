@@ -24,12 +24,13 @@ First radio: a V1-V3 board (its original firmware reported version 06.09), on a 
 |---|---|
 | Boot, USB, debug link, CPS | Work |
 | Display | Works after turning it 180 degrees (segments reversed, COM normal, column offset 4; unknown 22) |
-| Keys, key lock | Work (HIL); encoder and mic keypad not checked by hand yet |
+| Keys, key lock, encoder | Work (HIL; the encoder by hand: one step per click both ways, a wobble counts none). Mic keypad not checked yet |
 | Data flash, calibration, option block | Read: `cal factory`, `opt factory`, band edges from the option block |
 | Board revision | Stored by hand as V1-V3 before the installers learned to read it |
 | FM receive, VHF | Works: a NOAA station through the dummy load, at 25 kHz |
 | FM receive audio | Loud at the bottom of the volume knob and overdriven. The HR_C6000 settings, FM_SW and the IF chip words were compared with the original firmware's and changed live without effect; whether the original firmware sounds the same on this radio is not checked |
-| UHF receive, DMR receive | Not checked (no signal source at hand) |
+| FM receive, UHF | Works: a handheld on 446.000 MHz, 12.5 kHz, at -57 to -73 dBm; the audio sounds the same as on VHF |
+| DMR receive | Fails: the HR_C6000 never syncs on a clean call that other receivers decode (UHF, CC 1, slot 1). The DMR modem counters are on the diagnostics page after the board lines |
 | Transmit | Off in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`) |
 
 ## 0. Before anything
