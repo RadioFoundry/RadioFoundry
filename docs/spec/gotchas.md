@@ -691,3 +691,14 @@ the 30 ms bursts, so the reading at the end of the dwell, or any poll of the pro
 the probe ended at once; and a 700 ms probe was shorter than a late entry that has to wait for a second superframe's LC
 (about 1.1 s from the retune). Rule: a carrier seen in the last 150 ms counts; bursts with the channel's color code
 extend the probe to 1.5 s (`docs/spec/radio-features.md` 2).
+
+**17.2 A DMR retune without a receiver restart keeps the last transmitter's slot timing.**
+Symptom: a field report (build b0b69d2) on an HR_C7000 radio: the scan never stopped on a DMR transmission; FM
+scanning worked. Cause: the HR_C6000 boards restart the DMR receiver in their own `rx()` on a new frequency; the
+HR_C7000 boards didn't, and that chip keeps the slot timing it took from the last DMR signal it heard. On the next
+channel it then decodes nothing from another transmitter until its own stale restart, 390-600 ms later
+(`modem-hrc7000.md` 5.3), longer than the 150 ms dwell. With a noise reading that shows the DMR carrier the probe
+outlasts it, only later; without one, the stop ends at the dwell on every visit (`radioFeaturesTest`,
+`test_scan_dmr_kept_timing`). Rule: the radio core calls `hal_dmr_modem_t.rx_restart` at every new DMR frequency while
+the stack runs. Whether the RF chip's noise reading follows a DMR carrier in DMR mode is a board fact to check on the
+radio: the DMR scan relies on it to probe within the dwell.

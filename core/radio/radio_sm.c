@@ -1284,6 +1284,13 @@ static void dmr_begin(radio_sm_t *sm)
 		return;
 	}
 #endif
+	// A new frequency with the stack running: the receiver drops the slot timing it took on the last one and searches
+	// again. Without it a modem may keep that timing and decode nothing from another transmitter until its own stale
+	// restart, 390-600 ms later: longer than a scan's dwell (gotchas 17.2). A start (set_mode) searches anyway
+	if (sm->dmr_running && sm->dmr_rx_hz != sm->view.ch.rx_hz) {
+		board.dmr->rx_restart();
+	}
+	sm->dmr_rx_hz = sm->view.ch.rx_hz;
 	dmr_load_channel(sm);
 	dmr_configure(sm);
 	if (!sm->dmr_running && board.dmr != NULL) {

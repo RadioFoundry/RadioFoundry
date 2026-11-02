@@ -324,7 +324,7 @@ interrupt.
 | Command | Effect |
 |---|---|
 | `configure` | own DMR ID, color code (or "any"), sync families to detect, default access policy (impolite / polite to CC / polite to all), DMO / RMO framing |
-| `rx_start` / `rx_restart` | receive every slot, passive timing; restart = drop sync and search again |
+| `rx_start` / `rx_restart` | receive every slot, passive timing; restart = drop sync and search again. The radio core restarts at every new DMR frequency with the stack running (a scan or channel step): a chip may keep the last transmitter's slot timing otherwise ([gotchas](gotchas.md) 17.2) |
 | `rx_lock_slot(slot or none)` | receive only our slot / both |
 | `tx_begin(timing)` | start a transmission: own timing (DMO), aligned to the received signal on the next slot carrying a given TS (RMO, SFR user), or as soon as possible; with the access policy for this transmission |
 | `tx_queue_burst` | one burst: type (voice header, voice A-F with 27-byte AMBE, terminator, PI header, CSBK, data header / block, idle, raw DT), payload, "host supplied CRC" flag, embedded LC for B-E (voice), sync family override (SFR outbound) |

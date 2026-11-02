@@ -563,7 +563,7 @@ AUDIO_CONTROL is not rewritten here; after FM it ends up 0x00 once FM audio is s
 
 ### 5.2 Start / restart receive
 
-Used at DMR entry, after TX, and wherever reception must be (re)acquired:
+Used at DMR entry, after TX, at a new DMR frequency (the radio core calls `rx_restart` then, `gotchas.md` 17.2) and wherever reception must be (re)acquired:
 
 | # | Register | Value | Why |
 |---|---|---|---|
