@@ -12,7 +12,7 @@ import { fromHex, toHex, sha256, crc32, u32le } from "../static/js/flasher/bytes
 import * as stockfw from "../static/js/flasher/stockfw.js";
 import { makePlan, KEEP, MERGE, RESTORE, PlanError } from "../static/js/flasher/plan.js";
 import { verify, segments, ManifestError } from "../static/js/flasher/manifest.js";
-import { Dfu, NormalModeError, WebUsbTransport, normalMode } from "../static/js/flasher/dfu.js";
+import { Dfu, NormalModeError, WebUsbTransport, dfuRegion, normalMode } from "../static/js/flasher/dfu.js";
 import { Link, crc16, frame, parseFrames, probe } from "../static/js/flasher/link.js";
 import { FakeRadio, simulation } from "../static/js/flasher/fake.js";
 import { zip, unzip } from "../static/js/flasher/zip.js";
@@ -904,6 +904,9 @@ test("WebUSB transport refuses the radio switched on normally", async () => {
 	assert.equal(normalMode(NORMAL, board), true);
 	assert.equal(normalMode(LOADER, board), false);
 	assert.equal(normalMode([undefined], board), false);
+	// a bootloader that showed the whole flash, not only the application area, is no normal mode
+	assert.equal(normalMode(["@Internal Flash  /0x08000000/03*016Kg,01*016Kg,01*064Kg,07*128Kg"], board), false);
+	assert.deepEqual(dfuRegion("@SPI Flash Memory /0x00000000/16*064Kg"), [0, 0x100000]);
 	const declared = { ...board, dfu_layout: "@Internal Flash /0x0800C000/01*016Kg,01*064Kg,07*128Kg" };
 	assert.equal(normalMode(LOADER, declared), false);
 	assert.equal(normalMode(["@Internal Flash /0x0800C000/01*016Kg"], declared), true);

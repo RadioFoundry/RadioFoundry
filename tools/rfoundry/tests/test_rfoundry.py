@@ -726,6 +726,9 @@ class NormalMode(unittest.TestCase):
         self.assertTrue(dfumod.normal_mode(self.NORMAL))
         self.assertFalse(dfumod.normal_mode(self.LOADER))
         self.assertFalse(dfumod.normal_mode([None]))			# no layout string: nothing to go by
+        # a bootloader that showed the whole flash, not only the application area, is no normal mode
+        self.assertFalse(dfumod.normal_mode(["@Internal Flash  /0x08000000/03*016Kg,01*016Kg,01*064Kg,07*128Kg"]))
+        self.assertEqual(dfumod.region("@SPI Flash Memory /0x00000000/16*064Kg"), (0, 0x100000))
         declared = mock.Mock(dfu_layout="@Internal Flash /0x0800C000/01*016Kg,01*064Kg,07*128Kg")
         self.assertFalse(dfumod.normal_mode(self.LOADER, declared))	# white space doesn't count
         self.assertTrue(dfumod.normal_mode(["@Internal Flash /0x0800C000/01*016Kg"], declared))

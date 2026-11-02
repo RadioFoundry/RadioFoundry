@@ -190,7 +190,8 @@ BOARD_SCHEMA = {
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str),
                             "hold": _opt(STR_LIST)}),
         # layout: the bootloader's alt 0 interface string, only once read from a radio in its bootloader. The
-        # flashers then accept no other device; without it they refuse a layout from 0x08000000 (rfoundry dfu.py)
+        # flashers then accept no other device; without it they refuse a layout of only the bootloader's sectors
+        # (rfoundry dfu.py normal_mode)
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
                      "key_sha256": _req(str), "key_prefix": _req(str), "layout": _opt(str)}),
         # flash no tool may erase or write (PROTECT_MEMS): the factory calibration and other factory data that can't

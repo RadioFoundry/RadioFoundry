@@ -9,6 +9,7 @@ index 0 whichever sectors are skipped.
 """
 import hashlib
 import os
+import re
 import struct
 import sys
 import time
@@ -205,19 +206,34 @@ def _layout(name):
     return " ".join((name or "").split())
 
 
+BOOT_AREA = 0xC000      # the bootloader's sectors, 0x08000000-0x0800BFFF
+
+
+def region(name):
+    """The first region of a DfuSe interface string ("@name /0xADDR/NN*SSSKg,..."): (start, bytes), None if it has none."""
+    m = re.search(r"/0x([0-9a-fA-F]+)/([^/]*)", name or "")
+    if not m:
+        return None
+    unit = {"K": 1024, "M": 1024 * 1024}
+    size = sum(int(n) * int(s) * unit.get(u, 1) for n, s, u in re.findall(r"(\d+)\*(\d+)\s*([KM]?)", m.group(2)))
+    return int(m.group(1), 16), size
+
+
 def normal_mode(interfaces, board=None):
     """True when the DFU device is the radio's own firmware switched on normally, not its bootloader
     (hardware-dm1701.md 15.1). The normal-mode firmware has the bootloader's USB IDs and strings, but erasing or writing
     through it can reach the bootloader's sectors. A board that declares its bootloader's layout ([flash.dfu] layout)
-    accepts only that alt 0 string; any other board refuses a layout from 0x08000000, the whole flash, since the
-    bootloader shows only the application area. No layout string at all: nothing to go by, accepted."""
+    accepts only that alt 0 string; any other board refuses a layout that shows only the bootloader's sectors (from
+    0x08000000, at most BOOT_AREA bytes), as every original firmware's does. A bootloader shows the application area,
+    so one that listed the whole flash would still pass. No layout string at all: nothing to go by, accepted."""
     names = [_layout(n) for n in interfaces if n]
     if not names:
         return False
     want = getattr(board, "dfu_layout", None)
     if want:
         return names[0] != _layout(want)
-    return any("/0x08000000/" in n for n in names)
+    regions = [region(n) for n in names]
+    return any(r is not None and r[0] == 0x08000000 and r[1] <= BOOT_AREA for r in regions)
 
 
 def fingerprint(usb, dev):

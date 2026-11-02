@@ -1269,10 +1269,13 @@ Measured on an MD-9600, 2026-11-02. In normal mode the requests of 15.2 don't do
 it can erase the bootloader. Both flashers (rfoundry, the web flasher, and `tools/stm32_dfu.py`) refuse such a device
 before any DFU request. A board whose bootloader layout was read on a radio declares it (`[flash.dfu] layout`, see
 [board-registry.md](../dev/board-registry.md)), and then only that alt 0 string is accepted. Without a declaration,
-the flashers refuse any layout from 0x08000000, the whole flash.
+the flashers refuse a layout that shows only the bootloader's sectors: from 0x08000000, at most 48 KB. A bootloader
+that listed the whole flash rather than the application area would still be accepted.
 
-An MD-380 shows the same alt 0 strings as the MD-9600 in both modes (measured; [hardware-md380.md](hardware-md380.md) 14.3). The DM-1701's own strings in either
-mode have not been read on a radio (?).
+An MD-380 shows the same alt 0 strings as the MD-9600 in both modes (measured; [hardware-md380.md](hardware-md380.md) 14.3).
+The DM-1701's and the MD-UV380's original firmware images hold the same normal-mode alt 0 string,
+`@Internal Flash   /0x08000000/03*016Kg` (every DM-1701 build examined). Their bootloader strings have not been read
+on a radio (?).
 
 ### 15.2 Flashing protocol (DfuSe-style, as the loader drives it)
 
