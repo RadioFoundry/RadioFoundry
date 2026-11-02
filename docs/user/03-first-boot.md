@@ -34,8 +34,11 @@ contacts and your DMR ID. When RadioFoundry finds no channels there, it uses six
 Check that these frequencies are legal for you before you transmit on them. **Settings > Advanced > Codeplug** shows
 which channels the radio uses: "built-in channels" or "from the CPS".
 
-A radio that ran the stock firmware has stock data in the SPI flash. RadioFoundry may read it as channels with unreadable
-names. In that case, write a codeplug right away.
+A radio that ran its original firmware still holds that firmware's codeplug. RadioFoundry checks the codeplug when it
+starts. When it isn't a RadioFoundry (open-firmware) codeplug, the radio ignores it and uses the built-in channels.
+**Settings > Advanced > Codeplug** then also shows "Other firmware's codeplug: ignored". Nothing is erased: the
+Codeplug Editor can still read and convert it. Write a codeplug to replace it. A channel or contact you add on the
+radio starts a new, empty RadioFoundry codeplug, which replaces the old one's channels, contacts, DMR ID and radio name.
 
 ## Programming the radio
 

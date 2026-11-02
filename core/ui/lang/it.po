@@ -2021,6 +2021,10 @@ msgid "Written by the CPS"
 msgstr "Scritto dal CPS"
 
 #: core/ui/ui_menus.c
+msgid "Other firmware's codeplug: ignored"
+msgstr "Codeplug di un altro firmware: ignorato"
+
+#: core/ui/ui_menus.c
 msgid "Zones: "
 msgstr "Zone: "
 

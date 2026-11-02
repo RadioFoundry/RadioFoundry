@@ -3405,6 +3405,10 @@ static const char *info_body(void)
 		codeplug_source_t s = codeplug_source();
 		sb_str(&b, (unsigned)s < 3 ? tr(src[s]) : "?");
 		sb_chr(&b, '\n');
+		if (codeplug_foreign()) {	// another firmware's codeplug, left alone until the CPS writes one
+			sb_str(&b, TR("Other firmware's codeplug: ignored"));
+			sb_chr(&b, '\n');
+		}
 		sb_str(&b, TR("Zones: "));
 		sb_u32(&b, codeplug_zone_count(), 1);
 		sb_chr(&b, '\n');

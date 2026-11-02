@@ -531,6 +531,7 @@ static const sim_contact_t worst_contacts[] = {
 #define WORST_FIRST	985u
 
 codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
+bool codeplug_foreign(void) { return false; }
 
 // Channels the channel editor saved (ui_svc_write_channel): they shadow the built-in ones and fill numbers past 40
 #define SIM_EDITS	8
