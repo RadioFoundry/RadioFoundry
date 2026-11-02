@@ -78,10 +78,14 @@ export function parseKv(text) {
 }
 
 // A byte stream with a receive buffer: WebSerial in the browser, fake.js in tests and the simulator.
-// Web Serial's non-fatal read errors: the reader ends, port.readable is a new stream. A cap, so a line that keeps
-// erroring can't spin the loop for ever.
+// Web Serial's non-fatal read errors: the reader ends, port.readable is a new stream. They never end the reading: a
+// programming cable on a radio that is switched off sees a break after break for as long as it stays off (hundreds
+// while the user power-cycles it for the boot ROM), and a cap on them once stopped the reading for good with the radio
+// still there, so every later reply went unread. From GLITCH_BURST errors in a row without data, the loop waits
+// GLITCH_PAUSE ms before the next reader, so a line that keeps erroring can't spin it, and only every GLITCH_NOTE-th
+// error goes to the log.
 const SOFT_READ_ERRORS = new Set(["FramingError", "ParityError", "BreakError", "BufferOverrunError"]);
-const MAX_READ_GLITCHES = 50;
+const GLITCH_BURST = 20, GLITCH_PAUSE = 20, GLITCH_NOTE = 100;
 
 export class SerialStream {
 	constructor(port) {
@@ -133,6 +137,7 @@ export class SerialStream {
 				for (;;) {
 					const { value, done } = await this.reader.read();
 					if (done) break;
+					if (value.length) glitches = 0;
 					this.buf = concat(this.buf, value);
 					this.received += value.length;
 					if (this.first.length < 16) this.first = concat(this.first, value.subarray(0, 16 - this.first.length));
@@ -141,12 +146,15 @@ export class SerialStream {
 				// A framing, parity or overrun error or a break (a radio switched on or off with the cable in) ends only
 				// this reader: the port gives a fresh readable and reading goes on. Stopping here left every later
 				// reply unread ("nothing received"). A lost device has no readable, which ends the loop.
-				const soft = SOFT_READ_ERRORS.has(e?.name) && ++glitches <= MAX_READ_GLITCHES;
-				if (!this.closed) note(soft ? "serial read error, reading on" : "serial read stopped", String(e?.message || e));
+				const soft = SOFT_READ_ERRORS.has(e?.name);
+				if (soft) glitches++;
+				if (!this.closed && (!soft || glitches <= GLITCH_BURST || glitches % GLITCH_NOTE === 0))
+					note(soft ? `serial read error${glitches > 1 ? ` (${glitches} in a row)` : ""}, reading on` : "serial read stopped", String(e?.message || e));
 				if (!soft) break;
 			} finally {
 				this.reader.releaseLock();
 			}
+			if (glitches > GLITCH_BURST) await sleep(GLITCH_PAUSE);
 		}
 		// the device went away (or its port stopped reading): a page that kept this stream would talk to nothing
 		if (!this.closed) this.lost = true;

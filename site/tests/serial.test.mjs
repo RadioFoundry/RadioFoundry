@@ -109,6 +109,27 @@ test("a framing error or a break doesn't end the reading: the bytes after it sti
 	assert.equal(s.received, 1, "nothing read after a fatal error");
 });
 
+// Field (Sentry OPENDIGITALRADIO-M): a DM-32 switched off and on with the cable in gave break after break; 50 of them
+// once stopped the reading for good, the radio still there, and every stub request after it failed "no reply header"
+test("a radio power-cycled with the cable in: hundreds of breaks in a row never stop the reading", async () => {
+	const port = new FakePort();
+	const s = await SerialStream.open(port);
+	const before = diag.report().log.length;
+	for (let i = 0; i < 300; i++) {
+		await new Promise((r) => setTimeout(r, 0));
+		lineError(port, "BreakError");
+	}
+	await new Promise((r) => setTimeout(r, 60));
+	port.readable.push(new Uint8Array([0x02, 0x05]));
+	await new Promise((r) => setTimeout(r, 60));
+	assert.equal(s.received, 2, "the stub's reply after the breaks is read");
+	assert.equal(s.lost, false, "the device is still there");
+	const noted = diag.report().log.slice(before).filter((e) => /serial read/.test(e.text));
+	assert.ok(noted.length < 30, `a burst is noted sparingly (${noted.length} lines)`);
+	assert.ok(!noted.some((e) => /read stopped/.test(e.text)));
+	await s.close();
+});
+
 test("a port this page left open is closed and opened again", async () => {
 	const port = new FakePort();
 	await port.open();
