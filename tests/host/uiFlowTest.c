@@ -448,6 +448,7 @@ static const flow_t flows[] = {
 	// The own DMR ID (Settings > My radio, set76, the codeplug's): digits type it, OK saves, BACK takes the last digit
 	// back and with none typed leaves it; 0 is refused
 	{ "S DMR ID opens", "", "ok 7 9 ok", "screen=dmr-id shows=DMR_ID", 4, false },
+	{ "S About from My radio", "", "ok 7 9 down ok", "screen=about", 5, false },
 	{ "S DMR ID typed and saved", "ok 7 9 ok", "3 1 0 9 9 9 9 ok", "set76=3109999 toast=DMR_ID_saved", 8, false },
 	{ "S DMR ID: BACK takes a digit back", "ok 7 9 ok", "3 1 back ok", "set76=3 toast=DMR_ID_saved", 4, false },
 	{ "S DMR ID: BACK with none typed leaves it", "ok 7 9 ok 3 1 0 9 9 9 9 ok", "3 1 back back back",

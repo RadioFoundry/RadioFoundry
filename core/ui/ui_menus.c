@@ -4955,6 +4955,8 @@ static const set_item_t s_keys[] = {
 };
 static const set_item_t s_my_radio[] = {
 	ACTION(TRN("DMR ID and name"), "callsign", SA_MY_RADIO),
+	// Also in Advanced, where users didn't look for it
+	ACTION(TRN("About"), "firmware version release build date", SA_FIRMWARE),
 };
 static const set_item_t s_advanced[] = {
 	ACTION(TRN("About"), "firmware version license authors", SA_FIRMWARE),
