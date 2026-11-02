@@ -95,7 +95,7 @@ lens = [22, 22]
 # (boards/md9600/hil)
 [hil]
 display = "128x64x1"
-features = ["USB", "DEBUGLINK", "CPS_OPENFW"]
+features = ["USB", "DEBUGLINK", "CPS_FAST"]	# CPS_FAST needs CPS_OPENFW, which the feature string doesn't list
 supply_mv = [10000, 16000]
 
 # The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
