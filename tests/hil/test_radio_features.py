@@ -386,7 +386,8 @@ def fm_tx(radio, pytestconfig):
             yield radio
         finally:
             radio.link.ptt(False)
-            radio.link.tone_burst(False)
+            with contextlib.suppress(DebugLinkError):	# "unavailable" in a build without the FM TX tones
+                radio.link.tone_burst(False)
             radio.wait_for(lambda v: v.get("state") != "tx", 3.0, what="TX ended")
 
 
