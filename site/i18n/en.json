@@ -714,6 +714,7 @@
  "flash.f4.ok": "Installation complete and verified. The radio is restarting.",
  "flash.f4.same": "The radio already has this firmware. It is restarting.",
  "flash.f4.bootloader": "Use Update Mode Instead",
+ "flash.f4.register_short": "This radio's chip reports {kb} KB of flash, less than the firmware occupies, so the installation over the cable is not available. Install in update mode below.",
  "flash.plan.sector": "Area",
  "flash.plan.address": "Address",
  "flash.plan.size": "Size",

@@ -45,7 +45,7 @@ import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
 import { APP_ENTRY } from "./iap.js";
 import { slotBytes, locateCodec } from "./c7000.js";
 import { Stub, StubError } from "./stub.js";
-import { F4Stub, f4Image } from "./f4stub.js";
+import { F4Stub, f4Image, registerShort } from "./f4stub.js";
 import { f4LoaderReader } from "./readers.js";
 import * as openfw from "./openfw.js";
 import { register, backendOf, bundleBackend, allBackends } from "./backends.js";
@@ -408,8 +408,10 @@ register({
 // The STM32F4 loader route (f4stub.js): the radio runs RadioFoundry with stub entry and its codec, the image leaves the codec
 // alone, and nobody asked for a bootloader mode. Everything else, a stock radio first of all, uses the bootloader.
 const f4Board = () => fb().f4stub?.boards[S.board?.id];
+// A chip whose flash size register reads less than the firmware's flash: the loader would refuse the top sectors
+const shortRegister = () => !!(f4Board() && S.now?.kind === "rfoundry" && registerShort(S.now.flashKb, f4Board().owned));
 const stubRoute = () => !!((S.task === "install" || S.task === "update") && f4Board() && S.now?.kind === "rfoundry" && S.now.stubOffer && !S.requested
-	&& S.now.probe?.codec === S.board.codec.id && !S.firmware?.manifest.codec?.included);
+	&& S.now.probe?.codec === S.board.codec.id && !S.firmware?.manifest.codec?.included && !shortRegister());
 let f4Json = null;
 const f4StubJson = async () => (f4Json ||= await (await fetch(`${ROOT}data/f4-stub.json`)).json());
 
@@ -436,8 +438,12 @@ function optionMismatch(p) {
 // connections (real or simulated)
 
 // What runs on the radio, once it answered as RadioFoundry: on the STM32 radios also whether it offers the loader hand-over
+// flashKb: the chip's flash size register (INFO_CHIP) on a loader board, null when the radio didn't say: the loader is
+// bounded by it, and some chips read less than the board's flash (f4stub.js registerShort)
 async function rfoundryNow(link, p) {
-	return { kind: "rfoundry", probe: p, stubOffer: f4Board() ? await Stub.rfoundryOffer(link) : null };
+	if (!f4Board()) return { kind: "rfoundry", probe: p, stubOffer: null };
+	const flashKb = (await link.chip().catch(() => null))?.flashKb ?? null;
+	return { kind: "rfoundry", probe: p, stubOffer: await Stub.rfoundryOffer(link), flashKb };
 }
 
 const grantedRFoundryPorts = async () => (await navigator.serial.getPorts()).filter((p) => {
@@ -1920,7 +1926,11 @@ function writeView() {
 		notePlan(plan, prof);
 		return plan;
 	}, next, what, opts);
-	if (!stubRoute()) return dfu();
+	if (!stubRoute()) {
+		if (!shortRegister()) return dfu();
+		diag.note("flash size register reads short: update mode", { flashKb: S.now.flashKb });
+		return h("div", { class: "flasher" }, notice(t("flash.f4.register_short", { kb: S.now.flashKb }), "action"), dfu());
+	}
 	// the bootloader route stays one click away: it finishes an install the loader couldn't
 	const fallback = h("details", { class: "panel" }, h("summary", {}, t("flash.f4.bootloader")));
 	fallback.addEventListener("toggle", () => { if (fallback.open && fallback.children.length < 2) fallback.append(dfu({ inline: true })); });

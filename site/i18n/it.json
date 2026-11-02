@@ -714,6 +714,7 @@
  "flash.f4.ok": "Installazione completata e verificata. La radio si sta riavviando.",
  "flash.f4.same": "La radio ha già questo firmware. Si sta riavviando.",
  "flash.f4.bootloader": "Usa invece la modalità aggiornamento",
+ "flash.f4.register_short": "Il chip di questa radio indica {kb} KB di memoria flash, meno di quanto occupa il firmware, quindi l'installazione tramite cavo non è disponibile. Installa in modalità aggiornamento qui sotto.",
  "flash.plan.sector": "Area",
  "flash.plan.address": "Indirizzo",
  "flash.plan.size": "Dimensione",
