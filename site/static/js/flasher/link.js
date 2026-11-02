@@ -34,6 +34,8 @@ export function browserErrorKey(e) {
 	case "NotAllowedError": return "flash.err.not_allowed";
 	case "NetworkError": return /open serial port/i.test(raw) ? "flash.err.port_busy" : /claim|access denied/i.test(raw) ? "flash.err.usb_busy" : "flash.err.connection_lost";
 	case "BufferOverrunError": case "BreakError": case "FramingError": case "ParityError": return "flash.err.connection_lost";
+	// usbserial.js on a USB-serial chip it has no driver for (CH340, CP210x, PL2303)
+	case "NotSupportedError": return /serial device this page/i.test(raw) ? "flash.err.usb_chip" : null;
 	default: return null;
 	}
 }

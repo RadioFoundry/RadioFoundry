@@ -854,6 +854,7 @@
  "flash.err.port_busy": "La porta seriale della radio è in uso. Chiudi ogni altro programma che usa la radio (il CPS del produttore, qdmr, un'altra scheda di questa pagina), poi riprova.",
  "flash.err.usb_busy": "La connessione USB della radio è in uso o non permessa. Chiudi ogni altro programma che usa la radio, poi riprova. Su Windows il bootloader può richiedere il suo driver; su Linux il tuo utente deve avere accesso al dispositivo USB.",
  "flash.err.connection_lost": "La connessione con la radio si è interrotta. Controlla il cavo e che la radio sia accesa, poi riprova.",
+ "flash.err.usb_chip": "Il chip USB-seriale di questo cavo non funziona ancora in Chrome su Android. Usa un cavo con chip FTDI, la porta USB della radio o un computer.",
  "flash.err.download": "Un download non si è completato. Controlla la connessione a internet e ricarica la pagina; può dipendere anche da un'estensione del browser che blocca le richieste.",
  "flash.err.security": "Il browser ha bloccato l'accesso USB. Apri l'utility di programmazione tramite HTTPS.",
  "flash.err.gesture": "Il browser mostra l'elenco delle porte solo subito dopo un clic, e questo ha richiesto troppo tempo. Fai di nuovo clic sul pulsante.",
