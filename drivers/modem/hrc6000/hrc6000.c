@@ -99,10 +99,22 @@ static bool set_mic_gain(hrc_t *dev, uint8_t gain)
 	return hrc_write(dev, 4, 0xE4, (uint8_t)(0x20u + gain));
 }
 
+// 4:0x01 with the board's receive I/Q order (bit 6, hrc6000_rx_iq_swap)
+static uint8_t hw_config(const hrc_t *dev, uint8_t v)
+{
+	return dev->rx_iq_straight ? (uint8_t)(v & ~0x40u) : v;
+}
+
+bool hrc6000_rx_iq_swap(hrc_t *dev, bool swap, bool dmr)
+{
+	dev->rx_iq_straight = !swap;
+	return !dmr || hrc_write(dev, 4, 0x01, hw_config(dev, 0xF0));
+}
+
 static bool dmr_enter(hrc_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mic_gain)
 {
 	bool ok = hrc_write(dev, 4, 0x60, 0x00);	// analog voice TX off (FM leftovers)
-	ok &= hrc_write(dev, 4, 0x01, 0xF0);		// two-point modulation TX, IF RX
+	ok &= hrc_write(dev, 4, 0x01, hw_config(dev, 0xF0));	// two-point modulation TX, IF RX
 	ok &= hrc_set_mod_gain(dev, mod2, mod1);	// DMR pair
 	ok &= hrc_write(dev, 4, 0x10, dmr_mode(false));	// DMR, Tier II, layer 2
 	ok &= hrc_write(dev, 4, 0xE0, 0xC9);		// codec under MCU control, mic on
@@ -144,7 +156,8 @@ static bool write_rows(hrc_t *dev, const hrc_row_t *rows, uint32_t n)
 {
 	bool ok = true;
 	for (uint32_t i = 0; i < n; i++) {
-		ok &= hrc_write(dev, rows[i].page, rows[i].reg, rows[i].val);
+		uint8_t v = rows[i].page == 4 && rows[i].reg == 0x01 ? hw_config(dev, rows[i].val) : rows[i].val;
+		ok &= hrc_write(dev, rows[i].page, rows[i].reg, v);
 	}
 	return ok;
 }

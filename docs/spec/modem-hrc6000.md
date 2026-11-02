@@ -92,7 +92,7 @@ Names are the manual's. Only the bits we rely on are listed.
 | Reg | Name | Bits / values used |
 |---|---|---|
 | 0x00 | reset (active low per module: DMR, PHY, codec, FM, vocoder IF, MSK, I2S, built-in codec) | 0xFF at init (all running) then 0x2A (partial reset, unexplained) |
-| 0x01 | H/W config | 0xF0 in DMR (two-point modulation TX, IF RX); 0xB0 then 0xF8 during init (unexplained). The same value is used on UHF and VHF |
+| 0x01 | H/W config | 0xF0 in DMR (two-point modulation TX, IF RX); 0xB0 then 0xF8 during init (unexplained). The same value is used on UHF and VHF. Bit 6 swaps the receive I and Q (the manual: the receive port's mapping to the RF port). With an IF input that inverts the received spectrum, so it must match the radio's mixers: inverted 4FSK flips every symbol, and since the voice and data sync patterns are complements, the chip then sees the odd voice burst as a data sync and tracks no call. A board whose first LO changes side between bands sets the bit per band (`hrc6000_rx_iq_swap()`); the default is set |
 | 0x02-0x05 | TX / RX I and Q offsets | 0 at init; 0x04 is rewritten in FM with the calibration "Mod2 offset". In two-point mode 0x04 is the MOD1 (reference crystal) offset and 0x02 the MOD2 (VCO) one (manual 4.7.2; the register table says MOD2 for both): 0x04 moves the FM carrier about 75 Hz a step, signed (bench 2026-10-12) |
 | 0x06 | vocoder select | 0x21 = vocoder over SPI under MCU control; 0x22 = "open music" (used only while flushing page 3); 0x20 = normal |
 | 0x07-0x09 | IF frequency H/M/L | 0x0B, 0xB8, 0x00 (450 kHz) |
@@ -527,9 +527,11 @@ deviation, 0xA0 = CTCSS or DCS deviation, 0x3F=0x04, 0x34=0x3C, 0x3E=0x08, page 
 **FM RX**: 0x60=0x00, 0xE0=0x89, 0x10=0x80, 0x34=0x3C, 0x81=0x19, 0x85=0x00, 0x26=0xFD. Audio feed-through 0x36=0x02
 (0x00 mutes); 0x10 back to 0x6E for DMR.
 
-**Tones (0xA1 mode)**: 0x80 off, 0x88 CTCSS, 0x84 DCS, 0x82 DTMF. 0x80 leaves the tone engine on with no tone. A
-board that feeds the chip a 450 kHz IF (an IF chip ahead of it) needs 0x00 there: with 0x80 the chip never detects a
-DMR sync, though its RSSI (0x43 / 0x44) follows the signal. `hrc6000_tones_off()` writes it after the power-on init.
+**Tones (0xA1 mode)**: 0x80 off, 0x88 CTCSS, 0x84 DCS, 0x82 DTMF, as traced. The manual's register table differs:
+0xA1 is `fm_mod`, bit 7 is reserved and must be 0, bit 6 MSK, and its appendix selects CTCSS with 0x08, CDCSS 0x04,
+DTMF 0x02, 2-tone 0x10, 5-tone 0x20. With bit 7 set (the init's 0x80) a board that feeds the chip a 450 kHz IF never
+gets a DMR sync, though the chip's RSSI (0x43 / 0x44) follows the signal; `hrc6000_tones_off()` writes 0x00 after
+the power-on init. The other boards receive with 0x80 and haven't been tried with 0x00.
 - CTCSS TX: 0xA1=0x88, 0xA8 = tone index. RX: 0xA1=0x88, 0xA7=0x10 (threshold), 0xD3=0x07 / 0xD2=0xD0 (sampling depth
   2000 = 250 ms at 8 kHz), 0xD4 = tone index. Detected: 0x93 bit 0.
 - DCS TX: 0xA1=0x84, 0xA2 = 0x00 inverted / 0x08 normal, 0xAB = code bits 7-0, 0xAC = code bit 8. RX: 0xA1=0x84, 0xA2 =

@@ -187,13 +187,13 @@ register behavior is the DM-1701's ([modem-hrc6000.md](modem-hrc6000.md)).
 | Item | MD-9600 |
 | --- | --- |
 | Clock / PLL | 4:0x0A=0x80, 0x0B=0x28, 0x0C=0x33, 0x0A=0x00, 0xB9=0x05, 0xBA=0x04, 0xBB=0x02: the same values RadioFoundry already uses |
-| IF | 450 kHz (4:0x07-0x09 = 0x0B 0xB8 0x00), from the IF receiver chip, two-point modulation (4:0x01=0xB0) |
+| IF | 450 kHz (4:0x07-0x09 = 0x0B 0xB8 0x00), from the IF receiver chip into ADC_IVINP (pin 70). **4:0x01 bit 6 (receive I/Q swap) follows the first LO's side** (5.2): clear on UHF (LO below, 0xB0 in DMR), set on VHF (LO above, 0xF0), as the radio's own firmware does. The wrong value inverts the spectrum: about one voice burst in six syncs and no call is tracked (first radio, 2026-11-02, both bands) |
 | FM receive audio | **not through the HR_C6000**: 4:0x36 = 0x00 always. FM audio comes from the IF chip's demodulator via U_V_AF_SW, FM_SW, FM_MUTE (6.1) |
 | FM TX, CTCSS, DCS, DTMF, tones | through the HR_C6000 (TX tone generator, RX CTCSS / DCS detector); PWM on PC7 is reported for TX tones instead (unverified) |
 | MOD2 routing | U_V_MOD_SW (PB7) sends the MOD2 output to the active band's VCO; set with every synthesizer write |
 | Reference / MOD2 offset | per band byte t from calibration (11.2); signed c = t - 128; 4:0x47 = c, 4:0x48 = 0x03 if c < 0 else 0x00, 4:0x04 = c. Rewritten at every RX entry (otherwise an RX offset is reported after TX) |
 | DMR sync detection | 4:0x5F = 0xF0 (MS, BS, TDMA1, TDMA2) |
-| Tone engine | **4:0xA1 = 0x00** after the power-on init. With the init's 0x80 the chip never syncs on DMR, though its RSSI (4:0x43 / 0x44) follows the signal (first radio, 2026-11-02; found by setting the register live during a call) |
+| Tone mode | **4:0xA1 = 0x00** after the power-on init (bit 7 is reserved, must be 0). With the init's 0x80 the chip never syncs on DMR, though its RSSI (4:0x43 / 0x44) follows the signal (first radio, 2026-11-02) |
 
 ### 4.3 Voice port and I2S
 

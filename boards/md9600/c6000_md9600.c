@@ -212,6 +212,17 @@ void md9600_c6000_init(void)
 	speaker_apply();
 }
 
+#if CONFIG_DMR
+// The receive I/Q order follows the first LO's side (hardware-md9600.md 4.2, 5.2): above the signal on VHF, which
+// inverts the IF, and below it on UHF. Swapped on VHF, straight on UHF
+static bool iq_swap(uint32_t hz)
+{
+	uint8_t band = MD9600_UHF;
+	(void)md9600_band_of(hz, &band);
+	return band == MD9600_VHF;
+}
+#endif
+
 void md9600_c6000_mode(bool dmr, uint32_t hz)
 {
 #if !CONFIG_DMR
@@ -223,6 +234,7 @@ void md9600_c6000_mode(bool dmr, uint32_t hz)
 	diag.dmr = dmr;
 	if (dmr) {
 #if CONFIG_DMR
+		count(hrc6000_rx_iq_swap(&modem, iq_swap(hz), false));
 		count(hrc6000_dmr_enter(&modem, cal_gain(CAL_DMR_I_UHF, CAL_DMR_I_VHF, hz),
 					cal_gain(CAL_DMR_Q_UHF, CAL_DMR_Q_VHF, hz), DMR_MIC_GAIN));
 #endif
@@ -246,6 +258,11 @@ void md9600_c6000_retune(uint32_t hz)
 		return;
 	}
 	ref_offset(hz);
+#if CONFIG_DMR
+	if (diag.dmr && iq_swap(hz) != iq_swap(tuned_hz)) {
+		count(hrc6000_rx_iq_swap(&modem, iq_swap(hz), true));	// a band change
+	}
+#endif
 	if (diag.dmr && hz != tuned_hz) {
 		// New channel: its modulation pair, and the receiver searches again
 		count(hrc_set_mod_gain(&modem, cal_gain(CAL_DMR_I_UHF, CAL_DMR_I_VHF, hz),

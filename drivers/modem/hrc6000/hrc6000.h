@@ -31,6 +31,11 @@ typedef struct {
 
 // Bind the HR_C6000's chip description to a bus
 void hrc6000_attach(hrc_t *dev, const hrc_bus_t *bus);
+// The receive I/Q order, 4:0x01 bit 6 (modem-hrc6000.md 2): swapped (the default) or not. With an IF input it
+// inverts the received spectrum, so it must match the radio's mixers; a board whose first LO is above the signal on
+// one band and below it on another sets it per band. Kept for every later write of 0x01; dmr: also write it now (the
+// chip is in DMR receive)
+bool hrc6000_rx_iq_swap(hrc_t *dev, bool swap, bool dmr);
 
 // Power-on initialization, modem-hrc6000.md section 3 steps 1-14. The board has already taken PWD low and waited
 // 10 ms. Leaves the chip in its DMR layer 2 receive set-up; call a hrc6000_set_mode_*() next
@@ -44,8 +49,8 @@ bool hrc6000_set_mode_fm_tx(hrc_t *dev, const hrc6000_fm_tx_t *cfg);
 bool hrc6000_fm_audio(hrc_t *dev, bool on);
 // Reference oscillator offset (hardware-dm1701.md 12.4). fm_tx: the FM TX form (0x48 = 0)
 bool hrc6000_set_ref_offset(hrc_t *dev, int8_t offset, bool fm_tx);
-// The tone engine fully off (4:0xA1 = 0x00; modem-hrc6000.md 8). The power-on init leaves 0x80, the engine on with no
-// tone, which receives DMR on most boards; on a board that feeds the chip a 450 kHz IF it stops every DMR sync
+// 4:0xA1 = 0x00 (modem-hrc6000.md 8). The power-on init leaves 0x80, whose bit 7 the manual marks reserved, must be 0.
+// The other boards receive DMR with it; on a board that feeds the chip a 450 kHz IF it stops every DMR sync
 bool hrc6000_tones_off(hrc_t *dev);
 // RX audio gain, -31..+31 dB (4:0x37 = 0x80 + 0x40 if positive + the low 5 bits of the gain, modem-hrc6000.md 2)
 bool hrc6000_set_rx_gain(hrc_t *dev, int8_t db);

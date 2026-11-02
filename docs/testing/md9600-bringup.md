@@ -30,7 +30,7 @@ First radio: a V1-V3 board (its original firmware reported version 06.09), on a 
 | FM receive, VHF | Works: a NOAA station through the dummy load, at 25 kHz |
 | FM receive audio | Loud at the bottom of the volume knob and overdriven. The HR_C6000 settings, FM_SW and the IF chip words were compared with the original firmware's and changed live without effect; whether the original firmware sounds the same on this radio is not checked |
 | FM receive, UHF | Works: a handheld on 446.000 MHz, 12.5 kHz, at -57 to -73 dBm; the audio sounds the same as on VHF |
-| DMR receive | Fails: the HR_C6000 never syncs on a clean call that other receivers decode (UHF, CC 1, slot 1). The DMR modem counters are on the diagnostics page after the board lines |
+| DMR receive | Works (UHF, by hand): a group call from another radio (CC 1, slot 1) plays clearly, every voice burst received. VHF DMR not tried. The DMR modem counters are on the diagnostics page after the board lines |
 | Transmit | Off in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`) |
 
 ## 0. Before anything
@@ -100,5 +100,17 @@ live.
 
 ## 5. DMR receive, transmit
 
-Not reached yet. DMR receive needs a DMR signal on a channel of the codeplug; transmit stays off in the build until
-the RF sequence is checked (19.8).
+DMR receive works on UHF (2026-11-02, a simplex group call, CC 1, slot 1, from another radio at about -70 dBm): headers,
+terminator and every voice burst, played clearly. Three fixes, found in this order (hardware-md9600.md 2.6, 4.2):
+
+| Fault | Symptom with it |
+| --- | --- |
+| 4:0xA1 = 0x80 from the init (bit 7 reserved, must be 0) | no sync at all, though the chip's RSSI follows the signal |
+| The tone pin (PC7) driven low into the reference oscillator | no sync |
+| 4:0x01 bit 6 (receive I/Q swap) not matching the first LO's side: set on UHF, where the LO is below the signal | an inverted spectrum: the odd sync, about one voice burst in six, no call |
+
+The first two were each needed for any sync while 0x01 was still wrong. Whether each is still needed with 0x01 right
+wasn't tried; both match what the manual and the radio's own start-up do.
+
+FM transmit was keyed once (a 5 W carrier into a dummy load, `CONFIG_MD9600_TX` build, armed by hand): on frequency
+within a few hundred Hz. Transmit stays off in the build until the RF sequence is checked (19.8).
