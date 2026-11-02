@@ -383,6 +383,19 @@ test("the update mode picture comes from the radio's data", () => {
 	assert.equal([...src.matchAll(/withPicture\(h\("ol", \{ class: "steps[^"]*" \}, S\.radio\.flash\.bootloader\.map/g)].length, lists);
 });
 
+// app.js needs the DOM, so its source is checked: the bootloader route's Install asks once more (nocodec.js) when the
+// install keeps a codec known to be missing, before anything is disabled or written (c7000ui and iapui tests: the others)
+test("the bootloader route's Install asks before an install without a codec", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	const body = src.slice(src.indexOf('const write = button(t("flash.write.go")'));
+	const ask = body.indexOf("confirmNoCodec(");
+	assert.ok(ask > 0, "confirmNoCodec called from the write button");
+	assert.ok(ask < body.indexOf("write.disabled = true") && ask < body.indexOf("flashStarted("), "asked before the write starts");
+	assert.match(body.slice(0, ask), /S\.decision\?\.expectCodec === false/);
+	// only a forced Keep gives such a decision: going back drops it, so a stock file picked there is used
+	assert.match(body.slice(0, ask), /S\.requested = null; S\.step--/);
+});
+
 // app.js needs the DOM, so what it must keep is checked in its source: whyNoAnswer() is async, so a noAnswer() that
 // isn't awaited throws a Promise and the user reads "[object Promise]"; a radio that answered with the open-firmware
 // CPS gets the next step, not the cable and driver tips; every string it picks exists

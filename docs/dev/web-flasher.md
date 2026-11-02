@@ -224,6 +224,7 @@ and the events don't. Both requests carry `adapter`, and the PATCH carries `trai
 | `open firmware backup` | The key and codec found in the open-firmware read |
 | `verify`, `verify failed` | What the radio reported after the install |
 | `cable radio check`, `cable radio codec decision` | The cable radio's read choices and codec decision |
+| `no codec confirm` | The answer to the dialog Install opens before an install without the codec: `go`, `back` or `stay` |
 | `adapter` | The USB device, once per change |
 
 The cable log (`logBox()`) also goes to the trail, so a boot ROM load that fails leaves the bytes received.
@@ -534,6 +535,12 @@ The codec decision (`decide()` in `c7000.js`), first match wins:
 | This browser | A slot an earlier run kept in IndexedDB |
 | A file | A program memory backup, a known stock firmware file, or an image merged by `tools/hrc7000_codec.py` |
 | None | Only when the user asks for it: FM works, DMR voice stays off |
+
+An install without the codec asks once more when Install is pressed (`nocodec.js` `confirmNoCodec()`), on every route:
+the cable write, the update mode write (decision `none`) and the bootloader write (a decision with `expectCodec`
+false). The dialog says DMR voice calls won't work and offers **Go Back and Add the Codec** (the step before, where a
+file is selected) and **Install Anyway**. Escape stays on the step. A bootloader route without a codec step before
+the write (an update) offers only **Install Anyway**. A retry after a failed write doesn't ask again.
 
 The page never sends a STUB command to RadioFoundry except right before it enters the stub: any STUB command parks RadioFoundry's codec
 until the next restart.
