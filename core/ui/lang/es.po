@@ -2225,8 +2225,12 @@ msgid "Firmware: "
 msgstr "Firmware: "
 
 #: core/ui/ui_menus.c
-msgid "Build: "
+msgid "Release: "
 msgstr "Versión: "
+
+#: core/ui/ui_menus.c
+msgid "Build: "
+msgstr "Compilación: "
 
 #: core/ui/ui_menus.c
 msgid "Date: "
