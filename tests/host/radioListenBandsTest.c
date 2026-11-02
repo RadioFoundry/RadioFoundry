@@ -136,7 +136,7 @@ static const hal_power_t fake_power = { .led = p_led, .battery_mv = p_battery_mv
 static bool a_start(audio_block_cb_t cb, void *ctx) { (void)cb; (void)ctx; return true; }
 static void a_stop(void) {}
 static void a_pcm(bool on) { (void)on; }
-static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
+static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm };
 static bool v_present(void) { return true; }
 static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }

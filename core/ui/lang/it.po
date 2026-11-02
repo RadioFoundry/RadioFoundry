@@ -3265,6 +3265,10 @@ msgid "WAITING"
 msgstr "ATTESA"
 
 #: core/ui/ui_screens.c
+msgid "ADMITTED"
+msgstr "AMMESSO"
+
+#: core/ui/ui_screens.c
 msgid "ENDING"
 msgstr "FINE"
 

@@ -170,6 +170,7 @@ typedef enum {
 	DMR_CALL_PHASE_TX_ENDING,	// terminator queued, waiting for the modem's tx_done
 	DMR_CALL_PHASE_TX_DENIED,	// PTT still held after a refusal: release to clear
 	DMR_CALL_PHASE_TX_DATA,		// sending a data / CSBK burst list (dmr_call_data_tx), its repeater wake-up included
+	DMR_CALL_PHASE_TX_PERMIT,	// admitted, still receiving: the talk permit hold before keying (permit_hold_ms)
 } dmr_call_phase_t;
 
 typedef enum {

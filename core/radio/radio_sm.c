@@ -1361,7 +1361,8 @@ static uint8_t dmr_deny_reason(uint8_t err)
 static bool dmr_tx_phase(uint8_t phase)
 {
 	return phase == DMR_CALL_PHASE_TX_ACCESS || phase == DMR_CALL_PHASE_TX_WAKEUP ||
-		phase == DMR_CALL_PHASE_TX_VOICE || phase == DMR_CALL_PHASE_TX_ENDING || phase == DMR_CALL_PHASE_TX_DATA;
+		phase == DMR_CALL_PHASE_TX_VOICE || phase == DMR_CALL_PHASE_TX_ENDING || phase == DMR_CALL_PHASE_TX_DATA ||
+		phase == DMR_CALL_PHASE_TX_PERMIT;
 }
 
 #if CONFIG_DMR_GPS
@@ -1442,6 +1443,7 @@ static void dmr_publish(radio_sm_t *sm)
 	case DMR_CALL_PHASE_TX_VOICE: d->state = RDMR_TX; break;
 	case DMR_CALL_PHASE_TX_ENDING: d->state = RDMR_TX_ENDING; break;
 	case DMR_CALL_PHASE_TX_DATA: d->state = RDMR_TX_DATA; break;
+	case DMR_CALL_PHASE_TX_PERMIT: d->state = RDMR_TX_PERMIT; break;
 	default: d->state = RDMR_IDLE; break;
 	}
 	d->codec = sm->codec;

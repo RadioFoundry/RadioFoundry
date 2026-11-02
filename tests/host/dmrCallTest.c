@@ -709,6 +709,54 @@ static void test_tx_modem_stalled(void)
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->tx_error == DMR_TX_OK && sim.tx_ends == 1);
 }
 
+static bool permit_busy_flag;
+static bool permit_busy(void) { return permit_busy_flag; }
+
+// Talk permit before keying (permit_hold_ms): the admitted call holds in its own phase, still receiving, until the
+// minimum has passed and permit_busy() is false, at most DMR_CALL_PERMIT_MAX_MS
+static void test_tx_permit_hold(void)
+{
+	dmr_call_config_t c = base_cfg();
+	c.permit_hold_ms = 40;
+	c.permit_busy = permit_busy;
+	setup(&c);
+	uint8_t seq = V()->permit_seq;
+	permit_busy_flag = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT && V()->state == DMR_CALL_STATE_TX && sim.tx_begins == 0);
+	CHECK(V()->permit_seq == (uint8_t)(seq + 1));
+	run_ms(100);	// past the minimum, the beep still playing
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT && sim.tx_begins == 0);
+	permit_busy_flag = false;
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.tx_begins == 1);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+
+	// Busy for good: keys at the maximum
+	setup(&c);
+	permit_busy_flag = true;
+	dmr_call_ptt(true);
+	run_ms(DMR_CALL_PERMIT_MAX_MS - 20);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT && sim.tx_begins == 0);
+	run_ms(40);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.tx_begins == 1);
+	dmr_call_ptt(false);
+	run_ms(600);
+
+	// PTT released in the hold: nothing is sent
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT);
+	dmr_call_ptt(false);
+	run_ms(100);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->state == DMR_CALL_STATE_IDLE && sim.tx_begins == 0);
+	permit_busy_flag = false;
+}
+
 static void test_rmo_wakeup(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -2112,6 +2160,7 @@ int main(void)
 	test_embedded();
 	test_alias();
 	test_tx_call();
+	test_tx_permit_hold();
 	test_tx_timeout_and_starve();
 	test_tx_refused();
 	test_tx_modem_stalled();

@@ -1735,8 +1735,10 @@ static void view_update(uint32_t now)
 
 	switch (s.tx) {
 	case TX_ACCESS:
-	case TX_PERMIT:		// still receiving: not on air yet
 		phase = DMR_CALL_PHASE_TX_ACCESS;
+		break;
+	case TX_PERMIT:		// still receiving: not on air yet
+		phase = DMR_CALL_PHASE_TX_PERMIT;
 		break;
 	case TX_WAKE:
 	case TX_WAKE_LISTEN:

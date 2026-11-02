@@ -215,7 +215,7 @@ static bool a_start(audio_block_cb_t cb, void *ctx)
 }
 static void a_stop(void) { aud.streaming = false; aud.cb = NULL; aud.stops++; }
 static void a_pcm(bool on) { aud.pcm = on; }
-static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
+static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm };
 
 // FM transmit audio from the MCU (hal_audio_tap_t.fm_tx_inject): what the radio core asked for
 static struct {
