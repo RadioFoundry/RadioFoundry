@@ -54,7 +54,8 @@ Rules:
   a valid codeplug flips it back on the reload. The first edit on the radio materializes as for a blank flash and also
   clears the rest the rule reads or the radio uses: the radio name and DMR ID (0xFF), the boot text (0xFF), the quick-key
   slots (0) and the 1024 contact records (0xFF, seven sector rewrites). The codeplug made is a clean one, which the next
-  start-up finds ours. Debug link: `codeplug.foreign` and `codeplug.evidence=good,bad` (`storage` view).
+  start-up finds ours. Debug link: `codeplug.foreign` and `codeplug.evidence=good,bad` (`storage` view; the counts of
+  the last index, with bad set to 0 by that first edit).
 - **A free channel slot.** `codeplug_set_channel` on a channel number that isn't in use starts from a blank record,
   not from the bytes in the slot. Only an existing channel keeps the bytes the model doesn't own.
 - **Zones.** With no zone stored there is one virtual zone, "All channels". The first `codeplug_set_zone(0, ...)`

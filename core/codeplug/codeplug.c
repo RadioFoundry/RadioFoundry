@@ -92,8 +92,9 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 
 static codeplug_source_t source = CODEPLUG_NONE;
 static uint32_t serial;
-static bool foreign;			// the area holds another layout's bytes (codeplug_foreign)
-static uint16_t ev_good, ev_bad;	// open-firmware evidence (codeplug-stock-tyt.md 2, step 1)
+// Open-firmware evidence (codeplug-stock-tyt.md 2, step 1), which codeplug_foreign() decides from (no flag of its own:
+// RAM is tight on some radios)
+static uint16_t ev_good, ev_bad;
 
 // Open-firmware codeplug index
 static uint8_t used[CH_MAX / 8];	// bit set = channel record passed the checks
@@ -497,10 +498,9 @@ static codeplug_source_t index_all(void)
 		index_channels();
 		index_evidence();
 	}
-	// At least one good record and at most one bad one for every four good: the open-firmware layout. Records in use
-	// that fail it are another firmware's codeplug: shown as none (the built-in set), the bytes left alone
-	foreign = ev_bad != 0 && (uint32_t)ev_bad * 4u > ev_good;
-	if (foreign) {
+	// Records in use that fail the rule are another firmware's codeplug: shown as none (the built-in set), the bytes
+	// left alone
+	if (codeplug_foreign()) {
 		memset(used, 0, sizeof(used));
 		channel_max = 0;
 	}
@@ -535,9 +535,11 @@ codeplug_source_t codeplug_source(void)
 	return source;
 }
 
+// At least one good record and at most one bad one for every four good: the open-firmware layout. No record in use:
+// blank
 bool codeplug_foreign(void)
 {
-	return foreign;
+	return ev_bad != 0 && (uint32_t)ev_bad * 4u > ev_good;
 }
 
 void codeplug_evidence(uint16_t *good, uint16_t *bad)
@@ -805,12 +807,12 @@ static bool materialize(void)
 		ok = flash_write(bank_bitmap(bank), zero, CH_PER_BANK / 8u);
 	}
 	ok = ok && flash_write(ZONE_BITMAP, zero, sizeof(zero)) && storage_fill(LIST_COUNTS, 0x00, LIST_COUNT);
-	if (foreign) {
+	if (codeplug_foreign()) {
 		ok = ok && storage_fill(GEN_CALLSIGN, 0xFF, GEN_NAME_LEN + 4u) &&
 		     storage_fill(BOOT_TEXT, 0xFF, 2u * CODEPLUG_NAME_LEN) &&
 		     flash_write(QUICK_KEYS, zero, CODEPLUG_QUICK_KEYS * 2u) &&
 		     storage_fill(CONTACT_BASE, 0xFF, CONTACT_COUNT * CONTACT_SIZE);
-		foreign = false;	// a failure re-reads it (index_all below)
+		ev_bad = 0;	// cleared: ours from now on (a failure re-reads it, index_all below)
 	}
 	memset(used, 0, sizeof(used));
 	channel_max = 0;
