@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ftdiDivisor, lineCoding, ftdiPayload, serialLayout, usbFilters, usbSerialNeeded, UsbSerialPort, FTDI } from "../static/js/flasher/usbserial.js";
-import { SerialStream } from "../static/js/flasher/link.js";
+import { SerialStream, browserErrorKey } from "../static/js/flasher/link.js";
 
 const ep = (endpointNumber, direction, type = "bulk", packetSize = 64) => ({ endpointNumber, direction, type, packetSize });
 const iface = (interfaceNumber, alternates) => ({ interfaceNumber, alternates });
@@ -138,3 +138,142 @@ test("reads stay queued on the device while the page isn't reading, and nothing 
 	await port.close();
 });
 
+
+const tick = (ms = 1) => new Promise((r) => setTimeout(r, ms));
+const lines = (dev) => dev.control.filter((c) => c.request === 0x22 || (c.requestType === "vendor" && c.request === 1)).map((c) => c.value);
+
+test("FTDI divisors: every fraction code (AN232B-05), the high bit in wIndex", () => {
+	// eighths of the 3 MHz clock: 8 * whole + fraction; codes 0, 3, 2, 4, 1, 5, 6, 7 for 0/8 .. 7/8
+	const at = (eighths) => ftdiDivisor(24000000 / eighths);
+	assert.deepEqual(at(26 * 8 + 0), { value: 26, index: 0 });
+	assert.deepEqual(at(26 * 8 + 1), { value: 26 | (3 << 14), index: 0 });
+	assert.deepEqual(at(26 * 8 + 2), { value: 26 | (2 << 14), index: 0 });
+	assert.deepEqual(at(26 * 8 + 3), { value: 26 | (0 << 14), index: 1 });
+	assert.deepEqual(at(26 * 8 + 4), { value: 26 | (1 << 14), index: 0 });
+	assert.deepEqual(at(26 * 8 + 5), { value: 26 | (1 << 14), index: 1 });
+	assert.deepEqual(at(26 * 8 + 6), { value: 26 | (2 << 14), index: 1 });
+	assert.deepEqual(at(26 * 8 + 7), { value: 26 | (3 << 14), index: 1 });
+	// common rates: 57600 is 52 1/8 (417 eighths), 19200 is 156 2/8, 230400 is 13, 921600 is 3 2/8
+	assert.deepEqual(ftdiDivisor(57600), { value: 0xC034, index: 0 });
+	assert.deepEqual(ftdiDivisor(19200), { value: 0x809C, index: 0 });
+	assert.deepEqual(ftdiDivisor(230400), { value: 13, index: 0 });
+	assert.deepEqual(ftdiDivisor(921600), { value: 0x8003, index: 0 });
+});
+
+test("FTDI status bytes go at every packet boundary of a long transfer, full and high speed", () => {
+	for (const size of [64, 512]) {
+		const payload = Array.from({ length: 3 * (size - 2) + 5 }, (_, i) => i & 0xFF);
+		const raw = [];
+		for (let i = 0; i < payload.length; i += size - 2) raw.push(0x01, 0x60, ...payload.slice(i, i + size - 2));
+		assert.deepEqual([...ftdiPayload(Uint8Array.from(raw), size)], payload, `packet size ${size}`);
+	}
+	// a transfer that ends on a packet boundary, and one of status packets only
+	assert.deepEqual([...ftdiPayload(Uint8Array.from([1, 0x60, ...Array(62).fill(5)]), 64)], Array(62).fill(5));
+	assert.equal(ftdiPayload(Uint8Array.from([1, 0x60, ...Array(62).fill(5), 1, 0x60]).subarray(64), 64).length, 0);
+});
+
+test("an FTDI cable through the port: status bytes dropped across packets, nothing reordered", async () => {
+	const payload = Array.from({ length: 200 }, (_, i) => i);
+	const raw = [];
+	for (let i = 0; i < payload.length; i += 62) raw.push(0x31, 0x60, ...payload.slice(i, i + 62));
+	const dev = new FakeDevice(FTDI, 0x6001, FTDI_CONFIG, [raw.slice(0, 128), raw.slice(128)]);
+	const s = await SerialStream.open(new UsbSerialPort(dev));
+	for (let i = 0; i < 50 && s.buf.length < 200; i++) await tick();
+	assert.deepEqual([...s.buf], payload);
+	await s.close();
+});
+
+test("CDC-ACM in a composite device: the data interface next to the communication one", () => {
+	const config = { interfaces: [
+		iface(0, [alt(0, 2, 13, [ep(3, "in", "interrupt", 16)])]),
+		iface(1, [alt(0, 10, 0, []), alt(1, 10, 0, [ep(4, "in"), ep(4, "out")])]),
+		iface(2, [alt(0, 2, 2, [ep(2, "in", "interrupt", 16)])]),
+		iface(3, [alt(0, 10, 0, [ep(1, "in"), ep(1, "out")])]),
+	] };
+	const l = serialLayout({ vendorId: 0x1FC9, configuration: config });
+	assert.deepEqual([l.control, l.data, l.alt, l.in.endpointNumber], [2, 3, 0, 1]);
+	assert.deepEqual(l.claim, [2, 3]);
+});
+
+test("a short or stalled bulk OUT is sent on from where it stopped, no byte lost or doubled", async () => {
+	const dev = new FakeDevice(0x1FC9, 0x94, ACM_CONFIG);
+	const plan = [{ status: "ok", n: 3 }, { status: "stall", n: 2 }, { status: "ok" }];
+	const halts = [];
+	dev.transferOut = async (epn, data) => {
+		const step = plan.shift() || { status: "ok" };
+		const n = step.n ?? data.length;
+		dev.sent.push(...data.subarray(0, n));
+		return { status: step.status, bytesWritten: n };
+	};
+	dev.clearHalt = async (dir, n) => { halts.push([dir, n]); };
+	const port = new UsbSerialPort(dev);
+	await port.open({ baudRate: 115200 });
+	const w = port.writable.getWriter();
+	await w.write(Uint8Array.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]));
+	w.releaseLock();
+	assert.deepEqual(dev.sent, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+	assert.deepEqual(halts, [["out", 1]]);
+	await port.close();
+});
+
+test("a bulk OUT that keeps stalling fails the write instead of hanging", async () => {
+	const dev = new FakeDevice(0x1FC9, 0x94, ACM_CONFIG);
+	dev.transferOut = async () => ({ status: "stall", bytesWritten: 0 });
+	const s = await SerialStream.open(new UsbSerialPort(dev));
+	await assert.rejects(s.write(Uint8Array.from([1, 2])), (e) => e.name === "NetworkError" && browserErrorKey(e) === "flash.err.connection_lost");
+	await s.close();
+});
+
+test("close: refused while another stream reads the port; DTR and RTS dropped; the wake count settles", async () => {
+	const dev = new FakeDevice(0x1FC9, 0x94, ACM_CONFIG);
+	const port = new UsbSerialPort(dev);
+	const s = await SerialStream.open(port);
+	await tick();
+	await assert.rejects(port.close(), (e) => e.name === "InvalidStateError");
+	assert.ok(port.readable && dev.opened, "the reading stream keeps its port");
+	// the same port picked again: Web Serial's answer stands, the first stream is not cut off
+	await assert.rejects(SerialStream.open(port), (e) => e.name === "InvalidStateError");
+	dev.arrive([7]);
+	for (let i = 0; i < 50 && !s.buf.length; i++) await tick();
+	assert.deepEqual([...s.buf], [7]);
+	await s.close();
+	assert.equal(dev.opened, false);
+	assert.equal(port.readable, null);
+	assert.deepEqual(lines(dev), [3, 0]);
+});
+
+test("FTDI close drops DTR and RTS", async () => {
+	const dev = new FakeDevice(FTDI, 0x6001, FTDI_CONFIG);
+	const s = await SerialStream.open(new UsbSerialPort(dev));
+	await s.close();
+	assert.deepEqual(lines(dev), [0x0303, 0x0300]);
+});
+
+test("a device unplugged mid-read: the stream is lost, the pump ends, a write says so", async () => {
+	const dev = new FakeDevice(0x1FC9, 0x94, ACM_CONFIG);
+	const port = new UsbSerialPort(dev);
+	const s = await SerialStream.open(port);
+	await tick();
+	dev.transferOut = async () => { throw new DOMException("The device was disconnected.", "NotFoundError"); };
+	dev.cancelReads();	// every waiting transferIn fails, as when the device goes
+	await Promise.race([s.pumping, tick(500)]);
+	assert.equal(s.lost, true);
+	assert.equal(port.readable, null);
+	await assert.rejects(s.write(Uint8Array.from([1])), (e) => browserErrorKey(e) === "flash.err.disconnected");
+	await s.close();
+});
+
+test("a failed open leaves the device closed and released; a cable chip without a driver says what to do", async () => {
+	const dev = new FakeDevice(0x1FC9, 0x94, ACM_CONFIG);
+	dev.controlTransferOut = async () => { throw new DOMException("A transfer error has occurred.", "NetworkError"); };
+	const port = new UsbSerialPort(dev);
+	await assert.rejects(port.open({ baudRate: 115200 }));
+	assert.equal(dev.opened, false);
+	assert.deepEqual(dev.claimed, []);
+	assert.equal(port.readable, null);
+	const ch340 = new FakeDevice(0x1A86, 0x7523, { interfaces: [iface(0, [alt(0, 255, 1, [ep(2, "in"), ep(2, "out")])])] });
+	const err = await new UsbSerialPort(ch340).open().catch((e) => e);
+	assert.equal(browserErrorKey(err), "flash.err.usb_chip");
+	assert.equal(ch340.opened, false);
+	assert.equal(browserErrorKey(new DOMException("other", "NotSupportedError")), null);
+});
