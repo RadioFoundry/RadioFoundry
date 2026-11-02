@@ -767,6 +767,7 @@ export function checkView() {
 				say("q128", "run", t("flash.c7.check.reading"));
 				t0 = performance.now();
 				c.q128 = await st.dump(dataMem(), 0, dataSize(), { onRetry: retrying, progress: bar(t("flash.c7.check.q128")) });
+				c.nandEcc = st.ecc;
 				say("q128", "ok", t("flash.c7.check.q128_done", { sha: (await sha256(c.q128)).slice(0, 12) }));
 			} else say("q128", "skip", t("flash.c7.check.q128_skipped"));
 			if (want.cal || want.q128) {
@@ -917,7 +918,9 @@ async function saveBundle() {
 	const fwNow = c.rfoundry ? { kind: "rfoundry", git: c.rfoundry.git, codec: c.rfoundry.codec, features: c.rfoundry.features } : { kind: c.analysis?.firmware === "stock" ? "stock" : "unknown",
 		version: c.analysis?.codec ? `with the ${String(c.analysis.codec.profile.tag).padStart(3, "0")} codec` : null };
 	const meta = { radio: { board: S().radio.id, name: S().radio.name, model: S().radio.model, chip: null, jedec: c.jedec }, firmware_now: fwNow, contents: parts.map((p) => p.what).join("+"),
-		notes: [t(dataMem() === "nand" ? "flash.c7.bundle_note_nand" : "flash.c7.bundle_note", { progmem: `${progSize() / 0x100000} MB`, data: `${dataSize() / 0x100000} MB` })] };
+		notes: [t(dataMem() === "nand" ? "flash.c7.bundle_note_nand" : "flash.c7.bundle_note", { progmem: `${progSize() / 0x100000} MB`, data: `${dataSize() / 0x100000} MB` })],
+		// the NAND sectors whose ECC failed: nand.bin holds them as the chip does, uncorrected (Stub.dump)
+		...(c.q128 && c.nandEcc?.length ? { nand_ecc: c.nandEcc.map((a) => `0x${a.toString(16)}`) } : {}) };
 	const bytes = await makeBundle(meta, parts, { git: S().data.site.git, url: location.origin });
 	c.backupName = bundleName(meta);
 	download(c.backupName, bytes, "application/zip");
@@ -1189,7 +1192,10 @@ export function backupView() {
 			await quiet(c);
 			if (want.progmem) c.progmem = await c.stub.dump("progmem", 0, progSize(), { progress: (d, n) => prog.set(d, n, t("flash.c7.check.progmem")) });
 			if (want.progmem) await ctx.noteReadout(c.progmem);
-			if (want.q128) c.q128 = await c.stub.dump(dataMem(), 0, dataSize(), { progress: (d, n) => prog.set(d, n, t("flash.c7.check.q128")) });
+			if (want.q128) {
+				c.q128 = await c.stub.dump(dataMem(), 0, dataSize(), { progress: (d, n) => prog.set(d, n, t("flash.c7.check.q128")) });
+				c.nandEcc = c.stub.ecc;
+			}
 			if (want.cal || want.q128) await readCalibration(c, prog);
 			if (c.progmem) c.analysis = await c7.analyze(c.progmem, C(), boardId());
 			await saveBundle();

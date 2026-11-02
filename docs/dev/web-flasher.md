@@ -458,6 +458,17 @@ ignores them, stock firmware is untested. So on a radio not known to run RadioFo
 user selects "Radio Is Off"; RadioFoundry's soft reset and a power cycle of a radio it found running RadioFoundry start
 at once. When the load fails, the factory update mode is the main action. `stubtool.py --slow-cable` does the same.
 
+The session holds a stub only once it answered HELLO. A cable whose reading stopped (the device lost) is dropped
+before a step uses it, and after a failed backup, restore or check read the page asks the stub for HELLO: one that
+no longer answers (the radio switched off or reset) is dropped too, and Try Again goes to the connect step, which says
+why. Breaks and framing errors never stop the reading: a radio switched off with the cable in gives one after another
+for as long as it is off.
+
+A page of an SPI NAND whose bit errors its ECC can't correct reads the same every time: the stub answers status 0x0D
+for its sector, in a read (op 09) or a checksum (op 07). The page then reads that sector's two pages itself with SPI
+requests (page read, status, read from cache), twice, and keeps them as the chip holds them. The final checksum pass
+sums a window that holds one sector by sector and leaves it out, and `backup.json` lists those sectors as `nand_ecc`.
+
 ### The factory update mode
 
 Every HR_C7000 board has one: `update_mode` in its `data/radios.json` `flash` entry, from the family in
