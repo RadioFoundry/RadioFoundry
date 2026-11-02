@@ -589,6 +589,30 @@ static bool r_nak(uint8_t area, uint32_t addr, uint16_t len)
 	return is_nak();
 }
 
+// A memory chip too small for the board's map (storage_map NULL): nothing is stored and there is no open-firmware layout,
+// but the chip's bytes still read through area 1, so a backup can save them. Area 2 and every write are refused
+static void test_no_map(void)
+{
+	uint8_t b[32];
+	sim_flash_create(0x100000u, NULL);
+	for (unsigned i = 0; i < 32; i++) {
+		sim_flash_data[0xFFFE0u + i] = (uint8_t)(0xC0 + i);
+	}
+	sim_flash_power_on();
+	CHECK(!storage_init());
+	settings_init();
+	codeplug_init();
+	cps_init(&io);
+	uint8_t r[8] = { 'R', 9, 0, 0, 0, 0, 0, 0x20 };
+	request(r, sizeof(r), 0);
+	CHECK(out_len == 3 + 46 && out[3 + 40] == 0x14 && out[3 + 41] == 0x40);	// 1 MB: capacity code 0x14
+	CHECK(read_block(1, 0xFFFE0u, 32, b) && b[0] == 0xC0 && b[31] == 0xDF);	// the chip's last bytes
+	CHECK(r_nak(1, 0xFFFF0u, 0x20));		// past its end
+	CHECK(r_nak(2, 0x0080, 0x20));			// no EEPROM image
+	CHECK(!x_prepare(0x3));				// nowhere to write
+	sim_flash_free();
+}
+
 static void test_bad_requests(void)
 {
 	uint8_t b[64], d[32];
@@ -656,6 +680,7 @@ int main(void)
 	test_stray_reboot();
 	test_foreign();
 	sim_flash_free();
+	test_no_map();
 	printf("# cpsTest %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;
 }
