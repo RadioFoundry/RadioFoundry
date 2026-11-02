@@ -439,11 +439,14 @@ function optionMismatch(p) {
 
 // What runs on the radio, once it answered as RadioFoundry: on the STM32 radios also whether it offers the loader hand-over
 // flashKb: the chip's flash size register (INFO_CHIP) on a loader board, null when the radio didn't say: the loader is
-// bounded by it, and some chips read less than the board's flash (f4stub.js registerShort)
+// bounded by it, and some chips read less than the board's flash (f4stub.js registerShort). storage: its settings
+// region (link.js storageInfo), "none" on a memory chip too small to store anything
 async function rfoundryNow(link, p) {
-	if (!f4Board()) return { kind: "rfoundry", probe: p, stubOffer: null };
+	const storage = await link.storageInfo().catch(() => null);
+	if (storage?.region === "nomap") diag.note("no storage region", { flash: await link.flashSize() });
+	if (!f4Board()) return { kind: "rfoundry", probe: p, stubOffer: null, storage };
 	const flashKb = (await link.chip().catch(() => null))?.flashKb ?? null;
-	return { kind: "rfoundry", probe: p, stubOffer: await Stub.rfoundryOffer(link), flashKb };
+	return { kind: "rfoundry", probe: p, stubOffer: await Stub.rfoundryOffer(link), flashKb, storage };
 }
 
 const grantedRFoundryPorts = async () => (await navigator.serial.getPorts()).filter((p) => {
@@ -1358,6 +1361,7 @@ function nowView() {
 				h("dt", {}, t("flash.now.board")), h("dd", {}, p.board),
 				h("dt", {}, t("flash.now.firmware")), h("dd", {}, firmwareName(p)),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, codecText(p.codec))),
+			S.now.storage?.region === "nomap" ? notice(t("flash.now.no_storage"), "info") : "",
 			S.backupDone ? notice(t("flash.backup.done_before"), "ok") : backupNow({ when: "before", onDone: draw, actions: (b) => { runBackup = b; } }));
 		} else if (S.now?.kind === "stock") {
 			const versions = S.radio.flash.stock_versions;
@@ -1446,8 +1450,10 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			bulk = viaLoader() ? f4LoaderReader(link, { stubJson: f4StubJson, reopen: reopenRFoundryPort, board: f4Board(), onHandOver: () => { S.link = null; } }) : null;
 			S.backupParts = await readRadio(link, S.board, S.radio, {
 				what: choices[pick].what, readers: bulk ? [bulk] : [], progress: (part, d, total) => prog.set(d, total, t(`flash.backup.part.${part}`)) });
-			// only a read long enough to time says how fast the memory reads: the calibration is mostly round trips
-			if (!bulk?.used && choices[pick].bytes >= 0x10000) S.readRate = choices[pick].bytes / Math.max(0.5, (performance.now() - t0) / 1000);
+			// only a read long enough to time says how fast the memory reads: the calibration is mostly round trips. The
+			// bytes the parts hold, not the choice's: a memory chip smaller than the board's reads less
+			const got = S.backupParts.reduce((n, x) => n + x.data.length, 0);
+			if (!bulk?.used && got >= 0x10000) S.readRate = got / Math.max(0.5, (performance.now() - t0) / 1000);
 			if (S.stock && !codecOnlyFile(S.stock)) S.backupParts.push({ file: "stock-firmware.bin", what: "stock-firmware", addr: 0, data: S.stock.data, complete: true });
 			const after = when === "after";
 			const meta = {
@@ -2118,11 +2124,17 @@ async function bringChannels(status, { finish }) {
 	let link, read, src = { layout: null };
 	try {
 		link = await connectSerial();
+		// a memory chip too small for the board's flash map: RadioFoundry stores nothing there, so no channels to bring
+		if ((await link.storageInfo().catch(() => null))?.region === "nomap") {
+			say(notice(t("flash.channels.no_storage"), "info"));
+			S.forward(finish());
+			return;
+		}
 		box.append(prog.el);
 		const reading = (d, n) => prog.set(d, n, t("flash.channels.reading"));
-		// the radio's codeplug span as it is now, for the sectors that change; the stock codeplug from the backup if
-		// this visit took one (migrate.js stockSource)
-		read = await link.cpsDump(1, 0, m.readSpan(null), { progress: reading });
+		// the radio's codeplug span as it is now (no further than its memory chip reaches), for the sectors that change;
+		// the stock codeplug from the backup if this visit took one (migrate.js stockSource)
+		read = await link.cpsDump(1, 0, Math.min(m.readSpan(null), await link.flashSize() || Infinity), { progress: reading });
 		if (!read.complete) throw new Error(`memory chip read stopped at ${read.data.length}`);
 		src = m.stockSource(read.data, saved);
 		// the stock tables reach past RadioFoundry's codeplug span on some families
