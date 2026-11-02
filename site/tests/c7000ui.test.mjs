@@ -139,9 +139,11 @@ test("install: a write without a codec warns above the button; the write logs it
 		errorText: (e) => e.message, next() {}, render() { rendered++; } });
 	forwards.at(-1).click();
 	await sleep(0);
+	state.c7none = true;
 	pick("Go Back and Add the Codec");
 	await sleep(0);
 	assert.equal(state.step, 3, "back to the check step");
+	assert.equal(state.c7none, false, "the file picker shows again there");
 	assert.equal(rendered, 1);
 	assert.equal(writes.length, 0);
 	forwards.at(-1).click();

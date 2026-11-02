@@ -379,10 +379,12 @@ test("update mode: Install without a codec asks once more; Go Back returns to th
 	forwards.at(-1).click();
 	await sleep(0);
 	assert.match(dialog().textContent, /Install Without DMR Voice\?.*not be able to send or receive DMR voice calls.*Analog FM will work/);
+	state.c7none = true;
 	answer("Go Back and Add the Codec");
 	await sleep(0);
 	assert.equal(dialog(), null);
 	assert.equal(state.step, 3);
+	assert.equal(state.c7none, false, "the file picker shows again there");
 	assert.equal(state.rendered, 1);
 	assert.equal(calls.listen, 0, "not listening for the radio");
 	forwards.at(-1).click();

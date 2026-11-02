@@ -345,7 +345,7 @@ export function makeStockRoutes(host) {
 		};
 		return iapPanel({ title: t("flash.c7.write.title"), image, restore: false, gate, allowed,
 			notices: d.mode === "none" ? [noCodecNotice(true)] : [],
-			confirm: d.mode === "none" ? () => confirmNoCodec(() => { S().step--; ctx.render(); }) : null,
+			confirm: d.mode === "none" ? () => confirmNoCodec(() => { S().c7none = false; S().step--; ctx.render(); }) : null,
 			rows: [[t("flash.c7.write.firmware"), `${fw.source} (${Math.round(fw.image.length / 1024)} KB)`], [t("flash.c7.write.codec"), what]],
 			report: { task: "install", source: fw.origin || "", radio: boardId(), firmware: String(fw.manifest.version || ""),
 				variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null },

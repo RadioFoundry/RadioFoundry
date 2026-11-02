@@ -1879,9 +1879,9 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 		const winHelp = onWindows() ? h("div", {}, windowsDriverHelp()) : null;
 		const write = button(t("flash.write.go"), async () => {
 			// an install that keeps a codec known to be missing: asked once more (not again on a retry), with the way back
-			// to the codec step
+			// to the codec step. Only a forced Keep gets here, so going back drops it: a stock file picked there is used
 			if (what?.task === "install" && S.decision?.expectCodec === false && !noCodecOk) {
-				const back = stepsFor()[S.step - 1] === "codec" ? () => { S.step--; render(); } : null;
+				const back = stepsFor()[S.step - 1] === "codec" ? () => { S.requested = null; S.step--; render(); } : null;
 				if (!(await confirmNoCodec(back))) return;
 				noCodecOk = true;
 			}

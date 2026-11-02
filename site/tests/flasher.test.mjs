@@ -392,6 +392,8 @@ test("the bootloader route's Install asks before an install without a codec", ()
 	assert.ok(ask > 0, "confirmNoCodec called from the write button");
 	assert.ok(ask < body.indexOf("write.disabled = true") && ask < body.indexOf("flashStarted("), "asked before the write starts");
 	assert.match(body.slice(0, ask), /S\.decision\?\.expectCodec === false/);
+	// only a forced Keep gives such a decision: going back drops it, so a stock file picked there is used
+	assert.match(body.slice(0, ask), /S\.requested = null; S\.step--/);
 });
 
 // app.js needs the DOM, so what it must keep is checked in its source: whyNoAnswer() is async, so a noAnswer() that
