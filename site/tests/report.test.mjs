@@ -285,6 +285,15 @@ test("a Sentry event's context is scrubbed value by value: an ID in a list stays
 	assert.deepEqual(ev.contexts.rfoundry, { iddb: ["[id]", 12], dirty: false, step: 0, trail: ["0.1s contact [email], call [call]", { n: 7 }] });
 });
 
+test("a Sentry event keeps a file's size: a picked stock file's size is not taken for a DMR ID", () => {
+	const ev = scrubEvent({ contexts: { rfoundry: { vendor_file: { picked: { name: "DM-1701(CSV)-V02.06.bin", size: 1048832 }, id: 3101276 },
+		trail: ['113.6s file picked {"name":"DM-1701(CSV)-V02.06.bin","size":1048832}'] } } });
+	assert.equal(ev.contexts.rfoundry.vendor_file.picked.size, 1048832);
+	assert.equal(ev.contexts.rfoundry.vendor_file.id, "[id]");
+	const line = ev.contexts.rfoundry.trail[0];
+	assert.equal(JSON.parse(line.slice(line.indexOf("{"))).size, 1048832);
+});
+
 test("the report line under a failure links the community group and the GitHub issues, when the site names them", async () => {
 	const withLinks = await import("../static/js/report.js?community");
 	globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ community: "https://www.facebook.com/groups/radiofoundry/", repo: "https://github.com/radiofoundry/radiofoundry" }) });

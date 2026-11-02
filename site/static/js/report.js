@@ -56,7 +56,7 @@ function loadScript(src, integrity) {
 }
 
 // Every string and number in a value, scrubbed one by one: scrubbing its JSON text instead turns a number (a DMR ID
-// in a list) into [id] without quotes, the parse throws and Sentry drops the event
+// in a list) into [id] without quotes, the parse throws and Sentry drops the event. A size (diag.SIZE_KEYS) stays a number
 function scrubDeep(x) {
 	if (typeof x === "string") return diag.scrub(x);
 	if (typeof x === "number") {
@@ -64,7 +64,7 @@ function scrubDeep(x) {
 		return t === String(x) ? x : t;
 	}
 	if (Array.isArray(x)) return x.map(scrubDeep);
-	if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, scrubDeep(v)]));
+	if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, typeof v === "number" && diag.SIZE_KEYS.has(k) ? v : scrubDeep(v)]));
 	return x;
 }
 
