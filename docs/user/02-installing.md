@@ -57,6 +57,14 @@ that runs RadioFoundry already: [Updating RadioFoundry](#updating-radiofoundry))
    RadioFoundry and the radio runs an OpenGD77-family firmware, the installer says so and offers **Another open
    firmware** instead. A RadioFoundry build without the debug link answers the same way.
 
+   On some radios, **Original firmware** and **Other / Not sure** also offer **Back Up Now** before anything is
+   written (recommended). Connect the radio switched on normally and pick **Everything** (several minutes) or
+   **Channels and settings only** (under a minute). The installer reads the radio's factory data, the start of its
+   program memory and its memory chip, saves them as a `.zip` on your computer and restarts the radio. Nothing is
+   written to the radio and nothing is sent anywhere. In update mode the radio gives less (part of the memory chip);
+   the installer says so, and the installation can go on from there. Keep the file, and keep it private: it holds
+   your radio's calibration.
+
    Some radios come in hardware revisions that RadioFoundry can't tell apart, while the version of their original
    firmware does. On such a radio, **Original firmware** and **Other / Not sure** offer **Read Firmware Version**:
    connect the radio switched on normally (not in its bootloader) and select it. Reading changes nothing on the radio.

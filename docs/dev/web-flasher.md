@@ -21,6 +21,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `dfu.js` | The AnyRoad DFU bootloader over WebUSB | `rfoundry/dfu.py` |
 | `codecsave.js` | The codec read back from a radio that runs RadioFoundry (where stock keeps it, or where the merge placed it), checked against the profile's hashes, and a copy kept in IndexedDB: before every update that erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `rfoundry/codecsave.py` |
 | `bootkey.js` | The bootloader key from a radio that runs RadioFoundry: the bootloader read over READ_MEM, the block with the key's SHA-256 | `rfoundry/bootkey.py` |
+| `origbackup.js` | The backup before the install through the original firmware's or the bootloader's DFU device, behind an allowlist (below) | |
 | `origversion.js` | The original firmware's version read before an install, and the hardware option it settles (below) | `rfoundry/origversion.py` |
 | `link.js` | The debug link and open-firmware CPS reads and writes over Web Serial | `rfoundry/debuglink.py`, [open-firmware-cps.md](../spec/open-firmware-cps.md) |
 | `backends.js` | The radio access backend registry: which steps and views a radio's family uses (below) | |
@@ -297,6 +298,44 @@ Only the requests of the read are sent: GETSTATUS, CLRSTATUS or ABORT to reach d
 GETSTATUS, ABORT, UPLOAD block 0 of 1024 bytes. The fakes (`fake.js` with `originalVersion`, rfoundry's
 `fakedfu.FakeOriginalFirmware`) fail on any other request; `site/tests/origversion.test.mjs` and
 `tools/rfoundry/tests/test_origversion.py` check the sequence, the parse, the table and the store.
+
+## Backup before the install
+
+A board with `[flash.original_backup]` ([board-registry.md](board-registry.md#backup-before-the-install)) is backed up
+before anything is written, through the DFU device its original firmware or its bootloader shows (`origbackup.js`).
+The Current firmware step offers it under **Original firmware** and **Other / Not sure**, above the version read:
+recommended, never required.
+
+1. **Back Up Now** opens the WebUSB chooser on the bootloader's USB IDs. The interface strings say which device it is
+   (`deviceKind`): the original firmware (`original_version.interface`), the bootloader (`loader_interface`), or
+   neither (refused, nothing sent).
+2. The info blocks (`info`), each a block 0 command `A2 ss` and an UPLOAD of block 0.
+3. Before program mode, one snapshot of the internal flash from its start: 65535 bytes, then 32768, 16384, 8192 and
+   4096 until the host passes one (Linux stops at 4096). It holds the radio's bootloader.
+4. **Everything** (`spi`, about 6 minutes) or **Channels and settings only** (`quick`): program mode (`91 01`), the
+   address set to 0, then 1 KB blocks with a progress bar. **Stop** ends the read early; the part read is kept. The
+   bootloader gives `loader_spi` at most, and the page says a full backup needs the radio switched on normally.
+5. The original firmware is left with `91 05`: it restarts and runs normally again. The bootloader stays in program
+   mode: the page remembers that USB device, and a write to it starts at `91 31` (`Dfu.run` `programMode`), since the
+   bootloader takes `91 01` once. A power cycle makes a new device and the whole sequence.
+6. The bundle is a backup bundle (`rfoundry-backup/1`, below): `info/info-<ss>.bin` (`info-<ss>`),
+   `bootloader-<bytes>.bin` (`internal-flash-mirror`, at 0x08000000), `spi-flash.bin` or `spi-flash-0-<n>MB.bin`
+   (`spi-flash`, complete only when it is all of `spi`). `backup.json` carries `original_backup` (the device, the
+   version, the bootloader's version, the choice, whether the radio restarted, the browser) and `firmware_now` /
+   `firmware_before` (`stock` with the version when the original firmware answered). Named
+   `<model>_Original_<last 8 UID digits>_<date>.zip`. The Codeplug Editor's import and the channel conversion read
+   `spi-flash` from it as from any bundle; Restore offers only putting the original firmware back from a file.
+
+`Guard` is an allowlist in front of the transport: GETSTATUS, CLRSTATUS, ABORT, UPLOAD (1024 bytes, or the one
+snapshot of block 2 before program mode), and DNLOAD block 0 with exactly `A2 ss`, `21` + address, `91 01`, or `91 05`
+(original firmware only). Anything else throws before it is sent. The fake radio (`fake.js`) models both devices: the
+mode byte and its gates, the ignored block number of the snapshot, the bootloader's 1 MB, the restart on `91 05`, a
+host's transfer cap (`usbCap`), and a list of every request outside the allowlist that reached it (`forbidden`).
+`site/tests/origbackup.test.mjs` checks the allowlist, the order, both devices, the bundle, and a write after a
+bootloader backup.
+
+The bundle holds the radio's calibration and its bootloader. It is saved as a download only: it is not kept for the
+report attachments (`S.lastBackup`), and the flash log and breadcrumbs get only its size and part count.
 
 ## Radio access backends
 

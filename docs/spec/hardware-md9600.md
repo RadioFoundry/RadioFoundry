@@ -587,7 +587,8 @@ image is merged with the codec (`rfoundry_md9600_codec.bin`), and never touches 
 first and its first word written last, so an interrupted update leaves the application invalid. Whether the TYT
 bootloader then stays in DFU on its own, as the DM-1701's does, is unverified. If it doesn't, the key combination of
 14.1 still reaches DFU. The stub also backs up and verifies the whole internal flash and the 16 MB SPI flash
-(`--progmem`, `--q128`), which covers the backup 12.2 asks for once RadioFoundry runs, but not before the first install.
+(`--progmem`, `--q128`), which covers the backup 12.2 asks for once RadioFoundry runs. Before the first install the
+web flasher backs up what the original firmware or the bootloader gives (15.2).
 
 ---
 
@@ -625,6 +626,30 @@ same sequence too, with `54 02 10 06` (first byte 0x54, 'T'; from its code, not 
 commands, DNLOAD with block 2 and above, and a zero-length DNLOAD (its manifest step writes the SPI flash and resets the
 radio) are never sent by RadioFoundry's tools. The version's leading digit is the board family (16), so the installers
 read it to learn the board revision (19.3).
+
+### 15.2 Backup before the install
+
+The original firmware (running normally) and the bootloader both let a host read the radio without writing anything.
+The web flasher backs up through either before an install (board.toml `[flash.original_backup]`,
+[web-flasher.md](../dev/web-flasher.md#backup-before-the-install)). Every block 0 command below is DNLOAD block 0, then
+GETSTATUS twice (bState 4, then 5), then ABORT, as in 15.1.
+
+| Read | Original firmware (checked on a radio) | Bootloader (from its code; not yet tried) |
+|---|---|---|
+| Info blocks: `A2 ss`, then UPLOAD block 0 | 01 and 03: option block 0x00-0x37 (32 + 24 bytes); 04: 8 bytes of settings; 05: the calibration as loaded in RAM (512 bytes, odd points interpolated, not the raw registers); 07: CRC-32 of the chip UID, then the 96-bit UID; 08: the clock; 32: the UID record and the STM32 OTP area (561 bytes); 33: the SPI region table and the radio name; 50: a constant; any other code: the version (15.1) | the same codes; the version answers `54 02 10 06`; 01, 03, 04 and 05 may be blank |
+| Internal flash | UPLOAD of block 2 or above, below program mode, answers from address 0, which on this chip is the flash from 0x08000000 (bootloader first): the block number is ignored, so one request is one snapshot of up to its wLength (at most 64 KB: the bootloader and the first 16 KB of the application). Linux usbfs refuses control transfers above 4096 bytes | the same |
+| Program mode | `91 01` (only below mode 0x30); the radio stops normal operation | `91 01`, accepted once |
+| SPI flash | `21` + LE32 address 0, then UPLOAD of block 2 + n, 1024 bytes each: the 16 MB from (n x 1024). About 47 KB/s, paced by the radio (346 s for 16 MB); re-reads matched | the same, for the first 1 MB only; above it the answer is a stale buffer |
+| Leave | `91 05` (only in program mode): the radio restarts before it answers the first GETSTATUS, and comes back running normally | stays in program mode. Its `91 05` needs a calibration mode and is never sent. The flasher's own `91 01` only acts below 0x30 (whether it then stalls or does nothing is open), so a write in the same session starts at `91 31` (mode 0x40, erase and write). A power cycle starts over |
+
+The codeplug areas are within the first 2 MB (0x002000-0x03EFFF and 0x110000-0x197FFF in the map of 12.2); the
+11.7 MB above 0x204000 (a contact database) is most of the time a full read takes. The internal flash above
+0x08010000 can't be read by either: the media read of the internal flash returns a RAM buffer.
+
+Never sent by the backup: `41` (erase), DNLOAD with block 2 and above (write), a zero-length DNLOAD (the original
+firmware's manifest writes the SPI flash at 0x02F000 and restarts), `91` with any second byte but 01 and 05 (05 only
+to the original firmware), `B2`-`B5`, `C4`, `D5`, an UPLOAD of block 1, and an UPLOAD above 1024 bytes in program
+mode. The flasher refuses each of them in code before it reaches the radio.
 
 ---
 

@@ -170,6 +170,21 @@ flasher's `origversion.js`; [web-flasher.md](web-flasher.md#the-original-firmwar
 `tools/boards.py check` refuses a choice or option name that doesn't appear in the board's sources. A version whose
 major isn't listed settles nothing: the radio then uses its own fallback.
 
+#### Backup before the install
+
+`[flash.original_backup]` (optional, with `[flash.original_version]`): what the web flasher backs up through the
+original firmware's or the bootloader's DFU device before an install (`origbackup.js`,
+[web-flasher.md](web-flasher.md#backup-before-the-install)). The commands are in the radio's hardware page.
+
+| Key | Meaning |
+|---|---|
+| `info` | The info block codes (`A2 ss`), two hex digits each, in the order read |
+| `mirror` | The most to ask for in the one snapshot of the internal flash from the start of flash, before program mode (at most 0xFFFF) |
+| `spi` | The SPI bytes the original firmware reads in program mode (at most `backup.spi_size`) |
+| `quick` | The SPI bytes of the quick read (the codeplug areas) |
+| `loader_interface` | The bootloader's DFU interface string (spaces not counted), which tells it from the original firmware |
+| `loader_spi` | The SPI bytes the bootloader reads |
+
 `[flash.stub]` (a board on a platform with `board_stub`): `id` (the board id the stub echoes, unique per stub; 0xFE is reserved for the stub tools' test profiles) and
 `tested` (flashed through the stub on a radio), then the keys the platform's `board_stub` names:
 
