@@ -62,6 +62,12 @@ export function f405Sectors(flashKb = 1024) {
 	return out;
 }
 
+// Whether the chip's flash size register (the loader's HELLO, the debug link's INFO_CHIP: the same register) reads less
+// than the flash the firmware owns. Some radios' chips read 512 KB while the board's flash reaches 1 MB (the codec sits
+// in the top sectors): the loader refuses everything past the register's size, so their install goes through the
+// bootloader. owned: [[lo, hi)] (data/f4-stub.json). An unknown size (null, 0) is not short
+export const registerShort = (flashKb, owned) => !!flashKb && owned.some(([, hi]) => hi > FLASH_BASE + flashKb * 1024);
+
 export class F4Stub extends Stub {
 	// reopen: async () => a new stream, for a stub that enumerated again (the old port is gone), or null.
 	// board: the radio's entry of data/flash-boards.json f4stub.boards ({name, stub_id, record, v2_wiring, owned, codec}),
@@ -287,8 +293,11 @@ export class F4Stub extends Stub {
 		return this.request(OP.RESET, be32(F4_MAGIC), { retries: 0 });
 	}
 
-	checkChip() {
-		if (this.info.flashKb !== 1024) throw new StubError(`the chip reports ${this.info.flashKb} KB of flash; the STM32F405 radios have 1024`);
+	// owned: the firmware's flash ([[lo, hi)]); the loader refuses everything past the register's size. More than 1 MB
+	// is a part with another sector map
+	checkChip(owned) {
+		if (!this.info.flashKb || this.info.flashKb > 1024) throw new StubError(`the chip reports ${this.info.flashKb} KB of flash; the STM32F405 radios have 1024`);
+		if (registerShort(this.info.flashKb, owned)) throw new StubError(`the chip's flash size register reads ${this.info.flashKb} KB, less than the flash the firmware owns, so the loader cannot write it: install in update mode instead`);
 	}
 
 	// {sectors: [{index, addr, size, data, kept}], changed: [index]} for every sector holding firmware-owned flash.
@@ -327,7 +336,7 @@ export class F4Stub extends Stub {
 	// sector to be rewritten that holds bytes that are not the firmware's (keep a copy). progress(done, total, what).
 	// Returns {written, same}.
 	async writeImage(owned, segs, { onKept = async () => {}, progress = () => {}, plan = null } = {}) {
-		this.checkChip();
+		this.checkChip(owned);
 		this.needConfigured();
 		const p = plan || await this.plan(owned, segs);
 		if (!p.changed.length) return { written: 0, same: p.sectors.length };

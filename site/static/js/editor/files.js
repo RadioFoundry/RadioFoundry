@@ -66,7 +66,10 @@ export async function openFile(name, bytes) {
 		}
 		const { meta, parts } = await openBundle(bytes);
 		const spi = parts.get("spi-flash");
-		if (!spi || spi.data.length < TFTP_SIZE) throw new FileError("backup_no_codeplug");
+		// a firmware or calibration backup, or one whose radio keeps its channels elsewhere: the report names its parts
+		if (!spi || spi.data.length < TFTP_SIZE) {
+			throw new FileError("backup_no_codeplug", { board: meta?.radio?.board || null, parts: [...parts.keys()].slice(0, 10), spi: spi?.data.length ?? 0 });
+		}
 		return fromBytes(spi.data, meta?.radio?.board || null);
 	}
 	if (/\.ya?ml$/i.test(name)) return { kind: "yaml", text: new TextDecoder().decode(bytes) };

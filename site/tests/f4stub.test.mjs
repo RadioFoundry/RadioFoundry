@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { crc32, equal, fromHex, toHex } from "../static/js/flasher/bytes.js";
 import { FakeRadio, simulation, randomBytes, rng } from "../static/js/flasher/fake.js";
-import { F4Stub, f4Image, f4StubHeader, HDR, APP_BASE, MEM_SPI, OP } from "../static/js/flasher/f4stub.js";
+import { F4Stub, f4Image, f4StubHeader, HDR, APP_BASE, MEM_SPI, OP, registerShort } from "../static/js/flasher/f4stub.js";
 import { Stub, StubError } from "../static/js/flasher/stub.js";
 import { Link } from "../static/js/flasher/link.js";
 import { readRadio } from "../static/js/flasher/backup.js";
@@ -263,6 +263,45 @@ test("the loader refuses a read past the chip's register size (what the debug li
 	const s = await enter(radio);
 	assert.equal(s.info.flashKb, 512);
 	await assert.rejects(s.readFlash(0x0807C000, 0x10000), /refused: status 0xd/);
+});
+
+test("a register that reads short: a backup whose INFO_CHIP goes unanswered still reads the internal flash in place", async () => {
+	// OPENDIGITALRADIO-17 on a build with the size check: the loader read the internal flash and refused the top
+	const { sim, radio } = await running("dm1701", { flashKb: 512 });
+	radio.flash.set(randomBytes(rng(5), 0x4000), 0x0F0000);
+	let asked = 0;
+	const b = await backupVia(radio, sim, {}, { patch: (link) => { link.chip = async () => { asked++; throw new Error("no answer to command 0xb"); }; } });
+	assert.equal(asked, 2, "asked twice");
+	const internal = b.get("internal-flash");
+	assert.ok(internal.complete);
+	assert.deepEqual(internal.data, radio.flash.subarray(APP_BASE - 0x08000000));
+	assert.deepEqual(b.get("spi-flash").data, radio.spi, "the loader reads the SPI flash");
+	assert.equal(radio.mode, "normal");
+});
+
+test("a register that reads short: install refused before anything is erased when the firmware's flash reaches past it", async () => {
+	// OPENDIGITALRADIO-34: an MD-UV380 whose register reads 512 KB, its firmware owning sectors past 0x08080000
+	for (const id of Object.keys(fb.f4stub.boards)) {
+		const owned = fb.f4stub.boards[id].owned;
+		assert.equal(registerShort(1024, owned), false, id);
+		assert.equal(registerShort(null, owned), false, `${id}: unknown is not short`);
+		const short = registerShort(512, owned);
+		assert.equal(short, owned.some(([, hi]) => hi > 0x08080000), id);
+		const { radio } = await running(id, { flashKb: 512 });
+		const s = await enter(radio);
+		const before = radio.events.length;
+		const write = s.writeImage(owned, [[APP_BASE, app(6, 0x20000)]]);
+		if (short) {
+			await assert.rejects(write, /reads 512 KB.*update mode/);
+			assert.ok(!radio.events.slice(before).some((e) => /^erase/.test(e)), `${id}: nothing erased`);
+		} else {
+			await write;	// the firmware's flash fits under the register: the loader writes it
+			assert.ok(equal(at(radio, APP_BASE, 0x20000), app(6, 0x20000)), id);
+		}
+	}
+	assert.ok(Object.values(fb.f4stub.boards).some((b) => registerShort(512, b.owned)), "a board that needs the bootloader then");
+	const { radio } = await running("dm1701", { flashKb: 2048 });
+	await assert.rejects((await enter(radio)).writeImage(fb.f4stub.boards.dm1701.owned, [[APP_BASE, app(6, 0x1000)]]), /2048 KB/);
 });
 
 test("hand-over on a port that went away: says so, not \"built without CONFIG_STUB_ENTRY\"", async () => {

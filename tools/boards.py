@@ -189,8 +189,11 @@ BOARD_SCHEMA = {
         # key-<name> ids), for the web flasher's picture; steps stays the instructions
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str),
                             "hold": _opt(STR_LIST)}),
+        # layout: the bootloader's alt 0 interface string, only once read from a radio in its bootloader. The
+        # flashers then accept no other device; without it they refuse a layout of only the bootloader's sectors
+        # (rfoundry dfu.py normal_mode)
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
-                     "key_sha256": _req(str), "key_prefix": _req(str)}),
+                     "key_sha256": _req(str), "key_prefix": _req(str), "layout": _opt(str)}),
         # flash no tool may erase or write (PROTECT_MEMS): the factory calibration and other factory data that can't
         # be made again. start and end (exclusive) are offsets in the memory, on its erase boundaries; what says
         # what it is and where the spec says so (docs/dev/board-registry.md, "Protected regions")
@@ -1253,6 +1256,7 @@ def rfoundry_view(boards):
             "key_sha256": dfu["key_sha256"] if dfu else None, "key_prefix": dfu["key_prefix"] if dfu else None,
             "dfu_ids": [dfu["vid"], dfu["pid"]] if dfu else None,
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
+            "dfu_layout": dfu.get("layout") if dfu else None,
             "stub": b.stub(),
             "build_options": d.get("build_options", []),		# rfoundry asks with the same words as the site
             # the radio types another open firmware's CPS radio info reports for this radio (board.toml [cps])

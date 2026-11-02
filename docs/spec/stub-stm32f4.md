@@ -461,9 +461,12 @@ same for every target; only the HELLO name, the op magic and the board record's 
 The flash size register can read less than the flash the chip has. On one field radio it read 512 KB on a part whose
 top sectors hold the codec (seen 2026-10). The stub then refuses READ, SUMS and writes past that size with status
 0x0D. INFO_CHIP's flash size over the debug link is the same register, so the web flasher's backup compares it with
-the board's flash end before the hand-over. When it reads short, RadioFoundry reads the internal flash in place, up to
-the board's `rom_size`, and the loader reads only the SPI flash (`site/static/js/flasher/backup.js`). An install that
-reaches past the register's size still needs the bootloader route.
+the board's flash end before the hand-over. When it reads short, or INFO_CHIP goes unanswered twice, RadioFoundry reads
+the internal flash in place, up to the board's `rom_size`, and the loader reads only the SPI flash
+(`site/static/js/flasher/backup.js`). An install whose firmware flash (the board's `owned` ranges) reaches past the
+register's size needs the bootloader route: the flasher reads INFO_CHIP at its "now" step and then offers update mode
+only, with a notice (`registerShort` in `site/static/js/flasher/f4stub.js`). The page's own check refuses such a write
+before the first erase. A firmware flash that fits under the register is still written through the loader.
 
 The engine checks the application base `configure` returns: a sector start, not sector 0, at or above
 `min_app_base`. The commit word is at that base, and the commit sector (the interlock's) is the sector holding it. The
