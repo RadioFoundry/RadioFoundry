@@ -16,6 +16,7 @@
 
 import { concat, crc32, sha256, u32le, le32, startsWith } from "./bytes.js";
 import { byCodeSha, checkWords } from "./codecmap.js";
+import { ECC } from "./stub.js";
 
 // code: as stockfw.js StockError's, for the page's explanation (explain.js) and the error report; "image" is a
 // RadioFoundry image the codec slot can't take (the user's own build), not a vendor file
@@ -383,7 +384,8 @@ export async function blankCount(stub, mem, start, end, { deadline = 8000, stop 
 	let sectors = 0, blank = 0;
 	for (let i = 0; i < n && !stop() && Date.now() - t0 < deadline; i++) {
 		const a = start + ((i * step) % n) * span;
-		const sums = await stub.sums(mem, a, Math.min(window, (end - a) / SECTOR));
+		// a NAND window holding a page its ECC can't correct has no sums: the count goes on without it
+		const sums = await stub.sums(mem, a, Math.min(window, (end - a) / SECTOR)).catch((e) => { if (e.status === ECC) return []; throw e; });
 		sectors += sums.length;
 		blank += sums.filter((s) => s.blank).length;
 	}

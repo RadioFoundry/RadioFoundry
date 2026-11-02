@@ -484,14 +484,18 @@ bool ui_dual_start(const ui_dual_ref_t *b)
 	return true;
 }
 
-// Off: the radio stays on the selected channel
-void ui_dual_stop(void)
+// Off: the radio stays on the selected channel. `asked`: the UI asks the radio to stop; else the radio has stopped
+// already (a stop asked for elsewhere, view.dual_stops): nothing to ask, and no grace before a watch started after it
+// is taken on (adopt_poll), as the next one may come at once (the debug link: a stop, then a start)
+static void stop(bool asked)
 {
 	ui_dual_t *d = dual();
 	if (!d->on)
 		return;
-	ui_svc_dual(NULL, 0);	// the radio stops on the selected channel
-	off_ms = ui_st.now_ms;
+	if (asked) {
+		ui_svc_dual(NULL, 0);	// the radio stops on the selected channel
+		off_ms = ui_st.now_ms;
+	}
 	d->on = false;
 	d->back_to = UI_DUAL_NONE;
 	ui_toast(d->sel ? TR("Dual watch off: on B") : TR("Dual watch off: on A"));
@@ -507,6 +511,11 @@ void ui_dual_stop(void)
 		d->sel = 0;
 	}
 	state_save();
+}
+
+void ui_dual_stop(void)
+{
+	stop(true);
 }
 
 // Back on Home with nothing else to clear: the first press says how to stop the watch, a second one soon after stops it.
@@ -1021,7 +1030,7 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 	if (v->hotspot)
 		return false;	// the host has the radio; the watch comes back after
 	if (stop_asked && v->scan != 3 /* SCAN_DUAL */) {
-		ui_dual_stop();
+		stop(false);
 		return true;
 	}
 	bool dirty = false;
