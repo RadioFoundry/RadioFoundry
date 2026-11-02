@@ -240,8 +240,9 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 - Talk permit before keying (`dmr_call_config_t.permit_hold_ms`): on a radio whose beeps can't sound on air, an
   admitted voice call (the channel free, the repeater up) waits in `TX_PERMIT`, still receiving, while the radio plays
   its talk permit tone. It keys after at least `permit_hold_ms` and once `permit_busy()` is false, at most
-  `DMR_CALL_PERMIT_MAX_MS` (400 ms) after the hold began. The call view counts each hold in `permit_seq`, and shows
-  the phase as TX access. Releasing PTT in the hold ends the call, as in TX access.
+  `DMR_CALL_PERMIT_MAX_MS` (400 ms) after the hold began. The call view counts each hold in `permit_seq` and shows
+  it as its own phase (`DMR_CALL_PHASE_TX_PERMIT`; the screen says ADMITTED). Releasing PTT in the hold ends the
+  call, as in TX access.
 - After our own transmission, the receiver keeps the slot lock and the call's destination for the capture timeout.
 
 ---

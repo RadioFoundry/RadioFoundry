@@ -228,7 +228,7 @@ beep just before it transmits instead ([the radio's notes](23-radios.md)):
 | Screen | What happens |
 |---|---|
 | WAKING RPT | On a repeater channel, the radio wakes the repeater (as above) |
-| WAITING | The channel is yours: the beep plays while the radio is still receiving |
+| ADMITTED | The channel is yours: the beep plays while the radio is still receiving |
 | TALKING | The radio transmits. Start talking |
 
 The wait for the beep is under half a second. Releasing **PTT** during it cancels the call.

@@ -441,7 +441,7 @@ A 240 x 320 color screen. RadioFoundry uses its full resolution, with smooth (an
 - Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
 - No beeps while transmitting: the radio's beep path would put them on the air. A beep still playing when the
   transmission ends is heard from then on. The DMR talk permit tone is a single short beep played just before the
-  radio transmits, while the screen shows WAITING ([DMR](09-dmr.md#the-talk-permit-tone)).
+  radio transmits, while the screen shows ADMITTED ([DMR](09-dmr.md#the-talk-permit-tone)).
 - The signal strength in dBm is uncalibrated: strong signals read high.
 - No vibration alerts: RadioFoundry doesn't drive a vibration motor on it, and **Settings > Sound > Vibrate** isn't in the
   image.
