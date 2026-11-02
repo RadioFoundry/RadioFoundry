@@ -540,8 +540,10 @@ for valid NMEA, as on the MD-380 (ours).
 
 ### 14.1 Entering the loader
 
-Disconnect DC (the power key is not enough), hold **P1 and the orange (alarm) key** ( notes) while reconnecting; the backlight / display flashes, the
-screen stays blank. Another report gives **the red key and P1** instead (unverified); the second key is open (?).
+Disconnect DC (the power key is not enough), hold **P1 and the orange (alarm) key** while reconnecting. The screen stays
+blank and the backlight blinks at 1 Hz (checked on a V1-V3 radio, 2026-11-02). The loader's DFU interface string for
+the internal flash, `@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg`, tells it apart from the original
+firmware in normal mode, which shows `/0x08000000/03*016Kg` under the same USB IDs and strings.
 
 ### 14.2 Protocol and encryption
 
@@ -633,7 +635,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 
 | # | Unknown | How to settle it |
 |---|---|---|
-| 1 | Which revision the test radio is | Open the top cover, read the PCB label; then try the V5 image's RX |
+| 1 | Which revision the test radio is | Settled for the first test radio (2026-11-02): its original firmware reported v06.09, so V1-V3; FM receive works with the V1-V3 words. PCB label not read |
 | 2 | V4 synthesizer exact part ("PLL1590"), V5 IF part, V5 use of PE15 | Photos of the board (and FCC internal photos) |
 | 3 | Lock detect pin (none mapped) | Scope / board photos; otherwise lock is inferred from RX |
 | 4 | LMX2571 delays after reset and calibration | Scope the PLL on retune; measure the relock time (also [gotchas.md](gotchas.md) 14.6, SFR / DMR burst switching) |
@@ -642,7 +644,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 | 7 | RSSI / noise curves per revision | Signal generator steps |
 | 8 | Mic keypad thresholds | Press every mic key, log PA6 / PA7 raw |
 | 9 | Front panel LEDs, key backlight | Look at the radio |
-| 10 | Loader key combination (orange vs red + P1) | Try both |
+| 10 | Loader key combination (orange vs red + P1) | Settled (2026-11-02): P1 + orange, DC reconnected; the backlight blinks at 1 Hz (14.1) |
 | 11 | Ignition sense | Schematic / board photos |
 | 12 | I2C1 devices | Bus scan |
 | 13 | Calibration unknown bytes, BCD frequency format | Dump the security registers and compare with the vendor CPS test screen |
@@ -654,7 +656,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 | 19 | LMX2571 registers beyond the documented set (R60, R58, R53 and the rest), the DEN = 0 reading | Lock and spur check on V5 |
 | 20 | Calibration record layout (11.2) and the hardware option block beyond the band edges | Dump security registers 1-3 |
 | 21 | The CPS command set inside the DFU transfers | USB capture of TYT's CPS |
-| 22 | Display orientation and column offset (RadioFoundry: segments normal, COM reversed, offset 0) | First boot |
+| 22 | Display orientation and column offset | Settled (2026-11-02): segments reversed, COM normal, column offset 4 (segments normal and COM reversed showed the picture upside down) |
 | 23 | Encoder steps per detent and rest state (RadioFoundry: 2, resting where A = B) | Turn the knob, read the debug link's encoder counts |
 | 24 | The V1-V3 per-channel reference divider setting (5.3) | Retune across a band on V1-V3 |
 | 25 | Receiver probe thresholds per revision (section 19.3) | Noise readings per revision with the probe words |
@@ -681,7 +683,11 @@ last (unidentified synthesizer, needs its power-on quirk).
 
 ## 19. RadioFoundry on the MD-9600
 
-Bring-up state (2026-10-20): the image builds; nothing has run on a radio. `boards/md9600/`.
+Bring-up state (2026-11-02): runs on a V1-V3 radio (original firmware v06.09). Checked: boot, display (orientation
+7.2 and 17 #22), keys, the debug link and CPS, the data flash, calibration and option block reads, FM receive on VHF
+(a NOAA station through a dummy load). Open: the receive audio level is high at the bottom of the volume knob and
+sounds overdriven (the HR_C6000 settings, the FM_SW line and the IF chip words match the original firmware's; whether
+the original firmware sounds the same on this radio is not checked); UHF receive, DMR, transmit. `boards/md9600/`.
 
 ### 19.1 What the image does
 
