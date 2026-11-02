@@ -24,6 +24,7 @@
 #include "modem/hrc7000/hrc7000_bs.h"
 #include "dmr/bsOutbound.h"
 #endif
+#include "audio_pcm.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -234,8 +235,11 @@ static void configure(const dmr_config_t *cfg) { hrc7000_dmr_configure(&eng, cfg
 static void rx_restart(void) { hrc7000_dmr_rx_restart(&eng); }
 static void rx_lock_slot(int8_t ts) { hrc7000_dmr_rx_lock_slot(&eng, ts); }
 
+// The prompt FIFO also feeds the modulator: its gate closes before the first burst can be armed, and audio_pcm.c opens
+// it once the engine has stopped transmitting
 static bool tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 {
+	hrc_audio_pcm_tx_gate();
 	return active && hrc7000_dmr_tx_begin(&eng, timing, ts, access);
 }
 
@@ -269,7 +273,13 @@ static bool bs_start(const dmr_bs_config_t *cfg)
 	return active && hrc7000_bs_start(&bs, &eng, cfg, bsOutboundRawSlot);
 }
 
-static void bs_key(bool on) { hrc7000_bs_key(&eng, on); }
+static void bs_key(bool on)
+{
+	if (on) {
+		hrc_audio_pcm_tx_gate();	// as tx_begin
+	}
+	hrc7000_bs_key(&eng, on);
+}
 
 static bool bs_queue(int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach, const uint8_t *emb_lc)
 {

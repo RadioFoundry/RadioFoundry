@@ -40,6 +40,7 @@
 #define DMR_CALL_LBT_DMO_MS		120	// machine traffic: quiet needed before sending (gotcha 3.6)
 #define DMR_CALL_LBT_RMO_MS		180
 #define DMR_CALL_RMO_HANG_MS		3000	// machine traffic waits this long after a call through a repeater
+#define DMR_CALL_PERMIT_MAX_MS		400	// the talk permit hold keys after this long whatever permit_busy says
 // SFR user: which copies of a call are heard (dmr_call_config_t.sfr_rx)
 typedef enum {
 	DMR_SFR_RX_REPEATER,	// the repeat only: the talker's own copy is dropped
@@ -112,6 +113,11 @@ typedef struct {
 	uint8_t rx_sync;		// the repeat's sync: DMR_SYNC_TS1 / TS2 (TS framing), BS, or MS (the copies look alike)
 	uint8_t sfr_rx;			// dmr_sfr_rx_t
 	int8_t cc2;			// a second color code heard (an ERDM repeater's outbound), -1 = none
+	// Talk permit before keying (radios whose beeps can't sound on air): once a voice call is admitted (the channel
+	// free, the repeater up) it waits, receiving, at least permit_hold_ms and while permit_busy() is true, at most
+	// DMR_CALL_PERMIT_MAX_MS, then keys. Each hold counts in view.permit_seq: the tone's cue. 0 = keys at once
+	uint16_t permit_hold_ms;
+	bool (*permit_busy)(void);	// NULL = the minimum alone
 } dmr_call_config_t;
 
 // Caller info for the UI
@@ -197,6 +203,7 @@ typedef struct {
 	uint32_t evq_overflows;		// diagnostics
 	uint32_t tx_underruns;		// voice frames replaced with silence
 	uint8_t wake_admits;		// counts repeater wake-ups answered after PTT was let go: the call would have been admitted
+	uint8_t permit_seq;		// counts talk permit holds (permit_hold_ms): play the talk permit now
 } dmr_call_view_t;
 
 void dmr_call_config_default(dmr_call_config_t *cfg);

@@ -273,6 +273,9 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 			return hrc_dmr_stats_line((uint8_t)(i - DIAG_DMR_FIRST), buf, len);
 		}
 		if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES) {
+			return hrc_audio_pcm_gate_line(buf, len);	// the prompt FIFO gate
+		}
+		if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES + 1) {
 			uint32_t ph = db25d_dmr_phase();
 			put(&o, "cdc ");
 			if (hrc_vocoder_tag() != 0) {
@@ -287,7 +290,7 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 			break;
 		}
 #if DB25D_DMR_TX
-		if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES + 1) {
+		if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES + 2) {
 			// DMR TX bursts (4.5): TX-on and TX-off sequences run, RF RX interrupts seen, what woke the last TX-off
 			// (R: RF RX interrupt, T: slot tick, A: abort), and how many ramp downs started late, the last by how much
 			db25d_dmr_tx_stats_t t;
