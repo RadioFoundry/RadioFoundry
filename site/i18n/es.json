@@ -1030,6 +1030,7 @@
  "flash.c7.connect.try_again": "Reintentar",
  "flash.c7.connect.rom_found": "La radio respondió. Preparándola…",
  "flash.c7.connect.load_failed": "No se pudo preparar la radio. {error}",
+ "flash.c7.connect.lost": "La radio dejó de responder por el cable. Comprueba el cable y que la radio esté encendida, y vuelve a conectar.",
  "flash.c7.connect.found_stub": "La radio sigue en modo de actualización desde la sesión anterior.",
  "flash.c7.connect.found_rfoundry_stub": "La radio está en modo de actualización.",
  "flash.c7.connect.found_rom": "La radio está en modo de actualización.",
