@@ -172,17 +172,6 @@ static bool bcd(uint32_t word, uint8_t digits, uint32_t *out)
 	return true;
 }
 
-// DMR ID or talkgroup: 8 BCD digits, bytes in reading order; 0 if malformed or out of the 24-bit range
-static uint32_t bcd_id(const uint8_t *p)
-{
-	uint32_t word = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
-	uint32_t v;
-	if (!bcd(word, 8, &v) || v > 0xFFFFFFu) {
-		return 0;
-	}
-	return v;
-}
-
 static uint32_t to_bcd(uint32_t v, uint8_t digits)
 {
 	uint32_t w = 0;
@@ -425,21 +414,14 @@ static void index_zones(void)
 	}
 }
 
-// The rest of the open-firmware evidence (codeplug-stock-tyt.md 2, step 1, the same rule as the web editor's
-// site/static/js/codeplug/detect.js): the general settings, the zones, the contacts and the RX group lists
+// The rest of the open-firmware evidence (codeplug-stock-tyt.md 2, step 1, the web editor's rule in
+// site/static/js/codeplug/detect.js) for what the radio shows from the codeplug: the zones and the RX group lists. Not
+// the contacts or the general settings: another firmware's contacts left beside a codeplug edited on the radio
+// mustn't hide it, and the checks cost flash
 static void index_evidence(void)
 {
 	uint8_t r[CH_SIZE];
-	bool empty;
 
-	// General settings: the callsign, then the DMR ID
-	if (flash_read(GEN_CALLSIGN, r, GEN_NAME_LEN + 4u)) {
-		if (!latin_name(r, GEN_NAME_LEN, &empty)) {
-			ev_bad++;
-		} else if (!empty && bcd_id(&r[GEN_NAME_LEN]) != 0) {
-			ev_good++;
-		}
-	}
 	// Zones whose in-use bit is set and whose record isn't erased
 	uint8_t layout, bits[(ZONE_SLOTS + 7u) / 8u];
 	if (flash_read(ZONE_LAYOUT, &layout, 1) && flash_read(ZONE_BITMAP, bits, sizeof(bits))) {
@@ -450,13 +432,6 @@ static void index_evidence(void)
 			    flash_read(a, r, ZONE_NAME_LEN)) {
 				named(r);
 			}
-		}
-	}
-	// Contacts that decode
-	for (unsigned i = 0; i < CONTACT_COUNT; i++) {
-		if (flash_read(CONTACT_BASE + i * CONTACT_SIZE, r, CONTACT_SIZE) && r[0] != 0xFF && r[0x14] <= 2u &&
-		    (r[0x14] == 2u || bcd_id(&r[0x10]) != 0)) {
-			named(r);
 		}
 	}
 	// RX group lists whose count is set: a count past 32 members is bad
@@ -806,12 +781,12 @@ static bool materialize(void)
 	for (unsigned bank = 0; bank < CH_BANKS && ok; bank++) {
 		ok = flash_write(bank_bitmap(bank), zero, CH_PER_BANK / 8u);
 	}
-	ok = ok && flash_write(ZONE_BITMAP, zero, sizeof(zero)) && storage_fill(LIST_COUNTS, 0x00, LIST_COUNT);
+	ok = ok && flash_write(ZONE_BITMAP, zero, sizeof(zero)) && flash_write(LIST_COUNTS, NULL, LIST_COUNT);
 	if (codeplug_foreign()) {
-		ok = ok && storage_fill(GEN_CALLSIGN, 0xFF, GEN_NAME_LEN + 4u) &&
-		     storage_fill(BOOT_TEXT, 0xFF, 2u * CODEPLUG_NAME_LEN) &&
+		ok = ok && flash_write(GEN_CALLSIGN, NULL, GEN_NAME_LEN + 4u) &&
+		     flash_write(BOOT_TEXT, NULL, 2u * CODEPLUG_NAME_LEN) &&
 		     flash_write(QUICK_KEYS, zero, CODEPLUG_QUICK_KEYS * 2u) &&
-		     storage_fill(CONTACT_BASE, 0xFF, CONTACT_COUNT * CONTACT_SIZE);
+		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE);
 		ev_bad = 0;	// cleared: ours from now on (a failure re-reads it, index_all below)
 	}
 	memset(used, 0, sizeof(used));
@@ -1188,6 +1163,17 @@ bool codeplug_set_boot_text(const char *line1, const char *line2)
 }
 
 #if CONFIG_DMR
+// DMR ID or talkgroup: 8 BCD digits, bytes in reading order; 0 if malformed or out of the 24-bit range
+static uint32_t bcd_id(const uint8_t *p)
+{
+	uint32_t word = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+	uint32_t v;
+	if (!bcd(word, 8, &v) || v > 0xFFFFFFu) {
+		return 0;
+	}
+	return v;
+}
+
 static void put_bcd_id(uint8_t *p, uint32_t id)
 {
 	uint32_t w = to_bcd(id, 8);

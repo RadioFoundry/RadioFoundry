@@ -261,8 +261,8 @@ static void put_contact(uint16_t n, const char *name, uint32_t id, uint8_t type,
 }
 
 // The pseudo-random bytes site/tests/stock.test.mjs classifies, from the same generator in JavaScript's arithmetic (a
-// double product, then ToUint32): the web editor counts 0 good and 624 bad open-firmware records in them, and so must
-// the radio
+// double product, then ToUint32): the web editor counts 0 good and 624 bad open-firmware records in them, the radio
+// the same less the general settings and the contacts it doesn't count
 static void fill_noise(void)
 {
 	uint32_t x = 12345;
@@ -309,7 +309,7 @@ static void test_foreign(void)
 	fill_noise();
 	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign());
 	codeplug_evidence(&good, &bad);
-	CHECK(good == 0 && bad == 624);
+	CHECK(good == 0 && bad == 620);	// the web editor: 624, with the general settings and the contacts
 	check_empty();
 
 	// Stock-style: records with UTF-16 names and valid frequencies, and the one seen on a radio (channel 183, a name
@@ -330,14 +330,22 @@ static void test_foreign(void)
 	put_freq(c + 0x10, 80200);
 	put_freq(c + 0x14, 2200220);
 	mark(183);
-	put_utf16(&image[EE + 0xE0], "N0CALL");		// UTF-16 in the callsign field
+	put_utf16(&image[EE + 0xE0], "N0CALL");		// UTF-16 in the callsign field: the radio doesn't count it
 	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign());
 	codeplug_evidence(&good, &bad);
-	CHECK(good == 0 && bad == 18);
+	CHECK(good == 0 && bad == 17);
 	check_empty();
 
 	// Mixed: a RadioFoundry codeplug over stock remnants is ours while at most one record in five is bad
 	build_openfw();		// 4 good, 1 bad
+	for (uint16_t n = 4; n < 12; n++) {
+		c = channel(n);
+		memset(c, 0, 56);
+		put_name(c, "Simplex");
+		put_freq(c + 0x10, 146520000);
+		put_freq(c + 0x14, 146520000);
+		mark(n);
+	}
 	for (uint16_t n = 300; n < 302; n++) {
 		c = channel(n);
 		memset(c, 0, 56);
@@ -346,21 +354,26 @@ static void test_foreign(void)
 		put_freq(c + 0x14, 146520000);
 		mark(n);
 	}
-	memcpy(&image[EE + 0xE0], "N0CALL\xFF\xFF", 8);	// a callsign with a DMR ID: good
-	put_bcd_be(&image[EE + 0xE8], 3101276);
-	for (uint16_t n = 1; n <= 7; n++) {
-		put_contact(n, "TG", n, 0, 0xFF);
+	// The other firmware's contacts and callsign aren't counted: left beside a codeplug edited on the radio, they
+	// mustn't hide it
+	put_utf16(&image[EE + 0xE0], "N0CALL");
+	for (uint16_t n = 1; n <= 8; n++) {
+		put_utf16(&image[FL + 0x87620 + 24u * (n - 1u)], "TG");
 	}
-	put_contact(8, "No ID", 0, 0, 0xFF);	// doesn't decode: not counted
 	CHECK(codeplug_init() == CODEPLUG_OPENFW && !codeplug_foreign());
 	codeplug_evidence(&good, &bad);
 	CHECK(good == 12 && bad == 3);
 	CHECK(codeplug_channel_count() == 301);	// the remnants have valid frequencies: shown, as the editor shows them
 	// One bad record more than the rule allows: foreign
-	put_utf16(&image[FL + 0x87620 + 24u * 6u], "TG");
+	c = channel(302);
+	memset(c, 0, 56);
+	put_utf16(c, "Old");
+	put_freq(c + 0x10, 146520000);
+	put_freq(c + 0x14, 146520000);
+	mark(302);
 	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign());
 	codeplug_evidence(&good, &bad);
-	CHECK(good == 11 && bad == 4);
+	CHECK(good == 12 && bad == 4);
 	check_empty();
 }
 

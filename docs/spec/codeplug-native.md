@@ -48,11 +48,13 @@ Rules:
   valid BCD), so the radio decides for the whole codeplug at every index (start-up and `codeplug_reload()` after a
   CPS write). It counts good and bad records by the web editor's open-firmware evidence rule
   ([codeplug-stock-tyt.md](codeplug-stock-tyt.md) 2, step 1; the same thresholds, and `site/static/js/codeplug/detect.js`
-  is the reference implementation). With bad records and fewer than four good ones for each bad one,
+  is the reference implementation), on the channels, zones and RX group lists only. It leaves out the contacts and the
+  general settings: another firmware's contacts left beside a codeplug edited on the radio must not hide it, and the
+  checks cost flash. With bad records and fewer than four good ones for each bad one,
   `codeplug_foreign()` is true. The radio then shows no codeplug: the built-in set, `codeplug=builtin`, no zones,
   contacts, RX group lists, DMR ID, radio name or boot text. It writes nothing there on its own. A CPS write that leaves
   a valid codeplug flips it back on the reload. The first edit on the radio materializes as for a blank flash and also
-  clears the rest the rule reads or the radio uses: the radio name and DMR ID (0xFF), the boot text (0xFF), the quick-key
+  clears the rest the editor's rule reads or the radio uses: the radio name and DMR ID (0xFF), the boot text (0xFF), the quick-key
   slots (0) and the 1024 contact records (0xFF, seven sector rewrites). The codeplug made is a clean one, which the next
   start-up finds ours. Debug link: `codeplug.foreign` and `codeplug.evidence=good,bad` (`storage` view; the counts of
   the last index, with bad set to 0 by that first edit).
