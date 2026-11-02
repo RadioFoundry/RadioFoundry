@@ -540,7 +540,7 @@ Ordered; (register, value, why). The whole DMR block is written once here and no
 | 26 | RF_RECV_DELAY | 0x36B0 | 1.4 ms receive path delay |
 | 27 | RX_IF_FREQ, TX_IF_FREQ | 0x0BB800 each | |
 | 28 | RECV_MS_SYNC_H, RECV_BS_SYNC_H | set bit 31 | undocumented enable |
-| 29 | RF_CONTROL | 0x00041F1A | RF TX interrupt 3.1 ms early |
+| 29 | RF_CONTROL | 0x00041F1A | RF TX interrupt 3.1 ms early; b20:16 (`tx_pre_on`) and b13:8 (`rf_tx_lead`) are the board's (2.1) |
 | 30 | WORK_MODE | 0x80 | start in FM (idle) |
 | 31 | FM_TONE1..4 | 0x05930629, 0x06D10787, 0x09AC0AB0, 0x0BD10D10 | DTMF tone steps (section 8) |
 | 32 | GCR_ADCL | mic gain or 0x80 | DMR mic gain setting |
