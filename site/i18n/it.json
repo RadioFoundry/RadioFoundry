@@ -1699,7 +1699,7 @@
  "editor.err.fix_first.other": "Il codeplug ha {n} errori. Correggili prima nella scheda Problemi.",
  "editor.err.unknown_file": "{name} non è un file che l'editor codeplug sa aprire. Apre file codeplug RadioFoundry e backup di radio, codeplug delle famiglie TYT MD-380 e MD-UV380 dal loro firmware originale, file YAML qdmr e tabelle CSV.",
  "editor.err.open_failed": "Impossibile aprire il file: {error}",
- "editor.err.backup_no_codeplug": "Questo backup non contiene un codeplug.",
+ "editor.err.backup_no_codeplug": "{name} è un backup di radio senza un codeplug che l'editor sappia leggere: contiene solo il firmware o la calibrazione, oppure i canali originali della radio. Usa Leggi dalla radio per modificare il codeplug della radio.",
  "editor.err.firmware_not_codeplug": "Questo è un file firmware, non un codeplug.",
  "editor.err.foreign": "Questo file contiene un codeplug in un formato che l'editor non sa leggere ({format}).",
  "editor.err.foreign_rdt": "I file CPS TYT (.rdt) della famiglia MD-UV380 non si possono ancora aprire. qdmr ne converte uno in YAML (dmrconf decode --manufacturer --radio dm1701 FILE.rdt FILE.yaml) e l'editor apre il file YAML.",
