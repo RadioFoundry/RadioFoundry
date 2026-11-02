@@ -269,11 +269,14 @@ def test_dmr_repeater_slots(radio, sdr_bench, pytestconfig, backup_dir, scenario
 
 def burst_offsets_ms(inbound, outbound):
     """Each inbound burst's offset in ms from the nearest outbound burst 30 ms before it (records with `t`, the sync's
-    time in s on one clock). The outbound has a burst every 30 ms while it is up, so an offset is within +-15 ms; one
-    with no outbound burst within 5 ms (the outbound missed one) is left out."""
-    out = sorted(r["t"] for r in outbound)
+    time in s on one clock; None before the receiver's clock is anchored, left out). The outbound has a burst every
+    30 ms while it is up, so an offset is within +-15 ms; one with no outbound burst within 5 ms (the outbound missed
+    one) is left out."""
+    out = sorted(r["t"] for r in outbound if r.get("t") is not None)
     offs = []
     for r in inbound:
+        if r.get("t") is None:
+            continue
         t = r["t"] - 0.030
         k = bisect.bisect_left(out, t)
         near = [out[j] for j in (k - 1, k) if 0 <= j < len(out)]
