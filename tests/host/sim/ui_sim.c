@@ -34,8 +34,8 @@
 //   zoneexpire          the offer is gone (not opened in time)
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
-//   timeout             the radio core cuts the transmission at the TX time-out (PTT still held): tx_deny=timeout
-//   pttlocked:on|off    Settings > Privacy > PTT when locked
+//   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
+//   pttlocked:on|off    turns Settings > Privacy > PTT when locked on or off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
@@ -2308,7 +2308,7 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
-	if (strcmp(t, "timeout") == 0) {	// the radio core cuts the transmission at the TX time-out (PTT still held)
+	if (strcmp(t, "timeout") == 0) {	// the TX timeout cuts the transmission off while PTT is still held
 		if (view.state == RS_TX) {
 			view.state = RS_TX_DENIED;
 			view.tx_deny = TXDENY_TIMEOUT;
@@ -2319,13 +2319,13 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 	if (strcmp(t, "pttlocked") == 0 && arg != NULL) {	// Settings > Privacy > PTT when locked
-		int v = strcmp(arg, "on") == 0 ? 1 : strcmp(arg, "off") == 0 ? 0 : -1;
-		if (v < 0) {
-			snprintf(err, len, "pttlocked: no %s", arg);
+		bool on = strcmp(arg, "on") == 0;
+		if (!on && strcmp(arg, "off") != 0) {
+			snprintf(err, len, "pttlocked: expected on or off, got %s", arg);
 			return false;
 		}
-		ui_svc_setting_set(UI_SET_PTT_LOCKED, v);
-		ui_apply_setting(UI_SET_PTT_LOCKED, v);
+		ui_svc_setting_set(UI_SET_PTT_LOCKED, on);
+		ui_apply_setting(UI_SET_PTT_LOCKED, on);
 		advance(200);
 		return true;
 	}
