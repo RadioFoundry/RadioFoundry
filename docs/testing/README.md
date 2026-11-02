@@ -15,6 +15,7 @@ repeatable and skips cleanly what it can't reach. What each level is for and whe
 | Manual bench cases | the SDR bench, a person at the radio | `tools/bench/dmr_bench.py run CASE` | `docs/testing/dmr-bench.md` |
 | DM-32UV first hardware test | a DM-32UV on its programming cable, a dummy load | step by step | `docs/testing/dm32-bringup.md` |
 | MD-380 first hardware test | an MD-380 / MD-390 / RT3 on USB, a dummy load, an SDR or signal generator | step by step | `docs/testing/md380-bringup.md` |
+| MD-9600 first hardware test | an MD-9600 / RT90 on USB, DC supply, a dummy load, a signal source | step by step | `docs/testing/md9600-bringup.md` |
 
 ## 1. The release gate: `tools/ci.sh`
 
