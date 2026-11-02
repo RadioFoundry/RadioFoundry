@@ -76,6 +76,8 @@ key_prefix = "A2FABB4B"
 # revision as the board record once RadioFoundry runs (hardware-md9600.md 15.1, 19.3)
 [flash.original_version]
 read = "dfu-info"
+# the original firmware's first DFU interface string; the bootloader's is "@Internal Flash   /0x0800C000/..."
+interface = "@Internal Flash   /0x08000000/03*016Kg"
 hwopt = "Board revision"
 major = { "06" = "V1-V3", "16" = "V4", "26" = "V4A/V5" }
 

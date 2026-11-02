@@ -542,16 +542,29 @@ def learn_original_version(args, usb, board, log=say, ask=None, sleep=time.sleep
         return None
     dev = devs[0]
     try:
+        fp = dfumod.fingerprint(usb, dev)
+    except dfumod.DfuError as e:
+        log("version  not read: %s" % str(e).splitlines()[0])
+        return None
+    # the strings tell the original firmware from the bootloader before anything is sent
+    if not origversion.runs_original(spec, fp["interfaces"]):
+        log("version  the radio is not running its original firmware (in its bootloader already?): the %s is not "
+            "read from here" % what)
+        return None
+    try:
         intf = dfumod.open_device(usb, dev)
     except dfumod.DfuError as e:
         log("version  not read: %s" % str(e).splitlines()[0])
         return None
     try:
-        v = origversion.read_dfu_info(dev, intf, log=lambda m: log("         " + m))
+        kind, v = origversion.read_dfu_info(dev, intf, log=lambda m: log("         " + m))
     finally:
         dfumod.release(usb, dev)
+    if kind == origversion.BOOTLOADER:
+        log("version  the radio is in its bootloader already: the %s is not read from here" % what)
+        return None
     if v is None:
-        log("version  no original firmware version from the radio (it may be in its bootloader already)")
+        log("version  no original firmware version from the radio")
         return None
     choice = origversion.choice_for(spec, v)
     if choice is None:
@@ -608,6 +621,9 @@ def check_bootloader(usb, dev, board, log=say):
     if board.dfu_string1 and board.dfu_string1.split()[0] not in (fp["string1"] or ""):
         raise UsageError("this is not the radio's own bootloader (string 1 is %r, expected %r). ST's ROM bootloader "
                          "would write the encrypted image as is: refusing" % (fp["string1"], board.dfu_string1))
+    if board.original_version and origversion.runs_original(board.original_version, fp["interfaces"]):
+        raise UsageError("the radio is running its original firmware, not its bootloader (the same USB IDs): put it "
+                         "in its bootloader (%s) and run the same command" % bootloader_steps(board))
     return fp
 
 

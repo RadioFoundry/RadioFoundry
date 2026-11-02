@@ -4,24 +4,28 @@
 
 Some radios come in board revisions RadioFoundry can't tell apart while it runs, but the firmware they shipped with
 follows the revision. Such a board declares [flash.original_version] in its board.toml (docs/dev/board-registry.md,
-"Original firmware version"): how the version is read (`read`), the hardware option it settles (`hwopt`, the debug
-link's HWOPT, docs/spec/debuglink.md 3.25) and the option's choice for each major version (`major`). The installer
-reads the version before it asks for the bootloader and stores the choice over the debug link once RadioFoundry runs.
-A version not in the table, or no answer, settles nothing: the radio then uses its own fallback.
+"Original firmware version"): how the version is read (`read`), the DFU interface string that marks the original
+firmware running (`interface`), the hardware option it settles (`hwopt`, the debug link's HWOPT,
+docs/spec/debuglink.md 3.25) and the option's choice for each major version (`major`). The installer reads the version
+before it asks for the bootloader and stores the choice over the debug link once RadioFoundry runs. A version not in
+the table, or no answer, settles nothing: the radio then uses its own fallback.
 
 Read "dfu-info" (docs/spec/hardware-md9600.md 15.1): the original firmware, running normally, is a DFU device with the
-bootloader's USB IDs whose block 0 command `A2 02` selects its version for the next UPLOAD. These are the only
-requests sent, all on the DFU interface, and none of them changes anything on the radio:
+bootloader's USB IDs. Its interface string tells it from the bootloader without a request, so nothing is sent to a
+device whose strings aren't the original firmware's. Then these requests, all on the DFU interface, none of which
+changes anything on the radio:
 
     GETSTATUS; CLRSTATUS when the state is dfuERROR, ABORT when it is not dfuIDLE
     DNLOAD block 0 `A2 02`; GETSTATUS (dfuDNBUSY); GETSTATUS (dfuDNLOAD-IDLE); ABORT
     UPLOAD block 0, 1024 bytes: `56 0M m0 mm`, version Mm.mm (`56 00 60 09` = 06.09)
 
-Any other answer, a stall included, means the device isn't that firmware (a bootloader, say): no version.
+The bootloader answers the same command with `54 ...` ('T'): the radio is in its bootloader already. Any other answer,
+a stall included: unknown.
 """
 from . import dfu as dfumod
 
 READS = ("dfu-info",)
+ORIGINAL, BOOTLOADER = "original", "bootloader"
 
 DFU_UPLOAD = 2
 INFO_CMD = bytes([0xA2, 0x02])
@@ -41,6 +45,29 @@ def parse_version(data):
     return "%d%d.%d%d" % (nib[1], nib[2], nib[4], nib[5])
 
 
+def answer_kind(data):
+    """(kind, version) of a dfu-info answer: (ORIGINAL, "06.09"), (BOOTLOADER, None) for the bootloader's 'T' answer,
+    (None, None) for anything else."""
+    data = bytes(data or b"")
+    v = parse_version(data)
+    if v is not None:
+        return ORIGINAL, v
+    if len(data) == 4 and data[0] == 0x54:
+        return BOOTLOADER, None
+    return None, None
+
+
+def _norm(s):
+    return " ".join((s or "").split())
+
+
+def runs_original(spec, interfaces):
+    """Whether a DFU device's interface strings (fingerprint interfaces) are the original firmware's, running normally:
+    one of them is spec["interface"] (spaces not counted). False for the bootloader's and for unreadable strings."""
+    want = _norm(spec.get("interface")) if spec else ""
+    return bool(want) and any(_norm(i) == want for i in interfaces or [])
+
+
 def choice_for(spec, version):
     """The hardware option choice a version settles (spec: the board's original_version), or None."""
     if not spec or not version:
@@ -49,8 +76,9 @@ def choice_for(spec, version):
 
 
 def read_dfu_info(dev, intf=0, timeout=2000, log=None):
-    """The version a device running the original firmware reports (dev: anything with pyusb's ctrl_transfer), or None.
-    Never raises for a device that doesn't answer the way that firmware does."""
+    """(kind, version) from a device (dev: anything with pyusb's ctrl_transfer): (ORIGINAL, version) from the original
+    firmware, (BOOTLOADER, None) from the bootloader, (None, None) for anything else. The caller checks the interface
+    strings first (runs_original). Never raises for a device that doesn't answer the way that firmware does."""
     def out(req, data=None):
         dev.ctrl_transfer(0x21, req, 0, intf, data, timeout)
 
@@ -79,17 +107,17 @@ def read_dfu_info(dev, intf=0, timeout=2000, log=None):
                 idle()
             except Exception:
                 pass
-            return None
+            return None, None
         out(dfumod.DFU_ABORT)
         data = bytes(dev.ctrl_transfer(0xA1, DFU_UPLOAD, 0, intf, UPLOAD_LEN, timeout))
-    except Exception as e:		# a stall: not the original firmware (the bootloader, another device)
+    except Exception as e:		# a stall: not the original firmware
         if log:
             log("no version: %s" % e)
-        return None
-    v = parse_version(data)
-    if v is None and log:
+        return None, None
+    kind, v = answer_kind(data)
+    if kind is None and log:
         log("no version: the answer is %s" % data[:16].hex())
-    return v
+    return kind, v
 
 
 def hwopt_action(opts, name, choice):

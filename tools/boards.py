@@ -197,7 +197,8 @@ BOARD_SCHEMA = {
         # a hardware option the radio can't detect, settled by the version its original firmware reports before the
         # install (rfoundry/origversion.py; docs/dev/board-registry.md "Original firmware version"): how the version is
         # read, the option's name (hal_hwopt_t) and its choice for each major version
-        "original_version": _opt({"read": _req(ORIGINAL_VERSION_READS), "hwopt": _req(str),
+        # interface: the DFU interface string that marks the original firmware running (not the bootloader)
+        "original_version": _opt({"read": _req(ORIGINAL_VERSION_READS), "interface": _req(str), "hwopt": _req(str),
                                   "major": _req(("map", str))}),
         # flash no tool may erase or write (PROTECT_MEMS): the factory calibration and other factory data that can't
         # be made again. start and end (exclusive) are offsets in the memory, on its erase boundaries; what says

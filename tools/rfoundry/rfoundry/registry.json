@@ -841,6 +841,7 @@
    "dfu_product": "Digital Radio in USB mode",
    "original_version": {
     "read": "dfu-info",
+    "interface": "@Internal Flash   /0x08000000/03*016Kg",
     "hwopt": "Board revision",
     "major": {
      "06": "V1-V3",

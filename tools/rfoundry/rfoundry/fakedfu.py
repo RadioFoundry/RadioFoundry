@@ -180,7 +180,10 @@ class FakeOriginalFirmware:
     class _Intf:
         bInterfaceClass, bInterfaceSubClass, bInterfaceNumber, iInterface = 0xFE, 0x01, 0, 5
 
-    def __init__(self, board, answer=b"\x56\x00\x60\x09", state=dfumod.ST_IDLE, address=7):
+    BOOTLOADER_ANSWER = b"\x54\x02\x10\x06"	# the bootloader's answer to A2 02 ('T')
+    BOOTLOADER_INTERFACES = ["@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg"]
+
+    def __init__(self, board, answer=b"\x56\x00\x60\x09", state=dfumod.ST_IDLE, address=7, interfaces=None):
         self.board = board
         self.answer = answer
         self.state = state
@@ -188,8 +191,9 @@ class FakeOriginalFirmware:
         self.selected = False
         self.requests = []
         self.strings = {"string1": board.dfu_string1, "manufacturer": board.dfu_string1, "product": board.dfu_product,
-                        "serial": "00000000010C", "interfaces": ["@Internal Flash   /0x08000000/03*016Kg",
-                                                                 "@SPI Flash Memory /0x00000000/16*064Kg"]}
+                        "serial": "00000000010C",
+                        "interfaces": interfaces or ["@Internal Flash   /0x08000000/03*016Kg",
+                                                     "@SPI Flash Memory /0x00000000/16*064Kg"]}
 
     def ctrl_transfer(self, rtype, req, value, intf, data, timeout=None):
         self.requests.append((rtype, req, value, bytes(data) if isinstance(data, (bytes, bytearray)) else data))

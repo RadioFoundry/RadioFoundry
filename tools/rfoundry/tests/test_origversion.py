@@ -77,34 +77,54 @@ class ChoiceFor(unittest.TestCase):
 class ReadDfuInfo(unittest.TestCase):
     def test_version_and_the_exact_requests(self):
         dev = fakedfu.FakeOriginalFirmware(board())
-        self.assertEqual(origversion.read_dfu_info(dev), "06.09")
+        self.assertEqual(origversion.read_dfu_info(dev), ("original", "06.09"))
         self.assertEqual(dev.requests, [GETSTATUS, DNLOAD_INFO, GETSTATUS, GETSTATUS, ABORT, UPLOAD])
 
     def test_other_version(self):
         dev = fakedfu.FakeOriginalFirmware(board(), answer=b"\x56\x01\x60\x45")
-        self.assertEqual(origversion.read_dfu_info(dev), "16.45")
+        self.assertEqual(origversion.read_dfu_info(dev), ("original", "16.45"))
 
     def test_error_state_is_cleared_first(self):
         dev = fakedfu.FakeOriginalFirmware(board(), state=dfumod.ST_ERROR)
-        self.assertEqual(origversion.read_dfu_info(dev), "06.09")
+        self.assertEqual(origversion.read_dfu_info(dev), ("original", "06.09"))
         self.assertEqual(dev.requests[:2], [GETSTATUS, (0x21, dfumod.DFU_CLRSTATUS, 0, None)])
 
     def test_other_state_is_aborted_first(self):
         dev = fakedfu.FakeOriginalFirmware(board(), state=9)
-        self.assertEqual(origversion.read_dfu_info(dev), "06.09")
+        self.assertEqual(origversion.read_dfu_info(dev), ("original", "06.09"))
         self.assertEqual(dev.requests[:2], [GETSTATUS, ABORT])
 
     def test_a_stall_is_no_version(self):
-        """A bootloader (or anything else) that doesn't take A2 02: no version, and nothing more is sent."""
+        """A device that doesn't take A2 02: no version, and nothing more is sent."""
         dev = fakedfu.FakeOriginalFirmware(board(), answer=None)
         logs = []
-        self.assertIsNone(origversion.read_dfu_info(dev, log=logs.append))
+        self.assertEqual(origversion.read_dfu_info(dev, log=logs.append), (None, None))
         self.assertEqual(dev.requests, [GETSTATUS, DNLOAD_INFO])
         self.assertIn("no version", logs[0])
 
     def test_unexpected_answer_is_no_version(self):
         dev = fakedfu.FakeOriginalFirmware(board(), answer=b"\x00\x21\x41")
-        self.assertIsNone(origversion.read_dfu_info(dev))
+        self.assertEqual(origversion.read_dfu_info(dev), (None, None))
+
+    def test_the_bootloaders_answer(self):
+        """The bootloader answers A2 02 with 'T': in the bootloader already, no version."""
+        dev = fakedfu.FakeOriginalFirmware(board(), answer=fakedfu.FakeOriginalFirmware.BOOTLOADER_ANSWER)
+        self.assertEqual(origversion.read_dfu_info(dev), ("bootloader", None))
+        self.assertEqual(origversion.answer_kind(b"\x54\x02\x10\x06"), ("bootloader", None))
+        self.assertEqual(origversion.answer_kind(b"\x56\x01\x60\x45"), ("original", "16.45"))
+        self.assertEqual(origversion.answer_kind(b"\x54\x02\x10"), (None, None))
+
+
+class RunsOriginal(unittest.TestCase):
+    def test_interface_strings(self):
+        spec = dict(SPEC, interface="@Internal Flash   /0x08000000/03*016Kg")
+        self.assertTrue(origversion.runs_original(spec, ["@Internal Flash   /0x08000000/03*016Kg", "@SPI Flash"]))
+        self.assertTrue(origversion.runs_original(spec, ["@Internal Flash /0x08000000/03*016Kg"]))	# spaces
+        self.assertFalse(origversion.runs_original(spec, fakedfu.FakeOriginalFirmware.BOOTLOADER_INTERFACES))
+        self.assertFalse(origversion.runs_original(spec, ["@Internal Flash  /0x08000000/03*016Kg,01*016Kg"]))
+        self.assertFalse(origversion.runs_original(spec, [None]))
+        self.assertFalse(origversion.runs_original(spec, []))
+        self.assertFalse(origversion.runs_original(None, ["@Internal Flash   /0x08000000/03*016Kg"]))
 
     def test_unexpected_states_end_the_read(self):
         """A device whose command doesn't go busy, then idle, gets no UPLOAD."""
@@ -118,7 +138,7 @@ class ReadDfuInfo(unittest.TestCase):
                 return bytes([0, 0, 0, 0, dfumod.ST_IDLE, 0])
             return r
         dev.ctrl_transfer = flat
-        self.assertIsNone(origversion.read_dfu_info(dev))
+        self.assertEqual(origversion.read_dfu_info(dev), (None, None))
         self.assertNotIn(UPLOAD, dev.requests)
 
 
@@ -255,12 +275,40 @@ class Learn(unittest.TestCase):
         self.assertEqual((r["version"], r["choice"]), ("99.01", None))
         self.assertIn("settles it itself", out)
 
-    def test_bootloader_already_is_quiet(self):
+    def test_a_stall_is_quiet(self):
         b = board()
         dev = fakedfu.FakeOriginalFirmware(b, answer=None)
         r, out = quiet(cli.learn_original_version, self.args(), fakedfu.FakeUsb([dev]), b)
         self.assertIsNone(r)
         self.assertNotIn("warning", out)
+
+    def test_bootloader_by_its_strings_gets_no_request(self):
+        """The bootloader's interface string: nothing is sent, nothing alarming said."""
+        b = board()
+        dev = fakedfu.FakeOriginalFirmware(b, interfaces=fakedfu.FakeOriginalFirmware.BOOTLOADER_INTERFACES)
+        r, out = quiet(cli.learn_original_version, self.args(), fakedfu.FakeUsb([dev]), b)
+        self.assertIsNone(r)
+        self.assertEqual(dev.requests, [])
+        self.assertIn("bootloader already", out)
+        self.assertNotIn("warning", out)
+
+    def test_bootloader_by_its_answer(self):
+        b = board()
+        dev = fakedfu.FakeOriginalFirmware(b, answer=fakedfu.FakeOriginalFirmware.BOOTLOADER_ANSWER)
+        r, out = quiet(cli.learn_original_version, self.args(), fakedfu.FakeUsb([dev]), b)
+        self.assertIsNone(r)
+        self.assertIn("in its bootloader already", out)
+
+    def test_flash_refuses_the_original_firmware(self):
+        """The original firmware has the bootloader's USB IDs: its strings stop the flash before any request."""
+        b = board()
+        dev = fakedfu.FakeOriginalFirmware(b)
+        with self.assertRaises(cli.UsageError) as cm:
+            quiet(cli.check_bootloader, fakedfu.FakeUsb([dev]), dev, b)
+        self.assertIn("original firmware, not its bootloader", str(cm.exception))
+        self.assertEqual(dev.requests, [])
+        loader = fakedfu.FakeOriginalFirmware(b, interfaces=fakedfu.FakeOriginalFirmware.BOOTLOADER_INTERFACES)
+        quiet(cli.check_bootloader, fakedfu.FakeUsb([loader]), loader, b)
 
     def test_skipped(self):
         b = board()
