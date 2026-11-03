@@ -51,6 +51,7 @@ typedef struct {
 // 0x03 values
 #define QA4818_ENABLE_OFF	0x0000u
 #define QA4818_ENABLE_RX	0xBFF5u		// a transceiver receiving
+#define QA4818_ENABLE_TX_DSP	0x0002u	// 0x03 bit 1, the transmit DSP (BK4819 map; the tone generator's source)
 #define QA4818_ENABLE_LO	0xC1FEu		// a local oscillator running
 #define QA4818_ENABLE_TX	0xC1FEu		// a transceiver transmitting (the same value)
 
@@ -105,15 +106,21 @@ void qa4818_init_lo(qa4818_t *c);
 void qa4818_init_trx(qa4818_t *c, uint16_t gpio, uint16_t r49);
 
 void qa4818_enable(qa4818_t *c, uint16_t value);
-// 0x47, the AF output (BK4819 map; inferred): bits 11:8 what goes out, 1 the voice audio, 8 the demodulator for a
-// DMR baseband; bit 13 inverts it. DMR receive inverts below 300 MHz, where the LO is above the signal and the IF
+// 0x47, the AF output (BK4819 map; inferred): bits 11:8 what goes out, 1 the voice audio, 3 the tone generator (a
+// beep), 8 the demodulator for a DMR baseband; bit 13 inverts it. DMR receive inverts below 300 MHz, where the LO is above the signal and the IF
 // spectrum is reversed, so the baseband hears one polarity on both bands
 #define QA4818_AF_VOICE		0x6140u
 #define QA4818_AF_DMR		0x4840u
 #define QA4818_AF_INVERT	0x2000u
+#define QA4818_AF_BEEP		0x6341u	// bit 0: the TX audio filters bypassed, so their high-pass leaves low tones
 // A transceiver's receiver on (its front-end constants, the AF output for a digital or analog channel at hz, then
 // QA4818_ENABLE_RX); its transmitter on (QA4818_ENABLE_TX)
 void qa4818_rx_on(qa4818_t *c, bool digital, uint32_t hz);
+// The receive AF output word (0x47) qa4818_rx_on writes
+uint16_t qa4818_af_rx(bool digital, uint32_t hz);
+// In receive: a beep tone of hz from the tone generator to the AF output instead of the receiver, at tone gain 0..127;
+// hz 0 puts back af (qa4818_af_rx) and stops the generator
+void qa4818_beep(qa4818_t *c, uint16_t hz, uint8_t gain, uint16_t af);
 void qa4818_tx_on(qa4818_t *c);
 // A local oscillator on (through off, as the stock firmware does)
 void qa4818_lo_on(qa4818_t *c);
