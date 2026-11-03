@@ -90,10 +90,10 @@ is `tools/bringup.py list --radio <id>`.
 | `cps_openfw` | not recorded | pass (seed) | not recorded | pass (seed) | pass (seed) | not recorded | partial, needs re-run |
 | `cps_fast` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `stub_entry` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `crash_log` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
+| `crash_log` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `crash_screen` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `crash_report` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
+| `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `fault_trace` | not recorded | ✕ | not recorded | not recorded | ✕ | ✕ | ✕ |
 | `usb_network` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | not recorded |
 | `dmr_ip_gateway` | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded |
