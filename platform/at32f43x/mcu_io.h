@@ -44,6 +44,13 @@ static inline void mcu_port_high_byte_dir(mcu_gpio_t *p, bool out)
 	p->CFGR = (p->CFGR & 0x0000FFFFu) | (out ? 0x55550000u : 0u);
 }
 
+// Pins 8..15 all inputs with pull-up: a released bus reads 0xFF, not what floats
+static inline void mcu_port_high_byte_pullup(mcu_gpio_t *p)
+{
+	p->PULL = (p->PULL & 0x0000FFFFu) | 0x55550000u;
+	p->CFGR &= 0x0000FFFFu;
+}
+
 // The debug pins become GPIO when a pin's mode is set, with no separate switch as on the GD32: nothing to do
 static inline void mcu_jtag_release(void) {}
 static inline void mcu_swd_release(void) {}

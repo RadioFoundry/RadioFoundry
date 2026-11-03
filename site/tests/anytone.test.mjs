@@ -181,6 +181,15 @@ test("anytone: a frame refused every time, a radio gone silent and a stop all en
 	const ac = new AbortController();
 	const stop = on();
 	await assert.rejects(stop.u.write(BOARD.app_base, data, { signal: ac.signal, onFrame: (i) => { if (i === 5) ac.abort(); } }), /stopped after 5 of/);
+	// the radio restarts and drops the port before the last ACK: every frame was confirmed, so the write stands
+	const drop = on({ dropAtFinish: true });
+	await drop.u.hello();
+	assert.equal(await drop.u.write(BOARD.app_base, data), Math.ceil(data.length / 32));
+	assert.ok(drop.fake.finished);
+	// the bootloader answers UPDATE with the ACK alone; QX before it is taken too, nothing else is
+	for (const reply of [[0x06], [0x51, 0x58, 0x06]]) await on({ updateReply: Uint8Array.from(reply) }).u.hello();
+	for (const reply of [[0x15], [0x51, 0x58, 0x15], [0x51]])
+		await assert.rejects(on({ updateReply: Uint8Array.from(reply) }).u.hello(), /update mode/);
 	const mute = new at.AnytoneUpdate({ buf: new Uint8Array(0), clear() {}, take: () => new Uint8Array(0), async write() {} }, { timeout: 20 });
 	await assert.rejects(mute.hello(), /update mode/);
 	// an answer that comes late still counts (the stream's arrived() wakes the wait)

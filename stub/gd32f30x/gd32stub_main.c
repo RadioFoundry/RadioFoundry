@@ -160,7 +160,14 @@ static bool port_program(void *ctx, uint32_t addr, const uint32_t *words, uint32
 	return gd32flash_program(addr, words, n);
 }
 
-// CONFIG: the board record gives the bootloader's end; there is no SPI flash for the stub on this target
+static bool port_xread(void *ctx, uint32_t addr, void *dst, uint32_t n)
+{
+	(void)ctx;
+	return gd32nand_read(addr, dst, n);
+}
+
+// CONFIG: the board record gives the bootloader's end and, in layout 2, an SPI NAND: the external memory, read only.
+// A NAND that doesn't answer leaves the external memory absent (xsize 0), the rest of the record applied
 static bool port_configure(void *ctx, const uint8_t *rec, uint32_t n, stubeng_config_t *out)
 {
 	(void)ctx;
@@ -169,6 +176,10 @@ static bool port_configure(void *ctx, const uint8_t *rec, uint32_t n, stubeng_co
 		return false;
 	}
 	out->app_base = b.app_base;
+	if (b.nand && gd32nand_init(&b)) {
+		out->xsize = (uint32_t)b.nand_mb << 20;
+		port.xread = port_xread;
+	}
 	return true;
 }
 

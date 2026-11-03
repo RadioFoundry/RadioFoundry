@@ -22,7 +22,7 @@ CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -std=gnu11 -ffreest
 LDFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -nostdlib -nostartfiles -Wl,--gc-sections -T gd32stub.ld \
 	-Wl,-Map=$(BUILD)/gd32stub.map -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments
 
-SRC := gd32stub_main.c stubeng.c gd32stub_board.c gd32stub_usb.c gd32stub_flash.c
+SRC := gd32stub_main.c stubeng.c gd32stub_board.c gd32stub_usb.c gd32stub_flash.c gd32stub_nand.c
 OBJ := $(patsubst %.c,$(BUILD)/%.o,$(SRC))
 vpath stubeng.c ../common
 

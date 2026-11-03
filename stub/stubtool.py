@@ -2778,8 +2778,9 @@ def main(argv=None):
     ap.add_argument("--q128", metavar="FILE", help="read the 16 MB data flash into FILE")
     ap.add_argument("--progmem-range", metavar="START:END", help="byte range, any alignment (default all)")
     ap.add_argument("--q128-range", metavar="START:END")
-    ap.add_argument("--nand", metavar="FILE", help="DB25-D (--board db25d or found from RadioFoundry): read the SPI NAND into FILE "
-                    "(2 KB pages without the spare bytes; give --nand-range, the chip is 256 MB)")
+    ap.add_argument("--nand", metavar="FILE", help="read the SPI NAND into FILE (main areas: 2 KB pages without the spare "
+                    "bytes; --nand-range for part of it): the DB25-D, and a GD32F30x radio whose board.toml names one "
+                    "([flash.stub] spi_nand)")
     ap.add_argument("--nand-range", metavar="START:END")
     ap.add_argument("--verify-nand", metavar="FILE", help="compare the NAND from --nand-range's start (default 0) with FILE by CRC")
     ap.add_argument("--start", type=lambda s: int(s, 0), help="old form: first byte")

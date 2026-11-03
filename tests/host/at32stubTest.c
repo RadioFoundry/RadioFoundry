@@ -29,7 +29,7 @@ static int failures, checks;
 #define APP		0x08006000u	// a bootloader of 24 KB: six engine sectors
 
 static uint8_t flash[FLASH_SIZE];
-static unsigned erased[256];
+static unsigned erased[AT32_STUB_SECTORS];
 static uint8_t sent[16 * 1024];
 static uint32_t sent_len;
 static stubeng_port_t port;
@@ -151,12 +151,14 @@ static uint8_t program_word(uint32_t addr, uint32_t w)
 static void test_geometry(void)
 {
 	stubeng_flash_t big = at32_flash(4032), half = at32_flash(512), small = at32_flash(256);
-	CHECK(big.size == 1024u * 1024u && stubeng_sector_count(&big) == 256, "a 4032 KB part: the first 1 MB, 256 sectors");
+	CHECK(big.size == 4032u * 1024u && stubeng_sector_count(&big) == 1008, "a 4032 KB part: 1008 sectors");
 	CHECK(stubeng_sector_count(&half) == 128 && stubeng_sector_count(&small) == 64, "512 KB and 256 KB parts");
 	CHECK(stubeng_sector_of(&big, 0x080FF000u) == 255, "the last 4 KB of the first 1 MB is sector 255 (%d)",
 	      stubeng_sector_of(&big, 0x080FF000u));
 	CHECK(stubeng_sector_of(&big, APP) == 6 && stubeng_sector_addr(&big, 6) == APP, "0x08006000 starts sector 6");
-	CHECK(stubeng_sector_of(&big, 0x08100000u) == -1, "nothing past 1 MB");
+	CHECK(stubeng_sector_of(&big, 0x08100000u) == 256 && stubeng_sector_of(&big, 0x083EF000u) == 1007,
+	      "past 1 MB: sectors 256 to 1007");
+	CHECK(stubeng_sector_of(&big, 0x083F0000u) == -1, "nothing past 4032 KB");
 	CHECK(big.prog_unit == 4 && big.min_app_base == 0x08001000u, "word programming; sector 0 never opened");
 	CHECK(at32_bank2_start(4032) == 0x08200000u && at32_bank2_start(2048) == 0x08200000u,
 	      "parts over 1 MB: bank 2 from 2 MB, past what the engine maps");
@@ -239,7 +241,7 @@ static void test_engine(void)
 	reset_flash();
 
 	CHECK(request(STUB_OP_HELLO, NULL, 0) == STUB_ST_OK && memcmp(sent + 6, "ATSTUB", 6) == 0, "HELLO names the target");
-	CHECK(((sent[6 + 9] << 8) | sent[6 + 10]) == 1024, "HELLO: 1024 KB of a 4032 KB part");
+	CHECK(((sent[6 + 9] << 8) | sent[6 + 10]) == 4032, "HELLO: all 4032 KB of a 4032 KB part");
 	CHECK(erase(6) == STUB_ST_NOCONFIG, "no write before CONFIG");
 	CHECK(config(1, AT32_FLASH_START) == STUB_ST_BADARG, "sector 0 as the application base is refused");
 	CHECK(config(1, APP + 0x800u) == STUB_ST_BADARG, "a base off a 4 KB sector is refused");

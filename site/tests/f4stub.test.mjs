@@ -613,3 +613,13 @@ for (const st of SHORT) {
 		}
 	});
 }
+
+test("f4stub: the GD32F30x and AT32F43x maps cover the flash a stub reports, past sector 255", () => {
+	const g = gd32Sectors(3072), a = at32Sectors(4032), old = gd32Sectors(1024);
+	assert.equal(g.length, 768);
+	assert.equal(g[767].addr, 0x082FF000);
+	assert.equal(a.length, 1008);
+	assert.equal(a[1007].addr, 0x083EF000);
+	assert.equal(old.length, 256);	// a stub before the two-byte ERASE reports 1 MB at most
+	assert.equal(gd32Sectors(8192).length, 768);	// never past the family's largest
+});

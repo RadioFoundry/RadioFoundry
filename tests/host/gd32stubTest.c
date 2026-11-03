@@ -28,7 +28,7 @@ static int failures, checks;
 #define APP		0x08006000u	// a bootloader of 24 KB: twelve 2 KB pages, six engine sectors
 
 static uint8_t flash[FLASH_SIZE];
-static unsigned erased[256];
+static unsigned erased[GD32_STUB_SECTORS];
 static uint8_t sent[16 * 1024];
 static uint32_t sent_len;
 static stubeng_port_t port;
@@ -139,6 +139,14 @@ static uint8_t erase(unsigned sector)
 	return request(STUB_OP_ERASE, p, 5);
 }
 
+// The two-byte form, for a sector past 255
+static uint8_t erase16(unsigned sector)
+{
+	uint8_t p[6] = { (uint8_t)(sector >> 8), (uint8_t)sector };
+	put32(p + 2, GD32STUB_MAGIC);
+	return request(STUB_OP_ERASE, p, 6);
+}
+
 static uint8_t program_word(uint32_t addr, uint32_t w)
 {
 	uint8_t p[8];
@@ -150,12 +158,14 @@ static uint8_t program_word(uint32_t addr, uint32_t w)
 static void test_geometry(void)
 {
 	stubeng_flash_t big = gd32_flash(3072), half = gd32_flash(512), small = gd32_flash(256);
-	CHECK(big.size == 1024u * 1024u && stubeng_sector_count(&big) == 256, "a 3 MB part: the first 1 MB, 256 sectors");
+	CHECK(big.size == 3072u * 1024u && stubeng_sector_count(&big) == 768, "a 3 MB part: 768 sectors");
 	CHECK(stubeng_sector_count(&half) == 128 && stubeng_sector_count(&small) == 64, "512 KB and 256 KB parts");
 	CHECK(stubeng_sector_of(&big, 0x080FF000u) == 255, "the last 4 KB of the first 1 MB is sector 255 (%d)",
 	      stubeng_sector_of(&big, 0x080FF000u));
 	CHECK(stubeng_sector_of(&big, APP) == 6 && stubeng_sector_addr(&big, 6) == APP, "0x08006000 starts sector 6");
-	CHECK(stubeng_sector_of(&big, 0x08100000u) == -1, "nothing past 1 MB");
+	CHECK(stubeng_sector_of(&big, 0x08100000u) == 256 && stubeng_sector_of(&big, 0x082FF000u) == 767,
+	      "past 1 MB: sectors 256 to 767");
+	CHECK(stubeng_sector_of(&big, 0x08300000u) == -1, "nothing past 3 MB");
 	CHECK(stubeng_sector_addr(&big, 128) == GD32_BANK0_END, "sector 128 starts bank 1");
 }
 
@@ -173,6 +183,32 @@ static void test_record(void)
 	rec[1] = GD32_REC_LAYOUT;
 	rec[3] = 1;
 	CHECK(!gd32_board_parse(rec, sizeof(rec), &b), "the reserved bytes must be 0");
+
+	// Layout 2: an SPI NAND on PB8 (CS), PB15 (CLK), PB14 (IO0), PA15 (IO1), dual, 256 MB
+	uint8_t n2[GD32_REC_LEN_NAND] = { 7, GD32_REC_LAYOUT_NAND, 0, 0, 0x08, 0x00, 0x60, 0x00,
+					  0x18, 0x1F, 0x1E, 0x0F, GD32_NAND_DUAL, 0, 0x01, 0x00 };
+	CHECK(gd32_board_parse(n2, sizeof(n2), &b) && b.nand && b.app_base == APP && b.nand_pin[0] == 0x18 &&
+	      b.nand_pin[3] == 0x0F && b.nand_flags == GD32_NAND_DUAL && b.nand_mb == 256, "a NAND record decodes");
+	uint8_t r1[GD32_REC_LEN] = { 7, GD32_REC_LAYOUT, 0, 0, 0x08, 0x00, 0x60, 0x00 };
+	CHECK(gd32_board_parse(r1, sizeof(r1), &b) && !b.nand, "layout 1 has no NAND");
+	CHECK(!gd32_board_parse(n2, GD32_REC_LEN, &b), "layout 2 cut to 8 bytes is refused");
+	n2[1] = GD32_REC_LAYOUT;
+	CHECK(!gd32_board_parse(n2, sizeof(n2), &b), "16 bytes of layout 1 are refused");
+	n2[1] = GD32_REC_LAYOUT_NAND;
+	n2[9] = 0x18;
+	CHECK(!gd32_board_parse(n2, sizeof(n2), &b), "two roles on one pin are refused");
+	n2[9] = 0x5F;
+	CHECK(!gd32_board_parse(n2, sizeof(n2), &b), "a port past E is refused");
+	n2[9] = 0x1F;
+	n2[12] = 0x02;
+	CHECK(!gd32_board_parse(n2, sizeof(n2), &b), "an unknown flag is refused");
+	n2[12] = GD32_NAND_DUAL;
+	n2[14] = 0;
+	n2[15] = 0;
+	CHECK(!gd32_board_parse(n2, sizeof(n2), &b), "a NAND of 0 MB is refused");
+	n2[14] = 0x08;
+	n2[15] = 0x01;
+	CHECK(!gd32_board_parse(n2, sizeof(n2), &b), "one over 2048 MB is refused");
 }
 
 static void make_image(uint8_t *img, uint32_t len, uint32_t magic, uint32_t version, uint32_t flags)
@@ -230,7 +266,7 @@ static void test_engine(void)
 	reset_flash();
 
 	CHECK(request(STUB_OP_HELLO, NULL, 0) == STUB_ST_OK && memcmp(sent + 6, "GDSTUB", 6) == 0, "HELLO names the target");
-	CHECK(((sent[6 + 9] << 8) | sent[6 + 10]) == 1024, "HELLO: 1024 KB of a 3 MB part");
+	CHECK(((sent[6 + 9] << 8) | sent[6 + 10]) == 3072, "HELLO: all 3072 KB of a 3 MB part");
 	CHECK(erase(6) == STUB_ST_NOCONFIG, "no write before CONFIG");
 	CHECK(config(1, GD32_FLASH_START) == STUB_ST_BADARG, "sector 0 as the application base is refused");
 	CHECK(config(1, APP + 0x800u) == STUB_ST_BADARG, "a base off a 4 KB sector is refused");
@@ -242,6 +278,13 @@ static void test_engine(void)
 	CHECK(erase(6) == STUB_ST_OK && erased[6] == 1, "the commit sector first");
 	CHECK(erase(7) == STUB_ST_OK && erase(255) == STUB_ST_OK, "then any application sector, up to 0x080FF000");
 	CHECK(erase(0) == STUB_ST_REFUSED && erased[0] == 0, "sector 0 (the vector table) is never erased");
+	CHECK(erase16(600) == STUB_ST_OK && erased[600] == 1, "a sector past 255 in the two-byte form (0x08258000)");
+	CHECK(erase16(7) == STUB_ST_OK && erased[7] == 2, "the two-byte form below 256 too");
+	CHECK(erase16(768) == STUB_ST_BADARG && erase16(0xFFFF) == STUB_ST_BADARG, "nothing past the map");
+	CHECK(erase16(5) == STUB_ST_REFUSED && erased[5] == 0, "nor the bootloader in the two-byte form");
+	uint8_t bad[7] = { 0 };
+	CHECK(request(STUB_OP_ERASE, bad, 7) == STUB_ST_BADARG && request(STUB_OP_ERASE, bad, 4) == STUB_ST_BADARG,
+	      "other lengths are refused");
 	CHECK(program_word(0x080FF000u, 0x12345678u) == STUB_ST_OK, "a program in the last sector");
 	CHECK(program_word(APP, 0x20018000u) == STUB_ST_OK, "the commit word last");
 	CHECK(program_word(0x080FF004u, 0) == STUB_ST_REFUSED, "and no program outside the commit sector after it");

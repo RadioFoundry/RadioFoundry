@@ -12,7 +12,9 @@ import { AT, BLOCK, CTCSS, MAP, currentBlock } from "../codeplug/stock_anytone.j
 import { HELLO, HELLO_REPLY, FINISH, ACK, NAK, DATA, CHUNK, FRAME_LEN, PROGRAM, END, READ, readReply } from "./anytone.js";
 
 export class FakeAnytone {
-	constructor({ model = "MODEL1", nakEvery = 0, silentAfter = null, delay = 0, memory = [], pairs = false } = {}) {
+	constructor({ model = "MODEL1", nakEvery = 0, silentAfter = null, delay = 0, memory = [], pairs = false, updateReply = Uint8Array.of(ACK), dropAtFinish = false } = {}) {
+		this.updateReply = updateReply;	// the bootloader's answer to UPDATE
+		this.dropAtFinish = dropAtFinish;	// the port goes away at FINISH, before the ACK (the radio restarts)
 		Object.assign(this, { model, nakEvery, silentAfter, delay, memory, pairs });
 		this.program = false;
 		this.ended = false;
@@ -84,7 +86,7 @@ export class FakeAnytone {
 				this.send(readReply(addr, this.peek(at, n)));
 			} else if (this.inbuf.length >= HELLO.length && starts(HELLO)) {
 				this.inbuf = this.inbuf.slice(HELLO.length);
-				this.send(HELLO_REPLY);
+				this.send(this.updateReply);
 			} else if (this.inbuf[0] === 0x02) {
 				this.inbuf = this.inbuf.slice(1);
 				const r = new Uint8Array(16);
@@ -95,7 +97,8 @@ export class FakeAnytone {
 			} else if (this.inbuf[0] === FINISH[0]) {
 				this.inbuf = this.inbuf.slice(1);
 				this.finished = true;
-				this.send(Uint8Array.of(ACK));
+				if (this.dropAtFinish) this.stream.lost = true;
+				else this.send(Uint8Array.of(ACK));
 			} else if (this.inbuf[0] === DATA) {
 				if (this.inbuf.length < FRAME_LEN) return;
 				const f = this.inbuf.slice(0, FRAME_LEN);

@@ -1943,10 +1943,18 @@
    "stub": {
     "tool": "f4stub",
     "id": 6,
-    "tested": false,
+    "tested": true,
     "boot_end": 134242304,
     "hse": null,
-    "spi": null
+    "spi": null,
+    "spi_nand": {
+     "mb": 256,
+     "dual": true,
+     "cs": "PB8",
+     "clk": "PB15",
+     "io0": "PB14",
+     "io1": "PA15"
+    }
    },
    "variants": {
     "GD": [
@@ -4555,7 +4563,8 @@
     "tested": false,
     "boot_end": 134242304,
     "hse": null,
-    "spi": null
+    "spi": null,
+    "spi_nand": null
    },
    "variants": {
     "GD": [
@@ -4898,7 +4907,8 @@
      "mosi": "PB5",
      "cs": "PD7",
      "idle": []
-    }
+    },
+    "spi_nand": null
    },
    "variants": {},
    "anytone_models": {},
@@ -5297,7 +5307,8 @@
      "mosi": "PB5",
      "cs": "PD7",
      "idle": []
-    }
+    },
+    "spi_nand": null
    },
    "variants": {},
    "anytone_models": {},
@@ -5501,7 +5512,8 @@
      "mosi": "PB5",
      "cs": "PD7",
      "idle": []
-    }
+    },
+    "spi_nand": null
    },
    "variants": {},
    "anytone_models": {},

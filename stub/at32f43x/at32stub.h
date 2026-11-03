@@ -16,11 +16,12 @@
 
 #define AT32_FLASH_START	0x08000000u
 // The engine's sectors are 4 KB everywhere, the larger of the two sector sizes the AT32F435/437 parts have (2 KB or
-// 4 KB, by part: the flash driver erases what each 4 KB holds either way, at32stub_flash.c). The ERASE request carries
-// the sector as one byte, so the map stops at 256 sectors (1 MB); everything RadioFoundry and the vendor images place
-// is below that (docs/spec/stub-at32f43x.md 2)
+// 4 KB, by part: the flash driver erases what each 4 KB holds either way, at32stub_flash.c). The map covers the
+// part's flash, up to the family's largest (4032 KB, 1008 sectors); ERASE carries a sector past 255 in two bytes
+// (docs/spec/stub-at32f43x.md 2)
 #define AT32_SECTOR_SIZE	0x1000u
-#define AT32_STUB_FLASH_MAX	(256u * AT32_SECTOR_SIZE)
+#define AT32_STUB_SECTORS	1008u
+#define AT32_STUB_FLASH_MAX	(AT32_STUB_SECTORS * AT32_SECTOR_SIZE)
 // The physical erase unit the flash driver steps in: the smaller sector size, so a 4 KB engine sector is never more
 // than two of them
 #define AT32_ERASE_STEP		0x800u
