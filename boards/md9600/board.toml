@@ -71,6 +71,8 @@ string1 = "AnyRoad Technology"
 product = "Digital Radio in USB mode"
 key_sha256 = "c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae"
 key_prefix = "A2FABB4B"
+# the bootloader's alt 0 string (seen on a radio, hardware-md9600.md 15): the flashers accept no other DFU layout
+layout = "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg"
 
 # The board revision, which RadioFoundry can't detect (docs/spec/hardware-md9600.md 16), follows the major version of
 # the radio's original firmware. The installers read that version over USB before the install and store the

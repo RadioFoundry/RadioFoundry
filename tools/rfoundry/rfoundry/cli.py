@@ -624,6 +624,10 @@ def check_bootloader(usb, dev, board, log=say):
     if board.original_version and origversion.runs_original(board.original_version, fp["interfaces"]):
         raise UsageError("the radio is running its original firmware, not its bootloader (the same USB IDs): put it "
                          "in its bootloader (%s) and run the same command" % bootloader_steps(board))
+    if dfumod.normal_mode(fp["interfaces"], board):
+        raise UsageError("the radio is switched on normally, not in its bootloader (its layout reads %r). Writing "
+                         "through it could erase the bootloader: refusing. Switch it off, put it in its bootloader "
+                         "(%s) and try again" % (fp["interfaces"][0], bootloader_steps(board)))
     return fp
 
 
@@ -1035,7 +1039,9 @@ def cmd_detect(args):
             % (board.dfu_ids + (fp["string1"], fp["manufacturer"], fp["product"], fp["serial"])))
         for i in fp["interfaces"]:
             say("         layout %r" % i)
-        if "AnyRoad" in (fp["string1"] or ""):
+        if dfumod.normal_mode(fp["interfaces"], None if args.board is None else board):
+            say("         the radio switched on normally, not its bootloader: rfoundry won't flash it")
+        elif "AnyRoad" in (fp["string1"] or ""):
             say("         a TYT/Baofeng AnyRoad bootloader (DM-1701, MD-UV380, MD-9600 and others share it; the model "
                 "isn't reported, rfoundry goes by the image, the debug link probe or --board)")
         else:

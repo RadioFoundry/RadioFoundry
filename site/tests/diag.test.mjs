@@ -72,6 +72,13 @@ test("automatic reports lose callsigns, DMR IDs and email addresses", () => {
 	assert.equal(diag.scrub("X 2 0x6a000 1024 at 0x00123456 v1.2.3 DM-1701 HR_C6000"), "X 2 0x6a000 1024 at 0x00123456 v1.2.3 DM-1701 HR_C6000");
 });
 
+test("a file's size in a trail line stays a number: the line's JSON stays valid and the size readable", () => {
+	const line = 'file picked {"name":"DM-1701.bin","size":1048832,"id":3101276}';
+	assert.equal(diag.scrub(line), 'file picked {"name":"DM-1701.bin","size":1048832,"id":[id]}');
+	assert.equal(diag.scrub('restore file {"len":524288,"received":2097152}'), 'restore file {"len":524288,"received":2097152}');
+	assert.equal(diag.scrub("size 3101276"), "size [id]", "only a JSON size field is kept");
+});
+
 test("a refused codeplug write leaves its frames in the log", async () => {
 	const radio = new FakeCpsRadio({ board: "DM-1701", end: 0x30000 });	// no room for the flash codeplug
 	const tr = new CpsSerial(radio.stream());

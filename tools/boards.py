@@ -192,8 +192,11 @@ BOARD_SCHEMA = {
         # key-<name> ids), for the web flasher's picture; steps stays the instructions
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str),
                             "hold": _opt(STR_LIST)}),
+        # layout: the bootloader's alt 0 interface string, only once read from a radio in its bootloader. The
+        # flashers then accept no other device; without it they refuse a layout of only the bootloader's sectors
+        # (rfoundry dfu.py normal_mode)
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
-                     "key_sha256": _req(str), "key_prefix": _req(str)}),
+                     "key_sha256": _req(str), "key_prefix": _req(str), "layout": _opt(str)}),
         # a hardware option the radio can't detect, settled by the version its original firmware reports before the
         # install (rfoundry/origversion.py; docs/dev/board-registry.md "Original firmware version"): how the version is
         # read, the option's name (hal_hwopt_t) and its choice for each major version
@@ -1291,6 +1294,7 @@ def rfoundry_view(boards):
             "key_sha256": dfu["key_sha256"] if dfu else None, "key_prefix": dfu["key_prefix"] if dfu else None,
             "dfu_ids": [dfu["vid"], dfu["pid"]] if dfu else None,
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
+            "dfu_layout": dfu.get("layout") if dfu else None,
             # a hardware option the original firmware's version settles (rfoundry/origversion.py), or None
             "original_version": fl.get("original_version"),
             # the backup before the install (origbackup.js), or None

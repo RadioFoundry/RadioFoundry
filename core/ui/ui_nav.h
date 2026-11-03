@@ -35,6 +35,7 @@ typedef enum {
 	SCR_GPS,			// Tools > Position's pages (CONFIG_GPS_SKY): status, sky, signal, grid
 	SCR_CONTACT_EDIT,		// the contact editor (CONFIG_CONTACT_EDIT): a new contact, from ui_target
 	SCR_LANGUAGE,			// Settings > Display > Language: every language, those not built dimmed
+	SCR_CP_FOREIGN,			// another firmware's codeplug: what the first edit does with it (ui_svc_codeplug_answer)
 	SCR_COUNT
 } ui_scr_t;
 
@@ -93,6 +94,8 @@ void ui_push(uint8_t scr, uint16_t arg);
 void ui_pop(void);
 void ui_go_home(void);
 void ui_toast(const char *text);
+// Save temporary channel changes and tell the user why a save cannot start
+bool ui_try_save_channel(void);
 void ui_dirty(void);
 // The focused row changed: tell the radio what PTT would talk to now
 void ui_focus_changed(void);

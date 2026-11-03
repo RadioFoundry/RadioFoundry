@@ -628,7 +628,10 @@ static void test_direct_write(void)
 	codeplug_block(c, 50);
 	CHECK(write_block(0x8000, c, 61) == DL_ST_OK);
 	serial = codeplug_serial();
+	codeplug_accept(true);	// "Use anyway" doesn't outlive the codeplug a commit replaces
 	CHECK(op(CPSF_OP_COMMIT) == DL_ST_OK && state() == CPSF_ST_DONE && codeplug_serial() != serial);
+	CHECK(codeplug_acceptance() == CODEPLUG_ACCEPT_DROPPED);
+	codeplug_accept(false);
 	CHECK(read_block(0x8000, got, &fmt, &reqs) && memcmp(got, c, BLOCK) == 0);
 	CHECK(read_block(0x3000, got, &fmt, &reqs) && memcmp(got, b, BLOCK) == 0);
 	CHECK(op(CPSF_OP_COMMIT) == DL_ST_REFUSED && refused(CPSF_R_STATE));
@@ -718,6 +721,7 @@ static void test_staged_write(void)
 	}
 	CHECK(state() == CPSF_ST_OPEN && g16(&rep[3]) == 5);
 	uint32_t serial = codeplug_serial();
+	codeplug_accept(true);
 	CHECK(op(CPSF_OP_COMMIT) == DL_ST_OK && state() == CPSF_ST_COMMITTING);
 	CHECK(g32(&sim_flash_data[STAGING]) == STORAGE_STAGE_MAGIC_CPSF && g32(&sim_flash_data[STAGING + 8]) == 4);
 	CHECK(begin(CPSF_MODE_DIRECT) == DL_ST_BUSY && op(CPSF_OP_ABORT) == DL_ST_BUSY);
@@ -726,6 +730,8 @@ static void test_staged_write(void)
 		CHECK(memcmp(&sim_flash_data[at[i]], b[i], BLOCK) == 0);
 	}
 	CHECK(g32(&sim_flash_data[STAGING]) == 0xFFFFFFFFu && codeplug_serial() != serial && !cps_fast_staging_busy());
+	CHECK(codeplug_acceptance() == CODEPLUG_ACCEPT_DROPPED);	// a staged commit drops it too
+	codeplug_accept(false);
 
 	// An abandoned staged session changes nothing
 	CHECK(begin(CPSF_MODE_STAGED) == DL_ST_OK);

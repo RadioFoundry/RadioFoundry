@@ -97,6 +97,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "channel_name", "ok 5 ok ok 4 4 4 wait:1200 6 6" },
 	{ "channel_contact", "ok 5 ok down down down down down down down down down ok" },
 	{ "channel_discard", "ok 5 ok down down down down down ok enc+ ok back" },
+	{ "codeplug_foreign", "foreign quick 2 long:ok" },	// a save over another firmware's codeplug asks first
 	{ "channel_new", "ok 5 up up up ok" },
 	{ "channel_tone_entry", "ok 5 up up ok down down down down down down down down ok 8 8 5" },
 	{ "channel_zones", "ok 5 ok up up up up ok" },

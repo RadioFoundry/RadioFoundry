@@ -35,8 +35,11 @@
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
+//   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
+//   contacts:full       every contact number holds a talkgroup ("Long 31" ...), but every third: a list past 128
+//   contacts:<n>        the same up to contact n (a list just past 128 at 220)
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
 //   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
@@ -93,6 +96,7 @@ void gfx_fit_trace(const char *src, const char *out)
 // them read as one word. Marks of 6 px or less (scroll marks, ellipsis dots) and lines (one pixel thick) are left out.
 
 static bool worst;	// sim_worst: worst-case codeplug content
+static uint16_t full_contacts;	// contacts:full / :<n>: every contact number up to it used, but every third
 
 #define LIVE_MAX	160
 static struct { int x0, y0, x1, y1; char s[40]; } live[LIVE_MAX];
@@ -544,6 +548,34 @@ static const sim_contact_t worst_contacts[] = {
 
 codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
 
+// Another firmware's codeplug ("foreign"): a channel write is held and the UI asked, as ui_svc_storage.c does
+static bool sim_foreign, sim_held;
+bool codeplug_foreign(void) { return sim_foreign; }
+
+static bool sim_hold(void)
+{
+	if (!sim_foreign)
+		return false;
+	ui_event_t ev;
+	memset(&ev, 0, sizeof ev);
+	ev.kind = UI_EV_CODEPLUG_FOREIGN;
+	sim_held = ui_notify(&ev);
+	return true;
+}
+
+// Start new makes the write (counted), Use anyway drops it; both make the codeplug the radio's own
+bool ui_svc_codeplug_answer(uint8_t answer)
+{
+	if (!sim_held)
+		return false;
+	sim_held = false;
+	if (answer == UI_CP_NEW)
+		sim_rec.codeplug_writes++;
+	if (answer != UI_CP_CANCEL)
+		sim_foreign = false;
+	return true;
+}
+
 // Channels the channel editor saved (ui_svc_write_channel): they shadow the built-in ones and fill numbers past 40
 #define SIM_EDITS	8
 static struct { uint16_t number; channel_t ch; } sim_edits[SIM_EDITS];
@@ -559,6 +591,8 @@ static const channel_t *sim_edit(uint16_t number)
 
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 {
+	if (sim_hold())
+		return sim_held;
 	uint8_t i = 0;
 	while (i < n_edits && sim_edits[i].number != number)
 		i++;
@@ -804,6 +838,17 @@ bool codeplug_contact(uint16_t index, contact_t *out)
 			return true;
 		}
 	}
+	if (full_contacts != 0) {
+		// "TG 100001" ... a talkgroup at each number, none at 3, 6, 9 ...; past the built-in ones
+		if (index <= N_CONTACTS || index > full_contacts || index % 3u == 0)
+			goto builtin;
+		memset(out, 0, sizeof *out);
+		out->id = 100000u + index;
+		snprintf(out->name, sizeof out->name, "Long %u", (unsigned)index);
+		out->type = CONTACT_GROUP;
+		return true;
+	}
+builtin:
 	if (worst) {
 		if (index < 1 || index > N_WORST)
 			return false;
@@ -1482,6 +1527,8 @@ bool ui_svc_vox(bool on)
 }
 bool ui_svc_save_channel(void)
 {
+	if (sim_hold())
+		return sim_held;
 	sim_rec.codeplug_writes++;
 	ch_saved = view.ch;
 	view.temp = 0;
@@ -1871,6 +1918,7 @@ static void advance(uint32_t ms)
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
 	emergency_on = false;
+	sim_foreign = sim_held = false;
 	disp.width = g->w;
 	disp.height = g->h;
 	disp.bpp = g->bpp;
@@ -1879,6 +1927,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	font_aa_on = g->aa;
 	font_big_on = g->big;
 	worst = false;
+	full_contacts = 0;
 	layout_reset();
 	board.keymap = maps[map].m;
 	board.keymap_len = maps[map].n;
@@ -2585,6 +2634,10 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
+		sim_foreign = true;
+		return true;
+	}
 	if (strcmp(t, "nobattery") == 0) {
 		board.caps |= CAP_NO_BATTERY;
 		advance(1100);
@@ -2640,6 +2693,17 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "trim") == 0) {		// this radio has a reference trim (hal_radio_t.ref_trim)
 		ref_trim = true;
+		return true;
+	}
+	if (strcmp(t, "contacts") == 0 && arg != NULL) {	// contacts:full, contacts:<n>
+		unsigned long n = strcmp(arg, "full") == 0 ? CODEPLUG_CONTACTS_MAX : strtoul(arg, NULL, 10);
+		if (n == 0 || n > CODEPLUG_CONTACTS_MAX) {
+			snprintf(err, len, "contacts: full or 1..%u", (unsigned)CODEPLUG_CONTACTS_MAX);
+			return false;
+		}
+		full_contacts = (uint16_t)n;
+		changed();
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "worst") == 0) {		// worst-case codeplug content from here on (sim_worst)

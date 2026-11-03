@@ -28,7 +28,7 @@ enum {
 	DL_VIEW_LINK,		// input and debug link state
 	DL_VIEW_FEATURES,	// scan, FM extras, battery, beeps, the radio settings (debuglink_view_radio.c)
 	DL_VIEW_DMR_DATA,	// the DMR data service: state, settings, counters (debuglink_dmr_data.c)
-	DL_VIEW_STORAGE,	// settings store, flash journal, codeplug and CPS session counters
+	DL_VIEW_STORAGE,	// settings store, flash journal, codeplug
 	DL_VIEW_DMR_EXT,	// DMR emergency, ETSI short data, the hotspot CW ID (debuglink_view_ext.c)
 	DL_VIEW_DMR_DATA_STATS,	// the DMR data service counters (debuglink_dmr_data.c; split from dmr_data for the reply size)
 	DL_VIEW_ROAM,		// DMR repeater roaming: state, sites, counters, settings (debuglink_view_roam.c)
@@ -46,10 +46,11 @@ enum {
 	DL_VIEW_AIR,		// the data TX queue, its guard and zone sharing (debuglink_view_air.c)
 	DL_VIEW_NET_SVC,	// mDNS and TFTP (were in DL_VIEW_NET until view version 4)
 	DL_VIEW_NET_LINK,	// the MTUs and the PPP link (PPP was in DL_VIEW_HOTSPOT until view version 4)
+	DL_VIEW_CPS,		// the CPS shims' counters (were in DL_VIEW_STORAGE until view version 5)
 	DL_VIEW_BOARD,		// the board's own keys (board.view_line): pins, ADC, clock, flash, calibration
 	DL_VIEW_COUNT
 };
-#define DL_VIEW_VERSION		4	// bumped when a key changes meaning or goes away (new keys don't bump it)
+#define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)
 
 // Render one section of v into t. Every section starts with "section=<name>"
 void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t);

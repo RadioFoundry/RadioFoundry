@@ -75,6 +75,7 @@ WEAK bool ui_svc_emergency(bool on) { (void)on; return false; }
 WEAK void ui_svc_emergency_dismiss(void) { }
 WEAK bool ui_svc_emergency_active(void) { return false; }
 WEAK bool ui_svc_factory_reset(void) { return false; }
+WEAK bool ui_svc_codeplug_answer(uint8_t answer) { (void)answer; return false; }
 
 WEAK bool ui_svc_crash_get(ui_crash_t *out) { (void)out; return false; }
 WEAK void ui_svc_crash_seen(void) { }

@@ -1255,6 +1255,33 @@ device, VID 0x0483 PID 0xDF11 (ST's DFU IDs, but the TYT/AnyRoad bootloader, not
 index 1 reads "AnyRoad Technology". The screen stays dark. The interface string describes the memory layout in the
 usual DfuSe "@name/0xADDR/NN*SSKg,..." form.
 
+**Normal mode is a DFU device too.** The original firmware, switched on normally (the mode the vendor's programming
+software uses), also enumerates as 0483:DF11. On an MD-9600, a radio with the same bootloader, it shows the
+bootloader's manufacturer, product and serial strings as well. Only the layout of alt 0 tells the two apart:
+
+| Mode | Alt 0 | Alt 1 |
+|---|---|---|
+| Switched on normally | `@Internal Flash   /0x08000000/03*016Kg` | `@SPI Flash Memory /0x00000000/16*064Kg` |
+| Bootloader | `@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg` (the application area only) | the same |
+
+Measured on an MD-9600, 2026-11-02. In normal mode the requests of 15.2 don't do what they do in the bootloader. 0x91
+0x31 enters a programming mode whose erase and write don't protect the bootloader sectors, so running 15.2 against
+it can erase the bootloader. Both flashers (rfoundry, the web flasher, and `tools/stm32_dfu.py`) refuse such a device
+before any DFU request. A board whose bootloader layout was read on a radio declares it (`[flash.dfu] layout`, see
+[board-registry.md](../dev/board-registry.md)), and then only that alt 0 string is accepted. Without a declaration,
+the flashers refuse a layout that shows only the bootloader's sectors: from 0x08000000, at most 48 KB. A bootloader
+that listed the whole flash rather than the application area would still be accepted.
+
+An MD-380 shows the same alt 0 strings as the MD-9600 in both modes (measured; [hardware-md380.md](hardware-md380.md) 14.3).
+The DM-1701's and the MD-UV380's original firmware images hold the same normal-mode alt 0 string,
+`@Internal Flash   /0x08000000/03*016Kg` (every DM-1701 build examined).
+
+The DM-1701's bootloader, read on a radio (2026-11-02, standard descriptors only): manufacturer and string 1 "AnyRoad
+Technology", product "Digital Radio in USB mode", serial "00000000010C", bcdDevice 0x0200, alt 0
+`@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg`, alt 1 `@SPI Flash Memory /0x00000000/16*064Kg`: the
+bootloader row of the table. `boards/dm1701/board.toml` declares alt 0, so the flashers accept only that device. The
+MD-UV380's bootloader strings have not been read on a radio (?).
+
 ### 15.2 Flashing protocol (DfuSe-style, as the loader drives it)
 
 | Step | Request (bmRequestType 0x21 unless noted) |

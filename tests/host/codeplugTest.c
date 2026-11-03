@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// core/codeplug against synthetic flash images: an open-firmware codeplug, an erased flash, no flash at all
+// core/codeplug against synthetic flash images: an open-firmware codeplug, an erased flash, no flash at all, another
+// firmware's codeplug in the open-firmware area (foreign: shown as none)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "codeplug/codeplug.h"
 #include "codeplug/dmr_iddb.h"
 #include "board.h"
@@ -160,6 +162,10 @@ static void test_openfw(void)
 	CHECK(codeplug_init() == CODEPLUG_OPENFW);
 	CHECK(codeplug_source() == CODEPLUG_OPENFW);
 	CHECK(codeplug_channel_count() == 200);
+	// Evidence: channels 1, 2, 200 and zone A good; zone slot 5 (in use, not erased, no name) bad
+	uint16_t good, bad;
+	codeplug_evidence(&good, &bad);
+	CHECK(!codeplug_foreign() && good == 4 && bad == 1);
 
 	channel_t ch;
 	CHECK(codeplug_channel(1, &ch));
@@ -220,6 +226,9 @@ static void test_erased(void)
 {
 	memset(image, 0xFF, IMAGE_SIZE);	// bitmaps say "all in use", every record fails the BCD check
 	CHECK(codeplug_init() == CODEPLUG_BUILTIN);
+	uint16_t good, bad;
+	codeplug_evidence(&good, &bad);
+	CHECK(!codeplug_foreign() && good == 0 && bad == 0);	// erased records don't count: blank
 	CHECK(codeplug_channel_count() == 6);
 	channel_t ch;
 	CHECK(codeplug_channel(2, &ch));
@@ -229,20 +238,6 @@ static void test_erased(void)
 	zone_t z;
 	CHECK(codeplug_zone_count() == 1);
 	CHECK(codeplug_zone(0, &z) && z.count == 6 && z.channels[5] == 6);
-}
-
-static void test_no_flash(void)
-{
-	band_t saved[2] = { bands[0], bands[1] };
-	flash.size = 0;
-	bands[0] = bands[1] = (band_t){ 400000000, 470000000, false };	// UHF receive only
-	CHECK(codeplug_init() == CODEPLUG_BUILTIN);
-	CHECK(codeplug_channel_count() == 3);
-	channel_t ch;
-	CHECK(codeplug_channel(1, &ch) && ch.rx_hz == 433500000 && ch.bw == RADIO_BW_12K5 && ch.rx_only);
-	bands[0] = saved[0];
-	bands[1] = saved[1];
-	flash.size = IMAGE_SIZE;
 }
 
 // 8 BCD digits, bytes in reading order (DMR IDs and contact numbers)
@@ -263,6 +258,139 @@ static void put_contact(uint16_t n, const char *name, uint32_t id, uint8_t type,
 	c[0x15] = 0;
 	c[0x16] = 0;
 	c[0x17] = ts_byte;
+}
+
+// The pseudo-random bytes site/tests/stock.test.mjs classifies, from the same generator in JavaScript's arithmetic (a
+// double product, then ToUint32): the web editor counts 0 good and 624 bad open-firmware records in them, the radio
+// the same less the general settings and the contacts it doesn't count. The product is rounded on its own (volatile):
+// a compiler that fuses the multiply and add (clang on arm64 does) gives other bytes
+static void fill_noise(void)
+{
+	uint32_t x = 12345;
+	for (uint32_t a = 0; a < IMAGE_SIZE; a++) {
+		volatile double product = (double)x * 1103515245.0;
+		x = (uint32_t)fmod(product + 12345.0, 4294967296.0);
+		image[a] = (uint8_t)(x >> 24);
+	}
+}
+
+// A UTF-16LE name, as the stock layout stores them
+static void put_utf16(uint8_t *p, const char *s)
+{
+	memset(p, 0, 16);
+	for (unsigned i = 0; s[i] != '\0' && i < 8; i++) {
+		p[2 * i] = (uint8_t)s[i];
+	}
+}
+
+static void check_empty(void)
+{
+	CHECK(codeplug_source() == CODEPLUG_BUILTIN && codeplug_channel_count() == 6);
+	channel_t ch;
+	CHECK(codeplug_channel(1, &ch) && strcmp(ch.name, "Simplex 145.500") == 0);
+	zone_t z;
+	CHECK(codeplug_zone_count() == 1 && !codeplug_zones_stored() && codeplug_zone(0, &z) && z.count == 6);
+	char name[CODEPLUG_NAME_LEN + 1];
+	codeplug_radio_name(name);
+	CHECK(name[0] == '\0');
+#if CONFIG_DMR
+	contact_t ct;
+	listen_list_t ll;
+	CHECK(codeplug_dmr_id() == 0 && !codeplug_contact(1, &ct) && !codeplug_listen_list(1, &ll));
+	CHECK(!codeplug_contact_find(201, true, &ct));
+#endif
+}
+
+// Another firmware's codeplug where the open-firmware one goes (codeplug-stock-tyt.md 2): its in-use bits and BCD
+// frequencies pass by chance, its names and the rest don't. The radio shows no codeplug and keeps the bytes
+static void test_foreign(void)
+{
+	uint16_t good, bad;
+
+	memset(image, 0xFF, IMAGE_SIZE);
+	fill_noise();
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign());
+	codeplug_evidence(&good, &bad);
+	CHECK(good == 0 && bad == 620);	// the web editor: 624, with the general settings and the contacts
+	check_empty();
+
+	// Stock-style: records with UTF-16 names and valid frequencies, and the one seen on a radio (channel 183, a name
+	// of random bytes, 0.08020 / 2.20022 MHz)
+	memset(image, 0xFF, IMAGE_SIZE);
+	erase_bitmaps();
+	for (uint16_t n = 1; n <= 16; n++) {
+		uint8_t *c = channel(n);
+		memset(c, 0, 56);
+		put_utf16(c, "Channel");
+		put_freq(c + 0x10, 438500000);
+		put_freq(c + 0x14, 438500000);
+		mark(n);
+	}
+	uint8_t *c = channel(183);
+	static const uint8_t junk[16] = { 'r', 0x85, 0xC2, '@', 0xF9, ' ', 0x85, 0xF7, 0xC0, ' ', '@', '*', 0x85, '1', 0, 1 };
+	memcpy(c, junk, 16);
+	put_freq(c + 0x10, 80200);
+	put_freq(c + 0x14, 2200220);
+	mark(183);
+	put_utf16(&image[EE + 0xE0], "N0CALL");		// UTF-16 in the callsign field: the radio doesn't count it
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign());
+	codeplug_evidence(&good, &bad);
+	CHECK(good == 0 && bad == 17);
+	check_empty();
+
+	// Mixed: a RadioFoundry codeplug over stock remnants is ours while at most one record in five is bad
+	build_openfw();		// 4 good, 1 bad
+	for (uint16_t n = 4; n < 12; n++) {
+		c = channel(n);
+		memset(c, 0, 56);
+		put_name(c, "Simplex");
+		put_freq(c + 0x10, 146520000);
+		put_freq(c + 0x14, 146520000);
+		mark(n);
+	}
+	for (uint16_t n = 300; n < 302; n++) {
+		c = channel(n);
+		memset(c, 0, 56);
+		put_utf16(c, "Old");
+		put_freq(c + 0x10, 146520000);
+		put_freq(c + 0x14, 146520000);
+		mark(n);
+	}
+	// The other firmware's contacts and callsign aren't counted: left beside a codeplug edited on the radio, they
+	// mustn't hide it
+	put_utf16(&image[EE + 0xE0], "N0CALL");
+	for (uint16_t n = 1; n <= 8; n++) {
+		put_utf16(&image[FL + 0x87620 + 24u * (n - 1u)], "TG");
+	}
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && !codeplug_foreign());
+	codeplug_evidence(&good, &bad);
+	CHECK(good == 12 && bad == 3);
+	CHECK(codeplug_channel_count() == 301);	// the remnants have valid frequencies: shown, as the editor shows them
+	// One bad record more than the rule allows: foreign
+	c = channel(302);
+	memset(c, 0, 56);
+	put_utf16(c, "Old");
+	put_freq(c + 0x10, 146520000);
+	put_freq(c + 0x14, 146520000);
+	mark(302);
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign());
+	codeplug_evidence(&good, &bad);
+	CHECK(good == 12 && bad == 4);
+	check_empty();
+}
+
+static void test_no_flash(void)
+{
+	band_t saved[2] = { bands[0], bands[1] };
+	flash.size = 0;
+	bands[0] = bands[1] = (band_t){ 400000000, 470000000, false };	// UHF receive only
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN);
+	CHECK(codeplug_channel_count() == 3);
+	channel_t ch;
+	CHECK(codeplug_channel(1, &ch) && ch.rx_hz == 433500000 && ch.bw == RADIO_BW_12K5 && ch.rx_only);
+	bands[0] = saved[0];
+	bands[1] = saved[1];
+	flash.size = IMAGE_SIZE;
 }
 
 static void test_dmr_records(void)
@@ -681,6 +809,7 @@ int main(void)
 	test_iddb();
 	test_iddb_compact();
 	test_erased();
+	test_foreign();
 	test_no_flash();
 	free(image);
 	printf(failures ? "# codeplugTest FAILED (%d)\n" : "# codeplugTest PASSED\n", failures);
