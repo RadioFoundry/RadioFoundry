@@ -21,6 +21,9 @@
 #if CONFIG_MD9600_DMR_TX
 #include "hrc/dmr_glue.h"
 #endif
+#if CONFIG_DTMF
+#include "hal_dtmf.h"
+#endif
 
 // The revision driven when none is stored and the probe has no verdict: one constant, set by the build
 // (board.mk MD9600_REV_DEFAULT). Which revision that should be is the owner's decision
@@ -443,6 +446,30 @@ static bool tx_tail(bool on)
 }
 #endif
 
+#if CONFIG_MD9600_TX && CONFIG_FM_TX_TONES
+// The 1750 Hz burst, the roger beep and Morse: one tone from the HR_C6000's generator, the microphone off
+static bool tx_tone(uint16_t hz)
+{
+	return !dmr_mode && rf.state == MD9600_RF_TX && md9600_c6000_tx_pair(hz, hz);
+}
+
+static bool tx_tone_key(bool down)
+{
+	return !dmr_mode && rf.state == MD9600_RF_TX && md9600_c6000_tx_key(down);
+}
+#endif
+
+#if CONFIG_MD9600_TX && CONFIG_DTMF
+static bool tx_dtmf(char digit)
+{
+	uint16_t low = 0, high = 0;
+	if (dmr_mode || rf.state != MD9600_RF_TX || (digit != 0 && !dtmf_pair(digit, &low, &high))) {
+		return false;
+	}
+	return md9600_c6000_tx_pair(low, high);
+}
+#endif
+
 static void tx_off(void)
 {
 #if CONFIG_SUBTONE && CONFIG_MD9600_TX
@@ -476,6 +503,11 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = md9600_rf_rssi_dbm(rf.rev, band, rssi);
 	st->noise = md9600_rf_noise(noise_floor(noise, hal_millis()), sql_l1, sql_l9);
 	st->carrier = rf.state == MD9600_RF_RX && st->rssi_dbm >= CARRIER_DBM;
+#if MD9600_TX_SIG
+	if (rf.state == MD9600_RF_TX) {
+		md9600_c6000_tx_service(hal_millis());
+	}
+#endif
 #if CONFIG_SUBTONE
 	st->tone_ok = md9600_subtone_rx_match();	// true for a channel without an RX tone
 #else
@@ -518,6 +550,13 @@ const hal_radio_t md9600_radio = {
 	.tx_off = tx_off,
 #if CONFIG_SUBTONE && CONFIG_MD9600_TX
 	.tx_tail = tx_tail,
+#endif
+#if CONFIG_MD9600_TX && CONFIG_FM_TX_TONES
+	.tx_tone = tx_tone,
+	.tx_tone_key = tx_tone_key,
+#endif
+#if CONFIG_MD9600_TX && CONFIG_DTMF
+	.tx_dtmf = tx_dtmf,
 #endif
 	.status = status,
 	.audio = audio,

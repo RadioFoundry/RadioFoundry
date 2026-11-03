@@ -24,16 +24,11 @@ BOARD_DIRS += $(if $(filter y,$(CONFIG_MD9600_V1V3)),drivers/rf/sky72310)
 BOARD_DIRS += $(if $(filter y,$(CONFIG_MD9600_V4)),drivers/rf/pll1590)
 BOARD_DIRS += $(if $(filter y,$(CONFIG_MD9600_V5)),drivers/rf/lmx2571)
 BOARD_DIRS += $(if $(filter y,$(CONFIG_MD9600_V1V3) $(CONFIG_MD9600_V4)),drivers/rf/ak2365a)
-# DMR receive on the shared HR_C6000 glue. The DMR transmit glue (CONFIG_MD9600_DMR_TX) stays off, and the hotspot,
-# which needs the transmitter, too
-CONFIG_HOTSPOT ?= n
-# The USB network adapter carries the DMR IP gateway's services, which wait for DMR transmit
-CONFIG_USB_NETWORK ?= n
-CONFIG_NET_PPP ?= n
-# FM transmit is refused for now, so the TX tones and DTMF have no path. APRS receives from the audio on PC3
+# The hotspot, SFR, the DMR IP gateway and its services, the crash report and the USB network adapter are built as on
+# the other HR_C6000 radios; without CONFIG_MD9600_DMR_TX the transmitter refuses their transmissions
+# The TX tones (the 1750 Hz burst, the roger beep) and DTMF come from the HR_C6000's tone generator during FM TX
+# (c6000_md9600.c); without CONFIG_MD9600_TX they have no transmitter. APRS receives from the audio on PC3
 # (afsk_md9600.c)
-CONFIG_FM_TX_TONES ?= n
-CONFIG_DTMF ?= n
 # CONFIG_SUBTONE stays on: the decode is written (subtone_md9600.c, PA2), the encode (the tone PWM on PC7) is not, and
 # transmit is refused in the build until the RF sequence is confirmed
 # VOX reads the mic level on PA3 (power_md9600.c); the reference trim needs a hal_radio_t.ref_trim, not written
@@ -56,29 +51,6 @@ BOARD_UNSUPPORTED += VIBRATE	# no vibration motor
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and the one UART is the GPS receive line
 BOARD_NOT_WRITTEN += REF_TRIM	# no hal_radio_t.ref_trim yet
-BOARD_NOT_WRITTEN += FM_TX_TONES	# FM transmit is refused until a radio confirms the RF sequence
-BOARD_NOT_WRITTEN += DTMF	# the tones go out through the FM transmitter, refused for now (above)
-BOARD_NOT_WRITTEN += HOTSPOT	# needs the transmitter (CONFIG_MD9600_TX, CONFIG_MD9600_DMR_TX), refused for now
-BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# needs the hotspot (above)
-BOARD_NOT_WRITTEN += SFR	# repeats on air: waits for DMR transmit
-BOARD_NOT_WRITTEN += CRASH_REPORT	# sends over DMR packet data: waits for DMR transmit
-BOARD_NOT_WRITTEN += DMR_IP_GATEWAY	# the IP services send over DMR: waits for DMR transmit
-BOARD_NOT_WRITTEN += DMR_UDP_COMPRESS	# compresses transmitted headers: waits for DMR transmit
-BOARD_NOT_WRITTEN += USB_NETWORK	# carries the DMR IP gateway's services (above)
-BOARD_NOT_WRITTEN += NET_PPP	# carries the DMR IP gateway's services (above)
-BOARD_NOT_WRITTEN += NET_TCP	# an IP service: waits for the DMR IP gateway (above)
-BOARD_NOT_WRITTEN += NET_KISS	# an IP service: waits for the DMR IP gateway (above)
-BOARD_NOT_WRITTEN += NET_HTTP	# an IP service: waits for the DMR IP gateway (above)
-BOARD_NOT_WRITTEN += NET_HTTP_GZIP	# needs NET_HTTP (above)
-BOARD_NOT_WRITTEN += NET_WEBCTL	# needs NET_HTTP (above)
-BOARD_NOT_WRITTEN += NET_RIGCTL	# an IP service: waits for the DMR IP gateway (above)
-BOARD_NOT_WRITTEN += NET_APRSIS	# an IP service: waits for the DMR IP gateway (above)
-BOARD_NOT_WRITTEN += NET_USRP	# an IP service: waits for the DMR IP gateway (above)
-BOARD_NOT_WRITTEN += MDNS	# an IP service: waits for the DMR IP gateway (above)
-BOARD_NOT_WRITTEN += TFTP	# an IP service: waits for the DMR IP gateway (above)
-BOARD_NOT_WRITTEN += TFTP_IDDB	# needs TFTP (above)
-BOARD_NOT_WRITTEN += DMR_CONTROL_STATION	# needs the DMR IP gateway (above)
-BOARD_NOT_WRITTEN += SNMP	# needs the DMR IP gateway (above)
 # FM receive is the checked path: the matrix has no FM-less configuration
 BOARD_REQUIRED := FM
 # CONFIG_STUB_ENTRY is on with the host link (config/features.mk): the STM32F4 flash stub serves this radio through its
@@ -86,3 +58,5 @@ BOARD_REQUIRED := FM
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter
 MAXIMAL_SKIP := NET_PPP
+# English only (the owner's choice, 2026-11-03)
+CONFIG_LANG_ES ?= n

@@ -14,6 +14,10 @@
 #include "gps_uart/gps_uart.h"
 #if CONFIG_USB
 #include "usb/usb_device.h"
+#include "usb/usb_ncm.h"
+#endif
+#if CONFIG_NET_PPP
+#include "hostlink/hostlink_ppp.h"
 #endif
 
 // The RTOS heap, and with it every task stack, in the CCM (as on the other STM32F4 radios): nothing on a stack or from
@@ -117,8 +121,8 @@ const board_t board = {
 	.quick_label = "P1",
 	.context_label = "P2",
 	.radio = &md9600_radio,
-#if CONFIG_APRS_RX
-	.afsk = &md9600_afsk,	// receive only
+#if CONFIG_APRS && (CONFIG_APRS_RX || CONFIG_MD9600_TX)
+	.afsk = &md9600_afsk,
 #endif
 #if CONFIG_DMR
 	.dmr = &stm32_hrc_dmr,
@@ -143,6 +147,11 @@ const board_t board = {
 #endif
 #if CONFIG_USB
 	.host_port = &usb_cdc_stream,
+#if CONFIG_NET_PPP
+	.netif = &hostlink_ppp_netif,	// PPP on the USB serial port, the network adapter under it (board_init)
+#elif CONFIG_USB_NETWORK
+	.netif = &usb_ncm_netif,
+#endif
 #endif
 	.system = &stm32_system,
 #if CONFIG_CPS_OPENFW
@@ -289,6 +298,9 @@ void board_init(void)
 	md9600_power.init();
 	md9600_flash_init();
 	md9600_cal_load();
+#if CONFIG_NET_PPP && CONFIG_USB_NETWORK
+	hostlink_ppp_set_usb(&usb_ncm_netif);
+#endif
 	md9600_radio_early();
 #if CONFIG_GPS
 	md9600_gps_init();

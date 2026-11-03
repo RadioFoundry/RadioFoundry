@@ -159,6 +159,12 @@ void md9600_speaker_fm(bool on, bool vhf)
 
 static bool fm_tx;
 
+// The tone generator for the 1750 Hz burst, the roger beep, DTMF and APRS (hrc6000_tx_pair)
+#if MD9600_TX_SIG
+static hrc6000_tx_sig_t tx_sig;
+static uint8_t tx_sig_dev;	// 4:0xA0 for the band and bandwidth of the transmission
+#endif
+
 // The FM receive set-up (power-up and after an FM over): FM audio never passes through this chip, so it stays in DMR
 // mode, where its codec plays the beeps
 static void fm_rx_setup(void)
@@ -189,14 +195,65 @@ void md9600_c6000_fm_tx(uint32_t hz, bool wide)
 		.mic_gain = FM_MIC_GAIN,
 	};
 	fm_tx = true;
+#if MD9600_TX_SIG
+	tx_sig_dev = hrc6000_fm_deviation(cfg.uhf, wide).dtmf;
+#endif
 	count(hrc6000_set_mode_fm_tx(&modem, &cfg));
 }
+
+#if MD9600_TX_SIG
+
+bool md9600_c6000_tx_pair(uint16_t low_hz, uint16_t high_hz)
+{
+	if (!fm_tx) {
+		return false;
+	}
+	bool ok = hrc6000_tx_pair(&modem, &tx_sig, low_hz, high_hz, tx_sig_dev);
+	count(ok);
+	return ok;
+}
+
+bool md9600_c6000_tx_key(bool down)
+{
+	return fm_tx && hrc6000_tx_sig_key(&modem, &tx_sig, down);
+}
+
+void md9600_c6000_tx_service(uint32_t now_ms)
+{
+	if (fm_tx) {
+		(void)hrc6000_tx_sig_service(&modem, &tx_sig, now_ms);
+	}
+}
+
+#if CONFIG_APRS
+// APRS: the first symbol's tone at level percent of the band's tone deviation x 2 (50 = the nominal); then
+// md9600_c6000_afsk_tone from the symbol timer's interrupt
+bool md9600_c6000_afsk_begin(uint16_t hz, uint8_t level)
+{
+	if (!fm_tx) {
+		return false;
+	}
+	uint32_t d = ((uint32_t)tx_sig_dev * level + 25u) / 50u;
+	bool ok = hrc6000_tx_pair(&modem, &tx_sig, hz, hz, (uint8_t)(d > 0xFFu ? 0xFFu : d));
+	count(ok);
+	return ok;
+}
+
+bool md9600_c6000_afsk_tone(uint16_t hz)
+{
+	return hrc6000_tx_sig_retune(&modem, &tx_sig, hz, hz);
+}
+#endif
+#endif
 
 void md9600_c6000_fm_tx_end(void)
 {
 	if (!fm_tx) {
 		return;
 	}
+#if MD9600_TX_SIG
+	count(hrc6000_tx_pair(&modem, &tx_sig, 0, 0, 0));
+#endif
 	fm_tx = false;
 	fm_rx_setup();
 	count(hrc6000_tones_off(&modem));

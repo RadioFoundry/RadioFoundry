@@ -90,7 +90,8 @@ enum { MD9600_PWM_TONE = 2, MD9600_PWM_BEEP = 3 };
 void md9600_pwm_out(uint8_t ch, uint8_t duty);
 // The other analog inputs: the sub-audio input on ADC3 (PA2), 12-bit, one conversion
 uint16_t md9600_adc3_qt(void);
-// APRS receive audio from PC3 on ADC3 (afsk_md9600.c, CONFIG_APRS_RX); ADC3 is its while it runs
+// APRS (afsk_md9600.c): transmit through the HR_C6000's tone generator (CONFIG_MD9600_TX), receive audio from PC3 on
+// ADC3 (CONFIG_APRS_RX); ADC3 is the receiver's while it runs
 extern const hal_afsk_t md9600_afsk;
 bool md9600_afsk_rx_running(void);
 
@@ -131,6 +132,18 @@ void md9600_speaker_fm(bool on, bool vhf);	// the core's FM squelch (hal_radio_t
 // receive set-up after the over (a no-op when not in FM TX)
 void md9600_c6000_fm_tx(uint32_t hz, bool wide);
 void md9600_c6000_fm_tx_end(void);
+// The chip's tone generator in FM TX: the 1750 Hz burst, the roger beep, DTMF and APRS
+#define MD9600_TX_SIG	(CONFIG_MD9600_TX && (CONFIG_FM_TX_TONES || CONFIG_DTMF || CONFIG_APRS))
+// During FM TX: the chip's tone generator sends low_hz + high_hz in place of the microphone (0, 0: the microphone
+// again); tx_key keys that tone on and off (CONFIG_FM_TX_TONES, CONFIG_DTMF)
+bool md9600_c6000_tx_pair(uint16_t low_hz, uint16_t high_hz);
+bool md9600_c6000_tx_key(bool down);
+// From the radio task's poll (radio status): keeps a tone from tx_pair going past the generator's 16 codes
+void md9600_c6000_tx_service(uint32_t now_ms);
+// APRS transmit (CONFIG_APRS): the tone generator at level (hal_afsk.h), then retuned symbol by symbol from an
+// interrupt; md9600_c6000_tx_pair(0, 0) or the end of FM TX stops it
+bool md9600_c6000_afsk_begin(uint16_t hz, uint8_t level);
+bool md9600_c6000_afsk_tone(uint16_t hz);
 typedef struct {
 	bool up;		// the chip answered after its power-on set-up
 	bool dmr;		// in DMR

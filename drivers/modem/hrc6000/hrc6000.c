@@ -183,7 +183,7 @@ static bool write_dtmf_table(hrc_t *dev)
 {
 	bool ok = true;
 	for (uint32_t i = 0; i < sizeof(dtmf_hz) / sizeof(dtmf_hz[0]); i++) {
-		uint16_t v = (uint16_t)(((uint32_t)dtmf_hz[i] * 65536u + 16000u) / 32000u);
+		uint16_t v = hrc6000_tone_step(dtmf_hz[i]);
 		uint16_t addr = (uint16_t)(DTMF_TABLE_ADDR + 2u * i);
 		ok &= hrc_write_ext(dev, HRC_PAGE_AUX, addr, (uint8_t)(v & 0xFFu));
 		ok &= hrc_write_ext(dev, HRC_PAGE_AUX, (uint16_t)(addr + 1u), (uint8_t)(v >> 8));
@@ -282,6 +282,143 @@ bool hrc6000_set_mode_fm_tx(hrc_t *dev, const hrc6000_fm_tx_t *cfg)
 	ok &= hrc_write(dev, 1, 0x51, 0x00);
 	ok &= hrc_write(dev, 4, 0x60, 0x80);	// analog voice TX on
 	return ok;
+}
+
+uint16_t hrc6000_tone_step(uint16_t hz)
+{
+	return (uint16_t)(((uint32_t)hz * 65536u + 16000u) / 32000u);
+}
+
+#define DTMF_LOW1_ADDR	DTMF_TABLE_ADDR			// 697 Hz: digit 1's low tone
+#define DTMF_HIGH1_ADDR	(DTMF_TABLE_ADDR + 8u)		// 1209 Hz: digit 1's high tone
+#define E0_INPUTS	0x66u				// LINEIN1, LINEIN2, MIC_N, MIC_P (hrc6000-registers.md 3.20)
+
+static bool table_entry(hrc_t *dev, uint16_t addr, uint16_t hz)
+{
+	uint16_t v = hrc6000_tone_step(hz);
+	bool ok = hrc_write_ext(dev, HRC_PAGE_AUX, addr, (uint8_t)(v & 0xFFu));
+	return ok & hrc_write_ext(dev, HRC_PAGE_AUX, (uint16_t)(addr + 1u), (uint8_t)(v >> 8));
+}
+
+// The 2-tone selcall tones A-E use the first five low-group entries (hrc6000-registers.md 7.8)
+#define TONE2_ENTRIES	5u
+
+static bool single_entries(hrc_t *dev, uint16_t hz)
+{
+	bool ok = true;
+	for (uint16_t i = 0; i < TONE2_ENTRIES; i++) {
+		ok &= table_entry(dev, (uint16_t)(DTMF_TABLE_ADDR + 2u * i), hz);
+	}
+	return ok;
+}
+
+bool hrc6000_tx_pair(hrc_t *dev, hrc6000_tx_sig_t *s, uint16_t low_hz, uint16_t high_hz, uint8_t dev_coef)
+{
+	bool ok = true;
+	if (low_hz == 0 || high_hz == 0) {
+		if (!s->on) {
+			return true;
+		}
+		s->on = false;
+		ok &= hrc_write(dev, 4, 0xA1, s->a1);
+		ok &= hrc_write(dev, 4, 0xA0, s->a0);
+		ok &= hrc_write(dev, 4, 0xA3, s->a3);
+		ok &= hrc_write(dev, 4, 0xA4, s->a4);
+		ok &= hrc_write(dev, 4, 0xA5, s->a5);
+		ok &= hrc_write(dev, 4, 0xA6, s->a6);
+		ok &= hrc_write(dev, 4, 0xD1, s->d1);
+		ok &= hrc_write_burst(dev, 4, 0xA8, s->code, sizeof(s->code));
+		ok &= write_dtmf_table(dev);
+		ok &= hrc_write(dev, 4, 0xE0, s->e0);	// the microphone back
+		return ok;
+	}
+	if (!s->on) {
+		ok &= hrc_read(dev, 4, 0xA1, &s->a1);
+		ok &= hrc_read(dev, 4, 0xA0, &s->a0);
+		ok &= hrc_read(dev, 4, 0xA3, &s->a3);
+		ok &= hrc_read(dev, 4, 0xA4, &s->a4);
+		ok &= hrc_read(dev, 4, 0xA5, &s->a5);
+		ok &= hrc_read(dev, 4, 0xA6, &s->a6);
+		ok &= hrc_read(dev, 4, 0xD1, &s->d1);
+		ok &= hrc_read(dev, 4, 0xE0, &s->e0);
+		ok &= hrc_read_burst(dev, 4, 0xA8, s->code, sizeof(s->code));
+		if (!ok) {
+			return false;
+		}
+	}
+	s->dev = dev_coef;
+	s->single = low_hz == high_hz;
+	ok &= hrc_write(dev, 4, 0xE0, (uint8_t)(s->e0 & ~E0_INPUTS));	// the microphone off for the tone
+	ok &= hrc_write(dev, 4, 0xA3, 0x00);	// no gap
+	if (s->single) {
+		// A single tone from the 2-tone mode: each tone up to 25.5 s (100 ms steps), where a DTMF code lasts at most
+		// 510 ms with about 20 ms of silence in it (on air, 2026-11-03). Every tone entry holds the frequency, so
+		// both tones of the code sound the same. The codes are the letters' hex digits: "A-B" is 0xAF bits 3-0 = 0xA,
+		// 0xAE bits 7-4 = 0xB (on air, 2026-11-03: 1, 2 and 0 send nothing)
+		static const uint8_t pair_ab[8] = { 0, 0, 0, 0, 0, 0, 0xB0, 0x0A };
+		ok &= single_entries(dev, low_hz);
+		ok &= hrc_write(dev, 4, 0xA4, 0xFF);
+		ok &= hrc_write(dev, 4, 0xA5, 0xFF);
+		ok &= hrc_write(dev, 4, 0xA6, 0xFF);
+		ok &= hrc_write_burst(dev, 4, 0xA8, pair_ab, sizeof(pair_ab));
+		ok &= hrc_write(dev, 4, 0xA1, (uint8_t)((s->a1 & 0x80u) | 0x10u));	// 2-tone (bit 7 as it was)	// 2-tone (bit 7 as it was)
+	} else {
+		// A DTMF pair: 16 codes of digit "1" with its 697 and 1209 Hz entries rewritten, 510 ms each (the most 0xA4
+		// holds), 8.16 s
+		static const uint8_t ones[8] = { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11 };
+		ok &= write_dtmf_table(dev);	// after a single tone
+		ok &= table_entry(dev, DTMF_LOW1_ADDR, low_hz);
+		ok &= table_entry(dev, DTMF_HIGH1_ADDR, high_hz);
+		ok &= hrc_write(dev, 4, 0xA4, 0xFF);
+		ok &= hrc_write_burst(dev, 4, 0xA8, ones, sizeof(ones));
+		ok &= hrc_write(dev, 4, 0xD1, (uint8_t)((s->d1 & 0xE0u) | 16u));
+		ok &= hrc_write(dev, 4, 0xA1, (uint8_t)((s->a1 & 0x80u) | 0x02u));	// DTMF (bit 7 as it was)
+	}
+	ok &= hrc_write(dev, 4, 0xA0, dev_coef);
+	ok &= hrc_write(dev, 4, 0x60, 0x00);	// a new TX start sends the sequence
+	ok &= hrc_write(dev, 4, 0x60, 0x80);
+	s->on = ok;
+	s->timed = false;
+	return ok;
+}
+
+bool hrc6000_tx_sig_retune(hrc_t *dev, hrc6000_tx_sig_t *s, uint16_t low_hz, uint16_t high_hz)
+{
+	if (!s->on) {
+		return false;
+	}
+	if (s->single) {
+		return single_entries(dev, low_hz);
+	}
+	bool ok = table_entry(dev, DTMF_LOW1_ADDR, low_hz);
+	return ok & table_entry(dev, DTMF_HIGH1_ADDR, high_hz);
+}
+
+bool hrc6000_tx_sig_service(hrc_t *dev, hrc6000_tx_sig_t *s, uint32_t now_ms)
+{
+	if (!s->on) {
+		return true;
+	}
+	if (!s->timed) {
+		s->timed = true;
+		s->t_ms = now_ms;
+		return true;
+	}
+	if (now_ms - s->t_ms < (s->single ? HRC6000_TX_TONE_RENEW_MS : HRC6000_TX_SIG_RENEW_MS)) {
+		return true;
+	}
+	s->t_ms = now_ms;
+	bool ok = hrc_write(dev, 4, 0x60, 0x00);	// the sequence from its first code again
+	ok &= hrc_write(dev, 4, 0x60, 0x80);
+	return ok;
+}
+
+bool hrc6000_tx_sig_key(hrc_t *dev, hrc6000_tx_sig_t *s, bool down)
+{
+	if (!s->on) {
+		return false;
+	}
+	return hrc_write(dev, 4, 0xA0, down ? s->dev : 0x00);
 }
 
 bool hrc6000_set_rx_gain(hrc_t *dev, int8_t db)

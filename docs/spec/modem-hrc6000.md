@@ -541,13 +541,17 @@ the power-on init. The other boards receive with 0x80 and haven't been tried wit
   2000 = 250 ms at 8 kHz), 0xD4 = tone index. Detected: 0x93 bit 0.
 - DCS TX: 0xA1=0x84, 0xA2 = 0x00 inverted / 0x08 normal, 0xAB = code bits 7-0, 0xAC = code bit 8. RX: 0xA1=0x84, 0xA2 =
   0x04 inverted / 0x00 normal, 0xD4 = code bits 7-0, 0xD3 = (code bit 8 << 4) + 0x03, 0xD2=0x20 (depth 800 = 100 ms).
-- DTMF TX: save 0xA1, 0xA0 and 0xD1; 0xA1=0x82, 0xA0 = deviation, 0xA4=0xFA (tone time, continuous), 0xA3=0x19 (gap,
+- DTMF TX: save 0xA1, 0xA0 and 0xD1; 0xA1=0x82, 0xA0 = deviation, 0xA4=0xFA (tone time), 0xA3=0x19 (gap,
   2 ms units), 0xD1=0x01 (one code), 0xAF = code << 4, 0x60=0x00 then 0x80 to send. Restore the three registers after
-  (the high bits of 0xD1 matter).
+  (the high bits of 0xD1 matter). Seen on air: 0xA4 = 0xFA is 500 ms, not continuous; one code is at most 510 ms and
+  ends in about 20 ms of silence (`hrc6000-registers.md` 7.6).
 - Tone table (page 1, extended addresses, value = f x 65536 / 32000, low byte first): 0x11A/0x11B 697 Hz (0x0593),
   0x11C/D 770 (0x0629), 0x11E/F 852 (0x06D1), 0x120/1 941 (0x0787), 0x122/3 1209 (0x09AC), 0x124/5 1336 (0x0AB0),
-  0x126/7 1477 (0x0BD1), 0x128/9 1633 (0x0D10). A single arbitrary
-  tone: put its value in both the 697 and 1209 entries and send DTMF "1"; restore the entries after.
+  0x126/7 1477 (0x0BD1), 0x128/9 1633 (0x0D10). Any DTMF pair: put its values in the 697 and 1209 entries and send
+  DTMF "1"; restore the entries after.
+- A single tone (1750 Hz burst, roger beep, AFSK; `hrc6000_tx_pair`): 2-tone mode (0xA1 = 0x10, bit 7 kept), every
+  entry 0x11A-0x123 set to the tone, 0xA4 = 0xA5 = 0xA6 = 0xFF, 0xA3 = 0, code "A-B" (0xAF = 0x0A, 0xAE = 0xB0): one
+  gapless tone of at least 25.5 s. The driver starts the sequence again before it runs out (`hrc6000-registers.md` 7.8).
 
 ### 8.1 FM audio paths in the manual (unverified)
 
