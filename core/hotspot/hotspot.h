@@ -33,6 +33,10 @@ typedef struct {
 	// at most once per HOTSPOT_ENTER_RETRY_MS while the host keeps talking, and answers the host meanwhile (the
 	// status shows no space until the hotspot runs). Calling it again while a request is pending must be harmless
 	bool (*enter)(uint32_t rx_hz);
+	// Optional: the radio is in hotspot mode now. An enter that returned false because its request was still being
+	// handled (a radio whose retune waits for its synthesizer) has finished since: the engine tries again at once,
+	// instead of HOTSPOT_ENTER_RETRY_MS after the last try (a host's first commands, such as SEND_CWID, find it running)
+	bool (*active)(void);
 	// Tune for the hotspot: receive on rx_hz, transmit on tx_hz (simplex: equal). Called with the modem idle.
 	// Hotspot frequencies may lie outside the amateur bands (docs/spec/gotchas.md 8.7): only the board's band
 	// limits apply. False if out of range (the host gets a NAK). A few register writes; must not block for long
