@@ -306,12 +306,33 @@ void qa4818_enable(qa4818_t *c, uint16_t value)
 	wr(c, QA4818_REG_ENABLE, value);
 }
 
+uint16_t qa4818_af_rx(bool digital, uint32_t hz)
+{
+	return digital ? (hz >= MHZ(300) ? QA4818_AF_DMR : QA4818_AF_DMR | QA4818_AF_INVERT) : QA4818_AF_VOICE;
+}
+
 void qa4818_rx_on(qa4818_t *c, bool digital, uint32_t hz)
 {
 	wr(c, 0x34, 0x086F);
 	wr(c, 0x35, 0xF208);
-	wr(c, 0x47, digital ? (hz >= MHZ(300) ? QA4818_AF_DMR : QA4818_AF_DMR | QA4818_AF_INVERT) : QA4818_AF_VOICE);
+	wr(c, 0x47, qa4818_af_rx(digital, hz));
 	wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_RX);
+}
+
+void qa4818_beep(qa4818_t *c, uint16_t hz, uint8_t gain, uint16_t af)
+{
+	if (hz == 0) {
+		wr(c, QA4818_REG_TONE_GEN, 0);
+		wr(c, 0x47, af);
+		wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_RX);
+		return;
+	}
+	wr(c, QA4818_REG_TONE_FREQ, qa4818_tone_word(hz));
+	// 0x70 bit 15 tone 1 on, bits 14:8 its gain (BK4819 map)
+	wr(c, QA4818_REG_TONE_GEN, (uint16_t)(0x8000u | (uint16_t)(gain & 0x7Fu) << 8));
+	wr(c, 0x47, QA4818_AF_BEEP);
+	// The tone generator is the transmit DSP's: on for the beep, with the PA gain still off (bit 3), so nothing is sent
+	wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_RX | QA4818_ENABLE_TX_DSP);
 }
 
 void qa4818_tx_on(qa4818_t *c)

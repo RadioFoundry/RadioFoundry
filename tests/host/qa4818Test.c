@@ -254,6 +254,14 @@ static void test_paths(void)
 	SEQ(&f, n, { 0x34, 0x086F }, { 0x35, 0xF208 }, { 0x47, 0x4840 }, { 0x03, 0xBFF5 });
 	qa4818_rx_on(&c, true, 146520000u);
 	CHECK(f.regs[0x47] == 0x6840);
+	// A beep in receive: the tone generator to the AF output, then the receive output back
+	n = f.n;
+	qa4818_beep(&c, 1000, 0x7F, qa4818_af_rx(true, 146520000u));
+	SEQ(&f, n, { 0x71, 0x1428 }, { 0x70, 0xFF00 }, { 0x47, 0x6341 }, { 0x03, 0xBFF7 });
+	n = f.n;
+	qa4818_beep(&c, 0, 0, qa4818_af_rx(true, 146520000u));
+	SEQ(&f, n, { 0x70, 0 }, { 0x47, 0x6840 }, { 0x03, 0xBFF5 });
+	CHECK(qa4818_af_rx(false, 446000000u) == 0x6140 && qa4818_af_rx(true, 446000000u) == 0x4840);
 	n = f.n;
 	qa4818_tx_on(&c);
 	SEQ(&f, n, { 0x47, 0x6140 }, { 0x03, 0xC1FE });
