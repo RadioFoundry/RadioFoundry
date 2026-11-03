@@ -26,7 +26,7 @@
 #endif
 
 // Settings > Connections > Data services: the ARS server and the IP gateway
-#define DATA_IDS	(CONFIG_DMR_ARS || CONFIG_DMR_IP_GATEWAY)
+#define DATA_IDS	(CONFIG_DMR && (CONFIG_DMR_ARS || CONFIG_DMR_IP_GATEWAY))
 
 #ifndef RFOUNDRY_GIT
 #define RFOUNDRY_GIT "host"
@@ -3594,16 +3594,18 @@ static void dmr_id_item(uint16_t i, ui_item_t *it)
 	sb_str(&b, name[0] != 0 ? name : TR("None"));
 }
 
+// My Radio's and Data Services' text above the rows, one buffer (the two screens never show together)
+static char id_body[48];
+
 static const char *dmr_id_body(void)
 {
-	static char t[48];
 	sbuf_t b;
-	sb_init(&b, t, sizeof t);
+	sb_init(&b, id_body, sizeof id_body);
 	sb_str(&b, TR("Saved in the codeplug"));
 	sb_chr(&b, '\n');
 	sb_str(&b, TR("Radio: "));
 	sb_str(&b, board.name);		// as the info page it replaces
-	return t;
+	return id_body;
 }
 
 #if CONFIG_CHANNEL_EDIT
@@ -3754,11 +3756,10 @@ static const uint8_t ds_setting[] = {
 	[DS_GATEWAY] = UI_SET_IP_GATEWAY,
 #endif
 };
-static uint32_t ds_value;
-static uint8_t ds_len;			// digits typed
+// The typing and the ID just saved share My radio's (dmr_id_*): the two screens are never open together, and RAM is
+// short. dmr_id_editing is unused here (ds_row says which row is typed), and dmr_id_serial holds the save's time
 static uint8_t ds_row = DS_COUNT;	// the row being typed (DS_COUNT: none)
 static uint8_t ds_saved_row = DS_COUNT;	// the row just saved: its ID shows until the radio has taken it
-static uint32_t ds_saved, ds_saved_ms;
 
 static uint16_t ds_count(void) { return DS_COUNT; }
 
@@ -3782,15 +3783,15 @@ static void ds_item(uint16_t i, ui_item_t *it)
 	sb_init(&b, it->value, sizeof it->value);
 	str_copy(it->label, sizeof it->label, tr(labels[i]));
 	if (ds_row == i) {
-		if (ds_len > 0)
-			sb_u32(&b, ds_value, 1);
+		if (dmr_id_len > 0)
+			sb_u32(&b, dmr_id_value, 1);
 		sb_chr(&b, '_');
 		it->flags |= UI_ITEM_EDIT;
 		return;
 	}
 	uint32_t v = (uint32_t)ui_svc_setting_get(ds_setting[i]);
-	if (ds_saved_row == i && v != ds_saved && hal_millis() - ds_saved_ms < 3000u)
-		v = ds_saved;		// the codeplug write and the radio core's reload take a moment
+	if (ds_saved_row == i && v != dmr_id_saved && hal_millis() - dmr_id_serial < 3000u)
+		v = dmr_id_saved;	// the codeplug write and the radio core's reload take a moment
 	if (v != 0)
 		sb_u32(&b, v, 1);
 	else
@@ -3799,9 +3800,8 @@ static void ds_item(uint16_t i, ui_item_t *it)
 
 static const char *ds_body(void)
 {
-	static char t[48];
 	sbuf_t b;
-	sb_init(&b, t, sizeof t);
+	sb_init(&b, id_body, sizeof id_body);
 	sb_str(&b, TR("Saved in the codeplug"));
 #if CONFIG_DMR_ARS
 	static const char *const states[] = { [UI_ARS_OFF] = TRN("Off"), [UI_ARS_REGISTERING] = TRN("Registering"),
@@ -3812,22 +3812,29 @@ static const char *ds_body(void)
 	sb_str(&b, TR("ARS: "));
 	sb_str(&b, tr(states[s <= UI_ARS_NO_ANSWER ? s : UI_ARS_OFF]));
 #endif
-	return t;
+	return id_body;
+}
+
+static void ds_begin(uint16_t row)
+{
+	ds_row = (uint8_t)row;
+	dmr_id_len = 0;
+	dmr_id_value = 0;
 }
 
 static void ds_save(void)
 {
 	uint8_t row = ds_row;
 	ds_row = DS_COUNT;
-	if (ds_len == 0)
+	if (dmr_id_len == 0)
 		return;		// nothing typed: as it was
-	if (!ui_svc_setting_set(ds_setting[row], (int32_t)ds_value)) {
+	if (!ui_svc_setting_set(ds_setting[row], (int32_t)dmr_id_value)) {
 		ui_toast(TR("Couldn't save: try again"));
 		return;
 	}
 	ds_saved_row = row;
-	ds_saved = ds_value;
-	ds_saved_ms = hal_millis();
+	dmr_id_saved = dmr_id_value;
+	dmr_id_serial = hal_millis();
 	ui_toast(TR("Saved"));
 }
 
@@ -3836,13 +3843,10 @@ static void ds_select(uint16_t i, bool hold)
 	(void)hold;
 	if (i >= DS_COUNT)
 		return;
-	if (ds_row == i) {
+	if (ds_row == i)
 		ds_save();
-		return;
-	}
-	ds_row = (uint8_t)i;
-	ds_len = 0;
-	ds_value = 0;
+	else
+		ds_begin(i);
 }
 
 static bool ds_key(const input_event_t *ev)
@@ -3850,27 +3854,24 @@ static bool ds_key(const input_event_t *ev)
 	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
 	uint16_t focus = ui_frame()->focus;
 	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press && focus < DS_COUNT) {
-		if (ds_row != focus) {
-			ds_row = (uint8_t)focus;
-			ds_len = 0;
-			ds_value = 0;
-		}
-		uint32_t v = ds_value * 10u + (uint32_t)(ev->action - ACT_DIGIT_0);
+		if (ds_row != focus)
+			ds_begin(focus);
+		uint32_t v = dmr_id_value * 10u + (uint32_t)(ev->action - ACT_DIGIT_0);
 		if (v > CODEPLUG_DMR_ID_MAX) {
 			ui_toast(TR("IDs go up to 16776415"));
 			return true;
 		}
-		ds_value = v;
-		ds_len++;
+		dmr_id_value = v;
+		dmr_id_len++;
 		ui_dirty();
 		return true;
 	}
 	if (ds_row == DS_COUNT)
 		return false;
 	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
-		if (ds_len > 0) {
-			ds_len--;
-			ds_value /= 10u;
+		if (dmr_id_len > 0) {
+			dmr_id_len--;
+			dmr_id_value /= 10u;
 		} else {
 			ds_row = DS_COUNT;
 		}

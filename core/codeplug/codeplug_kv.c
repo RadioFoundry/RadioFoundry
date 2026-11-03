@@ -67,7 +67,7 @@ static bool walk_ok(const uint8_t *data, uint16_t len, uint16_t *count)
 // the data starts and its length. Under storage_lock
 static codeplug_kv_state_t check_flash(uint32_t *data, uint16_t *len, uint16_t *count)
 {
-	static uint8_t b[64];	// static: the lock serializes callers, and the debug link's view runs on a full stack
+	uint8_t b[CODEPLUG_KV_HDR];	// small chunks: no RAM of its own, little stack (the debug link's view runs deep)
 	uint32_t a, crc;
 	uint16_t hdr;
 	*count = 0;

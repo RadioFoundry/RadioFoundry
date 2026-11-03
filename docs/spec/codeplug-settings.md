@@ -105,7 +105,9 @@ While the open-firmware area holds another firmware's codeplug (`codeplug_foreig
 other codeplug write.
 
 The radio core reads the keys at start and whenever `codeplug_serial()` moves on (a menu edit, a CPS commit, a
-TFTP write). A key that is present sets the setting. A key that is absent leaves the setting as the radio had it. The
+TFTP write), and again when the setting changes another way: a key that is present sets the setting and puts such a
+change back before it is saved. A key that is absent leaves the setting as the radio had it. Nothing of the area is
+kept in RAM between reads. The
 radio's own copy of each setting stays in the settings store (`ds_ars_server`, `ds_ip_gateway`,
 [settings-store.md](settings-store.md) 3). So a codeplug written by a tool that doesn't carry the area doesn't change
 how the radio behaves.

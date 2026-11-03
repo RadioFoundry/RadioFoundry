@@ -98,7 +98,7 @@ WEAK void ui_svc_zone_offer_reject(uint32_t serial) { (void)serial; }
 WEAK bool ui_svc_zone_offer_import(uint32_t serial, uint16_t zone) { (void)serial; (void)zone; return false; }
 
 // Safe defaults (P7): no auto-transmit feature on, tones on, hints on
-static int32_t settings[UI_SET_COUNT] = {
+static int32_t settings[UI_SET_RAM_COUNT] = {
 	[UI_SET_KEY_TONES] = 1, [UI_SET_TONE_VOLUME] = 5, [UI_SET_TALK_PERMIT] = 1, [UI_SET_MESSAGE_TONE] = 1,
 	[UI_SET_BRIGHTNESS] = 100, [UI_SET_BACKLIGHT_S] = 30, [UI_SET_HINTS] = 1,
 	[UI_SET_REPLY_S] = 10, [UI_SET_TOT_S] = 180, [UI_SET_SQUELCH] = 5, [UI_SET_MIC_GAIN] = 5, [UI_SET_ALIAS_SHOW] = 1,
@@ -112,12 +112,12 @@ static int32_t settings[UI_SET_COUNT] = {
 // (ui_svc_storage.c keeps the ones settings_t has fields for: these are the defaults of the rest, and the UI's
 // stand-ins in a build without the store)
 
-int32_t ui_svc_ram_get(uint8_t id) { return id < UI_SET_COUNT ? settings[id] : 0; }
+int32_t ui_svc_ram_get(uint8_t id) { return id < UI_SET_RAM_COUNT ? settings[id] : 0; }
 
 bool ui_svc_ram_set(uint8_t id, int32_t value)
 {
-	if (id >= UI_SET_COUNT)
-		return false;
+	if (id >= UI_SET_RAM_COUNT)
+		return false;	// past the table (RAM is short): the codeplug's, set through ui_svc_storage.c
 	settings[id] = value;
 	return true;
 }
