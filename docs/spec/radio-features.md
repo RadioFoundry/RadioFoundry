@@ -324,13 +324,16 @@ knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM pat
 board's RX gain, an HR_C7000 board's line out gain) play the beep at `beep_level`, and the volume acts on it in the
 speaker path. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
 volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`); otherwise the beep
-starts the board's PCM audio stream itself and stops it two silent blocks after the pattern. If that stream delivers no
+starts the board's PCM audio stream itself, routes the speaker for silent lead-in blocks before the tone (one 20 ms
+block, or `hal_audio_t.speaker_lead_ms` rounded up to blocks, at most 200 ms, for an amplifier that unmutes slowly), holds
+the route for four silent blocks after the pattern, and then stops the stream. A beep in that hold plays at once, with no
+lead-in. If that stream delivers no
 block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stream, gives the speaker route back and
 drops the pattern, so a codec that goes quiet can't leave the analog receive audio muted. A start that fails (no codec
 clock) is stopped the same way, in case a block already ran. Counters in the view:
 `beep.played` (started), `beep.no_stream` (no audio stream could be started: on a board that can't stream PCM in FM
 mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
-`beep.busy`.
+`beep.busy`, `beep.shared` (patterns mixed into the voice stream), `beep.leads` (lead-in blocks played).
 
 ### 4.1 Vibration (CONFIG_VIBRATE)
 

@@ -215,7 +215,7 @@ static bool a_start(audio_block_cb_t cb, void *ctx)
 }
 static void a_stop(void) { aud.streaming = false; aud.cb = NULL; aud.stops++; }
 static void a_pcm(bool on) { aud.pcm = on; }
-static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
+static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm };
 
 // FM transmit audio from the MCU (hal_audio_tap_t.fm_tx_inject): what the radio core asked for
 static struct {
@@ -786,6 +786,28 @@ static void test_beep_module(void)
 		beep_service(false);
 	}
 	CHECK(!aud.pcm && !aud.streaming);
+
+	// A board whose amplifier unmutes slowly (speaker_lead_ms 50): three silent blocks with the speaker routed, then
+	// the whole tone
+	static const hal_audio_t slow_amp = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm, .speaker_lead_ms = 50 };
+	beep_init(&slow_amp);
+	beep_play(BEEP_KEY, 100, false);
+	for (int b = 0; b < 3; b++) {
+		beep_audio_block(mic, blk, NULL);
+		bool silent = true;
+		for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+			silent &= blk[i] == 0;
+		}
+		CHECK(silent && aud.pcm && beep_busy());
+	}
+	beep_audio_block(mic, blk, NULL);
+	CHECK(blk[0] == 0 && blk[42] != 0);	// the tone from the block's start, faded in
+	for (int i = 0; i < 10; i++) {
+		beep_audio_block(mic, blk, NULL);
+		beep_service(false);
+	}
+	CHECK(!aud.pcm && !aud.streaming);
+	beep_init(&fake_audio);
 }
 
 // ---- through the radio core ----

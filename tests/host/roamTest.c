@@ -684,7 +684,7 @@ static struct {
 static bool a_start(audio_block_cb_t cb, void *ctx) { (void)ctx; aud.cb = cb; aud.streaming = true; return true; }
 static void a_stop(void) { aud.streaming = false; aud.cb = NULL; }
 static void a_pcm(bool on) { (void)on; }
-static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
+static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm };
 
 static bool v_present(void) { return true; }
 static void v_reset(void) {}

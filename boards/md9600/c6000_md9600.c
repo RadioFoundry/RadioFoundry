@@ -414,7 +414,10 @@ static void speaker_pcm(bool on)
 	speaker_apply();
 }
 
-const hal_audio_t md9600_audio = { .start = audio_start, .stop = stm32_i2s_pcm_stop, .speaker_pcm = speaker_pcm };
+// The amplifier takes about 60 ms from unmute to sound (by a microphone at the speaker: with the default 20 ms lead-in
+// a lone 25 or 40 ms beep was lost and longer ones lost their start; with 80 ms every beep plays whole)
+const hal_audio_t md9600_audio = { .start = audio_start, .stop = stm32_i2s_pcm_stop, .speaker_pcm = speaker_pcm,
+				   .speaker_lead_ms = 80 };
 #endif
 
 #if CONFIG_AUDIO_PROBE
