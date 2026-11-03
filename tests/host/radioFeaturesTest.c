@@ -640,6 +640,71 @@ static void test_battery_module(void)
 
 // ---- the beep engine on its own ----
 
+// Tones without PCM audio (beep_init_tone): each segment's tone for its whole polls, then off
+static uint16_t tone_hz[16];
+static uint8_t tone_lvl[16];
+static int tone_calls;
+static void fake_tone(uint16_t hz, uint8_t level)
+{
+	if (tone_calls < 16) {
+		tone_hz[tone_calls] = hz;
+		tone_lvl[tone_calls] = level;
+	}
+	tone_calls++;
+}
+
+static void test_beep_tone(void)
+{
+	beep_init(NULL);
+	beep_init_tone(fake_tone, 25);
+	beep_reset_stats();
+	tone_calls = 0;
+	beep_play(BEEP_KEY, 0, false);
+	CHECK(tone_calls == 0 && !beep_busy());
+
+	// The key beep, 25 ms: on for one poll
+	beep_play(BEEP_KEY, 70, false);
+	CHECK(tone_calls == 1 && tone_hz[0] == 1000 && tone_lvl[0] == 70 && beep_busy());
+	beep_service(false);
+	CHECK(tone_calls == 2 && tone_hz[1] == 0 && !beep_busy());
+	beep_service(false);
+	CHECK(tone_calls == 2);
+
+	// Call end: 1200 Hz 50 ms, a 30 ms gap, 900 Hz 70 ms; segments end on the poll their time runs out in
+	tone_calls = 0;
+	beep_play(BEEP_CALL_END, 100, false);
+	CHECK(tone_calls == 1 && tone_hz[0] == 1200);
+	beep_service(false);			// 25 of 50
+	CHECK(tone_calls == 1);
+	beep_service(false);			// 50: the gap, silent
+	CHECK(tone_calls == 2 && tone_hz[1] == 0 && tone_lvl[1] == 0 && beep_busy());
+	beep_service(false);			// 75 (gap to 80)
+	CHECK(tone_calls == 2);
+	beep_service(false);			// 100: the 900 Hz tone (to 150)
+	CHECK(tone_calls == 3 && tone_hz[2] == 900 && tone_lvl[2] == 100);
+	beep_service(false);			// 125
+	CHECK(tone_calls == 3 && beep_busy());
+	beep_service(false);			// 150: the pattern's end
+	CHECK(tone_calls == 4 && tone_hz[3] == 0 && !beep_busy());
+
+	// A new pattern replaces one still sounding
+	tone_calls = 0;
+	beep_play(BEEP_TX_DENY, 50, false);
+	beep_play(BEEP_KEY, 50, false);
+	CHECK(tone_calls == 2 && tone_hz[1] == 1000);
+	beep_service(false);
+	CHECK(tone_calls == 3 && tone_hz[2] == 0 && !beep_busy());
+	beep_stats_t bs;
+	beep_get_stats(&bs);
+	CHECK(bs.played == 4 && bs.no_stream == 0);
+
+	// No hook: dropped, as before
+	beep_init_tone(NULL, 25);
+	beep_play(BEEP_KEY, 50, false);
+	beep_get_stats(&bs);
+	CHECK(bs.no_stream == 1 && !beep_busy());
+}
+
 static void test_beep_module(void)
 {
 	memset(&aud, 0, sizeof(aud));
@@ -2764,6 +2829,7 @@ int main(void)
 	test_scan_engine();
 	test_battery_module();
 	test_beep_module();
+	test_beep_tone();
 	test_vibe_module();
 	test_zone_scan();
 	test_scan_ptt_and_modes();
