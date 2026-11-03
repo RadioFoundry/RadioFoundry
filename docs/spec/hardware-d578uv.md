@@ -369,6 +369,7 @@ The speaker during a DMR call (seen on a radio, a bench call and the owner liste
 | --- | --- |
 | Codec headphone driver (page 1 register 0x10) | the call's voice. Muted, the voice goes and nothing else changes |
 | Volume device, side A's channel | side A's RF chip audio, which in DMR is the 4FSK demodulator output (0x47 = 0x4840 or 0x6840): a loud data sound under the voice, with shift register bit 0x08 clear. RadioFoundry holds the channel at code 0 in DMR except for a beep or the KTMicro receiver; the voice is unchanged |
+| Chip 1 GPIO (0x25) bit 1 | a second gate on side A's RF chip audio. With the volume channel at code 0 the 4FSK still came through, quieter; clearing bit 1 stops it (measured with the radio's own microphone and heard on a radio), and the voice is unchanged. RadioFoundry sets the bit only while side A's RF audio plays or side B is heard. Bit 5 cleared stops the voice too |
 
 Beeps: the board has no PCM speaker audio, so the core plays a beep's tones through `beep_tone`. Side A's chip sounds
 each on its tone generator (0x71 the tone, 0x70 the gain, 0x47 = 0x6341) with 0x03 = 0xBFF7: the receive enable plus
