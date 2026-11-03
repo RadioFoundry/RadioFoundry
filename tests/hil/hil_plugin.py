@@ -118,7 +118,8 @@ def sdr_bench(pytestconfig):
                  allow_service_stop=pytestconfig.getoption("--allow-service-stop"),
                  tx_power=pytestconfig.getoption("--tx-power"), gain=pytestconfig.getoption("--sdr-gain"),
                  wait_max=pytestconfig.getoption("--bench-wait-max"), api=pytestconfig.getoption("--bench-api"),
-                 api_rx=pytestconfig.getoption("--bench-api-rx"))
+                 api_rx=pytestconfig.getoption("--bench-api-rx"),
+                 api_level=pytestconfig.getoption("--bench-api-level"))
     if not b.reachable():
         if b.api:
             skip("bench", f"bench board {b.api} (receive {b.api_rx}) not answering on the line protocol, with a TX "

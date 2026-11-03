@@ -467,22 +467,26 @@ class BenchFault(Exception):
 
 
 class _LineTx:
-    """A bench board's tx op (bench_line Request) as one of SdrBench's background jobs: .started once the board
-    keyed (its tx header), .done the done record ({"mode", "freq", "on_air_s", "cut", "dev_hz", "peak_hz", ...}) once it's over."""
+    """A bench board's tx or rx op (bench_line Request) as one of SdrBench's background jobs: .started once the board
+    keyed or started receiving (its tx / rx header), .records an rx op's records, .done the done record ({"mode", "freq", "on_air_s", "cut", "dev_hz", "peak_hz", ...}) once it's over."""
 
     def __init__(self, line, where, req):
         self.started = threading.Event()
         self.over = threading.Event()      # the done record came (the stream may stay open after it)
         self.done = None
         self.header = None
+        self.records = []
+        self.req_op = f"{req.get('op')} {req.get('mode', '')}".strip()                  # an rx op's records ({"block": ...})
         self.req = line.Request(where, req, self._on)
 
     def _on(self, d, data):
         # The header comes once the board has the modem (after any queued / granted lines) and keys right away;
         # a "started" line, where a board sends one, says the same
-        if "tx" in d:
-            self.header = d["tx"]
+        if "tx" in d or "rx" in d:
+            self.header = d.get("tx", d.get("rx"))
             self.started.set()
+        elif "rec" in d:
+            self.records.append(d["rec"])
         elif "started" in d:
             self.started.set()
         elif "done" in d:
@@ -494,9 +498,9 @@ class _LineTx:
         while not self.over.wait(0.2) and not self.req.done.is_set() and time.monotonic() < end:
             pass
         if self.req.error is not None:
-            raise RuntimeError(f"bench board FM failed: {self.req.error}")
+            raise RuntimeError(f"bench board {self.req_op} failed: {self.req.error}")
         if self.done is None:
-            raise RuntimeError(f"bench board FM: no done record ({self.req.replies[-3:]})")
+            raise RuntimeError(f"bench board {self.req_op}: no done record ({self.req.replies[-3:]})")
         return self.done
 
     def poll(self):
@@ -727,11 +731,12 @@ class SdrBench:
     stations)."""
 
     def __init__(self, allow_rf=False, allow_service_stop=False, tx_power=40, lease_max=300, gain=5.0,
-                 offset_khz=-200.0, wait_max=None, api=None, api_rx=None):
+                 offset_khz=-200.0, wait_max=None, api=None, api_rx=None, api_level=None):
         import dmr_bench
         self.dmr_bench = dmr_bench
         self.api = api
         self.api_rx = api_rx or api
+        self.api_level = api_level      # the board's transmit level 0-255 (None: its own)
         self.lease_max = lease_max
         self._api_session = None
         self.host = api or dmr_bench.BENCH_HOST
@@ -792,6 +797,8 @@ class SdrBench:
         once the board started it (it may have queued behind another session's job). The job's records and log
         lines are in .lines (text, the tool's output) with their arrival in .stamps; wait(), kill(), returncode."""
         L = self._line()
+        if self.api_level is not None and tool in ("bench_tx", "bench_repeater"):
+            args = f"--power {self.api_level} {args}"
         job = L.job_from_args(tool, args)
         for k in ("freq", "tx"):            # bench_tx's frequency, bench_repeater's output
             if job.get(k) is not None:
@@ -831,6 +838,8 @@ class SdrBench:
         req = {"op": "tx", "mode": "fm", "freq": freq, "session": self._api_session, "max_s": max_s,
                "program": program, "wait_max": self.dmr_bench.WAIT_MAX,
                "label": getattr(self.bench, "label", None) or "fm"}
+        if self.api_level is not None:
+            req["power"] = self.api_level
         req.update({k: v for k, v in fields.items() if v is not None})
         t = _LineTx(L, L.address(self.api), req)
         self.bg.append(t)
@@ -847,6 +856,36 @@ class SdrBench:
     def fm_transmit(self, freq, program, max_s=10.0, **fields):
         """fm_tx_start, then its done record once the last sample went out"""
         return self.fm_tx_start(freq, program, max_s, **fields).wait(max_s + 15)
+
+    def can_fm_rx(self):
+        """True when the receive board demodulates FM itself (the rx op, mode fm): a second measurement of what the
+        radio sends, beside the analysis of the board's I/Q"""
+        if not self.api:
+            return False
+        return "fm" in (self._api_info(rx=True).get("signal_modes") or {}).get("rx", [])
+
+    def fm_rx_start(self, freq, seconds, **fields):
+        """The receive board's FM measurement on freq (MHz) for `seconds` from now, in the background: a _LineTx whose
+        wait() gives the done record, its summary the board's figures (carrier_s, cfo_hz, deviation, tone, sub: the
+        CTCSS or DCS it decoded). fields: the mode's others (bw, nominal_dev_hz, deemph_us; None left out). Receives
+        only: no claim on the frequency."""
+        if not self.can_fm_rx():
+            skip("bench", f"the bench board {self.api_rx} has no FM receive (signal modes)")
+        self._need_lease()
+        L = self._line()
+        req = {"op": "rx", "mode": "fm", "freq": freq, "seconds": float(seconds), "streams": [],
+               "label": getattr(self.bench, "label", None) or "fm rx"}
+        if self.api_rx == self.api:     # the lease's session is the TX board's; another board has none of ours
+            req["session"] = self._api_session
+        req.update({k: v for k, v in fields.items() if v is not None})
+        t = _LineTx(L, L.address(self.api_rx), req)
+        self.bg.append(t)
+        end = time.monotonic() + 15
+        while not t.started.wait(0.2) and not t.req.done.is_set() and time.monotonic() < end:
+            pass
+        if t.req.error is not None:
+            self._api_fail(t.req.error, f"FM receive on {freq} MHz")
+        return t
 
     def ssh(self, cmd, timeout=300, check=True):
         self._no_api("shell")
@@ -1166,7 +1205,7 @@ class SdrBench:
     def _api_transmit(self, args, freq, cc, timeout, expect_s=None):
         """The bench_tx.py command line as a job on the board, which builds and sends the bursts (a --listen-after
         listens on its receiver); its JSON records, as the tool prints them. No --power: the board's own level (its
-        scale isn't the bench modem's, where --tx-power's 40 is all but off)."""
+        scale isn't the bench modem's, where --tx-power's 40 is all but off), unless --bench-api-level gives one."""
         p = self._api_job("bench_tx", f"--freq {freq} --cc {cc} {args}", expect_s)
         try:
             p.wait(timeout)

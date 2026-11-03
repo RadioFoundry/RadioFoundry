@@ -48,6 +48,9 @@ def pytest_addoption(parser):
     g.addoption("--bench-api-rx", default=os.environ.get("RFOUNDRY_BENCH_API_RX"), metavar="HOST[:PORT]",
                 help="a second bench board for bursts and captures (default: --bench-api's): a half-duplex board "
                      "can't hear while it transmits")
+    g.addoption("--bench-api-level", type=int, default=(int(os.environ["RFOUNDRY_BENCH_API_LEVEL"])
+                                                        if os.environ.get("RFOUNDRY_BENCH_API_LEVEL") else None),
+                metavar="0-255", help="the bench board's transmit level for its jobs and FM (default: the board's own)")
     g.addoption("--bench-station", default=os.environ.get("RFOUNDRY_BENCH_STATION"),
                 help="a shared bench's station (a RadioFoundry radio on the bench host) as the second radio of the tests "
                      "that use one (bench_station fixture); rfoundry-bench info lists them")
