@@ -23,7 +23,9 @@ from . import modemboot
 
 ACK, NAK = 0x06, 0x15
 HELLO = b"UPDATE"
-HELLO_REPLY = b"QX\x06"
+HELLO_REPLY = b"QX\x06"		# the stock firmware's answer (PROGRAM, END)
+# The bootloader answers UPDATE with the ACK alone (seen on a radio, bootloader V100); a QX before it is taken as well
+UPDATE_REPLIES = (bytes([ACK]), HELLO_REPLY)
 IDENTIFY = b"\x02"
 IDENTIFY_LEN = 16
 FINISH = b"\x18"
@@ -230,8 +232,10 @@ class Radio:
     def hello(self):
         self.port.reset_input_buffer()
         self.port.write(HELLO)
-        r = self._read(len(HELLO_REPLY))
-        if r != HELLO_REPLY:
+        r = self._read(1)
+        if r == HELLO_REPLY[:1]:
+            r += self._read(len(HELLO_REPLY) - 1)
+        if r not in UPDATE_REPLIES:
             raise UpdateError("no answer to UPDATE (%s): is the radio in update mode (%s)?"
                               % (r.hex() or "nothing", "the board's keys held at power-on"))
 
@@ -258,7 +262,14 @@ class Radio:
             if progress:
                 progress(i + 1, n)
         self.port.write(FINISH)
-        if self._read(1) != bytes([ACK]):
+        try:
+            r = self._read(1)
+        except OSError:
+            # Every frame was confirmed: a radio that restarts at once drops the port before its last ACK (seen on a
+            # radio). The image is in; only a radio that stays and says nothing has failed
+            self.log("note     the radio restarted before it confirmed the end of the write: every frame was confirmed")
+            return n
+        if r != bytes([ACK]):
             raise UpdateError("the radio didn't confirm the end of the write")
         return n
 
@@ -335,8 +346,12 @@ class FakeRadio:
     """A simulated update mode for tests: answers the handshake and the identity, keeps what is written. nak_every:
     refuse every n-th frame once; silent_after: stop answering after that many frames"""
 
-    def __init__(self, model="MODEL1", nak_every=0, silent_after=None, memory=None):
+    def __init__(self, model="MODEL1", nak_every=0, silent_after=None, memory=None, update_reply=bytes([ACK]),
+                 drop_at_finish=False):
         self.model = model
+        self.drop_at_finish = drop_at_finish	# the port goes away at FINISH, before the ACK (the radio restarts)
+        self.gone = False
+        self.update_reply = update_reply	# the bootloader's answer to UPDATE
         self.memory = memory or {}	# the PC mode's memory: {address: bytes}, unset bytes read 0xFF
         self.program = False
         self.ended = False
@@ -353,6 +368,8 @@ class FakeRadio:
         self.out = b""
 
     def read(self, n):
+        if self.gone:
+            raise OSError("device reports readiness to read but returned no data (device disconnected)")
         r, self.out = self.out[:n], self.out[n:]
         return r
 
@@ -393,14 +410,17 @@ class FakeRadio:
                 self.out += read_reply(addr, self.peek(addr, n))
             elif self.inbuf.startswith(HELLO):
                 self.inbuf = self.inbuf[len(HELLO):]
-                self.out += HELLO_REPLY
+                self.out += self.update_reply
             elif self.inbuf[:1] == IDENTIFY:
                 self.inbuf = self.inbuf[1:]
                 self.out += b"I" + self.model.encode().ljust(7, b"\x00")[:7] + b"\x01V100\x00\x00\x06"
             elif self.inbuf[:1] == FINISH:
                 self.inbuf = self.inbuf[1:]
                 self.finished = True
-                self.out += bytes([ACK])
+                if self.drop_at_finish:
+                    self.gone = True
+                else:
+                    self.out += bytes([ACK])
             elif self.inbuf[:1] == bytes([DATA]):
                 if len(self.inbuf) < FRAME_LEN:
                     return

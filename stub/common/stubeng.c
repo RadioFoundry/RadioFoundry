@@ -361,6 +361,10 @@ static void op_read(stubeng_t *s, const uint8_t *p, uint16_t len)
 
 static void op_xerase(stubeng_t *s, const uint8_t *p, uint16_t len)
 {
+	if (s->port->xerase == NULL) {
+		status(s, STUB_ST_BADOP);	// an external memory the stub only reads (an SPI NAND)
+		return;
+	}
 	if (len != 8) {
 		status(s, STUB_ST_BADARG);
 		return;
@@ -381,6 +385,10 @@ static void op_xerase(stubeng_t *s, const uint8_t *p, uint16_t len)
 // Bytes inside one 4 KB sector, all reading erased first, read back after
 static void op_xprogram(stubeng_t *s, const uint8_t *p, uint16_t len)
 {
+	if (s->port->xprogram == NULL) {
+		status(s, STUB_ST_BADOP);
+		return;
+	}
 	if (len < 5 || len - 4u > STUBENG_BLOCK) {
 		status(s, STUB_ST_BADARG);
 		return;
@@ -448,14 +456,16 @@ static uint8_t op_sreg(stubeng_t *s, bool write, const uint8_t *p, uint16_t len)
 	return 0;
 }
 
+// The sector as one byte (5-byte request) or, for a map past 256 sectors, two (big endian, 6 bytes); the magic follows
 static void op_erase(stubeng_t *s, const uint8_t *p, uint16_t len)
 {
-	if (len != 5) {
+	if (len != 5 && len != 6) {
 		status(s, STUB_ST_BADARG);
 		return;
 	}
-	unsigned sector = p[0];
-	if (get32(p + 1) != s->port->magic) {
+	unsigned sector = len == 5 ? p[0] : ((unsigned)p[0] << 8 | p[1]);
+	p += len - 4u;
+	if (get32(p) != s->port->magic) {
 		status(s, STUB_ST_REFUSED);
 		return;
 	}

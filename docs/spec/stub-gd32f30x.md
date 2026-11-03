@@ -26,7 +26,7 @@ Status (2026-10-31): built and host tested, host tools included. Nothing has run
 | | STM32F4 stub | GD32F30x stub |
 |---|---|---|
 | Name in HELLO, magic | `F4STUB`, its own | `GDSTUB`, `0x47445342` ('GDSB') |
-| Sectors the engine sees | the chip's sectors (16 to 128 KB) | 4 KB logical sectors over the first 1 MB (section 2) |
+| Sectors the engine sees | the chip's sectors (16 to 128 KB) | 4 KB logical sectors over the whole flash, up to 3 MB (section 2) |
 | Program unit | 4 or 8 bytes (the engine's rule) | 32-bit words, the FMC's unit |
 | SPI flash, security registers | yes, from the board record | none: the record holds only the bootloader's end (section 5) |
 | Watchdog fed | IWDG | FWDGT (section 3.3) |
@@ -41,8 +41,8 @@ pages (GD32F30x user manual, FMC). Each bank has its own key, status, control an
 | Engine's view | Value |
 |---|---|
 | Sector size | 4 KB everywhere: two 2 KB pages in bank 0, one page in bank 1 |
-| Sectors | the part's flash (the flash size register) cut to 1 MB: at most 256 |
-| Why 1 MB | the ERASE request carries the sector as one byte. RadioFoundry's image and every vendor area a board's registry names lie below 1 MB |
+| Sectors | the part's flash (the flash size register), up to the family's largest, 3 MB: at most 768 |
+| Above sector 255 | ERASE carries the sector in two bytes (`stub-stm32f4.md` 4). A stub before this reported at most 1 MB, so a host never asks it for more. Vendor data sits up there on some radios (a 3 MB part keeps a block at 0x082F5800) |
 | Sector 0 | never writable: no record may name it as the application base (`GD32_MIN_APP_BASE`) |
 | Bootloader | below the record's application base, never erased or programmed (engine rule) |
 | Option bytes | never touched: the stub has no code that unlocks or writes them |
@@ -120,14 +120,25 @@ The protocol is the shared engine's ([stub-stm32f4.md](stub-stm32f4.md) 5 and 13
 PROGRAM, CONFIG, RESET, with the interlock on the commit sector (the application's first sector is erased first and its
 first word programmed last).
 
-The CONFIG record is 8 bytes, big endian:
+The CONFIG record is big endian: layout 1 is 8 bytes, layout 2 adds 8 for an SPI NAND:
 
 | Offset | Size | Field |
 |---|---|---|
 | 0 | 1 | board id, nonzero (echoed by HELLO) |
-| 1 | 1 | layout, 1 |
+| 1 | 1 | layout, 1 or 2 |
 | 2 | 2 | reserved, 0 |
 | 4 | 4 | application base: the first writable address, the bootloader's end, on a 4 KB sector, above sector 0 |
+| 8 | 4 | layout 2: the NAND's chip select, clock, data out (IO0) and data in (IO1), each port << 4 \| pin (port 0 = A, at most E), all different |
+| 12 | 1 | layout 2: flags, bit 0 dual SPI reads |
+| 13 | 1 | layout 2: reserved, 0 |
+| 14 | 2 | layout 2: the NAND's size in MB, main areas, 1 to 2048 |
+
+With layout 2 the stub bit-bangs the NAND (`gd32stub_nand.c`) and serves its main areas as the external memory (the
+memory byte 1 of SUMS and READ; HELLO reports its size): page reads to the chip's cache, then the cache read, in dual
+SPI with IO0 turned input when the flag says so. A page whose ECC fails is passed on as read. The external memory is
+read only here: XERASE and XPROGRAM answer BADOP. A NAND that doesn't answer its ID leaves the external memory absent
+and the rest of the record applied. The pins and size come from the board's `[flash.stub] spi_nand` and its `pins.h`
+(`PIN_NAND_CS`, `PIN_NAND_CLK`, `PIN_NAND_MOSI`, `PIN_NAND_MISO`); `stubtool.py --nand FILE` reads it.
 
 PEEK reads the chip's device information (flash size, UID), the option bytes and SRAM.
 

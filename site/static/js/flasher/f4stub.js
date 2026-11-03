@@ -24,8 +24,8 @@ import * as protect from "./protect.js";
 
 export const BLOCK = 4096, FLASH_BASE = 0x08000000, APP_BASE = 0x0800C000, STUB_RUN = 0x20000000;
 export const F4_MAGIC = 0x46345342;	// 'F4SB': ERASE, XERASE and RESET carry it (the STM32F4 stub)
-export const GD32_MAGIC = 0x47445342, GD32_SECTOR = 0x1000;	// 'GDSB'; the GD32F30x stub's 4 KB sectors over at most 1 MB
-export const AT32_MAGIC = 0x41545342, AT32_SECTOR = 0x1000;	// 'ATSB'; the AT32F43x stub's 4 KB sectors over at most 1 MB
+export const GD32_MAGIC = 0x47445342, GD32_SECTOR = 0x1000, GD32_SECTORS = 768;	// 'GDSB'; the GD32F30x stub's 4 KB sectors, up to 3 MB
+export const AT32_MAGIC = 0x41545342, AT32_SECTOR = 0x1000, AT32_SECTORS = 1008;	// 'ATSB'; the AT32F43x stub's 4 KB sectors, up to 4032 KB
 export const MEM_INTERNAL = 0, MEM_SPI = 1;
 export const OP = { HELLO: 0x01, PEEK: 0x02, SUMS: 0x07, READ: 0x09, RESET: 0x0D, ERASE: 0x10, PROGRAM: 0x11, XERASE: 0x12, XPROGRAM: 0x13, CONFIG: 0x14, SREAD: 0x15 };
 export const BADARG = 0x0D, REFUSED = 0x0F, NOCONFIG = 0x11;
@@ -75,18 +75,19 @@ export function f405Sectors(flashKb = 1024) {
 	return out;
 }
 
-// [{index, addr, size}] the GD32F30x stub's engine sees: 4 KB sectors over the chip's flash, cut to 1 MB
+// [{index, addr, size}] the GD32F30x stub's engine sees: 4 KB sectors over the flash it reports (a stub before the
+// two-byte ERASE reports 1 MB at most)
 export function gd32Sectors(flashKb = 1024) {
 	const out = [];
-	for (let i = 0; i < Math.min(flashKb * 1024 / GD32_SECTOR, 256); i++) out.push({ index: i, addr: FLASH_BASE + i * GD32_SECTOR, size: GD32_SECTOR });
+	for (let i = 0; i < Math.min(flashKb * 1024 / GD32_SECTOR, GD32_SECTORS); i++) out.push({ index: i, addr: FLASH_BASE + i * GD32_SECTOR, size: GD32_SECTOR });
 	return out;
 }
 
-// [{index, addr, size}] the AT32F43x stub's engine sees: 4 KB sectors over the chip's flash, cut to 1 MB (the stub
-// erases the 2 KB or 4 KB physical sectors each holds)
+// [{index, addr, size}] the AT32F43x stub's engine sees: 4 KB sectors over the flash it reports (a stub before the
+// two-byte ERASE reports 1 MB at most; the stub erases the 2 KB or 4 KB physical sectors each holds)
 export function at32Sectors(flashKb = 1024) {
 	const out = [];
-	for (let i = 0; i < Math.min(flashKb * 1024 / AT32_SECTOR, 256); i++) out.push({ index: i, addr: FLASH_BASE + i * AT32_SECTOR, size: AT32_SECTOR });
+	for (let i = 0; i < Math.min(flashKb * 1024 / AT32_SECTOR, AT32_SECTORS); i++) out.push({ index: i, addr: FLASH_BASE + i * AT32_SECTOR, size: AT32_SECTOR });
 	return out;
 }
 
@@ -318,7 +319,9 @@ export class F4Stub extends Stub {
 		this.needConfigured();
 		const sec = this.sectors().find((s) => s.index === sector);
 		if (sec) this.guard("progmem", sec.addr - FLASH_BASE, sec.addr + sec.size - FLASH_BASE, "erase");
-		return this.request(OP.ERASE, concat(new Uint8Array([sector]), be32(this.t.magic)), { retries: 0, timeout: ERASE_TIMEOUT });
+		// One byte up to sector 255, two (big endian) past it: a stub that reports a map that large takes them
+		const num = sector < 256 ? new Uint8Array([sector]) : new Uint8Array([sector >> 8, sector & 0xFF]);
+		return this.request(OP.ERASE, concat(num, be32(this.t.magic)), { retries: 0, timeout: ERASE_TIMEOUT });
 	}
 
 	// data (whole words) at addr in pieces of up to 4 KB, all-0xFF pieces skipped (erased already)

@@ -4,7 +4,7 @@
 #include "at32stub.h"
 
 const stubeng_run_t at32_sector_runs[1] = {
-	{ AT32_SECTOR_SIZE, 256 },
+	{ AT32_SECTOR_SIZE, AT32_STUB_SECTORS },
 };
 
 // The flash size word and the unique ID; the user system data (option bytes); the 128 KB of SRAM every EOPB0 setting

@@ -12,7 +12,7 @@
 #include "at32stub.h"
 #include "stubeng.h"
 
-#define FLASH_SIZE	AT32_STUB_FLASH_MAX
+#define FLASH_SIZE	(1024u * 1024u)	// the part it models: at32_flash(1024)
 
 static uint8_t flash[FLASH_SIZE];
 static stubeng_port_t port;

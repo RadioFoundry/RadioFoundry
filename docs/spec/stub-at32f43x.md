@@ -32,7 +32,7 @@ Status (2026-10-31): built and host tested, host tools included. Nothing has run
 | USB core | USBD, its own packet memory | OTGFS1, a Synopsys DWC2 core like the STM32F4's OTG_FS (section 4) |
 | DMA stopped at entry | DMA0, DMA1 | DMA1, DMA2 (7 channels each) |
 
-The record, the 4 KB engine sectors, the 1 MB cut, the frame buffer staging and the entry registers are the GD32F30x
+The record, the 4 KB engine sectors, the two-byte ERASE past sector 255, the frame buffer staging and the entry registers are the GD32F30x
 stub's.
 
 ## 2. Flash map
@@ -57,8 +57,8 @@ The engine's view:
 |---|---|
 | Sector size | 4 KB everywhere |
 | Erase of one engine sector | each 2 KB half that does not read blank gets a sector erase at its address, then must read blank. On a 4 KB part the first erase blanks both halves, so the second is skipped; on a 2 KB part each half is its own sector. Either way nothing outside the 4 KB is erased, and the stub needs no sector size fact |
-| Sectors | the part's flash (the flash size register, 0x1FFFF7E0) cut to 1 MB: at most 256 |
-| Why 1 MB | the ERASE request carries the sector as one byte. RadioFoundry's image and every vendor area a board's registry names lie below 1 MB |
+| Sectors | the part's flash (the flash size register, 0x1FFFF7E0), up to the family's largest, 4032 KB: at most 1008 |
+| Above sector 255 | ERASE carries the sector in two bytes (`stub-stm32f4.md` 4). A stub before this reported at most 1 MB, so a host never asks it for more |
 | Program unit | 32-bit words; a request that crosses into bank 2 goes to each bank's registers in turn |
 | Sector 0 | never writable: no record may name it as the application base (`AT32_MIN_APP_BASE`) |
 | Bootloader | below the record's application base, never erased or programmed (engine rule) |

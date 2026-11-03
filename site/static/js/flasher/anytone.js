@@ -16,7 +16,7 @@ export class AnytoneError extends Error {}
 export const ACK = 0x06, NAK = 0x15, DATA = 0x01;
 export const BAUD = 921600;
 export const HELLO = new TextEncoder().encode("UPDATE");
-export const HELLO_REPLY = Uint8Array.of(0x51, 0x58, ACK);	// "QX", ACK
+export const HELLO_REPLY = Uint8Array.of(0x51, 0x58, ACK);	// "QX", ACK: the stock firmware's answer (PROGRAM, END)
 export const IDENTIFY = Uint8Array.of(0x02), IDENTIFY_LEN = 16;
 export const FINISH = Uint8Array.of(0x18);
 export const CHUNK = 32, FRAME_LEN = 40;
@@ -222,8 +222,11 @@ export class AnytoneUpdate {
 	async hello() {
 		this.s.clear();
 		await this.s.write(HELLO);
-		const r = await this.readExact(HELLO_REPLY.length);
-		if (r.length !== 3 || r.some((b, i) => b !== HELLO_REPLY[i]))
+		// The bootloader answers with the ACK alone (seen on a radio, bootloader V100); QX before it is taken as well
+		let r = await this.readExact(1);
+		if (r.length === 1 && r[0] === HELLO_REPLY[0]) r = Uint8Array.of(r[0], ...await this.readExact(HELLO_REPLY.length - 1));
+		const ok = (r.length === 1 && r[0] === ACK) || (r.length === 3 && r.every((b, i) => b === HELLO_REPLY[i]));
+		if (!ok)
 			throw new AnytoneError(`no answer to UPDATE (${hexs(r)}): is the radio in update mode?`);
 	}
 
@@ -252,6 +255,12 @@ export class AnytoneUpdate {
 		}
 		await this.s.write(FINISH);
 		const r = await this.readExact(1);
+		// Every frame was confirmed: a radio that restarts at once drops the port before its last ACK (seen on a
+		// radio). The image is in; only a radio that stays and says nothing has failed
+		if (r.length === 0 && this.s.lost) {
+			this.log("the radio restarted before it confirmed the end of the write: every frame was confirmed");
+			return total;
+		}
 		if (!(r.length === 1 && r[0] === ACK)) throw new AnytoneError("the radio didn't confirm the end of the write");
 		return total;
 	}

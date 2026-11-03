@@ -176,6 +176,32 @@ class Protocol(unittest.TestCase):
             r.write(B.app_base, data)
         self.assertEqual(fake.image()[:len(data)], data)
 
+    def test_restart_at_finish_is_success(self):
+        # The radio restarts and drops the port before its last ACK: every frame was confirmed, so the write stands.
+        # A radio that stays and says nothing at the end has failed
+        data = app_image(200)
+        fake = at.FakeRadio(model=model_of(runs_here()[0]), drop_at_finish=True)
+        r = at.Radio(fake, log=lambda m: None, timeout=0.01)
+        r.hello()
+        self.assertEqual(r.write(B.app_base, data), at.frames_needed(len(data)))
+        self.assertTrue(fake.finished)
+        self.assertEqual(fake.image()[:len(data)], data)
+        mute = at.FakeRadio(model=model_of(runs_here()[0]))
+        mute.write = (lambda orig: lambda b: None if b == at.FINISH else orig(b))(mute.write)
+        r = at.Radio(mute, log=lambda m: None, timeout=0.01)
+        r.hello()
+        self.assertRaisesRegex(at.UpdateError, "confirm the end", r.write, B.app_base, data)
+
+    def test_hello_takes_either_answer(self):
+        # The bootloader on the radio answers UPDATE with the ACK alone; QX before it is taken too, nothing else is
+        for reply in (b"\x06", b"QX\x06"):
+            r = at.Radio(at.FakeRadio(model=model_of(runs_here()[0]), update_reply=reply), log=lambda m: None, timeout=0.01)
+            r.hello()
+            self.assertEqual(r.identify()[0], model_of(runs_here()[0]))
+        for reply in (b"\x15", b"QX\x15", b"Q"):
+            r = at.Radio(at.FakeRadio(update_reply=reply), log=lambda m: None, timeout=0.01)
+            self.assertRaises(at.UpdateError, r.hello)
+
     def test_hello_needs_update_mode(self):
         class Mute(at.FakeRadio):
             def write(self, b):
