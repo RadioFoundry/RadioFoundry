@@ -30,12 +30,11 @@ CONFIG_HOTSPOT ?= n
 # The USB network adapter carries the DMR IP gateway's services, which wait for DMR transmit
 CONFIG_USB_NETWORK ?= n
 CONFIG_NET_PPP ?= n
-# FM transmit is refused for now, so the TX tones and DTMF have no path. APRS receive: the radio has the receive audio
-# on PC3, but the board doesn't feed it samples yet
+# FM transmit is refused for now, so the TX tones and DTMF have no path. APRS receives from the audio on PC3
+# (afsk_md9600.c)
 CONFIG_FM_TX_TONES ?= n
 CONFIG_DTMF ?= n
-CONFIG_APRS_RX ?= n
-# CONFIG_SUBTONE stays on: the decode is written (subtone_md9600.c, PC3), the encode (the tone PWM on PC7) is not, and
+# CONFIG_SUBTONE stays on: the decode is written (subtone_md9600.c, PA2), the encode (the tone PWM on PC7) is not, and
 # transmit is refused in the build until the RF sequence is confirmed
 # VOX needs the mic level (hal_power_t.mic_level), and the reference trim a hal_radio_t.ref_trim: neither is written
 CONFIG_VOX ?= n
@@ -61,8 +60,6 @@ BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet (the mic level is o
 BOARD_NOT_WRITTEN += REF_TRIM	# no hal_radio_t.ref_trim yet
 BOARD_NOT_WRITTEN += FM_TX_TONES	# FM transmit is refused until a radio confirms the RF sequence
 BOARD_NOT_WRITTEN += DTMF	# the tones go out through the FM transmitter, refused for now (above)
-BOARD_NOT_WRITTEN += APRS_RX	# the receive audio (PC3) isn't fed to the AFSK decoder
-BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += HOTSPOT	# needs the transmitter (CONFIG_MD9600_TX, CONFIG_MD9600_DMR_TX), refused for now
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# needs the hotspot (above)
 BOARD_NOT_WRITTEN += SFR	# repeats on air: waits for DMR transmit

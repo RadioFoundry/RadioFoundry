@@ -90,8 +90,11 @@ enum { MD9600_PWM_TONE = 2, MD9600_PWM_BEEP = 3 };
 void md9600_pwm_out(uint8_t ch, uint8_t duty);
 // The other analog inputs: the sub-audio input on ADC3 (PA2), 12-bit, one conversion
 uint16_t md9600_adc3_qt(void);
+// APRS receive audio from PC3 on ADC3 (afsk_md9600.c, CONFIG_APRS_RX); ADC3 is its while it runs
+extern const hal_afsk_t md9600_afsk;
+bool md9600_afsk_rx_running(void);
 
-// Sub-audio receive (subtone_md9600.c, CONFIG_SUBTONE): software CTCSS / DCS decode from PC3. rx_set starts the
+// Sub-audio receive (subtone_md9600.c, CONFIG_SUBTONE): software CTCSS / DCS decode from PA2. rx_set starts the
 // sampling on first use and restarts the detector for a tone (TONE_NONE matches always)
 void md9600_subtone_rx_set(const subtone_t *tone);
 bool md9600_subtone_rx_match(void);

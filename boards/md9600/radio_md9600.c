@@ -349,9 +349,15 @@ static void status(radio_status_t *st)
 #endif
 }
 
-// ADC3 IN2 (PA2, the sub-audio input), one software-started conversion. The common prescaler is the ADC1 scan's
+// ADC3 IN2 (PA2, the sub-audio input), one software-started conversion. The common prescaler is the ADC1 scan's.
+// While APRS receive has ADC3 (afsk_md9600.c): the last reading
 uint16_t md9600_adc3_qt(void)
 {
+	static uint16_t last;
+#if CONFIG_APRS_RX
+	if (md9600_afsk_rx_running())
+		return last;
+#endif
 	if (!(RCC->APB2ENR & RCC_APB2ENR_ADC3EN)) {
 		stm32_pin_analog(PIN_PORT(PIN_QT_IN), PIN_MASK(PIN_QT_IN));
 		RCC->APB2ENR |= RCC_APB2ENR_ADC3EN;
@@ -366,7 +372,8 @@ uint16_t md9600_adc3_qt(void)
 	ADC3->CR2 |= ADC_CR2_SWSTART;
 	for (uint32_t i = 0; i < 100000u && !(ADC3->SR & ADC_SR_EOC); i++) {
 	}
-	return (uint16_t)(ADC3->DR & 0xFFFu);
+	last = (uint16_t)(ADC3->DR & 0xFFFu);
+	return last;
 }
 
 const hal_radio_t md9600_radio = {

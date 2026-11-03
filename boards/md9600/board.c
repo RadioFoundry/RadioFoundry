@@ -117,6 +117,9 @@ const board_t board = {
 	.quick_label = "P1",
 	.context_label = "P2",
 	.radio = &md9600_radio,
+#if CONFIG_APRS_RX
+	.afsk = &md9600_afsk,	// receive only
+#endif
 #if CONFIG_DMR
 	.dmr = &stm32_hrc_dmr,
 	.audio = &md9600_audio,
