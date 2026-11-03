@@ -5423,27 +5423,33 @@ static const ui_scr_def_t group_screen = {
 
 // ======================= Hardware options (hal_hwopt.h) =======================
 // OK steps through an option's choices without storing; holding OK stores the one shown. A choice the board marks
-// "restart" applies from the next start-up
+// "restart" applies from the next start-up. One row at a time shows an unstored choice, kept in the screen's frame
+// argument (no static: RAM is tight on some radios): the row + 1 in the high byte, 0 = none, the choice in the low one.
+// Stepping another row drops it
 
-#define HWOPT_SHOWN_MAX	8
-static int8_t hwopt_shown[HWOPT_SHOWN_MAX];	// the choice on screen, HWOPT_NONE = what is stored
+#define HWOPT_ROWS_MAX		15
 
 static void hwopt_enter(void)
 {
-	for (uint8_t i = 0; i < HWOPT_SHOWN_MAX; i++)
-		hwopt_shown[i] = HWOPT_NONE;
+	ui_frame()->arg = 0;
 }
 
 static uint16_t hwopt_count(void)
 {
-	return board.hwopts != NULL ? (board.hwopt_count < HWOPT_SHOWN_MAX ? board.hwopt_count : HWOPT_SHOWN_MAX) : 0;
+	return board.hwopts != NULL ? (board.hwopt_count < HWOPT_ROWS_MAX ? board.hwopt_count : HWOPT_ROWS_MAX) : 0;
+}
+
+static int8_t hwopt_shown(uint16_t i, int8_t stored)
+{
+	uint16_t p = ui_frame()->arg;
+	return (p >> 8) == i + 1u ? (int8_t)(p & 0xFFu) : stored;
 }
 
 static void hwopt_item(uint16_t i, ui_item_t *it)
 {
 	const hal_hwopt_t *o = &board.hwopts[i];
 	int8_t stored = o->get();
-	int8_t c = hwopt_shown[i] != HWOPT_NONE ? hwopt_shown[i] : stored;
+	int8_t c = hwopt_shown(i, stored);
 	sbuf_t b;
 	sb_init(&b, it->label, sizeof it->label);
 	sb_str(&b, o->name);
@@ -5459,9 +5465,9 @@ static void hwopt_select(uint16_t i, bool hold)
 {
 	const hal_hwopt_t *o = &board.hwopts[i];
 	int8_t stored = o->get();
-	int8_t c = hwopt_shown[i] != HWOPT_NONE ? hwopt_shown[i] : stored;
+	int8_t c = hwopt_shown(i, stored);
 	if (!hold) {
-		hwopt_shown[i] = (int8_t)(c < 0 ? 0 : (c + 1) % o->count);
+		ui_frame()->arg = (uint16_t)(((i + 1u) << 8) | (uint8_t)(c < 0 ? 0 : (c + 1) % o->count));
 		return;
 	}
 	if (c < 0) {
@@ -5471,7 +5477,7 @@ static void hwopt_select(uint16_t i, bool hold)
 	} else if (!o->set((uint8_t)c)) {
 		ui_toast("Not stored");
 	} else {
-		hwopt_shown[i] = HWOPT_NONE;
+		ui_frame()->arg = 0;
 		ui_toast(o->restart ? "Stored: restart to apply" : "Stored");
 	}
 }

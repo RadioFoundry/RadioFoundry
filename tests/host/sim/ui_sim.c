@@ -1315,6 +1315,20 @@ static uint16_t n_inbox;
 static bool soft_volume;
 // The broadcast receiver (Settings > Talk & listen > FM broadcast step) only with the "bcast" token, the same way
 static bool bcast_rx;
+// Hardware options (Settings > Advanced > Hardware, hal_hwopt.h) only with the "hwopt" token: a revision that starts
+// unset and a plain option
+static int8_t hwopt_val[2];
+static const char *const hwopt_revs[] = { "V1", "V2", "V3" };
+static const char *const hwopt_onoff[] = { "Off", "On" };
+static int8_t hwopt_get0(void) { return hwopt_val[0]; }
+static int8_t hwopt_get1(void) { return hwopt_val[1]; }
+static bool hwopt_set0(uint8_t c) { hwopt_val[0] = (int8_t)c; return true; }
+static bool hwopt_set1(uint8_t c) { hwopt_val[1] = (int8_t)c; return true; }
+static const hal_hwopt_t sim_hwopts[] = {
+	{ .name = "Board revision", .count = 3, .choices = hwopt_revs, .get = hwopt_get0, .set = hwopt_set0, .restart = true },
+	{ .name = "Option", .count = 2, .choices = hwopt_onoff, .get = hwopt_get1, .set = hwopt_set1 },
+};
+
 // A reference trim (Settings > Advanced > Freq trim) only with the "trim" token, the same way
 static bool ref_trim;
 uint32_t ui_svc_features(void)
@@ -1985,6 +1999,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	soft_volume = false;
 	bcast_rx = false;
 	ref_trim = false;
+	board.hwopts = NULL;
+	board.hwopt_count = 0;
+	hwopt_val[0] = HWOPT_NONE;
+	hwopt_val[1] = 0;
 	ui_svc_setting_set(UI_SET_VOLUME, RADIO_VOLUME_DEFAULT);
 	ui_svc_setting_set(UI_SET_HINTS, 1);
 	ui_svc_setting_set(UI_SET_LARGE_TEXT, 0);
@@ -2689,6 +2707,11 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver
 		bcast_rx = true;
+		return true;
+	}
+	if (strcmp(t, "hwopt") == 0) {		// this radio has hardware options (sim_hwopts)
+		board.hwopts = sim_hwopts;
+		board.hwopt_count = 2;
 		return true;
 	}
 	if (strcmp(t, "trim") == 0) {		// this radio has a reference trim (hal_radio_t.ref_trim)

@@ -584,9 +584,8 @@ static const char *key_names(const char *text, char *out, size_t cap, bool hint)
 // takes a second line above it, so it is never shortened
 void ui_draw_hint(const char *text, bool toast)
 {
-	// Static: only the UI task draws, and the UI task's deepest chain runs through here (docs/dev/stack-check.md)
-	static char named[96];
-	text = key_names(text, named, sizeof named, !toast);
+	// The key names go into each alternate once it is picked, in buffers this function has anyway: no static (RAM is
+	// tight on some radios) and no more stack (the UI task's deepest chain runs through here, docs/dev/stack-check.md)
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->small;
 	int w = gfx_width();
@@ -596,16 +595,23 @@ void ui_draw_hint(const char *text, bool toast)
 	if (gfx_bpp() == 1 && !toast)
 		fg = ui_col.fg;
 	if (toast) {
-		char first[64], second[64];
+		char first[64], second[64];	// second holds the raw alternate until the key names are in first
+		const char *line = first;	// the alternate with the key names: first, or second when there were none
 		bool more = true;
 		// One line in the longest alternate that fits it, else two lines of the first
 		for (int level = 0; more; level++) {
-			gfx_text_alt(text, level, first, sizeof first, &more);
-			if (gfx_text_width(f, first) <= w - 2)
+			gfx_text_alt(text, level, second, sizeof second, &more);
+			line = key_names(second, first, sizeof first, false);
+			if (gfx_text_width(f, line) <= w - 2)
 				break;
 		}
-		if (gfx_text_width(f, first) > w - 2)
-			gfx_text_alt(text, 0, first, sizeof first, &more);
+		if (gfx_text_width(f, line) > w - 2) {
+			gfx_text_alt(text, 0, second, sizeof second, &more);
+			line = key_names(second, first, sizeof first, false);
+		}
+		if (line != first) {
+			memcpy(first, second, sizeof first);	// the rest below may point into it, and second is reused
+		}
 		const char *rest = wrap_line(f, first, w - 2, fit, sizeof fit);
 		int y = L->hint_y, top = y;
 		second[0] = 0;
@@ -635,7 +641,7 @@ void ui_draw_hint(const char *text, bool toast)
 	int lw = 0, rw = 0;
 	for (int level = 0; more; level++) {
 		gfx_text_alt(text, level, form, sizeof form, &more);
-		hint_split(form, left, sizeof left, right, sizeof right);
+		hint_split(key_names(form, fit, sizeof fit, true), left, sizeof left, right, sizeof right);
 		lw = gfx_text_width(f, left);
 		rw = gfx_text_width(f, right);
 		if (lw + (rw && lw ? f->w : 0) + rw <= w)

@@ -964,7 +964,7 @@ class StockLibrary(unittest.TestCase):
         self.assertTrue(b.keep_codec_supported)		# the application has sectors 3-7, the codec 9 and 11
         self.assertEqual(b.codec.id, "md9600-s11")
         self.assertEqual([s.index for s in b.codec_sectors()], [9, 11])
-        self.assertEqual(tuple(b.app_region), (0x0800C000, 0x08080000))	# memory.ld: sectors 3-7
+        self.assertEqual(tuple(b.app_region), (0x0800C000, 0x080A0000))	# memory.ld: sectors 3-8
         # The board's windows are the union of both stock builds' (a radio may hold either): every window of each
         # file's layout lies inside one of them, and an image reaching either table range is refused
         for sha in MD9600_STOCK:

@@ -103,6 +103,11 @@ static const flow_t flows[] = {
 	{ "11 dual watch: Tools > Scan, a zone scan instead", "quick 7 ctx 3 5 ok", "ok 6 1", "dual=0 scanning=1", 3, false },
 	{ "11 dual watch: the last B after power off", "quick 7 ctx 3 5 ok back back reboot", "quick 7", "dual=1 sel=A bpos=5",
 	  2, false },
+	// Settings > Advanced > Hardware (last row): OK steps a choice without storing ("*"), holding OK stores it
+	{ "S hardware options open", "hwopt", "ok 7 0 up ok", "screen=hwopt shows=Not_set", 5, false },
+	{ "S hardware option stepped, not stored", "hwopt ok 7 0 up ok", "ok ok", "shows=V2*", 2, false },
+	{ "S hardware option stored on hold", "hwopt ok 7 0 up ok", "ok long:ok", "toast=Stored:_restart hides=V1*", 2, false },
+	{ "S stepping another row drops the first", "hwopt ok 7 0 up ok ok", "down ok", "shows=Not_set shows=On*", 2, false },
 	{ "S freq trim opens its page", "trim", "ok 7 0 up ok", "screen=freq-trim shows=440_MHz shows=144_MHz", 9, false },
 	{ "S freq trim: Down steps 0.1 ppm at once", "trim ok 7 0 up ok", "down down",
 	  "set77=-200 shows=-0.2 shows=-88_Hz", 2, false },
