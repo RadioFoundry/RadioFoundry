@@ -794,6 +794,14 @@ static const flow_t flows_k[] = {
 	{ "C a long list reaches its end", "contacts:full ok 1", "up", "screen=contacts focus=Long_1024", 1, false },
 	{ "C a long list steps back past a gap", "contacts:full ok 1 up", "up", "focus=Long_1022", 1, false },
 	{ "C a long list wraps through its top", "contacts:full ok 1 up", "down up", "focus=Long_1024", 2, false },
+	// Past the 127 rows the filter keeps, one slot is a cursor stepped over the raw rows: back into the kept rows and
+	// out again, and a codeplug write (the list rebuilt) under a focus past them
+#define UP40	"up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up"
+#define DOWN40	"down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down"
+	{ "C a long list steps back into the kept rows", "contacts:220 ok 1 up", UP40, "focus=Long_160", 40, false },
+	{ "C and out of them to its end", "contacts:220 ok 1 up " UP40, DOWN40, "focus=Long_220", 40, false },
+	{ "C a long list rebuilt past the kept rows", "contacts:full ok 1 up", "cpwrite wait:1000",
+	  "screen=contacts focus=Long_1024", 0, false },
 	{ "K monitor key on DMR: digital monitor", "", "mon", "hearall=1 toast=Digital_monitor_on", 1, false },
 	{ "K monitor key on DMR, again: off", "mon", "mon", "hearall=0 toast=Digital_monitor_off", 1, false },
 	{ "K a key set to key lock", "", "lockkey", "locked=1", 1, false },

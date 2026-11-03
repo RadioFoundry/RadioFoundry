@@ -88,9 +88,10 @@ a body, raw keys, drawing and entry. List screens need only `count` and `item`; 
 scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and the long-press target.
 
 A filtered list's rows are raw rows (`raw_count`, `raw_label`) that have a label and, with keys typed, match them.
-With keys typed the list is the first `UI_FILTER_MAX` (128) matches. With none it is every row: the first 128 are kept
-in an index, and rows past them are found by stepping raw rows from the last one found, so a list of 1024 contacts
-scrolls to its end (and Up from the top wraps to it) without RAM for a full index.
+With keys typed the list is the first `UI_FILTER_MAX` (128) matches. With none it is every row: the first 127 are kept
+in an index, and in a longer list its last slot is a cursor stepped over the raw rows, so a list of 1024 contacts
+scrolls to its end (and Up from the top wraps to it) without RAM for a full index. A jump to the end reads every raw
+row once, as a typed key does.
 
 | Screen | Name | Reached by |
 |---|---|---|
