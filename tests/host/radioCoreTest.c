@@ -170,8 +170,14 @@ static void fake_gps_enable(bool on)
 	gps_enabled = on;
 }
 
+// FAKE_MODEM_VOICE: a modem that plays the voice itself (CAP_MODEM_VOICE); that build runs test_modem_voice only
+#ifndef FAKE_MODEM_VOICE
+#define FAKE_MODEM_VOICE	0
+#endif
+
 const board_t board = {
 	.name = "fake",
+	.caps = FAKE_MODEM_VOICE ? CAP_MODEM_VOICE : 0,
 	.gps_enable = fake_gps_enable,
 	.bands = bands,
 	.band_count = 3,
@@ -4545,8 +4551,32 @@ static void test_sfr_cwid(void)
 #endif
 #endif
 
+#if FAKE_MODEM_VOICE
+// A modem with its own voice: the board's speaker path opens while a call is played, and not for one that isn't
+static void test_modem_voice(void)
+{
+	dmr_start(false);
+	const radio_dmr_view_t *d = &sm.view.dmr;
+	CHECK(d->codec && !hw.audio);
+	hear_call(true, 201, 3101234, 2, 1, false);
+	CHECK(sm.view.state == RS_RX && d->state == RDMR_RX && hw.led[LED_GREEN] && hw.audio);
+	uint8_t lc[9];
+	mk_lc(lc, true, 201, 3101234);
+	burst_lc(lc, 2, true);
+	run(100);
+	CHECK(d->state == RDMR_IDLE && !hw.led[LED_GREEN] && !hw.audio);
+	hear_call(true, 3100, 3107777, 2, 1, false);	// not in the listen list: shown, not played
+	CHECK(d->state == RDMR_RX_OTHER && !hw.audio);
+}
+#endif
+
 int main(void)
 {
+#if FAKE_MODEM_VOICE
+	test_modem_voice();
+	printf("# radioCoreTestModemVoice: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
+	return failures != 0;
+#endif
 	test_startup();
 	test_persist();
 	test_channel_step();
