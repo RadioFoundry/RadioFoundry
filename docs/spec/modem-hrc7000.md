@@ -763,12 +763,14 @@ rides on the 4FSK. On one board the talk permit tone overlapped the second and t
 carried no decodable sync on the SDR bench and the bench modem took the call by late entry; with b7 held clear while
 transmitting, all three headers decoded in five runs (measured). Keep b7 clear during any transmission.
 
-`audio_pcm.c` keeps it clear for every board on the platform with one gate. The DMR glue closes it as the engine
-starts to transmit (`tx_begin`, and the hotspot's `bs_key`); while it is closed, b7 stays clear and nothing is pushed
-to the FIFO. It opens at least 50 ms later, once `hrc_dmr_tx_active()` is false. On both edges the speaker queue is
-emptied, so a beep queued during the transmission is dropped, not played late. Boards set b7 only through
-`hrc_audio_pcm_ring()`, which applies the gate. The diagnostics line `pg g<closings> l<closings that found speaker
-audio still pending> ra<checks that found b7 set while closed>` checks it: `l` and `ra` stay 0.
+`audio_pcm.c` keeps it clear for every board on the platform with one gate. The DMR glue closes it as the engine starts
+to transmit (`tx_begin`, and the hotspot's `bs_key`); while it is closed, b7 stays clear and nothing is pushed to the
+FIFO. It opens at least 50 ms later, once `hrc_dmr_tx_active()` is false: checked by the audio task, on each speaker
+route change and on each `hrc_audio_pcm_ring()` call (the audio task only exists once a stream has run, and APRS sets b7
+without one). On both edges the speaker queue is emptied, so a beep queued during the transmission is dropped, not
+played late. Boards set b7 only through `hrc_audio_pcm_ring()`, which applies the gate. The diagnostics line
+`pg g<closings> l<closings that found speaker audio still pending> ra<checks that found b7 set while closed>` checks
+it: `l` and `ra` stay 0.
 
 So the talk permit can't sound during DMR TX, and the boards set `CAP_BEEP_NOT_ON_AIR`: the radio core plays it in a
 short receive-only hold before the first burst (`radio-features.md` 4). On air with a hotspot parrot, the beep was

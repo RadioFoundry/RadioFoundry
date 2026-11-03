@@ -197,11 +197,15 @@ static void ring_apply(void)
 	hrc7000_audio_bits(modem, on ? C7_AUDIO_RING_PLAY : 0, on ? 0 : C7_AUDIO_RING_PLAY);
 }
 
+// The board's ring play changes (a beep, APRS AFSK): the gate may be due to open first. The audio task, which opens it
+// otherwise, starts with the first stream (a beep, voice): with none since boot, a DMR data or hotspot transmission
+// left the gate closed, and APRS's tones off the modulator
 void hrc_audio_pcm_ring(hrc7000_t *m, bool want)
 {
 	uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
 	modem = m;
 	ring_want = want;
+	gate_check();
 	ring_apply();
 	hrc_irq_restore(s);
 }
@@ -247,21 +251,22 @@ void hrc_audio_pcm_tx_gate(void)
 	}
 }
 
+// Interrupts on or off. All of it under the lock: a close from another task between a check and the opening (a new
+// tx_begin moves gate_at) must leave the gate closed
 static void gate_check(void)
 {
-	if (!tx_gated) {
-		return;
-	}
-	if ((modem->audio_ctl & C7_AUDIO_RING_PLAY) != 0) {
-		ring_on_air++;	// never: ring play came on while gated
-	}
-	if (hrc_micros() - gate_at < GATE_MIN_US || hrc_dmr_tx_active()) {
+	if (!tx_gated || modem == NULL) {
 		return;
 	}
 	uint32_t s = hrc_irq_save();
-	tx_gated = false;
-	spk_drop();	// what was queued meanwhile is stale
-	ring_apply();
+	if ((modem->audio_ctl & C7_AUDIO_RING_PLAY) != 0) {
+		ring_on_air++;	// never: ring play came on while gated
+	}
+	if (tx_gated && hrc_micros() - gate_at >= GATE_MIN_US && !hrc_dmr_tx_active()) {
+		tx_gated = false;
+		spk_drop();	// what was queued meanwhile is stale
+		ring_apply();
+	}
 	hrc_irq_restore(s);
 }
 
