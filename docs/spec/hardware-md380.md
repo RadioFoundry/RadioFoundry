@@ -407,7 +407,7 @@ pull request. Each test started from a power-on, and register reads confirmed th
 while a call played. `hrc5000_speaker_voice()` now writes, when a DMR PCM stream opens the route: 0x0D = 0x9C, 0x0E = 0x4C
 (HPMute stays set, HPoutEn stays off, Mic1En on) and 0x37 = 0xC2, with 0x36 = 0x00 already written; it writes 0x0D = 0x8C and
 0x0E = 0x44 back when the route closes, which should also end the buzz after a call. `-DHRC5000_SPK_VOICE=0` leaves it out.
-On an MD-380 (UHF, D002.032 codec) against an AT-D878UV on 446.075 TS1, with the build at 17d89001 plus the codec
+On an MD-380 (UHF, D002.032 codec) against an AT-D878UV on a 70 cm test frequency, TS1, with the build at 17d89001 plus the codec
 move: received speech plays clear from the speaker and transmit is clear (one 10 s call: 498 frames, 10 bit errors, 3
 concealed, 0 lost). Why both bits are needed together isn't in the manual (unverified). Not yet checked with it: the buzz after
 a call or after our own transmit, the key beep in DMR and FM, and FM receive.
@@ -434,7 +434,7 @@ Skyworks SKY72310-11 (unverified as the part fitted to this radio). From the dat
 - **The driver uses the signed mode** (register 14 bit 5): N_reg = round(N) - 32 and a two's complement dividend for a
   fraction of -0.5..+0.5. Sent unsigned, every channel whose fraction was over one half came out one phase detector
   step (8.4 MHz) low with lock detect high: at 443.7, 444.0-444.5, 435 and 450 MHz the radio received nothing, at
-  440, 445 and 446.075 it did (DM-32UV as the sender, 2026-10-20, issue 108). Either the unsigned-mode write doesn't
+  440, 445 and 446 MHz it did (DM-32UV as the sender, 2026-10-20, issue 108). Either the unsigned-mode write doesn't
   take or the part runs signed; signed encoding is right in both cases on air.
 - A new ratio takes effect on the dividend MSB write: order divider, LSB, MSB.
 - Lock detect high = locked (on the Mux_out / LD pin, wired to PD10 (unverified)). The pin is the PS output, open collector

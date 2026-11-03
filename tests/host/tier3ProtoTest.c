@@ -482,7 +482,7 @@ static void test_aloha(void)
 static void test_grants(void)
 {
 	grant_t g = { .group = true, .lpcn = 17, .slot = 2, .late_entry = true, .emergency = false, .offset = false,
-		.target = 3100, .source = 3109999 }, h;
+		.target = 3100, .source = 9999999 }, h;
 	uint8_t buf[12] = { 0 };
 	grant_pack(&g, buf);
 	CHECK(buf[0] == 0xB1, "TV_GRANT octet 0 %02X", buf[0]);
@@ -491,40 +491,40 @@ static void test_grants(void)
 	// LPCN 17 = 0000 0001 0001, then slot 1 (TS2), late 1, emergency 0, offset 0: octets 2-3 = 01 1C
 	CHECK(buf[2] == 0x01 && buf[3] == 0x1C, "TV_GRANT octets 2-3 %02X %02X", buf[2], buf[3]);
 	uint32_t groups[] = { 9, 3100 };
-	CHECK(grant_applicable(&h, 1234567, groups, 2), "TV_GRANT to a listened group");
+	CHECK(grant_applicable(&h, 9997001, groups, 2), "TV_GRANT to a listened group");
 	h.target = 91;
-	CHECK(!grant_applicable(&h, 1234567, groups, 2), "TV_GRANT to another group");
-	CHECK(grant_applicable(&h, 3109999, groups, 2), "TV_GRANT from us");
+	CHECK(!grant_applicable(&h, 9997001, groups, 2), "TV_GRANT to another group");
+	CHECK(grant_applicable(&h, 9999999, groups, 2), "TV_GRANT from us");
 
-	grant_t p = { .group = false, .lpcn = 4094, .slot = 1, .emergency = true, .offset = true, .target = 1234567,
-		.source = 7654321 }, q;
+	grant_t p = { .group = false, .lpcn = 4094, .slot = 1, .emergency = true, .offset = true, .target = 9997001,
+		.source = 9997002 }, q;
 	grant_pack(&p, buf);
 	CHECK(buf[0] == 0xB0, "PV_GRANT octet 0 %02X", buf[0]);
 	CHECK(grant_unpack(buf, &q) && q.lpcn == 4094 && q.slot == 1 && q.emergency && q.offset && !q.late_entry &&
-		q.target == 1234567 && q.source == 7654321, "PV_GRANT round trip");
-	CHECK(grant_applicable(&q, 1234567, NULL, 0), "PV_GRANT to us");
+		q.target == 9997001 && q.source == 9997002, "PV_GRANT round trip");
+	CHECK(grant_applicable(&q, 9997001, NULL, 0), "PV_GRANT to us");
 }
 
 static void test_rand_ack(void)
 {
 	uint8_t buf[12] = { 0 };
-	rand_voice_pack(true, false, 0, 3100, 1234567, buf);
+	rand_voice_pack(true, false, 0, 3100, 9997001, buf);
 	CHECK(buf[0] == 0x9F && buf[1] == 0, "C_RAND octets 0-1 %02X %02X", buf[0], buf[1]);
 	CHECK(buf[2] == 0x00 && buf[3] == 0x01, "C_RAND group voice octets 2-3 %02X %02X", buf[2], buf[3]);
 	CHECK(buf[4] == 0x00 && buf[5] == 0x0C && buf[6] == 0x1C, "C_RAND target 3100");
-	rand_voice_pack(false, true, 3, 7654321, 1234567, buf);
+	rand_voice_pack(false, true, 3, 9997002, 9997001, buf);
 	CHECK(buf[2] == 0x80 && buf[3] == 0x00, "C_RAND emergency individual octets 2-3 %02X %02X (priority forced 0)",
 		buf[2], buf[3]);
-	rand_reg_pack(true, 0x5A3D, 1234567, buf);
+	rand_reg_pack(true, 0x5A3D, 9997001, buf);
 	CHECK(buf[2] == 0x02 && buf[3] == 0x0E, "C_RAND registration octets 2-3 %02X %02X", buf[2], buf[3]);
 	CHECK(buf[4] == 0x00 && buf[5] == 0x5A && buf[6] == 0x3D, "C_RAND registration target 00 + syscode");
-	rand_reg_pack(false, 0x5A3D, 1234567, buf);
+	rand_reg_pack(false, 0x5A3D, 9997001, buf);
 	CHECK(buf[2] == 0x00, "C_RAND de-registration Reg_Dereg = 0");
 
-	ack_pack(CSBKO_C_ACKD, 0, REASON_REG_ACCEPTED, 1234567, ID_REGI, buf);
+	ack_pack(CSBKO_C_ACKD, 0, REASON_REG_ACCEPTED, 9997001, ID_REGI, buf);
 	unsigned p = 16;
 	CHECK(get(buf, &p, 7) == 0 && get(buf, &p, 8) == REASON_REG_ACCEPTED && get(buf, &p, 1) == 0 &&
-		get(buf, &p, 24) == 1234567 && get(buf, &p, 24) == ID_REGI, "C_ACKD Reg_Accepted fields");
+		get(buf, &p, 24) == 9997001 && get(buf, &p, 24) == ID_REGI, "C_ACKD Reg_Accepted fields");
 	// Reason layout t t d a a a a a: ACK (01), TS to MS (1)
 	CHECK((REASON_REG_ACCEPTED >> 6) == 1 && ((REASON_REG_ACCEPTED >> 5) & 1) == 1, "Reg_Accepted is an ACK, TS to MS");
 	CHECK((REASON_REG_REFUSED >> 6) == 0, "Reg_Refused is a NACK");
@@ -541,14 +541,14 @@ static void test_payload_pdus(void)
 	CHECK(get(buf, &p, 12) == 0, "P_CLEAR LPCN 0: back to the last confirmed TSCC");
 	p = 32;
 	CHECK(get(buf, &p, 24) == ID_ALLMSI && get(buf, &p, 24) == ID_TSI, "P_CLEAR ALLMSI from TSI");
-	p_maint_discon_pack(1234567, buf);
+	p_maint_discon_pack(9997001, buf);
 	p = 0;
 	CHECK(get(buf, &p, 8) == (0x80 | CSBKO_P_MAINT), "P_MAINT opcode");
 	p = 32;
-	CHECK(get(buf, &p, 24) == ID_TSI && get(buf, &p, 24) == 1234567, "P_MAINT DISCON to TSI from us");
-	ahoy_auth_pack(1234567, 0x7A17C0, buf);
+	CHECK(get(buf, &p, 24) == ID_TSI && get(buf, &p, 24) == 9997001, "P_MAINT DISCON to TSI from us");
+	ahoy_auth_pack(9997001, 0x7A17C0, buf);
 	p = 28;
-	CHECK(get(buf, &p, 4) == SK_REG && get(buf, &p, 24) == 1234567 && get(buf, &p, 24) == 0x7A17C0,
+	CHECK(get(buf, &p, 4) == SK_REG && get(buf, &p, 24) == 9997001 && get(buf, &p, 24) == 0x7A17C0,
 		"C_AHOY authentication challenge fields");
 }
 
@@ -603,7 +603,7 @@ static void test_channel_plans(void)
 	CHECK(tx == 460000000u && rx == 465000000u, "fixed plan CHAN 801: %u / %u", tx, rx);
 	fixed_plan(150000000u, 1, 3, false, 240, &tx, &rx);
 	CHECK(tx == 150012500u && rx == 149412500u, "fixed plan VHF Tx high: %u / %u", tx, rx);
-	CHECK(cdef_hz(461, 5500) == 461687500u, "CdefParms 461 MHz + 5500 x 125 Hz");
+	CHECK(cdef_hz(462, 2500) == 462312500u, "CdefParms 462 MHz + 2500 x 125 Hz");
 	CHECK(cdef_hz(999, 0x1F3F) == 999999875u, "CdefParms top of the 125 Hz range");
 }
 
@@ -621,7 +621,7 @@ static void test_auth(void)
 	CHECK(r[0] == 0xE9 && r[1] == 0xC8 && r[2] == 0x1E, "auth with PSN %02X %02X %02X", r[0], r[1], r[2]);
 	uint8_t buf[12] = { 0 };
 	auth_response(0x7A17C0, k, NULL, r);
-	ack_pack(CSBKO_C_ACKU, 0, REASON_AUTH_RESPONSE, ((uint32_t)r[0] << 16) | ((uint32_t)r[1] << 8) | r[2], 1234567,
+	ack_pack(CSBKO_C_ACKU, 0, REASON_AUTH_RESPONSE, ((uint32_t)r[0] << 16) | ((uint32_t)r[1] << 8) | r[2], 9997001,
 		buf);
 	CHECK(buf[0] == 0xA1 && buf[4] == 0xE8 && buf[5] == 0xCA && buf[6] == 0x1D, "C_ACKU carries the response");
 }

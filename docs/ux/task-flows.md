@@ -84,7 +84,7 @@ TG not in the codeplug: on Home type `3`,`1`,`0`,`0`; Find's first result is "Ta
 
 ## 4. Call back the last station heard
 
-During the reply window (default 10 s): just `PTT`. Home already shows "Reply → TG 91" or "Reply → K1ABC (private)".
+During the reply window (default 10 s): just `PTT`. Home already shows "Reply → TG 91" or "Reply → Q1AAA (private)".
 
 After the window:
 
@@ -103,12 +103,12 @@ Older station: `SELECT`, `3` opens Recent, `NAV_DOWN` to the station, `PTT`. (Lo
 
 By name:
 
-1. On Home type T9 letters (`5`,`6`,`3` for "Joe"). Find lists Joe Smith K1ABC first.
+1. On Home type T9 letters (`5`,`6`,`3` for "Joe"). Find lists Joe Smith Q1AAA first.
 2. `CONTEXT`: contact actions. `2` (Private call) or simply `PTT` with "Private call" focused.
 
 Shortcut: in Find, focus the contact and press `PTT`: talk target choice for a person is private call, for a TG group call.
 
-By ID: type the ID (`3`,`1`,`0`,`1`,`2`,`3`,`4`); Find shows "Private call 3101234" (name from the ID database if present) and "Talk to TG 3101234"; focus the private call line and `PTT`.
+By ID: type the ID (`3`,`1`,`0`,`1`,`2`,`3`,`4`); Find shows "Private call 9991234" (name from the ID database if present) and "Talk to TG 9991234"; focus the private call line and `PTT`.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -120,7 +120,7 @@ By ID: type the ID (`3`,`1`,`0`,`1`,`2`,`3`,`4`); Find shows "Private call 31012
 1. Pick the recipient: `CONTEXT` (last caller) or Find by name, then `CONTEXT`.
 2. `3` (Message): the composer opens with Canned messages listed first ("OK", "On my way", "Call me", "QSY TG 91", user-defined), then "Write…".
 3. Canned: `NAV_DOWN` to it, `SELECT` = Send. Written: `NAV_DOWN` to "Write…", `SELECT`, type (T9), `SELECT` = Send.
-4. Status strip shows "Sending…", then "Delivered" (if confirmed data) or "Sent, no confirmation" with what to do on failure ("No answer from K1ABC. Retry with Select, or Back to keep in Drafts").
+4. Status strip shows "Sending…", then "Delivered" (if confirmed data) or "Sent, no confirmation" with what to do on failure ("No answer from Q1AAA. Retry with Select, or Back to keep in Drafts").
 
 Long `BACK` from the composer keeps the text as a draft (P4).
 
@@ -142,7 +142,7 @@ Banner is up (8 s): `CONTEXT` opens it. Banner gone: the status strip shows an e
 ## 8. Radio check
 
 1. Pick the target (last caller: `CONTEXT`; contact: Find, `CONTEXT`).
-2. `4` (Radio check). Status strip "Checking K1ABC…"; tone and banner "K1ABC answered (0.8 s)" or "No answer from K1ABC after 3 tries. They may be off, out of range, or on another channel."
+2. `4` (Radio check). Status strip "Checking Q1AAA…"; tone and banner "Q1AAA answered (0.8 s)" or "No answer from Q1AAA after 3 tries. They may be off, out of range, or on another channel."
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -249,7 +249,7 @@ While active: `BACK` goes Home; the hotspot keeps running and Home's status stri
 
 ## 16. See who is talking
 
-No presses: on RX the Activity region shows, in order of what's known: name (contact, else ID database), callsign, talker alias (as it arrives), DMR ID, TG and TS, RSSI, distance and bearing if a position is known. On 128x64, the two most important lines (name or callsign, TG) are shown and `CONTEXT` > Speak status or the RX detail view (`CONTEXT`, then `SELECT` on the header) shows the rest. Outside Home, the status strip shows "RX TG 91 · K1ABC".
+No presses: on RX the Activity region shows, in order of what's known: name (contact, else ID database), callsign, talker alias (as it arrives), DMR ID, TG and TS, RSSI, distance and bearing if a position is known. On 128x64, the two most important lines (name or callsign, TG) are shown and `CONTEXT` > Speak status or the RX detail view (`CONTEXT`, then `SELECT` on the header) shows the rest. Outside Home, the status strip shows "RX TG 91 · Q1AAA".
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -392,7 +392,7 @@ the radio follows its zone to the new position and stays on its channel.
 
 ## 27. Create a contact from a typed number
 
-1. On Home type the ID or talkgroup: Find's last row is "Create contact 3109876" when no contact has that number.
+1. On Home type the ID or talkgroup: Find's last row is "Create contact 9999876" when no contact has that number.
 2. Focus it, `SELECT`: New Contact opens with the ID, the type (a person for 7 digits and more) and the number as its
    name. From a caller's or talkgroup's actions it is Save as contact (`7` for a person), filled from the call.
 3. Change the name or type if needed, long `SELECT` saves.

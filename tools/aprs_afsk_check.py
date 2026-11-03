@@ -500,9 +500,9 @@ def self_test(wav=None):
         if not cond:
             fails.append(what)
 
-    lines = [("N0TST-15", "APZRDF", [], "!/5L!!<*e7>7P[RadioFoundry self test"),
-             ("N0TST-15", "APZRDF", ["WIDE1-1"], ">status text"),
-             ("N0TST-15", "APZRDF", [], ":K1ABC-9  :hello{42")]
+    lines = [("Q0TST-15", "APZRDF", [], "!/5L!!<*e7>7P[RadioFoundry self test"),
+             ("Q0TST-15", "APZRDF", ["WIDE1-1"], ">status text"),
+             ("Q0TST-15", "APZRDF", [], ":Q2BBB-9  :hello{42")]
     frames = [ax25_frame(*ln) for ln in lines]
     want = [f"{s}>{d}{''.join(',' + x for x in dg)}:{i}" for s, d, dg, i in lines]
     for f, ln in zip(frames, lines):
@@ -553,7 +553,7 @@ def self_test(wav=None):
         # the firmware's modulator (aprsTest --wav): as audio, and FM modulated into I/Q
         r = analyze_audio(wav)
         got = [f["tnc2"] for f in r["frames"]]
-        check(len(got) == 3 and all(g.startswith("N0CALL-7>APZRDF") for g in got), f"firmware WAV: {got}")
+        check(len(got) == 3 and all(g.startswith("Q0TST-7>APZRDF") for g in got), f"firmware WAV: {got}")
         x, fs = read_wav(wav)
         path = os.path.join(tmp, "fw.cs8")
         synth_iq(path, x / np.max(np.abs(x)) * 3000.0, fs, offset)

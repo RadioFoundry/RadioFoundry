@@ -189,7 +189,7 @@ static void snmp_udp(bool fromAir, uint32_t src, uint16_t srcPort, uint32_t dst,
 static void snmp_setup(void)
 {
 	data.dmrId = RADIO_ID;
-	strcpy(data.name, "N0CALL");
+	strcpy(data.name, "Q0TEST");
 	data.board = "pppPeer";
 	data.firmware = "ppp-interop";
 	data.batteryMv = 7600;

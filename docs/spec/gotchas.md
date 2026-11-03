@@ -608,7 +608,7 @@ the talker's direct copy was clean. It plays, but it is the reason a user would 
   between RX and DMR TX keeps it locked: no frames lost, 48-68 bits. The band's RX supply still follows the PA.
 - Straight from RX the carrier is about 3.07 kHz low, and a frequency write can't correct it (3.5). Raise the HR_C6000
   MOD1 offset (4:0x04, about 75 Hz a step at 461 MHz) for the burst and restore it for RX. On the board measured that is 42
-  steps over the calibrated value (41: -57..-15 Hz, 42: +16..+60 Hz), at 461.1375 MHz only. Check it at
+  steps over the calibrated value (41: -57..-15 Hz, 42: +16..+60 Hz), at one frequency near 461 MHz only. Check it at
   other frequencies and on each radio.
 - Key 1 ms after the RF TX interrupt, which comes about 1.28 ms before the slot. 0.6-1.2 ms all did the same; keying
   at the interrupt lost frames. Dropping the PA earlier (28.5-30 ms) changed nothing.

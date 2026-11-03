@@ -235,7 +235,7 @@ what you typed as you go.
 |---|---|
 | **4** **4** **6** **0** **0** **0** | 446.000 MHz |
 | **1** **4** **6** **5** **2** | 146.520 MHz |
-| **4** **6** **1** **8** **6** **2** **5** | 461.8625 MHz |
+| **4** **3** **8** **2** **6** **2** **5** | 438.2625 MHz |
 | **0** **8** **8** **1** | 88.100 MHz (below 100 MHz, start with **0**) |
 
 - Type at least the three MHz digits, then press **OK** (or **#** where the radio has that key) to tune.

@@ -580,7 +580,7 @@ driver, simplex and SFR `repeater`) and **bench** (our `hotspot_test.py`, `hs_no
 | 9 | SET_CONFIG length | 23 payload (v1) | 23 (v1) / 37 (v2) | 23 |
 | 10 | SET_CONFIG state byte | 00 | 02 | 02 |
 | 11 | Simplex flag | set (Duplex=0) | set (simplex); **clear + RX = TX for SFR** | set (`--simplex`) or clear + RX = TX (SFR) |
-| 12 | SET_FREQ | 14 bytes, POCSAG 433 MHz filler | 14 bytes, POCSAG = TX freq; business band | 14 bytes, 461.6875 MHz |
+| 12 | SET_FREQ | 14 bytes, POCSAG 433 MHz filler | 14 bytes, POCSAG = TX freq; business band | 14 bytes, 463.2500 MHz |
 | 13 | DMR_DATA control byte to modem | **always 00** | set (41, 20, 01-05, 42, 43, 46 ...) | 00 (`net_*`) or set (`net_*_ctl`) |
 | 14 | Headers / terminators to modem | 8 / 3 (simplex), 6 idle bursts first | 1 / 1 to the radio profile; SFR: 6 idle + 3 headers, terminator + (call hang / 60 ms − 1) more, about 50 | 6 idle, 8 headers, 3 terminators, 2 idle |
 | 15 | Space use | write while > 1, −1 per frame | same; SFR: slot 1 space from offset 7, slot 2 from 8 | same (`take_space`) |
@@ -752,7 +752,7 @@ full where they matter; `<33>` is a 33-byte burst.
 
 Example frames (typical MMDVMHost defaults: levels 50 %, CC 1, TX delay 100 ms, simplex, DMR only):
 
-- SET_FREQ 461.6875 MHz, RF 100 %: `E0 11 04 00 CC CA 84 1B CC CA 84 1B FF 40 0E CF 19` → `E0 04 70 04`
+- SET_FREQ 463.2500 MHz, RF 100 %: `E0 11 04 00 50 A2 9C 1B 50 A2 9C 1B FF 40 0E CF 19` → `E0 04 70 04`
 - SET_CONFIG v1: `E0 1A 02 80 02 0A 00 80 80 01 00 80 80 80 80 80 80 80 80 04 80 80 05 05 00 00` → `E0 04 70 02`
 - SET_MODE DMR: `E0 04 03 02` → `E0 04 70 03`
 
@@ -766,7 +766,7 @@ Example frames (typical MMDVMHost defaults: levels 50 %, CC 1, TX delay 100 ms, 
 | C-6 | SET_CONFIG with state 01 (D-Star) | `E0 05 7F 02 04` |
 | C-7 | SET_CONFIG of 13 payload bytes (old hosts) | ACK, color code taken from payload 6 |
 | C-8 | SET_FREQ of 9 and of 10 payload bytes | ACK each; 9 means full power |
-| C-9 | SET_FREQ at 461.6875 MHz with POCSAG 433 MHz, and at 146.52 MHz (if the radio has VHF) | ACK (no amateur-band check, POCSAG frequency ignored) |
+| C-9 | SET_FREQ at 463.2500 MHz with POCSAG 433 MHz, and at 146.52 MHz (if the radio has VHF) | ACK (no amateur-band check, POCSAG frequency ignored) |
 | C-10 | SET_FREQ outside the hardware range (e.g. 1 GHz) | `E0 05 7F 04 04` |
 | C-11 | SET_MODE 06, then 00, then 02, then 02 again | four ACKs |
 | C-12 | SET_MODE 03 (YSF) | `E0 05 7F 03 04` |

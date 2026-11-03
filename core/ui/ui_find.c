@@ -4,7 +4,7 @@
 // The keys are read both as a number and as T9 letters (2 = abc ... 9 = wxyz), matched against the start of each
 // word. Order of the results:
 //  1. a channel at that position in the zone (numbers of up to 3 digits: "12" then OK = channel 12, P1), then the
-//     digits as a frequency in one of the bands, read as VFO entry reads them ("Tune VFO to 461.462"),
+//     digits as a frequency in one of the bands, read as VFO entry reads them ("Tune VFO to 438.250"),
 //  2. channels of the zone, contacts and talkgroups, zones and places / settings whose names match the letters,
 //     contacts whose ID starts with the number (3+ digits),
 //  3. the number itself as a talkgroup and as a private call ("TG 3100 (not saved)", "Private call 3100"), so a
