@@ -351,9 +351,8 @@ keeps the single receiver's values. It sends
 `SQ_LEVEL` and `DEMOD_GAIN` once at start-up; RadioFoundry sends both in every start. The baseband needs
 `CARRIER_READY` 2 (ready, demodulated phase reversed): RadioFoundry sends 2 when side A's carrier comes up and 0
 when it goes, from the status poll (`d578uv_modem_carrier`); with 1 no call decodes.
-The `MODOUT_CONFIG` delay byte is a setting the stock firmware sets to 0 at start-up,
-not a calibration value. The equalizer filters stay at the baseband's default, off, which is what the stock firmware
-sends without a preset.
+The `MODOUT_CONFIG` delay byte is a setting, 0 from start-up, not a calibration value. The equalizer filters stay at
+the baseband's default, off.
 
 While it transmits, the stock firmware mutes the headphone driver (codec page 1 register 0x10 to 0x40) and writes
 the calibrated level back for receive. RadioFoundry does the same: the mute before `WORK_MODE` transmit, the level
