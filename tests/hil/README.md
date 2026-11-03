@@ -190,7 +190,7 @@ the radio during the bench's own key-up needs the second board.
 | `repeater_start()` | a `bench_repeater.py` job; a board that runs no duplex repeater refuses it (skip kind `bench`) |
 | `outbound_start()` | a repeater's idle outbound with no repeater behind it (`bench_tx.py outbound`): BS bursts on both slots with the CACH. A bench board only |
 | `dmr_watch_start()`, `bursts_start()` | the receive board's decoded bursts (`bursts`), in the bench host's record shape |
-| `capture_start()`, `analyze_fm()`, `analyze_aprs()` | the receive board's wideband I/Q (`capture`, cs8) into a local run directory, each frame placed by its sample clock; `tools/sdr_fm_check.py` and `tools/aprs_afsk_check.py` run on the test host. A capture with samples the board lost (`gap_samples`, frames it couldn't send, or a run of exact zeros of 2 ms or more) skips as `bench`. The channel must be inside the board's receive window |
+| `capture_start()`, `analyze_fm()`, `analyze_aprs()` | the receive board's channel as I/Q (`trigger`: cs16, 40 kHz wide, from 1 s before the radio keys; a quarter of the wideband stream, which a busy network link carries without loss) into a local run directory, each frame placed by its sample clock; `tools/sdr_fm_check.py` and `tools/aprs_afsk_check.py` run on the test host. A capture with samples the board lost (`gap_samples`, frames it couldn't send, or a run of exact zeros of 2 ms or more) skips as `bench`. The channel must be inside the board's receive window |
 | `analyze_dmr()` (sdrmon.py), bench stations | skip as missing (skip kind `bench`) |
 
 `--dmr-freq` and `--dmr-cc` must be a frequency the board may transmit on, with the radio's channel (or the VFO) on

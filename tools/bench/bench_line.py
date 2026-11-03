@@ -14,7 +14,8 @@ Library use: request() for one-line answers, Request for a stream read on its ow
 bench_tx / bench_repeater command line as the job the board runs (it builds and sends the bursts itself).
 
 Errors are {"error": text, "code": ...}. The codes: timeout, busy, deadlock (a wait that ran out), refused (a
-frequency the board doesn't list), unsupported (an op or option the board doesn't do), no_signal.
+frequency the board doesn't list), unsupported (an op or option the board doesn't do), no_signal. This client adds
+unavailable (no connection) and lost (the stream broke mid-request: the board restarted or hung).
 """
 import json
 import os
@@ -139,6 +140,7 @@ class Request:
         self.log = log or (lambda s: print(s, file=sys.stderr, flush=True))
         self.replies, self.stamps = [], []
         self.error = None
+        self.cancelled = False
         self.first = threading.Event()
         self.done = threading.Event()
         self.conn = Conn(where)
@@ -168,7 +170,7 @@ class Request:
                     self.on_line(d, data)
         except (OSError, ValueError) as e:
             if not self.done.is_set():
-                self.error = BenchLineError(f"the bench board's stream broke: {e}", "internal")
+                self.error = BenchLineError(f"the bench board's stream broke: {e}", "lost")
         finally:
             self.first.set()
             self.done.set()
@@ -180,6 +182,7 @@ class Request:
 
     def cancel(self):
         """Close the connection: the board ends the request (a transmission unkeys)."""
+        self.cancelled = True
         self.done.set()
         self.conn.end()
         self.thread.join(5)
