@@ -789,11 +789,11 @@ static const flow_t flows_k[] = {
 	// The picker's last row, Select contact..., opens Contacts: every contact, PTT, OK and hold OK as in the picker
 	{ "C Select contact in the picker", "", "tt up", "screen=picker focus=Select_contact", 2, false },
 	{ "C Select contact opens Contacts", "tt up", "ok", "screen=contacts", 1, false },
-	{ "C a contact picked from there", "tt up ok", "down ok", "screen=home talk=91 toast=Talking_to", 2, false },
+	{ "C a contact picked from there", "tt up ok", "9 6 7 5 3 ok", "screen=home talk=91 toast=Talking_to", 6, false },
 	// An untyped list goes past the filter's 128 kept rows to its end (693 contacts, with gaps), and back up
 	{ "C a long list reaches its end", "contacts:full ok 1", "up", "screen=contacts focus=Long_1024", 1, false },
 	{ "C a long list steps back past a gap", "contacts:full ok 1 up", "up", "focus=Long_1022", 1, false },
-	{ "C a long list wraps to its top", "contacts:full ok 1 up", "down", "focus=USA", 1, false },
+	{ "C a long list wraps through its top", "contacts:full ok 1 up", "down up", "focus=Long_1024", 2, false },
 	{ "K monitor key on DMR: digital monitor", "", "mon", "hearall=1 toast=Digital_monitor_on", 1, false },
 	{ "K monitor key on DMR, again: off", "mon", "mon", "hearall=0 toast=Digital_monitor_off", 1, false },
 	{ "K a key set to key lock", "", "lockkey", "locked=1", 1, false },
