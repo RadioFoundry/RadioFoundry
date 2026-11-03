@@ -970,6 +970,13 @@ The call goes up whole (18 voice frames and the terminator). About 15-25% of the
 check, and the first frame of each burst carries most of the corrected bits: the receiver's recovery after the drop at
 the slot start. Keeping the receivers' supplies on while transmitting changed nothing measurable. One run in three
 repeated two superframes of three at any setting (not explained yet).
+
+Status (2026-11-03): SFR on V1-V3 is not fully supported yet. The HIL repeater-quality run (4 superframes, 72 inbound
+voice frames) repeats 27 bursts and passes the slot, CW ID and user-role checks, but loses 13 of 72 inbound frames
+(about 18%; the limit is 3), with 64 of the 76 corrected bits in the first frame of each burst. The SKY72310's charge
+pump is already at its maximum (register 6 gain 0x1F) and it has no fast-lock mode, so the receiver's recovery after
+each outbound burst is set by the loop filter. Next step: scope the synthesizer's lock detect and the receive AGC after
+a burst to tell the relock from what follows it.
 Measured off air (UHF, 5 W, 2026-11-03): T5 left on between bursts leaks the carrier at -13 dB, hence T5 per burst. With
 it, between bursts the carrier is below the measuring receiver's floor (26 dB down). On air at key-up: a 0.5 ms step to
 -13 dB (T5), then full power 0.4 ms later; key-down takes 0.4 ms. On-time 30.7 ms, same-slot spacing 60.0 ms, outer
