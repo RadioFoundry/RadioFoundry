@@ -190,6 +190,9 @@ export class SerialStream {
 	}
 }
 
+// Between the tries of a codeplug read, in ms: about 13 s of silence in all before it gives up
+const CPS_RETRY_WAIT = [300, 1000, 2000, 3000];
+
 export class Link {
 	constructor(stream, { timeout = 1500 } = {}) {
 		this.s = stream;
@@ -291,10 +294,11 @@ export class Link {
 	// ---- open-firmware CPS
 
 	// R area addr len: the reply is "R" + length (BE) + data, or "-" when refused. A read changes nothing, so one
-	// that went unanswered or came back short is asked again, after the rest of a broken reply has drained.
-	async cpsRead(area, addr, len, tries = 3) {
+	// that went unanswered or came back short is asked again, after the rest of a broken reply has drained. The waits
+	// grow: a radio busy for a few seconds (a memory chip erase) must not end a minute-long backup halfway
+	async cpsRead(area, addr, len, tries = 5) {
 		for (let i = 0; i < tries; i++) {
-			if (i) await sleep(300);
+			if (i) await sleep(CPS_RETRY_WAIT[Math.min(i, CPS_RETRY_WAIT.length) - 1]);
 			this.s.clear();
 			await this.s.write(concat(new Uint8Array([0x52, area]), be32(addr), new Uint8Array([len >> 8, len & 0xFF])));
 			const got = await this.waitFor((buf) => {
@@ -304,7 +308,11 @@ export class Link {
 			});
 			this.s.clear();
 			wire(`R ${area} 0x${addr.toString(16)} ${len}: ${got === undefined ? "no answer" : got === null ? "refused" : `${got.length} bytes`}`);
-			if (got !== undefined) return got;	// null: refused (out of range, not offered)
+			if (got !== undefined) {
+				// a radio that went quiet and came back: the trail keeps it, for the report of a later failure
+				if (i) note("codeplug read answered after retries", { addr: `0x${addr.toString(16)}`, tries: i + 1 });
+				return got;	// null: refused (out of range, not offered)
+			}
 		}
 		throw new LinkError(`no answer to a codeplug read at 0x${addr.toString(16)}`);
 	}
