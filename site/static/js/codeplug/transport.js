@@ -131,13 +131,15 @@ export class CpsSerial {
 		this.radio = null;
 		this.base = 0;
 		this.fast = null;	// the fast protocol's INFO, when the radio speaks it
+		this.flash = null;	// the radio's memory chip in bytes, from its radio info (null: it didn't say)
 		this.compact = false;	// the radio reads a format C ID database (iddb-compact.md)
 		this.moved = 0;		// bytes the reads took from the radio (not blank or cached blocks): its read rate
 	}
 
 	// Which radio answers, matched by the board name it reports to radios.json's codeplug.names. No answer is told
 	// apart by what the port gave (link.js whyNoAnswer()): another open firmware that gives its radio info, or bytes
-	// that aren't the debug link (another firmware)
+	// that aren't the debug link (another firmware). A radio without a settings region (a memory chip too small for its
+	// board's flash map) stores no codeplug and refuses every write: it is no_storage, before anything is read
 	async identify(radios) {
 		const p = await probe(this.link);
 		if (!p) {
@@ -162,7 +164,9 @@ export class CpsSerial {
 				this.fast = info;
 			}
 		}
-		note("transport", { fast: !!this.fast, compact: this.compact, staging: this.fast?.stageMax || 0 });
+		this.flash = await this.link.flashSize();
+		note("transport", { fast: !!this.fast, compact: this.compact, staging: this.fast?.stageMax || 0, flash: this.flash });
+		if ((await this.storage())?.region === "nomap") throw new TransportError("no_storage", { flash: this.flash });
 		return { radio, probe: p };
 	}
 
@@ -177,8 +181,12 @@ export class CpsSerial {
 		}
 	}
 
+	// The end of the codeplug's room as an image address: the board's (radios.json), or less where the radio says so,
+	// by the fast protocol's image end or a memory chip smaller than the board's usual one
 	get end() {
-		return this.radio ? this.radio.codeplug.end - this.radio.codeplug.base : CODEPLUG_SPAN;
+		const cp = this.radio?.codeplug;
+		if (!cp) return CODEPLUG_SPAN;
+		return Math.min(cp.end - cp.base, this.fast?.end || Infinity, this.flash ? this.flash - cp.base : Infinity);
 	}
 
 	// The codeplug's regions read into a fresh image (the rest erased); with iddb, the whole ID database too. cache: an

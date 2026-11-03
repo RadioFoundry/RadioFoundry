@@ -22,6 +22,9 @@ class El {
 		this.isConnected = false;
 	}
 	append(...cs) { for (const c of cs) this.children.push(c instanceof El ? c : { text: String(c) }); }
+	showModal() {}
+	close() {}
+	remove() { document.body.children = document.body.children.filter((c) => c !== this); }
 	appendChild(c) { this.append(c); return c; }
 	replaceChildren(...cs) { this.children = []; this.append(...cs); }
 	setAttribute(k, v) { this.attrs[k] = v; }
@@ -116,8 +119,38 @@ test("install: a write without a codec warns above the button; the write logs it
 	assert.match(box.textContent, /will not include the DMR voice codec/i);
 	assert.match(box.textContent, /was not backed up and no supported stock firmware file was selected/);
 	assert.doesNotMatch(box.textContent, /no way back/i);
+	// Install asks once more (nocodec.js): Escape stays, Go Back returns to the check step, Install Anyway writes
+	const dialogs = () => document.body.children.filter((c) => c.tagName === "DIALOG");
+	const pick = (label) => {
+		const find = (el) => (el.tagName === "BUTTON" && el.textContent === label ? el : el.children?.map((c) => (c instanceof El ? find(c) : null)).find(Boolean));
+		find(dialogs()[0]).listeners.click[0]({ preventDefault() {} });
+	};
 	forwards.at(-1).click();
+	await sleep(0);
+	assert.equal(dialogs().length, 1);
+	assert.match(dialogs()[0].textContent, /Install Without DMR Voice\?.*not be able to send or receive DMR voice calls/);
+	dialogs()[0].listeners.cancel[0]({ preventDefault() {} });
+	await sleep(0);
+	assert.equal(dialogs().length, 0);
+	assert.equal(writes.length, 0, "nothing written when the dialog is dismissed");
+	let rendered = 0;
+	state.step = 4;
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, flashStarted: () => 0, flashFinished() {}, flashMark() {},
+		errorText: (e) => e.message, next() {}, render() { rendered++; } });
+	forwards.at(-1).click();
+	await sleep(0);
+	state.c7none = true;
+	pick("Go Back and Add the Codec");
+	await sleep(0);
+	assert.equal(state.step, 3, "back to the check step");
+	assert.equal(state.c7none, false, "the file picker shows again there");
+	assert.equal(rendered, 1);
+	assert.equal(writes.length, 0);
+	forwards.at(-1).click();
+	await sleep(0);
+	pick("Install Anyway");
 	await sleep(1500);
+	assert.match(diag.trail(50).join("\n"), /no codec confirm \{"answer":"go"\}/);
 	const tr = diag.trail(50).join("\n");
 	assert.match(tr, /write range/);
 	assert.match(tr, new RegExp(`"first":"0x${C.app_start.toString(16).toUpperCase().padStart(8, "0")}"`));
@@ -128,6 +161,8 @@ test("install: a write without a codec warns above the button; the write logs it
 	state.c7.stub.writeProgram = async (data, start, { onSector }) => { bootNow = new Uint8Array(C.app_start).fill(0); onSector(C.app_start, "written"); return { written: 1, same: 0 }; };
 	const box2 = c7ui.writeView();
 	forwards.at(-1).click();
+	await sleep(0);
+	pick("Install Anyway");
 	await sleep(300);
 	assert.match(box2.textContent, /bootloader area changed/);
 	assert.match(diag.trail(50).join("\n"), /"bootloader":"changed"/);

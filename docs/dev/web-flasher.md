@@ -224,6 +224,7 @@ and the events don't. Both requests carry `adapter`, and the PATCH carries `trai
 | `open firmware backup` | The key and codec found in the open-firmware read |
 | `verify`, `verify failed` | What the radio reported after the install |
 | `cable radio check`, `cable radio codec decision` | The cable radio's read choices and codec decision |
+| `no codec confirm` | The answer to the dialog Install opens before an install without the codec: `go`, `back` or `stay` |
 | `adapter` | The USB device, once per change |
 
 The cable log (`logBox()`) also goes to the trail, so a boot ROM load that fails leaves the bytes received.
@@ -322,6 +323,12 @@ each part's address, size, SHA-256 and whether the read completed), `internal-fl
 base; the bootloader is never read or written), `spi-flash.bin`, `security-registers.bin` (the factory calibration),
 `radio-info.bin`, and `stock-firmware.bin` when the user gave one.
 
+`spi-flash.bin` is the radio's own memory chip: `backup.spi_size`, or less when the radio reports a smaller chip
+(`spiBytes`: the radio info's flash part id, or the loader's SPI flash size from HELLO). Some radios of a model came
+with a smaller chip, and a read past its end is refused or wraps around. A backup over another open firmware sizes its
+read the same way (`newState`). Restoring the codeplug and opening the backup in the Codeplug Editor need only the
+codeplug's regions (`TFTP_SIZE`), not the whole open-firmware span.
+
 `openBundle()` also reads a backup whose files sit in one folder (`bundleFolder()`): what macOS's Compress makes of a
 backup it unpacked, `__MACOSX/` ignored. The restore picker and the codeplug editor use the same test.
 
@@ -353,8 +360,8 @@ last step of the install brings it over by default, on every radio whose stock c
 
 | Step | What happens |
 |---|---|
-| 0. Skip | An update, a move from another open firmware, a board without a memory chip (`backup.spi_size` 0), or a backup from this visit that read every stock family's tables and found none (`channelsWanted`): nothing is read |
-| 1. Read | The codeplug span over the CPS. The stock codeplug comes from this visit's backup when it holds one (`stockSource`), else from the live read, further on a family whose stock tables reach past the span (`readSpan`) |
+| 0. Skip | An update, a move from another open firmware, a board without a memory chip (`backup.spi_size` 0), or a backup from this visit that read every stock family's tables and found none (`channelsWanted`): nothing is read. A radio without a settings region (STORAGE INFO unavailable: a chip too small for the board's flash map) stores no codeplug: the step says so and ends |
+| 1. Read | The codeplug span over the CPS, no further than the radio's chip. The stock codeplug comes from this visit's backup when it holds one (`stockSource`), else from the live read, further on a family whose stock tables reach past the span (`readSpan`) |
 | 2. Recognize | `classify` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md) 2). A RadioFoundry codeplug, a blank chip or an unknown layout ends the step: nothing is written |
 | 3. Convert | `importStock`, the Codeplug Editor's conversion, with its counts and notes. No channels ends the step |
 | 4. Prepare | The settings area is claimed (`prepareStorage`), as before a codeplug restore |
@@ -528,6 +535,12 @@ The codec decision (`decide()` in `c7000.js`), first match wins:
 | This browser | A slot an earlier run kept in IndexedDB |
 | A file | A program memory backup, a known stock firmware file, or an image merged by `tools/hrc7000_codec.py` |
 | None | Only when the user asks for it: FM works, DMR voice stays off |
+
+An install without the codec asks once more when Install is pressed (`nocodec.js` `confirmNoCodec()`), on every route:
+the cable write, the update mode write (decision `none`) and the bootloader write (a decision with `expectCodec`
+false). The dialog says DMR voice calls won't work and offers **Go Back and Add the Codec** (the step before, where a
+file is selected) and **Install Anyway**. Escape stays on the step. A bootloader route without a codec step before
+the write (an update) offers only **Install Anyway**. A retry after a failed write doesn't ask again.
 
 The page never sends a STUB command to RadioFoundry except right before it enters the stub: any STUB command parks RadioFoundry's codec
 until the next restart.
