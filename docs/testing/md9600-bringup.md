@@ -38,7 +38,7 @@ First radio: a V1-V3 board (its original firmware reported version 06.09), on a 
 | APRS receive | Written (`afsk_md9600.c`: PC3 on ADC3, 9146 Hz), untested: no APRS traffic on 144.390 MHz in 12 minutes at the bench. Listening, the decoder sees the noise only (aborts, a few FCS errors) |
 | VOX mic level | PA3 is a level tap: 3-4 counts (VOX level 12-16 of 100) with the mic quiet, and a beep in the speaker doesn't move it. VOX on and off from Quick works. The level while speaking is not measured yet; VOX can't key while transmit is refused |
 | DMR receive | Works on UHF (446.100) and VHF (151.505), by hand: a group call from another radio (CC 1, slot 1) plays clearly, every voice burst received. The DMR modem counters are on the diagnostics page after the board lines |
-| Transmit | Off in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`). UHF, 5 W into a dummy load (section 5): DMR decoded burst for burst; FM with CTCSS and DCS passes the FM transmit HIL tests. VHF and power per level not checked |
+| Transmit | Off in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`). UHF, 5 W into a dummy load (section 5): DMR decoded burst for burst; FM with CTCSS and DCS passes the FM transmit HIL tests. VHF, 5 W on 151.5125 MHz: FM (12.5 and 25 kHz, CTCSS, DCS) and DMR checked off air ([hardware-md9600.md](../spec/hardware-md9600.md) 19.9.1). Power per level not checked |
 
 ## 0. Before anything
 
@@ -129,4 +129,4 @@ Transmit, UHF, 5 W into a dummy load, a `CONFIG_MD9600_TX` and `CONFIG_MD9600_DM
 | CTCSS 100.0 Hz | 665 Hz deviation at 12.5 kHz, 1327 Hz at 25 kHz (`test_fm_tx_ctcss`, `test_fm_tx_bandwidth`) |
 | DCS D023N | +-700 Hz, 0.30 s turn-off tail (`test_fm_tx_dcs`); inverted until `MD9600_SUBTONE_TX_INVERT` |
 
-Transmit stays off in the build until VHF and the power levels are checked.
+Transmit stays off in the build until the power levels are checked.

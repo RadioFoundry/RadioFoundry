@@ -769,8 +769,8 @@ the original firmware sounds the same on this radio is not checked); UHF receive
 | Audio | FM from the IF chip (FM_MUTE high), PCM (DMR voice, beeps) from the HR_C6000 line out with FM held back, AF_SW muting otherwise (`boards/md9600/speaker_md9600.h`) |
 | GPS | USART1 RX (PA10), receive interrupt; 9600 baud first, then 4800, 19200, 38400, 57600, 115200, 3 s each. A silent line ends the search after the first window; a module once heard feeds APRS positions. PA9 stays on (it also powers the mic) |
 | Hand mic | the keypad of 9.3 through `drivers/input/adckeys`, three equal scans per key. Key roles of A-D and A/B are a proposal (unverified). No `CAP_KEYPAD`: a mic may have no keypad |
-| Transmit | FM and DMR on UHF, checked off air into a dummy load (19.8, 19.9). Off in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`); a build with them still needs the run-time arm, a stored revision and plausible PA rows. Sub-audio: CTCSS and DCS from the PWM generator on PC7, with the DCS turn-off tail |
-| Not yet | VHF transmit, transmit power per level, split duplex and the two-PLL burst switching (17 #17), the CPS's own command set, update packaging |
+| Transmit | FM and DMR on UHF and VHF, checked off air into a dummy load (19.8, 19.9; VHF 19.9.1). Off in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`); a build with them still needs the run-time arm, a stored revision and plausible PA rows. Sub-audio: CTCSS and DCS from the PWM generator on PC7, with the DCS turn-off tail |
+| Not yet | Transmit power per level (a power meter), split duplex and the two-PLL burst switching (17 #17), the CPS's own command set, update packaging |
 
 ### 19.2 Clock plan and memory map
 
@@ -1007,6 +1007,18 @@ arm and the last refusal.
 | PC7, TIM8 CH2 | sub-audio tone PWM (`md9600_pwm_out`), on the backlight's 28 kHz timebase, into the reference oscillator's modulation input. Without a tone the pin is released (open drain high), as at start-up: driven low it pulls the reference and DMR never syncs. In FM transmit TIM8's update interrupt (priority 6) feeds `drivers/rf/subaudio`'s generator a new duty every 8 periods (about 3.6 kHz). Measured off air at 30 % of the swing (12.5 kHz; doubled at 25 kHz): CTCSS 100.0 Hz at 665 Hz deviation (1327 Hz at 25 kHz), DCS D023N at +-700 Hz with a 0.30 s 134.4 Hz tail. The path inverts: DCS goes out with the generator's polarity flipped (`MD9600_SUBTONE_TX_INVERT`) (first radio, 2026-11-03) |
 | PC8, TIM8 CH3 | beep PWM, same helper |
 | PA temperature, fan | no sensor or fan line is known on any revision (?) |
+
+#### 19.9.1 VHF transmit
+
+Checked off air (V1-V3, 151.5125 MHz, 5 W into a dummy load, 2026-11-03), the bench board's receiver retuned to VHF:
+
+| Check | Result |
+|---|---|
+| FM, 12.5 kHz, CTCSS 100.0 | carrier -31 Hz; CTCSS 100.16 Hz at 478 Hz deviation |
+| FM, 25 kHz, CTCSS 100.0 | carrier -20 Hz; CTCSS at 958 Hz deviation |
+| FM, DCS D023N | decoded, +-505 Hz deviation; 134.4 Hz turn-off tail 0.32 s |
+| DMR, CC 1, slot 1, 4 s | voice header, 11 superframes and the terminator: 70 bursts, no sync errors, 60.0 ms apart, 1.83-1.97 kHz deviation, carrier +46 Hz |
+| Level per power step (relative, leakage from the dummy load) | 10 W +2.7 dB, 25 W +4.0 dB, 40 W +8.9 dB over 5 W (nominal +3.0 / +7.0 / +9.0); needs a power meter |
 
 ### 19.10 Build switches
 
