@@ -476,6 +476,14 @@ msgstr "Tasti sbloccati"
 msgid "Talk target: DMR channels only"
 msgstr "Destinaz.: solo canali DMR"
 
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Talkgroup name first"
+msgstr "Prima il nome del gruppo"
+
+#: core/ui/ui_app.c
+msgid "Talkgroup number first"
+msgstr "Prima il numero del gruppo"
+
 #: core/ui/ui_app.c
 msgid "Volume: use the knob"
 msgstr "Volume: usa la manopola"
@@ -2643,6 +2651,10 @@ msgstr "Copia su VFO"
 #: core/ui/ui_menus.c
 msgid "Call back"
 msgstr "Richiama"
+
+#: core/ui/ui_menus.c
+msgid "TG name / number"
+msgstr "Nome / numero TG"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "Emergency"

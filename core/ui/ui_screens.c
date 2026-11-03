@@ -923,7 +923,7 @@ static void draw_talk(const radio_view_t *v)
 		sb_str(&b, TEXT_ALT_CLOSE);
 	}
 	// Too wide: shorter text, never a smaller font
-	int x = gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);
+	int x = gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);	// no space, on purpose: as on DMR's talk line
 	char fit[40];
 	gfx_text_fit(f, buf, gfx_width() - x, fit, sizeof fit);
 	gfx_text(f, x, L->talk_y, fit, c);
@@ -1159,8 +1159,10 @@ static void sb_target_alts(sbuf_t *b, uint32_t id, bool private_call, const char
 
 // For the talk line: a named talkgroup as text alternates, longest first ("TG 201 Main Ops (8s)", "TG 201 Main Ops",
 // "TG 201 Main O…" cut to room cells, "TG 201"), so the reply seconds go before the label and the label is cut before
-// it goes. The cut form only when two letters of the label fit. Anything else: sb_target_alts
-static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *name, const char *tail, size_t room)
+// it goes. The cut form only when two letters of the label fit. label_first (Settings > Display, a side key) puts the
+// name first and drops the number before the name. Anything else: sb_target_alts
+static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *name, const char *tail, size_t room,
+			 bool label_first)
 {
 	bool named = name[0] != '\0' && id != 0xFFFFFFu && !ui_name_is_id(name, id, private_call);
 	if (private_call || !named) {
@@ -1171,15 +1173,39 @@ static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *
 	sbuf_t nb;
 	sb_init(&nb, num, sizeof num);
 	sb_target(&nb, id, false, "");
-	size_t lead = strlen(num) + 1;	// "TG 201 "
+	size_t len = strlen(name);
 	sb_str(b, TEXT_ALT_OPEN);
+	if (label_first) {
+		// "Main Ops TG 201 (9s)", "Main Ops TG 201", "Main Ops", "Main O…": the name is what the user reads
+		if (tail[0]) {
+			sb_str(b, name);
+			sb_chr(b, ' ');
+			sb_str(b, num);
+			sb_str(b, tail);
+			sb_str(b, TEXT_ALT_NEXT);
+		}
+		sb_str(b, name);
+		sb_chr(b, ' ');
+		sb_str(b, num);
+		sb_str(b, TEXT_ALT_NEXT);
+		sb_str(b, name);
+		if (room >= 2 && room < len) {
+			sb_str(b, TEXT_ALT_NEXT);
+			for (size_t i = 0; i < room - 1; i++)
+				sb_chr(b, name[i]);
+			sb_str(b, GLYPH_ELLIPSIS);
+		}
+		sb_str(b, TEXT_ALT_CLOSE);
+		return;
+	}
+	size_t lead = strlen(num) + 1;	// "TG 201 "
 	if (tail[0]) {
 		sb_target(b, id, false, name);
 		sb_str(b, tail);
 		sb_str(b, TEXT_ALT_NEXT);
 	}
 	sb_target(b, id, false, name);
-	if (room >= lead + 3 && room < lead + strlen(name)) {
+	if (room >= lead + 3 && room < lead + len) {
 		sb_str(b, TEXT_ALT_NEXT);
 		sb_str(b, num);
 		sb_chr(b, ' ');
@@ -1229,6 +1255,7 @@ static bool dmr_call_screen(const radio_view_t *v)
 // Talk target line on Home: an arrow and "TG 201 Main Ops", or an inverted return arrow and "TG 9 (8s)" in warn color
 // during the reply window. Icons, not words, so a small display keeps room for the label (#336)
 static bool ui_st_dmr_off;		// ui_state_t.dmr_off of the frame being drawn
+static bool ui_st_label_first;		// ui_state_t.label_first of the frame being drawn
 
 static void draw_talk_dmr(const radio_view_t *v)
 {
@@ -1240,7 +1267,9 @@ static void draw_talk_dmr(const radio_view_t *v)
 	color_t c = ui_col.fg;
 
 	int w = gfx_width();
-	// the reply window's icon inverted, so it stands out on a monochrome display as well
+	// the reply window's icon inverted, so it stands out on a monochrome display as well. No space after either icon,
+	// on purpose: the glyph's own blank column (or the inverted cell) sets it apart, and the space is one more
+	// character of the label on a small display
 	int x = d->reply_active ? gfx_text_bg(f, 0, L->talk_y, GLYPH_REPLY, ui_col.bg, ui_col.warn)
 		: gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);
 	size_t room = x < w ? (size_t)((w - x) / f->w) : 0;
@@ -1265,7 +1294,7 @@ static void draw_talk_dmr(const radio_view_t *v)
 			c = ui_col.warn;
 		}
 		// and last without the reply seconds (the hint still says the reply is on)
-		sb_talk_alts(&b, d->target_id, d->target_private, d->target_name, secs, room);
+		sb_talk_alts(&b, d->target_id, d->target_private, d->target_name, secs, room, ui_st_label_first);
 	}
 	// Too wide: the shorter alternate (a talkgroup's label cut, then dropped; a contact its ID), never a smaller font
 	gfx_text_fit(f, buf, w - x, fit, sizeof fit);
@@ -1698,6 +1727,7 @@ void ui_draw_home(const radio_view_t *v, const ui_state_t *s)
 #endif
 #if CONFIG_DMR
 	ui_st_dmr_off = s->dmr_off;
+	ui_st_label_first = s->label_first;
 	if (dmr_call_screen(v)) {
 		draw_dmr_call(v, s);
 		ui_draw_banner(s);

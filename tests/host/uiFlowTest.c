@@ -751,6 +751,12 @@ static const flow_t flows_mono[] = {
 	// The talk line on the smallest display (#336): an icon, not "PTT->" or "Reply->", so the label keeps its room
 	{ "2 the talk line: an arrow, no PTT word", "", "", "screen=home shows=TG_3100_USA hides=PTT", 0, false },
 	{ "4 reply window: a long label is cut, not dropped", "call:3101234,201,g", "", "shows=TG_201_Main_O hides=Reply", 0, false },
+	// The side key's TG name / number (Settings > Display > Talkgroup name first): the name leads. The choice is saved,
+	// so the next flow starts with it and turns it back off
+	{ "4 a side key puts the TG name first", "call:3101234,201,g", "labelkey",
+	  "shows=Main_Ops hides=TG_201_Main toast=Talkgroup_name_first", 1, false },
+	{ "4 kept, and pressed again: the number first", "call:3101234,201,g", "labelkey",
+	  "shows=TG_201_Main toast=Talkgroup_number_first", 1, false },
 #if CONFIG_UI_COLOR
 	{ "S theme on a monochrome screen: dimmed", "", "ok 7 2 down down ok", "toast=Colors_are_for set7=0", 6, false },
 	{ "S highlight color on a monochrome screen: dimmed", "", "ok 7 2 down down down ok",
@@ -802,7 +808,9 @@ static const flow_t flows_k[] = {
 	  false },
 	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back", 1,
 	  false },
-	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1, false },
+	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok", "ok",
+	  "set47=17 shows=TG_name", 1, false },
+	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1, false },
 	{ "K a key set to power", "", "powerkey", "power=5", 1, false },
 	{ "K a key set to power, long", "", "long:powerkey", "power=5", 1, false },
 	{ "K a key set to the next zone", "", "zone+", "zone=1", 1, false },

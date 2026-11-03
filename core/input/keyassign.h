@@ -37,6 +37,7 @@ typedef enum {
 	KEYFN_COPY_VFO,		// copy the channel to the VFO and open it (CONFIG_VFO)
 	KEYFN_DUAL_WATCH,	// dual watch on / off (CONFIG_DUAL_WATCH)
 	KEYFN_AB,		// dual watch: the other channel, A / B (starts dual watch when it is off)
+	KEYFN_TALK_LABEL,	// Home's talk line: the talkgroup's name or its number first (CONFIG_DMR)
 	KEYFN_COUNT
 } keyfn_t;
 

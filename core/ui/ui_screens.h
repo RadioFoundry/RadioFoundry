@@ -119,6 +119,7 @@ typedef struct {
 	bool message_tone;	// a tone when a message arrives (Settings > Sound)
 	bool vibrate;		// vibrate for messages, calls to us, emergencies (Settings > Sound, CONFIG_VIBRATE)
 	uint8_t updown;		// what Up / Down change on Home: 0 channel, 1 zone, 2 talk target (Settings > Keys)
+	bool label_first;	// Home's talk line: the talkgroup's name before its number (Settings > Display, a side key)
 	uint8_t low_batt_pct;	// warn at this battery percent, 0 = never (Settings > Power)
 	uint8_t volume;		// speaker volume step 0..RADIO_VOLUME_MAX of a radio without a knob (the volume screen, Settings > Sound)
 	uint16_t auto_off_min;	// switch off after this long without use, 0 = never (Settings > Power)
