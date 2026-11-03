@@ -105,6 +105,8 @@
 #define GPIO_GPS		0x0004u
 // Chip 3 output bit 6: set for AM, clear for the receiver's broadcast FM input (inferred, 5.4)
 #define GPIO_LO_B_AM		0x0040u
+// Chip 1 GPIO bit 1: set passes side A's RF chip audio toward the speaker, clear holds it off (seen on a radio)
+#define GPIO_B_A_AUDIO		0x0002u
 
 // Shift register bits (roles inferred from the stock firmware's use)
 #define SR_BOOT			0x02u	// the Bluetooth module's supply, on from boot (bt_d578uv.c)
@@ -473,6 +475,15 @@ static bool b_heard(void)
 static bool b_heard(void) { return false; }
 #endif
 
+static bool chips_ready;	// init() has set chip 0 up: its output register can be written
+
+static void chip1_gpio(uint16_t mask, uint16_t val)
+{
+	uint32_t s = bus_lock();
+	qa4818_gpio(&chip_b, mask, val);
+	bus_unlock(s);
+}
+
 // The speaker's sources: PA7 open while either side plays, each side's level the volume while it plays (side A also
 // while neither does, as before side B), and the shift register's RF audio bit set for an FM side. The main receiver's
 // calls win: the core gives side B the speaker only while side A is quiet. In AM, and while broadcast FM plays, both
@@ -491,6 +502,11 @@ static void audio_route(void)
 	if (level_code_vol >= 0) {
 		level_set(0, a_rf ? (uint8_t)level_code_vol : 0);
 		level_set(1, (b || kt_out) && code_b >= 0 ? (uint8_t)code_b : 0);
+	}
+	// Chip 1's GPIO bit 1 is a second gate on the same path, after the level device (seen on a radio: with channel 0 at
+	// 0 the 4FSK still reached the speaker until it cleared)
+	if (chips_ready && !transmitting) {
+		chip1_gpio(GPIO_B_A_AUDIO, a_rf || b ? GPIO_B_A_AUDIO : 0);
 	}
 	bool rf = mode == RADIO_MODE_FM || b || kt_out || beeping;
 	if (!transmitting) {
@@ -701,7 +717,6 @@ static void chip0_gpio(uint16_t mask, uint16_t val)
 	bus_unlock(s);
 }
 
-static bool chips_ready;	// init() has set chip 0 up: its output register can be written
 static bool fan_hot;		// the PA's temperature has reached the fan's on point (fan_poll)
 
 // The fan's thresholds on the PA6 sensor's average of four readings, as the stock firmware's: on from 0x3E0, off
