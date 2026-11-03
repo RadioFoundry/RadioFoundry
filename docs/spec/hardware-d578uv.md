@@ -363,6 +363,18 @@ The voice goes from the baseband to the codec, so the board sets `CAP_MODEM_VOIC
 store-and-forward repeater are not written for this radio. RAM decides the rest: the USB network adapter and zone
 sharing are off with DMR on.
 
+The speaker during a DMR call (seen on a radio, a bench call and the owner listening):
+
+| Path | What reaches the speaker |
+| --- | --- |
+| Codec headphone driver (page 1 register 0x10) | the call's voice. Muted, the voice goes and nothing else changes |
+| Volume device, side A's channel | side A's RF chip audio, which in DMR is the 4FSK demodulator output (0x47 = 0x4840 or 0x6840): a loud data sound under the voice, with shift register bit 0x08 clear. RadioFoundry holds the channel at code 0 in DMR except for a beep or the KTMicro receiver; the voice is unchanged |
+
+Beeps: the board has no PCM speaker audio, so the core plays a beep's tones through `beep_tone`. Side A's chip sounds
+each on its tone generator (0x71 the tone, 0x70 the gain, 0x47 = 0x6341) with 0x03 = 0xBFF7: the receive enable plus
+bit 1, without which the tone is silent (seen on a radio). The PA gain bit stays off, so nothing is sent. Side A's
+volume channel opens for the beep in either mode, and the chip's receive audio is restored after.
+
 ## 5. RF chips
 
 Four chips of one type on a 3-wire bus: PB3 clock, PB4 data, one enable each (low = selected): chip 0 PB5, chip 1
