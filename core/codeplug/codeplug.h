@@ -87,6 +87,8 @@ bool codeplug_zones_stored(void);
 
 // Bumped on every change (edits, and codeplug_reload after the CPS wrote the image)
 uint32_t codeplug_serial(void);
+// Bump it for a write outside the records (the settings area, codeplug_kv.c)
+void codeplug_note_change(void);
 // Store a channel at number 1..CODEPLUG_CHANNELS_MAX (new or replaced; fields the model doesn't know are kept)
 bool codeplug_set_channel(uint16_t number, const channel_t *ch);
 bool codeplug_delete_channel(uint16_t number);

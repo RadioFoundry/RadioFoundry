@@ -1047,6 +1047,17 @@ run-cpedit: codeplugEditTest
 	./codeplugEditTest
 .PHONY: run-cpedit
 
+# The codeplug settings area: keyed values, unknown keys kept, invalid and newer areas, power cuts during a write
+TESTS   += codeplugKvTest
+
+codeplugKvTest: codeplugKvTest.c $(CORE)/codeplug/codeplug_kv.c $(CPEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ codeplugKvTest.c $(CORE)/codeplug/codeplug_kv.c $(CPEDIT)
+
+run: run-cpkv
+run-cpkv: codeplugKvTest
+	./codeplugKvTest
+.PHONY: run-cpkv
+
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
 # rename, delete, a new channel added in one step, the limits
 ZEDIT   := $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c $(CPEDIT) \

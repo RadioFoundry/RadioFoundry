@@ -91,6 +91,9 @@ until the native format exists every channel uses the radio-wide slot.
 - **Open-firmware tools after conversion.** Two options, open: (a) the open-firmware CPS shim keeps reading and writing the open-firmware
   image and a commit triggers a re-import into the native area, or (b) the shim serves an open-firmware view generated from
   the native records. (a) is simpler; (b) never lets the two drift apart.
+- **Settings without a record.** Radio-wide settings the open-firmware layout has no field for are keys in the
+  codeplug settings area ([codeplug-settings.md](codeplug-settings.md)), built now in the open-firmware image. The
+  native header can point at an area in the same entry format, so a conversion copies it as it is.
 - **Native protocol.** `cps-protocol.md` 3 drafts the record-level protocol a native CPS (and qdmr, if it adds a
   driver) would use: read and write records by type and index, no addresses.
 

@@ -405,6 +405,13 @@ uint32_t codeplug_serial(void)
 	return serial;
 }
 
+void codeplug_note_change(void)
+{
+	storage_lock();
+	serial++;
+	storage_unlock();
+}
+
 uint16_t codeplug_channel_count(void)
 {
 	switch (source) {

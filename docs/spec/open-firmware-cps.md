@@ -359,6 +359,7 @@ range without letting them corrupt the live settings. It can ignore the range, o
 | 0x8000 | 0x10 | Reserved ("extended zone basic"), not read by the firmware |
 | 0x8010 | 0x20 | Zone in-use bitmap: bit j of byte i means zone slot (i x 8 + j) is in use. 68 slots are used |
 | 0x8030 | 68 x 0xB0 | Zone records (7.3.4), 80 channels each, to 0xAEF0. Open-firmware 16-channel layout: 68 x 0x30 |
+| 0xE000 | 0x1000 | RadioFoundry's codeplug settings area ([codeplug-settings.md](codeplug-settings.md)): keyed settings this layout has no field for. Outside the regions qdmr transfers |
 
 Zone layout detection: the firmware reads the 16 bytes at 0x8060 and looks at the last one (0x806F). In the 16-channel
 layout, 0x806F is the last byte of the second zone's name, so it is 0xFF. In the 80-channel layout, it is the high byte
@@ -694,8 +695,9 @@ The new firmware should keep its settings elsewhere, and treat bytes 0x604B..0x6
 - **APRS magic.** 0x4153 now, 0x4152 in older records (7.3.8).
 - **Voice prompt versions.** 8 for mono radios, 9 for color radios. A version mismatch makes the radio fall back to
   beeps.
-- **Our additions.** The SFR bytes and flag 1 bit 1, the `D` commands, and the network mode USB identities
-  (PID 0x0095 / 0x0096) don't exist in R20260131. They are invisible to the CPS, which round-trips the bytes it read.
+- **Our additions.** The SFR bytes and flag 1 bit 1, the `D` commands, the codeplug settings area at EEPROM image
+  0xE000 ([codeplug-settings.md](codeplug-settings.md)) and the network mode USB identities (PID 0x0095 / 0x0096)
+  don't exist in R20260131. They are invisible to the CPS, which round-trips the bytes it read.
 
 ## 10. Open questions
 
