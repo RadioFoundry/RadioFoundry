@@ -122,7 +122,8 @@ until the native format exists every channel uses the radio-wide slot.
   the native records. (a) is simpler; (b) never lets the two drift apart.
 - **Settings without a record.** Radio-wide settings the open-firmware layout has no field for are keys in the
   codeplug settings area ([codeplug-settings.md](codeplug-settings.md)), built now in the open-firmware image. The
-  native header can point at an area in the same entry format, so a conversion copies it as it is.
+  native format carries the same key space: one record in the same entry format, the same key numbers and value
+  encodings, so a conversion copies the entries as they are and no key is ever translated (codeplug-settings.md 8).
 - **Native protocol.** `cps-protocol.md` 3 drafts the record-level protocol a native CPS (and qdmr, if it adds a
   driver) would use: read and write records by type and index, no addresses.
 
