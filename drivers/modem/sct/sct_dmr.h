@@ -67,6 +67,8 @@ typedef struct {
 	uint8_t last_nak;
 	uint8_t last_event;	// the last NEW_EVENT code
 	uint8_t last_slot_found;
+	uint8_t carrier;	// the last CARRIER_READY sent (0 lost, 1 ready, 2 ready with the phase reversed)
+	uint32_t carrier_sent;	// CARRIER_READY packets sent
 	bool sending;		// a frame is out, its answer not in yet
 } sct_dmr_stats_t;
 
@@ -83,6 +85,12 @@ extern const hal_dmr_modem_t sct_dmr_modem;
 void sct_dmr_packet(const uint8_t *pkt, uint16_t len, uint32_t now_ms);
 // Pacing and timeouts. Call it every few ms while the modem runs (every 10 ms at the least)
 void sct_dmr_poll(uint32_t now_ms);
+// The board's carrier detection, as CARRIER_READY's value: 0 no carrier, 1 a carrier, 2 a carrier whose
+// demodulated phase is reversed. The chip looks for sync only after it hears that a carrier came up, so a board
+// calls this at each change, or every status poll (repeats cost nothing). The engine sends a change while it
+// receives, and the current value again at each return to receive; it never sends one while it transmits. A board
+// that never calls it relies on the chip's own squelch (docs/spec/modem-sct.md 3)
+void sct_dmr_carrier(uint8_t ready);
 
 void sct_dmr_get_stats(sct_dmr_stats_t *out);
 void sct_dmr_reset_stats(void);

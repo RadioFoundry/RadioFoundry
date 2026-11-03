@@ -935,6 +935,58 @@ static void test_dmr_rx(void)
 	CHECK(st.rx_bad == 1 && st.rx_frames == 10 && st.rx_fec == 1 && st.rx_voice == 10);
 }
 
+// CARRIER_READY: the board's value, sent on a change in receive only, and again at each return to receive
+static void test_dmr_carrier(void)
+{
+	const uint8_t *d;
+	sct_dmr_stats_t st;
+
+	start();
+	sct_dmr_poll(1000);
+	CHECK(nsent == 2);			// the board said nothing yet: nothing sent
+	sct_dmr_carrier(2);
+	CHECK(nsent == 3 && sent[2].pkt[5] == SCT_TYPE_CONTROL);
+	d = sent_field(2, SCT_F_CARRIER_READY, NULL);
+	CHECK(d != NULL && d[0] == 2);
+	sct_dmr_carrier(2);
+	sct_dmr_poll(1010);
+	CHECK(nsent == 3);			// no change, nothing more
+	sct_dmr_carrier(0);
+	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
+	CHECK(nsent == 4 && d != NULL && d[0] == 0);
+	sct_dmr_carrier(2);
+	CHECK(nsent == 5);
+
+	// Transmitting: nothing, and the reading from before doesn't come back after it
+	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	int n = nsent;
+	sct_dmr_carrier(2);
+	sct_dmr_poll(1020);
+	CHECK(nsent == n);
+	m->tx_abort();
+	sct_dmr_poll(1030);
+	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
+	CHECK(d != NULL && d[0] == 0);		// receive again: "lost" until the board's next reading
+	sct_dmr_carrier(2);
+	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
+	CHECK(d != NULL && d[0] == 2);
+
+	// A receive restart (WORK_MODE receive) sends the current value again
+	n = nsent;
+	m->rx_restart();
+	sct_dmr_poll(1040);
+	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
+	CHECK(nsent == n + 2 && d != NULL && d[0] == 2);
+	sct_dmr_get_stats(&st);
+	CHECK(st.carrier == 2 && st.carrier_sent == 6);
+
+	// Stopped: nothing
+	m->stop();
+	n = nsent;
+	sct_dmr_carrier(0);
+	CHECK(nsent == n);
+}
+
 int main(void)
 {
 	test_build();
@@ -947,6 +999,7 @@ int main(void)
 	test_dmr_data_tx();
 	test_dmr_rx();
 	test_dmr_options();
+	test_dmr_carrier();
 	CHECK(lock_depth == 0 && lock_max == 1);
 	// Not booted: start fails and sends nothing
 	booted = false;

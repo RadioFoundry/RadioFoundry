@@ -95,7 +95,7 @@ Fields the driver uses:
 | 0x18 | WORK_MODE | 0x01 receive, 0x02 transmit |
 | 0x1A | PROCESS_MODE | 0x02 layer 2 |
 | 0x1B | NEW_EVENT | 1 data sync with FEC error, 4 data sync, 5 voice sync, 8 sync lost, 12 carrier, 13 carrier lost |
-| 0x19 | CARRIER_READY | bits 1-0: 0 carrier lost (the default), 1 carrier ready, 2 ready with the demodulated phase reversed; bit 2 mute on a code mismatch (not sent by the driver) |
+| 0x19 | CARRIER_READY | bits 1-0: 0 carrier lost (the default), 1 carrier ready, 2 ready with the demodulated phase reversed; bit 2 mute on a code mismatch (never set by the driver) |
 | 0x1C | DEMOD_GAIN | 2 bytes, MSB first: the demodulator's gain in Q16.11 (2048 = 0 dB); 0 auto calibration (the default) |
 | 0x1D | REPORT_FIELD | which fields the chip reports. In DMR: bit 7 NEW_EVENT, bit 6 DMR_FLC, bit 5 CSBK, bit 0 slot type and EMB, bits 4-1 reserved. The chip's default is 0x70 |
 | 0x2D | CODEC_SELECT | the codec chip: 1 TLV320AIC3204, 2 WM8758B (the chip's default), 3 ES8338 |
@@ -123,8 +123,11 @@ DMR_CALL_OPTION, from the Packet Interface document (default all 0):
 | 4 | reserved |
 
 Without squelch detection by the chip (byte 0 bit 6), the chip looks for sync only after CARRIER_READY says the
-carrier is there. The engine never sends CARRIER_READY, so a board sets bit 6 unless it adds that. The chip's
-squelch then works with SQ_LEVEL's thresholds, its defaults unless the board sends its own.
+carrier is there. A board that detects the carrier itself gives the engine its value at each status poll
+(`sct_dmr_carrier`: 0 lost, 1 ready, 2 ready with the phase reversed). The engine sends a change while it receives,
+the current value again after each `WORK_MODE` receive, and nothing while it transmits; a reading taken while
+transmitting counts as lost. A board that never calls it gets no CARRIER_READY and sets bit 6. The chip's squelch
+then works with SQ_LEVEL's thresholds, its defaults unless the board sends its own.
 
 Byte 3: an engine at the burst level takes every repeat as a burst modem gives it, so a board sets bits 1 and 0
 (LC headers and terminators). With them clear the chip reports a header identical to the last one once; if it keeps

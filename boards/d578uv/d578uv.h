@@ -140,4 +140,6 @@ void d578uv_gps_power(bool on);
 // Boot the SCT3258 from the codec slot (about 1 s) and start the modem task. False: no block or no answer, FM only
 bool d578uv_modem_init(void);
 uint8_t d578uv_modem_boot_result(void);		// sct_boot_result_t
+// Side A's carrier in DMR, each status poll: tells the baseband when one comes up and when it goes (CARRIER_READY)
+void d578uv_modem_carrier(bool carrier);
 #endif
