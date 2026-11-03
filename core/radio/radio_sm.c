@@ -356,7 +356,8 @@ static bool bcast_listening(const radio_sm_t *sm)
 
 // Speaker and LEDs follow the state; only changes go to the board
 // FM: the board's speaker path follows the squelch (or the monitor). DMR voice goes out as PCM from the vocoder
-// (core/dmr/ambe routes the speaker itself); the green LED shows a call being played
+// (core/dmr/ambe routes the speaker itself), except with a modem that plays the voice itself (CAP_MODEM_VOICE): its
+// voice reaches the speaker through the board's path, open while a call is played. The green LED shows a call played
 static void outputs(radio_sm_t *sm)
 {
 	bool tx = sm->view.state == RS_TX;
@@ -366,6 +367,7 @@ static void outputs(radio_sm_t *sm)
 #if CONFIG_DMR
 	if (!fm && !tx && sm->view.state == RS_RX && sm->view.dmr.state == RDMR_RX) {
 		green = true;
+		open = !sm->hotspot && (board.caps & CAP_MODEM_VOICE) != 0;
 	}
 	if ((sm->hotspot || sm->sfr_rpt) && board.dmr != NULL && board.dmr->is_transmitting()) {
 		tx = true;
