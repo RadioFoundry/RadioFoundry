@@ -232,6 +232,7 @@ static bool have_rx;
 static bool transmitting;
 static uint8_t sr;			// the shift register's outputs
 static bool main_audio;			// side A's audio to the speaker (audio())
+static bool beeping;			// side A's chip sounds a beep instead of its receiver (beep_tone())
 static int16_t level_code_vol = -1;	// the speaker level code for the volume, -1 until the core sets one
 static bool vol_zero;			// the volume (knob A) is 0: side A and the KTMicro receiver stay silent
 static int16_t level_code_b = -1;	// side B's level code from knob B, -1 until side B's poll reads it
@@ -483,17 +484,21 @@ static void audio_route(void)
 	// Each side's knob sets its level, as the stock firmware does (knob A the core's volume, knob B read in side B's
 	// poll); the KTMicro receiver takes knob A's on both channels
 	int16_t code_b = kt_out || level_code_b < 0 ? level_code_vol : level_code_b;
+	// Channel 0 carries side A's RF chip audio, which in DMR is the demodulator's 4FSK: clearing SR_RF_AUDIO doesn't
+	// keep it off the speaker (heard on a radio, under the call's voice), so in DMR it opens only for a beep or the
+	// KTMicro receiver. The baseband's voice reaches the speaker without it
+	bool a_rf = beeping || kt_out || (mode != RADIO_MODE_DMR && (main_audio || !b));
 	if (level_code_vol >= 0) {
-		level_set(0, main_audio || !b ? (uint8_t)level_code_vol : 0);
+		level_set(0, a_rf ? (uint8_t)level_code_vol : 0);
 		level_set(1, (b || kt_out) && code_b >= 0 ? (uint8_t)code_b : 0);
 	}
-	bool rf = mode == RADIO_MODE_FM || b || kt_out;
+	bool rf = mode == RADIO_MODE_FM || b || kt_out || beeping;
 	if (!transmitting) {
 		sr_set(rf ? SR_RF_AUDIO : 0, rf ? 0 : SR_RF_AUDIO);
 	}
 	// The level device's lowest code still passes audio (seen on a radio): PA7 opens only for a source whose knob is up
 	bool b_loud = b && (level_code_b < 0 ? !vol_zero : !vol_b_zero);
-	mcu_pin_write(PIN_SPK_MUTE, !(((main_audio || kt_out) && !vol_zero) || b_loud));
+	mcu_pin_write(PIN_SPK_MUTE, !(((main_audio || kt_out || beeping) && !vol_zero) || b_loud));
 }
 
 static void volume(uint8_t percent)
@@ -1595,6 +1600,10 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 #if CONFIG_DMR
 	burst_disarm();		// keyed again without tx_off(): no burst switches the PA of the new set-up
 #endif
+	if (beeping) {		// a beep cut by the key-up: its tone generator off before the TX set-up
+		beeping = false;
+		qa4818_tone_gen(&chip_if, false);
+	}
 #if CONFIG_DTMF || CONFIG_APRS
 	d578uv_tone_stop();
 #endif
@@ -1853,6 +1862,25 @@ static void status(radio_status_t *st)
 	}
 }
 
+// Beeps (hal_radio_t.beep_tone): side A's chip plays the tone generator to its AF output, which the speaker takes
+// whatever the squelch, at the volume. In DMR this takes the chip's output from the baseband for the beep's length.
+// Not while transmitting, in AM or with broadcast FM (the speaker's source is the KTMicro receiver then)
+static void beep_tone(uint16_t hz, uint8_t level)
+{
+	if (hz != 0 && (transmitting || !have_rx || AM_ON || BC_HEARD)) {
+		return;
+	}
+	if (hz == 0 && !beeping) {
+		return;
+	}
+	beeping = hz != 0;
+	if (!transmitting && have_rx) {
+		qa4818_beep(&chip_if, hz, (uint8_t)((level * 0x7Fu + 50u) / 100u), qa4818_af_rx(mode == RADIO_MODE_DMR,
+			rx_hz));
+	}
+	audio_route();
+}
+
 static void audio(bool on)
 {
 	main_audio = on;
@@ -1925,6 +1953,8 @@ const hal_radio_t d578uv_radio = {
 	.status = status,
 	.audio = audio,
 	.volume = volume,
+	.volume_pcm = true,	// beeps go through the level device, which the volume sets
+	.beep_tone = beep_tone,
 #if CONFIG_AM_RX
 	.rx_am = rx_am,
 #endif
