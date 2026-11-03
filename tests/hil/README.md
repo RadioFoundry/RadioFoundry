@@ -191,7 +191,11 @@ the radio during the bench's own key-up needs the second board.
 | `outbound_start()` | a repeater's idle outbound with no repeater behind it (`bench_tx.py outbound`): BS bursts on both slots with the CACH. A bench board only |
 | `dmr_watch_start()`, `bursts_start()` | the receive board's decoded bursts (`bursts`), in the bench host's record shape |
 | `capture_start()`, `analyze_fm()`, `analyze_aprs()` | the receive board's channel as I/Q (`trigger`: cs16, 40 kHz wide, from 1 s before the radio keys; a quarter of the wideband stream, which a busy network link carries without loss) into a local run directory, each frame placed by its sample clock; `tools/sdr_fm_check.py` and `tools/aprs_afsk_check.py` run on the test host. A capture with samples the board lost (`gap_samples`, frames it couldn't send, or a run of exact zeros of 2 ms or more) skips as `bench`. The channel must be inside the board's receive window |
+| `fm_tx_start()`, `fm_transmit()` | FM from the TX board (`tx`, mode `fm`): a program of segments (tones, sweeps, DTMF, AFSK as `fsk` bits, noise, silence) with an optional CTCSS or DCS, at the board's lowest power, within its key limit. A board without `fm` in `info`'s `signal_modes` skips as `bench`. The bench host has no FM transmitter: these skip there |
 | `analyze_dmr()` (sdrmon.py), bench stations | skip as missing (skip kind `bench`) |
+
+FM from the board is what the radio receives in `test_rx_tone_decode_bench` (CTCSS / DCS decode) and
+`test_aprs_rx_on_air` (an AFSK frame), on `--fm-mhz`, which must then be a frequency the board may transmit on.
 
 `--dmr-freq` and `--dmr-cc` must be a frequency the board may transmit on, with the radio's channel (or the VFO) on
 it: the receive tests don't tune the radio. `test_dmr_repeater_burst_offset` times the radio against the TX board's

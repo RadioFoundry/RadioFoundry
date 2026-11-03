@@ -466,6 +466,48 @@ class BenchFault(Exception):
     """The bench failed the test, not the radio: reported as a skip of kind "bench"."""
 
 
+class _LineTx:
+    """A bench board's tx op (bench_line Request) as one of SdrBench's background jobs: .started once the board
+    keyed (its tx header), .done the done record ({"mode", "freq", "on_air_s", "cut", "dev_hz", "peak_hz", ...}) once it's over."""
+
+    def __init__(self, line, where, req):
+        self.started = threading.Event()
+        self.over = threading.Event()      # the done record came (the stream may stay open after it)
+        self.done = None
+        self.header = None
+        self.req = line.Request(where, req, self._on)
+
+    def _on(self, d, data):
+        # The header comes once the board has the modem (after any queued / granted lines) and keys right away;
+        # a "started" line, where a board sends one, says the same
+        if "tx" in d:
+            self.header = d["tx"]
+            self.started.set()
+        elif "started" in d:
+            self.started.set()
+        elif "done" in d:
+            self.done = d["done"]
+            self.over.set()
+
+    def wait(self, timeout=None):
+        end = time.monotonic() + (timeout if timeout is not None else 1e9)
+        while not self.over.wait(0.2) and not self.req.done.is_set() and time.monotonic() < end:
+            pass
+        if self.req.error is not None:
+            raise RuntimeError(f"bench board FM failed: {self.req.error}")
+        if self.done is None:
+            raise RuntimeError(f"bench board FM: no done record ({self.req.replies[-3:]})")
+        return self.done
+
+    def poll(self):
+        return 0 if self.over.is_set() or self.req.done.is_set() else None
+
+    def terminate(self):
+        self.req.cancel()      # closing the connection unkeys the board
+
+    kill = terminate
+
+
 class _LineJob:
     """A bench board's job (bench_line Request of op run) as SdrBench's background jobs look on the bench host: like
     a Popen, with the tool's output lines in .lines (records and log lines, text with newlines; .out the records
@@ -770,6 +812,41 @@ class SdrBench:
         if p.req.error is not None:
             self._api_fail(p.req.error, f"{tool} {job.get('cmd', '')}".strip())
         return p
+
+    # ── a bench board's FM transmitter (the line protocol's tx op, the gateway's bench-api.md 14.6) ──
+    def fm_tx_start(self, freq, program, max_s=10.0, **fields):
+        """FM from the TX board on freq (MHz), started in the background: program is a list of segments
+        ({"kind": "tone", "hz": 1000, "s": 2}, "fsk", "dtmf", "sweep", "noise", "silence"), fields the mode's others
+        (ctcss, dcs, dev_hz, sub_dev_hz, lead_s, tail_s, repeat; None left out). Returns once the board keyed: a
+        _LineTx whose wait() gives the board's done record. Needs the lease (tests mark it bench_service and rf).
+        Only a bench board transmits FM: the SDR bench host's modem is DMR only, so it skips there."""
+        if not self.api:
+            skip("bench", "the SDR bench host has no FM transmitter: needs a bench board (--bench-api)")
+        self._need_lease()
+        modes = (self._api_info().get("signal_modes") or {}).get("tx", [])
+        if "fm" not in modes:
+            skip("bench", f"the bench board {self.api} doesn't transmit FM (its signal modes: {modes or 'none'})")
+        L = self._line()
+        self._api_claim(freq)
+        req = {"op": "tx", "mode": "fm", "freq": freq, "session": self._api_session, "max_s": max_s,
+               "program": program, "wait_max": self.dmr_bench.WAIT_MAX,
+               "label": getattr(self.bench, "label", None) or "fm"}
+        req.update({k: v for k, v in fields.items() if v is not None})
+        t = _LineTx(L, L.address(self.api), req)
+        self.bg.append(t)
+        end = time.monotonic() + self.dmr_bench.WAIT_MAX + 30      # it may queue behind another session's job
+        while not t.started.wait(0.2) and not t.req.done.is_set() and time.monotonic() < end:
+            pass
+        if t.req.error is not None:
+            self._api_fail(t.req.error, f"FM on {freq} MHz")
+        if not t.started.is_set():
+            t.terminate()
+            raise RuntimeError(f"the bench board never keyed FM on {freq} MHz: {t.req.replies[-3:]}")
+        return t
+
+    def fm_transmit(self, freq, program, max_s=10.0, **fields):
+        """fm_tx_start, then its done record once the last sample went out"""
+        return self.fm_tx_start(freq, program, max_s, **fields).wait(max_s + 15)
 
     def ssh(self, cmd, timeout=300, check=True):
         self._no_api("shell")

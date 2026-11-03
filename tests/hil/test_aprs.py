@@ -31,6 +31,12 @@ Where and how it transmits, so that nothing reaches the APRS network:
 - Each transmission is short: TX delay 300 ms plus about 0.3 s of frame. The message is sent 3 times (0, 30, 90 s:
   the DM-1701 can't hear the ack), all on the test frequency.
 
+On air, receive (rf + bench_service: --allow-rf, --aprs-call): a bench board (--bench-api) sends one AX.25 position
+frame from <call>-7 (-11 when that is the radio's own call) in Bell 202 AFSK on its FM transmitter, on --fm-mhz (an amateur non-APRS frequency the bench may
+transmit on), path none. The radio, in the FM VFO there with APRS receive on that frequency (custom region), decodes
+it; it doesn't transmit (beacons and the digipeater off, put back after). The SDR bench host has no FM transmitter:
+the test skips there.
+
 On air, DMR (radio_tx + bench_service): on the DMR test channel (--dmr-freq / --dmr-cc, e.g. 467.375 MHz CC 2) at
 the lowest power the radio sends its position as an LRRP report (UDP 4001 in rate 1/2 data) and as an ETSI UDT
 location to --aprs-dmr-dst; the bench modem's listener (bench_tx.py listen) hears the data header and blocks, and
@@ -50,6 +56,7 @@ Pass criteria:
 - test_aprs_dmr_position[lrrp|udt]: aprs.dmr_sent +1; a data header from our DMR ID to the destination (CRC ok),
   LRRP: DPF 2 (unconfirmed) carrying IPv4 / UDP to port 4001 with a triggered location report (document 0x0D);
   UDT: DPF 0, format 5 (NMEA location), appended block CRC ok; the position within 2e-5 degree.
+- test_aprs_rx_on_air: aprs.rx_frames +1 with aprs.rx_bad unchanged, and aprs.stations at least 1.
 """
 import contextlib
 import re
@@ -143,7 +150,8 @@ class AprsSession:
         self.keep = {"tx": _n(v, "set.aprs_tx"), "region": _n(v, "set.aprs_region"), "ssid": _n(v, "set.aprs_ssid"),
                      "pos_src": _n(v, "set.aprs_pos_src"), "dmr_dst": _n(v, "set.aprs_dmr_dst"),
                      "dmr_udt": _n(v, "set.aprs_dmr_udt"), "via": VIAS[v["set.aprs_via"]],
-                     "path": PATHS.index(v["set.aprs_path"])}
+                     "path": PATHS.index(v["set.aprs_path"]), "rx": _n(v, "set.aprs_rx"),
+                     "digi": _n(v, "set.aprs_digi")}
         self.v0 = v
         self.expected_rf = 0
         self.message = False
@@ -182,6 +190,18 @@ class AprsSession:
         assert v["aprs.block"] == "ok" and int(v["aprs.freq_hz"]) == hz, v
         return v
 
+    def rx_setup(self, hz):
+        """Receive on hz (custom region), the digipeater off: the radio never repeats what the bench sends"""
+        assert allowed_test_hz(hz), f"{hz} Hz: not an amateur non-APRS test frequency"
+        self.set("digi", 0)
+        self.set("region", REGION_CUSTOM)
+        time.sleep(0.3)             # the view's frequency follows on the engine's next tick (25 ms)
+        self.custom_hz = int(self.radio.view(["aprs"])["aprs.freq_hz"])
+        self.set("freq_hz", hz)
+        self.set("rx", 1)
+        return self.radio.wait_for(lambda y: int(y.get("aprs.freq_hz", 0)) == hz and y.get("set.aprs_rx") == "1",
+                                   sections=("aprs", "aprs_set"), what="APRS receive on the test frequency")
+
     def position(self):
         self.set("lat", POS[0])
         self.set("lon", POS[1])
@@ -214,7 +234,7 @@ class AprsSession:
         if {"lat", "lon"} & self.changed:
             L.aprs_set("lat", self.fixed[0])
             L.aprs_set("lon", self.fixed[1])
-        for f in ("ssid", "path", "via", "dmr_dst", "dmr_udt", "pos_src"):
+        for f in ("ssid", "path", "via", "dmr_dst", "dmr_udt", "pos_src", "rx", "digi"):
             if f in self.changed:
                 L.aprs_set(f, k[f])
         if self.custom_hz is not None:
@@ -227,7 +247,7 @@ class AprsSession:
         back = {"tx": _n(v, "set.aprs_tx"), "region": _n(v, "set.aprs_region"), "ssid": _n(v, "set.aprs_ssid"),
                 "pos_src": _n(v, "set.aprs_pos_src"), "dmr_dst": _n(v, "set.aprs_dmr_dst"),
                 "dmr_udt": _n(v, "set.aprs_dmr_udt"), "via": VIAS[v["set.aprs_via"]],
-                "path": PATHS.index(v["set.aprs_path"])}
+                "path": PATHS.index(v["set.aprs_path"]), "rx": _n(v, "set.aprs_rx"), "digi": _n(v, "set.aprs_digi")}
         assert back == k, f"APRS settings not restored: {back} != {k}"
 
 
@@ -607,3 +627,60 @@ def test_aprs_dmr_position(radio, sdr_bench, pytestconfig, form):
         assert valid, blk.hex()
     print(f"{form} position from {own} to {dst}: {lat:.6f}, {lon:.6f}")
     assert abs(lat - POS[0]) < 2e-5 and abs(lon - POS[1]) < 2e-5, f"{lat}, {lon} != {POS}"
+
+
+BENCH_RX_SSIDS = (7, 11)    # the bench's frame: --aprs-call with the first that isn't the radio's own call
+BENCH_RX_INFO = "!3330.00N/08645.00W-RadioFoundry bench frame"
+
+
+@pytest.mark.feature("aprs_rx")
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
+    """One AX.25 UI frame (a position, from --aprs-call-7 or -11, not the radio's own call) in Bell 202 AFSK from the bench board's FM transmitter on
+    --fm-mhz: the radio, in the FM VFO there with APRS receive on that frequency, decodes it (aprs.rx_frames) with no
+    FCS error and lists the station. The radio doesn't transmit: beacons and the digipeater are off for the test."""
+    import aprs_afsk_check as afsk
+    _need_aprs(radio)
+    if "APRS_RX" not in radio.features() or "VFO_FM" not in radio.features():
+        skip("not_built", "built without APRS receive or the FM VFO")
+    call = pytestconfig.getoption("--aprs-call")
+    if not call:
+        skip("opt_in", "give --aprs-call (or $RFOUNDRY_APRS_CALL): a licensed operator's callsign (amateur transmission)")
+    mhz = pytestconfig.getoption("--fm-mhz")
+    hz = round(mhz * 1e6)
+    if not allowed_test_hz(hz):
+        skip("state", f"--fm-mhz {mhz:.4f}: the bench's frame needs a 2 m or 70 cm amateur frequency that is not an "
+                      "APRS frequency")
+    radio.go_home()
+    if radio.screen() == "hotspot":
+        skip("state", "the radio is in hotspot mode")
+    own = _aprs(radio).get("aprs.call")
+    src = next(c for c in (f"{call.upper()}-{n}" for n in BENCH_RX_SSIDS) if c != own)    # the radio skips its own
+    bits = afsk.hdlc_bits([afsk.ax25_frame(src, "APZRDF", [], BENCH_RX_INFO)], 40)     # 40 flags: 267 ms TX delay
+    packed = bits + "0" * (-len(bits) % 8)
+    hexs = "".join(f"{int(packed[i:i + 8], 2):02x}" for i in range(0, len(packed), 8))   # MSB first, as sent
+    program = [{"kind": "fsk", "hex": hexs, "bits": len(bits), "nrzi": True, "level": 1.0}]
+    L = radio.link
+    with radio.vfo_session(), aprs_session(radio) as s:
+        L.vfo_set(hz)
+        radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO")
+        s.rx_setup(hz)
+        radio.wait_for(lambda v: v.get("aprs.rx_listening") == "1", sections=("aprs",), what="APRS receiver on")
+        v0 = _aprs(radio)
+        with sdr_bench.lease():
+            done = sdr_bench.fm_transmit(mhz, program, dev_hz=3000, lead_s=0.1, tail_s=0.1)
+        print(f"bench: {done}")
+        try:
+            v = radio.wait_for(lambda x: _n(x, "aprs.rx_frames") > _n(v0, "aprs.rx_frames"), timeout=5,
+                               sections=("aprs",), what="the bench's frame decoded")
+        except AssertionError:
+            v = _aprs(radio)
+            raise AssertionError("no frame decoded: " + " ".join(
+                f"{k}={_n(v0, k)}->{_n(v, k)}" for k in ("aprs.rx_bits", "aprs.rx_hdlc_frames", "aprs.rx_fcs_errors",
+                                                         "aprs.rx_aborts", "aprs.rx_bad", "aprs.rx_peak")))
+        print(" ".join(f"{k}={_n(v0, k)}->{_n(v, k)}" for k in ("aprs.rx_frames", "aprs.rx_fcs_errors",
+                                                               "aprs.rx_bad", "aprs.stations", "aprs.rx_peak")))
+        assert _n(v, "aprs.rx_frames") == _n(v0, "aprs.rx_frames") + 1, f"one frame expected: {v}"
+        assert _n(v, "aprs.rx_bad") == _n(v0, "aprs.rx_bad"), f"the frame was refused (rx_bad): {v}"
+        assert _n(v, "aprs.stations") >= 1, f"the station isn't listed: {v}"
