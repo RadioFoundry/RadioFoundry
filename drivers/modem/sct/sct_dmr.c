@@ -53,6 +53,7 @@ static struct {
 	uint32_t now;
 	bool cr_used;		// the board reports its carrier (sct_dmr_carrier)
 	uint8_t cr_want;	// ... its last CARRIER_READY value
+	uint32_t cr_seen;	// ... when it last said a carrier is there
 	uint8_t cr_sent;	// ... the chip's, CR_UNSENT after each WORK_MODE receive
 
 	sct_dmr_stats_t st;
@@ -109,6 +110,11 @@ static bool send_rx_mode(void)
 static void carrier_step(void)
 {
 	if (!s.cr_used || !s.running || s.tx != TX_IDLE || s.cr_want == s.cr_sent)
+		return;
+	// A direct-mode station sends one slot in two, so the reading drops between its bursts. Each "lost" makes the
+	// chip look for sync again, so a loss goes out only once it has lasted SCT_DMR_CR_HOLD_MS
+	if (s.cr_want == 0 && s.cr_sent != CR_UNSENT && s.cr_sent != 0 &&
+	    (int32_t)(s.now - s.cr_seen) < SCT_DMR_CR_HOLD_MS)
 		return;
 	sct_pkt_t p;
 
@@ -752,8 +758,11 @@ void sct_dmr_carrier(uint8_t ready)
 {
 	lock();
 	s.cr_used = true;
-	if (s.tx == TX_IDLE)	// while transmitting the receiver hears this radio: kept at "lost"
+	if (s.tx == TX_IDLE) {	// while transmitting the receiver hears this radio: kept at "lost"
 		s.cr_want = ready <= 2 ? ready : 1;
+		if (ready != 0)
+			s.cr_seen = s.now;
+	}
 	carrier_step();
 	unlock();
 }

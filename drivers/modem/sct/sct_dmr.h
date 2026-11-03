@@ -77,6 +77,8 @@ typedef struct {
 // After the last frame, how long to wait for the chip's "far end done" before reporting TX_DONE anyway
 #define SCT_DMR_DONE_MS		600
 #define SCT_DMR_SLOT_MS		60
+// How long the board's carrier must stay lost before CARRIER_READY 0 goes out: a voice superframe
+#define SCT_DMR_CR_HOLD_MS	360
 
 void sct_dmr_init(const sct_dmr_port_t *port);
 extern const hal_dmr_modem_t sct_dmr_modem;
@@ -88,7 +90,8 @@ void sct_dmr_poll(uint32_t now_ms);
 // The board's carrier detection, as CARRIER_READY's value: 0 no carrier, 1 a carrier, 2 a carrier whose
 // demodulated phase is reversed. The chip looks for sync only after it hears that a carrier came up, so a board
 // calls this at each change, or every status poll (repeats cost nothing). The engine sends a change while it
-// receives, and the current value again at each return to receive; it never sends one while it transmits. A board
+// receives (a loss only once it has lasted SCT_DMR_CR_HOLD_MS, since a direct-mode station is silent between its
+// bursts), and the current value again at each return to receive; it never sends one while it transmits. A board
 // that never calls it relies on the chip's own squelch (docs/spec/modem-sct.md 3)
 void sct_dmr_carrier(uint8_t ready);
 

@@ -125,7 +125,8 @@ DMR_CALL_OPTION, from the Packet Interface document (default all 0):
 Without squelch detection by the chip (byte 0 bit 6), the chip looks for sync only after CARRIER_READY says the
 carrier is there. A board that detects the carrier itself gives the engine its value at each status poll
 (`sct_dmr_carrier`: 0 lost, 1 ready, 2 ready with the phase reversed). The engine sends a change while it receives,
-the current value again after each `WORK_MODE` receive, and nothing while it transmits; a reading taken while
+the current value again after each `WORK_MODE` receive, and nothing while it transmits. A loss goes out only once it
+has lasted `SCT_DMR_CR_HOLD_MS` (360 ms): a direct-mode station is silent between its bursts; a reading taken while
 transmitting counts as lost. A board that never calls it gets no CARRIER_READY and sets bit 6. The chip's squelch
 then works with SQ_LEVEL's thresholds, its defaults unless the board sends its own.
 
