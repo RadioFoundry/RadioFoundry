@@ -962,8 +962,8 @@ arm and the last refusal.
 
 | Line | Use in RadioFoundry |
 |---|---|
-| PA2, ADC3 IN2 (QT_DQT_IN) | one software-started conversion for the diagnostics page ("qt"). Mid-supply (about 1950 counts) with about 280 counts of noise on an empty channel. `MD9600_SUBTONE_ADC_CH=2` moves the decoder here |
-| PC3, ADC2 IN13 (sub-audio low-pass output) | the CTCSS / DCS decoder (`subtone_md9600.c`, `CONFIG_SUBTONE`): ADC2 converts continuously (480 cycles, 18.3 kHz) into DMA2 stream 3, and each half-transfer interrupt feeds sums of 8 to `drivers/rf/subaudio` at 2287 Hz. About 1065 counts with about 260 counts rms of noise on an empty channel, little changed under a DMR carrier. A tone on the air is not checked yet: which of PC3 and PA2 carries it is open |
+| PA2, ADC IN2 (QT_DQT_IN, the sub-audio low-pass output) | the CTCSS / DCS decoder (`subtone_md9600.c`, `CONFIG_SUBTONE`): ADC2 converts it continuously (480 cycles, 18.3 kHz) into DMA2 stream 3, and each half-transfer interrupt feeds sums of 8 to `drivers/rf/subaudio` at 2287 Hz. Mid-supply (about 1950 counts). A 100.0 Hz tone on a narrow channel holds it at about 320 counts of amplitude, talking or not; an empty channel gives 300-600 counts rms of noise. The diagnostics page's "qt" is one ADC3 conversion of it |
+| PC3, ADC IN13 (RX_2T_5T) | not sampled. Voice-band audio with sub-audio removed: under a carrier with a 100.0 Hz tone it drops to about 16 counts rms and rises to about 400 with speech; 450 counts of noise on an empty channel |
 | PC7, TIM8 CH2 | sub-audio tone PWM (`md9600_pwm_out`), on the backlight's 28 kHz timebase, into the reference oscillator's modulation input. Without a tone the pin is released (open drain high), as at start-up: driven low it pulls the reference and DMR never syncs. No tone generator drives it yet |
 | PC8, TIM8 CH3 | beep PWM, same helper |
 | PA temperature, fan | no sensor or fan line is known on any revision (?) |

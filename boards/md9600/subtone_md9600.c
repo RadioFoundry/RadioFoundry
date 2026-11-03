@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 sub-audio receive: CTCSS / DCS decode in software from the sub-audio low-pass output on PC3 (ADC2 IN13,
-// docs/spec/hardware-md9600.md 19.9). ADC2 converts continuously into a circular DMA buffer (DMA2 stream 3, channel 1);
+// MD-9600 sub-audio receive: CTCSS / DCS decode in software from QT_DQT_IN on PA2 (ADC2 IN2, docs/spec/hardware-md9600.md
+// 19.9). ADC2 converts continuously into a circular DMA buffer (DMA2 stream 3, channel 1);
 // each half-transfer interrupt sums groups of DECIM conversions into one sample for drivers/rf/subaudio, the DSP. The
 // transmit side (the tone PWM on PC7) is not written.
 #include "config.h"
@@ -14,10 +14,10 @@
 #include "hal_time.h"
 #include "rf/subaudio/subaudio_rx.h"
 
-// The input: ADC IN13 (PC3). PA2 (IN2, the other sub-audio line) is a build knob until a tone on the air shows which
-// one carries it
+// The input: ADC IN2 (PA2, QT_DQT_IN). A 100.0 Hz tone on the air holds it at about 320 counts of amplitude; PC3 (IN13)
+// carries the voice band with the tone filtered out (first radio, 2026-11-03)
 #ifndef MD9600_SUBTONE_ADC_CH
-#define MD9600_SUBTONE_ADC_CH	13u
+#define MD9600_SUBTONE_ADC_CH	2u
 #endif
 #ifndef MD9600_SUBTONE_RX_INVERT
 #define MD9600_SUBTONE_RX_INVERT	0
