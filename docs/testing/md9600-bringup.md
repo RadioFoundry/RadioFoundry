@@ -30,6 +30,7 @@ First radio: a V1-V3 board (its original firmware reported version 06.09), on a 
 | Clock | The 8 MHz HSE starts as a crystal, 72 MHz |
 | Board revision | Stored by hand as V1-V3 before the installers learned to read it |
 | FM receive, VHF | Works: a NOAA station through the dummy load, at 25 kHz |
+| Beeps | Work on FM and DMR channels (by ear, 2026-11-03). They follow the volume knob: they go out the HR_C6000 line out, ahead of the knob, where the radio's own firmware plays key beeps as PWM on the beep pin, after it |
 | FM receive audio | Loud at the bottom of the volume knob and overdriven. The HR_C6000 settings, FM_SW and the IF chip words were compared with the original firmware's and changed live without effect; whether the original firmware sounds the same on this radio is not checked |
 | FM receive, UHF | Works: a handheld on 446.000 MHz, 12.5 kHz, at -57 to -73 dBm; the audio sounds the same as on VHF |
 | DMR receive | Works on UHF (446.100) and VHF (151.505), by hand: a group call from another radio (CC 1, slot 1) plays clearly, every voice burst received. The DMR modem counters are on the diagnostics page after the board lines |

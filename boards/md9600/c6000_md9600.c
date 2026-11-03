@@ -205,6 +205,7 @@ void md9600_c6000_init(void)
 	count(hrc6000_power_on_init(&modem, DMR_MIC_GAIN));
 	count(hrc6000_set_mode_fm_rx(&modem));
 	count(hrc6000_fm_audio(&modem, false));		// FM audio never passes through this chip
+	count(hrc6000_fm_rx_pcm(&modem));		// so it stays in DMR mode, where its codec plays the beeps
 	count(hrc6000_set_rx_gain(&modem, RX_GAIN_DB));
 	count(hrc6000_tones_off(&modem));	// with the init's 0x80 the chip never syncs on DMR (hardware-md9600.md 4.2)
 	diag.up = hrc_read(&modem, 4, 0x10, &diag.r10);
@@ -245,6 +246,7 @@ void md9600_c6000_mode(bool dmr, uint32_t hz)
 		stm32_hrc_dmr_leave();
 		count(hrc6000_set_mode_fm_rx(&modem));
 		count(hrc6000_fm_audio(&modem, false));
+		count(hrc6000_fm_rx_pcm(&modem));
 	}
 	speaker_apply();
 }

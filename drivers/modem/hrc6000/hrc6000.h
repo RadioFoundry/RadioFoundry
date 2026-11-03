@@ -52,6 +52,10 @@ bool hrc6000_set_ref_offset(hrc_t *dev, int8_t offset, bool fm_tx);
 // 4:0xA1 = 0x00 (modem-hrc6000.md 8). The power-on init leaves 0x80, whose bit 7 the manual marks reserved, must be 0.
 // The other boards receive DMR with it; on a board that feeds the chip a 450 kHz IF it stops every DMR sync
 bool hrc6000_tones_off(hrc_t *dev);
+// FM receive on a board whose FM audio doesn't pass through the chip: the modulator back to DMR (4:0x10 bit 7 clear).
+// In FM mode the codec's line out carries only the chip's own FM receive audio, gated by 4:0x36 bit 1, so PCM (beeps,
+// prompts) plays silent there; in DMR mode it plays (modem-hrc6000.md 8). After hrc6000_set_mode_fm_rx()
+bool hrc6000_fm_rx_pcm(hrc_t *dev);
 // RX audio gain, -31..+31 dB (4:0x37 = 0x80 + 0x40 if positive + the low 5 bits of the gain, modem-hrc6000.md 2)
 bool hrc6000_set_rx_gain(hrc_t *dev, int8_t db);
 
