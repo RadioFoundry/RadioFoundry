@@ -1226,8 +1226,8 @@ static bool dmr_call_screen(const radio_view_t *v)
 	return v->state == RS_RX && (v->dmr.state == RDMR_RX || v->dmr.state == RDMR_RX_OTHER);
 }
 
-// Talk target line on Home: an arrow and "TG 201 Main Ops", or a return arrow and "TG 9 (8s)" in warn color during
-// the reply window. Icons, not words, so a small display keeps room for the label (#336)
+// Talk target line on Home: an arrow and "TG 201 Main Ops", or an inverted return arrow and "TG 9 (8s)" in warn color
+// during the reply window. Icons, not words, so a small display keeps room for the label (#336)
 static bool ui_st_dmr_off;		// ui_state_t.dmr_off of the frame being drawn
 
 static void draw_talk_dmr(const radio_view_t *v)
@@ -1239,9 +1239,10 @@ static void draw_talk_dmr(const radio_view_t *v)
 	sbuf_t b;
 	color_t c = ui_col.fg;
 
-	const char *prefix = d->reply_active ? GLYPH_REPLY " " : GLYPH_ARROW " ";
 	int w = gfx_width();
-	int x = gfx_text(f, 0, L->talk_y, prefix, d->reply_active ? ui_col.warn : ui_col.dim);
+	// the reply window's icon inverted, so it stands out on a monochrome display as well
+	int x = d->reply_active ? gfx_text_bg(f, 0, L->talk_y, GLYPH_REPLY, ui_col.bg, ui_col.warn) + f->w
+		: gfx_text(f, 0, L->talk_y, GLYPH_ARROW " ", ui_col.dim);
 	size_t room = x < w ? (size_t)((w - x) / f->w) : 0;
 	sb_init(&b, buf, sizeof buf);
 	if (v->ch.rx_only) {
