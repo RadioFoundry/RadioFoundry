@@ -35,6 +35,7 @@
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"	// dmr_sms_format_t
+#include "codeplug/codeplug_kv.h"
 #endif
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
@@ -1836,6 +1837,44 @@ static void data_save_settings(uint32_t now_ms)
 	settings_end(now_ms);
 }
 
+// The ARS server and the IP gateway as the codeplug's settings area gives them (docs/spec/codeplug-settings.md 5), read
+// at start and whenever codeplug_serial() moves on. A key that is present holds its setting: a settings change that
+// raced a codeplug write is put back at the next tick. An absent key leaves the setting as the radio has it (the
+// settings store's copy), so a codeplug from a tool that doesn't carry the area changes nothing
+static struct {
+	bool ars, gw;
+	uint32_t ars_id, gw_id;
+} data_kv;
+
+static void data_kv_read(void)
+{
+	data_kv.ars = CONFIG_DMR_ARS && codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &data_kv.ars_id);
+	data_kv.gw = CONFIG_DMR_IP_GATEWAY && codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &data_kv.gw_id);
+}
+
+static bool data_kv_apply(dmrDataSettings_t *set)
+{
+	bool changed = false;
+	if (data_kv.ars && set->arsServer != data_kv.ars_id) {
+		set->arsServer = data_kv.ars_id;
+		changed = true;
+	}
+	if (data_kv.gw && set->ipGatewayId != data_kv.gw_id) {
+		set->ipGatewayId = data_kv.gw_id;
+		changed = true;
+	}
+	return changed;
+}
+
+static void data_kv_tick(void)
+{
+	dmrDataSettings_t set;
+	dmrDataServiceGetSettings(&set);
+	if (data_kv_apply(&set)) {
+		dmrDataServiceSetSettings(&set);
+	}
+}
+
 #if CONFIG_DMR_EMERGENCY
 // --- DMR emergency (core/dmr/dmr_emergency.c): the module decides; this keys the hot mic as the 1750 Hz burst keys
 // the transmitter (PTT taken over by a real press), reconfigures the stack when the emergency starts or ends, sounds
@@ -1948,6 +1987,8 @@ static void data_init(radio_sm_t *sm)
 		memcpy(set.ipConfirmedRule, st->ds_ip_rule, sizeof(set.ipConfirmedRule));
 		set.ipGatewayId = st->ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
 	}
+	data_kv_read();
+	data_kv_apply(&set);
 	data_saved = set;
 	data_tx.list = NULL;
 	dmrDataServiceInit(&env);
@@ -1992,6 +2033,7 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_ZONE_SHARE
 	zone_share_tick(now_ms);
 #endif
+	data_kv_tick();
 	data_save_settings(now_ms);
 	if (sm->power_off_req && sm->power_off_busy) {
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
@@ -4623,6 +4665,9 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	sm->reload_pending = false;
 	sm->codeplug_serial = codeplug_serial();
 	sm->view.source = codeplug_source();
+#if CONFIG_DMR_DATA_CORE
+	data_kv_read();		// the next data tick applies it
+#endif
 #if CONFIG_DMR
 	// The cached names may be gone or new now ("" is cached too): a contact added after its ID was heard or called
 	// would otherwise stay a bare ID on the screens until it fell out of the cache

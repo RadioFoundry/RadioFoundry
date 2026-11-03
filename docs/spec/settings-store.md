@@ -99,7 +99,8 @@ changes have rested `SETTINGS_SAVE_DELAY_MS` (2 s), so turning the knob through 
   the VFO's frequency and settings, and the privacy key in use.
 - The radio core, for `radio_set_settings()`: the `rs_*` fields (TOT, busy channel lockout, scan, beeps, VOX,
   battery saving, backlight times; `radio-features.md` 1). `rs_stored` 0 means the radio core's defaults.
-- The radio core's data tick, for the DMR data service (`dmr-data.md`): the `ds_*` fields (ARS server, radio
+- The radio core's data tick, for the DMR data service (`dmr-data.md`; the ARS server and IP gateway follow the
+  codeplug's settings area when it has their keys, [codeplug-settings.md](codeplug-settings.md) 5): the `ds_*` fields (ARS server, radio
   check reply, call alert ACK, LRRP reply, the formats). `ds_stored` 0 means the service's defaults.
 - The UI and the debug link's radio op 27: `usb_mode`, `net_flags`, `net_link_ip` (`usb-network.md` 5.4); the host
   link reads them at start and on `hostlink_settings_changed()`.

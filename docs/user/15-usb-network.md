@@ -288,7 +288,8 @@ By default the radio carries only addresses that stand for a DMR ID: 12.x.y.z fo
 talkgroup. A packet from the computer to any other address is dropped.
 
 If another radio in your fleet is a gateway to a network (for example a MOTOTRBO control station on a dispatch PC),
-give the radio that radio's DMR ID:
+give the radio that radio's DMR ID in **Settings > Connections > Data services > IP gateway** (0 is off), in the
+[Codeplug Editor](04-programming.md), or over the debug link:
 
 ```
 tools/rfoundry_debug.py data ip-settings auto rules gateway=3100500

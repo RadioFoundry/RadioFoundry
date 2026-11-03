@@ -11,6 +11,7 @@
 #include "dmr/dmr_data_api.h"
 #include "dmr/dmrData.h"
 #include "dmr/ipGateway.h"
+#include "codeplug/codeplug_kv.h"
 
 static int failures, checks;
 
@@ -61,6 +62,37 @@ uint8_t dmrDataServiceIpResult(void) { return DMR_REQ_OK; }
 int dmrDataServiceLrrpTriggerCount(void) { return 0; }
 const char *dmrDataServiceTxKindName(uint8_t kind) { (void)kind; return "other"; }
 void dmrDataServiceSetTxSpacing(uint16_t guardMs, bool chain) { (void)guardMs; (void)chain; }
+
+// The codeplug's settings area: the gateway key, a write that can fail (a CPS session holds the flash)
+static struct {
+	bool present, fail;
+	uint32_t id;
+	int writes;
+} kv;
+bool codeplug_kv_get_id(uint16_t key, uint32_t *id)
+{
+	if (key != CODEPLUG_KEY_IP_GATEWAY || !kv.present) {
+		return false;
+	}
+	*id = kv.id;
+	return true;
+}
+bool codeplug_kv_set_u32(uint16_t key, uint32_t value)
+{
+	if (key != CODEPLUG_KEY_IP_GATEWAY || kv.fail) {
+		return false;
+	}
+	kv.present = true;
+	kv.id = value;
+	kv.writes++;
+	return true;
+}
+codeplug_kv_state_t codeplug_kv_info(uint16_t *length, uint16_t *entries)
+{
+	*length = kv.present ? 8 : 0;
+	*entries = kv.present;
+	return kv.present ? CODEPLUG_KV_VALID : CODEPLUG_KV_EMPTY;
+}
 
 bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
 		      const uint8_t *l4, int length)
@@ -119,6 +151,19 @@ static void test_ip_settings(void)
 	settings.ipGatewayId = 77;
 	CHECK(cmd(r, 1 + 13) == 1 && out[0] == DL_ST_OK && settings.ipGatewayId == 77);
 	CHECK(cmd(r, 1 + 10) == 1 && out[0] == DL_ST_BAD_ARG);
+	// A new gateway ID goes to the codeplug's key too (docs/spec/codeplug-settings.md 5); the same one writes nothing
+	CHECK(kv.present && kv.id == 0 && kv.writes == 2);
+	put32(r + 12, 3100600);
+	CHECK(cmd(r, 1 + 15) == 1 && out[0] == DL_ST_OK && kv.id == 3100600 && kv.writes == 3);
+	CHECK(cmd(r, 1 + 15) == 1 && out[0] == DL_ST_OK && kv.writes == 3);
+	// The key can't be written: busy and nothing changed, as the radio core would put the key's value back
+	kv.fail = true;
+	put32(r + 12, 3100700);
+	CHECK(cmd(r, 1 + 15) == 1 && out[0] == DL_ST_BUSY && settings.ipGatewayId == 3100600);
+	// ... unless the codeplug has no key: the radio's own setting, as before
+	kv.present = false;
+	CHECK(cmd(r, 1 + 15) == 1 && out[0] == DL_ST_OK && settings.ipGatewayId == 3100700);
+	kv.fail = false;
 }
 
 // IP_SEND: the ports little endian in, big endian in the UDP header; flags bit 1 takes a u32 IPv4 destination after

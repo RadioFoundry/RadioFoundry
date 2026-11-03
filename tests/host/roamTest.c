@@ -747,6 +747,7 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 }
 static const contact_t contacts[] = { { "Local", 9, CONTACT_GROUP, 0 }, { "World", 91, CONTACT_GROUP, 0 } };
 uint32_t codeplug_dmr_id(void) { return 3101276; }
+bool codeplug_kv_get_id(uint16_t key, uint32_t *id) { (void)key; (void)id; return false; }	// no settings area
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
 	if (index < 1 || index > 2) {

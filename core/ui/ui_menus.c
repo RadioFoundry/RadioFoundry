@@ -25,6 +25,9 @@
 #include "dmr/sfr.h"
 #endif
 
+// Settings > Connections > Data services: the ARS server and the IP gateway
+#define DATA_IDS	(CONFIG_DMR_ARS || CONFIG_DMR_IP_GATEWAY)
+
 #ifndef RFOUNDRY_GIT
 #define RFOUNDRY_GIT "host"
 #endif
@@ -3536,6 +3539,9 @@ static uint32_t dmr_id_saved, dmr_id_serial;	// the ID just saved, shown until t
 #endif
 
 static uint16_t dmr_id_count(void) { return MY_COUNT; }
+#if DATA_IDS
+static void ds_forget(void);	// Data services, below
+#endif
 
 void ui_menus_save_failed(void)
 {
@@ -3545,6 +3551,9 @@ void ui_menus_save_failed(void)
 	my_text_row = MY_COUNT;		// the stored name shows again
 #if CONFIG_DMR
 	dmr_id_saved = 0;
+#endif
+#if DATA_IDS
+	ds_forget();
 #endif
 }
 
@@ -3717,6 +3726,170 @@ static const ui_scr_def_t dmr_id_screen = {
 	.count = dmr_id_count, .item = dmr_id_item, .select = dmr_id_select, .key = dmr_id_key, .enter = dmr_id_enter,
 	.body = dmr_id_body,
 };
+
+#if DATA_IDS
+// ======================= Data services (Settings > Connections) =======================
+// The ARS presence server and the off-net IP gateway, both DMR IDs saved in the codeplug's settings area
+// (docs/spec/codeplug-settings.md), so a CPS read shows them and the Codeplug Editor can set them. Typed as My radio's
+// DMR ID: digits type, OK saves, BACK takes the last digit back and with none typed leaves the ID as it was. 0 turns
+// the service off. The body shows the ARS registration
+
+enum {
+#if CONFIG_DMR_ARS
+	DS_ARS,
+#endif
+#if CONFIG_DMR_IP_GATEWAY
+	DS_GATEWAY,
+#endif
+	DS_COUNT };
+static const uint8_t ds_setting[] = {
+#if CONFIG_DMR_ARS
+	[DS_ARS] = UI_SET_ARS_SERVER,
+#endif
+#if CONFIG_DMR_IP_GATEWAY
+	[DS_GATEWAY] = UI_SET_IP_GATEWAY,
+#endif
+};
+static uint32_t ds_value;
+static uint8_t ds_len;			// digits typed
+static uint8_t ds_row = DS_COUNT;	// the row being typed (DS_COUNT: none)
+static uint8_t ds_saved_row = DS_COUNT;	// the row just saved: its ID shows until the radio has taken it
+static uint32_t ds_saved, ds_saved_ms;
+
+static uint16_t ds_count(void) { return DS_COUNT; }
+
+// A save that failed: the stored ID shows again
+static void ds_forget(void)
+{
+	ds_saved_row = DS_COUNT;
+}
+
+static void ds_item(uint16_t i, ui_item_t *it)
+{
+	static const char *const labels[] = {
+#if CONFIG_DMR_ARS
+		[DS_ARS] = TRN("ARS server"),
+#endif
+#if CONFIG_DMR_IP_GATEWAY
+		[DS_GATEWAY] = TRN("IP gateway"),
+#endif
+	};
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	str_copy(it->label, sizeof it->label, tr(labels[i]));
+	if (ds_row == i) {
+		if (ds_len > 0)
+			sb_u32(&b, ds_value, 1);
+		sb_chr(&b, '_');
+		it->flags |= UI_ITEM_EDIT;
+		return;
+	}
+	uint32_t v = (uint32_t)ui_svc_setting_get(ds_setting[i]);
+	if (ds_saved_row == i && v != ds_saved && hal_millis() - ds_saved_ms < 3000u)
+		v = ds_saved;		// the codeplug write and the radio core's reload take a moment
+	if (v != 0)
+		sb_u32(&b, v, 1);
+	else
+		sb_str(&b, TR("Off"));
+}
+
+static const char *ds_body(void)
+{
+	static char t[48];
+	sbuf_t b;
+	sb_init(&b, t, sizeof t);
+	sb_str(&b, TR("Saved in the codeplug"));
+#if CONFIG_DMR_ARS
+	static const char *const states[] = { [UI_ARS_OFF] = TRN("Off"), [UI_ARS_REGISTERING] = TRN("Registering"),
+		[UI_ARS_REGISTERED] = TRN("Registered"), [UI_ARS_REFUSED] = TRN("Refused"),
+		[UI_ARS_NO_ANSWER] = TRN("No answer") };
+	uint8_t s = ui_svc_ars_state();
+	sb_chr(&b, '\n');
+	sb_str(&b, TR("ARS: "));
+	sb_str(&b, tr(states[s <= UI_ARS_NO_ANSWER ? s : UI_ARS_OFF]));
+#endif
+	return t;
+}
+
+static void ds_save(void)
+{
+	uint8_t row = ds_row;
+	ds_row = DS_COUNT;
+	if (ds_len == 0)
+		return;		// nothing typed: as it was
+	if (!ui_svc_setting_set(ds_setting[row], (int32_t)ds_value)) {
+		ui_toast(TR("Couldn't save: try again"));
+		return;
+	}
+	ds_saved_row = row;
+	ds_saved = ds_value;
+	ds_saved_ms = hal_millis();
+	ui_toast(TR("Saved"));
+}
+
+static void ds_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	if (i >= DS_COUNT)
+		return;
+	if (ds_row == i) {
+		ds_save();
+		return;
+	}
+	ds_row = (uint8_t)i;
+	ds_len = 0;
+	ds_value = 0;
+}
+
+static bool ds_key(const input_event_t *ev)
+{
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	uint16_t focus = ui_frame()->focus;
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press && focus < DS_COUNT) {
+		if (ds_row != focus) {
+			ds_row = (uint8_t)focus;
+			ds_len = 0;
+			ds_value = 0;
+		}
+		uint32_t v = ds_value * 10u + (uint32_t)(ev->action - ACT_DIGIT_0);
+		if (v > CODEPLUG_DMR_ID_MAX) {
+			ui_toast(TR("IDs go up to 16776415"));
+			return true;
+		}
+		ds_value = v;
+		ds_len++;
+		ui_dirty();
+		return true;
+	}
+	if (ds_row == DS_COUNT)
+		return false;
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		if (ds_len > 0) {
+			ds_len--;
+			ds_value /= 10u;
+		} else {
+			ds_row = DS_COUNT;
+		}
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_NAV_UP || ev->action == ACT_NAV_DOWN || ev->action == ACT_ENC_STEP)
+		ds_row = DS_COUNT;	// another row: what was typed is dropped
+	return false;
+}
+
+static void ds_enter(void)
+{
+	ds_row = DS_COUNT;
+	ds_saved_row = DS_COUNT;
+}
+
+static const ui_scr_def_t ds_screen = {
+	.name = "data-services", .flags = SF_LIST, .prefix = TRN("Data Services"),
+	.hint = TRN("0-9 type  OK edit/save  Back"),
+	.count = ds_count, .item = ds_item, .select = ds_select, .key = ds_key, .enter = ds_enter, .body = ds_body,
+};
+#endif
 
 #if CONFIG_REF_TRIM
 // ======================= Freq trim (Settings > Advanced) =======================
@@ -4671,7 +4844,7 @@ static const ui_scr_def_t tools_screen = {
 #if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
-enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE };
+enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_DATA_SERVICES };
 
 typedef struct {
 	const char *name;
@@ -4905,6 +5078,9 @@ static const set_item_t s_connections[] = {
 #if CONFIG_DMR_CONTROL_STATION
 	TOGGLE(TRN("PC answers data"), "dispatch control station passthrough", UI_SET_PC_ENDPOINT),
 	LIST(TRN("USB address"), "dispatch IP link", UI_SET_USB_FIXED_LINK, v_netlink, n_netlink),
+#endif
+#if DATA_IDS	// last, so the rows above keep their places
+	ACTION(TRN("Data services"), "ARS registration presence server IP gateway off-net", SA_DATA_SERVICES),
 #endif
 };
 static const set_item_t s_power[] = {
@@ -5266,6 +5442,9 @@ static void group_select(uint16_t i, bool hold)
 		case SA_MY_RADIO: ui_push(SCR_DMR_ID, 0); break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
 		case SA_LANGUAGE: ui_push(SCR_LANGUAGE, 0); break;
+#if DATA_IDS
+		case SA_DATA_SERVICES: ui_push(SCR_DATA_SERVICES, 0); break;
+#endif
 #if CONFIG_CRASH_SCREEN
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
 #endif
@@ -5658,6 +5837,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
 	[SCR_VOLUME] = &volume_screen, [SCR_LANGUAGE] = &lang_screen,
 	[SCR_DMR_ID] = &dmr_id_screen,
+#if DATA_IDS
+	[SCR_DATA_SERVICES] = &ds_screen,
+#endif
 #if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,
 #endif

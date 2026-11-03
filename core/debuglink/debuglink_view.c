@@ -15,6 +15,9 @@
 #include "settings/settings.h"
 #include "radio/ref_trim.h"
 #include "storage/storage.h"
+#if CONFIG_DMR_DATA_CORE
+#include "codeplug/codeplug_kv.h"
+#endif
 #if CONFIG_APRS
 #include "aprs/aprs.h"
 #endif
@@ -366,6 +369,19 @@ static void link_section(dl_text_t *t)
 	}
 }
 
+#if CONFIG_DMR_DATA_CORE
+// The codeplug settings area (docs/spec/codeplug-settings.md 5). noinline: inlined, its flash reads would sit under
+// storage_section's frame, the host task's deepest path
+static void __attribute__((noinline)) cpkv_section(dl_text_t *t)
+{
+	static const char *const states[] = { [CODEPLUG_KV_EMPTY] = "empty", [CODEPLUG_KV_VALID] = "valid",
+		[CODEPLUG_KV_BAD] = "bad", [CODEPLUG_KV_NEWER] = "newer" };
+	uint16_t len, keys;
+	codeplug_kv_state_t s = codeplug_kv_info(&len, &keys);
+	dl_text(t, "cpkv.state=%s\ncpkv.length=%u\ncpkv.keys=%u\n", states[s], len, keys);
+}
+#endif
+
 static void storage_section(dl_text_t *t)
 {
 	static const char *const loads[] = { "ram", "defaults", "loaded", "upgraded", "foreign" };
@@ -499,6 +515,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_STORAGE:
 		storage_section(t);
+#if CONFIG_DMR_DATA_CORE
+		cpkv_section(t);
+#endif
 		break;
 	case DL_VIEW_DMR_EXT:
 		debuglink_view_dmr_ext(t);
