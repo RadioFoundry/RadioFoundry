@@ -46,6 +46,8 @@ MD9600_KEY_SHA256 = "c3d665b297651b52310ec098e87440b147136241359c1154d474e517b04
 # supported; boards.py requires one id per board, and the site and release manifests compare it
 DM1701_CODEC = "dm1701-v0206-csv-s11"
 MDUV380_CODEC = "mduv380-1926-s11"
+# MD-2017 / RT82: the UV380 family codec in its own builds (docs/spec/codec-md2017.md), the MD-UV380 key
+MD2017_CODEC = "md2017-405-s11"
 MD380_CODEC = "md380-d2032-s11"
 # The count word of the single-segment container form (the MD-380 D002.032 file: one segment, count 0xFFFFFFFF)
 SINGLE_SEGMENT = 0xFFFFFFFF
@@ -1502,6 +1504,142 @@ PROFILES = {
                    "tables": (0x55648D6B, "2a388c51ec726f26514152efab7d3d5a572c5842be625f1f16f4ddfd55ecd635"),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
     },
+    # TYT MD-2017 4.05 and Retevis RT82 4.15 and EXXT_V2 (codec-md2017.md): the codec placed as the MD-UV380's
+    "51944821b12066654101d3c9889472fd111525c2ed114ebeeb67bf1ff1bfc871": {
+        "name": "TYT2017-UV(CSV)-V4.05.bin",
+        "version": "V4.05 CSV",
+        "board": "md2017",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MD2017_CODEC,
+        "size": 1276416,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xDA400)],
+        "code": (0x08075808, 0xF6E2, "dda72c91f42456deac38f596fdfdf5f04c01cac071e177b750f4d7006cbeec49"),
+        "tables": (0x080D2AF4, 0x12850, "1373110539a96957b046b8e25ca9455fe1ddd920cdd258e2413aa675a71761aa"),
+        # the codec's data ends at 0x080E4A4A; the code leaves 48722 bytes below the descriptor
+        "placement": {"code": 0x080E4A4C, "tables_len": 0x11F56, "tag": 0x00560405},
+        "placed": {"code": (0xA0E05F0C, "1565152fdbbb46bd1f0bafdb5bd3d80c00b2ab440bf2a5bae28d3b48bd771705"),
+                   "tables": (0x08F19F1D, "6ab2afe8118a7ba021acc59ae582bd696185608d7c7788ba7f44cfcec7957e3b")},
+    },
+    "25ee8be1643381fabb12c8139decb82a177c21c20089856fe9fdfa9574dd2264": {
+        "name": "TYT2017-UV(REC)-D4.05.bin",
+        "version": "D4.05 REC",
+        "board": "md2017",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MD2017_CODEC,
+        "size": 1286656,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xDCC00)],
+        "code": (0x08077D00, 0xF6EA, "3c3042fc84cb13503ee19160ba05e62b644827d37d666c944dd862943d94564b"),
+        "tables": (0x080D53D8, 0x12850, "89a4e64d5e8b683926617d0a227a221a0c44b6fdb58b3f4020e528498faa0c23"),
+        # the codec's data ends at 0x080E7336; the code leaves 38238 bytes below the descriptor
+        "placement": {"code": 0x080E7338, "tables_len": 0x11F5E, "tag": 0x00440405},
+        "placed": {"code": (0x1B55116B, "6fd0064361ed93748a0da084b213c520ea1e2285fd645af77848fea0950c2c21"),
+                   "tables": (0x59ED45C3, "a3a57781398619f8b0e523d54cbbe50a149cd0173d6291ece4350724d17b1bed")},
+    },
+    "95e299ed9419278f32779da1e10af0c7c1270c70374141b465cdb21a718566f6": {
+        "name": "TYT2017-UV(CSV-GPS)-P4.05.bin",
+        "version": "P4.05 CSV-GPS",
+        "board": "md2017",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MD2017_CODEC,
+        "size": 1282560,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xDBC00)],
+        "code": (0x08077164, 0xF706, "bb9f7b44e1bd6e398f6c3a2ea7843bfba4ba94963143dc87e5769a69c3c2dd88"),
+        "tables": (0x080D4474, 0x12850, "b853aa4a570d652adb735a93ef9cdd95bafb8592b819fd2e9b0f8de56d2e2452"),
+        # the codec's data ends at 0x080E644A; the code leaves 42030 bytes below the descriptor
+        "placement": {"code": 0x080E644C, "tables_len": 0x11FD6, "tag": 0x00500405},
+        "placed": {"code": (0x835BC708, "17826bcb57a93ac362fc4dcc840c32e479a3d7df2f098155c2c8fd49aa073213"),
+                   "tables": (0x0DB2A471, "f4d21ab76a29e697ecb4e2a651e1c4d0516477376458ea0c2423e81b60655bc6")},
+    },
+    "4e4ba370b81b02c27f75e814e07ef0ef0a417d439a3a79824061ca3171c325bc": {
+        "name": "TYT2017-UV(GPS-REC)-S4.05.bin",
+        "version": "S4.05 GPS-REC",
+        "board": "md2017",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MD2017_CODEC,
+        "size": 1293824,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xDE800)],
+        "code": (0x08079654, 0xF6D6, "bead720dee75e66df7cfb3d0c55eb7036b204273ecce30566b72b5579e27b5b4"),
+        "tables": (0x080D6D18, 0x12850, "1fc8efdbce4c79ca4241337dba113916ddf193b20c0a563b61dd082bf685747d"),
+        # the codec's data ends at 0x080E8D06; the code leaves 31650 bytes below the descriptor
+        "placement": {"code": 0x080E8D08, "tables_len": 0x11FEE, "tag": 0x00530405},
+        "placed": {"code": (0xF2A3A5FB, "49fae741338a547591d6015ac303a9b3b81034126d2b735ab1d0939e5f7405a8"),
+                   "tables": (0xE4E5B155, "7359b6e53560a3ffda852c270dd926eff61bccad64ea5838890559e05e802ebf")},
+    },
+    "16c8ce5cabdac8c0f4642aa57411fd270e42558550ad91eae453b06a27747e67": {
+        "name": "RT82 (CSV)-V4.15.bin",
+        "version": "V4.15 CSV",
+        "board": "md2017",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MD2017_CODEC,
+        "size": 1280512,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xDB400)],
+        "code": (0x0807690C, 0xF6DE, "46a8c76549dc387f5dc970c5e5a83d57504fc9d330893da37b8db180b51d9263"),
+        "tables": (0x080D3BF4, 0x12850, "0db8574c07b8fc9b5a92240561c7518f1409f1be674785ff8be3e40b4ab0774d"),
+        # the codec's data ends at 0x080E5B3E; the code leaves 44386 bytes below the descriptor
+        "placement": {"code": 0x080E5B40, "tables_len": 0x11F4A, "tag": 0x00560415},
+        "placed": {"code": (0x32156970, "c9370df7c943bbd3f41e25c4e46a863979958cd983618ccd9b568a520fbc1ec3"),
+                   "tables": (0x8DE04C0B, "0a5ebfcbcd43879c003ab518dd85889360f8abd7db9f6ff08a89a435038f727f")},
+    },
+    "cd2e310562b8ad9bb78e9b87ea9499eafef4ab4e3539f81b49e308749e8d65ca": {
+        "name": "RT82 (REC)-D4.15.bin",
+        "version": "D4.15 REC",
+        "board": "md2017",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MD2017_CODEC,
+        "size": 1291776,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xDE000)],
+        "code": (0x080790D8, 0xF6D2, "663232750ce8a5e5f714b561939b82b3a956633650c953730f07639023f934a5"),
+        "tables": (0x080D6798, 0x12850, "742b27427515985aeb5d1500ac0cb41a03ad9e8e281c598c28bfc4d15bdae211"),
+        # the codec's data ends at 0x080E86EA; the code leaves 33218 bytes below the descriptor
+        "placement": {"code": 0x080E86EC, "tables_len": 0x11F52, "tag": 0x00440415},
+        "placed": {"code": (0x89FF7A8B, "ec994b0bbc98027d8a955a27a16a74167eacf7c118a1bf6372e63e040fdeebed"),
+                   "tables": (0xC9E8AC09, "d8c0f57e445e1a99211fd544288924bcc4b374fd99526451c4d82f9d31158e90")},
+    },
+    "7eb8d28fa1251fdbc19c58c364b3e252d4176f972f326c37e4af12329cccebb4": {
+        "name": "RT82 (CSV-GPS)-P4.15.bin",
+        "version": "P4.15 CSV-GPS",
+        "board": "md2017",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MD2017_CODEC,
+        "size": 1287680,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xDD000)],
+        "code": (0x080782F0, 0xF6FA, "fe2f0d54edec58c312bcd86ece9e685082dd4b942299cf1fea1d80d09850538f"),
+        "tables": (0x080D55F4, 0x12850, "8034ae3eb6ad41870c3306538629983b54cd49897d0808bb4449e1cbefc25b32"),
+        # the codec's data ends at 0x080E75BE; the code leaves 37574 bytes below the descriptor
+        "placement": {"code": 0x080E75C0, "tables_len": 0x11FCA, "tag": 0x00500415},
+        "placed": {"code": (0x79810032, "9ee80ed7668bce745c2f294de043bb088701277ba49c74015e077c1aec378cd7"),
+                   "tables": (0x473DC5EE, "390215360f7f671c753f8257b8cff2bb1515bfe54723838dfd55752f018bd5b5")},
+    },
+    "14d90ee24ccd6c5217ada3c0290c9eb7901853905bf565ef1c56b7276f33fbde": {
+        "name": "RT82 (GPS-REC)-S4.15.bin",
+        "version": "S4.15 GPS-REC",
+        "board": "md2017",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MD2017_CODEC,
+        "size": 1298944,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xDFC00)],
+        "code": (0x0807AAB8, 0xF6F2, "146ffb2c208d42015762e856b9ae77f5d81638248506cafad9b2c6159cf760d3"),
+        "tables": (0x080D8198, 0x12850, "942975c8c29ef8e949d2f6208711f41f1d32b26c268b9c75e60d0773a634ca73"),
+        # the codec's data ends at 0x080EA17A; the code leaves 26386 bytes below the descriptor
+        "placement": {"code": 0x080EA17C, "tables_len": 0x11FE2, "tag": 0x00530415},
+        "placed": {"code": (0x164FDD7C, "05f3d1b16949a38e4bdbe4232e31b4a6c19ab95e8e65c4153cafc89c8fc46340"),
+                   "tables": (0xEAB1A997, "c33be1be52b6920e70fba9760666344582b898ab30d9c57efbd204ce927d0f54")},
+    },
+    "ebd8bc4b75c03498cc0092daa5594400ad2eb3ebead48e57247bfb772c981c41": {
+        "name": "RT82_EXXT_V2_GPS.bin",
+        "version": "EXXT_V2 GPS",
+        "board": "md2017",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MD2017_CODEC,
+        "size": 1282560,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xDBC00)],
+        "code": (0x08077164, 0xF706, "bb9f7b44e1bd6e398f6c3a2ea7843bfba4ba94963143dc87e5769a69c3c2dd88"),
+        "tables": (0x080D4474, 0x12850, "b853aa4a570d652adb735a93ef9cdd95bafb8592b819fd2e9b0f8de56d2e2452"),
+        # the codec's data ends at 0x080E644A; the code leaves 42030 bytes below the descriptor
+        "placement": {"code": 0x080E644C, "tables_len": 0x11FD6, "tag": 0x00500405},
+        "placed": {"code": (0x835BC708, "17826bcb57a93ac362fc4dcc840c32e479a3d7df2f098155c2c8fd49aa073213"),
+                   "tables": (0x0DB2A471, "f4d21ab76a29e697ecb4e2a651e1c4d0516477376458ea0c2423e81b60655bc6")},
+    },
 }
 
 # Stock files that are not codec donors but are known DM-1701 files: the key can be derived from them (any of them;
@@ -2027,7 +2165,8 @@ def derive_key(stock, want_sha256=DM1701_KEY_SHA256, max_alternatives=2, candida
     nearly every j, and the few columns where that guess is wrong are found by trying the next most common bytes in the
     least confident columns until the SHA-256 matches. The MD-380 image is far less zero-dominated (a third of the
     columns vote wrong), so when the vote fails the key is refined with a byte-pair model learned from the file itself
-    (_refine) and then checked the same way. No key material is needed or stored: a wrong result can't pass the hash
+    (_refine) and then checked the same way; a file mostly 0xFF padding is refined from the vote with every byte
+    flipped. No key material is needed or stored: a wrong result can't pass the hash
     check. Raises StockError when it fails.
     """
     segs = parse_container(stock)
@@ -2037,8 +2176,10 @@ def derive_key(stock, want_sha256=DM1701_KEY_SHA256, max_alternatives=2, candida
         raise StockError("the file is too short to derive the key from")
     cols = [collections.Counter(payload[j::KEY_LEN]).most_common(8) for j in range(KEY_LEN)]
     base = bytes(c[0][0] for c in cols)
-    if sha256(base) == want_sha256:
-        return base
+    flipped = bytes(b ^ 0xFF for b in base)	# the vote of a file that is mostly 0xFF padding
+    for k in (base, flipped):
+        if sha256(k) == want_sha256:
+            return k
     cands = [[b for b, _ in c] for c in cols]
     margin = [c[0][1] - (c[1][1] if len(c) > 1 else 0) for c in cols]
     doubtful = sorted(range(KEY_LEN), key=lambda j: margin[j])[:candidates]
@@ -2061,6 +2202,11 @@ def derive_key(stock, want_sha256=DM1701_KEY_SHA256, max_alternatives=2, candida
         k = _alternatives(k, alt, order, want_sha256, max_alternatives)
         if k:
             return k
+    # A file padded with 0xFF (erased flash) votes key ^ 0xFF in most columns: refine from that base instead
+    fcands = [[flipped[j]] + [b for b in cands[j] if b != flipped[j]] for j in range(KEY_LEN)]
+    k, _ = _refine(pairs, fcands, flipped, list(range(int(KEY_LEN * 0.9))), False)
+    if sha256(k) == want_sha256:
+        return k
     raise StockError("could not derive the bootloader key from this file (is it a stock firmware file for this radio?)")
 
 

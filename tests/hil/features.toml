@@ -370,7 +370,7 @@ spec = "docs/spec/ppp.md"
 
 [feature.ui_navigation]
 spec = "docs/spec/ui.md"
-source = ["core/ui", "core/input"]
+source = ["core/ui", "core/input", "drivers/input/steplines"]
 
 [feature.channel_knob]
 spec = "docs/spec/ui.md"

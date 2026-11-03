@@ -6,7 +6,7 @@ Status: research, 2026-10-10. This page collects the main chips of every radio R
 close relatives, from public sources only. It also says which RadioFoundry platforms and drivers each radio could reuse and
 suggests an order for the ports. Register-level facts live in the per-radio specs
 ([hardware-dm1701.md](hardware-dm1701.md), [hardware-dm32.md](hardware-dm32.md),
-[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd88.md](hardware-gd88.md), [hardware-db25d.md](hardware-db25d.md), [hardware-dm1801pro.md](hardware-dm1801pro.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
+[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-md2017.md](hardware-md2017.md), [hardware-gd88.md](hardware-gd88.md), [hardware-db25d.md](hardware-db25d.md), [hardware-dm1801pro.md](hardware-dm1801pro.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
 
 Facts are not copyrightable. Claims come from public sources (manufacturer pages, FCC filings, datasheets, retailer
 listings) or from measurements on the radio. A value marked `(unverified)` is reported by a retailer, review or forum
@@ -43,7 +43,7 @@ on the radio`, any of the three. The README marks each ◐ until the board merge
 | Baofeng DR-1801 / DR-1801UV | ? (inside the AM6102 module ?) | Auctus AM6102 module (FCC photo) | ? | ? | ? | ? | ? | Not planned. Looks like a DM-1801 |
 | Radioddity DB25-D / DB25-D PRO, Retevis RT73, Kydera CDR-300UV (mobile) | HR_C7000 SoC (FCC photo) | HR_C7000 | 2x BK4819 on the PRO; FD6818 on earlier batches | 1.77" color TFT, ST7735S class, serial bus | 2 Gbit SPI NAND, Kioxia TC58CVG1S3 (FCC photo) | yes, module ? | Vendor IAP loader over a UART cable, plain images | Supported ([hardware-db25d.md](hardware-db25d.md)) |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | two processors "A" and "B", likely two HR_C7000 (two, from the photos; ? for the part) | HR_C7000 | ? (separate VHF and UHF chains and PA modules) | 2.4" color TFT, controller ? | SPI NAND, TC58 family | yes, module ? | Vendor IAP loader over RJ-45 only, two plain images | Planned, hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port |
-| TYT MD-2017 / Retevis RT82 | STM32 (unverified) | HR_C6000 (unverified) | two RF transceiver ICs (unverified) | ? | ? | ? | ? | Planned. The DM-1701's STM32 and HR_C6000 pair with two receivers, so it should reuse the STM32F4 platform. The hardware can receive two channels at once |
+| TYT MD-2017 / Retevis RT82 | STM32F405VG (stock images) | HR_C6000 (stock images) | 2x AT1846S, one receive only (stock images) | 160x128 color, the MD-UV380's panels (stock images) | 16 MB SPI NOR (unverified) | optional (unverified) | USB DFU on the MCU, XOR-keyed images | Bring-up ([md2017-bringup.md](../testing/md2017-bringup.md)) |
 | BTECH DMR-6X2 PRO | ? | ? | ? | ? | ? | yes | ? (built on the AT-D878UVII Plus, unverified, [miklor](https://miklor.com/COM/Review_DMR6X2.php)) | Planned. Built on the AT-D878UVII Plus, so it should follow the Anytone port |
 | Anytone AT-D578UV (mobile) | GD32F303VKT6; AT32F435/437 after 2022-07, with separate firmware (unverified) | SCT3258 (unverified) | 4x QA4818N, AT1846S-compatible; true dual receive (unverified) | ? | ? | ? | as the 878 (unverified) | Planned. The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](hardware-anytone.md)) |
 | BridgeCom Maverick | ? | ? | ? | ? | ? | yes | ? (sold as an upgraded 878, takes the 868/878 battery, F, [BridgeCom](https://www.bridgecomsystems.com/products/bridgecom-maverick-dual-band-dmr-analog-ham-radio)) | Planned. Sold as an upgraded AT-D878UV, so it likely follows the Anytone port |
@@ -343,7 +343,6 @@ The Retevis RT73 is reported as the same radio (unverified) ([kydera-ham forum](
 
 | Radio | Chips | Reuse | Notes |
 |---|---|---|---|
-| TYT MD-2017 / Retevis RT82 | STM32 + HR_C6000, two RF transceiver ICs (unverified) | stm32f4, hrc6000, at1846s (if that's what the RF ICs are, ?) | True dual receive possible in hardware (unverified) ([radioreference](https://forums.radioreference.com/threads/is-the-md2017-true-dual-receive.414074/)) |
 | Baofeng DM-1702 / DM-X | STM32 or MK22 + HR_C6000 (unverified) | hrc6000; platform ? | USB update protocol unknown |
 | Ailunce HD1 (v1) | MK22FN512, HR_C6000, AT1846S, 160x128 color, GPS (unverified) | GD-77 port + 160x128 class | Out of production, so used units only. Encrypted vendor firmware (unverified) |
 | Connect Systems CS7000-M17 | STM32F405VG, HR_C6000, SKY72310, HX8302A, 25Q128FV (unverified) | stm32f4, hrc6000, SKY72310 driver from the MD-9600 / MD-380 | Free once the SKY72310 driver exists. The Plus model has an STM32H743 |

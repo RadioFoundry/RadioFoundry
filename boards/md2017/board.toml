@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# The MD-2017's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/md2017/memory.ld.
+
+id = "md2017"
+name = "TYT MD-2017"
+maker = "TYT"
+model = "MD-2017"
+also = ["Retevis RT82"]
+kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 7
+
+[docs]
+hardware = "docs/spec/hardware-md2017.md"
+codec = "docs/spec/codec-md2017.md"
+install = "docs/user/02-installing.md"
+bringup = "docs/testing/md2017-bringup.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+bands = "136-174 / 400-480 MHz"
+power = "1 / 5 W"
+display = "1.77\" color, 160 × 128"
+gallery = "160x128"
+clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal, as on the UV380 family; a coin cell is fitted (docs/spec/hardware-md2017.md 1)" }
+
+[status]
+level = "bring-up"
+summary = """\
+Built on the UV380 family code with the MD-2017's own pins, keys, navigation ring and second AT1846S; nothing has run \
+on a radio yet. One receiver at a time: the second receiver rests. Open: every function on air."""
+release = "testing"
+
+[flash]
+family = "usb-dfu"
+keep_codec = true
+stock_download = "https://www.qsl.net/on5mu/Download/DMR/"
+stock_versions = [
+	"V4.05 CSV",
+	"D4.05 REC",
+	"P4.05 CSV-GPS",
+	"S4.05 GPS-REC",
+	"V4.15 CSV",
+	"D4.15 REC",
+	"P4.15 CSV-GPS",
+	"S4.15 GPS-REC",
+	"EXXT_V2 GPS",
+]
+backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
+
+# Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
+# as offsets in that memory, what with the spec section that establishes it
+[[flash.protect]]
+mem = "secreg"
+start = 0x0
+end = 0x200
+what = "factory calibration in security registers 1 and 2 (hardware-md2017.md 8)"
+
+[[flash.protect]]
+mem = "secreg"
+start = 0x200
+end = 0x300
+what = "factory flags in security register 3: panel type, band limits (hardware-md2017.md 4, 8)"
+
+# The vendor's update guide (hardware-md2017.md 11); no hold yet: the top key's name is unconfirmed on a radio
+[flash.bootloader]
+steps = [
+	"Turn the radio off and connect the USB cable.",
+	"Hold PTT and the orange key on top.",
+	"Turn the radio on with the volume knob while you hold both keys. The LED blinks.",
+	"Release the keys.",
+]
+
+# The TYT bootloader takes the same DFU protocol and sector order as the other STM32 radios', with the key the
+# family's other TYT radios use (hardware-md2017.md 11)
+[flash.dfu]
+vid = 0x0483
+pid = 0xDF11
+string1 = "AnyRoad Technology"
+product = "Digital Radio in USB mode"
+key_sha256 = "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991"
+key_prefix = "00AA8989"
+
+# The STM32F4 stub's board record (stub/f4stub.py, stub-stm32f4.md 5.2): its board id (HELLO echoes it), whether
+# protocol 4 has run on a radio, and the SPI flash's bus, mode and clock (its pins: pins.h PIN_FLASH_*)
+[flash.stub]
+id = 6
+tested = false
+spi = { bus = 1, mode = 0, hz = 4500000 }
+
+# How the site draws the radio
+[frame]
+shape = "handheld"
+body = "#1b1c1f"
+accent = "#e07a1f"
+lens = [30, 30]
+
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them
+[cps]
+radio_types = [9]
+
+[codec]
+tool = "codec_extract"
+stock = [
+	"51944821b12066654101d3c9889472fd111525c2ed114ebeeb67bf1ff1bfc871",	# V4.05 CSV
+	"25ee8be1643381fabb12c8139decb82a177c21c20089856fe9fdfa9574dd2264",	# D4.05 REC
+	"95e299ed9419278f32779da1e10af0c7c1270c70374141b465cdb21a718566f6",	# P4.05 CSV-GPS
+	"4e4ba370b81b02c27f75e814e07ef0ef0a417d439a3a79824061ca3171c325bc",	# S4.05 GPS-REC
+	"16c8ce5cabdac8c0f4642aa57411fd270e42558550ad91eae453b06a27747e67",	# V4.15 CSV (Retevis RT82)
+	"cd2e310562b8ad9bb78e9b87ea9499eafef4ab4e3539f81b49e308749e8d65ca",	# D4.15 REC (Retevis RT82)
+	"7eb8d28fa1251fdbc19c58c364b3e252d4176f972f326c37e4af12329cccebb4",	# P4.15 CSV-GPS (Retevis RT82)
+	"14d90ee24ccd6c5217ada3c0290c9eb7901853905bf565ef1c56b7276f33fbde",	# S4.15 GPS-REC (Retevis RT82)
+	"ebd8bc4b75c03498cc0092daa5594400ad2eb3ebead48e57247bfb772c981c41",	# EXXT_V2 GPS (Retevis RT82)
+]
