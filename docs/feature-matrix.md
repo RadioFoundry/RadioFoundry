@@ -43,7 +43,7 @@ is `tools/bringup.py list --radio <id>`.
 | `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | partial |
 | `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded | not written |
 | `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not written |
-| `vox` | not written | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
+| `vox` | not written | not recorded | not recorded | not written | not recorded | not recorded | partial |
 | `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial |
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ |
@@ -53,22 +53,22 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial |
 | `dmr_emergency` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial |
 | `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | fail |
-| `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
+| `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial |
 | `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
-| `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
-| `vfo_dmr` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run |
+| `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
+| `vfo_dmr` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass |
 | `channel_list` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `channel_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
-| `zone_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
+| `zone_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
 | `contact_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `key_assign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `scan` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial |
-| `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | fail |
+| `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial |
 | `beep` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `vibrate` | off | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
 | `gps` | pass (seed) | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded |
-| `dmr_data_rx` | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | partial, needs re-run |
-| `dmr_sms` | not recorded | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | fail |
+| `dmr_data_rx` | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | partial |
+| `dmr_sms` | not recorded | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | partial |
 | `dmr_tms` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
 | `dmr_ars` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_lrrp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
@@ -115,8 +115,8 @@ is `tools/bringup.py list --radio <id>`.
 | `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | not written |
-| `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
-| `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | fail |
+| `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
+| `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
 | `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ |
