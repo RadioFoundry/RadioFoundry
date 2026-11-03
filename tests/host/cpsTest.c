@@ -306,6 +306,7 @@ static void test_write_session(void)
 	channel_t ch;
 	uint32_t serial = codeplug_serial();
 
+	codeplug_accept(true);	// "Use anyway" was chosen for the codeplug the CPS replaces
 	CHECK(qdmr_read(img));
 	// Edit like a CPS: rename channel 8, add channel 2, change the zone's name, set the quick-key slots (the side
 	// key assignment lives there: the CPS may write them)
@@ -323,6 +324,8 @@ static void test_write_session(void)
 	CHECK(st.commits > 10 && !st.pending && !st.session);
 	// Close re-read the codeplug: the radio core sees it through the serial
 	CHECK(codeplug_serial() != serial);
+	CHECK(codeplug_acceptance() == CODEPLUG_ACCEPT_DROPPED);	// a codeplug written: the choice doesn't carry over
+	codeplug_accept(false);
 	CHECK(codeplug_channel(8, &ch) && strcmp(ch.name, "Renamed") == 0);
 	CHECK(codeplug_channel(2, &ch) && strcmp(ch.name, "Copy") == 0 && ch.rx_hz == 145012500u);
 	zone_t z;

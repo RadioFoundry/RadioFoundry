@@ -168,8 +168,19 @@ void ui_push(uint8_t scr, uint16_t arg)
 	dirty = true;
 }
 
+// The foreign codeplug question leaves the stack unanswered (BACK, Home): the write it holds is dropped. After an
+// answer it fails harmlessly (nothing held, or the answer's job is pending)
+static void cp_question_gone(uint8_t from)
+{
+	for (uint8_t i = from; i <= sp; i++) {
+		if (stack[i].scr == SCR_CP_FOREIGN && ui_svc_codeplug_answer(UI_CP_CANCEL))
+			ui_toast(TR("Not saved"));
+	}
+}
+
 void ui_pop(void)
 {
+	cp_question_gone(sp);
 	if (sp > 0)
 		sp--;
 	if (ui_scr[stack[sp].scr]->flags & SF_FILTER)
@@ -184,6 +195,7 @@ void ui_pop(void)
 
 void ui_go_home(void)
 {
+	cp_question_gone(1);
 	sp = 0;
 	ui_st.quick_edit = false;
 	entry_cancel();
@@ -193,13 +205,45 @@ void ui_go_home(void)
 
 // --- filtered lists (SF_FILTER): the rows whose label matches the T9 keys typed ---
 
+// With keys typed the list is the first UI_FILTER_MAX matches. With none it is every row, so a long list (1024
+// contacts) scrolls to its end without the RAM for its index: the first UI_FILTER_MAX - 2 rows are in filter_idx, and
+// in a longer list its last two slots are a cursor, row WALK_I at raw row WALK_RAW, moved by stepping raw rows.
+// Scrolling and drawing move it a few rows at a time; a jump from the top to the end steps through every raw row once,
+// as typing a key does. RAM is short (no static of its own), and the list's screen is the one on top (only it calls
+// this)
 static uint16_t filter_idx[UI_FILTER_MAX];
-static uint16_t filter_n;
+static uint16_t filter_n;		// the rows in the list
+#define WALK_I		filter_idx[UI_FILTER_MAX - 2]	// past UI_FILTER_MAX: the cursor's row
+#define WALK_RAW	filter_idx[UI_FILTER_MAX - 1]	// and its raw row
 static char filter_keys[UI_FILTER_KEYS + 1];
 
 uint16_t ui_filter_count(void) { return filter_n; }
-uint16_t ui_filter_raw(uint16_t i) { return i < filter_n ? filter_idx[i] : 0; }
 const char *ui_filter_text(void) { return filter_keys; }
+
+uint16_t ui_filter_raw(uint16_t i)
+{
+	if (i >= filter_n)
+		return 0;
+	if (filter_n <= UI_FILTER_MAX || i < UI_FILTER_MAX - 2u)
+		return filter_idx[i];
+	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
+	if (!(d->flags & SF_FILTER) || d->raw_count == NULL || d->raw_label == NULL)
+		return 0;
+	uint16_t n = d->raw_count();
+	uint16_t raw = WALK_RAW;
+	char label[40];
+	while (WALK_I != i) {	// never below UI_FILTER_MAX - 2, one under where the cursor started
+		bool up = i > WALK_I;
+		do {
+			if (up ? raw + 1u >= n : raw == 0)
+				return 0;	// the rows changed under the list: the next rebuild puts it right
+			raw = up ? (uint16_t)(raw + 1u) : (uint16_t)(raw - 1u);
+		} while (!d->raw_label(raw, label, sizeof label));
+		WALK_RAW = raw;
+		WALK_I = up ? (uint16_t)(WALK_I + 1u) : (uint16_t)(WALK_I - 1u);
+	}
+	return raw;
+}
 
 void ui_filter_rebuild(void)
 {
@@ -209,12 +253,19 @@ void ui_filter_rebuild(void)
 		return;
 	uint16_t n = d->raw_count();
 	char label[40];
-	for (uint16_t i = 0; i < n && filter_n < UI_FILTER_MAX; i++) {
+	for (uint16_t i = 0; i < n; i++) {
 		if (!d->raw_label(i, label, sizeof label))
 			continue;
-		if (filter_keys[0] == 0 || ui_t9_match(label, filter_keys))
-			filter_idx[filter_n++] = i;
+		if (filter_keys[0] != 0 && !ui_t9_match(label, filter_keys))
+			continue;
+		if (filter_n < UI_FILTER_MAX)
+			filter_idx[filter_n] = i;
+		filter_n++;
+		if (filter_keys[0] != 0 && filter_n >= UI_FILTER_MAX)
+			break;	// typed: the first matches
 	}
+	if (filter_n > UI_FILTER_MAX)
+		WALK_I = UI_FILTER_MAX - 1u;	// the cursor starts on that row, its raw row already in WALK_RAW
 }
 
 void ui_filter_reset(void)
@@ -603,6 +654,12 @@ static void handle_event(const ui_event_t *ev)
 		ui_menus_save_failed();
 		break;
 	}
+	case UI_EV_CODEPLUG_FOREIGN:
+		ui_st.toast = NULL;	// the screen that asked may have said "Saved": the question says what happens
+		if (stack[sp].scr != SCR_CP_FOREIGN)
+			ui_push(SCR_CP_FOREIGN, 0);
+		wake_req = true;
+		break;
 	case UI_EV_CALL_ALERT_RESULT:
 		if (ev->ok) {
 			station(&b, ev);
