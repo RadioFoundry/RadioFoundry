@@ -748,6 +748,9 @@ static const flow_t flows[] = {
 static const flow_t flows_mono[] = {
 	{ "2 Right steps to the next zone on Home", "", "right", "zone=1 screen=home", 1, false },
 	{ "2 Left steps back a zone", "right", "left", "zone=0 screen=home", 1, false },
+	// The talk line on the smallest display (#336): an icon, not "PTT->" or "Reply->", so the label keeps its room
+	{ "2 the talk line: an arrow, no PTT word", "", "", "screen=home shows=TG_3100_USA hides=PTT", 0, false },
+	{ "4 reply window: a long label is cut, not dropped", "call:3101234,201,g", "", "shows=TG_201_Main_O hides=Reply", 0, false },
 #if CONFIG_UI_COLOR
 	{ "S theme on a monochrome screen: dimmed", "", "ok 7 2 down down ok", "toast=Colors_are_for set7=0", 6, false },
 	{ "S highlight color on a monochrome screen: dimmed", "", "ok 7 2 down down down ok",

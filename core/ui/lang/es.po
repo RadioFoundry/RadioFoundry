@@ -3277,10 +3277,6 @@ msgid "Private to "
 msgstr "Privada a "
 
 #: core/ui/ui_screens.c
-msgid "Reply→ "
-msgstr "Resp→ "
-
-#: core/ui/ui_screens.c
 msgid "Sending ID"
 msgstr "Enviando ID"
 
