@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Codeplug editing on a simulated NOR flash with the DM-1701 map: the open-firmware record encoder against the decoder,
 // bytes the model doesn't own kept, the built-in set turned into a stored codeplug by the first edit, zones,
-// contacts and RX group lists, and the round trip read -> write -> read (model and image), with power cuts.
+// contacts and RX group lists, and the round trip read -> write -> read (model and image), with power cuts. Another
+// firmware's codeplug in the open-firmware area: left alone, the first edit starts a clean codeplug.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -545,6 +546,124 @@ static void test_quick_keys(void)
 	CHECK(sim_flash_data[EE + 0x7523] == 0xFF && sim_flash_data[EE + 0x7538] == 0xFF);	// nothing around them
 }
 
+// Another firmware's codeplug where the open-firmware images go (codeplug-stock-tyt.md 2): pseudo-random bytes over
+// both images, clear of the settings, the journal and the calibration. Its first 16 channels are stock-style: in use,
+// valid BCD frequencies (438.5 MHz), UTF-16 names, which the radio reads as channels once the owner accepts them
+static void foreign_image(void)
+{
+	uint32_t x = 99;
+	for (uint32_t a = 0; a < 0xB0000u; a++) {
+		x = x * 1103515245u + 12345u;
+		if (a < 0x10000u || a >= FL) {
+			sim_flash_data[a] = (uint8_t)(x >> 24);
+		}
+	}
+	sim_flash_data[EE + 0x3780] = sim_flash_data[EE + 0x3781] = 0xFF;	// channels 1..16 in use
+	for (unsigned n = 0; n < 16; n++) {
+		uint8_t *r = &sim_flash_data[EE + 0x3790 + 56u * n];
+		memset(r, 0, 56);
+		memcpy(r, "C\0h\0a\0n\0", 8);
+		static const uint8_t f[4] = { 0x00, 0x00, 0x85, 0x43 };	// 438.5 MHz: BCD in 10 Hz, little endian
+		memcpy(r + 0x10, f, 4);
+		memcpy(r + 0x14, f, 4);
+		r[0x18] = 1;
+	}
+}
+
+// Both open-firmware images as they were (the settings ring, the journal and the calibration aren't compared)
+static bool images_same(const uint8_t *before)
+{
+	return memcmp(before, sim_flash_data, 0x10000u) == 0 && memcmp(before + FL, sim_flash_data + FL, 0x90000u) == 0;
+}
+
+static void test_foreign(void)
+{
+	channel_t c = make("Added", 145550000, 145550000), back;
+	uint16_t good, bad;
+	zone_t z;
+
+	sim_flash_create(FLASH_SIZE, &map);
+	foreign_image();
+	uint8_t *before = malloc(FLASH_SIZE);
+	memcpy(before, sim_flash_data, FLASH_SIZE);
+	CHECK(storage_init());
+	codeplug_accept(false);
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign() && codeplug_channel_count() == 6);
+	// Reading writes nothing, and no edit starts on its own (Cancel: nothing changes)
+	CHECK(codeplug_channel(1, &back) && codeplug_reload() == CODEPLUG_BUILTIN);
+	CHECK(!codeplug_set_channel(10, &c) && !codeplug_set_dmr_id(3101276) && !codeplug_set_radio_name("N0CALL"));
+	CHECK(!codeplug_set_zone(0, &(zone_t){ .name = "Zone", .count = 1, .channels = { 1 } }));
+	CHECK(codeplug_source() == CODEPLUG_BUILTIN && codeplug_foreign() && images_same(before));
+
+	// Use anyway: the verdict off, the old records shown, nothing erased; an edit writes only what it changes
+	codeplug_accept(true);
+	CHECK(codeplug_acceptance() == CODEPLUG_ACCEPT_YES);
+	codeplug_reload();
+	CHECK(!codeplug_foreign() && images_same(before));
+	codeplug_evidence(&good, &bad);
+	CHECK(bad > 0 && (uint32_t)bad * 4u > good);	// still counted: the view shows why it was asked
+	CHECK(codeplug_source() == CODEPLUG_OPENFW && codeplug_channel_count() >= 16);
+	CHECK(codeplug_channel(16, &back) && back.rx_hz == 438500000u);
+	uint16_t n = codeplug_free_channel();
+	CHECK(n > 16 && codeplug_set_channel(n, &c) && codeplug_channel(n, &back) && same_channel(&c, &back));
+	CHECK(codeplug_channel(1, &back) && back.rx_hz == 438500000u);	// the old channels stay
+	CHECK(memcmp(before + 0x7524u, sim_flash_data + 0x7524u, 0x7538u - 0x7524u) == 0);	// the quick keys
+	CHECK(memcmp(before + FL + 0x87620u, sim_flash_data + FL + 0x87620u, 24u * 1024u) == 0);	// the contacts
+	CHECK(memcmp(before + 0xE0u, sim_flash_data + 0xE0u, 0x1Au) == 0);	// the callsign, the DMR ID
+	// A codeplug written by a CPS drops the acceptance: judged again
+	memcpy(sim_flash_data, before, FLASH_SIZE);
+	sim_flash_power_on();
+	CHECK(storage_init());
+	CHECK(codeplug_written() == CODEPLUG_BUILTIN && codeplug_foreign());
+	CHECK(codeplug_acceptance() == CODEPLUG_ACCEPT_DROPPED);
+	codeplug_accept(false);
+
+	// Start new: what the radio reads of the old bytes cleared, the built-in set stored; then the edit
+	CHECK(codeplug_start_new() && codeplug_set_channel(10, &c));
+	CHECK(codeplug_source() == CODEPLUG_OPENFW && !codeplug_foreign() && codeplug_channel_count() == 10);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && !codeplug_foreign());
+	codeplug_evidence(&good, &bad);
+	CHECK(good == 7 && bad == 0);
+	CHECK(codeplug_channel(10, &back) && same_channel(&c, &back) && !back.roam && back.sfr_flag1 == 0);
+	CHECK(codeplug_zone_count() == 1 && !codeplug_zones_stored() && codeplug_zone(0, &z));
+	char name[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
+	codeplug_radio_name(name);
+	CHECK(name[0] == '\0');
+	codeplug_boot_text(name, l2);
+	CHECK(name[0] == '\0' && l2[0] == '\0');
+	uint16_t keys[CODEPLUG_QUICK_KEYS];
+	CHECK(codeplug_quick_keys(keys) && keys[0] == 0 && keys[9] == 0);
+	// Only what the radio reads is cleared: the general settings past the hang times and the bytes between the quick
+	// keys and the boot text keep the old bytes
+	CHECK(memcmp(&sim_flash_data[EE + 0xE0 + 0x1A], &before[EE + 0xE0 + 0x1A], 0x28 - 0x1A) == 0);
+	CHECK(memcmp(&sim_flash_data[EE + 0x7538], &before[EE + 0x7538], 8) == 0);
+#if CONFIG_DMR
+	contact_t ct;
+	listen_list_t ll;
+	codeplug_dmr_settings_t ds;
+	CHECK(codeplug_dmr_settings(&ds) && ds.group_hang_ms == 0 && ds.private_hang_ms == 0);	// not the old bytes
+	CHECK(codeplug_dmr_id() == 0 && !codeplug_contact(1, &ct) && !codeplug_contact(1024, &ct));
+	CHECK(!codeplug_listen_list(1, &ll) && !codeplug_listen_list(76, &ll));
+#endif
+	CHECK(codeplug_start_new());	// ours now: nothing to clear
+	CHECK(sim_flash_violations() == 0);
+
+	// A CPS write over the foreign bytes (here, the image of a fresh codeplug put underneath) flips it on reload
+	uint8_t *ours = malloc(FLASH_SIZE);
+	memcpy(ours, sim_flash_data, FLASH_SIZE);
+	memcpy(sim_flash_data, before, FLASH_SIZE);
+	sim_flash_power_on();
+	CHECK(storage_init() && codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign());
+	uint32_t ser = codeplug_serial();
+	memcpy(sim_flash_data, ours, 0x10000u);
+	memcpy(sim_flash_data + FL, ours + FL, 0x90000u);
+	CHECK(codeplug_written() == CODEPLUG_OPENFW && !codeplug_foreign() && codeplug_serial() != ser);
+	CHECK(codeplug_channel(10, &back) && same_channel(&c, &back));
+	codeplug_accept(false);
+	free(ours);
+	free(before);
+}
+
 int main(void)
 {
 	test_encode();
@@ -557,6 +676,7 @@ int main(void)
 	test_aprs_path();
 #endif
 	test_quick_keys();
+	test_foreign();
 	test_round_trip();
 	test_edit_cuts();
 	sim_flash_free();
