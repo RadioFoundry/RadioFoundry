@@ -82,6 +82,8 @@ static const st7735_bus_t bus = {
 static const st7735_t panel = {
 	.bus = &bus,
 	.type = 0,
+	// Seen on a radio: the type's landscape is upside down (both axes flipped, 0xC0) and red and blue swapped (BGR, 0x08)
+	.madctl_xor = 0xC8,
 	.width = LCD_W,
 	.height = LCD_H,
 };

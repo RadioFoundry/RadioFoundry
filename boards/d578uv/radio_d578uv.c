@@ -70,6 +70,9 @@
 #include "bcast/ktamfm/ktamfm.h"
 #include "bus/i2c_gpio/i2c_gpio.h"
 #endif
+#if CONFIG_BCAST_FM
+#include "bcast/rda5807m/rda5807m_hal.h"
+#endif
 
 // The two-wire speaker level device on the SWD pins. 0 leaves SWD on and the device at its power-on level
 #ifndef D578UV_LEVEL_IC
@@ -87,8 +90,8 @@
 #define GPIO_B_INIT		0x0033u
 // Chip 0 GPIO bits: 3/6 side A's complementary band pair (UHF sets 3, VHF 6), 7/4 side B's (UHF sets 7, VHF 4; both
 // clear with side B off, as the stock firmware leaves them in some single-receiver cases); 5 set while transmitting
-// above 300 MHz, cleared at TX end (inferred); 1 the one LED (which color is not known): lit while transmitting and
-// while the core's receive LED is on (d578uv_led_rx), the stock firmware's "either" choice; 2 the GPS module's supply, high = on (d578uv_gps_power, hardware-d578uv.md 3.6); 0 set in
+// above 300 MHz, cleared at TX end (inferred); 1 the fan, high = on: while transmitting or while the PA is hot (fan_poll),
+// the stock "Fan Open" setting's "Both"; 2 the GPS module's supply, high = on (d578uv_gps_power, hardware-d578uv.md 3.6); 0 set in
 // receive and while a TX tone sounds, clear for the microphone: a microphone mute (inferred)
 #define GPIO_BAND_A_MASK	0x0048u
 #define GPIO_BAND_A_UHF		0x0008u
@@ -98,19 +101,20 @@
 #define GPIO_BAND_B_VHF		0x0010u
 #define GPIO_MIC_MUTE		0x0001u
 #define GPIO_TX_UHF		0x0020u
-#define GPIO_LED_TX		0x0002u
+#define GPIO_FAN		0x0002u
 #define GPIO_GPS		0x0004u
 // Chip 3 output bit 6: set for AM, clear for the receiver's broadcast FM input (inferred, 5.4)
 #define GPIO_LO_B_AM		0x0040u
 
 // Shift register bits (roles inferred from the stock firmware's use)
 #define SR_BOOT			0x02u	// the Bluetooth module's supply, on from boot (bt_d578uv.c)
-#define SR_ANALOG		0x04u	// analog channel on the main side (INF)
+#define SR_RX_DEMOD		0x04u	// main side's demodulator to the codec, FM and DMR alike: with it clear the baseband
+					// hears nothing (measured; set on every receive start, as stock does)
 #define SR_RF_AUDIO		0x08u	// speaker from the RF chip, 0 for the DMR codec (INF)
 #define SR_TX			0x10u	// transmit path
 #define SR_RX_PATH		0x20u	// cleared at the end of TX turn-on (receive front end, INF)
 #define SR_RX_AUDIO		0x40u	// receive audio gate
-#define SR_RX			(SR_BOOT | SR_ANALOG | SR_RF_AUDIO | SR_RX_PATH | SR_RX_AUDIO)
+#define SR_RX			(SR_BOOT | SR_RX_DEMOD | SR_RF_AUDIO | SR_RX_PATH | SR_RX_AUDIO)
 
 // PC4: low in receive; the stock firmware sets it when RX and TX frequencies straddle 300 MHz (not done here)
 #define PIN_RF_SPLIT		GPIOC, MCU_PIN(4)
@@ -159,9 +163,27 @@ static ktamfm_t kt;
 static bool kt_present;			// the receiver answered at init
 static uint8_t kt_level_out = 0xFFu;	// the receiver's level as written; 0xFF unknown
 
-bool d578uv_kt_present(void)
+#if CONFIG_BCAST_FM
+static bool rda_present;		// no KTMicro, but an RDA5807 on its bus answered at init: broadcast FM only
+static uint16_t rda_raw[3];		// its 0x02, 0x0A and 0x0B as the last status poll read them (diag)
+static int8_t rda_heard = -1;		// its audio as last written: 1 on, 0 muted, -1 unknown
+#define RDA_VOLUME		9u	// the stock firmware's fixed chip volume: the level device after it follows the knob
+#else
+#define rda_present		false
+#endif
+
+#if CONFIG_BCAST_FM
+void d578uv_bc_raw(uint16_t r[3])
 {
-	return kt_present;
+	for (unsigned i = 0; i < 3u; i++) {
+		r[i] = rda_present ? rda_raw[i] : 0;
+	}
+}
+#endif
+
+const char *d578uv_bc_chip(void)
+{
+	return kt_present ? "kt" : rda_present ? "rda" : "no";
 }
 #endif
 #if CONFIG_AM_RX
@@ -175,6 +197,8 @@ static bool bc_on;			// the core powered the broadcast receiver: the receiver is
 static bool bc_audio;			// the core plays it
 static bool bc_silent;			// the core's broadcast volume is 0
 static uint32_t bc_khz;			// the frequency it is tuned to
+#define BC_LO_KHZ		87500u	// the stock firmware's band and default
+#define BC_HI_KHZ		108000u
 #define BC_HEARD		(bc_on && bc_audio && !transmitting)
 #else
 #define BC_HEARD		false
@@ -209,6 +233,9 @@ static bool transmitting;
 static uint8_t sr;			// the shift register's outputs
 static bool main_audio;			// side A's audio to the speaker (audio())
 static int16_t level_code_vol = -1;	// the speaker level code for the volume, -1 until the core sets one
+static bool vol_zero;			// the volume (knob A) is 0: side A and the KTMicro receiver stay silent
+static int16_t level_code_b = -1;	// side B's level code from knob B, -1 until side B's poll reads it
+static bool vol_b_zero;			// knob B is at 0: side B stays silent
 #if D578UV_LEVEL_IC
 static int16_t level_last[2] = { -1, -1 };	// level codes written, side A and B; -1 = none
 #endif
@@ -291,6 +318,18 @@ void d578uv_bus_init(void)
 		rfbus_3w_attach(&b, &pins_chip[i]);
 		rfbus_write(&b.bus, QA4818_REG_ENABLE, QA4818_ENABLE_OFF);
 	}
+	// The RF chips' GPIO set as the stock start-up leaves them before the baseband's boot, in its order (from a trace
+	// of its start-up); the boot has been seen to work only with them
+	static const struct { uint8_t chip, reg; uint16_t v; } stock_gpio[] = {
+		{ 0, 0x26, 0x0000 }, { 0, 0x27, 0x0000 }, { 0, 0x25, 0x0001 },
+		{ 1, 0x26, 0x0000 }, { 1, 0x27, 0x0000 }, { 1, 0x25, 0x0033 }, { 1, 0x25, 0x00B3 },
+		{ 3, 0x26, 0x1111 }, { 3, 0x27, 0x0011 }, { 3, 0x25, 0x0000 },
+	};
+	for (unsigned i = 0; i < sizeof stock_gpio / sizeof stock_gpio[0]; i++) {
+		rfbus_3w_t b;
+		rfbus_3w_attach(&b, &pins_chip[stock_gpio[i].chip]);
+		rfbus_write(&b.bus, stock_gpio[i].reg, stock_gpio[i].v);
+	}
 }
 
 // The stock firmware's five levels (front_io.h); 0 at the core's power-off. The panel stays awake: the stock firmware
@@ -340,6 +379,12 @@ static void sr_set(uint8_t set, uint8_t clear)
 		sr = v;
 		sr_shift(v);
 	}
+}
+
+// The standby (power_d578uv.c): every shift register output off, as the stock power-off writes it
+void d578uv_outputs_off(void)
+{
+	sr_set(0, 0xFFu);
 }
 
 // ---- Speaker level device (PA13 data, PA14 clock) ----
@@ -435,19 +480,25 @@ static void audio_route(void)
 {
 	bool b = b_heard();
 	bool kt_out = (AM_ON && main_audio) || BC_HEARD;
+	// Each side's knob sets its level, as the stock firmware does (knob A the core's volume, knob B read in side B's
+	// poll); the KTMicro receiver takes knob A's on both channels
+	int16_t code_b = kt_out || level_code_b < 0 ? level_code_vol : level_code_b;
 	if (level_code_vol >= 0) {
 		level_set(0, main_audio || !b ? (uint8_t)level_code_vol : 0);
-		level_set(1, b || kt_out ? (uint8_t)level_code_vol : 0);
+		level_set(1, (b || kt_out) && code_b >= 0 ? (uint8_t)code_b : 0);
 	}
 	bool rf = mode == RADIO_MODE_FM || b || kt_out;
 	if (!transmitting) {
 		sr_set(rf ? SR_RF_AUDIO : 0, rf ? 0 : SR_RF_AUDIO);
 	}
-	mcu_pin_write(PIN_SPK_MUTE, !(main_audio || b || kt_out));
+	// The level device's lowest code still passes audio (seen on a radio): PA7 opens only for a source whose knob is up
+	bool b_loud = b && (level_code_b < 0 ? !vol_zero : !vol_b_zero);
+	mcu_pin_write(PIN_SPK_MUTE, !(((main_audio || kt_out) && !vol_zero) || b_loud));
 }
 
 static void volume(uint8_t percent)
 {
+	vol_zero = percent == 0;
 #if D578UV_LEVEL_IC
 	if (percent > 100) {
 		percent = 100;
@@ -463,7 +514,9 @@ static void volume(uint8_t percent)
 
 static bool cal_read(uint32_t off, void *buf, uint32_t len)
 {
-	return cal_base != 0 && d578uv_nand_read(cal_base + off, buf, len);
+	// The factory wrote the calibration's first page with the chip's ECC off: it reads back as an ECC failure (seen on
+	// a radio, both blocks), as the stock firmware reads it
+	return cal_base != 0 && d578uv_nand_read_any(cal_base + off, buf, len, NULL);
 }
 
 static bool cal_current(uint32_t base)
@@ -644,14 +697,35 @@ static void chip0_gpio(uint16_t mask, uint16_t val)
 }
 
 static bool chips_ready;	// init() has set chip 0 up: its output register can be written
-static bool led_rx;		// the core's receive LED (hal_power_t.led, LED_GREEN)
+static bool fan_hot;		// the PA's temperature has reached the fan's on point (fan_poll)
 
-void d578uv_led_rx(bool on)
+// The fan's thresholds on the PA6 sensor's average of four readings, as the stock firmware's: on from 0x3E0, off
+// again at 0x364 and below
+#define FAN_HOT_ON		0x3E0u
+#define FAN_HOT_OFF		0x364u
+
+bool d578uv_fan_on(void)
 {
+	return transmitting || fan_hot;
+}
+
+// The radio task, with each status poll: the fan follows the temperature while receiving; while transmitting it
+// stays on (the key-up sets it)
+static void fan_poll(void)
+{
+	uint32_t sum = 0;
+	for (int i = 0; i < 4; i++) {
+		sum += mcu_adc_read(ADC_PA_TEMP);
+	}
+	uint32_t v = sum / 4u;
+	bool hot = fan_hot ? v > FAN_HOT_OFF : v >= FAN_HOT_ON;
+	if (hot == fan_hot) {
+		return;
+	}
+	fan_hot = hot;
 	uint32_t s = bus_lock();
-	led_rx = on;
 	if (chips_ready && !transmitting) {
-		qa4818_gpio(&chip_if, GPIO_LED_TX, on ? GPIO_LED_TX : 0);
+		qa4818_gpio(&chip_if, GPIO_FAN, hot ? GPIO_FAN : 0);
 	}
 	bus_unlock(s);
 }
@@ -844,8 +918,7 @@ static void rx_setup(void)
 #endif
 	pa_off();
 	mcu_pin_write(PIN_RF_SPLIT, false);
-	sr_set((uint8_t)(digital ? (SR_RX & ~(SR_ANALOG | SR_RF_AUDIO)) : SR_RX),
-	       (uint8_t)(SR_TX | (digital ? (SR_ANALOG | SR_RF_AUDIO) : 0)));
+	sr_set((uint8_t)(digital ? (SR_RX & ~SR_RF_AUDIO) : SR_RX), (uint8_t)(SR_TX | (digital ? SR_RF_AUDIO : 0)));
 	audio_route();		// side B may need the RF audio with side A on DMR
 }
 
@@ -957,6 +1030,25 @@ static bool tone_found(uint8_t type, uint16_t flags)
 	}
 }
 
+// Knob B: side B's level, followed in steps of 2 % or more and at the ends, as the core follows knob A
+static void b_knob(void)
+{
+	static int16_t sent = -1;
+	int16_t v = (int16_t)d578uv_pot_percent(mcu_adc_read(ADC_VOL_B));
+	int16_t d = (int16_t)(v - sent);
+	if (sent >= 0 && d < 2 && d > -2 && !((v == 0 || v == 100) && v != sent)) {
+		return;
+	}
+	sent = v;
+	vol_b_zero = v == 0;
+#if D578UV_LEVEL_IC
+	level_code_b = level_code((uint8_t)((v * 32 + 50) / 100));
+#else
+	level_code_b = 0;
+#endif
+	audio_route();
+}
+
 // The radio task polls the chip and runs the squelch (the core's levels: open below the level's noise, closed after
 // RADIO_SQL_CLOSE_POLLS polls RADIO_SQL_HYST_DB above it, or without the tone); any other task gets the last copy
 static void b_status(rx2_status_t *st)
@@ -964,15 +1056,17 @@ static void b_status(rx2_status_t *st)
 	if (b_task != NULL && xTaskGetCurrentTaskHandle() == b_task) {
 		rx2_status_t n = { .up = true, .tuned = b_on, .rssi_dbm = -160, .noise = 127 };
 		if (b_on && !transmitting && !AM_ON) {
+			b_knob();
 			qa4818_status_t s;
 			qa4818_status(&chip_b, &s);
 			bool was = b_open;
 			uint8_t open_below = radio_sm_squelch_open_below(b_squelch);
 			bool tone = tone_found(b_tone.type, s.tone_flags);
+			uint8_t noise = qa4818_noise(s.noise);
 			if (!b_open) {
-				b_open = s.noise < open_below && tone;
+				b_open = noise < open_below && tone;
 				b_close_polls = 0;
-			} else if (!tone || s.noise >= open_below + RADIO_SQL_HYST_DB) {
+			} else if (!tone || noise >= open_below + RADIO_SQL_HYST_DB) {
 				if (++b_close_polls >= RADIO_SQL_CLOSE_POLLS) {
 					b_open = false;
 				}
@@ -983,7 +1077,7 @@ static void b_status(rx2_status_t *st)
 				audio_route();
 			}
 			n.rssi_dbm = qa4818_rssi_dbm(s.rssi);
-			n.noise = s.noise;
+			n.noise = noise;
 			n.active = b_open;
 			n.heard = b_heard();
 		}
@@ -1068,6 +1162,32 @@ static void kt_delay(uint32_t us)
 
 static const ktamfm_bus_t kt_bus = { .read = kt_read, .write = kt_write, .delay_us = kt_delay };
 
+#if CONFIG_BCAST_FM
+// Some units carry an RDA5807 instead of the KTMicro, on the same two pins (5.4): broadcast FM through the shared
+// driver (rda5807m_hal), no air band. The board's routing stays as for the KTMicro's FM
+static void rda_delay_ms(uint32_t ms)
+{
+	vTaskDelay(pdMS_TO_TICKS(ms));
+}
+
+static const rda5807m_hal_cfg_t rda_cfg = {
+	.bus = &kt_i2c,
+	.delay_ms = rda_delay_ms,
+	// A 32.768 kHz crystal, 75 us; GPIO1 low while on and high while off, as the stock firmware drives it (what it
+	// switches on the board isn't traced)
+	.cfg = { .clk_mode = 0, .rclk_direct = false, .de_50us = false, .seek_th = 8, .gpio_on = RDA5807M_GPIO1_LOW,
+		 .gpio_off = RDA5807M_GPIO1_HIGH },
+	.start_khz = BC_LO_KHZ,
+};
+
+static void rda_attach(void)
+{
+	uint16_t id = 0;
+	rda5807m_hal_init(&rda_cfg);
+	rda_present = rda5807m_i2c_bus.read(NULL, RDA5807M_REG_CHIPID, &id) && (id >> 8) == RDA5807M_CHIP_ID;
+}
+#endif
+
 // The pins, a bus recovery and the ID read (none of it waits for long)
 static void kt_attach(void)
 {
@@ -1076,12 +1196,29 @@ static void kt_attach(void)
 	i2c_gpio_recover(&kt_i2c);
 	ktamfm_attach(&kt, &kt_bus);
 	kt_present = ktamfm_probe(&kt);
+#if CONFIG_BCAST_FM
+	if (!kt_present) {
+		rda_attach();
+	}
+#endif
 }
 
 // The receiver's level: AM's while AM is on and the core gives the main side the speaker, broadcast FM's while the core
 // plays it, muted otherwise (the stock squelch mutes it the same way). Only once it is set up. Radio task only
 static void kt_level(void)
 {
+#if CONFIG_BCAST_FM
+	if (rda_present) {
+		// Muted unless the core plays it, the volume is up and the radio isn't transmitting (the core's order of
+		// audio(), volume() and the key-up can each change it); written only when that changes
+		int8_t want = (int8_t)(BC_HEARD && !bc_silent && !vol_zero);
+		if (bc_on && want != rda_heard) {
+			rda5807m_hal.audio(want != 0);
+			rda_heard = want;
+		}
+		return;
+	}
+#endif
 	if (!kt.ready) {
 		return;
 	}
@@ -1153,7 +1290,7 @@ static bool rx_am(uint32_t hz, radio_bw_t bw)
 	rx_hz = hz;
 	rx_tone = (subtone_t){ TONE_NONE, 0 };
 	have_rx = true;
-	sr_set(SR_ANALOG, 0);
+	sr_set(SR_RX_DEMOD, 0);
 	trims_b();
 	kt_level();
 	audio_route();
@@ -1196,8 +1333,6 @@ static bool am_leave(void) { return false; }
 #if CONFIG_BCAST_FM
 // ---- Broadcast FM: the KTMicro receiver's FM mode (hal_bcast.h, 5.4) ----
 
-#define BC_LO_KHZ		87500u	// the stock firmware's band and default
-#define BC_HI_KHZ		108000u
 
 // On: taken back from AM first (chip 3 off, side B again), then the stock broadcast set-up: chip 3's output bit 6
 // clear, the receiver set up once, FM mode, the last frequency. Muted until audio(true). Off: muted, and the receiver
@@ -1205,26 +1340,34 @@ static bool am_leave(void) { return false; }
 static bool bc_power(bool on)
 {
 	if (!on) {
+		if (rda_present && bc_on) {
+			(void)rda5807m_hal.power(false);
+		}
 		bc_on = bc_audio = false;
 		trims_b();
 		kt_level();
 		audio_route();
 		return true;
 	}
-	if (!kt_present) {
+	if (!kt_present && !rda_present) {
 		return false;
 	}
 	am_leave();
 #if SIDE_B_CHIPS
-	qa4818_gpio(&chip_lo_b, GPIO_LO_B_AM, 0);
-#endif
-	if (!kt_init() || !ktamfm_fm(&kt)) {
-		return false;
+	if (kt_present) {
+		qa4818_gpio(&chip_lo_b, GPIO_LO_B_AM, 0);	// the KTMicro's FM input; the RDA5807 path leaves it alone
 	}
+#endif
 	if (bc_khz == 0) {
 		bc_khz = BC_LO_KHZ;
 	}
-	if (!ktamfm_tune_fm(&kt, bc_khz)) {
+	if (rda_present) {
+		if (!rda5807m_hal.power(true) || !rda5807m_hal.tune(bc_khz)) {
+			return false;
+		}
+		rda5807m_hal.volume(RDA_VOLUME);
+		rda_heard = 0;		// powered up muted
+	} else if (!kt_init() || !ktamfm_fm(&kt) || !ktamfm_tune_fm(&kt, bc_khz)) {
 		return false;
 	}
 	bc_on = true;
@@ -1236,14 +1379,16 @@ static bool bc_power(bool on)
 
 static bool bc_tune(uint32_t khz)
 {
-	if (!bc_on || khz < BC_LO_KHZ || khz > BC_HI_KHZ || !ktamfm_tune_fm(&kt, khz)) {
+	if (!bc_on || khz < BC_LO_KHZ || khz > BC_HI_KHZ ||
+	    !(rda_present ? rda5807m_hal.tune(khz) : ktamfm_tune_fm(&kt, khz))) {
 		return false;
 	}
 	bc_khz = khz;
 	return true;
 }
 
-// The receiver has no seek the stock firmware uses (its scan steps the frequency); the core doesn't seek
+// The KTMicro has no seek the stock firmware uses (its scan steps the frequency); the RDA5807's own seek stays inside
+// the board's band only with the core's checks, so neither seeks here (the core doesn't seek)
 static bool bc_seek(bool up)
 {
 	(void)up;
@@ -1262,6 +1407,18 @@ static void bc_volume(uint8_t level)
 // debounce left to the caller), rssi the receiver's 0xE6 reading (its scale against dBuV isn't known)
 static bool bc_status(bcast_status_t *st)
 {
+	if (rda_present) {
+		if (!bc_on) {
+			return false;
+		}
+		static const uint8_t regs[3] = { RDA5807M_REG_CTRL, RDA5807M_REG_STATUS, RDA5807M_REG_RSSI };
+		for (unsigned i = 0; i < 3u; i++) {
+			if (!rda5807m_i2c_bus.read(NULL, regs[i], &rda_raw[i])) {
+				rda_raw[i] = 0xFFFFu;
+			}
+		}
+		return rda5807m_hal.status(st);
+	}
 	ktamfm_fm_status_t f;
 	if (!bc_on || !ktamfm_fm_status(&kt, &f)) {
 		return false;
@@ -1330,13 +1487,13 @@ static void init(void)
 	qa4818_init_lo(c3);
 	qa4818_init_trx(c1, GPIO_B_INIT, R49);
 	qa4818_init_trx(&chip_if, GPIO_A_INIT, R49);
-	// The GPS task may have asked for the module's power, and the core for the LED, before the chip was set up
+	// The GPS task may have asked for the module's power before the chip was set up; the fan starts off
 	uint32_t s = bus_lock();
 	chips_ready = true;
 #if CONFIG_GPS
 	qa4818_gpio(&chip_if, GPIO_GPS, gps_power ? GPIO_GPS : 0);
 #endif
-	qa4818_gpio(&chip_if, GPIO_LED_TX, led_rx ? GPIO_LED_TX : 0);
+	qa4818_gpio(&chip_if, GPIO_FAN, fan_hot ? GPIO_FAN : 0);
 	bus_unlock(s);
 	qa4818_enable(c1, QA4818_ENABLE_OFF);
 	qa4818_enable(c3, QA4818_ENABLE_OFF);
@@ -1417,7 +1574,7 @@ static bool dmr_tx(uint32_t hz, uint8_t dac)
 	qa4818_dmr_tx(&chip_if, hz);
 	qa4818_tx_on(&chip_if);
 	band_bits(hz);
-	chip0_gpio(GPIO_TX_UHF | GPIO_LED_TX | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_LED_TX);
+	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_FAN);
 	hal_delay_ms(10);
 	// The receive path bit before the PA can come on (the stock firmware clears it after its PE6 step)
 	sr_set(SR_TX, SR_RX_PATH);
@@ -1476,7 +1633,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	qa4818_tx_drive(&chip_if, hz, narrow, drive, tx_level);
 	qa4818_tx_on(&chip_if);
 	band_bits(hz);
-	chip0_gpio(GPIO_TX_UHF | GPIO_LED_TX | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_LED_TX);
+	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_FAN);
 	hal_delay_ms(10);
 	mcu_dac_write(0, (uint16_t)(dac << 4));
 	sr_set(SR_TX, SR_RX_PATH);
@@ -1613,7 +1770,7 @@ static void tx_off(void)
 	}
 	sr_set(0, SR_RX_AUDIO);
 	qa4818_tx_drive_off(&chip_if);
-	chip0_gpio(GPIO_TX_UHF | GPIO_LED_TX | GPIO_MIC_MUTE, GPIO_MIC_MUTE | (led_rx ? GPIO_LED_TX : 0));
+	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, GPIO_MIC_MUTE | (fan_hot ? GPIO_FAN : 0));
 	chips_off();
 	transmitting = false;
 	if (have_rx) {
@@ -1655,6 +1812,7 @@ static void mic_poll(void)
 
 static void status(radio_status_t *st)
 {
+	fan_poll();
 #if CONFIG_VOX
 	mic_poll();
 #endif
@@ -1675,7 +1833,7 @@ static void status(radio_status_t *st)
 	qa4818_status(&chip_if, &s);
 	diag_rx = (uint32_t)s.rssi | (uint32_t)(s.noise & 0x7FFFu) << 16 | (s.signal ? 1u << 31 : 0u);
 	st->rssi_dbm = qa4818_rssi_dbm(s.rssi);
-	st->noise = s.noise;
+	st->noise = qa4818_noise(s.noise);
 	st->carrier = s.signal && s.rssi >= rx_threshold;
 	switch (rx_tone.type) {
 	case TONE_CTCSS:
@@ -1720,7 +1878,7 @@ static void trims_b(void)
 		rc = trim_am(cal_uhf + BLK_TRIM_AM, rx_hz / 10u);
 	}
 #if CONFIG_BCAST_FM
-	else if (cal_base != 0 && bc_on && !B_ON) {
+	else if (cal_base != 0 && bc_on && !B_ON && kt_present) {	// the KTMicro's set-up only
 		r2 = cal_vhf[BLK_TRIM_B];
 	}
 #endif

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // GD32F30x system clock: HXTAL through the PLL, with the high-driver mode the core needs above 108 MHz (GD32F30x user
-// manual, RCU and PMU chapters). The USB clock is CK_PLL divided down to 48 MHz
+// manual, RCU and PMU chapters). The USB clock is IRC48M (gd32_clock_init)
 #include "platform.h"
 
 uint32_t SystemCoreClock = 8000000u;	// IRC8M after a reset
@@ -88,6 +88,13 @@ bool gd32_clock_init(const gd32_clock_t *c)
 		return false;
 	}
 	SystemCoreClock = sys_hz;
+	// The USB clock from IRC48M, as a radio's own firmware and bootloader on this platform run it. USBDPSC can't be relied on
+	// here: a bootloader that leaves the USBD clock enabled keeps its own prescaler, and CK_PLL through that one
+	// failed to enumerate on a radio (protocol errors). The CK_PLL path stays set up for a cold start
+	RCU_ADDCTL |= RCU_ADDCTL_IRC48MEN;
+	if (wait_set(&RCU_ADDCTL, RCU_ADDCTL_IRC48MSTB)) {
+		RCU_ADDCTL |= RCU_ADDCTL_CK48MSEL;
+	}
 	return true;
 }
 

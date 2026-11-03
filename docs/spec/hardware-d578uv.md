@@ -18,7 +18,7 @@ The radio was built with two MCUs. Each needs its own firmware build; the manufa
 
 | Variant | MCU | Built | Firmware model names (update mode answer) |
 | --- | --- | --- | --- |
-| GD | GigaDevice GD32F303VKT6 (Cortex-M4, 3 MB flash, 96 KB RAM, no CCM) | until about mid-2022 | `D578UV2` (578UV), `D578UV` (PRO) |
+| GD | GigaDevice GD32F303VKT6 (Cortex-M4, 3 MB flash, 96 KB RAM, no CCM) | until about mid-2022 | `D578UV2` (578UV), `D578UV` (PRO); `D578UV` confirmed on a PRO (bootloader V100) |
 | AT | Artery AT32F435/437 (Cortex-M4F) | from about mid-2022 | `578UV2A` (578UV), `D578UVA` (PRO) |
 
 - The stock firmware's version screen names the build: `GD_Ver` or `AT_Ver`.
@@ -39,10 +39,14 @@ The radio was built with two MCUs. Each needs its own firmware build; the manufa
 | Application | from 0x08006000 (vector table there); `APP_BASE` in `board.mk` |
 | Modem boot slot | 0x080FF000-0x080FFFFF: the SCT3258 boot block (section 4.3), `__codec_slot` in `memory.ld` |
 | RAM | 96 KB at 0x20000000 |
-| Debug | SWD on PA13/PA14, no read-out protection seen. PA13/PA14 are also the level device's lines (section 3.4): RadioFoundry turns SWD off when it starts so it can set the speaker level; build with `D578UV_LEVEL_IC=0` to keep SWD |
+| Debug | SWD on PA13/PA14, no read-out protection seen. PA13/PA14 are also the level device's lines (section 3.4): RadioFoundry turns SWD off when it starts so it can set the speaker level; build with `D578UV_LEVEL_IC=0` to keep SWD. AFIO_PCF0's SWJ field goes to 0 first, then to "off": a direct change from "SW-DP only" to "off" doesn't take (seen on a radio) |
 
-The stock firmware's USB clock setting was not located (48 MHz from 120 MHz needs the /2.5 prescaler)
-(unverified).
+USB (seen on a radio):
+
+| Item | Value |
+| --- | --- |
+| Clock | IRC48M, as the stock firmware sets it (RCU_ADDCTL bit 16 on, then bit 0 to select it; 0x0809B3B2). CK_PLL / 2.5 failed to enumerate after the bootloader: it leaves the USBD clock on, so the prescaler doesn't change |
+| D+ pull-up | switched by PE2, high = on (push-pull; 0x0809B370 and 0x0809B396). Without it the host sees no device |
 
 ## 3. Inputs, outputs and power
 
@@ -166,10 +170,10 @@ its digits enter digits, `*` and `#` act as down and up, A/B switches the side, 
 | Pin | Use |
 | --- | --- |
 | PC3 | power hold, high = on, set first at boot, never cleared by the stock firmware (inferred) |
-| PA0 | power key, pull-up, low = pressed; counts only with PA6 below 1.33 V |
-| PA6 (ADC 6) | ignition / supply sense (inferred) |
+| PA0 | power key, pull-up, low = pressed; the stock firmware counts it only with PA6 below 1.33 V |
+| PA6 (ADC 6) | the PA's temperature sensor, higher = hotter; the fan's thresholds (section 5) |
 | PC1 (ADC 11) | supply voltage, 11:1 divider (inferred) |
-| PE0 | switched rail for the LCD, RF and audio (inferred) |
+| PE0 | switched rail of the backlight, the RF chips and the audio, high = on; the stock firmware raises it at boot and waits 150 ms. Left low, the panel shows a picture without backlight, the receiver is dead and the radio draws less current (seen on a radio) |
 
 The stock "off" is a soft standby: the shift register cleared, pins parked analog, PC3 kept high, and an IWDG reset
 loop that wakes on PA0 held for 1 s.
@@ -188,8 +192,10 @@ loop that wakes on PA0 held for 1 s.
 | PA13 / PA14 | data and clock of a two-channel volume device (inferred) |
 | PC2 / PC5 (ADC 12 / 15) | the A and B volume pots |
 
-Shift register bits (all inferred): 0x02 main audio enable, 0x04 VHF/UHF filter, 0x08 speaker path A/B, 0x10 TX
-path, 0x20 cleared at the end of TX turn-on, 0x40 RX audio gate, 0x01 and 0x80 rarely used.
+Shift register bits (inferred unless marked): 0x02 main audio enable, 0x04 the main side's demodulator output to the
+codec, FM and DMR alike (measured: with it clear the baseband hears nothing; the stock firmware sets it on every
+receive start), 0x08 speaker from the RF chip (clear in DMR), 0x10 TX path, 0x20 cleared at the end of TX turn-on,
+0x40 RX audio gate, 0x01 and 0x80 rarely used.
 
 The audio codec is a TLV320AIC3204 class part on the baseband's I2C; the MCU sets it up through the baseband's codec
 bypass packets ([modem-sct.md](modem-sct.md) 3).
@@ -224,7 +230,7 @@ audio while side B also receives, and whether it is there with the squelch close
 | UART3 (the Artery's UART4) | PC10 / PC11, 115200 baud 8N1 | the Bluetooth module, or the APRS add-on board (3.7) |
 | USART0 | PA9 / PA10, 115200 baud | the serial keypad microphone (section 3.2); GPIO inputs with a plain microphone |
 | USB | PA11 / PA12 | native USB, the host link and the update mode |
-| I2C (bit-banged) | PB6 SDA / PB7 SCL | the KTMicro AM/FM receiver (5.4). The stock firmware drives SDA push-pull and reads it as an input with pull-up |
+| I2C (bit-banged) | PB6 SDA / PB7 SCL | the KTMicro AM/FM receiver or the RDA5807 (5.4). The stock firmware drives SDA push-pull and reads it as an input with pull-up |
 
 ### 3.6 GPS
 
@@ -296,7 +302,7 @@ The bus is bit-banged, as the stock firmware does it (`boards/d578uv/modem_d578u
 ### 4.2 Reset
 
 1. PA8 high; PD2, PD3, PD4 high; PD1, PD7, PC12, PC7 low; PC6 high.
-2. 100 ms, RSTN high, 100 ms, RSTN low, 500 ms.
+2. 100 ms, RSTN high, 100 ms, RSTN low, 500 ms, RSTN high (0x080930F0; left low, the chip never answers).
 3. The boot block (4.3), then `ACK_MESSAGE` 0x01.
 
 ### 4.3 Boot block
@@ -402,12 +408,13 @@ squelch threshold register is written. The 578UV and the PRO differ only in regi
 on the PRO; 0x29AA on the 578UV unless a flag is set).
 
 Chip 0's register 0x25 bit 0 is set in receive and while a TX tone sounds and cleared at each key-up: a microphone
-mute (inferred from where the stock firmware sets it). It also drives the only LED output found: bit 1 follows transmit, a received level (PA6, on at
-0x3E0 and above, off at 0x364 and below) or either, by a user setting. One bit serves both, so the two colors are
-switched elsewhere or in hardware; which is not known. Bit 2 is the GPS module's enable, not an LED: the firmware
+mute (inferred from where the stock firmware sets it). Bit 1 is the fan, high = on (seen on a radio): the stock "Fan
+Open" setting (PTT, Temperature or Both, default PTT) runs it while transmitting, while PA6's average of four readings
+is hot (on at 0x3E0 and above, off at 0x364 and below), or either (0x0808BE9C). The status LED is an RGB LED whose
+output is not found. Bit 2 is the GPS module's enable, not an LED: the firmware
 sets it with the GPS setting on, together with the GPS UART, and clears it in standby and at power-off (inferred from
-the code). RadioFoundry lights bit 1 while transmitting and while the core's receive LED is on (a signal or a call: the
-stock "either" choice), and sets bit 2 while the GPS module is powered (section 3.6).
+the code). RadioFoundry runs the fan while transmitting or hot (the stock "Both"), and sets bit 2 while the GPS module is
+powered (section 3.6).
 
 ### 5.1 DMR
 
@@ -510,7 +517,7 @@ RadioFoundry (`tx_tone`, `tx_tone_key`, `tx_dtmf`): the same sequences. Keying a
 microphone still muted. The DTMF synthesis is `tone_d578uv.c` (`tone_synth.h`); its sine table is RadioFoundry's own. Untested on the
 radio.
 
-### 5.4 Air band AM and broadcast FM: the KTMicro receiver
+### 5.4 Air band AM and broadcast FM: the KTMicro or RDA5807 receiver
 
 The air band receiver is a superhet: chip 3 is the LO and first mixer, and a KTMicro AM/FM receiver demodulates AM at
 a 29.25 MHz IF. The receiver sits on a bit-banged I2C bus (PB6 SDA, PB7 SCL) at address 0x6A / 0x6B, 8-bit registers
@@ -518,8 +525,24 @@ and data; registers 0x02 / 0x03 hold its ID 0x4B 0x54 ("KT"). The stock firmware
 when it answers. Its broadcast FM mode receives 87.5-108 MHz in 50 kHz steps (87.5 MHz the default, both ends wrap in
 the stock firmware); chip 3's output bit 6 clear selects that input (inferred). No register map is public: the values
 below are the stock firmware's, their roles inferred. Driver: `drivers/bcast/ktamfm`.
-Radios whose receiver doesn't answer get broadcast FM from another tuner, an 8-byte command block on another bus; that
-path isn't traced and isn't written.
+Some units carry an RDA5807 instead, on the same two pins (a 578UV PRO seen 2026-11: chip ID 0x5804, nothing at
+0x6A). The stock firmware uses it whenever the KTMicro probe fails, without probing it: broadcast FM only, no air
+band (the AM settings and menu entries are hidden). RadioFoundry probes the KTMicro first, then reads the RDA5807's
+chip ID (`diag` line 7: `bc kt`, `bc rda` with its 0x02 / 0x0A / 0x0B, or `bc no`), and drives it with the shared
+driver ([airband-and-broadcast.md](airband-and-broadcast.md) 4.2).
+
+| RDA5807 item | Stock |
+| --- | --- |
+| Bus | sequential mode at 0x10 (0x20 / 0x21); writes retried, then 5 ms. The chip also answers at 0x11 (random access, the driver's) and 0x60 |
+| On | 0x02 = 0xC009, 0x03 = channel \| TUNE \| band 2 \| 50 kHz, 0x04 = 0x0402 (GPIO1 low), 0x05 = 0x85A9 (volume 9 fixed: the level device sets the loudness); 32.768 kHz crystal; STC not polled |
+| Off | 0x02 = 0x8000 (disabled), 0x04 = 0x0403 (GPIO1 high) |
+| At boot | soft reset, 5 ms, then 0x02-0x21 in one write from a table (chip left disabled; RadioFoundry doesn't write it) |
+| Station | 0x0B bit 8 (FM_TRUE); RSSI, stereo and seek unused |
+| Routing | as the KTMicro's FM, but chip 3's bit 6, PA5 register 2 and the receiver mute in the squelch paths are KTMicro only. What GPIO1 switches isn't traced |
+
+On the radio (2026-11-02, a wire on the antenna jack): local stations at RSSI 38-67 with FM_TRUE, empty
+channels 26-35; broadcast FM plays through the speaker and mutes with knob A at 0. With the jack bare, RSSI 2: the
+receiver takes its signal from the antenna jack. The stock boot table changed no reading and isn't written.
 
 | Step | Stock writes (receiver registers, read-modify-write where masked) |
 | --- | --- |
@@ -635,8 +658,10 @@ RadioFoundry writes the default level (g = 4, k the calibration byte) at each FM
 
 ### 6.1 Chip
 
-2 Gbit (256 MB): 2048 blocks of 64 pages of 2048 bytes plus 64 spare bytes. Bit-banged SPI: CS PB8, CLK PB14, MOSI
-PB15, MISO PA15 (PA15 and PB3/PB4 need JTAG off, SWD kept). Two parts are in use; the stock firmware accepts both and
+2 Gbit (256 MB): 2048 blocks of 64 pages of 2048 bytes plus 64 spare bytes. Bit-banged SPI: CS PB8, CLK PB15, MOSI
+PB14, MISO PA15 (PA15 and PB3/PB4 need JTAG off, SWD kept; the clock and data out pins confirmed on a radio, ID
+0x98 0xCB). No SPI peripheral has these pins. The stock firmware's fast read is dual SPI: PB14 becomes the second
+data input. Two parts are in use; the stock firmware accepts both and
 differs only in the read path:
 
 | Part | ID | Read from cache | ECC uncorrectable |
@@ -720,7 +745,7 @@ radio is turned on with MENU and EXIT held (unverified, section 3.2).
 
 | Step | Host sends | Radio answers |
 | --- | --- | --- |
-| Hello | `UPDATE` (ASCII) | `QX 06` |
+| Hello | `UPDATE` (ASCII) | `06` (ACK) on the bootloader seen so far (GD32, V100); the tools take `QX 06` too |
 | Identify | `02` | 16 bytes: `I`, model (7 bytes, NUL padded), hardware byte, version (4 bytes), `00 00 06` |
 | Data | `01`, address (4 bytes LE), 32 bytes, 16-bit LE sum of bytes 1-36, `06` | `06` ACK or `15` NAK |
 | Finish | `18` | `06` |
@@ -755,7 +780,7 @@ The order to check it in on a radio, with the diagnostics lines and what to chan
 | Reference trim | the stock firmware programs the frequency words with no correction; its one candidate is the factory item "FQCA", the UHF block's byte 0 (default 0x23) sent to the PA5 device's register 1 after each side A retune (5.5), role not proven; RadioFoundry sends it the same way. RadioFoundry's trim is its own: each synthesizer is programmed at f x (1 + trim), side A's and B's LOs, the air band LO and the transmitter, with the IF chips at their IF ([radio-features.md](radio-features.md) 6.1). Written, untested |
 | Flash stub | `CONFIG_STUB_ENTRY` on: the GD32F30x stub ([stub-gd32f30x.md](stub-gd32f30x.md)) with board record id 6, application base 0x08006000; `stub/stubtool.py --board d578uv` drives it. Host tested, untested on the radio |
 | Air band AM | side B's chips and the KTMicro receiver (5.4); written, host tested (the receiver's sequences), untested on the radio |
-| Broadcast FM | the KTMicro receiver's FM mode (5.4); written, host tested (the receiver's sequences), untested on the radio. No stereo, no seek |
+| Broadcast FM | the KTMicro receiver's FM mode, or the RDA5807 where it is fitted (5.4); written, host tested. The RDA5807 works on the radio (2026-11-02); the KTMicro untested on the radio. No stereo, no seek |
 | Bluetooth | PTT and keys from the module's lines (3.7, `CONFIG_BT_PTT`); written, the line parser host tested, untested on the radio. Pairing, audio and the module's settings not written |
 | DMR on side B | not written: what is missing is listed below |
 | VOX | chip 0's voice amplitude as the microphone level (5.6); written, untested on the radio. The register and its scale are inferred from the BK4819 map |

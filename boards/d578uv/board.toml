@@ -63,7 +63,9 @@ backup = { stock = "none", rfoundry = "none", spi_size = 0 }
 # has run on a radio. The record's other field, the bootloader's end, is APP_BASE
 [flash.stub]
 id = 6
-tested = false
+tested = true
+# The SPI NAND the stub reads as its external memory (pins from pins.h): 2 Gbit, dual SPI reads as the stock firmware
+spi_nand = { mb = 256, dual = true }
 
 # What no tool erases or writes, as offsets in the program flash. Not the modem boot slot (0xFF000-0x100000): every
 # install through the update mode writes it, and the stub writes it only from an image that carries the boot block

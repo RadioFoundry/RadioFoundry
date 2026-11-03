@@ -216,7 +216,11 @@ BOARD_SCHEMA = {
                       # the STM32F4 stub: the SPI flash's bus (SPIn), mode and fastest clock; the pins come from pins.h
                       # (F4_SPI_PINS), and idle_cs names other chip selects on that bus to hold high
                       "spi": _opt({"bus": _req(int), "mode": _req(int), "hz": _req(int)}),
-                      "idle_cs": _opt(STR_LIST)}),
+                      "idle_cs": _opt(STR_LIST),
+                      # the GD32F30x / AT32F43x stubs: a bit-banged SPI NAND they read as the external memory (its
+                      # size in MB, whether it reads in dual SPI); the pins come from pins.h (PIN_NAND_CS, _CLK,
+                      # _MOSI, _MISO)
+                      "spi_nand": _opt({"mb": _req(int), "dual": _opt(bool)})}),
     }),
     # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file
     "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(STR_LIST), "profile": _opt(str), "sources": _opt(STR_LIST),
@@ -515,7 +519,7 @@ def not_written_problems(bid, b):
 
 def pin_defines(path):
     """{NAME: value} of the pin #defines in a pins.h: an integer (the HR_C7000's port << 4 | pin), or "PB3" for the
-    STM32 form `GPIOB, GPIO_PIN_3`."""
+    STM32 form `GPIOB, GPIO_PIN_3` and the GD32F30x / AT32F43x form `GPIOB, MCU_PIN(3)`."""
     if not os.path.isfile(path):
         return {}
     with open(path, encoding="utf-8") as f:
@@ -529,6 +533,9 @@ def pin_defines(path):
                 for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?((?:0[xX][0-9a-fA-F]+|\d+))[uU]?\)?\s*$", text)})
     out.update({m.group(1): "P%s%d" % (m.group(2), int(m.group(3)))
                 for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+GPIO([A-K])\s*,\s*GPIO_PIN_(\d+)\s*$", text)})
+    # The GD32F30x / AT32F43x boards' form `GPIOB, MCU_PIN(8)`
+    out.update({m.group(1): "P%s%d" % (m.group(2), int(m.group(3)))
+                for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+GPIO([A-K])\s*,\s*MCU_PIN\((\d+)\)\s*$", text)})
     return out
 
 
@@ -646,7 +653,12 @@ class Board:
             return None
         out = {"tool": bs["tool"], "id": s["id"], "tested": s["tested"]}
         if bs["tool"] == "f4stub":
-            out.update(boot_end=self.app_base, hse=None, spi=None)
+            out.update(boot_end=self.app_base, hse=None, spi=None, spi_nand=None)
+            if "spi_nand" in s:
+                n = s["spi_nand"]
+                out.update(spi_nand={"mb": n["mb"], "dual": bool(n.get("dual", False)),
+                                     "cs": self.pins.get("PIN_NAND_CS"), "clk": self.pins.get("PIN_NAND_CLK"),
+                                     "io0": self.pins.get("PIN_NAND_MOSI"), "io1": self.pins.get("PIN_NAND_MISO")})
         if "spi" in s:
             spi, af = s["spi"], bs.get("spi_af") or []
             pin = {k: self.pins.get(k) for k in F4_SPI_PINS}

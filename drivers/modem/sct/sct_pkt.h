@@ -97,6 +97,9 @@ enum {
 // DIGC_DATA_FRAME PROP byte in DMR: bit 4 a voice burst (data = the 9-byte LC for the embedded signaling), bits 3-0
 // the data type (TS 102 361-1 slot type, the same numbers as dmr_burst_kind_t's data kinds)
 #define SCT_PROP_VOICE		0x10
+// The PROP of the LC that starts a call's voice and renews its embedded signaling: a voice burst with data type 1
+// (voice LC). The chip refuses a voice frame without it (ACK 0x01) and sends no traffic at all (Packet Interface 2.5.2.5)
+#define SCT_PROP_VOICE_LC	0x11
 #define SCT_PROP_TYPE		0x0F
 #define SCT_FRAME_MAX		180
 
@@ -133,8 +136,9 @@ typedef struct {
 	const uint8_t *data;
 } sct_field_t;
 
-// One write to the codec chip through the baseband (a codec-bypass packet, TYPE SCT_TYPE_CODEC: page, register,
-// value; the chip adds the codec's I2C address). The chip answers with a TYPE SCT_TYPE_CODEC packet holding an
+// One write to the codec chip through the baseband (a codec-bypass packet, TYPE SCT_TYPE_CODEC, in the
+// TLV320AIC3204 layout of the Analog Setup document: 0, page, register, value, 0, 0; the chip adds the codec's I2C
+// address and refuses another length with ACK 0x05). The chip answers with a TYPE SCT_TYPE_CODEC packet holding an
 // ACK_MESSAGE
 typedef struct {
 	uint8_t page;
@@ -142,8 +146,8 @@ typedef struct {
 	uint8_t value;
 } sct_codec_write_t;
 
-// The codec-bypass packet for one write: header, page, register, value and the pad, no parity
-#define SCT_CODEC_PKT_BYTES	10
+// The codec-bypass packet for one write: header and the six-byte body, no parity
+#define SCT_CODEC_PKT_BYTES	12
 void sct_pkt_codec(uint8_t out[SCT_CODEC_PKT_BYTES], const sct_codec_write_t *w);
 
 // Byte-stream reassembly of what the chip sends. Bytes outside a packet (pad, noise) are skipped

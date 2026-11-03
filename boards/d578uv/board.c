@@ -6,6 +6,7 @@
 #include "d578uv.h"
 #include "pins.h"
 #include "mcu_io.h"
+#include "hal_time.h"
 #if CONFIG_DMR
 #include "modem/sct/sct_dmr.h"
 #endif
@@ -99,6 +100,7 @@ const board_t board = {
 #if CONFIG_DUAL_WATCH
 	.rx2 = &d578uv_rx2,
 #endif
+	.temp = &d578uv_temp,
 #if CONFIG_BCAST_FM
 	.bcast = &d578uv_bcast,
 #endif
@@ -143,6 +145,9 @@ void board_early_init(void)
 
 void board_init(void)
 {
+	// The rail first: the RF chips the bus init turns off and the backlight sit on it
+	mcu_pin_out(PIN_RAIL, true, false);
+	hal_delay_ms(150);
 	d578uv_bus_init();	// the backlight (on the RF bus) is set before the radio starts
 	d578uv_nand_init();
 #if CONFIG_NAND_STORAGE

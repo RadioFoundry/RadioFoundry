@@ -12,7 +12,7 @@ D578UV_DEFS ?=
 MCU_DEFS   += $(D578UV_DEFS)
 BOARD_DIRS := boards/d578uv drivers/display/st7735 drivers/flash/spi_nand drivers/input/quadrature drivers/modem/sct \
               drivers/rf/rfbus drivers/rf/subaudio drivers/rf/qa4818 drivers/gps/nmea_line drivers/gps/gps_rx \
-              platform/gd32f30x/gps_uart drivers/bcast/ktamfm drivers/bus/i2c_gpio
+              platform/gd32f30x/gps_uart drivers/bcast/ktamfm drivers/bcast/rda5807m drivers/bus/i2c_gpio
 # The core's storage on the NAND, with CONFIG_NAND_STORAGE (hardware-d578uv.md 6.3)
 BOARD_NAND_DIRS := drivers/flash/nand_sectors
 # The 160x128 panel in 16 colors (display_d578uv.c): the 4 bpp frame buffer is 10240 B and 128 rows, not the 40 KB / 160 row

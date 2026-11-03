@@ -24,12 +24,12 @@ Most checks read the diagnostics lines (`tools/rfoundry_debug.py diag`, `boards/
 | --- | --- |
 | `bb` | the baseband's boot result (`ok`, `no block`, `bus`, `no app`, `silent`, `no voice`) |
 | `keys` | the two key ladders' raw 12-bit samples (PB0, PB1), PA1, and the microphone lines PA9 and PA10 |
-| `sup` | the supply in mV (PC1) and the ignition sense's raw sample (PA6) |
+| `sup` | the supply in mV (PC1) and the PA temperature sensor's raw sample (PA6) |
 | `vol` | the A and B volume pots' raw samples (PC2, PC5) |
 | `nand` | the SPI NAND's ID |
 | `burst` | DMR transmit bursts the PA gate switched on (PD0's rising edges while keyed), and key-ups refused with PD0 already high (`ref`) |
 | `gps` | whether the module was heard (`yes`/`no`), NMEA sentences with a good / a bad checksum, bytes received (`b`) |
-| `kt` | whether the KTMicro receiver answered on its I2C bus |
+| `bc` | the AM/FM receiver on the I2C bus: `kt` (KTMicro), `rda` (RDA5807, then its 0x02, 0x0A and 0x0B as last polled) or `no` |
 | `rssi` | chip 0's raw RSSI and noise as the radio task last read them, and its signal flag (`sig`) |
 | `hmic` | the serial keypad microphone: present (`yes`/`no`), frames accepted / bytes dropped, the key code held (`k`, hex) |
 
@@ -37,7 +37,24 @@ The `gps` and `rssi` lines have the shape the generic health tests read (`tests/
 
 ## Status
 
-Not run on a radio.
+First radio: an AT-D578UV PRO, GD32 (`GD_Ver 1.21`, bootloader V100, update-mode model `D578UV`), on the bench
+2026-11-01/02, receive only.
+
+| Stage | Result |
+| --- | --- |
+| 0 | The update mode works (MENU + EXIT); its `UPDATE` answer is a bare `06`. The install writes and every frame is confirmed; the radio may restart before it confirms the finish |
+| 1 | Boots; USB enumerates once PE2 pulls D+ up and USB runs from IRC48M |
+| 2 | Picture right with MADCTL 0xC8 (upside down and red/blue swapped before); the backlight needs the PE0 rail |
+| 3 | Keys and encoder not yet checked one by one. Both volume knobs follow (knob A the core's volume, knob B side B's level); volume 0 mutes. NAND answers (`98CB`) with the clock on PB15; storage mounts once the factory's 0x55 block marks count as blank. Standby works |
+| 4 | FM receive audio; the squelch closes on an empty channel with the QA4818 noise offset. Opening on a signal not yet checked |
+| 6 | The baseband boots (2 KB boot block, answer about 2.15 s later) and reports SCT3258, baseband firmware V2.01 |
+| 5 | `kt no`: the KTMicro receiver doesn't answer. Open |
+| 8 | Calls decode (2026-11-03, a known-good radio on 461.4625 CC 1 TS 1): with shift register bit 0x04 set, the codec left to the baseband's routing, and CARRIER_READY 0 when the carrier drops, 2 when it comes up, three calls of three decoded and played (73-97 voice bursts each). With 2 sent only at receive start, the first call decodes and later ones mostly don't; with 1, none decode. Not heard from the speaker yet. Open |
+| 7, 9 | Not run (no transmitting yet) |
+| 10 | GPS sentences arrive |
+| 11 | The stub enters from RadioFoundry, writes, verifies and resets |
+
+The fan is chip 0's GPIO bit 1 (once taken for the LED); the RGB status LED's output is not found.
 
 ## 0. Before anything
 
@@ -143,6 +160,7 @@ Select a DMR channel and let the SDR bench send a call.
 | Check | Pass | If not |
 | --- | --- | --- |
 | The call heard, the talker shown | `tests/hil` DMR receive cases | the digital register set (5.1), the call option bits (modem-sct.md 4) |
+| Every call decodes, not only the first | the debug link's call counters | CARRIER_READY at each carrier edge, with the phase reversed (2) on this radio; shift register bit 0x04 |
 | Every LC header and terminator reaches the stack | the debug link's DMR counters | call option byte 3 (0x47 here, 0x44 in the stock firmware) |
 | Voice level right | | the codec levels and digital speaker gain from the calibration (4.4) |
 

@@ -12,8 +12,16 @@
 #include "pins.h"
 #include "mcu_io.h"
 #include "config.h"
+#include "hal_time.h"
+#if CONFIG_WATCHDOG
+#include "app/watchdog.h"
+#endif
+#include "FreeRTOS.h"
+#include "task.h"
 
 #define POWER_OFF_POLLS		20u	// held this many switch_on polls after a release (the core polls about every 50 ms)
+#define STANDBY_POLL_US		10000u
+#define STANDBY_WAKE_POLLS	100u	// the power key held this many polls (1 s) wakes the radio from standby
 #define SUPPLY_SAMPLES		4u
 // mV per count: 3.3 V reference, 12 bits, 11:1 divider (the stock scale, 363 / 4096 in 0.1 V)
 #define SUPPLY_MV_NUM		36300u
@@ -29,27 +37,57 @@ static void init(void)
 	mcu_pin_analog(PIN_SUPPLY_SENSE);
 	mcu_pin_analog(PIN_VOL_A);
 	mcu_pin_analog(PIN_VOL_B);
+	mcu_pin_analog(PIN_PA_TEMP);
 	mcu_adc_init();
 	key_released = false;
 	held = 0;
 }
 
+// Dropping PC3 doesn't cut a mobile's supply (seen on a radio): "off" is the stock firmware's standby instead. The
+// transmitter off, the switched rail (backlight, RF chips, audio) down, then nothing but the power key: a one second
+// hold restarts the radio. The scheduler stays held, so no task drives the unpowered chips
 static void latch(bool on)
 {
-	mcu_pin_write(PIN_POWER_LATCH, on);
+	if (on) {
+		mcu_pin_write(PIN_POWER_LATCH, true);
+		return;
+	}
+	vTaskSuspendAll();
+	board_rf_safe();
+	d578uv_outputs_off();
+	mcu_pin_write(PIN_RAIL, false);
+	bool released = false;
+	uint32_t polls = 0;
+	for (;;) {
+#if CONFIG_WATCHDOG
+		watchdog_kick(hal_millis());	// the idle task never runs here: the hang check counts from this feed
+#endif
+		hal_delay_us(STANDBY_POLL_US);
+		if (mcu_pin_read(PIN_POWER_KEY)) {
+			released = true;
+			polls = 0;
+		} else if (released && ++polls >= STANDBY_WAKE_POLLS) {
+			NVIC_SystemReset();
+		}
+	}
 }
 
-// The A channel's pot, 0..100 (the stock maps it to 33 levels over 0x96..0xF60)
-static int8_t volume(void)
+// A volume pot's reading, 0..100 (the stock maps it to 33 levels over 0x96..0xF60)
+uint8_t d578uv_pot_percent(uint32_t v)
 {
-	uint32_t v = mcu_adc_read(ADC_VOL_A);
 	if (v <= 0x96u) {
 		return 0;
 	}
 	if (v >= 0xF60u) {
 		return 100;
 	}
-	return (int8_t)((v - 0x96u) * 100u / (0xF60u - 0x96u));
+	return (uint8_t)((v - 0x96u) * 100u / (0xF60u - 0x96u));
+}
+
+// The A channel's pot: the core's volume. Side B's pot sets side B's level in the board (radio_d578uv.c)
+static int8_t volume(void)
+{
+	return (int8_t)d578uv_pot_percent(mcu_adc_read(ADC_VOL_A));
 }
 
 // The key must be let go after power-on before a hold counts, so the press that switched the radio on doesn't
@@ -66,11 +104,11 @@ static bool switch_on(void)
 	return held < POWER_OFF_POLLS;
 }
 
+// The LEDs' outputs are not known: chip 0's GPIO bit 1, once taken for one, is the fan (radio_d578uv.c)
 static void led(uint8_t which, bool on)
 {
-	if (which == LED_GREEN) {
-		d578uv_led_rx(on);
-	}
+	(void)which;
+	(void)on;
 }
 
 static uint16_t supply_mv(void)
@@ -81,6 +119,27 @@ static uint16_t supply_mv(void)
 	}
 	return (uint16_t)(sum * SUPPLY_MV_NUM / (SUPPLY_MV_DEN * SUPPLY_SAMPLES));
 }
+
+// The PA's temperature sensor in mV: four readings averaged, as the stock firmware does (3.3 V reference, 12 bits).
+// Higher is hotter; its curve to degrees is not known yet (hardware-d578uv.md 5)
+static uint16_t pa_temp_mv(void)
+{
+	uint32_t sum = 0;
+	for (uint32_t i = 0; i < 4u; i++) {
+		sum += mcu_adc_read(ADC_PA_TEMP);
+	}
+	return (uint16_t)(sum * 3300u / (4096u * 4u));
+}
+
+static const hal_temp_sensor_t temp_sensors[] = {
+	{ .kind = TEMP_KIND_PA, .read_mv = pa_temp_mv },
+};
+
+const hal_temp_t d578uv_temp = {
+	.sensors = temp_sensors,
+	.count = sizeof(temp_sensors) / sizeof(temp_sensors[0]),
+	.fan_on = d578uv_fan_on,
+};
 
 const hal_power_t d578uv_power = {
 	.init = init,

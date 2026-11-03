@@ -18,10 +18,11 @@
 #define PIN_LCD_CS		GPIOB, MCU_PIN(13)
 #define PIN_LCD_RD		GPIOE, MCU_PIN(15)
 
-// SPI NAND, bit-banged (the stock firmware drives these pins as GPIOs)
+// SPI NAND, bit-banged (the stock firmware drives these pins as GPIOs; no SPI peripheral has them as SCK, MOSI and
+// MISO). The clock is PB15 and the data out PB14 (read on a radio: the ID answered only this way round)
 #define PIN_NAND_CS		GPIOB, MCU_PIN(8)
-#define PIN_NAND_CLK		GPIOB, MCU_PIN(14)
-#define PIN_NAND_MOSI		GPIOB, MCU_PIN(15)
+#define PIN_NAND_CLK		GPIOB, MCU_PIN(15)
+#define PIN_NAND_MOSI		GPIOB, MCU_PIN(14)
 #define PIN_NAND_MISO		GPIOA, MCU_PIN(15)
 
 // The four RF chips' 3-wire bus: shared clock and data, one enable each (low = selected)
@@ -74,6 +75,12 @@
 // Power: the hold output (high = stay on) and the power key (low = pressed)
 #define PIN_POWER_LATCH		GPIOC, MCU_PIN(3)
 #define PIN_POWER_KEY		GPIOA, MCU_PIN(0)
+// The switched rail of the LCD backlight, the RF chips and the audio (high = on): the stock firmware raises it at
+// boot and waits 150 ms (hardware-d578uv.md 3)
+#define PIN_RAIL		GPIOE, MCU_PIN(0)
+
+// USB: the D+ pull-up's switch (high = seen by the host), on the GD32 builds (hardware-d578uv.md 3)
+#define PIN_USB_PULLUP		GPIOE, MCU_PIN(2)
 
 // Keys: two resistor ladders on the ADC (four keys each), one key on its own pin, the encoder. PTT is the microphone's
 // (above)
@@ -93,8 +100,9 @@
 #define ADC_VOL_A		12u
 #define PIN_VOL_B		GPIOC, MCU_PIN(5)
 #define ADC_VOL_B		15u
-#define PIN_IGNITION_SENSE	GPIOA, MCU_PIN(6)
-#define ADC_IGNITION_SENSE	6u
+// The PA's temperature sensor, higher = hotter: the stock firmware runs the fan from it (hardware-d578uv.md 5)
+#define PIN_PA_TEMP		GPIOA, MCU_PIN(6)
+#define ADC_PA_TEMP		6u
 // Demodulated receive audio, biased at mid-scale (hardware-d578uv.md 3.4): APRS receive samples it (afsk_d578uv.c)
 #define PIN_RX_AUDIO		GPIOC, MCU_PIN(0)
 #define ADC_RX_AUDIO		10u

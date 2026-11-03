@@ -21,7 +21,8 @@
 #define MODEM_TASK_STACK	256
 #define MODEM_TASK_PRIORITY	(configMAX_PRIORITIES - 2)
 #define MODEM_POLL_MS		2
-#define BOOT_TIMEOUT_MS		2000
+// The chip answers about 2.15 s after the boot block (measured at HOBIB on a radio): 2 s gave up just before it
+#define BOOT_TIMEOUT_MS		5000
 // CRC-32 (zlib) of the 2048-byte boot block every stock image holds (SHA-256 743515b9...): the slot holds it, not an
 // erased page or something else
 #define BOOT_BLOCK_CRC32	0x024F600Au
@@ -55,32 +56,44 @@ static sct_boot_result_t boot_result = SCT_BOOT_SILENT;
 static SemaphoreHandle_t lock;
 static sct_rx_t rx;
 
-// Strobes a little over 30 ns: the bus has no wait line, so the stock firmware's timing is the guide
+// The bus has no wait line, so the stock firmware's timing is the guide: a counted loop of about 0.7 us inside each
+// strobe (0x080932C2). Strobes of about 30 ns got no answer on a radio
+#define STROBE_US		1u
+#define RESET_RUN_MS		100u	// after RSTN goes high, before the boot block
+#define SUPPLY_OFF_MS		300u	// supply and lines held low before the power-up
 static inline void settle(void)
 {
-	__asm volatile("nop\n nop\n nop\n nop");
+	hal_delay_us(STROBE_US);
 }
 
+// PD8-PD15: outputs only while a write runs; between writes inputs with pull-up, as the stock firmware leaves them
 static void data_dir(bool out)
 {
-	mcu_port_high_byte_dir(HPI_DATA_PORT, out);	// PD8-PD15
+	if (out) {
+		mcu_port_high_byte_dir(HPI_DATA_PORT, true);
+	} else {
+		mcu_port_high_byte_pullup(HPI_DATA_PORT);
+	}
 }
 
+// The stock write (0x080933A0): CS low once for the whole transfer; per byte WR low, then the data, then WR high
+// (the chip latches on WR's rise, inferred). No handshake: the boot block's 2048 bytes go out back to back
 static bool hpi_write(const uint8_t *buf, uint16_t len, void *ctx)
 {
 	(void)ctx;
 	data_dir(true);
+	mcu_pin_write(PIN_HPI_CS, false);
 	for (uint16_t i = 0; i < len; i++) {
 		uint8_t v = buf[i];
 
-		mcu_port_put(HPI_DATA_PORT, (uint16_t)(v << HPI_DATA_SHIFT), (uint16_t)((uint8_t)~v << HPI_DATA_SHIFT));
-		mcu_pin_write(PIN_HPI_CS, false);
 		mcu_pin_write(PIN_HPI_WR, false);
 		settle();
+		mcu_port_put(HPI_DATA_PORT, (uint16_t)(v << HPI_DATA_SHIFT), (uint16_t)((uint8_t)~v << HPI_DATA_SHIFT));
+		settle();
 		mcu_pin_write(PIN_HPI_WR, true);
-		mcu_pin_write(PIN_HPI_CS, true);
 		settle();
 	}
+	mcu_pin_write(PIN_HPI_CS, true);
 	data_dir(false);
 	return true;
 }
@@ -111,26 +124,49 @@ static uint16_t hpi_read(uint8_t *buf, uint16_t max, void *ctx)
 	return n;
 }
 
-// The stock power-up: supply on, strobes idle high, PIO1 low (Intel bus), RSTN high 100 ms then low, 500 ms
+// The stock power-up: supply on, strobes idle high, PIO1 driven low (the Intel bus strap), RSTN high 100 ms, low
+// 500 ms (the reset), then high again: the chip runs and latches PIO1 (seen on a radio: left low, it never answered)
 static void hpi_reset(void *ctx)
 {
 	(void)ctx;
+	// Off first, as the stock firmware starts (0x08092E98): supply low and every line low, so the chip powers up from
+	// cold even after a warm reset of the MCU (the GPIO reset state floats the supply enable and may leave it on)
+	mcu_pin_out(PIN_SCT_ENABLE, false, false);
+	mcu_pin_out(PIN_HPI_CS, false, false);
+	mcu_pin_out(PIN_HPI_WR, false, false);
+	mcu_pin_out(PIN_HPI_RD, false, false);
+	mcu_pin_out(PIN_HPI_RESET, false, false);
+	mcu_pin_out(PIN_HPI_PD1, false, false);
+	mcu_pin_out(PIN_HPI_PD7, false, false);
+	mcu_pin_out(PIN_SCT_PIO1, false, false);
+	mcu_pin_out(PIN_SCT_PC7, false, false);
+	mcu_pin_out(PIN_SCT_PC6, false, false);
+	data_dir(true);
+	mcu_port_put(HPI_DATA_PORT, 0, (uint16_t)(0xFFu << HPI_DATA_SHIFT));
+	hal_delay_ms(SUPPLY_OFF_MS);
+	data_dir(false);
 	mcu_pin_out(PIN_SCT_ENABLE, true, false);
 	mcu_pin_out(PIN_HPI_CS, true, false);
 	mcu_pin_out(PIN_HPI_WR, true, false);
 	mcu_pin_out(PIN_HPI_RD, true, false);
 	mcu_pin_out(PIN_HPI_PD1, false, false);
 	mcu_pin_out(PIN_HPI_PD7, false, false);
-	mcu_pin_out(PIN_SCT_PIO1, false, false);
+	mcu_pin_out(PIN_SCT_PIO1, false, false);	// the strap: driven low through RSTN's rise selects the Intel bus
 	mcu_pin_out(PIN_SCT_PC7, false, false);
 	mcu_pin_out(PIN_SCT_PC6, true, false);
-	mcu_pin_in(PIN_HPI_HOBI, MCU_PULL_NONE);
+	mcu_pin_in(PIN_HPI_HOBI, MCU_PULL_UP);	// as the stock firmware: an undriven line reads idle, not "a word waiting"
 	data_dir(false);
 	hal_delay_ms(100);
 	mcu_pin_out(PIN_HPI_RESET, true, false);
 	hal_delay_ms(100);
 	mcu_pin_write(PIN_HPI_RESET, false);
 	hal_delay_ms(500);
+	mcu_pin_write(PIN_HPI_RESET, true);
+	// The chip has latched PIO1: released to the pull-down, as the stock firmware does after the rise (0x0809304C);
+	// a pull-down alone loses to the chip's side and the strap read Motorola (seen on a radio: no answer)
+	mcu_pin_in(PIN_SCT_PIO1, MCU_PULL_DOWN);
+	// The stock firmware sends the boot block from a task well after this; the chip's ROM gets time to start
+	hal_delay_ms(RESET_RUN_MS);
 }
 
 static uint32_t crc32(const uint8_t *p, uint32_t len)
@@ -212,13 +248,13 @@ static void cal_values(void)
 	uint8_t v[sizeof(cal_audio_default)];
 	uint32_t base = !d578uv_nand_ready() ? 0 : cal_current(CAL_A) ? CAL_A : cal_current(CAL_B) ? CAL_B : 0;
 
-	if (base == 0 || !d578uv_nand_read(base + CAL_AUDIO, v, sizeof(v)))
+	if (base == 0 || !d578uv_nand_read_any(base + CAL_AUDIO, v, sizeof(v), NULL))
 		memcpy(v, cal_audio_default, sizeof(v));
 	for (int i = 0; i < 4; i++)
 		codec_writes[i].value = v[i];
 	memcpy(spk_gain, &v[CAL_SPK], sizeof(spk_gain));
 	memcpy(mic_gain, &v[CAL_MIC], sizeof(mic_gain));
-	if (base == 0 || !d578uv_nand_read(base + CAL_OFFSET, dmr_offset, sizeof(dmr_offset)))
+	if (base == 0 || !d578uv_nand_read_any(base + CAL_OFFSET, dmr_offset, sizeof(dmr_offset), NULL))
 		memcpy(dmr_offset, cal_offset_default, sizeof(dmr_offset));
 }
 

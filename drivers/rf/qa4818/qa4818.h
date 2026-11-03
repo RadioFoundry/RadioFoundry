@@ -161,6 +161,16 @@ typedef struct {
 	uint16_t tone_flags;	// 0x60
 } qa4818_status_t;
 
+// Noise for the core's squelch (hal_radio_t status, larger = more noise): 0x65 bits 6:0 plus an offset. Without a
+// signal the raw value reads 48-50 (seen on a radio, 145.5 MHz), inside the core's levels (open below 64, loosest,
+// down to 40), so every level opened on noise. The stock firmware calls a signal lost above 43; the offset puts the
+// floor above the loosest level, as for the FD6818 (fd6818.h)
+#define QA4818_NOISE_OFFSET	25u
+static inline uint8_t qa4818_noise(uint8_t raw)
+{
+	return (uint8_t)((raw & 0x7Fu) + QA4818_NOISE_OFFSET);
+}
+
 void qa4818_status(qa4818_t *c, qa4818_status_t *st);
 // The microphone's amplitude (0x64), with the chip transmitting or receiving and its microphone ADC on
 uint16_t qa4818_voice(qa4818_t *c);
