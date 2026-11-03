@@ -272,6 +272,13 @@ void md9600_dmr_tx_allow(bool on)
 }
 #endif
 
+// RF_TX_INTER's advance before the slot (0x12 bits 5-0, about 100 us steps; hrc6000-registers.md): an SFR retunes the
+// synthesizer from receive to transmit at that interrupt, so it needs more lead than a plain transmission (0)
+void md9600_c6000_tx_lead(uint8_t steps)
+{
+	count(hrc_write(&modem, 4, 0x12, (uint8_t)(steps & 0x3Fu)));
+}
+
 // From the modem interrupts: never blocks
 static bool rf_switch(bool tx)
 {

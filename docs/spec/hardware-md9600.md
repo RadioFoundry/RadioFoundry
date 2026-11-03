@@ -950,7 +950,26 @@ synthesizer stays on the carrier. DMR receive uses the 12.5 kHz IF setting.
 DMR transmit (`CONFIG_MD9600_DMR_TX`): the HR_C6000 glue's prepare hook runs steps 1-4 without the waits (TX VCO on the
 carrier, receivers off) at the start of a transmission, and the task waits the synthesizer's 2 ms plus 1 ms. Each
 burst then, from the RF TX interrupt: the band's T5 on, 500 us, RF_APC_SW on, the APC reference up in 4 steps of
-100 us; at its end the same ramp down, RF_APC_SW off, T5 off. The receiver comes back at the end of the transmission.
+100 us; at its end the same ramp down, RF_APC_SW off, T5 off. The receiver comes back at the end of the transmission,
+except in an SFR (below).
+
+SFR (`CONFIG_SFR`; the transmission receives between its bursts, `docs/spec/sfr.md` 3 item 1, gotchas 14.6): at each
+burst's end, after the ramp down, the synthesizer goes back to the receive LO (receivers on, RX VCOs, the words, the
+front-end DAC, FM_SW off) without waits; the IF chip keeps its set-up. RF_TX_INTER moves to 1.5 ms ahead of the slot
+(HR_C6000 0x12 = 15, back to 0 when the transmission ends). There the TX retune runs, then 0.6 ms for the lock, then
+the burst's T5 and ramp. Swept on air (V1-V3, UHF 446.125 MHz, 5 W, 2026-11-03), the bench's 3-superframe call
+repeated by the MMDVM SFR:
+
+| Lead, settle | Voice repeated | Corrected bits by voice frame (1st/2nd/3rd) |
+|---|---|---|
+| 3.0 ms, 2 ms | 12-18 of 18 | 35-59 / 0-12 / 42-56 |
+| 2.0 ms, 1 ms | 18 | 71 / 0 / 36 |
+| 1.5 ms, 0.6 ms | 12-18 of 18 | 53-67 / 0-6 / 0-6 |
+
+The call goes up whole (18 voice frames and the terminator). About 15-25% of the inbound AMBE frames fail their C0
+check, and the first frame of each burst carries most of the corrected bits: the receiver's recovery after the drop at
+the slot start. Keeping the receivers' supplies on while transmitting changed nothing measurable. One run in three
+repeated two superframes of three at any setting (not explained yet).
 Measured off air (UHF, 5 W, 2026-11-03): T5 left on between bursts leaks the carrier at -13 dB, hence T5 per burst. With
 it, between bursts the carrier is below the measuring receiver's floor (26 dB down). On air at key-up: a 0.5 ms step to
 -13 dB (T5), then full power 0.4 ms later; key-down takes 0.4 ms. On-time 30.7 ms, same-slot spacing 60.0 ms, outer

@@ -425,6 +425,31 @@ md9600_rf_err_t md9600_rf_pa_burst(md9600_rf_t *rf, bool on)
 	return MD9600_RF_OK;
 }
 
+md9600_rf_err_t md9600_rf_burst_rx(md9600_rf_t *rf)
+{
+	const md9600_rf_ops_t *o = rf->ops;
+	if (rf->state != MD9600_RF_TX || !rf->rx_valid || rf->desc == NULL) {
+		return MD9600_RF_E_STATE;
+	}
+	md9600_pll_plan_t p;
+	if (!md9600_pll_plan(rf->rev, rf->rx_hz, false, &p)) {
+		return fail(rf, MD9600_RF_E_BAND);
+	}
+	md9600_rf_pa_safe(rf);
+	receivers_on(o);
+	md9600_rf_err_t e = pll_words(o, rf->desc, &p, false);
+	if (e != MD9600_RF_OK) {
+		return fail(rf, e);
+	}
+	o->dac(o->ctx, p.band == MD9600_VHF ? MD9600_DAC_APC_TUNE_V : MD9600_DAC_TUNE_U, o->rx_tune(o->ctx, rf->rx_hz));
+	set(o, MD9600_LN_AF_VHF, p.band == MD9600_VHF);
+	set(o, MD9600_LN_FM_SW, false);
+	rf->state = MD9600_RF_RX;
+	rf->lo_hz = p.lo_hz;
+	rf->band = p.band;
+	return MD9600_RF_OK;
+}
+
 void md9600_rf_tx_off(md9600_rf_t *rf)
 {
 	(void)md9600_rf_pa(rf, false);

@@ -555,8 +555,13 @@ cleared). The raw 264-bit RX RAM areas (0x30 / 0x60) only held a fill pattern in
 
 **14.5 Late entry needs A then B 60 ms later** (a lone voice A is noise).
 
-**14.6 A synthesizer retuned per burst** is the open risk (about 1.25 ms guard time); the HR_C5000 isn't ported
-(register page 0 and no CRC_MCU_Control). The HR_C7000 is (14.11).
+**14.6 A synthesizer retuned per burst** has about 1.25 ms of guard time; the HR_C5000 isn't ported
+(register page 0 and no CRC_MCU_Control). The HR_C7000 is (14.11). On an HR_C6000 board with one synthesizer for
+receive and transmit, the end of each burst (the engine's `rf(false)`) retunes to the receive LO without waiting, and
+the RF TX interrupt retunes to the carrier and waits for the lock before the PA. RF_TX_INTER's advance (0x12 bits
+5-0, 100 us steps) gives that time; it is set only while the transmission listens (`tx_listen`) and cleared after.
+Too much lead cuts the end of the inbound burst: its last voice frame takes the errors (`sfr.rx_fec_pos`). The
+board's hardware page has the values.
 
 **14.7 SFR channels never switch to repeater mode on BS sync.** RMO slot lock needs a CACH every slot and an SFR sends
 none. On an MK22 board the repeater ends its own burst at the RF RX interrupt once the PA has been on 20 ms.

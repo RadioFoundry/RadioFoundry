@@ -435,6 +435,11 @@ bool stm32_hrc_dmr_tx_active(void)
 	return active && hrc6000_dmr_is_transmitting(&eng);
 }
 
+bool stm32_hrc_dmr_tx_listening(void)
+{
+	return active && eng.tx_listen;
+}
+
 void stm32_hrc_dmr_tx_drop(void)
 {
 	if (!active) {

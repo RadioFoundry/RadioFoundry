@@ -143,6 +143,10 @@ md9600_rf_err_t md9600_rf_tx(md9600_rf_t *rf, uint32_t hz, bool wide, uint8_t po
 // interrupt or under a lock); the caller waits md9600_rf_tx_settle_us() before the first burst
 md9600_rf_err_t md9600_rf_tx_tune(md9600_rf_t *rf, uint32_t hz, uint8_t power, bool settle);
 uint32_t md9600_rf_tx_settle_us(const md9600_rf_t *rf);
+// SFR (a DMR transmission that receives between its bursts): from the modem interrupts after a burst's PA is off, the
+// synthesizer back on the receive LO and the receivers on, without the waits; the IF chip keeps its set-up. The next
+// burst retunes with md9600_rf_tx_tune(settle false) and waits for the lock before its PA
+md9600_rf_err_t md9600_rf_burst_rx(md9600_rf_t *rf);
 // One DMR burst's PA: on, the band's transmitter supply, MD9600_BURST_T5_US, the loop closed and a short APC ramp
 // (MD9600_BURST_RAMP_*); off, the ramp down, the loop open and the supply off. Busy waits only: callable from the
 // modem interrupts

@@ -209,6 +209,17 @@ static volatile bool dmr_tuned;
 static uint32_t dmr_hz;
 static uint8_t dmr_power;
 static uint32_t dmr_skipped, dmr_unarmed;
+#if CONFIG_SFR
+// An SFR receives between its bursts (docs/spec/sfr.md 3 item 1): one synthesizer, so each burst's end retunes to
+// the receive LO, and the next RF TX interrupt, moved this far ahead of the slot, retunes to the carrier and waits for
+// the lock before the PA (gotchas 14.6)
+// Swept on air (V1-V3, UHF, 2026-11-03): 3.0 ms lead and the 2 ms settle cut the end of the inbound burst (its third
+// voice frame took most of the corrected bits); 1.5 ms with 0.6 ms repeats every burst and leaves the third frame clean
+#define SFR_TX_LEAD	15u	// RF_TX_INTER 1.5 ms ahead of the slot: the retune, the lock, T5 (0.5 ms) and the ramp
+#define SFR_SETTLE_US	600u	// the synthesizer's lock from the receive LO to the carrier (no lock detect, 5.3)
+static bool dmr_lead;		// the lead is set for this transmission
+static uint32_t dmr_rx_bursts;	// receive set-ups between bursts
+#endif
 
 void md9600_rf_dmr_prepare(void)
 {
@@ -233,6 +244,18 @@ bool md9600_rf_dmr_key(bool tx)
 {
 	if (!tx) {
 		(void)md9600_rf_pa_burst(&rf, false);
+#if CONFIG_SFR
+		if (dmr_tuned && stm32_hrc_dmr_tx_listening()) {
+			if (!dmr_lead) {
+				md9600_c6000_tx_lead(SFR_TX_LEAD);
+				dmr_lead = true;
+			}
+			if (md9600_rf_burst_rx(&rf) == MD9600_RF_OK) {
+				dmr_tuned = false;
+				dmr_rx_bursts++;
+			}
+		}
+#endif
 		return true;
 	}
 	if (!dmr_armed) {
@@ -244,6 +267,11 @@ bool md9600_rf_dmr_key(bool tx)
 		if (!dmr_tuned) {
 			return false;
 		}
+#if CONFIG_SFR
+		if (dmr_lead) {
+			hal_delay_us(SFR_SETTLE_US);	// back from receive: the lock, inside the lead
+		}
+#endif
 	}
 	if (md9600_rf_pa_burst(&rf, true) != MD9600_RF_OK) {
 		dmr_skipped++;
@@ -256,7 +284,11 @@ void md9600_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx)
 {
 	*skipped = dmr_skipped;
 	*unarmed = dmr_unarmed;
+#if CONFIG_SFR
+	*rx = dmr_rx_bursts;
+#else
 	*rx = 0;
+#endif
 }
 
 static void dmr_disarm(void)
@@ -267,6 +299,12 @@ static void dmr_disarm(void)
 	}
 	(void)md9600_rf_pa_burst(&rf, false);
 	dmr_tuned = false;
+#if CONFIG_SFR
+	if (dmr_lead) {
+		md9600_c6000_tx_lead(0);
+		dmr_lead = false;
+	}
+#endif
 }
 #endif
 
