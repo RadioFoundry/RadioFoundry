@@ -407,6 +407,17 @@ static const flow_t flows[] = {
 	{ "20 timeslot", "", "quick 2 back", "ts=2 screen=home", 3, false },
 	{ "20 color code 7", "", "quick 3 7 ok", "cc=7", 4, false },
 	{ "20 save to channel", "quick 2", "long:ok", "writes=1", 1, true },
+	// Another firmware's codeplug: the first write asks first, Cancel the default (codeplug-native.md 2)
+	{ "20 save over another firmware's codeplug asks", "foreign quick 2", "long:ok",
+	  "screen=codeplug-foreign shows=Start_new writes=0", 1, false },
+	{ "20 foreign codeplug: Cancel saves nothing", "foreign quick 2 long:ok", "ok", "writes=0 toast=Not_saved", 1, false },
+	{ "20 foreign codeplug: Back cancels", "foreign quick 2 long:ok", "back", "writes=0 toast=Not_saved", 1, false },
+	{ "20 foreign codeplug: Start new saves", "foreign quick 2 long:ok", "down ok", "writes=1 toast=New_codeplug", 2,
+	  true },
+	{ "20 foreign codeplug: Use anyway keeps it", "foreign quick 2 long:ok", "down down ok",
+	  "writes=0 toast=Old_codeplug_kept", 3, false },
+	{ "20 foreign codeplug: after Use anyway a save writes", "foreign quick 2 long:ok down down ok", "long:ok",
+	  "writes=1", 1, true },
 	{ "20 VFO Quick save explains itself", "ok 4 up ok", "quick 1 long:ok",
 	  "vfo=1 toast=VFO_settings_save_automatically writes=0", 3, false },
 	// Settings the radio core acts on reach it (ui_svc_apply), key presses ask for a key beep
@@ -794,6 +805,22 @@ static const flow_t flows_k[] = {
 	{ "K a key set to the previous zone", "", "zone-", "zone=2", 1, false },
 	{ "K a key set to scan, from a menu", "ok 7", "scankey", "scanning=1", 1, false },
 	{ "K talk target on a long press", "", "long:tt", "screen=picker", 1, false },
+	// The picker's last row, Select contact..., opens Contacts: every contact, PTT, OK and hold OK as in the picker
+	{ "C Select contact in the picker", "", "tt up", "screen=picker focus=Select_contact", 2, false },
+	{ "C Select contact opens Contacts", "tt up", "ok", "screen=contacts", 1, false },
+	{ "C a contact picked from there", "tt up ok", "9 6 7 5 3 ok", "screen=home talk=91 toast=Talking_to", 6, false },
+	// An untyped list goes past the filter's 128 kept rows to its end (693 contacts, with gaps), and back up
+	{ "C a long list reaches its end", "contacts:full ok 1", "up", "screen=contacts focus=Long_1024", 1, false },
+	{ "C a long list steps back past a gap", "contacts:full ok 1 up", "up", "focus=Long_1022", 1, false },
+	{ "C a long list wraps through its top", "contacts:full ok 1 up", "down up", "focus=Long_1024", 2, false },
+	// Past the 127 rows the filter keeps, one slot is a cursor stepped over the raw rows: back into the kept rows and
+	// out again, and a codeplug write (the list rebuilt) under a focus past them
+#define UP40	"up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up"
+#define DOWN40	"down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down"
+	{ "C a long list steps back into the kept rows", "contacts:220 ok 1 up", UP40, "focus=Long_160", 40, false },
+	{ "C and out of them to its end", "contacts:220 ok 1 up " UP40, DOWN40, "focus=Long_220", 40, false },
+	{ "C a long list rebuilt past the kept rows", "contacts:full ok 1 up", "cpwrite wait:1000",
+	  "screen=contacts focus=Long_1024", 0, false },
 	{ "K monitor key on DMR: digital monitor", "", "mon", "hearall=1 toast=Digital_monitor_on", 1, false },
 	{ "K monitor key on DMR, again: off", "mon", "mon", "hearall=0 toast=Digital_monitor_off", 1, false },
 	{ "K a key set to key lock", "", "lockkey", "locked=1", 1, false },

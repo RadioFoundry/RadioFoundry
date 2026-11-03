@@ -70,6 +70,7 @@ Press **Talk target** on a DMR channel (or **\***, **8**). The picker lists, in 
 | The talkgroups of the channel's listen list | listen |
 | Talkgroups from Recent | recent |
 | Type a number... | |
+| Select contact... | |
 
 The focus starts on the reply row when there is one.
 
@@ -81,6 +82,10 @@ The focus starts on the reply row when there is one.
 | **#** | Opens its actions |
 
 "Type a number..." opens Find. Type the talkgroup or ID, focus the line you want and press **PTT** or **OK**.
+
+"Select contact..." opens [Contacts](#contacts), every contact and talkgroup in the codeplug. Turn the knob, or press
+**Up** and **Down**, to go through them, or type letters of the name or digits of the ID to find one. The keys are the
+picker's. **Up** from the top goes to the last contact.
 
 <img src="../ux/screens/160x120i5/talk_target_picker.png" width="200" alt="The talk target picker">
 
@@ -139,7 +144,9 @@ it permanent. **#** opens its actions.
 
 ## Contacts
 
-**OK**, **1** lists the codeplug's contacts and talkgroups. Type letters of the name, or digits of the ID, to filter.
+**OK**, **1** lists the codeplug's contacts and talkgroups, all of them. Type letters of the name, or digits of the ID,
+to filter. Contacts are for the talkgroups and people you call; the [ID database](04-programming.md#dmr-id-database-and-contacts-from-radioidnet)
+names everyone else.
 **OK** talks to the focused entry for now. Holding **OK** makes it the channel's default. **PTT** talks to it once.
 **#** opens its actions.
 
