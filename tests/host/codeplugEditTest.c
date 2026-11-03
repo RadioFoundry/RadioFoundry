@@ -45,7 +45,8 @@ static bool same_channel(const channel_t *a, const channel_t *b)
 	       a->bw == b->bw && a->rx_tone.type == b->rx_tone.type && a->rx_tone.value == b->rx_tone.value &&
 	       a->tx_tone.type == b->tx_tone.type && a->tx_tone.value == b->tx_tone.value && a->power == b->power &&
 	       a->rx_only == b->rx_only && a->color_code == b->color_code && a->timeslot == b->timeslot &&
-	       a->contact == b->contact && a->listen_list == b->listen_list && a->dmr_id == b->dmr_id && a->dmo == b->dmo;
+	       a->contact == b->contact && a->listen_list == b->listen_list && a->dmr_id == b->dmr_id && a->dmo == b->dmo &&
+	       a->vox == b->vox && a->scan_skip == b->scan_skip && a->no_beep == b->no_beep && a->no_eco == b->no_eco;
 }
 
 static channel_t make(const char *name, uint32_t rx, uint32_t tx)
@@ -86,6 +87,10 @@ static void test_encode(void)
 	v[3].dmr_id = 3101276;
 	v[3].dmo = true;
 	v[3].rx_only = true;
+	v[3].no_beep = true;	// the channel editor's flags (#321: the encoder kept the bits as read)
+	v[3].no_eco = true;
+	v[3].vox = true;
+	v[3].scan_skip = true;
 	v[4] = make("", 136000000, 174000000);
 	v[5] = make("Lo", 400012500, 479987500);
 	for (unsigned i = 0; i < 6; i++) {
@@ -125,6 +130,13 @@ static void test_encode(void)
 	codeplug_openfw_encode(&d, r);
 	CHECK(r[0x31] == ((old[0x31] & ~0x40) | 0x00) && (r[0x33] & 0x02) && (r[0x33] & 0x60) == 0x60 && r[0x26] == old[0x26]);
 	CHECK(r[0x1B] == 0x08 && r[0x25] == 0x0B && r[0x2A] == 0x85 && r[0x37] == 12 && r[0x36] == 0x50);
+	// The editor's flags reach the record: VOX and zone scan skip (0x33 bits 6, 5), no beep (0x26 bit 6), no eco
+	// (bit 5). The SFR bit (0x26 bit 1) is still kept
+	d.vox = d.scan_skip = d.no_beep = false;
+	d.no_eco = true;
+	codeplug_openfw_encode(&d, r);
+	CHECK((r[0x33] & 0x60) == 0 && (r[0x26] & 0x62) == 0x22);
+	CHECK(codeplug_openfw_decode(r, &d) && !d.vox && !d.scan_skip && !d.no_beep && d.no_eco);
 }
 
 static void test_materialize(void)

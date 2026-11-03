@@ -673,14 +673,16 @@ void codeplug_openfw_encode(const channel_t *ch, uint8_t *r)
 	r[CH_POWER] = ch->power == CODEPLUG_POWER_DEFAULT ? 0 : power_to_byte(ch->power);
 	put16(&r[CH_RX_TONE], tone_word(&ch->rx_tone));
 	put16(&r[CH_TX_TONE], tone_word(&ch->tx_tone));
-	r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~(FLAG4_RX_ONLY | FLAG4_25K)) | (ch->rx_only ? FLAG4_RX_ONLY : 0) |
-				(ch->bw == RADIO_BW_25K ? FLAG4_25K : 0));
+	r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~(FLAG4_VOX | FLAG4_ZONE_SKIP | FLAG4_RX_ONLY | FLAG4_25K)) |
+				(ch->vox ? FLAG4_VOX : 0) | (ch->scan_skip ? FLAG4_ZONE_SKIP : 0) |
+				(ch->rx_only ? FLAG4_RX_ONLY : 0) | (ch->bw == RADIO_BW_25K ? FLAG4_25K : 0));
 	r[CH_FLAG2] = (uint8_t)((r[CH_FLAG2] & ~FLAG2_TS2) | (ch->timeslot == 2 ? FLAG2_TS2 : 0));
 	r[CH_CC] = ch->color_code & 0x0Fu;
 	put16(&r[CH_CONTACT], ch->contact);
 	r[CH_RX_GROUP] = (uint8_t)(ch->listen_list <= 0xFFu ? ch->listen_list : 0);
-	r[CH_LFLAG1] = (uint8_t)((r[CH_LFLAG1] & ~(LFLAG1_ID | LFLAG1_DMO)) | (ch->dmr_id != 0 ? LFLAG1_ID : 0) |
-				 (ch->dmo ? LFLAG1_DMO : 0));
+	r[CH_LFLAG1] = (uint8_t)((r[CH_LFLAG1] & ~(LFLAG1_ID | LFLAG1_NO_BEEP | LFLAG1_NO_ECO | LFLAG1_DMO)) |
+				 (ch->dmr_id != 0 ? LFLAG1_ID : 0) | (ch->no_beep ? LFLAG1_NO_BEEP : 0) |
+				 (ch->no_eco ? LFLAG1_NO_ECO : 0) | (ch->dmo ? LFLAG1_DMO : 0));
 	uint32_t tot = (ch->tot_s + 14u) / 15u;
 	r[CH_TOT] = (uint8_t)(tot > 255u ? 255u : tot);
 	// The text bit of each timeslot's talker alias field; the APRS bit is kept
