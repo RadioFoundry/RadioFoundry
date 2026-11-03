@@ -463,20 +463,22 @@ static void contacts_item(uint16_t i, ui_item_t *it)
 #define CONTACTS_NEW	(CONFIG_CONTACT_EDIT ? 1u : 0u)
 
 static bool contacts_is_new(uint16_t i) { return CONFIG_CONTACT_EDIT && i < ui_filter_count() && ui_filter_raw(i) == 0; }
-static uint16_t contacts_list_raw_count(void) { return (uint16_t)(CODEPLUG_CONTACTS_MAX + CONTACTS_NEW); }
+static uint16_t contacts_list_raw_count(void) { return (uint16_t)(contacts_raw_count() + CONTACTS_NEW); }
 
 static bool contacts_list_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
-	if (raw < CONTACTS_NEW) {
+#if CONFIG_CONTACT_EDIT
+	if (raw == 0) {
 		str_copy(buf, len, TR("New contact"));
 		return true;
 	}
+#endif
 	return contacts_raw_label((uint16_t)(raw - CONTACTS_NEW), buf, len);
 }
 
 static bool contacts_list_target(uint16_t i, ui_target_t *t)
 {
-	if (i >= ui_filter_count() || ui_filter_raw(i) < CONTACTS_NEW)
+	if (i >= ui_filter_count() || contacts_is_new(i))
 		return false;
 	return contact_target_raw((uint16_t)(ui_filter_raw(i) - CONTACTS_NEW), t);
 }
