@@ -88,11 +88,12 @@ From the public datasheet (RDA Microelectronics, rev 1.1; register summary check
 | Bus | I2C, random access at 0x11: write reg, hi, lo; read reg, repeated START, hi, lo. Chip ID 0x58 in 0x00 bits 15:8 |
 | 0x02 | DHIZ b15, DMUTE b14 (1 = audio), MONO, BASS, RCLK non-calibrate b11, RCLK direct b10, SEEKUP b9, SEEK b8, SKMODE b7 (0 = wrap), CLK_MODE b6:4, RDS_EN b3, NEW_METHOD b2, SOFT_RESET b1, ENABLE b0 |
 | 0x03 | CHAN b15:6, TUNE b4, BAND b3:2 (2 = 76-108, 3 = 65-76 with 0x07 b9), SPACE b1:0 (2 = 50 kHz) |
-| 0x04 / 0x05 / 0x07 | de-emphasis 50 us b11 / INT_MODE, SEEKTH b11:8, LNA port b7:6, VOLUME b3:0 / soft blend threshold, 65M mode b9, soft blend b1 |
+| 0x04 / 0x05 / 0x07 | de-emphasis 50 us b11, GPIO3 b5:4, GPIO2 b3:2, GPIO1 b1:0 (00 high impedance, 10 low, 11 high) / INT_MODE, SEEKTH b11:8, LNA port b7:6, VOLUME b3:0 / soft blend threshold, 65M mode b9, soft blend b1 |
 | 0x0A / 0x0B | STC b14, SF b13, ST b10, READCHAN b9:0 / RSSI b15:9, FM_TRUE b8, FM_READY b7 |
 
 The driver tunes 65-76 and 76-108 MHz on a 50 kHz grid, keeps shadows so TUNE and SEEK are never written twice, and
-follows the chip's STC. The board supplies the bus; `drivers/bus/i2c_gpio` is a bit-banged master (open-drain SDA,
+follows the chip's STC. A board that switches something with the chip's GPIO pins sets `gpio_on` and `gpio_off`
+(0x04 bits 5:0 while on and after power-down; 0 leaves them high impedance). The board supplies the bus; `drivers/bus/i2c_gpio` is a bit-banged master (open-drain SDA,
 push-pull SCL, no clock stretching).
 
 ### 4.3 Behavior

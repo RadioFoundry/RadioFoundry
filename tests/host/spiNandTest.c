@@ -326,6 +326,14 @@ static void test_ecc(void)
 	chip.ecc[8] = SPI_NAND_ECC_FAILED;
 	uint8_t span[PAGE + 4];
 	CHECK(!spi_nand_read(&n, 7 * PAGE + 4, span, sizeof(span)));
+	// spi_nand_read_any passes it on as read and counts it; a clean page counts nothing
+	uint32_t failed = 0;
+	CHECK(spi_nand_read_any(&n, 7 * PAGE + 4, span, sizeof(span), &failed) && failed == 1);
+	CHECK(span[PAGE - 4] == chip.array[8][0] && span[PAGE + 3] == chip.array[8][7]);
+	failed = 0;
+	CHECK(spi_nand_read_any(&n, 5 * PAGE, buf, 4, &failed) && failed == 0 && buf[0] == chip.array[5][0]);
+	CHECK(spi_nand_read_any(&n, 8 * PAGE, buf, 4, NULL) && buf[0] == chip.array[8][0]);
+	chip.ecc[8] = SPI_NAND_ECC_OK;
 }
 
 // GigaDevice parts: the read from cache's 3-byte address and the 3-bit ECC field (0 clean, 7 uncorrectable)

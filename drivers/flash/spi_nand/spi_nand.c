@@ -197,7 +197,7 @@ bool spi_nand_read_uid(spi_nand_t *nand, uint8_t id[SPI_NAND_UID_LEN])
 	return found && restored;
 }
 
-bool spi_nand_read(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len)
+static bool read_range(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len, uint32_t *ecc_failed)
 {
 	uint8_t *p = buf;
 	if (nand->page_size == 0 || addr > spi_nand_size(nand) || len > spi_nand_size(nand) - addr) {
@@ -210,14 +210,34 @@ bool spi_nand_read(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len)
 		if (n > len) {
 			n = len;
 		}
-		if (!spi_nand_read_page(nand, page, column, p, n)) {
-			return false;
+		if (ecc_failed == NULL) {
+			if (!spi_nand_read_page(nand, page, column, p, n)) {
+				return false;
+			}
+		} else {
+			if (!load(nand, page, true) || !read_cache(nand, column, p, n)) {
+				return false;
+			}
+			if (nand->ecc == SPI_NAND_ECC_FAILED) {
+				(*ecc_failed)++;
+			}
 		}
 		addr += n;
 		p += n;
 		len -= n;
 	}
 	return true;
+}
+
+bool spi_nand_read(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len)
+{
+	return read_range(nand, addr, buf, len, NULL);
+}
+
+bool spi_nand_read_any(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len, uint32_t *ecc_failed)
+{
+	uint32_t none = 0;
+	return read_range(nand, addr, buf, len, ecc_failed != NULL ? ecc_failed : &none);
 }
 
 bool spi_nand_block_bad(spi_nand_t *nand, uint32_t block, bool *bad)
