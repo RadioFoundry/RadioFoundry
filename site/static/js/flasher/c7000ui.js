@@ -1160,11 +1160,84 @@ export function doneView() {
 			c.backupSaved ? h("p", { class: "small muted" }, t(c.rfoundry ? "flash.c7.done.backup_kept_rfoundry" : "flash.c7.done.backup_kept")) : null,
 			// not asked of the radio: any STUB command parks RadioFoundry's codec until the next restart (platform stub_region, core/stubentry)
 			h("p", { class: "small muted" }, t(hasStubEntry() ? "flash.c7.done.next_time" : "flash.c7.done.next_time_power")));
+		if (good) await bringChannels(c, status, left);
+		if (left()) return;
 		S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
 		await dropC7();
 	};
 	check();
 	return box;
+}
+
+// After an install over the stock firmware, its channels (migrate.js convertPagedStock, writeConverted): the stock
+// codeplug from the area this visit's check step read, else read from the radio now (RadioFoundry never writes there),
+// converted and written through the codeplug interface. A radio whose codeplug has channels already is asked first.
+// A failure leaves RadioFoundry running as it was, and the stock codeplug where it is
+async function bringChannels(c, status, left) {
+	const lay = calLayout();
+	if (S().task !== "install" || c.rfoundry || !lay?.area || !S().radio.codeplug || !c.stream) return;
+	const box = h("div");
+	status.append(box);
+	const prog = progressBar();
+	let m, tr, conv;
+	const from = c.calArea ? "backup" : "radio";
+	try {
+		m = await import("./migrate.js");
+		const { CpsSerial } = await import("../codeplug/transport.js");
+		tr = new CpsSerial(c.stream, { cable: true });
+		let stock = c.calArea;
+		if (!stock) {
+			box.append(prog.el);
+			const r = await tr.link.cpsDump(1, 0, lay.area, { chunk: tr.chunk, progress: (d, n) => prog.set(d, n, t("flash.channels.reading")) });
+			if (!r.complete) throw new Error(`stock area read stopped at ${r.data.length}`);
+			stock = r.data;
+		}
+		conv = m.convertPagedStock(stock);
+	} catch (e) {
+		diag.error("flash/c7 channels read", e);
+		prog.el.remove();
+		box.append(notice(t("flash.channels.read_failed"), "bad"), reportLine());
+		return;
+	}
+	prog.el.remove();
+	diag.note("channels", { from, ...(conv ? conv.counts : { layout: null }) });
+	if (!conv || left()) return;
+	if (!conv.counts.channels) {
+		box.append(notice(t("flash.channels.none"), "info"));
+		return;
+	}
+	const counts = (x) => t("flash.channels.counts", x);
+	const notes = conv.notes.length ? h("ul", { class: "small" }, conv.notes.map((x) => h("li", {}, t(`editor.qdmr.note.${x.code}`, { n: x.n })))) : null;
+	// the user decides when the radio's own codeplug would be replaced
+	const ask = (now) => new Promise((done) => {
+		box.append(h("p", {}, t("flash.c7.channels.replace", { have: counts(now), want: counts(conv.counts) })));
+		S().forward([button(t("flash.c7.channels.keep"), () => done(false), { quiet: true }),
+			button(t("flash.c7.channels.go"), () => done(true), { primary: true })]);
+	});
+	try {
+		box.append(prog.el);
+		const r = await m.writeConverted(tr, Object.values(S().data.radios), conv, {
+			ask: async (now) => {
+				prog.el.remove();
+				const yes = await ask(now);
+				S().forward(null);
+				if (yes) box.append(prog.el);
+				return yes;
+			},
+			progress: (what, d, n) => prog.set(d, n, t(`flash.channels.${what}`)) });
+		prog.el.remove();
+		diag.note("channels written", { written: r.written, ok: r.ok, have: r.have });
+		if (!r.written) return;
+		if (!r.ok) {
+			S().reportResult = "problem";
+			box.append(notice(t("flash.c7.channels.check_failed", { want: counts(conv.counts), have: r.have ? counts(r.have) : "?" }), "bad"), reportLine());
+		} else box.append(notice(t("flash.channels.done", { counts: counts(conv.counts) }), "ok"), notes);
+	} catch (e) {
+		diag.error("flash/c7 channels write", e);
+		prog.el.remove();
+		S().reportResult = "problem";
+		box.append(notice(t("flash.c7.channels.failed"), "bad"), reportLine());
+	}
 }
 
 // Whether the installed build hands over to the loader by itself (CONFIG_STUB_ENTRY), from its manifest or selection

@@ -8,12 +8,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { classify } from "../static/js/codeplug/detect.js";
 import { DM32_STOCK, pageMap, detectStock, readStock, importStock, dm32Tone } from "../static/js/codeplug/stock_baofeng.js";
-import { empty, decode } from "../static/js/codeplug/model.js";
+import { empty, decode, encode, newChannel } from "../static/js/codeplug/model.js";
 import { CodeplugImage } from "../static/js/codeplug/image.js";
 import { putFreq } from "../static/js/codeplug/fields.js";
 import { openFile } from "../static/js/editor/files.js";
 import { makeBundle } from "../static/js/flasher/backup.js";
 import { detect, convertersFor } from "../static/js/flasher/codeplug.js";
+import { convertPagedStock, writeConverted } from "../static/js/flasher/migrate.js";
+import { FakeCpsRadio } from "../static/js/codeplug/fakecps.js";
+import { CpsSerial } from "../static/js/codeplug/transport.js";
 
 const AREA = 0xC9000;
 const put16 = (b, o, v) => {
@@ -252,4 +255,53 @@ test("Tools page: a data flash read converts to a RadioFoundry codeplug image an
 	const fromBackup = await convertersFor("rfoundry-backup")[0].convert(zipped);
 	assert.equal(fromBackup.name, "codeplug-dm32.bin");
 	assert.equal(classify(fromBackup.data).layout, "openfw");
+});
+
+// --- After an install (migrate.js) ---
+
+const RADIOS = [{ id: "dm32", codeplug: { base: 0x700000, end: 0xF00000, names: ["DM-32UV", "dm32"] } }];
+
+test("convertPagedStock: the converted codeplug and its counts; null for a read without one", () => {
+	const conv = convertPagedStock(sample().read());
+	assert.deepEqual(conv.counts, { channels: 4, contacts: 4, rxLists: 1, zones: 2 });
+	assert.equal(classify(conv.image.bytes).layout, "openfw");
+	assert.equal(convertPagedStock(new Uint8Array(AREA).fill(0xFF)), null);
+	assert.equal(convertPagedStock(null), null);
+});
+
+test("writeConverted: a blank radio gets the channels at its base; the stock area stays as it was", async () => {
+	const stock = sample().read();
+	const radio = new FakeCpsRadio({ board: "DM-32UV", base: 0x700000, end: 0xF00000, cable: true });
+	radio.spi.set(stock, 0);
+	const conv = convertPagedStock(stock);
+	const steps = new Set();
+	let asked = 0;
+	const r = await writeConverted(new CpsSerial(radio.stream(), { cable: true }), RADIOS, conv,
+		{ ask: async () => (asked++, true), progress: (what) => steps.add(what) });
+	assert.deepEqual([r.written, r.ok, asked], [true, true, 0]);
+	assert.deepEqual(r.have, conv.counts);
+	assert.deepEqual([...steps].sort(), ["checking", "reading", "writing"]);
+	assert.ok(radio.writes.every(([a]) => a >= 0x700000), "every write at the base");
+	assert.deepEqual(radio.spi.subarray(0, AREA), stock, "stock area untouched");
+	assert.equal(radio.reloads, 1);
+});
+
+test("writeConverted: a codeplug with channels on the radio is replaced only when the user says so; a foreign settings area is claimed", async () => {
+	const m = empty();
+	m.channels.push(newChannel({ number: 1, name: "Mine" }));
+	const mine = encode(m);
+	const conv = convertPagedStock(sample().read());
+	const radio = new FakeCpsRadio({ board: "DM-32UV", base: 0x700000, end: 0xF00000, image: mine.bytes, cable: true });
+	let seen = null;
+	const no = await writeConverted(new CpsSerial(radio.stream(), { cable: true }), RADIOS, conv, { ask: async (now) => ((seen = now), false) });
+	assert.equal(no.written, false);
+	assert.equal(seen.channels, 1);
+	assert.equal(radio.writes.length, 0, "nothing written");
+
+	const foreign = new FakeCpsRadio({ board: "DM-32UV", base: 0x700000, end: 0xF00000, image: mine.bytes, cable: true, foreign: true });
+	const yes = await writeConverted(new CpsSerial(foreign.stream(), { cable: true }), RADIOS, conv, { ask: async () => true });
+	assert.deepEqual([yes.written, yes.ok], [true, true]);
+	assert.equal(foreign.foreign, false, "the settings area was claimed");
+	assert.deepEqual(decode(CodeplugImage.from(foreign.spi.slice(0x700000, 0x700000 + 0x120000))).channels.map((c) => c.name),
+		["Repeater", "DMR TS2", "DMR TS1", "GMRS"]);
 });

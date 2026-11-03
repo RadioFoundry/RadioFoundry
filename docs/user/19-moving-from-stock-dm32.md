@@ -71,7 +71,7 @@ python3 dm32_migrate.py restore --workdir ~/RadioFoundry-DM32-migration/20261011
 or a `.yaml`. `dm32_migrate.py import --from FILE` only converts and checks, with no radio needed. Files from Baofeng's
 own CPS aren't supported here. Read the radio with qdmr and save the codeplug from there.
 
-Without qdmr, the [Codeplug Editor](04-programming.md#the-codeplug-editor) and the Tools page convert the stock codeplug straight from a
+The web installer brings these over by itself at the end of an install from the stock firmware. Without qdmr, the [Codeplug Editor](04-programming.md#the-codeplug-editor) and the Tools page convert the stock codeplug straight from a
 data flash read: the web installer's backup `.zip` taken on the stock firmware, or the `data-memory.bin` or
 `original-channels.bin` in it. They bring over channels with their TX contact, contacts, RX group lists, zones, your
 DMR ID and the boot text. Power, bandwidth, tones, time slot and color code come with each channel. Squelch, TX

@@ -133,6 +133,10 @@ with the same note codes.
 
 Channels past the first block are not read; their number is reported as `too_many_channels`.
 
+The web installer runs the conversion as its last step (`c7000ui.js` `bringChannels`, [web-flasher.md](../dev/web-flasher.md)):
+from the stock area its check step read, or read through RadioFoundry's CPS at physical addresses, then written at
+0x700000 by the Codeplug Editor's transport. The stock pages are never written, so the original stays on the radio.
+
 ## 5. Open points
 
 - Channels past 84, contacts past 170 and zones past 28: the blocks that hold them (0x13 and up, 0x45 and up,
