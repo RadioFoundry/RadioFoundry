@@ -484,10 +484,14 @@ static void chip1_gpio(uint16_t mask, uint16_t val)
 	bus_unlock(s);
 }
 
-// The speaker's sources: PA7 open while either side plays, each side's level the volume while it plays (side A also
-// while neither does, as before side B), and the shift register's RF audio bit set for an FM side. The main receiver's
-// calls win: the core gives side B the speaker only while side A is quiet. In AM, and while broadcast FM plays, both
-// channels take the volume (which one carries the KTMicro receiver isn't traced)
+// The speaker's sources. Chip 1's GPIO bit 1 is the gate on side A's RF chip audio: FM while the squelch is open, a
+// beep, the KTMicro receiver. The level device follows each side's knob and isn't the mute (its lowest code still
+// passes audio, and a jump from it clicks: both measured on a radio), so side A's channel stays at the volume unless
+// side B plays with side A shut. PA7 keeps the amplifier on while a knob is up and the radio receives: switching it
+// thumps, and with the gate shut the speaker is as quiet as with it off (measured by microphone). The shift
+// register's RF audio bit is set for an FM side. The main receiver's calls win: the core gives side B the speaker
+// only while side A is quiet. In AM, and while broadcast FM plays, both channels take the volume (which one carries
+// the KTMicro receiver isn't traced)
 static void audio_route(void)
 {
 	bool b = b_heard();
@@ -495,26 +499,22 @@ static void audio_route(void)
 	// Each side's knob sets its level, as the stock firmware does (knob A the core's volume, knob B read in side B's
 	// poll); the KTMicro receiver takes knob A's on both channels
 	int16_t code_b = kt_out || level_code_b < 0 ? level_code_vol : level_code_b;
-	// Channel 0 carries side A's RF chip audio, which in DMR is the demodulator's 4FSK: clearing SR_RF_AUDIO doesn't
-	// keep it off the speaker (heard on a radio, under the call's voice), so in DMR it opens only for a beep or the
-	// KTMicro receiver. The baseband's voice reaches the speaker without it
-	bool a_rf = beeping || kt_out || (mode != RADIO_MODE_DMR && (main_audio || !b));
+	// In DMR side A's RF chip audio is the demodulator's 4FSK, which the gate keeps off the speaker but for a beep or
+	// the KTMicro receiver; the baseband's voice reaches the speaker without it
+	bool a_rf = beeping || kt_out || (mode != RADIO_MODE_DMR && main_audio);
 	if (level_code_vol >= 0) {
-		level_set(0, a_rf ? (uint8_t)level_code_vol : 0);
+		level_set(0, a_rf || !b ? (uint8_t)level_code_vol : 0);
 		level_set(1, (b || kt_out) && code_b >= 0 ? (uint8_t)code_b : 0);
 	}
-	// Chip 1's GPIO bit 1 is a second gate on the same path, after the level device (seen on a radio: with channel 0 at
-	// 0 the 4FSK still reached the speaker until it cleared)
 	if (chips_ready && !transmitting) {
 		chip1_gpio(GPIO_B_A_AUDIO, a_rf || b ? GPIO_B_A_AUDIO : 0);
 	}
-	bool rf = mode == RADIO_MODE_FM || b || kt_out || beeping;
+	bool rf = mode == RADIO_MODE_FM || b || kt_out;
 	if (!transmitting) {
 		sr_set(rf ? SR_RF_AUDIO : 0, rf ? 0 : SR_RF_AUDIO);
 	}
-	// The level device's lowest code still passes audio (seen on a radio): PA7 opens only for a source whose knob is up
 	bool b_loud = b && (level_code_b < 0 ? !vol_zero : !vol_b_zero);
-	mcu_pin_write(PIN_SPK_MUTE, !(((main_audio || kt_out || beeping) && !vol_zero) || b_loud));
+	mcu_pin_write(PIN_SPK_MUTE, transmitting || (vol_zero && !b_loud));
 }
 
 static void volume(uint8_t percent)
@@ -1586,6 +1586,7 @@ static bool dmr_tx(uint32_t hz, uint8_t dac)
 		return false;
 	}
 	transmitting = true;
+	mcu_pin_write(PIN_SPK_MUTE, true);	// the speaker is off while transmitting, as audio_route() keeps it
 	sr_set(SR_TX, 0);
 	chips_off();
 	b_pause();
@@ -1645,6 +1646,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	tx_level = dcs ? lvl_dcs : lvl_ctcss;
 
 	transmitting = true;
+	mcu_pin_write(PIN_SPK_MUTE, true);	// the speaker is off while transmitting, as audio_route() keeps it
 	sr_set(SR_TX, 0);
 	chips_off();
 	b_pause();
@@ -1889,11 +1891,16 @@ static void beep_tone(uint16_t hz, uint8_t level)
 		return;
 	}
 	beeping = hz != 0;
+	if (!beeping) {
+		audio_route();	// the gate shuts first: the chip's output goes back to the receiver below
+	}
 	if (!transmitting && have_rx) {
 		qa4818_beep(&chip_if, hz, (uint8_t)((level * 0x7Fu + 50u) / 100u), qa4818_af_rx(mode == RADIO_MODE_DMR,
 			rx_hz));
 	}
-	audio_route();
+	if (beeping) {
+		audio_route();	// ... and opens once the tone is on
+	}
 }
 
 static void audio(bool on)

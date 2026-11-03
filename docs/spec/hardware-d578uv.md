@@ -367,13 +367,19 @@ The speaker during a DMR call (seen on a radio, a bench call and the owner liste
 | Path | What reaches the speaker |
 | --- | --- |
 | Codec headphone driver (page 1 register 0x10) | the call's voice. Muted, the voice goes and nothing else changes |
-| Volume device, side A's channel | side A's RF chip audio, which in DMR is the 4FSK demodulator output (0x47 = 0x4840 or 0x6840): a loud data sound under the voice, with shift register bit 0x08 clear. RadioFoundry holds the channel at code 0 in DMR except for a beep or the KTMicro receiver; the voice is unchanged |
-| Chip 1 GPIO (0x25) bit 1 | a second gate on side A's RF chip audio. With the volume channel at code 0 the 4FSK still came through, quieter; clearing bit 1 stops it (measured with the radio's own microphone and heard on a radio), and the voice is unchanged. RadioFoundry sets the bit only while side A's RF audio plays or side B is heard. Bit 5 cleared stops the voice too |
+| Volume device, side A's channel | side A's RF chip audio, which in DMR is the 4FSK demodulator output (0x47 = 0x4840 or 0x6840): a loud data sound under the voice, with shift register bit 0x08 clear. Code 0 is not a mute (the 4FSK still plays loudly with the gate below open), and a jump from code 0 to the volume clicks: RadioFoundry leaves the channel at the volume and mutes with the gate |
+| Chip 1 GPIO (0x25) bit 1 | the gate on side A's RF chip audio: clearing bit 1 stops it (measured by microphone and heard on a radio), and the voice is unchanged. Opening and shutting it on silence doesn't click. RadioFoundry sets the bit only while side A's RF audio plays (FM with the squelch open, a beep, the KTMicro receiver) or side B is heard. Bit 5 cleared stops the voice too |
+| PA7 | the amplifier. Switching it thumps, and with the gate shut the speaker is as quiet as with it off (measured by microphone): RadioFoundry keeps it on while a volume knob is up and the radio receives, and off while it transmits |
 
 Beeps: the board has no PCM speaker audio, so the core plays a beep's tones through `beep_tone`. Side A's chip sounds
 each on its tone generator (0x71 the tone, 0x70 the gain, 0x47 = 0x6341) with 0x03 = 0xBFF7: the receive enable plus
-bit 1, without which the tone is silent (seen on a radio). The PA gain bit stays off, so nothing is sent. Side A's
-volume channel opens for the beep in either mode, and the chip's receive audio is restored after.
+bit 1, without which the tone is silent (seen on a radio). The PA gain bit stays off, so nothing is sent. With the
+receiver on the generator sounds at twice the frequency of its transmit word (measured by microphone, 500 to 1500 Hz),
+so a beep writes half the word. Its level follows page 1 0x1D: 12 dB louder at the analog path's 0x39FD than at the
+digital path's 0x29A1, which only DMR transmit needs, so DMR receive takes 0x39FD as well and a beep sounds the same in
+both modes (measured by microphone; DMR receive unchanged on bench calls). The chip's output switches to the tone
+before the gate opens, and the gate shuts before it switches back. A tone longer than about 1.1 s drops 12 dB by
+itself; no beep is that long.
 
 ## 5. RF chips
 
@@ -415,7 +421,7 @@ stock arithmetic (one step less on a narrow channel) and the factory items MODU 
 | DCS | register 0x08 the Golay word in two halves, register 0x07 = 0x0AD7 (134.4 Hz), register 0x51 = 0x80B0 |
 | Status | register 0x0C bit 1 signal present; 0x65 noise; 0x67 RSSI; 0x61 the RSSI the S-meter uses; 0x60 tone flags |
 | Band switch | each transceiver's register 0x25 is a GPIO register. Chip 0's bits 3/6 are side A's complementary pair (UHF sets 3), bits 7/4 side B's (UHF sets 7), by the 300 MHz rule; side B's are both clear in some single-receiver cases |
-| TX tone generator | register 0x70 = 0xA000 on, 0 off; register 0x71 = Hz x 10.32 (truncated), halved (5.3) |
+| TX tone generator | register 0x70 = 0xA000 on, 0 off; register 0x71 = Hz x 10.32 (truncated), halved (5.3); with the receiver on (a beep) half that again |
 
 The squelch is decided in firmware from register 0x0C bit 1, the noise and the RSSI against calibration values; no
 squelch threshold register is written. The 578UV and the PRO differ only in register 0x49 of chips 0 and 1 (0x26AC
@@ -440,7 +446,7 @@ The stock firmware has two register sets, analog and digital, written at receive
 | 0x44 | 0x43EC | 0x53EC |
 | 0x73 | 0x464A (0x564A narrow) | 0x4E8A (0x569A with the second receiver) |
 | 0x7E | 0x342E | 0x361E |
-| Page 1: 0x1B, 0x1C, 0x1D, 0x27, 0x36 | 0x0004, 0x04D7, 0x39FD, 0x091B, 0x9D08 (0x1D08 TX) | 0x07FF, 0x04D3, 0x29A1, 0x891B, 0x1D59 |
+| Page 1: 0x1B, 0x1C, 0x1D, 0x27, 0x36 | 0x0004, 0x04D7, 0x39FD, 0x091B, 0x9D08 (0x1D08 TX) | 0x07FF, 0x04D3, 0x39FD (0x29A1 TX), 0x891B, 0x1D59 |
 | 0x43 (receive) | 0x6009 | 0x6E09 |
 | 0x3A (receive) | 0x0040 (0x00E0 narrow, not yet copied) | 0x0040 |
 | 0x18, page 1 0x17 (receive) | not written | 0x4125, 0x0AA8, as for DMR transmit |
