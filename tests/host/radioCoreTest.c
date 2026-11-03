@@ -2767,6 +2767,13 @@ bool ui_notify(const ui_event_t *ev) { last_ev = *ev; n_ev++; return true; }
 bool ui_svc_zone_event(uint8_t kind, uint32_t id, ui_event_t *ev) { (void)kind; ev->id = id; return true; }
 static int cp_writes;
 static bool cp_write_fails;
+// Another firmware's codeplug (codeplug.h): the UI's writes ask first (ui_svc_storage.c)
+static bool cp_foreign, cp_accepted;
+static int cp_new, cp_reloads;
+bool codeplug_foreign(void) { return cp_foreign && !cp_accepted; }
+bool codeplug_start_new(void) { cp_new++; cp_foreign = false; return true; }
+void codeplug_accept(bool on) { cp_accepted = on; }
+codeplug_source_t codeplug_reload(void) { cp_reloads++; cp_serial++; return source; }
 // The contact editor's write (ui_svc_storage.c); the radio core's tests don't add contacts
 bool codeplug_set_contact(uint16_t index, const contact_t *c) { (void)index; (void)c; return false; }
 bool codeplug_set_channel(uint16_t n, const channel_t *ch)
@@ -3022,6 +3029,49 @@ static void test_ui_glue(void)
 	run(20);
 	CHECK(n_ev == 1 && strstr(last_ev.text, "for now only") != NULL && d->target_manual && d->target_id == 3109999);
 	chans[4].contact = 1;
+	reload_channel();
+	// Another firmware's codeplug: the write is held and the UI asked; nothing written until the answer
+	cp_foreign = true;
+	ed = chans[6];
+	ed.color_code = 3;
+	w = cp_writes;
+	n_ev = 0;
+	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 1 && last_ev.kind == UI_EV_CODEPLUG_FOREIGN);
+	CHECK(!ui_svc_write_channel(6, &ed) && !ui_svc_save_channel() && n_ev == 1);	// one question at a time
+	storage_job_poll();
+	CHECK(cp_writes == w && !storage_job_busy());
+	// Cancel: nothing written, nothing cleared
+	CHECK(ui_svc_codeplug_answer(UI_CP_CANCEL) && !ui_svc_codeplug_answer(UI_CP_CANCEL));
+	storage_job_poll();
+	CHECK(cp_writes == w && cp_new == 0 && !cp_accepted && chans[6].color_code != 3);
+	// Use anyway: accepted and shown, the write made on the built-in set dropped, nothing cleared
+	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 2);
+	int reloads = cp_reloads;
+	CHECK(ui_svc_codeplug_answer(UI_CP_USE) && storage_job_busy());
+	storage_job_poll();
+	CHECK(cp_writes == w && cp_new == 0 && cp_accepted && cp_reloads == reloads + 1 && !codeplug_foreign());
+	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 2);	// ours now: written at once
+	storage_job_poll();
+	CHECK(cp_writes == w + 1 && chans[6].color_code == 3);
+	// Start new: the old one cleared, then the write
+	cp_accepted = false;
+	ed.color_code = 4;
+	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 3 && ui_svc_codeplug_answer(UI_CP_NEW));
+	storage_job_poll();
+	CHECK(cp_new == 1 && cp_writes == w + 2 && chans[6].color_code == 4 && !codeplug_foreign());
+	// The settings area's keys are codeplug writes too: held for the same question, written after Start new
+	cp_foreign = true;
+	kv_ars_present = false;
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 3100123) && n_ev == 4 && last_ev.kind == UI_EV_CODEPLUG_FOREIGN);
+	storage_job_poll();
+	CHECK(!kv_ars_present);
+	CHECK(ui_svc_codeplug_answer(UI_CP_NEW));
+	storage_job_poll();
+	CHECK(cp_new == 2 && kv_ars_present && kv_ars == 3100123);
+	kv_ars_present = false;
+	n_ev = 0;
+	run(100);
+	req(RREQ_CLEAR_TEMP, 0);
 	reload_channel();
 	// Mode
 	CHECK(ui_svc_mode(RADIO_MODE_FM) && sm.view.ch.mode == RADIO_MODE_FM && !ui_svc_mode(7));

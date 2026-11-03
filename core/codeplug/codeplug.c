@@ -70,6 +70,7 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define GEN_DMR_ID	EE(0x00E8u)
 #define GEN_GROUP_HANG	0x18u	// offsets in the block
 #define GEN_PRIV_HANG	0x19u
+#define GEN_CLEAR	0x1Au	// the bytes up to the hang times: what the radio reads of the block
 #define GEN_HANG_UNIT_MS 500u	// assumed, not confirmed: no unit in the interop spec, the ref notes or the vendor
 				// guide (docs/spec/dmr-voice.md 8); check with the vendor CPS on the bench
 
@@ -79,6 +80,8 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define LIST_COUNTS	FL(0x8D620u)
 #define LIST_BASE	FL(0x8D6A0u)
 #define LIST_SIZE	80u
+#define CONTACT_COUNT	1024u	// CODEPLUG_CONTACTS_MAX, CODEPLUG_LISTS_MAX: the layout's, built with DMR or not
+#define LIST_COUNT	76u
 
 // Zones (7.2, 7.3.4)
 #define ZONE_SLOTS	CODEPLUG_ZONES_MAX
@@ -90,6 +93,11 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 
 static codeplug_source_t source = CODEPLUG_NONE;
 static uint32_t serial;
+// Open-firmware evidence (codeplug-stock-tyt.md 2, step 1), which codeplug_foreign() decides from (no flag of its own:
+// RAM is tight on some radios)
+static uint16_t ev_good, ev_bad;
+static uint8_t accept;	// codeplug_accept_t: the owner's "Use anyway", which turns the verdict off; | ACCEPT_UNSTORED
+#define ACCEPT_UNSTORED	0x80u	// changed since codeplug_accept_take
 
 // Open-firmware codeplug index
 static uint8_t used[CH_MAX / 8];	// bit set = channel record passed the checks
@@ -289,6 +297,62 @@ static void set_used(uint16_t number, bool on)
 	}
 }
 
+// A Latin-1 name field (codeplug-stock-tyt.md 2): printable text (0x20-0x7E, 0xA0-0xFE) up to the first 0x00 or
+// 0xFF, only 0x00 or 0xFF after it. A UTF-16 name fails: its second byte is 0x00 and printable bytes follow
+static bool latin_name(const uint8_t *p, unsigned len, bool *empty)
+{
+	unsigned n = 0;
+	while (n < len && p[n] != 0x00 && p[n] != 0xFF) {
+		if (p[n] < 0x20u || (p[n] > 0x7Eu && p[n] < 0xA0u)) {
+			return false;
+		}
+		n++;
+	}
+	*empty = n == 0;
+	for (unsigned i = n; i < len; i++) {
+		if (p[i] != 0x00 && p[i] != 0xFF) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// A record that counts by its name: good when the name is valid and not empty
+static void named(const uint8_t *p)
+{
+	bool empty;
+	if (latin_name(p, CODEPLUG_NAME_LEN, &empty) && !empty) {
+		ev_good++;
+	} else {
+		ev_bad++;
+	}
+}
+
+static bool all_ff(const uint8_t *p, unsigned len)
+{
+	while (len > 0 && p[len - 1u] == 0xFF) {
+		len--;
+	}
+	return len == 0;
+}
+
+// Erased flash (all 0xFF), read in pieces; a read that fails counts as erased (the record isn't counted)
+static bool erased(uint32_t addr, unsigned len, uint8_t *buf, unsigned size)
+{
+	while (len > 0) {
+		unsigned n = len < size ? len : size;
+		if (!flash_read(addr, buf, n)) {
+			return true;
+		}
+		if (!all_ff(buf, n)) {
+			return false;
+		}
+		addr += n;
+		len -= n;
+	}
+	return true;
+}
+
 static void find_max(void)
 {
 	channel_max = 0;
@@ -300,9 +364,12 @@ static void find_max(void)
 	}
 }
 
-// In-use bitmaps, then the frequencies of every marked record: an erased bank (all 0xFF) fails the BCD check
+// In-use bitmaps, then the frequencies of every marked record: an erased bank (all 0xFF) fails the BCD check. Counts
+// the channels' evidence on the way: a marked record that isn't erased is good with valid frequencies and name
 static void index_channels(void)
 {
+	uint8_t r[CH_SIZE];
+
 	for (unsigned bank = 0; bank < CH_BANKS; bank++) {
 		uint8_t *bits = &used[bank * (CH_PER_BANK / 8u)];
 		if (!flash_read(bank_bitmap(bank), bits, CH_PER_BANK / 8u)) {
@@ -314,10 +381,14 @@ static void index_channels(void)
 			if (!is_used(number)) {
 				continue;
 			}
-			uint8_t f[8];
 			uint32_t rx, tx;
-			if (!flash_read(channel_addr(number) + CH_RX, f, sizeof(f)) || !freq(&f[0], &rx) || !freq(&f[4], &tx)) {
+			if (!flash_read(channel_addr(number), r, sizeof(r))) {
 				set_used(number, false);
+			} else if (!freq(&r[CH_RX], &rx) || !freq(&r[CH_TX], &tx)) {
+				set_used(number, false);
+				ev_bad += all_ff(r, sizeof(r)) ? 0u : 1u;
+			} else {
+				named(&r[CH_NAME]);
 			}
 		}
 	}
@@ -346,6 +417,40 @@ static void index_zones(void)
 	}
 }
 
+// The rest of the open-firmware evidence (codeplug-stock-tyt.md 2, step 1, the web editor's rule in
+// site/static/js/codeplug/detect.js) for what the radio shows from the codeplug: the zones and the RX group lists. Not
+// the contacts or the general settings: another firmware's contacts left beside a codeplug edited on the radio
+// mustn't hide it, and the checks cost flash
+static void index_evidence(void)
+{
+	uint8_t r[CH_SIZE];
+
+	// Zones whose in-use bit is set and whose record isn't erased
+	uint8_t layout, bits[(ZONE_SLOTS + 7u) / 8u];
+	if (flash_read(ZONE_LAYOUT, &layout, 1) && flash_read(ZONE_BITMAP, bits, sizeof(bits))) {
+		uint32_t rec = ZONE_NAME_LEN + 2u * (layout <= 0x04 ? 80u : 16u);
+		for (unsigned slot = 0; slot < ZONE_SLOTS; slot++) {
+			uint32_t a = ZONE_DATA + slot * rec;
+			if ((bits[slot / 8u] & (1u << (slot % 8u))) != 0 && !erased(a, rec, r, sizeof(r)) &&
+			    flash_read(a, r, ZONE_NAME_LEN)) {
+				named(r);
+			}
+		}
+	}
+	// RX group lists whose count is set: a count past 32 members is bad
+	for (unsigned i = 0; i < LIST_COUNT; i++) {
+		uint8_t n;
+		if (!flash_read(LIST_COUNTS + i, &n, 1) || n == 0 || n == 0xFF) {
+			continue;
+		}
+		if (n > 33u) {
+			ev_bad++;
+		} else if (flash_read(LIST_BASE + i * LIST_SIZE, r, CODEPLUG_NAME_LEN)) {
+			named(r);
+		}
+	}
+}
+
 static void index_builtin(void)
 {
 	builtin_count = 0;
@@ -365,9 +470,17 @@ static codeplug_source_t index_all(void)
 	memset(used, 0, sizeof(used));
 	channel_max = 0;
 	zone_count = 0;
+	ev_good = ev_bad = 0;
 	index_builtin();
 	if (have_flash()) {
 		index_channels();
+		index_evidence();
+	}
+	// Records in use that fail the rule are another firmware's codeplug: shown as none (the built-in set), the bytes
+	// left alone
+	if (codeplug_foreign()) {
+		memset(used, 0, sizeof(used));
+		channel_max = 0;
 	}
 	if (channel_max > 0) {
 		index_zones();
@@ -398,6 +511,46 @@ codeplug_source_t codeplug_reload(void)
 codeplug_source_t codeplug_source(void)
 {
 	return source;
+}
+
+// At least one good record and at most one bad one for every four good: the open-firmware layout. No record in use:
+// blank
+bool codeplug_foreign(void)
+{
+	return codeplug_acceptance() != CODEPLUG_ACCEPT_YES && ev_bad != 0 && (uint32_t)ev_bad * 4u > ev_good;
+}
+
+void codeplug_accept(bool on)
+{
+	accept = (uint8_t)((on ? CODEPLUG_ACCEPT_YES : CODEPLUG_ACCEPT_NO) | ACCEPT_UNSTORED);
+}
+
+codeplug_accept_t codeplug_acceptance(void)
+{
+	return (codeplug_accept_t)(accept & ~ACCEPT_UNSTORED);
+}
+
+bool codeplug_accept_take(codeplug_accept_t *store)
+{
+	uint8_t a = accept;
+	if ((a & ACCEPT_UNSTORED) == 0) {
+		return false;
+	}
+	*store = (a & ~ACCEPT_UNSTORED) == CODEPLUG_ACCEPT_YES ? CODEPLUG_ACCEPT_YES : CODEPLUG_ACCEPT_NO;
+	accept = (uint8_t)*store;
+	return true;
+}
+
+codeplug_source_t codeplug_written(void)
+{
+	accept = CODEPLUG_ACCEPT_DROPPED | ACCEPT_UNSTORED;
+	return codeplug_reload();
+}
+
+void codeplug_evidence(uint16_t *good, uint16_t *bad)
+{
+	*good = ev_good;
+	*bad = ev_bad;
 }
 
 uint32_t codeplug_serial(void)
@@ -527,14 +680,16 @@ void codeplug_openfw_encode(const channel_t *ch, uint8_t *r)
 	r[CH_POWER] = ch->power == CODEPLUG_POWER_DEFAULT ? 0 : power_to_byte(ch->power);
 	put16(&r[CH_RX_TONE], tone_word(&ch->rx_tone));
 	put16(&r[CH_TX_TONE], tone_word(&ch->tx_tone));
-	r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~(FLAG4_RX_ONLY | FLAG4_25K)) | (ch->rx_only ? FLAG4_RX_ONLY : 0) |
-				(ch->bw == RADIO_BW_25K ? FLAG4_25K : 0));
+	r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~(FLAG4_VOX | FLAG4_ZONE_SKIP | FLAG4_RX_ONLY | FLAG4_25K)) |
+				(ch->vox ? FLAG4_VOX : 0) | (ch->scan_skip ? FLAG4_ZONE_SKIP : 0) |
+				(ch->rx_only ? FLAG4_RX_ONLY : 0) | (ch->bw == RADIO_BW_25K ? FLAG4_25K : 0));
 	r[CH_FLAG2] = (uint8_t)((r[CH_FLAG2] & ~FLAG2_TS2) | (ch->timeslot == 2 ? FLAG2_TS2 : 0));
 	r[CH_CC] = ch->color_code & 0x0Fu;
 	put16(&r[CH_CONTACT], ch->contact);
 	r[CH_RX_GROUP] = (uint8_t)(ch->listen_list <= 0xFFu ? ch->listen_list : 0);
-	r[CH_LFLAG1] = (uint8_t)((r[CH_LFLAG1] & ~(LFLAG1_ID | LFLAG1_DMO)) | (ch->dmr_id != 0 ? LFLAG1_ID : 0) |
-				 (ch->dmo ? LFLAG1_DMO : 0));
+	r[CH_LFLAG1] = (uint8_t)((r[CH_LFLAG1] & ~(LFLAG1_ID | LFLAG1_NO_BEEP | LFLAG1_NO_ECO | LFLAG1_DMO)) |
+				 (ch->dmr_id != 0 ? LFLAG1_ID : 0) | (ch->no_beep ? LFLAG1_NO_BEEP : 0) |
+				 (ch->no_eco ? LFLAG1_NO_ECO : 0) | (ch->dmo ? LFLAG1_DMO : 0));
 	uint32_t tot = (ch->tot_s + 14u) / 15u;
 	r[CH_TOT] = (uint8_t)(tot > 255u ? 255u : tot);
 	// The text bit of each timeslot's talker alias field; the APRS bit is kept
@@ -648,28 +803,24 @@ bool codeplug_zone(uint16_t index, zone_t *out)
 
 // --- Editing ---
 
+static const uint8_t zero[32];	// what the bitmaps and the quick keys are cleared with
+
 // A codeplug to edit: the built-in set first becomes a stored one (its channels written, the bitmaps, zones and
-// lists that may hold junk from other firmware cleared)
+// lists that may hold junk from other firmware cleared). Never over another firmware's codeplug (foreign): only
+// codeplug_start_new clears that
 static bool materialize(void)
 {
 	if (source == CODEPLUG_OPENFW) {
 		return true;
 	}
-	if (source != CODEPLUG_BUILTIN || !storage_ready()) {
+	if (source != CODEPLUG_BUILTIN || !storage_ready() || codeplug_foreign()) {
 		return false;
 	}
-	static const uint8_t zero[32];
 	bool ok = true;
 	for (unsigned bank = 0; bank < CH_BANKS && ok; bank++) {
 		ok = flash_write(bank_bitmap(bank), zero, CH_PER_BANK / 8u);
 	}
-	ok = ok && flash_write(ZONE_BITMAP, zero, sizeof(zero));
-#if CONFIG_DMR
-	for (unsigned off = 0; off < CODEPLUG_LISTS_MAX && ok; off += sizeof(zero)) {
-		uint32_t n = CODEPLUG_LISTS_MAX - off < sizeof(zero) ? CODEPLUG_LISTS_MAX - off : sizeof(zero);
-		ok = flash_write(LIST_COUNTS + off, zero, n);
-	}
-#endif
+	ok = ok && flash_write(ZONE_BITMAP, zero, sizeof(zero)) && flash_write(LIST_COUNTS, NULL, LIST_COUNT);
 	memset(used, 0, sizeof(used));
 	channel_max = 0;
 	zone_count = 0;
@@ -684,6 +835,27 @@ static bool materialize(void)
 	if (!ok) {
 		index_all();
 	}
+	return ok;
+}
+
+// Also the rest the evidence reads (the callsign and DMR ID, the contacts) and what the radio reads (boot text, quick
+// keys), so the codeplug made is a clean one and the next start-up finds it ours
+bool codeplug_start_new(void)
+{
+	_Static_assert(sizeof(zero) >= CODEPLUG_QUICK_KEYS * 2u, "zero clears the quick keys");
+	storage_lock();
+	bool ok = !codeplug_foreign();	// nothing to clear: the edit makes the codeplug as for a blank flash
+	if (!ok && storage_ready()) {
+		ok = flash_write(GEN_BASE, NULL, GEN_CLEAR) && flash_write(BOOT_TEXT, NULL, 2u * CODEPLUG_NAME_LEN) &&
+		     flash_write(QUICK_KEYS, zero, CODEPLUG_QUICK_KEYS * 2u) &&
+		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE);
+		ev_bad = 0;	// cleared: ours from now on (a failure re-reads it, materialize)
+		ok = ok && materialize();
+		if (!ok) {
+			index_all();
+		}
+	}
+	storage_unlock();
 	return ok;
 }
 
@@ -713,6 +885,9 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 	storage_lock();
 	bool ok = materialize() && flash_read(channel_addr(number), r, sizeof(r));
 	if (ok) {
+		if (!is_used(number)) {
+			blank_channel(r);	// a free slot's bytes aren't ours to keep (another firmware's, or deleted)
+		}
 		codeplug_openfw_encode(ch, r);
 		ok = flash_write(channel_addr(number), r, sizeof(r));
 	}

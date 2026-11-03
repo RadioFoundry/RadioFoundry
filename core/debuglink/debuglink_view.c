@@ -371,7 +371,7 @@ static void link_section(dl_text_t *t)
 
 #if CONFIG_DMR_DATA_CORE
 // The codeplug settings area (docs/spec/codeplug-settings.md 5). noinline: inlined, its flash reads would sit under
-// storage_section's frame, the host task's deepest path
+// the caller's frame on the host task's deepest path
 static void __attribute__((noinline)) cpkv_section(dl_text_t *t)
 {
 	static const char *const states[] = { [CODEPLUG_KV_EMPTY] = "empty", [CODEPLUG_KV_VALID] = "valid",
@@ -439,23 +439,33 @@ static void storage_section(dl_text_t *t)
 		st.foreign_slots, (unsigned)st.foreign_refusals, st.claim_pending);
 	dl_text(t, "codeplug.source=%s\ncodeplug.serial=%u\n", (unsigned)src < 3 ? sources[src] : "?",
 		(unsigned)codeplug_serial());
+	uint16_t ev_good, ev_bad;
+	codeplug_evidence(&ev_good, &ev_bad);
+	dl_text(t, "codeplug.foreign=%u\ncodeplug.accepted=%u\ncodeplug.evidence=%u,%u\n", codeplug_foreign(),
+		codeplug_acceptance() == CODEPLUG_ACCEPT_YES, ev_good, ev_bad);
 	uint32_t zone_edits;
 	uint8_t zone_last;
 	zone_edit_stats(&zone_edits, &zone_last);
 	dl_text(t, "zone.edits=%u\nzone.edit_last=%u\n", (unsigned)zone_edits, zone_last);
+}
+
+// The CPS shims' counters (were in the storage section until view version 5: with the codeplug keys it outgrew a
+// reply)
+static void cps_section(dl_text_t *t)
+{
 #if CONFIG_CPS_OPENFW
 	cps_stats_t c;
 
 	cps_get_stats(&c);
-	dl_text(t, "cps.built=1\ncps.requests=%u\ncps.reads=%u\ncps.commits=%u\n", (unsigned)c.requests,
-		(unsigned)c.reads, (unsigned)c.commits);
+	// Where the image starts in the flash: what a CPS client adds to its addresses (0 on the STM32 radios)
+	const hal_flash_map_t *fm = storage_map();
+	dl_text(t, "cps.built=1\ncps.openfw_eeprom=0x%x\n", fm != NULL ? (unsigned)fm->openfw_eeprom : 0u);
+	dl_text(t, "cps.requests=%u\ncps.reads=%u\ncps.commits=%u\n", (unsigned)c.requests, (unsigned)c.reads,
+		(unsigned)c.commits);
 	dl_text(t, "cps.refused=%u\ncps.overflows=%u\ncps.last=0x%02x\n", (unsigned)c.refused, (unsigned)c.overflows,
 		c.last);
 	dl_text(t, "cps.session=%u\ncps.pending=%u\ncps.junk=%u\n", c.session, c.pending, (unsigned)c.junk);
 	dl_text(t, "cps.reboots_ignored=%u\n", (unsigned)c.reboots_ignored);
-	// Where the image starts in the flash: what a CPS client adds to its addresses (0 on the STM32 radios)
-	const hal_flash_map_t *fm = storage_map();
-	dl_text(t, "cps.openfw_eeprom=0x%x\n", fm != NULL ? (unsigned)fm->openfw_eeprom : 0u);
 #else
 	dl_text(t, "cps.built=0\n");
 #endif
@@ -472,7 +482,7 @@ static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dm
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
-						  "net_link" };
+						  "net_link", "cps" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -515,9 +525,6 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_STORAGE:
 		storage_section(t);
-#if CONFIG_DMR_DATA_CORE
-		cpkv_section(t);
-#endif
 		break;
 	case DL_VIEW_DMR_EXT:
 		debuglink_view_dmr_ext(t);
@@ -571,6 +578,12 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_NET_LINK:
 		net_link_section(t);
+		break;
+	case DL_VIEW_CPS:
+		cps_section(t);
+#if CONFIG_DMR_DATA_CORE
+		cpkv_section(t);
+#endif
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

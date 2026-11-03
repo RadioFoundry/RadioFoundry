@@ -249,6 +249,7 @@
  "screen.channel_name": "Text entry: a channel name on the keypad",
  "screen.channel_contact": "Channel editor: picking the TX contact",
  "screen.channel_discard": "Leaving the channel editor with unsaved changes",
+ "screen.codeplug_foreign": "Saving over another firmware's codeplug: start a new one or keep it",
  "screen.channel_new": "New channel from current settings",
  "screen.channel_share": "Sharing a channel from its settings",
  "screen.compose": "Write a message",

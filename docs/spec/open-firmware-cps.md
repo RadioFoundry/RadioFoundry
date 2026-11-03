@@ -309,6 +309,10 @@ SPI flash. The STM32 radios and the HR_C7000 radios have no EEPROM: both images 
 it with the per-family offsets below. A new firmware can store the data any way it likes, as long as the shim
 presents these addresses.
 
+The CPS reads the image as stored, whatever it holds. RadioFoundry uses it only when its records in use look like an
+open-firmware codeplug ([codeplug-native.md](codeplug-native.md) 2, "Another firmware's codeplug"). The check runs
+again after every write.
+
 ### 7.1 Per-family address mapping
 
 | Family | EEPROM image | Flash image (codeplug regions, DMR ID DB, voice prompts) | Wire commands used for the EEPROM image |

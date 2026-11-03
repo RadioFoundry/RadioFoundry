@@ -100,6 +100,9 @@ A new key is added to this table in the same change that first writes it.
 `codeplug_kv_set` needs no built-in codeplug to be stored first. The area is apart from the channel records, so it
 doesn't materialize the built-in set ([codeplug-native.md](codeplug-native.md) 2). It fails while a CPS session holds
 the shared sector buffer, or when the storage region isn't ours ([settings-store.md](settings-store.md) 5).
+While the open-firmware area holds another firmware's codeplug (`codeplug_foreign`, [codeplug-native.md](codeplug-native.md)
+2) the area reads as empty and `codeplug_kv_set` fails; the menu's write is held for the user's answer like any
+other codeplug write.
 
 The radio core reads the keys at start and whenever `codeplug_serial()` moves on (a menu edit, a CPS commit, a
 TFTP write). A key that is present sets the setting. A key that is absent leaves the setting as the radio had it. The
@@ -111,7 +114,7 @@ Every way the radio sets one of these settings writes the key: the menu (Setting
 [ui.md](ui.md)) and the debug link's DMR_DATA SETTINGS and IP_SETTINGS ([debuglink.md](debuglink.md) 3.12). A CPS
 read shows the radio's setting.
 
-Debug link view `storage`: `cpkv.state` (`valid`, `empty`: no area, `bad`: invalid, `newer`: an unknown version),
+Debug link view `cps`: `cpkv.state` (`valid`, `empty`: no area, `bad`: invalid, `newer`: an unknown version),
 `cpkv.length` (data length) and `cpkv.keys` (entries).
 
 ## 6. Codeplug Editor

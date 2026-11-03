@@ -16,10 +16,12 @@ static uint32_t get32(const uint8_t *p) { return (uint32_t)p[0] | ((uint32_t)p[1
 static void put16(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
 static void put32(uint8_t *p, uint32_t v) { put16(p, v); put16(p + 2, v >> 16); }
 
+// None while the open-firmware area holds another firmware's codeplug (codeplug_foreign): that is shown as no
+// codeplug, so its bytes at 0xE000 aren't read as our keys nor written over before the user has answered
 static bool area_addr(uint32_t *addr)
 {
 	const hal_flash_map_t *m = storage_map();
-	if (m == NULL || board.flash->size == 0 || m->openfw_eeprom + CODEPLUG_KV_ADDR + STORAGE_SECTOR > board.flash->size) {
+	if (m == NULL || codeplug_foreign() || board.flash->size == 0 || m->openfw_eeprom + CODEPLUG_KV_ADDR + STORAGE_SECTOR > board.flash->size) {
 		return false;
 	}
 	*addr = m->openfw_eeprom + CODEPLUG_KV_ADDR;

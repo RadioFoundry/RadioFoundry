@@ -249,6 +249,7 @@
  "screen.channel_name": "Inserimento testo: il nome di un canale dal tastierino",
  "screen.channel_contact": "Editor canale: scelta del contatto TX",
  "screen.channel_discard": "Uscita dall'editor canale con modifiche non salvate",
+ "screen.codeplug_foreign": "Salvataggio sul codeplug di un altro firmware: crearne uno nuovo o tenerlo",
  "screen.channel_new": "Nuovo canale dalle impostazioni attuali",
  "screen.channel_share": "Condivisione di un canale dalle sue impostazioni",
  "screen.compose": "Scrivi un messaggio",

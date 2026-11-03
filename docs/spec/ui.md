@@ -87,6 +87,12 @@ link's `ui.screen`), flags, and callbacks for list rows, SELECT, CONTEXT, the ta
 a body, raw keys, drawing and entry. List screens need only `count` and `item`; the generic list code does focus,
 scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and the long-press target.
 
+A filtered list's rows are raw rows (`raw_count`, `raw_label`) that have a label and, with keys typed, match them.
+With keys typed the list is the first `UI_FILTER_MAX` (128) matches. With none it is every row: the first 126 are kept
+in an index, and in a longer list its last two slots are a cursor (its row and raw row) stepped over the raw rows, so a list of 1024 contacts
+scrolls to its end (and Up from the top wraps to it) without RAM for a full index. A jump to the end reads every raw
+row once, as a typed key does.
+
 | Screen | Name | Reached by |
 |---|---|---|
 | Home | `home` | start, long BACK from anywhere |
@@ -108,7 +114,7 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Unsaved Changes | `discard` | BACK in the channel editor with unsaved changes (2.1), or in the contact editor (2.4) |
 | New Contact | `contactedit` | Find's "Create contact 3100", or Save as contact in a station's or talkgroup's actions (`CONFIG_CONTACT_EDIT`): the contact editor (2.4) |
 | List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered |
-| Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (a side key set to it), Quick 8 |
+| Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (a side key set to it), Quick 8. Its last rows: "Type a number..." (Find) and "Select contact..." (Contacts, whose keys are the picker's) |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
 | Share | `zone_share` | without `CONFIG_ZONE_EDIT`: CONTEXT in a zone's channels (`zone`): Share zone to..., Share channel to... ([zone-share.md](zone-share.md) 7). With the zone editor these are rows of Zone options and Channel actions (2.2) |
 | Share To | `zone_share_to` | a pick in Share, Channel actions, Zone options or the channel editor: the contacts, T9 filtered. Digits that make an ID add "Private ID 3101234" and "TG 3101234" after the contacts ("Not saved"), so a station that isn't a contact can be sent to. OK sends and returns to the zone's list (to the channel editor from there) |
