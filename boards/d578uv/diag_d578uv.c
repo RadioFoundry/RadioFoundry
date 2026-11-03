@@ -88,8 +88,8 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 	case 2:
 		put(&o, "sup ");
 		put_u(&o, d578uv_power.supply_mv());
-		put(&o, " ign ");
-		put_u(&o, mcu_adc_read(ADC_IGNITION_SENSE));
+		put(&o, " temp ");
+		put_u(&o, mcu_adc_read(ADC_PA_TEMP));
 		break;
 	case 3:
 		put(&o, "vol ");
@@ -131,9 +131,19 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	}
 	case 7:
-		put(&o, "kt ");
+		put(&o, "bc ");
 #if CONFIG_AM_RX || CONFIG_BCAST_FM
-		put(&o, d578uv_kt_present() ? "yes" : "no");
+		put(&o, d578uv_bc_chip());
+#if CONFIG_BCAST_FM
+		{
+			uint16_t r[3];
+			d578uv_bc_raw(r);
+			for (unsigned k = 0; k < 3u; k++) {
+				put(&o, " ");
+				put_x(&o, r[k], 4);
+			}
+		}
+#endif
 #else
 		put(&o, "-");
 #endif

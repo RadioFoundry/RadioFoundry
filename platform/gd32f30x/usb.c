@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // USB port glue for TinyUSB on the GD32F30x USBD core, which is the STM32F103's full-speed device register for register
 // (TinyUSB's stm32_fsdev driver, built as OPT_MCU_STM32F1 through stm32f1xx.h here). Device only, PA11 (DM) / PA12
-// (DP); the D+ pull-up is the board's (board_usb_pullup). The 48 MHz clock is CK_PLL divided down (clock.c).
+// (DP); the D+ pull-up is the board's (board_usb_pullup). The 48 MHz clock is IRC48M (clock.c).
 #include "config.h"
 #if CONFIG_USB	// the whole file
 #include "platform.h"

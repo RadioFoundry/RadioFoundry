@@ -208,7 +208,7 @@ static void tx_pump(void)
 			if (lc) {
 				s.lc_new = false;
 				q_pop();
-				if (!send_frame(SCT_PROP_VOICE, s.emb_lc, LC_BYTES))
+				if (!send_frame(SCT_PROP_VOICE_LC, s.emb_lc, LC_BYTES))
 					s.waiting = false;
 				return;
 			}

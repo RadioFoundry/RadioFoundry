@@ -45,7 +45,7 @@ answer before the next:
 | 1 | TYPE 0x00, CODEC_SELECT (the board's `codec`; 0 skips the step) | `2D 00`, 1 s |
 | 2 | TYPE 0x00, VOCODER_SEL (the board's `vocoder`; 0 skips the step) | `10 00`, 3 s |
 | 3 | TYPE 0x00, one packet per entry of the board's `fields`, in order (control fields such as DIGI_SPEAKER_GAIN and DIGI_MIC_GAIN) | `ID 00`, 200 ms |
-| 4 | TYPE 0x40, `page register value`, one packet per entry of the board's `codec_writes`, in order | `17 00`, 200 ms |
+| 4 | TYPE 0x40, `00 page register value 00 00` (LEN 6), one packet per entry of the board's `codec_writes`, in order | `17 00`, 200 ms |
 
 The waits are the Packet Interface document's field timeouts; the control field's and the codec write's are what
 the stock firmware allows. A field of the wrong length is not sent and fails the set-up.
@@ -79,7 +79,7 @@ TYPE:
 | 0x04 | program (flash) |
 | 0x10 | bit: to the far end |
 | 0x20 | bit: read (a query, and every report from the chip) |
-| 0x40 | codec bypass: the body (page, register, value) goes to the codec chip on the baseband's I2C; answered by `ACK_MESSAGE` |
+| 0x40 | codec bypass: the body goes to the codec chip on the baseband's I2C; answered by `ACK_MESSAGE`. For the TLV320AIC3204 it is `00 page register value 00 00`; another length is refused with ACK 0x05 |
 | 0x80 | AMBE bypass: the packet goes to an external vocoder chip. Not a path to the baseband's own vocoder frames (section 7) |
 
 A write is answered with a packet without the read bit whose fields are `ID status`. A report has the read bit and
@@ -178,7 +178,9 @@ modem task can both call in. No RTOS calls and no waits: the host tests run the 
    60 ms after the one before.
 3. A frame unanswered for `SCT_DMR_ACK_MS` (300 ms) is dropped and counted; a NAK frees the slot.
 4. Voice: the first voice burst of a call (and burst A after `set_embedded_lc`) sends `43 11 09 LC`. Later voice
-   bursts carry nothing for the chip; they are taken one per 60 ms and reported as sent.
+   bursts carry nothing for the chip; they are taken one per 60 ms and reported as sent. The PROP must be 0x11 (a
+   voice burst, data type 1): the chip answers 0x10 with ACK 0x01 and then sends no traffic at all, though it keys its
+   burst timing (the LC headers before it are acknowledged as sent but never go on the air).
 5. `TX_DONE` comes on ACK 0x0A after the last frame, or `SCT_DMR_DONE_MS` (600 ms) after it. Then WORK_MODE
    receive. `tx_abort` goes back to receive without `TX_DONE`.
 6. After `codec_tx`, the return to receive (`TX_DONE`, `tx_abort`, `stop`) sends the board's `codec_rx` once,

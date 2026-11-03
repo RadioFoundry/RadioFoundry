@@ -153,7 +153,7 @@ static struct {
 	int refuse_id;		// a field (or 0x40, a codec write) the chip refuses, -1 none
 	bool mute_id;		// ... or doesn't answer at all
 	bool processing;	// an ACK_MESSAGE "processing" before each answer
-	uint8_t log[16][10];	// the voice set-up's packets as sent
+	uint8_t log[16][12];	// the voice set-up's packets as sent
 	uint16_t nlog;
 } bus;
 
@@ -177,7 +177,7 @@ static bool b_write(const uint8_t *buf, uint16_t len, void *ctx)
 	memcpy(bus.last_write, buf, len < 8 ? len : 8);
 	if (bus.voice && len != SCT_BOOT_BLOCK_BYTES) {
 		if (bus.nlog < 16)
-			memcpy(bus.log[bus.nlog++], buf, len < 10 ? len : 10);
+			memcpy(bus.log[bus.nlog++], buf, len < sizeof(bus.log[0]) ? len : sizeof(bus.log[0]));
 		// A write's answer: TYPE 0 echoes the field and its status, a codec write gets an ACK_MESSAGE
 		bool codec = buf[5] == SCT_TYPE_CODEC;
 		int id = codec ? SCT_TYPE_CODEC : buf[6];
@@ -308,8 +308,9 @@ static void test_voice(void)
 	static const uint8_t vs[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, 0x00, 0x10, 0x04 };
 	static const uint8_t f1[] = { 0x84, 0xA9, 0x61, 0x00, 0x03, 0x00, 0x69, 0x05, 0x46, 0x00 };
 	static const uint8_t f2[] = { 0x84, 0xA9, 0x61, 0x00, 0x03, 0x00, 0x68, 0x07, 0xD0, 0x00 };
-	static const uint8_t c1[] = { 0x84, 0xA9, 0x61, 0x00, 0x03, 0x40, 0x01, 0x12, 0x08, 0x00 };
-	static const uint8_t c2[] = { 0x84, 0xA9, 0x61, 0x00, 0x03, 0x40, 0x00, 0x56, 0xA0, 0x00 };
+	// The codec writes in the six-byte TLV320AIC3204 layout: a radio refused the three-byte one with ACK 0x05
+	static const uint8_t c1[] = { 0x84, 0xA9, 0x61, 0x00, 0x06, 0x40, 0x00, 0x01, 0x12, 0x08, 0x00, 0x00 };
+	static const uint8_t c2[] = { 0x84, 0xA9, 0x61, 0x00, 0x06, 0x40, 0x00, 0x00, 0x56, 0xA0, 0x00, 0x00 };
 	CHECK(memcmp(bus.log[0], cs, sizeof(cs)) == 0);
 	CHECK(memcmp(bus.log[1], vs, sizeof(vs)) == 0);
 	CHECK(memcmp(bus.log[2], f1, sizeof(f1)) == 0);
@@ -581,7 +582,7 @@ static void test_dmr_voice_tx(void)
 	sct_dmr_poll(t + 60);
 	CHECK(frames_sent() == 2);
 	d = sent_field(nsent - 1, SCT_F_DATA_FRAME, &n);
-	CHECK(d != NULL && d[0] == SCT_PROP_VOICE && d[1] == 9 && d[2] == 0x10);
+	CHECK(d != NULL && d[0] == SCT_PROP_VOICE_LC && d[1] == 9 && d[2] == 0x10);
 	frame_ok(t + 70);
 	CHECK(count_ev(DMR_EV_TX_SLOT_STARTED) == 2);
 
@@ -602,7 +603,7 @@ static void test_dmr_voice_tx(void)
 	sct_dmr_poll(t);
 	CHECK(frames_sent() == 3);
 	d = sent_field(nsent - 1, SCT_F_DATA_FRAME, NULL);
-	CHECK(d != NULL && d[0] == SCT_PROP_VOICE && d[10] == 7);
+	CHECK(d != NULL && d[0] == SCT_PROP_VOICE_LC && d[10] == 7);
 	frame_ok(t);
 
 	// Terminator, end: TX_DONE when the chip says the far end has it
@@ -714,11 +715,11 @@ static const sct_dmr_port_t port_opts = {
 
 static bool is_codec(int i, const sct_codec_write_t *w)
 {
-	static const uint8_t hdr[6] = { 0x84, 0xA9, 0x61, 0x00, 0x03, SCT_TYPE_CODEC };
+	static const uint8_t hdr[7] = { 0x84, 0xA9, 0x61, 0x00, 0x06, SCT_TYPE_CODEC, 0x00 };
 
-	return i >= 0 && i < nsent && sent[i].len == SCT_CODEC_PKT_BYTES && memcmp(sent[i].pkt, hdr, 6) == 0 &&
-	       sent[i].pkt[6] == w->page && sent[i].pkt[7] == w->reg && sent[i].pkt[8] == w->value &&
-	       sent[i].pkt[9] == 0;
+	return i >= 0 && i < nsent && sent[i].len == SCT_CODEC_PKT_BYTES && memcmp(sent[i].pkt, hdr, 7) == 0 &&
+	       sent[i].pkt[7] == w->page && sent[i].pkt[8] == w->reg && sent[i].pkt[9] == w->value &&
+	       sent[i].pkt[10] == 0 && sent[i].pkt[11] == 0;
 }
 
 static int codec_count(const sct_codec_write_t *w)

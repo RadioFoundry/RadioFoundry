@@ -73,7 +73,11 @@ void gd32_swj(uint32_t mode)
 {
 	RCU_APB2EN |= RCU_APB2EN_AFEN;
 	(void)RCU_APB2EN;
-	AFIO_PCF0 = (AFIO_PCF0 & ~AFIO_PCF0_SWJ_MASK) | mode;
+	// The field to 0 first, then the mode, as the vendor library writes it: a GD32F303 ignored a direct change from
+	// SW-DP only to off (seen on a radio; the pins stayed SWD)
+	uint32_t v = AFIO_PCF0 & ~AFIO_PCF0_SWJ_MASK;
+	AFIO_PCF0 = v;
+	AFIO_PCF0 = v | mode;
 }
 
 void gd32_exti_route(gd32_gpio_t *port, uint8_t line)

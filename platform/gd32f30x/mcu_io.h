@@ -51,6 +51,13 @@ static inline void mcu_port_high_byte_dir(mcu_gpio_t *p, bool out)
 	p->CTL1 = out ? 0x33333333u : 0x44444444u;
 }
 
+// Pins 8..15 all inputs with pull-up (OCTL 1, CTL 8): a released bus reads 0xFF, not what floats
+static inline void mcu_port_high_byte_pullup(mcu_gpio_t *p)
+{
+	p->BOP = 0xFF00u;
+	p->CTL1 = 0x88888888u;
+}
+
 // The JTAG-only pins (PA15, PB3, PB4) as GPIO, SWD kept; and the SWD pins (PA13, PA14) as GPIO too
 static inline void mcu_jtag_release(void) { gd32_swj(AFIO_PCF0_SWJ_SWDP); }
 static inline void mcu_swd_release(void) { gd32_swj(AFIO_PCF0_SWJ_OFF); }

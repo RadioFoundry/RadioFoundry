@@ -117,6 +117,14 @@ bool d578uv_nand_read(uint32_t addr, void *buf, uint32_t len)
 	return ok;
 }
 
+bool d578uv_nand_read_any(uint32_t addr, void *buf, uint32_t len, uint32_t *ecc_failed)
+{
+	d578uv_nand_lock();
+	bool ok = ready && spi_nand_read_any(&nand, addr, buf, len, ecc_failed);
+	d578uv_nand_unlock();
+	return ok;
+}
+
 #if CONFIG_NAND_STORAGE
 // RadioFoundry's range as the sector layer sees it (nand_dev_t): blocks and pages from D578UV_NAND_RFOUNDRY_FIRST. The
 // driver's write window refuses anything outside it as well
@@ -207,6 +215,10 @@ static void dev_busy(void *ctx)
 	}
 }
 
+// The factory's block test leaves ten 0x55 bytes at the start of each block, the rest erased (read on a radio, in
+// RadioFoundry's range too): blank to the sector layer (docs/spec/hardware-d578uv.md 6.3)
+static const uint8_t factory_mark[10] = { 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55 };
+
 const nand_dev_t d578uv_nand_dev = {
 	.ctx = NULL,
 	.pages_per_block = PPB,
@@ -218,6 +230,8 @@ const nand_dev_t d578uv_nand_dev = {
 	.block_bad = dev_block_bad,
 	.mark_bad = dev_mark_bad,
 	.busy = dev_busy,
+	.factory_mark = factory_mark,
+	.factory_mark_len = sizeof(factory_mark),
 };
 
 #endif

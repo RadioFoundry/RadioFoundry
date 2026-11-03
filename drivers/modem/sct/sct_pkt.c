@@ -120,12 +120,14 @@ void sct_pkt_codec(uint8_t out[SCT_CODEC_PKT_BYTES], const sct_codec_write_t *w)
 	out[1] = SCT_SYNC1;
 	out[2] = SCT_SYNC2;
 	out[3] = 0;
-	out[4] = 3;		// LEN: page, register, value
+	out[4] = 6;		// LEN: the body after TYPE
 	out[5] = SCT_TYPE_CODEC;
-	out[6] = w->page;
-	out[7] = w->reg;
-	out[8] = w->value;
-	out[9] = 0;		// the pad of an odd length
+	out[6] = 0;
+	out[7] = w->page;
+	out[8] = w->reg;
+	out[9] = w->value;
+	out[10] = 0;
+	out[11] = 0;
 }
 
 uint16_t sct_pkt_end(sct_pkt_t *p, bool parity)

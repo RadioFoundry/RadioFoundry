@@ -390,6 +390,7 @@ static void test_status(void)
 	qa4818_status(&c, &s);
 	CHECK(s.signal);
 	CHECK(s.noise == 0x2A);
+	CHECK(qa4818_noise(s.noise) == 0x2A + QA4818_NOISE_OFFSET && qa4818_noise(0xFF) == 0x7F + QA4818_NOISE_OFFSET);
 	CHECK(s.rssi == 0x046);
 	CHECK(s.tone_flags == 0x0001);
 	CHECK(f.n == 0);		// reads only

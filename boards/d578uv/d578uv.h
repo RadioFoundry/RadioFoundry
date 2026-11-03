@@ -40,8 +40,6 @@ _Static_assert(KEY_COUNT <= 32, "the key scan is a 32-bit mask");
 
 // The serial hand microphone (input_d578uv.c): heard, its accepted frames, bytes dropped and the key it holds
 void d578uv_hand_mic(hal_hand_mic_stats_t *st);
-// The core's receive LED: the one LED lights for it as well as on transmit (radio_d578uv.c)
-void d578uv_led_rx(bool on);
 
 // LCD backlight, 0..100 %: register 8 of the PA5 device (radio_d578uv.c, front_io.h). Any task
 void d578uv_backlight(uint8_t percent);
@@ -52,6 +50,10 @@ void d578uv_bus_init(void);
 // --- Radio (radio_d578uv.c, hardware-d578uv.md 5) ---
 // board_rf_safe's part: PE6 low, the PA DAC at 0, the shift register's TX bit clear. Plain register writes only
 void d578uv_rf_safe(void);
+void d578uv_outputs_off(void);		// the shift register all off, for the standby (power_d578uv.c)
+bool d578uv_fan_on(void);		// the fan runs (chip 0's GPIO bit 1: transmitting or the PA hot)
+extern const hal_temp_t d578uv_temp;
+uint8_t d578uv_pot_percent(uint32_t raw);	// a volume pot's ADC reading as 0..100 (power_d578uv.c)
 #if CONFIG_DMR
 // DMR transmit bursts the PA gate switched on, and key-ups refused with the burst line already high (pa_gate.h)
 void d578uv_pa_counts(uint32_t *bursts, uint32_t *refused);
@@ -76,7 +78,10 @@ bool d578uv_afsk_tx_busy(void);
 void d578uv_afsk_tx_stop(void);
 #endif
 #if CONFIG_AM_RX || CONFIG_BCAST_FM
-bool d578uv_kt_present(void);		// the KTMicro receiver answered at the radio's init (5.4)
+#if CONFIG_BCAST_FM
+void d578uv_bc_raw(uint16_t r[3]);	// the RDA5807's 0x02, 0x0A, 0x0B as last polled (0 without one)
+#endif
+const char *d578uv_bc_chip(void);	// the AM/FM receiver that answered at init: "kt", "rda" (FM only) or "no" (5.4)
 #endif
 #if CONFIG_VOX
 uint8_t d578uv_mic_level(void);	// hal_power_t.mic_level: chip 0's voice amplitude, 0..100 (radio_d578uv.c)
@@ -104,6 +109,8 @@ bool d578uv_nand_init(void);
 bool d578uv_nand_ready(void);
 uint16_t d578uv_nand_id(void);		// manufacturer << 8 | device, 0 if nothing answered
 bool d578uv_nand_read(uint32_t addr, void *buf, uint32_t len);
+// The same with a page whose ECC failed passed on (spi_nand_read_any): the stock calibration's first page reads so
+bool d578uv_nand_read_any(uint32_t addr, void *buf, uint32_t len, uint32_t *ecc_failed);
 // The NAND's mutex (recursive): taken by every function here, and by the storage around each whole operation
 void d578uv_nand_lock(void);
 void d578uv_nand_unlock(void);

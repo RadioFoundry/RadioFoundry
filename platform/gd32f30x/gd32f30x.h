@@ -115,6 +115,10 @@ typedef enum {
 #define RCU_APB2EN		GD32_REG(RCU_BASE + 0x18u)
 #define RCU_APB1EN		GD32_REG(RCU_BASE + 0x1Cu)
 #define RCU_BDCTL		GD32_REG(RCU_BASE + 0x20u)
+#define RCU_ADDCTL		GD32_REG(RCU_BASE + 0xC0u)
+#define RCU_ADDCTL_CK48MSEL	(1u << 0)	// the USB clock from IRC48M instead of CK_PLL / USBDPSC
+#define RCU_ADDCTL_IRC48MEN	(1u << 16)
+#define RCU_ADDCTL_IRC48MSTB	(1u << 17)
 #define RCU_RSTSCK		GD32_REG(RCU_BASE + 0x24u)
 #define RCU_AHBRST		GD32_REG(RCU_BASE + 0x28u)
 #define RCU_CFG1		GD32_REG(RCU_BASE + 0x2Cu)
