@@ -80,7 +80,7 @@ was programmed keeps stock bytes wherever RadioFoundry hasn't written. The open-
 
 The firmware applies step 1 at start-up and after a CPS write, with the same rule and thresholds, to the channels,
 zones and RX group lists ([codeplug-native.md](codeplug-native.md) 2, "Another firmware's codeplug"). Records in use
-that fail it make the radio show an empty codeplug. The radio doesn't know the stock layouts, so it doesn't apply the exception in step 1 (the
+that fail it make the radio show an empty codeplug and ask before an edit writes over it. The radio doesn't know the stock layouts, so it doesn't apply the exception in step 1 (the
 general settings of a radio put back on stock) or steps 2 and 3. It needs no frequency range check: a junk record with
 valid BCD frequencies also has a name that fails.
 
