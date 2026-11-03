@@ -951,7 +951,16 @@ static void test_dmr_carrier(void)
 	sct_dmr_carrier(2);
 	sct_dmr_poll(1010);
 	CHECK(nsent == 3);			// no change, nothing more
+	// A loss goes out only once it has lasted the hold: the gaps between one station's bursts don't
 	sct_dmr_carrier(0);
+	sct_dmr_poll(1040);
+	CHECK(nsent == 3);
+	sct_dmr_poll(1070);
+	sct_dmr_carrier(2);
+	sct_dmr_carrier(0);
+	sct_dmr_poll(1070 + SCT_DMR_CR_HOLD_MS - 10);
+	CHECK(nsent == 3);
+	sct_dmr_poll(1070 + SCT_DMR_CR_HOLD_MS);
 	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
 	CHECK(nsent == 4 && d != NULL && d[0] == 0);
 	sct_dmr_carrier(2);
@@ -961,10 +970,10 @@ static void test_dmr_carrier(void)
 	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	int n = nsent;
 	sct_dmr_carrier(2);
-	sct_dmr_poll(1020);
+	sct_dmr_poll(1500);
 	CHECK(nsent == n);
 	m->tx_abort();
-	sct_dmr_poll(1030);
+	sct_dmr_poll(1510);
 	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
 	CHECK(d != NULL && d[0] == 0);		// receive again: "lost" until the board's next reading
 	sct_dmr_carrier(2);
@@ -974,7 +983,7 @@ static void test_dmr_carrier(void)
 	// A receive restart (WORK_MODE receive) sends the current value again
 	n = nsent;
 	m->rx_restart();
-	sct_dmr_poll(1040);
+	sct_dmr_poll(1520);
 	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
 	CHECK(nsent == n + 2 && d != NULL && d[0] == 2);
 	sct_dmr_get_stats(&st);
