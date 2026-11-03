@@ -48,11 +48,11 @@ is `tools/bringup.py list --radio <id>`.
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial |
-| `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | fail |
+| `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial |
 | `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial |
 | `dmr_emergency` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial |
-| `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | fail |
+| `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
 | `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial |
 | `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
