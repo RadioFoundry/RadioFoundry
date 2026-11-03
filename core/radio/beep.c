@@ -69,6 +69,13 @@ static const int16_t sine[64] = {
 static const hal_audio_t *aud;
 static beep_stats_t stats;
 
+// Tones without PCM (beep_init_tone), radio task only
+static void (*tone_fn)(uint16_t hz, uint8_t level);
+static uint16_t tone_poll_ms;
+static bool tone_on;		// a pattern is playing as tones
+static uint8_t tone_pattern, tone_seg, tone_level;
+static int32_t tone_left_ms;
+
 // Handed from the radio task to the audio side
 static uint8_t req_pattern;
 static uint8_t req_level;
@@ -97,6 +104,38 @@ void beep_init(const hal_audio_t *audio)
 	aud = audio;
 }
 
+void beep_init_tone(void (*tone)(uint16_t hz, uint8_t level), uint16_t poll_ms)
+{
+	tone_fn = tone;
+	tone_poll_ms = poll_ms != 0 ? poll_ms : 1;
+	tone_on = false;
+}
+
+// The tone of the pattern's segment tone_seg, for its length
+static void tone_seg_start(void)
+{
+	const beep_seg_t *s = &patterns[tone_pattern].segs[tone_seg];
+	tone_left_ms += s->ms;
+	tone_fn(s->hz, s->hz != 0 ? tone_level : 0);
+}
+
+// A poll gone by: the next segment when this one's time is up, off after the last
+static void tone_step(void)
+{
+	if (!tone_on) {
+		return;
+	}
+	tone_left_ms -= tone_poll_ms;
+	while (tone_left_ms <= 0) {
+		if (++tone_seg >= patterns[tone_pattern].count) {
+			tone_on = false;
+			tone_fn(0, 0);
+			return;
+		}
+		tone_seg_start();
+	}
+}
+
 uint8_t beep_pattern(beep_t b, const beep_seg_t **segs)
 {
 	if (b <= BEEP_NONE || b >= BEEP_COUNT) {
@@ -109,7 +148,7 @@ uint8_t beep_pattern(beep_t b, const beep_seg_t **segs)
 
 bool beep_busy(void)
 {
-	return cb_active || LOAD(req_seq) != cb_seq;
+	return tone_on || cb_active || LOAD(req_seq) != cb_seq;
 }
 
 void beep_play(beep_t b, uint8_t level, bool shared)
@@ -118,7 +157,17 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 		return;
 	}
 	if (aud == NULL || aud->start == NULL) {
-		stats.no_stream++;
+		if (tone_fn == NULL) {
+			stats.no_stream++;
+			return;
+		}
+		tone_pattern = (uint8_t)b;
+		tone_seg = 0;
+		tone_level = level > 100 ? 100 : level;
+		tone_left_ms = 0;
+		tone_on = true;		// replaces a pattern still playing
+		tone_seg_start();
+		stats.played++;
 		return;
 	}
 	req_pattern = (uint8_t)b;
@@ -151,6 +200,7 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 
 void beep_service(bool shared)
 {
+	tone_step();
 	if (!own_stream) {
 		return;
 	}

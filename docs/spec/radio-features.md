@@ -345,6 +345,12 @@ clock) is stopped the same way, in case a block already ran. Counters in the vie
 mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
 `beep.busy`.
 
+A board with no PCM speaker audio (no `board.audio`) can give `hal_radio_t.beep_tone(hz, level)` instead: the core
+then plays each segment of the pattern as one tone on the board's own tone generator, `hz` 0 for a silent segment and
+once at the end, timed by the radio poll (a segment ends on the first poll at or after its length). `level` is the
+same level a PCM beep would play at. The board ignores the hook while it transmits. `beep.played` counts these
+beeps too.
+
 ### 4.1 Vibration (CONFIG_VIBRATE)
 
 On a radio with a vibration motor (`hal_power_t.vibrate` not NULL), the alerts that already reach the user also

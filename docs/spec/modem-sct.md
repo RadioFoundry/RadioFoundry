@@ -229,7 +229,8 @@ The board turns those switches off in its `config.mk` ([build-config.md](../buil
 
 The speaker: the core opens the board's receive audio (`hal_radio_t.audio`) while it plays a DMR call (RDMR_RX), as
 it does for an FM signal, and closes it at the call's end; a call it doesn't play (RDMR_RX_OTHER) and a hotspot don't
-open it. The board routes its speaker to the baseband's voice in DMR.
+open it. The board routes its speaker to the baseband's voice in DMR. Beeps have no PCM path either; such a board plays
+them through `beep_tone` ([radio-features.md](radio-features.md) 4).
 
 The vocoder's frames can be routed through the MCU, but the driver doesn't do it yet: what the chip's frames hold is
 not known well enough (section 9).

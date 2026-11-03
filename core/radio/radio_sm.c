@@ -4739,6 +4739,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	batt_init(&sm->batt);
 #if CONFIG_BEEP
 	beep_init(pcm_audio());
+	beep_init_tone(pcm_audio() == NULL && board.radio != NULL ? board.radio->beep_tone : NULL, RADIO_POLL_MS);
 #endif
 	step_update(sm);
 	sm->view.source = codeplug_source();
