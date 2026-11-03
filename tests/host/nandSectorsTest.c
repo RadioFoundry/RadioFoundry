@@ -1336,6 +1336,50 @@ static void test_cps(void)
 	CHECK(nand.violations == 0);
 }
 
+// A factory block test's mark at the start of page 0 of every block, the rest erased: blank to a device that names
+// the mark, foreign to one that doesn't; anything beyond the mark is still foreign
+static void mark_blocks(uint16_t blocks, uint16_t ppb)
+{
+	nand_create(blocks, ppb);
+	for (uint16_t b = 0; b < blocks; b++) {
+		uint8_t *d = nand.data[(uint32_t)b * ppb];
+		memset(d, 0x55, 10);
+		nand.next[b] = 1;
+	}
+}
+
+static void test_factory_mark(void)
+{
+	static const uint8_t mark[10] = { 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55 };
+	nand_sectors_stats_t st;
+
+	mark_blocks(8, 16);
+	expect_refused(8, 16, 12, 0, "a factory mark the device doesn't name");
+
+	dev.factory_mark = mark;
+	dev.factory_mark_len = sizeof(mark);
+	mark_blocks(8, 16);
+	memset(model, 0xFF, sizeof(model));
+	CHECK(mount(8, 16, 12));
+	nand_sectors_get_stats(&ns, &st);
+	CHECK(st.status == NAND_SECTORS_MOUNTED && st.foreign == 0);
+	for (uint32_t i = 0; i < 100; i++) {
+		CHECK(rewrite_both(rnd() % 12, i));
+	}
+	CHECK(remount() && matches_model());
+
+	// One byte past the mark, or a mark byte changed: foreign
+	mark_blocks(8, 16);
+	nand.data[3 * 16][10] = 0x00;
+	expect_refused(8, 16, 12, 3, "data after the factory mark");
+	mark_blocks(8, 16);
+	nand.data[5 * 16][2] = 0x54;
+	expect_refused(8, 16, 12, 5, "a changed factory mark");
+	dev.factory_mark = NULL;
+	dev.factory_mark_len = 0;
+	CHECK(nand.violations == 0);
+}
+
 int main(void)
 {
 	test_basic();
@@ -1343,6 +1387,7 @@ int main(void)
 	test_gc_and_wear();
 	test_bad_blocks();
 	test_foreign();
+	test_factory_mark();
 	test_power_cuts();
 	test_settings();
 	test_cps();
