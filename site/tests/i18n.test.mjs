@@ -94,7 +94,8 @@ test("the start-language switches are LANG_DEFAULT_<CODE>, not packs", () => {
 test("the radio starts in one language: English or a pack that is on", () => {
 	const s = new Selection(startRadio, startFeatures, [{ id: "full" }]);
 	s.useVariant("full");
-	assert.deepEqual(startLanguages(startFeatures, s).map((l) => l.code), ["en", "es"]);
+	// every pack the radio can have is a choice; those the build leaves out say so
+	assert.deepEqual(startLanguages(startFeatures, s).map((l) => [l.code, l.included]), [["en", true], ["es", true], ["it", false]]);
 	assert.equal(startLanguage(startFeatures, s), "en");
 	assert.equal(setStartLanguage(startFeatures, s, "es"), "es");
 	assert.ok(s.on.has("LANG_DEFAULT_ES"));
@@ -113,6 +114,35 @@ test("the radio starts in one language: English or a pack that is on", () => {
 	setStartLanguage(startFeatures, s, "es");
 	setStartLanguage(startFeatures, s, "it");
 	assert.ok(s.on.has("LANG_DEFAULT_IT") && !s.on.has("LANG_DEFAULT_ES"));
+});
+
+test("a radio language picked by hand is built in, and a pack the radio can't have is never offered", () => {
+	const s = new Selection(startRadio, startFeatures, [{ id: "full" }]);
+	s.useVariant("full");
+	assert.equal(setStartLanguage(startFeatures, s, "it", { include: true }), "it");
+	assert.ok(s.on.has("LANG_IT") && s.on.has("LANG_DEFAULT_IT") && !s.on.has("LANG_DEFAULT_ES"));
+	assert.equal(s.matches(startCode), null);	// Full plus Italian: a custom build
+	// English by hand: no start switch, the packs stay as they are
+	assert.equal(setStartLanguage(startFeatures, s, "en", { include: true }), "en");
+	assert.ok(!s.on.has("LANG_DEFAULT_IT") && s.on.has("LANG_IT"));
+	// a radio that can't have Italian: not a choice, and picking it anyway starts in English
+	const no = new Selection({ ...startRadio, unsupported: ["LANG_IT", "LANG_DEFAULT_IT"] }, startFeatures, [{ id: "full" }]);
+	no.useVariant("full");
+	assert.deepEqual(startLanguages(startFeatures, no).map((l) => l.code), ["en", "es"]);
+	assert.equal(setStartLanguage(startFeatures, no, "it", { include: true }), "en");
+	assert.ok(!no.on.has("LANG_IT"));
+});
+
+test("the build step builds a picked radio language in and takes it out again when the pick changes", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	assert.match(src, /setStartLanguage\(S\.data\.features, sel, want, \{ include: S\.startLang != null \}\)/);
+	assert.match(src, /if \(S\.langAdded && S\.langAdded !== `LANG_\$\{code\.toUpperCase\(\)\}`\) sel\.set\(S\.langAdded, false\);/);
+	// the pack left out by hand takes the pick with it
+	assert.match(src, /packCode\(name\) === S\.startLang\) S\.startLang = "en";/);
+	for (const lang of ["en", "es", "it"]) {
+		const cat = JSON.parse(readFileSync(new URL(`../i18n/${lang}.json`, import.meta.url), "utf8"));
+		assert.match(cat["flash.build.start_lang_adds"], /\{language\}/, lang);
+	}
 });
 
 test("the build step offers the start language, preset to the page's on an installation only", () => {

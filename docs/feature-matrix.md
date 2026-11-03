@@ -131,6 +131,7 @@ is `tools/bringup.py list --radio <id>`.
 | `lang_default_it` | off | off | off | off | off | off | off | off |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded |
+| `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | not recorded | not recorded |
 | `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `audio_probe` | not written | off | not written | not written | not written | off | not written | not written |
@@ -265,8 +266,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | FM VOX | `VOX` | 496 | 1,064 |  |
 | Receiver battery saver | `BATTERY_SAVE` | 296 | 740 |  |
 | Frequency trim, Settings > Advanced | `REF_TRIM` | 2,156 | 2,232 | Figures from tools/ci.sh (2026-10-30); the hook on each radio, the page and the setting |
-| Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | Needs a receiver that does AM; the DM-32's board glue isn't written yet |
-| Broadcast FM receiver | `BCAST_FM` | ~0* | — | Needs a second receiver chip (the DM-32's RDA5807M, whose glue isn't written yet, or the AT-D578UV's KTMicro AM/FM receiver) |
+| Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | Needs a receiver that does AM; DM-32 board glue not written yet, so nothing runs |
+| Broadcast FM receiver | `BCAST_FM` | ~0* | — | Needs a second receiver chip (DM-32's RDA5807M); glue not written yet |
 | DMR Tier II voice (modem, call stack, AMBE FEC, vocoder) | `DMR` | 175,856 | 134,308 | Includes every DMR feature and everything on IP over DMR |
 | Basic privacy (Motorola / Anytone BP) | `DMR_PRIVACY` | 1,936 | 1,992 |  |
 | Talker alias receive and send | `DMR_TALKER_ALIAS` | 984 | 1,300 |  |
@@ -286,7 +287,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 |  |
 | Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one RadioFoundry drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
-| Bluetooth PTT and keys: a Bluetooth module's PTT and mic keys on a UART | `BT_PTT` | — | — | Needs a Bluetooth module the radio talks to over a UART; none on these two. 1,620 B on the AT-D578UV (GD32F303), measured 2026-10-31 with tools/ci.sh |
 | GPS receiver: the module driver and its NMEA input (Settings > Location > GPS) | `GPS` | — | 1,196 | Needs a GPS receiver. Off, DMR GPS, LRRP and APRS keep the fixed position and report no fix. MD-380 measured 2026-10-22 (LTO, 58f2cebe). The DM-1701 has none from the factory but listens for an owner-fitted one (1,308 B, LTO) |
 
 ## DMR data
@@ -359,8 +359,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | 16x32 font | `FONT_XL` | 6,352* | — | Only useful at 240 px and wider (MD-380 is 160 px). Anti-aliased on the DM-32 (7.4 KB of glyphs) |
 | Anti-aliased fonts | `FONT_AA` | 3,004* | — | Smooth text on color panels (measured 2026-10-17); the DM-32's image grew 9.5 KB with it and `FONT_XL` |
 | Larger text | `FONT_BIG` | — | — | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 (measured 2026-10-17) |
-| Spanish on the radio | `LANG_ES` | 29,964 | 29,692 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
-| Italian on the radio | `LANG_IT` | 22,464 | 22,456 | Off by default; measured with Spanish on (its text only). Alone it costs about as much as Spanish |
+| Spanish on the radio | `LANG_ES` | 28,456 | 28,348 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
+| Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text, and the hashes of strings Spanish leaves untranslated). Alone it costs about as much as Spanish |
 | Start in Spanish | `LANG_DEFAULT_ES` | 0 | 0 | The language the radio starts in until the user picks one (needs `LANG_ES`); the web flasher sets it from its Radio language choice |
 | Start in Italian | `LANG_DEFAULT_IT` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_IT`) |
 

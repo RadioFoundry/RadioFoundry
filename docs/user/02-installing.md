@@ -42,8 +42,9 @@ that runs RadioFoundry already: [Updating RadioFoundry](#updating-radiofoundry))
    features one by one. Features the radio can't have are marked. A custom build is made when you continue and takes
    under a minute. When your browser asks for a language the radio can show but the build leaves out, the page offers
    to include it (Settings > Display > Language on the radio, [Settings](17-settings.md)). **Radio language** picks
-   the language the radio starts in: English or one the build includes, preset to the page's language. You can
-   change it on the radio later.
+   the language the radio starts in, preset to the page's language when the build has it. Picking a language the
+   build leaves out adds it to the build. You can change it on the radio later. A build too big for the radio says
+   by how much: turn some features off in **Custom**, or pick a smaller build, and build again.
 3. **Current firmware.** Say what the radio runs now:
 
    | Choice | When |
@@ -71,7 +72,9 @@ that runs RadioFoundry already: [Updating RadioFoundry](#updating-radiofoundry))
    firmware backup and select no supported stock file, **Install without the codec** is the only way on. The installer
    then warns, above the Install button, that this installation will not include the DMR voice codec: analog FM will
    work, but DMR voice will not until you install RadioFoundry again with a supported manufacturer firmware file.
-   Installing again keeps your channels and settings.
+   Installing again keeps your channels and settings. When you press **Install**, a dialog asks once more:
+   **Go Back and Add the Codec** returns to the step where you select the file, **Install Anyway** installs without
+   DMR voice.
 
    The same choice comes when the backup finds a firmware version whose codec RadioFoundry has not mapped yet. The
    backup is still complete; the codec step asks for a supported stock firmware file instead.
@@ -184,7 +187,10 @@ firmware version has not been mapped yet: Restore puts it back as it is, never t
 can't use that dump's codec until the version is mapped, so the installer offers to send the dump to the RadioFoundry
 team for mapping and asks for a supported manufacturer firmware file instead.
 
-A backup you unpacked and zipped again (macOS unpacks downloads by itself) still restores.
+A backup you unpacked and zipped again (macOS unpacks downloads by itself) still restores. The backup is the .zip file
+itself (its name is the radio's model, `_Backup_` and the date), not one of the files inside it. When you pick a file
+that is not a backup, Restore says what it is and what to pick instead. An original firmware file goes on to the
+restore of the original firmware where the radio supports that without a backup.
 
 If the backup holds the original firmware's codeplug, open the file in the
 [Codeplug Editor](04-programming.md#the-codeplug-editor). It converts the channels, zones and contacts to the

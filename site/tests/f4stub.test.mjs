@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { crc32, equal, fromHex, toHex } from "../static/js/flasher/bytes.js";
 import { FakeRadio, simulation, randomBytes, rng } from "../static/js/flasher/fake.js";
-import { F4Stub, f4Image, f4StubHeader, gd32Sectors, at32Sectors, HDR, APP_BASE, GD32_MAGIC, AT32_MAGIC, MEM_SPI, OP, TARGETS } from "../static/js/flasher/f4stub.js";
+import { F4Stub, f4Image, f4StubHeader, gd32Sectors, at32Sectors, HDR, APP_BASE, GD32_MAGIC, AT32_MAGIC, MEM_SPI, OP, TARGETS, registerShort } from "../static/js/flasher/f4stub.js";
 import { OK, Stub, StubError } from "../static/js/flasher/stub.js";
 import { Link } from "../static/js/flasher/link.js";
 import { readRadio } from "../static/js/flasher/backup.js";
@@ -183,12 +183,12 @@ test("SPI flash: only changed sectors are written, then verified; outside the ch
 });
 
 // A backup through the loader the way the backup step runs it
-async function backupVia(radio, sim, what, { patch = () => {} } = {}) {
+async function backupVia(radio, sim, what, { patch = () => {}, spiSize = radio.spi.length } = {}) {
 	const link = new Link(radio.serialStream());
 	patch(link);
 	let handedOver = false;
 	const loader = f4LoaderReader(link, { stubJson: async () => stubJson, reopen: async () => radio.serialStream(), board: fb.f4stub.boards[radio.board.id], onHandOver: () => { handedOver = true; } });
-	const parts = await readRadio(link, sim.board, { backup: { spi_size: radio.spi.length } }, { what, readers: [loader] });
+	const parts = await readRadio(link, sim.board, { backup: { spi_size: spiSize } }, { what, readers: [loader] });
 	return { parts, loader, handedOver, get: (w) => parts.find((x) => x.what === w) };
 }
 
@@ -268,6 +268,46 @@ test("the loader refuses a read past the chip's register size (what the debug li
 	await assert.rejects(s.readFlash(0x0807C000, 0x10000), /refused: status 0xd/);
 });
 
+test("a register that reads short: a backup whose INFO_CHIP goes unanswered still reads the internal flash in place", async () => {
+	// OPENDIGITALRADIO-17 on a build with the size check: the loader read the internal flash and refused the top
+	const { sim, radio } = await running("dm1701", { flashKb: 512 });
+	radio.flash.set(randomBytes(rng(5), 0x4000), 0x0F0000);
+	let asked = 0;
+	const b = await backupVia(radio, sim, {}, { patch: (link) => { link.chip = async () => { asked++; throw new Error("no answer to command 0xb"); }; } });
+	assert.equal(asked, 2, "asked twice");
+	const internal = b.get("internal-flash");
+	assert.ok(internal.complete);
+	assert.deepEqual(internal.data, radio.flash.subarray(APP_BASE - 0x08000000));
+	assert.deepEqual(b.get("spi-flash").data, radio.spi, "the loader reads the SPI flash");
+	assert.equal(radio.mode, "normal");
+});
+
+test("a register that reads short: install refused before anything is erased when the firmware's flash reaches past it", async () => {
+	// OPENDIGITALRADIO-34: an MD-UV380 whose register reads 512 KB, its firmware owning sectors past 0x08080000
+	for (const id of Object.keys(fb.f4stub.boards)) {
+		const owned = fb.f4stub.boards[id].owned;
+		assert.equal(registerShort(1024, owned), false, id);
+		assert.equal(registerShort(null, owned), false, `${id}: unknown is not short`);
+		const short = registerShort(512, owned);
+		assert.equal(short, owned.some(([, hi]) => hi > 0x08080000), id);
+		if ((fb.f4stub.boards[id].target || "stm32f4") !== "stm32f4") continue;	// the simulated radio is a DFU one
+		const { radio } = await running(id, { flashKb: 512 });
+		const s = await enter(radio);
+		const before = radio.events.length;
+		const write = s.writeImage(owned, [[APP_BASE, app(6, 0x20000)]]);
+		if (short) {
+			await assert.rejects(write, /reads 512 KB.*update mode/);
+			assert.ok(!radio.events.slice(before).some((e) => /^erase/.test(e)), `${id}: nothing erased`);
+		} else {
+			await write;	// the firmware's flash fits under the register: the loader writes it
+			assert.ok(equal(at(radio, APP_BASE, 0x20000), app(6, 0x20000)), id);
+		}
+	}
+	assert.ok(Object.values(fb.f4stub.boards).some((b) => registerShort(512, b.owned)), "a board that needs the bootloader then");
+	const { radio } = await running("dm1701", { flashKb: 2048 });
+	await assert.rejects((await enter(radio)).writeImage(fb.f4stub.boards.dm1701.owned, [[APP_BASE, app(6, 0x1000)]]), /2048 KB/);
+});
+
 test("hand-over on a port that went away: says so, not \"built without CONFIG_STUB_ENTRY\"", async () => {
 	const dead = { buf: new Uint8Array(0), clear() {}, take: () => new Uint8Array(0), write: async () => {} };
 	const s = new F4Stub(dead, { log: quiet });
@@ -285,6 +325,29 @@ test("a codeplug-only backup with no reader reads over the debug link", async ()
 	const parts = await readRadio(new Link(radio.serialStream()), sim.board, { backup: { spi_size: radio.spi.length } }, { what: { internal: false, spi: "codeplug" } });
 	assert.deepEqual(radio.events, []);
 	assert.equal(parts.find((x) => x.what === "spi-flash").data.length, 0x120000);
+});
+
+// Some radios of a model came with a smaller memory chip than the board's (1 MB where radios.json says 16 MB): RadioFoundry
+// then has no flash map for it. A read past the chip's end is refused, so the backup reads the chip the radio has
+test("a backup of a radio with a smaller memory chip reads that chip, through the loader and over the debug link", async () => {
+	const BOARD_SPI = 0x1000000;
+	// the loader's own probe (HELLO) gives the size, with no radio info to say it
+	let { sim, radio } = await running("dm1701", { spiSize: 0x100000, noMap: true, radioInfo: false });
+	radio.spi.set(randomBytes(rng(4), 0x1000), 0xFF000);
+	const b = await backupVia(radio, sim, {}, { spiSize: BOARD_SPI });
+	assert.ok(b.loader.used);
+	assert.ok(b.get("spi-flash").complete);
+	assert.deepEqual(b.get("spi-flash").data, radio.spi);
+	// over the debug link: the radio info gives it
+	({ sim, radio } = await running("dm1701", { spiSize: 0x100000, noMap: true }));
+	for (const spi of ["full", "codeplug"]) {
+		const parts = await readRadio(new Link(radio.serialStream()), sim.board, { backup: { spi_size: BOARD_SPI } }, { what: { internal: false, spi } });
+		const got = parts.find((x) => x.what === "spi-flash");
+		assert.deepEqual(got.data, radio.spi, spi);
+		assert.equal(got.complete, spi === "full");
+		assert.ok(parts.some((x) => x.what === "radio-info"));
+	}
+	assert.equal((await new Link(radio.serialStream()).storageInfo()).region, "nomap", "no settings region on that chip");
 });
 
 test("a read that fails inside the loader restarts the radio before the error goes up", async () => {
@@ -329,7 +392,8 @@ test("board records: the page sends stub/f4stub.py's bytes for every radio", () 
 	for (const [bid, rec] of Object.entries(vectors.records)) {
 		const b = fb.f4stub.boards[bid];
 		assert.equal(b.record, rec, bid);
-		assert.equal(fromHex(rec).length, vectors.targets[b.target].rec_len, `${bid}: the ${b.target} record length`);
+		// layout 2 (a GD32F30x or AT32F43x board with an SPI NAND) carries 8 more bytes
+		assert.equal(fromHex(rec).length, vectors.targets[b.target].rec_len + (fromHex(rec)[1] === 2 ? 8 : 0), `${bid}: the ${b.target} record length`);
 		assert.equal(fromHex(rec)[0], b.stub_id);
 	}
 	assert.ok(fb.f4stub.boards.dm1701.v2_wiring && fb.f4stub.boards.md380.v2_wiring && !vectors.test_board.v2_wiring);
@@ -507,7 +571,8 @@ class ShortSim {
 				1 | (this.rec ? 0x80 : 0), ...be(base, 4), 0, 0, 0, 0, 0, 0, 0, this.rec ? rec[0] : 0, rec.length, ...rec]));
 		}
 		if (op === OP.CONFIG) {
-			const ok = p.length === 8 && p[0] && p[1] === 1 && !p[2] && !p[3];
+			// layout 1, or 2: layout 1 and an SPI NAND (8 more bytes), as stub/f4stub.py's simulated stub takes them
+			const ok = (p.length === 8 && p[1] === 1 || p.length === 16 && p[1] === 2) && p[0] && !p[2] && !p[3];
 			this.rec = ok ? p.slice() : null;
 			return this.reply(ok ? OK : 0x0D);
 		}

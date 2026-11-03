@@ -47,6 +47,9 @@ test("classify: a stock MD-UV380 codeplug, an MD-380 image and .rdt, blank, unkn
 	let x = 12345;
 	const noise = new Uint8Array(0x1A0000).map(() => (x = (x * 1103515245 + 12345) >>> 0) >>> 24);
 	assert.equal(classify(noise).layout, "unknown");
+	// the radio applies the rule to its channels, zones and RX group lists at start-up: tests/host/codeplugTest.c
+	// counts 620 of these 624 in the same bytes (not the general settings or the contacts)
+	assert.deepEqual(openfwEvidence(noise), { good: 0, bad: 624 });
 });
 
 test("classify: a RadioFoundry codeplug wins over stock bytes it hasn't overwritten", () => {
@@ -177,6 +180,10 @@ test("openFile: a stock dump or backup converts; a RadioFoundry image opens; oth
 	const zipped = await makeBundle(meta, [{ file: "spi-flash.bin", what: "spi-flash", addr: 0, data: dump, complete: true }]);
 	const b = await openFile("backup.zip", zipped);
 	assert.deepEqual([b.kind, b.from, b.board], ["converted", "tyt-uv380", "dm1701"]);
+	// a firmware-only backup: no codeplug, and the report says what the backup held
+	const fw = await makeBundle(meta, [{ file: "internal-flash.bin", what: "internal-flash", addr: 0x0800C000, data: new Uint8Array(64), complete: true }]);
+	await assert.rejects(openFile("backup.zip", fw), (e) => e.code === "backup_no_codeplug" &&
+		JSON.stringify(e.params) === JSON.stringify({ board: "dm1701", parts: ["internal-flash"], spi: 0 }));
 
 	const md = new Stock("tyt-md380");
 	md.channel(1, { name: "Ch", mode: "fm", rx: 146520000 });

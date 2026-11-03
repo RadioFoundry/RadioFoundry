@@ -99,6 +99,12 @@ export const TARGETS = {
 	at32f43x: { key: "at32f43x", label: "AT32F43x", hello: "ATSTUB", magic: AT32_MAGIC, hdrMagic: 0x48535441, hdrMinVersion: 1, configVersion: 1, sectors: at32Sectors, watchdog: "WDT" },
 };
 
+// Whether the chip's flash size register (the loader's HELLO, the debug link's INFO_CHIP: the same register) reads less
+// than the flash the firmware owns. Some radios' chips read 512 KB while the board's flash reaches 1 MB (the codec sits
+// in the top sectors): the loader refuses everything past the register's size, so their install goes through the
+// bootloader. owned: [[lo, hi)] (data/f4-stub.json). An unknown size (null, 0) is not short
+export const registerShort = (flashKb, owned) => !!flashKb && owned.some(([, hi]) => hi > FLASH_BASE + flashKb * 1024);
+
 export class F4Stub extends Stub {
 	// reopen: async () => a new stream, for a stub that enumerated again (the old port is gone), or null.
 	// board: the radio's entry of data/flash-boards.json f4stub.boards ({name, target, app_base, stub_id, record, v2_wiring,
@@ -340,11 +346,15 @@ export class F4Stub extends Stub {
 		return this.request(OP.RESET, be32(this.t.magic), { retries: 0 });
 	}
 
-	// The flash the stub sees must hold what the firmware owns (owned: [[lo, hi)]), on the target's map
+	// The flash the stub sees must hold what the firmware owns (owned: [[lo, hi)]), on the target's map; the loader
+	// refuses everything past the chip's flash size register
 	checkChip(owned = []) {
+		// More than 1 MB on the STM32F4 is a part with another sector map
+		if (this.t.key === "stm32f4" && this.info.flashKb > 1024) throw new StubError(`the chip reports ${this.info.flashKb} KB of flash; the STM32F405 radios have 1024`);
+		if (registerShort(this.info.flashKb, owned)) throw new StubError(`the chip's flash size register reads ${this.info.flashKb} KB, less than the flash the firmware owns, so the loader cannot write it: install in update mode instead`);
 		const secs = this.sectors();
 		const top = secs.length ? secs[secs.length - 1].addr + secs[secs.length - 1].size : FLASH_BASE;
-		const need = Math.max(FLASH_BASE + 1, ...owned.map(([, hi]) => hi), ...(this.board?.codec ? [this.board.codec[1]] : []));
+		const need = Math.max(FLASH_BASE + 1, ...owned.map(([, hi]) => hi));	// not the codec: the loader never writes it
 		if (top < need) throw new StubError(`the chip reports ${this.info.flashKb} KB of flash; this radio's firmware runs to ${hex8(need)}`);
 	}
 

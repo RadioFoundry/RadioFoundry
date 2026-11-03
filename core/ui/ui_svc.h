@@ -69,7 +69,7 @@ bool ui_svc_hear_all(bool on);
 bool ui_svc_privacy(bool on);			// false also when there is no key: the UI says how to add one
 bool ui_svc_monitor(bool on);			// FM monitor latch
 bool ui_svc_vox(bool on);
-// Make the temporary changes permanent (storage-cps): false if the codeplug can't be written
+// Make temporary channel changes permanent (storage-cps): false when busy, off a stored channel, or unavailable
 bool ui_svc_save_channel(void);
 // Store a whole channel (the channel editor, ui.md 2.1) at number 1..CODEPLUG_CHANNELS_MAX, as a storage job like
 // ui_svc_save_channel. false: a write is still going on, or no codeplug storage in this build
@@ -197,6 +197,13 @@ void ui_svc_emergency_dismiss(void);
 // calibration: those would need a second, explicit confirmation), then the radio restarts. Done by the housekeeping
 // task, not the UI's; false if it can't be started (no flash, or a save still going on)
 bool ui_svc_factory_reset(void);
+// Another firmware's codeplug (codeplug_foreign, docs/spec/codeplug-native.md 2): the codeplug write the UI asks for
+// is held, not made, and UI_EV_CODEPLUG_FOREIGN asks the owner. The answer: UI_CP_CANCEL drops the write; UI_CP_NEW
+// clears the old codeplug, starts a new one and makes the write; UI_CP_USE keeps the old codeplug as the radio's own,
+// erasing nothing, and drops the write (it was made on the built-in channels shown until then). Storage jobs. false:
+// nothing held, or a write still going on
+enum { UI_CP_CANCEL, UI_CP_NEW, UI_CP_USE };
+bool ui_svc_codeplug_answer(uint8_t answer);
 
 // --- The crash log (CONFIG_CRASH_LOG) and its report (CONFIG_CRASH_REPORT; ui_svc_crash.c, docs/spec/crash-log.md) ---
 typedef struct {
@@ -356,6 +363,7 @@ typedef enum {
 	UI_EV_ZONE_SENT,	// our zone to id (index 1: a talkgroup): ok = it went out whole
 	UI_EV_ZONE_IMPORTED,	// the import ended: ok with name (the zone here), index (channels), id 1 for an update; else
 				// text says why
+	UI_EV_CODEPLUG_FOREIGN,	// a codeplug write is held: ask what to do with another firmware's codeplug
 } ui_event_kind_t;
 
 typedef struct {

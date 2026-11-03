@@ -1314,6 +1314,8 @@ static void test_cps(void)
 	c.rx_hz = c.tx_hz = 461462500u;
 	c.mode = RADIO_MODE_FM;
 	c.power = CODEPLUG_POWER_DEFAULT;
+	// The test sectors written above look like another firmware's codeplug: the radio edits only after "Start new"
+	CHECK(!codeplug_foreign() || codeplug_start_new());
 	CHECK(codeplug_set_channel(1, &c));
 	static uint8_t sec3[STORAGE_SECTOR];
 	CHECK(cps_ctl(0, 0));

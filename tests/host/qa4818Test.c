@@ -222,6 +222,11 @@ static void test_paths(void)
 	n = f.n;
 	qa4818_path(&c, false, true, false, 0x26AC);	// DMR
 	CHECK(f.regs[0x36] == 0x1D59 && f.regs[0x44] == 0x53EC && f.regs[0x7E] == 0x361E && f.regs[0x1B] == 0x07FF);
+	// page 1 0x1D: the analog value in DMR receive (beeps at the analog path's level), the digital one in DMR transmit
+	CHECK(f.regs[0x1D] == 0x39FD);
+	qa4818_path(&c, true, true, false, 0x26AC);
+	CHECK(f.regs[0x1D] == 0x29A1);
+	qa4818_path(&c, false, true, false, 0x26AC);
 	CHECK(f.regs[0x13] == 0x0375 && f.regs[0x73] == 0x4E8A);	// the digital values without a second receiver
 	(void)n;
 
@@ -254,10 +259,11 @@ static void test_paths(void)
 	SEQ(&f, n, { 0x34, 0x086F }, { 0x35, 0xF208 }, { 0x47, 0x4840 }, { 0x03, 0xBFF5 });
 	qa4818_rx_on(&c, true, 146520000u);
 	CHECK(f.regs[0x47] == 0x6840);
-	// A beep in receive: the tone generator to the AF output, then the receive output back
+	// A beep in receive: the tone generator to the AF output at half the transmit word (it sounds at twice the word's
+	// frequency with the receiver on), then the receive output back
 	n = f.n;
 	qa4818_beep(&c, 1000, 0x7F, qa4818_af_rx(true, 146520000u));
-	SEQ(&f, n, { 0x71, 0x1428 }, { 0x70, 0xFF00 }, { 0x47, 0x6341 }, { 0x03, 0xBFF7 });
+	SEQ(&f, n, { 0x71, 0x0A14 }, { 0x70, 0xFF00 }, { 0x47, 0x6341 }, { 0x03, 0xBFF7 });
 	n = f.n;
 	qa4818_beep(&c, 0, 0, qa4818_af_rx(true, 146520000u));
 	SEQ(&f, n, { 0x70, 0 }, { 0x47, 0x6840 }, { 0x03, 0xBFF5 });
