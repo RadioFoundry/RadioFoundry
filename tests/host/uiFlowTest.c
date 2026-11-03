@@ -715,6 +715,14 @@ static const flow_t flows[] = {
 	{ "C Back asks before discarding", "3 1 0 9 8 7 6 down down ok", "back", "screen=discard shows=new_contact", 1, false },
 	{ "C discard goes back to Find", "3 1 0 9 8 7 6 down down ok back", "down ok", "screen=find writes=0", 2, false },
 	{ "C the name by text entry", "3 1 0 9 8 7 6 down down ok", "ok", "screen=text", 1, false },
+	// Contacts' first row is New contact: the editor starts empty, on a talkgroup, and a save goes back to Contacts
+	{ "C New contact in Contacts", "", "ok 1 ok", "screen=contactedit shows=New_Contact shows=Talkgroup", 3, false },
+	{ "C a new contact needs a name", "ok 1 ok", "down ok 9 9 9 ok long:ok", "toast=Give_it_a_name_first writes=0", 7,
+	  false },
+	{ "27 a contact made in Contacts", "", "ok 1 ok ok 2 ok down ok 9 9 9 ok long:ok",
+	  "screen=contacts writes=1 toast=Saved_contact_A", 13, true },
+	{ "C Contacts lists the new contact", "ok 1 ok ok 2 ok down ok 9 9 9 ok long:ok", "9 9 9",
+	  "screen=contacts shows=TG_999", 3, true },
 	// A caller who isn't a contact: Save as contact is item 7 of the actions, and they show In contacts after
 	{ "C save a caller as a contact", "call:3101999,91,g wait:11000 ctx", "7", "screen=contactedit shows=3101999", 1,
 	  false },
