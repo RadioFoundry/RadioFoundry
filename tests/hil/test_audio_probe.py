@@ -157,6 +157,17 @@ def watch_text(w):
     return f"{bits or 'no flags'}; RAM word changed {w['ram_changes']}x in {w['elapsed_ms']} ms"
 
 
+def pcm_start(L, hz, amp):
+    """L.probe_start, skipping on a board whose probe has no PCM tap (register access only)."""
+    from rfoundry_debug import DebugLinkError
+    try:
+        L.probe_start(hz, amp)
+    except DebugLinkError:
+        if L.probe_status().get("no_pcm"):
+            skip("not_built", "this radio's audio probe has no PCM tap (register access only)")
+        raise
+
+
 @pytest.fixture
 def probe(radio):
     from rfoundry_debug import DebugLinkError
@@ -207,7 +218,7 @@ def test_probe_stream_in_fm(probe, pytestconfig):
     with probe.vfo_session():
         L.vfo_set(hz)
         probe.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
-        L.probe_start(0, 0)
+        pcm_start(L, 0, 0)
         b0 = L.probe_status()["blocks"]
         time.sleep(1.0)
         st = L.probe_status()
@@ -225,7 +236,7 @@ def test_probe_fm_rx_variants(probe, pytestconfig):
     with probe.vfo_session():
         saved = regs_saved(L, {0xE0, 0xE3, 0x36})
         try:
-            L.probe_start(0, 0)
+            pcm_start(L, 0, 0)
             for name, reg, set_mask, clear_mask in RX_VARIANTS:
                 res = {}
                 for tag, hz in (("signal", noaa), ("quiet", quiet)):
@@ -331,7 +342,7 @@ def test_probe_fm_tx_variants(probe, sdr_bench, pytestconfig):
         def during():
             for reg, s_, c in regs:
                 apply(L, reg, s_, c)
-        return (lambda: L.probe_start(hz, amp)), during
+        return (lambda: pcm_start(L, hz, amp)), during
 
     runs = [(name, *run(regs, amp, hz)) for name, regs, amp, hz in TX_VARIANTS]
     rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "tx")
@@ -526,7 +537,7 @@ def test_probe_fm_tx_sweep(probe, sdr_bench, pytestconfig):
                 for r, v in saved.items():
                     L.probe_reg(PAGE, r, v)
                 L.probe_ram(RAM_PAGE, RAM_FM, data=tone_bytes(">") * 2)
-                L.probe_start(I2S_HZ, TONE_AMP)
+                pcm_start(L, I2S_HZ, TONE_AMP)
                 rdir = sdr_bench.run_dir(f"hil_aprobe_sweep{k}")
                 with sdr_bench.lease():
                     cap = sdr_bench.capture_start(rdir, mhz, seconds=key_s + 5)
@@ -626,7 +637,7 @@ def marked_steps(probe, sdr_bench, pytestconfig, steps, tag, per_key=8):
                 for (p, r), v in saved.items():
                     L.probe_reg(p, r, v)
                 L.probe_ram(RAM_PAGE, 0, data=tx_ram_tone())
-                L.probe_start(I2S_HZ, TONE_AMP)
+                pcm_start(L, I2S_HZ, TONE_AMP)
                 rdir = sdr_bench.run_dir(f"hil_aprobe_{tag}{k}")
                 with sdr_bench.lease():
                     for attempt in range(3):      # the bench service sometimes still holds the SDR for a moment
@@ -1456,7 +1467,7 @@ def test_probe_fm_tx_ext_i2s(probe, sdr_bench, pytestconfig):
     def run(writes):
         def before():
             restore()
-            L.probe_start(TONE_HZ, TONE_AMP)
+            pcm_start(L, TONE_HZ, TONE_AMP)
 
         def during():
             for reg, s_, c in writes:
@@ -1507,7 +1518,7 @@ def test_probe_fm_tx_linein2_loop(probe, sdr_bench, pytestconfig):
     def run(writes):
         def before():
             restore()
-            L.probe_start(TONE_HZ, TONE_AMP)
+            pcm_start(L, TONE_HZ, TONE_AMP)
 
         def during():
             e0 = L.probe_reg(PAGE, 0xE0)

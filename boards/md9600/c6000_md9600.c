@@ -308,7 +308,13 @@ static bool probe_reg(uint8_t page, uint8_t reg, uint8_t *val, bool write)
 	return write ? hrc_write(&modem, page, reg, *val) : hrc_read(&modem, page, reg, val);
 }
 
+static bool probe_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t len)
+{
+	return hrc_write_burst(&modem, page, reg, buf, len);
+}
+
 const hal_audio_tap_t md9600_audio_tap = {
 	.modem_reg = probe_reg,
+	.modem_burst = probe_burst,
 };
 #endif

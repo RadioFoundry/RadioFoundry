@@ -554,7 +554,7 @@ semantics in the table are the HR_C6000's.
 
 | Op | Request | Reply after the status |
 |---|---|---|
-| 0 STATUS | none | flags u8 (bit 0 the probe owns the stream, bit 1 the stream runs), blocks u32, then for the left and the right channel: peak u16, RMS u16, peak since start u16 (of the last 20 ms block, full scale 32767) |
+| 0 STATUS | none | flags u8 (bit 0 the probe owns the stream, bit 1 the stream runs, bit 2 the board has no PCM tap: register and RAM access only, START answers unavailable), blocks u32, then for the left and the right channel: peak u16, RMS u16, peak since start u16 (of the last 20 ms block, full scale 32767) |
 | 1 REG_READ | page u8, register u8 | value u8 |
 | 2 REG_WRITE | page u8, register u8, value u8 | the value read back u8 (logged) |
 | 3 START | tone Hz u16 (0-3800), amplitude u16 (0 = silence), flags u8 (bit 0: route the PCM to the speaker) | none. `DL_ST_BUSY` while DMR voice owns the stream; `DL_ST_UNAVAILABLE` when the stream can't start (no I2S clock) |

@@ -401,7 +401,7 @@ class DebugLink:
         _, r = self.request(AUDIO_PROBE, bytes([PROBE_STATUS]))
         flags, blocks = r[0], struct.unpack_from("<I", r, 1)[0]
         lp, lr, lm, rp, rr, rm = struct.unpack_from("<6H", r, 5)
-        return {"ours": bool(flags & 1), "running": bool(flags & 2), "blocks": blocks,
+        return {"ours": bool(flags & 1), "running": bool(flags & 2), "no_pcm": bool(flags & 4), "blocks": blocks,
                 "left": {"peak": lp, "rms": lr, "peak_max": lm}, "right": {"peak": rp, "rms": rr, "peak_max": rm}}
 
     def probe_reg(self, page, reg, value=None):
