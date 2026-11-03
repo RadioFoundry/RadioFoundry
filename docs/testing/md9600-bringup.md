@@ -30,8 +30,8 @@ First radio: a V1-V3 board (its original firmware reported version 06.09), on a 
 | FM receive, VHF | Works: a NOAA station through the dummy load, at 25 kHz |
 | FM receive audio | Loud at the bottom of the volume knob and overdriven. The HR_C6000 settings, FM_SW and the IF chip words were compared with the original firmware's and changed live without effect; whether the original firmware sounds the same on this radio is not checked |
 | FM receive, UHF | Works: a handheld on 446.000 MHz, 12.5 kHz, at -57 to -73 dBm; the audio sounds the same as on VHF |
-| DMR receive | Works (UHF, by hand): a group call from another radio (CC 1, slot 1) plays clearly, every voice burst received. VHF DMR not tried. The DMR modem counters are on the diagnostics page after the board lines |
-| Transmit | Off in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`) |
+| DMR receive | Works on UHF (446.100) and VHF (151.505), by hand: a group call from another radio (CC 1, slot 1) plays clearly, every voice burst received. The DMR modem counters are on the diagnostics page after the board lines |
+| Transmit | Off in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`). FM keyed once on UHF with it on (section 5): on frequency; power, deviation and DMR transmit not checked |
 
 ## 0. Before anything
 
@@ -100,7 +100,7 @@ live.
 
 ## 5. DMR receive, transmit
 
-DMR receive works on UHF (2026-11-02, a simplex group call, CC 1, slot 1, from another radio at about -70 dBm): headers,
+DMR receive works on UHF and VHF (2026-11-02, a simplex group call, CC 1, slot 1, from another radio at about -70 dBm): headers,
 terminator and every voice burst, played clearly. Three fixes, found in this order (hardware-md9600.md 2.6, 4.2):
 
 | Fault | Symptom with it |

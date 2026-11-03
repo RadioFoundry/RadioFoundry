@@ -703,7 +703,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 | 5 | RF TX interrupt usefulness and the 20 ms burst-off workaround | Scope T5 against the burst on an SDR |
 | 6 | Power level labels (5/10/25/40 W) and the low-level fractions | Power meter into a dummy load, both bands, edges and center |
 | 7 | RSSI / noise curves per revision | Signal generator steps |
-| 8 | Mic keypad thresholds | Press every mic key, log PA6 / PA7 raw |
+| 8 | Mic keypad thresholds | Settled (2026-11-02): with the current thresholds all 19 hand mic keys and the mic PTT read as the right key |
 | 9 | Front panel LEDs, key backlight | Look at the radio |
 | 10 | Loader key combination (orange vs red + P1) | Settled (2026-11-02): P1 + orange, DC reconnected; the backlight blinks at 1 Hz (14.1) |
 | 11 | Ignition sense | Schematic / board photos |
