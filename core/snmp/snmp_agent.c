@@ -8,6 +8,7 @@
 #include "board.h"
 #include "hal_time.h"
 #include "radio/radio.h"
+#include "app/temp.h"
 #include "settings/settings.h"
 #include "codeplug/codeplug.h"
 #include "hostlink/hostlink.h"
@@ -147,6 +148,21 @@ static void fill(uint32_t now)
 	data.lastDst = view.dmr.last.dst;
 	data.lastGroup = view.dmr.last.group;
 	data.lastMs = view.dmr.last_ms;
+	data.tempCount = 0;
+	for (uint8_t i = 0; i < SNMP_TEMP_MAX; i++) {
+		temp_reading_t r;
+
+		if (!temp_read(board.temp, i, &r)) {
+			break;
+		}
+		data.temp[i].kind = r.kind;
+		data.temp[i].hasMv = r.has_mv;
+		data.temp[i].mv = r.mv;
+		data.temp[i].hasDc = r.has_dc;
+		data.temp[i].dc = r.dc;
+		data.tempCount = (uint8_t)(i + 1u);
+	}
+	data.fan = (board.temp == NULL || board.temp->fan_on == NULL) ? 0 : board.temp->fan_on() ? 1 : 2;
 
 	dmrDataStats_t ds;
 

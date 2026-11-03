@@ -16,12 +16,15 @@ IMPORTS
         FROM SNMPv2-CONF;
 
 rfoundryMIB MODULE-IDENTITY
-    LAST-UPDATED "202610110000Z"
+    LAST-UPDATED "202611020000Z"
     ORGANIZATION "The RadioFoundry Authors"
     CONTACT-INFO "https://github.com/RadioFoundry"
     DESCRIPTION
         "Objects and notifications of a radio running RadioFoundry firmware: identity, power, the channel and
-        the DMR call state, the DMR data service, the USB network link and the agent's own settings."
+        the DMR call state, the DMR data service, the USB network link, temperature sensors and the agent's own
+        settings."
+    REVISION     "202611020000Z"
+    DESCRIPTION  "rfoundrySensors: the temperature sensor table and the fan state."
     REVISION     "202610110000Z"
     DESCRIPTION  "First version."
     ::= { rfoundry 2 }
@@ -43,6 +46,7 @@ rfoundryData            OBJECT IDENTIFIER ::= { rfoundryObjects 5 }
 rfoundryNet             OBJECT IDENTIFIER ::= { rfoundryObjects 6 }
 rfoundryAgent           OBJECT IDENTIFIER ::= { rfoundryObjects 7 }
 rfoundryEvent           OBJECT IDENTIFIER ::= { rfoundryObjects 8 }
+rfoundrySensors         OBJECT IDENTIFIER ::= { rfoundryObjects 9 }
 
 -- Identity
 
@@ -415,6 +419,69 @@ rfoundryAgentTrapsDropped OBJECT-TYPE
     DESCRIPTION "Notifications given up (the queue full, the RF rate limit, the channel busy too long)."
     ::= { rfoundryAgent 8 }
 
+-- Sensors (docs/spec/temperature.md)
+
+rfoundryTempTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RfoundryTempEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "The temperature sensors the firmware reads, at most four, in the board's order. A radio without one
+        has no rows."
+    ::= { rfoundrySensors 1 }
+
+rfoundryTempEntry OBJECT-TYPE
+    SYNTAX      RfoundryTempEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "One sensor."
+    INDEX       { rfoundryTempIndex }
+    ::= { rfoundryTempTable 1 }
+
+RfoundryTempEntry ::= SEQUENCE {
+    rfoundryTempIndex       Integer32,
+    rfoundryTempKind        INTEGER,
+    rfoundryTempMilliVolts  Integer32,
+    rfoundryTempValue       Integer32
+}
+
+rfoundryTempIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..4)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "The sensor's position in the board's list, from 1."
+    ::= { rfoundryTempEntry 1 }
+
+rfoundryTempKind OBJECT-TYPE
+    SYNTAX      INTEGER { pa(1), board(2), mcu(3), battery(4) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "What the sensor measures: the power amplifier, the board, the MCU's own sensor, the battery pack."
+    ::= { rfoundryTempEntry 2 }
+
+rfoundryTempMilliVolts OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    UNITS       "millivolts"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The sensor's output voltage, read now. No instance for a sensor that gives only degrees."
+    ::= { rfoundryTempEntry 3 }
+
+rfoundryTempValue OBJECT-TYPE
+    SYNTAX      Integer32 (-32768..32767)
+    UNITS       "0.1 degrees Celsius"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The temperature, read now. No instance while the board doesn't know the sensor's curve or the
+        sensor has no reading."
+    ::= { rfoundryTempEntry 4 }
+
+rfoundryFanState OBJECT-TYPE
+    SYNTAX      INTEGER { on(1), off(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The cooling fan the firmware drives. No instance on a radio without one."
+    ::= { rfoundrySensors 2 }
+
 -- Notification objects
 
 rfoundryEventSource OBJECT-TYPE
@@ -516,6 +583,8 @@ rfoundryCompliance MODULE-COMPLIANCE
     DESCRIPTION "What every RadioFoundry radio with the SNMP agent implements."
     MODULE
         MANDATORY-GROUPS { rfoundryStatusGroup, rfoundryAgentGroup, rfoundryEventGroupObjects, rfoundryNotificationGroup }
+        GROUP       rfoundrySensorGroup
+        DESCRIPTION "Radios with a temperature sensor or a fan the firmware reads."
     ::= { rfoundryCompliances 1 }
 
 rfoundryStatusGroup OBJECT-GROUP
@@ -559,5 +628,11 @@ rfoundryNotificationGroup NOTIFICATION-GROUP
     STATUS      current
     DESCRIPTION "The radio's notifications."
     ::= { rfoundryGroups 4 }
+
+rfoundrySensorGroup OBJECT-GROUP
+    OBJECTS { rfoundryTempKind, rfoundryTempMilliVolts, rfoundryTempValue, rfoundryFanState }
+    STATUS      current
+    DESCRIPTION "Temperature sensors and the fan."
+    ::= { rfoundryGroups 5 }
 
 END
