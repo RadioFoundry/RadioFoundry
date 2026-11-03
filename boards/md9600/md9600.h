@@ -91,6 +91,19 @@ void md9600_pwm_out(uint8_t ch, uint8_t duty);
 // The other analog inputs: the sub-audio input on ADC3 (PA2), 12-bit, one conversion
 uint16_t md9600_adc3_qt(void);
 
+// Sub-audio receive (subtone_md9600.c, CONFIG_SUBTONE): software CTCSS / DCS decode from PC3. rx_set starts the
+// sampling on first use and restarts the detector for a tone (TONE_NONE matches always)
+void md9600_subtone_rx_set(const subtone_t *tone);
+bool md9600_subtone_rx_match(void);
+typedef struct {
+	uint32_t samples;	// fed to the detector since start
+	uint16_t fs_hz;		// its sample rate
+	uint16_t rms, mean;	// the input's AC level and mean over the last 0.11 s, 12-bit counts
+	uint8_t kind;		// subaudio_kind_t
+	bool match, fault;
+} md9600_subtone_stats_t;
+void md9600_subtone_stats(md9600_subtone_stats_t *s);
+
 // The debug link's board view keys (view_md9600.c)
 bool md9600_view_line(uint8_t i, char *buf, uint8_t len);
 

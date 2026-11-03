@@ -901,6 +901,7 @@ voltage is the generic `supply_mv` key instead (`hal_power_t.supply_mv`; the div
 | `speaker` | bit 0 amplifier on, bit 1 FM audio through, bit 2 codec line out |
 | `mic_key` | the hand-mic key decoded on the last scan, 255 for none |
 | `gps`, `gps.baud`, `gps.nmea` | module heard; the rate listened at (0 once given up); valid / bad sentences / bytes |
+| `subtone` | the sub-audio decoder (`CONFIG_SUBTONE`): samples fed / rate; the input's rms and mean over 0.11 s (12-bit counts); the tone kind (0 none, 1 CTCSS, 2 DCS, 3 DCS inverted); match; an ADC or DMA fault |
 
 `tests/hil/test_md9600.py` checks them on a radio: identity, every key present, the transmitter switches low, the
 clock, the flash and its map, both blocks readable, no key or PTT down at rest, the ADC scan in range and a plausible
@@ -961,8 +962,8 @@ arm and the last refusal.
 
 | Line | Use in RadioFoundry |
 |---|---|
-| PA2, ADC3 IN2 (QT_DQT_IN) | one software-started conversion for the diagnostics page ("qt"). No sub-audio decoder runs on it yet |
-| PC3, ADC2 IN13 (discriminator audio) | not sampled yet. The software CTCSS / DCS detector (`drivers/rf/subaudio`) is the intended consumer; the sample rate and DMA set-up are open |
+| PA2, ADC3 IN2 (QT_DQT_IN) | one software-started conversion for the diagnostics page ("qt"). Mid-supply (about 1950 counts) with about 280 counts of noise on an empty channel. `MD9600_SUBTONE_ADC_CH=2` moves the decoder here |
+| PC3, ADC2 IN13 (sub-audio low-pass output) | the CTCSS / DCS decoder (`subtone_md9600.c`, `CONFIG_SUBTONE`): ADC2 converts continuously (480 cycles, 18.3 kHz) into DMA2 stream 3, and each half-transfer interrupt feeds sums of 8 to `drivers/rf/subaudio` at 2287 Hz. About 1065 counts with about 260 counts rms of noise on an empty channel, little changed under a DMR carrier. A tone on the air is not checked yet: which of PC3 and PA2 carries it is open |
 | PC7, TIM8 CH2 | sub-audio tone PWM (`md9600_pwm_out`), on the backlight's 28 kHz timebase, into the reference oscillator's modulation input. Without a tone the pin is released (open drain high), as at start-up: driven low it pulls the reference and DMR never syncs. No tone generator drives it yet |
 | PC8, TIM8 CH3 | beep PWM, same helper |
 | PA temperature, fan | no sensor or fan line is known on any revision (?) |

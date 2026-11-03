@@ -240,9 +240,24 @@ static void audio(bool on)
 	md9600_speaker_fm(on, band == MD9600_VHF);	// with the PCM requests (c6000_md9600.c)
 }
 
+#if CONFIG_SUBTONE
+static subtone_t rx_tone_now;	// the RX sub-audio the detector is set for
+#endif
+
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 {
-	(void)rx_tone;	// no sub-audio decode yet (CONFIG_SUBTONE is off on this board)
+#if CONFIG_SUBTONE
+	// NULL (back from transmit, wake-up) keeps the last tone; a new tone or channel restarts the detector
+	bool same = rf.rx_valid && hz == rf.rx_hz && (bw == RADIO_BW_25K) == rf.rx_wide;
+	if (rx_tone != NULL && (!same || rx_tone->type != rx_tone_now.type || rx_tone->value != rx_tone_now.value)) {
+		rx_tone_now = *rx_tone;
+		md9600_subtone_rx_set(&rx_tone_now);
+	} else if (!same) {
+		md9600_subtone_rx_set(&rx_tone_now);
+	}
+#else
+	(void)rx_tone;
+#endif
 	if (md9600_rf_rx(&rf, hz, bw == RADIO_BW_25K) != MD9600_RF_OK) {
 		return false;
 	}
@@ -282,7 +297,11 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = md9600_rf_rssi_dbm(rf.rev, band, rssi);
 	st->noise = md9600_rf_noise(noise, sql_l1, sql_l9);
 	st->carrier = rf.state == MD9600_RF_RX && st->rssi_dbm >= CARRIER_DBM;
+#if CONFIG_SUBTONE
+	st->tone_ok = md9600_subtone_rx_match();	// true for a channel without an RX tone
+#else
 	st->tone_ok = true;
+#endif
 }
 
 // ADC3 IN2 (PA2, the sub-audio input), one software-started conversion. The common prescaler is the ADC1 scan's

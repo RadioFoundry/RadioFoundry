@@ -35,8 +35,8 @@ CONFIG_NET_PPP ?= n
 CONFIG_FM_TX_TONES ?= n
 CONFIG_DTMF ?= n
 CONFIG_APRS_RX ?= n
-# No sub-audio decode or encode path written yet (the tone PWM on PC7, the discriminator samples on PC3)
-CONFIG_SUBTONE ?= n
+# CONFIG_SUBTONE stays on: the decode is written (subtone_md9600.c, PC3), the encode (the tone PWM on PC7) is not, and
+# transmit is refused in the build until the RF sequence is confirmed
 # VOX needs the mic level (hal_power_t.mic_level), and the reference trim a hal_radio_t.ref_trim: neither is written
 CONFIG_VOX ?= n
 CONFIG_REF_TRIM ?= n
@@ -59,7 +59,6 @@ BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and the one UART is the GPS receive line
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet (the mic level is on PA3)
 BOARD_NOT_WRITTEN += REF_TRIM	# no hal_radio_t.ref_trim yet
-BOARD_NOT_WRITTEN += SUBTONE	# the sub-audio paths (the tone PWM on PC7, the discriminator samples on PC3)
 BOARD_NOT_WRITTEN += FM_TX_TONES	# FM transmit is refused until a radio confirms the RF sequence
 BOARD_NOT_WRITTEN += DTMF	# the tones go out through the FM transmitter, refused for now (above)
 BOARD_NOT_WRITTEN += APRS_RX	# the receive audio (PC3) isn't fed to the AFSK decoder

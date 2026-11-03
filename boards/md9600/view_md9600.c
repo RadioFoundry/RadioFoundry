@@ -79,6 +79,15 @@ static bool audio_line(uint8_t i, char *buf, uint8_t len)
 	case 8:
 		dl_fmt(buf, len, "gps.nmea=%u/%u/%u", (unsigned)good, (unsigned)bad, (unsigned)bytes);
 		return true;
+#if CONFIG_SUBTONE
+	case 9: {	// the sub-audio detector: samples fed, rate, input level, tone kind, match, ADC fault
+		md9600_subtone_stats_t s;
+		md9600_subtone_stats(&s);
+		dl_fmt(buf, len, "subtone=%u/%u rms=%u mean=%u kind=%u match=%u fault=%u", (unsigned)s.samples,
+		       (unsigned)s.fs_hz, (unsigned)s.rms, (unsigned)s.mean, (unsigned)s.kind, s.match ? 1u : 0u, s.fault ? 1u : 0u);
+		return true;
+	}
+#endif
 	default:
 		return false;
 	}

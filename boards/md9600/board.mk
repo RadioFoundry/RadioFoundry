@@ -20,4 +20,4 @@ MD9600_REV_PROBE ?= 0
 MCU_DEFS   += -DMD9600_REV_PROBE=$(MD9600_REV_PROBE)
 BOARD_DIRS := boards/md9600 drivers/display/st7567 drivers/flash/spi_nor drivers/input/keymatrix drivers/input/quadrature \
 	drivers/cal/calblock drivers/input/adckeys platform/stm32f4/hrc platform/stm32f4/spi_flash drivers/modem/hrc6000 drivers/modem/hrc_common \
-	drivers/gps/nmea_line drivers/gps/gps_rx platform/stm32f4/gps_uart
+	drivers/gps/nmea_line drivers/gps/gps_rx platform/stm32f4/gps_uart drivers/rf/subaudio
