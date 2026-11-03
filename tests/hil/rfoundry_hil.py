@@ -458,6 +458,14 @@ class Radio:
         raise AssertionError(f"no channel on {rx_hz / 1e6:.5f} MHz{' ' + mode if mode else ''} in any zone: "
                              f"{', '.join(searched)}")
 
+API_CAPTURE_LOSS_MAX = 0.005       # stream time a bench API board may lose in a capture (CTCSS reads 0.5 % high)
+API_FM_THRESHOLD_DB = 8.0          # sdr_fm_check's keyed threshold on a bench API board (analyze_fm)
+
+
+class BenchFault(Exception):
+    """The bench failed the test, not the radio: reported as a skip of kind "bench"."""
+
+
 INDIVIDUAL_NET = 0x0C000000        # 12.0.0.0/8: the IP gateway's individual range (default addressing)
 
 
@@ -597,8 +605,9 @@ class SdrBench:
     built on it (voice_call, data, csbk) run bench_tx.py here, which builds the bursts with the rfoundry_sdrbench
     package ($RFOUNDRY_SDRBENCH_SRC, the directory holding it) and sends them through the bench API client
     ($RFOUNDRY_BENCHAPI, the directory holding benchapi.py), holding the board's session and TX lease for each run;
-    dmr_watch_start() / bursts_start() read the board's decoded bursts. What needs the bench host (raw captures,
-    the modem's listener, the repeater, stations) skips as missing."""
+    dmr_watch_start() / bursts_start() read the board's decoded bursts. capture_start() records the board's narrow
+    I/Q (cs8) into a local run directory, and analyze_fm() / analyze_aprs() run their tools here on it. What needs the
+    bench host (sdrmon.py analysis, the modem's listener, the repeater, stations) skips as missing."""
 
     def __init__(self, allow_rf=False, allow_service_stop=False, tx_power=40, lease_max=300, gain=5.0,
                  offset_khz=-200.0, wait_max=None, api=None):
@@ -721,6 +730,11 @@ class SdrBench:
         return name
 
     def run_dir(self, tag):
+        if self.api:            # captures land here
+            import tempfile
+            d = tempfile.mkdtemp(prefix=f"rfoundry-hil-{tag}-")
+            self._run_dirs.append(d)
+            return d
         d = f"runs/{time.strftime('%Y%m%d-%H%M%S')}_{tag}"
         self.ssh(f"mkdir -p ~/{self.dir}/{d}")
         self._run_dirs.append(d)
@@ -730,6 +744,12 @@ class SdrBench:
         """Delete the run directories this session made on the bench (captures are ~50 MB each and filled the bench's
         disk). Only names run_dir() returned; RFOUNDRY_HIL_KEEP_RUNS=1 keeps them for a look."""
         if os.environ.get("RFOUNDRY_HIL_KEEP_RUNS") or not self._run_dirs:
+            return
+        if self.api:
+            import shutil
+            for d in self._run_dirs:
+                shutil.rmtree(d, ignore_errors=True)
+            self._run_dirs = []
             return
         dirs = [d for d in self._run_dirs if d.startswith("runs/") and ".." not in d]
         self._run_dirs = []
@@ -1090,6 +1110,8 @@ class SdrBench:
         """A raw I/Q capture (cs8, 1.536 MS/s, the channel offset_khz from the tuner center) in the background;
         returns once the capture is running. The file stays on the bench (about 3 MB/s). gain: this capture's RTL-SDR
         gain instead of --sdr-gain (level measurements want the ADC far from its rails)."""
+        if self.api:
+            return self._api_capture_start(run_dir, freq, seconds, name)
         self._no_api("SDR capture")
         self._need_lease()
         f = f"~/{self.dir}/{run_dir}/{name}.cs8"
@@ -1102,7 +1124,68 @@ class SdrBench:
         return f
 
     def capture_wait(self, timeout=120):
+        if self.api:
+            caps, self._api_caps = getattr(self, "_api_caps", []), []
+            for t, err in caps:
+                t.join(timeout)
+                if err and isinstance(err[0], BenchFault):
+                    skip("bench", str(err[0]))
+                if err:
+                    raise RuntimeError(f"bench API capture failed: {err[0]}")
+            return
         self.bench.captures_wait(timeout)
+
+    def _api_capture_start(self, run_dir, freq, seconds, name):
+        """The board's I/Q of the channel (cs8 at its narrow rate, centered on the channel) for `seconds`, by a thread;
+        capture_wait() joins it. FILE.json gets what sdr_fm_check.py reads: center, rate, fmt, ppm 0 (the board's I/Q needs
+        no carrier correction; its own ppm, a sample clock rate, is kept as clock_ppm), freq."""
+        self._need_lease()
+        bench = self._api_bench()
+        sdr = bench.info().get("sdr", {})
+        win = sdr.get("window", {})
+        hz = freq * 1e6
+        if win and not (win.get("lo_hz", 0) + 6250 <= hz <= win.get("hi_hz", 0) - 6250):
+            skip("bench", f"{freq} MHz is outside the bench API board's receive window "
+                          f"{win.get('lo_hz', 0) / 1e6:.4f}-{win.get('hi_hz', 0) / 1e6:.4f} MHz")
+        f = os.path.join(run_dir, f"{name}.cs16")
+        err = []
+
+        def lost():
+            st = bench.status().get("sdr", {})
+            return st.get("bytes_lost") or 0
+
+        def run():
+            try:
+                lost0 = lost()
+                # The channel at the board's narrow rate (48 kS/s, centered on it): wide enough for a 25 kHz FM
+                # channel, and the stream a board keeps up with (its wideband stream has dropped chunks). cs16: the
+                # narrow stream's noise is a count or two, which cs8 rounds to zero
+                m = bench.capture(hz, seconds, f, wide=False, fmt="cs16")
+                # The board can drop stream chunks and still return a full, gapless file: the samples then cover more
+                # time than they claim, and every frequency and duration in them reads high
+                # sdr.bytes_lost counts the receiver's own stream, 4 bytes a sample at the wideband rate (1.08 MB
+                # moved the board's clock by 1.44 s at 192 kS/s): the time lost, against the capture's
+                dropped = lost() - lost0
+                loss = dropped / (4.0 * (sdr.get("rate") or 192000.0)) / max(0.1, seconds)
+                if loss > API_CAPTURE_LOSS_MAX:
+                    err.append(BenchFault(f"the bench API board lost {loss:.1%} of the capture's time from its stream "
+                                          f"(sdr.bytes_lost +{dropped}); its timing and frequencies are not usable"))
+                meta = {"center": m.get("center_hz", hz), "rate": m.get("rate"), "fmt": "cs16",
+                        # The board's ppm is its sample clock's rate error (timestamps); its I/Q is on frequency, so
+                        # the analyzers must not correct the carrier by it
+                        "ppm": 0.0, "clock_ppm": sdr.get("ppm"), "freq": hz, "gain": m.get("gain_db"),
+                        "samples": m.get("samples"), "gaps": m.get("gaps", 0), "lost": round(loss, 4)}
+                with open(f + ".json", "w") as fh:
+                    json.dump(meta, fh)
+            except Exception as e:      # noqa: BLE001 - reported by capture_wait
+                err.append(e)
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        if not hasattr(self, "_api_caps"):
+            self._api_caps = []
+        self._api_caps.append((t, err))
+        time.sleep(1.0)                 # the stream is up before the radio keys
+        return f
 
     def _offset_khz(self, capture):
         """The channel minus the tuner center of this capture: a shared bench's receiver sits at one center for
@@ -1115,6 +1198,12 @@ class SdrBench:
     def capture_meta(self, capture):
         """The capture's FILE.json (sdrmon.py capture): gain, samples, overflows, clip_pct (I/Q samples at the ADC
         rails, over the whole file)."""
+        if self.api:
+            try:
+                with open(capture + ".json") as fh:
+                    return json.load(fh)
+            except (OSError, ValueError):
+                return {}
         try:
             return json.loads(self.ssh(f"cat {capture}.json", timeout=30))
         except (RuntimeError, ValueError):
@@ -1284,10 +1373,16 @@ class SdrBench:
     def analyze_aprs(self, capture, bw_khz=25.0):
         """tools/aprs_afsk_check.py on the bench (Bell 202 AFSK / AX.25 decode and the tone measurements); returns
         its JSON result (frames with a valid FCS, segments). Raw I/Q on purpose: AFSK is audio on an FM carrier."""
-        self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))     # its filters
-        tool = self.sync_tool(os.path.join(ROOT, "tools", "aprs_afsk_check.py"))
-        out = self.ssh(f"cd ~/{self.dir} && {self.py} {tool} {capture} --offset {self._offset_khz(capture) * 1000:.0f} "
-                       f"--bw {bw_khz} --json", timeout=600, check=False)
+        if self.api:
+            r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "aprs_afsk_check.py"), capture, "--offset",
+                                f"{self._offset_khz(capture) * 1000:.0f}", "--bw", str(bw_khz), "--json"],
+                               capture_output=True, text=True, timeout=600)
+            out = r.stdout + r.stderr
+        else:
+            self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))     # its filters
+            tool = self.sync_tool(os.path.join(ROOT, "tools", "aprs_afsk_check.py"))
+            out = self.ssh(f"cd ~/{self.dir} && {self.py} {tool} {capture} --offset "
+                           f"{self._offset_khz(capture) * 1000:.0f} --bw {bw_khz} --json", timeout=600, check=False)
         lines = [ln for ln in out.splitlines() if ln.startswith("{")]
         if not lines:
             raise RuntimeError(f"aprs_afsk_check.py printed no result: {out[-1500:]}")
@@ -1298,7 +1393,7 @@ class SdrBench:
         """tools/sdr_fm_check.py on the bench; returns (exit status, text). tones: also report the audio tones;
         track: the carrier every 50 ms; levels: the voice band rms every 50 ms. Raw I/Q on purpose: FM audio, tone,
         deviation and carrier-offset measurements need the demodulated waveform, not decoded DMR bursts. dtmf: the DTMF digits."""
-        tool = self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))
+        tool = None if self.api else self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))
         off = self._offset_khz(capture)
         a = f"--offset {off * 1000:.0f} --bw {bw_khz}" + (" --tones" if tones else "") + \
             (" --track" if track else "") + (" --levels" if levels else "") + (" --dtmf" if dtmf else "") + \
@@ -1309,6 +1404,13 @@ class SdrBench:
             a += f" --expect-dcs {dcs}"
         if ppm is not None and freq is not None:
             a += f" --center {freq * 1e6 - off * 1e3:.0f} --ppm {ppm}"
+        if self.api:
+            # A board's receiver sits wherever the bench put it: a radio on low power into a dummy load can arrive
+            # only about 11 dB over its floor, under sdr_fm_check's 15 dB default
+            a += f" --threshold {API_FM_THRESHOLD_DB:g}"
+            r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "sdr_fm_check.py"), capture] + a.split(),
+                               capture_output=True, text=True, timeout=600)
+            return r.returncode, r.stdout + r.stderr
         r = subprocess.run(["ssh", "-o", "BatchMode=yes", self.host,
                             f"cd ~/{self.dir} && {self.py} {tool} {capture} {a}"],
                            capture_output=True, text=True, timeout=600)

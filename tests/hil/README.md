@@ -185,7 +185,8 @@ SDR receiver) as the SDR bench. This is the preferred DMR bench; the bench host 
 | `transmit()`, `voice_call`, `data`, `csbk` | `tools/bench/bench_tx.py --bench-api URL` on the test host: the same bursts as on the bench modem, built here and sent through the board's TX stream. bench_tx.py takes the board's session and TX lease for each run and checks the board keyed every burst. |
 | `dmr_watch_start()`, `bursts_start()` | the board's decoded bursts (`WS /bursts`), read in a thread here, in the same record shape as the bench host's |
 | `listen_after` | waited out; the board has no modem listener, so what the bench heard is empty (tests check the radio's own counters; the bench side is a soft check) |
-| Raw capture, modem listener, repeater, bench stations | skip as missing (skip kind `bench`) |
+| `capture_start()`, `analyze_fm()`, `analyze_aprs()` | the board's I/Q of the channel (`WS /iq`, cs8 at its narrow rate, centered on the channel; its wideband stream drops chunks, and a capture whose stream lost over 0.5 % of its time skips as `bench`) into a local run directory; `tools/sdr_fm_check.py` and `tools/aprs_afsk_check.py` run on the test host (a multiple of 192 kHz, or 96 or 48 kHz, from the capture's JSON). The channel must be inside the board's receive window |
+| `analyze_dmr()` (sdrmon.py), modem listener, repeater, bench stations | skip as missing (skip kind `bench`) |
 
 | Needs on the test host | |
 |---|---|

@@ -334,7 +334,7 @@ def send_and_capture(radio, sdr_bench, s, tag, send):
     for k in ("rx_hz", "mode", "zone_pos", "vfo"):
         assert core.get(k) == core0.get(k), f"{k}: {core0.get(k)} -> {core.get(k)}"
     assert ch.get("ch.rx_hz") == ch0.get("ch.rx_hz"), (ch0, ch)
-    res = sdr_bench.analyze_aprs(f"{rdir}/cap0.cs8")
+    res = sdr_bench.analyze_aprs(cap)
     for seg in res.get("segments", []):
         print(f"keyed {seg['t_start_s']:.2f}-{seg['t_end_s']:.2f} s, carrier {seg['carrier_hz']:+d} Hz, "
               f"{seg['level_dbfs']} dBFS (floor {res.get('floor_dbfs')})")
@@ -342,7 +342,7 @@ def send_and_capture(radio, sdr_bench, s, tag, send):
     for f in res["frames"]:
         print_frame(f)
     assert len(ours) == 1, f"expected one frame from {s.call}-{s.ssid} with a valid FCS, got {res['frames']} " \
-                           f"(capture ~/{sdr_bench.dir}/{rdir}/cap0.cs8, segments {res.get('segments')})"
+                           f"(capture {cap}, segments {res.get('segments')})"
     f = ours[0]
     assert f["fcs_ok"] and f["dst"] == "APZRDF" and f["digis"] == [], f
     assert f["control"] == 0x03 and f["pid"] == 0xF0, f
