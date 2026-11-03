@@ -175,27 +175,27 @@ bench daemon is assumed to have both.
 
 `test_probe_fm_tx_ram_writer_sweep` holds the lease but uses neither receiver.
 
-### A bench API board in place of the SDR bench host
+### A bench board in place of the SDR bench host
 
-`--bench-api URL` (or `$RFOUNDRY_BENCH_API`) uses a board that serves the bench API (`http://BOARD`, with TX and an
-SDR receiver) as the SDR bench. This is the preferred DMR bench; the bench host below remains for what a board can't do.
+`--bench-api HOST[:PORT]` (or `$RFOUNDRY_BENCH_API`) uses a board that serves the bench line protocol (TCP 7373, the
+shared bench daemon's ops; client `tools/bench/bench_line.py`) as the SDR bench. This is the preferred DMR bench; the
+bench host below remains for what a board can't do. `--bench-api-rx HOST[:PORT]` (or `$RFOUNDRY_BENCH_API_RX`) is a
+second board for what the bench receives. A half-duplex board can't hear while it transmits, so a test that watches
+the radio during the bench's own key-up needs the second board.
 
-| Bench call | On a bench API board |
+| Bench call | On a bench board |
 |---|---|
-| `transmit()`, `voice_call`, `data`, `csbk` | `tools/bench/bench_tx.py --bench-api URL` on the test host: the same bursts as on the bench modem, built here and sent through the board's TX stream. bench_tx.py takes the board's session and TX lease for each run and checks the board keyed every burst. |
-| `dmr_watch_start()`, `bursts_start()` | the board's decoded bursts (`WS /bursts`), read in a thread here, in the same record shape as the bench host's |
-| `listen_after` | waited out; the board has no modem listener, so what the bench heard is empty (tests check the radio's own counters; the bench side is a soft check) |
-| `capture_start()`, `analyze_fm()`, `analyze_aprs()` | the board's I/Q of the channel (`WS /iq`, cs8 at its narrow rate, centered on the channel; a capture with samples the board lost (`gap_samples`, or a run of exact zeros of 2 ms or more) skips as `bench`) into a local run directory; `tools/sdr_fm_check.py` and `tools/aprs_afsk_check.py` run on the test host (a multiple of 192 kHz, or 96 or 48 kHz, from the capture's JSON). The channel must be inside the board's receive window |
-| `analyze_dmr()` (sdrmon.py), modem listener, repeater, bench stations | skip as missing (skip kind `bench`) |
+| `lease()` | a session on the TX board for the test; a test's transmit frequencies are claimed in it, so another session's jobs wait for them |
+| `transmit()`, `voice_call`, `data`, `csbk`, `listen_start()` | the `bench_tx.py` command line sent as a job (`run`): the board builds and sends the bursts, and a `--listen-after` or `listen` reports what its receiver hears, as the tool's JSON lines. `--tx-power` doesn't apply: the board sends at its own level |
+| `repeater_start()` | a `bench_repeater.py` job; a board that runs no duplex repeater refuses it (skip kind `bench`) |
+| `outbound_start()` | a repeater's idle outbound with no repeater behind it (`bench_tx.py outbound`): BS bursts on both slots with the CACH. A bench board only |
+| `dmr_watch_start()`, `bursts_start()` | the receive board's decoded bursts (`bursts`), in the bench host's record shape |
+| `capture_start()`, `analyze_fm()`, `analyze_aprs()` | the receive board's wideband I/Q (`capture`, cs8) into a local run directory, each frame placed by its sample clock; `tools/sdr_fm_check.py` and `tools/aprs_afsk_check.py` run on the test host. A capture with samples the board lost (`gap_samples`, frames it couldn't send, or a run of exact zeros of 2 ms or more) skips as `bench`. The channel must be inside the board's receive window |
+| `analyze_dmr()` (sdrmon.py), bench stations | skip as missing (skip kind `bench`) |
 
-| Needs on the test host | |
-|---|---|
-| `$RFOUNDRY_SDRBENCH_SRC` | the directory holding the `rfoundry_sdrbench` package (bench_tx.py's burst and FEC code) |
-| `$RFOUNDRY_BENCHAPI` | the directory holding the bench API client `benchapi.py` |
-| `--dmr-freq`, `--dmr-cc` | a frequency the board may transmit on, with the radio's channel (or the VFO) on it: the receive tests don't tune the radio |
-
-`--tx-power` doesn't apply: the board sets its own level. A board refuses a new TX job for a moment after the last one
-closes; bench_tx.py opens another until one keys.
+`--dmr-freq` and `--dmr-cc` must be a frequency the board may transmit on, with the radio's channel (or the VFO) on
+it: the receive tests don't tune the radio. `test_dmr_repeater_burst_offset` times the radio against the TX board's
+outbound, both decoded by the receive board.
 
 ### Bursts on the bench, raw I/Q only where needed
 

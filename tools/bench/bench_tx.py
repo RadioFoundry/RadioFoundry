@@ -534,84 +534,7 @@ class Listener:
             self.emit({"call": i, **c})
 
 
-# ── a bench API transmitter ──────────────────────────────────────────────────
-
-class ApiSender:
-    """A transmitter behind the bench API (WS /tx, through the bench API client benchapi.py) in place of the serial
-    bench modem: the same bursts, built here, sent as 33-byte frames. A session with a TX lease on the frequency for
-    the run; each send() is one keying. Transmit only: nothing here listens. benchapi.py is found on $RFOUNDRY_BENCHAPI
-    (its directory) or the module path."""
-
-    def __init__(self, url: str, freq_hz: int, cc: int, slot: int, label: str):
-        import os
-        import sys
-        if os.environ.get("RFOUNDRY_BENCHAPI"):
-            sys.path.insert(0, os.environ["RFOUNDRY_BENCHAPI"])
-        import benchapi
-        self.bench = benchapi.open_bench(url)
-        self.freq_hz, self.cc, self.slot = freq_hz, cc, slot
-        s = self.bench.session(label, 30)
-        self.sid = s.get("session") or s.get("id")
-        try:
-            self.bench.lease(self.sid, [freq_hz], tx=True)
-        except Exception:
-            self.close()
-            raise
-
-    JOB_TRIES = 10          # the board runs one TX job at a time and refuses the next while the last one closes
-
-    def send(self, items, headers: int, terminators: int) -> int:
-        out = [b for control, burst in items for b in B.expand(control, burst, headers, terminators)]
-        for attempt in range(self.JOB_TRIES):
-            tx = self.bench.tx(self.sid, self.freq_hz, via="modem", cc=self.cc)
-            try:
-                tx.send(out, slot=self.slot)
-                k = tx.wait_keyings(1, len(out) * SLOT_S + 15)
-            except Exception as e:      # noqa: BLE001 - a refused job never keyed: open another one
-                if any(ev.get("type") == "keyed" for ev in tx.events) or attempt == self.JOB_TRIES - 1:
-                    raise
-                logging.debug("bench API job refused (%s), again", e)
-                time.sleep(0.5)
-                continue
-            finally:        # the keying is over (unkeyed "end"): closing ends the job
-                tx.close()
-            if k is None or k.get("type") != "unkeyed" or k.get("why") != "end" or k.get("bursts") != len(out):
-                raise RuntimeError(f"the bench API transmitter didn't finish {len(out)} bursts: {k}")
-            logging.info("sent %d bursts", len(out))
-            return len(out)
-        raise RuntimeError("unreachable")
-
-    def close(self) -> None:
-        self.bench.end_session(self.sid)
-
-
 # ── main ─────────────────────────────────────────────────────────────────────
-
-def transmit(args, out, headers: int, terminators: int) -> None:
-    """voice / data / csbk through out(items, headers, terminators), one keying a call: the bench modem's send() or a
-    bench API transmitter's. headers / terminators: the defaults when the command line gives none."""
-    if args.cmd == "voice":
-        headers = headers if args.headers is None else args.headers
-        terminators = terminators if args.terminators is None else max(1, args.terminators)
-        for n in range(args.calls):
-            if n:
-                time.sleep(args.gap_ms / 1000)
-            src = args.src if n % 2 == 0 else args.src2
-            out(voice_call(args, src), headers, terminators)
-            logging.info("call %d from %d done", n + 1, src)
-    elif args.cmd == "data":
-        lists = data_lists(args)
-        if args.repeat_gap_ms <= 0:
-            out([it for items in lists for it in items], 1, 1)
-        else:
-            for n, items in enumerate(lists):
-                if n:
-                    time.sleep(args.repeat_gap_ms / 1000)
-                out(items, 1, 1)
-        logging.info("data: %d packet(s) sent", len(lists))
-    elif args.cmd == "csbk":
-        out(csbk_items(args), 1, 1)
-
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -626,11 +549,6 @@ def main() -> None:
                     help="voice / data / csbk: then listen this many seconds (JSON lines), for the radio's answer "
                          "(confirmed data response, call alert ack, a reply call)")
     ap.add_argument("--ambe-out", default=None, help="with --listen-after: AMBE files of what was heard")
-    ap.add_argument("--bench-api", default=None, metavar="URL",
-                    help="send through a bench API transmitter (http://BOARD) instead of the serial bench modem; "
-                         "voice / data / csbk only, no listening, --power and the offsets don't apply")
-    ap.add_argument("--bench-api-slot", type=int, choices=(1, 2), default=1,
-                    help="with --bench-api: the slot the bursts are queued on (default 1)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def common(p, dst):
@@ -692,18 +610,6 @@ def main() -> None:
     if getattr(args, "burst_cc", None) is None:
         args.burst_cc = args.cc
 
-    if args.bench_api:
-        if args.cmd == "listen" or args.listen_after > 0:
-            ap.error("--bench-api transmits only: no listen, no --listen-after")
-        api = ApiSender(args.bench_api, int(round(args.freq * 1e6)), args.cc, args.bench_api_slot,
-                        f"bench_tx {args.cmd}")
-        logging.info("bench API %s on %.4f MHz cc %d", args.bench_api, args.freq, args.cc)
-        try:
-            transmit(args, api.send, 8, 3)    # the mmdvm_hs profile's headers and terminators
-        finally:
-            api.close()
-        return
-
     import serial
     modem = Modem(serial.Serial(args.port, 115200, timeout=0.1))
     lis = None
@@ -722,11 +628,30 @@ def main() -> None:
     logging.info("%s on %.4f MHz cc %d", modem.version, args.freq, args.cc)   # dmr_bench.py waits for "MHz cc"
 
     try:
-        if args.cmd == "listen":
+        if args.cmd == "voice":
+            headers = radio.headers if args.headers is None else args.headers
+            terminators = radio.terminators if args.terminators is None else max(1, args.terminators)
+            for n in range(args.calls):
+                if n:
+                    time.sleep(args.gap_ms / 1000)
+                src = args.src if n % 2 == 0 else args.src2
+                send(modem, voice_call(args, src), headers, terminators)
+                logging.info("call %d from %d done", n + 1, src)
+        elif args.cmd == "data":
+            lists = data_lists(args)
+            if args.repeat_gap_ms <= 0:
+                send(modem, [it for items in lists for it in items], 1, 1)
+            else:
+                for n, items in enumerate(lists):
+                    if n:
+                        time.sleep(args.repeat_gap_ms / 1000)
+                    send(modem, items, 1, 1)
+            logging.info("data: %d packet(s) sent", len(lists))
+        elif args.cmd == "csbk":
+            send(modem, csbk_items(args), 1, 1)
+        else:
             time.sleep(args.seconds)
             lis.summary()
-        else:
-            transmit(args, lambda items, h, t: send(modem, items, h, t), radio.headers, radio.terminators)
         if args.cmd != "listen" and args.listen_after > 0:
             lis = Listener(True, args.ambe_out)
             modem.on_rx, modem.on_lost = lis.on_rx, lis.on_lost

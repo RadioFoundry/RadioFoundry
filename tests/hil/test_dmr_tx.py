@@ -121,6 +121,7 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     assert ch_cc == cc, f"the channel's color code {ch_cc} != --dmr-cc {cc}"
     radio.reset_counters()
     _, before = radio.counters()
+    sdr_bench.need_dmr_waveform()
     rdir = sdr_bench.run_dir("hil_dmr_tx")
     # Raw I/Q on purpose: check_tx judges the waveform (burst on-time, keying ramps, power steps, overlaps, clipping),
     # which the bench-side burst records (dmr_watch_start) don't carry
@@ -550,6 +551,7 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
         assert got == opts, f"options in force {got:#x} after SETTING 31 {opts:#x}"
         radio.reset_counters()
         _, before = radio.counters()
+        sdr_bench.need_dmr_waveform()
         rdir = sdr_bench.run_dir(f"hil_dmr_enc_{word:x}")
         with sdr_bench.lease():
             cap = sdr_bench.capture_start(rdir, freq, seconds=PTT_S + 8)

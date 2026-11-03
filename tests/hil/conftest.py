@@ -42,10 +42,12 @@ def pytest_addoption(parser):
     g.addoption("--shots", default=None, help="directory for screenshots taken by the tests")
     g.addoption("--bench-wait-max", type=float, default=float(os.environ.get("RFOUNDRY_SDR_BENCH_WAIT_MAX", "900")),
                 help="s: a test that would wait longer for a shared SDR bench (rfoundry-benchd) is skipped")
-    g.addoption("--bench-api", default=os.environ.get("RFOUNDRY_BENCH_API"), metavar="URL",
-                help="a bench API transmitter (http://BOARD) in place of the SDR bench's modem: the bench sends voice, "
-                     "data and CSBKs through it; tests needing the SDR, a listener or the repeater skip "
-                     "(tests/hil/README.md)")
+    g.addoption("--bench-api", default=os.environ.get("RFOUNDRY_BENCH_API"), metavar="HOST[:PORT]",
+                help="a bench board (the bench line protocol, TCP 7373) in place of the SDR bench host: it runs the "
+                     "bench's jobs and receives (tests/hil/README.md)")
+    g.addoption("--bench-api-rx", default=os.environ.get("RFOUNDRY_BENCH_API_RX"), metavar="HOST[:PORT]",
+                help="a second bench board for bursts and captures (default: --bench-api's): a half-duplex board "
+                     "can't hear while it transmits")
     g.addoption("--bench-station", default=os.environ.get("RFOUNDRY_BENCH_STATION"),
                 help="a shared bench's station (a RadioFoundry radio on the bench host) as the second radio of the tests "
                      "that use one (bench_station fixture); rfoundry-bench info lists them")
