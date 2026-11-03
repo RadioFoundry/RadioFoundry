@@ -82,10 +82,11 @@ for documentation (RFC 5612), a placeholder** until the project has its own Priv
 | rfoundryNet (.2.1.6) | rfoundryUsbNetwork, rfoundryNetToAir (the gateway's packets to the air), rfoundryNetPacketsUp (air packets to the host); the gateway's other counters are in the debug link's `net.*`. No interfaces group (RFC 2863): it didn't fit the smallest flash |
 | rfoundryAgent (.2.1.7) | the agent's settings (section 6, writable) and its notification counters |
 | rfoundryEvent (.2.1.8) | the notification objects (accessible-for-notify) |
+| rfoundrySensors (.2.1.9) | rfoundryTempTable (.9.1, up to four rows in the board's order): rfoundryTempKind (pa, board, mcu, battery), rfoundryTempMilliVolts, rfoundryTempValue (0.1 degree C; no instance until the board knows the sensor's curve); rfoundryFanState (.9.2, on or off; no instance without a fan the firmware drives). [temperature.md](temperature.md) |
 
 Enumerations start at 1 as SMIv2 asks (rfoundryBatteryState ok(1), low(2), critical(3), ...). A radio without a battery reports rfoundryBatteryVoltage 0, rfoundryBatteryPercent 0 and
-rfoundryBatteryState ok(1), and sends no rfoundryLowBattery. The radio has no
-temperature sensor the firmware reads, so there is no temperature object.
+rfoundryBatteryState ok(1), and sends no rfoundryLowBattery. A radio without a temperature sensor has no
+rfoundryTempTable rows.
 
 ## 5. Notifications
 

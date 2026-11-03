@@ -23,6 +23,7 @@
 #include "hal_bcast.h"
 #include "hal_afsk.h"
 #include "hal_rx2.h"
+#include "hal_temp.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -106,6 +107,8 @@ typedef struct {
 	void (*gps_enable)(bool on);
 	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
 	const hal_rx2_t *rx2;
+	// Optional: the temperature sensors and the fan (hal_temp.h); NULL on a radio with none the firmware reads
+	const hal_temp_t *temp;
 } board_t;
 
 extern const board_t board;

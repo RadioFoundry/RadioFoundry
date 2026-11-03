@@ -26,11 +26,13 @@
 
 // The prefixes (each led by its length): system, snmp (RFC 3418) and rfoundryObjects. The interfaces group is left out
 // for the flash it would cost (the smallest images); rfoundryNet has the link's counters
-enum { P_SYSTEM, P_SNMP, P_RFOUNDRY };
+enum { P_SYSTEM, P_SNMP, P_RFOUNDRY, P_TEMP };
 static const uint8_t PFX_SYSTEM[] = { 6, 0x2B, 6, 1, 2, 1, 1 };
 static const uint8_t PFX_SNMP[] = { 6, 0x2B, 6, 1, 2, 1, 11 };
 static const uint8_t PFX_RFOUNDRY[] = { 7 + PEN_LEN, 0x2B, 6, 1, 4, 1, PEN_BER, 2, 1 };
-static const uint8_t *const prefixes[] = { PFX_SYSTEM, PFX_SNMP, PFX_RFOUNDRY };
+// rfoundryTempEntry (rfoundrySensors.1.1): its cells are column.row below it
+static const uint8_t PFX_TEMP[] = { 10 + PEN_LEN, 0x2B, 6, 1, 4, 1, PEN_BER, 2, 1, 9, 1, 1 };
+static const uint8_t *const prefixes[] = { PFX_SYSTEM, PFX_SNMP, PFX_RFOUNDRY, PFX_TEMP };
 
 // The instances in OID order; the enum is their index (the id the callbacks get)
 enum {
@@ -44,6 +46,8 @@ enum {
 	DA_RX_PACKETS, DA_RX_FOR_US, DA_SMS_RX, DA_SMS_TX, DA_SMS_FAILED, DA_INBOX, DA_UNREAD, DA_ARS,
 	NT_USB, NT_TO_AIR, NT_PACKETS_UP,
 	AG_RF_MANAGER, AG_RF_GAP, AG_RF_ANSWERS, AG_RF_WRITE, AG_USB_TRAPS, AG_RF_CALL_TRAPS, AG_TRAPS_SENT, AG_TRAPS_DROPPED,
+	TP_KIND, TP_MV = TP_KIND + SNMP_TEMP_MAX, TP_DC = TP_MV + SNMP_TEMP_MAX, TP_END = TP_DC + SNMP_TEMP_MAX,
+	SE_FAN = TP_END,
 	OBJECT_COUNT
 };
 
@@ -56,6 +60,9 @@ enum {
 #define SYS(n, t, f)	{ P_SYSTEM, { n, 0 }, 2, t, f }
 #define SNMPG(n, t, f)	{ P_SNMP, { n, 0 }, 2, t, f }
 #define RFOUNDRY(g, n, t, f)	{ P_RFOUNDRY, { g, n, 0 }, 3, t, f }
+#define TEMP(col, row)	{ P_TEMP, { col, row }, 2, INT, R }	// rows from 1
+#define TEMP_COL(id, col)	[id] = TEMP(col, 1), [id + 1] = TEMP(col, 2), [id + 2] = TEMP(col, 3), [id + 3] = TEMP(col, 4)
+_Static_assert(SNMP_TEMP_MAX == 4, "TEMP_COL lists four rows");
 
 // Sorted by OID (tests/host/snmpTest.c checks it)
 static const snmpObject_t objects[OBJECT_COUNT] = {
@@ -122,6 +129,8 @@ static const snmpObject_t objects[OBJECT_COUNT] = {
 	[AG_RF_CALL_TRAPS] = RFOUNDRY(7, 6, INT, W),
 	[AG_TRAPS_SENT] = RFOUNDRY(7, 7, CNT, R),
 	[AG_TRAPS_DROPPED] = RFOUNDRY(7, 8, CNT, R),
+	TEMP_COL(TP_KIND, 2), TEMP_COL(TP_MV, 3), TEMP_COL(TP_DC, 4),	// column 1 is the index (not-accessible)
+	[SE_FAN] = RFOUNDRY(9, 2, INT, R),
 };
 
 // Where each value comes from: a kind and an offset (into snmpData_t, snmpStats_t, or a small constant)
@@ -195,6 +204,22 @@ static bool get(const snmpMib_t *mib, uint8_t id, snmpValue_t *v)
 
 	if ((kind & K_DMR) && (d->mode != 1)) {
 		return false;	// DMR only
+	}
+	if ((id >= TP_KIND) && (id < TP_END)) {
+		// A row per sensor; a sensor without a mV output or without a temperature now has no cell there
+		uint8_t row = (uint8_t)((id - TP_KIND) % SNMP_TEMP_MAX), col = (uint8_t)((id - TP_KIND) / SNMP_TEMP_MAX);
+		if ((row >= d->tempCount) || ((col == 1) && !d->temp[row].hasMv) || ((col == 2) && !d->temp[row].hasDc)) {
+			return false;
+		}
+		v->num = (col == 0) ? d->temp[row].kind : (col == 1) ? d->temp[row].mv : (uint32_t)(int32_t)d->temp[row].dc;
+		return true;
+	}
+	if (id == SE_FAN) {
+		if (d->fan == 0) {
+			return false;
+		}
+		v->num = d->fan;
+		return true;
 	}
 	switch (kind & 0x7Fu) {
 	case K_CONST:

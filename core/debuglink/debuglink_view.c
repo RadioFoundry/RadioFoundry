@@ -4,6 +4,7 @@
 // (DL_VIEW_VERSION is bumped when one changes meaning or goes away); new keys may appear anywhere in a section.
 #include "config.h"
 #include "board.h"
+#include "app/temp.h"
 #include "hal_time.h"
 #include "debuglink/debuglink.h"
 #include "hostlink/hostlink.h"
@@ -464,11 +465,39 @@ static void storage_section(dl_text_t *t)
 #endif
 }
 
+// The temperature sensors and the fan (docs/spec/temperature.md): each sensor's kind, output in mV and temperature in
+// 0.1 degree C, "-" where the board has none
+static void sensors_section(dl_text_t *t)
+{
+	static const char *const kinds[] = { "?", "pa", "board", "mcu", "battery" };
+	const hal_temp_t *h = board.temp;
+	dl_text(t, "sensor.count=%u\n", h != NULL ? h->count : 0u);
+	temp_reading_t r;
+	for (uint8_t i = 0; temp_read(h, i, &r); i++) {
+		dl_text(t, "sensor.%u.kind=%s\n", i, r.kind < 5 ? kinds[r.kind] : "?");
+		if (r.has_mv) {
+			dl_text(t, "sensor.%u.mv=%u\n", i, r.mv);
+		} else {
+			dl_text(t, "sensor.%u.mv=-\n", i);
+		}
+		if (r.has_dc) {
+			dl_text(t, "sensor.%u.dc=%d\n", i, r.dc);
+		} else {
+			dl_text(t, "sensor.%u.dc=-\n", i);
+		}
+	}
+	if (h != NULL && h->fan_on != NULL) {
+		dl_text(t, "fan.on=%u\n", h->fan_on() ? 1u : 0u);
+	} else {
+		dl_text(t, "fan.on=-\n");
+	}
+}
+
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
-						  "net_link" };
+						  "net_link", "sensors" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -564,6 +593,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_NET_LINK:
 		net_link_section(t);
+		break;
+	case DL_VIEW_SENSORS:
+		sensors_section(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP
