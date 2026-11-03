@@ -206,13 +206,15 @@ void ui_go_home(void)
 // --- filtered lists (SF_FILTER): the rows whose label matches the T9 keys typed ---
 
 // With keys typed the list is the first UI_FILTER_MAX matches. With none it is every row, so a long list (1024
-// contacts) scrolls to its end without the RAM for its index: the first UI_FILTER_MAX - 1 rows are in filter_idx, and
-// in a longer list its last slot is a cursor, row walk_i, moved by stepping raw rows. Scrolling and drawing move it a
-// few rows at a time; a jump from the top to the end steps through every raw row once, as typing a key does. RAM is
-// short: the cursor costs walk_i alone, and the list's screen is the one on top (only it calls this)
+// contacts) scrolls to its end without the RAM for its index: the first UI_FILTER_MAX - 2 rows are in filter_idx, and
+// in a longer list its last two slots are a cursor, row WALK_I at raw row WALK_RAW, moved by stepping raw rows.
+// Scrolling and drawing move it a few rows at a time; a jump from the top to the end steps through every raw row once,
+// as typing a key does. RAM is short (no static of its own), and the list's screen is the one on top (only it calls
+// this)
 static uint16_t filter_idx[UI_FILTER_MAX];
 static uint16_t filter_n;		// the rows in the list
-static uint16_t walk_i;			// past UI_FILTER_MAX: row walk_i is raw row filter_idx[UI_FILTER_MAX - 1]
+#define WALK_I		filter_idx[UI_FILTER_MAX - 2]	// past UI_FILTER_MAX: the cursor's row
+#define WALK_RAW	filter_idx[UI_FILTER_MAX - 1]	// and its raw row
 static char filter_keys[UI_FILTER_KEYS + 1];
 
 uint16_t ui_filter_count(void) { return filter_n; }
@@ -222,23 +224,23 @@ uint16_t ui_filter_raw(uint16_t i)
 {
 	if (i >= filter_n)
 		return 0;
-	if (filter_n <= UI_FILTER_MAX || i < UI_FILTER_MAX - 1u)
+	if (filter_n <= UI_FILTER_MAX || i < UI_FILTER_MAX - 2u)
 		return filter_idx[i];
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
 	if (!(d->flags & SF_FILTER) || d->raw_count == NULL || d->raw_label == NULL)
 		return 0;
 	uint16_t n = d->raw_count();
-	uint16_t raw = filter_idx[UI_FILTER_MAX - 1];
+	uint16_t raw = WALK_RAW;
 	char label[40];
-	while (walk_i != i) {	// never below UI_FILTER_MAX - 1, where the cursor started
-		bool up = i > walk_i;
+	while (WALK_I != i) {	// never below UI_FILTER_MAX - 2, one under where the cursor started
+		bool up = i > WALK_I;
 		do {
 			if (up ? raw + 1u >= n : raw == 0)
 				return 0;	// the rows changed under the list: the next rebuild puts it right
 			raw = up ? (uint16_t)(raw + 1u) : (uint16_t)(raw - 1u);
 		} while (!d->raw_label(raw, label, sizeof label));
-		filter_idx[UI_FILTER_MAX - 1] = raw;
-		walk_i = up ? (uint16_t)(walk_i + 1u) : (uint16_t)(walk_i - 1u);
+		WALK_RAW = raw;
+		WALK_I = up ? (uint16_t)(WALK_I + 1u) : (uint16_t)(WALK_I - 1u);
 	}
 	return raw;
 }
@@ -247,7 +249,6 @@ void ui_filter_rebuild(void)
 {
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
 	filter_n = 0;
-	walk_i = UI_FILTER_MAX - 1u;
 	if (d->raw_count == NULL || d->raw_label == NULL)
 		return;
 	uint16_t n = d->raw_count();
@@ -263,6 +264,8 @@ void ui_filter_rebuild(void)
 		if (filter_keys[0] != 0 && filter_n >= UI_FILTER_MAX)
 			break;	// typed: the first matches
 	}
+	if (filter_n > UI_FILTER_MAX)
+		WALK_I = UI_FILTER_MAX - 1u;	// the cursor starts on that row, its raw row already in WALK_RAW
 }
 
 void ui_filter_reset(void)
