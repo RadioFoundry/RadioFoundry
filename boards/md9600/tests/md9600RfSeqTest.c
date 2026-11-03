@@ -469,6 +469,41 @@ static void check_tx(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz, uint8_t pow
 	pa_allowed = false;
 }
 
+// DMR: tuned without the settle wait (from an interrupt), the supply up with the loop open, then per burst the loop
+// and a short ramp, the supply kept between bursts
+static void check_dmr_tx(md9600_rev_t r, uint32_t hz, uint8_t power)
+{
+	fresh(r, true);
+	CHECK(md9600_rf_rx(&rf, hz, false) == MD9600_RF_OK);
+	CHECK(md9600_rf_tx_arm(&rf, true));
+	reset_log();
+	pa_allowed = true;
+	md9600_pll_plan_t p;
+	CHECK(md9600_pll_plan(r, hz, true, &p));
+	uint8_t t5 = p.band == MD9600_VHF ? MD9600_LN_T5_V : MD9600_LN_T5_U;
+	CHECK(md9600_rf_tx_tune(&rf, hz, power, false) == MD9600_RF_OK);
+	CHECK(delay_total == 0 && count(EV_PLL, p.band) == p.count && rf.state == MD9600_RF_TX);
+	CHECK(pa_off_now());
+	CHECK(md9600_rf_tx_settle_us(&rf) >= MD9600_TX_SUPPLY_US);
+	for (int burst = 0; burst < 2; burst++) {
+		reset_log();
+		CHECK(md9600_rf_pa_burst(&rf, true) == MD9600_RF_OK);
+		CHECK(level[MD9600_LN_APC] && level[t5] && dac_now[MD9600_DAC_APC_TUNE_V] == apc_value + power);
+		CHECK(count(EV_DAC, MD9600_DAC_APC_TUNE_V) == (int)MD9600_BURST_RAMP_STEPS + 1);
+		CHECK(delay_total == MD9600_BURST_T5_US + (MD9600_BURST_RAMP_STEPS - 1u) * MD9600_BURST_RAMP_STEP_US);
+		CHECK(find(0, EV_LINE, t5, 1) < find(0, EV_LINE, MD9600_LN_APC, 1));	// the supply before the loop
+		CHECK(count(EV_PLL, -1) == 0);
+		CHECK(md9600_rf_pa_burst(&rf, false) == MD9600_RF_OK);
+		CHECK(pa_off_now() && rf.state == MD9600_RF_TX);	// between bursts nothing of the transmitter is on
+	}
+	// Disarmed: no burst keys, the PA stays safe
+	CHECK(md9600_rf_tx_arm(&rf, false));
+	CHECK(md9600_rf_pa_burst(&rf, true) != MD9600_RF_OK && pa_off_now());
+	md9600_rf_tx_off(&rf);
+	CHECK(pa_off_now() && rf.state == MD9600_RF_RX);
+	pa_allowed = false;
+}
+
 static void test_tx(void)
 {
 	for (int r = MD9600_REV_V1V3; r < MD9600_REV_COUNT; r++) {
@@ -729,6 +764,12 @@ int main(void)
 	test_tx_gates();
 #if CONFIG_MD9600_TX
 	test_tx();
+	for (int r = MD9600_REV_V1V3; r < MD9600_REV_COUNT; r++) {
+		if (md9600_rev_built((md9600_rev_t)r)) {
+			check_dmr_tx((md9600_rev_t)r, 446075000u, 0);
+			check_dmr_tx((md9600_rev_t)r, 146520000u, 1);
+		}
+	}
 #endif
 	test_probe();
 	test_readings();

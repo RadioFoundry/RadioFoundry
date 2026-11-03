@@ -106,6 +106,10 @@ typedef struct {
 	bool match, fault;
 } md9600_subtone_stats_t;
 void md9600_subtone_stats(md9600_subtone_stats_t *s);
+// Sub-audio transmit (CONFIG_MD9600_TX): the tone as PWM on PC7 for an FM over; tail: the DCS turn-off tail
+void md9600_subtone_tx_start(const subtone_t *tone, bool wide);
+void md9600_subtone_tx_stop(void);
+bool md9600_subtone_tx_tail(bool on);
 
 // The debug link's board view keys (view_md9600.c)
 bool md9600_view_line(uint8_t i, char *buf, uint8_t len);
@@ -123,6 +127,10 @@ extern const hal_audio_tap_t md9600_audio_tap;
 void md9600_c6000_mode(bool dmr, uint32_t hz);	// set_mode: into or out of DMR at the receive frequency
 void md9600_c6000_retune(uint32_t hz);		// after every receiver retune: reference offset, DMR receiver restart
 void md9600_speaker_fm(bool on, bool vhf);	// the core's FM squelch (hal_radio_t.audio)
+// FM transmit: the chip in FM TX (the microphone, the band's FM modulation pair) before the PA keys, and back to the
+// receive set-up after the over (a no-op when not in FM TX)
+void md9600_c6000_fm_tx(uint32_t hz, bool wide);
+void md9600_c6000_fm_tx_end(void);
 typedef struct {
 	bool up;		// the chip answered after its power-on set-up
 	bool dmr;		// in DMR
@@ -134,10 +142,14 @@ typedef struct {
 void md9600_c6000_diag(md9600_c6000_diag_t *d);
 extern const hal_audio_t md9600_audio;
 #if CONFIG_MD9600_DMR_TX
-// The run-time gate on DMR transmit (off at start-up); nothing in the firmware turns it on yet
+// The run-time gate on DMR transmit (off at start-up): follows the transmit arm (md9600_radio_tx_arm)
 void md9600_dmr_tx_allow(bool on);
-// The RF chain's per-burst keying, from the modem interrupts; the default refuses (c6000_md9600.c)
+// The RF chain's DMR switching (radio_md9600.c): the per-burst keying from the modem interrupts, the transmit side
+// tuned ahead of the first burst (never blocks) and the task-level wait for it, the counters for the glue
 bool md9600_rf_dmr_key(bool tx);
+void md9600_rf_dmr_prepare(void);
+void md9600_rf_dmr_wait(void);
+void md9600_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx);
 #endif
 
 // GPS (gps_md9600.c): the module's NMEA on USART1, detected at run time (13)

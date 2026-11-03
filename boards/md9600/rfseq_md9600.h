@@ -90,6 +90,12 @@ typedef enum { MD9600_RF_OFF, MD9600_RF_RX, MD9600_RF_TX } md9600_rf_state_t;
 #define MD9600_TX_SUPPLY_US		1000u	// transmitter supply on, before the PA loop
 #define MD9600_APC_RAMP_STEPS		8u	// APC reference up and down in steps, so the PA doesn't splash
 #define MD9600_APC_RAMP_STEP_US		250u
+// DMR bursts: the RF TX interrupt comes about 1.3 ms ahead of the slot (on the other HR_C6000 radios), so the burst's
+// supply settle and ramp are short; they run in the modem interrupt. The supply goes off between bursts: left on, the
+// PA leaks the carrier at about -13 dB (measured off air)
+#define MD9600_BURST_T5_US		500u
+#define MD9600_BURST_RAMP_STEPS		4u
+#define MD9600_BURST_RAMP_STEP_US	100u
 #define MD9600_V4_KICK_HZ		145000000u	// V4: the VHF synthesizer is set right after power-on or it never locks
 
 typedef struct {
@@ -132,6 +138,15 @@ void md9600_rf_sleep(md9600_rf_t *rf);
 // Transmit on hz at a board power level (0 = 5 W .. 3 = 40 W, labels unverified). Refused unless built, armed,
 // confirmed and calibrated; on any refusal or failure the PA stays off and the receiver returns
 md9600_rf_err_t md9600_rf_tx(md9600_rf_t *rf, uint32_t hz, bool wide, uint8_t power);
+// The transmit side tuned with the PA off (DMR, ahead of the first burst): the same checks as md9600_rf_tx, the
+// receivers off, the TX VCO on the carrier. settle false: the synthesizer words only, without the wait (from an
+// interrupt or under a lock); the caller waits md9600_rf_tx_settle_us() before the first burst
+md9600_rf_err_t md9600_rf_tx_tune(md9600_rf_t *rf, uint32_t hz, uint8_t power, bool settle);
+uint32_t md9600_rf_tx_settle_us(const md9600_rf_t *rf);
+// One DMR burst's PA: on, the band's transmitter supply, MD9600_BURST_T5_US, the loop closed and a short APC ramp
+// (MD9600_BURST_RAMP_*); off, the ramp down, the loop open and the supply off. Busy waits only: callable from the
+// modem interrupts
+md9600_rf_err_t md9600_rf_pa_burst(md9600_rf_t *rf, bool on);
 // While transmitting: the PA alone on or off (the transmitter supply and the loop, the synthesizer stays), for DMR
 // bursts
 md9600_rf_err_t md9600_rf_pa(md9600_rf_t *rf, bool on);

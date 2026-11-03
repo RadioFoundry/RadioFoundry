@@ -18,6 +18,9 @@
 #include "pins.h"
 #include "periph_md9600.h"
 #include "hal_time.h"
+#if CONFIG_MD9600_DMR_TX
+#include "hrc/dmr_glue.h"
+#endif
 
 // The revision driven when none is stored and the probe has no verdict: one constant, set by the build
 // (board.mk MD9600_REV_DEFAULT). Which revision that should be is the owner's decision
@@ -113,10 +116,15 @@ static void op_dac(void *ctx, uint8_t ch, uint16_t value)
 	}
 }
 
-// Whole milliseconds sleep the task once the RTOS runs; the rest is a busy wait
+// Whole milliseconds sleep the task once the RTOS runs; the rest is a busy wait. In an interrupt (the DMR transmit
+// side tuned from the timeslot interrupt) all of it is a busy wait
 static void op_delay(void *ctx, uint32_t us)
 {
 	(void)ctx;
+	if (__get_IPSR() != 0u) {
+		hal_delay_us(us);
+		return;
+	}
 	if (us >= 1000u) {
 		hal_delay_ms(us / 1000u);
 		us %= 1000u;
@@ -178,8 +186,86 @@ void md9600_radio_diag(md9600_radio_diag_t *d)
 
 bool md9600_radio_tx_arm(bool on)
 {
-	return md9600_rf_tx_arm(&rf, on);
+	bool ok = md9600_rf_tx_arm(&rf, on);
+#if CONFIG_MD9600_DMR_TX
+	md9600_dmr_tx_allow(on && ok);	// DMR bursts follow the same arm
+#endif
+	return ok;
 }
+
+// --- DMR transmit: the per-burst RF switching (hardware-md9600.md 5.5, 19.8) ---
+//
+// tx() in DMR only arms. The glue's tx_prepare (at tx_begin under the modem lock, or in the timeslot interrupt for an
+// aligned start) puts the TX VCO on the carrier without the waits; tx_wait_lock (task level) waits the synthesizer's
+// settle time. Each burst then switches the band's transmitter supply, the PA loop and a short APC ramp from the modem
+// interrupts (md9600_rf_pa_burst). The receiver comes back at tx_off(); on a split channel it doesn't come
+// back between transmissions (no tx_done yet: the receive set-up waits on the RTOS)
+#if CONFIG_MD9600_DMR_TX
+static volatile bool dmr_armed;
+static volatile bool dmr_tuned;
+static uint32_t dmr_hz;
+static uint8_t dmr_power;
+static uint32_t dmr_skipped, dmr_unarmed;
+
+void md9600_rf_dmr_prepare(void)
+{
+	if (!dmr_armed || dmr_tuned) {
+		return;
+	}
+	if (md9600_rf_tx_tune(&rf, dmr_hz, dmr_power, false) != MD9600_RF_OK) {
+		dmr_skipped++;
+		return;
+	}
+	dmr_tuned = true;
+}
+
+void md9600_rf_dmr_wait(void)
+{
+	if (dmr_tuned) {
+		hal_delay_us(md9600_rf_tx_settle_us(&rf));
+	}
+}
+
+bool md9600_rf_dmr_key(bool tx)
+{
+	if (!tx) {
+		(void)md9600_rf_pa_burst(&rf, false);
+		return true;
+	}
+	if (!dmr_armed) {
+		dmr_unarmed++;
+		return false;
+	}
+	if (!dmr_tuned) {
+		md9600_rf_dmr_prepare();	// unlocked for this burst: better than none (the glue normally did it)
+		if (!dmr_tuned) {
+			return false;
+		}
+	}
+	if (md9600_rf_pa_burst(&rf, true) != MD9600_RF_OK) {
+		dmr_skipped++;
+		return false;
+	}
+	return true;
+}
+
+void md9600_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx)
+{
+	*skipped = dmr_skipped;
+	*unarmed = dmr_unarmed;
+	*rx = 0;
+}
+
+static void dmr_disarm(void)
+{
+	dmr_armed = false;
+	if (stm32_hrc_dmr_tx_active()) {
+		stm32_hrc_dmr_tx_drop();
+	}
+	(void)md9600_rf_pa_burst(&rf, false);
+	dmr_tuned = false;
+}
+#endif
 
 // --- Start-up ---
 
@@ -314,13 +400,61 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
 {
+	if (dmr_mode) {
+#if CONFIG_MD9600_DMR_TX
+		// Arm only: the receiver stays until the glue's tx_prepare (md9600_rf_dmr_prepare)
+		if (md9600_rf_tx_check(&rf, hz, power) != MD9600_RF_OK) {
+			return false;
+		}
+		dmr_hz = hz;
+		dmr_power = power;
+		dmr_tuned = false;
+		__DMB();
+		dmr_armed = true;
+		stm32_hrc_dmr_tx_prepare();	// a transmission the stack has already begun gets its first burst too
+		return true;
+#else
+		return false;
+#endif
+	}
+	if (md9600_rf_tx_check(&rf, hz, power) != MD9600_RF_OK) {
+		return md9600_rf_tx(&rf, hz, bw == RADIO_BW_25K, power) == MD9600_RF_OK;	// records the refusal
+	}
+	md9600_c6000_fm_tx(hz, bw == RADIO_BW_25K);	// the modulator first: the PA keys at the end of rf_tx
+	if (md9600_rf_tx(&rf, hz, bw == RADIO_BW_25K, power) != MD9600_RF_OK) {
+		md9600_c6000_fm_tx_end();
+		return false;
+	}
+#if CONFIG_SUBTONE && CONFIG_MD9600_TX
+	if (tx_tone != NULL) {
+		md9600_subtone_tx_start(tx_tone, bw == RADIO_BW_25K);
+	}
+#else
 	(void)tx_tone;
-	return md9600_rf_tx(&rf, hz, bw == RADIO_BW_25K, power) == MD9600_RF_OK;
+#endif
+	return true;
 }
+
+#if CONFIG_SUBTONE && CONFIG_MD9600_TX
+// The DCS turn-off tail from the PWM generator; the core holds the carrier for it
+static bool tx_tail(bool on)
+{
+	return !dmr_mode && rf.state == MD9600_RF_TX && md9600_subtone_tx_tail(on);
+}
+#endif
 
 static void tx_off(void)
 {
+#if CONFIG_SUBTONE && CONFIG_MD9600_TX
+	md9600_subtone_tx_stop();
+#endif
+#if CONFIG_MD9600_DMR_TX
+	if (dmr_mode) {
+		dmr_disarm();	// after the stack's TX done this only disarms; before it, the transmission is cut
+	}
+#endif
 	md9600_rf_tx_off(&rf);
+	md9600_c6000_fm_tx_end();
 }
 
 static void rx_sleep(bool sleep)
@@ -382,6 +516,9 @@ const hal_radio_t md9600_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+#if CONFIG_SUBTONE && CONFIG_MD9600_TX
+	.tx_tail = tx_tail,
+#endif
 	.status = status,
 	.audio = audio,
 	.rx_sleep = rx_sleep,

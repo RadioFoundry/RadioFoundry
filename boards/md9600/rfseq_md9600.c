@@ -99,13 +99,17 @@ static uint32_t settle_us(const md9600_rev_desc_t *d)
 	}
 }
 
-// The words, then the settle time or the lock indication (bounded)
-static md9600_rf_err_t pll_program(const md9600_rf_ops_t *o, const md9600_rev_desc_t *d, const md9600_pll_plan_t *p)
+// The words, then the settle time or the lock indication (bounded). settle false: the words only (the caller waits)
+static md9600_rf_err_t pll_words(const md9600_rf_ops_t *o, const md9600_rev_desc_t *d, const md9600_pll_plan_t *p,
+				 bool settle)
 {
 	for (uint8_t i = 0; i < p->count; i++) {
 		if (!o->pll(o->ctx, p->band, p->words[i], p->bits)) {
 			return MD9600_RF_E_BUS;
 		}
+	}
+	if (!settle) {
+		return MD9600_RF_OK;
 	}
 	if (o->locked == NULL) {
 		wait_us(o, settle_us(d));
@@ -118,6 +122,11 @@ static md9600_rf_err_t pll_program(const md9600_rf_ops_t *o, const md9600_rev_de
 		wait_us(o, MD9600_LOCK_POLL_US);
 	}
 	return o->locked(o->ctx, p->band) ? MD9600_RF_OK : MD9600_RF_E_LOCK;
+}
+
+static md9600_rf_err_t pll_program(const md9600_rf_ops_t *o, const md9600_rev_desc_t *d, const md9600_pll_plan_t *p)
+{
+	return pll_words(o, d, p, true);
 }
 
 // The receiving band's IF: the AK2365A set-up (V1-V4) or the V5 filter and route lines
@@ -290,6 +299,12 @@ md9600_rf_err_t md9600_rf_tx_check(const md9600_rf_t *rf, uint32_t hz, uint8_t p
 md9600_rf_err_t md9600_rf_tx(md9600_rf_t *rf, uint32_t hz, bool wide, uint8_t power)
 {
 	(void)wide;	// FM deviation is the HR_C6000's; the IF filter is a receive setting
+	md9600_rf_err_t e = md9600_rf_tx_tune(rf, hz, power, true);
+	return e != MD9600_RF_OK ? e : md9600_rf_pa(rf, true);
+}
+
+md9600_rf_err_t md9600_rf_tx_tune(md9600_rf_t *rf, uint32_t hz, uint8_t power, bool settle)
+{
 	md9600_rf_pa_safe(rf);
 	md9600_rf_err_t e = md9600_rf_tx_check(rf, hz, power);
 	if (e != MD9600_RF_OK) {
@@ -312,7 +327,7 @@ md9600_rf_err_t md9600_rf_tx(md9600_rf_t *rf, uint32_t hz, bool wide, uint8_t po
 	set(o, MD9600_LN_MOD_VHF, b == MD9600_VHF);
 	set(o, ln_vco[b], false);
 	set(o, ln_vco[other], true);
-	e = pll_program(o, rf->desc, &p);
+	e = pll_words(o, rf->desc, &p, settle);
 	if (e != MD9600_RF_OK) {
 		// No carrier off frequency: back to receive, and report the transmit failure
 		md9600_rf_pa_safe(rf);
@@ -328,7 +343,7 @@ md9600_rf_err_t md9600_rf_tx(md9600_rf_t *rf, uint32_t hz, bool wide, uint8_t po
 	rf->lo_hz = p.lo_hz;
 	rf->band = b;
 	rf->retunes++;
-	return md9600_rf_pa(rf, true);
+	return MD9600_RF_OK;
 #else
 	return fail(rf, MD9600_RF_E_TX_BUILD);
 #endif
@@ -359,6 +374,54 @@ md9600_rf_err_t md9600_rf_pa(md9600_rf_t *rf, bool on)
 	set(o, MD9600_LN_APC, true);
 	rf->pa_on = true;
 	apc_ramp(o, 0, rf->apc);
+	return MD9600_RF_OK;
+}
+
+uint32_t md9600_rf_tx_settle_us(const md9600_rf_t *rf)
+{
+	return rf->desc != NULL ? settle_us(rf->desc) + MD9600_TX_SUPPLY_US : 0u;
+}
+
+md9600_rf_err_t md9600_rf_pa_burst(md9600_rf_t *rf, bool on)
+{
+	const md9600_rf_ops_t *o = rf->ops;
+	if (!on) {
+		// The ramp down, the loop open, then the transmitter supply off (2.5: per burst T5 and the loop toggle)
+		if (rf->pa_on) {
+			for (uint32_t i = 1; i <= MD9600_BURST_RAMP_STEPS; i++) {
+				o->dac(o->ctx, MD9600_DAC_APC_TUNE_V,
+				       (uint16_t)(rf->apc - rf->apc * i / MD9600_BURST_RAMP_STEPS));
+				if (i < MD9600_BURST_RAMP_STEPS) {
+					wait_us(o, MD9600_BURST_RAMP_STEP_US);
+				}
+			}
+		}
+		set(o, MD9600_LN_APC, false);
+		o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, 0);
+		set(o, MD9600_LN_T5_U, false);
+		set(o, MD9600_LN_T5_V, false);
+		rf->pa_on = false;
+		return MD9600_RF_OK;
+	}
+	if (rf->state != MD9600_RF_TX || !rf->tx_armed || !CONFIG_MD9600_TX) {
+		md9600_rf_pa_safe(rf);
+		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE : MD9600_RF_E_TX_ARM);
+	}
+	if (rf->pa_on) {
+		return MD9600_RF_OK;
+	}
+	o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, 0);
+	set(o, ln_t5[1u - rf->tx_band], false);
+	set(o, ln_t5[rf->tx_band], true);
+	wait_us(o, MD9600_BURST_T5_US);
+	set(o, MD9600_LN_APC, true);
+	rf->pa_on = true;
+	for (uint32_t i = 1; i <= MD9600_BURST_RAMP_STEPS; i++) {
+		o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, (uint16_t)(rf->apc * i / MD9600_BURST_RAMP_STEPS));
+		if (i < MD9600_BURST_RAMP_STEPS) {
+			wait_us(o, MD9600_BURST_RAMP_STEP_US);
+		}
+	}
 	return MD9600_RF_OK;
 }
 

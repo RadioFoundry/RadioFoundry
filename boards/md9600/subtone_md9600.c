@@ -2,8 +2,9 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 sub-audio receive: CTCSS / DCS decode in software from QT_DQT_IN on PA2 (ADC2 IN2, docs/spec/hardware-md9600.md
 // 19.9). ADC2 converts continuously into a circular DMA buffer (DMA2 stream 3, channel 1);
-// each half-transfer interrupt sums groups of DECIM conversions into one sample for drivers/rf/subaudio, the DSP. The
-// transmit side (the tone PWM on PC7) is not written.
+// each half-transfer interrupt sums groups of DECIM conversions into one sample for drivers/rf/subaudio, the DSP.
+// Transmit (CONFIG_MD9600_TX): the tone as PWM on PC7 (TIM8 CH2, the backlight's 28 kHz timebase) into the reference
+// oscillator's modulation input; TIM8's update interrupt takes the generator's next duty every TX_DIV periods.
 #include "config.h"
 
 #if CONFIG_SUBTONE
@@ -13,6 +14,9 @@
 #include "platform.h"
 #include "hal_time.h"
 #include "rf/subaudio/subaudio_rx.h"
+#if CONFIG_MD9600_TX
+#include "rf/subaudio/subaudio_tx.h"
+#endif
 
 // The input: ADC IN2 (PA2, QT_DQT_IN). A 100.0 Hz tone on the air holds it at about 320 counts of amplitude; PC3 (IN13)
 // carries the voice band with the tone filtered out (first radio, 2026-11-03)
@@ -165,4 +169,76 @@ void md9600_subtone_stats(md9600_subtone_stats_t *s)
 	// The ADC stopped (an overrun clears its DMA request) or the stream was disabled by an error
 	s->fault = started && ((ADC2->SR & ADC_SR_OVR) || !(DMA2_Stream3->CR & DMA_SxCR_EN));
 }
+
+#if CONFIG_MD9600_TX
+// The tone's share of the PWM swing at 12.5 kHz (doubled at 25 kHz) and whether the analog path inverts it (DCS
+// polarity only), set from the deviation and polarity measured off air: 30 % gives 665 Hz CTCSS and +-700 Hz DCS
+// at 12.5 kHz (first radio, 2026-11-03)
+#ifndef MD9600_SUBTONE_PERCENT
+#define MD9600_SUBTONE_PERCENT	30
+#endif
+// DCS reads inverted off air without it (D023N came out as D023I, first radio, 2026-11-03)
+#ifndef MD9600_SUBTONE_TX_INVERT
+#define MD9600_SUBTONE_TX_INVERT	1
+#endif
+#define TX_DIV			8u	// a new duty every 8 PWM periods: about 3.5 kHz
+#define TX_IRQ_PRIORITY		6	// no RTOS calls in the handler
+static subaudio_tx_t tx;
+static volatile uint8_t tx_count;
+static bool tx_running;
+
+void TIM8_UP_TIM13_IRQHandler(void)
+{
+	TIM8->SR = (uint16_t)~TIM_SR_UIF;	// the other flags are the backlight's and the beep's to ignore
+	if (++tx_count >= TX_DIV) {
+		tx_count = 0;
+		TIM8->CCR2 = subaudio_tx_next(&tx);
+	}
+}
+
+void md9600_subtone_tx_stop(void)
+{
+	if (!tx_running) {
+		return;
+	}
+	TIM8->DIER &= ~TIM_DIER_UIE;
+	HAL_NVIC_DisableIRQ(TIM8_UP_TIM13_IRQn);
+	tx_running = false;
+	md9600_pwm_out(MD9600_PWM_TONE, 0);	// released: driven low it pulls the reference
+}
+
+void md9600_subtone_tx_start(const subtone_t *tone, bool wide)
+{
+	md9600_subtone_tx_stop();
+	subaudio_kind_t kind = kind_of(tone);
+	if (kind == SUBAUDIO_NONE || !(RCC->APB2ENR & RCC_APB2ENR_TIM8EN)) {
+		return;
+	}
+	uint32_t full = TIM8->ARR;
+	uint32_t rate = 72000000u / (TIM8->PSC + 1u) / (full + 1u) / TX_DIV;	// TIM8 on APB2 at 72 MHz
+	// The modulator scales nothing by bandwidth here: a 25 kHz channel gets twice the swing, twice the deviation
+	subaudio_tx_init(&tx, rate, (uint16_t)full, (uint8_t)(wide ? 2u * MD9600_SUBTONE_PERCENT : MD9600_SUBTONE_PERCENT));
+	subaudio_tx_start(&tx, kind, tone->value, MD9600_SUBTONE_TX_INVERT != 0);
+	tx_count = 0;
+	uint16_t first = subaudio_tx_next(&tx);
+	md9600_pwm_out(MD9600_PWM_TONE, (uint8_t)(first != 0 ? first : 1u));
+	TIM8->SR = (uint16_t)~TIM_SR_UIF;
+	HAL_NVIC_SetPriority(TIM8_UP_TIM13_IRQn, TX_IRQ_PRIORITY, 0);
+	HAL_NVIC_EnableIRQ(TIM8_UP_TIM13_IRQn);
+	TIM8->DIER |= TIM_DIER_UIE;
+	tx_running = true;
+}
+
+
+bool md9600_subtone_tx_tail(bool on)
+{
+	if (!tx_running) {
+		return false;
+	}
+	HAL_NVIC_DisableIRQ(TIM8_UP_TIM13_IRQn);	// the generator runs in its interrupt
+	bool ok = subaudio_tx_tail(&tx, on);
+	HAL_NVIC_EnableIRQ(TIM8_UP_TIM13_IRQn);
+	return ok;
+}
+#endif
 #endif

@@ -106,7 +106,7 @@ applied, used for the standby flag (10.2) and for non-permanent settings.
 | PC4 | RF_APC_SW, PA power loop on |  |
 | PC5 | ADC1 IN15: VHF noise level |  |
 | PC6 | Display_Light: LCD and key backlight, TIM8 CH1 PWM (AF3) | unverified, 7.3 |
-| PC7 | CTC_DCS_PWM, sub-audio tone output, TIM8 CH2 PWM (AF3) | unverified |
+| PC7 | CTC_DCS_PWM, sub-audio tone output, TIM8 CH2 PWM (AF3) | checked |
 | PC8 | BEEP_PWM, TIM8 CH3 PWM (AF3) | unverified |
 | PC9 | C5_V_SW, VHF 5 V supply (receiver side) |  |
 | PC10 / PC11 / PC12 | I2S3 CK (AF6) / I2S3ext SD (AF5) / I2S3 SD (AF6) |  |
@@ -189,7 +189,7 @@ register behavior is the DM-1701's ([modem-hrc6000.md](modem-hrc6000.md)).
 | Clock / PLL | 4:0x0A=0x80, 0x0B=0x28, 0x0C=0x33, 0x0A=0x00, 0xB9=0x05, 0xBA=0x04, 0xBB=0x02: the same values RadioFoundry already uses |
 | IF | 450 kHz (4:0x07-0x09 = 0x0B 0xB8 0x00), from the IF receiver chip into ADC_IVINP (pin 70). **4:0x01 bit 6 (receive I/Q swap) follows the first LO's side** (5.2): clear on UHF (LO below, 0xB0 in DMR), set on VHF (LO above, 0xF0), as the radio's own firmware does. The wrong value inverts the spectrum: about one voice burst in six syncs and no call is tracked (first radio, 2026-11-02, both bands) |
 | FM receive audio | **not through the HR_C6000**: 4:0x36 = 0x00 always. FM audio comes from the IF chip's demodulator via U_V_AF_SW, FM_SW, FM_MUTE (6.1). The chip stays in DMR mode in FM receive (4:0x10 bit 7 clear), as the radio's own firmware leaves it: in FM mode its line out plays only its own FM audio, so beeps were silent on FM channels (first radio, 2026-11-03) |
-| FM TX, CTCSS, DCS, DTMF, tones | through the HR_C6000 (TX tone generator, RX CTCSS / DCS detector); PWM on PC7 is reported for TX tones instead (unverified) |
+| FM TX, CTCSS, DCS, DTMF, tones | through the HR_C6000 (TX tone generator, RX CTCSS / DCS detector); RadioFoundry sends CTCSS and DCS as PWM on PC7 instead (19.9) |
 | MOD2 routing | U_V_MOD_SW (PB7) sends the MOD2 output to the active band's VCO; set with every synthesizer write |
 | Reference / MOD2 offset | per band byte t from calibration (11.2); signed c = t - 128; 4:0x47 = c, 4:0x48 = 0x03 if c < 0 else 0x00, 4:0x04 = c. Rewritten at every RX entry (otherwise an RX offset is reported after TX) |
 | DMR sync detection | 4:0x5F = 0xF0 (MS, BS, TDMA1, TDMA2) |
@@ -705,7 +705,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 | 2 | V4 synthesizer exact part ("PLL1590"), V5 IF part, V5 use of PE15 | Photos of the board (and FCC internal photos) |
 | 3 | Lock detect pin (none mapped) | Scope / board photos; otherwise lock is inferred from RX |
 | 4 | LMX2571 delays after reset and calibration | Scope the PLL on retune; measure the relock time (also [gotchas.md](gotchas.md) 14.6, SFR / DMR burst switching) |
-| 5 | RF TX interrupt usefulness and the 20 ms burst-off workaround | Scope T5 against the burst on an SDR |
+| 5 | RF TX interrupt usefulness and the 20 ms burst-off workaround | Settled (2026-11-03): keyed from the RF TX interrupt, the burst reaches full power ahead of its payload and every burst decodes; no workaround (19.8) |
 | 6 | Power level labels (5/10/25/40 W) and the low-level fractions | Power meter into a dummy load, both bands, edges and center |
 | 7 | RSSI / noise curves per revision | Signal generator steps |
 | 8 | Mic keypad thresholds | Settled (2026-11-02): with the current thresholds all 19 hand mic keys and the mic PTT read as the right key |
@@ -769,8 +769,8 @@ the original firmware sounds the same on this radio is not checked); UHF receive
 | Audio | FM from the IF chip (FM_MUTE high), PCM (DMR voice, beeps) from the HR_C6000 line out with FM held back, AF_SW muting otherwise (`boards/md9600/speaker_md9600.h`) |
 | GPS | USART1 RX (PA10), receive interrupt; 9600 baud first, then 4800, 19200, 38400, 57600, 115200, 3 s each. A silent line ends the search after the first window; a module once heard feeds APRS positions. PA9 stays on (it also powers the mic) |
 | Hand mic | the keypad of 9.3 through `drivers/input/adckeys`, three equal scans per key. Key roles of A-D and A/B are a proposal (unverified). No `CAP_KEYPAD`: a mic may have no keypad |
-| Transmit | the sequence is written (19.8) but refused: `CONFIG_MD9600_TX` is off, and a build with it still needs the run-time arm, a stored revision and plausible PA rows. FM modulation needs the HR_C6000 glue DMR transmit glue is behind `CONFIG_MD9600_DMR_TX` (off) and a run-time gate; its per-burst RF keying hook (`md9600_rf_dmr_key`) is not connected to this sequence yet |
-| Not yet | sub-audio, FM transmit, DMR transmit, split duplex and the two-PLL burst switching (17 #5, #17), the CPS's own command set, update packaging |
+| Transmit | FM and DMR on UHF, checked off air into a dummy load (19.8, 19.9). Off in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`); a build with them still needs the run-time arm, a stored revision and plausible PA rows. Sub-audio: CTCSS and DCS from the PWM generator on PC7, with the DCS turn-off tail |
+| Not yet | VHF transmit, transmit power per level, split duplex and the two-PLL burst switching (17 #17), the CPS's own command set, update packaging |
 
 ### 19.2 Clock plan and memory map
 
@@ -947,6 +947,15 @@ Return to receive ramps the APC reference down in the same steps, opens the loop
 column with the last receive settings. For DMR bursts the PA alone (T5, the loop, the ramp) switches while the
 synthesizer stays on the carrier. DMR receive uses the 12.5 kHz IF setting.
 
+DMR transmit (`CONFIG_MD9600_DMR_TX`): the HR_C6000 glue's prepare hook runs steps 1-4 without the waits (TX VCO on the
+carrier, receivers off) at the start of a transmission, and the task waits the synthesizer's 2 ms plus 1 ms. Each
+burst then, from the RF TX interrupt: the band's T5 on, 500 us, RF_APC_SW on, the APC reference up in 4 steps of
+100 us; at its end the same ramp down, RF_APC_SW off, T5 off. The receiver comes back at the end of the transmission.
+Measured off air (UHF, 5 W, 2026-11-03): T5 left on between bursts leaks the carrier at -13 dB, hence T5 per burst. With
+it, between bursts the carrier is below the measuring receiver's floor (26 dB down). On air at key-up: a 0.5 ms step to
+-13 dB (T5), then full power 0.4 ms later; key-down takes 0.4 ms. On-time 30.7 ms, same-slot spacing 60.0 ms, outer
+symbol deviation 1933 Hz, every burst of a 3 s call decoded (headers, 9 superframes, terminator).
+
 At power-up, with the revision known: receivers on, then on V1-V4 the AK2365A reset (PE15 low for 10 us), and on V4
 the VHF synthesizer set for 145 MHz receive. PE15 stays an input on V4A / V5.
 
@@ -969,7 +978,7 @@ arm and the last refusal.
 |---|---|
 | PA2, ADC IN2 (QT_DQT_IN, the sub-audio low-pass output) | the CTCSS / DCS decoder (`subtone_md9600.c`, `CONFIG_SUBTONE`): ADC2 converts it continuously (480 cycles, 18.3 kHz) into DMA2 stream 3, and each half-transfer interrupt feeds sums of 8 to `drivers/rf/subaudio` at 2287 Hz. Mid-supply (about 1950 counts). A 100.0 Hz tone on a narrow channel holds it at about 320 counts of amplitude, talking or not; an empty channel gives 300-600 counts rms of noise. The line is AC coupled: a DCS stream on it is high-passed with a corner near 18 Hz, so a run of equal bits sags to under half within a bit (the decoder slices with hysteresis for this). The diagnostics page's "qt" is one ADC3 conversion of it |
 | PC3, ADC IN13 (RX_2T_5T) | APRS receive (`afsk_md9600.c`, `CONFIG_APRS_RX`): while the core listens, ADC3 converts it continuously (480 cycles, 18.3 kHz) into DMA2 stream 1, and each half-transfer interrupt queues sums of 2 (9146 Hz) with the DC taken away; the diagnostics page's ADC3 reading of PA2 holds its last value meanwhile. Voice-band audio with sub-audio removed: under a carrier with a 100.0 Hz tone it drops to about 16 counts rms and rises to about 400 with speech; 450 counts of noise on an empty channel |
-| PC7, TIM8 CH2 | sub-audio tone PWM (`md9600_pwm_out`), on the backlight's 28 kHz timebase, into the reference oscillator's modulation input. Without a tone the pin is released (open drain high), as at start-up: driven low it pulls the reference and DMR never syncs. No tone generator drives it yet |
+| PC7, TIM8 CH2 | sub-audio tone PWM (`md9600_pwm_out`), on the backlight's 28 kHz timebase, into the reference oscillator's modulation input. Without a tone the pin is released (open drain high), as at start-up: driven low it pulls the reference and DMR never syncs. In FM transmit TIM8's update interrupt (priority 6) feeds `drivers/rf/subaudio`'s generator a new duty every 8 periods (about 3.6 kHz). Measured off air at 30 % of the swing (12.5 kHz; doubled at 25 kHz): CTCSS 100.0 Hz at 665 Hz deviation (1327 Hz at 25 kHz), DCS D023N at +-700 Hz with a 0.30 s 134.4 Hz tail. The path inverts: DCS goes out with the generator's polarity flipped (`MD9600_SUBTONE_TX_INVERT`) (first radio, 2026-11-03) |
 | PC8, TIM8 CH3 | beep PWM, same helper |
 | PA temperature, fan | no sensor or fan line is known on any revision (?) |
 
@@ -984,7 +993,7 @@ The board's own switches, in `boards/md9600/board.mk` and `config.mk` (the share
 | `MD9600_REV_PROBE` | `1`: the receiver probe at start-up picks the revision when none is stored. Off (`0`) until its thresholds are measured |
 | `CONFIG_MD9600_V1V3` / `_V4` / `_V5` | `y` (default) or `n`: the synthesizer driver per board revision: V1-V3 (SKY72310 and the AK2365A IF receivers), V4 (the 24-bit "PLL1590" part and the AK2365A), V4A / V5 (LMX2571). All on, one image runs every revision; fewer make a smaller image for those boards. At least one must be on (19.3) |
 | `CONFIG_MD9600_TX` | `n` (default) or `y`: the transmit sequence (`boards/md9600/rfseq_md9600.c`). Built, transmit is still refused until it is armed for the power cycle (Settings > Advanced > Hardware, or the debug link) on a radio whose board revision is stored, and the PA calibration rows look plausible (19.8) |
-| `CONFIG_MD9600_DMR_TX` | `n` (default) or `y`: the HR_C6000's per-burst RF keying for DMR transmit. Still refused at run time until enabled (19.1) |
+| `CONFIG_MD9600_DMR_TX` | `n` (default) or `y`: DMR transmit, the per-burst RF keying of 19.8 from the HR_C6000 glue. Needs `CONFIG_MD9600_TX`, and keys only while transmit is armed |
 
 Feature switches that differ from the platform's defaults (`config.mk`; the two lists:
 [build-config.md](../build-config.md#unsupported-not-written-unconfirmed)):

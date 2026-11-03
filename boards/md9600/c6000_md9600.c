@@ -11,9 +11,9 @@
 // rewrite the reference offset and the DMR modulation pair from the calibration.
 //
 // Transmit: the slot engine asks the board to key the RF side for each burst (rf_switch). Here that is refused unless
-// the build has CONFIG_MD9600_DMR_TX and md9600_dmr_tx_allow(true) was called, and even then it needs the RF chain's
-// per-burst keying (md9600_rf_dmr_key), which the radio code doesn't have yet. The radio's tx() refuses as well, so no
-// DMR transmission starts.
+// the build has CONFIG_MD9600_DMR_TX and the transmit arm is on (md9600_dmr_tx_allow); the RF chain's per-burst keying
+// is radio_md9600.c's (md9600_rf_dmr_key). FM transmit puts the chip in its FM TX mode (the microphone on its line
+// input, two-point modulation with the band's FM pair) for the over, and back to the receive set-up after it.
 #include <stddef.h>
 #include "md9600.h"
 #include "config.h"
@@ -41,6 +41,12 @@
 #define CAL_DMR_I_VHF		0x139u
 #define CAL_DMR_Q_UHF		0x140u
 #define CAL_DMR_Q_VHF		0x149u
+// FM modulation pair: I at 0x170 / 0x179, Q at 0x180 / 0x189 (hardware-md9600.md 11.2, unverified)
+#define CAL_FM_I_UHF		0x170u
+#define CAL_FM_I_VHF		0x179u
+#define CAL_FM_Q_UHF		0x180u
+#define CAL_FM_Q_VHF		0x189u
+#define FM_MIC_GAIN		7	// the other HR_C6000 radios' value (unverified here)
 
 // The configuration port on PE2-PE5 and the voice port on SPI1 (PB3-PB5, chip select PD7): mode 2 at PCLK2 / 16 =
 // 4.5 MHz, the other HR_C6000 radios' rate (unverified on this radio)
@@ -149,6 +155,55 @@ void md9600_speaker_fm(bool on, bool vhf)
 	speaker_apply();
 }
 
+// --- FM transmit ---
+
+static bool fm_tx;
+
+// The FM receive set-up (power-up and after an FM over): FM audio never passes through this chip, so it stays in DMR
+// mode, where its codec plays the beeps
+static void fm_rx_setup(void)
+{
+	count(hrc6000_set_mode_fm_rx(&modem));
+	count(hrc6000_fm_audio(&modem, false));
+	count(hrc6000_fm_rx_pcm(&modem));
+}
+
+void md9600_c6000_fm_tx(uint32_t hz, bool wide)
+{
+	if (!diag.up || diag.dmr) {
+		return;
+	}
+	uint8_t band = MD9600_UHF;
+	int8_t off = 0;
+	(void)md9600_band_of(hz, &band);
+	if (!md9600_cal_ref_tune(band == MD9600_UHF, &off)) {
+		off = 0;
+	}
+	hrc6000_fm_tx_t cfg = {
+		.uhf = band == MD9600_UHF,
+		.wide = wide,
+		.tone = HRC6000_TONE_NONE,
+		.mod2 = cal_gain(CAL_FM_I_UHF, CAL_FM_I_VHF, hz),
+		.mod1 = cal_gain(CAL_FM_Q_UHF, CAL_FM_Q_VHF, hz),
+		.ref_offset = off,
+		.mic_gain = FM_MIC_GAIN,
+	};
+	fm_tx = true;
+	count(hrc6000_set_mode_fm_tx(&modem, &cfg));
+}
+
+void md9600_c6000_fm_tx_end(void)
+{
+	if (!fm_tx) {
+		return;
+	}
+	fm_tx = false;
+	fm_rx_setup();
+	count(hrc6000_tones_off(&modem));
+	ref_offset(tuned_hz);
+	speaker_apply();
+}
+
 // --- DMR glue ---
 
 #if CONFIG_MD9600_DMR_TX
@@ -157,13 +212,6 @@ static volatile bool tx_allowed;
 void md9600_dmr_tx_allow(bool on)
 {
 	tx_allowed = on;
-}
-
-// The RF chain's per-burst keying (hardware-md9600.md 5.5: T5 and RF_APC_SW per burst). Not written: refuse to key,
-// accept the return to receive (nothing was keyed)
-__attribute__((weak)) bool md9600_rf_dmr_key(bool tx)
-{
-	return !tx;
 }
 #endif
 
@@ -188,6 +236,11 @@ static bool rf_switch(bool tx)
 static const stm32_hrc_dmr_board_t dmr_board = {
 	.int_port = GPIOC,
 	.rf_switch = rf_switch,
+#if CONFIG_MD9600_DMR_TX
+	.rf_counters = md9600_rf_dmr_counters,
+	.tx_prepare = md9600_rf_dmr_prepare,
+	.tx_wait_lock = md9600_rf_dmr_wait,
+#endif
 };
 
 // --- radio hooks (radio_md9600.c) ---
@@ -203,9 +256,7 @@ void md9600_c6000_init(void)
 	hal_delay_ms(C6000_PWD_WAIT_MS);
 	hrc6000_attach(&modem, &modem_bus);
 	count(hrc6000_power_on_init(&modem, DMR_MIC_GAIN));
-	count(hrc6000_set_mode_fm_rx(&modem));
-	count(hrc6000_fm_audio(&modem, false));		// FM audio never passes through this chip
-	count(hrc6000_fm_rx_pcm(&modem));		// so it stays in DMR mode, where its codec plays the beeps
+	fm_rx_setup();
 	count(hrc6000_set_rx_gain(&modem, RX_GAIN_DB));
 	count(hrc6000_tones_off(&modem));	// with the init's 0x80 the chip never syncs on DMR (hardware-md9600.md 4.2)
 	diag.up = hrc_read(&modem, 4, 0x10, &diag.r10);
