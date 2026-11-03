@@ -611,6 +611,7 @@ static void test_codeplug(void)
 	// Write it back with channel 8 renamed and other quick-key slots: both land (the side key assignment lives
 	// there)
 	uint32_t serial = codeplug_serial();
+	codeplug_accept(true);	// "Use anyway" for the codeplug this write replaces: dropped at the commit
 	rename_channel(img, 8, "Renamed");
 	rename_channel(img, 260, "Far one");
 	memset(img + 0x7524, 0x11, 20);
@@ -620,7 +621,8 @@ static void test_codeplug(void)
 	CHECK(put("codeplug.bin", wopts, img, TFTP_CODEPLUG_SIZE, 512) == 0);
 	CHECK(regions_equal(img));
 	CHECK(sim_flash_data[EE + 0x7524] == 0x11 && sim_flash_data[EE + 0x7537] == 0x11);
-	CHECK(codeplug_serial() > serial);
+	CHECK(codeplug_serial() > serial && codeplug_acceptance() == CODEPLUG_ACCEPT_DROPPED);
+	codeplug_accept(false);
 	CHECK(codeplug_channel(8, &ch) && strcmp(ch.name, "Renamed") == 0);
 	CHECK(codeplug_channel(260, &ch) && strcmp(ch.name, "Far one") == 0);
 	CHECK(sim_flash_data[0x40000] == 0x77);			// outside the regions: untouched

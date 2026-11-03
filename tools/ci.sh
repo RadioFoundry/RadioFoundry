@@ -5,7 +5,7 @@
 # The release gate: everything CI runs, in one script (docs/testing/README.md).
 #
 #   tools/ci.sh                 host tests, Python checks, every board with its feature matrix, license checks
-#   tools/ci.sh --quick         the same with only each board's default build (no matrix)
+#   tools/ci.sh --quick         the same with only each board's default and maximal builds (no matrix)
 #   tools/ci.sh --board dm1701  one board only (or a comma separated list: --board dm1701,md380); an unknown id fails
 #   tools/ci.sh --toolchain arm every board whose platform builds with that toolchain (platform.toml [toolchain] id,
 #                               or a comma separated list), from the registry; what each CI firmware job runs
@@ -471,7 +471,6 @@ for bm in boards/*/board.mk boards/*/; do
 		# Each build option value besides the default (a band): its image, default config
 		builds "$b"
 	fi
-	[ "$QUICK" = 1 ] && continue
 	features=$(make -s BOARD="$b" print-config 2>/dev/null)
 	all_on=""
 	unsupported=" $(make -s BOARD="$b" print-unsupported 2>/dev/null) $(make -s BOARD="$b" print-not-written 2>/dev/null)"
@@ -480,12 +479,16 @@ for bm in boards/*/board.mk boards/*/; do
 	for kv in $features; do
 		f=${kv%%=*}
 		case "$unsupported" in *" $f "*) ;; *) all_on="$all_on CONFIG_$f=y" ;; esac
+		[ "$QUICK" = 1 ] && continue
 		case "$required" in *" $f "*) continue ;; esac
 		[ "${kv#*=}" = y ] && build "$b" "no-$f" "CONFIG_$f=n"
 	done
-	# The board's [ci] extra configurations (a diagnostic only one board carries, with what it needs to fit)
-	builds "$b" --extra
-	build "$b" fm-minimal CONFIG_DMR=n CONFIG_USB=n CONFIG_VFO=n CONFIG_DIAG=n CONFIG_SUBTONE=n CONFIG_FONT_XL=n
+	if [ "$QUICK" = 0 ]; then
+		# The board's [ci] extra configurations (a diagnostic only one board carries, with what it needs to fit)
+		builds "$b" --extra
+		build "$b" fm-minimal CONFIG_DMR=n CONFIG_USB=n CONFIG_VFO=n CONFIG_DIAG=n CONFIG_SUBTONE=n CONFIG_FONT_XL=n
+	fi
+	# Maximal with --quick too: its flash and the stack check's deepest chains are where a pull request runs out first
 	# shellcheck disable=SC2086
 	build "$b" maximal $all_on $(make -s BOARD="$b" print-maximal-vars 2>/dev/null)
 done

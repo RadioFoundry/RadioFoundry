@@ -150,7 +150,10 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 | `sign` | Optional: what the radio shows in the bootloader |
 
 `[flash.dfu]` (`usb-dfu`): `vid`, `pid`, `string1`, `product` (the USB identity) and `key_sha256`, `key_prefix` (the
-per-model XOR key's hash and first bytes, never the key).
+per-model XOR key's hash and first bytes, never the key). Optional `layout`: the bootloader's alt 0 interface string,
+added only once it was read on a radio in its bootloader. The flashers then accept no other device. Without it they
+refuse a layout that shows only the bootloader's sectors (from 0x08000000, at most 48 KB): that is the radio's own
+firmware switched on normally, which has the bootloader's IDs and strings but whose erase can reach the bootloader.
 
 `[flash.stub]` (a board on a platform with `board_stub`): `id` (the board id the stub echoes, unique per stub; 0xFE is reserved for the stub tools' test profiles) and
 `tested` (flashed through the stub on a radio), then the keys the platform's `board_stub` names. The `f4stub` tool serves

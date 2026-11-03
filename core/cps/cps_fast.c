@@ -283,7 +283,7 @@ static void end_session(uint8_t state)
 {
 	drop_block();
 	if (s.written) {
-		codeplug_reload();	// the radio core follows codeplug_serial()
+		codeplug_written();	// the radio core follows codeplug_serial()
 		stats.commits++;
 	}
 	s.written = false;
@@ -672,7 +672,7 @@ void cps_fast_tick(uint32_t now_ms)
 	s.slots = 0;
 	s.state = CPSF_ST_DONE;
 	stats.commits++;
-	codeplug_reload();
+	codeplug_written();
 }
 
 bool cps_fast_staging_busy(void)

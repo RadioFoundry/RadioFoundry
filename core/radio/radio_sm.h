@@ -36,6 +36,10 @@
 #define RADIO_SQL_DB_PER_STEP	3
 #define RADIO_SQL_HYST_DB	3
 #define RADIO_SQL_CLOSE_POLLS	2
+// DMR scan: a stop also hears a carrier by its signal strength, as the squelch levels do on noise: level 1 above
+// RADIO_DMR_SQL_L1_DBM, RADIO_SQL_DB_PER_STEP more a level (5, the default, above -100 dBm). Some receivers' noise
+// reading doesn't follow a DMR signal (gotchas 17.3)
+#define RADIO_DMR_SQL_L1_DBM	(-112)
 // While APRS receive listens (aprs.md 5.3): a packet's tones at full deviation push the noise reading over the line
 // for a poll or two, and on a radio whose modem gates it, a closed squelch zeroes the receive audio, so a packet came apart (on air,
 // 2026-10-13). On the APRS frequency the squelch holds this many polls (300 ms) instead
@@ -328,6 +332,7 @@ typedef struct {
 	bool sfr_rpt;			// the channel's SFR repeater role has the modem (radio_sfr.c), not the call stack
 	bool sfr_denied;		// a repeater channel kept ordinary because the radio may not transmit or a scan
 					// runs: the role starts once it may (TX inhibit cleared, the scan stopped)
+	uint32_t dmr_rx_hz;		// the frequency the call stack's receiver searched for slot timing on
 	uint32_t own_id;		// the radio's DMR ID (codeplug, else RADIO_DMR_ID_DEFAULT)
 	uint32_t dmr_serial;		// call stack view serial last copied
 	uint32_t talk_id;		// the channel's talk target

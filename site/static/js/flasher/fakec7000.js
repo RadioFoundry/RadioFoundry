@@ -14,6 +14,10 @@
 // ("Flash Read ...", iap.js probe) with that string, and then stops answering its console until the next power-on;
 // faults.consoleSilent: a console that never answers (the identify still does).
 //
+// faults.nandEcc: byte addresses on the NAND whose 2 KB page has more bit errors than its ECC corrects: the stub's
+// sector reads and sums of it answer status 0x0D, and a page read of it (0x13) leaves the status feature's ECC bits 2
+// with the page in the cache as the chip holds it.
+//
 // A radio with the Baofeng updater (loaderId: the ID its loader answers) enters it when switched on with its keys
 // held (powerOn({ keys: true })): FakeBfLoader, the radio side of bfloader.js, erases the application area and writes
 // the blocks it takes into the program flash.
@@ -279,6 +283,7 @@ export class FakeC7000 {
 		this.q128.set(randomBytes(rng(6), 0xFFF), 0x7C000);
 		this.q128[0x7CFFF] = 2;
 		this.nand = null;
+		this.nandPage = 0;	// the NAND page in the chip's cache (0x13)
 		if (nand) {
 			this.nand = new SparseNand();
 			this.nand.set(randomBytes(rng(7), 0x10000), 0x40000);
@@ -305,7 +310,7 @@ export class FakeC7000 {
 		// badWrite: how many of the next WRITEs (op 0x0E) leave a bit wrong in their sector; writeStatus: the status every
 		// WRITE answers instead (0x0F write protected, 0x0C flash busy too long), 0 = none
 		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, slowCable: 0, badWrite: 0,
-			writeStatus: 0, ...faults };
+			writeStatus: 0, nandEcc: [], ...faults };
 		this.rand = rng(11);
 		this.state = "off";		// off | rom | booting | firmware | stub | bfloader
 		this.inb = new Uint8Array(0);
@@ -600,6 +605,8 @@ export class FakeC7000 {
 			return this.nand ? null : this.q128;
 		};
 		const blank = (sec) => sec === BLANK_SECTOR || sec.every((b) => b === 0xFF);
+		// a NAND page (2 KB) or sector (4 KB) at a whose ECC fails (faults.nandEcc)
+		const eccBad = (m, a, n) => m === this.nand && this.faults.nandEcc.some((x) => x >= a && x < a + n);
 		const crcOf = (sec) => (sec === BLANK_SECTOR ? BLANK_CRC : crc32(sec));
 		const univ = this.loaded.length >= 0xC0 && String.fromCharCode(...this.loaded.subarray(0x80, 0x84)) === "UCFG";
 		const be = (v) => new Uint8Array([v >>> 24, (v >>> 16) & 0xFF, (v >>> 8) & 0xFF, v & 0xFF]);
@@ -647,8 +654,14 @@ export class FakeC7000 {
 			const m = mem(u32be(p, 0), p[4], p[5]);
 			const txn = (p[6] << 8) | p[7], rxn = (p[8] << 8) | p[9], tx = p.subarray(10, 10 + txn);
 			let body = new Uint8Array(rxn);
-			if (this.nand && u32be(p, 0) !== SSI_PROG && tx[0] === 0x9F && txn === 2) body = new Uint8Array([0x98, 0xE2]).subarray(0, rxn);
-			else if (!m) body.fill(0xFF);
+			const nandBus = this.nand && u32be(p, 0) !== SSI_PROG && (p[4] & 2) && p[5] === 18;
+			if (nandBus && tx[0] === 0x9F && txn === 2) body = new Uint8Array([0x98, 0xE2]).subarray(0, rxn);
+			else if (nandBus && tx[0] === 0x13) this.nandPage = (tx[1] << 16) | (tx[2] << 8) | tx[3];	// page read
+			else if (nandBus && tx[0] === 0x0F && tx[1] === 0xC0) body[0] = eccBad(this.nand, this.nandPage * 2048, 2048) ? 0x20 : 0;
+			else if (nandBus && tx[0] === 0x03) {	// read from the cache: the page last read
+				const at = this.nandPage * 2048 + ((tx[1] << 8) | tx[2]);
+				body = this.nand.subarray(at, at + rxn).slice();
+			} else if (!m) body.fill(0xFF);
 			else if (tx[0] === 0x9F) body = new Uint8Array([0xC8, 0x40, m === this.progmem ? 0x14 : 0x18]).subarray(0, rxn);
 			else if (tx[0] === 0x03) body = m.slice((tx[1] << 16) | (tx[2] << 8) | tx[3]).subarray(0, rxn);
 			else if (tx[0] === 0x06) this.wel = true;
@@ -667,6 +680,7 @@ export class FakeC7000 {
 		} else if (op === 0x07) {
 			const m = mem(u32be(p, 0), p[4], p[5]);
 			const a = u32be(p, 6), n = (p[10] << 8) | p[11];
+			if (eccBad(m, a, n * SECTOR)) return this.reply(0x0D, new Uint8Array(0)), 1;
 			const out = [];
 			for (let i = 0; i < n; i++) {
 				let at = a + i * SECTOR;
@@ -693,6 +707,7 @@ export class FakeC7000 {
 					this.faults.misplace.splice(k, 1);
 					at += SECTOR;
 				}
+				if (eccBad(m, at, SECTOR)) return this.reply(0x0D, new Uint8Array(0)), 1;	// and nothing after it
 				const sec = m ? m.subarray(at, at + SECTOR) : BLANK_SECTOR;
 				const crc = be32(crcOf(sec));
 				let rec;

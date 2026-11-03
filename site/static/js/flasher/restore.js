@@ -19,6 +19,7 @@ import { RESTORE, makePlan } from "./plan.js";
 import { overlapping as protectOverlap } from "./protect.js";
 import { stockApplication } from "./stockfw.js";
 import { CODEPLUG_SPAN } from "./backup.js";
+import { TFTP_SIZE } from "../codeplug/image.js";
 import { classify } from "../codeplug/detect.js";
 
 export class RestoreError extends Error {}
@@ -29,7 +30,8 @@ export function targets(bundle) {
 	const spi = bundle.parts.get("spi-flash");
 	if (bundle.meta.firmware_now?.kind === "rfoundry" && internal?.complete) out.push("rfoundry");
 	if (bundle.meta.firmware_now?.kind === "openfw" && internal?.complete) out.push("openfw");
-	if (bundle.meta.firmware_now?.kind === "rfoundry" && spi && spi.data.length >= CODEPLUG_SPAN && codeplugLayout(bundle) === "openfw") out.push("codeplug");
+	// the memory chip read as far as the codeplug's regions: a smaller chip's backup ends before CODEPLUG_SPAN
+	if (bundle.meta.firmware_now?.kind === "rfoundry" && spi && spi.data.length >= TFTP_SIZE && codeplugLayout(bundle) === "openfw") out.push("codeplug");
 	if (bundle.parts.has("stock-firmware") || bundle.meta.firmware_before?.kind === "stock") out.push("stock");
 	return out;
 }

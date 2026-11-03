@@ -43,6 +43,9 @@
 // inbound burst before ours (a clipped SFR header lost the next superframe; at 2.0 ms the frame before ours still
 // carried most of the voice bit errors). Swept 0.4-3.1 ms in hardware-dm1801pro.md 5.6.
 #define RF_TX_LEAD		6u
+// TX data advance (hrc7000_t.tx_pre_on) 1.1 ms, not the chip's 0.4 ms: at 0.4 ms the inbound burst came 0.71 ms late
+// against the outbound, about 0.11 ms less per step (hardware-dm1801pro.md 5.6)
+#define TX_PRE_ON		11u
 #define FM_TX_LIMIT_12K5	5u	// FM_DEV_COEF b23:16 (hrc7000_t.fm_tx_limit)
 #define FM_TX_LIMIT_25K		0x0Fu
 #define FD_REG_NOISE		0x65u
@@ -247,6 +250,7 @@ static void init(void)
 	modem.fm_tx_limit[0] = FM_TX_LIMIT_12K5;
 	modem.fm_tx_limit[1] = FM_TX_LIMIT_25K;
 	modem.rf_tx_lead = RF_TX_LEAD;
+	modem.tx_pre_on = TX_PRE_ON;
 	hrc_modem_analog_init(DAC_C_INIT);
 	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DMR_DB);
 	hrc7000_set_rf_tx_lead(&modem, RF_TX_LEAD);

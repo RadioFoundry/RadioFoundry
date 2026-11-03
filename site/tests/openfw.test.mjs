@@ -426,3 +426,12 @@ test("trail of an open-firmware backup: each codec search stage and what it foun
 	await openfw.analyze(st2, none.sim.board, none.sim.fb, (l) => lines2.push(l));
 	assert.match(lines2.at(-1), /^moved codec search: none in \d+ code start\(s\) against \d+ profile\(s\)/);
 });
+
+test("a backup over another open firmware reads the memory chip its radio info gives, when smaller than the board's", async () => {
+	const sim = await simulation(fb, ONE, 3);
+	const info = (id) => ({ flashId: id });
+	assert.equal(openfw.newState(sim.board, { backup: { spi_size: 0x1000000 } }, info(0x4014)).spi.data.length, 0x100000);
+	assert.equal(openfw.newState(sim.board, { backup: { spi_size: 0x1000000 } }, info(0x4018)).spi.data.length, 0x1000000);
+	assert.equal(openfw.newState(sim.board, { backup: { spi_size: 0x1000000 } }, info(0)).spi.data.length, 0x1000000, "no id: the board's");
+	assert.equal(openfw.newState(sim.board, { backup: { spi_size: 0x1000000 } }).spi.data.length, 0x1000000);
+});

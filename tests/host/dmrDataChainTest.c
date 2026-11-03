@@ -100,6 +100,7 @@ static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, NULL
 
 static dmr_event_cb_t stack_cb;
 static void *stack_ctx;
+static bool refuse_tx;
 
 static bool m_start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
 {
@@ -112,7 +113,10 @@ static void m_stop(void) { stack_cb = NULL; }
 static void m_configure(const dmr_config_t *cfg) { hrc6000_dmr_configure(&eng, cfg); }
 static void m_rx_restart(void) { hrc6000_dmr_rx_restart(&eng); }
 static void m_rx_lock_slot(int8_t ts) { hrc6000_dmr_rx_lock_slot(&eng, ts); }
-static bool m_tx_begin(dmr_timing_t t, int8_t ts, dmr_access_t a) { return hrc6000_dmr_tx_begin(&eng, t, ts, a); }
+static bool m_tx_begin(dmr_timing_t t, int8_t ts, dmr_access_t a)
+{
+	return !refuse_tx && hrc6000_dmr_tx_begin(&eng, t, ts, a);
+}
 static bool m_tx_queue(const dmr_tx_burst_t *b) { return hrc6000_dmr_tx_queue(&eng, b); }
 static uint8_t m_tx_queue_space(void) { return hrc6000_dmr_tx_queue_space(&eng); }
 static void m_tx_end(void) { hrc6000_dmr_tx_end(&eng); }
@@ -274,6 +278,7 @@ static void setup(void)
 	ntx = 0;
 	rxq_n = rxq_next = 0;
 	tx_starts = 0;
+	refuse_tx = false;
 	pa_on_calls = 0;
 	cur_tick = 0;
 	t_us = 1000000;
@@ -364,6 +369,37 @@ static void test_call_alert_in(void)
 		CHECK(id24(&txl[0].payload[4]) == OTHER_ID && id24(&txl[0].payload[7]) == OUR_ID);
 	}
 	CHECK(pa_on_calls >= 1 && eng.st.tx_done == 1 && !hrc6000_dmr_is_transmitting(&eng));
+	CHECK(!dmr_call_data_busy() && !dmrDataServiceIsBusy());
+}
+
+// A modem refusal completes inside txStart; a later reply must work without resetting the service.
+static void test_refused_reply_recovers(void)
+{
+	setup();
+	refuse_tx = true;
+	dmrBurst_t b;
+	csbk_burst(DMR_CSBKO_CALL_ALERT, DMR_FID_ETSI, 0, OUR_ID, OTHER_ID, &b);
+	queue_rx(&b, 1);
+	run(1500);
+	dmrDataStats_t st;
+	dmrDataServiceGetStats(&st);
+	CHECK(st.txLists == 1 && st.txFailed == 1 && st.txOk == 0);
+	CHECK(st.txLastError == DMR_TX_ERR_REJECTED);
+	CHECK(ntx == 0 && pa_on_calls == 0);
+	CHECK(!dmr_call_data_busy() && !dmrDataServiceIsBusy());
+
+	refuse_tx = false;
+	queue_rx(&b, 1);
+	run(1500);
+	dmrDataServiceGetStats(&st);
+	CHECK(st.txLists == 2 && st.txFailed == 1 && st.txOk == 1);
+	CHECK(ntx == 1);
+	if (ntx == 1) {
+		CHECK(txl[0].kind == DMR_BURST_CSBK && txl[0].mcu_crc);
+		CHECK((txl[0].payload[0] & 0x3F) == DMR_CSBKO_CALL_ALERT_ACK);
+		CHECK(dmrDataCheckCRC16(txl[0].payload, 0xA5));
+		CHECK(id24(&txl[0].payload[4]) == OTHER_ID && id24(&txl[0].payload[7]) == OUR_ID);
+	}
 	CHECK(!dmr_call_data_busy() && !dmrDataServiceIsBusy());
 }
 
@@ -773,6 +809,7 @@ int main(void)
 	test_etsi_text_vector();
 	test_etsi_sms_in();
 	test_etsi_sms_out();
+	test_refused_reply_recovers();
 	if (failures) {
 		printf("# dmrDataChainTest: %d FAILED\n", failures);
 		return 1;

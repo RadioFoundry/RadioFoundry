@@ -219,7 +219,7 @@ typedef struct {
 	uint8_t zone_jrn_kind;		// SETTINGS_ZONE_JRN_*
 	char lang[2];			// the radio's language, its ISO 639-1 code (i18n.h lang_value), "\0\0" = never picked: the build's default
 					// (was reserved8b: older records read English)
-	uint8_t reserved8c;
+	uint8_t cp_flags;		// SETTINGS_CP_* (was reserved8c: 0 = none, as before)
 	// Zone share: the zones imported last, so the same zone sent again updates its import instead of adding a copy
 	// (docs/spec/zone-share.md 5.4); key 0 = unused, the oldest replaced first
 	settings_zs_import_t zs_import[SETTINGS_ZS_IMPORTS];
@@ -232,6 +232,10 @@ typedef struct {
 #define SETTINGS_PAGES_MAX	16u
 #define SETTINGS_PAGES		((sizeof(settings_t) + SETTINGS_PAGE_BYTES - 1u) / SETTINGS_PAGE_BYTES)
 #define SETTINGS_PAGE_SHIFT	12	// a record's layout field: the page in bits 12-15, the layout in bits 0-11
+// cp_flags: the owner kept another firmware's codeplug as the radio's own ("Use anyway", docs/spec/codeplug-native.md
+// 2); app.c keeps it equal to codeplug_acceptance(), which a codeplug written by a CPS or TFTP drops
+#define SETTINGS_CP_ACCEPTED		0x01u
+
 #define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
 #define SETTINGS_ZONE_JRN_ADD		1u
 #define SETTINGS_ZONE_JRN_DELETE	2u

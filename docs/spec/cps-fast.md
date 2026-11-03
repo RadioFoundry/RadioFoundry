@@ -169,7 +169,7 @@ bytes is skipped by the journal; a staged one reuses the block's slot.
 | copied | committing: blocks copied in so far |
 | reason | the last refusal's reason (section 6), 0 since BEGIN if none |
 
-The debug link's `storage` view section has `cpsf.state`, `cpsf.read`, `cpsf.written`, `cpsf.commits` and
+The debug link's `cps` view section has `cpsf.state`, `cpsf.read`, `cpsf.written`, `cpsf.commits` and
 `cpsf.refused` (`debuglink.md` 3.7).
 
 ### 3.6 Pipelined DATA

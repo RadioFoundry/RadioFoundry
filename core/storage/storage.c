@@ -547,7 +547,7 @@ bool storage_write(uint32_t addr, const void *buf, uint32_t len)
 	storage_lock();
 	uint8_t *b = storage_buffer_acquire();
 	bool ok = b != NULL;
-	if (ok && len <= P_MAX) {
+	if (ok && p != NULL && len <= P_MAX) {
 		// One transaction for the one or two sectors it touches (above)
 		if (same(addr, p, len)) {
 			stats.sector_skips++;
@@ -569,11 +569,15 @@ bool storage_write(uint32_t addr, const void *buf, uint32_t len)
 		uint32_t n = STORAGE_SECTOR - off < len ? STORAGE_SECTOR - off : len;
 		ok = rd(base, b, STORAGE_SECTOR);
 		if (ok) {
-			memcpy(b + off, p, n);
+			if (p != NULL) {
+				memcpy(b + off, p, n);
+				p += n;
+			} else {
+				memset(b + off, 0xFF, n);
+			}
 			ok = storage_sector_write(base, b);
 		}
 		addr += n;
-		p += n;
 		len -= n;
 	}
 	if (b != NULL) {

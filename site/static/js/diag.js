@@ -171,11 +171,16 @@ export function reset() {
 	info = { tool: "", version: "" };
 }
 
+// Fields whose numbers are lengths and counts, never a DMR ID: a file's size (a stock file is 6 or 7 digits long) stays
+// in a scrubbed report, both as a value (SIZE_KEYS) and in a trail line's JSON ("size":1048576)
+export const SIZE_KEYS = new Set(["size", "len", "length", "bytes", "total", "received"]);
+const SIZE_FIELD = new RegExp(`"(?:${[...SIZE_KEYS].join("|")})":$`);
+
 // Personal data out of text that leaves the browser without the user reading it first: callsigns, DMR IDs, email
 // addresses. Downloaded reports keep it (the user sees and sends them); automatic reports go through this.
 export function scrub(text) {
 	return String(text)
 		.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[email]")
 		.replace(/\b(?:[A-Z]{1,2}|\d[A-Z]|[A-Z]\d)\d[A-Z]{1,4}\b/g, "[call]")
-		.replace(/(?<![\w.x])\d{6,8}(?![\w.])/g, "[id]");
+		.replace(/(?<![\w.x])\d{6,8}(?![\w.])/g, (id, at, all) => (SIZE_FIELD.test(all.slice(Math.max(0, at - 12), at)) ? id : "[id]"));
 }

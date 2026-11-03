@@ -395,6 +395,10 @@
     "CHANNEL_EDIT"
    ]
   },
+  "codeplug_foreign": {
+   "group": "channels",
+   "needs": []
+  },
   "channel_new": {
    "group": "channels",
    "needs": [

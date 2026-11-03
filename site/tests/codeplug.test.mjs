@@ -263,6 +263,10 @@ test("longer database text is kept up to 48 characters", () => {
 import { CpsSerial, changes, writeRanges, TransportError, keepIdentity } from "../static/js/codeplug/transport.js";
 import { concat } from "../static/js/flasher/bytes.js";
 import { FakeCpsRadio } from "../static/js/codeplug/fakecps.js";
+import { makeBundle } from "../static/js/flasher/backup.js";
+import { CONVERTERS } from "../static/js/flasher/codeplug.js";
+import { FastLink, FastError } from "../static/js/codeplug/fastlink.js";
+import { Link, browserErrorKey } from "../static/js/flasher/link.js";
 import { updateFor } from "../static/js/flasher/version.js";
 
 const RADIOS = [
@@ -453,6 +457,16 @@ test("the fast protocol reads what the CPS reads, and writes only the blocks tha
 	assert.equal(simDetailFlash(await s.close()), detail(m));
 });
 
+test("a fast request to a radio that went away is a lost connection, not a radio that won't answer", async () => {
+	// a stream nobody answers on; lost as SerialStream's pump sets it when the USB device disappears
+	const s = { buf: new Uint8Array(0), lost: false, clear() {}, take() {}, async write() {} };
+	const fl = new FastLink(new Link(s, { timeout: 20 }));
+	fl.limits = { sums: 16 };
+	await assert.rejects(fl.sums(0, 1), (e) => e instanceof FastError && e.status === "no answer");
+	s.lost = true;
+	await assert.rejects(fl.sums(0, 1), (e) => e.name === "NetworkError" && browserErrorKey(e) === "flash.err.connection_lost");
+});
+
 test("a DATA frame lost in a window sends the block again", async () => {
 	let lost = 0;
 	const s = simRadio(["--populate"], { drop: (f) => f.length > 64 * 3 && lost++ === 0 });	// a window of DATA frames
@@ -564,12 +578,60 @@ test("a sector left pending by an interrupted write is retried; verify skips the
 	await assert.rejects(tr.verify(want, res.plan), (e) => e.code === "verify_failed" && e.params.addr === 0x7600);
 });
 
+test("a read-back the radio refuses part way is reported as such, not as a mismatch", async () => {
+	const radio = new FakeCpsRadio({ board: "DM-1701" });
+	const tr = new CpsSerial(radio.stream());
+	await tr.identify(RADIOS);
+	const want = encode(rich());
+	const res = await tr.write(want, null);
+	const answer = radio.answer.bind(radio);
+	radio.answer = (req) => (req[0] === 0x52 ? new Uint8Array([0x2D]) : answer(req));
+	await assert.rejects(tr.verify(want, res.plan), (e) => e.code === "verify_incomplete" && e.params.addr === res.plan[0][1][0][0]);
+});
+
 test("a backup's codeplug is offered for restore only in RadioFoundry's layout", () => {
 	const bundle = (data) => ({ meta: { firmware_now: { kind: "rfoundry" } }, parts: new Map([["spi-flash", { data }]]) });
 	assert.deepEqual(targets(bundle(encode(rich()).bytes)), ["codeplug"]);
 	const noise = new Uint8Array(CODEPLUG_SPAN);
 	for (let i = 0; i < noise.length; i++) noise[i] = (i * 7919 + (i >> 5)) & 0xFF;
 	assert.deepEqual(targets(bundle(noise)), []);
+});
+
+test("a backup of a smaller memory chip is offered for restore when it covers the codeplug's regions", () => {
+	const bundle = (data) => ({ meta: { firmware_now: { kind: "rfoundry" } }, parts: new Map([["spi-flash", { data }]]) });
+	const img = encode(rich()).bytes;
+	assert.deepEqual(targets(bundle(img.slice(0, 0x100000))), ["codeplug"], "a 1 MB chip");
+	assert.deepEqual(targets(bundle(img.slice(0, TFTP_SIZE - 1))), [], "short of the codeplug's end");
+});
+
+test("the codeplug editor turns a radio without a settings region away before reading, and sizes the room by its chip", async () => {
+	const none = new FakeCpsRadio({ board: "DM-1701", size: 0x100000, noMap: true, radioInfo: true });
+	await assert.rejects(new CpsSerial(none.stream()).identify(RADIOS), (e) => e.code === "no_storage" && e.params.flash === 0x100000);
+	assert.equal(none.readBytes, 0, "nothing read");
+	// a map whose flash didn't start answers INFO with region 0: not a small chip
+	const dead = new CpsSerial(new FakeCpsRadio({ board: "DM-1701", region: 0 }).stream());
+	await dead.identify(RADIOS);
+	assert.equal((await dead.storage()).region, "none");
+	// a chip with a map, smaller than the board's usual one: the room ends with the chip
+	const small = new FakeCpsRadio({ board: "DM-1701", size: 0x100000, end: 0x100000, radioInfo: true });
+	const tr = new CpsSerial(small.stream());
+	await tr.identify(RADIOS);
+	assert.equal(tr.end, 0x100000);
+	const img = await tr.read();
+	assert.equal(decode(img).channels.length, 0);
+	// without radio info: the board's room, as before
+	const plain = new CpsSerial(new FakeCpsRadio({ board: "DM-1701" }).stream());
+	await plain.identify(RADIOS);
+	assert.equal(plain.end, 0xE00000);
+});
+
+test("a backup of a 1 MB memory chip converts to a codeplug image", async () => {
+	const img = encode(rich()).bytes;
+	const parts = [{ file: "spi-flash.bin", what: "spi-flash", addr: 0, data: img.slice(0, 0x100000), complete: true }];
+	const zip = await makeBundle({ radio: { board: "md380", name: "MD-380" }, firmware_now: { kind: "rfoundry" } }, parts);
+	const out = await CONVERTERS.find((c) => c.id === "backup-to-image").convert(zip);
+	assert.equal(out.data.length, CODEPLUG_SPAN);
+	assert.equal(decode(CodeplugImage.from(out.data)).channels.length, decode(CodeplugImage.from(img)).channels.length);
 });
 
 test("changed runs stay inside their ranges and sectors", () => {

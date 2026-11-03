@@ -63,7 +63,7 @@ export class Grid {
 			const c = this.columns.find((x) => x.key === this.sort.key);
 			const val = (r) => {
 				const v = c.sortValue ? c.sortValue(r) : c.get(r);
-				return typeof v === "number" ? v : String(this.text(c, r)).toLowerCase();
+				return typeof v === "number" ? v : this.text(c, r).toLowerCase();
 			};
 			list = [...list].sort((a, b) => {
 				const x = val(a), y = val(b);
@@ -73,9 +73,11 @@ export class Grid {
 		return list;
 	}
 
+	// always a string: a column's format may hand back the value itself (a record number), and the filter and sort
+	// compare text
 	text(c, r) {
 		const v = c.get(r);
-		if (c.format) return c.format(v, r);
+		if (c.format) return String(c.format(v, r) ?? "");
 		if (c.type === "bool") return v ? "✓" : "";
 		if (c.type === "select") {
 			const o = c.options(r).find(([k]) => k === v);

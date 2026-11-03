@@ -18,7 +18,7 @@
 // known key (family usb-dfu, key_sha256). Everything else about the radio comes from the board data.
 
 import { hex, sha256 } from "./bytes.js";
-import { LinkError, parseRadioInfo, RADIO_INFO_LEN } from "./link.js";
+import { LinkError, parseRadioInfo, flashBytes, RADIO_INFO_LEN } from "./link.js";
 import { findKey } from "./bootkey.js";
 import { fromFlash, fromMoved } from "./stockfw.js";
 import { profilesFor } from "./codecsave.js";
@@ -71,12 +71,14 @@ export async function readInfo(link) {
 	return info ? { ...info, raw } : null;
 }
 
-// What a backup holds while it runs and after it stopped: pass it back to readBackup to continue
-export function newState(board, radio) {
+// What a backup holds while it runs and after it stopped: pass it back to readBackup to continue. info: the radio info,
+// whose flash part id gives a chip smaller than the board's usual one (a read past its end is refused)
+export function newState(board, radio, info = null) {
+	const spi = Math.min(radio.backup.spi_size, flashBytes(info?.flashId) || Infinity);
 	return {
 		info: null,
 		rom: { base: board.rom_base, data: new Uint8Array(board.flash_end - board.rom_base).fill(0xFF), done: 0 },
-		spi: { data: new Uint8Array(radio.backup.spi_size).fill(0xFF), done: 0 },
+		spi: { data: new Uint8Array(spi).fill(0xFF), done: 0 },
 		stopped: null,		// {part: "internal" | "spi", addr, why: "no answer" | "refused" | "canceled"}
 		requests: 0,
 	};
@@ -131,7 +133,7 @@ export async function readBackup(link, board, radio, { state = null, progress = 
 	const info = await readInfo(link);
 	if (!info) throw new OpenFwError("the radio gave no open-firmware radio info", "no-info");
 	if (!typeMatches(board, info)) throw new OpenFwError(`radio type ${info.radioType} is not a ${board.name} (${board.cps_radio_types.join(", ")})`, "type", { radioType: info.radioType });
-	if (!state || state.info?.git !== info.git || state.info?.radioType !== info.radioType || state.info?.built !== info.built) state = newState(board, radio);
+	if (!state || state.info?.git !== info.git || state.info?.radioType !== info.radioType || state.info?.built !== info.built) state = newState(board, radio, info);
 	state.info = info;
 	state.stopped = null;
 	const step = (name) => (d, total) => progress(name, d, total);

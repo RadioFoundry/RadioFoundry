@@ -175,7 +175,7 @@ hold #. Every side key can take A/B or Dual watch in Settings › Keys (press or
   | Event | Dual watch |
   |---|---|
   | A channel picked in Find, Channels or Zones, or set over the debug link | That channel becomes the selected one; the other channel picked selects it |
-  | Dual watch started over the debug link (`radio scan dual POS`) | Home shows it and the same rules apply, as if started with `*` `7` ("Dual watch on") |
+  | Dual watch started over the debug link (`radio scan dual POS`) | Home shows it and the same rules apply, as if started with `*` `7` ("Dual watch on"), also right after a scan stop over the debug link |
   | A or B selected over the debug link (`radio scan select a\|b`) | That one becomes the selected one ("Talking on B"), as with the A/B key: the debug link's channel, zone and frequency requests then change it |
   | Hotspot mode | Paused while it runs, then goes on |
   | A codeplug write | Goes on with the same channels, found again by number; a channel gone is replaced by the one the radio is on |

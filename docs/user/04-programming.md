@@ -57,6 +57,9 @@ can't store a codeplug or keep its settings when turned off. The [web installer]
 after the backup it takes when it installs RadioFoundry. The backup holds a copy of that data. The calibration isn't
 touched.
 
+A radio whose memory chip is too small for RadioFoundry's settings area can't store a codeplug at all. The editor
+says so instead of reading it ([radios](23-radios.md) lists the models where this can happen).
+
 Write to Radio is blocked while the **Problems** tab lists errors, such as a name that is too long or a frequency that
 isn't valid. Warnings, such as a frequency outside the radio's bands or a DMR channel without a TX contact, don't
 block it.
@@ -140,6 +143,10 @@ Then choose:
 The page previews the records, and shows the database size against the radio's room. **Write ID Database** puts it in
 the codeplug; **Write to Radio** then sends it. **Add as Contacts** adds the users as private-call contacts instead,
 skipping IDs that are already contacts. The editor remembers these choices in the browser.
+
+Keep contacts for what you call: your talkgroups and the few people you make private calls to. The codeplug holds at
+most 1024 contacts, and every one is a row in Contacts and the talk target picker. Let the ID database name everyone
+else: a caller who isn't a contact is shown by the database's name for their ID.
 
 Current firmware reads a **compact database**, about half the size, so the same room holds about twice the names.
 After a refresh from RadioID.net, a write sends only the parts that changed. The editor picks the format when it

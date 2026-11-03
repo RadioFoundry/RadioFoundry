@@ -25,6 +25,7 @@ import time
 # the board registry (tools/boards.py generates it): the RadioFoundry boards on this bootloader, their sectors, keys and codecs
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))
 from rfoundry import boards  # noqa: E402
+from rfoundry import dfu as rfdfu  # noqa: E402  (the normal-mode check, shared with rfoundry)
 from rfoundry import protect  # noqa: E402  (protected flash regions, board.toml [[flash.protect]])
 
 RFOUNDRY_BOARDS = [b for b in boards.BOARDS.values() if b.key_sha256]
@@ -378,7 +379,7 @@ class Dfu:
             pass
 
 
-def open_device(usb, force):
+def open_device(usb, force, model=None):
     devs = find_devices(usb)
     if not devs:
         raise DfuError("no DFU device 0483:DF11 found. Power the radio on while holding PTT + side key 1 "
@@ -394,6 +395,12 @@ def open_device(usb, force):
     intfs = dfu_interfaces(dev)
     if not intfs:
         raise DfuError("device has no DFU interface")
+    # the radio switched on normally is a DFU device with the same IDs and strings; --force doesn't override this
+    names = [get_string(usb, dev, i.iInterface) if i.iInterface else None for i in intfs]
+    if rfdfu.normal_mode(names, boards.BOARDS.get(model)):
+        raise DfuError("the radio is switched on normally, not in its bootloader (its layout reads %r). Writing "
+                       "through it could erase the bootloader: refusing. Switch it off, hold PTT + side key 1 while "
+                       "switching it on (the screen stays dark) and try again." % names[0])
     intf = intfs[0].bInterfaceNumber
     try:
         try:
@@ -412,9 +419,9 @@ def open_device(usb, force):
     return dev, intf
 
 
-def do_flash(enc, force):
+def do_flash(enc, force, model=None):
     usb = import_usb()
-    dev, intf = open_device(usb, force)
+    dev, intf = open_device(usb, force, model)
     plan = plan_blocks(enc)
     for line in describe_plan(plan, len(enc)):
         print(line)
@@ -673,7 +680,7 @@ def main(argv=None):
             return 0
         if warnings and not args.force:
             raise DfuError("image has warnings (see above); fix them or pass --force")
-        do_flash(enc, args.force)
+        do_flash(enc, args.force, model)
         return 0
     except DfuError as e:
         print("error: %s" % e, file=sys.stderr)

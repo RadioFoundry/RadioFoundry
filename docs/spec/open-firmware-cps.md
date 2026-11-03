@@ -193,8 +193,8 @@ A typical session, as qdmr does it:
 
 | Area | Name | Address space | Notes |
 | --- | --- | --- | --- |
-| 1 | Flash | Image address in the external SPI flash (section 7) | STM32 and HR_C7000 radios: the calibration window is served from the working copy, and the VFO overlay applies (2.2). HR_C7000: image addresses are offset by +0x700000 physically (section 7.4) |
-| 2 | EEPROM | EEPROM image address, 0x0000..0xFFFF | MK22: the 64 KB I2C EEPROM. STM32 and HR_C7000: emulated in the external flash at flash image 0x00000 (same bytes as area 1 at the same address) |
+| 1 | Flash | Image address in the external SPI flash (section 7) | STM32 and HR_C7000 radios: the calibration window is served from the working copy, and the VFO overlay applies (2.2). HR_C7000: image addresses are offset by +0x700000 physically (section 7.4). RadioFoundry serves it on a radio without a flash map too (a chip smaller than the board's map needs), up to the chip's end, so a backup can read it |
+| 2 | EEPROM | EEPROM image address, 0x0000..0xFFFF | MK22: the 64 KB I2C EEPROM. STM32 and HR_C7000: emulated in the external flash at flash image 0x00000 (same bytes as area 1 at the same address). Refused on a radio without a flash map |
 | 5 | MCU ROM | Offset into the MCU's program flash | STM32: offset from 0x08000000. MK22: absolute address from 0. HR_C7000: offset from 0x03000000, bounds-checked to 1 MB (other builds don't check bounds) |
 | 6 | Display buffer | Byte offset into the frame buffer | MK22: 128x64 mono, 1 bit per pixel (1024 bytes, 8-pixel pages). STM32 and HR_C7000: RGB565, 2 bytes per pixel (160x128 on the STM32 radios). Some panels have an 8-row top offset: the first 8 rows read 0xFF (white). Used for screenshots |
 | 7 | WAV buffer | Byte offset into the audio / hotspot buffer (2400 bytes on STM32) | Read or write raw PCM (8 kHz, 16 bit) |
@@ -308,6 +308,10 @@ The PC tools see two images, "EEPROM" and "flash", in the GD-77's terms. The GD-
 SPI flash. The STM32 radios and the HR_C7000 radios have no EEPROM: both images live in one large SPI flash. The tools address
 it with the per-family offsets below. A new firmware can store the data any way it likes, as long as the shim
 presents these addresses.
+
+The CPS reads the image as stored, whatever it holds. RadioFoundry uses it only when its records in use look like an
+open-firmware codeplug ([codeplug-native.md](codeplug-native.md) 2, "Another firmware's codeplug"). The check runs
+again after every write.
 
 ### 7.1 Per-family address mapping
 

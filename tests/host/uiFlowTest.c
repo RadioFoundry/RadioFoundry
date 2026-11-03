@@ -178,6 +178,9 @@ static const flow_t flows[] = {
 	  "dual=1 sel=B bpos=7", 0, false },
 	{ "11 dual watch: started by the debug link, then its stop", "dldual:5 wait:1000", "dlstop wait:1500", "dual=0", 0,
 	  false },
+	// Started again right after its stop (before START_GRACE_MS): the UI takes it on, so the B change goes on watching
+	{ "11 dual watch: the debug link's stop, then its start", "dldual:5 wait:1000 dlstop wait:100",
+	  "dldual:5 dlsel:b wait:100 dlpos:7 wait:1000", "dual=1 sel=B bpos=7", 0, false },
 	{ "11 dual watch: stopped by the debug link", "quick 7 ctx 3 5 ok", "dlstop wait:1500",
 	  "dual=0 pos=3 toast=Dual_watch_off:_on_A", 0, false },
 	{ "11 dual watch: stopped by the debug link on B", "quick 7 ctx 3 5 ok ctx 1", "dlstop wait:1500",
@@ -404,6 +407,19 @@ static const flow_t flows[] = {
 	{ "20 timeslot", "", "quick 2 back", "ts=2 screen=home", 3, false },
 	{ "20 color code 7", "", "quick 3 7 ok", "cc=7", 4, false },
 	{ "20 save to channel", "quick 2", "long:ok", "writes=1", 1, true },
+	// Another firmware's codeplug: the first write asks first, Cancel the default (codeplug-native.md 2)
+	{ "20 save over another firmware's codeplug asks", "foreign quick 2", "long:ok",
+	  "screen=codeplug-foreign shows=Start_new writes=0", 1, false },
+	{ "20 foreign codeplug: Cancel saves nothing", "foreign quick 2 long:ok", "ok", "writes=0 toast=Not_saved", 1, false },
+	{ "20 foreign codeplug: Back cancels", "foreign quick 2 long:ok", "back", "writes=0 toast=Not_saved", 1, false },
+	{ "20 foreign codeplug: Start new saves", "foreign quick 2 long:ok", "down ok", "writes=1 toast=New_codeplug", 2,
+	  true },
+	{ "20 foreign codeplug: Use anyway keeps it", "foreign quick 2 long:ok", "down down ok",
+	  "writes=0 toast=Old_codeplug_kept", 3, false },
+	{ "20 foreign codeplug: after Use anyway a save writes", "foreign quick 2 long:ok down down ok", "long:ok",
+	  "writes=1", 1, true },
+	{ "20 VFO Quick save explains itself", "ok 4 up ok", "quick 1 long:ok",
+	  "vfo=1 toast=VFO_settings_save_automatically writes=0", 3, false },
 	// Settings the radio core acts on reach it (ui_svc_apply), key presses ask for a key beep
 	{ "S TX timeout to the radio", "", "ok 7 3 down ok", "radio_tot=300", 5, false },
 	{ "S backlight time to the radio", "", "ok 7 2 down ok", "radio_backlight=60", 5, false },
@@ -443,6 +459,7 @@ static const flow_t flows[] = {
 	// The own DMR ID (Settings > My radio, set76, the codeplug's): digits type it, OK saves, BACK takes the last digit
 	// back and with none typed leaves it; 0 is refused
 	{ "S DMR ID opens", "", "ok 7 9 ok", "screen=dmr-id shows=DMR_ID", 4, false },
+	{ "S About from My radio", "", "ok 7 9 down ok", "screen=about shows=Build:", 5, false },
 	{ "S DMR ID typed and saved", "ok 7 9 ok", "3 1 0 9 9 9 9 ok", "set76=3109999 toast=DMR_ID_saved", 8, false },
 	{ "S DMR ID: BACK takes a digit back", "ok 7 9 ok", "3 1 back ok", "set76=3 toast=DMR_ID_saved", 4, false },
 	{ "S DMR ID: BACK with none typed leaves it", "ok 7 9 ok 3 1 0 9 9 9 9 ok", "3 1 back back back",
@@ -699,6 +716,14 @@ static const flow_t flows[] = {
 	{ "C Back asks before discarding", "3 1 0 9 8 7 6 down down ok", "back", "screen=discard shows=new_contact", 1, false },
 	{ "C discard goes back to Find", "3 1 0 9 8 7 6 down down ok back", "down ok", "screen=find writes=0", 2, false },
 	{ "C the name by text entry", "3 1 0 9 8 7 6 down down ok", "ok", "screen=text", 1, false },
+	// Contacts' first row is New contact: the editor starts empty, on a talkgroup, and a save goes back to Contacts
+	{ "C New contact in Contacts", "", "ok 1 ok", "screen=contactedit shows=New_Contact shows=Talkgroup", 3, false },
+	{ "C a new contact needs a name", "ok 1 ok", "down ok 9 9 9 ok long:ok", "toast=Give_it_a_name_first writes=0", 7,
+	  false },
+	{ "27 a contact made in Contacts", "", "ok 1 ok ok 2 ok down ok 9 9 9 ok long:ok",
+	  "screen=contacts writes=1 toast=Saved_contact_A", 13, true },
+	{ "C Contacts lists the new contact", "ok 1 ok ok 2 ok down ok 9 9 9 ok long:ok", "9 9 9",
+	  "screen=contacts shows=TG_999", 3, true },
 	// A caller who isn't a contact: Save as contact is item 7 of the actions, and they show In contacts after
 	{ "C save a caller as a contact", "call:3101999,91,g wait:11000 ctx", "7", "screen=contactedit shows=3101999", 1,
 	  false },
@@ -781,6 +806,22 @@ static const flow_t flows_k[] = {
 	{ "K a key set to the previous zone", "", "zone-", "zone=2", 1, false },
 	{ "K a key set to scan, from a menu", "ok 7", "scankey", "scanning=1", 1, false },
 	{ "K talk target on a long press", "", "long:tt", "screen=picker", 1, false },
+	// The picker's last row, Select contact..., opens Contacts: every contact, PTT, OK and hold OK as in the picker
+	{ "C Select contact in the picker", "", "tt up", "screen=picker focus=Select_contact", 2, false },
+	{ "C Select contact opens Contacts", "tt up", "ok", "screen=contacts", 1, false },
+	{ "C a contact picked from there", "tt up ok", "9 6 7 5 3 ok", "screen=home talk=91 toast=Talking_to", 6, false },
+	// An untyped list goes past the filter's 128 kept rows to its end (693 contacts, with gaps), and back up
+	{ "C a long list reaches its end", "contacts:full ok 1", "up", "screen=contacts focus=Long_1024", 1, false },
+	{ "C a long list steps back past a gap", "contacts:full ok 1 up", "up", "focus=Long_1022", 1, false },
+	{ "C a long list wraps through its top", "contacts:full ok 1 up", "down up", "focus=Long_1024", 2, false },
+	// Past the 127 rows the filter keeps, one slot is a cursor stepped over the raw rows: back into the kept rows and
+	// out again, and a codeplug write (the list rebuilt) under a focus past them
+#define UP40	"up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up up"
+#define DOWN40	"down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down down"
+	{ "C a long list steps back into the kept rows", "contacts:220 ok 1 up", UP40, "focus=Long_160", 40, false },
+	{ "C and out of them to its end", "contacts:220 ok 1 up " UP40, DOWN40, "focus=Long_220", 40, false },
+	{ "C a long list rebuilt past the kept rows", "contacts:full ok 1 up", "cpwrite wait:1000",
+	  "screen=contacts focus=Long_1024", 0, false },
 	{ "K monitor key on DMR: digital monitor", "", "mon", "hearall=1 toast=Digital_monitor_on", 1, false },
 	{ "K monitor key on DMR, again: off", "mon", "mon", "hearall=0 toast=Digital_monitor_off", 1, false },
 	{ "K a key set to key lock", "", "lockkey", "locked=1", 1, false },

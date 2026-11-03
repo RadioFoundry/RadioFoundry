@@ -27,6 +27,8 @@ uint32_t db25d_rf_writes(void);
 
 void db25d_main_idle(void);
 void db25d_main_rx_state(void);
+// The main chip's band flag (the TX band) for hz (hardware-db25d.md 4.8)
+void db25d_main_band(uint32_t hz);
 // Idle, then the 51.55 MHz IF (receive)
 void db25d_main_to_if(void);
 void db25d_main_bandwidth(radio_bw_t bw);
@@ -60,5 +62,7 @@ void db25d_main_burst(uint32_t hz, bool tx);
 void db25d_lo_tune(uint32_t hz);
 void db25d_lo_off(void);
 void db25d_lo_resume(void);
+// The LO's output that follows ADC 7 (hardware-db25d.md 3.3); the chip writes it only when it changes
+void db25d_lo_aux(bool high);
 
 #endif

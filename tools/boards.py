@@ -195,8 +195,11 @@ BOARD_SCHEMA = {
         # the anytone-update family: the model names the radio's update mode answers (byte 02), per [hardware]
         # variants code, as the vendor's .spi files for that variant carry them (tools/rfoundry/rfoundry/anytone.py)
         "anytone": _opt({"models": _req(("map", STR_LIST))}),
+        # layout: the bootloader's alt 0 interface string, only once read from a radio in its bootloader. The
+        # flashers then accept no other device; without it they refuse a layout of only the bootloader's sectors
+        # (rfoundry dfu.py normal_mode)
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
-                     "key_sha256": _req(str), "key_prefix": _req(str)}),
+                     "key_sha256": _req(str), "key_prefix": _req(str), "layout": _opt(str)}),
         # flash no tool may erase or write (PROTECT_MEMS): the factory calibration and other factory data that can't
         # be made again. start and end (exclusive) are offsets in the memory, on its erase boundaries; what says
         # what it is and where the spec says so (docs/dev/board-registry.md, "Protected regions")
@@ -1277,6 +1280,7 @@ def rfoundry_view(boards):
             "key_sha256": dfu["key_sha256"] if dfu else None, "key_prefix": dfu["key_prefix"] if dfu else None,
             "dfu_ids": [dfu["vid"], dfu["pid"]] if dfu else None,
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
+            "dfu_layout": dfu.get("layout") if dfu else None,
             "stub": b.stub(),
             # [hardware] variants: code -> (name, the board whose image it runs or None); the anytone-update family's
             # model names per variant code

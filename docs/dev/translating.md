@@ -56,7 +56,8 @@ With every language switched off, `TR()` is the text itself and the lookup is go
 A new language is off by default. It is turned on by default only when it is widely used and the radios have the
 flash for it ([build-config.md](../build-config.md)): Spanish is, Italian isn't. A language that is off is still listed on the
 radio, dimmed, and the web flasher offers to turn it on for a visitor whose browser asks for it. The web flasher also
-asks which language the radio starts in (preset to the page's) and sets `CONFIG_LANG_DEFAULT_<CODE>` from it.
+asks which language the radio starts in (preset to the page's when the build has it) and sets
+`CONFIG_LANG_DEFAULT_<CODE>` from it. A language picked there is built in: its `CONFIG_LANG_<CODE>` goes on with it.
 
 ### Translating the catalog
 

@@ -397,10 +397,15 @@ the radio follows its zone to the new position and stays on its channel.
    name. From a caller's or talkgroup's actions it is Save as contact (`7` for a person), filled from the call.
 3. Change the name or type if needed, long `SELECT` saves.
 
+A contact from nothing: `SELECT`, `1` (Contacts), and its first row, New contact, `SELECT`. The editor starts empty,
+on a talkgroup: the name (`SELECT`, text entry, `SELECT`), `NAV_DOWN`, the ID (`SELECT`, digits, `SELECT`), long
+`SELECT` saves and goes back to Contacts.
+
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
 | Typed ID, saved as it is | 11 (7 digits, `NAV_DOWN` x2, `SELECT`, long `SELECT`) | 11 | 11 | n/a (no keypad) | 11 |
 | Last caller, saved | 3 (`CONTEXT`, `7`, long `SELECT`) | 3 | 3 | 3+n | 3 |
+| New contact in Contacts | 5+n (n: the name and the ID, each with its two `SELECT`s) | 5+n | 5+n | n/a (no keypad) | 5+n |
 
 ---
 
@@ -436,6 +441,6 @@ the radio follows its zone to the new position and stays on its channel.
 | Add a channel to a zone (typed number) | 8 | yes |
 | Copy / delete a zone | 5+n / 7+n | yes |
 | TS / CC | 3 / 4 | yes |
-| Create a contact (typed ID / last caller) | 11 / 3 | yes |
+| Create a contact (typed ID / last caller / Contacts) | 11 / 3 / 5+n | yes |
 
 Every task except typed entries (IDs, frequencies, free text) and deleting a zone (its confirmation, P7) completes in six presses or fewer, inside the NHTSA six-input guideline.

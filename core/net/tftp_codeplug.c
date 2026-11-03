@@ -282,7 +282,7 @@ static int open_write(uint32_t tsize, const char **msg)
 		return TFTP_FAIL(TFTP_ERR_OTHER);
 	}
 	if ((h[0] & h[1] & h[2] & h[3]) != 0xFF && tftp_codeplug_resume()) {
-		codeplug_reload();
+		codeplug_written();
 	}
 	w.open = true;
 	return TFTP_OK;
@@ -461,7 +461,7 @@ static int commit(uint32_t size, const char **msg)
 	}
 	flash_erase(map()->staging_addr);
 	reset_write();
-	codeplug_reload();		// the radio core follows codeplug_serial()
+	codeplug_written();		// the radio core follows codeplug_serial()
 	return TFTP_OK;
 }
 

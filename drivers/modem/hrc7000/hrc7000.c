@@ -6,8 +6,9 @@
 #include "hal_dtmf.h"
 
 #define RF_MODE_VALUE		0x03269860u	// AF RX with averaging, gain 2.375, RX IQ invert, dynamic sync, dual RX, two-point TX
-#define RF_CONTROL_VALUE	0x0004001Au	// tx_pre_on 0.4 ms, RF RX interrupt 2.6 ms early; b13:8 from rf_tx_lead
+#define RF_CONTROL_VALUE	0x0000001Au	// RF RX interrupt 2.6 ms early; b20:16 from tx_pre_on, b13:8 from rf_tx_lead
 #define RF_CONTROL_TX_LEAD	8u
+#define RF_CONTROL_TX_PRE_ON	16u
 #define SYS_INT_ENABLE		0x1187Fu	// layer-2 TX/RX points, late entry, deframe, short LC, slot abnormal, PHY
 #define CODEC_RESET_SPINS	400u		// > 2 us at 168 MHz
 
@@ -90,7 +91,9 @@ int hrc7000_volume_db(unsigned step, unsigned def_step, unsigned steps, int top_
 static void rf_control_wr(hrc7000_t *d)
 {
 	uint32_t lead = d->rf_tx_lead != 0 ? d->rf_tx_lead : HRC7000_RF_TX_LEAD_DEF;
-	hrc7000_wr(d, C7_RF_CONTROL, RF_CONTROL_VALUE | ((lead & 0x3Fu) << RF_CONTROL_TX_LEAD));
+	uint32_t pre_on = d->tx_pre_on != 0 ? d->tx_pre_on : HRC7000_TX_PRE_ON_DEF;
+	hrc7000_wr(d, C7_RF_CONTROL, RF_CONTROL_VALUE | ((pre_on & 0x1Fu) << RF_CONTROL_TX_PRE_ON) |
+					 ((lead & 0x3Fu) << RF_CONTROL_TX_LEAD));
 }
 
 void hrc7000_set_rf_tx_lead(hrc7000_t *d, uint8_t lead)

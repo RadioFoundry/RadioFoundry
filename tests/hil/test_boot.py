@@ -61,8 +61,8 @@ def test_view_sections(radio):
     v = radio.view()
     for k in ("view", "state", "rx_hz", "ch.name", "dmr.built", "hostlink", "ui.screen", "input.idle_ms"):
         assert k in v, k
-    # View 4: mDNS and TFTP moved from the net section to net_svc, PPP from hotspot to net_link (debuglink.md 3.7)
-    assert v["view"] == "4"
+    # View 5: the CPS counters moved from the storage section to cps (debuglink.md 3.7)
+    assert v["view"] == "5"
 
 
 @pytest.mark.feature("debuglink")

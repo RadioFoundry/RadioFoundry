@@ -307,6 +307,9 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 - GPS only on the "G" models. The radio listens for the GPS module for 5 s at start-up and hides the GPS features if
   it hears nothing. **Settings > Location > GPS** off only stops APRS using the fix; the module stays powered.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
+- Some early VHF radios may have a 1 MB memory chip instead of 16 MB (not yet confirmed on a radio). RadioFoundry
+  can't store a codeplug on it: settings are lost when the radio is turned off, and the Codeplug Editor and the
+  web installer say so. A backup still saves the whole chip.
 
 ## TYT MD-UV380
 

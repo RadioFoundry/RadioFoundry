@@ -11,7 +11,7 @@ cpu = "AT32F435"
 stubs = ["stub/at32f43x"]
 # The stub's board profiles ([flash.stub]): the host side is stub/f4stub.py, as for the GD32F30x stub. The record holds
 # the board id and the bootloader's end (the image's APP_BASE), so a profile needs no other key
-board_stub = { tool = "f4stub", keys = [], optional = [] }
+board_stub = { tool = "f4stub", keys = [], optional = ["spi_nand"] }
 # Linker symbols every board's scripts must define: none (no codec in flash)
 codec_symbols = []
 # Program flash starts here. The vendor bootloader holds the flash from here to a board's image (its linker FLASH
