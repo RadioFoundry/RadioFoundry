@@ -211,7 +211,9 @@ the answer is never taken as a frame's answer or a NAK, OK or not.
   the first superframe's LC on a late entry. From there the engine reports a voice burst without payload every
   60 ms, from burst A (B for a late entry), at most 4 catching up at once, until the terminator, sync lost or
   carrier lost. A repeated header starts the count again, burst A 60 ms after it; a superframe's LC during the call
-  doesn't. The stack holds the call as on other modems.
+  doesn't. The call's own LC from a superframe isn't reported at all: the stack would take it for a repeated header
+  and count the bursts back to A as lost (seen on a radio: 4 bursts concealed in every call). A different LC is
+  reported, as a voice LC header. The stack holds the call as on other modems.
 
 ## 7. Voice on the baseband (`CAP_MODEM_VOICE`)
 
