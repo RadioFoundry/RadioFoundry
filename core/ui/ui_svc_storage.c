@@ -608,7 +608,7 @@ static struct {
 // Another firmware's codeplug (codeplug_foreign, docs/spec/codeplug-native.md 2): the radio erases nothing of it on
 // its own. The first codeplug write is held (job.held) and the UI asks (UI_EV_CODEPLUG_FOREIGN,
 // ui_svc_codeplug_answer). While one is held no other write starts (job_busy), so the job struct keeps what the held
-// write needs. An index into this table, not a pointer: no RAM of its own (dm32 has none to spare)
+// write needs. An index into this table, not a pointer: no RAM of its own (some radios have none to spare)
 static void save_channel_job(void *ctx);
 static void write_channel_job(void *ctx);
 static void name_job(void *ctx);
