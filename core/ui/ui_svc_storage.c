@@ -586,32 +586,89 @@ static void save_failed_text(const char *text)
 	save_failed_text(s); \
 } while (0)
 
+// What the job writes: a copy of the radio's view taken when the UI asked (the job runs up to 100 ms later), and the
+// talk target for a permanent one. Only the UI task fills it, and only while no job is pending
+static struct {
+	uint16_t channel;
+	uint8_t temp;
+	uint8_t power;
+	uint8_t squelch;
+	uint8_t held;		// a write held for the foreign codeplug question: cp_jobs[held - 1], 0 none (in padding)
+	union {
+		channel_t now;		// the channel as the radio has it now (temporary changes included)
+#if CONFIG_CONTACT_EDIT
+		contact_t contact;	// the contact editor's, at index channel (one job at a time: RAM is short)
+#endif
+		char name[CODEPLUG_NAME_LEN + 1];	// a name field's new text, UI_NAME_* in channel
+	};
+	uint32_t id;		// the talk target's, or the radio's own DMR ID
+	bool private_call;
+} job;
+
 // Another firmware's codeplug (codeplug_foreign, docs/spec/codeplug-native.md 2): the radio erases nothing of it on
-// its own. The first codeplug write is held here and the UI asks (UI_EV_CODEPLUG_FOREIGN, ui_svc_codeplug_answer).
-// While one is held no other write starts (job_busy), so the job struct keeps what the held write needs
-static void (*cp_held)(void *ctx);
-static uint8_t cp_answer;
+// its own. The first codeplug write is held (job.held) and the UI asks (UI_EV_CODEPLUG_FOREIGN,
+// ui_svc_codeplug_answer). While one is held no other write starts (job_busy), so the job struct keeps what the held
+// write needs. An index into this table, not a pointer: no RAM of its own (dm32 has none to spare)
+static void save_channel_job(void *ctx);
+static void write_channel_job(void *ctx);
+static void name_job(void *ctx);
+#if CONFIG_DMR
+static void dmr_id_job(void *ctx);
+static void save_target_job(void *ctx);
+#endif
+#if CONFIG_CONTACT_EDIT
+static void write_contact_job(void *ctx);
+#endif
+#if CONFIG_ZONE_EDIT
+static void zone_edit_job(void *ctx);
+#endif
+#if CONFIG_KEY_ASSIGN
+static void key_write_job(void *ctx);
+#endif
+static void (*const cp_jobs[])(void *ctx) = {
+	save_channel_job, write_channel_job, name_job,
+#if CONFIG_DMR
+	dmr_id_job, save_target_job,
+#endif
+#if CONFIG_CONTACT_EDIT
+	write_contact_job,
+#endif
+#if CONFIG_ZONE_EDIT
+	zone_edit_job,
+#endif
+#if CONFIG_KEY_ASSIGN
+	key_write_job,
+#endif
+};
 
 static bool job_busy(void)
 {
-	return storage_job_busy() || cp_held != NULL;
+	return storage_job_busy() || job.held != 0;
 }
 
 // A codeplug write as a storage job, or held for the question
 static bool cp_post(void (*fn)(void *ctx))
 {
-	if (cp_held != NULL) {
+	if (job.held != 0) {
 		return false;
 	}
 	if (!codeplug_foreign()) {
 		return storage_job_post(fn, NULL);
 	}
+	const uint8_t n = (uint8_t)(sizeof(cp_jobs) / sizeof(cp_jobs[0]));
+	uint8_t i = 0;
+	while (i < n && cp_jobs[i] != fn) {
+		i++;
+	}
+	if (i == n) {
+		return false;
+	}
 	ui_event_t ev;
 	memset(&ev, 0, sizeof ev);
 	ev.kind = UI_EV_CODEPLUG_FOREIGN;
-	cp_held = fn;
+	job.held = (uint8_t)(i + 1u);
 	if (!ui_notify(&ev)) {
-		cp_held = NULL;
+		job.held = 0;
 		return false;
 	}
 	return true;
@@ -627,7 +684,7 @@ static void key_reload(void);
 // What a held write changed on the UI task alone goes back to the codeplug's: the side keys, the zone edits queued
 static void cp_drop(void)
 {
-	cp_held = NULL;
+	job.held = 0;
 #if CONFIG_KEY_ASSIGN
 	key_reload();
 #endif
@@ -638,14 +695,13 @@ static void cp_drop(void)
 
 static void cp_answer_job(void *ctx)
 {
-	(void)ctx;
-	void (*fn)(void *ctx) = cp_held;
-	if (cp_answer == UI_CP_USE) {
+	void (*fn)(void *ctx) = cp_jobs[job.held - 1u];
+	if ((uintptr_t)ctx == UI_CP_USE) {
 		codeplug_accept(true);		// app.c stores it
 		codeplug_reload();		// the old codeplug's records shown; the write made on the built-in set dropped
 		cp_drop();
 	} else if (codeplug_start_new()) {
-		cp_held = NULL;
+		job.held = 0;
 		fn(NULL);
 	} else {
 		cp_drop();
@@ -655,26 +711,23 @@ static void cp_answer_job(void *ctx)
 
 bool ui_svc_codeplug_answer(uint8_t answer)
 {
-	if (cp_held == NULL || storage_job_busy()) {
+	if (job.held == 0 || storage_job_busy()) {
 		return false;
 	}
 	if (answer != UI_CP_NEW && answer != UI_CP_USE) {
 		cp_drop();
 		return true;
 	}
-	cp_answer = answer;
-	return storage_job_post(cp_answer_job, NULL);
+	return storage_job_post(cp_answer_job, (void *)(uintptr_t)answer);	// the answer in ctx: no RAM of its own
 }
 
 #if CONFIG_DMR
 // The radio's own DMR ID, written into the codeplug (Settings > My radio): the radio core takes it when
 // codeplug_serial() changes, and a CPS read shows it
-static uint32_t job_dmr_id;
-
 static void dmr_id_job(void *ctx)
 {
 	(void)ctx;
-	if (!codeplug_set_dmr_id(job_dmr_id))
+	if (!codeplug_set_dmr_id(job.id))
 		save_failed(TRN("Couldn't write the codeplug: not saved"));
 }
 
@@ -682,28 +735,11 @@ static bool dmr_id_post(uint32_t id)
 {
 	if (id == 0 || id > CODEPLUG_DMR_ID_MAX || job_busy())
 		return false;
-	job_dmr_id = id;
+	job.id = id;
 	return cp_post(dmr_id_job);
 }
 #endif
 
-// What the job writes: a copy of the radio's view taken when the UI asked (the job runs up to 100 ms later), and the
-// talk target for a permanent one. Only the UI task fills it, and only while no job is pending
-static struct {
-	uint16_t channel;
-	uint8_t temp;
-	uint8_t power;
-	uint8_t squelch;
-	union {
-		channel_t now;		// the channel as the radio has it now (temporary changes included)
-#if CONFIG_CONTACT_EDIT
-		contact_t contact;	// the contact editor's, at index channel (one job at a time: RAM is short)
-#endif
-		char name[CODEPLUG_NAME_LEN + 1];	// a name field's new text, UI_NAME_* in channel
-	};
-	uint32_t id;
-	bool private_call;
-} job;
 static channel_t job_ch;	// the job's working copy of the stored channel
 
 // Power, bandwidth, tones, mode, color code and timeslot go into the channel; the squelch is radio-wide (the default

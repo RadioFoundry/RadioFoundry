@@ -96,7 +96,8 @@ static uint32_t serial;
 // Open-firmware evidence (codeplug-stock-tyt.md 2, step 1), which codeplug_foreign() decides from (no flag of its own:
 // RAM is tight on some radios)
 static uint16_t ev_good, ev_bad;
-static uint8_t accept;	// codeplug_accept_t: the owner's "Use anyway", which turns the verdict off
+static uint8_t accept;	// codeplug_accept_t: the owner's "Use anyway", which turns the verdict off; | ACCEPT_UNSTORED
+#define ACCEPT_UNSTORED	0x80u	// changed since codeplug_accept_take
 
 // Open-firmware codeplug index
 static uint8_t used[CH_MAX / 8];	// bit set = channel record passed the checks
@@ -516,22 +517,33 @@ codeplug_source_t codeplug_source(void)
 // blank
 bool codeplug_foreign(void)
 {
-	return accept != CODEPLUG_ACCEPT_YES && ev_bad != 0 && (uint32_t)ev_bad * 4u > ev_good;
+	return codeplug_acceptance() != CODEPLUG_ACCEPT_YES && ev_bad != 0 && (uint32_t)ev_bad * 4u > ev_good;
 }
 
 void codeplug_accept(bool on)
 {
-	accept = on ? CODEPLUG_ACCEPT_YES : CODEPLUG_ACCEPT_NO;
+	accept = (uint8_t)((on ? CODEPLUG_ACCEPT_YES : CODEPLUG_ACCEPT_NO) | ACCEPT_UNSTORED);
 }
 
 codeplug_accept_t codeplug_acceptance(void)
 {
-	return (codeplug_accept_t)accept;
+	return (codeplug_accept_t)(accept & ~ACCEPT_UNSTORED);
+}
+
+bool codeplug_accept_take(codeplug_accept_t *store)
+{
+	uint8_t a = accept;
+	if ((a & ACCEPT_UNSTORED) == 0) {
+		return false;
+	}
+	*store = (a & ~ACCEPT_UNSTORED) == CODEPLUG_ACCEPT_YES ? CODEPLUG_ACCEPT_YES : CODEPLUG_ACCEPT_NO;
+	accept = (uint8_t)*store;
+	return true;
 }
 
 codeplug_source_t codeplug_written(void)
 {
-	accept = CODEPLUG_ACCEPT_DROPPED;
+	accept = CODEPLUG_ACCEPT_DROPPED | ACCEPT_UNSTORED;
 	return codeplug_reload();
 }
 

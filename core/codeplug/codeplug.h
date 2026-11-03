@@ -83,6 +83,9 @@ void codeplug_accept(bool on);
 typedef enum { CODEPLUG_ACCEPT_NO, CODEPLUG_ACCEPT_YES, CODEPLUG_ACCEPT_DROPPED } codeplug_accept_t;
 // DROPPED: a codeplug was written since start-up or the last codeplug_accept, so the stored acceptance goes
 codeplug_accept_t codeplug_acceptance(void);
+// The housekeeping task's: true once after a change of the acceptance, with the state to store (YES or NO; DROPPED
+// becomes NO here). No flag of its own in app.c: RAM is short
+bool codeplug_accept_take(codeplug_accept_t *store);
 
 // Highest channel number that may be in use (channels are 1..count, some may be empty)
 uint16_t codeplug_channel_count(void);

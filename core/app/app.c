@@ -83,16 +83,10 @@ static void power_off(bool knob)
 // codeplug was written since (codeplug_written) or a factory reset (docs/spec/codeplug-native.md 2)
 static void accept_sync(void)
 {
-	static uint8_t synced = 0xFF;	// the state last stored: none yet (the first poll stores the one loaded, no change)
-	codeplug_accept_t a = codeplug_acceptance();
-	if (a == CODEPLUG_ACCEPT_DROPPED) {
-		codeplug_accept(false);
-		a = CODEPLUG_ACCEPT_NO;
-	}
-	if (a == synced) {
+	codeplug_accept_t a;
+	if (!codeplug_accept_take(&a)) {
 		return;
 	}
-	synced = a;
 	settings_t *st = settings_begin();
 	st->cp_flags = a == CODEPLUG_ACCEPT_YES ? (uint8_t)(st->cp_flags | SETTINGS_CP_ACCEPTED)
 						: (uint8_t)(st->cp_flags & ~SETTINGS_CP_ACCEPTED);
