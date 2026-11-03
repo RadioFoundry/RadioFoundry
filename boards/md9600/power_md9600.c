@@ -12,6 +12,7 @@
 #include "periph_md9600.h"
 #include "hal_time.h"
 #include "radio/power_key.h"
+#include "audio/miclevel/miclevel.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -140,6 +141,15 @@ static void led(uint8_t which, bool on)
 	(void)on;
 }
 
+#if CONFIG_VOX
+// Mic level 0..100 for VOX: PA3 (ADC1 IN3) is a level tap, not the audio (3-4 counts with the mic quiet), so the
+// scan's reading goes straight onto the 12-bit log scale (drivers/audio/miclevel)
+static uint8_t mic_level(void)
+{
+	return miclevel_log(md9600_adc_raw(MD9600_ADC_MIC), 12);
+}
+#endif
+
 const hal_power_t md9600_power = {
 	.init = init,
 	.latch = latch,
@@ -147,4 +157,7 @@ const hal_power_t md9600_power = {
 	.switch_on = switch_on,
 	.led = led,
 	.supply_mv = md9600_supply_mv,
+#if CONFIG_VOX
+	.mic_level = mic_level,
+#endif
 };

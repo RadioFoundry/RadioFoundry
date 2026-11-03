@@ -36,6 +36,7 @@ First radio: a V1-V3 board (its original firmware reported version 06.09), on a 
 | FM receive, UHF | Works: a handheld on 446.000 MHz, 12.5 kHz, at -57 to -73 dBm; the audio sounds the same as on VHF |
 | DMR data receive | Works: an unconfirmed ETSI IP text from the SDR bench's transmitter on 446.100 (CC 1, slot 1) lands in the inbox with its text, the CRC good and no reply sent (2026-11-03). Deleting it from the UI works |
 | APRS receive | Written (`afsk_md9600.c`: PC3 on ADC3, 9146 Hz), untested: no APRS traffic on 144.390 MHz in 12 minutes at the bench. Listening, the decoder sees the noise only (aborts, a few FCS errors) |
+| VOX mic level | PA3 is a level tap: 3-4 counts (VOX level 12-16 of 100) with the mic quiet, and a beep in the speaker doesn't move it. VOX on and off from Quick works. The level while speaking is not measured yet; VOX can't key while transmit is refused |
 | DMR receive | Works on UHF (446.100) and VHF (151.505), by hand: a group call from another radio (CC 1, slot 1) plays clearly, every voice burst received. The DMR modem counters are on the diagnostics page after the board lines |
 | Transmit | Off in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`). FM keyed once on UHF with it on (section 5): on frequency; power, deviation and DMR transmit not checked |
 

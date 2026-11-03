@@ -36,8 +36,7 @@ CONFIG_FM_TX_TONES ?= n
 CONFIG_DTMF ?= n
 # CONFIG_SUBTONE stays on: the decode is written (subtone_md9600.c, PA2), the encode (the tone PWM on PC7) is not, and
 # transmit is refused in the build until the RF sequence is confirmed
-# VOX needs the mic level (hal_power_t.mic_level), and the reference trim a hal_radio_t.ref_trim: neither is written
-CONFIG_VOX ?= n
+# VOX reads the mic level on PA3 (power_md9600.c); the reference trim needs a hal_radio_t.ref_trim, not written
 CONFIG_REF_TRIM ?= n
 # A 128x64 monochrome panel: no colors. No air band or broadcast receiver. The fault trace, the large font and LTO
 # follow the platform (platform/stm32f4/config.mk)
@@ -56,7 +55,6 @@ BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-bro
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and the one UART is the GPS receive line
-BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet (the mic level is on PA3)
 BOARD_NOT_WRITTEN += REF_TRIM	# no hal_radio_t.ref_trim yet
 BOARD_NOT_WRITTEN += FM_TX_TONES	# FM transmit is refused until a radio confirms the RF sequence
 BOARD_NOT_WRITTEN += DTMF	# the tones go out through the FM transmitter, refused for now (above)

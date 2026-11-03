@@ -69,7 +69,7 @@ applied, used for the standby flag (10.2) and for non-permanent settings.
 | PA0 | ADC1 IN0: VHF RSSI |  |
 | PA1 | ADC1 IN1: supply voltage | 10.3 |
 | PA2 | ADC123 IN2: QT_DQT_IN, sub-audio tone input, sampled by ADC3 | ADC3 (unverified) |
-| PA3 | ADC1 IN3: VOX / mic level | the only mic level input (no separate "mic" signal) |
+| PA3 | ADC1 IN3: VOX / mic level | the only mic level input (no separate "mic" signal). A level tap, not the audio: 3-4 counts with the mic quiet, unmoved by a beep in the speaker (2026-11-03). VOX reads it (`power_md9600.c`) |
 | PA4 | DAC1: TV_U, UHF receiver front-end tuning |  |
 | PA5 | DAC2: APC_TV_V, **shared** TX power (APC) reference and VHF receiver front-end tuning |  |
 | PA6 | ADC1 IN6: hand-mic keypad, row level ("P2") | 9.3 |
