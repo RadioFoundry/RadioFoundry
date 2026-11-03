@@ -915,13 +915,20 @@ static void test_dmr_rx(void)
 	CHECK(nev == 16);
 	sct_dmr_poll(4130);
 	CHECK(nev == 17 && ev_bursts[16].voice_index == 0);
+	// The call's own LC from a superframe is dropped: the stack would take it for a header and restart at A
 	chip_packet(r3, 14, 0x30, 4140);
 	sct_dmr_poll(4190);
-	CHECK(nev == 19 && ev_bursts[17].kind == DMR_BURST_VOICE_LC_HEADER && ev_bursts[18].voice_index == 1);
-	chip_packet(r6, 12, 0x30, 4200);
+	CHECK(nev == 18 && ev_bursts[17].kind == DMR_BURST_VOICE && ev_bursts[17].voice_index == 1);
+	// ... another LC (a new talker) goes through, and the bursts go on
+	uint8_t r7[16] = { 0x43, SCT_PROP_VOICE, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x53, 0x5C };
+	chip_packet(r7, 12, 0x30, 4200);
+	CHECK(nev == 19 && ev_bursts[18].kind == DMR_BURST_VOICE_LC_HEADER && ev_bursts[18].lc[7] == 0x53);
+	sct_dmr_poll(4250);
+	CHECK(nev == 20 && ev_bursts[19].voice_index == 2);
 	chip_packet(r6, 12, 0x30, 4260);
-	sct_dmr_poll(4400);
-	CHECK(nev == 21 && ev_bursts[20].kind == DMR_BURST_TERMINATOR_LC);
+	chip_packet(r6, 12, 0x30, 4320);
+	sct_dmr_poll(4500);
+	CHECK(nev == 22 && ev_bursts[20].kind == DMR_BURST_TERMINATOR_LC && ev_bursts[21].kind == DMR_BURST_TERMINATOR_LC);
 	nev = 6;
 
 	// Nothing reported while transmitting; a garbled packet is counted
@@ -932,7 +939,7 @@ static void test_dmr_rx(void)
 	chip_packet(junk, 4, 0x30, 900);
 	sct_dmr_stats_t st;
 	sct_dmr_get_stats(&st);
-	CHECK(st.rx_bad == 1 && st.rx_frames == 10 && st.rx_fec == 1 && st.rx_voice == 10);
+	CHECK(st.rx_bad == 1 && st.rx_frames == 11 && st.rx_fec == 1 && st.rx_voice == 11);
 }
 
 // CARRIER_READY: the board's value, sent on a change in receive only, and again at each return to receive

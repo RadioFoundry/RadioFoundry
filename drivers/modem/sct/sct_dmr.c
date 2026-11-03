@@ -48,6 +48,7 @@ static struct {
 	bool fec_err;		// the last NEW_EVENT was a data sync with an FEC error
 	bool rx_voice;		// a received voice call runs: voice bursts are reported in its slots
 	uint8_t rx_index;	// the next one's index, 0..5 (A..F)
+	uint8_t rx_lc[LC_BYTES];	// the LC of the call rx_voice runs
 	uint32_t rx_next_ms;
 	uint32_t counter;	// burst counter for event args, never 0
 	uint32_t now;
@@ -364,11 +365,14 @@ static void rx_frame(const uint8_t *f, uint8_t flen)
 		// header for the last, so it shows the call; the chip plays the voice
 		if (n < LC_BYTES)
 			return;
+		if ((prop & SCT_PROP_VOICE) != 0 && s.rx_voice && memcmp(data, s.rx_lc, LC_BYTES) == 0)
+			return;	// the running call's own LC from a superframe: to the stack a header, which restarts it at A
 		b.kind = (prop & SCT_PROP_VOICE) != 0 ? DMR_BURST_VOICE_LC_HEADER : (prop & SCT_PROP_TYPE);
 		memcpy(b.lc, data, LC_BYTES);
 		memcpy(b.payload, data, LC_BYTES);
 		b.len = LC_BYTES;
 		b.lc_valid = true;
+		memcpy(s.rx_lc, data, LC_BYTES);
 		if (b.kind == DMR_BURST_TERMINATOR_LC) {
 			s.rx_voice = false;
 		} else if (!s.rx_voice || (prop & SCT_PROP_VOICE) == 0) {
