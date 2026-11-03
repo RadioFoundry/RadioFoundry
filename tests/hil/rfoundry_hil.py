@@ -6,6 +6,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -458,7 +459,6 @@ class Radio:
         raise AssertionError(f"no channel on {rx_hz / 1e6:.5f} MHz{' ' + mode if mode else ''} in any zone: "
                              f"{', '.join(searched)}")
 
-API_CAPTURE_LOSS_MAX = 0.005       # stream time a bench API board may lose in a capture (CTCSS reads 0.5 % high)
 API_FM_THRESHOLD_DB = 8.0          # sdr_fm_check's keyed threshold on a bench API board (analyze_fm)
 
 
@@ -1150,31 +1150,28 @@ class SdrBench:
         f = os.path.join(run_dir, f"{name}.cs16")
         err = []
 
-        def lost():
-            st = bench.status().get("sdr", {})
-            return st.get("bytes_lost") or 0
-
         def run():
             try:
-                lost0 = lost()
                 # The channel at the board's narrow rate (48 kS/s, centered on it): wide enough for a 25 kHz FM
-                # channel, and the stream a board keeps up with (its wideband stream has dropped chunks). cs16: the
-                # narrow stream's noise is a count or two, which cs8 rounds to zero
+                # channel, and a smaller stream than the wideband one. cs16: the narrow stream's noise is a few counts
                 m = bench.capture(hz, seconds, f, wide=False, fmt="cs16")
-                # The board can drop stream chunks and still return a full, gapless file: the samples then cover more
-                # time than they claim, and every frequency and duration in them reads high
-                # sdr.bytes_lost counts the receiver's own stream, 4 bytes a sample at the wideband rate (1.08 MB
-                # moved the board's clock by 1.44 s at 192 kS/s): the time lost, against the capture's
-                dropped = lost() - lost0
-                loss = dropped / (4.0 * (sdr.get("rate") or 192000.0)) / max(0.1, seconds)
-                if loss > API_CAPTURE_LOSS_MAX:
-                    err.append(BenchFault(f"the bench API board lost {loss:.1%} of the capture's time from its stream "
-                                          f"(sdr.bytes_lost +{dropped}); its timing and frequencies are not usable"))
+                # Samples the board lost are zeros in the file, counted in gap_samples (its timeline stays real):
+                # a key cut short or a tone broken up, so the capture is a bench fault
+                gap = m.get("gap_samples") or 0
+                # gap_samples has missed losses the board zero-filled; 2 ms of exact zeros is never noise (the narrow
+                # stream's noise is a few counts), so a run that long is a loss whatever the count says
+                rate = m.get("rate") or 48000.0
+                with open(f, "rb") as fh:
+                    zeros = sum(len(z.group()) for z in re.finditer(b"\0{%d,}" % int(rate * 0.002 * 4), fh.read()))
+                if gap > 0 or zeros:
+                    err.append(BenchFault(f"the bench API board lost samples in the capture (gap_samples {gap}, "
+                                          f"{zeros / 4 / rate:.3f} s of zero runs); it can't judge the radio"))
                 meta = {"center": m.get("center_hz", hz), "rate": m.get("rate"), "fmt": "cs16",
                         # The board's ppm is its sample clock's rate error (timestamps); its I/Q is on frequency, so
                         # the analyzers must not correct the carrier by it
                         "ppm": 0.0, "clock_ppm": sdr.get("ppm"), "freq": hz, "gain": m.get("gain_db"),
-                        "samples": m.get("samples"), "gaps": m.get("gaps", 0), "lost": round(loss, 4)}
+                        "samples": m.get("samples"), "gaps": m.get("gaps", 0), "gap_samples": gap,
+                        "zero_s": round(zeros / 4 / rate, 3)}
                 with open(f + ".json", "w") as fh:
                     json.dump(meta, fh)
             except Exception as e:      # noqa: BLE001 - reported by capture_wait
