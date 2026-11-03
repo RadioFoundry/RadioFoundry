@@ -168,8 +168,19 @@ void ui_push(uint8_t scr, uint16_t arg)
 	dirty = true;
 }
 
+// The foreign codeplug question leaves the stack unanswered (BACK, Home): the write it holds is dropped. After an
+// answer it fails harmlessly (nothing held, or the answer's job is pending)
+static void cp_question_gone(uint8_t from)
+{
+	for (uint8_t i = from; i <= sp; i++) {
+		if (stack[i].scr == SCR_CP_FOREIGN && ui_svc_codeplug_answer(UI_CP_CANCEL))
+			ui_toast(TR("Not saved"));
+	}
+}
+
 void ui_pop(void)
 {
+	cp_question_gone(sp);
 	if (sp > 0)
 		sp--;
 	if (ui_scr[stack[sp].scr]->flags & SF_FILTER)
@@ -184,6 +195,7 @@ void ui_pop(void)
 
 void ui_go_home(void)
 {
+	cp_question_gone(1);
 	sp = 0;
 	ui_st.quick_edit = false;
 	entry_cancel();
@@ -639,6 +651,12 @@ static void handle_event(const ui_event_t *ev)
 		ui_menus_save_failed();
 		break;
 	}
+	case UI_EV_CODEPLUG_FOREIGN:
+		ui_st.toast = NULL;	// the screen that asked may have said "Saved": the question says what happens
+		if (stack[sp].scr != SCR_CP_FOREIGN)
+			ui_push(SCR_CP_FOREIGN, 0);
+		wake_req = true;
+		break;
 	case UI_EV_CALL_ALERT_RESULT:
 		if (ev->ok) {
 			station(&b, ev);

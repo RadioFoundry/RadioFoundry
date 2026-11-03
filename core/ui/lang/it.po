@@ -36,6 +36,10 @@ msgstr "OK Menu  * Rapido"
 msgid "OK Menu  Hold OK Quick"
 msgstr "OK Menu  Tieni OK Rapido"
 
+#: core/ui/ui_app.c
+msgid "Not saved"
+msgstr "Non salvato"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "All call"
 msgstr "Chiamata a tutti"
@@ -2037,6 +2041,10 @@ msgid "Written by the CPS"
 msgstr "Scritto dal CPS"
 
 #: core/ui/ui_menus.c
+msgid "Other firmware's codeplug: ignored"
+msgstr "Codeplug di un altro firmware: ignorato"
+
+#: core/ui/ui_menus.c
 msgid "Zones: "
 msgstr "Zone: "
 
@@ -3071,6 +3079,34 @@ msgstr "Modifica liste scan in qdmr"
 #: core/ui/ui_menus.c
 msgid "In use"
 msgstr "In uso"
+
+#: core/ui/ui_menus.c
+msgid "Cancel"
+msgstr "Annulla"
+
+#: core/ui/ui_menus.c
+msgid "Start new"
+msgstr "Crea nuovo"
+
+#: core/ui/ui_menus.c
+msgid "Use anyway"
+msgstr "Usa comunque"
+
+#: core/ui/ui_menus.c
+msgid "New codeplug started"
+msgstr "Nuovo codeplug creato"
+
+#: core/ui/ui_menus.c
+msgid "Old codeplug kept: edit again"
+msgstr "Codeplug precedente in uso: rifai la modifica"
+
+#: core/ui/ui_menus.c
+msgid "Another firmware's codeplug? Start new erases contacts, callsign and DMR ID. Back up first."
+msgstr "Codeplug di un altro firmware? Crea nuovo cancella contatti, nominativo e ID DMR. Fai prima una copia."
+
+#: core/ui/ui_menus.c
+msgid "Old codeplug"
+msgstr "Codeplug precedente"
 
 #: core/ui/ui_screens.c
 msgid "IDLE"

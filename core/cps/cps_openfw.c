@@ -98,7 +98,7 @@ static void end_session(void)
 	drop_sector();
 	if (image_written) {
 		image_written = false;
-		codeplug_reload();	// the radio core follows codeplug_serial()
+		codeplug_written();	// the radio core follows codeplug_serial()
 	}
 	stats.session = false;
 }
