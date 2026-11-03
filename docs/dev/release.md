@@ -26,7 +26,7 @@ alpha; there is no release candidate yet. `tools/release_build.sh` and the relea
 
 **On the radio.** A clean build of a commit that carries a release tag gets `RFOUNDRY_RELEASE` (the Makefile reads the
 tag; `make RELEASE=<tag>` sets it, as `tools/release_build.sh` does, and `RELEASE=` leaves it out). The splash screen
-shows the release name in place of the commit, About shows both, and the debug link's VERSION adds `release=`
+shows the release name in place of the commit, About shows both on their own lines (Release, then Build), and the debug link's VERSION adds `release=`
 ([debuglink.md](../spec/debuglink.md) 3.1). `RFOUNDRY_GIT` stays the commit everywhere else: the crash record's build
 id, the manifests and the CPS id need it. The build service fetches tags, so a custom build of a tagged commit shows
 the release name too.
