@@ -15,7 +15,7 @@
 // Bench knobs (docs/testing/md380-bringup.md): the tone's share of the PWM swing, and whether the analog path inverts
 // the waveform (DCS polarity only: a CTCSS tone does not care). The transmit path inverts: PC7 enters the oscillator's
 // tuning amplifier on its inverting input (hardware-md380.md 5.2), and D023N went out as D023I on air (2026-11-02).
-// The swing is a guess until a radio shows the deviation
+// 30 % gives 0.60 kHz of CTCSS deviation and about 0.72 kHz of DCS (2026-11-02)
 #ifndef MD380_SUBTONE_PERCENT
 #define MD380_SUBTONE_PERCENT	30
 #endif
