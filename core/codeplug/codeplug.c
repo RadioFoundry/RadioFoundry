@@ -96,6 +96,7 @@ static uint32_t serial;
 // Open-firmware evidence (codeplug-stock-tyt.md 2, step 1), which codeplug_foreign() decides from (no flag of its own:
 // RAM is tight on some radios)
 static uint16_t ev_good, ev_bad;
+static uint8_t accept;	// codeplug_accept_t: the owner's "Use anyway", which turns the verdict off
 
 // Open-firmware codeplug index
 static uint8_t used[CH_MAX / 8];	// bit set = channel record passed the checks
@@ -515,7 +516,23 @@ codeplug_source_t codeplug_source(void)
 // blank
 bool codeplug_foreign(void)
 {
-	return ev_bad != 0 && (uint32_t)ev_bad * 4u > ev_good;
+	return accept != CODEPLUG_ACCEPT_YES && ev_bad != 0 && (uint32_t)ev_bad * 4u > ev_good;
+}
+
+void codeplug_accept(bool on)
+{
+	accept = on ? CODEPLUG_ACCEPT_YES : CODEPLUG_ACCEPT_NO;
+}
+
+codeplug_accept_t codeplug_acceptance(void)
+{
+	return (codeplug_accept_t)accept;
+}
+
+codeplug_source_t codeplug_written(void)
+{
+	accept = CODEPLUG_ACCEPT_DROPPED;
+	return codeplug_reload();
 }
 
 void codeplug_evidence(uint16_t *good, uint16_t *bad)
@@ -765,30 +782,24 @@ bool codeplug_zone(uint16_t index, zone_t *out)
 
 // --- Editing ---
 
+static const uint8_t zero[32];	// what the bitmaps and the quick keys are cleared with
+
 // A codeplug to edit: the built-in set first becomes a stored one (its channels written, the bitmaps, zones and
-// lists that may hold junk from other firmware cleared). Over another firmware's codeplug (foreign) also the rest the
-// evidence reads (the callsign and DMR ID, the contacts) and what the radio reads (boot text, quick keys), so the
-// codeplug made is a clean one and the next start-up finds it ours
+// lists that may hold junk from other firmware cleared). Never over another firmware's codeplug (foreign): only
+// codeplug_start_new clears that
 static bool materialize(void)
 {
 	if (source == CODEPLUG_OPENFW) {
 		return true;
 	}
-	if (source != CODEPLUG_BUILTIN || !storage_ready()) {
+	if (source != CODEPLUG_BUILTIN || !storage_ready() || codeplug_foreign()) {
 		return false;
 	}
-	static const uint8_t zero[32];
 	bool ok = true;
 	for (unsigned bank = 0; bank < CH_BANKS && ok; bank++) {
 		ok = flash_write(bank_bitmap(bank), zero, CH_PER_BANK / 8u);
 	}
 	ok = ok && flash_write(ZONE_BITMAP, zero, sizeof(zero)) && flash_write(LIST_COUNTS, NULL, LIST_COUNT);
-	if (codeplug_foreign()) {
-		ok = ok && flash_write(GEN_BASE, NULL, GEN_CLEAR) && flash_write(BOOT_TEXT, NULL, 2u * CODEPLUG_NAME_LEN) &&
-		     flash_write(QUICK_KEYS, zero, CODEPLUG_QUICK_KEYS * 2u) &&
-		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE);
-		ev_bad = 0;	// cleared: ours from now on (a failure re-reads it, index_all below)
-	}
 	memset(used, 0, sizeof(used));
 	channel_max = 0;
 	zone_count = 0;
@@ -803,6 +814,27 @@ static bool materialize(void)
 	if (!ok) {
 		index_all();
 	}
+	return ok;
+}
+
+// Also the rest the evidence reads (the callsign and DMR ID, the contacts) and what the radio reads (boot text, quick
+// keys), so the codeplug made is a clean one and the next start-up finds it ours
+bool codeplug_start_new(void)
+{
+	_Static_assert(sizeof(zero) >= CODEPLUG_QUICK_KEYS * 2u, "zero clears the quick keys");
+	storage_lock();
+	bool ok = !codeplug_foreign();	// nothing to clear: the edit makes the codeplug as for a blank flash
+	if (!ok && storage_ready()) {
+		ok = flash_write(GEN_BASE, NULL, GEN_CLEAR) && flash_write(BOOT_TEXT, NULL, 2u * CODEPLUG_NAME_LEN) &&
+		     flash_write(QUICK_KEYS, zero, CODEPLUG_QUICK_KEYS * 2u) &&
+		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE);
+		ev_bad = 0;	// cleared: ours from now on (a failure re-reads it, materialize)
+		ok = ok && materialize();
+		if (!ok) {
+			index_all();
+		}
+	}
+	storage_unlock();
 	return ok;
 }
 

@@ -79,6 +79,26 @@ static void power_off(bool knob)
 	ui_notify(&ev);			// "Couldn't switch off"; the UI waits a whole period again
 }
 
+// The stored "Use anyway" (settings_t.cp_flags) mirrors the codeplug's: set when the owner chose it, cleared when a
+// codeplug was written since (codeplug_written) or a factory reset (docs/spec/codeplug-native.md 2)
+static void accept_sync(void)
+{
+	static uint8_t synced = 0xFF;	// the state last stored: none yet (the first poll stores the one loaded, no change)
+	codeplug_accept_t a = codeplug_acceptance();
+	if (a == CODEPLUG_ACCEPT_DROPPED) {
+		codeplug_accept(false);
+		a = CODEPLUG_ACCEPT_NO;
+	}
+	if (a == synced) {
+		return;
+	}
+	synced = a;
+	settings_t *st = settings_begin();
+	st->cp_flags = a == CODEPLUG_ACCEPT_YES ? (uint8_t)(st->cp_flags | SETTINGS_CP_ACCEPTED)
+						: (uint8_t)(st->cp_flags & ~SETTINGS_CP_ACCEPTED);
+	settings_end(hal_millis());
+}
+
 static void startup_task(void *arg)
 {
 	(void)arg;
@@ -87,13 +107,20 @@ static void startup_task(void *arg)
 	board.display->set_backlight(100);
 	board.input->init();
 	storage_init();			// finishes a codeplug sector rewrite a power cut interrupted
+	bool written = false;		// a commit below wrote a new codeplug
 #if CONFIG_CPS_FAST
-	cps_fast_resume();		// and a fast codeplug protocol commit (docs/spec/cps-fast.md 7)
+	written = cps_fast_resume();	// and a fast codeplug protocol commit (docs/spec/cps-fast.md 7)
 #endif
 #if CONFIG_TFTP
-	tftp_codeplug_resume();		// and a TFTP codeplug write's commit (before the codeplug is read)
+	written = tftp_codeplug_resume() || written;	// and a TFTP codeplug write's commit (before the codeplug is read)
 #endif
 	settings_init();
+	settings_t *cp = settings_begin();
+	if (written) {
+		cp->cp_flags &= (uint8_t)~SETTINGS_CP_ACCEPTED;	// "Use anyway" was for the codeplug replaced
+	}
+	codeplug_accept((cp->cp_flags & SETTINGS_CP_ACCEPTED) != 0);
+	settings_end(hal_millis());
 	codeplug_init();
 	board.radio->init();
 	radio_core_start();
@@ -122,6 +149,7 @@ static void startup_task(void *arg)
 		hal_delay_ms(HOUSEKEEPING_MS);
 		settings_poll(hal_millis());	// saves here, so no other task waits for the flash
 		storage_job_poll();		// and the codeplug writes the UI asks for (save to channel, factory reset)
+		accept_sync();
 		if (!board.power->switch_on() || radio_power_off_wanted()) {
 			power_off(true);	// the knob, or the radio core after a long critical battery (battery_off_s)
 		} else if (ui_app_power_off_due()) {

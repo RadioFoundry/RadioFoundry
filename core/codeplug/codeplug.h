@@ -68,11 +68,21 @@ codeplug_source_t codeplug_init(void);
 codeplug_source_t codeplug_source(void);
 // The open-firmware area holds records in use that aren't an open-firmware codeplug: another firmware's own
 // codeplug, left there when RadioFoundry was installed over it. Decided at every index (start-up, codeplug_reload) by
-// the rule the web editor uses (docs/spec/codeplug-stock-tyt.md 2, step 1). The radio then shows no codeplug (the
-// built-in set, source CODEPLUG_BUILTIN) and writes nothing there until an edit, which starts a clean codeplug
+// the rule the web editor uses (docs/spec/codeplug-stock-tyt.md 2, step 1), unless the owner accepted it (below). The
+// radio then shows no codeplug (the built-in set, source CODEPLUG_BUILTIN) and writes nothing there: every edit fails
+// until codeplug_start_new or codeplug_accept (the UI asks which first)
 bool codeplug_foreign(void);
 // The evidence counts behind it: the good and bad open-firmware records found
 void codeplug_evidence(uint16_t *good, uint16_t *bad);
+// "Start new": clear what the radio reads of the other firmware's codeplug (general settings up to the hang times,
+// boot text, quick keys, contacts) and start a stored one from the built-in set. true when the codeplug is ours after
+bool codeplug_start_new(void);
+// "Use anyway": the codeplug is the radio's own (on) or judged again (off), erasing nothing; codeplug_reload shows it.
+// The settings store keeps it (settings_t.cp_flags, app.c). codeplug_written drops it
+void codeplug_accept(bool on);
+typedef enum { CODEPLUG_ACCEPT_NO, CODEPLUG_ACCEPT_YES, CODEPLUG_ACCEPT_DROPPED } codeplug_accept_t;
+// DROPPED: a codeplug was written since start-up or the last codeplug_accept, so the stored acceptance goes
+codeplug_accept_t codeplug_acceptance(void);
 
 // Highest channel number that may be in use (channels are 1..count, some may be empty)
 uint16_t codeplug_channel_count(void);
@@ -146,6 +156,8 @@ bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2);
 
 // Re-read everything after the image was written underneath (the CPS); bumps the serial
 codeplug_source_t codeplug_reload(void);
+// The same after a new codeplug was written (a CPS session or commit, a TFTP write): the acceptance goes with the old one
+codeplug_source_t codeplug_written(void);
 
 // The open-firmware 56-byte channel record (open-firmware-cps.md 7.3.3), for the CPS shim's VFO handling. decode: false
 // if the frequencies are malformed. encode: updates rec in place, keeping the bytes the model doesn't own
