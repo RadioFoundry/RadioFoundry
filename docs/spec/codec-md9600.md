@@ -129,7 +129,7 @@ are **no small tables outside the two windows** (every literal target lies in th
 ## Hosting
 
 Decided 2026-10-21, as the MD-380 (`docs/spec/codec-placement.md`). The code window starts in sector 7
-(0x08074B18 or 0x08075C98), which the application owns (sectors 3-7, `boards/md9600/memory.ld`), so the merge moves it:
+(0x08074B18 or 0x08075C98), which the application owns (sectors 3-8, `boards/md9600/memory.ld`), so the merge moves it:
 
 | Part | Where it goes | Why |
 |---|---|---|
@@ -137,8 +137,9 @@ Decided 2026-10-21, as the MD-380 (`docs/spec/codec-placement.md`). The code win
 | Table window | stays at the build's stock address in sector 9 (06.09: 0x080AB13C..0x080BC122, 16.45: 0x080AC2BC..0x080BD2F2) | the code reaches the tables through absolute addresses; the two builds differ, so the board reserves all of sector 9 and each profile names its own window |
 | Descriptor | end of sector 11, 0x080FFF80 | `platform/stm32f4/codec_desc.h`: tag, code window, table window, a CRC-32 of each |
 
-Sectors 8 and 10 stay free. The application never links past 0x0807FFFF, so an update erases sectors 3-7 only and keeps
-the codec. Two profiles, one codec id (`md9600-s11`): the tag in the descriptor (0x0609 or 0x1645) says which build
+Sector 10 stays free. The application never links past 0x0809FFFF, so an update erases sectors 3-8 only and keeps
+the codec. Sector 8 joined the application on 2026-11-03: every feature switch on needs more than sectors 3-7.
+Two profiles, one codec id (`md9600-s11`): the tag in the descriptor (0x0609 or 0x1645) says which build
 the radio holds.
 
 The moved codec was run on the host (Cortex-M model) against the stock-address run: the same 60-frame vector (encode and decode,

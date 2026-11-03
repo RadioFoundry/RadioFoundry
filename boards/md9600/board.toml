@@ -98,7 +98,7 @@ loader_spi = 0x100000
 
 # The codec where the merge puts it (docs/spec/codec-md9600.md "Hosting"): the tables stay in sector 9 at the stock
 # build's address, the code moves to the start of sector 11 and the descriptor to its end. The application has sectors
-# 3-7, so an update leaves the codec sectors alone. The 06.09 and 16.45 builds keep their tables at different addresses
+# 3-8, so an update leaves the codec sectors alone. The 06.09 and 16.45 builds keep their tables at different addresses
 # and report the one codec id: a merge uses the windows of the file it merges, and the board's windows are both files'
 [codec]
 tool = "codec_extract"

@@ -17,7 +17,7 @@
 #if CONFIG_DMR	// the whole file: DMR only
 #include "hrc/vocoder.h"
 
-#define CODEC_FLASH_LO		0x08080000u	// sectors 8-11: the flash boards/md9600/memory.ld leaves to the codec
+#define CODEC_FLASH_LO		0x080A0000u	// sectors 9-11: the flash boards/md9600/memory.ld leaves to the codec
 #define CODEC_CODE		0x080E0000u	// sector 11
 #define CODE_LEN		0xF214u		// both builds' code window
 

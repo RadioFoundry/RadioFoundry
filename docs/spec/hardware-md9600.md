@@ -594,7 +594,7 @@ SCK, PB14 MISO, PB15 MOSI, AF5), chip select PB12, mode 3, at most 4.5 MHz, the 
 the stub runs, an 8 MHz crystal, the bootloader ending at 0x0800C000. The stub never touches SPI1 / PD7, the HR_C6000's
 voice port here.
 
-An update with the stub writes the changed sectors of 3-7 only. It leaves the codec in sectors 8-11 alone unless the
+An update with the stub writes the changed sectors of 3-8 only. It leaves the codec in sectors 9-11 alone unless the
 image is merged with the codec (`rfoundry_md9600_codec.bin`), and never touches the bootloader in 0-2. Sector 3 is erased
 first and its first word written last, so an interrupted update leaves the application invalid. Whether the TYT
 bootloader then stays in DFU on its own, as the DM-1701's does, is unverified. If it doesn't, the key combination of
@@ -779,7 +779,7 @@ the original firmware sounds the same on this radio is not checked); UHF receive
 | HSE | 8 MHz crystal; bypass mode tried if it doesn't start; HSI 16 MHz (no USB) as the last resort |
 | PLL | M 4, N 72, P 2, Q 3: SYSCLK 72 MHz, USB 48 MHz |
 | Buses | AHB 72 MHz, APB1 36 MHz (timers 72 MHz), APB2 72 MHz |
-| Flash | 0x0800C000-0x0807FFFF application (sectors 3-7, 464 KB); sectors 8-11 kept free for the codec |
+| Flash | 0x0800C000-0x0809FFFF application (sectors 3-8, 592 KB); sectors 9-11 kept free for the codec |
 | RAM | 128 KB main SRAM (DMA buffers), 64 KB CCM (RTOS heap and task stacks, `RFOUNDRY_CPU_RAM`) |
 
 ### 19.3 Board revisions in one image
