@@ -19,7 +19,9 @@
 #define DCS_MASK	0x7FFFFFu
 #define DCS_TOLERANCE	2	// bit errors accepted in a word
 #define DCS_LOCK_GAIN	0.15f
-#define DCS_PEAK_DECAY	512.0f	// slicer level tracker time constant in samples
+#define DCS_PEAK_DECAY	512.0f	// swing tracker time constant in samples
+#define DCS_DC_TRACK	1024.0f	// DC tracker time constant in samples (about 0.4 s): slow against a word (0.17 s)
+#define DCS_HYSTERESIS	0.3f	// share of the half swing a sample must pass to flip the bit
 #define DCS_MISSING	3	// words without a match before closing
 
 // cos(x) for 0 <= x <= 0.7, Taylor series (error under 1e-9): no libm
@@ -135,11 +137,17 @@ static void feed_ctcss(subaudio_rx_t *d, float x)
 
 static void feed_dcs(subaudio_rx_t *d, float x)
 {
-	// Slicer level: midway between the tracked peaks
+	// The slicer works on the signal less its slow DC, with hysteresis: a bit flips only when the signal passes the
+	// other side's threshold. A sub-audio input coupled through a capacitor high-passes the NRZ stream, so a run of
+	// equal bits sags toward zero after its edge (to under half within a bit with a corner near 18 Hz); a slicer at
+	// the middle of the peaks reads the run's tail as noise. The sag never crosses to the other side, so holding the
+	// last bit reads the run right, and a flat input reads the same
 	if (!d->primed) {
 		d->primed = true;
-		d->hi = d->lo = x;
+		d->dc = x;
 	}
+	d->dc += (x - d->dc) / DCS_DC_TRACK;
+	x -= d->dc;
 	if (x > d->hi) {
 		d->hi = x;
 	} else {
@@ -155,7 +163,13 @@ static void feed_dcs(subaudio_rx_t *d, float x)
 		d->dcs_on = false;
 		return;
 	}
-	bool bit = x > (d->hi + d->lo) / 2.0f;
+	float h = DCS_HYSTERESIS * (d->hi - d->lo) / 2.0f;
+	bool bit = d->last_bit;
+	if (x > h) {
+		bit = true;
+	} else if (x < -h) {
+		bit = false;
+	}
 
 	// Clock recovery: an edge should fall on the bit boundary (phase 0)
 	if (bit != d->last_bit) {
