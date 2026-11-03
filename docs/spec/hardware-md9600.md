@@ -319,6 +319,11 @@ only working well on DMR at full power (unverified). RadioFoundry: refuse TX wit
 Analog per band: VHF RSSI PA0, UHF RSSI PB0, VHF noise PC5, UHF noise PB1. A fit, not a measurement (?): V1/V2/V4
 -135 dBm (VHF) / -145 dBm (UHF) + raw8 / 2; V5 -155 dBm + raw8 / 1.95 (raw8 = the 12-bit average >> 4). Calibration also has RSSI points at -120 and -70 dBm and squelch open / close rows (11.2).
 
+The noise line follows the modulation. Under a -73 dBm NOAA carrier (VHF, 25 kHz), it reads about 100 counts in a pause and
+peaks at 900-1500 in speech for tens of ms; an empty channel holds 1700-1900 (first radio, 2026-11-03). The squelch
+therefore takes the lowest reading over the last 160 ms (`radio_md9600.c`), cleared on every retune: one reading a
+poll let speech close it. A carrier that drops closes the squelch up to 160 ms later.
+
 ---
 
 ## 6. Audio
