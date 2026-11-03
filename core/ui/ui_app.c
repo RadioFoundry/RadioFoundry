@@ -193,28 +193,64 @@ void ui_go_home(void)
 
 // --- filtered lists (SF_FILTER): the rows whose label matches the T9 keys typed ---
 
+// With keys typed the list is the first UI_FILTER_MAX matches. With none it is every row: the first UI_FILTER_MAX are
+// in filter_idx, the rest are found by stepping from the last one found (walk_i, walk_raw), so a long list (1024
+// contacts) scrolls to its end without the RAM for its index. Scrolling and drawing move the walk a few rows at a time
 static uint16_t filter_idx[UI_FILTER_MAX];
-static uint16_t filter_n;
+static uint16_t filter_n;		// the rows in the list
+static uint16_t filter_kept;		// of them, the first ones, in filter_idx
+static uint16_t walk_i, walk_raw;	// past filter_idx: row walk_i is raw row walk_raw
+static const ui_scr_def_t *filter_def;	// the screen the rows are of
 static char filter_keys[UI_FILTER_KEYS + 1];
 
 uint16_t ui_filter_count(void) { return filter_n; }
-uint16_t ui_filter_raw(uint16_t i) { return i < filter_n ? filter_idx[i] : 0; }
 const char *ui_filter_text(void) { return filter_keys; }
+
+uint16_t ui_filter_raw(uint16_t i)
+{
+	if (i < filter_kept)
+		return filter_idx[i];
+	if (i >= filter_n || filter_def == NULL)
+		return 0;
+	uint16_t n = filter_def->raw_count();
+	char label[40];
+	while (walk_i != i) {
+		bool up = i > walk_i;
+		uint16_t raw = walk_raw;
+		do {
+			if (up ? raw + 1u >= n : raw == 0)
+				return 0;	// the rows changed under the list: the next rebuild puts it right
+			raw = up ? (uint16_t)(raw + 1u) : (uint16_t)(raw - 1u);
+		} while (!filter_def->raw_label(raw, label, sizeof label));
+		walk_raw = raw;
+		walk_i = up ? (uint16_t)(walk_i + 1u) : (uint16_t)(walk_i - 1u);
+	}
+	return walk_raw;
+}
 
 void ui_filter_rebuild(void)
 {
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
-	filter_n = 0;
+	filter_n = filter_kept = 0;
+	filter_def = NULL;
 	if (d->raw_count == NULL || d->raw_label == NULL)
 		return;
 	uint16_t n = d->raw_count();
 	char label[40];
-	for (uint16_t i = 0; i < n && filter_n < UI_FILTER_MAX; i++) {
+	for (uint16_t i = 0; i < n; i++) {
 		if (!d->raw_label(i, label, sizeof label))
 			continue;
-		if (filter_keys[0] == 0 || ui_t9_match(label, filter_keys))
-			filter_idx[filter_n++] = i;
+		if (filter_keys[0] != 0 && !ui_t9_match(label, filter_keys))
+			continue;
+		if (filter_kept < UI_FILTER_MAX)
+			filter_idx[filter_kept++] = i;
+		filter_n++;
+		if (filter_keys[0] != 0 && filter_kept >= UI_FILTER_MAX)
+			break;	// typed: the first matches
 	}
+	filter_def = d;
+	walk_i = filter_kept > 0 ? (uint16_t)(filter_kept - 1u) : 0;
+	walk_raw = filter_kept > 0 ? filter_idx[walk_i] : 0;
 }
 
 void ui_filter_reset(void)

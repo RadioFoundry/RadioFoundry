@@ -5502,12 +5502,15 @@ static void picker_enter(void)
 			ui_frame()->focus = i;
 }
 
-static uint16_t picker_count(void) { return (uint16_t)(n_picks + 1u); }
+// After the targets: Type a number..., then Select contact... (every contact, as Contacts lists them)
+#define PICK_CONTACTS	(CONFIG_DMR ? 1u : 0u)
+
+static uint16_t picker_count(void) { return (uint16_t)(n_picks + 1u + PICK_CONTACTS); }
 
 static void picker_item(uint16_t i, ui_item_t *it)
 {
 	if (i >= n_picks) {
-		str_copy(it->label, sizeof it->label, TR("Type a number..."));
+		str_copy(it->label, sizeof it->label, i == n_picks ? TR("Type a number...") : TR("Select contact..."));
 		return;
 	}
 	ui_sb_target(it->label, sizeof it->label, &picks[i].t);
@@ -5528,7 +5531,11 @@ static bool picker_target(uint16_t i, ui_target_t *t)
 
 static void picker_select(uint16_t i, bool hold)
 {
-	if (i >= n_picks) {
+	if (i > n_picks) {
+		ui_push(SCR_CONTACTS, 0);	// PTT, OK, hold OK and # work there as here
+		return;
+	}
+	if (i == n_picks) {
 		ui_push(SCR_FIND, 0);	// digits then OK / PTT: talk to the number typed
 		ui_find_set("");
 		return;
