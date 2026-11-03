@@ -20,6 +20,7 @@ from rfoundry_hil import DebugLink, DebugLinkError, find_ports, skip
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import rfoundry_snmp  # noqa: E402
+from hil_config import rig
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 TEST_COMMUNITY = "rfoundry-hil-rw"
@@ -62,7 +63,7 @@ def test_snmp_usb(radio, pytestconfig):
         skip("not_built", "built without CONFIG_SNMP")
     # On a DMR channel: the DMR objects (talk group, target type) are only in the walk then
     radio.go_home()
-    radio.find_channel(round(pytestconfig.getoption("--dmr-freq") * 1e6), "dmr")
+    radio.find_channel(round(rig(pytestconfig, "dmr-freq") * 1e6), "dmr")
     own_id = int(radio.view(["dmr"]).get("dmr.own_id", "0"))
     assert 0 < own_id < (1 << 24), "no DMR ID: the gateway can't make an address"
     before = radio.view(["snmp"])

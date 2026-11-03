@@ -3,7 +3,7 @@
 """Analog FM transmit checked off air by the SDR bench (opt-in: --allow-rf --allow-service-stop; the radio and the
 bench's RTL-SDR only, the bench never transmits here).
 
-The radio's FM VFO is tuned to --fm-mhz (default the DMR test channel, 461.6875 MHz) on its lowest power, with a
+The radio's FM VFO is tuned to --fm-mhz (the rig's FM test frequency) on its lowest power, with a
 sub-audio tone and a bandwidth set through debug-link radio requests; it keys for 3 s with no audio while the bench
 records raw I/Q (sdrmon.py capture), and tools/sdr_fm_check.py analyzes the over on the bench. A bench board that
 demodulates FM itself (the line protocol's rx op) also measures each over: its summary is printed and its CTCSS or DCS
@@ -44,6 +44,7 @@ import time
 import pytest
 
 from rfoundry_hil import skip
+from hil_config import rig
 
 PTT_S = 3.0
 
@@ -84,7 +85,7 @@ def fm_vfo(radio, pytestconfig):
         skip("not_built", "built without the FM VFO")
     if "SUBTONE" not in radio.features():
         skip("not_built", "built without CTCSS / DCS")
-    hz = round(pytestconfig.getoption("--fm-mhz") * 1e6)
+    hz = round(rig(pytestconfig, "fm-mhz") * 1e6)
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
@@ -118,7 +119,7 @@ def set_fm(radio, wide, kind, value):
 def key_and_check(radio, sdr_bench, pytestconfig, tag, bw_khz, ctcss=None, dcs=None, key=None, seconds=PTT_S + 5,
                   tones=False, dtmf=False):
     """Capture while key() keys the radio (default: PTT for PTT_S), analyze, check one segment and the carrier."""
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     rdir = sdr_bench.run_dir(tag)
     board = None
     with sdr_bench.lease():
@@ -383,7 +384,7 @@ def test_fm_tx_dtmf_stop(fm_vfo, sdr_bench, pytestconfig):
 @pytest.mark.sdr_rx
 def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "none", 0)
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     levels = []
     for step in range(3):
         if step:

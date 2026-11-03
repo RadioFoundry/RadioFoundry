@@ -36,6 +36,7 @@ import time
 import pytest
 
 from rfoundry_hil import counter_deltas, skip
+from hil_config import rig
 
 PRIME = 3                   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
 PEAK_MIN = 1000             # decoded speech peaks at thousands; the stale voice RAM gave 6
@@ -84,7 +85,7 @@ def dmr_channel(radio, pytestconfig):
     (freq, cc, dst, private, own_id). Fails (not skips) when the radio has DMR but can't play a call."""
     if "DMR" not in radio.features():
         skip("not_built", "DMR AUDIO NOT CHECKED: firmware built without DMR")
-    freq = pytestconfig.getoption("--dmr-freq")
+    freq = rig(pytestconfig, "dmr-freq")
     radio.go_home()
     find_dmr_channel(radio, round(freq * 1e6))
     d = radio.view(["dmr"])

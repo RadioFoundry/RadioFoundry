@@ -34,6 +34,7 @@ import pytest
 from rfoundry_hil import skip
 from rfoundry_debug import DebugLink, DebugLinkError, as_int
 from test_fm_tx import fm_vfo  # noqa: F401  (the fixture)
+from hil_config import rig
 
 LINK_BACK_S = 180.0
 MIN_SEGMENT_S = 1.0
@@ -111,7 +112,7 @@ def test_mic_gain_deviation(fm_vfo, sdr_bench, pytestconfig):
     steps = [int(s) for s in pytestconfig.getoption("--mic-gain-steps").split(",") if s.strip()]
     assert steps and all(0 <= s <= 10 for s in steps), f"--mic-gain-steps out of 0-10: {steps}"
     window = pytestconfig.getoption("--mic-gain-window")
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     step0 = as_int(f["set.mic_gain"], 5)
     overs = [(wide, s) for wide in (False, True) for s in steps]
     rows = []

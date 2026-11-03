@@ -5,39 +5,37 @@
 Radio only (no flags): the aprs / aprs_set view sections, a setting round trip, the RAM test callsign, host NMEA as
 the position source. Nothing transmits.
 
-On air, AFSK (radio_tx + bench_service: --allow-rf --allow-service-stop, and --aprs-call / $RFOUNDRY_APRS_CALL, a licensed
-operator's callsign; the transmissions are amateur ones). The radio sends a position, a status and a message on the
-70 cm band at its lowest power while the bench's RTL-SDR records I/Q (the gateway service stopped through the lease and
+On air, AFSK (radio_tx + bench_service: --allow-rf --allow-service-stop, and the rig's callsign, a licensed
+operator's: the transmissions are amateur ones; the rig's values are in hil_config.py). The radio sends a position, a
+status and a message on the test frequency at its lowest power while the bench's RTL-SDR records I/Q (the gateway service stopped through the lease and
 started again afterwards). tools/aprs_afsk_check.py FM demodulates the capture on the bench, decodes Bell 202 / AX.25
 and measures the tones.
 
 Where and how it transmits, so that nothing reaches the APRS network:
-- Frequency: --aprs-test-mhz, default 446.050 MHz (a 70 cm simplex frequency), through the custom APRS region. APRS
-  lives on 2 m: 144.390 is the national APRS frequency, where digipeaters and iGates would repeat the test frames and
-  gate them to APRS-IS. A 70 cm test frequency keeps the frames away from that network and away from 2 m receivers on
-  the bench. The option takes any 2 m or 70 cm amateur frequency (144-148, 420-450 MHz) except the regional APRS ones
-  (144.390, 144.800, 145.175, 144.575, 144.660, 144.640), which are refused. Pick another simplex frequency with the
-  option if 446.050 is busy locally.
+- Frequency: --aprs-test-mhz, through the custom APRS region, and one of the rig's transmit frequencies (tx_mhz); no
+  default. Give an amateur simplex frequency that is not an APRS one: on an APRS frequency, digipeaters and iGates
+  would repeat the test frames and gate them to APRS-IS. A band with no APRS network nearby also keeps the frames
+  away from the bench's other receivers.
 - Path: none (no WIDEn-N), so a digipeater that hears a frame does not repeat it.
-- Power: the radio's lowest level (50 mW on the DM-1701). The tests check `aprs.tx_power` (the level an APRS
+- Power: the radio's lowest level. The tests check `aprs.tx_power` (the level an APRS
   transmission keys at) is 0 before keying, and skip on firmware without that key: it used to key APRS at the
   settings' default power (1 W on the DM-1701) whatever the radio was set to.
-- Callsign: --aprs-call as the RAM-only test call (never saved) with SSID --aprs-ssid (default 15). Destination
+- Callsign: --callsign as the RAM-only test call (never saved) with SSID --aprs-ssid (default 15). Destination
   APZRDF.
 - Every APRS setting a test changes (transmit, region, custom frequency, SSID, path, send via, position source, fixed
   position, digital destination, UDT) is put back afterwards, after the queued frames and message retries are on
   air (still on the test frequency). If they don't drain, the region stays on the test frequency and the test fails
-  saying so, so a leftover frame never goes out on 144.390.
+  saying so, so a leftover frame never goes out on the radio's own APRS frequency.
 - Each transmission is short: TX delay 300 ms plus about 0.3 s of frame. The message is sent 3 times (0, 30, 90 s:
-  the DM-1701 can't hear the ack), all on the test frequency.
+  a radio that can't hear the ack), all on the test frequency.
 
-On air, receive (rf + bench_service: --allow-rf, --aprs-call): a bench board (--bench-api) sends one AX.25 position
-frame from <call>-7 (-11 when that is the radio's own call) in Bell 202 AFSK on its FM transmitter, on --fm-mhz (an amateur non-APRS frequency the bench may
-transmit on), path none. The radio, in the FM VFO there with APRS receive on that frequency (custom region), decodes
+On air, receive (rf + bench_service: --allow-rf, --callsign): a bench board (--bench-api) sends one AX.25 position
+frame from <call>-7 (-11 when that is the radio's own call) in Bell 202 AFSK on its FM transmitter, on --fm-mhz (one of the rig's transmit frequencies: an amateur
+non-APRS one), path none. The radio, in the FM VFO there with APRS receive on that frequency (custom region), decodes
 it; it doesn't transmit (beacons and the digipeater off, put back after). The SDR bench host has no FM transmitter:
 the test skips there.
 
-On air, DMR (radio_tx + bench_service): on the DMR test channel (--dmr-freq / --dmr-cc, e.g. 467.375 MHz CC 2) at
+On air, DMR (radio_tx + bench_service): on the DMR test channel (--dmr-freq / --dmr-cc) at
 the lowest power the radio sends its position as an LRRP report (UDP 4001 in rate 1/2 data) and as an ETSI UDT
 location to --aprs-dmr-dst; the bench modem's listener (bench_tx.py listen) hears the data header and blocks, and
 the test reassembles and decodes them here.
@@ -65,14 +63,15 @@ import time
 import pytest
 
 from rfoundry_hil import DebugLinkError, skip
+from hil_config import rig, tx_allowed
 
 POS = (33.7490, -84.3880)
-APRS_HZ = {144390000, 144800000, 145175000, 144575000, 144660000, 144640000}
 
 
 def allowed_test_hz(hz):
-    """An amateur 2 m or 70 cm frequency that is not a regional APRS frequency"""
-    return hz not in APRS_HZ and (144000000 <= hz <= 148000000 or 420000000 <= hz <= 450000000)
+    """One of the rig's transmit frequencies (tx_mhz): the operator lists only amateur simplex frequencies that are
+    not APRS ones there"""
+    return tx_allowed(None, hz / 1e6)
 PATHS = ["", "WIDE1-1", "WIDE1-1,WIDE2-1", "WIDE2-1", "WIDE2-2"]
 VIAS = {"rf": 0, "dmr": 1, "both": 2}
 REGION_CUSTOM, POS_FIXED, PATH_NONE = 6, 3, 0
@@ -112,18 +111,19 @@ def test_aprs_view_and_settings(radio):
 
 
 @pytest.mark.feature("aprs")
-def test_aprs_test_call_and_nmea(radio):
+def test_aprs_test_call_and_nmea(radio, pytestconfig):
     """A RAM test callsign clears the "no callsign" block; host NMEA becomes the position (source "host")."""
     _need_aprs(radio)
+    call = rig(pytestconfig, "callsign")
     before = _aprs(radio)
     try:
-        radio.link.aprs_test_call("N0TST")
+        radio.link.aprs_test_call(call)
         radio.link.aprs_set("pos_src", 2)       # Computer (host NMEA)
         radio.link.aprs_nmea("$GPRMC,123519,A,3344.940,N,08423.280,W,000.0,000.0,101026,,")
         # pos_valid alone can already be 1 from a fixed position: wait for the source
         v = radio.wait_for(lambda x: x.get("aprs.pos_valid") == "1" and x.get("aprs.pos_src") == "host",
                            sections=("aprs",), what="host position")
-        assert v["aprs.pos_src"] == "host" and v["aprs.call"].startswith("N0TST"), v
+        assert v["aprs.pos_src"] == "host" and v["aprs.call"].startswith(call), v
         assert abs(float(v["aprs.lat"]) - 33.749) < 1e-3 and abs(float(v["aprs.lon"]) + 84.388) < 1e-3, v
         assert v["aprs.block"] in ("ok", "not_amateur", "no_afsk"), v
     finally:
@@ -175,7 +175,7 @@ class AprsSession:
 
     def rf_setup(self, call, ssid, hz):
         """AFSK on hz (custom region), no path, via RF, our test call and SSID, the fixed test position."""
-        assert allowed_test_hz(hz), f"{hz} Hz: not an amateur non-APRS test frequency"
+        assert allowed_test_hz(hz), f"{hz} Hz: not one of the rig's transmit frequencies (tx_mhz)"
         self.set("region", REGION_CUSTOM)
         time.sleep(0.3)             # the view's frequency follows on the engine's next tick (25 ms)
         self.custom_hz = int(self.radio.view(["aprs"])["aprs.freq_hz"])
@@ -192,7 +192,7 @@ class AprsSession:
 
     def rx_setup(self, hz):
         """Receive on hz (custom region), the digipeater off: the radio never repeats what the bench sends"""
-        assert allowed_test_hz(hz), f"{hz} Hz: not an amateur non-APRS test frequency"
+        assert allowed_test_hz(hz), f"{hz} Hz: not one of the rig's transmit frequencies (tx_mhz)"
         self.set("digi", 0)
         self.set("region", REGION_CUSTOM)
         time.sleep(0.3)             # the view's frequency follows on the engine's next tick (25 ms)
@@ -293,15 +293,12 @@ def aprs_air(radio, pytestconfig, request):
     the DMR test channel on the bench) or "fm_vfo" (the FM VFO on --fm-mhz, receive only there)."""
     start = getattr(request, "param", "channel")
     _need_aprs(radio)
-    call = pytestconfig.getoption("--aprs-call")
-    if not call:
-        skip("opt_in", "give --aprs-call (or $RFOUNDRY_APRS_CALL): a licensed operator's callsign (amateur transmission)")
+    call = rig(pytestconfig, "callsign", "an amateur transmission: needs a licensed operator's callsign,")
     if "FM" not in radio.features():
         skip("not_built", "built without FM")
-    hz = round(pytestconfig.getoption("--aprs-test-mhz") * 1e6)
+    hz = round(rig(pytestconfig, "aprs-test-mhz") * 1e6)
     if not allowed_test_hz(hz):
-        pytest.fail(f"--aprs-test-mhz {hz / 1e6:.3f}: must be a 2 m or 70 cm amateur frequency that is not an APRS "
-                    "frequency")
+        pytest.fail(f"--aprs-test-mhz {hz / 1e6:.4f}: not one of the rig's transmit frequencies (tx_mhz)")
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
@@ -310,7 +307,7 @@ def aprs_air(radio, pytestconfig, request):
             if "VFO_FM" not in radio.features():
                 skip("not_built", "built without the FM VFO")
             stack.enter_context(radio.vfo_session())
-            fm_hz = round(pytestconfig.getoption("--fm-mhz") * 1e6)
+            fm_hz = round(rig(pytestconfig, "fm-mhz") * 1e6)
             radio.link.vfo_set(fm_hz)
             radio.wait_for(lambda x: x.get("rx_hz") == str(fm_hz) and x.get("mode") == "fm", what="FM VFO")
         yield from _aprs_air(radio, pytestconfig, call, hz)
@@ -582,8 +579,8 @@ def test_aprs_dmr_position(radio, sdr_bench, pytestconfig, form):
         skip("not_built", "built without DMR data")
     if form == "lrrp" and "DMR_LRRP" not in feats:
         skip("not_built", "built without CONFIG_DMR_LRRP")
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
-    dst = pytestconfig.getoption("--aprs-dmr-dst")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
+    dst = rig(pytestconfig, "aprs-dmr-dst")
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
@@ -629,7 +626,7 @@ def test_aprs_dmr_position(radio, sdr_bench, pytestconfig, form):
     assert abs(lat - POS[0]) < 2e-5 and abs(lon - POS[1]) < 2e-5, f"{lat}, {lon} != {POS}"
 
 
-BENCH_RX_SSIDS = (7, 11)    # the bench's frame: --aprs-call with the first that isn't the radio's own call
+BENCH_RX_SSIDS = (7, 11)    # the bench's frame: --callsign with the first that isn't the radio's own call
 BENCH_RX_INFO = "!3330.00N/08645.00W-RadioFoundry bench frame"
 
 
@@ -637,21 +634,18 @@ BENCH_RX_INFO = "!3330.00N/08645.00W-RadioFoundry bench frame"
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
-    """One AX.25 UI frame (a position, from --aprs-call-7 or -11, not the radio's own call) in Bell 202 AFSK from the bench board's FM transmitter on
+    """One AX.25 UI frame (a position, from --callsign-7 or -11, not the radio's own call) in Bell 202 AFSK from the bench board's FM transmitter on
     --fm-mhz: the radio, in the FM VFO there with APRS receive on that frequency, decodes it (aprs.rx_frames) with no
     FCS error and lists the station. The radio doesn't transmit: beacons and the digipeater are off for the test."""
     import aprs_afsk_check as afsk
     _need_aprs(radio)
     if "APRS_RX" not in radio.features() or "VFO_FM" not in radio.features():
         skip("not_built", "built without APRS receive or the FM VFO")
-    call = pytestconfig.getoption("--aprs-call")
-    if not call:
-        skip("opt_in", "give --aprs-call (or $RFOUNDRY_APRS_CALL): a licensed operator's callsign (amateur transmission)")
-    mhz = pytestconfig.getoption("--fm-mhz")
+    call = rig(pytestconfig, "callsign", "an amateur transmission: needs a licensed operator's callsign,")
+    mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
     if not allowed_test_hz(hz):
-        skip("state", f"--fm-mhz {mhz:.4f}: the bench's frame needs a 2 m or 70 cm amateur frequency that is not an "
-                      "APRS frequency")
+        pytest.fail(f"--fm-mhz {mhz:.4f}: not one of the rig's transmit frequencies (tx_mhz)")
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")

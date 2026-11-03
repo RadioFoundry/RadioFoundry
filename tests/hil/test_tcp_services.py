@@ -165,8 +165,9 @@ def test_kiss_tcp(net):
         with socket.create_connection((ip, 8001), timeout=5) as s:
             time.sleep(0.3)
             assert _net_view(link)["kiss.client"] == "1"
-            # A frame from a foreign callsign: taken by the TNC, refused by the APRS engine (nothing transmitted)
-            s.sendall(_kiss(_ui_frame("N0CALL", 0, b">RFOUNDRY HIL KISS-TCP")))
+            # A frame from a foreign callsign (Q9ZZZ: a Q prefix is never issued): taken by the TNC, refused by the
+            # APRS engine (nothing transmitted)
+            s.sendall(_kiss(_ui_frame("Q9ZZZ", 0, b">RFOUNDRY HIL KISS-TCP")))
             time.sleep(0.5)
             after = link.view(["aprs"])
             assert int(after["aprs.host_in"]) == int(before["aprs.host_in"]) + 1, (before, after)

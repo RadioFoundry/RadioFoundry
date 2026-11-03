@@ -47,6 +47,7 @@ import pytest
 
 from rfoundry_hil import skip
 from test_dmr_tx import _dmr_tx_setup, _wait_line
+from hil_config import rig
 
 VOICE_PER_S = 1 / 0.060         # one voice burst per 60 ms frame on our slot
 OFFSET_MAX_MS = 0.25            # the inbound burst against the outbound + 30 ms (test_dmr_repeater_burst_offset)
@@ -130,7 +131,7 @@ def _session(radio, sdr_bench, pytestconfig, backup_dir, body):
     split = pytestconfig.getoption("--split-tx-mhz")
     if not split:
         skip("opt_in", "give the split channel's TX frequency: --split-tx-mhz MHz (one you may transmit on)")
-    if abs(split - pytestconfig.getoption("--dmr-freq")) < 0.0125:
+    if abs(split - rig(pytestconfig, "dmr-freq")) < 0.0125:
         skip("opt_in", "--split-tx-mhz must differ from --dmr-freq")
     if radio.view().get("set.tx_inhibit") == "1":
         skip("state", "the radio's TX inhibit is on (set.tx_inhibit=1)")

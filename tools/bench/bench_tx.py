@@ -9,7 +9,7 @@ test, or to listen to what the radio sends. Runs on the SDR bench in a Python en
 package (default /opt/rfoundry-sdrbench/.venv/bin/python): it uses its MMDVM modem driver and its burst and FEC code. The
 bench's gateway service must not hold the bench modem while this runs; tools/bench/dmr_bench.py stops it for you.
 
-    bench_tx.py [--freq 461.6875] [--cc 2] [--power 255] voice [--src ID] [--dst ID] [--private] [--superframes N]
+    bench_tx.py --freq MHZ --cc CC [--power 0-255] voice [--src ID] [--dst ID] [--private] [--superframes N]
               [--headers N] [--terminators N] [--late K] [--calls N] [--gap-ms MS] [--src2 ID]
               [--family ms|bs|ts1|ts2] [--ambe FILE] [--talker-alias TEXT] [--gps LAT,LON[,ERR]] [--pi]
               [--service-options HEX] [--emergency] [--burst-cc CC]
@@ -60,6 +60,7 @@ PREFIX_<n>.amb (DSD .amb: 49 parameter bits per frame, for any AMBE+2 decoder yo
 import argparse
 import json
 import logging
+import os
 import time
 import zlib
 
@@ -297,7 +298,7 @@ def selftest() -> int:
     BPTC, reassembled, its CRCs and IPv4 / UDP checked against what was asked. 568 octets of payload (596 of IPv4, the
     air MTU) take 2 preambles + 1 header + 50 blocks = 53 bursts: what a radio sends at most unconfirmed; 580 (608 of
     IPv4) take 51 blocks, the most a radio reassembles."""
-    ns = argparse.Namespace(src=9990301, dst=3101276, family="ms", burst_cc=2, confirmed=False, preambles=2, tms=None,
+    ns = argparse.Namespace(src=9990301, dst=9991276, family="ms", burst_cc=2, confirmed=False, preambles=2, tms=None,
                             etsi=None, ip_text=None, octets=40, udp_port=50001, udp_src_port=50000, udp_octets=568,
                             udp_payload=None, repeat=3, tms_seq=1, tms_no_ack=False)
     for octets, bursts_each in ((580, 54), (568, 53), (40, 9), (1, 6)):
@@ -539,8 +540,10 @@ class Listener:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", default="/dev/ttyS0")
-    ap.add_argument("--freq", type=float, default=461.6875)
-    ap.add_argument("--cc", type=int, default=2)
+    ap.add_argument("--freq", type=float, default=os.environ.get("RFOUNDRY_BENCH_FREQ"), required="RFOUNDRY_BENCH_FREQ" not in os.environ,
+                    help="MHz ($RFOUNDRY_BENCH_FREQ): the rig's test frequency, no default")
+    ap.add_argument("--cc", type=int, default=os.environ.get("RFOUNDRY_BENCH_CC"), required="RFOUNDRY_BENCH_CC" not in os.environ,
+                    help="color code ($RFOUNDRY_BENCH_CC), no default")
     ap.add_argument("--power", type=int, default=255, help="MMDVM_HS RF level 0-255")
     ap.add_argument("--rx-offset", type=int, default=None, help="Hz, the bench modem's RX offset (default: the bench's calibration)")
     ap.add_argument("--tx-offset", type=int, default=None, help="Hz, the bench modem's TX offset (default: the bench's calibration)")
@@ -574,7 +577,7 @@ def main() -> None:
     v.add_argument("--service-options", type=lambda s: int(s, 16), default=0)
     v.add_argument("--emergency", action="store_true")
     d = sub.add_parser("data")
-    common(d, 3101276)
+    common(d, 9991276)
     d.add_argument("--confirmed", action="store_true")
     d.add_argument("--octets", type=int, default=40)
     d.add_argument("--preambles", type=int, default=2)
@@ -593,7 +596,7 @@ def main() -> None:
     d.add_argument("--repeat-gap-ms", type=int, default=0,
                    help="0: the --repeat packets in one key-up; else this far apart, each its own key-up")
     c = sub.add_parser("csbk")
-    common(c, 3101276)
+    common(c, 9991276)
     c.add_argument("--count", type=int, default=4, help="preamble CSBKs (opcode 0x3D)")
     c.add_argument("--opcode", type=lambda x: int(x, 16), default=None,
                    help="then one CSBK with this opcode (hex), e.g. 1F call alert (FID 0)")

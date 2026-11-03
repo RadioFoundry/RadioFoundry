@@ -783,6 +783,13 @@ class SdrBench:
             skip("bench", f"the bench board stopped answering during {what}: {e}")
         raise RuntimeError(f"bench board {what} failed: {e}")
 
+    @staticmethod
+    def _tx_check(freq):
+        """Refuse to key on a frequency outside the rig's tx_mhz (hil_config.py), in a pytest run"""
+        import hil_config
+        if hil_config.CONFIG is not None and not hil_config.tx_allowed(None, float(freq)):
+            raise RuntimeError(f"{freq} MHz is not one of the rig's transmit frequencies (tx_mhz)")
+
     def _api_claim(self, freq):
         L = self._line()
         try:
@@ -827,6 +834,7 @@ class SdrBench:
         (ctcss, dcs, dev_hz, sub_dev_hz, lead_s, tail_s, repeat; None left out). Returns once the board keyed: a
         _LineTx whose wait() gives the board's done record. Needs the lease (tests mark it bench_service and rf).
         Only a bench board transmits FM: the SDR bench host's modem is DMR only, so it skips there."""
+        self._tx_check(freq)
         if not self.api:
             skip("bench", "the SDR bench host has no FM transmitter: needs a bench board (--bench-api)")
         self._need_lease()
@@ -1069,6 +1077,8 @@ class SdrBench:
         self._no_api("bench stations")
         import select
         import tty
+        for f in tx:
+            self._tx_check(f)
         self._need_lease()
         if not self.bench.uses_daemon():
             skip("bench", "bench stations need the shared bench daemon (rfoundry-benchd)")
@@ -1153,6 +1163,8 @@ class SdrBench:
         """cmd (a string, run in ~/<dir> on the bench) with {port} the station's guarded port: for exchanges that
         need the radio's port without a network hop (an MMDVM hotspot session). Returns (status, stdout)."""
         self._no_api("bench stations")
+        for f in tx:
+            self._tx_check(f)
         self._need_lease()
         for f in tx:
             self._claim(f)
@@ -1172,6 +1184,7 @@ class SdrBench:
         """For code that runs bench_tx.py over ssh itself (hotspot_cases): the command prefix that puts it under
         a shared bench's modem queue (the channel and the modem held for this lease), or the plain one."""
         self._no_api("modem command line")
+        self._tx_check(freq)
         self._need_lease()
         self._claim(freq)
         try:
@@ -1186,6 +1199,7 @@ class SdrBench:
         lease and --allow-rf. expect_s: about how long it keys up (a shared bench's queue predictions)."""
         if not self.allow_rf:
             raise RuntimeError("the bench transmitter keys up: needs --allow-rf")
+        self._tx_check(freq)
         self._need_lease()
         if self.api:
             return self._api_transmit(args, freq, cc, timeout, expect_s)
@@ -1361,6 +1375,7 @@ class SdrBench:
         arguments (e.g. --beacon). Needs the lease and --allow-rf. A half-duplex bench board refuses the job: a skip."""
         if not self.allow_rf:
             raise RuntimeError("the bench repeater keys up: needs --allow-rf")
+        self._tx_check(tx)
         self._need_lease()
         args = f"--rx {rx} --tx {tx} --cc {cc} --seconds {seconds} --json {extra}"
         if self.api:

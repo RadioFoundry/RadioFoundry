@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""FM receive, no transmission: the VFO on NOAA weather radio (162.550 MHz by default) opens the squelch or shows an
+"""FM receive, no transmission: the VFO on a NOAA weather radio station (--noaa-mhz, the rig's) opens the squelch or shows an
 RSSI above the floor within a few seconds. Depends on reception at the bench.
 
 test_rx_tone_squelch: CTCSS / DCS decode, from the side NOAA can test (it sends no sub-audio tone): on NOAA with the squelch opening (stepped down from the radio's
@@ -18,6 +18,7 @@ import time
 import pytest
 
 from rfoundry_hil import skip
+from hil_config import rig
 
 
 @pytest.mark.feature("fm", "vfo_fm")
@@ -27,7 +28,7 @@ def test_noaa_receive(radio, pytestconfig):
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
-    hz = round(pytestconfig.getoption("--noaa-mhz") * 1e6)
+    hz = round(rig(pytestconfig, "noaa-mhz") * 1e6)
     floor = pytestconfig.getoption("--rssi-floor")
     with radio.vfo_session():
         radio.link.vfo_set(hz)
@@ -49,7 +50,7 @@ def test_rx_tone_squelch(radio, pytestconfig):
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
-    hz = round(pytestconfig.getoption("--noaa-mhz") * 1e6)
+    hz = round(rig(pytestconfig, "noaa-mhz") * 1e6)
     L = radio.link
     with radio.vfo_session():
         L.vfo_set(hz)
@@ -117,7 +118,7 @@ def test_rx_tone_decode_bench(radio, sdr_bench, pytestconfig, kind, value, sub, 
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
     L = radio.link
     program = [{"kind": "tone", "hz": 1000, "s": BENCH_FM_S, "level": 0.6}]
