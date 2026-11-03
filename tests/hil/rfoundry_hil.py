@@ -591,13 +591,21 @@ class SdrBench:
     is a daemon session, the frequencies a test captures or transmits on are leased to it (another session's radio
     test waits), bench modem jobs queue, captures come from the shared receiver. Waits are printed as they happen
     (predicted time, worst case, who holds the bench); a test that would wait longer than --bench-wait-max is
-    skipped."""
+    skipped.
+
+    A bench API board (api="http://BOARD", --bench-api) stands in for the SDR bench host: transmit() and the calls
+    built on it (voice_call, data, csbk) run bench_tx.py here, which builds the bursts with the rfoundry_sdrbench
+    package ($RFOUNDRY_SDRBENCH_SRC, the directory holding it) and sends them through the bench API client
+    ($RFOUNDRY_BENCHAPI, the directory holding benchapi.py), holding the board's session and TX lease for each run;
+    dmr_watch_start() / bursts_start() read the board's decoded bursts. What needs the bench host (raw captures,
+    the modem's listener, the repeater, stations) skips as missing."""
 
     def __init__(self, allow_rf=False, allow_service_stop=False, tx_power=40, lease_max=300, gain=5.0,
-                 offset_khz=-200.0, wait_max=None):
+                 offset_khz=-200.0, wait_max=None, api=None):
         import dmr_bench
         self.dmr_bench = dmr_bench
-        self.host = dmr_bench.BENCH_HOST
+        self.api = api
+        self.host = api or dmr_bench.BENCH_HOST
         self.dir = dmr_bench.DIR
         self._run_dirs = []
         self.py = dmr_bench.PY
@@ -613,7 +621,19 @@ class SdrBench:
         self.leased = False
         self.bg = []
 
+    def _no_api(self, what):
+        if self.api:
+            skip("bench", f"the bench API board {self.api} has no {what} here: only the SDR bench host does")
+
+    def _api_env(self):
+        env = dict(os.environ)
+        src = env.get("RFOUNDRY_SDRBENCH_SRC")
+        if src:
+            env["PYTHONPATH"] = src + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        return env
+
     def ssh(self, cmd, timeout=300, check=True):
+        self._no_api("shell")
         r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.host, cmd],
                            capture_output=True, text=True, timeout=timeout)
         if check and r.returncode != 0:
@@ -621,12 +641,20 @@ class SdrBench:
         return r.stdout
 
     def ssh_bg(self, cmd):
+        self._no_api("shell")
         p = subprocess.Popen(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.host, cmd],
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.bg.append(p)
         return p
 
     def reachable(self):
+        if self.api:
+            # bench_tx.py's imports here, and an answer from the board with TX in its caps
+            r = subprocess.run([sys.executable, "-c", "import rfoundry_sdrbench; import os, sys; "
+                                "sys.path.insert(0, os.environ.get('RFOUNDRY_BENCHAPI', '')); import benchapi; "
+                                "sys.exit(0 if benchapi.open_bench(sys.argv[1]).info().get('caps', {}).get('tx') "
+                                "else 3)", self.api], env=self._api_env(), capture_output=True, timeout=30)
+            return r.returncode == 0
         try:
             self.ssh(f"test -f ~/{self.dir}/bench_tx.py", timeout=15)
             return True
@@ -638,6 +666,13 @@ class SdrBench:
         """The gateway service stopped for the duration and restarted afterwards, also on failure (the bench-side
         guard restarts it after lease_max seconds whatever happens). Background bench processes started inside are
         ended before the service comes back."""
+        if self.api:            # bench_tx.py takes the API's session and lease for each run
+            self.leased = True
+            try:
+                yield
+            finally:
+                self.leased = False
+            return
         shared = self.bench.uses_daemon()
         if not shared and not self.allow_service_stop:
             skip("opt_in", "stops the SDR bench's gateway service: run with --allow-service-stop")
@@ -671,6 +706,8 @@ class SdrBench:
             self._busy(e)
 
     def upload(self, local, name):
+        if self.api:
+            return os.path.abspath(local)       # bench_tx.py runs here
         remote = f"{self.dir}/runs/{name}"
         self.ssh(f"mkdir -p ~/{self.dir}/runs")
         subprocess.run(["scp", "-q", local, f"{self.host}:{remote}"], check=True, timeout=120)
@@ -705,7 +742,7 @@ class SdrBench:
     def info(self):
         """rfoundry-benchd's view of the bench: the shared RX window, every frequency's caps and holder, the stations
         (their bands, modes, who holds them), the modem queue. {} on a bench without the daemon."""
-        if not self.bench.uses_daemon():
+        if self.api or not self.bench.uses_daemon():
             return {}
         return json.loads(self.ssh(f"{self.bench.ctl} info --json", timeout=30))
 
@@ -713,6 +750,8 @@ class SdrBench:
         """Why this bench can't serve a test that needs the SDR (sdr), the bench modem (modem) or either of them
         (either): None when it can. Judged from the daemon's info(); a bench without the daemon has both, as far as
         a test can tell before it takes the lease."""
+        if self.api:
+            return None         # the board transmits and decodes bursts; a raw capture skips when a test asks for one
         info = self.info()
         if not info:
             return None
@@ -740,6 +779,7 @@ class SdrBench:
         bench's guard, for rfoundry_debug / Radio, the MMDVM hotspot tools, anything that opens a serial port. tx: MHz
         it may transmit on (leased to this test), mode: dmr | nfm | wfm | aprs | sfr; none: receive only. The
         guard keeps it at its lowest power and refuses PTT anywhere else."""
+        self._no_api("bench stations")
         import select
         import tty
         self._need_lease()
@@ -825,6 +865,7 @@ class SdrBench:
     def station_run(self, name, cmd, tx=(), mode=None, expect_s=None, timeout=600):
         """cmd (a string, run in ~/<dir> on the bench) with {port} the station's guarded port: for exchanges that
         need the radio's port without a network hop (an MMDVM hotspot session). Returns (status, stdout)."""
+        self._no_api("bench stations")
         self._need_lease()
         for f in tx:
             self._claim(f)
@@ -843,6 +884,7 @@ class SdrBench:
     def modem_prefix(self, freq, expect_s=None):
         """For code that runs bench_tx.py over ssh itself (hotspot_cases): the command prefix that puts it under
         a shared bench's modem queue (the channel and the modem held for this lease), or the plain one."""
+        self._no_api("modem command line")
         self._need_lease()
         self._claim(freq)
         try:
@@ -858,6 +900,8 @@ class SdrBench:
         if not self.allow_rf:
             raise RuntimeError("the bench transmitter keys up: needs --allow-rf")
         self._need_lease()
+        if self.api:
+            return self._api_transmit(args, freq, cc, timeout)
         self._claim(freq)
         cmd = self.bench.modem_cmd(f"{self.py} bench_tx.py --freq {freq} --cc {cc} --power {self.tx_power} {args}",
                                    "bench_tx", expect_s)
@@ -870,6 +914,23 @@ class SdrBench:
         if rc != 0:
             raise RuntimeError(f"bench_tx.py {args!r} failed ({rc}): {err[-1500:]}")
         return self.dmr_bench.jsonl(out)
+
+    def _api_transmit(self, args, freq, cc, timeout):
+        """bench_tx.py --bench-api here. The board has no MMDVM listener: a --listen-after is waited out and heard
+        nothing (the tests check the radio's answer on its own counters; what the bench heard is a soft check)."""
+        import re
+        m = re.match(r"--listen-after (\S+) ", args)
+        listen = float(m.group(1)) if m else 0.0
+        if m:
+            args = args[m.end():]
+        tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "bench", "bench_tx.py")
+        r = subprocess.run(f"{shlex.quote(sys.executable)} {shlex.quote(tool)} --freq {freq} --cc {cc} "
+                           f"--bench-api {shlex.quote(self.api)} {args}", shell=True, env=self._api_env(),
+                           capture_output=True, text=True, timeout=timeout)
+        if r.returncode != 0:
+            raise RuntimeError(f"bench_tx.py --bench-api {args!r} failed ({r.returncode}): {r.stderr[-1500:]}")
+        time.sleep(listen)
+        return self.dmr_bench.jsonl(r.stdout)
 
     def voice_call(self, freq, cc, dst, superframes=3, calls=1, headers=8, terminators=3, gap_ms=500, ambe=None,
                    private=False, src=None, late=None, talker_alias=None, pi=False, emergency=False,
@@ -952,6 +1013,7 @@ class SdrBench:
 
     def listen_start(self, freq, cc, seconds, ambe_out=None):
         """bench_tx.py listen in the background (receive only); listen_result() collects its JSON lines."""
+        self._no_api("listener")
         self._need_lease()
         extra = f"--ambe-out {ambe_out} " if ambe_out else ""
         cmd = f"{self.py} bench_tx.py --freq {freq} --cc {cc} {extra}listen --json --seconds {seconds}"
@@ -1007,6 +1069,7 @@ class SdrBench:
         """bench_repeater.py --json in the background: a duplex repeater with input rx and output tx (MHz), under a
         shared bench's modem queue; repeater_result() collects its JSON events. extra: more bench_repeater.py
         arguments (e.g. --beacon). Needs the lease and --allow-rf."""
+        self._no_api("repeater")
         if not self.allow_rf:
             raise RuntimeError("the bench repeater keys up: needs --allow-rf")
         self._need_lease()
@@ -1027,6 +1090,7 @@ class SdrBench:
         """A raw I/Q capture (cs8, 1.536 MS/s, the channel offset_khz from the tuner center) in the background;
         returns once the capture is running. The file stays on the bench (about 3 MB/s). gain: this capture's RTL-SDR
         gain instead of --sdr-gain (level measurements want the ADC far from its rails)."""
+        self._no_api("SDR capture")
         self._need_lease()
         f = f"~/{self.dir}/{run_dir}/{name}.cs8"
         g = self.gain if gain is None else gain
@@ -1061,6 +1125,8 @@ class SdrBench:
         """True when dmr_watch_start() can decode bursts on the bench: it runs the shared bench daemon, its client has
         `dmr-bursts` and freq (with bw_hz around it) is inside the shared receiver's window (the tool never retunes
         the SDR). Otherwise a test takes a raw capture and analyzes that (dmr_watch_start does this itself)."""
+        if self.api:            # the board decodes bursts; it has no raw capture path here
+            return True
         if not self.bench.uses_daemon() or os.environ.get("RFOUNDRY_HIL_RAW_IQ") == "1":     # =1: force raw captures
             return False
         if getattr(self, "_watch_cli", None) is None:
@@ -1077,7 +1143,10 @@ class SdrBench:
     def bursts_start(self, freq, seconds, cc=None, bursts=None, until_end=False):
         """rfoundry-bench dmr-bursts in the background (the shared receiver's window; receive only); returns once it is
         watching (its READY line). bursts_result() collects the records. The daemon's own `bursts` op does the work
-        when it has it, else the client decodes short captures (the tool decides, same records either way)."""
+        when it has it, else the client decodes short captures (the tool decides, same records either way). On a
+        bench API board: its WS /bursts on freq, in a thread here (the same record fields)."""
+        if self.api:
+            return self._api_bursts_start(freq, seconds, cc, bursts, until_end)
         self._need_lease()
         self._claim(freq)
         cmd = (f"{self.bench.ctl} dmr-bursts --session {self.bench.session} --freq {freq} --seconds {seconds}"
@@ -1107,8 +1176,61 @@ class SdrBench:
             self._busy("".join(p.err).strip().splitlines()[-1])
         return p
 
+    def _api_bench(self):
+        if getattr(self, "_api_client", None) is None:
+            if os.environ.get("RFOUNDRY_BENCHAPI"):
+                sys.path.insert(0, os.environ["RFOUNDRY_BENCHAPI"])
+            import benchapi
+            self._api_client = benchapi.open_bench(self.api)
+        return self._api_client
+
+    def _api_bursts_start(self, freq, seconds, cc, bursts, until_end):
+        """The board's decoded bursts on freq for `seconds` (WS /bursts), collected by a thread; bursts_result() waits.
+        The records get the fields analysis_from_bursts() reads that the board leaves out: t_rel_ms from the first
+        burst, voice, slot_ab (the 30 ms grid position) and the FEC and measurement fields when missing."""
+        self._need_lease()
+        bench = self._api_bench()
+        w = argparse.Namespace(rows=[], error=None, thread=None, api=True)
+
+        def run():
+            try:
+                for r in bench.bursts(freq_hz=freq * 1e6, seconds=seconds, max_bursts=bursts or None):
+                    if "summary" in r or r.get("type") == "summary":
+                        continue
+                    if cc is not None and r.get("cc") not in (None, cc):
+                        continue
+                    w.rows.append(r)
+                    if until_end and str(r.get("kind", "")).startswith("TERM"):
+                        break
+            except Exception as e:      # noqa: BLE001 - reported by bursts_result
+                w.error = e
+        w.thread = threading.Thread(target=run, daemon=True)
+        w.thread.start()
+        time.sleep(0.5)                 # the socket is up before the transmitter keys
+        return w
+
     def bursts_result(self, p, timeout=120):
         """(burst records, summary) of a bursts_start(): waits for the watch to end. No bursts is an empty list."""
+        if getattr(p, "api", False):
+            p.thread.join(timeout)
+            if p.error is not None:
+                raise RuntimeError(f"bench API bursts failed: {p.error}")
+            t0 = p.rows[0]["t"] if p.rows else 0.0
+            out = []
+            for r in p.rows:
+                r = dict(r)
+                t_rel = (r.get("t", t0) - t0) * 1e3
+                r.setdefault("t_rel_ms", round(t_rel, 1))
+                r.setdefault("slot_ab", "AB"[int(round(t_rel / 30.0)) % 2])
+                r.setdefault("voice", str(r.get("kind", "")).startswith("VOICE") or r.get("sync", "").endswith("VOICE"))
+                for k in ("cfo_hz", "level_dbfs", "dev_hz"):
+                    if r.get(k) is None:
+                        r[k] = 0.0
+                r.setdefault("lc", None)
+                r["fec"] = r.get("fec") or {"fec_ok": None}
+                r["sync"] = r.get("sync") or "EMB"
+                out.append(r)
+            return out, {"bursts": len(out)}
         try:
             p.wait(timeout=timeout)
         except subprocess.TimeoutExpired:

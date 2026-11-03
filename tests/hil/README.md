@@ -175,6 +175,27 @@ bench daemon is assumed to have both.
 
 `test_probe_fm_tx_ram_writer_sweep` holds the lease but uses neither receiver.
 
+### A bench API board in place of the SDR bench host
+
+`--bench-api URL` (or `$RFOUNDRY_BENCH_API`) uses a board that serves the bench API (`http://BOARD`, with TX and an
+SDR receiver) as the SDR bench. This is the preferred DMR bench; the bench host below remains for what a board can't do.
+
+| Bench call | On a bench API board |
+|---|---|
+| `transmit()`, `voice_call`, `data`, `csbk` | `tools/bench/bench_tx.py --bench-api URL` on the test host: the same bursts as on the bench modem, built here and sent through the board's TX stream. bench_tx.py takes the board's session and TX lease for each run and checks the board keyed every burst. |
+| `dmr_watch_start()`, `bursts_start()` | the board's decoded bursts (`WS /bursts`), read in a thread here, in the same record shape as the bench host's |
+| `listen_after` | waited out; the board has no modem listener, so what the bench heard is empty (tests check the radio's own counters; the bench side is a soft check) |
+| Raw capture, modem listener, repeater, bench stations | skip as missing (skip kind `bench`) |
+
+| Needs on the test host | |
+|---|---|
+| `$RFOUNDRY_SDRBENCH_SRC` | the directory holding the `rfoundry_sdrbench` package (bench_tx.py's burst and FEC code) |
+| `$RFOUNDRY_BENCHAPI` | the directory holding the bench API client `benchapi.py` |
+| `--dmr-freq`, `--dmr-cc` | a frequency the board may transmit on, with the radio's channel (or the VFO) on it: the receive tests don't tune the radio |
+
+`--tx-power` doesn't apply: the board sets its own level. A board refuses a new TX job for a moment after the last one
+closes; bench_tx.py opens another until one keys.
+
 ### Bursts on the bench, raw I/Q only where needed
 
 A test that needs to know what the radio sent as DMR does not pull raw I/Q any more. `SdrBench.dmr_watch_start()` runs

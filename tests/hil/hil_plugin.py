@@ -117,8 +117,11 @@ def sdr_bench(pytestconfig):
     b = SdrBench(allow_rf=pytestconfig.getoption("--allow-rf"),
                  allow_service_stop=pytestconfig.getoption("--allow-service-stop"),
                  tx_power=pytestconfig.getoption("--tx-power"), gain=pytestconfig.getoption("--sdr-gain"),
-                 wait_max=pytestconfig.getoption("--bench-wait-max"))
+                 wait_max=pytestconfig.getoption("--bench-wait-max"), api=pytestconfig.getoption("--bench-api"))
     if not b.reachable():
+        if b.api:
+            skip("bench", f"bench API transmitter {b.api} not answering with TX in its caps, or bench_tx.py's modules "
+                          "missing here ($RFOUNDRY_SDRBENCH_SRC, $RFOUNDRY_BENCHAPI)")
         skip("bench", f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
                       "sync): no bench test runs, the DMR audio smoke neither")
     yield b
