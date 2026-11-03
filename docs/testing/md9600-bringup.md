@@ -26,6 +26,8 @@ First radio: a V1-V3 board (its original firmware reported version 06.09), on a 
 | Display | Works after turning it 180 degrees (segments reversed, COM normal, column offset 4; unknown 22) |
 | Keys, key lock, encoder, hand mic | Work (HIL; by hand: the encoder one step per click both ways, a wobble counts none; all 19 mic keys and the mic PTT each read as the right key) |
 | Data flash, calibration, option block | Read: `cal factory`, `opt factory`, band edges from the option block |
+| GPS | No module on the first radio: no bytes at any rate, the receiver gave up (`board.gps=0`, `gps.nmea=0/0/0`). With a module not tried |
+| Clock | The 8 MHz HSE starts as a crystal, 72 MHz |
 | Board revision | Stored by hand as V1-V3 before the installers learned to read it |
 | FM receive, VHF | Works: a NOAA station through the dummy load, at 25 kHz |
 | FM receive audio | Loud at the bottom of the volume knob and overdriven. The HR_C6000 settings, FM_SW and the IF chip words were compared with the original firmware's and changed live without effect; whether the original firmware sounds the same on this radio is not checked |

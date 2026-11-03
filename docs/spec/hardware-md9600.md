@@ -35,7 +35,7 @@ is used (section 10.2). Read-out protection level 1 assumed, as on every TYT STM
 
 | Item | Value | Note |
 |---|---|---|
-| HSE | 8 MHz, a crystal oscillator (not bypass mode) | unverified |
+| HSE | 8 MHz, a crystal oscillator (not bypass mode) | V1-V3: starts in crystal mode (17 #18) |
 | LSE | 32.768 kHz crystal, RTC enabled |  |
 | SYSCLK, USB | 72 MHz and 48 MHz | unverified |
 | AHB / APB1 / APB2 | 72 MHz / 36 MHz (/2) / 72 MHz (/1): the DM-1701's bus clocks | unverified |
@@ -713,7 +713,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 | 15 | The I2C1 device at 0x3D | Bus scan, board photos |
 | 16 | GPS UART baud rate (9600 in 13.1 is unverified) | Listen on PA10 with a GPS model |
 | 17 | DMR slot and burst timing on this RF chain (synthesizer relock per TX/RX switch) | SDR captures of a DMR call |
-| 18 | The crystal: 8 MHz crystal or an oscillator | RadioFoundry reports which mode started (diagnostics); board photos |
+| 18 | The crystal: 8 MHz crystal or an oscillator | Settled for V1-V3 (2026-11-03): the HSE starts in crystal mode, 72 MHz SYSCLK (`board.clock=crystal`) |
 | 19 | LMX2571 registers beyond the documented set (R60, R58, R53 and the rest), the DEN = 0 reading | Lock and spur check on V5 |
 | 20 | Calibration record layout (11.2) and the hardware option block beyond the band edges | Dump security registers 1-3 |
 | 21 | The CPS command set inside the DFU transfers (the version read is known, 15.1) | USB capture of TYT's CPS |
