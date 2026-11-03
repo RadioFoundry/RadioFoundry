@@ -263,8 +263,8 @@ screen says so and points to Settings > Location. Without `CONFIG_GPS_SKY` the s
 With `CONFIG_CONTACT_EDIT` (DMR and the channel editor), New Contact (`contactedit`) makes a contact on the radio. It
 opens from:
 
-- Contacts: New contact, the first row (before the contacts: the T9 filter keeps only the first 128 rows). The editor
-  starts empty, on a talkgroup. With the editor Contacts is never empty; a filter that matches nothing says "No contact
+- Contacts: New contact, the first row (before the contacts, so 1024 of them never push it out of reach, and a typed
+  filter, which keeps the first 128 matches, keeps it when it matches). The editor starts empty, on a talkgroup. With the editor Contacts is never empty; a filter that matches nothing says "No contact
   matches".
 - Find: "Create contact 3100", the last row for a typed number no contact has as its ID. Up to 6 digits start it as a
   talkgroup, 7 and more (a DMR ID) as a person.

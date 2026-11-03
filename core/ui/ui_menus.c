@@ -458,8 +458,8 @@ static void contacts_item(uint16_t i, ui_item_t *it)
 		contact_row(&t, it);
 }
 
-// Contacts: with the contact editor raw row 0 is New contact, first because the filter keeps only the first rows of a
-// long list; the contacts follow it
+// Contacts: with the contact editor raw row 0 is New contact, first so a long list (and a typed filter's first matches)
+// keeps it in reach; the contacts follow it
 #define CONTACTS_NEW	(CONFIG_CONTACT_EDIT ? 1u : 0u)
 
 static bool contacts_is_new(uint16_t i) { return CONFIG_CONTACT_EDIT && i < ui_filter_count() && ui_filter_raw(i) == 0; }

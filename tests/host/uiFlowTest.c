@@ -708,8 +708,8 @@ static const flow_t flows[] = {
 	{ "C New contact in Contacts", "", "ok 1 ok", "screen=contactedit shows=New_Contact shows=Talkgroup", 3, false },
 	{ "C a new contact needs a name", "ok 1 ok", "down ok 9 9 9 ok long:ok", "toast=Give_it_a_name_first writes=0", 7,
 	  false },
-	{ "28 a contact made in Contacts", "ok 1 ok", "ok 2 ok down ok 9 9 9 ok long:ok",
-	  "screen=contacts writes=1 toast=Saved_contact_A", 10, true },
+	{ "27 a contact made in Contacts", "", "ok 1 ok ok 2 ok down ok 9 9 9 ok long:ok",
+	  "screen=contacts writes=1 toast=Saved_contact_A", 13, true },
 	{ "C Contacts lists the new contact", "ok 1 ok ok 2 ok down ok 9 9 9 ok long:ok", "9 9 9",
 	  "screen=contacts shows=TG_999", 3, true },
 	// A caller who isn't a contact: Save as contact is item 7 of the actions, and they show In contacts after
