@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shlex
+import struct
 import subprocess
 import sys
 import threading
@@ -162,8 +163,47 @@ class Radio:
     def __init__(self, port=None):
         self.link = DebugLink(port, timeout=1.5)
         self.port = self.link.port
+        # A port given by name (--radio-port) is the only one the radio is ever reopened on: on a bench with several
+        # radios, any other is someone else's
+        self.pinned = port is not None
+        self.uid = self._uid(self.link)
         self._version = None
         self._last_shot = 0.0
+
+    @staticmethod
+    def _uid(link):
+        try:
+            return link.chip()["uid"]
+        except (DebugLinkError, KeyError, ValueError, struct.error):
+            return None
+
+    def port_present(self):
+        """The radio's serial port is there again (after a restart or a USB personality switch). Pinned: that port's
+        own device node; found by USB ID: any debug link port (reconnect() then checks it is this radio)."""
+        return os.path.exists(self.port) if self.pinned else bool(find_ports())
+
+    def reconnect(self, timeout=30.0, what="the restart"):
+        """Reopen the debug link after the radio restarted. Pinned: only on its own port. Otherwise any port found by
+        USB ID whose chip has this radio's UID (never another radio on the bench)."""
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            ports = [self.port] if self.pinned else [self.port] + [p for p in find_ports() if p != self.port]
+            for port in ports:
+                link = None
+                try:
+                    link = DebugLink(port, timeout=1.5)
+                    link.ping()
+                    if port != self.port and (self.uid is None or self._uid(link) != self.uid):
+                        link.close()
+                        continue
+                    self.link, self.port = link, port
+                    return
+                except (DebugLinkError, OSError):
+                    # A serial hub takes one client per port: a link left open would lock out every later try.
+                    if link is not None:
+                        link.close()
+            time.sleep(0.5)
+        raise AssertionError(f"the radio did not come back after {what}")
 
     def close(self):
         self.link.close()
@@ -621,7 +661,7 @@ def usb_network(radio, own_id, timeout=30.0):
                 pass
             udp.close()
         end = time.monotonic() + 20
-        while not find_ports() and time.monotonic() < end:
+        while not radio.port_present() and time.monotonic() < end:
             time.sleep(0.5)
         for _ in range(40):
             try:

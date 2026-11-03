@@ -21,7 +21,7 @@ import urllib.request
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, find_ports, skip
+from rfoundry_hil import DebugLink, DebugLinkError, skip
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 FEND, FESC, TFEND, TFESC = 0xC0, 0xDB, 0xDC, 0xDD
@@ -39,10 +39,10 @@ def _udp_link(ip, timeout):
     return None
 
 
-def _serial_back(timeout):
+def _serial_back(radio, timeout):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
-        if find_ports():
+        if radio.port_present():
             return True
         time.sleep(0.5)
     return False
@@ -71,12 +71,12 @@ def net(radio, request):
             except (DebugLinkError, OSError):
                 pass
             udp.close()
-        if not _serial_back(20):
+        if not _serial_back(radio, 20):
             again = _udp_link(radio_ip, 10)
             if again is not None:
                 again.usb_network(False)
                 again.close()
-            assert _serial_back(20), "the radio didn't come back as a serial port"
+            assert _serial_back(radio, 20), "the radio didn't come back as a serial port"
         for _ in range(40):
             try:
                 radio.link = DebugLink(radio.port, timeout=1.5)

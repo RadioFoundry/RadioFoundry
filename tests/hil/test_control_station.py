@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, find_ports, skip
+from rfoundry_hil import DebugLink, DebugLinkError, skip
 from hil_config import rig
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
@@ -44,10 +44,10 @@ def _udp_link(ip, timeout):
     return None
 
 
-def _serial_back(timeout):
+def _serial_back(radio, timeout):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
-        if find_ports():
+        if radio.port_present():
             return True
         time.sleep(0.5)
     return False
@@ -65,7 +65,7 @@ def _reconnect(radio):
 
 def _back_to_serial(radio, ips):
     """Settings all off and the serial personality again, over whichever UDP address answers."""
-    if not _serial_back(5):
+    if not _serial_back(radio, 5):
         for ip in ips:
             again = _udp_link(ip, 15)
             if again is not None:
@@ -75,7 +75,7 @@ def _back_to_serial(radio, ips):
                 finally:
                     again.close()
                 break
-        assert _serial_back(20), "the radio didn't come back as a serial port"
+        assert _serial_back(radio, 20), "the radio didn't come back as a serial port"
     _reconnect(radio)
     radio.link.usb_net_settings()
 
@@ -167,7 +167,7 @@ def test_boot_network(radio):
     finally:
         if udp is not None:
             udp.close()
-        _serial_back(60)            # the restart takes a while; _back_to_serial tries UDP if it stays a network adapter
+        _serial_back(radio, 60)            # the restart takes a while; _back_to_serial tries UDP if it stays a network adapter
         _back_to_serial(radio, [radio_ip])
     assert radio.view(["hotspot"]).get("usb.boot_network") == "0"
 
