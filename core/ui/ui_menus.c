@@ -5654,6 +5654,41 @@ static const ui_scr_def_t lang_screen = {
 	.count = lang_list_count, .item = lang_list_item, .select = lang_list_select, .enter = lang_list_enter,
 };
 
+// ======================= Another firmware's codeplug: the first edit asks (defaults to Cancel; P7) ===============
+// ui_svc_codeplug_answer: the rows are UI_CP_CANCEL, UI_CP_NEW, UI_CP_USE. BACK is Cancel (ui_pop drops the write)
+
+static uint16_t cpf_count(void) { return 3; }
+
+static void cpf_item(uint16_t i, ui_item_t *it)
+{
+	str_copy(it->label, sizeof it->label, i == UI_CP_CANCEL ? TR("Cancel") : i == UI_CP_NEW ? TR("Start new") :
+		 TR("Use anyway"));
+	if (i == UI_CP_NEW)
+		it->flags |= UI_ITEM_WARN;
+}
+
+static void cpf_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	if (i != UI_CP_CANCEL && !ui_svc_codeplug_answer((uint8_t)i)) {
+		ui_toast(TR("Busy saving: try again"));
+		return;
+	}
+	ui_pop();	// Cancel: the pop drops the write and says so
+	if (i != UI_CP_CANCEL)
+		ui_toast(i == UI_CP_NEW ? TR("New codeplug started") : TR("Old codeplug kept: edit again"));
+}
+
+static const char *cpf_body(void)
+{
+	return TR("Another firmware's codeplug? Start new erases contacts, callsign and DMR ID. Back up first.");
+}
+
+static const ui_scr_def_t cpf_screen = {
+	.name = "codeplug-foreign", .flags = SF_LIST, .prefix = TRN("Old codeplug"), .hint = TRN("OK choose  Back cancel"),
+	.count = cpf_count, .item = cpf_item, .select = cpf_select, .body = cpf_body,
+};
+
 const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_HOME] = &home_screen, [SCR_QUICK] = &quick_screen, [SCR_HUB] = &hub_screen,
 	[SCR_FIND] = &ui_find_screen, [SCR_ACTIONS] = &actions_screen, [SCR_CONTACTS] = &contacts_screen,
@@ -5666,6 +5701,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
 	[SCR_VOLUME] = &volume_screen, [SCR_LANGUAGE] = &lang_screen,
 	[SCR_DMR_ID] = &dmr_id_screen,
+	[SCR_CP_FOREIGN] = &cpf_screen,
 #if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,
 #endif

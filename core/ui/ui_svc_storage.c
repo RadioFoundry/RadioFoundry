@@ -586,6 +586,86 @@ static void save_failed_text(const char *text)
 	save_failed_text(s); \
 } while (0)
 
+// Another firmware's codeplug (codeplug_foreign, docs/spec/codeplug-native.md 2): the radio erases nothing of it on
+// its own. The first codeplug write is held here and the UI asks (UI_EV_CODEPLUG_FOREIGN, ui_svc_codeplug_answer).
+// While one is held no other write starts (job_busy), so the job struct keeps what the held write needs
+static void (*cp_held)(void *ctx);
+static uint8_t cp_answer;
+
+static bool job_busy(void)
+{
+	return storage_job_busy() || cp_held != NULL;
+}
+
+// A codeplug write as a storage job, or held for the question
+static bool cp_post(void (*fn)(void *ctx))
+{
+	if (cp_held != NULL) {
+		return false;
+	}
+	if (!codeplug_foreign()) {
+		return storage_job_post(fn, NULL);
+	}
+	ui_event_t ev;
+	memset(&ev, 0, sizeof ev);
+	ev.kind = UI_EV_CODEPLUG_FOREIGN;
+	cp_held = fn;
+	if (!ui_notify(&ev)) {
+		cp_held = NULL;
+		return false;
+	}
+	return true;
+}
+
+#if CONFIG_ZONE_EDIT
+static void zone_drop(void);
+#endif
+#if CONFIG_KEY_ASSIGN
+static void key_reload(void);
+#endif
+
+// What a held write changed on the UI task alone goes back to the codeplug's: the side keys, the zone edits queued
+static void cp_drop(void)
+{
+	cp_held = NULL;
+#if CONFIG_KEY_ASSIGN
+	key_reload();
+#endif
+#if CONFIG_ZONE_EDIT
+	zone_drop();
+#endif
+}
+
+static void cp_answer_job(void *ctx)
+{
+	(void)ctx;
+	void (*fn)(void *ctx) = cp_held;
+	if (cp_answer == UI_CP_USE) {
+		codeplug_accept(true);		// app.c stores it
+		codeplug_reload();		// the old codeplug's records shown; the write made on the built-in set dropped
+		cp_drop();
+	} else if (codeplug_start_new()) {
+		cp_held = NULL;
+		fn(NULL);
+	} else {
+		cp_drop();
+		save_failed(TRN("Couldn't write the codeplug: not saved"));
+	}
+}
+
+bool ui_svc_codeplug_answer(uint8_t answer)
+{
+	if (cp_held == NULL || storage_job_busy()) {
+		return false;
+	}
+	if (answer != UI_CP_NEW && answer != UI_CP_USE) {
+		cp_drop();
+		return true;
+	}
+	cp_answer = answer;
+	return storage_job_post(cp_answer_job, NULL);
+}
+
 #if CONFIG_DMR
 // The radio's own DMR ID, written into the codeplug (Settings > My radio): the radio core takes it when
 // codeplug_serial() changes, and a CPS read shows it
@@ -600,10 +680,10 @@ static void dmr_id_job(void *ctx)
 
 static bool dmr_id_post(uint32_t id)
 {
-	if (id == 0 || id > CODEPLUG_DMR_ID_MAX || storage_job_busy())
+	if (id == 0 || id > CODEPLUG_DMR_ID_MAX || job_busy())
 		return false;
 	job_dmr_id = id;
-	return storage_job_post(dmr_id_job, NULL);
+	return cp_post(dmr_id_job);
 }
 #endif
 
@@ -665,7 +745,7 @@ static void save_channel_job(void *ctx)
 // Whether the radio is on a stored channel (its view in v)
 static bool take_channel(void)
 {
-	if (storage_job_busy()) {
+	if (job_busy()) {
 		return false;	// the last write is still going on
 	}
 	radio_get_view(&v);
@@ -682,7 +762,7 @@ static bool take_channel(void)
 
 bool ui_svc_save_channel(void)
 {
-	return take_channel() && storage_job_post(save_channel_job, NULL);
+	return take_channel() && cp_post(save_channel_job);
 }
 
 // The channel editor's whole channel (ui.md 2.1). Writing the channel in use drops its temporary changes: the radio
@@ -702,14 +782,14 @@ static void write_channel_job(void *ctx)
 
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 {
-	if (number == 0 || number > CODEPLUG_CHANNELS_MAX || storage_job_busy()) {
+	if (number == 0 || number > CODEPLUG_CHANNELS_MAX || job_busy()) {
 		return false;
 	}
 	radio_get_view(&v);
 	job.channel = number;
 	job.temp = !v.vfo && v.channel_number == number && v.temporary;	// here: drop the temporary changes after it
 	job.now = *ch;
-	return storage_job_post(write_channel_job, NULL);
+	return cp_post(write_channel_job);
 }
 
 #if CONFIG_CONTACT_EDIT
@@ -725,12 +805,12 @@ static void write_contact_job(void *ctx)
 
 bool ui_svc_write_contact(uint16_t index, const contact_t *c)
 {
-	if (index == 0 || index > CODEPLUG_CONTACTS_MAX || storage_job_busy()) {
+	if (index == 0 || index > CODEPLUG_CONTACTS_MAX || job_busy()) {
 		return false;
 	}
 	job.channel = index;
 	job.contact = *c;
-	return storage_job_post(write_contact_job, NULL);
+	return cp_post(write_contact_job);
 }
 #endif
 
@@ -776,9 +856,15 @@ static void zone_edit_job(void *ctx)
 // The job, unless one (this or another write) is running: then ui_svc_zone_poll posts it later
 static void zone_kick(void)
 {
-	if (zq_tail != zq_head && !storage_job_busy()) {
-		storage_job_post(zone_edit_job, NULL);
+	if (zq_tail != zq_head && !job_busy()) {
+		cp_post(zone_edit_job);
 	}
+}
+
+// The edits queued, dropped with the held write (cp_drop)
+static void zone_drop(void)
+{
+	zq_tail = zq_head;
 }
 
 bool ui_svc_zone_edit(const zone_op_t *op)
@@ -843,7 +929,7 @@ bool ui_svc_save_talk_target(uint32_t id, bool private_call)
 		return false;
 	job.id = id;
 	job.private_call = private_call;
-	if (!storage_job_post(save_target_job, NULL))
+	if (!cp_post(save_target_job))
 		return false;
 	radio_req_dmr_target(id, private_call);	// in effect at once; the job makes it the channel's
 	return true;
@@ -858,8 +944,9 @@ static void factory_reset_job(void *ctx)
 {
 	(void)ctx;
 	settings_t *st = settings_begin();
-	settings_defaults(st);
+	settings_defaults(st);	// cp_flags too: "Use anyway" doesn't outlive a reset
 	settings_end(hal_millis());
+	codeplug_accept(false);
 	bool saved = settings_flush();
 	storage_native_t n = storage_native_erase();
 	if (!saved && storage_ready()) {
@@ -918,12 +1005,12 @@ static void name_job(void *ctx)
 
 bool ui_svc_name_set(uint8_t which, const char *text)
 {
-	if (which >= UI_NAME_COUNT || storage_job_busy())
+	if (which >= UI_NAME_COUNT || job_busy())
 		return false;
 	job.channel = which;
 	strncpy(job.name, text, CODEPLUG_NAME_LEN);
 	job.name[CODEPLUG_NAME_LEN] = '\0';
-	return storage_job_post(name_job, NULL);
+	return cp_post(name_job);
 }
 
 #if CONFIG_KEY_ASSIGN
@@ -953,6 +1040,12 @@ static void key_load(void)
 	key_apply();
 }
 
+// The slots read again at the next poll (the UI task's): a held write of them was dropped
+static void key_reload(void)
+{
+	key_loaded = false;
+}
+
 static void key_write_job(void *ctx)
 {
 	(void)ctx;
@@ -967,16 +1060,16 @@ void ui_svc_keys_poll(void)
 		key_load();
 	}
 	if (key_dirty) {
-		if (storage_job_busy()) {
+		if (job_busy()) {
 			return;
 		}
 		memcpy(key_job_slots, key_slots, sizeof(key_job_slots));
-		if (storage_job_post(key_write_job, NULL)) {
+		if (cp_post(key_write_job)) {
 			key_dirty = false;
 		}
 		return;
 	}
-	if (!storage_job_busy() && codeplug_serial() != key_serial) {
+	if (!job_busy() && codeplug_serial() != key_serial) {
 		key_load();	// a CPS or TFTP write, or our own job, landed
 	}
 }

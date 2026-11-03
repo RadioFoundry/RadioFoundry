@@ -404,6 +404,17 @@ static const flow_t flows[] = {
 	{ "20 timeslot", "", "quick 2 back", "ts=2 screen=home", 3, false },
 	{ "20 color code 7", "", "quick 3 7 ok", "cc=7", 4, false },
 	{ "20 save to channel", "quick 2", "long:ok", "writes=1", 1, true },
+	// Another firmware's codeplug: the first write asks first, Cancel the default (codeplug-native.md 2)
+	{ "20 save over another firmware's codeplug asks", "foreign quick 2", "long:ok",
+	  "screen=codeplug-foreign shows=Start_new writes=0", 1, false },
+	{ "20 foreign codeplug: Cancel saves nothing", "foreign quick 2 long:ok", "ok", "writes=0 toast=Not_saved", 1, false },
+	{ "20 foreign codeplug: Back cancels", "foreign quick 2 long:ok", "back", "writes=0 toast=Not_saved", 1, false },
+	{ "20 foreign codeplug: Start new saves", "foreign quick 2 long:ok", "down ok", "writes=1 toast=New_codeplug", 2,
+	  true },
+	{ "20 foreign codeplug: Use anyway keeps it", "foreign quick 2 long:ok", "down down ok",
+	  "writes=0 toast=Old_codeplug_kept", 3, false },
+	{ "20 foreign codeplug: after Use anyway a save writes", "foreign quick 2 long:ok down down ok", "long:ok",
+	  "writes=1", 1, true },
 	// Settings the radio core acts on reach it (ui_svc_apply), key presses ask for a key beep
 	{ "S TX timeout to the radio", "", "ok 7 3 down ok", "radio_tot=300", 5, false },
 	{ "S backlight time to the radio", "", "ok 7 2 down ok", "radio_backlight=60", 5, false },
