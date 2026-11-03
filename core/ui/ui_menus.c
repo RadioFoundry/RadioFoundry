@@ -3997,15 +3997,17 @@ static const char *about_text(void)
 	static char t[400];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
-	// every line "Label: value" (ui_draw_text_page shows labels dim). A release: its name, then the commit it was built
-	// from
+	// every line "Label: value" (ui_draw_text_page shows labels dim), each on its own line: "RadioFoundry v26.11" was
+	// wider than the display and the release wrapped without its label. A release: its name, then the commit it was
+	// built from; any other build: the commit alone
 	sb_str(&b, TR("Firmware: "));
-	sb_str(&b, "RadioFoundry ");
+	sb_str(&b, "RadioFoundry\n");
 	if (RFOUNDRY_RELEASE[0] != '\0') {
+		sb_str(&b, TR("Release: "));
 		sb_str(&b, RFOUNDRY_RELEASE);
 		sb_chr(&b, '\n');
-		sb_str(&b, TR("Build: "));
 	}
+	sb_str(&b, TR("Build: "));
 	sb_str(&b, RFOUNDRY_GIT);
 	// the commit's date (UTC; a dirty build's: the build's), which the web editor's update notice compares with a
 	// release's
@@ -5013,6 +5015,8 @@ static const set_item_t s_keys[] = {
 };
 static const set_item_t s_my_radio[] = {
 	ACTION(TRN("DMR ID and name"), "callsign", SA_MY_RADIO),
+	// Also in Advanced, where users didn't look for it
+	ACTION(TRN("About"), "firmware version release build date", SA_FIRMWARE),
 };
 static const set_item_t s_advanced[] = {
 	ACTION(TRN("About"), "firmware version license authors", SA_FIRMWARE),
