@@ -425,17 +425,23 @@ static void storage_section(dl_text_t *t)
 		(unsigned)codeplug_serial());
 	uint16_t ev_good, ev_bad;
 	codeplug_evidence(&ev_good, &ev_bad);
-	dl_text(t, "codeplug.foreign=%u\ncodeplug.evidence=%u,%u\n", codeplug_foreign(), ev_good, ev_bad);
+	dl_text(t, "codeplug.foreign=%u\ncodeplug.accepted=%u\ncodeplug.evidence=%u,%u\n", codeplug_foreign(),
+		codeplug_acceptance() == CODEPLUG_ACCEPT_YES, ev_good, ev_bad);
 	uint32_t zone_edits;
 	uint8_t zone_last;
 	zone_edit_stats(&zone_edits, &zone_last);
 	dl_text(t, "zone.edits=%u\nzone.edit_last=%u\n", (unsigned)zone_edits, zone_last);
+}
+
+// The CPS shims' counters (were in the storage section until view version 5: with the codeplug keys it outgrew a
+// reply)
+static void cps_section(dl_text_t *t)
+{
 #if CONFIG_CPS_OPENFW
 	cps_stats_t c;
 
 	cps_get_stats(&c);
-	// Where the image starts in the flash: what a CPS client adds to its addresses (0 on the STM32 radios). Ahead of
-	// the counters: this view is close to the reply's 1 KB, and a cut drops the last keys (truncated=1)
+	// Where the image starts in the flash: what a CPS client adds to its addresses (0 on the STM32 radios)
 	const hal_flash_map_t *fm = storage_map();
 	dl_text(t, "cps.built=1\ncps.openfw_eeprom=0x%x\n", fm != NULL ? (unsigned)fm->openfw_eeprom : 0u);
 	dl_text(t, "cps.requests=%u\ncps.reads=%u\ncps.commits=%u\n", (unsigned)c.requests, (unsigned)c.reads,
@@ -460,7 +466,7 @@ static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dm
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
-						  "net_link" };
+						  "net_link", "cps" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -556,6 +562,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_NET_LINK:
 		net_link_section(t);
+		break;
+	case DL_VIEW_CPS:
+		cps_section(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP
