@@ -923,7 +923,7 @@ static void draw_talk(const radio_view_t *v)
 		sb_str(&b, TEXT_ALT_CLOSE);
 	}
 	// Too wide: shorter text, never a smaller font
-	int x = gfx_text(f, 0, L->talk_y, GLYPH_ARROW " ", ui_col.dim);
+	int x = gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);
 	char fit[40];
 	gfx_text_fit(f, buf, gfx_width() - x, fit, sizeof fit);
 	gfx_text(f, x, L->talk_y, fit, c);
@@ -1241,8 +1241,8 @@ static void draw_talk_dmr(const radio_view_t *v)
 
 	int w = gfx_width();
 	// the reply window's icon inverted, so it stands out on a monochrome display as well
-	int x = d->reply_active ? gfx_text_bg(f, 0, L->talk_y, GLYPH_REPLY, ui_col.bg, ui_col.warn) + f->w
-		: gfx_text(f, 0, L->talk_y, GLYPH_ARROW " ", ui_col.dim);
+	int x = d->reply_active ? gfx_text_bg(f, 0, L->talk_y, GLYPH_REPLY, ui_col.bg, ui_col.warn)
+		: gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);
 	size_t room = x < w ? (size_t)((w - x) / f->w) : 0;
 	sb_init(&b, buf, sizeof buf);
 	if (v->ch.rx_only) {
