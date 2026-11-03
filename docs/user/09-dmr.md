@@ -155,8 +155,10 @@ names everyone else.
 
 ### New contact
 
-Make a contact on the radio from a number or a call:
+Make a contact on the radio from Contacts, a number or a call:
 
+- In Contacts (**OK**, **1**), the first row is **New contact**. Press **OK**, then type the name and the ID and pick
+  the type.
 - On Home, type the ID or talkgroup. Find's last row is "Create contact 3100" when no contact has that number. Press
   **OK**. Up to 6 digits start as a talkgroup, 7 and more as a person.
 - In a caller's or talkgroup's actions (**#**), pick **Save as contact**.

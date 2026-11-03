@@ -1257,8 +1257,16 @@ msgid "(no name)"
 msgstr "(sin nombre)"
 
 #: core/ui/ui_menus.c
+msgid "New contact"
+msgstr "Contacto nuevo"
+
+#: core/ui/ui_menus.c
 msgid "{0-9 find  OK talk  # more|0-9  OK talk  # more}"
 msgstr "{0-9 buscar  OK hablar  # más|0-9  OK hablar  # más}"
+
+#: core/ui/ui_menus.c
+msgid "No contact matches"
+msgstr "Ningún contacto coincide"
 
 #: core/ui/ui_menus.c
 msgid "No contacts: add them in qdmr"
