@@ -814,15 +814,25 @@ static int digit_of(const input_event_t *ev)
 	return ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 ? ev->action - ACT_DIGIT_0 : -1;
 }
 
-static void save_channel(void)
+bool ui_try_save_channel(void)
 {
-	if (!view->temporary && !ui_st.privacy) {
+	if (view->vfo) {
+		ui_toast(TR("VFO settings save automatically"));
+	} else if (view->hotspot) {
+		ui_toast(TR("Stop hotspot to save"));
+	} else if (!view->temporary && !ui_st.privacy) {
 		ui_toast(TR("Nothing to save"));
+	} else if (view->channel_number == 0) {
+		ui_toast(TR("Pick a saved channel"));
+	} else if (!(ui_svc_features() & UI_FEAT_SAVE_CHANNEL)) {
+		ui_toast(TR("Channel saving unavailable"));
 	} else if (ui_svc_save_channel()) {
 		ui_toast(TR("Saved to channel"));
+		return true;
 	} else {
-		ui_toast(TR("Can't save here: use qdmr"));
+		ui_toast(TR("Save busy: try again"));
 	}
+	return false;
 }
 
 // --- Home (information-architecture.md 3) ---
@@ -1024,7 +1034,7 @@ bool ui_home_key(const input_event_t *ev)
 			if (!has_quick_key)
 				ui_push(SCR_QUICK, 0);	// few-key boards: long SELECT is QUICK
 			else
-				save_channel();
+				ui_try_save_channel();
 			return true;
 		}
 		return false;
@@ -1415,7 +1425,7 @@ bool ui_quick_key(const input_event_t *ev)
 			if (ui_st.quick_edit)
 				quick_close_editor();
 			if (!ui_st.quick_edit)	// a value the editor refused (Split's TX) keeps it open, unsaved
-				save_channel();
+				ui_try_save_channel();
 		} else if (press && ui_st.quick_edit) {
 			quick_close_editor();
 		} else if (press) {

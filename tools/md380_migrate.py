@@ -631,7 +631,7 @@ def step_flash(sess, args):
         Leave the cable connected.""")
     try:
         usb = wait_dfu(sess, dfu, args.wait)
-        dev, intf = dfu.open_device(usb, args.force)
+        dev, intf = dfu.open_device(usb, args.force, "md380")
         man = dfu.get_string(usb, dev, dev.iManufacturer)
         prod = dfu.get_string(usb, dev, dev.iProduct)
     except dfu.DfuError as e:

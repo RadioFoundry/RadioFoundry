@@ -14,6 +14,8 @@ export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
 export const RFOUNDRY_NET = { vendorId: 0x1FC9, productId: 0x0096 };
 const SOF1 = 0xA5, SOF2 = 0x5A;
 export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F };
+// The status a command not built in, or with nothing to act on, answers (debuglink.md 2)
+const DL_UNAVAILABLE = 4;
 
 export class LinkError extends Error {}
 
@@ -24,7 +26,9 @@ export function browserErrorKey(e) {
 	switch (e?.name) {
 	case "NotFoundError": return /disconnect/i.test(raw) ? "flash.err.disconnected" : "flash.err.no_device";
 	// "Access denied" on opening a USB device is the device's driver or another program (Windows without WinUSB), not the page
-	case "SecurityError": return /access denied/i.test(raw) ? "flash.err.usb_busy" : "flash.err.security";
+	// "Must be handling a user gesture": the port chooser opens only on a click, and the click was spent on an earlier wait
+	// (a lost port closing, a slow check): clicking again works
+	case "SecurityError": return /access denied/i.test(raw) ? "flash.err.usb_busy" : /user gesture/i.test(raw) ? "flash.err.gesture" : "flash.err.security";
 	case "InvalidStateError": return "flash.err.port_open";
 	case "NotAllowedError": return "flash.err.not_allowed";
 	case "NetworkError": return /open serial port/i.test(raw) ? "flash.err.port_busy" : /claim|access denied/i.test(raw) ? "flash.err.usb_busy" : "flash.err.connection_lost";
@@ -78,10 +82,14 @@ export function parseKv(text) {
 }
 
 // A byte stream with a receive buffer: WebSerial in the browser, fake.js in tests and the simulator.
-// Web Serial's non-fatal read errors: the reader ends, port.readable is a new stream. A cap, so a line that keeps
-// erroring can't spin the loop for ever.
+// Web Serial's non-fatal read errors: the reader ends, port.readable is a new stream. They never end the reading: a
+// programming cable on a radio that is switched off sees a break after break for as long as it stays off (hundreds
+// while the user power-cycles it for the boot ROM), and a cap on them once stopped the reading for good with the radio
+// still there, so every later reply went unread. From GLITCH_BURST errors in a row without data, the loop waits
+// GLITCH_PAUSE ms before the next reader, so a line that keeps erroring can't spin it, and only every GLITCH_NOTE-th
+// error goes to the log.
 const SOFT_READ_ERRORS = new Set(["FramingError", "ParityError", "BreakError", "BufferOverrunError"]);
-const MAX_READ_GLITCHES = 50;
+const GLITCH_BURST = 20, GLITCH_PAUSE = 20, GLITCH_NOTE = 100;
 
 export class SerialStream {
 	constructor(port) {
@@ -133,6 +141,7 @@ export class SerialStream {
 				for (;;) {
 					const { value, done } = await this.reader.read();
 					if (done) break;
+					if (value.length) glitches = 0;
 					this.buf = concat(this.buf, value);
 					this.received += value.length;
 					if (this.first.length < 16) this.first = concat(this.first, value.subarray(0, 16 - this.first.length));
@@ -141,12 +150,15 @@ export class SerialStream {
 				// A framing, parity or overrun error or a break (a radio switched on or off with the cable in) ends only
 				// this reader: the port gives a fresh readable and reading goes on. Stopping here left every later
 				// reply unread ("nothing received"). A lost device has no readable, which ends the loop.
-				const soft = SOFT_READ_ERRORS.has(e?.name) && ++glitches <= MAX_READ_GLITCHES;
-				if (!this.closed) note(soft ? "serial read error, reading on" : "serial read stopped", String(e?.message || e));
+				const soft = SOFT_READ_ERRORS.has(e?.name);
+				if (soft) glitches++;
+				if (!this.closed && (!soft || glitches <= GLITCH_BURST || glitches % GLITCH_NOTE === 0))
+					note(soft ? `serial read error${glitches > 1 ? ` (${glitches} in a row)` : ""}, reading on` : "serial read stopped", String(e?.message || e));
 				if (!soft) break;
 			} finally {
 				this.reader.releaseLock();
 			}
+			if (glitches > GLITCH_BURST) await sleep(GLITCH_PAUSE);
 		}
 		// the device went away (or its port stopped reading): a page that kept this stream would talk to nothing
 		if (!this.closed) this.lost = true;
@@ -209,7 +221,9 @@ export class Link {
 		}
 		this.s.take(reply.end);
 		wire(`cmd 0x${cmd.toString(16)} seq ${seq} len ${payload.length}: status ${reply.payload[0]} len ${reply.payload.length}`);
-		if (!reply.payload.length || reply.payload[0] !== 0) throw new LinkError(`command 0x${cmd.toString(16)}: status ${reply.payload[0]}`);
+		if (!reply.payload.length || reply.payload[0] !== 0) {
+			throw Object.assign(new LinkError(`command 0x${cmd.toString(16)}: status ${reply.payload[0]}`), { status: reply.payload[0] });
+		}
 		return reply.payload.subarray(1);
 	}
 
@@ -227,13 +241,15 @@ export class Link {
 	}
 
 	// STORAGE INFO (debuglink.md 3.13): whether the settings and journal region is ours, or still holds another
-	// firmware's data ("foreign": the radio then refuses every settings save and codeplug write). null from a build
-	// without the command
+	// firmware's data ("foreign": the radio then refuses every settings save and codeplug write). "none": the region
+	// didn't start (unusable flash). "nomap": the radio has no such region (a memory chip too small for the board's flash
+	// map: nothing is stored, no codeplug is there and every write is refused). null from a build without the command
 	async storageInfo() {
 		let r;
 		try {
 			r = await this.request(CMD.STORAGE, new Uint8Array([0]));
 		} catch (e) {
+			if (e instanceof LinkError && e.status === DL_UNAVAILABLE) return { region: "nomap", pending: false, settings: null, journal: null, calibration: null };
 			if (e instanceof LinkError && !/no answer/.test(e.message)) return null;
 			throw e;
 		}
@@ -291,6 +307,15 @@ export class Link {
 			if (got !== undefined) return got;	// null: refused (out of range, not offered)
 		}
 		throw new LinkError(`no answer to a codeplug read at 0x${addr.toString(16)}`);
+	}
+
+	// The memory chip's size in bytes from the CPS radio info (flashBytes), null when the radio doesn't say
+	async flashSize() {
+		try {
+			return flashBytes(parseRadioInfo(await this.cpsRead(9, 0, RADIO_INFO_LEN, 1))?.flashId);
+		} catch {
+			return null;
+		}
 	}
 
 	// Read [addr, addr + size) of an area in pieces; stops early (and says so) when the radio refuses. RadioFoundry answers up
@@ -407,6 +432,13 @@ export function silence(link) {
 // protocol that happens to start with "R" isn't taken for it. The revision or the build date must be there: our shim
 // (core/cps/cps_openfw.c) always fills both, so all zeros after the struct version is not that structure
 export const RADIO_INFO_LEN = 46;
+// The memory chip's size from the radio info's flash part id, whose low byte is the JEDEC capacity code (log2 of the
+// size: 0x4018 is 16 MB); null when the radio gives none
+export function flashBytes(flashId) {
+	const code = (flashId ?? 0) & 0xFF;
+	return code >= 0x10 && code <= 0x1C ? 2 ** code : null;
+}
+
 export function parseRadioInfo(b) {
 	if (!b || b.length < 40) return null;
 	// ASCII, NUL padded: printable characters, then only NULs
