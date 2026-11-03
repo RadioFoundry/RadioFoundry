@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { bulkColumns, channelForm, columns } from "../static/js/editor/views.js";
+import { bulkColumns, channelForm, columns, parseAreaId } from "../static/js/editor/views.js";
 import { empty } from "../static/js/codeplug/model.js";
 import { Grid } from "../static/js/editor/grid.js";
 
@@ -79,4 +79,13 @@ test("the table filter and sort take every column's text, numbers too", () => {
 	g.filter = "";
 	g.sort = { key: "number", dir: 1 };
 	assert.deepEqual(g.shown().map((r) => r.number), [3, 12]);
+});
+
+test("Radio tab ARS server and IP gateway: empty is an absent key, 0 is off", () => {
+	const typed = (s) => parseAreaId(s, (k, p) => `${k} ${p.min}-${p.max}`);
+	for (const s of ["", " ", null]) assert.deepEqual(typed(s), { value: null }, JSON.stringify(s));
+	assert.deepEqual(typed("0"), { value: 0 });
+	assert.deepEqual(typed(" 3100500 "), { value: 3100500 });
+	assert.deepEqual(typed("16776415"), { value: 16776415 });
+	for (const s of ["16776416", "-1", "1.5", "abc"]) assert.deepEqual(typed(s), { error: "editor.err.range 0-16776415" }, s);
 });

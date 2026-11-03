@@ -223,7 +223,9 @@ test("import: every table and setting qdmr's file holds", () => {
 	// ch2's "infinite": a channel can't turn its timeout off, so it takes the radio's
 	assert.deepEqual(codes, { path_cut: 1, aprs_period: 1, dmr_positioning: 1, tot_off: 1, scan_lists: 1 });
 
-	assert.deepEqual(m.general, { radioName: "N0CALL", dmrId: 1234567, groupHang: 6, privateHang: 10, bootLine1: "Test Radio", bootLine2: "N0CALL" });
+	// qdmr has no ARS server or IP gateway: the settings area's keys stay absent
+	assert.deepEqual(m.general, { radioName: "N0CALL", dmrId: 1234567, groupHang: 6, privateHang: 10, bootLine1: "Test Radio", bootLine2: "N0CALL",
+		arsServer: null, ipGateway: null });
 	assert.deepEqual(m.contacts.map((c) => [c.number, c.name, c.id, c.type, c.timeslot]),
 		[[1, "TG 9", 9, "group", 0], [2, "Echo Test", 9990, "private", 2], [3, "201", 201, "group", 0], [4, "All Call", 0xFFFFFF, "all", 0]]);
 	assert.deepEqual(m.dtmfContacts.map((d) => [d.name, d.code]), [["Gate", "123*#A"]]);
