@@ -13,6 +13,7 @@
 #define TRAFFIC_DIRECT	0x01
 // REPORT_FIELD bits the engine needs: NEW_EVENT (7), DMR_FLC (6), DMR_CSBK (5), slot type and EMB (0)
 #define REPORT_FIELD	0xE1
+#define CR_UNSENT	0xFF	// CARRIER_READY not sent since the chip went to receive
 
 typedef enum { TX_IDLE, TX_ON, TX_ENDING, TX_DRAIN } tx_state_t;
 
@@ -50,6 +51,9 @@ static struct {
 	uint32_t rx_next_ms;
 	uint32_t counter;	// burst counter for event args, never 0
 	uint32_t now;
+	bool cr_used;		// the board reports its carrier (sct_dmr_carrier)
+	uint8_t cr_want;	// ... its last CARRIER_READY value
+	uint8_t cr_sent;	// ... the chip's, CR_UNSENT after each WORK_MODE receive
 
 	sct_dmr_stats_t st;
 } s;
@@ -97,7 +101,24 @@ static bool send_rx_mode(void)
 	sct_pkt_begin(&p, SCT_TYPE_DMR);
 	add_work_mode(&p, 1);
 	sct_pkt_add1(&p, SCT_F_DMR_CALL_SLOT, rx_slot_byte());
+	s.cr_sent = CR_UNSENT;
 	return send(&p);
+}
+
+// CARRIER_READY when the board's value differs from the chip's, in receive only
+static void carrier_step(void)
+{
+	if (!s.cr_used || !s.running || s.tx != TX_IDLE || s.cr_want == s.cr_sent)
+		return;
+	sct_pkt_t p;
+
+	sct_pkt_begin(&p, SCT_TYPE_CONTROL);
+	sct_pkt_add1(&p, SCT_F_CARRIER_READY, s.cr_want);
+	if (send(&p)) {
+		s.cr_sent = s.cr_want;
+		s.st.carrier = s.cr_want;
+		s.st.carrier_sent++;
+	}
 }
 
 static void send_config(sct_pkt_t *p, const dmr_config_t *cfg)
@@ -635,6 +656,7 @@ static bool x_tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 	}
 	s.tx = TX_ON;
 	s.rx_voice = false;
+	s.cr_want = 0;	// the board's next reading after the transmission says what is there
 	s.tx_ts = (int8_t)(ts == 2 ? 2 : 1);
 	s.q_count = 0;
 	s.waiting = false;
@@ -722,6 +744,17 @@ void sct_dmr_poll(uint32_t now_ms)
 	s.now = now_ms;
 	tx_step();
 	rx_voice_step();
+	carrier_step();
+	unlock();
+}
+
+void sct_dmr_carrier(uint8_t ready)
+{
+	lock();
+	s.cr_used = true;
+	if (s.tx == TX_IDLE)	// while transmitting the receiver hears this radio: kept at "lost"
+		s.cr_want = ready <= 2 ? ready : 1;
+	carrier_step();
 	unlock();
 }
 
@@ -765,6 +798,7 @@ void sct_dmr_init(const sct_dmr_port_t *port)
 	memset(&s, 0, sizeof(s));
 	s.port = port;
 	s.cc_filter = -1;
+	s.cr_sent = CR_UNSENT;
 }
 
 void sct_dmr_get_stats(sct_dmr_stats_t *out)

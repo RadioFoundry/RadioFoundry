@@ -49,7 +49,7 @@ First radio: an AT-D578UV PRO, GD32 (`GD_Ver 1.21`, bootloader V100, update-mode
 | 4 | FM receive audio; the squelch closes on an empty channel with the QA4818 noise offset. Opening on a signal not yet checked |
 | 6 | The baseband boots (2 KB boot block, answer about 2.15 s later) and reports SCT3258, baseband firmware V2.01 |
 | 5 | `kt no`: the KTMicro receiver doesn't answer. Open |
-| 8 | Calls decode (2026-11-03, a known-good radio on 461.4625 CC 1 TS 1): with shift register bit 0x04 set, the codec left to the baseband's routing, and CARRIER_READY 0 when the carrier drops, 2 when it comes up, three calls of three decoded and played (73-97 voice bursts each). With 2 sent only at receive start, the first call decodes and later ones mostly don't; with 1, none decode. Not heard from the speaker yet. Open |
+| 8 | Calls decode (2026-11-03, a known-good radio on 461.4625 CC 1 TS 1): with shift register bit 0x04 set, the codec left to the baseband's routing, and CARRIER_READY 0 when the carrier drops, 2 when it comes up, three calls of three decoded and played (73-97 voice bursts each). That was with the RF chip's digital AF output (0x47 = 0x4840). With the analog receive values (0x47 = 0x6140, 0x43 = 0x6009, 0x3A = 0x00E0) a strong control channel (CC 10, -73 dBm, both slots always on) gave about one burst in six with CARRIER_READY 1 and none with 2; with the digital values (hardware-d578uv.md 5.1) and 2, every TS 1 burst (about 17 a second, 944 CSBKs, none failing CRC, no FEC error). A site whose CSBKs all fail the standard CRC gives no report at all: the baseband drops them, so the stack can't count them. Not heard from the speaker yet. Open |
 | 7, 9 | Not run (no transmitting yet) |
 | 10 | GPS sentences arrive |
 | 11 | The stub enters from RadioFoundry, writes, verifies and resets |
@@ -160,7 +160,7 @@ Select a DMR channel and let the SDR bench send a call.
 | Check | Pass | If not |
 | --- | --- | --- |
 | The call heard, the talker shown | `tests/hil` DMR receive cases | the digital register set (5.1), the call option bits (modem-sct.md 4) |
-| Every call decodes, not only the first | the debug link's call counters | CARRIER_READY at each carrier edge, with the phase reversed (2) on this radio; shift register bit 0x04 |
+| Every call decodes, not only the first | the debug link's call counters; diag line 0 (`cr` the last CARRIER_READY and how many went, `rx` frames, `fec` frames after an FEC error) | CARRIER_READY at each carrier edge, 2 on this radio; the RF chip's digital receive values (0x47, 0x43, hardware-d578uv.md 5.1); shift register bit 0x04 |
 | Every LC header and terminator reaches the stack | the debug link's DMR counters | call option byte 3 (0x47 here, 0x44 in the stock firmware) |
 | Voice level right | | the codec levels and digital speaker gain from the calibration (4.4) |
 

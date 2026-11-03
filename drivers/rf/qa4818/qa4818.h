@@ -105,8 +105,15 @@ void qa4818_init_lo(qa4818_t *c);
 void qa4818_init_trx(qa4818_t *c, uint16_t gpio, uint16_t r49);
 
 void qa4818_enable(qa4818_t *c, uint16_t value);
-// A transceiver's receiver on (its front-end constants, then QA4818_ENABLE_RX); its transmitter on (QA4818_ENABLE_TX)
-void qa4818_rx_on(qa4818_t *c);
+// 0x47, the AF output (BK4819 map; inferred): bits 11:8 what goes out, 1 the voice audio, 8 the demodulator for a
+// DMR baseband; bit 13 inverts it. DMR receive inverts below 300 MHz, where the LO is above the signal and the IF
+// spectrum is reversed, so the baseband hears one polarity on both bands
+#define QA4818_AF_VOICE		0x6140u
+#define QA4818_AF_DMR		0x4840u
+#define QA4818_AF_INVERT	0x2000u
+// A transceiver's receiver on (its front-end constants, the AF output for a digital or analog channel at hz, then
+// QA4818_ENABLE_RX); its transmitter on (QA4818_ENABLE_TX)
+void qa4818_rx_on(qa4818_t *c, bool digital, uint32_t hz);
 void qa4818_tx_on(qa4818_t *c);
 // A local oscillator on (through off, as the stock firmware does)
 void qa4818_lo_on(qa4818_t *c);

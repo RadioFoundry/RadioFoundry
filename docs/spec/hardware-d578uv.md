@@ -348,8 +348,10 @@ lowest. Its byte 3, 0x44, reports identical LC headers and terminators once; Rad
 so a second call with the same LC can't go unreported ([modem-sct.md](modem-sct.md) 3). The stock firmware sets
 byte 3 bit 0 and other byte 4 values only with the second receiver; RadioFoundry runs side B for FM only (5.2) and
 keeps the single receiver's values. It sends
-`SQ_LEVEL` and `DEMOD_GAIN` once at start-up and never `CARRIER_READY` (its sender has no caller); RadioFoundry
-sends both in every start. The `MODOUT_CONFIG` delay byte is a setting the stock firmware sets to 0 at start-up,
+`SQ_LEVEL` and `DEMOD_GAIN` once at start-up; RadioFoundry sends both in every start. The baseband needs
+`CARRIER_READY` 2 (ready, demodulated phase reversed): RadioFoundry sends 2 when side A's carrier comes up and 0
+when it goes, from the status poll (`d578uv_modem_carrier`); with 1 no call decodes.
+The `MODOUT_CONFIG` delay byte is a setting the stock firmware sets to 0 at start-up,
 not a calibration value. The equalizer filters stay at the baseband's default, off, which is what the stock firmware
 sends without a preset.
 
@@ -375,7 +377,7 @@ the paged range 0x10-0x3F; the meanings below come from the stock firmware, and 
 | 0x09 | ten writes at init, 0x0000 to 0x9076 | DTMF/SelCall detector coefficients: bits 15:12 the symbol, 7:0 its coefficient |
 | 0x10-0x13 | 0x0038, 0x025A, 0x035B, 0x0396 | RX AGC gain table (defaults 0x0038, 0x025A, 0x037B, 0x03DE) |
 | 0x40 | the "drive": 0x3600-0x3900 by band + the level << 1, less 0x100 on a narrow channel | TX deviation: bit 12 on, 11:0 the amount (default 0x4D0) |
-| 0x47 | 0x6140 | AF output: bits 11:8 = 1 normal audio, bit 13 inverted |
+| 0x47 | 0x6140; in DMR receive 0x4840 at 300 MHz and above, 0x6840 below | AF output: bits 11:8 = 1 normal audio, bit 13 inverted |
 | 0x51 | bit 15 on, low 7 bits a calibrated level | sub-audio TX on, bits 6:0 its gain |
 | 0x64 | not read | voice amplitude, the VOX detector's input (5.6) |
 | 0x78 | the gain code << 8 \| 0xFF | RSSI squelch thresholds (the stock firmware decides the squelch itself) |
@@ -427,6 +429,16 @@ The stock firmware has two register sets, analog and digital, written at receive
 | 0x73 | 0x464A (0x564A narrow) | 0x4E8A (0x569A with the second receiver) |
 | 0x7E | 0x342E | 0x361E |
 | Page 1: 0x1B, 0x1C, 0x1D, 0x27, 0x36 | 0x0004, 0x04D7, 0x39FD, 0x091B, 0x9D08 (0x1D08 TX) | 0x07FF, 0x04D3, 0x29A1, 0x891B, 0x1D59 |
+| 0x43 (receive) | 0x6009 | 0x6E09 |
+| 0x3A (receive) | 0x0040 (0x00E0 narrow, not yet copied) | 0x0040 |
+| 0x18, page 1 0x17 (receive) | not written | 0x4125, 0x0AA8, as for DMR transmit |
+| 0x47 (receive) | 0x6140 | 0x4840 at 300 MHz and above, 0x6840 below |
+
+In the BK4819 map 0x43 bits 11:9 are the weak-signal channel filter: 0x6E09 the widest (4.5 kHz), 0x6009 1.7 kHz
+(inferred). 0x47 bits 11:8 = 8 gives the baseband the demodulator output instead of the voice audio, and bit 13
+inverts it where the LO is above the signal (VHF), so the baseband sees one polarity on both bands. With the analog
+values in DMR receive the baseband finds sync but few bursts decode (a strong control channel: about one burst in
+six); with the digital ones every burst decodes (d578uv-bringup.md, status 8).
 
 Transmit keys the RF chips once, before the baseband gets `DMR_CALL_SLOT` with the transmit bit, and keeps them in
 transmit for the whole call; the digital set carries over. Per burst only the PA is switched: PD0's rising edge turns

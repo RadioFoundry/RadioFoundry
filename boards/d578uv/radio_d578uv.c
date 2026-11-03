@@ -909,7 +909,7 @@ static void rx_setup(void)
 	qa4818_out(&chip_lo, QA4818_OUT_LO);
 	qa4818_out(&chip_if, QA4818_OUT_RX);
 	qa4818_lo_on(&chip_lo);
-	qa4818_rx_on(&chip_if);
+	qa4818_rx_on(&chip_if, digital, rx_hz);
 	band_bits(rx_hz);
 	trims_a(rx_hz);
 	chip0_gpio(GPIO_MIC_MUTE, GPIO_MIC_MUTE);
@@ -956,7 +956,7 @@ static void b_setup(void)
 	qa4818_out(&chip_lo_b, QA4818_OUT_LO);
 	qa4818_out(&chip_b, QA4818_OUT_RX);
 	qa4818_lo_on(&chip_lo_b);
-	qa4818_rx_on(&chip_b);
+	qa4818_rx_on(&chip_b, false, 0);
 	b_band_bits();
 	b_open = false;
 	b_close_polls = 0;
@@ -1835,6 +1835,10 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = qa4818_rssi_dbm(s.rssi);
 	st->noise = qa4818_noise(s.noise);
 	st->carrier = s.signal && s.rssi >= rx_threshold;
+#if CONFIG_DMR
+	if (mode == RADIO_MODE_DMR)
+		d578uv_modem_carrier(st->carrier);
+#endif
 	switch (rx_tone.type) {
 	case TONE_CTCSS:
 		st->tone_ok = (s.tone_flags & 0x0001u) != 0;

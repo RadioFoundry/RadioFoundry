@@ -349,6 +349,14 @@ bool d578uv_modem_init(void)
 	return true;
 }
 
+// 2, ready with the phase reversed: with the RF chip's DMR AF output (inverted below 300 MHz, qa4818.h), that is the
+// polarity the baseband gets on both bands. With 1, no call decodes (hardware-d578uv.md 4.4)
+void d578uv_modem_carrier(bool carrier)
+{
+	if (booted)
+		sct_dmr_carrier(carrier ? 2 : 0);
+}
+
 uint8_t d578uv_modem_boot_result(void)
 {
 	return (uint8_t)boot_result;

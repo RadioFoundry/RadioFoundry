@@ -2,9 +2,10 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT-D578UV diagnostics page lines: the raw readings the bring-up needs (docs/testing/d578uv-bringup.md): the
 // baseband's boot result, the key ladders and microphone lines (to place the keys), the supply and volume pots, the
-// NAND's ID, the DMR PA gate's bursts, the GPS receiver's sentences, whether the KTMicro receiver answered, side A's
-// raw RSSI and the serial hand microphone's frames. Each line keeps its number whatever is built. The gps and rssi lines are in the shape the HIL health tests
-// read on every radio (tests/hil/test_health.py)
+// NAND's ID, the baseband's CARRIER_READY and received frames, the DMR PA gate's bursts, the GPS receiver's sentences,
+// whether the KTMicro receiver answered, side A's raw RSSI and the serial hand microphone's frames. Each line keeps its
+// number whatever is built. The gps and rssi lines are in the shape the HIL health tests read on every radio
+// (tests/hil/test_health.py)
 #include <stddef.h>
 #include "d578uv.h"
 #include "pins.h"
@@ -12,6 +13,9 @@
 #include "config.h"
 #if CONFIG_GPS
 #include "gps_uart/gps_uart.h"
+#endif
+#if CONFIG_DMR
+#include "modem/sct/sct_dmr.h"
 #endif
 
 #if CONFIG_DIAG
@@ -69,6 +73,19 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, "bb ");
 #if CONFIG_DMR
 		put(&o, boot_name(d578uv_modem_boot_result()));
+		{
+			// The last CARRIER_READY and how many went, the frames reported and those after an FEC error
+			sct_dmr_stats_t st;
+			sct_dmr_get_stats(&st);
+			put(&o, " cr ");
+			put_u(&o, st.carrier);
+			put(&o, "/");
+			put_u(&o, st.carrier_sent);
+			put(&o, " rx ");
+			put_u(&o, st.rx_frames);
+			put(&o, " fec ");
+			put_u(&o, st.rx_fec);
+		}
 #else
 		put(&o, "-");
 #endif

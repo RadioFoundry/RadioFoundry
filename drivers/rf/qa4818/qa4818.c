@@ -306,17 +306,17 @@ void qa4818_enable(qa4818_t *c, uint16_t value)
 	wr(c, QA4818_REG_ENABLE, value);
 }
 
-void qa4818_rx_on(qa4818_t *c)
+void qa4818_rx_on(qa4818_t *c, bool digital, uint32_t hz)
 {
 	wr(c, 0x34, 0x086F);
 	wr(c, 0x35, 0xF208);
-	wr(c, 0x47, 0x6140);
+	wr(c, 0x47, digital ? (hz >= MHZ(300) ? QA4818_AF_DMR : QA4818_AF_DMR | QA4818_AF_INVERT) : QA4818_AF_VOICE);
 	wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_RX);
 }
 
 void qa4818_tx_on(qa4818_t *c)
 {
-	wr(c, 0x47, 0x6140);
+	wr(c, 0x47, QA4818_AF_VOICE);
 	wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_TX);
 }
 
@@ -377,16 +377,24 @@ static void audio_plain(qa4818_t *c)
 	rfbus_write_table(c->bus, t, sizeof(t) / sizeof(t[0]));
 }
 
-// 0x3A and 0x43 for an analog or a digital channel (0x43 is not the FM bandwidth: the same for 12.5 and 25 kHz)
+// 0x3A and 0x43 for an analog or a digital channel (0x43 is not the FM bandwidth: the same for 12.5 and 25 kHz). A
+// digital channel widens 0x43 bits 11:9, in the BK4819 map the weak-signal channel filter (4.5 kHz, 1.7 kHz for
+// analog; inferred), which 4FSK's +-1944 Hz outer deviation needs
 static void channel_mode(qa4818_t *c, bool digital)
 {
-	wr(c, 0x3A, digital ? 0x00E0 : 0x0040);
-	wr(c, 0x43, 0x6009);
+	wr(c, 0x3A, 0x0040);
+	wr(c, 0x43, digital ? 0x6E09 : 0x6009);
 }
 
 void qa4818_rx_setup(qa4818_t *c, bool digital)
 {
 	if (digital) {
+		// 0x18 and page 1 0x17 as the digital TX sets them, on every digital receive too: after an FM
+		// transmission the microphone's values would stay
+		wr(c, 0x18, 0x4125);
+		page(c, 1);
+		wr(c, 0x17, 0x0AA8);
+		page(c, 0);
 		wr(c, 0x53, 0x97DD);
 		wr(c, 0x23, 0x8F85);
 	} else {
