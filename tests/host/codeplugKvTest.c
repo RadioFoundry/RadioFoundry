@@ -195,6 +195,28 @@ static void test_invalid(void)
 	CHECK(memcmp(before, &sim_flash_data[AREA], sizeof(before)) == 0 && codeplug_serial() == serial);
 }
 
+// codeplug_kv_check on a sector in RAM (TFTP's staged area) says what a reader of the same bytes in flash says
+static void test_check(void)
+{
+	fresh();
+	const uint8_t *s = &sim_flash_data[AREA];
+	uint16_t len, n;
+	uint8_t d[16];
+	uint16_t dl = entry(d, CODEPLUG_KEY_ARS_SERVER, "\x01\x02\x03\x00", 4);
+	CHECK(codeplug_kv_check(s) == CODEPLUG_KV_EMPTY);
+	raw_area(d, dl, 1, 16, false);
+	CHECK(codeplug_kv_check(s) == CODEPLUG_KV_VALID && codeplug_kv_info(&len, &n) == CODEPLUG_KV_VALID);
+	raw_area(d, dl, 1, 20, false);	// a longer header
+	CHECK(codeplug_kv_check(s) == CODEPLUG_KV_VALID && codeplug_kv_info(&len, &n) == CODEPLUG_KV_VALID);
+	raw_area(d, dl, 1, 16, true);
+	CHECK(codeplug_kv_check(s) == CODEPLUG_KV_BAD && codeplug_kv_info(&len, &n) == CODEPLUG_KV_BAD);
+	raw_area(d, dl, 2, 16, false);
+	CHECK(codeplug_kv_check(s) == CODEPLUG_KV_NEWER && codeplug_kv_info(&len, &n) == CODEPLUG_KV_NEWER);
+	put16(&d[2], 5);		// the entry runs past the data
+	raw_area(d, dl, 1, 16, false);
+	CHECK(codeplug_kv_check(s) == CODEPLUG_KV_BAD && codeplug_kv_info(&len, &n) == CODEPLUG_KV_BAD);
+}
+
 static void test_full(void)
 {
 	fresh();
@@ -248,6 +270,7 @@ int main(void)
 	test_edits();
 	test_foreign();
 	test_invalid();
+	test_check();
 	test_full();
 	test_power_cut();
 	sim_flash_free();

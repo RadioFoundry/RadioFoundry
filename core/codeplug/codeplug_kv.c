@@ -102,6 +102,18 @@ static codeplug_kv_state_t check_flash(uint32_t *data, uint16_t *len, uint16_t *
 	return CODEPLUG_KV_VALID;
 }
 
+codeplug_kv_state_t codeplug_kv_check(const uint8_t *sector)
+{
+	uint16_t hdr, len, count;
+	uint32_t crc;
+	codeplug_kv_state_t s = header(sector, &hdr, &len, &crc);
+	if (s != CODEPLUG_KV_VALID) {
+		return s;
+	}
+	return storage_crc32(0, &sector[hdr], len) == crc && walk_ok(&sector[hdr], len, &count) ? CODEPLUG_KV_VALID :
+												 CODEPLUG_KV_BAD;
+}
+
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 {
 	uint32_t data;
@@ -165,15 +177,16 @@ static bool seen(const uint8_t *d, uint32_t end, uint16_t k)
 // dropped. A sector that isn't a valid area starts a new one. False if it doesn't fit or the area is a newer version
 static bool edit(uint8_t *b, uint16_t key, const uint8_t *value, uint16_t vlen)
 {
-	uint16_t hdr = CODEPLUG_KV_HDR, len = 0, count;
+	uint16_t hdr = CODEPLUG_KV_HDR, len = 0;
 	uint32_t crc;
-	codeplug_kv_state_t s = header(b, &hdr, &len, &crc);
+	codeplug_kv_state_t s = codeplug_kv_check(b);
 	if (s == CODEPLUG_KV_NEWER) {
 		return false;	// a later firmware's area: never ours to rewrite
 	}
-	if (s != CODEPLUG_KV_VALID || storage_crc32(0, &b[hdr], len) != crc || !walk_ok(&b[hdr], len, &count)) {
+	if (s == CODEPLUG_KV_VALID) {
+		header(b, &hdr, &len, &crc);
+	} else {
 		hdr = CODEPLUG_KV_HDR;	// nothing in it could be read: start over
-		len = 0;
 		memset(b, 0, CODEPLUG_KV_HDR);
 	}
 	uint8_t *d = &b[hdr];

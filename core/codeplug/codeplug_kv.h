@@ -32,6 +32,9 @@ bool codeplug_kv_get_id(uint16_t key, uint32_t *id);
 // while a CPS session holds the buffer, when the storage region isn't ours, the area is CODEPLUG_KV_NEWER or full
 bool codeplug_kv_set(uint16_t key, const void *value, uint16_t len);
 bool codeplug_kv_set_u32(uint16_t key, uint32_t value);
+// The state of an area held whole in RAM (a STORAGE_SECTOR), as a reader would find it in flash: for a write that
+// carries the whole sector (TFTP codeplug.bin), which takes it only when it is CODEPLUG_KV_VALID. No lock
+codeplug_kv_state_t codeplug_kv_check(const uint8_t *sector);
 // For the debug link: the area's state, its data length and how many entries it holds (0 unless valid)
 codeplug_kv_state_t codeplug_kv_info(uint16_t *length, uint16_t *entries);
 
