@@ -2381,6 +2381,28 @@ static void test_dmr_emergency(void)
 	run(20);
 	CHECK(!dmr_emergency_alert(&a));
 
+	// A message heard: one UI_EV_MESSAGE. Reading and deleting it change the inbox, not the last event: nothing again
+	{
+		static dmrBurst_t b[DMR_DATA_MAX_BURSTS];
+		int nb = dmrDataBuildIPText(false, 3101276, 3101234, "hello", DT_RATE_12_DATA, 0, b, DMR_DATA_MAX_BURSTS);
+		CHECK(nb > 0);
+		int before = sms_inbox_count();
+		for (int i = 0; i < nb; i++) {
+			now += 60;
+			dmrDataServiceRxBurst(&b[i], now);
+		}
+		run(20);
+		CHECK(sms_inbox_count() == before + 1);
+		n_ev = 0;
+		ui_svc_poll();
+		CHECK(n_ev == 1 && last_ev.kind == UI_EV_MESSAGE && last_ev.id == 3101234);
+		sms_inbox_mark_read(0);
+		ui_svc_poll();
+		CHECK(sms_inbox_delete(0));
+		ui_svc_poll();
+		CHECK(n_ev == 1);
+	}
+
 	// The UI's emergency key (ui_svc_emergency, core/ui/ui_svc_emergency.c)
 	CHECK(ui_svc_feat_ext() & UI_FEAT_EMERGENCY);
 	CHECK(ui_svc_emergency(true));
