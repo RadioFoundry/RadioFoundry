@@ -1467,7 +1467,14 @@ static void tx_poll(uint32_t now)
 	case TX_PERMIT: {
 		uint32_t held = now - s.permit_ms;
 
-		if (held >= DMR_CALL_PERMIT_MAX_MS ||
+		if (voice_channel_busy(now)) {
+			// A call began in the hold: access again, as if it had been there at PTT (through a repeater the key-up
+			// is impolite, so it would go over the call). A new permit plays once the channel is free
+			s.tx = TX_ACCESS;
+			s.permit_done = false;
+			s.dirty = true;
+			tx_access(now);
+		} else if (held >= DMR_CALL_PERMIT_MAX_MS ||
 		    (held >= s.cfg.permit_hold_ms && !(s.cfg.permit_busy != NULL && s.cfg.permit_busy())))
 			tx_start_voice(now);
 		break;

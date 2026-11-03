@@ -754,7 +754,71 @@ static void test_tx_permit_hold(void)
 	dmr_call_ptt(false);
 	run_ms(100);
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->state == DMR_CALL_STATE_IDLE && sim.tx_begins == 0);
+
+	// A call begins in the hold: refused as at PTT (no access wait), nothing sent
+	uint8_t lc[9];
+	unsigned frame = 1;
+	mk_lc(lc, 0, TG_LIST, 2345678);
+	setup(&c);
+	permit_busy_flag = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT);
+	rx_header(lc, 1, 0, DMR_SYNC_MS, false);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_BUSY && sim.tx_begins == 0);
+	dmr_call_ptt(false);
+	run_ms(600);
 	permit_busy_flag = false;
+
+	// With an access wait: back to access while the call runs, then a new permit and the key-up
+	c.access_wait_ms = 2000;
+	setup(&c);
+	seq = V()->permit_seq;
+	permit_busy_flag = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_ACCESS && V()->state == DMR_CALL_STATE_RX && sim.tx_begins == 0);
+	rx_header(lc, 1, 0, DMR_SYNC_MS, true);
+	run_ms(20);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT && V()->permit_seq == (uint8_t)(seq + 2) && sim.tx_begins == 0);
+	permit_busy_flag = false;
+	run_ms(50);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.tx_begins == 1);
+	dmr_call_ptt(false);
+	run_ms(600);
+	c.access_wait_ms = 0;
+
+	// Through a repeater: the hold follows the wake-up, the permit plays only once the repeater answered
+	c.rmo = true;
+	c.ts = 2;
+	setup(&c);
+	sim.wake_repeater_on_csbk = true;
+	seq = V()->permit_seq;
+	permit_busy_flag = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_WAKEUP && V()->permit_seq == seq);
+	run_ms(400);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT && V()->repeater_up && V()->permit_seq == (uint8_t)(seq + 1));
+	CHECK(sim.air_count == 1 && sim.air[0].kind == DMR_BURST_CSBK);
+	permit_busy_flag = false;
+	run_ms(50);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.last_timing == DMR_TIMING_ALIGNED);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+
+	// A short press through a repeater: the wake-up goes on, no hold and nothing more sent once it answers
+	setup(&c);
+	sim.wake_repeater_on_csbk = true;
+	seq = V()->permit_seq;
+	dmr_call_ptt(true);
+	run_ms(10);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->permit_seq == seq && sim.air_count == 1);
 }
 
 static void test_rmo_air_slot_alignment(void)
