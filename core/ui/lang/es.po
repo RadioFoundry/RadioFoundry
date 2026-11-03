@@ -3037,6 +3037,10 @@ msgid "Type a number..."
 msgstr "Escribe un número..."
 
 #: core/ui/ui_menus.c
+msgid "Select contact..."
+msgstr "Elige un contacto..."
+
+#: core/ui/ui_menus.c
 msgid "Talk to"
 msgstr "Hablar a"
 

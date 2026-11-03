@@ -38,6 +38,8 @@
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
+//   contacts:full       every contact number holds a talkgroup ("Long 31" ...), but every third: a list past 128
+//   contacts:<n>        the same up to contact n (a list just past 128 at 220)
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
 //   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
@@ -94,6 +96,7 @@ void gfx_fit_trace(const char *src, const char *out)
 // them read as one word. Marks of 6 px or less (scroll marks, ellipsis dots) and lines (one pixel thick) are left out.
 
 static bool worst;	// sim_worst: worst-case codeplug content
+static uint16_t full_contacts;	// contacts:full / :<n>: every contact number up to it used, but every third
 
 #define LIVE_MAX	160
 static struct { int x0, y0, x1, y1; char s[40]; } live[LIVE_MAX];
@@ -823,6 +826,17 @@ bool codeplug_contact(uint16_t index, contact_t *out)
 			return true;
 		}
 	}
+	if (full_contacts != 0) {
+		// "TG 100001" ... a talkgroup at each number, none at 3, 6, 9 ...; past the built-in ones
+		if (index <= N_CONTACTS || index > full_contacts || index % 3u == 0)
+			goto builtin;
+		memset(out, 0, sizeof *out);
+		out->id = 100000u + index;
+		snprintf(out->name, sizeof out->name, "Long %u", (unsigned)index);
+		out->type = CONTACT_GROUP;
+		return true;
+	}
+builtin:
 	if (worst) {
 		if (index < 1 || index > N_WORST)
 			return false;
@@ -1901,6 +1915,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	font_aa_on = g->aa;
 	font_big_on = g->big;
 	worst = false;
+	full_contacts = 0;
 	layout_reset();
 	board.keymap = maps[map].m;
 	board.keymap_len = maps[map].n;
@@ -2663,6 +2678,17 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "trim") == 0) {		// this radio has a reference trim (hal_radio_t.ref_trim)
 		ref_trim = true;
+		return true;
+	}
+	if (strcmp(t, "contacts") == 0 && arg != NULL) {	// contacts:full, contacts:<n>
+		unsigned long n = strcmp(arg, "full") == 0 ? CODEPLUG_CONTACTS_MAX : strtoul(arg, NULL, 10);
+		if (n == 0 || n > CODEPLUG_CONTACTS_MAX) {
+			snprintf(err, len, "contacts: full or 1..%u", (unsigned)CODEPLUG_CONTACTS_MAX);
+			return false;
+		}
+		full_contacts = (uint16_t)n;
+		changed();
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "worst") == 0) {		// worst-case codeplug content from here on (sim_worst)
