@@ -409,10 +409,11 @@ static bool contacts_raw_label(uint16_t raw, char *buf, uint8_t len)
 	return true;
 }
 
-static bool contacts_target(uint16_t i, ui_target_t *t)
+// Contact raw + 1 (raw 0 is contact 1) as a target
+static bool contact_target_raw(uint16_t raw, ui_target_t *t)
 {
 	contact_t c;
-	if (i >= ui_filter_count() || !codeplug_contact((uint16_t)(ui_filter_raw(i) + 1u), &c))
+	if (!codeplug_contact((uint16_t)(raw + 1u), &c))
 		return false;
 	memset(t, 0, sizeof *t);
 	t->id = c.id;
@@ -422,11 +423,15 @@ static bool contacts_target(uint16_t i, ui_target_t *t)
 	return true;
 }
 
-static void contacts_item(uint16_t i, ui_item_t *it)
+// Share To's rows: raw rows are the contacts
+static bool contacts_target(uint16_t i, ui_target_t *t)
 {
-	ui_target_t t;
-	if (!contacts_target(i, &t))
-		return;
+	return i < ui_filter_count() && contact_target_raw(ui_filter_raw(i), t);
+}
+
+static void contact_row(const ui_target_t *tp, ui_item_t *it)
+{
+	const ui_target_t t = *tp;
 	sbuf_t b;
 	sb_init(&b, it->label, sizeof it->label);
 	sbuf_t vb;
@@ -446,26 +451,73 @@ static void contacts_item(uint16_t i, ui_item_t *it)
 	}
 }
 
-static void contacts_select(uint16_t i, bool hold)
+static void contacts_item(uint16_t i, ui_item_t *it)
 {
 	ui_target_t t;
 	if (contacts_target(i, &t))
+		contact_row(&t, it);
+}
+
+// Contacts: with the contact editor raw row 0 is New contact, first because the filter keeps only the first rows of a
+// long list; the contacts follow it
+#define CONTACTS_NEW	(CONFIG_CONTACT_EDIT ? 1u : 0u)
+
+static bool contacts_is_new(uint16_t i) { return CONFIG_CONTACT_EDIT && i < ui_filter_count() && ui_filter_raw(i) == 0; }
+static uint16_t contacts_list_raw_count(void) { return (uint16_t)(CODEPLUG_CONTACTS_MAX + CONTACTS_NEW); }
+
+static bool contacts_list_raw_label(uint16_t raw, char *buf, uint8_t len)
+{
+	if (raw < CONTACTS_NEW) {
+		str_copy(buf, len, TR("New contact"));
+		return true;
+	}
+	return contacts_raw_label((uint16_t)(raw - CONTACTS_NEW), buf, len);
+}
+
+static bool contacts_list_target(uint16_t i, ui_target_t *t)
+{
+	if (i >= ui_filter_count() || ui_filter_raw(i) < CONTACTS_NEW)
+		return false;
+	return contact_target_raw((uint16_t)(ui_filter_raw(i) - CONTACTS_NEW), t);
+}
+
+static void contacts_list_item(uint16_t i, ui_item_t *it)
+{
+	ui_target_t t;
+	if (contacts_is_new(i))
+		str_copy(it->label, sizeof it->label, TR("New contact"));
+	else if (contacts_list_target(i, &t))
+		contact_row(&t, it);
+}
+
+static void contacts_select(uint16_t i, bool hold)
+{
+	ui_target_t t;
+#if CONFIG_CONTACT_EDIT
+	if (contacts_is_new(i)) {
+		memset(&t, 0, sizeof t);
+		t.group = true;		// the editor starts empty, on a talkgroup
+		ui_new_contact(&t);
+		return;
+	}
+#endif
+	if (contacts_list_target(i, &t))
 		ui_talk(&t, hold);
 }
 
 static void contacts_context(uint16_t i)
 {
 	ui_target_t t;
-	if (contacts_target(i, &t))
+	if (contacts_list_target(i, &t))
 		ui_open_actions(&t);
 }
 
 static const ui_scr_def_t contacts_screen = {
 	.name = "contacts", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = TRN("Contacts"),
 	.hint = TRN(TEXT_ALT_OPEN "0-9 find  OK talk  # more" TEXT_ALT_NEXT "0-9  OK talk  # more" TEXT_ALT_CLOSE),
-	.empty = TRN("No contacts: add them in qdmr"),
-	.count = ui_filter_count, .item = contacts_item, .select = contacts_select, .context = contacts_context,
-	.target = contacts_target, .raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
+	.empty = CONFIG_CONTACT_EDIT ? TRN("No contact matches") : TRN("No contacts: add them in qdmr"),
+	.count = ui_filter_count, .item = contacts_list_item, .select = contacts_select, .context = contacts_context,
+	.target = contacts_list_target, .raw_count = contacts_list_raw_count, .raw_label = contacts_list_raw_label,
 };
 #else
 static uint16_t none_count(void) { return 0; }
@@ -2671,7 +2723,7 @@ void ui_new_contact(const ui_target_t *t)
 	sb_init(&b, ct.name, sizeof ct.name);
 	if (t->name[0] != 0) {
 		sb_str(&b, t->name);
-	} else {
+	} else if (t->id != 0) {
 		if (t->group)
 			sb_str(&b, "TG ");
 		sb_u32(&b, t->id, 1);	// "TG 3100", "3101234": a name to save with, or to type over
@@ -2699,7 +2751,7 @@ static void ct_item(uint16_t i, ui_item_t *it)
 			it->flags |= UI_ITEM_EDIT;
 			sb_str(&b, ced_digits);
 			sb_chr(&b, '_');
-		} else {
+		} else if (ct.id != 0) {	// a new contact from Contacts starts with none
 			sb_u32(&b, ct.id, 1);
 		}
 		break;
@@ -2771,9 +2823,9 @@ static void ct_save(void)
 	if (ui_frame()->scr == SCR_ACTIONS && ui_target.id == ct.id && ui_target.group == (ct.type != CONTACT_PRIVATE)) {
 		ui_target.saved = true;		// the actions it came from: In contacts, under its new name
 		strcpy(ui_target.name, ct.name);
-	} else {
+	} else if (ui_frame()->scr != SCR_CONTACTS) {
 		ui_go_home();	// Find: its rows are the number's, not the contact (written by the storage job, later)
-	}
+	}	// Contacts lists it once the job has written it (the codeplug's change rebuilds the list)
 	ui_toast(toast_msg);
 }
 
