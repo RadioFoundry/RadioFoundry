@@ -218,9 +218,9 @@ test("the editor reads and writes the settings area with a radio; qdmr's ranges 
 	assert.ok(writeRanges().some(([a, b]) => a === 0xE000 && b === 0xF000));
 
 	const start = withArea([e(0x7001, 1), e(KEY.ipGateway, 7, 0, 0, 0)]);
-	const radio = new FakeCpsRadio({ board: "DM-1701", image: start.bytes });
+	const radio = new FakeCpsRadio({ board: "TEST-RADIO", image: start.bytes });
 	const tr = new CpsSerial(radio.stream());
-	await tr.identify([{ id: "dm1701", codeplug: { base: 0, end: 0xE00000, names: ["DM-1701"] } }]);
+	await tr.identify([{ id: "test", codeplug: { base: 0, end: 0xE00000, names: ["TEST-RADIO"] } }]);
 	const read = await tr.read({ iddb: false });
 	assert.deepEqual(area(read), area(start));
 	const m = decode(read);
