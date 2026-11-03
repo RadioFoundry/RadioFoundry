@@ -1274,8 +1274,13 @@ that listed the whole flash rather than the application area would still be acce
 
 An MD-380 shows the same alt 0 strings as the MD-9600 in both modes (measured; [hardware-md380.md](hardware-md380.md) 14.3).
 The DM-1701's and the MD-UV380's original firmware images hold the same normal-mode alt 0 string,
-`@Internal Flash   /0x08000000/03*016Kg` (every DM-1701 build examined). Their bootloader strings have not been read
-on a radio (?).
+`@Internal Flash   /0x08000000/03*016Kg` (every DM-1701 build examined).
+
+The DM-1701's bootloader, read on a radio (2026-11-02, standard descriptors only): manufacturer and string 1 "AnyRoad
+Technology", product "Digital Radio in USB mode", serial "00000000010C", bcdDevice 0x0200, alt 0
+`@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg`, alt 1 `@SPI Flash Memory /0x00000000/16*064Kg`: the
+bootloader row of the table. `boards/dm1701/board.toml` declares alt 0, so the flashers accept only that device. The
+MD-UV380's bootloader strings have not been read on a radio (?).
 
 ### 15.2 Flashing protocol (DfuSe-style, as the loader drives it)
 

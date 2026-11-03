@@ -103,10 +103,13 @@ export class FakeRadio {
 	// STM32F4 stub's protocol (5: SREAD, the security registers; 4: CONFIG and the record echo; 2 and 3: the DM-1701's
 	// wiring built in); stubConfig: what the stub does with a record it would accept ("ok", "refuse": answers bad
 	// argument, "garble": accepts it but HELLO echoes different bytes). cpsSecurity false: a build whose codeplug
-	// protocol doesn't serve the security registers (area 10).
+	// protocol doesn't serve the security registers (area 10). noMap: a memory chip smaller than the board's flash map
+	// needs: RadioFoundry stores nothing (STORAGE answers unavailable) and gives its radio info (area 9) with the chip's
+	// size. radioInfo: the radio info answered on a radio with its map too.
 	// state "openfw": another open firmware runs (installOpenFirmware; await radio.ready before using it), options in openfw
-	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {}, flashKb = 1024, cpsSecurity = true } = {}) {
+	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {}, flashKb = 1024, cpsSecurity = true, noMap = false, radioInfo = noMap } = {}) {
 		this.sim = sim;
+		Object.assign(this, { noMap, radioInfo });
 		this.board = sim.board;
 		this.key = sim.key;
 		this.flash = new Uint8Array(FLASH_SIZE);
@@ -505,6 +508,7 @@ export class FakeRadio {
 				}
 				return frame(f.cmd | 0x80, f.seq, new Uint8Array([3]));
 			}
+			if (f.cmd === 0x0F && this.noMap) return frame(f.cmd | 0x80, f.seq, new Uint8Array([4]));
 			if (f.cmd === 0x0F) {
 				// STORAGE (debuglink.md 3.13): the settings ring and journal hold the stock codeplug until claimed
 				const foreign = !this.spi.subarray(0x11000, 0x1B000).every((x) => x === 0xFF) && !this.storageOurs;
@@ -532,6 +536,15 @@ export class FakeRadio {
 			if (area === 1) src = this.spi;
 			else if (area === 5) src = this.flash;
 			else if (area === 10 && this.cpsSecurity) { src = this.security; a = ((addr >> 12) - 1) * 0x100 + (addr & 0xFFF); }
+			else if (area === 9 && this.radioInfo) {
+				// struct version 3, radio type 6, the git hash, the build time, the chip's capacity code (core/cps/cps_openfw.c)
+				const d = new Uint8Array(46);
+				d.set(le32(3), 0); d.set(le32(6), 4);
+				d.set(new TextEncoder().encode(this.git), 8);
+				d.set(new TextEncoder().encode("20261101120000"), 24);
+				d.set(le32(0x4000 | Math.log2(this.spi.length)), 40);
+				return concat(new Uint8Array([0x52, 0, 46]), d);
+			}
 			if (!src || a + len > src.length || len === 0) return new Uint8Array([0x2D]);
 			return concat(new Uint8Array([0x52, len >> 8, len & 0xFF]), src.subarray(a, a + len));
 		}
