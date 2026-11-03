@@ -68,6 +68,8 @@ static const uint16_t ctcss_detect[CTCSS_TONES + 1] = {
 #define TX_AUDIO_LINE	0x03B9u		// ... bit 0 set: the audio input pin (the stock DTMF, inferred)
 #define TX_PATH_VOICE	0x0004u		// page 1 0x1B in FM TX
 #define TX_PATH_TONE	0x0005u		// ... while a tone sends (inferred: the microphone's path off)
+#define P1_1D_ANALOG	0x39FDu		// page 1 0x1D on the analog path; with it the tone generator plays 12 dB louder
+#define P1_1D_DIGITAL	0x29A1u		// ... on the digital path (both measured on a radio by microphone)
 
 uint32_t qa4818_freq_word(uint32_t hz)
 {
@@ -238,13 +240,16 @@ static void path_page1(qa4818_t *c, bool tx, bool digital)
 	page(c, 1);
 	if (digital) {
 		static const rfbus_regval_t d[] = {
-			{ 0x1B, 0x07FF }, { 0x1C, 0x04D3 }, { 0x1D, 0x29A1 }, { 0x27, 0x891B }, { 0x21, 0xC8F7 },
+			{ 0x1B, 0x07FF }, { 0x1C, 0x04D3 }, { 0x27, 0x891B }, { 0x21, 0xC8F7 },
 			{ 0x22, 0x2136 }, { 0x2A, 0x8537 }, { 0x2B, 0x3B20 }, { 0x36, 0x1D59 },
 		};
 		rfbus_write_table(c->bus, d, sizeof(d) / sizeof(d[0]));
+		// 0x1D is the transmit DSP's: in receive it takes the analog value, at which the tone generator's beeps play
+		// as loud as on the analog path (12 dB louder, measured by microphone), and DMR receive is unchanged
+		wr(c, 0x1D, tx ? P1_1D_DIGITAL : P1_1D_ANALOG);
 	} else {
 		static const rfbus_regval_t a[] = {
-			{ 0x1B, 0x0004 }, { 0x1C, 0x04D7 }, { 0x1D, 0x39FD }, { 0x27, 0x091B },
+			{ 0x1B, 0x0004 }, { 0x1C, 0x04D7 }, { 0x1D, P1_1D_ANALOG }, { 0x27, 0x091B },
 		};
 		rfbus_write_table(c->bus, a, sizeof(a) / sizeof(a[0]));
 		wr(c, 0x36, tx ? 0x1D08 : 0x9D08);
@@ -278,7 +283,7 @@ void qa4818_init_trx(qa4818_t *c, uint16_t gpio, uint16_t r49)
 	if_constants(c, r49);
 	static const rfbus_regval_t p1[] = {
 		{ QA4818_REG_PAGE, 1 }, { 0x10, 0x8308 }, { 0x15, 0xC9A7 }, { 0x17, 0x0AA8 }, { 0x18, 0x0A18 },
-		{ 0x19, 0x7900 }, { 0x1A, 0x0728 }, { 0x1D, 0x39FD }, { 0x35, 0x100F }, { QA4818_REG_PAGE, 0 },
+		{ 0x19, 0x7900 }, { 0x1A, 0x0728 }, { 0x1D, P1_1D_ANALOG }, { 0x35, 0x100F }, { QA4818_REG_PAGE, 0 },
 	};
 	rfbus_write_table(c->bus, p1, sizeof(p1) / sizeof(p1[0]));
 	path_page1(c, false, false);
@@ -319,6 +324,8 @@ void qa4818_rx_on(qa4818_t *c, bool digital, uint32_t hz)
 	wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_RX);
 }
 
+// The tone generator's frequency word in receive is half the transmit one: with the receiver on, the generator sounds
+// at twice the transmit word's frequency (measured on a radio by microphone, 500 to 1500 Hz)
 void qa4818_beep(qa4818_t *c, uint16_t hz, uint8_t gain, uint16_t af)
 {
 	if (hz == 0) {
@@ -327,7 +334,7 @@ void qa4818_beep(qa4818_t *c, uint16_t hz, uint8_t gain, uint16_t af)
 		wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_RX);
 		return;
 	}
-	wr(c, QA4818_REG_TONE_FREQ, qa4818_tone_word(hz));
+	wr(c, QA4818_REG_TONE_FREQ, (uint16_t)(qa4818_tone_word(hz) >> 1));
 	// 0x70 bit 15 tone 1 on, bits 14:8 its gain (BK4819 map)
 	wr(c, QA4818_REG_TONE_GEN, (uint16_t)(0x8000u | (uint16_t)(gain & 0x7Fu) << 8));
 	wr(c, 0x47, QA4818_AF_BEEP);
