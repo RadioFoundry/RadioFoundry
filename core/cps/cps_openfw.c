@@ -312,7 +312,8 @@ static void cmd_read(void)
 	switch (area) {
 	case 1:		// flash: physical addresses (the STM32 family's tools add the 128 KB offset themselves)
 	case 2:		// EEPROM image: the first 64 KB of the open-firmware layout
-		if (m == NULL || board.flash == NULL || len == 0) {
+		// A chip too small for the board's map has no layout (no area 2), but its bytes still read for a backup
+		if ((area == 2 && m == NULL) || board.flash == NULL || len == 0) {
 			refuse();
 			return;
 		}

@@ -57,6 +57,9 @@ can't store a codeplug or keep its settings when turned off. The [web installer]
 after the backup it takes when it installs RadioFoundry. The backup holds a copy of that data. The calibration isn't
 touched.
 
+A radio whose memory chip is too small for RadioFoundry's settings area can't store a codeplug at all. The editor
+says so instead of reading it ([radios](23-radios.md) lists the models where this can happen).
+
 Write to Radio is blocked while the **Problems** tab lists errors, such as a name that is too long or a frequency that
 isn't valid. Warnings, such as a frequency outside the radio's bands or a DMR channel without a TX contact, don't
 block it.

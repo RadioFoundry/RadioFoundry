@@ -438,6 +438,10 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | USB mode (Tools > USB network) | hostlink | `hostlink_network_mode`, `hostlink_request_usb_network` (with `CONFIG_USB_NETWORK` and `CONFIG_HOSTLINK`) |
 | talker alias, private call start | dmr-voice | read from `radio_view_t.dmr`; `UI_EV_PRIVATE_CALL` is not raised by anyone yet |
 
+A request to save channel changes reports the reason when it cannot start: the VFO keeps its settings
+automatically, hotspot mode must end first, a stored channel must be selected, or another storage job must finish.
+The Home and Quick save keys and Actions > Save to channel use the same messages.
+
 Auto power off is the UI's: `ui_app_power_off_due()` turns true after Settings > Power > Auto power off without use
 (keys, RX, TX, scan and hotspot count as use), with a banner and beep one minute before; the housekeeping loop
 (core/app) then powers off as for the knob, except that if the power is still on 2 s after releasing the latch it

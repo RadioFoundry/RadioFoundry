@@ -304,6 +304,30 @@ test("a NAND radio: the stub reads the NAND through its NAND path once configure
 	await assert.rejects(s.writeCmd("nand", new Uint8Array([0x20, 0, 0, 0]), "erase", 100), /only read/);
 });
 
+// Field (Sentry OPENDIGITALRADIO-X, a NAND radio's install check, four tries on two days): the stub answered status 0x0D
+// for the sector at 0x1740000 every time, and the whole read failed after seven
+test("a NAND page whose ECC fails: kept as the chip holds it, the read goes on, the checksum pass leaves it out", async (t) => {
+	const sim = await c7000Simulation(C, "db25d");
+	const lay = C.boards.db25d;
+	const bad = 0x40000 + 0x5000 + 0x800;	// the second page of a used sector
+	const r = new FakeC7000({ progmem: sim.progmem.slice(), speed: 200, romWindow: 400, bootTime: 200, nand: { calibration: lay.calibration },
+		faults: { nandEcc: [bad] } });
+	t.after(() => r.stop());
+	const lines = [];
+	const s = new Stub(r.stream, { log: (l) => lines.push(l) });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.image, stubs.load);
+	await s.configure(lay.stub_board, C.led);
+	const got = await s.dump("nand", 0x40000, 0x50000);
+	assert.ok(equal(got, r.nand.subarray(0x40000, 0x50000)), "every sector read back, the failing one by its pages");
+	assert.deepEqual(s.ecc, [0x45000]);
+	assert.ok(lines.some((l) => /0x45000: the NAND's ECC can't correct this sector/.test(l)));
+	assert.ok(!lines.some((l) => /resuming here/.test(l)), "never asked again as a damaged frame");
+	const dm = await c7.blankCount(s, "nand", 0x40000, 0x60000);
+	assert.equal(dm?.sectors, 16, "the blank count goes on past its window");
+});
+
 test("NAND calibration copies: only those with the magic are kept, and a missing one is named", () => {
 	const tune = new Uint8Array(0x1000).fill(0x11);
 	tune.set(new TextEncoder().encode("TUNE"));

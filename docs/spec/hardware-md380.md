@@ -827,7 +827,9 @@ size.
 On a 16 MB part RadioFoundry uses the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug 0x000000 and
 0x020000-0xE00000, native area 0xE00000, TFTP staging 0xF00000), so the open-firmware CPS works the same. The TYT codeplug at 0 is overwritten
 by the first open-firmware write: read it out with the manufacturer's CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
-main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written.
+main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written. The CPS still
+reads the chip (area 1, up to its end) and the radio info gives its size, so a backup saves all of it; the Codeplug
+Editor and the flasher's channel step say that the radio stores no codeplug.
 
 ---
 
@@ -882,6 +884,24 @@ non-standard commands; the same erase-by-sector and block-write protocol as the 
 image with `tools/stm32_dfu.py --model md380 --key KEY rfoundry_md380.bin`. The image is plain, starts at 0x0800C000, and the
 tool encrypts it for the loader. rfoundry knows the board (`boards/md380/board.toml`: release `stable`, an update writes
 sectors 3-7 and keeps the codec).
+
+Switched on normally, the original firmware is also a DFU device with the same IDs. The flashers tell it from the
+bootloader by alt 0's layout and refuse it ([hardware-dm1701.md](hardware-dm1701.md) 15.1). The MD-380's bootloader,
+read on a radio (2026-11-02): manufacturer and string 1 "AnyRoad Technology", product "Digital Radio in USB mode", serial
+"00000000010C", bcdDevice 0x0200, one DFU interface with two alternate settings:
+
+| Alt | Layout |
+|---|---|
+| 0 | `@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg` (the application area only) |
+| 1 | `@SPI Flash Memory /0x00000000/16*064Kg` |
+
+`boards/md380/board.toml` declares alt 0 (`[flash.dfu] layout`), so the flashers accept only that device.
+
+The same radio switched on normally, running a patched build of the original firmware (2026-11-02): 0483:DF11,
+bcdDevice 0x0200, serial "00000000010C", alt 0 `@Internal Flash   /0x08000000/03*016Kg`, alt 1 as in the bootloader.
+String 1 and the manufacturer read "@00000004 : ffffffff" and the product "Patched MD380", which the patch may have
+changed; the unpatched firmware's strings are not known (?). Alt 0 is the MD-9600's normal-mode layout, so either rule
+refuses it.
 
 ### 14.4 The codec
 
