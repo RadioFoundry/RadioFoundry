@@ -358,8 +358,10 @@ What can be read depends on the firmware running:
 | Another open firmware (OpenGD77 family) | Everything but the security registers, over that firmware's CPS (`openfw.js`, below) |
 | Stock (STM32F4) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing RadioFoundry: flashing never touches the SPI flash, and RadioFoundry doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
 
-A CPS read the radio doesn't answer is asked again up to five times, 0.3, 1, 2 and 3 s apart (`link.js` `cpsRead`): a radio
-quiet for a few seconds must not end a backup halfway. A read answered after a retry goes on the trail.
+A CPS read the radio doesn't answer is tried up to five times, 0.3, 1, 2 and 3 s apart (`link.js` `cpsRead`): a radio
+quiet for a few seconds must not end a backup halfway. A read answered after a retry goes on the trail. Reads a build
+may not answer at all (the radio info and security registers in `backup.js`, the `openfw.js` probe) keep 3 tries, and a
+probe asks once.
 
 ## Channels after an install (`migrate.js`)
 
