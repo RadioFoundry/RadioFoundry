@@ -2390,7 +2390,7 @@ static void test_dmr_emergency(void)
 	// A message heard: one UI_EV_MESSAGE. Reading and deleting it change the inbox, not the last event: nothing again
 	{
 		static dmrBurst_t b[DMR_DATA_MAX_BURSTS];
-		int nb = dmrDataBuildIPText(false, 3101276, 3101234, "hello", DT_RATE_12_DATA, 0, b, DMR_DATA_MAX_BURSTS);
+		int nb = dmrDataBuildIPText(false, 9996543, 9991234, "hello", DT_RATE_12_DATA, 0, b, DMR_DATA_MAX_BURSTS);
 		CHECK(nb > 0);
 		int before = sms_inbox_count();
 		for (int i = 0; i < nb; i++) {
@@ -2401,7 +2401,7 @@ static void test_dmr_emergency(void)
 		CHECK(sms_inbox_count() == before + 1);
 		n_ev = 0;
 		ui_svc_poll();
-		CHECK(n_ev == 1 && last_ev.kind == UI_EV_MESSAGE && last_ev.id == 3101234);
+		CHECK(n_ev == 1 && last_ev.kind == UI_EV_MESSAGE && last_ev.id == 9991234);
 		sms_inbox_mark_read(0);
 		ui_svc_poll();
 		CHECK(sms_inbox_delete(0));
