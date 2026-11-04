@@ -95,8 +95,9 @@
 #define DONE_FALLBACK_TICKS	4u
 #define STALE_LC_VOICE		6u	// voice bursts after which the embedded LC is trusted even if unchanged
 #define SLOT_LC_GAP_TICKS	12u	// a slot's call is over after this long without its voice (360 ms)
-#define SLOT_LC_BUSY_TICKS	34u	// alias and GPS blocks are held back this long after the other slot's LC was seen
-#define SLOT_LC_OTHER_TICKS	2000u	// the other slot's LC is still its call's this long after it was last seen (60 s)
+#define SLOT_LC_BUSY_TICKS	72u	// a slot is busy this long after its LC or voice was last seen (2.2 s, 6 superframes)
+#define SLOT_LC_OTHER_TICKS	2000u	// its voice not taken, a slot's call may go on this long after its header or LC (60 s)
+#define SLOT_LC_ADOPT_READS	8u	// reads at F showing only the other slot's LC: this slot's call has the same one
 // Voice read at the ticks (chips with rx_voice_read, hardware-md380.md 4.8)
 #define TR_FIND_TICKS		40u	// reads to find the call's slot in (1.2 s) before the call counts as none
 #define TR_END_MISSES		6u	// reads on the call's slot in a row without a new burst (360 ms): the call is over
@@ -848,14 +849,29 @@ static void lc_look_again(hrc6000_dmr_t *e, char ev, const uint8_t lc[9], uint32
 // for a new call and the wanted call went quiet. An embedded voice LC read for a voice burst on ts is held back when it
 // is the other slot's call's, or, with a different call on each slot, when it is neither (it may be the other slot's
 // next talker; a new call on this slot comes with its header, or after a gap). Talker alias and GPS blocks (other
-// FLCOs, also in page 2) can't be told apart by slot: they are held back while the other slot was heard lately, and
-// never become a slot's call LC. Bursts with no slot number are left alone. The slots' LCs outlast a reception: with
-// the voice read locked to one slot (the HR_C5000), the other call's bursts are never taken, so the reception seems
-// over while that call goes on. Its LC is kept up to a long call's length after it was last seen, and every time page
-// 2 shows it again it is seen again. A new frequency or channel, or a start, forgets them
-static bool slot_lc_live(const hrc6000_dmr_t *e, int i, uint32_t ticks)
+// FLCOs, also in page 2) can't be told apart by slot: they are held back while the other slot is busy, and never
+// become a slot's call LC. Bursts with no slot number are left alone. The slots' LCs outlast a reception: with the
+// voice read locked to one slot (the HR_C5000) or the other slot closed (a repeater channel), the other call's bursts
+// are never taken, so the reception seems over while that call goes on. Its LC is then kept up to a long call's
+// length after its header or LC was taken, and page 2 showing it keeps it busy. A call ended by its terminator, or
+// one whose voice is taken, is only kept while busy. A new frequency or channel, or a start, forgets them
+static bool slot_voice_taken(const hrc6000_dmr_t *e)
 {
-	return e->slot_lc[i].known && (uint32_t)(e->tick - e->slot_lc[i].seen_tick) <= ticks;
+	return e->dev->chip->rx_voice_read == NULL && e->lock_ts == 0;
+}
+
+// Slot i's call LC was seen lately (its header, voice or LC, or page 2)
+static bool slot_lc_busy(const hrc6000_dmr_t *e, int i)
+{
+	return e->slot_lc[i].known && (uint32_t)(e->tick - e->slot_lc[i].seen_tick) <= SLOT_LC_BUSY_TICKS;
+}
+
+// Slot i's call may still be going on, its LC in page 2
+static bool slot_lc_live(const hrc6000_dmr_t *e, int i)
+{
+	const bool ended = !e->slot_lc[i].open;	// its terminator was heard
+	return slot_lc_busy(e, i) || (e->slot_lc[i].known && !ended && !slot_voice_taken(e) &&
+				      (uint32_t)(e->tick - e->slot_lc[i].call_tick) <= SLOT_LC_OTHER_TICKS);
 }
 
 // Slot i's call is going on: open, and its voice not gone quiet (it may have ended with no terminator heard)
@@ -869,33 +885,41 @@ static void slot_lc_forget(hrc6000_dmr_t *e)
 	memset(e->slot_lc, 0, sizeof(e->slot_lc));
 }
 
-// Group or unit voice channel user (FLCO 0 or 3): a call's LC, not an alias or GPS block
+// Group or unit voice channel user (FLCO 0 or 3): a call's LC, not an alias or GPS block (the core's dmr_lc_is_voice;
+// the driver doesn't include core headers)
 static bool lc_is_voice(const uint8_t lc[9])
 {
 	uint8_t flco = lc[0] & 0x3Fu;
 	return flco == 0x00u || flco == 0x03u;
 }
 
-static bool lc_slot_ok(hrc6000_dmr_t *e, int8_t ts, const uint8_t lc[9])
+// at_f: the read at this slot's F (once per superframe)
+static bool lc_slot_ok(hrc6000_dmr_t *e, int8_t ts, const uint8_t lc[9], bool at_f)
 {
 	if (ts != 1 && ts != 2) {
 		return true;
 	}
 	int me = ts - 1, other = 2 - ts;
 	if (!lc_is_voice(lc)) {
-		return !slot_lc_live(e, other, SLOT_LC_BUSY_TICKS);
+		return !slot_lc_busy(e, other);
 	}
 	bool open = slot_lc_open(e, me);
 	if (open && memcmp(lc, e->slot_lc[me].lc, 9) == 0) {
 		return true;	// this slot's own call, even when the other slot's carries the same LC (a bridged group)
 	}
-	bool other_live = slot_lc_live(e, other, SLOT_LC_OTHER_TICKS);
-	if (other_live && memcmp(lc, e->slot_lc[other].lc, 9) == 0) {
-		e->slot_lc[other].seen_tick = e->tick;	// still talking: page 2 keeps getting its LC
-		return false;
+	if (slot_lc_live(e, other) && memcmp(lc, e->slot_lc[other].lc, 9) == 0) {
+		if (e->slot_lc[other].open && !slot_voice_taken(e)) {
+			e->slot_lc[other].seen_tick = e->tick;	// still talking, as far as can be told
+		}
+		// With two different calls page 2 shows this slot's LC at its F about every other superframe. Only the
+		// other's at every F: it is this call's too (a group on both slots, or the other call over unseen)
+		return !open && at_f && ++e->slot_lc[me].other_reads >= SLOT_LC_ADOPT_READS;
+	}
+	if (at_f) {
+		e->slot_lc[me].other_reads = 0;
 	}
 	// Neither call's: with one call it is that slot's next talker (no header, a terminator missed)
-	return !(open && other_live && memcmp(e->slot_lc[me].lc, e->slot_lc[other].lc, 9) != 0);
+	return !(open && slot_lc_busy(e, other) && memcmp(e->slot_lc[me].lc, e->slot_lc[other].lc, 9) != 0);
 }
 
 // ts's call has this LC (open: its voice goes on; a terminator closes it). Only voice LCs
@@ -910,6 +934,8 @@ static void lc_slot_set(hrc6000_dmr_t *e, int8_t ts, const uint8_t lc[9], bool o
 	e->slot_lc[i].open = open;
 	e->slot_lc[i].seen_tick = e->tick;
 	e->slot_lc[i].voice_tick = e->tick;
+	e->slot_lc[i].call_tick = e->tick;
+	e->slot_lc[i].other_reads = 0;
 }
 
 // The post-access interrupt (0x82 bit 4)
@@ -994,12 +1020,12 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 		// to find, and an unchanged page 2 at A counts after STALE_LC_VOICE as at F (the capture may have been taken
 		// just after this call's F, when page 2 already held its LC)
 		int8_t ts = b->ts;
-		bool two = (ts == 1 || ts == 2) && slot_lc_live(e, 2 - ts, SLOT_LC_OTHER_TICKS);
+		bool two = (ts == 1 || ts == 2) && slot_lc_live(e, 2 - ts);
 		bool looking = !e->lc_given || (two && !slot_lc_open(e, ts - 1));
 		bool counted = e->voice_since_start > STALE_LC_VOICE;
 		if (s->voice_index == 5) {	// the embedded LC of B-E is assembled by F
 			bool changed = lc_read(e, b->lc);
-			bool mine = lc_slot_ok(e, ts, b->lc);
+			bool mine = lc_slot_ok(e, ts, b->lc, s->crc_ok);
 			b->lc_valid = s->crc_ok && (changed || counted) && mine;
 			e->st.lc_other_slot += s->crc_ok && (changed || counted) && !mine;
 			e->f_crc_bad = !s->crc_ok;
@@ -1014,7 +1040,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 		} else if (s->voice_index == 0 && looking && !e->lc_kept) {
 			// No LC yet: the last superframe's may have reached page 2 only after its F was read
 			bool changed = lc_read(e, b->lc);
-			bool mine = lc_slot_ok(e, ts, b->lc);
+			bool mine = lc_slot_ok(e, ts, b->lc, false);
 			b->lc_valid = (changed || (two && counted)) && !e->f_crc_bad && mine;
 			e->st.lc_a_new += b->lc_valid;
 			e->st.lc_other_slot += (changed || (two && counted)) && !e->f_crc_bad && !mine;
@@ -1023,7 +1049,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 		}
 		if (!b->lc_valid && e->lc_kept && !e->lc_given) {
 			e->lc_kept = false;
-			if (lc_slot_ok(e, ts, e->lc_keep)) {
+			if (lc_slot_ok(e, ts, e->lc_keep, false)) {
 				memcpy(b->lc, e->lc_keep, sizeof(b->lc));	// seen at F's repeat or the post-access interrupt
 				b->lc_valid = true;
 				e->st.lc_kept++;
@@ -1039,6 +1065,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 			lc_slot_set(e, ts, b->lc, true);
 		} else if ((ts == 1 || ts == 2) && slot_lc_open(e, ts - 1)) {
 			e->slot_lc[ts - 1].voice_tick = e->tick;
+			e->slot_lc[ts - 1].seen_tick = e->tick;
 		}
 	} else if (s->kind == DMR_BURST_VOICE_LC_HEADER || s->kind == DMR_BURST_TERMINATOR_LC) {
 		memcpy(b->lc, b->payload, sizeof(b->lc));

@@ -265,8 +265,10 @@ typedef struct {
 		uint8_t lc[9];
 		bool known;		// lc is this slot's last call's (a header, a terminator, an embedded LC handed over)
 		bool open;		// ... and that call is going on: its voice bursts carry no other LC
-		uint32_t seen_tick;	// tick lc was last seen (taken, or found in page 2)
+		uint32_t seen_tick;	// tick lc was last seen (taken, its voice, or found in page 2)
 		uint32_t voice_tick;	// tick of the slot's last voice burst taken while open
+		uint32_t call_tick;	// tick lc was last taken (a header, a terminator, an embedded LC handed over)
+		uint8_t other_reads;	// reads at F in a row that showed only the other slot's LC
 	} slot_lc[2];
 	// CC acquisition (5.4) when the filter is off
 	uint8_t cc_last, cc_matches, cc_cur;

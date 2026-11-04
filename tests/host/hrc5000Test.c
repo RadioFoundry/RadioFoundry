@@ -1036,6 +1036,21 @@ static void test_two_slots(void)
 	const two_opts_t moved = { 0, 0, 0, 1, 110, 0, true, 0 };
 	r = two_slots(&ts1m, &ts2m, 260, &moved);
 	TWO_CHECK("new frequency, same call", r, r.heard[1] > 0 && r.lc_own[1] > 0);
+
+	// A TS2 call that ended with no terminator heard, then a TS1 call with its headers whose talker changes with no
+	// header: TS2 is no longer busy, so the next talker's LC is handed over
+	two_call_t ts2n = { 20, 30, -1, 30, 60 };
+	two_call_t ts1n = { 80, 90, -1, 90, 240 };
+	r = two_slots(&ts1n, &ts2n, 260, &talker);
+	TWO_CHECK("next talker after the other call", r, r.heard[1] == r.sent[1] && r.lc_new[1] > 0);
+	// ... and a TS1 call with the ended TS2 call's LC, joined by late entry (the same group re-keyed on the other
+	// slot): page 2 shows only that LC at TS1's F, so it is TS1's too after SLOT_LC_ADOPT_READS superframes
+	two_call_t ts1o = { 0, 0, 124, 120, 260 };
+	const two_opts_t same_both = { 0, 0, 0, 0, 0, 0, true, 0 };
+	r = two_slots(&ts1o, &ts2n, 280, &same);
+	TWO_CHECK("late entry, the ended call's LC", r, r.heard[1] > 0 && r.lc_own[1] > 0);
+	r = two_slots(&ts1o, &ts2n, 280, &same_both);
+	TWO_CHECK("late entry, the ended call's LC, both slots", r, r.heard[1] > 0 && r.lc_own[1] > 0);
 }
 
 int main(void)
