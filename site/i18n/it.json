@@ -1366,6 +1366,7 @@
  "editor.qdmr.note.bad_frequency.one": "{n} canale senza una frequenza valida.",
  "editor.qdmr.note.bad_frequency.other": "{n} canali senza una frequenza valida.",
  "editor.qdmr.note.bad_tone": "{n} sub-toni che non sono toni CTCSS o DCS; i loro canali sono stati importati senza.",
+ "editor.qdmr.note.dcs_polarity": "{n} toni DCS sono stati impostati con polarità normale (N): la polarità del codeplug originale non viene ancora letta. Controlla quelli che devono essere invertiti (I).",
  "editor.qdmr.note.list_cut.one": "{n} lista gruppi RX ha più di 32 contatti; gli altri sono stati scartati.",
  "editor.qdmr.note.list_cut.other": "{n} liste gruppi RX hanno più di 32 contatti; gli altri sono stati scartati.",
  "editor.qdmr.note.zone_cut.one": "{n} zona ha più di 80 canali; gli altri sono stati scartati.",

@@ -124,7 +124,7 @@ with the same note codes.
 | Stock | Open-firmware |
 |---|---|
 | First radio ID, boot text | DMR ID, radio name (cut to 8), boot lines |
-| Channels | Table order. Power low, mid, high = "Low" (3), "Mid" (6), "High" (9). TX timeout is the radio's. Squelch the radio's default. Bandwidth only for FM. A DCS code with a digit above 7 is dropped (note `bad_tone`) |
+| Channels | Table order. Power low, mid, high = "Low" (3), "Mid" (6), "High" (9). TX timeout is the radio's. Squelch the radio's default. Bandwidth only for FM. A DCS code with a digit above 7 is dropped (note `bad_tone`). Every DCS code comes as normal (N), with note `dcs_polarity`, until the polarity bit is mapped (5) |
 | TX contact | The channel's contact (digital channels only) |
 | Contacts | Contacts with time slot override off |
 | RX group lists | Lists with members or used by a channel. A member ID without a contact becomes a group contact named by its ID |

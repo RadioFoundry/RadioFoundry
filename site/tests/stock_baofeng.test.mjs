@@ -190,12 +190,12 @@ test("detectStock and classify: a stock read, a whole data flash, blank, a Radio
 
 // --- Conversion ---
 
-test("importStock: the editing model with references kept; list members by ID; DCS out of range noted", () => {
+test("importStock: the editing model with references kept; list members by ID; DCS out of range and polarity noted", () => {
 	const m = empty();
 	const { counts, notes } = importStock(m, sample().read());
 	// lists: FAV has members, Empty has none and no channel uses it. TG 4000 has no contact: one is made
 	assert.deepEqual(counts, { channels: 4, contacts: 4, rxLists: 1, zones: 2 });
-	assert.deepEqual(notes, [{ code: "scan_lists", n: 1 }, { code: "bad_tone", n: 1 }]);
+	assert.deepEqual(notes, [{ code: "scan_lists", n: 1 }, { code: "dcs_polarity", n: 1 }, { code: "bad_tone", n: 1 }]);
 	assert.deepEqual(m.contacts.map((c) => [c.name, c.id, c.type]), [["Local", 2, "group"], ["TAC 311", 311, "group"], ["Friend", 3100999, "private"], ["4000", 4000, "group"]]);
 	assert.deepEqual(m.rxLists[0].contacts.map((c) => c.name), ["Local", "TAC 311", "4000"]);
 	const [rep, ts2, ts1, gmrs] = m.channels;

@@ -264,6 +264,7 @@ export function importStock(m, bytes) {
 		const tone = (t) => {
 			if (dmr) return "";
 			if (t === null) note("bad_tone");
+			else if (t.startsWith("D")) note("dcs_polarity");	// the polarity bit isn't mapped yet (spec 5): all come as N
 			return t || "";
 		};
 		const x = {
