@@ -322,6 +322,7 @@ The voice set-up after the boot ([modem-sct.md](modem-sct.md) 2), as the stock f
 | `VOCODER_SEL` | 4, AMBE+2 |
 | `DIGI_SPEAKER_GAIN` | from calibration (7, offset 0x0D9), MSB first |
 | `DIGI_MIC_GAIN` | from calibration (7, offset 0x0DB), MSB first |
+| `MOD_GAIN` | RadioFoundry only: 0x0C60 (+3.8 dB). At the chip's default (0 dB) the DMR deviation is 1255 Hz, 35% under the outer symbols' 1944 Hz; 0x0C60 gives 1941 Hz at 446 MHz, read by the bench's burst decoder, which reads 1948 Hz from a reference transmitter (measured). VHF not measured. In the DMR start (TYPE 0x05) the field changed nothing |
 | Codec page 1, registers 0x12, 0x13, 0x3C, 0x10 | four levels from calibration (7, offset 0x0D2): line outputs left and right, the right input, the headphone driver |
 | Codec page 1, register 0x34 | 0x80 |
 | Codec page 0, registers 0x56 and 0x58 | the microphone gain: `0x80 \| g` and `g`, g one of 0x18, 0x1C, 0x20, 0x24, 0x2A by the user's microphone gain; RadioFoundry sends 0x20, the middle step |
