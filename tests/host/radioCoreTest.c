@@ -967,8 +967,14 @@ static void test_tone_lists(void)
 	CHECK(t.type == TONE_NONE);
 	t = tones_step(&(subtone_t){ TONE_CTCSS, 2541 }, 1);
 	CHECK(t.type == TONE_DCS && t.value == 023);
-	t = tones_step(&(subtone_t){ TONE_DCS, 0754 }, 1);
+	t = tones_step(&(subtone_t){ TONE_DCS, 023 }, 1);
 	CHECK(t.type == TONE_DCS_INV && t.value == 023);
+	t = tones_step(&(subtone_t){ TONE_DCS_INV, 023 }, 1);
+	CHECK(t.type == TONE_DCS && t.value == 025);
+	t = tones_step(&(subtone_t){ TONE_DCS, 025 }, -1);
+	CHECK(t.type == TONE_DCS_INV && t.value == 023);
+	t = tones_step(&(subtone_t){ TONE_DCS, 0754 }, 1);
+	CHECK(t.type == TONE_DCS_INV && t.value == 0754);
 
 	// A non-standard tone steps to its neighbors
 	subtone_t odd = { TONE_CTCSS, 1500 };
@@ -2380,6 +2386,28 @@ static void test_dmr_emergency(void)
 	dmr_emergency_dismiss();
 	run(20);
 	CHECK(!dmr_emergency_alert(&a));
+
+	// A message heard: one UI_EV_MESSAGE. Reading and deleting it change the inbox, not the last event: nothing again
+	{
+		static dmrBurst_t b[DMR_DATA_MAX_BURSTS];
+		int nb = dmrDataBuildIPText(false, 9996543, 9991234, "hello", DT_RATE_12_DATA, 0, b, DMR_DATA_MAX_BURSTS);
+		CHECK(nb > 0);
+		int before = sms_inbox_count();
+		for (int i = 0; i < nb; i++) {
+			now += 60;
+			dmrDataServiceRxBurst(&b[i], now);
+		}
+		run(20);
+		CHECK(sms_inbox_count() == before + 1);
+		n_ev = 0;
+		ui_svc_poll();
+		CHECK(n_ev == 1 && last_ev.kind == UI_EV_MESSAGE && last_ev.id == 9991234);
+		sms_inbox_mark_read(0);
+		ui_svc_poll();
+		CHECK(sms_inbox_delete(0));
+		ui_svc_poll();
+		CHECK(n_ev == 1);
+	}
 
 	// The UI's emergency key (ui_svc_emergency, core/ui/ui_svc_emergency.c)
 	CHECK(ui_svc_feat_ext() & UI_FEAT_EMERGENCY);

@@ -6,8 +6,9 @@
 // that says "not available", so UI code needs no #if.
 //
 // Typical UI use:
-//   - redraw when dmr_data_serial() changes; dmr_data_last_event() says what happened (a banner / toast:
-//     "Message from 9991234", "Call alert from 9991234", "Q1AAA answered", "No answer from 9991234")
+//   - redraw when dmr_data_serial() changes (an event, a message read or deleted); dmr_data_last_event() says what
+//     happened: show it once per new dmrDataEvent_t.serial (a banner / toast: "Message from 9991234", "Call alert
+//     from 9991234", "Q1AAA answered", "No answer from 9991234")
 //   - inbox list: sms_inbox_count(), sms_inbox_get(i) (0 = newest), sms_inbox_mark_read(i), sms_inbox_unread(),
 //     sms_inbox_delete(i)
 //   - send: sms_send() then watch sms_send_state() (or the SMS_SENT / SMS_FAILED events)
