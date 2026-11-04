@@ -103,6 +103,10 @@ def pytest_addoption(parser):
     g.addoption("--outbound-mhz", type=float, default=None,
                 help="MHz: test_dmr_outbound_voice, a repeater's output the bench board sends BS bursts on; the radio "
                      "needs a duplex DMR channel receiving it (TX differs from RX); no default: one you may transmit on")
+    g.addoption("--am-mhz", type=float, default=None,
+                help="MHz: test_am_rx, the AM test frequency in the air band (108-137) the bench board sends full-carrier "
+                     "AM on and the radio's VFO receives; the bench transmits on it: a cabled setup unless the frequency "
+                     "is approved for the air; no default")
     g.addoption("--split-calls", type=int, default=1,
                 help="test_dmr_tx_split_repeater: key up this many times in one run (the split is written and "
                      "restored once; every call needs a fresh repeater start)")

@@ -194,3 +194,33 @@ def test_fm_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
                 problems.append(f"FM {mhz} MHz: a squelch tail: {ms:.0f} ms of noise {over:.0f} dB over the floor, "
                                 f"{(t0 - end) * 1000:.0f} ms after the carrier ended")
     assert not problems, "\n".join(problems)
+
+
+AM_LEAD_S = 0.5
+AM_PROGRAM = [{"kind": "tone", "hz": 1000, "s": 3.0, "level": 1.0}]
+
+
+@pytest.mark.feature("am_rx")
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_am_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
+    """The bench board's AM (1 kHz at depth 0.3, --am-mhz) received in AM by the VFO: the speaker plays a steady
+    1 kHz tone for the carrier's length, with nothing before or after it."""
+    from test_am_rx import am_tx_start, am_vfo_ready, tune_am
+    mhz, hz = am_vfo_ready(radio, pytestconfig)
+    segs = A.program_segs(AM_PROGRAM)
+    length = AM_PROGRAM[0]["s"] + 2 * AM_LEAD_S
+    with radio.vfo_session():
+        tune_am(radio, hz)
+        time.sleep(0.5)
+        with sdr_bench.lease():
+            p, path = microphone.start(length + 3.0)
+            done = am_tx_start(sdr_bench, mhz, AM_PROGRAM, depth=0.3, lead=AM_LEAD_S, tail=AM_LEAD_S).wait(length + 15)
+            microphone.finish(p, path)
+    print(f"bench {done}")
+    assert not done.get("cut"), f"the bench cut its transmission: {done}"
+    r = A.check_wav(path, segs, guard_ms=(AM_LEAD_S * 1000 - 50, 900))
+    problems = _check(r, f"AM {mhz} MHz", path)
+    if r.quiet:
+        _quiet(f"AM {mhz} MHz")
+    assert not problems, "\n".join(problems)
