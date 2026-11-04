@@ -190,6 +190,7 @@ def test_fm_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
     if end is not None:
         for t0, over, ms in r.pops:
             if t0 > end + 0.02:
+                problems = [p for p in problems if f"at {t0:.3f} s" not in p]     # named below instead
                 problems.append(f"FM {mhz} MHz: a squelch tail: {ms:.0f} ms of noise {over:.0f} dB over the floor, "
                                 f"{(t0 - end) * 1000:.0f} ms after the carrier ended")
     assert not problems, "\n".join(problems)

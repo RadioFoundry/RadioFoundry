@@ -144,3 +144,16 @@ def test_too_quiet():
 def test_program_segs():
     prog = [{"kind": "silence", "s": 0.5}, {"kind": "tone", "hz": 1000, "s": 0.3, "level": 0.6}]
     assert A.program_segs(prog) == [(0, 500.0), (1000, 300.0)]
+
+
+def test_noisy_lead():
+    """An FM receiver's hiss as the squelch opens, before and between the tones: the tones are still found where
+    they are, not at the first noise"""
+    segs = [(1000, 300), (0, 200), (600, 150), (0, 200), (1500, 80)]
+    x, t0 = render(segs, lead_s=0.8, level=0.03)
+    rng = np.random.default_rng(3)
+    a = int(0.2 * FS)
+    x[a:] += rng.normal(0, 10 ** (-58 / 20), len(x) - a)       # the carrier's noise from 0.2 s on
+    r = check(x, segs, guard_ms=(550, 300))
+    assert abs(r.tones[0].start_s - t0) < 0.004, r.report()
+    assert not [p for p in r.problems if "cut" in p or "long" in p], r.problems

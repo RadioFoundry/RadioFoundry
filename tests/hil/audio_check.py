@@ -188,13 +188,34 @@ def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_
                           f"(at least {min_snr_db:.0f} needed): too quiet, or not played")
         r.tones = [Tone(h, m) for h, m in tones]
         return r
-    # coarse start: the first rise halfway (in dB) from the background to the peak (a first tone quieter than the
-    # rest is still the first), then each segment measured near where it should be. The background is the median, as
-    # an FM receiver's hiss between squelched stretches is no tone either
-    back = max(float(np.median(first[a:b])), r.floor_db)
-    i0 = _crossing_up(first, a, b, (back + peak) / 2, int(min(tones[0][1] / 2, 10) / HOP_MS))
-    if i0 is None:
-        i0 = int(np.argmax(first[a:b])) + a
+    # coarse start: where the whole sequence fits best (the tones' mean levels at their places, summed), so a noise
+    # burst or a squelch opening before the first tone isn't taken for it; then each segment measured near there
+    span_i, offs, t = int(sum(m for _, m in segs) / 1000 / hop), [], 0.0
+    for h, m in segs:
+        if h:
+            offs.append((h, int(t / 1000 / hop), max(int(m / 1000 / hop), 1)))
+        t += m
+    last = min(b, n - span_i)
+    if last <= a:
+        last = a + 1
+    score = np.zeros(last - a)
+    for h, o, ln in offs:
+        c = np.concatenate([[0.0], np.cumsum(levels[h][:n])])
+        idx = np.arange(a, last) + o
+        ok = idx + ln <= n
+        score[ok] += (c[idx[ok] + ln] - c[idx[ok]]) / ln * ln     # longer tones weigh more
+        score[~ok] -= 1e9
+    i0 = a + int(np.argmax(score))
+    # the fit favors a room's swell over a short tone's true start: take the first sustained rise halfway from the
+    # background (just before the fit) to the tone's level, a little before the fit
+    t_len = max(int(tones[0][1] / 1000 / hop), 1)
+    near = min(t_len, int(0.03 / hop))
+    lo = max(a, i0 - near)
+    back = float(np.median(first[max(a, lo - int(0.1 / hop)):lo + 1]))
+    top = float(first[i0:i0 + t_len].max())
+    c = _crossing_up(first, lo, i0 + near, (back + top) / 2, int(min(tones[0][1] / 2, 10) / HOP_MS))
+    if c is not None:
+        i0 = int(c)
     expect = i0
     prev = None
     win_half = WIN_MS / 2 / HOP_MS
