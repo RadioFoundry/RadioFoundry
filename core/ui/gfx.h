@@ -84,6 +84,12 @@ int gfx_text_width(const font_t *f, const char *s);
 size_t gfx_text_alt(const char *s, int level, char *out, size_t cap, bool *more);
 // Copy s into out, shortened from the middle with an ellipsis so it is at most max_w pixels wide
 void gfx_text_fit(const font_t *f, const char *s, int max_w, char *out, size_t out_len);
+#if CONFIG_LANG_ZH
+// A CJK catalog's text is UTF-8 (tools/i18n.py): the code point at s and its length in bytes. A byte below 0xC0 is a
+// character of its own (ASCII, or one of font.h's glyphs), and a cut sequence is one box (U+FFFD), never a walk off
+// the string. gfx.c decodes with it, and so does the UI where it wraps or cuts text by character
+uint32_t gfx_utf8_next(const char *s, int *len);
+#endif
 #ifdef GFX_FIT_TRACE
 // Host builds only: called whenever gfx_text_fit had to shorten a text (the simulator lists them per screen)
 void gfx_fit_trace(const char *src, const char *out);

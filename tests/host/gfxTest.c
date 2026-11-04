@@ -11,6 +11,7 @@
 #include "ui/fmt.h"
 #include "ui/ui_screens.h"
 #include "ui/ui_svc.h"
+#include "ui/cjk_font.h"
 
 static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -444,6 +445,31 @@ static void test_pass_wait(void)
 	CHECK(!gfx_held(5));
 }
 
+#if CONFIG_LANG_ZH
+// A CJK catalog's text (CONFIG_LANG_ZH): UTF-8 decoded one character at a time, 16 px a character, widths in pixels, and
+// a cut that keeps whole characters (docs/spec/ui.md 2.5, core/ui/cjk_font.h)
+static void test_cjk_text(void)
+{
+	const font_t *f = &font_6x12;
+	char buf[24];
+	// 信 is E4 BF A1, 道 is E9 81 93
+	CHECK(gfx_text_width(f, "A") == f->w);
+	CHECK(gfx_text_width(f, "\xE4\xBF\xA1\xE9\x81\x93") == 2 * CJK_FONT_W);
+	CHECK(gfx_text_width(f, "A\xE4\xBF\xA1") == f->w + CJK_FONT_W);
+	// Room for one character and the ellipsis: the second character goes, whole
+	gfx_text_fit(f, "\xE4\xBF\xA1\xE9\x81\x93", CJK_FONT_W + f->w, buf, sizeof buf);
+	CHECK(strcmp(buf, "\xE4\xBF\xA1" GLYPH_ELLIPSIS) == 0);
+	// A buffer that cannot hold two characters keeps the first whole: never half of one
+	char small[4];
+	gfx_text_fit(f, "\xE4\xBF\xA1\xE9\x81\x93", 100, small, sizeof small);
+	CHECK(strcmp(small, "\xE4\xBF\xA1") == 0);
+	// A sequence cut by a buffer is one box as wide as a character, not a walk off the string
+	CHECK(gfx_text_width(f, "\xE4") == CJK_FONT_W);
+	// Drawing advances by each character's own width
+	CHECK(gfx_text(f, 0, 0, "\xE4\xBF\xA1\xE9\x81\x93", 0) == 2 * CJK_FONT_W);
+}
+#endif
+
 int main(void)
 {
 	mkdir("out", 0755);
@@ -573,6 +599,9 @@ int main(void)
 	CHECK(gfx_init(&disp));
 	ui_layout_init();
 	render_set("128x64");
+#if CONFIG_LANG_ZH
+	test_cjk_text();
+#endif
 
 	// 240x320 color doesn't fit the frame buffer: gfx refuses it instead of overrunning
 	disp.width = 240; disp.height = 320; disp.bpp = 16;
