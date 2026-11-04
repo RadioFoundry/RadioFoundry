@@ -25,6 +25,8 @@ RIG = {
     "aprs-dmr-dst": (int, "test_aprs DMR position: the destination ID", False),
     "callsign": (str, "the licensed operator's callsign: everything the tests send that carries one (APRS, CW ID, "
                       "talker alias), RAM only on the radio", False),
+    "microphone": (str, "an ALSA capture device (arecord -D, e.g. plughw:1,0) whose microphone is at the radio's "
+                        "speaker: the speaker tests (test_speaker.py)", False),
     "tx-mhz": (str, "MHz, comma separated: the frequencies this rig may transmit on (the radio and the bench); "
                     "--allow-rf needs it", False),
 }
