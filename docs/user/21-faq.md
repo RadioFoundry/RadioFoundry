@@ -90,6 +90,7 @@ radio is connected.
 | Point | Why |
 |---|---|
 | Cables with an FTDI chip and radios with their own USB port work. Other USB-serial cables (CH340, CP210x, PL2303) don't yet | Chrome on Android reaches USB serial devices only through WebUSB, and the page brings its own driver for each kind |
+| Accept Android's "Allow Chrome to access ..." prompt after picking the radio or cable in Chrome's list | Without it the page can't open the device |
 | Close any app that opens when the radio or cable is plugged in, and don't pick it in Android's "open with" prompt | An app holding the cable takes the radio's replies; the page then reports that the radio didn't answer |
 | Keep Chrome in front and the screen on (above) | Android slows a page in the background to about one step a second |
 
