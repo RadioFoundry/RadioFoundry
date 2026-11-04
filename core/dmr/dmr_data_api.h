@@ -7,8 +7,8 @@
 //
 // Typical UI use:
 //   - redraw when dmr_data_serial() changes (an event, a message read or deleted); dmr_data_last_event() says what
-//     happened, once a new event serial (a banner / toast: "Message from 3101234", "Call alert from 3101234",
-//     "K1ABC answered", "No answer from 3101234")
+//     happened: show it once per new dmrDataEvent_t.serial (a banner / toast: "Message from 3101234", "Call alert
+//     from 3101234", "K1ABC answered", "No answer from 3101234")
 //   - inbox list: sms_inbox_count(), sms_inbox_get(i) (0 = newest), sms_inbox_mark_read(i), sms_inbox_unread(),
 //     sms_inbox_delete(i)
 //   - send: sms_send() then watch sms_send_state() (or the SMS_SENT / SMS_FAILED events)

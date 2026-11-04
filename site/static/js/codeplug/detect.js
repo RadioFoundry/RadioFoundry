@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // What layout a codeplug image or SPI flash dump holds (docs/spec/codeplug-stock-tyt.md 2): the open-firmware layout
-// (open-firmware-cps.md 7), a stock TYT-family codeplug, nothing (blank), or something else. Decided from the
+// (open-firmware-cps.md 7), a stock TYT-family codeplug, a stock DM-32UV one (dm32-stock-codeplug.md 3), nothing
+// (blank), or something else. Decided from the
 // records each layout marks as in use, so stock bytes RadioFoundry hasn't overwritten yet don't hide a RadioFoundry codeplug.
 
 import {
@@ -10,6 +11,7 @@ import {
 } from "./records.js";
 import { getBcdId } from "./fields.js";
 import { STOCK, stockBytes, stockEvidence, stockDmrId, RDT_MD380, RDT_UV380 } from "./stock_tyt.js";
+import { DM32_STOCK, stockEvidence as dm32Evidence } from "./stock_baofeng.js";
 
 // A Latin-1 name field: {text, ok}; ok when the text is printable and only 0x00 or 0xFF follow it
 export function latinName(b, off, len) {
@@ -75,11 +77,12 @@ const NAMES = {
 	"tyt-uv380": "Stock TYT MD-UV380 family codeplug (DM-1701, RT84, MD-UV380, MD-UV390, RT3S, MD-2017)",
 	"tyt-md380": "Stock TYT MD-380 family codeplug (MD-380, MD-390, RT3)",
 	"tyt-uv380-rdt": "TYT MD-UV380 family CPS file (.rdt)",
+	[DM32_STOCK]: "Stock Baofeng DM-32UV codeplug",
 	unknown: "Unknown codeplug layout",
 };
 export const formatName = (f) => NAMES[f] || f;
 
-// {layout: "openfw" | "blank" | "tyt-uv380" | "tyt-md380" | "tyt-uv380-rdt" | "unknown", good, bad}
+// {layout: "openfw" | "blank" | "tyt-uv380" | "tyt-md380" | "tyt-uv380-rdt" | DM32_STOCK | "unknown", good, bad}
 export function classify(bytes) {
 	if (bytes.length === RDT_UV380) return { layout: "tyt-uv380-rdt", good: 0, bad: 0 };
 	const ev = bytes.length === RDT_MD380 ? { good: 0, bad: 0 } : openfwEvidence(bytes);
@@ -89,7 +92,8 @@ export function classify(bytes) {
 			const st = stockEvidence(sb, format);
 			if (st.good && st.bad * 4 <= st.good) return { layout: format, ...st };
 		}
-		return null;
+		const st = dm32Evidence(bytes);
+		return st.good && st.bad * 4 <= st.good ? { layout: DM32_STOCK, ...st } : null;
 	};
 	if (ev.good && ev.bad * 4 <= ev.good) {
 		// A radio put back on its stock firmware after RadioFoundry keeps RadioFoundry's records where the stock codeplug

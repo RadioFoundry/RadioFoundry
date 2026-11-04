@@ -87,6 +87,7 @@ Reading a vendor codeplug and moving a radio from the vendor firmware. User step
 | [codeplug-port.md](codeplug-port.md) | Stock codeplug to RadioFoundry: the clean-up, contacts, CPS write shared by the migration tools |
 | `<id>-migration.md` | One radio's flashing and migration procedure, where a migration tool exists |
 | `<id>-stock-cps.md` | One radio's vendor programming protocol, for interoperability |
+| `<id>-stock-codeplug.md` | One radio's vendor codeplug layout, where it isn't a family's: records and conversion |
 
 ## Flashing and updates
 
