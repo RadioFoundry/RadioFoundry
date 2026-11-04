@@ -37,13 +37,13 @@ bool tones_valid(const subtone_t *t)
 	}
 }
 
-// Sort key along the picker order: 0 none, then CTCSS (1 + Hz x 10), then DCS normal, then DCS inverted
+// Sort key along the picker order: 0 none, then CTCSS (1 + Hz x 10), then DCS by code with N before I
 static uint32_t key(const subtone_t *t)
 {
 	switch (t->type) {
 	case TONE_CTCSS: return 1u + t->value;
-	case TONE_DCS: return 0x10000u + t->value;
-	case TONE_DCS_INV: return 0x20000u + t->value;
+	case TONE_DCS: return 0x10000u + 2u * t->value;
+	case TONE_DCS_INV: return 0x10001u + 2u * t->value;
 	default: return 0;
 	}
 }
@@ -61,8 +61,8 @@ subtone_t tones_picker(uint16_t index)
 		return t;
 	}
 	index -= TONES_CTCSS_COUNT;
-	t.type = index < TONES_DCS_COUNT ? TONE_DCS : TONE_DCS_INV;
-	t.value = tones_dcs[index % TONES_DCS_COUNT];
+	t.type = index & 1u ? TONE_DCS_INV : TONE_DCS;
+	t.value = tones_dcs[index / 2u];
 	return t;
 }
 

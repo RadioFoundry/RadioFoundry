@@ -234,6 +234,10 @@ static void chip_rx_restart(hrc7000_dmr_t *e)
 	e->tc_slot[0] = e->tc_slot[1] = 0;
 	e->tc_agree = 0;
 	e->emb_pending = false;
+	// What was heard is gone with the slot timing. Kept, the polite check went on seeing a busy channel: an empty
+	// channel gives no timeslot interrupts after the restart, so rx_resync never aged it out, and every PTT after a
+	// data response was refused until the radio left DMR (on the SDR bench, 2026-11-03)
+	e->rx_any = false;
 	e->resync_tick = e->tick;
 	e->st.rx_restarts++;
 }
@@ -255,7 +259,6 @@ static void rx_resync(hrc7000_dmr_t *e)
 			e->st.rx_stale++;
 		}
 		chip_rx_restart(e);
-		e->rx_any = false;
 	}
 }
 
