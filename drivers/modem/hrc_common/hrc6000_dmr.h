@@ -103,7 +103,8 @@ typedef struct {
 	char ev;	// F burst F's report, f F reported again (a repeat, dropped), A burst A while no LC yet, P post-access
 			// interrupt, p post-access shortly before the reception started, H voice LC header
 	char res;	// n differs from the capture (taken), s same as the capture (held back), v same but taken (more than
-			// STALE_LC_VOICE voice bursts), c CRC error flagged, k kept for the next voice burst, - not used
+			// STALE_LC_VOICE voice bursts), c CRC error flagged, k kept for the next voice burst, o maybe the
+			// other slot's (held back, modem-hrc6000.md 5.2), - not used
 	uint8_t tk;	// ticks since the capture (255: 255 or more)
 	uint8_t vss;	// voice bursts taken in this reception at the time
 	uint32_t src;	// page 2's source ID (LC octets 6-8)
@@ -163,6 +164,8 @@ typedef struct {
 	uint32_t lc_rep_new;	// at F's repeated report: differs, kept for the next voice burst
 	uint32_t lc_pa_new;	// at a post-access interrupt: differs, kept for the next voice burst
 	uint32_t lc_kept;	// kept LCs handed over with the next voice burst
+	uint32_t lc_other_slot;	// embedded LCs and alias blocks that would have been handed over, held back as maybe
+				// the other slot's (page 2 isn't per slot)
 	uint8_t last_r5f;	// raw 0x5F of the last report
 	uint8_t last_data_r51;	// raw 0x51 of the last report classified as non-voice
 	uint8_t last_cc;	// last burst heard
@@ -257,6 +260,19 @@ typedef struct {
 	uint32_t pa_tick;	// tick of the last post-access interrupt
 	bool pa_any;
 	uint32_t pa_src;	// page 2's source ID then
+	// Each slot's call LC (index ts - 1), so the other slot's is never handed over for this one's (5.2)
+	struct {
+		uint8_t lc[9];
+		bool known;		// lc is this slot's last call's (a header, a terminator, an embedded LC handed over)
+		bool open;		// ... and that call is going on: its voice bursts carry no other LC
+		uint32_t seen_tick;	// tick lc was last seen (taken, its voice, or found in page 2)
+		uint32_t voice_tick;	// tick of the slot's last voice burst taken while open
+		uint32_t call_tick;	// tick lc was last taken (a header, a terminator, an embedded LC handed over)
+		uint8_t other_reads;	// reads at F in a row that showed only the other slot's LC
+		uint8_t cand[9];	// an LC neither call had, first read at cand_tick (handed over when read again later)
+		bool cand_ok;
+		uint32_t cand_tick;
+	} slot_lc[2];
 	// CC acquisition (5.4) when the filter is off
 	uint8_t cc_last, cc_matches, cc_cur;
 	uint32_t t_cc;

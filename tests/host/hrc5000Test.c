@@ -688,6 +688,12 @@ typedef struct {
 	int inv_from, inv_to;	// steps whose TC reads name the other slot
 	int8_t lock_ts;		// rx_lock_slot: 1 a repeater channel on TS1, 0 both slots (a hotspot, hear all)
 	int restart_at;		// step of an rx_restart from the stack (0 none): the slots are forgotten
+	int alias;		// page 2 holds a talker alias block (FLCO 4) for each call's superframes 0, 2, 4... (1) or
+				// 1, 3, 5... (2) instead of its LC (0 never)
+	bool same;		// both calls have the same LC (a group bridged to both slots)
+	int talker_at;		// step from which TS1's call has another talker, with no header (0 never)
+	int mix_sf;		// TS2's superframe after which page 2 holds a mix of both calls' LCs, once (0 never); below
+				// 0, page 2 holds the mix after every F from step -mix_sf on
 } two_opts_t;
 
 typedef struct {
@@ -697,9 +703,81 @@ typedef struct {
 	int wrong[3];		// ... taken with the other slot
 	int idx_jump[3];	// ... taken with a burst index out of step with the call's earlier bursts
 	int idx_off[3];		// ... with a burst index that isn't the call's (burst n is index n % 6 from its start)
+	int lc_own[3];		// ... handed over with an LC, the call's own
+	int lc_other[3];	// ... handed over with the other call's LC
+	int lc_new[3];		// ... handed over with TS1's next talker's LC
+	int alias[3];		// ... handed over with the call's own alias block
+	int alias_other[3];	// ... handed over with the other call's alias block
+	int lc_mix[3];		// ... handed over with the mixed LC
 	int tc_wrong;		// ticks with a wrong slot number (0, unknown, isn't)
 	int ctr_wrong;		// voice bursts whose slot counter isn't their report's (the tick before their read)
 } two_result_t;
+
+static const two_opts_t *two_o;	// the run's options
+
+// Each call's LC: group call to TG ts from 0x0n0n0n (TS2's for both with same). Page 2 (not per slot) gets a call's LC
+// with its header, and its embedded LC (or an alias block) by the tick after its F was read (the sticky LC rule's A
+// look): at the other call's F it may hold this one's
+static void two_lc(int ts, uint8_t lc[9])
+{
+	int of = two_o->same ? 2 : ts;
+	uint8_t s = (uint8_t)(of * 0x11);
+	const uint8_t v[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, (uint8_t)of, s, s, s };
+	memcpy(lc, v, 9);
+}
+
+static void two_lc_new(uint8_t lc[9])
+{
+	const uint8_t v[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x77, 0x77, 0x77 };
+	memcpy(lc, v, 9);
+}
+
+static void two_alias(int ts, uint8_t lc[9])
+{
+	const uint8_t v[9] = { 0x04, 0x00, (uint8_t)ts, 'C', 'A', 'L', 'L', '0', (uint8_t)('0' + ts) };
+	memcpy(lc, v, 9);
+}
+
+// Neither call's LC: a mix of both (on the bench, 2026-11-04: source 12087454, TG 3)
+static void two_lc_mix(uint8_t lc[9])
+{
+	const uint8_t v[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xB8, 0x70, 0x9E };
+	memcpy(lc, v, 9);
+}
+
+// Page 2 after the F of superframe sf of the call on ts, at step k
+static void two_page2(int ts, uint32_t sf, int k, uint8_t lc[9])
+{
+	if ((ts == 2 && two_o->mix_sf > 0 && sf == (uint32_t)two_o->mix_sf) || (two_o->mix_sf < 0 && k >= -two_o->mix_sf)) {
+		two_lc_mix(lc);
+	} else if (two_o->alias != 0 && sf % 2u == (uint32_t)(two_o->alias - 1)) {
+		two_alias(ts, lc);
+	} else if (ts == 1 && two_o->talker_at > 0 && k >= two_o->talker_at) {
+		two_lc_new(lc);
+	} else {
+		two_lc(ts, lc);
+	}
+}
+
+static void two_count_lc(two_result_t *res, int ts, const uint8_t lc[9])
+{
+	uint8_t v[9];
+	two_lc(ts, v);
+	if (memcmp(lc, v, 9) == 0) {
+		res->lc_own[ts]++;
+		return;
+	}
+	two_lc(3 - ts, v);
+	res->lc_other[ts] += memcmp(lc, v, 9) == 0;
+	two_lc_new(v);
+	res->lc_new[ts] += memcmp(lc, v, 9) == 0;
+	two_alias(ts, v);
+	res->alias[ts] += memcmp(lc, v, 9) == 0;
+	two_alias(3 - ts, v);
+	res->alias_other[ts] += memcmp(lc, v, 9) == 0;
+	two_lc_mix(v);
+	res->lc_mix[ts] += memcmp(lc, v, 9) == 0;
+}
 
 // Step k, at the engine's tick t (the one its timeslot interrupt is about to start): is a burst of the call on ts in
 // the port (voice, read at t), or its report due (header, after t)
@@ -715,6 +793,7 @@ static bool two_report(const two_call_t *c, int ts, int k, uint32_t t)
 
 static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ticks, const two_opts_t *o)
 {
+	two_o = o;
 	memset(rd, 0, sizeof(rd));
 	memset(voice_port, 0, sizeof(voice_port));
 	hrc5000_attach(&c5, &bus, false);
@@ -734,10 +813,15 @@ static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ti
 	rep_ctl[0] = rep_ctl[1] = 0x50;
 	rep_bit = 0;
 	uint32_t n_burst[3] = { 0, 0, 0 };
+	int f_ts = 0;	// the call whose F was in the port at the last step
 	for (int k = 0; k < ticks; k++) {
+		if (f_ts != 0) {
+			two_page2(f_ts, (n_burst[f_ts] - 1u) / 6u, k, rd[2]);
+		}
 		// The port: this tick's call burst, else what the idle slot leaves (no frame that checks)
 		uint32_t t = eng.tick + 1u;
 		int vts = two_voice(c1, 1, k, t) ? 1 : two_voice(c2, 2, k, t) ? 2 : 0;
+		f_ts = vts != 0 && n_burst[vts] % 6u == 5u ? vts : 0;
 		if (vts != 0) {
 			vburst(voice_port, TWO_KEY(vts, n_burst[vts]++));
 		} else {
@@ -772,6 +856,7 @@ static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ti
 		if (two_report(c1, 1, k, t) || two_report(c2, 2, k, t)) {
 			flags = 0x08;
 			rd[0][0x51] = 0x12;
+			two_lc(two_report(c1, 1, k, t) ? 1 : 2, rd[2]);
 		} else if (k == c1->late_at || k == c2->late_at) {
 			flags = 0x10;
 		}
@@ -799,6 +884,9 @@ static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ti
 					vburst(want, TWO_KEY(ts, n));
 					if (memcmp(want, b.payload, sizeof(want)) == 0) {
 						res.heard[ts] += ev.ts == ts;
+						if (b.lc_valid) {
+							two_count_lc(&res, ts, b.lc);
+						}
 						res.unknown[ts] += ev.ts == 0;
 						res.wrong[ts] += ev.ts != 0 && ev.ts != ts;
 						if (first_n[ts] < 0) {
@@ -823,8 +911,10 @@ static void two_print(const char *what, const two_result_t *r)
 {
 	printf("  %s: tc %d wrong, slot counter %d wrong\n", what, r->tc_wrong, r->ctr_wrong);
 	for (int ts = 1; ts <= 2; ts++) {
-		printf("    TS%d: %d sent, %d heard, %d unknown, %d wrong; index %d out of step, %d not the call's\n", ts,
-		       r->sent[ts], r->heard[ts], r->unknown[ts], r->wrong[ts], r->idx_jump[ts], r->idx_off[ts]);
+		printf("    TS%d: %d sent, %d heard, %d unknown, %d wrong; index %d out of step, %d not the call's; LC %d own, "
+		       "%d other's, %d next talker's, %d mixed; alias %d own, %d other's\n", ts, r->sent[ts],
+		       r->heard[ts], r->unknown[ts], r->wrong[ts], r->idx_jump[ts], r->idx_off[ts], r->lc_own[ts],
+		       r->lc_other[ts], r->lc_new[ts], r->lc_mix[ts], r->alias[ts], r->alias_other[ts]);
 	}
 }
 
@@ -832,7 +922,7 @@ static void two_print(const char *what, const two_result_t *r)
 
 static void test_two_slots(void)
 {
-	const two_opts_t rpt = { 0, 0, 0, 1, 0 };
+	const two_opts_t rpt = { 0, 0, 0, 1, 0, 0, false, 0, 0 };
 	const two_call_t none = { 0, 0, -1, 0, 0 };
 
 	// TS2 talking first; a TS1 call starts with its headers while TS2 goes on, and outlasts it
@@ -846,7 +936,7 @@ static void test_two_slots(void)
 	// One TC read in seven misses its update
 	two_call_t ts2b = { 0, 0, 6, 0, 200 };
 	two_call_t ts1b = { 40, 50, -1, 50, 160 };
-	const two_opts_t stale = { 7, 0, 0, 1, 0 };
+	const two_opts_t stale = { 7, 0, 0, 1, 0, 0, false, 0, 0 };
 	r = two_slots(&ts1b, &ts2b, 200, &stale);
 	TWO_CHECK("TS2 running", r, r.tc_wrong == 0 && r.wrong[1] == 0 && r.wrong[2] == 0);
 	TWO_CHECK("TS2 running", r, r.heard[1] == r.sent[1] && r.idx_off[1] == 0);
@@ -861,7 +951,7 @@ static void test_two_slots(void)
 	// locks again, but nothing names the other slot. The call keeps its lock (bursts with no slot number meanwhile)
 	// and its burst index
 	two_call_t ts1d = { 20, 30, -1, 30, 200 };
-	const two_opts_t blip = { 0, 0, 0, 1, 100 };
+	const two_opts_t blip = { 0, 0, 0, 1, 100, 0, false, 0, 0 };
 	r = two_slots(&ts1d, &none, 220, &blip);
 	TWO_CHECK("TC blip", r, r.wrong[1] == 0 && r.heard[1] + r.unknown[1] == r.sent[1] && r.unknown[1] > 0);
 	TWO_CHECK("TC blip", r, r.idx_off[1] == 0);
@@ -871,13 +961,13 @@ static void test_two_slots(void)
 	// TS2's header phase go, and TS1's call, already talking, is found
 	two_call_t ts2e = { 10, 20, -1, 20, 240 };
 	two_call_t ts1e = { 50, 60, -1, 60, 240 };
-	const two_opts_t wrong = { 0, 0, 70, 1, 0 };
+	const two_opts_t wrong = { 0, 0, 70, 1, 0, 0, false, 0, 0 };
 	r = two_slots(&ts1e, &ts2e, 260, &wrong);
 	TWO_CHECK("TC wrong at first", r, r.wrong[1] == 0 && r.heard[1] >= 45 && r.idx_jump[1] == 0);
 
 	// Both slots heard (a hotspot, hear all): a TS2 header with no voice after it (the call's voice lost), then a
 	// TS1 call joined by late entry: the late entry frees the read from the header's phase
-	const two_opts_t both = { 0, 0, 0, 0, 0 };
+	const two_opts_t both = { 0, 0, 0, 0, 0, 0, false, 0, 0 };
 	two_call_t ts2f = { 20, 30, -1, 0, 0 };
 	two_call_t ts1f = { 0, 0, 40, 34, 150 };
 	r = two_slots(&ts1f, &ts2f, 160, &both);
@@ -898,6 +988,99 @@ static void test_two_slots(void)
 	r = two_slots(&ts1h, &none, 140, &rpt);
 	TWO_CHECK("header at a restart", r, r.wrong[1] == 0 && r.unknown[1] == 0 && r.heard[1] >= r.sent[1] - 3);
 	TWO_CHECK("header at a restart", r, r.idx_off[1] == 0);
+
+	// The embedded LCs of two calls (page 2 isn't per slot): no voice burst of one call is handed over with the
+	// other's LC, which the core takes for a new call on the channel (HIL 2026-11-04: the wanted call went quiet with
+	// the other call's source shown). TS1 talking first, then TS2 with its headers
+	two_call_t ts1i = { 20, 30, -1, 30, 240 };
+	two_call_t ts2i = { 80, 90, -1, 90, 240 };
+	r = two_slots(&ts1i, &ts2i, 260, &rpt);
+	TWO_CHECK("TS1 first, LC", r, r.lc_other[1] == 0 && r.heard[1] == r.sent[1]);
+	// TS2 first, as above
+	r = two_slots(&ts1, &ts2, 260, &rpt);
+	TWO_CHECK("TS2 first, LC", r, r.lc_other[1] == 0);
+	// TS2 with its headers, then TS1 joined by late entry: TS1's own LC is found (at the A after its F) and only that
+	two_call_t ts2j = { 20, 30, -1, 30, 240 };
+	two_call_t ts1j = { 0, 0, 86, 74, 240 };
+	r = two_slots(&ts1j, &ts2j, 260, &rpt);
+	TWO_CHECK("late entry beside a call, LC", r, r.lc_other[1] == 0 && r.lc_own[1] > 0);
+	// Both slots heard (a hotspot, hear all), TS1 first: neither call gets the other's LC
+	two_call_t ts1k = { 20, 30, -1, 30, 240 };
+	two_call_t ts2k = { 50, 60, -1, 60, 240 };
+	r = two_slots(&ts1k, &ts2k, 260, &both);
+	TWO_CHECK("both slots, LC", r, r.lc_other[1] == 0 && r.lc_other[2] == 0);
+	// One call: its embedded LC is still handed over (nothing to hold back)
+	r = two_slots(&ts1c, &none, 140, &rpt);
+	TWO_CHECK("late entry, LC", r, r.lc_own[1] > 0);
+
+	// Talker alias blocks in page 2 every other superframe (FLCO 4). One call with its headers: its alias blocks and
+	// LCs are handed over
+	const two_opts_t alias1 = { 0, 0, 0, 1, 0, 2, false, 0, 0 };
+	r = two_slots(&ts1i, &none, 260, &alias1);
+	TWO_CHECK("one call, alias", r, r.heard[1] == r.sent[1] && r.alias[1] > 0 && r.lc_own[1] > 0);
+	// One call joined late, an alias block in its first superframe: it is never taken for the call's LC
+	const two_opts_t alias0 = { 0, 0, 0, 1, 0, 1, false, 0, 0 };
+	r = two_slots(&ts1c, &none, 140, &alias0);
+	TWO_CHECK("late entry, alias", r, r.heard[1] == 45 && r.lc_own[1] > 0 && r.alias[1] > 0);
+	// Two calls with alias blocks: neither call's go with the other's bursts, and the wanted call keeps its LC
+	r = two_slots(&ts1i, &ts2i, 260, &alias1);
+	TWO_CHECK("two calls, alias", r, r.heard[1] == r.sent[1] && r.lc_own[1] > 0 && r.lc_other[1] == 0);
+	TWO_CHECK("two calls, alias", r, r.alias_other[1] == 0);
+	r = two_slots(&ts1j, &ts2j, 260, &alias1);
+	TWO_CHECK("late entry beside a call, alias", r, r.lc_own[1] > 0 && r.lc_other[1] == 0 && r.alias_other[1] == 0);
+
+	// Both checks pass with the wanted call's own LC: TS2 first, as above
+	r = two_slots(&ts1, &ts2, 260, &rpt);
+	TWO_CHECK("TS2 first, own LC", r, r.heard[1] == r.sent[1] && r.lc_own[1] > 0);
+
+	// The same LC on both slots (a group bridged to both): TS1's call, with its headers, gets it
+	const two_opts_t same = { 0, 0, 0, 1, 0, 0, true, 0, 0 };
+	r = two_slots(&ts1, &ts2, 260, &same);
+	TWO_CHECK("same LC on both slots", r, r.heard[1] == r.sent[1] && r.lc_own[1] > 0);
+
+	// Another talker on TS1 with no header (its terminator missed), the other slot quiet: the new LC is handed over
+	const two_opts_t talker = { 0, 0, 0, 1, 0, 0, false, 150, 0 };
+	r = two_slots(&ts1i, &none, 260, &talker);
+	TWO_CHECK("next talker, no header", r, r.heard[1] == r.sent[1] && r.lc_own[1] > 0 && r.lc_new[1] > 0);
+
+	// A TS2 call heard, then a new frequency (rx_restart), where TS1 carries the same call joined by late entry: the
+	// old frequency's slot LCs are forgotten, so TS1 gets the LC
+	two_call_t ts2m = { 20, 30, -1, 30, 100 };
+	two_call_t ts1m = { 0, 0, 130, 124, 240 };
+	const two_opts_t moved = { 0, 0, 0, 1, 110, 0, true, 0, 0 };
+	r = two_slots(&ts1m, &ts2m, 260, &moved);
+	TWO_CHECK("new frequency, same call", r, r.heard[1] > 0 && r.lc_own[1] > 0);
+
+	// A TS2 call that ended with no terminator heard, then a TS1 call with its headers whose talker changes with no
+	// header and no gap: TS2's call may go on unseen, so the new LC may be a mix of the two and TS1 keeps its own
+	two_call_t ts2n = { 20, 30, -1, 30, 60 };
+	two_call_t ts1n = { 80, 90, -1, 90, 240 };
+	r = two_slots(&ts1n, &ts2n, 260, &talker);
+	TWO_CHECK("next talker after the other call", r, r.heard[1] == r.sent[1] && r.lc_own[1] > 0 && r.lc_new[1] == 0);
+	// ... and a TS1 call with the ended TS2 call's LC, joined by late entry (the same group re-keyed on the other
+	// slot): page 2 shows only that LC at TS1's F, so it is TS1's too after SLOT_LC_ADOPT_READS superframes
+	two_call_t ts1o = { 0, 0, 124, 120, 260 };
+	const two_opts_t same_both = { 0, 0, 0, 0, 0, 0, true, 0, 0 };
+	r = two_slots(&ts1o, &ts2n, 280, &same);
+	TWO_CHECK("late entry, the ended call's LC", r, r.heard[1] > 0 && r.lc_own[1] > 0);
+	r = two_slots(&ts1o, &ts2n, 280, &same_both);
+	TWO_CHECK("late entry, the ended call's LC, both slots", r, r.heard[1] > 0 && r.lc_own[1] > 0);
+
+	// Page 2 once holds neither call's LC (a mix of both), read at TS1's F: a late entry beside the other call, and a
+	// call with its headers, don't take it, and still get their own
+	const two_opts_t mix = { 0, 0, 0, 1, 0, 0, false, 0, 4 };
+	r = two_slots(&ts1j, &ts2j, 260, &mix);
+	TWO_CHECK("late entry, a mixed LC", r, r.lc_mix[1] == 0 && r.lc_other[1] == 0 && r.lc_own[1] > 0);
+	const two_opts_t mix2 = { 0, 0, 0, 1, 0, 0, false, 0, 9 };
+	r = two_slots(&ts1, &ts2, 260, &mix2);
+	TWO_CHECK("headers, a mixed LC", r, r.lc_mix[1] == 0 && r.heard[1] == r.sent[1] && r.lc_own[1] > 0);
+	// ... and on a repeater channel (TS2's voice unseen, so its busy window lapses) a mix that stays in page 2 from
+	// mid-call on (bench, 2026-11-04): TS1 keeps the LC its headers gave
+	const two_opts_t mix3 = { 0, 0, 0, 1, 0, 0, false, 0, -160 };
+	two_call_t ts2s = { 20, 30, -1, 30, 330 };
+	two_call_t ts1s = { 80, 90, -1, 90, 330 };
+	r = two_slots(&ts1s, &ts2s, 340, &mix3);
+	TWO_CHECK("headers, a mix that stays", r, r.lc_mix[1] == 0 && r.heard[1] == r.sent[1]);
 }
 
 int main(void)
