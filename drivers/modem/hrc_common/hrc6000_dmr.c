@@ -814,6 +814,8 @@ static void capture_if_fresh(hrc6000_dmr_t *e, char how)
 		e->lc_given = false;
 		e->lc_kept = false;
 		e->f_crc_bad = false;
+		e->slot_lc[0].other_reads = 0;	// a new reception: its call's F reads count from here (5.2)
+		e->slot_lc[1].other_reads = 0;
 		e->st.lc_n = 0;
 		e->st.lc_cap_how = how;
 		e->st.lc_cap_src = lc_src(e->stale_lc);
@@ -913,7 +915,10 @@ static bool lc_slot_ok(hrc6000_dmr_t *e, int8_t ts, const uint8_t lc[9], bool at
 		}
 		// With two different calls page 2 shows this slot's LC at its F about every other superframe. Only the
 		// other's at every F: it is this call's too (a group on both slots, or the other call over unseen)
-		return !open && at_f && ++e->slot_lc[me].other_reads >= SLOT_LC_ADOPT_READS;
+		if (!open && at_f && e->slot_lc[me].other_reads < SLOT_LC_ADOPT_READS) {
+			e->slot_lc[me].other_reads++;
+		}
+		return !open && e->slot_lc[me].other_reads >= SLOT_LC_ADOPT_READS;
 	}
 	if (at_f) {
 		e->slot_lc[me].other_reads = 0;

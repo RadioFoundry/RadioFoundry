@@ -321,9 +321,11 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   the capture can come just after this call's F. Bursts with no slot number are left alone. Counter `lc_other_slot`
   (what would have been handed over, held back).
 
-  Limits: a call joined by late entry beside another call gets the other call's LC if page 2 shows only that at 8 of
-  its F reads in a row (about 1 in 256 if each read shows either at even odds). A call with the other slot's LC gets
-  its embedded LC only after those 8 superframes (2.9 s).
+  Limits: the two slots' superframes share a period, so page 2 at this slot's F holds the same call's LC nearly every
+  time. A call joined by late entry beside another call whose own LC isn't found at A, F's repeat or the post-access
+  interrupt within 8 superframes (a weak signal, CRC errors) takes the other call's LC: its caller and talk group show
+  (and the talk group filter uses them) until its own LC comes. Before this rule it took the other call's LC at once.
+  A call with the other slot's LC gets its embedded LC only after those 8 superframes (2.9 s).
 - **LC trace** (for the bench): every look at page 2 until the reception's LC is handed over is logged, with the ticks
   since the capture, the voice bursts taken and page 2's source ID. Debug link log lines
   `dle cap<how> <src>` (how: `0` status report, `A` lone burst A, `T` burst taken) and
