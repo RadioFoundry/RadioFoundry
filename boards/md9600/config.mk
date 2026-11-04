@@ -14,10 +14,10 @@ CONFIG_MD9600_V5 ?= y
 ifeq ($(CONFIG_MD9600_V1V3)$(CONFIG_MD9600_V4)$(CONFIG_MD9600_V5),nnn)
 $(error the MD-9600 needs at least one of CONFIG_MD9600_V1V3, CONFIG_MD9600_V4 and CONFIG_MD9600_V5)
 endif
-# Transmit: off until a radio confirms the RF sequence; built, it still needs the run-time arm. DMR transmit (the
-# HR_C6000's per-burst RF keying) stays off until the radio code keys the RF chain (docs/spec/hardware-md9600.md 4.4)
-CONFIG_MD9600_TX ?= n
-CONFIG_MD9600_DMR_TX ?= n
+# Transmit: FM and DMR, both bands, checked off air (docs/spec/hardware-md9600.md 19.8, 19.9). Built, it still needs
+# the run-time arm for the power cycle, a stored board revision and plausible PA rows. n leaves a receive-only image
+CONFIG_MD9600_TX ?= y
+CONFIG_MD9600_DMR_TX ?= y
 # This board's own switches (config_md9600.h), not feature switches: no other radio has them
 MCU_DEFS += $(foreach s,V1V3 V4 V5 TX DMR_TX,-DCONFIG_MD9600_$(s)=$(if $(filter y,$(CONFIG_MD9600_$(s))),1,0))
 BOARD_DIRS += $(if $(filter y,$(CONFIG_MD9600_V1V3)),drivers/rf/sky72310)
@@ -29,8 +29,7 @@ BOARD_DIRS += $(if $(filter y,$(CONFIG_MD9600_V1V3) $(CONFIG_MD9600_V4)),drivers
 # The TX tones (the 1750 Hz burst, the roger beep) and DTMF come from the HR_C6000's tone generator during FM TX
 # (c6000_md9600.c); without CONFIG_MD9600_TX they have no transmitter. APRS receives from the audio on PC3
 # (afsk_md9600.c)
-# CONFIG_SUBTONE stays on: the decode is written (subtone_md9600.c, PA2), the encode (the tone PWM on PC7) is not, and
-# transmit is refused in the build until the RF sequence is confirmed
+# Sub-audio: decoded on PA2, sent as PWM on PC7 (subtone_md9600.c)
 # VOX reads the mic level on PA3 (power_md9600.c); the reference trim needs a hal_radio_t.ref_trim, not written
 CONFIG_REF_TRIM ?= n
 # A 128x64 monochrome panel: no colors. No air band or broadcast receiver. The fault trace, the large font and LTO

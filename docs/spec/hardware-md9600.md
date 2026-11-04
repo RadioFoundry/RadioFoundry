@@ -769,7 +769,7 @@ the original firmware sounds the same on this radio is not checked); UHF receive
 | Audio | FM from the IF chip (FM_MUTE high), PCM (DMR voice, beeps) from the HR_C6000 line out with FM held back, AF_SW muting otherwise (`boards/md9600/speaker_md9600.h`) |
 | GPS | USART1 RX (PA10), receive interrupt; 9600 baud first, then 4800, 19200, 38400, 57600, 115200, 3 s each. A silent line ends the search after the first window; a module once heard feeds APRS positions. PA9 stays on (it also powers the mic) |
 | Hand mic | the keypad of 9.3 through `drivers/input/adckeys`, three equal scans per key. Key roles of A-D and A/B are a proposal (unverified). No `CAP_KEYPAD`: a mic may have no keypad |
-| Transmit | FM and DMR on UHF and VHF, checked off air into a dummy load (19.8, 19.9; VHF 19.9.1). Off in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`); a build with them still needs the run-time arm, a stored revision and plausible PA rows. Sub-audio: CTCSS and DCS from the PWM generator on PC7, with the DCS turn-off tail |
+| Transmit | FM and DMR on UHF and VHF, checked off air into a dummy load (19.8, 19.9; VHF 19.9.1). On in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`); it still needs the run-time arm, a stored revision and plausible PA rows. Sub-audio: CTCSS and DCS from the PWM generator on PC7, with the DCS turn-off tail |
 | Not yet | Transmit power per level (a power meter), split duplex and the two-PLL burst switching (17 #17), the CPS's own command set, update packaging |
 
 ### 19.2 Clock plan and memory map
@@ -985,7 +985,7 @@ symbol deviation 1933 Hz, every burst of a 3 s call decoded (headers, 9 superfra
 At power-up, with the revision known: receivers on, then on V1-V4 the AK2365A reset (PE15 low for 10 us), and on V4
 the VHF synthesizer set for 145 MHz receive. PE15 stays an input on V4A / V5.
 
-Transmit is refused unless all hold: the build has `CONFIG_MD9600_TX` (off by default); a person armed it for this
+Transmit is refused unless all hold: the build has `CONFIG_MD9600_TX` (on by default); a person armed it for this
 power cycle (Settings > Advanced > Hardware > Transmit, or HWOPT; every start is unarmed); the revision comes from a
 stored record; the frequency is in a band; the calibration's PA rows are present at every point and rise with the
 power level (11.2). A refusal or a bus failure leaves the PA loop and both T5 off and the receiver back on. Disarming
@@ -1030,8 +1030,8 @@ The board's own switches, in `boards/md9600/board.mk` and `config.mk` (the share
 | `MD9600_REV_DEFAULT` | `v5` (default), `v4` or `v1v3`: the board revision driven when none is stored and the probe gives no verdict (19.3) |
 | `MD9600_REV_PROBE` | `1`: the receiver probe at start-up picks the revision when none is stored. Off (`0`) until its thresholds are measured |
 | `CONFIG_MD9600_V1V3` / `_V4` / `_V5` | `y` (default) or `n`: the synthesizer driver per board revision: V1-V3 (SKY72310 and the AK2365A IF receivers), V4 (the 24-bit "PLL1590" part and the AK2365A), V4A / V5 (LMX2571). All on, one image runs every revision; fewer make a smaller image for those boards. At least one must be on (19.3) |
-| `CONFIG_MD9600_TX` | `n` (default) or `y`: the transmit sequence (`boards/md9600/rfseq_md9600.c`). Built, transmit is still refused until it is armed for the power cycle (Settings > Advanced > Hardware, or the debug link) on a radio whose board revision is stored, and the PA calibration rows look plausible (19.8) |
-| `CONFIG_MD9600_DMR_TX` | `n` (default) or `y`: DMR transmit, the per-burst RF keying of 19.8 from the HR_C6000 glue. Needs `CONFIG_MD9600_TX`, and keys only while transmit is armed |
+| `CONFIG_MD9600_TX` | `y` (default) or `n`: the transmit sequence (`boards/md9600/rfseq_md9600.c`). Built, transmit is still refused until it is armed for the power cycle (Settings > Advanced > Hardware, or the debug link) on a radio whose board revision is stored, and the PA calibration rows look plausible (19.8) |
+| `CONFIG_MD9600_DMR_TX` | `y` (default) or `n`: DMR transmit, the per-burst RF keying of 19.8 from the HR_C6000 glue. Needs `CONFIG_MD9600_TX`, and keys only while transmit is armed |
 
 Feature switches that differ from the platform's defaults (`config.mk`; the two lists:
 [build-config.md](../build-config.md#unsupported-not-written-unconfirmed)):
