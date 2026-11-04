@@ -276,6 +276,13 @@ bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int8_t *out)
 	return true;
 }
 
+int8_t uvf_ref_trimmed(int8_t ref_offset, int32_t ppb)
+{
+	int32_t half = ppb < 0 ? -UVF_REF_TRIM_PPB_PER_STEP / 2 : UVF_REF_TRIM_PPB_PER_STEP / 2;
+	int32_t v = ref_offset + (ppb + half) / UVF_REF_TRIM_PPB_PER_STEP;
+	return (int8_t)(v > 127 ? 127 : v < -128 ? -128 : v);
+}
+
 const char *uvf_cal_source(void)
 {
 	return source == CAL_WORKING ? "working" : source == CAL_FACTORY ? "factory" : "none";

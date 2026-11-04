@@ -32,6 +32,18 @@ What made DMR receive work: configuration port reads sampled one bit late (4.2),
 audio path to the speaker, issue 2, and the features the board leaves off. The draft pull request for
 `feature/md380_follow_up` holds the task list.
 
+## Web installer from stock (2026-10-27)
+
+The web installer's channel step ([web-flasher.md](../dev/web-flasher.md), "Channels after an install", issue
+247), run on the owner's UHF radio from a local build of the site:
+
+| Step | Result |
+|---|---|
+| Start | The memory chip rewritten with its factory image, stock firmware restored by the page (Restore, original firmware only) |
+| Install | Own image, full backup taken after the write, settings area claimed |
+| First run | 508 channels, 96 contacts, 76 RX lists, 0 zones, reported as a success. The claim had erased the stock zone table (0x0149E0, inside the settings area) before the step read the radio, and the check compares against the conversion's own counts |
+| After the fix | The step converts from the backup's copy of the memory chip: 508 channels, 46 zones, 96 contacts, 76 RX lists. All zones present on the radio |
+
 ## 0. Before anything
 
 1. **Back up the radio** with the stock CPS (or `tools/md380_migrate.py backup`, [md380-migration.md](../spec/md380-migration.md)): the codeplug (RadioFoundry's open-firmware layout overwrites it, hardware-md380.md 12.2)
@@ -89,7 +101,7 @@ With SNMP off by default (`boards/md380/config.mk`) all of them fit together.
 | Look for | Proves | If not |
 |---|---|---|
 | Backlight on | TIM8 CH1 on PC6 | `display_md380.c` backlight set-up; the LAMP pin may be plain GPIO, not PWM |
-| The Home screen, right side up, black background | FSMC timing, controller init | Rebuild with `MD380_PANEL_TYPE=1` (or the st7735 driver's other types), then `MD380_PANEL_MADCTL_XOR` (0x40, 0x80, 0xC0) for orientation. Unknown 2 |
+| The Home screen, right side up, black background, red and blue right | FSMC timing, controller init, the factory panel type (hardware-md380.md 7) | Note the `display.panel_*` keys (debug link `link` section: controller, ID bytes, factory byte, type), then rebuild with `MD380_PANEL_TYPE` set to another of the st7735 driver's types, then `MD380_PANEL_MADCTL_XOR` (0x40, 0x80, 0xC0) for orientation. Unknown 2 |
 | No band of garbage at the edges | 160 x 128 window, no inset | `CONFIG_DISPLAY_INSET` in `config.mk`, the panel's row offset in `display_md380.c` |
 
 ## 3. Keys, channel switch, power, flash
@@ -142,7 +154,7 @@ With `CONFIG_SUBTONE` (on by default; sub-audio, [hardware-md380.md](../spec/har
 |---|---|
 | Receive: a generator sending 100.0 Hz CTCSS at about 15 % deviation opens a channel with that RX tone and no other (try 97.4 and 103.5); the Home screen shows "tone" | `MD380_SUBTONE_MIN_AMP` (the level on PA2: read `md380_adc_raw` of IN2 with and without the tone), the ADC rate (`md380_adc_scan_rate_hz`), whether PA2 sees the audio at all |
 | Receive: DCS 023N and 023I from a generator each open only their own channel | `MD380_SUBTONE_RX_INVERT=1` if they are swapped |
-| Transmit: CTCSS 100.0 Hz on a dummy load, an SDR or service monitor shows the tone at 0.5 to 0.75 kHz deviation (CTCSS) and the channel's DCS decodes on another radio | `MD380_SUBTONE_PERCENT` for the deviation; no tone at all: whether PC7 reaches the modulator (scope on PC7 first, 17.6 kHz PWM with a 100 Hz envelope), `MD380_SUBTONE_TX_INVERT=1` for DCS polarity |
+| Transmit: CTCSS 100.0 Hz on a dummy load, an SDR or service monitor shows the tone at 0.5 to 0.75 kHz deviation (CTCSS) and the channel's DCS decodes on another radio | `MD380_SUBTONE_PERCENT` for the deviation; no tone at all: whether PC7 reaches the modulator (scope on PC7 first, 17.6 kHz PWM with a 100 Hz envelope), `MD380_SUBTONE_TX_INVERT=0` if the DCS polarity is swapped (on by default: this radio inverts) |
 | Voice still clean with the tone on, and the squelch tail short | the tone level; the turn-off burst is not written |
 
 ## 7. DMR receive

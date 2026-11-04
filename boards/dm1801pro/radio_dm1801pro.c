@@ -18,6 +18,7 @@
 #include "dmr_glue.h"
 #include "audio_pcm.h"
 #include "hrc_afsk.h"
+#include "radio/ref_trim.h"
 
 // DAC C biases the modem's AF input. The radio's own value: with the other HR_C7000 boards' 0x06E2 the modem missed the sync of
 // about half of the DMR senders (bench, strong and weak signal); with 0x067E it took every burst
@@ -42,6 +43,9 @@
 // inbound burst before ours (a clipped SFR header lost the next superframe; at 2.0 ms the frame before ours still
 // carried most of the voice bit errors). Swept 0.4-3.1 ms in hardware-dm1801pro.md 5.6.
 #define RF_TX_LEAD		6u
+// TX data advance (hrc7000_t.tx_pre_on) 1.1 ms, not the chip's 0.4 ms: at 0.4 ms the inbound burst came 0.71 ms late
+// against the outbound, about 0.11 ms less per step (hardware-dm1801pro.md 5.6)
+#define TX_PRE_ON		11u
 #define FM_TX_LIMIT_12K5	5u	// FM_DEV_COEF b23:16 (hrc7000_t.fm_tx_limit)
 #define FM_TX_LIMIT_25K		0x0Fu
 #define FD_REG_NOISE		0x65u
@@ -56,6 +60,7 @@ static const fd6818_rssi_cal_t rssi_cal[] = {
 };
 
 static fd6818_t fd;
+static rfbus_3w_t rf_bus;
 static hrc7000_t modem;
 
 static radio_mode_t mode = RADIO_MODE_FM;
@@ -89,7 +94,7 @@ static void rf_data_release(void) { hrc_pin_in(PIN_RF_DATA); }
 static bool rf_data_in(void) { return hrc_pin_read(PIN_RF_DATA); }
 static void rf_delay_us(uint32_t us) { hal_delay_us(us * RF_BIT_SCALE_US); }
 
-static const fd6818_bus_t rf_bus = {
+static const rfbus_3w_pins_t rf_bus_pins = {
 	.cs = rf_cs,
 	.clk = rf_clk,
 	.data_out = rf_data_out,
@@ -173,6 +178,23 @@ static void write_mod_bias(uint32_t hz)
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, mod_bias(hz));
 }
 
+// The reference trim (hal_radio_t.ref_trim): the FD6818 is programmed f x (1 + trim), at every tune and burst
+static volatile int16_t trim_ppb;
+
+static uint32_t synth_hz(uint32_t hz)
+{
+	return ref_trim_tune_hz(hz, trim_ppb);
+}
+
+#if CONFIG_REF_TRIM
+// Taken at the next tune, so the RF chips' bus stays the radio task's: true asks the core for one
+static bool ref_trim(int16_t ppb)
+{
+	trim_ppb = ppb;
+	return true;
+}
+#endif
+
 // ---- From the DMR interrupts ----
 
 // RF TX interrupt (tx): RX path off, FD6818 straight to TX (no idle) and the TX aux word, TX path on. After the burst:
@@ -183,13 +205,13 @@ static void dmr_rf_switch(bool tx)
 {
 	if (tx) {
 		rx_path(rx_hz, false);
-		fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, tx_hz);
+		fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, synth_hz(tx_hz));
 		fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
 		tx_path(tx_hz, true);
 	} else {
 		DAC_DATA_B = 0;
 		tx_path(tx_hz, false);
-		fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, rx_hz);
+		fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, synth_hz(rx_hz));
 		rx_path(rx_hz, true);
 	}
 }
@@ -228,13 +250,15 @@ static void init(void)
 	modem.fm_tx_limit[0] = FM_TX_LIMIT_12K5;
 	modem.fm_tx_limit[1] = FM_TX_LIMIT_25K;
 	modem.rf_tx_lead = RF_TX_LEAD;
+	modem.tx_pre_on = TX_PRE_ON;
 	hrc_modem_analog_init(DAC_C_INIT);
 	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DMR_DB);
 	hrc7000_set_rf_tx_lead(&modem, RF_TX_LEAD);
 
 	hrc_pin_out(PIN_RF_CS, true);
 	hrc_pin_out(PIN_RF_CLK, false);
-	fd6818_attach_variant(&fd, &rf_bus, &fd6818_variant_dm1801pro);
+	rfbus_3w_attach(&rf_bus, &rf_bus_pins);
+	fd6818_attach_variant(&fd, &rf_bus.bus, &fd6818_variant_dm1801pro);
 	fd6818_init(&fd);
 	fd6818_set_mode(&fd, FD6818_MODE_FM);
 	mode = RADIO_MODE_FM;
@@ -277,7 +301,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 	}
 	DAC_DATA_B = 0;
 	tx_path(hz, false);
-	fd6818_set_freq(&fd, hz);
+	fd6818_set_freq(&fd, synth_hz(hz));
 	if (mode == RADIO_MODE_DMR) {
 		fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);
 		fd6818_set_bandwidth(&fd, fd.variant->bw_dmr);
@@ -345,7 +369,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	write_mod_bias(hz);
 	// DMR keeps listening on the RX frequency until a burst (dmr_rf_switch retunes per burst); on a split channel the
 	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
-	fd6818_set_freq(&fd, mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz);
+	fd6818_set_freq(&fd, synth_hz(mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz));
 	fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the HR_C7000's
 	hrc_dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
@@ -612,7 +636,7 @@ void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d)
 	d->rssi_raw = last_rssi_raw;
 	d->noise_raw = last_noise_raw;
 	d->fm_noise = hrc7000_fm_noise(&modem);
-	d->rf_writes = fd.writes;
+	d->rf_writes = rf_bus.bus.writes;
 	d->c7_audio = hrc7000_rd(&modem, C7_AUDIO_CONTROL);
 	d->c7_rf_mode = hrc7000_rd(&modem, C7_RF_MODE);
 	d->c7_work_mode = (uint8_t)hrc7000_rd(&modem, C7_WORK_MODE);
@@ -646,4 +670,7 @@ const hal_radio_t dm1801pro_radio = {
 	.rx_am = rx_am,
 #endif
 	.mic_gain = mic_gain,
+#if CONFIG_REF_TRIM
+	.ref_trim = ref_trim,
+#endif
 };

@@ -136,6 +136,12 @@ static void test_settings_basic(void)
 	settings_read(&s);
 	CHECK(s.brightness == 100 && s.squelch == SETTINGS_UNSET8 && s.beeps == 1);
 	CHECK((s.accent & SETTINGS_AUDIO_MASK) == 0);	// noise reduction on, AGC off (a record from before them: also 0)
+	// Zone shares accepted by default, and by a record that stored the old Off (0) or Ask (1); only 2 turns them off
+	CHECK(s.zs_offers == 0 && settings_zs_accept(&s));
+	s.zs_offers = 1;
+	CHECK(settings_zs_accept(&s));
+	s.zs_offers = SETTINGS_ZS_OFF;
+	CHECK(!settings_zs_accept(&s));
 
 	settings_t *w = settings_begin();
 	w->vfo_rx_hz = 146520000;

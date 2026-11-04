@@ -28,9 +28,11 @@ test("every placed layout has a fixture, each layout once", () => {
 	assert.ok(L.files.length > 0);
 	const covered = new Set(L.files.flatMap((f) => stockfw.sameLayout(fb.profiles[f.real_sha256], fb.profiles)));
 	for (const [sha, p] of reals) assert.ok(covered.has(p), `${p.name} (${sha.slice(0, 8)})`);
-	// a layout is where the codec sits, stock and placed: addresses and lengths (the hashes are of random bytes)
+	// a layout is where the codec sits, stock and placed (addresses and lengths), and which codec it is: builds can put
+	// different codecs at the same addresses, so the real profile's codec checksums count (a fixture's own hashes are of
+	// random bytes)
 	const where = (f) => JSON.stringify([fb.profiles[f.real_sha256].board, fb.profiles[f.real_sha256].windows.map(([a, n]) => [a, n]),
-		f.placed.slice(0, -1).map(([a, , n]) => [a, n])]);
+		f.placed.slice(0, -1).map(([a, , n]) => [a, n]), fb.profiles[f.real_sha256].placed ?? null]);
 	assert.equal(new Set(L.files.map(where)).size, L.files.length);
 });
 
@@ -79,7 +81,9 @@ for (const f of L.files.filter((x) => fb.profiles[x.real_sha256].file_radio)) {
 		const board = fb.boards[real.board];
 		// the synthetic map holds no table ref, so its tables are found at their stock address only (moved tables:
 		// codecmap.test.mjs, with the shared vector)
-		for (const [cr, tr, verbatim] of [[0x0807537C, ta, false], [0x0807537C, ta, true], [f.profile.windows[0][0], ta, false]]) {
+		// a moved address that differs from the file's own: one build (MD-9600 V26.45) has its code at 0x0807537C
+		const away = f.profile.windows[0][0] === 0x0807537C ? 0x08060004 : 0x0807537C;
+		for (const [cr, tr, verbatim] of [[away, ta, false], [away, ta, true], [f.profile.windows[0][0], ta, false]]) {
 			const [c2, t2] = await moveWindow(code, tables, m, cr, tr);
 			const flash = new Uint8Array(0x100000).fill(0xFF);
 			flash.set(c2, cr - 0x08000000);

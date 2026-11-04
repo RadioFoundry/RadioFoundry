@@ -29,15 +29,21 @@
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
+//                       (each also <src>,<name>: the station's name, _ = space, for one not in the contacts)
 //   zoneoffer:<src>[,c] another radio offers its zone "Club net" (,c: one channel); the import and sends always work
+//   zoneexpire          the offer is gone (not opened in time)
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
+//   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
+//   contacts:full       every contact number holds a talkgroup ("Long 31" ...), but every third: a list past 128
+//   contacts:<n>        the same up to contact n (a list just past 128 at 220)
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
 //   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
+//   splash:loader       the same splash as the stub entry draws it, while the flashing tools have the radio
 //   shot:<name>         save the screen (sim_set_shot_dir)
 //   expect:<key>=<value>   check (see check()); value "*" = anything; shows=<text> / hides=<text>: a drawn
 //                          text contains it / none does; markafter=<text> / nomarkafter=<text>: a mark is drawn just right of it / none is;
@@ -59,6 +65,7 @@
 #include "input/input.h"
 #include "hostlink/hostlink.h"
 #include "hotspot/hotspot.h"
+#include "stubentry/stub_entry.h"
 #include "ui/ui_svc_aprs.h"
 
 #define TICK_MS		50
@@ -89,6 +96,7 @@ void gfx_fit_trace(const char *src, const char *out)
 // them read as one word. Marks of 6 px or less (scroll marks, ellipsis dots) and lines (one pixel thick) are left out.
 
 static bool worst;	// sim_worst: worst-case codeplug content
+static uint16_t full_contacts;	// contacts:full / :<n>: every contact number up to it used, but every third
 
 #define LIVE_MAX	160
 static struct { int x0, y0, x1, y1; char s[40]; } live[LIVE_MAX];
@@ -351,7 +359,9 @@ static uint8_t p_battery(void) { return battery; }
 static uint16_t p_supply(void) { return 13800; }	// the sim's view carries the reading (supply:<mv>)
 static hal_power_t power = { .battery_pct = p_battery };
 
-static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
+// The air band receive only, as on radios that have it (docs/spec/airband-and-broadcast.md 3.2)
+static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true },
+				{ 108000000, 136000000, false } };
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
 static bool afsk_tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mark, uint16_t space, uint8_t level)
@@ -369,7 +379,7 @@ static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_O
 static const hal_vocoder_t vocoder = { .options = v_options };
 
 board_t board = {
-	.name = "Simulator", .bands = bands, .band_count = 2, .power_count = 9, .power_names = power_names,
+	.name = "Simulator", .bands = bands, .band_count = 3, .power_count = 9, .power_names = power_names,
 	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk, .vocoder = &vocoder,
 };
 
@@ -526,6 +536,34 @@ static const sim_contact_t worst_contacts[] = {
 
 codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
 
+// Another firmware's codeplug ("foreign"): a channel write is held and the UI asked, as ui_svc_storage.c does
+static bool sim_foreign, sim_held;
+bool codeplug_foreign(void) { return sim_foreign; }
+
+static bool sim_hold(void)
+{
+	if (!sim_foreign)
+		return false;
+	ui_event_t ev;
+	memset(&ev, 0, sizeof ev);
+	ev.kind = UI_EV_CODEPLUG_FOREIGN;
+	sim_held = ui_notify(&ev);
+	return true;
+}
+
+// Start new makes the write (counted), Use anyway drops it; both make the codeplug the radio's own
+bool ui_svc_codeplug_answer(uint8_t answer)
+{
+	if (!sim_held)
+		return false;
+	sim_held = false;
+	if (answer == UI_CP_NEW)
+		sim_rec.codeplug_writes++;
+	if (answer != UI_CP_CANCEL)
+		sim_foreign = false;
+	return true;
+}
+
 // Channels the channel editor saved (ui_svc_write_channel): they shadow the built-in ones and fill numbers past 40
 #define SIM_EDITS	8
 static struct { uint16_t number; channel_t ch; } sim_edits[SIM_EDITS];
@@ -541,6 +579,8 @@ static const channel_t *sim_edit(uint16_t number)
 
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 {
+	if (sim_hold())
+		return sim_held;
 	uint8_t i = 0;
 	while (i < n_edits && sim_edits[i].number != number)
 		i++;
@@ -760,8 +800,43 @@ bool ui_svc_zone_edit(const zone_op_t *op)
 
 uint32_t codeplug_dmr_id(void) { return 3101276; }
 
+// Contacts the contact editor saved (ui_svc_write_contact): at the numbers past the built-in ones
+#define SIM_CONTACT_EDITS	4
+static struct { uint16_t index; contact_t c; } sim_ct_edits[SIM_CONTACT_EDITS];
+static uint8_t n_ct_edits;
+
+#if CONFIG_CONTACT_EDIT
+bool ui_svc_write_contact(uint16_t index, const contact_t *c)
+{
+	if (n_ct_edits == SIM_CONTACT_EDITS)
+		return false;
+	sim_ct_edits[n_ct_edits].index = index;
+	sim_ct_edits[n_ct_edits].c = *c;
+	n_ct_edits++;
+	sim_rec.codeplug_writes++;
+	return true;
+}
+#endif
+
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
+	for (uint8_t i = 0; i < n_ct_edits; i++) {
+		if (sim_ct_edits[i].index == index) {
+			*out = sim_ct_edits[i].c;
+			return true;
+		}
+	}
+	if (full_contacts != 0) {
+		// "TG 100001" ... a talkgroup at each number, none at 3, 6, 9 ...; past the built-in ones
+		if (index <= N_CONTACTS || index > full_contacts || index % 3u == 0)
+			goto builtin;
+		memset(out, 0, sizeof *out);
+		out->id = 100000u + index;
+		snprintf(out->name, sizeof out->name, "Long %u", (unsigned)index);
+		out->type = CONTACT_GROUP;
+		return true;
+	}
+builtin:
 	if (worst) {
 		if (index < 1 || index > N_WORST)
 			return false;
@@ -984,13 +1059,49 @@ static void sim_vfo(bool on)
 		load_channel();
 	}
 }
+// board_tx_band on this file's writable board (board.h's inline one reads the const declaration)
+static int sim_tx_band(uint32_t hz)
+{
+	for (uint8_t i = 0; i < board.band_count; i++)
+		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz && board.bands[i].tx)
+			return i;
+	return -1;
+}
+// As the radio core (vfo_set_hz): a split keeps its offset within one transmit band, else it is simplex
+static void sim_vfo_rx(uint32_t hz)
+{
+	uint32_t tx = vfo_tx_hz - vfo_rx_hz + hz;
+	int band = sim_tx_band(hz);
+	bool carries = band >= 0 && sim_tx_band(vfo_rx_hz) == band && sim_tx_band(tx) == band;
+	vfo_rx_hz = hz;
+	vfo_tx_hz = carries ? tx : hz;
+}
 void radio_req_vfo_step(int8_t dir)
 {
 	retune();
-	view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = view.ch.rx_hz + dir * view.vfo_step_hz;
+	sim_vfo_rx(view.ch.rx_hz + dir * view.vfo_step_hz);
+	view.ch.rx_hz = vfo_rx_hz;
+	view.ch.tx_hz = vfo_tx_hz;
 	changed();
 }
-void radio_req_vfo_set(uint32_t hz) { retune(); view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = hz; changed(); }
+// As the radio core: off the VFO, the VFO opens on the frequency (Find's Tune VFO)
+void radio_req_vfo_set(uint32_t hz)
+{
+	retune();
+	sim_vfo_rx(hz);
+	if (!view.vfo)
+		sim_vfo(true);
+	view.ch.rx_hz = vfo_rx_hz;
+	view.ch.tx_hz = vfo_tx_hz;
+	changed();
+}
+void radio_req_vfo_tx(uint32_t hz)
+{
+	if (!view.vfo || sim_tx_band(hz ? hz : vfo_rx_hz) < 0)
+		return;
+	vfo_tx_hz = view.ch.tx_hz = hz ? hz : vfo_rx_hz;
+	changed();
+}
 // Copy to VFO as the radio core does (core/radio/radio_sm.c vfo_copy): what is in effect now is the VFO's own
 uint8_t ui_svc_vfo_copy(const radio_view_t *v)
 {
@@ -1192,14 +1303,38 @@ static uint16_t n_inbox;
 static bool soft_volume;
 // The broadcast receiver (Settings > Talk & listen > FM broadcast step) only with the "bcast" token, the same way
 static bool bcast_rx;
+// A reference trim (Settings > Advanced > Freq trim) only with the "trim" token, the same way
+static bool ref_trim;
 uint32_t ui_svc_features(void)
 {
-	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST);
+	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
+	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM);
+}
+// My radio's names (ui_svc_name_*): placeholders, as the user's own would be; a save writes at once
+static char sim_names[UI_NAME_COUNT][17];
+static void sim_names_reset(void)
+{
+	strcpy(sim_names[UI_NAME_RADIO], "N0CALL");
+	strcpy(sim_names[UI_NAME_BOOT1], "N0CALL");
+	strcpy(sim_names[UI_NAME_BOOT2], "Jamie Thompson");
+}
+void ui_svc_name_get(uint8_t which, char out[17])
+{
+	strcpy(out, which < UI_NAME_COUNT ? sim_names[which] : "");
+}
+bool ui_svc_name_set(uint8_t which, const char *text)
+{
+	if (which >= UI_NAME_COUNT)
+		return false;
+	strncpy(sim_names[which], text, 16);
+	sim_names[which][16] = '\0';
+	sim_rec.codeplug_writes++;
+	return true;
 }
 void ui_svc_boot_text(char line1[17], char line2[17])
 {
-	strcpy(line1, "N0CALL");
-	strcpy(line2, "Jamie Thompson");	// placeholders: the codeplug's boot text is the user's own
+	strcpy(line1, sim_names[UI_NAME_BOOT1]);
+	strcpy(line2, sim_names[UI_NAME_BOOT2]);
 }
 // Zone sharing (ui_svc.h): one offer of 6 channels, one of them outside the radio's bands
 static struct {
@@ -1241,6 +1376,7 @@ bool ui_svc_zone_offer(ui_zone_offer_t *out)
 	return true;
 }
 void ui_svc_zone_offer_open(uint32_t which) { (void)which; }
+bool ui_svc_zone_offer_pending(void) { return zs_sim.pending; }
 bool ui_svc_zone_offer_channel(uint32_t which, uint16_t i, ui_zone_offer_ch_t *out)
 {
 	if (!zs_sim.pending || which != zs_sim.serial || i >= (zs_sim.channel ? 1 : ZS_SIM_CHANNELS))
@@ -1379,6 +1515,8 @@ bool ui_svc_vox(bool on)
 }
 bool ui_svc_save_channel(void)
 {
+	if (sim_hold())
+		return sim_held;
 	sim_rec.codeplug_writes++;
 	ch_saved = view.ch;
 	view.temp = 0;
@@ -1604,13 +1742,41 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 }
 bool ui_svc_radio_check(uint32_t id) { sim_rec.radio_checks++; check_id = id; check_due = now_ms + 800; return true; }
 bool ui_svc_call_alert(uint32_t id) { (void)id; sim_rec.call_alerts++; return true; }
+// A GPS + BeiDou receiver near Boston with a 3D fix: 9 of 14 satellites used
+static const ui_gps_sat_t sim_sats[] = {
+	{ UI_GNSS_GPS, 2, 62, 44, 48, true }, { UI_GNSS_GPS, 5, 35, 40, 120, true },
+	{ UI_GNSS_GPS, 12, 18, 31, 210, true }, { UI_GNSS_GPS, 15, 74, 47, 300, true },
+	{ UI_GNSS_GPS, 18, 8, 18, 330, false }, { UI_GNSS_GPS, 24, 41, 38, 260, true },
+	{ UI_GNSS_GPS, 29, 5, 0, 160, false }, { UI_GNSS_BEIDOU, 6, 52, 36, 80, true },
+	{ UI_GNSS_BEIDOU, 9, 27, 33, 190, true }, { UI_GNSS_BEIDOU, 16, 13, 22, 20, false },
+	{ UI_GNSS_BEIDOU, 23, 66, 42, 140, true }, { UI_GNSS_BEIDOU, 35, 30, 29, 240, true },
+	{ UI_GNSS_GLONASS, 7, 22, 0, 100, false }, { UI_GNSS_GALILEO, 11, 15, 15, 280, false },
+};
+#define SIM_SATS	(sizeof(sim_sats) / sizeof(sim_sats[0]))
+
 bool ui_svc_position(ui_position_t *out)
 {
+	memset(out, 0, sizeof(*out));
 	out->fix = true;
 	out->sats = 9;
 	out->lat_e7 = 423601000;
 	out->lon_e7 = -710589000;
 	out->alt_m = 43;
+	out->alt_ok = true;
+	out->mode = 3;
+	out->in_view = SIM_SATS;
+	out->hdop10 = 9;
+	out->speed_kmh = 4;
+	out->course = 45;
+	out->utc_hms = 123519;
+	return true;
+}
+
+bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out)
+{
+	if (i >= SIM_SATS)
+		return false;
+	*out = sim_sats[i];
 	return true;
 }
 static bool emergency_on;
@@ -1740,6 +1906,7 @@ static void advance(uint32_t ms)
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
 	emergency_on = false;
+	sim_foreign = sim_held = false;
 	disp.width = g->w;
 	disp.height = g->h;
 	disp.bpp = g->bpp;
@@ -1748,6 +1915,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	font_aa_on = g->aa;
 	font_big_on = g->big;
 	worst = false;
+	full_contacts = 0;
 	layout_reset();
 	board.keymap = maps[map].m;
 	board.keymap_len = maps[map].n;
@@ -1785,6 +1953,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.netif = &sim_netif;
 	aprs_sim_reset();
 	n_edits = 0;
+	n_ct_edits = 0;
+	sim_names_reset();
 	sim_cp_serial = 0;
 	sim_cp_insert = false;
 	sim_cp_deleted = 0;
@@ -1799,12 +1969,14 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	load_channel();
 	soft_volume = false;
 	bcast_rx = false;
+	ref_trim = false;
 	ui_svc_setting_set(UI_SET_VOLUME, RADIO_VOLUME_DEFAULT);
 	ui_svc_setting_set(UI_SET_HINTS, 1);
 	ui_svc_setting_set(UI_SET_LARGE_TEXT, 0);
 	ui_svc_setting_set(UI_SET_BRIGHTNESS, 100);
 	ui_svc_setting_set(UI_SET_TOT_S, 180);
 	ui_svc_setting_set(UI_SET_BACKLIGHT_S, 30);
+	ui_svc_setting_set(UI_SET_REF_TRIM, 0);
 	ui_svc_setting_set(UI_SET_LONG_PRESS_MS, 600);	// settings a flow changes start from their defaults
 	ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
@@ -1832,6 +2004,9 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_ROAM_PROBE, 0);
 	ui_svc_setting_set(UI_SET_CRASH_MODE, UI_CRASH_SEND_OFF);
 	ui_svc_setting_set(UI_SET_CRASH_CONTACT, 0);
+	// English, or the language UI_LANG names ("es": a gallery in that language, docs/dev/translating.md)
+	const char *lang = getenv("UI_LANG");
+	ui_svc_setting_set(UI_SET_LANGUAGE, lang != NULL && strlen(lang) == 2 ? (uint8_t)lang[0] << 8 | (uint8_t)lang[1] : 0);
 #if CONFIG_DUAL_WATCH
 	ui_svc_setting_set(UI_SET_DUAL_TALK_BACK, 0);
 	ui_svc_setting_set(UI_SET_DUAL_B, 0);
@@ -1968,6 +2143,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "pos") == 0) snprintf(got, sizeof got, "%u", view.zone_pos + 1u);
 	else if (strcmp(key, "vfo") == 0) snprintf(got, sizeof got, "%u", view.vfo);
 	else if (strcmp(key, "freq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.rx_hz);
+	else if (strcmp(key, "txfreq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.tx_hz);
 	else if (strcmp(key, "mode") == 0) snprintf(got, sizeof got, "%s", view.ch.mode == RADIO_MODE_DMR ? "dmr" : "fm");
 	else if (strcmp(key, "tx") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_count);
 	else if (strcmp(key, "txid") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_id);
@@ -2353,7 +2529,11 @@ static bool run_token(char *t, char *err, size_t len)
 		memset(&ev, 0, sizeof ev);
 		ev.kind = t[0] == 'a' ? UI_EV_CALL_ALERT : t[0] == 'e' ? UI_EV_EMERGENCY : UI_EV_PRIVATE_CALL;
 		ev.id = (uint32_t)atoi(arg);
-		strcpy(ev.name, contact_name(ev.id, false));
+		const char *name = strchr(arg, ',');
+		strncpy(ev.name, name != NULL ? name + 1 : contact_name(ev.id, false), sizeof ev.name - 1);
+		for (char *p = ev.name; *p; p++)
+			if (*p == '_')
+				*p = ' ';
 		ui_notify(&ev);
 		advance(200);
 		return true;
@@ -2371,6 +2551,11 @@ static bool run_token(char *t, char *err, size_t len)
 		strcpy(ev.name, contact_name(ev.id, false));
 		strcpy(ev.text, zs_sim.channel ? "Channel Club rpt" : "Zone Club net, 6 channels");
 		ui_notify(&ev);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "zoneexpire") == 0) {
+		zs_sim.pending = false;
 		advance(200);
 		return true;
 	}
@@ -2417,6 +2602,10 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 	if (strcmp(t, "splash") == 0) {		// the boot screen (last in a script: nothing redraws over it)
+		if (arg != NULL && strcmp(arg, "loader") == 0) {	// the stub entry's (stub_entry.c show_banner)
+			ui_draw_splash(board.name, "a1b2c3d4", STUB_ENTRY_LINE1, STUB_ENTRY_LINE2);
+			return true;
+		}
 		char l1[17], l2[17];
 		ui_svc_boot_text(l1, l2);
 		ui_draw_splash(board.name, "a1b2c3d4", l1, l2);
@@ -2428,6 +2617,10 @@ static bool run_token(char *t, char *err, size_t len)
 		ev.kind = UI_EV_POWER_OFF_FAILED;
 		ui_notify(&ev);
 		advance(200);
+		return true;
+	}
+	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
+		sim_foreign = true;
 		return true;
 	}
 	if (strcmp(t, "nobattery") == 0) {
@@ -2481,6 +2674,21 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver
 		bcast_rx = true;
+		return true;
+	}
+	if (strcmp(t, "trim") == 0) {		// this radio has a reference trim (hal_radio_t.ref_trim)
+		ref_trim = true;
+		return true;
+	}
+	if (strcmp(t, "contacts") == 0 && arg != NULL) {	// contacts:full, contacts:<n>
+		unsigned long n = strcmp(arg, "full") == 0 ? CODEPLUG_CONTACTS_MAX : strtoul(arg, NULL, 10);
+		if (n == 0 || n > CODEPLUG_CONTACTS_MAX) {
+			snprintf(err, len, "contacts: full or 1..%u", (unsigned)CODEPLUG_CONTACTS_MAX);
+			return false;
+		}
+		full_contacts = (uint16_t)n;
+		changed();
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "worst") == 0) {		// worst-case codeplug content from here on (sim_worst)

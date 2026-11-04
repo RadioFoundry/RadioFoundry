@@ -22,6 +22,7 @@
 
 #define RADIO_SM_CW		(CONFIG_HOTSPOT || CONFIG_SFR_CWID)	// the CW keyer (radio_sm.c)
 #define RADIO_POLL_MS		25	// status poll and squelch period
+#define RADIO_RETUNE_SETTLE_MS	400	// RREQ_RETUNE: tune once the reference trim has held this long
 #define RADIO_TICK_MS		10	// DMR call stack poll (radio_sm_tick)
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
 #define RADIO_SQUELCH_DEFAULT	5
@@ -35,6 +36,10 @@
 #define RADIO_SQL_DB_PER_STEP	3
 #define RADIO_SQL_HYST_DB	3
 #define RADIO_SQL_CLOSE_POLLS	2
+// DMR scan: a stop also hears a carrier by its signal strength, as the squelch levels do on noise: level 1 above
+// RADIO_DMR_SQL_L1_DBM, RADIO_SQL_DB_PER_STEP more a level (5, the default, above -100 dBm). Some receivers' noise
+// reading doesn't follow a DMR signal (gotchas 17.3)
+#define RADIO_DMR_SQL_L1_DBM	(-112)
 // While APRS receive listens (aprs.md 5.3): a packet's tones at full deviation push the noise reading over the line
 // for a poll or two, and on a radio whose modem gates it, a closed squelch zeroes the receive audio, so a packet came apart (on air,
 // 2026-10-13). On the APRS frequency the squelch holds this many polls (300 ms) instead
@@ -141,6 +146,8 @@ typedef enum {
 	RREQ_VFO_COPY,		// the channel's settings into the VFO, and open it (CONFIG_VFO); no-op in the VFO
 	RREQ_DTMF,		// arg: the digit (ASCII) in bits 7:0, bit 8 = key down (0 = up)
 	RREQ_DUAL,		// dual watch (CONFIG_DUAL_WATCH): arg channel A, arg2 channel B, radio_dual_arg()
+	RREQ_RETUNE,		// tune the current frequency again (the reference trim changed: radio/ref_trim.h)
+	RREQ_VFO_TX,		// arg: the VFO's TX Hz, 0 = simplex (its RX frequency)
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -227,6 +234,7 @@ typedef struct {
 	uint8_t base_ts;
 	uint8_t base_mode;
 	uint8_t temp_ts;		// a timeslot chosen for now (RREQ_DMR_TS), 0 = none
+	uint8_t ts_pending;		// RREQ_DMR_TS that came during a transmission without PTT: applied at its end
 	uint8_t board_mode;		// radio_mode_t the board was last put in
 	uint8_t vol_step;		// the volume step of a radio without a knob
 	int8_t vol_override;		// the debug link's step over the knob, -1 = none
@@ -237,6 +245,8 @@ typedef struct {
 	uint32_t host_pushes;		// the host's audio pushes last seen, and when they last moved (the watchdog)
 	uint32_t host_push_ms;
 	bool retune_pending;		// receive settings changed during TX: retune on PTT release
+	bool retune_due;		// the reference trim changed: tune at retune_due_ms (RREQ_RETUNE)
+	uint32_t retune_due_ms;
 	uint32_t tx_start_ms;
 	uint8_t close_count;		// polls in a row above the close threshold
 	uint8_t tone_count;		// polls in a row disagreeing with view.tone_ok (debounce)
@@ -322,6 +332,7 @@ typedef struct {
 	bool sfr_rpt;			// the channel's SFR repeater role has the modem (radio_sfr.c), not the call stack
 	bool sfr_denied;		// a repeater channel kept ordinary because the radio may not transmit or a scan
 					// runs: the role starts once it may (TX inhibit cleared, the scan stopped)
+	uint32_t dmr_rx_hz;		// the frequency the call stack's receiver searched for slot timing on
 	uint32_t own_id;		// the radio's DMR ID (codeplug, else RADIO_DMR_ID_DEFAULT)
 	uint32_t dmr_serial;		// call stack view serial last copied
 	uint32_t talk_id;		// the channel's talk target

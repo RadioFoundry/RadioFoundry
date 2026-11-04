@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include "hal_system.h"
 #include "hal_flash.h"
+#include "hal_input.h"
 
 #define REG32(a)		(*(volatile uint32_t *)(uintptr_t)(a))
 
@@ -118,6 +119,10 @@ typedef void (*hrc_irq_fn)(void);
 // Point source s at fn (NULL = the default handler, which masks the source) and leave it masked
 void hrc_irq_register(uint8_t source, hrc_irq_fn fn);
 void hrc_irq_enable(uint8_t source, bool on);
+// The handlers by source (irq.c; the common entry calls through it)
+extern hrc_irq_fn hrc_irq_table[];
+// The default handler's record (hal_system_t.irq_unhandled): how often it masked a source, and the last one
+void hrc_irq_unhandled(uint32_t *count, uint32_t *last_source);
 // The four modem interrupts (sources 29-32) masked or unmasked as one group (gotchas 2.3: PIC_MASK bits 29-31 and
 // PIC_MASK_1 bit 0, never vectors 93-95). Returns the previous mask bits for hrc_modem_irqs_restore
 uint32_t hrc_modem_irqs_mask(void);
@@ -184,6 +189,21 @@ static inline bool hrc_pin_read(uint8_t pin)
 void hrc_pin_irq(uint8_t pin, bool on, bool both, bool rising);
 uint32_t hrc_gpio_pending(uint32_t bank);
 void hrc_gpio_ack(uint32_t bank, uint32_t bits);
+
+// The GPIO interrupt watch (gpio_watch.c, hardware-dm32.md 6.3), for one bank interrupt a board's input depends on.
+// hrc_gpio_watch_register points the source at a counting wrapper around isr and leaves it masked, as hrc_irq_register
+// does. hrc_gpio_watch_scan, from the board's input scan, finds the bits pending but not taken on two scans running,
+// keeps the state the first time, serves the bank (isr) and enables the source again. hrc_gpio_watch_stats fills the
+// watch's fields of the encoder stats
+typedef struct {
+	uint32_t bank;		// GPIOA_BASE, GPIOB_BASE or GPIOC_BASE
+	uint32_t bits;		// the bank's pins isr serves
+	hrc_irq_fn isr;		// the board's handler: acks the bank and samples the pins
+	uint8_t source;		// IRQ_GPIOA, IRQ_GPIOB or IRQ_GPIOC
+} hrc_gpio_watch_t;
+void hrc_gpio_watch_register(const hrc_gpio_watch_t *w);
+void hrc_gpio_watch_scan(void);
+void hrc_gpio_watch_stats(hal_encoder_stats_t *st);
 
 // --- SPI master (ssi.c): SPI0_BASE or SPI2_BASE ---
 

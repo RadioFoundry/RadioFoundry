@@ -11,6 +11,7 @@
 //   used                       true once open() changed the radio's state (a hand-over): close() or abort() owed
 //   read(mem, addr, n, {progress, signal}) -> {data, complete}   addr in the memory's own addresses (the MCU flash
 //                              from 0x08000000, the SPI flash from 0); complete false when the radio stopped early
+//   spiSize                    the SPI flash's size as the reader found it once open, null when it doesn't know
 //   close()                    give the radio back (restart it into RadioFoundry, end the session)
 //   abort()                    the same after a failure, best effort
 
@@ -23,6 +24,7 @@ export function debugLinkReader(link) {
 	return {
 		id: "debuglink",
 		used: false,
+		spiSize: null,
 		open: async () => true,
 		read: (mem, addr, n, { progress, signal } = {}) => (mem === "internal"
 			? link.cpsDump(CPS_MCU, addr - MCU_BASE, n, { progress, signal })
@@ -43,6 +45,7 @@ export function f4LoaderReader(link, { stubJson, reopen, board, log = () => {}, 
 	return {
 		id: "f4-loader",
 		get used() { return !!stub?.jumped; },
+		get spiSize() { return holding ? stub.info?.spiSize || null : null; },
 		open: async (progress = () => {}) => {
 			try {
 				const json = await stubJson();
@@ -69,6 +72,8 @@ export function f4LoaderReader(link, { stubJson, reopen, board, log = () => {}, 
 		},
 		read: async (mem, addr, n, { progress } = {}) =>
 			({ data: await stub.readFlash(addr, n, { mem: mem === "spi" ? MEM_SPI : MEM_INTERNAL, progress }), complete: true }),
+		// the SPI flash's security registers through the stub (SREAD), CRC-checked; null where the stub can't
+		security: () => stub.sregReadAll(),
 		close: async () => {
 			holding = false;
 			await stub.resetChip();

@@ -32,6 +32,7 @@ import time
 # the board registry (tools/boards.py generates it): which radios speak this protocol, and their flash maps
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))
 from rfoundry import boards as rfoundryboards  # noqa: E402
+from rfoundry import protect  # noqa: E402  (protected flash regions, board.toml [[flash.protect]])
 
 SLOT_MAGIC = 0x43524444                 # "DDRC", first word of the slot header
 FILE_END = b"END"                       # a vendor firmware file: the loader ID (board.toml [flash.bootloader] id),
@@ -46,7 +47,7 @@ class Model:
     its firmware files), the key combination, what the radio shows in update mode, and its flash map (from the board
     registry: the application base, the end of flash, RadioFoundry's codec slot)."""
 
-    def __init__(self, id, name, magic, keys, sign, app_base, flash_end, slot):
+    def __init__(self, id, name, magic, keys, sign, app_base, flash_end, slot, rom_base=None, protect=()):
         self.id = id
         self.name = name
         self.magic = magic
@@ -55,6 +56,17 @@ class Model:
         self.app_base = app_base
         self.flash_end = flash_end
         self.slot = slot			# RadioFoundry's codec slot address, or None
+        self.rom_base = app_base if rom_base is None else rom_base	# where the program flash starts
+        self.protect = list(protect)		# the board's [[flash.protect]]
+
+    def check_erase(self):
+        """Step 7 makes the loader erase the whole application area, app_base to the end of flash, whatever the image's
+        size: refused when a protected region lies in it (no radio this loader serves has one there today)."""
+        try:
+            protect.check_absolute(self.protect, self.rom_base, self.app_base, self.flash_end,
+                                   "let the loader erase")
+        except protect.ProtectedError as e:
+            raise FlashError(str(e))
 
     @property
     def app_max(self):
@@ -70,7 +82,7 @@ class Model:
 
 
 MODELS = {b.id: Model(b.id, b.model, b.loader_id.encode("ascii"), b.loader_keys, b.loader_sign, b.app_base,
-                      b.flash_end, b.codec_slot[0] if b.codec_slot else None)
+                      b.flash_end, b.codec_slot[0] if b.codec_slot else None, b.rom_base, b.protect)
           for b in rfoundryboards.BOARDS.values() if b.loader_id}
 
 ACK, NAK, CRC_REQ, SOH, STX, EOT = 0x06, 0x15, 0x43, 0x01, 0x02, 0x04
@@ -149,6 +161,7 @@ def check_image(raw, model):
     """Problems that stop a flash (raises) and facts worth printing (returned as lines)."""
     if not raw:
         raise FlashError("the image is empty")
+    model.check_erase()
     if len(raw) > model.app_max:
         raise FlashError("the image is %d bytes: it does not fit 0x%08X..0x%08X (%d bytes)"
                          % (len(raw), model.app_base, model.flash_end, model.app_max))
@@ -298,6 +311,7 @@ class Flasher:
 
     def flash(self, raw, name="firmware.bin"):
         total = blocks_needed(len(raw))
+        self.model.check_erase()		# before the radio is even asked: step 7 erases everything
         self.handshake()
         self.log("   bootloader found (%s)" % self.model.tag)
         self.send_header(name, len(raw))
@@ -593,6 +607,19 @@ def self_test():
     except FlashError as e:
         check("step 1" in str(e), "silent probe names step 1: %s" % e)
 
+    # a protected region in the area step 7 erases: refused before the radio is asked anything
+    cal = {"mem": "progmem", "start": M0.flash_end - M0.rom_base - 0x1000, "end": M0.flash_end - M0.rom_base,
+           "what": "test (x.md 1)"}
+    guarded = Model("guarded", "a radio", M0.magic, "?", "", M0.app_base, M0.flash_end, None, M0.rom_base, [cal])
+    fake = FB(model=guarded)
+    for what, call in (("check_image", lambda: check_image(raw, guarded)),
+                       ("flash", lambda: F(fake, model=guarded, log=quiet, step_timeout=0.05).flash(raw[:1024]))):
+        try:
+            call()
+            check(False, "%s refuses a protected region in the erased area" % what)
+        except FlashError as e:
+            check("protected region" in str(e) and fake.state == 1 and not fake.inbuf,
+                  "%s refuses a protected region in the erased area, nothing sent (%s)" % (what, e))
     fake = FB(erase_reads=10 ** 9)
     try:
         F(fake, log=quiet, step_timeout=0.05, erase_timeout=0.2).flash(raw[:1024])

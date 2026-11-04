@@ -28,7 +28,7 @@ enum {
 	DL_VIEW_LINK,		// input and debug link state
 	DL_VIEW_FEATURES,	// scan, FM extras, battery, beeps, the radio settings (debuglink_view_radio.c)
 	DL_VIEW_DMR_DATA,	// the DMR data service: state, settings, counters (debuglink_dmr_data.c)
-	DL_VIEW_STORAGE,	// settings store, flash journal, codeplug and CPS session counters
+	DL_VIEW_STORAGE,	// settings store, flash journal, codeplug
 	DL_VIEW_DMR_EXT,	// DMR emergency, ETSI short data, the hotspot CW ID (debuglink_view_ext.c)
 	DL_VIEW_DMR_DATA_STATS,	// the DMR data service counters (debuglink_dmr_data.c; split from dmr_data for the reply size)
 	DL_VIEW_ROAM,		// DMR repeater roaming: state, sites, counters, settings (debuglink_view_roam.c)
@@ -44,9 +44,12 @@ enum {
 	DL_VIEW_WATCHDOG,	// the hardware watchdog: timeout, feeds, longest idle gap, raw registers (debuglink_watchdog.c)
 	DL_VIEW_RESET,		// why this start happened: the crash log's restart cause (debuglink_crash.c)
 	DL_VIEW_AIR,		// the data TX queue, its guard and zone sharing (debuglink_view_air.c)
+	DL_VIEW_NET_SVC,	// mDNS and TFTP (were in DL_VIEW_NET until view version 4)
+	DL_VIEW_NET_LINK,	// the MTUs and the PPP link (PPP was in DL_VIEW_HOTSPOT until view version 4)
+	DL_VIEW_CPS,		// the CPS shims' counters (were in DL_VIEW_STORAGE until view version 5)
 	DL_VIEW_COUNT
 };
-#define DL_VIEW_VERSION		3	// bumped when a key changes meaning or goes away (new keys don't bump it)
+#define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)
 
 // Render one section of v into t. Every section starts with "section=<name>"
 void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t);
@@ -101,6 +104,8 @@ size_t debuglink_cmd_aprs(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 
 // The net section (debuglink_view_net.c); built without any of the radio's own services (CONFIG_NET_LOCAL) it says "net.built=0"
 void debuglink_view_net(dl_text_t *t);
+// The net_svc section (debuglink_view_net.c): mDNS and TFTP; "net_svc.built=0" without either
+void debuglink_view_net_svc(dl_text_t *t);
 // The air section (debuglink_view_air.c): "airq.built=0" / "zs.built=0" without the air queue / zone sharing
 void debuglink_view_air(dl_text_t *t);
 // The SNMP agent (debuglink_snmp.c): the snmp section and the SNMP command; without CONFIG_SNMP "snmp.built=0" /
@@ -130,6 +135,10 @@ void debuglink_crash_service(void);
 // unavailable
 size_t debuglink_cmd_rx2(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_rx2_service(void);
+
+// The DMR ID database (debuglink_iddb.c, docs/spec/debuglink.md 3.23): DL_CMD_IDDB, id u32 -> format, records, found,
+// text. Without CONFIG_DMR, unavailable
+size_t debuglink_cmd_iddb(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 
 // The hardware watchdog (debuglink_watchdog.c, docs/spec/debuglink.md 3.21): the watchdog section, DL_CMD_WATCHDOG's
 // bench tests and the service hook that starts them after the reply. Without CONFIG_WATCHDOG: "watchdog.built=0",

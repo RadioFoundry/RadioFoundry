@@ -11,7 +11,12 @@ Codec modes (docs/dev/release.md "Codec handling"):
 
 A written sector is always erased first and written from its start through its last data block (0xFF filling the
 gaps), as one run of 1024-byte blocks numbered from 2: the AnyRoad bootloader's region form (hardware-dm1701.md 15.2).
+
+No plan erases a sector that holds a protected region of the board (board.toml [[flash.protect]], protect.py): the
+plan is refused instead.
 """
+from . import protect
+
 KEEP = "keep"
 MERGE = "merge"
 MODES = (KEEP, MERGE)
@@ -175,6 +180,11 @@ def make_plan(board, segments, mode, codec_segments=(), codec_windows=None):
         content = "+".join(k for k in ("app", "codec") if k in kinds)
         steps.append(Step(s, "write", blocks, content))
     plan = Plan(board, mode, steps)
+    for s in plan.erase:
+        try:
+            protect.check_absolute(board, board.rom_base, s.addr, s.end, "erase")
+        except protect.ProtectedError as e:
+            raise PlanError("sector %d: %s" % (s.index, e))
     if mode == KEEP and any(s.index in codec_idx for s in plan.erase):
         raise PlanError("internal: keep mode would erase a codec sector")	# guarded above; never reached
     return plan

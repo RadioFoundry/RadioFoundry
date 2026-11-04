@@ -43,10 +43,12 @@ CODEC_SIG = (0x152514D8, 0x74C776CD)
 # slot in program flash, the codec window at the top of SRAM (the slot's code runs at its start; sized for the largest
 # code among the board's maps), the modem SRAM table window (docs/spec/codec-placement.md), and what the web flasher
 # needs beyond the codec (site/rfoundrysite/repo.py c7000_flash): the program flash size, whether the SPI0 chip select the
-# data flash sits on has one (not on a radio with the SPI NAND there). The image starts at app_base.
+# data flash sits on has one (not on a radio with the SPI NAND there), and where a NAND radio keeps its calibration
+# copies. The image starts at app_base.
 BOARDS = {b.id: {"slot": b.codec_slot, "run": b.codec_run, "tables": b.codec_tables, "app_base": b.app_base,
                  "progmem_size": b.stub["progmem"] if b.stub else 0x100000,
-                 "data_flash": not (b.stub and b.stub["nand"])}
+                 "data_flash": not (b.stub and b.stub["nand"]),
+                 "calibration": b.stub.get("calibration") if b.stub else None}
           for b in boards.BOARDS.values() if b.codec_tool == "hrc7000_codec"}
 PROGMEM_BASE = 0x03000000   # a program flash dump starts here
 
@@ -175,7 +177,7 @@ PROFILES = {
 
 # DB25-D PRO stock images: plain, linked at 0x0300C000, no container (hardware-db25d.md 8). Code: 0x12B20 bytes at the
 # signature, run at 0x1CEB0 (the stock start-up copies the RAM block from 0x030B4DA8-class addresses to 0x10000, which puts
-# the codec at 0x1CEB0 in all three). Tables: one 0x2D50 window (two object groups, 4 bytes apart) in the modem SRAM
+# the codec at 0x1CEB0 in the three newest; the 2023-07-06 build's is at 0x1795C, its tables at 0x180010B4, the lowest). Tables: one 0x2D50 window (two object groups, 4 bytes apart) in the modem SRAM
 # image, run at 0x180014AC + the build's shift. fec_init is +0x1DCC in all three
 _DB25D_ENTRIES = {"decode": 0x0, "encode": 0x260, "dec_init": 0xB4, "dec_set": 0x84, "enc_init": 0x314,
                   "enc_set": 0x2E4, "fec_init": 0x1DCC}
@@ -203,6 +205,15 @@ PROFILES.update({
         "size": 843944, "hdr": 0, "magic": None,
         "code": (0x030C1130, 0x12B20, 0x0001CEB0),
         "tables": (0x0307A150, 0x2D50, 0x180014B0),
+        "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
+        "entries": _DB25D_ENTRIES,
+    },
+    "03f3ddfe1c4117ddf4ed64eaa1f72cd24783d5d0de8933ce53651e02b4fe2e68": {
+        "name": "DB25-D_909E.Dx.EARSAB.018_2023-07-06.bin", "board": "db25d", "tag": 2307, "size": 808292,
+        "hdr": 0, "magic": None,
+        "code_sha256": "686a4173288dd6b3e43f61d8c9bd48f984dcfe8d56e013b3c7ef75a25881811a",
+        "code": (0x030B79D4, 0x12B20, 0x0001795C),
+        "tables": (0x030760E4, 0x2D50, 0x180010B4),
         "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
         "entries": _DB25D_ENTRIES,
     },

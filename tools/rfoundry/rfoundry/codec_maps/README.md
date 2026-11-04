@@ -8,7 +8,7 @@ codec and which words and instructions in it hold addresses. Format and use:
 
 A map is found by the SHA-256 of the stock code window, so one map serves every stock build whose code window is
 byte-identical: `dm32-049` also covers DM32.01.01.047, `dm32-037` covers 039 and 040, `dm32-046` covers 01.02.046,
-`dm1701-v0203-csv` covers DM-1701 V02.01 and V02.02 CSV. Builds whose codec code differs get a map each: the DM-1701
+`dm32-nrf-049` covers the DM32.NRF.01.049 and fanti 049 builds, `dm1701-v0203-csv` covers DM-1701 V02.01 and V02.02 CSV. Builds whose codec code differs get a map each: the DM-1701
 noCSV files have `dm1701-v0206-nocsv` and `dm1701-v0203-nocsv`.
 
 `md9600/` maps the eight TYT MD-9600 files (V06.09 and V16.45, four variants each). No board builds for the MD-9600; the

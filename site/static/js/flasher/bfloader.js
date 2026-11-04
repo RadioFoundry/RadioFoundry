@@ -8,6 +8,7 @@
 
 import { sleep } from "./bytes.js";
 import { crc16 } from "./link.js";
+import * as protect from "./protect.js";
 
 export class BfError extends Error {}
 
@@ -61,10 +62,14 @@ export function checkImage(raw, appMax) {
 
 export class BfLoader {
 	// id: the string the board's loader answers at step 3 (c7000.boards.<id>.bootloader_id); appMax as checkImage's
-	constructor(stream, { id, appMax, log = () => {}, stepTimeout = STEP_TIMEOUT, eraseTimeout = ERASE_TIMEOUT, retries = RETRIES, poll = 1000 } = {}) {
+	// appStart, protect: where the area the loader erases starts (a program flash offset) and the board's protected
+	// regions; a protected region in that area refuses every write
+	constructor(stream, { id, appMax, appStart = 0, protect = [], log = () => {}, stepTimeout = STEP_TIMEOUT, eraseTimeout = ERASE_TIMEOUT, retries = RETRIES, poll = 1000 } = {}) {
 		this.s = stream;
 		this.id = new TextEncoder().encode(id || "");
 		this.appMax = appMax;
+		this.appStart = appStart;
+		this.protect = protect || [];
 		this.log = log;
 		this.stepTimeout = stepTimeout;
 		this.eraseTimeout = eraseTimeout;
@@ -158,6 +163,11 @@ export class BfLoader {
 	// each block by its CRC; there is no checksum over the whole image to compare. Returns the blocks written.
 	async write(raw, { name = "rfoundry.bin", onPage = () => {}, onPhase = () => {}, signal } = {}) {
 		checkImage(raw, this.appMax);
+		try {	// step 7 erases the whole application area, whatever the image's size
+			protect.check(this.protect, "progmem", this.appStart, this.appStart + this.appMax, "let the loader erase");
+		} catch (e) {
+			throw new BfError(e.message);
+		}
 		if (signal?.aborted) throw new BfError("stopped");
 		if (!this.ready) await this.hello();
 		this.ready = false;

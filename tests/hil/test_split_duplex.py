@@ -547,7 +547,11 @@ def check_rx_labels(first, marks, ups, results, meta=None):
         labels = {m["label"] for m in meta if m["flags"] & sdh.META_EPOCH}
         print(f"RX_META: {len(meta)} events for {len(data)} uplink bursts, labels {sorted(labels)}, "
               f"{sum(1 for m in meta if m['flags'] & sdh.META_TIMED)} timed")
-        assert len(meta) >= len(data), "an RX_META event for every burst sent up"
+        # After the shift the call goes on under the other label as a late entry: the uplink makes up its header
+        # from the embedded LC (spec 7), a frame with no burst heard and so no event
+        made_up = max(0, sum(1 for f in data if f[3] == 0x41) - sum(1 for m in meta if m["kind"] == 0x01))
+        assert made_up <= 2, f"{made_up} headers made up: at most one per label"
+        assert len(meta) >= len(data) - made_up, "an RX_META event for every burst heard"
         assert all((b["seq"] - a["seq"]) & 0xFFFF == 1 for a, b in zip(meta, meta[1:])), "seq counts every event"
         assert labels == {1, 2}, "the events carry both labels, as the uplink"
         assert all(m["cc"] == meta[0]["cc"] for m in meta if m["flags"] & sdh.META_CRC_OK)

@@ -464,18 +464,27 @@ class Manifests(unittest.TestCase):
             sums = open(os.path.join(out, "SHA256SUMS")).read().splitlines()
             self.assertEqual(len(sums), 2)
             self.assertIn(hashlib.sha256(img).hexdigest() + "  rfoundry-dm1701-v9.9.9.bin", sums)
-            # a merged image is refused: the codec where this layout puts it, or where merges before the move did
-            for at in (0x080E3A74, 0x08074714):
-                merged = bytearray(b"\xFF" * (at - 0x0800C000 + 4))
+            # a merged image is refused: the codec where this layout puts it (its first word), or where merges before
+            # the move did (the stock code, here a stand-in profile's)
+            code = struct.pack("<I", stockfw.CODEC_SIG) + bytes(random.Random(5).randrange(256) for _ in range(252))
+            fake = {"board": "dm1701", "code": (0x08074714, len(code), hashlib.sha256(code).hexdigest())}
+            for at, data in ((0x080E3A74, code[:4]), (0x08074714, code)):
+                merged = bytearray(b"\xFF" * (at - 0x0800C000 + len(data)))
                 merged[:len(img)] = img
-                struct.pack_into("<I", merged, at - 0x0800C000, stockfw.CODEC_SIG)
+                merged[at - 0x0800C000:] = data
                 open(bp, "wb").write(merged)
-                with self.assertRaises(SystemExit) as e:
-                    release.check_no_codec(DM1701, bytes(merged))
-                self.assertIn("codec signature", str(e.exception))
-                with self.assertRaises(SystemExit):
-                    release.main(["--board", "dm1701", "--version", "v9", "--bin", bp, "--out", out, "--git", "d" * 40,
-                                  "--features", "", "--toolchain", ""])
+                with mock.patch.dict(stockfw.PROFILES, {"stand-in": fake}):
+                    with self.assertRaises(SystemExit) as e:
+                        release.check_no_codec(DM1701, bytes(merged))
+                    self.assertIn("codec signature", str(e.exception))
+                    with self.assertRaises(SystemExit):
+                        release.main(["--board", "dm1701", "--version", "v9", "--bin", bp, "--out", out, "--git", "d" * 40,
+                                      "--features", "", "--toolchain", ""])
+            # the image's own code may hold the codec's first word at a stock address: that's a push, not the codec
+            mine = bytearray(b"\xFF" * (0x08074714 - 0x0800C000 + 4))
+            mine[:len(img)] = img
+            struct.pack_into("<I", mine, 0x08074714 - 0x0800C000, stockfw.CODEC_SIG)
+            release.check_no_codec(DM1701, bytes(mine))
 
     def test_release_build_option(self):
         """--build-option: a non-default value of a board's [[build_options]] gets its own names and manifest field;
@@ -700,6 +709,53 @@ class WaitForDfu(unittest.TestCase):
         self.assertIn("no radio bootloader found (USB 0483:DF11)", str(cm.exception))
 
 
+class NormalMode(unittest.TestCase):
+    """The radio's own firmware switched on normally is a DFU device with the bootloader's IDs and strings; writing
+    through it can erase the bootloader. Both DFU tools refuse it before any DFU request."""
+    NORMAL = ["@Internal Flash   /0x08000000/03*016Kg", "@SPI Flash Memory /0x00000000/16*064Kg"]
+    LOADER = ["@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg", "@SPI Flash Memory /0x00000000/16*064Kg"]
+
+    def device(self, interfaces):
+        board = boards.get("dm1701")
+        dev = fakedfu.FakeUsbDevice(board, b"\0" * dfumod.KEY_LEN)
+        dev.strings = dict(dev.strings, interfaces=interfaces)
+        dev.ctrl_transfer = mock.Mock(side_effect=AssertionError("a DFU request reached a radio in normal mode"))
+        return board, dev
+
+    def test_rule(self):
+        self.assertTrue(dfumod.normal_mode(self.NORMAL))
+        self.assertFalse(dfumod.normal_mode(self.LOADER))
+        self.assertFalse(dfumod.normal_mode([None]))			# no layout string: nothing to go by
+        # a bootloader that showed the whole flash, not only the application area, is no normal mode
+        self.assertFalse(dfumod.normal_mode(["@Internal Flash  /0x08000000/03*016Kg,01*016Kg,01*064Kg,07*128Kg"]))
+        self.assertEqual(dfumod.region("@SPI Flash Memory /0x00000000/16*064Kg"), (0, 0x100000))
+        declared = mock.Mock(dfu_layout="@Internal Flash /0x0800C000/01*016Kg,01*064Kg,07*128Kg")
+        self.assertFalse(dfumod.normal_mode(self.LOADER, declared))	# white space doesn't count
+        self.assertTrue(dfumod.normal_mode(["@Internal Flash /0x0800C000/01*016Kg"], declared))
+        for b in ("md380", "dm1701"):					# their boards declare the layout read on a radio
+            self.assertFalse(dfumod.normal_mode(self.LOADER, boards.get(b)))
+            self.assertTrue(dfumod.normal_mode(self.NORMAL, boards.get(b)))
+
+    def test_rfoundry_refuses_without_a_dfu_request(self):
+        board, dev = self.device(self.NORMAL)
+        with self.assertRaises(cli.UsageError) as cm:
+            cli.check_bootloader(fakedfu.FakeUsb([dev]), dev, board, log=lambda s: None)
+        self.assertIn("switched on normally", str(cm.exception))
+        dev.ctrl_transfer.assert_not_called()
+        board, dev = self.device(self.LOADER)
+        cli.check_bootloader(fakedfu.FakeUsb([dev]), dev, board, log=lambda s: None)
+
+    def test_stm32_dfu_refuses_without_a_dfu_request(self):
+        sys.path.insert(0, os.path.join(HERE, "..", ".."))
+        import stm32_dfu
+        _, dev = self.device(self.NORMAL)
+        for force in (False, True):				# --force is for string 1, not this
+            with self.assertRaises(stm32_dfu.DfuError) as cm:
+                stm32_dfu.open_device(fakedfu.FakeUsb([dev]), force, "dm1701")
+            self.assertIn("switched on normally", str(cm.exception))
+        dev.ctrl_transfer.assert_not_called()
+
+
 class OldRouteGuard(unittest.TestCase):
     def test_stm32_dfu_refuses_a_release_image_with_two_ranges(self):
         """A release from before the codec moved holds the application and its sector 9 data back to back; written as
@@ -837,7 +893,10 @@ class StockLibrary(unittest.TestCase):
         self.assertEqual(b.app_region, (0x0800C000, 0x08080000))
         self.assertEqual(b.codec.windows[0][0], 0x080E0000)
         self.assertIn((stockfw.DESC_ADDR, stockfw.DESC_LEN), b.codec.windows)
-        self.assertEqual(b.codec_codes, [0x080E0000, 0x080C45D0, 0x080C5710])	# D002.032, D35.14, S35.14
+        # one entry per stock file: D002.032, D35.14, S35.14 first, then every other build's code address
+        self.assertEqual(b.codec_codes[:3], [0x080E0000, 0x080C45D0, 0x080C5710])
+        self.assertEqual(b.codec_codes, [stockfw.placed_windows(stockfw.PROFILES[h])[0][0] for h in b.codec_stock])
+        self.assertIn(0x0809A8DC, b.codec_codes)	# RT3 S14.04
         self.assertIs(boards.from_debuglink_name("MD-380 VHF"), b)
 
     def test_md380_profile(self):
@@ -926,7 +985,7 @@ class StockLibrary(unittest.TestCase):
         # V02.06 noCSV's and V02.03 noCSV's, then the MD-9600 files' (code and tables moved)
         md = [w for h in DM1701.codec_stock if stockfw.codec_only(stockfw.PROFILES[h])
               for w in DM1701.merge_windows(stockfw.PROFILES[h])[:2]]
-        self.assertEqual(len(md), 16)
+        self.assertEqual(len(md), 42)
         self.assertEqual(DM1701.codec.windows, [(0x080E3A74, 0x1021C), (0x080D19F0, 0x12082), (0x080FFF80, 0x80),
                                                 (0x080E3A34, 0x1021C), (0x080D19B0, 0x12082),
                                                 (0x080E6828, 0x10200), (0x080D4794, 0x12092),
@@ -1189,6 +1248,19 @@ class Md9600Files(unittest.TestCase):
         "9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5": 0x96010609,	# MD-9600 P06.09 CSV-GPS
         "7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f": 0x96020609,	# MD-9600 D06.09 REC
         "4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7": 0x96030609,	# MD-9600 S06.09 GPS-REC
+        "194526d60f796cc0f7339d14c1efeedc267731d108fd66a96876b459408de0ba": 0x96000624,	# MD-9600 V06.24 CSV
+        "1eafdb774fd71cb7bc3334d06617ed42264ee25df1c73f61744f6b21742bbd20": 0x96010624,	# MD-9600 P06.24 CSV-GPS
+        "ec44929e855442ad248f1a5c171a467922d6cb5742fc35f759db269c645e22ab": 0x96030624,	# MD-9600 S06.24 GPS-REC
+        "6643261e62b9778a5df43b1e5c3428d6d308bf54b34478513df3e08f6f4dbb63": 0x96020624,	# MD-9600 D06.24 REC
+        "98302fbc26fa0db93bd7ecbd29a410ac9fbb42cbd7d6ce15d54ce085fefff329": 0x96001624,	# MD-9600 V16.24 CSV
+        "e86b9e9775758548dd2d01334cfacc96c640fbf843aa6c5fa009b4bc7598e98d": 0x96011624,	# MD-9600 P16.24 CSV-GPS
+        "4e1c5c081d5bdf4bef8f205668fd7381391187d8b07150df7e99275b030b811b": 0x96031624,	# MD-9600 S16.24 GPS-REC
+        "e21c72e30716fb43e4d15798012aec15e964b9ec8c1a534ede5d0b0fe73f3acb": 0x96021624,	# MD-9600 D16.24 REC
+        "02e366687f122ed752581344db8316666d21782d9353334518b69237a81e74dc": 0x96012645,	# MD-9600 P26.45 CSV-GPS
+        "6df34152e9786530d61032ab71f1962cf194aca0b99cf0a54e3802fd2cd4ac72": 0x96032645,	# MD-9600 S26.45 GPS-REC
+        "baee36b0fd852dfc1fb14952242a1231dbfa4fabc37cba57c61f1b8d3e0d830d": 0x96022645,	# MD-9600 D26.45 REC
+        "2522008737d7845e43ab47a307d38498ee783c788a377fac855dff94dea53af0": 0x96022657,	# MD-9600 D26.57 REC
+        "d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f": 0x96002645,	# MD-9600 V26.45 CSV
     }
 
     def test_profiles(self):
@@ -1288,7 +1360,7 @@ class Md9600Files(unittest.TestCase):
         prof = stockfw.PROFILES[next(iter(self.FILES))]
         self.assertIn("MD-9600", stockfw.codec_only(prof))
         hint = cli.stock_hint(DM1701)
-        self.assertIn("for the codec only, one of 8 MD-9600 firmware files", hint)
+        self.assertIn("for the codec only, one of 21 MD-9600 firmware files", hint)
         self.assertNotIn(prof["name"], hint)
         self.assertNotIn("MD-9600", cli.stock_hint(DM1701, key=True), "the key's hint names only files that give it")
 
@@ -1304,7 +1376,7 @@ class MdUv380(unittest.TestCase):
     def test_board(self):
         b = self.B
         self.assertEqual(b.codec.id, "mduv380-1926-s11")
-        self.assertEqual(len(b.codec_stock), 30)
+        self.assertEqual(len(b.codec_stock), 35)
         self.assertEqual(b.codec_stock[0], self.V1926)		# the first: what the simulations use
         self.assertEqual([s.index for s in b.codec_sectors()], [10, 11])
         self.assertEqual(b.app_region, (0x0800C000, 0x080C0000))
@@ -1349,7 +1421,7 @@ class MdUv380(unittest.TestCase):
             self.assertEqual(tw["min_len"], pl["tables_len"])
             wins = stockfw.layout(prof)
             self.assertEqual(wins[-1][:2], (stockfw.DESC_ADDR, stockfw.DESC_LEN))
-        self.assertEqual(len(tags), 30)
+        self.assertEqual(len(tags), 35)
 
     def synthetic(self):
         return stockfw.build_synthetic_stock(KEY, random.Random(19), self.V1926)

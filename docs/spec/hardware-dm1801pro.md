@@ -126,6 +126,10 @@ radio; the per-burst switch (5.6) needs the speed.
 - Bandwidth register 0x43: 0x3048 for DMR and for 12.5 kHz FM, 0x3028 for 25 kHz FM. The radio's channel set-up picks
   0x3048 for a digital channel, and for an analog one by the channel's Narrow / Wide bit (Narrow 0x3048, Wide 0x3028).
   Its bandwidth table also holds 0x2028 and 0x205C, but nothing selects them.
+- Reference trim ([radio-features.md](radio-features.md) 6.1): RadioFoundry doesn't move the reference. It tunes
+  the FD6818 to f x (1 + trim), in receive, FM transmit and every DMR burst, and the next tune applies a new trim.
+  Measured on the SDR bench at 461.4625 MHz (2026-10-30): +5.0 ppm moved the carrier +2309 Hz and -5.0 ppm -2310 Hz
+  (2307 Hz expected).
 
 ### 5.3 Register tables
 
@@ -278,6 +282,21 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   whole from the header (no late entry, no lost frame). The same build at 2.0 ms: the same headers and ramps, burst
   on-time 31.83-31.94 ms. The bench's MMDVM modem decoded none of these overs at either lead (it decodes the DM-1701's),
   so its check fails on this radio for a reason other than the lead.
+- **TX data advance 1.1 ms** (`hrc7000_t.tx_pre_on` = 11, RF_CONTROL b20:16), not the chip's 0.4 ms. Through a
+  repeater at 0.4 ms the inbound burst came 0.67-0.71 ms late against the outbound (issue 268; the requirement is
+  centers aligned, ETSI TS 102 361-1 4.1, with 1 ms for propagation and drift, 10.2.3.1.3). Burst start from the
+  sync correlation, alone on TS1, 142-143 bursts per run, all decoded (BENCH 2026-10-29):
+
+  | Setting | Inbound vs outbound |
+  |---|---|
+  | tx_pre_on 4, RF_RECV_DELAY 0x36B0 (two runs) | +0.708, +0.709 ms |
+  | tx_pre_on 11 (register write; the firmware's value, a second run) | -0.042 ms, -0.042 ms |
+  | RF_RECV_DELAY 21000 | +0.021 ms |
+  | RF TX interrupt lead 2.0 ms | +0.688 ms |
+
+  Each tx_pre_on step moves the burst about 0.107 ms. The RF TX interrupt's lead moves only the carrier, not the
+  data. RF_RECV_DELAY also moves the burst but shifts the receive compensation too, and late entry was not tested
+  with it, so it stays at 0x36B0.
 - **PA key:** the TX path switches on and off with each burst. With it on for the whole transmission, a hotspot (keyed
   while it listens) received nothing (2026-10-16). Per burst, `test_dmr_tx_off_air` passes: ramps up 1.44 ms, down
   0.31 ms, slot spacing 60.00 ms. The DAC B drive is set 28 ms after each burst is armed (the DM-32UV's "DMR PA"
@@ -733,6 +752,7 @@ confirmed data with its response, SMS and ETSI SMS received and acknowledged. FM
 beep) pass. The bandwidth test passes too: the CTCSS 100.0 tone deviates 298 Hz at 12.5 kHz (word 0x3048) and 597 Hz at
 25 kHz (0x3028), a ratio of 2.00 (2026-10-16).
 The MMDVM hotspot on the programming cable works both ways on air (2026-10-16: the four `test_hotspot_on_air` cases).
+The reference trim passes `test_ref_trim.py` (2026-10-30, 5.2).
 Not checked on the radio yet: the air band and the broadcast tuner ([airband-and-broadcast.md](airband-and-broadcast.md)). Not in: USB (the radio has none).
 
 Further measurements and notes:

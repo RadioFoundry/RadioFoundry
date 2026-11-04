@@ -8,6 +8,10 @@
 #include "debuglink/dl_fmt.h"
 #include "debuglink/dlog.h"
 #include "debuglink/dl_chip.h"
+#include "debuglink/dl_shot.h"
+#include "cps/cps_lz4.h"
+#include "../../platform/stm32f4/mem_window.h"
+#include "../../platform/hrc7000/mem_window.h"
 
 static int failures, checks;
 
@@ -260,6 +264,100 @@ static void test_dlog(void)
 	CHECK(n == 2 + DLOG_LINE_MAX + 1, "long line cut to DLOG_LINE_MAX: %zu", n);
 }
 
+static uint32_t get32le(const uint8_t *p)
+{
+	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+// Read a packed screenshot in replies of at most cap bytes, as the host does, and decode it
+static void shot_read(const dl_shot_t *s, size_t cap, const char *what)
+{
+	static uint8_t out[DL_REPLY_MAX], fb[0x10000];
+	cps_lz4_dec_t dec;
+	uint32_t offset = 0, total = 0;
+	size_t hdr = DL_SHOT_HDR + (s->bpp == 4 ? 32u : 0u);
+	bool last = false;
+	int replies = 0;
+
+	cps_lz4_dec_init(&dec, fb, s->size);
+	while (!last && replies < 1000) {
+		size_t n = dl_shot_reply(s, offset, out, cap, &last);
+		CHECK(n > hdr && n <= cap, "%s: reply of %zu bytes", what, n);
+		if (n <= hdr || n > cap)
+			return;
+		CHECK(out[0] == DL_ST_OK && out[5] == s->bpp && out[6] == DL_SHOT_LZ4, "%s: header", what);
+		CHECK((out[1] | out[2] << 8) == s->width && (out[3] | out[4] << 8) == s->height && out[7] == s->insets[0] &&
+		      out[10] == s->insets[3], "%s: geometry", what);
+		CHECK(get32le(out + 15) == offset && get32le(out + 19) == s->size && get32le(out + 23) == s->frame &&
+		      out[27] == s->drawing, "%s: offset, size, frame", what);
+		if (s->bpp == 4)
+			CHECK((out[DL_SHOT_HDR + 2] | out[DL_SHOT_HDR + 3] << 8) == s->palette[1], "%s: palette", what);
+		total = get32le(out + 11);
+		CHECK(cps_lz4_dec_feed(&dec, out + hdr, (uint32_t)(n - hdr)), "%s: stream at %u", what, (unsigned)offset);
+		offset += (uint32_t)(n - hdr);
+		replies++;
+	}
+	CHECK(last && offset == total && cps_lz4_dec_done(&dec), "%s: whole stream (%u of %u)", what, (unsigned)offset,
+	      (unsigned)total);
+	CHECK(memcmp(fb, s->fb, s->size) == 0, "%s: decodes to the frame buffer", what);
+	CHECK(dl_shot_reply(s, total + 1u, out, cap, &last) == 0, "%s: offset past the end", what);
+}
+
+static void test_shot(void)
+{
+	static uint8_t fb[240 * 320 / 2];
+	dl_shot_t s = { .fb = fb, .size = 80 * 128, .width = 160, .height = 128, .bpp = 4, .insets = { 8, 0, 0, 0 },
+			.frame = 0x12345678u, .drawing = true };
+	for (int i = 0; i < 16; i++)
+		s.palette[i] = (uint16_t)(0x1111u * (unsigned)i);
+	// A screen-like frame: a background, a title bar, text-like noise in a few rows
+	memset(fb, 0x00, sizeof fb);
+	memset(fb, 0x33, 80 * 16);
+	uint32_t r = 1;
+	for (int y = 40; y < 60; y++)
+		for (int x = 4; x < 76; x++) {
+			r = r * 1103515245u + 12345u;
+			fb[y * 80 + x] = (uint8_t)(r >> 24);
+		}
+	shot_read(&s, DL_REPLY_MAX, "4 bpp");
+	shot_read(&s, DL_SHOT_HDR + 32u + 7u, "4 bpp, 7-byte windows");
+	// The largest panel: 38400 bytes, one LZ4 block
+	s.width = 240;
+	s.height = 320;
+	s.size = 120 * 320;
+	s.drawing = false;
+	shot_read(&s, DL_REPLY_MAX, "240 x 320");
+	s.bpp = 1;
+	s.width = 128;
+	s.height = 64;
+	s.size = 16 * 64;
+	shot_read(&s, DL_REPLY_MAX, "1 bpp");
+	uint8_t out[DL_SHOT_HDR];
+	bool last;
+	CHECK(dl_shot_reply(&s, 0, out, sizeof out, &last) == 0, "no room for a byte");
+}
+
+static bool stm1024(unsigned i, hal_mem_window_t *w)
+{
+	return stm32_mem_window_for(i, w, 1024);
+}
+static bool stm512(unsigned i, hal_mem_window_t *w)
+{
+	return stm32_mem_window_for(i, w, 512);
+}
+static bool stm0(unsigned i, hal_mem_window_t *w)
+{
+	return stm32_mem_window_for(i, w, 0);
+}
+static bool hrc1m(unsigned i, hal_mem_window_t *w)
+{
+	return hrc_mem_window_for(i, w, 0x100000u);
+}
+static bool hrc2m(unsigned i, hal_mem_window_t *w)
+{
+	return hrc_mem_window_for(i, w, 0x200000u);
+}
+
 static void test_chip(void)
 {
 	// Option bytes: RDP levels, write protection, BOR, user bits
@@ -270,22 +368,49 @@ static void test_chip(void)
 	CHECK(dl_wrp_mask(0x0FF8AAEDu) == 0x007, "WRP sectors 0-2: 0x%03X", dl_wrp_mask(0x0FF8AAEDu));
 	CHECK(dl_bor_level(0x0FFFAAEDu) == 3 && dl_user_bits(0x0FFFAAEDu) == 7, "BOR off, user bits");
 
-	// READ_MEM whitelist
-	CHECK(dl_mem_allowed(0x08000000u, 1000, 1024), "stock bootloader start");
-	CHECK(dl_mem_allowed(0x080FFC18u, 1000, 1024), "flash end exact");
-	CHECK(!dl_mem_allowed(0x080FFC19u, 1000, 1024), "past the flash end");
-	CHECK(!dl_mem_allowed(0x0807FFFFu, 2, 512), "a 512 KB part ends at 0x0807FFFF");
-	CHECK(dl_mem_allowed(0x080FFFFFu, 1, 0), "flash size unreadable: 1 MB");
-	CHECK(!dl_mem_allowed(0x08000000u, 0, 1024), "zero length");
-	CHECK(!dl_mem_allowed(0x07FFFFFFu, 2, 1024), "below flash");
-	CHECK(dl_mem_allowed(0x1FFF0000u, 1000, 1024) && dl_mem_allowed(0x1FFF7400u, 0x400, 1024), "system memory");
-	CHECK(!dl_mem_allowed(0x1FFF7700u, 0x200, 1024), "across system memory and OTP: refused");
-	CHECK(dl_mem_allowed(0x1FFF7800u, 0x210, 1024) && !dl_mem_allowed(0x1FFF7800u, 0x211, 1024), "OTP");
-	CHECK(!dl_mem_allowed(0x1FFF7A10u, 12, 1024), "UID is INFO_CHIP's, not READ_MEM's");
-	CHECK(dl_mem_allowed(0x1FFFC000u, 16, 1024) && !dl_mem_allowed(0x1FFFC000u, 17, 1024), "option bytes");
-	CHECK(!dl_mem_allowed(0x20000000u, 4, 1024) && !dl_mem_allowed(0x10000000u, 4, 1024), "RAM, CCM refused");
-	CHECK(!dl_mem_allowed(0x40023C00u, 4, 1024) && !dl_mem_allowed(0xE0042000u, 4, 1024), "peripherals refused");
-	CHECK(!dl_mem_allowed(0xFFFFFFF0u, 0x20, 1024) && !dl_mem_allowed(0x08000010u, 0xFFFFFFF8u, 1024),
+	// READ_MEM windows: the STM32F4's
+	CHECK(dl_mem_allowed(0x08000000u, 1000, stm1024), "stock bootloader start");
+	CHECK(dl_mem_allowed(0x080FFC18u, 1000, stm1024), "flash end exact");
+	CHECK(!dl_mem_allowed(0x080FFC19u, 1000, stm1024), "past the flash end");
+	CHECK(!dl_mem_allowed(0x0807FFFFu, 2, stm512), "a 512 KB part ends at 0x0807FFFF");
+	CHECK(dl_mem_allowed(0x080FFFFFu, 1, stm0), "flash size unreadable: 1 MB");
+	CHECK(!dl_mem_allowed(0x08000000u, 0, stm1024), "zero length");
+	CHECK(!dl_mem_allowed(0x07FFFFFFu, 2, stm1024), "below flash");
+	CHECK(dl_mem_allowed(0x1FFF0000u, 1000, stm1024) && dl_mem_allowed(0x1FFF7400u, 0x400, stm1024), "system memory");
+	CHECK(!dl_mem_allowed(0x1FFF7700u, 0x200, stm1024), "across system memory and OTP: refused");
+	CHECK(dl_mem_allowed(0x1FFF7800u, 0x210, stm1024) && !dl_mem_allowed(0x1FFF7800u, 0x211, stm1024), "OTP");
+	CHECK(!dl_mem_allowed(0x1FFF7A10u, 12, stm1024), "UID is INFO_CHIP's, not READ_MEM's");
+	CHECK(dl_mem_allowed(0x1FFFC000u, 16, stm1024) && !dl_mem_allowed(0x1FFFC000u, 17, stm1024), "option bytes");
+	CHECK(!dl_mem_allowed(0x20000000u, 4, stm1024) && !dl_mem_allowed(0x10000000u, 4, stm1024), "RAM, CCM refused");
+	CHECK(!dl_mem_allowed(0x40023C00u, 4, stm1024) && !dl_mem_allowed(0xE0042000u, 4, stm1024), "peripherals refused");
+	CHECK(!dl_mem_allowed(0xFFFFFFF0u, 0x20, stm1024) && !dl_mem_allowed(0x08000010u, 0xFFFFFFF8u, stm1024),
+	      "wrap-around refused");
+
+	CHECK(!dl_mem_allowed(0x08000000u, 4, NULL), "no windows");
+
+	// The HR_C7000's: memory byte by byte, register blocks in aligned words only
+	CHECK(dl_mem_allowed(0x00010000u, 1000, hrc1m) && dl_mem_allowed(0x00057C18u, 1000, hrc1m), "main SRAM");
+	CHECK(!dl_mem_allowed(0x00057C19u, 1000, hrc1m) && !dl_mem_allowed(0x0000FFFFu, 2, hrc1m), "past main SRAM");
+	CHECK(dl_mem_allowed(0x00010001u, 3, hrc1m), "SRAM: any alignment");
+	CHECK(dl_mem_allowed(0x18000000u, 1000, hrc1m) && !dl_mem_allowed(0x18007FFFu, 2, hrc1m), "shared SRAM");
+	CHECK(dl_mem_allowed(0x030FFC18u, 1000, hrc1m) && !dl_mem_allowed(0x030FFC19u, 1000, hrc1m), "1 MB flash end");
+	CHECK(dl_mem_allowed(0x031FFC18u, 1000, hrc2m) && !dl_mem_allowed(0x03100000u, 4, hrc1m), "2 MB flash");
+	CHECK(dl_mem_allowed(0x14100040u, 4, hrc1m) && dl_mem_allowed(0x14100000u, 0x80, hrc1m), "GPIO B words");
+	CHECK(dl_mem_allowed(0x14020000u, 0x80, hrc1m) && dl_mem_allowed(0x14110000u, 0x80, hrc1m), "GPIO A, C");
+	CHECK(!dl_mem_allowed(0x14100040u, 2, hrc1m) && !dl_mem_allowed(0x14100042u, 4, hrc1m) &&
+	      !dl_mem_allowed(0x14100041u, 1, hrc1m), "GPIO: unaligned or partial words refused");
+	CHECK(!dl_mem_allowed(0x1410007Cu, 8, hrc1m), "past the GPIO block");
+	CHECK(dl_mem_allowed(0x17000000u, 0x34, hrc1m) && dl_mem_allowed(0x17000044u, 8, hrc1m) &&
+	      dl_mem_allowed(0x17000060u, 0x30, hrc1m), "PIC");
+	CHECK(!dl_mem_allowed(0x17000000u, 0x90, hrc1m) && !dl_mem_allowed(0x17000034u, 4, hrc1m) &&
+	      !dl_mem_allowed(0x17000040u, 4, hrc1m) && !dl_mem_allowed(0x1700004Cu, 4, hrc1m), "PIC: undocumented gaps refused");
+	CHECK(dl_mem_allowed(0x1100003Cu, 4, hrc1m) && !dl_mem_allowed(0x11000060u, 4, hrc1m), "system block, not the modem");
+	CHECK(!dl_mem_allowed(0x14000000u, 4, hrc1m) && !dl_mem_allowed(0x1400000Cu, 4, hrc1m), "timers refused (EOI)");
+	CHECK(!dl_mem_allowed(0x14010000u, 4, hrc1m), "watchdog refused");
+	CHECK(!dl_mem_allowed(0x14030000u, 4, hrc1m) && !dl_mem_allowed(0x14040000u, 4, hrc1m), "UARTs refused");
+	CHECK(!dl_mem_allowed(0x140A0060u, 4, hrc1m), "SPI data register refused");
+	CHECK(!dl_mem_allowed(0x16000980u, 4, hrc1m) && !dl_mem_allowed(0x11000100u, 4, hrc1m), "modem refused");
+	CHECK(!dl_mem_allowed(0xFFFFFFFCu, 8, hrc1m) && !dl_mem_allowed(0x00010000u, 0xFFFFFFF0u, hrc1m),
 	      "wrap-around refused");
 
 	// REBOOT gate
@@ -316,6 +441,7 @@ int main(void)
 	test_parser();
 	test_dlog();
 	test_chip();
+	test_shot();
 	printf("# debuglinkTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

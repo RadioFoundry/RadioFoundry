@@ -97,6 +97,38 @@ static const stm32_codec_profile_t s1811 = {
 	.at = CODEC_ENTRIES,
 };
 
+// V18.03 CSV
+static const codec_desc_window_t v1803_tables[] = { { 0x080D49F4u, 0x12132u, 0xB84C8BA8u } };
+static const stm32_codec_profile_t v1803 = {
+	.tag = 0x00561803u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E6B28u, .code_len = 0xF6DEu, .code_crc = 0xFB39A876u, .tables = v1803_tables, .windows = 1,
+	.at = CODEC_ENTRIES,
+};
+
+// D18.03 REC
+static const codec_desc_window_t d1803_tables[] = { { 0x080D7858u, 0x1213Au, 0x901D342Fu } };
+static const stm32_codec_profile_t d1803 = {
+	.tag = 0x00441803u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E9994u, .code_len = 0xF6BEu, .code_crc = 0xAB2D790Fu, .tables = d1803_tables, .windows = 1,
+	.at = CODEC_ENTRIES,
+};
+
+// P18.03 CSV-GPS
+static const codec_desc_window_t p1803_tables[] = { { 0x080D6534u, 0x121D2u, 0x15D2D1B0u } };
+static const stm32_codec_profile_t p1803 = {
+	.tag = 0x00501803u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E8708u, .code_len = 0xF70Au, .code_crc = 0xBF2AB13Eu, .tables = p1803_tables, .windows = 1,
+	.at = CODEC_ENTRIES,
+};
+
+// S18.03 GPS-REC
+static const codec_desc_window_t s1803_tables[] = { { 0x080D9398u, 0x121EAu, 0x7D1A9F28u } };
+static const stm32_codec_profile_t s1803 = {
+	.tag = 0x00531803u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080EB584u, .code_len = 0xF6CEu, .code_crc = 0x46C1D218u, .tables = s1803_tables, .windows = 1,
+	.at = CODEC_ENTRIES,
+};
+
 // P18.16 CSV-GPS
 static const codec_desc_window_t p1816_tables[] = { { 0x080D87F4u, 0x1228Eu, 0xD772CFADu } };
 static const stm32_codec_profile_t p1816 = {
@@ -126,6 +158,14 @@ static const codec_desc_window_t p1906_tables[] = { { 0x080D94B4u, 0x12416u, 0x0
 static const stm32_codec_profile_t p1906 = {
 	.tag = 0x00501906u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
 	.code = 0x080EB8CCu, .code_len = 0xF6DEu, .code_crc = 0xB18F0F57u, .tables = p1906_tables, .windows = 1,
+	.at = CODEC_ENTRIES,
+};
+
+// P19.33 CSV-GPS
+static const codec_desc_window_t p1933_tables[] = { { 0x080DBA54u, 0x12726u, 0x7B71694Cu } };
+static const stm32_codec_profile_t p1933 = {
+	.tag = 0x00501933u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080EE17Cu, .code_len = 0xF4A2u, .code_crc = 0xB2440AD5u, .tables = p1933_tables, .windows = 1,
 	.at = CODEC_ENTRIES,
 };
 
@@ -275,7 +315,7 @@ static const stm32_codec_profile_t w10_s21974 = {
 
 // 19.26 first: the builds most radios carry
 static const stm32_codec_profile_t *const profiles[] = {
-	&v1926, &d1926, &p1926, &s1926, &v1811, &d1811, &p1811, &s1811, &p1816, &s1816, &v1906, &p1906, &v1974,
+	&v1926, &d1926, &p1926, &s1926, &v1811, &d1811, &p1811, &s1811, &v1803, &d1803, &p1803, &s1803, &p1816, &s1816, &v1906, &p1906, &p1933, &v1974,
 	&d1974, &p1974, &s1974, &w10_v1974, &w10_d1974, &w10_p1974, &w10_s1974, &v21960, &p21960, &v21974, &d21974,
 	&p21974, &s21974, &w10_v21974, &w10_d21974, &w10_p21974, &w10_s21974
 };

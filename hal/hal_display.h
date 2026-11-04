@@ -5,6 +5,18 @@
 #define HAL_DISPLAY_H
 
 #include <stdint.h>
+#include <stdbool.h>
+
+// What a board knows of its panel, for the debug link
+typedef struct {
+	int16_t factory;	// the factory's panel byte as read, -1: not read
+	uint8_t type;		// the controller type in use (the board's driver's numbering)
+	const char *controller;	// the controller family the board recognized ("unknown" when none), or NULL
+	const char *source;	// what chose the type: "id", "factory", "default" or "build", or NULL
+	bool id_read;		// the panel's ID registers were read
+	uint8_t id[3];		// read display ID (MIPI DCS 0x04), after its dummy byte
+	uint8_t id_reg[3];	// ID1-ID3 (0xDA, 0xDB, 0xDC), each after its dummy byte
+} hal_display_panel_t;
 
 typedef struct {
 	uint16_t width;		// visible pixels
@@ -20,6 +32,8 @@ typedef struct {
 	// bpp 4 instead of flush: the same with the palette, 16 RGB565 colors the indexes stand for
 	void (*flush_indexed)(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t y1);
 	void (*set_backlight)(uint8_t percent);
+	// Optional, for the debug link
+	void (*panel)(hal_display_panel_t *p);
 } hal_display_t;
 
 #endif

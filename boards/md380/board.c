@@ -208,7 +208,9 @@ static void reset_levels(void)
 	stm32_pin_out(PIN_PORT(PIN_FM_MUTE), PIN_MASK(PIN_FM_MUTE), false, false);
 	stm32_pin_out(PIN_PORT(PIN_LCD_BACKLIGHT), PIN_MASK(PIN_LCD_BACKLIGHT), false, false);
 	stm32_pin_out(PIN_PORT(PIN_FLASH_CS), PIN_MASK(PIN_FLASH_CS), true, false);
-	stm32_pin_out(PIN_PORT(PIN_CTCSS_PWM), PIN_MASK(PIN_CTCSS_PWM), false, false);
+	// CTC/DCS_OUT feeds the reference oscillator's tuning amplifier (hardware-md380.md 5.2): released (open drain,
+	// high) whenever no tone is sent. Held low it pulled the reference about 4.5 ppm high
+	stm32_pin_out(PIN_PORT(PIN_CTCSS_PWM), PIN_MASK(PIN_CTCSS_PWM), true, true);
 	stm32_pin_out(PIN_PORT(PIN_BEEP_PWM), PIN_MASK(PIN_BEEP_PWM), false, false);
 	// PA13 (W/N_SW) and PA14 (mic power) are the SWD pins: radio_md380.c takes them over later, unless built with
 	// MD380_KEEP_SWD for debugging (hardware-md380.md 2.6)

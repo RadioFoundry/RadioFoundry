@@ -237,6 +237,27 @@ test("every HR_C7000 radio has a factory update mode with steps into it, offered
 	for (const k of ["file", "backup"]) assert.ok(text[`flash.help.fix.factory_text_${k}`], k);
 });
 
+// The cable page's connect step is one panel for every task. Every power cycle sends the answer to the boot ROM's
+// greeting ahead (the slow cable mode, no longer a choice), and a ROM load that fails offers the factory update mode
+// (c7000ui.js romFailed). The tasks that write take the factory mode's way in; the backup can't (nothing can be read
+// through update mode). A task that stopped passing it would leave a radio with a damaged application without the way
+// that works
+test("the connect step always sends ahead and offers the factory update mode to the install and the restore", () => {
+	const src = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
+	const connects = [...src.matchAll(/(?<!function )connectPanel\(([^\n]*)\)/g)].map((m) => m[1]);
+	assert.equal(connects.filter((x) => /onUpdateMode/.test(x)).length, 2, "install and restore pass the factory way in");
+	assert.equal(connects.filter((x) => !/onUpdateMode/.test(x)).length, 1, "only the backup goes without: nothing can be read in update mode");
+	// every wait for the boot ROM sends the answer ahead
+	const waits = [...src.matchAll(/waitForRom\(([^)]*)\)/g)].map((m) => m[1]);
+	assert.ok(waits.length >= 2 && waits.every((w) => /repeat: ROM_REPEAT/.test(w)), waits.join(" | "));
+	const failed = src.slice(src.indexOf("const romFailed"), src.indexOf("const factoryWay"));
+	assert.match(failed, /factoryWay\(\)/);
+	assert.match(failed, /factoryButton\(/);
+	assert.match(failed, /slowNote\(\)/, "users who knew the slow cable mode are told where it went");
+	const text = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url)));
+	assert.ok(text["flash.factory.offer_restore"] && text["flash.c7.connect.slow_title"]);
+});
+
 test("a program memory backup gives the codec where the radio has no stock file", async () => {
 	const sim = await c7000Simulation(C, BACKUP_ID);
 	const got = await c7.codecFromFile(sim.progmem, sim.c, BACKUP_ID);
@@ -245,4 +266,13 @@ test("a program memory backup gives the codec where the radio has no stock file"
 	assert.equal(d.mode, "write");
 	const data = factoryInstallImage(sim.c, BACKUP_ID, app(4096, 3), d);
 	assert.ok(await c7.parseSlot(sim.c, BACKUP_ID, data.subarray(C.boards[BACKUP_ID].slot[0] - C.app_start)));
+});
+
+test("a protected region in the area the loader erases refuses the write before anything is sent", async () => {
+	let sent = 0;
+	const stream = { buf: new Uint8Array(0), clear() {}, take: () => new Uint8Array(0), write: async () => { sent++; } };
+	const cal = [{ mem: "progmem", start: C.app_end - 0x1000, end: C.app_end, what: "test (x.md 1)" }];
+	const l = new BfLoader(stream, { id: "X", appMax: C.app_end - C.app_start, appStart: C.app_start, protect: cal });
+	await assert.rejects(l.write(new Uint8Array(4096).fill(1)), /protected region/);
+	assert.equal(sent, 0);
 });

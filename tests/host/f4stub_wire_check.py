@@ -158,6 +158,16 @@ def main():
     new[5] ^= 0xFF
 
     def sreg_job(r, d):
+        # the engine's side of a register write: on a board whose registers aren't protected regions (a real board's
+        # factory calibration is, and the tool refuses it first: f4stub.py --self-test)
+        keep = f4stub.BOARDS[r.board].get("protect", [])
+        f4stub.BOARDS[r.board]["protect"] = []
+        try:
+            return sreg_steps(r, d)
+        finally:
+            f4stub.BOARDS[r.board]["protect"] = keep
+
+    def sreg_steps(r, d):
         sr2, first = r.sreg_read_all()
         written = r.sreg_write(bytes(new), d)
         locked = bytearray(new)

@@ -457,6 +457,13 @@ int main(void)
 	sb_init(&b, buf, sizeof buf); sb_tone(&b, &t); CHECK(strcmp(buf, "D023N") == 0);
 	t.type = TONE_CTCSS; t.value = 885;
 	sb_init(&b, buf, sizeof buf); sb_tone(&b, &t); CHECK(strcmp(buf, "88.5") == 0);
+	// Split offsets: whole units, decimals only where they count
+	sb_init(&b, buf, sizeof buf); sb_split(&b, 146520000, 146520000); CHECK(strcmp(buf, "Off") == 0);
+	sb_init(&b, buf, sizeof buf); sb_split(&b, 146520000, 147120000); CHECK(strcmp(buf, "+600k") == 0);
+	sb_init(&b, buf, sizeof buf); sb_split(&b, 446000000, 441000000); CHECK(strcmp(buf, "-5M") == 0);
+	sb_init(&b, buf, sizeof buf); sb_split(&b, 146520000, 154120000); CHECK(strcmp(buf, "+7.6M") == 0);
+	sb_init(&b, buf, sizeof buf); sb_split(&b, 446000000, 446012500); CHECK(strcmp(buf, "+12.5k") == 0);
+	sb_init(&b, buf, sizeof buf); sb_split(&b, 446000000, 445999500); CHECK(strcmp(buf, "-0.5k") == 0);
 	sb_init(&b, buf, sizeof buf); sb_mmss(&b, 187); CHECK(strcmp(buf, "3:07") == 0);
 	sb_init(&b, buf, 6); sb_str(&b, "truncated"); CHECK(strcmp(buf, "trunc") == 0);
 

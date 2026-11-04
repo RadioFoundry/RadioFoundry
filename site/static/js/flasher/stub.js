@@ -15,6 +15,7 @@
 import { be32, concat, crc32, le32, sleep, u32le } from "./bytes.js";
 import { decodeBlock } from "./lz4.js";
 import { Link, LinkError } from "./link.js";
+import * as protect from "./protect.js";
 
 // USB-serial chips known to take the boot ROM load well (adapter.js names a cable by these)
 const GOOD_CHIPS = ["FTDI", "CP210x", "PL2303"];
@@ -29,9 +30,17 @@ export class StubError extends Error {
 }
 // A damaged, short or missing frame, or a sector that failed its CRC: worth asking again
 export class FrameError extends StubError {}
+// The NAND's ECC failed on the sector being read (status ECC): not worth asking again
+class EccError extends StubError {}
 
 export const SECTOR = 4096, PAGE = 256, WINDOW = 16, PACK = 16, CHUNK = 1024, ROM_BLOCK = 256;
-export const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, TOOLONG = 0x0E;
+export const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, SPITIMEOUT = 0x0C, TOOLONG = 0x0E, NOWEL = 0x0F;
+// A sector read or checksum of the SPI NAND (NAND_FLAG): a page of it has more bit errors than the chip's ECC corrects
+// (its status feature reads ECC 2). It reads the same every time, so it is never asked for again: Stub.nandRaw takes
+// the page as the chip holds it instead
+export const ECC = 0x0D;
+const NAND_PAGE = 2048;
+export const WRITE_VERSION = 7;	// the stub has op 0x0E (WRITE): a sector erased, programmed and read back in one request
 export const SSI_PROG = 0x04000000, SSI_DATA = 0x140A0000;
 export const QUAD_ENABLE = 0x1100005C, LCSFC_BAUDR = 0x11000030, SYS_SOFT_RSTN = 0x11000000, TIMER2_VALUE = 0x14000018;
 export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
@@ -46,12 +55,19 @@ const ROM_GAVE_UP = [0x00, 0x10, 0x00, 0x03], ROM_NAK = [0x02, 0x0A, 0x00, 0x03]
 // ms once the greeting is seen: the ROM drops what reaches it before its greeting, so only the answers sent after that
 // count, and the ROM's 48 ms must be covered however late the greeting shows here (hardware-dm32.md 13.3)
 export const ROM_REPEAT = 30, ROM_REPEAT_AFTER = 150;
-// memory: SSI base, the GPIO chip select (the data flash's is PTA18), size
+// memory: SSI base, the GPIO chip select (the data flash's is PTA18), size. A radio's data memory is either the SPI NOR
+// flash (q128) or an SPI NAND on the same bus and chip select (nand): the universal stub reads the NAND's 2 KB pages
+// without their spare bytes, two to a 4 KB sector, when a read or checksum request carries NAND_FLAG and the stub was
+// configured for a NAND board (stub/stubtool.py). It is only ever read.
 export const MEM = {
 	progmem: { base: SSI_PROG, cs: null, size: 0x100000, name: "program memory" },
 	q128: { base: SSI_DATA, cs: 18, size: 0x1000000, name: "data memory" },
+	nand: { base: SSI_DATA, cs: 18, size: 0x10000000, name: "NAND", nand: true },
 };
-// played when a run finishes: three green flashes, then the slow orange blink resumes
+const NAND_FLAG = 4;
+// A USB-serial cable holds a write up to its latency timer (16 ms on an FTDI) before it sends it
+const NOREPLY_DRAIN_MS = 50;
+// played when a run finishes: three green flashes, then the slow yellow blink resumes
 export const DONE_LED = [[0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150]];
 
 const sum8 = (b) => b.reduce((a, x) => (a + x) & 0xFF, 0);
@@ -60,7 +76,9 @@ const u32be = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o
 const romCmd = (op, payload = new Uint8Array(0)) => concat(new Uint8Array([0x02, op, sum8(payload), 0x03]), payload);
 const isBlank = (b) => b.every((x) => x === 0xFF);
 const hexBytes = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join(" ");
-const memArgs = (m) => new Uint8Array([1 | (m.cs !== null ? 2 : 0), m.cs || 0]);
+// the flags and chip select of a request; a sector read or checksum of the NAND also carries NAND_FLAG (a plain SPI
+// transfer never does: the command bytes are the caller's)
+const memArgs = (m, sectors = false) => new Uint8Array([1 | (m.cs !== null ? 2 : 0) | (sectors && m.nand ? NAND_FLAG : 0), m.cs || 0]);
 
 function find(buf, pat) {
 	outer: for (let i = 0; i + pat.length <= buf.length; i++) {
@@ -111,7 +129,11 @@ export class Stub {
 		this.info = null;
 		this.size = {};		// per-radio memory sizes where they differ from MEM (the DB25-D's program flash is 2 MB)
 		this.v6 = null;		// the universal stub's HELLO fields (protocol 6); null for an older stub
+		this.sectorOp = false;	// protocol 7: whole-sector writes (op 0x0E); else one SPI request per step
 		this.configured = null;	// the board profile the stub confirmed after CONFIG
+		// the board's protected regions (c7000.boards[id].protect, board.toml [[flash.protect]]), from the profile
+		// configure() gets: every erase and program checks them before it is sent
+		this.protect = [];
 	}
 
 	async readExact(n, timeout) {
@@ -132,14 +154,17 @@ export class Stub {
 	async waitForRom(timeout, { signal, repeat = 0 } = {}) {
 		const until = Date.now() + timeout;
 		this.s.clear();
-		let sending = Promise.resolve(), next = 0, heard = 0;
+		// the answers go out in the background: a write that fails (the cable pulled) ends the wait with its error, and
+		// is never left as an unhandled rejection
+		let sending = Promise.resolve(), next = 0, heard = 0, failed = null;
 		try {
 			while (Date.now() < until) {
 				if (signal?.aborted) throw new StubError("stopped");
 				if (repeat && Date.now() >= next) {
 					next = Date.now() + repeat;
-					sending = sending.then(() => this.s.write(new Uint8Array(ROM_REPLY)));
+					sending = sending.then(() => this.s.write(new Uint8Array(ROM_REPLY))).catch((e) => { failed ||= e; });
 				}
+				if (failed) throw failed;
 				const b = this.s.buf;
 				const at = find(b, ROM_HELLO);
 				if (at >= 0) {
@@ -358,15 +383,20 @@ export class Stub {
 		throw new StubError(`op 0x${op.toString(16)}: no clean reply after ${retries + 1} tries (${why})`);
 	}
 
+	// The write resolves once the bytes are handed to the cable, not once they are on the line: wait out the frame at the
+	// line rate and the cable's latency, or a port closed next (Restart Radio) discards it and the radio stays in the stub
 	async sendNoReply(op, payload) {
 		this.s.clear();
-		await this.s.write(concat(new Uint8Array([0x02, op, payload.length >> 8, payload.length & 0xFF, sum8(payload), 0x03]), payload));
+		const frame = concat(new Uint8Array([0x02, op, payload.length >> 8, payload.length & 0xFF, sum8(payload), 0x03]), payload);
+		await this.s.write(frame);
+		await sleep(NOREPLY_DRAIN_MS + Math.ceil((frame.length * 10 * 1000) / (this.s.baud || 115200)));
 	}
 
 	async hello({ retries = 0 } = {}) {
 		const r = await this.request(0x01, new Uint8Array(0), { retries });
 		if (String.fromCharCode(...r.subarray(0, 6)) !== "C7STUB") throw new StubError("unexpected hello");
 		this.info = { version: r[6], maxPayload: (r[7] << 8) | r[8] };
+		this.sectorOp = r[6] >= WRITE_VERSION;
 		const g = (o) => ((r[o] << 24) | (r[o + 1] << 16) | (r[o + 2] << 8) | r[o + 3]) >>> 0;
 		this.v6 = r.length >= 43 && r[6] >= 6 ? { load: g(9), board: r[17], flags: r[18], run: g(19), image: g(23), bssEnd: g(27),
 			stackLo: g(31), stackTop: g(35), stackUsed: g(39) } : null;
@@ -378,6 +408,7 @@ export class Stub {
 	// the APB clock, measured (24 MHz under the boot ROM, 36 MHz on the DB25-D, 84 MHz under RadioFoundry on the DM-32UV and
 	// DM-1801 Pro). An older stub has no CONFIG.
 	async configure(profile, led = { red: 33, green: 32 }) {
+		if (profile?.protect) this.protect = profile.protect;
 		if (!this.v6) return;
 		if (this.v6.board && this.v6.board === profile.id && this.v6.flags === (profile.nand ? 1 : 0)) {
 			this.configured = profile;
@@ -385,7 +416,7 @@ export class Stub {
 		}
 		let hz = await this.timerHz(300);
 		if (!(hz > 1e6 && hz < 4e8)) throw new StubError("the radio's timer rate can't be right: not configuring the loader");
-		hz = Math.round(hz / 1e5) * 1e5;
+		hz = Math.round(hz / 1e6) * 1e6;	// every APB clock here is whole MHz
 		await this.request(0x0D, concat(be32(hz), be32(hz), new Uint8Array([profile.latch, profile.key, led.red, led.green, profile.id,
 			profile.nand ? 1 : 0, 3, 0])));
 		await this.hello({ retries: this.retries });	// a request like any other here: a damaged reply is asked for again
@@ -437,32 +468,46 @@ export class Stub {
 		return r;
 	}
 
-	// The JEDEC ID; refuses a chip that doesn't answer (chip select or cable wrong)
+	// The JEDEC ID; refuses a chip that doesn't answer (chip select or cable wrong). An SPI NAND answers 0x9F after a
+	// dummy byte, with its maker and device
 	async checkId(mem) {
-		const id = await this.spi(mem, new Uint8Array([0x9F]), 3);
+		const id = MEM[mem].nand ? await this.spi(mem, new Uint8Array([0x9F, 0x00]), 2) : await this.spi(mem, new Uint8Array([0x9F]), 3);
 		const hexId = [...id].map((b) => b.toString(16).padStart(2, "0")).join("");
-		if (hexId === "ffffff" || hexId === "000000") throw new StubError(`the ${MEM[mem].name} chip does not answer (${hexId})`);
+		if (/^(ff)+$|^(00)+$/.test(hexId)) throw new StubError(`the ${MEM[mem].name} chip does not answer (${hexId})`);
 		return hexId;
 	}
 
 	// [{crc, blank}] for `count` sectors from addr, computed by the radio: no flash data crosses the cable
 	async sums(mem, addr, count) {
 		const m = MEM[mem];
-		const r = await this.request(0x07, concat(be32(m.base), memArgs(m), be32(addr), be16(count)), { timeout: 1000 + count * 150 });
+		const r = await this.request(0x07, concat(be32(m.base), memArgs(m, true), be32(addr), be16(count)), { timeout: 1000 + count * 150 });
 		if (r.length !== count * 5) throw new StubError(`sector sums reply is ${r.length} bytes, wanted ${count * 5}`);
 		return Array.from({ length: count }, (_, i) => ({ crc: u32be(r, i * 5), blank: r[i * 5 + 4] === 1 }));
 	}
 
-	// Sector addresses in [start, start + data.length) where the flash differs from data, by CRC
-	async verify(mem, data, start = 0, progress = () => {}) {
+	// Sector addresses in [start, start + data.length) where the flash differs from data, by CRC. ecc: a NAND's sectors
+	// whose ECC fails (Stub.dump), which have no CRC of the radio's: a window holding one is summed sector by sector
+	// without them, and a sector that fails its ECC only now counts as differing (read again, it joins them)
+	async verify(mem, data, start = 0, progress = () => {}, { ecc = null } = {}) {
 		if (start % SECTOR || data.length % SECTOR) throw new StubError("verify needs whole 4 KB sectors");
 		const bad = [];
 		const end = start + data.length;
 		for (let w = start; w < end; w += WINDOW * SECTOR) {
 			const count = Math.min(WINDOW, (end - w) / SECTOR);
-			(await this.sums(mem, w, count)).forEach(({ crc }, i) => {
+			let sums;
+			try {
+				sums = await this.sums(mem, w, count);
+			} catch (e) {
+				if (!ecc || e.status !== ECC) throw e;
+				sums = [];
+				for (let a = w; a < w + count * SECTOR; a += SECTOR) {
+					if (ecc.has(a)) sums.push(null);
+					else sums.push(await this.sums(mem, a, 1).then((r) => r[0], (e1) => { if (e1.status !== ECC) throw e1; return { crc: -1 }; }));
+				}
+			}
+			sums.forEach((sum, i) => {
 				const off = w + i * SECTOR - start;
-				if (crc32(data.subarray(off, off + SECTOR)) !== crc) bad.push(w + i * SECTOR);
+				if (sum && crc32(data.subarray(off, off + SECTOR)) !== sum.crc) bad.push(w + i * SECTOR);
 			});
 			progress(Math.min(w + WINDOW * SECTOR, end) - start, data.length);
 		}
@@ -482,8 +527,9 @@ export class Stub {
 	// Read [start, end) of a memory. The radio sends each sector blank (a flag), LZ4-compressed or raw with its CRC-32;
 	// a sector that doesn't match is asked for again, uncompressed from the second try. A record carries no address, so
 	// one left over from a request cut short could pass for another sector: at the end every sector is checked against
-	// the radio's own CRCs (op 07) and read again until it matches. progress(done, total, stats)
-	async dump(mem, start, end, { progress = () => {}, signal, compress = true } = {}) {
+	// the radio's own CRCs (op 07) and read again until it matches. A NAND sector whose ECC fails is taken as the chip
+	// holds it (nandRaw), without a CRC to check it by; this.ecc lists them after the read. progress(done, total, stats)
+	async dump(mem, start, end, { progress = () => {}, onRetry = () => {}, signal, compress = true } = {}) {
 		const m = MEM[mem];
 		const size = this.size[mem] || m.size;
 		if (!(start >= 0 && start < end && end <= size)) throw new StubError(`${m.name} range must lie within 0..0x${size.toString(16)}`);
@@ -491,34 +537,38 @@ export class Stub {
 		const lo = Math.floor(start / SECTOR) * SECTOR, hi = Math.ceil(end / SECTOR) * SECTOR;
 		const full = new Uint8Array(hi - lo);
 		const stats = { blank: 0, packed: 0, wire: 0 };
-		await this.readSectors(m, full, lo, lo, hi, { compress, signal, stats,
-			progress: (sa) => progress(Math.min(sa, end) - start, end - start, stats) });
+		const ecc = m.nand ? new Set() : null;
+		await this.readSectors(m, full, lo, lo, hi, { compress, signal, stats, ecc,
+			progress: (sa) => progress(Math.min(sa, end) - start, end - start, stats), onRetry });
 		for (let pass = 0; ; pass++) {
-			const bad = await this.verify(mem, full, lo);
+			const bad = await this.verify(mem, full, lo, () => {}, { ecc });
 			if (!bad.length) break;
 			if (pass >= this.retries) throw new StubError(`0x${bad[0].toString(16)}: the read does not match the radio's checksum after ${pass + 1} tries`);
 			this.log(`${bad.length} sector(s) read wrong (first 0x${bad[0].toString(16)}), reading them again`);
 			this.retried += bad.length;
-			for (const sa of bad) await this.readSectors(m, full, lo, sa, sa + SECTOR, { compress: false, signal, stats });
+			for (const sa of bad) await this.readSectors(m, full, lo, sa, sa + SECTOR, { compress: false, signal, stats, ecc, onRetry });
 		}
 		this.stats = stats;
-		return full.slice(start - lo, end - lo);
+		this.ecc = ecc ? [...ecc].sort((a, b) => a - b) : [];
+		// a whole memory is returned as read: a NAND's copy would hold its size twice
+		return start === lo && end === hi ? full : full.slice(start - lo, end - lo);
 	}
 
 	// Sectors [from, to) into full (which starts at base), resuming where a damaged frame stopped
-	async readSectors(m, full, base, from, to, { compress, signal, stats, progress = () => {} }) {
+	async readSectors(m, full, base, from, to, { compress, signal, stats, ecc = null, progress = () => {}, onRetry = () => {} }) {
 		let sa = from, fails = 0, want = compress;
 		while (sa < to) {
 			if (signal?.aborted) throw new StubError("stopped");
 			const count = Math.min(PACK, (to - sa) / SECTOR);
 			try {
 				this.s.clear();
-				const payload = concat(be32(m.base), memArgs(m), be32(sa), new Uint8Array([count, want ? 1 : 0]));
+				const payload = concat(be32(m.base), memArgs(m, true), be32(sa), new Uint8Array([count, want ? 1 : 0]));
 				await this.s.write(concat(new Uint8Array([0x02, 0x09, 0, payload.length, sum8(payload), 0x03]), payload));
 				for (let i = 0; i < count; i++) {
 					const [status, r] = await this.readFrame(i === 0 ? 3000 : 1500);
 					if (status !== OK) {
 						if (status === BADOP || status === TOOLONG) throw new StubError(`stub op 0x09 refused: status 0x${status.toString(16)}`);
+						if (status === ECC && ecc) throw new EccError(`0x${sa.toString(16)}: the NAND's ECC fails`);
 						throw new FrameError(`stub op 0x09: status 0x${status.toString(16)}`);
 					}
 					if (r.length < 7 || r.length !== 7 + ((r[5] << 8) | r[6])) throw new FrameError("sector record malformed");
@@ -534,15 +584,52 @@ export class Stub {
 					progress(sa);
 				}
 			} catch (e) {
+				if (e instanceof EccError) {
+					// the frames before it came through; the stub sends nothing after its error
+					full.set(await this.nandRaw(sa), sa - base);
+					ecc.add(sa);
+					this.log(`0x${sa.toString(16)}: the NAND's ECC can't correct this sector; kept as the chip holds it`);
+					sa += SECTOR;
+					fails = 0;
+					want = compress;
+					progress(sa);
+					continue;
+				}
 				if (!(e instanceof FrameError)) throw e;
 				fails++;
 				this.retried++;
 				if (fails > this.retries) throw new StubError(`0x${sa.toString(16)}: no clean read after ${fails} tries (${e.message})`);
 				this.log(`0x${sa.toString(16)}: ${e.message}, resuming here (${fails} of ${this.retries})`);
+				// the first retry is routine; from the second the user is told, and the next good sector clears it (progress)
+				if (fails >= 2) onRetry(fails, this.retries, sa);
 				await this.drain();
 				want = compress && fails < 2;
 			}
 		}
+	}
+
+	// The 4 KB at addr of the SPI NAND as the chip holds it, whatever its ECC says, by generic SPI requests: for each 2 KB
+	// page a page read (0x13 and the page), the status feature (0x0F 0xC0) until it is not busy, then the cache (0x03, a
+	// column, a dummy byte) in halves that fit a reply: the standard SPI NAND commands, as the stub's own NAND reads use
+	// them. Read twice; both must be the same
+	async nandRaw(addr) {
+		const once = async () => {
+			const out = new Uint8Array(SECTOR);
+			for (let h = 0; h < SECTOR / NAND_PAGE; h++) {
+				const pg = (addr + h * NAND_PAGE) / NAND_PAGE;
+				await this.spi("nand", new Uint8Array([0x13, (pg >> 16) & 0xFF, (pg >> 8) & 0xFF, pg & 0xFF]), 0);
+				for (let n = 0; (await this.spi("nand", new Uint8Array([0x0F, 0xC0]), 1))[0] & 1; n++)
+					if (n >= 50) throw new StubError(`0x${addr.toString(16)}: the NAND stays busy after a page read`);
+				for (let col = 0; col < NAND_PAGE; col += 1024)
+					out.set(await this.spi("nand", new Uint8Array([0x03, col >> 8, col & 0xFF, 0]), 1024), h * NAND_PAGE + col);
+			}
+			return out;
+		};
+		for (let i = 0; i <= this.retries; i++) {
+			const a = await once(), b = await once();
+			if (a.every((x, k) => x === b[k])) return a;
+		}
+		throw new StubError(`0x${addr.toString(16)}: the NAND's ECC fails here and the page reads differently each time`);
 	}
 
 	// ---- writes (generic SPI flash ops: write enable 06, status 05, sector erase 20, page program 02)
@@ -558,7 +645,25 @@ export class Stub {
 		}
 	}
 
+	// The last check before a flash command goes out, whoever built it (stubtool.py _guard): a sector erase or page
+	// program must miss the protected regions, a chip erase is refused on a memory that has any
+	guard(mem, tx) {
+		const m = { progmem: "progmem", q128: "data" }[mem];
+		const op = tx[0], a = (tx[1] << 16) | (tx[2] << 8) | tx[3];
+		try {
+			if (op === 0x60 || op === 0xC7) protect.checkWhole(this.protect, m);
+			else if (op === 0x20 || op === 0x52 || op === 0xD8) {
+				const n = { 0x20: SECTOR, 0x52: 0x8000, 0xD8: 0x10000 }[op];
+				protect.check(this.protect, m, a - (a % n), a - (a % n) + n, "erase");
+			} else if (op === 0x02) protect.check(this.protect, m, a, a + Math.max(tx.length - 4, 1), "program");
+		} catch (e) {
+			throw new StubError(e.message);
+		}
+	}
+
 	async writeCmd(mem, tx, what, timeout) {
+		if (MEM[mem].nand) throw new StubError("the NAND is only read here");
+		this.guard(mem, tx);
 		await this.spi(mem, new Uint8Array([0x06]), 0);
 		const st = await this.status(mem);
 		if (!(st & 2)) throw new StubError(`${what}: write enable did not stick (status 0x${st.toString(16)}): chip write-protected?`);
@@ -566,42 +671,69 @@ export class Stub {
 		await this.waitReady(mem, what, timeout);
 	}
 
+	// Erase the program flash sector at addr and program data into it. A protocol 7 stub does all of it in one request
+	// (op 0x0E) and answers with the CRC-32 it reads back; an older one takes write enable, status, command and busy
+	// polls as separate SPI requests, four or more per page. Resolves the radio's CRC, or null when only a SUMS can tell
 	async writeSector(addr, data) {
+		if (this.sectorOp) {
+			const m = MEM.progmem;
+			const payload = concat(be32(m.base), memArgs(m), be32(addr), isBlank(data) ? new Uint8Array(0) : data);
+			let r;
+			try {	// the frame's time on the wire, then erase and program (worst case about 2 s)
+				r = await this.request(0x0E, payload, { timeout: 4000 + Math.ceil((payload.length * 10 * 1000) / (this.s.baud || 115200)) });
+			} catch (e) {
+				if (e.status === NOWEL) throw new StubError(`write 0x${addr.toString(16)}: write enable did not stick: chip write-protected?`);
+				if (e.status === SPITIMEOUT) throw new StubError(`write 0x${addr.toString(16)}: the flash stayed busy past its erase or program time`);
+				throw e;
+			}
+			if (r.length !== 4) throw new StubError(`write 0x${addr.toString(16)}: reply is ${r.length} bytes, wanted 4`);
+			return u32be(r, 0);
+		}
 		const a3 = (a) => new Uint8Array([(a >> 16) & 0xFF, (a >> 8) & 0xFF, a & 0xFF]);
 		await this.writeCmd("progmem", concat(new Uint8Array([0x20]), a3(addr)), `erase 0x${addr.toString(16)}`, 3000);
 		for (let p = 0; p < SECTOR; p += PAGE) {
 			const page = data.subarray(p, p + PAGE);
 			if (!isBlank(page)) await this.writeCmd("progmem", concat(new Uint8Array([0x02]), a3(addr + p), page), `program 0x${(addr + p).toString(16)}`, 1000);
 		}
+		return null;
 	}
 
 	// Program `data` (whole sectors) into the program flash at `start`, which must lie in the application area
 	// [appStart, appEnd). Only sectors whose CRC differs are written; each is read back by CRC at once and written
 	// again (up to 3 times) when it doesn't match, the first sector of the application last, so the radio only has a
 	// start address when everything else is in place. A final CRC pass over the whole range ends it.
-	// onSector(addr, state): "todo" | "same" | "writing" | "retry" | "written"
-	async writeProgram(data, start, { appStart, appEnd, onSector = () => {}, signal } = {}) {
+	// A protected region of the board (this.protect) refuses the write before anything is erased; with carve (a
+	// restore) its sectors are left as the radio has them instead ("kept") and the rest is written.
+	// onSector(addr, state): "todo" | "same" | "kept" | "writing" | "retry" | "written"
+	async writeProgram(data, start, { appStart, appEnd, onSector = () => {}, signal, carve = false } = {}) {
 		if (start % SECTOR || data.length % SECTOR || !data.length) throw new StubError("writes are whole 4 KB sectors");
 		if (start < appStart || start + data.length > appEnd) throw new StubError(`refusing to write outside the application area 0x${appStart.toString(16)}..0x${appEnd.toString(16)}`);
+		if (!carve) {
+			try {
+				protect.check(this.protect, "progmem", start, start + data.length);
+			} catch (e) {
+				throw new StubError(e.message);
+			}
+		}
+		const kept = (a) => protect.overlapping(this.protect, "progmem", a, a + SECTOR).length > 0;
 		if (this.v6 && !this.configured) throw new StubError("the loader's radio configuration is not confirmed: refusing to write");
 		await this.checkId("progmem");
-		const todo = await this.verify("progmem", data, start);
-		for (let a = start; a < start + data.length; a += SECTOR) onSector(a, todo.includes(a) ? "todo" : "same");
+		const todo = (await this.verify("progmem", data, start)).filter((a) => !kept(a));
+		for (let a = start; a < start + data.length; a += SECTOR) onSector(a, kept(a) ? "kept" : todo.includes(a) ? "todo" : "same");
 		const order = todo.filter((a) => a !== appStart).concat(todo.includes(appStart) ? [appStart] : []);
 		for (const a of order) {
 			if (signal?.aborted) throw new StubError("stopped");
 			const sec = data.subarray(a - start, a - start + SECTOR);
 			for (let attempt = 1; ; attempt++) {
 				onSector(a, attempt === 1 ? "writing" : "retry");
-				await this.writeSector(a, sec);
-				const [{ crc }] = await this.sums("progmem", a, 1);
+				const crc = (await this.writeSector(a, sec)) ?? (await this.sums("progmem", a, 1))[0].crc;
 				if (crc === crc32(sec)) break;
 				this.log(`0x${a.toString(16)}: read back differs, writing it again (${attempt} of 3)`);
 				if (attempt === 3) throw new StubError(`0x${a.toString(16)}: the sector reads back wrong after 3 writes`);
 			}
 			onSector(a, "written");
 		}
-		const bad = todo.length ? await this.verify("progmem", data, start) : [];
+		const bad = todo.length ? (await this.verify("progmem", data, start)).filter((a) => !kept(a)) : [];
 		if (bad.length) throw new StubError(`verify after write: sectors differ at ${bad.map((x) => "0x" + x.toString(16)).join(", ")}`);
 		return { written: todo.length, same: data.length / SECTOR - todo.length };
 	}
@@ -609,15 +741,18 @@ export class Stub {
 	// ---- the LED on top of the radio, and leaving the loader
 
 	// Tick rate of timer 2 (it counts down), measured against this computer's clock
+	// Each sample's time is taken as its request goes out: the reply waits up to the cable's latency timer (16 ms on an
+	// FTDI) on its way back, and timing to the second reply read an 84 MHz clock as about 80 MHz over 0.3 s
 	async timerHz(span = 400) {
 		const t0 = performance.now();
 		const v0 = u32le(await this.peek(TIMER2_VALUE, 4), 0);
 		await sleep(span);
+		const t1 = performance.now();
 		const v1 = u32le(await this.peek(TIMER2_VALUE, 4), 0);
-		return (((v0 - v1) >>> 0) / (performance.now() - t0)) * 1000;
+		return (((v0 - v1) >>> 0) / (t1 - t0)) * 1000;
 	}
 
-	// Status blink: slow while waiting (500 ms phases), fast while data moves (125 ms). Both LEDs make orange.
+	// Status blink: slow while waiting (500 ms phases), fast while data moves (125 ms). Both LEDs full on make yellow.
 	async setupLed(red, green) {
 		let hz = await this.timerHz();
 		if (!(hz > 1e6 && hz < 4e8)) hz = 24e6;

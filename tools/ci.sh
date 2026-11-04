@@ -5,7 +5,7 @@
 # The release gate: everything CI runs, in one script (docs/testing/README.md).
 #
 #   tools/ci.sh                 host tests, Python checks, every board with its feature matrix, license checks
-#   tools/ci.sh --quick         the same with only each board's default build (no matrix)
+#   tools/ci.sh --quick         the same with only each board's default and maximal builds (no matrix)
 #   tools/ci.sh --board dm1701  one board only (or a comma separated list: --board dm1701,md380); an unknown id fails
 #   tools/ci.sh --toolchain arm every board whose platform builds with that toolchain (platform.toml [toolchain] id,
 #                               or a comma separated list), from the registry; what each CI firmware job runs
@@ -16,8 +16,9 @@
 #                                     default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
 #   RFOUNDRY_CI_SANITIZE=1 tools/ci.sh   the host step also runs the host tests under ASan and UBSan (make SANITIZE=1)
-#   RFOUNDRY_CI_PRUNE=1 tools/ci.sh  remove each build tree once its size is in the report (the log and the .bin stay;
-#                               the matrix otherwise leaves about 65 MB per configuration)
+#   RFOUNDRY_CI_PRUNE=0 tools/ci.sh  keep every build tree (about 65 MB per configuration). By default each tree is
+#                               removed once its size is in the report and it built clean (the log and the .bin stay;
+#                               a configuration that failed keeps its tree to debug)
 #
 # The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps registry,python,licenses`, the host tests and
 # `--quick --steps firmware --toolchain <t>` for each toolchain; nightly `--matrix --steps firmware --toolchain <t>`.
@@ -289,6 +290,21 @@ for f in sys.argv[1:]:
 		head -20 "$OUT/glossary.log"
 		bad "glossary (see $OUT/glossary.log)"
 	fi
+	# translations (docs/dev/translating.md): the radio's catalogs in step with the source, every translation drawable,
+	# none missing or fuzzy, on the radio or the site
+	if python3 tools/i18n.py --check > "$OUT/i18n.log" 2>&1 && python3 tools/i18n_test.py >> "$OUT/i18n.log" 2>&1 &&
+		(cd site && python3 -m rfoundrysite.i18n) >> "$OUT/i18n.log" 2>&1; then
+		ok "translations: $(grep '^i18n: [0-9]' "$OUT/i18n.log" | sed 's/^i18n: //'); $(python3 tools/i18n.py --stats |
+			sed -E 's/^([a-z]+) .* \(([0-9]+%)\)$/\1 \2/' | paste -sd ' ' -)"
+	else
+		grep -v '^changed$' "$OUT/i18n.log" | head -30
+		bad "translations (see $OUT/i18n.log)"
+	fi
+	# English this branch changed while a translation didn't: often right, so a warning (a pull request annotation in
+	# GitHub Actions) for the reviewer, never a failure
+	python3 tools/i18n_changes.py > "$OUT/i18n-changes.log" 2>&1 || true
+	grep -v '^i18n changes: ' "$OUT/i18n-changes.log" || true
+	ok "$(grep '^i18n changes: ' "$OUT/i18n-changes.log" || echo "i18n changes: not run")"
 	# the web site (docs/dev/website.md): its generator with site/requirements.txt, from the environment or through uv
 	if python3 -c "import markdown_it, resvg_py" 2> /dev/null; then SITE_PY="python3"
 	elif command -v uv > /dev/null; then SITE_PY="uv run --no-project -q --with-requirements site/requirements.txt python3"
@@ -311,6 +327,12 @@ for f in sys.argv[1:]:
 		else
 			tail -20 "$OUT/release-site.log"
 			bad "site release and beta tests (see $OUT/release-site.log)"
+		fi
+		if $SITE_PY site/tests/i18n_test.py > "$OUT/i18n-site.log" 2>&1; then
+			ok "site catalogs and second language: $(tail -3 "$OUT/i18n-site.log" | head -1)"
+		else
+			tail -20 "$OUT/i18n-site.log"
+			bad "site catalogs and second language (see $OUT/i18n-site.log)"
 		fi
 	else
 		skip "web site build: site/requirements.txt not installed (pip install -r site/requirements.txt, or install uv)"
@@ -356,6 +378,7 @@ build() {
 	b=$1; name=$2; shift 2
 	dir="$OUT/$b-$name"
 	log="$dir.log"
+	failed_before=$FAILED
 	target=$(make -s BOARD="$b" BUILD="$dir" "$@" print-vars VARS=TARGET | sed 's/^TARGET=//')	# build options name it
 	rm -f "$target.elf"		# always relink: the size report reads the linker's memory-usage lines
 	if ! make BOARD="$b" BUILD="$dir" -j"$JOBS" "$@" > "$log" 2>&1; then
@@ -398,7 +421,8 @@ build() {
 	fi
 	echo "| $b | $name | $bytes | $delta | $free | $pct % |" >> "$REPORT"
 	ok "$b $name: $bytes bytes, $free bytes free in the app region"
-	if [ "${RFOUNDRY_CI_PRUNE:-0}" = 1 ]; then
+	# a tree that failed (warnings, stack check) stays for debugging
+	if [ "${RFOUNDRY_CI_PRUNE:-1}" != 0 ] && [ "$FAILED" = "$failed_before" ]; then
 		cp "$bin" "$dir.bin" && rm -rf "$dir"
 	fi
 }
@@ -447,7 +471,6 @@ for bm in boards/*/board.mk boards/*/; do
 		# Each build option value besides the default (a band): its image, default config
 		builds "$b"
 	fi
-	[ "$QUICK" = 1 ] && continue
 	features=$(make -s BOARD="$b" print-config 2>/dev/null)
 	all_on=""
 	unsupported=" $(make -s BOARD="$b" print-unsupported 2>/dev/null) $(make -s BOARD="$b" print-not-written 2>/dev/null)"
@@ -456,12 +479,16 @@ for bm in boards/*/board.mk boards/*/; do
 	for kv in $features; do
 		f=${kv%%=*}
 		case "$unsupported" in *" $f "*) ;; *) all_on="$all_on CONFIG_$f=y" ;; esac
+		[ "$QUICK" = 1 ] && continue
 		case "$required" in *" $f "*) continue ;; esac
 		[ "${kv#*=}" = y ] && build "$b" "no-$f" "CONFIG_$f=n"
 	done
-	# The board's [ci] extra configurations (a diagnostic only one board carries, with what it needs to fit)
-	builds "$b" --extra
-	build "$b" fm-minimal CONFIG_DMR=n CONFIG_USB=n CONFIG_VFO=n CONFIG_DIAG=n CONFIG_SUBTONE=n CONFIG_FONT_XL=n
+	if [ "$QUICK" = 0 ]; then
+		# The board's [ci] extra configurations (a diagnostic only one board carries, with what it needs to fit)
+		builds "$b" --extra
+		build "$b" fm-minimal CONFIG_DMR=n CONFIG_USB=n CONFIG_VFO=n CONFIG_DIAG=n CONFIG_SUBTONE=n CONFIG_FONT_XL=n
+	fi
+	# Maximal with --quick too: its flash and the stack check's deepest chains are where a pull request runs out first
 	# shellcheck disable=SC2086
 	build "$b" maximal $all_on $(make -s BOARD="$b" print-maximal-vars 2>/dev/null)
 done

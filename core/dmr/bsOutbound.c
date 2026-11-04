@@ -268,13 +268,15 @@ void bsOutboundNext(bsOutbound_t *o, int8_t ts, uint32_t now_ms, dmr_tx_burst_t 
 		o->st.idle++;
 	}
 
-	// The CACH before this burst (split-duplex.md 5.2)
+	// The CACH before this burst (split-duplex.md 5.2). Its AT speaks for the inbound slot a slot later (-1 4.5 figure
+	// 4.8): with aligned timing (-1 5.1.1 table 5.1) that's the other channel's
 	uint8_t bit = (ts == 1) ? 1u : 2u;
+	uint8_t other = (uint8_t)(bit ^ 3u);
 	bool busy = out->kind != DMR_BURST_IDLE;
-	uint8_t at = (uint8_t)(((bsOutboundAtMask(o, now_ms) & bit) != 0) ||
-			       (((o->at_mode == BS_AT_MODE_OR) || !o->at_set) && busy));
 
 	o->at_auto = (uint8_t)((o->at_auto & (uint8_t)~bit) | (busy ? bit : 0u));
+	uint8_t at = (uint8_t)(((bsOutboundAtMask(o, now_ms) & other) != 0) ||
+			       (((o->at_mode == BS_AT_MODE_OR) || !o->at_set) && ((o->at_auto & other) != 0)));
 	uint8_t row = (uint8_t)(sidx % 4u);
 	static const uint8_t LCSS[4] = { DMR_LCSS_FIRST, DMR_LCSS_CONT, DMR_LCSS_CONT, DMR_LCSS_LAST };
 
@@ -290,7 +292,7 @@ void bsOutboundNext(bsOutbound_t *o, int8_t ts, uint32_t now_ms, dmr_tx_burst_t 
 	if ((row == 0) && dmrShortLcDecode(set, &cach->slc)) {	// the HR_C6000 takes the short LC whole (page 2 0x24)
 		cach->slc_crc = dmrShortLcCrc8(cach->slc);
 	}
-	o->at_on_air = (uint8_t)((o->at_on_air & (uint8_t)~bit) | (at ? bit : 0u));
+	o->at_on_air = (uint8_t)((o->at_on_air & (uint8_t)~other) | (at ? other : 0u));
 	o->st.cach++;
 	s->n++;
 }

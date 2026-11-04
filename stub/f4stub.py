@@ -46,6 +46,7 @@ import zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stubtool  # noqa: E402  (the shared framing, LZ4 decoder and debug link loader)
 from stubtool import rfoundryboards  # noqa: E402  (the board registry, tools/rfoundry/rfoundry/registry.json)
+from stubtool import protect  # noqa: E402  (protected flash regions, board.toml [[flash.protect]])
 
 # --- F4STUB begin (f4stub.py --embed rewrites everything up to the end marker)
 F4STUB_SHA256 = "8141381cf472d079dd0b4bea6d187b1351c8a71535956fc3a7561c2dcfada083"
@@ -178,7 +179,7 @@ SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the st
 # selects on that bus to hold high ("idle").
 BOARDS = {b.id: {"name": b.name, "names": tuple(b.debuglink_names), "owned": [b.app_region],
                  "codec": (b.app_region[1], b.flash_end), "id": b.stub["id"], "hse": b.stub["hse"],
-                 "boot_end": b.stub["boot_end"], "spi": b.stub["spi"]}
+                 "boot_end": b.stub["boot_end"], "spi": b.stub["spi"], "protect": b.protect}
           for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "f4stub"}
 # The tool installs at one application base, which every profile's record must give
 for _bid, _b in BOARDS.items():
@@ -534,13 +535,28 @@ class F4Radio(stubtool.Radio):
                 self.drain()
         return bytes(out)
 
+    def protect(self):
+        """The protected regions (board.toml [[flash.protect]], rfoundry/protect.py) of the board the stub is configured
+        for. Every erase and program below checks them first, whoever calls it."""
+        return BOARDS[self.board].get("protect", []) if self.board in BOARDS else []
+
+    def guard(self, mem, start, end, action="write"):
+        try:
+            protect.check(self.protect(), mem, start, end, action)
+        except protect.ProtectedError as e:
+            raise F4Error(str(e))
+
     def erase(self, sector):
+        sec = {i: (a, n) for i, a, n in f405_sectors(self.flash_kb)}
+        if sector in sec:
+            self.guard("progmem", sec[sector][0] - FLASH_BASE, sum(sec[sector]) - FLASH_BASE, "erase")
         self.request(OP_ERASE, bytes([sector]) + MAGIC.to_bytes(4, "big"), retries=0, timeout=ERASE_TIMEOUT)
 
     def program(self, addr, data):
         """Program data (a multiple of 4 bytes) at addr in pieces of up to 4 KB, skipping all-0xFF pieces (erased)."""
         if addr % 4 or len(data) % 4:
             raise F4Error("program 0x%08X+%d: words only" % (addr, len(data)))
+        self.guard("progmem", addr - FLASH_BASE, addr + len(data) - FLASH_BASE)
         for off in range(0, len(data), BLOCK):
             piece = data[off:off + BLOCK]
             if piece != b"\xff" * len(piece):
@@ -601,9 +617,11 @@ class F4Radio(stubtool.Radio):
         self.check_board()
         self.need_board(board_id)
         new, changed, kept = self.plan(board_id, segments)
+        sec = {i: (a, s) for i, a, s in f405_sectors(self.flash_kb)}
+        for idx in changed:			# refused before the first erase, not halfway through
+            self.guard("progmem", sec[idx][0] - FLASH_BASE, sum(sec[idx]) - FLASH_BASE, "erase")
         if not changed:
             return 0, len(new)
-        sec = {i: (a, s) for i, a, s in f405_sectors(self.flash_kb)}
         for idx in changed:
             if idx in kept:			# bytes that are not ours: a copy first
                 if backup_dir is None:
@@ -650,17 +668,23 @@ class F4Radio(stubtool.Radio):
         return [start + i * BLOCK for i, (crc, _) in enumerate(sums) if zlib.crc32(data[i * BLOCK:(i + 1) * BLOCK]) != crc]
 
     def spi_erase(self, addr):
+        self.guard("data", addr, addr + BLOCK, "erase")
         self.request(OP_XERASE, addr.to_bytes(4, "big") + MAGIC.to_bytes(4, "big"), retries=0, timeout=2.0)
 
     def spi_write(self, data, start=0, progress=None):
         """Write data (whole 4 KB sectors) into the SPI flash from start: only the sectors whose CRC differs are erased
-        and programmed (blank pieces skipped), each read back by the stub, then all checked again. Returns (written,
-        unchanged)."""
+        and programmed (blank pieces skipped), each read back by the stub, then all checked again. A restore: the
+        board's protected regions are carved out, so the radio keeps its own factory data there whatever the file
+        holds. Returns (written, unchanged); protected sectors count as unchanged."""
         self.need_spi()
         self.need_board()
         if start % BLOCK or len(data) % BLOCK or start + len(data) > self.spi_size:
             raise F4Error("SPI flash writes are whole 4 KB sectors inside the chip's %d KB" % (self.spi_size // 1024))
-        todo = self.verify_file(data, start, MEM_SPI)
+        keep = protect.overlapping(self.protect(), "data", start, start + len(data))
+        if keep:
+            self.log("left as the radio has them (protected): %s" % "; ".join(protect.describe(p) for p in keep))
+        free = set(protect.carved_units(self.protect(), "data", start, start + len(data), BLOCK))
+        todo = [a for a in self.verify_file(data, start, MEM_SPI) if a in free]
         for n, a in enumerate(todo, 1):
             sec = data[a - start:a - start + BLOCK]
             self.spi_erase(a)
@@ -670,7 +694,7 @@ class F4Radio(stubtool.Radio):
                     self.request(OP_XPROGRAM, (a + off).to_bytes(4, "big") + piece, retries=0, timeout=2.0)
             if progress:
                 progress(n, len(todo))
-        bad = self.verify_file(data, start, MEM_SPI) if todo else []
+        bad = [a for a in self.verify_file(data, start, MEM_SPI) if a in free] if todo else []
         if bad:
             raise F4Error("SPI flash verify: %d sector(s) differ, first at 0x%06X" % (len(bad), bad[0]))
         return len(todo), len(data) // BLOCK - len(todo)
@@ -741,6 +765,8 @@ class F4Radio(stubtool.Radio):
         todo = [reg for reg in range(1, SREG_COUNT + 1) if self.sreg_slice(have, reg) != self.sreg_slice(data, reg)]
         if not todo:
             return []
+        for reg in todo:		# factory calibration and flags: refused, not carved (a register is all or nothing)
+            self.guard("secreg", (reg - 1) * SREG_LEN, reg * SREG_LEN)
         locked = [reg for reg in todo if self.sreg_locks(sr2)[reg - 1]]
         if locked:
             raise F4Error("security register(s) %s differ but are locked for good (status register 2 = 0x%02X): "
@@ -1422,8 +1448,57 @@ def self_test():
     except F4Error:
         pass
 
+    # Protected regions (board.toml [[flash.protect]]): the DM-1701's security registers 1-3 are its factory data. A
+    # write to a differing register is refused before anything is sent; an SPI flash restore keeps the radio's bytes
+    # in a protected range, writing the rest; an install never erases a protected sector, and the primitives check too
+    fake = FakeF4(stock(5), spi=spi)
+    r = F4Radio(fake, log=quiet)
+    r.hello()
+    r.configure("dm1701")
+    sr2, regs = r.sreg_read_all()
+    for reg in (1, 3):
+        new = bytearray(regs)
+        new[(reg - 1) * 256] ^= 0xFF
+        try:
+            r.sreg_write(bytes(new), tmp)
+            check(False, "a protected security register %d: refused" % reg)
+        except F4Error as e:
+            check("protected region" in str(e) and fake.sreg_writes == [], "a protected security register %d: refused, "
+                  "nothing sent (%s)" % (reg, e))
+    keep = BOARDS["dm1701"]["protect"]
+    BOARDS["dm1701"]["protect"] = keep + [{"mem": "data", "start": 0x2000, "end": 0x4000, "what": "test (x.md 1)"},
+                                          {"mem": "progmem", "start": 0x60000, "end": 0x80000, "what": "test (x.md 1)"}]
+    try:
+        before = bytes(fake.spi)
+        new = bytearray(before)
+        new[0x1000:0x5000] = b"\x5a" * 0x4000
+        fake.spi_erases = 0
+        nw, nk = r.spi_write(bytes(new), 0)
+        check(bytes(fake.spi[0x2000:0x4000]) == before[0x2000:0x4000] and bytes(fake.spi[0x1000:0x2000]) == new[0x1000:0x2000]
+              and bytes(fake.spi[0x4000:0x5000]) == new[0x4000:0x5000] and (nw, fake.spi_erases) == (2, 2),
+              "SPI restore: the protected sectors carved out, the rest written (%d, %d)" % (nw, nk))
+        for what, call in (("an SPI sector erase", lambda: r.spi_erase(0x3000)),
+                           ("an internal sector erase", lambda: r.erase(7)),
+                           ("an internal program", lambda: r.program(0x08060000, b"\0" * 4))):
+            try:
+                call()
+                check(False, "%s in a protected region: refused" % what)
+            except F4Error as e:
+                check("protected region" in str(e), "%s in a protected region: refused" % what)
+        erased = list(fake.erased)
+        try:
+            r.write_image("dm1701", [(APP_BASE, app(0x80000 - 0xC000, 23))], backup_dir=tmp)
+            check(False, "an install over a protected sector: refused")
+        except F4Error as e:
+            check("protected region" in str(e) and fake.erased == erased, "an install over a protected sector: "
+                  "refused before the first erase")
+    finally:
+        BOARDS["dm1701"]["protect"] = keep
+
     # The security registers: read with CRC, written only where they differ (the old content saved first), a locked
-    # register refused by the tool before anything is sent and by the stub when asked anyway
+    # register refused by the tool before anything is sent and by the stub when asked anyway. On a board without
+    # protected registers (the DM-1701's own are protected)
+    BOARDS["dm1701"]["protect"] = []
     fake = FakeF4(stock(5), spi=spi)
     r = F4Radio(fake, log=quiet)
     r.hello()
@@ -1482,6 +1557,7 @@ def self_test():
         check(False, "a protocol 4 stub has no security register ops")
     except F4Error:
         pass
+    BOARDS["dm1701"]["protect"] = keep
     import contextlib
     import io
     sp = os.path.join(tmp, "secreg.bin")

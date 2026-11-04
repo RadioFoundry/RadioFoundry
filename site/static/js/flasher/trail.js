@@ -11,7 +11,7 @@ export function filePicked(picked, got) {
 	const m = got?.match;
 	return ["file picked", { name: String(picked.name || "").slice(0, 80), size: picked.size, sha: String(picked.sha256 || "").slice(0, 12),
 		id: logId(got || {}), match: m?.kind || null, board: m?.board || null, known: got?.info?.known || m?.known || null,
-		problem: got?.problem?.problem || null }];
+		problem: got?.problem?.problem || null, why: String(got?.why || m?.why || "").slice(0, 120) || null }];
 }
 
 // decideCodec's answer (decide.js), or why there is none

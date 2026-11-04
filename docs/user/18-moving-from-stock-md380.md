@@ -8,9 +8,9 @@ This chapter is for a TYT MD-380, MD-390 or Retevis RT3 that runs TYT's stock fi
 2. It flashes RadioFoundry.
 3. It writes the codeplug back, plus the DMR ID (callsign) database.
 
-The web installer and the Codeplug Editor do the same in two steps: the installer backs up the radio and installs
-RadioFoundry, and the editor converts the backup ([Installing](02-installing.md), [Programming the
-radio](04-programming.md#files)). Use this program to do all of it in one run. What has been checked on the radio is in
+The web installer does the same: it backs up the radio, installs RadioFoundry, then converts the codeplug and writes it
+back ([Installing](02-installing.md)). The Codeplug Editor converts a backup later ([Programming the
+radio](04-programming.md#files)). Use this program to do it from the command line, with the ID database. What has been checked on the radio is in
 the [Radio reference](23-radios.md#tyt-md-380). Keep your stock firmware file, so you can go back to stock with TYT's
 updater.
 

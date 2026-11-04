@@ -3,8 +3,9 @@
 /*
  * The split duplex RX half's slot labels (docs/spec/split-duplex.md 7): the host gives the start E of an outbound TS1
  * slot in this radio's modem clock and the outbound slot length P in this radio's clock units; a burst whose slot
- * started at t is in outbound slot n = round((t - E) / P), and the inbound slot running then has the other number:
- * TS2 for even n, TS1 for odd n (ETSI TS 102 361-1 4.5 figures 4.8 / 4.9, table 5.1).
+ * started at t is in outbound slot n = round((t - E) / P), and the label is that slot's number, by aligned timing
+ * (ETSI TS 102 361-1 5.1.1, table 5.1: logical channel x is the inbound burst under outbound TSx): TS1 for even n,
+ * TS2 for odd n.
  *
  * In-step bursts refine the anchor: the residual (t minus the predicted slot start, within +-P/2) is averaged (1/8 per
  * burst) and the anchor follows it, by at most SLOT_EPOCH_TRACK_MAX_US in all since the last epoch. That absorbs the

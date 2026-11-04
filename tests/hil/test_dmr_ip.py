@@ -23,7 +23,7 @@ import warnings
 
 import pytest
 
-from rfoundry_hil import skip
+from rfoundry_hil import skip, host_network
 import dmr_packet
 
 BENCH_ID = 9990301
@@ -287,31 +287,16 @@ def test_confirmed_tx_unanswered(radio, sdr_bench, pytestconfig, ip_settings, ar
 def test_usb_network_udp_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars_off):
     """The real host path: the radio as a USB network adapter, a UDP datagram from this host to the bench's address
     (12.x.y.z) goes on air as a SAP 3 packet the bench decodes; then back to the serial port."""
-    from rfoundry_hil import DebugLink, DebugLinkError, find_ports
     freq, cc, own, _ = _setup(radio, pytestconfig)
     radio.link.ip_settings("auto", "rules", 0, [])
-    host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own)
-    radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
     bench_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (BENCH_ID & 0xFFFFFF)))
-    radio.link.usb_network(True)
-    radio.link.close()
-    udp = None
-    try:
-        end = time.monotonic() + 30
-        while udp is None and time.monotonic() < end:
-            try:
-                udp = DebugLink(f"udp:{radio_ip}", timeout=1.0)
-                udp.ping()
-            except (DebugLinkError, OSError):
-                udp = None
-                time.sleep(0.5)
-        assert udp is not None, f"no debug link over UDP at {radio_ip} (DHCP on the host's adapter?)"
+    with host_network(radio, own) as (udp, host_ip, _):
         before = {k: int(v) for k, v in udp.view(["dmr_ip"]).items() if str(v).isdigit()}
         heard_pkts = []
         with sdr_bench.lease():
             lis = sdr_bench.listen_start(freq, cc, seconds=10)
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.bind((str(host_ip), SRC_PORT))
+                s.bind((host_ip, SRC_PORT))
                 s.sendto(PAYLOAD, (bench_ip, DST_PORT))
             time.sleep(4)
             heard_pkts = dmr_packet.packets(sdr_bench.listen_result(lis))
@@ -324,16 +309,3 @@ def test_usb_network_udp_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars
             assert whole[0]["dst_port"] == DST_PORT and bytes.fromhex(whole[0]["payload"]) == PAYLOAD, whole[0]
         else:
             warnings.warn("the bench modem didn't hear the packet whole")
-        udp.usb_network(False)
-    finally:
-        if udp is not None:
-            udp.close()
-        end = time.monotonic() + 20
-        while not find_ports() and time.monotonic() < end:
-            time.sleep(0.5)
-        for _ in range(40):
-            try:
-                radio.link = DebugLink(radio.port, timeout=1.5)
-                break
-            except DebugLinkError:
-                time.sleep(0.25)

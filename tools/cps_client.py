@@ -25,7 +25,10 @@ Regions (wire addresses = flash addresses on the STM32 radios):
   codeplug  the EEPROM image 0x0-0x10000 and the flash image's codeplug 0x9B000-0xAEE60
   all       the EEPROM image and the whole open-firmware flash image 0x20000-0x120000 (DMR ID database and voice prompts
             included; slow)
-Writes never touch bytes outside the regions; the radio refuses its own areas.
+Writes never touch bytes outside the regions; the radio refuses its own areas. Area 1 addresses on the wire are the
+data flash's physical ones, so a write is also checked against the board's protected regions (board.toml
+[[flash.protect]], mem "data") before anything is sent: the board comes from --board, or from the radio type info
+reports.
 """
 import argparse
 import os
@@ -34,6 +37,10 @@ import shlex
 import subprocess
 import sys
 import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))
+from rfoundry import boards as rfoundryboards  # noqa: E402
+from rfoundry import protect as rfprotect  # noqa: E402
 
 IMAGE_SIZE = 0x120000
 SECTOR = 4096
@@ -259,10 +266,18 @@ class Cps:
         self.t.write(bytes([0x58, 3]))
         self._ack(f"commit sector {sector:#x}", 3)
 
-    def write_image(self, img, regions, reboot=True, block=BLOCK, progress=None, base=None):
-        """Write the regions of img; with base (what the radio holds now) only the sectors that differ"""
-        self.opening(True)
+    def write_image(self, img, regions, reboot=True, block=BLOCK, progress=None, base=None, protect=None):
+        """Write the regions of img; with base (what the radio holds now) only the sectors that differ. protect: the
+        board's protected regions; a sector on the wire that overlaps one refuses the whole write before anything is
+        sent."""
         jobs = plan_write(img, regions, base)
+        for sector, _, _ in jobs:
+            wire = sector * SECTOR + self.offset
+            try:
+                rfprotect.check(protect, "data", wire, wire + SECTOR)
+            except rfprotect.ProtectedError as e:
+                raise CpsError(str(e))
+        self.opening(True)
         for i, (sector, start, end) in enumerate(jobs):
             self.write_sector(img, sector, start, end, block)
             if progress:
@@ -460,6 +475,7 @@ def main(argv=None):
     ap.add_argument("--block", type=int, default=BLOCK, help="bytes per read / data request (qdmr: 32)")
     ap.add_argument("--offset", type=lambda x: int(x, 0), default=0,
                     help="added to flash addresses on the wire (DM-32UV: 0x700000)")
+    ap.add_argument("--board", help="the radio's board id, for its protected regions (default: from the radio type)")
     ap.add_argument("--quiet", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("info")
@@ -506,7 +522,8 @@ def main(argv=None):
             print(f"read {sum(e - s for s, e in regions)} bytes into {a.image}")
         elif a.cmd == "write":
             img = load_image(a.image)
-            cps.write_image(img, regions, reboot=not a.no_reboot, block=a.block, progress=progress)
+            board = rfoundryboards.get(a.board) if a.board else rfoundryboards.from_debuglink_name(cps.info()["model"])
+            cps.write_image(img, regions, reboot=not a.no_reboot, block=a.block, progress=progress, protect=board)
             print(f"wrote {a.image}" + ("" if a.no_reboot else "; the radio restarts"))
         elif a.cmd == "verify":
             img = load_image(a.image)

@@ -18,6 +18,8 @@
 bool dmr_iddb_init(void);
 // Records in the database, 0 if none
 uint32_t dmr_iddb_count(void);
+// The header's format byte of the database in use ('N', 'n', 'C' or another, open-firmware-cps.md 7.5), 0 if none
+char dmr_iddb_format(void);
 // The text for an ID ("callsign name [city ...]", trailing spaces trimmed), cut to len - 1 characters. False if the
 // ID is not in the database. Reads about log2(count) records
 bool dmr_iddb_lookup(uint32_t id, char *out, size_t len);

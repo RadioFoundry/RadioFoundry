@@ -8,6 +8,8 @@
 // too, so a low read within 50 ms of a good byte is serial data, not PTT (drivers/input/sharedptt, as on the other HR_C7000 boards),
 // and the line then has to read low on three scans in a row (INF: the pad level is assumed readable while the pin is
 // the UART's). The hand mic's PTT is PTC11, low while held (found on the radio), as the stock firmware reads it.
+// With no mic in the front jack PTC11 rests low from power-on, so it counts only once it has read high, a mic
+// plugged in (drivers/input/plugptt, 3.3).
 #include "db25d.h"
 #include "config.h"
 #include "pins.h"
@@ -16,6 +18,7 @@
 #include "input/keymatrix/keymatrix.h"
 #include "input/quadrature/quadrature.h"
 #include "input/sharedptt/shared_ptt.h"
+#include "input/plugptt/plug_ptt.h"
 
 #define N		KEYMATRIX_NONE
 #define PTT_SCANS	3
@@ -52,6 +55,7 @@ static const keymatrix_t matrix = { .rows = KEY_DRIVES, .cols = KEY_SENSES, .map
 static uint32_t last_raw, stable;
 static uint8_t ptt_low;
 static shared_ptt_t ptt_gate;	// PTA9 is also the host UART's RXD
+static plug_ptt_t mic_ptt;	// PTC11 rests low with no mic
 static uint8_t mic_levels;
 static uint16_t a9_changes, c11_changes;
 
@@ -102,6 +106,14 @@ static void gpiob_isr(void)
 	}
 }
 
+// The interrupt watch serves the bank from the scan if the interrupt is ever lost (hardware-db25d.md 3.3)
+static const hrc_gpio_watch_t enc_watch = {
+	.bank = GPIOB_BASE,
+	.bits = (1u << (PIN_ENC_A & 31u)) | (1u << (PIN_ENC_B & 31u)),
+	.isr = gpiob_isr,
+	.source = IRQ_GPIOB,
+};
+
 static void init(void)
 {
 	for (uint8_t r = 0; r < KEY_DRIVES; r++) {
@@ -117,7 +129,7 @@ static void init(void)
 	enc_taken = 0;
 	ptt_low = 0;
 	mic_levels = (uint8_t)((hrc_pin_read(PIN_MIC_RXD) ? 1u : 0u) | (hrc_pin_read(PIN_PTT2) ? 2u : 0u));
-	hrc_irq_register(IRQ_GPIOB, gpiob_isr);
+	hrc_gpio_watch_register(&enc_watch);
 	hrc_pin_irq(PIN_ENC_A, true, true, false);
 	hrc_pin_irq(PIN_ENC_B, true, true, false);
 	hrc_irq_enable(IRQ_GPIOB, true);
@@ -143,6 +155,11 @@ uint32_t db25d_input_ptt_ignored(void)
 	return ptt_gate.ignored;
 }
 
+bool db25d_input_mic_armed(void)
+{
+	return mic_ptt.armed;
+}
+
 void db25d_mic_lines_reset(void)
 {
 	a9_changes = 0;
@@ -165,6 +182,7 @@ static void sample_mic_lines(void)
 // Called every 10 ms: a change is reported once two scans in a row agree
 static uint32_t scan(void)
 {
+	hrc_gpio_watch_scan();
 	uint32_t raw = scan_matrix();
 	uint8_t mic = mic_bit(db25d_mic_key());
 	if (mic != N) {
@@ -172,9 +190,11 @@ static uint32_t scan(void)
 	}
 	sample_mic_lines();
 	uint32_t rx_ms;
+	uint32_t now = hal_millis();
 	bool rx_seen = hrc_host_uart_last_rx(&rx_ms);
-	bool rxd_low = shared_ptt_pressed(&ptt_gate, !hrc_pin_read(PIN_MIC_RXD), rx_seen, rx_ms, hal_millis());
-	if (rxd_low || !hrc_pin_read(PIN_PTT2)) {
+	bool rxd_low = shared_ptt_pressed(&ptt_gate, !hrc_pin_read(PIN_MIC_RXD), rx_seen, rx_ms, now);
+	bool mic_low = plug_ptt_pressed(&mic_ptt, !hrc_pin_read(PIN_PTT2), now);
+	if (rxd_low || mic_low) {
 		if (ptt_low < PTT_SCANS) {
 			ptt_low++;
 		}
@@ -203,6 +223,7 @@ static void encoder_stats(hal_encoder_stats_t *st)
 	st->illegal = enc.illegal;
 	st->reversals = enc.reversals;
 	st->steps_per_detent = ENC_STEPS;
+	hrc_gpio_watch_stats(st);
 }
 
 const hal_input_t db25d_input = {

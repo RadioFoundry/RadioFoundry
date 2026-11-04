@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// NMEA 0183 RMC / GGA (aprs_nmea.h)
+// NMEA 0183 RMC / GGA and the field splitting nmea_sky.c shares (aprs_nmea.h)
 #include <string.h>
 #include "aprs/aprs_nmea.h"
 
@@ -82,21 +82,17 @@ static bool coord(const char *s, size_t n, char hemi, bool lon, int32_t *out)
 	return true;
 }
 
-bool nmea_parse(const char *s, size_t n, nmea_fix_t *out)
+uint8_t nmea_fields(const char *s, size_t n, const char **f, uint8_t *fl, uint8_t max)
 {
-	memset(out, 0, sizeof(*out));
-	out->speed_kn10 = 0xFFFFu;
-	out->course10 = 0xFFFFu;
-	out->alt_dm = INT32_MIN;
 	while (n > 0 && (s[n - 1] == '\r' || s[n - 1] == '\n')) {
 		n--;
 	}
 	if (n < 10 || s[0] != '$' || n > NMEA_LINE_MAX) {
-		return false;
+		return 0;
 	}
 	const char *star = memchr(s, '*', n);
 	if (star == NULL || (size_t)(star - s) + 3u != n) {
-		return false;
+		return 0;
 	}
 	uint8_t sum = 0;
 	for (const char *c = s + 1; c < star; c++) {
@@ -104,24 +100,39 @@ bool nmea_parse(const char *s, size_t n, nmea_fix_t *out)
 	}
 	int h = hexval(star[1]), l = hexval(star[2]);
 	if (h < 0 || l < 0 || ((h << 4) | l) != sum) {
-		return false;
+		return 0;
 	}
-	// split the fields after "$ttSSS"
-	const char *f[FIELDS_MAX];
-	size_t fl[FIELDS_MAX];
 	uint8_t nf = 0;
 	const char *p = s + 1;
-	while (p <= star && nf < FIELDS_MAX) {
+	while (p <= star && nf < max) {
 		const char *e = p;
 		while (e < star && *e != ',') {
 			e++;
 		}
 		f[nf] = p;
-		fl[nf] = (size_t)(e - p);
+		fl[nf] = (uint8_t)(e - p);
 		nf++;
 		p = e + 1;
 	}
-	if (fl[0] != 5) {
+	return fl[0] == 5 ? nf : 0;
+}
+
+bool nmea_number(const char *s, size_t n, uint8_t scale, uint32_t *out)
+{
+	return fixed(s, n, scale, out);
+}
+
+bool nmea_parse(const char *s, size_t n, nmea_fix_t *out)
+{
+	memset(out, 0, sizeof(*out));
+	out->speed_kn10 = 0xFFFFu;
+	out->course10 = 0xFFFFu;
+	out->alt_dm = INT32_MIN;
+	out->hdop10 = 0xFFFFu;
+	const char *f[FIELDS_MAX];
+	uint8_t fl[FIELDS_MAX];
+	uint8_t nf = nmea_fields(s, n, f, fl, FIELDS_MAX);
+	if (nf == 0) {
 		return false;
 	}
 	uint32_t v;
@@ -164,6 +175,9 @@ bool nmea_parse(const char *s, size_t n, nmea_fix_t *out)
 		}
 		if (fixed(f[7], fl[7], 0, &v) && v < 100u) {
 			out->sats = (uint8_t)v;
+		}
+		if (fixed(f[8], fl[8], 1, &v) && v < 0xFFFFu) {
+			out->hdop10 = (uint16_t)v;
 		}
 		if (fl[9] > 0) {
 			bool neg = f[9][0] == '-';

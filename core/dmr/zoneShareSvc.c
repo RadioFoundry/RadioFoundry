@@ -13,6 +13,10 @@
 #define UDP_HEADER		8
 #define HOUR_MS			(60UL * 60UL * 1000UL)
 
+// A send puts all its fragments in the TX queue at once (records round up to 4 octets)
+_Static_assert(ZS_SEND_FRAGMENTS_MAX * (AIRQ_RECORD_HEADER + ((UDP_HEADER + ZS_MSG_HEADER + ZS_SEND_CHUNK + 3) & ~3)) <= CONFIG_DMR_AIR_QUEUE_BYTES,
+			   "the TX queue holds a whole record's fragments");
+
 static uint32_t nowMs;
 static volatile uint8_t offersMode = ZS_OFFERS_OFF;
 static zone_share_stats_t stats;
@@ -124,10 +128,10 @@ bool zone_share_send(uint32_t dst, bool group, const uint8_t *record, int length
 		return false;
 	}
 	uint8_t transfer = (uint8_t)(sendTransfer + 1);
-	airqItem_t items[ZS_FRAGMENTS_MAX];
+	airqItem_t items[ZS_SEND_FRAGMENTS_MAX];
 	// Each fragment's headers; its slice of the record goes into the queue straight from the record (no copy of the
 	// fragments here: RAM is tight on some radios)
-	uint8_t heads[ZS_FRAGMENTS_MAX][UDP_HEADER + ZS_MSG_HEADER];
+	uint8_t heads[ZS_SEND_FRAGMENTS_MAX][UDP_HEADER + ZS_MSG_HEADER];
 
 	for (int i = 0; i < count; i++)
 	{

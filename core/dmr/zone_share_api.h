@@ -22,7 +22,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define ZS_OFFERS_OFF			0		// the default: offers are not taken
+#define ZS_OFFERS_OFF			0		// offers are not taken (the service's state until the settings set it)
 #define ZS_OFFERS_ASK			1		// offers are shown, applied only when the user imports them
 
 #define ZS_OFFERS_PER_HOUR		6

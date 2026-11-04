@@ -15,6 +15,7 @@
 #define OFF_PA_HIGH		0x045u		// stock power level 1
 #define OFF_PA_LOW		0x056u		// every other level
 #define OFF_MOD			0x067u		// (u8, u8) pairs, the first byte used
+#define OFF_PA_GAIN		0x09Bu		// u8 per point, capped at 15: the FD6818's PA gain (hardware-db25d.md 4.8)
 #define OFF_TX_DELAY		0x0AEu		// (u16 on, u16 off) pairs in us
 #define OFF_SQUELCH		0x0CFu		// 8 segments x 9 levels x u16
 #define HALF			0x400u		// the VHF half
@@ -23,6 +24,7 @@
 #define VHF_BELOW_HZ		280000000u
 #define TX_DELAY_MAX_US		2000u		// a larger value counts as 0
 #define DAC_MAX			4095u
+#define PA_GAIN_MAX		15u		// 0x09B: the stock caps the byte here
 #define SQUELCH_LEVEL0_DB	136u
 
 static const uint32_t points_uhf[DB25D_CAL_POINTS] = {
@@ -178,6 +180,21 @@ uint8_t db25d_cal_tx_center(void)
 #else
 	return valid ? page[OFF_TX_CENTER] : 0x80u;
 #endif
+}
+
+uint8_t db25d_cal_pa_gain(uint32_t hz)
+{
+	if (!valid) {
+		return PA_GAIN_MAX;
+	}
+	// Not interpolated: the entry of the last point at or below hz, point 1's below it (the stock lookup)
+	const uint32_t *pts = is_vhf(hz) ? points_vhf : points_uhf;
+	uint8_t p = 0;
+	while (p + 1u < DB25D_CAL_POINTS && pts[p + 1u] <= hz) {
+		p++;
+	}
+	int32_t v = entry(at(hz, OFF_PA_GAIN), p, 1, true);
+	return v > (int32_t)PA_GAIN_MAX ? PA_GAIN_MAX : (uint8_t)v;
 }
 
 uint8_t db25d_cal_mod(uint32_t hz)

@@ -33,7 +33,10 @@ same records at the same addresses as the base model, plus tables this spec does
 
 RadioFoundry's flash map on these radios puts its emulated EEPROM, settings ring, journal and second DMR ID database
 area at addresses that overlap the stock tables ([settings-store.md](settings-store.md) 1). Until the user writes a
-RadioFoundry codeplug and an ID database, those areas still hold the stock bytes.
+RadioFoundry codeplug and an ID database, those areas still hold the stock bytes. Claiming the settings area erases
+it, and on some boards the zone table (0x0149E0) lies inside it. A conversion therefore reads the stock codeplug from
+a copy taken before the claim, such as the installer's backup ([web-flasher.md](../dev/web-flasher.md), "Channels
+after an install").
 
 Files that carry the same codeplug:
 
@@ -61,6 +64,11 @@ was programmed keeps stock bytes wherever RadioFoundry hasn't written. The open-
    it. A UTF-16 name, as the stock layout stores them, fails: its second byte is 0x00 and printable bytes follow.
    The layout is the open-firmware one when there is at least one good record and at most one bad record for every
    four good ones.
+
+   One exception: a radio put back on its stock firmware after RadioFoundry. The stock software rewrites only its own
+   codeplug, so RadioFoundry's records past it still count as good, but both layouts keep their general settings in the
+   chip's first sectors, which the stock codeplug covers. When the open-firmware general settings have no DMR ID and
+   the stock ones (3.1) hold a valid one (1 to 16776415), the stock software wrote last: step 2 decides.
 2. **Stock evidence.** The channel table of each family (section 3.2) is checked: a record is in use when its first
    name character is not 0 and its mode (byte 0 bits 0-1) is 1 or 2. An in-use record is good when both frequencies are
    valid BCD and the name is valid UTF-16 (each character 0x0020 or above and not 0xFFFF, 0x0000 after the first
@@ -69,6 +77,12 @@ was programmed keeps stock bytes wherever RadioFoundry hasn't written. The open-
 3. **Blank.** No record in use in either layout: an erased or empty codeplug. The editor opens it as an empty
    open-firmware codeplug.
 4. Anything else is a codeplug in a layout the editor doesn't know.
+
+The firmware applies step 1 at start-up and after a CPS write, with the same rule and thresholds, to the channels,
+zones and RX group lists ([codeplug-native.md](codeplug-native.md) 2, "Another firmware's codeplug"). Records in use
+that fail it make the radio show an empty codeplug and ask before an edit writes over it. The radio doesn't know the stock layouts, so it doesn't apply the exception in step 1 (the
+general settings of a radio put back on stock) or steps 2 and 3. It needs no frequency range check: a junk record with
+valid BCD frequencies also has a name that fails.
 
 A UV380 family `.rdt` file is recognized by its size alone (section 1) and reported as not supported.
 

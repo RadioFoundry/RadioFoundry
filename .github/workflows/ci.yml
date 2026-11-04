@@ -3,8 +3,7 @@
 #
 # CI on main (docs/dev/ci.md): everything that takes a few minutes, on every push to main that changes firmware
 # sources, tests, build tools or this workflow (docs-only changes run only the manual workflow), and by hand on any
-# branch. Pull requests get the same jobs from pr-tests.yml, which runs main's copy of the workflow, never the pull
-# request's; a branch isn't tested twice. The pieces are tools/ci.sh's steps and tools/coverage.sh, so a local
+# branch. Pull requests get the same jobs from pr-tests.yml; a branch isn't tested twice. The pieces are tools/ci.sh's steps and tools/coverage.sh, so a local
 # `tools/ci.sh --quick` runs the same checks:
 #   unit tests the host tests (64 suites, tshark pcap checks) run once, built with --coverage and under ASan and UBSan
 #              (gcovr's report as an artifact, totals in the job summary); the UI screen gallery
@@ -12,13 +11,12 @@
 #   firmware   one job per toolchain (Arm, C-SKY): every board built with it, from the registry (tools/ci.sh
 #              --toolchain), each build option value too, with zero warnings, the size report and the app region fit.
 #              The compiler comes from .github/actions/toolchain (platform.toml's pin); C-SKY builds run in the
-#              csky-elf image (repository variable RFOUNDRY_CSKY_IMAGE, default platform.toml's image) unless the runner has
-#              csky-elf GCC, and are skipped with a notice where that image isn't available (GitHub's runners until
-#              it is in a registry)
+#              csky-elf image (platform.toml's image, public on ghcr.io; the repository variable RFOUNDRY_CSKY_IMAGE
+#              overrides it) unless the runner has csky-elf GCC, and are skipped with a notice where that image
+#              isn't available
 # The feature matrix and the other long builds run nightly (nightly.yml), the radio tests by hand (hil.yml).
-# Runs on Gitea Actions (the self-hosted runner) and GitHub Actions alike; a newer push to the same branch cancels
-# the run in progress. On GitHub the repository variable RFOUNDRY_CI_RUNNER (a runner label) moves the jobs from the
-# hosted runners to the self-hosted one in tools/ci-runner/, whose image has every tool installed (RFOUNDRY_CI_IMAGE=1).
+# Runs on Gitea Actions (the self-hosted runner) and GitHub Actions alike, on GitHub's hosted runners there; a newer
+# push to the same branch cancels the run in progress.
 name: CI
 
 on:
@@ -55,7 +53,7 @@ jobs:
   unit-tests:
     name: unit tests
     if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
-    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
@@ -101,19 +99,21 @@ jobs:
   checks:
     name: checks   # Python and license checks, beside the unit tests
     if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
-    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           submodules: false
-      - name: Install numpy, pytest, pyserial
+      - name: Install numpy, pytest, pyserial, the site's packages
         run: |
           set -eu
           if [ "${RFOUNDRY_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
             sudo apt-get update -qq
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
               python3-numpy python3-pytest python3-serial
+            # without them ci.sh skips the strict site build, which Cloudflare Pages then fails on
+            python3 -m pip install -q --user --break-system-packages -r site/requirements.txt
           fi
           # reuse lint only when the tree is expected to pass it (repository variable RFOUNDRY_CI_REUSE=true)
           if [ "${{ vars.RFOUNDRY_CI_REUSE }}" = true ]; then
@@ -128,7 +128,7 @@ jobs:
     # (tools/ci.sh --toolchain takes them from the registry, so a new radio joins with no edit here); 4 cores each
     name: firmware (${{ matrix.name }})
     if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
-    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false

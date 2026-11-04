@@ -16,7 +16,7 @@ import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
 import { stockVersion } from "../static/js/flasher/usmart.js";
-import { openVendorFile } from "../static/js/flasher/vendorfile.js";
+import { openVendorFile, whyNot, analysisCandidate } from "../static/js/flasher/vendorfile.js";
 import { vendorBundle, hasC7Backup, backupChoices } from "../static/js/flasher/c7000ui.js";
 import * as explain from "../static/js/flasher/explain.js";
 import * as crumbs from "../static/js/flasher/trail.js";
@@ -92,7 +92,7 @@ test("#sim=<board>: every C7 stub radio's fake comes from its data", async () =>
 		// a stock console's version string is where the console's build check reads it
 		if (r.flash.stock_console) {
 			assert.equal(o.usmart, r.flash.stock_versions[0].slice(-3), r.id);
-			assert.equal(stockVersion(sim.progmem), r.flash.stock_versions[0], r.id);
+			assert.equal(stockVersion(sim.progmem)?.slice(-3), o.usmart, r.id);
 		} else assert.equal(o.usmart, null, r.id);
 	}
 });
@@ -184,6 +184,21 @@ test("slow cable: the answer to the greeting comes too late, the ROM says so, an
 	assert.notEqual(r.state, "stub");
 });
 
+test("slow cable mode: a cable pulled while the answers go out ends the wait with the lost connection", async (t) => {
+	const { r } = await radio("stock", { romWindow: 40 });
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	let n = 0;
+	r.stream.write = async () => { if (++n > 2) throw new DOMException("The device has been lost.", "NetworkError"); };
+	const unhandled = [];
+	const seen = (e) => unhandled.push(e);
+	process.on("unhandledRejection", seen);
+	t.after(() => process.off("unhandledRejection", seen));
+	await assert.rejects(s.waitForRom(5000, { repeat: 30 }), { name: "NetworkError" });
+	await new Promise((ok) => setTimeout(ok, 50));
+	assert.equal(unhandled.length, 0);
+});
+
 test("slow cable mode: the answer sent ahead every 30 ms gets the load through the same slow cable", async (t) => {
 	const { r } = await radio("stock", { romWindow: 40, faults: { slowCable: 60 } });
 	t.after(() => r.stop());
@@ -249,6 +264,97 @@ test("simulated boot ROM: unanswered, it says it stops waiting; a second answer 
 	await new Promise((ok) => setTimeout(ok, 450));
 	assert.deepEqual([...r.stream.buf], [0x02, 0x24, 0x00, 0x03, 0x02, 0x0A, 0x00, 0x03]);
 	assert.equal(r.state, "romload");
+});
+
+test("blank count: the windows are visited spread over the whole range, each once", async () => {
+	const seen = [];
+	const fake = { sums: async (mem, a, n) => (seen.push(a), Array.from({ length: n }, () => ({ crc: 0, blank: true }))) };
+	const MB = 0x100000;
+	const all = await c7.blankCount(fake, "nand", 0, 256 * MB);
+	assert.equal(all.sectors, 65536);
+	assert.equal(new Set(seen).size, seen.length, "no window twice");
+	seen.length = 0;
+	let n = 0;
+	await c7.blankCount(fake, "nand", 0, 256 * MB, { stop: () => ++n > 8 });
+	assert.equal(seen.length, 8);
+	assert.ok(Math.max(...seen) > 128 * MB && seen.some((a) => a > 0 && a < 128 * MB), "a short count samples the whole chip");
+});
+
+test("a NAND radio: the stub reads the NAND through its NAND path once configured for it, and never writes it", async (t) => {
+	const sim = await c7000Simulation(C, "db25d");
+	const lay = C.boards.db25d;
+	assert.equal(lay.data_flash, false);
+	assert.ok(lay.calibration, "the board profile says where the calibration copies are");
+	const r = new FakeC7000({ progmem: sim.progmem.slice(), speed: 200, romWindow: 400, bootTime: 200, nand: { calibration: lay.calibration } });
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	s.size.progmem = lay.progmem_size;
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.image, stubs.load);
+	await s.configure(lay.stub_board, C.led);
+	assert.equal(await s.checkId("nand"), "98e2");
+	const a = lay.calibration.nand;
+	const page = await s.dump("nand", a, a + 0x1000);
+	assert.ok(equal(page, r.nand.subarray(a, a + 0x1000)));
+	assert.equal(new TextDecoder().decode(page.subarray(0, 4)), lay.calibration.magic);
+	assert.ok(equal(await s.dump("nand", 0x40000, 0x50000), r.nand.subarray(0x40000, 0x50000)), "used and blank sectors read back");
+	const dm = await c7.blankCount(s, "nand", 0, 0x10000000, { deadline: 300 });
+	assert.ok(dm.sectors > 0 && dm.blank <= dm.sectors);
+	await assert.rejects(s.writeCmd("nand", new Uint8Array([0x20, 0, 0, 0]), "erase", 100), /only read/);
+});
+
+// Field (Sentry OPENDIGITALRADIO-X, a NAND radio's install check, four tries on two days): the stub answered status 0x0D
+// for the sector at 0x1740000 every time, and the whole read failed after seven
+test("a NAND page whose ECC fails: kept as the chip holds it, the read goes on, the checksum pass leaves it out", async (t) => {
+	const sim = await c7000Simulation(C, "db25d");
+	const lay = C.boards.db25d;
+	const bad = 0x40000 + 0x5000 + 0x800;	// the second page of a used sector
+	const r = new FakeC7000({ progmem: sim.progmem.slice(), speed: 200, romWindow: 400, bootTime: 200, nand: { calibration: lay.calibration },
+		faults: { nandEcc: [bad] } });
+	t.after(() => r.stop());
+	const lines = [];
+	const s = new Stub(r.stream, { log: (l) => lines.push(l) });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.image, stubs.load);
+	await s.configure(lay.stub_board, C.led);
+	const got = await s.dump("nand", 0x40000, 0x50000);
+	assert.ok(equal(got, r.nand.subarray(0x40000, 0x50000)), "every sector read back, the failing one by its pages");
+	assert.deepEqual(s.ecc, [0x45000]);
+	assert.ok(lines.some((l) => /0x45000: the NAND's ECC can't correct this sector/.test(l)));
+	assert.ok(!lines.some((l) => /resuming here/.test(l)), "never asked again as a damaged frame");
+	const dm = await c7.blankCount(s, "nand", 0x40000, 0x60000);
+	assert.equal(dm?.sectors, 16, "the blank count goes on past its window");
+});
+
+test("NAND calibration copies: only those with the magic are kept, and a missing one is named", () => {
+	const tune = new Uint8Array(0x1000).fill(0x11);
+	tune.set(new TextEncoder().encode("TUNE"));
+	const blank = new Uint8Array(0x1000).fill(0xFF);
+	const both = c7.calibrationCopies([{ where: "nand", data: tune }, { where: "progmem", data: tune }], "TUNE");
+	assert.deepEqual([both.found, both.missing, both.keep.length], [true, null, 2]);
+	// a NAND erased after the stock firmware left (seen on a radio, 2026-10-27): the program memory copy alone
+	const one = c7.calibrationCopies([{ where: "nand", data: blank }, { where: "progmem", data: tune }], "TUNE");
+	assert.deepEqual([one.found, one.missing, one.keep.map((p) => p.where)], [true, "nand", ["progmem"]]);
+	const none = c7.calibrationCopies([{ where: "nand", data: blank }, { where: "progmem", data: blank }], "TUNE");
+	assert.deepEqual([none.found, none.missing, none.keep.length], [false, null, 2]);
+});
+
+test("NAND calibration: found past bad blocks the stock firmware skips, else the copy where the profile says", async () => {
+	const tune = new Uint8Array(0x1000).fill(0x11);
+	tune.set(new TextEncoder().encode("TUNE"));
+	const blank = new Uint8Array(0x1000).fill(0xFF);
+	const lay = { nand: 0x280000, magic: "TUNE" };
+	const reads = [];
+	// one bad block at or below block 20 (seen on a radio, 2026-10-27): the copy is a block later
+	const at = (where) => async (a) => (reads.push(a), a === where ? tune : blank);
+	const moved = await c7.findNandCalibration(at(0x2A0000), lay);
+	assert.equal(moved.addr, 0x2A0000);
+	assert.deepEqual(reads, [0x280000, 0x2A0000], "stops at the first copy");
+	assert.equal((await c7.findNandCalibration(at(0x280000), lay)).addr, 0x280000);
+	const none = await c7.findNandCalibration(at(-1), lay);
+	assert.deepEqual([none.addr, none.data[0]], [0x280000, 0xFF]);
 });
 
 test("boot ROM ack read: an exact echo is dropped, a partial one waits, anything else fails with its bytes", async () => {
@@ -370,6 +476,49 @@ test("RadioFoundry path: no buttons, keep the codec, write only what changed", a
 	assert.ok(equal(r.progmem.subarray(0xE8000), before), "codec slot kept");
 });
 
+test("protocol 7 writes a sector in one request and checks its read-back CRC; protocol 6 keeps the SPI path", async (t) => {
+	for (const stubWrite of [true, false]) {
+		const { sim, r } = await radio("rfoundry", { stubWrite, faults: { badWrite: stubWrite ? 1 : 0 } });
+		t.after(() => r.stop());
+		r.powerOn();
+		await new Promise((ok) => setTimeout(ok, 800));
+		const s = new Stub(r.stream, { log: quiet });
+		await s.enterFromRFoundry(stubs.image);
+		await s.configure(C.boards.dm1801pro.stub_board, C.led);
+		assert.equal(s.sectorOp, stubWrite, `HELLO v${stubWrite ? 7 : 6}`);
+		const image = r.progmem.slice(0xC000, 0xC000 + 0x40000);
+		for (const off of [0x1000, 0x5000, 0x9000]) image[off + 7] ^= 0xFF;
+		image.fill(0xFF, 0x20000, 0x21000);		// a sector left erased
+		const [start, data] = c7.target(sim.c, "dm1801pro", image, null);
+		const writes = r.writes, retried = s.retried;
+		const res = await s.writeProgram(data, start, { appStart: C.app_start, appEnd: C.app_end });
+		assert.equal(res.written, 4);
+		assert.ok(equal(r.progmem.subarray(start, start + data.length), data), "image written");
+		if (stubWrite) {
+			assert.equal(r.writes - writes, 5, "one WRITE per sector, and one again for the sector that read back wrong");
+			assert.equal(s.retried, retried, "a wrong read-back is a write again, not a damaged frame");
+		} else assert.ok(r.writes - writes > 4 * 4, "erase and page programs as separate SPI requests");
+	}
+});
+
+test("protocol 7: a write-protected or stuck flash stops the write with a plain reason, nothing written", async (t) => {
+	for (const [status, why] of [[0x0F, /write-protected/], [0x0C, /stayed busy/]]) {
+		const { sim, r } = await radio("rfoundry", { faults: { writeStatus: status } });
+		t.after(() => r.stop());
+		r.powerOn();
+		await new Promise((ok) => setTimeout(ok, 800));
+		const s = new Stub(r.stream, { log: quiet });
+		await s.enterFromRFoundry(stubs.image);
+		await s.configure(C.boards.dm1801pro.stub_board, C.led);
+		const image = r.progmem.slice(0xC000, 0xC000 + 0x40000);
+		image[0x1007] ^= 0xFF;
+		const before = r.progmem.slice();
+		const [start, data] = c7.target(sim.c, "dm1801pro", image, null);
+		await assert.rejects(s.writeProgram(data, start, { appStart: C.app_start, appEnd: C.app_end }), (e) => e instanceof StubError && why.test(e.message));
+		assert.ok(equal(r.progmem, before), "the flash is as it was");
+	}
+});
+
 test("RadioFoundry without stub entry says so; the stub refuses writes outside the application", async (t) => {
 	const { r } = await radio("rfoundry-nostub");
 	t.after(() => r.stop());
@@ -396,6 +545,13 @@ test("a codec from a stock file or a program memory backup", async () => {
 	await assert.rejects(c7.codecFromFile(new Uint8Array(1000), sim.c, "dm1801pro"), (e) => e.code === "not-vendor");
 	await assert.rejects(c7.codecFromFile(new Uint8Array(sim.progmem.length), sim.c, "dm1801pro"), (e) => e.code === "not-vendor");
 	assert.throws(() => c7.slotBytes({ ...sim.c, codec_maps: [] }, "dm1801pro", got), (e) => e.code === "unmapped");
+	// the same build in the radio, its codec without a map: the check step's analysis completes (the backup is saved) and
+	// names it a codec the page doesn't know, so the codec step asks for a stock file instead of failing the read
+	const unmapped = await c7.analyze(sim.progmem, { ...sim.c, codec_maps: [] }, "dm1801pro");
+	assert.equal(unmapped.firmware, "stock");
+	assert.equal(unmapped.codec, null);
+	assert.equal(unmapped.otherCodec, true);
+	assert.equal(await c7.decide(sim.c, "dm1801pro", { flashCodec: unmapped.codec }), null);
 	const slot = c7.slotBytes(sim.c, "dm1801pro", got);
 	assert.equal((await c7.decide(sim.c, "dm1801pro", { savedSlot: slot })).source, "browser");
 	// a codec slot that came with the user's firmware file has no name of its own: its text must not print an empty one
@@ -453,17 +609,20 @@ test("the original firmware goes back from its vendor file, without a backup", a
 	assert.equal(explain.pickProblem(await openVendorFile("DM1801Pro-new.bin", changed, fb, "md380"), "md380").problem, "not-vendor");
 });
 
-test("factory calibration: the first page of the stock codeplug area whose ID byte is 2, and only in that area", () => {
-	const area = new Uint8Array(c7.CAL_AREA_END + 0x2000).fill(0xFF);
-	assert.equal(c7.findCalibration(area), -1);
-	area[0x0FFF] = 2;				// page 0 isn't a codeplug page
-	area[c7.CAL_AREA_END + 0xFFF] = 2;		// past the area
-	assert.equal(c7.findCalibration(area), -1);
-	area[0x7CFFF] = 2;
-	area[0x9CFFF] = 2;
-	assert.equal(c7.findCalibration(area), 0x7C000);
+test("factory calibration: the first page of the stock codeplug area with the profile's ID byte, and only in that area", () => {
+	const lay = C.boards.dm1801pro.calibration;
+	assert.ok(lay.area && lay.page_id !== undefined, "a data flash radio's profile gives the area and the page ID");
+	for (const [id, b] of Object.entries(C.boards)) assert.ok(b.calibration, `${id}: every board says where its calibration is`);
+	const area = new Uint8Array(lay.area + 0x2000).fill(0xFF);
+	assert.equal(c7.findCalibration(area, lay), -1);
+	area[0x0FFF] = lay.page_id;			// page 0 isn't a codeplug page
+	area[lay.area + 0xFFF] = lay.page_id;		// past the area
+	assert.equal(c7.findCalibration(area, lay), -1);
+	area[0x7CFFF] = lay.page_id;
+	area[0x9CFFF] = lay.page_id;
+	assert.equal(c7.findCalibration(area, lay), 0x7C000);
 	// the simulated radio carries one where the DM-1801 Pro examined had it
-	assert.equal(c7.findCalibration(new FakeC7000({ progmem: new Uint8Array(0x100000) }).q128), 0x7C000);
+	assert.equal(c7.findCalibration(new FakeC7000({ progmem: new Uint8Array(0x100000) }).q128, lay), 0x7C000);
 });
 
 // Slots (docs/spec/codec-placement.md): the same bytes as hrc7000_codec.py, read back; a version 1 slot from before the
@@ -509,6 +668,14 @@ test("read times: pessimistic, from the radio's count of blank sectors, else the
 	// a full program memory: about 2 min
 	const pm = c7.readSeconds(MB, { sizing: { sectors: 256, blank: 0, ms: 1000 } });
 	assert.ok(pm.seconds > 110 && pm.seconds < 125, `${pm.seconds}`);
+	// how well the used sectors pack isn't counted: least takes them packed to BEST_PACK. A data memory 15 % used read
+	// in 2.25 min on the bench, between the two
+	const used = c7.readSeconds(16 * MB, { sizing: { sectors: 4096, blank: 3458, ms: 3000 } });
+	assert.ok(used.least < 135 && used.seconds > 135, `${used.least} ${used.seconds}`);
+	assert.ok(pm.least < pm.seconds / 2, `${pm.least}`);
+	// a full data memory: about 10 to 31 min
+	const full = c7.readSeconds(16 * MB, { sizing: { sectors: 4096, blank: 0, ms: 3000 } });
+	assert.ok(full.least > 9 * 60 && full.seconds > 30 * 60, `${full.least} ${full.seconds}`);
 	// a measured rate replaces the bench one, but never beats the line
 	assert.ok(c7.readSeconds(MB, { sizing: { sectors: 256, blank: 0, ms: 0 }, rate: 4500 }).seconds > 2 * 115);
 	assert.ok(c7.readSeconds(MB, { sizing: { sectors: 256, blank: 0, ms: 0 }, rate: 1e6 }).seconds > MB / 11520);
@@ -578,4 +745,84 @@ test("trail of a cable radio run: the boot ROM load (an echoing cable), the choi
 	assert.ok(tr.some((l) => /cable radio check \{"progmem":true,"cal":true,"q128":false,"skipFirmware":false,"firstInstall":true,"how":"rom"\}/.test(l)));
 	assert.ok(tr.some((l) => /cable radio codec decision \{"mode":"[a-z]+"/.test(l)));
 	assert.ok(tr.some((l) => /cable radio codec decision \{"mode":null,"firmware":"stock","notRead":true,"file":false\}/.test(l)));
+});
+
+test("protected regions: the stub refuses a write over one, a restore leaves it as the radio has it", async (t) => {
+	const { sim, r } = await radio("rfoundry");
+	t.after(() => r.stop());
+	r.powerOn();
+	await new Promise((ok) => setTimeout(ok, 800));
+	const s = new Stub(r.stream, { log: quiet });
+	await s.enterFromRFoundry(stubs.image);
+	const cal = [{ mem: "progmem", start: 0x20000, end: 0x21000, what: "test (x.md 1)" },
+		{ mem: "data", start: 0x1000, end: 0xC9000, what: "test (x.md 1)" }];
+	await s.configure({ ...C.boards.dm1801pro.stub_board, protect: cal }, C.led);
+	assert.deepEqual(s.protect, cal);
+	const before = r.progmem.slice();
+	const image = r.progmem.slice(0xC000, 0x4C000);
+	image.fill(0x33, 0x13000, 0x16000);	// 0x1F000-0x22000: the protected sector and one each side
+	const [start, data] = c7.target(sim.c, "dm1801pro", image, null);
+	await assert.rejects(s.writeProgram(data, start, { appStart: C.app_start, appEnd: C.app_end }), /protected region/);
+	assert.ok(equal(r.progmem, before), "nothing written");
+	const states = new Map();
+	const res = await s.writeProgram(data, start, { appStart: C.app_start, appEnd: C.app_end, carve: true, onSector: (a, st) => states.set(a, st) });
+	assert.deepEqual(res, { written: 2, same: 62 });
+	assert.equal(states.get(0x20000), "kept");
+	assert.ok(equal(r.progmem.subarray(0x20000, 0x21000), before.subarray(0x20000, 0x21000)), "the protected sector kept");
+	assert.ok(equal(r.progmem.subarray(0x1F000, 0x20000), data.subarray(0x13000, 0x14000)));
+	await assert.rejects(s.writeCmd("q128", Uint8Array.of(0x60), "chip erase", 1000), /protected regions/);
+	await assert.rejects(s.writeCmd("q128", Uint8Array.of(0x20, 0x00, 0x7C, 0x00), "erase", 1000), /protected region/);
+});
+
+test("a program memory dump of this radio with no codec restores, but never gives a codec", async () => {
+	const id = Object.keys(C.boards).find((b) => C.boards[b].bootloader_id);
+	const radioInfo = { id, name: "Radio", flash: { board: id } };
+	const fb = json("flash-boards.json");
+	const dump = new Uint8Array(c7.totalSize(C, id)).fill(0xFF);
+	dump.set(new TextEncoder().encode(C.boards[id].bootloader_id), 0x100);
+	for (let i = C.app_start; i < C.app_start + 4096; i++) dump[i] = (i * 7) & 0xFF;
+	const opened = await openVendorFile("DM32_progmem_backup.bin", dump, fb, id);
+	assert.equal(opened.best?.match.kind, "progmem");
+	assert.equal(opened.best.match.board, id);
+	// the restore takes it as it is, and says nothing is known of its firmware
+	assert.equal(explain.pickProblem(opened, id, { need: "key" }), null);
+	const bundle = vendorBundle(radioInfo, opened.best, C);
+	assert.equal(bundle.meta.firmware_now.kind, "unknown");
+	assert.deepEqual(c7.restoreTarget(C, bundle.parts.get("c7000-progmem").data)[1], dump.subarray(C.app_start, C.app_end));
+	// the codec step explains it (a dump, not "not the manufacturer's file")
+	assert.equal(explain.pickProblem(opened, id).problem, "dump");
+	assert.match(opened.files[0].match.why, /no codec/);
+	// the notice offers it to the team for mapping (the backend takes a dump by its bootloader ID), as itself
+	assert.ok(explain.OFFER.has("dump"));
+	const offer = analysisCandidate(opened, fb, id);
+	assert.equal(offer?.reason, "progmem-dump");
+	assert.equal(offer.file.data, dump);
+	assert.equal(analysisCandidate(await openVendorFile("d.bin", dump, fb, Object.keys(C.boards).find((b) => b !== id)), fb, id), null);
+	// the log says what it was
+	const [, got] = crumbs.filePicked({ name: "d.bin", size: dump.length, sha256: "ab" }, opened.best);
+	assert.equal(got.match, "progmem");
+	assert.equal(got.board, id);
+	// another radio's bootloader, or a blank application area, is not one
+	const other = Object.keys(C.boards).find((b) => b !== id);
+	const asOther = await openVendorFile("d.bin", dump, fb, other);
+	assert.equal(asOther.best, null);
+	const blank = dump.slice();
+	blank.fill(0xFF, C.app_start, C.app_start + 4096);
+	const bo = await openVendorFile("d.bin", blank, fb, id);
+	assert.equal(bo.best, null);
+	assert.throws(() => vendorBundle(radioInfo, { path: "d.bin", data: blank, match: { kind: "key", board: id } }, C), (e) => e.code === "unmapped");
+});
+
+test("a pick nothing in which serves is logged with its problem and why, not as an empty record", async () => {
+	const id = Object.keys(C.boards)[0];
+	const fb = json("flash-boards.json");
+	const junk = new Uint8Array(5000).fill(7);
+	const opened = await openVendorFile("junk.bin", junk, fb, id);
+	assert.equal(opened.best, null);
+	const problem = explain.pickProblem(opened, id);
+	const [, rec] = crumbs.filePicked({ name: "junk.bin", size: junk.length, sha256: "cd" }, { problem, why: whyNot(opened) });
+	assert.equal(rec.problem, problem.problem);
+	assert.ok(rec.problem);
+	assert.ok(rec.why, "why the file was not taken");
+	assert.match(rec.id, /^problem:/);
 });

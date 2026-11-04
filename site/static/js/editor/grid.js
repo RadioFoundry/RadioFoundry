@@ -12,7 +12,7 @@ function pencil() {
 	const svg = document.createElementNS(SVG, "svg");
 	svg.setAttribute("viewBox", "0 0 16 16");
 	svg.setAttribute("aria-hidden", "true");
-	svg.setAttribute("class", "icon");
+	svg.setAttribute("class", "pencil");
 	const path = document.createElementNS(SVG, "path");
 	path.setAttribute("d", "M11.5 1.5l3 3L5 14H2v-3l9.5-9.5zM10 3l3 3");
 	path.setAttribute("fill", "none");
@@ -63,7 +63,7 @@ export class Grid {
 			const c = this.columns.find((x) => x.key === this.sort.key);
 			const val = (r) => {
 				const v = c.sortValue ? c.sortValue(r) : c.get(r);
-				return typeof v === "number" ? v : String(this.text(c, r)).toLowerCase();
+				return typeof v === "number" ? v : this.text(c, r).toLowerCase();
 			};
 			list = [...list].sort((a, b) => {
 				const x = val(a), y = val(b);
@@ -73,9 +73,11 @@ export class Grid {
 		return list;
 	}
 
+	// always a string: a column's format may hand back the value itself (a record number), and the filter and sort
+	// compare text
 	text(c, r) {
 		const v = c.get(r);
-		if (c.format) return c.format(v, r);
+		if (c.format) return String(c.format(v, r) ?? "");
 		if (c.type === "bool") return v ? "✓" : "";
 		if (c.type === "select") {
 			const o = c.options(r).find(([k]) => k === v);
@@ -219,7 +221,11 @@ export class Grid {
 		td.replaceChildren(input);
 		td.classList.add("editing");
 		input.focus();
-		if (input.select && typed === null) input.select();
+		// a value from the attribute leaves the caret at 0 (Chromium), before the key that started the edit: the next
+		// key would land ahead of it ("461" became "614")
+		// (a select has neither)
+		if (typed === null) input.select?.();
+		else input.setSelectionRange?.(typed.length, typed.length);
 		let done = false;
 		const finish = (save, move = null) => {
 			if (done) return;

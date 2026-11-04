@@ -6,10 +6,9 @@
 # screen side by side in the `ui-gallery` artifact. ui-gallery-comment.yml posts it on the pull request.
 #
 # This job runs the pull request's code (uiSim is built from its tree), so it is a plain pull_request run: a read-only
-# token, no secrets, no cache, nothing a fork couldn't have. It never writes to the repository or the pull request;
-# the comment job does that, from main's copy of its workflow, and never runs anything from the artifact. It runs on
-# GitHub's runners: a pull request runs its own copy of this file, so the self-hosted runner refuses it
-# (tools/ci-runner/job-gate.sh, docs/dev/ci-runners.md).
+# token, no secrets, no cache, nothing a fork couldn't have, on GitHub's runners; a fork's run waits for a maintainer's
+# approval. It never writes to the repository or the pull request; the comment job does that, from main's copy of its
+# workflow, and never runs anything from the artifact.
 name: UI gallery
 
 on:
@@ -41,8 +40,9 @@ concurrency:
 
 jobs:
   render:
-    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
-    runs-on: ubuntu-24.04   # never self-hosted: the runner refuses a pull_request run (tools/ci-runner/job-gate.sh)
+    # a public repository always (a fork's run may not get repository variables); a private copy when it opts in
+    if: (github.server_url != 'https://github.com' || !github.event.repository.private || vars.RFOUNDRY_CI_GITHUB == 'true')
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1

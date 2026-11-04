@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { crc32, equal, fromHex, toHex } from "../static/js/flasher/bytes.js";
 import { FakeRadio, simulation, randomBytes, rng } from "../static/js/flasher/fake.js";
-import { F4Stub, f4Image, f4StubHeader, HDR, APP_BASE, MEM_SPI, OP } from "../static/js/flasher/f4stub.js";
+import { F4Stub, f4Image, f4StubHeader, HDR, APP_BASE, MEM_SPI, OP, registerShort } from "../static/js/flasher/f4stub.js";
 import { Stub, StubError } from "../static/js/flasher/stub.js";
 import { Link } from "../static/js/flasher/link.js";
 import { readRadio } from "../static/js/flasher/backup.js";
@@ -180,22 +180,25 @@ test("SPI flash: only changed sectors are written, then verified; outside the ch
 });
 
 // A backup through the loader the way the backup step runs it
-async function backupVia(radio, sim, what) {
+async function backupVia(radio, sim, what, { patch = () => {}, spiSize = radio.spi.length } = {}) {
 	const link = new Link(radio.serialStream());
+	patch(link);
 	let handedOver = false;
 	const loader = f4LoaderReader(link, { stubJson: async () => stubJson, reopen: async () => radio.serialStream(), board: fb.f4stub.boards[radio.board.id], onHandOver: () => { handedOver = true; } });
-	const parts = await readRadio(link, sim.board, { backup: { spi_size: radio.spi.length } }, { what, readers: [loader] });
+	const parts = await readRadio(link, sim.board, { backup: { spi_size: spiSize } }, { what, readers: [loader] });
 	return { parts, loader, handedOver, get: (w) => parts.find((x) => x.what === w) };
 }
 
-test("backup through the loader: the security registers over the debug link, both memories through the loader, then RadioFoundry again", async () => {
-	for (const adopt of [true, false]) {
-		const { sim, radio } = await running("dm1701", { adopt });
+test("backup through the loader, every loader board: the security registers over the debug link, both memories through the loader, then RadioFoundry again", async () => {
+	for (const [id, adopt] of Object.keys(fb.f4stub.boards).flatMap((id) => [[id, true], [id, false]])) {
+		const { sim, radio } = await running(id, { adopt });
 		const b = await backupVia(radio, sim, {});
 		assert.ok(b.loader.used && b.handedOver);
 		assert.deepEqual(radio.events, ["stub (from RadioFoundry)", "reset"]);
 		assert.equal(radio.mode, "normal", "the radio runs RadioFoundry again");
-		assert.ok(b.get("security-registers").complete, "read over the debug link before the hand-over");
+		assert.ok(b.get("security-registers").complete, "read before the hand-over, and again through the loader");
+		assert.deepEqual(b.get("security-registers").data, radio.security);
+		assert.equal(b.parts.filter((x) => x.what === "security-registers").length, 1, "the two reads agree: one copy");
 		const internal = b.get("internal-flash");
 		assert.equal(internal.addr, APP_BASE);
 		assert.ok(internal.complete);
@@ -204,6 +207,30 @@ test("backup through the loader: the security registers over the debug link, bot
 		assert.ok(spi.complete);
 		assert.deepEqual(spi.data, radio.spi);
 	}
+});
+
+test("security registers: a build without them in the codeplug protocol gets them through the loader's SREAD", async () => {
+	for (const id of Object.keys(fb.f4stub.boards)) {
+		const { sim, radio } = await running(id, { cpsSecurity: false });
+		const b = await backupVia(radio, sim, { internal: false, spi: "none" });
+		assert.ok(b.loader.used, "the loader opened for the calibration alone");
+		assert.deepEqual(b.get("security-registers").data, radio.security);
+		assert.equal(radio.mode, "normal", "and RadioFoundry runs again");
+	}
+});
+
+test("security registers: the codeplug protocol's copy alone without SREAD (a protocol 4 stub), both when the reads differ", async () => {
+	const { sim, radio } = await running("dm1701", { stubVersion: 4 });
+	const old = await backupVia(radio, sim, {});
+	assert.deepEqual(old.get("security-registers").data, radio.security);
+	const { sim: sim2, radio: radio2 } = await running("dm1701");
+	const differ = await backupVia(radio2, sim2, {}, { patch: (link) => {
+		const read = link.cpsRead.bind(link);
+		link.cpsRead = async (area, addr, len) => { const d = await read(area, addr, len); if (area === 10 && d) d[0] ^= 1; return d; };
+	} });
+	assert.deepEqual(differ.get("security-registers").data, radio2.security, "the loader's CRC-checked copy is the one kept");
+	const other = differ.parts.find((x) => x.file === "security-registers-codeplug-protocol.bin");
+	assert.ok(other && !other.complete && other.data[0] === (radio2.security[0] ^ 1));
 });
 
 test("backup without stub entry: the loader doesn't start and the debug link reads everything, RadioFoundry untouched", async () => {
@@ -238,6 +265,45 @@ test("the loader refuses a read past the chip's register size (what the debug li
 	await assert.rejects(s.readFlash(0x0807C000, 0x10000), /refused: status 0xd/);
 });
 
+test("a register that reads short: a backup whose INFO_CHIP goes unanswered still reads the internal flash in place", async () => {
+	// OPENDIGITALRADIO-17 on a build with the size check: the loader read the internal flash and refused the top
+	const { sim, radio } = await running("dm1701", { flashKb: 512 });
+	radio.flash.set(randomBytes(rng(5), 0x4000), 0x0F0000);
+	let asked = 0;
+	const b = await backupVia(radio, sim, {}, { patch: (link) => { link.chip = async () => { asked++; throw new Error("no answer to command 0xb"); }; } });
+	assert.equal(asked, 2, "asked twice");
+	const internal = b.get("internal-flash");
+	assert.ok(internal.complete);
+	assert.deepEqual(internal.data, radio.flash.subarray(APP_BASE - 0x08000000));
+	assert.deepEqual(b.get("spi-flash").data, radio.spi, "the loader reads the SPI flash");
+	assert.equal(radio.mode, "normal");
+});
+
+test("a register that reads short: install refused before anything is erased when the firmware's flash reaches past it", async () => {
+	// OPENDIGITALRADIO-34: an MD-UV380 whose register reads 512 KB, its firmware owning sectors past 0x08080000
+	for (const id of Object.keys(fb.f4stub.boards)) {
+		const owned = fb.f4stub.boards[id].owned;
+		assert.equal(registerShort(1024, owned), false, id);
+		assert.equal(registerShort(null, owned), false, `${id}: unknown is not short`);
+		const short = registerShort(512, owned);
+		assert.equal(short, owned.some(([, hi]) => hi > 0x08080000), id);
+		const { radio } = await running(id, { flashKb: 512 });
+		const s = await enter(radio);
+		const before = radio.events.length;
+		const write = s.writeImage(owned, [[APP_BASE, app(6, 0x20000)]]);
+		if (short) {
+			await assert.rejects(write, /reads 512 KB.*update mode/);
+			assert.ok(!radio.events.slice(before).some((e) => /^erase/.test(e)), `${id}: nothing erased`);
+		} else {
+			await write;	// the firmware's flash fits under the register: the loader writes it
+			assert.ok(equal(at(radio, APP_BASE, 0x20000), app(6, 0x20000)), id);
+		}
+	}
+	assert.ok(Object.values(fb.f4stub.boards).some((b) => registerShort(512, b.owned)), "a board that needs the bootloader then");
+	const { radio } = await running("dm1701", { flashKb: 2048 });
+	await assert.rejects((await enter(radio)).writeImage(fb.f4stub.boards.dm1701.owned, [[APP_BASE, app(6, 0x1000)]]), /2048 KB/);
+});
+
 test("hand-over on a port that went away: says so, not \"built without CONFIG_STUB_ENTRY\"", async () => {
 	const dead = { buf: new Uint8Array(0), clear() {}, take: () => new Uint8Array(0), write: async () => {} };
 	const s = new F4Stub(dead, { log: quiet });
@@ -255,6 +321,29 @@ test("a codeplug-only backup with no reader reads over the debug link", async ()
 	const parts = await readRadio(new Link(radio.serialStream()), sim.board, { backup: { spi_size: radio.spi.length } }, { what: { internal: false, spi: "codeplug" } });
 	assert.deepEqual(radio.events, []);
 	assert.equal(parts.find((x) => x.what === "spi-flash").data.length, 0x120000);
+});
+
+// Some radios of a model came with a smaller memory chip than the board's (1 MB where radios.json says 16 MB): RadioFoundry
+// then has no flash map for it. A read past the chip's end is refused, so the backup reads the chip the radio has
+test("a backup of a radio with a smaller memory chip reads that chip, through the loader and over the debug link", async () => {
+	const BOARD_SPI = 0x1000000;
+	// the loader's own probe (HELLO) gives the size, with no radio info to say it
+	let { sim, radio } = await running("dm1701", { spiSize: 0x100000, noMap: true, radioInfo: false });
+	radio.spi.set(randomBytes(rng(4), 0x1000), 0xFF000);
+	const b = await backupVia(radio, sim, {}, { spiSize: BOARD_SPI });
+	assert.ok(b.loader.used);
+	assert.ok(b.get("spi-flash").complete);
+	assert.deepEqual(b.get("spi-flash").data, radio.spi);
+	// over the debug link: the radio info gives it
+	({ sim, radio } = await running("dm1701", { spiSize: 0x100000, noMap: true }));
+	for (const spi of ["full", "codeplug"]) {
+		const parts = await readRadio(new Link(radio.serialStream()), sim.board, { backup: { spi_size: BOARD_SPI } }, { what: { internal: false, spi } });
+		const got = parts.find((x) => x.what === "spi-flash");
+		assert.deepEqual(got.data, radio.spi, spi);
+		assert.equal(got.complete, spi === "full");
+		assert.ok(parts.some((x) => x.what === "radio-info"));
+	}
+	assert.equal((await new Link(radio.serialStream()).storageInfo()).region, "nomap", "no settings region on that chip");
 });
 
 test("a read that fails inside the loader restarts the radio before the error goes up", async () => {
@@ -410,4 +499,23 @@ test("backup through the loader on a radio whose stub refuses the record: the ra
 	await assert.rejects(backupVia(radio, sim, {}), /refused/);
 	assert.deepEqual(radio.events, ["stub (from RadioFoundry)", "reset"]);
 	assert.equal(radio.mode, "normal");
+});
+
+test("protected regions: an SPI restore keeps the radio's bytes there, erases and installs over one are refused", async () => {
+	const { radio } = await running();
+	const s = await enter(radio);
+	s.board = { ...s.board, protect: [
+		{ mem: "data", start: 0x2000, end: 0x4000, what: "test (x.md 1)" },
+		{ mem: "progmem", start: 0x20000, end: 0x40000, what: "test (x.md 1)" }] };
+	const before = radio.spi.slice(0, 0x8000);
+	const data = before.slice();
+	data.fill(0x5A, 0x1000, 0x5000);
+	assert.deepEqual(await s.spiWrite(data, 0), { written: 2, same: 6 });
+	assert.ok(equal(radio.spi.subarray(0x2000, 0x4000), before.subarray(0x2000, 0x4000)), "protected sectors kept");
+	assert.ok(equal(radio.spi.subarray(0x1000, 0x2000), data.subarray(0x1000, 0x2000)) && equal(radio.spi.subarray(0x4000, 0x5000), data.subarray(0x4000, 0x5000)));
+	await assert.rejects(s.erase(5), /protected region/);
+	await assert.rejects(s.program(0x08020000, new Uint8Array(4)), /protected region/);
+	const flash = radio.flash.slice();
+	await assert.rejects(s.writeImage(fb.f4stub.boards.dm1701.owned, [[APP_BASE, app(2, 0x30000)]]), /protected region/);
+	assert.ok(equal(radio.flash, flash), "nothing erased");
 });

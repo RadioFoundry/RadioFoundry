@@ -12,7 +12,7 @@ and what has been checked on it.
 | [Baofeng DM-32UV](#baofeng-dm-32uv) |  | FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and each split duplex half work on air. Open: FM deviation at 12.5 kHz and an outdoor GPS fix. |
 | [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | FM, DMR voice and data, text messages, alerts, emergency, scan, the hotspot, single frequency repeating, each split duplex half and the USB network services work on air. Open: standalone SFR and a two-radio split duplex pair. |
 | [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | Baofeng DM-1801 | FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, single frequency repeating, the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX. |
-| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. Open: the older FD6818 batches and the Retevis RT73. |
+| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
 <!-- end generated -->
@@ -237,9 +237,10 @@ ARS and LRRP.
 Covers the TYT MD-380, the MD-390 and the Retevis RT3. **Fully operational on a UHF radio**: FM, DMR in simplex and through a
 repeater or duplex hotspot, and programming. The VHF image is untested. Installing: [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md).
 
-> **Check your TX frequency.** Accuracy depends on the radio's factory calibration. Confirm it against an external
-> reference (a frequency counter, a service monitor, or a hotspot's MMDVMCal BER test) before you rely on it. One MD-380
-> measured 1.9 kHz high, enough that an MMDVM hotspot never decoded it.
+> **Check your frequency.** Two MD-380s measured 2 to 2.5 kHz high on receive and transmit, enough that an MMDVM
+> hotspot never decoded them. Confirm yours against an external reference (a frequency counter, a service monitor, or a
+> hotspot's MMDVMCal BER test), then correct it with **Settings > Advanced > Freq trim**: enter the error with the
+> sign reversed (2 kHz high at 448.7 MHz: -4.5 ppm). With that the first radio decodes on the hotspot at BER under 0.1 %.
 
 ### Installing on the MD-380
 
@@ -305,6 +306,9 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 - GPS only on the "G" models. The radio listens for the GPS module for 5 s at start-up and hides the GPS features if
   it hears nothing. **Settings > Location > GPS** off only stops APRS using the fix; the module stays powered.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
+- Some early VHF radios may have a 1 MB memory chip instead of 16 MB (not yet confirmed on a radio). RadioFoundry
+  can't store a codeplug on it: settings are lost when the radio is turned off, and the Codeplug Editor and the
+  web installer say so. A backup still saves the whole chip.
 
 ## TYT MD-UV380
 
@@ -451,6 +455,26 @@ A mobile radio for 136-174 and 400-480 MHz with a front knob, a few front keys a
 voice both ways, the hotspot, the DMR VFO and the network services work on the radio. It is installed with the
 [radio programming utility](#installing-the-db25-d-pro) only.
 
+**Which DB25-D.** Open the radio's **Version** screen. The version reads like `909E.DBB.EARSAB.020`; the letters
+after `909E.` name the hardware.
+
+| Code | Hardware | RadioFoundry |
+|---|---|---|
+| DBB | DB25-D PRO: two BK4819 (2024 on) | Supported |
+| D64 | FD6818 transceiver, 0x7813 LO (2021 to 2023) | Testing: the same image, untested on this hardware |
+| D66 | FD6818 transceiver and LO (2021 to 2023) | Testing: the same image, untested on this hardware |
+| D6T | FD6818 transceiver, AT1141 LO (2021 to 2023) | Testing: the same image, untested on this hardware |
+
+One image runs on every batch: it reads which RF chips the radio has when it starts. Tools > Diagnostics shows them
+(`rf` line). If you install it on a D64, D66 or D6T, a report of what works and what doesn't helps the project.
+
+The radio programming utility reads the code from the radio before it writes, and asks for it when only the factory
+update mode answers. On vendor firmware older than the 2025-01-21 build a backup is not proven: the utility offers to
+try it anyway (nothing is written to the radio's flash; if it fails, switch the radio off and on), to update the vendor
+firmware first, or to install without a backup. The same try runs from **Back Up**. A backup made that way can be sent
+to the project with a report, so the next version knows that firmware. **Back Up** works on every hardware version,
+including one RadioFoundry doesn't run on yet: it only reads the radio.
+
 ### Installing the DB25-D PRO
 
 The radio programming utility on the web site installs and updates this radio over the programming cable (K1 jack).
@@ -491,6 +515,11 @@ aren't decoded yet, so there are no number keys.
 | **PTT** on the microphone | **PTT** |
 | Front knob | Channel knob, and **Up** / **Down** in lists |
 | Power key | Press to switch on. Hold 2 s to switch off. Hold P1 while you press it to start the bootloader (the red LED lights and the screen stays blank) |
+
+The microphone's PTT counts once the radio has seen a microphone in the front jack. The radio can run without one and
+doesn't transmit, and a microphone plugged in later works from then on. Unplugging the microphone while the radio is
+on reads as a held PTT: the radio transmits until the [transmit timeout](08-fm.md#transmit-timeout), or with TX
+timeout Off until it is switched off. Switch the radio off before unplugging the microphone.
 
 ### DB25-D PRO power and supply
 

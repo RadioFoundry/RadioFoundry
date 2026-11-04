@@ -177,12 +177,12 @@ def test_mdns(radio):
     have_dns_sd = shutil.which("dns-sd") is not None
     with network_mode(radio) as (udp, radio_ip, own_id):
         host = f"rfoundry-{own_id}.local"
-        v = udp.view(["net"])
+        v = udp.view(["net_svc"])
         # probing and announcing take about 3 s after the link comes up
         end = time.monotonic() + 10
         while v.get("mdns.state") != "3" and time.monotonic() < end:
             time.sleep(0.5)
-            v = udp.view(["net"])
+            v = udp.view(["net_svc"])
         assert v.get("mdns.state") == "3" and v.get("mdns.name") == f"rfoundry-{own_id}", v
 
         addr = None
@@ -212,7 +212,7 @@ def test_mdns(radio):
         # The host's resolver may answer from what the radio announced and never ask it: one query of our own (a
         # legacy unicast one, RFC 6762 6.7) checks that the radio answers and counts it
         assert _legacy_query(radio_ip, host) == radio_ip, f"no legacy unicast answer for {host} from {radio_ip}"
-        v2 = udp.view(["net"])
+        v2 = udp.view(["net_svc"])
         assert as_int(v2.get("mdns.queries"), 0) > 0 and as_int(v2.get("mdns.conflicts"), 0) == 0, v2
         print(f"mDNS: {host} = {addr}, instance {name!r}, TXT {txt}, {v2.get('mdns.queries')} queries")
 
@@ -238,7 +238,7 @@ def test_tftp_read(radio):
         b = _read_image(radio_ip)
         d = cps_client.compare(a, b, QDMR, skip=())
         assert not d, f"two reads differ at {len(d)} bytes, first {d[:4]}"
-        v = udp.view(["net"])
+        v = udp.view(["net_svc"])
         assert as_int(v.get("tftp.reads"), 0) >= 3 and as_int(v.get("tftp.timeouts"), 0) == 0, v
         print(f"codeplug.bin: {IMAGE} bytes in {took:.1f} s; info.txt:\n{info}")
     if core.get("codeplug") == "open-firmware" and core.get("vfo") != "1" and as_int(core.get("channel_number"), 0):
@@ -260,7 +260,7 @@ def test_tftp_write(radio, backup_dir):
     need(radio, "TFTP")
     core = radio.core()
     with network_mode(radio) as (udp, radio_ip, own_id):
-        if as_int(udp.view(["net"]).get("tftp.write_allowed"), 1) == 0:
+        if as_int(udp.view(["net_svc"]).get("tftp.write_allowed"), 1) == 0:
             skip("state", "TFTP codeplug writes are off on the radio (Settings > Connections)")
         backup = _read_image(radio_ip)
         again = _read_image(radio_ip)
@@ -285,7 +285,7 @@ def test_tftp_write(radio, backup_dir):
             back = _read_image(radio_ip)
             d = cps_client.compare(edited, back, QDMR)
             assert not d, f"read back differs at {len(d)} bytes, first {[(hex(x), y, z) for x, y, z in d[:4]]}"
-            v = udp.view(["net"])
+            v = udp.view(["net_svc"])
             assert as_int(v.get("tftp.writes"), 0) >= 1, v
         finally:
             tftp_client.put(radio_ip, "codeplug.bin", bytes(backup[:IMAGE]), blksize=BLKSIZE)

@@ -89,14 +89,20 @@ def strip_md(text):
 FEATURE_LINE = re.compile(r"^CONFIG_(\w+)\s*\?=\s*(.*)$")
 
 
+def feature_names(text=None):
+	"""The FEATURES list of config/features.mk, in its order"""
+	text = text if text is not None else read("config/features.mk")
+	m = re.search(r"^FEATURES\s*:=\s*((?:.*\\\n)*.*)$", text, re.M)
+	if not m:
+		raise SourceError("config/features.mk: no FEATURES list")
+	return m.group(1).replace("\\\n", " ").split()
+
+
 def features():
 	"""Every switch in config/features.mk, in its order: name, help text (the comment above it), default expression,
 	what it needs (from the dependency checks), and the feature matrix's group, title, sizes and notes."""
 	text = read("config/features.mk")
-	m = re.search(r"^FEATURES\s*:=\s*((?:.*\\\n)*.*)$", text, re.M)
-	if not m:
-		raise SourceError("config/features.mk: no FEATURES list")
-	names = m.group(1).replace("\\\n", " ").split()
+	names = feature_names(text)
 	out, comment = {}, []
 	for line in text.splitlines():
 		if line.startswith("##"):
@@ -276,8 +282,8 @@ def flash_boards():
 			"debuglink_names": list(b.debuglink_names), "releasable": b.releasable,
 			"keep_codec_supported": b.keep_codec_supported, "key_sha256": b.key_sha256,
 			"dfu_ids": list(b.dfu_ids) if b.dfu_ids else None, "dfu_string1": b.dfu_string1,
-			"dfu_product": b.dfu_product,
-			"protected": [list(p) for p in b.protected],
+			"dfu_product": b.dfu_product, "dfu_layout": b.dfu_layout,
+			"protected": [list(p) for p in b.protected], "protect": b.protect,
 			# for a backup over another open firmware's CPS (openfw.js): area 5's base and the radio types
 			"rom_base": b.rom_base, "cps_radio_types": list(b.cps_radio_types)}
 	for sha, p in stockfw.PROFILES.items():
@@ -315,11 +321,16 @@ def c7000_flash():
 			       "run": list(lay["run"]), "tables": list(lay["tables"]),
 			       "bootloader_id": fl.MODELS[bid].tag if bid in fl.MODELS else None,
 			       # the whole program flash (a backup reads it all; writes stay in the application area), whether
-			       # the radio has the SPI data flash the stub reads, and the board profile the universal stub gets
-			       # (CONFIG). A stock console, the update mode and the read rate are in radios.json flash
+			       # the data memory is SPI NOR flash (else SPI NAND), where a NAND radio's calibration copies sit,
+			       # and the board profile the universal stub gets (CONFIG). A stock console, the update mode and
+			       # the read rate are in radios.json flash
 			       "progmem_size": lay.get("progmem_size", dc.PROGMEM_SIZE), "data_flash": lay.get("data_flash", True),
+			       "calibration": lay.get("calibration"),
 			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand")} if bid in st.C7_BOARDS
-			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")}}
+			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")},
+			       # the board's [[flash.protect]] (progmem offsets are the stub's: from the program flash's base),
+			       # which every write and restore here checks first (protect.js)
+			       "protect": st.C7_BOARDS[bid]["protect"] if bid in st.C7_BOARDS else []}
 	profiles = []
 	for p in dc.PROFILES.values():
 		# a stock file known only by its whole-file hash (e.g. a 2024-05-09 build) has no codec hashes: it can be
@@ -368,7 +379,7 @@ def f4_flash():
 	return {"app_base": f4.APP_BASE, "protocol": f4.VERSION, "record_len": f4.REC_LEN,
 		"boards": {bid: {"owned": [list(r) for r in b["owned"]], "codec": list(b["codec"]) if b["codec"] else None,
 				 "name": b["name"], "stub_id": b["id"], "record": f4.config_record(bid).hex(),
-				 "v2_wiring": f4.config_record(bid)[1:] == v2}
+				 "v2_wiring": f4.config_record(bid)[1:] == v2, "protect": b["protect"]}
 			   for bid, b in f4.BOARDS.items()}}
 
 
@@ -395,3 +406,13 @@ def releases(dist):
 		if m.get("format", "").startswith("rfoundry-release/") and os.path.isfile(img):
 			out.append((m, img))
 	return out
+
+
+def reported_features():
+	"""The switches a radio running RadioFoundry names in its VERSION features= list (core/hostlink/build_info.c): an
+	installer matches that list against the releases to tell which build an older radio runs."""
+	with open(path("core", "hostlink", "build_info.c"), encoding="utf-8") as f:
+		src = f.read()
+	block = re.search(r'const char build_features\[\] =(.*?);', src, re.S)
+	# switches only: a derived name in the list (DMR_DATA_CORE) is in no release's features, so it would match none
+	return sorted(set(re.findall(r'"([A-Z0-9_]+),?"', block.group(1))) & set(feature_names())) if block else []

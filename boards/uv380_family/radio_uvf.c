@@ -20,6 +20,7 @@
 #include "hal_dtmf.h"
 #include "rf/at1846s/at1846s.h"
 #include "modem/hrc6000/hrc6000.h"
+#include "radio/ref_trim.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "hrc/hrc_bus.h"
 #include "dmr_uvf.h"
@@ -699,6 +700,19 @@ static void inject_stop(void)
 }
 #endif
 
+// The reference trim (hal_radio_t.ref_trim): added to the calibrated HR_C6000 MOD1 offset, which pulls the reference
+// oscillator, so receive and transmit move together (uvf_ref_trimmed)
+static volatile int16_t trim_ppb;
+
+#if CONFIG_REF_TRIM
+// Taken at the next tune, so the RF chips' bus stays the radio task's: true asks the core for one
+static bool ref_trim(int16_t ppb)
+{
+	trim_ppb = ppb;
+	return true;
+}
+#endif
+
 // Enter RX (hardware-dm1701.md 6): PA off first, RX supply for the band, AT1846S to RX, then the HR_C6000
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 {
@@ -732,8 +746,9 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 
 	uvf_cal_point_t cal;
 	uvf_cal_at(hz, &cal);	// on false it fills safe defaults
-	count(hrc6000_set_ref_offset(&r.modem, cal.ref_offset, false));
-	r.rf_ref = cal.ref_offset;
+	int8_t ref = uvf_ref_trimmed(cal.ref_offset, trim_ppb);
+	count(hrc6000_set_ref_offset(&r.modem, ref, false));
+	r.rf_ref = ref;
 	r.rf_direct = false;
 	if (r.mode == RADIO_MODE_FM) {
 		count(hrc6000_set_mode_fm_rx(&r.modem));
@@ -794,7 +809,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 			: tone == AT1846S_TONE_CTCSS ? HRC6000_TONE_CTCSS : HRC6000_TONE_DCS,
 		.mod2 = cal.fm_i,
 		.mod1 = cal.fm_q,
-		.ref_offset = cal.ref_offset,
+		.ref_offset = uvf_ref_trimmed(cal.ref_offset, trim_ppb),
 		.mic_gain = FM_MIC_GAIN,
 	};
 	count(hrc6000_set_mode_fm_tx(&r.modem, &fm));
@@ -1031,6 +1046,9 @@ const hal_radio_t uvf_radio = {
 	.tx_dtmf = tx_dtmf,
 #endif
 	.rx_sleep = rx_sleep,
+#if CONFIG_REF_TRIM
+	.ref_trim = ref_trim,
+#endif
 };
 
 void uvf_radio_diag(uvf_radio_diag_t *d)

@@ -1125,6 +1125,21 @@ offset = (VHF or UHF tune byte) - 128, signed, for the band in use (TX band whil
 Written to HR_C6000 4:0x47 = offset, 4:0x48 = 0x03 if offset < 0 else 0x00, 4:0x04 = offset. In FM TX, 4:0x48 = 0x00
 and 4:0x04 = offset.
 
+The HR_C6000 manual (4.7.2, two-point modulation): MOD1 drives the reference oscillator's control pin and MOD2 the VCO.
+4:0x04 is the MOD1 offset in transmit, about +-422 mV in 3.3 mV steps. 4:0x47 and 4:0x48 bits 1:0 are a 10-bit level
+MOD1 holds in receive, 0-3.3 V (the DAC kept on: 4:0x25 bit 5 = 1, bit 3 = 0). The radio's values are the offset
+sign-extended to 10 bits, so receive and transmit sit at the same level.
+
+The user's reference trim ([radio-features.md](radio-features.md) 6.1) adds to this offset at every tune:
+`uvf_ref_trimmed` turns ppb into steps at 160 ppb a step and clamps to -128..127. The scale comes from the direct
+keying measurement in section 6 (41 and 43 steps put the carrier 149 Hz apart at 461.1375 MHz, about 74 Hz a step).
+A step is 0.16 ppm, so the 0.1 ppm trim steps round to it. With a blank band (12.1) the offset is 0 and the trim still
+applies.
+
+Checked on the radio (2026-10-30): DMR at 438.5 MHz, lowest power, read by an SDR's AFC once settled. +-5 ppm is 31
+steps (4.96 ppm, 2175 Hz); the carrier moved +2155 and -2120 Hz from trim 0, after taking out the 86 Hz drift between
+the trim-0 readings before and after, as linear in time. That is within 3% of the scale, and the sign is right.
+
 ### 12.5 FM deviation (fixed, not from the table)
 
 HR_C6000 FM TX deviation coefficients used instead of the table rows:
@@ -1239,6 +1254,33 @@ Hold **PTT + side key 1 (the key just above PTT)** while turning the power switc
 device, VID 0x0483 PID 0xDF11 (ST's DFU IDs, but the TYT/AnyRoad bootloader, not ST's ROM loader). The device string at
 index 1 reads "AnyRoad Technology". The screen stays dark. The interface string describes the memory layout in the
 usual DfuSe "@name/0xADDR/NN*SSKg,..." form.
+
+**Normal mode is a DFU device too.** The original firmware, switched on normally (the mode the vendor's programming
+software uses), also enumerates as 0483:DF11. On an MD-9600, a radio with the same bootloader, it shows the
+bootloader's manufacturer, product and serial strings as well. Only the layout of alt 0 tells the two apart:
+
+| Mode | Alt 0 | Alt 1 |
+|---|---|---|
+| Switched on normally | `@Internal Flash   /0x08000000/03*016Kg` | `@SPI Flash Memory /0x00000000/16*064Kg` |
+| Bootloader | `@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg` (the application area only) | the same |
+
+Measured on an MD-9600, 2026-11-02. In normal mode the requests of 15.2 don't do what they do in the bootloader. 0x91
+0x31 enters a programming mode whose erase and write don't protect the bootloader sectors, so running 15.2 against
+it can erase the bootloader. Both flashers (rfoundry, the web flasher, and `tools/stm32_dfu.py`) refuse such a device
+before any DFU request. A board whose bootloader layout was read on a radio declares it (`[flash.dfu] layout`, see
+[board-registry.md](../dev/board-registry.md)), and then only that alt 0 string is accepted. Without a declaration,
+the flashers refuse a layout that shows only the bootloader's sectors: from 0x08000000, at most 48 KB. A bootloader
+that listed the whole flash rather than the application area would still be accepted.
+
+An MD-380 shows the same alt 0 strings as the MD-9600 in both modes (measured; [hardware-md380.md](hardware-md380.md) 14.3).
+The DM-1701's and the MD-UV380's original firmware images hold the same normal-mode alt 0 string,
+`@Internal Flash   /0x08000000/03*016Kg` (every DM-1701 build examined).
+
+The DM-1701's bootloader, read on a radio (2026-11-02, standard descriptors only): manufacturer and string 1 "AnyRoad
+Technology", product "Digital Radio in USB mode", serial "00000000010C", bcdDevice 0x0200, alt 0
+`@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg`, alt 1 `@SPI Flash Memory /0x00000000/16*064Kg`: the
+bootloader row of the table. `boards/dm1701/board.toml` declares alt 0, so the flashers accept only that device. The
+MD-UV380's bootloader strings have not been read on a radio (?).
 
 ### 15.2 Flashing protocol (DfuSe-style, as the loader drives it)
 

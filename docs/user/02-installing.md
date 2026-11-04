@@ -34,12 +34,17 @@ backup. The web installer's own backup (below) holds it too.
 
 ## Install with the web installer
 
-Open the [web installer](https://radiofoundry.org/flash/index.html), choose **Install**, and follow the steps:
+Open the [web installer](https://radiofoundry.org/flash/index.html), choose **Install**, and follow the steps (a radio
+that runs RadioFoundry already: [Updating RadioFoundry](#updating-radiofoundry)):
 
 1. **Radio.** Pick your radio.
 2. **Build.** Pick **Full** (every feature the radio supports), **Amateur**, **Commercial**, or **Custom** to choose
    features one by one. Features the radio can't have are marked. A custom build is made when you continue and takes
-   under a minute.
+   under a minute. When your browser asks for a language the radio can show but the build leaves out, the page offers
+   to include it (Settings > Display > Language on the radio, [Settings](17-settings.md)). **Radio language** picks
+   the language the radio starts in, preset to the page's language when the build has it. Picking a language the
+   build leaves out adds it to the build. You can change it on the radio later. A build too big for the radio says
+   by how much: turn some features off in **Custom**, or pick a smaller build, and build again.
 3. **Current firmware.** Say what the radio runs now:
 
    | Choice | When |
@@ -57,15 +62,33 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
    right after the installation, before anything else changes.
 
    On a radio installed over its programming cable the cable is slow, so the installer shows how long each part
-   takes. The firmware memory is required, unless you use a stock file instead (below). **All channels and settings** is optional and off by default: the
+   takes. The program memory is required, unless you use a stock file instead (below). **All channels and settings** is optional and off by default: the
    installer never changes them, and the whole data memory can take many minutes. If you have the radio's stock
    firmware file, **Use a Stock File Instead** skips the firmware backup, before or during the read. The installer
    then reads only the codec area and takes the codec from the file in the next step. The firmware in the radio is
    not backed up, but the stock file can restore the original firmware.
+
+   **Without a firmware backup or a stock file, the installer has no codec to give the radio.** If you skip the
+   firmware backup and select no supported stock file, **Install without the codec** is the only way on. The installer
+   then warns, above the Install button, that this installation will not include the DMR voice codec: analog FM will
+   work, but DMR voice will not until you install RadioFoundry again with a supported manufacturer firmware file.
+   Installing again keeps your channels and settings. When you press **Install**, a dialog asks once more:
+   **Go Back and Add the Codec** returns to the step where you select the file, **Install Anyway** installs without
+   DMR voice.
+
+   The same choice comes when the backup finds a firmware version whose codec RadioFoundry has not mapped yet. The
+   backup is still complete; the codec step asks for a supported stock firmware file instead.
+
 5. **Install.** Put the radio in its bootloader when asked ([your radio's keys](23-radios.md)). The installer writes
    the changed parts and restarts the radio. Do not unplug the radio until it says the installation is complete.
 6. **Verify.** The installer reads what the radio reports: the version it wrote, and "DMR voice is ready" when the
    codec is in place.
+7. **Channels.** If the radio still holds its original firmware's codeplug, the installer converts it to the
+   RadioFoundry layout and writes it to the radio, then reads it back and shows how many channels, zones and contacts
+   came over. This runs on its own once the backup holds the original codeplug. If you skipped the backup, the installer
+   asks first: on some radios the converted codeplug replaces the original bytes. An update of RadioFoundry skips this
+   step. If the installer can't read, convert or write the original codeplug, it says so and the radio starts without
+   channels: convert the backup as described in [Backing up and restoring](#backing-up-and-restoring).
 
 On Windows the bootloader needs a driver once ([Windows: the bootloader driver](#windows-the-bootloader-driver)).
 
@@ -98,9 +121,21 @@ This path has not been tested on a real radio yet. Keep your stock firmware file
 
 ### Updating RadioFoundry
 
-Start the radio normally with RadioFoundry running, connect it and run **Install** again. The installer asks the radio
-whether its codec is in place. If it is, it writes only the new firmware and needs no stock file. The codeplug and the
-settings stay: they live in separate flash that installing never touches.
+Start the radio normally with RadioFoundry running and choose **Update** in the web installer:
+
+1. Connect the radio and press **Connect**. One port list shows the radio's USB port and programming cables.
+2. The installer shows the radio, the installed version, the new version and the radio's build (Full, Amateur,
+   Commercial or Custom). The update installs the same build of the new release.
+   - **Edit Build** opens the build step, to change features before the update.
+   - A preset build lists the features the new release adds to it.
+   - A custom build lists the features added since it was made. Choose **On** or **Off** for each before updating.
+   - Firmware too old to report its build gets the build step, starting from the closest match.
+3. **Save a backup first** is optional and off. An update keeps the channels, settings, calibration and codec.
+4. Press **Update**. The installer builds the image, writes it and checks the version.
+
+The radio goes straight from RadioFoundry into the loader: no keys to hold, no stock file. The codeplug and the settings
+stay: they live in flash that updating never touches. **Install** still works on a radio that runs RadioFoundry, with
+every question asked.
 
 ### Backing up and restoring
 
@@ -108,6 +143,29 @@ settings stay: they live in separate flash that installing never touches.
 writes back the whole radio, only the firmware, or only the channels and settings. It can also return the radio to its
 original firmware, from your stock firmware file. Any version of the manufacturer's file for your radio works, not only
 the one the installer needs for the codec. A restore from the update mode works even when the firmware is damaged.
+
+**Back Up** asks what the radio runs now, as the install does. **RadioFoundry** reads it over the debug link.
+**Another open firmware** reads it through that firmware, on radios where the installer supports it. A radio on its
+original firmware is not backed up here: choose Install, which backs it up right after the installation.
+
+Each radio lists every backup option and the time it takes: the program memory, the factory calibration and all
+channels and settings. **Calibration only** (or **Factory calibration**) reads just the factory calibration. On a radio
+that keeps a calibration copy in its program memory, that option is named **Program Memory & Calibration**. On a radio
+whose channels and settings are in NAND memory, **All channels and settings** reads the whole NAND, which can take
+several minutes.
+
+Without the program memory, a backup can't be restored to your initial radio firmware using these tools. Restore
+writes back the program memory only; a backup's calibration and data memory are kept for the record. When you pick
+such a backup, Restore says so and offers **Select a Firmware File**: pick a manufacturer firmware file for your
+radio instead, in a version the installer supports. A whole program memory dump of the radio also works, even when its
+firmware version has not been mapped yet: Restore puts it back as it is, never touching the bootloader. An install
+can't use that dump's codec until the version is mapped, so the installer offers to send the dump to the RadioFoundry
+team for mapping and asks for a supported manufacturer firmware file instead.
+
+A backup you unpacked and zipped again (macOS unpacks downloads by itself) still restores. The backup is the .zip file
+itself (its name is the radio's model, `_Backup_` and the date), not one of the files inside it. When you pick a file
+that is not a backup, Restore says what it is and what to pick instead. An original firmware file goes on to the
+restore of the original firmware where the radio supports that without a backup.
 
 If the backup holds the original firmware's codeplug, open the file in the
 [Codeplug Editor](04-programming.md#the-codeplug-editor). It converts the channels, zones and contacts to the
@@ -269,12 +327,12 @@ with an FTDI, CP210x or PL2303 chip. The installer warns when it sees a CH340 ca
 
 **When the cable can't prepare the radio:** a radio installed over its programming cable first gets a small loader in
 its memory. When the radio turns on, it waits only about 1/20 of a second for the installer's answer, and some cables
-and USB hubs are slower than that. If the load fails ("Preparing the radio failed"), the radio starts normally instead,
-or it never answers, the installer offers **Try Slow Cable Mode**: turn the radio off, select **Radio Is Off**, then
-turn it on, and the installer keeps sending its answer while the radio starts. Select Radio Is Off only once the radio is
-off: the installer then sends to the cable, and the firmware of a radio that is still on would receive it.
+and USB hubs are slower than that. So the installer keeps sending its answer while the radio starts (this used to be the
+separate **Slow Cable Mode**; it is now always on). Turn the radio off, select **Radio Is Off**, then turn it on.
+A radio already running RadioFoundry skips that step.
 
-If the slow cable mode fails too, the installer offers **Use Factory Update Mode**: the radio's own update mode, entered by holding keys while you turn the radio
+If the load fails ("Preparing the radio failed"), the radio starts normally instead, or it never answers, the installer
+offers **Use Factory Update Mode**: the radio's own update mode, entered by holding keys while you turn the radio
 on (your radio's "Installing" section in the [Radio reference](23-radios.md)). Nothing can be read from the radio that
 way, so no backup is taken and the voice codec comes from a file: the stock firmware file, or a program memory backup
 of the radio where the installer knows no stock file for it. Troubleshooting offers the same route ("Reinstall in

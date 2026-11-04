@@ -115,11 +115,15 @@ def test_http_status(net):
     assert v["section"] == "net" and v["tcp.accepted"] >= 3, v
     names = json.loads(_get(ip, "/api/view")[2])["sections"]
     assert "core" in names and "net" in names
-    # The screen as a BMP of the frame buffer's size
+    # The screen as a BMP of the frame buffer's size, at the panel's own depth (core/net/http.c): a palette after the
+    # 54 header octets for 1 and 4 bpp, the three RGB565 masks for 16; rows padded to 4 octets
     st, ct, body = _get(ip, "/api/screen.bmp", timeout=20)
     assert ct == "image/bmp" and body[:2] == b"BM"
+    data_at, = struct.unpack("<I", body[10:14])
     width, height = struct.unpack("<ii", body[18:26])
-    assert len(body) == 66 + ((width * 2 + 3) & ~3) * abs(height), (width, height, len(body))
+    bpp, = struct.unpack("<H", body[28:30])
+    assert bpp in (1, 4, 16) and data_at == 54 + (12 if bpp == 16 else 4 << bpp), (bpp, data_at)
+    assert len(body) == data_at + (width * bpp + 31) // 32 * 4 * abs(height), (width, height, bpp, len(body))
     # Errors
     try:
         _get(ip, "/nothing")

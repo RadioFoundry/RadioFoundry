@@ -105,7 +105,8 @@ is foreign. They are not refused while transmitting, as codeplug.bin's aren't: t
 like every other writer. A put isn't power-cut safe beyond that rule: a cut mid-transfer leaves no database.
 
 Accepted headers: `Id`, a record size the radio reads (more than the ID, at most `DMR_IDDB_RECORD_MAX`), at most
-0x400000 records, any format but `n` (whose area 2 sits in the voice prompts). The records must fit below
+0x400000 records, any format but `n` (whose area 2 sits in the voice prompts). Format `C` ([iddb-compact.md](iddb-compact.md))
+fails the record size check and is refused: hosts send format `N` over TFTP. The records must fit below
 `openfw_end`. A header that fails these is refused before anything is erased.
 
 ### 5.1 iddb.bin
@@ -163,5 +164,5 @@ A read of codeplug.bin stays 716,384 bytes without the database: read `iddb.bin`
 - HIL: `tests/hil/test_net_services.py` (`--allow-usb-switch`): `info.txt`, two reads of `codeplug.bin` identical and
   equal to the stored image; with `--allow-codeplug-write` also: back up, write a channel rename, read it back, write
   the backup again and verify it byte for byte, as `test_cps.py` does over the CPS.
-  Debug link view keys (section `net`): `tftp.state` (0 idle, 1 reading, 2 writing, 3 committing, 4 dallying)
+  Debug link view keys (section `net_svc`): `tftp.state` (0 idle, 1 reading, 2 writing, 3 committing, 4 dallying)
   `tftp.reads tftp.writes tftp.errors tftp.timeouts tftp.retransmits tftp.last_size tftp.blksize tftp.write_allowed`.

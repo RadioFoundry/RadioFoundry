@@ -7,6 +7,7 @@
 import { openBundle, CODEPLUG_SPAN } from "./backup.js";
 import { startsWith } from "./bytes.js";
 import { classify } from "../codeplug/detect.js";
+import { CodeplugImage, TFTP_SIZE } from "../codeplug/image.js";
 import { STOCK, RDT_MD380, RDT_UV380 } from "../codeplug/stock_tyt.js";
 
 // A stock TYT-family codeplug in a dump or memory image (docs/spec/codeplug-stock-tyt.md): its family, or null
@@ -15,6 +16,11 @@ const stockLayout = (b) => {
 	return STOCK[layout] ? layout : null;
 };
 
+// A conversion that can't run: code names its message in the catalog (tools.convert.err.<code>, params filled in);
+// the English message stays for tests and reports
+const fail = (code, message, params = {}) => Object.assign(new Error(message), { code, params });
+
+// name: the English name; the Tools page shows tools.format.<id> (formats) and tools.conv.<id> (converters)
 export const FORMATS = [
 	{ id: "rfoundry-backup", name: "RadioFoundry backup bundle (.zip)", detect: (b) => startsWith(b, "PK\u0003\u0004") },
 	{ id: "tyt-stock", name: "Stock TYT-family codeplug: DM-1701, RT84, MD-UV380/390, MD-380 (SPI flash dump or memory image)", detect: (b) => b.length > 0x40000 && b.length !== RDT_UV380 && !!stockLayout(b) },
@@ -34,13 +40,14 @@ export const CONVERTERS = [
 		async convert(bytes) {
 			const { meta, parts } = await openBundle(bytes);
 			const spi = parts.get("spi-flash");
-			if (!spi || spi.data.length < CODEPLUG_SPAN) throw new Error("this backup has no SPI flash read covering the codeplug");
+			// a radio with a smaller memory chip gives a shorter read: enough when it covers the codeplug's regions
+			if (!spi || spi.data.length < TFTP_SIZE) throw fail("no_spi", "this backup has no SPI flash read covering the codeplug");
 			const name = `codeplug-${meta.radio.board}.bin`;
 			const { layout } = classify(spi.data);
 			// a backup taken right after RadioFoundry replaced the stock firmware still holds the stock codeplug
 			if (STOCK[layout]) return { name, data: await fromStock(spi.data, layout) };
-			if (layout === "unknown") throw new Error("the codeplug in this backup is in a layout this page cannot read");
-			return { name, data: spi.data.slice(0, CODEPLUG_SPAN) };
+			if (layout === "unknown") throw fail("unknown_layout", "the codeplug in this backup is in a layout this page cannot read");
+			return { name, data: CodeplugImage.from(spi.data.subarray(0, CODEPLUG_SPAN)).bytes };
 		},
 	},
 	{
@@ -85,7 +92,8 @@ export const CONVERTERS = [
 			try {
 				importQdmr(m, new TextDecoder().decode(bytes));
 			} catch (e) {
-				throw new Error(e.code === "not_qdmr" ? "this file is not a qdmr codeplug" : `this file is not valid YAML (${e.params?.error || e.message})`);
+				throw e.code === "not_qdmr" ? fail("not_qdmr", "this file is not a qdmr codeplug")
+					: fail("bad_yaml", `this file is not valid YAML (${e.params?.error || e.message})`, { error: e.params?.error || e.message });
 			}
 			return { name: `${base(name)}.bin`, data: encode(m).bytes.slice(0, CODEPLUG_SPAN) };
 		},
@@ -113,7 +121,7 @@ async function codeplugModules() {
 // An open-firmware codeplug image converted from a stock one
 async function fromStock(bytes, layout) {
 	const { empty, encode, importStock, detectStock } = await codeplugModules();
-	if (!layout || detectStock(bytes) !== layout) throw new Error("this file holds no stock codeplug this page can read");
+	if (!layout || detectStock(bytes) !== layout) throw fail("no_stock", "this file holds no stock codeplug this page can read");
 	const m = empty();
 	importStock(m, bytes, layout);
 	return encode(m).bytes.slice(0, CODEPLUG_SPAN);

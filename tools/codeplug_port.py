@@ -414,7 +414,8 @@ def cps_write_dfu(sess, open_cps, dfu_path, label, before_name, offset=0, floor=
                                                        if offset else ""))
         jobs = _cps().plan_write(img, regions, before)
         sess.say("   writing %d sectors ..." % len(jobs))
-        cps.write_image(img, regions, reboot=reboot, block=block, progress=progress, base=before)
+        board = _cps().rfoundryboards.from_debuglink_name(info.get("model"))	# its protected regions, checked first
+        cps.write_image(img, regions, reboot=reboot, block=block, progress=progress, base=before, protect=board)
     except PortError:
         raise
     except Exception as e:

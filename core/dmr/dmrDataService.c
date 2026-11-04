@@ -49,7 +49,11 @@
 #define ARS_REFRESH_DEFAULT_MS	(30U * 60U * 1000U)
 // IP packets (dmrDataServiceSendIP): one taken but never on air within this is given up (the gateway's mailbox waits)
 #define IP_QUEUE_TIMEOUT_MS		START_TIMEOUT_MS
-#define IP_PREAMBLES			DMR_DATA_SMS_PREAMBLES
+#define IP_PREAMBLES			DMR_DATA_IP_PREAMBLES	// what the air MTU (dmrData.h) counts on
+_Static_assert(DMR_DATA_IP_PREAMBLES == DMR_DATA_SMS_PREAMBLES, "IP packets keep the preambles of an SMS");
+// The preambles, the header, the blocks of a confirmed packet of the air MTU (10 octets each) and the terminator
+_Static_assert(IP_PREAMBLES + 1 + ((DMR_DATA_IP_MTU + 4 + 9) / 10) + 1 <= DMR_DATA_MAX_BURSTS,
+				"a confirmed packet of the air MTU goes in one transmission");
 // Confirmed data to us whose blocks stopped coming before the count in its header: lost bursts, asked for again
 #define CNF_RX_STALL_MS			300
 // A confirmed packet again from the same radio with the N(S) we last ACKed this soon is a retry (our ACK was lost)
@@ -57,9 +61,9 @@
 #define CNF_PEERS				4		// radios whose N(S) we keep (ours to them, theirs to us)
 
 static dmrDataEnv_t env;
-static dmrDataSettings_t settings = { .callAlertAck = true, .lrrpReply = true, .smsFormat = DMR_SMS_FORMAT_ETSI_IP,
-										.udpCompress = DMR_UDPC_AUTO, .ipConfirmed = DMR_IPC_RULES,
-										.ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
+static dmrDataSettings_t settings = { .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
+										.smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
+										.ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 static bool passthrough;				// control station: IP based packets to us belong to the PC
 static dmrDataChannel_t channel;
 static uint32_t now;
@@ -349,6 +353,19 @@ bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count)
 
 	memmove(txBursts, bursts, count * sizeof(dmrBurst_t));
 	return queueTx(count, TXK_OTHER);
+}
+
+int dmrDataServiceSendShortData(bool group, uint32_t dst, uint32_t src, const uint8_t *data, int length, int preambles)
+{
+	if (dmrDataServiceIsBusy() || !canTransmit())
+	{
+		return 0;
+	}
+
+	int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, group, dst, src, data, length, DT_RATE_12_DATA,
+									preambles, txBursts, DMR_DATA_MAX_BURSTS);
+
+	return (count <= 0) ? -1 : (queueTx(count, TXK_OTHER) ? 1 : 0);
 }
 
 // --- IP packets (dmrDataServiceSendIP): compressed headers, confirmed delivery ---
@@ -1974,10 +1991,20 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 			stats.txGuarded++;
 		}
 
-		if (clear && (env.txStart != NULL) && env.txStart(txBursts, txBurstCount, env.ctx))
+		bool started = false;
+		if (clear && (env.txStart != NULL))
+		{
+			// The modem may complete a refused start synchronously through TxDone.
+			txRunning = true;
+			started = env.txStart(txBursts, txBurstCount, env.ctx);
+			if (!started)
+			{
+				txRunning = false;
+			}
+		}
+		if (started)
 		{
 			txPending = false;
-			txRunning = true;
 			stats.txLists++;
 			stats.txLastKind = txKind;
 			stats.txLastMs = (now != 0) ? now : 1;

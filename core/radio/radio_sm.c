@@ -281,6 +281,7 @@ static bool clear_temporary(radio_sm_t *sm)
 	sm->temp_power = false;
 	sm->temp_squelch = false;
 	sm->temp_ts = 0;
+	sm->ts_pending = 0;
 	sm->view.power = channel_power(&sm->view.ch);
 	sm->view.squelch = sm->base_squelch;
 	if (!sm->view.vfo) {
@@ -471,12 +472,39 @@ static void bcast_status(radio_sm_t *sm, radio_status_t *st)
 }
 #endif
 
+// The air band (on a radio with AM receive) and the broadcast receiver's range: receive only, and never DMR
+// (docs/spec/airband-and-broadcast.md 2)
+static bool listen_band(uint32_t hz)
+{
+#if CONFIG_AM_RX
+	if (radio_am_tx_refused(hz))
+		return true;
+#endif
+#if CONFIG_BCAST_FM
+	if (radio_bcast_band(hz))
+		return true;
+#endif
+	(void)hz;
+	return false;
+}
+
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
+	sm->retune_pending = sm->retune_due = false;	// this tune is the one they wait for
 #if CONFIG_SFR_CWID
 	cw_cancel(sm);		// the repeater's ID: the board is set up for the channel below
 #endif
 	end_reception(sm, now_ms);
+	if (listen_band(sm->view.ch.rx_hz)) {
+		// AM or broadcast there, whatever the channel says; the VFO stays FM when it leaves the band. The channel's
+		// own mode follows, so FM there is not a temporary change (dual watch brings a pane back already FM)
+		sm->view.ch.mode = RADIO_MODE_FM;
+		if (sm->view.vfo)
+			sm->vfo_ch.mode = RADIO_MODE_FM;
+		else
+			sm->base_mode = RADIO_MODE_FM;
+		set_temporary(sm);
+	}
 #if CONFIG_AM_RX
 	sm->view.am = radio_am_channel(&sm->view.ch);	// an FM channel in the air band: AM, no sub-audio
 #endif
@@ -586,14 +614,19 @@ static uint32_t vfo_default_hz(void)
 	return board.band_count > 0 ? board.bands[0].lo_hz : 0;
 }
 
+// A new RX frequency. A split VFO keeps its offset within one transmit band (board_offset_carries); otherwise it is
+// simplex
 static void vfo_set_hz(radio_sm_t *sm, uint32_t hz)
 {
+	uint32_t tx = sm->vfo_ch.tx_hz - sm->vfo_ch.rx_hz + hz;
+	if (!sm->vfo_seeded || !board_offset_carries(sm->vfo_ch.rx_hz, hz, tx))
+		tx = hz;
 	sm->vfo_ch.rx_hz = hz;
-	sm->vfo_ch.tx_hz = hz;
+	sm->vfo_ch.tx_hz = tx;
 	sm->vfo_seeded = true;
 	if (sm->view.vfo) {
 		sm->view.ch.rx_hz = hz;
-		sm->view.ch.tx_hz = hz;
+		sm->view.ch.tx_hz = tx;
 	}
 }
 
@@ -1127,9 +1160,18 @@ static void set_hear_all_latch(radio_sm_t *sm, bool on)
 // channel's) clears it again
 static void dmr_set_timeslot(radio_sm_t *sm, int32_t ts, bool busy)
 {
-	if (busy || sm->view.ch.mode != RADIO_MODE_DMR || (ts != 1 && ts != 2)) {
+	if (sm->view.ch.mode != RADIO_MODE_DMR || (ts != 1 && ts != 2)) {
 		return;
 	}
+	if (busy) {
+		// A data burst list (ARS after a slot change, a position) is not the user's transmission: the change waits
+		// for its end instead of being lost (a TS2 call went out on TS1, 2026-10-27)
+		if (sm->view.state == RS_TX && sm->tx_no_ptt && !sm->hotspot) {
+			sm->ts_pending = (uint8_t)ts;
+		}
+		return;
+	}
+	sm->ts_pending = 0;
 	if (sm->view.vfo) {
 		// The VFO's own slot, not a temporary change
 		if (ts != sm->view.ch.timeslot) {
@@ -1242,6 +1284,13 @@ static void dmr_begin(radio_sm_t *sm)
 		return;
 	}
 #endif
+	// A new frequency with the stack running: the receiver drops the slot timing it took on the last one and searches
+	// again. Without it a modem may keep that timing and decode nothing from another transmitter until its own stale
+	// restart, 390-600 ms later: longer than a scan's dwell (gotchas 17.2). A start (set_mode) searches anyway
+	if (sm->dmr_running && sm->dmr_rx_hz != sm->view.ch.rx_hz) {
+		board.dmr->rx_restart();
+	}
+	sm->dmr_rx_hz = sm->view.ch.rx_hz;
 	dmr_load_channel(sm);
 	dmr_configure(sm);
 	if (!sm->dmr_running && board.dmr != NULL) {
@@ -1460,6 +1509,11 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 		sm->view.state = RS_IDLE;
 		sm->view.tx_deny = TXDENY_NONE;
 		changed(sm);
+		if (sm->ts_pending != 0) {
+			uint8_t ts = sm->ts_pending;
+			sm->ts_pending = 0;	// taken or refused now, never left for a later transmission
+			dmr_set_timeslot(sm, ts, sm->hotspot);
+		}
 		if (cv->tx_error == DMR_TX_ERR_NO_REPEATER && !data) {	// a data sender hears about its own failure
 			// A short press goes on waking the repeater after the release: its failure still gets the deny tone
 			beep(sm, BEEP_TX_DENY);
@@ -1773,7 +1827,7 @@ static void data_save_settings(uint32_t now_ms)
 				 (cur.radioCheckEtsi ? SETTINGS_DS_RADIO_CHECK_ETSI : 0) |
 				 (cur.udpCompress == DMR_UDPC_OFF ? SETTINGS_DS_UDPC_OFF : 0) |
 				 (cur.udpCompress == DMR_UDPC_ALL ? SETTINGS_DS_UDPC_ALL : 0));
-	st->ds_ip_cnf = (uint8_t)((cur.ipConfirmedTries & 0x0F) |
+	st->ds_ip_cnf = (uint8_t)((cur.ipConfirmedTries & 0x0F) | SETTINGS_DS_CHECK_SET |
 				  ((cur.ipConfirmed == DMR_IPC_OFF ? SETTINGS_DS_IPC_OFF :
 				    cur.ipConfirmed == DMR_IPC_ALL ? SETTINGS_DS_IPC_ALL : 0u) << SETTINGS_DS_IPC_SHIFT));
 	memcpy(st->ds_ip_rule, cur.ipConfirmedRule, sizeof(st->ds_ip_rule));
@@ -1864,18 +1918,20 @@ static void data_init(radio_sm_t *sm)
 	env.packet = hostlink_net_air_packet;
 	hostlink_net_air_start();
 #endif
-	// No auto-transmit features until the user turns them on (docs/ux/principles.md): no ARS server, no radio
-	// check auto-reply. Call alerts are acknowledged (that is what makes them work); LRRP answers "no fix" without
-	// a position source
+	// No ARS server until the user sets one (docs/ux/principles.md). Radio checks are answered and call alerts
+	// acknowledged (that is what makes them work for the radio asking); LRRP answers "no fix" without a position
+	// source
 	// IP packets: compressed headers where the ports allow, confirmed only for the rules the user sets
-	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = false, .callAlertAck = true, .lrrpReply = true,
+	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
 				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 	settings_t *st = &st_copy;
 	settings_read(st);
 	if (st->ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
 		set.arsServer = st->ds_ars_server <= 0xFFFFFFu ? st->ds_ars_server : 0;
-		set.radioCheckReply = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
+		// A record from before the default became On answers too (as zone shares, docs/spec/dmr-data.md 8)
+		set.radioCheckReply = !(st->ds_ip_cnf & SETTINGS_DS_CHECK_SET) ||
+				      (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
 		set.callAlertAck = (st->ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
 		set.lrrpReply = (st->ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
 		// A record from before ETSI IP text has neither format bit: TMS, as that firmware sent (only the default
@@ -1898,7 +1954,8 @@ static void data_init(radio_sm_t *sm)
 	dmrDataServiceSetSettings(&set);
 #if CONFIG_ZONE_SHARE
 	zone_share_init();
-	zone_share_set_offers(st->zs_offers);	// Off unless the user chose Ask (docs/spec/zone-share.md 5)
+	// On unless the user turned it off (docs/spec/zone-share.md 5)
+	zone_share_set_offers(settings_zs_accept(st) ? ZS_OFFERS_ASK : ZS_OFFERS_OFF);
 #endif
 	dmr_call_set_data_rx(data_rx, NULL);
 #if CONFIG_DMR_EMERGENCY
@@ -2621,6 +2678,18 @@ static bool dual_wait_service(radio_sm_t *sm, const radio_status_t *st, uint32_t
 }
 #endif
 
+#if CONFIG_DMR
+// A DMR carrier by its signal strength at the squelch level (the default level when the squelch is open)
+static bool dmr_strength_heard(const radio_sm_t *sm, int16_t rssi_dbm)
+{
+	uint8_t sq = sm->view.squelch != 0 ? sm->view.squelch : RADIO_SQUELCH_DEFAULT;
+	if (sq > RADIO_SQUELCH_MAX) {
+		sq = RADIO_SQUELCH_MAX;
+	}
+	return rssi_dbm > RADIO_DMR_SQL_L1_DBM + (sq - 1) * RADIO_SQL_DB_PER_STEP;
+}
+#endif
+
 // Every poll while scanning: pause on the monitor, what the receiver hears, move on
 static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_ms)
 {
@@ -2642,6 +2711,9 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 #if CONFIG_DMR
 	if (dmr) {
 		active = sm->view.dmr.state == RDMR_RX;
+		// Some receivers' noise reading stays put on a DMR signal while its strength rises: either one is a
+		// carrier, the strength once the settle has passed (a reading just after the retune is the last stop's)
+		carrier = carrier || (now_ms - sc->tuned_ms >= SCAN_SETTLE_MS && dmr_strength_heard(sm, st->rssi_dbm));
 		// Sync: bursts with the channel's color code since this stop's settle, a call or a late entry still
 		// waiting for its LC. A call known not to be for us (another group, a private call) holds nothing
 		uint32_t heard_ms;
@@ -2686,6 +2758,10 @@ static void scan_stop_asked(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 	if (dual_running(sm)) {
 		cancel = true;
 		sm->view.dual_stops++;
+#if CONFIG_DUAL_WATCH
+		// The user's stop, as dual_request's: the UI asks for nothing after it, so the other's go here
+		sm->dual_keep[0].valid = sm->dual_keep[1].valid = false;
+#endif
 	}
 	scan_stop(sm, cancel, now_ms);
 }
@@ -4763,7 +4839,7 @@ static bool retunes(uint8_t type)
 {
 	switch (type) {
 	case RREQ_CH_STEP: case RREQ_ZONE_POS: case RREQ_ZONE: case RREQ_VFO: case RREQ_VFO_STEP: case RREQ_VFO_SET:
-	case RREQ_BANDWIDTH: case RREQ_TONE: case RREQ_MODE: case RREQ_DMR_TS: case RREQ_DMR_CC: case RREQ_VFO_COPY:
+	case RREQ_VFO_TX: case RREQ_BANDWIDTH: case RREQ_TONE: case RREQ_MODE: case RREQ_DMR_TS: case RREQ_DMR_CC: case RREQ_VFO_COPY:
 		return true;
 	default:
 		return false;
@@ -4776,7 +4852,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	// channel, so it neither gives way to nor cancels anything either
 	bool alert = req->type == RREQ_BEEP || req->type == RREQ_VIBRATE || req->type == RREQ_VOLUME ||
 		     req->type == RREQ_VOLUME_OVERRIDE;
-	if (!alert && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS) {
+	if (!alert && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS && req->type != RREQ_RETUNE) {
 		aprs_rf_abort(sm, now_ms);	// the user does something: an APRS transmission gives way
 	}
 	bool busy = sm->view.state == RS_TX || sm->hotspot;	// no retuning while transmitting or a hotspot
@@ -4888,6 +4964,22 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			enter_vfo(sm, now_ms);
 		}
 		break;
+	case RREQ_VFO_TX: {
+		// The receiver stays as it is: TX is set up at the next key-up. DMR works out repeater or direct from the
+		// split, so the call stack is set up again (it publishes the view)
+		uint32_t tx = req->arg > 0 ? (uint32_t)req->arg : sm->vfo_ch.rx_hz;
+		if (busy || !sm->view.vfo || req->arg < 0 || !board_in_band(tx, true)) {
+			break;
+		}
+		sm->vfo_ch.tx_hz = tx;
+		sm->view.ch.tx_hz = tx;
+#if CONFIG_DMR
+		dmr_reconfigure(sm);
+#else
+		changed(sm);
+#endif
+		break;
+	}
 #if CONFIG_AM_RX
 	case RREQ_VFO_STEP_SIZE:
 		if ((req->arg == 0 || (req->arg >= 1000 && req->arg <= 1000000)) && (uint32_t)req->arg != sm->vfo_step_set) {
@@ -5009,6 +5101,10 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			changed(sm);
 		}
 		break;
+	case RREQ_RETUNE:	// a board that applies its reference trim when it tunes (hal_radio_t.ref_trim)
+		sm->retune_due = true;	// radio_sm_poll: once the trim stops changing
+		sm->retune_due_ms = now_ms + RADIO_RETUNE_SETTLE_MS;
+		break;
 	case RREQ_BANDWIDTH:
 		if (busy || sm->view.ch.mode != RADIO_MODE_FM || (req->arg != RADIO_BW_12K5 && req->arg != RADIO_BW_25K) ||
 				req->arg == sm->view.ch.bw) {
@@ -5102,7 +5198,8 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_MODE:
 		if (busy || (req->arg != RADIO_MODE_FM && req->arg != RADIO_MODE_DMR) || req->arg == sm->view.ch.mode ||
 				(req->arg == RADIO_MODE_FM && !(sm->view.vfo ? CONFIG_VFO_FM : CONFIG_FM)) ||
-				(req->arg == RADIO_MODE_DMR && sm->view.vfo && !CONFIG_VFO_DMR)) {
+				(req->arg == RADIO_MODE_DMR && (listen_band(sm->view.ch.rx_hz) ||
+								(sm->view.vfo && !CONFIG_VFO_DMR)))) {
 			break;
 		}
 		sm->view.ch.mode = (uint8_t)req->arg;
@@ -5555,6 +5652,20 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_APRS
 	aprs_poll(sm, now_ms);	// before battery saving: beacons are due while the receiver sleeps too
 #endif
+	// The reference trim changed (RREQ_RETUNE): one tune once it has held still, so stepping it drops a reception once,
+	// not at every step. It waits for an APRS job; while transmitting or a hotspot, for the end of it
+	if (sm->retune_due && (int32_t)(now_ms - sm->retune_due_ms) >= 0) {
+		bool aprs = false;
+#if CONFIG_APRS
+		aprs = sm->aprs_phase != APRS_RF_OFF;
+#endif
+		if (sm->view.state == RS_TX || sm->hotspot) {
+			sm->retune_due = false;
+			sm->retune_pending = true;
+		} else if (!aprs) {
+			tune(sm, now_ms);
+		}
+	}
 #if CONFIG_BATTERY_SAVE
 	if (save_poll(sm, now_ms)) {
 		outputs(sm);

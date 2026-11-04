@@ -38,16 +38,25 @@ Every message starts with the version (1) and the type. Multi-octet fields are b
 
 | Type | Octets | Layout |
 |---|---|---|
-| 1 Fragment | 7 to 328 | version, type, transfer number, index (bits 7-4) and count (bits 3-0), offset (2), chunk |
+| 1 Fragment | 7 to 328 sent, up to 568 taken | version, type, transfer number, index (bits 7-4) and count (bits 3-0), offset (2), chunk |
 | 2 Request | 5 | version, type, request number, what (1: the zone of the site the request came in through), options (0) |
 | 3 Refusal | 4 | version, type, request number, code |
 
 ### 3.1 Fragments
 
-- A record of up to 1024 octets goes in 1 to 4 fragments. Each chunk is 322 octets, the last one shorter. The largest
-  message, 328 octets, fits one confirmed packet with the full IPv4 and UDP headers.
-- The offset must be index x 322. Every fragment but the last must be full. A fragment that breaks a rule is dropped
-  (`zs.rx_bad`).
+- A record of up to 1024 octets goes in 1 to 4 fragments of 322-octet chunks, the last one shorter (`ZS_SEND_CHUNK`).
+- The chunk size is the sender's. A receiver takes any from 128 octets up to the longest message the air MTU allows
+  with the full IPv4 and UDP headers (`ZS_MSG_MAX` = `DMR_DATA_IP_MTU` - 28: 568 octets, a 562-octet chunk,
+  [dmr-data.md](dmr-data.md) 12.8). That limit grows with the air MTU. A record in 128-octet chunks takes 8 fragments,
+  the most a transfer may have.
+- We still send 322: the first builds take only that chunk size and messages of at most 328 octets, and would drop
+  larger fragments. Every build since takes chunks up to 562, so the sender can move up to 562 (2 fragments for a
+  full record) once the first builds are no longer in use. A build whose air MTU is larger takes larger chunks, but
+  must not send them while builds that take only 562 are in use. `zoneShareTest` checks our fragments against the
+  first builds' rules.
+- Every fragment but the last is full, and its offset is index x its length. The last fragment's offset is a whole
+  number of chunks of a size the receiver takes, and it is no longer than one. Every fragment of a transfer must give the
+  same chunk size. A fragment that breaks a rule is dropped (`zs.rx_bad`).
 - The transfer number is the sender's, one per send.
 
 ### 3.2 Reassembly
@@ -96,8 +105,10 @@ codeplug is sent: no scan lists, no RX group lists, no privacy keys.
 
 ### 5.1 The setting
 
-**Settings > Connections > Zone offers**: Off (the default) or Ask. With Off, fragments are dropped (`zs.rx_off`) and
-nothing reaches the user. The setting is `zs_offers` in the settings record ([settings-store.md](settings-store.md)).
+**Settings > Connections > Accept zone shares**: On (the default) or Off. With On, a share is offered to the user,
+who imports it or not (5.2); nothing is imported without that. With Off, fragments are dropped (`zs.rx_off`) and
+nothing reaches the user. The setting is `zs_offers` in the settings record: 0 (never set) and 1 are On, 2 is Off
+([settings-store.md](settings-store.md)). In the service and on the debug link, 1 (`ZS_OFFERS_ASK`) is On and 0 Off.
 
 ### 5.2 Offers
 
@@ -108,8 +119,9 @@ nothing reaches the user. The setting is `zs_offers` in the settings record ([se
 | Lifetime | an offer not opened within 10 minutes is dropped (`zs.expired`). Once opened, it waits for the user |
 | Group offers | a record sent to a talkgroup the radio listens to is offered like one sent to it |
 
-The offer shows as a banner, "Zone from <name or ID>" with "Zone <name>, <n> channels". **#** opens it. While it
-waits it is also under **Tools > Zones/Chs Received**. The offer screen (Zone Share Received, or Channel Share Received) reads "Zone <name>, <n> channels, from <ID>" and
+The offer shows as a banner, "Zone from <name or ID>" with "Zone <name>, <n> channels". **#** opens it. The banner
+has no timer: it stays until **#** opens it, **Back** hides it (on any screen), or the offer ends (it expires, or is answered from
+Tools, which also hides it). Another banner can take its place. While it waits it is also under **Tools > Zones/Chs Received**. The offer screen (Zone Share Received, or Channel Share Received) reads "Zone <name>, <n> channels, from <ID>" and
 how many are not in this radio's bands, with three choices:
 
 - **Import** imports it (5.3).
@@ -164,9 +176,12 @@ a refusal (3.3). An answer later than 60 s is not taken. No screen sends request
 In a zone's channel list, **#** opens "Share zone to..." and "Share channel to..." (the focused channel). With the
 zone editor (`CONFIG_ZONE_EDIT`), **#** on a channel opens its Channel actions, where "Share channel to..." is item 5,
 and "Share zone to..." is item 3 of Zone options ([ui.md](ui.md) 2.2). The channel editor has "Share channel to..."
-after "Go to it" ([ui.md](ui.md) 2.1); it sends the stored channel, so unsaved changes must be saved first. The rows
-carry a share icon, and the offer's title and banner a download icon. Then the contact list (Share To): a private contact gets confirmed packets, a talkgroup unconfirmed ones. The send works only on a DMR
-channel; the banner says "Sent to <name>" or "Not sent to <name>". One send at a time.
+after "Tune to this ch" ([ui.md](ui.md) 2.1); it sends the stored channel, so unsaved changes must be saved first. The rows
+carry a share icon, and the offer's title and banner a download icon. Then the contact list (Share To): a private contact gets confirmed packets, a talkgroup unconfirmed ones. Digits that make an ID add two rows after the contacts,
+"Private ID 3101234" and "TG 3101234", so a station that isn't a contact can be sent to. The send works only on a DMR
+channel: on another, OK says "Go to a DMR channel to send" and sends nothing. The send's toast names the frequency:
+"Sending to K1ABC Joe via 442.375" ("Sending via 442.375" where that doesn't fit). It is the channel's receive frequency, which on a repeater is its output.
+The banner says "Sent to <name>" or "Not sent to <name>". One send at a time.
 
 ## 8. Limits
 
@@ -174,5 +189,5 @@ channel; the banner says "Sent to <name>" or "Not sent to <name>". One send at a
 |---|---|
 | Record | 1024 octets, 80 channels, 32 contacts |
 | Names | 16 printable ASCII characters |
-| Fragments | 4 of up to 322 octets |
+| Fragments | sent: up to 4 of 322 octets; taken: up to 8, chunks of 128 to 562 octets |
 | RAM | about 4 KB on one board's build; the record being sent comes from the RTOS heap while it is made ([feature-matrix.md](../feature-matrix.md)) |

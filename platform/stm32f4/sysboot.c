@@ -14,6 +14,7 @@
 #include "platform.h"
 #include "board.h"
 #include "hal_system.h"
+#include "mem_window.h"
 #if CONFIG_CRASH_LOG
 #include "hal_crash.h"
 #endif
@@ -44,6 +45,11 @@ static bool chip(hal_chip_t *c)
 static void read(uint32_t addr, void *dst, size_t n)
 {
 	memcpy(dst, (const void *)(uintptr_t)addr, n);
+}
+
+static bool mem_window(unsigned i, hal_mem_window_t *w)
+{
+	return stm32_mem_window_for(i, w, *(volatile const uint16_t *)FLASH_SIZE_ADDR);
 }
 
 static void backup_write(uint32_t v)
@@ -77,6 +83,7 @@ static bool reboot(uint8_t mode)
 const hal_system_t stm32_system = {
 	.chip = chip,
 	.read = read,
+	.mem_window = mem_window,
 	.reboot = reboot,
 #if CONFIG_STUB_ENTRY
 	.stub_region = stm32_stub_region,	// stub_entry.c

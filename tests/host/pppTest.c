@@ -14,6 +14,7 @@
 #include "net/ppp.h"
 #include "hostlink/hostlink_ppp.h"
 #include "dmr/ipGateway.h"
+#include "dmr/dmrData.h"
 
 static int failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -552,6 +553,77 @@ static void test_ipv4(void)
 	CHECK(board.netif->receive(d, 600) == 0);
 }
 
+// Our MRU (RFC 1661 6.1): PPP_MRU, what the gateway's frames take. A Nak to a smaller one (not under PPP_MIN_MRU) is
+// asked for next; a bigger one isn't (our buffer can't take it); a Reject drops the option (the peer may then send
+// 1500, and longer frames are dropped as too long). ppp_stats reports both directions
+static void test_mru(void)
+{
+	uint8_t d[64], id, rid;
+	int n, k;
+	ppp_stats_t s;
+
+	out_len = out_pos = 0;
+	ppp_start(false, 5, now_ms, rxbuf);
+	k = opt16(d, 1, 1000);
+	peer_ctl(LCP, CONF_REQ, 1, d, k);
+	CHECK(expect(LCP, CONF_REQ, &rid, d, &n));
+	CHECK(find_opt(d, n, 1) && get16(find_opt(d, n, 1) + 2) == PPP_MRU);
+	CHECK(expect(LCP, CONF_ACK, &id, d, &n));
+	ppp_stats(&s);
+	CHECK((s.mru == PPP_MRU) && (s.peer_mru == 1000));
+
+	k = opt16(d, 1, 296);
+	peer_ctl(LCP, CONF_NAK, rid, d, k);
+	CHECK(expect(LCP, CONF_REQ, &rid, d, &n));
+	CHECK(find_opt(d, n, 1) && get16(find_opt(d, n, 1) + 2) == 296);
+	k = opt16(d, 1, PPP_MRU + 1);	// more than a frame of ours holds: ours again
+	peer_ctl(LCP, CONF_NAK, rid, d, k);
+	CHECK(expect(LCP, CONF_REQ, &rid, d, &n));
+	CHECK(find_opt(d, n, 1) && get16(find_opt(d, n, 1) + 2) == 296);
+	k = opt16(d, 1, PPP_MIN_MRU - 1);
+	peer_ctl(LCP, CONF_NAK, rid, d, k);
+	CHECK(expect(LCP, CONF_REQ, &rid, d, &n));
+	CHECK(find_opt(d, n, 1) && get16(find_opt(d, n, 1) + 2) == 296);
+	peer_ctl(LCP, CONF_ACK, rid, d, n);
+	CHECK(expect(IPCP, CONF_REQ, &rid, d, &n));
+	ppp_stats(&s);
+	CHECK((s.lcp == PPP_OPENED) && (s.mru == 296) && (s.peer_mru == 1000));
+
+	// A new link starts from PPP_MRU again; a Reject of the option: not asked for, the peer may send the default
+	out_len = out_pos = 0;
+	ppp_start(true, 6, now_ms, rxbuf);
+	CHECK(expect(LCP, CONF_REQ, &rid, d, &n));
+	CHECK(find_opt(d, n, 1) && get16(find_opt(d, n, 1) + 2) == PPP_MRU);
+	k = opt16(d, 1, PPP_MRU);
+	peer_ctl(LCP, CONF_REJ, rid, d, k);
+	CHECK(expect(LCP, CONF_REQ, &rid, d, &n));
+	CHECK(find_opt(d, n, 1) == NULL);
+	peer_ctl(LCP, CONF_ACK, rid, d, n);
+	peer_ctl(LCP, CONF_REQ, 1, NULL, 0);
+	CHECK(expect(LCP, CONF_ACK, &id, d, &n));
+	ppp_stats(&s);
+	CHECK((s.lcp == PPP_OPENED) && (s.mru == 1500) && (s.peer_mru == 1500));
+}
+
+// The air MTU on the PPP path (the same ipGatewayEthernetIn; usb-network.md 3.2): the longest datagram PPP takes
+// (PPP_MRU, below the link's MTU) with the full header, DF set, goes to the air whole, and nothing comes back
+static void test_air_mtu(void)
+{
+	static uint8_t payload[PPP_MRU];
+	uint8_t pkt[1600];
+
+	open_link();
+	air_count = 0;
+	memset(payload, 0x5A, sizeof(payload));
+	int n = udp(pkt, HOST_IP, IPGW_INDIVIDUAL_NET | 5u, 4001, 4001, payload, PPP_MRU - 28);	// the full header
+	pkt[6] = 0x40;	// DF
+	put16(pkt + 10, 0);
+	put16(pkt + 10, csum(pkt, 20, 0));
+	peer_send(IP, pkt, n);
+	CHECK((n == PPP_MRU) && (PPP_MRU <= IPGW_LINK_MTU) && (air_count == 1) && (air_len == PPP_MRU - 20));
+	CHECK(out_pos == out_len);
+}
+
 static void test_accm(void)
 {
 	uint8_t pkt[200], d[2048], id;
@@ -961,6 +1033,8 @@ int main(void)
 	test_max_failure();
 	test_echo_and_rejects();
 	test_ipv4();
+	test_mru();
+	test_air_mtu();
 	test_accm();
 	test_framing();
 	test_terminate();

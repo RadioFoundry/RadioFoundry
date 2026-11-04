@@ -14,6 +14,7 @@
 #include "modem/hrc7000/hrc7000.h"
 #include "fm_rx_audio.h"
 #include "hrc_afsk.h"
+#include "radio/ref_trim.h"
 
 #define DAC_C_INIT		0x06E2u
 
@@ -23,6 +24,9 @@
 // RF TX interrupt 0.4 ms before our burst, not the driver's 3.1 ms: earlier, the per-burst switch cut the tail of the
 // inbound burst an SFR receives before ours (swept 0.4-2.0 ms in hardware-dm32.md 8.5)
 #define RF_TX_LEAD		4u
+// TX data advance (hrc7000_t.tx_pre_on): the chip's 0.4 ms until the inbound burst's offset against the outbound is
+// measured here. The other FD6818 board needed 1.1 ms
+#define TX_PRE_ON		4u
 // FM TX limiter (FM_DEV_COEF b23:16, hrc7000_t.fm_tx_limit) at 12.5 / 25 kHz: the driver's default 4 holds mic audio
 // to about 1.65 kHz peak at 25 kHz (modem-hrc7000.md 8.4). The values measured on the other FD6818 board; at 12.5 kHz a loud whistle and
 // voice peaked at 1.3 kHz (99.9 %) on the SDR bench, so the 12.5 kHz value may still be low. 25 kHz not measured yet
@@ -32,6 +36,7 @@
 #define FD_REG_RSSI		0x67u
 
 static fd6818_t fd;
+static rfbus_3w_t fd_bus;
 static hrc7000_t modem;
 
 static radio_mode_t mode = RADIO_MODE_FM;
@@ -70,7 +75,7 @@ static void fd_data_out(bool level) { hrc_pin_out(PIN_FD_DATA, level); }
 static void fd_data_release(void) { hrc_pin_in(PIN_FD_DATA); }
 static bool fd_data_in(void) { return hrc_pin_read(PIN_FD_DATA); }
 
-static const fd6818_bus_t fd_bus = {
+static const rfbus_3w_pins_t fd_bus_pins = {
 	.cs = fd_cs,
 	.clk = fd_clk,
 	.data_out = fd_data_out,
@@ -136,6 +141,24 @@ static void write_mod_bias(uint32_t hz)
 
 // ---- From the DMR interrupts ----
 
+// The reference trim (hal_radio_t.ref_trim): the FD6818 is programmed f x (1 + trim), at every tune and burst. The
+// modem's DC bias stays the factory's tune
+static volatile int16_t trim_ppb;
+
+static uint32_t synth_hz(uint32_t hz)
+{
+	return ref_trim_tune_hz(hz, trim_ppb);
+}
+
+#if CONFIG_REF_TRIM
+// Taken at the next tune, so the RF chips' bus stays the radio task's: true asks the core for one
+static bool ref_trim(int16_t ppb)
+{
+	trim_ppb = ppb;
+	return true;
+}
+#endif
+
 // RF TX interrupt (tx): LNA off, FD6818 idle then TX for our burst. After the burst: PA off, FD6818 and the LNA back
 // to RX, so the radio hears the other slot (the hotspot listens while keyed)
 static void dmr_rf_switch(bool tx)
@@ -146,7 +169,7 @@ static void dmr_rf_switch(bool tx)
 		lna(tx_hz, false);
 	}
 	// A split channel (repeater, duplex hotspot): the one synthesizer moves to the TX frequency for the burst and back
-	fd6818_dmr_burst_at(&fd, tx, FD6818_BW_DMR, tx ? tx_hz : rx_hz);
+	fd6818_dmr_burst_at(&fd, tx, FD6818_BW_DMR, synth_hz(tx ? tx_hz : rx_hz));
 	if (!tx) {
 		lna(rx_hz, true);
 	}
@@ -180,6 +203,7 @@ static const hrc_afsk_board_t afsk_board = {
 static void init(void)
 {
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
+	modem.tx_pre_on = TX_PRE_ON;
 	hrc_modem_analog_init(DAC_C_INIT);
 	pa_off();
 	lna(0, false);
@@ -190,7 +214,8 @@ static void init(void)
 
 	hrc_pin_out(PIN_FD_CS, true);
 	hrc_pin_out(PIN_FD_CLK, false);
-	fd6818_attach(&fd, &fd_bus);
+	rfbus_3w_attach(&fd_bus, &fd_bus_pins);
+	fd6818_attach(&fd, &fd_bus.bus);
 	fd6818_init(&fd);
 	fd6818_set_mode(&fd, FD6818_MODE_FM);
 	mode = RADIO_MODE_FM;
@@ -245,7 +270,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 	wake();
 	pa_off();
 	lna(hz, true);
-	fd6818_set_freq(&fd, hz);
+	fd6818_set_freq(&fd, synth_hz(hz));
 	if (mode == RADIO_MODE_DMR) {
 		fd6818_set_bandwidth(&fd, FD6818_BW_DMR);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
@@ -306,7 +331,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	write_mod_bias(hz);
 	// DMR keeps listening on the RX frequency until a burst (dmr_rf_switch retunes per burst); on a split channel the
 	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
-	fd6818_set_freq(&fd, mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz);
+	fd6818_set_freq(&fd, synth_hz(mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz));
 	hrc_dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
 		// 8.5 "Enter DMR TX": the PA select and drive wait for the PA one-shot of each burst. Between bursts the radio
@@ -532,7 +557,7 @@ void dm32_radio_diag(dm32_radio_diag_t *d)
 	d->rssi_raw = last_rssi_raw;
 	d->noise_raw = last_noise_raw;
 	d->fm_noise = hrc7000_fm_noise(&modem);
-	d->fd_writes = fd.writes;
+	d->fd_writes = fd_bus.bus.writes;
 }
 
 // Receiver battery saving (FM receive only, the radio's own sequence: hardware-dm32.md 8.8): FD6818 idle with its
@@ -570,4 +595,7 @@ const hal_radio_t dm32_radio = {
 	.status = status,
 	.audio = audio,
 	.volume = NULL,
+#if CONFIG_REF_TRIM
+	.ref_trim = ref_trim,
+#endif
 };

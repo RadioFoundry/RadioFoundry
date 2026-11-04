@@ -50,11 +50,19 @@ timer 3 s, Max-Configure 10, Max-Terminate 2, Max-Failure 5 (then Nak'd options 
 
 | Option | We ask for | We take from the peer |
 |---|---|---|
-| 1 MRU | 584 (the gateway's 600 byte frames) | any; our packets longer than it are dropped |
+| 1 MRU | 584 (`PPP_MRU`: the gateway's 600 byte frames); a Nak'd value from 68 to 584 is asked for instead | any; our packets longer than it are dropped |
 | 2 ACCM | 0 (a Nak'd map is asked for instead) | any |
 | 5 Magic-Number | a number from the start time and DMR ID | any but 0 and ours (Nak'd: a looped-back line) |
 | 3 Authentication, 4 Quality, 7 PFC, 8 ACFC, others | (none) | Configure-Reject |
 
+- The MRU we announce is the link MTU the peer takes for its interface (pppd sets it from the MRU). The air's MTU (596,
+  [dmr-data.md](dmr-data.md) 12.8) is above it, so every datagram the peer sends for the air goes in one transmission
+  ([usb-network.md](usb-network.md) 3.2; the gateway's input is shared).
+  A peer that Naks our MRU with a value from 68 (`PPP_MIN_MRU`, the smallest IPv4 MTU, RFC 791) up to ours gets it
+  asked for in the next request (RFC 1661 5.3); a bigger or smaller one is ignored and ours asked for again, until
+  Max-Failure. A Reject drops the option: the default 1500 then applies (RFC 1661 6.1), and our receive buffer still
+  takes only 584, so longer frames are dropped. View keys (section `net_link`) `ppp.mru` (what we receive: the MRU asked for, 1500 when
+  rejected) and `ppp.peer_mru` (the peer's, 1500 when it gave none).
 - Echo-Request answered with our magic number while open. Echo-Reply and Discard-Request are taken quietly.
 - Terminate-Request: Terminate-Ack, IP down at once, the link ends one restart time later (the Stopping state, so
   retransmitted requests are answered).
@@ -98,8 +106,8 @@ modes, exactly as on the adapter, so MMDVMHost over UDP gets hotspot mode while 
 personality is in use (`hostlink_network_mode()`): the gateway, the radio's services, and the serial protocols over
 UDP 3334 (`usb-network.md` 1), so `rfoundry_debug.py --port udp:<radio IP>`, MMDVMHost over UDP and the HTTP / SNMP / TFTP
 / mDNS services work as over the adapter. UDP serial bytes never reach PPP, whatever they start with. The view
-section `hotspot` shows `usb.network=1`, `usb.net_up` (IPCP open) and the `ppp.*` keys; `hostlink` is the mode of
-the protocols over UDP.
+section `hotspot` shows `usb.network=1` and `usb.net_up` (IPCP open), section `net_link` the `ppp.*` keys; `hostlink`
+is the mode of the protocols over UDP.
 
 **Leaving** gives the port back to the serial protocols in idle mode; a hotspot session over UDP ends with the link,
 as when the USB personality switches.
@@ -189,7 +197,9 @@ PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B 
   Max-Failure; Echo; Protocol-Reject of IPv6CP; Code-Reject; ping, UDP serial both ways, UDP to a DMR ID and back
   from the air through the real gateway; the ACCM both ways with line noise; byte-by-byte input, back-to-back flags,
   bad FCS, abort, no `FF 03`, too long, a stalled frame; Terminate both ways; the negotiation time-out, the dead
-  peer, a live peer answering echoes, another protocol's request; renegotiation on an open link. Then a seeded fuzz
+  peer, a live peer answering echoes, another protocol's request; renegotiation on an open link; the MRU Nak'd to a
+  smaller value, a too big and a too small one ignored, Rejected (`test_mru`); the air MTU over PPP, the largest UDP
+  datagram PPP takes, DF set, to the air whole (`test_air_mtu`). Then a seeded fuzz
   loop (`RFOUNDRY_FUZZ_ITERS`, default 3,000): mutated whole sessions in random pieces, and single packets with a good
   FCS mutated inside (LCP, IPCP, IPv4, IPv6CP), every frame the radio sends checked. Clean under
   `make -C tests/host SANITIZE=1` with 30,000 iterations.

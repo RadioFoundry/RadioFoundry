@@ -283,7 +283,7 @@ static void end_session(uint8_t state)
 {
 	drop_block();
 	if (s.written) {
-		codeplug_reload();	// the radio core follows codeplug_serial()
+		codeplug_written();	// the radio core follows codeplug_serial()
 		stats.commits++;
 	}
 	s.written = false;
@@ -383,6 +383,7 @@ static size_t op_read(const uint8_t *a, uint16_t len, uint8_t *out, size_t cap)
 	put16(&out[6], total);
 	put32(&out[8], crc);
 	put16(&out[12], offset);
+	out[14] = 0;	// reserved
 	if (offset + n == total) {
 		stats.blocks_read++;
 	}
@@ -671,7 +672,7 @@ void cps_fast_tick(uint32_t now_ms)
 	s.slots = 0;
 	s.state = CPSF_ST_DONE;
 	stats.commits++;
-	codeplug_reload();
+	codeplug_written();
 }
 
 bool cps_fast_staging_busy(void)

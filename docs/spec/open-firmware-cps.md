@@ -193,8 +193,8 @@ A typical session, as qdmr does it:
 
 | Area | Name | Address space | Notes |
 | --- | --- | --- | --- |
-| 1 | Flash | Image address in the external SPI flash (section 7) | STM32 and HR_C7000 radios: the calibration window is served from the working copy, and the VFO overlay applies (2.2). HR_C7000: image addresses are offset by +0x700000 physically (section 7.4) |
-| 2 | EEPROM | EEPROM image address, 0x0000..0xFFFF | MK22: the 64 KB I2C EEPROM. STM32 and HR_C7000: emulated in the external flash at flash image 0x00000 (same bytes as area 1 at the same address) |
+| 1 | Flash | Image address in the external SPI flash (section 7) | STM32 and HR_C7000 radios: the calibration window is served from the working copy, and the VFO overlay applies (2.2). HR_C7000: image addresses are offset by +0x700000 physically (section 7.4). RadioFoundry serves it on a radio without a flash map too (a chip smaller than the board's map needs), up to the chip's end, so a backup can read it |
+| 2 | EEPROM | EEPROM image address, 0x0000..0xFFFF | MK22: the 64 KB I2C EEPROM. STM32 and HR_C7000: emulated in the external flash at flash image 0x00000 (same bytes as area 1 at the same address). Refused on a radio without a flash map |
 | 5 | MCU ROM | Offset into the MCU's program flash | STM32: offset from 0x08000000. MK22: absolute address from 0. HR_C7000: offset from 0x03000000, bounds-checked to 1 MB (other builds don't check bounds) |
 | 6 | Display buffer | Byte offset into the frame buffer | MK22: 128x64 mono, 1 bit per pixel (1024 bytes, 8-pixel pages). STM32 and HR_C7000: RGB565, 2 bytes per pixel (160x128 on the STM32 radios). Some panels have an 8-row top offset: the first 8 rows read 0xFF (white). Used for screenshots |
 | 7 | WAV buffer | Byte offset into the audio / hotspot buffer (2400 bytes on STM32) | Read or write raw PCM (8 kHz, 16 bit) |
@@ -260,7 +260,7 @@ reply starts with `D`, the sub command, and a result byte: 1 means OK; 0 means f
 | --- | --- | --- |
 | 1 Clear | none | none. Fails while a transmission is in progress |
 | 2 Append bytes | len (1 byte), then len bytes (up to 61) | none. Appends to a 300 byte message buffer; fails when full |
-| 3 Append burst | data type (1), flags (1: bit 0 = the payload already holds its CRC / mask, send it verbatim), len (1, at most 24), payload | none. Up to 40 bursts; fails while busy |
+| 3 Append burst | data type (1), flags (1: bit 0 = the payload already holds its CRC / mask, send it verbatim), len (1, at most 24), payload | none. Up to 64 bursts; fails while busy |
 | 4 Send | kind (1), flags (1), destination (3 bytes BE), port (2 bytes BE; for kind 3: byte 0 = DPF, low 4 bits of byte 1 = SAP) | none. Result 1 means queued |
 | 5 Status | none | The result byte is the TX status (0 idle, 1 running, 2 done, 3 failed); then the received bursts waiting (1 byte) and the inbox messages not yet read by the host (1 byte) |
 | 6 Pop RX burst | none | data type, flags (bit 1 = the receiver reported a CRC error), len, payload (oldest first; the queue holds the last 8) |
@@ -308,6 +308,10 @@ The PC tools see two images, "EEPROM" and "flash", in the GD-77's terms. The GD-
 SPI flash. The STM32 radios and the HR_C7000 radios have no EEPROM: both images live in one large SPI flash. The tools address
 it with the per-family offsets below. A new firmware can store the data any way it likes, as long as the shim
 presents these addresses.
+
+The CPS reads the image as stored, whatever it holds. RadioFoundry uses it only when its records in use look like an
+open-firmware codeplug ([codeplug-native.md](codeplug-native.md) 2, "Another firmware's codeplug"). The check runs
+again after every write.
 
 ### 7.1 Per-family address mapping
 
@@ -621,6 +625,10 @@ in 256 KB minus the header. The rest continue at the start of area 2. Each recor
   records) on the GD-77 and 32 (27 byte records) on the UV380 family.
 
 The radio looks IDs up by binary search, using a cache of 14 evenly spaced IDs once there are more than 40 records.
+
+RadioFoundry also reads format `C` (header bytes 2-3 `C`, 0): a dictionary-coded database about half the size of
+`N`, laid out so a refresh changes few 4 KB blocks ([iddb-compact.md](iddb-compact.md)). Byte 3 is 0, so firmware
+that doesn't read it sees no database.
 
 ### 7.6 Voice prompts file
 

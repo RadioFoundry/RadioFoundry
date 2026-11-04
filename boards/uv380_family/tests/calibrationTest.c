@@ -183,12 +183,23 @@ static void test_direct_tx_ref(void)
 	CHECK(!uvf_direct_tx_ref(146520000u, 0, &v) && v == 5);	// VHF: idle path
 }
 
+static void test_ref_trimmed(void)
+{
+	CHECK(uvf_ref_trimmed(2, 0) == 2);
+	CHECK(uvf_ref_trimmed(2, 1000) == 2 + 6);	// 6.25 steps
+	CHECK(uvf_ref_trimmed(2, -1000) == 2 - 6);
+	CHECK(uvf_ref_trimmed(0, 80) == 1 && uvf_ref_trimmed(0, 79) == 0 && uvf_ref_trimmed(0, -80) == -1);
+	CHECK(uvf_ref_trimmed(-8, 10000) == -8 + 63);	// +10 ppm: 62.5 steps
+	CHECK(uvf_ref_trimmed(100, 10000) == 127 && uvf_ref_trimmed(-100, -10000) == -128);
+}
+
 int main(void)
 {
 	test_factory();
 	test_working();
 	test_blank();
 	test_direct_tx_ref();
+	test_ref_trimmed();
 	printf(failures ? "# %s FAILED (%d)\n" : "# %s PASSED\n", TEST_NAME, failures);
 	return failures ? 1 : 0;
 }

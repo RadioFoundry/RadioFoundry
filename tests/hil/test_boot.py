@@ -36,6 +36,7 @@ def test_screenshot_geometry(radio, shots):
     stride = w * 2 if bpp == 16 else (w + 7) // 8
     assert len(data) == info["total"] == stride * h
     assert stable, "the screen kept changing during the capture"
+    assert info.get("packed"), "the firmware sent only the RGB565 form, not the packed one (debuglink.md 3.3)"
     radio.save_screenshot(f"{shots}/boot.png")
 
 
@@ -60,8 +61,8 @@ def test_view_sections(radio):
     v = radio.view()
     for k in ("view", "state", "rx_hz", "ch.name", "dmr.built", "hostlink", "ui.screen", "input.idle_ms"):
         assert k in v, k
-    # View 3: net.air_busy counts packets dropped after waiting in the TX queue (debuglink.md 3.7)
-    assert v["view"] == "3"
+    # View 5: the CPS counters moved from the storage section to cps (debuglink.md 3.7)
+    assert v["view"] == "5"
 
 
 @pytest.mark.feature("debuglink")

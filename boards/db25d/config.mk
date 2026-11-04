@@ -22,7 +22,7 @@ CONFIG_HOTSPOT_SPLIT ?= n
 # every slot on the per-burst retune, with the RF TX interrupt's lead and the TX off timed for it (hardware-db25d.md
 # 4.5), checked on the SDR bench
 # With DMR: the platform's linker script with the codec window at the top of SRAM and the modem SRAM table window
-# (memory.ld), its codec host (the profile ids are db25d-2501, db25d-2409, db25d-2405, db25d-020; hardware-db25d.md 8),
+# (memory.ld), its codec host (the profile ids are db25d-2501, db25d-2409, db25d-2405, db25d-2307, db25d-020; hardware-db25d.md 8),
 # the core's CPU state in .ram_lo and the runtime stub's load span inside the codec window (0x45000..0x58000; the
 # universal stub copies itself to its run address). Without DMR: no codec window, the CPU state in .bss, and the stub
 # in the 128 KB above it (fm_only.ld). Bench knobs (dmr_db25d.c, radio_db25d.c): DB25D_DMR_RF_MODE (the modem's RF_MODE word), DB25D_DMR_AF_GAIN

@@ -128,7 +128,7 @@ typedef struct {
 	uint8_t roles_offered;		// INFO byte 1
 	uint8_t variant;
 	uint8_t cach_method;		// INFO byte 4
-	uint8_t at_host, at_on_air;	// TX: the host's AT mask now, the AT bits of the last CACH per slot
+	uint8_t at_host, at_on_air;	// TX: the host's AT mask now, the AT bits last sent per channel
 	uint8_t inbound_busy;		// RX: STATUS byte 2
 	uint8_t buffered[2];		// TX: bursts buffered per slot
 	uint16_t underruns[2];

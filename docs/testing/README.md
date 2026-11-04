@@ -20,12 +20,12 @@ repeatable and skips cleanly what it can't reach. What each level is for and whe
 
 ```
 tools/ci.sh                    # everything below
-tools/ci.sh --quick            # each board's default build only (no feature matrix)
+tools/ci.sh --quick            # each board's default and maximal builds (no feature matrix)
 tools/ci.sh --board <b>        # one board, for example dm1701
 tools/ci.sh --matrix           # only the feature matrix (no default builds)
 tools/ci.sh --steps host,python   # only some steps: host, python, firmware, licenses, similarity
 JOBS=8 tools/ci.sh             # parallel make jobs (default: the CPU count)
-RFOUNDRY_CI_PRUNE=1 tools/ci.sh     # drop each build tree once its size is recorded (logs and images stay)
+RFOUNDRY_CI_PRUNE=0 tools/ci.sh     # keep every build tree (by default each is dropped once its size is recorded and it built clean)
 RFOUNDRY_CI_SANITIZE=1 tools/ci.sh  # the host step also runs the host tests under ASan and UBSan
 ```
 

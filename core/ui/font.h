@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Fixed-cell fonts: ASCII 0x20..0x7E plus a few extra glyphs reached through the byte codes below. Glyphs are 1 bit a
+// Fixed-cell fonts: ASCII 0x20..0x7E plus a few extra glyphs reached through the byte codes below, and in a build
+// with a translation (CONFIG_LANG_ANY) the Latin-1 letters 0xA0..0xFF, one byte each as in ISO 8859-1 (a font
+// without them, or a build without, shows the letter without its accent). Glyphs are 1 bit a
 // pixel (ink or not) or 2 (anti-aliased: coverage 0..3, blended with what is under them on color panels)
 #ifndef UI_FONT_H
 #define UI_FONT_H
@@ -25,12 +27,15 @@
 #define TEXT_ALT_CLOSE	"\x1e"
 #define GLYPH_FIRST_EXTRA	0x80
 #define GLYPH_EXTRA_COUNT	4	// the extras a font can hold; the icons after them are drawn from lines only
+#define FONT_LATIN1_FIRST	0xA0u
+#define FONT_LATIN1		CONFIG_LANG_ANY
 
 typedef struct {
 	uint8_t w, h;		// cell size in pixels; every glyph advances w
 	uint8_t ascent;		// baseline, rows from the top of the cell
 	uint8_t missing;	// bit n: extra glyph n is not in the font (drawn from primitives instead)
 	uint8_t bpp;		// 1 or 2
+	bool latin1;		// has the Latin-1 glyphs (after the extras)
 	// Glyph after glyph: its first inked row, the number of rows from there, then those rows of (w * bpp + 7) / 8
 	// bytes, MSB = left (the blank rows above and below aren't stored). index: where each glyph starts in bits
 	const uint8_t *bits;
@@ -74,5 +79,7 @@ extern const font_t font_9x18;
 // Rows of a glyph from row *top of the cell, *rows of them (0 for a space), or NULL for a byte the font can't draw
 // (shown as a box) or a missing extra
 const uint8_t *font_glyph(const font_t *f, uint8_t c, int *top, int *rows);
+// A Latin-1 byte (0xA0..0xFF) as plain ASCII, the letter without its accent ("\xF3" is 'o'); any other byte as it is
+char font_fold(char c);
 
 #endif

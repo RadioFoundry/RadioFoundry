@@ -20,6 +20,7 @@ Refuses an image that reaches into a codec sector or that carries the codec sign
 the codec or break "keep the radio's codec" (tools/rfoundry).
 """
 import argparse
+import hashlib
 import os
 import struct
 import subprocess
@@ -35,11 +36,21 @@ def git(*a):
     return subprocess.run(["git", "-C", ROOT] + list(a), capture_output=True, text=True, check=True).stdout.strip()
 
 
-def features(board_id, variant=None, options=()):
-    cmd = (["make", "-s", "-C", ROOT, "BOARD=" + board_id, "print-config"] + (["VARIANT=" + variant] if variant else [])
+def make_print(board_id, goal, variant=None, options=()):
+    """The words a make print-* goal prints for the build"""
+    cmd = (["make", "-s", "-C", ROOT, "BOARD=" + board_id, goal] + (["VARIANT=" + variant] if variant else [])
            + ["%s=%s" % o for o in sorted(dict(options).items())])
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    return ",".join(kv.split("=")[0] for kv in r.stdout.split() if kv.endswith("=y"))
+    return subprocess.run(cmd, capture_output=True, text=True).stdout.split()
+
+
+def features(board_id, variant=None, options=(), value="y"):
+    """The switches the build has at value (y: on, n: off) as a comma list (make print-config). Off leaves out what the
+    board can't have (BOARD_UNSUPPORTED, BOARD_NOT_WRITTEN), as the radio's VERSION off= does (Makefile RFOUNDRY_OFF)"""
+    names = [kv.split("=")[0] for kv in make_print(board_id, "print-config", variant, options) if kv.endswith("=" + value)]
+    if value == "n":
+        never = {n for goal in ("print-unsupported", "print-not-written") for n in make_print(board_id, goal, variant, options)}
+        names = [n for n in names if n not in never]
+    return ",".join(names)
 
 
 def toolchain(board_id):
@@ -54,13 +65,15 @@ def toolchain(board_id):
 
 def check_no_codec(board, image):
     """The release image must not contain any codec bytes: it ends before the codec sectors (manifest.generate checks
-    that), and the codec's first word must not appear where a merged image puts it: an STM32 radio's code window (or
-    the stock address, where merges from before the codec moved put it), an HR_C7000 radio's codec slot (the build's
-    _codec.bin)."""
+    that), and the codec must not be where a merged image puts it: an STM32 radio's code window (its first word), or
+    the stock address, where merges from before the codec moved put it (the stock code, by its SHA-256: the image's
+    own code reaches past those addresses now, and the codec's first word, a push, is common there), an HR_C7000
+    radio's codec slot (the build's _codec.bin)."""
     off = board.codec.windows[0][0] - board.app_base
     if board.codec_slot is None:	# a codec merged from a stock file at the stock placement
-        offs = {off} | {p["code"][0] - board.app_base for p in stockfw.PROFILES.values() if p["board"] == board.id}
-        if any(o + 4 <= len(image) and struct.unpack_from("<I", image, o)[0] == stockfw.CODEC_SIG for o in offs):
+        stock = {(p["code"][0] - board.app_base, p["code"][1], p["code"][2]) for p in stockfw.PROFILES.values() if p["board"] == board.id}
+        if (off + 4 <= len(image) and struct.unpack_from("<I", image, off)[0] == stockfw.CODEC_SIG) or any(
+                o + n <= len(image) and hashlib.sha256(image[o:o + n]).hexdigest() == sha for o, n, sha in stock):
             raise SystemExit("release: %s carries the codec signature: never release a merged image" % board.id)
     else:				# a codec in RadioFoundry's own slot
         if off + 4 <= len(image) and struct.unpack_from("<I", image, off)[0] == serialflash.SLOT_MAGIC:
@@ -124,6 +137,16 @@ def main(argv=None):
     except mf.ManifestError as e:
         raise SystemExit("release: %s" % e)
     man["variant"] = variant or "full"
+    # every switch the build has off: with features, the switches this release knew, so the web flasher's update tells
+    # a feature added since from one a custom build left on (site/static/js/flasher/update.js)
+    if args.features is None:
+        man["off"] = features(board.id, variant, options, "n")
+    # the commit's time, which the web editor compares with a radio's git_time= to offer this release to a build that
+    # isn't one (docs/dev/codeplug-editor.md)
+    try:
+        man["git_time"] = int(git("show", "-s", "--format=%ct", commit))
+    except (subprocess.CalledProcessError, ValueError):
+        pass
     if options:
         man["build_options"] = dict(options)
     whole = image

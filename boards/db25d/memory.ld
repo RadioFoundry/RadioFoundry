@@ -11,8 +11,8 @@
  * SRAM (288 KB at 0x10000): RadioFoundry's region from 0x10000, and at the top the codec window 0x44E00..0x58000 (78,336 B: the
  * 020 code, 78,172 B, the largest of the supported builds). The runtime stub entry (CONFIG_STUB_ENTRY) loads the stub
  * into the codec window (HRC_STUB_BASE in config.mk) after the codec is parked. The modem SRAM window the codec's
- * tables are copied to, 0x180014AC..0x18004360 (the three 018 builds and 020 put the same tables at four addresses;
- * hardware-db25d.md 8), is reserved.
+ * tables are copied to, 0x180010B4..0x18004360 (the four 018 builds and 020 put the same tables at five addresses, the
+ * 2023-07-06 build's the lowest; the tables don't move with the code, hardware-db25d.md 8.4), is reserved.
  *
  * The layout is the platform's (platform/hrc7000/common.ld). */
 
@@ -23,7 +23,7 @@ __codec_slot_end = 0x03100000;
  * window, the union of the builds' stock table addresses */
 __codec_run_lo = 0x00044E00;
 __codec_run_hi = 0x00058000;
-__codec_tab_lo = 0x180014AC;
+__codec_tab_lo = 0x180010B4;
 __codec_tab_hi = 0x18004360;
 
 MEMORY

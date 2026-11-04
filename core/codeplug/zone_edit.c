@@ -156,6 +156,21 @@ zone_edit_result_t zone_edit_create(const zone_t *z, uint16_t *index)
 	return r;
 }
 
+zone_edit_result_t zone_edit_new(const char *name, uint16_t *index)
+{
+	storage_lock();
+	zone_shift_busy(true);
+	zone_edit_result_t r = make_room();
+	if (r == ZONE_EDIT_OK) {
+		memset(&work, 0, sizeof work);
+		strncpy(work.name, name, CODEPLUG_NAME_LEN);
+		r = create_locked(index);
+	}
+	zone_shift_busy(false);
+	storage_unlock();
+	return r;
+}
+
 zone_edit_result_t zone_edit_insert(uint16_t zone, uint16_t pos, uint16_t channel)
 {
 	storage_lock();
@@ -308,6 +323,7 @@ static zone_edit_result_t run(const zone_op_t *op, uint16_t *index)
 	case ZONE_OP_COPY: return zone_edit_copy(op->zone, index);
 	case ZONE_OP_RENAME: return zone_edit_rename(op->zone, op->name);
 	case ZONE_OP_DELETE: return zone_edit_delete(op->zone);
+	case ZONE_OP_NEW: return zone_edit_new(op->name, index);
 	default: return ZONE_EDIT_FAILED;
 	}
 }

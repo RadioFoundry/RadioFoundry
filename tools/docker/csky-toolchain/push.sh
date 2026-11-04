@@ -7,13 +7,13 @@
 #   tools/docker/csky-toolchain/push.sh docker.io/<user>/rfoundry-csky-gcc14            (Docker Hub)
 #   SRC=rfoundry/csky-gcc14:20261011b tools/docker/csky-toolchain/push.sh REPO [TAG...]
 #
-# Tags SRC (default platform/hrc7000/platform.toml [toolchain] image) as REPO:<its dated tag> and REPO:latest (or the TAGs given), pushes
+# Tags SRC (default rfoundry/csky-gcc14:latest, build.sh's local tag) as REPO:<its dated tag> and REPO:latest (or the TAGs given), pushes
 # them and prints the digest. Log in first and out afterwards (docs/dev/ci-runners.md "Publishing it to GitHub Packages"): the
 # script never handles a password or token, so none ends up in its arguments, its output or a file it writes.
 set -eu
 [ $# -ge 1 ] || { sed -n '5,12p' "$0"; exit 2; }
 REPO=$1; shift
-SRC=${SRC:-$("$(dirname "$0")/../../platform_toolchain.sh" hrc7000 image)}
+SRC=${SRC:-rfoundry/csky-gcc14:latest}
 docker image inspect "$SRC" > /dev/null 2>&1 || { echo "push: no image $SRC here" >&2; exit 1; }
 
 if [ $# -eq 0 ]; then
