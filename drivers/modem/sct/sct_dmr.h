@@ -56,8 +56,8 @@ typedef struct {
 
 typedef struct {
 	uint32_t tx_frames;	// DIGC_DATA_FRAMEs sent
-	uint32_t tx_acks;	// ... and taken by the chip
-	uint32_t tx_timeouts;	// ... not answered in time (dropped)
+	uint32_t tx_acks;	// ... answered by the chip within their slot
+	uint32_t tx_timeouts;	// ... not answered within it (the next one went anyway)
 	uint32_t tx_paced;	// voice bursts taken without a frame
 	uint32_t rx_frames;	// data frames reported
 	uint32_t rx_fec;	// ... with an FEC error event before them
@@ -72,8 +72,6 @@ typedef struct {
 	bool sending;		// a frame is out, its answer not in yet
 } sct_dmr_stats_t;
 
-// Milliseconds a frame may go unanswered before it is dropped
-#define SCT_DMR_ACK_MS		300
 // After the last frame, how long to wait for the chip's "far end done" before reporting TX_DONE anyway
 #define SCT_DMR_DONE_MS		600
 #define SCT_DMR_SLOT_MS		60

@@ -31,7 +31,7 @@ static struct {
 	int8_t tx_ts;
 	dmr_tx_burst_t q[TXQ_DEPTH];
 	uint8_t q_head, q_count;
-	bool waiting;		// a frame is out, its answer not in yet
+	bool waiting;		// a frame is out: the next waits for its answer or its slot to pass
 	uint32_t sent_ms;	// when it went (or when a paced voice burst was taken)
 	uint32_t next_ms;	// the next burst goes no earlier than this
 	bool paced;		// next_ms is set
@@ -280,25 +280,34 @@ static void tx_finish(void)
 	emit(DMR_EV_TX_DONE, s.tx_ts, next_counter(), NULL);
 }
 
-// A frame was taken: the next one goes a slot after this one
-static void frame_taken(void)
+// The frame out has its slot: the next one goes a slot after it
+static void frame_slot(void)
 {
 	if (!s.waiting)
 		return;
 	s.waiting = false;
-	s.st.tx_acks++;
 	s.next_ms = s.sent_ms + SCT_DMR_SLOT_MS;
 	s.paced = true;
 	slot_started();
+}
+
+// The chip answered the frame out
+static void frame_taken(void)
+{
+	if (s.waiting)
+		s.st.tx_acks++;
+	frame_slot();
 }
 
 static void tx_step(void)
 {
 	if (s.tx == TX_IDLE)
 		return;
-	if (s.waiting && (int32_t)(s.now - s.sent_ms) >= SCT_DMR_ACK_MS) {
-		s.waiting = false;
+	// A chip may answer only once its frames are on the air (ACK 0x0A, two slots or more after the send) and hold
+	// the next frame meanwhile: unanswered, the next one goes a slot after it anyway
+	if (s.waiting && (int32_t)(s.now - s.sent_ms) >= SCT_DMR_SLOT_MS) {
 		s.st.tx_timeouts++;
+		frame_slot();
 	}
 	tx_pump();
 	if (s.tx == TX_ENDING && s.q_count == 0 && !s.waiting) {
@@ -475,12 +484,16 @@ static void rx_status(uint8_t code)
 	case SCT_ACK_OK:
 	case SCT_ACK_RESET_READY:
 		break;
-	case SCT_ACK_FAR_DONE:
-		// The frame (or the call's last one) has gone to the far end
+	case SCT_ACK_FAR_DONE: {
+		// The frames sent have gone on the air. After the last one (a slot after it at the soonest, so not an
+		// earlier frame's) that ends the transmission, also when it comes before the drain
+		bool last = s.tx == TX_DRAIN || (s.tx == TX_ENDING && s.q_count == 0);
+
 		frame_taken();
-		if (s.tx == TX_DRAIN)
+		if (last && (int32_t)(s.now - s.sent_ms) >= SCT_DMR_SLOT_MS)
 			tx_finish();
 		break;
+	}
 	default:
 		s.st.naks++;
 		s.st.last_nak = code;

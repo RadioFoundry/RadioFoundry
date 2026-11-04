@@ -274,7 +274,8 @@ def test_dmr_tx_bursts_clean(radio, sdr_bench, pytestconfig):
     """Every burst of an over decodes clean on the bench (bursts decoded there, no raw I/Q): each voice LC header
     and the terminator pass BPTC and RS with at most DATA_BITS_MAX bits corrected, and the voice bursts carry at most
     VOICE_BITS_MAX bit errors on average. A PA switched off before the burst's modulation ended left 16 to 25 bit
-    errors in the last 4 ms of every header and terminator, while the voice still decoded."""
+    errors in the last 4 ms of every header and terminator, while the voice still decoded. The headers go 60 ms
+    apart."""
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     if not sdr_bench.can_watch(freq):
         skip("bench", f"the SDR bench can't decode bursts on {freq} MHz (no shared daemon, or outside its window)")
@@ -291,6 +292,10 @@ def test_dmr_tx_bursts_clean(radio, sdr_bench, pytestconfig):
     print(f"{len(voice)} voice bursts, bit errors {errs}")
     assert [r["kind"] for r in data].count("VLC_HDR") >= 1, f"no voice LC header decoded ({len(rows)} bursts)"
     assert data[-1]["kind"] == "TERM_LC", "no terminator after the voice"
+    # The headers go one per slot of ours, 60 ms apart (they went a slot in four when each waited for its answer)
+    hdr = [r["t_rel_ms"] for r in data if r["kind"] == "VLC_HDR"]
+    gaps = [round(b - a) for a, b in zip(hdr, hdr[1:])]
+    assert all(abs(g - 60) <= 2 for g in gaps), f"voice LC headers {gaps} ms apart, not 60"
     bad = [f"{r['kind']} at {r['t_rel_ms']:.0f} ms: {r['fec']}" for r in data
            if not r["fec"].get("fec_ok") or (r["fec"].get("bit_err_est") or 0) > DATA_BITS_MAX]
     assert not bad, "LC bursts with FEC errors: " + "; ".join(bad)

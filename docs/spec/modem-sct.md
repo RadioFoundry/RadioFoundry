@@ -178,14 +178,17 @@ modem task can both call in. No RTOS calls and no waits: the host tests run the 
 
 1. `tx_begin`: the board's `codec_tx` (when given), then WORK_MODE transmit, DMR_CALL_SLOT
    `0x80 | aligned 0x40 | slot`. The queue holds 8 bursts.
-2. Each frame is sent, then the engine waits for its answer (`43 00` or ACK 0x0A). The next frame goes at least
-   60 ms after the one before.
-3. A frame unanswered for `SCT_DMR_ACK_MS` (300 ms) is dropped and counted; a NAK frees the slot.
+2. Each frame is sent, then the engine waits for its answer (`43 00` or ACK 0x0A), at most a slot (60 ms). The next
+   frame goes 60 ms after the one before. A chip may answer no frame with `43 00` and send ACK 0x0A only once its
+   frames are on the air, about two slots after the send and once for frames sent back to back: waiting for that
+   answer put the voice LC headers one slot in four (measured).
+3. A frame unanswered within its slot is counted (`tx_timeouts`); a NAK frees the slot at once.
 4. Voice: the first voice burst of a call (and burst A after `set_embedded_lc`) sends `43 11 09 LC`. Later voice
    bursts carry nothing for the chip; they are taken one per 60 ms and reported as sent. The PROP must be 0x11 (a
    voice burst, data type 1): the chip answers 0x10 with ACK 0x01 and then sends no traffic at all, though it keys its
    burst timing (the LC headers before it are acknowledged as sent but never go on the air).
-5. `TX_DONE` comes on ACK 0x0A after the last frame, or `SCT_DMR_DONE_MS` (600 ms) after it. Then WORK_MODE
+5. `TX_DONE` comes on the first ACK 0x0A at least a slot after the last frame (an earlier one is another frame's),
+   also when it comes before the queue has drained, or `SCT_DMR_DONE_MS` (600 ms) after it. Then WORK_MODE
    receive. `tx_abort` goes back to receive without `TX_DONE`.
 6. After `codec_tx`, the return to receive (`TX_DONE`, `tx_abort`, `stop`) sends the board's `codec_rx` once,
    after WORK_MODE.
