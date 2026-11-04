@@ -1047,8 +1047,19 @@ static void test_rx_filters(void)
 	CHECK(V()->caller.src == 2345678);
 }
 
-// A parrot answers a while after our call ends, from our own ID (#294): it plays, with and without hear all, and a
-// call from our ID with no call of ours before it (a cloned ID) plays too
+// Our call, ended: back to idle, so a call heard next is judged by the echo window, not as heard while keyed
+static void own_call_then_idle(void)
+{
+	dmr_call_ptt(true);
+	run_ms(300);
+	dmr_call_ptt(false);
+	for (int i = 0; i < 100 && V()->state != DMR_CALL_STATE_IDLE; i++)
+		run_ms(10);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE);
+}
+
+// A parrot answers a while after our call ends, from our own ID (#294): it plays, with and without hear all, its
+// terminator ends it, and a call from our ID with no call of ours before it (a cloned ID) plays too
 static void test_rx_own_id_parrot(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -1058,13 +1069,12 @@ static void test_rx_own_id_parrot(void)
 	for (int hear_all = 0; hear_all < 2; hear_all++) {
 		c.listen.hear_all = hear_all;
 		setup(&c);
-		dmr_call_ptt(true);
-		run_ms(300);
-		dmr_call_ptt(false);
+		own_call_then_idle();
 		run_ms(1000);
 		mk_lc(lc, 0, TG_TALK, OWN_ID);
-		rx_call(lc, 1, true, 0, 1, true, &frame);	// seconds after our terminator
+		rx_call(lc, 1, true, 0, 1, true, &frame);	// a second after our terminator
 		CHECK(sink_log.begins == 1);
+		CHECK(sink_log.ends == 1 && V()->state == DMR_CALL_STATE_IDLE);
 	}
 	c.listen.hear_all = false;
 
@@ -1072,15 +1082,30 @@ static void test_rx_own_id_parrot(void)
 	setup(&c);
 	mk_lc(lc, 0, TG_LIST, OWN_ID);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
+	CHECK(sink_log.begins == 1 && sink_log.ends == 1);
+
+	// The repeater's echo right behind our terminator is still dropped; just after the window it plays
+	setup(&c);
+	own_call_then_idle();
+	run_ms(DMR_CALL_OWN_ECHO_MS - 100);
+	mk_lc(lc, 0, TG_TALK, OWN_ID);
+	rx_call(lc, 1, true, 0, 1, true, &frame);
+	CHECK(sink_log.begins == 0);
+	setup(&c);
+	own_call_then_idle();
+	run_ms(DMR_CALL_OWN_ECHO_MS + 50);
+	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 1);
 
-	// The repeater's echo right behind our terminator is still dropped
+	// A call cut short (the modem refused a burst) is echoed as well: dropped
 	setup(&c);
 	dmr_call_ptt(true);
 	run_ms(300);
+	sim.reject_next = true;
+	run_ms(60);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED);
 	dmr_call_ptt(false);
-	run_ms(600);
-	mk_lc(lc, 0, TG_TALK, OWN_ID);
+	run_ms(100);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 0);
 }

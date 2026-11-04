@@ -998,8 +998,9 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			dmr_lc_t l;
 
 			dmr_lc_unpack(lc, &l);
-			if (l.src == s.cfg.own_id)
-				break;	// our own terminator echoed by the repeater
+			// Our own terminator echoed by the repeater ends only a call from our ID with its LC: a parrot's (#294)
+			if (l.src == s.cfg.own_id && memcmp(lc, s.call_lc, DMR_LC_BYTES) != 0)
+				break;
 			// Through a repeater only the call's own terminator ends it (the timeout does the rest)
 			if (s.cfg.rmo && memcmp(lc, s.call_lc, DMR_LC_BYTES) != 0)
 				break;
@@ -1071,6 +1072,10 @@ static void tx_deny(uint8_t err)
 	stats.tx_denied++;
 	if (s.tx == TX_WAKE || s.tx == TX_ON || s.tx == TX_END)
 		s.modem->tx_abort();
+	if (s.tx == TX_ON || s.tx == TX_END) {	// the bursts already sent are still echoed by the repeater
+		s.tx_end_ms = s.now;
+		s.tx_end_seen = true;
+	}
 	if (s.tx == TX_ON)
 		source_end();
 	s.tx = s.ptt ? TX_DENIED : TX_NONE;
