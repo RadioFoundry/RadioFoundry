@@ -967,8 +967,14 @@ static void test_tone_lists(void)
 	CHECK(t.type == TONE_NONE);
 	t = tones_step(&(subtone_t){ TONE_CTCSS, 2541 }, 1);
 	CHECK(t.type == TONE_DCS && t.value == 023);
-	t = tones_step(&(subtone_t){ TONE_DCS, 0754 }, 1);
+	t = tones_step(&(subtone_t){ TONE_DCS, 023 }, 1);
 	CHECK(t.type == TONE_DCS_INV && t.value == 023);
+	t = tones_step(&(subtone_t){ TONE_DCS_INV, 023 }, 1);
+	CHECK(t.type == TONE_DCS && t.value == 025);
+	t = tones_step(&(subtone_t){ TONE_DCS, 025 }, -1);
+	CHECK(t.type == TONE_DCS_INV && t.value == 023);
+	t = tones_step(&(subtone_t){ TONE_DCS, 0754 }, 1);
+	CHECK(t.type == TONE_DCS_INV && t.value == 0754);
 
 	// A non-standard tone steps to its neighbors
 	subtone_t odd = { TONE_CTCSS, 1500 };
