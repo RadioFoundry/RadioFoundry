@@ -903,7 +903,7 @@ voltage is the generic `supply_mv` key instead (`hal_power_t.supply_mv`; the div
 | `pin.power`, `pin.c5`, `pin.r5`, `pin.tx` | output levels: Power_Control; C5 UHF and VHF; R5 UHF and VHF; T5 UHF, T5 VHF and the PA loop enable (`000` in this build) |
 | `adc.noise_u`, `adc.noise_v`, `adc.rssi_u`, `adc.rssi_v`, `adc.mic`, `adc.supply`, `adc.mic_row`, `adc.mic_col` | the ADC1 scan, raw 12-bit (10.3) |
 | `c6000`, `c6000.dmr`, `c6000.errors`, `c6000.tx_refused` | the HR_C6000 answered after set-up (with 4:0x10), in DMR, failed transfers, bursts the RF switch refused |
-| `speaker` | bit 0 amplifier on, bit 1 FM audio through, bit 2 codec line out |
+| `speaker` | bit 0 amplifier on, bit 1 FM audio through, bit 2 codec line out, bit 3 amplifier held warm (`speaker_hang_s`) |
 | `mic_key` | the hand-mic key decoded on the last scan, 255 for none |
 | `gps`, `gps.baud`, `gps.nmea` | module heard; the rate listened at (0 once given up); valid / bad sentences / bytes |
 | `subtone` | the sub-audio decoder (`CONFIG_SUBTONE`): samples fed / rate; the input's rms and mean over 0.11 s (12-bit counts); the tone kind (0 none, 1 CTCSS, 2 DCS, 3 DCS inverted); match; an ADC or DMA fault |

@@ -64,7 +64,7 @@ static bool audio_line(uint8_t i, char *buf, uint8_t len)
 	case 3:		// DMR bursts the RF switch would not key (0 unless something asked to transmit)
 		dl_fmt(buf, len, "c6000.tx_refused=%u", (unsigned)c.tx_refused);
 		return true;
-	case 4:		// bit 0 amplifier on, bit 1 FM audio through, bit 2 codec line out
+	case 4:		// bit 0 amplifier on, bit 1 FM audio through, bit 2 codec line out, bit 3 held warm
 		dl_fmt(buf, len, "speaker=%u", c.speaker);
 		return true;
 	case 5:		// the hand-mic key decoded on the last scan, 255 for none (the md9600.h key number)

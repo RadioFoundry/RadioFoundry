@@ -24,6 +24,11 @@ typedef struct {
 	// Silence (ms) a beep's own stream plays with the speaker routed before the tone, while the amplifier comes up;
 	// 0 = one block (20 ms). An amplifier that unmutes slowly needs more, or short beeps are lost
 	uint8_t speaker_lead_ms;
+	// Keep the amplifier powered with nothing routed to it (silent), so a sound that follows needs no lead-in. The
+	// core holds it on for speaker_hang_s after the last key, PTT, reception or beep (0 or NULL: never; a battery
+	// radio leaves it 0 unless its amplifier is slow too)
+	void (*speaker_warm)(bool on);
+	uint8_t speaker_hang_s;
 } hal_audio_t;
 
 #endif

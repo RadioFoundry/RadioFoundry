@@ -105,7 +105,7 @@ static void ref_offset(uint32_t hz)
 
 // Two callers: the core's FM squelch (md9600_speaker_fm, radio task) and PCM (speaker_pcm, the audio task or the radio
 // task). The mutex keeps their register and pin writes from interleaving
-static bool fm_wanted, pcm_wanted, band_vhf;
+static bool fm_wanted, pcm_wanted, band_vhf, warm_wanted;
 static SemaphoreHandle_t speaker_lock;
 
 // The codec DAC to the line out (4:0xE2 bit 1); in DMR also the codec under MCU control (4:0xE0 = 0xC9) with the I2S
@@ -130,7 +130,7 @@ static void speaker_apply(void)
 	if (locked) {
 		xSemaphoreTake(speaker_lock, portMAX_DELAY);
 	}
-	md9600_speaker_t s = md9600_speaker_lines(fm_wanted, pcm_wanted, diag.dmr, band_vhf);
+	md9600_speaker_t s = md9600_speaker_lines(fm_wanted, pcm_wanted, diag.dmr, band_vhf, warm_wanted);
 	if (s.af_mute) {
 		PIN_WRITE(PIN_AF_MUTE, true);	// mute first, then switch
 	}
@@ -142,7 +142,8 @@ static void speaker_apply(void)
 	if (!s.af_mute) {
 		PIN_WRITE(PIN_AF_MUTE, false);	// switch first, then unmute
 	}
-	diag.speaker = (uint8_t)((s.af_mute ? 0u : 1u) | (s.fm_pass ? 2u : 0u) | (s.codec_out ? 4u : 0u));
+	diag.speaker = (uint8_t)((s.af_mute ? 0u : 1u) | (s.fm_pass ? 2u : 0u) | (s.codec_out ? 4u : 0u) |
+				 (warm_wanted ? 8u : 0u));
 	if (locked) {
 		xSemaphoreGive(speaker_lock);
 	}
@@ -414,10 +415,21 @@ static void speaker_pcm(bool on)
 	speaker_apply();
 }
 
+// The radio core's amplifier hang (hal_audio_t.speaker_warm): the amplifier on with no source through it
+static void speaker_warm(bool on)
+{
+	if (on == warm_wanted) {
+		return;
+	}
+	warm_wanted = on;
+	speaker_apply();
+}
+
 // The amplifier takes about 60 ms from unmute to sound (by a microphone at the speaker: with the default 20 ms lead-in
-// a lone 25 or 40 ms beep was lost and longer ones lost their start; with 80 ms every beep plays whole)
+// a lone 25 or 40 ms beep was lost and longer ones lost their start; with 80 ms every beep plays whole). A mobile on
+// a supply: the amplifier stays up for 30 s after the last key, PTT, reception or beep, so those play at once
 const hal_audio_t md9600_audio = { .start = audio_start, .stop = stm32_i2s_pcm_stop, .speaker_pcm = speaker_pcm,
-				   .speaker_lead_ms = 80 };
+				   .speaker_lead_ms = 80, .speaker_warm = speaker_warm, .speaker_hang_s = 30 };
 #endif
 
 #if CONFIG_AUDIO_PROBE

@@ -97,11 +97,40 @@ void beep_init(const hal_audio_t *audio)
 	aud = audio;
 }
 
+// The amplifier held powered (beep_warm): since when, until when, and the last poll's time
+static bool warm_on;
+static uint32_t warm_since, warm_until, last_now;
+static volatile uint8_t lead_target = 1;	// lead-in blocks for the pattern requested last (beep_play)
+
 static uint8_t lead_blocks(void)
 {
 	uint32_t ms = aud != NULL ? aud->speaker_lead_ms : 0;
+	// Warm for at least the lead: the amplifier is up already, one block is enough for the route to settle
+	if (warm_on && last_now - warm_since >= ms) {
+		return 1;
+	}
 	uint32_t n = (ms + AUDIO_BLOCK_MS - 1u) / AUDIO_BLOCK_MS;
 	return (uint8_t)(n == 0 ? 1u : n > LEAD_BLOCKS_MAX ? LEAD_BLOCKS_MAX : n);
+}
+
+void beep_warm(uint32_t now_ms)
+{
+	last_now = now_ms;
+	if (aud == NULL || aud->speaker_warm == NULL || aud->speaker_hang_s == 0) {
+		return;
+	}
+	warm_until = now_ms + (uint32_t)aud->speaker_hang_s * 1000u;
+	if (!warm_on) {
+		warm_on = true;
+		warm_since = now_ms;
+		stats.warms++;
+		aud->speaker_warm(true);
+	}
+}
+
+bool beep_warm_on(void)
+{
+	return warm_on;
 }
 
 uint8_t beep_pattern(beep_t b, const beep_seg_t **segs)
@@ -130,6 +159,8 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 	}
 	req_pattern = (uint8_t)b;
 	req_level = level > 100 ? 100 : level;
+	lead_target = lead_blocks();	// before the warm below: an amplifier only just powered still needs the lead
+	beep_warm(last_now);		// a beep is a sound: the amplifier stays up for the next one
 	STORE(req_seq, (uint8_t)(req_seq + 1));
 	if (shared) {
 		stats.shared++;
@@ -158,8 +189,15 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 	stats.played++;
 }
 
-void beep_service(bool shared)
+void beep_service(bool shared, uint32_t now_ms)
 {
+	last_now = now_ms;
+	if (warm_on && (int32_t)(now_ms - warm_until) >= 0) {
+		warm_on = false;
+		if (aud != NULL && aud->speaker_warm != NULL) {
+			aud->speaker_warm(false);
+		}
+	}
 	if (!own_stream) {
 		return;
 	}
@@ -263,7 +301,7 @@ void beep_audio_block(const int16_t *mic, int16_t *spk, void *ctx)
 	cb_blocks++;
 	memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
 	bool on;
-	if (cb_lead < lead_blocks() && beep_busy()) {
+	if (cb_lead < lead_target && beep_busy()) {
 		cb_lead++;
 		stats.leads++;
 		on = true;	// silence: the route settles before the tone
