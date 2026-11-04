@@ -86,7 +86,9 @@ Symptom: with a call on each slot, the wanted call went quiet with the other cal
 played; HIL 2026-11-04 on the HR_C5000). Cause: page 2 holds the embedded LC (or alias or GPS block) the chip
 assembled last, of either slot, so at one call's F it held the other's, and the core took it for a new call. Rule:
 keep each slot's call LC and check every embedded LC against both before handing it over; only voice LCs (FLCO 0, 3)
-become a slot's call LC, and alias and GPS blocks wait while the other slot is busy. Forget the slots on a new
+become a slot's call LC, and alias and GPS blocks wait while the other slot is busy. While a slot's call goes on,
+never hand over another LC beside a call that may go on: page 2 can hold a mix of both that passes the 5-bit
+checksum, steady for as long as both talk (bench, the same day). Forget the slots on a new
 frequency or channel. Rules: [modem-hrc6000.md](modem-hrc6000.md) 5.2. Radios: HR_C6000, HR_C5000.
 
 **1.9 Restore reg 0x10 to the driver's value, not the init value.**

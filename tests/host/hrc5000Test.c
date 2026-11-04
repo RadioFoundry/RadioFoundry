@@ -692,7 +692,8 @@ typedef struct {
 				// 1, 3, 5... (2) instead of its LC (0 never)
 	bool same;		// both calls have the same LC (a group bridged to both slots)
 	int talker_at;		// step from which TS1's call has another talker, with no header (0 never)
-	int mix_sf;		// TS2's superframe after which page 2 holds a mix of both calls' LCs, once (0 never)
+	int mix_sf;		// TS2's superframe after which page 2 holds a mix of both calls' LCs, once (0 never); below
+				// 0, page 2 holds the mix after every F from step -mix_sf on
 } two_opts_t;
 
 typedef struct {
@@ -747,7 +748,7 @@ static void two_lc_mix(uint8_t lc[9])
 // Page 2 after the F of superframe sf of the call on ts, at step k
 static void two_page2(int ts, uint32_t sf, int k, uint8_t lc[9])
 {
-	if (ts == 2 && two_o->mix_sf > 0 && sf == (uint32_t)two_o->mix_sf) {
+	if ((ts == 2 && two_o->mix_sf > 0 && sf == (uint32_t)two_o->mix_sf) || (two_o->mix_sf < 0 && k >= -two_o->mix_sf)) {
 		two_lc_mix(lc);
 	} else if (two_o->alias != 0 && sf % 2u == (uint32_t)(two_o->alias - 1)) {
 		two_alias(ts, lc);
@@ -1051,11 +1052,11 @@ static void test_two_slots(void)
 	TWO_CHECK("new frequency, same call", r, r.heard[1] > 0 && r.lc_own[1] > 0);
 
 	// A TS2 call that ended with no terminator heard, then a TS1 call with its headers whose talker changes with no
-	// header: TS2 is no longer busy, so the next talker's LC is handed over
+	// header and no gap: TS2's call may go on unseen, so the new LC may be a mix of the two and TS1 keeps its own
 	two_call_t ts2n = { 20, 30, -1, 30, 60 };
 	two_call_t ts1n = { 80, 90, -1, 90, 240 };
 	r = two_slots(&ts1n, &ts2n, 260, &talker);
-	TWO_CHECK("next talker after the other call", r, r.heard[1] == r.sent[1] && r.lc_new[1] > 0);
+	TWO_CHECK("next talker after the other call", r, r.heard[1] == r.sent[1] && r.lc_own[1] > 0 && r.lc_new[1] == 0);
 	// ... and a TS1 call with the ended TS2 call's LC, joined by late entry (the same group re-keyed on the other
 	// slot): page 2 shows only that LC at TS1's F, so it is TS1's too after SLOT_LC_ADOPT_READS superframes
 	two_call_t ts1o = { 0, 0, 124, 120, 260 };
@@ -1073,6 +1074,13 @@ static void test_two_slots(void)
 	const two_opts_t mix2 = { 0, 0, 0, 1, 0, 0, false, 0, 9 };
 	r = two_slots(&ts1, &ts2, 260, &mix2);
 	TWO_CHECK("headers, a mixed LC", r, r.lc_mix[1] == 0 && r.heard[1] == r.sent[1] && r.lc_own[1] > 0);
+	// ... and on a repeater channel (TS2's voice unseen, so its busy window lapses) a mix that stays in page 2 from
+	// mid-call on (bench, 2026-11-04): TS1 keeps the LC its headers gave
+	const two_opts_t mix3 = { 0, 0, 0, 1, 0, 0, false, 0, -160 };
+	two_call_t ts2s = { 20, 30, -1, 30, 330 };
+	two_call_t ts1s = { 80, 90, -1, 90, 330 };
+	r = two_slots(&ts1s, &ts2s, 340, &mix3);
+	TWO_CHECK("headers, a mix that stays", r, r.lc_mix[1] == 0 && r.heard[1] == r.sent[1]);
 }
 
 int main(void)

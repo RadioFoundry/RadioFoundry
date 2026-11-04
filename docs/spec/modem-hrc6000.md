@@ -307,7 +307,7 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   | This slot's open call's LC | Yes, even when the other slot's call has the same LC (a group on both slots) |
   | The other slot's call's LC, while that call may go on | No, unless this slot has no call of its own and 8 of its F reads in a row showed only that LC (then it is this call's too: a group on both slots, or the other call over unseen) |
   | Another voice LC, the other slot idle | Yes: this slot's next talker (no header, a terminator missed) |
-  | Another voice LC, the other slot's call maybe going on | No while each slot has a different call and the other is busy (it may be the other slot's next talker). Otherwise only when read again a superframe later, so such a call gets its LC about 360 ms later. Page 2 once held a mix of both calls' LCs (bench, 2026-11-04: a source and talk group neither call had); the embedded LC has only a 5-bit checksum, so about 1 mix in 32 passes it |
+  | Another voice LC, the other slot's call maybe going on | No while this slot's call goes on (voice within the last superframe): its talker can't change without a gap, and a mix of both calls stays in page 2 for as long as both talk (bench, 2026-11-04). Otherwise only when read again a superframe later, so such a call gets its LC about 360 ms later. Page 2 held a mix of both calls' LCs (bench, 2026-11-04: a source and talk group neither call had, from 2.2 s into the call on every run); the embedded LC has only a 5-bit checksum, so about 1 mix in 32 passes it |
   | A talker alias or GPS block (other FLCOs) | Only when the other slot isn't busy. Never kept as a slot's call LC |
 
   A slot is busy for 2.2 s (6 superframes) after its header, voice or LC was last taken, or its LC last seen in page
@@ -326,7 +326,8 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   time. A call joined by late entry beside another call whose own LC isn't found at A, F's repeat or the post-access
   interrupt within 8 superframes (a weak signal, CRC errors) takes the other call's LC: its caller and talk group show
   (and the talk group filter uses them) until its own LC comes. Before this rule it took the other call's LC at once.
-  A call with the other slot's LC gets its embedded LC only after those 8 superframes (2.9 s).
+  A call with the other slot's LC gets its embedded LC only after those 8 superframes (2.9 s). A talker change with
+  no header and no gap while the other slot's call may go on keeps the first talker's LC until the voice pauses.
 - **LC trace** (for the bench): every look at page 2 until the reception's LC is handed over is logged, with the ticks
   since the capture, the voice bursts taken and page 2's source ID. Debug link log lines
   `dle cap<how> <src>` (how: `0` status report, `A` lone burst A, `T` burst taken) and

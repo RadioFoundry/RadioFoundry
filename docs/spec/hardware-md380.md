@@ -386,7 +386,18 @@ call's LC was in page 2 at the wanted call's F: the core took it for a new call,
 the other call's source shown (23 of 78 bursts when the wanted call started first). The engine keeps each slot's
 call LC and holds back an embedded LC that is the other slot's call's (the rules are in modem-hrc6000.md 5.2).
 Host-tested (`test_two_slots`, the `LC`, `alias` and `mixed LC` cases: page 2 gets a call's LC or alias block the
-tick after its F). On air: see the bench results in PR 364.
+tick after its F). On air (2026-11-04, the SDR bench, a call on each slot, 78 bursts sent to the wanted slot, two
+runs each):
+
+| Case | Before | After |
+|---|---|---|
+| Wanted call first, the other starts beside it | 23 | 78, 78 (both slots) |
+| Other call first, wanted call with its headers | 75-77, TS2 once 13-19 | 73-77 (both slots) |
+| Wanted call joined mid-stream (no header) beside the other, TS1 | 0 played | 56-57 |
+| Single call: headers, late entry, no header | 77-78, 38, 68 | the same |
+
+Left as they were: both calls joined at once after a channel switch (0-20 bursts) and TS2 joined mid-stream beside a
+call (0) play as before.
 
 On air with this (2026-10-18): calls are taken with the caller and talk group, and 393 frames reached the codec with
 2 bit errors in all. The decoded audio is speech (peak 3521 of 32767) and streams to the chip (`aud blk` climbing),
