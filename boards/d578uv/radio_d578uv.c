@@ -32,10 +32,10 @@
 // bands.
 //
 // DMR transmit (5.1): tx() keys chip 0 once with the digital set and it stays keyed until tx_off(); only the PA follows
-// the bursts. The baseband's burst line PD0 interrupts on both edges (EXTI 0): high turns the DAC and PE6 on, low the
-// DAC off at once and PE6 after an 800 us one-shot on TIM2, the stock firmware's timer and period. The core calls
-// tx() before the call stack starts the modem's transmission, so the RF is keyed before the baseband gets
-// DMR_CALL_SLOT with the transmit bit, the stock order.
+// the bursts, from the baseband's burst line PD0 (EXTI 0, both edges) and a one-shot on TIM2 (pa_gate.h): the DAC and
+// PE6 on 5.75 ms after PD0 rises, the DAC off 5 ms after it falls and PE6 800 us later, because the burst's modulation
+// lags PD0 by that much. The core calls tx() before the call stack starts the modem's transmission, so the RF is keyed
+// before the baseband gets DMR_CALL_SLOT with the transmit bit.
 //
 // Around the chips: the 8-bit shift register (PE3 data, PE4 clock) switches the audio and RF paths, PE6 enables the
 // transmitter, PA7 mutes the speaker, the two-wire level device on PA13/PA14 sets the speaker level (SWD is off while
@@ -807,8 +807,6 @@ static void pa_off(void)
 #define BURST_LINE		(1u << 0)		// EXTI 0: PD0
 #define BURST_TIM_N		2u			// TIM2 (the GD32 manual's TIMER1)
 #define BURST_TIMER		MCU_TIM(BURST_TIM_N)
-// PE6 stays on this long after a burst's end: the stock TIM2 at 120 MHz, prescaler 0x77 and period 0x31F
-#define BURST_TAIL_US		800u
 // Above the RTOS's syscall level: the handlers make no RTOS calls, and a critical section mustn't delay the PA edge
 #define BURST_IRQ_PRIORITY	3
 
@@ -817,6 +815,7 @@ static void pa_off(void)
 static volatile bool burst_keyed;
 static volatile uint16_t burst_dac;	// the DAC word while a burst goes out
 static volatile uint32_t burst_count;	// rising edges while keyed (diag_d578uv.c)
+static pa_phase_t burst_phase;		// the handlers' (one priority, so neither interrupts the other)
 static uint32_t burst_refused;		// key-ups refused with the burst line high (pa_gate_can_key)
 
 static void burst_timer_stop(void)
@@ -825,19 +824,26 @@ static void burst_timer_stop(void)
 	MCU_TIM_SR(BURST_TIMER) = 0;
 }
 
+// The one-shot from now: the period loaded at once (UG, which URS keeps from interrupting)
+static void burst_timer_start(uint16_t us)
+{
+	MCU_TIM_CR1(BURST_TIMER) &= ~MCU_TIM_CR1_CEN;
+	MCU_TIM_ARR(BURST_TIMER) = us - 1u;
+	MCU_TIM_EGR(BURST_TIMER) = MCU_TIM_EGR_UG;
+	MCU_TIM_SR(BURST_TIMER) = 0;
+	MCU_TIM_CR1(BURST_TIMER) |= MCU_TIM_CR1_CEN;
+}
+
 // From the handlers and, with them masked, the task: plain register writes
 static void burst_apply(pa_gate_t a)
 {
 	switch (a) {
 	case PA_GATE_ON:
-		burst_timer_stop();
 		mcu_dac0_put(burst_dac);
 		mcu_pin_write(PIN_TX_ENABLE, true);
 		break;
 	case PA_GATE_DOWN:
 		mcu_dac0_put(0);
-		MCU_TIM_CNT(BURST_TIMER) = 0;
-		MCU_TIM_CR1(BURST_TIMER) |= MCU_TIM_CR1_CEN;
 		break;
 	case PA_GATE_OFF:
 		burst_timer_stop();
@@ -849,24 +855,40 @@ static void burst_apply(pa_gate_t a)
 	}
 }
 
+static void burst_step(pa_step_t st)
+{
+	if (st.timer_us != 0) {
+		burst_timer_start(st.timer_us);
+	} else if (st.act != PA_GATE_OFF) {
+		burst_timer_stop();
+	}
+	burst_apply(st.act);
+}
+
 void MCU_EXTI0_HANDLER(void)
 {
 	mcu_exti_clear(BURST_LINE);
-	pa_gate_t a = pa_gate_edge(burst_keyed, mcu_pin_read(PIN_DMR_TX_BURST));
-	if (a == PA_GATE_ON) {
+	bool burst = mcu_pin_read(PIN_DMR_TX_BURST);
+	pa_phase_t was = burst_phase;
+	pa_step_t st = pa_gate_edge(&burst_phase, burst_keyed, burst);
+
+	if (burst_phase == PA_RISING && was != PA_RISING) {
 		burst_count++;
 	}
-	burst_apply(a);
+	if (st.act == PA_GATE_NONE && st.timer_us == 0) {
+		return;		// a repeat: the running delay stays
+	}
+	burst_step(st);
 }
 
 void MCU_TIM2_HANDLER(void)
 {
 	MCU_TIM_SR(BURST_TIMER) = 0;
-	burst_apply(pa_gate_timer(burst_keyed, mcu_pin_read(PIN_DMR_TX_BURST)));
+	burst_step(pa_gate_timer(&burst_phase, burst_keyed));
 }
 
 // PD0 an input with pull-up (the stock set-up) on EXTI 0, both edges, its interrupt off until a key-up; TIM2 a
-// one-shot of BURST_TAIL_US
+// one-shot in 1 us ticks, its period set at each start
 static void burst_init(void)
 {
 	mcu_pin_in(PIN_DMR_TX_BURST, MCU_PULL_UP);
@@ -880,7 +902,7 @@ static void burst_init(void)
 	mcu_tim_clock_on(BURST_TIM_N);
 	MCU_TIM_CR1(BURST_TIMER) = MCU_TIM_CR1_URS | MCU_TIM_CR1_OPM;
 	MCU_TIM_PSC(BURST_TIMER) = SystemCoreClock / 1000000u - 1u;	// 1 us ticks (the timer clock is the core's)
-	MCU_TIM_ARR(BURST_TIMER) = BURST_TAIL_US - 1u;
+	MCU_TIM_ARR(BURST_TIMER) = PA_TAIL_US - 1u;
 	MCU_TIM_EGR(BURST_TIMER) = MCU_TIM_EGR_UG;			// load them; URS keeps it from interrupting
 	MCU_TIM_SR(BURST_TIMER) = 0;
 	MCU_TIM_DIER(BURST_TIMER) = MCU_TIM_DIER_UIE;
@@ -893,6 +915,7 @@ static void burst_arm(uint16_t dac_word)
 	burst_dac = dac_word;
 	mcu_exti_clear(BURST_LINE);
 	__disable_irq();
+	burst_phase = PA_IDLE;
 	burst_keyed = true;
 	mcu_exti_enable(BURST_LINE);	// an edge from here on is pending: it follows
 	__enable_irq();
