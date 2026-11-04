@@ -460,16 +460,24 @@ values in DMR receive the baseband finds sync but few bursts decode (a strong co
 six); with the digital ones every burst decodes (d578uv-bringup.md, status 8).
 
 Transmit keys the RF chips once, before the baseband gets `DMR_CALL_SLOT` with the transmit bit, and keeps them in
-transmit for the whole call; the digital set carries over. Per burst only the PA is switched: PD0's rising edge turns
-PE6 and PA4's DAC on, its falling edge off, PE6 after a short timer delay. At the end the baseband gets `WORK_MODE`
-and `DMR_CALL_SLOT` 0x10, then the RF goes back to receive.
+transmit for the whole call; the digital set carries over. Per burst only the PA is switched, from PD0 (`pa_gate.h`).
+At the end the baseband gets `WORK_MODE` and `DMR_CALL_SLOT` 0x10, then the RF goes back to receive.
+
+PD0 is high for 30.0 ms per burst, but the burst's modulation lags it: it starts 7.0 ms after the rising edge and ends
+4.5 ms after the falling edge (measured on the bench by the sync's position in the RF envelope, the same on every
+burst). A PA that followed PD0 keyed 5.75 ms into the slot before and cut off the burst's last 4 ms: every LC header
+and terminator came out with 16 to 25 bit errors in its last 21 symbols, and voice bursts with 1 to 6. So the PA
+follows PD0 late: the DAC and PE6 on 5.75 ms after the rising edge, the DAC off 5 ms after the falling edge and PE6
+800 us later. The RF is then on from 1.25 ms before the burst to about 1 ms after it, and every burst decodes with 0
+bit errors. `DMR_OFFSET` (offsets 0, 0x82 and 0xFF, length 1200) and `MODOUT_CONFIG` byte 1 (0x00, 0x28) moved
+neither PD0 nor the modulation.
 
 | Step | Stock firmware | RadioFoundry (`radio_d578uv.c`) |
 | --- | --- | --- |
 | Key-up | chips off, chip 0 to the TX frequency, 0x28 output stage, 0x18 = 0x4125, page 1 0x17 = 0x0AA8, sub-audio off, drive 0x40 = 0, 0x47, 0x03 = 0xC1FE, GPIO bit 5 above 300 MHz, 10 ms | the same, with the digital set rewritten first (`qa4818_dmr_tx`) |
 | PA level | the FM transmit's calibrated DAC value | the same |
 | PD0 | input with pull-up, EXTI 0 both edges, enabled at start-up; the handler ignores it unless transmitting | the same; the interrupt is on only while keyed |
-| PE6 tail | PD0 low: the PA DAC to 0 and TIMER1 started, one-shot, period 0x77 and prescaler 0x31F: 800 us at the 120 MHz timer clock. At its end PE6 is cleared only if PD0 is still low | TIMER1 one-shot, 800 us |
+| PE6 tail | PD0 low: the PA DAC to 0 and TIMER1 started, one-shot, period 0x77 and prescaler 0x31F: 800 us at the 120 MHz timer clock. At its end PE6 is cleared only if PD0 is still low | TIMER1 one-shot: on 5.75 ms after PD0 rises, the DAC to 0 5 ms after it falls, PE6 800 us later |
 | A burst under way at key-up | on a digital channel PE6 set at once only if PD0 is already high (an FM channel sets it at once without reading PD0) | the key-up is refused, a deliberate difference: the baseband has not been told to transmit yet, so a high PD0 is a line nobody drives (it floats high on the pull-up) or the opposite polarity; only a rising edge turns the PA on |
 | PC4 | set at a burst in some baseband states when two frequencies (not traced which) are on the same side of 300 MHz | not driven (as in FM) |
 
