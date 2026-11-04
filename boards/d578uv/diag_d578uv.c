@@ -114,10 +114,17 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " ");
 		put_u(&o, mcu_adc_read(ADC_VOL_B));
 		break;
-	case 4:
+	case 4: {
+		uint8_t fqca = 0;
+		char copy = d578uv_cal_copy(&fqca);
 		put(&o, "nand ");
 		put_x(&o, d578uv_nand_id(), 4);
+		put(&o, copy == 'A' ? " cal A fqca " : copy == 'B' ? " cal B fqca " : " cal none");
+		if (copy != 0) {
+			put_x(&o, fqca, 2);
+		}
 		break;
+	}
 	case 5: {
 		// Bursts the gate switched the PA on for, and key-ups refused with the burst line already high
 		put(&o, "burst ");

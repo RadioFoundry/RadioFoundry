@@ -90,6 +90,8 @@ uint8_t d578uv_mic_level(void);	// hal_power_t.mic_level: chip 0's voice amplitu
 void d578uv_rx_raw(uint16_t *rssi, uint16_t *noise, bool *signal);
 // Diagnostics page lines (diag_d578uv.c)
 bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len);
+// The calibration copy in use: 'A', 'B' or 0 for none; *fqca the UHF block's byte 0 (radio_d578uv.c)
+char d578uv_cal_copy(uint8_t *fqca);
 void d578uv_diag_reset(void);
 #if CONFIG_DTMF
 // The DTMF pair on PB9 (tone_d578uv.c, hardware-d578uv.md 5.3): start, or change to, low_hz + high_hz
