@@ -384,9 +384,9 @@ plays with the other slot already talking (77 of 78 bursts; 0 before the fix).
 The embedded LC isn't per slot (page 2, [modem-hrc6000.md](modem-hrc6000.md) 5.2). On the same bench run, the other
 call's LC was in page 2 at the wanted call's F: the core took it for a new call, and the wanted call went quiet with
 the other call's source shown (23 of 78 bursts when the wanted call started first). The engine keeps each slot's
-call LC and holds back an embedded LC that is the other slot's call's, or that differs from this slot's call while
-it goes on. Host-tested (`test_two_slots`, the `LC` cases: page 2 gets a call's LC the tick after its F). Unverified
-on air.
+call LC and holds back an embedded LC that is the other slot's call's (the rules are in modem-hrc6000.md 5.2).
+Host-tested (`test_two_slots`, the `LC` and `alias` cases: page 2 gets a call's LC or alias block the tick after its
+F). Unverified on air.
 
 On air with this (2026-10-18): calls are taken with the caller and talk group, and 393 frames reached the codec with
 2 bit errors in all. The decoded audio is speech (peak 3521 of 32767) and streams to the chip (`aud blk` climbing),

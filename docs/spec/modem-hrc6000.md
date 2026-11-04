@@ -297,15 +297,25 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   F's first report (the EMB one): a new LC was first seen there at the second F. So until a reception has its LC the
   driver also reads page 2 at the next burst A, at F's repeated report and at the post-access interrupt (an LC that
   differs there is handed over with the next voice burst).
-- **Page 2 isn't per slot.** With a call on each slot it holds the LC the chip assembled last, of either call, so at
-  one call's F it can hold the other's. The driver keeps each slot's call LC (from its header or terminator, or the
-  embedded LC it handed over) and holds back an embedded LC for a burst on a slot when it is the other slot's call's,
-  or when it differs from this slot's call while that call goes on (a new call on the slot comes with its header, or
-  after 360 ms without its voice). The other slot's LC is kept up to 60 s after it was last seen in page 2: with the
-  voice read locked to one slot, the other call's bursts are never taken. While the other slot has a call, a slot
-  with no LC of its own keeps looking at the next burst A, and there an unchanged page 2 counts after more than one
-  superframe of voice, as at F (the capture can come just after this call's F). Bursts with no slot number are left
-  alone. Counter `lc_other_slot`.
+- **Page 2 isn't per slot.** With a call on each slot it holds what the chip assembled last, of either call, so at
+  one call's F it can hold the other's. The driver keeps each slot's call LC (a voice LC, FLCO 0 or 3, from its
+  header or terminator, or the embedded LC it handed over) and checks each embedded LC it would hand over for a burst
+  on a slot:
+
+  | Page 2 holds | Handed over |
+  |---|---|
+  | This slot's open call's LC | Yes, even when the other slot's call has the same LC (a group on both slots) |
+  | The other slot's call's LC | No |
+  | Another voice LC | Yes, unless each slot has a different call going on (then it may be the other slot's next talker); a new talker here comes with a header, or after 360 ms without this slot's voice |
+  | A talker alias or GPS block (other FLCOs) | Only when the other slot's LC wasn't seen in the last second. Never kept as a slot's call LC |
+
+  The other slot's LC is kept up to 60 s after it was last seen in page 2: with the voice read locked to one slot,
+  the other call's bursts are never taken. A start, an `rx_restart` (a new frequency) or another color code or
+  repeater setting forgets both. While the other slot has a call, a slot with no LC of its own keeps looking at the
+  next burst A. There an unchanged page 2 counts as at F once the reception has had more than one superframe of
+  voice or a header (on either slot): the capture can come just after this call's F. Bursts with no slot number are
+  left alone. Counter `lc_other_slot` (what would have been handed over, held back). Limit: a call joined by late
+  entry whose LC equals the other slot's call's gets no embedded LC while the other slot's LC stays live.
 - **LC trace** (for the bench): every look at page 2 until the reception's LC is handed over is logged, with the ticks
   since the capture, the voice bursts taken and page 2's source ID. Debug link log lines
   `dle cap<how> <src>` (how: `0` status report, `A` lone burst A, `T` burst taken) and

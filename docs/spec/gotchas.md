@@ -81,6 +81,14 @@ has its LC, look at page 2 again at the next burst A (and at F's repeated report
 driver logs every look (`dle` lines, `lt` diagnostics line) so the next HIL run shows exactly when the LC appeared.
 Radios: HR_C6000.
 
+**1.4b Page 2 isn't per slot.**
+Symptom: with a call on each slot, the wanted call went quiet with the other call's source shown (23 of 78 bursts
+played; HIL 2026-11-04 on the HR_C5000). Cause: page 2 holds the embedded LC (or alias or GPS block) the chip
+assembled last, of either slot, so at one call's F it held the other's, and the core took it for a new call. Rule:
+keep each slot's call LC and check every embedded LC against both before handing it over; only voice LCs (FLCO 0, 3)
+become a slot's call LC, and alias and GPS blocks wait while the other slot is busy. Forget the slots on a new
+frequency or channel. Rules: [modem-hrc6000.md](modem-hrc6000.md) 5.2. Radios: HR_C6000, HR_C5000.
+
 **1.9 Restore reg 0x10 to the driver's value, not the init value.**
 After a special mode, writing back the init value (0x6B) instead of the running value (0x6E: relay, aligned, slot 1)
 broke subsequent operation. Rule: save and restore modem mode registers around any temporary change.

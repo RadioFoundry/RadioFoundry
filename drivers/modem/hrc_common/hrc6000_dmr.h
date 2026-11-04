@@ -103,8 +103,8 @@ typedef struct {
 	char ev;	// F burst F's report, f F reported again (a repeat, dropped), A burst A while no LC yet, P post-access
 			// interrupt, p post-access shortly before the reception started, H voice LC header
 	char res;	// n differs from the capture (taken), s same as the capture (held back), v same but taken (more than
-			// STALE_LC_VOICE voice bursts), c CRC error flagged, k kept for the next voice burst, o the other
-			// slot's call's or not this slot's open call's (held back), - not used
+			// STALE_LC_VOICE voice bursts), c CRC error flagged, k kept for the next voice burst, o maybe the
+			// other slot's (held back, modem-hrc6000.md 5.2), - not used
 	uint8_t tk;	// ticks since the capture (255: 255 or more)
 	uint8_t vss;	// voice bursts taken in this reception at the time
 	uint32_t src;	// page 2's source ID (LC octets 6-8)
@@ -164,7 +164,8 @@ typedef struct {
 	uint32_t lc_rep_new;	// at F's repeated report: differs, kept for the next voice burst
 	uint32_t lc_pa_new;	// at a post-access interrupt: differs, kept for the next voice burst
 	uint32_t lc_kept;	// kept LCs handed over with the next voice burst
-	uint32_t lc_other_slot;	// embedded LCs held back as the other slot's call's (page 2 isn't per slot)
+	uint32_t lc_other_slot;	// embedded LCs and alias blocks that would have been handed over, held back as maybe
+				// the other slot's (page 2 isn't per slot)
 	uint8_t last_r5f;	// raw 0x5F of the last report
 	uint8_t last_data_r51;	// raw 0x51 of the last report classified as non-voice
 	uint8_t last_cc;	// last burst heard
