@@ -1037,19 +1037,6 @@ static void b_stop(void)
 	audio_route();
 }
 
-static bool tone_found(uint8_t type, uint16_t flags)
-{
-	switch (type) {
-	case TONE_CTCSS:
-		return (flags & 0x0001u) != 0;
-	case TONE_DCS:
-	case TONE_DCS_INV:
-		return (flags & 0x0002u) != 0;
-	default:
-		return true;
-	}
-}
-
 // Knob B: side B's level, followed in steps of 2 % or more and at the ends, as the core follows knob A
 static void b_knob(void)
 {
@@ -1081,7 +1068,7 @@ static void b_status(rx2_status_t *st)
 			qa4818_status(&chip_b, &s);
 			bool was = b_open;
 			uint8_t open_below = radio_sm_squelch_open_below(b_squelch);
-			bool tone = tone_found(b_tone.type, s.tone_flags);
+			bool tone = qa4818_tone_heard(chip_tone(b_tone.type), s.tone_flags);
 			uint8_t noise = qa4818_noise(s.noise);
 			if (!b_open) {
 				b_open = noise < open_below && tone;
@@ -1865,18 +1852,7 @@ static void status(radio_status_t *st)
 	if (mode == RADIO_MODE_DMR)
 		d578uv_modem_carrier(st->carrier);
 #endif
-	switch (rx_tone.type) {
-	case TONE_CTCSS:
-		st->tone_ok = (s.tone_flags & 0x0001u) != 0;
-		break;
-	case TONE_DCS:
-	case TONE_DCS_INV:
-		st->tone_ok = (s.tone_flags & 0x0002u) != 0;
-		break;
-	default:
-		st->tone_ok = true;
-		break;
-	}
+	st->tone_ok = qa4818_tone_heard(chip_tone(rx_tone.type), s.tone_flags);
 }
 
 // Beeps (hal_radio_t.beep_tone): side A's chip plays the tone generator to its AF output, which the speaker takes

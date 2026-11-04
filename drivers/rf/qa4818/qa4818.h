@@ -39,7 +39,10 @@ typedef struct {
 #define QA4818_REG_DRIVE	0x40	// TX drive: band base + level (the BK4819 map's TX deviation: bit 12 on, 11:0 the amount)
 #define QA4818_REG_SUBAUDIO	0x51	// sub-audio mode; low 7 bits a calibrated TX level
 #define QA4818_REG_CSS_DETECT	0x52	// CTCSS detector thresholds
-#define QA4818_REG_TONE_FLAGS	0x60	// bit 0 CTCSS found, bit 1 DCS found
+#define QA4818_REG_TONE_FLAGS	0x60	// tone flags (QA4818_TONE_*_HEARD; qa4818_tone_heard)
+#define QA4818_CTCSS_HEARD	0x0001u	// 0x60: the CTCSS tone set is heard
+#define QA4818_DCS_HEARD	0x0400u	// 0x60: the DCS code set is heard, normal polarity
+#define QA4818_DCS_INV_HEARD	0x0800u	// 0x60: ... inverted. Bit 1 shows only at a carrier's start, for any code (measured)
 #define QA4818_REG_TONE_GEN	0x70	// the TX tone generator: 0xA000 on, 0 off (the only values the stock firmware writes)
 #define QA4818_REG_TONE_FREQ	0x71	// its tone: Hz x 10.32, halved (qa4818_tone_word)
 #define QA4818_REG_VOICE	0x64	// voice amplitude, the VOX detector's input (BK4819 map; not read by the stock firmware)
@@ -91,6 +94,9 @@ int16_t qa4818_rssi_dbm(uint16_t raw);
 uint16_t qa4818_drive_raw(uint16_t base, uint8_t level, bool narrow);
 // The tone generator's word (0x71) for hz: Hz x 10.32, truncated, halved (the stock firmware's arithmetic)
 uint16_t qa4818_tone_word(uint16_t hz);
+
+// Whether the status's tone flags show the receive tone set (true for none)
+bool qa4818_tone_heard(qa4818_tone_t type, uint16_t flags);
 // The drive (0x40) while the tone generator sends on hz: fixed levels by band, the stock firmware's tone burst values
 uint16_t qa4818_tone_drive_word(uint32_t hz, bool narrow);
 // The drive (0x40) while the audio input pin sends on hz (the stock DTMF): the band's base and a calibrated level

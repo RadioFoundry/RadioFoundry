@@ -456,6 +456,20 @@ static void dcs_word(qa4818_t *c, uint16_t code, bool invert)
 	wr(c, QA4818_REG_CTCSS, DCS_RATE | TONE_LATCH);
 }
 
+bool qa4818_tone_heard(qa4818_tone_t type, uint16_t flags)
+{
+	switch (type) {
+	case QA4818_TONE_CTCSS:
+		return (flags & QA4818_CTCSS_HEARD) != 0;
+	case QA4818_TONE_DCS:
+		return (flags & QA4818_DCS_HEARD) != 0;
+	case QA4818_TONE_DCS_INV:
+		return (flags & QA4818_DCS_INV_HEARD) != 0;
+	default:
+		return true;
+	}
+}
+
 void qa4818_rx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value)
 {
 	switch (type) {
@@ -467,7 +481,9 @@ void qa4818_rx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value)
 		break;
 	case QA4818_TONE_DCS:
 	case QA4818_TONE_DCS_INV:
-		dcs_word(c, value, type == QA4818_TONE_DCS_INV);
+		// The normal word for either: the chip matches both polarities and flags each (qa4818_tone_heard); a
+		// complemented word matches neither (measured)
+		dcs_word(c, value, false);
 		wr(c, QA4818_REG_SUBAUDIO, SUBAUDIO_DCS);
 		wr(c, QA4818_REG_CSS_DETECT, CSS_DETECT_IDLE);
 		break;

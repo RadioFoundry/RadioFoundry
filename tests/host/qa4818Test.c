@@ -311,8 +311,8 @@ static void test_tones(void)
 	qa4818_rx_tone(&c, QA4818_TONE_DCS, 023);	// word 0x763813
 	SEQ(&f, n, { 0x08, 0x0813 }, { 0x08, 0x8763 }, { 0x07, 0x0AD7 }, { 0x07, 0x2AD7 }, { 0x51, 0x80B0 }, { 0x52, 0x028A });
 	n = f.n;
-	qa4818_rx_tone(&c, QA4818_TONE_DCS_INV, 023);	// ~0x763813 & 0x7FFFFF = 0x09C7EC
-	SEQ(&f, n, { 0x08, 0x07EC }, { 0x08, 0x809C }, { 0x07, 0x0AD7 }, { 0x07, 0x2AD7 }, { 0x51, 0x80B0 }, { 0x52, 0x028A });
+	qa4818_rx_tone(&c, QA4818_TONE_DCS_INV, 023);	// the normal word: the chip flags the inverted match itself
+	SEQ(&f, n, { 0x08, 0x0813 }, { 0x08, 0x8763 }, { 0x07, 0x0AD7 }, { 0x07, 0x2AD7 }, { 0x51, 0x80B0 }, { 0x52, 0x028A });
 	n = f.n;
 	qa4818_rx_tone(&c, QA4818_TONE_NONE, 0);
 	SEQ(&f, n, { 0x51, 0x1050 }, { 0x52, 0x028A });
@@ -423,6 +423,14 @@ static void test_status(void)
 	CHECK(s.rssi == 0x046);
 	CHECK(s.tone_flags == 0x0001);
 	CHECK(f.n == 0);		// reads only
+
+	// The flags measured on a radio set for DCS 023: 023N heard, 023I heard, a wrong code, a carrier's start
+	CHECK(qa4818_tone_heard(QA4818_TONE_DCS, 0x0500) && !qa4818_tone_heard(QA4818_TONE_DCS_INV, 0x0500));
+	CHECK(qa4818_tone_heard(QA4818_TONE_DCS_INV, 0x0A00) && !qa4818_tone_heard(QA4818_TONE_DCS, 0x0A00));
+	CHECK(!qa4818_tone_heard(QA4818_TONE_DCS, 0x0200) && !qa4818_tone_heard(QA4818_TONE_DCS, 0x0300));
+	CHECK(!qa4818_tone_heard(QA4818_TONE_DCS, 0x0007) && !qa4818_tone_heard(QA4818_TONE_DCS_INV, 0x0007));
+	CHECK(qa4818_tone_heard(QA4818_TONE_CTCSS, 0x0010 | QA4818_CTCSS_HEARD) && !qa4818_tone_heard(QA4818_TONE_CTCSS, 0x0500));
+	CHECK(qa4818_tone_heard(QA4818_TONE_NONE, 0));
 	f.regs[0x0C] = 0x0001;
 	qa4818_status(&c, &s);
 	CHECK(!s.signal);

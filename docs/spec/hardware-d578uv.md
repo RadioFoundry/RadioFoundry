@@ -418,8 +418,8 @@ stock arithmetic (one step less on a narrow channel) and the factory items MODU 
 | RX IF | 38.85 MHz side A, 38.55 MHz side B. LO = F - IF when that is at least 300 MHz, else F + IF |
 | TX | chip 0 on the channel frequency; PA level from PA4's DAC |
 | CTCSS | register 0x07 = Hz x 20.649, register 0x51 = 0x90C5, register 0x52 the detector thresholds per tone |
-| DCS | register 0x08 the Golay word in two halves, register 0x07 = 0x0AD7 (134.4 Hz), register 0x51 = 0x80B0 |
-| Status | register 0x0C bit 1 signal present; 0x65 noise; 0x67 RSSI; 0x61 the RSSI the S-meter uses; 0x60 tone flags |
+| DCS | register 0x08 the Golay word in two halves, register 0x07 = 0x0AD7 (134.4 Hz), register 0x51 = 0x80B0. Receive writes the normal word for either polarity |
+| Status | register 0x0C bit 1 signal present; 0x65 noise; 0x67 RSSI; 0x61 the RSSI the S-meter uses; 0x60 tone flags: bit 0 the CTCSS tone, bit 10 the DCS code (normal), bit 11 the DCS code (inverted). Bit 1 shows only at a carrier's start, for any code |
 | Band switch | each transceiver's register 0x25 is a GPIO register. Chip 0's bits 3/6 are side A's complementary pair (UHF sets 3), bits 7/4 side B's (UHF sets 7), by the 300 MHz rule; side B's are both clear in some single-receiver cases |
 | TX tone generator | register 0x70 = 0xA000 on, 0 off; register 0x71 = Hz x 10.32 (truncated), halved (5.3); with the receiver on (a beep) half that again |
 
