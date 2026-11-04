@@ -17,6 +17,8 @@ export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
 export const RFOUNDRY_NET = { vendorId: 0x1FC9, productId: 0x0096 };
 const SOF1 = 0xA5, SOF2 = 0x5A;
 export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F };
+// The status a command not built in, or with nothing to act on, answers (debuglink.md 2)
+const DL_UNAVAILABLE = 4;
 
 export class LinkError extends Error {}
 
@@ -225,7 +227,9 @@ export class Link {
 		}
 		this.s.take(reply.end);
 		wire(`cmd 0x${cmd.toString(16)} seq ${seq} len ${payload.length}: status ${reply.payload[0]} len ${reply.payload.length}`);
-		if (!reply.payload.length || reply.payload[0] !== 0) throw new LinkError(`command 0x${cmd.toString(16)}: status ${reply.payload[0]}`);
+		if (!reply.payload.length || reply.payload[0] !== 0) {
+			throw Object.assign(new LinkError(`command 0x${cmd.toString(16)}: status ${reply.payload[0]}`), { status: reply.payload[0] });
+		}
 		return reply.payload.subarray(1);
 	}
 
@@ -243,13 +247,15 @@ export class Link {
 	}
 
 	// STORAGE INFO (debuglink.md 3.13): whether the settings and journal region is ours, or still holds another
-	// firmware's data ("foreign": the radio then refuses every settings save and codeplug write). null from a build
-	// without the command
+	// firmware's data ("foreign": the radio then refuses every settings save and codeplug write). "none": the region
+	// didn't start (unusable flash). "nomap": the radio has no such region (a memory chip too small for the board's flash
+	// map: nothing is stored, no codeplug is there and every write is refused). null from a build without the command
 	async storageInfo() {
 		let r;
 		try {
 			r = await this.request(CMD.STORAGE, new Uint8Array([0]));
 		} catch (e) {
+			if (e instanceof LinkError && e.status === DL_UNAVAILABLE) return { region: "nomap", pending: false, settings: null, journal: null, calibration: null };
 			if (e instanceof LinkError && !/no answer/.test(e.message)) return null;
 			throw e;
 		}
@@ -307,6 +313,15 @@ export class Link {
 			if (got !== undefined) return got;	// null: refused (out of range, not offered)
 		}
 		throw new LinkError(`no answer to a codeplug read at 0x${addr.toString(16)}`);
+	}
+
+	// The memory chip's size in bytes from the CPS radio info (flashBytes), null when the radio doesn't say
+	async flashSize() {
+		try {
+			return flashBytes(parseRadioInfo(await this.cpsRead(9, 0, RADIO_INFO_LEN, 1))?.flashId);
+		} catch {
+			return null;
+		}
 	}
 
 	// Read [addr, addr + size) of an area in pieces; stops early (and says so) when the radio refuses. RadioFoundry answers up
@@ -423,6 +438,13 @@ export function silence(link) {
 // protocol that happens to start with "R" isn't taken for it. The revision or the build date must be there: our shim
 // (core/cps/cps_openfw.c) always fills both, so all zeros after the struct version is not that structure
 export const RADIO_INFO_LEN = 46;
+// The memory chip's size from the radio info's flash part id, whose low byte is the JEDEC capacity code (log2 of the
+// size: 0x4018 is 16 MB); null when the radio gives none
+export function flashBytes(flashId) {
+	const code = (flashId ?? 0) & 0xFF;
+	return code >= 0x10 && code <= 0x1C ? 2 ** code : null;
+}
+
 export function parseRadioInfo(b) {
 	if (!b || b.length < 40) return null;
 	// ASCII, NUL padded: printable characters, then only NULs

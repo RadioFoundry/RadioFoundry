@@ -605,8 +605,10 @@ Bias from MICPWR_SW (PA14), on whenever the radio runs (section 2.6). Mic level 
 
 CTCSS / DCS are decoded in software from QT_DQT_IN (PA2) and generated as PWM on
 CTC/DCS_OUT (PC7) (unverified). RadioFoundry does the same behind `CONFIG_SUBTONE` (on by default, 3.3 KB of
-flash). CTCSS 100.0 Hz works on air both ways (tester, 2026-10-19); DCS and the deviation aren't checked yet. Without
-the switch, channels with a tone open on carrier and send no tone.
+flash). CTCSS 100.0 Hz works on air both ways (tester, 2026-10-19). DCS receive works on air (D023N, 2026-11-02). DCS
+transmit went out inverted (D023N decoded as D023I by another radio, 2026-11-02), so `MD380_SUBTONE_TX_INVERT` is on
+by default. At `MD380_SUBTONE_PERCENT` 30 the deviation is 0.60 kHz peak for CTCSS 100.0 Hz and about 0.72 kHz for DCS
+(SDR, 2026-11-02), inside the usual 0.5 to 0.75 kHz. Without `CONFIG_SUBTONE`, channels with a tone open on carrier and send no tone.
 The FM TX tones (1750 Hz, roger beep) and APRS AFSK are not written (`CONFIG_FM_TX_TONES`, `CONFIG_APRS_RX` in
 `config.mk`).
 
@@ -827,7 +829,9 @@ size.
 On a 16 MB part RadioFoundry uses the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug 0x000000 and
 0x020000-0xE00000, native area 0xE00000, TFTP staging 0xF00000), so the open-firmware CPS works the same. The TYT codeplug at 0 is overwritten
 by the first open-firmware write: read it out with the manufacturer's CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
-main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written.
+main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written. The CPS still
+reads the chip (area 1, up to its end) and the radio info gives its size, so a backup saves all of it; the Codeplug
+Editor and the flasher's channel step say that the radio stores no codeplug.
 
 ---
 

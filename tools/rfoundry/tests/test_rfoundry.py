@@ -732,9 +732,9 @@ class NormalMode(unittest.TestCase):
         declared = mock.Mock(dfu_layout="@Internal Flash /0x0800C000/01*016Kg,01*064Kg,07*128Kg")
         self.assertFalse(dfumod.normal_mode(self.LOADER, declared))	# white space doesn't count
         self.assertTrue(dfumod.normal_mode(["@Internal Flash /0x0800C000/01*016Kg"], declared))
-        md380 = boards.get("md380")					# its board declares the layout read on a radio
-        self.assertFalse(dfumod.normal_mode(self.LOADER, md380))
-        self.assertTrue(dfumod.normal_mode(self.NORMAL, md380))
+        for b in ("md380", "dm1701"):					# their boards declare the layout read on a radio
+            self.assertFalse(dfumod.normal_mode(self.LOADER, boards.get(b)))
+            self.assertTrue(dfumod.normal_mode(self.NORMAL, boards.get(b)))
 
     def test_rfoundry_refuses_without_a_dfu_request(self):
         board, dev = self.device(self.NORMAL)

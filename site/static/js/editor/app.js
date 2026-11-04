@@ -516,12 +516,19 @@ async function connect() {
 		const { radio, probe } = await tr.identify(S.radios);
 		diag.note("radio found", { radio: radio.id, board: probe.board, git: probe.git, features: probe.features });
 		// dbKnown: the radio's ID database is the model's (read or written since the model was loaded)
-		S.conn = { transport: tr, radio, probe, image: null, uid: null, cable, dbKnown: false };
+		S.conn = { transport: tr, radio: sizedRadio(tr), probe, image: null, uid: null, cable, dbKnown: false };
 		return S.conn;
 	} catch (e) {
 		await tr.close();
 		throw e;
 	}
+}
+
+// The radio as radios.json has it, its codeplug's room cut to what this one says it has (transport.js end), so the ID
+// database is sized for it
+function sizedRadio(tr) {
+	const r = tr.radio, cp = r.codeplug;
+	return tr.end < cp.end - cp.base ? { ...r, codeplug: { ...cp, end: cp.base + tr.end } } : r;
 }
 
 function radioError(e) {
@@ -601,7 +608,7 @@ async function exclusive(fn) {
 // new one's. A different chip UID, or none (firmware that doesn't say), drops c.image and the write reads first
 async function onLine(c) {
 	const uid = await c.transport.who(S.radios);
-	c.radio = c.transport.radio;
+	c.radio = sizedRadio(c.transport);
 	if (c.image && (!uid || uid !== c.uid)) {
 		diag.note("radio changed: read before write", { was: c.uid, now: uid });
 		c.image = null;

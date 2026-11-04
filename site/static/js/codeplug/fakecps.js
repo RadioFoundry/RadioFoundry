@@ -11,10 +11,13 @@ export class FakeCpsRadio {
 	// foreign: the settings region still holds another firmware's data until a STORAGE CLAIM (settings-store.md 5).
 	// uid: the byte the chip UID is filled with (INFO_CHIP), so two radios can be told apart. features: VERSION's list
 	// (IDDB_COMPACT for a radio that reads a format C ID database; no CPS_FAST: this radio speaks only the CPS).
-	// release: VERSION's release, for a radio that runs one. gitTime: VERSION's git_time, 0 for none
+	// release: VERSION's release, for a radio that runs one. gitTime: VERSION's git_time, 0 for none. noMap: a memory chip
+	// smaller than the board's flash map needs: no settings region (STORAGE answers unavailable). region: the STORAGE
+	// INFO region byte instead of ours or foreign (0: a map whose flash didn't start). radioInfo: area 9
+	// answered, with the chip's size (core/cps/cps_openfw.c)
 	constructor({ board = "DM-1701", base = 0, end = 0xE00000, size = 0x1000000, image = null, cable = false, foreign = false, uid = 0x11,
-		features = "FM,DMR", release = null, gitTime = 0 } = {}) {
-		Object.assign(this, { board, base, end, cable, foreign, uid, features, release, gitTime });
+		features = "FM,DMR", release = null, gitTime = 0, noMap = false, radioInfo = false, region = null } = {}) {
+		Object.assign(this, { board, base, end, cable, foreign, uid, features, release, gitTime, noMap, radioInfo, region });
 		this.spi = new Uint8Array(size).fill(0xFF);
 		if (image) this.spi.set(image.subarray(0, Math.min(image.length, end - base)), base);
 		this.writes = [];		// [addr, length] of every X 2
@@ -38,7 +41,8 @@ export class FakeCpsRadio {
 			}
 			const ok = (...b) => frame(f.cmd | 0x80, f.seq, new Uint8Array([0, ...b]));
 			if (f?.cmd === 0x0B) return ok(...new Uint8Array(28).fill(this.uid));	// INFO_CHIP: the UID's low word 0x11111111 by default
-			if (f?.cmd === 0x0F && f.payload[0] === 0) return ok(this.foreign ? 2 : 1, 0, ...new Uint8Array(24));
+			if (f?.cmd === 0x0F && this.noMap) return frame(0x8F, f.seq, new Uint8Array([4]));
+			if (f?.cmd === 0x0F && f.payload[0] === 0) return ok(this.region ?? (this.foreign ? 2 : 1), 0, ...new Uint8Array(24));
 			if (f?.cmd === 0x0F && f.payload[0] === 2) {
 				if (!this.foreign || f.payload[1] !== this.uid) return frame(0x8F, f.seq, new Uint8Array([this.foreign ? 7 : 4, 1]));
 				this.foreign = false;
@@ -49,6 +53,16 @@ export class FakeCpsRadio {
 		}
 		if (req[0] === 0x52) {
 			const addr = ((req[2] << 24) | (req[3] << 16) | (req[4] << 8) | req[5]) >>> 0, len = (req[6] << 8) | req[7];
+			if (req[1] === 9 && this.radioInfo) {
+				const d = new Uint8Array(46);
+				d[0] = 3;
+				d[4] = 6;
+				d.set(new TextEncoder().encode("0123abcd"), 8);
+				d.set(new TextEncoder().encode("20261101120000"), 24);
+				d[40] = Math.log2(this.spi.length);
+				d[41] = 0x40;
+				return concat(new Uint8Array([0x52, 0, 46]), d);
+			}
 			if (req[1] !== 1 || len === 0 || addr + len > this.spi.length) return new Uint8Array([0x2D]);
 			this.readBytes += len;
 			return concat(new Uint8Array([0x52, len >> 8, len & 0xFF]), this.spi.subarray(addr, addr + len));

@@ -45,7 +45,9 @@ static bool tx_begin(dmr_timing_t t, int8_t ts, dmr_access_t a)
 	sim.tx_active = true;
 	sim.tx_ending = false;
 	sim.q_head = sim.q_count = 0;
-	sim.tx_parity = (int8_t)((sim.slot + 1) & 1);	// first burst in the next slot
+	// Repeater ticks label even slots TS1 and odd slots TS2; aligned TX must honor that clock.
+	sim.tx_parity = t == DMR_TIMING_ALIGNED && sim.repeater && (ts == 1 || ts == 2)
+		? (int8_t)(ts - 1) : (int8_t)((sim.slot + 1) & 1);
 	return true;
 }
 

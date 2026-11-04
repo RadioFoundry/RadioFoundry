@@ -72,7 +72,9 @@ that runs RadioFoundry already: [Updating RadioFoundry](#updating-radiofoundry))
    firmware backup and select no supported stock file, **Install without the codec** is the only way on. The installer
    then warns, above the Install button, that this installation will not include the DMR voice codec: analog FM will
    work, but DMR voice will not until you install RadioFoundry again with a supported manufacturer firmware file.
-   Installing again keeps your channels and settings.
+   Installing again keeps your channels and settings. When you press **Install**, a dialog asks once more:
+   **Go Back and Add the Codec** returns to the step where you select the file, **Install Anyway** installs without
+   DMR voice.
 
    The same choice comes when the backup finds a firmware version whose codec RadioFoundry has not mapped yet. The
    backup is still complete; the codec step asks for a supported stock firmware file instead.

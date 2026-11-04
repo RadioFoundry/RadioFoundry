@@ -28,6 +28,7 @@ import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
 import { register } from "./backends.js";
 import { makeStockRoutes, variantVerdict, noCodecNotice } from "./iapui.js";
+import { confirmNoCodec } from "./nocodec.js";
 import { versionText, writable } from "./variant.js";
 import { Usmart, stockVersion, stockName } from "./usmart.js";
 import { Iap, checkInstallImage } from "./iap.js";
@@ -1029,7 +1030,12 @@ export function writeView() {
 		return panel(t("flash.write.title"), errorNotice(ctx.errorText(e)));
 	}
 	const what = d.mode === "keep" ? t("flash.c7.codec.keep") : d.mode === "none" ? t("flash.c7.codec.none") : t(`flash.c7.codec.from_${d.source}`, { name: d.name || "", tag: String(d.tag ?? "").padStart(3, "0") });
-	const go = button(t("flash.c7.write.go"), () => write(), { primary: true });
+	// no codec: asked once more where the click is, with the way back to the check step's file picker (which shows only
+	// while "install without the codec" isn't chosen)
+	const go = button(t("flash.c7.write.go"), async () => {
+		if (d.mode === "none" && !(await confirmNoCodec(() => { S().c7none = false; S().step--; ctx.render(); }))) return;
+		write();
+	}, { primary: true });
 	const box = panel(t("flash.c7.write.title"), h("div", { class: "c7-grid" },
 		h("div", {}, cableBanner(),
 			h("dl", { class: "kv-list" },
