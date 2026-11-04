@@ -111,6 +111,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1D` | WATCHDOG | operation u8 + arguments (3.21); `CONFIG_WATCHDOG` builds, else status 4 | none (3.21) |
 | `0x1E` | RX2 | operation u8 + arguments (3.22) | flags, or none (3.22) |
 | `0x1F` | IDDB | DMR ID u32 (3.23); `CONFIG_DMR` builds, else status 4 | format u8, records u32, found u8, text (3.23) |
+| `0x20` | CHIP_REG | chip u8, page u8, register u8 [+ value u32] (3.24) | the register's value u32 (3.24) |
 
 ### 3.1 VERSION
 
@@ -769,6 +770,22 @@ lookup as a received call's name, without the cut to the screen's name length. `
 `rfoundry_debug.py iddb [ID ...]`, `tools/cps_fast.py`'s `FastLink.iddb()`. `tests/hil/test_iddb.py` compares the
 radio's answers with records read from the database by `tools/iddb_read.py`.
 
+### 3.24 CHIP_REG
+
+One register of the radio's RF chips, read, or written and then read back, for bench work: comparing a register with
+another firmware's value or trying one on the air without a new build. The board provides it (`board.chip_reg`);
+without it the command answers `DL_ST_UNAVAILABLE`. The chip and page numbers are the board's, listed on its hardware
+page.
+
+| Request | Reply after the status |
+|---|---|
+| chip u8, page u8, register u8 | the value u32 |
+| chip u8, page u8, register u8, value u32 | the value read back u32 (a write-only register: the value written) |
+
+A chip, page, register or value the board doesn't offer answers `DL_ST_BAD_ARG`. Writes are logged. The driver
+doesn't know about a write: its next set-up of that register (a retune, a mode change, a key-up) overwrites it.
+`rfoundry_debug.py reg CHIP REG [VALUE] [--page N]`.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -787,8 +804,9 @@ radio's answers with records read from the database by `tools/iddb_read.py`.
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the vendor bootloader is proprietary).
-- AUDIO_PROBE (diagnostic builds only) writes audio chip registers as asked; nothing else in the debug link writes
-  chip registers.
+- AUDIO_PROBE (diagnostic builds only) writes audio chip registers as asked, and CHIP_REG writes the RF chip
+  registers the board offers (3.24); nothing else in the debug link writes chip registers. A CHIP_REG write can move
+  the transmitter's frequency or power: the radio's band and power limits don't apply to it.
 - STUB (bench builds only) writes arbitrary RAM and then runs it, giving the host full control: it is gated by a magic
   key, the exact length and a CRC-32, loads only into the platform's declared free RAM span, is refused while
   transmitting, and never returns (recover by a power cycle). Off in a release. The stub, not the debug link, is

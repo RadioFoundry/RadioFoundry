@@ -97,6 +97,7 @@ const board_t board = {
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
 	.radio = &d578uv_radio,
+	.chip_reg = d578uv_chip_reg,
 #if CONFIG_DUAL_WATCH
 	.rx2 = &d578uv_rx2,
 #endif

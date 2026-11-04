@@ -1967,6 +1967,34 @@ static void trims_b(void)
 }
 #endif
 
+// board.chip_reg (debuglink.md 3.24): chips 0-3 are the QA4818s, pages 0 and 1 (not the page register itself); chip
+// 4 is the PA5 trims device, registers 0-0xF, write-only (hardware-d578uv.md 5.5)
+bool d578uv_chip_reg(uint8_t chip, uint8_t pg, uint8_t reg, uint32_t *val, bool write)
+{
+	if (!chips_ready || pg > 1) {
+		return false;
+	}
+	if (chip == 4) {
+		if (!write || pg != 0 || reg > 0xFu || *val > 0xFFu) {
+			return false;
+		}
+		aux_write(reg, (uint8_t)*val);
+		return true;
+	}
+#if SIDE_B_CHIPS
+	qa4818_t *const chips[4] = { &chip_if, &chip_b, &chip_lo, &chip_lo_b };
+#else
+	qa4818_t *const chips[4] = { &chip_if, &chip_b, &chip_lo, NULL };
+#endif
+	if (chip > 3 || chips[chip] == NULL || reg == QA4818_REG_PAGE || *val > 0xFFFFu) {
+		return false;
+	}
+	uint32_t s = bus_lock();
+	*val = qa4818_reg(chips[chip], pg, reg, (uint16_t)*val, write);
+	bus_unlock(s);
+	return true;
+}
+
 void d578uv_rf_safe(void)
 {
 #if CONFIG_DMR

@@ -359,6 +359,25 @@ void qa4818_out(qa4818_t *c, uint16_t value)
 	wr(c, 0x28, value);
 }
 
+uint16_t qa4818_reg(qa4818_t *c, uint8_t pg, uint8_t reg, uint16_t val, bool write)
+{
+	uint8_t was = c->page;
+	if (pg != was) {
+		page(c, pg);
+	}
+	if (write) {
+		wr(c, reg, val);
+		if (pg == 0 && reg == QA4818_REG_GPIO) {
+			c->gpio = val;
+		}
+	}
+	uint16_t v = rfbus_read(c->bus, reg);
+	if (pg != was) {
+		page(c, was);
+	}
+	return v;
+}
+
 void qa4818_gpio(qa4818_t *c, uint16_t mask, uint16_t val)
 {
 	uint16_t g = (uint16_t)((c->gpio & ~mask) | (val & mask));

@@ -420,6 +420,9 @@ kHz). The calibration's MODU (modulation) bytes feed it.
 | 2 | side A local oscillator |
 | 3 | side B local oscillator, and the air band receiver's LO |
 
+The debug link's CHIP_REG ([debuglink.md](debuglink.md) 3.24) uses these numbers: chips 0-3 on pages 0 and 1, every
+register but 0x7F (the page itself); chip 4 is the PA5 trims device (5.5), page 0, registers 0-0xF, write-only.
+
 | Item | Value |
 | --- | --- |
 | Frequency | registers 0x38 (low) / 0x39 (high), 10 Hz units |

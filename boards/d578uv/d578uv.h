@@ -50,6 +50,8 @@ void d578uv_bus_init(void);
 // --- Radio (radio_d578uv.c, hardware-d578uv.md 5) ---
 // board_rf_safe's part: PE6 low, the PA DAC at 0, the shift register's TX bit clear. Plain register writes only
 void d578uv_rf_safe(void);
+// board.chip_reg: the QA4818s (chips 0-3) and the PA5 trims device (chip 4, write-only)
+bool d578uv_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 void d578uv_outputs_off(void);		// the shift register all off, for the standby (power_d578uv.c)
 bool d578uv_fan_on(void);		// the fan runs (chip 0's GPIO bit 1: transmitting or the PA hot)
 extern const hal_temp_t d578uv_temp;

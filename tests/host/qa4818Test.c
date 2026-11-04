@@ -456,6 +456,30 @@ static void test_gpio_page(void)
 	CHECK(f.n == 1 && f.log[0].reg == QA4818_REG_GPIO);
 }
 
+// qa4818_reg (the debug link's CHIP_REG): the page it needs, then the page the driver had; a GPIO write keeps the shadow
+static void test_reg(void)
+{
+	fake_t f;
+	qa4818_t c;
+	fake_init(&f);
+	qa4818_attach(&c, &f.bus, false);
+
+	int n = f.n;
+	CHECK(qa4818_reg(&c, 0, 0x3A, 0x00E0, true) == 0x00E0);	// page 0 as selected: no page writes
+	SEQ(&f, n, { 0x3A, 0x00E0 });
+	n = f.n;
+	int reads = f.reads;
+	CHECK(qa4818_reg(&c, 1, 0x17, 0, false) == f.regs[0x17]);
+	SEQ(&f, n, { QA4818_REG_PAGE, 1 }, { QA4818_REG_PAGE, 0 });
+	CHECK(f.reads == reads + 1);
+	CHECK(c.page == 0);
+
+	n = f.n;
+	qa4818_reg(&c, 0, QA4818_REG_GPIO, 0x0018, true);
+	qa4818_gpio(&c, 0x0018, 0x0018);	// the shadow follows the write: no write
+	CHECK(f.n == n + 1);
+}
+
 int main(void)
 {
 	test_pure();
@@ -466,6 +490,7 @@ int main(void)
 	test_tx_tones();
 	test_status();
 	test_gpio_page();
+	test_reg();
 
 	if (failures) {
 		printf("qa4818Test: %d failure(s)\n", failures);
