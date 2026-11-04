@@ -654,6 +654,184 @@ static void test_repeater_slot(void)
 	drain();
 }
 
+// Traffic on both slots of a duplex hotspot (issue 279), the channel on TS1. The chip as measured (4.9, and the tests
+// above): receive stays open in both slots, the TC bit alternates, a slot's header is reported in the next slot, and
+// its voice is in the port one tick after that, so the port holds a burst of one call or the other at every tick.
+// TS1 starts at the even ticks (rep_ts_starting): its headers are reported after the odd ticks and its voice is read
+// at the even ones.
+// Every voice burst taken must keep its call's slot, and the TS1 call must be heard although TS2 is talking
+static void vburst(uint8_t out[27], uint32_t key)
+{
+	uint32_t x = key * 2654435761u + 0x9E3779B9u;
+	for (int f = 0; f < 3; f++) {
+		uint8_t p[AMBE_PARAM_BITS];
+		for (int i = 0; i < AMBE_PARAM_BITS; i++) {
+			x ^= x << 13;
+			x ^= x >> 17;
+			x ^= x << 5;
+			p[i] = (uint8_t)(x & 1u);
+		}
+		ambeFecEncode(p, out + 9 * f);
+	}
+}
+
+#define TWO_KEY(ts, n)	((uint32_t)(ts) << 16 | (uint32_t)(n))
+
+typedef struct {
+	int hdr_from, hdr_to;		// ticks of the call's headers (none when equal)
+	int late_at;			// tick of a late entry report (-1 none)
+	int voice_from, voice_to;	// ticks of its voice
+} two_call_t;
+
+typedef struct {
+	int heard[3];		// voice bursts taken per call slot, with that slot
+	int wrong[3];		// ... with the other slot or none
+	int tc_wrong;		// ticks with a wrong slot number (0, unknown, isn't)
+} two_result_t;
+
+// Step k, at the engine's tick t (the one its timeslot interrupt is about to start): is a burst of the call on ts in
+// the port (voice, read at t), or its report due (header, after t)
+static bool two_voice(const two_call_t *c, int ts, int k, uint32_t t)
+{
+	return k >= c->voice_from && k < c->voice_to && rep_ts_starting(t) == ts;
+}
+
+static bool two_report(const two_call_t *c, int ts, int k, uint32_t t)
+{
+	return k >= c->hdr_from && k < c->hdr_to && rep_ts_starting(t - 1u) == ts;
+}
+
+static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ticks, int stale_every)
+{
+	memset(rd, 0, sizeof(rd));
+	memset(voice_port, 0, sizeof(voice_port));
+	hrc5000_attach(&c5, &bus, false);
+	hrc_t *h = hrc5000_hrc(&c5);
+	CHECK(hrc6000_dmr_enter(h, 0x40, 0x40, 0xC8));
+	t_us = 1000000;
+	hrc6000_dmr_init(&eng, h, &ops);
+	hrc6000_dmr_run(&eng);
+	dmr_config_t cfg = { .own_id = 0x0A0B0C, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = true };
+	hrc6000_dmr_configure(&eng, &cfg);
+	hrc6000_dmr_rx_lock_slot(&eng, 1);
+	drain();
+
+	two_result_t res;
+	memset(&res, 0, sizeof(res));
+	rep_ctl[0] = rep_ctl[1] = 0x50;
+	rep_bit = 0;
+	uint32_t n_burst[3] = { 0, 0, 0 };
+	for (int k = 0; k < ticks; k++) {
+		// The port: this tick's call burst, else what the idle slot leaves (no frame that checks)
+		uint32_t t = eng.tick + 1u;
+		int vts = two_voice(c1, 1, k, t) ? 1 : two_voice(c2, 2, k, t) ? 2 : 0;
+		if (vts != 0) {
+			vburst(voice_port, TWO_KEY(vts, n_burst[vts]++));
+		} else {
+			vburst(voice_port, TWO_KEY(3, (uint32_t)k));
+			voice_port[0] ^= 0x88;
+			voice_port[1] ^= 0x88;
+			voice_port[9] ^= 0x88;
+			voice_port[10] ^= 0x88;
+			voice_port[18] ^= 0x88;
+			voice_port[19] ^= 0x88;
+		}
+		// The TC as rep_tick has it, with a read now and then that missed its update
+		bool stale = stale_every > 0 && k % stale_every == stale_every - 1;
+		if ((rep_ctl[1] & 0x50u) == 0x50u && !stale) {
+			rep_bit = rep_ts_starting(eng.tick + 1u) == 2 ? 0x04 : 0x00;
+		}
+		rd[0][0x52] = (uint8_t)(0x10 | rep_bit);
+		t_us += 30000;
+		nx = 0;
+		hrc6000_dmr_isr_timeslot(&eng);
+		rep_ctl[1] = rep_ctl[0];
+		for (int i = 0; i < nx; i++) {
+			if (!xlog[i].read && xlog[i].page == 0 && xlog[i].reg == 0x41) {
+				rep_ctl[0] = xlog[i].data[0];
+			}
+		}
+		uint32_t ph = eng.tick & 1u;
+		res.tc_wrong += eng.phase_ts[ph] != 0 && eng.phase_ts[ph] != rep_ts_starting(eng.tick);
+		// Reports: a voice LC header (data) or a late entry, 3.5 ms into the slot after the burst's
+		uint8_t flags = 0;
+		if (two_report(c1, 1, k, t) || two_report(c2, 2, k, t)) {
+			flags = 0x08;
+			rd[0][0x51] = 0x12;
+		} else if (k == c1->late_at || k == c2->late_at) {
+			flags = 0x10;
+		}
+		if (flags != 0) {
+			t_us += 3500;
+			rd[0][0x82] = flags;
+			hrc6000_dmr_isr_sys(&eng);
+			rd[0][0x82] = 0;
+			t_us -= 3500;
+		}
+		dmr_event_t ev;
+		dmr_burst_t b;
+		while (hrc6000_dmr_pop(&eng, &ev, &b)) {
+			if (ev.kind != DMR_EV_BURST_RX || b.kind != DMR_BURST_VOICE) {
+				continue;
+			}
+			// Which call's burst this is
+			for (int ts = 1; ts <= 2; ts++) {
+				for (uint32_t n = 0; n < n_burst[ts]; n++) {
+					uint8_t want[27];
+					vburst(want, TWO_KEY(ts, n));
+					if (memcmp(want, b.payload, sizeof(want)) == 0) {
+						if (ev.ts == ts) {
+							res.heard[ts]++;
+						} else {
+							res.wrong[ts]++;
+						}
+					}
+				}
+			}
+		}
+	}
+	return res;
+}
+
+static void test_two_slots(void)
+{
+	// TS2 talking first; a TS1 call starts with its headers while TS2 goes on, and outlasts it
+	two_call_t ts2 = { 20, 30, -1, 30, 200 };
+	two_call_t ts1 = { 80, 90, -1, 90, 240 };
+	two_result_t r1 = two_slots(&ts1, &ts2, 260, 0);
+	CHECK(r1.tc_wrong == 0);
+	CHECK(r1.wrong[1] == 0 && r1.wrong[2] == 0);	// no burst on the other call's slot
+	CHECK(r1.heard[1] == 75);			// the whole TS1 call, while TS2 talks too
+	if (r1.heard[1] != 75 || r1.wrong[1] != 0 || r1.wrong[2] != 0) {
+		printf("  two slots, TS2 first: TS1 %d heard %d wrong, TS2 %d heard %d wrong, tc %d\n", r1.heard[1],
+		       r1.wrong[1], r1.heard[2], r1.wrong[2], r1.tc_wrong);
+	}
+
+	// TS2 already running when the radio comes in (its late entry report only); TS1's headers come mid-stream.
+	// One TC read in seven misses its update
+	two_call_t ts2b = { 0, 0, 6, 0, 200 };
+	two_call_t ts1b = { 40, 50, -1, 50, 160 };
+	two_result_t r2 = two_slots(&ts1b, &ts2b, 200, 7);
+	CHECK(r2.tc_wrong == 0);
+	CHECK(r2.wrong[1] == 0 && r2.wrong[2] == 0);
+	CHECK(r2.heard[1] == 55);
+	if (r2.heard[1] != 55 || r2.wrong[1] != 0 || r2.wrong[2] != 0 || r2.tc_wrong != 0) {
+		printf("  two slots, TS2 running: TS1 %d heard %d wrong, TS2 %d heard %d wrong, tc %d\n", r2.heard[1],
+		       r2.wrong[1], r2.heard[2], r2.wrong[2], r2.tc_wrong);
+	}
+
+	// One call, joined late on a radio that has heard no header since it started: its slot is the call's too, and
+	// every burst read after the late entry report is taken
+	two_call_t none = { 0, 0, -1, 0, 0 };
+	two_call_t ts1c = { 0, 0, 30, 24, 120 };
+	two_result_t r3 = two_slots(&ts1c, &none, 140, 0);
+	CHECK(r3.tc_wrong == 0);
+	CHECK(r3.wrong[1] == 0 && r3.heard[1] == 45);
+	if (r3.heard[1] != 45 || r3.wrong[1] != 0) {
+		printf("  late entry, one slot: TS1 %d heard %d wrong\n", r3.heard[1], r3.wrong[1]);
+	}
+}
+
 int main(void)
 {
 	test_chip();
@@ -662,6 +840,7 @@ int main(void)
 	test_tick_rx();
 	test_tick_rx_stale_headers();
 	test_repeater_slot();
+	test_two_slots();
 	printf("hrc5000Test: %s (%d failures)\n", failures ? "FAILED" : "passed", failures);
 	return failures ? 1 : 0;
 }

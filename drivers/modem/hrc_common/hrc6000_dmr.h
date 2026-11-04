@@ -314,10 +314,8 @@ typedef struct {
 	uint8_t tr_miss;
 	uint8_t tr_wait;
 	uint8_t tr_last[27];
-	// The tick phase of the header that started this read (-1: none yet), and the parity flip that names the read
-	// bursts with their call's slot: learned when a header-started read locks, kept for later calls (late entry too)
+	// The tick phase of the header that started this read (-1: none yet): the call to lock to
 	int8_t tr_hdr_ph;
-	uint8_t tr_ph_flip;
 
 	hrc6000_dmr_stats_t st;
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
