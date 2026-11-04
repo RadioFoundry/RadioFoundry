@@ -81,7 +81,7 @@
 
 #define IF_A_HZ			38850000u
 #define IF_B_HZ			38550000u
-#define UHF_FROM_HZ		300000000u
+#define UHF_FROM_HZ		D578UV_UHF_FROM_HZ
 // Chip 0 / 1 register 0x49: 0x26AC on the PRO; the 578UV's stock firmware writes 0x29AA unless a flag (not identified)
 // is set (5). No pin tells the models apart, so the PRO value is used
 #define R49			0x26ACu
@@ -567,6 +567,11 @@ static void cal_load(void)
 	if (!cal_read(CAL_UHF, cal_uhf, CAL_BLOCK_LEN) || !cal_read(CAL_VHF, cal_vhf, CAL_BLOCK_LEN)) {
 		cal_base = 0;
 	}
+}
+
+uint32_t d578uv_tx_hz(void)
+{
+	return tx_hz;
 }
 
 char d578uv_cal_copy(uint8_t *fqca)
@@ -1609,6 +1614,7 @@ static bool dmr_tx(uint32_t hz, uint8_t dac)
 		return false;
 	}
 	transmitting = true;
+	tx_hz = hz;	// the modem's set-up for this transmission reads it (d578uv_tx_hz)
 	mcu_pin_write(PIN_SPK_MUTE, true);	// the speaker is off while transmitting, as audio_route() keeps it
 	sr_set(SR_TX, 0);
 	chips_off();

@@ -322,10 +322,18 @@ The voice set-up after the boot ([modem-sct.md](modem-sct.md) 2), as the stock f
 | `VOCODER_SEL` | 4, AMBE+2 |
 | `DIGI_SPEAKER_GAIN` | from calibration (7, offset 0x0D9), MSB first |
 | `DIGI_MIC_GAIN` | from calibration (7, offset 0x0DB), MSB first |
-| `MOD_GAIN` | RadioFoundry only: 0x0C60 (+3.8 dB). At the chip's default (0 dB) the DMR deviation is 1255 Hz, 35% under the outer symbols' 1944 Hz; 0x0C60 gives 1941 Hz at 446 MHz, read by the bench's burst decoder, which reads 1948 Hz from a reference transmitter (measured). VHF not measured. In the DMR start (TYPE 0x05) the field changed nothing |
 | Codec page 1, registers 0x12, 0x13, 0x3C, 0x10 | four levels from calibration (7, offset 0x0D2): line outputs left and right, the right input, the headphone driver |
 | Codec page 1, register 0x34 | 0x80 |
 | Codec page 0, registers 0x56 and 0x58 | the microphone gain: `0x80 \| g` and `g`, g one of 0x18, 0x1C, 0x20, 0x24, 0x2A by the user's microphone gain; RadioFoundry sends 0x20, the middle step |
+
+`MOD_GAIN` (RadioFoundry only) goes before each DMR transmission, by band (`tx_fields`, [modem-sct.md](modem-sct.md) 5): the VCO's modulation gain differs by band, so one value puts the outer symbols at 1944 Hz on one band only. At the chip's default (0 dB) the deviation is 1255 Hz at 446 MHz and about 430 Hz at 151 MHz.
+
+| Band | `MOD_GAIN` | Deviation (measured) |
+| --- | --- | --- |
+| UHF (300 MHz and up) | 0x0C60 (+3.8 dB) | 1946 Hz at 446.075 MHz |
+| VHF | 0x2475 (+13.1 dB) | 1938 Hz at 151.5125 MHz, about 1900 Hz at 146.535 MHz |
+
+The bench's burst decoder reads 1948 Hz from a reference transmitter. Every burst decodes clean on both bands. In the DMR start (TYPE 0x05) the field changed nothing.
 
 Without a current calibration block the four levels and the two gains are the stock factory defaults: 0x08, 0x04,
 0x14, 0x14, speaker 0x0546 (-3.6 dB) and microphone 0x07D0 (-0.2 dB). The stock firmware sends other gains only for

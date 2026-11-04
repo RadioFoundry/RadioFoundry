@@ -669,6 +669,18 @@ static bool x_tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 	// TX on the slot asked; with aligned timing, take the TX timing from what is received
 	uint8_t slot = (uint8_t)(0x80 | (timing == DMR_TIMING_ALIGNED ? 0x40 : 0) | (ts == 2 ? 2 : 1));
 
+	if (s.port->tx_fields != NULL) {
+		const sct_field_t *f = NULL;
+		uint8_t n = s.port->tx_fields(&f, s.port->ctx);
+
+		if (n != 0 && f != NULL) {
+			sct_pkt_begin(&p, SCT_TYPE_CONTROL);
+			for (uint8_t i = 0; i < n; i++)
+				sct_pkt_add(&p, f[i].id, f[i].data, f[i].len);
+			if (!send(&p))
+				return false;
+		}
+	}
 	audio_tx();
 	sct_pkt_begin(&p, SCT_TYPE_DMR);
 	add_work_mode(&p, 2);

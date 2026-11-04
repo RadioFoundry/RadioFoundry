@@ -1045,6 +1045,65 @@ static void test_dmr_carrier(void)
 	CHECK(nsent == n);
 }
 
+// Fields the board gives at each transmission (a modulator gain by band): one control packet before WORK_MODE
+// transmit, asked for again at every key-up
+static uint8_t t_band;	// 0: the board gives none
+static const uint8_t t_gain_a[2] = { 0x0C, 0x60 };
+static const uint8_t t_gain_b[2] = { 0x24, 0x75 };
+static const sct_field_t t_tx_a[] = { { SCT_F_MOD_GAIN, 2, t_gain_a } };
+static const sct_field_t t_tx_b[] = { { SCT_F_MOD_GAIN, 2, t_gain_b } };
+
+static uint8_t d_tx_fields(const sct_field_t **f, void *ctx)
+{
+	(void)ctx;
+	if (t_band == 0)
+		return 0;
+	*f = t_band == 1 ? t_tx_a : t_tx_b;
+	return 1;
+}
+
+static const sct_dmr_port_t port_txf = {
+	.send = d_send, .call_option = { 0x41, 0x40, 0x42, 0x47, 0x08 }, .tx_fields = d_tx_fields,
+	.ready = d_ready, .lock = d_lock, .unlock = d_unlock,
+};
+
+static void test_dmr_tx_fields(void)
+{
+	dmr_config_t cfg = { .own_id = 1234567, .cc = 1, .access = DMR_ACCESS_IMPOLITE };
+	const uint8_t *d;
+	uint8_t n;
+	uint32_t t = 5000;
+	sct_dmr_stats_t st0, st;
+
+	sct_dmr_init(&port_txf);
+	CHECK(m->start(&cfg, on_event, NULL));
+	sct_dmr_poll(t);
+	for (uint8_t k = 1; k <= 2; k++) {
+		t_band = k;
+		nsent = 0;
+		CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+		CHECK(nsent == 2 && sent[0].pkt[5] == SCT_TYPE_CONTROL);
+		d = sent_field(0, SCT_F_MOD_GAIN, &n);
+		CHECK(d != NULL && n == 2 && memcmp(d, k == 1 ? t_gain_a : t_gain_b, 2) == 0);
+		d = sent_field(1, SCT_F_WORK_MODE, NULL);
+		CHECK(d != NULL && d[0] == 2 && sent_field(1, SCT_F_MOD_GAIN, NULL) == NULL);
+		// The field's status is no frame's answer and no NAK
+		static const uint8_t a[] = { SCT_F_MOD_GAIN, SCT_ACK_OK };
+		sct_dmr_get_stats(&st0);
+		chip_packet(a, 2, SCT_TYPE_CONTROL, t + 1);
+		sct_dmr_get_stats(&st);
+		CHECK(st.naks == st0.naks && st.rx_bad == st0.rx_bad && st.tx_acks == st0.tx_acks && !st.sending);
+		m->tx_abort();
+	}
+	// None given: no control packet
+	t_band = 0;
+	nsent = 0;
+	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(nsent == 1 && sent_field(0, SCT_F_WORK_MODE, NULL) != NULL);
+	m->tx_abort();
+	m->stop();
+}
+
 int main(void)
 {
 	test_build();
@@ -1059,6 +1118,7 @@ int main(void)
 	test_dmr_rx();
 	test_dmr_options();
 	test_dmr_carrier();
+	test_dmr_tx_fields();
 	CHECK(lock_depth == 0 && lock_max == 1);
 	// Not booted: start fails and sends nothing
 	booted = false;
