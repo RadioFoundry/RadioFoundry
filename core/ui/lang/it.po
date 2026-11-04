@@ -1257,8 +1257,16 @@ msgid "(no name)"
 msgstr "(senza nome)"
 
 #: core/ui/ui_menus.c
+msgid "New contact"
+msgstr "Nuovo contatto"
+
+#: core/ui/ui_menus.c
 msgid "{0-9 find  OK talk  # more|0-9  OK talk  # more}"
 msgstr "{0-9 cerca  OK parla  # altro|0-9  OK parla  # altro}"
+
+#: core/ui/ui_menus.c
+msgid "No contact matches"
+msgstr "Nessun contatto corrisponde"
 
 #: core/ui/ui_menus.c
 msgid "No contacts: add them in qdmr"
@@ -2263,6 +2271,10 @@ msgstr "Fino a 10.0 ppm"
 #: core/ui/ui_menus.c
 msgid "Firmware: "
 msgstr "Firmware: "
+
+#: core/ui/ui_menus.c
+msgid "Release: "
+msgstr "Versione: "
 
 #: core/ui/ui_menus.c
 msgid "Build: "

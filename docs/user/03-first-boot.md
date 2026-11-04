@@ -62,7 +62,7 @@ the codeplug.
 
 ## Checks after installing
 
-1. **Settings > Advanced > About** shows "RadioFoundry" with the version you flashed and the radio model. Below
+1. **Settings > My radio > About** (also under **Advanced**) shows "RadioFoundry" with the version you flashed and the radio model. Below
    them it lists the authors and the licenses of everything in the firmware.
 2. On an FM channel, hold **Monitor** to open the squelch. You hear noise. This shows that the
    receiver and the audio path work.

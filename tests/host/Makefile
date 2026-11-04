@@ -470,6 +470,27 @@ uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
 uiSim: uiSim.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -o $@ uiSim.c $(UIAPP) -lz
 
+# The beep reel (tools/beep_reel.py). BEEP_DIR picks the beep.c and beep.h to build with, so CI can build the base
+# commit's beeps for a before and after comparison. We copy that beep.h into out/beep/radio/ and put out/beep first on
+# the include path, so beep.c and beepReel.c both use it instead of core/radio/beep.h, and beep_names.awk makes the
+# list of beep names from it. The beep_dir file holds the last BEEP_DIR built and only changes when BEEP_DIR does, so
+# switching to another directory forces a rebuild.
+BEEP_DIR ?= $(CORE)/radio
+BEEPINC := out/beep
+TESTS   += beepReel
+
+$(BEEPINC)/beep_dir: FORCE
+	@mkdir -p $(BEEPINC)
+	@echo '$(BEEP_DIR)' | cmp -s - $@ || echo '$(BEEP_DIR)' > $@
+FORCE:
+.PHONY: FORCE
+
+beepReel: beepReel.c beep_names.awk $(UIDEPS) $(BEEP_DIR)/beep.c $(BEEP_DIR)/beep.h $(BEEPINC)/beep_dir
+	mkdir -p $(BEEPINC)/radio
+	cp $(BEEP_DIR)/beep.h $(BEEPINC)/radio/beep.h
+	awk -f beep_names.awk $(BEEP_DIR)/beep.h > $(BEEPINC)/beep_names.h
+	$(CC) -I$(BEEPINC) $(UIFLAGS) -o $@ beepReel.c $(UIAPP) $(BEEP_DIR)/beep.c -lz
+
 # The highlight colors the gallery shows its color pages in: the list in .github/workflows/ui-gallery.yml, so the
 # committed gallery and a pull request's before / after pictures show the same colors
 UI_GALLERY_COLORS ?= $(shell sed -n 's/^ *UI_GALLERY_COLORS: *"\([^"]*\)".*/\1/p' $(ROOT)/.github/workflows/ui-gallery.yml)
@@ -483,7 +504,7 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim
+run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim beepReel
 	./gfxTest
 	./i18nTest
 	./i18nTestNoLang
@@ -491,6 +512,7 @@ run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoC
 	./uiFlowTest
 	./uiFlowTestNoColor
 	./uiSim --layout
+	./beepReel --out out/beep-reel --no-frames > /dev/null	# checks every beep has a scene and the scenes still run
 .PHONY: run-ui ui-gallery ui-sheets
 
 # AMBE+2 3600x2450 air frame FEC and interleaving (core/dmr/ambe), with vectors from the stock DM-1701 codec's FEC

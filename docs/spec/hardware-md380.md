@@ -605,8 +605,10 @@ Bias from MICPWR_SW (PA14), on whenever the radio runs (section 2.6). Mic level 
 
 CTCSS / DCS are decoded in software from QT_DQT_IN (PA2) and generated as PWM on
 CTC/DCS_OUT (PC7) (unverified). RadioFoundry does the same behind `CONFIG_SUBTONE` (on by default, 3.3 KB of
-flash). CTCSS 100.0 Hz works on air both ways (tester, 2026-10-19); DCS and the deviation aren't checked yet. Without
-the switch, channels with a tone open on carrier and send no tone.
+flash). CTCSS 100.0 Hz works on air both ways (tester, 2026-10-19). DCS receive works on air (D023N, 2026-11-02). DCS
+transmit went out inverted (D023N decoded as D023I by another radio, 2026-11-02), so `MD380_SUBTONE_TX_INVERT` is on
+by default. At `MD380_SUBTONE_PERCENT` 30 the deviation is 0.60 kHz peak for CTCSS 100.0 Hz and about 0.72 kHz for DCS
+(SDR, 2026-11-02), inside the usual 0.5 to 0.75 kHz. Without `CONFIG_SUBTONE`, channels with a tone open on carrier and send no tone.
 The FM TX tones (1750 Hz, roger beep) and APRS AFSK are not written (`CONFIG_FM_TX_TONES`, `CONFIG_APRS_RX` in
 `config.mk`).
 
