@@ -198,15 +198,27 @@ static sct_codec_write_t codec_writes[] = {
 static uint8_t spk_gain[2];
 static uint8_t mic_gain[2];
 
-// The modulator's gain. At the chip's default (0 dB) the DMR deviation is 1255 Hz, 35% under the 1944 Hz of the outer
-// symbols; 0x0C60 (+3.8 dB) gives 1941 Hz at 446 MHz (measured). Sent here, as a control field: in the DMR start it
-// changed nothing
-static const uint8_t mod_gain[2] = { 0x0C, 0x60 };
+// The modulator's gain, by band: the VCO's modulation gain differs, so one value gives the outer symbols' 1944 Hz on
+// one band only. At the chip's default (0 dB) the deviation is 1255 Hz at 446 MHz and about 430 Hz at 151 MHz. 0x0C60
+// (+3.8 dB) gives 1941 Hz at 446 MHz, 0x2475 (+13.1 dB) 1944 Hz at 151.5 MHz and about 1910 Hz at 146.5 MHz
+// (measured). Sent as a control field before each transmission (tx_fields): in the DMR start it changed nothing
+static const uint8_t mod_gain_uhf[2] = { 0x0C, 0x60 };
+static const uint8_t mod_gain_vhf[2] = { 0x24, 0x75 };
+
+static const sct_field_t tx_uhf[] = { { SCT_F_MOD_GAIN, sizeof(mod_gain_uhf), mod_gain_uhf } };
+static const sct_field_t tx_vhf[] = { { SCT_F_MOD_GAIN, sizeof(mod_gain_vhf), mod_gain_vhf } };
+
+static uint8_t port_tx_fields(const sct_field_t **fields, void *ctx)
+{
+	(void)ctx;
+	// The core keys the RF chips before the modem's transmission begins, so the TX frequency is this one's
+	*fields = d578uv_tx_hz() >= D578UV_UHF_FROM_HZ ? tx_uhf : tx_vhf;
+	return 1;
+}
 
 static const sct_field_t voice_fields[] = {
 	{ SCT_F_DIGI_SPK_GAIN, sizeof(spk_gain), spk_gain },
 	{ SCT_F_DIGI_MIC_GAIN, sizeof(mic_gain), mic_gain },
-	{ SCT_F_MOD_GAIN, sizeof(mod_gain), mod_gain },
 };
 
 static const sct_voice_t voice = {
@@ -315,6 +327,7 @@ static const sct_dmr_port_t port = {
 	.start_count = sizeof(start_fields) / sizeof(start_fields[0]),
 	.codec_tx = &hpl_mute,
 	.codec_rx = &codec_writes[CODEC_HPL],
+	.tx_fields = port_tx_fields,
 	.ready = port_ready,
 	.lock = port_lock,
 	.unlock = port_unlock,

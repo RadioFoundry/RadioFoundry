@@ -98,7 +98,7 @@ Fields the driver uses:
 | 0x19 | CARRIER_READY | bits 1-0: 0 carrier lost (the default), 1 carrier ready, 2 ready with the demodulated phase reversed; bit 2 mute on a code mismatch (never set by the driver) |
 | 0x1C | DEMOD_GAIN | 2 bytes, MSB first: the demodulator's gain in Q16.11 (2048 = 0 dB); 0 auto calibration (the default) |
 | 0x1D | REPORT_FIELD | which fields the chip reports. In DMR: bit 7 NEW_EVENT, bit 6 DMR_FLC, bit 5 CSBK, bit 0 slot type and EMB, bits 4-1 reserved. The chip's default is 0x70 |
-| 0x2C | MOD_GAIN | 2 bytes, MSB first: the modulator's gain in Q16.11 (2048 = 0 dB). It sets the DMR transmit deviation when sent as a control field in the voice set-up (section 2); in the DMR start it changed nothing (measured) |
+| 0x2C | MOD_GAIN | 2 bytes, MSB first: the modulator's gain in Q16.11 (2048 = 0 dB). It sets the DMR transmit deviation when sent as a control field, in the voice set-up (section 2) or before a transmission (section 5); in the DMR start it changed nothing (measured) |
 | 0x2D | CODEC_SELECT | the codec chip: 1 TLV320AIC3204, 2 WM8758B (the chip's default), 3 ES8338 |
 | 0x41 | MODOUT_CONFIG | 5 bytes: the delay between the two outputs of two-point modulation (signed, 10.4 µs steps, ±40), then 4 reserved bytes. Default all 0 |
 | 0x43 | DIGC_DATA_FRAME | PROP, LEN, data (section 4) |
@@ -177,7 +177,8 @@ modem task can both call in. No RTOS calls and no waits: the host tests run the 
 
 ## 5. Transmit
 
-1. `tx_begin`: the board's `codec_tx` (when given), then WORK_MODE transmit, DMR_CALL_SLOT
+1. `tx_begin`: the board's `tx_fields` (when given) as one control packet (TYPE 0), such as a modulator gain for
+   the band being keyed; then its `codec_tx` (when given), then WORK_MODE transmit, DMR_CALL_SLOT
    `0x80 | aligned 0x40 | slot`. The queue holds 8 bursts.
 2. Each frame is sent, then the engine waits for its answer (`43 00` or ACK 0x0A), at most a slot (60 ms). The next
    frame goes 60 ms after the one before. A chip may answer no frame with `43 00` and send ACK 0x0A only once its

@@ -46,6 +46,9 @@ typedef struct {
 	// engine ignores
 	const sct_codec_write_t *codec_tx;
 	const sct_codec_write_t *codec_rx;
+	// Optional: control fields (TYPE 0) sent as each transmission begins, before its first packet, as the board's
+	// state has them then: a setting that differs by band, for example. Returns how many (0: none)
+	uint8_t (*tx_fields)(const sct_field_t **fields, void *ctx);
 	// Optional: true once the chip has booted (start fails before). NULL: always
 	bool (*ready)(void *ctx);
 	// Optional: a recursive lock around the engine, taken by every entry (the stack's task calls the hal functions,

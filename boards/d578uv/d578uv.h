@@ -90,6 +90,10 @@ uint8_t d578uv_mic_level(void);	// hal_power_t.mic_level: chip 0's voice amplitu
 void d578uv_rx_raw(uint16_t *rssi, uint16_t *noise, bool *signal);
 // Diagnostics page lines (diag_d578uv.c)
 bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len);
+// The band split: the UHF path from here up (hardware-d578uv.md 5)
+#define D578UV_UHF_FROM_HZ	300000000u
+// The frequency the RF chips were last keyed on, FM or DMR (radio_d578uv.c)
+uint32_t d578uv_tx_hz(void);
 // The calibration copy in use: 'A', 'B' or 0 for none; *fqca the UHF block's byte 0 (radio_d578uv.c)
 char d578uv_cal_copy(uint8_t *fqca);
 void d578uv_diag_reset(void);
