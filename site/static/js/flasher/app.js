@@ -994,7 +994,12 @@ function variantLines(r) {
 }
 
 function selectRadio(r) {
-	if (S.radio && S.radio.id !== r.id) Promise.resolve(backend().release?.()).then(() => { S.c7 = null; });
+	if (S.radio && S.radio.id !== r.id) {
+		Promise.resolve(backend().release?.()).then(() => { S.c7 = null; });
+		// another radio's backup is not this one's: its install backs up again and brings back no channels of the other
+		S.backupDone = false;
+		S.backupParts = [];
+	}
 	S.radio = r;
 	S.board = fb().boards[r.flash.board];
 	S.selection = new Selection(r, S.data.features, S.data.variants);
