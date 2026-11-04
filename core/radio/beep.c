@@ -101,6 +101,7 @@ void beep_init(const hal_audio_t *audio)
 static bool warm_on;
 static uint32_t warm_since, warm_until, last_now;
 static volatile uint8_t lead_target = 1;	// lead-in blocks for the pattern requested last (beep_play)
+static uint8_t lead_seq;		// the request the lead-in count was last reset for (the audio callback's)
 
 static uint8_t lead_blocks(void)
 {
@@ -300,6 +301,16 @@ void beep_audio_block(const int16_t *mic, int16_t *spk, void *ctx)
 	(void)ctx;
 	cb_blocks++;
 	memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
+	// A new pattern after the route's hold ran out: its lead-in from the first block (inside the hold the route is
+	// still up: none). The hold's end on this stream resets the count too, but the voice stream may have taken the
+	// last beep over (beep_mix counts the idle blocks there) and left it counted up
+	uint8_t seq = LOAD(req_seq);
+	if (seq != lead_seq) {
+		lead_seq = seq;
+		if (!cb_active && cb_idle >= ROUTE_HOLD_BLOCKS) {
+			cb_lead = 0;
+		}
+	}
 	bool on;
 	if (cb_lead < lead_target && beep_busy()) {
 		cb_lead++;

@@ -816,6 +816,33 @@ static void test_beep_module(void)
 		beep_service(false, 0);
 	}
 	CHECK(!aud.pcm && !aud.streaming);
+	// The voice stream takes a beep over during its hold (DMR transmit right after a beep): the next beep on the
+	// beep stream still gets the whole lead-in, not the count the last one left
+	beep_play(BEEP_KEY, 100, false);
+	for (int b = 0; b < 4; b++) {
+		beep_audio_block(mic, blk, NULL);
+	}
+	a_stop();
+	for (int b = 0; b < 8; b++) {	// the voice stream runs on past the hold
+		beep_mix(blk);
+	}
+	CHECK(!beep_busy());
+	beep_play(BEEP_KEY, 100, false);
+	for (int b = 0; b < 3; b++) {
+		beep_audio_block(mic, blk, NULL);
+		bool silent = true;
+		for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+			silent &= blk[i] == 0;
+		}
+		CHECK(silent && aud.pcm);
+	}
+	beep_audio_block(mic, blk, NULL);
+	CHECK(blk[42] != 0);
+	for (int i = 0; i < 10; i++) {
+		beep_audio_block(mic, blk, NULL);
+		beep_service(false, 0);
+	}
+	CHECK(!aud.pcm && !aud.streaming);
 
 	// The amplifier hang (speaker_warm, 2 s): a key at 1000 ms powers it, a beep at once still takes the full lead
 	// (the amplifier only just came up), one after the lead takes one block, and the hang ends 2 s after the last event
