@@ -125,6 +125,7 @@
     "nand": true,
     "progmem": 2097152,
     "stock_console": "usmart",
+    "rom_entry": null,
     "calibration": {
      "progmem": 2088960,
      "nand": 2621440,
@@ -414,6 +415,7 @@
     "nand": false,
     "progmem": 1048576,
     "stock_console": null,
+    "rom_entry": null,
     "calibration": {
      "area": 823296,
      "page_id": 2
@@ -532,6 +534,7 @@
     "nand": false,
     "progmem": 1048576,
     "stock_console": null,
+    "rom_entry": null,
     "calibration": {
      "area": 823296,
      "page_id": 2
@@ -928,6 +931,115 @@
    "cps_radio_types": [
     6
    ]
+  },
+  "rt10": {
+   "id": "rt10",
+   "name": "Retevis RT10",
+   "model": "RT10",
+   "part_of": null,
+   "platform": "hrc7000",
+   "platform_stubs": [],
+   "family": "boot-rom",
+   "link": "serial-cable",
+   "release": "testing",
+   "debuglink_names": [
+    "RT10",
+    "rt10"
+   ],
+   "rom_base": 50331648,
+   "app_base": 50380800,
+   "flash_end": 51380224,
+   "app_region": [
+    50380800,
+    51281920
+   ],
+   "sectors": [
+    [
+     0,
+     50380800,
+     901120
+    ],
+    [
+     1,
+     51281920,
+     98304
+    ]
+   ],
+   "protected": [
+    [
+     50331648,
+     50380800
+    ]
+   ],
+   "protect": [
+    {
+     "mem": "data",
+     "start": 2088960,
+     "end": 2097152,
+     "what": "the activation block (0x1FE000) and the factory calibration (0x1FF000) (hardware-rt10.md 4)"
+    }
+   ],
+   "keep_codec_supported": true,
+   "first_stage": null,
+   "codec_tool": "hrc7000_codec",
+   "codec_stock": [],
+   "codec": {
+    "id": "rt10-112",
+    "windows": [
+     [
+      51281920,
+      98304
+     ]
+    ],
+    "installed": [],
+    "sources": [
+     "a program flash read of the radio"
+    ]
+   },
+   "codec_code": 51281920,
+   "codec_slot": [
+    51281920,
+    51380224
+   ],
+   "codec_run": [
+    276992,
+    360448
+   ],
+   "codec_tables": [
+    402670092,
+    402682244
+   ],
+   "loader_id": null,
+   "loader_keys": null,
+   "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Start the tool and wait until it asks you to switch the radio on.",
+    "Turn the radio on. No keys are needed."
+   ],
+   "stock_download": null,
+   "key_sha256": null,
+   "key_prefix": null,
+   "dfu_ids": null,
+   "dfu_string1": null,
+   "dfu_product": null,
+   "dfu_layout": null,
+   "stub": {
+    "tool": "stubtool",
+    "id": 4,
+    "tested": false,
+    "latch": 255,
+    "key": 255,
+    "nand": false,
+    "progmem": 2097152,
+    "stock_console": null,
+    "rom_entry": 50380800,
+    "calibration": {
+     "data": 2093056
+    }
+   },
+   "build_options": [],
+   "cps_radio_types": []
   }
  }
 }

@@ -431,6 +431,7 @@ PAGE = 256
 # The application area of the program flash: an RadioFoundry image is linked for 0x0300C000, which is flash offset 0xC000. The
 # bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
 APP_START, APP_END = 0xC000, 0x100000
+ROM_FLAG = b"thd\x0c"                    # the boot ROM's flag at flash 0, followed by the entry address (hardware-rt10.md 2)
 # The first word of RadioFoundry's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D). Its
 # application is linked for 0x0300D000, so the image written at APP_START is the install image, which starts with it
 STAGE_MAGIC = bytes.fromhex("2c1101c0")
@@ -557,10 +558,11 @@ def check_univ_load(image, load, window=None):
 # program flash size. VERSION's board= names them on the RadioFoundry route; --board at power-on. Unknown radio: GENERIC (no
 # pins, nothing echoed but 0).
 C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
-                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"], "protect": b.protect}
+                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"], "rom_entry": b.stub.get("rom_entry"),
+                    "protect": b.protect}
              for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000,
-           "protect": []}
+           "rom_entry": None, "protect": []}
 # This tool's memory names as board.toml [[flash.protect]] names them
 PROTECT_MEM = {"progmem": "progmem", "q128": "data", "nand": "nand"}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
@@ -1224,7 +1226,7 @@ class Radio:
         except protect.ProtectedError as e:
             raise DumpError(str(e))
 
-    def check_write_range(self, mem, start, end, app=False):
+    def check_write_range(self, mem, start, end, app=False, rom_flag=False):
         """Refuse a write or erase of [start, end) before anything is sent: whole sectors, never the NAND, only the
         allowed regions, and never a protected region of the board the stub is configured for (board.toml
         [[flash.protect]], rfoundry/protect.py)."""
@@ -1237,6 +1239,7 @@ class Radio:
         if mem == "nand":
             raise DumpError("the NAND is read only here")
         ok = WRITE_OK.get(mem, []) + ([(APP_START, APP_END)] if app and mem == "progmem" else [])
+        ok += [(0, SECTOR)] if rom_flag and mem == "progmem" else []
         if not any(a <= start and end <= b for a, b in ok):
             raise DumpError("%s 0x%X-0x%X is outside the allowed write regions %s" %
                             (MEM[mem][4], start, end, ", ".join("0x%X-0x%X" % r for r in WRITE_OK.get(mem, []))))
@@ -1321,7 +1324,28 @@ class Radio:
         bad = self.verify(mem, padded, APP_START) if todo else []
         if bad:
             raise DumpError("verify after write: sectors differ at %s" % ", ".join("0x%X" % x for x in bad))
-        return len(todo), (end - APP_START) // SECTOR - len(todo)
+        flag = self.write_rom_flag()
+        return len(todo) + flag, (end - APP_START) // SECTOR - len(todo)
+
+    def write_rom_flag(self):
+        """On a board the boot ROM starts directly (profile rom_entry), make the flag sector at flash 0 name the
+        application's entry. Written after the application, so an interrupted write leaves the radio starting what it
+        started before. The rest of the sector is kept; a sector without the flag gets the flag, the entry and 0xFF.
+        Returns 1 if the sector was written, else 0."""
+        entry = (self.profile or {}).get("rom_entry")
+        if entry is None:
+            return 0
+        mem = "progmem"
+        cur = b"".join(bytes(self.read_flash(mem, a, CHUNK)) for a in range(0, SECTOR, CHUNK))
+        want = ROM_FLAG + entry.to_bytes(4, "little") + (cur[8:] if cur[:4] == ROM_FLAG else b"\xff" * (SECTOR - 8))
+        if cur == want:
+            return 0
+        self.check_write_range(mem, 0, SECTOR, rom_flag=True)
+        self.write_sectors(mem, want, 0, [0])
+        if self.verify(mem, want, 0):
+            raise DumpError("verify after write: the boot ROM flag sector differs")
+        self.log("boot ROM flag at 0 now names 0x%08X" % entry)
+        return 1
 
     def write_flash(self, mem, start, data):
         """Erase and program whole sectors at `start`, then check by CRC against the radio's own read of them."""
@@ -2636,6 +2660,13 @@ def self_test():
         check(23e6 < int.from_bytes(cfg[:4], "big") < 25e6, "CONFIG carries the measured clock")
         check(r.configured is prof, "the %s profile is confirmed by the HELLO echo" % prof["name"])
         nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
+        if prof["rom_entry"] is not None:	# the boot ROM's flag sector at 0 is made to name the entry, once
+            pm = radio.images["progmem"]
+            check(nw == 1 and nk == 4 and pm[:8] == ROM_FLAG + prof["rom_entry"].to_bytes(4, "little"),
+                  "the flag sector names 0x%X after the first write" % prof["rom_entry"])
+            check(pm[8:SECTOR] == images["progmem"][8:SECTOR] or images["progmem"][:4] != ROM_FLAG,
+                  "the rest of a flag sector is kept")
+            nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
         check(nw == 0 and nk == 4, "writing the same image after CONFIG changes nothing")
         if b and b.first_stage:		# a first stage in the radio: only an image that starts with one goes over it
             pm = bytearray(radio.images["progmem"])

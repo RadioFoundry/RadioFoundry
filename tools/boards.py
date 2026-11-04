@@ -67,6 +67,8 @@ FAMILIES = {
     # combination, speaking its own file format (tools/serial_loader.py)
     "serial-iap": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": "iap"},	# a vendor IAP
     # loader on the cable, through the RAM stub
+    "boot-rom": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": None},	# no vendor loader:
+    # the SoC's boot ROM serial window on the cable at every power-on, through the RAM stub
 }
 # [flash.stub] stock_console: the debug console a stock firmware answers on the cable, by protocol (the web flasher
 # loads the stub through it before RadioFoundry is installed: site/static/js/flasher/usmart.js)
@@ -203,12 +205,16 @@ BOARD_SCHEMA = {
         # platform lists in board_stub.keys, nothing another platform's stub takes
         "stub": _opt({"id": _req(int), "tested": _req(bool),
                       "hold_power": _opt(bool), "progmem": _opt(int),	# the HR_C7000 universal stub
+                      # HR_C7000 without a vendor loader: the boot ROM starts the image its flag sector at flash 0
+                      # names, so stubtool --write-app keeps that sector naming this entry
+                      "rom_entry": _opt(int),
                       "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int),
                       # where the factory calibration is, for a backup: in a data flash, the 4 KB page of the stock
                       # codeplug area [0, area) whose last byte is page_id; on a radio whose data memory is a NAND,
                       # the 4 KB sectors of the program flash (progmem) and the NAND (nand) that each hold a copy
                       # starting with magic
-                      "calibration": _opt({"area": _opt(int), "page_id": _opt(int),
+                      # or, data: the data flash sector (4 KB) at a fixed address that holds it
+                      "calibration": _opt({"area": _opt(int), "page_id": _opt(int), "data": _opt(int),
                                            "progmem": _opt(int), "nand": _opt(int), "magic": _opt(str)}),
                       # the STM32F4 stub: the SPI flash's bus (SPIn), mode and fastest clock; the pins come from pins.h
                       # (F4_SPI_PINS), and idle_cs names other chip selects on that bus to hold high
@@ -652,7 +658,7 @@ class Board:
             hold = s["hold_power"]
             out.update(latch=self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
                        key=self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, nand=self.nand,
-                       progmem=s["progmem"], stock_console=s.get("stock_console"))
+                       progmem=s["progmem"], stock_console=s.get("stock_console"), rom_entry=s.get("rom_entry"))
             if "calibration" in s:
                 out["calibration"] = s["calibration"]
         return out
@@ -1137,8 +1143,8 @@ def check(root=ROOT):
                 for k in set(stub) - {"id", "tested"} - set(bs["keys"]) - set(bs["optional"]):
                     bad("flash.stub %s is not a key of the %s stub (platform.toml board_stub)" % (k, bs["tool"]))
                 cal = stub.get("calibration")
-                if cal is not None and set(cal) not in ({"area", "page_id"}, {"progmem", "nand", "magic"}):
-                    bad("flash.stub calibration is either {area, page_id} (a data flash) or {progmem, nand, magic} (a NAND)")
+                if cal is not None and set(cal) not in ({"area", "page_id"}, {"data"}, {"progmem", "nand", "magic"}):
+                    bad("flash.stub calibration is {area, page_id} or {data} (a data flash) or {progmem, nand, magic} (a NAND)")
                 if cal is not None and ("nand" in cal) != b.nand:
                     bad("flash.stub calibration names %s, but the data memory is %s" % ("the NAND" if "nand" in cal else "a data flash",
                         "a NAND" if b.nand else "a data flash"))
