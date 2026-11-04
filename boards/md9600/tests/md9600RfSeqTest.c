@@ -536,6 +536,26 @@ static void test_tx(void)
 	md9600_rf_tx_off(&rf);
 	CHECK(rf.state == MD9600_RF_RX);
 
+	// A retune in transmit (a new frequency, or a power step) and sleep with the PA on: each ramps the PA down first,
+	// the loop opening only at the end of the ramp
+	CHECK(md9600_rf_tx_arm(&rf, true));
+	for (int k = 0; k < 2; k++) {
+		CHECK(md9600_rf_tx(&rf, 446000000u, true, 2) == MD9600_RF_OK && level[MD9600_LN_APC]);
+		reset_log();
+		if (k == 0) {
+			CHECK(md9600_rf_tx(&rf, 446100000u, true, 1) == MD9600_RF_OK);
+		} else {
+			md9600_rf_sleep(&rf);
+		}
+		int open = find(0, EV_LINE, MD9600_LN_APC, 0);
+		CHECK(count(EV_DAC, MD9600_DAC_APC_TUNE_V) >= (int)MD9600_APC_RAMP_STEPS);
+		CHECK(open > 0 && find(0, EV_DAC, MD9600_DAC_APC_TUNE_V, -1) < open);
+		CHECK(find(0, EV_DELAY, -1, MD9600_APC_RAMP_STEP_US) >= 0);
+		CHECK(k == 1 || find(0, EV_PLL, -1, -1) > open);	// the new words after the PA is off
+	}
+	CHECK(pa_off_now() && rf.state == MD9600_RF_OFF);
+	CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK);
+
 	// A receive request in transmit ends the transmission first
 	CHECK(md9600_rf_tx_arm(&rf, true));
 	CHECK(md9600_rf_tx(&rf, 446000000u, true, 2) == MD9600_RF_OK);

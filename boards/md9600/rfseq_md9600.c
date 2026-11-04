@@ -203,7 +203,7 @@ void md9600_rf_set_dmr(md9600_rf_t *rf, bool dmr)
 
 void md9600_rf_sleep(md9600_rf_t *rf)
 {
-	md9600_rf_pa_safe(rf);
+	(void)md9600_rf_pa(rf, false);	// ramped down if it was on, so the PA doesn't splash
 	receivers_off(rf->ops);
 	rf->state = MD9600_RF_OFF;
 }
@@ -305,7 +305,7 @@ md9600_rf_err_t md9600_rf_tx(md9600_rf_t *rf, uint32_t hz, bool wide, uint8_t po
 
 md9600_rf_err_t md9600_rf_tx_tune(md9600_rf_t *rf, uint32_t hz, uint8_t power, bool settle)
 {
-	md9600_rf_pa_safe(rf);
+	(void)md9600_rf_pa(rf, false);	// a retune in transmit: the PA ramped down before the carrier moves
 	md9600_rf_err_t e = md9600_rf_tx_check(rf, hz, power);
 	if (e != MD9600_RF_OK) {
 		return fail(rf, e);
