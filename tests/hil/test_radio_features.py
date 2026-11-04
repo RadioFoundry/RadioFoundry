@@ -31,7 +31,8 @@ Pass criteria:
 - test_vfo_scan: (FM VFO) SCAN_VFO over the VFO frequency + 0..10 steps: rx_hz takes 3+ values, all inside the range,
   within 4 s; CANCEL: the starting frequency again.
 - test_dual_watch: (zone of 2+ channels) dual watch with the next position: dual.a / dual.b are the two, dual.sel=a;
-  zone_pos alternates between exactly the two positions and dual.at between a and b; CANCEL: back to the start.
+  zone_pos alternates between exactly the two positions and dual.at between a and b, or, with dual.both=1 (a second
+  receiver has B), stays on A; CANCEL: back to the start.
 - test_dual_watch_debug_link: (zone of 3+ channels, a build with dual.stops) dual watch with the next position; SCAN
   select b: dual.sel=b within 1 s; ZONE_POS +2: the watch again within 3 s with dual.b the new position, dual.a
   unchanged, dual.sel=b; SCAN stop: scan=off within 1 s, still off 2 s later (the UI didn't start it again), and
@@ -337,9 +338,12 @@ def test_dual_watch(radio):
         if "dual.a" in f:       # the debug link's dual watch fields: the pair and the selected one (A)
             assert (f["dual.a"], f["dual.b"], f["dual.sel"]) == (f"{zone}:{a}", f"{zone}:{b}", "a"), f
         seen, f = collect(radio, "zone_pos", 3.0)
-        print("positions:", seen, "phase:", f.get("scan_phase"))
+        print("positions:", seen, "phase:", f.get("scan_phase"), "both:", f.get("dual.both"))
         assert set(seen) <= {str(a), str(b)}, seen
-        assert len(set(seen)) == 2 or f.get("scan_phase") in ("probe", "hold", "resume"), (seen, f)
+        if f.get("dual.both") == "1":   # a second receiver has B: the main one stays on A (radio-features.md 2.2)
+            assert set(seen) == {str(a)}, (seen, f)
+        else:
+            assert len(set(seen)) == 2 or f.get("scan_phase") in ("probe", "hold", "resume"), (seen, f)
         if "dual.at" in f:      # where the receiver is: A or B, never neither
             ats, _ = collect(radio, "dual.at", 2.0, sections=("features",))
             print("receiver on:", ats)
@@ -663,6 +667,7 @@ def test_dual_watch_second_receiver_bench(radio, sdr_bench, pytestconfig):
         L.scan("dual_vfo")
         try:
             wait_features(radio, lambda v: v.get("scan") == "dual" and v.get("dual.b") == "vfo2", 1.0, "VFO dual watch")
+            wait_ui_dual(radio)     # else a retune ends the watch for good
             L.scan("select", 1)
             wait_features(radio, lambda v: v.get("dual.sel") == "b", 1.0, "B selected")
             b0 = radio.core()
