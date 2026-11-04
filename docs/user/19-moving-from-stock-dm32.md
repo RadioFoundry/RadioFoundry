@@ -71,6 +71,19 @@ python3 dm32_migrate.py restore --workdir ~/RadioFoundry-DM32-migration/20261011
 or a `.yaml`. `dm32_migrate.py import --from FILE` only converts and checks, with no radio needed. Files from Baofeng's
 own CPS aren't supported here. Read the radio with qdmr and save the codeplug from there.
 
+### From a web installer backup
+
+A backup taken with the web installer (the `.zip`) still holds the stock codeplug. The web installer and the
+Codeplug Editor can't read it from there: only qdmr's `dmrconf` decodes this layout. Get it out on a computer:
+
+1. `tools/backup_codeplug.py BACKUP.zip -o DIR` writes `<name>-stock.yaml` and `<name>-stock.dfu` (and RadioFoundry's
+   codeplug, `<name>-rfoundry.yaml`, when the backup holds one). It needs `dmrconf` 0.15 or newer.
+2. Open `<name>-stock.yaml` in the Codeplug Editor and write it to the radio, or give it to
+   `dm32_migrate.py --from`.
+
+Checked on a backup from 2026-10-26: 24 channels, 5 zones and 23 contacts came out, and the Codeplug Editor opened
+them. The editor reports the scan lists, an encrypted channel and 4 tones it couldn't take.
+
 ## What fits
 
 RadioFoundry holds 1024 channels, 68 zones of 80 channels, 1024 contacts and 76 RX group lists, with names of up to 16

@@ -127,6 +127,7 @@ The Codeplug Editor converts these when you open them ([Files](04-programming.md
 |---|---|---|
 | DM-1701, RT84 | The web installer's backup, a dump of the radio's data flash | The manufacturer's MD-UV380 family CPS file (`.rdt`): `dmrconf decode --manufacturer --radio dm1701 FILE.rdt FILE.yaml`, then open the YAML |
 | MD-380, MD-390, RT3 | The web installer's backup, a dump of the radio's data flash, the manufacturer's CPS file (`.rdt`) | |
+| DM-32UV | The YAML below | The web installer's backup: `tools/backup_codeplug.py BACKUP.zip -o DIR`, then open `DIR/<name>-stock.yaml` ([From a web installer backup](19-moving-from-stock-dm32.md#from-a-web-installer-backup)) |
 
 ## Baofeng DM-1701
 
