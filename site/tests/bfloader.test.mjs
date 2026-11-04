@@ -246,7 +246,8 @@ test("the connect step always sends ahead and offers the factory update mode to 
 	const src = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
 	const connects = [...src.matchAll(/(?<!function )connectPanel\(([^\n]*)\)/g)].map((m) => m[1]);
 	assert.equal(connects.filter((x) => /onUpdateMode/.test(x)).length, 2, "install and restore pass the factory way in");
-	assert.equal(connects.filter((x) => !/onUpdateMode/.test(x)).length, 1, "only the backup goes without: nothing can be read in update mode");
+	assert.equal(connects.filter((x) => !/onUpdateMode|restart:/.test(x)).length, 1, "only the backup goes without: nothing can be read in update mode");
+	assert.equal(connects.filter((x) => /restart:/.test(x)).length, 1, "and the restart task, which only leaves the loader");
 	// every wait for the boot ROM sends the answer ahead
 	const waits = [...src.matchAll(/waitForRom\(([^)]*)\)/g)].map((m) => m[1]);
 	assert.ok(waits.length >= 2 && waits.every((w) => /repeat: ROM_REPEAT/.test(w)), waits.join(" | "));

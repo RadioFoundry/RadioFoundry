@@ -609,6 +609,20 @@ static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 
 // --- Engine: receive ---
 
+// Voice read at the ticks: may a search lock the call on phase ph? On a repeater channel only once the TC names it
+// the channel's slot: taken with no slot number, the other slot's call could start ours (issue 279)
+static bool tr_slot_ok(const hrc6000_dmr_t *e, uint8_t ph)
+{
+	return e->lock_ts == 0 || e->phase_ts[ph] == e->lock_ts;
+}
+
+// ... and does the TC name phase ph as the other slot of a repeater channel's? (Unknown is not: a short TC loss keeps
+// a lock and a header)
+static bool tr_slot_other(const hrc6000_dmr_t *e, uint8_t ph)
+{
+	return e->lock_ts != 0 && e->phase_ts[ph] != 0 && e->phase_ts[ph] != e->lock_ts;
+}
+
 // CACH TC tracking at the timeslot interrupt (5.3); only in slots being received, while a repeater is heard
 static void track_tc(hrc6000_dmr_t *e)
 {
@@ -863,8 +877,10 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 		}
 	}
 
-	if (e->tr_active && e->tr_ph < 0 && s->kind == DMR_BURST_VOICE_LC_HEADER) {
+	if (e->tr_active && e->tr_ph < 0 && s->kind == DMR_BURST_VOICE_LC_HEADER && !tr_slot_other(e, ph)) {
 		e->tr_hdr_ph = (int8_t)ph;
+		e->tr_skip_ph = (int8_t)ph;	// its voice skipped while the slot is unknown still counts A-F
+		e->tr_skip_all = false;
 	}
 	e->rx_tick = e->tick;
 	e->rx_any = true;
@@ -1171,7 +1187,8 @@ static void tr_end(hrc6000_dmr_t *e)
 // A sending radio repeats its header for about 600 ms before the voice. Until the call's slot is found each header
 // starts the decoder again and restarts the search window. What the port holds when the decoder starts is the last
 // burst of an earlier call: it is no burst of this one, or it would lock a slot and end the call once it never changes
-static void tr_begin(hrc6000_dmr_t *e)
+// late: a late entry report, a call already in its voice: no longer only the phase of a header heard before it
+static void tr_begin(hrc6000_dmr_t *e, bool late)
 {
 	if (e->dev->chip->rx_voice_read == NULL || e->tx_state != TXS_IDLE) {
 		return;
@@ -1180,6 +1197,10 @@ static void tr_begin(hrc6000_dmr_t *e)
 		if (e->tr_ph < 0) {
 			e->dev->chip->rx_decode(e->dev, true);
 			e->tr_wait = 0;
+			if (late && e->tr_hdr_ph >= 0) {
+				e->tr_hdr_ph = -1;
+				e->tr_skip_ph = -1;
+			}
 		}
 		return;
 	}
@@ -1187,6 +1208,8 @@ static void tr_begin(hrc6000_dmr_t *e)
 	e->tr_active = true;
 	e->tr_ph = -1;
 	e->tr_hdr_ph = -1;
+	e->tr_skip_ph = -1;
+	e->tr_skip_all = false;
 	e->tr_index = 0;
 	e->tr_miss = 0;
 	e->tr_wait = 0;
@@ -1196,9 +1219,26 @@ static void tr_begin(hrc6000_dmr_t *e)
 	e->st.tr_calls++;
 }
 
+// A burst is in the port one tick after its slot's report (hardware-md380.md 4.9): the read at tick t is the burst
+// reported at t - 1, so it is named and counted from t - 1, and its phase is the tick's own. Learned from the first read
+// that checked, this relation took the other call's bursts for ours with traffic on both slots (issue 279)
 static void tr_tick(hrc6000_dmr_t *e)
 {
+	uint32_t rtick = e->tick - 1u;
+	if (rtick == 0u) {
+		return;		// no report tick before the first: the slot counter is never 0
+	}
 	uint8_t ph = (uint8_t)(e->tick & 1u);
+	if (e->tr_ph >= 0 && tr_slot_other(e, (uint8_t)e->tr_ph)) {
+		// The TC now names the call's phase the other slot (a resync): look for the channel's slot again. The
+		// header's phase goes too (it was that call's), and the frames go on counting A-F at the old phase, so
+		// a lock back on it keeps its burst index
+		e->tr_skip_ph = e->tr_ph;
+		e->tr_skip_all = true;
+		e->tr_ph = -1;
+		e->tr_hdr_ph = -1;
+		e->tr_wait = 0;
+	}
 	if (e->tr_ph >= 0 && ph != (uint8_t)e->tr_ph) {
 		return;
 	}
@@ -1208,14 +1248,21 @@ static void tr_tick(hrc6000_dmr_t *e)
 	int good = e->dev->chip->rx_voice_read(e->dev, nb.payload);
 	bool fresh = good >= 0 && memcmp(nb.payload, e->tr_last, sizeof(e->tr_last)) != 0;
 	if (e->tr_ph < 0) {
-		if (fresh && good >= TR_LOCK_FRAMES) {
+		// With a call on each slot both phases hold bursts, and the first read that checks may be the other call's
+		// (issue 279): the lock goes to the phase of the header that started the read, and on a repeater channel
+		// only to the channel's slot. A header the TC names the other slot's is forgotten
+		if (e->tr_hdr_ph >= 0 && tr_slot_other(e, (uint8_t)e->tr_hdr_ph)) {
+			e->tr_hdr_ph = -1;
+		}
+		bool burst = fresh && good >= TR_LOCK_FRAMES;
+		if (burst && (e->tr_hdr_ph < 0 || ph == (uint8_t)e->tr_hdr_ph) && tr_slot_ok(e, ph)) {
 			e->tr_ph = (int8_t)ph;
-			if (e->tr_hdr_ph >= 0) {
-				// This read holds a burst of the call whose header came at phase tr_hdr_ph: take() names
-				// the read from (tick - 1), so flip the parity when the two disagree
-				e->tr_ph_flip = (uint8_t)((((e->tick - 1u) & 1u) ^ (uint8_t)e->tr_hdr_ph) & 1u);
-			}
 		} else {
+			// Frames not taken on the phase still counted (a header's call before its slot is known, a lock
+			// dropped): the index moves on as it would have
+			if (ph == (uint8_t)e->tr_skip_ph && (e->tr_skip_all || burst)) {
+				e->tr_index = (uint8_t)((e->tr_index + 1u) % 6u);
+			}
 			if (++e->tr_wait >= TR_FIND_TICKS) {
 				tr_end(e);
 			}
@@ -1241,8 +1288,7 @@ static void tr_tick(hrc6000_dmr_t *e)
 	s.cc = e->cc_cur;
 	s.crc_ok = good >= TR_LOCK_FRAMES;
 	e->st.tr_bursts++;
-	// The read names its call's slot: the parity flip learned from the call's header (tr_begin, tr_tick)
-	take(e, &s, &nb, e->tick ^ e->tr_ph_flip, true, true, 0, false);
+	take(e, &s, &nb, rtick, true, true, 0, false);
 	e->tr_index = (uint8_t)((e->tr_index + 1u) % 6u);
 }
 
@@ -1435,7 +1481,7 @@ static void sys_service(hrc6000_dmr_t *e, uint32_t t, bool at_tick)
 #endif
 		// A call's header, late entry or information report: its voice is read at the ticks from now on
 		if ((flags & (INT_RX_DATA | INT_RX_INFO | INT_LATE_ENTRY)) != 0) {
-			tr_begin(e);
+			tr_begin(e, (flags & INT_LATE_ENTRY) != 0);
 		}
 		if ((flags & INT_REJECTED) != 0 && e->tx_state != TXS_IDLE && e->tx_access != DMR_ACCESS_IMPOLITE
 		    && !e->tx_abort_req) {
