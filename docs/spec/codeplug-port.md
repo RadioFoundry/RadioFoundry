@@ -87,7 +87,8 @@ the data flash from address 0.
 | Stock | the board's `[stock_codeplug]` in `board.toml`: `span`, page layout `pages`, driver `dmrconf` | that driver |
 
 The Codeplug Editor's qdmr import reads the YAML of either (T: a stock codeplug of 24 channels, 5 zones and 23
-contacts). A part that is blank (all 0xFF) or not in the backup is skipped and the other still extracted: a backup taken
+contacts). A part that is blank (all 0xFF), not in the backup or that its driver doesn't decode is skipped and the
+other still extracted: a backup taken
 on stock firmware can end before the RadioFoundry codeplug (T: an install backup holding only the start of the data
 flash, to 0xC9000). One element over the whole image decodes the same as
 the four regions qdmr writes (T). Each codeplug is written as `<name>-rfoundry.dfu` / `.yaml` or `<name>-stock.dfu` /
@@ -118,4 +119,5 @@ Where a board's `[stock_codeplug]` span overlaps its open-firmware image (the bo
 RadioFoundry's radio ID, zones and first channels and keeps the rest. The open-firmware decode of such a dump succeeds:
 the contacts are RadioFoundry's, the ID and zones are stock bytes (T: radio ID 166666665 with no name, 0 zones, 36
 channels, 26 contacts). The tool flags a RadioFoundry codeplug with no valid radio ID, or channels and no zone, on such a
-board, and says to use the stock one instead.
+board, and says to use the stock one instead. When the bundle doesn't say RadioFoundry ran (`firmware_now`), or the
+input is a raw dump, nothing shows RadioFoundry ever wrote a codeplug there: the tool writes no RadioFoundry files.

@@ -44,8 +44,9 @@ ROOT = os.path.dirname(HERE)
 RFOUNDRY_DRIVER = "openuv380"    # the open-firmware layout RadioFoundry serves (open-firmware-cps.md 7)
 OPENFW_SPAN = 0x120000        # the EEPROM image and the flash image, as the CPS wire addresses them (7.1)
 PAGE = 0x1000
-# the bundle parts that hold the data flash from address 0: the whole of it, or only its start
-DATA_PARTS = ("spi-flash", "c7000-data", "c7000-data-start")
+# the bundle parts that hold the data flash from address 0: the whole of it (a NAND without its spare bytes), or only
+# its start (c7000ui.js)
+DATA_PARTS = ("spi-flash", "c7000-data", "c7000-nand", "c7000-data-start")
 
 
 class BackupError(Exception):
@@ -56,6 +57,15 @@ class NotInBackup(BackupError):
     """The backup doesn't reach that codeplug: skipped, not an error"""
 
 
+def bundle_folder(names):
+    """Where a zip keeps backup.json, as the site's backup.js bundleFolder: "" at the top, "name/" for a backup unpacked
+    and zipped again (Finder's Compress adds the folder and __MACOSX/), None when there is none or more than one."""
+    if "backup.json" in names:
+        return ""
+    found = [n for n in names if not n.startswith("__MACOSX/") and n.endswith("/backup.json")]
+    return found[0][:-len("backup.json")] if len(found) == 1 else None
+
+
 def read_bundle(path):
     """(board id, data flash bytes from address 0, what the bundle says of the firmware) from a backup bundle."""
     try:
@@ -63,10 +73,10 @@ def read_bundle(path):
     except zipfile.BadZipFile:
         raise BackupError("%s: not a zip file" % path)
     with z:
-        try:
-            meta = json.loads(z.read("backup.json"))
-        except KeyError:
+        folder = bundle_folder(z.namelist())
+        if folder is None:
             raise BackupError("%s: no backup.json, not a radio backup" % path)
+        meta = json.loads(z.read(folder + "backup.json"))
         # odr-backup/1: the same bundle from before the project was renamed (backup.js LEGACY_FORMAT)
         if not str(meta.get("format", "")).startswith(("rfoundry-backup/", "odr-backup/")):
             raise BackupError("%s: backup format %r unknown" % (path, meta.get("format")))
@@ -80,7 +90,7 @@ def read_bundle(path):
                 raise BackupError("%s: %s starts at %s, not 0" % (path, p["file"], p["addr"]))
             if not p.get("complete", True):
                 print("note: %s is incomplete (the read stopped); what it holds is used" % p["file"])
-            return board, z.read(p["file"]), meta.get("firmware_now") or {}
+            return board, z.read(folder + p["file"]), meta.get("firmware_now") or {}
     raise BackupError("%s: no data flash in this backup (parts: %s)" % (path, ", ".join(sorted(parts)) or "none"))
 
 
@@ -224,7 +234,7 @@ def port(stock_yaml, outdir, stem, dmrconf, cleanup=True):
     return out["yaml"]
 
 
-MAX_DMR_ID = 16776415
+MAX_DMR_ID = cp.MAX_DMR_ID
 
 
 def mixed_warning(yaml_text, lay):
@@ -243,8 +253,10 @@ def mixed_warning(yaml_text, lay):
     return "; ".join(why) or None
 
 
-def extract(data, board, outdir, stem, dmrconf):
-    """Write the codeplugs found; returns [(label, yaml path, counts)]. Raises BackupError when none is found."""
+def extract(data, board, outdir, stem, dmrconf, fw=None):
+    """Write the codeplugs found; returns [(label, yaml path, counts)]. Raises BackupError when none is found. A
+    codeplug that doesn't decode is reported and skipped, so the other still comes out (codeplug-port.md 5). fw: the
+    bundle's firmware_now; a raw dump has none"""
     lay = board_layout(board)
     jobs = []
     if lay["openfw"] is not None:
@@ -267,18 +279,28 @@ def extract(data, board, outdir, stem, dmrconf):
         yaml_path = os.path.join(outdir, "%s-%s.yaml" % (stem, suffix))
         with open(dfu_path, "wb") as f:
             f.write(dfu)
-        decode(dmrconf, driver, dfu_path, yaml_path)
+        try:
+            decode(dmrconf, driver, dfu_path, yaml_path)
+        except BackupError as e:
+            os.remove(dfu_path)
+            print("%s codeplug: not decoded (%s), skipped" % (label, e))
+            continue
         with open(yaml_path, encoding="utf-8") as f:
-            n = counts(f.read())
+            text = f.read()
+        why = mixed_warning(text, lay) if suffix == "rfoundry" else None
+        if why and (fw or {}).get("kind") not in ("rfoundry", "odr"):  # odr: a bundle from before the rename
+            # nothing says RadioFoundry ever wrote a codeplug here: these are the stock bytes, already in the stock one
+            for f in (dfu_path, yaml_path):
+                os.remove(f)
+            print("%s codeplug: none, the image holds stock codeplug bytes (%s), skipped" % (label, why))
+            continue
+        n = counts(text)
         done.append((label, yaml_path, n))
         print("%s codeplug: %s" % (label, yaml_path))
         print("   " + ", ".join("%d %s" % (n.get(s, 0), s) for s in SECTIONS))
-        if suffix == "rfoundry":
-            with open(yaml_path, encoding="utf-8") as f:
-                why = mixed_warning(f.read(), lay)
-            if why:
-                print("   ! this looks like stock codeplug bytes read as RadioFoundry's (%s): the stock codeplug was "
-                      "written over the start of RadioFoundry's. Don't write it to a radio; use the stock one" % why)
+        if why:
+            print("   ! this looks like stock codeplug bytes read as RadioFoundry's (%s): the stock codeplug was "
+                  "written over the start of RadioFoundry's. Don't write it to a radio; use the stock one" % why)
     if not done:
         raise BackupError("no codeplug in this backup")
     return done
@@ -375,6 +397,18 @@ def self_test():
         b, _, _ = read_bundle(bundle("e.zip", dict(meta, format="odr-backup/1"), {"original-channels.bin": b"\x01"}))
         check(b == "b1", "a bundle from before the rename (odr-backup/1)")
         expect_error(lambda: read_bundle(bundle("f.zip", dict(meta, format="other/1"), {})), "an unknown format")
+        # unpacked and zipped again: backup.json one folder down, as the site's Restore takes it
+        p = os.path.join(tmp, "g.zip")
+        with zipfile.ZipFile(p, "w") as z:
+            z.writestr("DM32_Backup/backup.json", json.dumps(meta))
+            z.writestr("DM32_Backup/original-channels.bin", b"\x03")
+            z.writestr("__MACOSX/DM32_Backup/._backup.json", b"x")
+        b, d, _ = read_bundle(p)
+        check(b == "b1" and d == b"\x03", "a bundle zipped again with its folder")
+        check(bundle_folder(["a/backup.json", "b/backup.json"]) is None, "two backups in one zip")
+        meta4 = dict(meta, parts=[{"file": "nand.bin", "what": "c7000-nand", "addr": 0}])
+        _, d, _ = read_bundle(bundle("h.zip", meta4, {"nand.bin": b"\x04"}))
+        check(d == b"\x04", "a NAND data memory part")
     expect_error(lambda: board_layout("no-such-board"), "unknown board")
 
     # every board's open-firmware image is found, also where hal_flash_map_t sits in a family directory
@@ -405,7 +439,11 @@ def main(argv=None):
     ap.add_argument("--self-test", action="store_true", help="test the logic offline (no dmrconf)")
     a = ap.parse_args(argv)
     if a.self_test:
-        return self_test()
+        try:
+            return self_test()
+        except boards.RegistryError as e:
+            print("error: %s" % e, file=sys.stderr)
+            return 1
     if not a.backup:
         ap.error("give a backup file")
     try:
@@ -418,7 +456,7 @@ def main(argv=None):
         else:
             if not a.board:
                 raise BackupError("a raw dump needs --board")
-            board = a.board
+            board, fw = a.board, {}
             with open(a.backup, "rb") as f:
                 data = f.read()
         dmrconf = a.dmrconf or shutil.which("dmrconf")
@@ -427,7 +465,7 @@ def main(argv=None):
         outdir = os.path.abspath(a.outdir or os.path.dirname(os.path.abspath(a.backup)))
         os.makedirs(outdir, exist_ok=True)
         stem = os.path.splitext(os.path.basename(a.backup))[0]
-        done = extract(data, board, outdir, stem, dmrconf)
+        done = extract(data, board, outdir, stem, dmrconf, fw)
         if not a.no_port:
             for label, yaml_path, _ in done:
                 if label == "stock":
