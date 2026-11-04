@@ -661,7 +661,7 @@ reads which one the radio has and refuses the other image.
 
 The radio's own update mode takes the image over its USB cable, so the vendor's loader stays and the vendor firmware
 can go back the same way ([installing](02-installing.md#radios-installed-through-the-manufacturers-update-mode)). To
-start it, turn the radio on while holding **MENU** and **EXIT** (unconfirmed), then connect the cable. The vendor
+start it, turn the radio on while holding **MENU** and **EXIT**, then connect the cable. The vendor
 firmware's other power-on screens, such as its own **UPDATE MODE**, are for fonts and icons, not the firmware: don't
 install from them.
 
@@ -672,7 +672,7 @@ install from them.
 | Back to the vendor firmware | **Help**, restore, pick the vendor's `.CDD`, `.CDI` and `.spi` | `rfoundry restore-stock FW.CDD --board d578uv` |
 
 The installer refuses a radio whose model doesn't match, and an Artery radio (`AT_Ver`) given this image: it names
-the `d578uva` image instead. Neither route has written to a radio yet.
+the `d578uva` image instead. The `rfoundry` route has installed on a radio; the web installer hasn't yet.
 
 ### AT-D578UV keys
 
