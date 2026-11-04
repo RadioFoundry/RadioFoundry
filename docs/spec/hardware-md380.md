@@ -363,16 +363,21 @@ row end the reception (0x22 = 0x17). The chip's voice class reports are ignored,
 count as out of step.
 
 A burst is in the port one tick after its slot's report, so the read at a tick holds the burst of the slot that
-started two ticks before. The engine takes this as fixed (`TR_PH_FLIP`). It used to learn it from the first read
-that checked after a header, which with traffic on both slots can be the other call's (issue 279). With traffic on
-both slots both phases hold bursts that check, so the lock is limited:
+started two ticks before. The engine takes this as fixed: the read is named, and given its slot counter, from the
+tick before it. It used to learn the relation from the first read that checked after a header, which with traffic on
+both slots can be the other call's (issue 279). With traffic on both slots both phases hold bursts that check, so the
+search for the call's phase is limited:
 
-| Case | The lock goes to |
+| Rule | Detail |
 |---|---|
-| Header started the read | The header's phase only |
-| Repeater channel (`rx_lock_slot` 1 or 2) | Only a phase the CACH TC names as the channel's slot; none while the slot is unknown. A lock whose slot changes (restart, resync) searches again |
+| A header started the read | Lock only the header's phase. A late entry report while searching drops that limit |
+| Repeater channel (`rx_lock_slot` 1 or 2) | Lock only a phase the CACH TC names as the channel's slot, never one with the slot unknown. A header is kept unless the TC names its phase the other slot |
+| A lock whose phase the TC names the other slot | Search again, without the header's phase. The burst index goes on counting one per frame, so a lock back on the same phase keeps A-F |
+| The slot unknown while locked (a receiver restart) | The lock stays; its bursts carry no slot number until the TC locks again |
+| The call's own bursts skipped while its slot is unknown | Counted, so the index stays A-F. After a quiet-period restart that costs the first bursts of a call (two in the host test, about 150 ms until the TC locks) |
 
-Both are host-tested with a call on each slot (`hrc5000Test`, unverified on air).
+All of these are host-tested (`hrc5000Test` `test_two_slots`: a call on each slot, a restart mid-call, a TC wrong
+from the start, both slots heard with `rx_lock_slot` 0). Unverified on air.
 
 On air with this (2026-10-18): calls are taken with the caller and talk group, and 393 frames reached the codec with
 2 bit errors in all. The decoded audio is speech (peak 3521 of 32767) and streams to the chip (`aud blk` climbing),
