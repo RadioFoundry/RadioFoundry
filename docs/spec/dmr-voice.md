@@ -16,7 +16,7 @@ when it passes the filters, and shown either way:
 |---|---|
 | Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all, "digital monitor" in the UI (the hear-all latch: the MONITOR key's press toggles it on a DMR channel, its release does nothing (#19); Quick 5; `radio_req_dmr_hear_all`; until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it) |
 | Private (FLCO 3) | addressed to our ID (the channel's DMR ID override, else the radio's), or all call, or hear all |
-| Our own ID as source | never (our call echoed by a repeater) |
+| Our own ID as source | not while we transmit or for `DMR_CALL_OWN_ECHO_MS` (700 ms) after our call ended (the repeater's echo of it); later it is judged as any other call, so a parrot's playback of our call plays (#294) |
 | Encrypted | only with a privacy key, and never after a PI header (section 5) |
 
 A call that doesn't pass is shown as busy ("not played") while it lasts, and counts for polite channel access.

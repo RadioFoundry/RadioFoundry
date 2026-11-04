@@ -35,7 +35,7 @@ also from the installer's [manual install kit](02-installing.md#install-from-the
 | Problem | Cause and fix |
 |---|---|
 | DMR calls show but there is no audio, "No codec: voice off" | The radio has no usable codec. See [Installing, no codec](02-installing.md#no-codec-no-codec-voice-off) |
-| A DMR call shows "Other TG: not played" | Its talkgroup isn't the talk target, in the listen list or the reply target. Press **Monitor** (digital monitor), or add the talkgroup to the channel's RX group list in qdmr |
+| A DMR call shows "Other TG: not played" | Its talkgroup isn't the talk target, in the listen list or the reply target. Press **Monitor** (digital monitor), or add the talkgroup to the channel's RX group list in qdmr. A parrot's playback of your own call (your own ID as the source) plays like any other call |
 | "Encrypted: not played" | The call uses basic privacy and the radio has no matching key, or stronger encryption the radio can't play |
 | "No DMR ID in codeplug" when transmitting | Write a codeplug with your DMR ID ([Programming the radio](04-programming.md)) |
 | "Channel busy" | Someone is talking on the timeslot. Wait for the call to end |

@@ -1005,12 +1005,18 @@ static void test_rx_filters(void)
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 0);
 
-	// Our own call echoed by a repeater, with its terminators: never played, never ends someone else's call
-	c.rmo = true;
+	// Our own call echoed by a repeater right behind our terminator: not played (a parrot's later answer is, below)
 	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(300);
+	dmr_call_ptt(false);
+	run_ms(400);
 	mk_lc(lc, 0, TG_TALK, OWN_ID);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 0);
+	// ... and its terminators never end someone else's call
+	c.rmo = true;
+	setup(&c);
 	mk_lc(lc, 0, TG_TALK, 2345678);
 	uint8_t own[9];
 	mk_lc(own, 0, TG_TALK, OWN_ID);
@@ -1039,6 +1045,44 @@ static void test_rx_filters(void)
 	sim_rx(&b);
 	run_ms(20);
 	CHECK(V()->caller.src == 2345678);
+}
+
+// A parrot answers a while after our call ends, from our own ID (#294): it plays, with and without hear all, and a
+// call from our ID with no call of ours before it (a cloned ID) plays too
+static void test_rx_own_id_parrot(void)
+{
+	dmr_call_config_t c = base_cfg();
+	uint8_t lc[9];
+	unsigned frame = 1;
+
+	for (int hear_all = 0; hear_all < 2; hear_all++) {
+		c.listen.hear_all = hear_all;
+		setup(&c);
+		dmr_call_ptt(true);
+		run_ms(300);
+		dmr_call_ptt(false);
+		run_ms(1000);
+		mk_lc(lc, 0, TG_TALK, OWN_ID);
+		rx_call(lc, 1, true, 0, 1, true, &frame);	// seconds after our terminator
+		CHECK(sink_log.begins == 1);
+	}
+	c.listen.hear_all = false;
+
+	// A parrot on a talk group we only hear by the listen list, on the other slot of the repeater
+	setup(&c);
+	mk_lc(lc, 0, TG_LIST, OWN_ID);
+	rx_call(lc, 1, true, 0, 1, true, &frame);
+	CHECK(sink_log.begins == 1);
+
+	// The repeater's echo right behind our terminator is still dropped
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(300);
+	dmr_call_ptt(false);
+	run_ms(600);
+	mk_lc(lc, 0, TG_TALK, OWN_ID);
+	rx_call(lc, 1, true, 0, 1, true, &frame);
+	CHECK(sink_log.begins == 0);
 }
 
 static bool tg777(uint32_t tg, void *ctx) { (void)ctx; return tg == 777; }
@@ -2151,6 +2195,7 @@ int main(void)
 	test_rx_recheck_on_configure();
 	test_rx_no_call_after_terminator();
 	test_rx_group_callback();
+	test_rx_own_id_parrot();
 	test_late_entry();
 	test_alias_and_privacy();
 	test_privacy_hook();

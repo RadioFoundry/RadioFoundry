@@ -136,6 +136,8 @@ static struct {
 	uint32_t wake_sent_ms;
 	uint8_t wake_tries;
 	uint32_t tx_start_ms;
+	uint32_t tx_end_ms;	// the last voice call of ours ended (DMR_CALL_OWN_ECHO_MS)
+	bool tx_end_seen;
 	uint32_t tx_progress_ms;	// the modem last took a burst (queued or started): none for long and it has stalled
 	// talker alias (and GPS Info) in alternate superframes
 	uint8_t tx_ta[DMR_TA_LC_MAX + 1][DMR_LC_BYTES];	// the alias LCs, then our GPS Info
@@ -482,8 +484,10 @@ static bool group_listened(uint32_t tg, uint32_t now)
 
 static bool rx_accept(const dmr_lc_t *l, uint32_t now)
 {
-	if (l->src == s.cfg.own_id)
-		return false;	// our own call echoed (repeater)
+	// Our own call echoed by the repeater, which trails our terminator by a few bursts. Later our ID as the source is
+	// a parrot or test service playing the call back, or a clone of the ID, and plays like any other (#294)
+	if (l->src == s.cfg.own_id && (transmitting() || !elapsed(now, s.tx_end_ms, s.tx_end_seen, DMR_CALL_OWN_ECHO_MS)))
+		return false;
 	if (l->flco == DMR_FLCO_GROUP_VOICE)
 		return group_listened(l->dst, now);
 	return l->dst == s.cfg.own_id || l->dst == DMR_ID_ALL_CALL || s.cfg.listen.hear_all;
@@ -1410,6 +1414,8 @@ static void tx_ptt_released(void)
 static void tx_finished(uint32_t now)
 {
 	s.tx = TX_NONE;
+	s.tx_end_ms = now;
+	s.tx_end_seen = true;
 	set_reply(s.tx_target_used, now);
 	s.last_call_end_ms = now;
 	s.call_end_seen = true;
