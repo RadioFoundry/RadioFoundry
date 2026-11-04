@@ -94,6 +94,10 @@ Automatic beacons go out at the interval, or with SmartBeaconing by speed and tu
 30 seconds. The radio waits for a clear APRS frequency before it sends, and gives up after 10 seconds. Pressing PTT
 always wins: an APRS transmission in progress stops and your channel comes back.
 
+An FM beacon can interrupt dual watch. It always sends on the APRS frequency you set, then dual watch resumes on the
+channel it was listening to. A or B selection still controls where PTT transmits; it does not choose the beacon
+frequency. A zone or VFO scan delays the beacon until the scan stops.
+
 ## Position
 
 The position comes from:

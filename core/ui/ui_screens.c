@@ -1659,7 +1659,7 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		sb_mmss(&b, v->tx_elapsed_ms / 1000u);
 		int tw = gfx_text_width(big, buf);
 		gfx_text(big, w - tw, y, buf, ui_col.fg);
-		gfx_text(big, 0, y, sending_data(v) ? TR("SENDING") : TR("TALKING"), ui_col.tx);
+		gfx_text(big, 0, y, sending_data(v) ? TR("SENDING") : TR("TALKING"), ui_col.tx);	// data: ARS, SMS, IP
 		if (two) {
 			sb_init(&b, buf, sizeof buf);
 			if (v->dtmf_digits[0] != 0) {
