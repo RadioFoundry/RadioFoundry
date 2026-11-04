@@ -653,16 +653,16 @@ static void test_dmr_data_tx(void)
 	d = sent_field(nsent - 1, SCT_F_DATA_FRAME, &n);
 	CHECK(d != NULL && d[0] == DMR_BURST_DATA_HEADER && d[1] == 10 && n == 12);
 
-	// Unanswered: dropped after the timeout, the next goes
-	sct_dmr_poll(t + SCT_DMR_ACK_MS - 1);
+	// Unanswered: the next goes a slot later anyway
+	sct_dmr_poll(t + SCT_DMR_SLOT_MS - 1);
 	CHECK(frames_sent() == 1);
-	sct_dmr_poll(t + SCT_DMR_ACK_MS);
+	sct_dmr_poll(t + SCT_DMR_SLOT_MS);
 	CHECK(frames_sent() == 2);
 	d = sent_field(nsent - 1, SCT_F_DATA_FRAME, &n);
 	CHECK(d != NULL && d[0] == DMR_BURST_RATE_34_DATA && d[1] == 18);
 
-	// A refusal frees the slot too
-	t += SCT_DMR_ACK_MS;
+	// A refusal frees the slot at once
+	t += SCT_DMR_SLOT_MS;
 	static const uint8_t nak[] = { 0x43, SCT_ACK_LENGTH };
 	chip_packet(nak, 2, SCT_TYPE_DMR, t + 10);
 	sct_dmr_poll(t + 10);
@@ -691,6 +691,48 @@ static void test_dmr_data_tx(void)
 	CHECK(!m->is_transmitting());
 	CHECK(nsent == before + 1 && sent_field(nsent - 1, SCT_F_WORK_MODE, NULL)[0] == 1);
 	CHECK(count_ev(DMR_EV_TX_DONE) == 1);
+}
+
+// A chip that answers no frame with `43 00`, only with ACK 0x0A once its frames are on the air (two slots after the
+// send or later, and once for frames sent back to back): the frames still go a slot apart, and the transmission ends
+// on the 0x0A after the last one
+static void test_dmr_tx_answer_on_air(void)
+{
+	uint32_t t = 9000;
+
+	start();
+	sct_dmr_poll(t);
+	CHECK(m->tx_begin(DMR_TIMING_ASAP, 1, DMR_ACCESS_IMPOLITE));
+	dmr_tx_burst_t b = burst(DMR_BURST_VOICE_LC_HEADER, 0, 12);
+	for (int i = 0; i < 3; i++)
+		CHECK(m->tx_queue(&b));
+	b = burst(DMR_BURST_VOICE, 0, 27);
+	CHECK(m->tx_queue(&b));
+	CHECK(frames_sent() == 1);
+	for (uint32_t ms = 1; ms <= 180; ms++) {
+		sct_dmr_poll(t + ms);
+		CHECK(frames_sent() == 1 + (int)(ms / SCT_DMR_SLOT_MS));	// headers, then the voice LC, a slot apart
+	}
+	CHECK(count_ev(DMR_EV_TX_SLOT_STARTED) == 3);
+
+	// The terminator; a 0x0A within a slot of it is an earlier frame's and doesn't end the transmission
+	t += 240;
+	b = burst(DMR_BURST_TERMINATOR_LC, 0, 12);
+	CHECK(m->tx_queue(&b));
+	m->tx_end();
+	sct_dmr_poll(t);
+	CHECK(frames_sent() == 5);
+	far_done(t + 20);
+	sct_dmr_poll(t + 20);
+	CHECK(count_ev(DMR_EV_TX_DONE) == 0);
+	// The terminator's own, two slots on: done then, not SCT_DMR_DONE_MS later
+	sct_dmr_poll(t + 60);
+	far_done(t + 120);
+	CHECK(count_ev(DMR_EV_TX_DONE) == 1);
+	CHECK(!m->is_transmitting());
+	sct_dmr_stats_t st;
+	sct_dmr_get_stats(&st);
+	CHECK(st.tx_frames == 5 && st.tx_paced == 0);
 }
 
 // A board's options: its call option and report bits, more start fields, and a codec write each way around a
@@ -1013,6 +1055,7 @@ int main(void)
 	test_dmr_start();
 	test_dmr_voice_tx();
 	test_dmr_data_tx();
+	test_dmr_tx_answer_on_air();
 	test_dmr_rx();
 	test_dmr_options();
 	test_dmr_carrier();
