@@ -233,6 +233,25 @@ static void test_full(void)
 }
 
 // A power cut anywhere in a write leaves the old area or the new one (the journal finishes it at the next boot)
+// A rewrite keeps the header as it found it (spec 2.4): its length, the continuation in bytes 12-15 and a later
+// version's fields after them
+static void test_header_kept(void)
+{
+	fresh();
+	uint8_t d[16], *s = &sim_flash_data[AREA];
+	uint16_t len = entry(d, CODEPLUG_KEY_ARS_SERVER, (const uint8_t[]){ 1, 0, 0, 0 }, 4);
+	raw_area(d, len, CODEPLUG_KV_VERSION, 24, false);
+	put32(&s[12], 0x04030201u);
+	memset(&s[16], 0x5A, 8);
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_IP_GATEWAY, 7));
+	CHECK(s[5] == 24);
+	CHECK(s[12] == 1 && s[13] == 2 && s[14] == 3 && s[15] == 4);
+	CHECK(s[16] == 0x5A && s[23] == 0x5A);
+	uint32_t id;
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 1);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id) && id == 7);
+}
+
 static void test_power_cut(void)
 {
 	fresh();
@@ -272,6 +291,7 @@ int main(void)
 	test_invalid();
 	test_check();
 	test_full();
+	test_header_kept();
 	test_power_cut();
 	sim_flash_free();
 	if (failures) {

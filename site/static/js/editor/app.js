@@ -12,6 +12,7 @@ import { decode, encode, empty, remove, validate, newChannel, newContact, number
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
+import { areaForWrite } from "../codeplug/kv.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
 import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
@@ -829,6 +830,7 @@ async function planWrite() {
 		// the same codeplug with this radio's own name, ID and boot text kept, and what each would send
 		// (compared byte for byte: two plans can send the same number of bytes. The second is planned only when there
 		// is something to keep: each plan is a pass over every block's CRC)
+		areaForWrite(file.bytes, c.image.bytes);
 		const kept = keepIdentity(file, c.image);
 		const differs = IDENTITY.some(([a, b]) => kept.bytes.subarray(a, b).some((x, i) => x !== file.bytes[a + i]));
 		const plans = { file: await c.transport.plan(file, c.image, { iddb }) };

@@ -227,7 +227,7 @@ static bool edit(uint8_t *b, uint16_t key, const uint8_t *value, uint16_t vlen)
 	b[5] = (uint8_t)hdr;
 	put16(&b[6], len);
 	put32(&b[8], storage_crc32(0, d, len));
-	memset(&b[12], 0, 4);
+	// bytes 12 up to hdr stay as found (spec 2.4: the continuation, a later version's header fields); a new area's are 0
 	return true;
 }
 

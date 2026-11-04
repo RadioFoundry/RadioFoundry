@@ -87,13 +87,16 @@ export function idValue(id) {
 	return Uint8Array.of(id & 0xFF, (id >>> 8) & 0xFF, (id >>> 16) & 0xFF, (id >>> 24) & 0xFF);
 }
 
-// The sector for entries (duplicates dropped): header, entries, 0xFF to the end. Throws when they don't fit
-export function encodeArea(entries) {
+// The sector for entries (duplicates dropped): header, entries, 0xFF to the end. Throws when they don't fit. prev, a
+// valid area's sector, gives its header length and the header bytes past the CRC, kept as found (2.4: a later
+// version's fields and the continuation); a new area has them 0
+export function encodeArea(entries, prev = null) {
 	entries = dedupe(entries);
+	const hdr = prev ? prev[5] : KV_HDR;
 	const len = entries.reduce((n, e) => n + 4 + e.value.length, 0);
-	if (KV_HDR + len > KV_SIZE) throw new RangeError("codeplug settings area full");
+	if (hdr + len > KV_SIZE) throw new RangeError("codeplug settings area full");
 	const s = new Uint8Array(KV_SIZE).fill(0xFF);
-	let o = KV_HDR;
+	let o = hdr;
 	for (const e of entries) {
 		s[o] = e.key & 0xFF;
 		s[o + 1] = e.key >> 8;
@@ -104,21 +107,23 @@ export function encodeArea(entries) {
 	}
 	s.set(MAGIC, 0);
 	s[4] = KV_VERSION;
-	s[5] = KV_HDR;
+	s[5] = hdr;
 	s[6] = len & 0xFF;
 	s[7] = len >> 8;
-	const crc = crc32(s.subarray(KV_HDR, KV_HDR + len));
+	const crc = crc32(s.subarray(hdr, hdr + len));
 	s.set(idValue(crc), 8);
-	s.fill(0, 12, 16);
+	if (prev) s.set(prev.subarray(12, hdr), 12);
+	else s.fill(0, 12, hdr);
 	return s;
 }
 
 // Write entries into an image's bytes as the area, only when the sector's bytes change. Refuses (returns false,
 // writes nothing) over an area of a newer version. True when the sector holds the entries afterwards
 export function putArea(bytes, entries) {
-	if (decodeArea(bytes).state === "newer") return false;
-	const s = encodeArea(entries);
+	const state = decodeArea(bytes).state;
+	if (state === "newer") return false;
 	const have = bytes.subarray(KV_ADDR, KV_ADDR + KV_SIZE);
+	const s = encodeArea(entries, state === "valid" ? have : null);
 	if (!s.every((x, i) => x === have[i])) have.set(s);
 	return true;
 }
@@ -144,4 +149,11 @@ export function putIds(bytes, ids) {
 		entries = setValue(entries, k, value);
 	}
 	return putArea(bytes, entries);
+}
+
+// The area a write to a radio sends (6): the file's when it is valid and the radio's isn't of a newer version, else
+// the radio's own, put into file's bytes. A file without an area (another tool's, 0xFF there) never erases the keys
+export function areaForWrite(file, radio) {
+	if (decodeArea(file).state === "valid" && decodeArea(radio).state !== "newer") return;
+	file.subarray(KV_ADDR, KV_ADDR + KV_SIZE).set(radio.subarray(KV_ADDR, KV_ADDR + KV_SIZE));
 }

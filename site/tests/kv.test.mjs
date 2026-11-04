@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 
 import { CodeplugImage, REGIONS, EDITOR_REGIONS, SETTINGS_AREA } from "../static/js/codeplug/image.js";
 import {
-	KV_ADDR, KV_SIZE, KEY, ID_MAX, decodeArea, encodeArea, getValue, setValue, deleteValue, getId, idValue, putArea, putIds,
+	KV_ADDR, KV_SIZE, KEY, ID_MAX, decodeArea, encodeArea, getValue, setValue, deleteValue, getId, idValue, putArea, putIds, areaForWrite,
 } from "../static/js/codeplug/kv.js";
 import { decode, encode, empty, validate } from "../static/js/codeplug/model.js";
 import { CpsSerial, writeRanges } from "../static/js/codeplug/transport.js";
@@ -231,4 +231,47 @@ test("the editor reads and writes the settings area with a radio; qdmr's ranges 
 	await tr.verify(want, res.plan);
 	assert.deepEqual(radio.spi.subarray(0xE000, 0xF000), area(want));
 	assert.deepEqual(decodeArea(radio.spi).entries, [e(0x7001, 1), e(KEY.ipGateway, 7, 0, 0, 0), { key: KEY.arsServer, value: idValue(3100001) }]);
+});
+
+test("settings area: a rewrite keeps the header length and the reserved bytes (2.4)", () => {
+	const img = CodeplugImage.blank();
+	const s = encodeArea([e(KEY.arsServer, 1, 0, 0, 0)]);
+	// a later version's header: 24 bytes, a continuation named in 12-15 and a field in 16-23
+	const later = new Uint8Array(KV_SIZE).fill(0xFF);
+	later.set(s.subarray(0, 16));
+	later[5] = 24;
+	later.set([1, 2, 3, 4], 12);
+	later.fill(0x5A, 16, 24);
+	later.set(s.subarray(16, 16 + 8), 24);
+	area(img).set(later);
+	assert.equal(decodeArea(img.bytes).state, "valid");
+	assert.equal(putIds(img.bytes, { [KEY.ipGateway]: 7 }), true);
+	const a = area(img);
+	assert.equal(a[5], 24);
+	assert.deepEqual([...a.subarray(12, 24)], [1, 2, 3, 4, ...new Array(8).fill(0x5A)]);
+	assert.equal(getId(decodeArea(img.bytes).entries, KEY.arsServer), 1);
+	assert.equal(getId(decodeArea(img.bytes).entries, KEY.ipGateway), 7);
+	// a new area: 16 bytes, reserved 0
+	const fresh = CodeplugImage.blank();
+	putIds(fresh.bytes, { [KEY.arsServer]: 3 });
+	assert.equal(area(fresh)[5], 16);
+	assert.deepEqual([...area(fresh).subarray(12, 16)], [0, 0, 0, 0]);
+});
+
+test("settings area: a write sends the file's area only when valid and the radio's isn't newer (6)", () => {
+	const radio = withArea([e(KEY.arsServer, 9, 0, 0, 0)]);
+	// a file without an area (another tool's): the radio's stays
+	const none = CodeplugImage.blank();
+	areaForWrite(none.bytes, radio.bytes);
+	assert.deepEqual(area(none), area(radio));
+	// a valid file area goes
+	const file = withArea([e(KEY.arsServer, 5, 0, 0, 0)]);
+	areaForWrite(file.bytes, radio.bytes);
+	assert.equal(getId(decodeArea(file.bytes).entries, KEY.arsServer), 5);
+	// over a newer area, never
+	const newer = withArea([e(KEY.arsServer, 9, 0, 0, 0)]);
+	area(newer)[4] = 2;
+	const file2 = withArea([e(KEY.arsServer, 5, 0, 0, 0)]);
+	areaForWrite(file2.bytes, newer.bytes);
+	assert.deepEqual(area(file2), area(newer));
 });

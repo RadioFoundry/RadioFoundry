@@ -45,7 +45,7 @@ All values are little endian.
 | 5 | 1 | Header length: 16. Entries start here, so a later version can add header fields that older readers skip |
 | 6 | 2 | Data length: the bytes of entries after the header, at most 4096 minus the header length |
 | 8 | 4 | CRC-32 of the entries (IEEE 802.3, reflected, as `storage_crc32`) |
-| 12 | 4 | Reserved for the continuation (2.4): written 0, not checked |
+| 12 | 4 | Reserved for the continuation (2.4): 0 in a new area, kept as found by a rewrite, not checked |
 
 The version changes only if the entry framing changes so that a version 1 reader would misread it. A reader that
 doesn't know the version reads the area as empty and refuses to write it, so it never destroys a newer area. The
@@ -75,7 +75,7 @@ When 4 KB isn't enough, the reserved header bytes 12-15 will name a continuation
 format, at EEPROM image 0xF000, holding more entries. A reader takes a key from the first sector before the
 continuation. A version 1 reader of today ignores the reserved bytes, so it sees only the first sector: keys that live
 only in the continuation read as absent, and the radio keeps its own values (4). A writer that doesn't know the
-continuation keeps the reserved bytes as it found them.
+continuation keeps the reserved bytes and the header length as it found them.
 
 ## 3. Keys
 
