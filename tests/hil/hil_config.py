@@ -61,7 +61,10 @@ def _file(config):
     except ImportError:         # Python before 3.11
         raise pytest.UsageError(f"reading {path} needs Python 3.11 or later (tomllib)")
     with open(path, "rb") as f:
-        return tomllib.load(f), path
+        try:
+            return tomllib.load(f), path
+        except tomllib.TOMLDecodeError as e:
+            raise pytest.UsageError(f"the rig's file {path}: {e}")
 
 
 def _parse(name, v, typ, where):
@@ -86,7 +89,8 @@ def configure(config):
     CONFIG = config
     data, path = _file(config)
     for k in data:
-        if k.replace("_", "-") not in RIG and k.replace("_", "-") not in TX_OPTIONS:
+        # exactly key(name): a hyphenated key would pass a looser test and then never be read
+        if k not in {key(n) for n in RIG} | {key(n) for n in TX_OPTIONS}:
             raise pytest.UsageError(f"{path}: unknown key {k!r} (keys: {', '.join(key(n) for n in RIG)}, "
                                     f"{', '.join(key(n) for n in TX_OPTIONS if n not in RIG)})")
     for name in list(RIG) + [n for n in TX_OPTIONS if n not in RIG]:

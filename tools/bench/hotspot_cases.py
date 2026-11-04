@@ -317,7 +317,7 @@ def case_rf_b2b(hs, args, r):
 
 
 def case_rf_csbk(hs, args, r):
-    ok, m, _ = rf_case(hs, args, f"csbk --src {MODEM_SRC} --dst 9991276 --count 4")
+    ok, m, _ = rf_case(hs, args, f"csbk --src {MODEM_SRC} --dst 9991234 --count 4")
     csbks = [x for x in m.data if x[1] == DT_CSBK]
     r.info["csbk"] = len(csbks)
     r.check("bench modem sent", ok)
@@ -327,7 +327,7 @@ def case_rf_csbk(hs, args, r):
 
 def data_case(hs, args, r, confirmed):
     octets = 40
-    ok, m, _ = rf_case(hs, args, f"data --src {MODEM_SRC} --dst 9991276 --octets {octets} --preambles 2"
+    ok, m, _ = rf_case(hs, args, f"data --src {MODEM_SRC} --dst 9991234 --octets {octets} --preambles 2"
                        + (" --confirmed" if confirmed else ""))
     types = [dt for _, dt, _ in m.data]
     blocks = (octets + 4 + 9) // 10 if confirmed else (octets + 4 + 11) // 12

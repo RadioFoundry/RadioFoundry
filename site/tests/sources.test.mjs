@@ -15,27 +15,27 @@ import { History } from "../static/js/editor/undo.js";
 
 const CSV = [
 	"RADIO_ID,CALLSIGN,FIRST_NAME,LAST_NAME,CITY,STATE,COUNTRY",
-	"9991276,q0tst,Charlie M,,Dayton,Ohio,United States",
+	"9991234,q0tst,Charlie M,,Dayton,Ohio,United States",
 	"9990102,QA1AAA,Hans Juergen,,Cornwall,Ontario,Canada",
 	"9990262,QB2BBB,Jürgen,,München,Bayern,Germany",
 	"9991277,QC3CCC,\"Smith, Jo\",,Toledo,OHIO,United States",
-	"9991276,DUP,,,,,",
+	"9991234,DUP,,,,,",
 	"abc,Q5EEE,,,,,",
 	"9991300,,NoCall,,,,",
 ].join("\r\n");
 
-const user = (o = {}) => ({ id: 9991276, call: "Q0TST", name: "Charlie M", last: "", city: "Dayton", state: "Ohio", country: "United States", ...o });
+const user = (o = {}) => ({ id: 9991234, call: "Q0TST", name: "Charlie M", last: "", city: "Dayton", state: "Ohio", country: "United States", ...o });
 
 test("parseUsers: header row, quotes, duplicates and bad lines dropped, sorted by ID", () => {
 	const u = parseUsers("﻿" + CSV);
-	assert.deepEqual(u.map((x) => x.id), [9990102, 9990262, 9991276, 9991277]);
+	assert.deepEqual(u.map((x) => x.id), [9990102, 9990262, 9991234, 9991277]);
 	assert.equal(u[2].call, "Q0TST");
 	assert.equal(u[3].name, "Smith, Jo");
 	assert.equal(u[1].city, "München");
 });
 
 test("parseUsers: a file without a header row uses RadioID's column order", () => {
-	const u = parseUsers("9991276,Q0TST,Charlie,,Dayton,Ohio,United States\n");
+	const u = parseUsers("9991234,Q0TST,Charlie,,Dayton,Ohio,United States\n");
 	assert.deepEqual(u, [user({ name: "Charlie" })]);
 });
 
@@ -44,10 +44,10 @@ test("regionsOf and select: countries, states case-insensitively, prefixes, ID r
 	const r = regionsOf(u);
 	assert.equal(r[0].country, "United States");
 	assert.equal(r[0].count, 2);
-	assert.deepEqual(select(u, { regions: [{ country: "united states", state: "ohio" }] }).map((x) => x.id), [9991276, 9991277]);
+	assert.deepEqual(select(u, { regions: [{ country: "united states", state: "ohio" }] }).map((x) => x.id), [9991234, 9991277]);
 	assert.deepEqual(select(u, { regions: [{ country: "Canada" }, { country: "Germany", state: "Bayern" }] }).map((x) => x.id), [9990102, 9990262]);
 	assert.deepEqual(select(u, { prefixes: ["qc3", " "] }).map((x) => x.id), [9991277]);
-	assert.deepEqual(select(u, { idMin: 9991000, idMax: 9991276 }).map((x) => x.id), [9991276]);
+	assert.deepEqual(select(u, { idMin: 9991000, idMax: 9991234 }).map((x) => x.id), [9991234]);
 	assert.equal(select(u, {}).length, 4);
 });
 
@@ -60,7 +60,7 @@ test("format: tokens, abbreviations, country codes, empty values drop with their
 	assert.equal(format(u, "{call} {name} {city}", { upper: true, max: 16 }), "Q0TST CHARLIE M");
 	assert.equal(format(user({ country: "Canada", state: "Ontario" }), "{st}/{cc}"), "ON/CA");
 	assert.equal(format(user({ country: "Germany", state: "Bayern" }), "{st}"), "Bayern");
-	assert.equal(format(u, "{id} {nope}"), "9991276 {nope}");
+	assert.equal(format(u, "{id} {nope}"), "9991234 {nope}");
 });
 
 test("the region list has every country once, with ISO codes", () => {
@@ -153,7 +153,7 @@ test("ID database: written into a new image, read back, sized against the radio,
 
 test("contacts: private calls, existing IDs skipped, names in Latin-1 and 16 characters, the list's limit kept", () => {
 	const m = empty();
-	m.contacts.push(newContact({ number: 1, name: "Me", id: 9991276, type: "private" }));
+	m.contacts.push(newContact({ number: 1, name: "Me", id: 9991234, type: "private" }));
 	const r = addContacts(m, [...parseUsers(CSV), user({ id: 9994600, call: "QD4DDD", name: "Łukasz 王" })], { template: "{call} {name} {city}" });
 	assert.deepEqual(r, { added: 4, existing: 1, full: 0 });
 	assert.deepEqual(m.contacts.slice(1).map((c) => c.name), ["QA1AAA Hans Juer", "QB2BBB Jürgen Mü", "QC3CCC Smith, Jo", "QD4DDD Lukasz Da"]);

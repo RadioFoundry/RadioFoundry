@@ -130,10 +130,10 @@ test("an unedited codeplug encodes to the same bytes", () => {
 // A codeplug using every field the radio reads, built in the editor's model
 function rich() {
 	const m = empty();
-	m.general = { ...m.general, radioName: "Q0RFDY", dmrId: 9991276, bootLine1: "Radio", bootLine2: "Foundry" };
+	m.general = { ...m.general, radioName: "Q0RFDY", dmrId: 9991234, bootLine1: "Radio", bootLine2: "Foundry" };
 	const tg91 = newContact({ name: "Worldwide", id: 91, type: "group" });
 	const tg3100 = newContact({ name: "USA", id: 3100, type: "group", timeslot: 1 });
-	const priv = newContact({ name: "Q0TST", id: 9991276, type: "private", timeslot: 2 });
+	const priv = newContact({ name: "Q0TST", id: 9991234, type: "private", timeslot: 2 });
 	const all = newContact({ name: "All Call", type: "all" });
 	m.contacts.push(tg91, tg3100, priv, all);
 	const list = { number: null, name: "Local", contacts: [tg91, tg3100] };
@@ -209,13 +209,13 @@ test("the DMR ID database is found by the radio across both areas", () => {
 	const img = CodeplugImage.blank();
 	const records = [];
 	for (let i = 0; i < 17500; i++) records.push({ id: 9870000 + 7 * i, text: `K${String(i).padStart(5, "0")} Op${i % 10}` });
-	records.push({ id: 9991276, text: "Q0TST Charlie Lawson Atlanta GA" }, { id: 9991276, text: "duplicate" });
+	records.push({ id: 9991234, text: "Q0TST Charlie Lawson Atlanta GA" }, { id: 9991234, text: "duplicate" });
 	records.push({ id: 2, text: "Ünïcode/Ä-test" });
 	const r = iddb.write(img, records, { textLen: 16 });
 	assert.equal(r.count, 17502);
 	assert.equal(r.rec, 15);
 	assert.ok(img.size > CODEPLUG_SPAN || r.top <= CODEPLUG_SPAN);
-	const ids = [2, 9870000, 9870000 + 7 * 17474, 9870000 + 7 * 17475, 9870000 + 7 * 17499, 9991276, 9870001];
+	const ids = [2, 9870000, 9870000 + 7 * 17474, 9870000 + 7 * 17475, 9870000 + 7 * 17499, 9991234, 9870001];
 	const got = simDetail(img, ids).split("\n").filter((l) => l.startsWith("iddb"));
 	assert.deepEqual(got, [
 		"iddb count 17502",
@@ -224,7 +224,7 @@ test("the DMR ID database is found by the radio across both areas", () => {
 		`iddb ${9870000 + 7 * 17474} "K17474 Op4"`,
 		`iddb ${9870000 + 7 * 17475} "K17475 Op5"`,
 		`iddb ${9870000 + 7 * 17499} "K17499 Op9"`,
-		'iddb 9991276 "Q0TST Charlie La"',
+		'iddb 9991234 "Q0TST Charlie La"',
 		"iddb 9870001 -",
 	]);
 	const back = iddb.read(img.bytes);
@@ -253,9 +253,9 @@ test("the DMR ID database is found by the radio across both areas", () => {
 
 test("longer database text is kept up to 48 characters", () => {
 	const img = CodeplugImage.blank();
-	iddb.write(img, [{ id: 9991276, text: "Q0TST Charlie Lawson Atlanta Georgia United States" }], { textLen: 48 });
-	const got = simDetail(img, [9991276]).split("\n").filter((l) => l.startsWith("iddb 9"));
-	assert.deepEqual(got, ['iddb 9991276 "Q0TST Charlie Lawson Atlanta Georgia United Stat"']);
+	iddb.write(img, [{ id: 9991234, text: "Q0TST Charlie Lawson Atlanta Georgia United States" }], { textLen: 48 });
+	const got = simDetail(img, [9991234]).split("\n").filter((l) => l.startsWith("iddb 9"));
+	assert.deepEqual(got, ['iddb 9991234 "Q0TST Charlie Lawson Atlanta Georgia United Stat"']);
 });
 
 // --- Reaching the radio (transport.js) against a simulated radio ---

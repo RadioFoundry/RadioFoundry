@@ -118,6 +118,8 @@ def request(where, req, timeout=30.0):
         raise BenchLineError("the bench board closed the connection with no answer", "internal")
     except socket.timeout:
         raise BenchLineError(f"no answer to {req.get('op')} in {timeout:g} s", "timeout")
+    except (OSError, ValueError) as e:     # a board that restarts mid-request, or a garbled line
+        raise BenchLineError(f"the bench board stopped answering {req.get('op')}: {e}", "lost")
     finally:
         c.close()
 
@@ -144,7 +146,11 @@ class Request:
         self.first = threading.Event()
         self.done = threading.Event()
         self.conn = Conn(where)
-        self.conn.send(req)
+        try:
+            self.conn.send(req)
+        except OSError as e:
+            self.conn.close()
+            raise BenchLineError(f"the bench board stopped answering {req.get('op')}: {e}", "lost")
         self.thread = threading.Thread(target=self._pump, daemon=True)
         self.thread.start()
 

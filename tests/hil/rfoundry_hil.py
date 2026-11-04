@@ -23,6 +23,25 @@ from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_ports, parse
                        to_rgb, write_png, ACTIONS, PRESS, LONG)
 
 
+# A test finds its channel by RX frequency (find_channel), so a split or repeater channel would key a TX frequency no one
+# compared with the rig's tx_mhz. Every PTT goes through DebugLink.ptt (ptt_for too, and every link a test opens), so
+# the check is made there, on the channel the radio is on when it keys
+_ptt = DebugLink.ptt
+
+
+def _guarded_ptt(self, down, max_ms=10000):
+    import hil_config
+    if down and hil_config.CONFIG is not None and hil_config.CONFIG.getoption("--allow-rf"):
+        tx = int(self.view(["core"]).get("tx_hz") or 0) / 1e6
+        if not hil_config.tx_allowed(None, tx):
+            raise RuntimeError(f"PTT refused: the channel transmits on {tx:.5f} MHz, not one of the rig's transmit "
+                               f"frequencies (tx_mhz)")
+    return _ptt(self, down, max_ms)
+
+
+DebugLink.ptt = _guarded_ptt
+
+
 # ── skips ───────────────────────────────────────────────────────────────────
 # Every HIL skip names its kind (README.md, "Skip kinds"), so a bring-up run can tell a skip it expects (an --allow-*
 # flag not given) from a gap (the radio lacks what the feature needs) and fail on the gap. The kind travels as the
@@ -849,6 +868,7 @@ class SdrBench:
         job = L.job_from_args(tool, args)
         for k in ("freq", "tx"):            # bench_tx's frequency, bench_repeater's output
             if job.get(k) is not None:
+                self._tx_check(job[k])
                 self._api_claim(job[k])
         ambe_dir = None
         if job.get("ambe_out"):             # the board sends the file's bytes back: written where the test asked
@@ -874,6 +894,8 @@ class SdrBench:
         (ctcss, dcs, dev_hz, sub_dev_hz, lead_s, tail_s, repeat; None left out). Returns once the board keyed: a
         _LineTx whose wait() gives the board's done record. Needs the lease (tests mark it bench_service and rf).
         Only a bench board transmits FM: the SDR bench host's modem is DMR only, so it skips there."""
+        if not self.allow_rf:
+            raise RuntimeError("the bench board's FM transmitter keys up: needs --allow-rf")
         self._tx_check(freq)
         if not self.api:
             skip("bench", "the SDR bench host has no FM transmitter: needs a bench board (--bench-api)")

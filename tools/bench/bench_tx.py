@@ -298,7 +298,7 @@ def selftest() -> int:
     BPTC, reassembled, its CRCs and IPv4 / UDP checked against what was asked. 568 octets of payload (596 of IPv4, the
     air MTU) take 2 preambles + 1 header + 50 blocks = 53 bursts: what a radio sends at most unconfirmed; 580 (608 of
     IPv4) take 51 blocks, the most a radio reassembles."""
-    ns = argparse.Namespace(src=9990301, dst=9991276, family="ms", burst_cc=2, confirmed=False, preambles=2, tms=None,
+    ns = argparse.Namespace(src=9990301, dst=9991234, family="ms", burst_cc=2, confirmed=False, preambles=2, tms=None,
                             etsi=None, ip_text=None, octets=40, udp_port=50001, udp_src_port=50000, udp_octets=568,
                             udp_payload=None, repeat=3, tms_seq=1, tms_no_ack=False)
     for octets, bursts_each in ((580, 54), (568, 53), (40, 9), (1, 6)):
@@ -577,7 +577,7 @@ def main() -> None:
     v.add_argument("--service-options", type=lambda s: int(s, 16), default=0)
     v.add_argument("--emergency", action="store_true")
     d = sub.add_parser("data")
-    common(d, 9991276)
+    common(d, 9991234)
     d.add_argument("--confirmed", action="store_true")
     d.add_argument("--octets", type=int, default=40)
     d.add_argument("--preambles", type=int, default=2)
@@ -596,7 +596,7 @@ def main() -> None:
     d.add_argument("--repeat-gap-ms", type=int, default=0,
                    help="0: the --repeat packets in one key-up; else this far apart, each its own key-up")
     c = sub.add_parser("csbk")
-    common(c, 9991276)
+    common(c, 9991234)
     c.add_argument("--count", type=int, default=4, help="preamble CSBKs (opcode 0x3D)")
     c.add_argument("--opcode", type=lambda x: int(x, 16), default=None,
                    help="then one CSBK with this opcode (hex), e.g. 1F call alert (FID 0)")
