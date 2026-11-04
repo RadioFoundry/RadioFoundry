@@ -377,7 +377,21 @@ sectors with RadioFoundry's codeplug, the write replaces them. A failure at any 
 channels and says so. With the backup, the Codeplug Editor converts the original codeplug from there; without one, the
 message says whether the original is still on the radio (a read or conversion failure writes nothing).
 
-The boards whose stock codeplug the browser converts are those in the TYT family layouts of `codeplug/stock_tyt.js`.
+The boards whose stock codeplug the browser converts are those in the TYT family layouts of `codeplug/stock_tyt.js`,
+and those whose paged stock codeplug `codeplug/stock_baofeng.js` reads ([feature-matrix.md](../feature-matrix.md)).
+
+### HR_C7000 radios (`c7000ui.js` `bringChannels`)
+
+The stock codeplug sits in its own pages of the data flash, below RadioFoundry's codeplug, and no step of the install
+writes there. So the step needs no backup and loses nothing:
+
+| Step | What happens |
+|---|---|
+| 0. Skip | Not an install, a radio that ran RadioFoundry before, or a board without a paged stock area (`calibration.area`) or a codeplug base |
+| 1. Read | The stock area as this visit's check step read it (`c.calArea`). Without one (the factory update mode route reads no data memory), RadioFoundry reads it over the CPS, area 1 at its physical addresses |
+| 2. Convert | `convertPagedStock`. No stock codeplug, or one without channels, ends the step |
+| 3. Write | `writeConverted` through the Codeplug Editor's transport (`CpsSerial`), which adds the board's codeplug base: the settings area claimed when foreign, the radio's codeplug read, the bytes that differ written and read back. A codeplug with channels already on the radio is replaced only when the user says so |
+| 4. Check | The radio's codeplug read again and counted. A mismatch is reported as a problem |
 The HR_C7000 backend has no conversion: its stock codeplug stays in the data flash and in the backup
 (`original-channels.bin`), and `tools/backup_codeplug.py` ports it.
 
