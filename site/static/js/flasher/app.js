@@ -359,6 +359,7 @@ async function flashFinished(started, error = null) {
 const STEPS = {
 	install: ["radio", "build", "now", "codec", "write", "done"],
 	backup: ["radio", "backup"],
+	restart: ["radio", "restart"],
 	restore: ["bundle", "restore"],
 	help: ["radio", "symptom", "recover"],
 };
@@ -737,7 +738,7 @@ function render() {
 	// a step this browser can't run (no WebUSB or Web Serial): the manual install kit in its place
 	const missing = S.radio && !S.sim && missingApi(S.radio, S.task, step, { usb: usbSupported(), serial: serialSupported(), stub: stubRoute() });
 	const view = (missing && (() => kitView(missing))) || (step === "restore" && bundleBackend(S.bundle)?.views.restore) || (S.radio && backend().views[step])
-		|| { update: updateView, radio: radioView, build: buildView, bundle: bundleView, symptom: symptomView, recover: recoverView }[step];
+		|| { update: updateView, radio: radioView, build: buildView, bundle: bundleView, symptom: symptomView, recover: recoverView, restart: restartView }[step];
 	app.append(view());
 	app.append(h("div", { class: "nav-bar" },
 		h("div", { class: "nav-back" },
@@ -796,7 +797,7 @@ function startView() {
 	return h("div", { class: "flasher" },
 		...support,
 		panel(t("flash.start.title"),
-			h("div", { class: "choice-grid" }, choice("update", "⟳"), choice("install", "⤓"), choice("backup", "⎘"), choice("restore", "↺"),
+			h("div", { class: "choice-grid" }, choice("update", "⟳"), choice("install", "⤓"), choice("backup", "⎘"), choice("restore", "↺"), choice("restart", "⏻"),
 				choice("help", "?"))),
 		h("details", { class: "small" }, h("summary", {}, t("flash.start.privacy_title")), h("p", {}, t("flash.start.privacy"))),
 		h("p", { class: "small muted" }, S.sim ? h("a", { href: "#", onclick: (e) => { e.preventDefault(); location.hash = ""; location.reload(); } }, t("flash.sim.leave"))
@@ -2303,6 +2304,15 @@ function backupView() {
 	}
 	draw();
 	return box;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// restart task: a radio left in an update mode. A radio whose backend has a loader to leave draws its own step
+// (c7000ui.js restartView); for the others the page has no loader to talk to, so it says how to power-cycle
+
+function restartView() {
+	S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true }));
+	return panel(t("flash.restart.title", { name: S.radio.name }), h("p", {}, t("flash.restart.manual")), notice(t("flash.restart.battery"), "info"));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
