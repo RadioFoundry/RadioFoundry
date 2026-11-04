@@ -297,14 +297,24 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   F's first report (the EMB one): a new LC was first seen there at the second F. So until a reception has its LC the
   driver also reads page 2 at the next burst A, at F's repeated report and at the post-access interrupt (an LC that
   differs there is handed over with the next voice burst).
+- **Page 2 isn't per slot.** With a call on each slot it holds the LC the chip assembled last, of either call, so at
+  one call's F it can hold the other's. The driver keeps each slot's call LC (from its header or terminator, or the
+  embedded LC it handed over) and holds back an embedded LC for a burst on a slot when it is the other slot's call's,
+  or when it differs from this slot's call while that call goes on (a new call on the slot comes with its header, or
+  after 360 ms without its voice). The other slot's LC is kept up to 60 s after it was last seen in page 2: with the
+  voice read locked to one slot, the other call's bursts are never taken. While the other slot has a call, a slot
+  with no LC of its own keeps looking at the next burst A, and there an unchanged page 2 counts after more than one
+  superframe of voice, as at F (the capture can come just after this call's F). Bursts with no slot number are left
+  alone. Counter `lc_other_slot`.
 - **LC trace** (for the bench): every look at page 2 until the reception's LC is handed over is logged, with the ticks
   since the capture, the voice bursts taken and page 2's source ID. Debug link log lines
   `dle cap<how> <src>` (how: `0` status report, `A` lone burst A, `T` burst taken) and
   `dle <ev><res> @<ticks> v<voice> <src>` (ev: `F` burst F, `f` F's repeated report, `A` the next burst A, `P`
   post-access, `p` post-access just before the reception, `H` header; res: `n` differs from the capture, taken; `s`
   same, held back; `v` same, taken after more than one superframe; `k` differs, kept for the next voice burst; `c` CRC
-  error flagged). Diagnostics lines `lc n= s= v= c=` (at F), `lc2 a= f= p= k=` (found at A, at F's repeat, at
-  post-access; kept LCs handed over) and `lt <how><capture src> <ev><res><ticks>...` (the last reception).
+  error flagged; `o` the other slot's call's, held back). Diagnostics lines `lc n= s= v= c=` (at F),
+  `lc2 a= f= p= k= o=` (found at A, at F's repeat, at post-access; kept LCs handed over; held back as the other slot's
+  call's) and `lt <how><capture src> <ev><res><ticks>...` (the last reception).
 - Talker alias and GPS embedded data (FLCO 4-8) appear in the same page 2 location as the embedded LC.
 
 ### 5.3 Timeslot tracking (repeater signals)
