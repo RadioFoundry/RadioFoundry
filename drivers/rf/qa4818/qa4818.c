@@ -104,10 +104,10 @@ uint16_t qa4818_ctcss_detect(uint16_t hz_x10)
 	return ctcss_detect[i];
 }
 
-uint16_t qa4818_drive_word(uint32_t hz, bool narrow, uint8_t drive)
+uint16_t qa4818_drive_word(uint32_t hz, bool wide, uint8_t drive)
 {
 	uint16_t base = hz >= MHZ(300) ? 0x3900u : hz >= MHZ(200) ? 0x3800u : 0x3700u;
-	if (narrow) {
+	if (wide) {
 		base -= 0x100u;
 	}
 	uint16_t d = (uint16_t)(drive << 1);
@@ -122,9 +122,9 @@ int16_t qa4818_rssi_dbm(uint16_t raw)
 	return (int16_t)((int16_t)(raw & 0x1FFu) / 2 - 160);
 }
 
-uint16_t qa4818_drive_raw(uint16_t base, uint8_t level, bool narrow)
+uint16_t qa4818_drive_raw(uint16_t base, uint8_t level, bool wide)
 {
-	if (narrow) {
+	if (wide) {
 		base = (uint16_t)(base - 0x100u);
 	}
 	uint16_t d = (uint16_t)(level << 1);
@@ -142,21 +142,21 @@ uint16_t qa4818_tone_word(uint16_t hz)
 }
 
 // The stock firmware compares the frequency against 300 and 200 MHz with "above", not "at least", in both
-uint16_t qa4818_tone_drive_word(uint32_t hz, bool narrow)
+uint16_t qa4818_tone_drive_word(uint32_t hz, bool wide)
 {
 	if (hz > MHZ(300)) {
-		return qa4818_drive_raw(0x3900, 0x32, narrow);
+		return qa4818_drive_raw(0x3900, 0x32, wide);
 	}
 	if (hz > MHZ(200)) {
-		return qa4818_drive_raw(0x3900, 0xB4, narrow);
+		return qa4818_drive_raw(0x3900, 0xB4, wide);
 	}
-	return qa4818_drive_raw(0x3800, 0x82, narrow);
+	return qa4818_drive_raw(0x3800, 0x82, wide);
 }
 
-uint16_t qa4818_line_drive_word(uint32_t hz, bool narrow, uint8_t level)
+uint16_t qa4818_line_drive_word(uint32_t hz, bool wide, uint8_t level)
 {
 	uint16_t base = hz > MHZ(300) ? 0x3900u : hz > MHZ(200) ? 0x3800u : 0x3700u;
-	return qa4818_drive_raw(base, level, narrow);
+	return qa4818_drive_raw(base, level, wide);
 }
 
 void qa4818_attach(qa4818_t *c, rfbus_t *bus, bool lo)
@@ -377,7 +377,7 @@ void qa4818_gpio(qa4818_t *c, uint16_t mask, uint16_t val)
 	}
 }
 
-void qa4818_path(qa4818_t *c, bool tx, bool digital, bool narrow, uint16_t r49)
+void qa4818_path(qa4818_t *c, bool tx, bool digital, bool wide, uint16_t r49)
 {
 	if_constants(c, r49);
 	if (digital)
@@ -389,7 +389,7 @@ void qa4818_path(qa4818_t *c, bool tx, bool digital, bool narrow, uint16_t r49)
 		wr(c, 0x73, 0x4E8A);	// 0x569A in the stock firmware only with the second receiver on
 		wr(c, 0x7E, 0x361E);
 	} else {
-		wr(c, 0x73, narrow ? 0x564A : 0x464A);
+		wr(c, 0x73, wide ? 0x564A : 0x464A);
 		wr(c, 0x7E, 0x342E);
 	}
 }
@@ -551,10 +551,10 @@ static void drive(qa4818_t *c, uint16_t r40, uint8_t level)
 	wr(c, QA4818_REG_SUBAUDIO, (uint16_t)((r51 & 0xFF80u) | (level & 0x7Fu)));
 }
 
-void qa4818_tx_drive(qa4818_t *c, uint32_t hz, bool narrow, uint8_t d, uint8_t level)
+void qa4818_tx_drive(qa4818_t *c, uint32_t hz, bool wide, uint8_t d, uint8_t level)
 {
 	audio_plain(c);
-	drive(c, qa4818_drive_word(hz, narrow, d), level);
+	drive(c, qa4818_drive_word(hz, wide, d), level);
 }
 
 void qa4818_tx_drive_off(qa4818_t *c)

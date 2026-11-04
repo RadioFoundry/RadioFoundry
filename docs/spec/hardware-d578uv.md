@@ -394,14 +394,15 @@ the paged range 0x10-0x3F; the meanings below come from the stock firmware, and 
 | 0x03 | the enable word (0xBFF5, 0xC1FE) | not listed; the same word is the BK4819's 0x30 (bit 2 the microphone ADC, 1 TX DSP, 0 RX DSP, 3 PA gain, 7:4 PLL, 13:10 RX chain, 15 VCO calibration), which the QA4818 uses otherwise |
 | 0x09 | ten writes at init, 0x0000 to 0x9076 | DTMF/SelCall detector coefficients: bits 15:12 the symbol, 7:0 its coefficient |
 | 0x10-0x13 | 0x0038, 0x025A, 0x035B, 0x0396 | RX AGC gain table (defaults 0x0038, 0x025A, 0x037B, 0x03DE) |
-| 0x40 | the "drive": 0x3600-0x3900 by band + the level << 1, less 0x100 on a narrow channel | TX deviation: bit 12 on, 11:0 the amount (default 0x4D0) |
+| 0x40 | the "drive": 0x3600-0x3900 by band + the level << 1, less 0x100 on a 25 kHz channel | TX deviation: bit 12 on, 11:0 the amount (default 0x4D0) |
 | 0x47 | 0x6140; in DMR receive 0x4840 at 300 MHz and above, 0x6840 below | AF output: bits 11:8 = 1 normal audio, bit 13 inverted |
 | 0x51 | bit 15 on, low 7 bits a calibrated level | sub-audio TX on, bits 6:0 its gain |
 | 0x64 | not read | voice amplitude, the VOX detector's input (5.6) |
 | 0x78 | the gain code << 8 \| 0xFF | RSSI squelch thresholds (the stock firmware decides the squelch itself) |
 
 Where the two agree the BK4819 meaning is likely but inferred. 0x40 as the deviation, not the PA drive, fits the
-stock arithmetic (one step less on a narrow channel) and the factory items MODU (modulation) whose bytes feed it.
+measurement: one step less on a 25 kHz channel doubles every deviation (CTCSS 374 Hz at 12.5 kHz, 748 Hz at 25
+kHz). The calibration's MODU (modulation) bytes feed it.
 
 | Chip | Role |
 | --- | --- |
@@ -444,11 +445,11 @@ The stock firmware has two register sets, analog and digital, written at receive
 | --- | --- | --- |
 | 0x13 | 0x0396 | 0x0375 (0x0396 with the second receiver) |
 | 0x44 | 0x43EC | 0x53EC |
-| 0x73 | 0x464A (0x564A narrow) | 0x4E8A (0x569A with the second receiver) |
+| 0x73 | 0x464A (0x564A at 25 kHz) | 0x4E8A (0x569A with the second receiver) |
 | 0x7E | 0x342E | 0x361E |
 | Page 1: 0x1B, 0x1C, 0x1D, 0x27, 0x36 | 0x0004, 0x04D7, 0x39FD, 0x091B, 0x9D08 (0x1D08 TX) | 0x07FF, 0x04D3, 0x39FD (0x29A1 TX), 0x891B, 0x1D59 |
 | 0x43 (receive) | 0x6009 | 0x6E09 |
-| 0x3A (receive) | 0x0040 (0x00E0 narrow, not yet copied) | 0x0040 |
+| 0x3A (receive) | 0x0040 (0x00E0 at 25 kHz, not yet copied) | 0x0040 |
 | 0x18, page 1 0x17 (receive) | not written | 0x4125, 0x0AA8, as for DMR transmit |
 | 0x47 (receive) | 0x6140 | 0x4840 at 300 MHz and above, 0x6840 below |
 
@@ -524,7 +525,7 @@ pin. Both mute the microphone with chip 0's 0x25 bit 0 while they sound.
 | Step | 1750 Hz burst | DTMF |
 | --- | --- | --- |
 | Audio source | page 1 0x19 = 0x7800 | page 1 0x19 = 0x7800, 0x18 = 0x4125, page 1 0x17 = 0x03B9 (0x03B8 for the microphone: bit 0 the input pin, inferred) |
-| Drive 0x40 | above 300 MHz 0x3900 + level 0x32, above 200 MHz 0x3900 + 0xB4, else 0x3800 + 0x82 (base, level << 1, one step less narrow) | base 0x3900 / 0x3800 / 0x3700 by the same limits, level the UHF block's byte 0x17 above 200 MHz, 0x18 below |
+| Drive 0x40 | above 300 MHz 0x3900 + level 0x32, above 200 MHz 0x3900 + 0xB4, else 0x3800 + 0x82 (base, level << 1, one step less at 25 kHz) | base 0x3900 / 0x3800 / 0x3700 by the same limits, level the UHF block's byte 0x17 above 200 MHz, 0x18 below |
 | Path | page 1 0x1B = 5 | page 1 0x1B = 5 |
 | Tone | 0x71 = 9030 (1750 Hz), 0x70 = 0xA000 | PB9 PWM (below) |
 | End | page 1 0x1B = 4, 0x70 = 0, the voice drive | page 1 0x1B = 4, page 1 0x17 = 0x03B8, the voice drive |
