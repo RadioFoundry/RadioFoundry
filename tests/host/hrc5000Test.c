@@ -684,9 +684,21 @@ typedef struct {
 } two_call_t;
 
 typedef struct {
-	int heard[3];		// voice bursts taken per call slot, with that slot
-	int wrong[3];		// ... with the other slot or none
+	int stale_every;	// one TC read in this many misses its update (0 none)
+	int inv_from, inv_to;	// steps whose TC reads name the other slot
+	int8_t lock_ts;		// rx_lock_slot: 1 a repeater channel on TS1, 0 both slots (a hotspot, hear all)
+	int restart_at;		// step of an rx_restart from the stack (0 none): the slots are forgotten
+} two_opts_t;
+
+typedef struct {
+	int sent[3];		// voice bursts per call slot
+	int heard[3];		// ... taken, with that slot
+	int unknown[3];		// ... taken with no slot number
+	int wrong[3];		// ... taken with the other slot
+	int idx_jump[3];	// ... taken with a burst index out of step with the call's earlier bursts
+	int idx_off[3];		// ... with a burst index that isn't the call's (burst n is index n % 6 from its start)
 	int tc_wrong;		// ticks with a wrong slot number (0, unknown, isn't)
+	int ctr_wrong;		// voice bursts whose slot counter isn't their report's (the tick before their read)
 } two_result_t;
 
 // Step k, at the engine's tick t (the one its timeslot interrupt is about to start): is a burst of the call on ts in
@@ -701,7 +713,7 @@ static bool two_report(const two_call_t *c, int ts, int k, uint32_t t)
 	return k >= c->hdr_from && k < c->hdr_to && rep_ts_starting(t - 1u) == ts;
 }
 
-static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ticks, int stale_every)
+static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ticks, const two_opts_t *o)
 {
 	memset(rd, 0, sizeof(rd));
 	memset(voice_port, 0, sizeof(voice_port));
@@ -713,11 +725,12 @@ static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ti
 	hrc6000_dmr_run(&eng);
 	dmr_config_t cfg = { .own_id = 0x0A0B0C, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = true };
 	hrc6000_dmr_configure(&eng, &cfg);
-	hrc6000_dmr_rx_lock_slot(&eng, 1);
+	hrc6000_dmr_rx_lock_slot(&eng, o->lock_ts);
 	drain();
 
 	two_result_t res;
 	memset(&res, 0, sizeof(res));
+	int first_n[3] = { -1, -1, -1 }, first_idx[3] = { 0, 0, 0 };
 	rep_ctl[0] = rep_ctl[1] = 0x50;
 	rep_bit = 0;
 	uint32_t n_burst[3] = { 0, 0, 0 };
@@ -737,9 +750,10 @@ static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ti
 			voice_port[19] ^= 0x88;
 		}
 		// The TC as rep_tick has it, with a read now and then that missed its update
-		bool stale = stale_every > 0 && k % stale_every == stale_every - 1;
+		bool stale = o->stale_every > 0 && k % o->stale_every == o->stale_every - 1;
 		if ((rep_ctl[1] & 0x50u) == 0x50u && !stale) {
-			rep_bit = rep_ts_starting(eng.tick + 1u) == 2 ? 0x04 : 0x00;
+			bool inv = k >= o->inv_from && k < o->inv_to;
+			rep_bit = (rep_ts_starting(eng.tick + 1u) == 2) != inv ? 0x04 : 0x00;
 		}
 		rd[0][0x52] = (uint8_t)(0x10 | rep_bit);
 		t_us += 30000;
@@ -768,68 +782,122 @@ static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ti
 			rd[0][0x82] = 0;
 			t_us -= 3500;
 		}
+		if (o->restart_at > 0 && k == o->restart_at) {
+			hrc6000_dmr_rx_restart(&eng);
+		}
 		dmr_event_t ev;
 		dmr_burst_t b;
 		while (hrc6000_dmr_pop(&eng, &ev, &b)) {
 			if (ev.kind != DMR_EV_BURST_RX || b.kind != DMR_BURST_VOICE) {
 				continue;
 			}
+			res.ctr_wrong += ev.arg != eng.tick - 1u;
 			// Which call's burst this is
 			for (int ts = 1; ts <= 2; ts++) {
 				for (uint32_t n = 0; n < n_burst[ts]; n++) {
 					uint8_t want[27];
 					vburst(want, TWO_KEY(ts, n));
 					if (memcmp(want, b.payload, sizeof(want)) == 0) {
-						if (ev.ts == ts) {
-							res.heard[ts]++;
-						} else {
-							res.wrong[ts]++;
+						res.heard[ts] += ev.ts == ts;
+						res.unknown[ts] += ev.ts == 0;
+						res.wrong[ts] += ev.ts != 0 && ev.ts != ts;
+						if (first_n[ts] < 0) {
+							first_n[ts] = (int)n;
+							first_idx[ts] = b.voice_index;
 						}
+						res.idx_jump[ts] += (b.voice_index + 6 - first_idx[ts]) % 6 !=
+							((int)n - first_n[ts]) % 6;
+						res.idx_off[ts] += b.voice_index != n % 6u;
 					}
 				}
 			}
 		}
 	}
+	for (int ts = 1; ts <= 2; ts++) {
+		res.sent[ts] = (int)n_burst[ts];
+	}
 	return res;
 }
 
+static void two_print(const char *what, const two_result_t *r)
+{
+	printf("  %s: tc %d wrong, slot counter %d wrong\n", what, r->tc_wrong, r->ctr_wrong);
+	for (int ts = 1; ts <= 2; ts++) {
+		printf("    TS%d: %d sent, %d heard, %d unknown, %d wrong; index %d out of step, %d not the call's\n", ts,
+		       r->sent[ts], r->heard[ts], r->unknown[ts], r->wrong[ts], r->idx_jump[ts], r->idx_off[ts]);
+	}
+}
+
+#define TWO_CHECK(what, r, cond) do { int f_ = failures; CHECK(cond); if (failures != f_) two_print(what, &(r)); } while (0)
+
 static void test_two_slots(void)
 {
+	const two_opts_t rpt = { 0, 0, 0, 1, 0 };
+	const two_call_t none = { 0, 0, -1, 0, 0 };
+
 	// TS2 talking first; a TS1 call starts with its headers while TS2 goes on, and outlasts it
 	two_call_t ts2 = { 20, 30, -1, 30, 200 };
 	two_call_t ts1 = { 80, 90, -1, 90, 240 };
-	two_result_t r1 = two_slots(&ts1, &ts2, 260, 0);
-	CHECK(r1.tc_wrong == 0);
-	CHECK(r1.wrong[1] == 0 && r1.wrong[2] == 0);	// no burst on the other call's slot
-	CHECK(r1.heard[1] == 75);			// the whole TS1 call, while TS2 talks too
-	if (r1.heard[1] != 75 || r1.wrong[1] != 0 || r1.wrong[2] != 0) {
-		printf("  two slots, TS2 first: TS1 %d heard %d wrong, TS2 %d heard %d wrong, tc %d\n", r1.heard[1],
-		       r1.wrong[1], r1.heard[2], r1.wrong[2], r1.tc_wrong);
-	}
+	two_result_t r = two_slots(&ts1, &ts2, 260, &rpt);
+	TWO_CHECK("TS2 first", r, r.tc_wrong == 0 && r.wrong[1] == 0 && r.wrong[2] == 0 && r.ctr_wrong == 0);
+	TWO_CHECK("TS2 first", r, r.heard[1] == r.sent[1] && r.idx_off[1] == 0);	// all of TS1, A-F in place
 
 	// TS2 already running when the radio comes in (its late entry report only); TS1's headers come mid-stream.
 	// One TC read in seven misses its update
 	two_call_t ts2b = { 0, 0, 6, 0, 200 };
 	two_call_t ts1b = { 40, 50, -1, 50, 160 };
-	two_result_t r2 = two_slots(&ts1b, &ts2b, 200, 7);
-	CHECK(r2.tc_wrong == 0);
-	CHECK(r2.wrong[1] == 0 && r2.wrong[2] == 0);
-	CHECK(r2.heard[1] == 55);
-	if (r2.heard[1] != 55 || r2.wrong[1] != 0 || r2.wrong[2] != 0 || r2.tc_wrong != 0) {
-		printf("  two slots, TS2 running: TS1 %d heard %d wrong, TS2 %d heard %d wrong, tc %d\n", r2.heard[1],
-		       r2.wrong[1], r2.heard[2], r2.wrong[2], r2.tc_wrong);
-	}
+	const two_opts_t stale = { 7, 0, 0, 1, 0 };
+	r = two_slots(&ts1b, &ts2b, 200, &stale);
+	TWO_CHECK("TS2 running", r, r.tc_wrong == 0 && r.wrong[1] == 0 && r.wrong[2] == 0);
+	TWO_CHECK("TS2 running", r, r.heard[1] == r.sent[1] && r.idx_off[1] == 0);
 
 	// One call, joined late on a radio that has heard no header since it started: its slot is the call's too, and
 	// every burst read after the late entry report is taken
-	two_call_t none = { 0, 0, -1, 0, 0 };
 	two_call_t ts1c = { 0, 0, 30, 24, 120 };
-	two_result_t r3 = two_slots(&ts1c, &none, 140, 0);
-	CHECK(r3.tc_wrong == 0);
-	CHECK(r3.wrong[1] == 0 && r3.heard[1] == 45);
-	if (r3.heard[1] != 45 || r3.wrong[1] != 0) {
-		printf("  late entry, one slot: TS1 %d heard %d wrong\n", r3.heard[1], r3.wrong[1]);
-	}
+	r = two_slots(&ts1c, &none, 140, &rpt);
+	TWO_CHECK("late entry", r, r.tc_wrong == 0 && r.wrong[1] == 0 && r.heard[1] == 45 && r.idx_jump[1] == 0);
+
+	// A receiver restart mid-call (the stack's rx_restart, a color code change): the slots are forgotten until the TC
+	// locks again, but nothing names the other slot. The call keeps its lock (bursts with no slot number meanwhile)
+	// and its burst index
+	two_call_t ts1d = { 20, 30, -1, 30, 200 };
+	const two_opts_t blip = { 0, 0, 0, 1, 100 };
+	r = two_slots(&ts1d, &none, 220, &blip);
+	TWO_CHECK("TC blip", r, r.wrong[1] == 0 && r.heard[1] + r.unknown[1] == r.sent[1] && r.unknown[1] > 0);
+	TWO_CHECK("TC blip", r, r.idx_off[1] == 0);
+
+	// The TC wrong from the start: TS2's call is taken as TS1 (nothing to tell them apart) until the TC comes right
+	// (the lock unwinds one agreement per read: about 60 reads here) and names its phase TS2. Then the lock and
+	// TS2's header phase go, and TS1's call, already talking, is found
+	two_call_t ts2e = { 10, 20, -1, 20, 240 };
+	two_call_t ts1e = { 50, 60, -1, 60, 240 };
+	const two_opts_t wrong = { 0, 0, 70, 1, 0 };
+	r = two_slots(&ts1e, &ts2e, 260, &wrong);
+	TWO_CHECK("TC wrong at first", r, r.wrong[1] == 0 && r.heard[1] >= 45 && r.idx_jump[1] == 0);
+
+	// Both slots heard (a hotspot, hear all): a TS2 header with no voice after it (the call's voice lost), then a
+	// TS1 call joined by late entry: the late entry frees the read from the header's phase
+	const two_opts_t both = { 0, 0, 0, 0, 0 };
+	two_call_t ts2f = { 20, 30, -1, 0, 0 };
+	two_call_t ts1f = { 0, 0, 40, 34, 150 };
+	r = two_slots(&ts1f, &ts2f, 160, &both);
+	TWO_CHECK("late entry after a header", r, r.tc_wrong == 0 && r.wrong[1] == 0 && r.heard[1] == 55);
+
+	// Both slots heard: TS2 talking with nothing reported, TS1's headers come: the read locks TS1's call, the one its
+	// header started, and names it TS1
+	two_call_t ts2g = { 0, 0, -1, 0, 200 };
+	two_call_t ts1g = { 40, 50, -1, 50, 160 };
+	r = two_slots(&ts1g, &ts2g, 200, &both);
+	TWO_CHECK("both slots", r, r.tc_wrong == 0 && r.wrong[1] == 0 && r.wrong[2] == 0);
+	TWO_CHECK("both slots", r, r.heard[1] == r.sent[1] && r.idx_off[1] == 0);
+
+	// After a quiet period the receiver restarts as the call's single header comes, and the slot is unknown for
+	// its first bursts: they are skipped (on a repeater channel nothing is taken without its slot), but counted, so
+	// the rest come out with their own index
+	two_call_t ts1h = { 20, 22, -1, 22, 120 };
+	r = two_slots(&ts1h, &none, 140, &rpt);
+	TWO_CHECK("header at a restart", r, r.wrong[1] == 0 && r.unknown[1] == 0 && r.heard[1] >= r.sent[1] - 3);
+	TWO_CHECK("header at a restart", r, r.idx_off[1] == 0);
 }
 
 int main(void)

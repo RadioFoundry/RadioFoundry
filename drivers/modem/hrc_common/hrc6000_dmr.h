@@ -314,8 +314,11 @@ typedef struct {
 	uint8_t tr_miss;
 	uint8_t tr_wait;
 	uint8_t tr_last[27];
-	// The tick phase of the header that started this read (-1: none yet): the call to lock to
+	// The tick phase of the header that started this read (-1: none yet): the call to lock to. While searching, the
+	// phase whose frames still count A-F (-1 none): every frame after a lock was dropped, else each burst skipped
 	int8_t tr_hdr_ph;
+	int8_t tr_skip_ph;
+	bool tr_skip_all;
 
 	hrc6000_dmr_stats_t st;
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
