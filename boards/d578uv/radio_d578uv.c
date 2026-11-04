@@ -156,9 +156,11 @@ static qa4818_t chip_if, chip_lo;	// chips 0 and 2
 
 // Side B: chips 1 and 3, run by the radio task (the task of the core's tune() calls), for dual watch and the air band
 #define SIDE_B_CHIPS		(CONFIG_DUAL_WATCH || CONFIG_AM_RX)
+static rfbus_3w_t bus_b;		// chip 1 is kept in every build: its GPIO gates side A's audio (chip1_gpio)
+static qa4818_t chip_b;
 #if SIDE_B_CHIPS
-static rfbus_3w_t bus_b, bus_lo_b;
-static qa4818_t chip_b, chip_lo_b;
+static rfbus_3w_t bus_lo_b;
+static qa4818_t chip_lo_b;
 #endif
 #if KT_USED
 static ktamfm_t kt;
@@ -578,15 +580,16 @@ static uint8_t cal_byte(uint32_t off, bool *ok)
 
 // ---- The PA5 device's trims from the calibration (5.5, rf_plan.h) ----
 #define AUX_FQCA		0x1u	// the UHF block's byte 0 ("FQCA"), after every side A trim
-#define AUX_TRIM_B		0x2u	// side B's fixed trim: the air band's, broadcast FM's, else 0
+#define AUX_TRIM_B		0x2u	// side B's fixed trim: the air band's, side B's band's, broadcast FM's, else 0
 #define AUX_TRIM_TX		0x4u	// by the TX band and power, at each key-up
 #define AUX_TRIM_A_FIX		0x6u	// side A's fixed trim, by band
 #define AUX_TRIM_A		0xAu	// side A's trim, interpolated over the frequency
-#define AUX_TRIM_B_TABLE	0xCu	// side B's interpolated trim: the air band's, else 0
+#define AUX_TRIM_B_TABLE	0xCu	// side B's interpolated trim: the air band's, side B's frequency's, else 0
 #define BLK_FQCA		0x00u
 #define BLK_TRIM_A		0x0Au	// 0x0A..0x0C: side A's three points
 #define BLK_TRIM_A_FIX		0x10u
 #define BLK_TRIM_B		0x11u
+#define BLK_TRIM_B_PTS		0x0Du	// 0x0D..0x0F: side B's three points
 #define BLK_TRIM_TX		0x16u
 #define BLK_TRIM_AM		0x1Bu	// the UHF block's 0x1B..0x1D: the air band's three points; the VHF block's: register 2
 
@@ -604,7 +607,7 @@ static void trims_a(uint32_t hz)
 	aux_write(AUX_FQCA, cal_uhf[BLK_FQCA]);
 }
 
-#if CONFIG_AM_RX || CONFIG_BCAST_FM
+#if CONFIG_AM_RX || CONFIG_BCAST_FM || CONFIG_DUAL_WATCH
 static void trims_b(void);
 #endif
 
@@ -978,6 +981,7 @@ static void b_setup(void)
 	qa4818_lo_on(&chip_lo_b);
 	qa4818_rx_on(&chip_b, false, 0);
 	b_band_bits();
+	trims_b();
 	b_open = false;
 	b_close_polls = 0;
 }
@@ -1034,6 +1038,7 @@ static void b_stop(void)
 		b_chips_off();
 	}
 	b_band_bits();
+	trims_b();
 	audio_route();
 }
 
@@ -1472,16 +1477,18 @@ static void init(void)
 	d578uv_bus_init();
 
 	// Chips in the stock order: the two LOs, then side B's and side A's transceivers. Side B stays off until the core
-	// tunes it (kept only with CONFIG_DUAL_WATCH or CONFIG_AM_RX)
+	// tunes it (chip 3 kept only with CONFIG_DUAL_WATCH or CONFIG_AM_RX)
 #if SIDE_B_CHIPS
-	rfbus_3w_t *b1 = &bus_b, *b3 = &bus_lo_b;
-	qa4818_t *c1 = &chip_b, *c3 = &chip_lo_b;
+	rfbus_3w_t *b3 = &bus_lo_b;
+	qa4818_t *c3 = &chip_lo_b;
 #else
-	rfbus_3w_t bus_b, bus_lo_b;
-	qa4818_t chip_b, chip_lo_b;
-	rfbus_3w_t *b1 = &bus_b, *b3 = &bus_lo_b;
-	qa4818_t *c1 = &chip_b, *c3 = &chip_lo_b;
+	rfbus_3w_t bus_lo_b;
+	qa4818_t chip_lo_b;
+	rfbus_3w_t *b3 = &bus_lo_b;
+	qa4818_t *c3 = &chip_lo_b;
 #endif
+	rfbus_3w_t *b1 = &bus_b;
+	qa4818_t *c1 = &chip_b;
 	rfbus_3w_attach(&bus_lo, &pins_chip[2]);
 	rfbus_3w_attach(b3, &pins_chip[3]);
 	rfbus_3w_attach(b1, &pins_chip[1]);
@@ -1895,11 +1902,11 @@ bool d578uv_fm_rx_a(void)
 }
 #endif
 
-// Side B's trims as the stock firmware sets them with side A the main channel: in AM register 2 the VHF block's 0x1B and
-// 0xC the air band table at the AM frequency; with broadcast FM and no dual receive register 2 side B's 0x11; else
-// both 0. (The stock firmware sets them by side B's frequency only with side B the main channel or keyed, which
-// RadioFoundry doesn't do: side B is only ever a second receiver.) Radio task
-#if CONFIG_AM_RX || CONFIG_BCAST_FM
+// Side B's trims: in AM register 2 the VHF block's 0x1B and 0xC the air band table at the AM frequency; with side B
+// receiving, its band's 0x11 and the table from 0x0D..0x0F at its frequency (with both 0 it hears nothing: measured,
+// RSSI unmoved by a strong signal); with broadcast FM and no dual receive register 2 side B's 0x11; else both 0.
+// Radio task
+#if CONFIG_AM_RX || CONFIG_BCAST_FM || CONFIG_DUAL_WATCH
 static void trims_b(void)
 {
 	uint8_t r2 = 0, rc = 0;
@@ -1907,6 +1914,14 @@ static void trims_b(void)
 		r2 = cal_vhf[BLK_TRIM_AM];
 		rc = trim_am(cal_uhf + BLK_TRIM_AM, rx_hz / 10u);
 	}
+#if CONFIG_DUAL_WATCH
+	else if (cal_base != 0 && B_ON) {
+		uint32_t f = b_hz / 10u;
+		const uint8_t *blk = f >= F10(300) ? cal_uhf : cal_vhf;
+		r2 = blk[BLK_TRIM_B];
+		rc = trim_lookup(blk + BLK_TRIM_B_PTS, f, f >= F10(200));
+	}
+#endif
 #if CONFIG_BCAST_FM
 	else if (cal_base != 0 && bc_on && !B_ON && kt_present) {	// the KTMicro's set-up only
 		r2 = cal_vhf[BLK_TRIM_B];

@@ -36,6 +36,9 @@ Pass criteria:
   select b: dual.sel=b within 1 s; ZONE_POS +2: the watch again within 3 s with dual.b the new position, dual.a
   unchanged, dual.sel=b; SCAN stop: scan=off within 1 s, still off 2 s later (the UI didn't start it again), and
   zone_pos the new B.
+- test_dual_watch_second_receiver_bench (rf, a radio with dual.receivers=2, a bench that sends FM): dual watch of the
+  two VFOs, B on --fm-mhz and A 25 kHz above, both FM; while the bench sends FM on B the second receiver shows
+  rx2.active=1 and rx2.heard=1 (its audio on the speaker) and dual.at stays a; after it, rx2.active=0.
 - test_tx_inhibit (radio_tx): set.tx_inhibit=1, PTT: tx_deny=inhibit, the state never shows tx; input.ptt_downs
   counts the press and the debug log has "input: PTT down (host".
 - test_tot_warning (radio_tx): tot_s 6, tot_warn_s 3: tot_warning=1 between 2.5 and 4.5 s after key-up, then
@@ -611,6 +614,78 @@ def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
     print(f"positions {sorted(positions)}, held on {sorted(set(held))} ({len(held)} views)")
     assert positions <= {str(pos), str(other)}, positions
     assert str(pos) in held, f"dual watch never held on position {pos} (the test channel): {sorted(set(held))}"
+
+
+@pytest.mark.feature("dual_watch")
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_dual_watch_second_receiver_bench(radio, sdr_bench, pytestconfig):
+    need_scan(radio)
+    if features(radio).get("dual.receivers") != "2":
+        skip("no_hw", "one receiver: dual watch alternates (test_dual_watch)")
+    if "VFO_FM" not in radio.features():
+        skip("not_built", "built without the FM VFO")
+    if not hasattr(sdr_bench, "fm_tx_start"):
+        skip("bench", "this bench can't send FM")
+    mhz = pytestconfig.getoption("fm_mhz")
+    hz, other = round(mhz * 1e6), round(mhz * 1e6) + 25000
+    L = radio.link
+    radio.go_home()
+    if radio.screen() == "hotspot":
+        skip("state", "the radio is in hotspot mode")
+
+    def watch_back(sel):
+        # retuning the selected VFO restarts the watch (scan off for about 1 s)
+        wait_features(radio, lambda v: v.get("scan") == "dual" and v.get("dual.sel") == sel, 3.0, "the watch back")
+
+    def fm_vfo(f, sel):
+        L.vfo_set(f)
+        radio.wait_for(lambda v: v.get("rx_hz") == str(f), what="VFO tuned")
+        watch_back(sel)
+        if radio.core().get("mode") != "fm":
+            L.dmr_fields(mode="fm")
+            radio.wait_for(lambda v: v.get("mode") == "fm", what="FM VFO")
+            watch_back(sel)
+
+    b0 = None       # VFO B's frequency and mode, put back afterwards
+    with radio.vfo_session():
+        L.scan("dual_vfo")
+        try:
+            wait_features(radio, lambda v: v.get("scan") == "dual" and v.get("dual.b") == "vfo2", 1.0, "VFO dual watch")
+            L.scan("select", 1)
+            wait_features(radio, lambda v: v.get("dual.sel") == "b", 1.0, "B selected")
+            b0 = radio.core()
+            fm_vfo(hz, "b")
+            L.scan("select", 0)
+            wait_features(radio, lambda v: v.get("dual.sel") == "a", 1.0, "A selected")
+            fm_vfo(other, "a")
+            radio.wait_for(lambda v: v.get("rx2.tuned") == "1" and v.get("rx2.active") == "0", 3.0,
+                           what="the second receiver on B, quiet")
+            seen = []
+            with sdr_bench.lease():
+                tx = sdr_bench.fm_tx_start(mhz, [{"kind": "tone", "hz": 1000, "s": 3.0, "level": 0.6}])
+                while tx.poll() is None:
+                    v = {**radio.core(), **features(radio)}
+                    seen.append((v.get("rx2.active"), v.get("rx2.heard"), v.get("dual.at"), v.get("rx2.rssi_dbm")))
+                done = tx.wait(5)
+            print(f"second receiver (active, heard, dual.at, dBm): {sorted(set(seen))}; bench {done}")
+            assert ("1", "1") in {s[:2] for s in seen}, f"the second receiver never heard the bench on B: {seen}"
+            assert {s[2] for s in seen} == {"a"}, f"the main receiver left A: {seen}"
+            radio.wait_for(lambda v: v.get("rx2.active") == "0", 3.0, what="the second receiver quiet again")
+        finally:
+            if b0 is not None:
+                L.scan("select", 1)
+                wait_features(radio, lambda v: v.get("dual.sel") == "b", 1.0, "B selected")
+                L.vfo_set(int(b0["rx_hz"]))
+                radio.wait_for(lambda v: v.get("rx_hz") == b0["rx_hz"], what="VFO B frequency back")
+                watch_back("b")
+                if radio.core().get("mode") != b0.get("mode"):
+                    L.dmr_fields(mode=b0["mode"])
+                    radio.wait_for(lambda v: v.get("mode") == b0["mode"], what="VFO B mode back")
+                    watch_back("b")
+                L.scan("select", 0)
+                wait_features(radio, lambda v: v.get("dual.sel") == "a", 1.0, "A selected")
+            scan_off(radio)
 
 
 @contextlib.contextmanager

@@ -648,11 +648,12 @@ VHF block's 220 MHz cells from 200 MHz. Factory default points: 0x0A..0x0C 1E 87
 AA; 0x11 AA, AA; 0x16 96, 91; the UHF block's 0x1B..0x1D 41 6E B4 and the VHF block's 0x1B B4. The Artery firmware
 computes the same.
 
-RadioFoundry (`rf_plan.h`, `radio_d578uv.c`): the same values by the stock arithmetic, computed when written (no
-tables in RAM). Side B is only a second receiver, never the main channel or keyed, so register 0xC is 0 outside AM
-and register 2 is 0 outside AM and broadcast FM. Turbo is not lowered with dual receive. Without a calibration block
-the start-up's 0s stay. Host tested against the factory defaults' tables and lookups worked out apart from the code;
-untested on the radio.
+RadioFoundry (`rf_plan.h`, `radio_d578uv.c`): the same values by the same arithmetic, computed when written (no
+tables in RAM). While side B receives (dual watch), registers 2 and 0xC take side B's band's 0x11 and the table from
+0x0D..0x0F at its frequency, as for side B the main channel: with both 0 side B hears nothing (measured: its RSSI
+stays at the floor through a strong signal side A hears). They are written when side B tunes and when it stops.
+Turbo is not lowered with dual receive. Without a calibration block the start-up's 0s stay. Host tested against the
+factory defaults' tables and lookups worked out apart from the code.
 
 ### 5.6 Microphone level (VOX)
 
