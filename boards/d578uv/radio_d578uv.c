@@ -569,6 +569,12 @@ static void cal_load(void)
 	}
 }
 
+char d578uv_cal_copy(uint8_t *fqca)
+{
+	*fqca = cal_base != 0 ? cal_uhf[0] : 0;	// BLK_FQCA
+	return cal_base == CAL_A ? 'A' : cal_base == CAL_B ? 'B' : 0;
+}
+
 static uint8_t cal_byte(uint32_t off, bool *ok)
 {
 	uint8_t b = 0;

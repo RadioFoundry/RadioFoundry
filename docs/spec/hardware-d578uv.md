@@ -627,10 +627,15 @@ the calibration blocks (7):
 | --- | --- | --- |
 | 6 | each side A retune, not in TX | the block's 0x10 by side A's frequency (UHF at or above 300 MHz) |
 | 0xA | the same, after 6 | interpolated over side A's frequency from the block's 0x0A..0x0C (below) |
-| 1 | the same, after 0xA | the UHF block's 0x00, the factory item "FQCA" (default 0x23); the VHF block's 0x00 is unused |
+| 1 | the same, after 0xA | the UHF block's 0x00, the factory item "FQCA" (default 0x23): the reference oscillator's trim (below); the VHF block's 0x00 is unused |
 | 2 | each side B retune | AM: the VHF block's 0x1B. Side B the main channel or keyed: side B's band's 0x11. Broadcast FM without dual receive: the VHF block's 0x11. Else 0 |
 | 0xC | each side B retune | AM: the air band table from the UHF block's 0x1B..0x1D at the AM frequency. Side B the main channel: interpolated from 0x0D..0x0F at side B's frequency. Else 0 |
 | 4 | each TX start; kept after | UHF: 0x78 at Low and Mid, 0x82 at High, the UHF block's 0x16 at Turbo. VHF: 0x78 up to High, the VHF block's 0x16 at Turbo. With dual receive on, Turbo counts as High |
+
+Register 1 trims the reference oscillator: measured on one radio at 446.075 MHz, the carrier moves linearly over the
+whole range, about 41.5 Hz a step (0.093 ppm), from -2.6 kHz at 0 to +5.4 kHz at 192, settling within about 1 s. It
+moves every carrier, receive and transmit. That radio's calibration (0x27) left it 2.3 ppm low; the reference trim
+setting corrects such a radio ([radio-features.md](radio-features.md) 6.1).
 
 Each interpolated trim is a table of byte cells from three points p0, p1, p2; a frequency's value lies between two
 cells:
@@ -808,7 +813,7 @@ The order to check it in on a radio, with the diagnostics lines and what to chan
 | DMR baseband | driver, voice set-up and DMR start as the stock firmware sends them (4.4) with the squelch levels and digital mode gains, every LC header and terminator reported, the headphone mute while transmitting; written and host tested, untested on the radio |
 | RF chips | `drivers/rf/qa4818` and `boards/d578uv/radio_d578uv.c`: FM receive and transmit and DMR receive and transmit keying (the PA per burst, 5.1) on side A; side B as the second receiver for FM (5.2); the 1750 Hz burst and DTMF (5.3). Host tested (the chip sequences), untested on the radio |
 | GPS | the module on USART1, powered by chip 0's register 0x25 bit 2, the CASIC set-up on its first `$xxTXT` (3.6); written, the set-up's framing host tested, untested on the radio |
-| Reference trim | the stock firmware programs the frequency words with no correction; its one candidate is the factory item "FQCA", the UHF block's byte 0 (default 0x23) sent to the PA5 device's register 1 after each side A retune (5.5), role not proven; RadioFoundry sends it the same way. RadioFoundry's trim is its own: each synthesizer is programmed at f x (1 + trim), side A's and B's LOs, the air band LO and the transmitter, with the IF chips at their IF ([radio-features.md](radio-features.md) 6.1). Written, untested |
+| Reference trim | the factory item "FQCA", the UHF block's byte 0 (default 0x23), is the reference oscillator's trim: PA5 register 1, sent after each side A retune (5.5); the frequency words carry no correction. RadioFoundry sends it the same way. Its own trim on top: each synthesizer is programmed at f x (1 + trim), side A's and B's LOs, the air band LO and the transmitter, with the IF chips at their IF ([radio-features.md](radio-features.md) 6.1). Measured: +2.3 ppm took a carrier on 446.075 MHz from -1018 Hz to +23 Hz |
 | Flash stub | `CONFIG_STUB_ENTRY` on: the GD32F30x stub ([stub-gd32f30x.md](stub-gd32f30x.md)) with board record id 6, application base 0x08006000; `stub/stubtool.py --board d578uv` drives it. Host tested, untested on the radio |
 | Air band AM | side B's chips and the KTMicro receiver (5.4); written, host tested (the receiver's sequences), untested on the radio |
 | Broadcast FM | the KTMicro receiver's FM mode, or the RDA5807 where it is fitted (5.4); written, host tested. The RDA5807 works on the radio (2026-11-02); the KTMicro untested on the radio. No stereo, no seek |
