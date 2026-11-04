@@ -89,6 +89,13 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "temporary=%u\ntemp=0x%02x\n", v->temporary, v->temp);
 	dl_text(t, "squelch=%u\nmonitor=%u\ntone_ok=%u\n", v->squelch, v->monitor, v->tone_ok);
 	dl_text(t, "rssi_dbm=%d\nnoise=%u\n", v->rssi_dbm, v->noise);
+	// The second receiver's last status (hal_rx2.h): all 0 on a radio with one receiver
+	rx2_status_t r2 = { 0 };
+	if (board.rx2 != NULL) {
+		board.rx2->status(&r2);
+	}
+	dl_text(t, "rx2.up=%u\nrx2.tuned=%u\nrx2.active=%u\nrx2.heard=%u\nrx2.dmr=%u\nrx2.rssi_dbm=%d\n", r2.up, r2.tuned,
+		r2.active, r2.heard, r2.dmr, r2.rssi_dbm);
 	dl_text(t, "tx_elapsed_ms=%u\ntot_s=%u\n", (unsigned)v->tx_elapsed_ms, v->tot_s);
 	dl_text(t, "last_rx_ms=%u\nlast_tx_ms=%u\ntx_auto=%u\nwakes=%u\n", (unsigned)v->last_rx_ms,
 		(unsigned)v->last_tx_ms, v->tx_auto, radio_view_wakes(v));
