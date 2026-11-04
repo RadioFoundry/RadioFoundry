@@ -416,6 +416,36 @@ def test_etsi_sms_rx(radio, sdr_bench, pytestconfig):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+def test_ptt_after_etsi_response(radio, sdr_bench, pytestconfig):
+    """A voice PTT after the radio answered an ETSI text message keys: the response goes out a few slots after the
+    message, and a modem that kept the message's sender as channel activity past its own transmission refused every
+    polite start (tx_error rejected) until the radio left DMR."""
+    freq, cc, own, feats = _setup(radio, pytestconfig, tx=True)
+    _need(feats, "DMR_SMS")
+    before = radio.data_view()
+    with sdr_bench.lease():
+        sdr_bench.data(freq, cc, own, etsi=f"RadioFoundry PTT {int(time.time()) % 10000}", src=BENCH_SRC)
+    time.sleep(1.0)
+    after = radio.data_view()
+    d = _deltas(before, after, ["data.sms_received", "data.responses_sent"])
+    if d["data.sms_received"] != 1 or d["data.responses_sent"] != 1:
+        skip("bench", f"the message or its response didn't happen: {d}")
+    radio.link.mark_read(0)
+    v0 = radio.view()
+    radio.ptt_for(1.5)
+    time.sleep(0.5)
+    v1 = radio.view()
+    calls = int(v1.get("call.tx_calls", 0)) - int(v0.get("call.tx_calls", 0))
+    denied = int(v1.get("call.tx_denied", 0)) - int(v0.get("call.tx_denied", 0))
+    print(f"radio: call.tx_calls +{calls}, call.tx_denied +{denied}, dmr.tx_error {v1.get('dmr.tx_error')}")
+    assert denied == 0 and calls == 1 and v1.get("dmr.tx_error") == "ok", \
+        f"PTT after the response: tx_calls +{calls}, tx_denied +{denied}, tx_error {v1.get('dmr.tx_error')}"
+
+
+@pytest.mark.feature("dmr_sms")
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_etsi_sms_tx(radio, sdr_bench, pytestconfig):
     """Our ETSI text message to the bench, no response asked: a defined short data header (DPF 13, SAP 10) to the
     bench from us, then sent."""

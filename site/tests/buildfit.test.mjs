@@ -21,7 +21,7 @@ test("the service's too-big error gives the memory and the kilobytes over, round
 test("the build step shows a build that doesn't fit as what to change, in every language", () => {
 	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
 	assert.match(src, /const fit = tooBig\(why\);\n\t+if \(fit\) throw new FitError\(fit\);/);
-	assert.match(src, /err\.fit \? notice\(err\.text, "bad"\) : errorNotice\(err\.text, err\.rec\)/);
+	assert.match(src, /err\.fit \? notice\(err\.text, "bad"\) : errorNotice\(err\.text, \{ rec: err\.rec \}\)/);
 	assert.equal((src.match(/buildErrorNotice\(S\.build\.error\)/g) || []).length, 2);	// the build step and the update's
 	for (const lang of ["en", "es", "it"]) {
 		const cat = JSON.parse(readFileSync(new URL(`../i18n/${lang}.json`, import.meta.url), "utf8"));

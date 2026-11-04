@@ -577,6 +577,8 @@ Used at DMR entry, after TX, at a new DMR frequency (the radio core calls `rx_re
 
 A sequence of TXRX 0xC00000, 0, 0xC00000, 0x8040 with no SLOTON writes, or a busy wait in the color code probe, does not acquire sync reliably. Use this one everywhere.
 
+A restart also forgets what was heard: the polite-access busy window (`dmr-modem.md`) starts again with the next burst taken. The window is counted in timeslot interrupts, and on an empty channel they stop after a restart, so a station heard just before one stayed "busy" for good. Every polite start was then refused (`tx_rejected`) until the radio left DMR: after a one-burst data response, the restart at the end of the transmission came well inside the window.
+
 ### 5.3 While receiving
 
 | Event | Action |

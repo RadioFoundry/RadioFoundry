@@ -9,6 +9,7 @@ import { startsWith } from "./bytes.js";
 import { classify } from "../codeplug/detect.js";
 import { CodeplugImage, TFTP_SIZE } from "../codeplug/image.js";
 import { STOCK, RDT_MD380, RDT_UV380 } from "../codeplug/stock_tyt.js";
+import { DM32_STOCK } from "../codeplug/stock_baofeng.js";
 
 // A stock TYT-family codeplug in a dump or memory image (docs/spec/codeplug-stock-tyt.md): its family, or null
 const stockLayout = (b) => {
@@ -24,6 +25,7 @@ const fail = (code, message, params = {}) => Object.assign(new Error(message), {
 export const FORMATS = [
 	{ id: "rfoundry-backup", name: "RadioFoundry backup bundle (.zip)", detect: (b) => startsWith(b, "PK\u0003\u0004") },
 	{ id: "tyt-stock", name: "Stock TYT-family codeplug: DM-1701, RT84, MD-UV380/390, MD-380 (SPI flash dump or memory image)", detect: (b) => b.length > 0x40000 && b.length !== RDT_UV380 && !!stockLayout(b) },
+	{ id: "dm32-stock", name: "Stock Baofeng DM-32UV codeplug (data flash read)", detect: (b) => b.length >= 0xC9000 && classify(b).layout === DM32_STOCK },
 	{ id: "openfw-image", name: "Codeplug image in the open-firmware layout (SPI flash dump)", detect: (b) => b.length === CODEPLUG_SPAN || b.length === 0x1000000 },
 	{ id: "tyt-rdt", name: "TYT MD-380 CPS codeplug (.rdt)", detect: (b) => b.length === RDT_MD380 },
 	{ id: "tyt-uv380-rdt", name: "TYT MD-UV380 family CPS codeplug (.rdt)", detect: (b) => b.length === RDT_UV380 },
@@ -40,6 +42,11 @@ export const CONVERTERS = [
 		async convert(bytes) {
 			const { meta, parts } = await openBundle(bytes);
 			const spi = parts.get("spi-flash");
+			// an HR_C7000 radio's backup taken on its stock firmware: its data flash holds the stock codeplug
+			const data = parts.get("c7000-data") || parts.get("c7000-data-start");
+			if (!spi && data && meta.firmware_now?.kind !== "rfoundry" && classify(data.data).layout === DM32_STOCK) {
+				return { name: `codeplug-${meta.radio.board}.bin`, data: await fromDm32(data.data) };
+			}
 			// a radio with a smaller memory chip gives a shorter read: enough when it covers the codeplug's regions
 			if (!spi || spi.data.length < TFTP_SIZE) throw fail("no_spi", "this backup has no SPI flash read covering the codeplug");
 			const name = `codeplug-${meta.radio.board}.bin`;
@@ -78,6 +85,23 @@ export const CONVERTERS = [
 		id: "raw-to-rfoundry", from: "tyt-raw", to: "openfw-image", status: "ready", name: "TYT MD-380 memory image to a RadioFoundry codeplug image",
 		async convert(bytes, name) {
 			return { name: `${base(name)}-rfoundry.bin`, data: await fromStock(bytes, "tyt-md380") };
+		},
+	},
+	{
+		id: "dm32-stock-to-rfoundry", from: "dm32-stock", to: "openfw-image", status: "ready",
+		name: "Stock DM-32UV codeplug to a RadioFoundry codeplug image (open-firmware layout)",
+		async convert(bytes, name) {
+			return { name: `${base(name)}-rfoundry.bin`, data: await fromDm32(bytes) };
+		},
+	},
+	{
+		id: "dm32-stock-to-yaml", from: "dm32-stock", to: "yaml", status: "ready",
+		name: "Stock DM-32UV codeplug to qdmr YAML (through the RadioFoundry layout)",
+		async convert(bytes, name) {
+			const { exportQdmr } = await import("../codeplug/qdmr.js");
+			const { decode, CodeplugImage } = await codeplugModules();
+			const { text } = exportQdmr(decode(CodeplugImage.from(await fromDm32(bytes))));
+			return { name: `${base(name)}.yaml`, data: new TextEncoder().encode(text) };
 		},
 	},
 	{ id: "dfuse-to-rfoundry", from: "dfuse", to: "openfw-image", status: "planned", name: "qdmr binary codeplug to a RadioFoundry codeplug" },
@@ -124,6 +148,16 @@ async function fromStock(bytes, layout) {
 	if (!layout || detectStock(bytes) !== layout) throw fail("no_stock", "this file holds no stock codeplug this page can read");
 	const m = empty();
 	importStock(m, bytes, layout);
+	return encode(m).bytes.slice(0, CODEPLUG_SPAN);
+}
+
+// An open-firmware codeplug image converted from a stock DM-32UV one
+async function fromDm32(bytes) {
+	const { empty, encode } = await codeplugModules();
+	const { detectStock, importStock } = await import("../codeplug/stock_baofeng.js");
+	if (detectStock(bytes) !== DM32_STOCK) throw fail("no_stock", "this file holds no stock codeplug this page can read");
+	const m = empty();
+	importStock(m, bytes);
 	return encode(m).bytes.slice(0, CODEPLUG_SPAN);
 }
 

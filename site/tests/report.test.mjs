@@ -232,6 +232,22 @@ const clean = (el, what) => {
 	return s;
 };
 
+// A failure says what to do next and offers Try Again in the notice itself: pressing it takes the notice away first,
+// so a second failure replaces the first rather than stacking a second card under it
+test("an error notice gives the way on and a Try Again that removes it before retrying", async () => {
+	const { errorNotice } = await import("../static/js/report.js?retry");
+	const plain = errorNotice("It failed.");
+	assert.equal(find(plain, (e) => e.tagName === "BUTTON" && e.textContent === en["report.try_again"]).length, 0, "no retry, no button");
+	const order = [];
+	const el = errorNotice("It failed.", { next: "Turn it off and on.", retry: () => order.push("retry") });
+	el.remove = () => order.push("removed");
+	assert.ok(clean(el, "notice with retry").includes("Turn it off and on."));
+	const [again] = find(el, (e) => e.tagName === "BUTTON" && e.textContent === en["report.try_again"]);
+	assert.ok(again, "Try Again in the notice");
+	await press(again);
+	assert.deepEqual(order, ["removed", "retry"]);
+});
+
 test("Report a Problem renders cleanly in every state: no files, some files, sending, sent, a refused file, failed", async () => {
 	// the plain dialog (no backend, no Sentry: the editor with reporting off): a fresh module
 	const plain = await import("../static/js/report.js?plain");

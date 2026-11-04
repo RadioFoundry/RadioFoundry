@@ -939,3 +939,36 @@ test("WebUSB transport refuses the radio switched on normally", async () => {
 	await WebUsbTransport.open(loader, board);
 	assert.deepEqual(loader.calls, ["open", "claimInterface"]);
 });
+
+// A radio quiet for a few seconds mid-backup (it read 45% of a 17 MB backup, then went silent) is asked again with
+// growing waits, and the read goes on; one that stays silent still fails, naming the address
+test("a codeplug read outlasts a radio that goes quiet for a few seconds", async () => {
+	const answer = Uint8Array.from([0x52, 0, 4, 1, 2, 3, 4]);
+	const stream = (silent) => ({
+		buf: new Uint8Array(0), sent: 0,
+		clear() { this.buf = new Uint8Array(0); },
+		async write() { if (++this.sent > silent) this.buf = answer; },
+	});
+	const quiet = stream(3);
+	const t0 = Date.now();
+	assert.deepEqual([...await new Link(quiet, { timeout: 20 }).cpsRead(1, 0x738000, 4)], [1, 2, 3, 4]);
+	assert.equal(quiet.sent, 4);
+	assert.ok(Date.now() - t0 >= 3000, "the waits grow: 0.3 + 1 + 2 s before the fourth try");
+	const dead = stream(Infinity);
+	await assert.rejects(new Link(dead, { timeout: 1 }).cpsRead(1, 0x870000, 4, 2), /no answer to a codeplug read at 0x870000/);
+	assert.equal(dead.sent, 2);
+	// a probe asks once: a radio that isn't there is not waited for
+	const probeOnce = stream(Infinity);
+	await assert.rejects(new Link(probeOnce, { timeout: 1 }).cpsRead(9, 0, 4, 1));
+	assert.equal(probeOnce.sent, 1);
+});
+
+// app.js needs the DOM, so its source is checked: the backup after a first install hands over to the loader that the
+// build just written offers (S.now still says the stock firmware ran before), not only one probed before the install
+test("the backup after a first install reads through the loader the new build offers", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	assert.match(src, /const loaderOffer = \(\) => \(!f4Board\(\) \? null : S\.now\?\.kind === "rfoundry" \? S\.now\.stubOffer : S\.now\?\.afterOffer/);
+	assert.match(src, /const viaLoader = \(\) => !!\(loaderOffer\(\) && pick !== "codeplug"\)/);
+	const done = src.slice(src.indexOf("function doneView()"));
+	assert.match(done.slice(0, done.indexOf("backupNow(")), /afterOffer: f4Board\(\) \? await Stub\.rfoundryOffer\(link\) : null/);
+});

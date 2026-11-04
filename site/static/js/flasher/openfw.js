@@ -62,7 +62,7 @@ export const backupBytes = (board, radio) => board.flash_end - board.rom_base + 
 export async function readInfo(link) {
 	let raw;
 	try {
-		raw = await link.cpsRead(AREA_INFO, 0, RADIO_INFO_LEN);
+		raw = await link.cpsRead(AREA_INFO, 0, RADIO_INFO_LEN, 3);	// a probe: a silent port isn't waited out
 	} catch (e) {
 		if (e instanceof LinkError) return null;
 		throw e;

@@ -21,6 +21,9 @@ test("placeholders, plural forms and numbers follow the page's language", () => 
 	assert.equal(c.t("no.such.key"), "no.such.key");
 	assert.equal(c.t("flash.build.count", { total: 9 }), "{n} of 9 features");
 	assert.ok(c.has("editor.delete_confirm"));
+	// an error text with its own period doesn't get a second one where the string goes on after it
+	assert.equal(c.t("flash.kit.failed", { error: "No network." }), "Could not make the kit: No network. Reload the page and try again.");
+	assert.equal(c.t("flash.kit.failed", { error: "no network" }), "Could not make the kit: no network. Reload the page and try again.");
 
 	const es = catalog({ "a.one": "{n} archivo", "a.other": "{n} archivos", b: "{x} y {n}" }, "es");
 	assert.equal(es.t("a", { n: 1 }), "1 archivo");

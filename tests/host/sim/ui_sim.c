@@ -34,6 +34,8 @@
 //   zoneexpire          the offer is gone (not opened in time)
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
+//   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
+//   pttlocked:on|off    turns Settings > Privacy > PTT when locked on or off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
@@ -1564,7 +1566,15 @@ bool ui_svc_roam(uint8_t cmd)
 	return false;
 #endif
 }
-void ui_svc_beep(uint8_t beep) { sim_rec.beeps++; sim_rec.last_beep = beep; }
+static void (*beep_hook)(uint8_t beep, uint32_t now_ms);
+void sim_set_beep_hook(void (*hook)(uint8_t beep, uint32_t now_ms)) { beep_hook = hook; }
+void ui_svc_beep(uint8_t beep)
+{
+	sim_rec.beeps++;
+	sim_rec.last_beep = beep;
+	if (beep_hook != NULL)
+		beep_hook(beep, now_ms);
+}
 void ui_svc_vibrate(uint8_t vibe) { sim_rec.vibes++; sim_rec.last_vibe = vibe; }
 static bool ptt_blocked;	// ui_svc_ptt_block: the input layer keeps PTT presses from the radio
 void ui_svc_ptt_block(bool blocked) { ptt_blocked = blocked; }
@@ -1856,6 +1866,8 @@ static const char *shot_dir, *shot_prefix;
 int sim_presses(void) { return presses; }
 void sim_count_reset(void) { presses = 0; }
 void sim_set_shot_dir(const char *dir, const char *prefix) { shot_dir = dir; shot_prefix = prefix; }
+static void (*tick_hook)(uint32_t now_ms);
+void sim_set_tick_hook(void (*hook)(uint32_t now_ms)) { tick_hook = hook; }
 
 static void step(void)
 {
@@ -1896,6 +1908,8 @@ static void step(void)
 	view.hotspot = hotspot_on;
 	if (ui_app_tick(&view, now_ms))
 		ui_app_draw();
+	if (tick_hook != NULL)
+		tick_hook(now_ms);
 }
 
 static void advance(uint32_t ms)
@@ -2341,6 +2355,27 @@ static bool run_token(char *t, char *err, size_t len)
 		input_event_t ev = { ACT_PTT, GESTURE_UP, 0 };
 		ui_app_key(&ev);
 		ptt(false);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "timeout") == 0) {	// the TX timeout cuts the transmission off while PTT is still held
+		if (view.state == RS_TX) {
+			view.state = RS_TX_DENIED;
+			view.tx_deny = TXDENY_TIMEOUT;
+			view.dmr.state = RDMR_IDLE;
+			changed();
+		}
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "pttlocked") == 0 && arg != NULL) {	// Settings > Privacy > PTT when locked
+		bool on = strcmp(arg, "on") == 0;
+		if (!on && strcmp(arg, "off") != 0) {
+			snprintf(err, len, "pttlocked: expected on or off, got %s", arg);
+			return false;
+		}
+		ui_svc_setting_set(UI_SET_PTT_LOCKED, on);
+		ui_apply_setting(UI_SET_PTT_LOCKED, on);
 		advance(200);
 		return true;
 	}

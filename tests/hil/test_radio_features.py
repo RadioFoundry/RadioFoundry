@@ -100,6 +100,14 @@ def wait_features(radio, pred, timeout=3.0, what="features"):
     return radio.wait_for(pred, timeout, sections=("features",), what=what)
 
 
+def wait_ui_dual(radio):
+    """Wait for the UI to run the dual watch the debug link started (ui.dual); a build before that key: wait it out."""
+    if "ui.dual" not in radio.link.view(["link"]):
+        time.sleep(1.0)
+        return
+    radio.wait_for(lambda v: v.get("ui.dual") == "1", 2.0, sections=("link",), what="the UI to take over the watch")
+
+
 @contextlib.contextmanager
 def settings(radio, **values):
     """Set radio settings (RAM) for the block, then put the old values back."""
@@ -355,6 +363,9 @@ def test_dual_watch_debug_link(radio):
     radio.link.scan("dual", b)
     try:
         wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+        # The UI takes the watch over only 0.5 s after the last one stopped (the test before may have just stopped one).
+        # A channel change before then ends the watch, with nobody to start it again
+        wait_ui_dual(radio)
         radio.link.scan("select", 1)
         wait_features(radio, lambda v: v.get("dual.sel") == "b", 1.0, "B selected")
         radio.link.zone_pos(c)

@@ -2461,4 +2461,9 @@ void ui_app_status(ui_app_status_t *s)
 	s->query = stack[sp].scr == SCR_FIND ? ui_find_query() : (d->flags & SF_FILTER) ? filter_keys : "";
 	s->draws = draws;
 	s->strip_drawn = strip_ok;
+#if CONFIG_DUAL_WATCH
+	s->dual = ui_st.dual.on;
+#else
+	s->dual = false;
+#endif
 }

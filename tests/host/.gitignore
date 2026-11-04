@@ -10,4 +10,5 @@
 !/stubs/
 !/*.sh
 !/*.py
+!/*.awk
 !/watchdog_stub/

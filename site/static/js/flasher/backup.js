@@ -41,8 +41,9 @@ export async function readRadio(link, board, radio, { what = {}, progress = () =
 	const parts = [];
 	const want = { internal: true, spi: "full", security: true, ...what };
 	const step = (name) => (done, total) => progress(name, done, total);
-	// a build without the codeplug protocol's areas refuses these, or doesn't answer them
-	const cps = async (area, addr, len) => { try { return await link.cpsRead(area, addr, len); } catch (e) { return null; } };
+	// a build without the codeplug protocol's areas refuses these, or doesn't answer them: not the long retries of a
+	// read that must finish
+	const cps = async (area, addr, len) => { try { return await link.cpsRead(area, addr, len, 3); } catch (e) { return null; } };
 	const info = await cps(CPS_INFO, 0, 128);
 	if (info) parts.push({ file: "radio-info.bin", what: "radio-info", addr: 0, data: info, complete: true });
 	let security = null;
