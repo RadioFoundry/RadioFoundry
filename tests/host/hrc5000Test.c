@@ -697,9 +697,32 @@ typedef struct {
 	int wrong[3];		// ... taken with the other slot
 	int idx_jump[3];	// ... taken with a burst index out of step with the call's earlier bursts
 	int idx_off[3];		// ... with a burst index that isn't the call's (burst n is index n % 6 from its start)
+	int lc_own[3];		// ... handed over with an LC, the call's own
+	int lc_other[3];	// ... handed over with the other call's LC
 	int tc_wrong;		// ticks with a wrong slot number (0, unknown, isn't)
 	int ctr_wrong;		// voice bursts whose slot counter isn't their report's (the tick before their read)
 } two_result_t;
+
+// Each call's LC: group call to TG ts from 0x0n0n0n. Page 2 (not per slot) gets a call's LC with its header, and its
+// embedded LC by the tick after its F was read (the sticky LC rule's A look): at the other call's F it may hold this one's
+static void two_lc(int ts, uint8_t lc[9])
+{
+	uint8_t s = (uint8_t)(ts * 0x11);
+	const uint8_t v[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, (uint8_t)ts, s, s, s };
+	memcpy(lc, v, 9);
+}
+
+static int two_lc_of(const uint8_t lc[9])
+{
+	for (int ts = 1; ts <= 2; ts++) {
+		uint8_t want[9];
+		two_lc(ts, want);
+		if (memcmp(lc, want, 9) == 0) {
+			return ts;
+		}
+	}
+	return 0;
+}
 
 // Step k, at the engine's tick t (the one its timeslot interrupt is about to start): is a burst of the call on ts in
 // the port (voice, read at t), or its report due (header, after t)
@@ -734,10 +757,15 @@ static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ti
 	rep_ctl[0] = rep_ctl[1] = 0x50;
 	rep_bit = 0;
 	uint32_t n_burst[3] = { 0, 0, 0 };
+	int f_ts = 0;	// the call whose F was in the port at the last step
 	for (int k = 0; k < ticks; k++) {
+		if (f_ts != 0) {
+			two_lc(f_ts, rd[2]);
+		}
 		// The port: this tick's call burst, else what the idle slot leaves (no frame that checks)
 		uint32_t t = eng.tick + 1u;
 		int vts = two_voice(c1, 1, k, t) ? 1 : two_voice(c2, 2, k, t) ? 2 : 0;
+		f_ts = vts != 0 && n_burst[vts] % 6u == 5u ? vts : 0;
 		if (vts != 0) {
 			vburst(voice_port, TWO_KEY(vts, n_burst[vts]++));
 		} else {
@@ -772,6 +800,7 @@ static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ti
 		if (two_report(c1, 1, k, t) || two_report(c2, 2, k, t)) {
 			flags = 0x08;
 			rd[0][0x51] = 0x12;
+			two_lc(two_report(c1, 1, k, t) ? 1 : 2, rd[2]);
 		} else if (k == c1->late_at || k == c2->late_at) {
 			flags = 0x10;
 		}
@@ -799,6 +828,11 @@ static two_result_t two_slots(const two_call_t *c1, const two_call_t *c2, int ti
 					vburst(want, TWO_KEY(ts, n));
 					if (memcmp(want, b.payload, sizeof(want)) == 0) {
 						res.heard[ts] += ev.ts == ts;
+						if (b.lc_valid) {
+							int of = two_lc_of(b.lc);
+							res.lc_own[ts] += of == ts;
+							res.lc_other[ts] += of != 0 && of != ts;
+						}
 						res.unknown[ts] += ev.ts == 0;
 						res.wrong[ts] += ev.ts != 0 && ev.ts != ts;
 						if (first_n[ts] < 0) {
@@ -823,8 +857,9 @@ static void two_print(const char *what, const two_result_t *r)
 {
 	printf("  %s: tc %d wrong, slot counter %d wrong\n", what, r->tc_wrong, r->ctr_wrong);
 	for (int ts = 1; ts <= 2; ts++) {
-		printf("    TS%d: %d sent, %d heard, %d unknown, %d wrong; index %d out of step, %d not the call's\n", ts,
-		       r->sent[ts], r->heard[ts], r->unknown[ts], r->wrong[ts], r->idx_jump[ts], r->idx_off[ts]);
+		printf("    TS%d: %d sent, %d heard, %d unknown, %d wrong; index %d out of step, %d not the call's; LC %d own, "
+		       "%d other's\n", ts, r->sent[ts], r->heard[ts], r->unknown[ts], r->wrong[ts], r->idx_jump[ts],
+		       r->idx_off[ts], r->lc_own[ts], r->lc_other[ts]);
 	}
 }
 
@@ -898,6 +933,30 @@ static void test_two_slots(void)
 	r = two_slots(&ts1h, &none, 140, &rpt);
 	TWO_CHECK("header at a restart", r, r.wrong[1] == 0 && r.unknown[1] == 0 && r.heard[1] >= r.sent[1] - 3);
 	TWO_CHECK("header at a restart", r, r.idx_off[1] == 0);
+
+	// The embedded LCs of two calls (page 2 isn't per slot): no voice burst of one call is handed over with the
+	// other's LC, which the core takes for a new call on the channel (HIL 2026-11-04: the wanted call went quiet with
+	// the other call's source shown). TS1 talking first, then TS2 with its headers
+	two_call_t ts1i = { 20, 30, -1, 30, 240 };
+	two_call_t ts2i = { 80, 90, -1, 90, 240 };
+	r = two_slots(&ts1i, &ts2i, 260, &rpt);
+	TWO_CHECK("TS1 first, LC", r, r.lc_other[1] == 0 && r.heard[1] == r.sent[1]);
+	// TS2 first, as above
+	r = two_slots(&ts1, &ts2, 260, &rpt);
+	TWO_CHECK("TS2 first, LC", r, r.lc_other[1] == 0);
+	// TS2 with its headers, then TS1 joined by late entry: TS1's own LC is found (at the A after its F) and only that
+	two_call_t ts2j = { 20, 30, -1, 30, 240 };
+	two_call_t ts1j = { 0, 0, 86, 74, 240 };
+	r = two_slots(&ts1j, &ts2j, 260, &rpt);
+	TWO_CHECK("late entry beside a call, LC", r, r.lc_other[1] == 0 && r.lc_own[1] > 0);
+	// Both slots heard (a hotspot, hear all), TS1 first: neither call gets the other's LC
+	two_call_t ts1k = { 20, 30, -1, 30, 240 };
+	two_call_t ts2k = { 50, 60, -1, 60, 240 };
+	r = two_slots(&ts1k, &ts2k, 260, &both);
+	TWO_CHECK("both slots, LC", r, r.lc_other[1] == 0 && r.lc_other[2] == 0);
+	// One call: its embedded LC is still handed over (nothing to hold back)
+	r = two_slots(&ts1c, &none, 140, &rpt);
+	TWO_CHECK("late entry, LC", r, r.lc_own[1] > 0);
 }
 
 int main(void)

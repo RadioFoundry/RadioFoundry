@@ -94,6 +94,8 @@
 #define ALIGN_TIMEOUT_TICKS	50u	// 1.5 s for a slot to align to
 #define DONE_FALLBACK_TICKS	4u
 #define STALE_LC_VOICE		6u	// voice bursts after which the embedded LC is trusted even if unchanged
+#define SLOT_LC_GAP_TICKS	12u	// a slot's call is over after this long without its voice (360 ms)
+#define SLOT_LC_OTHER_TICKS	2000u	// the other slot's LC is still its call's this long after it was last seen (60 s)
 // Voice read at the ticks (chips with rx_voice_read, hardware-md380.md 4.8)
 #define TR_FIND_TICKS		40u	// reads to find the call's slot in (1.2 s) before the call counts as none
 #define TR_END_MISSES		6u	// reads on the call's slot in a row without a new burst (360 ms): the call is over
@@ -840,6 +842,57 @@ static void lc_look_again(hrc6000_dmr_t *e, char ev, const uint8_t lc[9], uint32
 	lc_note(e, ev, !changed ? 's' : keep ? 'k' : 'c', lc_src(lc));
 }
 
+// Two calls, one on each slot (issue 279; modem-hrc6000.md 5.2): page 2 holds the LC the chip assembled last, of
+// either call, and on the bench the other slot's LC was there at this slot's F as often as not, so the core took it
+// for a new call and the wanted call went quiet. An embedded LC read for a voice burst on ts is held back when it is
+// the other slot's call's, or when this slot's call is going on with another LC (a new call on the slot comes with
+// its header, or after a gap). Bursts with no slot number are left alone. The slots' LCs outlast a reception: with the
+// voice read locked to one slot (the HR_C5000), the other call's bursts are never taken, so the reception seems over
+// while that call goes on. Its LC is kept up to a long call's length after it was last seen, and every time page 2
+// shows it again it is seen again
+static bool slot_lc_live(const hrc6000_dmr_t *e, int i, uint32_t ticks)
+{
+	return e->slot_lc[i].known && (uint32_t)(e->tick - e->slot_lc[i].seen_tick) <= ticks;
+}
+
+// Slot i's call is going on: open, and its voice not gone quiet (it may have ended with no terminator heard)
+static bool slot_lc_open(const hrc6000_dmr_t *e, int i)
+{
+	return e->slot_lc[i].open && (uint32_t)(e->tick - e->slot_lc[i].voice_tick) <= SLOT_LC_GAP_TICKS;
+}
+
+static bool lc_slot_ok(hrc6000_dmr_t *e, int8_t ts, const uint8_t lc[9])
+{
+	if (ts != 1 && ts != 2) {
+		return true;
+	}
+	int me = ts - 1, other = 2 - ts;
+	bool theirs = slot_lc_live(e, other, SLOT_LC_OTHER_TICKS) && memcmp(lc, e->slot_lc[other].lc, 9) == 0;
+	bool not_mine = slot_lc_open(e, me) && memcmp(lc, e->slot_lc[me].lc, 9) != 0;
+	if (theirs) {
+		e->slot_lc[other].seen_tick = e->tick;	// still talking: page 2 keeps getting its LC
+	}
+	if (theirs || not_mine) {
+		e->st.lc_other_slot++;
+		return false;
+	}
+	return true;
+}
+
+// ts's call has this LC (open: its voice goes on; a terminator closes it)
+static void lc_slot_set(hrc6000_dmr_t *e, int8_t ts, const uint8_t lc[9], bool open)
+{
+	if (ts != 1 && ts != 2) {
+		return;
+	}
+	int i = ts - 1;
+	memcpy(e->slot_lc[i].lc, lc, 9);
+	e->slot_lc[i].known = true;
+	e->slot_lc[i].open = open;
+	e->slot_lc[i].seen_tick = e->tick;
+	e->slot_lc[i].voice_tick = e->tick;
+}
+
 // The post-access interrupt (0x82 bit 4)
 static void lc_post_access(hrc6000_dmr_t *e)
 {
@@ -918,34 +971,49 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	b->pi = s->pi;
 	b->in_step = in_step && !tx;	// what the chip says while it sends is suspect (7.8)
 	if (voice) {
+		// A call on the other slot: the LC given for the reception may be that call's, so this slot's call has its own
+		// to find, and an unchanged page 2 at A counts after STALE_LC_VOICE as at F (the capture may have been taken
+		// just after this call's F, when page 2 already held its LC)
+		int8_t ts = b->ts;
+		bool two = (ts == 1 || ts == 2) && slot_lc_live(e, 2 - ts, SLOT_LC_OTHER_TICKS);
+		bool looking = !e->lc_given || (two && !slot_lc_open(e, ts - 1));
+		bool counted = e->voice_since_start > STALE_LC_VOICE;
 		if (s->voice_index == 5) {	// the embedded LC of B-E is assembled by F
 			bool changed = lc_read(e, b->lc);
-			b->lc_valid = s->crc_ok && (changed || e->voice_since_start > STALE_LC_VOICE);
+			bool mine = lc_slot_ok(e, ts, b->lc);
+			b->lc_valid = s->crc_ok && (changed || counted) && mine;
 			e->f_crc_bad = !s->crc_ok;
 			if (!e->lc_given) {
-				char res = !s->crc_ok ? 'c' : changed ? 'n' : b->lc_valid ? 'v' : 's';
+				char res = !s->crc_ok ? 'c' : !mine ? 'o' : changed ? 'n' : b->lc_valid ? 'v' : 's';
 				e->st.lc_f_new += res == 'n';
 				e->st.lc_f_stale += res == 's';
 				e->st.lc_f_count += res == 'v';
 				e->st.lc_f_crc += res == 'c';
 				lc_note(e, 'F', res, lc_src(b->lc));
 			}
-		} else if (s->voice_index == 0 && !e->lc_given && !e->lc_kept) {
+		} else if (s->voice_index == 0 && looking && !e->lc_kept) {
 			// No LC yet: the last superframe's may have reached page 2 only after its F was read
 			bool changed = lc_read(e, b->lc);
-			b->lc_valid = changed && !e->f_crc_bad;
+			bool mine = lc_slot_ok(e, ts, b->lc);
+			b->lc_valid = (changed || (two && counted)) && !e->f_crc_bad && mine;
 			e->st.lc_a_new += b->lc_valid;
-			lc_note(e, 'A', !changed ? 's' : b->lc_valid ? 'n' : 'c', lc_src(b->lc));
+			lc_note(e, 'A', !mine ? 'o' : b->lc_valid ? 'n' : !changed ? 's' : 'c', lc_src(b->lc));
 			e->f_crc_bad = false;
 		}
 		if (!b->lc_valid && e->lc_kept && !e->lc_given) {
-			memcpy(b->lc, e->lc_keep, sizeof(b->lc));	// seen at F's repeat or the post-access interrupt
-			b->lc_valid = true;
-			e->st.lc_kept++;
+			e->lc_kept = false;
+			if (lc_slot_ok(e, ts, e->lc_keep)) {
+				memcpy(b->lc, e->lc_keep, sizeof(b->lc));	// seen at F's repeat or the post-access interrupt
+				b->lc_valid = true;
+				e->st.lc_kept++;
+			}
 		}
 		if (b->lc_valid) {
 			e->lc_given = true;
 			e->lc_kept = false;
+			lc_slot_set(e, ts, b->lc, true);
+		} else if ((ts == 1 || ts == 2) && slot_lc_open(e, ts - 1)) {
+			e->slot_lc[ts - 1].voice_tick = e->tick;
 		}
 	} else if (s->kind == DMR_BURST_VOICE_LC_HEADER || s->kind == DMR_BURST_TERMINATOR_LC) {
 		memcpy(b->lc, b->payload, sizeof(b->lc));
@@ -958,6 +1026,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 			e->voice_since_start = STALE_LC_VOICE + 1u;
 			e->lc_given = true;
 			e->lc_kept = false;
+			lc_slot_set(e, b->ts, b->lc, s->kind == DMR_BURST_VOICE_LC_HEADER);
 		}
 	}
 	if (s->kind == DMR_BURST_TERMINATOR_LC) {
