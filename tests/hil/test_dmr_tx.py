@@ -71,6 +71,7 @@ PTT_S = 3.0
 # most (a clean over at low power on the bench reads 0)
 DATA_BITS_MAX = 2
 VOICE_BITS_MAX = 1.0
+DEV_HZ = (1750, 2140)     # the outer symbols' deviation, 1944 Hz +-10% (ETSI TS 102 361-1)
 # dmr_bench.check_tx items that judge the waveform, meaningless in a capture whose ADC clipped
 SDR_WAVEFORM_CHECKS = ("capture not saturated", "sync family", "voice A-F in order", "same-slot spacing", "ramps",
                        "no overlapping bursts", "no power steps", "burst on-time", "no unexplained carrier")
@@ -275,7 +276,7 @@ def test_dmr_tx_bursts_clean(radio, sdr_bench, pytestconfig):
     and the terminator pass BPTC and RS with at most DATA_BITS_MAX bits corrected, and the voice bursts carry at most
     VOICE_BITS_MAX bit errors on average. A PA switched off before the burst's modulation ended left 16 to 25 bit
     errors in the last 4 ms of every header and terminator, while the voice still decoded. The headers go 60 ms
-    apart."""
+    apart, and where the bench reads it the deviation is 1944 Hz +-10% (at 65% of it every burst still decoded)."""
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     if not sdr_bench.can_watch(freq):
         skip("bench", f"the SDR bench can't decode bursts on {freq} MHz (no shared daemon, or outside its window)")
@@ -301,6 +302,10 @@ def test_dmr_tx_bursts_clean(radio, sdr_bench, pytestconfig):
     assert not bad, "LC bursts with FEC errors: " + "; ".join(bad)
     mean = sum(errs) / max(1, len(errs))
     assert voice and mean <= VOICE_BITS_MAX, f"voice bursts average {mean:.1f} bit errors"
+    dev = [r["dev_hz"] for r in rows if r.get("dev_hz")]
+    if dev:     # a bench that reports it: the outer symbols' deviation
+        d_mean = sum(dev) / len(dev)
+        assert DEV_HZ[0] <= d_mean <= DEV_HZ[1], f"DMR deviation {d_mean:.0f} Hz, not 1944 Hz +-10%"
 
 
 @pytest.mark.feature("dmr_talker_alias")

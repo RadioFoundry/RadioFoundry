@@ -198,9 +198,15 @@ static sct_codec_write_t codec_writes[] = {
 static uint8_t spk_gain[2];
 static uint8_t mic_gain[2];
 
+// The modulator's gain. At the chip's default (0 dB) the DMR deviation is 1255 Hz, 35% under the 1944 Hz of the outer
+// symbols; 0x0C60 (+3.8 dB) gives 1941 Hz at 446 MHz (measured). Sent here, as a control field: in the DMR start it
+// changed nothing
+static const uint8_t mod_gain[2] = { 0x0C, 0x60 };
+
 static const sct_field_t voice_fields[] = {
 	{ SCT_F_DIGI_SPK_GAIN, sizeof(spk_gain), spk_gain },
 	{ SCT_F_DIGI_MIC_GAIN, sizeof(mic_gain), mic_gain },
+	{ SCT_F_MOD_GAIN, sizeof(mod_gain), mod_gain },
 };
 
 static const sct_voice_t voice = {

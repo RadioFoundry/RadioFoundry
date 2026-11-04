@@ -44,6 +44,7 @@ enum {
 	SCT_F_BER_REPORT	= 0x1E,
 	SCT_F_CALL_STOP		= 0x21,
 	SCT_F_SUBAUDIO		= 0x26,
+	SCT_F_MOD_GAIN		= 0x2C,	// the modulator's gain: u16 MSB first, Q16.11 (2048 = 0 dB)
 	SCT_F_CODEC_SELECT	= 0x2D,
 	SCT_F_Q_PRO_STR		= 0x30,	// queries 0x30-0x33: the answer is LEN, text
 	SCT_F_Q_HW_VER		= 0x31,

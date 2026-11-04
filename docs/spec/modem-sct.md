@@ -98,6 +98,7 @@ Fields the driver uses:
 | 0x19 | CARRIER_READY | bits 1-0: 0 carrier lost (the default), 1 carrier ready, 2 ready with the demodulated phase reversed; bit 2 mute on a code mismatch (never set by the driver) |
 | 0x1C | DEMOD_GAIN | 2 bytes, MSB first: the demodulator's gain in Q16.11 (2048 = 0 dB); 0 auto calibration (the default) |
 | 0x1D | REPORT_FIELD | which fields the chip reports. In DMR: bit 7 NEW_EVENT, bit 6 DMR_FLC, bit 5 CSBK, bit 0 slot type and EMB, bits 4-1 reserved. The chip's default is 0x70 |
+| 0x2C | MOD_GAIN | 2 bytes, MSB first: the modulator's gain in Q16.11 (2048 = 0 dB). It sets the DMR transmit deviation when sent as a control field in the voice set-up (section 2); in the DMR start it changed nothing (measured) |
 | 0x2D | CODEC_SELECT | the codec chip: 1 TLV320AIC3204, 2 WM8758B (the chip's default), 3 ES8338 |
 | 0x41 | MODOUT_CONFIG | 5 bytes: the delay between the two outputs of two-point modulation (signed, 10.4 µs steps, ±40), then 4 reserved bytes. Default all 0 |
 | 0x43 | DIGC_DATA_FRAME | PROP, LEN, data (section 4) |
