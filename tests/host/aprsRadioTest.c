@@ -24,6 +24,7 @@ static int checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
 #define CH_HZ		146520000u
+#define CH2_HZ		146050000u
 #define APRS_HZ		144390000u
 
 // ---- fake board ----
@@ -182,6 +183,33 @@ static const hal_bcast_t fake_bcast = {
 	.volume = b_volume, .status = b_status, .audio = b_audio,
 };
 
+#if CONFIG_DUAL_WATCH
+static struct {
+	bool up, active;
+	uint32_t hz;
+	int tunes, stops;
+} other_rx;
+
+static bool x_tune(const rx2_tune_t *t)
+{
+	if (!other_rx.up) {
+		return false;
+	}
+	other_rx.hz = t->rx_hz;
+	other_rx.tunes++;
+	return true;
+}
+static void x_stop(void) { other_rx.stops++; }
+static void x_status(rx2_status_t *st)
+{
+	memset(st, 0, sizeof(*st));
+	st->up = st->tuned = other_rx.up;
+	st->active = other_rx.active;
+}
+static void x_audio(bool on) { (void)on; }
+static const hal_rx2_t fake_rx2 = { .tune = x_tune, .stop = x_stop, .status = x_status, .audio = x_audio };
+#endif
+
 static const band_t bands[] = {
 	{ 136000000, 174000000, true }, { 400000000, 480000000, true }, { 65000000, 108000000, false },
 };
@@ -203,10 +231,13 @@ const board_t board = {
 	.audio = &fake_audio,
 	.audio_tap = &fake_tap,
 	.bcast = &fake_bcast,
+#if CONFIG_DUAL_WATCH
+	.rx2 = &fake_rx2,
+#endif
 };
 
-// ---- fake codeplug: one channel ----
-static channel_t chan;
+// ---- fake codeplug ----
+static channel_t chan, chan2;
 static zone_t zone;
 static char cp_name[CODEPLUG_NAME_LEN + 1];
 codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
@@ -217,14 +248,18 @@ void storage_lock(void) {}
 void storage_unlock(void) {}
 void storage_quick_lock(void) {}
 void storage_quick_unlock(void) {}
-uint16_t codeplug_channel_count(void) { return 1; }
+uint16_t codeplug_channel_count(void) { return 2; }
 bool codeplug_channel(uint16_t n, channel_t *out)
 {
-	if (n != 1) {
-		return false;
+	if (n == 1) {
+		*out = chan;
+		return true;
 	}
-	*out = chan;
-	return true;
+	if (n == 2) {
+		*out = chan2;
+		return true;
+	}
+	return false;
 }
 uint16_t codeplug_zone_count(void) { return 1; }
 bool codeplug_zones_stored(void) { return true; }
@@ -304,6 +339,9 @@ static void req(uint8_t type, int32_t arg)
 static void reset(void)
 {
 	memset(&hw, 0, sizeof(hw));
+#if CONFIG_DUAL_WATCH
+	memset(&other_rx, 0, sizeof(other_rx));
+#endif
 	hw.noise_on_aprs = 120;
 	nframes = 0;
 	memset(frames, 0, sizeof(frames));
@@ -314,6 +352,9 @@ static void reset(void)
 	chan.mode = RADIO_MODE_FM;
 	chan.bw = RADIO_BW_25K;
 	chan.power = CODEPLUG_POWER_DEFAULT;
+	chan2 = chan;
+	strcpy(chan2.name, "Other");
+	chan2.rx_hz = chan2.tx_hz = CH2_HZ;
 	memset(&zone, 0, sizeof(zone));
 	strcpy(zone.name, "Z");
 	zone.count = 1;
@@ -507,6 +548,72 @@ static void test_ptt_cuts(void)
 	run(20u * 1000u);	// the beacon goes again later
 	CHECK(hw.starts >= 1);
 }
+
+#if CONFIG_DUAL_WATCH
+static void test_dual_watch_beacon(void)
+{
+	reset();
+	zone.count = 2;
+	zone.channels[1] = 2;
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("N0TST");
+	configure(0, false);
+	radio_req_t watch = { RREQ_SCAN, RSCAN_DUAL, 1 };
+	radio_sm_request(&sm, &watch, now);
+	CHECK(sm.scan.kind == SCAN_DUAL);
+	for (int i = 0; i < 100 && sm.dual_at != 1; i++) {
+		run(RADIO_POLL_MS);
+	}
+	CHECK(sm.dual_at == 1 && hw.rx_hz == CH2_HZ);
+	uint32_t steps = sm.scan.steps;
+	CHECK(aprs_send_now());
+	CHECK(wait_start(1, 5000));
+	CHECK(sm.scan.kind == SCAN_DUAL && hw.tx_hz == APRS_HZ && hw.starts == 1);
+	wait_idle();
+	CHECK(sm.scan.kind == SCAN_DUAL && sm.scan.phase == SCAN_PH_RESUME &&
+	      sm.dual_at == 1 && hw.rx_hz == CH2_HZ && !hw.keyed);
+	run(5000);
+	CHECK(sm.scan.kind == SCAN_DUAL && sm.scan.steps > steps);
+	// PTT still uses the selected channel after a beacon interrupted the watch.
+	req(RREQ_PTT, 1);
+	CHECK(sm.scan.kind == SCAN_DUAL && hw.tx_hz == CH_HZ);
+	req(RREQ_PTT, 0);
+	// A regular zone scan still holds a queued packet until the scan stops.
+	req(RREQ_SCAN, RSCAN_STOP);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.scan.kind == SCAN_ZONE && aprs_send_now());
+	run(5000);
+	CHECK(sm.scan.kind == SCAN_ZONE && hw.starts == 1);
+	req(RREQ_SCAN, RSCAN_STOP);
+	CHECK(wait_start(2, 5000) && hw.tx_hz == APRS_HZ);
+	wait_idle();
+}
+
+static void test_dual_receiver_beacon(void)
+{
+	reset();
+	zone.count = 2;
+	zone.channels[1] = 2;
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("N0TST");
+	configure(0, false);
+	other_rx.up = true;
+	radio_req_t watch = { RREQ_SCAN, RSCAN_DUAL, 1 };
+	radio_sm_request(&sm, &watch, now);
+	CHECK(sm.rx2_on && other_rx.hz == CH2_HZ && hw.rx_hz == CH_HZ);
+	other_rx.active = true;
+	CHECK(aprs_send_now());
+	run(5000);
+	CHECK(hw.starts == 0 && sm.rx2_on && other_rx.stops == 0);
+	int tunes = other_rx.tunes;
+	other_rx.active = false;
+	CHECK(wait_start(1, 5000));
+	CHECK(!sm.rx2_on && other_rx.stops == 1 && hw.tx_hz == APRS_HZ);
+	wait_idle();
+	CHECK(sm.scan.kind == SCAN_DUAL && sm.rx2_on && other_rx.tunes == tunes + 1 &&
+	      other_rx.hz == CH2_HZ && hw.rx_hz == CH_HZ);
+}
+#endif
 
 static void test_not_amateur(void)
 {
@@ -1196,6 +1303,10 @@ int main(void)
 	test_busy_channel();
 	test_bcast_channel();
 	test_ptt_cuts();
+#if CONFIG_DUAL_WATCH
+	test_dual_watch_beacon();
+	test_dual_receiver_beacon();
+#endif
 	test_not_amateur();
 	test_manual_and_ptt_trigger();
 	test_tx_power();

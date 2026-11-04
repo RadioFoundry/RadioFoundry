@@ -186,7 +186,7 @@ below the squelch could be decoded. That needs a board receive path (1 above) re
 ## 6. RF transmission
 
 The radio core's APRS block (`radio_sm.c`, `aprs_*`): when a frame waits (`aprs_rf_pending`) and the radio is idle
-(no PTT, no call heard or sent, no scan, no hotspot, no monitor, no TX inhibit, battery not critical), it takes the
+(no PTT, no call heard or sent, no zone or VFO scan, no hotspot, no monitor, no TX inhibit, battery not critical), it takes the
 job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags before, 3 after), and:
 
 1. LISTEN: tunes the APRS frequency (25 kHz, or 12.5 kHz when narrow is set), 50 ms to settle, then 100 ms slots with
@@ -200,6 +200,12 @@ job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags
 While keyed, Home keeps the selected channel on screen. Its status pill says "TX APRS" and its activity says
 "SENDING", without elapsed or remaining TX time. The ordinary status and activity return when the APRS job ends or is
 aborted.
+
+During dual watch, the job temporarily interrupts the watch and sends on APRS's configured frequency regardless of
+which channel is selected or tuned. A call on either receiver defers the job. A second receiver is stopped during the
+job. After the channel is restored, dual watch resumes with its reply wait; a second receiver is engaged again. A
+short look at the other channel finishes before a job starts. Zone and VFO scans still defer APRS transmission until
+they stop.
 
 PTT, a channel change or any request other than beeps, DMR focus and settings aborts it (`rf_failed`, the frame
 retried after 15 s, 3 tries). A failure counts in `rf_failed` and names its step in `rf_fail`: `aborted`, `no_key`
