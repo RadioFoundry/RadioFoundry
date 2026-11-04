@@ -77,7 +77,7 @@ msgstr "Retroiluminación"
 | Keep it short. Most screens are 128 or 160 pixels wide: about 21 characters in the small font, 16 in the list font | A row too long is cut with an ellipsis; a toast or hint is cut |
 | Keep leading and trailing spaces, and the colon at the end | The code glues a number or a name to the text: `"Volume "` + `"5"` |
 | Keep `{a\|b}` groups as groups, with the same number of choices | A text alternate: the radio shows the first choice that fits, longest first. Write each choice shorter than the one before |
-| Use only ASCII and Latin-1 letters (á é í ó ú ñ ü ç ß ...) and `… · → ° ⤒ ⤓` | The radio draws one byte a character; `--check` rejects anything else |
+| Use only ASCII and Latin-1 letters (á é í ó ú ñ ü ç ß ...) and `… · → ° ⤒ ⤓` | The radio draws one byte a character; `--check` rejects anything else. A CJK catalog is the exception, and says so ([below](#chinese-and-other-cjk-languages)) |
 | Start every hint group that names the Back key with exactly your translation of `"Back"` | Hints keep the Back group at the right edge by matching that word: change it and every Back group must change with it |
 | Status strip words (IDLE, NO TX, SCAN, DUAL, ROAM) and chips (Lock, DMon, Priv) no longer than the English; keep the English when nothing fits | They sit in fixed slots of the status strip |
 | Don't translate the standard abbreviations the source leaves unmarked (TG, TS, CC, RX, TX, VFO, DMR, FM) | Radio operators know them; they aren't in the catalog |
@@ -89,6 +89,20 @@ way round.
 To see where a string goes, search for it in the file its `#:` line names: `grep -n -F '"Backlight"'
 core/ui/ui_menus.c`. The comments next to a `TR()` often say more. A string with a leading or trailing space is
 always such a piece.
+
+### Chinese and other CJK languages
+
+The Latin fonts have no glyph for Chinese, so such a catalog is UTF-8 and brings its own face. Everything else works as
+above: one catalog, one switch, the same checks.
+
+| Step | What |
+|---|---|
+| The catalog | `tools/i18n.py --new zh 中文` writes it with an `X-Glyphs: utf8` header. A catalog with that header holds UTF-8: ASCII, `font.h`'s glyphs, and characters the CJK face has. Latin-1 letters are not allowed (a UTF-8 reader would take them for the start of a sequence), and `--check` lists every character the face lacks |
+| The face | `tools/cjkfont.py --font <outline font> --po core/ui/lang/zh.po --out-c core/ui/cjk_font_data.c` rasterizes every character the catalogs use into a 16x16 one-bit glyph and writes the table the firmware links. 476 characters are 15.2 KB; with the text, Chinese costs 32,856 bytes. Run it whenever a translation adds a character (`--check` fails until it does) and commit both |
+| The font | One whose license allows embedding bitmaps: an SIL OFL font such as Noto Sans SC or Source Han Sans. The generated file carries the font's notice, because that data is under the font's license, not MIT. Do not use a vendor font that forbids it |
+| Size | A CJK character is 16 px wide and 16 tall, the height of the 8x16 font: 8 characters a line on a 128 px screen, 10 on a 160 px one, 15 on a 240 px one. **A line must be at least 16 px high.** A 240 px color radio draws its words in 8x16 (a CJK build moves its text pages up to that font too) and shows Chinese everywhere; a layout whose words use the 5x8 or 6x12 font (a 128x64 display, and the 160x128 class) has no room for 16 px lines, so do not build Chinese into those |
+| Cutting | A string too long for its space is cut at the end, whole characters only (`gfx_text_fit`), because Chinese has no spaces to cut at a middle. A line wraps after any CJK character (`wrap_line`); Latin words inside it still wrap at their spaces |
+| Switch | `CONFIG_LANG_ZH` is off by default. Measure it like any switch and put the bytes in [the feature matrix](../feature-matrix.md) |
 
 ### When the source changes
 
