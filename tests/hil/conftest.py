@@ -100,6 +100,9 @@ def pytest_addoption(parser):
     g.addoption("--split-tx-mhz", type=float, default=None,
                 help="MHz: test_dmr_tx_split_repeater, the radio's TX frequency on its DMR test channel made split "
                      "(the bench repeater's input; its output is --dmr-freq); no default: one you may transmit on")
+    g.addoption("--outbound-mhz", type=float, default=None,
+                help="MHz: test_dmr_outbound_voice, a repeater's output the bench board sends BS bursts on; the radio "
+                     "needs a duplex DMR channel receiving it (TX differs from RX); no default: one you may transmit on")
     g.addoption("--split-calls", type=int, default=1,
                 help="test_dmr_tx_split_repeater: key up this many times in one run (the split is written and "
                      "restored once; every call needs a fresh repeater start)")

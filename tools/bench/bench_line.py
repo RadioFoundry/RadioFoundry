@@ -31,7 +31,7 @@ PORT = 7373
 FLAGS = {"private", "pi", "emergency", "confirmed", "tms_no_ack", "etsi_no_response", "group", "json", "verbose"}
 # options sent as text: free text, and the hex fields (the board reads a string as hex, a number as itself)
 TEXT = {"tms", "etsi", "ip_text", "talker_alias", "gps", "udp_payload", "opcode", "fid", "octet3", "service_options",
-        "slots", "family", "ambe_out"}
+        "slots", "family", "ambe_out", "voice"}
 
 
 class BenchLineError(Exception):
