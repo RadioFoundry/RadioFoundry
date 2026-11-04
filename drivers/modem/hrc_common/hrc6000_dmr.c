@@ -916,8 +916,9 @@ static bool lc_slot_ok(hrc6000_dmr_t *e, int8_t ts, const uint8_t lc[9], bool at
 		if (e->slot_lc[other].open && !slot_voice_taken(e)) {
 			e->slot_lc[other].seen_tick = e->tick;	// still talking, as far as can be told
 		}
-		// With two different calls page 2 shows this slot's LC at its F about every other superframe. Only the
-		// other's at every F: it is this call's too (a group on both slots, or the other call over unseen)
+		// This slot's own LC is normally found at F, at the A after it, or at F's repeat or the post-access
+		// interrupt. Only the other's, at 8 F reads in a row: it is this call's too (a group on both slots, or the
+		// other call over unseen)
 		if (!open && at_f && e->slot_lc[me].other_reads < SLOT_LC_ADOPT_READS) {
 			e->slot_lc[me].other_reads++;
 		}

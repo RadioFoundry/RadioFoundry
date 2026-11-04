@@ -307,7 +307,7 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   | This slot's open call's LC | Yes, even when the other slot's call has the same LC (a group on both slots) |
   | The other slot's call's LC, while that call may go on | No, unless this slot has no call of its own and 8 of its F reads in a row showed only that LC (then it is this call's too: a group on both slots, or the other call over unseen) |
   | Another voice LC, the other slot idle | Yes: this slot's next talker (no header, a terminator missed) |
-  | Another voice LC, the other slot's call maybe going on | No while each slot has a different call and the other is busy (it may be the other slot's next talker). Otherwise only when read again a superframe later: page 2 once held a mix of both calls' LCs (bench, 2026-11-04: a source and talk group neither call had) |
+  | Another voice LC, the other slot's call maybe going on | No while each slot has a different call and the other is busy (it may be the other slot's next talker). Otherwise only when read again a superframe later, so such a call gets its LC about 360 ms later. Page 2 once held a mix of both calls' LCs (bench, 2026-11-04: a source and talk group neither call had); the embedded LC has only a 5-bit checksum, so about 1 mix in 32 passes it |
   | A talker alias or GPS block (other FLCOs) | Only when the other slot isn't busy. Never kept as a slot's call LC |
 
   A slot is busy for 2.2 s (6 superframes) after its header, voice or LC was last taken, or its LC last seen in page
