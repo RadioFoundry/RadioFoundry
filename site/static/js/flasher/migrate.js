@@ -4,7 +4,9 @@
 // an install"). A radio installed from its stock firmware still holds the stock codeplug in its memory chip, in a
 // layout RadioFoundry does not read, so the radio would start without channels. The install converts it into the
 // open-firmware layout (codeplug/stock_tyt.js, the same conversion as the Codeplug Editor's), writes the sectors that
-// change through the CPS, and reads them back. Only TYT-family stock codeplugs convert in the browser so far.
+// change through the CPS, and reads them back. On an HR_C7000 radio the stock codeplug stays in its own pages, below
+// RadioFoundry's codeplug (codeplug/stock_baofeng.js): the install converts the read its check step took and writes it
+// through the codeplug interface (writeConverted).
 
 import { CODEPLUG_SPAN } from "./backup.js";
 import { codeplugSectors } from "./restore.js";
@@ -13,6 +15,7 @@ import { STOCK, detectStock, importStock } from "../codeplug/stock_tyt.js";
 import { empty, encode, decode } from "../codeplug/model.js";
 import { CodeplugImage } from "../codeplug/image.js";
 import { writeRanges, VFOS } from "../codeplug/transport.js";
+import { DM32_STOCK, detectStock as detectPaged, importStock as importPaged } from "../codeplug/stock_baofeng.js";
 
 // The stock family a memory chip read holds, or null (a RadioFoundry codeplug, a blank one, or one not read here)
 export function stockLayoutOf(bytes) {
@@ -93,4 +96,44 @@ export function checkMigration(sectors, readBack, want) {
 	} catch (e) { /* unreadable: counts as a mismatch */ }
 	const counted = !!have && Object.keys(want).every((k) => have[k] === want[k]);
 	return { ok: !differ.length && counted, differ, have };
+}
+
+// The stock codeplug in an HR_C7000 radio's data flash read (the install's check step reads it before the write, and
+// RadioFoundry never writes there): {image, counts, notes} as convertStock gives them, or null when it holds none this
+// page reads
+export function convertPagedStock(bytes) {
+	if (!bytes || detectPaged(bytes) !== DM32_STOCK) return null;
+	const m = empty();
+	const { counts, notes } = importPaged(m, bytes);
+	return { image: encode(m), counts, notes };
+}
+
+const countsOf = (img) => {
+	try {
+		return classify(img.bytes).layout === "openfw" ? imageCounts(img.bytes) : null;
+	} catch (e) {
+		return null;
+	}
+};
+
+// The converted codeplug written through the radio's codeplug interface (codeplug/transport.js CpsSerial, which adds
+// the radio's base on the wire): the settings area claimed when another firmware's data is there, the radio's codeplug
+// read, the bytes that differ written and read back, the radio's codeplug counted again. ask(counts): whether to
+// replace a codeplug with channels already on the radio; false writes nothing. The VFO pair keeps the radio's (a read
+// shows the live VFOs there). progress(what, done, total), what "reading" | "writing" | "checking".
+// {written, ok, have}: have the counts the radio holds afterwards (before, when nothing was written)
+export async function writeConverted(tr, radios, conv, { ask = async () => true, progress = () => {} } = {}) {
+	await tr.identify(radios);
+	if ((await tr.storage())?.region === "foreign" && !(await tr.claimStorage())) throw new Error("the settings area could not be claimed");
+	const have = await tr.read({ iddb: false, progress: (d, n) => progress("reading", d, n) });
+	const now = countsOf(have);
+	if (now?.channels && !(await ask(now))) return { written: false, ok: false, have: now };
+	const want = CodeplugImage.from(conv.image.bytes.slice(0, CODEPLUG_SPAN));
+	want.bytes.set(have.bytes.subarray(VFOS[0], VFOS[1]), VFOS[0]);
+	const res = await tr.write(want, have, { progress: (d, n) => progress("writing", d, n) });
+	await tr.verify(want, res.plan, { progress: (d, n) => progress("checking", d, n) });
+	await tr.finish();
+	const got = countsOf(await tr.read({ iddb: false }));
+	const ok = !!got && Object.keys(conv.counts).every((k) => got[k] === conv.counts[k]);
+	return { written: true, ok, have: got };
 }
