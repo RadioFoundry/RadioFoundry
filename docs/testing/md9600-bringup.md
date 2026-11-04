@@ -126,7 +126,7 @@ Transmit, UHF, 5 W into a dummy load, a `CONFIG_MD9600_TX` and `CONFIG_MD9600_DM
 | --- | --- |
 | DMR call, 3 s | every burst decoded: headers, voice A-F, terminator, CC 1, BER 0. Carrier off between bursts (over 26 dB down) once T5 switches per burst (19.8) |
 | FM carrier | within 1 kHz of the channel, steady through the key |
-| CTCSS 100.0 Hz | 665 Hz deviation at 12.5 kHz, 1327 Hz at 25 kHz (`test_fm_tx_ctcss`, `test_fm_tx_bandwidth`) |
+| CTCSS 100.0 Hz | 368 Hz deviation at 12.5 kHz, 754 Hz at 25 kHz on UHF; 380 / 758 Hz on VHF; DCS D023N +-385 / +-399 Hz (`test_fm_tx_ctcss`, `test_fm_tx_bandwidth`) |
 | DCS D023N | +-700 Hz, 0.30 s turn-off tail (`test_fm_tx_dcs`); inverted until `MD9600_SUBTONE_TX_INVERT` |
 
 Transmit stays off in the build until the power levels are checked.

@@ -468,7 +468,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	}
 #if CONFIG_SUBTONE && CONFIG_MD9600_TX
 	if (tx_tone != NULL) {
-		md9600_subtone_tx_start(tx_tone, bw == RADIO_BW_25K);
+		uint8_t band = MD9600_UHF;
+		(void)md9600_band_of(hz, &band);
+		md9600_subtone_tx_start(tx_tone, bw == RADIO_BW_25K, band == MD9600_VHF);
 	}
 #else
 	(void)tx_tone;

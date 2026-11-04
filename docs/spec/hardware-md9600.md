@@ -1004,7 +1004,7 @@ arm and the last refusal.
 |---|---|
 | PA2, ADC IN2 (QT_DQT_IN, the sub-audio low-pass output) | the CTCSS / DCS decoder (`subtone_md9600.c`, `CONFIG_SUBTONE`): ADC2 converts it continuously (480 cycles, 18.3 kHz) into DMA2 stream 3, and each half-transfer interrupt feeds sums of 8 to `drivers/rf/subaudio` at 2287 Hz. Mid-supply (about 1950 counts). A 100.0 Hz tone on a narrow channel holds it at about 320 counts of amplitude, talking or not; an empty channel gives 300-600 counts rms of noise. The line is AC coupled: a DCS stream on it is high-passed with a corner near 18 Hz, so a run of equal bits sags to under half within a bit (the decoder slices with hysteresis for this). The diagnostics page's "qt" is one ADC3 conversion of it |
 | PC3, ADC IN13 (RX_2T_5T) | APRS receive (`afsk_md9600.c`, `CONFIG_APRS_RX`): while the core listens, ADC3 converts it continuously (480 cycles, 18.3 kHz) into DMA2 stream 1, and each half-transfer interrupt queues sums of 2 (9146 Hz) with the DC taken away; the diagnostics page's ADC3 reading of PA2 holds its last value meanwhile. Voice-band audio with sub-audio removed: under a carrier with a 100.0 Hz tone it drops to about 16 counts rms and rises to about 400 with speech; 450 counts of noise on an empty channel |
-| PC7, TIM8 CH2 | sub-audio tone PWM (`md9600_pwm_out`), on the backlight's 28 kHz timebase, into the reference oscillator's modulation input. Without a tone the pin is released (open drain high), as at start-up: driven low it pulls the reference and DMR never syncs. In FM transmit TIM8's update interrupt (priority 6) feeds `drivers/rf/subaudio`'s generator a new duty every 8 periods (about 3.6 kHz). Measured off air at 30 % of the swing (12.5 kHz; doubled at 25 kHz): CTCSS 100.0 Hz at 665 Hz deviation (1327 Hz at 25 kHz), DCS D023N at +-700 Hz with a 0.30 s 134.4 Hz tail. The path inverts: DCS goes out with the generator's polarity flipped (`MD9600_SUBTONE_TX_INVERT`) (first radio, 2026-11-03) |
+| PC7, TIM8 CH2 | sub-audio tone PWM (`md9600_pwm_out`), on the backlight's 28 kHz timebase, into the reference oscillator's modulation input. Without a tone the pin is released (open drain high), as at start-up: driven low it pulls the reference and DMR never syncs. In FM transmit TIM8's update interrupt (priority 6) feeds `drivers/rf/subaudio`'s generator a new duty every 8 periods (about 3.6 kHz). The tone's share of the swing is set per band for about 375 Hz deviation at 12.5 kHz and doubled at 25 kHz (`MD9600_SUBTONE_PERCENT_UHF` 17, `_VHF` 24; at 30 % UHF gave 665 Hz and VHF 478 Hz). Measured off air (2026-11-04): CTCSS 100.0 Hz at 368 / 754 Hz (UHF, 12.5 / 25 kHz) and 380 / 758 Hz (VHF); DCS D023N at +-385 Hz (UHF) and +-399 Hz (VHF), with a 0.30 s 134.4 Hz tail. The path inverts: DCS goes out with the generator's polarity flipped (`MD9600_SUBTONE_TX_INVERT`) (first radio, 2026-11-03) |
 | PC8, TIM8 CH3 | beep PWM, same helper |
 | PA temperature, fan | no sensor or fan line is known on any revision (?) |
 
@@ -1014,9 +1014,9 @@ Checked off air (V1-V3, 151.5125 MHz, 5 W into a dummy load, 2026-11-03), the be
 
 | Check | Result |
 |---|---|
-| FM, 12.5 kHz, CTCSS 100.0 | carrier -31 Hz; CTCSS 100.16 Hz at 478 Hz deviation |
-| FM, 25 kHz, CTCSS 100.0 | carrier -20 Hz; CTCSS at 958 Hz deviation |
-| FM, DCS D023N | decoded, +-505 Hz deviation; 134.4 Hz turn-off tail 0.32 s |
+| FM, 12.5 kHz, CTCSS 100.0 | carrier -31 Hz; CTCSS 100.02 Hz at 380 Hz deviation (478 Hz before the per-band level) |
+| FM, 25 kHz, CTCSS 100.0 | carrier -20 Hz; CTCSS at 758 Hz deviation |
+| FM, DCS D023N | decoded, +-399 Hz deviation; 134.4 Hz turn-off tail 0.32 s |
 | DMR, CC 1, slot 1, 4 s | voice header, 11 superframes and the terminator: 70 bursts, no sync errors, 60.0 ms apart, 1.83-1.97 kHz deviation, carrier +46 Hz |
 | Level per power step (relative, leakage from the dummy load) | 10 W +2.7 dB, 25 W +4.0 dB, 40 W +8.9 dB over 5 W (nominal +3.0 / +7.0 / +9.0); needs a power meter |
 

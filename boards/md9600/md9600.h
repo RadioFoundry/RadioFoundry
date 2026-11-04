@@ -108,7 +108,7 @@ typedef struct {
 } md9600_subtone_stats_t;
 void md9600_subtone_stats(md9600_subtone_stats_t *s);
 // Sub-audio transmit (CONFIG_MD9600_TX): the tone as PWM on PC7 for an FM over; tail: the DCS turn-off tail
-void md9600_subtone_tx_start(const subtone_t *tone, bool wide);
+void md9600_subtone_tx_start(const subtone_t *tone, bool wide, bool vhf);
 void md9600_subtone_tx_stop(void);
 bool md9600_subtone_tx_tail(bool on);
 

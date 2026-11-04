@@ -171,11 +171,14 @@ void md9600_subtone_stats(md9600_subtone_stats_t *s)
 }
 
 #if CONFIG_MD9600_TX
-// The tone's share of the PWM swing at 12.5 kHz (doubled at 25 kHz) and whether the analog path inverts it (DCS
-// polarity only), set from the deviation and polarity measured off air: 30 % gives 665 Hz CTCSS and +-700 Hz DCS
-// at 12.5 kHz (first radio, 2026-11-03)
-#ifndef MD9600_SUBTONE_PERCENT
-#define MD9600_SUBTONE_PERCENT	30
+// The tone's share of the PWM swing at 12.5 kHz (doubled at 25 kHz), per band, for about 375 Hz deviation (750 Hz
+// wide), the usual sub-audio level. Each band's VCO takes the reference's pull differently: 30 % gave 665 Hz CTCSS
+// and +-700 Hz DCS on UHF, 478 Hz and +-505 Hz on VHF (first radio, 2026-11-03)
+#ifndef MD9600_SUBTONE_PERCENT_UHF
+#define MD9600_SUBTONE_PERCENT_UHF	17
+#endif
+#ifndef MD9600_SUBTONE_PERCENT_VHF
+#define MD9600_SUBTONE_PERCENT_VHF	24
 #endif
 // DCS reads inverted off air without it (D023N came out as D023I, first radio, 2026-11-03)
 #ifndef MD9600_SUBTONE_TX_INVERT
@@ -207,7 +210,7 @@ void md9600_subtone_tx_stop(void)
 	md9600_pwm_out(MD9600_PWM_TONE, 0);	// released: driven low it pulls the reference
 }
 
-void md9600_subtone_tx_start(const subtone_t *tone, bool wide)
+void md9600_subtone_tx_start(const subtone_t *tone, bool wide, bool vhf)
 {
 	md9600_subtone_tx_stop();
 	subaudio_kind_t kind = kind_of(tone);
@@ -217,7 +220,8 @@ void md9600_subtone_tx_start(const subtone_t *tone, bool wide)
 	uint32_t full = TIM8->ARR;
 	uint32_t rate = 72000000u / (TIM8->PSC + 1u) / (full + 1u) / TX_DIV;	// TIM8 on APB2 at 72 MHz
 	// The modulator scales nothing by bandwidth here: a 25 kHz channel gets twice the swing, twice the deviation
-	subaudio_tx_init(&tx, rate, (uint16_t)full, (uint8_t)(wide ? 2u * MD9600_SUBTONE_PERCENT : MD9600_SUBTONE_PERCENT));
+	uint32_t pct = vhf ? MD9600_SUBTONE_PERCENT_VHF : MD9600_SUBTONE_PERCENT_UHF;
+	subaudio_tx_init(&tx, rate, (uint16_t)full, (uint8_t)(wide ? 2u * pct : pct));
 	subaudio_tx_start(&tx, kind, tone->value, MD9600_SUBTONE_TX_INVERT != 0);
 	tx_count = 0;
 	uint16_t first = subaudio_tx_next(&tx);
