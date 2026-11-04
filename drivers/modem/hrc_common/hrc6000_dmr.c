@@ -97,6 +97,7 @@
 #define SLOT_LC_GAP_TICKS	12u	// a slot's call is over after this long without its voice (360 ms)
 #define SLOT_LC_BUSY_TICKS	72u	// a slot is busy this long after its LC or voice was last seen (2.2 s, 6 superframes)
 #define SLOT_LC_OTHER_TICKS	2000u	// its voice not taken, a slot's call may go on this long after its header or LC (60 s)
+#define SLOT_LC_AGAIN_TICKS	8u	// an LC neither call had counts when read again this much later (the next superframe)
 #define SLOT_LC_ADOPT_READS	8u	// reads at F showing only the other slot's LC: this slot's call has the same one
 // Voice read at the ticks (chips with rx_voice_read, hardware-md380.md 4.8)
 #define TR_FIND_TICKS		40u	// reads to find the call's slot in (1.2 s) before the call counts as none
@@ -814,8 +815,10 @@ static void capture_if_fresh(hrc6000_dmr_t *e, char how)
 		e->lc_given = false;
 		e->lc_kept = false;
 		e->f_crc_bad = false;
-		e->slot_lc[0].other_reads = 0;	// a new reception: its call's F reads count from here (5.2)
-		e->slot_lc[1].other_reads = 0;
+		for (int i = 0; i < 2; i++) {	// a new reception: its call's F reads count from here (5.2)
+			e->slot_lc[i].other_reads = 0;
+			e->slot_lc[i].cand_ok = false;
+		}
 		e->st.lc_n = 0;
 		e->st.lc_cap_how = how;
 		e->st.lc_cap_src = lc_src(e->stale_lc);
@@ -924,7 +927,22 @@ static bool lc_slot_ok(hrc6000_dmr_t *e, int8_t ts, const uint8_t lc[9], bool at
 		e->slot_lc[me].other_reads = 0;
 	}
 	// Neither call's: with one call it is that slot's next talker (no header, a terminator missed)
-	return !(open && slot_lc_busy(e, other) && memcmp(e->slot_lc[me].lc, e->slot_lc[other].lc, 9) != 0);
+	if (!slot_lc_live(e, other)) {
+		return true;
+	}
+	if (open && slot_lc_busy(e, other) && memcmp(e->slot_lc[me].lc, e->slot_lc[other].lc, 9) != 0) {
+		return false;	// maybe the other slot's next talker
+	}
+	// With the other slot's call maybe going on, page 2 once held an LC neither call had (bench, 2026-11-04: a mix
+	// of the two). A real LC comes again with the next superframe: handed over when it is read again a superframe
+	// later (at F or the A after it)
+	if (e->slot_lc[me].cand_ok && memcmp(lc, e->slot_lc[me].cand, 9) == 0) {
+		return (uint32_t)(e->tick - e->slot_lc[me].cand_tick) >= SLOT_LC_AGAIN_TICKS;
+	}
+	memcpy(e->slot_lc[me].cand, lc, 9);
+	e->slot_lc[me].cand_ok = true;
+	e->slot_lc[me].cand_tick = e->tick;
+	return false;
 }
 
 // ts's call has this LC (open: its voice goes on; a terminator closes it). Only voice LCs
@@ -941,6 +959,7 @@ static void lc_slot_set(hrc6000_dmr_t *e, int8_t ts, const uint8_t lc[9], bool o
 	e->slot_lc[i].voice_tick = e->tick;
 	e->slot_lc[i].call_tick = e->tick;
 	e->slot_lc[i].other_reads = 0;
+	e->slot_lc[i].cand_ok = false;
 }
 
 // The post-access interrupt (0x82 bit 4)

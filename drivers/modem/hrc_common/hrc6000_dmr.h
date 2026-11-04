@@ -269,6 +269,9 @@ typedef struct {
 		uint32_t voice_tick;	// tick of the slot's last voice burst taken while open
 		uint32_t call_tick;	// tick lc was last taken (a header, a terminator, an embedded LC handed over)
 		uint8_t other_reads;	// reads at F in a row that showed only the other slot's LC
+		uint8_t cand[9];	// an LC neither call had, first read at cand_tick (handed over when read again later)
+		bool cand_ok;
+		uint32_t cand_tick;
 	} slot_lc[2];
 	// CC acquisition (5.4) when the filter is off
 	uint8_t cc_last, cc_matches, cc_cur;
