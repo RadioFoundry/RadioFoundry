@@ -1187,7 +1187,7 @@
  "flash.c7.cal_where_progmem": "la memoria del programma",
  "flash.c7.backup.leave": "Riavvia la radio",
  "flash.c7.backup.restarted": "La radio è stata riavviata ed è tornata in modalità normale.",
- "flash.c7.backup.next": "Ora installa o aggiorna RadioFoundry (questo backup vale, quindi non ne viene chiesto un altro), oppure termina.",
+ "flash.c7.backup.next": "Ora puoi installare RadioFoundry oppure terminare.",
  "flash.c7.restore.title": "Ripristina il firmware",
  "flash.c7.restore.lead": "Riscrive esattamente il firmware e il codec del backup. Vengono scritte solo le parti diverse. L'area di avvio non viene mai scritta.",
  "flash.c7.restore.lead_vendor": "Riscrive il firmware originale da {file}. Vengono scritte solo le parti diverse. L'area di avvio non viene mai scritta.",

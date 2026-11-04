@@ -325,11 +325,12 @@ leave it out. Attached files and your email address are deleted within 90 days.
 
 **A radio left in update mode:** a backup or install interrupted by a cable pull, or a page closed in the middle, can leave
 a radio in its loader (update mode), where the power switch may do nothing. Choose **Radio Stuck in Update Mode** on the
-installer's first page, pick the radio and the cable, and the installer restarts it into normal mode. When you connect
+installer's first page and pick the radio. On a radio the installer programs through its cable, pick the cable too, and
+the installer restarts it into normal mode; for the others the page says how to restart it by hand. When you connect
 for any other task and the loader is already running, the connect step offers **Restart Radio** next to **Continue**.
 If the loader does not answer at all, turn the radio off and on; if the power switch does nothing, take the battery out
-for a few seconds. After a **Back Up** the installer's **Restart Radio** ends on a finished screen that offers Install,
-Update or Finish, and the next task does not ask for a second backup.
+for a few seconds. After a **Back Up**, **Restart Radio** ends the task on a finished screen that offers Install or
+Finish (and Update when the radio runs RadioFoundry).
 
 **Programming cables:** cables with a CH340 chip can be unreliable for backups and installs. If one fails, try a cable
 with an FTDI, CP210x or PL2303 chip. The installer warns when it sees a CH340 cable.

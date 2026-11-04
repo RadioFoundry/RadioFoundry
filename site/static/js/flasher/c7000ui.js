@@ -1298,13 +1298,14 @@ function untriedOffer(c) {
 		reportButton({ quiet: false }));
 }
 
-// The backup is saved and the radio restarted: the task ends here, with the ways on. The next task needs no backup of its own
+// The backup is saved and the radio restarted: the task ends here, with the ways on (Update only for a radio that runs
+// RadioFoundry). The next task starts with a new session, as from the start page: its check step reads the radio again.
+// The backup's reads can't stand in for that one: they set no codec slot and keep no copy in this browser before a write
 function backupDoneView() {
 	const c = session();
 	const out = h("div", { class: "flasher" });
 	const go = (task) => () => {
-		c.backupDone = false;
-		S().backupDone = true;
+		S().c7 = null;
 		S().task = task;
 		S().step = 0;
 		ctx.render();
@@ -1312,14 +1313,16 @@ function backupDoneView() {
 	out.append(panel(t("flash.backup.task_title", { name: S().radio.name }),
 		notice(t("flash.c7.backup.done", { name: c.backupName }), "ok"), notice(t("flash.c7.backup.restarted"), "info"),
 		h("p", {}, t("flash.c7.backup.next"))));
-	S().forward([button(t("flash.task.install"), go("install"), { quiet: true }), button(t("flash.task.update"), go("update"), { quiet: true }),
-		button(t("flash.nav.finish"), () => ctx.reset(), { primary: true })]);
+	const rfoundry = c.rfoundry || c.analysis?.firmware === "rfoundry";
+	S().forward([button(t("flash.task.install"), go("install"), { quiet: true }), rfoundry ? button(t("flash.task.update"), go("update"), { quiet: true }) : null,
+		button(t("flash.nav.finish"), () => ctx.reset(), { primary: true })].filter(Boolean));
 	return out;
 }
 
 export function backupView() {
 	const c = session();
-	if (c.backupDone) return backupDoneView();
+	// backupDone: the radio whose backup ended with Restart Radio (another radio picked meanwhile starts its own)
+	if (c.backupDone === S().radio.id) return backupDoneView();
 	const out = h("div", { class: "flasher" });
 	if (!c.stub || c.stream?.lost) {
 		out.append(connectPanel(() => ctx.render()));
@@ -1354,7 +1357,7 @@ export function backupView() {
 			top.set({ led: "done", screen: screenNow() });
 			fill(status, notice(t("flash.c7.backup.done", { name: c.backupName }), "ok"),
 				c.calCopies && !c.calFound ? notice(t("flash.c7.backup.cal_missing"), "bad") : calOneCopy(c), untriedOffer(c));
-			S().forward(leaveLoaderButton(t("flash.c7.backup.leave"), () => { c.backupDone = true; }));
+			S().forward(leaveLoaderButton(t("flash.c7.backup.leave"), () => { c.backupDone = S().radio.id; }));
 		} catch (e) {
 			ctx.flashFinished(started, e);
 			fill(status, errorNotice(ctx.errorText(e)), retryHelp());

@@ -516,9 +516,17 @@ test("backup: after Restart Radio the task ends on a finished screen, not at the
 	assert.match(after.textContent, /Backup saved as/);
 	assert.match(after.textContent, /back in normal mode/);
 	assert.doesNotMatch(after.textContent, /Choose Cable/);
-	assert.deepEqual(forwards.at(-1).map((b) => b.textContent), ["Install", "Update", "Finish"]);
-	forwards.at(-1)[1].click();
-	assert.equal(state.task, "update");
-	assert.equal(state.backupDone, true, "the next task does not ask for a backup again");
+	// the simulated radio runs its original firmware: Update has nothing to update
+	assert.deepEqual(forwards.at(-1).map((b) => b.textContent), ["Install", "Finish"]);
+	// another radio picked meanwhile (Back, then the radio step) starts its own backup at the connect step
+	const other = { ...radio, id: `${radio.id}-other` };
+	state.radio = other;
+	assert.match(c7ui.backupView().textContent, /Connect Your/);
+	state.radio = radio;
+	c7ui.backupView();
+	forwards.at(-1)[0].click();
+	assert.equal(state.task, "install");
 	assert.equal(state.step, 0);
+	assert.equal(state.c7, null, "the install starts with a new session: its check step reads the radio itself");
+	assert.equal(state.backupDone, undefined, "nothing tells the next task its backup is done");
 });
