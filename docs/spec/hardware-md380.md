@@ -362,6 +362,18 @@ go to the stack as bursts A to F. A read that hasn't changed, or has no frame th
 row end the reception (0x22 = 0x17). The chip's voice class reports are ignored, and its 25 ms report delay doesn't
 count as out of step.
 
+A burst is in the port one tick after its slot's report, so the read at a tick holds the burst of the slot that
+started two ticks before. The engine takes this as fixed (`TR_PH_FLIP`). It used to learn it from the first read
+that checked after a header, which with traffic on both slots can be the other call's (issue 279). With traffic on
+both slots both phases hold bursts that check, so the lock is limited:
+
+| Case | The lock goes to |
+|---|---|
+| Header started the read | The header's phase only |
+| Repeater channel (`rx_lock_slot` 1 or 2) | Only a phase the CACH TC names as the channel's slot; none while the slot is unknown. A lock whose slot changes (restart, resync) searches again |
+
+Both are host-tested with a call on each slot (`hrc5000Test`, unverified on air).
+
 On air with this (2026-10-18): calls are taken with the caller and talk group, and 393 frames reached the codec with
 2 bit errors in all. The decoded audio is speech (peak 3521 of 32767) and streams to the chip (`aud blk` climbing),
 but the speaker plays only a faint buzz (4.8). Leads, not checked: 0x0E (HPoutEn, bit 7; RadioFoundry writes 0x44, which
