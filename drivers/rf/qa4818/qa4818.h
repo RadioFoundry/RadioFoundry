@@ -85,23 +85,24 @@ void qa4818_rx_plan(uint32_t hz, uint32_t if_hz, qa4818_rx_plan_t *p);
 uint8_t qa4818_tx_subband(uint32_t hz);
 // CTCSS detector thresholds (0x52) for a tone in Hz x 10: per tone of the standard set, a catch-all otherwise
 uint16_t qa4818_ctcss_detect(uint16_t hz_x10);
-// The drive register (0x40) for transmitting on hz at drive level drive; narrow: 12.5 kHz (one step less)
-uint16_t qa4818_drive_word(uint32_t hz, bool narrow, uint8_t drive);
+// The drive register (0x40) for transmitting on hz at drive level drive; wide: 25 kHz (one step less, which doubles
+// the deviation: measured)
+uint16_t qa4818_drive_word(uint32_t hz, bool wide, uint8_t drive);
 // RSSI register reading to dBm (half dB + 160, inferred)
 int16_t qa4818_rssi_dbm(uint16_t raw);
 // A drive word (0x40) from a band base and a level, the stock firmware's rule: base | (level << 1) & 0xFF, one step
-// (0x100) less for 12.5 kHz and one more when level << 1 carries
-uint16_t qa4818_drive_raw(uint16_t base, uint8_t level, bool narrow);
+// (0x100) less for 25 kHz and one more when level << 1 carries
+uint16_t qa4818_drive_raw(uint16_t base, uint8_t level, bool wide);
 // The tone generator's word (0x71) for hz: Hz x 10.32, truncated, halved (the stock firmware's arithmetic)
 uint16_t qa4818_tone_word(uint16_t hz);
 
 // Whether the status's tone flags show the receive tone set (true for none)
 bool qa4818_tone_heard(qa4818_tone_t type, uint16_t flags);
 // The drive (0x40) while the tone generator sends on hz: fixed levels by band, the stock firmware's tone burst values
-uint16_t qa4818_tone_drive_word(uint32_t hz, bool narrow);
+uint16_t qa4818_tone_drive_word(uint32_t hz, bool wide);
 // The drive (0x40) while the audio input pin sends on hz (the stock DTMF): the band's base and a calibrated level
 // (the caller's: the stock firmware takes it from its calibration, by band)
-uint16_t qa4818_line_drive_word(uint32_t hz, bool narrow, uint8_t level);
+uint16_t qa4818_line_drive_word(uint32_t hz, bool wide, uint8_t level);
 
 // ---- Register sequences ----
 
@@ -137,8 +138,8 @@ void qa4818_tune(qa4818_t *c, uint8_t subband, uint32_t hz);
 void qa4818_gpio(qa4818_t *c, uint16_t mask, uint16_t val);
 
 // The FM (analog) or DMR (digital) path of a transceiver, receive or transmit (both write it): mixer and filter
-// constants, and for FM the 12.5 / 25 kHz choice (inferred)
-void qa4818_path(qa4818_t *c, bool tx, bool digital, bool narrow, uint16_t r49);
+// constants, and for FM the 12.5 / 25 kHz choice (0x73; wide: 25 kHz)
+void qa4818_path(qa4818_t *c, bool tx, bool digital, bool wide, uint16_t r49);
 // The receive-only part, after qa4818_path(); then the gain code (0x4F, 0x78)
 void qa4818_rx_setup(qa4818_t *c, bool digital);
 void qa4818_gain(qa4818_t *c, uint8_t code);
@@ -152,7 +153,7 @@ void qa4818_fm_tx(qa4818_t *c, uint32_t hz);
 // drive word 0 (the baseband modulates; the board switches its PA per burst). Keyed by qa4818_tx_on() for the call
 void qa4818_dmr_tx(qa4818_t *c, uint32_t hz);
 void qa4818_tx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value, uint8_t cal_ctcss, uint8_t cal_dcs);
-void qa4818_tx_drive(qa4818_t *c, uint32_t hz, bool narrow, uint8_t drive, uint8_t level);
+void qa4818_tx_drive(qa4818_t *c, uint32_t hz, bool wide, uint8_t drive, uint8_t level);
 // The analog microphone's level, after qa4818_fm_tx() (the stock order): 0x18 = 0x125 | gain << 11 and page 1 0x17 =
 // 0x200 | cal << 3. gain is one of the stock levels 2..7 (QA4818_MIC_GAIN_DEFAULT its default), cal the factory MIC
 // byte 0..0x3F. Digital transmit has fixed values (qa4818_dmr_tx)

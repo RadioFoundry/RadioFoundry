@@ -246,7 +246,7 @@ static int16_t level_last[2] = { -1, -1 };	// level codes written, side A and B;
 #endif
 // The FM transmission tx() set up, for the tones: the voice drive word and its 0x51 level to restore
 static uint32_t tx_hz;
-static bool tx_narrow;
+static bool tx_wide;
 static uint16_t tx_r40;
 static uint8_t tx_level;
 typedef enum { AUX_NONE, AUX_TONE, AUX_LINE } aux_t;	// AUX_LINE: PB9's audio (DTMF, APRS) on the input pin
@@ -929,7 +929,7 @@ static void rx_setup(void)
 	qa4818_rx_plan(synth_hz(rx_hz), IF_A_HZ, &plan);
 	qa4818_tune(&chip_lo, plan.lo_subband, plan.lo_hz);
 	qa4818_tune(&chip_if, QA4818_SUBBAND_IF, IF_A_HZ);
-	qa4818_path(&chip_if, false, digital, rx_bw == RADIO_BW_12K5, R49);
+	qa4818_path(&chip_if, false, digital, rx_bw == RADIO_BW_25K, R49);
 	qa4818_rx_setup(&chip_if, digital);
 	qa4818_rx_tone(&chip_if, digital ? QA4818_TONE_NONE : chip_tone(rx_tone.type), rx_tone.value);
 	uint8_t code = rx_gain_code(rx_hz, false);
@@ -977,7 +977,7 @@ static void b_setup(void)
 	qa4818_rx_plan(synth_hz(b_hz), IF_B_HZ, &plan);
 	qa4818_tune(&chip_lo_b, plan.lo_subband, plan.lo_hz);
 	qa4818_tune(&chip_b, QA4818_SUBBAND_IF, IF_B_HZ);
-	qa4818_path(&chip_b, false, false, b_bw == RADIO_BW_12K5, R49);
+	qa4818_path(&chip_b, false, false, b_bw == RADIO_BW_25K, R49);
 	qa4818_rx_setup(&chip_b, false);
 	qa4818_tone_gen(&chip_b, false);
 	qa4818_rx_tone(&chip_b, chip_tone(b_tone.type), b_tone.value);
@@ -1634,15 +1634,15 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 #endif
 	}
 	bool uhf = hz > UHF_FROM_HZ;
-	bool narrow = bw == RADIO_BW_12K5;
+	bool wide = bw == RADIO_BW_25K;
 	qa4818_tone_t tone = t != NULL ? chip_tone(t->type) : QA4818_TONE_NONE;
 	bool dcs = tone == QA4818_TONE_DCS || tone == QA4818_TONE_DCS_INV;
 	uint8_t lvl_ctcss = cal_uhf[BLK_TONE_CTCSS], lvl_dcs = cal_uhf[BLK_TONE_DCS];
 
 	uint8_t drive = (uhf ? cal_uhf : cal_vhf)[BLK_DRIVE];
 	tx_hz = hz;
-	tx_narrow = narrow;
-	tx_r40 = qa4818_drive_word(hz, narrow, drive);
+	tx_wide = wide;
+	tx_r40 = qa4818_drive_word(hz, wide, drive);
 	tx_level = dcs ? lvl_dcs : lvl_ctcss;
 
 	transmitting = true;
@@ -1651,12 +1651,12 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	chips_off();
 	b_pause();
 	qa4818_tune(&chip_if, qa4818_tx_subband(hz), synth_hz(hz));
-	qa4818_path(&chip_if, true, false, narrow, R49);
+	qa4818_path(&chip_if, true, false, wide, R49);
 	qa4818_fm_tx(&chip_if, hz);
 	qa4818_mic_level(&chip_if, QA4818_MIC_GAIN_DEFAULT, cal_uhf[BLK_MIC]);
 	qa4818_tone_gen(&chip_if, false);	// the stock analog TX-on: no burst left on from a previous key-up
 	qa4818_tx_tone(&chip_if, tone, t != NULL ? t->value : 0, lvl_ctcss, lvl_dcs);
-	qa4818_tx_drive(&chip_if, hz, narrow, drive, tx_level);
+	qa4818_tx_drive(&chip_if, hz, wide, drive, tx_level);
 	qa4818_tx_on(&chip_if);
 	band_bits(hz);
 	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_FAN);
@@ -1709,7 +1709,7 @@ static bool tx_tone(uint16_t hz)
 		if (aux != AUX_NONE) {
 			mic_again();
 		}
-		qa4818_tx_aux(&chip_if, false, qa4818_tone_drive_word(tx_hz, tx_narrow));
+		qa4818_tx_aux(&chip_if, false, qa4818_tone_drive_word(tx_hz, tx_wide));
 		chip0_gpio(GPIO_MIC_MUTE, GPIO_MIC_MUTE);
 		aux = AUX_TONE;
 	}
@@ -1737,7 +1737,7 @@ static void line_in(void)
 			mic_again();
 		}
 		uint8_t level = cal_uhf[tx_hz > 200000000u ? BLK_DTMF_UHF : BLK_DTMF_VHF];
-		qa4818_tx_aux(&chip_if, true, qa4818_line_drive_word(tx_hz, tx_narrow, level));
+		qa4818_tx_aux(&chip_if, true, qa4818_line_drive_word(tx_hz, tx_wide, level));
 		chip0_gpio(GPIO_MIC_MUTE, GPIO_MIC_MUTE);
 		aux = AUX_LINE;
 	}
