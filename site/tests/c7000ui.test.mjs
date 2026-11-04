@@ -31,7 +31,7 @@ class El {
 	getAttribute(k) { return this.attrs[k] ?? null; }
 	setAttributeNS(ns, k, v) { this.attrs[k] = v; }
 	addEventListener(ev, f) { (this.listeners[ev] ||= []).push(f); }
-	click() { for (const f of this.listeners.click || []) f({ preventDefault() {} }); }
+	click() { if (!this.disabled) for (const f of this.listeners.click || []) f({ preventDefault() {} }); }
 	get textContent() { return this.children.map((c) => (c instanceof El ? c.textContent : c.text)).join(""); }
 	set textContent(v) { this.children = [{ text: String(v) }]; }
 	get firstChild() { return this.children[0]; }
@@ -474,9 +474,10 @@ test("connect step: a loader already running offers Restart Radio next to Contin
 	assert.equal(went, 0, "the step does not go on without the user");
 	assert.ok(!r.events.includes("reset"));
 	restart.click();
+	assert.equal(forwards.at(-1), null, "the actions go at once: no second reset, no Continue into a radio restarting");
 	for (let i = 0; i < 300 && !/restarted into normal mode/.test(box.textContent); i++) await sleep(20);
 	assert.match(box.textContent, /restarted into normal mode/);
-	assert.ok(r.events.includes("reset"));
+	assert.equal(r.events.filter((e) => e === "reset").length, 1);
 	assert.equal(went, 0);
 });
 
@@ -507,6 +508,7 @@ test("backup: after Restart Radio the task ends on a finished screen, not at the
 	const leave = forwards.at(-1);
 	assert.equal(leave.textContent, "Restart Radio");
 	leave.click();
+	assert.ok(leave.disabled, "one reset: a second click does nothing");
 	for (let i = 0; i < 100 && !rendered; i++) await sleep(20);
 	assert.equal(rendered, 1);
 	assert.ok(r.events.includes("reset"));

@@ -462,8 +462,14 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 
 	// The radio was reset out of loader mode: the visit ends here, not at the task's connect step again
 	const restarted = () => {
-		show({ led: "off", screen: "rfoundry", knob: "cycle" }, notice(t("flash.c7.restart.done"), "ok"), h("p", {}, t("flash.c7.restart.wait")));
+		show({ led: "off", screen: c.rfoundry ? "rfoundry" : "any", knob: "cycle" }, notice(t("flash.c7.restart.done"), "ok"), h("p", {}, t("flash.c7.restart.wait")));
 		act(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
+	};
+	// the actions go first: a second click, or Continue, would reach a radio that is already restarting
+	const restartNow = async () => {
+		act();
+		await restartRadio();
+		restarted();
 	};
 
 	// The stub runs (st answered): the LED, both chips, which radio this is. From here the session holds it
@@ -487,7 +493,7 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 			if (c.model && c.model !== boardId()) {
 				const other = Object.values(S().data.radios).find((r) => r.flash.board === c.model);
 				show({ led: "wait", screen }, notice(t("flash.c7.connect.wrong_radio", { name: S().radio.name, other: other?.name || c.model }), "bad"));
-				return act(leaveLoaderButton());
+				return act(restart ? button(t("flash.c7.leave"), restartNow, { primary: true }) : leaveLoaderButton());
 			}
 			show({ led: "wait", screen }, h("p", { class: "c7-big" }, h("b", {}, how)),
 				h("dl", { class: "kv-list" },
@@ -495,13 +501,13 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 				h("p", {}, t({ rfoundry: "flash.c7.connect.led_rfoundry", usmart: "flash.usmart.led" }[c.how] || "flash.c7.connect.led_rom")));
 			if (restart) {
 				await sleep(S().fakeC7 ? 400 : 1500);
-				await restartRadio();
-				return restarted();
+				if (gone()) return;
+				return restartNow();
 			}
 			// a loader left running by an earlier visit (an interrupted backup, a closed tab): the user may only want the
 			// radio back, so nothing goes on by itself
 			if (c.how === "attach") {
-				return act(button(t("flash.c7.connect.restart"), async () => { await restartRadio(); restarted(); }, { quiet: true }),
+				return act(button(t("flash.c7.connect.restart"), restartNow, { quiet: true }),
 					button(t("flash.c7.connect.continue"), () => onReady(), { primary: true }));
 			}
 			await sleep(S().fakeC7 ? 400 : 1500);
@@ -539,11 +545,13 @@ async function restartRadio() {
 
 // after: what the task records before the step is drawn again (the backup task's finished screen)
 function leaveLoaderButton(label = t("flash.c7.leave"), after = null) {
-	return button(label, async () => {
+	const b = button(label, async () => {
+		b.disabled = true;	// one reset: a second click would reach a radio that is already restarting
 		await restartRadio();
 		after?.();
 		ctx.render();
 	}, { primary: true });
+	return b;
 }
 
 // The Restart task: a radio left in loader mode goes back to normal operation, with no backup or install
