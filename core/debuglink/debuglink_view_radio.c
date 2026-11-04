@@ -177,6 +177,7 @@ static bool set_one(radio_settings_t *s, uint8_t id, uint16_t v)
 // SCAN's own command after the radio_scan_cmd_t ones: dual watch selects A (0) or B (1), the pair kept. The UI follows
 // (view.dual_sel), and the channel, zone and VFO requests then act on that one
 #define DL_SCAN_DUAL_SELECT	7u
+#define DL_SCAN_DUAL_VFO	8u	// dual watch of VFO A and VFO B, A selected
 
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 {
@@ -192,6 +193,14 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 				return DL_ST_UNAVAILABLE;	// not built, or the watch is off
 			}
 			radio_req_dual(ref, a[1]);
+			return DL_ST_OK;
+		}
+		if (len >= 1 && a[0] == DL_SCAN_DUAL_VFO) {
+			if (!CONFIG_DUAL_WATCH) {
+				return DL_ST_UNAVAILABLE;
+			}
+			const radio_dual_ref_t vfos[2] = { { true, 0, 0 }, { true, 0, 1 } };
+			radio_req_dual(vfos, 0);
 			return DL_ST_OK;
 		}
 		if (len < 1 || a[0] > RSCAN_TOGGLE) {

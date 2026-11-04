@@ -173,7 +173,7 @@ DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
 OP_PPP = 28
 ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4, "unlock": 5, "lock_toggle": 6}
-SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6, "select": 7}
+SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6, "select": 7, "dual_vfo": 8}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
          "battery_crit": 8, "scan_hold": 9}
 VIBES = {"message": 1, "call": 2, "emergency": 3}
@@ -828,7 +828,7 @@ class DebugLink:
 
     def scan(self, cmd, pos=None):
         """Scan: stop | zone | vfo | dual (pos = the second channel) | cancel | nuisance | toggle | select (pos = 0 A,
-        1 B: the dual watch channel that position, zone and VFO requests then change)."""
+        1 B: the dual watch channel that position, zone and VFO requests then change) | dual_vfo (VFO A and VFO B)."""
         c = SCAN_CMDS[cmd] if isinstance(cmd, str) else cmd
         if c == SCAN_CMDS["dual"]:
             self.radio(OP_SCAN, bytes([c]) + struct.pack("<H", pos))

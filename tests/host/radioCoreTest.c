@@ -2806,6 +2806,15 @@ static void test_ui_dual(void)
 	const ui_dual_ref_t withvfo[2] = { vfo, a };
 	CHECK(ui_svc_dual(withvfo, 0) && sm.view.scan == SCAN_DUAL);
 	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.vfo);
+	// The debug link's watch of the two VFOs (SCAN op 8): VFO A selected, the second VFO as B
+	CHECK(debuglink_radio_feature_op(DL_OP_SCAN, (const uint8_t[]){ 8 }, 1) == DL_ST_OK);
+	{
+		radio_dual_ref_t got[2];
+		uint8_t sel, at;
+		CHECK(sm.view.scan == SCAN_DUAL && radio_get_dual(got, &sel, &at) && sel == 0);
+		CHECK(got[0].vfo && got[0].pos == 0 && got[1].vfo && got[1].pos == 1);
+	}
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.vfo);
 	// Saved while the watch is on B: powers up on the selected A all the same
 	req(RREQ_VFO, 0);
 	req(RREQ_ZONE_POS, 0);
