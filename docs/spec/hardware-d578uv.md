@@ -339,7 +339,7 @@ The DMR start ([modem-sct.md](modem-sct.md) 4), as the stock firmware sends it a
 | `DMR_CALL_OPTION` | `41 40 42 47 08` | byte 0: squelch detection by the baseband, traffic mode 1, no RF control (the MCU keys the RF chips); byte 1: voice delay 0, reserved bit 6 set; byte 2: four good CACH, two LC header repeats; byte 3: every CSBK, LC header and terminator reported, reserved bit 6 set (stock: 0x44, below); byte 4 reserved |
 | `REPORT_FIELD` | 0xFF | the four documented reports and the reserved bits 4-1 |
 | `MODOUT_CONFIG` | `00 10 00 00 00` | no two-point delay; 0x10 in a reserved byte |
-| `DMR_OFFSET` | 8 bytes from calibration (7, offset 0x140) | the baseband's RF_TIMING output, likely PD0, the PA's per-burst gate (5.1; inferred). Without a current calibration block the stock factory default `00 82 02 D0 02 D0 02 D0` |
+| `DMR_OFFSET` | 8 bytes from calibration (7, offset 0x140) | the baseband's RF_TIMING output; changing it moved neither PD0 nor the burst's modulation (5.1, measured). Without a current calibration block the default `00 82 02 D0 02 D0 02 D0` |
 | `SQ_LEVEL` | `00 02 00 3C 17 70 15 7C 17 70 15 7C` | the baseband's squelch: no gain adjustment, external LNA 2, AGC, OOBE every 80 ms, carrier thresholds 0x1770 high and 0x157C low for digital and analog. Fixed in the stock firmware |
 | `DEMOD_GAIN` | `00 00` | auto calibration. The stock firmware sends 0 though it passes calibration offset 0x0D7 |
 
