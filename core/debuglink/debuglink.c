@@ -785,6 +785,29 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 	}
 }
 
+// --- RF chip registers (docs/spec/debuglink.md 3.24) ---
+
+static size_t cmd_chip_reg(const uint8_t *req, uint16_t len, uint8_t *out)
+{
+	if (board.chip_reg == NULL) {
+		return status_only(out, DL_ST_UNAVAILABLE);
+	}
+	if (len != 3 && len != 7) {
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+	bool write = len == 7;
+	uint32_t v = write ? get32(req + 3) : 0;
+	if (!board.chip_reg(req[0], req[1], req[2], &v, write)) {
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+	if (write) {
+		dlog("debuglink: chip %u page %u reg 0x%02X = 0x%lX", req[0], req[1], req[2], (unsigned long)v);
+	}
+	out[0] = DL_ST_OK;
+	put32(out + 1, v);
+	return 5;
+}
+
 // --- dispatch ---
 
 static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
@@ -842,6 +865,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_rx2(req, len, out, cap);
 	case DL_CMD_IDDB:
 		return debuglink_cmd_iddb(req, len, out, cap);
+	case DL_CMD_CHIP_REG:
+		return cmd_chip_reg(req, len, out);
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST
 		return cps_fast_cmd(req, len, out, cap, hal_millis());

@@ -136,6 +136,9 @@ void qa4818_out(qa4818_t *c, uint16_t value);			// 0x28
 void qa4818_tune(qa4818_t *c, uint8_t subband, uint32_t hz);
 // Output register: bits in mask take val's; written when it changes
 void qa4818_gpio(qa4818_t *c, uint16_t mask, uint16_t val);
+// Bench access to one register on page pg (0 or 1): writes val when write, then returns the register as read back.
+// The page the driver selected last is restored. The caller holds the bus lock
+uint16_t qa4818_reg(qa4818_t *c, uint8_t pg, uint8_t reg, uint16_t val, bool write);
 
 // The FM (analog) or DMR (digital) path of a transceiver, receive or transmit (both write it): mixer and filter
 // constants, and for FM the 12.5 / 25 kHz choice (0x73; wide: 25 kHz)

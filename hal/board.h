@@ -109,6 +109,11 @@ typedef struct {
 	const hal_rx2_t *rx2;
 	// Optional: the temperature sensors and the fan (hal_temp.h); NULL on a radio with none the firmware reads
 	const hal_temp_t *temp;
+	// Optional: bench access to the radio's RF chip registers (the debug link's CHIP_REG, docs/spec/debuglink.md
+	// 3.24). chip and page are the board's numbering (its hardware page lists them). Writes val when write, then sets
+	// *val to the register as read back (a write-only register: the value written). False for a chip, page or
+	// register it doesn't offer. NULL: none
+	bool (*chip_reg)(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 } board_t;
 
 extern const board_t board;
