@@ -21,6 +21,7 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `codeplug/yaml.js` | The YAML subset qdmr writes: block and flow maps and lists, quoted values, `!default` tags, comments. Anchors are refused |
 | `codeplug/qdmr.js` | qdmr YAML to the model and back ([qdmr-yaml.md](../spec/qdmr-yaml.md)), with notes on what each side can't hold |
 | `codeplug/detect.js`, `codeplug/stock_tyt.js` | Telling the open-firmware layout from a vendor codeplug, and converting that to the editing model ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
+| `codeplug/stock_baofeng.js` | The same for a paged vendor codeplug in an HR_C7000 radio's data flash (spec in the radio's own `<id>-stock-codeplug.md`) |
 | `codeplug/transport.js` | How the page reaches a radio (below) |
 | `codeplug/fakecps.js` | A simulated RadioFoundry radio: VERSION, CPS reads, sector writes and `C 5`, writes refused outside the codeplug as the radio refuses them |
 | `codeplug/fastlink.js` | The fast codeplug protocol ([cps-fast.md](../spec/cps-fast.md)): block CRCs, LZ4 reads and pipelined writes |

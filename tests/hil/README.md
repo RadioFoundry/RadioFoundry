@@ -320,7 +320,8 @@ within a few frames of the bench's last burst, inside the bench modem's TX to RX
 ETSI forms (`dmr_ext` section): an ETSI text message in: `data.sms_received` 1, `data.etsi_sms_received` 1,
 `data.responses_sent` 1, no TMS ACK, inbox entry 0 with format `etsi`. ETSI text out (no response asked): `ok`,
 `data.etsi_sms_sent` 1, a data header with DPF 13 and SAP 10 to the bench heard. Radio check in the ETSI form: 3
-tries counted, 1 to 3 heard with a good CRC, each with FID 0x00.
+tries counted, 1 to 3 heard with a good CRC, each with FID 0x00. Voice PTT after an ETSI text message was answered
+(`test_ptt_after_etsi_response`, `radio_tx`): `call.tx_calls` 1, `call.tx_denied` 0, `dmr.tx_error=ok`.
 
 `test_dmr_emergency` (`dmr_ext` section): an alarm in (opcode 0x27, FID 0x10, to the channel's talkgroup):
 `data.emergency_alarms_received` 1 or more, `em.alert=1`, `em.alert_kind=alarm` from the bench ID, `data.event=

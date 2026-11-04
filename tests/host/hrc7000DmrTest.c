@@ -585,6 +585,44 @@ static void test_polite_and_repeater(void)
 	count_kind(0xFF, NULL);
 }
 
+// A receiver restart forgets what was heard: an empty channel gives no timeslot interrupts after it, so a station
+// heard just before stayed "busy" for good and every polite start was refused. Seen after an aligned one-burst data
+// response (the restart at the end of the transmission) and after a frequency change (rx_restart)
+static void test_polite_after_restart(void)
+{
+	for (int via_tx = 0; via_tx < 2; via_tx++) {
+		setup();
+		hrc7000_dmr_run(&eng);
+		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+		hrc7000_dmr_configure(&eng, &cfg);
+		tick(false);
+		deframe(rti(0, DMR_BURST_DATA_HEADER, 1, 2, 0, 0));	// own color code, TS1 sync: the SMS to us
+		count_kind(0xFF, NULL);
+		if (via_tx) {
+			CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_IMPOLITE));
+			dmr_tx_burst_t r = { .kind = DMR_BURST_DATA_HEADER, .len = 10 };	// the one-burst response
+			CHECK(hrc7000_dmr_tx_queue(&eng, &r));
+			hrc7000_dmr_tx_end(&eng);
+			REG(C7_LAYER2_STATUS) = 0;
+			for (int i = 0; i < 8 && hrc7000_dmr_is_transmitting(&eng); i++) {
+				tick(true);
+			}
+			CHECK(!hrc7000_dmr_is_transmitting(&eng) && eng.st.tx_bursts == 1);
+		} else {
+			hrc7000_dmr_rx_restart(&eng);
+		}
+		CHECK(eng.tick - eng.rx_tick < 12u);	// the busy window hasn't run out in ticks: none come any more
+		count_kind(0xFF, NULL);
+		now += 5000000;
+		hrc7000_dmr_poll(&eng);
+		CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_POLITE_CC));
+		CHECK(count_kind(DMR_EV_TX_REJECTED, NULL) == 0 && eng.st.tx_rejected == 0);
+		hrc7000_dmr_tx_abort(&eng);
+		tick(true);
+		count_kind(0xFF, NULL);
+	}
+}
+
 static void test_event_overflow(void)
 {
 	setup();
@@ -1241,6 +1279,7 @@ int main(void)
 	test_tx_repeater_lock();
 	test_tx_empty_and_fill();
 	test_polite_and_repeater();
+	test_polite_after_restart();
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
 	test_mic_gain();

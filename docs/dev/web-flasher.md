@@ -252,6 +252,11 @@ locally (`practiceFetch`) and sends nothing.
 Where it is offered: the button under every failure notice (`errorNotice()`, `problemNotice()`), the failed checks of
 the install, cable radio and loader routes, and the quiet "Something wrong? Report a Problem" link on Verify.
 
+Every failure says what to do next: the message itself, or `errorNotice(text, { next })` beside it. Where the step can
+run again in place, `{ retry }` puts Try Again in the notice. Pressing it removes the notice first, so a second
+failure replaces the first instead of stacking under it. A step that shows its result in a status area clears that
+area at the start of each run.
+
 ## The Update task
 
 **Update** reaches a radio that runs RadioFoundry with one port chooser (its USB port and the programming cables),
@@ -350,14 +355,21 @@ What can be read depends on the firmware running:
 | Radio runs | Read |
 |---|---|
 | RadioFoundry | Everything, through the CPS reads (areas 1, 5, 9 and 10): the whole SPI flash, the internal flash, the security registers |
-| RadioFoundry with stub entry (STM32F4) | The same. The radio info comes over the debug link; the internal flash, the SPI flash and the security registers come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into RadioFoundry. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves RadioFoundry running, and the debug link reads everything. A build whose codeplug protocol has no area 10 still gets the security registers, through the loader's SREAD (protocol 5). When both read them and the copies differ, the loader's checked copy is `security-registers.bin` and the other is kept as `security-registers-codeplug-protocol.bin`, marked incomplete |
+| RadioFoundry with stub entry (STM32F4) | The same. The radio info comes over the debug link; the internal flash, the SPI flash and the security registers come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into RadioFoundry. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves RadioFoundry running, and the debug link reads everything. After a first install the hand-over is the one the build just written offers: Verify asks it (`afterOffer`), since the probe before the install found the original firmware. A build whose codeplug protocol has no area 10 still gets the security registers, through the loader's SREAD (protocol 5). When both read them and the copies differ, the loader's checked copy is `security-registers.bin` and the other is kept as `security-registers-codeplug-protocol.bin`, marked incomplete |
 | Another open firmware (OpenGD77 family) | Everything but the security registers, over that firmware's CPS (`openfw.js`, below) |
 | Stock (STM32F4) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing RadioFoundry: flashing never touches the SPI flash, and RadioFoundry doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
+
+A CPS read the radio doesn't answer is tried up to five times, 0.3, 1, 2 and 3 s apart (`link.js` `cpsRead`): a radio
+quiet for a few seconds must not end a backup halfway. A read answered after a retry goes on the trail. Reads a build
+may not answer at all (the radio info and security registers in `backup.js`, the `openfw.js` probe) keep 3 tries, and a
+probe asks once.
 
 ## Channels after an install (`migrate.js`)
 
 A radio installed from its stock firmware still holds the stock codeplug, in a layout RadioFoundry does not read. The
-last step of the install brings it over by default, on every radio whose stock codeplug the browser converts:
+last step of the install brings it over by default, on every radio whose stock codeplug the browser converts. The
+backup panel before it says so (`flash.backup.after_channels`). With a backup that holds the stock codeplug the step
+writes without asking; without one it asks first:
 
 | Step | What happens |
 |---|---|
@@ -378,7 +390,21 @@ sectors with RadioFoundry's codeplug, the write replaces them. A failure at any 
 channels and says so. With the backup, the Codeplug Editor converts the original codeplug from there; without one, the
 message says whether the original is still on the radio (a read or conversion failure writes nothing).
 
-The boards whose stock codeplug the browser converts are those in the TYT family layouts of `codeplug/stock_tyt.js`.
+The boards whose stock codeplug the browser converts are those in the TYT family layouts of `codeplug/stock_tyt.js`,
+and those whose paged stock codeplug `codeplug/stock_baofeng.js` reads ([feature-matrix.md](../feature-matrix.md)).
+
+### HR_C7000 radios (`c7000ui.js` `bringChannels`)
+
+The stock codeplug sits in its own pages of the data flash, below RadioFoundry's codeplug, and no step of the install
+writes there. So the step needs no backup and loses nothing:
+
+| Step | What happens |
+|---|---|
+| 0. Skip | Not an install, a radio that ran RadioFoundry before, or a board without a paged stock area (`calibration.area`) or a codeplug base |
+| 1. Read | The stock area as this visit's check step read it (`c.calArea`). Without one (the factory update mode route reads no data memory), RadioFoundry reads it over the CPS, area 1 at its physical addresses |
+| 2. Convert | `convertPagedStock`. No stock codeplug, or one without channels, ends the step |
+| 3. Write | `writeConverted` through the Codeplug Editor's transport (`CpsSerial`), which adds the board's codeplug base: the settings area claimed when foreign, the radio's codeplug read, the bytes that differ written and read back. A codeplug with channels already on the radio is replaced only when the user says so |
+| 4. Check | The radio's codeplug read again and counted. A mismatch is reported as a problem |
 The HR_C7000 backend has no conversion: its stock codeplug stays in the data flash and in the backup
 (`original-channels.bin`), and `tools/backup_codeplug.py` ports it.
 
