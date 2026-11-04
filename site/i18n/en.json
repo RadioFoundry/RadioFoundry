@@ -1042,7 +1042,7 @@
  "flash.c7.connect.rfoundry_failed": "The radio did not switch to update mode ({error}). Turn it off and on instead.",
  "flash.c7.connect.power_instead": "Use Power Cycle Instead",
  "flash.c7.connect.rfoundry_restart": "The radio programming utility restarts the radio to enter update mode. This takes a few seconds.",
- "flash.c7.connect.rfoundry_restart_failed": "The restart did not enter update mode. Turn the radio off and on instead: If the power switch does nothing, take the battery out for a few seconds.",
+ "flash.c7.connect.rfoundry_restart_failed": "The restart did not enter update mode. Turn the radio off and on instead:",
  "flash.c7.connect.step_off": "Turn the radio off. Leave the cable connected.",
  "flash.c7.connect.step_on": "Turn the radio on. The page is sending its answer, and the radio programming utility connects within a second.",
  "flash.c7.connect.no_keys": "Do not hold any keys. In update mode the screen stays dark and the LED on top blinks yellow slowly.",

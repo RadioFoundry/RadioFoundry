@@ -1042,7 +1042,7 @@
  "flash.c7.connect.rfoundry_failed": "La radio no cambió al modo de actualización ({error}). Apáguela y enciéndala en su lugar.",
  "flash.c7.connect.power_instead": "Apagar y encender en su lugar",
  "flash.c7.connect.rfoundry_restart": "La utilidad de programación de radios reinicia la radio para entrar en el modo de actualización. Esto tarda unos segundos.",
- "flash.c7.connect.rfoundry_restart_failed": "El reinicio no entró en el modo de actualización. Apague y encienda la radio en su lugar: Si el interruptor de encendido no responde, quite la batería unos segundos.",
+ "flash.c7.connect.rfoundry_restart_failed": "El reinicio no entró en el modo de actualización. Apague y encienda la radio en su lugar:",
  "flash.c7.connect.step_off": "Apague la radio. Deje el cable conectado.",
  "flash.c7.connect.step_on": "Encienda la radio. La página está enviando su respuesta, y la utilidad de programación de radios se conecta en menos de un segundo.",
  "flash.c7.connect.no_keys": "No mantenga pulsada ninguna tecla. En el modo de actualización la pantalla sigue apagada y el LED superior parpadea lentamente en amarillo.",
