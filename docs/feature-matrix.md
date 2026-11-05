@@ -125,10 +125,10 @@ is `tools/bringup.py list --radio <id>`.
 | `font_big` | not recorded | off | off | off | off | off |
 | `lang_es` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `lang_it` | off | off | off | off | off | off |
-| `lang_zh` | off | off | off | off | off | off |
+| `lang_zh` | off | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `lang_default_es` | off | off | off | off | off | off |
 | `lang_default_it` | off | off | off | off | off | off |
-| `lang_default_zh` | off | off | off | off | off | off |
+| `lang_default_zh` | off | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded |
 | `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -217,10 +217,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FONT_BIG` | ● | ○ | ○ | ○ | ○ | ○ |
 | `LANG_ES` | ● | ● | ● | ● | ● | ● |
 | `LANG_IT` | ○ | ○ | ○ | ○ | ○ | ○ |
-| `LANG_ZH` | ○ | ○ | ○ | ○ | ○ | ○ |
+| `LANG_ZH` | ○ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `LANG_DEFAULT_ES` | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_DEFAULT_IT` | ○ | ○ | ○ | ○ | ○ | ○ |
-| `LANG_DEFAULT_ZH` | ○ | ○ | ○ | ○ | ○ | ○ |
+| `LANG_DEFAULT_ZH` | ○ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `UI_COLOR` | ● | ● | ✕ | ● | ● | ● |
 | `UI_SETTINGS` | ● | ● | ● | ● | ● | ● |
 | `SCAN` | ● | ● | ● | ● | ● | ● |
