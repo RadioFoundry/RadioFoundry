@@ -92,10 +92,23 @@ enum { MD9600_PWM_TONE = 2, MD9600_PWM_BEEP = 3 };
 void md9600_pwm_out(uint8_t ch, uint8_t duty);
 // The other analog inputs: the sub-audio input on ADC3 (PA2), 12-bit, one conversion
 uint16_t md9600_adc3_qt(void);
-// APRS (afsk_md9600.c): transmit through the HR_C6000's tone generator (CONFIG_MD9600_TX), receive audio from PC3 on
-// ADC3 (CONFIG_APRS_RX); ADC3 is the receiver's while it runs
+// APRS (afsk_md9600.c): transmit through the HR_C6000's tone generator (CONFIG_MD9600_TX), receive audio from the
+// discriminator capture (CONFIG_APRS_RX)
 extern const hal_afsk_t md9600_afsk;
-bool md9600_afsk_rx_running(void);
+
+// FM receive audio on the PCM stream's input (c6000_md9600.c): a host audio session hears the receiver (NET_USRP)
+#define MD9600_FM_RX_TAP	(CONFIG_DMR && CONFIG_NET_USRP)
+// The discriminator capture (disc_md9600.c): PC3 on ADC3 at MD9600_DISC_RATE_HZ into a ring each reader keeps its own
+// tail on, running while a reader wants it; ADC3 is the capture's meanwhile. Radio task
+#define MD9600_DISC		(MD9600_FM_RX_TAP || (CONFIG_APRS && CONFIG_APRS_RX))
+#define MD9600_DISC_RATE_HZ	((72000000u / 8u / 492u + 1u) / 2u)	// 9146 Hz
+#define MD9600_DISC_RING	1024u					// 112 ms, a power of two
+enum { MD9600_DISC_APRS = 1u << 0, MD9600_DISC_STREAM = 1u << 1 };
+void md9600_disc_start(uint8_t user);
+void md9600_disc_stop(uint8_t user);
+bool md9600_disc_running(void);
+uint32_t md9600_disc_head(void);		// samples written since power-up (wraps)
+const volatile int16_t *md9600_disc_ring(void);	// sample k is at [k % MD9600_DISC_RING]
 
 // Sub-audio receive (subtone_md9600.c, CONFIG_SUBTONE): software CTCSS / DCS decode from PA2. rx_set starts the
 // sampling on first use and restarts the detector for a tone (TONE_NONE matches always)
@@ -123,8 +136,9 @@ void md9600_diag_reset(void);
 
 // HR_C6000, PCM audio and the speaker routing (c6000_md9600.c). Radio task, after md9600_radio_early
 void md9600_c6000_init(void);
-#if CONFIG_AUDIO_PROBE
-// The audio probe's view (debuglink.md 3.14): HR_C6000 register access only
+#if CONFIG_DMR && (CONFIG_AUDIO_PROBE || MD9600_FM_RX_TAP)
+// The audio tap: FM receive audio on the stream (MD9600_FM_RX_TAP); the audio probe's HR_C6000 register access
+// (debuglink.md 3.14)
 extern const hal_audio_tap_t md9600_audio_tap;
 #endif
 void md9600_c6000_mode(bool dmr, uint32_t hz);	// set_mode: into or out of DMR at the receive frequency

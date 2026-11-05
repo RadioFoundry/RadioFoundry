@@ -274,6 +274,10 @@ rx2LinkTest: rx2LinkTest.c $(CORE)/rx2/rx2_link.c $(CORE)/rx2/rx2_link.h $(ROOT)
 TESTS   += miclevelTest
 miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
+# The ring-to-block rate converter for ADC audio on the PCM stream (drivers/audio/resample)
+TESTS   += resampleTest
+resampleTest: resampleTest.c $(ROOT)/drivers/audio/resample/resample.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ resampleTest.c -lm
 
 # The battery average and charge estimate the radios share (drivers/power/battery)
 TESTS   += batteryTest
@@ -285,7 +289,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
           rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
@@ -298,6 +302,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTes
 	./quadratureTest
 	./serialmicTest
 	./miclevelTest
+	./resampleTest
 	./rx2LinkTest
 	./keyassignTest
 	./powerSwitchTest

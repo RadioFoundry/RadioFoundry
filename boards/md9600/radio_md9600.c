@@ -517,13 +517,14 @@ static void status(radio_status_t *st)
 }
 
 // ADC3 IN2 (PA2, the sub-audio input), one software-started conversion. The common prescaler is the ADC1 scan's.
-// While APRS receive has ADC3 (afsk_md9600.c): the last reading
+// While the discriminator capture has ADC3 (disc_md9600.c): the last reading
 uint16_t md9600_adc3_qt(void)
 {
 	static uint16_t last;
-#if CONFIG_APRS_RX
-	if (md9600_afsk_rx_running())
+#if MD9600_DISC
+	if (md9600_disc_running()) {
 		return last;
+	}
 #endif
 	if (!(RCC->APB2ENR & RCC_APB2ENR_ADC3EN)) {
 		stm32_pin_analog(PIN_PORT(PIN_QT_IN), PIN_MASK(PIN_QT_IN));

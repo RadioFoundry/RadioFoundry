@@ -14,6 +14,11 @@
 // the build has CONFIG_MD9600_DMR_TX and the transmit arm is on (md9600_dmr_tx_allow); the RF chain's per-burst keying
 // is radio_md9600.c's (md9600_rf_dmr_key). FM transmit puts the chip in its FM TX mode (the microphone on its line
 // input, two-point modulation with the band's FM pair) for the over, and back to the receive set-up after it.
+//
+// FM receive audio to a host (MD9600_FM_RX_TAP, hal_audio_tap.h AUDIO_TAP_FM_RX): the core expects it on the stream's
+// input, which in FM is otherwise the chip's codec with the microphone off. While the stream runs in FM, the block
+// callback swaps that input for the discriminator capture (disc_md9600.c) taken from 9146 Hz to 8 kHz, gated by the
+// core's squelch and silent in transmit.
 #include <stddef.h>
 #include "md9600.h"
 #include "config.h"
@@ -25,6 +30,10 @@
 #include "hrc/dmr_glue.h"
 #include "hrc/i2s_pcm.h"
 #include "speaker_md9600.h"
+#if MD9600_FM_RX_TAP
+#include <string.h>
+#include "audio/resample/resample.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -262,6 +271,67 @@ void md9600_c6000_fm_tx_end(void)
 	speaker_apply();
 }
 
+// --- FM receive audio on the stream ---
+
+#if MD9600_FM_RX_TAP
+// The fill the converter keeps: one block (183 inputs) plus two capture bursts of 32, about 28 ms of latency
+#define FM_TAP_TARGET		256u
+// The ring's 15-bit swing times this: speech at about 400 counts rms on the capture comes out near -26 dBFS. A guess
+// until a known deviation is measured through it
+#ifndef MD9600_FM_RX_GAIN
+#define MD9600_FM_RX_GAIN	4
+#endif
+
+static audio_block_cb_t stream_cb;
+static void *stream_ctx;
+static bool stream_on;			// radio task
+static volatile bool fm_tap;		// the block callback swaps the input; set after the converter is ready
+static resample_t fm_rs;
+static int16_t fm_block[AUDIO_BLOCK_SAMPLES];
+
+// Radio task: the capture runs while the stream does in FM
+static void fm_tap_update(void)
+{
+	bool want = stream_on && !diag.dmr;
+	if (want == fm_tap) {
+		return;
+	}
+	if (want) {
+		md9600_disc_start(MD9600_DISC_STREAM);
+		resample_init(&fm_rs, MD9600_DISC_RATE_HZ, 8000u, md9600_disc_head());
+		fm_tap = true;
+	} else {
+		fm_tap = false;
+		md9600_disc_stop(MD9600_DISC_STREAM);
+	}
+}
+
+// The audio task, every 20 ms
+static void stream_block(const int16_t *mic, int16_t *spk, void *ctx)
+{
+	(void)ctx;
+	if (fm_tap) {
+		// The converter runs with the squelch shut too, so its place on the ring stays current
+		resample_block(&fm_rs, md9600_disc_ring(), MD9600_DISC_RING, md9600_disc_head(), fm_block,
+			       AUDIO_BLOCK_SAMPLES, FM_TAP_TARGET);
+		if (!fm_wanted || fm_tx) {
+			memset(fm_block, 0, sizeof(fm_block));
+		} else {
+			for (uint32_t i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+				int32_t v = (int32_t)fm_block[i] * MD9600_FM_RX_GAIN;
+				fm_block[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+			}
+		}
+		mic = fm_block;
+	}
+	stream_cb(mic, spk, stream_ctx);
+}
+#else
+static void fm_tap_update(void)
+{
+}
+#endif
+
 // --- DMR glue ---
 
 #if CONFIG_MD9600_DMR_TX
@@ -365,6 +435,7 @@ void md9600_c6000_mode(bool dmr, uint32_t hz)
 		count(hrc6000_fm_rx_pcm(&modem));
 	}
 	speaker_apply();
+	fm_tap_update();
 }
 
 void md9600_c6000_retune(uint32_t hz)
@@ -401,10 +472,36 @@ void md9600_c6000_diag(md9600_c6000_diag_t *d)
 // Clock idle high, as on the other HR_C6000 radios (unverified here)
 static const stm32_i2s_pcm_cfg_t i2s_cfg = { .ckpol = true };
 
+#if MD9600_FM_RX_TAP
+static bool audio_start(audio_block_cb_t cb, void *ctx)
+{
+	stream_cb = cb;
+	stream_ctx = ctx;
+	if (!stm32_i2s_pcm_start(&i2s_cfg, stream_block, NULL)) {
+		return false;
+	}
+	stream_on = true;
+	fm_tap_update();
+	return true;
+}
+
+static void audio_stop(void)
+{
+	stm32_i2s_pcm_stop();
+	stream_on = false;
+	fm_tap_update();
+}
+#else
 static bool audio_start(audio_block_cb_t cb, void *ctx)
 {
 	return stm32_i2s_pcm_start(&i2s_cfg, cb, ctx);
 }
+
+static void audio_stop(void)
+{
+	stm32_i2s_pcm_stop();
+}
+#endif
 
 static void speaker_pcm(bool on)
 {
@@ -428,10 +525,11 @@ static void speaker_warm(bool on)
 // The amplifier takes about 60 ms from unmute to sound (by a microphone at the speaker: with the default 20 ms lead-in
 // a lone 25 or 40 ms beep was lost and longer ones lost their start; with 80 ms every beep plays whole). A mobile on
 // a supply: the amplifier stays up for 30 s after the last key, PTT, reception or beep, so those play at once
-const hal_audio_t md9600_audio = { .start = audio_start, .stop = stm32_i2s_pcm_stop, .speaker_pcm = speaker_pcm,
+const hal_audio_t md9600_audio = { .start = audio_start, .stop = audio_stop, .speaker_pcm = speaker_pcm,
 				   .speaker_lead_ms = 80, .speaker_warm = speaker_warm, .speaker_hang_s = 30 };
 #endif
 
+#if CONFIG_DMR && (CONFIG_AUDIO_PROBE || MD9600_FM_RX_TAP)
 #if CONFIG_AUDIO_PROBE
 // The audio probe's register access (hal_audio_tap_t.modem_reg): one HR_C6000 register, any task. It can change
 // state under the driver, which is what a bench probe is for
@@ -445,8 +543,17 @@ static bool probe_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t 
 	return hrc_write_burst(&modem, page, reg, buf, len);
 }
 
+#endif
+
 const hal_audio_tap_t md9600_audio_tap = {
+	.caps = AUDIO_TAP_DMR
+#if MD9600_FM_RX_TAP
+		| AUDIO_TAP_FM_RX
+#endif
+		,
+#if CONFIG_AUDIO_PROBE
 	.modem_reg = probe_reg,
 	.modem_burst = probe_burst,
+#endif
 };
 #endif
