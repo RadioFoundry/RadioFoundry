@@ -197,21 +197,25 @@ class Radio:
             return None
 
     def reconnect(self, timeout=30.0, what="the restart"):
-        """Reopen the debug link after the radio restarted. Pinned: only on its own port. Otherwise any port found by
-        USB ID whose chip has this radio's UID (never another radio on the bench)."""
+        """Reopen the debug link after the radio restarted or re-enumerated. Pinned: only on its own port. Otherwise
+        also any port found by USB ID whose chip has this radio's UID. A chip with another UID is never taken, on its
+        own port name either (a re-enumeration can hand that name to another radio); one that can't say yet (an
+        HR_C7000 before its UID is read) only on its own name."""
+        self.link.close()       # a second open of the port is refused by a serial hub, and leaked on a tty
         end = time.monotonic() + timeout
+        foreign = set()         # asked once per call: a long wait doesn't keep writing to another session's radio
         while time.monotonic() < end:
             ports = [self.port] if self.pinned else [self.port] + [p for p in find_ports() if p != self.port]
-            for port in ports:
+            for port in (p for p in ports if p not in foreign):
                 link = None
                 try:
                     link = DebugLink(port, timeout=1.5)
                     link.ping()
-                    # Found by USB ID, a port is this radio only by its chip's UID: after a re-enumeration even
-                    # its old name can be another radio's
-                    if not self.pinned and (self.uid is None and port != self.port
-                                            or self.uid is not None and self._uid(link) != self.uid):
+                    uid = self._uid(link) if self.uid is not None else None
+                    if uid is not None and uid != self.uid or uid is None and port != self.port:
                         link.close()
+                        if uid is not None:
+                            foreign.add(port)
                         continue
                     self.link, self.port = link, port
                     return
@@ -242,12 +246,16 @@ class Radio:
         try:
             yield self.port
         finally:
-            for _ in range(20 if self.link is closed else 0):     # a serial_back() inside already reopened it
-                try:
-                    self.link = DebugLink(self.port, timeout=1.5)
-                    break
-                except DebugLinkError:
-                    time.sleep(0.25)
+            if self.link is closed:         # else a serial_back() inside already reopened it
+                for _ in range(20):
+                    try:
+                        self.link = DebugLink(self.port, timeout=1.5)
+                        break
+                    except DebugLinkError:
+                        time.sleep(0.25)
+                # The port re-enumerated meanwhile and its name is another radio's now: find ours
+                if self.link is not closed and self.uid is not None and self._uid(self.link) not in (None, self.uid):
+                    self.serial_back(10, "the port's release")
 
     # ── reading ──
     def ping(self):

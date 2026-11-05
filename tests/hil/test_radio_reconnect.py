@@ -13,6 +13,8 @@ class FakeLink:
     """A debug link on one of the fake ports: uids maps a port to its chip UID; a missing port doesn't answer."""
     uids = {}
     opened = []
+    closed = []
+    booting = set()             # ports whose chip can't give its UID yet (an HR_C7000 just after boot)
 
     def __init__(self, port, timeout=None):
         FakeLink.opened.append(port)
@@ -24,10 +26,12 @@ class FakeLink:
         return True
 
     def chip(self):
+        if self.port in FakeLink.booting:
+            raise DebugLinkError("INFO_CHIP: not ready")
         return {"uid": FakeLink.uids[self.port]}
 
     def close(self):
-        pass
+        FakeLink.closed.append(self)
 
 
 @pytest.fixture
@@ -35,6 +39,8 @@ def bench(monkeypatch):
     """Ours on A (uid 1), another radio on B (uid 2); find_ports lists both"""
     FakeLink.uids = {"A": (1, 0, 0), "B": (2, 0, 0)}
     FakeLink.opened = []
+    FakeLink.closed = []
+    FakeLink.booting = set()
     monkeypatch.setattr(rfoundry_hil, "DebugLink", FakeLink)
     monkeypatch.setattr(rfoundry_hil, "find_ports", lambda: ["B", "A"])
     monkeypatch.setattr(rfoundry_hil.time, "sleep", lambda s: None)
@@ -101,3 +107,49 @@ def test_released_keeps_a_link_reopened_inside(bench, monkeypatch):
         inside = r.link
         bench.opened = []
     assert r.link is inside and bench.opened == []
+
+
+def test_reconnect_closes_the_old_link(bench):
+    r = Radio("A")
+    old = r.link
+    r.reconnect(timeout=1)
+    assert old in bench.closed and r.link is not old
+
+
+def test_another_radio_is_asked_once(bench):
+    r = Radio("A")
+    r.pinned = False
+    _gone(bench, "A")
+    bench.opened = []
+    with pytest.raises(AssertionError):
+        r.reconnect(timeout=0.05)       # many passes: sleep is a no-op here
+    assert bench.opened.count("B") == 1, bench.opened
+
+
+def test_own_port_while_the_chip_cant_say(bench):
+    r = Radio("A")
+    r.pinned = False
+    bench.booting.add("A")
+    r.reconnect(timeout=1)
+    assert r.port == "A"
+    bench.booting.add("B")              # another port that can't say is never taken
+    _gone(bench, "A")
+    with pytest.raises(AssertionError):
+        r.reconnect(timeout=0.01)
+
+
+def test_pinned_port_with_another_chip(bench):
+    r = Radio("A")
+    bench.uids["A"] = (2, 0, 0)         # e.g. /dev/ttyACM0 handed to another radio
+    with pytest.raises(AssertionError):
+        r.reconnect(timeout=0.01)
+
+
+def test_released_finds_this_radio_after_a_rename(bench, monkeypatch):
+    r = Radio("A")
+    r.pinned = False
+    with r.released():
+        bench.uids["A"] = (2, 0, 0)     # the body never reopened it; the old name is another radio's now
+        bench.uids["C"] = (1, 0, 0)
+        monkeypatch.setattr(rfoundry_hil, "find_ports", lambda: ["A", "C"])
+    assert r.port == "C" and r.link.port == "C"
