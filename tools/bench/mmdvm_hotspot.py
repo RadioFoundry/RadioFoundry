@@ -8,7 +8,7 @@ Talk to the radio under test as an MMDVM modem (the public MMDVM serial protocol
 bench tests of its hotspot and single frequency repeater (SFR) modes (CONFIG_HOTSPOT, CONFIG_SFR).
 
     mmdvm_hotspot.py [--port /dev/tty.usbmodemXXXX | --udp 192.168.x.y:3334 [--local :3335]]
-                     [--freq 461.6875] [--cc 2] [--power 12] [--seconds 20] [--simplex | --sfr]
+                     --freq MHZ --cc CC [--power 12] [--seconds 20] [--simplex | --sfr]
                      [--send [--send-at 3]] [--debug flags,framing[,reg10[,reg12[,rssiMin[,reg11[,flags2]]]]]]
                      [--json]
 
@@ -238,7 +238,7 @@ def network_call(cc: int, sfr: bool):
     sdrbench_path()
     from rfoundry_sdrbench import sim
     from rfoundry_sdrbench.dmr import pdu
-    call = sim.voice_call(3101999, 215, cc, 2, family="bs" if sfr else "ms", slot=2, voice=[sim.AMBE_SILENCE] * 36)
+    call = sim.voice_call(9991999, 215, cc, 2, family="bs" if sfr else "ms", slot=2, voice=[sim.AMBE_SILENCE] * 36)
     out = []
     for tb in call:
         c = SYNC_AUDIO if tb.dt == pdu.DT_VOICE_SYNC else (tb.n if tb.dt == pdu.DT_VOICE else SYNC_DATA | tb.dt)
@@ -251,8 +251,10 @@ def main():
     ap.add_argument("--port", default=None, help="serial port of the radio's USB CDC MMDVM link")
     ap.add_argument("--udp", default=None, help="host:port of an MMDVM UDP modem (optional transport)")
     ap.add_argument("--local", default=":3335", help="local host:port for --udp")
-    ap.add_argument("--freq", type=float, default=461.6875)
-    ap.add_argument("--cc", type=int, default=2)
+    ap.add_argument("--freq", type=float, default=os.environ.get("RFOUNDRY_BENCH_FREQ"), required="RFOUNDRY_BENCH_FREQ" not in os.environ,
+                    help="MHz ($RFOUNDRY_BENCH_FREQ): the rig's test frequency, no default")
+    ap.add_argument("--cc", type=int, default=os.environ.get("RFOUNDRY_BENCH_CC"), required="RFOUNDRY_BENCH_CC" not in os.environ,
+                    help="color code ($RFOUNDRY_BENCH_CC), no default")
     ap.add_argument("--power", type=int, default=12, help="SET_FREQ RF level 0-255")
     ap.add_argument("--seconds", type=float, default=20)
     mode = ap.add_mutually_exclusive_group()

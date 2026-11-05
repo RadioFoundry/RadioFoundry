@@ -23,6 +23,7 @@ import pytest
 from rfoundry_hil import DebugLink, skip
 from test_split_duplex import check_rx_labels, rx_half_labels
 from test_usb_network import INDIVIDUAL_NET, _serial_back, _udp_link
+from hil_config import rig
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -81,7 +82,7 @@ def net(radio):
             except Exception:
                 pass
             n.close()
-            assert _serial_back(30), "the radio didn't come back as a serial port"
+            assert _serial_back(radio, 30), "the radio didn't come back as a serial port"
             time.sleep(2.0)
 
 
@@ -91,7 +92,7 @@ def test_net_split_protocol(net, pytestconfig):
     if "HOTSPOT_SPLIT" not in net.features:
         skip("not_built", "built without the split duplex extension")
     import split_duplex_host as sdh
-    hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
+    hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
     net.close()
     r = sdh.Radio(net.port, "net")
     try:
@@ -116,8 +117,8 @@ def test_net_split_protocol(net, pytestconfig):
 def test_net_split_rx_half_labels(net, sdr_bench, pytestconfig):
     if "HOTSPOT_SPLIT" not in net.features:
         skip("not_built", "built without the split duplex extension")
-    freq, cc, tg = (pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc"),
-                    pytestconfig.getoption("--dmr-tg"))
+    freq, cc, tg = (rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc"),
+                    rig(pytestconfig, "dmr-tg"))
     net.close()
     with sdr_bench.lease():
         got = rx_half_labels(net.port, sdr_bench, freq, cc, tg)

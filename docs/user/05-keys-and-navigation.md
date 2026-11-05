@@ -78,7 +78,7 @@ On Home (not in the VFO), a number key opens Find. Find searches everything at o
 this order:
 
 1. The channel at that position in the current zone. "12" lists channel 12.
-2. The digits as a frequency in one of the radio's bands, read as in the VFO: "461462" lists "Tune VFO to 461.462".
+2. The digits as a frequency in one of the radio's bands, read as in the VFO: "438250" lists "Tune VFO to 438.250".
    **OK** opens the VFO on it. The VFO's mode, power and tones stay as they were.
 3. Channels in the zone, contacts and talkgroups, zones, places (Contacts, Messages and so on) and settings whose
    names match the keys as letters.

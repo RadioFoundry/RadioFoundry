@@ -70,6 +70,7 @@ import pytest
 
 import rfoundry_hil
 from rfoundry_hil import DebugLinkError, skip
+from hil_config import rig
 
 PTT_S = 3.0
 # dmr_bench.check_tx items that judge the waveform, meaningless in a capture whose ADC clipped
@@ -114,7 +115,7 @@ def talker_alias_on_air(bursts):
 def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     if "DMR" not in radio.features():
         skip("not_built", "built without DMR")
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     radio.lowest_power()
@@ -126,6 +127,7 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     assert ch_cc == cc, f"the channel's color code {ch_cc} != --dmr-cc {cc}"
     radio.reset_counters()
     _, before = radio.counters()
+    sdr_bench.need_dmr_waveform()
     rdir = sdr_bench.run_dir("hil_dmr_tx")
     # Raw I/Q on purpose: check_tx judges the waveform (burst on-time, keying ramps, power steps, overlaps, clipping),
     # which the bench-side burst records (dmr_watch_start) don't carry
@@ -210,7 +212,7 @@ def test_dmr_gps_tx(radio, sdr_bench, pytestconfig):
     feats = radio.features()
     if "DMR_GPS" not in feats or "APRS" not in feats:
         skip("not_built", "needs CONFIG_DMR_GPS and CONFIG_APRS (the position source)")
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     radio.lowest_power()
@@ -242,7 +244,7 @@ def test_dmr_gps_tx(radio, sdr_bench, pytestconfig):
 def _dmr_tx_setup(radio, pytestconfig):
     if "DMR" not in radio.features():
         skip("not_built", "built without DMR")
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     radio.go_home()
     pos = radio.find_channel(round(freq * 1e6), "dmr")
     radio.lowest_power()
@@ -616,6 +618,7 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
         assert got == opts, f"options in force {got:#x} after SETTING 31 {opts:#x}"
         radio.reset_counters()
         _, before = radio.counters()
+        sdr_bench.need_dmr_waveform()
         rdir = sdr_bench.run_dir(f"hil_dmr_enc_{word:x}")
         with sdr_bench.lease():
             cap = sdr_bench.capture_start(rdir, freq, seconds=PTT_S + 8)

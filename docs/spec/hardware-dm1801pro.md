@@ -128,8 +128,8 @@ radio; the per-burst switch (5.6) needs the speed.
   Its bandwidth table also holds 0x2028 and 0x205C, but nothing selects them.
 - Reference trim ([radio-features.md](radio-features.md) 6.1): RadioFoundry doesn't move the reference. It tunes
   the FD6818 to f x (1 + trim), in receive, FM transmit and every DMR burst, and the next tune applies a new trim.
-  Measured on the SDR bench at 461.4625 MHz (2026-10-30): +5.0 ppm moved the carrier +2309 Hz and -5.0 ppm -2310 Hz
-  (2307 Hz expected).
+  Measured on the SDR bench (2026-10-30): +5.0 ppm moved the carrier +5.004 Hz per MHz and -5.0 ppm -5.006 Hz per MHz
+  (5.000 expected).
 
 ### 5.3 Register tables
 
@@ -193,12 +193,12 @@ which gives receive audio on the speaker path (measured).
   LNA gain). On this radio that formula reads high, by an amount that changes with frequency, so RadioFoundry adds a correction
   table (`rssi_cal` in `radio_dm1801pro.c`, `fd6818_rssi_cal_db`), measured against another radio (2026-10-20).
   - UHF: the SDR bench's carrier at three levels from -125 to -99 dBm, both radios side by side on identical dummy
-    loads, read +16 dB at 451.5 MHz, +11 dB at 461.1375 and 461.4625, +10 dB at 467.375 (linear, an offset only; the
+    loads, read +16 dB at 451.5 MHz, +11 dB at two test frequencies near 461 MHz, +10 dB near 467 MHz (linear, an offset only; the
     same in FM and DMR). Corrections -16 dB at 400-451, -11 at 461, -10 at 467-470. 400-450 isn't measured: 451's value
     is carried down. An earlier run the same day read +19 to +20 dB above 460 MHz and left the two radios 9 dB apart
     (the difference in that setup wasn't found). The UHF noise floor difference doesn't follow the signal one (+14 dB against +11 at 461), so the floor isn't used
     for UHF.
-  - VHF (first run): a NOAA station at 162.475 MHz read +41 dB; the noise floor across the band gives the shape: +22 dB
+  - VHF (first run): a NOAA station read +41 dB; the noise floor across the band gives the shape: +22 dB
     at 136 MHz, +31 to +38 dB from 140 to 174 MHz. Corrections -26 dB at 136 MHz, -36 dB at 140-150, -41 dB at 162,
     -40 dB at 174. Not rechecked side by side.
   - About 1 dB either way on UHF at the measured frequencies, about 3 dB elsewhere.
@@ -276,7 +276,7 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   margin above 0.4 ms, which measured the same. Earlier, with 2.0 ms, the SFR repeat test
   (`tests/hil/test_hotspot_sfr.py`) passed 10 of 10 runs and `test_dmr_tx_off_air` passed: ramps up 0.33 ms, down
   0.29 ms, slot spacing 60.00 ms (BENCH 2026-10-19).
-  Plain simplex at 0.6 ms (BENCH 2026-10-25, 461.1375 MHz, lowest power, dummy load): `test_dmr_tx_off_air` 3 of 3
+  Plain simplex at 0.6 ms (BENCH 2026-10-25, a UHF test frequency, lowest power, dummy load): `test_dmr_tx_off_air` 3 of 3
   overs with all 3 voice LC headers and the terminator decoded, ramps up 0.31-0.56 ms and down 0.29-0.31 ms, burst
   on-time 30.42-30.82 ms, spacing 60.00 ms, carrier -13 to -15 Hz; a DM-32UV and a DM-1701 each played 5 of 5 overs
   whole from the header (no late entry, no lost frame). The same build at 2.0 ms: the same headers and ramps, burst
@@ -514,7 +514,7 @@ The power level is one value for the three arrays: 0 = low (0x40 / 0xD0), 1 = mi
 (0x4A / 0xDA, also used for 3). The radio's menu shows the setting as High / Low / Middle and stores 2 / 0 / 1, and the
 drive bytes rise with the level in every segment. RadioFoundry's L / M / H use the same arrays and the same lookup.
 
-**L / M / H on air.** At 461.4625 MHz (between the 452.5 and 470 MHz points) the radio examined gets a middle drive 1.40
+**L / M / H on air.** At the test frequency (between the 452.5 and 470 MHz points) the radio examined gets a middle drive 1.40
 times the low drive and a high drive 1.46 times the middle, in DAC counts. The bench run used RadioFoundry's older lookup,
 within 9 counts of the radio's own; the lookup is now the radio's. The drive steps are about even, so the 0.4 dB
 between L and M against 4.4 dB between M and H on the SDR bench (section 10) doesn't come from the calibration or from
@@ -664,8 +664,8 @@ receiving and orange flashing while scanning.
 - VHF transmit on air. The code follows the radio's (5.5, "VHF transmit"), but no VHF transmission has been checked.
   To check: the carrier on frequency at L / M / H (the `pa 145` line gives the drive), CTCSS, DCS and the 1750 Hz tone
   deviation against the UHF values (the tone deviations are the UHF ones, unverified), and a DMR burst decoded on VHF.
-- The power levels on air: on the SDR bench L and M are only 0.4 dB apart and H is 4.4 dB above M (2026-10-16, 461.4625
-  MHz, the drive from the 0x40 / 0x45 / 0x4A arrays). The drive itself steps evenly (6.4, "L / M / H on air"), so the
+- The power levels on air: on the SDR bench L and M are only 0.4 dB apart and H is 4.4 dB above M (2026-10-16, the test
+  frequency, the drive from the 0x40 / 0x45 / 0x4A arrays). The drive itself steps evenly (6.4, "L / M / H on air"), so the
   cause is the PA or the measurement. The SDR's levels are relative and the radio is in its near field, so this wants
   a wattmeter, read against the `pa tx` diagnostics line.
 - The display controller part and its contrast.
@@ -687,7 +687,7 @@ receiving and orange flashing while scanning.
   carrier up through our slot. Before the lead change, the straight switch passed the SFR repeat test in 6 of 8 runs;
   the failures were the clipped-header case (5.6). How the trip through idle detunes the receiver isn't
   known (?). The experiment build (PR 38) recorded each modem interrupt, RF switch and deframe (RX_TYPE_INFO,
-  RECV_INFO_COUNT, PHASE_OUT) and switched these variants at run time (BENCH 2026-10-16, 461.4625 MHz, a 29-burst bench
+  RECV_INFO_COUNT, PHASE_OUT) and switched these variants at run time (BENCH 2026-10-16, the test frequency, a 29-burst bench
   call):
 
   | Variant | Bursts heard | Sent up | Bad header CRC |

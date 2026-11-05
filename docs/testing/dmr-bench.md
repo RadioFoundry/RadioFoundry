@@ -20,7 +20,7 @@ the HIL tests don't script yet.
 | Radio under test | A radio with RadioFoundry, on the bench, on USB (so far the DM-1701: HR_C6000 modem, I2S audio): driven by the debug link (`tools/rfoundry_debug.py`, the HIL tests) or its keys; the board's diagnostics page (on the DM-1701 a long press of SK3) | the user |
 | SDR bench (`ssh $RFOUNDRY_SDR_BENCH_HOST`, default `sdr-bench`: an ssh alias for the bench board) | a small ARM Linux board, 824 MB RAM, Debian, the rfoundry_sdrbench package in `/opt/rfoundry-sdrbench/.venv` | the gateway service (`$RFOUNDRY_SDR_BENCH_SERVICE`) |
 | MMDVM_HS dual modem board | `/dev/ttyS0`, two ADF7021 (simplex or duplex), firmware MMDVM_HS. The other DMR station | the gateway (one of its receivers in the current config) |
-| RTL-SDR | RTL2832U + R820T on USB, bias tee powering an LNA. The instrument | the gateway's receivers SDR02..SDR15 (461-462 MHz group, tuner center 461.52875 MHz). SDR15 = 461.6875 MHz |
+| RTL-SDR | RTL2832U + R820T on USB, bias tee powering an LNA. The instrument | the gateway's receivers, one per channel of the window it tunes (one tuner center) |
 | MQTT broker | the gateway publishes what its SDR receivers decode (`DMR/<receiver>/sdr/...`); `sdr_watch.py` reads it | the owner |
 
 Configuration: the tools take the bench's names from the environment, so no host name lives in the repository.
@@ -35,7 +35,7 @@ The easiest setup is an ssh config alias `Host sdr-bench` pointing at the bench 
 | `RFOUNDRY_SDR_BENCH_ENV_FILE` | `/etc/rfoundry-sdrbench/env` | the gateway's environment file on the bench: the MQTT login `sdr_watch.py` uses (`RFOUNDRY_SDR_BENCH_MQTT_HOST`, `_USER`, `_PASSWORD`) |
 | `RFOUNDRY_SDRBENCH` | none | an rfoundry_sdrbench checkout on the Mac, for the Mac-side tools when the package isn't installed there |
 
-Test channel used so far: 461.6875 MHz, color code 2 (Ch 15). The radio's codeplug also has DMR channels; any free
+The test channel is the rig's (`--dmr-freq` / `--dmr-cc`: tests/hil/README.md, "The rig's configuration"). Any free
 channel works as long as it sits well away from the SDR's tuner center (section 3).
 
 While the bench modem or the RTL-SDR is used by a test, the gateway service must not hold it. The bench modem is in
@@ -102,9 +102,9 @@ capture` now records the clipping share in the capture's JSON and warns above 1 
   powers an LNA; `sdrmon.py capture --no-biastee` turns it off, but check that the unpowered LNA still passes signal.
 
 **DC spike.** The RTL has a spike (and IQ imbalance) at the tuner center. `sdrmon.py` tunes the dongle
-`--offset-khz` (default -200 kHz) away from the channel: for 461.6875 MHz the tuner sits at 461.8875. Keep the
+`--offset-khz` (default -200 kHz) away from the channel: the tuner sits 200 kHz below the channel. Keep the
 channel at least 100 kHz from the tuner center and don't pick a test channel near the tuner center of the capture
-(461.8875 MHz with the defaults). The repeater case puts the center 100 kHz beside the midpoint of the pair so both
+(channel - 200 kHz with the defaults). The repeater case puts the center 100 kHz beside the midpoint of the pair so both
 channels are clear of it.
 
 **Timing of a capture.** `READY` is printed before samples really flow; wait 2 s after READY before keying
@@ -154,7 +154,7 @@ Note the diagnostics counters (the page, or `rfoundry_debug.py diag`) before eac
 | Case | Setup | User | Tools show | Pass |
 |---|---|---|---|---|
 | C0 SDR levels | Radio low power, test channel | Hold PTT for the sweep (~30 s) | ADC clipping per gain | A gain with < 0.1 % clipping chosen |
-| T0 TX smoke (no service stop) | Radio on a DMR channel at 461.6875, cc 2 | Key ~3 s | the gateway's SDR15 decode via MQTT: family, type, cc, src, dst | MS data headers, voice, terminator, cc 2, the radio's ID and TG |
+| T0 TX smoke (no service stop) | Radio on a DMR channel on the test frequency and color code | Key ~3 s | the gateway's receiver's decode via MQTT: family, type, cc, src, dst | MS data headers, voice, terminator, the color code, the radio's ID and TG |
 
 T0 is the first thing to run after flashing a DMR TX build: it stops nothing.
 
@@ -166,12 +166,12 @@ To check the stimulus itself, run the same `bench_tx.py` command during an `sdrm
 
 | Case | bench modem sends (`bench_tx.py ...`) | Radio should show | Pass |
 |---|---|---|---|
-| R1 group voice | `voice --dst TG --superframes 3` | +18 voice bursts, 8 headers, 3 terminators, CRC errors unchanged, CC 2, sync MS; call 9990301 -> TG | All counted, call shown and ended by the terminator |
+| R1 group voice | `voice --dst TG --superframes 3` | +18 voice bursts, 8 headers, 3 terminators, CRC errors unchanged, the channel's CC, sync MS; call 9990301 -> TG | All counted, call shown and ended by the terminator |
 | R2 private | `voice --private --dst <radio ID>` | Private call from 9990301 | Shown; not shown when sent to another ID |
 | R3 late entry | `voice --late 8 --superframes 5` (no header, first 8 bursts dropped) | Call acquired from the embedded LC | Right caller (not a stale LC) within ~1 s; no call started by a lone burst |
 | R4 back to back | `voice --superframes 2 --calls 3 --gap-ms 60` | Three calls, callers alternate | None merged or lost |
 | R5 no terminator | `voice --superframes 2 --terminators 0` | Call ends by time-out | Ends 0.3-0.8 s after the last burst; slot ticks keep counting |
-| R6 wrong CC | `voice --burst-cc 3` (radio on cc 2) | No call, no audio | Never counted as voice for us |
+| R6 wrong CC | `voice --burst-cc N` (N not the radio's color code) | No call, no audio | Never counted as voice for us |
 | R7 CSBK | `csbk --count 4 --opcode 1F --dst <radio ID>` (+ listen 3 s) | +5 CSBKs; with the data service, a call alert | Counted with good CRC; later: the radio's ack CSBK in the listen output |
 | R8 data | `data --dst <radio ID> --octets 40` | 2 CSBK + 1 data header + 4 rate 1/2 blocks | Counted with good CRC |
 | R9 confirmed data | `data --confirmed` (+ listen 4 s) | Data received | Later: the radio's response header heard by the bench modem within 1 s |
@@ -242,7 +242,7 @@ capture). `bench_tx.py --family bs` alone only gives BS sync in DMO timing (R10)
 
 | Case | User | Tools show | Pass |
 |---|---|---|---|
-| P1 BS activation + call | Repeater channel on the radio (TX = `--rpt-rx`, RX = `--rpt-tx`, slot, cc 2); key ~3 s, then again within the hang | Repeater log: wakeup (BS_Dwn_Act, source), key-up, the radio's header and voice on its slot; SDR: the radio's inbound bursts and the outbound | Wakeup from the radio's ID, then the call repeated on its slot; the second over needs no wakeup; the radio's inbound phase-locked to the outbound slot; the radio shows its own call / the hang |
+| P1 BS activation + call | Repeater channel on the radio (TX = `--rpt-rx`, RX = `--rpt-tx`, slot, color code); key ~3 s, then again within the hang | Repeater log: wakeup (BS_Dwn_Act, source), key-up, the radio's header and voice on its slot; SDR: the radio's inbound bursts and the outbound | Wakeup from the radio's ID, then the call repeated on its slot; the second over needs no wakeup; the radio's inbound phase-locked to the outbound slot; the radio shows its own call / the hang |
 
 Then (later cases, same tools): a call heard through the repeater on the radio (bench modem simplex can't key the duplex
 repeater from the other side, so use a second radio or the repeater's network input), slot filter on / off, the

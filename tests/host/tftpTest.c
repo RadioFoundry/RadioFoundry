@@ -554,7 +554,7 @@ static void populate(void)
 		c.timeslot = 1;
 		CHECK(codeplug_set_channel(n, &c));
 	}
-	CHECK(codeplug_set_dmr_id(3100001));
+	CHECK(codeplug_set_dmr_id(9990001));
 	for (unsigned i = 0; i < 20; i++) {
 		sim_flash_data[EE + 0x7524 + i] = (uint8_t)(0x40 + i);	// the quick-key slots as the radio had them
 	}

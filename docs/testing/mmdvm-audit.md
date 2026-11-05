@@ -48,7 +48,7 @@ Found since:
   `hs.running=0`.** The test's MMDVM client opened the port with pyserial's default DTR set; closing it dropped DTR,
   and the host link leaves hotspot mode on that edge (spec 5.1). By the time the debug link looked, the session was
   over. `hs.enter_attempts` counts every session since boot, so 2 meant two sessions that had each taken the modem,
-  not two refused attempts. The radio core path was reproduced on the host (DMR channel at 467.375 MHz, the radio
+  not two refused attempts. The radio core path was reproduced on the host (a DMR channel, the radio
   task above and below the host link task in priority): the modem is taken on the first frame or on the retry 1 s
   later. Fix: `tests/hil/test_hotspot.py` opens with DTR clear (as MMDVMHost on Windows does) and checks the slot 2
   space, `hs.running` and `hs.starts`; new view keys `hostlink.left` (why the last session ended), `hs.starts`,

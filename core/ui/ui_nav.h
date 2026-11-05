@@ -200,7 +200,7 @@ void ui_crash_reset(void);
 void ui_crash_tick(uint32_t now_ms);
 
 // Text helpers
-void ui_sb_target(char *buf, size_t len, const ui_target_t *t);	// "TG 91 World", "Joe 3101234"
+void ui_sb_target(char *buf, size_t len, const ui_target_t *t);	// "TG 91 World", "Joe 9991234"
 void ui_sb_age(char *buf, size_t len, uint32_t ms);
 
 #endif
