@@ -223,7 +223,7 @@ def test_fm_tx_tone_burst(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "none", 0)
 
     def burst():
-        fm_vfo.link.tone_burst(True)
+        fm_vfo.link.tone_burst(True, 4000)
         try:
             fm_vfo.wait_for(lambda v: v.get("tone_burst") == "1", 1.0, sections=("features",), what="burst on")
             time.sleep(2.0)

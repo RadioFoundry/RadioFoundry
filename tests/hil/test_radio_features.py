@@ -43,6 +43,8 @@ Pass criteria:
 - test_roger_beep (radio_tx): roger_beep 1, 1.5 s over: roger=1 is seen after PTT release while still transmitting,
   then the state returns to rx within 1 s.
 - test_tone_burst (radio_tx): TONE_BURST 1: state tx and tone_burst=1 within 1 s; TONE_BURST 0: rx within 1 s.
+- test_tone_burst_time_limit (radio_tx): TONE_BURST 1 with a 1.5 s limit and no 0: once the link answers, the state
+  has left tx and the over (tx_elapsed_ms) lasted 1.0-2.5 s.
 - test_scan_stops_on_dmr_call (rf): the zone holding the DMR test channel scans while the bench sends a 20 superframe
   group call there: the scan holds on that channel (scan_phase hold, rx_hz the test frequency) while the call runs.
 - test_vfo_scan_stops_on_signal (rf): the FM VFO scans the DMR test frequency +- 5 steps while the bench sends a 20
@@ -471,7 +473,7 @@ def test_roger_beep(fm_tx):
 def test_tone_burst(fm_tx):
     if "FM_TX_TONES" not in fm_tx.features():
         skip("not_built", "built without CONFIG_FM_TX_TONES")
-    fm_tx.link.tone_burst(True)
+    fm_tx.link.tone_burst(True, 3000)
     try:
         fm_tx.wait_for(lambda v: v.get("state") == "tx" and v.get("tone_burst") == "1", 1.0,
                        sections=("core", "features"), what="burst keyed")
@@ -479,6 +481,40 @@ def test_tone_burst(fm_tx):
     finally:
         fm_tx.link.tone_burst(False)
     fm_tx.wait_for(lambda v: v.get("state") != "tx", 1.0, what="burst over")
+
+
+@pytest.mark.feature("fm_tx_tones")
+@pytest.mark.radio_tx
+def test_tone_burst_time_limit(fm_tx):
+    """A burst whose "off" never comes (the host went away) ends by itself at its time limit. The radio's own
+    transmission may jam the link while it is keyed, so the over is read once the link answers again."""
+    if "FM_TX_TONES" not in fm_tx.features():
+        skip("not_built", "built without CONFIG_FM_TX_TONES")
+    if "tone_burst_max_ms" not in fm_tx.link.version():
+        skip("not_built", "firmware without the tone burst's time limit")
+    fm_tx.link.tone_burst(True, 1500)
+    try:
+        deadline = time.monotonic() + 8.0
+        time.sleep(1.5)
+        v = None
+        while time.monotonic() < deadline:
+            try:
+                v = fm_tx.view(["core", "features"])
+            except DebugLinkError:
+                v = None	# jammed while keyed: ask again
+            if v is not None and v.get("state") != "tx":
+                break
+            time.sleep(0.2)
+        assert v is not None and v.get("state") != "tx", f"still keyed (or no answer) 8 s after a 1.5 s burst: {v}"
+        assert v.get("tone_burst") == "0", v
+        elapsed = int(v.get("tx_elapsed_ms") or 0)
+        print(f"burst over after {elapsed} ms (limit 1500)")
+        assert 1000 <= elapsed <= 2500, f"the over lasted {elapsed} ms, limit 1500"
+    finally:
+        try:
+            fm_tx.link.tone_burst(False)
+        except DebugLinkError:
+            pass
 
 
 # ── the SDR bench transmits ───────────────────────────────────────────────

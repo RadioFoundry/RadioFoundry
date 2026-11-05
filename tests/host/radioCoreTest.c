@@ -130,7 +130,7 @@ static struct {
 static bool a_start(audio_block_cb_t cb, void *ctx) { aud.cb = cb; aud.ctx = ctx; aud.started = true; aud.starts++; return true; }
 static void a_stop(void) { aud.started = false; aud.stops++; }
 static void a_pcm(bool on) { aud.pcm = on; }
-static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
+static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm };
 
 static bool codec_present;
 static bool v_present(void) { return codec_present; }
@@ -2648,7 +2648,7 @@ void radio_req_scan_dual(uint16_t pos) { (void)pos; }
 void radio_req_zone_pos(uint16_t pos) { req(RREQ_ZONE_POS, pos); }
 void radio_req_zone(uint16_t index) { req(RREQ_ZONE, index); }
 void radio_req_scan_vfo(uint32_t lo, uint32_t hi) { (void)lo; (void)hi; }
-void radio_req_tone_burst(bool on) { (void)on; }
+void radio_req_tone_burst(bool on, uint32_t max_ms) { (void)on; (void)max_ms; }
 void radio_req_dtmf(char digit, bool down) { req(RREQ_DTMF, (uint8_t)digit | (down ? 0x100 : 0)); }
 bool radio_dtmf_ready(void) { return sm.view.dtmf_ready; }
 void radio_req_scan(uint8_t cmd) { req(RREQ_SCAN, cmd); }

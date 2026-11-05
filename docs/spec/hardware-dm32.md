@@ -152,8 +152,10 @@ Registers at base +: RBR/THR/DLL 0x00, DLH/IER 0x04, IIR/FCR 0x08, LCR 0x0C, LSR
 | Divisor | APB / 16 / baud, APB = 84 MHz (115200 → 45, 1.3 % fast; 9600 → 546) |
 | Divisor latch | LCR bit 7 set, write DLL then DLH, clear bit 7 |
 | Format | LCR \|= 0x03 (8N1) |
-| FIFO | FCR = 0x67: FIFOs enabled and reset, RX trigger 1 char (bits 7:6 = 01), TX trigger code 2 |
+| FIFO | FCR = 0x67: FIFOs enabled and reset, RX trigger 4 characters (bits 7:6 = 01; fewer arrive by the character time-out), TX trigger 4 characters (bits 5:4 = 10) |
+| FIFOs | 16 bytes each (the FCR trigger levels: RX 1, 4, 8, 14; TX empty, 2, 4, 8). TFL (0x80) and RFL (0x84) count what each holds |
 | TX ready | USR bit 1 (TX FIFO not full) |
+| TX interrupt | IER bit 1 (ETBEI) with bit 7 (PTIME): IIR ID 0010 while the TX FIFO holds the FCR TX trigger level or less; cleared by filling it above that, or by reading IIR. The host port sends this way: the host link task hands its buffer to the interrupt and sleeps until it is sent (`platform/hrc7000/uart.c`). Sent by polling at the host task's priority, a long reply during a DMR transmission kept the idle task out until the hang check reset the radio, and ran at a third of the line's speed |
 | RX ready | LSR bit 0 |
 | Interrupts | GPS uses IER = 0x05 (RX data + line status); on stop, IER = 0 and FCR bits 1, 2 to flush |
 | UART0 | 115200 8N1: programming cable (Baofeng CPS, open-firmware CPS, hotspot). RadioFoundry's host port, where a CPU fault's trace lines appear ([crash-log.md](crash-log.md) 2.3) |
@@ -557,6 +559,16 @@ task ran late about 11 times a second and caught up with scans back to back. A l
 two scans in the same millisecond, 65 ms after the last host byte, with the pin low on four quick reads: the start of
 a new host byte, not yet received (2026-10-22, RADIO). Before the hold, 2 such presses came in 100 s, each a short
 DMR voice transmission; no line errors (`ue 0`) and no overruns.
+
+**The radio's own RF on the cable (measured, 2026-11-05).** With the programming cable coiled near the antenna, a
+1750 Hz burst at the lowest power (FM, UHF) started by the debug link kept the radio keyed for a minute. The link went
+silent 0.5 s in, so the burst's "off" never arrived. The burst's own time limit ended it at 2 s, but the key scan had
+reported PTT down 174 ms after keying with nothing touched, and that press held the radio keyed. A hand near the cable
+ended it. In that minute UART0 received 350 flagged characters and no good byte. The quiet-time gate takes exactly
+that for a press. A real press held 3 s gave one flagged character, its break, and nothing more: the key grounds the
+line. So, as `drivers/input/sharedptt` describes, no new press starts while the radio transmits, and a held press ends
+at a flagged character after its own break and bounce (`SHARED_PTT_SETTLE_MS`). The diag line `ue N` counts the
+flagged characters.
 
 ### 6.3 Rotary encoder
 

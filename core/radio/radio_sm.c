@@ -992,6 +992,27 @@ static uint8_t hang_s(uint16_t ms, uint8_t dflt)
 	return (uint8_t)(s > 30u ? 30u : s);
 }
 
+// The talk permit before keying (CAP_BEEP_NOT_ON_AIR): the hold's minimum covers the beep's start (beep_busy is true
+// from beep_play on); the hold lasts while the beep plays or its audio is still in the board's buffers, so none of it
+// is left to reach the modulator
+#define PERMIT_HOLD_MIN_MS	40u
+
+static bool permit_busy(void)
+{
+#if CONFIG_BEEP
+	const hal_audio_t *a = board.audio;
+	return beep_busy() || (a != NULL && a->spk_pending != NULL && a->spk_pending());
+#else
+	return false;
+#endif
+}
+
+// Whether the talk permit sounds before keying on this channel: the board can't play it on air, and it is on
+static bool permit_before_key(const radio_sm_t *sm)
+{
+	return CONFIG_BEEP && (board.caps & CAP_BEEP_NOT_ON_AIR) != 0 && sm->set.talk_permit && !sm->view.ch.no_beep;
+}
+
 static void dmr_configure(radio_sm_t *sm)
 {
 	const channel_t *ch = &sm->view.ch;
@@ -1071,6 +1092,10 @@ static void dmr_configure(radio_sm_t *sm)
 	}
 	sm->em_cfg_serial = dmr_emergency_config_serial();
 #endif
+	if (permit_before_key(sm)) {
+		cfg.permit_hold_ms = PERMIT_HOLD_MIN_MS;
+		cfg.permit_busy = permit_busy;
+	}
 	dmr_call_configure(&cfg);
 	sm->view.dmr.own_id = cfg.own_id;
 	sm->view.dmr.hear_all = cfg.listen.hear_all;
@@ -1343,7 +1368,8 @@ static uint8_t dmr_deny_reason(uint8_t err)
 static bool dmr_tx_phase(uint8_t phase)
 {
 	return phase == DMR_CALL_PHASE_TX_ACCESS || phase == DMR_CALL_PHASE_TX_WAKEUP ||
-		phase == DMR_CALL_PHASE_TX_VOICE || phase == DMR_CALL_PHASE_TX_ENDING || phase == DMR_CALL_PHASE_TX_DATA;
+		phase == DMR_CALL_PHASE_TX_VOICE || phase == DMR_CALL_PHASE_TX_ENDING || phase == DMR_CALL_PHASE_TX_DATA ||
+		phase == DMR_CALL_PHASE_TX_PERMIT;
 }
 
 #if CONFIG_DMR_GPS
@@ -1424,6 +1450,7 @@ static void dmr_publish(radio_sm_t *sm)
 	case DMR_CALL_PHASE_TX_VOICE: d->state = RDMR_TX; break;
 	case DMR_CALL_PHASE_TX_ENDING: d->state = RDMR_TX_ENDING; break;
 	case DMR_CALL_PHASE_TX_DATA: d->state = RDMR_TX_DATA; break;
+	case DMR_CALL_PHASE_TX_PERMIT: d->state = RDMR_TX_PERMIT; break;
 	default: d->state = RDMR_IDLE; break;
 	}
 	d->codec = sm->codec;
@@ -1545,17 +1572,26 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 	outputs(sm);
 
 	// Talk permit when the voice goes on air (unless turned off in the settings), call end when a call we played
-	// ends (neither on no-beep channels)
+	// ends (neither on no-beep channels). A board whose beeps can't sound on air plays a short permit before keying
+	// instead, in the stack's hold (permit_seq)
+	bool early = (board.caps & CAP_BEEP_NOT_ON_AIR) != 0;
+	uint8_t permit = early ? BEEP_TX_PERMIT_SHORT : BEEP_TX_PERMIT;
 	if (cv->wake_admits != sm->dmr_wake_admits) {
 		sm->dmr_wake_admits = cv->wake_admits;
 		if (!sm->view.ch.no_beep && sm->set.talk_permit) {
-			beep(sm, BEEP_TX_PERMIT);	// a short press: the repeater woke after PTT was let go
+			beep(sm, permit);	// a short press: the repeater woke after PTT was let go
+		}
+	}
+	if (cv->permit_seq != sm->dmr_permit_seq) {
+		sm->dmr_permit_seq = cv->permit_seq;
+		if (permit_before_key(sm)) {
+			beep(sm, BEEP_TX_PERMIT_SHORT);	// the stack holds the key-up until it has played
 		}
 	}
 	uint8_t st = sm->view.dmr.state;
 	if (st != sm->dmr_prev_state) {
 		if (!sm->view.ch.no_beep) {
-			if (st == RDMR_TX && sm->set.talk_permit) {
+			if (st == RDMR_TX && sm->set.talk_permit && !early) {
 				beep(sm, BEEP_TX_PERMIT);
 			} else if (sm->dmr_prev_state == RDMR_RX && (st == RDMR_IDLE || st == RDMR_RX_OTHER)) {
 				beep(sm, BEEP_CALL_END);
@@ -4533,7 +4569,8 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms)
 {
 #if CONFIG_DMR
-	bool reply_changed = s->reply_s != sm->set.reply_s || s->sfr_rx != sm->set.sfr_rx;
+	bool reply_changed = s->reply_s != sm->set.reply_s || s->sfr_rx != sm->set.sfr_rx ||
+		s->talk_permit != sm->set.talk_permit;	// the permit hold (permit_before_key)
 #endif
 	sm->set = *s;
 	clamp_settings(&sm->set);
@@ -4546,7 +4583,7 @@ static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now
 	activity(sm, now_ms);
 #if CONFIG_DMR
 	if (reply_changed && sm->dmr_running) {
-		dmr_configure(sm);	// the reply window, an SFR user's copies
+		dmr_configure(sm);	// the reply window, an SFR user's copies, the talk permit
 	}
 #endif
 #if CONFIG_VOX
@@ -4800,7 +4837,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 
 #if CONFIG_FM_TX_TONES
 // The 1750 Hz burst: on keys up (FM channel, the usual TX checks) if not transmitting yet
-static void tone_burst(radio_sm_t *sm, bool on, uint32_t now_ms)
+static void tone_burst(radio_sm_t *sm, bool on, uint32_t max_ms, uint32_t now_ms)
 {
 	if (on) {
 		if (sm->view.tone_burst || sm->view.ch.mode != RADIO_MODE_FM || sm->hotspot ||
@@ -4818,10 +4855,12 @@ static void tone_burst(radio_sm_t *sm, bool on, uint32_t now_ms)
 		dtmf_cancel(sm, now_ms);
 		if (tx_tone(RADIO_BURST_HZ)) {
 			sm->view.tone_burst = true;
+			sm->burst_end_ms = max_ms != 0 ? (now_ms + max_ms) | 1u : 0;	// | 1: never 0, "no limit"
 			changed(sm);
 		}
 		return;
 	}
+	sm->burst_end_ms = 0;
 	if (sm->view.tone_burst) {
 		tx_tone(0);
 		sm->view.tone_burst = false;
@@ -5318,7 +5357,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 #endif
 #if CONFIG_FM_TX_TONES
 	case RREQ_TONE_BURST:
-		tone_burst(sm, req->arg != 0, now_ms);
+		tone_burst(sm, req->arg != 0, req->arg2, now_ms);
 		break;
 #endif
 #if CONFIG_DTMF
@@ -5762,6 +5801,12 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 
 	if (sm->view.state == RS_TX) {
 #if CONFIG_FM_TX_TONES
+		if (sm->burst_end_ms != 0 && sm->view.tone_burst && (int32_t)(now_ms - sm->burst_end_ms) >= 0) {
+			tone_burst(sm, false, 0, now_ms);	// its "off" never came: unkey as the off would
+			if (sm->view.state != RS_TX) {
+				return;
+			}
+		}
 		if (sm->roger_ms != 0) {
 			roger_poll(sm, now_ms);
 			if (sm->view.state != RS_TX) {

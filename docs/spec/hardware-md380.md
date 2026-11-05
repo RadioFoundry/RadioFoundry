@@ -362,6 +362,43 @@ go to the stack as bursts A to F. A read that hasn't changed, or has no frame th
 row end the reception (0x22 = 0x17). The chip's voice class reports are ignored, and its 25 ms report delay doesn't
 count as out of step.
 
+A burst is in the port one tick after its slot's report, so the read at a tick holds the burst of the slot that
+started two ticks before. The engine takes this as fixed: the read is named, and given its slot counter, from the
+tick before it. It used to learn the relation from the first read that checked after a header, which with traffic on
+both slots can be the other call's (issue 279). With traffic on both slots both phases hold bursts that check, so the
+search for the call's phase is limited:
+
+| Rule | Detail |
+|---|---|
+| A header started the read | Lock only the header's phase. A late entry report while searching drops that limit |
+| Repeater channel (`rx_lock_slot` 1 or 2) | Lock only a phase the CACH TC names as the channel's slot, never one with the slot unknown. A header is kept unless the TC names its phase the other slot |
+| A lock whose phase the TC names the other slot | Search again, without the header's phase. The burst index goes on counting one per frame, so a lock back on the same phase keeps A-F |
+| The slot unknown while locked (a receiver restart) | The lock stays; its bursts carry no slot number until the TC locks again |
+| The call's own bursts skipped while its slot is unknown | Counted, so the index stays A-F. After a quiet-period restart that costs the first bursts of a call (two in the host test, about 150 ms until the TC locks) |
+
+All of these are host-tested (`hrc5000Test` `test_two_slots`: a call on each slot, a restart mid-call, a TC wrong
+from the start, both slots heard with `rx_lock_slot` 0). On air (2026-11-04, the SDR bench sending repeater bursts
+with the CACH on both slots): the reads alternate as above (phase 0 TS1's frames, phase 1 TS2's), and the wanted call
+plays with the other slot already talking (77 of 78 bursts; 0 before the fix).
+
+The embedded LC isn't per slot (page 2, [modem-hrc6000.md](modem-hrc6000.md) 5.2). On the same bench run, the other
+call's LC was in page 2 at the wanted call's F: the core took it for a new call, and the wanted call went quiet with
+the other call's source shown (23 of 78 bursts when the wanted call started first). The engine keeps each slot's
+call LC and holds back an embedded LC that is the other slot's call's (the rules are in modem-hrc6000.md 5.2).
+Host-tested (`test_two_slots`, the `LC`, `alias` and `mixed LC` cases: page 2 gets a call's LC or alias block the
+tick after its F). On air (2026-11-04, the SDR bench, a call on each slot, 78 bursts sent to the wanted slot, two
+runs each):
+
+| Case | Before | After |
+|---|---|---|
+| Wanted call first, the other starts beside it | 23 | 78, 78 (both slots) |
+| Other call first, wanted call with its headers | 75-77, TS2 once 13-19 | 73-77 (both slots) |
+| Wanted call joined mid-stream (no header) beside the other, TS1 | 0 played | 56-57 |
+| Single call: headers, late entry, no header | 77-78, 38, 68 | the same |
+
+Left as they were: both calls joined at once after a channel switch (0-20 bursts) and TS2 joined mid-stream beside a
+call (0) play as before.
+
 On air with this (2026-10-18): calls are taken with the caller and talk group, and 393 frames reached the codec with
 2 bit errors in all. The decoded audio is speech (peak 3521 of 32767) and streams to the chip (`aud blk` climbing),
 but the speaker plays only a faint buzz (4.8). Leads, not checked: 0x0E (HPoutEn, bit 7; RadioFoundry writes 0x44, which

@@ -38,9 +38,9 @@ extern const hal_dmr_modem_t hrc_dmr;
 
 // Bring-up counters: lines of at most about 20 characters, and the reset
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
-#define HRC_DMR_DIAG_LINES	14	// and the split duplex TX half's BS outbound (two "bs" lines)
+#define HRC_DMR_DIAG_LINES	15	// and the split duplex TX half's BS outbound (two "bs" lines)
 #else
-#define HRC_DMR_DIAG_LINES	12
+#define HRC_DMR_DIAG_LINES	13
 #endif
 bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len);
 void hrc_dmr_stats_reset(void);
