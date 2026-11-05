@@ -130,10 +130,12 @@ static void ui_task(void *arg)
 			vTaskDelay(1);
 			rested = hal_millis();
 		}
-		if (!input_next(&ev, wait)) {
-			if (wait != 0)
-				rested = hal_millis();
-		} else {
+		// Nothing queued and a wait: input_next blocks until a key or the time-out, and the idle task gets in
+		bool rests = wait != 0 && !input_pending();
+		bool got = input_next(&ev, wait);
+		if (rests)
+			rested = hal_millis();
+		if (got) {
 			bool was_off = backlight_now == 0;
 			set_backlight(ui_app_brightness());
 			if (!was_off || ev.action == ACT_PTT || ev.action == ACT_MONITOR)
