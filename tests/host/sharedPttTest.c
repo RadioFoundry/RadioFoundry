@@ -202,6 +202,23 @@ int main(void)
 	CHECK(!gate(&k, true, true, 0, 962510));
 	CHECK(!gate(&k, false, true, 0, 962520));
 
+	// A good byte during a held press: the line carries data, so the key is up (a held key grounds it), keyed or not
+	CHECK(press_after(&k, true, 0, 963000, 10, 100) == SHARED_PTT_HOLD_MS);
+	keyed = true;
+	CHECK(gate(&k, true, true, 0, 963500));
+	CHECK(!gate(&k, true, true, 963505, 963510));
+	CHECK(!gate(&k, true, true, 963505, 963600));	// keyed: no new press on the low line
+	keyed = false;
+	CHECK(!gate(&k, false, true, 963505, 963700));
+
+	// A late scan reports the press long after the pin went low: its break and bounce still settle from the report
+	CHECK(!gate(&k, true, true, 0, 964000));
+	CHECK(gate(&k, true, true, 0, 964000 + SHARED_PTT_HOLD_MS + 40u));
+	flagged++;
+	CHECK(gate(&k, true, true, 0, 964000 + SHARED_PTT_HOLD_MS + 40u + SHARED_PTT_SETTLE_MS - 1u));
+	CHECK(gate(&k, true, true, 0, 964500));
+	CHECK(!gate(&k, false, true, 0, 964600));
+
 	if (failures == 0) {
 		printf("sharedPttTest: all passed\n");
 	}

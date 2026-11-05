@@ -12,12 +12,20 @@ bool shared_ptt_pressed(shared_ptt_t *s, bool pin_low, const shared_ptt_line_t *
 	if (s->state == SHARED_PTT_NOISE) {
 		return false;
 	}
+	// A good byte means the line carries data, whatever the state: a held key would ground it. While the radio
+	// transmits, only a press already held stays trusted
+	bool data = line->rx_seen && (uint32_t)(now_ms - line->rx_ms) < SHARED_PTT_QUIET_MS;
+	if (data || (line->keyed && s->state != SHARED_PTT_PRESSED)) {
+		s->ignored++;	// serial data, or the radio's own transmission on the line
+		s->state = SHARED_PTT_UP;
+		return false;
+	}
 	if (s->state == SHARED_PTT_PRESSED) {
 		uint16_t flagged = (uint16_t)line->flagged;
 		if (flagged == s->flagged) {
 			return true;
 		}
-		if ((uint32_t)(now_ms - s->low_ms) < SHARED_PTT_HOLD_MS + SHARED_PTT_SETTLE_MS) {
+		if ((uint32_t)(now_ms - s->low_ms) < SHARED_PTT_SETTLE_MS) {
 			s->flagged = flagged;	// the press's own break or bounce
 			return true;
 		}
@@ -28,11 +36,6 @@ bool shared_ptt_pressed(shared_ptt_t *s, bool pin_low, const shared_ptt_line_t *
 		}
 		return false;
 	}
-	if (line->keyed || (line->rx_seen && (uint32_t)(now_ms - line->rx_ms) < SHARED_PTT_QUIET_MS)) {
-		s->ignored++;	// serial data, or the radio's own transmission on the line
-		s->state = SHARED_PTT_UP;
-		return false;
-	}
 	if (s->state == SHARED_PTT_UP) {
 		s->state = SHARED_PTT_LOW;
 		s->low_ms = now_ms;
@@ -41,6 +44,7 @@ bool shared_ptt_pressed(shared_ptt_t *s, bool pin_low, const shared_ptt_line_t *
 		return false;
 	}
 	s->state = SHARED_PTT_PRESSED;
+	s->low_ms = now_ms;	// the settle time runs from the report, however late the scan
 	s->flagged = (uint16_t)line->flagged;
 	return true;
 }

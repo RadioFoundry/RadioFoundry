@@ -11,11 +11,10 @@
 // The radio's own transmission can get into the cable (a coiled cable near the antenna): the line then reads low and
 // the UART receives garbage, flagged characters, none of them good. Gated as above, that is a press, and a press keeps
 // the radio transmitting: a latch that held a radio keyed for a minute with nothing touched. So, while the radio
-// transmits, the line is not trusted:
-// - a press can't start while the radio transmits (one held when it started stays held);
-// - a held press ends at a flagged character after its own break: a finger on the key grounds the line, and a grounded
-//   line receives nothing more, so a character means the key is up and the line is picking up noise. The pin then
-//   counts as released until it reads high.
+// transmits, no new press starts on the line (one held when it keyed stays held). And a held press ends, keyed or
+// not, at a good byte or at a flagged character after its own break and bounce: a finger on the key grounds the line,
+// and a grounded line receives nothing more, so a character means the key is up and the line is picking up noise or
+// data. After noise the pin counts as released until it reads high.
 // RF that holds a released line steadily low, with no character, still reads as held: the TX time-out ends that.
 #ifndef SHARED_PTT_H
 #define SHARED_PTT_H
@@ -42,7 +41,7 @@ enum { SHARED_PTT_UP, SHARED_PTT_LOW, SHARED_PTT_PRESSED, SHARED_PTT_NOISE };
 
 typedef struct {
 	uint32_t ignored;	// scans with the pin low inside the quiet time or while the radio transmitted (diagnostics)
-	uint32_t low_ms;	// when the pin was first read low outside the quiet time; valid in LOW and PRESSED
+	uint32_t low_ms;	// LOW: when the pin was first read low outside the quiet time; PRESSED: when it was reported
 	uint16_t flagged;	// the line's flagged count (its low half) at the press, moved on while it settles
 	uint8_t state;		// UP; LOW (held, not yet SHARED_PTT_HOLD_MS); PRESSED; NOISE (a held press ended by noise:
 				// released until the pin reads high)
