@@ -2274,7 +2274,7 @@ msgstr "Font JetBrains Mono: OFL-1.1"
 
 #: core/ui/ui_menus.c
 msgid "Noto Sans CJK SC font: OFL-1.1"
-msgstr ""
+msgstr "Font Noto Sans CJK SC: OFL-1.1"
 
 #: core/ui/ui_menus.c
 msgid "AMBE+2 codec: DVSI (stock)"

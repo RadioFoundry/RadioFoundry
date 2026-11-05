@@ -4040,6 +4040,10 @@ static const char *about_text(void)
 	sb_chr(&b, '\n');
 	sb_str(&b, TR("JetBrains Mono font: OFL-1.1"));
 #endif
+#if CONFIG_LANG_ZH
+	sb_chr(&b, '\n');
+	sb_str(&b, TR("Noto Sans CJK SC font: OFL-1.1"));	// core/ui/cjk_font_data.c
+#endif
 	sb_chr(&b, '\n');
 	sb_str(&b, TR("AMBE+2 codec: DVSI (stock)"));	// from the radio's own firmware, not part of RadioFoundry
 	return t;
