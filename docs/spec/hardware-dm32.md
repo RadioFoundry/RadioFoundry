@@ -673,6 +673,9 @@ Three-wire serial, bit-banged on GPIO: CS = 0x18 (active low), clock = 0x07, dat
 
 Registers 0x65 / 0x67 are not read by the radio's own firmware (unverified: its S-meter may be fake).
 
+The debug link's CHIP_REG ([debuglink.md 3.24](debuglink.md#324-chip_reg)) reaches the FD6818 as chip 0, page 0,
+registers 0x00-0x7F: `rfoundry_debug.py reg 0 0x67` reads the RSSI word.
+
 ### 8.2 Register tables (address: high byte, low byte)
 
 **Power-on init** (in order):
