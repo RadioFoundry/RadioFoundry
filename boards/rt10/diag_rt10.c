@@ -24,6 +24,13 @@ bool rt10_diag_line(uint8_t i, char *buf, uint8_t len)
 	case 4:
 		snprintf(buf, len, "ptt ign %lu", (unsigned long)rt10_input_ptt_ignored());
 		return true;
+	case 5: {
+		uint16_t id;
+		uint32_t nacks;
+		rt10_rf_info(&id, &nacks);
+		snprintf(buf, len, "rf id %04X nack %lu", id, (unsigned long)nacks);
+		return true;
+	}
 	default:
 		return false;
 	}

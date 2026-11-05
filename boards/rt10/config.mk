@@ -9,7 +9,7 @@ CONFIG_GPS ?= n
 CONFIG_GPS_SKY ?= n
 CONFIG_AM_RX ?= n
 CONFIG_BCAST_FM ?= n
-# APRS needs the FM transmitter and receive audio
+# APRS needs an AFSK path into the FD6818's transmitter and its receive audio
 CONFIG_APRS ?= n
 CONFIG_APRS_RX ?= n
 CONFIG_APRS_IGATE ?= n
@@ -20,8 +20,8 @@ BOARD_UNSUPPORTED += AM_RX	# no air band receive path
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver
 BOARD_UNSUPPORTED += GPS	# no GPS module
 BOARD_UNSUPPORTED += GPS_SKY	# no GPS module
-BOARD_NOT_WRITTEN += DMR	# the FD6818's two-wire bus and the DMR glue aren't written yet
-BOARD_NOT_WRITTEN += APRS	# no FM transmit or receive audio yet
+BOARD_NOT_WRITTEN += DMR	# the modem glue, the FD6818's digital set and the codec map (rt10-112) aren't written yet
+BOARD_NOT_WRITTEN += APRS	# no board.afsk: the FD6818 takes the microphone itself, not the modem's audio
 BOARD_NOT_WRITTEN += APRS_RX	# the same
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet

@@ -49,6 +49,7 @@ const board_t board = {
 	.host_port = &hrc_host_uart_stream,
 #endif
 	.system = &hrc_system,
+	.chip_reg = rt10_chip_reg,
 };
 
 // hardware-rt10.md 3: the boot ROM's reset-default IO mux is kept (UART0, JTAG); SPI0 to the data flash. The power
