@@ -104,7 +104,8 @@ def test_knob_counts_detents(home):
     assert d["input.enc_detents"] == 0, f"a wobble counted {d['input.enc_detents']}: {d}"
 
 
-@pytest.mark.feature("channel_knob")
+# Optional: only boards whose encoder runs on one level interrupt have the watch, so a skip doesn't fail the knob
+@pytest.mark.feature("channel_knob", optional=True)
 def test_encoder_interrupt_not_lost(radio):
     """The interrupt watch (gotchas.md 16.4): on a board that has it, no encoder interrupt has been found lost since
     start-up, and no interrupt source was masked by the fallback handler. A failure prints the first stall's state."""

@@ -10,7 +10,8 @@
 // and three bad ones in a row to close, so a fade or the phase reversal at the end of a transmission (the "reverse
 // burst") does not chop the audio.
 //
-// DCS: a slicer with peak-tracked threshold, a clock recovery loop locked to the edges of the 134.4 baud stream, and a
+// DCS: a slicer with hysteresis around the signal's slow DC (a coupling capacitor's high-pass leaves runs of equal
+// bits sagging toward zero), a clock recovery loop locked to the edges of the 134.4 baud stream, and a
 // 23-bit shift register compared to the code's Golay word (up to 2 bit errors). Two matches 23 bits apart open, none
 // for three words closes.
 #ifndef SUBAUDIO_RX_H
@@ -27,7 +28,7 @@ typedef struct {
 	float min_amp;			// smallest tone amplitude (or DCS swing / 2) accepted, in sample counts
 	bool invert;			// the signal path inverts the waveform (matters for DCS only)
 
-	float dc;			// high-pass state for the tone path
+	float dc;			// DC tracker: the tone path's high-pass, the DCS slicer's center
 
 	// CTCSS: two staggered windows, each with the tone bin and two guard bins
 	uint16_t win_len;

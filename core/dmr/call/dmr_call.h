@@ -50,6 +50,7 @@ typedef enum {
 } dmr_sfr_rx_t;
 #define DMR_SFR_DUALPATH_MS		120	// a burst with a failed frame waits this long for the other copy (90 ms behind)
 
+#define DMR_CALL_OWN_ECHO_MS		700	// a call from our own ID this soon after we stopped transmitting is the repeater's echo of it; later, a parrot's playback
 #define DMR_CALL_ALIGN_MS		300	// DMO: reply aligned to a station heard this recently (within the modem's slot memory, 390 ms on the HR_C6000)
 #define DMR_CALL_TX_DONE_GUARD_MS	1500	// tx_done overdue after the last burst: force receive
 #define DMR_CALL_TX_MAX_INFLIGHT	4	// bursts queued ahead of the air at most
