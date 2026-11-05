@@ -76,8 +76,8 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
 `uiSim --ellipsis` (section 7) lists what is still shortened; `uiSim --layout` fails the build on a middle ellipsis
 with ordinary content.
 
-On list entry with no nonzero focus set by the screen, select the first row that is neither informational nor
-disabled. If none is available, keep the initial row. Returning with Back preserves the parent focus; manual
+When entering a list screen, if the screen has not set a nonzero focus, select the first row that is neither
+informational nor disabled. If none is available, keep the initial row. Returning with Back preserves the parent focus; manual
 navigation can still reach disabled rows to explain why they are unavailable.
 
 Core code never includes a board header and never tests a radio define. What differs by radio comes from the board
