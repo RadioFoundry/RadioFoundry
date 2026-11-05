@@ -8,6 +8,8 @@ MCU        := gd32f303
 # The image starts where the vendor bootloader starts the application (hardware-d578uv.md 2)
 APP_BASE   := 0x08006000
 # Bench knobs (docs/testing/d578uv-bringup.md), e.g. D578UV_DEFS="-DD578UV_LEVEL_IC=0" to keep SWD on
+# board_t .name, the Artery build (boards/d578uva) has its own
+BOARD_T_NAME := AT-D578UV
 D578UV_DEFS ?=
 MCU_DEFS   += $(D578UV_DEFS)
 BOARD_DIRS := boards/d578uv drivers/display/st7735 drivers/flash/spi_nand drivers/input/quadrature drivers/modem/sct \

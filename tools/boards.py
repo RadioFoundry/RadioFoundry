@@ -94,7 +94,7 @@ DATA_SECTOR = 0x1000		# an SPI NOR data flash's smallest erase (sector erase 0x2
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
 MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
-             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "HSE_VALUE", "MCU_DEFS")
+             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "HSE_VALUE", "MCU_DEFS", "BOARD_T_NAME")
 # The frame buffer core/ui/gfx.h builds when a board's MCU_DEFS don't size it (RGB565, 160x128, at most 160 rows)
 GFX_DEFAULTS = {"GFX_FB_BYTES": 160 * 128 * 2, "GFX_MAX_ROWS": 160, "GFX_INDEXED": 0}
 # The [flash.stub] id every stub keeps for its tools' test profiles (stub/f4stub.py test_board()), so a test record
@@ -833,7 +833,10 @@ def load(root=ROOT, only=None):
         if plat is None:
             raise RegistryError("boards/%s: PLATFORM %r has no platform/<p>/platform.toml" % (bid, mk.get("PLATFORM")))
         srcs = [bdir] + shared_board_dirs(root, bid, mk)
-        out[bid] = Board(data, plat, mk, _layout(root, bid, mk), board_t_names(srcs),
+        # .name = BOARD_T_NAME: the Makefile defines it from board.mk, so its value is the board's literal
+        names = [(mk["BOARD_T_NAME"], None) if macro == "BOARD_T_NAME" and mk.get("BOARD_T_NAME") else (lit, macro)
+                 for lit, macro in board_t_names(srcs)]
+        out[bid] = Board(data, plat, mk, _layout(root, bid, mk), names,
                          pin_defines(os.path.join(bdir, "pins.h")),
                          # the platform's config.mk adds its own switches (no USB on a platform without it); the
                          # board's reason wins for a switch both list

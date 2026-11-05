@@ -74,7 +74,7 @@ static const keymap_entry_t keymap[] = {
 };
 
 const board_t board = {
-	.name = "AT-D578UV",
+	.name = BOARD_T_NAME,	// board.mk: the GD32 and Artery builds report their own
 #if CONFIG_DMR
 	.caps = CAP_ENCODER | CAP_NO_BATTERY | CAP_DMR | CAP_MODEM_VOICE | (CONFIG_GPS ? CAP_GPS : 0) |
 		(CONFIG_AM_RX ? CAP_AM_RX : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
