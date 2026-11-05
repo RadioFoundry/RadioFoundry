@@ -229,7 +229,8 @@ export async function c7000Simulation(cReal, boardId, seed = 7000, radio = null)
 	progmem.set(new TextEncoder().encode(c.boards[boardId].bootloader_id || ""), 0x5000);
 	const fwLen = 0xC0000;
 	progmem.set(randomBytes(r, fwLen).map((b) => (b < 120 ? b : 0)), c.app_start);	// firmware-like
-	const real = c.profiles.find((p) => p.board === boardId);
+	// a board without a codec map yet (in bring-up) borrows another board's profile: the simulation makes its own codec
+	const real = c.profiles.find((p) => p.board === boardId) ?? { ...c.profiles[0], board: boardId, name: boardId };
 	const code = randomBytes(r, real.code_len);
 	code.set(sigBytes(c), 0);
 	code.set(le32(real.run + 0x100), 0x40);		// one address word inside the code, which the map lists
