@@ -11,7 +11,7 @@ and follows the deepest call chain from each task's entry function:
   need = deepest chain (sum of frames) + port overhead (what the RTOS port saves on a task stack) + margin
 
 It fails when the need exceeds the task's stack. A platform whose interrupts run one at a time on a stack of their
-own (--irq-stack) names the function that installs a handler (--irq-register): every function passed to it is a root,
+own (--irq-stack, or --irq-stack-symbols for its ends in the ELF) names the function that installs a handler (--irq-register): every function passed to it is a root,
 and the deepest of them plus the margin must fit that stack. Calls through function pointers are resolved from the sources: a
 function stored into a struct field (a designated or positional initializer, an assignment) is a target of the calls
 through that field of that struct type; a function stored into a variable or passed as an argument is a target of
@@ -1063,6 +1063,7 @@ class Disasm:
     def __init__(self, dis, sym, fixed=None):
         self.funcs = {}		# address -> [name, frame, set of called addresses]
         self.addr = {}		# symbol name -> address
+        self.syms = {}		# every symbol's address, functions or not (a linker script's stack bounds)
         self.memo = {}
         self.fixed = fixed or {}	# symbol -> bytes, not followed (the table's lib lines)
         cur = None
@@ -1101,6 +1102,8 @@ class Disasm:
                 cur[2].add(int(m.group(1), 16))
         for line in sym.splitlines():
             m = re.match(r"^([0-9a-f]+)\s.*\s(\S+)$", line)
+            if m:
+                self.syms.setdefault(m.group(2), int(m.group(1), 16))
             if m and " F " in line:
                 self.addr.setdefault(m.group(2), int(m.group(1), 16) & ~1)
 
@@ -1296,6 +1299,14 @@ def run(args):
     disasm = None
     if args.objdump and args.elf:
         disasm = Disasm.from_elf(args.objdump, args.elf, table.lib)
+    if args.irq_stack_symbols:
+        # The interrupt stack's size as linked: no number to keep in step with the linker script
+        names = args.irq_stack_symbols.split(",")
+        if disasm is None or len(names) != 2 or any(n not in disasm.syms for n in names):
+            print("stack_check: --irq-stack-symbols %s: not in the ELF (needs --objdump and --elf)" %
+                  args.irq_stack_symbols, file=sys.stderr)
+            return 2
+        args.irq_stack = disasm.syms[names[1]] - disasm.syms[names[0]]
     an = Analysis(graph, model, table, args.lib_default, disasm)
     label = args.label or os.path.basename(os.path.normpath(args.build))
     fails = 0
@@ -1593,6 +1604,8 @@ def main():
                     DEFAULT_LIB_BYTES)
     ap.add_argument("--irq-stack", type=int, default=0,
                     help="bytes of the stack the interrupt handlers run on, one at a time (0: not checked)")
+    ap.add_argument("--irq-stack-symbols", metavar="BOTTOM,TOP",
+                    help="that stack's size from two ELF symbols, its ends (instead of --irq-stack)")
     ap.add_argument("--irq-register", action="append",
                     help="function whose last argument is an interrupt handler (repeatable)")
     ap.add_argument("--label", help="name in the report (default: the build directory's)")
