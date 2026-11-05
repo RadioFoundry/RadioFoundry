@@ -157,12 +157,14 @@ feature it checks.
 A test may carry several feature markers. What a test needs comes from its markers and fixtures: `rf` and `radio_tx`
 need `--allow-rf`, `bench_service` and the `sdr_bench` fixture the SDR bench, `manual` a person (`--manual`, and the
 marker's `owner=` says what they do), `second_radio` and the `bench_station` fixture a second radio, `usb_switch`,
-`codeplug_write` and `reboot` their `--allow-*` flags. `tools/bringup.py` (Python 3.11 or later) resolves each
+`codeplug_write` and `reboot` their `--allow-*` flags, the `microphone` fixture `--microphone`, and `factory_reset`
+`RFOUNDRY_HIL_FACTORY_RESET=1`. `tools/bringup.py` (Python 3.11 or later) resolves each
 radio's state for each feature from the board registry (`tools/boards.py`) and the board's build data:
 
 | State | When |
 |---|---|
-| `n/a` | The switch is in the board's `BOARD_UNSUPPORTED`: the hardware can't (`config.mk`, one switch a line with the reason in its comment: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`). `tools/boards.py check` fails on one without a reason |
+| `n/a` | The switch is in the board's `BOARD_UNSUPPORTED`: the hardware can't (`config.mk`, one switch a line with the reason in its comment: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`). `tools/boards.py check` fails on one without a reason. A feature without a switch: `board.toml` `[features] <id> = { state = "n/a", reason = "..." }` (key lock on a radio with no keypad) |
+| `requires` | Not a state: a feature without a switch of its own that is part of another's (`requires = "DMR"` for DMR data) takes that switch's `n/a`, `not written` or `off` on a board that leaves it out |
 | `not written` | The switch is in the board's `BOARD_NOT_WRITTEN`: the hardware could, the driver or glue isn't written for the radio yet. Same form and check; its tests skip `not_built` ([build-config.md](../../docs/build-config.md#unsupported-not-written-unconfirmed)) |
 | `unsupported` | `board.toml` `[features] <id> = { state = "unsupported", reason = "..." }`: built, but known not to work on the radio yet. Code not written for the radio goes in `BOARD_NOT_WRITTEN` instead |
 | `off` | The board's default build leaves the switch off |
@@ -186,7 +188,10 @@ excuse it:
 - `bench`: excused when the test needs the SDR bench. A run that finds no radio fails.
 - `opt_in`: excused when the test needs something the run didn't allow (`--allow-rf` for `rf`, `--manual` for a
   `manual` test and so on). With every need allowed, a missing option such as `--ambe` fails.
-- `not_built`, `no_hw`, `state`: never excused.
+- `not_built`: excused when the test carries `@pytest.mark.needs_switch("X")` and the board leaves switch `X` out
+  (`n/a`, `not written` or `off`; `run` passes them as `--bringup-absent`). A test of a built feature that also
+  needs another switch says so with this marker. Never excused otherwise.
+- `no_hw`, `state`: never excused.
 
 An excused skip is recorded but doesn't verify the feature, and an optional test never fails the run. A feature that
 depends on hardware glue has a capability gate, its one test marked `gate=True` (`test_split_capability`): it checks
