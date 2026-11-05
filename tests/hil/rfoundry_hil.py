@@ -446,6 +446,22 @@ class Radio:
     def long_press(self, name):
         self.press(name, LONG)
 
+    def in_band(self, hz):
+        """True if hz is inside one of the radio's bands (core view bands=). Firmware without the key: True."""
+        bands = self.core().get("bands")
+        if bands is None:
+            return True
+        for r in filter(None, bands.split(",")):
+            lo, _, hi = r.partition("-")
+            if int(lo) <= hz <= int(hi):
+                return True
+        return False
+
+    def skip_out_of_band(self, hz):
+        """Skip the test (no_hw) when hz is outside the radio's bands."""
+        if not self.in_band(hz):
+            skip("no_hw", f"{hz / 1e6:.4f} MHz is outside the radio's bands ({self.core().get('bands')})")
+
     def unlock_key(self, v=None):
         """The key held to unlock: "quick", "back" or "none" (a key map with neither; auto lock never locks it). Firmware
         without ui.unlock_key: "quick"."""

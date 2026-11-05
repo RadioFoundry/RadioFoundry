@@ -205,6 +205,7 @@ def test_probe_stream_in_fm(probe, pytestconfig):
         skip("not_built", "built without the FM VFO")
     L = probe.link
     hz = round(rig(pytestconfig, "noaa-mhz") * 1e6)
+    probe.skip_out_of_band(hz)
     with probe.vfo_session():
         L.vfo_set(hz)
         probe.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
@@ -221,6 +222,7 @@ def test_probe_fm_rx_variants(probe, pytestconfig):
         skip("not_built", "built without the FM VFO")
     L = probe.link
     noaa = round(rig(pytestconfig, "noaa-mhz") * 1e6)
+    probe.skip_out_of_band(noaa)
     quiet = noaa + 2_000_000          # 2 MHz away: nothing there at the bench, squelch closed (checked)
     rows = []
     with probe.vfo_session():
@@ -345,6 +347,7 @@ def test_probe_fm_ram_rx(probe, pytestconfig):
         skip("not_built", "built without the FM VFO")
     L = probe.link
     noaa = round(rig(pytestconfig, "noaa-mhz") * 1e6)
+    probe.skip_out_of_band(noaa)
     quiet = noaa + 2_000_000
     res = {}
     with probe.vfo_session():
