@@ -7,7 +7,7 @@
 <!-- generated: tools/boards.py docs radios; edit boards/*/board.toml [status] -->
 | 电台 | 其他销售名称 | 可用功能 |
 |---|---|---|
-| [宝锋 DM-32UV](#baofeng-dm-32-uv) |  | FM 与 DMR 语音双向、CTCSS/DCS、APRS 双向、GPS 数据、热点以及分离双工的每一半均已在空中验证。待完成：12.5 kHz 下的 FM 频偏和户外 GPS 定位。 |
+| [宝锋 DM-32UV](#baofeng-dm-32uv) |  | FM 与 DMR 语音双向、CTCSS/DCS、APRS 双向、GPS 数据、热点以及分离双工的每一半均已在空中验证。待完成：12.5 kHz 下的 FM 频偏和户外 GPS 定位。 |
 | [宝锋 DM-1701](#baofeng-dm-1701) | Retevis RT84 | FM、DMR 语音与数据、文本消息、提示、紧急、扫描、热点、单频中继、分离双工的每一半以及 USB 网络服务均已在空中验证。待完成：独立 SFR 和两台电台组成的分离双工对。 |
 | [宝锋 DM-1801 Pro](#baofeng-dm-1801-pro) | 宝锋 DM-1801 | 带 CTCSS/DCS 的 FM、使用电台自身编解码器的 DMR 语音、DMR 数据与文本、热点、单频中继、PPP 网络服务以及分离双工的每一半均已在空中验证。待完成：VHF 发射和 VOX。 |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM 与 DMR 语音双向、热点、DMR VFO、PPP 网络服务、线缆编程和设置存储已在电台上验证。较旧的 FD6818 批次运行同一镜像，未在电台上测试。待完成：Retevis RT73。 |
