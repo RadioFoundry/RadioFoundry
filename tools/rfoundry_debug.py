@@ -885,7 +885,7 @@ class DebugLink:
     def tone_burst(self, on, max_ms=0):
         """The 1750 Hz burst (FM): keys up and sends the tone while on. The firmware ends it by itself after max_ms
         (0: inject_max_ms, the cap as for PTT), so a lost "off" can't leave the radio keyed."""
-        self.radio(OP_TONE_BURST, struct.pack("<BH", 1 if on else 0, int(max_ms)))
+        self.radio(OP_TONE_BURST, struct.pack("<BH", 1 if on else 0, max(0, min(int(max_ms), 0xFFFF))))  # firmware caps it
 
     def setting(self, name, value):
         """One radio setting in RAM (not stored): a SETTINGS name or id, value u16 (negative: two's complement)."""

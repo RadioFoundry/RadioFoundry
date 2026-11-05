@@ -516,7 +516,6 @@ def test_tone_burst_time_limit(fm_tx):
             pass
 
 
-
 # ── the SDR bench transmits ───────────────────────────────────────────────
 
 @pytest.mark.feature("scan")
