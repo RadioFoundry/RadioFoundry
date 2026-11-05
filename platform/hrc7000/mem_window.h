@@ -45,4 +45,32 @@ static inline bool hrc_mem_window_for(unsigned i, hal_mem_window_t *w, uint32_t 
 	return false;
 }
 
+// CHIP_REG's SoC register windows (docs/spec/debuglink.md 3.24): READ_MEM's register blocks plus the timers, whose EOI
+// read acknowledges (a register tool may mean that, a memory read never does). Aligned words only
+static inline bool hrc_reg_allowed(uint32_t addr)
+{
+	static const struct {
+		uint32_t lo, hi;	// inclusive
+	} win[] = {
+		{ 0x11000000u, 0x1100005Fu },	// system block
+		{ 0x14000000u, 0x14000077u },	// timers 1-6, 0x14 bytes each (hardware-dm32.md 3.4)
+		{ 0x14020000u, 0x1402007Fu },	// GPIO A
+		{ 0x14100000u, 0x1410007Fu },	// GPIO B
+		{ 0x14110000u, 0x1411007Fu },	// GPIO C
+		{ 0x17000000u, 0x17000033u },	// PIC, as READ_MEM's windows
+		{ 0x1700003Cu, 0x1700003Fu },
+		{ 0x17000044u, 0x1700004Bu },
+		{ 0x17000060u, 0x1700008Fu },
+	};
+	if ((addr & 3u) != 0u) {
+		return false;
+	}
+	for (unsigned i = 0; i < sizeof(win) / sizeof(win[0]); i++) {
+		if (addr >= win[i].lo && addr <= win[i].hi - 3u) {
+			return true;
+		}
+	}
+	return false;
+}
+
 #endif

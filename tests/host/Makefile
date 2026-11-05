@@ -775,6 +775,19 @@ run-debuglinkRx2: debuglinkRx2Test
 	./debuglinkRx2Test
 .PHONY: run-debuglinkRx2
 
+# DL_CMD_CHIP_REG, RF chip and SoC registers on the debug link (core/debuglink/debuglink_chipreg.c): the board's hooks
+# and the radio's view are faked
+CHIPREG := debuglinkChipRegTest.c $(CORE)/debuglink/debuglink_chipreg.c
+TESTS   += debuglinkChipRegTest
+debuglinkChipRegTest: $(CHIPREG) $(ROOT)/hal/board.h $(ROOT)/hal/hal_system.h $(CORE)/debuglink/debuglink.h \
+		$(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -o $@ $(CHIPREG)
+
+run: run-debuglinkChipReg
+run-debuglinkChipReg: debuglinkChipRegTest
+	./debuglinkChipRegTest
+.PHONY: run-debuglinkChipReg
+
 # DL_CMD_DMR_DATA's IP operations (core/debuglink/debuglink_dmr_data.c): the settings' gateway ID and IP_SEND's parsing
 DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/debuglink/dl_fmt.c $(DATA)
 TESTS   += debuglinkDmrDataTest
