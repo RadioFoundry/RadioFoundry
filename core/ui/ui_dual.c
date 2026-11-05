@@ -1235,18 +1235,18 @@ static uint16_t pick_raw_count(void)
 static bool pick_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
 	static zone_t z;
-	static channel_t ch;
+	char name[CODEPLUG_NAME_LEN + 1];
 	sbuf_t b;
 	sb_init(&b, buf, len);
 	if (raw == 0) {
 		sb_str(&b, TR("Zone"));
 		return true;
 	}
-	if (!codeplug_zone(pick_zone, &z) || raw - 1u >= z.count || !codeplug_channel(z.channels[raw - 1u], &ch))
+	if (!codeplug_zone(pick_zone, &z) || raw - 1u >= z.count || !codeplug_channel_name(z.channels[raw - 1u], name))
 		return false;
 	sb_u32(&b, z.channels[raw - 1u], 1);
 	sb_chr(&b, ' ');
-	sb_str(&b, ch.name);
+	sb_str(&b, name);
 	return true;
 }
 
