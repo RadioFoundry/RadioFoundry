@@ -928,26 +928,34 @@ bool ui_svc_zone_pending(void)
 #if CONFIG_DMR
 // The first stored contact with this ID and kind becomes the channel's talk target. Searching the contacts reads up
 // to 1024 records, so it is part of the job too. Until it is done the target is a temporary one (ui_svc_talk_to)
+static bool target_match(uint16_t index, const contact_t *c, void *ctx)
+{
+	uint16_t *found = ctx;
+	if (c == NULL || c->id != job.id || (c->type == CONTACT_PRIVATE) != job.private_call)
+		return true;
+	*found = index;
+	return false;
+}
+
 static void save_target_job(void *ctx)
 {
 	(void)ctx;
-	contact_t c;
 	if (!codeplug_channel(job.channel, &job_ch)) {
 		save_failed(TRN("Couldn't read the channel: for now only"));
 		return;
 	}
-	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
-		if (!codeplug_contact(i, &c) || c.id != job.id || (c.type == CONTACT_PRIVATE) != job.private_call)
-			continue;
-		job_ch.contact = i;
-		if (!codeplug_set_channel(job.channel, &job_ch)) {
-			save_failed(TRN("Codeplug not written: for now only"));
-			return;
-		}
-		radio_req_dmr_target_clear();	// the channel's own target is this one now
+	uint16_t found = 0;
+	codeplug_contacts_each(target_match, &found);
+	if (found == 0) {
+		save_failed(TRN("Not a stored contact: for now only"));
 		return;
 	}
-	save_failed(TRN("Not a stored contact: for now only"));
+	job_ch.contact = found;
+	if (!codeplug_set_channel(job.channel, &job_ch)) {
+		save_failed(TRN("Codeplug not written: for now only"));
+		return;
+	}
+	radio_req_dmr_target_clear();	// the channel's own target is this one now
 }
 
 bool ui_svc_save_talk_target(uint32_t id, bool private_call)

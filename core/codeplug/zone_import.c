@@ -81,6 +81,30 @@ static int mark_needed(void)
 	return n;
 }
 
+typedef struct {
+	uint16_t free_slots[ZS_CONTACTS_MAX];
+	int free_count;
+} map_scan_t;
+
+static bool map_one(uint16_t index, const contact_t *have, void *ctx)
+{
+	map_scan_t *m = ctx;
+	zsContact_t c;
+
+	if (have == NULL) {
+		if (m->free_count < ZS_CONTACTS_MAX) {
+			m->free_slots[m->free_count++] = index;
+		}
+		return true;
+	}
+	for (int k = 0; k < rec.contacts; k++) {
+		if (needed[k] && (contact_index[k] == 0) && zsContactAt(&rec, k, &c) && (c.id == have->id) && (c.type == have->type)) {
+			contact_index[k] = index;
+		}
+	}
+	return true;
+}
+
 // Every contact the imported channels need mapped to one here: matched by ID and type (the user's name kept), else
 // added in the lowest free slots. One pass over the contact records (up to 24 KB of flash)
 static zone_import_status_t map_contacts(zone_import_result_t *res)
@@ -89,25 +113,12 @@ static zone_import_status_t map_contacts(zone_import_result_t *res)
 	if (rec.contacts == 0 || mark_needed() == 0) {
 		return ZI_OK;
 	}
-	uint16_t free_slots[ZS_CONTACTS_MAX];
-	int free_count = 0;
+	map_scan_t m = { .free_count = 0 };
 	zsContact_t c;
 
-	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
-		contact_t have;
-
-		if (!codeplug_contact(i, &have)) {
-			if (free_count < ZS_CONTACTS_MAX) {
-				free_slots[free_count++] = i;
-			}
-			continue;
-		}
-		for (int k = 0; k < rec.contacts; k++) {
-			if (needed[k] && (contact_index[k] == 0) && zsContactAt(&rec, k, &c) && (c.id == have.id) && (c.type == have.type)) {
-				contact_index[k] = i;
-			}
-		}
-	}
+	codeplug_contacts_each(map_one, &m);
+	uint16_t *free_slots = m.free_slots;
+	int free_count = m.free_count;
 	int next_free = 0;
 
 	for (int k = 0; k < rec.contacts; k++) {

@@ -467,6 +467,12 @@ factory calibration sector. A status read needs the chip select, and write enabl
 **10.4 Spare codeplug bytes get zeroed by a CPS.** SFR settings live in channel spare bytes guarded by a flag bit
 (flag 1 bit 0x02); a CPS that rewrites them with 0 turns SFR off.
 
+**10.5 Read many records in one flash read.** On a radio whose SPI flash is polled a byte at a time, a read costs
+about 0.15 ms before its first byte. A search or list that read 1024 contacts or channels one by one took 0.2-0.35 s a
+key, and fast typing kept the idle task out for 1.8 s. Scans read blocks (`codeplug_contacts_each`,
+`codeplug_channel_names_each`), a search by name reads the name alone (`codeplug_channel_name`, `codeplug_zone_name`),
+and a scan per drawn row is a scan per frame ([ui.md](ui.md) 2, [watchdog.md](watchdog.md) 4).
+
 ## 11. Calibration
 
 **11.1 Reference oscillator sign (HR_C5000 board).** regs 0x47 / 0x48 / 0x04 = 0x7F minus the calibration value, DAC2 =

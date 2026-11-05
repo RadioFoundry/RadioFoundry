@@ -738,6 +738,86 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	return ok;
 }
 
+// The scans' block buffer (codeplug_contacts_each, codeplug_channel_names_each). Static, used only under the storage
+// lock: on the stack it overflowed the radio task, whose DMR set-up scans through codeplug_contact_find (a DMR VFO whose
+// talk target is a contact, at boot). in_scan marks it in use, so a scan nested in a scan's callback (same task: the
+// lock is recursive) reads record by record instead of reusing it
+#define CONTACTS_PER_READ	32u	// records per flash read in a scan: 768 bytes
+#define CHANNELS_PER_READ	13u	// 728 bytes
+static uint8_t scan_blk[CONTACTS_PER_READ * CONTACT_SIZE];
+static bool in_scan;
+_Static_assert(CHANNELS_PER_READ * CH_SIZE <= sizeof scan_blk, "channel block");
+
+bool codeplug_channel_used(uint16_t number)
+{
+	return source == CODEPLUG_BUILTIN ? number >= 1 && number <= builtin_count : source == CODEPLUG_OPENFW && is_used(number);
+}
+
+bool codeplug_channel_name(uint16_t number, char out[CODEPLUG_NAME_LEN + 1])
+{
+	if (source == CODEPLUG_BUILTIN) {
+		if (number < 1 || number > builtin_count) {
+			return false;
+		}
+		strncpy(out, builtin[builtin_map[number - 1u]].name, CODEPLUG_NAME_LEN);
+		out[CODEPLUG_NAME_LEN] = '\0';
+		return true;
+	}
+	if (source != CODEPLUG_OPENFW) {
+		return false;
+	}
+	uint8_t r[CODEPLUG_NAME_LEN];
+	storage_lock();
+	bool ok = is_used(number) && flash_read(channel_addr(number) + CH_NAME, r, sizeof(r));
+	storage_unlock();
+	if (ok) {
+		copy_name(out, r, CODEPLUG_NAME_LEN);
+	}
+	return ok;
+}
+
+bool codeplug_channel_names_each(codeplug_name_fn fn, void *ctx, bool names)
+{
+	char name[CODEPLUG_NAME_LEN + 1];
+	uint16_t top = codeplug_channel_count();
+	bool ok = true, go = true;
+	uint16_t n;
+	for (uint16_t first = 1; first <= top && ok && go; first = (uint16_t)(first + n)) {
+		// A block never crosses a bank: the next one starts after the bitmap
+		n = (uint16_t)(CH_PER_BANK - (first - 1u) % CH_PER_BANK);
+		n = n < CHANNELS_PER_READ ? n : CHANNELS_PER_READ;
+		n = n < top - first + 1u ? n : (uint16_t)(top - first + 1u);
+		storage_lock();
+		bool table = source == CODEPLUG_BUILTIN, nested = in_scan;
+		// Only the span from the first used record to the last
+		uint16_t lo = first, hi = (uint16_t)(first + n - 1u);
+		while (!table && lo <= hi && !is_used(lo)) {
+			lo++;
+		}
+		while (!table && hi >= lo && !is_used(hi)) {
+			hi--;
+		}
+		in_scan = true;
+		ok = table || !names || nested || lo > hi ||
+		     flash_read(channel_addr(lo), scan_blk, (uint32_t)(hi - lo + 1u) * CH_SIZE);
+		for (uint16_t k = first; k < first + n && ok && go; k++) {
+			const char *got = NULL;
+			if (!names && (table || is_used(k))) {
+				got = "";
+			} else if (table || nested) {
+				got = codeplug_channel_name(k, name) ? name : NULL;
+			} else if (is_used(k)) {
+				copy_name(name, &scan_blk[(k - lo) * CH_SIZE + CH_NAME], CODEPLUG_NAME_LEN);
+				got = name;
+			}
+			go = fn(k, got, ctx);
+		}
+		in_scan = nested;
+		storage_unlock();
+	}
+	return ok;
+}
+
 uint16_t codeplug_zone_count(void)
 {
 	if (source == CODEPLUG_NONE) {
@@ -752,9 +832,11 @@ bool codeplug_zones_stored(void)
 }
 
 // The virtual zone: every used channel, as many as a zone_t holds
+#define ALL_CHANNELS	"All channels"	// the zone there is without stored ones
+
 static void all_channels(zone_t *out)
 {
-	strncpy(out->name, "All channels", CODEPLUG_NAME_LEN);
+	strncpy(out->name, ALL_CHANNELS, CODEPLUG_NAME_LEN);
 	uint16_t top = codeplug_channel_count();
 	for (uint16_t n = 1; n <= top && out->count < CODEPLUG_ZONE_MAX; n++) {
 		if (source == CODEPLUG_BUILTIN || is_used(n)) {
@@ -788,6 +870,26 @@ bool codeplug_zone(uint16_t index, zone_t *out)
 					out->channels[out->count++] = n;	// skip references to empty or broken records
 				}
 			}
+		}
+	}
+	storage_unlock();
+	return ok;
+}
+
+bool codeplug_zone_name(uint16_t index, char out[CODEPLUG_NAME_LEN + 1])
+{
+	uint8_t r[ZONE_NAME_LEN];
+	bool ok;
+	storage_lock();
+	if (index >= codeplug_zone_count()) {
+		ok = false;
+	} else if (zone_count == 0) {
+		strncpy(out, ALL_CHANNELS, CODEPLUG_NAME_LEN + 1);
+		ok = true;
+	} else {
+		ok = flash_read(ZONE_DATA + zone_slot[index] * zone_record, r, sizeof(r));
+		if (ok) {
+			copy_name(out, r, ZONE_NAME_LEN);
 		}
 	}
 	storage_unlock();
@@ -1261,14 +1363,10 @@ bool codeplug_set_dmr_id(uint32_t id)
 	return ok;
 }
 
-bool codeplug_contact(uint16_t index, contact_t *out)
+// One contact record decoded; false for an empty or unusable slot
+static bool contact_decode(const uint8_t *r, contact_t *out)
 {
-	uint8_t r[CONTACT_SIZE];
-	storage_lock();
-	bool ok = source == CODEPLUG_OPENFW && index >= 1 && index <= CODEPLUG_CONTACTS_MAX &&
-		  flash_read(CONTACT_BASE + (index - 1u) * CONTACT_SIZE, r, sizeof(r));
-	storage_unlock();
-	if (!ok || r[0] == 0xFF || r[0x14] > CONTACT_ALL_CALL) {
+	if (r[0] == 0xFF || r[0x14] > CONTACT_ALL_CALL) {
 		return false;
 	}
 	memset(out, 0, sizeof(*out));
@@ -1282,6 +1380,43 @@ bool codeplug_contact(uint16_t index, contact_t *out)
 		out->timeslot = (r[0x17] & 0x02u) ? 2 : 1;
 	}
 	return true;
+}
+
+bool codeplug_contact(uint16_t index, contact_t *out)
+{
+	uint8_t r[CONTACT_SIZE];
+	storage_lock();
+	bool ok = source == CODEPLUG_OPENFW && index >= 1 && index <= CODEPLUG_CONTACTS_MAX &&
+		  flash_read(CONTACT_BASE + (index - 1u) * CONTACT_SIZE, r, sizeof(r));
+	storage_unlock();
+	return ok && contact_decode(r, out);
+}
+
+
+bool codeplug_contacts_each(codeplug_contact_fn fn, void *ctx)
+{
+	if (source != CODEPLUG_OPENFW) {
+		return false;
+	}
+	contact_t c;
+	bool ok = true, go = true;
+	// The lock is taken per read, so the radio task's own reads wait for one block's callbacks at most
+	for (unsigned first = 0; first < CODEPLUG_CONTACTS_MAX && ok && go; first += CONTACTS_PER_READ) {
+		unsigned n = CODEPLUG_CONTACTS_MAX - first < CONTACTS_PER_READ ? CODEPLUG_CONTACTS_MAX - first
+									  : CONTACTS_PER_READ;
+		storage_lock();
+		bool nested = in_scan;
+		in_scan = true;
+		ok = nested || flash_read(CONTACT_BASE + first * CONTACT_SIZE, scan_blk, n * CONTACT_SIZE);
+		for (unsigned i = 0; i < n && ok && go; i++) {
+			uint16_t index = (uint16_t)(first + i + 1u);
+			bool have = nested ? codeplug_contact(index, &c) : contact_decode(&scan_blk[i * CONTACT_SIZE], &c);
+			go = fn(index, have ? &c : NULL, ctx);
+		}
+		in_scan = nested;
+		storage_unlock();
+	}
+	return ok;
 }
 
 bool codeplug_set_contact(uint16_t index, const contact_t *c)
@@ -1391,39 +1526,33 @@ bool codeplug_delete_listen_list(uint16_t index)
 	return ok;
 }
 
+typedef struct {
+	uint32_t id;
+	bool group;
+	contact_t *out;
+	uint16_t index;
+} find_t;
+
+static bool find_one(uint16_t index, const contact_t *c, void *ctx)
+{
+	find_t *f = ctx;
+	if (c == NULL || c->id != f->id || (c->type == CONTACT_PRIVATE) == f->group) {
+		return true;
+	}
+	*f->out = *c;
+	f->index = index;
+	return false;
+}
+
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
 {
-	enum { PER_READ = 32 };	// records per flash read
-	// Static, used only under the storage lock: on the stack it overflowed the radio task, whose DMR set-up calls
-	// this through find_name (a DMR VFO whose talk target is a contact, at boot)
-	static uint8_t r[PER_READ * CONTACT_SIZE];
-
-	if (source != CODEPLUG_OPENFW || id == 0 || id > 0xFFFFFFu) {
+	if (id == 0 || id > 0xFFFFFFu) {
 		return false;
 	}
 	// Locked like every other reader: the radio task and the UI task both search, and an edit may be writing
-	bool found = false, done = false;
-	storage_lock();
-	for (unsigned first = 0; first < CODEPLUG_CONTACTS_MAX && !done; first += PER_READ) {
-		if (!flash_read(CONTACT_BASE + first * CONTACT_SIZE, r, sizeof(r))) {
-			break;
-		}
-		for (unsigned i = 0; i < PER_READ; i++) {
-			const uint8_t *c = &r[i * CONTACT_SIZE];
-			uint8_t type = c[0x14];
-			if (c[0] == 0xFF || type > CONTACT_ALL_CALL || (type == CONTACT_PRIVATE) == group) {
-				continue;
-			}
-			uint32_t cid = type == CONTACT_ALL_CALL ? 0xFFFFFFu : bcd_id(&c[0x10]);
-			if (cid == id) {
-				found = codeplug_contact((uint16_t)(first + i + 1u), out);	// the lock is recursive
-				done = true;
-				break;
-			}
-		}
-	}
-	storage_unlock();
-	return found;
+	find_t f = { .id = id, .group = group, .out = out };
+	codeplug_contacts_each(find_one, &f);
+	return f.index != 0;
 }
 
 bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
