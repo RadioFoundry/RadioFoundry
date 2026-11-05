@@ -896,7 +896,8 @@ class SdrBench:
                 self._api_claim(job[k])
         ambe_dir = None
         if job.get("ambe_out"):             # the board sends the file's bytes back: written where the test asked
-            ambe_dir = os.path.dirname(os.path.abspath(job["ambe_out"]))
+            ambe_dir = os.path.dirname(os.path.abspath(os.path.expanduser(job["ambe_out"])))
+            os.makedirs(ambe_dir, exist_ok=True)    # a write failing in the reader thread would lose the job's output
             job["ambe_out"] = os.path.basename(job["ambe_out"])
         req = {"op": "run", "session": self._api_session, "job": job, "label": getattr(self.bench, "label", None) or tool,
                "wait_max": self.dmr_bench.WAIT_MAX}
