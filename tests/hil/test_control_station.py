@@ -18,6 +18,7 @@ import pytest
 
 from rfoundry_hil import DebugLink, DebugLinkError, skip
 from hil_config import rig
+from test_usb_network import _serial_back
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 FIXED_RADIO = "192.168.10.1"     # IPGW_FIXED_LINK_DEFAULT
@@ -42,15 +43,6 @@ def _udp_link(ip, timeout):
         except (DebugLinkError, OSError):
             time.sleep(0.5)
     return None
-
-
-def _serial_back(radio, timeout):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if radio.port_present():
-            return True
-        time.sleep(0.5)
-    return False
 
 
 def _reconnect(radio):

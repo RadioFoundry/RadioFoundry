@@ -215,7 +215,7 @@ def test_am_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
         time.sleep(0.5)
         with sdr_bench.lease():
             p, path = microphone.start(length + 3.0)
-            done = am_tx_start(sdr_bench, mhz, AM_PROGRAM, depth=0.3, lead=AM_LEAD_S, tail=AM_LEAD_S).wait(length + 15)
+            done = am_tx_start(sdr_bench, mhz, AM_PROGRAM, depth=0.3, lead_s=AM_LEAD_S, tail_s=AM_LEAD_S).wait(length + 15)
             microphone.finish(p, path)
     print(f"bench {done}")
     assert not done.get("cut"), f"the bench cut its transmission: {done}"

@@ -22,6 +22,7 @@ import urllib.request
 import pytest
 
 from rfoundry_hil import DebugLink, DebugLinkError, skip
+from test_usb_network import _serial_back
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 FEND, FESC, TFEND, TFESC = 0xC0, 0xDB, 0xDC, 0xDD
@@ -37,15 +38,6 @@ def _udp_link(ip, timeout):
         except (DebugLinkError, OSError):
             time.sleep(0.5)
     return None
-
-
-def _serial_back(radio, timeout):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if radio.port_present():
-            return True
-        time.sleep(0.5)
-    return False
 
 
 @pytest.fixture(scope="module")

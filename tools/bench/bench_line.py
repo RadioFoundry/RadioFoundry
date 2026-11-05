@@ -142,7 +142,7 @@ class Request:
         self.log = log or (lambda s: print(s, file=sys.stderr, flush=True))
         self.replies, self.stamps = [], []
         self.error = None
-        self.cancelled = False
+        self.canceled = False
         self.first = threading.Event()
         self.done = threading.Event()
         self.conn = Conn(where)
@@ -188,7 +188,7 @@ class Request:
 
     def cancel(self):
         """Close the connection: the board ends the request (a transmission unkeys)."""
-        self.cancelled = True
+        self.canceled = True
         self.done.set()
         self.conn.end()
         self.thread.join(5)

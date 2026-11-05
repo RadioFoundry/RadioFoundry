@@ -82,7 +82,7 @@ def net(radio):
             except Exception:
                 pass
             n.close()
-            assert _serial_back(30), "the radio didn't come back as a serial port"
+            assert _serial_back(radio, 30), "the radio didn't come back as a serial port"
             time.sleep(2.0)
 
 

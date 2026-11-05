@@ -540,9 +540,9 @@ class Listener:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", default="/dev/ttyS0")
-    ap.add_argument("--freq", type=float, default=os.environ.get("RFOUNDRY_BENCH_FREQ"), required="RFOUNDRY_BENCH_FREQ" not in os.environ,
+    ap.add_argument("--freq", type=float, default=os.environ.get("RFOUNDRY_BENCH_FREQ"),
                     help="MHz ($RFOUNDRY_BENCH_FREQ): the rig's test frequency, no default")
-    ap.add_argument("--cc", type=int, default=os.environ.get("RFOUNDRY_BENCH_CC"), required="RFOUNDRY_BENCH_CC" not in os.environ,
+    ap.add_argument("--cc", type=int, default=os.environ.get("RFOUNDRY_BENCH_CC"),
                     help="color code ($RFOUNDRY_BENCH_CC), no default")
     ap.add_argument("--power", type=int, default=255, help="MMDVM_HS RF level 0-255")
     ap.add_argument("--rx-offset", type=int, default=None, help="Hz, the bench modem's RX offset (default: the bench's calibration)")
@@ -609,6 +609,8 @@ def main() -> None:
     args = ap.parse_args()
     if args.cmd == "selftest":
         raise SystemExit(selftest())
+    if args.freq is None or args.cc is None:     # not at the parser: selftest needs neither
+        ap.error("--freq and --cc are required ($RFOUNDRY_BENCH_FREQ, $RFOUNDRY_BENCH_CC)")
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(asctime)s %(message)s")
     if getattr(args, "burst_cc", None) is None:
         args.burst_cc = args.cc

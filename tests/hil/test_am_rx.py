@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import _LineTx, skip
+from rfoundry_hil import skip
 from hil_config import rig
 
 RISE_DB = 10.0              # rssi_dbm over the floor that counts as the carrier when the state shows no squelch
@@ -25,39 +25,10 @@ PROGRAM = [{"kind": "tone", "hz": 1000, "s": 3.0, "level": 1.0}]
 
 
 def am_tx_start(bench, freq, program, max_s=10.0, **fields):
-    """AM from the bench board on freq (MHz) in the background, like SdrBench.fm_tx_start (the tx op, mode am): a
+    """AM from the bench board on freq (MHz) in the background (SdrBench.tx_start: the tx op, mode am): a
     _LineTx once the board keyed; wait() gives its done record (depth, carrier_db, cut ...). A board that only sends
     frequency refuses AM: a skip (bench). Needs the lease and --allow-rf."""
-    if not bench.allow_rf:
-        raise RuntimeError("the bench board's AM transmitter keys up: needs --allow-rf")
-    if not bench.api:
-        skip("bench", "AM needs a bench board (--bench-api): the SDR bench host's modem is DMR only")
-    bench._tx_check(freq)
-    bench._need_lease()
-    modes = (bench._api_info().get("signal_modes") or {}).get("tx", [])
-    if "am" not in modes:
-        skip("bench", f"the bench board {bench.api} doesn't transmit AM (its signal modes: {modes or 'none'})")
-    L = bench._line()
-    bench._api_claim(freq)
-    req = {"op": "tx", "mode": "am", "freq": freq, "session": bench._api_session, "max_s": max_s, "program": program,
-           "wait_max": bench.dmr_bench.WAIT_MAX, "label": getattr(bench.bench, "label", None) or "am"}
-    if bench.api_level is not None:
-        req["power"] = bench.api_level
-    req.update({k: v for k, v in fields.items() if v is not None})
-    t = _LineTx(L, L.address(bench.api), req)
-    bench.bg.append(t)
-    end = time.monotonic() + bench.dmr_bench.WAIT_MAX + 30
-    while not t.started.wait(0.2) and not t.req.done.is_set() and time.monotonic() < end:
-        pass
-    e = t.req.error
-    if e is not None:
-        if "only sends frequency" in str(e):
-            skip("bench", f"the bench board can't send AM: {e}")
-        bench._api_fail(e, f"AM on {freq} MHz")
-    if not t.started.is_set():
-        t.terminate()
-        raise RuntimeError(f"the bench board never keyed AM on {freq} MHz: {t.req.replies[-3:]}")
-    return t
+    return bench.tx_start("am", freq, program, max_s, **fields)
 
 
 def am_vfo_ready(radio, pytestconfig):
@@ -105,7 +76,7 @@ def test_am_rx_squelch(radio, sdr_bench, pytestconfig):
             skip("state", f"the squelch is open on {mhz} MHz with nothing sent: something else is on the channel")
         seen = None
         with sdr_bench.lease():
-            tx = am_tx_start(sdr_bench, mhz, PROGRAM, depth=DEPTH, lead=LEAD_S, tail=LEAD_S)
+            tx = am_tx_start(sdr_bench, mhz, PROGRAM, depth=DEPTH, lead_s=LEAD_S, tail_s=LEAD_S)
             end = time.monotonic() + 4.0
             while time.monotonic() < end and not tx.over.is_set():
                 v = radio.core()

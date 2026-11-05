@@ -14,8 +14,9 @@ and measures the tones.
 Where and how it transmits, so that nothing reaches the APRS network:
 - Frequency: --aprs-test-mhz, through the custom APRS region, and one of the rig's transmit frequencies (tx_mhz); no
   default. Give an amateur simplex frequency that is not an APRS one: on an APRS frequency, digipeaters and iGates
-  would repeat the test frames and gate them to APRS-IS. A band with no APRS network nearby also keeps the frames
-  away from the bench's other receivers.
+  would repeat the test frames and gate them to APRS-IS. The regional APRS frequencies (144.390, 144.800, 145.175,
+  144.575, 144.660, 144.640) are refused even when tx_mhz lists them. A band with no APRS network nearby also keeps
+  the frames away from the bench's other receivers.
 - Path: none (no WIDEn-N), so a digipeater that hears a frame does not repeat it.
 - Power: the radio's lowest level. The tests check `aprs.tx_power` (the level an APRS
   transmission keys at) is 0 before keying, and skip on firmware without that key: it used to key APRS at the
@@ -67,12 +68,16 @@ from rfoundry_hil import DebugLinkError, skip
 from hil_config import rig, tx_allowed
 
 POS = (33.7490, -84.3880)
+# The APRS network's own frequencies (regional, public): digipeaters and iGates there would repeat and gate the test
+# frames. tx_mhz lists every frequency the rig may key on (DMR and FM tests too), so it can't stand in for this
+APRS_HZ = {144390000, 144800000, 145175000, 144575000, 144660000, 144640000}
 
 
 def allowed_test_hz(hz):
-    """One of the rig's transmit frequencies (tx_mhz): the operator lists only amateur simplex frequencies that are
-    not APRS ones there"""
-    return tx_allowed(None, hz / 1e6)
+    """One of the rig's transmit frequencies (tx_mhz), and not an APRS network frequency"""
+    return hz not in APRS_HZ and tx_allowed(None, hz / 1e6)
+
+
 PATHS = ["", "WIDE1-1", "WIDE1-1,WIDE2-1", "WIDE2-1", "WIDE2-2"]
 VIAS = {"rf": 0, "dmr": 1, "both": 2}
 REGION_CUSTOM, POS_FIXED, PATH_NONE = 6, 3, 0
@@ -176,7 +181,7 @@ class AprsSession:
 
     def rf_setup(self, call, ssid, hz):
         """AFSK on hz (custom region), no path, via RF, our test call and SSID, the fixed test position."""
-        assert allowed_test_hz(hz), f"{hz} Hz: not one of the rig's transmit frequencies (tx_mhz)"
+        assert allowed_test_hz(hz), f"{hz} Hz: an APRS frequency, or not one of the rig's transmit frequencies (tx_mhz)"
         self.set("region", REGION_CUSTOM)
         time.sleep(0.3)             # the view's frequency follows on the engine's next tick (25 ms)
         self.custom_hz = int(self.radio.view(["aprs"])["aprs.freq_hz"])
@@ -193,7 +198,7 @@ class AprsSession:
 
     def rx_setup(self, hz):
         """Receive on hz (custom region), the digipeater off: the radio never repeats what the bench sends"""
-        assert allowed_test_hz(hz), f"{hz} Hz: not one of the rig's transmit frequencies (tx_mhz)"
+        assert allowed_test_hz(hz), f"{hz} Hz: an APRS frequency, or not one of the rig's transmit frequencies (tx_mhz)"
         self.set("digi", 0)
         self.set("region", REGION_CUSTOM)
         time.sleep(0.3)             # the view's frequency follows on the engine's next tick (25 ms)
@@ -300,7 +305,7 @@ def aprs_air(radio, pytestconfig, request):
         skip("not_built", "built without FM")
     hz = round(rig(pytestconfig, "aprs-test-mhz") * 1e6)
     if not allowed_test_hz(hz):
-        pytest.fail(f"--aprs-test-mhz {hz / 1e6:.4f}: not one of the rig's transmit frequencies (tx_mhz)")
+        pytest.fail(f"--aprs-test-mhz {hz / 1e6:.4f}: an APRS frequency, or not one of the rig's transmit frequencies (tx_mhz)")
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
@@ -655,7 +660,7 @@ def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
     mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
     if not allowed_test_hz(hz):
-        pytest.fail(f"--fm-mhz {mhz:.4f}: not one of the rig's transmit frequencies (tx_mhz)")
+        pytest.fail(f"--fm-mhz {mhz:.4f}: an APRS frequency, or not one of the rig's transmit frequencies (tx_mhz)")
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")

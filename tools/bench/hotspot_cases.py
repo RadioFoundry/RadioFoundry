@@ -432,9 +432,9 @@ def main():
     ap.add_argument("--udp", default=None, help="host:port of the radio's MMDVM UDP transport (optional)")
     ap.add_argument("--local", default=":3335")
     ap.add_argument("--cases", default="all")
-    ap.add_argument("--freq", type=float, default=os.environ.get("RFOUNDRY_BENCH_FREQ"), required="RFOUNDRY_BENCH_FREQ" not in os.environ,
+    ap.add_argument("--freq", type=float, default=os.environ.get("RFOUNDRY_BENCH_FREQ"),
                     help="MHz ($RFOUNDRY_BENCH_FREQ): the rig's test frequency, no default")
-    ap.add_argument("--cc", type=int, default=os.environ.get("RFOUNDRY_BENCH_CC"), required="RFOUNDRY_BENCH_CC" not in os.environ,
+    ap.add_argument("--cc", type=int, default=os.environ.get("RFOUNDRY_BENCH_CC"),
                     help="color code ($RFOUNDRY_BENCH_CC), no default")
     ap.add_argument("--power", type=int, default=12)
     ap.add_argument("--repeat", type=int, default=1)
@@ -445,6 +445,8 @@ def main():
     if args.list:
         print("\n".join(CASES))
         return 0
+    if args.freq is None or args.cc is None:     # not at the parser: --list needs neither
+        ap.error("--freq and --cc are required ($RFOUNDRY_BENCH_FREQ, $RFOUNDRY_BENCH_CC)")
     if not (args.port or args.udp):
         ap.error("give --port or --udp")
     hz = int(round(args.freq * 1e6))

@@ -422,9 +422,17 @@ class Radio:
         return {k: v.get(k) for k in ("vfo", "zone_index", "zone_pos", "rx_hz", "power", "temp", "squelch",
                                       "monitor", "channel_number", "hotspot")}
 
-    def _req_until(self, action, pred, what, timeout=3.0):
-        action()
-        return self.wait_for(pred, timeout, what=what)
+    def _req_until(self, action, pred, what, timeout=6.0):
+        """Send the request until pred holds. Right after a TX or an emergency the radio can take a zone or VFO
+        request without acting on it, so one send is not enough. Every request sent here is idempotent."""
+        end = time.monotonic() + timeout
+        while True:
+            action()
+            try:
+                return self.wait_for(pred, min(1.5, max(0.1, end - time.monotonic())), what=what)
+            except AssertionError:
+                if time.monotonic() >= end:
+                    raise
 
     def restore(self, snap):
         """Put back what snapshot() saw: monitor, zone, VFO or channel position, temporary changes, power, squelch.
@@ -479,8 +487,10 @@ class Radio:
 
     @contextlib.contextmanager
     def vfo_session(self):
-        """Enter the FM VFO, yield its frequency, put the VFO's frequency and mode back afterwards (restore() does the
-        rest). The VFO's mode is a kept setting: a run cut short in a DMR VFO test leaves it DMR."""
+        """Enter the FM VFO with no RX or TX tone, yield its frequency, put the VFO's frequency, mode and tones back
+        afterwards (restore() does the rest). The VFO's mode and tones are kept settings: a run cut short in a DMR VFO
+        test leaves it DMR, and a tone left on it (a run cut short in a tone test, or set by hand) keeps the squelch
+        shut on every untoned bench signal."""
         L = self.link
         if self.core().get("vfo") != "1":
             self._req_until(lambda: L.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
@@ -488,9 +498,23 @@ class Radio:
         mode = self.core().get("mode")
         if mode != "fm":
             self._req_until(lambda: L.dmr_fields(mode="fm"), lambda v: v.get("mode") == "fm", "FM VFO")
+        ch = self.view(["channel"])
+        tones = {1: ch.get("ch.tx_tone", "none:0"), 2: ch.get("ch.rx_tone", "none:0")}     # 1 TX, 2 RX
+
+        def set_tones(want):
+            for which, t in want.items():
+                kind, value = t.split(":")
+                L.tone(which, kind, int(value))
+            self.wait_for(lambda v: v.get("ch.tx_tone") == want[1] and v.get("ch.rx_tone") == want[2],
+                          sections=("channel",), what=f"VFO tones TX {want[1]}, RX {want[2]}")
+        none = {1: "none:0", 2: "none:0"}
+        if tones != none:
+            set_tones(none)
         try:
             yield hz
         finally:
+            if tones != none:
+                set_tones(tones)
             if self.core().get("rx_hz") != str(hz):
                 self._req_until(lambda: L.vfo_set(hz), lambda v: v.get("rx_hz") == str(hz), "VFO frequency back")
             if self.core().get("mode") != mode:
@@ -613,7 +637,7 @@ class _LineJob:
         self.req.wait()
         if self.returncode is None:
             # An error reply, or the stream ended with no exit: the daemon client's exit codes
-            if self.req.cancelled:
+            if self.req.canceled:
                 self.returncode = -9
                 self.started.set()
                 return
@@ -885,29 +909,35 @@ class SdrBench:
         p.started.wait(self.dmr_bench.WAIT_MAX + 30 if wait_start else 1.0)
         if p.req.error is not None:
             self._api_fail(p.req.error, f"{tool} {job.get('cmd', '')}".strip())
+        if wait_start and not p.started.is_set():
+            # Still queued (or the board never said started): a test going on now would judge a radio with nothing sent
+            p.kill()
+            raise RuntimeError(f"the bench board never started {tool} {job.get('cmd', '')}: {''.join(p.lines)[-400:]}")
         return p
 
-    # ── a bench board's FM transmitter (the line protocol's tx op, the gateway's bench-api.md 14.6) ──
-    def fm_tx_start(self, freq, program, max_s=10.0, **fields):
-        """FM from the TX board on freq (MHz), started in the background: program is a list of segments
-        ({"kind": "tone", "hz": 1000, "s": 2}, "fsk", "dtmf", "sweep", "noise", "silence"), fields the mode's others
-        (ctcss, dcs, dev_hz, sub_dev_hz, lead_s, tail_s, repeat; None left out). Returns once the board keyed: a
-        _LineTx whose wait() gives the board's done record. Needs the lease (tests mark it bench_service and rf).
-        Only a bench board transmits FM: the SDR bench host's modem is DMR only, so it skips there."""
+    # ── a bench board's transmitter (the line protocol's tx op, the gateway's bench-api.md 14.6) ──
+    def tx_start(self, mode, freq, program, max_s=10.0, **fields):
+        """The TX board's signal mode (fm, am: its info's signal_modes) on freq (MHz), started in the background:
+        program is a list of segments ({"kind": "tone", "hz": 1000, "s": 2}, "fsk", "dtmf", "sweep", "noise",
+        "silence"), fields the mode's others (FM: ctcss, dcs, dev_hz, sub_dev_hz, lead_s, tail_s, repeat; AM: depth
+        ...; None left out). Returns once the board keyed: a _LineTx whose wait() gives the board's done record. Needs
+        the lease (tests mark it bench_service and rf). Only a bench board has these: the SDR bench host's modem is DMR
+        only, so it skips there, and so does a board without the mode."""
+        name = mode.upper()
         if not self.allow_rf:
-            raise RuntimeError("the bench board's FM transmitter keys up: needs --allow-rf")
+            raise RuntimeError(f"the bench board's {name} transmitter keys up: needs --allow-rf")
         self._tx_check(freq)
         if not self.api:
-            skip("bench", "the SDR bench host has no FM transmitter: needs a bench board (--bench-api)")
+            skip("bench", f"the SDR bench host has no {name} transmitter: needs a bench board (--bench-api)")
         self._need_lease()
         modes = (self._api_info().get("signal_modes") or {}).get("tx", [])
-        if "fm" not in modes:
-            skip("bench", f"the bench board {self.api} doesn't transmit FM (its signal modes: {modes or 'none'})")
+        if mode not in modes:
+            skip("bench", f"the bench board {self.api} doesn't transmit {name} (its signal modes: {modes or 'none'})")
         L = self._line()
         self._api_claim(freq)
-        req = {"op": "tx", "mode": "fm", "freq": freq, "session": self._api_session, "max_s": max_s,
+        req = {"op": "tx", "mode": mode, "freq": freq, "session": self._api_session, "max_s": max_s,
                "program": program, "wait_max": self.dmr_bench.WAIT_MAX,
-               "label": getattr(self.bench, "label", None) or "fm"}
+               "label": getattr(self.bench, "label", None) or mode}
         if self.api_level is not None:
             req["power"] = self.api_level
         req.update({k: v for k, v in fields.items() if v is not None})
@@ -916,12 +946,19 @@ class SdrBench:
         end = time.monotonic() + self.dmr_bench.WAIT_MAX + 30      # it may queue behind another session's job
         while not t.started.wait(0.2) and not t.req.done.is_set() and time.monotonic() < end:
             pass
-        if t.req.error is not None:
-            self._api_fail(t.req.error, f"FM on {freq} MHz")
+        e = t.req.error
+        if e is not None:
+            if "only sends frequency" in str(e):    # a board whose transmitter can't vary its amplitude (AM)
+                skip("bench", f"the bench board can't send {name}: {e}")
+            self._api_fail(e, f"{name} on {freq} MHz")
         if not t.started.is_set():
             t.terminate()
-            raise RuntimeError(f"the bench board never keyed FM on {freq} MHz: {t.req.replies[-3:]}")
+            raise RuntimeError(f"the bench board never keyed {name} on {freq} MHz: {t.req.replies[-3:]}")
         return t
+
+    def fm_tx_start(self, freq, program, max_s=10.0, **fields):
+        """tx_start of FM"""
+        return self.tx_start("fm", freq, program, max_s, **fields)
 
     def fm_transmit(self, freq, program, max_s=10.0, **fields):
         """fm_tx_start, then its done record once the last sample went out"""
@@ -1490,6 +1527,8 @@ class SdrBench:
             caps, self._api_caps = getattr(self, "_api_caps", []), []
             for t, err in caps:
                 t.join(timeout)
+                if t.is_alive():        # the file is still being written and has no FILE.json: nothing to analyze
+                    skip("bench", f"the bench board's capture didn't end in {timeout:g} s")
                 if err and isinstance(err[0], BenchFault):
                     skip("bench", str(err[0]))
                 if err and isinstance(err[0], self._line().BenchLineError):
@@ -1713,7 +1752,7 @@ class SdrBench:
                 t_rel = (r.get("t", t0) - t0) * 1e3
                 r.setdefault("t_rel_ms", round(t_rel, 1))
                 r.setdefault("slot_ab", "AB"[int(round(t_rel / 30.0)) % 2])
-                r.setdefault("voice", str(r.get("kind", "")).startswith("VOICE") or r.get("sync", "").endswith("VOICE"))
+                r.setdefault("voice", str(r.get("kind", "")).startswith("VOICE") or (r.get("sync") or "").endswith("VOICE"))
                 for k in ("cfo_hz", "level_dbfs", "dev_hz"):
                     if r.get(k) is None:
                         r[k] = 0.0

@@ -21,6 +21,7 @@ from rfoundry_hil import DebugLink, DebugLinkError, skip
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import rfoundry_snmp  # noqa: E402
 from hil_config import rig
+from test_usb_network import _serial_back
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 TEST_COMMUNITY = "rfoundry-hil-rw"
@@ -37,15 +38,6 @@ def _udp_link(ip, timeout):
         except (DebugLinkError, OSError):
             time.sleep(0.5)
     return None
-
-
-def _serial_back(radio, timeout):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if radio.port_present():
-            return True
-        time.sleep(0.5)
-    return False
 
 
 def _value(vbs, name):
