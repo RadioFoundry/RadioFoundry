@@ -42,6 +42,7 @@ bool rt10_diag_line(uint8_t i, char *buf, uint8_t len);
 #define RT10_CAL_BASE_MIN	80u	// the base's plausible range, / 10 MHz
 #define RT10_CAL_BASE_MAX	95u
 #define RT10_TX_CENTER_DEFAULT	128u	// the modem's TX center without a calibration
+#define RT10_BIAS_DEFAULT_HZ	915000000u	// the modulation byte's frequency before a receive set-up
 typedef bool (*rt10_cal_read_fn)(uint32_t addr, void *buf, uint32_t len);
 // Copies the tables from the data flash; false (and every plan refused) without a calibration
 bool rt10_cal_load(rt10_cal_read_fn read);

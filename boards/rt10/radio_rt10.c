@@ -12,6 +12,7 @@
 #include "hal_time.h"
 #include "radio/apc_ramp.h"
 #include "radio/ref_trim.h"
+#include "modem/hrc7000/hrc7000.h"
 #include "rf/rfbus/rfbus_i2c.h"
 #include "rf/fd6818/fd6818.h"
 #include "rf/fd6818/fd6818sh.h"
@@ -28,6 +29,7 @@
 #define CTCSS_MIN_X10	600u
 #define CTCSS_MAX_X10	2600u
 #define DAC_C_INIT	1762u	// the stock DAC set-up's channel C level, as on the other HR_C7000 radios
+#define MODEM_MIC_DB	0u	// the modem's ADC gain: the microphone reaches the FD6818, not the modem
 
 // The RT10's power-on set (hardware-rt10.md 7). Page 1 is addressed from 0x80 on this bus
 static const rfbus_regval_t rt10_page0[] = {
@@ -105,6 +107,7 @@ static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
 static rt10_tx_plan_t plan;
+static hrc7000_t modem;
 
 rfbus_t *rt10_rf_bus(void)
 {
@@ -127,6 +130,14 @@ static bool cal_read(uint32_t addr, void *buf, uint32_t len)
 	return hrc_flash_spi0.read(addr, buf, len);
 }
 
+// The modem's DC bias: the TX center byte and the step's modulation byte in RF_MOD_BIAS_CTRL, as on the other HR_C7000
+// radios. Its MOD1 level is the TCXO's control voltage, so it sets the frequency of the FD6818 (hardware-rt10.md 4.1);
+// unwritten, the radio sat 28 ppm low. Written at start-up and at every receive set-up, for the step's byte
+static void write_bias(uint32_t hz)
+{
+	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias(rt10_cal_tx_center(), rt10_cal_mod(hz)));
+}
+
 static void init(void)
 {
 	board_rf_safe();
@@ -137,6 +148,9 @@ static void init(void)
 	IO_DIPLEX2 &= ~IO_DIPLEX2_DAC_C;
 	hrc_irq_restore(irq);
 	hrc_dac_b_power(false);	// powered only for a transmission
+	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
+	hrc7000_power_on_init(&modem, rt10_cal_tx_center(), MODEM_MIC_DB);
+	write_bias(RT10_BIAS_DEFAULT_HZ);
 	hrc_pin_in(PIN_RF_CSS);
 	hrc_pin_out(PIN_FD_SCL, true);
 	rfbus_i2c_attach(&fd_bus, &fd_i2c, FD_ADDR7, hal_delay_ms);
@@ -198,6 +212,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	if (!fd_ok) {
 		return true;
 	}
+	write_bias(hz);
 	fd6818sh_set_state(&fd, FD6818SH_STATE_IDLE);
 	fd6818sh_tune(&fd, synth_hz(hz));
 	fd6818sh_set_bandwidth(&fd, bw == RADIO_BW_25K);

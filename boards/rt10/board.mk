@@ -8,6 +8,6 @@ PLATFORM   := hrc7000
 APP_BASE   := 0x0300C000
 # 2 MB program flash (GD25Q16): the debug link's READ_MEM window over it (platform/hrc7000/mem_window.h)
 MCU_DEFS   := -DHRC_XIP_FLASH_SIZE=0x200000u
-BOARD_DIRS := boards/rt10 drivers/rf/rfbus drivers/rf/fd6818 drivers/rf/subaudio drivers/bus/i2c_gpio drivers/flash/spi_nor drivers/input/sharedptt
+BOARD_DIRS := boards/rt10 drivers/rf/rfbus drivers/rf/fd6818 drivers/modem/hrc7000 drivers/rf/subaudio drivers/bus/i2c_gpio drivers/flash/spi_nor drivers/input/sharedptt
 # No display: the core still draws into a 128x64 1 bpp frame buffer (display_rt10.c), read only by the debug link
 MCU_DEFS   += -DGFX_FB_BYTES=1024u -DGFX_MAX_ROWS=64u
