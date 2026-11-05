@@ -543,6 +543,58 @@ static bool probe_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t 
 	return hrc_write_burst(&modem, page, reg, buf, len);
 }
 
+// PC8 (the beep PWM net, hardware-md9600.md 2.3): where it goes is unknown. A square wave on it while keyed shows
+// whether it reaches the transmit audio (test_audio_probe.py). TIM7's interrupt toggles the pin as a GPIO, so TIM8
+// keeps its timebase for the backlight and the sub-audio tone
+void TIM7_IRQHandler(void)
+{
+	TIM7->SR = 0;
+	GPIO_TypeDef *port = PIN_PORT(PIN_BEEP_PWM);
+	uint16_t mask = PIN_MASK(PIN_BEEP_PWM);
+	port->BSRR = (port->ODR & mask) ? (uint32_t)mask << 16 : mask;
+}
+
+static void probe_pin_tone(uint16_t hz)
+{
+	TIM7->CR1 = 0;
+	TIM7->DIER = 0;
+	HAL_NVIC_DisableIRQ(TIM7_IRQn);
+	md9600_pwm_out(MD9600_PWM_BEEP, 0);	// the pin a low output
+	if (hz == 0) {
+		return;
+	}
+	__HAL_RCC_TIM7_CLK_ENABLE();
+	uint32_t pclk = HAL_RCC_GetPCLK1Freq();
+	uint32_t clk = ((RCC->CFGR & RCC_CFGR_PPRE1) == RCC_CFGR_PPRE1_DIV1) ? pclk : 2u * pclk;	// APB1 timer clock
+	TIM7->PSC = clk / 1000000u - 1u;	// 1 MHz
+	TIM7->ARR = 500000u / hz - 1u;		// a toggle every half period
+	TIM7->CNT = 0;
+	TIM7->EGR = TIM_EGR_UG;
+	TIM7->SR = 0;
+	TIM7->DIER = TIM_DIER_UIE;
+	HAL_NVIC_SetPriority(TIM7_IRQn, 6, 0);	// no RTOS calls in the handler
+	HAL_NVIC_EnableIRQ(TIM7_IRQn);
+	TIM7->CR1 = TIM_CR1_CEN;
+}
+
+// Every MCU input sampled for ms: the pins that changed, per port A-E
+static uint8_t probe_pin_scan(uint16_t ms, uint16_t *changed, uint8_t max)
+{
+	GPIO_TypeDef *const ports[] = { GPIOA, GPIOB, GPIOC, GPIOD, GPIOE };
+	uint8_t n = max < 5u ? max : 5u;
+	uint16_t first[5];
+	for (uint8_t i = 0; i < n; i++) {
+		first[i] = (uint16_t)ports[i]->IDR;
+		changed[i] = 0;
+	}
+	uint32_t t0 = hal_millis();
+	while (hal_millis() - t0 < ms) {
+		for (uint8_t i = 0; i < n; i++) {
+			changed[i] |= (uint16_t)(ports[i]->IDR ^ first[i]);
+		}
+	}
+	return n;
+}
 #endif
 
 const hal_audio_tap_t md9600_audio_tap = {
@@ -554,6 +606,8 @@ const hal_audio_tap_t md9600_audio_tap = {
 #if CONFIG_AUDIO_PROBE
 	.modem_reg = probe_reg,
 	.modem_burst = probe_burst,
+	.pin_tone = probe_pin_tone,
+	.pin_scan = probe_pin_scan,
 #endif
 };
 #endif
