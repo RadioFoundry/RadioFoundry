@@ -173,6 +173,9 @@ static void render_set(const char *cls)
 	v.dmr.state = RDMR_TX_WAIT; v.dmr.rmo = true;
 	ui_draw_home(&v, &s);
 	snprintf(name, sizeof name, "%s_dmr_tx_wake", cls); save(name);
+	v.dmr.state = RDMR_TX_PERMIT;	// admitted: the talk permit before keying
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_dmr_tx_admitted", cls); save(name);
 	v.dmr.rmo = false;
 	v.state = RS_TX_DENIED; v.tx_deny = TXDENY_NO_CODEC;
 	ui_draw_home(&v, &s);

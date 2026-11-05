@@ -889,9 +889,10 @@ class DebugLink:
             self.dtmf_key(d, False)
             time.sleep(gap / 1000.0)
 
-    def tone_burst(self, on):
-        """The 1750 Hz burst (FM): keys up and sends the tone while on."""
-        self.radio(OP_TONE_BURST, bytes([1 if on else 0]))
+    def tone_burst(self, on, max_ms=0):
+        """The 1750 Hz burst (FM): keys up and sends the tone while on. The firmware ends it by itself after max_ms
+        (0: inject_max_ms, the cap as for PTT), so a lost "off" can't leave the radio keyed."""
+        self.radio(OP_TONE_BURST, struct.pack("<BH", 1 if on else 0, max(0, min(int(max_ms), 0xFFFF))))  # firmware caps it
 
     def setting(self, name, value):
         """One radio setting in RAM (not stored): a SETTINGS name or id, value u16 (negative: two's complement)."""
@@ -1324,8 +1325,8 @@ def cmd_radio(link, a):
         if not args or any(c not in DTMF_DIGITS for c in args[0].upper()):
             raise SystemExit("dtmf DIGITS [ms]: digits from " + DTMF_DIGITS)
         link.dtmf(args[0], num(1) if len(args) > 1 else 150)
-    elif op == "burst":               # burst on|off
-        link.tone_burst(args[:1] != ["off"])
+    elif op == "burst":               # burst on|off [max_ms]
+        link.tone_burst(args[:1] != ["off"], num(1) if len(args) > 1 else 0)
     elif op == "voice-test":          # voice-test on|off (the DMR encoder's test signal, RAM only)
         link.voice_test(args[:1] != ["off"])
     elif op == "set":                 # set NAME VALUE
