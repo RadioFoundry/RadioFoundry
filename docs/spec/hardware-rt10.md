@@ -12,7 +12,7 @@ markings.
 | --- | --- | --- |
 | SoC | HR_C7000 | C-SKY CK803S core and DMR baseband |
 | RF transceiver | FD6818 | receive and transmit, on a two-wire bus (section 7) |
-| Reference | 26 MHz TCXO | the FD6818's reference (unverified) |
+| Reference | 26 MHz TCXO | the FD6818's reference; the modem's DC bias sets its frequency (section 4.1). Marking unverified |
 | SoC crystal | unmarked | 24 MHz (unverified: the PLL settings give 168 MHz only from 24 MHz) |
 | Program flash | GD25Q16C, JEDEC C8 40 15 (measured) | 2 MB, execute in place at 0x03000000 |
 | Data flash | GD25Q16C | 2 MB on SPI0 (section 4) |
@@ -94,13 +94,19 @@ tables at start-up (`boards/rt10/calibration_rt10.c`) and transmits only with a 
 
 | Offset | Content |
 | --- | --- |
-| 0x1A9 | the modem's TX center (SIG_CENTER), one byte |
+| 0x1A9 | the modem's TX center (SIG_CENTER), one byte: the TCXO's tune (below) |
 | 0x470 | base: the first step's frequency / 10 MHz (90 on the radio checked; 80-95 accepted) |
 | 0x51D / 0x52C | PA control level / 16 (DAC B), high / low power |
 | 0x559 | 15 pairs: the first byte the modulation balance (the modem's MOD_BIAS), the second not used |
 | 0x5B5 / 0x5C4 | FD6818 PA gain (0x28), high / low power; the high one is capped at 7 |
 | 0x5D3 / 0x5F1 | key-up delay / 10 us, high / low power: RX supply off to the TX state |
 | 0x600 | key-down delay / 10 us, before the ramp down |
+
+The TX center and the step's modulation byte go into the modem's SIG_CENTER and RF_MOD_BIAS_CTRL at start-up and at
+every receive set-up, as on the other HR_C7000 radios (`boards/rt10/radio_rt10.c`). The modem's MOD1 DC level is the
+TCXO's control voltage, so these bytes set the frequency of receive and transmit alike. With the modem never powered,
+the radio measured 28.2 ppm low: its carrier at 927.4738 MHz for 927.5, and its receiver's peak 25 kHz low. With them
+written, the carrier measured +0.47 ppm (section 5) and the receiver peaks on the bench's frequency.
 
 ## 5. Power and transmitter
 
@@ -113,7 +119,8 @@ tables at start-up (`boards/rt10/calibration_rt10.c`) and transmits only with a 
 | Power levels | L and H: the calibration's low and high sets |
 
 FM key-up, in the original firmware's order. Measured: the chip's TX state and frequency, the pin levels and the
-signal on air (927.5 MHz at L: the SDR bench received the whole key, about 330 Hz above the bench's frequency).
+signal on air (927.5 MHz at L, the modem's bias written as in section 4.1: the carrier 436 Hz high, +0.47 ppm, on
+the SDR bench, whose own correction is good to about 0.5 ppm).
 
 1. The FD6818's TX words while it still receives (0x40 0x3AD0 with or without sub-audio, the sub-audio, PA gain 0x28
    with the gain in both 3-bit fields), the speaker off, PTB3 and PTB0 low.
@@ -166,5 +173,6 @@ in the codec slot like the other HR_C7000 radios (`boards/rt10/memory.ld`).
 | Factory calibration read | measured (the radio's own sector) |
 | FM transmit | measured on air (section 5) |
 | Battery save | measured: asleep is the FD6818 idle and PTB4 (RX supply) low; waking retunes the receiver |
-| Reference trim | written: the trim moves the synthesizer frequency at the next tune (no oscillator control); untested on air |
+| Reference | measured: the modem's bias from the calibration puts receive and transmit on frequency (section 4.1) |
+| Reference trim | written: the trim moves the synthesizer frequency at the next tune; the modem's bias stays the factory's tune. Untested on air |
 | DMR, codec map | open |
