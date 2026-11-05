@@ -28,9 +28,10 @@ void hrc_audio_pcm_ring(hrc7000_t *modem, bool want);
 void hrc_audio_pcm_tx_gate(void);
 // Speaker audio other than silence still queued or in the FIFO (hal_audio_t.spk_pending)
 bool hrc_audio_pcm_spk_pending(void);
-// The gate's diagnostics line, "pg g<closings> l<those that found a beep still sounding: its tail cut, never sent>
-// ra<checks that found ring play on while closed: never>"
-bool hrc_audio_pcm_gate_line(char *buf, uint8_t len);
+// The gate's counters, for the DMR glue's "pg" diagnostics line: closings, those that found a beep still sounding (its
+// tail cut, never sent), checks that found ring play on while closed (never). Reset with the DMR counters
+void hrc_audio_pcm_gate_stats(uint32_t *closings, uint32_t *late, uint32_t *ring_on);
+void hrc_audio_pcm_gate_reset(void);
 
 extern const hal_audio_t hrc_audio_pcm;
 

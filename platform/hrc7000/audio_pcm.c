@@ -56,6 +56,8 @@ static volatile bool fifo_held;	// another user (the board's AFSK) owns the FIFO
 static volatile uint32_t blocks, overruns, underruns;	// underruns: the FIFO does not report them (stays 0)
 static bool spk_loud[SPK_BLOCKS];	// the queued block has a sample other than 0 (a beep, voice)
 static volatile uint32_t loud_pushed;	// hrc_micros() when the last chunk of a loud block went to the FIFO
+static volatile bool loud_recent;	// loud_pushed is set and less than FIFO_PLAY_MS old when last looked at
+static volatile uint8_t spk_gen;	// bumped by spk_drop: a block the task filled meanwhile is not queued
 static volatile bool tx_gated;		// the DMR engine transmits: no ring play, no pushes
 static bool ring_want;			// the board's ring play (hrc_audio_pcm_ring), applied when not gated
 static uint32_t gate_at;		// hrc_micros() at the last close
@@ -122,6 +124,7 @@ static void fifo_feed(void)
 	while (spk_tail != spk_head && hrc7000_prompt_push(modem, &spk_q[spk_tail][spk_pos])) {
 		if (spk_loud[spk_tail]) {
 			loud_pushed = hrc_micros();
+			loud_recent = true;
 		}
 		spk_pos = (uint8_t)(spk_pos + C7_PROMPT_CHUNK);
 		if (spk_pos >= AUDIO_BLOCK_SAMPLES) {
@@ -136,7 +139,9 @@ static void audio_task(void *arg)
 	(void)arg;
 	static int16_t mic[AUDIO_BLOCK_SAMPLES];
 	for (;;) {
-		ulTaskNotifyTake(pdTRUE, spk_routed || tx_gated ? pdMS_TO_TICKS(2) : portMAX_DELAY);
+		// Gated without the speaker stream only the gate's opening is waited for: 10 ms late is fine for the beep
+		// after TX, and a hotspot keeps the gate closed for hours
+		ulTaskNotifyTake(pdTRUE, spk_routed ? pdMS_TO_TICKS(2) : tx_gated ? pdMS_TO_TICKS(10) : portMAX_DELAY);
 		gate_check();
 		fifo_feed();
 		uint32_t s = hrc_irq_save();
@@ -156,13 +161,19 @@ static void audio_task(void *arg)
 			cb(mic, discard, block_ctx);	// the speaker side is full (PCM not routed): keep the mic side going
 		} else {
 			int16_t *q = spk_q[spk_head];
+			uint8_t gen = spk_gen;
 			cb(mic, q, block_ctx);
 			bool loud = false;
 			for (uint32_t i = 0; i < AUDIO_BLOCK_SAMPLES && !loud; i++) {
 				loud = q[i] != 0;
 			}
-			spk_loud[spk_head] = loud;
-			spk_head = next;
+			// A gate edge emptied the queue during cb() (another task): this block is as stale as the rest
+			s = hrc_irq_save();
+			if (gen == spk_gen) {
+				spk_loud[spk_head] = loud;
+				spk_head = next;
+			}
+			hrc_irq_restore(s);
 		}
 		blocks++;
 		fifo_feed();
@@ -189,6 +200,7 @@ static void spk_drop(void)
 {
 	spk_head = spk_tail = 0;
 	spk_pos = 0;
+	spk_gen++;
 }
 
 static void ring_apply(void)
@@ -221,8 +233,12 @@ bool hrc_audio_pcm_spk_pending(void)
 	for (uint8_t i = spk_tail; i != spk_head && !loud; i = (uint8_t)((i + 1u) % SPK_BLOCKS)) {
 		loud = spk_loud[i];
 	}
+	if (loud_recent && hrc_micros() - loud_pushed >= FIFO_PLAY_MS * 1000u) {
+		loud_recent = false;	// played out: an old time can't look recent again when the counter wraps
+	}
+	loud = loud || loud_recent;
 	hrc_irq_restore(s);
-	return loud || (hrc_micros() - loud_pushed) < FIFO_PLAY_MS * 1000u;
+	return loud;
 }
 
 // Closed by the DMR glue as the engine starts to transmit; opened here once it has stopped (gate_check, from the
@@ -270,42 +286,16 @@ static void gate_check(void)
 	hrc_irq_restore(s);
 }
 
-static char *put_u(char *p, char *end, uint32_t v)
+void hrc_audio_pcm_gate_stats(uint32_t *closings, uint32_t *late, uint32_t *ring_on)
 {
-	char t[10];
-	int n = 0;
-	do {
-		t[n++] = (char)('0' + v % 10u);
-		v /= 10u;
-	} while (v != 0 && n < 10);
-	while (n > 0 && p < end) {
-		*p++ = t[--n];
-	}
-	return p;
+	*closings = gates;
+	*late = loud_at_gate;
+	*ring_on = ring_on_air;
 }
 
-static char *put_s(char *p, char *end, const char *s)
+void hrc_audio_pcm_gate_reset(void)
 {
-	while (*s != '\0' && p < end) {
-		*p++ = *s++;
-	}
-	return p;
-}
-
-bool hrc_audio_pcm_gate_line(char *buf, uint8_t len)
-{
-	if (len == 0) {
-		return false;
-	}
-	char *p = buf, *end = buf + len - 1;
-	p = put_s(p, end, "pg g");
-	p = put_u(p, end, gates);
-	p = put_s(p, end, " l");
-	p = put_u(p, end, loud_at_gate);
-	p = put_s(p, end, " ra");
-	p = put_u(p, end, ring_on_air);
-	*p = '\0';
-	return true;
+	gates = loud_at_gate = ring_on_air = 0;
 }
 
 // Once: registering masks the source, so never while the meter or the stream has it on
@@ -391,7 +381,6 @@ void hrc_audio_pcm_stats(uint32_t *b, uint32_t *ov, uint32_t *un)
 void hrc_audio_pcm_reset_stats(void)
 {
 	blocks = overruns = underruns = 0;
-	gates = loud_at_gate = ring_on_air = 0;
 }
 
 #if CONFIG_VOX

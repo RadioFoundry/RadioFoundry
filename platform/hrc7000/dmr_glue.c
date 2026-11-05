@@ -329,6 +329,7 @@ void hrc_dmr_stats_reset(void)
 	lock(NULL);
 	memset(&eng.st, 0, offsetof(hrc7000_dmr_stats_t, last_rx_type_info));
 	unlock(NULL);
+	hrc_audio_pcm_gate_reset();	// its line is one of ours
 }
 
 typedef struct {
@@ -477,6 +478,15 @@ bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " mg", bs.st.max_gap_us);
 		break;
 #endif
+	case HRC_DMR_DIAG_LINES - 1: {	// the prompt FIFO's TX gate (audio_pcm.c): closings, late (a beep still
+					// sounding, its tail cut), ring play on while closed (never)
+		uint32_t g, l, ra;
+		hrc_audio_pcm_gate_stats(&g, &l, &ra);
+		put_kv(&o, "pg g", g);
+		put_kv(&o, " l", l);
+		put_kv(&o, " ra", ra);
+		break;
+	}
 	default:
 		return false;
 	}
