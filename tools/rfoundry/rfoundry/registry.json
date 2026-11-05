@@ -1993,7 +1993,7 @@
    "link": "usb",
    "release": "testing",
    "debuglink_names": [
-    "AT-D578UV",
+    "AT-D578UV AT32",
     "d578uva"
    ],
    "rom_base": 134217728,
