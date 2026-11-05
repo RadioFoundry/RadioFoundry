@@ -17,6 +17,7 @@
 #include "ui_app.h"
 #include "ui_nav.h"
 #include "ui_svc.h"
+#include "ui_screens.h"		// ui_layout_init: a line of Chinese needs a taller font
 #include "fmt.h"
 #include "i18n.h"
 #include "input/input.h"
@@ -1861,6 +1862,9 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	case UI_SET_LANGUAGE:
 		if (!lang_set(lang_find(v)))
 			lang_set(LANG_ENGLISH);	// a language this image was built without
+#if CONFIG_LANG_ZH
+		ui_layout_init();		// a line of Chinese needs the 16 px font (ui_screens.c)
+#endif
 		break;
 	default:
 		return;

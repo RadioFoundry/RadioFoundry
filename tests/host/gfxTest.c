@@ -463,10 +463,23 @@ static void test_cjk_text(void)
 	char small[4];
 	gfx_text_fit(f, "\xE4\xBF\xA1\xE9\x81\x93", 100, small, sizeof small);
 	CHECK(strcmp(small, "\xE4\xBF\xA1") == 0);
-	// A sequence cut by a buffer is one box as wide as a character, not a walk off the string
-	CHECK(gfx_text_width(f, "\xE4") == CJK_FONT_W);
+	// Latin-1 text stays one byte a character (Señal): a name, a message or the Spanish catalog in a build with the CJK
+	// face must not turn into boxes
+	CHECK(gfx_text_width(f, "Se\xF1" "al") == 5 * f->w);
+	CHECK(gfx_text_width(f, "A\xF1\xE4\xBF\xA1") == 2 * f->w + CJK_FONT_W);
+	CHECK(gfx_text_width(f, "\xE4") == f->w);	// not UTF-8 at all: a Latin-1 byte, not a box
 	// Drawing advances by each character's own width
 	CHECK(gfx_text(f, 0, 0, "\xE4\xBF\xA1\xE9\x81\x93", 0) == 2 * CJK_FONT_W);
+	CHECK(gfx_text(f, 0, 0, "Se\xF1" "al", 0) == 5 * f->w);
+	// The end cut keeps the start: Latin at a word (fit_end's job), Chinese by whole characters
+	gfx_text_fit_end(f, "Channel here now", 8 * f->w, buf, sizeof buf);
+	CHECK(strcmp(buf, "Channel" GLYPH_ELLIPSIS) == 0);
+	gfx_text_fit_end(f, "\xE4\xBF\xA1\xE9\x81\x93", CJK_FONT_W + f->w, buf, sizeof buf);
+	CHECK(strcmp(buf, "\xE4\xBF\xA1" GLYPH_ELLIPSIS) == 0);
+	// A byte buffer too small for a whole character keeps the characters before it, never half of one
+	char cut[4];
+	str_copy(cut, sizeof cut, "\xE4\xBF\xA1\xE9\x81\x93");
+	CHECK(strcmp(cut, "\xE4\xBF\xA1") == 0);
 }
 #endif
 

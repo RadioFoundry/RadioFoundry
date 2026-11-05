@@ -28,6 +28,18 @@ int main(void)
 	CHECK(strcmp(lang_name(es), "Espa\xF1" "ol") == 0);
 	CHECK(lang_value(es) == ('e' << 8 | 's') && lang_value(LANG_ENGLISH) == ('e' << 8 | 'n'));
 	CHECK(lang_find('e' << 8 | 'n') == LANG_ENGLISH && lang_find('x' << 8 | 'x') == LANG_ENGLISH);
+	// A CJK catalog is listed even in a build without its face, under the Latin name that build's font can draw
+	uint8_t zh = lang_find('z' << 8 | 'h');
+	CHECK(zh != LANG_ENGLISH && strcmp(lang_code(zh), "zh") == 0 && lang_wide(zh));
+	CHECK(!lang_wide(es));
+#if CONFIG_LANG_ZH
+	CHECK(lang_built(zh));
+#else
+	CHECK(!lang_built(zh));
+	CHECK(strcmp(lang_name(zh), "Chinese") == 0);
+	for (const char *p = lang_name(zh); *p; p++)
+		CHECK((unsigned char)*p < 0x80);	// a Latin font would draw UTF-8 bytes as boxes
+#endif
 	CHECK(strcmp(lang_code(200), "") == 0 && !lang_built(200) && !lang_set(200) && lang_value(200) == 0);
 
 	// An empty setting (never picked) is the build's default, and so is the language before the settings are applied;

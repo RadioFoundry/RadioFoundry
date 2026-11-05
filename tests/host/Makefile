@@ -511,8 +511,9 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim beepReel
+run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim beepReel
 	./gfxTest
+	./gfxTestZh
 	./i18nTest
 	./i18nTestNoLang
 	./i18nTestDefault
