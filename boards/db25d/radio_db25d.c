@@ -624,3 +624,9 @@ const hal_radio_t db25d_radio = {
 	.ref_trim = ref_trim,
 #endif
 };
+
+// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt)
+bool db25d_radio_transmitting(void)
+{
+	return transmitting;
+}

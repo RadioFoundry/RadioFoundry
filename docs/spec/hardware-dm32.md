@@ -560,6 +560,16 @@ two scans in the same millisecond, 65 ms after the last host byte, with the pin 
 a new host byte, not yet received (2026-10-22, RADIO). Before the hold, 2 such presses came in 100 s, each a short
 DMR voice transmission; no line errors (`ue 0`) and no overruns.
 
+**The radio's own RF on the cable (measured, 2026-11-05).** With the programming cable coiled near the antenna, a
+1750 Hz burst at the lowest power (FM, UHF) started by the debug link kept the radio keyed for a minute. The link went
+silent 0.5 s in, so the burst's "off" never arrived. The burst's own time limit ended it at 2 s, but the key scan had
+reported PTT down 174 ms after keying with nothing touched, and that press held the radio keyed. A hand near the cable
+ended it. In that minute UART0 received 350 flagged characters and no good byte. The quiet-time gate takes exactly
+that for a press. A real press held 3 s gave one flagged character, its break, and nothing more: the key grounds the
+line. So, as `drivers/input/sharedptt` describes, no new press starts while the radio transmits, and a held press ends
+at a flagged character after its own break and bounce (`SHARED_PTT_SETTLE_MS`). The diag line `ue N` counts the
+flagged characters.
+
 ### 6.3 Rotary encoder
 
 A = GPIO 0x27, B = 0x26, inputs with GPIO B interrupts (vector 46). On every change of B: direction = −1 if A == B

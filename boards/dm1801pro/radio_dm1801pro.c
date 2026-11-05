@@ -675,3 +675,9 @@ const hal_radio_t dm1801pro_radio = {
 	.ref_trim = ref_trim,
 #endif
 };
+
+// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt)
+bool dm1801pro_radio_transmitting(void)
+{
+	return transmitting;
+}
