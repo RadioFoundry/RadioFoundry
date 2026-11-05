@@ -147,7 +147,7 @@ void ui_push(uint8_t scr, uint16_t arg)
 	}
 	if (ui_scr[scr]->enter != NULL)
 		ui_scr[scr]->enter();	// may focus a row (the current zone in Channels)
-	// Else the first row that can be focused
+	// Else prefer the first available row; disabled rows remain reachable for their explanations.
 	const ui_scr_def_t *d = ui_scr[scr];
 	if ((d->flags & SF_LIST) && d->count != NULL && d->item != NULL && stack[sp].focus == 0) {
 		uint16_t n = d->count();
@@ -157,7 +157,7 @@ void ui_push(uint8_t scr, uint16_t arg)
 			it.label[0] = it.value[0] = 0;
 			it.num = 0;
 			d->item(stack[sp].focus, &it);
-			if (!(it.flags & UI_ITEM_INFO))
+			if (!(it.flags & (UI_ITEM_INFO | UI_ITEM_DIM)))
 				break;
 			stack[sp].focus++;
 		}
