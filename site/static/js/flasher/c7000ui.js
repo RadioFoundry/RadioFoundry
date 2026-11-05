@@ -208,7 +208,8 @@ const mkStub = () => {
 // connect: the cable, then whatever answers; ends with the stub running and the radio identified
 
 // onUpdateMode: what the task does with a radio reached through the vendor update mode (null: the task can't use it)
-function connectPanel(onReady, { onUpdateMode = null } = {}) {
+// restart: the Restart task, which ends the visit by leaving loader mode instead of going on
+function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 	const c = session();
 	const radio = S().radio;
 	const top = radioTop(radio, { led: "off", screen: "any" });
@@ -459,6 +460,18 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		}
 	};
 
+	// The radio was reset out of loader mode: the visit ends here, not at the task's connect step again
+	const restarted = () => {
+		show({ led: "off", screen: c.rfoundry ? "rfoundry" : "any", knob: "cycle" }, notice(t("flash.c7.restart.done"), "ok"), h("p", {}, t("flash.c7.restart.wait")));
+		act(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
+	};
+	// the actions go first: a second click, or Continue, would reach a radio that is already restarting
+	const restartNow = async () => {
+		act();
+		await restartRadio();
+		restarted();
+	};
+
 	// The stub runs (st answered): the LED, both chips, which radio this is. From here the session holds it
 	const ready = async (how, st) => {
 		// a wait or a load from a panel the user left ends here (show() draws nothing then, and the session may have
@@ -480,12 +493,23 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			if (c.model && c.model !== boardId()) {
 				const other = Object.values(S().data.radios).find((r) => r.flash.board === c.model);
 				show({ led: "wait", screen }, notice(t("flash.c7.connect.wrong_radio", { name: S().radio.name, other: other?.name || c.model }), "bad"));
-				return act(leaveLoaderButton());
+				return act(restart ? button(t("flash.c7.leave"), restartNow, { primary: true }) : leaveLoaderButton());
 			}
 			show({ led: "wait", screen }, h("p", { class: "c7-big" }, h("b", {}, how)),
 				h("dl", { class: "kv-list" },
 					h("dt", {}, t("flash.c7.radio")), h("dd", {}, c.model ? S().radio.name : t("flash.c7.radio_unconfirmed"))),
 				h("p", {}, t({ rfoundry: "flash.c7.connect.led_rfoundry", usmart: "flash.usmart.led" }[c.how] || "flash.c7.connect.led_rom")));
+			if (restart) {
+				await sleep(S().fakeC7 ? 400 : 1500);
+				if (gone()) return;
+				return restartNow();
+			}
+			// a loader left running by an earlier visit (an interrupted backup, a closed tab): the user may only want the
+			// radio back, so nothing goes on by itself
+			if (c.how === "attach") {
+				return act(button(t("flash.c7.connect.restart"), restartNow, { quiet: true }),
+					button(t("flash.c7.connect.continue"), () => onReady(), { primary: true }));
+			}
 			await sleep(S().fakeC7 ? 400 : 1500);
 			onReady();
 		} catch (e) {
@@ -513,13 +537,26 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 	return box;
 }
 
-// Leave loader mode: the chip restarts into whatever firmware is in flash
-function leaveLoaderButton(label = t("flash.c7.leave")) {
-	return button(label, async () => {
-		try { await S().c7.stub.resetChip(); } catch (e) { /* the radio may be gone already */ }
-		await dropC7();
+// Leave loader mode: the chip restarts into whatever firmware is in flash. The session forgets its loader and cable
+async function restartRadio() {
+	try { await S().c7.stub.resetChip(); } catch (e) { /* the radio may be gone already */ }
+	await dropC7();
+}
+
+// after: what the task records before the step is drawn again (the backup task's finished screen)
+function leaveLoaderButton(label = t("flash.c7.leave"), after = null) {
+	const b = button(label, async () => {
+		b.disabled = true;	// one reset: a second click would reach a radio that is already restarting
+		await restartRadio();
+		after?.();
 		ctx.render();
 	}, { primary: true });
+	return b;
+}
+
+// The Restart task: a radio left in loader mode goes back to normal operation, with no backup or install
+export function restartView() {
+	return connectPanel(() => {}, { restart: true });
 }
 
 export function connectView() {
@@ -1261,8 +1298,31 @@ function untriedOffer(c) {
 		reportButton({ quiet: false }));
 }
 
+// The backup is saved and the radio restarted: the task ends here, with the ways on (Update only for a radio that runs
+// RadioFoundry). The next task starts with a new session, as from the start page: its check step reads the radio again.
+// The backup's reads can't stand in for that one: they set no codec slot and keep no copy in this browser before a write
+function backupDoneView() {
+	const c = session();
+	const out = h("div", { class: "flasher" });
+	const go = (task) => () => {
+		S().c7 = null;
+		S().task = task;
+		S().step = 0;
+		ctx.render();
+	};
+	out.append(panel(t("flash.backup.task_title", { name: S().radio.name }),
+		notice(t("flash.c7.backup.done", { name: c.backupName }), "ok"), notice(t("flash.c7.backup.restarted"), "info"),
+		h("p", {}, t("flash.c7.backup.next"))));
+	const rfoundry = c.rfoundry || c.analysis?.firmware === "rfoundry";
+	S().forward([button(t("flash.task.install"), go("install"), { quiet: true }), rfoundry ? button(t("flash.task.update"), go("update"), { quiet: true }) : null,
+		button(t("flash.nav.finish"), () => ctx.reset(), { primary: true })].filter(Boolean));
+	return out;
+}
+
 export function backupView() {
 	const c = session();
+	// backupDone: the radio whose backup ended with Restart Radio (another radio picked meanwhile starts its own)
+	if (c.backupDone === S().radio.id) return backupDoneView();
 	const out = h("div", { class: "flasher" });
 	if (!c.stub || c.stream?.lost) {
 		out.append(connectPanel(() => ctx.render()));
@@ -1297,7 +1357,7 @@ export function backupView() {
 			top.set({ led: "done", screen: screenNow() });
 			fill(status, notice(t("flash.c7.backup.done", { name: c.backupName }), "ok"),
 				c.calCopies && !c.calFound ? notice(t("flash.c7.backup.cal_missing"), "bad") : calOneCopy(c), untriedOffer(c));
-			S().forward(leaveLoaderButton(t("flash.c7.backup.leave")));
+			S().forward(leaveLoaderButton(t("flash.c7.backup.leave"), () => { c.backupDone = S().radio.id; }));
 		} catch (e) {
 			ctx.flashFinished(started, e);
 			fill(status, errorNotice(ctx.errorText(e)), retryHelp());
@@ -1445,7 +1505,7 @@ register({
 	available: (radio, fb) => isC7000(radio, fb),		// install and backup, stock firmware or RadioFoundry
 	steps: (task, { recovering }) => (task === "install" ? (recovering ? RECOVER : INSTALL) : task === "update" ? UPDATE : null),
 	stepLabel: (step, task) => (task !== "backup" && step === "done" ? "c7_done" : step),
-	views: { connect: connectView, check: checkView, write: writeView, done: doneView, backup: backupView, restore: restoreView },
+	views: { restart: restartView, connect: connectView, check: checkView, write: writeView, done: doneView, backup: backupView, restore: restoreView },
 	recovery: { first: "fix", stock: "restore", reach: "flash.help.c7_reach", stockText: "flash.help.fix.stock_c7",
 		// the factory update mode: a reinstall that needs nothing to answer on the cable but the radio's own loader. stuck:
 		// a radio without a complete application stays in it (white screen, red LED), a symptom of its own

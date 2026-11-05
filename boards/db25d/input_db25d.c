@@ -189,10 +189,10 @@ static uint32_t scan(void)
 		raw |= 1u << mic;
 	}
 	sample_mic_lines();
-	uint32_t rx_ms;
 	uint32_t now = hal_millis();
-	bool rx_seen = hrc_host_uart_last_rx(&rx_ms);
-	bool rxd_low = shared_ptt_pressed(&ptt_gate, !hrc_pin_read(PIN_MIC_RXD), rx_seen, rx_ms, now);
+	shared_ptt_line_t line = { .flagged = hrc_host_uart_line_errors(), .keyed = db25d_radio_transmitting() };
+	line.rx_seen = hrc_host_uart_last_rx(&line.rx_ms);
+	bool rxd_low = shared_ptt_pressed(&ptt_gate, !hrc_pin_read(PIN_MIC_RXD), &line, now);
 	bool mic_low = plug_ptt_pressed(&mic_ptt, !hrc_pin_read(PIN_PTT2), now);
 	if (rxd_low || mic_low) {
 		if (ptt_low < PTT_SCANS) {

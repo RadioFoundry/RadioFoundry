@@ -804,11 +804,12 @@ bool stm32_hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " c=", m->lc_f_crc);
 		break;
 	case 19:	// ... a new LC found at the next A, at F's repeated report, at a post-access interrupt; kept ones
-			// handed over with the next voice burst
+			// handed over with the next voice burst; LCs held back as the other slot's call's
 		put_kv(&o, "lc2 a=", m->lc_a_new);
 		put_kv(&o, " f=", m->lc_rep_new);
 		put_kv(&o, " p=", m->lc_pa_new);
 		put_kv(&o, " k=", m->lc_kept);
+		put_kv(&o, " o=", m->lc_other_slot);
 		break;
 	case 20: {	// the last reception's LC trace: capture (how, source ID), then <ev><res><ticks> per look
 		put(&o, "lt ");

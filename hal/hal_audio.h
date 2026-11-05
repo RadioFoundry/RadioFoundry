@@ -20,6 +20,9 @@ typedef struct {
 	void (*stop)(void);
 	// Route PCM to the speaker (DMR voice, beeps) instead of the modem's own FM path
 	void (*speaker_pcm)(bool on);
+	// Optional: speaker audio other than silence is still queued or playing (a beep's tail in the driver's buffers).
+	// NULL: none is held past the block callback
+	bool (*spk_pending)(void);
 } hal_audio_t;
 
 #endif

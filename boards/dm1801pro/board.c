@@ -71,7 +71,7 @@ static const char *const side_key_names[] = { "SK1", "SK2", "SOS", "A/B", "VFO/M
 
 const board_t board = {
 	.name = "DM-1801 Pro",
-	.caps = CAP_KEYPAD | (CONFIG_DMR ? CAP_DMR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0) |
+	.caps = CAP_KEYPAD | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0) |
 		(CONFIG_AM_RX ? CAP_AM_RX : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),

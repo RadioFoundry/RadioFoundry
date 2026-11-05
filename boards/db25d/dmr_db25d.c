@@ -89,11 +89,8 @@ static void speaker_pcm(bool on)
 	}
 	last = (int8_t)on;
 	uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
-	if (on) {
-		hrc7000_audio_bits(modem, C7_AUDIO_RING_PLAY, C7_AUDIO_FM_PLAY);
-	} else {
-		hrc7000_audio_bits(modem, 0, C7_AUDIO_RING_PLAY | C7_AUDIO_FM_PLAY);
-	}
+	hrc7000_audio_bits(modem, 0, C7_AUDIO_FM_PLAY);
+	hrc_audio_pcm_ring(modem, on);	// held off while the DMR engine transmits (audio_pcm.c)
 	hrc_irq_restore(s);
 	db25d_speaker_pcm(on);	// the amplifier and its source: the squelch path never opens for DMR voice
 }

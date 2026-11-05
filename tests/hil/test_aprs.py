@@ -22,6 +22,7 @@ Where and how it transmits, so that nothing reaches the APRS network:
 - Power: the radio's lowest level (50 mW on the DM-1701). The tests check `aprs.tx_power` (the level an APRS
   transmission keys at) is 0 before keying, and skip on firmware without that key: it used to key APRS at the
   settings' default power (1 W on the DM-1701) whatever the radio was set to.
+  A fixed APRS power level (`set.aprs_power` not 0) is set to follow the channel for the run and put back after.
 - Callsign: --aprs-call as the RAM-only test call (never saved) with SSID --aprs-ssid (default 15). Destination
   APZRDF.
 - Every APRS setting a test changes (transmit, region, custom frequency, SSID, path, send via, position source, fixed
@@ -143,7 +144,7 @@ class AprsSession:
         self.keep = {"tx": _n(v, "set.aprs_tx"), "region": _n(v, "set.aprs_region"), "ssid": _n(v, "set.aprs_ssid"),
                      "pos_src": _n(v, "set.aprs_pos_src"), "dmr_dst": _n(v, "set.aprs_dmr_dst"),
                      "dmr_udt": _n(v, "set.aprs_dmr_udt"), "via": VIAS[v["set.aprs_via"]],
-                     "path": PATHS.index(v["set.aprs_path"])}
+                     "path": PATHS.index(v["set.aprs_path"]), "power": _n(v, "set.aprs_power")}
         self.v0 = v
         self.expected_rf = 0
         self.message = False
@@ -214,7 +215,7 @@ class AprsSession:
         if {"lat", "lon"} & self.changed:
             L.aprs_set("lat", self.fixed[0])
             L.aprs_set("lon", self.fixed[1])
-        for f in ("ssid", "path", "via", "dmr_dst", "dmr_udt", "pos_src"):
+        for f in ("ssid", "path", "via", "dmr_dst", "dmr_udt", "pos_src", "power"):
             if f in self.changed:
                 L.aprs_set(f, k[f])
         if self.custom_hz is not None:
@@ -302,9 +303,17 @@ def _aprs_air(radio, pytestconfig, call, hz):
     if "aprs.tx_power" not in v:
         skip("not_built", "this firmware keys APRS at the settings' default power (1 W on the DM-1701), not the "
                           "radio's lowest: needs the aprs.tx_power fix")
-    assert v["aprs.tx_power"] == "0" == radio.core()["power"], f"not at the lowest power: {v}"
     ssid = pytestconfig.getoption("--aprs-ssid")
     with aprs_session(radio) as s:
+        if v["aprs.tx_power"] != "0" and "set.aprs_power" in s.v0:
+            # A fixed APRS power level: follow the channel's (now the lowest) for the run; restore() puts it back
+            s.set("power", 0)
+            v = radio.wait_for(lambda x: x.get("aprs.tx_power") == "0", sections=("aprs",),
+                               what="APRS power following the channel")
+        if v["aprs.tx_power"] != "0":
+            skip("state", f"APRS would key at power level {v['aprs.tx_power']}, not the lowest, and this firmware "
+                          "can't set its APRS power over the link")
+        assert radio.core()["power"] == "0", f"not at the lowest power: {radio.core()}"
         s.rf_setup(call, ssid, hz)
         s.call, s.ssid, s.hz = call.upper(), ssid, hz
         yield s

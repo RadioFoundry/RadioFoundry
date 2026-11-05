@@ -24,6 +24,7 @@
 static const beep_seg_t p_key[] = { { 1000, 25 } };
 static const beep_seg_t p_error[] = { { 400, 150 } };
 static const beep_seg_t p_permit[] = { { 1600, 50 }, { 0, 40 }, { 1600, 50 } };
+static const beep_seg_t p_permit_short[] = { { 1600, 80 } };	// the same pitch, once: it delays keying
 static const beep_seg_t p_deny[] = { { 300, 400 } };
 static const beep_seg_t p_call_end[] = { { 1200, 50 }, { 0, 30 }, { 900, 70 } };
 static const beep_seg_t p_tot[] = { { 1000, 100 }, { 0, 100 }, { 1000, 100 } };
@@ -52,6 +53,7 @@ static const struct {
 	[BEEP_SCAN_HOLD] = PAT(p_scan_hold),
 	[BEEP_EMERGENCY] = PAT(p_emergency),
 	[BEEP_MESSAGE] = PAT(p_message),
+	[BEEP_TX_PERMIT_SHORT] = PAT(p_permit_short),
 };
 
 // One period of a sine, Q15

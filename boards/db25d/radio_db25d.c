@@ -624,3 +624,10 @@ const hal_radio_t db25d_radio = {
 	.ref_trim = ref_trim,
 #endif
 };
+
+// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt). DMR TX keys the RF per
+// burst while armed, without setting transmitting
+bool db25d_radio_transmitting(void)
+{
+	return transmitting || dmr_armed;
+}

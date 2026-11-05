@@ -20,7 +20,7 @@
 #define UART_FMT_DLAB		0x80u
 #define UART_FMT_8N1		0x03u
 #define UART_FMT_LSR_DR		0x01u
-#define UART_FMT_FIFOS		0x67u	// FIFOs on and reset, RX trigger 1 character
+#define UART_FMT_FIFOS		0x67u	// FIFOs on and reset, RX and TX triggers 4 characters
 // Tries before giving up: a few register accesses each, so about 100 ms. Host frames leave gaps on the line (each
 // request waits for its answer), so a try lands in one long before that
 #define UART_FMT_TRIES		100000u

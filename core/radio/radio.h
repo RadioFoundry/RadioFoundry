@@ -113,6 +113,7 @@ typedef enum {
 	RDMR_TX,		// on air
 	RDMR_TX_ENDING,		// PTT released: finishing the superframe
 	RDMR_TX_DATA,		// sending data / a CSBK for the data service (SMS, ACK, call alert, ...)
+	RDMR_TX_PERMIT,		// PTT held, the channel ours: the talk permit plays before keying (CAP_BEEP_NOT_ON_AIR)
 } radio_dmr_state_t;
 
 typedef struct {
@@ -433,8 +434,9 @@ void radio_req_beep(uint8_t beep);
 // A vibration pattern (radio/vibe.h vibe_t) on the board's motor (CONFIG_VIBRATE; nothing on a radio without
 // hal_power_t.vibrate). Whether an alert vibrates is the caller's setting
 void radio_req_vibrate(uint8_t pattern);
-// FM 1750 Hz tone burst while on (CONFIG_FM_TX_TONES): keys up if not transmitting, stops when off
-void radio_req_tone_burst(bool on);
+// FM 1750 Hz tone burst while on (CONFIG_FM_TX_TONES): keys up if not transmitting, stops when off or max_ms after
+// it started (0: no limit but the TX time-out), so a host that goes away can't leave the radio keyed
+void radio_req_tone_burst(bool on, uint32_t max_ms);
 // A DTMF key down / up (CONFIG_DTMF; radio-features.md 3.7): digit '0'-'9', '*', '#', 'A'-'D'. Ignored unless the
 // view's dtmf_ready; the tone lasts at least RADIO_DTMF_MIN_MS. The input task sends the keypad's edges (any task)
 void radio_req_dtmf(char digit, bool down);

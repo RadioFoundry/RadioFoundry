@@ -22,6 +22,7 @@ extern const hal_display_t dm32_display;
 extern const hal_input_t dm32_input;
 // Key scans with the PTT pin low that were ignored as host serial data (hardware-dm32.md 6.2)
 uint32_t dm32_input_ptt_ignored(void);
+bool dm32_radio_transmitting(void);	// the radio is keyed (the shared PTT line's gate)
 extern const hal_radio_t dm32_radio;
 extern const hal_power_t dm32_power;
 

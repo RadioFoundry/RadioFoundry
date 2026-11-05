@@ -17,7 +17,7 @@ static int starts, stops, speaker_on, speaker_calls;
 static bool fake_start(audio_block_cb_t c, void *ctx) { (void)ctx; cb = c; starts++; return true; }
 static void fake_stop(void) { stops++; cb = NULL; }
 static void fake_speaker(bool on) { speaker_on = on; speaker_calls++; }
-static const hal_audio_t audio = { fake_start, fake_stop, fake_speaker };
+static const hal_audio_t audio = { .start = fake_start, .stop = fake_stop, .speaker_pcm = fake_speaker };
 
 // Vocoder: encode copies the low bit of the first 49 samples; decode writes the bits into samples 0..48 and a frame
 // marker into sample 159

@@ -81,9 +81,10 @@ static uint32_t scan(void)
 			pins |= 1u << i;
 		}
 		if (direct_keys[i].key == KEY_PTT) {
-			uint32_t rx_ms;
-			bool rx_seen = hrc_host_uart_last_rx(&rx_ms);
-			low = shared_ptt_pressed(&ptt_gate, low, rx_seen, rx_ms, hal_millis());
+			shared_ptt_line_t line = { .flagged = hrc_host_uart_line_errors(),
+						   .keyed = dm1801pro_radio_transmitting() };
+			line.rx_seen = hrc_host_uart_last_rx(&line.rx_ms);
+			low = shared_ptt_pressed(&ptt_gate, low, &line, hal_millis());
 		}
 		if (low) {
 			raw |= 1u << direct_keys[i].key;
