@@ -386,7 +386,14 @@ void radio_req_beep(uint8_t b) { post(RREQ_BEEP, b, 0); }
 void radio_req_vibrate(uint8_t pattern) { post(RREQ_VIBRATE, pattern, 0); }
 void radio_req_roam(uint8_t cmd) { post(RREQ_ROAM, cmd, 0); }
 // A lost release would leave the burst keyed until the time-out
-void radio_req_tone_burst(bool on) { post(RREQ_TONE_BURST, on, pdMS_TO_TICKS(50)); }
+void radio_req_tone_burst(bool on, uint32_t max_ms)
+{
+	if (requests == NULL) {
+		return;
+	}
+	radio_req_t req = { .type = RREQ_TONE_BURST, .arg = on, .arg2 = max_ms };
+	send(&req, pdMS_TO_TICKS(50));
+}
 
 void radio_set_settings(const radio_settings_t *s)
 {

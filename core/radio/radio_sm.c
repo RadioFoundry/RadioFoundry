@@ -4837,7 +4837,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 
 #if CONFIG_FM_TX_TONES
 // The 1750 Hz burst: on keys up (FM channel, the usual TX checks) if not transmitting yet
-static void tone_burst(radio_sm_t *sm, bool on, uint32_t now_ms)
+static void tone_burst(radio_sm_t *sm, bool on, uint32_t max_ms, uint32_t now_ms)
 {
 	if (on) {
 		if (sm->view.tone_burst || sm->view.ch.mode != RADIO_MODE_FM || sm->hotspot ||
@@ -4855,10 +4855,12 @@ static void tone_burst(radio_sm_t *sm, bool on, uint32_t now_ms)
 		dtmf_cancel(sm, now_ms);
 		if (tx_tone(RADIO_BURST_HZ)) {
 			sm->view.tone_burst = true;
+			sm->burst_end_ms = max_ms != 0 ? (now_ms + max_ms) | 1u : 0;	// | 1: never 0, "no limit"
 			changed(sm);
 		}
 		return;
 	}
+	sm->burst_end_ms = 0;
 	if (sm->view.tone_burst) {
 		tx_tone(0);
 		sm->view.tone_burst = false;
@@ -5355,7 +5357,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 #endif
 #if CONFIG_FM_TX_TONES
 	case RREQ_TONE_BURST:
-		tone_burst(sm, req->arg != 0, now_ms);
+		tone_burst(sm, req->arg != 0, req->arg2, now_ms);
 		break;
 #endif
 #if CONFIG_DTMF
@@ -5799,6 +5801,12 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 
 	if (sm->view.state == RS_TX) {
 #if CONFIG_FM_TX_TONES
+		if (sm->burst_end_ms != 0 && sm->view.tone_burst && (int32_t)(now_ms - sm->burst_end_ms) >= 0) {
+			tone_burst(sm, false, 0, now_ms);	// its "off" never came: unkey as the off would
+			if (sm->view.state != RS_TX) {
+				return;
+			}
+		}
 		if (sm->roger_ms != 0) {
 			roger_poll(sm, now_ms);
 			if (sm->view.state != RS_TX) {

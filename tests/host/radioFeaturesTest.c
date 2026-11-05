@@ -2342,6 +2342,23 @@ static void test_roger_burst(void)
 	req(RREQ_PTT, 0);
 	run(300);
 	CHECK(sm.view.state == RS_IDLE);
+	// A burst with a time limit and no "off" (the host went away): it unkeys by itself when the time is up
+	int off = hw.tx_off_calls;
+	req2(RREQ_TONE_BURST, 1, 2000);
+	run(1800);
+	CHECK(sm.view.state == RS_TX && sm.view.tone_burst);
+	run(400);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst && hw.tone_hz == 0 && hw.tx_off_calls == off + 1);
+	req(RREQ_TONE_BURST, 0);	// the late "off": nothing more
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == off + 1);
+	// The same during PTT: the tone ends, PTT keeps the transmission
+	req(RREQ_PTT, 1);
+	req2(RREQ_TONE_BURST, 1, 500);
+	run(700);
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
 	// On a DMR channel: nothing
 	req(RREQ_ZONE_POS, 5);
 	run(50);

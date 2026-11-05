@@ -162,8 +162,10 @@ tone is not decoded). The deny beep sounds; the state is `tx_denied` until PTT i
 
 Both go out over the air through the board's `tx_tone(hz)` hook: an audio tone into the modulator in place of the
 microphone. Roger beep: at PTT release the radio stays keyed for 1200 Hz then 900 Hz, 100 ms each (`roger=1`), then
-unkeys; PTT again during the beep cancels it and the transmission goes on. Tone burst: `radio_req_tone_burst(true)`
-keys up if needed and sends 1750 Hz until `false` (repeater access); `tone_burst=1` in the view. A board without
+unkeys; PTT again during the beep cancels it and the transmission goes on. Tone burst: `radio_req_tone_burst(true, max_ms)`
+keys up if needed and sends 1750 Hz until `false` or until `max_ms` has passed (repeater access); `tone_burst=1` in
+the view. The debug link always gives a limit (at most `INPUT_INJECT_MAX_MS`), so a lost "off" unkeys as the "off"
+would; 0 means no limit but the TX time-out. A board without
 `tx_tone` gets neither.
 
 The board restores the microphone path on `tx_tone(0)` and on every return to receive. An AT1846S board makes the
