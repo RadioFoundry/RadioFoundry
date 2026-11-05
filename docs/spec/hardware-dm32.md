@@ -883,8 +883,8 @@ The radio's sleep lengths are 12, 18 or 30 ticks of its receive service by the b
 
 ### 8.9 SFR on air (SDR bench, 2026-10-19)
 
-As a standalone repeater (`sfr.md`) at 461.1375 MHz, CC 2: after a user's call the CW ID came 2 s after the hang,
-"N4NQV" at 20 wpm, 800 Hz, about 1.8 kHz deviation; the next one 5 min later after new traffic (interval 5 min). The
+As a standalone repeater (`sfr.md`) on a UHF test frequency, CC 2: after a user's call the CW ID came 2 s after the hang,
+the call sign at 20 wpm, 800 Hz, about 1.8 kHz deviation; the next one 5 min later after new traffic (interval 5 min). The
 repeat of a call sat 90.2 ms after the original on every voice burst (72 of 72). 212 of 216 repeated voice frames needed
 Golay corrections and 4 were uncorrectable, where the direct copy was clean: the receiver takes bit errors while it
 switches per burst. As a user it reports both copies of a call (gotchas 14.15).
@@ -925,7 +925,7 @@ Values written at init; field meanings from the datasheet:
 | 0x30 | DR_ADC_AGC | 0x34 | AGC data byte |
 | modem 0x088 | LINEOUT_CTRL | 0x01 | line out 2 enabled |
 
-APRS AFSK transmit (measured on the SDR bench, 2026-10-16, 467.375 MHz, 25 kHz, lowest power, a canned frame through
+APRS AFSK transmit (measured on the SDR bench, 2026-10-16, a UHF test frequency, 25 kHz, lowest power, a canned frame through
 `hal_afsk_t.tx_start`): a valid FCS at every level tried, 29 flags of TX delay, twist about -1.1 dB, 14-15 degrees phase
 residual. Level 50 (PCM amplitude 2750) gives 3.1 kHz peak with 2.2 / 2.5 kHz mark / space deviation; level 75 gives
 4.5 kHz peak; PCM 5850 and up is limited at 5.1 kHz peak. Receive decodes off air. While AFSK receive runs, the

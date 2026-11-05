@@ -67,30 +67,30 @@ static void test_fcs(void)
 static void test_addresses(void)
 {
 	ax25_addr_t a;
-	CHECK(ax25_addr_parse("n0call-15", 9, &a) && strcmp(a.call, "N0CALL") == 0 && a.ssid == 15, "parse");
-	CHECK(!ax25_addr_parse("N0CALL-16", 9, &a), "ssid 16");
+	CHECK(ax25_addr_parse("q0test-15", 9, &a) && strcmp(a.call, "Q0TEST") == 0 && a.ssid == 15, "parse");
+	CHECK(!ax25_addr_parse("Q0TEST-16", 9, &a), "ssid 16");
 	CHECK(!ax25_addr_parse("TOOLONG1", 8, &a), "7 chars");
 	CHECK(!ax25_addr_parse("-1", 2, &a), "empty call");
-	CHECK(!ax25_addr_parse("N0CALL-", 7, &a), "dash only");
+	CHECK(!ax25_addr_parse("Q0TEST-", 7, &a), "dash only");
 	char s[12];
-	ax25_addr_parse("N0CALL-15", 9, &a);
+	ax25_addr_parse("Q0TEST-15", 9, &a);
 	a.h = true;
 	ax25_addr_format(&a, true, s);
-	CHECK(strcmp(s, "N0CALL-15*") == 0, "format %s", s);
+	CHECK(strcmp(s, "Q0TEST-15*") == 0, "format %s", s);
 
-	// N0CALL>APRS: the address bytes of AX.25 2.2 3.12 (callsign shifted left, SSID byte 0b011SSSS0, C bit on
+	// Q0TEST>APRS: the address bytes of AX.25 2.2 3.12 (callsign shifted left, SSID byte 0b011SSSS0, C bit on
 	// the destination for a command, the extension bit on the last address)
 	uint8_t buf[64];
-	size_t n = make_frame("N0CALL>APRS:>test", buf, sizeof(buf));
-	static const uint8_t want[] = { 0x82, 0xA0, 0xA4, 0xA6, 0x40, 0x40, 0xE0, 0x9C, 0x60, 0x86, 0x82, 0x98, 0x98,
+	size_t n = make_frame("Q0TEST>APRS:>test", buf, sizeof(buf));
+	static const uint8_t want[] = { 0x82, 0xA0, 0xA4, 0xA6, 0x40, 0x40, 0xE0, 0xA2, 0x60, 0xA8, 0x8A, 0xA6, 0xA8,
 					0x61, 0x03, 0xF0, '>', 't', 'e', 's', 't' };
 	CHECK(n == sizeof(want) && memcmp(buf, want, n) == 0, "encode n=%zu", n);
 	ax25_frame_t f;
-	CHECK(ax25_decode(buf, n, &f) && f.ndigi == 0 && strcmp(f.src.call, "N0CALL") == 0 && f.info_len == 5,
+	CHECK(ax25_decode(buf, n, &f) && f.ndigi == 0 && strcmp(f.src.call, "Q0TEST") == 0 && f.info_len == 5,
 	      "decode");
 
 	// TNC2 round trip with a used digipeater
-	const char *line = "K1ABC-9>APZRDF,W1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-Test";
+	const char *line = "Q1ABC-9>APZRDF,Q1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-Test";
 	n = make_frame(line, buf, sizeof(buf));
 	CHECK(ax25_decode(buf, n, &f), "decode digi");
 	CHECK(f.ndigi == 2 && f.digi[0].h && !f.digi[1].h, "h bits");
@@ -103,7 +103,7 @@ static void test_addresses(void)
 	buf[27] &= (uint8_t)~1u;
 	CHECK(!ax25_decode(buf, 21, &f), "no end bit");
 	// APRS-IS line with a q construct and a long server name: the name is skipped
-	CHECK(ax25_from_tnc2("K1ABC>APRS,TCPIP*,qAC,T2TEXAS99:>hi", 35, &f) && f.ndigi == 2 &&
+	CHECK(ax25_from_tnc2("Q1ABC>APRS,TCPIP*,qAC,T2TEXAS99:>hi", 35, &f) && f.ndigi == 2 &&
 	      strcmp(f.digi[1].call, "QAC") == 0, "is line");
 }
 
@@ -113,7 +113,7 @@ static void test_hdlc(void)
 {
 	uint8_t frame[64], tones[256];
 	// a frame full of 0xFF and 0x7E: the worst case for stuffing
-	size_t n = make_frame("N0CALL>APRS:~~~~", frame, sizeof(frame));
+	size_t n = make_frame("Q0TEST>APRS:~~~~", frame, sizeof(frame));
 	for (int i = 0; i < 4; i++) {
 		frame[n - 4 + i] = (uint8_t)(i & 1 ? 0xFF : 0x7E);
 	}
@@ -199,7 +199,7 @@ static int afsk_run_emph(uint32_t mod_rate, uint32_t demod_rate, float snr_db, f
 {
 	static uint8_t frame[AX25_FRAME_MAX], tones[1024];
 	static int16_t pcm[400000];
-	size_t n = make_frame("K1ABC-9>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>RadioFoundry APRS test 0123456789",
+	size_t n = make_frame("Q1ABC-9>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>RadioFoundry APRS test 0123456789",
 			      frame, sizeof(frame));
 	hdlc_enc_t e;
 	hdlc_enc_init(&e, tones, sizeof(tones));
@@ -337,10 +337,10 @@ static void test_position_build(void)
 	// status, message, ack
 	aprs_build_status("On the air", out, sizeof(out));
 	CHECK(strcmp(out, ">On the air") == 0, "status");
-	aprs_build_message("K1ABC-9", "Hi {there}|", "42", out, sizeof(out));
-	CHECK(strcmp(out, ":K1ABC-9  :Hi  there} {42") == 0, "message %s", out);
-	aprs_build_ack("K1ABC-9", "42", false, out, sizeof(out));
-	CHECK(strcmp(out, ":K1ABC-9  :ack42") == 0, "ack %s", out);
+	aprs_build_message("Q1ABC-9", "Hi {there}|", "42", out, sizeof(out));
+	CHECK(strcmp(out, ":Q1ABC-9  :Hi  there} {42") == 0, "message %s", out);
+	aprs_build_ack("Q1ABC-9", "42", false, out, sizeof(out));
+	CHECK(strcmp(out, ":Q1ABC-9  :ack42") == 0, "ack %s", out);
 	CHECK(aprs_build_status("x", out, 2) == 0, "too small");
 }
 
@@ -418,16 +418,16 @@ static void test_mice(void)
 static void test_messages(void)
 {
 	aprs_parsed_t p;
-	const char *s = ":N0CALL-7 :Hello there{123";
+	const char *s = ":Q0TEST-7 :Hello there{123";
 	CHECK(aprs_parse(NULL, (const uint8_t *)s, strlen(s), &p) && p.type == APRS_T_MESSAGE, "message");
-	CHECK(strcmp(p.addressee, "N0CALL-7") == 0 && strcmp(p.msgno, "123") == 0 && p.text_len == 11 &&
+	CHECK(strcmp(p.addressee, "Q0TEST-7") == 0 && strcmp(p.msgno, "123") == 0 && p.text_len == 11 &&
 	      memcmp(p.text, "Hello there", 11) == 0 && !p.ack, "fields");
-	s = ":N0CALL   :ack123";
+	s = ":Q0TEST   :ack123";
 	CHECK(aprs_parse(NULL, (const uint8_t *)s, strlen(s), &p) && p.ack && strcmp(p.msgno, "123") == 0, "ack");
-	s = ":N0CALL   :rej7";
+	s = ":Q0TEST   :rej7";
 	CHECK(aprs_parse(NULL, (const uint8_t *)s, strlen(s), &p) && p.rej && strcmp(p.msgno, "7") == 0, "rej");
 	// 1.1 reply-ack: "{MM}AA"
-	s = ":N0CALL   :Hi{AB}CD";
+	s = ":Q0TEST   :Hi{AB}CD";
 	CHECK(aprs_parse(NULL, (const uint8_t *)s, strlen(s), &p) && strcmp(p.msgno, "AB") == 0 && p.text_len == 2,
 	      "reply-ack %s", p.msgno);
 	s = ":BLN1     :Bulletin";
@@ -714,14 +714,14 @@ static bool fake_direct(const char *call, uint8_t ssid, uint32_t secs, void *ctx
 {
 	(void)secs;
 	(void)ctx;
-	return strcmp(call, "K1ABC") == 0 && ssid == 9;
+	return strcmp(call, "Q1ABC") == 0 && ssid == 9;
 }
 
 static bool fake_rf(const char *call, uint8_t ssid, uint32_t secs, void *ctx)
 {
 	(void)secs;
 	(void)ctx;
-	return (strcmp(call, "K1ABC") == 0 && ssid == 9) || strcmp(call, "W2RF") == 0;
+	return (strcmp(call, "Q1ABC") == 0 && ssid == 9) || strcmp(call, "Q2RF") == 0;
 }
 
 static ax25_frame_t parse_line(const char *line)
@@ -738,45 +738,45 @@ static void test_igate(void)
 {
 	aprs_dedup_t d;
 	memset(&d, 0, sizeof(d));
-	ax25_addr_t me = addr("N0CALL-10");
+	ax25_addr_t me = addr("Q0TEST-10");
 	char out[AX25_TNC2_MAX + 20];
-	ax25_frame_t f = parse_line("K1ABC-9>APZRDF,W1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-Test\r");
+	ax25_frame_t f = parse_line("Q1ABC-9>APZRDF,Q1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-Test\r");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 1000, out, sizeof(out)) == APRS_GATE_OK, "gate");
-	CHECK(strcmp(out, "K1ABC-9>APZRDF,W1XYZ-1*,WIDE2-1,qAR,N0CALL-10:!4903.50N/07201.75W-Test") == 0, "line %s", out);
+	CHECK(strcmp(out, "Q1ABC-9>APZRDF,Q1XYZ-1*,WIDE2-1,qAR,Q0TEST-10:!4903.50N/07201.75W-Test") == 0, "line %s", out);
 	// the same packet over another digipeater within 30 s: once only; after 30 s again
-	f = parse_line("K1ABC-9>APZRDF,W1ZZZ*,WIDE2*:!4903.50N/07201.75W-Test");
+	f = parse_line("Q1ABC-9>APZRDF,Q1ZZZ*,WIDE2*:!4903.50N/07201.75W-Test");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 5000, out, sizeof(out)) == APRS_GATE_DUP, "dup");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 32000, out, sizeof(out)) == APRS_GATE_OK, "after 30 s");
-	f = parse_line("K1ABC-9>APZRDF,RFONLY:>local");
+	f = parse_line("Q1ABC-9>APZRDF,RFONLY:>local");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_NO_PATH, "rfonly");
-	f = parse_line("K1ABC-9>APZRDF,NOGATE:>local");
+	f = parse_line("Q1ABC-9>APZRDF,NOGATE:>local");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_NO_PATH, "nogate");
-	f = parse_line("K1ABC-9>APZRDF:?APRS?");
+	f = parse_line("Q1ABC-9>APZRDF:?APRS?");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_QUERY, "query");
 	// third party: from the Internet (TCPIP inside) stays; from RF elsewhere is gated as the inner packet
-	f = parse_line("W1GATE>APRS,WIDE1-1:}K9XYZ>APRS,TCPIP,W1GATE*::K1ABC-9  :hi{1");
+	f = parse_line("Q1GATE>APRS,WIDE1-1:}Q9XYZ>APRS,TCPIP,Q1GATE*::Q1ABC-9  :hi{1");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_FROM_IS, "third party from IS");
-	f = parse_line("W1GATE>APRS,WIDE1-1:}K9XYZ>APRS,W9DIGI*:>far away");
+	f = parse_line("Q1GATE>APRS,WIDE1-1:}Q9XYZ>APRS,Q9DIGI*:>far away");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_OK &&
-	      strcmp(out, "K9XYZ>APRS,W9DIGI*,qAR,N0CALL-10:>far away") == 0, "third party inner %s", out);
+	      strcmp(out, "Q9XYZ>APRS,Q9DIGI*,qAR,Q0TEST-10:>far away") == 0, "third party inner %s", out);
 	// the information field ends at a CR in the middle
-	f = parse_line("K1ABC-9>APZRDF:>one\rtwo");
+	f = parse_line("Q1ABC-9>APZRDF:>one\rtwo");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 41000, out, sizeof(out)) == APRS_GATE_OK &&
-	      strcmp(out, "K1ABC-9>APZRDF,qAR,N0CALL-10:>one") == 0, "cr %s", out);
+	      strcmp(out, "Q1ABC-9>APZRDF,qAR,Q0TEST-10:>one") == 0, "cr %s", out);
 
 	// IS -> RF
 	aprs_igate_env_t env = { fake_direct, fake_rf, NULL };
 	char info[AX25_INFO_MAX + 1];
 	size_t len;
-	const char *msg = "K9XYZ>APRS,TCPIP*,qAC,T2TEXAS::K1ABC-9  :Hello{12";
+	const char *msg = "Q9XYZ>APRS,TCPIP*,qAC,T2TEXAS::Q1ABC-9  :Hello{12";
 	CHECK(aprs_igate_is_to_rf(&d, msg, strlen(msg), &me, &env, 50000, info, sizeof(info), &len), "is to rf");
-	CHECK(strcmp(info, "}K9XYZ>APRS,TCPIP,N0CALL-10*::K1ABC-9  :Hello{12") == 0 && len == strlen(info), "%s", info);
+	CHECK(strcmp(info, "}Q9XYZ>APRS,TCPIP,Q0TEST-10*::Q1ABC-9  :Hello{12") == 0 && len == strlen(info), "%s", info);
 	CHECK(!aprs_igate_is_to_rf(&d, msg, strlen(msg), &me, &env, 52000, info, sizeof(info), &len), "is dup");
-	const char *far = "K9XYZ>APRS,TCPIP*,qAC,T2TEXAS::W5FAR    :Hello{13";
+	const char *far = "Q9XYZ>APRS,TCPIP*,qAC,T2TEXAS::Q5FAR    :Hello{13";
 	CHECK(!aprs_igate_is_to_rf(&d, far, strlen(far), &me, &env, 53000, info, sizeof(info), &len), "not local");
-	const char *pos = "K9XYZ>APRS,TCPIP*,qAC,T2TEXAS:!4903.50N/07201.75W-";
+	const char *pos = "Q9XYZ>APRS,TCPIP*,qAC,T2TEXAS:!4903.50N/07201.75W-";
 	CHECK(!aprs_igate_is_to_rf(&d, pos, strlen(pos), &me, &env, 53000, info, sizeof(info), &len), "not a message");
-	const char *rfs = "W2RF>APRS,TCPIP*,qAC,T2TEXAS::K1ABC-9  :Hi{14";
+	const char *rfs = "Q2RF>APRS,TCPIP*,qAC,T2TEXAS::Q1ABC-9  :Hi{14";
 	CHECK(!aprs_igate_is_to_rf(&d, rfs, strlen(rfs), &me, &env, 53000, info, sizeof(info), &len), "sender on RF");
 	const char *cmt = "# aprsc 2.1.14";
 	CHECK(!aprs_igate_is_to_rf(&d, cmt, strlen(cmt), &me, &env, 53000, info, sizeof(info), &len), "comment");
@@ -786,30 +786,30 @@ static void test_digi(void)
 {
 	aprs_dedup_t d;
 	memset(&d, 0, sizeof(d));
-	ax25_addr_t me = addr("N0CALL-10");
+	ax25_addr_t me = addr("Q0TEST-10");
 	ax25_frame_t in, out;
 	char s[AX25_TNC2_MAX];
-	in = parse_line("K1ABC-9>APZRDF,WIDE1-1,WIDE2-1:>hi");
+	in = parse_line("Q1ABC-9>APZRDF,WIDE1-1,WIDE2-1:>hi");
 	CHECK(aprs_digi(&d, &in, &out, &me, APRS_DIGI_FILL_IN, 1000), "fill-in");
 	ax25_to_tnc2(&out, s, sizeof(s));
-	CHECK(strcmp(s, "K1ABC-9>APZRDF,N0CALL-10,WIDE1*,WIDE2-1:>hi") == 0, "fill-in path %s", s);
+	CHECK(strcmp(s, "Q1ABC-9>APZRDF,Q0TEST-10,WIDE1*,WIDE2-1:>hi") == 0, "fill-in path %s", s);
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_FILL_IN, 2000), "dup");
 	// WIDE2-2 after a first hop: only in WIDE mode
-	in = parse_line("K1ABC-9>APZRDF,W1XYZ*,WIDE2-2:>two");
+	in = parse_line("Q1ABC-9>APZRDF,Q1XYZ*,WIDE2-2:>two");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_FILL_IN, 3000), "fill-in leaves WIDE2");
 	memset(&d, 0, sizeof(d));
 	CHECK(aprs_digi(&d, &in, &out, &me, APRS_DIGI_WIDE, 3000), "wide");
 	ax25_to_tnc2(&out, s, sizeof(s));
-	CHECK(strcmp(s, "K1ABC-9>APZRDF,W1XYZ,N0CALL-10*,WIDE2-1:>two") == 0, "wide path %s", s);
+	CHECK(strcmp(s, "Q1ABC-9>APZRDF,Q1XYZ,Q0TEST-10*,WIDE2-1:>two") == 0, "wide path %s", s);
 	// directed at us
-	in = parse_line("K1ABC-9>APZRDF,N0CALL-10:>direct");
+	in = parse_line("Q1ABC-9>APZRDF,Q0TEST-10:>direct");
 	CHECK(aprs_digi(&d, &in, &out, &me, APRS_DIGI_FILL_IN, 4000) && out.digi[0].h, "direct");
 	// used up, our own, WIDE3-3
-	in = parse_line("K1ABC-9>APZRDF,WIDE1*,WIDE2*:>done");
+	in = parse_line("Q1ABC-9>APZRDF,WIDE1*,WIDE2*:>done");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_WIDE, 5000), "used up");
-	in = parse_line("N0CALL-10>APZRDF,WIDE1-1:>mine");
+	in = parse_line("Q0TEST-10>APZRDF,WIDE1-1:>mine");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_WIDE, 5000), "own");
-	in = parse_line("K1ABC-9>APZRDF,WIDE3-3:>far");
+	in = parse_line("Q1ABC-9>APZRDF,WIDE3-3:>far");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_WIDE, 5000), "WIDE3-3");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_OFF, 5000), "off");
 }
@@ -822,9 +822,9 @@ static void wav_u16(FILE *f, uint16_t v) { fputc(v & 255, f); fputc(v >> 8, f); 
 static int write_wav(const char *dir)
 {
 	static const char *const lines[] = {
-		"N0CALL-7>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W-RadioFoundry test 1",
-		"N0CALL-7>APZRDF,WIDE1-1:=/5L!!<*e7>7PCRadioFoundry test 2",
-		"N0CALL-7>APZRDF::K1ABC-9  :Hello from the host test{42",
+		"Q0TST-7>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W-RadioFoundry test 1",
+		"Q0TST-7>APZRDF,WIDE1-1:=/5L!!<*e7>7PCRadioFoundry test 2",
+		"Q0TST-7>APZRDF::Q1ABC-9  :Hello from the host test{42",
 	};
 	static int16_t pcm[100000];
 	static uint8_t frame[AX25_FRAME_MAX], tones[1024];
@@ -919,8 +919,8 @@ static void test_parse_edges(void)
 	// every truncation of each format: parsed or refused, never read past
 	static const char *const formats[] = {
 		"=4903.50N/07201.75W-088/036/A=003281Hello", "@092345z4903.50N/07201.75W>", "=/5L!!<*e7>7P[comment",
-		";LEADER   *092345z4903.50N/07201.75W>088/036", ")AID #2!4903.50N/07201.75WA", ":N0CALL-7 :hello{12}AB",
-		":N0CALL   :ack123", "`(_fn\"Oj/`\"4T}text", ">status", "}N0CALL>APRS:>third",
+		";LEADER   *092345z4903.50N/07201.75W>088/036", ")AID #2!4903.50N/07201.75WA", ":Q0TEST-7 :hello{12}AB",
+		":Q0TEST   :ack123", "`(_fn\"Oj/`\"4T}text", ">status", "}Q0TEST>APRS:>third",
 	};
 	int bad = 0;
 	for (unsigned f = 0; f < sizeof(formats) / sizeof(formats[0]); f++) {
@@ -947,11 +947,11 @@ static void test_parse_edges(void)
 	// Messages: addressee all spaces, message number at its limit and past it, an ack with no number
 	strcpy(s, ":         :x");
 	CHECK(parse_exact(NULL, s, strlen(s), &p) && p.type == APRS_T_MESSAGE && p.addressee[0] == '\0', "blank addressee");
-	strcpy(s, ":N0CALL   :hi{123456789");
+	strcpy(s, ":Q0TEST   :hi{123456789");
 	CHECK(parse_exact(NULL, s, strlen(s), &p) && strlen(p.msgno) == APRS_MSGNO_MAX && p.text_len == 2, "msgno max");
-	strcpy(s, ":N0CALL   :ack");
+	strcpy(s, ":Q0TEST   :ack");
 	CHECK(parse_exact(NULL, s, strlen(s), &p) && !p.ack && p.text_len == 3, "ack without number");
-	strcpy(s, ":N0CALL   :ack ");
+	strcpy(s, ":Q0TEST   :ack ");
 	CHECK(parse_exact(NULL, s, strlen(s), &p) && !p.ack, "ack space");
 	// objects: one short of the position, killed; items with names of 3 and 9 characters, 10 is too long
 	strcpy(s, ";LEADER   _092345z4903.50N/07201.75W>");
@@ -984,14 +984,14 @@ static void test_parse_edges(void)
 static void test_parse_fuzz(void)
 {
 	static const char *const lines[] = {
-		"K1ABC-9>APZRDF,W1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-088/036/A=003281Test",
-		"N0CALL>APRS:=/5L!!<*e7>7P[compressed",
-		"N0CALL>SSRUVT,WIDE1-1:`(_fn\"Oj/`\"4T}mic-e",
-		"N0CALL>APRS::N0CALL-7 :hello{12}AB",
-		"N0CALL>APRS:;LEADER   *092345z4903.50N/07201.75W>088/036",
-		"N0CALL>APRS:)AID #2!4903.50N/07201.75WA",
-		"N0CALL>APRS:}W1AW>APRS,TCPIP,N0CALL*:>third party",
-		"N0CALL>APRS:@092345z4903.50N/07201.75W_220/004g005t077",
+		"Q1ABC-9>APZRDF,Q1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-088/036/A=003281Test",
+		"Q0TEST>APRS:=/5L!!<*e7>7P[compressed",
+		"Q0TEST>SSRUVT,WIDE1-1:`(_fn\"Oj/`\"4T}mic-e",
+		"Q0TEST>APRS::Q0TEST-7 :hello{12}AB",
+		"Q0TEST>APRS:;LEADER   *092345z4903.50N/07201.75W>088/036",
+		"Q0TEST>APRS:)AID #2!4903.50N/07201.75WA",
+		"Q0TEST>APRS:}W1AW>APRS,TCPIP,Q0TEST*:>third party",
+		"Q0TEST>APRS:@092345z4903.50N/07201.75W_220/004g005t077",
 	};
 	uint8_t seeds[8][AX25_FRAME_MAX];
 	size_t seedLen[8];

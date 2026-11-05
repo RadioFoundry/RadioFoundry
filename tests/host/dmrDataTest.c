@@ -83,7 +83,7 @@ static void testTMSRoundTrip(bool group, int preambles)
 {
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
 	const char *text = "Hello from TestText, this is a longer message to use a few blocks";
-	int n = dmrDataBuildTMS(group, 235, 3141592, text, 5, false, DT_RATE_12_DATA, preambles, bursts, DMR_DATA_MAX_BURSTS);
+	int n = dmrDataBuildTMS(group, 235, 9997008, text, 5, false, DT_RATE_12_DATA, preambles, bursts, DMR_DATA_MAX_BURSTS);
 
 	CHECK(n > (preambles + 1));
 	CHECK(bursts[preambles].dataType == DT_DATA_HEADER);
@@ -95,7 +95,7 @@ static void testTMSRoundTrip(bool group, int preambles)
 	}
 
 	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET);
-	CHECK(dmrDataRxPacket.src == 3141592);
+	CHECK(dmrDataRxPacket.src == 9997008);
 	CHECK(dmrDataRxPacket.dst == 235);
 	CHECK(dmrDataRxPacket.group == group);
 	CHECK(dmrDataRxPacket.dpf == DMR_DPF_UNCONFIRMED);
@@ -168,7 +168,7 @@ static void testTMSRates(void)
 	for (int r = 0; r < 2; r++)
 	{
 		uint8_t blockType = r ? DT_RATE_1_DATA : DT_RATE_34_DATA;
-		int n = dmrDataBuildTMS(false, 235, 3141592, text, 3, false, blockType, 1, bursts, DMR_DATA_MAX_BURSTS);
+		int n = dmrDataBuildTMS(false, 235, 9997008, text, 3, false, blockType, 1, bursts, DMR_DATA_MAX_BURSTS);
 		dmrDataUDP_t udp;
 		dmrDataTMS_t tms;
 
@@ -197,7 +197,7 @@ static void testIPPackets(void)
 
 	for (int m = 0; m < 2; m++)
 	{
-		int n = dmrDataBuildIP(m == 1, 235, 3141592, protocols[m], messages[m], lengths[m], DT_RATE_12_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
+		int n = dmrDataBuildIP(m == 1, 235, 9997008, protocols[m], messages[m], lengths[m], DT_RATE_12_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
 
 		CHECK(n > 2);
 		CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET);
@@ -210,7 +210,7 @@ static void testIPPackets(void)
 
 	// UDP from layer 4: the length and checksum are redone
 	uint8_t datagram[14] = { 0x0F, 0xA1, 0x0F, 0xA7, 0xFF, 0xFF, 0x12, 0x34, 'h', 'e', 'l', 'l', 'o', '!' };
-	int n = dmrDataBuildIP(false, 235, 3141592, DMR_IP_PROTO_UDP, datagram, sizeof(datagram), DT_RATE_34_DATA, 0, bursts, DMR_DATA_MAX_BURSTS);
+	int n = dmrDataBuildIP(false, 235, 9997008, DMR_IP_PROTO_UDP, datagram, sizeof(datagram), DT_RATE_34_DATA, 0, bursts, DMR_DATA_MAX_BURSTS);
 	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET);
 	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.srcPort == 4001 && udp.dstPort == 4007 && udp.length == 6);
 	const uint8_t *d = dmrDataRxPacket.data;
@@ -237,16 +237,16 @@ static void testRawPacket(void)
 
 	for (int i = 0; i < (int)sizeof(data); i++) data[i] = i * 7;
 
-	int n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, false, 16776962, 3141592, data, 608, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
+	int n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, false, 16776962, 9997008, data, 608, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
 	CHECK(n == 2 + 1 + 51);
 	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET && dmrDataRxPacket.length == 608 && memcmp(dmrDataRxPacket.data, data, 608) == 0);
-	CHECK(dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, false, 16776962, 3141592, data, 609, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS) == 0);
+	CHECK(dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, false, 16776962, 9997008, data, 609, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS) == 0);
 
-	n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, false, 16776962, 3141592, data, 2, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
+	n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, false, 16776962, 9997008, data, 2, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
 	CHECK(n == 4);
 	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET);
 	CHECK(dmrDataRxPacket.sap == DMR_SAP_SHORT_DATA && dmrDataRxPacket.dpf == DMR_DPF_UNCONFIRMED);
-	CHECK(dmrDataRxPacket.dst == 16776962 && dmrDataRxPacket.src == 3141592 && !dmrDataRxPacket.group);
+	CHECK(dmrDataRxPacket.dst == 16776962 && dmrDataRxPacket.src == 9997008 && !dmrDataRxPacket.group);
 	CHECK(dmrDataRxPacket.length == 2 && memcmp(dmrDataRxPacket.data, data, 2) == 0);
 	CHECK(!dmrDataGetUDP(&dmrDataRxPacket, &udp) && !dmrDataGetIP(&dmrDataRxPacket, &ip));
 	dumpBursts("raw-short-data", bursts, n);
@@ -255,7 +255,7 @@ static void testRawPacket(void)
 static void testTMSAck(void)
 {
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
-	int n = dmrDataBuildTMSAck(3141592, 235, 5, 0, bursts, DMR_DATA_MAX_BURSTS);
+	int n = dmrDataBuildTMSAck(9997008, 235, 5, 0, bursts, DMR_DATA_MAX_BURSTS);
 
 	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET);
 
@@ -268,7 +268,7 @@ static void testTMSAck(void)
 	CHECK((udp.length == 5) && (memcmp(udp.payload, "\x00\x03\x9F\x00\x05", 5) == 0));
 
 	// A sequence number over 31 needs the second octet: the same bytes as the MOTOTRBO capture (s/n 53)
-	n = dmrDataBuildTMSAck(3141592, 235, 53, 2, bursts, DMR_DATA_MAX_BURSTS);
+	n = dmrDataBuildTMSAck(9997008, 235, 53, 2, bursts, DMR_DATA_MAX_BURSTS);
 	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET);
 	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp));
 	CHECK((udp.length == 6) && (memcmp(udp.payload, "\x00\x04\x9F\x00\x95\x20", 6) == 0));
@@ -314,8 +314,8 @@ static void testARS(void)
 
 	// rfoundry_sdrbench's test vector (device ID "11"), and the 12 byte PDU hbnet recognizes a MOTOTRBO radio's by (000cf0)
 	CHECK((dmrDataBuildARSRegistration(11, pdu) == 9) && (memcmp(pdu, "\x00\x07\xF0\x20\x02\x31\x31\x00\x00", 9) == 0));
-	int length = dmrDataBuildARSRegistration(3101276, pdu);
-	CHECK((length == 14) && (memcmp(pdu, "\x00\x0C\xF0\x20\x07" "3101276" "\x00\x00", 14) == 0));
+	int length = dmrDataBuildARSRegistration(9996543, pdu);
+	CHECK((length == 14) && (memcmp(pdu, "\x00\x0C\xF0\x20\x07" "9996543" "\x00\x00", 14) == 0));
 	CHECK(dmrDataDecodeARS(pdu, length) == DMR_ARS_DEVICE_REGISTRATION);
 	CHECK(dmrDataBuildARSRegistration(16776415, pdu) <= DMR_ARS_MAX_PDU);
 
@@ -329,10 +329,10 @@ static void testARS(void)
 	CHECK(dmrDataDecodeARS((const uint8_t *)"\x00\x01\x0F", 3) == -1);// no control bit
 
 	// As it goes on air: UDP 4005 both ways, to the server's individual ID
-	length = dmrDataBuildARSRegistration(3101276, pdu);
-	int n = dmrDataBuildUDP(false, 9990100, 3101276, DMR_UDP_PORT_ARS, DMR_UDP_PORT_ARS, pdu, length, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
+	length = dmrDataBuildARSRegistration(9996543, pdu);
+	int n = dmrDataBuildUDP(false, 9998100, 9996543, DMR_UDP_PORT_ARS, DMR_UDP_PORT_ARS, pdu, length, DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
 	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET);
-	CHECK(!dmrDataRxPacket.group && (dmrDataRxPacket.dst == 9990100) && (dmrDataRxPacket.src == 3101276));
+	CHECK(!dmrDataRxPacket.group && (dmrDataRxPacket.dst == 9998100) && (dmrDataRxPacket.src == 9996543));
 	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && (udp.appPort == DMR_UDP_PORT_ARS) && (udp.length == length));
 	dumpBursts("ars-registration", bursts, n);
 }
@@ -341,12 +341,12 @@ static void testARS(void)
 // 84.38539 W, 22.2 km/h, 14:07:30 UTC, header and appended block CRCs good
 static void testUDTLocation(void)
 {
-	static const char *GOLDEN[] = { "bd008003986fd42f525c3aaf", "bd008002986fd42f525c82ce", "0005986fd42f525c001a6c3c", "51886e13495171349c3b76a0" };
+	static const char *GOLDEN[] = { "bd008003988f149888ffb60d", "bd008002988f149888ff0e6c", "0005988f149888ff001aa761", "51886e13495171349c3b76a0" };
 	static const uint8_t TYPES[] = { DT_CSBK, DT_CSBK, DT_DATA_HEADER, DT_RATE_12_DATA };
 	dmrDataLocation_t loc = { .fixValid = true, .north = true, .east = false, .latDegrees = 33, .latMinutes10000 = 461234, .lonDegrees = 84,
 								.lonMinutes10000 = 231234, .speedKnots = 12, .utcHours = 14, .utcMinutes = 7, .utcSeconds = 38 };
 	dmrBurst_t b[8];
-	int n = dmrDataBuildUDTLocation(false, 9990100, 3101276, &loc, 2, b, 8);
+	int n = dmrDataBuildUDTLocation(false, 9998100, 9996543, &loc, 2, b, 8);
 
 	CHECK(n == 4);
 	for (int i = 0; i < n; i++)
@@ -361,16 +361,16 @@ static void testUDTLocation(void)
 	}
 
 	// Straight after a call: no preambles; too small an output buffer: nothing
-	CHECK(dmrDataBuildUDTLocation(true, 9, 3101276, &loc, 0, b, 8) == 2);
+	CHECK(dmrDataBuildUDTLocation(true, 9, 9996543, &loc, 0, b, 8) == 2);
 	CHECK(b[0].dataType == DT_DATA_HEADER);
 	CHECK((b[0].payload[0] & 0x80) != 0);// group
-	CHECK(dmrDataBuildUDTLocation(false, 9, 3101276, &loc, 2, b, 3) == 0);
+	CHECK(dmrDataBuildUDTLocation(false, 9, 9996543, &loc, 2, b, 3) == 0);
 }
 
 static void testCSBK(void)
 {
 	dmrBurst_t burst;
-	const uint8_t csbk[10] = { 0x9F, 0x00, 0x00, 0x00, 0x00, 0xEB, 0x00, 0x2F, 0xEF, 0xD8 };// Call alert to 235 from 3141592
+	const uint8_t csbk[10] = { 0x9F, 0x00, 0x00, 0x00, 0x00, 0xEB, 0x00, 0x98, 0x8A, 0xD0 };// Call alert to 235 from 9997008
 
 	CHECK(dmrDataBuildCSBK(csbk, &burst) == 1);
 	CHECK(dmrDataRxBurst(&burst) == DMR_DATA_RX_CSBK);
@@ -380,14 +380,14 @@ static void testCSBK(void)
 	dumpBursts("csbk", &burst, 1);
 }
 
-// Call alert and radio check to 235 from 3141592, and the answers from 235
+// Call alert and radio check to 235 from 9997008, and the answers from 235
 static void testCSBKAnswers(void)
 {
 	dmrBurst_t burst;
-	const uint8_t alert[10] = { 0x9F, 0x10, 0x00, 0x00, 0x00, 0x00, 0xEB, 0x2F, 0xEF, 0xD8 };
-	const uint8_t check[10] = { 0xA4, 0x10, 0x00, 0x80, 0x00, 0x00, 0xEB, 0x2F, 0xEF, 0xD8 };
-	const uint8_t ackExpected[10] = { 0xA0, 0x10, 0x00, 0x00, 0x2F, 0xEF, 0xD8, 0x00, 0x00, 0xEB };
-	const uint8_t checkExpected[10] = { 0xA4, 0x10, 0x00, 0x00, 0x00, 0x00, 0xEB, 0x2F, 0xEF, 0xD8 };
+	const uint8_t alert[10] = { 0x9F, 0x10, 0x00, 0x00, 0x00, 0x00, 0xEB, 0x98, 0x8A, 0xD0 };
+	const uint8_t check[10] = { 0xA4, 0x10, 0x00, 0x80, 0x00, 0x00, 0xEB, 0x98, 0x8A, 0xD0 };
+	const uint8_t ackExpected[10] = { 0xA0, 0x10, 0x00, 0x00, 0x98, 0x8A, 0xD0, 0x00, 0x00, 0xEB };
+	const uint8_t checkExpected[10] = { 0xA4, 0x10, 0x00, 0x00, 0x00, 0x00, 0xEB, 0x98, 0x8A, 0xD0 };
 	uint8_t other[10];
 
 	CHECK(dmrDataBuildCSBKAnswer(alert, 235, &burst) == 1);
@@ -400,7 +400,7 @@ static void testCSBKAnswers(void)
 	dumpBursts("radio check answer", &burst, 1);
 
 	CHECK(dmrDataBuildCSBKAnswer(alert, 236, &burst) == 0);// someone else's
-	CHECK(dmrDataBuildCSBKAnswer(alert, 3141592, &burst) == 0);// our own, from the repeater
+	CHECK(dmrDataBuildCSBKAnswer(alert, 9997008, &burst) == 0);// our own, from the repeater
 	memcpy(other, check, 10);
 	other[3] = 0x00;
 	CHECK(dmrDataBuildCSBKAnswer(other, 235, &burst) == 0);// an answer isn't answered
@@ -431,7 +431,7 @@ static void testConfirmedRx(void)
 	uint32_t crc = dmrDataCRC32(packed, 56);
 	packed[56] = crc; packed[57] = crc >> 8; packed[58] = crc >> 16; packed[59] = crc >> 24;
 
-	uint8_t h[12] = { 0x40 | DMR_DPF_CONFIRMED, (DMR_SAP_IP << 4) | pad, 0x00, 0x00, 235, 0x2F, 0xEF, 0xD8, 0x80 | blocks, (5 << 4) | 0x08, 0, 0 };
+	uint8_t h[12] = { 0x40 | DMR_DPF_CONFIRMED, (DMR_SAP_IP << 4) | pad, 0x00, 0x00, 235, 0x98, 0x8A, 0xD0, 0x80 | blocks, (5 << 4) | 0x08, 0, 0 };
 	addHeaderCRC(h);
 	h[10] ^= 0xCC; h[11] ^= 0xCC;
 	bursts[0].dataType = DT_DATA_HEADER; bursts[0].length = 12; memcpy(bursts[0].payload, h, 12);
@@ -452,7 +452,7 @@ static void testConfirmedRx(void)
 	CHECK(memcmp(dmrDataRxPacket.data, user, sizeof(user)) == 0);
 
 	dmrBurst_t ack;
-	CHECK(dmrDataBuildResponseAck(DMR_SAP_IP, 3141592, 235, 5, &ack) == 1);
+	CHECK(dmrDataBuildResponseAck(DMR_SAP_IP, 9997008, 235, 5, &ack) == 1);
 	CHECK(feed(&ack, 1) == DMR_DATA_RX_PACKET);
 	CHECK(dmrDataRxPacket.dpf == DMR_DPF_RESPONSE);
 	dumpBursts("response-ack", &ack, 1);
@@ -804,7 +804,7 @@ static int burstsFor(int userData, int perBlock)
 static void testAirtime(void)
 {
 	uint8_t ars[DMR_ARS_MAX_PDU];
-	int arsLen = dmrDataBuildARSRegistration(3101234, ars);
+	int arsLen = dmrDataBuildARSRegistration(9991234, ars);
 	struct { const char *what; int payload; int header3; } t[] = {
 		{ "ARS registration (7 digit ID)", arsLen, 9 },
 		{ "TMS, 16 characters", 6 + 32, 5 },		// ID 98 both ways
@@ -830,7 +830,7 @@ static void testAirtime(void)
 static void testFrames(void)
 {
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
-	int n = dmrDataBuildTMS(false, 235, 3141592, "frame test", 1, true, DT_RATE_12_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
+	int n = dmrDataBuildTMS(false, 235, 9997008, "frame test", 1, true, DT_RATE_12_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
 	uint8_t frame[33];
 	dmrBurst_t back;
 
@@ -1023,14 +1023,14 @@ static void fuzzBursts(fuzz_t *f, long iters, long *bad, long *packets)
 	int count[6];
 	uint8_t pdu[60];
 	for (int i = 0; i < (int)sizeof(pdu); i++) pdu[i] = (uint8_t)(i * 7);
-	count[0] = dmrDataBuildUDP(false, 9990100, 3101276, 4001, 4001, pdu, 30, DT_RATE_12_DATA, 0, seeds[0], DMR_DATA_MAX_BURSTS);
-	count[1] = dmrDataBuildTMS(false, 3101276, 9990100, "fuzz text", 3, true, DT_RATE_34_DATA, 0, seeds[1], DMR_DATA_MAX_BURSTS);
-	count[2] = dmrDataBuildEtsiText(true, 91, 3101276, "short data", false, 0, seeds[2], DMR_DATA_MAX_BURSTS);
+	count[0] = dmrDataBuildUDP(false, 9998100, 9996543, 4001, 4001, pdu, 30, DT_RATE_12_DATA, 0, seeds[0], DMR_DATA_MAX_BURSTS);
+	count[1] = dmrDataBuildTMS(false, 9996543, 9998100, "fuzz text", 3, true, DT_RATE_34_DATA, 0, seeds[1], DMR_DATA_MAX_BURSTS);
+	count[2] = dmrDataBuildEtsiText(true, 91, 9996543, "short data", false, 0, seeds[2], DMR_DATA_MAX_BURSTS);
 	dmrDataLocation_t loc = { .fixValid = true, .north = true, .latDegrees = 33, .latMinutes10000 = 461230, .lonDegrees = 84,
 				  .lonMinutes10000 = 231234, .speedKnots = 12 };
-	count[3] = dmrDataBuildUDTLocation(false, 9990100, 3101276, &loc, 0, seeds[3], DMR_DATA_MAX_BURSTS);
-	count[4] = dmrDataBuildIPText(false, 9990100, 3101276, "ip text", DT_RATE_1_DATA, 0, seeds[4], DMR_DATA_MAX_BURSTS);
-	count[5] = dmrDataBuildConfirmed(DMR_SAP_IP, 9990100, 3101276, pdu, 40, DT_RATE_12_DATA, 1, true, ~0ull, 0, seeds[5], DMR_DATA_MAX_BURSTS);
+	count[3] = dmrDataBuildUDTLocation(false, 9998100, 9996543, &loc, 0, seeds[3], DMR_DATA_MAX_BURSTS);
+	count[4] = dmrDataBuildIPText(false, 9998100, 9996543, "ip text", DT_RATE_1_DATA, 0, seeds[4], DMR_DATA_MAX_BURSTS);
+	count[5] = dmrDataBuildConfirmed(DMR_SAP_IP, 9998100, 9996543, pdu, 40, DT_RATE_12_DATA, 1, true, ~0ull, 0, seeds[5], DMR_DATA_MAX_BURSTS);
 
 	for (long i = 0; i < iters; i++)
 	{

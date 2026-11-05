@@ -19,7 +19,7 @@ optional UDP transport); the SDR bench's MMDVM_HS modem board (bench_tx.py, over
          the script checks what came over the air
 
     hotspot_cases.py (--port /dev/tty.usbmodemXXXX | --udp host:3334) [--cases rf_voice8,net_voice,...|all]
-                     [--freq 461.6875] [--cc 2] [--power 12] [--sync-tools] [--json results.json] [--list]
+                     --freq MHZ --cc CC [--power 12] [--sync-tools] [--json results.json] [--list]
 
 Needs the rfoundry_sdrbench package (installed, or a checkout in $RFOUNDRY_SDRBENCH) for
 burst building and decoding. The bench's gateway service must not hold the bench modem: run it through `dmr_bench.py run H1` (which stops and
@@ -52,7 +52,7 @@ SYNC_DATA, SYNC_AUDIO = M.SYNC_DATA, M.SYNC_AUDIO
 DT_HEADER, DT_TERM, DT_CSBK, DT_DHDR, DT_IDLE = 1, 2, 3, 6, 9
 
 MODEM_SRC, MODEM_SRC2, MODEM_DST = 9990301, 9990302, 215
-NET_SRC, NET_SRC2, NET_DST = 3101999, 3101998, 9
+NET_SRC, NET_SRC2, NET_DST = 9991999, 9991998, 9
 frame = M.frame
 
 
@@ -317,7 +317,7 @@ def case_rf_b2b(hs, args, r):
 
 
 def case_rf_csbk(hs, args, r):
-    ok, m, _ = rf_case(hs, args, f"csbk --src {MODEM_SRC} --dst 3101276 --count 4")
+    ok, m, _ = rf_case(hs, args, f"csbk --src {MODEM_SRC} --dst 9991234 --count 4")
     csbks = [x for x in m.data if x[1] == DT_CSBK]
     r.info["csbk"] = len(csbks)
     r.check("bench modem sent", ok)
@@ -327,7 +327,7 @@ def case_rf_csbk(hs, args, r):
 
 def data_case(hs, args, r, confirmed):
     octets = 40
-    ok, m, _ = rf_case(hs, args, f"data --src {MODEM_SRC} --dst 3101276 --octets {octets} --preambles 2"
+    ok, m, _ = rf_case(hs, args, f"data --src {MODEM_SRC} --dst 9991234 --octets {octets} --preambles 2"
                        + (" --confirmed" if confirmed else ""))
     types = [dt for _, dt, _ in m.data]
     blocks = (octets + 4 + 9) // 10 if confirmed else (octets + 4 + 11) // 12
@@ -432,8 +432,10 @@ def main():
     ap.add_argument("--udp", default=None, help="host:port of the radio's MMDVM UDP transport (optional)")
     ap.add_argument("--local", default=":3335")
     ap.add_argument("--cases", default="all")
-    ap.add_argument("--freq", type=float, default=461.6875)
-    ap.add_argument("--cc", type=int, default=2)
+    ap.add_argument("--freq", type=float, default=os.environ.get("RFOUNDRY_BENCH_FREQ"),
+                    help="MHz ($RFOUNDRY_BENCH_FREQ): the rig's test frequency, no default")
+    ap.add_argument("--cc", type=int, default=os.environ.get("RFOUNDRY_BENCH_CC"),
+                    help="color code ($RFOUNDRY_BENCH_CC), no default")
     ap.add_argument("--power", type=int, default=12)
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--sync-tools", action="store_true")
@@ -443,6 +445,8 @@ def main():
     if args.list:
         print("\n".join(CASES))
         return 0
+    if args.freq is None or args.cc is None:     # not at the parser: --list needs neither
+        ap.error("--freq and --cc are required ($RFOUNDRY_BENCH_FREQ, $RFOUNDRY_BENCH_CC)")
     if not (args.port or args.udp):
         ap.error("give --port or --udp")
     hz = int(round(args.freq * 1e6))

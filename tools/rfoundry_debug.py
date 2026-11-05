@@ -14,7 +14,7 @@
     rfoundry_debug.py key --mask 0xBITS --hold MS    physical key bits
     rfoundry_debug.py wake                           backlight on without a key event
     rfoundry_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
-    rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq 162.550, power +1, copy-vfo, ...
+    rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power +1, copy-vfo, ...
     rfoundry_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     rfoundry_debug.py log [--follow]                 the firmware's dlog() ring
     rfoundry_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)

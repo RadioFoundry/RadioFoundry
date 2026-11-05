@@ -210,7 +210,7 @@ PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B 
   ping and version, IPv6CP and CCP Protocol-Rejected, pppd's hang-up ending the link cleanly.
 - On a radio, 2026-10-21: pppd 2.5.2 on Linux (`tools/rfoundry_ppp.sh`) over the programming cable at
   115200 baud. LCP and IPCP open, the host gets 12.<ID> and the routes. Ping (56 and 500 bytes, no loss), the debug
-  link over UDP 3334, HTTP 200 and an SNMP get work. Two UDP datagrams, one to a talkgroup (225.0.0.201) and one to a
+  link over UDP 3334, HTTP 200 and an SNMP get work. Two UDP datagrams, one to a talkgroup (225.x.y.z) and one to a
   radio ID (12.x.y.z), went out as SAP 3 data, and the SDR bench decoded the preamble CSBKs (our source ID, the right
   destination), the data headers and the blocks, CC 2, no FEC failures. `rfoundry_ppp.sh --stop` hangs up; the debug link
   answers on the cable right after. `ppp.rx_errors` stayed 0. A board without USB runs the network services over PPP too.

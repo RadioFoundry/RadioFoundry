@@ -58,12 +58,12 @@ def network_mode(radio):
             except Exception:
                 pass
             udp.close()
-        if not _serial_back(20):
+        if not _serial_back(radio, 20):
             again = _udp_link(radio_ip, 10)
             if again is not None:
                 again.usb_network(False)
                 again.close()
-            assert _serial_back(20), "the radio didn't come back as a serial port"
+            assert _serial_back(radio, 20), "the radio didn't come back as a serial port"
         for _ in range(40):
             try:
                 radio.link = DebugLink(radio.port, timeout=1.5)
