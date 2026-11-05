@@ -375,6 +375,9 @@ HRC_FLASHFUNC void hrc_dmr_stats_reset(void)
 	// Every field before last_rx_type_info is a uint32_t counter (hrc7000_dmr.h); the ISRs update them
 	lock(NULL);
 	memset(&eng.st, 0, offsetof(hrc7000_dmr_stats_t, last_rx_type_info));
+	lost_seen = 0;	// the loss record goes with its counters: health() would show a first loss from before the reset
+	lost_ms = 0;
+	memset(lost_regs, 0, sizeof lost_regs);
 	unlock(NULL);
 	hrc_audio_pcm_gate_reset();	// its line is one of ours
 }
