@@ -215,7 +215,7 @@ static bool a_start(audio_block_cb_t cb, void *ctx)
 }
 static void a_stop(void) { aud.streaming = false; aud.cb = NULL; aud.stops++; }
 static void a_pcm(bool on) { aud.pcm = on; }
-static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
+static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm };
 
 // FM transmit audio from the MCU (hal_audio_tap_t.fm_tx_inject): what the radio core asked for
 static struct {
@@ -2579,6 +2579,48 @@ static void test_dmr_beeps(void)
 	chans[6].no_beep = false;
 }
 
+static void set_no_permit(radio_settings_t *s) { s->talk_permit = false; }
+
+// A board whose beeps can't sound on air (CAP_BEEP_NOT_ON_AIR): the short talk permit plays in a hold before keying,
+// while the radio still receives, and none plays once on air. With the permit off it keys at once
+static void test_dmr_permit_before_key(void)
+{
+	beep_stats_t b0, b1;
+	uint32_t caps = board.caps;
+
+	board.caps |= CAP_BEEP_NOT_ON_AIR;
+	start();
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	beep_get_stats(&b0);
+	unsigned begins = sim.tx_begins;
+	req(RREQ_PTT, 1);
+	run(10);
+	beep_get_stats(&b1);
+	CHECK(sm.view.dmr.state == RDMR_TX_PERMIT && sim.tx_begins == begins && b1.played == b0.played + 1);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(sm.view.dmr.state == RDMR_TX && sim.tx_begins == begins + 1 && b1.played == b0.played + 1);
+	req(RREQ_PTT, 0);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// Talk permit off (the stack is configured again): no hold, no beep
+	settings(set_no_permit);
+	run(50);
+	beep_get_stats(&b0);
+	begins = sim.tx_begins;
+	req(RREQ_PTT, 1);
+	run(10);
+	CHECK(sm.view.dmr.state != RDMR_TX_PERMIT && sim.tx_begins == begins + 1);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(sm.view.dmr.state == RDMR_TX && b1.played == b0.played);
+	req(RREQ_PTT, 0);
+	run(1000);
+	board.caps = caps;
+}
+
 // A short PTT press through a repeater: the wake-up goes on after the release, and the user hears the talk permit when
 // the repeater answers (the call would have gone through) or the deny tone when none ever does
 static void test_dmr_short_press_wake(void)
@@ -2940,6 +2982,7 @@ int main(void)
 	test_supply_voltage();
 	test_battery_save();
 	test_dmr_beeps();
+	test_dmr_permit_before_key();
 	test_dmr_short_press_wake();
 	test_vibrate();
 	test_host_audio();

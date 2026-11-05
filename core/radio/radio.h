@@ -113,6 +113,7 @@ typedef enum {
 	RDMR_TX,		// on air
 	RDMR_TX_ENDING,		// PTT released: finishing the superframe
 	RDMR_TX_DATA,		// sending data / a CSBK for the data service (SMS, ACK, call alert, ...)
+	RDMR_TX_PERMIT,		// PTT held, the channel ours: the talk permit plays before keying (CAP_BEEP_NOT_ON_AIR)
 } radio_dmr_state_t;
 
 typedef struct {

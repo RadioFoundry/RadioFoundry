@@ -763,8 +763,26 @@ with no queue underruns (measured).
 The prompt path also feeds the TX modulator: with AUDIO_CONTROL b7 set during a DMR transmission, the beep's audio
 rides on the 4FSK. On one board the talk permit tone overlapped the second and third voice LC headers, which then
 carried no decodable sync on the SDR bench and the bench modem took the call by late entry; with b7 held clear while
-transmitting, all three headers decoded in five runs (measured). Keep b7 clear during any transmission; a beep that
-starts then plays silently, and b7 comes back on at TX end if the beep is still running.
+transmitting, all three headers decoded in five runs (measured). Keep b7 clear during any transmission.
+
+`audio_pcm.c` keeps it clear for every board on the platform with one gate. The DMR glue closes it as the engine starts
+to transmit (`tx_begin`, and the hotspot's `bs_key`); while it is closed, b7 stays clear and nothing is pushed to the
+FIFO. It opens at least 50 ms later, once `hrc_dmr_tx_active()` is false: checked by the audio task (every 2 ms with
+the speaker stream routed, every 10 ms without), on each speaker route change and on each `hrc_audio_pcm_ring()` call
+(the audio task only exists once a stream has run, and APRS sets b7 without one). On both edges the speaker queue is
+emptied, a block the audio task was filling at that moment included, so a beep queued during the transmission is
+dropped, not played late. Boards set b7 only through `hrc_audio_pcm_ring()`, which applies the gate. The last of the
+DMR glue's diagnostics lines, `pg g<closings> l<closings that found speaker audio still pending> ra<checks that found
+b7 set while closed>`, checks it: `l` and `ra` stay 0. Its counters reset with the DMR counters.
+
+So the talk permit can't sound during DMR TX, and the boards set `CAP_BEEP_NOT_ON_AIR`: the radio core plays it in a
+short receive-only hold before the first burst (`radio-features.md` 4). On air with a hotspot parrot, the beep was
+heard before each call and the echoed calls carried no trace of it, with `l0 ra0` (measured). On the SDR bench, in six
+overs with the permit played before keying, each over started with three voice LC headers that decoded and every burst
+was within 0.2 dB of the over's level (measured; `test_dmr_tx_permit_before_key`).
+
+The FIFO itself is not flushed at the gate. Filling it with 0x7F bytes would (above); the permit hold leaves only
+silence in it at key-up.
 
 APRS transmit uses the same path on purpose (`platform/hrc7000/hrc_afsk.c`): during an FM transmission, with b7 set
 and the microphone muted by the board, the FIFO's samples are the modulation. A timer tops the FIFO up every 2 ms;
