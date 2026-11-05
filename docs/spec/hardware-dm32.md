@@ -404,6 +404,11 @@ Init used: MODE = 0 (level), PO = 0xFFFFFFFF (high active), MASK = 0xFFFFFFFF, t
 INT_ST = INT_ST_1 = 0xFFFFFFFF. (Both masks must be written at init; the reset value is all masked.) Enabling vector v: clear bit (v − 32) in PIC_MASK for v < 64, bit (v − 64) in
 PIC_MASK_1 for v ≥ 64.
 
+Level mode still acts on the line rising (measured with timer 6, source 6, through the debug link's SoC register
+access, debuglink.md 3.24): a rise while the source is masked sets its INT_ST bit and is delivered when it is unmasked;
+after the request is taken, a line still high does not interrupt again, unmasked and with the INT_ST bit still set,
+until it falls and rises. A handler must clear its device's cause, or the source stays silent (gotchas 2.9).
+
 Dispatch: all 64 user vectors (32–95) point at one common entry; it saves context, writes 0x04 to PIC_COW1, takes the
 vector number from PSR bits 23:16, subtracts 32 and calls through a 64-entry software table.
 

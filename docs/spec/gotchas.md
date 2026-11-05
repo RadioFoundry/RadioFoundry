@@ -147,11 +147,11 @@ reads LCR, DLL and DLH back, and tries again until they stick (about 100 ms at m
 
 **2.9 A modem interrupt lost for good.**
 Symptom: field report #375: every DMR transmission through a repeater ended in "No repeater answered" until a power
-cycle, often after a zone switch. Cause: not confirmed. If the PIC acts on a request line rising, as the GPIO
-interrupt did in one bench session, a request that comes while the source is masked and stays high is never delivered,
-and no later request of that source can rise. The engine masks the modem sources for every task-side call, and the
-system interrupt handler stops after four passes with causes still listed. A dead timeslot interrupt means no
-repeater wake-up is ever sent. Rule: drop every pending modem request at each receiver restart and after a stalled
+cycle, often after a zone switch. Cause: not confirmed. The HR_C7000 PIC acts on a request line rising, in level
+mode too (measured with a spare timer as the source): a rise while the source is masked is kept and delivered when it
+is unmasked, but a line still high after its request was taken never interrupts again, unmasked or not, until it falls
+and rises. A modem request whose cause stays set (the system interrupt handler stops after four passes with causes
+still listed) leaves its source silent for good. A dead timeslot interrupt means no repeater wake-up is ever sent. Rule: drop every pending modem request at each receiver restart and after a stalled
 transmission; drop a system request pending for 50 ms with no handler run; count both and keep the first one's PIC
 state (`modem-hrc7000.md` 3.3). Radios: the HR_C7000 boards; one report.
 

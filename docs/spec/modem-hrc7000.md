@@ -506,8 +506,8 @@ from task level.
 
 ### 3.3 Lost requests
 
-A modem request the PIC never delivered may keep its line high, and then that source may never interrupt again
-(gotchas 2.9). TS and RF requests have no readable status, so the driver can't see one pending. What the engine does:
+A modem request whose line stays high after the PIC took it leaves that source silent: the PIC interrupts on the line
+rising only (gotchas 2.9). TS and RF requests have no readable status, so the driver can't see one pending. What the engine does:
 
 | When | What |
 |---|---|
