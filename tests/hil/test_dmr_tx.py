@@ -307,11 +307,9 @@ def _gate(radio):
     """The HR_C7000 TX gate's diagnostics line ("pg g<closings> l<late> ra<ring play while gated>") as a dict, or None
     on a board without it (one whose beeps may sound on air)."""
     import re
-    for line in rfoundry_hil.diag_lines(radio):
-        m = re.fullmatch(r"pg g(\d+) l(\d+) ra(\d+)", line.strip())
-        if m:
-            return {"g": int(m.group(1)), "l": int(m.group(2)), "ra": int(m.group(3))}
-    return None
+    line = rfoundry_hil.find(rfoundry_hil.diag_lines(radio), "pg ")
+    m = re.fullmatch(r"pg g(\d+) l(\d+) ra(\d+)", line.strip()) if line is not None else None
+    return {"g": int(m.group(1)), "l": int(m.group(2)), "ra": int(m.group(3))} if m else None
 
 
 PERMIT_LEVEL_DB = 1.5     # a header's level against the over's median (a beep on air or a late gate would dent it)
@@ -345,12 +343,15 @@ def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
     ours = [b for b in bursts if (b.get("lc") or {}).get("src") == own]
     assert ours, f"no burst with our source ID {own} decoded on {freq} MHz"
     start = bursts.index(ours[0])
-    over = bursts[start:]
+    # The over ends at our terminator: bursts after it (another station, the bench) don't judge its level
+    end = next((i for i in range(start, len(bursts)) if bursts[i].get("kind") == "TERM_LC"
+                and (bursts[i].get("lc") or {}).get("src") == own), len(bursts) - 1)
+    over = bursts[start:end + 1]
     headers = [b for b in over[:3] if b.get("kind") == "VLC_HDR"]
     print("first bursts:", [(b.get("kind"), b.get("level_dbfs"), b.get("fec_ok")) for b in over[:5]])
     assert len(headers) == 3, f"the over starts {[b.get('kind') for b in over[:3]]}, not three voice LC headers"
     assert all(b.get("fec_ok") is not False for b in headers), "a voice LC header failed its FEC"
-    levels = [b["level_dbfs"] for b in over if b.get("level_dbfs")]
+    levels = [b["level_dbfs"] for b in over if b.get("level_dbfs") is not None]
     if len(levels) < 10:
         warnings.warn("the bench gave no burst levels: the level checks are not judged")
         return
