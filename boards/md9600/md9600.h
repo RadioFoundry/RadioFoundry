@@ -76,6 +76,8 @@ typedef struct {
 	uint8_t last_err;	// md9600_rf_err_t
 	bool tx_armed;
 	int16_t probe;		// receiver probe: -1 not run, else the md9600_rev_t it picked (0 = no verdict)
+	uint16_t apc;		// the APC DAC value of the last transmission
+	uint32_t rx_hz;		// the receive frequency (the calibration lookups' point)
 } md9600_radio_diag_t;
 void md9600_radio_diag(md9600_radio_diag_t *d);
 void md9600_radio_early(void);	// board_init: the revision and the power-on synthesizer set-up

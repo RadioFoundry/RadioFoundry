@@ -180,10 +180,21 @@ bool md9600_view_line(uint8_t i, char *buf, uint8_t len)
 	case 24:	// the transmitter: both T5 supplies and the PA loop, all 0 while transmit is refused
 		dl_fmt(buf, len, "pin.tx=%u%u%u", LATCH(PIN_T5_U), LATCH(PIN_T5_V), LATCH(PIN_APC_EN));
 		return true;
+	case 25:	// the PA drive (APC DAC) of the last transmission
+		dl_fmt(buf, len, "apc=%u", (unsigned)rd.apc);
+		return true;
+	case 26: {	// the calibrated PA drive per power level (5, 10, 25, 40 W) at the receive frequency; 0 = refused
+		uint16_t pa[MD9600_POWER_LEVELS] = { 0 };
+		for (uint8_t l = 0; l < MD9600_POWER_LEVELS; l++) {
+			(void)md9600_cal_apc(rd.rx_hz, l, &pa[l]);
+		}
+		dl_fmt(buf, len, "cal.pa=%u/%u/%u/%u", (unsigned)pa[0], (unsigned)pa[1], (unsigned)pa[2], (unsigned)pa[3]);
+		return true;
+	}
 	default:
 		break;
 	}
-	uint8_t a = (uint8_t)(i - 25u);
+	uint8_t a = (uint8_t)(i - 27u);
 	if (a < MD9600_ADC_COUNT) {
 		dl_fmt(buf, len, "adc.%s=%u", adc_names[a], md9600_adc_raw(a));
 		return true;

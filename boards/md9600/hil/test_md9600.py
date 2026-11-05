@@ -13,7 +13,7 @@ from rfoundry_hil import skip
 
 KEYS = ["rev", "rev.source", "rev.usable", "rev.confirmed", "rev.stored", "probe", "clock", "sysclk_hz", "flash.id",
         "flash.size", "flash.map", "cal", "opt", "opt.backlight_switched", "opt.vhf_hz", "opt.uhf_hz", "keys", "ptt",
-        "lo_hz", "retunes", "refused", "pin.power", "pin.c5", "pin.r5", "pin.tx", "adc.noise_u",
+        "lo_hz", "retunes", "refused", "apc", "cal.pa", "pin.power", "pin.c5", "pin.r5", "pin.tx", "adc.noise_u",
         "adc.noise_v", "adc.rssi_u", "adc.rssi_v", "adc.mic", "adc.supply", "adc.mic_row", "adc.mic_col"]
 
 
@@ -114,3 +114,16 @@ def test_receiver_tuned(md9600):
         skip("state", f"revision {b['rev']} ({b['rev.source']}) not driven by this image")
     assert int(b["lo_hz"]) > 0 and int(b["retunes"]) > 0, b
     assert b["pin.power"] == "1", "Power_Control off while receiving"
+
+
+@pytest.mark.feature("fm", optional=True)
+def test_pa_calibration(md9600):
+    """The PA drive per power level at the receive frequency (calibration rows 11.2): the calibration refuses all four
+    or none, and each level drives harder than the one below. Printed for the power-per-level check (19.8)."""
+    b = board_view(md9600)
+    pa = [int(x) for x in b["cal.pa"].split("/")]
+    print(f"PA drive (APC DAC) 5/10/25/40 W at {int(b['lo_hz'])} Hz LO: {pa}, last transmission {b['apc']}")
+    if not any(pa):
+        skip("state", "the calibration's PA rows are refused here: transmit is refused too")
+    assert all(pa), f"some levels refused, others not: {pa}"
+    assert all(pa[i] < pa[i + 1] for i in range(3)), f"a higher level doesn't drive harder: {pa}"

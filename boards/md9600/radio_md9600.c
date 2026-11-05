@@ -185,6 +185,8 @@ void md9600_radio_diag(md9600_radio_diag_t *d)
 	d->last_err = rf.last_err;
 	d->tx_armed = rf.tx_armed;
 	d->probe = probe_result;
+	d->apc = rf.apc;
+	d->rx_hz = rf.rx_hz;
 }
 
 bool md9600_radio_tx_arm(bool on)
