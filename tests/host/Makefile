@@ -904,6 +904,12 @@ TESTS   += fd6818shTest
 # The superhet chip ops each of those drivers provides: filled in, and the same writes as the driver's own calls
 TESTS   += superhetTest
 
+# The RF register bus on a bit-banged I2C bus: frames, byte order, no acknowledge, the critical section
+TESTS   += rfbusI2cTest
+
+rfbusI2cTest: rfbusI2cTest.c $(ROOT)/drivers/rf/rfbus/rfbus_i2c.c $(RFBUS) $(ROOT)/drivers/rf/rfbus/rfbus_i2c.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ rfbusI2cTest.c $(ROOT)/drivers/rf/rfbus/rfbus_i2c.c $(RFBUS)
+
 fd6818shTest: fd6818shTest.c $(ROOT)/drivers/rf/fd6818/fd6818sh.c $(RFBUS) $(ROOT)/drivers/rf/fd6818/fd6818sh.h $(SUBAUDIO)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818shTest.c $(ROOT)/drivers/rf/fd6818/fd6818sh.c $(RFBUS) $(SUBAUDIO)
 
@@ -945,12 +951,13 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
 
 run: run-platform
-run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest \
+run-platform: bk4819Test at1141Test fd6818shTest superhetTest rfbusI2cTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest \
 		hrc7000IrqStallTest
 	./bk4819Test
 	./at1141Test
 	./fd6818shTest
 	./superhetTest
+	./rfbusI2cTest
 	./hrc7000ClockTest
 	./hrc7000UartFormatTest
 	./hrc7000IrqStallTest
