@@ -198,13 +198,13 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 	*out = zone;
 	return true;
 }
-uint32_t codeplug_dmr_id(void) { return 3101276; }
+uint32_t codeplug_dmr_id(void) { return 9996543; }
 bool codeplug_contact(uint16_t index, contact_t *out) { (void)index; (void)out; return false; }
 bool codeplug_listen_list(uint16_t index, listen_list_t *out) { (void)index; (void)out; return false; }
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out) { (void)id; (void)group; (void)out; return false; }
 bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
 {
-	*out = (codeplug_dmr_settings_t){ "N0CALL", 0, 0 };
+	*out = (codeplug_dmr_settings_t){ "Q0TEST", 0, 0 };
 	return true;
 }
 bool dmr_iddb_lookup(uint32_t id, char *out, size_t len) { (void)id; (void)out; (void)len; return false; }

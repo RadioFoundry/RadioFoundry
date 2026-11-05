@@ -324,7 +324,7 @@ Burst numbering for privacy keystream purposes is RX_TYPE_INFO's 1–6.
 
 Datasheet source: the Chinese original (HR_C7000_Document_2, 10.2.2.17, 10.2.2.18, 10.2.2.22, 10.2.2.25-10.2.2.28).
 The registers, their bits and what the chip does with them were tried on one board (RadioFoundry build with a scratch memory
-poke command, SDR bench capture on 461.4625 MHz, lowest power, `sdrmon.py analyze --cach`). (measured)
+poke command, SDR bench capture on the test frequency, lowest power, `sdrmon.py analyze --cach`). (measured)
 
 Datasheet summary:
 
@@ -428,7 +428,7 @@ Bench variants (`dmr_bs_config_t.variant`, the debug link's SPLIT op 1, `split-d
 continuous mode, b1 the autotest bit with the send bit (0x81), b3:2 the TX RAM halves (0 the slot to both, 1 alternate
 starting with SEND_DATA0, 2 alternate starting with SEND_DATA1). The default 0 is timeslot mode, 0x80, both halves.
 
-Bench results, 2026-10-20 (TX half keyed 8 s per variant at the lowest power on 461.4625 MHz; no SDR
+Bench results, 2026-10-20 (TX half keyed 8 s per variant at the lowest power on the test frequency; no SDR
 capture: the RTL-SDR was in use elsewhere. A second radio on the same frequency was the receiver). (measured)
 
 | # | Finding | Evidence |
@@ -439,7 +439,7 @@ capture: the RTL-SDR was in use elsewhere. A second radio on the same frequency 
 | 4 | The outbound decodes: the second radio deframed one idle burst per 60 ms with BS sync and color code 2, no CRC errors, labeled TS1 from the CACH TC (variant 8: TS2) | its `I`, `cc2 BS ts1` lines |
 | 5 | After the role ends (also by lease expiry) a normal call goes out whole | `dmr.tx_error=ok`; the second radio heard 3 headers, 42 voice bursts, the terminator |
 
-Second board on the SDR bench, 2026-10-21 (lowest power, 461.4625 MHz, `tests/hil/test_split_duplex.py`). (measured)
+Second board on the SDR bench, 2026-10-21 (lowest power, the test frequency, `tests/hil/test_split_duplex.py`). (measured)
 
 | # | Finding | Evidence |
 |---|---|---|

@@ -79,6 +79,7 @@ import pytest
 
 from rfoundry_hil import skip
 from rfoundry_debug import DebugLinkError, as_int
+from hil_config import rig
 
 FEATURE_KEYS = ("scan.built", "scan", "scan_phase", "scan_skipped", "tot_warning", "tone_burst", "roger", "vox_keyed",
                 "vox.mic", "vox.level", "rx_sleeping", "battery", "battery_pct", "battery_mv", "power_off", "beep.built", "set.tot_s",
@@ -392,7 +393,7 @@ def fm_tx(radio, pytestconfig):
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
     with radio.vfo_session():
-        radio.link.vfo_set(round(pytestconfig.getoption("--fm-mhz") * 1e6))
+        radio.link.vfo_set(round(rig(pytestconfig, "fm-mhz") * 1e6))
         radio.wait_for(lambda v: v.get("mode") == "fm", what="FM VFO")
         radio.lowest_power()
         try:
@@ -610,7 +611,7 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
         skip("not_built", "built without the FM VFO")
     if features(radio).get("rx_save.hw") == "0":
         skip("no_hw", "this radio's driver can't switch the receiver off (no rx_sleep)")
-    hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
+    hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
     radio.go_home()
     with radio.vfo_session():
         radio.link.vfo_set(hz)
@@ -635,7 +636,7 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
 @pytest.mark.bench_modem
 def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
     need_scan(radio)
-    hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
+    hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
     radio.go_home()
     pos = radio.find_channel(hz, "dmr")
     size = as_int(radio.core().get("zone_size"), 0)
@@ -668,7 +669,7 @@ def _battery_save(radio, pytestconfig):
         skip("not_built", "built without the FM VFO")
     if features(radio).get("rx_save.hw") == "0":
         skip("no_hw", "this radio's driver can't switch the receiver off (no rx_sleep)")
-    hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
+    hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
