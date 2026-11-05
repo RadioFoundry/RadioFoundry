@@ -174,6 +174,43 @@ static void test_materialize(void)
 	CHECK(sim_flash_violations() == 0);
 }
 
+// A read that fails at the index (and works again after it) is no free slot (codeplug-native.md 2). Bank 0: in-use
+// bitmap EE+0x3780, records from EE+0x3790; bank 1: bitmap FL+0x7B1B0. Records are 56 bytes
+static void test_unread(void)
+{
+	channel_t c = make("Kept", 433000000, 433000000), back;
+	fresh();
+	CHECK(codeplug_set_channel(2, &c) && codeplug_set_channel(129, &c));	// with the built-in 1-6
+	// Record 2 unreadable: it stays in use, its slot isn't offered, and a save in its bank keeps its bit
+	sim_flash_bad_read(EE + 0x3790u + 56u, 56u);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+	sim_flash_bad_read(0, 0);
+	CHECK(codeplug_free_channel() == 7);
+	c = make("Other", 433100000, 433100000);
+	CHECK(codeplug_set_channel(7, &c));
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel(2, &back) && strcmp(back.name, "Kept") == 0);
+	// Bank 1's bitmap unreadable: its channels unknown, nothing written there
+	uint8_t bits[16];
+	memcpy(bits, &sim_flash_data[FL + 0x7B1B0u], sizeof bits);
+	sim_flash_bad_read(FL + 0x7B1B0u, 16u);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+	sim_flash_bad_read(0, 0);
+	CHECK(!codeplug_set_channel(130, &c));
+	CHECK(codeplug_delete_channel(129));	// not seen: nothing to delete
+	CHECK(memcmp(bits, &sim_flash_data[FL + 0x7B1B0u], sizeof bits) == 0);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel(129, &back) && strcmp(back.name, "Kept") == 0);
+	// The only bank in use unreadable looks blank: the first edit doesn't materialize over it
+	for (uint16_t n = 1; n <= 7; n++) {
+		CHECK(codeplug_delete_channel(n));
+	}
+	sim_flash_bad_read(FL + 0x7B1B0u, 16u);
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN);
+	sim_flash_bad_read(0, 0);
+	CHECK(!codeplug_set_channel(1, &c));
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel(129, &back) && strcmp(back.name, "Kept") == 0);
+	CHECK(sim_flash_violations() == 0);
+}
+
 static void test_zones(void)
 {
 	zone_t z, back;
@@ -668,6 +705,7 @@ int main(void)
 {
 	test_encode();
 	test_materialize();
+	test_unread();
 	test_zones();
 #if CONFIG_DMR
 	test_dmr();

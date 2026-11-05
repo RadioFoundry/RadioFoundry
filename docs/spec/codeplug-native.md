@@ -43,6 +43,13 @@ Rules:
 - **The built-in set.** With no codeplug stored (blank flash, `codeplug=builtin`), the radio has a small built-in
   list of channels. The first edit *materializes* it: the built-in channels are written as stored records, the
   bitmaps and list counts are cleared, and the edit applies on top. After that the source is `open-firmware`.
+- **A failed read is not a free slot.** The index (start-up and `codeplug_reload()`) reads each bank's in-use bitmap,
+  then every record it marks. A marked record whose frequencies aren't valid BCD is dropped (an erased bank marks
+  every slot); the next save in its bank clears its bit in flash. A record that can't be read stays in use. A bitmap
+  that can't be read leaves its bank unknown until the next index: its channels aren't shown,
+  `codeplug_free_channel` skips the bank, `codeplug_set_channel` there fails, and the built-in set isn't
+  materialized. A save never writes a cleared bitmap over channels it couldn't see. `codeplug_start_new()` writes
+  every bitmap anyway.
 - **Another firmware's codeplug.** A radio that ran another firmware may hold that firmware's own codeplug where the
   open-firmware one goes. Its bytes can pass the per-record checks by chance (an in-use bit set, frequencies that are
   valid BCD), so the radio decides for the whole codeplug at every index (start-up and `codeplug_reload()` after a

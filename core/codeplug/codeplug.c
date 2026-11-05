@@ -101,6 +101,10 @@ static uint8_t accept;	// codeplug_accept_t: the owner's "Use anyway", which tur
 
 // Open-firmware codeplug index
 static uint8_t used[CH_MAX / 8];	// bit set = channel record passed the checks
+// Bit per bank whose in-use bitmap couldn't be read at the index: which of its channels exist isn't known, so nothing
+// writes that bitmap (it would clear every bit) or a record there (it may be in use) until an index reads it
+static uint8_t banks_unread;
+_Static_assert(CH_BANKS <= 8u, "banks_unread");
 static uint16_t channel_max;		// highest used channel number
 static uint8_t zone_slot[ZONE_SLOTS];
 static uint8_t zone_count;
@@ -353,6 +357,11 @@ static bool erased(uint32_t addr, unsigned len, uint8_t *buf, unsigned size)
 	return true;
 }
 
+static bool bank_known(uint16_t number)
+{
+	return (banks_unread & (1u << ((number - 1u) / CH_PER_BANK))) == 0;
+}
+
 static void find_max(void)
 {
 	channel_max = 0;
@@ -365,15 +374,19 @@ static void find_max(void)
 }
 
 // In-use bitmaps, then the frequencies of every marked record: an erased bank (all 0xFF) fails the BCD check. Counts
-// the channels' evidence on the way: a marked record that isn't erased is good with valid frequencies and name
+// the channels' evidence on the way: a marked record that isn't erased is good with valid frequencies and name. A read
+// that fails is no evidence that a record is unused: a bitmap marks its bank unknown (banks_unread), a record stays in
+// use. Dropped here, a save in the bank would write the drop to flash and a new channel could take the slot
 static void index_channels(void)
 {
 	uint8_t r[CH_SIZE];
 
+	banks_unread = 0;
 	for (unsigned bank = 0; bank < CH_BANKS; bank++) {
 		uint8_t *bits = &used[bank * (CH_PER_BANK / 8u)];
 		if (!flash_read(bank_bitmap(bank), bits, CH_PER_BANK / 8u)) {
 			memset(bits, 0, CH_PER_BANK / 8u);
+			banks_unread |= (uint8_t)(1u << bank);
 			continue;
 		}
 		for (unsigned k = 0; k < CH_PER_BANK; k++) {
@@ -383,8 +396,9 @@ static void index_channels(void)
 			}
 			uint32_t rx, tx;
 			if (!flash_read(channel_addr(number), r, sizeof(r))) {
-				set_used(number, false);
-			} else if (!freq(&r[CH_RX], &rx) || !freq(&r[CH_TX], &tx)) {
+				continue;	// stays in use
+			}
+			if (!freq(&r[CH_RX], &rx) || !freq(&r[CH_TX], &tx)) {
 				set_used(number, false);
 				ev_bad += all_ff(r, sizeof(r)) ? 0u : 1u;
 			} else {
@@ -908,7 +922,8 @@ static bool materialize(void)
 	if (source == CODEPLUG_OPENFW) {
 		return true;
 	}
-	if (source != CODEPLUG_BUILTIN || !storage_ready() || codeplug_foreign()) {
+	// An unread bitmap may be what made it look blank: clearing the bitmaps could drop a whole codeplug
+	if (source != CODEPLUG_BUILTIN || !storage_ready() || codeplug_foreign() || banks_unread != 0) {
 		return false;
 	}
 	bool ok = true;
@@ -945,6 +960,7 @@ bool codeplug_start_new(void)
 		     flash_write(QUICK_KEYS, zero, CODEPLUG_QUICK_KEYS * 2u) &&
 		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE);
 		ev_bad = 0;	// cleared: ours from now on (a failure re-reads it, materialize)
+		banks_unread = 0;	// the owner chose to clear it: materialize writes every bitmap
 		ok = ok && materialize();
 		if (!ok) {
 			index_all();
@@ -964,7 +980,7 @@ uint16_t codeplug_free_channel(void)
 {
 	uint16_t n;
 	storage_lock();
-	for (n = 1; n <= CH_MAX && (source == CODEPLUG_BUILTIN ? n <= builtin_count : is_used(n)); n++) {
+	for (n = 1; n <= CH_MAX && (source == CODEPLUG_BUILTIN ? n <= builtin_count : is_used(n) || !bank_known(n)); n++) {
 	}
 	storage_unlock();
 	return n <= CH_MAX ? n : 0;
@@ -978,7 +994,7 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 		return false;
 	}
 	storage_lock();
-	bool ok = materialize() && flash_read(channel_addr(number), r, sizeof(r));
+	bool ok = materialize() && bank_known(number) && flash_read(channel_addr(number), r, sizeof(r));
 	if (ok) {
 		if (!is_used(number)) {
 			blank_channel(r);	// a free slot's bytes aren't ours to keep (another firmware's, or deleted)
