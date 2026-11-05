@@ -177,19 +177,21 @@ static const stm32_clock_t clock_crystal = {
 	.lse = true,
 };
 
+// SPI2's owner: the flash driver and the display, each for one transfer. A plain mutex: no holder takes it twice, and
+// the recursive one's extra frame put the UI task over its stack (flash read under a list draw)
 static SemaphoreHandle_t spi2_lock;
 
 void md9600_spi2_lock(void)
 {
 	if (spi2_lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
-		xSemaphoreTakeRecursive(spi2_lock, portMAX_DELAY);
+		xSemaphoreTake(spi2_lock, portMAX_DELAY);
 	}
 }
 
 void md9600_spi2_unlock(void)
 {
 	if (spi2_lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
-		xSemaphoreGiveRecursive(spi2_lock);
+		xSemaphoreGive(spi2_lock);
 	}
 }
 
@@ -294,7 +296,7 @@ void board_early_init(void)
 
 void board_init(void)
 {
-	spi2_lock = xSemaphoreCreateRecursiveMutex();
+	spi2_lock = xSemaphoreCreateMutex();
 	md9600_power.init();
 	md9600_flash_init();
 	md9600_cal_load();
