@@ -119,7 +119,7 @@ is `tools/bringup.py list --radio <id>`.
 | `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded |
+| `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ |
 | `font_xl` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `font_aa` | not recorded | off | off | off | off | off | off |
 | `font_big` | not recorded | off | off | off | off | off | off |
@@ -217,7 +217,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `LANG_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_DEFAULT_ES` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_DEFAULT_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `UI_COLOR` | ● | ● | ✕ | ● | ● | ● | ● |
+| `UI_COLOR` | ● | ● | ✕ | ● | ● | ● | ✕ |
 | `UI_SETTINGS` | ● | ● | ● | ● | ● | ● | ● |
 | `SCAN` | ● | ● | ● | ● | ● | ● | ● |
 | `DUAL_WATCH` | ● | ● | ● | ● | ● | ● | ● |

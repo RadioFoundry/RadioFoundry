@@ -5,6 +5,7 @@
 CONFIG_DMR ?= n
 CONFIG_VOX ?= n
 CONFIG_FONT_XL ?= n
+CONFIG_UI_COLOR ?= n
 CONFIG_GPS ?= n
 CONFIG_GPS_SKY ?= n
 CONFIG_AM_RX ?= n
@@ -14,6 +15,7 @@ CONFIG_APRS ?= n
 CONFIG_APRS_RX ?= n
 CONFIG_APRS_IGATE ?= n
 BOARD_UNSUPPORTED += FONT_XL	# no display
+BOARD_UNSUPPORTED += UI_COLOR	# no display: no colors to set
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q16 class (docs/spec/hardware-rt10.md 4)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor
 BOARD_UNSUPPORTED += AM_RX	# no air band receive path
