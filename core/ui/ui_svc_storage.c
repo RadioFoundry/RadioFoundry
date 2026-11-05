@@ -237,6 +237,9 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_UPDOWN_HOME:
 		settings_read(&st);
 		return settings_updown_home(&st);
+	case UI_SET_LABEL_FIRST:
+		settings_read(&st);
+		return (st.updown_home & SETTINGS_HOME_LABEL_FIRST) != 0;
 	case UI_SET_LOW_BATTERY:
 		settings_read(&st);
 		return st.low_batt_pct;
@@ -364,6 +367,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 #endif
 		st = settings_begin();
 		st->ui_flags = (uint8_t)(value != 0 ? st->ui_flags | ui_flag(id) : st->ui_flags & ~ui_flag(id));
+		settings_end(hal_millis());
+		return true;
+	case UI_SET_LABEL_FIRST:
+		st = settings_begin();
+		st->updown_home = (uint8_t)(value != 0 ? st->updown_home | SETTINGS_HOME_LABEL_FIRST :
+					    st->updown_home & ~SETTINGS_HOME_LABEL_FIRST);
 		settings_end(hal_millis());
 		return true;
 	case UI_SET_VIBRATE:

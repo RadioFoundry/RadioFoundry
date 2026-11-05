@@ -24,6 +24,7 @@ typedef enum {
 	ACT_VFO_TOGGLE,		// the VFO/MR key: between the channel and the VFO (a key map entry, not a side key function)
 	ACT_DUAL_WATCH,		// dual watch on / off (docs/ux/dual-watch.md)
 	ACT_AB,			// dual watch: the other channel (A / B); starts dual watch when it is off
+	ACT_TALK_LABEL,		// Home's talk line: the talkgroup's name or its number first (a side key function)
 	ACT_COUNT
 } input_action_t;
 

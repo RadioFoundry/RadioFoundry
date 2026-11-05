@@ -4782,7 +4782,7 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 					 KEYFN_COPY_VFO,
 #endif
 #if CONFIG_DMR
-					 KEYFN_CALL_BACK,
+					 KEYFN_CALL_BACK, KEYFN_TALK_LABEL,
 #endif
 #if CONFIG_DUAL_WATCH
 					 KEYFN_AB, KEYFN_DUAL_WATCH,
@@ -4795,7 +4795,7 @@ static const char *const n_keyfn_press[] = { TRN("Default"), TRN("Nothing"), TRN
 					     TRN("Copy to VFO"),
 #endif
 #if CONFIG_DMR
-					     TRN("Call back"),
+					     TRN("Call back"), TRN("TG name / number"),
 #endif
 #if CONFIG_DUAL_WATCH
 					     "A/B", TRN("Dual watch"),
@@ -4811,7 +4811,7 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 					KEYFN_COPY_VFO,
 #endif
 #if CONFIG_DMR
-					KEYFN_CALL_BACK,
+					KEYFN_CALL_BACK, KEYFN_TALK_LABEL,
 #endif
 #if CONFIG_DUAL_WATCH
 					KEYFN_AB, KEYFN_DUAL_WATCH,
@@ -4827,7 +4827,7 @@ static const char *const n_keyfn_hold[] = { TRN("Default"), TRN("Nothing"), TRN(
 					    TRN("Copy to VFO"),
 #endif
 #if CONFIG_DMR
-					    TRN("Call back"),
+					    TRN("Call back"), TRN("TG name / number"),
 #endif
 #if CONFIG_DUAL_WATCH
 					    "A/B", TRN("Dual watch"),
@@ -4904,6 +4904,9 @@ static const set_item_t s_display[] = {
 #endif
 	TOGGLE(TRN("Large text"), "accessibility", UI_SET_LARGE_TEXT),
 	TOGGLE(TRN("Hint row"), "help", UI_SET_HINTS),
+#if CONFIG_DMR
+	TOGGLE(TRN("Talkgroup name first"), "talk line label TG number Home", UI_SET_LABEL_FIRST),
+#endif
 	// Last, so the rows above keep their places; its search words are "language" in other languages, for a user who
 	// can't read the English
 	ACTION(TRN("Language"), "idioma langue sprache lingua taal jezyk", SA_LANGUAGE),
