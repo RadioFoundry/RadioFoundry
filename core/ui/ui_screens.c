@@ -283,7 +283,7 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 #endif
 	switch (st) {
 	case RS_RX: word = "RX"; pbg = ui_col.rx; pfg = ui_col.pill_dark_fg; break;
-	case RS_TX: word = "TX"; pbg = ui_col.tx; break;
+	case RS_TX: word = v->aprs_tx ? "TX APRS" : "TX"; pbg = ui_col.tx; break;
 	case RS_TX_DENIED: word = TR("NO TX"); pbg = ui_col.warn; pfg = ui_col.pill_dark_fg; break;
 	default: break;
 	}
@@ -389,12 +389,14 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 	// mode is the selected channel's (the tuned one alternates) and the word is DUAL
 	const char *mw = mode_word(v);
 #if CONFIG_DUAL_WATCH
-	if (s->dual.on)
+	if (s->dual.on && !v->aprs_tx)
 		mw = s->dual.pane[s->dual.sel].mode == RADIO_MODE_DMR ? "DMR" : "FM";
 #endif
+	if (v->aprs_tx)
+		mw = "FM";
 	int lx = gfx_text(f, x, ty, mw, sfg);
 #if CONFIG_DUAL_WATCH
-	if (s->dual.on && strip_fits(f, lx, rx, TR("DUAL")))
+	if (s->dual.on && !v->aprs_tx && strip_fits(f, lx, rx, TR("DUAL")))
 		lx = gfx_text(f, lx + f->w, ty, TR("DUAL"), swarn);
 	else
 #endif
@@ -404,7 +406,7 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 	else if (v->roam.state == RROAM_STATE_SEARCH && strip_fits(f, lx, rx, TR("ROAM")))
 		lx = gfx_text(f, lx + f->w, ty, TR("ROAM"), swarn);	// searching the zone's sites
 #endif
-	else if (v->monitor && strip_fits(f, lx, rx, "MON"))
+	else if (v->monitor && !v->aprs_tx && strip_fits(f, lx, rx, "MON"))
 		lx = gfx_text(f, lx + f->w, ty, "MON", swarn);
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
 	// USB as a network adapter (Tools > USB network): the serial tools are off. IP, and once the PC has the link up an
@@ -1185,7 +1187,7 @@ static void sb_call_dst(sbuf_t *b, const radio_dmr_call_t *c)
 
 static bool dmr_call_screen(const radio_view_t *v)
 {
-	if (v->ch.mode != RADIO_MODE_DMR || !v->dmr.active || v->hotspot)
+	if (v->aprs_tx || v->ch.mode != RADIO_MODE_DMR || !v->dmr.active || v->hotspot)
 		return false;
 	if (v->state == RS_TX)
 		return !sending_data(v);	// data has no talk target to show: Home stays, its activity line says so
@@ -1500,10 +1502,14 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		break;
 	}
 	case RS_TX: {
+		if (v->aprs_tx) {
+			gfx_text(big, 0, y, TR("SENDING"), ui_col.tx);
+			break;
+		}
 		sb_mmss(&b, v->tx_elapsed_ms / 1000u);
 		int tw = gfx_text_width(big, buf);
 		gfx_text(big, w - tw, y, buf, ui_col.fg);
-		gfx_text(big, 0, y, sending_data(v) ? TR("SENDING") : TR("TALKING"), ui_col.tx);	// data: ARS, SMS, IP
+		gfx_text(big, 0, y, sending_data(v) ? TR("SENDING") : TR("TALKING"), ui_col.tx);
 		if (two) {
 			sb_init(&b, buf, sizeof buf);
 			if (v->dtmf_digits[0] != 0) {
@@ -2069,12 +2075,18 @@ static void dual_activity(const radio_view_t *v, const ui_state_t *s, int y, int
 	// A transmission or a call coming in takes the first line
 	sb_init(&b, buf, sizeof buf);
 	if (v->state == RS_TX) {
-		sb_str(&b, sending_data(v) ? TR("SENDING on ") : TR("TALKING on "));
-		sb_str(&b, d->sel ? "B" : "A");
+		if (v->aprs_tx)
+			sb_str(&b, TR("SENDING"));
+		else {
+			sb_str(&b, sending_data(v) ? TR("SENDING on ") : TR("TALKING on "));
+			sb_str(&b, d->sel ? "B" : "A");
+		}
 		gfx_text(sm, 0, y, buf, ui_col.tx);
-		sb_init(&b, buf, sizeof buf);
-		sb_mmss(&b, v->tx_elapsed_ms / 1000u);
-		gfx_text(sm, w - gfx_text_width(sm, buf), y, buf, ui_col.fg);
+		if (!v->aprs_tx) {
+			sb_init(&b, buf, sizeof buf);
+			sb_mmss(&b, v->tx_elapsed_ms / 1000u);
+			gfx_text(sm, w - gfx_text_width(sm, buf), y, buf, ui_col.fg);
+		}
 		y += sm->h;
 		lines--;
 	} else if (d->pane[0].rx && d->pane[1].rx && lines == 1) {
