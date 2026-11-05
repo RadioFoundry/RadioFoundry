@@ -11,6 +11,7 @@
 #include "platform.h"
 #include "hal_time.h"
 #include "radio/apc_ramp.h"
+#include "radio/ref_trim.h"
 #include "rf/rfbus/rfbus_i2c.h"
 #include "rf/fd6818/fd6818sh.h"
 
@@ -97,6 +98,8 @@ static bool fd_ok;		// the chip answered with its ID: the radio is driven
 static bool audio_open;
 static bool transmitting;
 static bool have_rx;
+static bool asleep;		// rx_sleep(true): the receiver is off until rx_sleep(false) or the next rx()
+static volatile int16_t trim_ppb;	// hal_radio_t.ref_trim: taken at the next tune
 static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
@@ -174,6 +177,12 @@ static fd6818sh_tone_t fd_tone(const subtone_t *t)
 
 static bool tx_stop(void);
 
+// The frequency the synthesizer is set to: the reference trim moves receive and transmit together
+static uint32_t synth_hz(uint32_t hz)
+{
+	return ref_trim_tune_hz(hz, trim_ppb);
+}
+
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 {
 	if (!board_in_band(hz, false)) {
@@ -184,11 +193,12 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	rx_bw = bw;
 	rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
 	have_rx = true;
+	asleep = false;
 	if (!fd_ok) {
 		return true;
 	}
 	fd6818sh_set_state(&fd, FD6818SH_STATE_IDLE);
-	fd6818sh_tune(&fd, hz);
+	fd6818sh_tune(&fd, synth_hz(hz));
 	fd6818sh_set_bandwidth(&fd, bw == RADIO_BW_25K);
 	fd6818sh_set_rx_tone(&fd, fd_tone(&rx_tone), rx_tone.value);
 	fd6818sh_set_af(&fd, audio_open ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
@@ -229,6 +239,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 	}
 	tx_stop();
+	asleep = false;
 	plan = p;
 	fd6818sh_tx_prepare(&fd, fd_tone(&tone), tone.value, hz, p.pa_gain);
 	fd6818sh_set_af(&fd, FD6818SH_AF_MUTE);
@@ -238,7 +249,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 
 	hal_delay_us(p.on_us);
 	hrc_pin_write(PIN_RX_SUPPLY, false);
-	fd6818sh_tx_tune(&fd, hz);
+	fd6818sh_tx_tune(&fd, synth_hz(hz));
 	DAC_DATA_B = 0;
 	hrc_dac_b_power(true);
 	hrc_pin_write(PIN_PA_SELECT, true);
@@ -315,9 +326,33 @@ static bool tx_tone_key(bool down)
 	return true;
 }
 
+// Battery save: the chip idle and the receiver's supply off. Waking retunes with the last rx() settings
+static void rx_sleep(bool sleep)
+{
+	if (!fd_ok || transmitting || !have_rx || sleep == asleep) {
+		return;
+	}
+	if (sleep) {
+		fd6818sh_set_state(&fd, FD6818SH_STATE_IDLE);
+		hrc_pin_write(PIN_RX_SUPPLY, false);
+		asleep = true;
+	} else {
+		rx(rx_hz, rx_bw, &rx_tone);
+	}
+}
+
+#if CONFIG_REF_TRIM
+// Taken at the next tune, so the chip's bus stays the radio task's: true asks the core for one
+static bool ref_trim(int16_t ppb)
+{
+	trim_ppb = ppb;
+	return true;
+}
+#endif
+
 static void status(radio_status_t *st)
 {
-	if (!fd_ok) {
+	if (!fd_ok || asleep) {
 		st->rssi_dbm = -160;
 		st->noise = 0;
 		st->carrier = false;
@@ -381,5 +416,9 @@ const hal_radio_t rt10_radio = {
 	.tx_tone_key = tx_tone_key,
 #if CONFIG_DTMF
 	.tx_dtmf = tx_dtmf,
+#endif
+	.rx_sleep = rx_sleep,
+#if CONFIG_REF_TRIM
+	.ref_trim = ref_trim,
 #endif
 };
