@@ -15,28 +15,28 @@ import { History } from "../static/js/editor/undo.js";
 
 const CSV = [
 	"RADIO_ID,CALLSIGN,FIRST_NAME,LAST_NAME,CITY,STATE,COUNTRY",
-	"3101276,n4nqv,Spencer M,,Auburn,Alabama,United States",
-	"1023007,VA3BOC,Hans Juergen,,Cornwall,Ontario,Canada",
-	"2620001,DL1ABC,Jürgen,,München,Bayern,Germany",
-	"3101277,KD4XYZ,\"Smith, Jo\",,Opelika,ALABAMA,United States",
-	"3101276,DUP,,,,,",
-	"abc,N0NE,,,,,",
-	"3101300,,NoCall,,,,",
+	"9991234,q0tst,Charlie M,,Dayton,Ohio,United States",
+	"9990102,QA1AAA,Hans Juergen,,Cornwall,Ontario,Canada",
+	"9990262,QB2BBB,Jürgen,,München,Bayern,Germany",
+	"9991277,QC3CCC,\"Smith, Jo\",,Toledo,OHIO,United States",
+	"9991234,DUP,,,,,",
+	"abc,Q5EEE,,,,,",
+	"9991300,,NoCall,,,,",
 ].join("\r\n");
 
-const user = (o = {}) => ({ id: 3101276, call: "N4NQV", name: "Spencer M", last: "", city: "Auburn", state: "Alabama", country: "United States", ...o });
+const user = (o = {}) => ({ id: 9991234, call: "Q0TST", name: "Charlie M", last: "", city: "Dayton", state: "Ohio", country: "United States", ...o });
 
 test("parseUsers: header row, quotes, duplicates and bad lines dropped, sorted by ID", () => {
 	const u = parseUsers("﻿" + CSV);
-	assert.deepEqual(u.map((x) => x.id), [1023007, 2620001, 3101276, 3101277]);
-	assert.equal(u[2].call, "N4NQV");
+	assert.deepEqual(u.map((x) => x.id), [9990102, 9990262, 9991234, 9991277]);
+	assert.equal(u[2].call, "Q0TST");
 	assert.equal(u[3].name, "Smith, Jo");
 	assert.equal(u[1].city, "München");
 });
 
 test("parseUsers: a file without a header row uses RadioID's column order", () => {
-	const u = parseUsers("3101276,N4NQV,Spencer,,Auburn,Alabama,United States\n");
-	assert.deepEqual(u, [user({ name: "Spencer" })]);
+	const u = parseUsers("9991234,Q0TST,Charlie,,Dayton,Ohio,United States\n");
+	assert.deepEqual(u, [user({ name: "Charlie" })]);
 });
 
 test("regionsOf and select: countries, states case-insensitively, prefixes, ID range", () => {
@@ -44,23 +44,23 @@ test("regionsOf and select: countries, states case-insensitively, prefixes, ID r
 	const r = regionsOf(u);
 	assert.equal(r[0].country, "United States");
 	assert.equal(r[0].count, 2);
-	assert.deepEqual(select(u, { regions: [{ country: "united states", state: "alabama" }] }).map((x) => x.id), [3101276, 3101277]);
-	assert.deepEqual(select(u, { regions: [{ country: "Canada" }, { country: "Germany", state: "Bayern" }] }).map((x) => x.id), [1023007, 2620001]);
-	assert.deepEqual(select(u, { prefixes: ["kd4", " "] }).map((x) => x.id), [3101277]);
-	assert.deepEqual(select(u, { idMin: 3000000, idMax: 3101276 }).map((x) => x.id), [3101276]);
+	assert.deepEqual(select(u, { regions: [{ country: "united states", state: "ohio" }] }).map((x) => x.id), [9991234, 9991277]);
+	assert.deepEqual(select(u, { regions: [{ country: "Canada" }, { country: "Germany", state: "Bayern" }] }).map((x) => x.id), [9990102, 9990262]);
+	assert.deepEqual(select(u, { prefixes: ["qc3", " "] }).map((x) => x.id), [9991277]);
+	assert.deepEqual(select(u, { idMin: 9991000, idMax: 9991234 }).map((x) => x.id), [9991234]);
 	assert.equal(select(u, {}).length, 4);
 });
 
 test("format: tokens, abbreviations, country codes, empty values drop with their separator", () => {
 	const u = user();
-	assert.equal(format(u, "{call} {first} {city} {st}"), "N4NQV Spencer Auburn AL");
-	assert.equal(format(u, "{call} {name} ({cc})"), "N4NQV Spencer M (US)");
-	assert.equal(format(user({ city: "" }), "{call}, {city} {st}"), "N4NQV AL");
-	assert.equal(format(user({ city: "" }), "{call} ({city})"), "N4NQV");
-	assert.equal(format(u, "{call} {name} {city}", { upper: true, max: 16 }), "N4NQV SPENCER M");
+	assert.equal(format(u, "{call} {first} {city} {st}"), "Q0TST Charlie Dayton OH");
+	assert.equal(format(u, "{call} {name} ({cc})"), "Q0TST Charlie M (US)");
+	assert.equal(format(user({ city: "" }), "{call}, {city} {st}"), "Q0TST OH");
+	assert.equal(format(user({ city: "" }), "{call} ({city})"), "Q0TST");
+	assert.equal(format(u, "{call} {name} {city}", { upper: true, max: 16 }), "Q0TST CHARLIE M");
 	assert.equal(format(user({ country: "Canada", state: "Ontario" }), "{st}/{cc}"), "ON/CA");
 	assert.equal(format(user({ country: "Germany", state: "Bayern" }), "{st}"), "Bayern");
-	assert.equal(format(u, "{id} {nope}"), "3101276 {nope}");
+	assert.equal(format(u, "{id} {nope}"), "9991234 {nope}");
 });
 
 test("the region list has every country once, with ISO codes", () => {
@@ -87,13 +87,13 @@ function fakeFetch({ users, directWorks = false, log = [] }) {
 	};
 }
 
-const MANY = Array.from({ length: 5 }, (_, i) => user({ id: 3101000 + i, call: `K4A${i}` }));
+const MANY = Array.from({ length: 5 }, (_, i) => user({ id: 9991000 + i, call: `Q4A${i}` }));
 
 test("API: direct fails, then the proxy; pages fetched in order; the key never goes to the proxy", async () => {
 	const log = [];
 	const api = new RadioIdApi({ key: "secret", fetchImpl: fakeFetch({ users: MANY, log }), wait: async () => {} });
 	const seen = [];
-	const got = await api.fetch({ country: "United States", state: "Alabama" }, { progress: (n, of) => seen.push([n, of]) });
+	const got = await api.fetch({ country: "United States", state: "Ohio" }, { progress: (n, of) => seen.push([n, of]) });
 	assert.deepEqual(got.map((u) => u.id), MANY.map((u) => u.id));
 	assert.deepEqual(seen, [[1, 3], [2, 3], [3, 3]]);
 	assert.equal(api.via, "proxy");
@@ -102,7 +102,7 @@ test("API: direct fails, then the proxy; pages fetched in order; the key never g
 	// direct, corsfix, allorigins for page 1; then allorigins only (no direct try again, the working proxy first)
 	assert.deepEqual(log.map((l) => new URL(l.url).host), ["database.radioid.net", "proxy.corsfix.com", "api.allorigins.win", "api.allorigins.win", "api.allorigins.win"]);
 	// a second fetch of the same region comes from the cache
-	await api.fetch({ country: "United States", state: "Alabama" });
+	await api.fetch({ country: "United States", state: "Ohio" });
 	assert.equal(log.length, 5);
 });
 
@@ -124,7 +124,7 @@ test("API: a failure everywhere is reported, and a stop ends the fetch", async (
 });
 
 test("fromApi keeps only users with an ID and a call sign", () => {
-	assert.deepEqual(fromApi([{ id: 1, callsign: "a1a" }, { id: 0, callsign: "X" }, { radio_id: 2, callsign: "" }]).map((u) => u.call), ["A1A"]);
+	assert.deepEqual(fromApi([{ id: 1, callsign: "q1a" }, { id: 0, callsign: "X" }, { radio_id: 2, callsign: "" }]).map((u) => u.call), ["Q1A"]);
 });
 
 test("ID database: written into a new image, read back, sized against the radio, undone", () => {
@@ -137,7 +137,7 @@ test("ID database: written into a new image, read back, sized against the radio,
 	assert.notEqual(m.base, before);
 	assert.equal(r.count, 4);
 	assert.equal(m.iddb.count, 4);
-	assert.deepEqual(iddb.read(m.base.bytes).map((x) => x.text), ["VA3BOC Hans ON", "DL1ABC Jurgen Ba", "N4NQV Spencer AL", "KD4XYZ Smith AL"]);
+	assert.deepEqual(iddb.read(m.base.bytes).map((x) => x.text), ["QA1AAA Hans ON", "QB2BBB Jurgen Ba", "Q0TST Charlie OH", "QC3CCC Smith OH"]);
 	h.undo(m);
 	assert.equal(m.base, before);
 	assert.equal(m.iddb, null);
@@ -153,10 +153,10 @@ test("ID database: written into a new image, read back, sized against the radio,
 
 test("contacts: private calls, existing IDs skipped, names in Latin-1 and 16 characters, the list's limit kept", () => {
 	const m = empty();
-	m.contacts.push(newContact({ number: 1, name: "Me", id: 3101276, type: "private" }));
-	const r = addContacts(m, [...parseUsers(CSV), user({ id: 4600001, call: "BG7ABC", name: "Łukasz 王" })], { template: "{call} {name} {city}" });
+	m.contacts.push(newContact({ number: 1, name: "Me", id: 9991234, type: "private" }));
+	const r = addContacts(m, [...parseUsers(CSV), user({ id: 9994600, call: "QD4DDD", name: "Łukasz 王" })], { template: "{call} {name} {city}" });
 	assert.deepEqual(r, { added: 4, existing: 1, full: 0 });
-	assert.deepEqual(m.contacts.slice(1).map((c) => c.name), ["VA3BOC Hans Juer", "DL1ABC Jürgen Mü", "KD4XYZ Smith, Jo", "BG7ABC Lukasz Au"]);
+	assert.deepEqual(m.contacts.slice(1).map((c) => c.name), ["QA1AAA Hans Juer", "QB2BBB Jürgen Mü", "QC3CCC Smith, Jo", "QD4DDD Lukasz Da"]);
 	assert.ok(m.contacts.every((c) => c.type === "private"));
 	const big = empty();
 	const many = Array.from({ length: 1030 }, (_, i) => user({ id: i + 1, call: `K${i}` }));

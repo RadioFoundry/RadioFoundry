@@ -71,7 +71,7 @@ should use a 19.26 file and one whose code goes to the start of sector 10 (RT3S 
 
 ## 5. FM receive
 
-`tests/hil` FM receive cases on 461.4625 against the SDR bench (`--fm-mhz`).
+`tests/hil` FM receive cases on the test frequency against the SDR bench (`--fm-mhz`).
 
 ## 6. FM transmit (dummy load)
 

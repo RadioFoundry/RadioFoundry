@@ -67,7 +67,7 @@ On FM, the activity region shows "Receiving" while the squelch is open, or "Sque
 While you hold **PTT**, the screen shows TALKING, the target, the timeslot and color code (DMR), the time on air and
 the transmit timeout. DMR shows the time as "0:07 of 3:00", FM as "2:53 left of 3:00".
 
-On DMR the top line says what kind of call it is: "TG 3100" for a group call, "Private 3101234" for a private call.
+On DMR the top line says what kind of call it is: "TG 3100" for a group call, "Private 9991234" for a private call.
 A private call shows the contact's name, and its ID when there is room. A name too long for the line keeps the name
 and drops the ID.
 

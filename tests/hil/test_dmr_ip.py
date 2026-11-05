@@ -25,6 +25,7 @@ import pytest
 
 from rfoundry_hil import skip, host_network
 import dmr_packet
+from hil_config import rig
 
 BENCH_ID = 9990301
 SRC_PORT, DST_PORT = 50000, 161            # an SNMP request: no port IDs, both ports in the extended headers
@@ -49,7 +50,7 @@ def _setup(radio, pytestconfig, tx=True):
         skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
     if _ip_view(radio).get("ip.built") != 1:
         skip("not_built", "firmware without the dmr_ip view section (before SAP 3 transmit)")
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     if tx:

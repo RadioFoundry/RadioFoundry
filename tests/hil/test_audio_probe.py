@@ -46,6 +46,7 @@ import time
 import pytest
 
 from rfoundry_hil import skip
+from hil_config import rig
 
 PAGE = 4
 TONE_HZ = 1000
@@ -203,7 +204,7 @@ def test_probe_stream_in_fm(probe, pytestconfig):
     if "VFO_FM" not in probe.features():
         skip("not_built", "built without the FM VFO")
     L = probe.link
-    hz = round(pytestconfig.getoption("--noaa-mhz") * 1e6)
+    hz = round(rig(pytestconfig, "noaa-mhz") * 1e6)
     with probe.vfo_session():
         L.vfo_set(hz)
         probe.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
@@ -219,7 +220,7 @@ def test_probe_fm_rx_variants(probe, pytestconfig):
     if "VFO_FM" not in probe.features():
         skip("not_built", "built without the FM VFO")
     L = probe.link
-    noaa = round(pytestconfig.getoption("--noaa-mhz") * 1e6)
+    noaa = round(rig(pytestconfig, "noaa-mhz") * 1e6)
     quiet = noaa + 2_000_000          # 2 MHz away: nothing there at the bench, squelch closed (checked)
     rows = []
     with probe.vfo_session():
@@ -266,7 +267,7 @@ def keyed_runs(probe, sdr_bench, pytestconfig, runs, tag, ptt_s=PTT_S, **analyze
     [(name, (peak 99.5 %, peak 99.9 %, rms) of the voice band deviation in Hz or None, note)]."""
     import re
     L = probe.link
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
     rows = []
     with probe.vfo_session():
@@ -343,7 +344,7 @@ def test_probe_fm_ram_rx(probe, pytestconfig):
     if "VFO_FM" not in probe.features():
         skip("not_built", "built without the FM VFO")
     L = probe.link
-    noaa = round(pytestconfig.getoption("--noaa-mhz") * 1e6)
+    noaa = round(rig(pytestconfig, "noaa-mhz") * 1e6)
     quiet = noaa + 2_000_000
     res = {}
     with probe.vfo_session():
@@ -510,7 +511,7 @@ def test_probe_fm_tx_sweep(probe, sdr_bench, pytestconfig):
         skip("not_built", "built without the FM VFO")
     import re
     L = probe.link
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
     flips = [(r, b) for r in SWEEP_REGS for b in range(8)]
     batches = [flips[i:i + SWEEP_PER_KEY] for i in range(0, len(flips), SWEEP_PER_KEY)]
@@ -610,7 +611,7 @@ def marked_steps(probe, sdr_bench, pytestconfig, steps, tag, per_key=8):
     texts): a hit is (label, Hz, source, seconds)."""
     import re
     L = probe.link
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
     batches = [steps[i:i + per_key] for i in range(0, len(steps), per_key)]
     key_s = SWEEP_MARK_S + 0.2 + per_key * (SWEEP_ON_S + SWEEP_GAP_S) + 0.3
@@ -759,7 +760,7 @@ def test_probe_fm_tx_offsets(probe, sdr_bench, pytestconfig):
     if "VFO_FM" not in probe.features():
         skip("not_built", "built without the FM VFO")
     L = probe.link
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
     deltas = [8, 32, -8, -32, "x80"]
     key_s = 0.6 + len(deltas) * 2 * OFFSET_HOLD_S + OFFSET_TOGGLE_S + 0.6
@@ -1071,7 +1072,7 @@ def test_probe_fm_tx_ram_writer_sweep(probe, sdr_bench, pytestconfig):
     if "VFO_FM" not in probe.features():
         skip("not_built", "built without the FM VFO")
     L = probe.link
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
     flips = [(p, r, b) for p, r in WRITER_REGS for b in range(8)]
     stops, i = [], 0
@@ -1160,7 +1161,7 @@ def ramfeed_sweep(probe, sdr_bench, pytestconfig, flips, tag):
     if "VFO_FM" not in probe.features():
         skip("not_built", "built without the FM VFO")
     L = probe.link
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
     batches = [flips[i:i + FEED_PER_KEY] for i in range(0, len(flips), FEED_PER_KEY)]
     feed_s = (FEED_PER_KEY * (FEED_HOLD_MS + FEED_GAP_MS) + FEED_GAP_MS) / 1000

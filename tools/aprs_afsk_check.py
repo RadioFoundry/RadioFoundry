@@ -42,9 +42,33 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sdr_fm_check import Decimator, bandpass, find_segments, fir, lowpass  # noqa: E402
 
-FS_IN = 1536000.0
+FS_IN = 1536000.0               # the capture's rate (--rate, or its CAPTURE.json; set_rate)
+SAMPLE = (np.int8, 128.0)       # the capture's sample type and full scale (set_format: cs8 or cs16)
 D1, D2 = 8, 4                   # 1.536 MHz -> 192 kHz -> 48 kHz
 FS_AUDIO = FS_IN / (D1 * D2)
+
+
+def set_format(fmt):
+    """The capture's sample format: cs8 (rtl_sdr, the default) or cs16 (interleaved int16 I/Q)."""
+    global SAMPLE
+    if fmt not in (None, "cs8", "cs16"):
+        raise SystemExit("sample format %s: needs cs8 or cs16" % fmt)
+    SAMPLE = (np.int16, 32768.0) if fmt == "cs16" else (np.int8, 128.0)
+
+
+def set_rate(rate):
+    """The capture's sample rate. A multiple of 192 kHz: the first stage decimates it to 192 kHz (none at 192
+    kHz). 96 or 48 kHz (a channel captured narrow): no first stage, and the second decimates less, to 48 kHz."""
+    global FS_IN, D1, D2
+    d = int(round(rate / 192000.0))
+    if d >= 1 and abs(rate - d * 192000.0) <= 1.0:
+        FS_IN, D1, D2 = float(rate), d, 4
+        return
+    for k in (2, 4):
+        if abs(rate * k - 192000.0) <= 1.0:
+            FS_IN, D1, D2 = float(rate), 1, 4 // k
+            return
+    raise SystemExit("sample rate %g: needs a multiple of 192 kHz, or 96 or 48 kHz" % rate)
 POWER_WIN_S = 0.01
 BAUD = 1200.0
 MARK, SPACE = 1200.0, 2200.0
@@ -58,7 +82,7 @@ def demodulate_iq(path, offset, bw_khz, chunk=384000):
     """Stream the capture: (48 kHz discriminator output in Hz, 10 ms power in dBFS)."""
     cutoff = 7000.0 if bw_khz < 20 else 12500.0
     fs1 = FS_IN / D1
-    st1 = Decimator(lowpass(40000.0, FS_IN, 31), D1, np.complex64)
+    st1 = Decimator(lowpass(40000.0, FS_IN, 31), D1, np.complex64) if D1 > 1 else (lambda x: x)
     st2 = Decimator(lowpass(cutoff, fs1, 161), D2, np.complex64)
     win = int(round(FS_AUDIO * POWER_WIN_S))
     audio, power = [], []
@@ -68,11 +92,11 @@ def demodulate_iq(path, offset, bw_khz, chunk=384000):
     chunk -= chunk % (D1 * D2)
     with open(path, "rb") as f:
         while True:
-            raw = np.fromfile(f, dtype=np.int8, count=2 * chunk)
+            raw = np.fromfile(f, dtype=SAMPLE[0], count=2 * chunk)
             n = len(raw) // 2
             if n == 0:
                 break
-            iq = (raw[0:2 * n:2].astype(np.float32) + 1j * raw[1:2 * n:2].astype(np.float32)) / 128.0
+            iq = (raw[0:2 * n:2].astype(np.float32) + 1j * raw[1:2 * n:2].astype(np.float32)) / SAMPLE[1]
             iq -= iq.mean()
             ph = (-offset / FS_IN) * (np.arange(n, dtype=np.float64) + k0)
             ph -= np.floor(ph)
@@ -90,7 +114,8 @@ def demodulate_iq(path, offset, bw_khz, chunk=384000):
             audio.append((np.angle(zz[1:] * np.conj(zz[:-1])) * (FS_AUDIO / (2.0 * np.pi))).astype(np.float32))
     if not audio:
         return np.zeros(0, np.float32), np.zeros(0)
-    delay = (30 / 2.0) / FS_IN + (160 / 2.0) / fs1          # the two filters' delay: line audio up with the power
+    # The two filters' delay (no first stage at 192 kHz and below): line the audio up with the power
+    delay = (30 / 2.0 if D1 > 1 else 0.0) / FS_IN + (160 / 2.0) / fs1
     a = np.concatenate(audio)
     return a[int(round(delay * FS_AUDIO)):], np.concatenate(power)
 
@@ -475,9 +500,9 @@ def self_test(wav=None):
         if not cond:
             fails.append(what)
 
-    lines = [("N0TST-15", "APZRDF", [], "!/5L!!<*e7>7P[RadioFoundry self test"),
-             ("N0TST-15", "APZRDF", ["WIDE1-1"], ">status text"),
-             ("N0TST-15", "APZRDF", [], ":K1ABC-9  :hello{42")]
+    lines = [("Q0TST-15", "APZRDF", [], "!/5L!!<*e7>7P[RadioFoundry self test"),
+             ("Q0TST-15", "APZRDF", ["WIDE1-1"], ">status text"),
+             ("Q0TST-15", "APZRDF", [], ":Q2BBB-9  :hello{42")]
     frames = [ax25_frame(*ln) for ln in lines]
     want = [f"{s}>{d}{''.join(',' + x for x in dg)}:{i}" for s, d, dg, i in lines]
     for f, ln in zip(frames, lines):
@@ -528,7 +553,7 @@ def self_test(wav=None):
         # the firmware's modulator (aprsTest --wav): as audio, and FM modulated into I/Q
         r = analyze_audio(wav)
         got = [f["tnc2"] for f in r["frames"]]
-        check(len(got) == 3 and all(g.startswith("N0CALL-7>APZRDF") for g in got), f"firmware WAV: {got}")
+        check(len(got) == 3 and all(g.startswith("Q0TST-7>APZRDF") for g in got), f"firmware WAV: {got}")
         x, fs = read_wav(wav)
         path = os.path.join(tmp, "fw.cs8")
         synth_iq(path, x / np.max(np.abs(x)) * 3000.0, fs, offset)
@@ -550,6 +575,9 @@ def main():
     ap.add_argument("--threshold", type=float, default=12.0, help="keyed when this many dB above the floor")
     ap.add_argument("--audio", help="decode a 16-bit WAV instead of a capture")
     ap.add_argument("--json", action="store_true", help="print the result as JSON")
+    ap.add_argument("--rate", type=float, default=None,
+                    help="capture sample rate, Hz, a multiple of 192 kHz (default: CAPTURE.json, else 1.536 MHz)")
+    ap.add_argument("--fmt", choices=("cs8", "cs16"), help="sample format (default: CAPTURE.json, else cs8)")
     ap.add_argument("--self-test", action="store_true", help="check the decoder on frames built here")
     ap.add_argument("--wav", help="--self-test: also the firmware's WAV (tests/host/aprsTest --wav DIR)")
     a = ap.parse_args()
@@ -558,6 +586,12 @@ def main():
     if a.audio:
         res = analyze_audio(a.audio)
     elif a.capture:
+        meta = {}
+        if os.path.exists(a.capture + ".json"):
+            with open(a.capture + ".json") as f:
+                meta = json.load(f)
+        set_rate(float(a.rate or meta.get("rate") or FS_IN))
+        set_format(a.fmt or meta.get("fmt"))
         res = analyze_iq(a.capture, a.offset, a.bw, a.threshold)
     else:
         ap.error("a capture, --audio or --self-test")

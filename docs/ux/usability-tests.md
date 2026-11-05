@@ -18,7 +18,7 @@ The host build of the UI (core UI + a simulated `hal/` display and input) runs i
 - A **skin per reference radio** (DM-1701, DM-32, GD-77, MD-9600) drawing the real key layout and display size, with keyboard and mouse bindings, so testers press "the radio" and not a PC keyboard map they have to learn. The skin's key map is the board's real key map file.
 - **Display class switch** (240x320 portrait/landscape, 160x128, 128x64) and a "glare" filter (reduced contrast) and "mono" filter.
 - **Event log**: every logical action with gesture and timestamp, every screen enter/leave, every banner, every codeplug write, every TX start/stop, as JSON lines. This is the source of all metrics.
-- **Scripted traffic**: a scenario file injects RX events (group call from ID 3101234 on TG 91 with talker alias, private call, text message, radio check request, emergency, GPS position) at set times, so every session sees the same radio world.
+- **Scripted traffic**: a scenario file injects RX events (group call from ID 9991234 on TG 91 with talker alias, private call, text message, radio check request, emergency, GPS position) at set times, so every session sees the same radio world.
 - **Script runner** (headless): replays a list of logical actions and asserts on screen state (named fields exposed by the UI model, not pixels). Used for the press-budget tests below.
 - **Screen crawler** (headless): from Home, explores every reachable screen with breadth-first logical actions and records the graph.
 
@@ -79,7 +79,7 @@ Targets are for regular DMR users; new users get 2x the time target. "Presses" =
 | T4 | Make TG 91 the normal talkgroup for this channel. | Codeplug written, banner seen | 3 | 15 s |
 | T5 | Someone just called you. Answer them. (scripted call) | TX to the caller's TG | 1-2 | 5 s |
 | T6 | Call Joe Smith privately. | Private call TX to Joe's ID | 4 | 15 s |
-| T7 | Call the ID 3101234 privately. | Private call TX to that ID | 9 | 25 s |
+| T7 | Call the ID 9991234 privately. | Private call TX to that ID | 9 | 25 s |
 | T8 | Reply "OK" to Joe by text. | Message sent to Joe | 4 | 15 s |
 | T9 | Read the message that just arrived. (scripted) | Message body shown | 1-3 | 10 s |
 | T10 | Check whether Joe's radio is on. | Radio check sent, result read aloud by participant | 2-5 | 15 s |

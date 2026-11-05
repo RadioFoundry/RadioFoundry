@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, as_int, find_ports, skip
+from rfoundry_hil import DebugLinkError, as_int, skip
 
 CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG = 1, 4, 5
 
@@ -16,22 +16,6 @@ def _need(radio):
         skip("not_built", "built without CONFIG_CRASH_LOG")
 
 
-def _reconnect(radio, timeout=30.0):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        for port in [radio.port] + find_ports():
-            link = None
-            try:
-                link = DebugLink(port, timeout=1.5)
-                link.ping()
-                radio.link, radio.port = link, port
-                return
-            except (DebugLinkError, OSError):
-                # A serial hub takes one client per port: a link left open would lock out every later try.
-                if link is not None:
-                    link.close()
-                time.sleep(0.5)
-    raise AssertionError("the radio did not come back after the crash")
 
 
 def _crash(radio, kind):
@@ -42,7 +26,7 @@ def _crash(radio, kind):
     radio.link.crash_test(kind)
     radio.link.close()
     time.sleep(2.0)
-    _reconnect(radio)
+    radio.reconnect()
     up_after = as_int(radio.view(["link"])["uptime_ms"])
     assert up_after < up_before or up_after < 30000, "the radio didn't restart"
     return radio.view(["crash"])

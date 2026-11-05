@@ -10,13 +10,12 @@ for voice B-F), color code, data type and the gateway's source / destination. Ne
 keeps running and the SDR keeps its normal job. It sees what the gateway decodes (no idle bursts, no timing, no
 power): use sdrmon.py for those.
 
-    sdr_watch.py [--receiver SDR15] [--seconds 60] [--json] [--host HOST]
+    sdr_watch.py --receiver NAME [--seconds 60] [--json] [--host HOST]
 
 Runs on the SDR bench with the rfoundry_sdrbench package (rfoundry_sdrbench.layer2) and paho-mqtt. The broker comes from
 --host or $RFOUNDRY_SDR_BENCH_MQTT_HOST (default localhost), the login from $RFOUNDRY_SDR_BENCH_MQTT_USER and
 $RFOUNDRY_SDR_BENCH_MQTT_PASSWORD. On the bench they are in $RFOUNDRY_SDR_BENCH_ENV_FILE (default /etc/rfoundry-sdrbench/env, root
 only), which dmr_bench.py exports before it runs this.
-SDR15 is the 461.6875 MHz receiver on the SDR bench (2026-10).
 """
 import argparse
 import base64
@@ -44,7 +43,9 @@ def family(burst: bytes) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default=os.environ.get("RFOUNDRY_SDR_BENCH_MQTT_HOST", "localhost"))
-    ap.add_argument("--receiver", default="SDR15")
+    ap.add_argument("--receiver", default=os.environ.get("RFOUNDRY_SDR_RECEIVER"),
+                    required="RFOUNDRY_SDR_RECEIVER" not in os.environ,
+                    help="the receiver's name on the SDR bench ($RFOUNDRY_SDR_RECEIVER), no default")
     ap.add_argument("--seconds", type=float, default=60)
     ap.add_argument("--json", action="store_true", help="one JSON object per burst")
     args = ap.parse_args()

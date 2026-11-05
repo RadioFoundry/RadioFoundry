@@ -8,7 +8,7 @@ encoder, so the host tests use it as a second implementation.
   rfoundry_snmp.py get 12.0.39.20 sysName.0 rfoundryDmrId.0
   rfoundry_snmp.py walk 12.0.39.20                      # the whole MIB
   rfoundry_snmp.py walk 12.0.39.20 rfoundry                  # the enterprise subtree
-  rfoundry_snmp.py -c private set 12.0.39.20 sysName.0 s:N0CALL rfoundryAgentRfManager.0 u:3100001
+  rfoundry_snmp.py -c private set 12.0.39.20 sysName.0 s:Q1AAA rfoundryAgentRfManager.0 u:9990001
   rfoundry_snmp.py traps                                # print notifications sent to UDP 162 (or --port)
 
 Names: the few below (sysDescr.0, rfoundryBatteryVoltage.0, ...) or dotted OIDs. Set values: i:INTEGER, u:Unsigned32

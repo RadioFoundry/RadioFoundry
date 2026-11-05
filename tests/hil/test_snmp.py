@@ -16,10 +16,12 @@ import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, find_ports, skip
+from rfoundry_hil import DebugLink, DebugLinkError, skip
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import rfoundry_snmp  # noqa: E402
+from hil_config import rig
+from test_usb_network import _serial_back
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 TEST_COMMUNITY = "rfoundry-hil-rw"
@@ -38,15 +40,6 @@ def _udp_link(ip, timeout):
     return None
 
 
-def _serial_back(timeout):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if find_ports():
-            return True
-        time.sleep(0.5)
-    return False
-
-
 def _value(vbs, name):
     want = rfoundry_snmp.oid_tuple(name)
     for oid, tag, value in vbs:
@@ -62,7 +55,7 @@ def test_snmp_usb(radio, pytestconfig):
         skip("not_built", "built without CONFIG_SNMP")
     # On a DMR channel: the DMR objects (talk group, target type) are only in the walk then
     radio.go_home()
-    radio.find_channel(round(pytestconfig.getoption("--dmr-freq") * 1e6), "dmr")
+    radio.find_channel(round(rig(pytestconfig, "dmr-freq") * 1e6), "dmr")
     own_id = int(radio.view(["dmr"]).get("dmr.own_id", "0"))
     assert 0 < own_id < (1 << 24), "no DMR ID: the gateway can't make an address"
     before = radio.view(["snmp"])
@@ -143,12 +136,12 @@ def test_snmp_usb(radio, pytestconfig):
     finally:
         if udp is not None:
             udp.close()
-        if not _serial_back(20):
+        if not _serial_back(radio, 20):
             again = _udp_link(radio_ip, 10)
             if again is not None:
                 again.usb_network(False)
                 again.close()
-            assert _serial_back(20), "the radio didn't come back as a serial port"
+            assert _serial_back(radio, 20), "the radio didn't come back as a serial port"
         for _ in range(40):
             try:
                 radio.link = DebugLink(radio.port, timeout=1.5)

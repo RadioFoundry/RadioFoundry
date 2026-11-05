@@ -54,7 +54,7 @@ bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, 
 bool ipGatewayRawToAir(bool group, uint32_t dst, const uint8_t *data, int length) { to_air++; return true; }
 
 // ---- the responder's io ----
-static mdns_identity_t ident = { .ip = RADIO_IP, .dmr_id = RADIO_ID, .callsign = "N0CALL", .board = "DM-1701",
+static mdns_identity_t ident = { .ip = RADIO_IP, .dmr_id = RADIO_ID, .callsign = "Q0TEST", .board = "DM-1701",
 				 .firmware = "abc1234" };
 static void io_identity(mdns_identity_t *id) { *id = ident; }
 static uint8_t *io_buffer(int *max) { *max = IPGW_UDP_PAYLOAD_MAX; return ipGatewayUdpPayload(); }
@@ -337,7 +337,7 @@ static void query(const char *name, uint16_t type, uint16_t cls, uint16_t sport,
 }
 
 #define HOST	"rfoundry-10005.local"
-#define INST	"N0CALL DM-1701 (10005)"
+#define INST	"Q0TEST DM-1701 (10005)"
 
 // Up: three probe rounds, then two announcements
 static void bring_up(void)
@@ -394,7 +394,7 @@ static void test_probe_announce(void)
 	const rr_t *srv = find(&d, INST "._tftp._udp.local", 33, 1);
 	CHECK(srv != NULL && srv->port == 69 && strcmp(srv->target, HOST) == 0 && srv->cls == 0x8001);
 	const rr_t *txt = find(&d, INST "._tftp._udp.local", 16, 1);
-	CHECK(txt != NULL && strcmp(txt->txt, "board=DM-1701;id=10005;call=N0CALL;fw=abc1234;") == 0);
+	CHECK(txt != NULL && strcmp(txt->txt, "board=DM-1701;id=10005;call=Q0TEST;fw=abc1234;") == 0);
 	const rr_t *en = find(&d, "_services._dns-sd._udp.local", 12, 1);
 	CHECK(en != NULL && strcmp(en->target, "_tftp._udp.local") == 0);
 	CHECK(d.length < 260);			// names compressed
@@ -537,7 +537,7 @@ static void test_conflict(void)
 	tick_for(5);
 	CHECK(out_count == 4 && parse(0, &d));
 	CHECK(strcmp(d.qname, "rfoundry-10005-2.local") == 0);	// renamed, probing again
-	CHECK(parse(1, &d) && strcmp(d.qname, "N0CALL DM-1701 (10005) (2)._rfoundry-debug._udp.local") == 0);
+	CHECK(parse(1, &d) && strcmp(d.qname, "Q0TEST DM-1701 (10005) (2)._rfoundry-debug._udp.local") == 0);
 	mdns_stats_t st;
 	mdnsStats(&st);
 	CHECK(st.conflicts == 1 && st.state == MDNS_PROBING);
@@ -614,7 +614,7 @@ static void test_identity_and_link(void)
 	bring_up();
 	tick_for(1000);
 	// A new call sign: goodbyes (TTL 0) for the old records, then probes for the new instance names
-	strcpy(ident.callsign, "N1NEW");
+	strcpy(ident.callsign, "Q1NEW");
 	out_count = 0;
 	tick_for(1000);
 	CHECK(out_count >= 4 && parse(0, &d));
@@ -623,8 +623,8 @@ static void test_identity_and_link(void)
 	CHECK(parse(1, &d) && find(&d, INST "._rfoundry-debug._udp.local", 33, 1) != NULL &&
 	      find(&d, INST "._rfoundry-debug._udp.local", 33, 1)->ttl == 0);
 	tick_for(300);
-	CHECK(parse(out_count - 1, &d) && strcmp(d.qname, "N1NEW DM-1701 (10005)._tftp._udp.local") == 0);
-	strcpy(ident.callsign, "N0CALL");
+	CHECK(parse(out_count - 1, &d) && strcmp(d.qname, "Q1NEW DM-1701 (10005)._tftp._udp.local") == 0);
+	strcpy(ident.callsign, "Q0TEST");
 	// Link down: quiet; up again: probes
 	tick_for(3000);
 	out_count = 0;

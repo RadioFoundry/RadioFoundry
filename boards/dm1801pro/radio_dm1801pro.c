@@ -51,9 +51,9 @@
 #define FD_REG_NOISE		0x65u
 #define FD_REG_RSSI		0x67u
 // The RSSI correction (hardware-dm1801pro.md 5.4): another radio as the reference. UHF from the SDR bench's carrier with
-// both radios side by side on identical dummy loads (2026-10-20, second run): +16 dB at 451.5 MHz, +11 at 461.1375 and
-// 461.4625, +10 at 467.375, the same at every level from -125 to -99 dBm; 400-450 not measured, 451's value carried
-// down. VHF from the floor across the band and a NOAA station at 162.475 (+41 dB), first run
+// both radios side by side on identical dummy loads (2026-10-20, second run): +16 dB at 451.5 MHz, +11 at two test
+// frequencies near 461 MHz, +10 near 467 MHz, the same at every level from -125 to -99 dBm; 400-450 not measured,
+// 451's value carried down. VHF from the floor across the band and a NOAA station (+41 dB), first run
 static const fd6818_rssi_cal_t rssi_cal[] = {
 	{ 136, -26 }, { 140, -36 }, { 150, -36 }, { 162, -41 }, { 174, -40 },
 	{ 400, -16 }, { 451, -16 }, { 461, -11 }, { 467, -10 }, { 470, -10 },

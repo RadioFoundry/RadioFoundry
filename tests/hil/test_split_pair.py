@@ -33,6 +33,7 @@ import time
 import pytest
 
 from rfoundry_hil import skip
+from hil_config import rig
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -182,7 +183,7 @@ def test_split_pair_handheld(radio, sdr_bench, pytestconfig, backup_dir):
     import split_duplex_host as sdh
     from rfoundry_hil import Radio
     from test_cps import codeplug_edited
-    fin, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    fin, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     slots = [int(x) for x in pytestconfig.getoption("--split-ms-ts").split(",")]
     ms = Radio(ms_port)
     try:

@@ -560,13 +560,13 @@ Take a backup first. A radio with nothing stored shows the built-in simplex FM c
 
 ```
 python3 tools/cps_client.py --port /dev/ttyUSB1 read cp.bin
-python3 tools/cps_client.py test-channels cp.bin --rx 461.4625 --tg 201 --cc 2 --ts 1 --id 1234567 --call N0CALL
+python3 tools/cps_client.py test-channels cp.bin --rx 438.2500 --tg 91 --cc 1 --ts 1 --id 9991234 --call Q0TST
 python3 tools/cps_client.py --port /dev/ttyUSB1 write cp.bin
 python3 tools/cps_client.py --port /dev/ttyUSB1 verify cp.bin
 ```
 
 `test-channels` makes channel 1 an FM channel (12.5 kHz, simplex, no tones), channel 2 a DMR channel on the same
-frequency (color code 2, timeslot 1, talk target group 201), and zone 1 holding both. It replaces those channels,
+frequency (color code 1, timeslot 1, talk target group 91), and zone 1 holding both. It replaces those channels,
 the first contact and the first zone and leaves everything else in the file. A DMR channel needs a build with
 `CONFIG_DMR=y` (the default); without it the radio lists only its FM channels. `verify` compares the regions the tool
 transfers. The write replaces whole 4 KB sectors, each in one step: a

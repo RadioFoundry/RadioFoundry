@@ -50,7 +50,7 @@ static int sampleZone(uint8_t *out, int size, int channels)
 	zsWriter_t w;
 	zsContact_t c1 = { .type = ZS_CONTACT_GROUP, .id = 3100, .name = "USA" };
 	zsContact_t c2 = { .type = ZS_CONTACT_GROUP, .id = 91, .timeslot = 1, .name = "Worldwide" };
-	zsContact_t c3 = { .type = ZS_CONTACT_PRIVATE, .id = 3101276, .name = "N4NQV" };
+	zsContact_t c3 = { .type = ZS_CONTACT_PRIVATE, .id = 9996543, .name = "Q4AAA" };
 
 	zsWriterBegin(&w, out, size, 0xA1B2C3D4, 0, "Site Zone");
 	zsWriterContact(&w, &c1);
@@ -91,7 +91,7 @@ static void test_roundtrip(void)
 	zsContact_t c;
 	CHECK(zsContactAt(&r, 1, &c) && c.id == 91 && c.type == ZS_CONTACT_GROUP && c.timeslot == 1 &&
 		  strcmp(c.name, "Worldwide") == 0);
-	CHECK(zsContactAt(&r, 2, &c) && c.id == 3101276 && c.type == ZS_CONTACT_PRIVATE);
+	CHECK(zsContactAt(&r, 2, &c) && c.id == 9996543 && c.type == ZS_CONTACT_PRIVATE);
 	CHECK(!zsContactAt(&r, 3, &c) && !zsContactAt(&r, -1, &c));
 	zsChannel_t ch;
 	CHECK(zsChannelAt(&r, 1, &ch) && ch.dmr && ch.rxHz == 444012500 && ch.txOffsetHz == 5000000 && ch.colorCode == 1 &&

@@ -17,7 +17,7 @@ static int failures, checks;
 
 #define RING	CONFIG_DMR_AIR_QUEUE_BYTES
 #define REC(n)	((AIRQ_RECORD_HEADER + (n) + 3) & ~3)
-#define RADIO_ID_FOR_TEST	3101234u
+#define RADIO_ID_FOR_TEST	9991234u
 
 // ---- fake data service ----
 static bool busy;						// refuses everything

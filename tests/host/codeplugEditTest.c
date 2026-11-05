@@ -84,7 +84,7 @@ static void test_encode(void)
 	v[2].power = 8;
 	v[3] = make("ID+DMO", 145500000, 145100000);
 	v[3].mode = RADIO_MODE_DMR;
-	v[3].dmr_id = 3101276;
+	v[3].dmr_id = 9996543;
 	v[3].dmo = true;
 	v[3].rx_only = true;
 	v[3].no_beep = true;	// the channel editor's flags (#321: the encoder kept the bits as read)
@@ -231,7 +231,7 @@ static void test_dmr(void)
 	c.type = CONTACT_GROUP;
 	CHECK(codeplug_set_contact(1, &c));
 	strcpy(c.name, "Joe");
-	c.id = 3101234;
+	c.id = 9991234;
 	c.type = CONTACT_PRIVATE;
 	c.timeslot = 2;
 	CHECK(codeplug_set_contact(1024, &c));
@@ -241,7 +241,7 @@ static void test_dmr(void)
 	c.id = 0;
 	CHECK(codeplug_set_contact(3, &c));
 	CHECK(codeplug_contact(1, &back) && back.id == 91 && back.type == CONTACT_GROUP && back.timeslot == 0);
-	CHECK(codeplug_contact(1024, &back) && back.id == 3101234 && back.timeslot == 2 && strcmp(back.name, "Joe") == 0);
+	CHECK(codeplug_contact(1024, &back) && back.id == 9991234 && back.timeslot == 2 && strcmp(back.name, "Joe") == 0);
 	CHECK(codeplug_contact(3, &back) && back.id == 0xFFFFFF && back.timeslot == 1);
 	CHECK(codeplug_delete_contact(3) && !codeplug_contact(3, &back));
 	c.id = 0;
@@ -263,16 +263,16 @@ static void test_dmr(void)
 	CHECK(codeplug_delete_listen_list(1) && !codeplug_listen_list(1, &lb));
 	CHECK(!codeplug_listen_list(2, &lb));		// cleared by the materialize
 
-	CHECK(codeplug_set_dmr_id(3101276) && codeplug_dmr_id() == 3101276);
-	CHECK(sim_flash_data[EE + 0xE8] == 0x03 && sim_flash_data[EE + 0xEB] == 0x76);
+	CHECK(codeplug_set_dmr_id(9996543) && codeplug_dmr_id() == 9996543);
+	CHECK(sim_flash_data[EE + 0xE8] == 0x09 && sim_flash_data[EE + 0xEB] == 0x43);
 	CHECK(codeplug_set_dmr_id(0) && codeplug_dmr_id() == 0);
-	CHECK(codeplug_set_radio_name("N0CALL-LONGER"));
+	CHECK(codeplug_set_radio_name("Q0TEST-LONGER"));
 	codeplug_radio_name(name);
-	CHECK(strcmp(name, "N0CALL-L") == 0);
+	CHECK(strcmp(name, "Q0TEST-L") == 0);
 	char l1[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
-	CHECK(codeplug_set_boot_text("Spencer Fowler", "N0CALL and more text"));
+	CHECK(codeplug_set_boot_text("Charlie Harper", "Q0TEST and more text"));
 	codeplug_boot_text(l1, l2);
-	CHECK(strcmp(l1, "Spencer Fowler") == 0 && strcmp(l2, "N0CALL and more ") == 0);
+	CHECK(strcmp(l1, "Charlie Harper") == 0 && strcmp(l2, "Q0TEST and more ") == 0);
 	CHECK(codeplug_set_boot_text("", "Line two"));
 	codeplug_boot_text(l1, l2);
 	CHECK(l1[0] == 0 && strcmp(l2, "Line two") == 0);
@@ -392,7 +392,7 @@ static void populate(void)
 		contact_t c;
 		memset(&c, 0, sizeof(c));
 		snprintf(c.name, sizeof(c.name), "Contact %u", i);
-		c.id = 1000000u + i;
+		c.id = 9990000u + i;
 		c.type = i % 2 ? CONTACT_GROUP : CONTACT_PRIVATE;
 		c.timeslot = (uint8_t)(i % 3);
 		CHECK(codeplug_set_contact(i, &c));
@@ -407,7 +407,7 @@ static void populate(void)
 		}
 		CHECK(codeplug_set_listen_list(i, &l));
 	}
-	CHECK(codeplug_set_dmr_id(2345678));
+	CHECK(codeplug_set_dmr_id(9997030));
 }
 
 static void test_round_trip(void)
@@ -503,7 +503,7 @@ static void test_aprs_path(void)
 {
 	codeplug_aprs_t a;
 	fresh();
-	CHECK(codeplug_set_radio_name("N0CALL"));	// a stored codeplug
+	CHECK(codeplug_set_radio_name("Q0TEST"));	// a stored codeplug
 	uint8_t r[0x40];
 	memset(r, 0, sizeof(r));
 	memcpy(r, "APRS1", 5);
@@ -591,7 +591,7 @@ static void test_foreign(void)
 	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign() && codeplug_channel_count() == 6);
 	// Reading writes nothing, and no edit starts on its own (Cancel: nothing changes)
 	CHECK(codeplug_channel(1, &back) && codeplug_reload() == CODEPLUG_BUILTIN);
-	CHECK(!codeplug_set_channel(10, &c) && !codeplug_set_dmr_id(3101276) && !codeplug_set_radio_name("N0CALL"));
+	CHECK(!codeplug_set_channel(10, &c) && !codeplug_set_dmr_id(9996543) && !codeplug_set_radio_name("Q0TEST"));
 	CHECK(!codeplug_set_zone(0, &(zone_t){ .name = "Zone", .count = 1, .channels = { 1 } }));
 	CHECK(codeplug_source() == CODEPLUG_BUILTIN && codeplug_foreign() && images_same(before));
 

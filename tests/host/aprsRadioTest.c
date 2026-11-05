@@ -374,24 +374,24 @@ static void test_defaults(void)
 	aprs_get_cfg(&c);
 	CHECK(!c.tx_on && c.region == APRS_REGION_NA && aprs_cfg_freq(&c) == APRS_HZ && c.ssid == 7);
 	// Callsign and a position, but transmit off: nothing in an hour
-	strcpy(cp_name, "N0TST");
+	strcpy(cp_name, "Q1TST");
 	c.fix_lat = 490583333;
 	c.fix_lon = -720291667;
 	aprs_set_cfg(&c, now);
 	run(3600u * 1000u);
 	CHECK(hw.tx_calls == 0 && hw.starts == 0);
 	aprs_get_view(&v);
-	CHECK(v.block == APRS_OK && strcmp(v.call, "N0TST-7") == 0 && v.pos_valid && v.pos_src == APRS_SRC_FIXED);
+	CHECK(v.block == APRS_OK && strcmp(v.call, "Q1TST-7") == 0 && v.pos_valid && v.pos_src == APRS_SRC_FIXED);
 	CHECK(hw.rx_hz == CH_HZ);
-	// N0CALL and a long name are no callsign
-	CHECK(!aprs_callsign_ok("N0CALL") && !aprs_callsign_ok("SPENCER") && !aprs_callsign_ok("1ABC") &&
-	      aprs_callsign_ok("K1ABC") && aprs_callsign_ok("2E0XYZ") && aprs_callsign_ok("VK2ABC"));
+	// N0CALL (refused by name) and a name without a digit are no callsign
+	CHECK(!aprs_callsign_ok("N0CALL") && !aprs_callsign_ok("QTEST") && !aprs_callsign_ok("1ABC") &&
+	      aprs_callsign_ok("Q1ABC") && aprs_callsign_ok("Q2Q0AB") && aprs_callsign_ok("QK2ABC"));
 }
 
 static void test_beacon_on_air(void)
 {
 	reset();
-	aprs_set_test_call("n0tst");
+	aprs_set_test_call("q1tst");
 	configure(60, false);
 	run(59u * 1000u);
 	CHECK(hw.starts == 0 && hw.rx_hz == CH_HZ);
@@ -400,7 +400,7 @@ static void test_beacon_on_air(void)
 	CHECK(sm.view.state == RS_TX);
 	CHECK(sm.view.tx_auto && !radio_view_wakes(&sm.view));	// a timed beacon leaves the screen as it is
 	CHECK(nframes == 1);
-	CHECK(strcmp(frames[0], "N0TST-7>APZRDF,WIDE1-1,WIDE2-1:!4903.50N/07201.75W[RadioFoundry test") == 0);
+	CHECK(strcmp(frames[0], "Q1TST-7>APZRDF,WIDE1-1,WIDE2-1:!4903.50N/07201.75W[RadioFoundry test") == 0);
 	if (nframes > 0) {
 		printf("# on air: %s\n", frames[0]);
 	}
@@ -420,7 +420,7 @@ static void test_beacon_on_air(void)
 static void test_min_interval(void)
 {
 	reset();
-	aprs_set_test_call("N0TST");
+	aprs_set_test_call("Q1TST");
 	configure(1, false);	// asks for every second: the hard minimum is 30 s
 	run(10u * 60u * 1000u);
 	CHECK(hw.starts >= 18 && hw.starts <= 21);
@@ -429,7 +429,7 @@ static void test_min_interval(void)
 static void test_busy_channel(void)
 {
 	reset();
-	aprs_set_test_call("N0TST");
+	aprs_set_test_call("Q1TST");
 	configure(60, false);
 	hw.noise_on_aprs = 30;	// a carrier on 144.390
 	run(61u * 1000u);
@@ -450,7 +450,7 @@ static void test_bcast_channel(void)
 	reset();
 	chan.rx_hz = chan.tx_hz = 100100000u;
 	radio_sm_init(&sm, now);
-	aprs_set_test_call("N0TST");
+	aprs_set_test_call("Q1TST");
 	configure(60, false);
 	hw.noise_on_aprs = 30;	// a carrier on 144.390; the broadcast frequency is empty
 	aprs_view_t v;
@@ -467,7 +467,7 @@ static void test_bcast_channel(void)
 static void test_ptt_cuts(void)
 {
 	reset();
-	aprs_set_test_call("N0TST");
+	aprs_set_test_call("Q1TST");
 	configure(60, false);
 	run(60u * 1000u + 100u);	// on the APRS frequency, listening or keyed
 	CHECK(hw.rx_hz == APRS_HZ || hw.keyed);
@@ -485,7 +485,7 @@ static void test_ptt_cuts(void)
 static void test_not_amateur(void)
 {
 	reset();
-	aprs_set_test_call("N0TST");
+	aprs_set_test_call("Q1TST");
 	configure(60, false);
 	aprs_cfg_t c;
 	aprs_get_cfg(&c);
@@ -505,7 +505,7 @@ static void test_not_amateur(void)
 static void test_manual_and_ptt_trigger(void)
 {
 	reset();
-	aprs_set_test_call("N0TST");
+	aprs_set_test_call("Q1TST");
 	configure(0, false);	// no interval
 	aprs_cfg_t c;
 	aprs_get_cfg(&c);
@@ -541,7 +541,7 @@ static void test_manual_and_ptt_trigger(void)
 static void test_tx_power(void)
 {
 	reset();
-	aprs_set_test_call("N0TST");
+	aprs_set_test_call("Q1TST");
 	configure(0, false);
 	CHECK(sm.view.power == 0);
 	CHECK(aprs_send_now());
@@ -562,7 +562,7 @@ static void test_tx_power(void)
 static void test_tx_power_own(void)
 {
 	reset();
-	aprs_set_test_call("N0TST");
+	aprs_set_test_call("Q1TST");
 	configure(0, false);
 	aprs_cfg_t c;
 	aprs_get_cfg(&c);
@@ -586,7 +586,7 @@ static void test_tx_power_own(void)
 static void test_host_kiss_nmea(void)
 {
 	reset();
-	aprs_set_test_call("N0TST");
+	aprs_set_test_call("Q1TST");
 	aprs_cfg_t c;
 	aprs_get_cfg(&c);
 	c.kiss = true;
@@ -607,7 +607,7 @@ static void test_host_kiss_nmea(void)
 	// a KISS data frame from the host, from our call (another SSID)
 	ax25_frame_t f;
 	uint8_t frame[AX25_FRAME_MAX], kiss[2 * AX25_FRAME_MAX];
-	const char *line = "N0TST-9>APRS,WIDE2-1:>from the host";
+	const char *line = "Q1TST-9>APRS,WIDE2-1:>from the host";
 	CHECK(ax25_from_tnc2(line, strlen(line), &f));
 	f.dst.h = true;
 	size_t n = ax25_encode(&f, frame, sizeof(frame));
@@ -623,12 +623,12 @@ static void test_host_kiss_nmea(void)
 	CHECK(seen);
 	run(3000);
 	// someone else's call: refused
-	line = "K1ABC>APRS:>not ours";
+	line = "Q1ABC>APRS:>not ours";
 	CHECK(ax25_from_tnc2(line, strlen(line), &f));
 	n = ax25_encode(&f, frame, sizeof(frame));
 	CHECK(!aprs_host_frame(frame, n, now));
 	// the rate limit: a burst of 3, then one per 10 s
-	line = "N0TST>APRS:>burst";
+	line = "Q1TST>APRS:>burst";
 	CHECK(ax25_from_tnc2(line, strlen(line), &f));
 	n = ax25_encode(&f, frame, sizeof(frame));
 	int ok = 0;
@@ -641,21 +641,21 @@ static void test_host_kiss_nmea(void)
 	host_out_has("");
 	CHECK(aprs_send_now());
 	run(1000);
-	CHECK(host_out_has("GN0TST-7>APZRDF,TCPIP*:!/"));	// compressed, no messaging (no receive path)
+	CHECK(host_out_has("GQ1TST-7>APZRDF,TCPIP*:!/"));	// compressed, no messaging (no receive path)
 }
 
 static void test_messages(void)
 {
 	reset();
-	aprs_set_test_call("N0TST");
+	aprs_set_test_call("Q1TST");
 	configure(0, false);
-	CHECK(aprs_send_message("K1ABC-9", "Hello"));
-	CHECK(!aprs_send_message("K1ABC-9", "Again"));	// one at a time
+	CHECK(aprs_send_message("Q1ABC-9", "Hello"));
+	CHECK(!aprs_send_message("Q1ABC-9", "Again"));	// one at a time
 	CHECK(wait_start(1, 5000));
 	CHECK(nframes == 1);
 	char msgno[8] = "";
 	const char *brace = nframes > 0 ? strchr(frames[0], '{') : NULL;
-	CHECK(brace != NULL && strstr(frames[0], "::K1ABC-9  :Hello{") != NULL);
+	CHECK(brace != NULL && strstr(frames[0], "::Q1ABC-9  :Hello{") != NULL);
 	if (brace != NULL) {
 		strncpy(msgno, brace + 1, sizeof(msgno) - 1);
 	}
@@ -666,7 +666,7 @@ static void test_messages(void)
 #if CONFIG_APRS_RX
 	// the ack comes: no third try
 	char ack[64];
-	snprintf(ack, sizeof(ack), "K1ABC-9>APRS::N0TST-7  :ack%s", msgno);
+	snprintf(ack, sizeof(ack), "Q1ABC-9>APRS::Q1TST-7  :ack%s", msgno);
 	rx_line(ack);
 	run(200u * 1000u);
 	CHECK(hw.starts == 2);
@@ -675,15 +675,15 @@ static void test_messages(void)
 	CHECK(v.msg_acked || !v.msg_pending);
 	// a message to us: kept and acked
 	nframes = 0;
-	rx_line("K1ABC-9>APRS,WIDE1-1::N0TST-7  :Hi there{42");
+	rx_line("Q1ABC-9>APRS,WIDE1-1::Q1TST-7  :Hi there{42");
 	CHECK(wait_start(3, 5000));
 	wait_idle();
 	CHECK(aprs_msg_count() == 1);
 	aprs_msg_t m;
-	CHECK(aprs_msg(0, &m) && strcmp(m.from, "K1ABC-9") == 0 && strcmp(m.text, "Hi there") == 0);
-	CHECK(nframes == 1 && strstr(frames[0], "::K1ABC-9  :ack42") != NULL);
+	CHECK(aprs_msg(0, &m) && strcmp(m.from, "Q1ABC-9") == 0 && strcmp(m.text, "Hi there") == 0);
+	CHECK(nframes == 1 && strstr(frames[0], "::Q1ABC-9  :ack42") != NULL);
 	// its retry: acked again, not kept twice
-	rx_line("K1ABC-9>APRS,WIDE1-1::N0TST-7  :Hi there{42");
+	rx_line("Q1ABC-9>APRS,WIDE1-1::Q1TST-7  :Hi there{42");
 	CHECK(wait_start(4, 5000));
 	wait_idle();
 	CHECK(aprs_msg_count() == 1 && nframes == 2);
@@ -696,7 +696,7 @@ static void test_messages(void)
 static void test_stations_digi_igate(void)
 {
 	reset();
-	aprs_set_test_call("N0TST");
+	aprs_set_test_call("Q1TST");
 	configure(0, false);
 	aprs_cfg_t c;
 	aprs_get_cfg(&c);
@@ -706,26 +706,26 @@ static void test_stations_digi_igate(void)
 	c.igate_tx = true;
 	aprs_set_cfg(&c, now);
 	host_out_has("");
-	rx_line("K1ABC-9>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>Mobile");
+	rx_line("Q1ABC-9>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>Mobile");
 	CHECK(aprs_station_count() == 1);
 	aprs_station_t s;
-	CHECK(aprs_station(0, &s) && strcmp(s.call, "K1ABC-9") == 0 && s.has_pos && s.direct && s.sym_code == '>');
+	CHECK(aprs_station(0, &s) && strcmp(s.call, "Q1ABC-9") == 0 && s.has_pos && s.direct && s.sym_code == '>');
 	// gated to APRS-IS with our q construct; the raw frame to the KISS host too
-	CHECK(host_out_has("GK1ABC-9>APZRDF,WIDE1-1,WIDE2-1,qAR,N0TST-7:=4903.50N/07201.75W>Mobile"));
+	CHECK(host_out_has("GQ1ABC-9>APZRDF,WIDE1-1,WIDE2-1,qAR,Q1TST-7:=4903.50N/07201.75W>Mobile"));
 	// digipeated (fill-in): our call in the path, used (TNC2 stars the last used entry)
 	CHECK(wait_start(1, 5000));
 	wait_idle();
-	CHECK(nframes == 1 && strcmp(frames[0], "K1ABC-9>APZRDF,N0TST-7,WIDE1*,WIDE2-1:=4903.50N/07201.75W>Mobile") == 0);
+	CHECK(nframes == 1 && strcmp(frames[0], "Q1ABC-9>APZRDF,Q1TST-7,WIDE1*,WIDE2-1:=4903.50N/07201.75W>Mobile") == 0);
 	// a message from APRS-IS for the station we just heard: to RF as a third-party packet
 	nframes = 0;
-	const char *is = "W9XYZ>APRS,TCPIP*,qAC,T2TEST::K1ABC-9  :From the net{7";
+	const char *is = "Q9WXY>APRS,TCPIP*,qAC,TIER2::Q1ABC-9  :From the net{7";
 	aprs_host_is_line(is, strlen(is), now);
 	CHECK(wait_start(2, 5000));
 	wait_idle();
-	CHECK(nframes == 1 && strcmp(frames[0], "N0TST-7>APZRDF:}W9XYZ>APRS,TCPIP,N0TST-7*::K1ABC-9  :From the net{7") == 0);
+	CHECK(nframes == 1 && strcmp(frames[0], "Q1TST-7>APZRDF:}Q9WXY>APRS,TCPIP,Q1TST-7*::Q1ABC-9  :From the net{7") == 0);
 	// RFONLY stays local
-	rx_line("K2DEF>APRS,RFONLY:>local only");
-	CHECK(!host_out_has("K2DEF"));
+	rx_line("Q2DEF>APRS,RFONLY:>local only");
+	CHECK(!host_out_has("Q2DEF"));
 }
 #endif
 
@@ -753,15 +753,15 @@ static void test_dmr_position(void)
 	CHECK(c.dmr_gps);	// saved and read back
 #if CONFIG_APRS_RX
 	uint8_t n0 = aprs_station_count();
-	aprs_dmr_heard(3112345, "kd9xyz Bob", 337490000, -843880000, now);
-	aprs_dmr_heard(3112345, "kd9xyz Bob", 337490000, -843880000, now + 1000);	// the same: not counted again
-	aprs_dmr_heard(3100001, "", 337000000, -843000000, now);
-	aprs_dmr_heard(3100002, "Not a call", 337000000, -843000000, now);
+	aprs_dmr_heard(9997040, "qd9xyz Bob", 337490000, -843880000, now);
+	aprs_dmr_heard(9997040, "qd9xyz Bob", 337490000, -843880000, now + 1000);	// the same: not counted again
+	aprs_dmr_heard(9990001, "", 337000000, -843000000, now);
+	aprs_dmr_heard(9990002, "Not a call", 337000000, -843000000, now);
 	aprs_station_t st;
 	CHECK(aprs_station_count() == n0 + 3);
-	CHECK(aprs_station(0, &st) && strcmp(st.call, "3100002") == 0 && st.has_pos);
-	CHECK(aprs_station(1, &st) && strcmp(st.call, "3100001") == 0);
-	CHECK(aprs_station(2, &st) && strcmp(st.call, "KD9XYZ") == 0 && st.count == 1 && st.lat == 337490000);
+	CHECK(aprs_station(0, &st) && strcmp(st.call, "9990002") == 0 && st.has_pos);
+	CHECK(aprs_station(1, &st) && strcmp(st.call, "9990001") == 0);
+	CHECK(aprs_station(2, &st) && strcmp(st.call, "QD9XYZ") == 0 && st.count == 1 && st.lat == 337490000);
 #endif
 }
 
@@ -959,7 +959,7 @@ static void test_rf_failures(void)
 {
 	aprs_view_t v;
 	reset();
-	strcpy(cp_name, "N0TST");
+	strcpy(cp_name, "Q1TST");
 	configure(0, false);
 	for (int fault = 0; fault < 3; fault++) {
 		hw.tx_fail = fault == 0;
@@ -1030,7 +1030,7 @@ static void test_rx_stream(void)
 	// A packet: silence, the tones (flags first, as a transmitter's TX delay), silence
 	static uint8_t tones[256];
 	static int16_t audio[24000];
-	const char *line = "K1ABC-9>APRS,WIDE2-1:!4903.50N/07201.75W-Heard on air";
+	const char *line = "Q1ABC-9>APRS,WIDE2-1:!4903.50N/07201.75W-Heard on air";
 	ax25_frame_t f;
 	uint8_t frame[AX25_FRAME_MAX];
 	CHECK(ax25_from_tnc2(line, strlen(line), &f));
@@ -1053,7 +1053,7 @@ static void test_rx_stream(void)
 	}
 	run(100);
 	aprs_station_t st;
-	CHECK(aprs_station_count() == 1 && aprs_station(0, &st) && strcmp(st.call, "K1ABC-9") == 0);
+	CHECK(aprs_station_count() == 1 && aprs_station(0, &st) && strcmp(st.call, "Q1ABC-9") == 0);
 	aprs_rx_stats_t rs;
 	aprs_rx_stats(&rs);
 	CHECK(rs.peak > 7000 && rs.peak <= 8000 && rs.frames == 1 && rs.bits > 900);
@@ -1113,13 +1113,13 @@ static void test_rx_board_only(void)
 	chan.rx_hz = chan.tx_hz = APRS_HZ;
 	settings_init();
 	radio_sm_init(&sm, now);
-	strcpy(cp_name, "N0TST");
+	strcpy(cp_name, "Q1TST");
 	configure(60, false);
 	run(200);
 	CHECK(aprs_rx_listening() && brx.starts == 1);
 	static uint8_t tones[256];
 	static int16_t audio[24000];
-	const char *line = "K1ABC-9>APRS,WIDE2-1:!4903.50N/07201.75W-Own path";
+	const char *line = "Q1ABC-9>APRS,WIDE2-1:!4903.50N/07201.75W-Own path";
 	ax25_frame_t f;
 	uint8_t frame[AX25_FRAME_MAX];
 	CHECK(ax25_from_tnc2(line, strlen(line), &f));
@@ -1137,7 +1137,7 @@ static void test_rx_board_only(void)
 	brx.n = k + 1600;
 	run(3000);
 	aprs_station_t st;
-	CHECK(aprs_station_count() == 1 && aprs_station(0, &st) && strcmp(st.call, "K1ABC-9") == 0);
+	CHECK(aprs_station_count() == 1 && aprs_station(0, &st) && strcmp(st.call, "Q1ABC-9") == 0);
 	// A beacon can't go out on RF: blocked, never keyed
 	aprs_view_t v;
 	aprs_get_view(&v);

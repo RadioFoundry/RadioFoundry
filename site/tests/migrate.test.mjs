@@ -75,7 +75,7 @@ test("a sector the radio did not take fails the check", () => {
 
 test("a 256 KB stock codeplug, which shares the chip's first sectors with RadioFoundry's codeplug", () => {
 	const m = new Stock(SMALL);
-	m.general({ name: "N0CALL", id: 3100123 });
+	m.general({ name: "Q0TST", id: 9990123 });
 	m.contact(1, { name: "TG 91", id: 91, type: "group" });
 	m.channel(1, { name: "Simplex", mode: "fm", rx: 146520000 });
 	m.channel(2, { name: "TG 91", mode: "dmr", rx: 439000000, tx: 431400000, cc: 1, ts: 1, contact: 1 });
@@ -92,7 +92,7 @@ test("a 256 KB stock codeplug, which shares the chip's first sectors with RadioF
 test("the backup's read is converted: the claim erased the stock zones from the live radio", () => {
 	// a 256 KB stock codeplug keeps its zones inside RadioFoundry's settings area, which the backup's last step claims
 	const m = new Stock(SMALL);
-	m.general({ name: "N0CALL", id: 3100123 });
+	m.general({ name: "Q0TST", id: 9990123 });
 	m.channel(1, { name: "Simplex", mode: "fm", rx: 146520000 });
 	m.channel(2, { name: "Calling", mode: "fm", rx: 446000000 });
 	m.zone(1, "Home", [1, 2]);

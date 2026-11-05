@@ -11,6 +11,7 @@ import time
 import pytest
 
 from rfoundry_hil import counter_deltas, skip
+from hil_config import rig
 
 BENCH_SRC = 9990301
 STATS = ["call.rx_calls", "call.rx_calls_played", "call.rx_late_entries", "call.rx_voice_bursts",
@@ -21,7 +22,7 @@ STATS = ["call.rx_calls", "call.rx_calls_played", "call.rx_late_entries", "call.
 def _on_dmr_channel(radio, pytestconfig):
     if "DMR" not in radio.features():
         skip("not_built", "built without DMR")
-    freq = pytestconfig.getoption("--dmr-freq")
+    freq = rig(pytestconfig, "dmr-freq")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     time.sleep(1.0)
@@ -85,7 +86,7 @@ def test_private_call_to_us(radio, sdr_bench, pytestconfig):
 def test_private_call_to_other(radio, sdr_bench, pytestconfig):
     """A private call between two other radios: counted (and shown while it lasts) but never played."""
     _on_dmr_channel(radio, pytestconfig)
-    d, _ = _bench_call(radio, sdr_bench, pytestconfig, dst=1234567, private=True)
+    d, _ = _bench_call(radio, sdr_bench, pytestconfig, dst=9991234, private=True)
     assert d["call.rx_calls"] == 1 and d["call.rx_private_calls"] == 1 and d["call.rx_calls_played"] == 0, d
     assert d["call.rx_voice_bursts"] == 0, d
 
@@ -114,7 +115,7 @@ def test_talker_alias(radio, sdr_bench, pytestconfig):
     _on_dmr_channel(radio, pytestconfig)
     if "DMR_TALKER_ALIAS" not in radio.features():
         skip("not_built", "built without CONFIG_DMR_TALKER_ALIAS")
-    alias = "RadioFoundry HIL N0CALL"
+    alias = f"RadioFoundry HIL {rig(pytestconfig, 'callsign')}"[:31]
     d, v = _bench_call(radio, sdr_bench, pytestconfig, talker_alias=alias, superframes=10)
     assert d["call.rx_calls"] == 1 and d["call.rx_alias_complete"] == 1, d
     assert v["call.alias"] == alias and v["call.alias_complete"] == "1", v
@@ -212,9 +213,9 @@ def test_talk_target_requests(radio, pytestconfig):
     L = radio.link
     base = radio.view(["dmr"])
     try:
-        L.dmr_target(3105555, private=True)
+        L.dmr_target(9990555, private=True)
         v = radio.wait_for(lambda x: x.get("dmr.target_manual") == "1", sections=("dmr",), what="manual target")
-        assert v["dmr.target_id"] == "3105555" and v["dmr.target_private"] == "1", v
+        assert v["dmr.target_id"] == "9990555" and v["dmr.target_private"] == "1", v
         L.dmr_target(91, private=False)
         v = radio.wait_for(lambda x: x.get("dmr.target_id") == "91", sections=("dmr",), what="TG 91")
         assert v["dmr.target_private"] == "0" and v["dmr.target_manual"] == "1", v

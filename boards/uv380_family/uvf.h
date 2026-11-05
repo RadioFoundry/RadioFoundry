@@ -140,7 +140,7 @@ bool uvf_cal_at(uint32_t hz, uvf_cal_point_t *out);
 // Direct DMR keying (hardware-dm1701.md 6): the AT1846S switched from RX straight to DMR TX, no idle step, puts the
 // carrier about 3.07 kHz low, and a frequency write can't fix it (it applies only coming out of idle). The HR_C6000
 // MOD1 reference offset (4:0x04, about 75 Hz a step at 461 MHz) is raised for the burst instead. Measured on a DM-1701
-// at 461.1375 MHz (SDR bench, 2026-10-19): 41 steps -57..-15 Hz, 42 steps +16..+60 Hz, 43 steps +94..+132 Hz; the
+// near 461 MHz (SDR bench, 2026-10-19): 41 steps -57..-15 Hz, 42 steps +16..+60 Hz, 43 steps +94..+132 Hz; the
 // MD-UV380 has the same two chips, unchecked on its own
 #define UVF_DIRECT_TX_REF_STEPS	42
 // 4:0x04 for a direct burst at hz from the calibrated offset; false where direct keying doesn't apply (VHF) or the
@@ -148,7 +148,7 @@ bool uvf_cal_at(uint32_t hz, uvf_cal_point_t *out);
 bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int8_t *out);
 
 // The user's reference trim (hal_radio_t.ref_trim) in MOD1 offset steps, added to the calibrated offset. The offset
-// pulls the reference, so a step is the same share of any carrier: about 74 Hz at 461.1375 MHz from the direct keying
+// pulls the reference, so a step is the same share of any carrier: about 74 Hz near 461 MHz from the direct keying
 // measurement above (41 and 43 steps 149 Hz apart), 160 ppb. Clamped to the register's -128..127
 #define UVF_REF_TRIM_PPB_PER_STEP	160
 int8_t uvf_ref_trimmed(int8_t ref_offset, int32_t ppb);

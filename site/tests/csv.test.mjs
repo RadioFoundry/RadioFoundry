@@ -21,8 +21,8 @@ test("parse: quotes, doubled quotes, newlines in a field, CRLF, BOM, blank lines
 });
 
 test("parse: semicolon and tab files", () => {
-	assert.deepEqual(parse("Name;RX\nA;446,1\n"), [["Name", "RX"], ["A", "446,1"]]);
-	assert.deepEqual(parse("Name\tRX\nA\t446.1"), [["Name", "RX"], ["A", "446.1"]]);
+	assert.deepEqual(parse("Name;RX\nA;438,25\n"), [["Name", "RX"], ["A", "438,25"]]);
+	assert.deepEqual(parse("Name\tRX\nA\t438.25"), [["Name", "RX"], ["A", "438.25"]]);
 });
 
 test("stringify quotes what needs it and parses back", () => {
@@ -143,8 +143,8 @@ test("values: aliases, Yes/No, power names, tones, bad values reported with row 
 	const text = [
 		"Channel Name;RX Freq;TX Freq;Mode;TX Power;Decode;Encode;CC;TS;RX Only;Bandwidth",
 		"Simplex;446,00625;446,00625;fm;high;88,5;d23;;;yes;25",
-		"Bad;abc;446.1;FM;Huge;12;D023N;;;maybe;20",
-		";446.1;446.1;FM;;;;;;;",
+		"Bad;abc;438.25;FM;Huge;12;D023N;;;maybe;20",
+		";438.25;438.25;FM;;;;;;;",
 	].join("\n");
 	assert.equal(detect(text), "channels");
 	const r = importTable(m, text);

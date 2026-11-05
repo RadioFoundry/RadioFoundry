@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AX.25 2.2 UI frames as APRS uses them (docs/spec/aprs.md 3): addresses, frame build and parse, the FCS, and the
-// TNC2 text form ("N0CALL-7>APZRDF,WIDE1-1*:payload") the APRS-IS servers and KISS monitors use. No RTOS, no board:
+// TNC2 text form ("Q0TST-7>APZRDF,WIDE1-1*:payload") the APRS-IS servers and KISS monitors use. No RTOS, no board:
 // the host tests run it as is.
 #ifndef RFOUNDRY_AX25_H
 #define RFOUNDRY_AX25_H
@@ -38,9 +38,9 @@ typedef struct {
 // CRC-16 of HDLC / AX.25 (ISO 3309, X.25: reflected 0x1021, init 0xFFFF, final complement). Appended low byte first
 uint16_t ax25_fcs(const uint8_t *p, size_t n);
 
-// "N0CALL-7" -> address. Accepts 1..6 letters / digits (lower case is folded), an optional -0..-15. False otherwise
+// "Q0TST-7" -> address. Accepts 1..6 letters / digits (lower case is folded), an optional -0..-15. False otherwise
 bool ax25_addr_parse(const char *s, size_t n, ax25_addr_t *a);
-// "N0CALL-7" ("N0CALL" for SSID 0), with a '*' when star and the H bit is set. Returns the length written
+// "Q0TST-7" ("Q0TST" for SSID 0), with a '*' when star and the H bit is set. Returns the length written
 size_t ax25_addr_format(const ax25_addr_t *a, bool star, char *out);
 bool ax25_addr_equal(const ax25_addr_t *a, const ax25_addr_t *b);	// call and SSID
 

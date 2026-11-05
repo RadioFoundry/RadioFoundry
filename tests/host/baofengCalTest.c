@@ -93,8 +93,8 @@ static void test_drive_text(void)
 {
 	char buf[32];
 	CHECK(bf_cal_drive_text(435000000u, buf, sizeof buf) == 18 &&strcmp(buf, "L/M/H 192/832/1632") == 0);
-	// Between UHF points 3 (452.5) and 4 (470): 8.9625 of 17.5 MHz, as the DM-1801 Pro's 461.4625 MHz test channel
-	CHECK(bf_cal_drive_text(461462500u, buf, sizeof buf) > 0 && strcmp(buf, "L/M/H 216/856/1656") == 0);
+	// Between UHF points 3 (452.5) and 4 (470): 10.225 of 17.5 MHz
+	CHECK(bf_cal_drive_text(462725000u, buf, sizeof buf) > 0 && strcmp(buf, "L/M/H 217/857/1657") == 0);
 	CHECK(bf_cal_drive_text(435000000u, buf, 9) == 8 && strcmp(buf, "L/M/H 19") == 0);
 	CHECK(bf_cal_drive_text(435000000u, buf, 1) == 0 && buf[0] == '\0');
 	CHECK(bf_cal_drive_text(435000000u, buf, 0) == 0);
@@ -161,7 +161,7 @@ static void test_tx_byte(void)
 	CHECK(bf_cal_tx_byte(140000000u, BF_ROW_REG40) == 134);	// 134 toward 133 over points 0-2: 0.2
 	CHECK(bf_cal_tx_byte(155500000u, BF_ROW_REG40) == 133);
 	CHECK(bf_cal_tx_byte(170000000u, BF_ROW_REG40) == 130);	// 133 toward 128 over points 2-4: 3.9
-	CHECK(bf_cal_tx_byte(461462500u, BF_ROW_PA_LOW) == 88);	// 92 toward 84, 8.9625 of 17.5 MHz: 4.1
+	CHECK(bf_cal_tx_byte(462725000u, BF_ROW_PA_LOW) == 88);	// 92 toward 84, 10.225 of 17.5 MHz: 4.7
 	CHECK(bf_cal_tx_byte(380000000u, BF_ROW_PA_LOW) == 110);	// UHF below 400: its first point
 	CHECK(bf_cal_tx_byte(446000000u, BF_ROW_REG40) == 0x85);
 	CHECK(bf_cal_tx_byte(446000000u, (bf_cal_row_t)5) == 0);

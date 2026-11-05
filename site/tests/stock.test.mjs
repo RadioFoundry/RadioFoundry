@@ -54,8 +54,8 @@ test("classify: a stock MD-UV380 codeplug, an MD-380 image and .rdt, blank, unkn
 
 test("classify: a RadioFoundry codeplug wins over stock bytes it hasn't overwritten", () => {
 	const m = empty();
-	m.general.dmrId = 3100123;
-	m.general.radioName = "N0CALL";
+	m.general.dmrId = 9990123;
+	m.general.radioName = "Q0TST";
 	m.contacts.push(newContact({ number: 1, name: "TG 91", id: 91 }));
 	m.channels.push(newChannel({ number: 1, name: "Simplex" }));
 	const img = encode(m).bytes;
@@ -70,8 +70,8 @@ test("classify: a RadioFoundry codeplug wins over stock bytes it hasn't overwrit
 test("classify: back on stock after RadioFoundry, the stock codeplug wins over RadioFoundry's leftover records", () => {
 	// RadioFoundry's codeplug with channels past the first bank, which lie beyond the 256 KB stock codeplug
 	const m = empty();
-	m.general.dmrId = 3100123;
-	m.general.radioName = "N0CALL";
+	m.general.dmrId = 9990123;
+	m.general.radioName = "Q0TST";
 	for (let n = 1; n <= 140; n++) m.channels.push(newChannel({ number: n, name: `Ch ${n}` }));
 	const img = encode(m).bytes.slice(0, CODEPLUG_SPAN);
 	const md = new Stock("tyt-md380");
@@ -82,7 +82,7 @@ test("classify: back on stock after RadioFoundry, the stock codeplug wins over R
 	back.fill(0xFF, 0, 0x2000);
 	assert.ok(openfwEvidence(back).good > 0);	// RadioFoundry's later channels are still there
 	assert.equal(classify(back).layout, "openfw");	// no stock DMR ID: nothing says the stock software wrote last
-	md.general({ name: "N0CALL Radio", id: 3100123 });
+	md.general({ name: "Q0TST Radio", id: 9990123 });
 	back.set(md.b.subarray(0x2000), 0x2000);
 	assert.equal(classify(back).layout, "tyt-md380");
 	// RadioFoundry's codeplug written again: its general settings are back and the stock ones gone
@@ -95,7 +95,7 @@ test("classify: back on stock after RadioFoundry, the stock codeplug wins over R
 
 test("readStock: channels, contacts, lists and zones as the spec lays them out", () => {
 	const s = readStock(uv380().b, "tyt-uv380");
-	assert.deepEqual(s.general, { radioName: "N0CALL Radio", dmrId: 3100123, bootLine1: "Hello", bootLine2: "World" });
+	assert.deepEqual(s.general, { radioName: "Q0TST Radio", dmrId: 9990123, bootLine1: "Hello", bootLine2: "World" });
 	assert.deepEqual(s.channels.map((c) => c.index), [1, 2, 4]);
 	const [r, f, l] = s.channels;
 	assert.deepEqual([r.mode, r.rxHz, r.txHz, r.colorCode, r.timeslot, r.contact, r.rxList, r.high, r.tot, r.rxOnly],
@@ -117,7 +117,7 @@ test("importStock: the editing model, references kept, A/B zones split, notes", 
 	assert.deepEqual(counts, { channels: 3, contacts: 4, rxLists: 2, zones: 3 });
 	// the stock 0 is "off", which takes the radio's TX timeout here (Simplex and Listen)
 	assert.deepEqual(notes, [{ code: "scan_lists", n: 1 }, { code: "tot_off", n: 2 }, { code: "shortened", n: 1 }]);
-	assert.deepEqual([m.general.dmrId, m.general.radioName, m.general.bootLine1], [3100123, "N0CALL R", "Hello"]);
+	assert.deepEqual([m.general.dmrId, m.general.radioName, m.general.bootLine1], [9990123, "Q0TST Ra", "Hello"]);
 	const [r, f, l] = m.channels;
 	assert.deepEqual([r.number, r.power, r.contact.name, r.rxList.name, r.colorCode, r.timeslot], [1, 9, "TG 91", "Local", 7, 2]);
 	assert.deepEqual([f.number, f.power, f.bw, f.contact, f.rxList, f.vox], [2, 3, 25, null, null, true]);

@@ -76,7 +76,7 @@ static void test_kiss(void)
 
 	// The engine's output goes to the client, frame for frame (the host link leaves it alone)
 	static const uint8_t out1[] = { 0xC0, 0x00, 'x', 0xDB, 0xDC, 'y', 0xC0 };
-	static const uint8_t out2[] = { 0xC0, 0x06, 'G', 'N', '0', 'C', 'A', 'L', 'L', 0xC0 };
+	static const uint8_t out2[] = { 0xC0, 0x06, 'G', 'Q', '0', 'T', 'E', 'S', 'T', 0xC0 };
 	ring_put(out1, sizeof(out1));
 	ring_put(out2, sizeof(out2));
 	pump();
@@ -453,7 +453,7 @@ static int settings_writes;
 void settings_read(settings_t *out) { *out = settings; }
 settings_t *settings_begin(void) { return &settings; }
 void settings_end(uint32_t t) { (void)t; settings_writes++; }
-static char my_call[12] = "N0CALL-7";
+static char my_call[12] = "Q0TEST-7";
 void aprs_get_view(aprs_view_t *v) { memset(v, 0, sizeof(*v)); strcpy(v->call, my_call); }
 static char is_line[256];
 static int is_lines;
@@ -471,7 +471,7 @@ static void test_aprsis(void)
 {
 	static peer_t srv, h, far;
 
-	CHECK(aprsis_passcode("N0CALL") == 13023 && aprsis_passcode("n0call-7") == 13023 && aprsis_passcode("W1AW") == 25988);
+	CHECK(aprsis_passcode("Q0TEST") == 9667 && aprsis_passcode("q0test-7") == 9667 && aprsis_passcode("W1AW") == 25988);
 
 	// Off: no server set
 	peer_listen(&srv, SERVER_IP, 14580);
@@ -488,28 +488,28 @@ static void test_aprsis(void)
 	run_for(2000);
 	CHECK(srv.syns == 1 && srv.established);
 	srv.rx[srv.rxn] = 0;
-	CHECK(strcmp((char *)srv.rx, "user N0CALL-7 pass 13023 vers RadioFoundry unknown filter m/50\r\n") == 0);
+	CHECK(strcmp((char *)srv.rx, "user Q0TEST-7 pass 9667 vers RadioFoundry unknown filter m/50\r\n") == 0);
 	CHECK(!net_tnc_taken());
-	static const char hello[] = "# aprsc 2.1.14\r\n# logresp N0CALL-7 verified, server T2TEST\r\n";
+	static const char hello[] = "# aprsc 2.1.14\r\n# logresp Q0TEST-7 verified, server TIER2\r\n";
 	peer_send(&srv, hello, sizeof(hello) - 1);
 	CHECK(aprsis_online() && net_tnc_taken());
 
 	// The engine's lines for APRS-IS go to the server; other frames don't
 	peer_clear(&srv);
-	static const uint8_t g[] = { 0xC0, 0x06, 'G', 'N', '0', 'C', 'A', 'L', 'L', '-', '7', '>', 'A', 'P', 'Z', 'R', 'D',
+	static const uint8_t g[] = { 0xC0, 0x06, 'G', 'Q', '0', 'T', 'E', 'S', 'T', '-', '7', '>', 'A', 'P', 'Z', 'R', 'D',
 				     'F', ',', 'T', 'C', 'P', 'I', 'P', '*', ':', '>', 'h', 'i', 0xC0 };
 	static const uint8_t data[] = { 0xC0, 0x00, 'x', 0xC0 };
 	ring_put(data, sizeof(data));
 	ring_put(g, sizeof(g));
 	pump();
 	srv.rx[srv.rxn] = 0;
-	CHECK(ring_n == 0 && strcmp((char *)srv.rx, "N0CALL-7>APZRDF,TCPIP*:>hi\r\n") == 0);
+	CHECK(ring_n == 0 && strcmp((char *)srv.rx, "Q0TEST-7>APZRDF,TCPIP*:>hi\r\n") == 0);
 
 	// The server's lines go to the engine (its iGate rules decide); comments don't
 	is_lines = 0;
-	static const char msg[] = "# filter active\r\nW1AW>APRS,TCPIP*,qAC,T2TEST::N0CALL-7 :hello{12\r\n";
+	static const char msg[] = "# filter active\r\nW1AW>APRS,TCPIP*,qAC,TIER2::Q0TEST-7 :hello{12\r\n";
 	peer_send(&srv, msg, sizeof(msg) - 1);
-	CHECK(is_lines == 1 && strcmp(is_line, "W1AW>APRS,TCPIP*,qAC,T2TEST::N0CALL-7 :hello{12") == 0);
+	CHECK(is_lines == 1 && strcmp(is_line, "W1AW>APRS,TCPIP*,qAC,TIER2::Q0TEST-7 :hello{12") == 0);
 
 	// A silent server: dropped after 2 minutes, tried again 30 s later
 	run_for(APRSIS_SILENCE_MS + 1000);
@@ -519,7 +519,7 @@ static void test_aprsis(void)
 	CHECK(srv.syns == 1 && srv.established);
 
 	// Unverified (a wrong passcode): dropped, the next try much later
-	static const char unv[] = "# logresp N0CALL-7 unverified, server T2TEST\r\n";
+	static const char unv[] = "# logresp Q0TEST-7 unverified, server TIER2\r\n";
 	peer_send(&srv, unv, sizeof(unv) - 1);
 	CHECK(srv.reset && !aprsis_online());
 	peer_listen(&srv, SERVER_IP, 14580);
@@ -565,7 +565,7 @@ static void test_fuzz(void)
 	static const uint8_t kseeds[3][12] = {
 		{ 0xC0, 0x00, 'A', 0xDB, 0xDC, 'B', 0xDB, 0xDD, 'C', 0xC0 },
 		{ 0xC0, 0x00, 0xDB, 0xC0, 0xDB, 0xDB, 0xDC, 0xC0, 0xC0 },	// an escape right before a FEND
-		{ 0xC0, 0x06, 'G', 'N', '0', 'C', 'A', 'L', 'L', 0xDB },	// ends inside an escape
+		{ 0xC0, 0x06, 'G', 'Q', '0', 'T', 'E', 'S', 'T', 0xDB },	// ends inside an escape
 	};
 	static const int klen[3] = { 10, 9, 10 };
 	int frames0 = got_frames;

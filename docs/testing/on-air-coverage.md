@@ -15,7 +15,7 @@ RF (or only the radio's side of an RF exchange); **partial** = only part of the 
 bench (why in the notes); **xfail** = the test runs and fails for a known, documented gap; **fails** = the test
 runs and finds a real firmware problem (left failing on purpose); **not run** = a test exists but wasn't in the last
 run; **none** = no automated test. Last run:
-2026-10-10 on the DM-1701, firmware `5a13814` (main, every feature built), radio at its lowest power on 467.375 MHz.
+2026-10-10 on the DM-1701, firmware `5a13814` (main, every feature built), radio at its lowest power on the DMR test frequency.
 
 | Feature | Test | Status | Notes |
 |---|---|---|---|
@@ -25,7 +25,7 @@ run; **none** = no automated test. Last run:
 | DMR private calls in | `test_dmr_call_features` | on air | to us played, to another ID not |
 | DMR transmit (voice call) | `test_dmr_tx::test_dmr_tx_off_air` | on air | content strict; waveform checks not judged while the SDR clips (8 % at gain 0) |
 | Talker alias receive | `test_dmr_call_features::test_talker_alias` | on air | |
-| Talker alias transmit | `test_dmr_tx::test_dmr_tx_talker_alias` | on air | needs `--allow-codeplug-write`: the test channel's alias flag set over CPS, backed up and restored byte for byte; "N4NQV" decoded by the SDR and the bench modem |
+| Talker alias transmit | `test_dmr_tx::test_dmr_tx_talker_alias` | on air | needs `--allow-codeplug-write`: the test channel's alias flag set over CPS, backed up and restored byte for byte; the rig's callsign decoded by the SDR and the bench modem |
 | Basic privacy receive | `test_dmr_call_features::test_privacy_service_option` | on air | the bench can't scramble: drop without a key, play with one |
 | Basic privacy transmit | `test_dmr_tx::test_dmr_privacy_tx` | on air (signaling) | service option 0x40 and FID 0x10 checked; the scrambling itself isn't (unknown microphone frames) |
 | ETSI GPS Info in calls, in / out | `test_dmr_call_features::test_gps_info`, `test_dmr_tx::test_dmr_gps_tx` | on air | |
@@ -49,7 +49,7 @@ run; **none** = no automated test. Last run:
 | IP over DMR in bursts and at the largest size (5 datagrams back to back each way, the largest datagram each way, one block more from the air; one octet more to the air and the ICMP fragmentation needed only on firmware with a narrower air MTU) | `test_dmr_ip_burst` | not run | the radio's counters and the host's socket pass or fail; what the bench modem misses of the radio's bursts is a warning |
 | IP over DMR, end to end | none | none (rig) | needs a second station that speaks IP over DMR data |
 | Roaming (settings, zone flag, roam now) | `test_roaming` radio tests | radio | |
-| Roaming to the bench repeater, beacon surveys | `test_roaming` rf tests | none (rig) | need a repeater-pair channel and a second frequency; only 467.375 MHz is approved |
+| Roaming to the bench repeater, beacon surveys | `test_roaming` rf tests | none (rig) | need a repeater-pair channel and a second frequency in the rig's `tx_mhz` |
 | FM receive | `test_fm::test_noaa_receive` | on air | |
 | CTCSS / DCS encode | `test_fm_tx` | on air | |
 | CTCSS / DCS decode | `test_fm::test_rx_tone_squelch` | partial | untoned NOAA stays muted with a tone required; a toned FM source would be needed for the positive case |

@@ -91,7 +91,7 @@ static void test_limits(void)
 }
 
 // Signed mode: a fraction over one half goes to the next N with a negative dividend. Unsigned, these left the MD-380
-// 8.4 MHz low (issue 108: 443.700 MHz RX, LO 393.75 MHz, N 46.875, received nothing; N 47.158 at 446.075 did)
+// 8.4 MHz low (issue 108: 443.700 MHz RX, LO 393.75 MHz, N 46.875, received nothing; N 47.158 2.4 MHz higher did)
 static void test_signed_fraction(void)
 {
 	sky72310_ratio_t r;

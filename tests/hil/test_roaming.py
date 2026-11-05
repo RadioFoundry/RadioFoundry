@@ -45,7 +45,9 @@ color code --dmr-cc, contact TG 9 or any talkgroup) and a second DMR repeater ch
 unused pair, roaming allowed for the zone (the tests turn it on and put it back). Example:
 
     python3 -m pytest tests/hil/test_roaming.py -v -rs -k beacon --allow-rf --allow-service-stop \
-        --roam-rx 461.6875 --roam-tx 466.6875 --dmr-cc 2 [--roam-beacon 20 --roam-beacon-len 3]
+        --roam-rx RX_MHZ --roam-tx TX_MHZ --dmr-cc CC [--roam-beacon 20 --roam-beacon-len 3]
+
+(the pair in the rig's tx_mhz too: hil_config.py)
 """
 import json
 import time
@@ -54,6 +56,7 @@ import pytest
 
 from rfoundry_hil import skip
 from rfoundry_debug import as_int
+from hil_config import rig
 
 ROAM_KEYS = ("roam.built", "roam.zone_on", "roam.state", "roam.why", "roam.pending", "roam.blocked", "roam.sites",
              "roam.site", "roam.home", "roam.channel", "roam.rssi_dbm", "roam.weak", "roam.searches", "roam.roams",
@@ -199,7 +202,7 @@ def test_roam_to_bench_repeater(roaming, sdr_bench, pytestconfig):
     if not rx or not tx:
         skip("opt_in", "give the bench repeater's pair as the radio sees it: --roam-rx MHz (radio receives, bench "
                        "transmits) --roam-tx MHz (radio transmits, bench receives); a pair you are licensed for")
-    cc = pytestconfig.getoption("--dmr-cc")
+    cc = rig(pytestconfig, "dmr-cc")
     L = roaming.link
     pos_b = roaming.find_channel(round(rx * 1e6), "dmr")
     v = zone_on(roaming)
@@ -281,7 +284,7 @@ def beacon_setup(roaming, pytestconfig):
 
 
 def bench_beacon(sdr_bench, pytestconfig, rx, tx, every, length, seconds):
-    cc = pytestconfig.getoption("--dmr-cc")
+    cc = rig(pytestconfig, "dmr-cc")
     return sdr_bench.ssh_bg(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} bench_repeater.py --rx {tx} --tx {rx} "
                             f"--cc {cc} --power {sdr_bench.tx_power} --seconds {seconds} --beacon {every} "
                             f"--beacon-len {length} --json")

@@ -117,7 +117,7 @@ static void test_pure(void)
 	CHECK(hrc7000_sig_center_dc(0) == (381u & 0xFF) * 0x0101u);
 	CHECK(hrc7000_mod_bias_dc(128, 45) == (512u << 16 | 45u));
 	CHECK(hrc7000_mod_bias_dc(255, 0x4D4D) == (641u << 16 | 0x4D4Du));
-	// The DB25-D owner's page: TX center 106 = 1.577 V = 489 (0x1E9), modulation balance 0x21 at 461.4625 MHz: the two
+	// The DB25-D owner's page: TX center 106 = 1.577 V = 489 (0x1E9), modulation balance 0x21 at the test frequency: the two
 	// words the stock firmware writes at every receive set-up (hardware-db25d.md 4.6)
 	CHECK(hrc7000_mod_dc(106) == 489);
 	CHECK(hrc7000_sig_center_dc(106) == 0x6A6AE9E9u);
@@ -817,7 +817,7 @@ static void test_tx_tone(void)
 {
 	setup();
 	REG(C7_SUBVOICE_COEF) = 0x07D00930u;
-	hrc7000_tx_tone(&dev, 1750, hrc7000_dtmf_dev(467375000u, false));
+	hrc7000_tx_tone(&dev, 1750, hrc7000_dtmf_dev(453625000u, false));
 	CHECK(REG(C7_FM_TONE1) >> 16 == 3584u && REG(C7_FM_TONE3) >> 16 == 3584u);	// round(1750 x 2.048)
 	CHECK((REG(C7_FM_TONE1) & 0xFFFFu) == 0x0629u && (REG(C7_FM_TONE3) & 0xFFFFu) == 0x0AB0u);
 	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D0C030u);

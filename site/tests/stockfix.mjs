@@ -88,7 +88,7 @@ export class Stock {
 
 export function uv380() {
 	const s = new Stock("tyt-uv380");
-	s.general({ name: "N0CALL Radio", id: 3100123, boot1: "Hello", boot2: "World" });
+	s.general({ name: "Q0TST Radio", id: 9990123, boot1: "Hello", boot2: "World" });
 	s.contact(1, { name: "TG 91", id: 91, type: "group" });
 	s.contact(2, { name: "Echo", id: 9990, type: "private" });
 	s.contact(3, { name: "All", id: 0xFFFFFF, type: "all" });

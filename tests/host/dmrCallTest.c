@@ -18,7 +18,7 @@ static int failures;
 static int checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
-#define OWN_ID	3112345u
+#define OWN_ID	9997040u
 #define TG_TALK	91u
 #define TG_LIST	3100u
 
@@ -181,11 +181,11 @@ static void test_rs129(void)
 	dmr_lc_encode_full(zero, DMR_RS_MASK_TERMINATOR, full);
 	CHECK(full[9] == 0x99 && full[10] == 0x99 && full[11] == 0x99);
 
-	// Group voice TG 9 from 2345678 (the example LC of sfrTest), and random LCs: parity equal to the long-division
+	// Group voice TG 9 from 9997030 (the example LC of sfrTest), and random LCs: parity equal to the long-division
 	// reference, syndromes zero, accepted by sfr.c's independent checker with the right mask only
 	srand(12345);
 	for (int n = 0; n < 300; n++) {
-		uint8_t d[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x23, 0xCA, 0xCE }, p[3], q[3];
+		uint8_t d[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x98, 0x8A, 0xE6 }, p[3], q[3];
 
 		if (n)
 			for (int i = 0; i < 9; i++)
@@ -222,7 +222,7 @@ static void test_rs129(void)
 
 static void test_csbk(void)
 {
-	uint8_t mine[12], ten[10] = { 0xB8, 0, 0, 0, 0, 0, 0, 0x2F, 0x7D, 0x99 };	// from 3112345 = 0x2F7D99
+	uint8_t mine[12], ten[10] = { 0xB8, 0, 0, 0, 0, 0, 0, 0x98, 0x8A, 0xF0 };	// from 9997040 = 0x988AF0
 	dmrBurst_t ref;
 
 	dmr_csbk_bs_activation(OWN_ID, mine);
@@ -323,23 +323,23 @@ static void test_alias(void)
 {
 	uint8_t lcs[4][9];
 	dmr_ta_t ta;
-	int n = mk_alias("N0CALL Spencer", DMR_TA_ISO8, lcs);
+	int n = mk_alias("Q0TEST Charlie", DMR_TA_ISO8, lcs);
 
 	CHECK(n == 3);
 	dmr_ta_reset(&ta);
 	CHECK(dmr_ta_push(&ta, lcs[0]));
-	CHECK(strcmp(ta.text, "N0CALL") == 0 && !ta.complete);
+	CHECK(strcmp(ta.text, "Q0TEST") == 0 && !ta.complete);
 	CHECK(!dmr_ta_push(&ta, lcs[2]));	// block 2 before block 1: nothing new shows
-	CHECK(strcmp(ta.text, "N0CALL") == 0);
+	CHECK(strcmp(ta.text, "Q0TEST") == 0);
 	CHECK(dmr_ta_push(&ta, lcs[1]));
-	CHECK(strcmp(ta.text, "N0CALL Spencer") == 0 && ta.complete);
+	CHECK(strcmp(ta.text, "Q0TEST Charlie") == 0 && ta.complete);
 	CHECK(!dmr_ta_push(&ta, lcs[1]));	// repeats change nothing
 
-	n = mk_alias("KD9XYZ Bob Smith Radio", DMR_TA_7BIT, lcs);
+	n = mk_alias("QD9XYZ Bob Smith Radio", DMR_TA_7BIT, lcs);
 	dmr_ta_reset(&ta);
 	for (int i = 0; i < n; i++)
 		dmr_ta_push(&ta, lcs[i]);
-	CHECK(strcmp(ta.text, "KD9XYZ Bob Smith Radio") == 0 && ta.complete);
+	CHECK(strcmp(ta.text, "QD9XYZ Bob Smith Radio") == 0 && ta.complete);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -758,7 +758,7 @@ static void test_tx_permit_hold(void)
 	// A call begins in the hold: refused as at PTT (no access wait), nothing sent
 	uint8_t lc[9];
 	unsigned frame = 1;
-	mk_lc(lc, 0, TG_LIST, 2345678);
+	mk_lc(lc, 0, TG_LIST, 9997030);
 	setup(&c);
 	permit_busy_flag = true;
 	dmr_call_ptt(true);
@@ -949,13 +949,13 @@ static void test_rx_call(void)
 	unsigned frame = 1;
 
 	setup(&c);
-	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_LIST, 2345678);
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_LIST, 9997030);
 	rx_header(lc, 1, 0, DMR_SYNC_MS, false);
 	run_ms(20);
 	CHECK(V()->state == DMR_CALL_STATE_RX && V()->phase == DMR_CALL_PHASE_RX_VOICE);
-	CHECK(sink_log.begins == 1 && sink_log.caller.src == 2345678 && sink_log.caller.dst == TG_LIST &&
+	CHECK(sink_log.begins == 1 && sink_log.caller.src == 9997030 && sink_log.caller.dst == TG_LIST &&
 	      sink_log.caller.group && !sink_log.caller.late_entry);
-	CHECK(V()->caller.src == 2345678 && V()->rssi_dbm == 0);
+	CHECK(V()->caller.src == 9997030 && V()->rssi_dbm == 0);
 	run_ms(40);
 	rx_call(lc, 1, true, 0, 2, false, &frame);	// more headers (same call), then two superframes
 	CHECK(sink_log.begins == 1 && sink_log.frames == 36 && sink_log.losts == 0);
@@ -965,7 +965,7 @@ static void test_rx_call(void)
 	rx_header(lc, 1, 0, DMR_SYNC_MS, true);
 	run_ms(20);
 	CHECK(sink_log.ends == 1 && V()->state == DMR_CALL_STATE_IDLE);
-	CHECK(V()->last_heard.src == 2345678 && V()->last_heard_ms == now - 10);
+	CHECK(V()->last_heard.src == 9997030 && V()->last_heard_ms == now - 10);
 	// Reply window: PTT now goes to the TG just heard
 	CHECK(V()->reply_active && V()->tx_target.id == TG_LIST && !V()->tx_target.private_call);
 	CHECK(V()->reply_s == 10);
@@ -1011,7 +1011,7 @@ static void test_rx_no_call_after_terminator(void)
 
 	setup(&c);
 	dmr_call_reset_stats();
-	mk_lc(lc, 0, TG_TALK, 2345678);
+	mk_lc(lc, 0, TG_TALK, 9997030);
 	rx_call(lc, 1, true, 0, 2, true, &frame);
 	CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.begins == 1 && sink_log.ends == 1);
 	rx_voice(4, 1, 0, DMR_SYNC_MS, &frame, NULL, false);
@@ -1037,7 +1037,7 @@ static void test_rx_recheck_on_configure(void)
 	unsigned frame = 1;
 
 	setup(&c);
-	mk_lc(lc, 0, 1234, 2345678);
+	mk_lc(lc, 0, 1234, 9997030);
 	rx_call(lc, 1, true, 0, 1, false, &frame);
 	CHECK(V()->phase == DMR_CALL_PHASE_RX_BUSY && sink_log.begins == 0 && sink_log.frames == 0);
 	c.talk_target.id = 1234;
@@ -1074,12 +1074,12 @@ static void test_rx_filters(void)
 
 	// Wrong color code: nothing at all
 	setup(&c);
-	mk_lc(lc, 0, TG_TALK, 2345678);
+	mk_lc(lc, 0, TG_TALK, 9997030);
 	rx_call(lc, 2, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 0 && sink_log.frames == 0 && V()->serial > 0 && V()->last_heard_ms == 0);
 
 	// Talkgroup not listened to: the slot is busy but nothing is played
-	mk_lc(lc, 0, 1234, 2345678);
+	mk_lc(lc, 0, 1234, 9997030);
 	rx_call(lc, 1, true, 0, 1, false, &frame);
 	CHECK(V()->phase == DMR_CALL_PHASE_RX_BUSY && V()->caller.dst == 1234);
 	CHECK(sink_log.begins == 0 && sink_log.frames == 0);
@@ -1103,33 +1103,33 @@ static void test_rx_filters(void)
 	CHECK(sink_log.begins == 1 && sink_log.frames == 18);
 	c.listen.hear_all = false;
 	setup(&c);
-	mk_lc(lc, 0, DMR_ID_ALL_CALL, 2345678);
+	mk_lc(lc, 0, DMR_ID_ALL_CALL, 9997030);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 1);
 
 	// Private call to us: played, reply goes back privately
 	setup(&c);
-	mk_lc(lc, DMR_FLCO_UNIT_VOICE, OWN_ID, 2345678);
+	mk_lc(lc, DMR_FLCO_UNIT_VOICE, OWN_ID, 9997030);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 1 && sink_log.caller.to_us && !sink_log.caller.group && sink_log.frames == 18);
-	CHECK(V()->reply_active && V()->tx_target.id == 2345678 && V()->tx_target.private_call);
+	CHECK(V()->reply_active && V()->tx_target.id == 9997030 && V()->tx_target.private_call);
 	dmr_call_ptt(true);
 	run_ms(20);
 	uint8_t want[9];
-	mk_lc(want, DMR_FLCO_UNIT_VOICE, 2345678, OWN_ID);
+	mk_lc(want, DMR_FLCO_UNIT_VOICE, 9997030, OWN_ID);
 	CHECK(memcmp(sim.emb_lc, want, 9) == 0);
 	dmr_call_ptt(false);
 	run_ms(600);
 
 	// Private call to someone else: not played
 	setup(&c);
-	mk_lc(lc, DMR_FLCO_UNIT_VOICE, 7654321, 2345678);
+	mk_lc(lc, DMR_FLCO_UNIT_VOICE, 9997002, 9997030);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 0);
 
 	// Group list by callback
 	setup(&c);
-	mk_lc(lc, 0, 777, 2345678);
+	mk_lc(lc, 0, 777, 9997030);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 0);
 
@@ -1145,7 +1145,7 @@ static void test_rx_filters(void)
 	// ... and its terminators never end someone else's call
 	c.rmo = true;
 	setup(&c);
-	mk_lc(lc, 0, TG_TALK, 2345678);
+	mk_lc(lc, 0, TG_TALK, 9997030);
 	uint8_t own[9];
 	mk_lc(own, 0, TG_TALK, OWN_ID);
 	run_ms(500);
@@ -1158,9 +1158,9 @@ static void test_rx_filters(void)
 	mk_lc(stranger, 0, TG_TALK, 9999999);
 	rx_header(stranger, 1, 0, DMR_SYNC_BS, true);
 	run_ms(20);
-	CHECK(V()->phase == DMR_CALL_PHASE_RX_VOICE && V()->caller.src == 2345678);
+	CHECK(V()->phase == DMR_CALL_PHASE_RX_VOICE && V()->caller.src == 9997030);
 	// RMO: wrong timeslot is filtered
-	mk_lc(lc, 0, TG_LIST, 1111111);
+	mk_lc(lc, 0, TG_LIST, 9997003);
 	dmr_burst_t b;
 	memset(&b, 0, sizeof(b));
 	b.kind = DMR_BURST_VOICE_LC_HEADER;
@@ -1172,7 +1172,7 @@ static void test_rx_filters(void)
 	dmr_lc_encode_full(lc, DMR_RS_MASK_VOICE_HEADER, b.payload);
 	sim_rx(&b);
 	run_ms(20);
-	CHECK(V()->caller.src == 2345678);
+	CHECK(V()->caller.src == 9997030);
 }
 
 // Our call, ended: back to idle, so a call heard next is judged by the echo window, not as heard while keyed
@@ -1248,7 +1248,7 @@ static void test_rx_group_callback(void)
 
 	c.listen.group_ok = tg777;
 	setup(&c);
-	mk_lc(lc, 0, 777, 2345678);
+	mk_lc(lc, 0, 777, 9997030);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 1);
 }
@@ -1261,9 +1261,9 @@ static void test_late_entry(void)
 
 	// Joined at burst C, no header: the call starts at F with the embedded LC, audio from F on
 	setup(&c);
-	mk_lc(lc, 0, TG_TALK, 2345678);
+	mk_lc(lc, 0, TG_TALK, 9997030);
 	rx_call(lc, 1, false, 2, 1, false, &frame);
-	CHECK(sink_log.begins == 1 && sink_log.caller.late_entry && sink_log.caller.src == 2345678);
+	CHECK(sink_log.begins == 1 && sink_log.caller.late_entry && sink_log.caller.src == 9997030);
 	CHECK(sink_log.frames == 3 && sink_log.seq[0] == 10);	// C, D, E were frames 1-9
 	rx_call(lc, 1, false, 0, 1, true, &frame);
 	CHECK(sink_log.frames == 21 && sink_log.losts == 0 && sink_log.ends == 1);
@@ -1284,7 +1284,7 @@ static void test_late_entry(void)
 	CHECK(sink_log.begins == 0);
 	rx_voice(1, 1, 0, DMR_SYNC_MS, &frame, NULL, false);
 	run_ms(60);
-	CHECK(sink_log.begins == 1 && sink_log.caller.late_entry && sink_log.caller.src == 2345678);
+	CHECK(sink_log.begins == 1 && sink_log.caller.late_entry && sink_log.caller.src == 9997030);
 	CHECK(sink_log.frames == 6 && sink_log.seq[0] == (uint8_t)first && sink_log.losts == 0);
 	run_ms(500);
 
@@ -1314,16 +1314,16 @@ static void test_late_entry(void)
 	run_ms(500);
 
 	// A different LC than the stale one is taken at the first superframe
-	mk_lc(other, 0, TG_LIST, 3333333);
+	mk_lc(other, 0, TG_LIST, 9997004);
 	rx_call(other, 1, false, 0, 1, false, &frame);
-	CHECK(sink_log.begins == 3 && V()->caller.src == 3333333);
+	CHECK(sink_log.begins == 3 && V()->caller.src == 9997004);
 
 	// New talker on the same call without a header (repeater): caller follows the embedded LC
-	mk_lc(lc, 0, TG_LIST, 4444444);
+	mk_lc(lc, 0, TG_LIST, 9997005);
 	rx_call(lc, 1, false, 0, 1, false, &frame);
-	CHECK(sink_log.begins == 4 && V()->caller.src == 4444444 && V()->phase == DMR_CALL_PHASE_RX_VOICE);
+	CHECK(sink_log.begins == 4 && V()->caller.src == 9997005 && V()->phase == DMR_CALL_PHASE_RX_VOICE);
 	// ... and to a TG we don't listen to: playing stops
-	mk_lc(lc, 0, 5555, 4444444);
+	mk_lc(lc, 0, 5555, 9997005);
 	rx_call(lc, 1, false, 0, 1, false, &frame);
 	CHECK(V()->phase == DMR_CALL_PHASE_RX_BUSY && sink_log.ends == 4);
 }
@@ -1333,10 +1333,10 @@ static void test_alias_and_privacy(void)
 	dmr_call_config_t c = base_cfg();
 	uint8_t lc[9], ta[4][9];
 	unsigned frame = 1;
-	int n = mk_alias("N0CALL Spencer", DMR_TA_ISO8, ta);
+	int n = mk_alias("Q0TEST Charlie", DMR_TA_ISO8, ta);
 
 	setup(&c);
-	mk_lc(lc, 0, TG_TALK, 2345678);
+	mk_lc(lc, 0, TG_TALK, 9997030);
 	rx_call(lc, 1, true, 0, 1, false, &frame);
 	// Talker alias in the following superframes' embedded LC (instead of the voice LC)
 	for (int sf = 0; sf < n; sf++)
@@ -1344,11 +1344,11 @@ static void test_alias_and_privacy(void)
 			rx_voice((uint8_t)i, 1, 0, DMR_SYNC_MS, &frame, i == 5 ? ta[sf] : NULL, false);
 			run_ms(60);
 		}
-	CHECK(strcmp(V()->caller.alias, "N0CALL Spencer") == 0 && V()->caller.alias_complete);
-	CHECK(V()->caller.src == 2345678 && sink_log.begins == 1);
+	CHECK(strcmp(V()->caller.alias, "Q0TEST Charlie") == 0 && V()->caller.alias_complete);
+	CHECK(V()->caller.src == 9997030 && sink_log.begins == 1);
 	rx_header(lc, 1, 0, DMR_SYNC_MS, true);
 	run_ms(20);
-	CHECK(strcmp(V()->last_heard.alias, "N0CALL Spencer") == 0);
+	CHECK(strcmp(V()->last_heard.alias, "Q0TEST Charlie") == 0);
 
 	// PI set and no key: shown as encrypted, never played
 	setup(&c);
@@ -1381,7 +1381,7 @@ static void test_privacy_hook(void)
 	c.tx_fid = 0x10;
 	c.tx_svc = DMR_SVC_PRIVACY;
 	setup(&c);
-	mk_lc(lc, 0, TG_TALK, 2345678);
+	mk_lc(lc, 0, TG_TALK, 9997030);
 	lc[2] = DMR_SVC_PRIVACY;
 	rx_header(lc, 1, 0, DMR_SYNC_MS, false);
 	run_ms(60);
@@ -1435,7 +1435,7 @@ static void test_impolite_over_call(void)
 
 	c.access = DMR_ACCESS_IMPOLITE;
 	setup(&c);
-	mk_lc(lc, 0, TG_LIST, 2345678);
+	mk_lc(lc, 0, TG_LIST, 9997030);
 	rx_call(lc, 1, true, 0, 1, false, &frame);
 	CHECK(V()->phase == DMR_CALL_PHASE_RX_VOICE);
 	dmr_call_ptt(true);
@@ -1473,7 +1473,7 @@ static void test_reconfigure(void)
 	unsigned frame = 1;
 
 	setup(&c);
-	mk_lc(lc, 0, TG_TALK, 2345678);
+	mk_lc(lc, 0, TG_TALK, 9997030);
 	rx_call(lc, 1, true, 0, 1, false, &frame);
 	CHECK(V()->state == DMR_CALL_STATE_RX);
 	c.cc = 3;
@@ -1521,7 +1521,7 @@ static void test_tx_alias(void)
 	uint8_t lc[9], ta[4][9], got[16][9];
 	dmr_call_stats_t st;
 
-	strcpy(c.tx_alias, "N0CALL Spencer");	// ISO 8-bit: header and two blocks
+	strcpy(c.tx_alias, "Q0TEST Charlie");	// ISO 8-bit: header and two blocks
 	c.tx_alias_format = DMR_TA_ISO8;
 	setup(&c);
 	int n = dmr_ta_encode(c.tx_alias, DMR_TA_ISO8, ta);
@@ -1544,7 +1544,7 @@ static void test_tx_alias(void)
 	dmr_ta_reset(&rx);
 	for (int k = 1; k < sfs; k += 2)
 		dmr_ta_push(&rx, got[k]);
-	CHECK(rx.complete && strcmp(rx.text, "N0CALL Spencer") == 0);
+	CHECK(rx.complete && strcmp(rx.text, "Q0TEST Charlie") == 0);
 	dmr_call_get_stats(&st);
 	CHECK(st.tx_alias_lcs == (uint32_t)(sfs / 2));
 
@@ -1671,7 +1671,7 @@ static void test_pi_header_and_emergency(void)
 
 	// Header, PI header, voice: the call is marked protected with the PI octets; no key, so nothing plays
 	setup(&c);
-	mk_lc(lc, 0, TG_TALK, 2345678);
+	mk_lc(lc, 0, TG_TALK, 9997030);
 	rx_header(lc, 1, 0, DMR_SYNC_MS, false);
 	run_ms(60);
 	CHECK(!V()->caller.encrypted && !V()->caller.pi_header);
@@ -1688,7 +1688,7 @@ static void test_pi_header_and_emergency(void)
 
 	// PI header heard, voice LC header missed: the late entry takes it
 	run_ms(1000);
-	mk_lc(lc, 0, TG_TALK, 3456789);
+	mk_lc(lc, 0, TG_TALK, 9997006);
 	rx_pi_header_burst(info, 1, true);
 	run_ms(60);
 	rx_call(lc, 1, false, 0, 1, false, &frame);
@@ -1698,7 +1698,7 @@ static void test_pi_header_and_emergency(void)
 
 	// Emergency service option: flagged for the screens and counted
 	setup(&c);
-	mk_lc(lc, 0, TG_TALK, 2345678);
+	mk_lc(lc, 0, TG_TALK, 9997030);
 	lc[2] = DMR_SVC_EMERGENCY;
 	rx_call(lc, 1, true, 0, 1, false, &frame);
 	CHECK(V()->caller.emergency && !V()->caller.encrypted && sink_log.frames == 18);
@@ -1708,7 +1708,7 @@ static void test_pi_header_and_emergency(void)
 	dmr_call_get_stats(&st);
 	CHECK(st.rx_emergency_calls == 1);
 	// ... and an emergency call to a talkgroup we don't listen to is still shown (busy), with the flag
-	mk_lc(lc, 0, 5555, 2345678);
+	mk_lc(lc, 0, 5555, 9997030);
 	lc[2] = DMR_SVC_EMERGENCY;
 	rx_call(lc, 1, true, 0, 1, false, &frame);
 	CHECK(V()->phase == DMR_CALL_PHASE_RX_BUSY && V()->caller.emergency);
@@ -1725,10 +1725,10 @@ static void test_private_calls(void)
 	c.reply_window_private_s = 12;
 	setup(&c);
 	// To us: played, reply target is the caller (private) for the private window
-	mk_lc(lc, DMR_FLCO_UNIT_VOICE, OWN_ID, 2345678);
+	mk_lc(lc, DMR_FLCO_UNIT_VOICE, OWN_ID, 9997030);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 1 && sink_log.caller.to_us && !sink_log.caller.group && sink_log.frames == 18);
-	CHECK(V()->reply_active && V()->tx_target.id == 2345678 && V()->tx_target.private_call && V()->reply_s == 12);
+	CHECK(V()->reply_active && V()->tx_target.id == 9997030 && V()->tx_target.private_call && V()->reply_s == 12);
 	// PTT in the window: a private call back
 	dmr_call_ptt(true);
 	run_ms(400);
@@ -1737,15 +1737,15 @@ static void test_private_calls(void)
 	CHECK(sim.air[0].payload[0] == DMR_FLCO_UNIT_VOICE);
 	dmr_lc_t l;
 	dmr_lc_unpack(sim.air[0].payload, &l);
-	CHECK(l.dst == 2345678 && l.src == OWN_ID);
+	CHECK(l.dst == 9997030 && l.src == OWN_ID);
 	CHECK(V()->reply_active && V()->reply_s == 12);	// our call restarted the private window
 	run_ms(13000);
 	CHECK(!V()->reply_active);
 
 	// To someone else: shown (busy) while it lasts, not played, no reply window
-	mk_lc(lc, DMR_FLCO_UNIT_VOICE, 3999999, 2345678);
+	mk_lc(lc, DMR_FLCO_UNIT_VOICE, 9997007, 9997030);
 	rx_call(lc, 1, true, 0, 1, false, &frame);
-	CHECK(V()->phase == DMR_CALL_PHASE_RX_BUSY && V()->caller.dst == 3999999 && !V()->caller.to_us &&
+	CHECK(V()->phase == DMR_CALL_PHASE_RX_BUSY && V()->caller.dst == 9997007 && !V()->caller.to_us &&
 	      !V()->caller.group);
 	rx_header(lc, 1, 0, DMR_SYNC_MS, true);
 	run_ms(60);
@@ -1754,13 +1754,13 @@ static void test_private_calls(void)
 	CHECK(st.rx_private_calls == 2 && st.rx_calls_played == 1);
 
 	// A group call uses the group window
-	mk_lc(lc, 0, TG_LIST, 2345678);
+	mk_lc(lc, 0, TG_LIST, 9997030);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(V()->reply_active && !V()->tx_target.private_call && V()->reply_s == 4);
 
 	// Private talk target (a contact or a typed ID): the header and terminator are unit to unit
 	c = base_cfg();
-	c.talk_target.id = 2345678;
+	c.talk_target.id = 9997030;
 	c.talk_target.private_call = true;
 	setup(&c);
 	dmr_call_ptt(true);
@@ -1768,7 +1768,7 @@ static void test_private_calls(void)
 	dmr_call_ptt(false);
 	run_ms(800);
 	unsigned v;
-	mk_lc(lc, DMR_FLCO_UNIT_VOICE, 2345678, OWN_ID);
+	mk_lc(lc, DMR_FLCO_UNIT_VOICE, 9997030, OWN_ID);
 	check_tx_burst_sequence(0, lc, &v);
 }
 
@@ -1829,7 +1829,7 @@ static void test_basic_privacy(void)
 			p49[k] = (uint8_t)((k * 7 + f) & 1);
 		ambeFecEncode(p49, &plain[f * 9]);
 	}
-	mk_lc(lc, 0, TG_TALK, 2345678);
+	mk_lc(lc, 0, TG_TALK, 9997030);
 	lc[1] = 0x10;
 	lc[2] = DMR_SVC_PRIVACY;
 	for (int pass = 0; pass < 2; pass++) {
@@ -1938,7 +1938,7 @@ static void test_gps_call(void)
 
 	dmr_gps_encode(&g, gps);
 	setup(&c);
-	mk_lc(lc, 0, TG_TALK, 2345678);
+	mk_lc(lc, 0, TG_TALK, 9997030);
 	rx_call(lc, 1, true, 0, 1, false, &frame);
 	CHECK(!V()->caller.gps_valid);
 	for (int i = 0; i < 6; i++) {
@@ -1953,9 +1953,9 @@ static void test_gps_call(void)
 	run_ms(20);
 	CHECK(V()->last_heard.gps_valid && V()->last_heard.gps.lat == g.lat);
 	// A new talker starts without a position
-	mk_lc(lc, 0, TG_TALK, 3456789);
+	mk_lc(lc, 0, TG_TALK, 9997006);
 	rx_call(lc, 1, true, 0, 1, false, &frame);
-	CHECK(V()->caller.src == 3456789 && !V()->caller.gps_valid);
+	CHECK(V()->caller.src == 9997006 && !V()->caller.gps_valid);
 
 	// TX: GPS Info alone takes every other superframe
 	c = base_cfg();
@@ -1974,7 +1974,7 @@ static void test_gps_call(void)
 	CHECK(st.tx_gps_lcs == (uint32_t)(sfs / 2) && st.tx_alias_lcs == 0);
 
 	// With a talker alias: header, block 1, block 2, GPS in the odd superframes
-	strcpy(c.tx_alias, "N0CALL Spencer");
+	strcpy(c.tx_alias, "Q0TEST Charlie");
 	c.tx_alias_format = DMR_TA_ISO8;
 	setup(&c);
 	dmr_call_set_tx_gps(&g);
@@ -2047,7 +2047,7 @@ static void test_sfr_user(void)
 	uint8_t lc[9];
 	dmr_call_stats_t st;
 
-	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_LIST, 2345678);
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_LIST, 9997030);
 
 	// Without the SFR role, the repeat on the other slot is dropped (the TDMA direct mode sync names it)
 	setup(&c);
@@ -2209,7 +2209,7 @@ static void sfr_dual_call(int superframes, uint32_t bad_direct, uint32_t bad_rep
 	uint8_t lc[9];
 	int n = 3 + superframes * 6 + 1;
 
-	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_LIST, 2345678);
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_LIST, 9997030);
 	for (int step = 0; step < 2 * n + 3; step++) {
 		for (int copy = 0; copy < 2; copy++) {
 			int k = copy == 0 ? step / 2 : (step - 3) / 2;

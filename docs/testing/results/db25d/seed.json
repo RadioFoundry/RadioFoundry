@@ -45,7 +45,7 @@
   "ref_trim": {
    "result": "pass",
    "source": "docs/spec/hardware-db25d.md",
-   "note": "test_ref_trim.py: +-5 ppm moved FM at 461.4625 MHz +2309 / -2311 Hz"
+   "note": "test_ref_trim.py: +-5 ppm moved FM on the UHF test frequency +2309 / -2311 Hz"
   }
  }
 }

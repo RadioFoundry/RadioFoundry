@@ -25,6 +25,7 @@ import pytest
 from rfoundry_hil import skip
 import dmr_packet
 from test_dmr_ip import _setup
+from hil_config import rig
 
 ZS_PORT = 4100
 
@@ -199,7 +200,7 @@ def test_zone_and_channel_between_radios(radio, pytestconfig, backup_dir):
     from rfoundry_hil import Radio
     from test_cps import QDMR, codeplug_edited, codeplug_kept, cps_session
     _zs(radio)
-    freq = round(pytestconfig.getoption("--dmr-freq") * 1e6)
+    freq = round(rig(pytestconfig, "dmr-freq") * 1e6)
     peer = Radio(peer_port)
     snap_r, snap_p = radio.snapshot(), peer.snapshot()
     try:

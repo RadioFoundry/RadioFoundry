@@ -38,10 +38,10 @@ int main(void)
 	CHECK(ref_trim_hz_at(10000, 480) == 4800 && ref_trim_hz_at(-10000, 480) == -4800);
 
 	// A board that trims by retuning: the synthesizer frequency, within about 1 Hz of f x (1 + trim)
-	CHECK(ref_trim_tune_hz(461462500u, 0) == 461462500u);
-	CHECK(ref_trim_tune_hz(461462500u, -4500) == 461462500u - 2077u);	// 2076.6 Hz
-	CHECK(ref_trim_tune_hz(461462500u, 10000) == 461462500u + 4615u);	// 4614.6 Hz
-	CHECK(ref_trim_tune_hz(146535000u, 100) == 146535000u + 15u);		// 14.65 Hz
+	CHECK(ref_trim_tune_hz(439125000u, 0) == 439125000u);
+	CHECK(ref_trim_tune_hz(439125000u, -4500) == 439125000u - 1976u);	// 1976.1 Hz
+	CHECK(ref_trim_tune_hz(439125000u, 10000) == 439125000u + 4391u);	// 4391.3 Hz
+	CHECK(ref_trim_tune_hz(145525000u, 100) == 145525000u + 15u);		// 14.55 Hz
 	CHECK(ref_trim_tune_hz(520000000u, -10000) == 520000000u - 5200u);	// the top of the bands, no overflow
 
 	// No board hook: no setting, the value is only kept

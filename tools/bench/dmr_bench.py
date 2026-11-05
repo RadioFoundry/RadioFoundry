@@ -767,6 +767,9 @@ def cmd_run(a):
                 modem_recs += jsonl(text)
                 results["steps"].append({"modem": b.fmt(step[1]), "ok": text is not None})
             elif kind == "watch":
+                if not a.receiver:
+                    raise SystemExit("this case watches the gateway's SDR receiver: give --receiver (or "
+                                     "$RFOUNDRY_SDR_RECEIVER)")
                 # the shared bench daemon publishes to a localhost broker without a login; the old gateway's
                 # broker login comes from its environment file
                 env = "" if b.uses_daemon() else f"export $(sudo cat {ENV_FILE} | xargs) && "
@@ -882,8 +885,10 @@ def main():
     def common(p):
         p.add_argument("--radio-id", type=int, default=None, help="the radio's own DMR ID (for LC checks)")
         p.add_argument("--tg", type=int, default=9, help="talkgroup on the radio's test channel")
-        p.add_argument("--freq", type=float, default=461.6875)
-        p.add_argument("--cc", type=int, default=2)
+        p.add_argument("--freq", type=float, default=os.environ.get("RFOUNDRY_BENCH_FREQ"), required="RFOUNDRY_BENCH_FREQ" not in os.environ,
+                       help="MHz ($RFOUNDRY_BENCH_FREQ): the rig's test frequency, no default")
+        p.add_argument("--cc", type=int, default=os.environ.get("RFOUNDRY_BENCH_CC"), required="RFOUNDRY_BENCH_CC" not in os.environ,
+                       help="color code ($RFOUNDRY_BENCH_CC), no default")
         p.add_argument("--gain", type=float, default=5.0, help="RTL-SDR gain for captures (C0 picks it)")
         p.add_argument("--offset-khz", type=float, default=-200.0, help="channel minus SDR center (DC spike)")
         p.add_argument("--modem-power", type=int, default=40, help="bench modem RF level 0-255 (bench: low)")
@@ -891,7 +896,8 @@ def main():
         p.add_argument("--rpt-tx", type=float, default=None, help="repeater output MHz (P cases)")
         p.add_argument("--ambe", default=None, help="Q2: a 9-byte-frame .ambe speech recording on the Mac")
         p.add_argument("--port", default=None, help="H/S cases: the radio's MMDVM serial port")
-        p.add_argument("--receiver", default="SDR15", help="the gateway's SDR receiver on --freq (T0)")
+        p.add_argument("--receiver", default=os.environ.get("RFOUNDRY_SDR_RECEIVER"),
+                       help="the gateway's SDR receiver on --freq (T0; $RFOUNDRY_SDR_RECEIVER)")
 
     s = sub.add_parser("show")
     s.add_argument("case", choices=list(BY_ID))

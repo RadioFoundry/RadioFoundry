@@ -151,17 +151,17 @@ def main():
 
         # No database
         link = cps_fast.open_link(exec_cmd=f"{sim} --image {dump}")
-        check(link.iddb(3100000) == {"format": "", "records": 0, "found": False, "text": None}, "no database")
+        check(link.iddb(9900000) == {"format": "", "records": 0, "found": False, "text": None}, "no database")
         link.close()
 
         # Format N, the last records in area 2
         flash = bytearray(base)
-        want = [(3100000 + 3 * i, f"K{i} Name{i % 7}") for i in range(17500)]
+        want = [(9900000 + 3 * i, f"K{i} Name{i % 7}") for i in range(17500)]
         per_area1 = format_n(flash, want)
         check(per_area1 < len(want), "format N reaches area 2")
         open(dump, "wb").write(flash)
         look = want[::101] + want[per_area1 - 2:per_area1 + 2] + want[-2:]      # across the area 1 / area 2 seam
-        against_radio(sim, dump, want, [3100001, 3100000 + 3 * 17500, 1], "format N", look)
+        against_radio(sim, dump, want, [9900001, 9900000 + 3 * 17500, 1], "format N", look)
 
         # Format C: 200 words (1- and 2-byte codes), literals, empty tokens; the last page in area 2 (page 70)
         flash = bytearray(base)

@@ -898,7 +898,7 @@ static const ui_scr_def_t channels_screen = {
 	.enter = chans_enter, .raw_count = chans_raw_count, .raw_label = chans_raw_label,
 };
 
-// A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID3101234" for a
+// A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
 // private contact) or "FM". The whole name comes first; where both don't fit beside it, the frequency and the bare
 // number, then the talkgroup alone (text alternates)
 static void sb_channel_row(sbuf_t *b, const channel_t *ch)
@@ -1407,7 +1407,7 @@ static void offer_select(uint16_t i, bool hold)
 	}
 }
 
-// "Zone Club, 24 channels, from Joe 3101234" and how many can't be received here
+// "Zone Club, 24 channels, from Joe 9991234" and how many can't be received here
 static const char *offer_body(void)
 {
 	static char body[96];
@@ -2728,7 +2728,7 @@ void ui_new_contact(const ui_target_t *t)
 	} else if (t->id != 0) {
 		if (t->group)
 			sb_str(&b, "TG ");
-		sb_u32(&b, t->id, 1);	// "TG 3100", "3101234": a name to save with, or to type over
+		sb_u32(&b, t->id, 1);	// "TG 3100", "9991234": a name to save with, or to type over
 	}
 	ct_edit = CT_NONE;
 	ui_push(SCR_CONTACT_EDIT, 0);

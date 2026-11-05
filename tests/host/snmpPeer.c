@@ -32,8 +32,8 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	data.uptimeMs = 987650;
-	data.dmrId = 3100001;
-	strcpy(data.name, "N0CALL");
+	data.dmrId = 9990001;
+	strcpy(data.name, "Q0TEST");
 	data.board = "board1";
 	data.firmware = "peer-test";
 	data.batteryMv = 7600;
@@ -50,7 +50,7 @@ int main(int argc, char **argv)
 	data.cc = 1;
 	data.ts = 1;
 	data.talkTarget = 91;
-	data.lastSrc = 3100002;
+	data.lastSrc = 9990002;
 	data.lastDst = 91;
 	data.lastGroup = true;
 	data.lastMs = 900000;
@@ -65,7 +65,7 @@ int main(int argc, char **argv)
 	uint8_t in[1500], out[1500];
 
 	if (trap) {
-		snmpEvent_t ev = { .kind = SNMP_EV_CALL_START, .src = 3100002, .dst = 91, .group = true, .slot = 1,
+		snmpEvent_t ev = { .kind = SNMP_EV_CALL_START, .src = 9990002, .dst = 91, .group = true, .slot = 1,
 				   .atMs = 123400 };
 		a.sin_port = htons((uint16_t)port);
 		int n = snmpEventEncode(&ev, 1, out, sizeof(out));

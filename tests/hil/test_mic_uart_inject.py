@@ -23,6 +23,7 @@ import pytest
 
 from rfoundry_debug import DebugLinkError
 from rfoundry_hil import skip
+from hil_config import rig
 
 INJECT_BAUD = 6000          # 0x55 at 6000 baud: a 3 kHz square, inside the vocoder's band. The coupling grows with
                             # the edge rate: on the DM-1801 Pro 1200 baud rose 3 dB, 2400 baud 9, 6000 baud 15
@@ -101,7 +102,7 @@ def test_mic_uart_inject(radio, inject_port, pytestconfig):
     f = radio.view(["dmr"])
     if "voice.tx_mic_level_db" not in f:
         skip("not_built", "this build has no voice.tx_mic_* statistics")
-    radio.find_channel(int(round(pytestconfig.getoption("--dmr-freq") * 1e6)), mode="dmr")
+    radio.find_channel(int(round(rig(pytestconfig, "dmr-freq") * 1e6)), mode="dmr")
     radio.lowest_power()
     quiet = over(radio, inject_port, inject=False)
     tone = over(radio, inject_port, inject=True)

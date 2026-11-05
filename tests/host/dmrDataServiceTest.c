@@ -270,7 +270,7 @@ static void reset(void)
 	memset(events, 0, sizeof(events));
 }
 
-#define ARS_SERVER	9990100
+#define ARS_SERVER	9998100
 
 // The server's ARS PDU to us, over the air
 static void receiveARS(const uint8_t *pdu, int length)
@@ -498,7 +498,7 @@ static void testArsPowerOff(void)
 	reset();
 }
 
-#define LRRP_SERVER	9990300
+#define LRRP_SERVER	9998300
 
 static void receiveLrrp(const char *hex)
 {

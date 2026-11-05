@@ -45,6 +45,7 @@ import time
 import pytest
 
 from rfoundry_hil import skip
+from hil_config import rig
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -180,7 +181,7 @@ def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
     2 s, the host frames of call on TS2 half a second in. Returns the SDR decode and STATUS keyed / after unkey."""
     import split_duplex_host as sdh
     dmr_cach = sdh.dmr_cach
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     hz = round(freq * 1e6)
     radio.link.split_variant(variant, regs)
     sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "sdrmon.py"))
@@ -247,7 +248,7 @@ def tx_half_cach(bs):
 def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     need_split(radio)
     import split_duplex_host as sdh
-    cc = pytestconfig.getoption("--dmr-cc")
+    cc = rig(pytestconfig, "dmr-cc")
     variant = int(os.environ.get("RFOUNDRY_SPLIT_VARIANT", "0"), 0)
     regs = [tuple(int(x, 0) for x in kv.split("=")) for kv in os.environ.get("RFOUNDRY_SPLIT_REGS", "").split()]
     sdr, st, end = tx_half_run(radio, sdr_bench, pytestconfig, variant, regs)   # $RFOUNDRY_SPLIT_REGS: "REG=VAL ..."
@@ -375,7 +376,7 @@ def test_split_slew(radio):
 def test_split_tx_sched(radio, sdr_bench, pytestconfig):
     need_split(radio)
     import split_duplex_host as sdh
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     hz = round(freq * 1e6)
     radio.link.split_variant(0, [])
     sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "sdrmon.py"))
@@ -563,8 +564,8 @@ def check_rx_labels(first, marks, ups, results, meta=None):
 @pytest.mark.bench_modem
 def test_split_rx_half_labels(radio, sdr_bench, pytestconfig):
     need_split(radio)
-    freq, cc, tg = (pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc"),
-                    pytestconfig.getoption("--dmr-tg"))
+    freq, cc, tg = (rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc"),
+                    rig(pytestconfig, "dmr-tg"))
     with sdr_bench.lease():
         with radio.released() as port:
             got = rx_half_labels(port, sdr_bench, freq, cc, tg)

@@ -21,8 +21,8 @@ until $PY -p $PORT -t 0.2 get 127.0.0.1 sysName.0 > /dev/null 2>&1; do
 done
 
 $PY -p $PORT get 127.0.0.1 sysName.0 rfoundryDmrId.0 rfoundryRssi.0 > snmpPeer.get || fail "rfoundry_snmp get"
-grep -q "sysName.0 = N0CALL" snmpPeer.get || fail "sysName: $(cat snmpPeer.get)"
-grep -q "rfoundryDmrId.0 = 3100001" snmpPeer.get || fail "rfoundryDmrId: $(cat snmpPeer.get)"
+grep -q "sysName.0 = Q0TEST" snmpPeer.get || fail "sysName: $(cat snmpPeer.get)"
+grep -q "rfoundryDmrId.0 = 9990001" snmpPeer.get || fail "rfoundryDmrId: $(cat snmpPeer.get)"
 grep -q "rfoundryRssi.0 = -101" snmpPeer.get || fail "rfoundryRssi: $(cat snmpPeer.get)"
 $PY -p $PORT walk 127.0.0.1 > snmpPeer.walk || fail "rfoundry_snmp walk"
 N=$(wc -l < snmpPeer.walk | tr -d ' ')
@@ -44,7 +44,7 @@ if command -v snmpwalk > /dev/null 2>&1; then
 	snmpbulkwalk -v2c -c public -t 1 -r 1 -On -m '' -Ln -Cr7 127.0.0.1:$PORT 1.3 | grep -v 'No more variables' \
 		| cut -d' ' -f1 > snmpPeer.bwalk || fail "snmpbulkwalk"
 	cmp -s snmpPeer.nwalk snmpPeer.bwalk || fail "snmpbulkwalk differs from snmpwalk"
-	snmpset -v2c -c private -t 1 -r 1 -On -m '' -Ln 127.0.0.1:$PORT 1.3.6.1.2.1.1.5.0 s N0CALL > /dev/null \
+	snmpset -v2c -c private -t 1 -r 1 -On -m '' -Ln 127.0.0.1:$PORT 1.3.6.1.2.1.1.5.0 s Q0TEST > /dev/null \
 		|| fail "snmpset"
 	snmpget -v2c -c public -t 1 -r 1 -On -m '' -Ln 127.0.0.1:$PORT 1.3.6.1.2.1.1.3.0 1.3.6.1.4.1.32473.2.1.3.7.0 \
 		> snmpPeer.nget || fail "snmpget 2"
@@ -75,7 +75,7 @@ sleep 0.5
 ./snmpPeer --trap $TPORT
 wait $LISTEN || fail "no traps"
 grep -q "snmpTrapOID.0 = 1.3.6.1.4.1.32473.2.0.1" snmpPeer.traps || fail "traps: $(cat snmpPeer.traps)"
-grep -q "rfoundryEventSource.0 = 3100002" snmpPeer.traps || fail "trap bindings: $(cat snmpPeer.traps)"
+grep -q "rfoundryEventSource.0 = 9990002" snmpPeer.traps || fail "trap bindings: $(cat snmpPeer.traps)"
 grep -q "snmpTrapOID.0 = 1.3.6.1.6.3.1.1.5.1" snmpPeer.traps || fail "coldStart: $(cat snmpPeer.traps)"
 echo "# notifications: rfoundryCallStart and coldStart decoded"
 rm -f snmpPeer.mwalk snmpPeer.merr snmpPeer.out snmpPeer.get snmpPeer.walk snmpPeer.err snmpPeer.nwalk snmpPeer.bwalk snmpPeer.nget snmpPeer.traps

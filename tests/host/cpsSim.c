@@ -114,9 +114,9 @@ static void populate(void)
 		z.channels[i] = (uint16_t)(1 + i * 3);
 	}
 	codeplug_set_zone(0, &z);
-	codeplug_set_radio_name("N0SIM");
+	codeplug_set_radio_name("Q0SIM");
 #if CONFIG_DMR
-	codeplug_set_dmr_id(3100001);
+	codeplug_set_dmr_id(9990001);
 	contact_t ct = { "TG 91", 91, CONTACT_GROUP, 0 };
 	codeplug_set_contact(1, &ct);
 #endif

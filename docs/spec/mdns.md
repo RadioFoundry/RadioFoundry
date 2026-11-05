@@ -12,9 +12,9 @@ only; there is no IPv6 on the link.
 
 | Name | Value |
 |---|---|
-| Host | `rfoundry-<DMR ID>.local`, e.g. `rfoundry-3101234.local`. The DMR ID is the radio's own (the one the gateway's addresses come from) |
-| Instance | `<callsign> <board> (<DMR ID>)`, e.g. `N0CALL XR-100UV (3101234)`. `<board>` is `board.name`. The call sign is the settings' radio name, else the codeplug's, first word only; left out when there is none |
-| After a conflict | host `rfoundry-3101234-2`, instance `... (3101234) (2)`, counting up |
+| Host | `rfoundry-<DMR ID>.local`, e.g. `rfoundry-9991234.local`. The DMR ID is the radio's own (the one the gateway's addresses come from) |
+| Instance | `<callsign> <board> (<DMR ID>)`, e.g. `Q0TST XR-100UV (9991234)`. `<board>` is `board.name`. The call sign is the settings' radio name, else the codeplug's, first word only; left out when there is none |
+| After a conflict | host `rfoundry-9991234-2`, instance `... (9991234) (2)`, counting up |
 
 | Owner | Type | Data | TTL | Kind |
 |---|---|---|---|---|
@@ -22,7 +22,7 @@ only; there is no IPv6 on the link.
 | host | NSEC | next name = host, types: A | 120 s | unique |
 | `<type>.local` | PTR | `<instance>.<type>.local` | 4500 s | shared |
 | `<instance>.<type>.local` | SRV | priority 0, weight 0, the port, target host | 120 s | unique |
-| `<instance>.<type>.local` | TXT | `board=<board.name>` `id=3101234` `call=N0CALL` `fw=<git>` | 4500 s | unique |
+| `<instance>.<type>.local` | TXT | `board=<board.name>` `id=9991234` `call=Q0TST` `fw=<git>` | 4500 s | unique |
 | `<instance>.<type>.local` | NSEC | next name = itself, types: TXT, SRV | 120 s | unique |
 | `_services._dns-sd._udp.local` | PTR | `<type>.local` | 4500 s | shared |
 

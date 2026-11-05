@@ -6,7 +6,7 @@ APRS host helper for a RadioFoundry radio in KISS mode (docs/spec/aprs.md 9): th
 radio's iGate, a KISS TCP port for APRS programs (APRSdroid, Xastir, YAAC ...), and NMEA forwarding from a GPS on the
 computer.
 
-    aprs_gate.py --port /dev/cu.usbmodemXXXX | --port udp:192.168.10.1 [--call N0CALL] [--passcode N]
+    aprs_gate.py --port /dev/cu.usbmodemXXXX | --port udp:192.168.10.1 [--call CALL] [--passcode N]
                  [--server rotate.aprs2.net:14580] [--filter "m/50"] [--no-is]
                  [--kiss-tcp 8001] [--nmea /dev/cu.gps | --nmea-file track.nmea] [-v]
 
@@ -226,7 +226,7 @@ def main(argv=None) -> int:
 
     ais = None
     if not a.no_is:
-        call = (a.call or "N0CALL").upper()
+        call = (a.call or "NOCALL").upper()     # APRS-IS receive-only login without one
         code = a.passcode if a.passcode is not None else (passcode(call) if a.call else -1)
         ais = AprsIs(a.server, call, code, a.filter)
 

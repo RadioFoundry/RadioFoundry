@@ -223,7 +223,7 @@ def selftest():
             r = tact_decode(c ^ ((1 << b) >> 1 if b else 0))
             check(r is not None and (r[0] << 3 | r[1] << 2 | r[2]) == d, f"tact {d} bit {b}")
     # The idle-channel short LC (null) and an activity update round trip through BPTC, pack and the decoder
-    for slc in (0, slc_activity(8, 0, slc_hash(9), 0), slc_activity(8, 9, slc_hash(91), slc_hash(1234567))):
+    for slc in (0, slc_activity(8, 0, slc_hash(9), 0), slc_activity(8, 9, slc_hash(91), slc_hash(9991234))):
         rows = slc_encode(slc)
         check(slc_decode(rows) == (slc, True), f"slc {slc:07X}")
         check(slc_unpack(slc_pack(rows)) == rows, "pack")

@@ -666,7 +666,7 @@ static void testOffNet(void)
 	uint8_t f[200];
 	const uint8_t text[] = { 0x00, 'h', 0x00, 'i' };
 	const uint32_t OFF_NET = 0xC0A80A05u;		// 192.168.10.5
-	const uint32_t GATEWAY = 3100500;
+	const uint32_t GATEWAY = 9990500;
 	int n;
 
 	int calls = air.calls;// the tests after count on from the ones before

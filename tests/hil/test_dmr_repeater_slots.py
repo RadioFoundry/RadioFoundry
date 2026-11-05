@@ -28,7 +28,8 @@ between TS1 and TS2 (a temporary override, cleared afterwards) unless the scenar
 | wake_ts | down at each key-up, answers 0.6 s after it | the timeslot changed 1 s before, 5 calls |
 
 test_dmr_repeater_burst_offset (the same options, and the SDR bench): where in the slot the radio's inbound bursts
-fall. The centers of the inbound and outbound bursts are aligned, the inbound slots 30 ms after the outbound ones (ETSI
+fall. On a bench board (--bench-api) the reference is the board's idle outbound with no repeater behind it, and the
+bursts come from the receive board (--bench-api-rx, a second board: the first can't hear while it transmits). The centers of the inbound and outbound bursts are aligned, the inbound slots 30 ms after the outbound ones (ETSI
 TS 102 361-1 4.1), and the 1 ms the standard allows is for propagation and drift (10.2.3.1.3), not for the radio's own
 error. With the repeater up all along, the SDR bench decodes both sides of an 8 s call (burst start from the sync
 correlation, one sample clock): the median of each inbound burst's offset from the nearest outbound burst plus 30 ms
@@ -46,6 +47,7 @@ import pytest
 
 from rfoundry_hil import skip
 from test_dmr_tx import _dmr_tx_setup, _wait_line
+from hil_config import rig
 
 VOICE_PER_S = 1 / 0.060         # one voice burst per 60 ms frame on our slot
 OFFSET_MAX_MS = 0.25            # the inbound burst against the outbound + 30 ms (test_dmr_repeater_burst_offset)
@@ -75,6 +77,7 @@ class _Session:
         self.freq, self.cc, _, d = _dmr_tx_setup(radio, pytestconfig)
         self.ts = int(d["dmr.ts"])
         self.calls = []
+        self.outbound = False       # the bench's outbound alone, no repeater input to judge the calls by
 
     def start(self, seconds, beacon, beacon_len, phase=1.0):
         self.rpt = self.bench.repeater_start(self.split, self.freq, self.cc, seconds=seconds,
@@ -107,6 +110,8 @@ class _Session:
 
     def judge(self):
         self.bench.repeater_result(self.rpt, timeout=180)
+        if self.outbound:
+            return
         bad = []
         for k, c in enumerate(self.calls):
             got = _voice_by_slot(self.rpt, c["t0"], c["t1"] + 0.8)
@@ -126,7 +131,7 @@ def _session(radio, sdr_bench, pytestconfig, backup_dir, body):
     split = pytestconfig.getoption("--split-tx-mhz")
     if not split:
         skip("opt_in", "give the split channel's TX frequency: --split-tx-mhz MHz (one you may transmit on)")
-    if abs(split - pytestconfig.getoption("--dmr-freq")) < 0.0125:
+    if abs(split - rig(pytestconfig, "dmr-freq")) < 0.0125:
         skip("opt_in", "--split-tx-mhz must differ from --dmr-freq")
     if radio.view().get("set.tx_inhibit") == "1":
         skip("state", "the radio's TX inhibit is on (set.tx_inhibit=1)")
@@ -298,7 +303,13 @@ def test_dmr_repeater_burst_offset(radio, sdr_bench, pytestconfig, backup_dir):
         for f in (s.split, s.freq):
             if not s.bench.can_watch(f):
                 skip("bench", f"the SDR bench can't decode bursts on {f} MHz (no shared daemon, or outside its window)")
-        _up_all_along(s, 40)
+        if s.bench.api:
+            # A bench board: its idle outbound is the reference (a half-duplex board runs no repeater), and the
+            # radio's bursts are judged by the SDR alone
+            s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, 40), True
+            s.wait_up()
+        else:
+            _up_all_along(s, 40)
         ins = s.bench.bursts_start(s.split, 14, cc=s.cc)
         outs = s.bench.bursts_start(s.freq, 14, cc=s.cc)
         s.call(8.0, "burst offset")

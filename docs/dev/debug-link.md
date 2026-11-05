@@ -38,7 +38,7 @@ there are several. `rfoundry_debug.py --help` and the module docstring list ever
 | `rfoundry_debug.py screenshot -o shot.png --scale 3` | The display as PNG |
 | `rfoundry_debug.py key ok`, `key quick --long`, `key enc --steps 2` | Inject a key press, a hold, encoder steps |
 | `rfoundry_debug.py ptt --seconds 3` | Key PTT for at most 10 s (the firmware times out too) |
-| `rfoundry_debug.py radio channel +1`, `radio freq 162.550` | Radio requests |
+| `rfoundry_debug.py radio channel +1`, `radio freq 438.250` | Radio requests |
 | `rfoundry_debug.py radio privacy moto KEY` | Load a basic privacy key (settings slot 1, kept across restarts) |
 | `rfoundry_debug.py data sms ID TEXT` | Send DMR data: text, call alert, radio check, emergency; read the inbox |
 | `rfoundry_debug.py aprs ...`, `snmp ...`, `split view` | APRS, the SNMP agent, the split duplex repeater |

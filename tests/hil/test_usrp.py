@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import usrp_client  # noqa: E402
 
 from test_net_services import network_mode  # noqa: E402
+from hil_config import rig
 
 
 @contextlib.contextmanager
@@ -68,7 +69,7 @@ def test_usrp_fm_rx(radio, pytestconfig):
         skip("opt_in", "needs --allow-usb-switch")
     if "VFO_FM" not in radio.features():
         skip("not_built", "built without the FM VFO")
-    hz = round(pytestconfig.getoption("--noaa-mhz") * 1e6)
+    hz = round(rig(pytestconfig, "noaa-mhz") * 1e6)
     with usrp_session(radio) as (link, peer):
         with radio.vfo_session():
             link.vfo_set(hz)
@@ -107,12 +108,12 @@ def test_usrp_fm_rx(radio, pytestconfig):
 def test_usrp_dmr_rx(radio, sdr_bench, pytestconfig):
     if not pytestconfig.getoption("--allow-usb-switch"):
         skip("opt_in", "needs --allow-usb-switch")
-    mhz = pytestconfig.getoption("--dmr-freq")
-    tg = pytestconfig.getoption("--dmr-tg")
+    mhz = rig(pytestconfig, "dmr-freq")
+    tg = rig(pytestconfig, "dmr-tg")
     ambe = pytestconfig.getoption("--ambe")
     with usrp_session(radio) as (link, peer):
         radio.find_channel(round(mhz * 1e6), "dmr")
-        cc = pytestconfig.getoption("--dmr-cc")
+        cc = rig(pytestconfig, "dmr-cc")
         remote = sdr_bench.upload(ambe, "hil_speech.ambe") if ambe else None
         peer.hello()
         with sdr_bench.lease():
@@ -143,7 +144,7 @@ def test_usrp_fm_tx(radio, sdr_bench, pytestconfig):
         skip("opt_in", "needs --allow-usb-switch")
     if "VFO_FM" not in radio.features():
         skip("not_built", "built without the FM VFO")
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
     with usrp_session(radio) as (link, peer):
         with radio.vfo_session():

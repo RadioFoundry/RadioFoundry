@@ -25,6 +25,7 @@ import warnings
 import pytest
 
 from rfoundry_hil import skip
+from hil_config import rig
 
 BENCH_SRC = 9990301
 CSBK_CALL_ALERT, CSBK_CALL_ALERT_ACK, CSBK_RADIO_CHECK = 0x1F, 0x20, 0x24
@@ -38,7 +39,7 @@ def _setup(radio, pytestconfig, tx=False):
         skip("not_built", "built without DMR")
     if radio.data_view().get("data.built") != 1:
         skip("not_built", "built without the DMR data features")
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     if tx:

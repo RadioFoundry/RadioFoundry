@@ -83,7 +83,7 @@ typedef struct {
 // battery_poll() (BATTERY_CRIT), scan_service() (SCAN_HOLD) and emergency_tick() (EMERGENCY).
 static const step_t steps[] = {
 	{ "Browse the menu", "ok down down back", NULL, true, false, 0 },
-	{ "Group call heard", "rx:3101234,91,g,K1ABC_Joe", NULL, false, true, 700 },
+	{ "Group call heard", "rx:9991234,91,g,Q1AAA_Joe", NULL, false, true, 700 },
 	{ NULL, "rxend", "CALL_END", false, false, 0 },
 	{ "Reply, held past the time-out (shortened)", "pttdown", "TX_PERMIT", false, false, 0 },
 	{ NULL, NULL, "TOT_WARN", false, false, 0 },
@@ -91,7 +91,7 @@ static const step_t steps[] = {
 	{ NULL, "pttup", NULL, false, true, 300 },
 	{ "Reply, permit before keying (radios with CAP_BEEP_NOT_ON_AIR)", "pttdown", "TX_PERMIT_SHORT", false, false, 600 },
 	{ NULL, "pttup", NULL, false, true, 300 },
-	{ "Text message", "msg:3101234,Net_starts_in_5_min", NULL, false, false, 0 },
+	{ "Text message", "msg:9991234,Net_starts_in_5_min", NULL, false, false, 0 },
 	{ NULL, "back", NULL, false, false, 0 },
 	{ "Battery runs down", "battery:14", NULL, false, false, 0 },
 	{ NULL, "battery:3", "BATTERY_CRIT", false, false, 0 },

@@ -135,7 +135,7 @@ function subTone(t) {
 	return flow({ ctcss: `${Number(t)} Hz` });
 }
 
-// A call sign and SSID: "N0CALL-7" to {call, ssid}
+// A call sign and SSID: "Q0TST-7" to {call, ssid}
 function callSsid(v) {
 	const [call, ssid] = text(v).toUpperCase().split("-");
 	const n = Number(ssid);

@@ -24,6 +24,7 @@ import time
 import pytest
 
 from rfoundry_hil import ROOT, skip
+from hil_config import rig
 
 CASES = ("rf_voice8", "rf_data_unconf", "net_voice", "net_data")
 
@@ -48,7 +49,7 @@ def test_hotspot_on_air(radio, sdr_bench, pytestconfig, hotspot_cases, case):
     H = hotspot_cases
     if "HOTSPOT" not in radio.features():
         skip("not_built", "built without the hotspot")
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     H.BENCH_HOST = sdr_bench.host
     args = type("Args", (), {"freq": freq, "cc": cc, "power": 12})()
     r = H.Result(case)
