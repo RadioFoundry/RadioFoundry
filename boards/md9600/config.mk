@@ -30,8 +30,8 @@ BOARD_DIRS += $(if $(filter y,$(CONFIG_MD9600_V1V3) $(CONFIG_MD9600_V4)),drivers
 # (c6000_md9600.c); without CONFIG_MD9600_TX they have no transmitter. APRS receives from the audio on PC3
 # (afsk_md9600.c)
 # Sub-audio: decoded on PA2, sent as PWM on PC7 (subtone_md9600.c)
-# VOX reads the mic level on PA3 (power_md9600.c); the reference trim needs a hal_radio_t.ref_trim, not written
-CONFIG_REF_TRIM ?= n
+# VOX reads the mic level on PA3 (power_md9600.c). The reference trim retunes the synthesizers (rfseq_md9600.c): the
+# TCXO has no control line
 # A 128x64 monochrome panel: no colors. No air band or broadcast receiver. The fault trace, the large font and LTO
 # follow the platform (platform/stm32f4/config.mk)
 CONFIG_UI_COLOR ?= n
@@ -49,7 +49,6 @@ BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-bro
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and the one UART is the GPS receive line
-BOARD_NOT_WRITTEN += REF_TRIM	# no hal_radio_t.ref_trim yet
 # FM receive is the checked path: the matrix has no FM-less configuration
 BOARD_REQUIRED := FM
 # CONFIG_STUB_ENTRY is on with the host link (config/features.mk): the STM32F4 flash stub serves this radio through its

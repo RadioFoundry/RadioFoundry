@@ -596,6 +596,36 @@ static void test_probe(void)
 	CHECK(md9600_rf_probe(&ops, 300000000u, MD9600_PROBE_THRESHOLD) == MD9600_REV_UNKNOWN);
 }
 
+// The reference trim: every synthesizer frequency is f x (1 + trim), the IF unchanged; the band check and the
+// calibration lookups stay on f
+static void test_ref_trim(void)
+{
+	for (int r = MD9600_REV_V1V3; r < MD9600_REV_COUNT; r++) {
+		if (!md9600_rev_built((md9600_rev_t)r)) {
+			continue;
+		}
+		md9600_pll_plan_t p;
+		fresh((md9600_rev_t)r, true);
+		rf.trim_ppb = 5000;	// +5.0 ppm
+		CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK);
+		CHECK(md9600_pll_plan((md9600_rev_t)r, 446002230u, false, &p) && rf.lo_hz == p.lo_hz);
+		CHECK(rf.lo_hz == 446002230u - MD9600_IF_HZ && rf.rx_hz == 446000000u);
+		rf.trim_ppb = -5000;
+		CHECK(md9600_rf_rx(&rf, 145500000u, true) == MD9600_RF_OK && rf.lo_hz == 145499272u + MD9600_IF_HZ);
+#if CONFIG_MD9600_TX
+		CHECK(md9600_rf_tx_arm(&rf, true));
+		pa_allowed = true;
+		CHECK(md9600_rf_tx(&rf, 146520000u, true, 0) == MD9600_RF_OK && rf.lo_hz == 146519267u);
+		CHECK(rf.tx_hz == 146520000u);
+		// A burst back to receive keeps the trim
+		CHECK(md9600_rf_burst_rx(&rf) == MD9600_RF_OK && rf.lo_hz == 145499272u + MD9600_IF_HZ);
+		md9600_rf_tx_off(&rf);
+#endif
+		rf.trim_ppb = 0;
+		CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK && rf.lo_hz == 446000000u - MD9600_IF_HZ);
+	}
+}
+
 // The squelch's noise window: speech peaks don't close it, a dropped carrier does at once
 static void test_noise_window(void)
 {
@@ -827,6 +857,7 @@ int main(void)
 	test_probe();
 	test_readings();
 	test_noise_window();
+	test_ref_trim();
 	test_cal();
 	test_hwopt();
 	test_rev_text();

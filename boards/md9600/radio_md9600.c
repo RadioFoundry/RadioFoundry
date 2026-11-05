@@ -541,6 +541,15 @@ uint16_t md9600_adc3_qt(void)
 	return last;
 }
 
+#if CONFIG_REF_TRIM
+// Taken at the next tune (rfseq_md9600.h), so the RF buses stay the radio task's: true asks the core for one
+static bool ref_trim(int16_t ppb)
+{
+	rf.trim_ppb = ppb;
+	return true;
+}
+#endif
+
 const hal_radio_t md9600_radio = {
 	.init = init,
 	.set_mode = set_mode,
@@ -560,4 +569,7 @@ const hal_radio_t md9600_radio = {
 	.status = status,
 	.audio = audio,
 	.rx_sleep = rx_sleep,
+#if CONFIG_REF_TRIM
+	.ref_trim = ref_trim,
+#endif
 };

@@ -106,6 +106,9 @@ typedef struct {
 	bool tx_armed;			// run-time arm, off at every start
 	bool dmr;			// DMR mode: narrow IF, the FM audio stages off
 	uint8_t state;			// md9600_rf_state_t
+	// The reference trim (hal_radio_t.ref_trim, ppb): every synthesizer is programmed for f x (1 + trim), taken at the
+	// next tune. The IF stays as it is: both synthesizers and the IF chip run from the one TCXO
+	volatile int16_t trim_ppb;
 	// The last receive settings (tx_off returns to them)
 	bool rx_valid;
 	uint32_t rx_hz;

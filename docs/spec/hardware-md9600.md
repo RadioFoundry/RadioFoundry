@@ -1036,10 +1036,14 @@ The board's own switches, in `boards/md9600/board.mk` and `config.mk` (the share
 | `CONFIG_MD9600_TX` | `y` (default) or `n`: the transmit sequence (`boards/md9600/rfseq_md9600.c`). Built, transmit is still refused until it is armed for the power cycle (Settings > Advanced > Hardware, or the debug link) on a radio whose board revision is stored, and the PA calibration rows look plausible (19.8) |
 | `CONFIG_MD9600_DMR_TX` | `y` (default) or `n`: DMR transmit, the per-burst RF keying of 19.8 from the HR_C6000 glue. Needs `CONFIG_MD9600_TX`, and keys only while transmit is armed |
 
+The 16.8 MHz TCXO has no control line (5.2), so the reference trim (`REF_TRIM`) programs each synthesizer for
+f x (1 + trim) at every tune and burst, the IF unchanged (`rfseq_md9600.c`; radio-features.md 6.1).
+
 Feature switches that differ from the platform's defaults (`config.mk`; the two lists:
 [build-config.md](../build-config.md#unsupported-not-written-unconfirmed)):
 
 | Off by default | Why |
 |---|---|
-| `SUBTONE`, `FM_TX_TONES`, `DTMF`, `APRS_RX`, `HOTSPOT`, `USB_NETWORK`, `NET_PPP` and what follows them (maximal build too: `BOARD_NOT_WRITTEN`) | bring-up: transmit is refused until a radio confirms the RF sequence, and the tone, sub-audio and APRS receive paths aren't written (19.1) |
+| `NET_PPP` (maximal build too: `MAXIMAL_SKIP`) | the radio has the USB network adapter; PPP is for radios with only a UART |
+| `LANG_ES` and what follows it | English only |
 | `UI_COLOR`, `FONT_XL`, `FONT_AA`, `FONT_BIG`, `AM_RX`, `BCAST_FM`, `VIBRATE`, `NAND_STORAGE`, `FAULT_TRACE` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen; no air band or broadcast receiver; no vibration motor; NOR data flash; no UART for a fault trace |

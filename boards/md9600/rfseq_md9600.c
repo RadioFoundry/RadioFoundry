@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include "rfseq_md9600.h"
 #include "config.h"
+#include "radio/ref_trim.h"
 
 // Per band: index md9600_band_t (VHF 0, UHF 1)
 static const uint8_t ln_t5[2] = { MD9600_LN_T5_V, MD9600_LN_T5_U };
@@ -153,6 +154,12 @@ static md9600_rf_err_t if_setup(const md9600_rf_ops_t *o, const md9600_rev_desc_
 
 // --- Set-up ---
 
+// The synthesizer plan for hz under the reference trim (radio-features.md 6.1): the LO goes to f x (1 + trim) +- IF
+static bool plan(const md9600_rf_t *rf, uint32_t hz, bool tx, md9600_pll_plan_t *p)
+{
+	return md9600_pll_plan(rf->rev, ref_trim_tune_hz(hz, rf->trim_ppb), tx, p);
+}
+
 void md9600_rf_init(md9600_rf_t *rf, const md9600_rf_ops_t *ops, md9600_rev_t rev, bool confirmed)
 {
 	*rf = (md9600_rf_t){ .ops = ops, .rev = MD9600_REV_UNKNOWN };
@@ -222,7 +229,7 @@ md9600_rf_err_t md9600_rf_rx(md9600_rf_t *rf, uint32_t hz, bool wide)
 		return fail(rf, MD9600_RF_E_REV);
 	}
 	md9600_pll_plan_t p;
-	if (!md9600_pll_plan(rf->rev, hz, false, &p)) {
+	if (!plan(rf, hz, false, &p)) {
 		return fail(rf, MD9600_RF_E_BAND);
 	}
 	bool w = wide && !rf->dmr;	// DMR is a 12.5 kHz channel
@@ -314,7 +321,7 @@ md9600_rf_err_t md9600_rf_tx_tune(md9600_rf_t *rf, uint32_t hz, uint8_t power, b
 	const md9600_rf_ops_t *o = rf->ops;
 	md9600_pll_plan_t p;
 	uint16_t apc = 0;
-	if (!md9600_pll_plan(rf->rev, hz, true, &p) || !o->apc(o->ctx, hz, power, &apc)) {
+	if (!plan(rf, hz, true, &p) || !o->apc(o->ctx, hz, power, &apc)) {
 		return fail(rf, MD9600_RF_E_BAND);
 	}
 	uint8_t b = p.band, other = (uint8_t)(1u - b);
@@ -432,7 +439,7 @@ md9600_rf_err_t md9600_rf_burst_rx(md9600_rf_t *rf)
 		return MD9600_RF_E_STATE;
 	}
 	md9600_pll_plan_t p;
-	if (!md9600_pll_plan(rf->rev, rf->rx_hz, false, &p)) {
+	if (!plan(rf, rf->rx_hz, false, &p)) {
 		return fail(rf, MD9600_RF_E_BAND);
 	}
 	md9600_rf_pa_safe(rf);
