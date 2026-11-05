@@ -65,11 +65,12 @@ def test_keys_move_the_channel(home):
 @pytest.mark.feature("ui_navigation")
 def test_hub_and_back(home):
     """OK opens the Hub (seven destinations, numbered); a digit opens one; BACK goes up one level; long BACK goes Home
-    from any depth (information-architecture.md, key meanings)."""
+    from any depth (information-architecture.md, key meanings). A radio without a CONTEXT key has Last caller first,
+    number 0; the others keep their numbers."""
     r = home
     r.press("ok")
     s = wait_screen(r, "hub", "the Hub on OK")
-    assert s["ui.depth"] == "1" and s["ui.count"] == "7", s
+    assert s["ui.depth"] == "1" and s["ui.count"] in ("7", "8"), s
     r.press("1")
     s = wait_screen(r, "contacts", "Contacts on 1")
     assert s["ui.depth"] == "2"
@@ -323,7 +324,8 @@ def test_quick_copy_to_vfo(home):
         if before["mode"] == "dmr":
             L.dmr_fields(mode="dmr", cc=int(before["dmr.cc"]), ts=int(before["dmr.ts"]))
             L.dmr_target(int(before["dmr.target_id"]), private=before["dmr.target_private"] == "1")
-        L.dmr_fields(mode=before["mode"])
+        if "DMR" in feats:      # an FM-only build's VFO is FM, and it has no DMR command
+            L.dmr_fields(mode=before["mode"])
         L.vfo_set(int(before["rx_hz"]))
         L.bandwidth(before["ch.bw"] == "25k")
         for which, key in ((2, "ch.rx_tone"), (1, "ch.tx_tone")):
@@ -519,6 +521,8 @@ def test_updown_changes_the_zone(home):
 def test_privacy_key_entry(home):
     """Settings > Privacy: key type Motorola, key typed 123 (slot 1); type Off again removes it."""
     r = home
+    if "DMR_PRIVACY" not in r.features():
+        skip("not_built", "built without CONFIG_DMR_PRIVACY")
     s = storage(r)
     if "settings.privacy_type" not in s:
         skip("not_built", "firmware without settings.privacy_type")
