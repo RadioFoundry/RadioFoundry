@@ -15,7 +15,7 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
-| [Retevis RT10](#retevis-rt10) |  | Bring-up: boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. The receiver and transmitter aren't driven yet. |
+| [Retevis RT10](#retevis-rt10) |  | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode works on the radio; FM transmit is written, untested on air. DMR isn't written. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -645,6 +645,33 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 - Air band and FM broadcast receive
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
+
+## Retevis RT10
+
+A handheld for 902-928 MHz with a 16-position channel knob, two side keys and no display. **In bring-up: not for
+everyday use yet.** FM receive with CTCSS and DCS decode works on the radio. FM transmit is written but not yet checked
+on the air, and DMR isn't written ([hardware and bring-up state](../spec/hardware-rt10.md#9-bring-up-state)).
+
+### Installing on the RT10
+
+The radio has no bootloader of its own: the chip's boot window on the programming cable is the way in, at every power-on.
+
+| Item | RT10 |
+|---|---|
+| Cable | the radio's programming cable on the accessory jack |
+| Keys | none: turn the radio on when the tool asks |
+| Backup | installing replaces the whole original image. Only a full program flash backup taken first puts it back |
+| Board name | `rt10` |
+
+### RT10 power levels
+
+Two, **L** and **H**: the radio's own factory calibration for each 10 MHz step. Without a valid calibration the
+radio refuses to transmit.
+
+### What the RT10 lacks today
+
+- DMR (receive and transmit) and the voice codec map.
+- The channel knob's position order, the LED colors and the battery scale.
 
 ## Planned radios
 

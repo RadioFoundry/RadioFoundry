@@ -236,6 +236,20 @@ pin set-up ran after the clock set-up. Rule: every fault handler, crash hook, so
 `board_rf_safe()` first, and so does `main()` before the clocks ([crash-log.md](crash-log.md) 8). A new board must
 provide it, and a new reset or jump path must call it.
 
+**3.14 An HR_C7000 PA control DAC needs its pin.** Symptom: FM TX on a board with no modem attached put the RF chip in
+its TX state on the right frequency, with the TX supply and PA select pins high and DAC B ramped, and nothing reached
+the air. DAC B (and C) reach their pins only after IO_DIPLEX2 bits 28 / 29 are cleared and the DAC's power mode is
+set, which `hrc_modem_analog_init()` does from the modem's start-up; a board that never attached the modem never ran
+it. Rule: a board that drives its PA control from DAC B calls `hrc_modem_analog_init()` in its radio init, with or
+without the modem. Radios: HR_C7000 boards without DMR.
+
+**3.15 An FD6818 register change acts at the next state entry.** Symptom: a new band word (0x1A) written while the chip
+received left the receiver as deaf as before; the same word written before the chip went through idle and back to
+receive worked. Rule: change the chip's settings with the state at idle and enter the state after, as
+`fd6818sh` does (`FD6818SH_STATE_IDLE`, then the new state). The band word is the chip's band, not the radio's: a
+word from another of the chip's bands leaves the receiver deaf with every other register right. Radios: boards with
+the FD6818 as the transceiver.
+
 ## 4. AMBE codec calling
 
 **4.1 The STM32 codec glue must be built at -O0.** The codec entry calls were inline assembly that depended on the

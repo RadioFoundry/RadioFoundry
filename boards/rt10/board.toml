@@ -27,8 +27,8 @@ clock = { rtc = "unknown", note = "no clock crystal or backup cell identified ye
 [status]
 level = "bring-up"
 summary = """\
-Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. Receive and transmit aren't \
-written."""
+Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS \
+decode works on the radio; FM transmit is written, untested on air. DMR isn't written."""
 release = "testing"
 
 # No vendor loader: the boot ROM's serial window on the accessory jack is the way in at every power-on

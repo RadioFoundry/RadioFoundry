@@ -65,8 +65,11 @@ bits 8:3 cleared, bits 29:27 set).
 | PTB12 | 44 | power latch | high = stay on |
 | PTB13 | 45 | audio amplifier | high = on (unverified) |
 | PTB17 | 49 | power switch sense | level when off: ? |
+| PTB26 | 58 | FD6818 GPIO6, its squelch output (measured) | not used |
+| PTB27 | 59 | FD6818 GPIO0, the sub-audio compare result (measured) | high = the tone or code is heard |
 | PTB28 / PTB29 | 60 / 61 | voice prompt chip clock / data | |
-| DAC B | | PA drive | 0 = off |
+| DAC B | | PA control, after IO_DIPLEX2 bit 28 is cleared | 0 = off |
+| DAC C | | routed to its pin (IO_DIPLEX2 bit 29) and set to 1762 at start-up; its use: ? | |
 | ADC channel 2 | | battery | divider: ? |
 | UART0 | | programming cable, 115200 8N1 under RadioFoundry | |
 
@@ -81,7 +84,23 @@ SPI0, mode 0, chip select PTA18 by GPIO. Read 0x03, page program 0x02, 4 KB eras
 | 0x001300-0x031FFF | the original firmware's settings and channels (kept, never written by RadioFoundry) |
 | 0x100000-0x1FDFFF | RadioFoundry: settings, journal, open-firmware codeplug images, native codeplug (`boards/rt10/board.c`) |
 | 0x1FE000-0x1FEFFF | activation block tied to the SoC's eFuse ID: never written |
-| 0x1FF000-0x1FFFFF | factory calibration (TX power and modem trims in 15 frequency steps; format ?): never written |
+| 0x1FF000-0x1FFFFF | factory calibration (section 4.1): never written |
+
+### 4.1 Factory calibration
+
+Byte tables of 15 entries, one per 10 MHz step. The step for a frequency is (frequency / 10 MHz) minus the base byte,
+held between 0 and 14. Offsets are from 0x1FF000. 0xFF is an entry the factory didn't fill. RadioFoundry copies the
+tables at start-up (`boards/rt10/calibration_rt10.c`) and transmits only with a valid base.
+
+| Offset | Content |
+| --- | --- |
+| 0x1A9 | the modem's TX center (SIG_CENTER), one byte |
+| 0x470 | base: the first step's frequency / 10 MHz (90 on the radio checked; 80-95 accepted) |
+| 0x51D / 0x52C | PA control level / 16 (DAC B), high / low power |
+| 0x559 | 15 pairs: the first byte the modulation balance (the modem's MOD_BIAS), the second not used |
+| 0x5B5 / 0x5C4 | FD6818 PA gain (0x28), high / low power; the high one is capped at 7 |
+| 0x5D3 / 0x5F1 | key-up delay / 10 us, high / low power: RX supply off to the TX state |
+| 0x600 | key-down delay / 10 us, before the ramp down |
 
 ## 5. Power and transmitter
 
@@ -90,7 +109,20 @@ SPI0, mode 0, chip select PTA18 by GPIO. Read 0x03, page program 0x02, 4 KB eras
 | Power latch | PTB12 high from start-up; low lets the radio turn off |
 | Power switch | PTB17; the original firmware lets go of the latch after it reads "off" for 500 ms. Which level is off: ? |
 | Battery | ADC channel 2; scale ? |
-| PA | DAC B drives the PA's power control; levels per frequency step come from the calibration (section 4) |
+| PA | DAC B drives the PA's power control; levels per frequency step come from the calibration (section 4.1) |
+| Power levels | L and H: the calibration's low and high sets |
+
+FM key-up, in the original firmware's order. Measured: the chip's TX state and frequency and the pin levels; the signal
+on air is untested.
+
+1. The FD6818's TX words while it still receives (0x40 0x3AD0 with or without sub-audio, the sub-audio, PA gain 0x28
+   with the gain in both 3-bit fields), the speaker off, PTB3 and PTB0 low.
+2. The key-up delay, then PTB4 (RX supply) low.
+3. The FD6818 to the TX frequency, idle, then TX state 0xC1FE (0xC1FA for a tone).
+4. DAC B powered, PTB3 and PTB0 high, DAC B ramped to the calibration's level: 180 steps of 2 us on a smoothstep curve.
+
+Key-down: the FD6818 back to receive, the key-down delay, the ramp down, DAC B 0, PTB0 and PTB3 low, DAC B powered
+down, 100 us, the receiver retuned, PTB4 high.
 
 ## 6. Keys and knob
 
@@ -100,7 +132,21 @@ the position in order (mapping ?).
 ## 7. FD6818 bus
 
 A two-wire bus (I2C style) on PTA7 (clock) and PTA8 (data), device address 0xE2 write / 0xE3 read, 16-bit registers,
-bit-banged. The register map is the FD6818's (frequency, AF output register 0x47 and the rest).
+bit-banged (measured). The register map is the FD6818's (`drivers/rf/fd6818/fd6818sh.h`): state 0x03, page select
+0x7F. On this bus page 1's registers are addressed from 0x80 (0x7F = 1, then register | 0x80).
+
+| Item | Value |
+| --- | --- |
+| ID (0x00) | 0x6818 (measured) |
+| States (0x03) | receive 0xBFF1 (reads back 0xBFF5), TX 0xC1FE, TX with a tone 0xC1FA; every change through 0 |
+| Band | 902-928 MHz is the chip's band above 600 MHz: 0x1A = 0x1F80, 0x40 = 0x3AD0 (measured: -34 dBm read from a signal the band word 0xBF24 left at the floor) |
+| Bandwidth (0x43) | 0x4048 at 12.5 kHz, 0x3028 at 25 kHz |
+| Receive set | the power-on tables and the analog words in `boards/rt10/radio_rt10.c`, from the original firmware's |
+| AF output (0x47) | 0x7140 receive, 0x7040 mute (TX) |
+| GPIO | 0x25-0x27: GPIO0 the sub-audio compare, to PTB27; GPIO6 squelch, to PTB26 (measured) |
+
+Sub-audio decode (measured with CTCSS 100.0 Hz and DCS 023N): the right tone or code raises PTB27, a wrong one and no
+carrier leave it low. The chip doesn't tell DCS polarity apart: 023N is heard with 023 set normal or inverted.
 
 ## 8. Codec
 
@@ -115,5 +161,7 @@ in the codec slot like the other HR_C7000 radios (`boards/rt10/memory.ld`).
 | Boot from the ROM flag at 0x0300C000 | written |
 | Host link on UART0, stub entry, watchdog, crash log | written |
 | Power switch level, battery scale, LED colors, key levels, knob map | open |
-| FD6818 two-wire bus, receive, transmit | open |
+| FD6818 two-wire bus, FM receive, sub-audio decode | measured |
+| Factory calibration read | measured (the radio's own sector) |
+| FM transmit | written; the chip's TX state, frequency and the PA pins measured, the signal on air untested |
 | DMR, codec map | open |
