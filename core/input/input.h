@@ -14,6 +14,8 @@
 void input_start(void);
 // Wait up to wait_ms for the next event (0 = don't wait). PTT and MONITOR edges also go straight to the radio core
 bool input_next(input_event_t *ev, uint32_t wait_ms);
+// An event is waiting (the UI leaves a redraw for after it)
+bool input_pending(void);
 // Milliseconds since the last key or encoder activity (backlight time-out)
 uint32_t input_idle_ms(void);
 // Raw state for the diagnostics page: physical key bits held now, encoder detents since start

@@ -6,21 +6,23 @@
 #include "config.h"
 #include "platform.h"
 #include "hal_watchdog.h"
+#include "irq_stack.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #if CONFIG_FAULT_TRACE
 #include "crash/crash.h"
 #endif
 #if CONFIG_CRASH_LOG
 #include "hal_crash.h"
-#if CONFIG_WATCHDOG
-#include "FreeRTOS.h"
-#include "task.h"
-#endif
 #endif
 
 #define VECTORS		128u	// 32 exceptions + 64 PIC sources, padded
 
 extern void hrc_irq_entry(void);
 extern void hrc_fault_entry(void);
+extern uint32_t __irq_stack_bottom[], __irq_stack_top[];	// common.ld
+
+#define IRQ_STACK_WORDS	((uint32_t)(__irq_stack_top - __irq_stack_bottom))
 
 static uint32_t vectors[VECTORS] __attribute__((section(".vectors"), aligned(1024)));
 hrc_irq_fn hrc_irq_table[PIC_SOURCES];
@@ -165,8 +167,25 @@ void hal_crash_hang(uint32_t ms)
 }
 #endif
 
+// The interrupt stack (irq_stack.h): the tick checks its canary, the debug link reads its high water mark
+void hrc_irq_stack_check(void)
+{
+	if (!irq_stack_canary_ok(__irq_stack_bottom)) {
+		// From the tick hook: the tick interrupt alone on this stack, or a task catching up on ticks. Either way
+		// the capture has the room the overflowing handler didn't
+		vApplicationStackOverflowHook(NULL, (char *)"irq");
+	}
+}
+
+uint32_t hrc_irq_stack_free(void)
+{
+	return irq_stack_free_words(__irq_stack_bottom, IRQ_STACK_WORDS) * 4u;
+}
+
 void hrc_irq_init(void)
 {
+	// Filled before the first interrupt can use it: main runs on its own stack (crt0.S)
+	irq_stack_fill(__irq_stack_bottom, IRQ_STACK_WORDS);
 	// PIC: everything masked, level triggered, high active, old requests cleared (hardware-dm32.md 4.1; both banks,
 	// unlike the old port, which wrote PIC_MASK twice)
 	PIC_MASK = 0xFFFFFFFFu;

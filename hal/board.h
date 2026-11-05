@@ -114,6 +114,11 @@ typedef struct {
 	void (*gps_enable)(bool on);
 	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
 	const hal_rx2_t *rx2;
+	// Optional: bench access to the radio's RF chip registers (the debug link's CHIP_REG, docs/spec/debuglink.md
+	// 3.24). chip and page are the board's numbering (its hardware page lists them), chip below 0xFF (the SoC's).
+	// Writes val when write, then sets *val to the register as read back (a write-only register: the value written).
+	// False for a chip, page or register it doesn't offer. NULL: none
+	bool (*chip_reg)(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 
 	// Optional: hardware options a person states because software can't read them (hal_hwopt.h): Settings >
 	// Advanced > Hardware and the debug link's HWOPT. NULL / 0 = none

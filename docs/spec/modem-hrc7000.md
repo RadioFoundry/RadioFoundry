@@ -504,6 +504,21 @@ Both timeslot interrupts are handled by one routine; it decides by the current a
 PIC_MASK bits 29, 30, 31 and PIC_MASK_1 bit 0 (vectors 61–64) (datasheet mapping). Mask them around multi-register updates
 from task level.
 
+### 3.3 Lost requests
+
+A modem request whose line stays high after the PIC took it leaves that source silent: the PIC interrupts on the line
+rising only (gotchas 2.9). TS and RF requests have no readable status, so the driver can't see one pending. What the engine does:
+
+| When | What |
+|---|---|
+| Every receiver restart (5.2: DMR entry, a color code or framing change, a stale or lost reception, the end of every transmission) | writes INTERP_CLEAR b0-b2 and writes SYS_INTERP_LIST back to SYS_INTERP_CLEAR. Not b3 (RF RX) or the PCM pair: other drivers own them |
+| No timeslot interrupt for 200 ms while sending | the transmission ends (`dmr.tx_error=stalled`), and its receiver restart clears as above. Counted (`dmr.modem_stalls`) |
+| A SYS_INTERP_LIST cause enabled in SYS_INTERP_MASK, pending at the 10 ms polls for 50 ms with no system interrupt taken | written back to SYS_INTERP_CLEAR. Counted (`dmr.modem_stuck`) |
+
+For the first stall or stuck request, the glue keeps PIC_MASK, PIC_MASK_1, PIC_INT_ST and PIC_INT_ST_1 as read before
+that poll (`dmr.modem_lost_ms`, `dmr.modem_lost_regs`, [debuglink.md](debuglink.md) 3.7). It then unmasks the modem
+sources again, unless a task holds the engine's lock.
+
 ---
 
 ## 4. Initialization (power-on, once)
@@ -867,6 +882,7 @@ What a working DMR driver does that a first attempt tends to miss. Details are i
 | 15 | Timeslot handler | run it from RAM so flash busy time adds no jitter |
 | 16 | Calibration | SIG_CENTER and RF_MOD_BIAS_CTRL from factory data |
 | 17 | Interrupt masking | PIC_MASK bits 29-31 and PIC_MASK_1 bit 0 (3.2) |
+| 18 | Lost requests | clear every pending modem request at each receiver restart; drop a system request pending with no handler run (3.3) |
 
 ---
 
