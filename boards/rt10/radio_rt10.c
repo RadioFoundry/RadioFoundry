@@ -13,6 +13,7 @@
 #include "radio/apc_ramp.h"
 #include "radio/ref_trim.h"
 #include "rf/rfbus/rfbus_i2c.h"
+#include "rf/fd6818/fd6818.h"
 #include "rf/fd6818/fd6818sh.h"
 
 #define FD_ADDR7	0x71u	// 0xE2 / 0xE3 on the wire
@@ -362,7 +363,9 @@ static void status(radio_status_t *st)
 	// The same scale as the BK4819's 0x67: half dB from -160 dBm, at the chip's input
 	uint16_t r67 = rfbus_read(&fd_bus.bus, FD_REG_RSSI);
 	st->rssi_dbm = (int16_t)((int16_t)((r67 & 0x1FFu) >> 1) - 160);
-	st->noise = (uint8_t)(rfbus_read(&fd_bus.bus, FD_REG_NOISE) & 0x7Fu);
+	// The chip's floor (38-44 raw at 902-928 MHz) lifted above the core's squelch levels, as on the other FD6818
+	// radios (fd6818.h): read raw, every level opened on noise
+	st->noise = fd6818_noise(rfbus_read(&fd_bus.bus, FD_REG_NOISE));
 	st->carrier = false;
 	// The chip compares the sub-audio set by set_rx_tone and puts the result on its GPIO0 (fd6818sh.h)
 	st->tone_ok = rx_tone.type == TONE_NONE || hrc_pin_read(PIN_RF_CSS);

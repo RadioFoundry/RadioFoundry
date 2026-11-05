@@ -144,6 +144,7 @@ bit-banged (measured). The register map is the FD6818's (`drivers/rf/fd6818/fd68
 | Receive set | the power-on tables and the analog words in `boards/rt10/radio_rt10.c`, from the original firmware's |
 | AF output (0x47) | 0x7140 receive, 0x7040 mute (TX) |
 | GPIO | 0x25-0x27: GPIO0 the sub-audio compare, to PTB27; GPIO6 squelch, to PTB26 (measured) |
+| Noise (0x65) | no signal: 38-44 raw at 904-927.5 MHz (measured), inside the core's squelch range, so the driver adds the FD6818 offset (`fd6818_noise`) |
 
 Sub-audio decode (measured with CTCSS 100.0 Hz and DCS 023N): the right tone or code raises PTB27, a wrong one and no
 carrier leave it low. The chip doesn't tell DCS polarity apart: 023N is heard with 023 set normal or inverted.
