@@ -21,7 +21,6 @@ from rfoundry_hil import DebugLink, DebugLinkError, skip
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import rfoundry_snmp  # noqa: E402
 from hil_config import rig
-from test_usb_network import _serial_back
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 TEST_COMMUNITY = "rfoundry-hil-rw"
@@ -136,18 +135,12 @@ def test_snmp_usb(radio, pytestconfig):
     finally:
         if udp is not None:
             udp.close()
-        if not _serial_back(radio, 20):
+        if not radio.serial_back(20):
             again = _udp_link(radio_ip, 10)
             if again is not None:
                 again.usb_network(False)
                 again.close()
-            assert _serial_back(radio, 20), "the radio didn't come back as a serial port"
-        for _ in range(40):
-            try:
-                radio.link = DebugLink(radio.port, timeout=1.5)
-                break
-            except DebugLinkError:
-                time.sleep(0.25)
+            assert radio.serial_back(20), "the radio didn't come back as a serial port"
     after = radio.view(["snmp"])
     if after.get("snmp.write_set") == "1" and not had_write:
         radio.link.snmp_community(True, "")        # the run ended early: don't leave the test community behind

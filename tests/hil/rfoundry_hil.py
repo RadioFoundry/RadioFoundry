@@ -196,11 +196,6 @@ class Radio:
         except (DebugLinkError, KeyError, ValueError, struct.error):
             return None
 
-    def port_present(self):
-        """The radio's serial port is there again (after a restart or a USB personality switch). Pinned: that port's
-        own device node; found by USB ID: any debug link port (reconnect() then checks it is this radio)."""
-        return os.path.exists(self.port) if self.pinned else bool(find_ports())
-
     def reconnect(self, timeout=30.0, what="the restart"):
         """Reopen the debug link after the radio restarted. Pinned: only on its own port. Otherwise any port found by
         USB ID whose chip has this radio's UID (never another radio on the bench)."""
@@ -212,7 +207,10 @@ class Radio:
                 try:
                     link = DebugLink(port, timeout=1.5)
                     link.ping()
-                    if port != self.port and (self.uid is None or self._uid(link) != self.uid):
+                    # Found by USB ID, a port is this radio only by its chip's UID: after a re-enumeration even
+                    # its old name can be another radio's
+                    if not self.pinned and (self.uid is None and port != self.port
+                                            or self.uid is not None and self._uid(link) != self.uid):
                         link.close()
                         continue
                     self.link, self.port = link, port
@@ -224,6 +222,15 @@ class Radio:
             time.sleep(0.5)
         raise AssertionError(f"the radio did not come back after {what}")
 
+    def serial_back(self, timeout, what="the switch back to the serial port"):
+        """After a USB personality switch: True once this radio answers on a serial port again (radio.link reopened,
+        as reconnect() does), False after timeout. It doesn't raise, so a test's cleanup can try the network first."""
+        try:
+            self.reconnect(timeout, what)
+            return True
+        except AssertionError:
+            return False
+
     def close(self):
         self.link.close()
 
@@ -231,10 +238,11 @@ class Radio:
     def released(self):
         """Close the port for the duration (another tool opens it, e.g. an MMDVM client), then reopen it."""
         self.link.close()
+        closed = self.link
         try:
             yield self.port
         finally:
-            for _ in range(20):
+            for _ in range(20 if self.link is closed else 0):     # a serial_back() inside already reopened it
                 try:
                     self.link = DebugLink(self.port, timeout=1.5)
                     break
@@ -701,15 +709,8 @@ def usb_network(radio, own_id, timeout=30.0):
             except (DebugLinkError, OSError):
                 pass
             udp.close()
-        end = time.monotonic() + 20
-        while not radio.port_present() and time.monotonic() < end:
-            time.sleep(0.5)
-        for _ in range(40):
-            try:
-                radio.link = DebugLink(radio.port, timeout=1.5)
-                break
-            except DebugLinkError:
-                time.sleep(0.25)
+        if not radio.serial_back(30):
+            print("rfoundry-hil: the radio didn't come back as a serial port", file=sys.stderr)
 
 
 def host_network_kind(radio):
