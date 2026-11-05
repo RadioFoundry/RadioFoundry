@@ -134,7 +134,8 @@ typedef struct {
 	uint32_t tick;
 	uint32_t t_tick;
 	uint32_t t_rx_tick;	// time of the last receive-vector tick
-	uint32_t sys_seen, t_sys_seen;	// the stuck request check: sys_ints, and since when nothing changed
+	uint32_t sys_seen, t_sys_seen;	// the stuck request check: sys_ints, and since when a request has waited
+	bool sys_waiting;	// a request seen pending with sys_ints at sys_seen (since t_sys_seen)
 	bool tick_tx;		// the last tick came on the TX vector
 	bool timing;
 	// Receive

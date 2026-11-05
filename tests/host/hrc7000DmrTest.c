@@ -1286,6 +1286,14 @@ static void test_lost_requests(void)
 	}
 	CHECK(eng.st.sys_stuck == 1 && REG(C7_SYS_INTERP_CLEAR) == 0);
 
+	// A late poll (the one before, 80 ms ago, saw nothing pending): a request pending now is a new one, not lost
+	REG(C7_SYS_INTERP_LIST) = 0;
+	hrc7000_dmr_poll(&eng);
+	now += 80000;
+	REG(C7_SYS_INTERP_LIST) = 1u << 3;
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.sys_stuck == 1 && REG(C7_SYS_INTERP_CLEAR) == 0);
+
 	// A cause the chip doesn't interrupt for (its mask bit off) is never a lost interrupt
 	REG(C7_SYS_INTERP_LIST) = C7_SYS_FM_RX;
 	for (int i = 0; i < 6; i++) {

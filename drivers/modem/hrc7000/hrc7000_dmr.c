@@ -857,7 +857,7 @@ void hrc7000_dmr_run(hrc7000_dmr_t *e)
 	set_cc(e, e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur);
 	chip_rx_restart(e);
 	e->sys_seen = e->st.sys_ints;	// the stuck request check starts over
-	e->t_sys_seen = now(e);
+	e->sys_waiting = false;
 	e->running = true;
 	unlock(e);
 }
@@ -917,15 +917,20 @@ void hrc7000_dmr_poll(hrc7000_dmr_t *e)
 		ev_simple(e, DMR_EV_SYNC_LOST, 0, tick_arg(e));
 	}
 	// A system request pending since an earlier poll with no handler run in between: its interrupt was lost, and
-	// with its line kept high no later one would come (received bursts gone for good). Dropped, so the next rises
+	// with its line kept high no later one would come (received bursts gone for good). Dropped, so the next rises.
+	// The 50 ms count from the first poll that saw it pending, not from the poll before: after a late poll a request
+	// that came just now (its handler held off by this poll's lock) isn't a lost one
 	uint32_t pend = e->running ? r(e, C7_SYS_INTERP_LIST) & r(e, C7_SYS_INTERP_MASK) : 0u;
 	if (pend == 0u || e->st.sys_ints != e->sys_seen) {
 		e->sys_seen = e->st.sys_ints;
+		e->sys_waiting = false;
+	} else if (!e->sys_waiting) {
+		e->sys_waiting = true;
 		e->t_sys_seen = now(e);
 	} else if ((uint32_t)(now(e) - e->t_sys_seen) > SYS_STUCK_US) {
 		e->st.sys_stuck++;
 		w(e, C7_SYS_INTERP_CLEAR, r(e, C7_SYS_INTERP_LIST));
-		e->t_sys_seen = now(e);
+		e->sys_waiting = false;
 	}
 	unlock(e);
 }
