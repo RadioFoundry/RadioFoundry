@@ -1478,9 +1478,10 @@ static void tx_poll(uint32_t now)
 	case TX_PERMIT: {
 		uint32_t held = now - s.permit_ms;
 
-		if (voice_channel_busy(now)) {
+		if (voice_channel_busy(now) || (s.cfg.rmo && !repeater_up(now))) {
 			// A call began in the hold: access again, as if it had been there at PTT (through a repeater the key-up
-			// is impolite, so it would go over the call). A new permit plays once the channel is free
+			// is impolite, so it would go over the call). A new permit plays once the channel is free. The hold can
+			// outlast DMR_CALL_REPEATER_HOLD_MS: a repeater that dropped in it is woken again, not keyed blind
 			s.tx = TX_ACCESS;
 			s.permit_done = false;
 			s.dirty = true;

@@ -819,6 +819,22 @@ static void test_tx_permit_hold(void)
 	dmr_call_ptt(false);
 	run_ms(600);
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->permit_seq == seq && sim.air_count == 1);
+
+	// The repeater drops in the hold (it outlasts DMR_CALL_REPEATER_HOLD_MS): woken again, never keyed blind
+	setup(&c);
+	sim.repeater = true;
+	run_ms(180);
+	CHECK(V()->repeater_up);
+	permit_busy_flag = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT && sim.tx_begins == 0);
+	sim.repeater = false;
+	run_ms(DMR_CALL_REPEATER_HOLD_MS + 40);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_WAKEUP && sim.air_count == 1 && sim.air[0].kind == DMR_BURST_CSBK);
+	permit_busy_flag = false;
+	dmr_call_ptt(false);
+	run_ms(3000);
 }
 
 static void test_rmo_air_slot_alignment(void)
