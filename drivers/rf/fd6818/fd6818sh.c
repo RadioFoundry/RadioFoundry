@@ -128,31 +128,46 @@ static uint32_t mhz(uint32_t hz)
 	return hz / 1000000u;
 }
 
-static unsigned band_index(uint32_t hz)
+static const fd6818sh_cfg_t own = {
+	.band_edge = band_edge, .band_word = band_word, .dev_high = dev_high, .bands = BANDS,
+	.tx_state = FD6818SH_STATE_TX, .tx_tone_state = FD6818SH_STATE_TX_TONE,
+};
+
+static unsigned band_index(const fd6818sh_cfg_t *c, uint32_t hz)
 {
 	uint32_t m = mhz(hz);
 	unsigned i = 0;
-	while (i < BANDS && band_edge[i] < m) {
+	while (i < c->bands && c->band_edge[i] < m) {
 		i++;
 	}
 	return i;
 }
 
-uint16_t fd6818sh_band_word(uint32_t hz)
+static uint16_t band_word_of(const fd6818sh_cfg_t *c, uint32_t hz)
 {
-	unsigned i = band_index(hz);
-	return i < BANDS ? band_word[i] : 0;
+	unsigned i = band_index(c, hz);
+	return i < c->bands ? c->band_word[i] : 0;
 }
 
-uint16_t fd6818sh_tx_dev(uint32_t hz, bool subaudio)
+uint16_t fd6818sh_band_word(uint32_t hz)
 {
-	unsigned i = band_index(hz);
-	if (i >= BANDS || dev_high[i] == 0) {
+	return band_word_of(&own, hz);
+}
+
+static uint16_t tx_dev_of(const fd6818sh_cfg_t *c, uint32_t hz, bool subaudio)
+{
+	unsigned i = band_index(c, hz);
+	if (i >= c->bands || c->dev_high[i] == 0) {
 		return 0;
 	}
 	// With sub-audio the fine level is lower, which leaves room for the tone
 	uint8_t low = (i & 1u) == 0 ? (subaudio ? 0x32u : 0x5Cu) : (subaudio ? 0x98u : 0xD0u);
-	return (uint16_t)(dev_high[i] << 8 | low);
+	return (uint16_t)(c->dev_high[i] << 8 | low);
+}
+
+uint16_t fd6818sh_tx_dev(uint32_t hz, bool subaudio)
+{
+	return tx_dev_of(&own, hz, subaudio);
 }
 
 uint16_t fd6818sh_pa_word(uint8_t v)
@@ -192,12 +207,49 @@ uint8_t fd6818sh_7813_section(uint32_t hz)
 
 // ---- Register access ----
 
+// The set's band and state choices (the driver's own without one)
+static const fd6818sh_cfg_t *cfg(const fd6818sh_t *dev)
+{
+	return dev->cfg != NULL && dev->cfg->band_edge != NULL ? dev->cfg : &own;
+}
+
+static uint16_t tx_state(const fd6818sh_t *dev)
+{
+	return dev->cfg != NULL && dev->cfg->tx_state != 0 ? dev->cfg->tx_state : FD6818SH_STATE_TX;
+}
+
+static uint16_t pa_word(const fd6818sh_t *dev, uint8_t v)
+{
+	return dev->cfg != NULL && dev->cfg->pa_both ? (uint16_t)((v & 7u) * 9u) : fd6818sh_pa_word(v);
+}
+
+static uint16_t tx_tone_state(const fd6818sh_t *dev)
+{
+	return dev->cfg != NULL && dev->cfg->tx_tone_state != 0 ? dev->cfg->tx_tone_state : FD6818SH_STATE_TX_TONE;
+}
+
+// A page-1 register goes to its address plus the set's page1_or, after the page select as on every bus
 static void wr(fd6818sh_t *dev, uint8_t reg, uint16_t val)
 {
+	if (reg == FD6818SH_REG_PAGE) {
+		dev->page1 = val == PAGE_1;
+	} else if (dev->page1 && dev->cfg != NULL) {
+		reg = (uint8_t)(reg | dev->cfg->page1_or);
+	}
 	rfbus_write(dev->bus, reg, val);
 }
 
-#define TABLE(dev, t)	rfbus_write_table((dev)->bus, t, sizeof(t) / sizeof(t[0]))
+static void table(fd6818sh_t *dev, const regval_t *t, size_t n)
+{
+	for (size_t i = 0; i < n; i++) {
+		wr(dev, t[i].reg, t[i].val);
+	}
+}
+
+#define TABLE(dev, t)	table(dev, t, sizeof(t) / sizeof(t[0]))
+// The set's table where it has one, else the driver's
+#define TABLE_OR(dev, f, t)	((dev)->cfg != NULL && (dev)->cfg->f != NULL ? \
+	table(dev, (dev)->cfg->f, (dev)->cfg->f##_n) : TABLE(dev, t))
 
 static void page1(fd6818sh_t *dev, uint8_t reg, uint16_t val)
 {
@@ -250,6 +302,8 @@ void fd6818sh_gpio(fd6818sh_t *dev, uint8_t pin, bool high)
 void fd6818sh_attach(fd6818sh_t *dev, rfbus_t *bus, fd6818sh_role_t role)
 {
 	dev->bus = bus;
+	dev->cfg = NULL;
+	dev->page1 = false;
 	dev->role = role;
 	dev->freq_10hz = 0;
 	dev->state = FD6818SH_STATE_IDLE;
@@ -271,14 +325,14 @@ static void reset_and_table(fd6818sh_t *dev, bool lo)
 	wr(dev, 0x00, 0x8000);
 	wr(dev, 0x00, 0x0000);
 	rfbus_delay_ms(dev->bus, RESET_MS);
-	TABLE(dev, init_page0);
+	TABLE_OR(dev, page0, init_page0);
 	if (lo) {
 		wr(dev, 0x35, 0xF608);
 		wr(dev, REG_DEV, 0x0000);
 		wr(dev, REG_AUDIO_GAIN, 0x77FD);
 	}
 	wr(dev, FD6818SH_REG_PAGE, PAGE_1);
-	TABLE(dev, init_page1);
+	TABLE_OR(dev, page1, init_page1);
 	wr(dev, FD6818SH_REG_PAGE, 0);
 	TABLE(dev, init_xtal);
 }
@@ -296,11 +350,16 @@ static void offset_cal(fd6818sh_t *dev)
 void fd6818sh_init_main(fd6818sh_t *dev)
 {
 	reset_and_table(dev, false);
-	TABLE(dev, init_agc);
-	wr(dev, 0x7D, 0x42E2);
-	wr(dev, REG_BAND, 0x2F50);
-	wr(dev, REG_FREQ_LO, 0x1D38);	// parked at 457.516 MHz for the calibration
-	wr(dev, REG_FREQ_HI, 0x02B7);
+	TABLE_OR(dev, agc, init_agc);
+	if (dev->cfg != NULL && dev->cfg->park_hz != 0) {
+		table(dev, dev->cfg->after, dev->cfg->after_n);
+		fd6818sh_tune(dev, dev->cfg->park_hz);
+	} else {
+		wr(dev, 0x7D, 0x42E2);
+		wr(dev, REG_BAND, 0x2F50);
+		wr(dev, REG_FREQ_LO, 0x1D38);	// parked at 457.516 MHz for the calibration
+		wr(dev, REG_FREQ_HI, 0x02B7);
+	}
 	offset_cal(dev);
 	dev->r7e = (uint16_t)((rfbus_read(dev->bus, REG_DC) & 0x0FFFu) | 0xB000u);
 	wr(dev, REG_DC, dev->r7e);
@@ -330,7 +389,9 @@ void fd6818sh_set_bandwidth(fd6818sh_t *dev, bool wide)
 	if (dev->digital) {
 		return;
 	}
-	if (wide) {
+	if (dev->cfg != NULL && dev->cfg->bw_word[wide ? 1 : 0] != 0) {
+		wr(dev, REG_BW, dev->cfg->bw_word[wide ? 1 : 0]);
+	} else if (wide) {
 		wr(dev, REG_BW, 0x3028);
 	} else {
 		wr(dev, REG_BW, 0x6648);
@@ -343,18 +404,23 @@ void fd6818sh_analog_mode(fd6818sh_t *dev)
 	fd6818sh_set_state(dev, FD6818SH_STATE_IDLE);
 	dev->digital = false;
 	wr(dev, REG_SUB, SUB_OFF);
-	wr(dev, REG_AFC, AFC_ANALOG);
-	wr(dev, 0x04, 0x0300);
-	wr(dev, FD6818SH_REG_PAGE, PAGE_1);
-	wr(dev, 0x1C, 0x04D7);
-	wr(dev, 0x1D, 0x39FD);
-	wr(dev, 0x27, 0x885B);
-	wr(dev, FD6818SH_REG_PAGE, 0);
-	wr(dev, 0x50, 0x073C);
-	wr(dev, REG_TONE_CTRL, 0x0000);
-	wr(dev, REG_DC, 0x341E);
-	wr(dev, 0x44, 0x4ACC);
-	mic_gain(dev, MIC_ANALOG);
+	if (dev->cfg != NULL && dev->cfg->analog != NULL) {
+		wr(dev, REG_TONE_CTRL, 0x0000);
+		table(dev, dev->cfg->analog, dev->cfg->analog_n);
+	} else {
+		wr(dev, REG_AFC, AFC_ANALOG);
+		wr(dev, 0x04, 0x0300);
+		wr(dev, FD6818SH_REG_PAGE, PAGE_1);
+		wr(dev, 0x1C, 0x04D7);
+		wr(dev, 0x1D, 0x39FD);
+		wr(dev, 0x27, 0x885B);
+		wr(dev, FD6818SH_REG_PAGE, 0);
+		wr(dev, 0x50, 0x073C);
+		wr(dev, REG_TONE_CTRL, 0x0000);
+		wr(dev, REG_DC, 0x341E);
+		wr(dev, 0x44, 0x4ACC);
+		mic_gain(dev, MIC_ANALOG);
+	}
 	fd6818sh_set_bandwidth(dev, dev->wide);
 	wr(dev, REG_AF, FD6818SH_AF_MUTE);
 	wr(dev, REG_AUDIO_GAIN, dev->r53);
@@ -384,9 +450,19 @@ void fd6818sh_dmr_mode(fd6818sh_t *dev)
 	wr(dev, REG_AF, FD6818SH_AF_DMR);
 }
 
+void fd6818sh_set_cfg(fd6818sh_t *dev, const fd6818sh_cfg_t *c)
+{
+	dev->cfg = c;
+}
+
+uint16_t fd6818sh_dev_band_word(const fd6818sh_t *dev, uint32_t hz)
+{
+	return band_word_of(cfg(dev), hz);
+}
+
 void fd6818sh_tune(fd6818sh_t *dev, uint32_t hz)
 {
-	wr(dev, REG_BAND, fd6818sh_band_word(hz));
+	wr(dev, REG_BAND, band_word_of(cfg(dev), hz));
 	write_freq(dev, hz);
 }
 
@@ -450,19 +526,19 @@ void fd6818sh_tx_prepare(fd6818sh_t *dev, fd6818sh_tone_t type, uint16_t value, 
 {
 	dev->tx_sub = type != FD6818SH_TONE_NONE;
 	dev->pa_gain = pa_gain;
-	wr(dev, REG_DEV, fd6818sh_tx_dev(hz, dev->tx_sub));
+	wr(dev, REG_DEV, dev->cfg != NULL && dev->cfg->tx_dev != 0 ? dev->cfg->tx_dev : tx_dev_of(cfg(dev), hz, dev->tx_sub));
 	if (dev->tx_sub) {
 		subaudio(dev, type, value);
 	} else {
 		wr(dev, REG_SUB, SUB_TX_NONE);
 	}
-	wr(dev, REG_PA, fd6818sh_pa_word(pa_gain));
+	wr(dev, REG_PA, pa_word(dev, pa_gain));
 }
 
 void fd6818sh_tx_tune(fd6818sh_t *dev, uint32_t hz)
 {
 	fd6818sh_tune(dev, hz);
-	fd6818sh_set_state(dev, FD6818SH_STATE_TX);
+	fd6818sh_set_state(dev, tx_state(dev));
 }
 
 // The working firmware ends every analog transmission so: CTCSS on the second slot (55 Hz, or 134.4 Hz after DCS),
@@ -508,8 +584,8 @@ void fd6818sh_tone_start(fd6818sh_t *dev, uint16_t hz, uint8_t gain)
 	wr(dev, REG_TONE1, subaudio_tone_word(hz, false));
 	wr(dev, REG_TONE_CTRL, (uint16_t)(TONE_ON | (uint16_t)gain << 8));
 	if (dev->tone_hz == 0) {
-		wr(dev, FD6818SH_REG_STATE, FD6818SH_STATE_TX_TONE);	// straight from TX, as the working firmware does
-		dev->state = FD6818SH_STATE_TX_TONE;
+		wr(dev, FD6818SH_REG_STATE, tx_tone_state(dev));	// straight from TX, as the working firmware does
+		dev->state = tx_tone_state(dev);
 		wr(dev, REG_AF, FD6818SH_AF_SIDETONE);
 	}
 	dev->tone_hz = hz;
@@ -526,8 +602,8 @@ void fd6818sh_dtmf_start(fd6818sh_t *dev, uint16_t low_hz, uint16_t high_hz)
 	wr(dev, REG_TONE1, subaudio_tone_word(low_hz, true));
 	wr(dev, REG_TONE2, subaudio_tone_word(high_hz, true));
 	if (dev->tone_hz == 0) {
-		wr(dev, FD6818SH_REG_STATE, FD6818SH_STATE_TX_TONE);
-		dev->state = FD6818SH_STATE_TX_TONE;
+		wr(dev, FD6818SH_REG_STATE, tx_tone_state(dev));
+		dev->state = tx_tone_state(dev);
 		wr(dev, REG_AF, FD6818SH_AF_SIDETONE);
 	}
 	dev->tone_hz = low_hz;
@@ -549,8 +625,8 @@ void fd6818sh_tone_stop(fd6818sh_t *dev)
 	}
 	wr(dev, REG_TONE_CTRL, 0x0000);
 	wr(dev, REG_AF, FD6818SH_AF_MUTE);
-	wr(dev, FD6818SH_REG_STATE, FD6818SH_STATE_TX);
-	dev->state = FD6818SH_STATE_TX;
+	wr(dev, FD6818SH_REG_STATE, tx_state(dev));
+	dev->state = tx_state(dev);
 	dev->tone_hz = 0;
 }
 
@@ -563,12 +639,12 @@ void fd6818sh_dmr_tx_prepare(fd6818sh_t *dev, uint8_t pa_gain)
 // The working firmware's TX and RX handlers: the band word, in TX the PA gain, the frequency, then the state
 void fd6818sh_burst_tune(fd6818sh_t *dev, uint32_t hz, bool tx)
 {
-	wr(dev, REG_BAND, fd6818sh_band_word(hz));
+	wr(dev, REG_BAND, band_word_of(cfg(dev), hz));
 	if (tx) {
-		wr(dev, REG_PA, fd6818sh_pa_word(dev->pa_gain));
+		wr(dev, REG_PA, pa_word(dev, dev->pa_gain));
 	}
 	write_freq(dev, hz);
-	fd6818sh_set_state(dev, tx ? FD6818SH_STATE_TX : FD6818SH_STATE_RX);
+	fd6818sh_set_state(dev, tx ? tx_state(dev) : FD6818SH_STATE_RX);
 }
 
 // ---- LO ----

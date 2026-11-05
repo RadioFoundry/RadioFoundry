@@ -277,6 +277,71 @@ static void test_fm_tx(void)
 	CHECK(regs[0][0x40] == 0x3732 && regs[0][0x07] == 0x2470 && regs[0][0x51] == 0x90C5);
 }
 
+// A board's own analog words, bandwidth words, TX deviation and PA gain encoding (fd6818sh_cfg_t), on a bus that maps
+// page 1 above 0x7F
+static const rfbus_regval_t own_analog[] = {
+	{ 0x73, 0x4642 }, { 0x04, 0x0300 }, { FD6818SH_REG_PAGE, 1 }, { 0x17, 0x02BE }, { FD6818SH_REG_PAGE, 0 },
+};
+static const uint16_t own_edge[] = { 1120 };
+static const uint16_t own_word[] = { 0x1F80 };
+static const uint8_t own_dev[] = { 0x3A };
+static const fd6818sh_cfg_t own_cfg = {
+	.band_edge = own_edge, .band_word = own_word, .dev_high = own_dev, .bands = 1,
+	.tx_state = 0xC1FE, .tx_tone_state = 0xC1FA,
+	.page1_or = 0x80,
+	.analog = own_analog, .analog_n = sizeof own_analog / sizeof own_analog[0],
+	.bw_word = { 0x4048, 0x3028 },
+	.tx_dev = 0x3AD0,
+	.pa_both = true,
+};
+
+static void test_board_set(void)
+{
+	fd6818sh_t c;
+	reset();
+	fd6818sh_attach(&c, &bus, FD6818SH_MAIN);
+	fd6818sh_set_cfg(&c, &own_cfg);
+	fd6818sh_set_af_gain(&c, 8);
+	unsigned from = nlog;
+	fd6818sh_analog_mode(&c);
+	// The board's words in place of the driver's AFC, DC, filter and microphone set: none of those written
+	CHECK(regs[0][0x73] == 0x4642 && regs[0][0x04] == 0x0300 && regs[1][0x17] == 0x02BE);
+	for (unsigned i = from; i < nlog; i++) {
+		CHECK(log_[i].reg != 0x4D && log_[i].reg != 0x18 && log_[i].reg != 0x11C);
+	}
+	CHECK(regs[0][0x43] == 0x4048 && regs[0][0x47] == FD6818SH_AF_MUTE && page == 0);
+	from = nlog;
+	fd6818sh_set_bandwidth(&c, true);
+	CHECK(LOGGED(from, 0x43, 0x3028));
+	fd6818sh_set_bandwidth(&c, false);
+	CHECK(regs[0][0x43] == 0x4048);
+
+	// Tuning writes the band word and the frequency only, not 0x40
+	from = nlog;
+	fd6818sh_tune(&c, 927500000);
+	CHECK(LOGGED(from, 0x1A, 0x1F80, 0x38, 0x40B0, 0x39, 0x0587));
+
+	// TX: the board's deviation word with sub-audio or without, the PA gain in both fields, its TX state
+	fd6818sh_tx_prepare(&c, FD6818SH_TONE_CTCSS, 1000, 927500000, 3);
+	CHECK(regs[0][0x40] == 0x3AD0 && regs[0][0x28] == 0x001B);
+	fd6818sh_tx_prepare(&c, FD6818SH_TONE_NONE, 0, 927500000, 7);
+	CHECK(regs[0][0x40] == 0x3AD0 && regs[0][0x28] == 0x003F);
+	fd6818sh_tx_prepare(&c, FD6818SH_TONE_NONE, 0, 927500000, 9);	// three bits a field
+	CHECK(regs[0][0x28] == 0x0009);
+	fd6818sh_tx_tune(&c, 927500000);
+	CHECK(regs[0][0x03] == 0xC1FE);
+	fd6818sh_tone_start(&c, 1750, 30);
+	CHECK(regs[0][0x03] == 0xC1FA);
+	fd6818sh_tx_end(&c);
+	CHECK(regs[0][0x03] == 0xBFF1);
+
+	// DMR bursts take the same encoding
+	fd6818sh_dmr_mode(&c);
+	fd6818sh_dmr_tx_prepare(&c, 5);
+	fd6818sh_burst_tune(&c, 927500000, true);
+	CHECK(regs[0][0x28] == 0x002D);
+}
+
 static void test_dmr_burst(void)
 {
 	fd6818sh_t c;
@@ -350,6 +415,7 @@ int main(void)
 	test_init_main();
 	test_rx_and_modes();
 	test_fm_tx();
+	test_board_set();
 	test_dmr_burst();
 	test_lo();
 	test_lo_7813();
