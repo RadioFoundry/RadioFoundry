@@ -304,8 +304,8 @@ static void link_section(dl_text_t *t)
 	dl_text(t, "ui.screen=%s\n", ui_screen_name());
 	ui_app_status_t u;
 	ui_get_status(&u);
-	dl_text(t, "ui.depth=%u\nui.focus=%u\nui.count=%u\nui.locked=%u\n", (unsigned)u.depth, (unsigned)u.focus,
-		(unsigned)u.count, (unsigned)u.locked);
+	dl_text(t, "ui.depth=%u\nui.focus=%u\nui.count=%u\nui.locked=%u\nui.unlock_key=%s\n", (unsigned)u.depth,
+		(unsigned)u.focus, (unsigned)u.count, (unsigned)u.locked, u.unlock_key);
 	dl_text(t, "ui.banner=%s\nui.toast=%s\nui.query=%s\nui.draws=%u\nui.dual=%u\n", u.banner, u.toast, u.query,
 		(unsigned)u.draws, u.dual);
 	dl_text(t, "input.idle_ms=%u\nui.backlight=%u\n", (unsigned)input_idle_ms(), ui_backlight());

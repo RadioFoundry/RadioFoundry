@@ -446,12 +446,25 @@ class Radio:
     def long_press(self, name):
         self.press(name, LONG)
 
+    def unlock_key(self, v=None):
+        """The key held to unlock: "quick", "back" or "none" (a key map with neither; auto lock never locks it). Firmware
+        without ui.unlock_key: "quick"."""
+        v = v if v is not None else self.link.view(["link"])
+        return v.get("ui.unlock_key", "quick")
+
+    def unlock(self):
+        """Unlock the keys if they are locked. With no unlock key on the radio a long Back still unlocks: the keys come
+        from the debug link, which isn't held to the key map."""
+        v = self.link.view(["link"])
+        if v.get("ui.locked") != "1":
+            return
+        self.long_press("quick" if self.unlock_key(v) == "quick" else "back")
+        self.wait_for(lambda v: v.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
+
     def go_home(self):
         self.ensure_awake()
-        if self.link.view(["link"]).get("ui.locked") == "1":
-            # auto lock locks the keys while the radio sits idle; a locked radio ignores every other key
-            self.long_press("quick")
-            self.wait_for(lambda v: v.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
+        # auto lock locks the keys while the radio sits idle; a locked radio ignores every other key
+        self.unlock()
         # The zone editor's screens go five deep below Home (menu, zones, zone, channel actions, a picker), so a test cut
         # short there leaves more than a few screens; each press is waited on, so a slow one isn't pressed again
         for _ in range(8):

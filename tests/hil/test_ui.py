@@ -33,9 +33,7 @@ def wait_screen(r, name, what=None):
 @pytest.fixture
 def home(radio):
     radio.ensure_awake()
-    if ui(radio).get("ui.locked") == "1":
-        radio.press("quick", LONG)
-        radio.wait_for(lambda v: v.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
+    radio.unlock()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
     if radio.screen() != "home":
@@ -46,8 +44,7 @@ def home(radio):
         radio.wait_for(lambda v: v.get("vfo") == "0", what="VFO off")
     yield radio
     # Leave the radio on Home with the keys unlocked whatever the test did
-    if ui(radio).get("ui.locked") == "1":
-        radio.press("quick", LONG)
+    radio.unlock()
     radio.press("back", LONG)
 
 
@@ -129,6 +126,8 @@ def test_find_by_digits(home, shots):
 def test_key_lock(home):
     """Long QUICK locks the keys; while locked, a key only explains how to unlock; long QUICK unlocks."""
     r = home
+    if r.unlock_key() != "quick":
+        skip("no_hw", "the radio has no QUICK key: a side key set to key lock locks it")
     r.press("quick", LONG)
     r.wait_for(lambda v: v.get("ui.locked") == "1", sections=("link",), what="keys locked")
     r.press("ok")
@@ -448,6 +447,8 @@ def test_long_press_time_reaches_input(home):
 def test_auto_lock(home):
     """Settings > Privacy > Auto lock 30 s locks the keys after 30 s without a key; set back to Off after."""
     r = home
+    if r.unlock_key() == "none":
+        skip("no_hw", "no key on the radio unlocks: auto lock never locks it")
     if as_int(r.view(["storage"]).get("settings.auto_lock_s"), 0) != 0:
         skip("state", "auto lock is already on")
     settings_keys(r, "ok 7 4 down down ok")
