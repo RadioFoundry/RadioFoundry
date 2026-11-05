@@ -776,7 +776,7 @@ run-debuglinkRx2: debuglinkRx2Test
 .PHONY: run-debuglinkRx2
 
 # DL_CMD_CHIP_REG, RF chip and SoC registers on the debug link (core/debuglink/debuglink_chipreg.c): the board's hooks
-# and the radio's view are faked
+# and the transmit check are faked
 CHIPREG := debuglinkChipRegTest.c $(CORE)/debuglink/debuglink_chipreg.c
 TESTS   += debuglinkChipRegTest
 debuglinkChipRegTest: $(CHIPREG) $(ROOT)/hal/board.h $(ROOT)/hal/hal_system.h $(CORE)/debuglink/debuglink.h \

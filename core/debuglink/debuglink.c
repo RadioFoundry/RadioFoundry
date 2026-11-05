@@ -651,7 +651,7 @@ static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	return 5u + n;
 }
 
-static bool transmitting(void)
+bool debuglink_transmitting(void)
 {
 	radio_get_view(&view);
 	if (view.state == RS_TX) {
@@ -671,7 +671,7 @@ static uint8_t reboot_gate(uint8_t mode, uint32_t token)
 {
 	hal_chip_t c;
 	bool have = read_chip(&c);
-	return dl_reboot_check(mode, token, have ? &c : NULL, transmitting());
+	return dl_reboot_check(mode, token, have ? &c : NULL, debuglink_transmitting());
 }
 
 static size_t cmd_reboot(const uint8_t *req, uint16_t len, uint8_t *out)

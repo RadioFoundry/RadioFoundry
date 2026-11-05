@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // DL_CMD_CHIP_REG (core/debuglink/debuglink_chipreg.c, docs/spec/debuglink.md 3.24): an RF chip register through
 // board.chip_reg, a SoC register through board.system->reg, the request lengths, a SoC write refused on the air, and
-// boards without the hooks. The board, the radio's view and the log are faked
+// boards without the hooks. The board, the transmit check and the log are faked
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -26,13 +26,12 @@ static int failures, checks;
 
 // --- fakes ---
 
-static radio_state_t fake_state = RS_RX;
+static bool fake_tx;	// a call or the hotspot on the air
 static unsigned logs;
 
-void radio_get_view(radio_view_t *v)
+bool debuglink_transmitting(void)
 {
-	memset(v, 0, sizeof *v);
-	v->state = fake_state;
+	return fake_tx;
 }
 
 void dlog(const char *fmt, ...)
@@ -99,7 +98,7 @@ static void reset(void)
 	board.chip_reg = chip_reg;
 	board.system = &sys;
 	sys.reg = soc_reg;
-	fake_state = RS_RX;
+	fake_tx = false;
 	memset(chip0, 0, sizeof chip0);
 	soc_word = 0;
 	soc_calls = logs = 0;
@@ -126,7 +125,7 @@ static void test_chip(void)
 	CHECK(cmd(wr, 5) == 1 && out[0] == DL_ST_BAD_ARG);
 	CHECK(cmd(NULL, 0) == 1 && out[0] == DL_ST_BAD_ARG);
 	// An RF chip write on the air goes through (trying a value on the air is what it is for)
-	fake_state = RS_TX;
+	fake_tx = true;
 	CHECK(cmd(wr, 7) == 5 && out[0] == DL_ST_OK);
 	board.chip_reg = NULL;
 	CHECK(cmd(rd, 3) == 1 && out[0] == DL_ST_UNAVAILABLE);
@@ -143,12 +142,12 @@ static void test_soc(void)
 	uint8_t off[5] = { DL_CHIP_SOC, 0x00, 0x00, 0x01, 0x00 };
 	CHECK(cmd(off, 5) == 1 && out[0] == DL_ST_REFUSED);
 	// A write on the air: refused before the platform sees it; a read still answers
-	fake_state = RS_TX;
+	fake_tx = true;
 	soc_calls = 0;
 	wr[5] = 0x99;
 	CHECK(cmd(wr, 9) == 1 && out[0] == DL_ST_REFUSED && soc_calls == 0 && soc_word == 0x40u);
 	CHECK(cmd(rd, 5) == 5 && out[0] == DL_ST_OK);
-	fake_state = RS_RX;
+	fake_tx = false;
 	// Lengths: the SoC form is 5 or 9 bytes, not the RF chips' 3 or 7
 	CHECK(cmd(rd, 3) == 1 && out[0] == DL_ST_BAD_ARG);
 	CHECK(cmd(wr, 7) == 1 && out[0] == DL_ST_BAD_ARG);

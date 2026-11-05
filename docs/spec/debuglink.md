@@ -788,8 +788,9 @@ a board without the hook answers unavailable (4).
 
 Chip `0xFF` is the SoC: a 32-bit register at a 32-bit address, through the platform's `hal_system_t.reg`. Only aligned
 words inside the platform's register windows; any other address is refused (7), as READ_MEM refuses one. A write is
-refused (7) while the radio transmits. The read has the register's side effects (reading a timer's EOI acknowledges
-it), so the windows can include blocks READ_MEM leaves out. A platform without the hook answers unavailable (4).
+refused (7) while the radio transmits, a call or the hotspot, as REBOOT is. The read has the register's side effects
+(reading a timer's EOI acknowledges it), so the windows can include blocks READ_MEM leaves out. A platform without the
+hook answers unavailable (4).
 
 | Platform | Register windows |
 |---|---|

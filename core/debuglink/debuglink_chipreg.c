@@ -8,7 +8,6 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dlog.h"
-#include "radio/radio.h"
 
 static uint32_t get32(const uint8_t *p)
 {
@@ -28,13 +27,6 @@ static size_t answer(uint8_t *out, uint8_t status, uint32_t v)
 	return 5;
 }
 
-static bool on_air(void)
-{
-	radio_view_t v;
-	radio_get_view(&v);
-	return v.state == RS_TX;
-}
-
 // chip DL_CHIP_SOC, address u32 [, value u32]
 static size_t soc_reg(const uint8_t *req, uint16_t len, uint8_t *out)
 {
@@ -48,7 +40,7 @@ static size_t soc_reg(const uint8_t *req, uint16_t len, uint8_t *out)
 	uint32_t addr = get32(req + 1);
 	uint32_t v = write ? get32(req + 5) : 0u;
 	// Not while transmitting: a timer or an interrupt mask written then could leave the transmitter keyed
-	if (write && on_air()) {
+	if (write && debuglink_transmitting()) {
 		return answer(out, DL_ST_REFUSED, 0);
 	}
 	if (!board.system->reg(addr, &v, write)) {

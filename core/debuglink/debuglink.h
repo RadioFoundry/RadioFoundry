@@ -140,6 +140,9 @@ void debuglink_rx2_service(void);
 // text. Without CONFIG_DMR, unavailable
 size_t debuglink_cmd_iddb(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 
+// The radio transmits: a call, or the hotspot (the gate of REBOOT and CHIP_REG's SoC writes). The debug link task only
+bool debuglink_transmitting(void);
+
 // One register of an RF chip (board.chip_reg) or of the SoC (board.system->reg), read or written for bench work
 // (debuglink_chipreg.c, docs/spec/debuglink.md 3.24). Without the hook, unavailable
 size_t debuglink_cmd_chip_reg(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
