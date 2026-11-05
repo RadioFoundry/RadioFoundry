@@ -226,6 +226,10 @@ job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags
 3. SEND: `board.afsk->tx_start`; at most 6 s.
 4. Back: transmitter off, the user's channel retuned exactly as it was.
 
+While keyed, Home keeps the selected channel on screen. Its status pill says "TX APRS" and its activity says
+"SENDING", without elapsed or remaining TX time. The ordinary status and activity return when the APRS job ends or is
+aborted.
+
 PTT, a channel change or any request other than beeps, DMR focus and settings aborts it (`rf_failed`, the frame
 retried after 15 s, 3 tries). A failure counts in `rf_failed` and names its step in `rf_fail`: `aborted`, `no_key`
 (the transmitter didn't key), `no_afsk` (`tx_start` refused), `timeout` (the tones didn't finish in 6 s). The settings save waits while a job is pending.

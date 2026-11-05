@@ -11,6 +11,7 @@
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
 //   datatx / dataend    DMR data goes out without PTT (ARS, SMS, IP): the view says TX; it ends
+//   aprstx / aprsend    an APRS RF beacon keys the transmitter / returns to the selected channel
 //   dtmf:<digits>       during TX: the radio core has sent these DTMF digits (the TX screen's DTMF line)
 //   wait:<ms>           time passes
 //   reboot              power off and on: the screens start over, the settings stay
@@ -2528,6 +2529,14 @@ static bool run_token(char *t, char *err, size_t len)
 		view.tx_elapsed_ms = 0;
 		changed();
 		advance(1500);
+		return true;
+	}
+	if (strcmp(t, "aprstx") == 0 || strcmp(t, "aprsend") == 0) {
+		bool on = strcmp(t, "aprstx") == 0;
+		view.state = on ? RS_TX : RS_IDLE;
+		view.aprs_tx = on;
+		changed();
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "dtmf") == 0 && arg != NULL) {
