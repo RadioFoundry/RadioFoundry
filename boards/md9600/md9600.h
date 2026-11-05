@@ -90,6 +90,14 @@ extern const hal_hwopt_t md9600_hwopts[];
 // 28 kHz; 0 = off (the pin a GPIO driven low). Needs the backlight's TIM8 set-up (display_md9600.c) first
 enum { MD9600_PWM_TONE = 2, MD9600_PWM_BEEP = 3 };
 void md9600_pwm_out(uint8_t ch, uint8_t duty);
+// Audio as PWM on PC8 into the HR_C6000's microphone input (pwm_md9600.c): FM transmit audio from a host
+// (MD9600_FM_TX_INJECT, c6000_md9600.c) and the audio probe's PWM tone. pull non-NULL starts it, with amp counts either
+// side of the middle for a full-scale sample (at most 127); NULL stops it. Radio task (needs config.h)
+#define MD9600_FM_TX_INJECT	(CONFIG_DMR && CONFIG_NET_USRP && CONFIG_MD9600_TX)
+#define MD9600_PWM_AUDIO	(MD9600_FM_TX_INJECT || (CONFIG_DMR && CONFIG_AUDIO_PROBE))
+#if MD9600_PWM_AUDIO
+void md9600_pwm_audio(audio_tap_pull_t pull, int16_t amp);
+#endif
 // The other analog inputs: the sub-audio input on ADC3 (PA2), 12-bit, one conversion
 uint16_t md9600_adc3_qt(void);
 // APRS (afsk_md9600.c): transmit through the HR_C6000's tone generator (CONFIG_MD9600_TX), receive audio from the

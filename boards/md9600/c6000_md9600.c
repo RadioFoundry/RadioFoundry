@@ -19,6 +19,9 @@
 // input, which in FM is otherwise the chip's codec with the microphone off. While the stream runs in FM, the block
 // callback swaps that input for the discriminator capture (disc_md9600.c) taken from 9146 Hz to 8 kHz, gated by the
 // core's squelch and silent in transmit.
+//
+// FM transmit audio from a host (MD9600_FM_TX_INJECT, AUDIO_TAP_FM_TX): PWM on PC8 (pwm_md9600.c) reaches the chip's
+// MIC_P / MIC_N inputs; inject switches those on and the microphone's LINEIN1 off for the rest of the over.
 #include <stddef.h>
 #include "md9600.h"
 #include "config.h"
@@ -33,6 +36,9 @@
 #if MD9600_FM_RX_TAP
 #include <string.h>
 #include "audio/resample/resample.h"
+#endif
+#if CONFIG_DMR && CONFIG_AUDIO_PROBE
+#include <math.h>
 #endif
 #include "FreeRTOS.h"
 #include "task.h"
@@ -256,11 +262,58 @@ bool md9600_c6000_afsk_tone(uint16_t hz)
 #endif
 #endif
 
+#if MD9600_FM_TX_INJECT
+// Host audio on PC8 in place of the microphone (hal_audio_tap_t.fm_tx_inject): full scale to the whole PWM range. At
+// the FM mic gain, linear to about 950 Hz peak deviation for half scale at 1 kHz, the limiter near 1.4 kHz peak (UHF,
+// 12.5 kHz; bench 2026-11-05, hardware-md9600.md 19.9). The mic gain register isn't monotonic, so it stays
+#define INJECT_AMP		127
+#define INJECT_NOMINAL_PEAK	26000	// about 1.5 kHz peak deviation at 1 kHz
+static bool injecting;
+
+static void inject_stop(void)
+{
+	if (!injecting) {
+		return;
+	}
+	injecting = false;
+	md9600_pwm_audio(NULL, 0);
+	uint8_t e0;
+	if (fm_tx && hrc_read(&modem, 4, 0xE0, &e0)) {
+		count(hrc_write(&modem, 4, 0xE0, (uint8_t)((e0 | 0x40u) & ~0x06u)));	// the microphone again
+	}
+}
+
+static bool fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode)
+{
+	if (pull == NULL) {
+		inject_stop();
+		return true;
+	}
+	if (!fm_tx || mode != AUDIO_TAP_VOICE) {
+		return false;	// no flat path: the PWM goes through the codec's voice filter
+	}
+	uint8_t e0;
+	if (!hrc_read(&modem, 4, 0xE0, &e0)) {
+		count(false);
+		return false;
+	}
+	md9600_pwm_audio(pull, INJECT_AMP);
+	count(hrc_write(&modem, 4, 0xE0, (uint8_t)((e0 & ~0x40u) | 0x06u)));	// MIC_P / MIC_N in, LINEIN1 out
+	injecting = true;
+	return true;
+}
+#else
+static void inject_stop(void)
+{
+}
+#endif
+
 void md9600_c6000_fm_tx_end(void)
 {
 	if (!fm_tx) {
 		return;
 	}
+	inject_stop();
 #if MD9600_TX_SIG
 	count(hrc6000_tx_pair(&modem, &tx_sig, 0, 0, 0));
 #endif
@@ -577,6 +630,37 @@ static void probe_pin_tone(uint16_t hz)
 	TIM7->CR1 = TIM_CR1_CEN;
 }
 
+// PWM audio on PC8 (hal_audio_tap_t.pin_pwm) through the same path as fm_tx_inject: a sine of hz at amp_permille of
+// half the PWM range. top is ignored: TIM8's period is the backlight's (256 counts at 7.2 MHz)
+static volatile float probe_step, probe_phase, probe_amp;
+
+static void probe_sine(int16_t *pcm, uint16_t n)
+{
+	float ph = probe_phase;
+	for (uint16_t i = 0; i < n; i++) {
+		pcm[i] = (int16_t)(probe_amp * sinf(6.2831853f * ph));
+		ph += probe_step;
+		if (ph >= 1.0f) {
+			ph -= 1.0f;
+		}
+	}
+	probe_phase = ph;
+}
+
+static uint32_t probe_pin_pwm(uint16_t top, uint16_t hz, uint16_t amp_permille)
+{
+	(void)top;
+	md9600_pwm_audio(NULL, 0);
+	if (hz == 0 || hz >= 4000u) {
+		return 0;
+	}
+	probe_step = (float)hz / 8000.0f;
+	probe_phase = 0.0f;
+	probe_amp = 32767.0f * (float)(amp_permille > 1000u ? 1000u : amp_permille) / 1000.0f;
+	md9600_pwm_audio(probe_sine, 127);
+	return 72000000u / 10u / 256u;
+}
+
 // Every MCU input sampled for ms: the pins that changed, per port A-E
 static uint8_t probe_pin_scan(uint16_t ms, uint16_t *changed, uint8_t max)
 {
@@ -602,12 +686,20 @@ const hal_audio_tap_t md9600_audio_tap = {
 #if MD9600_FM_RX_TAP
 		| AUDIO_TAP_FM_RX
 #endif
+#if MD9600_FM_TX_INJECT
+		| AUDIO_TAP_FM_TX
+#endif
 		,
+#if MD9600_FM_TX_INJECT
+	.fm_tx_inject = fm_tx_inject,
+	.fm_tx_nominal_peak = INJECT_NOMINAL_PEAK,
+#endif
 #if CONFIG_AUDIO_PROBE
 	.modem_reg = probe_reg,
 	.modem_burst = probe_burst,
 	.pin_tone = probe_pin_tone,
 	.pin_scan = probe_pin_scan,
+	.pin_pwm = probe_pin_pwm,
 #endif
 };
 #endif
