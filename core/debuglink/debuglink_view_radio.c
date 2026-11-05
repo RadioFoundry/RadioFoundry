@@ -15,6 +15,7 @@
 #include "hal_time.h"
 #include "hal_dtmf.h"
 #include "settings/settings.h"
+#include "input/input.h"
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
 #if CONFIG_ZONE_SHARE
@@ -306,7 +307,12 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		if (!CONFIG_FM_TX_TONES) {
 			return DL_ST_UNAVAILABLE;
 		}
-		radio_req_tone_burst(a[0] != 0);
+		// on u8, then max_ms u16 (optional; 0 or missing: INPUT_INJECT_MAX_MS, the cap as for PTT): the burst ends by
+		// itself when its "off" doesn't come
+		{
+			uint32_t max_ms = len >= 3 ? (uint32_t)(a[1] | (a[2] << 8)) : 0;
+			radio_req_tone_burst(a[0] != 0, max_ms == 0 || max_ms > INPUT_INJECT_MAX_MS ? INPUT_INJECT_MAX_MS : max_ms);
+		}
 		return DL_ST_OK;
 	case DL_OP_DTMF:
 		// digit u8 (ASCII), down u8: as a DTMF key's edge, so the same rules and timing apply. Refused unless a key

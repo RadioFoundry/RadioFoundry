@@ -674,7 +674,12 @@ check every new radio (adding-a-radio.md, bring-up order). The gate alone still 
 presses in 100 s (2026-10-22). A key scan that ran late caught up with two scans in the same millisecond, and both
 read the low bits of the first byte of a burst 65 ms after the last one, before the UART had reported it. Rule:
 debounce the shared pin by time, not by scan count. The pin must read low, and not gated, for 20 ms
-(`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio.
+(`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio. The radio's own transmission,
+picked up on a coiled cable, also reads as a press: the line goes low with flagged characters and no good byte, and
+the press keeps the radio keyed, a latch (2026-11-05: a minute keyed, nothing touched). Rule: while the radio
+transmits, no new press starts on the shared line, and a held press ends at a flagged character after its own break,
+since a grounded line receives nothing. RF that holds a released line steadily low, with no character, still reads
+as held, and the transmit time-out ends it.
 
 **16.3 PTT on an empty mic jack.**
 Symptom: a radio powered on without its hand mic transmitted at once (RadioFoundry, issue #230). Cause: the mic's PTT
