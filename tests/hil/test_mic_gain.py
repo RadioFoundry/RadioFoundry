@@ -146,7 +146,7 @@ def test_mic_gain_deviation(fm_vfo, sdr_bench, pytestconfig):
             back = features(radio).get("set.mic_gain")
             reg = adcl(radio)
             rows.append({"bw": bw_khz, "step": step, "back": back, "adcl": reg, "seg": seg,
-                         "capture": f"~/{sdr_bench.dir}/{rdir}/"})
+                         "capture": sdr_bench.run_path(rdir)})
             print(f"link back: step {back}, GCR_ADCL {'?' if reg is None else f'0x{reg:02X}'}", flush=True)
     finally:
         try:

@@ -227,7 +227,7 @@ for f in sys.argv[1:]:
 			ok "HIL skip and reconnect helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
 		else
 			tail -20 "$OUT/hil-skip-test.log"
-			bad "HIL skip helper tests (see $OUT/hil-skip-test.log)"
+			bad "HIL skip and reconnect helper tests (see $OUT/hil-skip-test.log)"
 		fi
 	fi
 	# the feature checklist (tests/hil/README.md, "Bring-up mode"): tools/bringup.py check, and the bring-up

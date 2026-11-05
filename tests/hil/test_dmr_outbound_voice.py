@@ -116,7 +116,7 @@ def _run(radio, bench, pytestconfig, calls, radio_ts, cc_offset=0, expect_up=Tru
     return d, view, recs
 
 
-def _board_calls(recs, calls, late=False):
+def _board_calls(recs, calls):
     """The board's side: one call record per call sent (index, slot, src, dst), none of its bursts late."""
     rows = [r for r in recs if isinstance(r.get("call"), dict) or ("index" in r and "bursts" in r)]
     rows = [r.get("call", r) if isinstance(r.get("call"), dict) else r for r in rows]

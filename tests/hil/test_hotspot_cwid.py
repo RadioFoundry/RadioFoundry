@@ -92,7 +92,7 @@ def test_hotspot_cwid(radio, sdr_bench, pytestconfig):
     rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz, tones=True)
     print(text)
     r = parse_fm(text)
-    assert r["segments"] == 1, f"keyed segments: {r['segments']} (~/{sdr_bench.dir}/{rdir}/)"
+    assert r["segments"] == 1, f"keyed segments: {r['segments']} ({sdr_bench.run_path(rdir)})"
     # The Morse itself: the dashes (180 ms at 20 wpm) as tone runs at one audio frequency
     tones = r["tones"]
     best = max((sum(1 for u in tones if abs(u[0] - t[0]) <= 25) for t in tones), default=0)

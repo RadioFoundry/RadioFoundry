@@ -196,24 +196,26 @@ class Radio:
         except (DebugLinkError, KeyError, ValueError, struct.error):
             return None
 
-    def port_present(self):
-        """The radio's serial port is there again (after a restart or a USB personality switch). Pinned: that port's
-        own device node; found by USB ID: any debug link port (reconnect() then checks it is this radio)."""
-        return os.path.exists(self.port) if self.pinned else bool(find_ports())
-
     def reconnect(self, timeout=30.0, what="the restart"):
-        """Reopen the debug link after the radio restarted. Pinned: only on its own port. Otherwise any port found by
-        USB ID whose chip has this radio's UID (never another radio on the bench)."""
+        """Reopen the debug link after the radio restarted or re-enumerated. Pinned: only on its own port. Otherwise
+        also any port found by USB ID whose chip has this radio's UID. A chip with another UID is never taken, on its
+        own port name either (a re-enumeration can hand that name to another radio); one that can't say yet (an
+        HR_C7000 before its UID is read) only on its own name."""
+        self.link.close()       # a second open of the port is refused by a serial hub, and leaked on a tty
         end = time.monotonic() + timeout
+        foreign = set()         # asked once per call: a long wait doesn't keep writing to another session's radio
         while time.monotonic() < end:
             ports = [self.port] if self.pinned else [self.port] + [p for p in find_ports() if p != self.port]
-            for port in ports:
+            for port in (p for p in ports if p not in foreign):
                 link = None
                 try:
                     link = DebugLink(port, timeout=1.5)
                     link.ping()
-                    if port != self.port and (self.uid is None or self._uid(link) != self.uid):
+                    uid = self._uid(link) if self.uid is not None else None
+                    if uid is not None and uid != self.uid or uid is None and port != self.port:
                         link.close()
+                        if uid is not None:
+                            foreign.add(port)
                         continue
                     self.link, self.port = link, port
                     return
@@ -224,6 +226,15 @@ class Radio:
             time.sleep(0.5)
         raise AssertionError(f"the radio did not come back after {what}")
 
+    def serial_back(self, timeout, what="the switch back to the serial port"):
+        """After a USB personality switch: True once this radio answers on a serial port again (radio.link reopened,
+        as reconnect() does), False after timeout. It doesn't raise, so a test's cleanup can try the network first."""
+        try:
+            self.reconnect(timeout, what)
+            return True
+        except AssertionError:
+            return False
+
     def close(self):
         self.link.close()
 
@@ -231,15 +242,20 @@ class Radio:
     def released(self):
         """Close the port for the duration (another tool opens it, e.g. an MMDVM client), then reopen it."""
         self.link.close()
+        closed = self.link
         try:
             yield self.port
         finally:
-            for _ in range(20):
-                try:
-                    self.link = DebugLink(self.port, timeout=1.5)
-                    break
-                except DebugLinkError:
-                    time.sleep(0.25)
+            if self.link is closed:         # else a serial_back() inside already reopened it
+                for _ in range(20):
+                    try:
+                        self.link = DebugLink(self.port, timeout=1.5)
+                        break
+                    except DebugLinkError:
+                        time.sleep(0.25)
+                # The port re-enumerated meanwhile and its name is another radio's now: find ours
+                if self.link is not closed and self.uid is not None and self._uid(self.link) not in (None, self.uid):
+                    self.serial_back(10, "the port's release")
 
     # ── reading ──
     def ping(self):
@@ -643,10 +659,8 @@ class _LineJob:
                 return
             if self.req.error is None:   # the board closed the stream mid-job: it restarted
                 self.req.error = self._L.BenchLineError("the bench board ended the job's stream with no exit", "lost")
-            e = self.req.error
-            self.returncode = {"timeout": 75, "busy": 75, "deadlock": 75, "refused": 77, "no_signal": 3}.get(e.code, 69)
-            if e is not None:
-                self.lines.append(f"rfoundry-bench: {e}\n")
+            self.returncode = self._L.exit_code(self.req.error)
+            self.lines.append(f"rfoundry-bench: {self.req.error}\n")
         self.started.set()
 
     def poll(self):
@@ -703,15 +717,8 @@ def usb_network(radio, own_id, timeout=30.0):
             except (DebugLinkError, OSError):
                 pass
             udp.close()
-        end = time.monotonic() + 20
-        while not radio.port_present() and time.monotonic() < end:
-            time.sleep(0.5)
-        for _ in range(40):
-            try:
-                radio.link = DebugLink(radio.port, timeout=1.5)
-                break
-            except DebugLinkError:
-                time.sleep(0.25)
+        if not radio.serial_back(30):
+            print("rfoundry-hil: the radio didn't come back as a serial port", file=sys.stderr)
 
 
 def host_network_kind(radio):
@@ -1115,6 +1122,11 @@ class SdrBench:
         self._run_dirs.append(d)
         return d
 
+    def run_path(self, run_dir, name=""):
+        """Where a file of run_dir() is, for a job's output path or a message: a local directory with a bench board,
+        the bench host's home otherwise."""
+        return os.path.join(run_dir, name) if self.api else f"~/{self.dir}/{run_dir}/{name}"
+
     def remove_run_dirs(self):
         """Delete the run directories this session made on the bench (captures are ~50 MB each and filled the bench's
         disk). Only names run_dir() returned; RFOUNDRY_HIL_KEEP_RUNS=1 keeps them for a look."""
@@ -1512,7 +1524,6 @@ class SdrBench:
         gain instead of --sdr-gain (level measurements want the ADC far from its rails)."""
         if self.api:
             return self._api_capture_start(run_dir, freq, seconds, name)
-        self._no_api("SDR capture")
         self._need_lease()
         f = f"~/{self.dir}/{run_dir}/{name}.cs8"
         g = self.gain if gain is None else gain
