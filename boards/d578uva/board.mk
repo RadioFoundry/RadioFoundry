@@ -10,7 +10,7 @@ MCU        := at32f435
 APP_BASE   := 0x08006000
 # Bench knobs (docs/testing/d578uv-bringup.md), e.g. D578UV_DEFS="-DD578UV_LEVEL_IC=0" to keep SWD on
 # board_t .name (boards/d578uv/board.c): not the GD32 build's, so the tools tell the two apart
-BOARD_T_NAME := AT-D578UV AT32
+BOARD_T_NAME := AT-D578UV-AT32
 D578UV_DEFS ?=
 MCU_DEFS   += $(D578UV_DEFS)
 # The radio task's deepest chain (a TFTP ID database write through the NAND sectors, with VOX on) is 2740 bytes here,
