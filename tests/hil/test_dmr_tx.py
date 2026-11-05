@@ -31,6 +31,11 @@ dmr.tx_alias = the radio name; a 4 s over: the alias the SDR decodes from the em
 modem's listener assembles equal dmr.tx_alias (at least one of the two must have heard it complete; both, when they
 did, must agree), call.tx_alias_lcs grew.
 
+test_dmr_tx_permit_before_key: on a board that holds its beeps off the air (the HR_C7000 TX gate, its "pg" diagnostics
+line; others skip), a 3 s over: beep.played grew (the talk permit played before the key-up), the gate closed (g + 1)
+and never found the beep still sounding (l) or ring play on (ra), and on air the over starts with three voice LC
+headers from us that decode, each within 1.5 dB of the over's median burst level, with no burst 2 dB or more under it.
+
 test_dmr_privacy_tx: Motorola basic privacy key 1 loaded (RADIO op 19), a 3 s over: every voice LC header and
 terminator from us that the SDR or the bench modem decoded carries the privacy service option (so & 0x40), every
 embedded call LC FID 0x10, and a clear over just before carries no privacy option. The scrambling itself isn't
@@ -296,6 +301,66 @@ def test_dmr_tx_talker_alias(radio, sdr_bench, pytestconfig, backup_dir):
     assert on_sdr is not None or on_bench is not None, "neither receiver assembled the talker alias"
     for name, got in (("SDR", on_sdr), ("bench modem", on_bench)):
         assert got is None or got == alias, f"{name} heard alias {got!r}, the radio sends {alias!r}"
+
+
+def _gate(radio):
+    """The HR_C7000 TX gate's diagnostics line ("pg g<closings> l<late> ra<ring play while gated>") as a dict, or None
+    on a board without it (one whose beeps may sound on air)."""
+    import re
+    for line in rfoundry_hil.diag_lines(radio):
+        m = re.fullmatch(r"pg g(\d+) l(\d+) ra(\d+)", line.strip())
+        if m:
+            return {"g": int(m.group(1)), "l": int(m.group(2)), "ra": int(m.group(3))}
+    return None
+
+
+PERMIT_LEVEL_DB = 1.5     # a header's level against the over's median (a beep on air or a late gate would dent it)
+
+
+@pytest.mark.feature("beep")
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.sdr_or_modem
+def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
+    """A board that holds its beeps off the air (CAP_BEEP_NOT_ON_AIR, the HR_C7000 TX gate) plays the talk permit
+    before it keys (docs/spec/dmr-modem.md): the beep plays once, the gate closes once and never finds the beep still
+    sounding or ring play on, and the over is whole from its first burst: three voice LC headers from us that decode,
+    each at the over's level (within PERMIT_LEVEL_DB of the median burst), and no burst more than 2 dB below it."""
+    gate = _gate(radio)
+    if gate is None:
+        skip("other_board", "no TX gate (pg) line: this board's beeps may sound on air, so it plays the permit on air")
+    freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
+    own = int(d["dmr.own_id"])
+    played = int(radio.view().get("beep.played", 0))
+    sdr, heard = _over(radio, sdr_bench, freq, cc, 3.0, "hil_dmr_permit")
+    after = _gate(radio)
+    played = int(radio.view().get("beep.played", 0)) - played
+    print(f"beep.played +{played}; gate {gate} -> {after}")
+    assert played >= 1, "no beep played for the over: is Settings > Talk permit off?"
+    assert after["g"] - gate["g"] >= 1, "the TX gate never closed for the over"
+    assert after["l"] == gate["l"], f"the key-up found the beep still sounding ({gate['l']} -> {after['l']})"
+    assert after["ra"] == gate["ra"], f"ring play was on while the gate was closed ({gate['ra']} -> {after['ra']})"
+
+    bursts = sdr.get("bursts", [])
+    ours = [b for b in bursts if (b.get("lc") or {}).get("src") == own]
+    assert ours, f"no burst with our source ID {own} decoded on {freq} MHz"
+    start = bursts.index(ours[0])
+    over = bursts[start:]
+    headers = [b for b in over[:3] if b.get("kind") == "VLC_HDR"]
+    print("first bursts:", [(b.get("kind"), b.get("level_dbfs"), b.get("fec_ok")) for b in over[:5]])
+    assert len(headers) == 3, f"the over starts {[b.get('kind') for b in over[:3]]}, not three voice LC headers"
+    assert all(b.get("fec_ok") is not False for b in headers), "a voice LC header failed its FEC"
+    levels = [b["level_dbfs"] for b in over if b.get("level_dbfs")]
+    if len(levels) < 10:
+        warnings.warn("the bench gave no burst levels: the level checks are not judged")
+        return
+    med = sorted(levels)[len(levels) // 2]
+    print(f"burst level median {med:.1f} dBFS, min {min(levels):.1f}, max {max(levels):.1f}, headers "
+          f"{[b['level_dbfs'] for b in headers]}")
+    for b in headers:
+        assert abs(b["level_dbfs"] - med) <= PERMIT_LEVEL_DB, \
+            f"a header at {b['level_dbfs']:.1f} dBFS, the over's median {med:.1f}"
+    assert min(levels) >= med - 2.0, f"a burst at {min(levels):.1f} dBFS, 2 dB or more under the median {med:.1f}"
 
 
 BEACON_PHASE_S = 6.0     # the bench repeater's beacon (its answer) this long after it started
