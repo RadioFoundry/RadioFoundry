@@ -527,6 +527,40 @@ uint8_t md9600_rf_noise(uint16_t raw12, uint16_t l1_open, uint16_t l9_open)
 	return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
 }
 
+void md9600_noise_clear(md9600_noise_win_t *w)
+{
+	w->valid = false;
+}
+
+uint16_t md9600_noise_floor(md9600_noise_win_t *w, uint16_t raw12, int16_t rssi_dbm, uint32_t now_ms)
+{
+	uint32_t b = now_ms / MD9600_NOISE_BUCKET_MS;
+	bool dropped = w->valid && rssi_dbm <= w->last_dbm - MD9600_NOISE_RSSI_DROP_DB;
+	if (!w->valid || dropped || b - w->bucket >= MD9600_NOISE_BUCKETS) {
+		for (uint32_t i = 0; i < MD9600_NOISE_BUCKETS; i++) {
+			w->min[i] = 0xFFFFu;
+		}
+		w->valid = true;
+	} else {
+		for (uint32_t k = 1; k <= b - w->bucket; k++) {
+			w->min[(w->bucket + k) % MD9600_NOISE_BUCKETS] = 0xFFFFu;	// buckets begun since the last reading
+		}
+	}
+	w->bucket = b;
+	w->last_dbm = rssi_dbm;
+	uint16_t *cur = &w->min[b % MD9600_NOISE_BUCKETS];
+	if (raw12 < *cur) {
+		*cur = raw12;
+	}
+	uint16_t lo = 0xFFFFu;
+	for (uint32_t i = 0; i < MD9600_NOISE_BUCKETS; i++) {
+		if (w->min[i] < lo) {
+			lo = w->min[i];
+		}
+	}
+	return lo;
+}
+
 const char *md9600_rf_err_name(uint8_t err)
 {
 	static const char *const names[MD9600_RF_E_COUNT] = {

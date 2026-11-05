@@ -371,48 +371,7 @@ static void audio(bool on)
 static subtone_t rx_tone_now;	// the RX sub-audio the detector is set for
 #endif
 
-// The noise line follows the modulation: under a strong carrier it reads about 100 counts in a pause and peaks over
-// 1000 in speech for tens of ms, while an empty channel holds 1700-1900 (first radio, VHF, 2026-11-03). One reading a
-// poll let speech peaks close the squelch. The squelch gets the lowest reading over the last NOISE_BUCKETS buckets of
-// NOISE_BUCKET_MS: a carrier that drops closes about that much later. Cleared on every retune and wake-up, so a scan
-// never sees the last channel's readings
-#define NOISE_BUCKET_MS		40u
-#define NOISE_BUCKETS		4u
-static uint16_t noise_min[NOISE_BUCKETS];
-static uint32_t noise_bucket;	// the bucket number (ms / NOISE_BUCKET_MS) of noise_min[noise_bucket % NOISE_BUCKETS]
-static bool noise_valid;
-
-static void noise_clear(void)
-{
-	noise_valid = false;
-}
-
-static uint16_t noise_floor(uint16_t raw, uint32_t now_ms)
-{
-	uint32_t b = now_ms / NOISE_BUCKET_MS;
-	if (!noise_valid || b - noise_bucket >= NOISE_BUCKETS) {
-		for (uint32_t i = 0; i < NOISE_BUCKETS; i++) {
-			noise_min[i] = 0xFFFFu;
-		}
-		noise_valid = true;
-	} else {
-		for (uint32_t k = 1; k <= b - noise_bucket; k++) {
-			noise_min[(noise_bucket + k) % NOISE_BUCKETS] = 0xFFFFu;	// buckets begun since the last reading
-		}
-	}
-	noise_bucket = b;
-	uint16_t *cur = &noise_min[b % NOISE_BUCKETS];
-	if (raw < *cur) {
-		*cur = raw;
-	}
-	uint16_t lo = 0xFFFFu;
-	for (uint32_t i = 0; i < NOISE_BUCKETS; i++) {
-		if (noise_min[i] < lo) {
-			lo = noise_min[i];
-		}
-	}
-	return lo;
-}
+static md9600_noise_win_t noise_win;	// the squelch's noise window (rfseq_md9600.h)
 
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 {
@@ -428,7 +387,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 #else
 	(void)rx_tone;
 #endif
-	noise_clear();
+	md9600_noise_clear(&noise_win);
 	if (md9600_rf_rx(&rf, hz, bw == RADIO_BW_25K) != MD9600_RF_OK) {
 		return false;
 	}
@@ -529,7 +488,7 @@ static void rx_sleep(bool sleep)
 	if (sleep) {
 		md9600_rf_sleep(&rf);
 	} else if (rf.rx_valid) {
-		noise_clear();
+		md9600_noise_clear(&noise_win);
 		(void)md9600_rf_rx(&rf, rf.rx_hz, rf.rx_wide);
 	}
 }
@@ -541,7 +500,7 @@ static void status(radio_status_t *st)
 	uint16_t rssi = md9600_adc_raw(band == MD9600_VHF ? MD9600_ADC_RSSI_V : MD9600_ADC_RSSI_U);
 	uint16_t noise = md9600_adc_raw(band == MD9600_VHF ? MD9600_ADC_NOISE_V : MD9600_ADC_NOISE_U);
 	st->rssi_dbm = md9600_rf_rssi_dbm(rf.rev, band, rssi);
-	st->noise = md9600_rf_noise(noise_floor(noise, hal_millis()), sql_l1, sql_l9);
+	st->noise = md9600_rf_noise(md9600_noise_floor(&noise_win, noise, st->rssi_dbm, hal_millis()), sql_l1, sql_l9);
 	st->carrier = rf.state == MD9600_RF_RX && st->rssi_dbm >= CARRIER_DBM;
 #if MD9600_TX_SIG
 	if (rf.state == MD9600_RF_TX) {

@@ -322,7 +322,10 @@ Analog per band: VHF RSSI PA0, UHF RSSI PB0, VHF noise PC5, UHF noise PB1. A fit
 The noise line follows the modulation. Under a -73 dBm NOAA carrier (VHF, 25 kHz), it reads about 100 counts in a pause and
 peaks at 900-1500 in speech for tens of ms; an empty channel holds 1700-1900 (first radio, 2026-11-03). The squelch
 therefore takes the lowest reading over the last 160 ms (`radio_md9600.c`), cleared on every retune: one reading a
-poll let speech close it. A carrier that drops closes the squelch up to 160 ms later.
+poll let speech close it. RSSI holds steady through the modulation and falls about 11 dB within one 25 ms poll when the
+carrier ends (UHF, -127 dBm), so a fall of 8 dB or more since the last poll starts the window over and the squelch closes
+on the next reading (`md9600_noise_floor`, `rfseq_md9600.c`). Without it, the noise kept the squelch open about 170 ms
+after the carrier dropped.
 
 ---
 

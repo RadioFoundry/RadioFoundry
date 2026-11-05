@@ -187,4 +187,24 @@ int16_t md9600_rf_rssi_dbm(md9600_rev_t rev, uint8_t band, uint16_t raw12);
 #define MD9600_SQL_CORE_L9	40
 uint8_t md9600_rf_noise(uint16_t raw12, uint16_t l1_open, uint16_t l9_open);
 
+// The squelch's noise window (hardware-md9600.md 5.7). The noise line follows the modulation: under a strong carrier it
+// reads about 100 counts in a pause and peaks over 1000 in speech for tens of ms, while an empty channel holds
+// 1700-1900. The squelch gets the lowest reading over the last MD9600_NOISE_BUCKETS buckets of MD9600_NOISE_BUCKET_MS,
+// so speech peaks don't close it. RSSI holds steady through the modulation and falls about 11 dB within one poll when
+// the carrier ends (UHF, -127 dBm): a fall of MD9600_NOISE_RSSI_DROP_DB or more since the last reading starts the
+// window over, so the squelch closes on the next reading instead of 160 ms of noise later
+#define MD9600_NOISE_BUCKET_MS		40u
+#define MD9600_NOISE_BUCKETS		4u
+#define MD9600_NOISE_RSSI_DROP_DB	8
+typedef struct {
+	uint16_t min[MD9600_NOISE_BUCKETS];
+	uint32_t bucket;	// the bucket number (ms / MD9600_NOISE_BUCKET_MS) of min[bucket % MD9600_NOISE_BUCKETS]
+	int16_t last_dbm;
+	bool valid;
+} md9600_noise_win_t;
+// Forget every reading (each retune and wake-up, so a scan never sees the last channel's)
+void md9600_noise_clear(md9600_noise_win_t *w);
+// Add one reading; returns the window's lowest
+uint16_t md9600_noise_floor(md9600_noise_win_t *w, uint16_t raw12, int16_t rssi_dbm, uint32_t now_ms);
+
 #endif

@@ -596,6 +596,39 @@ static void test_probe(void)
 	CHECK(md9600_rf_probe(&ops, 300000000u, MD9600_PROBE_THRESHOLD) == MD9600_REV_UNKNOWN);
 }
 
+// The squelch's noise window: speech peaks don't close it, a dropped carrier does at once
+static void test_noise_window(void)
+{
+	md9600_noise_win_t w;
+	md9600_noise_clear(&w);
+	uint32_t t = 1000;
+	// A carrier with speech: pauses near 100, peaks over 1000; RSSI steady at -110 dBm
+	static const uint16_t speech[] = { 100, 120, 1200, 1500, 900, 1400, 1300, 110, 1500, 1450 };
+	for (unsigned i = 0; i < sizeof speech / sizeof speech[0]; i++, t += 25) {
+		CHECK(md9600_noise_floor(&w, speech[i], -110, t) <= 120);
+	}
+	// Peaks for longer than the window: the floor follows them
+	for (int i = 0; i < 8; i++, t += 25) {
+		(void)md9600_noise_floor(&w, 1400, -110, t);
+	}
+	CHECK(md9600_noise_floor(&w, 1400, -110, t) == 1400);
+	t += 25;
+	CHECK(md9600_noise_floor(&w, 100, -110, t) == 100);
+	t += 25;
+	// The carrier ends: noise 1800 and RSSI 11 dB down within one poll. The floor follows the next reading
+	CHECK(md9600_noise_floor(&w, 1800, -121, t) == 1800);
+	t += 25;
+	CHECK(md9600_noise_floor(&w, 1750, -121, t) == 1750);
+	// A smaller RSSI step keeps the window: a speech peak during a 5 dB fade doesn't close it
+	md9600_noise_clear(&w);
+	(void)md9600_noise_floor(&w, 100, -100, t);
+	t += 25;
+	CHECK(md9600_noise_floor(&w, 1500, -105, t) == 100);
+	// A retune forgets the last channel
+	md9600_noise_clear(&w);
+	CHECK(md9600_noise_floor(&w, 1700, -105, t) == 1700);
+}
+
 static void test_readings(void)
 {
 	CHECK(md9600_rf_rssi_dbm(MD9600_REV_V4, MD9600_VHF, 0) == -135);
@@ -793,6 +826,7 @@ int main(void)
 #endif
 	test_probe();
 	test_readings();
+	test_noise_window();
 	test_cal();
 	test_hwopt();
 	test_rev_text();
