@@ -636,7 +636,7 @@ msgstr "Balizas automáticas"
 msgid "Frequency"
 msgstr "Frecuencia"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Power"
 msgstr "Potencia"
 
@@ -2921,6 +2921,10 @@ msgid "Connections"
 msgstr "Conexiones"
 
 #: core/ui/ui_menus.c
+msgid "Power saving"
+msgstr "Ahorro de energía"
+
+#: core/ui/ui_menus.c
 msgid "Keys"
 msgstr "Teclas"
 
@@ -3543,6 +3547,10 @@ msgstr "Red "
 #: core/ui/ui_screens.c
 msgid "No calls yet"
 msgstr "Sin llamadas aún"
+
+#: core/ui/ui_screens.c
+msgid "{Power|Pwr}"
+msgstr "{Pot|Pt}"
 
 #: core/ui/ui_screens.c
 msgid "{Squelch|SQL}"

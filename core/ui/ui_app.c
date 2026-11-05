@@ -2094,7 +2094,7 @@ void ui_app_key(const input_event_t *ev)
 		ui_toast(TR("Not used here"));
 }
 
-// Auto power off (Settings > Power): after auto_off_min without a key press, a call, a scan or the hotspot, a banner
+// Auto power off (Settings > Power saving): after auto_off_min without a key press, a call, a scan or the hotspot, a banner
 // a minute before, then the housekeeping task switches off (ui_app_power_off_due)
 static void use_tick(const radio_view_t *v)
 {
@@ -2114,7 +2114,7 @@ static void use_tick(const radio_view_t *v)
 		power_off_due = true;
 }
 
-// Low battery warning (Settings > Power): a banner when the battery falls to the level, again every 5 min while it
+// Low battery warning (Settings > Power saving): a banner when the battery falls to the level, again every 5 min while it
 // stays there, with the low battery tone unless the radio core's own voltage warning has sounded (view.battery)
 static void battery_tick(const radio_view_t *v)
 {

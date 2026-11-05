@@ -412,7 +412,7 @@ Nine levels, L-, L, L+, L++, M, M+, M++, H-, H, from the radio's factory calibra
 ### DM-32UV battery
 
 The percentage is linear from 6.4 V (0 %) to 8.2 V (100 %). There are no voltage thresholds: only the percentage
-warning (**Settings > Power > Low battery warning**) applies, and a low battery never stops a transmission.
+warning (**Settings > Power saving > Low battery warning**) applies, and a low battery never stops a transmission.
 
 ### DM-32UV power switch
 
@@ -525,7 +525,7 @@ timeout Off until it is switched off. Switch the radio off before unplugging the
 Two levels, L and H (nominal 20 W). The radio refuses to transmit until RadioFoundry can read its power calibration.
 
 The radio runs from a 13.8 V supply and has no battery. The status line shows no battery icon or percentage, Tools has
-no Battery page, and Settings > Power has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
+no Battery page, and Settings > Power saving has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
 voltage, so nothing warns about it.
 
 ### DB25-D PRO display
