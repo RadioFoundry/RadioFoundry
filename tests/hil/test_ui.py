@@ -554,6 +554,8 @@ def test_ptt_when_locked_off(home):
         skip("not_built", "firmware without settings.ui_flags")
     if not flags & 0x10:
         skip("state", "PTT when locked is already off")
+    if r.unlock_key() != "quick":
+        skip("no_hw", "the radio has no QUICK key to lock and unlock it with")
     r.lowest_power()
     settings_keys(r, "ok 7 4 down down down ok")
     try:
