@@ -29,6 +29,7 @@ def test_noaa_receive(radio, pytestconfig):
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
     hz = round(rig(pytestconfig, "noaa-mhz") * 1e6)
+    radio.skip_out_of_band(hz)
     floor = pytestconfig.getoption("--rssi-floor")
     with radio.vfo_session():
         radio.link.vfo_set(hz)
@@ -51,6 +52,7 @@ def test_rx_tone_squelch(radio, pytestconfig):
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
     hz = round(rig(pytestconfig, "noaa-mhz") * 1e6)
+    radio.skip_out_of_band(hz)
     L = radio.link
     with radio.vfo_session():
         L.vfo_set(hz)
