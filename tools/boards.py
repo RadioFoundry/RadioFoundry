@@ -228,7 +228,8 @@ BOARD_SCHEMA = {
                  "supply_mv": _opt(RANGE),
                  "codec": _opt(STR_LIST),
                  "limits": _opt({name: _opt(HIL_LIMIT) for name in HIL_LIMITS})}),
-    "features": _opt(("map", {"state": _req(("unsupported",)), "reason": _req(str)})),
+    # n/a: a feature without a switch the hardware rules out (one with a switch: BOARD_UNSUPPORTED)
+    "features": _opt(("map", {"state": _req(("unsupported", "n/a")), "reason": _req(str)})),
     # the open-firmware CPS radio types the board's hal_cps_t reports (docs/spec/cps-protocol.md 2.2, test_cps.py)
     "cps": _opt({"radio_types": _req(("list", int))}),
 }

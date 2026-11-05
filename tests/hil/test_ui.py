@@ -123,7 +123,7 @@ def test_find_by_digits(home, shots):
     wait_screen(r, "home")
 
 
-@pytest.mark.feature("ui_navigation")
+@pytest.mark.feature("key_lock")
 def test_key_lock(home):
     """Long QUICK locks the keys; while locked, a key only explains how to unlock; long QUICK unlocks."""
     r = home
@@ -140,11 +140,10 @@ def test_key_lock(home):
 
 
 @pytest.mark.feature("ui_navigation")
+@pytest.mark.needs_switch("DMR")
 def test_talk_target_picker_on_long_context(home):
     """Long # opens the talk target picker on a DMR channel (Recent is Hub 3)."""
-    r = home
-    if r.core().get("mode") != "dmr":
-        skip("state", "the channel isn't DMR")
+    r = dmr_home(home)
     r.press("context", LONG)
     wait_screen(r, "picker", "talk target picker on long #")
     r.press("back")
@@ -228,6 +227,9 @@ def test_injected_keys_count_as_activity(home):
 
 
 def dmr_home(r):
+    """The home screen on a DMR channel. A test that uses it carries @pytest.mark.needs_switch("DMR")."""
+    if "DMR" not in r.features():
+        skip("not_built", "built without DMR")
     if r.core().get("mode") != "dmr":
         skip("state", "the current channel isn't DMR")
     return r
@@ -250,6 +252,7 @@ def leave_quick(r):
 
 
 @pytest.mark.feature("dmr_voice", optional=True)
+@pytest.mark.needs_switch("DMR")
 def test_quick_timeslot_for_now(home):
     """Quick 2 flips the timeslot for now (temp bit 0x20); BACK on Home undoes it."""
     r = dmr_home(home)
@@ -267,6 +270,7 @@ def test_quick_timeslot_for_now(home):
 
 
 @pytest.mark.feature("dmr_voice", optional=True)
+@pytest.mark.needs_switch("DMR")
 def test_quick_color_code_for_now(home):
     """Quick 3, a digit, OK: the color code for now (temp bit 0x40)."""
     r = dmr_home(home)
@@ -335,6 +339,7 @@ def test_quick_copy_to_vfo(home):
 
 
 @pytest.mark.feature("dmr_voice", optional=True)
+@pytest.mark.needs_switch("DMR")
 def test_quick_hear_all_latch(home):
     """Quick 5 latches hear all (every talkgroup on the slot); Quick 5 again or BACK on Home drops it."""
     r = dmr_home(home)
@@ -387,6 +392,7 @@ def test_quick_vox_toggle(home):
 
 
 @pytest.mark.feature("ui_navigation")
+@pytest.mark.needs_switch("DMR")
 def test_picker_focus_target(home):
     """The talk target picker tells the radio core which row has the focus (the one-shot PTT target); long BACK
     clears it. Nothing transmits: the one-shot only arms on PTT (radio_tx tests key it)."""
@@ -445,7 +451,7 @@ def test_long_press_time_reaches_input(home):
     r.wait_for(lambda x: as_int(x.get("input.long_ms")) == before, sections=("link",), what="long press time back")
 
 
-@pytest.mark.feature("ui_settings")
+@pytest.mark.feature("key_lock")
 def test_auto_lock(home):
     """Settings > Privacy > Auto lock 30 s locks the keys after 30 s without a key; set back to Off after."""
     r = home
@@ -543,7 +549,7 @@ def test_privacy_key_entry(home):
     r.wait_for(lambda x: x.get("settings.privacy_type") == "0", sections=("storage",), what="the key removed")
 
 
-@pytest.mark.feature("ui_settings")
+@pytest.mark.feature("key_lock")
 @pytest.mark.radio_tx
 def test_ptt_when_locked_off(home):
     """Settings > Privacy > PTT when locked Off: with the keys locked an injected PTT doesn't transmit and the UI
@@ -601,6 +607,7 @@ def test_usb_network_switch_row(home):
 
 @pytest.mark.feature("channel_edit")
 @pytest.mark.codeplug_write
+@pytest.mark.needs_switch("DMR")
 def test_save_timeslot_to_channel(home):
     """Quick 2 then hold OK saves the timeslot into the channel off the UI task (storage.job_busy), the temporary mark
     goes, and the channel keeps the new slot; the test saves the old slot back the same way."""
@@ -687,6 +694,7 @@ def test_delete_message(home):
 
 @pytest.mark.feature("ui_settings")
 @pytest.mark.reboot
+@pytest.mark.factory_reset
 @skip_if(os.environ.get("RFOUNDRY_HIL_FACTORY_RESET") != "1", "opt_in",
          "erases the settings and the native area: set RFOUNDRY_HIL_FACTORY_RESET=1 (and --allow-reboot)")
 def test_factory_reset(home):

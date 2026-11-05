@@ -554,6 +554,7 @@ def test_tone_burst_time_limit(fm_tx):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("DMR")
 def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
     need_scan(radio)
     if "DMR" not in radio.features():
@@ -665,8 +666,11 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("DMR")
 def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
     need_scan(radio)
+    if "DMR" not in radio.features():
+        skip("not_built", "built without DMR")
     hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
     radio.go_home()
     pos = radio.find_channel(hz, "dmr")
