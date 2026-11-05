@@ -11,7 +11,8 @@ decode and deviation (within 20 %) must agree with the analysis (a second over: 
 
 Pass criteria:
 - test_fm_tx_ctcss: one keyed segment; CTCSS 100.0 Hz decoded within 0.5 Hz (sdr_fm_check --expect-ctcss PASS);
-  tone deviation 200-900 Hz at 12.5 kHz; |carrier offset| < --max-foff Hz (default 500; corrected for the SDR's own error by the SDR bench's calibration, or --sdr-ppm).
+  tone deviation 200-900 Hz at 12.5 kHz; |carrier offset| < --max-foff Hz (default 500; corrected for the SDR's own error by the SDR bench's calibration, or --sdr-ppm;
+  a bench board takes its crystal out itself and adds its correction's tolerance at the frequency, freq_tol_hz).
 - test_fm_tx_dcs: DCS D023N decoded with the right polarity (--expect-dcs 023N PASS; an inverted code fails).
 - test_fm_tx_bandwidth: the same CTCSS 100.0 Hz tone at 12.5 and at 25 kHz: the tone deviation at 25 kHz is 1.5 to
   2.6 times the one at 12.5 kHz (the radio scales every deviation with the channel bandwidth; nominally 2).
@@ -144,7 +145,13 @@ def key_and_check(radio, sdr_bench, pytestconfig, tag, bw_khz, ctcss=None, dcs=N
     assert r["segments"] >= 1, f"no keyed segment in the capture (~/{sdr_bench.dir}/{rdir}/): {text[-800:]}"
     foff = r.get("carrier_corrected_hz", r.get("carrier_hz"))
     max_foff = pytestconfig.getoption("--max-foff")
-    assert foff is not None and abs(foff) < max_foff, f"carrier offset {foff} Hz (limit {max_foff})"
+    # A bench board says how far its own crystal correction may be off at the frequency: the limit allows for it
+    meta = sdr_bench.capture_meta(cap)
+    tol = meta.get("freq_tol_hz") or 0.0
+    if "ppm_source" in meta:
+        print(f"bench board's correction: {meta.get('ppm_source')}, +-{meta.get('freq_tol_hz')} Hz at {mhz} MHz")
+    assert foff is not None and abs(foff) < max_foff + tol, \
+        f"carrier offset {foff} Hz (limit {max_foff} + the bench's {tol} Hz)"
     if board is not None:
         check_board_fm(board, ctcss, dcs, r)
     return rc, r

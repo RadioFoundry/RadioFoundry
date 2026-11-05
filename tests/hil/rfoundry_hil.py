@@ -1578,6 +1578,8 @@ class SdrBench:
                         "scale_db": m.get("scale_db"), "samples": m.get("samples", 0), "clip_pct": m.get("clip_pct", 0),
                         "trigger_time": m.get("trigger_time"), "level_db": m.get("level_db"),
                         "floor_db": m.get("floor_db"), "no_signal": r.error is not None,
+                        # how far the board's crystal correction may be off at freq (null: not known), and its source
+                        "freq_tol_hz": m.get("freq_tol_hz"), "ppm_source": m.get("ppm_source"),
                         "gap_samples": gap, "zero_s": round(zeros / 4 / rate, 3)}
                 with open(f + ".json", "w") as fh:
                     json.dump(meta, fh)
@@ -1605,7 +1607,7 @@ class SdrBench:
 
     def capture_meta(self, capture):
         """The capture's FILE.json (sdrmon.py capture): gain, samples, overflows, clip_pct (I/Q samples at the ADC
-        rails, over the whole file)."""
+        rails, over the whole file). A bench board's also has freq_tol_hz and ppm_source (its crystal correction)."""
         if self.api:
             try:
                 with open(capture + ".json") as fh:
