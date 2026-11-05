@@ -65,7 +65,7 @@ bits 8:3 cleared, bits 29:27 set).
 | PTB12 | 44 | power latch | high = stay on |
 | PTB13 | 45 | audio amplifier | high = on (unverified) |
 | PTB17 | 49 | power switch sense | level when off: ? |
-| PTB26 | 58 | FD6818 GPIO6, its squelch output (measured) | not used |
+| PTB26 | 58 | FD6818 GPIO6, its squelch output (measured) | high = open; PTB27 counts only while it is high |
 | PTB27 | 59 | FD6818 GPIO0, the sub-audio compare result (measured) | high = the tone or code is heard |
 | PTB28 / PTB29 | 60 / 61 | voice prompt chip clock / data | |
 | DAC B | | PA control, after IO_DIPLEX2 bit 28 is cleared | 0 = off |
@@ -154,7 +154,8 @@ bit-banged (measured). The register map is the FD6818's (`drivers/rf/fd6818/fd68
 | Noise (0x65) | no signal: 38-44 raw at 904-927.5 MHz (measured), inside the core's squelch range, so the driver adds the FD6818 offset (`fd6818_noise`) |
 
 Sub-audio decode (measured with CTCSS 100.0 Hz and DCS 023N): the right tone or code raises PTB27, a wrong one and no
-carrier leave it low. The chip doesn't tell DCS polarity apart: 023N is heard with 023 set normal or inverted.
+carrier leave it low. The chip updates PTB27 only while its squelch (PTB26) is open: when a carrier with CTCSS ends,
+PTB26 falls and PTB27 stays high (measured for 9 s), so the driver reads PTB27 only with PTB26 high. The chip doesn't tell DCS polarity apart: 023N is heard with 023 set normal or inverted.
 
 ## 8. Codec
 

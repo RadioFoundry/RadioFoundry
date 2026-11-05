@@ -24,7 +24,7 @@
 #define PIN_AMP_EN		0x2D	// audio amplifier, high = on
 #define PIN_POWER_SWITCH	0x31	// power switch sense
 #define PIN_KNOB_B0		0x35	// code bit 0
-#define PIN_RF_SQ		0x3A	// PTB26, from the FD6818's GPIO6: its squelch output (not used)
+#define PIN_RF_SQ		0x3A	// PTB26, from the FD6818's GPIO6: its squelch output: high = open, gates PTB27
 #define PIN_RF_CSS		0x3B	// PTB27, from the FD6818's GPIO0: the sub-audio compare result, high = heard
 #define PIN_VOICE_CLK		0x3C	// voice prompt chip serial clock
 #define PIN_VOICE_DATA		0x3D	// its data

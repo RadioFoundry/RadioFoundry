@@ -152,6 +152,7 @@ static void init(void)
 	hrc7000_power_on_init(&modem, rt10_cal_tx_center(), MODEM_MIC_DB);
 	write_bias(RT10_BIAS_DEFAULT_HZ);
 	hrc_pin_in(PIN_RF_CSS);
+	hrc_pin_in(PIN_RF_SQ);
 	hrc_pin_out(PIN_FD_SCL, true);
 	rfbus_i2c_attach(&fd_bus, &fd_i2c, FD_ADDR7, hal_delay_ms);
 	fd_bus.crit_enter = hrc_irq_save;
@@ -382,8 +383,10 @@ static void status(radio_status_t *st)
 	// radios (fd6818.h): read raw, every level opened on noise
 	st->noise = fd6818_noise(rfbus_read(&fd_bus.bus, FD_REG_NOISE));
 	st->carrier = false;
-	// The chip compares the sub-audio set by set_rx_tone and puts the result on its GPIO0 (fd6818sh.h)
-	st->tone_ok = rx_tone.type == TONE_NONE || hrc_pin_read(PIN_RF_CSS);
+	// The chip compares the sub-audio set by set_rx_tone and puts the result on its GPIO0 (fd6818sh.h). It updates
+	// the result only while its own squelch (GPIO6) is open: after a carrier the old result stays up, so it counts
+	// only with the squelch pin high (hardware-rt10.md 7)
+	st->tone_ok = rx_tone.type == TONE_NONE || (hrc_pin_read(PIN_RF_SQ) && hrc_pin_read(PIN_RF_CSS));
 }
 
 static void audio(bool on)
