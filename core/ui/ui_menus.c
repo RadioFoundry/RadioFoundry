@@ -2910,7 +2910,7 @@ static const char *ct_problem(uint16_t *slot)
 	if (group && ct.id > CT_GROUP_MAX)
 		return TR("Talkgroups go up to 16777214");
 	ct_scan_t sc = { .group = group, .dup = &c };
-	codeplug_contacts_each(ct_scan, &sc);
+	bool read = codeplug_contacts_each(ct_scan, &sc);
 	*slot = sc.free;
 	if (sc.dup_found) {
 		sbuf_t b;
@@ -2919,6 +2919,8 @@ static const char *ct_problem(uint16_t *slot)
 		sb_str(&b, c.name);
 		return toast_msg;
 	}
+	if (!read)
+		return TR("Couldn't save now: try again");	// the duplicate may be in a block not read
 	return *slot == 0 ? TR("No room for more contacts") : NULL;
 }
 

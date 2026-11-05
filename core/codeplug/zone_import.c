@@ -116,7 +116,9 @@ static zone_import_status_t map_contacts(zone_import_result_t *res)
 	map_scan_t m = { .free_count = 0 };
 	zsContact_t c;
 
-	codeplug_contacts_each(map_one, &m);
+	if (!codeplug_contacts_each(map_one, &m)) {
+		return ZI_FLASH;	// a contact block unread: a match missed would add the contact twice
+	}
 	uint16_t *free_slots = m.free_slots;
 	int free_count = m.free_count;
 	int next_free = 0;

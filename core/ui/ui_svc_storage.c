@@ -945,7 +945,10 @@ static void save_target_job(void *ctx)
 		return;
 	}
 	uint16_t found = 0;
-	codeplug_contacts_each(target_match, &found);
+	if (!codeplug_contacts_each(target_match, &found) && found == 0) {
+		save_failed(TRN("Codeplug not written: for now only"));
+		return;
+	}
 	if (found == 0) {
 		save_failed(TRN("Not a stored contact: for now only"));
 		return;
