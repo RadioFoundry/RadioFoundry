@@ -292,10 +292,10 @@ static bool wr_irq(const uint8_t *buf, size_t len, size_t *sent)
 
 static size_t wr(const uint8_t *buf, size_t len)
 {
-	bool rtos = xTaskGetSchedulerState() == taskSCHEDULER_RUNNING && !hrc_in_isr() && rx_sem != NULL;
 	if (len == 0) {
 		return 0;
 	}
+	bool rtos = xTaskGetSchedulerState() == taskSCHEDULER_RUNNING && !hrc_in_isr() && rx_sem != NULL;
 	if (rtos && tx_irq) {
 		size_t sent = 0;
 		if (wr_irq(buf, len, &sent)) {
