@@ -945,6 +945,17 @@ run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest h
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-platform
 
+# The HR_C7000 interrupt stack's fill, canary and high-water count (platform/hrc7000/irq_stack.h)
+TESTS   += hrc7000IrqStackTest
+
+hrc7000IrqStackTest: hrc7000IrqStackTest.c $(ROOT)/platform/hrc7000/irq_stack.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000IrqStackTest.c
+
+run: run-irqstack
+run-irqstack: hrc7000IrqStackTest
+	./hrc7000IrqStackTest
+.PHONY: run-irqstack
+
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
 # radio's own services are mdnsTest's and tftpTest's)
 HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/hostlink_net_air.c $(CORE)/dmr/ipGateway.c \

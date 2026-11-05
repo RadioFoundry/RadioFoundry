@@ -176,4 +176,5 @@ const hal_system_t hrc_system = {
 	.enter_stub = enter_stub,
 #endif
 	.irq_unhandled = hrc_irq_unhandled,
+	.irq_stack_free = hrc_irq_stack_free,
 };

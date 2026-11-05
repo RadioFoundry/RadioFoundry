@@ -55,6 +55,9 @@ typedef struct {
 	// Optional (NULL: none): interrupts the platform's fallback handler took for a source with no handler (it masks the
 	// source so it can't storm), and the last such source. A count above 0 means some interrupt went quiet for good
 	void (*irq_unhandled)(uint32_t *count, uint32_t *last_source);
+	// Optional (NULL: the handlers share the task or main stacks): bytes of the interrupt handlers' own stack never
+	// written since start. The platform checks that stack's end itself (a stack overflow crash, task "irq")
+	uint32_t (*irq_stack_free)(void);
 #if defined(CONFIG_STUB_ENTRY) && CONFIG_STUB_ENTRY
 	uint32_t stub_run_addr;		// last, so a file built without config.h sees the same layout before it
 	// Optional (NULL: any image): the loaded image may run here. The STM32 refuses one that doesn't feed the IWDG

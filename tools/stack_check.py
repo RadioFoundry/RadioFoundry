@@ -10,7 +10,9 @@ and follows the deepest call chain from each task's entry function:
 
   need = deepest chain (sum of frames) + port overhead (what the RTOS port saves on a task stack) + margin
 
-It fails when the need exceeds the task's stack. Calls through function pointers are resolved from the sources: a
+It fails when the need exceeds the task's stack. A platform whose interrupts run one at a time on a stack of their
+own (--irq-stack) names the function that installs a handler (--irq-register): every function passed to it is a root,
+and the deepest of them plus the margin must fit that stack. Calls through function pointers are resolved from the sources: a
 function stored into a struct field (a designated or positional initializer, an assignment) is a target of the calls
 through that field of that struct type; a function stored into a variable or passed as an argument is a target of
 the calls through that variable or parameter. What the sources can't show comes from tools/stack_check_edges.txt.
@@ -996,6 +998,36 @@ def find_tasks(graph, root, files, table, cc, cflags, word):
     return tasks
 
 
+def find_irqs(graph, root, files, registers):
+    """[(handler title, where)]: the functions passed as the last argument of a call to one of `registers` (the
+    platform's "install this interrupt handler") in the compiled sources"""
+    if not registers:
+        return []
+    call = re.compile(r"\b(?:" + "|".join(re.escape(r) for r in registers) + r")\s*\(")
+    out, seen = [], set()
+    for path in files:
+        try:
+            with open(os.path.join(root, path), encoding="utf-8", errors="replace") as fh:
+                t = fh.read()
+        except OSError:
+            continue
+        if not any(r in t for r in registers):
+            continue
+        t = strip_comments(t)
+        for m in call.finditer(t):
+            close = match_close(t, m.end() - 1)
+            if close >= len(t):
+                continue
+            arg = split_top(t[m.end():close], ",")[-1].strip().lstrip("&").strip()
+            if not re.fullmatch(IDENT, arg):
+                continue	# the declaration's parameter list, or a handler held in a variable
+            for title in graph.lookup(arg, path):
+                if title not in seen and graph.defined(title):
+                    seen.add(title)
+                    out.append((title, "%s:%d" % (path, t.count("\n", 0, m.start()) + 1)))
+    return out
+
+
 # ── code without a call graph: the disassembly ───────────────────────────────
 
 REGLIST_RE = re.compile(r"([a-z]+)(\d+)\s*-\s*[a-z]*(\d+)")
@@ -1303,6 +1335,32 @@ def run(args):
         else:
             print("      " + " > ".join(graph.display(t) for t, _l in path[:args.path_len]) +
                   (" > ..." if len(path) > args.path_len else ""))
+    if args.irq_stack:
+        irqs = find_irqs(graph, root, files, args.irq_register)
+        if not irqs:
+            print("  interrupts: no handler passed to %s found" % ", ".join(args.irq_register or ["(no --irq-register)"]))
+            fails += 1
+        else:
+            # One handler at a time (the platform's interrupts don't nest): the deepest one decides
+            deep = None
+            for title, where in irqs:
+                worst, path = an.depth(title)
+                reach |= an.reachable(title)
+                if deep is None or worst > deep[0]:
+                    deep = (worst, title, where, path)
+            worst, title, where, path = deep
+            free = args.irq_stack - worst - args.margin
+            status = "ok" if free >= 0 else "OVER"
+            fails += free < 0
+            print("  %-8s %-4s stack %5d  deepest %5d  free %5d  (%s, %s; %d handlers, one at a time)" %
+                  ("irq", status, args.irq_stack, worst, free, graph.display(title), where, len(irqs)))
+            print("      " + " > ".join(graph.display(t) for t, _l in path[:args.path_len]) +
+                  (" > ..." if len(path) > args.path_len else ""))
+            if args.verbose:
+                for t, w in irqs:
+                    print("      %5d  %-28s %s" % (an.depth(t)[0], graph.display(t), w))
+            if least is None or free < least[0]:
+                least = (free, "irq")
     unres = sorted((graph.display(c), loc, e) for (c, loc), e in an.unresolved.items() if c in reach)
     if unres:
         print("  unresolved pointer calls reachable from a task (%d; tools/stack_check_edges.txt can name targets):"
@@ -1374,6 +1432,9 @@ void start(void)
 }
 static int add(int a, int b) { return a + b; }
 static void task_c(void *p) { add(1, dev.ops->go(2)); }
+static void isr_x(void) { leaf(); }
+void irq_install(int n, cb_t fn);
+static void wire(void) { irq_install(3, isr_x); irq_install(4, &deep_isr); }
 """
 
 SELF_CI = """\
@@ -1395,6 +1456,7 @@ edge: { sourcename: "t.c:task_b" targetname: "t.c:run_cb" label: "t.c:15:31" }
 edge: { sourcename: "t.c:task_b" targetname: "__indirect_call" label: "t.c:15:45" }
 node: { title: "start" label: "start\\nt.c:16:6\\n8 bytes (dynamic,bounded)" }
 node: { title: "xTaskCreate" label: "xTaskCreate\\nt.h:1:6" shape : ellipse }
+node: { title: "t.c:isr_x" label: "isr_x\\nt.c:25:13\\n12 bytes (static)" }
 edge: { sourcename: "start" targetname: "xTaskCreate" label: "t.c:19:2" }
 }
 """
@@ -1471,6 +1533,8 @@ def self_test():
         tasks = find_tasks(g, d, files, Table(), None, "", 4)
         check([(t[1], t[2]) for t in tasks] == [("a", None), ("b", 128)],
               "tasks found (without the preprocessor a macro stack stays unknown)")
+        irqs = find_irqs(g, d, files, ["irq_install"])
+        check([t for t, _w in irqs] == ["t.c:isr_x"], "interrupt handlers from the install calls: %s" % irqs)
         an = Analysis(g, model, Table(), DEFAULT_LIB_BYTES)
         b, path = an.depth("t.c:task_a")
         check(b == 8 + 208 and [t for t, _l in path] == ["t.c:task_a", "t.c:deep"],
@@ -1527,6 +1591,10 @@ def main():
     ap.add_argument("--lib-default", type=int, default=DEFAULT_LIB_BYTES,
                     help="bytes for a function without call graph that the table doesn't list (default %d)" %
                     DEFAULT_LIB_BYTES)
+    ap.add_argument("--irq-stack", type=int, default=0,
+                    help="bytes of the stack the interrupt handlers run on, one at a time (0: not checked)")
+    ap.add_argument("--irq-register", action="append",
+                    help="function whose last argument is an interrupt handler (repeatable)")
     ap.add_argument("--label", help="name in the report (default: the build directory's)")
     ap.add_argument("--report-only", action="store_true", help="report tasks over their stack, exit 0")
     ap.add_argument("--path-len", type=int, default=40)

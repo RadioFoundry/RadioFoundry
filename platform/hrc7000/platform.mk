@@ -15,6 +15,9 @@ CPUFLAGS := -mcpu=ck803s -mlittle-endian -mno-high-registers -msoft-float
 # Bytes a task's stack holds beyond its call chain (make stack-check): an interrupt or a yield saves 17 words there
 # (freertos/portasm.S), then a handler runs on the interrupt stack with interrupts off, so frames never nest
 STACK_OVERHEAD := 68
+# The handlers run one at a time on the interrupt stack (_Irq_Stack_Size in common.ld): every function passed to
+# hrc_irq_register must fit it with the margin (crash-log.md: the interrupt stack's canary catches what slips past)
+STACK_IRQ := --irq-stack 2048 --irq-register hrc_irq_register
 
 RTOS := third_party/FreeRTOS-Kernel
 

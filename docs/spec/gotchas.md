@@ -145,6 +145,16 @@ deaf until a power cycle (bench 2026-10-22; quiet resets came back every time): 
 low divisor byte went out as data. So every HR_C7000 UART set-up (`platform/hrc7000/uart_format.h`) drains the RX FIFO, writes,
 reads LCR, DLL and DLH back, and tries again until they stick (about 100 ms at most).
 
+**2.9 A modem interrupt lost for good.**
+Symptom: field report #375: every DMR transmission through a repeater ended in "No repeater answered" until a power
+cycle, often after a zone switch. Cause: not confirmed. If the PIC acts on a request line rising, as the GPIO
+interrupt did in one bench session, a request that comes while the source is masked and stays high is never delivered,
+and no later request of that source can rise. The engine masks the modem sources for every task-side call, and the
+system interrupt handler stops after four passes with causes still listed. A dead timeslot interrupt means no
+repeater wake-up is ever sent. Rule: drop every pending modem request at each receiver restart and after a stalled
+transmission; drop a system request pending for 50 ms with no handler run; count both and keep the first one's PIC
+state (`modem-hrc7000.md` 3.3). Radios: the HR_C7000 boards; one report.
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,

@@ -114,4 +114,5 @@ void hrc_timer_stop(uint8_t n)
 void vApplicationTickHook(void)
 {
 	(void)cycles_now();
+	hrc_irq_stack_check();
 }
