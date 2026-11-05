@@ -1996,7 +1996,7 @@ msgstr "关于"
 
 #: core/ui/ui_menus.c
 msgid "Codeplug"
-msgstr "代码表"
+msgstr "电台频率"
 
 #: core/ui/ui_menus.c
 msgid "USB Network"
@@ -2052,7 +2052,7 @@ msgstr "由 CPS 写入"
 
 #: core/ui/ui_menus.c
 msgid "Other firmware's codeplug: ignored"
-msgstr "其他固件代码表：已忽略"
+msgstr "其他固件电台频率：已忽略"
 
 #: core/ui/ui_menus.c
 msgid "Zones: "
@@ -2076,7 +2076,7 @@ msgstr "USB 网络：本版本无"
 
 #: core/ui/ui_menus.c
 msgid "This channel has no SFR role. Set Repeater or User in the Codeplug Editor, on a channel with one frequency."
-msgstr "本信道无单频中继角色。请在代码表编辑器把单频信道设为中继台或用户。"
+msgstr "本信道无单频中继角色。请在电台频率编辑器把单频信道设为中继台或用户。"
 
 #: core/ui/ui_menus.c
 msgid "Repeater (ERDM style)"
@@ -2180,7 +2180,7 @@ msgstr "启动文字2"
 
 #: core/ui/ui_menus.c
 msgid "Saved in the codeplug"
-msgstr "保存在代码表中"
+msgstr "保存在电台频率中"
 
 #: core/ui/ui_menus.c
 msgid "Radio: "
@@ -2832,7 +2832,7 @@ msgstr "应答呼叫提示"
 
 #: core/ui/ui_menus.c
 msgid "TFTP codeplug write"
-msgstr "TFTP 写入代码表"
+msgstr "TFTP 写入电台频率"
 
 #: core/ui/ui_menus.c
 msgid "Message format"
@@ -3112,19 +3112,19 @@ msgstr "仍然使用"
 
 #: core/ui/ui_menus.c
 msgid "New codeplug started"
-msgstr "已新建代码表"
+msgstr "已新建电台频率"
 
 #: core/ui/ui_menus.c
 msgid "Old codeplug kept: edit again"
-msgstr "保留旧代码表：请重新编辑"
+msgstr "保留旧电台频率：请重新编辑"
 
 #: core/ui/ui_menus.c
 msgid "Another firmware's codeplug? Start new erases contacts, callsign and DMR ID. Back up first."
-msgstr "其他固件的代码表？新建会清除联系人、呼号和 ID。请先备份。"
+msgstr "其他固件的电台频率？新建会清除联系人、呼号和 ID。请先备份。"
 
 #: core/ui/ui_menus.c
 msgid "Old codeplug"
-msgstr "旧代码表"
+msgstr "旧电台频率"
 
 #: core/ui/ui_screens.c
 msgid "IDLE"
@@ -3212,7 +3212,7 @@ msgstr "热点模式：PTT 关闭"
 
 #: core/ui/ui_screens.c
 msgid "No DMR ID in codeplug"
-msgstr "代码表中无 DMR ID"
+msgstr "电台频率中无 DMR ID"
 
 #: core/ui/ui_screens.c
 msgid "Air band: receive only"
@@ -3644,7 +3644,7 @@ msgstr "* 更多  返回"
 
 #: core/ui/ui_svc_storage.c
 msgid "Couldn't write the codeplug: not saved"
-msgstr "代码表写入失败：未保存"
+msgstr "电台频率写入失败：未保存"
 
 #: core/ui/ui_svc_storage.c
 msgid "Couldn't read the channel: not saved"
@@ -3676,7 +3676,7 @@ msgstr "信道读取失败：仅临时"
 
 #: core/ui/ui_svc_storage.c
 msgid "Codeplug not written: for now only"
-msgstr "代码表未写入：仅临时"
+msgstr "电台频率未写入：仅临时"
 
 #: core/ui/ui_svc_storage.c
 msgid "Not a stored contact: for now only"
