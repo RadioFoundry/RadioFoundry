@@ -464,28 +464,23 @@ size_t gfx_text_alt(const char *s, int level, char *out, size_t cap, bool *more)
 }
 
 #if CONFIG_LANG_ZH
-// A CJK catalog's text is UTF-8 (tools/i18n.py), so the text layer steps a character at a time: an ASCII byte or one of
-// font.h's glyph bytes is a character of its own, a sequence of two or three is a code point of the CJK face, and a
-// sequence cut by a buffer is one box (the string helpers are byte based: a translation can end bytes into a character
-// when a buffer is just too small). A CJK glyph is 16 px wide, the height of the 8x16 font, and sits at the bottom of
-// the cell so it shares the Latin baseline.
+// A CJK catalog's text is UTF-8 (tools/i18n.py), so the text layer steps a character at a time. Only a three-byte
+// sequence is UTF-8: a Chinese catalog has nothing below U+0800, so every other byte is one character the Latin font
+// draws (ASCII, one of font.h's glyphs, or a Latin-1 letter: a channel name, a received message and the Spanish and
+// Italian catalogs are Latin-1, and must not turn into boxes in a build with the CJK face). A CJK glyph is 16 px wide,
+// the height of the 8x16 font, and sits at the bottom of the cell so it shares the Latin baseline.
 uint32_t gfx_utf8_next(const char *s, int *len)
 {
 	const uint8_t *b = (const uint8_t *)s;
-	if (b[0] < 0xC0) {		// ASCII, or a glyph byte (0x80..0x85) that is a character by itself
-		*len = 1;
-		return b[0];
-	}
-	if ((b[0] & 0xE0) == 0xC0 && (b[1] & 0xC0) == 0x80) {
-		*len = 2;
-		return ((uint32_t)(b[0] & 0x1Fu) << 6) | (uint32_t)(b[1] & 0x3Fu);
-	}
 	if ((b[0] & 0xF0) == 0xE0 && (b[1] & 0xC0) == 0x80 && (b[2] & 0xC0) == 0x80) {
-		*len = 3;
-		return ((uint32_t)(b[0] & 0x0Fu) << 12) | ((uint32_t)(b[1] & 0x3Fu) << 6) | (uint32_t)(b[2] & 0x3Fu);
+		uint32_t cp = ((uint32_t)(b[0] & 0x0Fu) << 12) | ((uint32_t)(b[1] & 0x3Fu) << 6) | (uint32_t)(b[2] & 0x3Fu);
+		if (cp >= 0x800) {	// not an overlong form
+			*len = 3;
+			return cp;
+		}
 	}
-	*len = 1;			// cut or not UTF-8 at all: one box, never a walk off the string
-	return 0xFFFD;
+	*len = 1;			// ASCII, a glyph byte (0x80..0x85), or Latin-1 text
+	return b[0];
 }
 
 // How far a character moves the pen in a font: its Latin cell, or a CJK glyph's 16 (a missing one is a box as wide)
@@ -540,6 +535,12 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 			g = cjk_font_glyph(cp);
 			top = f->h - CJK_FONT_H;	// the bottom of the cell: on the Latin baseline
 			rows = CJK_FONT_H;
+			if (top < 0) {			// a cell shorter than the glyph (a layout that must not hold Chinese): clip it to the cell
+				rows += top;		// top is negative: the rows above the cell go
+				if (g != NULL)
+					g += (size_t)(CJK_FONT_H - rows) * CJK_FONT_ROW_BYTES;
+				top = 0;
+			}
 			if (g == NULL)
 				gfx_rect(x + 1, y + 1, adv - 2, f->h - 2, fg);	// no glyph: a box
 		} else {
@@ -726,6 +727,48 @@ static void fit_cjk(const font_t *f, const char *s, int max_w, char *out, size_t
 	if (n < cap)
 		out[n++] = GLYPH_ELLIPSIS[0];
 	out[n] = 0;
+}
+
+// The end cut: keep the start and shorten at the end, at a word for Latin text and at a whole character for Chinese (a
+// message preview, a text page's last line, a row's label). A line without a wide character keeps the word cut every
+// other language has, so an English or Spanish screen looks the same in a build with the CJK face
+void gfx_text_fit_end(const font_t *f, const char *s, int max_w, char *out, size_t out_len)
+{
+	if (out_len == 0)
+		return;
+	if (has_wide(s)) {
+		fit_cjk(f, s, max_w, out, out_len);
+#ifdef GFX_FIT_TRACE
+		if (strcmp(s, out) != 0)
+			gfx_fit_trace(s, out);
+#endif
+		return;
+	}
+	size_t n = strlen(s), fit = max_w <= 0 ? 0 : (size_t)(max_w / f->w);
+	if (fit >= out_len)
+		fit = out_len - 1;
+	if (n <= fit) {
+		memcpy(out, s, n + 1);
+		return;
+	}
+	if (fit == 0) {
+		out[0] = 0;
+		return;
+	}
+	size_t keep = fit - 1;
+	size_t cut = keep;
+	while (cut > 0 && s[cut] != ' ')
+		cut--;
+	if (cut >= keep / 2)
+		keep = cut;			// end at a word unless that throws away more than half
+	while (keep > 0 && s[keep - 1] == ' ')
+		keep--;
+	memcpy(out, s, keep);
+	out[keep] = GLYPH_ELLIPSIS[0];
+	out[keep + 1] = 0;
+#ifdef GFX_FIT_TRACE
+	gfx_fit_trace(s, out);
+#endif
 }
 #endif
 

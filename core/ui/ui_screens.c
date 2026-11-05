@@ -178,10 +178,11 @@ void ui_layout_init(void)
 #if CONFIG_LANG_ZH
 	// A CJK character is 16 px tall (core/ui/cjk_font.h), so a line that may hold Chinese needs a 16 px font. Where the
 	// layout already draws its words in one (the 240 px class), only the smallest font, which text pages use, moves up to
-	// it. Where it draws them in the 5x8 or 6x12 font (the 128x64 and 160x128 classes) Chinese cannot be shown at all:
-	// there is no room for 16 px lines, so the layout stays as it is and the language must not be built in
-	// (docs/build-config.md)
-	if (L->small->h >= CJK_FONT_H && L->tiny->h < CJK_FONT_H)
+	// it - and only while the language in use is a wide one, so English and Spanish keep their layout in the same build.
+	// Where the layout draws its words in the 5x8 or 6x12 font (the 128x64 and 160x128 classes) Chinese cannot be shown
+	// at all: there is no room for 16 px lines, so the layout stays as it is and the board must not build the language
+	// in (BOARD_UNSUPPORTED, docs/build-config.md)
+	if (L->small->h >= CJK_FONT_H && L->tiny->h < CJK_FONT_H && lang_wide(lang_current()))
 		L->tiny = L->small;
 #endif
 
@@ -1728,7 +1729,7 @@ static int dual_right(const font_t *rf, int x_end, int y, int row_h, int min_x, 
 	bool more = true;
 	int tw = 0;
 	for (int level = 0; more; level++) {	// the longest alternate that fits
-		tw = (int)gfx_text_alt(text, level, fit, sizeof fit, &more) * rf->w;
+		tw = gfx_text_width(rf, fit);	// pixels: a CJK character is not one cell wide
 		if (tw <= room)
 			break;
 	}
@@ -2455,9 +2456,9 @@ int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *ti
 static void fit_end(const font_t *f, const char *s, int max_w, char *out, size_t len)
 {
 #if CONFIG_LANG_ZH
-	// Chinese has no spaces to break at, and a character is not one byte: gfx_text_fit already cuts at the end, and
-	// never inside a character
-	gfx_text_fit(f, s, max_w, out, len);
+	// Chinese has no spaces to break at, and a character is not one byte: a line with a wide character is cut by whole
+	// characters at the end; Latin text keeps the word cut below
+	gfx_text_fit_end(f, s, max_w, out, len);
 #else
 	size_t n = strlen(s), fit = max_w <= 0 ? 0 : (size_t)(max_w / f->w);
 	if (fit >= len)

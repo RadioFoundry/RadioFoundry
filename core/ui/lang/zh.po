@@ -8,6 +8,7 @@ msgstr ""
 "Project-Id-Version: RadioFoundry\n"
 "Language: zh\n"
 "X-Language-Name: 中文\n"
+"X-Language-Name-Latin: Chinese\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -2272,6 +2273,10 @@ msgstr "Spleen 字体：BSD-2-Clause"
 #: core/ui/ui_menus.c
 msgid "JetBrains Mono font: OFL-1.1"
 msgstr "JetBrains Mono 字体：OFL-1.1"
+
+#: core/ui/ui_menus.c
+msgid "Noto Sans CJK SC font: OFL-1.1"
+msgstr "Noto Sans CJK SC 字体：OFL-1.1"
 
 #: core/ui/ui_menus.c
 msgid "AMBE+2 codec: DVSI (stock)"
