@@ -90,8 +90,15 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 A filtered list's rows are raw rows (`raw_count`, `raw_label`) that have a label and, with keys typed, match them.
 With keys typed the list is the first `UI_FILTER_MAX` (128) matches. With none it is every row: the first 126 are kept
 in an index, and in a longer list its last two slots are a cursor (its row and raw row) stepped over the raw rows, so a list of 1024 contacts
-scrolls to its end (and Up from the top wraps to it) without RAM for a full index. A jump to the end reads every raw
-row once, as a typed key does.
+scrolls to its end (and Up from the top wraps to it) without RAM for a full index. A jump to the end steps over every
+raw row once.
+
+A record a row costs a flash read a row, about 0.2-0.3 ms each on a radio with polled SPI flash, so the long lists
+(every contact, every channel) give two more callbacks. `raw_each` gives every row's label in one pass, a block of
+records a read (`codeplug_contacts_each`, `codeplug_channel_names_each`); with no key typed only which rows exist
+counts, and a list of channels then reads nothing (the in-use map is in RAM). `raw_used` says whether a row exists
+without its label, for the cursor's steps. With 1024 channels a key took 0.34 s before, 0.11 s after; opening the list
+0.29 s before, under 10 ms after. A list without them reads its rows one by one.
 
 | Screen | Name | Reached by |
 |---|---|---|

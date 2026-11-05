@@ -404,6 +404,11 @@ Init used: MODE = 0 (level), PO = 0xFFFFFFFF (high active), MASK = 0xFFFFFFFF, t
 INT_ST = INT_ST_1 = 0xFFFFFFFF. (Both masks must be written at init; the reset value is all masked.) Enabling vector v: clear bit (v − 32) in PIC_MASK for v < 64, bit (v − 64) in
 PIC_MASK_1 for v ≥ 64.
 
+Level mode still acts on the line rising (measured with timer 6, source 6, through the debug link's SoC register
+access, debuglink.md 3.24): a rise while the source is masked sets its INT_ST bit and is delivered when it is unmasked;
+after the request is taken, a line still high does not interrupt again, unmasked and with the INT_ST bit still set,
+until it falls and rises. A handler must clear its device's cause, or the source stays silent (gotchas 2.9).
+
 Dispatch: all 64 user vectors (32–95) point at one common entry; it saves context, writes 0x04 to PIC_COW1, takes the
 vector number from PSR bits 23:16, subtracts 32 and calls through a 64-entry software table.
 
@@ -667,6 +672,9 @@ Three-wire serial, bit-banged on GPIO: CS = 0x18 (active low), clock = 0x07, dat
 | Read sampling | MCU reads data while clock is high |
 
 Registers 0x65 / 0x67 are not read by the radio's own firmware (unverified: its S-meter may be fake).
+
+The debug link's CHIP_REG ([debuglink.md 3.24](debuglink.md#324-chip_reg)) reaches the FD6818 as chip 0, page 0,
+registers 0x00-0x7F: `rfoundry_debug.py reg 0 0x67` reads the RSSI word.
 
 ### 8.2 Register tables (address: high byte, low byte)
 
