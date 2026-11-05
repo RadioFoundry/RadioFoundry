@@ -643,10 +643,8 @@ class _LineJob:
                 return
             if self.req.error is None:   # the board closed the stream mid-job: it restarted
                 self.req.error = self._L.BenchLineError("the bench board ended the job's stream with no exit", "lost")
-            e = self.req.error
-            self.returncode = {"timeout": 75, "busy": 75, "deadlock": 75, "refused": 77, "no_signal": 3}.get(e.code, 69)
-            if e is not None:
-                self.lines.append(f"rfoundry-bench: {e}\n")
+            self.returncode = self._L.exit_code(self.req.error)
+            self.lines.append(f"rfoundry-bench: {self.req.error}\n")
         self.started.set()
 
     def poll(self):
@@ -1115,6 +1113,11 @@ class SdrBench:
         self._run_dirs.append(d)
         return d
 
+    def run_path(self, run_dir, name=""):
+        """Where a file of run_dir() is, for a job's output path or a message: a local directory with a bench board,
+        the bench host's home otherwise."""
+        return os.path.join(run_dir, name) if self.api else f"~/{self.dir}/{run_dir}/{name}"
+
     def remove_run_dirs(self):
         """Delete the run directories this session made on the bench (captures are ~50 MB each and filled the bench's
         disk). Only names run_dir() returned; RFOUNDRY_HIL_KEEP_RUNS=1 keeps them for a look."""
@@ -1512,7 +1515,6 @@ class SdrBench:
         gain instead of --sdr-gain (level measurements want the ADC far from its rails)."""
         if self.api:
             return self._api_capture_start(run_dir, freq, seconds, name)
-        self._no_api("SDR capture")
         self._need_lease()
         f = f"~/{self.dir}/{run_dir}/{name}.cs8"
         g = self.gain if gain is None else gain
