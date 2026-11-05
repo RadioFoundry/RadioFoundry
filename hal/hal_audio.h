@@ -29,6 +29,9 @@ typedef struct {
 	// radio leaves it 0 unless its amplifier is slow too)
 	void (*speaker_warm)(bool on);
 	uint8_t speaker_hang_s;
+	// Optional: speaker audio other than silence is still queued or playing (a beep's tail in the driver's buffers).
+	// NULL: none is held past the block callback
+	bool (*spk_pending)(void);
 } hal_audio_t;
 
 #endif

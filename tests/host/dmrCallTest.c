@@ -709,6 +709,134 @@ static void test_tx_modem_stalled(void)
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->tx_error == DMR_TX_OK && sim.tx_ends == 1);
 }
 
+static bool permit_busy_flag;
+static bool permit_busy(void) { return permit_busy_flag; }
+
+// Talk permit before keying (permit_hold_ms): the admitted call holds in its own phase, still receiving, until the
+// minimum has passed and permit_busy() is false, at most DMR_CALL_PERMIT_MAX_MS
+static void test_tx_permit_hold(void)
+{
+	dmr_call_config_t c = base_cfg();
+	c.permit_hold_ms = 40;
+	c.permit_busy = permit_busy;
+	setup(&c);
+	uint8_t seq = V()->permit_seq;
+	permit_busy_flag = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT && V()->state == DMR_CALL_STATE_TX && sim.tx_begins == 0);
+	CHECK(V()->permit_seq == (uint8_t)(seq + 1));
+	run_ms(100);	// past the minimum, the beep still playing
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT && sim.tx_begins == 0);
+	permit_busy_flag = false;
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.tx_begins == 1);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+
+	// Busy for good: keys at the maximum
+	setup(&c);
+	permit_busy_flag = true;
+	dmr_call_ptt(true);
+	run_ms(DMR_CALL_PERMIT_MAX_MS - 20);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT && sim.tx_begins == 0);
+	run_ms(40);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.tx_begins == 1);
+	dmr_call_ptt(false);
+	run_ms(600);
+
+	// PTT released in the hold: nothing is sent
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT);
+	dmr_call_ptt(false);
+	run_ms(100);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->state == DMR_CALL_STATE_IDLE && sim.tx_begins == 0);
+
+	// A call begins in the hold: refused as at PTT (no access wait), nothing sent
+	uint8_t lc[9];
+	unsigned frame = 1;
+	mk_lc(lc, 0, TG_LIST, 2345678);
+	setup(&c);
+	permit_busy_flag = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT);
+	rx_header(lc, 1, 0, DMR_SYNC_MS, false);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_BUSY && sim.tx_begins == 0);
+	dmr_call_ptt(false);
+	run_ms(600);
+	permit_busy_flag = false;
+
+	// With an access wait: back to access while the call runs, then a new permit and the key-up
+	c.access_wait_ms = 2000;
+	setup(&c);
+	seq = V()->permit_seq;
+	permit_busy_flag = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_ACCESS && V()->state == DMR_CALL_STATE_RX && sim.tx_begins == 0);
+	rx_header(lc, 1, 0, DMR_SYNC_MS, true);
+	run_ms(20);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT && V()->permit_seq == (uint8_t)(seq + 2) && sim.tx_begins == 0);
+	permit_busy_flag = false;
+	run_ms(50);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.tx_begins == 1);
+	dmr_call_ptt(false);
+	run_ms(600);
+	c.access_wait_ms = 0;
+
+	// Through a repeater: the hold follows the wake-up, the permit plays only once the repeater answered
+	c.rmo = true;
+	c.ts = 2;
+	setup(&c);
+	sim.wake_repeater_on_csbk = true;
+	seq = V()->permit_seq;
+	permit_busy_flag = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_WAKEUP && V()->permit_seq == seq);
+	run_ms(400);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT && V()->repeater_up && V()->permit_seq == (uint8_t)(seq + 1));
+	CHECK(sim.air_count == 1 && sim.air[0].kind == DMR_BURST_CSBK);
+	permit_busy_flag = false;
+	run_ms(50);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.last_timing == DMR_TIMING_ALIGNED);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+
+	// A short press through a repeater: the wake-up goes on, no hold and nothing more sent once it answers
+	setup(&c);
+	sim.wake_repeater_on_csbk = true;
+	seq = V()->permit_seq;
+	dmr_call_ptt(true);
+	run_ms(10);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->permit_seq == seq && sim.air_count == 1);
+
+	// The repeater drops in the hold (it outlasts DMR_CALL_REPEATER_HOLD_MS): woken again, never keyed blind
+	setup(&c);
+	sim.repeater = true;
+	run_ms(180);
+	CHECK(V()->repeater_up);
+	permit_busy_flag = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_PERMIT && sim.tx_begins == 0);
+	sim.repeater = false;
+	run_ms(DMR_CALL_REPEATER_HOLD_MS + 40);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_WAKEUP && sim.air_count == 1 && sim.air[0].kind == DMR_BURST_CSBK);
+	permit_busy_flag = false;
+	dmr_call_ptt(false);
+	run_ms(3000);
+}
+
 static void test_rmo_air_slot_alignment(void)
 {
 	for (uint8_t ts = 1; ts <= 2; ts++) {
@@ -1005,12 +1133,18 @@ static void test_rx_filters(void)
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 0);
 
-	// Our own call echoed by a repeater, with its terminators: never played, never ends someone else's call
-	c.rmo = true;
+	// Our own call echoed by a repeater right behind our terminator: not played (a parrot's later answer is, below)
 	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(300);
+	dmr_call_ptt(false);
+	run_ms(400);
 	mk_lc(lc, 0, TG_TALK, OWN_ID);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 0);
+	// ... and its terminators never end someone else's call
+	c.rmo = true;
+	setup(&c);
 	mk_lc(lc, 0, TG_TALK, 2345678);
 	uint8_t own[9];
 	mk_lc(own, 0, TG_TALK, OWN_ID);
@@ -1039,6 +1173,69 @@ static void test_rx_filters(void)
 	sim_rx(&b);
 	run_ms(20);
 	CHECK(V()->caller.src == 2345678);
+}
+
+// Our call, ended: back to idle, so a call heard next is judged by the echo window, not as heard while keyed
+static void own_call_then_idle(void)
+{
+	dmr_call_ptt(true);
+	run_ms(300);
+	dmr_call_ptt(false);
+	for (int i = 0; i < 100 && V()->state != DMR_CALL_STATE_IDLE; i++)
+		run_ms(10);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE);
+}
+
+// A parrot answers a while after our call ends, from our own ID (#294): it plays, with and without hear all, its
+// terminator ends it, and a call from our ID with no call of ours before it (a cloned ID) plays too
+static void test_rx_own_id_parrot(void)
+{
+	dmr_call_config_t c = base_cfg();
+	uint8_t lc[9];
+	unsigned frame = 1;
+
+	for (int hear_all = 0; hear_all < 2; hear_all++) {
+		c.listen.hear_all = hear_all;
+		setup(&c);
+		own_call_then_idle();
+		run_ms(1000);
+		mk_lc(lc, 0, TG_TALK, OWN_ID);
+		rx_call(lc, 1, true, 0, 1, true, &frame);	// a second after our terminator
+		CHECK(sink_log.begins == 1);
+		CHECK(sink_log.ends == 1 && V()->state == DMR_CALL_STATE_IDLE);
+	}
+	c.listen.hear_all = false;
+
+	// A parrot on a talk group we only hear by the listen list, on the other slot of the repeater
+	setup(&c);
+	mk_lc(lc, 0, TG_LIST, OWN_ID);
+	rx_call(lc, 1, true, 0, 1, true, &frame);
+	CHECK(sink_log.begins == 1 && sink_log.ends == 1);
+
+	// The repeater's echo right behind our terminator is still dropped; just after the window it plays
+	setup(&c);
+	own_call_then_idle();
+	run_ms(DMR_CALL_OWN_ECHO_MS - 100);
+	mk_lc(lc, 0, TG_TALK, OWN_ID);
+	rx_call(lc, 1, true, 0, 1, true, &frame);
+	CHECK(sink_log.begins == 0);
+	setup(&c);
+	own_call_then_idle();
+	run_ms(DMR_CALL_OWN_ECHO_MS + 50);
+	rx_call(lc, 1, true, 0, 1, true, &frame);
+	CHECK(sink_log.begins == 1);
+
+	// A call cut short (the modem refused a burst) is echoed as well: dropped
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(300);
+	sim.reject_next = true;
+	run_ms(60);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED);
+	dmr_call_ptt(false);
+	run_ms(100);
+	rx_call(lc, 1, true, 0, 1, true, &frame);
+	CHECK(sink_log.begins == 0);
 }
 
 static bool tg777(uint32_t tg, void *ctx) { (void)ctx; return tg == 777; }
@@ -2141,6 +2338,7 @@ int main(void)
 	test_embedded();
 	test_alias();
 	test_tx_call();
+	test_tx_permit_hold();
 	test_tx_timeout_and_starve();
 	test_tx_refused();
 	test_tx_modem_stalled();
@@ -2151,6 +2349,7 @@ int main(void)
 	test_rx_recheck_on_configure();
 	test_rx_no_call_after_terminator();
 	test_rx_group_callback();
+	test_rx_own_id_parrot();
 	test_late_entry();
 	test_alias_and_privacy();
 	test_privacy_hook();

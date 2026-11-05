@@ -297,14 +297,46 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   F's first report (the EMB one): a new LC was first seen there at the second F. So until a reception has its LC the
   driver also reads page 2 at the next burst A, at F's repeated report and at the post-access interrupt (an LC that
   differs there is handed over with the next voice burst).
+- **Page 2 isn't per slot.** With a call on each slot it holds what the chip assembled last, of either call, so at
+  one call's F it can hold the other's. The driver keeps each slot's call LC (a voice LC, FLCO 0 or 3, from its
+  header or terminator, or the embedded LC it handed over) and checks each embedded LC it would hand over for a burst
+  on a slot:
+
+  | Page 2 holds | Handed over |
+  |---|---|
+  | This slot's open call's LC | Yes, even when the other slot's call has the same LC (a group on both slots) |
+  | The other slot's call's LC, while that call may go on | No, unless this slot has no call of its own and 8 of its F reads in a row showed only that LC (then it is this call's too: a group on both slots, or the other call over unseen) |
+  | Another voice LC, the other slot idle | Yes: this slot's next talker (no header, a terminator missed) |
+  | Another voice LC, the other slot's call maybe going on | No while this slot's call goes on (voice within the last superframe): its talker can't change without a gap, and a mix of both calls stays in page 2 for as long as both talk (bench, 2026-11-04). Otherwise only when read again a superframe later, so such a call gets its LC about 360 ms later. Page 2 held a mix of both calls' LCs (bench, 2026-11-04: a source and talk group neither call had, from 2.2 s into the call on every run); the embedded LC has only a 5-bit checksum, so about 1 mix in 32 passes it |
+  | A talker alias or GPS block (other FLCOs) | Only when the other slot isn't busy. Never kept as a slot's call LC |
+
+  A slot is busy for 2.2 s (6 superframes) after its header, voice or LC was last taken, or its LC last seen in page
+  2. Page 2 doesn't keep a call busy once its terminator was heard, nor when the driver takes that slot's voice (both
+  slots heard on a chip without the tick voice read). Otherwise the other slot's voice is never taken (the voice read
+  locked to one slot, or the slot closed on a repeater channel), so its call may go on unseen: it counts as going on
+  up to 60 s after its header or LC was last taken. A start, an `rx_restart` (a new frequency) or another color code
+  or repeater setting forgets both slots.
+
+  While the other slot has a call, a slot with no LC of its own keeps looking at the next burst A. There an unchanged
+  page 2 counts as at F once the reception has had more than one superframe of voice or a header (on either slot):
+  the capture can come just after this call's F. Bursts with no slot number are left alone. Counter `lc_other_slot`
+  (what would have been handed over, held back).
+
+  Limits: the two slots' superframes share a period, so page 2 at this slot's F holds the same call's LC nearly every
+  time. A call joined by late entry beside another call whose own LC isn't found at A, F's repeat or the post-access
+  interrupt within 8 superframes (a weak signal, CRC errors) takes the other call's LC: its caller and talk group show
+  (and the talk group filter uses them) until its own LC comes. Before this rule it took the other call's LC at once.
+  A call with the other slot's LC gets its embedded LC only after those 8 superframes (2.9 s). A talker change with
+  no header and no gap while the other slot's call may go on keeps the first talker's LC until the voice pauses.
 - **LC trace** (for the bench): every look at page 2 until the reception's LC is handed over is logged, with the ticks
   since the capture, the voice bursts taken and page 2's source ID. Debug link log lines
   `dle cap<how> <src>` (how: `0` status report, `A` lone burst A, `T` burst taken) and
   `dle <ev><res> @<ticks> v<voice> <src>` (ev: `F` burst F, `f` F's repeated report, `A` the next burst A, `P`
   post-access, `p` post-access just before the reception, `H` header; res: `n` differs from the capture, taken; `s`
   same, held back; `v` same, taken after more than one superframe; `k` differs, kept for the next voice burst; `c` CRC
-  error flagged). Diagnostics lines `lc n= s= v= c=` (at F), `lc2 a= f= p= k=` (found at A, at F's repeat, at
-  post-access; kept LCs handed over) and `lt <how><capture src> <ev><res><ticks>...` (the last reception).
+  error flagged; `o` the other slot's call's, held back). Diagnostics lines `lc n= s= v= c=` (at F),
+  `lc2 a= f= p= k= o=` (found at A, at F's repeat, at post-access; kept LCs handed over; held back as the other slot's
+  call's) and `lt <how><capture src> <ev><res><ticks>...` (the last reception).
 - Talker alias and GPS embedded data (FLCO 4-8) appear in the same page 2 location as the embedded LC.
 
 ### 5.3 Timeslot tracking (repeater signals)

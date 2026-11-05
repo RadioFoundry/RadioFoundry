@@ -79,7 +79,7 @@ typedef struct {
 // channel 1 (DMR), with key beep on. The TX timeout and the battery drain are sped up so the reel doesn't sit waiting.
 //
 // Nothing ties these steps to the radio core. If you change when core/radio/radio_sm.c plays a beep, update the
-// matching step here. The calls are in dmr_follow() (TX_PERMIT, CALL_END), tx_timer() (TOT_WARN), deny() (TX_DENY),
+// matching step here. The calls are in dmr_follow() (TX_PERMIT, TX_PERMIT_SHORT, CALL_END), tx_timer() (TOT_WARN), deny() (TX_DENY),
 // battery_poll() (BATTERY_CRIT), scan_service() (SCAN_HOLD) and emergency_tick() (EMERGENCY).
 static const step_t steps[] = {
 	{ "Browse the menu", "ok down down back", NULL, true, false, 0 },
@@ -88,6 +88,8 @@ static const step_t steps[] = {
 	{ "Reply, held past the time-out (shortened)", "pttdown", "TX_PERMIT", false, false, 0 },
 	{ NULL, NULL, "TOT_WARN", false, false, 0 },
 	{ NULL, "timeout", "TX_DENY", false, false, 800 },
+	{ NULL, "pttup", NULL, false, true, 300 },
+	{ "Reply, permit before keying (radios with CAP_BEEP_NOT_ON_AIR)", "pttdown", "TX_PERMIT_SHORT", false, false, 600 },
 	{ NULL, "pttup", NULL, false, true, 300 },
 	{ "Text message", "msg:3101234,Net_starts_in_5_min", NULL, false, false, 0 },
 	{ NULL, "back", NULL, false, false, 0 },

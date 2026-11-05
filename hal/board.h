@@ -45,6 +45,10 @@ enum {
 	// The radio has no battery (a mobile on a fixed supply). The core shows no battery icon, percentage, menu item or
 	// warning, never refuses to transmit for a battery, and reports no battery level. Unset: a battery radio
 	CAP_NO_BATTERY	= 1u << 7,
+	// Beeps can't sound while the radio transmits DMR (they share the modulator's audio path and are held off it). The
+	// talk permit then plays before the first burst: DMR voice keys after a short hold in which the radio still
+	// receives and the tone sounds (dmr_call_config_t.permit_hold_ms)
+	CAP_BEEP_NOT_ON_AIR = 1u << 8,
 };
 
 typedef struct {

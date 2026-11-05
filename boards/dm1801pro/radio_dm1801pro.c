@@ -580,11 +580,12 @@ static void audio(bool on)
 
 // The prompt FIFO's playback (ring play) also feeds the TX modulator: a talk permit tone played at key-up rode on the
 // voice LC headers, and the bench modem then joined by late entry (bench 2026-10-15, modem-hrc7000.md 8.4).
-// It plays only while receiving; the caller holds the AUDIO_CONTROL lock (interrupts off)
+// In DMR the gate in audio_pcm.c holds it off while the engine transmits (armed between bursts the radio receives);
+// in FM TX the microphone has the modulator. The caller holds the AUDIO_CONTROL lock (interrupts off)
 static void ring_play_update(void)
 {
-	bool play = (pcm_on && !transmitting) || afsk_tx;	// APRS tones go to the modulator on purpose
-	hrc7000_audio_bits(&modem, play ? C7_AUDIO_RING_PLAY : 0, play ? 0 : C7_AUDIO_RING_PLAY);
+	bool play = (pcm_on && !(transmitting && mode != RADIO_MODE_DMR)) || afsk_tx;	// APRS tones: on purpose
+	hrc_audio_pcm_ring(&modem, play);
 }
 
 // Speaker PCM (a beep, DMR voice): the codec plays the CPU's samples from the prompt FIFO, the speaker listens to the
@@ -674,3 +675,9 @@ const hal_radio_t dm1801pro_radio = {
 	.ref_trim = ref_trim,
 #endif
 };
+
+// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt)
+bool dm1801pro_radio_transmitting(void)
+{
+	return transmitting;
+}

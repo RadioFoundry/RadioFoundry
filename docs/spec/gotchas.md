@@ -81,6 +81,16 @@ has its LC, look at page 2 again at the next burst A (and at F's repeated report
 driver logs every look (`dle` lines, `lt` diagnostics line) so the next HIL run shows exactly when the LC appeared.
 Radios: HR_C6000.
 
+**1.4b Page 2 isn't per slot.**
+Symptom: with a call on each slot, the wanted call went quiet with the other call's source shown (23 of 78 bursts
+played; HIL 2026-11-04 on the HR_C5000). Cause: page 2 holds the embedded LC (or alias or GPS block) the chip
+assembled last, of either slot, so at one call's F it held the other's, and the core took it for a new call. Rule:
+keep each slot's call LC and check every embedded LC against both before handing it over; only voice LCs (FLCO 0, 3)
+become a slot's call LC, and alias and GPS blocks wait while the other slot is busy. While a slot's call goes on,
+never hand over another LC beside a call that may go on: page 2 can hold a mix of both that passes the 5-bit
+checksum, steady for as long as both talk (bench, the same day). Forget the slots on a new
+frequency or channel. Rules: [modem-hrc6000.md](modem-hrc6000.md) 5.2. Radios: HR_C6000, HR_C5000.
+
 **1.9 Restore reg 0x10 to the driver's value, not the init value.**
 After a special mode, writing back the init value (0x6B) instead of the running value (0x6E: relay, aligned, slot 1)
 broke subsequent operation. Rule: save and restore modem mode registers around any temporary change.
@@ -669,7 +679,12 @@ check every new radio (adding-a-radio.md, bring-up order). The gate alone still 
 presses in 100 s (2026-10-22). A key scan that ran late caught up with two scans in the same millisecond, and both
 read the low bits of the first byte of a burst 65 ms after the last one, before the UART had reported it. Rule:
 debounce the shared pin by time, not by scan count. The pin must read low, and not gated, for 20 ms
-(`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio.
+(`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio. The radio's own transmission,
+picked up on a coiled cable, also reads as a press: the line goes low with flagged characters and no good byte, and
+the press keeps the radio keyed, a latch (2026-11-05: a minute keyed, nothing touched). Rule: while the radio
+transmits, no new press starts on the shared line, and a held press ends at a flagged character after its own break,
+since a grounded line receives nothing. RF that holds a released line steadily low, with no character, still reads
+as held, and the transmit time-out ends it.
 
 **16.3 PTT on an empty mic jack.**
 Symptom: a radio powered on without its hand mic transmitted at once (RadioFoundry, issue #230). Cause: the mic's PTT

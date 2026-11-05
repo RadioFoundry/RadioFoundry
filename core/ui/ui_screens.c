@@ -1421,6 +1421,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		const char *word = TR("TALKING");
 		switch (d->state) {
 		case RDMR_TX_WAIT: word = d->rmo && !d->repeater_up ? TR("WAKING RPT") : TR("WAITING"); break;
+		case RDMR_TX_PERMIT: word = TR("ADMITTED"); break;	// the channel is ours: the talk permit sounds now
 		case RDMR_TX_ENDING: word = TR("ENDING"); break;
 		default: break;
 		}

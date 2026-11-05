@@ -128,7 +128,7 @@ typedef enum {
 	RREQ_SCAN,		// arg: radio_scan_cmd_t, arg2: dual watch position
 	RREQ_SCAN_VFO,		// arg: low Hz, arg2: high Hz (both 0: the VFO's band)
 	RREQ_BEEP,		// arg: beep_t
-	RREQ_TONE_BURST,	// arg: 1 on, 0 off
+	RREQ_TONE_BURST,	// arg: 1 on, 0 off; arg2: the burst's longest time in ms (0 = until off or the TX time-out)
 	RREQ_SETTINGS,		// radio_task.c: the pending settings were copied with radio_sm_set_settings
 	RREQ_POWER_OFF,		// switching off: ARS deregistration (radio_power_off_busy until done); arg 1 = canceled
 	RREQ_RELOAD,		// the settings' preferences changed: read them again (codeplug changes are noticed alone)
@@ -294,6 +294,7 @@ typedef struct {
 	uint32_t tx_end_ms;		// end of the last transmission (battery readings wait)
 #if CONFIG_FM_TX_TONES
 	bool burst_keyed;		// the 1750 Hz burst keyed the transmitter (not PTT)
+	uint32_t burst_end_ms;		// the burst ends by itself at this time (RREQ_TONE_BURST arg2), 0 = no limit
 	uint32_t roger_ms;		// roger beep start, 0 = none
 #endif
 #if CONFIG_DTMF
@@ -325,6 +326,7 @@ typedef struct {
 	bool power_off_busy;		// still sending what has to go out before the supply drops
 #if CONFIG_DMR
 	uint8_t dmr_wake_admits;	// the stack's wake_admits at the last tick (the permit tone for a short press)
+	uint8_t dmr_permit_seq;		// the stack's permit_seq at the last tick (the permit tone before keying)
 	uint8_t dmr_prev_state;		// radio_dmr_state_t at the last tick (beeps on changes)
 	bool codec;			// the vocoder is present
 	bool dmr_running;		// the call stack has the modem

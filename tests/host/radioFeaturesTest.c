@@ -2441,6 +2441,23 @@ static void test_roger_burst(void)
 	req(RREQ_PTT, 0);
 	run(300);
 	CHECK(sm.view.state == RS_IDLE);
+	// A burst with a time limit and no "off" (the host went away): it unkeys by itself when the time is up
+	int off = hw.tx_off_calls;
+	req2(RREQ_TONE_BURST, 1, 2000);
+	run(1800);
+	CHECK(sm.view.state == RS_TX && sm.view.tone_burst);
+	run(400);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst && hw.tone_hz == 0 && hw.tx_off_calls == off + 1);
+	req(RREQ_TONE_BURST, 0);	// the late "off": nothing more
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == off + 1);
+	// The same during PTT: the tone ends, PTT keeps the transmission
+	req(RREQ_PTT, 1);
+	req2(RREQ_TONE_BURST, 1, 500);
+	run(700);
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
 	// On a DMR channel: nothing
 	req(RREQ_ZONE_POS, 5);
 	run(50);
@@ -2676,6 +2693,48 @@ static void test_dmr_beeps(void)
 	beep_get_stats(&b1);
 	CHECK(b1.played == b0.played);
 	chans[6].no_beep = false;
+}
+
+static void set_no_permit(radio_settings_t *s) { s->talk_permit = false; }
+
+// A board whose beeps can't sound on air (CAP_BEEP_NOT_ON_AIR): the short talk permit plays in a hold before keying,
+// while the radio still receives, and none plays once on air. With the permit off it keys at once
+static void test_dmr_permit_before_key(void)
+{
+	beep_stats_t b0, b1;
+	uint32_t caps = board.caps;
+
+	board.caps |= CAP_BEEP_NOT_ON_AIR;
+	start();
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	beep_get_stats(&b0);
+	unsigned begins = sim.tx_begins;
+	req(RREQ_PTT, 1);
+	run(10);
+	beep_get_stats(&b1);
+	CHECK(sm.view.dmr.state == RDMR_TX_PERMIT && sim.tx_begins == begins && b1.played == b0.played + 1);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(sm.view.dmr.state == RDMR_TX && sim.tx_begins == begins + 1 && b1.played == b0.played + 1);
+	req(RREQ_PTT, 0);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// Talk permit off (the stack is configured again): no hold, no beep
+	settings(set_no_permit);
+	run(50);
+	beep_get_stats(&b0);
+	begins = sim.tx_begins;
+	req(RREQ_PTT, 1);
+	run(10);
+	CHECK(sm.view.dmr.state != RDMR_TX_PERMIT && sim.tx_begins == begins + 1);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(sm.view.dmr.state == RDMR_TX && b1.played == b0.played);
+	req(RREQ_PTT, 0);
+	run(1000);
+	board.caps = caps;
 }
 
 // A short PTT press through a repeater: the wake-up goes on after the release, and the user hears the talk permit when
@@ -3039,6 +3098,7 @@ int main(void)
 	test_supply_voltage();
 	test_battery_save();
 	test_dmr_beeps();
+	test_dmr_permit_before_key();
 	test_dmr_short_press_wake();
 	test_vibrate();
 	test_host_audio();
