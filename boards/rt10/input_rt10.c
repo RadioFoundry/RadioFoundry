@@ -28,9 +28,9 @@ static uint32_t scan(void)
 	if (!hrc_pin_read(PIN_SK2)) {
 		raw |= 1u << KEY_SK2;
 	}
-	uint32_t rx_ms;
-	bool rx_seen = hrc_host_uart_last_rx(&rx_ms);
-	if (shared_ptt_pressed(&ptt_gate, !hrc_pin_read(PIN_PTT), rx_seen, rx_ms, hal_millis())) {
+	shared_ptt_line_t line = { .flagged = hrc_host_uart_line_errors(), .keyed = rt10_radio_transmitting() };
+	line.rx_seen = hrc_host_uart_last_rx(&line.rx_ms);
+	if (shared_ptt_pressed(&ptt_gate, !hrc_pin_read(PIN_PTT), &line, hal_millis())) {
 		raw |= 1u << KEY_PTT;
 	}
 	if (raw == last_raw) {

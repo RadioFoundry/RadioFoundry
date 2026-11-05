@@ -107,6 +107,11 @@ rfbus_t *rt10_rf_bus(void)
 	return &fd_bus.bus;
 }
 
+bool rt10_radio_transmitting(void)
+{
+	return transmitting;
+}
+
 void rt10_rf_info(uint16_t *id, uint32_t *nacks)
 {
 	*id = fd_id;
