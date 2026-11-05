@@ -876,6 +876,20 @@ bool codeplug_contacts_each(codeplug_contact_fn fn, void *ctx)
 	return true;
 }
 
+uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out)
+{
+	for (uint16_t i = 1; id != 0 && i <= CODEPLUG_CONTACTS_MAX; i++) {
+		if (codeplug_contact(i, out) && out->id == id && (out->type != CONTACT_PRIVATE) == group)
+			return i;
+	}
+	return 0;
+}
+
+bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
+{
+	return codeplug_contact_find_index(id, group, out) != 0;
+}
+
 bool codeplug_channel_name(uint16_t number, char out[CODEPLUG_NAME_LEN + 1])
 {
 	channel_t ch;

@@ -1544,15 +1544,20 @@ static bool find_one(uint16_t index, const contact_t *c, void *ctx)
 	return false;
 }
 
-bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
+uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out)
 {
 	if (id == 0 || id > 0xFFFFFFu) {
-		return false;
+		return 0;
 	}
 	// Locked like every other reader: the radio task and the UI task both search, and an edit may be writing
 	find_t f = { .id = id, .group = group, .out = out };
 	codeplug_contacts_each(find_one, &f);
-	return f.index != 0;
+	return f.index;
+}
+
+bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
+{
+	return codeplug_contact_find_index(id, group, out) != 0;
 }
 
 bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)

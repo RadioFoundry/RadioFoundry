@@ -600,6 +600,9 @@ static struct {
 		contact_t contact;	// the contact editor's, at index channel (one job at a time: RAM is short)
 #endif
 		char name[CODEPLUG_NAME_LEN + 1];	// a name field's new text, UI_NAME_* in channel
+#if CONFIG_DMR
+		contact_t target;	// save_target_job's search: the stored contact found
+#endif
 	};
 	uint32_t id;		// the talk target's, or the radio's own DMR ID
 	bool private_call;
@@ -928,15 +931,6 @@ bool ui_svc_zone_pending(void)
 #if CONFIG_DMR
 // The first stored contact with this ID and kind becomes the channel's talk target. Searching the contacts reads up
 // to 1024 records, so it is part of the job too. Until it is done the target is a temporary one (ui_svc_talk_to)
-static bool target_match(uint16_t index, const contact_t *c, void *ctx)
-{
-	uint16_t *found = ctx;
-	if (c == NULL || c->id != job.id || (c->type == CONTACT_PRIVATE) != job.private_call)
-		return true;
-	*found = index;
-	return false;
-}
-
 static void save_target_job(void *ctx)
 {
 	(void)ctx;
@@ -944,11 +938,8 @@ static void save_target_job(void *ctx)
 		save_failed(TRN("Couldn't read the channel: for now only"));
 		return;
 	}
-	uint16_t found = 0;
-	if (!codeplug_contacts_each(target_match, &found) && found == 0) {
-		save_failed(TRN("Codeplug not written: for now only"));
-		return;
-	}
+	// A contact record that couldn't be read counts as not stored: nothing is written then
+	uint16_t found = codeplug_contact_find_index(job.id, !job.private_call, &job.target);
 	if (found == 0) {
 		save_failed(TRN("Not a stored contact: for now only"));
 		return;

@@ -268,6 +268,16 @@ bool codeplug_contacts_each(codeplug_contact_fn fn, void *ctx)
 	}
 	return true;
 }
+uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out)
+{
+	for (unsigned i = 0; i < sizeof(contacts) / sizeof(contacts[0]); i++) {
+		if (contacts[i].id == id && (contacts[i].type != CONTACT_PRIVATE) == group) {
+			*out = contacts[i];
+			return (uint16_t)(i + 1u);
+		}
+	}
+	return 0;
+}
 static uint32_t contact_finds, iddb_lookups;
 static contact_t added_contact;	// a contact written after the radio started (id 0 = none)
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)

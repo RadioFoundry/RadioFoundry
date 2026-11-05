@@ -396,33 +396,15 @@ static void recent_update(const radio_view_t *v)
 }
 #endif
 
-#if CONFIG_DMR
-typedef struct {
-	uint32_t id;
-	bool group, found;
-	char *out;
-} name_scan_t;
-
-static bool name_match(uint16_t index, const contact_t *c, void *ctx)
-{
-	(void)index;
-	name_scan_t *n = ctx;
-	if (c == NULL || c->id != n->id || (c->type == CONTACT_GROUP) != n->group)
-		return true;
-	strcpy(n->out, c->name);
-	n->found = true;
-	return false;
-}
-#endif
-
 bool ui_contact_name(uint32_t id, bool group, char *out)
 {
 	out[0] = 0;
 #if CONFIG_DMR
-	name_scan_t n = { .id = id, .group = group, .out = out };
-	codeplug_contacts_each(name_match, &n);
-	if (n.found)
+	contact_t c;
+	if (codeplug_contact_find(id, group, &c)) {
+		strcpy(out, c.name);
 		return true;
+	}
 #else
 	(void)id;
 	(void)group;
