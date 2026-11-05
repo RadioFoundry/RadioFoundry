@@ -112,8 +112,8 @@ tables at start-up (`boards/rt10/calibration_rt10.c`) and transmits only with a 
 | PA | DAC B drives the PA's power control; levels per frequency step come from the calibration (section 4.1) |
 | Power levels | L and H: the calibration's low and high sets |
 
-FM key-up, in the original firmware's order. Measured: the chip's TX state and frequency and the pin levels; the signal
-on air is untested.
+FM key-up, in the original firmware's order. Measured: the chip's TX state and frequency, the pin levels and the
+signal on air (927.5 MHz at L: the SDR bench received the whole key, about 330 Hz above the bench's frequency).
 
 1. The FD6818's TX words while it still receives (0x40 0x3AD0 with or without sub-audio, the sub-audio, PA gain 0x28
    with the gain in both 3-bit fields), the speaker off, PTB3 and PTB0 low.
@@ -164,5 +164,7 @@ in the codec slot like the other HR_C7000 radios (`boards/rt10/memory.ld`).
 | Power switch level, battery scale, LED colors, key levels, knob map | open |
 | FD6818 two-wire bus, FM receive, sub-audio decode | measured |
 | Factory calibration read | measured (the radio's own sector) |
-| FM transmit | written; the chip's TX state, frequency and the PA pins measured, the signal on air untested |
+| FM transmit | measured on air (section 5) |
+| Battery save | measured: asleep is the FD6818 idle and PTB4 (RX supply) low; waking retunes the receiver |
+| Reference trim | written: the trim moves the synthesizer frequency at the next tune (no oscillator control); untested on air |
 | DMR, codec map | open |
