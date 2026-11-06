@@ -68,12 +68,13 @@ def _addresses(radio):
 
 
 @pytest.mark.feature("dmr_control_station")
+@pytest.mark.needs_switch("USB")
 def test_usb_settings_stored(radio):
     """Radio only: op 27 stores each setting, the view keys follow; nothing re-enumerates (the power-on setting acts
     at the next boot only)."""
     _need(radio)
     if "USB" not in radio.features():
-        skip("no_hw", "no USB on this radio: no USB network settings")
+        skip("not_built", "built without CONFIG_USB: no USB network settings")
     try:
         radio.link.usb_net_settings(boot_network=True)
         v = radio.view(["hotspot"])

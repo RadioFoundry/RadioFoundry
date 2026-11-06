@@ -582,6 +582,7 @@ def udt_position(block):
 
 @pytest.mark.feature("dmr_lrrp")
 @pytest.mark.feature("aprs", optional=True)
+@pytest.mark.needs_switch("APRS")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
