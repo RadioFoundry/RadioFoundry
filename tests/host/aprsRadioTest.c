@@ -522,6 +522,10 @@ static void test_not_amateur(void)
 	aprs_view_t v;
 	aprs_get_view(&v);
 	CHECK(v.block == APRS_NOT_AMATEUR && hw.tx_calls == 0);
+	// The band edges, 33 cm included
+	CHECK(aprs_amateur_hz(144000000u) && aprs_amateur_hz(450000000u) && !aprs_amateur_hz(450000001u));
+	CHECK(aprs_amateur_hz(902000000u) && aprs_amateur_hz(927500000u) && aprs_amateur_hz(928000000u));
+	CHECK(!aprs_amateur_hz(901999999u) && !aprs_amateur_hz(928000001u));
 	c.freq_hz = 144800000u;
 	aprs_set_cfg(&c, now);
 	run(30u * 1000u);

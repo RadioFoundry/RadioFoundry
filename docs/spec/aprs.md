@@ -76,8 +76,8 @@ fake board whose AFSK output is demodulated back to frames.
 - A callsign is required: the debug link's test call, else Settings > My radio's radio name, else the codeplug's
   radio name; its first word, upper case, 3-6 letters and digits with a digit after the first character, not N0CALL.
   Our SSID comes from the APRS settings (7 by default). No callsign: nothing goes out, the page says why.
-- RF only on amateur frequencies: the APRS frequency must be in 144-148, 222-225 or 420-450 MHz and in a band the
-  board transmits in; else the reason is "not amateur" and nothing is keyed.
+- RF only on amateur frequencies: the APRS frequency must be in 144-148, 222-225, 420-450 or 902-928 MHz and in a
+  band the board transmits in; else the reason is "not amateur" and nothing is keyed.
 - A hard minimum of 30 s between automatic beacons (`AUTO_MIN_S`), 10 s for any configuration
   (`APRS_MIN_INTERVAL_FLOOR_S`), and "send now" pressed again within 5 s is ignored.
 - Frames from the host (KISS) must carry our callsign (any SSID) as the source and are rate limited: a burst of 3,

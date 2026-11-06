@@ -159,7 +159,7 @@ uint32_t aprs_cfg_freq(const aprs_cfg_t *c)
 bool aprs_amateur_hz(uint32_t hz)
 {
 	return (hz >= 144000000u && hz <= 148000000u) || (hz >= 222000000u && hz <= 225000000u) ||
-	       (hz >= 420000000u && hz <= 450000000u);
+	       (hz >= 420000000u && hz <= 450000000u) || (hz >= 902000000u && hz <= 928000000u);
 }
 
 bool aprs_callsign_ok(const char *call)
