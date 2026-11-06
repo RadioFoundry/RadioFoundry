@@ -572,6 +572,17 @@ static void test_iddb(void)
 	// The old "ID" tag is rejected
 	image[FL + 0x30001] = 'D';
 	CHECK(!dmr_iddb_init());
+
+	// A board's flash map moves the database with the codeplug's flash image: read at openfw_flash + 0x30000, not at
+	// the STM32 family's 0x20000 + 0x30000 (the RT10 keeps its image at 0x130000)
+	static const hal_flash_map_t moved = { .openfw_eeprom = EE, .openfw_flash = 0x040000u, .openfw_end = IMAGE_SIZE };
+	memmove(&image[moved.openfw_flash + 0x30000], &image[FL + 0x30000], 12 + 48);
+	image[moved.openfw_flash + 0x30001] = 'd';
+	flash.map = &moved;
+	CHECK(dmr_iddb_init() && dmr_iddb_count() == 1);
+	CHECK(dmr_iddb_lookup(9991234, text, sizeof(text)) && strcmp(text, "Q0TEST Charlie") == 0);
+	flash.map = NULL;
+	CHECK(!dmr_iddb_init());
 }
 
 // Format C (iddb-compact.md): written by hand, so the radio's reading is checked apart from the editor's encoder

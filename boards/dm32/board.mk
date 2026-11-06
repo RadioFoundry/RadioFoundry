@@ -6,7 +6,6 @@ PLATFORM   := hrc7000
 APP_BASE   := 0x0300C000
 # The CPS-compatible codeplug image sits at +0x700000 in the 16 MB data flash, below it is all stock data
 # (docs/spec/open-firmware-cps.md 7.4, hardware-dm32.md 10.1)
-MCU_DEFS   := -DCODEPLUG_OPENFW_EEPROM_BASE=0x700000u -DCODEPLUG_OPENFW_FLASH_BASE=0x720000u
 BOARD_DIRS := boards/dm32 drivers/rf/rfbus drivers/rf/fd6818 drivers/rf/subaudio drivers/modem/hrc7000 drivers/display/st7789 drivers/flash/spi_nor \
 	drivers/input/keymatrix drivers/input/quadrature drivers/input/sharedptt drivers/cal/baofeng \
 	drivers/bcast/rda5807m drivers/bus/i2c_gpio
