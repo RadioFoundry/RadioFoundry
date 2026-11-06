@@ -373,6 +373,10 @@ class Radio:
             self.ser = serial.serial_for_url(port, 115200, timeout=0.02, do_not_open=True)
             self.ser.dtr = dtr  # False: as MMDVMHost on Windows; closing then does not end the hotspot session
             self.ser.open()
+            try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
+                self.ser.set_low_latency_mode(True)
+            except (AttributeError, NotImplementedError, OSError, ValueError):
+                pass
         self.buf = bytearray()
         self.lock = threading.Condition()
         self.replies = []

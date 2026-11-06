@@ -102,6 +102,10 @@ class Transport:
         else:
             import serial
             self.ser = serial.serial_for_url(port, 115200, timeout=0.05)    # a device or a URL (rfc2217://)
+            try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
+                self.ser.set_low_latency_mode(True)
+            except (AttributeError, NotImplementedError, OSError, ValueError):
+                pass
             self.s = None
 
     def send(self, b: bytes) -> None:
