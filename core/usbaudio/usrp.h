@@ -123,8 +123,10 @@ void usrp_link_init(usrp_link_t *l, const usrp_link_cfg_t *cfg);
 // A datagram from the peer at now_ms. *voice (may be NULL) is set when it carried audio to play / transmit, and
 // that audio is only meant for the air while keyed. Returns what to do with the transmitter
 usrp_event_t usrp_link_rx(usrp_link_t *l, const uint8_t *buf, size_t len, uint32_t now_ms, int16_t *pcm, bool *voice);
-// Call every few ms: the watchdogs
+// Call every few ms: the watchdogs. now_ms may be older than the last frame's time (read before that frame came in)
 usrp_event_t usrp_link_tick(usrp_link_t *l, uint32_t now_ms);
+// Milliseconds from then_ms to now_ms, 0 when then_ms is the later one
+uint32_t usrp_since(uint32_t now_ms, uint32_t then_ms);
 // Our own frame toward the peer: received audio (pcm, NULL = silence) with keyup = cos (the squelch / call state).
 // ulaw picks the 192-byte VOICE_ULAW form. Returns the length
 size_t usrp_link_tx(usrp_link_t *l, uint8_t *out, size_t cap, const int16_t *pcm, bool cos, bool ulaw);
