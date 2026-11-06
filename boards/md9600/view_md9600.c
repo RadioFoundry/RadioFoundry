@@ -191,10 +191,18 @@ bool md9600_view_line(uint8_t i, char *buf, uint8_t len)
 		dl_fmt(buf, len, "cal.pa=%u/%u/%u/%u", (unsigned)pa[0], (unsigned)pa[1], (unsigned)pa[2], (unsigned)pa[3]);
 		return true;
 	}
+	case 27: {	// an SFR's burst end: the measured RF TX to timeslot interrupt interval (us), early ends
+		uint32_t slot_us = 0, early = 0;
+#if CONFIG_MD9600_DMR_TX && CONFIG_SFR
+		md9600_rf_sfr_timing(&slot_us, &early);
+#endif
+		dl_fmt(buf, len, "sfr.burst=%u/%u", (unsigned)slot_us, (unsigned)early);
+		return true;
+	}
 	default:
 		break;
 	}
-	uint8_t a = (uint8_t)(i - 27u);
+	uint8_t a = (uint8_t)(i - 28u);
 	if (a < MD9600_ADC_COUNT) {
 		dl_fmt(buf, len, "adc.%s=%u", adc_names[a], md9600_adc_raw(a));
 		return true;

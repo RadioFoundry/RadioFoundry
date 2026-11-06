@@ -222,6 +222,18 @@ static uint32_t dmr_rx_back;	// returns to receive after a split channel transmi
 #define SFR_SETTLE_US	600u	// the synthesizer's lock from the receive LO to the carrier (no lock detect, 5.3)
 static bool dmr_lead;		// the lead is set for this transmission
 static uint32_t dmr_rx_bursts;	// receive set-ups between bursts
+// The timeslot interrupt that ends a burst comes about 0.85 ms after the payload (on-time 30.7 ms, 19.8), and the
+// receiver's recovery after the drop takes the start of the inbound burst. An SFR burst ends this much sooner, from
+// TIM5, timed from the RF TX interrupt by the interval measured on the burst before (so no lead is assumed)
+#define SFR_END_EARLY_US	600u
+#define SFR_SLOT_MIN_US		29000u	// a measured interval outside this window is not used
+#define SFR_SLOT_MAX_US		34000u
+static uint32_t key_us;			// hal_micros() at the burst's RF TX interrupt
+static bool lead_burst;			// this burst was keyed from the lead (key_us is its start)
+static uint32_t sfr_slot_us;		// RF TX interrupt to the timeslot interrupt, last lead burst; 0 = none yet
+static volatile bool end_pending;	// TIM5 ends this burst
+static bool ended_early;		// ... and did: the receiver is already back
+static uint32_t sfr_early_ends;
 #endif
 
 // TIM5: one-shot at 1 MHz for the burst's key-up (MD9600_BURST_KEY_DELAY_US, then md9600_rf_pa_step's waits), at the
@@ -237,7 +249,14 @@ static void key_timer_stop(void)
 	TIM5->CR1 = 0;
 	TIM5->SR = 0;
 	key_pending = false;
+#if CONFIG_SFR
+	end_pending = false;
+#endif
 }
+
+#if CONFIG_SFR
+static void sfr_burst_rx(void);
+#endif
 
 static void key_timer_start(uint32_t us)
 {
@@ -264,6 +283,15 @@ static void key_timer_start(uint32_t us)
 void TIM5_IRQHandler(void)
 {
 	TIM5->SR = 0;
+#if CONFIG_SFR
+	if (end_pending) {
+		end_pending = false;
+		sfr_burst_rx();
+		ended_early = true;
+		sfr_early_ends++;
+		return;
+	}
+#endif
 	if (!key_pending) {
 		return;
 	}
@@ -297,25 +325,54 @@ void md9600_rf_dmr_wait(void)
 	}
 }
 
+#if CONFIG_SFR
+// The burst's end on an SFR: the PA down, then the receive LO, so the inbound burst between ours is heard
+static void sfr_burst_rx(void)
+{
+	(void)md9600_rf_pa_burst(&rf, false);
+	if (dmr_tuned && stm32_hrc_dmr_tx_listening()) {
+		if (!dmr_lead) {
+			md9600_c6000_tx_lead(SFR_TX_LEAD);
+			dmr_lead = true;
+		}
+		if (md9600_rf_burst_rx(&rf) == MD9600_RF_OK) {
+			dmr_tuned = false;
+			dmr_rx_bursts++;
+		}
+	}
+}
+
+void md9600_rf_sfr_timing(uint32_t *slot_us, uint32_t *early_ends)
+{
+	*slot_us = sfr_slot_us;
+	*early_ends = sfr_early_ends;
+}
+#endif
+
 bool md9600_rf_dmr_key(bool tx)
 {
 	if (!tx) {
 		key_timer_stop();
-		(void)md9600_rf_pa_burst(&rf, false);
 #if CONFIG_SFR
-		if (dmr_tuned && stm32_hrc_dmr_tx_listening()) {
-			if (!dmr_lead) {
-				md9600_c6000_tx_lead(SFR_TX_LEAD);
-				dmr_lead = true;
-			}
-			if (md9600_rf_burst_rx(&rf) == MD9600_RF_OK) {
-				dmr_tuned = false;
-				dmr_rx_bursts++;
-			}
+		if (lead_burst) {
+			uint32_t d = hal_micros() - key_us;
+			sfr_slot_us = (d >= SFR_SLOT_MIN_US && d <= SFR_SLOT_MAX_US) ? d : 0u;
+			lead_burst = false;
 		}
+		if (ended_early) {
+			ended_early = false;	// TIM5 already ended it: the PA lines now hold the receive DAC (VHF)
+			return true;
+		}
+		sfr_burst_rx();
+#else
+		(void)md9600_rf_pa_burst(&rf, false);
 #endif
 		return true;
 	}
+#if CONFIG_SFR
+	key_us = hal_micros();
+	ended_early = false;
+#endif
 	if (!dmr_armed) {
 		dmr_unarmed++;
 		return false;
@@ -332,6 +389,12 @@ bool md9600_rf_dmr_key(bool tx)
 			if (md9600_rf_pa_burst(&rf, true) != MD9600_RF_OK) {
 				dmr_skipped++;
 				return false;
+			}
+			lead_burst = true;
+			uint32_t now = hal_micros() - key_us;
+			if (sfr_slot_us != 0 && sfr_slot_us - SFR_END_EARLY_US > now + 2u) {
+				end_pending = true;
+				key_timer_start(sfr_slot_us - SFR_END_EARLY_US - now);
 			}
 			return true;
 		}
@@ -374,6 +437,10 @@ void md9600_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx)
 static void dmr_disarm(void)
 {
 	dmr_armed = false;
+#if CONFIG_SFR
+	lead_burst = ended_early = false;
+	sfr_slot_us = 0;
+#endif
 	if (stm32_hrc_dmr_tx_active()) {
 		stm32_hrc_dmr_tx_drop();
 	}
