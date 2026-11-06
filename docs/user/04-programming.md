@@ -89,7 +89,8 @@ cover every change, including an import.
 ([ARS](10-messages-and-signaling.md#registration-ars-and-location-lrrp)). **IP gateway** is the DMR ID of the radio
 that takes the computer's packets to other networks ([USB network](15-usb-network.md#other-networks-through-a-gateway-radio)).
 Leave a field empty and the radio keeps its own setting; enter 0 to turn it off. qdmr doesn't have these settings and
-leaves them as they are on the radio.
+leaves them as they are on the radio. Other programming software that writes the radio's whole memory can't erase them
+either: the radio keeps its own unless the software writes them in RadioFoundry's format.
 
 The page keeps the working codeplug in the browser, so closing or reloading the page doesn't lose edits. **New** starts
 over.
