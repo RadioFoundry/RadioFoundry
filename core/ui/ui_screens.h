@@ -266,6 +266,6 @@ uint32_t ui_freq_parse(const char *digits, uint8_t len);
 // Text for the board's bands ("136-174 400-480"), for hints
 void ui_bands_text(char *out, size_t len);
 // The board's power level name
-const char *ui_power_name(uint8_t level);
+const char *ui_power_name(uint8_t level, uint32_t tx_hz);
 
 #endif

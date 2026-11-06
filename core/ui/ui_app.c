@@ -1423,7 +1423,7 @@ static void quick_activate(int tile)
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
 		sb_str(&b, TR("Power "));
-		sb_str(&b, ui_power_name(next));
+		sb_str(&b, ui_power_name(next, view->ch.tx_hz));
 		ui_toast(msg);
 		break;
 	}
