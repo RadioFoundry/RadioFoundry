@@ -27,7 +27,7 @@ class FakeLink:
 
     def __init__(self, tx_mhz=461.4625, mode="dmr", aprs_mhz=0.0):
         self.views = {"core": {"tx_hz": str(round(tx_mhz * 1e6)), "mode": mode},
-                      "aprs": {"aprs.freq_hz": str(round(aprs_mhz * 1e6))}}
+                      "aprs": {"aprs.freq_hz": str(round(aprs_mhz * 1e6)), "aprs.block": "ok" if aprs_mhz else "no_freq"}}
         self.sent = []
 
     def view(self, sections):
@@ -60,6 +60,8 @@ def ptt(down):
     (H.DMR_DATA, bytes([H.DATA_OP_EMERGENCY, 1]), "channel"),
     (H.DMR_DATA, bytes([H.DATA_OP_EMERGENCY, 0]), None),
     (H.APRS, bytes([H.APRS_OP_SEND_NOW]), "aprs"),
+    (H.APRS, bytes([H.APRS_OP_STATUS]) + b"x", "aprs"),
+    (H.APRS, bytes([4]) + b"Q0TST", None),       # TEST_CALL: a RAM-only callsign, no transmission
     (9, b"", None),                     # GET_VIEW
 ])
 def test_keys_tx(cmd, payload, where):
@@ -90,6 +92,13 @@ def test_aprs_frequency_and_dmr_channel(rig):
         H._guarded_request(FakeLink(461.4625, "fm", aprs_mhz=144.39), H.APRS, bytes([H.APRS_OP_SEND_NOW]))
     with pytest.raises(RuntimeError, match="467.37500"):     # positions over DMR go on the DMR channel
         H._guarded_request(FakeLink(467.375, "dmr", aprs_mhz=446.05), H.APRS, bytes([H.APRS_OP_SEND_NOW]))
+    assert len(rig) == 1
+
+
+def test_aprs_frequency_only_when_rf_aprs_can_send(rig):
+    link = FakeLink(461.4625, "fm", aprs_mhz=144.39)
+    link.views["aprs"]["aprs.block"] = "not_amateur"
+    H._guarded_request(link, H.APRS, bytes([H.APRS_OP_SEND_NOW]))
     assert len(rig) == 1
 
 

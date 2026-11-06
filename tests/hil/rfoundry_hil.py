@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools", "bench"))
 
 from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_ports, parse_counters,  # noqa: E402
                        to_rgb, write_png, ACTIONS, PRESS, LONG, UP, APRS, APRS_OP_MESSAGE, APRS_OP_SEND_NOW,
-                       APRS_OP_TEST_CALL, DATA_OP_CALL_ALERT, DATA_OP_EMERGENCY, DATA_OP_IP_SEND,
+                       APRS_OP_STATUS, DATA_OP_CALL_ALERT, DATA_OP_EMERGENCY, DATA_OP_IP_SEND,
                        DATA_OP_RADIO_CHECK, DATA_OP_SMS, DMR_DATA, KEY, OP_TONE_BURST, PTT, RADIO)
 
 
@@ -35,8 +35,8 @@ TX_KEYS = {ACTIONS["ptt"], ACTIONS["emergency"]}
 
 
 def keys_tx(cmd, payload):
-    """Where a debug link request transmits: "channel" (the channel's TX frequency), "aprs" (the APRS frequency, and
-    the channel when it is DMR: positions over DMR), or None (it doesn't key). KEY's op 1 (physical key bits) is not
+    """Where a debug link request transmits: "channel" (the channel's TX frequency), "aprs" (the APRS frequency when
+    RF APRS can send, aprs.block=ok, and the channel when it is DMR: positions over DMR), or None (it doesn't key). KEY's op 1 (physical key bits) is not
     known here: its bits are the board's."""
     p = bytes(payload)
     if cmd == PTT:
@@ -52,7 +52,7 @@ def keys_tx(cmd, payload):
                 p[:2] == bytes([DATA_OP_EMERGENCY, 1]):
             return "channel"
         return None
-    if cmd == APRS and p[:1] and p[0] in (APRS_OP_SEND_NOW, APRS_OP_MESSAGE, APRS_OP_TEST_CALL):
+    if cmd == APRS and p[:1] and p[0] in (APRS_OP_SEND_NOW, APRS_OP_STATUS, APRS_OP_MESSAGE):
         return "aprs"
     return None
 
@@ -63,7 +63,8 @@ def tx_freqs(link, where):
     channel = int(core.get("tx_hz") or 0) / 1e6
     if where == "channel":
         return [channel]
-    aprs = int(link.view(["aprs"]).get("aprs.freq_hz") or 0) / 1e6
+    a = link.view(["aprs"])
+    aprs = int(a.get("aprs.freq_hz") or 0) / 1e6 if a.get("aprs.block") == "ok" else 0     # else no AFSK goes out
     return ([aprs] if aprs else []) + ([channel] if core.get("mode") == "dmr" else [])
 
 
