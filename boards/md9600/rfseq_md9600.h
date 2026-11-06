@@ -227,5 +227,10 @@ typedef struct {
 void md9600_noise_clear(md9600_noise_win_t *w);
 // Add one reading; returns the window's lowest
 uint16_t md9600_noise_floor(md9600_noise_win_t *w, uint16_t raw12, int16_t rssi_dbm, uint32_t now_ms);
+// The squelch's reading for the core (radio_status_t.noise): the window's lowest, mapped (md9600_rf_noise). While the
+// receiver is off (transmit, sleep) the noise line reads 700-800, which looks like a carrier: no reading of it enters
+// the window and the squelch reads closed (255), so a transmission's readings can't open the squelch after it ends
+uint8_t md9600_rf_squelch_noise(md9600_noise_win_t *w, bool receiving, uint16_t raw12, int16_t rssi_dbm,
+				uint32_t now_ms, uint16_t l1_open, uint16_t l9_open);
 
 #endif

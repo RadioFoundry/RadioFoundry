@@ -621,6 +621,16 @@ uint16_t md9600_noise_floor(md9600_noise_win_t *w, uint16_t raw12, int16_t rssi_
 	return lo;
 }
 
+uint8_t md9600_rf_squelch_noise(md9600_noise_win_t *w, bool receiving, uint16_t raw12, int16_t rssi_dbm,
+				uint32_t now_ms, uint16_t l1_open, uint16_t l9_open)
+{
+	if (!receiving) {
+		md9600_noise_clear(w);
+		return 255u;
+	}
+	return md9600_rf_noise(md9600_noise_floor(w, raw12, rssi_dbm, now_ms), l1_open, l9_open);
+}
+
 const char *md9600_rf_err_name(uint8_t err)
 {
 	static const char *const names[MD9600_RF_E_COUNT] = {

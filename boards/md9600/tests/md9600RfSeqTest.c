@@ -808,6 +808,17 @@ static void test_noise_window(void)
 	// A retune forgets the last channel
 	md9600_noise_clear(&w);
 	CHECK(md9600_noise_floor(&w, 1700, -105, t) == 1700);
+
+	// A transmission: the noise line reads 700-800 with the receiver off. The squelch stays closed through it, and the
+	// first reading after it (an empty channel, 1800) closes it, not the window's 700 from before
+	md9600_noise_clear(&w);
+	CHECK(md9600_rf_squelch_noise(&w, true, 1750, -138, t, 0, 0) == 1750 / 16);
+	for (int i = 0; i < 20; i++, t += 15) {
+		CHECK(md9600_rf_squelch_noise(&w, false, 700 + 5 * i, -145, t, 0, 0) == 255);
+	}
+	CHECK(md9600_rf_squelch_noise(&w, true, 1800, -138, t, 0, 0) == 1800 / 16);
+	t += 15;
+	CHECK(md9600_rf_squelch_noise(&w, true, 1600, -138, t, 2400, 1600) == 40);	// calibrated the same way
 }
 
 static void test_readings(void)
