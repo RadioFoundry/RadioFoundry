@@ -205,15 +205,26 @@ static uint8_t mic_gain[2];
 static const uint8_t mod_gain_uhf[2] = { 0x0C, 0x60 };
 static const uint8_t mod_gain_vhf[2] = { 0x24, 0x75 };
 
-static const sct_field_t tx_uhf[] = { { SCT_F_MOD_GAIN, sizeof(mod_gain_uhf), mod_gain_uhf } };
-static const sct_field_t tx_vhf[] = { { SCT_F_MOD_GAIN, sizeof(mod_gain_vhf), mod_gain_vhf } };
+// MODOUT_CONFIG: byte 0 the delay of LOR against LOL in 10.4 us steps, signed; bytes 1-4 as the stock firmware sends
+// them. The 4FSK is on LOL, and LOL later by 21 steps (0xEB) puts the inbound burst on the repeater's grid with the DAC
+// filter of codec_start (hardware-d578uv.md 5.1). Positive values moved it by less than a sample
+static const uint8_t modout_config[5] = { 0xEB, 0x10, 0x00, 0x00, 0x00 };
+
+static const sct_field_t tx_uhf[] = {
+	{ SCT_F_MOD_GAIN, sizeof(mod_gain_uhf), mod_gain_uhf },
+	{ SCT_F_MODOUT_CONFIG, sizeof(modout_config), modout_config },
+};
+static const sct_field_t tx_vhf[] = {
+	{ SCT_F_MOD_GAIN, sizeof(mod_gain_vhf), mod_gain_vhf },
+	{ SCT_F_MODOUT_CONFIG, sizeof(modout_config), modout_config },
+};
 
 static uint8_t port_tx_fields(const sct_field_t **fields, void *ctx)
 {
 	(void)ctx;
 	// The core keys the RF chips before the modem's transmission begins, so the TX frequency is this one's
 	*fields = d578uv_tx_hz() >= D578UV_UHF_FROM_HZ ? tx_uhf : tx_vhf;
-	return 1;
+	return sizeof(tx_uhf) / sizeof(tx_uhf[0]);
 }
 
 static const sct_field_t voice_fields[] = {
@@ -242,20 +253,23 @@ static bool cal_current(uint32_t base)
 	return written && !superseded;
 }
 
-// The rest of the stock DMR start (hardware-d578uv.md 4.4): MODOUT_CONFIG's fixed bytes, DMR_OFFSET from
+// The rest of the stock DMR start (hardware-d578uv.md 4.4) but MODOUT_CONFIG (in tx_fields): DMR_OFFSET from
 // calibration, the squelch's fixed levels (no gain adjustment, LNA 2, AGC, OOBE every 80 ms, carrier thresholds
 // 0x1770 / 0x157C for digital and analog) and the demodulator's auto calibration
-static const uint8_t modout_config[5] = { 0x00, 0x10, 0x00, 0x00, 0x00 };
 static uint8_t dmr_offset[8];
 static const uint8_t sq_level[12] = { 0x00, 0x02, 0x00, 0x3C, 0x17, 0x70, 0x15, 0x7C, 0x17, 0x70, 0x15, 0x7C };
 static const uint8_t demod_gain[2] = { 0x00, 0x00 };
 
 static const sct_field_t start_fields[] = {
-	{ SCT_F_MODOUT_CONFIG, sizeof(modout_config), modout_config },
 	{ SCT_F_DMR_OFFSET, sizeof(dmr_offset), dmr_offset },
 	{ SCT_F_SQ_LEVEL, sizeof(sq_level), sq_level },
 	{ SCT_F_DEMOD_GAIN, sizeof(demod_gain), demod_gain },
 };
+
+// The codec's DAC on processing block PRB_P17 (page 0 register 60): interpolation filter C, 13 samples of delay where
+// the baseband's own set-up has 18, so 0.41 ms less on the 4FSK's way out (hardware-d578uv.md 5.1). It takes effect
+// with the DAC running
+static const sct_codec_write_t codec_start[] = { { 0, 0x3C, 17 } };
 
 // The headphone driver muted while transmitting; codec_writes[CODEC_HPL] restores it
 static const sct_codec_write_t hpl_mute = { 1, 0x10, 0x40 };
@@ -327,6 +341,8 @@ static const sct_dmr_port_t port = {
 	.start_count = sizeof(start_fields) / sizeof(start_fields[0]),
 	.codec_tx = &hpl_mute,
 	.codec_rx = &codec_writes[CODEC_HPL],
+	.codec_start = codec_start,
+	.codec_start_count = sizeof(codec_start) / sizeof(codec_start[0]),
 	.tx_fields = port_tx_fields,
 	.ready = port_ready,
 	.lock = port_lock,

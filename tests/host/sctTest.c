@@ -1067,6 +1067,31 @@ static const sct_dmr_port_t port_txf = {
 	.ready = d_ready, .lock = d_lock, .unlock = d_unlock,
 };
 
+// codec_start: each start sends the board's codec writes, in order, after the start packet; none without it
+static const sct_codec_write_t t_cstart[] = { { 0, 0x3C, 0x11 }, { 1, 0x10, 0x08 } };
+static const sct_dmr_port_t port_cstart = {
+	.send = d_send, .call_option = { 0x41, 0x40, 0x42, 0x47, 0x08 }, .codec_start = t_cstart, .codec_start_count = 2,
+	.ready = d_ready, .lock = d_lock, .unlock = d_unlock,
+};
+
+static void test_dmr_codec_start(void)
+{
+	dmr_config_t cfg = { .own_id = 1234567, .cc = 1, .access = DMR_ACCESS_IMPOLITE };
+
+	sct_dmr_init(&port_cstart);
+	for (int k = 0; k < 2; k++) {
+		nsent = 0;
+		CHECK(m->start(&cfg, on_event, NULL));
+		CHECK(nsent == 4 && sent[0].pkt[5] == SCT_TYPE_DMR && is_codec(2, &t_cstart[0]) && is_codec(3, &t_cstart[1]));
+		m->stop();
+	}
+	sct_dmr_init(&port_opts);
+	nsent = 0;
+	CHECK(m->start(&cfg, on_event, NULL));
+	CHECK(codec_count(&t_cstart[0]) == 0);
+	m->stop();
+}
+
 static void test_dmr_tx_fields(void)
 {
 	dmr_config_t cfg = { .own_id = 1234567, .cc = 1, .access = DMR_ACCESS_IMPOLITE };
@@ -1076,7 +1101,20 @@ static void test_dmr_tx_fields(void)
 	sct_dmr_stats_t st0, st;
 
 	sct_dmr_init(&port_txf);
+	// Start sends them too, after the start packet, so the first transmission's aren't the chip's first
+	t_band = 1;
+	nsent = 0;
 	CHECK(m->start(&cfg, on_event, NULL));
+	CHECK(nsent >= 2 && sent[nsent - 1].pkt[5] == SCT_TYPE_CONTROL);
+	d = sent_field(nsent - 1, SCT_F_MOD_GAIN, &n);
+	CHECK(d != NULL && n == 2 && memcmp(d, t_gain_a, 2) == 0);
+	m->stop();
+	// None given: start sends no control packet
+	t_band = 0;
+	nsent = 0;
+	CHECK(m->start(&cfg, on_event, NULL));
+	for (int i = 0; i < nsent; i++)
+		CHECK(sent[i].pkt[5] != SCT_TYPE_CONTROL);
 	sct_dmr_poll(t);
 	for (uint8_t k = 1; k <= 2; k++) {
 		t_band = k;
@@ -1119,6 +1157,7 @@ int main(void)
 	test_dmr_options();
 	test_dmr_carrier();
 	test_dmr_tx_fields();
+	test_dmr_codec_start();
 	CHECK(lock_depth == 0 && lock_max == 1);
 	// Not booted: start fails and sends nothing
 	booted = false;
