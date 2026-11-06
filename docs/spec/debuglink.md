@@ -545,7 +545,7 @@ and the claim of a foreign region.
 | 2 CLAIM | token u32: the chip UID's low word (INFO_CHIP offset 7) | reason u8. `DL_ST_REFUSED` with reason 1 (bad token) or 4 (no chip info); `DL_ST_UNAVAILABLE` when the region isn't foreign. On OK the housekeeping task erases the region (10 sector erases, up to about 4 s, during which it does not watch the power knob); poll `storage.region` |
 
 Every op answers `DL_ST_UNAVAILABLE` on a radio with no flash map: a memory chip smaller than the board's map needs
-(its highest area ends past the chip), where nothing is stored. The web tools read that INFO answer as region "nomap", apart from region 0 in an OK answer (a map whose flash didn't start). A build without the
+(the driver drops a map its chip is too small for), where nothing is stored. The web tools read that INFO answer as region "nomap", apart from region 0 in an OK answer (a map whose flash didn't start). A build without the
 command answers `DL_ST_UNKNOWN_CMD`.
 
 `rfoundry_debug.py storage info | dump | claim` drives it; `claim` always dumps first, outside any git tree.
