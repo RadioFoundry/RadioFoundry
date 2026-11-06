@@ -4,7 +4,7 @@
 (the DM-1701, hal_radio_t tx_tone_key): the radio leaves DMR, keys an FM carrier on the hotspot's TX frequency with
 the tone keyed in Morse at the settings' speed (20 wpm by default), then the hotspot's DMR set-up is back.
 
-Opt-in: radio_tx + bench_service (--allow-rf --allow-service-stop). The bench only records (sdrmon.py capture) and
+Opt-in: radio_tx + bench_service (--allow-rf --allow-service-stop). The ID keys at the lowest power: SET_FREQ's RF level 0. The bench only records (sdrmon.py capture) and
 tools/sdr_fm_check.py finds the keyed segment. The MMDVM client keeps DTR clear (see test_hotspot.py).
 
 Pass criteria: SEND_CWID ACKed; the GET_STATUS TX flag set while keying; hs.cw_sent +1, hs.cw_wpm 20, hs.cw_last_ms
@@ -37,7 +37,9 @@ def config(cc=1):
 
 
 def freq(rx, tx):
-    return bytes([0]) + struct.pack("<II", rx, tx) + bytes([255]) + struct.pack("<I", tx)
+    """SET_FREQ with RF level 0: the board's lowest power step (radio_sm_hotspot_power). In hotspot mode the RF level
+    sets the power, not the radio's power setting, and level 255 keyed the ID at full power"""
+    return bytes([0]) + struct.pack("<II", rx, tx) + bytes([0]) + struct.pack("<I", tx)
 
 
 @pytest.mark.feature("hotspot", optional=True)
