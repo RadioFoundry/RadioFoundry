@@ -133,7 +133,7 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     # which the bench-side burst records (dmr_watch_start) don't carry
     with sdr_bench.lease():
         cap = sdr_bench.capture_start(rdir, freq, seconds=PTT_S + 8)
-        lis = sdr_bench.listen_start(freq, cc, seconds=PTT_S + 6, ambe_out=f"~/{sdr_bench.dir}/{rdir}/heard")
+        lis = sdr_bench.listen_start(freq, cc, seconds=PTT_S + 6, ambe_out=sdr_bench.run_path(rdir, "heard"))
         radio.ptt_for(PTT_S)
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
         heard = sdr_bench.listen_result(lis)
@@ -196,7 +196,7 @@ def _tx_checks(sdr, heard, own, target, private, cc, before, after, alias, pytes
 def _report(c, sdr_bench, rdir):
     for i in c.items:
         print(f"{ {True: 'ok  ', False: 'FAIL', None: 'man '}[i['ok']]} {i['check']}  {i['detail']}")
-    print(f"captures on the bench: ~/{sdr_bench.dir}/{rdir}/")
+    print(f"captures: {sdr_bench.run_path(rdir)}")
     failed = [i for i in c.items if i["ok"] is False]
     assert not failed, "; ".join(f"{i['check']} ({i['detail']})" for i in failed)
 
@@ -266,7 +266,7 @@ def _over(radio, sdr_bench, freq, cc, seconds, tag):
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
         heard = sdr_bench.listen_result(lis)
         sdr = sdr_bench.dmr_watch_result(watch)
-    print(f"captures on the bench: ~/{sdr_bench.dir}/{rdir}/" if "cap" in watch else "bursts decoded on the bench")
+    print(f"captures: {sdr_bench.run_path(rdir)}" if "cap" in watch else "bursts decoded on the bench")
     return sdr, heard
 
 
@@ -485,7 +485,7 @@ def test_dmr_tx_split_repeater(radio, sdr_bench, pytestconfig, backup_dir):
                 else:
                     print(f"no slot labels in the outbound capture on {freq} MHz ({len(out.get('bursts', []))} bursts)")
                 print(f"radio: call.tx_calls +{tx_calls}, call.tx_denied +{denied}; SDR on {split} MHz (the radio's TX): "
-                      f"{dict(kinds)}; captures: ~/{sdr_bench.dir}/{rdir}/")
+                      f"{dict(kinds)}; captures: {sdr_bench.run_path(rdir)}")
                 print(f"bench repeater: keyed {[e['key'] for e in events if 'key' in e]}, heard {len(rx)} bursts on its "
                       f"input: {len(rpt_headers)} voice LC headers from us, {len(rpt_voice)} voice bursts on TS{ts}; "
                       f"per slot {next((e['summary'] for e in events if 'summary' in e), None)}")

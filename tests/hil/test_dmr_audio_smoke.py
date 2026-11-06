@@ -186,7 +186,7 @@ def test_dmr_audio_tx(radio, sdr_bench, pytestconfig, tmp_path):
         with sdr_bench.lease():
             # A bench board sends the file back into the local run directory; the bench host writes it in its own
             lis = sdr_bench.listen_start(freq, cc, seconds=TX_S + 6,
-                                         ambe_out=f"{rdir}/heard" if sdr_bench.api else f"~/{sdr_bench.dir}/{rdir}/heard")
+                                         ambe_out=sdr_bench.run_path(rdir, "heard"))
             radio.ptt_for(TX_S)
             radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
             heard = sdr_bench.listen_result(lis)

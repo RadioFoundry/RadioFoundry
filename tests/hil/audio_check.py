@@ -203,7 +203,7 @@ def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_
         c = np.concatenate([[0.0], np.cumsum(levels[h][:n])])
         idx = np.arange(a, last) + o
         ok = idx + ln <= n
-        score[ok] += (c[idx[ok] + ln] - c[idx[ok]]) / ln * ln     # longer tones weigh more
+        score[ok] += (c[idx[ok] + ln] - c[idx[ok]])      # the sum over the tone: longer tones weigh more
         score[~ok] -= 1e9
     i0 = a + int(np.argmax(score))
     # the fit favors a room's swell over a short tone's true start: take the first sustained rise halfway from the

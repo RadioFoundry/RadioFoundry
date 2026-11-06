@@ -27,6 +27,7 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_fmt.h"
+#include "radio/tx_limit.h"
 
 static int failures;
 static int checks;
@@ -4633,8 +4634,34 @@ static void test_sfr_cwid(void)
 #endif
 #endif
 
+// RADIO op 35, the test TX limit (tx_limit.h): flags, a count, the frequencies; bad arguments change nothing
+static void test_tx_limit_op(void)
+{
+	tx_limit_info_t l;
+	uint32_t hz[TX_LIMIT_MAX];
+	CHECK(debuglink_is_feature_op(DL_OP_TX_LIMIT));
+	CHECK(debuglink_radio_feature_op(DL_OP_TX_LIMIT, (const uint8_t[]){ 1, 0 }, 2) == DL_ST_OK);
+	tx_limit_get(&l, NULL, 0);
+	CHECK(l.on && l.block && l.n == 0);
+	CHECK(debuglink_radio_feature_op(DL_OP_TX_LIMIT, (const uint8_t[]){ 0, 2, 0xE4, 0x5B, 0x81, 0x1B, 0xD0, 0x2E,
+									  0x96, 0x1A }, 10) == DL_ST_OK);
+	tx_limit_get(&l, hz, TX_LIMIT_MAX);
+	CHECK(l.on && !l.block && l.n == 2 && hz[0] == 461462500u && hz[1] == 446050000u);
+	CHECK(tx_limit_allows(461462500u) && !tx_limit_allows(461475000u));
+	CHECK(debuglink_radio_feature_op(DL_OP_TX_LIMIT, (const uint8_t[]){ 0, 2, 0, 0, 0, 0 }, 6) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_TX_LIMIT, (const uint8_t[]){ 2, 0 }, 2) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_TX_LIMIT, (const uint8_t[]){ 0, TX_LIMIT_MAX + 1 }, 2) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_TX_LIMIT, (const uint8_t[]){ 0 }, 1) == DL_ST_BAD_ARG);
+	tx_limit_get(&l, NULL, 0);
+	CHECK(l.n == 2 && !l.block);
+	CHECK(debuglink_radio_feature_op(DL_OP_TX_LIMIT, (const uint8_t[]){ 0, 0 }, 2) == DL_ST_OK);
+	tx_limit_get(&l, NULL, 0);
+	CHECK(!l.on && tx_limit_allows(461475000u));
+}
+
 int main(void)
 {
+	test_tx_limit_op();
 	test_startup();
 	test_persist();
 	test_channel_step();
