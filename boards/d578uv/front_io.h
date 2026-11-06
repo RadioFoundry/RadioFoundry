@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV: the plain hand microphone's two key lines and the backlight level (docs/spec/hardware-d578uv.md 3.2,
-// 3.1). Pure, so the host tests check them; input_d578uv.c and radio_d578uv.c apply them.
+// AT-D578UV: the plain hand microphone's two key lines, the backlight level and the speaker amplifier
+// (docs/spec/hardware-d578uv.md 3.2, 3.1, 4.4). Pure, so the host tests check them; input_d578uv.c and radio_d578uv.c
+// apply them.
 #ifndef D578UV_FRONT_IO_H
 #define D578UV_FRONT_IO_H
 
@@ -42,6 +43,15 @@ static inline uint8_t backlight_code(uint8_t percent)
 		percent = 100u;
 	}
 	return codes[(percent - 1u) / 20u];
+}
+
+// --- Speaker amplifier: PA7, high = off ---
+// On only while something plays and its knob is up: with it on and nothing playing, a hiss that doesn't follow the
+// volume can come from the speaker (heard on a radio). Off while transmitting. playing: side A's audio, side B's, a
+// beep or the KTMicro receiver; loud: the knob of a side that plays is above 0
+static inline bool spk_amp_off(bool transmitting, bool playing, bool loud)
+{
+	return transmitting || !playing || !loud;
 }
 
 #endif

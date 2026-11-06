@@ -489,8 +489,10 @@ static void chip1_gpio(uint16_t mask, uint16_t val)
 // The speaker's sources. Chip 1's GPIO bit 1 is the gate on side A's RF chip audio: FM while the squelch is open, a
 // beep, the KTMicro receiver. The level device follows each side's knob and isn't the mute (its lowest code still
 // passes audio, and a jump from it clicks: both measured on a radio), so side A's channel stays at the volume unless
-// side B plays with side A shut. PA7 keeps the amplifier on while a knob is up and the radio receives: switching it
-// thumps, and with the gate shut the speaker is as quiet as with it off (measured by microphone). The shift
+// side B plays with side A shut. PA7 turns the amplifier on only while something plays (side A's audio, side B, a beep,
+// the KTMicro receiver) and a knob is up: a hiss that doesn't follow the volume came from the speaker with the gate shut
+// and no hand mic connected (heard on a radio), and switching it at the squelch's edges or for a beep adds no click
+// (measured by microphone, the same as with it held on). The shift
 // register's RF audio bit is set for an FM side. The main receiver's calls win: the core gives side B the speaker
 // only while side A is quiet. In AM, and while broadcast FM plays, both channels take the volume (which one carries
 // the KTMicro receiver isn't traced)
@@ -516,7 +518,7 @@ static void audio_route(void)
 		sr_set(rf ? SR_RF_AUDIO : 0, rf ? 0 : SR_RF_AUDIO);
 	}
 	bool b_loud = b && (level_code_b < 0 ? !vol_zero : !vol_b_zero);
-	mcu_pin_write(PIN_SPK_MUTE, transmitting || (vol_zero && !b_loud));
+	mcu_pin_write(PIN_SPK_MUTE, spk_amp_off(transmitting, beeping || kt_out || main_audio || b, !vol_zero || b_loud));
 }
 
 static void volume(uint8_t percent)
