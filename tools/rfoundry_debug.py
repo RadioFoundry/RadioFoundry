@@ -229,6 +229,16 @@ def as_int(v, default=None):
         return default
 
 
+def low_latency(s):
+    """A USB-serial cable's FTDI chip holds received bytes for its latency timer (16 ms) before passing them on; 1 ms
+    halves a request's round trip on a radio linked by the programming cable. Linux only; elsewhere, and on ports
+    without the setting, nothing changes."""
+    try:
+        s.set_low_latency_mode(True)
+    except (AttributeError, NotImplementedError, OSError, ValueError):
+        pass
+
+
 def find_ports():
     if list_ports is None:
         return []
@@ -299,6 +309,7 @@ class DebugLink:
                 self.s = serial.serial_for_url(self.port, 115200, timeout=0.02)	# a device, or a URL such as rfc2217://host:port
             except serial.SerialException as e:
                 raise DebugLinkError(f"can't open {self.port}: {e}")
+            low_latency(self.s)
         self.buf = bytearray()
 
     def close(self):
