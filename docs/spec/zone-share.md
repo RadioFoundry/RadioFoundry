@@ -178,9 +178,9 @@ zone editor (`CONFIG_ZONE_EDIT`), **#** on a channel opens its Channel actions, 
 and "Share zone to..." is item 3 of Zone options ([ui.md](ui.md) 2.2). The channel editor has "Share channel to..."
 after "Tune to this ch" ([ui.md](ui.md) 2.1); it sends the stored channel, so unsaved changes must be saved first. The rows
 carry a share icon, and the offer's title and banner a download icon. Then the contact list (Share To): a private contact gets confirmed packets, a talkgroup unconfirmed ones. Digits that make an ID add two rows after the contacts,
-"Private ID 3101234" and "TG 3101234", so a station that isn't a contact can be sent to. The send works only on a DMR
+"Private ID 9991234" and "TG 9991234", so a station that isn't a contact can be sent to. The send works only on a DMR
 channel: on another, OK says "Go to a DMR channel to send" and sends nothing. The send's toast names the frequency:
-"Sending to K1ABC Joe via 442.375" ("Sending via 442.375" where that doesn't fit). It is the channel's receive frequency, which on a repeater is its output.
+"Sending to Q1AAA Joe via 442.375" ("Sending via 442.375" where that doesn't fit). It is the channel's receive frequency, which on a repeater is its output.
 The banner says "Sent to <name>" or "Not sent to <name>". One send at a time.
 
 ## 8. Limits

@@ -14,7 +14,7 @@
     rfoundry_debug.py key --mask 0xBITS --hold MS    physical key bits
     rfoundry_debug.py wake                           backlight on without a key event
     rfoundry_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
-    rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq 162.550, power +1, copy-vfo, ...
+    rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power +1, copy-vfo, ...
     rfoundry_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     rfoundry_debug.py log [--follow]                 the firmware's dlog() ring
     rfoundry_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
@@ -93,6 +93,8 @@ RX2_OP_INFO, RX2_OP_BRIDGE, RX2_OP_RESTART = range(3)
 RX2_TOKEN = 0x47445242              # 'BRDG'
 RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart"}
 IDDB = 0x1F                         # the DMR ID database: format, records, an ID looked up (docs/spec/debuglink.md 3.23)
+CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
+CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
 SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
@@ -568,6 +570,17 @@ class DebugLink:
         """The DMR ID database as the radio sees it, and the text it shows for dmr_id: {format, records, found, text}"""
         return decode_iddb(self.request(IDDB, struct.pack("<I", dmr_id))[1])
 
+    def chip_reg(self, chip, reg, value=None, page=0):
+        """An RF chip register (the board's chip and page numbering): writes value when given, returns the read-back"""
+        req = struct.pack("<BBB", chip, page, reg) + (b"" if value is None else struct.pack("<I", value))
+        return struct.unpack_from("<I", self.request(CHIP_REG, req)[1])[0]
+
+    def soc_reg(self, addr, value=None):
+        """A 32-bit SoC register inside the platform's register windows: writes value when given, returns the read-back
+        (a read has the register's side effects)"""
+        req = struct.pack("<BI", CHIP_SOC, addr) + (b"" if value is None else struct.pack("<I", value))
+        return struct.unpack_from("<I", self.request(CHIP_REG, req)[1])[0]
+
     def version(self):
         return parse_kv(self.request(VERSION)[1].decode("ascii", "replace"))
 
@@ -882,9 +895,10 @@ class DebugLink:
             self.dtmf_key(d, False)
             time.sleep(gap / 1000.0)
 
-    def tone_burst(self, on):
-        """The 1750 Hz burst (FM): keys up and sends the tone while on."""
-        self.radio(OP_TONE_BURST, bytes([1 if on else 0]))
+    def tone_burst(self, on, max_ms=0):
+        """The 1750 Hz burst (FM): keys up and sends the tone while on. The firmware ends it by itself after max_ms
+        (0: inject_max_ms, the cap as for PTT), so a lost "off" can't leave the radio keyed."""
+        self.radio(OP_TONE_BURST, struct.pack("<BH", 1 if on else 0, max(0, min(int(max_ms), 0xFFFF))))  # firmware caps it
 
     def setting(self, name, value):
         """One radio setting in RAM (not stored): a SETTINGS name or id, value u16 (negative: two's complement)."""
@@ -1317,8 +1331,8 @@ def cmd_radio(link, a):
         if not args or any(c not in DTMF_DIGITS for c in args[0].upper()):
             raise SystemExit("dtmf DIGITS [ms]: digits from " + DTMF_DIGITS)
         link.dtmf(args[0], num(1) if len(args) > 1 else 150)
-    elif op == "burst":               # burst on|off
-        link.tone_burst(args[:1] != ["off"])
+    elif op == "burst":               # burst on|off [max_ms]
+        link.tone_burst(args[:1] != ["off"], num(1) if len(args) > 1 else 0)
     elif op == "voice-test":          # voice-test on|off (the DMR encoder's test signal, RAM only)
         link.voice_test(args[:1] != ["off"])
     elif op == "set":                 # set NAME VALUE
@@ -2059,6 +2073,13 @@ def main(argv=None):
     p = sub.add_parser("iddb", help="the DMR ID database: its format and records, and the text for each ID given "
                        "(docs/spec/debuglink.md 3.23)")
     p.add_argument("ids", nargs="*", type=int)
+    p = sub.add_parser("reg", help="a register: read, or write then read back. CHIP is the board's RF chip number "
+                       "(its hardware page) or soc for the SoC's own, REG then a 32-bit address "
+                       "(docs/spec/debuglink.md 3.24)")
+    p.add_argument("chip", type=lambda x: CHIP_SOC if x == "soc" else int(x, 0))
+    p.add_argument("reg", type=lambda x: int(x, 0))
+    p.add_argument("value", nargs="?", type=lambda x: int(x, 0))
+    p.add_argument("--page", type=lambda x: int(x, 0), default=0)
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
@@ -2134,6 +2155,13 @@ def main(argv=None):
                 for i in a.ids:
                     r = link.iddb(i)
                     print(f"{i} {r['text']!r}" if r["found"] else f"{i} -")
+            elif a.cmd == "reg":
+                if a.chip == CHIP_SOC:
+                    v = link.soc_reg(a.reg, a.value)
+                    print(f"soc 0x{a.reg:08X} = 0x{v:08X}")
+                else:
+                    v = link.chip_reg(a.chip, a.reg, a.value, a.page)
+                    print(f"chip {a.chip} page {a.page} 0x{a.reg:02X} = 0x{v:04X}")
             elif a.cmd == "aprobe":
                 return cmd_aprobe(link, a)
             elif a.cmd == "split":

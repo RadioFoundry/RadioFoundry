@@ -96,7 +96,7 @@ python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "healt
 
 ## 5. FM receive
 
-Tune the FM VFO to a known signal (NOAA 162.550 MHz, a local repeater output) and to a quiet channel.
+Tune the FM VFO to a known signal (a NOAA weather station, a local repeater output) and to a quiet channel.
 
 | Check | If not |
 |---|---|
@@ -127,7 +127,7 @@ Select a DMR channel with traffic (or let the SDR bench send a call), then `diag
 DMR receive needs GPIO 0x2F low: that feeds the FD6818's audio into the C7000's ADC. With it high the modem sees
 no signal and `tk` stays at 0. The C7000's PHASE_OUT register (0x128) is a quick check that audio arrives
 (modem-hrc7000.md). Checked on the radio with an SDR bench call: sync ticks, slot interrupts, voice frames, headers,
-late entry and color code 2 all counted.
+late entry and the test channel's color code all counted.
 
 | Diag line | Healthy | If not |
 |---|---|---|
@@ -216,8 +216,8 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
   25 kHz, the DM-1801 Pro's values. At 12.5 kHz a loud whistle and voice peaked at 1.3 kHz (99.9 %, rms 167 Hz) on the
   SDR bench (2026-10-16), under the 2.5 kHz target. Still to try: a higher limiter, or more mic gain (GCR_ADCL 11 dB),
   and a measurement at 25 kHz. The K-plug cable cuts the mic, so the owner keys by hand with the cable out.
-- APRS transmit (section 13): decodes off air at 3.1 kHz peak (settled on the SDR bench). `test_aprs.py` on
-  446.050 MHz is still to run.
+- APRS transmit (section 13): decodes off air at 3.1 kHz peak (settled on the SDR bench). `test_aprs.py` on air
+  is still to run.
 - Host link lost with the UI running (2026-10-16, after a day of transmit tests): the debug link stopped answering,
   and the diagnostics page showed `ur 0 ut 0` (not one byte received) with the host link task alive (`hb` climbing)
   and the receive interrupt enabled (`ie 05`). The boot stub still worked on the same cable, and an image that had

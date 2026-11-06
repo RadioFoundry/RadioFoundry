@@ -215,7 +215,7 @@ static bool a_start(audio_block_cb_t cb, void *ctx)
 }
 static void a_stop(void) { aud.streaming = false; aud.cb = NULL; aud.stops++; }
 static void a_pcm(bool on) { aud.pcm = on; }
-static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
+static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm };
 
 // FM transmit audio from the MCU (hal_audio_tap_t.fm_tx_inject): what the radio core asked for
 static struct {
@@ -299,7 +299,7 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 	return true;
 }
 static const contact_t contacts[] = { { "Local", 9, CONTACT_GROUP, 0 } };
-uint32_t codeplug_dmr_id(void) { return 3101276; }
+uint32_t codeplug_dmr_id(void) { return 9996543; }
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
 	if (index != 1) {
@@ -319,7 +319,7 @@ bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
 }
 bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
 {
-	*out = (codeplug_dmr_settings_t){ "N0CALL", 0, 0 };
+	*out = (codeplug_dmr_settings_t){ "Q0TEST", 0, 0 };
 	return true;
 }
 bool dmr_iddb_lookup(uint32_t id, char *out, size_t len) { (void)id; (void)out; (void)len; return false; }
@@ -1158,7 +1158,7 @@ static void burst_voice(uint8_t index, uint8_t cc, const uint8_t *lc)
 static void hear_call(uint32_t dst, uint8_t cc, int superframes, bool end)
 {
 	uint8_t lc[9];
-	mk_lc(lc, dst, 3105555);
+	mk_lc(lc, dst, 9995555);
 	for (int h = 0; h < 3; h++) {
 		burst_lc(lc, cc, false);
 		run(60);
@@ -1260,7 +1260,7 @@ static void air_burst(void)
 		air.sf++;
 	}
 	uint8_t lc[9];
-	mk_lc(lc, air.dst, 3105555);
+	mk_lc(lc, air.dst, 9995555);
 	burst_voice(idx, 1, idx == 5 && air.sf >= air.lc_at ? lc : NULL);
 }
 
@@ -1483,8 +1483,8 @@ static bool wait_on(radio_dual_ref_t r, uint32_t ms)
 static void test_dual_watch(void)
 {
 	start();
-	// Zone 1 "Far": position 0 ch8 Far 446.100 FM, position 1 ch5 Other
-	add(8, "Far", 446100000, RADIO_MODE_FM);
+	// Zone 1 "Far": position 0 ch8 Far 445.900 FM, position 1 ch5 Other
+	add(8, "Far", 445900000, RADIO_MODE_FM);
 	memset(&zone2, 0, sizeof(zone2));
 	strcpy(zone2.name, "Far zone");
 	zone2.count = 2;
@@ -1514,7 +1514,7 @@ static void test_dual_watch(void)
 		at_home += on_ref(home);
 		at_far += on_ref(far);
 		if (on_ref(far)) {
-			CHECK(hw.rx_hz == 446100000 && strcmp(sm.view.zone_name, "Far zone") == 0);
+			CHECK(hw.rx_hz == 445900000 && strcmp(sm.view.zone_name, "Far zone") == 0);
 			CHECK(sm.view.zone_size == 2);
 		}
 	}
@@ -1545,12 +1545,12 @@ static void test_dual_watch(void)
 	dual(home, far, 1);
 	CHECK(wait_on(home, 500));
 	req(RREQ_PTT, 1);
-	CHECK(on_ref(far) && hw.tx_hz == 446100000 && sm.view.scan == SCAN_DUAL);
+	CHECK(on_ref(far) && hw.tx_hz == 445900000 && sm.view.scan == SCAN_DUAL);
 	req(RREQ_PTT, 0);
 	CHECK(wait_on(home, 1300) && sm.view.scan == SCAN_DUAL);
 
 	// A call holds the receiver on its channel, the watch goes on after the delay
-	signal_on(0, 446100000, 30, no_tone);
+	signal_on(0, 445900000, 30, no_tone);
 	CHECK(wait_on(far, 500));
 	run(3000);
 	CHECK(on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.state == RS_RX);
@@ -1605,7 +1605,7 @@ static void test_dual_watch(void)
 	req(RREQ_VFO, 0);
 	req(RREQ_ZONE, 0);
 	dual(home, far, 0);
-	signal_on(0, 446100000, 30, no_tone);
+	signal_on(0, 445900000, 30, no_tone);
 	CHECK(wait_on(far, 500));
 	run(1000);
 	CHECK(sm.view.scan == SCAN_DUAL && sm.view.scan_phase == SCAN_PH_HOLD && on_ref(far));
@@ -1620,9 +1620,9 @@ static void test_dual_watch(void)
 	dual(dmr, home, 0);
 	CHECK(wait_on(dmr, 500));
 	lc_private = true;
-	hear_call(3101276, 1, 1, false);
+	hear_call(9996543, 1, 1, false);
 	CHECK(sm.view.dmr.state == RDMR_RX && sm.view.scan_phase == SCAN_PH_HOLD);
-	hear_call(3101276, 1, 2, true);
+	hear_call(9996543, 1, 2, true);
 	lc_private = false;
 	hw.sig[0].hz = 0;
 	CHECK(sm.view.dmr.reply_active);
@@ -1731,10 +1731,10 @@ static void dual_wait_watch(radio_dual_ref_t home, uint32_t ms, int *looks, bool
 	}
 }
 
-// A call on far (446.100): held and played there, then it ends
+// A call on far (445.900): held and played there, then it ends
 static bool far_call(radio_dual_ref_t far)
 {
-	signal_on(0, 446100000, 30, no_tone);
+	signal_on(0, 445900000, 30, no_tone);
 	for (int t = 0; t < 160 && !(on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD); t++) {
 		run(25);
 	}
@@ -1747,7 +1747,7 @@ static bool far_call(radio_dual_ref_t far)
 static void test_dual_wait(void)
 {
 	start();
-	add(8, "Far", 446100000, RADIO_MODE_FM);
+	add(8, "Far", 445900000, RADIO_MODE_FM);
 	memset(&zone2, 0, sizeof(zone2));
 	strcpy(zone2.name, "Far zone");
 	zone2.count = 1;
@@ -1760,7 +1760,7 @@ static void test_dual_wait(void)
 
 	// A call on far (B) ends while home (A, selected) has a signal: the looks find it, show it, don't play it
 	dual(home, far, 0);
-	signal_on(0, 446100000, 30, no_tone);
+	signal_on(0, 445900000, 30, no_tone);
 	CHECK(wait_on(far, 500));
 	run(300);
 	CHECK(on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dual_busy == 0);
@@ -1799,7 +1799,7 @@ static void test_dual_wait(void)
 		run(25);	// to the first look
 	}
 	CHECK(on_ref(home) && !hw.audio);
-	signal_on(0, 446100000, 30, no_tone);
+	signal_on(0, 445900000, 30, no_tone);
 	run(300);
 	CHECK(on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.state == RS_RX && hw.audio);
 	hw.sig[0].hz = 0;
@@ -1852,7 +1852,7 @@ static void test_dual_wait(void)
 static void test_dual_requests(void)
 {
 	start();
-	add(8, "Far", 446100000, RADIO_MODE_FM);
+	add(8, "Far", 445900000, RADIO_MODE_FM);
 	memset(&zone2, 0, sizeof(zone2));
 	strcpy(zone2.name, "Far zone");
 	zone2.count = 2;
@@ -1995,7 +1995,7 @@ static void test_dual_rx2(void)
 	// DMR on the second receiver: color code, timeslot, our ID, the talk group
 	dual(dmr, home, 1);
 	CHECK(on_ref(home) && r2.t.mode == RADIO_MODE_DMR && r2.t.rx_hz == 438500000 && r2.t.color_code == 1 &&
-	      r2.t.timeslot == 1 && r2.t.own_id == 3101276 && r2.t.talk_group == 9);
+	      r2.t.timeslot == 1 && r2.t.own_id == 9996543 && r2.t.talk_group == 9);
 
 	// It goes down: the main receiver alternates; back up, it is given the channel again within the retry time
 	dual(home, tone, 0);
@@ -2342,6 +2342,23 @@ static void test_roger_burst(void)
 	req(RREQ_PTT, 0);
 	run(300);
 	CHECK(sm.view.state == RS_IDLE);
+	// A burst with a time limit and no "off" (the host went away): it unkeys by itself when the time is up
+	int off = hw.tx_off_calls;
+	req2(RREQ_TONE_BURST, 1, 2000);
+	run(1800);
+	CHECK(sm.view.state == RS_TX && sm.view.tone_burst);
+	run(400);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst && hw.tone_hz == 0 && hw.tx_off_calls == off + 1);
+	req(RREQ_TONE_BURST, 0);	// the late "off": nothing more
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == off + 1);
+	// The same during PTT: the tone ends, PTT keeps the transmission
+	req(RREQ_PTT, 1);
+	req2(RREQ_TONE_BURST, 1, 500);
+	run(700);
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
 	// On a DMR channel: nothing
 	req(RREQ_ZONE_POS, 5);
 	run(50);
@@ -2577,6 +2594,48 @@ static void test_dmr_beeps(void)
 	beep_get_stats(&b1);
 	CHECK(b1.played == b0.played);
 	chans[6].no_beep = false;
+}
+
+static void set_no_permit(radio_settings_t *s) { s->talk_permit = false; }
+
+// A board whose beeps can't sound on air (CAP_BEEP_NOT_ON_AIR): the short talk permit plays in a hold before keying,
+// while the radio still receives, and none plays once on air. With the permit off it keys at once
+static void test_dmr_permit_before_key(void)
+{
+	beep_stats_t b0, b1;
+	uint32_t caps = board.caps;
+
+	board.caps |= CAP_BEEP_NOT_ON_AIR;
+	start();
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	beep_get_stats(&b0);
+	unsigned begins = sim.tx_begins;
+	req(RREQ_PTT, 1);
+	run(10);
+	beep_get_stats(&b1);
+	CHECK(sm.view.dmr.state == RDMR_TX_PERMIT && sim.tx_begins == begins && b1.played == b0.played + 1);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(sm.view.dmr.state == RDMR_TX && sim.tx_begins == begins + 1 && b1.played == b0.played + 1);
+	req(RREQ_PTT, 0);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// Talk permit off (the stack is configured again): no hold, no beep
+	settings(set_no_permit);
+	run(50);
+	beep_get_stats(&b0);
+	begins = sim.tx_begins;
+	req(RREQ_PTT, 1);
+	run(10);
+	CHECK(sm.view.dmr.state != RDMR_TX_PERMIT && sim.tx_begins == begins + 1);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(sm.view.dmr.state == RDMR_TX && b1.played == b0.played);
+	req(RREQ_PTT, 0);
+	run(1000);
+	board.caps = caps;
 }
 
 // A short PTT press through a repeater: the wake-up goes on after the release, and the user hears the talk permit when
@@ -2940,6 +2999,7 @@ int main(void)
 	test_supply_voltage();
 	test_battery_save();
 	test_dmr_beeps();
+	test_dmr_permit_before_key();
 	test_dmr_short_press_wake();
 	test_vibrate();
 	test_host_audio();

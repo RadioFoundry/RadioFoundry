@@ -26,7 +26,7 @@ typedef struct {
 	bool writes;		// the flow saves on purpose (else: zero codeplug writes)
 } flow_t;
 
-#define CALLER	"call:3101234,91,g wait:11000 "
+#define CALLER	"call:9991234,91,g wait:11000 "
 #define TALK_BACK	"ok 7 3 down down down down down down down down down ok long:back quick 7 ctx 3 5 ok "	// on, and A 3 / B 5
 
 static const flow_t flows[] = {
@@ -45,24 +45,24 @@ static const flow_t flows[] = {
 	{ "3 one-shot TG, 2nd in picker", "", "tt down ptt", "txid=91 txpriv=0", 3, false },
 	{ "3 one-shot typed TG 3100", "", "3 1 0 0 ptt", "txid=3100 txpriv=0", 5, false },
 	{ "3 permanent TG", "", "tt down long:ok", "talk=91 writes=1", 4, true },
-	{ "4 reply in the window", "call:3101234,91,g", "ptt", "txid=91", 1, false },
+	{ "4 reply in the window", "call:9991234,91,g", "ptt", "txid=91", 1, false },
 	{ "4 call back after the window", CALLER, "ctx ptt", "txid=91", 2, false },
-	{ "4 3rd station in Recent", "call:3101234,91,g call:3105678,3100,g call:3102222,93,g wait:11000",
+	{ "4 3rd station in Recent", "call:9991234,91,g call:9995678,3100,g call:9992222,93,g wait:11000",
 	  "ok 3 down down ptt", "txid=91", 5, false },
-	{ "5 private call by name", "", "5 6 3 ptt", "txid=3101234 txpriv=1", 4, false },
-	{ "5 private call by ID", "", "3 1 0 9 9 9 9 down ptt", "txid=3109999 txpriv=1", 9, false },
+	{ "5 private call by name", "", "5 6 3 ptt", "txid=9991234 txpriv=1", 4, false },
+	{ "5 private call by ID", "", "9 9 9 9 9 9 9 down ptt", "txid=9999999 txpriv=1", 9, false },
 	{ "6 canned reply to last caller", CALLER, "ctx 3 ok", "sent=1 text=OK", 4, false },
 	{ "6 canned to contact by name", "", "5 6 3 ctx 3 ok", "sent=1 text=OK", 6, false },
-	{ "7 read message, banner up", "msg:3101234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
-	{ "7 read message later", "msg:3101234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
+	{ "7 read message, banner up", "msg:9991234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
+	{ "7 read message later", "msg:9991234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
 #if CONFIG_ZONE_SHARE
 	// An offer's banner has no timer: it waits for #, BACK or the offer's end (zone-share.md 5.2)
-	{ "zone offer banner still up a minute later", "zoneoffer:3101234", "wait:60000", "shows=Zone_from", 0, false },
-	{ "zone offer banner opens a minute later", "zoneoffer:3101234 wait:60000", "ctx", "shows=Import", 1, false },
-	{ "zone offer banner hidden with Back", "zoneoffer:3101234", "back", "banner=none screen=home", 1, false },
-	{ "zone offer banner goes with the offer", "zoneoffer:3101234 wait:5000", "zoneexpire", "banner=none", 0, false },
-	{ "zone offer banner hidden with Back on a menu", "zoneoffer:3101234 ok", "back", "banner=none screen=hub", 1, false },
-	{ "zone offer banner goes when Tools opens the offer", "zoneoffer:3101234", "ok 6 0", "banner=none shows=Import", 3,
+	{ "zone offer banner still up a minute later", "zoneoffer:9991234", "wait:60000", "shows=Zone_from", 0, false },
+	{ "zone offer banner opens a minute later", "zoneoffer:9991234 wait:60000", "ctx", "shows=Import", 1, false },
+	{ "zone offer banner hidden with Back", "zoneoffer:9991234", "back", "banner=none screen=home", 1, false },
+	{ "zone offer banner goes with the offer", "zoneoffer:9991234 wait:5000", "zoneexpire", "banner=none", 0, false },
+	{ "zone offer banner hidden with Back on a menu", "zoneoffer:9991234 ok", "back", "banner=none screen=hub", 1, false },
+	{ "zone offer banner goes when Tools opens the offer", "zoneoffer:9991234", "ok 6 0", "banner=none shows=Import", 3,
 	  false },
 #endif
 	{ "8 radio check last caller", CALLER, "ctx 4", "checks=1", 2, false },
@@ -94,10 +94,10 @@ static const flow_t flows[] = {
 	{ "11 dual watch: quick 7 stops it", "quick 7 ctx 3 5 ok", "quick 7", "dual=0 pos=3", 2, false },
 	{ "11 dual watch: a quick setting keeps it on", "down quick 7 ctx 3 5 ok", "quick 8 back", "dual=1 sel=A", 3, false },
 	{ "11 dual watch, two receivers: a call on each", "receivers:2 quick 7 ctx 3 5 ok",
-	  "rxa:3101234,91,g wait:300 rxb:3107777,3100,g wait:300", "dual=1 sel=A rx=A calls=0", 0, false },
+	  "rxa:9991234,91,g wait:300 rxb:9997777,3100,g wait:300", "dual=1 sel=A rx=A calls=0", 0, false },
 	{ "11 dual watch, two receivers: A's call ends", "receivers:2 quick 7 ctx 3 5 ok",
-	  "rxa:3101234,91,g wait:300 rxb:3107777,3100,g wait:300 rxaend wait:300", "dual=1 rx=B calls=1 last=A", 0, false },
-	{ "11 dual watch, two receivers: talk on B", "receivers:2 quick 7 ctx 3 5 ok rxb:3107777,3100,g wait:300 rxbend",
+	  "rxa:9991234,91,g wait:300 rxb:9997777,3100,g wait:300 rxaend wait:300", "dual=1 rx=B calls=1 last=A", 0, false },
+	{ "11 dual watch, two receivers: talk on B", "receivers:2 quick 7 ctx 3 5 ok rxb:9997777,3100,g wait:300 rxbend",
 	  "ctx 1", "dual=1 sel=B last=B uipos=5", 2, false },
 	{ "11 dual watch: long SK2", "quick 7 ctx 3 5 ok back back", "long:user2", "dual=1 sel=A bpos=5", 1, false },
 	{ "11 dual watch: Tools > Scan, a zone scan instead", "quick 7 ctx 3 5 ok", "ok 6 1", "dual=0 scanning=1", 3, false },
@@ -119,7 +119,7 @@ static const flow_t flows[] = {
 #if CONFIG_LANG_ES
 	{ "S language: Spanish", "", "ok 7 2 up ok down ok", "set78=25971 screen=group shows=Idioma", 7, false },
 	// A long banner title breaks before the station's name, also at a name that holds the word (" de ")
-	{ "S language: a banner keeps the name whole", "ok 7 2 up ok down ok back back back", "privcall:3101500,Maria_de_la_Cruz",
+	{ "S language: a banner keeps the name whole", "ok 7 2 up ok down ok back back back", "privcall:9991500,Maria_de_la_Cruz",
 	  "shows=Llamada_privada shows=Maria_de_la_Cruz", 0, false },
 	{ "S language: back to English", "ok 7 2 up ok down ok", "ok up ok", "set78=25966 shows=Language", 3, false },
 #else
@@ -130,15 +130,15 @@ static const flow_t flows[] = {
 	  7, false },
 	{ "11 dual watch talk back on", "", "ok 7 3 down down down down down down down down down ok", "shows=Dual_watch_talk_back", 13,
 	  false },
-	{ "11 dual watch talk back: a call on B", TALK_BACK, "tune:b call:3101234,91,g wait:4000", "dual=1 sel=B", 0,
+	{ "11 dual watch talk back: a call on B", TALK_BACK, "tune:b call:9991234,91,g wait:4000", "dual=1 sel=B", 0,
 	  false },
-	{ "11 dual watch talk back: then back on A", TALK_BACK, "tune:b call:3101234,91,g wait:4000 wait:11000",
+	{ "11 dual watch talk back: then back on A", TALK_BACK, "tune:b call:9991234,91,g wait:4000 wait:11000",
 	  "dual=1 sel=A", 0, false },
-	{ "11 dual watch talk back: # 1 goes back at once", TALK_BACK "tune:b call:3101234,91,g wait:4000", "ctx 1",
+	{ "11 dual watch talk back: # 1 goes back at once", TALK_BACK "tune:b call:9991234,91,g wait:4000", "ctx 1",
 	  "dual=1 sel=A", 2, false },
 	// A reply target lapses with its window: B's pane shows B's own talk group once the receiver has gone back to A
 	{ "11 dual watch: no stale reply target on B", "quick 7 ctx 3 5 ok wait:3000",
-	  "tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000", "dual=1 sel=A hides=World", 0, false },
+	  "tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000", "dual=1 sel=A hides=World", 0, false },
 	// B on the VFO, selected before the receiver has been there (a new selection doesn't retune): digits are a frequency
 	{ "11 dual watch: digits on B the VFO, receiver on A", "quick 7 ctx 1 vfokey ctx 1 wait:3000 tune:a ctx 1", "4 4",
 	  "dual=1 sel=B entry=44", 2, false },
@@ -455,16 +455,16 @@ static const flow_t flows[] = {
 	// Mic AGC on: Mic gain (the row above) shows "AGC", is dimmed and says why
 	{ "S mic AGC on", "", "ok 7 3 down down down down down ok", "set71=1 shows=AGC", 9, false },
 	{ "S mic gain while AGC is on", "ok 7 3 down down down down down ok", "up ok", "toast=Mic_AGC_sets set13=5", 2, false },
-	{ "S message tone", "", "msg:3101234,Hi", "beep=2", 0, false },
+	{ "S message tone", "", "msg:9991234,Hi", "beep=2", 0, false },
 	// The own DMR ID (Settings > My radio, set76, the codeplug's): digits type it, OK saves, BACK takes the last digit
 	// back and with none typed leaves it; 0 is refused
 	{ "S DMR ID opens", "", "ok 7 9 ok", "screen=dmr-id shows=DMR_ID", 4, false },
 	{ "S About from My radio", "", "ok 7 9 down ok", "screen=about shows=Build:", 5, false },
-	{ "S DMR ID typed and saved", "ok 7 9 ok", "3 1 0 9 9 9 9 ok", "set76=3109999 toast=DMR_ID_saved", 8, false },
+	{ "S DMR ID typed and saved", "ok 7 9 ok", "9 9 9 9 9 9 9 ok", "set76=9999999 toast=DMR_ID_saved", 8, false },
 	{ "S DMR ID: BACK takes a digit back", "ok 7 9 ok", "3 1 back ok", "set76=3 toast=DMR_ID_saved", 4, false },
-	{ "S DMR ID: BACK with none typed leaves it", "ok 7 9 ok 3 1 0 9 9 9 9 ok", "3 1 back back back",
-	  "set76=3109999 screen=dmr-id shows=3109999", 5, false },
-	{ "S DMR ID: OK with none typed leaves it", "ok 7 9 ok 3 1 0 9 9 9 9 ok", "ok ok", "set76=3109999 shows=3109999", 2,
+	{ "S DMR ID: BACK with none typed leaves it", "ok 7 9 ok 9 9 9 9 9 9 9 ok", "3 1 back back back",
+	  "set76=9999999 screen=dmr-id shows=9999999", 5, false },
+	{ "S DMR ID: OK with none typed leaves it", "ok 7 9 ok 9 9 9 9 9 9 9 ok", "ok ok", "set76=9999999 shows=9999999", 2,
 	  false },
 	{ "S DMR ID: the last own ID", "ok 7 9 ok", "1 6 7 7 6 4 1 5 ok", "set76=16776415 toast=DMR_ID_saved", 9, false },
 	// Above 16776415 are the network's IDs: the digit that would go past it is refused, as the channel editor's Own ID
@@ -473,21 +473,21 @@ static const flow_t flows[] = {
 	{ "S DMR ID 0 is refused", "ok 7 9 ok 3 1 ok", "0 ok", "set76=31 toast=IDs_start screen=dmr-id", 2, false },
 	// My radio's names (the codeplug's radio name and boot lines): OK types the row's text, OK saves it
 	{ "S radio name opens text entry", "ok 7 9 ok", "down ok", "screen=text", 2, false },
-	{ "S radio name typed and saved", "ok 7 9 ok down ok", "2 ok", "screen=dmr-id toast=Saved writes=1 shows=N0CALLA", 2, true },
+	{ "S radio name typed and saved", "ok 7 9 ok down ok", "2 ok", "screen=dmr-id toast=Saved writes=1 shows=Q0TESTA", 2, true },
 	{ "S boot line 2 typed and saved", "ok 7 9 ok down down down ok", "2 ok", "screen=dmr-id toast=Saved writes=1 shows=Jamie_ThompsonA", 2,
 	  true },
 	{ "S digits on a name row type no ID", "ok 7 9 ok down", "3 1",
 	  "screen=dmr-id focus=Radio_name toast=No_item_with_that_number", 2, false },
 	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
-	{ "S vibrate on a message", "", "msg:3101234,Hi", "vibes=1 vibe=0", 0, false },
+	{ "S vibrate on a message", "", "msg:9991234,Hi", "vibes=1 vibe=0", 0, false },
 	{ "S vibrate on a call alert", "", "alert:91", "vibes=1 vibe=1", 0, false },
 	{ "S vibrate on a private call", "", "privcall:91", "vibes=1 vibe=1", 0, false },
 	{ "S vibrate on an emergency", "", "emergency:91", "vibes=1 vibe=2", 0, false },
-	{ "S vibrate off", "ok 7 1 down down down down down ok long:back", "msg:3101234,Hi", "vibes=0 beep=2", 0,
+	{ "S vibrate off", "ok 7 1 down down down down down ok long:back", "msg:9991234,Hi", "vibes=0 beep=2", 0,
 	  false },
 	{ "S low battery warning", "", "battery:14", "banner=Battery_14%", 0, false },
 	// What reaches the user lights the screen; the radio's own traffic doesn't (radio_view_wakes covers the radio side)
-	{ "S a message lights the screen", "", "msg:3101234,Hi", "wake=1", 0, false },
+	{ "S a message lights the screen", "", "msg:9991234,Hi", "wake=1", 0, false },
 	{ "S a private call lights the screen", "", "privcall:91", "wake=1", 0, false },
 	{ "S an emergency lights the screen", "", "emergency:91", "wake=1", 0, false },
 	{ "S nothing new, no wake", "", "wait:1000", "wake=0", 0, false },
@@ -506,7 +506,7 @@ static const flow_t flows[] = {
 	// The VFO's step: Auto follows the width (12.5 kHz narrow, 25 kHz wide); one set in Settings > Talk stays
 	{ "S VFO entry: OK tunes the typed frequency", "vfokey", "1 4 6 5 2 ok", "freq=146520000", 6, false },
 	{ "S VFO entry: # tunes it too", "vfokey", "1 4 6 5 2 ctx", "freq=146520000", 6, false },
-	{ "S VFO entry: # tunes it with a banner up", "vfokey msg:3101234,Meet_at_the_north_lot", "1 4 6 5 2 ctx",
+	{ "S VFO entry: # tunes it with a banner up", "vfokey msg:9991234,Meet_at_the_north_lot", "1 4 6 5 2 ctx",
 	  "freq=146520000 screen=home", 6, false },
 	{ "S VFO step: auto, wide", "vfokey", "up", "freq=146545000", 1, false },
 	{ "S VFO step: auto, narrow", "vfokey quick 8 back", "up", "freq=146532500", 1, false },
@@ -688,34 +688,34 @@ static const flow_t flows[] = {
 #endif
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
 	// Find's Tune VFO row (#275): the digits as VFO entry reads them, inside a band only, first after a channel number
-	{ "12 a frequency typed on Home tunes the VFO", "", "4 6 1 4 6 2 ok", "vfo=1 freq=461462000 screen=home", 7, false },
+	{ "12 a frequency typed on Home tunes the VFO", "", "4 6 3 2 5 0 ok", "vfo=1 freq=463250000 screen=home", 7, false },
 	{ "F the Tune VFO row", "", "1 4 6 5 2", "screen=find focus=Tune_VFO_to_146.520", 5, false },
 	{ "F no Tune VFO row outside the bands", "", "5 2 3 4 5 6", "screen=find hides=Tune_VFO", 6, false },
 	{ "F no Tune VFO row for too few digits", "", "4 4", "screen=find hides=Tune_VFO", 2, false },
 	{ "F a channel number still comes first", "", "1 2", "screen=find focus=Ch_12 hides=Tune_VFO", 2, false },
 #endif
 #if CONFIG_CONTACT_EDIT
-	// The contact editor (ui.md 2.4). 3109876 is no contact: Find lists the talkgroup, the private call, then Create
+	// The contact editor (ui.md 2.4). 9999876 is no contact: Find lists the talkgroup, the private call, then Create
 	// contact; 7 digits start it on a person
-	{ "C create a contact from Find", "", "3 1 0 9 8 7 6 down down ok",
-	  "screen=contactedit shows=New_Contact shows=Private shows=3109876", 10, false },
-	{ "C a contact's ID in Find: no create row", "", "3 1 0 1 2 3 4", "screen=find hides=Create_contact", 7, false },
-	{ "27 a typed ID saved as a contact", "", "3 1 0 9 8 7 6 down down ok long:ok",
-	  "screen=home writes=1 toast=Saved_contact_3109876", 11, true },
-	{ "27 the last caller saved as a contact", "call:3101999,91,g wait:11000", "ctx 7 long:ok",
-	  "screen=actions writes=1 toast=Saved_contact_3101999", 3, true },
-	{ "C the saved contact is found", "3 1 0 9 8 7 6 down down ok long:ok", "3 1 0 9 8 7 6",
-	  "screen=find focus=3109876_3109876 hides=Create_contact", 7, true },
-	{ "C the type flips", "3 1 0 9 8 7 6 down down ok", "down down ok", "shows=Talkgroup hides=Private", 3, false },
-	{ "C a short number starts as a talkgroup", "", "9 9 9 9 down down ok", "screen=contactedit shows=TG_9999 shows=Talkgroup",
+	{ "C create a contact from Find", "", "9 9 9 9 8 7 6 down down ok",
+	  "screen=contactedit shows=New_Contact shows=Private shows=9999876", 10, false },
+	{ "C a contact's ID in Find: no create row", "", "9 9 9 1 2 3 4", "screen=find hides=Create_contact", 7, false },
+	{ "27 a typed ID saved as a contact", "", "9 9 9 9 8 7 6 down down ok long:ok",
+	  "screen=home writes=1 toast=Saved_contact_9999876", 11, true },
+	{ "27 the last caller saved as a contact", "call:9991999,91,g wait:11000", "ctx 7 long:ok",
+	  "screen=actions writes=1 toast=Saved_contact_9991999", 3, true },
+	{ "C the saved contact is found", "9 9 9 9 8 7 6 down down ok long:ok", "9 9 9 9 8 7 6",
+	  "screen=find focus=9999876_9999876 hides=Create_contact", 7, true },
+	{ "C the type flips", "9 9 9 9 8 7 6 down down ok", "down down ok", "shows=Talkgroup hides=Private", 3, false },
+	{ "C a short number starts as a talkgroup", "", "8 8 8 8 down down ok", "screen=contactedit shows=TG_8888 shows=Talkgroup",
 	  7, false },
-	{ "C the timeslot steps", "3 1 0 9 8 7 6 down down ok", "up up ok", "shows=TS_1", 3, false },
-	{ "C an ID typed in", "3 1 0 9 8 7 6 down down ok", "down ok 5 5 5 ok", "shows=555 hides=3109876_", 6, false },
-	{ "C a contact twice is refused", "3 1 0 9 8 7 6 down down ok", "down ok 3 1 0 1 2 3 4 ok long:ok",
-	  "toast=Already_a_contact:_K1ABC_Joe writes=0", 11, false },
-	{ "C Back asks before discarding", "3 1 0 9 8 7 6 down down ok", "back", "screen=discard shows=new_contact", 1, false },
-	{ "C discard goes back to Find", "3 1 0 9 8 7 6 down down ok back", "down ok", "screen=find writes=0", 2, false },
-	{ "C the name by text entry", "3 1 0 9 8 7 6 down down ok", "ok", "screen=text", 1, false },
+	{ "C the timeslot steps", "9 9 9 9 8 7 6 down down ok", "up up ok", "shows=TS_1", 3, false },
+	{ "C an ID typed in", "9 9 9 9 8 7 6 down down ok", "down ok 5 5 5 ok", "shows=555 hides=9999876_", 6, false },
+	{ "C a contact twice is refused", "9 9 9 9 8 7 6 down down ok", "down ok 9 9 9 1 2 3 4 ok long:ok",
+	  "toast=Already_a_contact:_Q1ABC_Joe writes=0", 11, false },
+	{ "C Back asks before discarding", "9 9 9 9 8 7 6 down down ok", "back", "screen=discard shows=new_contact", 1, false },
+	{ "C discard goes back to Find", "9 9 9 9 8 7 6 down down ok back", "down ok", "screen=find writes=0", 2, false },
+	{ "C the name by text entry", "9 9 9 9 8 7 6 down down ok", "ok", "screen=text", 1, false },
 	// Contacts' first row is New contact: the editor starts empty, on a talkgroup, and a save goes back to Contacts
 	{ "C New contact in Contacts", "", "ok 1 ok", "screen=contactedit shows=New_Contact shows=Talkgroup", 3, false },
 	{ "C a new contact needs a name", "ok 1 ok", "down ok 9 9 9 ok long:ok", "toast=Give_it_a_name_first writes=0", 7,
@@ -725,19 +725,19 @@ static const flow_t flows[] = {
 	{ "C Contacts lists the new contact", "ok 1 ok ok 2 ok down ok 9 9 9 ok long:ok", "9 9 9",
 	  "screen=contacts shows=TG_999", 3, true },
 	// A caller who isn't a contact: Save as contact is item 7 of the actions, and they show In contacts after
-	{ "C save a caller as a contact", "call:3101999,91,g wait:11000 ctx", "7", "screen=contactedit shows=3101999", 1,
+	{ "C save a caller as a contact", "call:9991999,91,g wait:11000 ctx", "7", "screen=contactedit shows=9991999", 1,
 	  false },
-	{ "C saved from the actions, back on them", "call:3101999,91,g wait:11000 ctx 7", "long:ok",
+	{ "C saved from the actions, back on them", "call:9991999,91,g wait:11000 ctx 7", "long:ok",
 	  "screen=actions shows=In_contacts writes=1", 1, true },
 	// A talkgroup not saved: Save as contact is item 4
-	{ "C save a talkgroup as a contact", "3 1 0 9 8 7 6 ctx", "4", "screen=contactedit shows=TG_3109876 shows=Talkgroup",
+	{ "C save a talkgroup as a contact", "9 9 9 9 8 7 6 ctx", "4", "screen=contactedit shows=TG_9999876 shows=Talkgroup",
 	  1, false },
 #endif
 #if CONFIG_ZONE_EDIT && CONFIG_ZONE_SHARE
 	// Share To a station that isn't a contact: the digits typed as an ID, private first (zone-share.md 7)
-	{ "Z share to a typed ID", "ok 4 ctx ctx 5", "3 1 0 9 8 7 6", "shows=Private_ID_3109876 shows=TG_3109876", 7, false },
-	{ "Z the channel goes to the typed ID, via the channel's frequency", "ok 4 ctx ctx 5 3 1 0 9 8 7 6", "ok",
-	  "screen=zone zs_sends=1 toast=Sending_to_3109876_via_467.375", 1, false },
+	{ "Z share to a typed ID", "ok 4 ctx ctx 5", "9 9 9 9 8 7 6", "shows=Private_ID_9999876 shows=TG_9999876", 7, false },
+	{ "Z the channel goes to the typed ID, via the channel's frequency", "ok 4 ctx ctx 5 9 9 9 9 8 7 6", "ok",
+	  "screen=zone zs_sends=1 toast=Sending_to_9999876_via_453.625", 1, false },
 	{ "Z after a send by name the zone's list isn't filtered", "ok 4 ctx ctx 5 2 2 5 4", "ok",
 	  "screen=zone zs_sends=1 hides=Find:_2254", 1, false },
 	{ "Z a share from an FM channel is refused", "up ok 4 ctx ctx 5", "ok", "zs_sends=0 toast=Go_to_a_DMR", 1, false },
@@ -822,6 +822,16 @@ static const flow_t flows_k[] = {
 	{ "C and out of them to its end", "contacts:220 ok 1 up " UP40, DOWN40, "focus=Long_220", 40, false },
 	{ "C a long list rebuilt past the kept rows", "contacts:full ok 1 up", "cpwrite wait:1000",
 	  "screen=contacts focus=Long_1024", 0, false },
+	// The same for channels (696 with gaps), whose list reads the names a block at a time and steps over the in-use map
+	{ "C a long channel list reaches its end", "channels:full ok 5", "up up up up", "screen=channels focus=1024_Far_1024",
+	  4, false },
+	{ "C a long channel list steps back past a gap", "channels:full ok 5 up up up up", "up", "focus=1022_Far_1022", 1,
+	  false },
+	{ "C a long channel list finds one far down", "channels:full ok 5", "1 0 0 0", "screen=channels count=1", 4, false },
+	{ "C a long channel list keeps the first matches", "channels:full ok 5", "3 2 7",
+	  "screen=channels count=128 focus=41_Far_41", 3, false },
+	{ "25 add channel: a long list to its end", "channels:full ok 4 ctx 2", "ok up", "screen=zpick focus=1024_Far_1024", 2,
+	  false },
 	{ "K monitor key on DMR: digital monitor", "", "mon", "hearall=1 toast=Digital_monitor_on", 1, false },
 	{ "K monitor key on DMR, again: off", "mon", "mon", "hearall=0 toast=Digital_monitor_off", 1, false },
 	{ "K a key set to key lock", "", "lockkey", "locked=1", 1, false },
@@ -851,12 +861,12 @@ static const flow_t flows_k[] = {
 	{ "K locked: the monitor key still works", "lockkey", "mon", "hearall=1", 1, false },
 	{ "K locked: call back is ignored", CALLER "lockkey", "cbkey", "talk=3100 toast=Keys_locked", 1, false },
 	{ "K unlocked again: call back works", CALLER "lockkey lockkey", "cbkey", "talk=91 toast=Talking_to", 1, false },
-	{ "K call back: a private call talks to the caller", "call:3101234,1,p wait:11000", "cbkey ptt",
-	  "txid=3101234 txpriv=1", 2, false },
-	{ "K call back: a caller in Contacts by its saved name", "call:3101234,1,p wait:11000", "cbkey",
-	  "talk=3101234 toast=Talking_to_K1ABC_Joe", 1, false },
-	{ "K call back: a caller not in Contacts by its ID", "call:3109999,1,p wait:11000", "cbkey ptt",
-	  "txid=3109999 txpriv=1", 2, false },
+	{ "K call back: a private call talks to the caller", "call:9991234,1,p wait:11000", "cbkey ptt",
+	  "txid=9991234 txpriv=1", 2, false },
+	{ "K call back: a caller in Contacts by its saved name", "call:9991234,1,p wait:11000", "cbkey",
+	  "talk=9991234 toast=Talking_to_Q1ABC_Joe", 1, false },
+	{ "K call back: a caller not in Contacts by its ID", "call:9999999,1,p wait:11000", "cbkey ptt",
+	  "txid=9999999 txpriv=1", 2, false },
 	{ "K call back: a group call names its talkgroup", CALLER, "cbkey", "talk=91 toast=Talking_to", 1, false },
 	{ "K call back on FM: DMR only, nothing changes", CALLER "down", "cbkey", "talk=3100 toast=Call_back:_DMR", 1,
 	  false },
@@ -979,7 +989,7 @@ typedef struct {
 static node_t nodes[CRAWL_MAX];
 static int n_nodes;
 
-#define WORLD	"msg:3101234,Meet_at_the_north_lot call:3105678,3100,g wait:11000 "
+#define WORLD	"msg:9991234,Meet_at_the_north_lot call:9995678,3100,g wait:11000 "
 
 static bool replay(const sim_geom_t *g, sim_map_t map, const char *path, ui_app_status_t *st)
 {
@@ -1156,10 +1166,10 @@ static void about_checks(void)
 static void call_screen_checks(void)
 {
 	static const struct { const char *name, *script, *expect; } cases[] = {
-		{ "private to a contact", "3 1 0 1 2 3 4 ok wait:5000 pttdown", "txpriv=1 shows=K1ABC_Joe shows=Private_310" },
-		{ "private, long name", "worst 3 1 0 9 9 9 9 ok wait:5000 pttdown",
-		  "txpriv=1 shows=Christo shows=Wood shows=Private_310" },
-		{ "private, no contact", "3 1 0 5 5 5 5 down ok wait:5000 pttdown", "txpriv=1 shows=3105555 shows=Private_310" },
+		{ "private to a contact", "9 9 9 1 2 3 4 ok wait:5000 pttdown", "txpriv=1 shows=Q1ABC_Joe shows=Private_999" },
+		{ "private, long name", "worst 9 9 9 9 9 9 9 ok wait:5000 pttdown",
+		  "txpriv=1 shows=Christo shows=Wood shows=Private_999" },
+		{ "private, no contact", "9 9 9 5 5 5 5 down ok wait:5000 pttdown", "txpriv=1 shows=9995555 shows=Private_999" },
 		{ "group", "3 1 0 0 ok wait:5000 pttdown", "txpriv=0 shows=TG_3100 hides=Private" },
 	};
 	char err[300], buf[200];
@@ -1285,8 +1295,8 @@ static int check_name_is_id(void)
 	int bad = 0;
 	static const struct { const char *name; uint32_t id; bool priv, want; } c[] = {
 		{ "TG 201", 201, false, true }, { "TG201", 201, false, true }, { "tg 201 ", 201, false, true }, { "201", 201, false, true },
-		{ "3101276", 3101276, true, true }, { "TG 202", 201, false, false }, { "Main Ops", 201, false, false },
-		{ "TG 201 Ops", 201, false, false }, { "TG 3101276", 3101276, true, false }, { "", 201, false, false },
+		{ "9996543", 9996543, true, true }, { "TG 202", 201, false, false }, { "Main Ops", 201, false, false },
+		{ "TG 201 Ops", 201, false, false }, { "TG 9996543", 9996543, true, false }, { "", 201, false, false },
 		{ "99999999999", 201, false, false },
 	};
 	for (size_t i = 0; i < sizeof c / sizeof c[0]; i++) {

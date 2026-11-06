@@ -31,6 +31,7 @@ SECTIONS
 	{
 		KEEP(*(.entry))	/* crt0: the first stage jumps to the first byte */
 		*(.text .text.*)
+		*(.flashfunc .flashfunc.*)
 		. = ALIGN(4);
 	} >FLASH
 
@@ -81,6 +82,7 @@ SECTIONS
 	{
 		. = ALIGN(8);
 		__ram_lo_bss_start = .;
+		__irq_stack_bottom = .;	/* its canary words (irq.c) */
 		. = . + _Irq_Stack_Size;
 		__irq_stack_top = .;
 		__ram_lo_bss_end = .;

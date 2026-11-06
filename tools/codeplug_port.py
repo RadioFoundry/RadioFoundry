@@ -509,11 +509,11 @@ SAMPLE = """version: 0.15.1
 settings:
   defaultID: id1
 radioIDs:
-  - dmr: {id: id1, name: N0CALL, number: 3100001}
+  - dmr: {id: id1, name: Q1AAA, number: 9990001}
 contacts:
   - dmr: {id: cont1, name: Local9, ring: false, type: GroupCall, number: 9}
   - dmr: {id: cont2, name: TAC 310, ring: false, type: GroupCall, number: 310}
-  - dmr: {id: cont3, name: "Alice, A", ring: false, type: PrivateCall, number: 3100002}
+  - dmr: {id: cont3, name: "Alice, A", ring: false, type: PrivateCall, number: 9990002}
 groupLists:
   - {id: grp1, name: L9, contacts: [cont1]}
   - {id: grp2, name: Empty, contacts: []}
@@ -640,7 +640,7 @@ def self_test():
     # the shared YAML helpers
     s = codeplug_summary(SAMPLE)
     check(s["counts"] == {"channels": 5, "zones": 1, "contacts": 3, "groupLists": 5}, "counts %r" % s["counts"])
-    check(s["names"]["contacts"][2] == "Alice, A" and s["radio_ids"] == [3100001], "names and radio ID")
+    check(s["names"]["contacts"][2] == "Alice, A" and s["radio_ids"] == [9990001], "names and radio ID")
     check(compare_counts({"channels": 5}, {"channels": 4, "zones": 0, "contacts": 0, "groupLists": 0})
           == [("channels", 5, 4)], "a lost channel is found")
 

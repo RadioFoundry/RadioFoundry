@@ -171,6 +171,11 @@ bool input_next(input_event_t *ev, uint32_t wait_ms)
 	return xQueueReceive(events, ev, wait) == pdTRUE;
 }
 
+bool input_pending(void)
+{
+	return events != NULL && uxQueueMessagesWaiting(events) != 0;
+}
+
 uint32_t input_idle_ms(void)
 {
 	uint32_t now = hal_millis();

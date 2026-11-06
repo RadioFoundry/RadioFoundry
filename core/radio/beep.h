@@ -30,6 +30,7 @@ typedef enum {
 	BEEP_SCAN_HOLD,		// the scan stopped on a signal (unused by default)
 	BEEP_EMERGENCY,		// DMR: someone's emergency heard (alarm or emergency call; core/dmr/dmr_emergency.h)
 	BEEP_MESSAGE,		// a text message arrived (the UI, if Settings > Sound > Message tone)
+	BEEP_TX_PERMIT_SHORT,	// DMR: talk now, played before keying (CAP_BEEP_NOT_ON_AIR): one short tone
 	BEEP_COUNT
 } beep_t;
 
