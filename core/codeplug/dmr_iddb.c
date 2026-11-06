@@ -12,17 +12,22 @@
 
 #if CONFIG_DMR
 
-// Flash image addresses (7.5) and where the flash image sits in the data flash (the STM32 family's +128 KB, as in
-// codeplug.c). TODO: per board, with the codeplug's offsets
-#ifndef CODEPLUG_OPENFW_FLASH_BASE
-#define CODEPLUG_OPENFW_FLASH_BASE	0x020000u
-#endif
-#define IDDB_AREA1		(CODEPLUG_OPENFW_FLASH_BASE + 0x30000u)
-#define IDDB_AREA2		(CODEPLUG_OPENFW_FLASH_BASE + 0xB8000u)
-#define IDDB_AREA2_VP		(CODEPLUG_OPENFW_FLASH_BASE + 0x8F400u)	// format 'n': in the voice prompt area
+// Flash image addresses (7.5) from where the flash image sits in the data flash: the board's map
+// (hal_flash_map_t.openfw_flash), as codeplug.c reads the codeplug, else the STM32 family's +128 KB
+#define DEFAULT_FLASH_BASE	0x020000u
+#define IDDB_AREA1		(flash_base() + 0x30000u)
+#define IDDB_AREA2		(flash_base() + 0xB8000u)
+#define IDDB_AREA2_VP		(flash_base() + 0x8F400u)	// format 'n': in the voice prompt area
 #define IDDB_AREA1_SIZE		0x40000u
 #define IDDB_HEADER		12u
 #define IDDB_RECORD_MAX		DMR_IDDB_RECORD_MAX
+
+static uint32_t flash_base(void)
+{
+	const hal_flash_map_t *m = (board.flash != NULL && board.flash->size != 0) ? board.flash->map : NULL;
+
+	return (m != NULL) ? m->openfw_flash : DEFAULT_FLASH_BASE;
+}
 
 static struct {
 	bool checked;
