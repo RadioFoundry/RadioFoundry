@@ -1512,7 +1512,7 @@ def decode_iddb(r):
 # these only give a clear message first. Flash ends at the largest part's size: the radio knows its own
 MEM_WINDOWS = {
     CHIP_STM32F4: [(0x08000000, 0x08100000, False), (0x1FFF0000, 0x1FFF7800, False), (0x1FFF7800, 0x1FFF7A10, False),
-                   (0x1FFFC000, 0x1FFFC010, False)],
+                   (0x1FFFC000, 0x1FFFC010, False), (0xE000ED00, 0xE000ED40, True)],
     CHIP_HRC7000: [(0x03000000, 0x03200000, False), (0x00010000, 0x00058000, False), (0x18000000, 0x18008000, False),
                    (0x11000000, 0x11000060, True), (0x14020000, 0x14020080, True), (0x14100000, 0x14100080, True),
                    (0x14110000, 0x14110080, True), (0x17000000, 0x17000034, True), (0x1700003C, 0x17000040, True),
@@ -2008,7 +2008,8 @@ def self_test():
           ["0x14100040: 000000c0 00000000 000000c0 000000c0", "0x14100050: 00000001"], "peek: words")
     check(format_peek(0x00010001, b"\x01\x02\x03") == ["0x00010001: 01 02 03"], "peek: bytes")
     check(mem_allowed(0x14100040, 4, CHIP_HRC7000) and not mem_allowed(0x14100042, 4, CHIP_HRC7000) and
-          not mem_allowed(0x14030000, 4, CHIP_HRC7000) and not mem_allowed(0x00010000, 4, CHIP_STM32F4),
+          not mem_allowed(0x14030000, 4, CHIP_HRC7000) and not mem_allowed(0x00010000, 4, CHIP_STM32F4) and
+          mem_allowed(0xE000ED00, 4, CHIP_STM32F4) and not mem_allowed(0xE000ED02, 2, CHIP_STM32F4),
           "READ_MEM windows by family")
     print("rfoundry_debug self-test:", "ok" if ok else "FAILED")
     return 0 if ok else 1

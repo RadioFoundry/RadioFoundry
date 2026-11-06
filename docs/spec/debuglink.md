@@ -448,9 +448,10 @@ STM32F4 (INFO_CHIP family 0; `platform/stm32f4/mem_window.h`):
 | `0x1FFF0000-0x1FFF77FF` | system memory (ST's ROM bootloader) |
 | `0x1FFF7800-0x1FFF7A0F` | OTP and its lock bytes |
 | `0x1FFFC000-0x1FFFC00F` | option bytes |
+| `0xE000ED00-0xE000ED3F` | the core's system control block, aligned words only: CPUID (`0x410FC241` on every STM32F405/407: Cortex-M4 r0p1), interrupt control, VTOR, the fault status and address registers (none clears on a read) |
 
-RAM, CCM and peripheral addresses are always refused on the STM32F4. The UID and the flash size register come through
-INFO_CHIP instead.
+RAM, CCM and the other peripheral addresses are always refused on the STM32F4 (CHIP_REG reaches the peripherals,
+3.24). The UID and the flash size register come through INFO_CHIP instead.
 
 HR_C7000 (family 1; `platform/hrc7000/mem_window.h`). READ_MEM works before INFO_CHIP has a UID:
 
@@ -798,7 +799,7 @@ hook answers unavailable (4).
 | Platform | Register windows |
 |---|---|
 | HR_C7000 (`platform/hrc7000/mem_window.h`) | READ_MEM's register windows (3.10: system block, GPIO A-C, PIC), plus the timers `0x14000000-0x14000077` |
-| STM32F4 | none yet |
+| STM32F4 (`platform/stm32f4/mem_window.h`) | the peripheral buses `0x40000000-0x5FFFFFFF`, the FSMC control registers `0xA0000000-0xA0000FFF` and the Cortex-M4 private peripheral bus `0xE0000000-0xE00FFFFF` (SCB, NVIC, SysTick, DWT, DBGMCU). The access runs with bus faults ignored: a reserved address that faults is refused (7) |
 
 Writes are logged. `rfoundry_debug.py reg CHIP REG [VALUE] [--page N]`, or `reg soc ADDR [VALUE]` for the SoC.
 

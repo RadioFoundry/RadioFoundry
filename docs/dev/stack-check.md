@@ -99,7 +99,8 @@ stack check <b>: every task fits, the least free: prvIdleTask 176 bytes
 
 * Recursion is counted once and listed. RadioFoundry has no deep recursion; the cycles found are mutual calls through callbacks
   (the network stack's `n_*`, the audio mixer).
-* Interrupt handlers on the main stack (STM32) aren't checked. Where they have a stack of their own and run one at a
+* Interrupt handlers on the main stack (STM32) aren't checked: they nest, and the stack has no size of its own (it may
+  grow down to the end of `.bss`). Its canary and `tasks.irq_free` watch it on the radio instead. Where they have a stack of their own and run one at a
   time (HR_C7000), the platform's `STACK_IRQ` names that stack (its size, or the two linker symbols at its ends so the
   size is the one linked) and the function that installs a handler: every function passed to it is a root, and the
   deepest plus the margin must fit (the `irq` line). A handler installed any other way is missed. The interrupt stack's canary and `tasks.irq_free` catch what the check misses on the radio.
