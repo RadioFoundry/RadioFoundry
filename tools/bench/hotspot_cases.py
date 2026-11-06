@@ -46,6 +46,11 @@ BENCH_HOST = os.environ.get("RFOUNDRY_SDR_BENCH_HOST", "sdr-bench")
 BENCH_DIR = os.environ.get("RFOUNDRY_SDR_BENCH_DIR", "~/rfoundry-bench")
 BENCH_PY = os.environ.get("RFOUNDRY_SDR_BENCH_PY", "/opt/rfoundry-sdrbench/.venv/bin/python")
 MODEM_CMD = f"cd {BENCH_DIR} && {BENCH_PY} bench_tx.py"
+# A caller that reaches the bench modem another way (the HIL harness with a bench board, over its line protocol) sets
+# these: MODEM_RUN(args_line, freq, cc, timeout) -> True when the job ran, LISTEN(freq, cc, seconds) -> an object whose
+# records() returns the listener's JSON records
+MODEM_RUN = None
+LISTEN = None
 
 DMR_DATA2, DMR_LOST2 = M.DMR_DATA2, M.DMR_LOST2
 SYNC_DATA, SYNC_AUDIO = M.SYNC_DATA, M.SYNC_AUDIO
@@ -162,6 +167,8 @@ def send_paced(hs, frames, upfront):
 # ── the bench modem over ssh ────────────────────────────────────────
 
 def modem(args_line, freq, cc, timeout=120):
+    if MODEM_RUN is not None:
+        return MODEM_RUN(args_line, freq, cc, timeout)
     cmd = f"{MODEM_CMD} --freq {freq} --cc {cc} {args_line}"
     r = subprocess.run(["ssh", BENCH_HOST, cmd], capture_output=True, text=True, timeout=timeout)
     if r.returncode != 0:
@@ -352,7 +359,7 @@ def case_rf_data_conf(hs, args, r):
 
 
 def net_case(hs, args, frames, upfront, listen_s):
-    lis = ModemListener(args.freq, args.cc, listen_s)
+    lis = (LISTEN or ModemListener)(args.freq, args.cc, listen_s)
     mark = hs.mark()
     send_paced(hs, frames, upfront)
     recs = lis.records()

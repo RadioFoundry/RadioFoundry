@@ -65,7 +65,8 @@ Other options: `--codeplug-backup-dir` (where codeplug_write tests keep their ba
 raw captures, default 5 dB; `dmr_bench.py run C0` picks it), `--sdr-ppm` (overrides the SDR's frequency error for
 FM carrier offsets; by default the SDR bench corrects them itself), `--max-foff` (largest carrier offset the TX tests
 accept, default 500 Hz), `--aprs-ssid` (default 15), `--roam-beacon` / `--roam-beacon-len` (test_roaming's beacon interval and duration, default 20 s / 3 s), `--split-tx-mhz` (test_dmr_tx_split_repeater and test_dmr_repeater_slots: the radio's TX frequency on its DMR test channel made split, the bench repeater's input; no default), `--outbound-mhz` (test_dmr_outbound_voice: a repeater's output the bench board sends BS bursts and voice on; the radio needs a duplex DMR channel receiving it; no default), `--am-mhz` (test_am_rx and test_am_rx_speaker: the AM test frequency in the air band, 108-137 MHz, that the bench board sends full-carrier AM on and the radio's VFO receives; the bench transmits on it: a cabled setup unless the frequency is approved for the air; no default), `--split-calls` (that test keys up this many times per run, default 1; the split is written and restored once), `--roam-rx` / `--roam-tx` (test_roaming's bench repeater site as the radio
-sees it: its receive and transmit MHz; no default). The rig's own values (frequencies, color code, talkgroup,
+sees it: its receive and transmit MHz; no default; with `--allow-codeplug-write` the zone's sites are given TX
+frequencies the bench serves for the test and put back after). The rig's own values (frequencies, color code, talkgroup,
 callsign) are in the next section.
 
 ### The rig's configuration
@@ -248,7 +249,10 @@ the radio during the bench's own key-up needs the second board.
 | `capture_start()`, `analyze_fm()`, `analyze_aprs()` | the receive board's channel as I/Q (`trigger`: cs16, 40 kHz wide, from 1 s before the radio keys; a quarter of the wideband stream, which a busy network link carries without loss) into a local run directory, each frame placed by its sample clock; `tools/sdr_fm_check.py` and `tools/aprs_afsk_check.py` run on the test host. A capture with samples the board lost (`gap_samples`, frames it couldn't send, or a run of exact zeros of 2 ms or more) skips as `bench`. The channel must be inside the board's receive window |
 | `tx_start()`, `fm_tx_start()`, `fm_transmit()` | FM (or AM, `tx_start("am", ...)`) from the TX board (`tx`, mode `fm` or `am`): a program of segments (tones, sweeps, DTMF, AFSK as `fsk` bits, noise, silence) with an optional CTCSS or DCS, at the board's lowest power, within its key limit. A board without the mode in `info`'s `signal_modes` skips as `bench`. The bench host has no FM or AM transmitter: these skip there |
 | `can_fm_rx()`, `fm_rx_start()` | the receive board's FM demodulator (`rx`, mode `fm`): its summary (carrier, offset, deviation, the strongest tone, the CTCSS or DCS it decoded). `test_fm_tx_ctcss`, `_dcs` and `_bandwidth` key the radio a second time for it (beside a triggered capture on the same board it lost seconds of samples) and check its decode and sub-audio deviation (within 20 %) against the I/Q analysis |
-| `analyze_dmr()` (sdrmon.py), bench stations | skip as missing (skip kind `bench`) |
+| `analyze_dmr()` | `tools/bench/sdrmon.py analyze` on the test host, on the capture above (48 kS/s, sdrmon's own channel rate); needs the rfoundry_sdrbench package here (installed, or a checkout in `$RFOUNDRY_SDRBENCH`), else skip kind `bench` |
+| `test_hotspot_voice` | `hotspot_cases.py`'s bench transmissions and listener as board jobs (`MODEM_RUN`, `LISTEN`) |
+| `sync_tool()` | nothing to copy: the analyzers run on the test host |
+| bench stations | skip as missing (skip kind `bench`) |
 
 FM from the board is what the radio receives in `test_rx_tone_decode_bench` (CTCSS / DCS decode) and
 `test_aprs_rx_on_air` (an AFSK frame), on `--fm-mhz`, which must then be a frequency the board may transmit on.

@@ -1238,7 +1238,10 @@ class SdrBench:
         return f"runs/{name}"     # relative: bench_tx.py runs in ~/<dir>, and a quoted "~" would not expand
 
     def sync_tool(self, local):
-        """Copy one tool (e.g. tools/sdr_fm_check.py) into the bench directory; returns its name there."""
+        """Copy one tool (e.g. tools/sdr_fm_check.py) into the bench directory; returns its name there. With a bench
+        board the analyzers run here: nothing to copy, the local path."""
+        if self.api:
+            return local
         name = os.path.basename(local)
         self.ssh(f"mkdir -p ~/{self.dir}")
         subprocess.run(["scp", "-q", local, f"{self.host}:{self.dir}/{name}"], check=True, timeout=120)
@@ -1755,7 +1758,7 @@ class SdrBench:
                 if gap > 0 or zeros:
                     err.append(BenchFault(f"the bench board lost samples in the capture (gap_samples {gap}, "
                                           f"{zeros / 4 / rate:.3f} s of zero runs); it can't judge the radio"))
-                meta = {"center": freq * 1e6, "rate": rate, "fmt": "cs16",
+                meta = {"center": freq * 1e6, "rate": rate, "fs": rate, "fmt": "cs16",     # fs: sdrmon.py's name
                         # The board's ppm is its sample clock's rate error (timestamps); its I/Q is on frequency, so
                         # the analyzers must not correct the carrier by it
                         "ppm": 0.0, "clock_ppm": info.get("window", {}).get("ppm"), "freq": freq * 1e6,
@@ -1949,15 +1952,45 @@ class SdrBench:
         return self.analyze_dmr(w["cap"], w["freq"], w["cc"])
 
     def need_dmr_waveform(self):
-        """Skip now, before the radio keys, when analyze_dmr() can't run here: sdrmon.py's waveform analysis runs on
-        the bench host only."""
-        self._no_api("sdrmon.py waveform analysis (analyze_dmr)")
+        """Skip now, before the radio keys, when analyze_dmr() can't run here. With a bench board sdrmon.py runs on
+        this machine on the board's channel I/Q, and needs the rfoundry_sdrbench package (installed, or a checkout in
+        $RFOUNDRY_SDRBENCH)."""
+        if self.api and self._sdrbench_env() is None:
+            skip("bench", "sdrmon.py's waveform analysis (analyze_dmr) needs the rfoundry_sdrbench package here "
+                          "(installed, or a checkout in $RFOUNDRY_SDRBENCH)")
 
-    def analyze_dmr(self, capture, freq, cc):
+    @staticmethod
+    def _sdrbench_env():
+        """The environment that lets a tool on this machine import rfoundry_sdrbench, None when it can't."""
+        env = dict(os.environ)
+        d = os.environ.get("RFOUNDRY_SDRBENCH")
+        if d:
+            env["PYTHONPATH"] = os.pathsep.join(x for x in (d, env.get("PYTHONPATH")) if x)
+        r = subprocess.run([sys.executable, "-c", "import rfoundry_sdrbench.channelizer"], env=env,
+                           capture_output=True, timeout=60)
+        return env if r.returncode == 0 else None
+
+    def analyze_dmr(self, capture, freq, cc, cach=False):
         """sdrmon.py analyze: every burst with its sync, CC, LC, timing, frequency offset, edges (a dict). From raw
         I/Q: use it only for what the burst records (dmr_watch_start) lack: the waveform (keying edges, ramps, power
-        steps, overlaps, CACH decode)."""
-        txt = self.ssh(f"cd ~/{self.dir} && {self.py} sdrmon.py analyze {capture} --freq {freq} --cc {cc} "
+        steps, overlaps, CACH decode). With a bench board, on this machine on the board's channel I/Q (48 kS/s, the
+        analysis's own rate, centered on the channel)."""
+        extra = " --cach" if cach else ""
+        if self.api:
+            env = self._sdrbench_env()
+            if env is None:
+                skip("bench", "sdrmon.py needs the rfoundry_sdrbench package here")
+            r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "bench", "sdrmon.py"), "analyze", capture,
+                                "--freq", str(freq), "--cc", str(cc), "--json", capture + ".analysis.json"]
+                               + (["--cach"] if cach else []), env=env, capture_output=True, text=True, timeout=600)
+            with open(capture + ".txt", "w") as fh:
+                fh.write(r.stdout + r.stderr)
+            print("\n".join((r.stdout + r.stderr).splitlines()[-40:]))
+            if r.returncode != 0 or not os.path.exists(capture + ".analysis.json"):
+                raise RuntimeError(f"sdrmon.py analyze failed ({r.returncode}): {(r.stdout + r.stderr)[-1500:]}")
+            with open(capture + ".analysis.json") as fh:
+                return json.load(fh)
+        txt = self.ssh(f"cd ~/{self.dir} && {self.py} sdrmon.py analyze {capture} --freq {freq} --cc {cc}{extra} "
                        f"--json {capture}.json > {capture}.txt 2>&1; cat {capture}.json", timeout=600)
         return json.loads(txt)
 

@@ -3,7 +3,8 @@
 """The MMDVM hotspot on air, both directions (opt-in: --allow-rf --allow-service-stop; the radio transmits).
 
 The radio is driven over USB as MMDVMHost drives a simplex modem (tools/bench/mmdvm_hotspot.py's MmdvmLink on the
-DMR test channel, RF level 12: the radio's lowest power), and the SDR bench's modem is the other radio. The cases are
+DMR test channel, RF level 12: the radio's lowest power), and the SDR bench's modem (or a bench board's jobs, with
+--bench-api) is the other radio. The cases are
 tools/bench/hotspot_cases.py's (docs/testing/dmr-bench.md); this module runs them under the bench lease:
 
 - rf_voice8: the bench modem sends a group call (8 headers, 3 superframes, 3 terminators); what the radio sends up
@@ -39,6 +40,30 @@ def hotspot_cases():
     return H
 
 
+def _api_modem(bench):
+    """hotspot_cases.MODEM_RUN on a bench board: the bench_tx command line as a board job."""
+    def run(args_line, freq, cc, timeout):
+        try:
+            bench.transmit(args_line, freq, cc, timeout=timeout, expect_s=30)
+        except RuntimeError as e:
+            print(f"bench job: {e}")
+            return False
+        return True
+    return run
+
+
+def _api_listener(bench):
+    """hotspot_cases.LISTEN on a bench board: its receiver's listen job, started at once."""
+    class Listener:
+        def __init__(self, freq, cc, seconds):
+            self.seconds = seconds
+            self.job = bench.listen_start(freq, cc, seconds)
+
+        def records(self):
+            return bench.listen_result(self.job, timeout=self.seconds + 30)
+    return Listener
+
+
 @pytest.mark.feature("hotspot")
 @pytest.mark.rf
 @pytest.mark.radio_tx
@@ -54,9 +79,14 @@ def test_hotspot_on_air(radio, sdr_bench, pytestconfig, hotspot_cases, case):
     args = type("Args", (), {"freq": freq, "cc": cc, "power": 12})()
     r = H.Result(case)
     with sdr_bench.lease(), radio.released() as port:
-        # the bench modem as SdrBench runs it: this bench's host, directory, python and transmit level (on a
-        # shared bench, the channel and the modem held for the case)
-        H.MODEM_CMD = sdr_bench.modem_prefix(freq, expect_s=60)
+        if sdr_bench.api:
+            # a bench board: its jobs over the line protocol, which build the bursts and listen on its receiver
+            H.MODEM_RUN, H.LISTEN = _api_modem(sdr_bench), _api_listener(sdr_bench)
+        else:
+            # the bench modem as SdrBench runs it: this bench's host, directory, python and transmit level (on a
+            # shared bench, the channel and the modem held for the case)
+            H.MODEM_RUN = H.LISTEN = None
+            H.MODEM_CMD = sdr_bench.modem_prefix(freq, expect_s=60)
         t = H.M.Transport(port)
         hs = H.M.MmdvmLink(t, int(round(freq * 1e6)), cc, args.power, simplex=True)
         try:

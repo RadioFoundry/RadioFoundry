@@ -63,6 +63,7 @@ the outbound while it talks (dmr.repeater_up during tx_voice) is printed, not ju
 receive between their own bursts outside SFR (tx_listen).
 """
 import collections
+import os
 import time
 import warnings
 
@@ -638,7 +639,12 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
     for k in [r for r in heard if "call" in r][:1]:
         amb = next((f for f in k.get("files", []) if f.endswith(".amb")), None)
         stats = {}
-        if amb:
+        if amb and sdr_bench.api:       # the board sent the file back into the run directory
+            local = os.path.join(rdir, os.path.basename(amb))
+            if os.path.exists(local):
+                with open(local, "rb") as fh:
+                    stats = ambe_param_stats(fh.read())
+        elif amb:
             hexdump = sdr_bench.ssh(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} -c \"import sys; "
                                     f"print(open(sys.argv[1], 'rb').read().hex())\" {amb}", check=False)
             stats = ambe_param_stats(bytes.fromhex(hexdump.strip() or ""))
