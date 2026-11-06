@@ -79,11 +79,11 @@ is `tools/bringup.py list --radio <id>`.
 | `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | pass |
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written | not recorded | pass |
-| `aprs_igate` | not recorded | off | not recorded | not written | not written | off | pass |
+| `aprs_igate` | not recorded | off | not recorded | not written | not written | off | pass, needs re-run |
 | `gps_sky` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded |
 | `usb` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | not recorded |
 | `hostlink` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded | pass |
+| `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded | pass, needs re-run |
 | `split_duplex` | pass (seed) | pass (seed) | pass (seed) | not written | not written | not recorded | partial |
 | `debuglink` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass |
 | `task_stacks` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
@@ -99,15 +99,15 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_ip_gateway` | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded | pass |
 | `dmr_tx_spacing` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `zone_share` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
-| `dmr_control_station` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
-| `net_tcp` | not recorded | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | pass |
+| `dmr_control_station` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
+| `net_tcp` | not recorded | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | pass, needs re-run |
 | `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded | not recorded | pass |
-| `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
+| `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
