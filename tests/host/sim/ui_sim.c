@@ -42,6 +42,7 @@
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
 //   contacts:full       every contact number holds a talkgroup ("Long 31" ...), but every third: a list past 128
 //   contacts:<n>        the same up to contact n (a list just past 128 at 220)
+//   channels:full       every channel number past the 40 holds one ("Far 41" ...), but every third: a list past 128
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
 //   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
@@ -99,6 +100,7 @@ void gfx_fit_trace(const char *src, const char *out)
 
 static bool worst;	// sim_worst: worst-case codeplug content
 static uint16_t full_contacts;	// contacts:full / :<n>: every contact number up to it used, but every third
+static bool full_channels;	// channels:full: every channel number used, but every third past 40
 
 #define LIVE_MAX	160
 static struct { int x0, y0, x1, y1; char s[40]; } live[LIVE_MAX];
@@ -599,7 +601,7 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 uint16_t codeplug_free_channel(void)
 {
 	for (uint16_t n = worst ? 1 : 41; n <= CODEPLUG_CHANNELS_MAX; n++) {
-		if (worst && n >= WORST_FIRST && n < WORST_FIRST + 40u)
+		if ((worst && n >= WORST_FIRST && n < WORST_FIRST + 40u) || (full_channels && n % 3u != 0))
 			continue;
 		if (sim_edit(n) == NULL)
 			return n;
@@ -609,7 +611,7 @@ uint16_t codeplug_free_channel(void)
 
 uint16_t codeplug_channel_count(void)
 {
-	uint16_t top = worst ? CODEPLUG_CHANNELS_MAX : 40;
+	uint16_t top = worst || full_channels ? CODEPLUG_CHANNELS_MAX : 40;
 	for (uint8_t i = 0; i < n_edits; i++)
 		if (sim_edits[i].number > top)
 			top = sim_edits[i].number;
@@ -621,6 +623,13 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	const channel_t *e = sim_edit(number);
 	if (e != NULL) {
 		*out = *e;
+		return true;
+	}
+	if (full_channels && number > 40 && number <= CODEPLUG_CHANNELS_MAX) {
+		// "Far 41" ...: channel 1's settings at each number, none at 42, 45, 48 ...
+		if (number % 3u == 0 || !codeplug_channel(1, out))
+			return false;
+		snprintf(out->name, sizeof out->name, "Far %u", (unsigned)number);
 		return true;
 	}
 	if (worst) {
@@ -854,6 +863,66 @@ builtin:
 	strncpy(out->name, contacts[index - 1].name, CODEPLUG_NAME_LEN);
 	out->id = contacts[index - 1].id;
 	out->type = contacts[index - 1].type;
+	return true;
+}
+
+bool codeplug_contacts_each(codeplug_contact_fn fn, void *ctx)
+{
+	contact_t c;
+	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
+		if (!fn(i, codeplug_contact(i, &c) ? &c : NULL, ctx))
+			break;
+	}
+	return true;
+}
+
+uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out)
+{
+	for (uint16_t i = 1; id != 0 && i <= CODEPLUG_CONTACTS_MAX; i++) {
+		if (codeplug_contact(i, out) && out->id == id && (out->type != CONTACT_PRIVATE) == group)
+			return i;
+	}
+	return 0;
+}
+
+bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
+{
+	return codeplug_contact_find_index(id, group, out) != 0;
+}
+
+bool codeplug_channel_name(uint16_t number, char out[CODEPLUG_NAME_LEN + 1])
+{
+	channel_t ch;
+	if (!codeplug_channel(number, &ch))
+		return false;
+	memcpy(out, ch.name, CODEPLUG_NAME_LEN + 1);
+	return true;
+}
+
+bool codeplug_channel_used(uint16_t number)
+{
+	channel_t ch;
+	return codeplug_channel(number, &ch);
+}
+
+bool codeplug_channel_names_each(codeplug_name_fn fn, void *ctx, bool names)
+{
+	char name[CODEPLUG_NAME_LEN + 1];
+	uint16_t top = codeplug_channel_count();
+	for (uint16_t n = 1; n <= top; n++) {
+		bool used = codeplug_channel_name(n, name);
+		if (!fn(n, !used ? NULL : names ? name : "", ctx))
+			break;
+	}
+	return true;
+}
+
+bool codeplug_zone_name(uint16_t index, char out[CODEPLUG_NAME_LEN + 1])
+{
+	zone_t z;
+	if (!codeplug_zone(index, &z))
+		return false;
+	memcpy(out, z.name, CODEPLUG_NAME_LEN + 1);
 	return true;
 }
 
@@ -1931,6 +2000,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	font_big_on = g->big;
 	worst = false;
 	full_contacts = 0;
+	full_channels = false;
 	layout_reset();
 	board.keymap = maps[map].m;
 	board.keymap_len = maps[map].n;
@@ -2723,6 +2793,12 @@ static bool run_token(char *t, char *err, size_t len)
 			return false;
 		}
 		full_contacts = (uint16_t)n;
+		changed();
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "channels") == 0 && arg != NULL && strcmp(arg, "full") == 0) {
+		full_channels = true;
 		changed();
 		advance(200);
 		return true;

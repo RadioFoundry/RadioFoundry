@@ -42,6 +42,9 @@ Pass criteria:
   rx2.active=1 and rx2.heard=1 (its audio on the speaker) and dual.at stays a; after it, rx2.active=0.
 - test_tx_inhibit (radio_tx): set.tx_inhibit=1, PTT: tx_deny=inhibit, the state never shows tx; input.ptt_downs
   counts the press and the debug log has "input: PTT down (host".
+- test_tx_limit (radio_tx): the test TX limit (RADIO op 35) set to block, then to a list without the VFO's
+  frequency: each time PTT is refused (the state never shows tx, tx_deny=inhibit), txlim.refused grows by 1 and
+  txlim.last_hz is the VFO's tx_hz. The harness's own limit is put back.
 - test_tot_warning (radio_tx): tot_s 6, tot_warn_s 3: tot_warning=1 between 2.5 and 4.5 s after key-up, then
   tx_deny=timeout and the state leaves tx between 5.4 and 7.5 s.
 - test_roger_beep (radio_tx): roger_beep 1, 1.5 s over: roger=1 is seen after PTT release while still transmitting,
@@ -429,6 +432,34 @@ def test_tx_inhibit(fm_tx):
     assert v.get("tx_deny") == "inhibit", v
     assert after == downs + 1, (downs, after)
     assert "input: PTT down (host" in log, log
+
+
+@pytest.mark.feature("debuglink")
+@pytest.mark.radio_tx
+def test_tx_limit(fm_tx):
+    """PTT under the test TX limit: if the limit failed, the radio keys on the FM VFO at its lowest power."""
+    core = fm_tx.core()
+    if "txlim" not in core:
+        skip("not_built", "firmware without the test TX limit")
+    tx_hz = int(core["tx_hz"])
+    try:
+        for limit in ({"block": True}, {"mhz": [(tx_hz + 25000) / 1e6]}):
+            fm_tx.link.tx_limit(**limit)
+            refused = int(fm_tx.core()["txlim.refused"])
+            fm_tx.link.ptt(True)
+            try:
+                seen, _ = collect(fm_tx, "state", 1.0)
+                v = fm_tx.core()
+            finally:
+                fm_tx.link.ptt(False)
+            # The next press must be a new one: the input task samples PTT, so a quick up-down could go unseen
+            fm_tx.wait_for(lambda x: x.get("state") != "tx_denied", 2.0, what="PTT released")
+            assert "tx" not in seen, (limit, seen)
+            assert v.get("tx_deny") == "inhibit", (limit, v)
+            assert int(v["txlim.refused"]) == refused + 1, (limit, v)
+            assert int(v["txlim.last_hz"]) == tx_hz, (limit, v)
+    finally:
+        fm_tx.tx_gate(True)
 
 
 @pytest.mark.feature("radio_controls")

@@ -97,6 +97,16 @@ uint32_t codeplug_channel_errors(void);
 // Zones 0..count-1. With no zones stored there is one zone "All channels" holding every used channel
 uint16_t codeplug_zone_count(void);
 bool codeplug_zone(uint16_t index, zone_t *out);
+// The name alone, false as codeplug_channel / codeplug_zone: a search by name reads 16 bytes a record, not all of it
+bool codeplug_channel_name(uint16_t number, char out[CODEPLUG_NAME_LEN + 1]);
+bool codeplug_zone_name(uint16_t index, char out[CODEPLUG_NAME_LEN + 1]);
+// Whether a channel number holds a channel, from the in-use bitmap: no flash read
+bool codeplug_channel_used(uint16_t number);
+// Every channel 1..codeplug_channel_count() in order with its name, NULL for an empty number, a few records per flash
+// read (as codeplug_contacts_each, whose rules fn follows). names false: only which numbers are used, from the in-use
+// bitmap without a flash read; the name is "" then. False when the codeplug can't be read
+typedef bool (*codeplug_name_fn)(uint16_t number, const char *name, void *ctx);
+bool codeplug_channel_names_each(codeplug_name_fn fn, void *ctx, bool names);
 // true when the zones are stored ones (false: the virtual "All channels" zone)
 bool codeplug_zones_stored(void);
 
@@ -192,6 +202,12 @@ typedef struct {
 uint32_t codeplug_dmr_id(void);
 // Contacts 1..CODEPLUG_CONTACTS_MAX; false if empty or unreadable
 bool codeplug_contact(uint16_t index, contact_t *out);
+// Every contact slot in order, many records per flash read: a scan with codeplug_contact (one read per slot) took
+// about 0.7 s for 1024 slots on an HR_C7000 radio and kept the idle task out. fn gets the slot (1-based) and the contact,
+// or NULL for an empty slot, under the storage lock, and returns false to stop. It may call codeplug functions, a
+// nested scan included (that one reads slot by slot). False when the codeplug can't be read
+typedef bool (*codeplug_contact_fn)(uint16_t index, const contact_t *c, void *ctx);
+bool codeplug_contacts_each(codeplug_contact_fn fn, void *ctx);
 // RX group lists 1..CODEPLUG_LISTS_MAX; false if unused or unreadable
 bool codeplug_listen_list(uint16_t index, listen_list_t *out);
 // The contact a channel talks to by default: its TX contact, else the first talkgroup of its RX group list; 0 when
@@ -206,6 +222,8 @@ bool codeplug_delete_listen_list(uint16_t index);
 // The first contact with this ID: group true finds a talkgroup (or all call for 0xFFFFFF), false a private contact.
 // Reads every contact record (24 KB of flash) in the worst case: cache the answer
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out);
+// The same, its index (0: none, or a contact record that couldn't be read)
+uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out);
 
 // General DMR settings (open-firmware general settings, docs/spec/open-firmware-cps.md 7.3.2)
 typedef struct {

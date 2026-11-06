@@ -145,6 +145,16 @@ deaf until a power cycle (bench 2026-10-22; quiet resets came back every time): 
 low divisor byte went out as data. So every HR_C7000 UART set-up (`platform/hrc7000/uart_format.h`) drains the RX FIFO, writes,
 reads LCR, DLL and DLH back, and tries again until they stick (about 100 ms at most).
 
+**2.9 A modem interrupt lost for good.**
+Symptom: field report #375: every DMR transmission through a repeater ended in "No repeater answered" until a power
+cycle, often after a zone switch. Cause: not confirmed. The HR_C7000 PIC acts on a request line rising, in level
+mode too (measured with a spare timer as the source): a rise while the source is masked is kept and delivered when it
+is unmasked, but a line still high after its request was taken never interrupts again, unmasked or not, until it falls
+and rises. A modem request whose cause stays set (the system interrupt handler stops after four passes with causes
+still listed) leaves its source silent for good. A dead timeslot interrupt means no repeater wake-up is ever sent. Rule: drop every pending modem request at each receiver restart and after a stalled
+transmission; drop a system request pending for 50 ms with no handler run; count both and keep the first one's PIC
+state (`modem-hrc7000.md` 3.3). Radios: the HR_C7000 boards; one report.
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,
@@ -456,6 +466,12 @@ factory calibration sector. A status read needs the chip select, and write enabl
 
 **10.4 Spare codeplug bytes get zeroed by a CPS.** SFR settings live in channel spare bytes guarded by a flag bit
 (flag 1 bit 0x02); a CPS that rewrites them with 0 turns SFR off.
+
+**10.5 Read many records in one flash read.** On a radio whose SPI flash is polled a byte at a time, a read costs
+about 0.15 ms before its first byte. A search or list that read 1024 contacts or channels one by one took 0.2-0.35 s a
+key, and fast typing kept the idle task out for 1.8 s. Scans read blocks (`codeplug_contacts_each`,
+`codeplug_channel_names_each`), a search by name reads the name alone (`codeplug_channel_name`, `codeplug_zone_name`),
+and a scan per drawn row is a scan per frame ([ui.md](ui.md) 2, [watchdog.md](watchdog.md) 4).
 
 ## 11. Calibration
 
