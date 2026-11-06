@@ -147,10 +147,12 @@ void ui_push(uint8_t scr, uint16_t arg)
 	}
 	if (ui_scr[scr]->enter != NULL)
 		ui_scr[scr]->enter();	// may focus a row (the current zone in Channels)
-	// Else prefer the first available row; disabled rows remain reachable for their explanations.
+	// Else the first row that is available, or failing that the first that can be focused: a dimmed row is still
+	// reachable to explain itself, a text row never is
 	const ui_scr_def_t *d = ui_scr[scr];
 	if ((d->flags & SF_LIST) && d->count != NULL && d->item != NULL && stack[sp].focus == 0) {
 		uint16_t n = d->count();
+		uint16_t dim = n;
 		while (stack[sp].focus < n) {
 			ui_item_t it;
 			it.flags = 0;
@@ -159,10 +161,12 @@ void ui_push(uint8_t scr, uint16_t arg)
 			d->item(stack[sp].focus, &it);
 			if (!(it.flags & (UI_ITEM_INFO | UI_ITEM_DIM)))
 				break;
+			if (!(it.flags & UI_ITEM_INFO) && dim == n)
+				dim = stack[sp].focus;
 			stack[sp].focus++;
 		}
 		if (stack[sp].focus >= n)
-			stack[sp].focus = 0;
+			stack[sp].focus = dim < n ? dim : 0;
 	}
 	update_focus_target();
 	dirty = true;
