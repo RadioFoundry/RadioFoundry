@@ -193,12 +193,17 @@ void fd6818_agc_reset(fd6818_agc_t *a);
 bool fd6818_agc_step(fd6818_agc_t *a, uint16_t r67);	// true: the 0x13 word changed
 uint16_t fd6818_agc_word(const fd6818_agc_t *a);	// 0x13
 uint8_t fd6818_agc_atten_db(const fd6818_agc_t *a);	// gain taken off, dB (0 = full gain)
-// The core's squelch value in AM (larger = weaker; radio_status_t.noise): the signal level, the 0x67 reading plus the gain
-// the loop took off, in the reading's 0.5 dB steps below FD6818_AM_SQL_REF. The radio's air band squelch opens at
-// readings of about 61 to 71 at full gain (hardware-dm32.md 8.7); level 1 opens at 62, each level 3 steps (1.5 dB)
-// higher, level 9 at 86
-#define FD6818_AM_SQL_REF	125
-uint8_t fd6818_am_noise(uint16_t r67, uint8_t atten_db);
+// The core's squelch value in AM (radio_status_t.noise): the chip's noise indicator, as in FM, with its own offset. The
+// chip's squelch is two thresholds (programming guide, squelch section): RSSI 0x67 over 0x78 and noise_sq (0x65 bits
+// 7:0, 1 dB/step) under 0x4F. In AM the gain loop holds 0x67 near its target with or without a signal, so the RSSI half
+// passes on noise and only noise_sq tells a carrier from an empty channel. Without a signal it reads 59-72 in AM, a
+// carrier pulls it down. The offset puts level 1 (opens below 64) at noise_sq 47, the chip's own noise threshold
+// (0x4F = 0x302F), and the empty floor 12 dB or more above it; each level is 3 dB more
+#define FD6818_AM_NOISE_OFFSET	17u
+static inline uint8_t fd6818_am_noise(uint16_t r65)
+{
+	return (uint8_t)((r65 & 0xFFu) + FD6818_AM_NOISE_OFFSET > 255u ? 255u : (r65 & 0xFFu) + FD6818_AM_NOISE_OFFSET);
+}
 // Receiver power saving (8.8, the radio's own sequence): sleep = idle, then 0x37 to its low-power word (FM 0x1D11,
 // DMR 0x1D00); wake = 0x37 back to the receive word (0x1F1F, then 0x1F0F) with the state still idle: the caller
 // retunes and sets the RX state next (fd6818_set_freq, fd6818_set_state)

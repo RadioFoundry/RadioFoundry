@@ -391,12 +391,6 @@ uint8_t fd6818_agc_atten_db(const fd6818_agc_t *a)
 	return (uint8_t)-agc_table[a->idx].db;
 }
 
-uint8_t fd6818_am_noise(uint16_t r67, uint8_t atten_db)
-{
-	int32_t n = FD6818_AM_SQL_REF - (int32_t)(r67 & 0x1FFu) - 2 * (int32_t)atten_db;
-	return n < 0 ? 0u : n > 255 ? 255u : (uint8_t)n;
-}
-
 void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode)
 {
 	if (sleep) {

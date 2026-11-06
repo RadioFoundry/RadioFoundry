@@ -884,12 +884,23 @@ From the radio's firmware (code read, not measured):
 | Gain loop | each tick: the 0x67 reading (bits 8:0) averaged with the one before; dB = (average - 142) / 2. 10 dB or more: down at once to the table entry about (dB - 8) below the current one. Under -6 dB and 30 ticks since the last change: up one entry. Any change, or -6 dB and over, starts the 30 ticks again. The table holds 42 0x13 words from 0x000 (-93 dB) to 0x03FF (0 dB). The RSSI isn't corrected for the gain |
 | Squelch | 0x78 = n << 8 \| (n - 1) on the raw 0x67 scale, n from the factory page's air band rows (11.2: 0x80 level 9, 0x85 level 1, at five points over 108-136 MHz), interpolated by level and frequency. One radio's rows: 61 (level 9) and 71 (level 1), about 30-40 below its FM rows |
 
-What RadioFoundry does (not yet checked on the radio): `rx_am` in `boards/dm32/radio_dm32.c` is the FM receive path
-(VHF LNA, speaker source to the FD6818, A2) with that set-up: 0x43 = 0x0048, 0x47 = 0x6740, 0x13 = 0x03FF and its gain
-loop at every status poll, 0x4A = 0x5450, each AM tune (`fd6818_set_am`, `fd6818_am_agc`). Leaving AM writes 0x13 =
-0x037E, 0x47 = 0x0140 and 0x4A as it read before. The squelch works on the 0x67 reading plus the gain the loop took off
-(`fd6818_am_noise`): level 1 opens at a reading of 62 at full gain, level 5 at 74, level 9 at 86; the factory rows are not
-read. The RSSI shown adds that gain back. The RDA5807M runs through the shared HR_C7000 glue (`platform/hrc7000/bcast_hrc.c`)
+On the bench (radio on a dummy load, an AM carrier from the SDR bench, a desk with a raised noise floor):
+
+| Reading | Empty channel | Carrier |
+|---|---|---|
+| 0x67 at full gain (0x13 = 0x03FF) | 133-158 over the band, higher than the factory rows by 60-90 | the gain loop takes 0x13 down and holds 0x67 near 142-150 |
+| 0x65 bits 7:0 (noise_sq) | 59-72 at every frequency | falls as the carrier rises: about 61, 53, 45 and 31 for carriers 5 dB apart (the weakest barely over the floor); 14-19 for a strong one |
+| 0x0C bit 1 (the chip's squelch, 0x78 = 0x6968, 0x4F = 0x302F) | 0 | 1 once noise_sq is under 47 |
+
+So with the gain loop the RSSI half of the chip's squelch always passes (0x67 is over any factory row), and noise_sq
+decides; the factory rows can't be compared with 0x67 as it reads here.
+
+What RadioFoundry does: `rx_am` in `boards/dm32/radio_dm32.c` is the FM receive path (VHF LNA, speaker source to the
+FD6818, A2) with that set-up: 0x43 = 0x0048, 0x47 = 0x6740, 0x13 = 0x03FF and its gain loop at every status poll, 0x4A
+= 0x5450, each AM tune (`fd6818_set_am`, `fd6818_am_agc`). Leaving AM writes 0x13 = 0x037E, 0x47 = 0x0140 and 0x4A as
+it read before. The squelch works on noise_sq plus 17 (`fd6818_am_noise`): level 1 opens under 47, as the chip's own
+squelch does, and each level is 3 dB tighter; the factory rows are not read. The RSSI shown adds the gain the loop took
+off back. The RDA5807M runs through the shared HR_C7000 glue (`platform/hrc7000/bcast_hrc.c`)
 on PTA25 / PTA26 with no enable pin; its audio path turns the amplifier on and leaves the speaker source alone (B4).
 The air band is an RX-only band of 108-136 MHz and the broadcast range 65-108 MHz in `boards/dm32/board.c`.
 

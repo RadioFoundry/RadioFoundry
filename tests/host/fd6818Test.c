@@ -399,16 +399,15 @@ static void test_am_agc(void)
 	CHECK(!fd6818_agc_step(&a, 0xFE00u | 142u));
 }
 
-// The AM squelch scale: 0.5 dB steps below FD6818_AM_SQL_REF, the gain taken off added back
+// The AM squelch scale: noise_sq (0x65 bits 7:0) plus the AM offset. Level 1 (opens below 64) opens at the chip's own
+// noise threshold, 47; the empty-channel floor (59 and up) stays shut at every level; the high byte (rssi_rel) is ignored
 static void test_am_noise(void)
 {
-	CHECK(fd6818_am_noise(125, 0) == 0 && fd6818_am_noise(300, 0) == 0);
-	CHECK(fd6818_am_noise(61, 0) == 64 && fd6818_am_noise(62, 0) == 63);	// level 1 opens below 64: at 62
-	CHECK(fd6818_am_noise(73, 0) == 52 && fd6818_am_noise(74, 0) == 51);	// level 5 (below 52): at 74
-	CHECK(fd6818_am_noise(0, 0) == 125);
-	// 140 with 30 dB off is a signal of 200
-	CHECK(fd6818_am_noise(140, 30) == 0 && fd6818_am_noise(60, 2) == 61);
-	CHECK(fd6818_am_noise(0xFE00u | 62u, 0) == 63);
+	CHECK(fd6818_am_noise(46) < 64 && fd6818_am_noise(47) == 64);
+	CHECK(fd6818_am_noise(59) > 64 + 3);	// above level 1 and its hysteresis
+	CHECK(fd6818_am_noise(23) == 40);	// level 9 opens below 40: at 22
+	CHECK(fd6818_am_noise(0x4B00u | 31u) == 48);
+	CHECK(fd6818_am_noise(0xFFu) == 255 && fd6818_am_noise(240) == 255);
 }
 
 // RX sub-audio set-up in the radio's own order, and the 0x0C detect bits

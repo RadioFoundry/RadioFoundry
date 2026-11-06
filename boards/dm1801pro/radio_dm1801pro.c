@@ -494,10 +494,10 @@ static void status(radio_status_t *st)
 									    rx_hz));
 	st->noise = fd6818_noise(r65);	// the chip's floor lifted above the core's squelch levels (fd6818.h)
 	if (rx_am_on) {
-		// AM: the squelch is on the signal level, the reading plus the gain the loop took off, which then steps
-		uint8_t atten = fd6818_agc_atten_db(&fd.agc);
-		st->rssi_dbm = (int16_t)(st->rssi_dbm + atten);
-		st->noise = fd6818_am_noise(r67, atten);
+		// AM: the signal level is the reading plus the gain the loop took off, which then steps; the squelch stays on the
+		// noise indicator (fd6818_am_noise)
+		st->rssi_dbm = (int16_t)(st->rssi_dbm + fd6818_agc_atten_db(&fd.agc));
+		st->noise = fd6818_am_noise(r65);
 		fd6818_am_agc(&fd, r67);
 	}
 	st->carrier = false;

@@ -51,7 +51,7 @@ radio uses, and the Problems list warns about a DMR channel there or a TX freque
 | When | `CONFIG_AM_RX`, the board has `CAP_AM_RX` and `board.radio->rx_am`, and the channel's or the VFO's RX frequency is in [108, 137) MHz, whatever its stored mode (3.1) |
 | Tuning | `tune()` calls `rx_am(hz, bw)` instead of `rx()`; if the board refuses, FM as before. `view.am` says AM is on |
 | Transmit | refused with `TXDENY_AM` whenever `view.am`, and for any TX frequency in the air band on an AM radio (split channels, DMR channels, the VFO, the data service, the hotspot's frequencies) |
-| Squelch | on the signal level: in AM the board's `status()` gives `noise` from it, on the FM noise scale (larger = weaker), so the levels and hysteresis are the FM ones (3.3). `view.noise` holds that value in AM. Scan uses the same value |
+| Squelch | in AM the board's `status()` gives `noise` on the FM noise scale (larger = weaker) from the reading that tells a carrier from an empty channel in AM, so the levels and hysteresis are the FM ones (3.3). `view.noise` holds that value in AM. Scan uses the same value |
 | Sub-audio | ignored in AM (`tone_needed()` is false, the tone counts as heard) |
 | Steps | `radio_req_vfo_step_size()` (RREQ_VFO_STEP_SIZE, stored in `settings_t.vfo_step_hz`; 0 is auto, the default: 25 kHz at width 25K or in AM, else `RADIO_VFO_STEP_HZ`, recomputed on every view change, with `view.vfo_step_auto` set; Settings › Talk › VFO step); 8333 means the exact 8.33 kHz grid (n x 25/3 kHz, `radio_am_step()` snaps and steps without drift); 25 kHz is a plain step |
 | Band table | the board lists the air band as an RX-only band ({108000000, 136000000, false} after the VHF TX band) |
@@ -64,9 +64,9 @@ radio uses, and the Problems list warns about a DMR channel there or a TX freque
 `rx_am(hz, bw)` tunes and receives AM; the board leaves AM at the next `rx()` or `set_mode()`. `tx()` is never called
 while AM is on. NULL = no AM. In AM `status()` gives:
 
-- `noise` from the signal level, on the squelch's scale (larger = weaker; the core opens below 64 at level 1 down to
-  40 at level 9). The receiver has no useful noise reading in AM, and only the board knows its RSSI scale and the gain
-  its receiver runs at, so the board makes the value.
+- `noise` on the squelch's scale (larger = weaker; the core opens below 64 at level 1 down to 40 at level 9), from
+  whichever reading of its receiver tells a carrier from an empty channel in AM. Only the board knows its receiver's
+  readings, their scale and the gain it runs at, so the board makes the value.
 - `rssi_dbm`, the signal level with any gain the receiver took off added back.
 - `tone_ok`: anything (the core takes it as true).
 
@@ -78,11 +78,16 @@ On an FD6818 (`fd6818_set_am`, `fd6818_am_agc`, `fd6818_am_noise`):
 | 0x47 AF output | 0x6740, type 7 (AM) | 0x0140, type 1 (FM) |
 | 0x13 receiver gain | a gain loop: 0x03FF (full gain) at each tune, then stepped through a 42-entry table to keep a signal's 0x67 reading near 142 (down at once when 10 dB or more over, by the excess less 8 dB; up one step after 30 readings 6 dB or more under) | the board's FM word, written back when AM ends |
 | 0x4A | 0x5450 | its value before AM, written back |
-| Squelch value | 125 minus (the 0x67 reading plus twice the dB the loop took off), 0.5 dB steps: level 1 opens at a reading of 62 at full gain, level 5 at 74, level 9 at 86 | 0x65 noise |
+| Squelch value | 0x65 bits 7:0 (noise_sq, 1 dB/step) + 17 (`FD6818_AM_NOISE_OFFSET`): level 1 opens at noise_sq 47, each level 3 dB lower | 0x65 bits 7:0 + 25 |
 
 The gain loop runs at the core's status poll (`RADIO_POLL_MS`). These are the air band settings an FD6818 radio's own
-firmware uses (its hardware page has them); the loop's tick there isn't known, and the squelch levels are placed over
-its air band squelch calibration (readings of 61 to 71). `rx()` and `set_mode()` end AM.
+firmware uses (its hardware page has them); the loop's tick there isn't known. `rx()` and `set_mode()` end AM.
+
+Why the squelch stays on noise_sq: the chip's own squelch (programming guide, squelch section) needs both RSSI 0x67 over
+0x78 and noise_sq under 0x4F. In AM the gain loop holds 0x67 near its target whether or not a signal is there, so only
+noise_sq tells them apart: on the bench it read 59 to 72 on empty channels and fell as a carrier rose (about 61, 53,
+45 and 31 for carriers 5 dB apart, 14 to 19 for a strong one). Level 1 opens where the chip's own squelch does (0x4F =
+0x302F: in under 47).
 
 ## 4. Broadcast FM
 
