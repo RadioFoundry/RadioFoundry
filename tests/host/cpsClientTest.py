@@ -35,6 +35,16 @@ def test_channels(sim):
         img = cps_client.load_image(path)
         check(cps_client.decode_channel(img, 1) == {"name": "Test FM 433.4500", "rx_hz": 433450000, "tx_hz": 433450000},
               "FM channel in the image")
+        check(cps_client.zones(img) == [(0, "Test zone", [1, 2])], f"zones {cps_client.zones(img)}")
+        check(cps_client.channel_dmr(img, 1) == (False, 0, 0) and cps_client.channel_dmr(img, 2) == (True, 1, 1),
+              "channel_dmr")
+        moved = bytearray(img)          # a site moved onto another pair and color code (test_roaming's bench site)
+        cps_client.set_channel_rx(moved, 2, 461462500)
+        cps_client.set_channel_tx(moved, 2, 451875000)
+        cps_client.set_channel_cc(moved, 2, 2)
+        check(cps_client.decode_channel(moved, 2)["rx_hz"] == 461462500 and
+              cps_client.decode_channel(moved, 2)["tx_hz"] == 451875000 and
+              cps_client.channel_dmr(moved, 2) == (True, 2, 1), "set_channel_rx / _tx / _cc")
         cps = cps_client.open_cps(exec_cmd=f"{sim} --dump {dump}")
         cps.write_image(img, regions, reboot=False)
         check(not cps_client.compare(img, cps.read_image(regions), regions), "the image reads back")

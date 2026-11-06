@@ -12,7 +12,10 @@ key an idle beacon (bench_repeater.py --beacon) and the radio only listens (the 
 The bench tests use the first duplex DMR channel receiving --roam-rx as the bench site. When the codeplug's sites
 transmit where the bench can't serve them, bench_sites() writes the TX frequencies over CPS for the test and puts the
 codeplug back after (--allow-codeplug-write): the bench site on --roam-tx, any other site the rig may not transmit on
-(tx_mhz) on --roam-rx, where the bench repeater doesn't listen.
+(tx_mhz) on --roam-rx, where the bench repeater doesn't listen. When no duplex DMR channel receives --roam-rx, the
+first site of the codeplug's first roaming zone (duplex DMR channels on one talkgroup, two or more receive frequencies)
+is moved onto the bench pair and the bench's color code the same way. test_roam_now_passive looks for a zone with
+sites itself when the current channel isn't one; every zone whose roaming flag a test turned on is put back.
 
 Pass criteria:
 - test_roam_section: roam.built=1 and every key present; state one of off / watch / search / locked; the settings in
@@ -88,8 +91,8 @@ def roaming(radio):
     if "DMR_ROAMING" not in radio.features():
         skip("not_built", "built without roaming (CONFIG_DMR_ROAMING=n)")
     v = roam(radio)
-    zone = radio.core().get("zone_index")
-    was_on = v.get("roam.zone_on") == "1"
+    # zone index -> its roaming flag as found, put back after: the starting zone's, and each zone zone_on() turned on
+    radio.roam_flags = {radio.core().get("zone_index"): v.get("roam.zone_on") == "1"}
     saved = {"roam_probe": 1 if v.get("set.roam_probe") == "wake" else 0,
              "roam_beacon_s": as_int(v.get("set.roam_beacon_s", "60")),
              "roam_beacon_len_s": as_int(v.get("set.roam_beacon_len_s", "4")),
@@ -101,8 +104,62 @@ def roaming(radio):
         L.roam("unlock")
         for k in ROAM_SETTINGS:
             L.setting(k, saved[k])
-        if radio.core().get("zone_index") == zone and (roam(radio).get("roam.zone_on") == "1") != was_on:
-            L.roam("zone_on" if was_on else "zone_off")
+        for zone, was_on in radio.roam_flags.items():
+            if radio.core().get("zone_index") != zone:
+                L.zone(int(zone))
+                radio.wait_for(lambda x: x.get("zone_index") == zone, 3.0, what=f"zone {zone}")
+            if (roam(radio).get("roam.zone_on") == "1") != was_on:
+                L.roam("zone_on" if was_on else "zone_off")
+        del radio.roam_flags
+
+
+def _site_zone(img):
+    """(zone name, its sites) of the codeplug's first zone with duplex DMR channels on one talkgroup on two or more
+    receive frequencies (sites roaming moves between, dmr-roaming.md 2; one pair's two timeslots never retune), or
+    None"""
+    import cps_client
+    for _, name, members in cps_client.zones(img):
+        by_tg = {}
+        for n in members:
+            ch = cps_client.decode_channel(img, n)
+            dmr, _, contact = cps_client.channel_dmr(img, n)
+            if ch and dmr and contact and ch["rx_hz"] != ch["tx_hz"]:
+                by_tg.setdefault(contact, []).append(n)
+        for sites in by_tg.values():
+            if len({cps_client.decode_channel(img, n)["rx_hz"] for n in sites}) >= 2:
+                return name, sites
+    return None
+
+
+@contextlib.contextmanager
+def _bench_site_written(radio, backup_dir, pytestconfig, rx, tx):
+    """No duplex DMR channel receives rx: the first site of the codeplug's first roaming zone becomes the bench site
+    (RX rx, TX tx, the bench's color code), and the zone's other sites that transmit where the rig may not transmit on
+    rx. Written over CPS for the test and put back after."""
+    if not pytestconfig.getoption("--allow-codeplug-write"):
+        skip("opt_in", f"no duplex DMR channel receives {rx} MHz: run with --allow-codeplug-write to make a roaming "
+                       "zone's site the bench site (written for the test, put back after)")
+    import cps_client
+    from test_cps import codeplug_edited
+    cc = rig(pytestconfig, "dmr-cc")
+
+    def edit(img):
+        z = _site_zone(img)
+        if z is None:
+            skip("state", "no zone with duplex DMR channels on one talkgroup on two receive frequencies (roaming's "
+                          "sites)")
+        name, sites = z
+        print(f"bench site: channel {sites[0]} of zone {name!r} on {rx}/{tx} MHz, color code {cc}")
+        cps_client.set_channel_rx(img, sites[0], round(rx * 1e6))
+        cps_client.set_channel_tx(img, sites[0], round(tx * 1e6))
+        cps_client.set_channel_cc(img, sites[0], cc)
+        for n in sites[1:]:
+            if not hil_config.tx_allowed(pytestconfig, cps_client.decode_channel(img, n)["tx_hz"] / 1e6):
+                cps_client.set_channel_tx(img, n, round(rx * 1e6))
+    with codeplug_edited(radio, backup_dir, edit, "roam"):
+        radio.find_channel(round(rx * 1e6), "dmr", duplex=True)
+        radio.wait_for(lambda x: x.get("tx_hz") == str(round(tx * 1e6)), timeout=5, what="the bench site's TX")
+        yield
 
 
 @contextlib.contextmanager
@@ -111,8 +168,13 @@ def bench_sites(radio, backup_dir, pytestconfig, rx, tx):
     channel receiving rx) transmits on tx, and every other site whose TX the rig may not transmit on (tx_mhz) transmits
     on rx instead, so a wake probe there stays on an allowed frequency where the bench repeater doesn't listen. Written
     over CPS and put back afterwards (needs --allow-codeplug-write); nothing is written when the codeplug has them so
-    already."""
-    radio.find_channel(round(rx * 1e6), "dmr", duplex=True)
+    already. With no duplex DMR channel on rx, a roaming zone's first site is moved there (_bench_site_written)."""
+    try:
+        radio.find_channel(round(rx * 1e6), "dmr", duplex=True)
+    except AssertionError:
+        with _bench_site_written(radio, backup_dir, pytestconfig, rx, tx):
+            yield
+        return
     v = zone_on(radio)
     if v["roam.state"] == "off":
         skip("state", "the bench repeater's channel is not a site with a second site (same talkgroup) in its zone")
@@ -147,9 +209,37 @@ def bench_sites(radio, backup_dir, pytestconfig, rx, tx):
 
 
 def zone_on(radio):
-    if roam(radio).get("roam.zone_on") != "1":
+    v = roam(radio)
+    if v.get("roam.zone_on") != "1":
+        flags = getattr(radio, "roam_flags", None)
+        if flags is not None:
+            flags.setdefault(radio.core().get("zone_index"), False)
         radio.link.roam("zone_on")
     return wait_roam(radio, lambda v: v.get("roam.zone_on") == "1", 1.0, "roaming on for the zone")
+
+
+def site_zone(radio):
+    """Roaming on, on a repeater site with a second site: the current channel if it is one, else the first such
+    channel of the other zones in order (each zone's flag put back by the roaming fixture). Its view."""
+    v = zone_on(radio)
+    if v["roam.state"] != "off":
+        return v
+    L = radio.link
+    start = radio.core().get("zone_index")
+    for zone in range(int(radio.core().get("zone_count") or 1)):
+        if str(zone) == start:
+            continue
+        L.zone(zone)
+        radio.wait_for(lambda x: x.get("zone_index") == str(zone), 3.0, what=f"zone {zone}")
+        for pos in range(int(radio.core().get("zone_size") or 0)):
+            L.zone_pos(pos)
+            radio.wait_for(lambda x: x.get("zone_pos") == str(pos), 2.0, what=f"position {pos}")
+            if radio.core().get("mode") != "dmr":
+                continue
+            v = zone_on(radio)
+            if v["roam.state"] != "off":
+                return v
+    skip("state", "no zone holds a repeater site with a second site on its talkgroup (roaming's sites)")
 
 
 @pytest.mark.feature("dmr_roaming")
@@ -217,9 +307,7 @@ def test_roam_now_passive(roaming):
         skip("state", "the radio is in the VFO: roaming works on channels")
     L = roaming.link
     L.setting("roam_probe", 0)
-    v = zone_on(roaming)
-    if v["roam.state"] == "off":
-        skip("state", "the current channel is not a repeater site with a second site (same talkgroup) in its zone")
+    v = site_zone(roaming)
     sites = as_int(v["roam.sites"])
     numbers = {roam(roaming)[f"site.{i}"].split(":")[0] for i in range(sites)}
     s0, p0, a0 = as_int(v["roam.searches"]), as_int(v["roam.probes"]), as_int(v["roam.aborts"])
