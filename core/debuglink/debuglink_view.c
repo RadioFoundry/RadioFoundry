@@ -14,6 +14,7 @@
 #include "codeplug/zone_edit.h"
 #include "settings/settings.h"
 #include "radio/ref_trim.h"
+#include "radio/tx_limit.h"
 #include "storage/storage.h"
 #if CONFIG_APRS
 #include "aprs/aprs.h"
@@ -73,6 +74,12 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "view=%u\n", DL_VIEW_VERSION);
 	dl_text(t, "state=%s\n", state_key((uint8_t)v->state));
 	dl_text(t, "tx_deny=%s\n", deny_key(v->tx_deny));
+	{
+		tx_limit_info_t l;
+		tx_limit_get(&l, NULL, 0);
+		dl_text(t, "txlim=%s\ntxlim.n=%u\ntxlim.refused=%u\ntxlim.last_hz=%u\n",
+			l.block ? "block" : l.n != 0 ? "list" : "off", l.n, (unsigned)l.refused, (unsigned)l.last_hz);
+	}
 	dl_text(t, "mode=%s\n", v->ch.mode == RADIO_MODE_DMR ? "dmr" : "fm");
 	dl_text(t, "am=%u\nbcast=%u\nbcast_fault=%u\nbcast_khz=%u\n", v->am, v->bcast, v->bcast_fault, (unsigned)v->bcast_khz);
 	dl_text(t, "vfo=%u\nvfo_index=%u\n", v->vfo, v->vfo_index);
