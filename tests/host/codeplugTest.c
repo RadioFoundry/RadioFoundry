@@ -574,7 +574,7 @@ static void test_iddb(void)
 	CHECK(!dmr_iddb_init());
 
 	// A board's flash map moves the database with the codeplug's flash image: read at openfw_flash + 0x30000, not at
-	// the STM32 family's 0x20000 + 0x30000 (the RT10 keeps its image at 0x130000)
+	// the STM32 family's 0x20000 + 0x30000 (a board with its image elsewhere read another area)
 	static const hal_flash_map_t moved = { .openfw_eeprom = EE, .openfw_flash = 0x040000u, .openfw_end = IMAGE_SIZE };
 	memmove(&image[moved.openfw_flash + 0x30000], &image[FL + 0x30000], 12 + 48);
 	image[moved.openfw_flash + 0x30001] = 'd';
