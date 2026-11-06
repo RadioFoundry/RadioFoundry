@@ -307,6 +307,8 @@ Checked with `tests/hil/test_crash.py` and `tests/hil/test_watchdog.py` under `-
   `reset.flags` keeps `SFTRST` through the vendor bootloader, so it leaves `RCC_CSR` alone.
 - The hang check and the task snapshot: CRASH TEST hang keeps kind 5, 3000 ms (3750 on a board with a slower
   timer), task `host`, pc in `debuglink_crash_service`; the snapshot names each waiting task's own wait.
+- The stall check: CRASH TEST stall (kind 4) keeps kind 6 with `cause` from 60000 ms and `host` in the snapshot, and
+  the link answers again after the restart. Not yet run on a radio.
 
 Each radio's result is in its hardware spec and in `docs/testing/results/`. Not checked: the report on the air (no
 receiver for port 4090 exists yet) and, on a radio that has not run `test_crash.py`, that its store survives the
@@ -318,14 +320,16 @@ restart. Check: `rfoundry_debug.py crash test trap`, then `rfoundry_debug.py cra
 same line), the CRC, sealing and the count in a row, the build ID, the start-up side on a fake store,
 the packed report and the summary line (a hang's too); `ui_svc_crash.c` on fake settings, contacts and data service (the record for
 the screen, seen, clear, the report to a private or group contact, its progress and the sent mark); and
-`debuglink_crash.c` (view section 21, CRASH's argument checks, token and transmit refusals and the deferred test).
+`debuglink_crash.c` (view section 21, CRASH's argument checks, token and transmit refusals, the deferred test and the stall test's endless wait).
 `tests/host/watchdogTest.c` (`test_hang_check`): when the hang check fires, a long job's kick, the starve and a
 stopped watchdog, and the tick keeping the uptime; (`test_stall_check`): the stall check's limit, kind, no record
 before the first pass or while starving. `crashTest.c` (`test_reset`): the restart cause's table and a run
 of starts on fake kept words (power-on, an unasked reset, a reboot, chip flags, no words). `tests/hil/test_watchdog.py`:
 after each bench watchdog reset the cause is `watchdog` (or `warm`) with the run's uptime; after a reboot, `software`.
 `tests/hil/test_crash.py` (`test_crash_hang_kept`): CRASH TEST hang keeps a hang record of `host`
-before the watchdog resets, with the UI and radio tasks in its snapshot and at least one of them waiting.
+before the watchdog resets, with the UI and radio tasks in its snapshot and at least one of them waiting;
+(`test_crash_stall_kept`) CRASH TEST stall keeps a stall record with `host` in the snapshot, and the radio answers
+again.
 `tests/host/crashCaptureTest.c`: `crash_capture.c` on a stand-in RTOS; every way in (a fault record, a stack
 overflow, out of heap, an assertion inside the capture) calls `board_rf_safe` first, with interrupts off, before the
 store and the restart; the snapshot's order, the running and idle tasks left out, names cut, the count of the rest. A board with a first stage tests that it drives the transmitter pins off (`boards/<id>/tests/`).
