@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The codeplug settings area (core/codeplug/codeplug_kv.c, docs/spec/codeplug-settings.md) on a simulated NOR flash:
 // reads of a blank, valid, invalid and newer area, writes that keep unknown keys and drop duplicates, values longer
-// than a reader knows, a full area, and power cuts during a write
+// than a reader knows, a full area, batches of sets and removes, walks over a key range, the raw write rule
+// (codeplug_kv_keep), and power cuts during a write
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -232,7 +233,210 @@ static void test_full(void)
 	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 1));
 }
 
-// A power cut anywhere in a write leaves the old area or the new one (the journal finishes it at the next boot)
+static uint32_t sector_writes(void)
+{
+	storage_stats_t st;
+	storage_get_stats(&st);
+	return st.sector_writes;
+}
+
+// Several sets and removes in one rewrite, all or nothing
+static void test_batch(void)
+{
+	fresh();
+	uint32_t id;
+	uint8_t a4[4], b4[4], big[STORAGE_SECTOR];
+	uint16_t l, n;
+	put32(a4, 3100111);
+	put32(b4, 3100222);
+	CHECK(codeplug_kv_set(0x7001, "x", 1));
+	uint32_t w = sector_writes(), serial = codeplug_serial();
+	codeplug_kv_op_t ops[] = {
+		{ CODEPLUG_KEY_ARS_SERVER, 4, a4 },
+		{ CODEPLUG_KEY_IP_GATEWAY, 4, b4 },
+		{ 0x7001, CODEPLUG_KV_REMOVE, NULL },
+		{ 0x7002, 0, NULL },			// an empty value: present, length 0
+	};
+	CHECK(codeplug_kv_write(ops, 4));
+	CHECK(sector_writes() == w + 1 && codeplug_serial() != serial);	// one rewrite, one serial move
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 3100111);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id) && id == 3100222);
+	CHECK(codeplug_kv_get(0x7001, a4, 4) == -1);
+	CHECK(codeplug_kv_get(0x7002, a4, 4) == 0);
+	CHECK(codeplug_kv_info(&l, &n) == CODEPLUG_KV_VALID && n == 3);
+
+	// One op that doesn't fit: nothing of the batch is written
+	memset(big, 0x5A, sizeof(big));
+	uint8_t before[STORAGE_SECTOR];
+	memcpy(before, &sim_flash_data[AREA], sizeof(before));
+	w = sector_writes();
+	serial = codeplug_serial();
+	codeplug_kv_op_t too_big[] = {
+		{ CODEPLUG_KEY_ARS_SERVER, CODEPLUG_KV_REMOVE, NULL },
+		{ 0x7003, STORAGE_SECTOR - CODEPLUG_KV_HDR, big },
+	};
+	CHECK(!codeplug_kv_write(too_big, 2));
+	CHECK(memcmp(before, &sim_flash_data[AREA], sizeof(before)) == 0 && sector_writes() == w && codeplug_serial() == serial);
+	codeplug_kv_op_t no_key[] = { { CODEPLUG_KEY_ARS_SERVER, CODEPLUG_KV_REMOVE, NULL }, { 0, 4, a4 } };
+	CHECK(!codeplug_kv_write(no_key, 2) && sector_writes() == w);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id));
+
+	// Ops apply in order: a set then a remove of the same key leaves it absent
+	codeplug_kv_op_t order[] = { { 0x7004, 4, a4 }, { 0x7004, CODEPLUG_KV_REMOVE, NULL } };
+	CHECK(codeplug_kv_write(order, 2) && codeplug_kv_get(0x7004, a4, 4) == -1);
+
+	// Nothing changed: no rewrite, the serial stays (a key set to its value, an absent key removed, an empty batch)
+	w = sector_writes();
+	serial = codeplug_serial();
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_IP_GATEWAY, 3100222));
+	CHECK(codeplug_kv_remove(0x7123));
+	CHECK(codeplug_kv_write(NULL, 0));
+	CHECK(sector_writes() == w && codeplug_serial() == serial);
+}
+
+static void test_remove(void)
+{
+	uint32_t id;
+	uint16_t l, n;
+	fresh();
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 5));
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_IP_GATEWAY, 6));
+	CHECK(codeplug_kv_remove(CODEPLUG_KEY_ARS_SERVER));
+	CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id));
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id) && id == 6);
+	CHECK(codeplug_kv_info(&l, &n) == CODEPLUG_KV_VALID && n == 1 && l == 8);
+	CHECK(sim_flash_data[AREA + 16] == 0x02 && sim_flash_data[AREA + 24] == 0xFF);	// the gap closed
+	// The last key out: a valid area with no entries
+	CHECK(codeplug_kv_remove(CODEPLUG_KEY_IP_GATEWAY));
+	CHECK(codeplug_kv_info(&l, &n) == CODEPLUG_KV_VALID && n == 0 && l == 0);
+	CHECK(!codeplug_kv_remove(0) && !codeplug_kv_remove(0xFFFF));
+
+	// Every entry of a key goes, a later duplicate too
+	fresh();
+	uint8_t d[32];
+	uint16_t len = 0;
+	len += entry(&d[len], CODEPLUG_KEY_ARS_SERVER, "\x01\x00\x00\x00", 4);
+	len += entry(&d[len], 0x7123, "z", 1);
+	len += entry(&d[len], CODEPLUG_KEY_ARS_SERVER, "\x02\x00\x00\x00", 4);
+	raw_area(d, len, 1, 16, false);
+	CHECK(codeplug_kv_remove(CODEPLUG_KEY_ARS_SERVER));
+	CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id));
+	CHECK(codeplug_kv_info(&l, &n) == CODEPLUG_KV_VALID && n == 1 && l == 5);
+
+	// Over an area that isn't valid, a remove has nothing to take out: no write, the bytes stay
+	fresh();
+	memset(&sim_flash_data[AREA], 0x00, 32);
+	uint32_t w = sector_writes();
+	CHECK(codeplug_kv_remove(CODEPLUG_KEY_ARS_SERVER) && sector_writes() == w && sim_flash_data[AREA] == 0x00);
+	// Nor over a newer one
+	fresh();
+	raw_area(d, len, 2, 16, false);
+	CHECK(!codeplug_kv_remove(CODEPLUG_KEY_ARS_SERVER));
+}
+
+// A walk over a key range: checked once, entries in the area's order, a later duplicate skipped, ended by a change
+static void test_walk(void)
+{
+	fresh();
+	uint8_t d[96], v[8];
+	uint16_t len = 0, key;
+	len += entry(&d[len], 0x7105, "e", 1);
+	len += entry(&d[len], CODEPLUG_KEY_ARS_SERVER, "\x01\x00\x00\x00", 4);
+	len += entry(&d[len], 0x7100, "a", 1);
+	len += entry(&d[len], 0x7105, "E", 1);	// a duplicate: no reader takes it
+	len += entry(&d[len], 0x7200, "out", 3);
+	len += entry(&d[len], 0x7102, "cc", 2);
+	raw_area(d, len, 1, 16, false);
+
+	codeplug_kv_cursor_t c;
+	codeplug_kv_begin(&c, 0x7100, 0x71FF);
+	CHECK(codeplug_kv_next(&c, &key, v, sizeof(v)) == 1 && key == 0x7105 && v[0] == 'e');
+	CHECK(codeplug_kv_next(&c, &key, v, sizeof(v)) == 1 && key == 0x7100 && v[0] == 'a');
+	CHECK(codeplug_kv_next(&c, &key, v, 1) == 2 && key == 0x7102 && v[0] == 'c');	// only max bytes copied
+	CHECK(codeplug_kv_next(&c, &key, v, sizeof(v)) == -1);
+	CHECK(codeplug_kv_next(&c, &key, v, sizeof(v)) == -1);		// stays at the end
+
+	// The whole key space: 0x0000 and 0xFFFF are never keys
+	unsigned count = 0;
+	codeplug_kv_begin(&c, 0, 0xFFFF);
+	while (codeplug_kv_next(&c, &key, v, sizeof(v)) >= 0) {
+		count++;
+	}
+	CHECK(count == 5);
+	codeplug_kv_begin(&c, 0, 0);
+	CHECK(codeplug_kv_next(&c, &key, v, sizeof(v)) == -1);
+
+	// The area rewritten during the walk: it ends rather than read old offsets
+	codeplug_kv_begin(&c, 0x7100, 0x71FF);
+	CHECK(codeplug_kv_next(&c, &key, v, sizeof(v)) == 1 && key == 0x7105);
+	CHECK(codeplug_kv_set(0x7101, "b", 1));
+	CHECK(codeplug_kv_next(&c, &key, v, sizeof(v)) == -1);
+
+	// A walk over an area that isn't valid finds nothing
+	sim_flash_data[AREA + 20] ^= 1;
+	codeplug_kv_begin(&c, 0, 0xFFFF);
+	CHECK(codeplug_kv_next(&c, &key, v, sizeof(v)) == -1);
+
+	// The cost: the first call reads the whole area once, later ones only a header and entries
+	fresh();
+	for (uint16_t k = 0; k < 100; k++) {
+		CHECK(codeplug_kv_set(0x7000 + k, "\x00\x00\x00\x00\x00\x00\x00\x00", 8));
+	}
+	codeplug_kv_begin(&c, 0x7050, 0x705F);
+	CHECK(codeplug_kv_next(&c, &key, v, sizeof(v)) == 8 && key == 0x7050);
+	uint32_t at = sim_flash_reads();
+	count = 1;
+	while (codeplug_kv_next(&c, &key, v, sizeof(v)) >= 0) {
+		count++;
+	}
+	CHECK(count == 16);
+	uint32_t walk = sim_flash_reads() - at;
+	at = sim_flash_reads();
+	CHECK(codeplug_kv_get(0x705F, v, sizeof(v)) == 8);
+	uint32_t get = sim_flash_reads() - at;
+	CHECK(walk < 4u * get);		// 15 more entries for less than four lookups' reads
+}
+
+// The raw write rule every transfer path applies (docs/spec/codeplug-settings.md 6)
+static void test_keep(void)
+{
+	static uint8_t file[STORAGE_SECTOR];
+	uint8_t d[16];
+	uint16_t len = entry(d, CODEPLUG_KEY_ARS_SERVER, "\x07\x00\x00\x00", 4);
+	fresh();
+	memset(file, 0xFF, sizeof(file));
+	CHECK(!codeplug_kv_keep(AREA, file));		// nothing to keep: the radio's area is erased
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 1));
+	CHECK(codeplug_kv_keep(AREA, file));		// erased over valid: kept
+	CHECK(!codeplug_kv_keep(AREA + STORAGE_SECTOR, file) && !codeplug_kv_keep(AREA - STORAGE_SECTOR, file));
+	memset(file, 0x00, 32);
+	CHECK(codeplug_kv_keep(AREA, file));		// some other bytes over valid: kept
+	// A valid file area: taken, an empty one too (erase every key)
+	memcpy(file, &sim_flash_data[AREA], sizeof(file));
+	CHECK(!codeplug_kv_keep(AREA, file));
+	CHECK(codeplug_kv_remove(CODEPLUG_KEY_ARS_SERVER));
+	memcpy(file, &sim_flash_data[AREA], sizeof(file));
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 1));
+	CHECK(!codeplug_kv_keep(AREA, file));
+	// A newer file area over a valid one: kept (we can't read it, the radio's keys stay)
+	memcpy(file, &sim_flash_data[AREA], sizeof(file));
+	file[4] = 2;
+	CHECK(codeplug_kv_keep(AREA, file));
+	// The radio's area newer: kept whatever comes
+	raw_area(d, len, 2, 16, false);
+	memset(file, 0xFF, sizeof(file));
+	CHECK(codeplug_kv_keep(AREA, file));
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 1) == false);
+	raw_area(d, len, 1, 16, false);
+	memcpy(file, &sim_flash_data[AREA], sizeof(file));
+	raw_area(d, len, 2, 16, false);
+	CHECK(codeplug_kv_keep(AREA, file));
+	// A damaged radio area: the file's bytes go in, whatever they are
+	raw_area(d, len, 1, 16, true);
+	memset(file, 0xFF, sizeof(file));
+	CHECK(!codeplug_kv_keep(AREA, file));
+}
+
 // A rewrite keeps the header as it found it (spec 2.4): its length, the continuation in bytes 12-15 and a later
 // version's fields after them
 static void test_header_kept(void)
@@ -252,6 +456,7 @@ static void test_header_kept(void)
 	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id) && id == 7);
 }
 
+// A power cut anywhere in a write leaves the old area or the new one (the journal finishes it at the next boot)
 static void test_power_cut(void)
 {
 	fresh();
@@ -292,6 +497,10 @@ int main(void)
 	test_check();
 	test_full();
 	test_header_kept();
+	test_batch();
+	test_remove();
+	test_walk();
+	test_keep();
 	test_power_cut();
 	sim_flash_free();
 	if (failures) {
