@@ -28,7 +28,10 @@ updater.
 Where to get the stock file: TYT's download page ([tyt888.com/download.html](https://www.tyt888.com/download.html)) ships
 the firmware update as a Windows program, and the `.bin` is inside it. The archive at
 [md380.org/firmware/orig](https://md380.org/firmware/orig/) has every known MD-380 release as plain files. Use
-**D2.32** (`MD-380-D2.32(AD).bin`): it gives both the bootloader key and the voice codec. D2.30 gives the key only.
+**D2.32** (`MD-380-D2.32(AD).bin`): it gives both the bootloader key and the voice codec. Other releases with a codec
+profile (D2.30 and D2.34 among them) merge the codec the same way; the list is in
+[codec-md380.md](../spec/codec-md380.md). The tool derives the key from the TYT file and checks it by its SHA-256, so a
+wrong file stops the run before it touches the radio.
 The web flasher also takes TYT's download zip as it is, and checks every file by its SHA-256.
 
 A tester kit (`md380_migrate.py package`) is one folder with the script, its helpers, the image, a `README.txt` and
