@@ -1723,6 +1723,10 @@ class SdrBench:
 
     API_CAPTURE_BW = 40000.0        # Hz: the channel cut on the board, wider than a 25 kHz FM channel's spectrum
     API_CAPTURE_PRE_S = 1.0         # s of history before the key-up
+    # dB over the channel's floor that fires the trigger (the board's default is 10). The receive board's front end
+    # compresses near a transmitting radio: the radio read 11-12 dB over the floor at 100 mW and at 5 W alike, so at
+    # 10 dB a small swing of the floor let it miss the key-up and the capture came back empty
+    API_CAPTURE_THRESHOLD_DB = 6.0
 
     def _api_capture_start(self, run_dir, freq, seconds, name):
         """The receive board's channel at freq as I/Q (cs16, about 48 kS/s, centered on it; the line protocol's
@@ -1763,7 +1767,7 @@ class SdrBench:
             elif "done" in d:
                 st["meta"] = d["done"]
         req = {"op": "trigger", "freq": freq, "bw": self.API_CAPTURE_BW, "fmt": "cs16", "pre_s": self.API_CAPTURE_PRE_S,
-               "post_s": float(seconds), "timeout_s": float(seconds)}
+               "post_s": float(seconds), "timeout_s": float(seconds), "threshold_db": self.API_CAPTURE_THRESHOLD_DB}
 
         def run():
             try:
