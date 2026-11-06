@@ -191,6 +191,17 @@ Measured on the SDR bench (927.5 MHz, lowest power, 2026-11-06):
 | DMR transmit, 6 s key-up, decoded by the bench | 106 bursts at 60.0 ms: 3 LC headers, 17 superframes, terminator; CC 2; group voice from the radio's ID; every FEC check passed, 0 AMBE bits corrected; deviation 1904-1913 Hz, frequency error within ±60 Hz. The diagnostics line: 106 keyed, 106 ended, none late |
 | DMR receive, a bench group call of recorded speech (78 voice bursts, 234 AMBE frames) | the call decoded (source, talkgroup, group, CC 2); 78 of 78 voice bursts, 3 headers, 2 terminators, no CRC errors; 234 of 234 frames played, none concealed or lost, 4 and 5 bits corrected on two calls; PCM peak 16707 |
 
+### 7.2 APRS
+
+The FD6818 has no AFSK path of its own, so APRS goes through the HR_C7000 (`platform/hrc7000/hrc_afsk.c`):
+
+| Direction | Path |
+| --- | --- |
+| Transmit | The FD6818 keys up in its TX state, then goes to its tone state with no tone (0xC1FA: carrier on, microphone ADC off, `fd6818sh_mic_off`). The HR_C7000's FM transmitter plays the AFSK from its prompt FIFO onto MOD1 (the TCXO, as DMR does), with the codec microphone muted. Level: `amp_per_level` 55 in `boards/rt10/radio_rt10.c`, not yet set against a measured deviation |
+| Receive | The HR_C7000 in FM receive copies the FD6818's AF output (0x47 = 0x7140) to the CPU (`fm_rx_audio.c`). The AF output stays on while APRS listens; the modem's FM_PLAY stays off |
+
+Untested on air.
+
 ## 8. Codec
 
 The AMBE+2 vocoder is part of the original image: its code runs from RAM, its tables are copied to modem SRAM. No
@@ -229,4 +240,9 @@ No codec bytes are in the repository or in a release.
 | Reference trim | written: the trim moves the synthesizer frequency at the next tune; the modem's bias stays the factory's tune. Untested on air |
 | DMR transmit and receive, codec | measured on air (7.1): voice both ways with the codec map `rt10-112` (section 8) |
 | DMR speaker audio, DMR microphone | open: decoded voice played (the counters) but not listened to; in a DMR key-up the vocoder's microphone level is a steady floor (peak 2946, spread 3 dB), speech not checked |
+| IP data over the air | measured on air: UDP to and from the radio, compressed and full headers, off-net, confirmed, bursts from the radio |
+| IP link to the computer | PPP on the host link (UART0, 115200 baud) |
+| APRS | written (7.2), untested on air |
+| Hotspot split, USRP | not written: no continuous base-station outbound; USRP's 8 kHz audio both ways needs more than 115200 baud |
+| Screen-only features | left out: no display (`boards/rt10/config.mk`) |
 | Microphone through the programming cable's line | measured: barely couples. FM key-ups on the SDR bench with 0x55 bursts at 6000 and 2400 baud on the line: the audio rose from about 5 Hz rms deviation to 6-8 Hz rms during the bursts, no tone. `tests/hil/test_mic_uart_inject.py` leaves the RT10 out |
