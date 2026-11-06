@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The DMR Tier III mobile station engine, receive side (t3_ms.h, docs/spec/dmr-trunking.md)
+// The DMR Tier III mobile station engine (t3_ms.h, docs/spec/dmr-trunking.md)
 #include <string.h>
+#include "config.h"
 #include "dmr/trunk/t3_ms.h"
 
 static bool since(uint32_t now, uint32_t t, uint32_t ms)
@@ -41,19 +42,71 @@ const char *t3_reg_name(t3_reg_t r)
 	return "?";
 }
 
+// May the radio transmit at all? Access code behind this folds away when the build leaves it out
+static bool may_send(const t3_ms_t *ms)
+{
+	return CONFIG_DMR_TRUNK_TX && !(ms->cfg->opts & T3_OPT_LISTEN_ONLY);
+}
+
+static uint32_t my_id(const t3_ms_t *ms)
+{
+	return ms->cfg->reg_id != 0 ? ms->cfg->reg_id : ms->cfg->own_id;
+}
+
+static bool is_me(const t3_ms_t *ms, uint32_t id)
+{
+	return id != T3_ID_NULL && (id == ms->cfg->own_id || id == my_id(ms));
+}
+
+// Actions wait in a short queue: a SEND goes out before the retune that follows it (P_MAINT, then back). A retune
+// drops a retune not yet taken and whatever was queued after it
+static void push(t3_ms_t *ms, const t3_act_t *a)
+{
+	if (a->type == T3_ACT_TUNE) {
+		for (uint8_t i = 0; i < ms->nq; i++) {
+			if (ms->q[i].type == T3_ACT_TUNE) {
+				ms->nq = i;
+				break;
+			}
+		}
+	}
+	if (ms->nq < T3_ACT_QUEUE) {
+		ms->q[ms->nq++] = *a;
+	}
+}
+
 static void tune(t3_ms_t *ms, uint32_t now, const t3_chan_t *c, uint8_t slot, bool payload)
 {
 	ms->tuned = *c;
 	ms->tuned_slot = slot;
 	ms->tuned_ms = now;
-	ms->pending.type = T3_ACT_TUNE;
-	ms->pending.chan = *c;
-	ms->pending.slot = slot;
-	ms->pending.payload = payload;
+	t3_act_t a;
+	memset(&a, 0, sizeof(a));
+	a.type = T3_ACT_TUNE;
+	a.chan = *c;
+	a.slot = slot;
+	a.payload = payload;
+	push(ms, &a);
 	ms->mbc[0].open = false;
 	ms->mbc[1].open = false;
 	ms->slc_foreign = 0;
+	ms->aloha_here = false;
+	ms->tx.count = 0;
 }
+
+static void send(t3_ms_t *ms, const uint8_t burst[T3_CSBK_BYTES], uint8_t slot, bool payload)
+{
+	t3_act_t a;
+	memset(&a, 0, sizeof(a));
+	a.type = T3_ACT_SEND;
+	a.slot = slot;
+	a.payload = payload;
+	memcpy(a.burst, burst, T3_CSBK_BYTES);
+	push(ms, &a);
+	ms->st.sent++;
+}
+
+static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r);
 
 // ---- Hunting (6.3.2.1, Annex D) ----
 
@@ -98,6 +151,9 @@ static void hunt_next(t3_ms_t *ms, uint32_t now)
 
 static void enter_hunt(t3_ms_t *ms, uint32_t now, bool retry)
 {
+	if (ms->ax.state != T3_AX_IDLE) {
+		finish(ms, now, T3_RES_LOST);
+	}
 	ms->state = T3_HUNT;
 	ms->confirmed = false;
 	ms->tscc_slots = 0;
@@ -115,6 +171,7 @@ void t3_ms_start(t3_ms_t *ms, const t3_cfg_t *cfg, uint32_t now)
 	ms->cfg = cfg;
 	ms->auth = cfg->auth;
 	ms->reg = T3_REG_UNKNOWN;
+	ms->rnd = cfg->seed != 0 ? cfg->seed : (cfg->own_id ^ (now * 2654435761u)) | 1u;
 	t3_learn_clear(&ms->learned);
 	enter_hunt(ms, now, false);
 }
@@ -122,7 +179,9 @@ void t3_ms_start(t3_ms_t *ms, const t3_cfg_t *cfg, uint32_t now)
 void t3_ms_stop(t3_ms_t *ms)
 {
 	ms->state = T3_OFF;
-	ms->pending.type = T3_ACT_NONE;
+	ms->nq = 0;
+	ms->tx.count = 0;
+	ms->ax.state = T3_AX_IDLE;
 	ms->confirmed = false;
 }
 
@@ -159,12 +218,21 @@ static bool wants_grant(const t3_ms_t *ms, const t3_csbk_t *p, bool *group)
 	switch (p->op) {
 	case T3_OP_TV_GRANT:
 	case T3_OP_BTV_GRANT:
+		// 6.6.2.2.7: a talkgroup we follow, or the call the radio itself asked for
 		*group = true;
+		if (is_me(ms, g->src)) {
+			return true;
+		}
+		if (g->late_entry && ms->left_dst != 0 && g->dst == ms->left_dst) {
+			// The user left this call: its late-entry grants don't pull the radio back (6.6.2.4.1)
+			return false;
+		}
 		return t3_ms_wants_group(ms, g->dst, g->emergency);
 	case T3_OP_PV_GRANT:
 	case T3_OP_PV_GRANT_DX:
+		// Either party: a call to the radio, or one it made
 		*group = false;
-		return (ms->cfg->opts & T3_OPT_PRIVATE) && ms->cfg->own_id != 0 && g->dst == ms->cfg->own_id;
+		return is_me(ms, g->src) || ((ms->cfg->opts & T3_OPT_PRIVATE) && is_me(ms, g->dst));
 	default:
 		// Data grants: the data services come later; a grant to a gateway or another MS is not ours
 		return false;
@@ -203,7 +271,11 @@ static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_
 	ms->call.chan = ch;
 	ms->call.slot = g->slot;
 	ms->call.start_ms = now;
+	ms->call.ours = is_me(ms, g->src);
 	ms->protect_dis = false;
+	if (g->dst != ms->left_dst || !g->late_entry) {
+		ms->left_dst = 0;
+	}
 	ms->state = T3_FOLLOW;
 	ms->last_act_ms = now;
 	ms->st.followed++;
@@ -219,6 +291,10 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 		ms->st.grants++;
 	}
 	if (!wants_grant(ms, p, &group)) {
+		return;
+	}
+	if (ms->ax.state != T3_AX_IDLE && !is_me(ms, p->u.grant.src) && !p->u.grant.emergency) {
+		// Asking for a service: someone else's call doesn't take the radio off the TSCC meanwhile
 		return;
 	}
 	t3_chan_t c;
@@ -243,6 +319,13 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 		return;
 	}
 	follow(ms, now, p, &c, group);
+	if (ms->call.ours && ms->ax.state != T3_AX_IDLE &&
+	    (ms->ax.svc == T3_SVC_GROUP_VOICE || ms->ax.svc == T3_SVC_IND_VOICE)) {
+		finish(ms, now, T3_RES_GRANTED);
+	} else if (ms->ax.state != T3_AX_IDLE) {
+		// An emergency call took us off the TSCC: what we were asking for is lost
+		finish(ms, now, T3_RES_LOST);
+	}
 }
 
 static void return_to_tscc(t3_ms_t *ms, uint32_t now)
@@ -258,14 +341,334 @@ static void return_to_tscc(t3_ms_t *ms, uint32_t now)
 
 // ---- The control channel ----
 
+// The registration area of a system code: MODEL, NET and the DMRLA most significant bits of SITE (6.4.4). A new
+// area needs a new registration
+static uint16_t reg_area(const t3_ms_t *ms, uint16_t code)
+{
+	t3_syscode_t s;
+	t3_syscode_split(code, &s);
+	uint8_t sb = t3_site_bits(s.model);
+	uint8_t la = ms->cfg->dmrla < sb ? ms->cfg->dmrla : sb;
+	return (uint16_t)(t3_syscode_14(code) >> (sb - la));
+}
+
+static bool area_denied(const t3_ms_t *ms, uint16_t area)
+{
+	for (uint8_t i = 0; i < T3_DENIED_MAX; i++) {
+		if (ms->denied[i] == (uint16_t)(area + 1u)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static void set_reg(t3_ms_t *ms, bool reg)
 {
+	uint16_t area = reg_area(ms, ms->syscode);
 	if (!reg) {
 		ms->reg = T3_REG_NOT_NEEDED;
 	} else if (ms->cfg->opts & T3_OPT_LISTEN_ONLY) {
 		ms->reg = T3_REG_LISTEN;
-	} else if (ms->reg != T3_REG_OK && ms->reg != T3_REG_DENIED) {
+	} else if (area_denied(ms, area)) {
+		ms->reg = T3_REG_DENIED;
+	} else if (ms->reg != T3_REG_OK || ms->reg_area != area) {
 		ms->reg = T3_REG_NEEDED;
+	}
+}
+
+// ---- Access: random access requests and their answers (6.2, 6.4.4, 6.6.1; CONFIG_DMR_TRUNK_TX) ----
+
+const char *t3_res_name(t3_res_t r)
+{
+	switch (r) {
+	case T3_RES_NONE: return "none";
+	case T3_RES_PENDING: return "pending";
+	case T3_RES_GRANTED: return "granted";
+	case T3_RES_DONE: return "done";
+	case T3_RES_REFUSED: return "refused";
+	case T3_RES_NO_ANSWER: return "no-answer";
+	case T3_RES_TIMEOUT: return "timeout";
+	case T3_RES_NOT_ALLOWED: return "not-allowed";
+	case T3_RES_LOST: return "lost";
+	case T3_RES_CANCELLED: return "cancelled";
+	}
+	return "?";
+}
+
+static uint32_t rnd(t3_ms_t *ms)
+{
+	uint32_t x = ms->rnd != 0 ? ms->rnd : 0x2545F491u;
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+	ms->rnd = x;
+	return x;
+}
+
+static bool is_voice(t3_svc_t s)
+{
+	return s == T3_SVC_GROUP_VOICE || s == T3_SVC_IND_VOICE;
+}
+
+static const t3_tg_t *talk_group(const t3_ms_t *ms)
+{
+	for (uint8_t i = 0; i < ms->cfg->ntg; i++) {
+		if (ms->cfg->tg[i].flags & T3_TG_TALK) {
+			return &ms->cfg->tg[i];
+		}
+	}
+	return NULL;
+}
+
+static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r)
+{
+	t3_svc_t svc = ms->ax.svc;
+	ms->ax.state = T3_AX_IDLE;
+	ms->ax.result = r;
+	if (svc == T3_SVC_REGISTER && r != T3_RES_DONE && ms->reg != T3_REG_DENIED) {
+		// No record was made: try again later (6.4.4.1: no answer leaves the record as it was)
+		ms->ax.retry_ms = (now + T3_REG_RETRY_MS) | 1u;
+	}
+}
+
+static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, bool emergency)
+{
+	ms->ax.state = T3_AX_WAIT_SLOT;
+	ms->ax.svc = svc;
+	ms->ax.dst = dst;
+	ms->ax.emergency = emergency;
+	// The first slot the TSCC uses; a dedicated TSCC on both slots is reached on TS1
+	ms->ax.slot = (ms->tscc_slots & 1u) || ms->tscc_slots == 0 ? 1 : 2;
+	ms->ax.frames = 0;
+	ms->ax.tries = 0;
+	ms->ax.tc_deadline = now + or_default(ms->cfg->trand_tc_ms, T3_TRAND_TC_MS);
+	ms->ax.ack_deadline = 0;
+	ms->ax.result = T3_RES_PENDING;
+	ms->ax.reason = 0;
+	ms->ax.progress = 0;
+	if (svc == T3_SVC_REGISTER) {
+		ms->ax.retry_ms = 0;
+	}
+}
+
+// 6.2.2: may this inbound slot carry the request? Every request needs an Aloha heard on this TSCC first and a free
+// AT bit; then the Aloha's Mask and Service Function. An emergency ignores both unless the Mask is 24 (all barred)
+static bool permitted(const t3_ms_t *ms, bool at_known, bool at_busy)
+{
+	if (!at_known || at_busy || !ms->aloha_here) {
+		return false;
+	}
+	const t3_aloha_t *a = &ms->aloha;
+	if (ms->ax.emergency && a->mask < 24) {
+		return true;
+	}
+	if (!t3_mask_match(a->mask, a->ms, my_id(ms))) {
+		return false;
+	}
+	if (ms->ax.emergency) {
+		return true;
+	}
+	switch (ms->ax.svc) {
+	case T3_SVC_REGISTER:
+	case T3_SVC_DEREGISTER:
+		return true;	// every Service Function lets registration through
+	case T3_SVC_GROUP_VOICE:
+	case T3_SVC_IND_VOICE:
+		return a->service_fn == 0 || a->service_fn == 1;
+	default:
+		return a->service_fn == 0 || a->service_fn == 2;
+	}
+}
+
+static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
+{
+	t3_csbk_t p;
+	memset(&p, 0, sizeof(p));
+	p.lb = true;
+	p.op = T3_OP_C_RAND;
+	t3_rand_t *q = &p.u.rand;
+	q->src = my_id(ms);
+	q->dst = ms->ax.dst;
+	switch (ms->ax.svc) {
+	case T3_SVC_REGISTER:
+	case T3_SVC_DEREGISTER: {
+		// Table 6.9: register to the system code, or subscribe to the talk group
+		const t3_tg_t *tg = talk_group(ms);
+		q->kind = T3_SK_REGISTRATION;
+		q->options = ms->ax.svc == T3_SVC_REGISTER ? T3_SO_REG_REGISTER : 0;
+		if ((ms->cfg->opts & T3_OPT_REG_TG) && tg != NULL) {
+			q->extra = T3_TRG_TALKGROUP << 2;
+			q->dst = tg->id;
+		} else {
+			q->extra = T3_TRG_SYSCODE << 2;
+			q->dst = ms->syscode;
+		}
+		break;
+	}
+	case T3_SVC_GROUP_VOICE:
+		q->kind = T3_SK_TG_VOICE;
+		q->options = ms->ax.emergency ? T3_SO_EMERGENCY : 0;
+		break;
+	case T3_SVC_IND_VOICE:
+		q->kind = T3_SK_IND_VOICE;
+		q->options = ms->ax.emergency ? T3_SO_EMERGENCY : 0;
+		break;
+	default:
+		q->kind = T3_SK_CANCEL;
+		break;
+	}
+	t3_csbk_build(&p, T3_CRC_MASK_CSBK, out);
+}
+
+static void ra_slot(t3_ms_t *ms, uint32_t now, bool at_known, bool at_busy)
+{
+	switch (ms->ax.state) {
+	case T3_AX_WAIT_SLOT: {
+		if (ms->ax.frames > 0) {
+			ms->ax.frames--;
+			return;
+		}
+		if (!permitted(ms, at_known, at_busy)) {
+			// Keep the slot already chosen: the next permitted one goes (6.2.2)
+			return;
+		}
+		uint8_t b[T3_CSBK_BYTES];
+		build_rand(ms, b);
+		send(ms, b, ms->ax.slot, false);
+		ms->ax.tries++;
+		ms->st.ra_tries++;
+		ms->ax.state = T3_AX_WAIT_RESP;
+		ms->ax.frames = (uint16_t)(t3_nwait_frames(ms->aloha.nrand_wait) + 1u);
+		if (ms->ax.svc == T3_SVC_REGISTER) {
+			// 6.4.4.1: the old record goes as soon as the request is sent
+			ms->reg = T3_REG_NEEDED;
+			ms->reg_area = 0;
+		}
+		break;
+	}
+	case T3_AX_WAIT_RESP: {
+		if (ms->ax.frames > 1) {
+			ms->ax.frames--;
+			return;
+		}
+		uint8_t max = ms->ax.emergency ? T3_NRAND_NE : T3_NRAND_NR;
+		if (ms->ax.tries >= max) {
+			finish(ms, now, T3_RES_NO_ANSWER);
+			return;
+		}
+		// Back off a random number of frames before the next try (table 6.3)
+		ms->ax.state = T3_AX_WAIT_SLOT;
+		ms->ax.frames = (uint16_t)(rnd(ms) % t3_backoff_frames(ms->aloha.backoff));
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+// C_ACKD (and C_NACKD, C_WACKD, C_QACKD: the reason code says which) to the radio
+static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
+{
+	if (!may_send(ms) || (ms->ax.state != T3_AX_WAIT_RESP && ms->ax.state != T3_AX_ACKED) || !is_me(ms, a->dst)) {
+		return;
+	}
+	t3_svc_t svc = ms->ax.svc;
+	ms->ax.reason = a->reason;
+	switch (t3_ack_class(a->reason)) {
+	case T3_WACK:
+	case T3_QACK:
+		// More to come: TP_Timer for a call, TNP_Timer for the rest; each further one restarts it
+		ms->ax.state = T3_AX_ACKED;
+		ms->ax.progress = (uint8_t)t3_ack_class(a->reason);
+		ms->ax.ack_deadline = now + (is_voice(svc) ? or_default(ms->cfg->tp_ms, T3_TP_MS) :
+							    or_default(ms->cfg->tnp_ms, T3_TNP_MS));
+		break;
+	case T3_ACK:
+		if (svc == T3_SVC_REGISTER) {
+			ms->reg = T3_REG_OK;
+			ms->reg_area = reg_area(ms, ms->syscode);
+		} else if (svc == T3_SVC_DEREGISTER) {
+			ms->reg = T3_REG_NEEDED;
+			ms->deregistered = true;
+		} else if (is_voice(svc) && a->reason == T3_RC_MS_ALERTING) {
+			// The called radio rings: the call goes on
+			ms->ax.state = T3_AX_ACKED;
+			ms->ax.ack_deadline = now + or_default(ms->cfg->tp_ms, T3_TP_MS);
+			break;
+		}
+		finish(ms, now, T3_RES_DONE);
+		break;
+	case T3_NACK:
+		if (svc == T3_SVC_REGISTER && a->reason == T3_RC_REG_DENIED) {
+			// Barred from this area until power off; find another TSCC (6.4.4.1)
+			uint16_t area = reg_area(ms, ms->syscode);
+			uint8_t i = 0;
+			while (i < T3_DENIED_MAX - 1 && ms->denied[i] != 0 && ms->denied[i] != (uint16_t)(area + 1u)) {
+				i++;
+			}
+			ms->denied[i] = (uint16_t)(area + 1u);
+			ms->reg = T3_REG_DENIED;
+			finish(ms, now, T3_RES_REFUSED);
+			enter_hunt(ms, now, false);
+		} else if (svc == T3_SVC_REGISTER && a->reason == T3_RC_REG_REFUSED) {
+			// Look for another TSCC; this one is tried again when the hunt comes back to it
+			finish(ms, now, T3_RES_REFUSED);
+			enter_hunt(ms, now, false);
+		} else {
+			finish(ms, now, T3_RES_REFUSED);
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+// C_AHOY on the TSCC or P_AHOY on the payload channel addressed to the radio: radio check, availability check (OACSU),
+// call cancel, selective clear. Authentication isn't supported: it is refused. The answer goes on the inbound slot
+// after the next CACH of the slot the AHOY came on, without random access
+static void answer(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason, uint32_t to, bool then_return)
+{
+	t3_csbk_t p;
+	memset(&p, 0, sizeof(p));
+	p.lb = true;
+	p.op = payload ? T3_OP_P_ACKU : T3_OP_C_ACKU;
+	p.u.ack.reason = reason;
+	p.u.ack.dst = to;
+	p.u.ack.src = my_id(ms);
+	t3_csbk_build(&p, T3_CRC_MASK_CSBK, ms->tx.burst);
+	ms->tx.count = 1;
+	ms->tx.slot = slot;
+	ms->tx.payload = payload;
+	ms->tx.then_return = then_return;
+}
+
+static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h, bool payload)
+{
+	bool to_me = !h->group && is_me(ms, h->dst);
+	bool to_call = payload && h->group && ms->call.group && h->dst == ms->call.dst;
+	if (!to_me && !to_call) {
+		return;
+	}
+	if (h->kind == T3_SK_CANCEL && payload) {
+		// Selective clear (6.6.2.3.1.8): answer, then leave the channel
+		if (may_send(ms)) {
+			answer(ms, slot, true, T3_RC_MESSAGE_ACCEPTED, h->src, true);
+		} else {
+			return_to_tscc(ms, now);
+		}
+		return;
+	}
+	if (!may_send(ms)) {
+		return;
+	}
+	if (h->kind == T3_SK_REGISTRATION && h->src == T3_ID_TSI) {
+		answer(ms, slot, payload, T3_RC_MS_ACCEPTED, h->src, false);	// radio check
+	} else if (to_me && !payload && h->kind == T3_SK_CANCEL) {
+		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// the caller gave up (6.6.1.2.2)
+	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE) {
+		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// availability check: OACSU
+	} else if (to_me) {
+		answer(ms, slot, payload, T3_RC_MS_NOT_SUPPORTED, h->src, false);
 	}
 }
 
@@ -298,6 +701,7 @@ static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 		}
 	}
 	ms->confirmed = true;
+	ms->aloha_here = true;
 	ms->syscode = a->syscode;
 	ms->aloha = *a;
 	ms->tscc_slots |= (uint8_t)(1u << (slot - 1u));
@@ -329,6 +733,7 @@ static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 			return;
 		}
 		ms->last_valid_ms = now;
+		ms->aloha.backoff = p->u.bcast.backoff;
 		set_reg(ms, p->u.bcast.reg);
 		if (p->u.bcast.type == T3_ANN_CHAN_FREQ && cdef != NULL && ms->cfg->plan.learn) {
 			t3_cdef_t c = *cdef;
@@ -343,6 +748,14 @@ static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 	}
 	// Grants and the rest carry no system code: the color code and the confirmed channel vouch for them
 	ms->last_valid_ms = now;
+	if (p->op == T3_OP_C_ACKD) {
+		on_ack(ms, now, &p->u.ack);
+		return;
+	}
+	if (p->op == T3_OP_C_AHOY) {
+		on_ahoy(ms, now, slot, &p->u.ahoy, false);
+		return;
+	}
 	if (is_grant(p->op)) {
 		if (cdef != NULL) {
 			t3_chan_t c = { cdef->chan, cdef->rx_hz, cdef->tx_hz, cdef->cc };
@@ -384,28 +797,68 @@ static void on_payload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_csbk_t 
 	case T3_OP_P_CLEAR:
 		if (for_call(ms, p->u.clear.group, p->u.clear.dst)) {
 			t3_chan_t c;
-			if (p->u.clear.lpcn != T3_LPCN_NULL && p->u.clear.lpcn != ms->tscc.lcn &&
-			    t3_plan_lookup(&ms->cfg->plan, &ms->learned, p->u.clear.lpcn, &c)) {
+			bool to = false;
+			if (p->u.clear.lpcn == T3_LPCN_ABSOLUTE && cdef != NULL) {
+				// An MBC: the appended block gives the TSCC's frequencies
+				c = (t3_chan_t){ cdef->chan, cdef->rx_hz, cdef->tx_hz, cdef->cc };
+				to = true;
+			} else if (p->u.clear.lpcn != T3_LPCN_NULL && p->u.clear.lpcn != T3_LPCN_ABSOLUTE &&
+				   p->u.clear.lpcn != ms->tscc.lcn) {
+				to = t3_plan_lookup(&ms->cfg->plan, &ms->learned, p->u.clear.lpcn, &c);
+			}
+			if (to) {
 				// Go to another TSCC (7.1.1.1.4): it must still confirm with an Aloha before T_Nosig
-				c.cc = ms->tscc.cc;
+				if (c.cc == T3_CC_ANY) {
+					c.cc = ms->tscc.cc;
+				}
 				ms->tscc = c;
 			}
 			return_to_tscc(ms, now);
 		}
 		break;
 	case T3_OP_P_MAINT:
-		if (p->u.maint.kind == T3_MAINT_DISCON && for_call(ms, ms->call.group, p->u.maint.dst)) {
+		// Another radio ending the call (its target is TSI): the caller of a group call, either party of a
+		// private one. The TS clears the call next; leave now
+		if (p->u.maint.kind == T3_MAINT_DISCON && !is_me(ms, p->u.maint.src) &&
+		    (p->u.maint.src == ms->call.src || (!ms->call.group && p->u.maint.src == ms->call.dst))) {
 			return_to_tscc(ms, now);
 		}
 		break;
-	case T3_OP_P_PROTECT:
-		if (for_call(ms, p->u.protect.group, p->u.protect.dst)) {
-			if (p->u.protect.kind == T3_PROTECT_DIS_PTT) {
+	case T3_OP_P_PROTECT: {
+		// 6.6.2.3.2.3: addressed to the radio, the call's talkgroup or every radio
+		const t3_protect_t *pr = &p->u.protect;
+		bool ours = pr->dst == T3_ID_ALLMSID || is_me(ms, pr->dst) || for_call(ms, pr->group, pr->dst);
+		switch (pr->kind) {
+		case T3_PROTECT_DIS_PTT:
+			if (ours) {
 				ms->protect_dis = true;
-			} else if (p->u.protect.kind == T3_PROTECT_EN_PTT) {
+			}
+			break;
+		case T3_PROTECT_EN_PTT:
+			if (ours) {
 				ms->protect_dis = false;
 			}
+			break;
+		case T3_PROTECT_EN_PTT_ONE_MS:
+			// Only the addressed radio may talk
+			ms->protect_dis = !is_me(ms, pr->dst);
+			break;
+		case T3_PROTECT_ILLEGALLY_PARKED: {
+			// Everyone not in the named call leaves
+			bool mine = pr->group ? (ms->call.group && pr->dst == ms->call.dst)
+					      : (is_me(ms, pr->dst) || is_me(ms, pr->src));
+			if (!mine) {
+				return_to_tscc(ms, now);
+			}
+			break;
 		}
+		default:
+			break;
+		}
+		break;
+	}
+	case T3_OP_C_AHOY:
+		on_ahoy(ms, now, slot, &p->u.ahoy, true);
 		break;
 	default:
 		if (is_grant(p->op)) {
@@ -522,6 +975,25 @@ void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc)
 	}
 }
 
+void t3_ms_slot(t3_ms_t *ms, uint32_t now, uint8_t slot, bool at_known, bool at_busy)
+{
+	if (!may_send(ms) || ms->state == T3_OFF || ms->state == T3_HUNT || slot < 1 || slot > 2 ||
+	    !since(now, ms->tuned_ms, T3_SETTLE_MS)) {
+		return;
+	}
+	if (ms->tx.count != 0 && slot == ms->tx.slot) {
+		// An answer or P_MAINT: no random access, the slot is the radio's
+		send(ms, ms->tx.burst, slot, ms->tx.payload);
+		if (--ms->tx.count == 0 && ms->tx.then_return && ms->state == T3_FOLLOW) {
+			return_to_tscc(ms, now);
+		}
+		return;
+	}
+	if (ms->state == T3_CAMPED && ms->ax.state != T3_AX_IDLE && slot == ms->ax.slot) {
+		ra_slot(ms, now, at_known, at_busy);
+	}
+}
+
 void t3_ms_activity(t3_ms_t *ms, uint32_t now, uint8_t slot)
 {
 	if (ms->state == T3_FOLLOW && slot == ms->call.slot && since(now, ms->tuned_ms, T3_SETTLE_MS)) {
@@ -537,13 +1009,28 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 	case T3_OFF:
 		break;
 	case T3_HUNT:
-		if (ms->pending.type == T3_ACT_NONE && (int32_t)(now - ms->hunt_deadline) >= 0) {
+		if (ms->nq == 0 && (int32_t)(now - ms->hunt_deadline) >= 0) {
 			hunt_next(ms, now);
 		}
 		break;
 	case T3_CAMPED:
 		if (since(now, ms->last_valid_ms, or_default(ms->cfg->nosig_ms, T3_NOSIG_MS))) {
 			enter_hunt(ms, now, true);
+			break;
+		}
+		if (!may_send(ms)) {
+			break;
+		}
+		if (ms->ax.state == T3_AX_ACKED && (int32_t)(now - ms->ax.ack_deadline) >= 0) {
+			finish(ms, now, T3_RES_TIMEOUT);	// TP_Timer / TNP_Timer
+		} else if ((ms->ax.state == T3_AX_WAIT_SLOT || ms->ax.state == T3_AX_WAIT_RESP) &&
+			   (int32_t)(now - ms->ax.tc_deadline) >= 0) {
+			finish(ms, now, T3_RES_TIMEOUT);	// TRand_TC
+		}
+		if (ms->ax.state == T3_AX_IDLE && ms->reg == T3_REG_NEEDED && !ms->deregistered && ms->aloha_here &&
+		    (ms->ax.retry_ms == 0 || (int32_t)(now - ms->ax.retry_ms) >= 0)) {
+			// Until registered the radio asks for nothing else (6.4.3)
+			start_access(ms, now, T3_SVC_REGISTER, 0, false);
 		}
 		break;
 	case T3_FOLLOW:
@@ -553,10 +1040,97 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 		}
 		break;
 	}
-	if (ms->pending.type == T3_ACT_NONE) {
+	if (ms->nq == 0) {
 		return false;
 	}
-	*act = ms->pending;
-	ms->pending.type = T3_ACT_NONE;
+	*act = ms->q[0];
+	ms->nq--;
+	memmove(&ms->q[0], &ms->q[1], ms->nq * sizeof(ms->q[0]));
 	return true;
+}
+
+// ---- Access requests from the radio ----
+
+static bool may_ask(t3_ms_t *ms)
+{
+	if (!may_send(ms) || ms->state != T3_CAMPED || !ms->confirmed ||
+	    (ms->reg != T3_REG_OK && ms->reg != T3_REG_NOT_NEEDED)) {
+		ms->ax.result = T3_RES_NOT_ALLOWED;
+		return false;
+	}
+	return true;
+}
+
+bool t3_ms_request(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, bool emergency)
+{
+	if (dst == T3_ID_NULL || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
+		if (dst == T3_ID_NULL) {
+			ms->ax.result = T3_RES_NOT_ALLOWED;
+		}
+		return false;
+	}
+	ms->talk_id = dst;
+	start_access(ms, now, group ? T3_SVC_GROUP_VOICE : T3_SVC_IND_VOICE, dst, emergency);
+	return true;
+}
+
+void t3_ms_cancel(t3_ms_t *ms, uint32_t now)
+{
+	if (!is_voice(ms->ax.svc) || ms->ax.state == T3_AX_IDLE) {
+		return;
+	}
+	if (ms->ax.state == T3_AX_WAIT_SLOT && ms->ax.tries == 0) {
+		// Nothing sent yet: just drop it (6.6.1.2.1)
+		finish(ms, now, T3_RES_CANCELLED);
+		return;
+	}
+	// The TSCC has it: ask it to cancel; it answers with C_ACKD (Message_Accepted)
+	start_access(ms, now, T3_SVC_CANCEL, ms->ax.dst, ms->ax.emergency);
+}
+
+void t3_ms_end_call(t3_ms_t *ms, uint32_t now)
+{
+	if (ms->state != T3_FOLLOW) {
+		return;
+	}
+	if (may_send(ms) && (ms->call.ours || !ms->call.group)) {
+		// 6.6.2.3.2.5: N_Maint P_MAINT (DISCON) in a row, then back to the TSCC
+		t3_csbk_t p;
+		memset(&p, 0, sizeof(p));
+		p.lb = true;
+		p.op = T3_OP_P_MAINT;
+		p.u.maint.kind = T3_MAINT_DISCON;
+		p.u.maint.dst = T3_ID_TSI;
+		p.u.maint.src = my_id(ms);
+		t3_csbk_build(&p, T3_CRC_MASK_CSBK, ms->tx.burst);
+		ms->tx.count = T3_N_MAINT;
+		ms->tx.slot = ms->call.slot;
+		ms->tx.payload = true;
+		ms->tx.then_return = true;
+		return;
+	}
+	// A talkgroup call heard: leave quietly, and don't come back on its late-entry grants
+	if (ms->call.group) {
+		ms->left_dst = ms->call.dst;
+	}
+	return_to_tscc(ms, now);
+}
+
+bool t3_ms_deregister(t3_ms_t *ms, uint32_t now)
+{
+	if (!may_send(ms) || ms->state != T3_CAMPED || ms->reg != T3_REG_OK) {
+		return false;
+	}
+	if (ms->ax.state != T3_AX_IDLE) {
+		finish(ms, now, T3_RES_CANCELLED);
+	}
+	start_access(ms, now, T3_SVC_DEREGISTER, 0, false);
+	return true;
+}
+
+bool t3_ms_can_talk(const t3_ms_t *ms)
+{
+	// The PTT stays off on an all-call the radio didn't make (6.6.2.3.2.4) and while P_PROTECT disables it
+	return may_send(ms) && ms->state == T3_FOLLOW && !ms->protect_dis && ms->tx.count == 0 &&
+	       (ms->call.ours || !is_allcall(ms->call.dst));
 }

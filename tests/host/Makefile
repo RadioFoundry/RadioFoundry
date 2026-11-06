@@ -1185,6 +1185,13 @@ run: run-t3ms
 run-t3ms: t3MsTest
 	./t3MsTest
 .PHONY: run-t3ms
+TESTS   += t3AccessTest
+t3AccessTest: t3AccessTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)
+	$(CC) $(CFLAGS) -o $@ t3AccessTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
+run: run-t3access
+run-t3access: t3AccessTest
+	./t3AccessTest
+.PHONY: run-t3access
 # The same engine on off-air recordings (not in the repository): skips unless RFOUNDRY_T3_RECORDINGS names a manifest
 TESTS   += t3ReplayTest
 t3ReplayTest: t3ReplayTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)

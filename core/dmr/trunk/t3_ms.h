@@ -13,8 +13,9 @@
 //   t3_ms_activity()  any sync on the slot being followed (voice or data), for the inactivity timer
 //   t3_ms_poll()      every 10-30 ms: T3_ACT_TUNE means retune to act->chan and listen to act->slot (0: both)
 //   t3_ms_stop()      another zone or channel selected
-// This is the receive side: an MS in listen-only mode never transmits. Access (registration, calls) comes with
-// CONFIG_DMR_TRUNK_TX.
+//   t3_ms_slot()      once per TDMA frame for each slot heard, at its CACH: the AT bit for the inbound slot after it
+// Access (registration, calls, answers) is built with CONFIG_DMR_TRUNK_TX. T3_ACT_SEND asks the radio to send one
+// CSBK in the inbound slot after the CACH t3_ms_slot() just reported. A radio in listen-only mode never transmits.
 #ifndef RFOUNDRY_T3_MS_H
 #define RFOUNDRY_T3_MS_H
 
@@ -45,6 +46,7 @@
 #define T3_OPT_MONITOR		0x0008	// follow every talkgroup grant (a scanner's view; listen-only)
 #define T3_OPT_LEARN_SYSCODE	0x0010	// take the first system heard as ours (model/net unset)
 #define T3_OPT_PRIVATE		0x0020	// follow private calls to the radio's ID (on by default)
+#define T3_OPT_REG_TG		0x0040	// register with the talk group (subscription) rather than the system code
 
 // Defaults (TS 102 361-4 Annex A ranges in the comments)
 #define T3_NOSIG_MS		5000	// T_Nosig, 1-15 s: no valid TSCC PDU this long, hunt again
@@ -53,6 +55,14 @@
 #define T3_INACTIVE_MS		2500	// TV_Inactive, 0-20 s: nothing on the followed slot this long, return
 #define T3_CALL_MAX_MS		300000	// a followed call ends by this at the latest
 #define T3_REGRANT_MS		2000	// a call just left isn't followed again this soon
+#define T3_TRAND_TC_MS		10000	// TRand_TC, 2-60 s: the longest a random access may take
+#define T3_TP_MS		20000	// TP_Timer: after a progress acknowledgement to a call request
+#define T3_TNP_MS		10000	// TNP_Timer: after one to a request without a payload channel
+#define T3_NRAND_NR		6	// random access tries, a request
+#define T3_NRAND_NE		10	// ... an emergency request
+#define T3_N_MAINT		4	// P_MAINT bursts at the end of a call we end
+#define T3_REG_RETRY_MS		30000	// a registration nobody answered is tried again after this
+#define T3_DENIED_MAX		4	// SYS_AREAs that denied registration (cleared at power on)
 
 typedef struct {
 	uint32_t id;
@@ -75,6 +85,11 @@ typedef struct {
 	uint16_t nosig_ms;		// 0 = default
 	uint16_t inactive_ms;
 	uint16_t dwell_ms;
+	uint32_t reg_id;		// the ID registered and called from, 0 = own_id
+	uint16_t trand_tc_ms;		// 0 = default, as the rest
+	uint16_t tp_ms;
+	uint16_t tnp_ms;
+	uint32_t seed;			// random access backoff; 0 = from the ID and the time
 } t3_cfg_t;
 
 typedef enum {
@@ -93,14 +108,42 @@ typedef enum {
 	T3_REG_DENIED,
 } t3_reg_t;
 
-typedef enum { T3_ACT_NONE, T3_ACT_TUNE } t3_act_type_t;
+typedef enum { T3_ACT_NONE, T3_ACT_TUNE, T3_ACT_SEND } t3_act_type_t;
 
 typedef struct {
 	t3_act_type_t type;
-	t3_chan_t chan;
-	uint8_t slot;		// 0: both (a control channel), 1 / 2: the payload slot
-	bool payload;
+	t3_chan_t chan;		// TUNE
+	uint8_t slot;		// TUNE: 0 both (a control channel), 1 / 2 the payload slot. SEND: the slot to send on
+	bool payload;		// TUNE: a payload channel. SEND: on the payload channel (else the TSCC)
+	uint8_t burst[T3_CSBK_BYTES];	// SEND: the CSBK, CRC included
 } t3_act_t;
+
+#define T3_ACT_QUEUE	3
+
+// Services the radio asks for (CONFIG_DMR_TRUNK_TX)
+typedef enum {
+	T3_SVC_NONE,
+	T3_SVC_REGISTER,
+	T3_SVC_DEREGISTER,
+	T3_SVC_GROUP_VOICE,
+	T3_SVC_IND_VOICE,
+	T3_SVC_CANCEL,
+} t3_svc_t;
+
+typedef enum {
+	T3_RES_NONE,
+	T3_RES_PENDING,		// trying, or acknowledged and waiting (ax.progress says which)
+	T3_RES_GRANTED,		// the call has its channel: the engine follows it
+	T3_RES_DONE,		// registered, de-registered, cancelled, call-back accepted
+	T3_RES_REFUSED,		// a NACK: ax.reason
+	T3_RES_NO_ANSWER,	// every try went unanswered
+	T3_RES_TIMEOUT,		// TRand_TC, or TP / TNP after a progress acknowledgement
+	T3_RES_NOT_ALLOWED,	// not now: listen only, not registered, no TSCC, PTT disabled
+	T3_RES_LOST,		// the TSCC was lost meanwhile
+	T3_RES_CANCELLED,	// withdrawn before anything was sent
+} t3_res_t;
+
+typedef enum { T3_AX_IDLE, T3_AX_WAIT_SLOT, T3_AX_WAIT_RESP, T3_AX_ACKED } t3_ax_state_t;
 
 // The call being followed (or last followed), for the UI and the debug view
 typedef struct {
@@ -112,6 +155,7 @@ typedef struct {
 	t3_chan_t chan;
 	uint8_t slot;
 	uint32_t start_ms;
+	bool ours;		// the radio asked for it (it may talk at once, and ends it with P_MAINT)
 } t3_call_t;
 
 typedef struct {
@@ -126,6 +170,8 @@ typedef struct {
 	uint32_t foreign_slc;	// C_SYS_Parms from another system (an 8-bit CRC: some are corrupt words)
 	uint32_t learned;	// Chan_Freq / CG_AP entries learned or changed
 	uint16_t last_unmapped;
+	uint32_t sent;		// CSBKs handed to the radio to send
+	uint32_t ra_tries;	// random access bursts among them
 } t3_stats_t;
 
 typedef struct {
@@ -149,7 +195,9 @@ typedef struct {
 	t3_chan_t tuned;
 	uint8_t tuned_slot;
 	uint32_t tuned_ms;
-	t3_act_t pending;
+	t3_act_t q[T3_ACT_QUEUE];	// actions for t3_ms_poll, oldest first
+	uint8_t nq;
+	bool aloha_here;	// an Aloha since the radio came to this TSCC (random access waits for one)
 
 	// hunting
 	uint32_t slc_foreign;	// the last foreign C_SYS_Parms code + 1 (0: none): two alike leave a candidate
@@ -173,6 +221,37 @@ typedef struct {
 	uint32_t cleared_ms;	// when the last call was cleared (T3_REGRANT_MS)
 	t3_call_t cleared;
 
+	// Access (CONFIG_DMR_TRUNK_TX)
+	struct {
+		t3_ax_state_t state;
+		t3_svc_t svc;
+		uint32_t dst;
+		bool emergency;
+		uint8_t slot;		// the TSCC slot it uses
+		uint16_t frames;	// WAIT_SLOT: frames to the chosen one; WAIT_RESP: frames left to wait
+		uint8_t tries;
+		uint32_t tc_deadline;	// TRand_TC
+		uint32_t ack_deadline;	// TP_Timer / TNP_Timer
+		t3_res_t result;
+		uint8_t reason;		// of the last acknowledgement
+		uint8_t progress;	// T3_WACK / T3_QACK of the last progress acknowledgement
+		uint32_t retry_ms;	// registration: try again from here (0: no)
+	} ax;
+	// A burst to send on a slot without random access: an answer (once) or P_MAINT (count times)
+	struct {
+		uint8_t count;
+		uint8_t slot;
+		bool payload;
+		bool then_return;	// back to the TSCC once sent
+		uint8_t burst[T3_CSBK_BYTES];
+	} tx;
+	uint32_t talk_id;		// set by t3_ms_request: the last target, for a user's PTT in the hang time
+	uint16_t reg_area;		// the registration record: MODEL, NET and the SYS_AREA bits of SITE (reg T3_REG_OK)
+	uint16_t denied[T3_DENIED_MAX];	// areas, as reg_area, that denied registration, + 1 (0: empty)
+	bool deregistered;		// de-registered: no registration until t3_ms_start
+	uint32_t left_dst;		// a talkgroup call the user left: its late-entry grants don't pull us back (6.6.2.4.1)
+	uint32_t rnd;
+
 	t3_stats_t st;
 } t3_ms_t;
 
@@ -182,6 +261,21 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc);
 void t3_ms_activity(t3_ms_t *ms, uint32_t now, uint8_t slot);
 bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act);
+
+void t3_ms_slot(t3_ms_t *ms, uint32_t now, uint8_t slot, bool at_known, bool at_busy);
+
+// Access (CONFIG_DMR_TRUNK_TX). t3_ms_request asks for a voice call (PTT) to dst, a talkgroup or an individual. False
+// (ax.result says why) when it can't start. Watch ax.result for the outcome
+bool t3_ms_request(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, bool emergency);
+// PTT released before the grant: withdraw the request, or cancel it at the TSCC once sent
+void t3_ms_cancel(t3_ms_t *ms, uint32_t now);
+// The user ends the call being followed: P_MAINT when the radio started it or it is individual, then back
+void t3_ms_end_call(t3_ms_t *ms, uint32_t now);
+// Switching off or leaving the system: de-register when registered. True when a de-registration started
+bool t3_ms_deregister(t3_ms_t *ms, uint32_t now);
+// May the user talk on the payload channel now (the call is ours or a group call, PTT not disabled)?
+bool t3_ms_can_talk(const t3_ms_t *ms);
+const char *t3_res_name(t3_res_t r);
 
 // Is a talkgroup grant one the radio follows?
 bool t3_ms_wants_group(const t3_ms_t *ms, uint32_t tg, bool emergency);

@@ -289,8 +289,12 @@ static void test_follow(void)
 	CHECK(ms.state == T3_FOLLOW && !ms.call.group && last.chan.rx_hz == RX(895), "private call followed");
 	t3_csbk_t m = { .lb = true, .op = T3_OP_P_MAINT };
 	m.u.maint.kind = T3_MAINT_DISCON;
-	m.u.maint.dst = 4321u;
+	m.u.maint.dst = T3_ID_TSI;	// table 7.32: to the TS, from the radio ending the call
+	m.u.maint.src = 1234u;
 	adv(&ms, 100);
+	send(&ms, 1, CC, &m);
+	CHECK(ms.state == T3_FOLLOW, "P_MAINT from a stranger is ignored");
+	m.u.maint.src = 4321u;
 	send(&ms, 1, CC, &m);
 	CHECK(ms.state == T3_CAMPED, "P_MAINT disconnect returns");
 
