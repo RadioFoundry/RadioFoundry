@@ -194,6 +194,15 @@ modem task can both call in. No RTOS calls and no waits: the host tests run the 
    receive. `tx_abort` goes back to receive without `TX_DONE`.
 6. After `codec_tx`, the return to receive (`TX_DONE`, `tx_abort`, `stop`) sends the board's `codec_rx` once,
    after WORK_MODE.
+7. `start` also sends the `tx_fields` once, after the start packet. When a transmission's `tx_fields` were the
+   chip's first since its boot, the bursts of that transmission went out 0.65 ms late against the repeater's slot
+   grid; every later transmission was on time, also after a change of the fields' values. Sent at start, the first
+   transmission is on time too (measured through a repeater).
+8. Where the inbound burst falls in the slot also depends on the codec and the modulator outputs: the chip times
+   the transmission from the slot timing it receives, and its 4FSK reaches the RF through the codec's DAC. A DAC
+   interpolation filter with fewer samples of delay moves the burst earlier. The MODOUT_CONFIG delay byte moves it
+   later in 10.4 µs steps when it delays the output that carries the 4FSK; the other sign moved it by less than a
+   sample. A board sets them with `codec_start` and `tx_fields` (section 8).
 
 A codec write is answered by a TYPE 0x40 packet holding an `ACK_MESSAGE`. The engine skips TYPE 0x40 packets, so
 the answer is never taken as a frame's answer or a NAK, OK or not.
@@ -262,6 +271,8 @@ not known well enough (section 9).
 | `report_field` | REPORT_FIELD bits added to the engine's 0xE1, as the stock firmware sends them |
 | `start_fields` | more start fields, such as MODOUT_CONFIG, DMR_OFFSET and the squelch's SQ_LEVEL, with calibrated values where the stock firmware takes them from calibration. Without calibration the board sends the stock factory default |
 | `codec_tx`, `codec_rx` | a codec write at the start of a transmission and its undo on the return to receive, such as an output the stock firmware mutes while transmitting |
+| `tx_fields` | control fields sent at each start and before each transmission, such as a modulator gain by band or a two-point modulation delay (section 5) |
+| `codec_start` | codec writes sent at each start, after the start packet: a codec setting the chip's own set-up doesn't make, such as a DAC filter with less delay (section 5) |
 | Voice set-up | `sct_voice_t`: CODEC_SELECT and VOCODER_SEL as the stock firmware sends them, control `fields` (the digital mode microphone and speaker gains), then the codec writes (gains and routing for the board's audio wiring). Calibrated values where the stock firmware takes them from calibration |
 
 ## 9. Open

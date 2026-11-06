@@ -365,7 +365,7 @@ The DMR start ([modem-sct.md](modem-sct.md) 4), as the stock firmware sends it a
 | --- | --- | --- |
 | `DMR_CALL_OPTION` | `41 40 42 47 08` | byte 0: squelch detection by the baseband, traffic mode 1, no RF control (the MCU keys the RF chips); byte 1: voice delay 0, reserved bit 6 set; byte 2: four good CACH, two LC header repeats; byte 3: every CSBK, LC header and terminator reported, reserved bit 6 set (stock: 0x44, below); byte 4 reserved |
 | `REPORT_FIELD` | 0xFF | the four documented reports and the reserved bits 4-1 |
-| `MODOUT_CONFIG` | `00 10 00 00 00` | no two-point delay; 0x10 in a reserved byte |
+| `MODOUT_CONFIG` | `00 10 00 00 00` | no two-point delay; 0x10 in a reserved byte. RadioFoundry sends `EB 10 00 00 00` before each transmission instead (5.1) |
 | `DMR_OFFSET` | 8 bytes from calibration (7, offset 0x140) | the baseband's RF_TIMING output; changing it moved neither PD0 nor the burst's modulation (5.1, measured). Without a current calibration block the default `00 82 02 D0 02 D0 02 D0` |
 | `SQ_LEVEL` | `00 02 00 3C 17 70 15 7C 17 70 15 7C` | the baseband's squelch: no gain adjustment, external LNA 2, AGC, OOBE every 80 ms, carrier thresholds 0x1770 high and 0x157C low for digital and analog. Fixed in the stock firmware |
 | `DEMOD_GAIN` | `00 00` | auto calibration. The stock firmware sends 0 though it passes calibration offset 0x0D7 |
@@ -378,7 +378,7 @@ keeps the single receiver's values. It sends
 `SQ_LEVEL` and `DEMOD_GAIN` once at start-up; RadioFoundry sends both in every start. The baseband needs
 `CARRIER_READY` 2 (ready, demodulated phase reversed): RadioFoundry sends 2 when side A's carrier comes up and 0
 when it goes, from the status poll (`d578uv_modem_carrier`); with 1 no call decodes.
-The `MODOUT_CONFIG` delay byte is a setting, 0 from start-up, not a calibration value. The equalizer filters stay at
+The `MODOUT_CONFIG` delay byte is a setting, 0 from start-up in the stock firmware, not a calibration value. The equalizer filters stay at
 the baseband's default, off.
 
 While it transmits, the stock firmware mutes the headphone driver (codec page 1 register 0x10 to 0x40) and writes
@@ -504,12 +504,21 @@ follows PD0 late: the DAC and PE6 on 5.75 ms after the rising edge, the DAC off 
 bit errors. `DMR_OFFSET` (offsets 0, 0x82 and 0xFF, length 1200) and `MODOUT_CONFIG` byte 1 (0x00, 0x28) moved
 neither PD0 nor the modulation.
 
-Through a repeater the inbound burst runs **0.85 ms late**: against the outbound plus 30 ms, median +0.854 ms, range
-+0.792 to +0.917 ms, 136 bursts, all matched (burst start from the sync correlation; a bench board's idle outbound as
-the reference, both sides decoded on a second board; BENCH 2026-11-06, `test_dmr_repeater_burst_offset`). ETSI TS
-102 361-1 10.2.3.1.3 allows 1 ms for propagation and drift; the test allows the radio 0.25 ms of its own. The baseband
-times its transmit from the slot timing it receives. Neither setting above moves the burst, and no TX advance is
-known for this baseband yet.
+Through a repeater, with the baseband's own set-up, the inbound burst ran **0.85 ms late**: against the outbound plus
+30 ms, median +0.854 ms, range +0.792 to +0.917 ms, 136 bursts. ETSI TS 102 361-1 10.2.3.1.3 allows 1 ms for
+propagation and drift; the test allows the radio 0.25 ms of its own. The baseband times its transmit from the slot
+timing it receives, and its 4FSK reaches the RF through the codec's DAC and the modulator outputs
+([modem-sct.md](modem-sct.md) 5). Neither setting above moves the burst. These do:
+
+| Setting | Where | Effect |
+| --- | --- | --- |
+| The codec's DAC on processing block PRB_P17 (page 0 register 60 = 17): interpolation filter C, 13 samples of delay where the baseband's set-up has 18 | `codec_start` in `modem_d578uv.c`, sent at each DMR start | the burst 0.41 ms earlier |
+| `MODOUT_CONFIG` byte 0 = 0xEB: LOL, which carries the 4FSK, 21 steps of 10.4 us later than LOR | `tx_fields`, before each transmission | sets the burst on the grid with the DAC filter above. Positive values moved it by less than a sample |
+| `tx_fields` sent once at each start as well | `sct_dmr.c` | the first transmission after the baseband's boot no longer runs 0.65 ms later than the ones after it |
+
+With all three, five calls of 142 bursts each, two of them the first call after a fresh boot: medians -0.020 to
++0.042 ms, every burst within -0.063 and +0.063 ms. Burst start from the sync correlation, a bench board's idle
+outbound as the reference, both sides decoded on a second board (`test_dmr_repeater_burst_offset`).
 
 | Step | Stock firmware | RadioFoundry (`radio_d578uv.c`) |
 | --- | --- | --- |
@@ -603,7 +612,7 @@ and data; registers 0x02 / 0x03 hold its ID 0x4B 0x54 ("KT"). The stock firmware
 when it answers. Its broadcast FM mode receives 87.5-108 MHz in 50 kHz steps (87.5 MHz the default, both ends wrap in
 the stock firmware); chip 3's output bit 6 clear selects that input (inferred). No register map is public: the values
 below are the stock firmware's, their roles inferred. Driver: `drivers/bcast/ktamfm`.
-Some units carry an RDA5807 instead, on the same two pins (a 578UV PRO seen 2026-11: chip ID 0x5804, nothing at
+Some units carry an RDA5807 instead, on the same two pins (seen on a 578UV PRO: chip ID 0x5804, nothing at
 0x6A). The stock firmware uses it whenever the KTMicro probe fails, without probing it: broadcast FM only, no air
 band (the AM settings and menu entries are hidden). RadioFoundry probes the KTMicro first, then reads the RDA5807's
 chip ID (`diag` line 7: `bc kt`, `bc rda` with its 0x02 / 0x0A / 0x0B, or `bc no`), and drives it with the shared
@@ -618,7 +627,7 @@ driver ([airband-and-broadcast.md](airband-and-broadcast.md) 4.2).
 | Station | 0x0B bit 8 (FM_TRUE); RSSI, stereo and seek unused |
 | Routing | as the KTMicro's FM, but chip 3's bit 6, PA5 register 2 and the receiver mute in the squelch paths are KTMicro only. What GPIO1 switches isn't traced |
 
-On the radio (2026-11-02, a wire on the antenna jack): local stations at RSSI 38-67 with FM_TRUE, empty
+On the radio (a wire on the antenna jack): local stations at RSSI 38-67 with FM_TRUE, empty
 channels 26-35; broadcast FM plays through the speaker and mutes with knob A at 0. With the jack bare, RSSI 2: the
 receiver takes its signal from the antenna jack. The stock boot table changed no reading and isn't written.
 
@@ -864,7 +873,7 @@ The order to check it in on a radio, with the diagnostics lines and what to chan
 | Reference trim | the factory item "FQCA", the UHF block's byte 0 (default 0x23), is the reference oscillator's trim: PA5 register 1, sent after each side A retune (5.5); the frequency words carry no correction. RadioFoundry sends it the same way. Its own trim on top: each synthesizer is programmed at f x (1 + trim), side A's and B's LOs, the air band LO and the transmitter, with the IF chips at their IF ([radio-features.md](radio-features.md) 6.1). Measured: +2.3 ppm took a carrier on 446.075 MHz from -1018 Hz to +23 Hz |
 | Flash stub | `CONFIG_STUB_ENTRY` on: the GD32F30x stub ([stub-gd32f30x.md](stub-gd32f30x.md)) with board record id 6, application base 0x08006000; `stub/stubtool.py --board d578uv` drives it. Host tested, untested on the radio |
 | Air band AM | side B's chips and the KTMicro receiver (5.4); written, host tested (the receiver's sequences), untested on the radio |
-| Broadcast FM | the KTMicro receiver's FM mode, or the RDA5807 where it is fitted (5.4); written, host tested. The RDA5807 works on the radio (2026-11-02); the KTMicro untested on the radio. No stereo, no seek |
+| Broadcast FM | the KTMicro receiver's FM mode, or the RDA5807 where it is fitted (5.4); written, host tested. The RDA5807 works on the radio; the KTMicro untested on the radio. No stereo, no seek |
 | Bluetooth | PTT and keys from the module's lines (3.7, `CONFIG_BT_PTT`); written, the line parser host tested, untested on the radio. Pairing, audio and the module's settings not written |
 | DMR on side B | not written: what is missing is listed below |
 | VOX | chip 0's voice amplitude as the microphone level (5.6); written, untested on the radio. The register and its scale are inferred from the BK4819 map |
@@ -914,7 +923,6 @@ Open on the radio:
 - DMR voice: the codec levels, digital mode gains and microphone gain of the voice set-up, and the DMR start's
   values (4.4): the baseband's squelch with the stock thresholds, `DMR_OFFSET` against the PA gate, and whether
   every LC header and terminator reported reaches the stack as on a burst modem.
-- DMR through a repeater: a setting that moves the inbound burst 0.85 ms earlier (5.1).
 - The bootloader's update entry keys.
 - Whether the bootloader stays in its update mode when the application's first word is erased (the flash stub's
   interlock relies on it: an install cut short must leave a radio the update mode finishes), and the stub's hand-over:

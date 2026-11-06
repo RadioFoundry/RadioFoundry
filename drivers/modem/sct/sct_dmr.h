@@ -46,8 +46,13 @@ typedef struct {
 	// engine ignores
 	const sct_codec_write_t *codec_tx;
 	const sct_codec_write_t *codec_rx;
+	// Optional: codec writes sent at each start, after the start packet: a codec setting the chip's own set-up
+	// doesn't make, such as a filter with less delay (modem-sct.md 5)
+	const sct_codec_write_t *codec_start;
+	uint8_t codec_start_count;
 	// Optional: control fields (TYPE 0) sent as each transmission begins, before its first packet, as the board's
-	// state has them then: a setting that differs by band, for example. Returns how many (0: none)
+	// state has them then: a setting that differs by band, for example. Also sent once at start, so that a
+	// transmission's are never the chip's first (modem-sct.md 5). Returns how many (0: none)
 	uint8_t (*tx_fields)(const sct_field_t **fields, void *ctx);
 	// Optional: true once the chip has booted (start fails before). NULL: always
 	bool (*ready)(void *ctx);
