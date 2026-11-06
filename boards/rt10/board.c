@@ -11,6 +11,9 @@
 #include "audio_pcm.h"
 #include "vocoder.h"
 #endif
+#if CONFIG_NET_PPP
+#include "hostlink/hostlink_ppp.h"
+#endif
 
 static const band_t bands[] = {
 	{ 902000000, 928000000, true },
@@ -57,6 +60,9 @@ const board_t board = {
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
+#endif
+#if CONFIG_NET_PPP
+	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the accessory jack's UART0 (docs/spec/ppp.md)
 #endif
 	.system = &hrc_system,
 	.chip_reg = rt10_chip_reg,
