@@ -1166,16 +1166,18 @@ else
 endif
 .PHONY: run-cpsclient
 
-# DMR Tier III prototype: the PDU layouts, tables and authentication vectors behind the ETSI TS 102 361-4 clauses it cites
-TESTS   += tier3ProtoTest
+# DMR Tier III PDUs, system identity and channel plans (core/dmr/trunk): the shared vectors, then the rules
+T3PDU   := $(CORE)/dmr/trunk/t3_pdu.c $(CORE)/dmr/trunk/t3_sys.c $(CORE)/dmr/trunk/t3_plan.c $(CORE)/dmr/call/dmr_lc.c \
+           $(CORE)/dmr/fec/dmrCach.c $(CORE)/dmr/fec/dmrFec.c
+TESTS   += t3PduTest
 
-tier3ProtoTest: tier3ProtoTest.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/call/dmr_lc.h $(CORE)/dmr/fec/dmrFec.c
-	$(CC) $(CFLAGS) -o $@ tier3ProtoTest.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c
+t3PduTest: t3PduTest.c $(T3PDU) $(wildcard $(CORE)/dmr/trunk/*.h) data/t3_vectors.jsonl
+	$(CC) $(CFLAGS) -o $@ t3PduTest.c $(T3PDU)
 
-run: run-tier3
-run-tier3: tier3ProtoTest
-	./tier3ProtoTest
-.PHONY: run-tier3
+run: run-t3pdu
+run-t3pdu: t3PduTest
+	./t3PduTest
+.PHONY: run-t3pdu
 
 # USB / network audio building blocks (docs/spec/usb-audio.md): USRP framing, G.711 mu-law, the link's PTT watchdogs,
 # the PCM jitter buffer between drifting clocks (core/usbaudio, not in the firmware yet)
