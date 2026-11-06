@@ -1178,6 +1178,21 @@ run: run-t3pdu
 run-t3pdu: t3PduTest
 	./t3PduTest
 .PHONY: run-t3pdu
+TESTS   += t3MsTest
+t3MsTest: t3MsTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)
+	$(CC) $(CFLAGS) -o $@ t3MsTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
+run: run-t3ms
+run-t3ms: t3MsTest
+	./t3MsTest
+.PHONY: run-t3ms
+# The same engine on off-air recordings (not in the repository): skips unless RFOUNDRY_T3_RECORDINGS names a manifest
+TESTS   += t3ReplayTest
+t3ReplayTest: t3ReplayTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)
+	$(CC) $(CFLAGS) -o $@ t3ReplayTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
+run: run-t3replay
+run-t3replay: t3ReplayTest
+	./t3ReplayTest
+.PHONY: run-t3replay
 
 # USB / network audio building blocks (docs/spec/usb-audio.md): USRP framing, G.711 mu-law, the link's PTT watchdogs,
 # the PCM jitter buffer between drifting clocks (core/usbaudio, not in the firmware yet)
