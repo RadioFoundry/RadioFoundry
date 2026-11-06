@@ -25,8 +25,8 @@ extern const hal_bcast_t d578uv_bcast;	// the KTMicro receiver's broadcast FM (r
 // 0x1E. In menus the stock firmware takes 0x14 and 0x16 as up and down, 0x0E confirms and 0x0F exits. Which printed key
 // each is isn't traced, so the others keep their stock code. PTT and the microphone's Up and Down come from the plain
 // hand microphone's lines (front_io.h) or the serial microphone's frames, which add its keypad (the KEY_MIC_ digits,
-// '*', '#', A/B and the programmable PA..PD; drivers/input/anytone_mic). The serial microphone's Menu and Exit are the
-// front panel's
+// '*', '#', the A/B button above PTT and the A..D keys; drivers/input/anytone_mic). The microphone's EXIT and MENU are
+// its C and D
 enum {
 	KEY_UP, KEY_C15, KEY_DOWN, KEY_MENU,
 	KEY_C17, KEY_C18, KEY_C19, KEY_EXIT,

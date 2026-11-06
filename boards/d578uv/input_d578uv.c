@@ -10,10 +10,11 @@
 //
 // The serial keypad microphone (the stock default "Hand Type") sends frames on PA10 at 115200 (anytone_mic.h). The
 // USART listens on PA10 all the time, so either microphone works without a setting: once a frame is accepted the keys
-// come from the frames and PA9 becomes the USART's TX for the answers; when the frames stop for
-// ANYTONE_MIC_TIMEOUT_MS, PA9 is an input again. While bytes arrive (MIC_ACTIVITY_MS after the last) the two lines
-// aren't read as keys, so a frame's start bits never look like PTT. A plain microphone's PTT shows the USART a break
-// (a framing error), which doesn't count as a byte. Debouncing is the core's, as for the other keys.
+// come from the frames and PA9 becomes the USART's TX for the radio's answers and status frames, which the key scan
+// sends (anytone_mic_out); when the microphone stops answering for ANYTONE_MIC_TIMEOUT_MS, PA9 is an input again.
+// While bytes arrive (MIC_ACTIVITY_MS after the last) the two lines aren't read as keys, so a frame's start bits never
+// look like PTT. A plain microphone's PTT shows the USART a break (a framing error), which doesn't count as a byte.
+// Debouncing is the core's, as for the other keys.
 #include "d578uv.h"
 #include "front_io.h"
 #include "pins.h"
@@ -34,7 +35,7 @@ static int32_t enc_taken;
 static anytone_mic_t mic;
 static volatile uint32_t mic_byte_ms;	// when the USART last received a byte
 static volatile bool mic_byte_seen;
-static volatile bool mic_tx;		// PA9 is the USART's TX
+static bool mic_tx;			// PA9 is the USART's TX (the key scan's)
 
 // The radio's key bit for a microphone key code, -1 for none
 static int8_t mic_key_bit(uint8_t code)
@@ -69,7 +70,7 @@ static int8_t mic_key_bit(uint8_t code)
 	}
 }
 
-// No RTOS calls: the answer is one byte, written straight into the empty transmit register
+// No RTOS calls; it only receives: the answers go out from the key scan
 void MIC_USART_HANDLER(void)
 {
 	int32_t c = mcu_uart_take(MIC_USART);
@@ -83,13 +84,7 @@ void MIC_USART_HANDLER(void)
 	uint32_t now = hal_millis();
 	mic_byte_ms = now;
 	mic_byte_seen = true;
-	if (anytone_mic_byte(&mic, (uint8_t)c, now)) {
-		if (!mic_tx) {
-			mcu_pin_af(PIN_MIC_LINE9, MIC_TX_AF, false);
-			mic_tx = true;
-		}
-		mcu_uart_put(MIC_USART, ANYTONE_MIC_ACK);
-	}
+	(void)anytone_mic_byte(&mic, (uint8_t)c, now);
 }
 
 void d578uv_hand_mic(hal_hand_mic_stats_t *st)
@@ -163,11 +158,20 @@ static uint32_t mic_scan(void)
 	bool ptt = mic.ptt;
 	uint8_t key = mic.key;
 	bool busy = mic_byte_seen && now - mic_byte_ms < MIC_ACTIVITY_MS;
-	if (!present && mic_tx) {
+	uint8_t out[ANYTONE_MIC_STATUS_LEN + 4u];
+	uint8_t n = anytone_mic_out(&mic, now, out, sizeof(out));
+	NVIC_EnableIRQ(MIC_USART_IRQn);
+	if (present && !mic_tx) {
+		mcu_pin_af(PIN_MIC_LINE9, MIC_TX_AF, false);
+		mic_tx = true;
+	} else if (!present && mic_tx) {
 		mcu_pin_in(PIN_MIC_LINE9, MCU_PULL_UP);
 		mic_tx = false;
 	}
-	NVIC_EnableIRQ(MIC_USART_IRQn);
+	// Up to 20 bytes at 115200, about 1.7 ms, once a second and after each frame
+	for (uint8_t i = 0; i < n; i++) {
+		mcu_uart_put(MIC_USART, out[i]);
+	}
 	uint32_t m = 0;
 	if (present) {
 		int8_t bit = mic_key_bit(key);
