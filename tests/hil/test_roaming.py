@@ -9,6 +9,10 @@ The radio-only tests never transmit: roaming starts passive (set.roam_probe=pass
 bench test uses the wake probe (the radio transmits BS_Dwn_Act on each site it visits) and the SDR bench's modem as
 a second site (tools/bench/bench_repeater.py, which keys only when woken). The beacon tests have the bench repeater
 key an idle beacon (bench_repeater.py --beacon) and the radio only listens (the survey, dmr-roaming.md 4.8 - 4.10).
+The bench tests use the first duplex DMR channel receiving --roam-rx as the bench site. When the codeplug's sites
+transmit where the bench can't serve them, bench_sites() writes the TX frequencies over CPS for the test and puts the
+codeplug back after (--allow-codeplug-write): the bench site on --roam-tx, any other site the rig may not transmit on
+(tx_mhz) on --roam-rx, where the bench repeater doesn't listen.
 
 Pass criteria:
 - test_roam_section: roam.built=1 and every key present; state one of off / watch / search / locked; the settings in
@@ -49,6 +53,7 @@ unused pair, roaming allowed for the zone (the tests turn it on and put it back)
 
 (the pair in the rig's tx_mhz too: hil_config.py)
 """
+import contextlib
 import json
 import time
 
@@ -56,6 +61,7 @@ import pytest
 
 from rfoundry_hil import skip
 from rfoundry_debug import as_int
+import hil_config
 from hil_config import rig
 
 ROAM_KEYS = ("roam.built", "roam.zone_on", "roam.state", "roam.why", "roam.pending", "roam.blocked", "roam.sites",
@@ -97,6 +103,47 @@ def roaming(radio):
             L.setting(k, saved[k])
         if radio.core().get("zone_index") == zone and (roam(radio).get("roam.zone_on") == "1") != was_on:
             L.roam("zone_on" if was_on else "zone_off")
+
+
+@contextlib.contextmanager
+def bench_sites(radio, backup_dir, pytestconfig, rx, tx):
+    """The roaming zone's sites on frequencies this bench serves, for the test. The bench site (the first duplex DMR
+    channel receiving rx) transmits on tx, and every other site whose TX the rig may not transmit on (tx_mhz) transmits
+    on rx instead, so a wake probe there stays on an allowed frequency where the bench repeater doesn't listen. Written
+    over CPS and put back afterwards (needs --allow-codeplug-write); nothing is written when the codeplug has them so
+    already."""
+    radio.find_channel(round(rx * 1e6), "dmr", duplex=True)
+    v = zone_on(radio)
+    if v["roam.state"] == "off":
+        skip("state", "the bench repeater's channel is not a site with a second site (same talkgroup) in its zone")
+    bench_ch = v["channel_number"]
+    numbers = {v[f"site.{i}"].split(":")[0] for i in range(as_int(v["roam.sites"]))}
+    want = {}           # channel number -> the TX it needs
+    size = as_int(radio.core().get("zone_size") or "0")
+    for pos in range(size):
+        radio.link.zone_pos(pos)
+        c = wait_roam(radio, lambda x: x.get("zone_pos") == str(pos), 2.0, f"position {pos}")
+        n, cur = c.get("channel_number"), as_int(c.get("tx_hz") or "0")
+        if n == bench_ch and cur != round(tx * 1e6):
+            want[int(n)] = round(tx * 1e6)
+        elif n in numbers and n != bench_ch and not hil_config.tx_allowed(pytestconfig, cur / 1e6):
+            want[int(n)] = round(rx * 1e6)
+    if not want:
+        yield
+        return
+    if not pytestconfig.getoption("--allow-codeplug-write"):
+        skip("opt_in", f"the zone's sites need TX frequencies the bench serves ({want}): run with "
+                       "--allow-codeplug-write (written for the test, put back after)")
+    import cps_client
+    from test_cps import codeplug_edited
+
+    def edit(img):
+        for n, hz in want.items():
+            cps_client.set_channel_tx(img, n, hz)
+    with codeplug_edited(radio, backup_dir, edit, "roam"):
+        radio.find_channel(round(rx * 1e6), "dmr", duplex=True)
+        radio.wait_for(lambda x: x.get("tx_hz") == str(round(tx * 1e6)), timeout=5, what="the bench site's TX")
+        yield
 
 
 def zone_on(radio):
@@ -197,14 +244,19 @@ def test_roam_now_passive(roaming):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
-def test_roam_to_bench_repeater(roaming, sdr_bench, pytestconfig):
+def test_roam_to_bench_repeater(roaming, sdr_bench, pytestconfig, backup_dir):
     rx, tx = pytestconfig.getoption("--roam-rx"), pytestconfig.getoption("--roam-tx")
     if not rx or not tx:
         skip("opt_in", "give the bench repeater's pair as the radio sees it: --roam-rx MHz (radio receives, bench "
                        "transmits) --roam-tx MHz (radio transmits, bench receives); a pair you are licensed for")
+    with bench_sites(roaming, backup_dir, pytestconfig, rx, tx):
+        _roam_to_bench_repeater(roaming, sdr_bench, pytestconfig, rx, tx)
+
+
+def _roam_to_bench_repeater(roaming, sdr_bench, pytestconfig, rx, tx):
     cc = rig(pytestconfig, "dmr-cc")
     L = roaming.link
-    pos_b = roaming.find_channel(round(rx * 1e6), "dmr")
+    pos_b = roaming.find_channel(round(rx * 1e6), "dmr", duplex=True)
     v = zone_on(roaming)
     if v["roam.state"] == "off":
         skip("state", "the bench repeater's channel is not a site with a second site in its zone")
@@ -227,22 +279,15 @@ def test_roam_to_bench_repeater(roaming, sdr_bench, pytestconfig):
     v = roam(roaming)
     r0, p0 = as_int(v["roam.roams"]), as_int(v["roam.probes"])
     with sdr_bench.lease():
-        p = sdr_bench.ssh_bg(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} bench_repeater.py --rx {tx} --tx {rx} "
-                             f"--cc {cc} --power {sdr_bench.tx_power} --seconds 60 --json")
-        time.sleep(3)
-        L.roam("now")
-        v = wait_roam(roaming, lambda x: x.get("channel_number") == bench_ch and x.get("roam.state") == "watch",
-                      40.0, "roamed to the bench repeater")
+        p = sdr_bench.repeater_start(tx, rx, cc, 60)       # input: what the radio sends on; output: what it hears
+        try:
+            L.roam("now")
+            v = wait_roam(roaming, lambda x: x.get("channel_number") == bench_ch and x.get("roam.state") == "watch",
+                          40.0, "roamed to the bench repeater")
+        finally:
+            events, out = bench_events(p)
         assert as_int(v["roam.roams"]) == r0 + 1
         assert as_int(v["roam.probes"]) > p0
-        p.terminate()
-        out, _ = p.communicate(timeout=10)
-    events = []
-    for line in (out or "").splitlines():
-        try:
-            events.append(json.loads(line))
-        except ValueError:
-            pass
     assert any("wakeup" in e for e in events), \
         f"bench_repeater.py saw no wakeup: {out[-800:] if out else ''}"
 
@@ -270,7 +315,7 @@ def beacon_setup(roaming, pytestconfig):
                        "are licensed for), in a zone with a second repeater channel on the same talkgroup")
     every, length = pytestconfig.getoption("--roam-beacon"), pytestconfig.getoption("--roam-beacon-len")
     L = roaming.link
-    pos_b = roaming.find_channel(round(rx * 1e6), "dmr")
+    pos_b = roaming.find_channel(round(rx * 1e6), "dmr", duplex=True)
     v = zone_on(roaming)
     if v["roam.state"] == "off":
         skip("state", "the bench repeater's channel is not a site with a second site (same talkgroup) in its zone")
@@ -285,14 +330,18 @@ def beacon_setup(roaming, pytestconfig):
 
 def bench_beacon(sdr_bench, pytestconfig, rx, tx, every, length, seconds):
     cc = rig(pytestconfig, "dmr-cc")
-    return sdr_bench.ssh_bg(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} bench_repeater.py --rx {tx} --tx {rx} "
-                            f"--cc {cc} --power {sdr_bench.tx_power} --seconds {seconds} --beacon {every} "
-                            f"--beacon-len {length} --json")
+    return sdr_bench.repeater_start(tx, rx, cc, seconds, extra=f"--beacon {every} --beacon-len {length}")
 
 
 def bench_events(p):
+    """End the bench repeater (repeater_start) and return (its JSON events, its output)."""
     p.terminate()
-    out, _ = p.communicate(timeout=10)
+    if hasattr(p, "lines"):         # a bench board job or a shared bench's modem job: its lines as they came
+        if getattr(p, "reader", None) is not None:
+            p.reader.join(5)
+        out = "".join(p.lines)
+    else:
+        out, _ = p.communicate(timeout=10)
     events = []
     for line in (out or "").splitlines():
         try:
@@ -306,7 +355,15 @@ def bench_events(p):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
-def test_roam_beacon_home(roaming, sdr_bench, pytestconfig):
+def test_roam_beacon_home(roaming, sdr_bench, pytestconfig, backup_dir):
+    rx, tx = pytestconfig.getoption("--roam-rx"), pytestconfig.getoption("--roam-tx")
+    if not rx or not tx:
+        beacon_setup(roaming, pytestconfig)         # the skip that says what to give
+    with bench_sites(roaming, backup_dir, pytestconfig, rx, tx):
+        _roam_beacon_home(roaming, sdr_bench, pytestconfig)
+
+
+def _roam_beacon_home(roaming, sdr_bench, pytestconfig):
     rx, tx, every, length, pos_b, bench_ch = beacon_setup(roaming, pytestconfig)
     v0 = roam(roaming)
     keys = ("roam.searches", "roam.roams", "roam.probes", "roam.surveys", "roam.beacons", "roam.cuts")
@@ -344,7 +401,15 @@ def test_roam_beacon_home(roaming, sdr_bench, pytestconfig):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
-def test_roam_beacon_other_site(roaming, sdr_bench, pytestconfig):
+def test_roam_beacon_other_site(roaming, sdr_bench, pytestconfig, backup_dir):
+    rx, tx = pytestconfig.getoption("--roam-rx"), pytestconfig.getoption("--roam-tx")
+    if not rx or not tx:
+        beacon_setup(roaming, pytestconfig)         # the skip that says what to give
+    with bench_sites(roaming, backup_dir, pytestconfig, rx, tx):
+        _roam_beacon_other_site(roaming, sdr_bench, pytestconfig)
+
+
+def _roam_beacon_other_site(roaming, sdr_bench, pytestconfig):
     rx, tx, every, length, pos_b, bench_ch = beacon_setup(roaming, pytestconfig)
     L = roaming.link
     v = roam(roaming)
