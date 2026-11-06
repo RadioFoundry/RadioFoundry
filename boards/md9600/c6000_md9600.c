@@ -329,10 +329,11 @@ void md9600_c6000_fm_tx_end(void)
 #if MD9600_FM_RX_TAP
 // The fill the converter keeps: one block (183 inputs) plus two capture bursts of 32, about 28 ms of latency
 #define FM_TAP_TARGET		256u
-// The ring's 15-bit swing times this: speech at about 400 counts rms on the capture comes out near -26 dBFS. A guess
-// until a known deviation is measured through it
-#ifndef MD9600_FM_RX_GAIN
-#define MD9600_FM_RX_GAIN	4
+// The ring's 15-bit swing times this, in 1/256: the codec level of the other HR_C6000 radios (usb-audio.md 6.1). A
+// 1 kHz tone at 1.5 kHz peak deviation (UHF, the SDR bench, 2026-11-06) gave 8735 rms at a gain of 4 here and 3520
+// rms on a DM-1701's FM tap: 4 * 3520 / 8735 = 1.61
+#ifndef MD9600_FM_RX_GAIN_Q8
+#define MD9600_FM_RX_GAIN_Q8	413
 #endif
 
 static audio_block_cb_t stream_cb;
@@ -371,7 +372,7 @@ static void stream_block(const int16_t *mic, int16_t *spk, void *ctx)
 			memset(fm_block, 0, sizeof(fm_block));
 		} else {
 			for (uint32_t i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-				int32_t v = (int32_t)fm_block[i] * MD9600_FM_RX_GAIN;
+				int32_t v = ((int32_t)fm_block[i] * MD9600_FM_RX_GAIN_Q8) / 256;
 				fm_block[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
 			}
 		}
