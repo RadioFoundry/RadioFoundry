@@ -181,14 +181,18 @@ static void test_unread(void)
 	channel_t c = make("Kept", 433000000, 433000000), back;
 	fresh();
 	CHECK(codeplug_set_channel(2, &c) && codeplug_set_channel(129, &c));	// with the built-in 1-6
-	// Record 2 unreadable: it stays in use, its slot isn't offered, and a save in its bank keeps its bit
+	// Record 2 unreadable: hidden, its bank unknown. No slot there is offered or taken and nothing deleted, a channel
+	// shown is still saved, and no bitmap is written: it is back at the next index
 	sim_flash_bad_read(EE + 0x3790u + 56u, 56u);
 	CHECK(codeplug_init() == CODEPLUG_OPENFW);
 	sim_flash_bad_read(0, 0);
-	CHECK(codeplug_free_channel() == 7);
+	CHECK(!codeplug_channel(2, &back));
+	CHECK(codeplug_free_channel() == 130);
 	c = make("Other", 433100000, 433100000);
-	CHECK(codeplug_set_channel(7, &c));
+	CHECK(!codeplug_set_channel(7, &c) && !codeplug_delete_channel(3));
+	CHECK(codeplug_set_channel(3, &c));
 	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel(2, &back) && strcmp(back.name, "Kept") == 0);
+	CHECK(codeplug_channel(3, &back) && strcmp(back.name, "Other") == 0);
 	// Bank 1's bitmap unreadable: its channels unknown, nothing written there
 	uint8_t bits[16];
 	memcpy(bits, &sim_flash_data[FL + 0x7B1B0u], sizeof bits);
@@ -196,9 +200,29 @@ static void test_unread(void)
 	CHECK(codeplug_init() == CODEPLUG_OPENFW);
 	sim_flash_bad_read(0, 0);
 	CHECK(!codeplug_set_channel(130, &c));
-	CHECK(codeplug_delete_channel(129));	// not seen: nothing to delete
+	CHECK(!codeplug_delete_channel(129));
 	CHECK(memcmp(bits, &sim_flash_data[FL + 0x7B1B0u], sizeof bits) == 0);
 	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel(129, &back) && strcmp(back.name, "Kept") == 0);
+	// A zone read without bank 1's channels isn't written back without them
+	zone_t z, zb;
+	memset(&z, 0, sizeof z);
+	strcpy(z.name, "Both");
+	z.count = 2;
+	z.channels[0] = 2;
+	z.channels[1] = 129;
+	sim_flash_bad_read(FL + 0x7B1B0u, 16u);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+	sim_flash_bad_read(0, 0);
+	CHECK(codeplug_zone(0, &zb) && zb.count >= 2);		// the virtual zone, read without 129
+	CHECK(!codeplug_set_zone(0, &zb));			// storing it would drop 129
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_set_zone(0, &z));
+	sim_flash_bad_read(FL + 0x7B1B0u, 16u);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+	sim_flash_bad_read(0, 0);
+	CHECK(codeplug_zone(0, &zb) && zb.count == 1);
+	CHECK(!codeplug_set_zone(0, &zb));
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_zone(0, &zb) && zb.count == 2 && zb.channels[1] == 129);
+	CHECK(codeplug_delete_zone(0));
 	// The only bank in use unreadable looks blank: the first edit doesn't materialize over it
 	for (uint16_t n = 1; n <= 7; n++) {
 		CHECK(codeplug_delete_channel(n));
@@ -208,6 +232,14 @@ static void test_unread(void)
 	sim_flash_bad_read(0, 0);
 	CHECK(!codeplug_set_channel(1, &c));
 	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel(129, &back) && strcmp(back.name, "Kept") == 0);
+	CHECK(sim_flash_violations() == 0);
+	// Blank flash (every bitmap bit set, every record erased): a record that can't be read makes no codeplug of it
+	fresh();
+	sim_flash_bad_read(EE + 0x3790u, 56u);
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_channel_count() == 6);
+	sim_flash_bad_read(0, 0);
+	CHECK(!codeplug_set_channel(10, &c));
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_set_channel(10, &c));
 	CHECK(sim_flash_violations() == 0);
 }
 
