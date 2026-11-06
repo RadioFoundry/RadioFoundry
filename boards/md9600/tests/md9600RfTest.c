@@ -192,13 +192,28 @@ static void test_plan(void)
 	CHECK(p.words[3] == 0x1FF404u && (p.words[5] >> 4) == (0x20000u | 124u));	// 174 / 1.4 = 124.29
 #endif
 #if CONFIG_MD9600_V5
+	// The whole retune as the original firmware writes it: no reset, R0 first, the 0x3F / 0x3E pair last
+	static const uint32_t v5_145[] = {
+		0x00003Eu, 0x04305Cu, 0x0100D5u, 0x025555u, 0x030000u, 0x050108u, 0x068581u,
+		0x071024u, 0x080430u, 0x290230u, 0x2A0108u, 0x00003Fu, 0x00003Eu,
+	};
 	CHECK(md9600_pll_plan(MD9600_REV_V5, 145000000u, false, &p));
-	CHECK(p.vco_hz == 194950000u && p.count == LMX2571_WORDS);
-	CHECK(p.words[6] == 0x050108u);		// pre-divider 8 on VHF
-	CHECK((p.words[2] & 0xFFFu) == 92u);	// 194.95 / 2.1 = 92.83
+	CHECK(p.vco_hz == 194950000u && p.count == LMX2571_WORDS - 1u && p.count == sizeof v5_145 / sizeof v5_145[0]);
+	for (uint8_t i = 0; i < p.count && i < sizeof v5_145 / sizeof v5_145[0]; i++) {
+		CHECK(p.words[i] == v5_145[i]);	// pre-divider 8 on VHF; 194.95 / 2.1 = 92.83
+	}
 	CHECK(md9600_pll_plan(MD9600_REV_V5, 440000000u, true, &p));
-	CHECK(p.words[6] == 0x050104u && (p.words[2] & 0xFFFu) == 104u);	// 440 / 4.2 = 104.76
+	CHECK(p.words[5] == 0x050104u && (p.words[1] & 0xFFFu) == 104u);	// 440 / 4.2 = 104.76
+	// The reset is a power-up word of its own
+	uint32_t w = 0;
+	CHECK(md9600_pll_reset_word(MD9600_REV_V5, &w) && w == 0x002000u);
 #endif
+#if CONFIG_MD9600_V4
+	uint32_t w4 = 0;
+	CHECK(!md9600_pll_reset_word(MD9600_REV_V4, &w4) && w4 == 0);
+#endif
+	uint32_t wu = 0;
+	CHECK(!md9600_pll_reset_word(MD9600_REV_UNKNOWN, &wu) && wu == 0);
 	CHECK(!md9600_pll_plan(MD9600_REV_V5, 300000000u, false, &p));
 	CHECK(!md9600_pll_plan(MD9600_REV_COUNT, 446000000u, false, &p));
 }

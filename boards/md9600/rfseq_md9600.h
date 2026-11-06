@@ -77,11 +77,15 @@ typedef enum {
 
 typedef enum { MD9600_RF_OFF, MD9600_RF_RX, MD9600_RF_TX } md9600_rf_state_t;
 
-// Timing (all unverified: no radio has been measured). The synthesizers have no lock detect line, so each gets a fixed
-// settle time after its words; with a lock indication the wait polls it every MD9600_LOCK_POLL_US up to the timeout
+// Timing (unverified unless noted: no radio has been measured). The synthesizers have no lock detect line, so each
+// gets a fixed settle time after its words; with a lock indication the wait polls it every MD9600_LOCK_POLL_US up to
+// the timeout. The LMX2571 transmit settle and its reset wait are what the original V26.45 firmware waits (12 and 10
+// system ticks)
 #define MD9600_SETTLE_SKY72310_US	2000u
 #define MD9600_SETTLE_PLL1590_US	2000u
-#define MD9600_SETTLE_LMX2571_US	2000u	// includes the VCO calibration after the 0x3F / 0x3E pair
+#define MD9600_SETTLE_LMX2571_US	2000u	// receive: includes the calibration after the 0x3F / 0x3E pair
+#define MD9600_SETTLE_LMX2571_TX_US	12000u	// transmit: from the last word to the transmitter supply
+#define MD9600_LMX2571_RESET_US		10000u	// after the power-on reset of both chips
 #define MD9600_LOCK_TIMEOUT_US		10000u
 #define MD9600_LOCK_POLL_US		100u
 #define MD9600_IF_CAL_US		2000u	// AK2365A discriminator calibration: 1.3 ms in the data sheet
@@ -132,7 +136,8 @@ typedef struct {
 // Hold everything off: PA loop and transmitter supplies first, then the receivers. rev must be usable (its driver
 // built) or MD9600_REV_UNKNOWN
 void md9600_rf_init(md9600_rf_t *rf, const md9600_rf_ops_t *ops, md9600_rev_t rev, bool confirmed);
-// After power-up: both receivers powered, the AK2365A reset pulse (V1-V4), the V4 VHF synthesizer kick
+// After power-up: both receivers powered, the AK2365A reset pulse (V1-V4), the V4 VHF synthesizer kick, the LMX2571
+// reset (V4A / V5)
 md9600_rf_err_t md9600_rf_power_up(md9600_rf_t *rf);
 
 // Receive on hz (wide = 25 kHz). From any state: a running transmission is ramped down first

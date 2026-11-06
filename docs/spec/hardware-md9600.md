@@ -136,9 +136,9 @@ applied, used for the standby flag (10.2) and for non-permanent settings.
 | PE7 | FM_MUTE: FM audio to the volume control, high = unmuted |  |
 | PE8 / PE9 | VCO_VCC_U_SW / VCO_VCC_V_SW: per band, high = RX VCO, low = TX VCO |  |
 | PE10 | PTT (hand mic), input with pull-up, active low |  |
-| PE11 / PE12 | V1-V4: IF_CS_V / IF_CS_U (IF chip selects). **V5: VHF / UHF IF bandwidth, high = 25 kHz** | 5.4 |
-| PE13 / PE14 | V1-V4: IF_DATA / IF_CLK. **V5: connect the VHF / UHF IF to the HR_C6000** (one high, the other low) | 5.4 |
-| PE15 | V1-V4: IF_RST (IF chip reset, active low) | V5 use unknown (?) |
+| PE11 / PE12 | V1-V4: IF_CS_V / IF_CS_U (IF chip selects). **V5: VHF / UHF IF bandwidth, high = 20 or 25 kHz** | 5.4, as V26.45 drives them |
+| PE13 / PE14 | V1-V4: IF_DATA / IF_CLK. **V5: connect the VHF / UHF IF to the HR_C6000** (high = connected) | 5.4, as V26.45 drives them |
+| PE15 | V1-V4: IF_RST (IF chip reset, active low) | V4A / V5: unused, V26.45 leaves it an input |
 
 ### 2.6 Reset-time levels and SWD
 
@@ -261,21 +261,33 @@ reg 6 = 0. R: VHF 12,
 UHF RX 8, UHF TX 4. **No x2 on VHF** here (VCO on the LO). Write order 5, 6, 3, 4, 1, 2. The V4 VHF synthesizer must
 be programmed (145 MHz RX) right after power-on or it never locks.
 
-**V5 (and V4A): TI LMX2571, one per band** ("PLL 2571" on a retailer page, unverified). 24-bit words: 8-bit address then 16 data bits. R: VHF
-8, UHF 4; 24-bit fraction; reg 0x04 = 0x3000 + (N & 0xFF), reg 0x01 = fraction >> 16, reg 0x02 = fraction low 16,
+**V5 (and V4A): TI LMX2571, one per band**, as the original V26.45 firmware programs it (read from its image, not yet
+checked on a radio). 24-bit words: 8-bit address then 16 data bits. R: VHF 8, UHF 4; 24-bit fraction, the remainder
+of VCO / f_pd times 2^24, truncated; reg 0x04 = 0x3000 + N, reg 0x01 = fraction >> 16, reg 0x02 = fraction low 16,
 reg 0x03 = 0, reg 0x05 = 0x100 + R, reg 0x06 = 0x8581, reg 0x07 = 0x1024, reg 0x08 = 0x0430, reg 0x29 = 0x0230,
-reg 0x2A = 0x0108, reg 0x00 = 0x003E. Sequence: reset (0x00 = 0x2000), 0x00, 0x04, 0x01, 0x02, 0x03, 0x05, 0x06, 0x07,
-0x08, 0x29, 0x2A, then 0x00 = 0x003F (start calibration) and 0x00 = 0x003E. The clock is left low after each word.
-Delays after reset and calibration may be needed (?).
+reg 0x2A = 0x0108, reg 0x00 = 0x003E. Sequence on every retune: 0x00, 0x04, 0x01, 0x02, 0x03, 0x05, 0x06, 0x07, 0x08,
+0x29, 0x2A, then 0x00 = 0x003F (start calibration) and 0x00 = 0x003E. The clock is left low after each word. The reset
+(0x00 = 0x2000) goes to each chip once at power-up, VHF then UHF, followed by a wait of 10 system ticks (nominally
+10 ms), and never on a retune. The words are the same for RX and TX; only the frequency and R change.
+
+The R above is for the default of a 2-bit per-channel setting (probably the CPS reference frequency choice; inferred).
+Its other values give R 5 or 4 (VHF) and 3 or 2 (UHF); RadioFoundry uses only the default. The LO side follows the
+band's upper edge from calibration (11.2): at or below 200 MHz high side, else low side, so VHF is high side and UHF
+low side as in 5.2.
 
 From the LMX2571 data sheet [TI]: the word is a R/W bit (0 = write), a 7-bit address and 16 data bits, clocked in on
 the rising edge and latched when LE rises. In these values R4 is FRAC_ORDER 3 (third-order modulator) and PLL_N (12
 bits, at most 1023), R1 holds PLL_DEN[23:16] (0) and PLL_NUM[23:16], R2 PLL_NUM[15:0], R3 PLL_DEN[15:0] (0), R5 PLL_R 1
 and the pre-divider R, R6 the multiplier bypassed, R8 EXTVCO_SEL (PLL mode with an external VCO) and FSK_EN. The data
-sheet asks for DEN = 0 when FSK_EN is set; RadioFoundry takes the fraction over 2^24 then (unverified). The data sheet's power-on
-sequence also writes R60, R58, R53 and the rest; this sequence doesn't (unverified).
+sheet asks for DEN = 0 when FSK_EN is set; the fraction is then over 2^24, as V26.45 computes it. R7 turns both of the
+chip's RF output buffers off (the external VCO is the output). R42's charge pump down current is not equal to R41's up
+current, though the data sheet asks for equal; that is V26.45's value. The data sheet's power-on sequence also writes
+R60, R58, R53 and the rest; V26.45 writes no register outside the set above, and neither does RadioFoundry. A reset
+restores the chip's defaults (its own VCO, the TX output buffer on, the external VCO's charge pump off) until R7 and
+R8 come again, which is why neither resets on a retune.
 
-No lock detect input is wired in the reference port's pin map for any revision (?).
+No lock detect input is wired in the reference port's pin map for any revision (?). V26.45 reads no synthesizer pin and
+never enables the LMX2571's lock detect output.
 
 ### 5.4 IF receiver per revision
 
@@ -292,8 +304,11 @@ the wide demodulator level, the +-6 kHz filter and the 50.4 MHz second LO; 0xE9 
 filter. Register 2 = 0x1D starts the discriminator calibration (1.3 ms). Register 4 = 0xAA is the software reset. After
 power-up the chip needs a hardware reset (RSTN low at least 1 us).
 
-**V5: no programmable IF chip.** PE11 / PE12 set the VHF / UHF IF filter (high = 25 kHz), PE13 / PE14 connect the VHF
-or UHF IF to the HR_C6000. The V5 IF part is not identified (?).
+**V5: no programmable IF chip.** As V26.45 drives the lines: PE11 / PE12 set the VHF / UHF IF filter, high for a 20
+or 25 kHz channel and low for 12.5 kHz (only the receiving band's line is written). PE13 / PE14 connect the VHF / UHF
+IF to the HR_C6000, high = connected: the receiving band's high and the other low, both high in dual watch, both low
+before a transmit retune and back on last in the return to receive. PE15 is not used. The V5 IF part is not
+identified (?); the firmware doesn't name it.
 
 ### 5.5 Receive and transmit switching
 
@@ -302,10 +317,14 @@ band; DAC1 (UHF) or DAC2 (VHF) = the calibrated front-end tuning voltage; IF set
 U_V_AF_SW to the band.
 
 TX: both R5 off, synthesizer to the carrier with VCO_VCC low, DAC2 = APC drive (for both bands: PA5 serves the APC in
-TX), then the band's T5 on and the other off, then RF_APC_SW on. On V4 (and V5, unverified) the other band's C5 supply
-goes off while one band transmits; V1-V3 leave both on (unverified). Per DMR burst only T5 and RF_APC_SW toggle; return to
-RX drops RF_APC_SW, both T5, then reprograms for RX. The ordering beyond that is the reference port's; no
-lock check (?).
+TX), then the band's T5 on and the other off, then RF_APC_SW on. On V4 and V4A / V5 the other band's C5 supply goes off
+while one band transmits (V4A / V5: as V26.45 does it); V1-V3 leave both on (unverified). Per DMR burst only T5 and
+RF_APC_SW toggle, with no retune; return to RX drops RF_APC_SW, both T5, then reprograms for RX. There is no lock check.
+
+V26.45 (V4A / V5) timing: the transmit retune drops RF_APC_SW, both R5 and both IF routes, sets the supplies and VCO
+lines, writes the words, then waits 12 system ticks (nominally 12 ms) before T5 and RF_APC_SW. The return to receive
+writes the words, turns R5 on, waits 4 ticks, then connects the IF routes. The ordering beyond that is the reference
+port's.
 
 ### 5.6 Power levels and control
 
@@ -317,7 +336,8 @@ only working well on DMR at full power (unverified). RadioFoundry: refuse TX wit
 ### 5.7 RSSI, noise, squelch
 
 Analog per band: VHF RSSI PA0, UHF RSSI PB0, VHF noise PC5, UHF noise PB1. A fit, not a measurement (?): V1/V2/V4
--135 dBm (VHF) / -145 dBm (UHF) + raw8 / 2; V5 -155 dBm + raw8 / 1.95 (raw8 = the 12-bit average >> 4). Calibration also has RSSI points at -120 and -70 dBm and squelch open / close rows (11.2).
+-135 dBm (VHF) / -145 dBm (UHF) + raw8 / 2; V5 -155 dBm + raw8 / 1.95 (raw8 = the 12-bit average >> 4). V26.45 has no
+dBm conversion (it compares raw readings with the calibration's squelch rows), so the V5 fit doesn't come from it. Calibration also has RSSI points at -120 and -70 dBm and squelch open / close rows (11.2).
 
 The noise line follows the modulation. Under a -73 dBm NOAA carrier (VHF, 25 kHz), it reads about 100 counts in a pause and
 peaks at 900-1500 in speech for tens of ms; an empty channel holds 1700-1900 (first radio, 2026-11-03). The squelch
@@ -562,7 +582,7 @@ firmware in normal mode, which shows `/0x08000000/03*016Kg` under the same USB I
 
 USB DFU 0483:DF11 with TYT's commands, the DM-1701's protocol ([hardware-dm1701.md](hardware-dm1701.md) 15.2). The image is XORed with the MD-9600's 1024-byte key, index from the start of the application image; key SHA-256
 c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae, first bytes A2 FA BB 4B
-([hardware-dm1701.md](hardware-dm1701.md) 15.3). The key can be derived from a vendor file (as for the DM-1701 and MD-380): it works on every V06.09 and V16.45 file (measured).
+([hardware-dm1701.md](hardware-dm1701.md) 15.3). The key can be derived from an original firmware file (as for the DM-1701 and MD-380): it works on every V06.09, V16.45 and V26.45 file (measured).
 
 ### 14.3 Stock firmware files
 
@@ -576,11 +596,16 @@ Files examined):
 |---|---|---|---|
 | 06.09 | V1-V3 (SKY72310) | `MD9600-CSV-V06.09.bin`, `-CSV-GPS-P06.09`, `-REC-D06.09`, `-GPS-REC-S06.09` | model string "MD-9600" at 0x10 |
 | 16.45 | V4 ("PLL1590") | `MD9600-CSV(V4)-V16.45.bin`, `-CSV-GPS(V4)-P16.45`, `-REC(V4)-D16.45`, `-GPS-REC(V4)-S16.45` | model string blank |
-| 26.45 | V5 ("2571") | `MD9600-CSV(2571V5)-V26.45.bin` | not on hand |
+| 26.45 | V5 ("2571") | `MD9600-CSV(2571V5)-V26.45.bin`, `-CSV-GPS(2571V5)-P26.45`, `-REC(2571V5)-D26.45`, `-GPS-REC(2571V5)-S26.45` | as 16.45 |
+| 26.57 | V4A ("2571V4") | `MD9600-REC(2571V4)-D26.57.bin` | as 16.45 |
 
-All eight: two segments, (0x00060000, 0x59800) for the external flash resources and (0x0800C000, 0xB1800..0xB6800)
+Files named `MD9600-CSV(V4)-V26.45.bin` and `-CSV-GPS(V4)-P26.45` also circulate; they hold the V16.45 V4 ("PLL1590")
+application, not LMX2571 code. The D26.57 V4A build programs the synthesizers and the IF lines exactly as the V26.45
+builds do.
+
+All of them: two segments, (0x00060000, 0x59800) for the external flash resources and (0x0800C000, 0xB1800..0xB6800)
 for the application, payload at 0x100, 0x100 trailing bytes. The leading digit of the version number is the board
-family (0 = V1-V3, 1 = V4, 2 = V5) (F: inferred from the three known files). The V06.09 images report SP 0x20001BA0,
+family (0 = V1-V3, 1 = V4, 2 = V4A / V5) (F: inferred from the known files). The V06.09 images report SP 0x20001BA0,
 the V16.45 ones 0x20001BB0.
 
 ### 14.4 Flashing: stock bootloader and stub
@@ -677,7 +702,8 @@ mode. The flasher refuses each of them in code before it reaches the radio.
 | V4 | "PLL1590" x2 (part ?) | AK2365A x2 | VHF synthesizer must be set at power-on |
 | V4A, V5 | LMX2571 x2 | none programmable; PE11-PE14 switches | RSSI curve differs |
 
-Vendor firmware follows the same split: V06.09 for V1-V3, V16.45 for V4, V26.45 for V5. TYT
+The original firmware follows the same split: V06.09 for V1-V3, V16.45 for V4, V26.45 for V5 (and D26.57 for V4A). The V4A
+and V5 images program the radio the same way, and neither reads anything that tells V4A from V5. TYT
 sometimes changed chips without changing the label; a wrong build boots but neither receives nor transmits, and does
 no harm (unverified). GPS models have been reported working with the V5 build. Radios needing
 TYT's V4 firmware are V4 or later.
@@ -705,9 +731,9 @@ last (unidentified synthesizer, needs its power-on quirk).
 | # | Unknown | How to settle it |
 |---|---|---|
 | 1 | Which revision the test radio is | Settled for the first test radio (2026-11-02): its original firmware reported v06.09, so V1-V3; FM receive works with the V1-V3 words. PCB label not read |
-| 2 | V4 synthesizer exact part ("PLL1590"), V5 IF part, V5 use of PE15 | Photos of the board (and FCC internal photos) |
-| 3 | Lock detect pin (none mapped) | Scope / board photos; otherwise lock is inferred from RX |
-| 4 | LMX2571 delays after reset and calibration | Scope the PLL on retune; measure the relock time (also [gotchas.md](gotchas.md) 14.6, SFR / DMR burst switching) |
+| 2 | V4 synthesizer exact part ("PLL1590"), V5 IF part. V5 use of PE15: none, V26.45 leaves it an input | Photos of the board (and FCC internal photos) |
+| 3 | Lock detect pin (none mapped; V26.45 reads none) | Scope / board photos; otherwise lock is inferred from RX |
+| 4 | LMX2571 delays after reset and calibration. V26.45 waits 10 ticks after the reset and 12 from the transmit words to the PA; the relock time itself is not measured | Scope the PLL on retune; measure the relock time (also [gotchas.md](gotchas.md) 14.6, SFR / DMR burst switching) |
 | 5 | RF TX interrupt usefulness and the 20 ms burst-off workaround | Settled (2026-11-03): keyed from the RF TX interrupt, the burst reaches full power ahead of its payload and every burst decodes; no workaround (19.8) |
 | 6 | Power level labels (5/10/25/40 W) and the low-level fractions | Power meter into a dummy load, both bands, edges and center |
 | 7 | RSSI / noise curves per revision | Signal generator steps |
@@ -722,7 +748,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 | 16 | GPS UART baud rate (9600 in 13.1 is unverified) | Listen on PA10 with a GPS model |
 | 17 | DMR slot and burst timing on this RF chain (synthesizer relock per TX/RX switch) | SDR captures of a DMR call |
 | 18 | The crystal: 8 MHz crystal or an oscillator | Settled for V1-V3 (2026-11-03): the HSE starts in crystal mode, 72 MHz SYSCLK (`board.clock=crystal`) |
-| 19 | LMX2571 registers beyond the documented set (R60, R58, R53 and the rest), the DEN = 0 reading | Lock and spur check on V5 |
+| 19 | LMX2571 registers beyond the documented set and the DEN = 0 reading: V26.45 writes nothing else and takes the fraction over 2^24, as RadioFoundry does. Still open: lock and spurs on a radio | Lock and spur check on V5 |
 | 20 | Calibration record layout (11.2) and the hardware option block beyond the band edges | Dump security registers 1-3 |
 | 21 | The CPS command set inside the DFU transfers (the version read is known, 15.1) | USB capture of TYT's CPS |
 | 22 | Display orientation and column offset | Settled (2026-11-02): segments reversed, COM normal, column offset 4 (segments normal and COM reversed showed the picture upside down) |
@@ -935,14 +961,14 @@ the owner's decision.
 
 `boards/md9600/rfseq_md9600.c` holds the order of every RF step for every revision; `radio_md9600.c` maps its lines to
 the pins of 19.4. No synthesizer has a lock detect line (5.3), so each gets a fixed settle time after its words. All
-times are unverified.
+times are unverified on a radio; the V4A / V5 transmit settle and reset wait are V26.45's (5.3, 5.5).
 
 | Step | Receive | Transmit (`CONFIG_MD9600_TX`, armed) |
 |---|---|---|
 | 1 | PA loop and both T5 off, APC reference 0 | the same |
 | 2 | Power_Control, both R5, both C5 on | both R5 off, FM stages off |
-| 3 | both VCO_VCC high (RX VCOs) | the band's C5 on; the other band's C5 off on V4 and V4A / V5, on for V1-V3; U_V_MOD_SW to the band; the band's VCO_VCC low (TX VCO) |
-| 4 | the band's synthesizer words for the LO (5.2), then 2 ms | the words for the carrier, then 2 ms |
+| 3 | both VCO_VCC high (RX VCOs) | the band's C5 on; the other band's C5 off on V4 and V4A / V5, on for V1-V3; U_V_MOD_SW to the band; the band's VCO_VCC low (TX VCO); V4A / V5: both IF routes off |
+| 4 | the band's synthesizer words for the LO (5.2), then 2 ms | the words for the carrier, then 2 ms (12 ms on V4A / V5) |
 | 5 | front-end tuning: DAC1 (UHF) or DAC2 (VHF) from calibration | the band's T5 on, 1 ms |
 | 6 | the IF: AK2365A set-up and 2 ms for its calibration (V1-V4), or the filter and route lines (V4A / V5) | RF_APC_SW on |
 | 7 | U_V_AF_SW to the band, FM_SW on in FM, off in DMR; 3 ms | APC reference (DAC2) up to the calibrated level in 8 steps of 250 us |
@@ -952,8 +978,9 @@ column with the last receive settings. For DMR bursts the PA alone (T5, the loop
 synthesizer stays on the carrier. DMR receive uses the 12.5 kHz IF setting.
 
 DMR transmit (`CONFIG_MD9600_DMR_TX`): the HR_C6000 glue's prepare hook runs steps 1-4 without the waits (TX VCO on the
-carrier, receivers off) at the start of a transmission, and the task waits the synthesizer's 2 ms plus 1 ms. Each
-burst then, 0.7 ms after the RF TX interrupt (a timer, no waits in an interrupt): the band's T5 on, 500 us,
+carrier, receivers off) at the start of a transmission, and the task waits the synthesizer's transmit settle (step 4)
+plus 1 ms. Each burst then, 0.7 ms after the RF TX interrupt (a timer, no waits in an interrupt): the band's
+T5 on, 500 us,
 RF_APC_SW on, the APC reference up in 4 steps of 100 us; at its end (the timeslot interrupt) the same ramp down,
 RF_APC_SW off, T5 off. T5 alone leaks the carrier about 13 dB under full power, and that counts as on air: keyed at the
 interrupt itself (about 1.3 ms ahead of the slot), every burst was 31.7-31.9 ms long at floor + 10 dB on the SDR bench
@@ -966,9 +993,10 @@ in `no_repeater`, HIL 2026-11-06); on a simplex channel at the return to receive
 
 SFR (`CONFIG_SFR`; the transmission receives between its bursts, `docs/spec/sfr.md` 3 item 1, gotchas 14.6): at each
 burst's end, after the ramp down, the synthesizer goes back to the receive LO (receivers on, RX VCOs, the words, the
-front-end DAC, FM_SW off) without waits; the IF chip keeps its set-up. RF_TX_INTER moves to 1.5 ms ahead of the slot
+front-end DAC, FM_SW off; on V4A / V5 the IF routes) without waits; the IF chip keeps its set-up. RF_TX_INTER moves to 1.5 ms ahead of the slot
 (HR_C6000 0x12 = 15, back to 0 when the transmission ends). There the TX retune runs, then 0.6 ms for the lock, then
-the burst's T5 and ramp. Swept on air (V1-V3, UHF 446.125 MHz, 5 W, 2026-11-03), the bench's 3-superframe call
+the burst's T5 and ramp. The original firmware never retunes between bursts, so it gives no figure for this; the
+0.6 ms holds for V1-V3 only, and V4A / V5 needs its own sweep. Swept on air (V1-V3, UHF 446.125 MHz, 5 W, 2026-11-03), the bench's 3-superframe call
 repeated by the MMDVM SFR:
 
 | Lead, settle | Voice repeated | Corrected bits by voice frame (1st/2nd/3rd) |
@@ -995,7 +1023,8 @@ it, between bursts the carrier is below the measuring receiver's floor (26 dB do
 symbol deviation 1933 Hz, every burst of a 3 s call decoded (headers, 9 superframes, terminator).
 
 At power-up, with the revision known: receivers on, then on V1-V4 the AK2365A reset (PE15 low for 10 us), and on V4
-the VHF synthesizer set for 145 MHz receive. PE15 stays an input on V4A / V5.
+the VHF synthesizer set for 145 MHz receive. On V4A / V5 the LMX2571 reset goes to both chips, then 10 ms; PE15 stays
+an input.
 
 Transmit is refused unless all hold: the build has `CONFIG_MD9600_TX` (on by default); a person armed it for this
 power cycle (Settings > Advanced > Hardware > Transmit, or HWOPT; every start is unarmed); the revision comes from a

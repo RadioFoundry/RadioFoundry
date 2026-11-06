@@ -101,6 +101,9 @@ typedef struct {
 // The words for receiving (tx false: LO = f + IF on VHF, f - IF on UHF) or transmitting (the carrier) on hz. False
 // when hz is outside the bands, the revision is unknown or its ratio is out of range
 bool md9600_pll_plan(md9600_rev_t rev, uint32_t hz, bool tx, md9600_pll_plan_t *p);
+// The synthesizer's power-on reset, written once to each band's chip before its first words (LMX2571); the plans
+// never repeat it. False when the revision has none
+bool md9600_pll_reset_word(md9600_rev_t rev, uint32_t *word);
 
 // The AK2365A set-up for a channel width (V1-V4), in write order; returns the count
 #define MD9600_IF_WORDS		6u

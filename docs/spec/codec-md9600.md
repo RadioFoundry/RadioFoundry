@@ -25,16 +25,17 @@ wherever the install put it (`stockfw.from_moved`). The radio's own codec page l
 | 16.45 CSV + GPS | V4 | `MD9600-CSV-GPS(V4)-P16.45.bin` | 1105408 | `7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f` |
 | 16.45 REC | V4 | `MD9600-REC(V4)-D16.45.bin` | 1108480 | `d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c` |
 | 16.45 GPS + REC | V4 | `MD9600-GPS-REC(V4)-S16.45.bin` | 1114624 | `3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff` |
-| 26.45 CSV | V5 ("2571") | `MD9600-CSV(2571V5)-V26.45.bin` | ? | `d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f` (not described) |
+| 26.45 CSV | V5 ("2571") | `MD9600-CSV(2571V5)-V26.45.bin` | 1096192 | `d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f` (no map yet) |
 
-All eight on hand: TYT "OutSecurityBin" container, two segments (0x00060000, 0x59800) and (0x0800C000, app length),
+All nine on hand: TYT "OutSecurityBin" container, two segments (0x00060000, 0x59800) and (0x0800C000, app length),
 payload at 0x100, 0x100 trailing bytes ([hardware-md9600.md](hardware-md9600.md) 14.3).
 
 ## Container and encryption
 
 plain[i] = file[0x100 + i] ^ key[i mod 1024]; the application starts at payload offset 0x59800, so for an application
 address A: **file offset = A - 0x0800C000 + 0x59900, key index = (A - 0x0800C000) mod 1024** (the resource segment is a
-multiple of 1024 long). V26.45 has the same layout (its codec is at 0x0807537C).
+multiple of 1024 long). V26.45 has the same layout; its codec code starts at 0x0807537C (checked in the decoded
+image).
 
 Key: SHA-256 `c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae`, first bytes A2 FA BB 4B. The plain
 column vote (most common cipher byte per key column) gives it on all eight files without any refinement; this is what
@@ -150,8 +151,8 @@ table window's island calls rewritten. The placed CRC-32s are in `stockfw.PROFIL
 **Supported donors: 06.09 CSV** (the default) **and 16.45 CSV.** Reasons: both are the plain CSV builds (no recorder or
 GPS code moving the codec), both are bit-identical in function to V26.45 and the DM-1701, and between them they cover
 the files an owner of a V1-V4 radio has. The other six work the same way with their own windows from the table above,
-and V26.45 can be added when a copy turns up (its windows: the code at 0x0807537C, the FEC decode at +0xB64; the
-table window still to be cut).
+and V26.45 can be added the same way now that a copy is on hand (its windows: the code at 0x0807537C, the FEC decode
+at +0xB64; the table window still to be cut).
 
 ## Extraction recipe (06.09 CSV)
 
@@ -180,7 +181,7 @@ windows is read.
 
 ## Open items
 
-* V26.45 itself (V5 boards) is still not on hand; not needed for the codec.
+* V26.45 (V5 boards) is on hand, its codec at 0x0807537C as expected; it has no map or profile yet.
 * The other six builds (GPS and recorder variants) have maps but no profile yet.
 
 ## Only a radio can check

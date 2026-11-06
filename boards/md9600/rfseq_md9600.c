@@ -91,18 +91,19 @@ void md9600_rf_pa_safe(md9600_rf_t *rf)
 
 // --- Synthesizer and IF ---
 
-static uint32_t settle_us(const md9600_rev_desc_t *d)
+static uint32_t settle_us(const md9600_rev_desc_t *d, bool tx)
 {
 	switch (d->pll) {
 	case MD9600_PLL_SKY72310: return MD9600_SETTLE_SKY72310_US;
 	case MD9600_PLL_PLL1590: return MD9600_SETTLE_PLL1590_US;
-	default: return MD9600_SETTLE_LMX2571_US;
+	default: return tx ? MD9600_SETTLE_LMX2571_TX_US : MD9600_SETTLE_LMX2571_US;
 	}
 }
 
-// The words, then the settle time or the lock indication (bounded). settle false: the words only (the caller waits)
+// The words, then the settle time (tx: the transmit one) or the lock indication (bounded). settle false: the words
+// only (the caller waits)
 static md9600_rf_err_t pll_words(const md9600_rf_ops_t *o, const md9600_rev_desc_t *d, const md9600_pll_plan_t *p,
-				 bool settle)
+				 bool settle, bool tx)
 {
 	for (uint8_t i = 0; i < p->count; i++) {
 		if (!o->pll(o->ctx, p->band, p->words[i], p->bits)) {
@@ -113,7 +114,7 @@ static md9600_rf_err_t pll_words(const md9600_rf_ops_t *o, const md9600_rev_desc
 		return MD9600_RF_OK;
 	}
 	if (o->locked == NULL) {
-		wait_us(o, settle_us(d));
+		wait_us(o, settle_us(d, tx));
 		return MD9600_RF_OK;
 	}
 	for (uint32_t t = 0; t < MD9600_LOCK_TIMEOUT_US; t += MD9600_LOCK_POLL_US) {
@@ -127,7 +128,21 @@ static md9600_rf_err_t pll_words(const md9600_rf_ops_t *o, const md9600_rev_desc
 
 static md9600_rf_err_t pll_program(const md9600_rf_ops_t *o, const md9600_rev_desc_t *d, const md9600_pll_plan_t *p)
 {
-	return pll_words(o, d, p, true);
+	return pll_words(o, d, p, true, false);
+}
+
+// The LMX2571 power-on reset, VHF chip (vhf true) then UHF, then its wait (once per power-up, never on a retune)
+static md9600_rf_err_t pll_reset(const md9600_rf_ops_t *o, md9600_rev_t rev, const md9600_rev_desc_t *d, bool vhf)
+{
+	uint32_t w;
+	if (!md9600_pll_reset_word(rev, &w)) {
+		return MD9600_RF_OK;
+	}
+	if ((vhf && !o->pll(o->ctx, MD9600_VHF, w, d->pll_bits)) || !o->pll(o->ctx, MD9600_UHF, w, d->pll_bits)) {
+		return MD9600_RF_E_BUS;
+	}
+	wait_us(o, MD9600_LMX2571_RESET_US);
+	return MD9600_RF_OK;
 }
 
 // The receiving band's IF: the AK2365A set-up (V1-V4) or the V5 filter and route lines
@@ -186,6 +201,10 @@ md9600_rf_err_t md9600_rf_power_up(md9600_rf_t *rf)
 		set(o, MD9600_LN_IF_RST, false);
 		wait_us(o, MD9600_IF_RESET_US);
 		set(o, MD9600_LN_IF_RST, true);
+	}
+	md9600_rf_err_t r = pll_reset(o, rf->rev, rf->desc, true);
+	if (r != MD9600_RF_OK) {
+		return fail(rf, r);
 	}
 	if (rf->desc->vhf_tune_at_power_on) {
 		md9600_pll_plan_t p;
@@ -334,7 +353,12 @@ md9600_rf_err_t md9600_rf_tx_tune(md9600_rf_t *rf, uint32_t hz, uint8_t power, b
 	set(o, MD9600_LN_MOD_VHF, b == MD9600_VHF);
 	set(o, ln_vco[b], false);
 	set(o, ln_vco[other], true);
-	e = pll_words(o, rf->desc, &p, settle);
+	if (!rf->desc->if_chip) {
+		// V5: both IF routes to the HR_C6000 off while transmitting, as the original firmware does
+		set(o, MD9600_LN_V5_ROUTE_V, false);
+		set(o, MD9600_LN_V5_ROUTE_U, false);
+	}
+	e = pll_words(o, rf->desc, &p, settle, true);
 	if (e != MD9600_RF_OK) {
 		// No carrier off frequency: back to receive, and report the transmit failure
 		md9600_rf_pa_safe(rf);
@@ -386,7 +410,7 @@ md9600_rf_err_t md9600_rf_pa(md9600_rf_t *rf, bool on)
 
 uint32_t md9600_rf_tx_settle_us(const md9600_rf_t *rf)
 {
-	return rf->desc != NULL ? settle_us(rf->desc) + MD9600_TX_SUPPLY_US : 0u;
+	return rf->desc != NULL ? settle_us(rf->desc, true) + MD9600_TX_SUPPLY_US : 0u;
 }
 
 md9600_rf_err_t md9600_rf_pa_burst(md9600_rf_t *rf, bool on)
@@ -461,11 +485,15 @@ md9600_rf_err_t md9600_rf_burst_rx(md9600_rf_t *rf)
 	}
 	md9600_rf_pa_safe(rf);
 	receivers_on(o);
-	md9600_rf_err_t e = pll_words(o, rf->desc, &p, false);
+	md9600_rf_err_t e = pll_words(o, rf->desc, &p, false, false);
 	if (e != MD9600_RF_OK) {
 		return fail(rf, e);
 	}
 	o->dac(o->ctx, p.band == MD9600_VHF ? MD9600_DAC_APC_TUNE_V : MD9600_DAC_TUNE_U, o->rx_tune(o->ctx, rf->rx_hz));
+	if (!rf->desc->if_chip) {
+		// V5: the IF routes transmit dropped (lines only, no wait)
+		(void)if_setup(o, rf->desc, p.band, rf->rx_wide && !rf->dmr);
+	}
 	set(o, MD9600_LN_AF_VHF, p.band == MD9600_VHF);
 	set(o, MD9600_LN_FM_SW, false);
 	rf->state = MD9600_RF_RX;
@@ -511,6 +539,7 @@ md9600_rev_t md9600_rf_probe(const md9600_rf_ops_t *o, uint32_t hz, uint16_t thr
 			// Never drives PE15 on a board that may be V5 (its use there is unknown): no reset pulse
 			(void)if_setup(o, d, MD9600_UHF, true);
 		}
+		(void)pll_reset(o, (md9600_rev_t)r, d, false);	// the probe listens on UHF only
 		(void)pll_program(o, d, &p);
 		if (!d->if_chip) {
 			(void)if_setup(o, d, MD9600_UHF, true);

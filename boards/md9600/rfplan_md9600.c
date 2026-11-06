@@ -78,7 +78,8 @@ static bool plan_pll1590(md9600_pll_plan_t *p, bool tx)
 #endif
 
 #if CONFIG_MD9600_V5
-// LMX2571 in PLL mode: pre-divider 8 on VHF (2.1 MHz), 4 on UHF (4.2 MHz); third-order modulator
+// LMX2571 in PLL mode: pre-divider 8 on VHF (2.1 MHz), 4 on UHF (4.2 MHz); third-order modulator. The register
+// values and the write order are the original V26.45 firmware's
 static bool plan_lmx2571(md9600_pll_plan_t *p)
 {
 	const lmx2571_cfg_t c = {
@@ -92,10 +93,32 @@ static bool plan_lmx2571(md9600_pll_plan_t *p)
 		.r41 = 0x0230u,
 		.r42 = 0x0108u,
 	};
-	p->count = lmx2571_words(&c, p->vco_hz, p->words);
+	uint32_t w[LMX2571_WORDS];
+	uint8_t n = lmx2571_words(&c, p->vco_hz, w);
+	// Without the driver's leading reset: the original firmware resets each chip once at power-up
+	// (md9600_pll_reset_word) and never on a retune. A reset there would drop the chip back to its own VCO, its TX
+	// output buffer on and the external VCO's charge pump off, until R7 and R8 come again
+	p->count = 0;
+	for (uint8_t i = 1; i < n; i++) {
+		p->words[p->count++] = w[i];
+	}
 	return p->count != 0;
 }
 #endif
+
+bool md9600_pll_reset_word(md9600_rev_t rev, uint32_t *word)
+{
+#if CONFIG_MD9600_V5
+	const md9600_rev_desc_t *d = md9600_rev_desc(rev);
+	if (d != NULL && md9600_rev_built(rev) && d->pll == MD9600_PLL_LMX2571) {
+		*word = lmx2571_word(LMX2571_R0, LMX2571_R0_RESET);
+		return true;
+	}
+#endif
+	(void)rev;
+	(void)word;
+	return false;
+}
 
 bool md9600_pll_plan(md9600_rev_t rev, uint32_t hz, bool tx, md9600_pll_plan_t *p)
 {

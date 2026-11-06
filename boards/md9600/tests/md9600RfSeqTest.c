@@ -261,9 +261,20 @@ static void test_power_up(void)
 #if CONFIG_MD9600_V5
 	fresh(MD9600_REV_V5, false);
 	CHECK(md9600_rf_power_up(&rf) == MD9600_RF_OK);
-	// V5: PE15's use is unknown, so it is never driven; no words at power-up
-	CHECK(count(EV_LINE, MD9600_LN_IF_RST) == 0 && count(EV_PLL, -1) == 0);
+	// V5: PE15 is never driven. The reset on the VHF then the UHF chip, after the supplies, then the wait; no other
+	// words
+	int on5 = find(0, EV_LINE, MD9600_LN_R5_U, 1);
+	int rv = find(0, EV_PLL, MD9600_VHF, 0x002000), ru = find(0, EV_PLL, MD9600_UHF, 0x002000);
+	CHECK(count(EV_LINE, MD9600_LN_IF_RST) == 0 && count(EV_PLL, -1) == 2);
+	CHECK(on5 >= 0 && rv > on5 && ru == rv + 1 && find(ru, EV_DELAY, -1, MD9600_LMX2571_RESET_US) == ru + 1);
 	CHECK(level[MD9600_LN_R5_V] && level[MD9600_LN_C5_U] && level[MD9600_LN_POWER] && pa_off_now());
+	// No retune repeats it
+	reset_log();
+	CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK && find(0, EV_PLL, -1, 0x002000) < 0);
+	// A bus failure there is reported
+	fresh(MD9600_REV_V5, false);
+	pll_fail = true;
+	CHECK(md9600_rf_power_up(&rf) == MD9600_RF_E_BUS && rf.errors == 1);
 #endif
 	(void)p;
 }
@@ -427,6 +438,17 @@ static void check_tx(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz, uint8_t pow
 	CHECK(r5 > 0 && c5 > r5 && c5o > r5 && mod > c5 && vco > mod && w0 > vco && words_follow(w0, &p));
 	CHECK(ev[c5o].v == (d->tx_other_c5_off ? 0u : 1u));
 	CHECK(t5 > wl && apc > t5 && find(t5, EV_DELAY, -1, MD9600_TX_SUPPLY_US) > t5);
+	if (d->pll == MD9600_PLL_LMX2571) {
+		// LMX2571: the transmit settle after the words, before the transmitter supply
+		int s = find(wl, EV_DELAY, -1, MD9600_SETTLE_LMX2571_TX_US);
+		CHECK(s == wl + 1 && s < t5 && find(0, EV_PLL, -1, 0x002000) < 0);
+	}
+	if (!d->if_chip) {
+		// V5: both IF routes off before the words, and off through the transmission
+		int rv = find(0, EV_LINE, MD9600_LN_V5_ROUTE_V, 0), ru = find(0, EV_LINE, MD9600_LN_V5_ROUTE_U, 0);
+		CHECK(rv > 0 && rv < w0 && ru > 0 && ru < w0);
+		CHECK(!level[MD9600_LN_V5_ROUTE_V] && !level[MD9600_LN_V5_ROUTE_U]);
+	}
 	// The reference: zero before T5, then rising in steps to the calibrated value
 	int z = last(EV_DAC, MD9600_DAC_APC_TUNE_V, 0);
 	CHECK(z >= 0 && z < t5);
@@ -485,6 +507,9 @@ static void check_dmr_tx(md9600_rev_t r, uint32_t hz, uint8_t power)
 	CHECK(delay_total == 0 && count(EV_PLL, p.band) == p.count && rf.state == MD9600_RF_TX);
 	CHECK(pa_off_now());
 	CHECK(md9600_rf_tx_settle_us(&rf) >= MD9600_TX_SUPPLY_US);
+	if (md9600_rev_desc(r)->pll == MD9600_PLL_LMX2571) {
+		CHECK(md9600_rf_tx_settle_us(&rf) == MD9600_SETTLE_LMX2571_TX_US + MD9600_TX_SUPPLY_US);
+	}
 	for (int burst = 0; burst < 2; burst++) {
 		reset_log();
 		CHECK(md9600_rf_pa_burst(&rf, true) == MD9600_RF_OK);
@@ -542,6 +567,10 @@ static void check_dmr_split(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz)
 		CHECK(md9600_rf_burst_rx(&rf) == MD9600_RF_OK);
 		CHECK(delay_total == 0 && pa_off_now() && rf.state == MD9600_RF_RX && rf.lo_hz == rxp.lo_hz);
 		CHECK(count(EV_PLL, rxp.band) == rxp.count && level[rxp.band == MD9600_VHF ? MD9600_LN_R5_V : MD9600_LN_R5_U]);
+		if (!md9600_rev_desc(r)->if_chip) {
+			// V5: the band's IF route back, which the transmit side dropped
+			CHECK(level[rxp.band == MD9600_VHF ? MD9600_LN_V5_ROUTE_V : MD9600_LN_V5_ROUTE_U]);
+		}
 		CHECK(md9600_rf_burst_rx(&rf) == MD9600_RF_E_STATE);	// once: already receiving
 	}
 	reset_log();
