@@ -92,6 +92,12 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "power=%u\n", v->power);
 	dl_text_kv_str(t, "power_name", pw);
 	dl_text(t, "power_count=%u\n", board.power_count);
+	// Every level's name at the channel's transmit frequency (per band), so a host picks a level by its power
+	dl_text(t, "power_names=");
+	for (uint8_t l = 0; l < board.power_count; l++) {
+		dl_text(t, l ? "/%s" : "%s", board_power_name(l, v->ch.tx_hz));
+	}
+	dl_text(t, "\n");
 	if (board.radio != NULL && board.radio->tx_drive_level != NULL) {
 		// The PA drive of each level at the channel's transmit frequency (power calibration)
 		dl_text(t, "tx_drive=");

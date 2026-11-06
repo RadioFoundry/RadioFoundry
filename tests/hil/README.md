@@ -49,6 +49,7 @@ with `-m audio_smoke`.
 |---|---|
 | (none) | radio-only tests: version, screenshots, keys, FM receive, MMDVM requests that don't transmit |
 | `--allow-rf` | tests that transmit (marker `rf`: the SDR bench's transmitter; marker `radio_tx`: the radio itself) |
+| `--radio-tx-watts W` | the radio's on-air tests key at its lowest power level named at least W watts (the core view's `power_names`), not the lowest: for a bench that can't hear the lowest level through a dummy load. The hotspot tests use the matching RF level. APRS on its ham test frequency keeps the lowest |
 | `--allow-usb-switch` | tests that switch the radio's USB personality to the network adapter and back (marker `usb_switch`); `test_dmr_ip.py` and `test_dmr_ip_burst.py` run pppd on the serial port instead on a radio without USB networking |
 | `--allow-service-stop` | tests that stop the SDR bench's gateway service (marker `bench_service`) to use its transmitter and receiver. Not needed on a bench that runs the shared bench daemon (nothing is stopped); without the daemon and without the flag those tests skip when they take the lease |
 | `--allow-codeplug-write` | tests that write the codeplug over CPS (marker `codeplug_write`): the qdmr regions are read and saved to the test's tmp directory first, one channel name is changed, and the backup is written back and verified in a `finally` block |

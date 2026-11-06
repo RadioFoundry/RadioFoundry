@@ -3,7 +3,7 @@
 """The MMDVM hotspot on air, both directions (opt-in: --allow-rf --allow-service-stop; the radio transmits).
 
 The radio is driven over USB as MMDVMHost drives a simplex modem (tools/bench/mmdvm_hotspot.py's MmdvmLink on the
-DMR test channel, RF level 12: the radio's lowest power), and the SDR bench's modem (or a bench board's jobs, with
+DMR test channel, the RF level of the radio's lowest power, or of --radio-tx-watts: Radio.hotspot_rf_level), and the SDR bench's modem (or a bench board's jobs, with
 --bench-api) is the other radio. The cases are
 tools/bench/hotspot_cases.py's (docs/testing/dmr-bench.md); this module runs them under the bench lease:
 
@@ -76,7 +76,7 @@ def test_hotspot_on_air(radio, sdr_bench, pytestconfig, hotspot_cases, case):
         skip("not_built", "built without the hotspot")
     freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     H.BENCH_HOST = sdr_bench.host
-    args = type("Args", (), {"freq": freq, "cc": cc, "power": 12})()
+    args = type("Args", (), {"freq": freq, "cc": cc, "power": radio.hotspot_rf_level()})()
     r = H.Result(case)
     with sdr_bench.lease(), radio.released() as port:
         if sdr_bench.api:

@@ -229,6 +229,12 @@ def find(lines, prefix):
     return next((line for line in lines if line.startswith(prefix)), None)
 
 
+
+def power_name_watts(name):
+    """A power level's name in watts ("100mW" 0.1, "5W" 5), None for a name without one ("Low")"""
+    m = re.fullmatch(r"\s*([0-9.]+)\s*(m?)W\s*", name or "")
+    return float(m.group(1)) / (1000 if m.group(2) else 1) if m else None
+
 class Radio:
     """The radio under test, over its debug link."""
 
@@ -599,14 +605,43 @@ class Radio:
             time.sleep(0.08)
         raise AssertionError(f"could not restore {key} to {target} (now {self.core().get(key)})")
 
-    def lowest_power(self):
-        """Step the power level down to the lowest (a temporary change; restore() puts it back)."""
+    def bench_tx_level(self):
+        """The power level on-air tests key at: 0, the lowest, or with --radio-tx-watts the lowest level whose name
+        (the core view's power_names, at the channel's transmit frequency) reads at least that many watts. A radio
+        whose names hold no power, or firmware without power_names, stays at the lowest."""
+        import hil_config
+        want = hil_config.CONFIG.getoption("--radio-tx-watts") if hil_config.CONFIG is not None else None
+        names = self.core().get("power_names", "")
+        if not want or not names:
+            return 0
+        names = names.split("/")
+        for i, n in enumerate(names):
+            w = power_name_watts(n)
+            if w is None:
+                return 0
+            if w >= want * 0.999:
+                return i
+        return len(names) - 1
+
+    def hotspot_rf_level(self):
+        """The MMDVM RF level (SET_FREQ / SET_CONFIG, 0-255) that gives bench_tx_level(): the smallest the radio
+        maps to it (radio_sm_hotspot_power spreads 0-255 over the power levels, rounding)"""
+        level, n = self.bench_tx_level(), int(self.core().get("power_count") or 1)
+        if level == 0 or n < 2:
+            return 0
+        return max(0, -(-(level * 255 - 127) // (n - 1)))
+
+    def lowest_power(self, absolute=False):
+        """Step the power level to bench_tx_level(), the lowest unless --radio-tx-watts asks for more (a temporary
+        change; restore() puts it back). absolute: the lowest whatever the option (a ham frequency)."""
+        target = 0 if absolute else self.bench_tx_level()
         for _ in range(int(self.core().get("power_count") or 9) + 1):
-            if self.core().get("power") == "0":
+            cur = int(self.core().get("power") or 0)
+            if cur == target:
                 return
-            self.link.power_step(-1)
+            self.link.power_step(1 if cur < target else -1)
             time.sleep(0.08)
-        raise AssertionError(f"could not reach the lowest power (now {self.core().get('power')})")
+        raise AssertionError(f"could not reach power level {target} (now {self.core().get('power')})")
 
     @contextlib.contextmanager
     def vfo_session(self):

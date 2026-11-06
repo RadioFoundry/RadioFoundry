@@ -329,7 +329,7 @@ def aprs_air(radio, pytestconfig, request):
 
 
 def _aprs_air(radio, pytestconfig, call, hz):
-    radio.lowest_power()
+    radio.lowest_power(absolute=True)     # an APRS test frequency is a ham one: the lowest, whatever --radio-tx-watts
     v = radio.view(["aprs"])
     if "aprs.tx_power" not in v:
         skip("not_built", "this firmware keys APRS at the settings' default power (1 W on the DM-1701), not the "

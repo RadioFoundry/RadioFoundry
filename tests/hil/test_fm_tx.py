@@ -45,7 +45,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import skip
+from rfoundry_hil import power_name_watts, skip
 from hil_config import rig
 
 PTT_S = 3.0
@@ -420,14 +420,9 @@ def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
     d = [levels[i + 1][2] - levels[i][2] for i in range(2)]
     assert all(x >= 1.0 for x in d), f"a higher power level is not stronger on air: steps {d} dB ({levels})"
     # The span the names give ("50mW" to "5W": 20 dB), else the usual 10 dB; ±5 dB for the bench's path
-    w0, w2 = name_watts(levels[0][1]), name_watts(levels[2][1])
+    w0, w2 = power_name_watts(levels[0][1]), power_name_watts(levels[2][1])
     want = 10 * math.log10(w2 / w0) if w0 and w2 else 10.0
     got = levels[2][2] - levels[0][2]
     assert want - 5.0 <= got <= want + 5.0, \
         f"{levels[0][1]} to {levels[2][1]}: {got:.1f} dB (nominally {want:.0f}) ({levels})"
 
-
-def name_watts(name):
-    """A power level's name in watts ("50mW" 0.05, "5W" 5), None for a name without one ("Low")"""
-    m = re.fullmatch(r"\s*([0-9.]+)\s*(m?)W\s*", name or "")
-    return float(m.group(1)) / (1000 if m.group(2) else 1) if m else None
