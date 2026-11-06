@@ -200,7 +200,7 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 | `TCP_CONNS` | HR_C7000 platform | TCP connections in all states (`core/net/tcp.h`, 4 elsewhere): 3 by default on the HR_C7000 platform, about 1.5 KB RAM each across TCP, HTTP and rigctld |
 | `MAXIMAL_VARS` | a board's own | set in a board's `config.mk`: make variables `tools/ci.sh` adds to that board's maximal build (`make print-maximal-vars`) |
 | `BOARD_UNSUPPORTED` | a board's own | set in a board's or platform's `config.mk`, one switch a line with the reason in its comment: switches the radio's hardware can't do ([above](#unsupported-not-written-unconfirmed)); the maximal build leaves them off (`make print-unsupported`) |
-| `BOARD_NOT_WRITTEN` | a board's own | the same form: switches the hardware can do but whose driver or glue isn't written for the radio yet; the maximal build leaves them off too (`make print-not-written`) |
+| `BOARD_NOT_WRITTEN` | a board's own | the same form: switches the hardware can do but whose driver or glue isn't written for the radio yet; the maximal build leaves them off too (`make print-not-written`), and every switch that needs one of them |
 | `BOARD_REQUIRED` | a board's own | set in a board's `config.mk`: switches the board can't build without; ci.sh builds no `no-` configuration for them (`make print-required`) |
 | `MAXIMAL_SKIP` | a board's own | set in a board's `config.mk`: switches that work on the radio but that it doesn't need, which the maximal build leaves off too (`make print-maximal-skip`). `NET_PPP` stands in for the USB network adapter on UART-only radios. The maximal build also leaves `CONFIG_AUDIO_PROBE` off on every board (`MAXIMAL_SKIP` in `tools/ci.sh`); one board's `audio-probe` build covers it |
 
@@ -233,3 +233,5 @@ most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need
    can't do, such as SFR on a modem chip lacking what the glue uses) or `BOARD_NOT_WRITTEN` (what its code doesn't do yet). Leaving the not-written switches out keeps the maximal build to code that
    runs on the radio: built on, they can fill a radio's memory (one radio's maximal build reached 99% of its CCM
    RAM), and any shared addition would then fail CI on unrelated pull requests.
+   A switch that needs a left-out one is off too: `tools/ci.sh` drops each switch the checks in `config/features.mk`
+   name until the set passes them (DMR not written takes all of DMR's family with it).
