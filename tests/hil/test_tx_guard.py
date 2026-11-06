@@ -25,9 +25,10 @@ class FakeConfig:
 class FakeLink:
     """The views the guard reads, and the requests that got through"""
 
-    def __init__(self, tx_mhz=461.4625, mode="dmr", aprs_mhz=0.0):
+    def __init__(self, tx_mhz=461.4625, mode="dmr", aprs_mhz=0.0, via="both"):
         self.views = {"core": {"tx_hz": str(round(tx_mhz * 1e6)), "mode": mode},
-                      "aprs": {"aprs.freq_hz": str(round(aprs_mhz * 1e6)), "aprs.block": "ok" if aprs_mhz else "no_freq"}}
+                      "aprs": {"aprs.freq_hz": str(round(aprs_mhz * 1e6)), "aprs.block": "ok" if aprs_mhz else "no_freq"},
+                      "aprs_set": {"set.aprs_via": via}}
         self.sent = []
 
     def view(self, sections):
@@ -59,7 +60,7 @@ def ptt(down):
     (H.DMR_DATA, bytes([H.DATA_OP_SMS]) + b"x", "channel"),
     (H.DMR_DATA, bytes([H.DATA_OP_EMERGENCY, 1]), "channel"),
     (H.DMR_DATA, bytes([H.DATA_OP_EMERGENCY, 0]), None),
-    (H.APRS, bytes([H.APRS_OP_SEND_NOW]), "aprs"),
+    (H.APRS, bytes([H.APRS_OP_SEND_NOW]), "position"),
     (H.APRS, bytes([H.APRS_OP_STATUS]) + b"x", "aprs"),
     (H.APRS, bytes([4]) + b"Q0TST", None),       # TEST_CALL: a RAM-only callsign, no transmission
     (9, b"", None),                     # GET_VIEW
@@ -93,6 +94,24 @@ def test_aprs_frequency_and_dmr_channel(rig):
     with pytest.raises(RuntimeError, match="467.37500"):     # positions over DMR go on the DMR channel
         H._guarded_request(FakeLink(467.375, "dmr", aprs_mhz=446.05), H.APRS, bytes([H.APRS_OP_SEND_NOW]))
     assert len(rig) == 1
+
+
+def test_aprs_position_by_its_way_out(rig):
+    send = (H.APRS, bytes([H.APRS_OP_SEND_NOW]))
+    H._guarded_request(FakeLink(461.4625, "dmr", aprs_mhz=144.39, via="dmr"), *send)    # over DMR: no AFSK
+    H._guarded_request(FakeLink(467.375, "dmr", aprs_mhz=446.05, via="rf"), *send)      # by AFSK: the channel idles
+    with pytest.raises(RuntimeError, match="467.37500"):
+        H._guarded_request(FakeLink(467.375, "dmr", aprs_mhz=446.05, via="dmr"), *send)
+    with pytest.raises(RuntimeError, match="144.39000"):
+        H._guarded_request(FakeLink(461.4625, "dmr", aprs_mhz=144.39, via="rf"), *send)
+    link = FakeLink(461.4625, "dmr", aprs_mhz=144.39)
+    del link.views["aprs_set"]["set.aprs_via"]      # a firmware that doesn't report it gets both checked
+    with pytest.raises(RuntimeError, match="144.39000"):
+        H._guarded_request(link, *send)
+    with pytest.raises(RuntimeError, match="144.39000"):      # a message goes by AFSK whatever the via
+        H._guarded_request(FakeLink(461.4625, "dmr", aprs_mhz=144.39, via="dmr"), H.APRS, bytes([H.APRS_OP_MESSAGE]) + b"x")
+    H._guarded_request(FakeLink(467.375, "dmr", aprs_mhz=446.05), H.APRS, bytes([H.APRS_OP_STATUS]) + b"x")
+    assert len(rig) == 3
 
 
 def test_aprs_frequency_only_when_rf_aprs_can_send(rig):

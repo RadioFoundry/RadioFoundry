@@ -35,9 +35,9 @@ TX_KEYS = {ACTIONS["ptt"], ACTIONS["emergency"]}
 
 
 def keys_tx(cmd, payload):
-    """Where a debug link request transmits: "channel" (the channel's TX frequency), "aprs" (the APRS frequency when
-    RF APRS can send, aprs.block=ok, and the channel when it is DMR: positions over DMR), or None (it doesn't key). KEY's op 1 (physical key bits) is not
-    known here: its bits are the board's."""
+    """Where a debug link request transmits: "channel" (the channel's TX frequency), "position" (an APRS position, by
+    the way out set.aprs_via picks), "aprs" (an APRS status or message), or None (it doesn't key). KEY's op 1 (physical
+    key bits) is not known here: its bits are the board's."""
     p = bytes(payload)
     if cmd == PTT:
         return "channel" if p[:1] == b"\x01" else None
@@ -52,7 +52,9 @@ def keys_tx(cmd, payload):
                 p[:2] == bytes([DATA_OP_EMERGENCY, 1]):
             return "channel"
         return None
-    if cmd == APRS and p[:1] and p[0] in (APRS_OP_SEND_NOW, APRS_OP_STATUS, APRS_OP_MESSAGE):
+    if cmd == APRS and p[:1] == bytes([APRS_OP_SEND_NOW]):
+        return "position"
+    if cmd == APRS and p[:1] and p[0] in (APRS_OP_STATUS, APRS_OP_MESSAGE):
         return "aprs"
     return None
 
@@ -63,9 +65,13 @@ def tx_freqs(link, where):
     channel = int(core.get("tx_hz") or 0) / 1e6
     if where == "channel":
         return [channel]
+    # A position goes out by AFSK, over DMR or both (set.aprs_via; a firmware that doesn't say gets both checked);
+    # a status or a message by AFSK only (aprs.md)
+    via = link.view(["aprs_set"]).get("set.aprs_via", "both") if where == "position" else "rf"
     a = link.view(["aprs"])
-    aprs = int(a.get("aprs.freq_hz") or 0) / 1e6 if a.get("aprs.block") == "ok" else 0     # else no AFSK goes out
-    return ([aprs] if aprs else []) + ([channel] if core.get("mode") == "dmr" else [])
+    afsk = int(a.get("aprs.freq_hz") or 0) / 1e6 if via != "dmr" and a.get("aprs.block") == "ok" else 0    # block: no AFSK
+    dmr = via != "rf" and core.get("mode") == "dmr"        # positions over DMR go on the DMR channel
+    return ([afsk] if afsk else []) + ([channel] if dmr else [])
 
 
 _request = DebugLink.request

@@ -118,7 +118,7 @@ The radio transmits only where the rig allows, in two layers (`rfoundry_hil.py`,
 
 | Layer | What it covers | How |
 |---|---|---|
-| 1. Requests | every debug link request that keys the radio: PTT, the PTT or emergency key, the 1750 Hz burst, DMR data sends (SMS, call alert, radio check, emergency, IP), APRS sends | With `--allow-rf`, the frequency it would key on is compared with `tx_mhz` first: the channel's TX frequency (a channel found by its RX frequency can be a split one), for APRS the APRS frequency and, on a DMR channel, the channel. Outside it, the request raises. |
+| 1. Requests | every debug link request that keys the radio: PTT, the PTT or emergency key, the 1750 Hz burst, DMR data sends (SMS, call alert, radio check, emergency, IP), APRS sends | With `--allow-rf`, the frequency it would key on is compared with `tx_mhz` first: the channel's TX frequency (a channel found by its RX frequency can be a split one), for an APRS position the way out `set.aprs_via` picks (the APRS frequency, the DMR channel or both), for an APRS status or message the APRS frequency. Outside it, the request raises. |
 | 2. TX inhibit | what the radio sends by itself: data and CSBK replies, registration, beacons, roaming probes | Every test that uses the radio runs with its TX inhibit on (`tx_inhibit`, a setting in RAM) unless it is marked `radio_tx`. The radio's own value comes back at the end of the run; a restart also clears it. |
 
 So a test where the radio transmits, by request or by itself, needs `radio_tx`: without it, the transmission is
