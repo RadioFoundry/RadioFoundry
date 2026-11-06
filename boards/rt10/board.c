@@ -6,6 +6,11 @@
 #include "rt10.h"
 #include "pins.h"
 #include "platform.h"
+#if CONFIG_DMR
+#include "dmr_glue.h"
+#include "audio_pcm.h"
+#include "vocoder.h"
+#endif
 
 static const band_t bands[] = {
 	{ 902000000, 928000000, true },
@@ -26,7 +31,7 @@ static const char *const side_key_names[] = { "SK1", "SK2" };
 
 const board_t board = {
 	.name = "RT10",
-	.caps = 0,
+	.caps = CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0,
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -44,6 +49,11 @@ const board_t board = {
 	.flash = &hrc_flash_spi0,
 #if CONFIG_DIAG
 	.diag_line = rt10_diag_line,
+#endif
+#if CONFIG_DMR
+	.dmr = &hrc_dmr,
+	.audio = &hrc_audio_pcm,
+	.vocoder = &hrc_vocoder,
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,

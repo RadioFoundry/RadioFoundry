@@ -3,8 +3,13 @@
 // RT10 radio: the FD6818 on its two-wire bus (hardware-rt10.md 7) with the RT10's register set, FM receive and
 // transmit. The FD6818 modulates the microphone itself; the PA is keyed through the supply pins and DAC B with the
 // factory calibration's level (calibration_rt10.c). TX is refused without a calibration, outside the band, or with a
-// tone the chip can't send
+// tone the chip can't send.
+//
+// DMR (CONFIG_DMR, hardware-rt10.md 7.1): the FD6818's digital set, the modem on the shared glue (dmr_rt10.c). tx()
+// only arms the transmitter; each burst then runs the FM key-up and key-down from the RF task (rt10_burst_on /
+// rt10_burst_off), as the stock firmware does
 #include "rt10.h"
+#include "dmr_rt10.h"
 #include "config.h"
 #include "hal_dtmf.h"
 #include "pins.h"
@@ -53,9 +58,11 @@ static const rfbus_regval_t rt10_after[] = {
 	{ 0x3E, 0x7410 }, { 0x25, 0x0000 }, { 0x27, 0x0000 }, { 0x26, 0x0000 }, { 0x53, 0x765D },
 };
 // The stock receive set-up, written by the analog mode: the RT10's AFC, DC, filter and page-1 words (the microphone
-// gain among them) in place of the driver's
+// gain among them) in place of the driver's. It undoes the digital set; 0x48 goes back to its power-on word, the one
+// FM was measured with (the stock writes it per bandwidth instead, hardware-rt10.md 7)
 static const rfbus_regval_t rt10_analog[] = {
-	{ 0x73, 0x4642 }, { 0x04, 0x0300 }, { 0x7E, 0x3425 }, { 0x44, 0x42CC }, { 0x4B, 0x223C }, { 0x35, 0xF008 },
+	{ 0x73, 0x4642 }, { 0x04, 0x0300 }, { 0x7E, 0x3425 }, { 0x44, 0x42CC }, { 0x4B, 0x223C }, { 0x48, 0x6C4C },
+	{ 0x35, 0xF008 },
 	{ 0x23, 0x9C0F }, { FD6818SH_REG_PAGE, 1 }, { 0x17, 0x02BE }, { 0x18, 0x8FD8 }, { 0x19, 0x4840 },
 	{ 0x1C, 0x076F }, { 0x1D, 0xB9FD }, { 0x27, 0x18DA }, { FD6818SH_REG_PAGE, 0 },
 };
@@ -64,6 +71,15 @@ static const rfbus_regval_t rt10_analog[] = {
 static const uint16_t rt10_band_edge[] = { 1120 };
 static const uint16_t rt10_band_word[] = { 0x1F80 };
 static const uint8_t rt10_dev_high[] = { 0x3A };
+
+// The digital set (hardware-rt10.md 7.1), the stock's DMR entry, then its digital bandwidth word and the band select's
+// 0x40, which the stock's every tune writes. 0x4B = 0xE442 is what puts the demodulated 4FSK on the AF output: without
+// it the modem's AF ADC sees a few millivolts and never syncs. Receive audio 0x4140 goes to the modem; at a burst's TX
+// 0x6740
+static const rfbus_regval_t rt10_digital[] = {
+	{ 0x04, 0x0300 }, { 0x48, 0x6C5C }, { 0x4B, 0xE442 }, { 0x73, 0x569A }, { 0x7E, 0x349E }, { 0x23, 0x8F87 },
+	{ 0x43, 0x7E08 }, { 0x40, 0x3AD0 },
+};
 
 #define N(t)	(uint8_t)(sizeof(t) / sizeof(t[0]))
 static const fd6818sh_cfg_t rt10_fd = {
@@ -77,6 +93,8 @@ static const fd6818sh_cfg_t rt10_fd = {
 	.bw_word = { 0x4048, 0x3028 },
 	.tx_dev = 0x3AD0,	// the band select's word, kept in TX with or without sub-audio
 	.pa_both = true,
+	.digital = rt10_digital, .digital_n = N(rt10_digital),
+	.af_dmr = 0x4140, .af_dmr_tx = 0x6740,
 };
 
 static void fd_scl(bool high) { hrc_pin_write(PIN_FD_SCL, high); }
@@ -108,15 +126,24 @@ static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
 static rt10_tx_plan_t plan;
 static hrc7000_t modem;
+static volatile bool pcm_on;	// the modem plays CPU samples (a beep, DMR voice): rt10_speaker_pcm()
+static radio_mode_t mode = RADIO_MODE_FM;	// DMR only with CONFIG_DMR
+static volatile bool dmr_armed;	// DMR TX armed by tx(): the bursts key the RF
+#if CONFIG_DMR
+static uint32_t tx_hz;		// the armed transmission's frequency
+static void dmr_disarm(void);
+#endif
 
 rfbus_t *rt10_rf_bus(void)
 {
 	return &fd_bus.bus;
 }
 
+// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt). DMR TX keys the RF per
+// burst while armed, without setting transmitting
 bool rt10_radio_transmitting(void)
 {
-	return transmitting;
+	return transmitting || dmr_armed;
 }
 
 void rt10_rf_info(uint16_t *id, uint32_t *nacks)
@@ -151,6 +178,9 @@ static void init(void)
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
 	hrc7000_power_on_init(&modem, rt10_cal_tx_center(), MODEM_MIC_DB);
 	write_bias(RT10_BIAS_DEFAULT_HZ);
+#if CONFIG_DMR
+	rt10_dmr_init(&modem);
+#endif
 	hrc_pin_in(PIN_RF_CSS);
 	hrc_pin_in(PIN_RF_SQ);
 	hrc_pin_out(PIN_FD_SCL, true);
@@ -169,9 +199,45 @@ static void init(void)
 	fd6818sh_analog_mode(&fd);
 }
 
-static void set_mode(radio_mode_t mode)
+// The amplifier: on for an open squelch (audio()) or while the modem plays samples (DMR voice never opens the squelch
+// path), off while keyed
+static void amp_update(void)
 {
-	(void)mode;
+	hrc_pin_write(PIN_AMP_EN, (audio_open || pcm_on) && !transmitting);
+}
+
+#if CONFIG_DMR
+void rt10_speaker_pcm(bool on)
+{
+	if (on != pcm_on) {
+		pcm_on = on;
+		amp_update();
+	}
+}
+#endif
+
+static void set_mode(radio_mode_t m)
+{
+#if CONFIG_DMR
+	if (!fd_ok || m == mode) {
+		return;
+	}
+	if (m == RADIO_MODE_DMR) {
+		fd6818sh_dmr_mode(&fd);
+		DAC_DATA_C = RT10_DMR_DAC_C;
+		rt10_dmr_enter(hrc7000_mod_bias(rt10_cal_tx_center(), rt10_cal_mod(have_rx ? rx_hz : RT10_BIAS_DEFAULT_HZ)));
+		mode = RADIO_MODE_DMR;
+	} else {
+		dmr_disarm();
+		rt10_dmr_leave();
+		DAC_DATA_C = DAC_C_INIT;
+		fd6818sh_analog_mode(&fd);
+		mode = RADIO_MODE_FM;
+	}
+	have_rx = false;	// the next rx() retunes
+#else
+	(void)m;	// FM only without CONFIG_DMR
+#endif
 }
 
 static fd6818sh_tone_t fd_tone(const subtone_t *t)
@@ -204,6 +270,9 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	if (!board_in_band(hz, false)) {
 		return false;
 	}
+#if CONFIG_DMR
+	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
+#endif
 	bool from_tx = tx_stop();
 	rx_hz = hz;
 	rx_bw = bw;
@@ -216,9 +285,12 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	write_bias(hz);
 	fd6818sh_set_state(&fd, FD6818SH_STATE_IDLE);
 	fd6818sh_tune(&fd, synth_hz(hz));
-	fd6818sh_set_bandwidth(&fd, bw == RADIO_BW_25K);
-	fd6818sh_set_rx_tone(&fd, fd_tone(&rx_tone), rx_tone.value);
-	fd6818sh_set_af(&fd, audio_open ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
+	if (mode != RADIO_MODE_DMR) {	// DMR: the bandwidth is the digital set's, no sub-audio
+		fd6818sh_set_bandwidth(&fd, bw == RADIO_BW_25K);
+		fd6818sh_set_rx_tone(&fd, fd_tone(&rx_tone), rx_tone.value);
+	}
+	// DMR: the receive audio is the modem's input, on whether or not the speaker is
+	fd6818sh_set_af(&fd, audio_open || mode == RADIO_MODE_DMR ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
 	fd6818sh_set_state(&fd, FD6818SH_STATE_RX);
 	if (from_tx) {
 		hal_delay_us(TX_END_US);	// stock key-down: the retune, then the RX supply
@@ -237,12 +309,85 @@ static void apc_ramp(uint16_t target, bool up)
 
 static void audio(bool on);
 
+#if CONFIG_DMR
+// DMR TX, armed at the key-up (hardware-rt10.md 7.1). The RF stays receiving until the first burst's RF TX interrupt;
+// the modem's bias gets the step's modulation byte for the TX frequency, the FD6818 the PA gain
+static bool dmr_tx(uint32_t hz, uint8_t power)
+{
+	rt10_tx_plan_t p;
+	if (!fd_ok || !board_in_band(hz, true) || !rt10_cal_tx_plan(hz, power >= 1, &p)) {
+		return false;
+	}
+	dmr_disarm();
+	plan = p;
+	tx_hz = hz;
+	write_bias(hz);
+	fd6818sh_dmr_tx_prepare(&fd, p.pa_gain);
+	DAC_DATA_B = 0;
+	hrc_dac_b_power(true);
+	dmr_armed = true;
+	hrc_rfburst_arm();
+	return true;
+}
+
+static void dmr_disarm(void)
+{
+	if (dmr_armed) {
+		hrc_rfburst_disarm();
+		dmr_armed = false;
+		DAC_DATA_B = 0;
+		hrc_dac_b_power(false);
+		write_bias(rx_hz);
+	}
+}
+
+// One burst's TX on, the stock's (hardware-rt10.md 7.1): the key-up delay, the RX supply off, the FD6818 to the TX
+// frequency (its TX AF word first) in its TX state, PA select and TX supply on, DAC B ramped up
+void rt10_burst_on(hrc_rfburst_wait_fn wait)
+{
+	wait(plan.on_us);
+	hrc_pin_write(PIN_RX_SUPPLY, false);
+	fd6818sh_burst_tune(&fd, synth_hz(tx_hz), true);
+	DAC_DATA_B = 0;
+	hrc_pin_write(PIN_PA_SELECT, true);
+	hrc_pin_write(PIN_TX_SUPPLY, true);
+	apc_ramp(plan.dac, true);
+}
+
+// The burst's TX off: the hold until its last symbol (none when now), the ramp down, TX supply and PA select off,
+// 100 us, the FD6818 back to the receive frequency, 100 us, the RX supply on. The stock's key-down delay counts from
+// its RF RX interrupt; the hold to the burst's end takes its place. Returns how late the ramp down started, in us
+uint32_t rt10_burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now)
+{
+	uint32_t late = now ? 0 : hrc_rfburst_late_us(elapsed_us, RT10_DMR_RF_TX_LEAD);
+	if (!now) {
+		wait(hrc_rfburst_hold_us(elapsed_us, RT10_DMR_RF_TX_LEAD));
+	}
+	apc_ramp(plan.dac, false);
+	DAC_DATA_B = 0;
+	hrc_pin_write(PIN_TX_SUPPLY, false);
+	hrc_pin_write(PIN_PA_SELECT, false);
+	wait(TX_END_US);
+	fd6818sh_burst_tune(&fd, synth_hz(rx_hz), false);
+	wait(TX_END_US);
+	hrc_pin_write(PIN_RX_SUPPLY, true);
+	return late;
+}
+#endif
+
 // The stock key-up (hardware-rt10.md 5): the TX words while still receiving, speaker off, PA select and TX supply
 // low; then the calibration's delay, the RX supply off, the chip to f in its TX state, PA select and TX supply on, and
 // DAC B ramped up to the calibration's level
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
 {
 	(void)bw;	// the chip's deviation goes by band, not by bandwidth
+	if (mode == RADIO_MODE_DMR) {
+#if CONFIG_DMR
+		return dmr_tx(hz, power);
+#else
+		return false;
+#endif
+	}
 	subtone_t tone = tx_tone != NULL ? *tx_tone : (subtone_t){ TONE_NONE, 0 };
 	if (tone.type == TONE_CTCSS && (tone.value < CTCSS_MIN_X10 || tone.value > CTCSS_MAX_X10)) {
 		return false;
@@ -299,6 +444,9 @@ static bool tx_stop(void)
 
 static void tx_off(void)
 {
+#if CONFIG_DMR
+	dmr_disarm();	// the RF task finishes the burst it is in; rx() then sets the receiver up again
+#endif
 	if (have_rx) {
 		rx(rx_hz, rx_bw, &rx_tone);	// stops the transmission first
 	} else if (tx_stop()) {
@@ -346,7 +494,7 @@ static bool tx_tone_key(bool down)
 // Battery save: the chip idle and the receiver's supply off. Waking retunes with the last rx() settings
 static void rx_sleep(bool sleep)
 {
-	if (!fd_ok || transmitting || !have_rx || sleep == asleep) {
+	if (!fd_ok || transmitting || dmr_armed || !have_rx || sleep == asleep) {
 		return;
 	}
 	if (sleep) {
@@ -387,10 +535,10 @@ static void status(radio_status_t *st)
 	// up after the carrier and through the next one, whatever its tone, until the sub-audio set is written again
 	// (hardware-rt10.md 7): with the chip's squelch (GPIO6) closed and the match up, write it again, which clears it
 	bool sq = hrc_pin_read(PIN_RF_SQ), css = hrc_pin_read(PIN_RF_CSS);
-	if (rx_tone.type != TONE_NONE && !sq && css && !transmitting) {	// 0x51 holds the TX sub-audio while keyed
+	if (mode != RADIO_MODE_DMR && rx_tone.type != TONE_NONE && !sq && css && !transmitting) {	// 0x51 holds the TX sub-audio while keyed
 		fd6818sh_set_rx_tone(&fd, fd_tone(&rx_tone), rx_tone.value);
 	}
-	st->tone_ok = rx_tone.type == TONE_NONE || (sq && css);
+	st->tone_ok = rx_tone.type == TONE_NONE || mode == RADIO_MODE_DMR || (sq && css);
 }
 
 static void audio(bool on)
@@ -399,10 +547,11 @@ static void audio(bool on)
 	if (transmitting) {
 		return;		// muted until tx_stop() restores this
 	}
+	// DMR: the receive audio is the modem's input and stays on
 	if (fd_ok) {
-		fd6818sh_set_af(&fd, on ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
+		fd6818sh_set_af(&fd, on || mode == RADIO_MODE_DMR ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
 	}
-	hrc_pin_write(PIN_AMP_EN, on);
+	amp_update();
 }
 
 // The debug link's CHIP_REG (board.chip_reg): chip 0 is the FD6818. Page 1 is selected around the access and its

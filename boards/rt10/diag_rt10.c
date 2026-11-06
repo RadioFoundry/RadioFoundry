@@ -5,6 +5,15 @@
 #include "rt10.h"
 #include "pins.h"
 #include "platform.h"
+#include "config.h"
+#if CONFIG_DMR
+#include "dmr_glue.h"
+#include "dmr_rfburst.h"
+#include "vocoder.h"
+#include "dmr_rt10.h"
+#endif
+
+#define DIAG_DMR_FIRST	6u	// the DMR modem counters (dmr_glue.c), then the codec and the burst line
 
 bool rt10_diag_line(uint8_t i, char *buf, uint8_t len)
 {
@@ -32,6 +41,30 @@ bool rt10_diag_line(uint8_t i, char *buf, uint8_t len)
 		return true;
 	}
 	default:
-		return false;
+		break;
 	}
+#if CONFIG_DMR
+	if (i >= DIAG_DMR_FIRST && i < DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES) {
+		return hrc_dmr_stats_line((uint8_t)(i - DIAG_DMR_FIRST), buf, len);
+	}
+	if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES) {
+		// DMR TX bursts (hardware-rt10.md 7.1): TX-on and TX-off sequences run, RF RX interrupts seen, what woke the
+		// last TX-off (R: RF RX interrupt, T: slot tick, A: abort), the ramp downs that started late and the last by
+		// how much; then the codec in the slot
+		hrc_rfburst_stats_t t;
+		hrc_rfburst_stats(&t);
+		snprintf(buf, len, "b%lu/%lu rx%lu %c L%lu/%lu c%u", (unsigned long)t.bursts, (unsigned long)t.ends,
+			 (unsigned long)t.rfrx_ints, t.last_by != 0 ? t.last_by : '-', (unsigned long)t.late,
+			 (unsigned long)t.last_late_us, (unsigned)hrc_vocoder_tag());
+		return true;
+	}
+	if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES + 1) {
+		// The AF phase range the modem saw, largest / smallest: within a few counts, no audio reaches its ADC
+		// (modem-hrc7000.md 2.1)
+		uint32_t ph = rt10_dmr_phase();
+		snprintf(buf, len, "ph %ld/%ld", (long)((int32_t)(ph << 2) >> 18), (long)((int32_t)(ph << 18) >> 18));
+		return true;
+	}
+#endif
+	return false;
 }

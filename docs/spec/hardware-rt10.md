@@ -69,7 +69,7 @@ bits 8:3 cleared, bits 29:27 set).
 | PTB27 | 59 | FD6818 GPIO0, the sub-audio compare result (measured) | high = the tone or code is heard |
 | PTB28 / PTB29 | 60 / 61 | voice prompt chip clock / data | |
 | DAC B | | PA control, after IO_DIPLEX2 bit 28 is cleared | 0 = off |
-| DAC C | | routed to its pin (IO_DIPLEX2 bit 29) and set to 1762 at start-up; its use: ? | |
+| DAC C | | routed to its pin (IO_DIPLEX2 bit 29), 1762 at start-up: the modem's AF ADC bias (7.1) | |
 | ADC channel 2 | | battery | divider: ? |
 | UART0 | | programming cable, 115200 8N1 under RadioFoundry | |
 
@@ -159,6 +159,38 @@ carrier, even one with another tone (131.8 Hz after 100.0 Hz, 4.6 s). Writing th
 it, and a new match then takes about 120 ms. The driver counts PTB27 only with PTB26 (squelch) high, and writes the
 sub-audio set again when it finds PTB26 low with PTB27 high. The chip doesn't tell DCS polarity apart: 023N is heard with 023 set normal or inverted.
 
+### 7.1 DMR
+
+The original firmware's scheme: the HR_C7000's 4FSK goes on the TCXO through MOD1 (section 4.1), and each burst
+runs the FM key-up and key-down, started by the modem's RF TX interrupt. RadioFoundry runs the bursts from the shared
+RF-burst task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a) with the sequences in `boards/rt10/radio_rt10.c`. Values
+from the original firmware's code:
+
+| Item | Value |
+| --- | --- |
+| FD6818 digital set | the stock's DMR entry: 0x04 = 0x0300, 0x48 = 0x6C5C, 0x4B = 0xE442, 0x73 = 0x569A (AFC off), 0x7E = 0x349E (TX DC filter bypassed), 0x23 = 0x8F87 (AF DAC level 7), then 0x43 = 0x7E08. The FD6818 guide's DMR bypass mode lists the same 0x48, 0x4B, 0x73 and 0x7E words ("cic mode"). Leaving DMR, the analog set writes the power-on words back (0x48 = 0x6C4C) |
+| 0x4B | 0xE442 puts the demodulated 4FSK on the AF output. With the power-on 0x223C the modem's PHASE_OUT range stays within about ±40 counts of its center during a call (a few millivolts at its AF ADC) and the modem never syncs; with 0xE442 it reaches the ±2432 limit (measured) |
+| AF output (0x47) | receive 0x4140 (to the modem; analog 0x7140); at a burst's TX 0x6740, written before the tune |
+| 0x40 | 0x3AD0: the band select in every tune writes it, so a burst transmits with it (the stock's 0x40 = 0 ahead of the tune is overwritten) |
+| States (0x03) | receive 0xBFF1, TX 0xC1FE, each through 0 |
+| Modem RF_MODE | 0x034C9860: AF gain 0x4C, TX symbol mapping not inverted (bit 7 clear) |
+| RF TX interrupt lead | RF_CONTROL b13:8 = 0x1A (2.6 ms) |
+| Modem ADC gain (GCR_ADCL) | 11 dB, the other HR_C7000 radios' value; the original's is not read. `make RT10_DMR_MIC_DB=N` |
+| DAC C | the modem's AF ADC bias (its N input): each step moves the PHASE_OUT center about 9 counts. The stock keeps 1762; RadioFoundry writes `RT10_DMR_DAC_C` (1850) entering DMR and 1762 leaving it. AMBE bits corrected per frame on a bench voice call (234 frames each, measured): 1762 0.83-0.86, 1800 0.51, 1825 0.45, 1850 0.05, 1875 0.09, 1900 0.16, 1950 0.50, 2050 0.89; at 1680 no sync. `make RT10_DMR_DAC_C=N` |
+
+Burst TX on, from the RF TX interrupt: the calibration's key-up delay (section 4.1), PTB4 (RX supply) low, the
+FD6818 to the TX frequency in its TX state, PTB3 and PTB0 high, DAC B ramped to the calibration's level. TX off: the
+ramp down, PTB0 and PTB3 low, 100 us, the FD6818 back to the receive frequency (0x4140, 0xBFF1), 100 us, PTB4 high.
+The original starts the key-down at its RF RX interrupt plus the calibration's key-down delay; RadioFoundry holds
+the TX until the burst's last symbol instead.
+
+Measured on the SDR bench (927.5 MHz, lowest power, 2026-11-06):
+
+| Test | Result |
+| --- | --- |
+| DMR transmit, 6 s key-up, decoded by the bench | 106 bursts at 60.0 ms: 3 LC headers, 17 superframes, terminator; CC 2; group voice from the radio's ID; every FEC check passed, 0 AMBE bits corrected; deviation 1904-1913 Hz, frequency error within ±60 Hz. The diagnostics line: 106 keyed, 106 ended, none late |
+| DMR receive, a bench group call of recorded speech (78 voice bursts, 234 AMBE frames) | the call decoded (source, talkgroup, group, CC 2); 78 of 78 voice bursts, 3 headers, 2 terminators, no CRC errors; 234 of 234 frames played, none concealed or lost, 4 and 5 bits corrected on two calls; PCM peak 16707 |
+
 ## 8. Codec
 
 The AMBE+2 vocoder is part of the original image: its code runs from RAM, its tables are copied to modem SRAM. No
@@ -176,7 +208,7 @@ No codec bytes are in the repository or in a release.
 | Entry points (offsets) | decode 0, encode 0x294, dec_init 0xE8, dec_set 0xA4, enc_init 0x400, enc_set 0x32C, fec_init 0x1CD0 |
 | Init | The stock init routine calls them in the order, with the arguments and the state offsets, that `platform/hrc7000/vocoder.c` uses |
 | Tables | flash 0x0303C76C, 0x2D50 bytes (11,600), sha256 `e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e` (the DB25-D's tables). The start-up code copies flash 0x03038D60 to modem SRAM 0x18000800, so they run at 0x1800420C..0x18006F5C |
-| Codec map | `rt10-112` (`tools/rfoundry/rfoundry/codec_maps/rt10/`): 3 self-referencing words (one reachable from the entry points), 69 table words (52 targets), no instruction pairs, no references outside the code and table windows. Static analysis only: the codec hasn't run on the radio |
+| Codec map | `rt10-112` (`tools/rfoundry/rfoundry/codec_maps/rt10/`): 3 self-referencing words (one reachable from the entry points), 69 table words (52 targets), no instruction pairs, no references outside the code and table windows. Measured: the merged codec decodes bench speech and encodes the radio's transmissions (7.1) |
 
 `memory.ld` reserves modem SRAM 0x1800420C..0x18007184, 0x228 bytes more than the tables. `tools/hrc7000_codec.py
 --board rt10 --stock READ` merges the codec into a built image; READ is a 1 MB or the whole 2 MB program flash read
@@ -195,4 +227,6 @@ No codec bytes are in the repository or in a release.
 | Battery save | measured: asleep is the FD6818 idle and PTB4 (RX supply) low; waking retunes the receiver |
 | Reference | measured: the modem's bias from the calibration puts receive and transmit on frequency (section 4.1) |
 | Reference trim | written: the trim moves the synthesizer frequency at the next tune; the modem's bias stays the factory's tune. Untested on air |
-| DMR, codec map | the codec map exists (`rt10-112`, section 8; not run on the radio). DMR is open |
+| DMR transmit and receive, codec | measured on air (7.1): voice both ways with the codec map `rt10-112` (section 8) |
+| DMR speaker audio, DMR microphone | open: decoded voice played (the counters) but not listened to; in a DMR key-up the vocoder's microphone level is a steady floor (peak 2946, spread 3 dB), speech not checked |
+| Microphone through the programming cable's line | measured: barely couples. FM key-ups on the SDR bench with 0x55 bursts at 6000 and 2400 baud on the line: the audio rose from about 5 Hz rms deviation to 6-8 Hz rms during the bursts, no tone. `tests/hil/test_mic_uart_inject.py` leaves the RT10 out |
