@@ -7,7 +7,7 @@ Adapted from our earlier bench tool sdrmon.py.
 sdrmon: on-air DMR burst monitor (one channel, offline analysis of a raw IQ capture from the SDR bench's RTL-SDR).
 Runs on the SDR bench with the rfoundry_sdrbench package (its Channelizer, FmDemod, slicer and FEC).
 
-    sdrmon.py capture --seconds N --out FILE [--freq 461.6875] [--offset-khz -200] [--gain 15] [--ppm P]
+    sdrmon.py capture --seconds N --out FILE --freq MHZ [--offset-khz -200] [--gain 15] [--ppm P]
                       [--service rfoundry-sdrbench@<bench host> | --service '']
         Stops the bench's gateway service (it holds the dongle) unless --service '', records raw IQ (cs8, 1.536 MS/s, bias tee
         on) tuned --offset-khz away from --freq (keeps the channel off the RTL DC spike at the tuner center), then
@@ -20,7 +20,7 @@ Runs on the SDR bench with the rfoundry_sdrbench package (its Channelizer, FmDem
         The ppm is applied in software at analysis time (librtlsdr only takes whole ppm). Without --ppm it is the
         SDR bench's own calibration (rfoundry_sdrbench.benchcal, a file on the bench host), recorded in FILE.json.
 
-    sdrmon.py analyze FILE [--cc 2] [--from MS] [--to MS] [--edges-only] [--dbm-offset DB] [--json OUT]
+    sdrmon.py analyze FILE [--cc CC] [--from MS] [--to MS] [--edges-only] [--dbm-offset DB] [--json OUT]
         Channelizes and FM-demodulates (48 kS/s, 10 samples per symbol), searches every sample for all four sync
         families (BS / MS / TS1 / TS2, voice and data), follows voice bursts B-F by their EMB, and prints per burst:
         time (ms from sample 0), slot phase, family, sync bit errors, color code / data type, power (dBFS and a
@@ -694,7 +694,8 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("capture", "analyze"):
         s = sub.add_parser(name)
-        s.add_argument("--freq", type=float, default=461.6875, help="channel MHz")
+        s.add_argument("--freq", type=float, default=os.environ.get("RFOUNDRY_BENCH_FREQ"), required="RFOUNDRY_BENCH_FREQ" not in os.environ,
+                           help="channel MHz ($RFOUNDRY_BENCH_FREQ), no default")
         s.add_argument("--offset-khz", type=float, default=-200.0, help="channel minus tuner center (kHz)")
         s.add_argument("--rate", type=float, default=1.536e6)
         s.add_argument("--ppm", type=float, default=None, help="SDR error (default: the bench's calibration)")
@@ -706,7 +707,8 @@ def main() -> int:
             s.add_argument("--service", default=SERVICE, help="'' to not stop/start any service")
         else:
             s.add_argument("file")
-            s.add_argument("--cc", type=int, default=2, help="color code for EMB checks (-1: any)")
+            s.add_argument("--cc", type=int, default=int(os.environ.get("RFOUNDRY_BENCH_CC", "-1")),
+                               help="color code for EMB checks ($RFOUNDRY_BENCH_CC; default -1: any)")
             s.add_argument("--from", dest="from_ms", type=float)
             s.add_argument("--to", dest="to_ms", type=float)
             s.add_argument("--edges-only", action="store_true")

@@ -27,8 +27,8 @@ def test_vfo_dmr_settings(radio):
                                what="talk target 3100")
             assert v["temporary"] == "0" and v["dmr.target_manual"] == "0" and v["dmr.target_private"] == "0"
             assert v["vfo"] == "1" and v["dmr.active"] == "1"
-            L.dmr_target(3107777, private=True)
-            radio.wait_for(lambda v: v.get("dmr.target_id") == "3107777" and v.get("dmr.target_private") == "1",
+            L.dmr_target(9990777, private=True)
+            radio.wait_for(lambda v: v.get("dmr.target_id") == "9990777" and v.get("dmr.target_private") == "1",
                            sections=("dmr",), what="private target")
             # The VFO's own: a channel and back keeps all of it
             L.vfo(False)
@@ -36,7 +36,7 @@ def test_vfo_dmr_settings(radio):
             L.vfo(True)
             v = radio.wait_for(lambda v: v.get("vfo") == "1" and v.get("mode") == "dmr", sections=("core", "dmr"),
                                what="the DMR VFO again")
-            assert v["dmr.cc"] == "7" and v["dmr.ts"] == "2" and v["dmr.target_id"] == "3107777"
+            assert v["dmr.cc"] == "7" and v["dmr.ts"] == "2" and v["dmr.target_id"] == "9990777"
             assert v["dmr.target_private"] == "1" and v["temporary"] == "0"
             # Back to FM stops the call stack
             L.dmr_fields(mode="fm")

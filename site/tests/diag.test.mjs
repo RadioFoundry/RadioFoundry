@@ -66,17 +66,18 @@ test("the context is the tool's, and a failing one doesn't break the report", ()
 });
 
 test("automatic reports lose callsigns, DMR IDs and email addresses", () => {
-	assert.equal(diag.scrub("channel N4NQV id 3101276 mail a.b@example.com"), "channel [call] id [id] mail [email]");
-	assert.equal(diag.scrub("VE3ABC, 2E0XYZ, G4A"), "[call], [call], [call]");
+	assert.equal(diag.scrub("channel Q0TST id 9991234 mail a.b@example.com"), "channel [call] id [id] mail [email]");
+	// Q and a leading 0 are never issued (ITU), so these keep the shapes and stay impossible calls
+	assert.equal(diag.scrub("QA3ABC, 0Q0XYZ, Q20XYZ, Q4A"), "[call], [call], [call], [call]");
 	// addresses, versions and protocol words stay
 	assert.equal(diag.scrub("X 2 0x6a000 1024 at 0x00123456 v1.2.3 DM-1701 HR_C6000"), "X 2 0x6a000 1024 at 0x00123456 v1.2.3 DM-1701 HR_C6000");
 });
 
 test("a file's size in a trail line stays a number: the line's JSON stays valid and the size readable", () => {
-	const line = 'file picked {"name":"DM-1701.bin","size":1048832,"id":3101276}';
+	const line = 'file picked {"name":"DM-1701.bin","size":1048832,"id":9991234}';
 	assert.equal(diag.scrub(line), 'file picked {"name":"DM-1701.bin","size":1048832,"id":[id]}');
 	assert.equal(diag.scrub('restore file {"len":524288,"received":2097152}'), 'restore file {"len":524288,"received":2097152}');
-	assert.equal(diag.scrub("size 3101276"), "size [id]", "only a JSON size field is kept");
+	assert.equal(diag.scrub("size 9991234"), "size [id]", "only a JSON size field is kept");
 });
 
 test("a refused codeplug write leaves its frames in the log", async () => {

@@ -40,6 +40,7 @@ import pytest
 from _pytest.outcomes import Skipped
 
 from rfoundry_hil import counter_deltas, skip
+from hil_config import rig
 
 RPT_ROLES = (3, 4)  # sfrRole_t: RPT_STANDARD, RPT_MOTOROLA
 USER_ROLES = (1, 2)  # USER_STANDARD, USER_ERDM
@@ -47,8 +48,8 @@ SRC = 9990302
 
 
 def _freq(pytestconfig):
-    f = pytestconfig.getoption("--sfr-freq") or pytestconfig.getoption("--dmr-freq")
-    return f, pytestconfig.getoption("--dmr-cc"), pytestconfig.getoption("--dmr-tg")
+    f = pytestconfig.getoption("--sfr-freq") or rig(pytestconfig, "dmr-freq")
+    return f, rig(pytestconfig, "dmr-cc"), rig(pytestconfig, "dmr-tg")
 
 
 def _sfr_channel(radio, hz, roles):

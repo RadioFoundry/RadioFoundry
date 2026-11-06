@@ -422,7 +422,7 @@ static void test_ui_svc(void)
 	CHECK(udp.calls == 0);
 
 	// The data service refuses it (one still going): false, and the state stays idle
-	fake_contact.id = 3101234;
+	fake_contact.id = 9991234;
 	fake_udp_ok = false;
 	CHECK(!ui_svc_crash_send());
 	CHECK(udp.calls == 1 && ui_svc_crash_tx_state() == UI_CRASH_TX_IDLE);
@@ -430,7 +430,7 @@ static void test_ui_svc(void)
 
 	// A private contact: the packed report to its ID, port 4090 both ends
 	CHECK(ui_svc_crash_send());
-	CHECK(udp.calls == 2 && udp.dst == 3101234u && !udp.group);
+	CHECK(udp.calls == 2 && udp.dst == 9991234u && !udp.group);
 	CHECK(udp.src_port == CRASH_UDP_PORT && udp.dst_port == CRASH_UDP_PORT);
 	uint8_t want[CRASH_PACK_MAX];
 	size_t n = crash_pack(&store, want, sizeof want, hal_crash_code_addr);

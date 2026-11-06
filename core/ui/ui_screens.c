@@ -1076,9 +1076,9 @@ static bool sending_data(const radio_view_t *v)
 
 // --- DMR (docs/ux/wireframes: Home DMR, Receiving, Transmitting) ---
 #if CONFIG_DMR
-// "TG 201 Main Ops", "Joe 3101234", "All call"; a private call without a name shows the ID only
-// A contact name that only repeats the ID ("TG 201", "TG201", "201" for talkgroup 201; "3101276" for that radio):
-// codeplugs often name talkgroups that way, and Home would read "TG 201 TG 201"
+// "TG 123 Main Ops", "Joe 9991234", "All call"; a private call without a name shows the ID only
+// A contact name that only repeats the ID ("TG 123", "TG123", "123" for talkgroup 123; "9996543" for that radio):
+// codeplugs often name talkgroups that way, and Home would read "TG 123 TG 123"
 bool ui_name_is_id(const char *name, uint32_t id, bool private_call)
 {
 	const char *p = name;
@@ -1125,7 +1125,7 @@ static void sb_target(sbuf_t *b, uint32_t id, bool private_call, const char *nam
 	}
 }
 
-// The target's short form, for when the whole doesn't fit: a talkgroup keeps its number ("TG 201"), a private contact
+// The target's short form, for when the whole doesn't fit: a talkgroup keeps its number ("TG 123"), a private contact
 // its name ("Joe"), since the name is what the user picked and the ID alone says nothing at a glance
 static void sb_target_short(sbuf_t *b, uint32_t id, bool private_call, const char *name)
 {
@@ -1166,7 +1166,7 @@ static void sb_caller(sbuf_t *b, const radio_dmr_call_t *c)
 		sb_u32(b, c->src, 1);
 }
 
-// Where the call went: "TG 201 Main Ops", "Private to you", "Private to 3101234"
+// Where the call went: "TG 123 Main Ops", "Private to you", "Private to 9991234"
 static void sb_call_dst(sbuf_t *b, const radio_dmr_call_t *c)
 {
 	if (c->group) {
@@ -1191,7 +1191,7 @@ static bool dmr_call_screen(const radio_view_t *v)
 	return v->state == RS_RX && (v->dmr.state == RDMR_RX || v->dmr.state == RDMR_RX_OTHER);
 }
 
-// Talk target line on Home: "PTT-> TG 201 Main Ops", or "Reply-> TG 9 (8s)" during the reply window
+// Talk target line on Home: "PTT-> TG 123 Main Ops", or "Reply-> TG 9 (8s)" during the reply window
 static bool ui_st_dmr_off;		// ui_state_t.dmr_off of the frame being drawn
 
 static void draw_talk_dmr(const radio_view_t *v)
@@ -1214,7 +1214,7 @@ static void draw_talk_dmr(const radio_view_t *v)
 		sb_str(&b, TR("DMR modem off"));
 		c = ui_col.warn;
 	} else {
-		// The target, and its short form as an alternate: "TG 91 World (9s)", "TG 91 (9s)"; "Joe 3101234", "Joe"
+		// The target, and its short form as an alternate: "TG 91 World (9s)", "TG 91 (9s)"; "Joe 9991234", "Joe"
 		char secs[8] = "";
 		if (d->reply_active) {
 			sbuf_t sb;
@@ -1343,7 +1343,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 
 	sb_init(&b, title, sizeof title);
 	if (v->state == RS_TX && d->target_private && d->target_id != 0xFFFFFFu) {
-		// A private call says so where a group call has its "TG": "Private 3101234", else "Private"
+		// A private call says so where a group call has its "TG": "Private 9991234", else "Private"
 		sb_str(&b, TEXT_ALT_OPEN);
 		sb_str(&b, TR("Private "));
 		sb_u32(&b, d->target_id, 1);
@@ -1362,6 +1362,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		const char *word = TR("TALKING");
 		switch (d->state) {
 		case RDMR_TX_WAIT: word = d->rmo && !d->repeater_up ? TR("WAKING RPT") : TR("WAITING"); break;
+		case RDMR_TX_PERMIT: word = TR("ADMITTED"); break;	// the channel is ours: the talk permit sounds now
 		case RDMR_TX_ENDING: word = TR("ENDING"); break;
 		default: break;
 		}

@@ -201,7 +201,7 @@ static void testAnytoneBP(void)
 
 static void testSignaling(void)
 {
-	uint8_t lc[12] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x2F, 0x52, 0x5C, 0, 0, 0 };
+	uint8_t lc[12] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x98, 0x88, 0xFF, 0, 0, 0 };
 
 	CHECK(dmrPrivacyLCIsPrivate(lc) == false, "clear LC");
 	lc[1] = dmrPrivacyFID(DMR_PRIVACY_MOTOROLA_BP, 0);
