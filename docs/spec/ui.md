@@ -76,6 +76,11 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
 `uiSim --ellipsis` (section 7) lists what is still shortened; `uiSim --layout` fails the build on a middle ellipsis
 with ordinary content.
 
+When entering a list screen, if the screen has not set a nonzero focus, select the first row that is neither
+informational nor disabled. If every row is one or the other, select the first disabled row (a text row is never
+focused). Returning with Back preserves the parent focus; manual navigation can still reach disabled rows to explain
+why they are unavailable.
+
 Core code never includes a board header and never tests a radio define. What differs by radio comes from the board
 descriptor: the display geometry and insets (`hal_display_t`), and the key map (`board.keymap`), which turns keys
 into logical actions (`hal_input.h`).
