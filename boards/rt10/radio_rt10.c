@@ -8,6 +8,9 @@
 // DMR (CONFIG_DMR, hardware-rt10.md 7.1): the FD6818's digital set, the modem on the shared glue (dmr_rt10.c). tx()
 // only arms the transmitter; each burst then runs the FM key-up and key-down from the RF task (rt10_burst_on /
 // rt10_burst_off), as the stock firmware does
+//
+// APRS (CONFIG_APRS, hardware-rt10.md 7.2): the tones take DMR's path onto the reference, the modem's FM transmitter
+// playing them on MOD1 with the FD6818's microphone off; receive takes the FD6818's FM audio through the modem
 #include "rt10.h"
 #include "dmr_rt10.h"
 #include "config.h"
@@ -21,6 +24,11 @@
 #include "rf/rfbus/rfbus_i2c.h"
 #include "rf/fd6818/fd6818.h"
 #include "rf/fd6818/fd6818sh.h"
+#if CONFIG_APRS
+#include "hrc_afsk.h"
+#include "audio_pcm.h"
+#include "fm_rx_audio.h"
+#endif
 
 #define FD_ADDR7	0x71u	// 0xE2 / 0xE3 on the wire
 #define FD_REG_ID	0x00u
@@ -129,9 +137,23 @@ static hrc7000_t modem;
 static volatile bool pcm_on;	// the modem plays CPU samples (a beep, DMR voice): rt10_speaker_pcm()
 static radio_mode_t mode = RADIO_MODE_FM;	// DMR only with CONFIG_DMR
 static volatile bool dmr_armed;	// DMR TX armed by tx(): the bursts key the RF
+static bool tx_wide;		// the FM transmission is at 25 kHz (the modem's deviation for APRS)
 #if CONFIG_DMR
 static uint32_t tx_hz;		// the armed transmission's frequency
 static void dmr_disarm(void);
+#endif
+#if CONFIG_APRS
+static bool afsk_tx;		// APRS tones on the reference (afsk_tx_route)
+static bool aprs_listen;	// APRS takes the FD6818's FM audio through the modem (aprs_listen_route)
+static bool afsk_tx_route(bool on);
+static void aprs_listen_route(bool on);
+static void modem_fm(void);
+
+// PCM amplitude per AFSK level step (level 50 is the nominal 3 kHz peak): the reference's modulation slope, set on the
+// SDR bench (hardware-rt10.md 7.2)
+static const hrc_afsk_board_t afsk_board = {
+	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 55,
+};
 #endif
 
 rfbus_t *rt10_rf_bus(void)
@@ -197,6 +219,22 @@ static void init(void)
 	fd6818sh_init_main(&fd);
 	fd6818sh_set_af_gain(&fd, FD_VOLUME);
 	fd6818sh_analog_mode(&fd);
+#if CONFIG_APRS
+	hrc_fm_rx_attach(&modem);
+	hrc_afsk_attach(&modem, &afsk_board);
+#endif
+}
+
+// The FD6818's AF output: the speaker's audio with the squelch open; in DMR the modem's input, and while APRS listens
+// the modem's copy for the demodulator, both whatever the squelch does
+static bool af_on(void)
+{
+#if CONFIG_APRS
+	if (aprs_listen) {
+		return true;
+	}
+#endif
+	return audio_open || mode == RADIO_MODE_DMR;
 }
 
 // The amplifier: on for an open squelch (audio()) or while the modem plays samples (DMR voice never opens the squelch
@@ -233,6 +271,9 @@ static void set_mode(radio_mode_t m)
 		DAC_DATA_C = DAC_C_INIT;
 		fd6818sh_analog_mode(&fd);
 		mode = RADIO_MODE_FM;
+#if CONFIG_APRS
+		modem_fm();	// leaving DMR left the modem idle
+#endif
 	}
 	have_rx = false;	// the next rx() retunes
 #else
@@ -289,8 +330,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 		fd6818sh_set_bandwidth(&fd, bw == RADIO_BW_25K);
 		fd6818sh_set_rx_tone(&fd, fd_tone(&rx_tone), rx_tone.value);
 	}
-	// DMR: the receive audio is the modem's input, on whether or not the speaker is
-	fd6818sh_set_af(&fd, audio_open || mode == RADIO_MODE_DMR ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
+	fd6818sh_set_af(&fd, af_on() ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
 	fd6818sh_set_state(&fd, FD6818SH_STATE_RX);
 	if (from_tx) {
 		hal_delay_us(TX_END_US);	// stock key-down: the retune, then the RX supply
@@ -380,7 +420,6 @@ uint32_t rt10_burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now)
 // DAC B ramped up to the calibration's level
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
 {
-	(void)bw;	// the chip's deviation goes by band, not by bandwidth
 	if (mode == RADIO_MODE_DMR) {
 #if CONFIG_DMR
 		return dmr_tx(hz, power);
@@ -403,6 +442,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	tx_stop();
 	asleep = false;
 	plan = p;
+	tx_wide = bw == RADIO_BW_25K;	// the FD6818's deviation goes by band; the modem's (APRS) by bandwidth
 	fd6818sh_tx_prepare(&fd, fd_tone(&tone), tone.value, hz, p.pa_gain);
 	fd6818sh_set_af(&fd, FD6818SH_AF_MUTE);
 	hrc_pin_write(PIN_AMP_EN, false);
@@ -429,6 +469,11 @@ static bool tx_stop(void)
 	if (!transmitting) {
 		return false;
 	}
+#if CONFIG_APRS
+	if (afsk_tx) {
+		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net
+	}
+#endif
 	fd6818sh_tx_end(&fd);
 	hal_delay_us(plan.off_us);
 	apc_ramp(plan.dac, false);
@@ -547,12 +592,68 @@ static void audio(bool on)
 	if (transmitting) {
 		return;		// muted until tx_stop() restores this
 	}
-	// DMR: the receive audio is the modem's input and stays on
 	if (fd_ok) {
-		fd6818sh_set_af(&fd, on || mode == RADIO_MODE_DMR ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
+		fd6818sh_set_af(&fd, af_on() ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
 	}
 	amp_update();
 }
+
+#if CONFIG_APRS
+// The modem in FM: receiving while APRS listens (its FM playback off), else idle. DMR keeps the modem's own state
+static void modem_fm(void)
+{
+	if (mode != RADIO_MODE_FM) {
+		return;
+	}
+	if (aprs_listen) {
+		hrc7000_fm_rx(&modem, rx_bw == RADIO_BW_25K);
+		hrc7000_audio_bits(&modem, 0, C7_AUDIO_FM_PLAY);
+	} else {
+		hrc7000_fm_idle(&modem);
+	}
+}
+
+// APRS AFSK (hrc_afsk.c). The FD6818 modulates only its microphone, so the tones go the way DMR's 4FSK does: the
+// modem's FM transmitter plays the prompt FIFO on MOD1, the reference's control voltage (hardware-rt10.md 7.1), around
+// the receive set-up's bias. The FD6818 keeps the carrier in its tone state with no tone (microphone off), and the
+// modem's own microphone input is muted. False when the radio isn't transmitting FM
+static bool afsk_tx_route(bool on)
+{
+	if (on && (!transmitting || mode != RADIO_MODE_FM)) {
+		return false;
+	}
+	if (on == afsk_tx) {
+		return true;
+	}
+	afsk_tx = on;
+	if (on) {
+		fd6818sh_mic_off(&fd, true);
+		hrc7000_codec_mute(&modem, true, false);
+		hrc7000_fm_tx(&modem, tx_wide);
+		hrc_audio_pcm_ring(&modem, true);
+	} else {
+		hrc_audio_pcm_ring(&modem, pcm_on);	// back to what the speaker PCM last asked for
+		modem_fm();
+		hrc7000_codec_mute(&modem, false, false);
+		fd6818sh_mic_off(&fd, false);
+	}
+	return true;
+}
+
+// APRS receive: the modem in FM receive copies its input, the FD6818's demodulated audio, to the CPU (fm_rx_audio.c).
+// The FD6818's AF output stays on with the squelch shut (the amplifier gate keeps the speaker quiet), and the modem's
+// own FM playback stays off: the speaker hears the FD6818 directly
+static void aprs_listen_route(bool on)
+{
+	aprs_listen = on;
+	if (!afsk_tx) {
+		modem_fm();
+	}
+	if (fd_ok && !transmitting) {
+		fd6818sh_set_af(&fd, af_on() ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
+	}
+}
+#endif
 
 // The debug link's CHIP_REG (board.chip_reg): chip 0 is the FD6818. Page 1 is selected around the access and its
 // registers go out at 0x80 up, as rt10_fd's page1_or. Bench use: a radio task write between the page selects would land

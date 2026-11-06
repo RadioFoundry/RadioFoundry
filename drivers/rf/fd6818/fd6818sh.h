@@ -145,6 +145,9 @@ void fd6818sh_tone_start(fd6818sh_t *dev, uint16_t hz, uint8_t gain);	// hz 0 = 
 void fd6818sh_tone_key(fd6818sh_t *dev, bool down);
 void fd6818sh_tone_stop(fd6818sh_t *dev);
 void fd6818sh_dtmf_start(fd6818sh_t *dev, uint16_t low_hz, uint16_t high_hz);	// low 0 = stop
+// In FM TX: the microphone off (the tone state with no tone, the carrier kept) or back on. For a modulation the board
+// puts on the reference instead (APRS tones through the modem). Nothing while a tone runs
+void fd6818sh_mic_off(fd6818sh_t *dev, bool off);
 // DMR TX: the PA gain for the bursts, then the per-burst tune (TX on hz, or back to receive at hz). With the board's
 // af_dmr_tx, TX writes it first; receive writes the digital AF word before the state
 void fd6818sh_dmr_tx_prepare(fd6818sh_t *dev, uint8_t pa_gain);

@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // FD6818 superhet driver (drivers/rf/fd6818/fd6818sh): the band, deviation, PA, microphone, volume, CTCSS and tone
 // words, the 0x7813 VCO sections, and the write order of init, receive at the IF, FM TX with sub-audio and its tail,
-// the DMR burst tune and the LO tune / off / resume. The chip is a register file with a page select
+// the microphone off in TX, the DMR burst tune and the LO tune / off / resume. The chip is a register file with a page
+// select
 #include <stdio.h>
 #include <string.h>
 #include "rf/fd6818/fd6818sh.h"
@@ -330,8 +331,17 @@ static void test_board_set(void)
 	CHECK(regs[0][0x28] == 0x0009);
 	fd6818sh_tx_tune(&c, 927500000);
 	CHECK(regs[0][0x03] == 0xC1FE);
+	// The microphone off for a modulation on the reference: the board's tone state with no tone, straight from TX
+	from = nlog;
+	fd6818sh_mic_off(&c, true);
+	CHECK(LOGGED(from, 0x70, 0x0000, 0x03, 0xC1FA));
+	fd6818sh_mic_off(&c, false);
+	CHECK(regs[0][0x03] == 0xC1FE && regs[0][0x70] == 0);
 	fd6818sh_tone_start(&c, 1750, 30);
 	CHECK(regs[0][0x03] == 0xC1FA);
+	from = nlog;
+	fd6818sh_mic_off(&c, false);	// a tone running: left alone
+	CHECK(nlog == from);
 	fd6818sh_tx_end(&c);
 	CHECK(regs[0][0x03] == 0xBFF1);
 

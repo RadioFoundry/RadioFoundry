@@ -641,6 +641,18 @@ void fd6818sh_tone_stop(fd6818sh_t *dev)
 	dev->tone_hz = 0;
 }
 
+// The tone state with no tone: the carrier stays, the microphone ADC is off. Ignored while a tone runs
+void fd6818sh_mic_off(fd6818sh_t *dev, bool off)
+{
+	if (dev->tone_hz != 0) {
+		return;
+	}
+	uint16_t st = off ? tx_tone_state(dev) : tx_state(dev);
+	wr(dev, REG_TONE_CTRL, 0x0000);
+	wr(dev, FD6818SH_REG_STATE, st);	// straight from TX, as a tone's start does
+	dev->state = st;
+}
+
 void fd6818sh_dmr_tx_prepare(fd6818sh_t *dev, uint8_t pa_gain)
 {
 	dev->tx_sub = false;
