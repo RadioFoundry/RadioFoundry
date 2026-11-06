@@ -337,6 +337,16 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		}
 		return tx_limit_set((a[0] & 1u) != 0, hz, a[1]) ? DL_ST_OK : DL_ST_BAD_ARG;
 	}
+	case DL_OP_TX_DRIVE:
+		// drive u16: the PA drive of the next transmission in the board's units, 0 = its power level's again
+		// (hal_radio_t.tx_drive; power calibration). The radio's transmit rules still apply
+		if (len < 2) {
+			return DL_ST_BAD_ARG;
+		}
+		if (board.radio == NULL || board.radio->tx_drive == NULL) {
+			return DL_ST_UNAVAILABLE;
+		}
+		return board.radio->tx_drive((uint16_t)(a[0] | (a[1] << 8))) ? DL_ST_OK : DL_ST_BAD_ARG;
 	case DL_OP_DTMF:
 		// digit u8 (ASCII), down u8: as a DTMF key's edge, so the same rules and timing apply. Refused unless a key
 		// would send now (dtmf_ready); an up is always taken
