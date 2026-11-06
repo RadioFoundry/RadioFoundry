@@ -71,6 +71,10 @@ class Link:
     def __init__(self, port, timeout=1.0):
         import serial
         self.s = serial.Serial(port, 115200, timeout=0.05)
+        try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
+            self.s.set_low_latency_mode(True)
+        except (AttributeError, NotImplementedError, OSError, ValueError):
+            pass
         self.timeout = timeout
         self.seq = 0x40
 
