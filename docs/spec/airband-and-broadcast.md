@@ -51,7 +51,7 @@ radio uses, and the Problems list warns about a DMR channel there or a TX freque
 | When | `CONFIG_AM_RX`, the board has `CAP_AM_RX` and `board.radio->rx_am`, and the channel's or the VFO's RX frequency is in [108, 137) MHz, whatever its stored mode (3.1) |
 | Tuning | `tune()` calls `rx_am(hz, bw)` instead of `rx()`; if the board refuses, FM as before. `view.am` says AM is on |
 | Transmit | refused with `TXDENY_AM` whenever `view.am`, and for any TX frequency in the air band on an AM radio (split channels, DMR channels, the VFO, the data service, the hotspot's frequencies) |
-| Squelch | on the RSSI: `radio_am_noise()` maps dBm onto the FM noise scale (-18 dBm = 0, 1 dB per step), so the levels and hysteresis are the FM ones: level 1 opens above -82 dBm, 5 above -70, 9 above -58. The boards' AM RSSI isn't calibrated: empty air band channels read -76 to -86 dBm on a radio (2026-10-22), so level 5 sits about 8 dB above that. `view.noise` holds that value in AM. Scan uses the same value |
+| Squelch | on the signal level: in AM the board's `status()` gives `noise` from it, on the FM noise scale (larger = weaker), so the levels and hysteresis are the FM ones (3.3). `view.noise` holds that value in AM. Scan uses the same value |
 | Sub-audio | ignored in AM (`tone_needed()` is false, the tone counts as heard) |
 | Steps | `radio_req_vfo_step_size()` (RREQ_VFO_STEP_SIZE, stored in `settings_t.vfo_step_hz`; 0 is auto, the default: 25 kHz at width 25K or in AM, else `RADIO_VFO_STEP_HZ`, recomputed on every view change, with `view.vfo_step_auto` set; Settings › Talk › VFO step); 8333 means the exact 8.33 kHz grid (n x 25/3 kHz, `radio_am_step()` snaps and steps without drift); 25 kHz is a plain step |
 | Band table | the board lists the air band as an RX-only band ({108000000, 136000000, false} after the VHF TX band) |
@@ -61,10 +61,28 @@ radio uses, and the Problems list warns about a DMR channel there or a TX freque
 
 ### 3.3 Board contract (hal_radio.h)
 
-`rx_am(hz, bw)` tunes and receives AM; the board leaves AM at the next `rx()` or `set_mode()`. `status()` gives an
-RSSI in dBm (noise isn't used in AM) and `tone_ok = true`. `tx()` is never called while AM is on. NULL = no AM.
-On an FD6818 `rx_am` is `rx` plus the AF output type AM (`fd6818_set_am`, 0x47 = 0x0740; inferred, section 2);
-`rx()` and `set_mode()` write FM back.
+`rx_am(hz, bw)` tunes and receives AM; the board leaves AM at the next `rx()` or `set_mode()`. `tx()` is never called
+while AM is on. NULL = no AM. In AM `status()` gives:
+
+- `noise` from the signal level, on the squelch's scale (larger = weaker; the core opens below 64 at level 1 down to
+  40 at level 9). The receiver has no useful noise reading in AM, and only the board knows its RSSI scale and the gain
+  its receiver runs at, so the board makes the value.
+- `rssi_dbm`, the signal level with any gain the receiver took off added back.
+- `tone_ok`: anything (the core takes it as true).
+
+On an FD6818 (`fd6818_set_am`, `fd6818_am_agc`, `fd6818_am_noise`):
+
+| Part | AM | FM |
+|---|---|---|
+| 0x43 receive filter | `FD6818_BW_AM` = 0x0048, the narrowest (about 1.7 kHz) | 0x3028 / 0x4008 or the board's |
+| 0x47 AF output | 0x6740, type 7 (AM) | 0x0140, type 1 (FM) |
+| 0x13 receiver gain | a gain loop: 0x03FF (full gain) at each tune, then stepped through a 42-entry table to keep a signal's 0x67 reading near 142 (down at once when 10 dB or more over, by the excess less 8 dB; up one step after 30 readings 6 dB or more under) | the board's FM word, written back when AM ends |
+| 0x4A | 0x5450 | its value before AM, written back |
+| Squelch value | 125 minus (the 0x67 reading plus twice the dB the loop took off), 0.5 dB steps: level 1 opens at a reading of 62 at full gain, level 5 at 74, level 9 at 86 | 0x65 noise |
+
+The gain loop runs at the core's status poll (`RADIO_POLL_MS`). These are the air band settings an FD6818 radio's own
+firmware uses (its hardware page has them); the loop's tick there isn't known, and the squelch levels are placed over
+its air band squelch calibration (readings of 61 to 71). `rx()` and `set_mode()` end AM.
 
 ## 4. Broadcast FM
 
