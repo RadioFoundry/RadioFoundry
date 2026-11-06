@@ -227,16 +227,25 @@ def test_injected_keys_count_as_activity(home):
 # on the host in uiFlowTest.c.
 
 
-def dmr_home(r):
-    if r.core().get("mode") != "dmr":
-        skip("state", "the current channel isn't DMR")
+def on_mode(r, mode):
+    """Home on a channel in mode ('fm' / 'dmr'): the current one, else the first such channel in any zone (restore()
+    puts the zone and channel back). Skips (state) when the codeplug has none"""
+    if r.core().get("vfo") != "1" and r.core().get("mode") == mode:
+        return r
+    try:
+        r.find_channel(None, mode)
+    except AssertionError as e:
+        skip("state", f"no {mode.upper()} channel to test on: {e}")
+    wait_screen(r, "home")
     return r
+
+
+def dmr_home(r):
+    return on_mode(r, "dmr")
 
 
 def fm_home(r):
-    if r.core().get("mode") != "fm":
-        skip("state", "the current channel isn't FM")
-    return r
+    return on_mode(r, "fm")
 
 
 def temp_bits(v):

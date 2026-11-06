@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The SFR roles of a codeplug channel, without the hotspot (docs/spec/sfr.md 4). The bench modem is the talker: a
 group call on the channel's timeslot with direct mode sync. The tests judge by the radio's own counters (sfr.*,
-dmr.*, call.*), not the SDR. They need a channel with the role on --sfr-freq (default --dmr-freq) in the current zone,
+dmr.*, call.*), not the SDR. They need a channel with the role on --sfr-freq (default --dmr-freq) in any zone,
 set in the codeplug (the tests don't write it), and skip without one. Every setting they change is put back.
 
 test_sfr_repeater_quality (rf, radio_tx, bench_service): a repeater-role channel (Rpt or Rpt Moto) repeats a 4
@@ -53,22 +53,30 @@ def _freq(pytestconfig):
 
 
 def _sfr_channel(radio, hz, roles):
-    """Select the first channel of the current zone on hz whose SFR role is in roles; its dmr view, or skip."""
+    """Select the first channel on hz whose SFR role is in roles, the current zone first, then the others (restore()
+    puts the zone back); its dmr view, or skip."""
     radio.go_home()
     L = radio.link
     if radio.core().get("vfo") == "1":
         radio._req_until(lambda: L.vfo(False), lambda v: v.get("vfo") == "0", "VFO off")
-    size = int(radio.core().get("zone_size") or 0)
-    for pos in range(size):
-        v = radio._req_until(lambda: L.zone_pos(pos), lambda x: x.get("zone_pos") == str(pos), f"position {pos}")
-        if int(v["rx_hz"]) != int(hz) or v.get("mode") != "dmr":
-            continue
-        d = radio.view(["dmr"])
-        if d.get("dmr.sfr_role") is None:
-            skip("not_built", "built without the SFR (dmr.sfr_role missing)")
-        if int(d["dmr.sfr_role"]) in roles:
-            return d
-    skip("state", f"no channel with SFR role {roles} on {hz / 1e6:.5f} MHz in zone {radio.core().get('zone_name')!r}")
+    start = int(radio.core().get("zone_index") or 0)
+    count = int(radio.core().get("zone_count") or 1)
+    searched = []
+    for zone in [start] + [z for z in range(count) if z != start]:
+        if radio.core().get("zone_index") != str(zone):
+            radio._req_until(lambda: L.zone(zone), lambda v: v.get("zone_index") == str(zone), f"zone {zone}")
+        size = int(radio.core().get("zone_size") or 0)
+        for pos in range(size):
+            v = radio._req_until(lambda: L.zone_pos(pos), lambda x: x.get("zone_pos") == str(pos), f"position {pos}")
+            if int(v["rx_hz"]) != int(hz) or v.get("mode") != "dmr":
+                continue
+            d = radio.view(["dmr"])
+            if d.get("dmr.sfr_role") is None:
+                skip("not_built", "built without the SFR (dmr.sfr_role missing)")
+            if int(d["dmr.sfr_role"]) in roles:
+                return d
+        searched.append(repr(radio.core().get("zone_name")))
+    skip("state", f"no channel with SFR role {roles} on {hz / 1e6:.5f} MHz in any zone ({', '.join(searched)})")
 
 
 def _setting(radio, name, value):
