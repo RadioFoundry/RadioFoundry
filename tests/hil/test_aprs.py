@@ -843,6 +843,7 @@ def test_aprs_igate_on_air(radio, sdr_bench, pytestconfig, to):
             srv = AprsIsServer()
             stack.callback(srv.close)
             host = ".".join(ip.split(".")[:3] + [str(int(ip.split(".")[3]) ^ 1)])     # the host's address
+            c0 = _n(L.view(["net"]), "aprsis.connects")
             st, _, body = _get(ip, f"/api/aprsis?server={host}:{srv.port}")
             assert st == 200, body
             stack.callback(lambda: _get(ip, "/api/aprsis?server=off"))
@@ -851,6 +852,9 @@ def test_aprs_igate_on_air(radio, sdr_bench, pytestconfig, to):
             login = [ln for ln in srv.lines if ln.startswith("user ")]
             print(f"login: {login}")
             assert login and login[-1].startswith(f"user {own} pass "), f"login {login}, expected as {own}"
+            # One connection and one login: a client that drops its first try reconnects only after its back-off
+            connects = _n(L.view(["net"]), "aprsis.connects") - c0
+            assert len(login) == 1 and connects == 1, f"{len(login)} logins, {connects} connects for one setup"
             n0 = len(srv.lines)
         else:
             k = stack.enter_context(socket.create_connection((ip, 8001), timeout=5))
