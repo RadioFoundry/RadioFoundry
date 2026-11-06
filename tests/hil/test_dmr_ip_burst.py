@@ -400,7 +400,9 @@ def test_udp_over_receive_limit_air_to_pc(radio, sdr_bench, pytestconfig):
     assert [p for p, _ in after_ok] == [_payload(0, 40)], "the next datagram didn't arrive: the receiver is stuck"
 
 
-@pytest.mark.feature("dmr_ip_gateway")
+# Optional for the gateway: the default build's air MTU is above the link's, so a bring-up run (default build) can't
+# run these two; a build with a narrower IPGW_AIR_MTU runs them
+@pytest.mark.feature("dmr_ip_gateway", optional=True)
 @pytest.mark.feature("dmr_udp_compress", optional=True)
 @pytest.mark.usb_switch
 @pytest.mark.radio_tx
@@ -512,7 +514,7 @@ def test_dhcp_mtu_on_host(radio, pytestconfig):
         warnings.warn(f"the host's adapter MTU is {mtu}, not the {LINK_MTU} DHCP gave (its client ignores option 26?)")
 
 
-@pytest.mark.feature("dmr_ip_gateway")
+@pytest.mark.feature("dmr_ip_gateway", optional=True)     # a narrower IPGW_AIR_MTU only, as above
 @pytest.mark.usb_switch
 def test_frag_needed_received(radio, pytestconfig, ip_settings):
     """Firmware with an air MTU below the link's only (_need_narrow_air). A DF datagram from this host too long for the
