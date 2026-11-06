@@ -224,6 +224,60 @@ static bool dmr_lead;		// the lead is set for this transmission
 static uint32_t dmr_rx_bursts;	// receive set-ups between bursts
 #endif
 
+// TIM5: one-shot at 1 MHz for the burst's key-up (MD9600_BURST_KEY_DELAY_US, then md9600_rf_pa_step's waits), at the
+// modem interrupts' priority so neither preempts the other. Nothing waits in an interrupt: the timeslot interrupt
+// falls inside the key-up
+#define KEY_IRQ_PRIORITY	5
+static volatile bool key_pending;
+static uint32_t key_step;
+static bool key_timer_ready;
+
+static void key_timer_stop(void)
+{
+	TIM5->CR1 = 0;
+	TIM5->SR = 0;
+	key_pending = false;
+}
+
+static void key_timer_start(uint32_t us)
+{
+	if (!key_timer_ready) {
+		__HAL_RCC_TIM5_CLK_ENABLE();
+		uint32_t pclk = HAL_RCC_GetPCLK1Freq();
+		uint32_t clk = ((RCC->CFGR & RCC_CFGR_PPRE1) == RCC_CFGR_PPRE1_DIV1) ? pclk : 2u * pclk;	// APB1 timer clock
+		TIM5->CR1 = 0;
+		TIM5->PSC = clk / 1000000u - 1u;
+		TIM5->EGR = TIM_EGR_UG;		// load the prescaler
+		TIM5->SR = 0;
+		TIM5->DIER = TIM_DIER_UIE;
+		HAL_NVIC_SetPriority(TIM5_IRQn, KEY_IRQ_PRIORITY, 0);
+		HAL_NVIC_EnableIRQ(TIM5_IRQn);
+		key_timer_ready = true;
+	}
+	TIM5->CR1 = 0;
+	TIM5->ARR = (us > 1u ? us : 2u) - 1u;
+	TIM5->CNT = 0;
+	TIM5->SR = 0;
+	TIM5->CR1 = TIM_CR1_OPM | TIM_CR1_CEN;
+}
+
+void TIM5_IRQHandler(void)
+{
+	TIM5->SR = 0;
+	if (!key_pending) {
+		return;
+	}
+	uint32_t us = 0;
+	if (md9600_rf_pa_step(&rf, key_step++, &us) != MD9600_RF_OK) {
+		dmr_skipped++;
+		key_pending = false;
+	} else if (us != 0) {
+		key_timer_start(us);
+	} else {
+		key_pending = false;
+	}
+}
+
 void md9600_rf_dmr_prepare(void)
 {
 	if (!dmr_armed || dmr_tuned) {
@@ -246,6 +300,7 @@ void md9600_rf_dmr_wait(void)
 bool md9600_rf_dmr_key(bool tx)
 {
 	if (!tx) {
+		key_timer_stop();
 		(void)md9600_rf_pa_burst(&rf, false);
 #if CONFIG_SFR
 		if (dmr_tuned && stm32_hrc_dmr_tx_listening()) {
@@ -272,14 +327,19 @@ bool md9600_rf_dmr_key(bool tx)
 		}
 #if CONFIG_SFR
 		if (dmr_lead) {
-			hal_delay_us(SFR_SETTLE_US);	// back from receive: the lock, inside the lead
+			// Back from receive: the lock, inside the lead, then the PA at once (the lead was swept with it)
+			hal_delay_us(SFR_SETTLE_US);
+			if (md9600_rf_pa_burst(&rf, true) != MD9600_RF_OK) {
+				dmr_skipped++;
+				return false;
+			}
+			return true;
 		}
 #endif
 	}
-	if (md9600_rf_pa_burst(&rf, true) != MD9600_RF_OK) {
-		dmr_skipped++;
-		return false;
-	}
+	key_step = 0;
+	key_pending = true;
+	key_timer_start(MD9600_BURST_KEY_DELAY_US);
 	return true;
 }
 
@@ -293,6 +353,7 @@ void md9600_rf_dmr_done(void)
 	if (!dmr_armed || !dmr_tuned || !rf.rx_valid || dmr_hz == rf.rx_hz) {
 		return;
 	}
+	key_timer_stop();
 	(void)md9600_rf_pa_burst(&rf, false);
 	if (md9600_rf_burst_rx(&rf) == MD9600_RF_OK) {
 		dmr_tuned = false;
@@ -316,6 +377,7 @@ static void dmr_disarm(void)
 	if (stm32_hrc_dmr_tx_active()) {
 		stm32_hrc_dmr_tx_drop();
 	}
+	key_timer_stop();
 	(void)md9600_rf_pa_burst(&rf, false);
 	dmr_tuned = false;
 #if CONFIG_SFR

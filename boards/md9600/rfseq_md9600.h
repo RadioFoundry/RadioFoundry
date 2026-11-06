@@ -91,8 +91,12 @@ typedef enum { MD9600_RF_OFF, MD9600_RF_RX, MD9600_RF_TX } md9600_rf_state_t;
 #define MD9600_APC_RAMP_STEPS		8u	// APC reference up and down in steps, so the PA doesn't splash
 #define MD9600_APC_RAMP_STEP_US		250u
 // DMR bursts: the RF TX interrupt comes about 1.3 ms ahead of the slot (on the other HR_C6000 radios), so the burst's
-// supply settle and ramp are short; they run in the modem interrupt. The supply goes off between bursts: left on, the
-// PA leaks the carrier at about -13 dB (measured off air)
+// supply settle and ramp are short. The supply goes off between bursts: left on, the PA leaks the carrier at about
+// -13 dB (measured off air). That leak counts as on air: the supply on at the interrupt made every burst 31.7-31.9 ms
+// long (bench, 2026-11-06; the bench allows 27-31.5 ms). The key-up starts MD9600_BURST_KEY_DELAY_US after the
+// interrupt, from a timer (md9600_rf_pa_step), and reaches full power about 0.2 ms after the slot boundary, inside the
+// guard ahead of the payload (hardware-md9600.md 19.8)
+#define MD9600_BURST_KEY_DELAY_US	700u
 #define MD9600_BURST_T5_US		500u
 #define MD9600_BURST_RAMP_STEPS		4u
 #define MD9600_BURST_RAMP_STEP_US	100u
@@ -154,6 +158,10 @@ md9600_rf_err_t md9600_rf_burst_rx(md9600_rf_t *rf);
 // (MD9600_BURST_RAMP_*); off, the ramp down, the loop open and the supply off. Busy waits only: callable from the
 // modem interrupts
 md9600_rf_err_t md9600_rf_pa_burst(md9600_rf_t *rf, bool on);
+// The burst's key-up in steps, for a timer (no busy waits): step 0 the supply, then the loop and each ramp step.
+// Call with step 0, 1, ... each *next_us later, until *next_us comes back 0. Step 0 with the PA already on does
+// nothing. md9600_rf_pa_burst(rf, false) ends it at any step
+md9600_rf_err_t md9600_rf_pa_step(md9600_rf_t *rf, uint32_t step, uint32_t *next_us);
 // While transmitting: the PA alone on or off (the transmitter supply and the loop, the synthesizer stays), for DMR
 // bursts
 md9600_rf_err_t md9600_rf_pa(md9600_rf_t *rf, bool on);

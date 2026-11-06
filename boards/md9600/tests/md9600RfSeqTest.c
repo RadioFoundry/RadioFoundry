@@ -496,9 +496,28 @@ static void check_dmr_tx(md9600_rev_t r, uint32_t hz, uint8_t power)
 		CHECK(md9600_rf_pa_burst(&rf, false) == MD9600_RF_OK);
 		CHECK(pa_off_now() && rf.state == MD9600_RF_TX);	// between bursts nothing of the transmitter is on
 	}
+	// The same key-up in timer steps (radio_md9600.c's TIM5): no waits of its own, the same lines and ramp, and the
+	// waits it asks for add up to the busy version's
+	reset_log();
+	uint32_t step = 0, us = 0, asked = 0;
+	CHECK(md9600_rf_pa_step(&rf, step++, &us) == MD9600_RF_OK && us == MD9600_BURST_T5_US);
+	CHECK(level[t5] && !level[MD9600_LN_APC] && dac_now[MD9600_DAC_APC_TUNE_V] == 0);	// the supply, loop open
+	do {
+		asked += us;
+		CHECK(md9600_rf_pa_step(&rf, step++, &us) == MD9600_RF_OK);
+	} while (us != 0 && step < 20);
+	CHECK(step == MD9600_BURST_RAMP_STEPS + 1u && delay_total == 0);
+	CHECK(asked == MD9600_BURST_T5_US + (MD9600_BURST_RAMP_STEPS - 1u) * MD9600_BURST_RAMP_STEP_US);
+	CHECK(level[MD9600_LN_APC] && level[t5] && dac_now[MD9600_DAC_APC_TUNE_V] == apc_value + power);
+	CHECK(md9600_rf_pa_step(&rf, 0, &us) == MD9600_RF_OK && us == 0);	// already on: nothing
+	CHECK(md9600_rf_pa_burst(&rf, false) == MD9600_RF_OK && pa_off_now());
+	// Ended after the supply step (the burst's end came first): all off
+	CHECK(md9600_rf_pa_step(&rf, 0, &us) == MD9600_RF_OK && level[t5]);
+	CHECK(md9600_rf_pa_burst(&rf, false) == MD9600_RF_OK && pa_off_now());
 	// Disarmed: no burst keys, the PA stays safe
 	CHECK(md9600_rf_tx_arm(&rf, false));
 	CHECK(md9600_rf_pa_burst(&rf, true) != MD9600_RF_OK && pa_off_now());
+	CHECK(md9600_rf_pa_step(&rf, 1, &us) != MD9600_RF_OK && us == 0 && pa_off_now());
 	md9600_rf_tx_off(&rf);
 	CHECK(pa_off_now() && rf.state == MD9600_RF_RX);
 	pa_allowed = false;

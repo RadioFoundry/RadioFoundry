@@ -410,25 +410,42 @@ md9600_rf_err_t md9600_rf_pa_burst(md9600_rf_t *rf, bool on)
 		rf->pa_on = false;
 		return MD9600_RF_OK;
 	}
+	uint32_t step = 0, us = 0;
+	md9600_rf_err_t e;
+	do {
+		wait_us(o, us);
+		e = md9600_rf_pa_step(rf, step++, &us);
+	} while (e == MD9600_RF_OK && us != 0);
+	return e;
+}
+
+md9600_rf_err_t md9600_rf_pa_step(md9600_rf_t *rf, uint32_t step, uint32_t *next_us)
+{
+	const md9600_rf_ops_t *o = rf->ops;
+	*next_us = 0;
 	if (rf->state != MD9600_RF_TX || !rf->tx_armed || !CONFIG_MD9600_TX) {
 		md9600_rf_pa_safe(rf);
 		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE : MD9600_RF_E_TX_ARM);
 	}
-	if (rf->pa_on) {
+	if (step == 0) {
+		if (rf->pa_on) {
+			return MD9600_RF_OK;
+		}
+		o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, 0);
+		set(o, ln_t5[1u - rf->tx_band], false);
+		set(o, ln_t5[rf->tx_band], true);
+		*next_us = MD9600_BURST_T5_US;
 		return MD9600_RF_OK;
 	}
-	o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, 0);
-	set(o, ln_t5[1u - rf->tx_band], false);
-	set(o, ln_t5[rf->tx_band], true);
-	wait_us(o, MD9600_BURST_T5_US);
-	set(o, MD9600_LN_APC, true);
-	rf->pa_on = true;
-	for (uint32_t i = 1; i <= MD9600_BURST_RAMP_STEPS; i++) {
-		o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, (uint16_t)(rf->apc * i / MD9600_BURST_RAMP_STEPS));
-		if (i < MD9600_BURST_RAMP_STEPS) {
-			wait_us(o, MD9600_BURST_RAMP_STEP_US);
-		}
+	if (step > MD9600_BURST_RAMP_STEPS) {
+		return MD9600_RF_OK;
 	}
+	if (step == 1) {
+		set(o, MD9600_LN_APC, true);
+		rf->pa_on = true;
+	}
+	o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, (uint16_t)(rf->apc * step / MD9600_BURST_RAMP_STEPS));
+	*next_us = step < MD9600_BURST_RAMP_STEPS ? MD9600_BURST_RAMP_STEP_US : 0u;
 	return MD9600_RF_OK;
 }
 
