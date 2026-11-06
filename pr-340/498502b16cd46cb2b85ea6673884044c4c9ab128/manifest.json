@@ -1,0 +1,1103 @@
+{
+  "pr": 340,
+  "base_sha": "70ce9659422f9d1700b0485dd9f60ec3c218dc27",
+  "head_sha": "498502b16cd46cb2b85ea6673884044c4c9ab128",
+  "generated": "2026-11-03T05:08:04Z",
+  "counts": {
+    "changed": 137,
+    "added": 0,
+    "removed": 0,
+    "unchanged": 600
+  },
+  "images": [
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-1.png",
+      "rows": 8,
+      "screens": [
+        "home_copy_to_vfo",
+        "home_dmr",
+        "home_dmr_lastheard",
+        "home_fm",
+        "home_locked",
+        "home_monitor",
+        "home_reply",
+        "home_temporary"
+      ]
+    },
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-2.png",
+      "rows": 8,
+      "screens": [
+        "home_usb_ip",
+        "home_usb_ip_up",
+        "home_vfo",
+        "home_vfo_dmr",
+        "home_vfo_entry",
+        "home_vfo_split_dmr",
+        "home_vfo_tx",
+        "tx_dtmf"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-1.png",
+      "rows": 7,
+      "screens": [
+        "banner_call_alert",
+        "banner_message",
+        "banner_radio_check",
+        "banner_zone_offer",
+        "home_copy_to_vfo",
+        "home_dmr",
+        "home_dmr__red",
+        "home_dmr__yellow",
+        "home_dmr__light_blue",
+        "home_dmr__light",
+        "home_dmr__high_contrast",
+        "home_dmr_lastheard"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-2.png",
+      "rows": 7,
+      "screens": [
+        "home_fm",
+        "home_locked",
+        "home_monitor",
+        "home_plain",
+        "home_plain__light",
+        "home_plain__high_contrast",
+        "home_reply",
+        "home_temporary",
+        "home_usb_ip"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-3.png",
+      "rows": 8,
+      "screens": [
+        "home_usb_ip_up",
+        "home_vfo",
+        "home_vfo_dmr",
+        "home_vfo_entry",
+        "home_vfo_split_dmr",
+        "home_vfo_tx",
+        "tx_dtmf",
+        "zone_imported"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-1.png",
+      "rows": 7,
+      "screens": [
+        "banner_radio_check",
+        "home_copy_to_vfo",
+        "home_dmr",
+        "home_dmr__red",
+        "home_dmr__yellow",
+        "home_dmr__light_blue",
+        "home_dmr__light",
+        "home_dmr__high_contrast",
+        "home_dmr_lastheard",
+        "home_fm",
+        "home_locked",
+        "home_monitor"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-2.png",
+      "rows": 7,
+      "screens": [
+        "home_plain",
+        "home_plain__light",
+        "home_plain__high_contrast",
+        "home_reply",
+        "home_temporary",
+        "home_usb_ip",
+        "home_usb_ip_up",
+        "home_vfo",
+        "home_vfo_dmr"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-3.png",
+      "rows": 5,
+      "screens": [
+        "home_vfo_entry",
+        "home_vfo_split_dmr",
+        "home_vfo_tx",
+        "tx_dtmf",
+        "zone_imported"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 7,
+      "screens": [
+        "banner_call_alert",
+        "banner_message",
+        "banner_radio_check",
+        "banner_zone_offer",
+        "home_copy_to_vfo",
+        "home_dmr",
+        "home_dmr__red",
+        "home_dmr__yellow",
+        "home_dmr__light_blue",
+        "home_dmr__light",
+        "home_dmr__high_contrast",
+        "home_dmr_lastheard"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-2.png",
+      "rows": 7,
+      "screens": [
+        "home_fm",
+        "home_locked",
+        "home_monitor",
+        "home_plain",
+        "home_plain__light",
+        "home_plain__high_contrast",
+        "home_reply",
+        "home_temporary",
+        "home_usb_ip"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-3.png",
+      "rows": 7,
+      "screens": [
+        "home_usb_ip_up",
+        "home_vfo",
+        "home_vfo_dmr",
+        "home_vfo_entry",
+        "home_vfo_split_dmr",
+        "home_vfo_tx",
+        "settings_display",
+        "settings_display__light",
+        "settings_display__high_contrast"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-4.png",
+      "rows": 3,
+      "screens": [
+        "settings_editor",
+        "tx_dtmf",
+        "zone_imported"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 7,
+      "screens": [
+        "banner_call_alert",
+        "banner_message",
+        "banner_radio_check",
+        "banner_zone_offer",
+        "home_copy_to_vfo",
+        "home_dmr",
+        "home_dmr__red",
+        "home_dmr__yellow",
+        "home_dmr__light_blue",
+        "home_dmr__light",
+        "home_dmr__high_contrast",
+        "home_dmr_lastheard"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-2.png",
+      "rows": 7,
+      "screens": [
+        "home_fm",
+        "home_locked",
+        "home_monitor",
+        "home_plain",
+        "home_plain__light",
+        "home_plain__high_contrast",
+        "home_reply",
+        "home_temporary",
+        "home_usb_ip"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-3.png",
+      "rows": 7,
+      "screens": [
+        "home_usb_ip_up",
+        "home_vfo",
+        "home_vfo_dmr",
+        "home_vfo_entry",
+        "home_vfo_split_dmr",
+        "home_vfo_tx",
+        "settings_display",
+        "settings_display__light",
+        "settings_display__high_contrast"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-4.png",
+      "rows": 3,
+      "screens": [
+        "settings_editor",
+        "tx_dtmf",
+        "zone_imported"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "128x64",
+      "screen": "home_copy_to_vfo",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dmr",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_fm",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_locked",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_monitor",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_reply",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_temporary",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_usb_ip",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_usb_ip_up",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_vfo",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_vfo_dmr",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_vfo_entry",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_vfo_split_dmr",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_vfo_tx",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "tx_dtmf",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "banner_call_alert",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "banner_message",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "banner_radio_check",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "banner_zone_offer",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_copy_to_vfo",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dmr",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dmr__red",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dmr__yellow",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dmr__light_blue",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dmr__light",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dmr__high_contrast",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_fm",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_locked",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_monitor",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_plain",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_plain__light",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_plain__high_contrast",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_reply",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_temporary",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_usb_ip",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_usb_ip_up",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_vfo",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_vfo_dmr",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_vfo_entry",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_vfo_split_dmr",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_vfo_tx",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "tx_dtmf",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "zone_imported",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "banner_radio_check",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_copy_to_vfo",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dmr",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dmr__red",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dmr__yellow",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dmr__light_blue",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dmr__light",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dmr__high_contrast",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_fm",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_locked",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_monitor",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_plain",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_plain__light",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_plain__high_contrast",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_reply",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_temporary",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_usb_ip",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_usb_ip_up",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_vfo",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_vfo_dmr",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_vfo_entry",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_vfo_split_dmr",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_vfo_tx",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "tx_dtmf",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "zone_imported",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "banner_call_alert",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "banner_message",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "banner_radio_check",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "banner_zone_offer",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_copy_to_vfo",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dmr",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dmr__red",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dmr__yellow",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dmr__light_blue",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dmr__light",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dmr__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_fm",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_locked",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_monitor",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_plain",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_plain__light",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_plain__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_reply",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_temporary",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_usb_ip",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_usb_ip_up",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_vfo",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_vfo_dmr",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_vfo_entry",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_vfo_split_dmr",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_vfo_tx",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "settings_display",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "settings_display__light",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "settings_display__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "settings_editor",
+      "status": "changed",
+      "image": "compare/240x320-4.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "tx_dtmf",
+      "status": "changed",
+      "image": "compare/240x320-4.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "zone_imported",
+      "status": "changed",
+      "image": "compare/240x320-4.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "banner_call_alert",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "banner_message",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "banner_radio_check",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "banner_zone_offer",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_copy_to_vfo",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dmr",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dmr__red",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dmr__yellow",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dmr__light_blue",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dmr__light",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dmr__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_fm",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_locked",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_monitor",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_plain",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_plain__light",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_plain__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_reply",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_temporary",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_usb_ip",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_usb_ip_up",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_vfo",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_vfo_dmr",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_vfo_entry",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_vfo_split_dmr",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_vfo_tx",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "settings_display",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "settings_display__light",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "settings_display__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "settings_editor",
+      "status": "changed",
+      "image": "compare/240x320i10x5-4.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "tx_dtmf",
+      "status": "changed",
+      "image": "compare/240x320i10x5-4.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "zone_imported",
+      "status": "changed",
+      "image": "compare/240x320i10x5-4.png"
+    }
+  ]
+}

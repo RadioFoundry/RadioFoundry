@@ -1,0 +1,119 @@
+{
+  "pr": 329,
+  "base_sha": "97688b726a6f5a50ecbc454acec26212606a0929",
+  "head_sha": "0d4d4581ef22c94eb1989120ece61f1231c333f2",
+  "generated": "2026-11-03T03:24:39Z",
+  "counts": {
+    "changed": 9,
+    "added": 0,
+    "removed": 0,
+    "unchanged": 728
+  },
+  "images": [
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-1.png",
+      "rows": 1,
+      "screens": [
+        "talk_target_picker_vfo"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-1.png",
+      "rows": 2,
+      "screens": [
+        "talk_target_picker",
+        "talk_target_picker_vfo"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-1.png",
+      "rows": 2,
+      "screens": [
+        "talk_target_picker",
+        "talk_target_picker_vfo"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 2,
+      "screens": [
+        "talk_target_picker",
+        "talk_target_picker_vfo"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 2,
+      "screens": [
+        "talk_target_picker",
+        "talk_target_picker_vfo"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "128x64",
+      "screen": "talk_target_picker_vfo",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "talk_target_picker",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "talk_target_picker_vfo",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "talk_target_picker",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "talk_target_picker_vfo",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "talk_target_picker",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "talk_target_picker_vfo",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "talk_target_picker",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "talk_target_picker_vfo",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    }
+  ]
+}

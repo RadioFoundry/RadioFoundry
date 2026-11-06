@@ -1,0 +1,2248 @@
+{
+  "pr": 341,
+  "base_sha": "dfbaf20c400c73e2ccf6edb80af7d1d255bee418",
+  "head_sha": "c14156645165bd12f4262b921503332f36f2e807",
+  "generated": "2026-11-05T21:24:28Z",
+  "counts": {
+    "changed": 280,
+    "added": 0,
+    "removed": 0,
+    "unchanged": 457
+  },
+  "images": [
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-1.png",
+      "rows": 8,
+      "screens": [
+        "banner_call_alert",
+        "banner_message",
+        "banner_radio_check",
+        "banner_zone_offer",
+        "boot",
+        "caller_actions",
+        "channel",
+        "channel_changed"
+      ]
+    },
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-2.png",
+      "rows": 8,
+      "screens": [
+        "channel_new",
+        "channel_power",
+        "channel_rx_entry",
+        "channels",
+        "compose",
+        "contact_edit",
+        "contact_edit_save",
+        "contacts_find"
+      ]
+    },
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-3.png",
+      "rows": 8,
+      "screens": [
+        "dmr_id",
+        "dmr_id_entry",
+        "dual_actions",
+        "emergency",
+        "find_name",
+        "find_new_contact",
+        "home_dmr_lastheard",
+        "home_dual"
+      ]
+    },
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-4.png",
+      "rows": 8,
+      "screens": [
+        "home_dual_fm",
+        "home_dual_on_b",
+        "home_dual_other_zone",
+        "home_dual_pill_row3",
+        "home_dual_rx_b",
+        "home_dual_talk_back",
+        "home_dual_two_rx",
+        "home_dual_tx"
+      ]
+    },
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-5.png",
+      "rows": 8,
+      "screens": [
+        "home_dual_tx_b",
+        "home_dual_vfo",
+        "home_reply",
+        "hotspot",
+        "message_view",
+        "messages",
+        "recent",
+        "rx_group"
+      ]
+    },
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-6.png",
+      "rows": 7,
+      "screens": [
+        "rx_private",
+        "tx_private",
+        "zone_offer",
+        "zone_offer_ch",
+        "zone_offer_preview",
+        "zone_share_sending",
+        "zone_share_to_id"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-1.png",
+      "rows": 8,
+      "screens": [
+        "banner_call_alert",
+        "banner_message",
+        "banner_radio_check",
+        "banner_zone_offer",
+        "boot",
+        "caller_actions",
+        "channel",
+        "channel_changed"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-2.png",
+      "rows": 7,
+      "screens": [
+        "channel_new",
+        "channel_power",
+        "channel_rx_entry",
+        "channels",
+        "channels__red",
+        "channels__yellow",
+        "channels__light_blue",
+        "channels__light",
+        "channels__high_contrast",
+        "compose",
+        "contact_edit",
+        "contact_edit_save"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-3.png",
+      "rows": 8,
+      "screens": [
+        "contacts_find",
+        "dmr_id",
+        "dmr_id_entry",
+        "dual_actions",
+        "emergency",
+        "find_name",
+        "find_new_contact",
+        "home_dmr_lastheard"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-4.png",
+      "rows": 6,
+      "screens": [
+        "home_dual_busy",
+        "home_dual_heard",
+        "home_dual_on_b",
+        "home_dual_rx_b",
+        "home_dual_rx_b__light",
+        "home_dual_rx_b__high_contrast",
+        "home_dual_talk_back",
+        "home_dual_two_rx",
+        "home_dual_two_rx__light",
+        "home_dual_two_rx__high_contrast"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-5.png",
+      "rows": 7,
+      "screens": [
+        "home_dual_tx_b",
+        "home_reply",
+        "hotspot",
+        "message_view",
+        "messages",
+        "recent",
+        "rx_group",
+        "rx_group__light",
+        "rx_group__high_contrast"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-6.png",
+      "rows": 8,
+      "screens": [
+        "rx_private",
+        "tx_private",
+        "zone_add",
+        "zone_channels",
+        "zone_offer",
+        "zone_offer_ch",
+        "zone_offer_preview",
+        "zone_share_sending"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-7.png",
+      "rows": 1,
+      "screens": [
+        "zone_share_to_id"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-1.png",
+      "rows": 8,
+      "screens": [
+        "banner_call_alert",
+        "banner_message",
+        "banner_radio_check",
+        "banner_zone_offer",
+        "boot",
+        "caller_actions",
+        "channel",
+        "channel_changed"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-2.png",
+      "rows": 7,
+      "screens": [
+        "channel_new",
+        "channel_power",
+        "channel_rx_entry",
+        "channels",
+        "channels__red",
+        "channels__yellow",
+        "channels__light_blue",
+        "channels__light",
+        "channels__high_contrast",
+        "compose",
+        "contact_edit",
+        "contact_edit_save"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-3.png",
+      "rows": 8,
+      "screens": [
+        "contacts_find",
+        "dmr_id",
+        "dmr_id_entry",
+        "dual_actions",
+        "emergency",
+        "find_name",
+        "find_new_contact",
+        "home_dmr_lastheard"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-4.png",
+      "rows": 7,
+      "screens": [
+        "home_dual",
+        "home_dual_busy",
+        "home_dual_fm",
+        "home_dual_heard",
+        "home_dual_on_b",
+        "home_dual_other_zone",
+        "home_dual_pill_row3"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-5.png",
+      "rows": 6,
+      "screens": [
+        "home_dual_rx_b",
+        "home_dual_rx_b__light",
+        "home_dual_rx_b__high_contrast",
+        "home_dual_talk_back",
+        "home_dual_two_rx",
+        "home_dual_two_rx__light",
+        "home_dual_two_rx__high_contrast",
+        "home_dual_tx",
+        "home_dual_tx_b",
+        "home_dual_vfo"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-6.png",
+      "rows": 7,
+      "screens": [
+        "home_reply",
+        "hotspot",
+        "message_view",
+        "messages",
+        "recent",
+        "rx_group",
+        "rx_group__light",
+        "rx_group__high_contrast",
+        "rx_private"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-7.png",
+      "rows": 7,
+      "screens": [
+        "tx_private",
+        "zone_add",
+        "zone_offer",
+        "zone_offer_ch",
+        "zone_offer_preview",
+        "zone_share_sending",
+        "zone_share_to_id"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 8,
+      "screens": [
+        "banner_call_alert",
+        "banner_message",
+        "banner_radio_check",
+        "banner_zone_offer",
+        "boot",
+        "caller_actions",
+        "channel",
+        "channel_changed"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-2.png",
+      "rows": 7,
+      "screens": [
+        "channel_new",
+        "channel_power",
+        "channel_rx_entry",
+        "channels",
+        "channels__red",
+        "channels__yellow",
+        "channels__light_blue",
+        "channels__light",
+        "channels__high_contrast",
+        "compose",
+        "contact_edit",
+        "contact_edit_save"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-3.png",
+      "rows": 8,
+      "screens": [
+        "contacts_find",
+        "dmr_id",
+        "dmr_id_entry",
+        "dual_actions",
+        "emergency",
+        "find_name",
+        "find_new_contact",
+        "home_dmr_lastheard"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-4.png",
+      "rows": 7,
+      "screens": [
+        "home_dual",
+        "home_dual_busy",
+        "home_dual_fm",
+        "home_dual_heard",
+        "home_dual_on_b",
+        "home_dual_other_zone",
+        "home_dual_pill_row3"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-5.png",
+      "rows": 6,
+      "screens": [
+        "home_dual_rx_b",
+        "home_dual_rx_b__light",
+        "home_dual_rx_b__high_contrast",
+        "home_dual_talk_back",
+        "home_dual_two_rx",
+        "home_dual_two_rx__light",
+        "home_dual_two_rx__high_contrast",
+        "home_dual_tx",
+        "home_dual_tx_b",
+        "home_dual_vfo"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-6.png",
+      "rows": 7,
+      "screens": [
+        "home_reply",
+        "hotspot",
+        "message_view",
+        "messages",
+        "recent",
+        "rx_group",
+        "rx_group__light",
+        "rx_group__high_contrast",
+        "rx_private"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-7.png",
+      "rows": 8,
+      "screens": [
+        "tx_private",
+        "zone_add",
+        "zone_channels",
+        "zone_offer",
+        "zone_offer_ch",
+        "zone_offer_preview",
+        "zone_share_sending",
+        "zone_share_to_id"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 8,
+      "screens": [
+        "banner_call_alert",
+        "banner_message",
+        "banner_radio_check",
+        "banner_zone_offer",
+        "boot",
+        "caller_actions",
+        "channel",
+        "channel_changed"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-2.png",
+      "rows": 8,
+      "screens": [
+        "channel_new",
+        "channel_power",
+        "channel_rx_entry",
+        "compose",
+        "contact_edit",
+        "contact_edit_save",
+        "contacts_find",
+        "dmr_id"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-3.png",
+      "rows": 8,
+      "screens": [
+        "dmr_id_entry",
+        "emergency",
+        "find_name",
+        "find_new_contact",
+        "home_dmr_lastheard",
+        "home_dual",
+        "home_dual_busy",
+        "home_dual_fm"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-4.png",
+      "rows": 6,
+      "screens": [
+        "home_dual_heard",
+        "home_dual_on_b",
+        "home_dual_other_zone",
+        "home_dual_pill_row3",
+        "home_dual_rx_b",
+        "home_dual_rx_b__light",
+        "home_dual_rx_b__high_contrast",
+        "home_dual_talk_back"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-5.png",
+      "rows": 7,
+      "screens": [
+        "home_dual_two_rx",
+        "home_dual_two_rx__light",
+        "home_dual_two_rx__high_contrast",
+        "home_dual_tx",
+        "home_dual_tx_b",
+        "home_dual_vfo",
+        "home_reply",
+        "hotspot",
+        "message_view"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-6.png",
+      "rows": 7,
+      "screens": [
+        "messages",
+        "recent",
+        "rx_group",
+        "rx_group__light",
+        "rx_group__high_contrast",
+        "rx_private",
+        "tx_private",
+        "zone_add",
+        "zone_offer"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-7.png",
+      "rows": 4,
+      "screens": [
+        "zone_offer_ch",
+        "zone_offer_preview",
+        "zone_share_sending",
+        "zone_share_to_id"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "128x64",
+      "screen": "banner_call_alert",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "banner_message",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "banner_radio_check",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "banner_zone_offer",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "boot",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "caller_actions",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "channel",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "channel_changed",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "channel_new",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "channel_power",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "channel_rx_entry",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "channels",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "compose",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "contact_edit",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "contact_edit_save",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "contacts_find",
+      "status": "changed",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "dmr_id",
+      "status": "changed",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "dmr_id_entry",
+      "status": "changed",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "dual_actions",
+      "status": "changed",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "emergency",
+      "status": "changed",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "find_name",
+      "status": "changed",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "find_new_contact",
+      "status": "changed",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dual",
+      "status": "changed",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dual_fm",
+      "status": "changed",
+      "image": "compare/128x64-4.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dual_on_b",
+      "status": "changed",
+      "image": "compare/128x64-4.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dual_other_zone",
+      "status": "changed",
+      "image": "compare/128x64-4.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dual_pill_row3",
+      "status": "changed",
+      "image": "compare/128x64-4.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dual_rx_b",
+      "status": "changed",
+      "image": "compare/128x64-4.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dual_talk_back",
+      "status": "changed",
+      "image": "compare/128x64-4.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dual_two_rx",
+      "status": "changed",
+      "image": "compare/128x64-4.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dual_tx",
+      "status": "changed",
+      "image": "compare/128x64-4.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dual_tx_b",
+      "status": "changed",
+      "image": "compare/128x64-5.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_dual_vfo",
+      "status": "changed",
+      "image": "compare/128x64-5.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_reply",
+      "status": "changed",
+      "image": "compare/128x64-5.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "hotspot",
+      "status": "changed",
+      "image": "compare/128x64-5.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "message_view",
+      "status": "changed",
+      "image": "compare/128x64-5.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "messages",
+      "status": "changed",
+      "image": "compare/128x64-5.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "recent",
+      "status": "changed",
+      "image": "compare/128x64-5.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "rx_group",
+      "status": "changed",
+      "image": "compare/128x64-5.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "rx_private",
+      "status": "changed",
+      "image": "compare/128x64-6.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "tx_private",
+      "status": "changed",
+      "image": "compare/128x64-6.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "zone_offer",
+      "status": "changed",
+      "image": "compare/128x64-6.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "zone_offer_ch",
+      "status": "changed",
+      "image": "compare/128x64-6.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "zone_offer_preview",
+      "status": "changed",
+      "image": "compare/128x64-6.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "zone_share_sending",
+      "status": "changed",
+      "image": "compare/128x64-6.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "zone_share_to_id",
+      "status": "changed",
+      "image": "compare/128x64-6.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "banner_call_alert",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "banner_message",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "banner_radio_check",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "banner_zone_offer",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "boot",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "caller_actions",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "channel",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "channel_changed",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "channel_new",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "channel_power",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "channel_rx_entry",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "channels",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "channels__red",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "channels__yellow",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "channels__light_blue",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "channels__light",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "channels__high_contrast",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "compose",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "contact_edit",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "contact_edit_save",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "contacts_find",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "dmr_id",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "dmr_id_entry",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "dual_actions",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "emergency",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "find_name",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "find_new_contact",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_busy",
+      "status": "changed",
+      "image": "compare/160x128-4.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_heard",
+      "status": "changed",
+      "image": "compare/160x128-4.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_on_b",
+      "status": "changed",
+      "image": "compare/160x128-4.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_rx_b",
+      "status": "changed",
+      "image": "compare/160x128-4.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_rx_b__light",
+      "status": "changed",
+      "image": "compare/160x128-4.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_rx_b__high_contrast",
+      "status": "changed",
+      "image": "compare/160x128-4.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_talk_back",
+      "status": "changed",
+      "image": "compare/160x128-4.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_two_rx",
+      "status": "changed",
+      "image": "compare/160x128-4.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_two_rx__light",
+      "status": "changed",
+      "image": "compare/160x128-4.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_two_rx__high_contrast",
+      "status": "changed",
+      "image": "compare/160x128-4.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_tx_b",
+      "status": "changed",
+      "image": "compare/160x128-5.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_reply",
+      "status": "changed",
+      "image": "compare/160x128-5.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "hotspot",
+      "status": "changed",
+      "image": "compare/160x128-5.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "message_view",
+      "status": "changed",
+      "image": "compare/160x128-5.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "messages",
+      "status": "changed",
+      "image": "compare/160x128-5.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "recent",
+      "status": "changed",
+      "image": "compare/160x128-5.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "rx_group",
+      "status": "changed",
+      "image": "compare/160x128-5.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "rx_group__light",
+      "status": "changed",
+      "image": "compare/160x128-5.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "rx_group__high_contrast",
+      "status": "changed",
+      "image": "compare/160x128-5.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "rx_private",
+      "status": "changed",
+      "image": "compare/160x128-6.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "tx_private",
+      "status": "changed",
+      "image": "compare/160x128-6.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "zone_add",
+      "status": "changed",
+      "image": "compare/160x128-6.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "zone_channels",
+      "status": "changed",
+      "image": "compare/160x128-6.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "zone_offer",
+      "status": "changed",
+      "image": "compare/160x128-6.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "zone_offer_ch",
+      "status": "changed",
+      "image": "compare/160x128-6.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "zone_offer_preview",
+      "status": "changed",
+      "image": "compare/160x128-6.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "zone_share_sending",
+      "status": "changed",
+      "image": "compare/160x128-6.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "zone_share_to_id",
+      "status": "changed",
+      "image": "compare/160x128-7.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "banner_call_alert",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "banner_message",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "banner_radio_check",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "banner_zone_offer",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "boot",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "caller_actions",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "channel",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "channel_changed",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "channel_new",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "channel_power",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "channel_rx_entry",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "channels",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "channels__red",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "channels__yellow",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "channels__light_blue",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "channels__light",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "channels__high_contrast",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "compose",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "contact_edit",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "contact_edit_save",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "contacts_find",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "dmr_id",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "dmr_id_entry",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "dual_actions",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "emergency",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "find_name",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "find_new_contact",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual",
+      "status": "changed",
+      "image": "compare/160x120i5-4.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_busy",
+      "status": "changed",
+      "image": "compare/160x120i5-4.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_fm",
+      "status": "changed",
+      "image": "compare/160x120i5-4.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_heard",
+      "status": "changed",
+      "image": "compare/160x120i5-4.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_on_b",
+      "status": "changed",
+      "image": "compare/160x120i5-4.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_other_zone",
+      "status": "changed",
+      "image": "compare/160x120i5-4.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_pill_row3",
+      "status": "changed",
+      "image": "compare/160x120i5-4.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_rx_b",
+      "status": "changed",
+      "image": "compare/160x120i5-5.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_rx_b__light",
+      "status": "changed",
+      "image": "compare/160x120i5-5.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_rx_b__high_contrast",
+      "status": "changed",
+      "image": "compare/160x120i5-5.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_talk_back",
+      "status": "changed",
+      "image": "compare/160x120i5-5.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_two_rx",
+      "status": "changed",
+      "image": "compare/160x120i5-5.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_two_rx__light",
+      "status": "changed",
+      "image": "compare/160x120i5-5.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_two_rx__high_contrast",
+      "status": "changed",
+      "image": "compare/160x120i5-5.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_tx",
+      "status": "changed",
+      "image": "compare/160x120i5-5.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_tx_b",
+      "status": "changed",
+      "image": "compare/160x120i5-5.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_vfo",
+      "status": "changed",
+      "image": "compare/160x120i5-5.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_reply",
+      "status": "changed",
+      "image": "compare/160x120i5-6.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "hotspot",
+      "status": "changed",
+      "image": "compare/160x120i5-6.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "message_view",
+      "status": "changed",
+      "image": "compare/160x120i5-6.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "messages",
+      "status": "changed",
+      "image": "compare/160x120i5-6.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "recent",
+      "status": "changed",
+      "image": "compare/160x120i5-6.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "rx_group",
+      "status": "changed",
+      "image": "compare/160x120i5-6.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "rx_group__light",
+      "status": "changed",
+      "image": "compare/160x120i5-6.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "rx_group__high_contrast",
+      "status": "changed",
+      "image": "compare/160x120i5-6.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "rx_private",
+      "status": "changed",
+      "image": "compare/160x120i5-6.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "tx_private",
+      "status": "changed",
+      "image": "compare/160x120i5-7.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "zone_add",
+      "status": "changed",
+      "image": "compare/160x120i5-7.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "zone_offer",
+      "status": "changed",
+      "image": "compare/160x120i5-7.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "zone_offer_ch",
+      "status": "changed",
+      "image": "compare/160x120i5-7.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "zone_offer_preview",
+      "status": "changed",
+      "image": "compare/160x120i5-7.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "zone_share_sending",
+      "status": "changed",
+      "image": "compare/160x120i5-7.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "zone_share_to_id",
+      "status": "changed",
+      "image": "compare/160x120i5-7.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "banner_call_alert",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "banner_message",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "banner_radio_check",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "banner_zone_offer",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "boot",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "caller_actions",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "channel",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "channel_changed",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "channel_new",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "channel_power",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "channel_rx_entry",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "channels",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "channels__red",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "channels__yellow",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "channels__light_blue",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "channels__light",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "channels__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "compose",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "contact_edit",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "contact_edit_save",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "contacts_find",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "dmr_id",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "dmr_id_entry",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "dual_actions",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "emergency",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "find_name",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "find_new_contact",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual",
+      "status": "changed",
+      "image": "compare/240x320-4.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_busy",
+      "status": "changed",
+      "image": "compare/240x320-4.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_fm",
+      "status": "changed",
+      "image": "compare/240x320-4.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_heard",
+      "status": "changed",
+      "image": "compare/240x320-4.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_on_b",
+      "status": "changed",
+      "image": "compare/240x320-4.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_other_zone",
+      "status": "changed",
+      "image": "compare/240x320-4.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_pill_row3",
+      "status": "changed",
+      "image": "compare/240x320-4.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_rx_b",
+      "status": "changed",
+      "image": "compare/240x320-5.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_rx_b__light",
+      "status": "changed",
+      "image": "compare/240x320-5.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_rx_b__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320-5.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_talk_back",
+      "status": "changed",
+      "image": "compare/240x320-5.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_two_rx",
+      "status": "changed",
+      "image": "compare/240x320-5.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_two_rx__light",
+      "status": "changed",
+      "image": "compare/240x320-5.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_two_rx__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320-5.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_tx",
+      "status": "changed",
+      "image": "compare/240x320-5.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_tx_b",
+      "status": "changed",
+      "image": "compare/240x320-5.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_vfo",
+      "status": "changed",
+      "image": "compare/240x320-5.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_reply",
+      "status": "changed",
+      "image": "compare/240x320-6.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "hotspot",
+      "status": "changed",
+      "image": "compare/240x320-6.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "message_view",
+      "status": "changed",
+      "image": "compare/240x320-6.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "messages",
+      "status": "changed",
+      "image": "compare/240x320-6.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "recent",
+      "status": "changed",
+      "image": "compare/240x320-6.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "rx_group",
+      "status": "changed",
+      "image": "compare/240x320-6.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "rx_group__light",
+      "status": "changed",
+      "image": "compare/240x320-6.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "rx_group__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320-6.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "rx_private",
+      "status": "changed",
+      "image": "compare/240x320-6.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "tx_private",
+      "status": "changed",
+      "image": "compare/240x320-7.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "zone_add",
+      "status": "changed",
+      "image": "compare/240x320-7.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "zone_channels",
+      "status": "changed",
+      "image": "compare/240x320-7.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "zone_offer",
+      "status": "changed",
+      "image": "compare/240x320-7.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "zone_offer_ch",
+      "status": "changed",
+      "image": "compare/240x320-7.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "zone_offer_preview",
+      "status": "changed",
+      "image": "compare/240x320-7.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "zone_share_sending",
+      "status": "changed",
+      "image": "compare/240x320-7.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "zone_share_to_id",
+      "status": "changed",
+      "image": "compare/240x320-7.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "banner_call_alert",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "banner_message",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "banner_radio_check",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "banner_zone_offer",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "boot",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "caller_actions",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "channel",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "channel_changed",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "channel_new",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "channel_power",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "channel_rx_entry",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "compose",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "contact_edit",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "contact_edit_save",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "contacts_find",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "dmr_id",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "dmr_id_entry",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "emergency",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "find_name",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "find_new_contact",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_busy",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_fm",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_heard",
+      "status": "changed",
+      "image": "compare/240x320i10x5-4.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_on_b",
+      "status": "changed",
+      "image": "compare/240x320i10x5-4.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_other_zone",
+      "status": "changed",
+      "image": "compare/240x320i10x5-4.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_pill_row3",
+      "status": "changed",
+      "image": "compare/240x320i10x5-4.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_rx_b",
+      "status": "changed",
+      "image": "compare/240x320i10x5-4.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_rx_b__light",
+      "status": "changed",
+      "image": "compare/240x320i10x5-4.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_rx_b__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320i10x5-4.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_talk_back",
+      "status": "changed",
+      "image": "compare/240x320i10x5-4.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_two_rx",
+      "status": "changed",
+      "image": "compare/240x320i10x5-5.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_two_rx__light",
+      "status": "changed",
+      "image": "compare/240x320i10x5-5.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_two_rx__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320i10x5-5.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_tx",
+      "status": "changed",
+      "image": "compare/240x320i10x5-5.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_tx_b",
+      "status": "changed",
+      "image": "compare/240x320i10x5-5.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_vfo",
+      "status": "changed",
+      "image": "compare/240x320i10x5-5.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_reply",
+      "status": "changed",
+      "image": "compare/240x320i10x5-5.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "hotspot",
+      "status": "changed",
+      "image": "compare/240x320i10x5-5.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "message_view",
+      "status": "changed",
+      "image": "compare/240x320i10x5-5.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "messages",
+      "status": "changed",
+      "image": "compare/240x320i10x5-6.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "recent",
+      "status": "changed",
+      "image": "compare/240x320i10x5-6.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "rx_group",
+      "status": "changed",
+      "image": "compare/240x320i10x5-6.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "rx_group__light",
+      "status": "changed",
+      "image": "compare/240x320i10x5-6.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "rx_group__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320i10x5-6.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "rx_private",
+      "status": "changed",
+      "image": "compare/240x320i10x5-6.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "tx_private",
+      "status": "changed",
+      "image": "compare/240x320i10x5-6.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "zone_add",
+      "status": "changed",
+      "image": "compare/240x320i10x5-6.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "zone_offer",
+      "status": "changed",
+      "image": "compare/240x320i10x5-6.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "zone_offer_ch",
+      "status": "changed",
+      "image": "compare/240x320i10x5-7.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "zone_offer_preview",
+      "status": "changed",
+      "image": "compare/240x320i10x5-7.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "zone_share_sending",
+      "status": "changed",
+      "image": "compare/240x320i10x5-7.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "zone_share_to_id",
+      "status": "changed",
+      "image": "compare/240x320i10x5-7.png"
+    }
+  ]
+}

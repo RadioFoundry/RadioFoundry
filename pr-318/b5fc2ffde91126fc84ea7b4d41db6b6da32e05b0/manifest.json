@@ -1,0 +1,91 @@
+{
+  "pr": 318,
+  "base_sha": "d6bb8cd3fe2c93507d932f2c4d1eebcc708c3d09",
+  "head_sha": "b5fc2ffde91126fc84ea7b4d41db6b6da32e05b0",
+  "generated": "2026-11-03T03:08:36Z",
+  "counts": {
+    "changed": 0,
+    "added": 5,
+    "removed": 0,
+    "unchanged": 732
+  },
+  "images": [
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-1.png",
+      "rows": 1,
+      "screens": [
+        "codeplug_foreign"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-1.png",
+      "rows": 1,
+      "screens": [
+        "codeplug_foreign"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-1.png",
+      "rows": 1,
+      "screens": [
+        "codeplug_foreign"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 1,
+      "screens": [
+        "codeplug_foreign"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 1,
+      "screens": [
+        "codeplug_foreign"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "128x64",
+      "screen": "codeplug_foreign",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "codeplug_foreign",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "codeplug_foreign",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "codeplug_foreign",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "codeplug_foreign",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    }
+  ]
+}

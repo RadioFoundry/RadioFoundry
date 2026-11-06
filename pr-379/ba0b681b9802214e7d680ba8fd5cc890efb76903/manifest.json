@@ -1,0 +1,14 @@
+{
+  "pr": 379,
+  "base_sha": "3edf195a4a8935c6f7ee0ff9778f03db5039db1c",
+  "head_sha": "ba0b681b9802214e7d680ba8fd5cc890efb76903",
+  "generated": "2026-11-06T15:29:06Z",
+  "counts": {
+    "changed": 0,
+    "added": 0,
+    "removed": 0,
+    "unchanged": 737
+  },
+  "images": [],
+  "screens": []
+}
