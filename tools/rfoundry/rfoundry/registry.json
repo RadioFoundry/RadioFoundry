@@ -417,7 +417,8 @@
     "calibration": {
      "area": 823296,
      "page_id": 2
-    }
+    },
+    "write_test": 7454720
    },
    "build_options": [],
    "cps_radio_types": []
@@ -535,7 +536,8 @@
     "calibration": {
      "area": 823296,
      "page_id": 2
-    }
+    },
+    "write_test": 7454720
    },
    "build_options": [],
    "cps_radio_types": []
