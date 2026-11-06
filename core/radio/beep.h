@@ -59,6 +59,7 @@ void beep_play(beep_t b, uint8_t level, bool shared);
 // Every radio poll: stop the beep's own stream once the pattern is over (shared: the voice stream took over), and
 // let the amplifier go once its hang has run out
 void beep_service(bool shared, uint32_t now_ms);
+#define BEEP_SERVICE_NOW	1	// beep_service takes now_ms (the beep reel builds older beep.h files too)
 // The user or the radio did something a sound may follow (a key, PTT, a reception, a beep): on a board with
 // speaker_hang_s, power the amplifier now and hold it for that long
 void beep_warm(uint32_t now_ms);
