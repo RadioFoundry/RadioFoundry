@@ -52,7 +52,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_emergency` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
-| `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | fail |
+| `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
 | `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
@@ -76,14 +76,14 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `sfr` | not recorded | pass (seed) | pass (seed) | not recorded | ✕ | not recorded | fail |
 | `sfr_dualpath_rx` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | not recorded |
-| `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | fail |
+| `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | pass |
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written | not recorded | pass |
 | `aprs_igate` | not recorded | off | not recorded | not written | not written | off | not recorded |
 | `gps_sky` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded |
 | `usb` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | not recorded |
 | `hostlink` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded | partial |
+| `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded | pass |
 | `split_duplex` | pass (seed) | pass (seed) | pass (seed) | not written | not written | not recorded | partial |
 | `debuglink` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass |
 | `task_stacks` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
@@ -111,13 +111,13 @@ is `tools/bringup.py list --radio <id>`.
 | `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `dmr_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | fail |
+| `dmr_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | off |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
-| `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | fail |
+| `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ |
 | `font_xl` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
@@ -127,7 +127,7 @@ is `tools/bringup.py list --radio <id>`.
 | `lang_it` | off | off | off | off | off | off | off |
 | `lang_default_es` | off | off | off | off | off | off | off |
 | `lang_default_it` | off | off | off | off | off | off | off |
-| `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run |
+| `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass |
 | `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | ✕ |
