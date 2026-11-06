@@ -46,7 +46,8 @@
 #        maximal            every switch on, except those the board lists as unsupported (BOARD_UNSUPPORTED: the
 #                           hardware can't), not written yet (BOARD_NOT_WRITTEN) or not needed (the board's MAXIMAL_SKIP: NET_PPP on the radios with the USB network adapter)
 #                           and the bench diagnostics (MAXIMAL_SKIP here: AUDIO_PROBE), with the board's MAXIMAL_VARS
-#                           (the DM-1701: LTO=1)
+#                           (the DM-1701: LTO=1). A switch that needs one of those is off too (config/features.mk's
+#                           checks: all of DMR's family where DMR isn't written)
 #        <value>            each build option value but the first (board.toml [[build_options]], e.g. a band),
 #                           default config; not with --matrix
 #        <extra>            each board.toml [ci] extra configuration (e.g. a bench diagnostic with the variables it
@@ -501,9 +502,21 @@ for bm in boards/*/board.mk boards/*/; do
 		builds "$b" --extra
 		build "$b" fm-minimal CONFIG_DMR=n CONFIG_USB=n CONFIG_VFO=n CONFIG_DIAG=n CONFIG_SUBTONE=n CONFIG_FONT_XL=n
 	fi
+	# A switch whose parent is left out (everything that needs DMR on a board where DMR isn't written) is left out too:
+	# config/features.mk's checks name one such switch per pass, until the set passes them
+	maximal_vars=$(make -s BOARD="$b" print-maximal-vars 2>/dev/null)
+	dropped=""
+	# shellcheck disable=SC2086
+	while err=$(make -s BOARD="$b" $all_on $maximal_vars print-config 2>&1 >/dev/null); [ -n "$err" ]; do
+		f=$(printf '%s\n' "$err" | sed -n 's/.*CONFIG_\([A-Z0-9_]*\)=y needs .*/\1/p' | head -1)
+		case "$all_on " in *" CONFIG_$f=y "*) ;; *) break ;; esac	# not a dependency: the build reports it
+		all_on=$(printf '%s ' $all_on | sed "s/CONFIG_$f=y //")
+		dropped="$dropped $f"
+	done
+	[ -n "$dropped" ] && echo "ci: $b maximal: off, their parent left out:$dropped"
 	# Maximal with --quick too: its flash and the stack check's deepest chains are where a pull request runs out first
 	# shellcheck disable=SC2086
-	build "$b" maximal $all_on $(make -s BOARD="$b" print-maximal-vars 2>/dev/null)
+	build "$b" maximal $all_on $maximal_vars
 done
 # Each platform's flash stubs (platform.toml stubs), once, when any board on the platform was built: one image serves
 # every board on it. Built with that platform's compiler (the first board's print-cc), then the stub's own check target
