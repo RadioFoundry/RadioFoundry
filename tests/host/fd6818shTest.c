@@ -357,6 +357,52 @@ static void test_dmr_burst(void)
 	CHECK(LOGGED(from, 0x1A, 0x5F42, 0x38, 0xA8B8, 0x39, 0x004E, 0x03, 0x0000, 0x03, 0xBFF1));
 }
 
+// A board's own digital set and AF words (fd6818sh_cfg_t digital, af_dmr, af_dmr_tx): the table in place of the
+// driver's, the board's receive AF word, and at a burst's TX the TX AF word ahead of the tune
+static const rfbus_regval_t own_digital[] = { { 0x43, 0x7E08 }, { 0x40, 0x3AD0 } };
+static const fd6818sh_cfg_t own_dmr_cfg = {
+	.band_edge = own_edge, .band_word = own_word, .dev_high = own_dev, .bands = 1,
+	.tx_state = 0xC1FE, .tx_tone_state = 0xC1FA,
+	.page1_or = 0x80,
+	.analog = own_analog, .analog_n = sizeof own_analog / sizeof own_analog[0],
+	.bw_word = { 0x4048, 0x3028 },
+	.tx_dev = 0x3AD0,
+	.pa_both = true,
+	.digital = own_digital, .digital_n = sizeof own_digital / sizeof own_digital[0],
+	.af_dmr = 0x4140, .af_dmr_tx = 0x6740,
+};
+
+static void test_board_digital(void)
+{
+	fd6818sh_t c;
+	reset();
+	fd6818sh_attach(&c, &bus, FD6818SH_MAIN);
+	fd6818sh_set_cfg(&c, &own_dmr_cfg);
+	fd6818sh_analog_mode(&c);
+	unsigned from = nlog;
+	fd6818sh_dmr_mode(&c);
+	CHECK(LOGGED(from, 0x03, 0x0000, 0x51, 0x0000, 0x43, 0x7E08, 0x40, 0x3AD0, 0x47, 0x4140));
+	// The bandwidth stays the digital set's; receive audio is the board's digital word
+	from = nlog;
+	fd6818sh_set_bandwidth(&c, true);
+	CHECK(nlog == from);
+	fd6818sh_set_af(&c, FD6818SH_AF_RX);
+	CHECK(regs[0][0x47] == 0x4140);
+
+	fd6818sh_dmr_tx_prepare(&c, 3);
+	from = nlog;
+	fd6818sh_burst_tune(&c, 927500000, true);
+	CHECK(LOGGED(from, 0x47, 0x6740, 0x1A, 0x1F80, 0x28, 0x001B, 0x38, 0x40B0, 0x39, 0x0587, 0x03, 0x0000,
+		     0x03, 0xC1FE));
+	from = nlog;
+	fd6818sh_burst_tune(&c, 927500000, false);
+	CHECK(LOGGED(from, 0x1A, 0x1F80, 0x38, 0x40B0, 0x39, 0x0587, 0x47, 0x4140, 0x03, 0x0000, 0x03, 0xBFF1));
+
+	// Back to analog: the bandwidth word again
+	fd6818sh_analog_mode(&c);
+	CHECK(regs[0][0x43] == 0x3028 && regs[0][0x47] == FD6818SH_AF_MUTE);
+}
+
 static void test_lo(void)
 {
 	fd6818sh_t c;
@@ -417,6 +463,7 @@ int main(void)
 	test_fm_tx();
 	test_board_set();
 	test_dmr_burst();
+	test_board_digital();
 	test_lo();
 	test_lo_7813();
 	printf("# fd6818shTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

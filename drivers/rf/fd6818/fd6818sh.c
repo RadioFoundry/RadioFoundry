@@ -426,11 +426,22 @@ void fd6818sh_analog_mode(fd6818sh_t *dev)
 	wr(dev, REG_AUDIO_GAIN, dev->r53);
 }
 
+// The digital receive AF word: the board's, else the driver's
+static uint16_t af_dmr(const fd6818sh_t *dev)
+{
+	return dev->cfg != NULL && dev->cfg->af_dmr != 0 ? dev->cfg->af_dmr : FD6818SH_AF_DMR;
+}
+
 void fd6818sh_dmr_mode(fd6818sh_t *dev)
 {
 	fd6818sh_set_state(dev, FD6818SH_STATE_IDLE);
 	dev->digital = true;
 	wr(dev, REG_SUB, SUB_OFF);
+	if (dev->cfg != NULL && dev->cfg->digital != NULL) {
+		table(dev, dev->cfg->digital, dev->cfg->digital_n);
+		wr(dev, REG_AF, af_dmr(dev));
+		return;
+	}
 	wr(dev, REG_AFC, AFC_DIGITAL);
 	mic_gain(dev, MIC_DIGITAL);
 	wr(dev, REG_SUB, SUB_TX_NONE);
@@ -469,7 +480,7 @@ void fd6818sh_tune(fd6818sh_t *dev, uint32_t hz)
 void fd6818sh_set_af(fd6818sh_t *dev, uint16_t af)
 {
 	if (dev->digital && af == FD6818SH_AF_RX) {
-		af = FD6818SH_AF_DMR;
+		af = af_dmr(dev);
 	}
 	wr(dev, REG_AF, af);
 }
@@ -639,11 +650,18 @@ void fd6818sh_dmr_tx_prepare(fd6818sh_t *dev, uint8_t pa_gain)
 // The working firmware's TX and RX handlers: the band word, in TX the PA gain, the frequency, then the state
 void fd6818sh_burst_tune(fd6818sh_t *dev, uint32_t hz, bool tx)
 {
+	bool own_af = dev->cfg != NULL && dev->cfg->af_dmr_tx != 0;
+	if (tx && own_af) {
+		wr(dev, REG_AF, dev->cfg->af_dmr_tx);
+	}
 	wr(dev, REG_BAND, band_word_of(cfg(dev), hz));
 	if (tx) {
 		wr(dev, REG_PA, pa_word(dev, dev->pa_gain));
 	}
 	write_freq(dev, hz);
+	if (!tx && own_af) {
+		wr(dev, REG_AF, af_dmr(dev));
+	}
 	fd6818sh_set_state(dev, tx ? tx_state(dev) : FD6818SH_STATE_RX);
 }
 

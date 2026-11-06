@@ -48,6 +48,12 @@ typedef struct {
 	uint16_t bw_word[2];	// 0x43 at 12.5 and 25 kHz, nothing else written; 0: the driver's words
 	uint16_t tx_dev;	// 0x40 in an FM transmission, sub-audio or not; 0: by band (dev_high)
 	bool pa_both;		// 0x28 takes the PA gain (0..7) in both 3-bit fields, else fd6818sh_pa_word()
+	// The digital mode's words (fd6818sh_dmr_mode), page selects inline: written in place of the driver's digital
+	// set, after the sub-audio off. NULL: the driver's
+	const rfbus_regval_t *digital;
+	uint8_t digital_n;
+	uint16_t af_dmr;	// 0x47 in digital receive; 0: FD6818SH_AF_DMR
+	uint16_t af_dmr_tx;	// 0x47 written ahead of a burst's TX tune (fd6818sh_burst_tune); 0: none
 } fd6818sh_cfg_t;
 
 typedef struct {
@@ -139,7 +145,8 @@ void fd6818sh_tone_start(fd6818sh_t *dev, uint16_t hz, uint8_t gain);	// hz 0 = 
 void fd6818sh_tone_key(fd6818sh_t *dev, bool down);
 void fd6818sh_tone_stop(fd6818sh_t *dev);
 void fd6818sh_dtmf_start(fd6818sh_t *dev, uint16_t low_hz, uint16_t high_hz);	// low 0 = stop
-// DMR TX: the PA gain for the bursts, then the per-burst tune (TX on hz, or back to receive at hz)
+// DMR TX: the PA gain for the bursts, then the per-burst tune (TX on hz, or back to receive at hz). With the board's
+// af_dmr_tx, TX writes it first; receive writes the digital AF word before the state
 void fd6818sh_dmr_tx_prepare(fd6818sh_t *dev, uint8_t pa_gain);
 void fd6818sh_burst_tune(fd6818sh_t *dev, uint32_t hz, bool tx);
 
