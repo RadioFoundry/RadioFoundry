@@ -190,8 +190,6 @@ void md9600_rf_dmr_prepare(void);
 void md9600_rf_dmr_wait(void);
 void md9600_rf_dmr_done(void);
 void md9600_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx);
-// An SFR's burst timing: RF TX interrupt to the timeslot interrupt (us, 0 = not measured), bursts ended early by TIM5
-void md9600_rf_sfr_timing(uint32_t *slot_us, uint32_t *early_ends);
 #endif
 
 // GPS (gps_md9600.c): the module's NMEA on USART1, detected at run time (13)

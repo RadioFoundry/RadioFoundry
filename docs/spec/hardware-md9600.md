@@ -976,6 +976,7 @@ repeated by the MMDVM SFR:
 | 3.0 ms, 2 ms | 12-18 of 18 | 35-59 / 0-12 / 42-56 |
 | 2.0 ms, 1 ms | 18 | 71 / 0 / 36 |
 | 1.5 ms, 0.6 ms | 12-18 of 18 | 53-67 / 0-6 / 0-6 |
+| 1.5 ms, 0.6 ms, the burst ended 0.6 ms before the timeslot interrupt (TIM5, 2026-11-06) | 27 bursts (4 superframes) | 37 / 48 / 48, 16 of 69 frames lost: worse, reverted |
 
 The call goes up whole (18 voice frames and the terminator). About 15-25% of the inbound AMBE frames fail their C0
 check, and the first frame of each burst carries most of the corrected bits: the receiver's recovery after the drop at
