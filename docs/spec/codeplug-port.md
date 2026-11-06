@@ -72,3 +72,20 @@ their contact back, 403 of 403 channels keep theirs (T). Before this module, 194
 (R, issue #9); `dmrconf read` fails the same way. `cps_client.py` writes the same regions qdmr does (0x80, 0x7500,
 0x20000, 0x9B000) through the same protocol, sector by sector, and only the sectors that change. The radio keeps its
 quick keys, and its own VFO records (0x7590-0x75B8) differ from the file afterwards (R). A radio tool may add an offset to every address (the open-firmware image sits above the data flash base on some radios).
+
+### 4.1 DfuSe file to flat image
+
+`dfu_image` turns a dmrconf file into one flat image in the STM32 layout of
+[open-firmware-cps.md](open-firmware-cps.md) 7.1 (file offset = wire address before the radio's offset), which is
+what `cps_client.channel_addr` and the writer use. `image_to_dfu` and `dfu_regions` place elements the same way.
+
+| dmrconf driver | EEPROM target | Flash target | In the flat image |
+|---|---|---|---|
+| `openuv380` (the migration tools) | empty | 0x80, 0x7500, 0x20000, 0x9B000 | as in the file |
+| `opengd77` (the MK22 mapping) | 0x80, 0x7500 | 0x0, 0x7B000, both from 0 | the flash target moves up by 0x20000 |
+
+A non-empty EEPROM target selects the MK22 placement. Elements that still overlap are refused.
+
+The placement covers codeplug files only. An ID database encoded with `opengd77` is one target at the MK22 address
+0x30000 and has a different record size from the `openuv380` one, so moving it would not make it valid. Encode the
+database with `openuv380`, as the migration tools do.
