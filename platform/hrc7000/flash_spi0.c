@@ -3,7 +3,8 @@
 // Data flash on SPI0 (a 16 MB SPI NOR, GD25Q128 or Puya PY25Q128HA class), chip select on a GPIO the board names and
 // drives by hand (docs/spec/hardware-dm32.md 3.2, 10; hardware-dm1801pro.md 6.1). One mutex serializes every
 // transaction once the scheduler runs. Everything below the board's write floor belongs to the radio's own firmware:
-// reads only, writes and erases there are refused here, whatever the caller asks.
+// reads only, writes and erases there are refused here, whatever the caller asks. Nothing past the probed size is read
+// or written (a 3-byte address would wrap to the bottom of the chip).
 #include "platform.h"
 #include "flash/spi_nor/spi_nor.h"
 #include "hal_time.h"
@@ -71,6 +72,9 @@ static bool init(void)
 	// Any vendor whose capacity code the driver knows: GD25Q128 C8 40 18, Puya 85 20 18
 	ready = ok;
 	hrc_flash_spi0.size = ok ? nor.size : 0;
+	// The board's map assumes its chip's size: on a smaller part the core gets no areas and stores nothing (as the
+	// STM32 radios' map_min_size), rather than areas that end past the chip
+	hrc_flash_spi0.map = ok && cfg->map != NULL && hal_flash_map_end(cfg->map, SPI_NOR_SECTOR_SIZE) <= nor.size ? cfg->map : NULL;
 	return ok;
 }
 
@@ -124,7 +128,6 @@ hal_flash_t hrc_flash_spi0 = {
 void hrc_flash_spi0_configure(const hrc_flash_cfg_t *c)
 {
 	cfg = c;
-	hrc_flash_spi0.map = c->map;
 }
 
 uint32_t hrc_flash_spi0_jedec(void)
