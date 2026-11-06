@@ -90,8 +90,8 @@ static void io_init(void)
 	hrc_pin_out(PIN_VOICE_EN, false);
 	hrc_pin_out(PIN_VOICE_CLK, false);
 	hrc_pin_out(PIN_VOICE_DATA, false);
-	hrc_pin_out(PIN_LED_A, false);
-	hrc_pin_out(PIN_LED_B, true);	// on from power-up, as the radio does it, until the core takes the LEDs
+	hrc_pin_out(PIN_LED_GREEN, false);
+	hrc_pin_out(PIN_LED_RED, true);	// on from power-up, as the radio does it, until the core takes the LEDs
 	hrc_pin_out(PIN_FD_SCL, true);	// the two-wire bus idle
 	hrc_pin_in(PIN_FD_SDA);
 

@@ -66,7 +66,7 @@ static bool switch_on(void)
 
 static void led(uint8_t which, bool on)
 {
-	hrc_pin_write(which == LED_RED ? PIN_LED_A : PIN_LED_B, on);
+	hrc_pin_write(which == LED_RED ? PIN_LED_RED : PIN_LED_GREEN, on);
 }
 
 const hal_power_t rt10_power = {

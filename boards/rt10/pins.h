@@ -13,9 +13,9 @@
 #define PIN_KNOB_B1		0x22	// code bit 1
 #define PIN_PA_SELECT		0x23	// PA select, high = on
 #define PIN_RX_SUPPLY		0x24	// RX supply, high = on
-#define PIN_LED_A		0x25	// LED, high = on
+#define PIN_LED_GREEN		0x25	// green LED, high = on
 #define PIN_KNOB_B3		0x26	// code bit 3
-#define PIN_LED_B		0x27	// LED, high = on (the one lit at power-up)
+#define PIN_LED_RED		0x27	// red LED, high = on (the one lit at power-up)
 #define PIN_VOICE_EN		0x28	// voice prompt chip enable, high = on
 #define PIN_SK1			0x29	// side key, low = pressed
 #define PIN_SK2			0x2A	// side key, low = pressed
