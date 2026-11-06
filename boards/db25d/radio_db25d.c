@@ -306,7 +306,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 		return false;
 	}
 	if (dmr_armed) {
-		db25d_dmr_tx_disarm();
+		hrc_rfburst_disarm();
 	}
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_pa = plan.pa;
@@ -326,7 +326,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 static void dmr_disarm(void)
 {
 	if (dmr_armed) {
-		db25d_dmr_tx_disarm();
+		hrc_rfburst_disarm();
 		dmr_armed = false;
 		DAC_DATA_B = 0;
 		hrc_dac_b_power(false);
@@ -335,7 +335,7 @@ static void dmr_disarm(void)
 
 // One burst, the stock TX on (3.2, 4.4 steps 2-7 without the audio): RX paths off, 50 us, main chip to f and the LO
 // off, the page's TX-on delay, PA select and the RX supply off, 200 us, the band's TX supply, the ramp up
-void db25d_burst_on(db25d_wait_fn wait)
+void db25d_burst_on(hrc_rfburst_wait_fn wait)
 {
 	hrc_pin_write(PIN_RX_FRONT_END, false);
 	hrc_pin_write(PIN_UHF_RX, false);
@@ -354,16 +354,16 @@ void db25d_burst_on(db25d_wait_fn wait)
 	apc_ramp(tx_pa, true);
 }
 
-// TX off after a burst: the hold until the burst's last symbol (db25d_dmr_hold_us; none when now), the ramp down,
+// TX off after a burst: the hold until the burst's last symbol (hrc_rfburst_hold_us; none when now), the ramp down,
 // supplies and PA selects off with PTA23 high, the main chip back to the IF and the LO on again, the RX path of the
 // band. The stock's waits between these steps (300, 300 and 200 us) are left out: they kept the receiver off for the
 // start of the next slot's burst, which an SFR repeater has to hear (hardware-db25d.md 4.5). Returns how late the ramp
 // down started, in us
-uint32_t db25d_burst_off(db25d_wait_fn wait, uint32_t elapsed_us, bool now)
+uint32_t db25d_burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now)
 {
-	uint32_t late = now ? 0 : db25d_dmr_late_us(elapsed_us, tx_lead);
+	uint32_t late = now ? 0 : hrc_rfburst_late_us(elapsed_us, tx_lead);
 	if (!now) {
-		wait(db25d_dmr_hold_us(elapsed_us, tx_lead));
+		wait(hrc_rfburst_hold_us(elapsed_us, tx_lead));
 	}
 	apc_ramp(tx_pa, false);
 	tx_paths_off();

@@ -372,13 +372,13 @@ bits corrected); the diagnostics line showed 57 bursts keyed and ended, each end
 | Mic and vocoder | The microphone reaches the modem's codec ADC with no pin to switch: PTB14 / PTB15 appear only in the audio on / off routines (3.3), never in a TX path. Mic gain (GCR_ADCL) on a digital channel comes from a setting (0 dB when unset); an analog channel sets +12 dB. WORK_MODE bit 7 cleared (DMR modulator) |
 | Analog PTT routine | Not used for a digital channel: the RF follows the bursts only (unverified) |
 
-RadioFoundry (`boards/db25d/dmr_db25d.c`, `radio_db25d.c`; tests in `tests/host/bk4819Test.c` and `boards/db25d/tests/db25dCalTest.c`):
+RadioFoundry (`boards/db25d/dmr_db25d.c`, `radio_db25d.c` on the shared RF-burst task, [modem-hrc7000.md](modem-hrc7000.md) 3.1a; tests in `tests/host/bk4819Test.c` and `boards/db25d/tests/db25dCalTest.c`):
 
 | Step | RadioFoundry |
 |---|---|
 | `tx()` in DMR mode | Checks band and page as FM does, keeps the TX plan (PA drive, TX-on and TX-off delays), writes RF_MOD_BIAS_CTRL with the modulation byte for the TX frequency, main chip 0x40 = 0 and 0x51 = 0 (`bk4819_dmr_tx_prepare`), powers DAC B at 0, clears RF_MODE bit 7 (`make DB25D_DMR_TX_INVERT=1` sets it, to try the other 4FSK polarity), sets the RF TX interrupt's lead (RF_CONTROL b13:8, `db25d_dmr_rf_tx_lead`: 1.6 ms with the UHF page, below) and arms. The RF stays receiving until the first burst |
-| RF TX interrupt | The glue's `rf_switch(true)` records the time and wakes the RF task (priority above every other task), which runs the TX on sequence (`db25d_burst_on`) |
-| End of a burst | Woken by the modem's RF RX interrupt (enabled while armed) or by the engine's `rf_switch(false)` at the first slot tick 20 ms after the RF TX interrupt, whichever comes first. The task then waits for the burst's last symbol, lead + 0.85 ms + 27.5 ms after the RF TX interrupt (`db25d_dmr_hold_us`), and runs the TX off sequence (`db25d_burst_off`) without the stock's 300, 300 and 200 us waits. A wake-up after that point ramps down at once and counts as late |
+| RF TX interrupt | The glue's `rf_switch(true)` (`hrc_rfburst_switch`) records the time and wakes the RF task (priority above every other task), which runs the TX on sequence (`db25d_burst_on`) |
+| End of a burst | Woken by the modem's RF RX interrupt (enabled while armed) or by the engine's `rf_switch(false)` at the first slot tick 20 ms after the RF TX interrupt, whichever comes first. The task then waits for the burst's last symbol, lead + 0.85 ms + 27.5 ms after the RF TX interrupt (`hrc_rfburst_hold_us`), and runs the TX off sequence (`db25d_burst_off`) without the stock's 300, 300 and 200 us waits. A wake-up after that point ramps down at once and counts as late |
 | Waits | Below 50 us a spin; from 50 us TIMER_BOARD (timer 5) while the task sleeps |
 | `tx_off()`, `rx()`, leaving DMR | Disarm: TX off at once (no hold) if a burst is on, wait for the task, DAC B powered down, then the normal receive set-up |
 | PA one-shot | The glue still arms it per burst; the board's hook does nothing |
