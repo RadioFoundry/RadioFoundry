@@ -383,10 +383,14 @@ static void status(radio_status_t *st)
 	// radios (fd6818.h): read raw, every level opened on noise
 	st->noise = fd6818_noise(rfbus_read(&fd_bus.bus, FD_REG_NOISE));
 	st->carrier = false;
-	// The chip compares the sub-audio set by set_rx_tone and puts the result on its GPIO0 (fd6818sh.h). It updates
-	// the result only while its own squelch (GPIO6) is open: after a carrier the old result stays up, so it counts
-	// only with the squelch pin high (hardware-rt10.md 7)
-	st->tone_ok = rx_tone.type == TONE_NONE || (hrc_pin_read(PIN_RF_SQ) && hrc_pin_read(PIN_RF_CSS));
+	// The chip compares the sub-audio set by set_rx_tone and puts the result on its GPIO0 (fd6818sh.h). A match stays
+	// up after the carrier and through the next one, whatever its tone, until the sub-audio set is written again
+	// (hardware-rt10.md 7): with the chip's squelch (GPIO6) closed and the match up, write it again, which clears it
+	bool sq = hrc_pin_read(PIN_RF_SQ), css = hrc_pin_read(PIN_RF_CSS);
+	if (rx_tone.type != TONE_NONE && !sq && css && !transmitting) {	// 0x51 holds the TX sub-audio while keyed
+		fd6818sh_set_rx_tone(&fd, fd_tone(&rx_tone), rx_tone.value);
+	}
+	st->tone_ok = rx_tone.type == TONE_NONE || (sq && css);
 }
 
 static void audio(bool on)
