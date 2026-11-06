@@ -352,7 +352,7 @@ direct sound's, since a room's echo builds up and dies away slower. Problems:
 | Length | a tone is more than 10 ms shorter than asked (a lost start or end), or more than 40 ms longer (a speaker and a room ring on a little) |
 | Level | a tone moves by more than 12 dB over its length, by more than 8 dB within a few ms (a step as an amplifier comes up, a dropout), or two tones at one frequency differ by 12 dB |
 | Silence | a silence is more than 10 ms longer than asked, or less than 8 dB under its louder neighbor |
-| Pops | broadband energy away from the tones' harmonics more than 20 dB over the recording's floor, or within 10 dB of a tone on it and in the 60 ms after it (at its edges: louder than the tone). In the FM test this includes the squelch opening and closing, and a squelch tail after the carrier is named as one |
+| Pops | broadband energy away from the tones' harmonics more than 20 dB over the recording's floor, or within 10 dB of a tone on it and in the 60 ms after it (at its edges: louder than the tone). In the FM test this includes the squelch opening and closing; a squelch tail after the carrier is named as one when it lasts longer than the core's squelch takes to close (`RADIO_SQL_CLOSE_POLLS` x `RADIO_POLL_MS`, plus one 10 ms frame: tail elimination is not done, radio-features.md 3.5) |
 
 The recordings stay in pytest's temporary directory (the test prints each path). By hand:
 `python3 tests/hil/audio_check.py FILE.wav BEEP` (a beep name, or `HZ:MS,...` with `0:MS` a silence).

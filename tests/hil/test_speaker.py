@@ -14,7 +14,10 @@ then the shortest beep (key): the lead-in must cover the amplifier's start.
 
 test_fm_rx_speaker (rf, bench_service): the bench board's FM transmitter sends a carrier, then tone pulses of exact
 lengths at several frequencies (--fm-mhz, no sub-audio tone); the radio's VFO receives them. Besides the tones'
-checks, nothing may pop as the squelch opens or closes, and no squelch tail may be heard after the carrier."""
+checks, nothing may pop as the squelch opens or closes, and a squelch tail after the carrier may last no longer than
+the core's squelch takes to close (RADIO_SQL_CLOSE_POLLS polls of RADIO_POLL_MS, core/radio/radio_sm.h): squelch tail
+elimination is not done (docs/spec/radio-features.md 3.5), so the noise until that close is expected; a longer one
+(a board whose noise reading lags the carrier) fails."""
 import os
 import shutil
 import subprocess
@@ -139,6 +142,15 @@ def test_speaker_beep_cold(radio, microphone):
 
 # the bench's FM program: a carrier first (the squelch opens on it), then pulses of exact lengths
 FM_LEAD_S = 0.5
+
+
+def squelch_close_ms():
+    """The longest the core's squelch stays open after the carrier: the close polls, read from radio_sm.h so the test
+    copies no number, plus one pop analysis frame for where the burst's edges fall."""
+    import re
+    src = open(os.path.join(A.ROOT, "core", "radio", "radio_sm.h")).read()
+    get = lambda name: int(re.search(rf"#define\s+{name}\s+(\d+)", src).group(1))  # noqa: E731
+    return get("RADIO_SQL_CLOSE_POLLS") * get("RADIO_POLL_MS") + A.POP_WIN_MS
 FM_PROGRAM = [{"kind": "silence", "s": FM_LEAD_S},
               {"kind": "tone", "hz": 1000, "s": 0.30, "level": 0.6},
               {"kind": "silence", "s": 0.20},
@@ -188,11 +200,17 @@ def test_fm_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
         _quiet(f"FM {mhz} MHz")
     end = r.tones[-1].end_s      # the program ends with its last tone: the carrier goes with it
     if end is not None:
-        for t0, over, ms in r.pops:
-            if t0 > end + 0.02:
-                problems = [p for p in problems if f"at {t0:.3f} s" not in p]     # named below instead
-                problems.append(f"FM {mhz} MHz: a squelch tail: {ms:.0f} ms of noise {over:.0f} dB over the floor, "
-                                f"{(t0 - end) * 1000:.0f} ms after the carrier ended")
+        tails = [(t0, over, ms) for t0, over, ms in r.pops if t0 > end + 0.02]
+        allowed = squelch_close_ms()
+        for i, (t0, over, ms) in enumerate(tails):
+            problems = [p for p in problems if f"at {t0:.3f} s" not in p]     # named below instead
+            what = (f"{ms:.0f} ms of noise {over:.0f} dB over the floor, {(t0 - end) * 1000:.0f} ms after the last "
+                    f"tone")
+            if i == 0 and ms <= allowed:
+                print(f"squelch tail: {what} (the squelch closes within {allowed:.0f} ms: expected)")
+            else:
+                problems.append(f"FM {mhz} MHz: a squelch tail: {what}" +
+                                (f" (more than the {allowed:.0f} ms the squelch takes to close)" if i == 0 else ""))
     assert not problems, "\n".join(problems)
 
 
