@@ -583,7 +583,6 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = md9600_rf_rssi_dbm(rf.rev, band, rssi);
 	st->noise = md9600_rf_noise(md9600_noise_floor(&noise_win, noise, st->rssi_dbm, hal_millis()), sql_l1, sql_l9);
 	st->carrier = rf.state == MD9600_RF_RX && st->rssi_dbm >= CARRIER_DBM;
-	md9600_speaker_poll(hal_millis());
 #if MD9600_TX_SIG
 	if (rf.state == MD9600_RF_TX) {
 		md9600_c6000_tx_service(hal_millis());
