@@ -122,11 +122,12 @@ def skip_reason(kind, reason):
     return f"[{kind}] {reason}"
 
 
-def skip(kind, reason):
-    """Skip the running test (or fixture) as pytest.skip does, with its kind."""
+def skip(kind, reason, module=False):
+    """Skip the running test (or fixture) as pytest.skip does, with its kind. module=True skips the whole module from
+    its top level, as pytest.skip(allow_module_level=True)."""
     __tracebackhide__ = True        # pytest reports the caller's line, not this one
     import pytest
-    e = pytest.skip.Exception(skip_reason(kind, reason))  # hil-skip: the helper
+    e = pytest.skip.Exception(skip_reason(kind, reason), allow_module_level=module)  # hil-skip: the helper
     e.kind = kind
     raise e
 
