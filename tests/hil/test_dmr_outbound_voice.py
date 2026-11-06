@@ -65,9 +65,9 @@ def _setup(radio, pytestconfig):
     cc = rig(pytestconfig, "dmr-cc")
     radio.go_home()
     try:
-        radio.find_channel(round(freq * 1e6), "dmr")
+        radio.find_channel(round(freq * 1e6), "dmr", duplex=True)
     except AssertionError as e:
-        skip("opt_in", f"the radio has no DMR channel receiving {freq} MHz: {e}")
+        skip("opt_in", f"the radio has no duplex DMR channel receiving {freq} MHz: {e}")
     core = radio.core()
     if core.get("tx_hz") == core.get("rx_hz"):
         skip("opt_in", f"the channel on {freq} MHz is simplex: the outbound needs a duplex (repeater) channel")

@@ -536,13 +536,11 @@ def test_dmr_privacy_tx(radio, sdr_bench, pytestconfig):
         skip("state", "a privacy key is set already: not overwriting it")
     own = int(d["dmr.own_id"])
     clear_sdr, clear_heard = _over(radio, sdr_bench, freq, cc, 3.0, "hil_dmr_clear")
-    try:
+    with radio.debuglink_privacy():
         radio.link.dmr_privacy("moto", 1)
         radio.wait_for(lambda x: x.get("dmr.privacy") == "1", sections=("dmr",), what="privacy key loaded")
         sdr, heard = _over(radio, sdr_bench, freq, cc, 3.0, "hil_dmr_privacy")
-    finally:
-        radio.link.dmr_privacy("off")
-        radio.wait_for(lambda x: x.get("dmr.privacy") == "0", sections=("dmr",), what="privacy off")
+    radio.wait_for(lambda x: x.get("dmr.privacy") == "0", sections=("dmr",), what="privacy off")
     # Voice LC headers and terminators from us (the SDR's and the bench modem's), embedded call LCs (the SDR's)
     lcs = [b["lc"] for b in sdr.get("bursts", []) if (b.get("lc") or {}).get("so") is not None
            and b["lc"].get("src") == own]

@@ -392,6 +392,37 @@ class Radio:
         return True
 
 
+    @contextlib.contextmanager
+    def debuglink_privacy(self):
+        """Around a test that loads a privacy key over the debug link (dmr_privacy): the radio core writes the key in
+        use back to privacy slot 1, and "off" leaves it in the slot (radio_sm.c, settings write-back), so a slot that
+        was empty is emptied again afterwards (Settings > Privacy > Key type steps Motorola, Anytone, Off). Without
+        this, test_privacy_key_entry later finds a key it won't overwrite."""
+        before = self.view(["storage"]).get("settings.privacy_type")
+        try:
+            yield
+        finally:
+            self.link.dmr_privacy("off")
+            if before == "0":
+                self.privacy_slot_off()
+
+    def privacy_slot_off(self):
+        """Privacy slot 1's key type to Off from the menu, which removes its key (each OK on the row steps the type
+        once). Returns True when it had to change it."""
+        if self.view(["storage"]).get("settings.privacy_type") in (None, "0"):
+            return False
+        self.go_home()
+        for k in ("ok", "7", "4"):
+            self.press(k)
+        for _ in range(3):
+            if self.view(["storage"]).get("settings.privacy_type") == "0":
+                break
+            self.press("ok")
+        self.press("back", LONG)
+        self.wait_for(lambda v: v.get("settings.privacy_type") == "0", sections=("storage",), what="privacy slot off")
+        self.go_home()
+        return True
+
     def language_english(self):
         """Settings > Display > Language back to English. The tests match the English text the debug link reports
         (screens, toasts, banners), so a radio left in another language fails them as if the firmware were wrong. The
@@ -520,10 +551,11 @@ class Radio:
             if self.core().get("mode") != mode:
                 self._req_until(lambda: L.dmr_fields(mode=mode), lambda v: v.get("mode") == mode, "VFO mode back")
 
-    def find_channel(self, rx_hz, mode=None):
-        """Select the first channel receiving on rx_hz (None: any frequency) and in mode 'fm' / 'dmr': the current zone
-        first, then the others in order, so a test doesn't depend on the zone the radio was left in (restore() puts the
-        zone back). Returns the channel's position in the zone it selected. AssertionError if no zone has one."""
+    def find_channel(self, rx_hz, mode=None, duplex=None):
+        """Select the first channel receiving on rx_hz (None: any frequency), in mode 'fm' / 'dmr' and, with duplex
+        True / False, transmitting on another / the same frequency: the current zone first, then the others in order,
+        so a test doesn't depend on the zone the radio was left in (restore() puts the zone back). Returns the
+        channel's position in the zone it selected. AssertionError if no zone has one."""
         L = self.link
         if self.core().get("vfo") == "1":
             self._req_until(lambda: L.vfo(False), lambda v: v.get("vfo") == "0", "VFO off")
@@ -536,11 +568,13 @@ class Radio:
             size = int(self.core().get("zone_size") or 0)
             for pos in range(size):
                 v = self._req_until(lambda: L.zone_pos(pos), lambda x: x.get("zone_pos") == str(pos), f"position {pos}")
-                if (rx_hz is None or int(v["rx_hz"]) == int(rx_hz)) and (mode is None or v.get("mode") == mode):
+                if ((rx_hz is None or int(v["rx_hz"]) == int(rx_hz)) and (mode is None or v.get("mode") == mode)
+                        and (duplex is None or (v.get("tx_hz") != v.get("rx_hz")) == duplex)):
                     return pos
             searched.append(f"{self.core().get('zone_name')!r} ({size})")
         on = "on any frequency" if rx_hz is None else f"on {rx_hz / 1e6:.5f} MHz"
-        raise AssertionError(f"no channel {on}{' ' + mode if mode else ''} in any zone: "
+        kind = "" if duplex is None else " duplex" if duplex else " simplex"
+        raise AssertionError(f"no{kind} channel {on}{' ' + mode if mode else ''} in any zone: "
                              f"{', '.join(searched)}")
 
 API_FM_THRESHOLD_DB = 8.0          # sdr_fm_check's keyed threshold on a bench board (analyze_fm)
