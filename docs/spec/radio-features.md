@@ -363,7 +363,9 @@ mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep
 
 A board with no PCM speaker audio (no `board.audio`) can give `hal_radio_t.beep_tone(hz, level)` instead: the core
 then plays each segment of the pattern as one tone on the board's own tone generator, `hz` 0 for a silent segment and
-once at the end, timed by the radio poll (a segment ends on the first poll at or after its length). `level` is the
+once at the end, timed by the radio poll: a segment ends on the first poll at or after its length, counted from the first poll after
+the pattern starts. The poll it starts in doesn't count, so a segment never plays shorter than its length (up to one poll
+longer). `level` is the
 same level a PCM beep would play at. The board ignores the hook while it transmits. `beep.played` counts these
 beeps too.
 
