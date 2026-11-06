@@ -728,6 +728,18 @@ on two scans running with no handler entry between them, keep the controller and
 the bank from the scan and unmask the source (the steps of the stall window may be lost). Count every source the fallback handler masks. Radios: the HR_C7000
 boards with an interrupt-driven encoder; one confirmed.
 
+**16.5 Both directions at once on the shared PTT line.**
+Symptom: on a radio whose PTT shares the host's RX line (16.2), PPP died soon after LCP opened and never came back:
+the radio sent and received nothing, the line read low with the cable unplugged, and only a power cycle cleared it.
+The radio kept running (keys, LEDs, its tasks). Cause: electrical, most likely a latch-up at the pad. When the radio
+starts sending while the host is still sending, the line is clamped low: driving the PTT pin high from the SoC
+didn't lift it, and a full SoC reset by the watchdog didn't release it. PPP isn't needed: debug link requests sent
+back to back, without waiting for the answers, did it within 15 ms. Request and answer in turn (the debug link, CPS)
+never did. Rule: on such a radio a host port write waits until the line has been quiet for a few milliseconds
+(`HRC_HOST_TX_IDLE_MS`, `platform/hrc7000/uart_idle.h`), and PPP, whose host sends at any time, stays off. The wait
+can't stop a host that starts sending during the radio's answer; MMDVM and KISS hosts do that too, unchecked. Don't
+reproduce it more than needed: a latch-up draws current. Radios: one confirmed.
+
 ## 17. Scan
 
 **17.1 Scanning DMR direct mode: the carrier is on air every other slot.**

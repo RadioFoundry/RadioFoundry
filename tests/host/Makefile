@@ -937,6 +937,12 @@ TESTS   += hrc7000UartFormatTest
 hrc7000UartFormatTest: hrc7000UartFormatTest.c $(ROOT)/platform/hrc7000/uart_format.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000UartFormatTest.c
 
+# The host port's wait for a quiet line before a write (platform/hrc7000/uart_idle.h, gotchas.md 16.5)
+TESTS   += hrc7000UartIdleTest
+
+hrc7000UartIdleTest: hrc7000UartIdleTest.c $(ROOT)/platform/hrc7000/uart_idle.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000UartIdleTest.c
+
 # The GPIO interrupt watch's lost-interrupt test (platform/hrc7000/irq_stall.h)
 TESTS   += hrc7000IrqStallTest
 
@@ -952,7 +958,7 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 
 run: run-platform
 run-platform: bk4819Test at1141Test fd6818shTest superhetTest rfbusI2cTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest \
-		hrc7000IrqStallTest
+		hrc7000IrqStallTest hrc7000UartIdleTest
 	./bk4819Test
 	./at1141Test
 	./fd6818shTest
@@ -960,6 +966,7 @@ run-platform: bk4819Test at1141Test fd6818shTest superhetTest rfbusI2cTest hrc70
 	./rfbusI2cTest
 	./hrc7000ClockTest
 	./hrc7000UartFormatTest
+	./hrc7000UartIdleTest
 	./hrc7000IrqStallTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
