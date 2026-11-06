@@ -22,9 +22,13 @@ import time
 
 import pytest
 
-import audio_check as A
 from hil_config import rig
 from rfoundry_hil import skip
+
+try:
+    import audio_check as A
+except ImportError as e:        # audio_check needs numpy
+    skip("bench", f"the speaker analysis needs numpy: {e}", module=True)
 
 RATE = 16000
 
