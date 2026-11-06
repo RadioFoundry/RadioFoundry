@@ -15,7 +15,8 @@ then the shortest beep (key): the lead-in must cover the amplifier's start.
 test_fm_rx_speaker (rf, bench_service): the bench board's FM transmitter sends a carrier, then tone pulses of exact
 lengths at several frequencies (--fm-mhz, no sub-audio tone); the radio's VFO receives them. Besides the tones'
 checks, nothing may pop as the squelch opens or closes, and a squelch tail after the carrier may last no longer than
-the core's squelch takes to close (RADIO_SQL_CLOSE_POLLS polls of RADIO_POLL_MS, core/radio/radio_sm.h): squelch tail
+the core's squelch takes to close (one poll to see the carrier gone, then RADIO_SQL_CLOSE_POLLS polls of RADIO_POLL_MS,
+core/radio/radio_sm.h): squelch tail
 elimination is not done (docs/spec/radio-features.md 3.5), so the noise until that close is expected; a longer one
 (a board whose noise reading lags the carrier) fails."""
 import os
@@ -145,12 +146,13 @@ FM_LEAD_S = 0.5
 
 
 def squelch_close_ms():
-    """The longest the core's squelch stays open after the carrier: the close polls, read from radio_sm.h so the test
-    copies no number, plus one pop analysis frame for where the burst's edges fall."""
+    """The longest the core's squelch stays open after the carrier: up to one poll before a poll sees the carrier gone,
+    then the close polls (read from radio_sm.h so the test copies no number), plus one pop analysis frame for where the
+    burst's edges fall."""
     import re
     src = open(os.path.join(A.ROOT, "core", "radio", "radio_sm.h")).read()
     get = lambda name: int(re.search(rf"#define\s+{name}\s+(\d+)", src).group(1))  # noqa: E731
-    return get("RADIO_SQL_CLOSE_POLLS") * get("RADIO_POLL_MS") + A.POP_WIN_MS
+    return (get("RADIO_SQL_CLOSE_POLLS") + 1) * get("RADIO_POLL_MS") + A.POP_WIN_MS
 FM_PROGRAM = [{"kind": "silence", "s": FM_LEAD_S},
               {"kind": "tone", "hz": 1000, "s": 0.30, "level": 0.6},
               {"kind": "silence", "s": 0.20},
