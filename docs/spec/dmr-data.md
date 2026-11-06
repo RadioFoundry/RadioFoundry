@@ -163,9 +163,12 @@ same too (12.3), and its resent text with a new sequence number is kept once (go
 
 Not known yet: whether BrandMeister takes unconfirmed rate 1/2 TMS, and ETSI IP text on 5016, from a radio. In the
 capture it ignored two TMS ACKs the radio sent 0.5 s after its link ACK with one preamble and took both retries sent
-with 12-17 preambles (one sample each, a hypothesis only). The defaults stay until an on-air test says otherwise.
-That test, through a BrandMeister hotspot to 262993, from a radio on an ID registered with BrandMeister (not one
-another radio on the test uses, or each takes the other's ACKs):
+with 12-17 preambles (one sample each, a hypothesis only). The defaults stay until an on-air check says otherwise.
+
+That check is run by hand, once, to settle the formats, and its results are recorded here. It is never part of
+`tests/hil` or any automated or repeated test: no test reaches the real BrandMeister network (tests use the capture
+or a local stand-in for the master). It goes through a BrandMeister hotspot to 262993, from a radio on an ID
+registered with BrandMeister (not one another radio on the check uses, or each takes the other's ACKs):
 
 | Case | Send | Pass |
 |---|---|---|
@@ -177,7 +180,7 @@ another radio on the test uses, or each takes the other's ACKs):
 | 6 | BrandMeister's text to us | inbox once; our link ACK and TMS ACK taken: no resend after about 28 s |
 | 7 | two texts from BrandMeister within 20 s (its TMS ACK, then its reply) | both reach us (N(S) 0 both times) |
 
-Record for each: the link ACK class, BrandMeister's TMS ACK time, and whether a resend came.
+Record for each, in this section: the link ACK class, BrandMeister's TMS ACK time, and whether a resend came.
 
 ### 5.2 ETSI short data text
 
