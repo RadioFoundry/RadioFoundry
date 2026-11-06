@@ -147,7 +147,7 @@ static void startup_task(void *arg)
 		if (!board.power->switch_on() || radio_power_off_wanted()) {
 			power_off(true);	// the knob, or the radio core after a long critical battery (battery_off_s)
 		} else if (ui_app_power_off_due()) {
-			power_off(false);	// Settings > Power > Auto power off
+			power_off(false);	// Settings > Power saving > Auto power off
 		}
 	}
 }

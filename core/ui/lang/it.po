@@ -2925,6 +2925,10 @@ msgid "Power saving"
 msgstr "Risparmio energia"
 
 #: core/ui/ui_menus.c
+msgid "Power Saving"
+msgstr "Risparmio energia"
+
+#: core/ui/ui_menus.c
 msgid "Keys"
 msgstr "Tasti"
 

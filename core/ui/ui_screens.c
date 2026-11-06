@@ -339,7 +339,8 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 			sb_u32(&b, s->battery_pct, 1);
 			sb_chr(&b, '%');
 			rx -= gfx_text_width(f, pct);
-			uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;	// Settings > Power saving > Low battery warning
+			// Settings > Power saving > Low battery warning
+			uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;
 			bc = s->battery_pct <= low ? swarn : sfg;
 			gfx_text(f, rx, ty, pct, bc);
 		}
