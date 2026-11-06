@@ -34,6 +34,26 @@ typedef struct {
 	uint32_t staging_size;
 } hal_flash_map_t;
 
+// The end of the highest area of a map whose flash erases in units of erase_size: a chip smaller than this can't hold
+// the map, and a driver then offers none (an address past the chip fails, it never wraps to a lower one)
+static inline uint32_t hal_flash_map_end(const hal_flash_map_t *m, uint32_t erase_size)
+{
+	const uint32_t ends[] = {
+		m->settings_size != 0u ? m->settings_addr + m->settings_size : 0u,
+		m->journal_addr + 2u * erase_size,
+		m->openfw_eeprom + 0x10000u,
+		m->openfw_end,
+		m->calibration_addr + m->calibration_size,
+		m->native_addr + m->native_size,
+		m->staging_addr + m->staging_size,
+	};
+	uint32_t end = 0;
+	for (unsigned i = 0; i < sizeof(ends) / sizeof(ends[0]); i++) {
+		end = ends[i] > end ? ends[i] : end;
+	}
+	return end;
+}
+
 typedef struct {
 	bool (*init)(void);
 	uint32_t size;		// bytes, filled in by init on boards that probe it
