@@ -23,10 +23,14 @@ void storage_unlock(void) {}
 
 static uint8_t *image;
 
+static unsigned reads;		// flash reads, for the scan's cost
+static uint32_t fail_at = ~0u;	// a read covering this address fails
+
 static bool fake_init(void) { return true; }
 static bool fake_read(uint32_t addr, void *buf, uint32_t len)
 {
-	if (addr + len > IMAGE_SIZE) {
+	reads++;
+	if (addr + len > IMAGE_SIZE || (fail_at >= addr && fail_at < addr + len)) {
 		return false;
 	}
 	memcpy(buf, &image[addr], len);
@@ -332,7 +336,7 @@ static void test_foreign(void)
 	put_freq(c + 0x10, 80200);
 	put_freq(c + 0x14, 2200220);
 	mark(183);
-	put_utf16(&image[EE + 0xE0], "N0CALL");		// UTF-16 in the callsign field: the radio doesn't count it
+	put_utf16(&image[EE + 0xE0], "Q0TEST");		// UTF-16 in the callsign field: the radio doesn't count it
 	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign());
 	codeplug_evidence(&good, &bad);
 	CHECK(good == 0 && bad == 17);
@@ -358,7 +362,7 @@ static void test_foreign(void)
 	}
 	// The other firmware's contacts and callsign aren't counted: left beside a codeplug edited on the radio, they
 	// mustn't hide it
-	put_utf16(&image[EE + 0xE0], "N0CALL");
+	put_utf16(&image[EE + 0xE0], "Q0TEST");
 	for (uint16_t n = 1; n <= 8; n++) {
 		put_utf16(&image[FL + 0x87620 + 24u * (n - 1u)], "TG");
 	}
@@ -396,13 +400,13 @@ static void test_no_flash(void)
 static void test_dmr_records(void)
 {
 	build_openfw();
-	put_bcd_be(&image[EE + 0xE8], 3101276);
+	put_bcd_be(&image[EE + 0xE8], 9996543);
 	put_contact(1, "Main Ops", 201, 0, 0xFF);
-	put_contact(2, "Joe", 3101234, 1, 0x02);	// TS2 override
+	put_contact(2, "Joe", 9991234, 1, 0x02);	// TS2 override
 	put_contact(3, "All", 16777215, 2, 0x01);	// all call, no override
 	put_contact(5, "Bad BCD", 0, 0, 0xFF);
 	image[FL + 0x87620 + 24u * 4u + 0x10] = 0xAB;
-	// List 2: TG 201 and contact 3; list 1 unused
+	// List 2: TG 123 and contact 3; list 1 unused
 	image[FL + 0x8D620 + 0] = 0;
 	image[FL + 0x8D620 + 1] = 3;
 	uint8_t *l = &image[FL + 0x8D6A0 + 80u];
@@ -413,16 +417,16 @@ static void test_dmr_records(void)
 	// Channel 2 gets a DMR ID override and force DMO
 	uint8_t *c = channel(2);
 	c[0x26] = 0x84;
-	c[0x27] = 0x2F;
-	c[0x28] = 0x52;
-	c[0x29] = 0x5C;
+	c[0x27] = 0x98;
+	c[0x28] = 0x88;
+	c[0x29] = 0xFF;
 	CHECK(codeplug_init() == CODEPLUG_OPENFW);
 
-	CHECK(codeplug_dmr_id() == 3101276);
+	CHECK(codeplug_dmr_id() == 9996543);
 	contact_t ct;
 	CHECK(codeplug_contact(1, &ct) && ct.id == 201 && ct.type == CONTACT_GROUP && ct.timeslot == 0 &&
 		strcmp(ct.name, "Main Ops") == 0);
-	CHECK(codeplug_contact(2, &ct) && ct.id == 3101234 && ct.type == CONTACT_PRIVATE && ct.timeslot == 2);
+	CHECK(codeplug_contact(2, &ct) && ct.id == 9991234 && ct.type == CONTACT_PRIVATE && ct.timeslot == 2);
 	CHECK(codeplug_contact(3, &ct) && ct.id == 0xFFFFFF && ct.type == CONTACT_ALL_CALL && ct.timeslot == 0);
 	CHECK(!codeplug_contact(4, &ct));	// erased
 	CHECK(!codeplug_contact(5, &ct));	// malformed number
@@ -435,14 +439,14 @@ static void test_dmr_records(void)
 	CHECK(!codeplug_listen_list(77, &ll));
 
 	channel_t ch;
-	CHECK(codeplug_channel(2, &ch) && ch.dmr_id == 0x2F525C && ch.dmo);
+	CHECK(codeplug_channel(2, &ch) && ch.dmr_id == 0x9888FF && ch.dmo);
 	CHECK(codeplug_channel(1, &ch) && ch.dmr_id == 0 && !ch.dmo);
 
 	// Lookup by ID: group and private are separate name spaces
 	CHECK(codeplug_contact_find(201, true, &ct) && strcmp(ct.name, "Main Ops") == 0);
 	CHECK(!codeplug_contact_find(201, false, &ct));
-	CHECK(codeplug_contact_find(3101234, false, &ct) && strcmp(ct.name, "Joe") == 0);
-	CHECK(!codeplug_contact_find(3101234, true, &ct));
+	CHECK(codeplug_contact_find(9991234, false, &ct) && strcmp(ct.name, "Joe") == 0);
+	CHECK(!codeplug_contact_find(9991234, true, &ct));
 	CHECK(codeplug_contact_find(0xFFFFFF, true, &ct) && ct.type == CONTACT_ALL_CALL);
 	put_contact(1024, "Last", 777, 1, 0xFF);	// the last record
 	CHECK(codeplug_contact_find(777, false, &ct) && strcmp(ct.name, "Last") == 0);
@@ -459,10 +463,10 @@ static void test_dmr_records(void)
 
 	// General settings: radio name (0xFF padded) and hang times
 	codeplug_dmr_settings_t g;
-	memcpy(&image[EE + 0xE0], "N0CALL\xFF\xFF", 8);
+	memcpy(&image[EE + 0xE0], "Q0TEST\xFF\xFF", 8);
 	image[EE + 0xF8] = 6;
 	image[EE + 0xF9] = 0xFF;
-	CHECK(codeplug_dmr_settings(&g) && strcmp(g.radio_name, "N0CALL") == 0 && g.group_hang_ms == 3000 &&
+	CHECK(codeplug_dmr_settings(&g) && strcmp(g.radio_name, "Q0TEST") == 0 && g.group_hang_ms == 3000 &&
 		g.private_hang_ms == 0);
 
 	// No ID stored
@@ -527,7 +531,7 @@ static void test_iddb(void)
 	uint32_t area2 = FL + 0xB8000;
 
 	build_openfw();
-	CHECK(!dmr_iddb_init() && dmr_iddb_count() == 0 && !dmr_iddb_lookup(3101234, text, sizeof(text)));
+	CHECK(!dmr_iddb_init() && dmr_iddb_count() == 0 && !dmr_iddb_lookup(9991234, text, sizeof(text)));
 
 	// 17500 records with IDs 1000000 + 7 i: 17475 fit in area 1, the rest are in area 2
 	uint32_t n = 17500;
@@ -551,13 +555,13 @@ static void test_iddb(void)
 	put_iddb_header('-', 4 + 20, 2);
 	uint8_t *r = &image[FL + 0x30000 + 12];
 	memset(r, 0, 48);
-	r[0] = 0x34; r[1] = 0x12; r[2] = 0x10; r[3] = 0x03;	// 03101234
-	memcpy(r + 4, "N0CALL Spencer", 14);
-	r[24] = 0x00; r[25] = 0x00; r[26] = 0x20; r[27] = 0x03;	// 03200000
+	r[0] = 0x34; r[1] = 0x12; r[2] = 0x99; r[3] = 0x09;	// 09991234
+	memcpy(r + 4, "Q0TEST Charlie", 14);
+	r[24] = 0x20; r[25] = 0x70; r[26] = 0x99; r[27] = 0x09;	// 09997020
 	memcpy(r + 28, "W1AW", 4);
 	CHECK(dmr_iddb_init() && dmr_iddb_count() == 2);
-	CHECK(dmr_iddb_lookup(3101234, text, sizeof(text)) && strcmp(text, "N0CALL Spencer") == 0);
-	CHECK(dmr_iddb_lookup(3200000, text, sizeof(text)) && strcmp(text, "W1AW") == 0);
+	CHECK(dmr_iddb_lookup(9991234, text, sizeof(text)) && strcmp(text, "Q0TEST Charlie") == 0);
+	CHECK(dmr_iddb_lookup(9997020, text, sizeof(text)) && strcmp(text, "W1AW") == 0);
 
 	// A database written by a CPS takes effect at the codeplug reload that ends the session, without a restart
 	put_iddb_header('-', 4 + 20, 1);
@@ -626,7 +630,7 @@ static void test_iddb_compact(void)
 {
 	char text[DMR_IDDB_TEXT_MAX + 1];
 	char word[16];
-	const char *long48 = "KH7Y Frederic Pine Grove CA abcdefghijklmnopqrst";
+	const char *long48 = "QH7Y Frederic Pine Grove CA abcdefghijklmnopqrst";
 
 	build_openfw();
 	memset(c_at(0), 0xFF, 0x40000);
@@ -636,7 +640,7 @@ static void test_iddb_compact(void)
 	uint32_t so = 0;
 	for (uint32_t k = 0; k < 130u; k++) {
 		snprintf(word, sizeof(word), "Name%u", (unsigned)k);
-		const char *w = k == 0u ? "Spencer" : k == 129u ? "Pine Grove CA" : word;
+		const char *w = k == 0u ? "Charlie" : k == 129u ? "Pine Grove CA" : word;
 		put_le(c_at(0x2000u + 3u * k), so, 3);
 		uint8_t *sp = c_at(0x3000u + so);
 		sp[0] = (uint8_t)strlen(w);
@@ -647,23 +651,23 @@ static void test_iddb_compact(void)
 	uint8_t *p = c_at(0x4000);
 	unsigned o = 2;
 	put_le(p, 3, 2);
-	o += c_leb(p + o, 3101234);
-	o += c_literal(p + o, "N0CALL");
+	o += c_leb(p + o, 9991234);
+	o += c_literal(p + o, "Q0TEST");
 	p[o++] = 0x00;
 	p[o++] = 0x80;
 	p[o++] = 0x01;			// 128 + 1
-	o += c_leb(p + o, 6);		// 3101240
+	o += c_leb(p + o, 6);		// 9991240
 	o += c_literal(p + o, "W1AW");
 	p[o++] = 0xC0;
 	p[o++] = 0xC0;
-	o += c_leb(p + o, 260);		// 3101500: two LEB128 bytes
+	o += c_leb(p + o, 260);		// 9991500: two LEB128 bytes
 	p[o++] = 0xC0;
 	p[o++] = 0x00;
 	p[o++] = 0xC0;
 	p = c_at(0x40000);
 	o = 2;
 	put_le(p, 2, 2);
-	o += c_leb(p + o, 3200000);
+	o += c_leb(p + o, 9997020);
 	o += c_literal(p + o, long48);
 	p[o++] = 0xC0;
 	p[o++] = 0x05;
@@ -673,9 +677,9 @@ static void test_iddb_compact(void)
 	p[o++] = 0xC0;
 
 	uint8_t *ix = c_at(0x1000);
-	put_le(ix, 3101234, 3);
+	put_le(ix, 9991234, 3);
 	put_le(ix + 3, 4, 2);
-	put_le(ix + 5, 3200000, 3);
+	put_le(ix + 5, 9997020, 3);
 	put_le(ix + 8, 64, 2);
 
 	uint8_t *h = c_at(0);
@@ -696,16 +700,16 @@ static void test_iddb_compact(void)
 
 #if CONFIG_IDDB_COMPACT
 	CHECK(dmr_iddb_init() && dmr_iddb_count() == 5);
-	CHECK(dmr_iddb_lookup(3101234, text, sizeof(text)) && strcmp(text, "N0CALL Spencer Pine Grove CA") == 0);
-	CHECK(dmr_iddb_lookup(3101240, text, sizeof(text)) && strcmp(text, "W1AW") == 0);
-	CHECK(dmr_iddb_lookup(3101500, text, sizeof(text)) && strcmp(text, "Spencer") == 0);
-	CHECK(dmr_iddb_lookup(3200000, text, sizeof(text)) && strcmp(text, long48) == 0);
-	CHECK(!dmr_iddb_lookup(3101235, text, sizeof(text)));		// between two records
-	CHECK(!dmr_iddb_lookup(3101233, text, sizeof(text)));		// before the first page
-	CHECK(!dmr_iddb_lookup(3101600, text, sizeof(text)));		// past a page's last record
-	CHECK(!dmr_iddb_lookup(3200001, text, sizeof(text)));		// an unused token: the page stops there
+	CHECK(dmr_iddb_lookup(9991234, text, sizeof(text)) && strcmp(text, "Q0TEST Charlie Pine Grove CA") == 0);
+	CHECK(dmr_iddb_lookup(9991240, text, sizeof(text)) && strcmp(text, "W1AW") == 0);
+	CHECK(dmr_iddb_lookup(9991500, text, sizeof(text)) && strcmp(text, "Charlie") == 0);
+	CHECK(dmr_iddb_lookup(9997020, text, sizeof(text)) && strcmp(text, long48) == 0);
+	CHECK(!dmr_iddb_lookup(9991235, text, sizeof(text)));		// between two records
+	CHECK(!dmr_iddb_lookup(9991233, text, sizeof(text)));		// before the first page
+	CHECK(!dmr_iddb_lookup(9991600, text, sizeof(text)));		// past a page's last record
+	CHECK(!dmr_iddb_lookup(9997021, text, sizeof(text)));		// an unused token: the page stops there
 	char small[10];
-	CHECK(dmr_iddb_lookup(3101234, small, sizeof(small)) && strcmp(small, "N0CALL Sp") == 0);
+	CHECK(dmr_iddb_lookup(9991234, small, sizeof(small)) && strcmp(small, "Q0TEST Ch") == 0);
 
 	// A header that doesn't hold together is no database
 	h[4] = 2;
@@ -728,7 +732,7 @@ static void test_iddb_compact(void)
 	CHECK(dmr_iddb_init());
 #else
 	// A build without the format sees no database, never a wrong one (iddb-compact.md 3.1)
-	CHECK(!dmr_iddb_init() && dmr_iddb_count() == 0 && !dmr_iddb_lookup(3101234, text, sizeof(text)));
+	CHECK(!dmr_iddb_init() && dmr_iddb_count() == 0 && !dmr_iddb_lookup(9991234, text, sizeof(text)));
 #endif
 	memset(c_at(0), 0xFF, 32);
 }
@@ -783,10 +787,10 @@ static void test_aprs_records(void)
 	CHECK(!codeplug_aprs(0, &a) && !codeplug_aprs(CODEPLUG_APRS_CONFIGS + 1, &a));
 	// The boot text (two 16-byte lines at EEPROM 0x7540), padding dropped
 	put_name(&image[EE + 0x7540], "Welcome");
-	put_name(&image[EE + 0x7550], "N0CALL");
+	put_name(&image[EE + 0x7550], "Q0TEST");
 	char l1[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
 	codeplug_boot_text(l1, l2);
-	CHECK(strcmp(l1, "Welcome") == 0 && strcmp(l2, "N0CALL") == 0);
+	CHECK(strcmp(l1, "Welcome") == 0 && strcmp(l2, "Q0TEST") == 0);
 	// Without an open-firmware codeplug: nothing
 	memset(image, 0xFF, IMAGE_SIZE);
 	codeplug_init();
@@ -794,6 +798,155 @@ static void test_aprs_records(void)
 	CHECK(l1[0] == 0 && l2[0] == 0 && !codeplug_aprs(1, &a));
 }
 #endif
+
+// codeplug_contacts_each: every slot once, in order, empty ones as NULL; a few large reads, not one per slot; the
+// callback stops it; a scan from inside a callback still sees every slot
+typedef struct {
+	uint16_t next, seen, stop_at;
+	uint32_t ids;
+	bool nested_ok;
+} each_t;
+
+static bool each_fn(uint16_t index, const contact_t *c, void *ctx)
+{
+	each_t *e = ctx;
+	if (index != e->next) {
+		e->next = 0xFFFF;	// out of order
+	} else {
+		e->next++;
+	}
+	if (c != NULL) {
+		e->seen++;
+		e->ids += c->id;
+	}
+	if (index == 2) {
+		contact_t ct;
+		e->nested_ok = codeplug_contact_find(777, false, &ct) && strcmp(ct.name, "Last") == 0;
+	}
+	return index != e->stop_at;
+}
+
+static void test_contacts_each(void)
+{
+	build_openfw();
+	put_contact(1, "First", 201, 0, 0xFF);
+	put_contact(32, "End of block", 202, 0, 0xFF);
+	put_contact(33, "Next block", 203, 1, 0xFF);
+	put_contact(40, "Bad BCD", 0, 0, 0xFF);
+	put_contact(1024, "Last", 777, 1, 0xFF);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+
+	each_t e = { .next = 1 };
+	reads = 0;
+	CHECK(codeplug_contacts_each(each_fn, &e));
+	CHECK(e.next == CODEPLUG_CONTACTS_MAX + 1);
+	CHECK(e.seen == 4 && e.ids == 201u + 202u + 203u + 777u);
+	CHECK(e.nested_ok);
+	// 32 block reads, plus the nested scan's slot by slot reads (it found the last slot)
+	CHECK(reads == 32 + CODEPLUG_CONTACTS_MAX);
+
+	e = (each_t){ .next = 1, .stop_at = 33 };
+	reads = 0;
+	CHECK(codeplug_contacts_each(each_fn, &e));
+	CHECK(e.next == 34 && e.seen == 3 && reads == 2 + CODEPLUG_CONTACTS_MAX);
+
+	// The nested scan is done: the next one reads in blocks again
+	contact_t ct;
+	reads = 0;
+	CHECK(codeplug_contact_find(777, false, &ct) && reads == 32);
+	reads = 0;
+	CHECK(codeplug_contact_find(203, false, &ct) && strcmp(ct.name, "Next block") == 0 && reads == 2);
+
+	// A failed read ends the scan
+	fail_at = FL + 0x87620 + 24u * 100u;
+	e = (each_t){ .next = 1 };
+	CHECK(!codeplug_contacts_each(each_fn, &e));
+	CHECK(e.next == 97);	// blocks 1-96 seen, the fourth failed
+	CHECK(!codeplug_contact_find(777, false, &ct));
+	fail_at = ~0u;
+}
+
+// codeplug_channel_names_each: every number once, in order, empty ones as NULL; one read a block of records holding a
+// used one, none for a block without; names off reads nothing; a nested scan and a failed read as with contacts
+typedef struct {
+	uint16_t next, used, stop_at;
+	bool names_ok, nested_ok;
+} names_t;
+
+static bool nested_fn(uint16_t number, const char *name, void *ctx)
+{
+	if (number == 200) {
+		*(bool *)ctx = name != NULL && strcmp(name, "Bank1") == 0;
+	}
+	return true;
+}
+
+static bool names_fn(uint16_t number, const char *name, void *ctx)
+{
+	names_t *e = ctx;
+	e->next = number == e->next ? (uint16_t)(number + 1u) : 0xFFFF;
+	if (name != NULL) {
+		e->used++;
+	}
+	if ((number == 1 && (name == NULL || strcmp(name, "Calling") != 0)) ||
+	    (number == 2 && (name == NULL || strcmp(name, "Repeater DMR 16c") != 0)) ||
+	    (number == 3 && name != NULL) ||
+	    (number == 129 && (name == NULL || strcmp(name, "Bank1 first") != 0))) {
+		e->names_ok = false;
+	}
+	if (number == 2) {
+		codeplug_channel_names_each(nested_fn, &e->nested_ok, true);
+	}
+	return number != e->stop_at;
+}
+
+static void test_channel_names(void)
+{
+	build_openfw();
+	static const struct { uint16_t n; const char *name; } more[] = {
+		{ 13, "Block end" }, { 14, "Next block" }, { 128, "Bank0 end" }, { 129, "Bank1 first" },
+	};
+	for (unsigned i = 0; i < sizeof more / sizeof more[0]; i++) {
+		uint8_t *c = channel(more[i].n);
+		memcpy(c, channel(1), 56);
+		put_name(c, more[i].name);
+		mark(more[i].n);
+	}
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel_count() == 200);
+
+	names_t e = { .next = 1, .names_ok = true };
+	reads = 0;
+	CHECK(codeplug_channel_names_each(names_fn, &e, true));
+	CHECK(e.next == 201 && e.used == 7 && e.names_ok && e.nested_ok);
+	// 13 records a read: 1-13, 14-26, 118-128, 129-141, 194-200, the nested scan's by name (7 used)
+	CHECK(reads == 5 + 7);
+
+	e = (names_t){ .next = 1, .names_ok = true, .stop_at = 14 };
+	CHECK(codeplug_channel_names_each(names_fn, &e, true));
+	CHECK(e.next == 15 && e.used == 4);
+
+	// Names off: the in-use bitmap alone
+	e = (names_t){ .next = 1, .names_ok = true };
+	reads = 0;
+	codeplug_channel_names_each(names_fn, &e, false);
+	CHECK(e.next == 201 && e.used == 7 && !e.names_ok && reads == 7);	// "" for a name; the nested scan's reads
+
+	fail_at = FL + 0x7B1C0 + 20u;	// in channel 129
+	e = (names_t){ .next = 1, .names_ok = true };
+	CHECK(!codeplug_channel_names_each(names_fn, &e, true));
+	CHECK(e.next == 129);
+	fail_at = ~0u;
+
+	char name[CODEPLUG_NAME_LEN + 1];
+	CHECK(codeplug_channel_name(2, name) && strcmp(name, "Repeater DMR 16c") == 0);
+	CHECK(codeplug_channel_name(200, name) && strcmp(name, "Bank1") == 0);
+	CHECK(!codeplug_channel_name(3, name) && !codeplug_channel_name(0, name) && !codeplug_channel_name(1025, name));
+	CHECK(codeplug_zone_name(0, name) && strcmp(name, "Zone A") == 0);
+	CHECK(!codeplug_zone_name(1, name));
+	memset(&image[EE + 0x8010], 0, 0x20);	// no zones stored: the virtual one
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+	CHECK(codeplug_zone_name(0, name) && strcmp(name, "All channels") == 0 && !codeplug_zone_name(1, name));
+}
 
 int main(void)
 {
@@ -806,6 +959,8 @@ int main(void)
 	test_aprs_records();
 #endif
 	test_dmr_records();
+	test_contacts_each();
+	test_channel_names();
 	test_iddb();
 	test_iddb_compact();
 	test_erased();

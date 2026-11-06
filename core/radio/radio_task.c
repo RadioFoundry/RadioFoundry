@@ -314,18 +314,18 @@ void radio_req_dmr_privacy(uint8_t type, uint16_t key) { post(RREQ_DMR_PRIVACY, 
 #endif
 #endif
 
-static void post_pair(uint8_t type, int32_t arg, uint32_t arg2)
+static void post_pair(uint8_t type, int32_t arg, uint32_t arg2, TickType_t wait)
 {
 	if (requests == NULL) {
 		return;
 	}
 	radio_req_t req = { .type = type, .arg = arg, .arg2 = arg2 };
-	send(&req, 0);
+	send(&req, wait);
 }
 
 void radio_req_scan(uint8_t cmd) { post(RREQ_SCAN, cmd, 0); }
-void radio_req_scan_vfo(uint32_t lo_hz, uint32_t hi_hz) { post_pair(RREQ_SCAN_VFO, (int32_t)lo_hz, hi_hz); }
-void radio_req_scan_dual(uint16_t pos) { post_pair(RREQ_SCAN, RSCAN_DUAL, pos); }
+void radio_req_scan_vfo(uint32_t lo_hz, uint32_t hi_hz) { post_pair(RREQ_SCAN_VFO, (int32_t)lo_hz, hi_hz, 0); }
+void radio_req_scan_dual(uint16_t pos) { post_pair(RREQ_SCAN, RSCAN_DUAL, pos, 0); }
 bool radio_dtmf_ready(void)
 {
 	return dtmf_ready;
@@ -338,10 +338,10 @@ void radio_req_dtmf(char digit, bool down) { post(RREQ_DTMF, (uint8_t)digit | (d
 void radio_req_dual(const radio_dual_ref_t ref[2], uint8_t sel)
 {
 	if (ref == NULL) {
-		post_pair(RREQ_DUAL, 0, 0);
+		post_pair(RREQ_DUAL, 0, 0, 0);
 		return;
 	}
-	post_pair(RREQ_DUAL, (int32_t)radio_dual_arg(&ref[0], sel == 0), radio_dual_arg(&ref[1], sel != 0));
+	post_pair(RREQ_DUAL, (int32_t)radio_dual_arg(&ref[0], sel == 0), radio_dual_arg(&ref[1], sel != 0), 0);
 }
 
 bool radio_get_vfo(uint8_t index, channel_t *out)
@@ -386,7 +386,7 @@ void radio_req_beep(uint8_t b) { post(RREQ_BEEP, b, 0); }
 void radio_req_vibrate(uint8_t pattern) { post(RREQ_VIBRATE, pattern, 0); }
 void radio_req_roam(uint8_t cmd) { post(RREQ_ROAM, cmd, 0); }
 // A lost release would leave the burst keyed until the time-out
-void radio_req_tone_burst(bool on) { post(RREQ_TONE_BURST, on, pdMS_TO_TICKS(50)); }
+void radio_req_tone_burst(bool on, uint32_t max_ms) { post_pair(RREQ_TONE_BURST, on, max_ms, pdMS_TO_TICKS(50)); }
 
 void radio_set_settings(const radio_settings_t *s)
 {

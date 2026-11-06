@@ -226,6 +226,24 @@ enough: let go of **PTT** and the radio keeps trying, up to the usual number of 
 | The talk permit tone (if it is on) | The repeater answered. If you were still holding **PTT**, the call starts. If not, nothing more is sent, and you can press **PTT** again |
 | The low error tone | No repeater answered. Check the color code and your range |
 
+## The talk permit tone
+
+The talk permit tone tells you the radio has the channel and you can talk. Turn it off for every channel in
+**Settings > Sound > Talk permit tone**, or for one channel with the channel's **Talk permit beeps** field.
+
+Most radios play two short beeps as your voice goes on air. A radio whose beeps would be transmitted plays one short
+beep just before it transmits instead ([the radio's notes](23-radios.md)):
+
+| Screen | What happens |
+|---|---|
+| WAKING RPT | On a repeater channel, the radio wakes the repeater (as above) |
+| ADMITTED | The channel is yours: the beep plays while the radio is still receiving |
+| TALKING | The radio transmits. Start talking |
+
+The wait for the beep is under half a second. Releasing **PTT** during it cancels the call.
+
+The beep at the end of a call you hear is the call end tone. The channel's **Talk permit beeps** field turns it off too.
+
 ## Digital monitor
 
 Digital monitor plays every talkgroup on this frequency, timeslot and color code.

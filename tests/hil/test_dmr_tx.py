@@ -31,6 +31,11 @@ dmr.tx_alias = the radio name; a 4 s over: the alias the SDR decodes from the em
 modem's listener assembles equal dmr.tx_alias (at least one of the two must have heard it complete; both, when they
 did, must agree), call.tx_alias_lcs grew.
 
+test_dmr_tx_permit_before_key: on a board that holds its beeps off the air (the HR_C7000 TX gate, its "pg" diagnostics
+line; others skip), a 3 s over: beep.played grew (the talk permit played before the key-up), the gate closed (g + 1)
+and never found the beep still sounding (l) or ring play on (ra), and on air the over starts with three voice LC
+headers from us that decode, each within 1.5 dB of the over's median burst level, with no burst 2 dB or more under it.
+
 test_dmr_privacy_tx: Motorola basic privacy key 1 loaded (RADIO op 19), a 3 s over: every voice LC header and
 terminator from us that the SDR or the bench modem decoded carries the privacy service option (so & 0x40), every
 embedded call LC FID 0x10, and a clear over just before carries no privacy option. The scrambling itself isn't
@@ -65,6 +70,7 @@ import pytest
 
 import rfoundry_hil
 from rfoundry_hil import DebugLinkError, skip
+from hil_config import rig
 
 PTT_S = 3.0
 # dmr_bench.check_tx items that judge the waveform, meaningless in a capture whose ADC clipped
@@ -109,7 +115,7 @@ def talker_alias_on_air(bursts):
 def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     if "DMR" not in radio.features():
         skip("not_built", "built without DMR")
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     radio.lowest_power()
@@ -121,12 +127,13 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     assert ch_cc == cc, f"the channel's color code {ch_cc} != --dmr-cc {cc}"
     radio.reset_counters()
     _, before = radio.counters()
+    sdr_bench.need_dmr_waveform()
     rdir = sdr_bench.run_dir("hil_dmr_tx")
     # Raw I/Q on purpose: check_tx judges the waveform (burst on-time, keying ramps, power steps, overlaps, clipping),
     # which the bench-side burst records (dmr_watch_start) don't carry
     with sdr_bench.lease():
         cap = sdr_bench.capture_start(rdir, freq, seconds=PTT_S + 8)
-        lis = sdr_bench.listen_start(freq, cc, seconds=PTT_S + 6, ambe_out=f"~/{sdr_bench.dir}/{rdir}/heard")
+        lis = sdr_bench.listen_start(freq, cc, seconds=PTT_S + 6, ambe_out=sdr_bench.run_path(rdir, "heard"))
         radio.ptt_for(PTT_S)
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
         heard = sdr_bench.listen_result(lis)
@@ -189,7 +196,7 @@ def _tx_checks(sdr, heard, own, target, private, cc, before, after, alias, pytes
 def _report(c, sdr_bench, rdir):
     for i in c.items:
         print(f"{ {True: 'ok  ', False: 'FAIL', None: 'man '}[i['ok']]} {i['check']}  {i['detail']}")
-    print(f"captures on the bench: ~/{sdr_bench.dir}/{rdir}/")
+    print(f"captures: {sdr_bench.run_path(rdir)}")
     failed = [i for i in c.items if i["ok"] is False]
     assert not failed, "; ".join(f"{i['check']} ({i['detail']})" for i in failed)
 
@@ -205,7 +212,7 @@ def test_dmr_gps_tx(radio, sdr_bench, pytestconfig):
     feats = radio.features()
     if "DMR_GPS" not in feats or "APRS" not in feats:
         skip("not_built", "needs CONFIG_DMR_GPS and CONFIG_APRS (the position source)")
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     radio.lowest_power()
@@ -237,7 +244,7 @@ def test_dmr_gps_tx(radio, sdr_bench, pytestconfig):
 def _dmr_tx_setup(radio, pytestconfig):
     if "DMR" not in radio.features():
         skip("not_built", "built without DMR")
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     radio.go_home()
     pos = radio.find_channel(round(freq * 1e6), "dmr")
     radio.lowest_power()
@@ -259,7 +266,7 @@ def _over(radio, sdr_bench, freq, cc, seconds, tag):
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
         heard = sdr_bench.listen_result(lis)
         sdr = sdr_bench.dmr_watch_result(watch)
-    print(f"captures on the bench: ~/{sdr_bench.dir}/{rdir}/" if "cap" in watch else "bursts decoded on the bench")
+    print(f"captures: {sdr_bench.run_path(rdir)}" if "cap" in watch else "bursts decoded on the bench")
     return sdr, heard
 
 
@@ -296,6 +303,67 @@ def test_dmr_tx_talker_alias(radio, sdr_bench, pytestconfig, backup_dir):
     assert on_sdr is not None or on_bench is not None, "neither receiver assembled the talker alias"
     for name, got in (("SDR", on_sdr), ("bench modem", on_bench)):
         assert got is None or got == alias, f"{name} heard alias {got!r}, the radio sends {alias!r}"
+
+
+def _gate(radio):
+    """The HR_C7000 TX gate's diagnostics line ("pg g<closings> l<late> ra<ring play while gated>") as a dict, or None
+    on a board without it (one whose beeps may sound on air)."""
+    import re
+    line = rfoundry_hil.find(rfoundry_hil.diag_lines(radio), "pg ")
+    m = re.fullmatch(r"pg g(\d+) l(\d+) ra(\d+)", line.strip()) if line is not None else None
+    return {"g": int(m.group(1)), "l": int(m.group(2)), "ra": int(m.group(3))} if m else None
+
+
+PERMIT_LEVEL_DB = 1.5     # a header's level against the over's median (a beep on air or a late gate would dent it)
+
+
+@pytest.mark.feature("beep")
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.sdr_or_modem
+def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
+    """A board that holds its beeps off the air (CAP_BEEP_NOT_ON_AIR, the HR_C7000 TX gate) plays the talk permit
+    before it keys (docs/spec/dmr-modem.md): the beep plays once, the gate closes once and never finds the beep still
+    sounding or ring play on, and the over is whole from its first burst: three voice LC headers from us that decode,
+    each at the over's level (within PERMIT_LEVEL_DB of the median burst), and no burst more than 2 dB below it."""
+    gate = _gate(radio)
+    if gate is None:
+        skip("other_board", "no TX gate (pg) line: this board's beeps may sound on air, so it plays the permit on air")
+    freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
+    own = int(d["dmr.own_id"])
+    played = int(radio.view().get("beep.played", 0))
+    sdr, heard = _over(radio, sdr_bench, freq, cc, 3.0, "hil_dmr_permit")
+    after = _gate(radio)
+    played = int(radio.view().get("beep.played", 0)) - played
+    print(f"beep.played +{played}; gate {gate} -> {after}")
+    assert played >= 1, "no beep played for the over: is Settings > Talk permit off?"
+    assert after["g"] - gate["g"] >= 1, "the TX gate never closed for the over"
+    assert after["l"] == gate["l"], f"the key-up found the beep still sounding ({gate['l']} -> {after['l']})"
+    assert after["ra"] == gate["ra"], f"ring play was on while the gate was closed ({gate['ra']} -> {after['ra']})"
+
+    bursts = sdr.get("bursts", [])
+    ours = [b for b in bursts if (b.get("lc") or {}).get("src") == own]
+    assert ours, f"no burst with our source ID {own} decoded on {freq} MHz"
+    start = bursts.index(ours[0])
+    # The over ends at our terminator: bursts after it (another station, the bench) don't judge its level
+    end = next((i for i in range(start, len(bursts)) if bursts[i].get("kind") == "TERM_LC"
+                and (bursts[i].get("lc") or {}).get("src") == own), len(bursts) - 1)
+    over = bursts[start:end + 1]
+    headers = [b for b in over[:3] if b.get("kind") == "VLC_HDR"]
+    print("first bursts:", [(b.get("kind"), b.get("level_dbfs"), b.get("fec_ok")) for b in over[:5]])
+    assert len(headers) == 3, f"the over starts {[b.get('kind') for b in over[:3]]}, not three voice LC headers"
+    assert all(b.get("fec_ok") is not False for b in headers), "a voice LC header failed its FEC"
+    levels = [b["level_dbfs"] for b in over if b.get("level_dbfs") is not None]
+    if len(levels) < 10:
+        warnings.warn("the bench gave no burst levels: the level checks are not judged")
+        return
+    med = sorted(levels)[len(levels) // 2]
+    print(f"burst level median {med:.1f} dBFS, min {min(levels):.1f}, max {max(levels):.1f}, headers "
+          f"{[b['level_dbfs'] for b in headers]}")
+    for b in headers:
+        assert abs(b["level_dbfs"] - med) <= PERMIT_LEVEL_DB, \
+            f"a header at {b['level_dbfs']:.1f} dBFS, the over's median {med:.1f}"
+    assert min(levels) >= med - 2.0, f"a burst at {min(levels):.1f} dBFS, 2 dB or more under the median {med:.1f}"
 
 
 BEACON_PHASE_S = 6.0     # the bench repeater's beacon (its answer) this long after it started
@@ -417,7 +485,7 @@ def test_dmr_tx_split_repeater(radio, sdr_bench, pytestconfig, backup_dir):
                 else:
                     print(f"no slot labels in the outbound capture on {freq} MHz ({len(out.get('bursts', []))} bursts)")
                 print(f"radio: call.tx_calls +{tx_calls}, call.tx_denied +{denied}; SDR on {split} MHz (the radio's TX): "
-                      f"{dict(kinds)}; captures: ~/{sdr_bench.dir}/{rdir}/")
+                      f"{dict(kinds)}; captures: {sdr_bench.run_path(rdir)}")
                 print(f"bench repeater: keyed {[e['key'] for e in events if 'key' in e]}, heard {len(rx)} bursts on its "
                       f"input: {len(rpt_headers)} voice LC headers from us, {len(rpt_voice)} voice bursts on TS{ts}; "
                       f"per slot {next((e['summary'] for e in events if 'summary' in e), None)}")
@@ -550,6 +618,7 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
         assert got == opts, f"options in force {got:#x} after SETTING 31 {opts:#x}"
         radio.reset_counters()
         _, before = radio.counters()
+        sdr_bench.need_dmr_waveform()
         rdir = sdr_bench.run_dir(f"hil_dmr_enc_{word:x}")
         with sdr_bench.lease():
             cap = sdr_bench.capture_start(rdir, freq, seconds=PTT_S + 8)

@@ -37,7 +37,7 @@ quick changes therefore never reads back a value from before its own last change
 | `dual_delay_ms` | 1000 | dual watch on one receiver: its wait after a signal ends, in place of `scan_delay_ms` (0-10000; section 2.1) |
 | `beep_level` | 50 | 0 (silent) to 100: the loudest a beep gets (section 4) |
 | `key_beep` | on | `radio_req_beep(BEEP_KEY)` sounds |
-| `talk_permit` | on | DMR: the talk permit tone when the voice goes on air (stored as `SETTINGS_RS_NO_TALK_PERMIT` in `rs_flags`, 0 = on) |
+| `talk_permit` | on | DMR: the talk permit tone when the voice goes on air, or just before on boards with `CAP_BEEP_NOT_ON_AIR` (4) (stored as `SETTINGS_RS_NO_TALK_PERMIT` in `rs_flags`, 0 = on) |
 | `vox` | off | off, on channels whose codeplug entry allows it, on every FM channel (CONFIG_VOX) |
 | `vox_level` | 5 | sensitivity 1 (loud voice needed) to 10 |
 | `vox_tail_ms` | 1500 | stays keyed this long after the voice stops |
@@ -153,6 +153,15 @@ second one has its channel: the dual watch screens then show a call on each pane
 lockout (`busy`; carrier = squelch open or noise below the open threshold; wrong tone = that, while the channel's RX
 tone is not decoded). The deny beep sounds; the state is `tx_denied` until PTT is released.
 
+The test TX limit (`core/radio/tx_limit.h`, built with `CONFIG_DEBUGLINK`) is a limit a test harness sets over the
+debug link (RADIO op 35, [debuglink.md](debuglink.md) 3.8): block every transmission, or allow only a list of up to 10
+frequencies. It lives in RAM and is never saved, so a restart clears it; the TX inhibit setting is saved and is left
+alone. The radio core checks it wherever it keys the transmitter (`key_tx`: PTT, DMR data and replies, roaming probes,
+APRS beacons, the SFR repeater role, the hotspot, the CW ID), against the frequency it is about to key on. PTT is denied
+as by the TX inhibit (`inhibit`); what the radio sends by itself is not keyed and counted (`txlim.refused`). A
+transmission already on air when the limit is set goes on until it ends. The HIL harness uses it to keep each test on
+the rig's transmit frequencies (`tests/hil/README.md`, "Transmit frequencies").
+
 ### 3.2 Time-out warning
 
 `tot_warn_s` before the time-out the TOT warning beep sounds once in the speaker (FM and DMR; the view's
@@ -162,8 +171,10 @@ tone is not decoded). The deny beep sounds; the state is `tx_denied` until PTT i
 
 Both go out over the air through the board's `tx_tone(hz)` hook: an audio tone into the modulator in place of the
 microphone. Roger beep: at PTT release the radio stays keyed for 1200 Hz then 900 Hz, 100 ms each (`roger=1`), then
-unkeys; PTT again during the beep cancels it and the transmission goes on. Tone burst: `radio_req_tone_burst(true)`
-keys up if needed and sends 1750 Hz until `false` (repeater access); `tone_burst=1` in the view. A board without
+unkeys; PTT again during the beep cancels it and the transmission goes on. Tone burst: `radio_req_tone_burst(true, max_ms)`
+keys up if needed and sends 1750 Hz until `false` or until `max_ms` has passed (repeater access); `tone_burst=1` in
+the view. The debug link always gives a limit (at most `INPUT_INJECT_MAX_MS`), so a lost "off" unkeys as the "off"
+would; 0 means no limit but the TX time-out. A board without
 `tx_tone` gets neither.
 
 The board restores the microphone path on `tx_tone(0)` and on every return to receive. An AT1846S board makes the
@@ -309,6 +320,7 @@ None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) 
 | key | 1000 Hz 25 ms | `radio_req_beep(BEEP_KEY)` from the UI, if `key_beep` |
 | error | 400 Hz 150 ms | UI errors |
 | TX permit | 1600 Hz 50 ms twice | DMR: the channel is granted (unless the codeplug channel has "no beep", or `talk_permit` is off: Settings > Sound > Talk permit tone) |
+| TX permit, before keying | 1600 Hz 80 ms | The TX permit on boards with `CAP_BEEP_NOT_ON_AIR`, whose beeps can't sound while DMR transmits: once the call is admitted, the stack holds the key-up (`dmr_call_config_t.permit_hold_ms`, `permit_busy`) while the radio still receives and this tone plays. It keys once the tone and the driver's buffers have played out (`hal_audio_t.spk_pending`): at least 40 ms, at most 400 ms (`DMR_CALL_PERMIT_MAX_MS`). The same conditions as the TX permit |
 | TX deny | 300 Hz 400 ms | any TX refusal |
 | call end | 1200 Hz 50 ms, 900 Hz 70 ms | DMR: a played call ended (unless "no beep") |
 | TOT warning | 1000 Hz 100 ms twice | 3.2 |

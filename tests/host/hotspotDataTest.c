@@ -51,7 +51,7 @@ static uint8_t queue(const dmrBurst_t *b, uint32_t now)
 
 static dmrBurst_t preamble(int blocksToFollow)
 {
-	const uint8_t csbk[10] = { 0xBD, 0x00, 0x80, blocksToFollow, 0x98, 0x70, 0x37, 0x2F, 0x52, 0x5C };
+	const uint8_t csbk[10] = { 0xBD, 0x00, 0x80, blocksToFollow, 0x98, 0x8F, 0x77, 0x98, 0x88, 0xFF };
 	dmrBurst_t b;
 
 	dmrDataBuildCSBK(csbk, &b);
@@ -64,7 +64,7 @@ static int packet(dmrBurst_t *out)
 	uint8_t data[60];
 
 	memset(data, 0x55, sizeof(data));
-	return dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_IP, false, 9990199, 3101276, data, sizeof(data), DT_RATE_12_DATA, 0, out, DMR_DATA_MAX_BURSTS);
+	return dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_IP, false, 9998199, 9996543, data, sizeof(data), DT_RATE_12_DATA, 0, out, DMR_DATA_MAX_BURSTS);
 }
 
 static dmrBurst_t storage[DMR_DATA_MAX_BURSTS];

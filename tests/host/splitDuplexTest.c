@@ -360,7 +360,7 @@ static void test_raw_slot(void)
 	CHECK(dmrFecSlotTypeDecode(raw + 3, &cc, &dt) && cc == 1 && dt == DMR_BURST_IDLE);
 
 	// The core's own terminator (LC without parity): RS(12,9) with the terminator mask
-	uint8_t lc[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0xC9, 0x2F, 0x56, 0x2C }, full[12];
+	uint8_t lc[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0xC9, 0x98, 0x78, 0x3C }, full[12];
 	dmr_tx_burst_t t = { .kind = DMR_BURST_TERMINATOR_LC, .len = 9 };
 	memcpy(t.payload, lc, 9);
 	dmr_lc_encode_full(lc, DMR_RS_MASK_TERMINATOR, full);
@@ -761,8 +761,8 @@ static void lc_frame(uint8_t dt, const uint8_t *lc, uint8_t *frame)
 	data_frame(dt, full, 12, frame);
 }
 
-static const uint8_t LC1[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x2F, 0x5A, 0x01 };	// TG 9
-static const uint8_t LC2[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x5B, 0x2F, 0x5A, 0x02 };	// TG 91
+static const uint8_t LC1[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x98, 0x7C, 0x11 };	// TG 9
+static const uint8_t LC2[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x5B, 0x98, 0x7C, 0x12 };	// TG 91
 
 // A voice frame as MMDVMHost builds it: AMBE, then the EMB and embedded LC fragment for B-E
 static void voice_frame(uint8_t index, uint8_t seed, const uint8_t *lc, uint8_t *frame)

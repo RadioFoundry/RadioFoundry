@@ -324,7 +324,7 @@ Burst numbering for privacy keystream purposes is RX_TYPE_INFO's 1–6.
 
 Datasheet source: the Chinese original (HR_C7000_Document_2, 10.2.2.17, 10.2.2.18, 10.2.2.22, 10.2.2.25-10.2.2.28).
 The registers, their bits and what the chip does with them were tried on one board (RadioFoundry build with a scratch memory
-poke command, SDR bench capture on 461.4625 MHz, lowest power, `sdrmon.py analyze --cach`). (measured)
+poke command, SDR bench capture on the test frequency, lowest power, `sdrmon.py analyze --cach`). (measured)
 
 Datasheet summary:
 
@@ -428,7 +428,7 @@ Bench variants (`dmr_bs_config_t.variant`, the debug link's SPLIT op 1, `split-d
 continuous mode, b1 the autotest bit with the send bit (0x81), b3:2 the TX RAM halves (0 the slot to both, 1 alternate
 starting with SEND_DATA0, 2 alternate starting with SEND_DATA1). The default 0 is timeslot mode, 0x80, both halves.
 
-Bench results, 2026-10-20 (TX half keyed 8 s per variant at the lowest power on 461.4625 MHz; no SDR
+Bench results, 2026-10-20 (TX half keyed 8 s per variant at the lowest power on the test frequency; no SDR
 capture: the RTL-SDR was in use elsewhere. A second radio on the same frequency was the receiver). (measured)
 
 | # | Finding | Evidence |
@@ -439,7 +439,7 @@ capture: the RTL-SDR was in use elsewhere. A second radio on the same frequency 
 | 4 | The outbound decodes: the second radio deframed one idle burst per 60 ms with BS sync and color code 2, no CRC errors, labeled TS1 from the CACH TC (variant 8: TS2) | its `I`, `cc2 BS ts1` lines |
 | 5 | After the role ends (also by lease expiry) a normal call goes out whole | `dmr.tx_error=ok`; the second radio heard 3 headers, 42 voice bursts, the terminator |
 
-Second board on the SDR bench, 2026-10-21 (lowest power, 461.4625 MHz, `tests/hil/test_split_duplex.py`). (measured)
+Second board on the SDR bench, 2026-10-21 (lowest power, the test frequency, `tests/hil/test_split_duplex.py`). (measured)
 
 | # | Finding | Evidence |
 |---|---|---|
@@ -503,6 +503,21 @@ Both timeslot interrupts are handled by one routine; it decides by the current a
 
 PIC_MASK bits 29, 30, 31 and PIC_MASK_1 bit 0 (vectors 61–64) (datasheet mapping). Mask them around multi-register updates
 from task level.
+
+### 3.3 Lost requests
+
+A modem request whose line stays high after the PIC took it leaves that source silent: the PIC interrupts on the line
+rising only (gotchas 2.9). TS and RF requests have no readable status, so the driver can't see one pending. What the engine does:
+
+| When | What |
+|---|---|
+| Every receiver restart (5.2: DMR entry, a color code or framing change, a stale or lost reception, the end of every transmission) | writes INTERP_CLEAR b0-b2 and writes SYS_INTERP_LIST back to SYS_INTERP_CLEAR. Not b3 (RF RX) or the PCM pair: other drivers own them |
+| No timeslot interrupt for 200 ms while sending | the transmission ends (`dmr.tx_error=stalled`), and its receiver restart clears as above. Counted (`dmr.modem_stalls`) |
+| A SYS_INTERP_LIST cause enabled in SYS_INTERP_MASK, pending at the 10 ms polls for 50 ms with no system interrupt taken | written back to SYS_INTERP_CLEAR. Counted (`dmr.modem_stuck`) |
+
+For the first stall or stuck request, the glue keeps PIC_MASK, PIC_MASK_1, PIC_INT_ST and PIC_INT_ST_1 as read before
+that poll (`dmr.modem_lost_ms`, `dmr.modem_lost_regs`, [debuglink.md](debuglink.md) 3.7). It then unmasks the modem
+sources again, unless a task holds the engine's lock.
 
 ---
 
@@ -763,8 +778,26 @@ with no queue underruns (measured).
 The prompt path also feeds the TX modulator: with AUDIO_CONTROL b7 set during a DMR transmission, the beep's audio
 rides on the 4FSK. On one board the talk permit tone overlapped the second and third voice LC headers, which then
 carried no decodable sync on the SDR bench and the bench modem took the call by late entry; with b7 held clear while
-transmitting, all three headers decoded in five runs (measured). Keep b7 clear during any transmission; a beep that
-starts then plays silently, and b7 comes back on at TX end if the beep is still running.
+transmitting, all three headers decoded in five runs (measured). Keep b7 clear during any transmission.
+
+`audio_pcm.c` keeps it clear for every board on the platform with one gate. The DMR glue closes it as the engine starts
+to transmit (`tx_begin`, and the hotspot's `bs_key`); while it is closed, b7 stays clear and nothing is pushed to the
+FIFO. It opens at least 50 ms later, once `hrc_dmr_tx_active()` is false: checked by the audio task (every 2 ms with
+the speaker stream routed, every 10 ms without), on each speaker route change and on each `hrc_audio_pcm_ring()` call
+(the audio task only exists once a stream has run, and APRS sets b7 without one). On both edges the speaker queue is
+emptied, a block the audio task was filling at that moment included, so a beep queued during the transmission is
+dropped, not played late. Boards set b7 only through `hrc_audio_pcm_ring()`, which applies the gate. The last of the
+DMR glue's diagnostics lines, `pg g<closings> l<closings that found speaker audio still pending> ra<checks that found
+b7 set while closed>`, checks it: `l` and `ra` stay 0. Its counters reset with the DMR counters.
+
+So the talk permit can't sound during DMR TX, and the boards set `CAP_BEEP_NOT_ON_AIR`: the radio core plays it in a
+short receive-only hold before the first burst (`radio-features.md` 4). On air with a hotspot parrot, the beep was
+heard before each call and the echoed calls carried no trace of it, with `l0 ra0` (measured). On the SDR bench, in six
+overs with the permit played before keying, each over started with three voice LC headers that decoded and every burst
+was within 0.2 dB of the over's level (measured; `test_dmr_tx_permit_before_key`).
+
+The FIFO itself is not flushed at the gate. Filling it with 0x7F bytes would (above); the permit hold leaves only
+silence in it at key-up.
 
 APRS transmit uses the same path on purpose (`platform/hrc7000/hrc_afsk.c`): during an FM transmission, with b7 set
 and the microphone muted by the board, the FIFO's samples are the modulation. A timer tops the FIFO up every 2 ms;
@@ -849,6 +882,7 @@ What a working DMR driver does that a first attempt tends to miss. Details are i
 | 15 | Timeslot handler | run it from RAM so flash busy time adds no jitter |
 | 16 | Calibration | SIG_CENTER and RF_MOD_BIAS_CTRL from factory data |
 | 17 | Interrupt masking | PIC_MASK bits 29-31 and PIC_MASK_1 bit 0 (3.2) |
+| 18 | Lost requests | clear every pending modem request at each receiver restart; drop a system request pending with no handler run (3.3) |
 
 ---
 

@@ -295,14 +295,14 @@ test("Report a Problem renders cleanly in every state: no files, some files, sen
 });
 
 test("a Sentry event's context is scrubbed value by value: an ID in a list stays valid, a callsign and an email go", () => {
-	const ev = scrubEvent({ message: "N4NQV failed", contexts: { rfoundry: { iddb: [3101276, 12], dirty: false, step: 0,
+	const ev = scrubEvent({ message: "Q0TST failed", contexts: { rfoundry: { iddb: [9991234, 12], dirty: false, step: 0,
 		trail: ["0.1s contact a@b.com, call W1AW", { n: 7 }] } } });
 	assert.equal(ev.message, "[call] failed");
 	assert.deepEqual(ev.contexts.rfoundry, { iddb: ["[id]", 12], dirty: false, step: 0, trail: ["0.1s contact [email], call [call]", { n: 7 }] });
 });
 
 test("a Sentry event keeps a file's size: a picked stock file's size is not taken for a DMR ID", () => {
-	const ev = scrubEvent({ contexts: { rfoundry: { vendor_file: { picked: { name: "Stock-V02.06.bin", size: 1048832 }, id: 3101276 },
+	const ev = scrubEvent({ contexts: { rfoundry: { vendor_file: { picked: { name: "Stock-V02.06.bin", size: 1048832 }, id: 9991234 },
 		trail: ['113.6s file picked {"name":"Stock-V02.06.bin","size":1048832}'] } } });
 	assert.equal(ev.contexts.rfoundry.vendor_file.picked.size, 1048832);
 	assert.equal(ev.contexts.rfoundry.vendor_file.id, "[id]");

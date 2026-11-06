@@ -22,7 +22,7 @@ static uint8_t decode(uint8_t byte)
 	uint8_t r[CODEPLUG_OPENFW_CHANNEL_SIZE];
 	channel_t ch;
 	memset(r, 0, sizeof(r));
-	channel_t seed = { .rx_hz = 446075000, .tx_hz = 446075000, .power = 0 };
+	channel_t seed = { .rx_hz = 433450000, .tx_hz = 433450000, .power = 0 };
 	codeplug_openfw_encode(&seed, r);
 	r[0x19] = byte;
 	CHECK(codeplug_openfw_decode(r, &ch));
@@ -43,7 +43,7 @@ int main(void)
 	// Every level encodes to a byte that decodes to the same level
 	for (uint8_t level = 0; level < POWER_COUNT; level++) {
 		uint8_t r[CODEPLUG_OPENFW_CHANNEL_SIZE];
-		channel_t in = { .rx_hz = 446075000, .tx_hz = 446075000, .power = level }, out;
+		channel_t in = { .rx_hz = 433450000, .tx_hz = 433450000, .power = level }, out;
 		memset(r, 0, sizeof(r));
 		codeplug_openfw_encode(&in, r);
 		CHECK(r[0x19] >= 1 && r[0x19] <= 10 + POWER_COUNT);
