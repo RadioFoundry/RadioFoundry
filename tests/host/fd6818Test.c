@@ -332,11 +332,28 @@ static void test_am(void)
 	CHECK(i >= 0 && chip.log[i].val == 0x1234 && !dev.am);
 	i = find_last(FD6818_REG_AF);
 	CHECK(i >= 0 && chip.log[i].val == FD6818_AF_FM);
-	// The gain loop runs only in AM
+	// Outside AM a status reading changes nothing and the gain loop doesn't run
 	chip.n = 0;
-	fd6818_am_agc(&dev, 400);
-	CHECK(chip.n == 0);
+	int16_t rssi = -90;
+	uint8_t noise = 77;
+	CHECK(!fd6818_am_status(&dev, 0x0010, 400, &rssi, &noise));
+	CHECK(chip.n == 0 && rssi == -90 && noise == 77);
 	CHECK(chip.protocol_errors == 0);
+
+	// In AM: the squelch value is noise_sq plus the offset from the default tables' 0x4F = 0x302F (noise_sq_th_in 47):
+	// level 1 (opens below 64) at 47. A strong reading cuts the gain (0x13 written) after the reading is taken
+	fd6818_set_am(&dev, true);
+	CHECK(dev.am_noise_off == 17);
+	chip.n = 0;
+	rssi = -60;
+	CHECK(fd6818_am_status(&dev, 0x4B00u | 46u, 222, &rssi, &noise));
+	CHECK(noise == 63 && rssi == -60);
+	CHECK(chip.n == 1 && chip.log[0].reg == FD6818_REG_GAIN && chip.log[0].val == 0x0BF);
+	// The next reading's RSSI gets the 32 dB the loop took off added back
+	rssi = -92;
+	CHECK(fd6818_am_status(&dev, 70, 150, &rssi, &noise));
+	CHECK(rssi == -60 && noise == 87);
+	fd6818_set_am(&dev, false);
 
 	// A variant whose tables set 0x13 and 0x4A (the DM-1801 Pro's init: 0x03DF, 0x5430) gets those back, no read
 	reset_chip();
@@ -344,6 +361,7 @@ static void test_am(void)
 	chip.regs[FD6818_REG_GAIN] = 0x1111;
 	chip.regs[FD6818_REG_AM_4A] = 0x2222;
 	fd6818_set_am(&dev, true);
+	CHECK(dev.am_noise_off == 24);	// its 0x4F = 0x2A28: noise_sq_th_in 40 is its level 1
 	fd6818_set_am(&dev, false);
 	i = find_last(FD6818_REG_GAIN);
 	CHECK(i >= 0 && chip.log[i].val == 0x03DF);
@@ -399,15 +417,19 @@ static void test_am_agc(void)
 	CHECK(!fd6818_agc_step(&a, 0xFE00u | 142u));
 }
 
-// The AM squelch scale: noise_sq (0x65 bits 7:0) plus the AM offset. Level 1 (opens below 64) opens at the chip's own
-// noise threshold, 47; the empty-channel floor (59 and up) stays shut at every level; the high byte (rssi_rel) is ignored
+// The AM squelch scale: noise_sq (0x65 bits 7:0) plus an offset that puts level 1 (opens below 64) at the chip's own
+// noise threshold (0x4F bits 6:0). The DM-32's empty-channel floor (59 and up) stays shut at every level; the high
+// byte (rssi_rel) is ignored
 static void test_am_noise(void)
 {
-	CHECK(fd6818_am_noise(46) < 64 && fd6818_am_noise(47) == 64);
-	CHECK(fd6818_am_noise(59) > 64 + 3);	// above level 1 and its hysteresis
-	CHECK(fd6818_am_noise(23) == 40);	// level 9 opens below 40: at 22
-	CHECK(fd6818_am_noise(0x4B00u | 31u) == 48);
-	CHECK(fd6818_am_noise(0xFFu) == 255 && fd6818_am_noise(240) == 255);
+	uint8_t off = fd6818_am_noise_offset(0x302F);
+	CHECK(off == 17 && fd6818_am_noise_offset(0x2A28) == 24);
+	CHECK(fd6818_am_noise_offset(0x7F7F) == 0 && fd6818_am_noise_offset(0x0000) == 64);
+	CHECK(fd6818_am_noise(46, off) < 64 && fd6818_am_noise(47, off) == 64);
+	CHECK(fd6818_am_noise(59, off) > 64 + 3);	// above level 1 and its hysteresis
+	CHECK(fd6818_am_noise(23, off) == 40);	// level 9 opens below 40: at 22
+	CHECK(fd6818_am_noise(0x4B00u | 31u, off) == 48);
+	CHECK(fd6818_am_noise(0xFFu, off) == 255 && fd6818_am_noise(240, off) == 255);
 }
 
 // RX sub-audio set-up in the radio's own order, and the 0x0C detect bits

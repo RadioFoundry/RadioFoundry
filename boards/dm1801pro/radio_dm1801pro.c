@@ -68,7 +68,6 @@ static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
 static bool have_rx;
-static bool rx_am_on;		// the FD6818 plays its AM demodulator (rx_am, the air band)
 static bool asleep;		// rx_sleep(true): the receiver is off until rx_sleep(false) or the next rx()
 static bool transmitting;
 static uint32_t tx_hz;		// TX frequency (FM: also the TX tone deviation, with tx_wide; DMR: the burst TX path)
@@ -289,7 +288,6 @@ static void set_mode(radio_mode_t m)
 		hrc7000_fm_idle(&modem);
 		mode = RADIO_MODE_FM;
 	}
-	rx_am_on = false;	// both mode tables write the FM AF word
 	have_rx = false;	// the next rx() retunes everything
 }
 
@@ -308,7 +306,12 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		rx_path(hz, true);
 	} else {
+#if CONFIG_AM_RX
 		fd6818_set_bandwidth(&fd, am ? FD6818_BW_AM : fm_bw_reg(bw));
+#else
+		(void)am;
+		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
+#endif
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		rx_path(hz, true);
 		hrc_dac_b_power(false);
@@ -318,10 +321,9 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 		// HR_C7000's detector has no input (hardware-dm32.md 8.4)
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
 		hrc7000_set_subtone(&modem, false, HRC7000_TONE_NONE, 0);	// the modem's tone bits off (left on by a TX)
-		if (am || rx_am_on) {
-			fd6818_set_am(&fd, am);	// every AM tune: full gain again for the new channel
-			rx_am_on = am;
-		}
+#if CONFIG_AM_RX
+		fd6818_set_am(&fd, am);	// every AM tune: full gain again for the new channel; FM: AM off
+#endif
 	}
 	rx_hz = hz;
 	rx_bw = bw;
@@ -351,7 +353,7 @@ static bool rx_am(uint32_t hz, radio_bw_t bw)
 static void retune(void)
 {
 	subtone_t t = rx_tone;
-	(void)rx_tune(rx_hz, rx_bw, &t, rx_am_on);
+	(void)rx_tune(rx_hz, rx_bw, &t, fd6818_am_on(&fd));
 }
 
 // 5.4 "Enter TX": RX path off, frequency, the RF state sequence, 0x50, the TX path, then the PA ramp. The radio's
@@ -493,13 +495,9 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = (int16_t)(fd6818_rssi_dbm(r67) + fd6818_rssi_cal_db(rssi_cal, sizeof(rssi_cal) / sizeof(rssi_cal[0]),
 									    rx_hz));
 	st->noise = fd6818_noise(r65);	// the chip's floor lifted above the core's squelch levels (fd6818.h)
-	if (rx_am_on) {
-		// AM: the signal level is the reading plus the gain the loop took off, which then steps; the squelch stays on the
-		// noise indicator (fd6818_am_noise)
-		st->rssi_dbm = (int16_t)(st->rssi_dbm + fd6818_agc_atten_db(&fd.agc));
-		st->noise = fd6818_am_noise(r65);
-		fd6818_am_agc(&fd, r67);
-	}
+#if CONFIG_AM_RX
+	(void)fd6818_am_status(&fd, r65, r67, &st->rssi_dbm, &st->noise);	// AM: its own level and squelch value
+#endif
 	st->carrier = false;
 	st->tone_ok = mode != RADIO_MODE_FM || fd6818_rx_tone_ok(&fd, fd_tone(rx_tone.type));
 }

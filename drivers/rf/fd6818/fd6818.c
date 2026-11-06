@@ -127,10 +127,13 @@ void fd6818_attach_variant(fd6818_t *dev, rfbus_t *bus, const fd6818_variant_t *
 	dev->freq_10hz = 0;
 	dev->bw_reg = 0;
 	dev->state = 0;
+#if CONFIG_AM_RX
 	dev->am = false;
+	dev->am_noise_off = 0;
 	dev->r13 = 0;
 	dev->r4a = 0;
 	fd6818_agc_reset(&dev->agc);
+#endif
 }
 
 void fd6818_write(fd6818_t *dev, uint8_t reg, uint16_t val)
@@ -168,9 +171,9 @@ void fd6818_init(fd6818_t *dev)
 void fd6818_set_mode(fd6818_t *dev, fd6818_mode_t mode)
 {
 	const fd6818_variant_t *v = dev->variant;
-	if (dev->am) {
-		fd6818_set_am(dev, false);	// 0x4A: the mode tables don't write it
-	}
+#if CONFIG_AM_RX
+	fd6818_set_am(dev, false);	// 0x4A: the mode tables don't write it
+#endif
 	if (mode == FD6818_MODE_DMR) {
 		if (v->dmr != NULL) {
 			write_table(dev, v->dmr, v->dmr_n);
@@ -282,6 +285,7 @@ bool fd6818_rx_tone_ok(fd6818_t *dev, fd6818_tone_t type)
 	return type == FD6818_TONE_NONE || fd6818_tone_found(fd6818_read(dev, FD6818_REG_CSS_STATUS), type);
 }
 
+#if CONFIG_AM_RX
 static bool last_in(const regval_t *t, uint16_t n, uint8_t reg, uint16_t *val)
 {
 	for (uint16_t i = n; i > 0; i--) {
@@ -311,6 +315,12 @@ void fd6818_set_am(fd6818_t *dev, bool am)
 			if (!fm_value(dev->variant, FD6818_REG_AM_4A, &dev->r4a)) {
 				dev->r4a = fd6818_read(dev, FD6818_REG_AM_4A);
 			}
+			// The squelch's level 1 at the chip's own noise threshold, as this board sets it
+			uint16_t r4f;
+			if (!fm_value(dev->variant, FD6818_REG_SQ_NOISE, &r4f)) {
+				r4f = fd6818_read(dev, FD6818_REG_SQ_NOISE);
+			}
+			dev->am_noise_off = fd6818_am_noise_offset(r4f);
 		}
 		fd6818_write(dev, FD6818_REG_AF, FD6818_AF_AM);
 		fd6818_write(dev, FD6818_REG_GAIN, FD6818_GAIN_AM_FULL);
@@ -324,11 +334,18 @@ void fd6818_set_am(fd6818_t *dev, bool am)
 	dev->am = am;
 }
 
-void fd6818_am_agc(fd6818_t *dev, uint16_t r67)
+bool fd6818_am_status(fd6818_t *dev, uint16_t r65, uint16_t r67, int16_t *rssi_dbm, uint8_t *noise)
 {
-	if (dev->am && fd6818_agc_step(&dev->agc, r67)) {
+	if (!dev->am) {
+		return false;
+	}
+	// The reading and the gain it was taken at, before the loop's step changes the gain
+	*rssi_dbm = (int16_t)(*rssi_dbm + fd6818_agc_atten_db(&dev->agc));
+	*noise = fd6818_am_noise(r65, dev->am_noise_off);
+	if (fd6818_agc_step(&dev->agc, r67)) {
 		fd6818_write(dev, FD6818_REG_GAIN, fd6818_agc_word(&dev->agc));
 	}
+	return true;
 }
 
 // The gain loop's 0x13 words, lowest gain first, with the gain each gives against the last (full gain, 0x3FF)
@@ -390,6 +407,7 @@ uint8_t fd6818_agc_atten_db(const fd6818_agc_t *a)
 {
 	return (uint8_t)-agc_table[a->idx].db;
 }
+#endif	// CONFIG_AM_RX
 
 void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode)
 {
