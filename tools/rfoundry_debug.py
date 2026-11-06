@@ -22,7 +22,7 @@
     rfoundry_debug.py peek ADDR[:LEN]                hex dump of LEN bytes (default 4) at ADDR, in words where aligned
                                                 outside any git tree
     rfoundry_debug.py reboot [--rom-dfu]             reset; --rom-dfu: into ST's ROM USB DFU (RDP level 0 only)
-    rfoundry_debug.py crash [show|clear|test trap|test assert|test hang]
+    rfoundry_debug.py crash [show|clear|test trap|test assert|test hang|test stall]
                                                 the crash log (CONFIG_CRASH_LOG): the record kept from before this
                                                 start, forget it, or crash on purpose (the radio restarts)
     rfoundry_debug.py watchdog [show|clear-gap]      the hardware watchdog (CONFIG_WATCHDOG): timeout, feeds, longest idle gap
@@ -81,7 +81,7 @@ APRS = 0x11
 APRS_OP_SEND_NOW, APRS_OP_STATUS, APRS_OP_MESSAGE, APRS_OP_TEST_CALL, APRS_OP_SET, APRS_OP_NMEA = range(1, 7)
 CRASH = 0x1B                        # the crash log (CONFIG_CRASH_LOG; docs/spec/debuglink.md 3.19)
 CRASH_OP_CLEAR, CRASH_OP_TEST = range(2)
-CRASH_TESTS = {"trap": 1, "assert": 2, "hang": 3}
+CRASH_TESTS = {"trap": 1, "assert": 2, "hang": 3, "stall": 4}
 CRASH_TOKEN = 0x48535243            # 'CRSH'
 WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFIG_WATCHDOG; docs/spec/debuglink.md 3.21)
 WDT_OP_CLEAR_GAP, WDT_OP_TEST, WDT_OP_LOAD = range(3)
@@ -539,8 +539,9 @@ class DebugLink:
         self.request(CRASH, bytes([CRASH_OP_CLEAR]))
 
     def crash_test(self, kind):
-        """Crash on purpose (kind: 'trap', 'assert' or 'hang'); the radio restarts about 100 ms after the reply (a hang:
-        about three quarters of the watchdog's timeout later, plus the fault trace on the HR_C7000)."""
+        """Crash on purpose (kind: 'trap', 'assert', 'hang' or 'stall'); the radio restarts about 100 ms after the reply
+        (a hang: about three quarters of the watchdog's timeout later, plus the fault trace on the HR_C7000; a stall:
+        the stall check's 60 s later, the link silent until then)."""
         self.request(CRASH, struct.pack("<BBI", CRASH_OP_TEST, CRASH_TESTS[kind], CRASH_TOKEN))
 
     def watchdog_clear_gap(self):
