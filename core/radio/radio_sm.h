@@ -24,6 +24,12 @@
 #define RADIO_POLL_MS		25	// status poll and squelch period
 #define RADIO_RETUNE_SETTLE_MS	400	// RREQ_RETUNE: tune once the reference trim has held this long
 #define RADIO_TICK_MS		10	// DMR call stack poll (radio_sm_tick)
+// The LEDs on a repeater wake-up and a TX deny (docs/spec/radio-features.md 5.7): while the radio waits for a
+// repeater to wake, red blinks once per wake-up burst sent, not solid (a burst is 30 ms: stretched to be seen); a
+// deny flashes red, green, red, green, red, green, RADIO_LED_DENY_STEP_MS each
+#define RADIO_LED_WAKE_MS	100
+#define RADIO_LED_DENY_STEP_MS	100
+#define RADIO_LED_DENY_STEPS	6
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
 #define RADIO_SQUELCH_DEFAULT	5
 #define RADIO_SQUELCH_MAX	9
@@ -264,6 +270,15 @@ typedef struct {
 #endif
 	int8_t green_out;
 	int8_t red_out;
+	// The LEDs' timed signals (outputs()): led_now is the time of the entry point that runs last (poll, tick,
+	// request), since outputs() is called from everywhere without one
+	uint32_t led_now;
+	uint32_t deny_led_ms;		// a TX deny: red, green, red, green, red, green from here
+	bool deny_led;
+	uint32_t wake_led_ms;		// a repeater wake-up burst went out here: red for RADIO_LED_WAKE_MS
+	bool wake_led;
+	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
+	bool led_timed;			// a timed signal was showing at the last outputs(): the tick keeps calling it
 	bool hotspot;			// hotspot mode: the host link owns the modem
 
 	radio_settings_t set;		// the settings in effect
