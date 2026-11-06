@@ -252,6 +252,21 @@ transmission, a one-shot 29 ms timer does the same. Keying takes the PA enables 
 On such a board the RF chip's "transmitting" state therefore goes on and off **burst by burst**. Code that needs to
 know whether a transmission is in progress must use the modem slot state (section 7.5), not the PA.
 
+### 4.4 Lost interrupts
+
+The three lines are edge triggered. A system line still low after its handler (a flag set again, or one whose edge
+was missed) gives no further edge, so no later request interrupts. The STM32F4 glue (`platform/stm32f4/hrc/dmr_glue.c`)
+recovers and counts (`hal_dmr_modem_t.health`, the debug link's `dmr.modem_*` keys):
+
+| Count | Found | Recovery |
+|---|---|---|
+| stalls | no timeslot interrupt for 200 ms while transmitting (the engine's `tx_stalls`; a stall while receiving is not counted) | the transmission ends, the receiver restarts |
+| stuck | the system line low with no edge pending: at a timeslot interrupt (EXTI pending bit clear), or at the task's 10 ms poll (still low 5 us later with no handler run) | the timeslot handler services it, or the task pends the handler; counted once per low stretch |
+
+Entering DMR with the line already low (a flag from FM) pends the handler at once and is not counted. The first loss
+keeps four words: 0x82, EXTI_PR, the interrupt port's IDR, and the three lines' NVIC enable, pending and active bits
+(bits 0-2, 8-10, 16-18).
+
 ---
 
 ## 5. Receive

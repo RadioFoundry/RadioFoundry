@@ -10,7 +10,7 @@
 //                                        over the voice port), send rejected, voice lost; clears the chip's flags
 //   EXTI2 (pin 2, RF TX, priority 5)     key the PA for our burst (the board's RF switch)
 //   "dmr" task (priority 5, 512 words)   drains the engine's events and calls the stack's callback; every 10 ms the
-//                                        watchdog (timing stall, PA left on)
+//                                        watchdog (timing stall, PA left on) and a system line left low
 // Priority 5 is no more urgent than the syscall level (4), so the ISRs may notify the task. Task-level calls into the engine
 // raise BASEPRI to the syscall level for the duration of their register work, which keeps the three ISRs out (they
 // share the bit-banged config port).
@@ -21,6 +21,7 @@
 #if CONFIG_DMR	// the whole file: DMR only
 #include "FreeRTOS.h"
 #include "task.h"
+#include "hal_time.h"
 #include "debuglink/dlog.h"
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 #include "modem/hrc_common/hrc6000_bs.h"
@@ -35,6 +36,8 @@
 #define INT_SYS		GPIO_PIN_1
 #define INT_RFTX	GPIO_PIN_2
 #define MODEM_IRQ_PRIORITY	5	// the chips' three lines, one level; must stay >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY
+#define R_INT_FLAGS		0x82	// the chip's system interrupt flags (modem-hrc6000.md 4.2)
+#define SYS_EDGE_US		5	// a system line seen low gets this long for its handler to run before it counts as lost
 
 static hrc6000_dmr_t eng RFOUNDRY_CPU_RAM;	// the slot ISRs' state: CCM, off the DMA bus
 static TaskHandle_t task;
@@ -130,6 +133,67 @@ static hrc6000_dmr_ops_t ops = {
 	.ctx = NULL,
 };
 
+// --- Lost interrupts (hal_dmr_modem_t.health) ---
+//
+// Two kinds. A transmission the engine dropped because no timeslot interrupt came for 200 ms (its tx_stalls). And a
+// system request holding its line low with no edge to come: the line is edge triggered, so a flag still set after the
+// handler, or one whose edge was missed, keeps it low for good and no later request interrupts. Those are serviced
+// late (the timeslot ISR takes a low line, the task pends the handler) rather than dropped, but each one held a request
+// back, so they are counted, once per low stretch of the line. The first loss of either kind keeps four words:
+// the chip's 0x82 flags, EXTI_PR, the interrupt port's IDR (the lines on pins 0-2, low = asserted) and the three lines'
+// NVIC enable, pending and active bits (bits 0-2, 8-10, 16-18: timeslot, system, RF TX)
+
+static volatile uint32_t sys_stuck;
+static bool sys_low_counted;	// the system line's current low stretch is counted already
+static uint32_t lost_seen;	// tx_stalls + sys_stuck at the last check
+static uint32_t lost_ms;	// the first loss's time (never 0 once set) and words
+static uint32_t lost_regs[4];
+
+static uint32_t nvic_lines(volatile uint32_t *reg)
+{
+	return (reg[0] >> EXTI0_IRQn) & 7u;	// EXTI0-2 are IRQs 6-8: one word, adjacent bits
+}
+
+// From the timeslot ISR or under the lock (the modem ISRs kept out): a count rose since the last check
+static void lost_check(void)
+{
+	uint32_t n = eng.st.tx_stalls + sys_stuck;
+	if (n == lost_seen) {
+		return;
+	}
+	lost_seen = n;
+	if (lost_ms != 0) {
+		return;
+	}
+	uint8_t flags = 0;
+	(void)hrc_read(eng.dev, HRC_PAGE_SYS, R_INT_FLAGS, &flags);
+	lost_regs[0] = flags;
+	lost_regs[1] = EXTI->PR;
+	lost_regs[2] = hooks->int_port->IDR;
+	lost_regs[3] = nvic_lines(NVIC->ISER) | nvic_lines(NVIC->ISPR) << 8 | nvic_lines(NVIC->IABR) << 16;
+	lost_ms = hal_millis() | 1u;
+}
+
+// The system line is low and no edge will run its handler: count it once for this low stretch
+static void sys_lost(void)
+{
+	if (!sys_low_counted) {
+		sys_low_counted = true;
+		sys_stuck++;
+		lost_check();
+	}
+}
+
+static void health(dmr_modem_health_t *h)
+{
+	lock(NULL);
+	h->stalls = eng.st.tx_stalls;
+	h->stuck = sys_stuck;
+	h->first_ms = lost_ms;
+	memcpy(h->first_regs, lost_regs, sizeof h->first_regs);
+	unlock(NULL);
+}
+
 // --- Interrupts ---
 
 #define MODEM_INT_PINS	(INT_TS | INT_SYS | INT_RFTX)
@@ -167,6 +231,13 @@ static void exti_enable(bool on)
 void EXTI0_IRQHandler(void)
 {
 	__HAL_GPIO_EXTI_CLEAR_IT(INT_TS);
+	// A system line low with no edge pending: its interrupt was lost (the engine services it below). With an edge
+	// pending, the system ISR is simply next (both lines fell together)
+	if (!sys_line_low(NULL)) {
+		sys_low_counted = false;
+	} else if ((EXTI->PR & INT_SYS) == 0) {
+		sys_lost();
+	}
 	if (hooks->ts_service != NULL) {
 		hooks->ts_service();
 	}
@@ -350,6 +421,30 @@ void stm32_hrc_dmr_set_trace(bool on)
 
 // --- Deferred event task ---
 
+// A flag still holds the system line low: no edge will come, so the handler is pended. Nothing masks the modem
+// interrupts here, so a line that fell just now has its handler run within the short wait; still low after it, with no
+// handler run, the edge was lost
+static void sys_line_check(void)
+{
+	if (!sys_line_low(NULL)) {
+		if (sys_low_counted) {
+			lock(NULL);	// the timeslot ISR sets it: not cleared under a line that fell meanwhile
+			sys_low_counted = sys_line_low(NULL);
+			unlock(NULL);
+		}
+		return;
+	}
+	uint32_t ints = eng.st.sys_ints;
+	hal_delay_us(SYS_EDGE_US);
+	if (!sys_line_low(NULL) || eng.st.sys_ints != ints) {
+		return;
+	}
+	lock(NULL);
+	sys_lost();
+	unlock(NULL);
+	NVIC_SetPendingIRQ(EXTI1_IRQn);
+}
+
 static void dmr_task(void *arg)
 {
 	(void)arg;
@@ -359,9 +454,12 @@ static void dmr_task(void *arg)
 		ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(DMR_POLL_MS));
 		if (active) {
 			hrc6000_dmr_poll(&eng);
-			if (sys_line_low(NULL)) {
-				NVIC_SetPendingIRQ(EXTI1_IRQn);	// a flag still holds the line low: no edge will come
+			if (eng.st.tx_stalls + sys_stuck != lost_seen) {
+				lock(NULL);
+				lost_check();
+				unlock(NULL);
 			}
+			sys_line_check();
 		}
 		while (hrc6000_dmr_pop(&eng, &ev, &burst)) {
 #if CONFIG_DEBUGLINK
@@ -403,6 +501,9 @@ void stm32_hrc_dmr_enter(void)
 	hrc6000_dmr_run(&eng);
 	active = true;
 	exti_enable(true);
+	if (sys_line_low(NULL)) {
+		NVIC_SetPendingIRQ(EXTI1_IRQn);	// a flag from before (FM) holds the line low: no edge will come, nor is one lost
+	}
 }
 
 void stm32_hrc_dmr_leave(void)
@@ -610,7 +711,7 @@ const hal_dmr_modem_t stm32_hrc_dmr = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
-	.is_transmitting = is_transmitting, .tx_listen = tx_listen, .tx_fill = tx_fill,
+	.is_transmitting = is_transmitting, .tx_listen = tx_listen, .tx_fill = tx_fill, .health = health,
 	SPLIT_OPS
 };
 
@@ -643,6 +744,10 @@ void stm32_hrc_dmr_stats_reset(void)
 	// Every field before last_r5f is a uint32_t counter (hrc6000_dmr.h); the ISRs update them, so under the lock
 	lock(NULL);
 	memset(&eng.st, 0, offsetof(hrc6000_dmr_stats_t, last_r5f));
+	sys_stuck = 0;
+	lost_seen = 0;	// the loss record goes with its counters: health() would show a first loss from before the reset
+	lost_ms = 0;
+	memset(lost_regs, 0, sizeof lost_regs);
 	unlock(NULL);
 	rf_counters(&rf_base[0], &rf_base[1], &rf_base[2]);
 }
