@@ -147,7 +147,9 @@ The path runs while the receive setting is on, the radio receives FM on the APRS
 region's, or the custom one) and no APRS transmission is under way. Anywhere else the stream is left alone: a
 repeater channel's audio isn't APRS, and battery saving would be blocked for nothing. While it runs, battery saving
 (`radio-features.md`) stays off: a sleeping receiver misses packets, and the squelch closes only after 300 ms of
-noise readings over the line (`RADIO_SQL_CLOSE_POLLS_APRS`) instead of 50 ms. On air, a packet's tones
+noise readings over the line (`RADIO_SQL_CLOSE_POLLS_APRS`) instead of 50 ms. A start the board's path refuses (no
+memory, its audio busy) is tried again 1 s later (`RX_RETRY_MS`), not on every tick, since each try routes the
+receiver and back; `aprs.rx_start_fails` counts them. On air, a packet's tones
 at full deviation pushed the AT1846S noise reading over the line for a poll or two, the squelch closed, and the
 squelch gated audio cut the packet in pieces: the preamble in one opening, the frame in the next. `aprs_rx_listening()`
 says whether the path runs.
