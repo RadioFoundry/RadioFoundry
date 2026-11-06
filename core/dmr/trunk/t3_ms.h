@@ -8,7 +8,7 @@
 // No hardware, no RTOS, no codeplug: the radio core feeds it what the modem hears and acts on what t3_ms_poll()
 // returns, as with the roaming engine.
 //   t3_ms_start()     the user selected a trunked system
-//   t3_ms_rx()        every data burst heard (CSBK, MBC header, MBC continuation) with its slot and colour code
+//   t3_ms_rx()        every data burst heard (CSBK, MBC header, MBC continuation) with its slot and color code
 //   t3_ms_slc()       every short LC the CACH carried (CRC-8 good)
 //   t3_ms_activity()  any sync on the slot being followed (voice or data), for the inactivity timer
 //   t3_ms_poll()      every 10-30 ms: T3_ACT_TUNE means retune to act->chan and listen to act->slot (0: both)

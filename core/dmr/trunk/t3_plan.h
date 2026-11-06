@@ -15,13 +15,13 @@
 #include "dmr/trunk/t3_pdu.h"
 
 #define T3_LEARN_MAX	64
-#define T3_CC_ANY	0xFF	// colour code: use the control channel's
+#define T3_CC_ANY	0xFF	// color code: use the control channel's
 
 typedef struct {
 	uint16_t lcn;
 	uint32_t rx_hz;		// the MS receives here
 	uint32_t tx_hz;		// the MS transmits here
-	uint8_t cc;		// colour code, T3_CC_ANY = the control channel's
+	uint8_t cc;		// color code, T3_CC_ANY = the control channel's
 } t3_chan_t;
 
 // Annex C.1.1.2: fMS_Tx = base + (CHAN - first) x separation; fMS_Rx = fMS_Tx -/+ split

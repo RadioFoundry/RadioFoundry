@@ -199,19 +199,19 @@ static void test_settle_crc_cc(void)
 	CHECK(ms.state == T3_HUNT && ms.st.crc_bad == 2, "wrong mask is dropped");
 	aloha(&ms, CC, ours, true);
 	CHECK(ms.state == T3_CAMPED && ms.tscc.rx_hz == 452000000u, "good Aloha confirms");
-	// Camped: another colour code is another channel
+	// Camped: another color code is another channel
 	t3_csbk_t g = grant(T3_OP_TV_GRANT, 159, 1, TG_A, 1234);
 	adv(&ms, 60);
 	send(&ms, 1, CC + 1, &g);
-	CHECK(ms.state == T3_CAMPED && ms.st.grants == 0, "a grant in another colour code is ignored");
-	// A programmed colour code on a candidate filters while hunting
+	CHECK(ms.state == T3_CAMPED && ms.st.grants == 0, "a grant in another color code is ignored");
+	// A programmed color code on a candidate filters while hunting
 	setup();
 	cfg.ctrl[0].cc = 7;
 	t3_ms_start(&ms, &cfg, T);
 	poll_all(&ms);
 	adv(&ms, 100);
 	aloha(&ms, CC, ours, true);
-	CHECK(ms.state == T3_HUNT, "candidate's colour code differs");
+	CHECK(ms.state == T3_HUNT, "candidate's color code differs");
 }
 
 static void test_follow(void)
@@ -458,7 +458,7 @@ static void test_learn(void)
 	send_mbc(&ms, 1, &b, &c);
 	CHECK(ms.st.learned == 1, "repeat not counted");
 
-	// A grant with LPCN 4095 and CG_AP: the appended frequencies and colour code
+	// A grant with LPCN 4095 and CG_AP: the appended frequencies and color code
 	camp(&ms, 120);
 	t3_csbk_t h = grant(T3_OP_TV_GRANT, T3_LPCN_ABSOLUTE, 2, TG_B, 7u);
 	h.lb = false;
@@ -466,16 +466,16 @@ static void test_learn(void)
 	send_mbc(&ms, 1, &h, &cg);
 	CHECK(ms.state == T3_FOLLOW && last.chan.rx_hz == 461000000u && last.chan.cc == 3 && last.slot == 2,
 	      "CG_AP followed: %u cc %u", last.chan.rx_hz, last.chan.cc);
-	// The payload channel's colour code is CG_AP's
+	// The payload channel's color code is CG_AP's
 	t3_ms_activity(&ms, T, 2);
 	t3_csbk_t cl = { .lb = true, .op = T3_OP_P_CLEAR };
 	cl.u.clear.group = true;
 	cl.u.clear.dst = TG_B;
 	adv(&ms, 100);
 	send(&ms, 2, CC, &cl);
-	CHECK(ms.state == T3_FOLLOW, "P_CLEAR in the TSCC's colour code isn't the payload's");
+	CHECK(ms.state == T3_FOLLOW, "P_CLEAR in the TSCC's color code isn't the payload's");
 	send(&ms, 2, 3, &cl);
-	CHECK(ms.state == T3_CAMPED, "P_CLEAR in the payload's colour code");
+	CHECK(ms.state == T3_CAMPED, "P_CLEAR in the payload's color code");
 
 	// A header whose continuation never comes doesn't act on the next one
 	camp(&ms, T3_REGRANT_MS + 100);

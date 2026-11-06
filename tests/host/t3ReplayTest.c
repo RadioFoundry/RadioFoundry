@@ -13,7 +13,7 @@
 //   tscc <file> <rx_hz> <lcn>               the control channel's recording
 //   payload <file> <rx_hz>                  a payload channel's recording
 //   plan <tx_hz> <first> <sep> <tx_low> <split_hz>   the fixed plan (t3_fixed_plan_t)
-//   system <model> <net> <site> <par> <cc>  the system code and the TSCC's colour code
+//   system <model> <net> <site> <par> <cc>  the system code and the TSCC's color code
 //   aloha <version> <nrand_wait> <backoff> <reg>
 //   tg <id>...                              the talkgroups granted in the recording
 //   lcn <n>...                              the payload channels granted

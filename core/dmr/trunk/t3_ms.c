@@ -341,7 +341,7 @@ static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 		}
 		return;
 	}
-	// Grants and the rest carry no system code: the colour code and the confirmed channel vouch for them
+	// Grants and the rest carry no system code: the color code and the confirmed channel vouch for them
 	ms->last_valid_ms = now;
 	if (is_grant(p->op)) {
 		if (cdef != NULL) {

@@ -257,7 +257,7 @@ typedef struct {
 
 // Appended block of an MBC (CG_AP, BC_AP, MV_AP: 7.1.1.1.2, 7.1.1.1.5.1): CdefParms type 0 (table 7.103)
 typedef struct {
-	uint8_t cc;		// colour code (CG_AP, MV_AP); 0 for BC_AP
+	uint8_t cc;		// color code (CG_AP, MV_AP); 0 for BC_AP
 	uint8_t cdeftype;
 	uint16_t chan;		// the logical channel the frequencies belong to
 	uint32_t tx_hz;		// the MS's transmit frequency (Annex C.1.1.4: the MS absolute frequencies)
