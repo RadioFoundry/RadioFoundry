@@ -14,6 +14,9 @@
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
 #endif
+#if CONFIG_APRS
+#include "hrc_afsk.h"
+#endif
 
 static const band_t bands[] = {
 	{ 902000000, 928000000, true },
@@ -57,6 +60,9 @@ const board_t board = {
 	.dmr = &hrc_dmr,
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,
+#endif
+#if CONFIG_APRS
+	.afsk = &hrc_afsk,	// through the HR_C7000 (hardware-rt10.md 7.2)
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
