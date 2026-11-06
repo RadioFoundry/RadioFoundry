@@ -119,6 +119,7 @@ static struct {
 	afsk_demod_t demod;
 	bool rx_running;
 	uint16_t rx_peak;
+	uint32_t rx_start_fails, rx_retry_ms;	// starts the board refused; the next try (RX_RETRY_MS later)
 	int16_t rxbuf[160];
 	char gate[AX25_TNC2_MAX + 20];
 #endif
@@ -1000,6 +1001,10 @@ static bool rx_by_stream(void)
 	return board.audio != NULL && board.audio_tap != NULL && (board.audio_tap->caps & AUDIO_TAP_FM_RX) != 0;
 }
 
+// A start the board refused (no memory, its audio path busy) is tried again this much later, not on every tick: each
+// try routes the receiver and back
+#define RX_RETRY_MS	1000u
+
 // The receive path: on while receiving FM with the setting on (radio task, outside the lock)
 static void rx_service(const aprs_radio_t *r, uint32_t now_ms)
 {
@@ -1007,11 +1012,15 @@ static void rx_service(const aprs_radio_t *r, uint32_t now_ms)
 	bool own = rx_by_board();
 	bool want = a.cfg.rx_on && r->fm_rx && r->rx_hz != 0 && r->rx_hz == aprs_cfg_freq(&a.cfg) &&
 		    (own || rx_by_stream());
-	if (want && !a.rx_running) {
+	if (want && !a.rx_running && (a.rx_start_fails == 0 || (int32_t)(now_ms - a.rx_retry_ms) >= 0)) {
 		a.rx_peak = 0;
 		a.rx_running = afsk_demod_init(&a.demod, own ? h->rx_rate_hz : 8000u, demod_frame, NULL);
 		if (a.rx_running && own) {
 			a.rx_running = h->rx_start();
+			if (!a.rx_running) {
+				a.rx_start_fails++;
+				a.rx_retry_ms = now_ms + RX_RETRY_MS;
+			}
 		} else if (a.rx_running) {
 			audio_mux_aprs_rx(true);
 		}
@@ -1052,6 +1061,7 @@ void aprs_rx_stats(aprs_rx_stats_t *out)
 	out->frames = a.demod.frames;
 	out->fcs_errors = afsk_demod_fcs_errors(&a.demod);
 	out->aborts = afsk_demod_aborts(&a.demod);
+	out->start_fails = a.rx_start_fails;
 }
 #endif
 

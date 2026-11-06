@@ -1120,9 +1120,17 @@ static void test_rx_stream(void)
 static struct {
 	const int16_t *s;
 	size_t n, pos;
-	int starts, stops;
+	int starts, stops, refuse;
 } brx;
-static bool b_rx_start(void) { brx.starts++; return true; }
+static bool b_rx_start(void)
+{
+	brx.starts++;
+	if (brx.refuse > 0) {
+		brx.refuse--;
+		return false;
+	}
+	return true;
+}
 static void b_rx_stop(void) { brx.stops++; }
 static uint16_t b_rx_read(int16_t *buf, uint16_t max)
 {
@@ -1147,6 +1155,9 @@ static void test_rx_board_only(void)
 	configure(60, false);
 	run(200);
 	CHECK(aprs_rx_listening() && brx.starts == 1);
+	aprs_rx_stats_t rs;
+	aprs_rx_stats(&rs);
+	CHECK(rs.start_fails == 0);
 	static uint8_t tones[256];
 	static int16_t audio[24000];
 	const char *line = "Q1ABC-9>APRS,WIDE2-1:!4903.50N/07201.75W-Own path";
@@ -1182,6 +1193,19 @@ static void test_rx_board_only(void)
 	aprs_set_cfg(&c, now);
 	run(200);
 	CHECK(!aprs_rx_listening() && brx.stops == 1);
+	// A start the board refuses is tried again a second later, not on every tick
+	brx.starts = 0;
+	brx.refuse = 2;
+	c.rx_on = true;
+	aprs_set_cfg(&c, now);
+	run(500);
+	aprs_rx_stats(&rs);
+	CHECK(!aprs_rx_listening() && brx.starts == 1 && rs.start_fails == 1);
+	run(1000);
+	aprs_rx_stats(&rs);
+	CHECK(!aprs_rx_listening() && brx.starts == 2 && rs.start_fails == 2);
+	run(1100);
+	CHECK(aprs_rx_listening() && brx.starts == 3);
 	fake_afsk = saved;
 }
 #endif
