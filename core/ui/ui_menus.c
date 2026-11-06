@@ -5187,7 +5187,8 @@ static const set_item_t s_advanced[] = {
 static const set_group_t groups[] = {
 	GROUP(TRN("Sound"), s_sound), GROUP(TRN("Display"), s_display),
 	GROUP_T(TRN("Talk & listen"), TRN("Talk & Listen"), s_talk), GROUP(TRN("Privacy"), s_privacy),
-	GROUP(TRN("Location"), s_location), GROUP(TRN("Connections"), s_connections), GROUP(TRN("Power"), s_power),
+	GROUP(TRN("Location"), s_location), GROUP(TRN("Connections"), s_connections),
+	GROUP_T(TRN("Power saving"), TRN("Power Saving"), s_power),
 	GROUP(TRN("Keys"), s_keys), GROUP_T(TRN("My radio"), TRN("My Radio"), s_my_radio), GROUP(TRN("Advanced"), s_advanced),
 };
 #define GROUPS	(sizeof groups / sizeof groups[0])

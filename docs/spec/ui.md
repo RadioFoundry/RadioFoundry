@@ -81,6 +81,11 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
 `uiSim --ellipsis` (section 7) lists what is still shortened; `uiSim --layout` fails the build on a middle ellipsis
 with ordinary content.
 
+When entering a list screen, if the screen has not set a nonzero focus, select the first row that is neither
+informational nor disabled. If every row is one or the other, select the first disabled row (a text row is never
+focused). Returning with Back preserves the parent focus; manual navigation can still reach disabled rows to explain
+why they are unavailable.
+
 Core code never includes a board header and never tests a radio define. What differs by radio comes from the board
 descriptor: the display geometry and insets (`hal_display_t`), and the key map (`board.keymap`), which turns keys
 into logical actions (`hal_input.h`).
@@ -379,7 +384,7 @@ stays for a call being played.
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
 idle, the bars and the battery (icon and percent) give way, so the title is centered across the whole row; the lock
 and the unread count stay. Home shows the battery, and the low battery banner warns on any screen. On a radio without
-a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Tools > Battery, Settings > Power > Battery saver and Low battery warning are left
+a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Tools > Battery, Settings > Power saving > Battery saver and Low battery warning are left
 out of their lists, so the other Tools rows move up), and only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 
@@ -465,12 +470,12 @@ A request to save channel changes reports the reason when it cannot start: the V
 automatically, hotspot mode must end first, a stored channel must be selected, or another storage job must finish.
 The Home and Quick save keys and Actions > Save to channel use the same messages.
 
-Auto power off is the UI's: `ui_app_power_off_due()` turns true after Settings > Power > Auto power off without use
+Auto power off is the UI's: `ui_app_power_off_due()` turns true after Settings > Power saving > Auto power off without use
 (keys, RX, TX, scan and hotspot count as use), with a banner and beep one minute before; the housekeeping loop
 (core/app) then powers off as for the knob, except that if the power is still on 2 s after releasing the latch it
 latches again, cancels the radio core's power off (`radio_req_power_off_cancel`) and raises `UI_EV_POWER_OFF_FAILED`
 ("Couldn't switch off / Turn the knob off"). The low battery warning is the UI's too: a banner (and the low beep
-while the radio core's level is still OK) at Settings > Power > Low battery warning, repeated every 5 minutes, reset
+while the radio core's level is still OK) at Settings > Power saving > Low battery warning, repeated every 5 minutes, reset
 3 % above it.
 
 Inbound events go through `ui_notify()` (a ring of 4, safe from any task) or, for packages the UI polls, through
