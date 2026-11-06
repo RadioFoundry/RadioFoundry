@@ -3,17 +3,19 @@
 """A serial hand mic: a mic with its own MCU that sends its keys as frames (hal_input_t.hand_mic_stats, the debug
 link's input.hmic_* keys; the radio's hardware page has the frame format).
 
-test_hand_mic_idle runs unattended: with no mic the decoder must not see one, and with a mic in, frames keep coming,
-no key or PTT is held and few bytes are dropped. test_hand_mic_keys needs a person at the radio (--manual): it asks
-for the mic, then for each keypad key in turn, and prints the mic's code for each (the codes the hardware page lists
-as inferred), then for the mic to be unplugged. It never asks for PTT: that would transmit."""
+test_hand_mic_idle runs unattended: with no mic the decoder must not see one, and with a mic in, it stays present
+(an answered mic sends no frame at rest; its answers to the radio's polls keep it), no key or PTT is held and few
+bytes are dropped. test_hand_mic_keys needs a person at the radio (--manual): it asks for the mic, then for each key
+in turn, and prints the mic's code for each (the hardware page's table), then for the mic to be unplugged. It never
+asks for PTT: that would transmit."""
 import time
 
 import pytest
 
 from rfoundry_hil import as_int, skip
 
-KEYS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "*", "#")
+KEYS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "*", "#", "A", "B", "C", "D", "Up", "Down",
+        "A/B (the small button above PTT)")
 GONE_S = 5.0        # the decoder's timeout with margin (3 s on the first radio)
 
 
@@ -46,7 +48,7 @@ def test_hand_mic_idle(radio):
         assert b["frames"] == a["frames"], f"frames accepted with no mic present: {a} -> {b}"
         assert b["ptt"] == 0 and b["key"] == 0, f"a key or PTT held with no mic: {b}"
         return
-    assert b["frames"] > a["frames"], f"the mic is present but sent no frame in 3 s: {a} -> {b}"
+    assert a["present"], f"the mic came in during the test: {a} -> {b}"
     assert b["ptt"] == 0 and b["key"] == 0, f"a key or PTT held at rest (nobody touching the mic?): {b}"
     assert b["errors"] - a["errors"] <= 2, f"bytes dropped at rest: {a} -> {b}"
 

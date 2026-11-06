@@ -678,11 +678,13 @@ the `d578uva` image instead. The `rfoundry` route has installed on a radio; the 
 ### AT-D578UV keys
 
 The front keys are read, but which printed key sends which code isn't known yet. The menus use four of them as
-**Up**, **Down**, **OK** and **Back**; the others carry **A/B**, **Monitor**, **Talk target** and jobs you can set in
-**Settings > Keys**, until a radio shows where they are. The front knob steps the channel.
+**Up**, **Down**, **OK** and **Back**; the others carry **A/B**, **Monitor** and jobs you can set in **Settings > Keys**,
+until a radio shows where they are. The front knob steps the channel, and in a list moves the focus; pushing it is
+**OK**.
 
 PTT is on the hand microphone. Both kinds work without a setting: the radio tells the keypad microphone from the plain
-one by the messages it sends. (The vendor firmware's **Hand Type** setting chooses between them.) Untested on a radio.
+one by the messages it sends. (The vendor firmware's **Hand Type** setting chooses between them.) The keypad
+microphone works on a radio; the plain one is untested.
 
 | Microphone key | Role |
 |---|---|
@@ -690,9 +692,12 @@ one by the messages it sends. (The vendor firmware's **Hand Type** setting choos
 | **Up**, **Down** (both microphones) | as the front **Up** and **Down** |
 | **0**-**9** (keypad microphone) | digits |
 | **\*** / **#** | **\*** / **#**, and **Down** / **Up** in lists |
-| **Menu**, **Exit** | as the front **OK** and **Back** |
-| **A/B** | **A/B** |
-| **PA**, **PB**, **PC**, **PD** | **OK**, zone up, zone down, **Back** (the vendor firmware's defaults) |
+| **A/B** (the small button above **PTT**) | **A/B** |
+| **A**, **B** (ZONE) | next zone, previous zone |
+| **C** (EXIT) | **Back** |
+| **D** (MENU) | **OK** |
+
+The **Key Lock** switch on the side has no effect yet, and the microphone's lights stay off.
 
 A keypad microphone unplugged while the radio is on stops its PTT within 3 seconds.
 

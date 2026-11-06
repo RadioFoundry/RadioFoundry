@@ -86,7 +86,7 @@ chips on the same lines, so each frame on the bus holds the scheduler (not the i
 | Microphone PA10 low, PA9 high | 0x1F press, 0x20 release: PTT | plain microphone only (below) |
 | Microphone PA9 low, PA10 high | 0x10: channel +1 (the microphone's Up) | |
 | Microphone PA9 and PA10 low | 0x11: channel -1 (Down) | |
-| Serial microphone frames | 0x01-0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x1A-0x1D, PTT | serial microphone only (below) |
+| Serial microphone frames | 0x01-0x0D, 0x10, 0x11, 0x1A-0x1D, PTT | serial microphone only (below) |
 
 What the stock firmware does with each code:
 
@@ -96,18 +96,17 @@ What the stock firmware does with each code:
 | 0x17-0x19 | P4-P6 (PB1 keys 1-3) | programmable function | its function |
 | 0x0E | (PB0 key 4) | opens the menu | confirm |
 | 0x0F | (PB1 key 4) | long: key lock on and off | back |
-| 0x1E | PUSH (PA1) | programmable function | confirm |
+| 0x1E | PUSH (PA1, the encoder's switch) | programmable function | confirm |
 | 0x12 / 0x13 | encoder | channel +1 / -1 | list keys |
 | 0x1A-0x1D | PA-PD (serial microphone only) | programmable function | |
-| 0x0D | (serial microphone only) | the main side, A or B | |
+| 0x0D | (serial microphone only) | transmit on the other side ("A/B SUBPTT") | |
 | 0x01-0x0C | (serial microphone keypad) | digits and direct entry | |
 
 - Every programmable key has a short and a long function ("Key Func"), a function id from a list of 58. First-boot
   defaults: P1 VFO/MR, P2 Tx Power, P3 TalkAround, P4 Speaker Mode, P5 APRS Set, P6 Switch ChType; PA Key Menu, PB
   Zone Up, PC Zone Dn, PD Key Exit; PUSH and every long press Off. The programming software sets its own.
-- The firmware names keys only by code (P1-P6, PA-PD, PUSH). Which printed key is P1, and whether PUSH is the
-  encoder's switch, is not in the image. The digit codes 0x01-0x0A as 1-9 and 0, 0x0B as `*` and 0x0C as `#` are
-  inferred from the code range and the unlock message ("Push * To Unlock Key").
+- The firmware names keys only by code (P1-P6, PA-PD, PUSH). PUSH is the encoder's switch (seen on a radio); which
+  printed key is P1 is not in the image. The serial microphone's codes are confirmed on a radio (table below).
 - Encoder: an edge on PC8 with PC9 equal to PC8 afterwards is 0x12 (+1), unequal 0x13. Which is clockwise depends
   on the wiring, which isn't known.
 - Power-on combinations, read by the stock application in its reset init (PA1 and the ladders, PA1 debounced twice
@@ -134,36 +133,55 @@ What the stock firmware does with each code:
   Bluetooth PTT and the CPS's remote PTT post the same key events. PD0, once taken for PTT, is a transmit burst line
   from the baseband (section 5.1).
 
-The serial microphone's frames, as the stock firmware reads them:
+The serial microphone, as seen on a radio with the keypad microphone:
+
+| Control | Where | Code |
+| --- | --- | --- |
+| PTT | left side | frame byte 1 |
+| A/B (manual: "A/B SUBPTT") | left side, the small button above PTT | 0x0D |
+| Up, Down | top | 0x10, 0x11 |
+| `0`, `1`-`9` | keypad | 0x01, 0x02-0x0A |
+| `*`, `#` | keypad | 0x0B, 0x0C |
+| A, B, C, D (printed ZONE, ZONE, EXIT, MENU) | keypad, bottom row | 0x1A-0x1D (the firmware's PA-PD) |
+| Key Lock | right side, slide switch | no frame; the keypad sends in both positions |
+| A/B TX/RX and main channel lights | top | driven from the radio (status frame, below) |
+
+The stock firmware also names codes 0x0E and 0x0F (menu, exit); the keypad microphone doesn't send them.
+
+Its frames, at 115200 8N1:
 
 | Item | Value |
 | --- | --- |
 | Frame types | the first byte gives the length: `A` (0x41) 8 bytes, the microphone's; `F` 7; `+` 31 (the PC link's); 0x06 one byte (an acknowledgement) |
 | Accepted | an `A` frame whose byte 7 is 0x06 |
-| Byte 4 = 0x82 | the microphone identifying itself: present, nothing else |
-| Otherwise | byte 1 PTT (nonzero = pressed), byte 2 a key state, byte 3 the key-valid flag, byte 4 the key code (the codes above). Bytes 5 and 6 unused |
+| Byte 4 = 0x82 | presence: `41 00 00 00 82 00 00 06` |
+| Otherwise | byte 1 PTT (nonzero = pressed), byte 2 the key (1 pressed, 0 released), byte 4 its code. Bytes 3, 5 and 6 are 0 |
 | Answer | the radio sends 0xAA for each accepted frame |
-| Presence | a countdown from 250 ticks, restarted by each accepted frame; at 0 the microphone is gone (the tick's length is not known) |
+| Status frame | 16 bytes from the radio: `S`, bytes 1-7 the state for the microphone's lights (side A busy, the main side's audio open, side A transmitting, side B busy, the other side's audio open, side B transmitting, the main side), byte 9 0x10, byte 12 the long press time (100 ms steps less one), byte 15 0x06; the rest 0. The light fields are the stock firmware's, not checked on the microphone |
 
-Byte 2's role is partly inferred: the firmware posts a press or release of code 0x0D from byte 3, and any other code
-unchanged.
+The handshake: the microphone sends the presence frame 10 times a second until the radio answers with 0xAA and a
+status frame. Until then it sends no PTT and no key. Once answered it sends a frame only when something changes: none
+while idle and none while PTT is held. It answers each status frame with a run of 0x06 bytes. The stock firmware
+answers from its key loop and spaces status frames 200 ms apart (inferred).
 
 RadioFoundry reads both microphones without a setting (`boards/d578uv/input_d578uv.c`,
 `drivers/input/anytone_mic`). Pull-ups on PA9 and PA10, so without a microphone both lines are high and nothing keys
 the transmitter. The USART receives on PA10 all the time. Once a frame is accepted the keys and PTT come from the
-frames and PA9 becomes the USART's transmit line for the answers. After 3 s without a frame the microphone counts as
-gone, with its PTT and key, and PA9 is an input again (the 3 s is RadioFoundry's choice). For 50 ms after any byte the
-two lines aren't read as keys, so a frame's bits never look like PTT; a plain microphone's PTT is a break to the USART,
-which counts as no byte. A key is held while the last frame had byte 3 set. The core debounces all of them as the other
-keys. The diagnostics line `hmic` shows whether a serial microphone is present, its frames and dropped bytes and the
-key code held.
+frames and PA9 becomes the USART's transmit line. The key scan sends the answers and the status frames: one after
+each presence frame and one a second after that, no closer than 200 ms. Any byte from the microphone, its 0x06 runs
+too, keeps it present, so PTT held for minutes stays on. After 3 s without a byte the microphone counts as gone, with
+its PTT and key, and PA9 is an input again: a microphone pulled out mid-transmission unkeys within 3 s. For 50 ms
+after any byte the two lines aren't read as keys, so a frame's bits never look like PTT; a plain microphone's PTT is a
+break to the USART, which counts as no byte. The core debounces all of them as the other keys. The status frame is
+sent idle, so the microphone's lights stay off. The diagnostics line `hmic` shows whether a serial microphone is
+present, its frames and dropped bytes and the key code held.
 
 RadioFoundry's key names (`d578uv.h`): `KEY_UP`, `KEY_DOWN`, `KEY_MENU`, `KEY_EXIT` for 0x14, 0x16, 0x0E and 0x0F,
 `KEY_C15`, `KEY_C17`, `KEY_C18`, `KEY_C19`, `KEY_C1E` (the stock code) for the others, `KEY_PTT`, `KEY_MIC_UP`,
 `KEY_MIC_DOWN` and `KEY_MIC_0`-`KEY_MIC_9`, `KEY_MIC_STAR`, `KEY_MIC_HASH`, `KEY_MIC_AB`, `KEY_MIC_PA`-`KEY_MIC_PD`
-for the microphones. The microphone's Up and Down act as the front Up and Down, its Menu and Exit as the front ones,
-its digits enter digits, `*` and `#` act as down and up, A/B switches the side, and PA-PD follow the stock defaults
-(menu, zone up, zone down, back).
+for the microphones. The microphone's Up and Down act as the front Up and Down, its digits enter digits, `*` and `#`
+act as down and up, A/B switches the side, and A-D follow their printed labels: zone up, zone down, back (EXIT) and
+confirm (MENU). PUSH (`KEY_C1E`) confirms, as the menu key does.
 
 ### 3.3 Power
 
@@ -837,7 +855,7 @@ The order to check it in on a radio, with the diagnostics lines and what to chan
 | Display, keys, encoder | written, untested; the key names are not known |
 | Backlight | register 8 of the PA5 device, the five stock levels (3.1); written, untested |
 | PA5 trims | registers 1, 2, 4, 6, 0xA, 0xC from the calibration after each retune and key-up (5.5); written, host tested, untested on the radio |
-| Microphone | the plain microphone on PA9/PA10 and the serial keypad microphone on USART0, told apart by its frames (3.2); written, the frame parser host tested, untested on the radio. The analog microphone level from the calibration (5.7); written, untested |
+| Microphone | the plain microphone on PA9/PA10 and the serial keypad microphone on USART0, told apart by its frames (3.2); the serial microphone's PTT and keys work on a radio. The analog microphone level from the calibration (5.7); written, untested |
 | NAND, core storage | written, untested |
 | Crash log | the platform's ([crash-log.md](crash-log.md) 2.4), untested: whether the record at the top of SRAM survives the bootloader |
 | DMR baseband | driver, voice set-up and DMR start as the stock firmware sends them (4.4) with the squelch levels and digital mode gains, every LC header and terminator reported, the headphone mute while transmitting; written and host tested, untested on the radio |
@@ -878,12 +896,10 @@ Open on the radio:
 - PTT on PA10 and the plain microphone's Up and Down (3.2).
 - The Bluetooth module (3.7): whether it answers the probe, keeps its pairings without the stock set-up, and what
   `+KEY=01`-`04` are on the hand mic.
-- The serial microphone (3.2): its frames against the stock reading, how often it sends one (RadioFoundry's 3 s
-  timeout), byte 2's role, the digit, `*` and `#` codes, and whether it needs anything at power-on.
+- The serial microphone (3.2): the status frame's light fields, and what the Key Lock switch does.
 - The backlight levels' brightness, and the part behind PA5.
 - The LED's colors: where the second color is switched.
-- Which printed key each ladder position is (PA1 is PUSH, the key common to every power-on combination; whether it is
-  the encoder's switch); the encoder's direction.
+- Which printed key each ladder position is; the encoder's direction.
 - The deviation per 0x40 step (5) and the dB per microphone gain step (5.7); the microphone level's register and
   scale (5.6); the
   audio routing to the speaker (shift register 0x08/0x40, PA7,
