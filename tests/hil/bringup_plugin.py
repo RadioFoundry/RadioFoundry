@@ -33,7 +33,7 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 # Test markers and fixtures -> the need they imply
 MARKER_NEEDS = {"rf": "rf", "radio_tx": "rf", "bench_service": "bench", "usb_switch": "usb_switch",
                 "codeplug_write": "codeplug_write", "reboot": "reboot", "manual": "owner_action",
-                "second_radio": "second_radio"}
+                "second_radio": "second_radio", "radio_chain": "radio_chain"}
 FIXTURE_NEEDS = {"radio": "radio", "sdr_bench": "bench", "bench_station": "second_radio"}
 # A need -> the run options that allow it (any one of them). radio and bench have none: the radio fixture and
 # the bench fixture decide (an unreachable bench is a bench skip, excused for a feature that needs the bench)
@@ -46,6 +46,7 @@ NEED_FLAGS = {
     "reboot": ("--allow-reboot",),
     "owner_action": ("--manual",),
     "second_radio": ("--split-rx-port", "--bench-station", "--peer-port"),
+    "radio_chain": ("--sfr-talker-port",),
 }
 # The VERSION keys a record keeps (docs/spec/debuglink.md 3.1): no uptime, nothing that names one unit
 FIRMWARE_KEYS = ("proto", "view", "git", "board", "features", "codec", "display")
@@ -194,6 +195,8 @@ class Plugin:
                                 "not gating; owner: what a person does for it; gate: the feature's capability gate, "
                                 "run first in bring-up mode, its other required tests fail unless it passes")
         config.addinivalue_line("markers", "second_radio: needs a second radio (--split-rx-port or --bench-station)")
+        config.addinivalue_line("markers", "radio_chain: needs two more radios, a talker and a listener "
+                                "(--sfr-talker-port, --sfr-listener-port)")
         if config.getoption("--bringup", default=None):
             config._rfoundry_bringup = BringUp(config)
 

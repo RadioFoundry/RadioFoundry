@@ -146,7 +146,7 @@ feature it checks.
 
 A test may carry several feature markers. What a test needs comes from its markers and fixtures: `rf` and `radio_tx`
 need `--allow-rf`, `bench_service` and the `sdr_bench` fixture the SDR bench, `manual` a person (`--manual`, and the
-marker's `owner=` says what they do), `second_radio` and the `bench_station` fixture a second radio, `usb_switch`,
+marker's `owner=` says what they do), `second_radio` and the `bench_station` fixture a second radio, `radio_chain` two more (`--sfr-talker-port`), `usb_switch`,
 `codeplug_write` and `reboot` their `--allow-*` flags. `tools/bringup.py` (Python 3.11 or later) resolves each
 radio's state for each feature from the board registry (`tools/boards.py`) and the board's build data:
 

@@ -242,6 +242,7 @@ def _user_radio(port, hz, what):
 
 @pytest.mark.rf
 @pytest.mark.radio_tx
+@pytest.mark.radio_chain
 @pytest.mark.feature("sfr")
 def test_sfr_chain_rfoundry_user(radio, pytestconfig, request, tx_allowed):
     talker_port = pytestconfig.getoption("--sfr-talker-port")
