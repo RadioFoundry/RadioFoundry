@@ -166,8 +166,8 @@ capture it ignored two TMS ACKs the radio sent 0.5 s after its link ACK with one
 with 12-17 preambles (one sample each, a hypothesis only). The defaults stay until an on-air check says otherwise.
 
 That check is run by hand, once, to settle the formats, and its results are recorded here. It is never part of
-`tests/hil` or any automated or repeated test: no test reaches the real BrandMeister network (tests use the capture
-or a local stand-in for the master). It goes through a BrandMeister hotspot to 262993, from a radio on an ID
+`tests/hil` or any automated or repeated test: no test reaches the real BrandMeister network. Host tests use the
+capture's bytes; a HIL test that involves BrandMeister runs against the simulated service in 5.1.2. It goes through a BrandMeister hotspot to 262993, from a radio on an ID
 registered with BrandMeister (not one another radio on the check uses, or each takes the other's ACKs):
 
 | Case | Send | Pass |
@@ -181,6 +181,24 @@ registered with BrandMeister (not one another radio on the check uses, or each t
 | 7 | two texts from BrandMeister within 20 s (its TMS ACK, then its reply) | both reach us (N(S) 0 both times) |
 
 Record for each, in this section: the link ACK class, BrandMeister's TMS ACK time, and whether a resend came.
+
+#### 5.1.2 Simulated BrandMeister text service (HIL)
+
+A HIL test that involves BrandMeister talks to a local stand-in for the master that the hotspot connects to, never
+to the real network. The stand-in answers as 262993 did in the capture. It is not built yet; this is what it must do.
+
+| Event | The stand-in sends | When |
+|---|---|---|
+| Any packet it sends | confirmed (A=1), rate 3/4, N(S) 0, F=1, FSN 1000, from 262993, UDP 4007 to 4007 | |
+| Our confirmed packet, every block good | link ACK: response class 0 type 1, status our N(S) | about 0.5 s after the last block, 1 preamble |
+| Our confirmed packet, CRC-32 wrong | NACK: class 1 type 1 | as the link ACK |
+| Our TMS with an ACK requested | TMS ACK `00 03 BF 00 <s/n>` (`00 04 BF 00 ...` past 31) | about 5.7 s after our message |
+| A command (`echo`, `wx`, ...) | a TMS text, header 0xE0 (ACK requested), the text starting with CR LF | after its TMS ACK; a test sets the gap, inside and outside 20 s |
+| Its text, no TMS ACK from us | the same text again with a new sequence number | about 28 s later |
+| Our ETSI IP text on 5016 | the link ACK only (what the real service does is open, 5.1.1) | |
+
+Cases 6 and 7 of the on-air check are the ones a HIL test can repeat against the stand-in. Case 7 sends two texts
+with N(S) 0 within 20 s.
 
 ### 5.2 ETSI short data text
 
