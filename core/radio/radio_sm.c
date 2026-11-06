@@ -3763,6 +3763,9 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 
 	uint8_t reason = tx_check(sm);
 	if (reason != TXDENY_NONE) {
+		if (reason == TXDENY_INHIBIT && !sm->set.tx_inhibit) {
+			tx_limit_refused(sm->view.ch.tx_hz);	// counted here: tx_check is also a plain test elsewhere
+		}
 		deny(sm, reason);
 		return;
 	}

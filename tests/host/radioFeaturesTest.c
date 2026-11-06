@@ -2238,9 +2238,13 @@ static void test_tx_limit(void)
 	tx_limit_info_t l;
 	start();
 	CHECK(tx_limit_set(true, NULL, 0));
+	tx_limit_get(&l, NULL, 0);
+	uint32_t refused = l.refused;
 	int calls = hw.tx_calls;
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_INHIBIT && hw.tx_calls == calls);
+	tx_limit_get(&l, NULL, 0);
+	CHECK(l.refused == refused + 1 && l.last_hz == 146520000);	// a refused PTT counts
 	req(RREQ_PTT, 0);
 	CHECK(!sm.set.tx_inhibit);
 	CHECK(tx_limit_set(false, pos0, 1));
