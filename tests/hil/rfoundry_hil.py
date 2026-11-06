@@ -20,26 +20,69 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "tools", "bench"))
 
 from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_ports, parse_counters,  # noqa: E402
-                       to_rgb, write_png, ACTIONS, PRESS, LONG)
+                       to_rgb, write_png, ACTIONS, PRESS, LONG, UP, APRS, APRS_OP_MESSAGE, APRS_OP_SEND_NOW,
+                       APRS_OP_TEST_CALL, DATA_OP_CALL_ALERT, DATA_OP_EMERGENCY, DATA_OP_IP_SEND,
+                       DATA_OP_RADIO_CHECK, DATA_OP_SMS, DMR_DATA, KEY, OP_TONE_BURST, PTT, RADIO)
 
 
-# A test finds its channel by RX frequency (find_channel), so a split or repeater channel would key a TX frequency no one
-# compared with the rig's tx_mhz. Every PTT goes through DebugLink.ptt (ptt_for too, and every link a test opens), so
-# the check is made there, on the channel the radio is on when it keys
-_ptt = DebugLink.ptt
+# Layer 1 of the TX guard (README.md, "Transmit frequencies"): with --allow-rf, every debug link request that keys the
+# radio is compared with the rig's tx_mhz first, on the frequency it would key, and refused outside it. A test finds its
+# channel by RX frequency (find_channel), so a split or repeater channel would key a TX frequency no one compared. The
+# check is on DebugLink.request, so it covers every link a test opens (the second radio's too). What the radio sends
+# by itself (data replies, registration, beacons, roaming probes) no request can check: layer 2 (hil_plugin.py,
+# tx_inhibit outside radio_tx tests) covers that.
+TX_KEYS = {ACTIONS["ptt"], ACTIONS["emergency"]}
 
 
-def _guarded_ptt(self, down, max_ms=10000):
+def keys_tx(cmd, payload):
+    """Where a debug link request transmits: "channel" (the channel's TX frequency), "aprs" (the APRS frequency, and
+    the channel when it is DMR: positions over DMR), or None (it doesn't key). KEY's op 1 (physical key bits) is not
+    known here: its bits are the board's."""
+    p = bytes(payload)
+    if cmd == PTT:
+        return "channel" if p[:1] == b"\x01" else None
+    if cmd == KEY and len(p) >= 2 and p[1] in TX_KEYS:
+        if p[0] == 3 or p[0] == 0 and len(p) >= 3 and p[2] != UP:     # held, or any gesture but the release
+            return "channel"
+        return None
+    if cmd == RADIO and p[:2] == bytes([OP_TONE_BURST, 1]):
+        return "channel"
+    if cmd == DMR_DATA and p:
+        if p[0] in (DATA_OP_SMS, DATA_OP_CALL_ALERT, DATA_OP_RADIO_CHECK, DATA_OP_IP_SEND) or \
+                p[:2] == bytes([DATA_OP_EMERGENCY, 1]):
+            return "channel"
+        return None
+    if cmd == APRS and p[:1] and p[0] in (APRS_OP_SEND_NOW, APRS_OP_MESSAGE, APRS_OP_TEST_CALL):
+        return "aprs"
+    return None
+
+
+def tx_freqs(link, where):
+    """The frequencies (MHz) a request that keys on `where` (keys_tx) would transmit on, as the radio says now"""
+    core = link.view(["core"])
+    channel = int(core.get("tx_hz") or 0) / 1e6
+    if where == "channel":
+        return [channel]
+    aprs = int(link.view(["aprs"]).get("aprs.freq_hz") or 0) / 1e6
+    return ([aprs] if aprs else []) + ([channel] if core.get("mode") == "dmr" else [])
+
+
+_request = DebugLink.request
+
+
+def _guarded_request(self, cmd, payload=b"", *args, **kwargs):
     import hil_config
-    if down and hil_config.CONFIG is not None and hil_config.CONFIG.getoption("--allow-rf"):
-        tx = int(self.view(["core"]).get("tx_hz") or 0) / 1e6
-        if not hil_config.tx_allowed(None, tx):
-            raise RuntimeError(f"PTT refused: the channel transmits on {tx:.5f} MHz, not one of the rig's transmit "
-                               f"frequencies (tx_mhz)")
-    return _ptt(self, down, max_ms)
+    if hil_config.CONFIG is not None and hil_config.CONFIG.getoption("--allow-rf"):
+        where = keys_tx(cmd, payload)
+        if where is not None:
+            for mhz in tx_freqs(self, where):
+                if not hil_config.tx_allowed(None, mhz):
+                    raise RuntimeError(f"TX refused: this request keys on {mhz:.5f} MHz, not one of the rig's "
+                                       f"transmit frequencies (tx_mhz)")
+    return _request(self, cmd, payload, *args, **kwargs)
 
 
-DebugLink.ptt = _guarded_ptt
+DebugLink.request = _guarded_request
 
 
 # ── skips ───────────────────────────────────────────────────────────────────
@@ -237,6 +280,27 @@ class Radio:
 
     def close(self):
         self.link.close()
+
+    def tx_gate(self, may_transmit):
+        """Layer 2 of the TX guard (README.md, "Transmit frequencies"): the radio's TX inhibit (a setting in RAM, so a
+        restart clears it) on unless the test may transmit, so what the radio sends by itself (data replies,
+        registration, beacons, roaming probes) can't go out in a test that isn't marked radio_tx. The first call keeps
+        the radio's own value for tx_gate_end(). False: firmware without the setting."""
+        cur = self.view(["features"]).get("set.tx_inhibit")
+        if cur is None:
+            return False
+        if not hasattr(self, "_tx_inhibit_own"):
+            self._tx_inhibit_own = cur
+        want = "0" if may_transmit else "1"
+        if cur != want:
+            self.link.setting("tx_inhibit", int(want))
+        return True
+
+    def tx_gate_end(self):
+        """The radio's own TX inhibit back, as the first tx_gate() found it"""
+        own = getattr(self, "_tx_inhibit_own", None)
+        if own is not None and self.view(["features"]).get("set.tx_inhibit") != own:
+            self.link.setting("tx_inhibit", int(own))
 
     @contextlib.contextmanager
     def released(self):

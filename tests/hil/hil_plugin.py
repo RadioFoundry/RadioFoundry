@@ -73,6 +73,10 @@ def radio(pytestconfig):
     if lang:
         print(f"rfoundry-hil: the radio's language was {lang}: set back to English (the tests read English text)")
     yield r
+    try:
+        r.tx_gate_end()
+    except DebugLinkError:
+        print("rfoundry-hil: couldn't put the radio's TX inhibit back (a restart clears it)")
     r.close()
 
 
@@ -94,13 +98,15 @@ def only_on(bid, radio):
 
 @pytest.fixture(autouse=True)
 def restore_radio(request):
-    """Every test that uses the radio leaves it as it found it (channel / VFO, zone, power, squelch, monitor)."""
+    """Every test that uses the radio leaves it as it found it (channel / VFO, zone, power, squelch, monitor), and runs
+    with its TX inhibit on unless marked radio_tx (Radio.tx_gate)."""
     # test_tcp_services.py's module fixture "net" has the radio on the network (its serial link closed) for the whole
     # module and puts it back on serial itself: nothing to snapshot over serial then
     if "radio" not in request.fixturenames or "net" in request.fixturenames:
         yield
         return
     r = request.getfixturevalue("radio")
+    r.tx_gate("radio_tx" in request.keywords)
     snap = r.snapshot()
     try:
         yield

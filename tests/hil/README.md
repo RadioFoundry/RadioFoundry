@@ -112,6 +112,19 @@ SDR bench names come from the environment (`docs/testing/dmr-bench.md` 1): `$RFO
 default `sdr-bench`), `$RFOUNDRY_SDR_BENCH_SERVICE`, `$RFOUNDRY_SDR_BENCH_DIR`, `$RFOUNDRY_SDR_BENCH_PY`, `$RFOUNDRY_SDR_BENCH_ENV_FILE`;
 `$RFOUNDRY_SDRBENCH` names an rfoundry_sdrbench checkout when the package isn't installed on the test host.
 
+### Transmit frequencies
+
+The radio transmits only where the rig allows, in two layers (`rfoundry_hil.py`, `tests/hil/test_tx_guard.py`):
+
+| Layer | What it covers | How |
+|---|---|---|
+| 1. Requests | every debug link request that keys the radio: PTT, the PTT or emergency key, the 1750 Hz burst, DMR data sends (SMS, call alert, radio check, emergency, IP), APRS sends | With `--allow-rf`, the frequency it would key on is compared with `tx_mhz` first: the channel's TX frequency (a channel found by its RX frequency can be a split one), for APRS the APRS frequency and, on a DMR channel, the channel. Outside it, the request raises. |
+| 2. TX inhibit | what the radio sends by itself: data and CSBK replies, registration, beacons, roaming probes | Every test that uses the radio runs with its TX inhibit on (`tx_inhibit`, a setting in RAM) unless it is marked `radio_tx`. The radio's own value comes back at the end of the run; a restart also clears it. |
+
+So a test where the radio transmits, by request or by itself, needs `radio_tx`: without it, the transmission is
+refused (`tx_deny=inhibit`) and the test fails. KEY's physical key bits (`keys_mask`) are the board's and not checked
+by layer 1. The second radio of a two-radio test has layer 1 only.
+
 ### Skip kinds
 
 Every skip names its kind. The reason starts with it (`-rs` shows `[opt_in] transmits: run with --allow-rf`), the
@@ -474,7 +487,8 @@ SDR clips, and the bench modem's tries counted with a minimum of one. An attenua
   the firmware releases PTT by itself at its time-out). Call `radio.go_home()` first for UI tests.
 - Check state with `radio.wait_for(lambda v: ..., timeout)` on the view (key=value strings, `docs/spec/debuglink.md`
   3.7), never with fixed sleeps alone; counters with `radio.reset_counters()` then `radio.counters()` deltas.
-- Anything that transmits gets `@pytest.mark.rf` (the radio: `radio_tx`); anything that uses the SDR bench's
+- Anything that transmits gets `@pytest.mark.rf` (the radio: `radio_tx`, also when it only replies or beacons by
+  itself: [Transmit frequencies](#transmit-frequencies)); anything that uses the SDR bench's
   transmitter or receiver also gets `@pytest.mark.bench_service`, one of `sdr_rx` / `bench_modem` / `sdr_or_modem`
   (both of the first two for a test that needs both, see Bench hardware markers) and runs inside
   `with sdr_bench.lease():` (`transmit` / `voice_call`, `listen_start` / `listen_result`, `dmr_watch_start` /
