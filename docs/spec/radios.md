@@ -249,7 +249,12 @@ board is dated 2020.08.21 and carried over, but its control, RX and TX boards ar
 ([2AN62-DB25DPRO internal photos](https://fccid.io/2AN62-DB25DPRO/Internal-Photos/Internal-photos-8316141)).
 One firmware image covers the DB25-D and the DB25-D PRO (readme in the
 [2025-02-10 package](https://radioddity.s3.amazonaws.com/2025-02-10_DB25-D_firmware_update_release_2025-02-10.zip)).
-The Retevis RT73 is reported as the same radio (unverified) ([kydera-ham forum](https://kydera-ham.boards.net/thread/315/thoughts-radioddity-db25-mini-mobile)). No RT73 FCC ID was found.
+The Retevis RT73 (version D4) runs the same firmware line: its 2021 builds (909E.D4.EARSAB.007 and .010, from the
+[Ailunce RT73 page](https://www.ailunce.com/Support/RT73/Software)) differ from the 2022 DB25-D builds in the
+model name, a few RF words, the missing chip detection and the codec's place; the pins and memory layout are the same
+([hardware-db25d.md](hardware-db25d.md) 1, 4.8). It was first reported as the same radio on the
+[kydera-ham forum](https://kydera-ham.boards.net/thread/315/thoughts-radioddity-db25-mini-mobile). No RT73 FCC ID
+was found. RadioFoundry runs on it with the D64 path, untested on an RT73.
 
 - **MCU and DMR:** one HR_C7000, marked "HR_C7000 D56323MP1" (FCC photo). The HR_C7000 integrates a C-SKY CK803S
   core, as on the DM-32UV ([hardware-dm32.md](hardware-dm32.md)). The vendor's update guide is on [radioddity.com](https://radioddity.com/products/radioddity-db25d).
@@ -260,8 +265,9 @@ The Retevis RT73 is reported as the same radio (unverified) ([kydera-ham forum](
   51.55 MHz and the other works at the IF in receive. BK4819 support first
   appears in the 2024-05-09 build, so older vendor images must not be loaded on a PRO. Both chips share one
   3-wire bus with separate enables.
-  The FD6818 batches pair an FD6818 main transceiver with a 0x7813 (D64), FD6818 (D66) or AT1141 (D6T) LO;
-  RadioFoundry drives all four from one image, the FD6818 ones untested ([hardware-db25d.md](hardware-db25d.md) 4.8).
+  The FD6818 batches pair an FD6818 main transceiver with a 0x7813 (D64, and D4 in the 2021 firmware), FD6818 (D66)
+  or AT1141 (D6T) LO; RadioFoundry drives all of them from one image, the FD6818 ones untested
+  ([hardware-db25d.md](hardware-db25d.md) 4.8).
 - **Bands and power:** 136–174 / 400–480 MHz, 20 W or 5 W, 13.8 V ([radioddity.com](https://radioddity.com/products/radioddity-db25d)).
   The FCC grant lists 19.7 W conducted. The PA is a discrete RF MOSFET on the TX board (photo). PA power is set
   by DAC B with a ramp at each burst, as on the DM-32.

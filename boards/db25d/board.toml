@@ -8,7 +8,7 @@ id = "db25d"
 name = "Radioddity DB25-D PRO"
 maker = "Radioddity"
 model = "DB25-D PRO"
-also = ["Kydera CDR-300UV"]
+also = ["Kydera CDR-300UV", "Retevis RT73"]
 kind = "mobile"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
 order = 4
@@ -38,6 +38,15 @@ name = "DB25-D PRO: two BK4819 (2024 on)"
 level = "supported"
 runs = { board = "db25d" }
 
+# The 2021 firmware (the Retevis RT73's, version D4) has no chip detection: one letter, always an FD6818 transceiver
+# and a 0x7813 LO, which the later firmware and RadioFoundry call D64 (hardware-db25d.md 4.8)
+[[hardware.variants]]
+code = "D4"
+name = "FD6818 transceiver, 0x7813 LO (2021 firmware, Retevis RT73)"
+level = "testing"
+notice = "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+runs = { board = "db25d" }
+
 [[hardware.variants]]
 code = "D64"
 name = "FD6818 transceiver, 0x7813 LO (2021-2023)"
@@ -63,7 +72,7 @@ runs = { board = "db25d" }
 level = "supported"
 summary = """\
 FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings \
-storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73."""
+storage work on the radio. The older FD6818 batches and the Retevis RT73 run the same image, untested on a radio."""
 release = "stable"
 
 # The vendor IAP loader (0x03000000..0x0300BFFF) is never written. RadioFoundry's first stage fills the sector at 0x0300C000
@@ -72,7 +81,7 @@ release = "stable"
 [flash]
 family = "serial-iap"
 keep_codec = false
-stock_versions = ["909E.DBB.EARSAB.018", "909E.DBB.EARSAB.020"]
+stock_versions = ["909E.DBB.EARSAB.018", "909E.DBB.EARSAB.020", "909E.D4.EARSAB.007", "909E.D4.EARSAB.010"]
 backup = { stock = "full", rfoundry = "full", spi_size = 0 }
 
 # Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions"): mem, start and end (exclusive)
