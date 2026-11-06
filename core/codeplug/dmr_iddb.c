@@ -50,6 +50,31 @@ static bool rd(uint32_t addr, void *buf, uint32_t len)
 	return board.flash != NULL && board.flash->size != 0 && board.flash->read(addr, buf, len);
 }
 
+// Where the database's room ends: the open-firmware area's end (what follows it, such as the native codeplug, is not
+// the database's), or the chip's end on a board without a map
+static uint32_t room_end(void)
+{
+	uint32_t end = board.flash->size;
+	if (board.flash->map != NULL && board.flash->map->openfw_end < end) {
+		end = board.flash->map->openfw_end;
+	}
+	return end;
+}
+
+// Bytes of the database that fit from area 1's start, area 2 continuing at area2 (iddb-compact.md 2: area 1 then area
+// 2, up to openfw_end). A header whose records or sections run past this is no database
+static uint32_t room(uint32_t area2)
+{
+	uint32_t end = room_end();
+	if (end > area2) {
+		return IDDB_AREA1_SIZE + (end - area2);
+	}
+	if (end <= IDDB_AREA1) {
+		return 0;
+	}
+	return end - IDDB_AREA1 < IDDB_AREA1_SIZE ? end - IDDB_AREA1 : IDDB_AREA1_SIZE;
+}
+
 // 6-bit packed text: 4 characters in 3 bytes, most significant first, alphabet space 0-9 A-Z a-z .
 static char unpack6(uint8_t c)
 {
@@ -113,7 +138,7 @@ static bool compact_init(void)
 	}
 	uint32_t count = le(h + 8, 4), size = le(h + 12, 4), index = le(h + 16, 4), table = le(h + 24, 4);
 	uint32_t strings = le(h + 28, 4), pages = le(h + 20, 2), dict = le(h + 22, 2);
-	uint32_t space = board.flash->size > IDDB_AREA2 ? IDDB_AREA1_SIZE + (board.flash->size - IDDB_AREA2) : IDDB_AREA1_SIZE;
+	uint32_t space = room(IDDB_AREA2);
 	// each section's length against the room after its offset, so no sum can wrap
 	if (count == 0u || count > 0x400000u || pages == 0u || dict > C_DICT_MAX || size > space || size % C_PAGE != 0u ||
 		index < C_PAGE || index > size || 5u * pages > size - index || table < C_PAGE || table > size ||
@@ -343,6 +368,14 @@ bool dmr_iddb_init(void)
 	}
 	db.per_area1 = (IDDB_AREA1_SIZE - IDDB_HEADER) / db.rec;
 	db.area2 = h[2] == 'n' ? IDDB_AREA2_VP : IDDB_AREA2;
+	// the records within the room: count and rec are bounded above, so neither product wraps
+	uint32_t space = room(db.area2);
+	bool fits = db.count <= db.per_area1 ? IDDB_HEADER + db.count * db.rec <= space :
+		    space > IDDB_AREA1_SIZE && (db.count - db.per_area1) * db.rec <= space - IDDB_AREA1_SIZE;
+	if (!fits) {
+		db.count = 0;
+		return false;
+	}
 	db.valid = true;
 	return true;
 }
