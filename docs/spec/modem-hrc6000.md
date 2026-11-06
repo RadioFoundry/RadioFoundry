@@ -408,7 +408,10 @@ signaling. If idle, with the CC held and matching: write 0x41=0x50 and start rec
 until two bursts A have passed, unless the source ID is already known and isn't our own. The LC comes from page 2 once
 the embedded LC is complete (subject to the sticky-LC rule above). The driver reads page 2 at the interrupt and keeps an
 LC that differs from the capture for the next voice burst (counted as `lc2 p=`, traced as `P`); whether the interrupt
-comes on a late entry, and when relative to burst F, is what the trace shows.
+comes on a late entry, and when relative to burst F, is what the trace shows. On the bench (HIL 2026-11-06, a call
+joined at burst C of its second superframe) it came before the next F in most runs, the LC taken there; on a weak
+signal it came one superframe later in 2 of 9 runs, page 2 still held the old LC at F, and the call played from the
+superframe after that.
 
 ### 5.7 Audio buffering
 
