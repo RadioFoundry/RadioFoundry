@@ -839,12 +839,13 @@ int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t
 }
 
 #if CONFIG_DMR_TMS
-// As a MOTOTRBO radio sends it (ok-dmrlib's capture: 00 04 9F 00 95 20): first header 0x9F (more headers, control,
-// type 0xF), no address, then the sequence number: its low 5 bits, and only when it needs them bits 5-6 in a second
-// octet (extension bit set in the first)
+// As a MOTOTRBO radio and BrandMeister send it (00 03 BF 00 0A for s/n 10): first header 0xBF (0x80 a sequence
+// octet follows, 0x20 as in every TMS header, type 0x1F ACK), no address, then the sequence number: its low 5 bits,
+// and only when it needs them bits 5-6 in a second octet (extension bit set in the first). Another capture had 0x9F
+// (0x20 clear); the decoder takes both
 int dmrDataBuildTMSAck(uint32_t dst, uint32_t src, uint8_t seq, int preambles, dmrBurst_t *out, int maxBursts)
 {
-	uint8_t ack[6] = { 0x00, 0x03, 0x9F, 0x00, (seq & 0x1F), 0x00 };
+	uint8_t ack[6] = { 0x00, 0x03, 0xBF, 0x00, (seq & 0x1F), 0x00 };
 	int length = 5;
 
 	seq &= 0x7F;

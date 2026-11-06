@@ -78,11 +78,11 @@ dmr_data_api.h (UI, debug link)                  sms_inbox_*, sms_send, dmr_sign
   the packet's CRC-32 decides.
 - Addressed to us: our ID, or a group that is the channel's talkgroup or in its listen list.
 - Confirmed data to us gets an ETSI response (ACK with its N(S)) before anything else (gotcha 5.6); bad or lost
-  blocks a selective ACK, a CRC-32 failure with good blocks a NACK, a repeat of the packet we ACKed last an ACK only
-  (12.3).
+  blocks a selective ACK, a CRC-32 failure with good blocks a NACK, a repeat of the packet we ACKed last (same N(S)
+  and data) an ACK only (12.3).
 - Text to us (any format, 5): kept in the inbox (4 messages, newest first, the oldest replaced). A TMS ACK request is
-  answered with a TMS ACK. The same message again from the same radio within 60 s (sender, format, sequence number,
-  text) is a retry: answered again, not kept twice (gotcha 5.8).
+  answered with a TMS ACK. The same message again from the same radio within 60 s (sender, format, text; the
+  sequence number may differ) is a retry: answered again, not kept twice (gotcha 5.8).
 - Control station passthrough (`usb-network.md` 5.2): IP based packets to us are left to the PC; only the ETSI
   response above is still sent.
 - Replies (responses, TMS ACKs, CSBK answers) wait in a 4-entry queue; one still queued after 5 s, or not started
@@ -130,7 +130,11 @@ All three are read whatever the setting.
 
 - Format: IPv4 / UDP port 4007 to 4007, user data SAP 4, unconfirmed data. TMS header 0xE0 (ACK requested) or 0xA0,
   sequence number in 5 bits (with bit 7 set), encoding 4, the text as UTF-16LE (Latin-1 characters only on the
-  radio side). Radio IDs map to 12.x.x.x, groups to 225.x.x.x (the CAI addresses; a packet from the host may carry
+  radio side). Header bits as seen on air: 0x80 a sequence octet follows, 0x40 ACK requested, 0x20 set in every
+  TMS packet, the low 5 bits the type (0 text, 0x1F ACK).
+- The TMS ACK: header 0xBF, no address, the sequence number (00 03 BF 00 0A for s/n 10; past 31 a second octet with
+  bits 5-6, 00 04 BF 00 9E 60 for s/n 126), as a MOTOTRBO radio and BrandMeister send it. An ACK with header 0x9F
+  (0x20 clear, seen from other MOTOTRBO gear) is still taken. Radio IDs map to 12.x.x.x, groups to 225.x.x.x (the CAI addresses; a packet from the host may carry
   others, 11.1).
 - Ours (`sms_send`): rate 1/2 blocks (gotcha 5.3), 2 preamble CSBKs. With an ACK requested: waits 8 s for the TMS
   ACK with our sequence number, 2 tries, then `SMS_FAILED`. To a group or without an ACK: `SMS_SENT` once on air.
@@ -140,6 +144,40 @@ All three are read whatever the setting.
   forwards it to the PC like any datagram. `sms_send(..., TMS)` is refused; a stored default of TMS (a record
   written by a build with it) sends ETSI IP text instead. The UI's format list has no Motorola entry. Host test:
   `dmrDataServiceTestNoTms`.
+
+#### 5.1.1 BrandMeister's text service
+
+BrandMeister's SMS service (ID 262993, through a hotspot) speaks TMS on UDP 4007. As captured with a MOTOTRBO radio:
+
+| | BrandMeister | MOTOTRBO radio | RadioFoundry |
+|---|---|---|---|
+| Data | confirmed (A=1), rate 3/4 | confirmed (A=1), rate 3/4 | TMS and TMS ACK unconfirmed, rate 1/2, 2 preambles |
+| N(S) | 0 on every packet | steps | steps (12.2) |
+| Link ACK | about 0.5 s after the last block, 1 preamble | | straight after (3) |
+| TMS ACK | about 5.7 s after the message | sent after its link ACK | queued after the link ACK (3) |
+| No TMS ACK | sends the text again after about 28 s, with a new sequence number | link layer retries about every 6 s | 8 s wait, 2 tries |
+| CRC-32 failure | NACK, class 1 type 1 | | NACK (12.3) |
+
+What follows for us: N(S) can't tell BrandMeister's packets apart, so a repeat is a repeat only when the data is the
+same too (12.3), and its resent text with a new sequence number is kept once (gotcha 5.8).
+
+Not known yet: whether BrandMeister takes unconfirmed rate 1/2 TMS, and ETSI IP text on 5016, from a radio. In the
+capture it ignored two TMS ACKs the radio sent 0.5 s after its link ACK with one preamble and took both retries sent
+with 12-17 preambles (one sample each, a hypothesis only). The defaults stay until an on-air test says otherwise.
+That test, through a BrandMeister hotspot to 262993, from a radio on an ID registered with BrandMeister (not one
+another radio on the test uses, or each takes the other's ACKs):
+
+| Case | Send | Pass |
+|---|---|---|
+| 1 | TMS, unconfirmed, rate 1/2 (our default for TMS) | text reply; our message's TMS ACK |
+| 2 | TMS, confirmed, rate 1/2 | link ACK, TMS ACK, text reply |
+| 3 | TMS, confirmed, rate 3/4 | as 2 |
+| 4 | ETSI IP text on 5016, confirmed, rate 1/2 (the default format) | link ACK; a reply in some format, or none (BrandMeister may not serve 5016) |
+| 5 | ETSI IP text on 5016, unconfirmed | as 4 without the link ACK |
+| 6 | BrandMeister's text to us | inbox once; our link ACK and TMS ACK taken: no resend after about 28 s |
+| 7 | two texts from BrandMeister within 20 s (its TMS ACK, then its reply) | both reach us (N(S) 0 both times) |
+
+Record for each: the link ACK class, BrandMeister's TMS ACK time, and whether a resend came.
 
 ### 5.2 ETSI short data text
 
@@ -440,8 +478,10 @@ the reply queue and its 5 s age limit, and the service's TX list and listen befo
   Every block good and the CRC-32 wrong: a NACK (class 1 type 1, `ip.rx_nacks_sent`). Blocks that stop coming before
   the header's count (lost bursts): the selective ACK 300 ms after the last one.
 - A selective retry for a packet we don't hold (another packet came between): a NACK, so the sender sends it whole.
-- The packet again with the N(S) we ACKed last from that radio, within 20 s: ACKed, not passed on (`ip.rx_duplicates`).
-  Any other N(S) is taken as new (no out of sequence NACK: senders restart their numbers).
+- The packet again with the N(S) and the data (a 16-bit fold of its CRC-32) we ACKed last from that radio, within
+  20 s of the last copy: ACKed, not passed on (`ip.rx_duplicates`). The standard keys on N(S) alone; BrandMeister
+  sends N(S) 0 on every packet, so other data with the same N(S) is a new packet. Any other N(S) is taken as new (no out of sequence
+  NACK: senders restart their numbers).
 - Built without `CONFIG_DMR_CONFIRMED` receive behaves as before (ACK, the CRC-32 alone).
 
 ### 12.4 Which packets (the settings `ipConfirmed`, `ipConfirmedRule`, `ipConfirmedTries`)

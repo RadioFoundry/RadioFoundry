@@ -24,6 +24,7 @@ static int failures = 0;
 #define OUR_ID		1000
 #define RADIO_A		2001
 #define RADIO_B		2002
+#define RADIO_C		2003
 
 static uint32_t millis = 100000;
 static dmrDataChannel_t ch = { .ownId = OUR_ID, .talkGroup = 9, .rmo = false, .canTransmit = true, .channelKey = 1 };
@@ -227,9 +228,11 @@ static void receiveTMS(uint32_t src, const char *text, uint8_t seq)
 }
 
 // The same, as confirmed data with a response requested: an ETSI response, then the TMS ACK
+static dmrDataPacket_t confirmedTms;
+
 static void receiveConfirmedTMS(uint32_t src, const char *text, uint8_t seq, uint8_t sendSeq)
 {
-	static dmrDataPacket_t packet;
+	dmrDataPacket_t packet;
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
 	int count = dmrDataBuildTMS(false, OUR_ID, src, text, seq, true, DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS);
 	dmrDataRxResult_t result = DMR_DATA_RX_NONE;
@@ -246,6 +249,7 @@ static void receiveConfirmedTMS(uint32_t src, const char *text, uint8_t seq, uin
 	packet.sendSeq = sendSeq;
 	millis += 60;
 	now = millis;
+	confirmedTms = packet;
 	handlePacket(&packet);
 	dmrDataRxReset();
 }
@@ -937,6 +941,35 @@ static void testTmsReplies(void)
 	CHECK((sent[1].kind == 'T') && (sent[1].dst == RADIO_A) && (sent[1].seq == 21));
 	CHECK((sent[2].kind == 'R') && (sent[2].dst == RADIO_B));
 	CHECK((sent[3].kind == 'T') && (sent[3].dst == RADIO_B) && (sent[3].seq == 22));
+
+	// A sender that never steps N(S) (BrandMeister sends 0 every time): other data with the same N(S) within
+	// CNF_RX_DUPLICATE_MS is a new packet, passed on; the same data again is the retry, ACKed only
+	reset();
+	uint32_t dups = stats.rxConfirmedDuplicates;
+	receiveConfirmedTMS(RADIO_C, "first from C", 1, 0);
+	runMainTask(3000);
+	receiveConfirmedTMS(RADIO_C, "second from C", 2, 0);
+	runMainTask(3000);
+	millis += 6000;
+	now = millis;
+	handlePacket(&confirmedTms);// the sender's retry: the same packet
+	runMainTask(3000);
+	CHECK(events[DMR_DATA_EV_SMS_RECEIVED] == 2);
+	CHECK(strcmp(dmrDataServiceMessage(0)->text, "second from C") == 0);
+	CHECK(stats.rxConfirmedDuplicates == dups + 1);
+	CHECK(sentCount == 5);// R T, R T, then R only for the retry
+	CHECK((sent[3].kind == 'T') && (sent[3].seq == 2) && (sent[4].kind == 'R') && (sent[4].dst == RADIO_C));
+
+	// The same text resent with a new sequence number (BrandMeister after its TMS ACK wait): ACKed with the new
+	// number, kept once
+	reset();
+	receiveTMS(RADIO_A, "resent text", 30);
+	runMainTask(2000);
+	millis += 28000;
+	receiveTMS(RADIO_A, "resent text", 3);
+	runMainTask(2000);
+	CHECK((sentCount == 2) && (sent[0].seq == 30) && (sent[1].kind == 'T') && (sent[1].seq == 3));
+	CHECK(events[DMR_DATA_EV_SMS_RECEIVED] == 1);
 
 	// More than the queue holds before the main task runs: REPLY_QUEUE_SIZE - 1 are ACKed, the rest retry
 	reset();

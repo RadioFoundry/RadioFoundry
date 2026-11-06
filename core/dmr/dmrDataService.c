@@ -56,7 +56,8 @@ _Static_assert(IP_PREAMBLES + 1 + ((DMR_DATA_IP_MTU + 4 + 9) / 10) + 1 <= DMR_DA
 				"a confirmed packet of the air MTU goes in one transmission");
 // Confirmed data to us whose blocks stopped coming before the count in its header: lost bursts, asked for again
 #define CNF_RX_STALL_MS			300
-// A confirmed packet again from the same radio with the N(S) we last ACKed this soon is a retry (our ACK was lost)
+// A confirmed packet again from the same radio with the N(S) and the data we last ACKed this soon is a retry (our ACK
+// was lost). The data counts too: some senders (BrandMeister's services) send N(S) 0 on every packet (gotcha 5.6)
 #define CNF_RX_DUPLICATE_MS		20000
 #define CNF_PEERS				4		// radios whose N(S) we keep (ours to them, theirs to us)
 
@@ -444,10 +445,11 @@ bool dmrDataServiceIpWantConfirmed(const dmrDataSettings_t *s, bool group, uint3
 static struct
 {
 	uint32_t id;
-	uint8_t ns;
-	bool txUsed;						// ns: our next N(S) to it
-	bool rxUsed;						// rxNs: the N(S) we last ACKed from it, at rxAt
-	uint8_t rxNs;
+	uint8_t ns : 3;
+	uint8_t txUsed : 1;					// ns: our next N(S) to it
+	uint8_t rxUsed : 1;					// rxNs, rxSum: the N(S) and data we last ACKed from it, at rxAt
+	uint8_t rxNs : 3;
+	uint16_t rxSum;						// the data's CRC-32 folded: the entry stays 12 octets (RAM is tight)
 	uint32_t rxAt;
 } peers[CNF_PEERS];
 static uint8_t peerNext;
@@ -494,14 +496,21 @@ static void nsSet(uint32_t dst, uint8_t ns)
 	peers[i].ns = ns & 0x07;
 }
 
-// Confirmed data to us from src with N(S) ns: true when it is the one we ACKed last (TS 102 361-1 9.3.24 b)
-static bool rxDuplicate(uint32_t src, uint8_t ns)
+// Confirmed packet p to us: true when it is the one we ACKed last from its sender (TS 102 361-1 9.3.24 b). The
+// standard keys on N(S) alone; the data (its CRC-32, folded) is compared too, as a sender that never steps N(S) would
+// otherwise lose every packet within CNF_RX_DUPLICATE_MS of the one before. A retry restarts the time: a long retry
+// chain stays one packet
+static bool rxDuplicate(const dmrDataPacket_t *p)
 {
-	int i = peerFind(src, true);
-	bool dup = peers[i].rxUsed && (peers[i].rxNs == ns) && ((now - peers[i].rxAt) < CNF_RX_DUPLICATE_MS);
+	int i = peerFind(p->src, true);
+	uint32_t crc = dmrDataCRC32(p->data, p->length);
+	uint16_t sum = (uint16_t)(crc ^ (crc >> 16));
+	bool dup = peers[i].rxUsed && (peers[i].rxNs == (p->sendSeq & 0x07)) && (peers[i].rxSum == sum) &&
+			((now - peers[i].rxAt) < CNF_RX_DUPLICATE_MS);
 
 	peers[i].rxUsed = true;
-	peers[i].rxNs = ns;
+	peers[i].rxNs = p->sendSeq & 0x07;
+	peers[i].rxSum = sum;
 	peers[i].rxAt = now;
 	return dup;
 }
@@ -2155,7 +2164,7 @@ static void handlePacket(const dmrDataPacket_t *packet)
 
 #if CONFIG_DMR_CONFIRMED
 	// The same packet again (our ACK was lost): ACKed again, not passed on twice
-	if (forUs && confirmed && rxDuplicate(packet->src, packet->sendSeq))
+	if (forUs && confirmed && rxDuplicate(packet))
 	{
 		stats.rxConfirmedDuplicates++;
 		queueReplyEntry(&reply);
@@ -2320,12 +2329,13 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		return;
 	}
 
-	// A sender that missed our ACK sends the message again: ACKed again above, but kept (and announced) once
+	// A sender that missed our ACK sends the message again: ACKed again above, but kept (and announced) once. The
+	// sequence number isn't compared: BrandMeister resends an unacknowledged text with a new one (gotcha 5.8)
 	for (int i = 0; i < inboxUsed; i++)
 	{
 		const dmrDataMessage_t *m = dmrDataServiceMessage(i);
 
-		if ((m->src == packet->src) && (m->dst == packet->dst) && (m->group == packet->group) && (m->seq == tms.seq) &&
+		if ((m->src == packet->src) && (m->dst == packet->dst) && (m->group == packet->group) &&
 				(m->format == format) &&
 				((now - m->receivedAt) < DUPLICATE_MESSAGE_MS) && (strcmp(m->text, tms.text) == 0))
 		{
