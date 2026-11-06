@@ -299,7 +299,7 @@ Checked with `tests/hil/test_crash.py` and `tests/hil/test_watchdog.py` under `-
 2026-10-23) on the bench radios, at least one of each SoC family:
 
 - The store survives the restart (backup SRAM on the STM32F4, modem SRAM on the HR_C7000, through the soft reset and
-  the vendor bootloader, and through the watchdog reset that replaced the soft reset on 2026-11-06). The record's CRC means a store that doesn't survive shows no record; it can't show a wrong
+  the vendor bootloader, and through the watchdog reset that replaced the soft reset). The record's CRC means a store that doesn't survive shows no record; it can't show a wrong
   one.
 - The trap test records a fault of the expected kind and the task `host`.
 - The restart cause (1.3): the watchdog tests read `watchdog` on the STM32F4 and `warm` on the HR_C7000, whose modem SRAM

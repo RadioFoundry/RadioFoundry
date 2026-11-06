@@ -9,7 +9,7 @@ CONFIG_NET_USRP ?= n
 CONFIG_VOX ?= n
 CONFIG_FONT_XL ?= n
 CONFIG_UI_COLOR ?= n
-# No display: what only shows text or takes it on a screen is left out (owner, 2026-11-05)
+# No display: what only shows text or takes it on a screen is left out
 CONFIG_FONT_AA ?= n
 CONFIG_FONT_BIG ?= n
 CONFIG_LANG_ES ?= n

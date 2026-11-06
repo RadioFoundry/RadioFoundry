@@ -738,7 +738,7 @@ static void two_alias(int ts, uint8_t lc[9])
 	memcpy(lc, v, 9);
 }
 
-// Neither call's LC: a mix of both (on the bench, 2026-11-04: source 12087454, TG 3)
+// Neither call's LC: a mix of both (on the bench: source 12087454, TG 3)
 static void two_lc_mix(uint8_t lc[9])
 {
 	const uint8_t v[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xB8, 0x70, 0x9E };
@@ -990,7 +990,7 @@ static void test_two_slots(void)
 	TWO_CHECK("header at a restart", r, r.idx_off[1] == 0);
 
 	// The embedded LCs of two calls (page 2 isn't per slot): no voice burst of one call is handed over with the
-	// other's LC, which the core takes for a new call on the channel (HIL 2026-11-04: the wanted call went quiet with
+	// other's LC, which the core takes for a new call on the channel (HIL: the wanted call went quiet with
 	// the other call's source shown). TS1 talking first, then TS2 with its headers
 	two_call_t ts1i = { 20, 30, -1, 30, 240 };
 	two_call_t ts2i = { 80, 90, -1, 90, 240 };
@@ -1075,7 +1075,7 @@ static void test_two_slots(void)
 	r = two_slots(&ts1, &ts2, 260, &mix2);
 	TWO_CHECK("headers, a mixed LC", r, r.lc_mix[1] == 0 && r.heard[1] == r.sent[1] && r.lc_own[1] > 0);
 	// ... and on a repeater channel (TS2's voice unseen, so its busy window lapses) a mix that stays in page 2 from
-	// mid-call on (bench, 2026-11-04): TS1 keeps the LC its headers gave
+	// mid-call on (bench): TS1 keeps the LC its headers gave
 	const two_opts_t mix3 = { 0, 0, 0, 1, 0, 0, false, 0, -160 };
 	two_call_t ts2s = { 20, 30, -1, 30, 330 };
 	two_call_t ts1s = { 80, 90, -1, 90, 330 };

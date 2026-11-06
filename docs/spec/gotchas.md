@@ -83,7 +83,7 @@ Radios: HR_C6000.
 
 **1.4b Page 2 isn't per slot.**
 Symptom: with a call on each slot, the wanted call went quiet with the other call's source shown (23 of 78 bursts
-played; HIL 2026-11-04 on the HR_C5000). Cause: page 2 holds the embedded LC (or alias or GPS block) the chip
+played; HIL on the HR_C5000). Cause: page 2 holds the embedded LC (or alias or GPS block) the chip
 assembled last, of either slot, so at one call's F it held the other's, and the core took it for a new call. Rule:
 keep each slot's call LC and check every embedded LC against both before handing it over; only voice LCs (FLCO 0, 3)
 become a slot's call LC, and alias and GPS blocks wait while the other slot is busy. While a slot's call goes on,
@@ -706,7 +706,7 @@ read the low bits of the first byte of a burst 65 ms after the last one, before 
 debounce the shared pin by time, not by scan count. The pin must read low, and not gated, for 20 ms
 (`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio. The radio's own transmission,
 picked up on a coiled cable, also reads as a press: the line goes low with flagged characters and no good byte, and
-the press keeps the radio keyed, a latch (2026-11-05: a minute keyed, nothing touched). Rule: while the radio
+the press keeps the radio keyed, a latch (measured: a minute keyed, nothing touched). Rule: while the radio
 transmits, no new press starts on the shared line, and a held press ends at a flagged character after its own break,
 since a grounded line receives nothing. RF that holds a released line steadily low, with no character, still reads
 as held, and the transmit time-out ends it.

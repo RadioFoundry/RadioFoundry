@@ -234,7 +234,7 @@ value) and 0 while open; any value but the key locks it. OT_LOAD_H is 3 bits (2:
 ms. EN is the only switch: no interrupt, no mode bit, no other enable; the watchdog reset is a global reset. The
 counter runs at the 24 MHz crystal (another HR_C7000 board, measured: H = 7, L = 0xF0000000, 2^28 counts, reset after 11.1 s). A soft
 reset clears EN. A watchdog reset keeps EN and both loads, and the counter starts again from the load (another HR_C7000
-board, 2026-11-06: armed at 32 s before a soft reset, it was off at `main()`; armed with a 1 ms load, the chip reset
+board: armed at 32 s before a soft reset, it was off at `main()`; armed with a 1 ms load, the chip reset
 every 23 ms inside the boot ROM until a power cycle cleared it). RadioFoundry restarts by a watchdog reset
 ([watchdog.md](watchdog.md) 3). RadioFoundry (`CONFIG_WATCHDOG`, `platform/hrc7000/watchdog.c`) arms it after the clock set-up with
 every write under LOCK: EN = 0, the loads, a feed, EN = 1. It feeds with LOCK = key, KNOCK = 0x55AADD22, LOCK = 0. The
@@ -568,7 +568,7 @@ two scans in the same millisecond, 65 ms after the last host byte, with the pin 
 a new host byte, not yet received (2026-10-22, RADIO). Before the hold, 2 such presses came in 100 s, each a short
 DMR voice transmission; no line errors (`ue 0`) and no overruns.
 
-**The radio's own RF on the cable (measured, 2026-11-05).** With the programming cable coiled near the antenna, a
+**The radio's own RF on the cable (measured).** With the programming cable coiled near the antenna, a
 1750 Hz burst at the lowest power (FM, UHF) started by the debug link kept the radio keyed for a minute. The link went
 silent 0.5 s in, so the burst's "off" never arrived. The burst's own time limit ended it at 2 s, but the key scan had
 reported PTT down 174 ms after keying with nothing touched, and that press held the radio keyed. A hand near the cable

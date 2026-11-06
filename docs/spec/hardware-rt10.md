@@ -58,7 +58,7 @@ bits 8:3 cleared, bits 29:27 set).
 | PTB1, PTB2, PTB6, PTB21 | 33, 34, 38, 53 | channel knob code bits 2, 1, 3, 0 | |
 | PTB3 | 35 | PA select | high = on |
 | PTB4 | 36 | RX supply | high = on |
-| PTB5, PTB7 | 37, 39 | LEDs: PTB5 green, PTB7 red (measured 2026-11-06: red at power-up and in TX, green on MON) | high = on |
+| PTB5, PTB7 | 37, 39 | LEDs: PTB5 green, PTB7 red (measured: red at power-up and in TX, green on MON) | high = on |
 | PTB8 | 40 | voice prompt chip enable | high = on |
 | PTB9, PTB10 | 41, 42 | side keys | low = pressed (unverified) |
 | PTB11 | 43 | PTT; also the cable's serial line | low = pressed |
@@ -184,7 +184,7 @@ ramp down, PTB0 and PTB3 low, 100 us, the FD6818 back to the receive frequency (
 The original starts the key-down at its RF RX interrupt plus the calibration's key-down delay; RadioFoundry holds
 the TX until the burst's last symbol instead.
 
-Measured on the SDR bench (927.5 MHz, lowest power, 2026-11-06):
+Measured on the SDR bench (927.5 MHz, lowest power):
 
 | Test | Result |
 | --- | --- |
@@ -231,7 +231,7 @@ No codec bytes are in the repository or in a release.
 | Item | State |
 | --- | --- |
 | Boot from the ROM flag at 0x0300C000 | written |
-| Host link on UART0, stub entry, watchdog, crash log | measured: the hang and stall checks keep their records and the radio restarts by itself (`test_crash.py`). The restart is a watchdog reset (2026-11-06): a reboot answers again after 3 s, and every crash and watchdog test passes through it (`test_crash.py`, `test_watchdog.py`, 12 of 12) |
+| Host link on UART0, stub entry, watchdog, crash log | measured: the hang and stall checks keep their records and the radio restarts by itself (`test_crash.py`). The restart is a watchdog reset: a reboot answers again after 3 s, and every crash and watchdog test passes through it (`test_crash.py`, `test_watchdog.py`, 12 of 12) |
 | Battery scale, key levels, knob map | open |
 | FD6818 two-wire bus, FM receive, sub-audio decode | measured |
 | Factory calibration read | measured (the radio's own sector) |

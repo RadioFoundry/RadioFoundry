@@ -66,7 +66,7 @@ take time, and a watchdog build of RadioFoundry refuses to enter a stub that doe
 | Power off | the supply goes; until it does the idle task feeds as usual (a knob that keeps the radio on leaves it running normally) | the same |
 
 **The HR_C7000 restart.** A soft reset (`SYS_SOFT_RSTN`) turns the watchdog off, and a watchdog reset keeps its enable
-and both loads, the counter starting again from the load (measured on an HR_C7000 radio, 2026-11-06). The restart used
+and both loads, the counter starting again from the load (measured on an HR_C7000 radio). The restart used
 to be a soft reset, and once a start after one hung with nothing left to reset it: the radio stayed dead until a power
 cycle. `hrc_restart` (transmitter off, the loader's clocks and flash controller mode back) arms the watchdog with a
 1 ms load, then writes the 32 s load without a feed. The reset comes about 23 ms later (RST_LOAD's 22 ms included),

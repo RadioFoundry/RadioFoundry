@@ -377,7 +377,7 @@ search for the call's phase is limited:
 | The call's own bursts skipped while its slot is unknown | Counted, so the index stays A-F. After a quiet-period restart that costs the first bursts of a call (two in the host test, about 150 ms until the TC locks) |
 
 All of these are host-tested (`hrc5000Test` `test_two_slots`: a call on each slot, a restart mid-call, a TC wrong
-from the start, both slots heard with `rx_lock_slot` 0). On air (2026-11-04, the SDR bench sending repeater bursts
+from the start, both slots heard with `rx_lock_slot` 0). On air (the SDR bench sending repeater bursts
 with the CACH on both slots): the reads alternate as above (phase 0 TS1's frames, phase 1 TS2's), and the wanted call
 plays with the other slot already talking (77 of 78 bursts; 0 before the fix).
 
@@ -386,7 +386,7 @@ call's LC was in page 2 at the wanted call's F: the core took it for a new call,
 the other call's source shown (23 of 78 bursts when the wanted call started first). The engine keeps each slot's
 call LC and holds back an embedded LC that is the other slot's call's (the rules are in modem-hrc6000.md 5.2).
 Host-tested (`test_two_slots`, the `LC`, `alias` and `mixed LC` cases: page 2 gets a call's LC or alias block the
-tick after its F). On air (2026-11-04, the SDR bench, a call on each slot, 78 bursts sent to the wanted slot, two
+tick after its F). On air (the SDR bench, a call on each slot, 78 bursts sent to the wanted slot, two
 runs each):
 
 | Case | Before | After |
