@@ -10,7 +10,9 @@ feeds, and the chip resets within a few seconds. Off: no watchdog runs, as befor
 
 With the crash log, the hang check in the tick interrupt keeps a record of the task that kept the idle task out, a
 quarter of the timeout before the reset would come, and restarts the radio itself ([crash-log.md](crash-log.md) 1.1).
-Only a hang with interrupts off still reaches the hardware reset.
+Only a hang with interrupts off still reaches the hardware reset. The stall check, in the same tick, keeps a record
+and restarts the radio when the host link's task stops passing its loop for a minute while the rest runs on
+([crash-log.md](crash-log.md) 1.1.1).
 
 A watchdog reset is a chip reset: the radio starts as at power-on. The transmitter must be off by then, which is the
 early-boot RF-off step's job (`board_rf_safe`, [crash-log.md](crash-log.md)), not the watchdog's.

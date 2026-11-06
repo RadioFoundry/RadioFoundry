@@ -17,6 +17,7 @@ radio until a power cycle, as before.
 | Out of heap | 3 | FreeRTOS's malloc-failed hook | 0 | in the kernel |
 | Assert | 4 | `configASSERT` (the platforms' `FreeRTOSConfig.h`) | the line | the caller of the assertion |
 | Hang | 5 | the hang check in the tick interrupt (1.1), with `CONFIG_WATCHDOG` | ms since the last watchdog feed | where the interrupted task was |
+| Stall | 6 | the stall check in the tick interrupt (1.1.1), with `CONFIG_WATCHDOG` | ms since the host link's task last passed its loop | where the interrupted task was (often the idle task's): the stalled task's wait is in the snapshot (1.2) |
 
 The capture runs with interrupts off, on a stack of its own (1 KB), and calls nothing that waits. It turns the
 transmitter off first (8), with or without the crash log. It adds the running
@@ -58,6 +59,22 @@ an interrupt storm that keeps the tick out. Those still end in the plain watchdo
 
 The debug link's CRASH TEST kind 3 ([debuglink.md](debuglink.md) 3.19) spins in the host link's task with interrupts
 on: the check keeps a hang record of `host`.
+
+#### 1.1.1 The stall check
+
+A task that waits forever (a lock never given back, a queue nobody fills) doesn't keep the idle task out, so the
+watchdog and the hang check never see it. On a radio driven by a computer, the host link's task is the one that
+matters: when it stops, the link goes silent and the radio looks dead while everything else runs. The stall check
+watches that task. Code: `watchdog_task_pass` and `watchdog_stalled` in `core/app/watchdog.c`, called from the host
+link's loop (`core/hostlink/hostlink.c`) and the tick.
+
+| Item | Value |
+|---|---|
+| Counts from | the host link's last pass of its loop. The loop waits at most `POLL_MS` for input, so an idle link passes several times a second |
+| Fires | `WATCHDOG_STALL_MS` (60 s) after it. No operation the loop runs takes that long: flash work waits by `hal_delay_ms`, and stub entry turns interrupts off first |
+| Never | before the loop's first pass, with the watchdog stopped, or while a bench test starves the idle task |
+| Record | kind 6, `cause` the ms since the last pass; the snapshot (1.2) shows what the host link's task (`host`) waits on |
+| Then | as the hang check: the store and the restart, so the link comes back without a power cycle |
 
 ### 1.2 The other tasks
 
@@ -303,7 +320,8 @@ the packed report and the summary line (a hang's too); `ui_svc_crash.c` on fake 
 the screen, seen, clear, the report to a private or group contact, its progress and the sent mark); and
 `debuglink_crash.c` (view section 21, CRASH's argument checks, token and transmit refusals and the deferred test).
 `tests/host/watchdogTest.c` (`test_hang_check`): when the hang check fires, a long job's kick, the starve and a
-stopped watchdog, and the tick keeping the uptime. `crashTest.c` (`test_reset`): the restart cause's table and a run
+stopped watchdog, and the tick keeping the uptime; (`test_stall_check`): the stall check's limit, kind, no record
+before the first pass or while starving. `crashTest.c` (`test_reset`): the restart cause's table and a run
 of starts on fake kept words (power-on, an unasked reset, a reboot, chip flags, no words). `tests/hil/test_watchdog.py`:
 after each bench watchdog reset the cause is `watchdog` (or `warm`) with the run's uptime; after a reboot, `software`.
 `tests/hil/test_crash.py` (`test_crash_hang_kept`): CRASH TEST hang keeps a hang record of `host`
