@@ -12,7 +12,8 @@ d578uvPaGateTest: $(HERE)d578uvPaGateTest.c $(HERE)../pa_gate.h
 run-boards:: d578uvPaGateTest
 	./d578uvPaGateTest
 
-# The plain microphone's key lines and the backlight levels (front_io.h, hardware-d578uv.md 3.1, 3.2)
+# The plain microphone's key lines, the backlight levels and the speaker amplifier (front_io.h, hardware-d578uv.md 3.1,
+# 3.2, 4.4)
 TESTS   += d578uvFrontIoTest
 d578uvFrontIoTest: $(HERE)d578uvFrontIoTest.c $(HERE)../front_io.h
 	$(CC) $(CFLAGS) -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)

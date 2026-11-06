@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The AT-D578UV's microphone key lines and backlight levels (front_io.h, hardware-d578uv.md 3.1, 3.2): every line
-// combination, and the percent to register byte map at its edges
+// The AT-D578UV's microphone key lines, backlight levels and speaker amplifier (front_io.h, hardware-d578uv.md 3.1,
+// 3.2, 4.4): every line combination, the percent to register byte map at its edges, every amplifier input
 #include <stdio.h>
 #include "front_io.h"
 
@@ -38,10 +38,20 @@ static void test_backlight(void)
 	}
 }
 
+static void test_amp(void)
+{
+	CHECK(!spk_amp_off(false, true, true));		// receiving, something plays, knob up: on
+	CHECK(spk_amp_off(false, false, true));		// nothing plays: off, so no hiss with the squelch shut
+	CHECK(spk_amp_off(false, true, false));		// the knob at 0
+	CHECK(spk_amp_off(true, true, true));		// transmitting
+	CHECK(spk_amp_off(true, false, false));
+}
+
 int main(void)
 {
 	test_mic();
 	test_backlight();
+	test_amp();
 	if (failures) {
 		printf("d578uvFrontIoTest: %d failure(s)\n", failures);
 		return 1;
