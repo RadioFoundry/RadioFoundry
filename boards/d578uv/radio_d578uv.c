@@ -1815,6 +1815,11 @@ static bool tx_dtmf(char digit)
 }
 #endif
 
+// Side A reports no carrier for RX_BACK_MS after a transmission: back in receive, the chip's signal flag opened the
+// squelch on noise for one poll at every unkey, about 50 ms of loud noise from the speaker (measured by microphone)
+#define RX_BACK_MS	150u
+static uint32_t rx_back_ms;		// hal_millis() at the last tx_off, 0 before any
+
 static void tx_off(void)
 {
 #if CONFIG_DMR
@@ -1833,6 +1838,7 @@ static void tx_off(void)
 	if (have_rx) {
 		rx_setup();
 	}
+	rx_back_ms = hal_millis();
 	b_resume();
 }
 
@@ -1873,7 +1879,7 @@ static void status(radio_status_t *st)
 #if CONFIG_VOX
 	mic_poll();
 #endif
-	if (transmitting || !have_rx) {
+	if (transmitting || !have_rx || (rx_back_ms != 0 && hal_millis() - rx_back_ms < RX_BACK_MS)) {
 		st->rssi_dbm = -160;
 		st->noise = 127;
 		st->carrier = false;
