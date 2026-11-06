@@ -242,7 +242,7 @@ No codec bytes are in the repository or in a release.
 | DMR transmit and receive, codec | measured on air (7.1): voice both ways with the codec map `rt10-112` (section 8) |
 | DMR speaker audio, DMR microphone | open: decoded voice played (the counters) but not listened to; in a DMR key-up the vocoder's microphone level is a steady floor (peak 2946, spread 3 dB), speech not checked |
 | IP data over the air | measured on air: UDP to and from the radio, compressed and full headers, off-net, confirmed, bursts from the radio |
-| IP link to the computer | PPP on the host link (UART0, 115200 baud) |
+| IP link to the computer | written: PPP on the host link (UART0, 115200 baud). Not working yet: twice the radio went silent soon after pppd's LCP opened, before IPCP, and answered nothing (PPP, debug link, boot ROM) until a power cycle. No watchdog reset and no stall restart came, so the host link's task wasn't blocked; the cause is open |
 | APRS | written (7.2): the radio keys up and sends its frames; deviation, twist and decoding on air not yet measured |
 | Hotspot split, USRP | not written: no continuous base-station outbound; USRP's 8 kHz audio both ways needs more than 115200 baud |
 | Screen-only features | left out: no display (`boards/rt10/config.mk`) |
