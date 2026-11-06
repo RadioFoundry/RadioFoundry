@@ -205,11 +205,9 @@ void ui_layout_init(void)
 
 // --- shared pieces ---
 
-const char *ui_power_name(uint8_t p)
+const char *ui_power_name(uint8_t p, uint32_t tx_hz)
 {
-	if (board.power_names != NULL && p < board.power_count)
-		return board.power_names[p];
-	return "?";
+	return board_power_name(p, tx_hz);
 }
 
 static uint8_t channel_power(const radio_view_t *v)
@@ -985,7 +983,7 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 	bool pw_temp = v->power != channel_power(v);
 	if (pw_temp)
 		x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
-	x = gfx_text(f, x, y, ui_power_name(v->power), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+	x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
 	sb_init(&b, buf, sizeof buf);
 	sb_str(&b, "SQ");
 	sb_u32(&b, v->squelch, 1);
@@ -1265,7 +1263,7 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 	bool pw_temp = v->power != channel_power(v);
 	if (pw_temp)
 		x = gfx_text(f, x, L->chips_y, GLYPH_DOT, ui_col.warn);
-	x = gfx_text(f, x, L->chips_y, ui_power_name(v->power), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+	x = gfx_text(f, x, L->chips_y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
 	if (L->zone_y < 0 && v->vfo && !v->ch.rx_only && v->ch.tx_hz != v->ch.rx_hz) {
 		// A split VFO with no top row for its TX frequency: the offset here ("+600k")
 		sb_init(&b, buf, sizeof buf);
@@ -1644,7 +1642,7 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 	{
 		sb_str(&b, mode_word(v));
 		sb_chr(&b, ' ');
-		sb_str(&b, ui_power_name(v->power));
+		sb_str(&b, ui_power_name(v->power, v->ch.tx_hz));
 	}
 	f = large_font(buf, room, form, sizeof form);
 	gfx_text_fit(f, form, w, fit, sizeof fit);
@@ -2664,7 +2662,7 @@ void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_st
 	sb_str(&b, "CC");
 	sb_u32(&b, h->cc, 1);
 	sb_str(&b, " ");
-	sb_str(&b, ui_power_name(v->power));
+	sb_str(&b, ui_power_name(v->power, v->ch.tx_hz));
 	y = call_line(L->small, y, buf, ui_col.dim);
 	sb_init(&b, buf, sizeof buf);
 	if (h->src != 0) {
@@ -2742,7 +2740,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	case QT_POWER:
 		if (v->power != channel_power(v))
 			sb_str(&b, GLYPH_DOT);
-		sb_str(&b, ui_power_name(v->power));
+		sb_str(&b, ui_power_name(v->power, v->ch.tx_hz));
 		return true;
 	case QT_SQUELCH:
 		if (v->temp & RADIO_TEMP_SQUELCH)

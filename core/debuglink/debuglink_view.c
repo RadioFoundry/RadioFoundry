@@ -69,7 +69,7 @@ static void tone(dl_text_t *t, const char *key, const subtone_t *s)
 
 static void core_section(const radio_view_t *v, dl_text_t *t)
 {
-	const char *pw = (v->power < board.power_count && board.power_names != NULL) ? board.power_names[v->power] : "?";
+	const char *pw = board_power_name(v->power, v->ch.tx_hz);
 	static const char *const sources[] = { "none", "builtin", "open-firmware" };
 
 	dl_text(t, "view=%u\n", DL_VIEW_VERSION);
