@@ -694,7 +694,6 @@ def test_delete_message(home):
 def test_factory_reset(home):
     """Settings > Advanced (0) > Factory reset > Yes: the settings go back to their defaults, the native area is erased
     (never the codeplug or calibration), and the radio restarts. The channel position survives only as the default."""
-    from test_cps import reconnect
     r = home
     zone_size = r.core().get("zone_size")
     for k in ("ok", "6", "0", "down", "down", "down", "ok"):
@@ -704,7 +703,7 @@ def test_factory_reset(home):
     r.press("down")
     r.press("ok", settle=0)
     time.sleep(2.0)
-    reconnect(r)
+    r.reconnect()
     s = r.view(["storage", "link"])
     assert as_int(s.get("settings.long_press_ms")) in (0, 600) and s.get("settings.auto_lock_s") == "0", s
     assert as_int(s.get("settings.failures"), 0) == 0, s
