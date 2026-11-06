@@ -349,6 +349,14 @@ channel's contact and its listen list; the arrow keys only: the channel knob, EN
 VFO frequency, #25), USER_1 / USER_4 the zone, USER_3 the power, long USER_3 speaks the status (a
 toast until voice prompts exist).
 
+A channel switch read as a position (`hal_input_t.position`, `drivers/input/chswitch`) isn't a step: the input task
+selects that position in the zone (`radio_req_zone_pos`), at power-on too, so the channel is always the one the knob
+points at, and again after a zone change (a new zone starts on its first channel). It asks again until the radio is
+on it, so a turn during a transmission, in hotspot mode or before the codeplug is loaded takes effect afterward; a
+position past the end of the zone changes nothing. Once on it, the knob is left alone until it moves or the zone
+changes, so a scan stands. Its position is `input.switch_pos` in the debug link view
+(-1: no switch, or not settled). A radio's hardware page says which kind of knob it has.
+
 VFO_TOGGLE is the VFO / MR key's short press (a board key map entry, not a side key function): between the channel
 and the VFO, "VFO" and "Back to channels". Its long press, COPY_VFO, copies the channel to the VFO (`dmr-voice.md`
 2.2). A board with a dedicated VFO/MR key gives its long press to COPY_VFO,

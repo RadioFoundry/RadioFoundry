@@ -323,6 +323,9 @@ void radio_core_start(void);
 void radio_get_view(radio_view_t *v);
 // Just the view's state, for a caller short of stack (the view is some 0.7 KB)
 radio_state_t radio_get_state(void);
+// Just the view's zone index and position and the zone's size (0 while none is loaded), likewise. False while the
+// radio would refuse radio_req_zone_pos (transmitting, a hotspot)
+bool radio_get_zone_pos(uint16_t *zone, uint16_t *pos, uint16_t *size);
 // Bumped on every visible change, so the UI can redraw only when needed
 uint32_t radio_view_serial(void);
 

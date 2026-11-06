@@ -232,6 +232,23 @@ radio_state_t radio_get_state(void)
 	return st;
 }
 
+bool radio_get_zone_pos(uint16_t *zone, uint16_t *pos, uint16_t *size)
+{
+	if (view_lock == NULL) {
+		*zone = 0;
+		*pos = 0;
+		*size = 0;
+		return false;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	*zone = shared_view.zone_index;
+	*pos = shared_view.zone_pos;
+	*size = shared_view.zone_size;
+	bool ready = shared_view.state != RS_TX && !shared_view.hotspot;	// radio_sm_request's busy
+	xSemaphoreGive(view_lock);
+	return ready;
+}
+
 uint32_t radio_view_serial(void)
 {
 	return shared_serial;

@@ -85,6 +85,10 @@ typedef struct {
 	int8_t (*encoder)(void);
 	// The decoder's counts (NULL: none)
 	void (*encoder_stats)(hal_encoder_stats_t *st);
+	// A channel switch read as an absolute position (drivers/input/chswitch), on a radio whose knob picks the zone's
+	// channel by where it points: 0-based, -1 while it hasn't settled. The core selects that position in the zone
+	// (docs/spec/ui.md 3). NULL: the knob, if any, steps through the channels (encoder)
+	int8_t (*position)(void);
 } hal_input_t;
 
 #endif
