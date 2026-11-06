@@ -70,7 +70,7 @@ while AM is on. NULL = no AM. In AM `status()` gives:
 - `rssi_dbm`, the signal level with any gain the receiver took off added back.
 - `tone_ok`: anything (the core takes it as true).
 
-On an FD6818 (`fd6818_set_am`, `fd6818_am_agc`, `fd6818_am_noise`):
+On an FD6818 (`fd6818_set_am`, `fd6818_am_status`, `fd6818_am_noise`):
 
 | Part | AM | FM |
 |---|---|---|
@@ -78,7 +78,7 @@ On an FD6818 (`fd6818_set_am`, `fd6818_am_agc`, `fd6818_am_noise`):
 | 0x47 AF output | 0x6740, type 7 (AM) | 0x0140, type 1 (FM) |
 | 0x13 receiver gain | a gain loop: 0x03FF (full gain) at each tune, then stepped through a 42-entry table to keep a signal's 0x67 reading near 142 (down at once when 10 dB or more over, by the excess less 8 dB; up one step after 30 readings 6 dB or more under) | the board's FM word, written back when AM ends |
 | 0x4A | 0x5450 | its value before AM, written back |
-| Squelch value | 0x65 bits 7:0 (noise_sq, 1 dB/step) + 17 (`FD6818_AM_NOISE_OFFSET`): level 1 opens at noise_sq 47, each level 3 dB lower | 0x65 bits 7:0 + 25 |
+| Squelch value | 0x65 bits 7:0 (noise_sq, 1 dB/step) + an offset that puts level 1 at the chip's own noise_sq_th_in, 0x4F bits 6:0 as the board's tables set it (`fd6818_am_noise_offset`: 64 - th_in; 17 with 0x4F = 0x302F); each level 3 dB lower | 0x65 bits 7:0 + 25 |
 
 The gain loop runs at the core's status poll (`RADIO_POLL_MS`). These are the air band settings an FD6818 radio's own
 firmware uses (its hardware page has them); the loop's tick there isn't known. `rx()` and `set_mode()` end AM.
@@ -86,8 +86,8 @@ firmware uses (its hardware page has them); the loop's tick there isn't known. `
 Why the squelch stays on noise_sq: the chip's own squelch (programming guide, squelch section) needs both RSSI 0x67 over
 0x78 and noise_sq under 0x4F. In AM the gain loop holds 0x67 near its target whether or not a signal is there, so only
 noise_sq tells them apart: on the bench it read 59 to 72 on empty channels and fell as a carrier rose (about 61, 53,
-45 and 31 for carriers 5 dB apart, 14 to 19 for a strong one). Level 1 opens where the chip's own squelch does (0x4F =
-0x302F: in under 47).
+45 and 31 for carriers 5 dB apart, 14 to 19 for a strong one). Level 1 opens where the chip's own squelch does
+(under 0x4F's noise_sq_th_in).
 
 ## 4. Broadcast FM
 
