@@ -551,6 +551,32 @@ static void test_iddb(void)
 	char small[7];
 	CHECK(dmr_iddb_lookup(1000000 + 7 * 42, small, sizeof(small)) && strcmp(small, "K00042") == 0);
 
+	// A header whose records run past the database's room is no database, so a lookup never reads what follows it:
+	// the chip's end here (area 2 runs from 0xD8000 to 0x100000: 28397 records of 15 bytes in all)...
+	put_iddb_header('N', 15, 28397);
+	CHECK(dmr_iddb_init() && dmr_iddb_count() == 28397);
+	put_iddb_header('N', 15, 28398);
+	CHECK(!dmr_iddb_init() && dmr_iddb_count() == 0 && !dmr_iddb_lookup(1000000, text, sizeof(text)));
+	put_iddb_header('N', 15, 0x3FFFFF);
+	CHECK(!dmr_iddb_init());
+	// ...and the open-firmware area's end on a board with a map, whatever follows it (the native codeplug)
+	hal_flash_map_t m = { .openfw_flash = FL, .openfw_end = area2 + 25u * 15u };
+	flash.map = &m;
+	put_iddb_header('N', 15, n);
+	CHECK(dmr_iddb_init() && dmr_iddb_lookup(1000000 + 7 * 17499, text, sizeof(text)) && strcmp(text, "K17499 Op9") == 0);
+	m.openfw_end--;
+	CHECK(!dmr_iddb_init());
+	m.openfw_end = area2;		// no area 2: area 1's records only
+	CHECK(!dmr_iddb_init());
+	put_iddb_header('N', 15, 17475);
+	CHECK(dmr_iddb_init() && dmr_iddb_count() == 17475);
+	m.openfw_end = FL + 0x30000 + 12 + 100u * 15u;	// the area ends inside area 1
+	put_iddb_header('N', 15, 100);
+	CHECK(dmr_iddb_init());
+	put_iddb_header('N', 15, 101);
+	CHECK(!dmr_iddb_init());
+	flash.map = NULL;
+
 	// Plain format: 4-byte BCD IDs (LE word) and ASCII text
 	put_iddb_header('-', 4 + 20, 2);
 	uint8_t *r = &image[FL + 0x30000 + 12];
@@ -581,17 +607,21 @@ static void test_iddb(void)
 	flash.map = &moved;
 	CHECK(dmr_iddb_init() && dmr_iddb_count() == 1);
 	CHECK(dmr_iddb_lookup(9991234, text, sizeof(text)) && strcmp(text, "Q0TEST Charlie") == 0);
-	// A header counting more records than area 2 holds before the flash image's end: only those that fit are read,
-	// never what follows the image (a board's own sectors). 24-byte records: 10922 in area 1
+	// Area 2 ends at the flash image's end, never in what follows it (a board's own sectors): a header counting more
+	// records than fit there is no database. 24-byte records: 10922 in area 1
 	uint8_t *count = &image[moved.openfw_flash + 0x30000 + 8];
-	count[0] = 0xFF; count[1] = 0xFF; count[2] = 0; count[3] = 0;		// 65535
-	CHECK(dmr_iddb_init() && dmr_iddb_count() == 10922u + (IMAGE_SIZE - (moved.openfw_flash + 0xB8000u)) / 24u);
+	count[0] = 0xFF; count[1] = 0xFF; count[2] = 0; count[3] = 0;		// 65535: past the image's end
+	CHECK(!dmr_iddb_init());
 	static const hal_flash_map_t short_end = { .openfw_eeprom = EE, .openfw_flash = 0x040000u,
 		.openfw_end = 0x040000u + 0xB8000u + 10u * 24u };
 	flash.map = &short_end;
+	count[0] = (uint8_t)(10932u & 0xFFu); count[1] = (uint8_t)(10932u >> 8);	// 10 records in area 2: they fit
 	CHECK(dmr_iddb_init() && dmr_iddb_count() == 10932u);
+	count[0] = (uint8_t)(10933u & 0xFFu); count[1] = (uint8_t)(10933u >> 8);	// one more than fits
+	CHECK(!dmr_iddb_init());
 	static const hal_flash_map_t no_area2 = { .openfw_eeprom = EE, .openfw_flash = 0x040000u, .openfw_end = 0x0B0000u };
 	flash.map = &no_area2;
+	count[0] = (uint8_t)(10922u & 0xFFu); count[1] = (uint8_t)(10922u >> 8);	// area 1 full, no area 2
 	CHECK(dmr_iddb_init() && dmr_iddb_count() == 10922u);
 	count[0] = 1; count[1] = 0;
 	flash.map = NULL;
@@ -753,6 +783,14 @@ static void test_iddb_compact(void)
 	put_le(h + 24, 0xFFFFF000u, 4);
 	CHECK(!dmr_iddb_init());
 	put_le(h + 24, 0x2000, 4);
+	CHECK(dmr_iddb_init());
+	// a size past the open-firmware area's end: the board's map, not the chip, bounds the database
+	hal_flash_map_t m = { .openfw_flash = FL, .openfw_end = FL + 0xB8000 + 0x1000 };
+	flash.map = &m;
+	CHECK(dmr_iddb_init());
+	m.openfw_end--;
+	CHECK(!dmr_iddb_init());
+	flash.map = NULL;
 	CHECK(dmr_iddb_init());
 #else
 	// A build without the format sees no database, never a wrong one (iddb-compact.md 3.1)
