@@ -504,6 +504,33 @@ static void check_dmr_tx(md9600_rev_t r, uint32_t hz, uint8_t power)
 	pa_allowed = false;
 }
 
+// A split channel's transmission ends (TX done): the receiver comes back on the RX frequency at once, without waits, so
+// the radio hears a repeater answer its wake-up (radio_md9600.c md9600_rf_dmr_done); the next transmission tunes the
+// carrier again
+static void check_dmr_split(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz)
+{
+	fresh(r, true);
+	CHECK(md9600_rf_rx(&rf, rx_hz, false) == MD9600_RF_OK);
+	CHECK(md9600_rf_tx_arm(&rf, true));
+	pa_allowed = true;
+	md9600_pll_plan_t rxp, txp;
+	CHECK(md9600_pll_plan(r, rx_hz, false, &rxp) && md9600_pll_plan(r, tx_hz, true, &txp));
+	for (int k = 0; k < 2; k++) {
+		CHECK(md9600_rf_tx_tune(&rf, tx_hz, 0, false) == MD9600_RF_OK && rf.state == MD9600_RF_TX);
+		CHECK(rf.lo_hz == txp.lo_hz);
+		CHECK(md9600_rf_pa_burst(&rf, true) == MD9600_RF_OK && md9600_rf_pa_burst(&rf, false) == MD9600_RF_OK);
+		reset_log();
+		CHECK(md9600_rf_burst_rx(&rf) == MD9600_RF_OK);
+		CHECK(delay_total == 0 && pa_off_now() && rf.state == MD9600_RF_RX && rf.lo_hz == rxp.lo_hz);
+		CHECK(count(EV_PLL, rxp.band) == rxp.count && level[rxp.band == MD9600_VHF ? MD9600_LN_R5_V : MD9600_LN_R5_U]);
+		CHECK(md9600_rf_burst_rx(&rf) == MD9600_RF_E_STATE);	// once: already receiving
+	}
+	reset_log();
+	md9600_rf_tx_off(&rf);		// the radio leaves transmit: the receiver is already back
+	CHECK(pa_off_now() && rf.state == MD9600_RF_RX && count(EV_PLL, -1) == 0);
+	pa_allowed = false;
+}
+
 static void test_tx(void)
 {
 	for (int r = MD9600_REV_V1V3; r < MD9600_REV_COUNT; r++) {
@@ -851,6 +878,8 @@ int main(void)
 		if (md9600_rev_built((md9600_rev_t)r)) {
 			check_dmr_tx((md9600_rev_t)r, 446075000u, 0);
 			check_dmr_tx((md9600_rev_t)r, 146520000u, 1);
+			check_dmr_split((md9600_rev_t)r, 461462500u, 451875000u);
+			check_dmr_split((md9600_rev_t)r, 146520000u, 147120000u);
 		}
 	}
 #endif

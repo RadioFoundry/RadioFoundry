@@ -954,8 +954,11 @@ synthesizer stays on the carrier. DMR receive uses the 12.5 kHz IF setting.
 DMR transmit (`CONFIG_MD9600_DMR_TX`): the HR_C6000 glue's prepare hook runs steps 1-4 without the waits (TX VCO on the
 carrier, receivers off) at the start of a transmission, and the task waits the synthesizer's 2 ms plus 1 ms. Each
 burst then, from the RF TX interrupt: the band's T5 on, 500 us, RF_APC_SW on, the APC reference up in 4 steps of
-100 us; at its end the same ramp down, RF_APC_SW off, T5 off. The receiver comes back at the end of the transmission,
-except in an SFR (below).
+100 us; at its end the same ramp down, RF_APC_SW off, T5 off. The receiver comes back at the end of the transmission:
+on a split channel at the slot engine's TX done, with the receive column's synthesizer, front-end and line steps and
+no waits, so a wake-up hears the repeater's answer (left on the carrier, every key-up to a repeater that was down ended
+in `no_repeater`, HIL 2026-11-06); on a simplex channel at the return to receive. An SFR receives between its bursts
+(below).
 
 SFR (`CONFIG_SFR`; the transmission receives between its bursts, `docs/spec/sfr.md` 3 item 1, gotchas 14.6): at each
 burst's end, after the ramp down, the synthesizer goes back to the receive LO (receivers on, RX VCOs, the words, the

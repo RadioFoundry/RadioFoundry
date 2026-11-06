@@ -203,14 +203,15 @@ bool md9600_radio_tx_arm(bool on)
 // tx() in DMR only arms. The glue's tx_prepare (at tx_begin under the modem lock, or in the timeslot interrupt for an
 // aligned start) puts the TX VCO on the carrier without the waits; tx_wait_lock (task level) waits the synthesizer's
 // settle time. Each burst then switches the band's transmitter supply, the PA loop and a short APC ramp from the modem
-// interrupts (md9600_rf_pa_burst). The receiver comes back at tx_off(); on a split channel it doesn't come
-// back between transmissions (no tx_done yet: the receive set-up waits on the RTOS)
+// interrupts (md9600_rf_pa_burst). The receiver comes back at tx_off(), and on a split channel at each
+// transmission's end (md9600_rf_dmr_done)
 #if CONFIG_MD9600_DMR_TX
 static volatile bool dmr_armed;
 static volatile bool dmr_tuned;
 static uint32_t dmr_hz;
 static uint8_t dmr_power;
 static uint32_t dmr_skipped, dmr_unarmed;
+static uint32_t dmr_rx_back;	// returns to receive after a split channel transmission
 #if CONFIG_SFR
 // An SFR receives between its bursts (docs/spec/sfr.md 3 item 1): one synthesizer, so each burst's end retunes to
 // the receive LO, and the next RF TX interrupt, moved this far ahead of the slot, retunes to the carrier and waits for
@@ -282,14 +283,30 @@ bool md9600_rf_dmr_key(bool tx)
 	return true;
 }
 
+// A transmission is over (the slot engine's TX done, task level under the modem lock): on a split channel the
+// receiver back on the RX frequency, so the radio hears the repeater answer its wake-up. Left on the carrier, every
+// key-up while the repeater was down ended in no_repeater (HIL 2026-11-06). Without the waits, as between an SFR's
+// bursts (hardware-md9600.md 19.8): the listen that follows is far longer than the lock. Simplex stays on the carrier
+// until tx_off(), as before
+void md9600_rf_dmr_done(void)
+{
+	if (!dmr_armed || !dmr_tuned || !rf.rx_valid || dmr_hz == rf.rx_hz) {
+		return;
+	}
+	(void)md9600_rf_pa_burst(&rf, false);
+	if (md9600_rf_burst_rx(&rf) == MD9600_RF_OK) {
+		dmr_tuned = false;
+		dmr_rx_back++;
+	}
+}
+
 void md9600_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx)
 {
 	*skipped = dmr_skipped;
 	*unarmed = dmr_unarmed;
+	*rx = dmr_rx_back;
 #if CONFIG_SFR
-	*rx = dmr_rx_bursts;
-#else
-	*rx = 0;
+	*rx += dmr_rx_bursts;
 #endif
 }
 
