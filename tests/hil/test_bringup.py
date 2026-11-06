@@ -111,6 +111,9 @@ class FakeLink:
 class FakeRadio:
     link = FakeLink()
 
+    def tx_gate(self, may_transmit):
+        return False
+
     def snapshot(self):
         return None
 
@@ -463,8 +466,26 @@ def test_not_written_reads_as_not_written():
 
 def test_requires_follows_the_switch():
     """A feature without a switch that requires one is n/a, not written or off wherever the board leaves that switch
-    out, as the switch's own feature is; elsewhere it resolves on its own."""
+    out, as the switch's own feature is; elsewhere it resolves on its own. Real boards where one leaves such a switch
+    out, and always three made-up boards, one per way of leaving it out."""
     py = python311()
+    fake = r"""
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import bringup
+base = {"unsupported": {}, "not_written": {}, "config": {"DMR": "y"}, "overrides": {}, "debuglink_names": []}
+bringup._BOARDS = {
+    "na": dict(base, unsupported={"DMR": "no modem"}),
+    "nw": dict(base, not_written={"DMR": "no glue yet"}),
+    "off": dict(base, config={"DMR": "n"}),
+    "has": base,
+}
+e = {"id": "x", "switch": None, "requires": "DMR"}
+print(json.dumps({b: bringup.resolve(b, e)[0] for b in bringup._BOARDS}))
+"""
+    r = subprocess.run([py, "-c", fake, os.path.join(ROOT, "tools")], capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert json.loads(r.stdout) == {"na": "n/a", "nw": "not written", "off": "off", "has": "required"}, r.stdout
     checked = 0
     for board in sorted(os.listdir(os.path.join(ROOT, "boards"))):
         if not os.path.isfile(os.path.join(ROOT, "boards", board, "board.toml")):
@@ -478,4 +499,4 @@ def test_requires_follows_the_switch():
             if req and own.get(req) in ("n/a", "not written", "off"):
                 assert row["state"] == own[req], (board, row["id"], row["state"], req, own[req])
                 checked += 1
-    assert checked, "no board leaves out a switch a feature requires"
+    print(f"{checked} real board rows checked")
