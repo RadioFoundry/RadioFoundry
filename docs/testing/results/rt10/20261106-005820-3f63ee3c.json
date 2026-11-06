@@ -1,0 +1,1170 @@
+{
+ "board": "rt10",
+ "commit": "3f63ee3c04fa9fe0b485ef29bccf064296cf93ed",
+ "date": "2026-11-06T00:58:20Z",
+ "dirty": false,
+ "features": [
+  "fm",
+  "ref_trim",
+  "subtone",
+  "fm_tx_tones",
+  "dtmf",
+  "battery_save",
+  "vfo",
+  "vfo_fm",
+  "channel_list",
+  "channel_edit",
+  "zone_edit",
+  "scan",
+  "dual_watch",
+  "beep",
+  "debuglink",
+  "task_stacks",
+  "cps_openfw",
+  "crash_log",
+  "watchdog",
+  "ui_navigation",
+  "channel_knob",
+  "ui_settings",
+  "diag",
+  "radio_controls",
+  "settings_store",
+  "codeplug_foreign",
+  "codec_check"
+ ],
+ "firmware": {
+  "board": "RT10",
+  "codec": "none",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,VFO,VFO_FM,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,BATTERY_SAVE,CPS_FAST,DEBUGLINK,HOSTLINK",
+  "git": "3f63ee3c",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "dmr-cc": 1,
+  "dmr-freq": 927.5,
+  "dmr-tg": 1,
+  "fm-mhz": 927.5,
+  "tx-power": 40
+ },
+ "sources": {
+  "battery_save": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "f95c3d1dfa2582d54e447cc8716fe5e8badb9da2",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "docs/spec/radio-features.md": "3db7ddd4404f3a7cd4de79b5a4f31d776605a870"
+  },
+  "beep": {
+   "core/debuglink/debuglink.c": "704f448f967127a0beab8fe7713445b606cb58d1",
+   "core/debuglink/debuglink_view_radio.c": "6573faa8af73706147425b3b06235a3b1d371f71",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/beep.c": "c34e72e4583582e58cdb0f698dd5048d86aa9481",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "f95c3d1dfa2582d54e447cc8716fe5e8badb9da2",
+   "core/ui/ui_menus.c": "78e521d16d0246366a84db1caf101dfa7c907030",
+   "core/ui/ui_svc_radio.c": "3c12f217fcab922161c514d09f89fdbec58582a4",
+   "docs/spec/radio-features.md": "3db7ddd4404f3a7cd4de79b5a4f31d776605a870"
+  },
+  "channel_edit": {
+   "core/ui/ui_menus.c": "78e521d16d0246366a84db1caf101dfa7c907030",
+   "docs/spec/ui.md": "8df7d715cbf6a179095a672393fdcb10546a92c3"
+  },
+  "channel_knob": {
+   "docs/spec/ui.md": "8df7d715cbf6a179095a672393fdcb10546a92c3",
+   "drivers/input/quadrature": "acff4ba730ac5bda79c9973d36550a81ecc3ff2d"
+  },
+  "channel_list": {
+   "core/ui/ui_menus.c": "78e521d16d0246366a84db1caf101dfa7c907030",
+   "docs/spec/ui.md": "8df7d715cbf6a179095a672393fdcb10546a92c3"
+  },
+  "codec_check": {
+   "docs/spec/codec-placement.md": "4bec065a196d573675b9ff059041f069e1de9501",
+   "tools/rfoundry/rfoundry": "758c958519192af7608d86237ca4a675029d4d62"
+  },
+  "codeplug_foreign": {
+   "core/codeplug/codeplug.c": "fe85c90f4ffab58f54927c9b4abc7ddb1954d613",
+   "docs/spec/codeplug-native.md": "5db85b8c6d64ae59662c28b81f345a8658225718"
+  },
+  "cps_openfw": {
+   "core/cps": "4cc5d6330d09448d07ee6a75a4e058be17d27444",
+   "docs/spec/cps-protocol.md": "2ea166dfe63024afac28bf3cc740ab906fbb74ef"
+  },
+  "crash_log": {
+   "core/crash": "ccb91547a39ed6bb6a528c75ab3856f14602c985",
+   "core/debuglink/dl_fmt.c": "5d4ed48e3605040d32262cd22ea96cc6d02d4473",
+   "docs/spec/crash-log.md": "94d119710ba9fbdfbbd696f928e3e2f38848d506"
+  },
+  "debuglink": {
+   "core/cps/cps_lz4.c": "b961393163a43ca1d742d6e66d13c0d37c9ee3ce",
+   "core/debuglink": null,
+   "core/debuglink/dl_fmt.c": "5d4ed48e3605040d32262cd22ea96cc6d02d4473",
+   "core/debuglink/dl_frame.c": "412b8045f8ec30b661c477d9d818ab5bd75f90f2",
+   "docs/spec/debuglink.md": "d6064b61807c53ca42aca6294f4236318b0c17d5"
+  },
+  "diag": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/ui/ui_app.c": "6d5d43d6d9080035f9f5e523e39e7947feccd84f",
+   "core/ui/ui_menus.c": "78e521d16d0246366a84db1caf101dfa7c907030",
+   "core/ui/ui_screens.c": "556cd9ff3bd3b8d1b302d7070c6269346320ce7d",
+   "docs/spec/ui.md": "8df7d715cbf6a179095a672393fdcb10546a92c3"
+  },
+  "dtmf": {
+   "core/debuglink/debuglink_view_radio.c": "6573faa8af73706147425b3b06235a3b1d371f71",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/input/input_task.c": "dd6231130609602ca9470f2b253cb78225931cc1",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "f95c3d1dfa2582d54e447cc8716fe5e8badb9da2",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/radio/radio_task.c": "be04cb551da20034b9de511ef74c993fec2b468a",
+   "docs/spec/radio-features.md": "3db7ddd4404f3a7cd4de79b5a4f31d776605a870",
+   "hal/hal_radio.h": "74e039e2420503182a4c16e1612cba7632162e65"
+  },
+  "dual_watch": {
+   "core/debuglink/debuglink_view_radio.c": "6573faa8af73706147425b3b06235a3b1d371f71",
+   "core/input/keyassign.h": "8501bc24842be8a884dc497567e1b7674df10852",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "f95c3d1dfa2582d54e447cc8716fe5e8badb9da2",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/radio/radio_task.c": "be04cb551da20034b9de511ef74c993fec2b468a",
+   "core/ui/ui_app.c": "6d5d43d6d9080035f9f5e523e39e7947feccd84f",
+   "core/ui/ui_dual.c": "5defbe2bd3b271e9feb167e1e48629262ce88df0",
+   "core/ui/ui_menus.c": "78e521d16d0246366a84db1caf101dfa7c907030",
+   "core/ui/ui_nav.h": "09347b5d8230182329da4672a0fe55ed8bcb5740",
+   "core/ui/ui_screens.c": "556cd9ff3bd3b8d1b302d7070c6269346320ce7d",
+   "core/ui/ui_screens.h": "0e3f9a1546d09a88c2128952b4a48975096bb0ca",
+   "core/ui/ui_svc.h": "b0115904398c27ff10091a77d7b7e3b0a2acdb27",
+   "core/ui/ui_svc_radio.c": "3c12f217fcab922161c514d09f89fdbec58582a4",
+   "core/ui/ui_svc_storage.c": "789fef7e0662ab20559c26d78ff114ee0cce2187",
+   "docs/spec/radio-features.md": "3db7ddd4404f3a7cd4de79b5a4f31d776605a870"
+  },
+  "fm": {
+   "core/radio": "97f151b796e5e91e14e4558404e56c4700cc0351",
+   "docs/spec/radio-features.md": "3db7ddd4404f3a7cd4de79b5a4f31d776605a870",
+   "drivers/rf": "8cc5c6ab22ef437147116fcb86d7fc6c806fdf55",
+   "hal/hal_audio.h": "810bbf047cc4ff20dc751314a9e3d5cc824bc81f",
+   "hal/hal_radio.h": "74e039e2420503182a4c16e1612cba7632162e65"
+  },
+  "fm_tx_tones": {
+   "core/debuglink/debuglink.c": "704f448f967127a0beab8fe7713445b606cb58d1",
+   "core/debuglink/debuglink_view_radio.c": "6573faa8af73706147425b3b06235a3b1d371f71",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "f95c3d1dfa2582d54e447cc8716fe5e8badb9da2",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "docs/spec/radio-features.md": "3db7ddd4404f3a7cd4de79b5a4f31d776605a870"
+  },
+  "radio_controls": {
+   "core/radio": "97f151b796e5e91e14e4558404e56c4700cc0351",
+   "docs/spec/radio-features.md": "3db7ddd4404f3a7cd4de79b5a4f31d776605a870"
+  },
+  "ref_trim": {
+   "core/radio/ref_trim.c": "0c4fc52a5af319b0e8932fa0061b490dd4c08a0f",
+   "core/radio/ref_trim.h": "a976722e6a723c5e0dba4da3795c415314a5622e",
+   "core/ui/ui_menus.c": "78e521d16d0246366a84db1caf101dfa7c907030",
+   "docs/spec/radio-features.md": "3db7ddd4404f3a7cd4de79b5a4f31d776605a870"
+  },
+  "scan": {
+   "core/debuglink/debuglink_view_radio.c": "6573faa8af73706147425b3b06235a3b1d371f71",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "f95c3d1dfa2582d54e447cc8716fe5e8badb9da2",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/radio/radio_task.c": "be04cb551da20034b9de511ef74c993fec2b468a",
+   "core/radio/scan.c": "839feb246aa4eea82da97492db9b247fc4a609fa",
+   "core/ui/ui_svc_radio.c": "3c12f217fcab922161c514d09f89fdbec58582a4",
+   "docs/spec/radio-features.md": "3db7ddd4404f3a7cd4de79b5a4f31d776605a870"
+  },
+  "settings_store": {
+   "core/settings": "9fdfc6674b7355c42416ce1dc280e327348c84c8",
+   "core/storage": "14db944b02fdd9508ab473b6fbfcd079c868ec54",
+   "docs/spec/settings-store.md": "8f61295b0421f957a8d293a90b5a4f314444671b"
+  },
+  "subtone": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio_sm.c": "f95c3d1dfa2582d54e447cc8716fe5e8badb9da2",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/radio/tones.c": "16903a7457681d39d4424571e89a6c15502f8ec6",
+   "core/radio/tones.h": "c30292ff05c9d7f0a04f2556f6b5db4d1a8da0c9",
+   "core/ui/ui_menus.c": "78e521d16d0246366a84db1caf101dfa7c907030",
+   "core/ui/ui_screens.c": "556cd9ff3bd3b8d1b302d7070c6269346320ce7d",
+   "docs/spec/radio-features.md": "3db7ddd4404f3a7cd4de79b5a4f31d776605a870"
+  },
+  "task_stacks": {
+   "core/app/task_stack.c": "6c6de39203f316c0b6b4af84a29ade80268b0d29",
+   "docs/spec/debuglink.md": "d6064b61807c53ca42aca6294f4236318b0c17d5"
+  },
+  "ui_navigation": {
+   "core/input": "a702b5848fac5e6b4b09ef9166b8b115f0365843",
+   "core/ui": "7b1ddc4ce576f089faa9a4f10a51710b3f5c5884",
+   "docs/spec/ui.md": "8df7d715cbf6a179095a672393fdcb10546a92c3"
+  },
+  "ui_settings": {
+   "core/ui/ui_menus.c": "78e521d16d0246366a84db1caf101dfa7c907030",
+   "docs/spec/ui.md": "8df7d715cbf6a179095a672393fdcb10546a92c3"
+  },
+  "vfo": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/input/keyassign.h": "8501bc24842be8a884dc497567e1b7674df10852",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/ui/ui_dual.c": "5defbe2bd3b271e9feb167e1e48629262ce88df0",
+   "core/ui/ui_menus.c": "78e521d16d0246366a84db1caf101dfa7c907030",
+   "core/ui/ui_svc.h": "b0115904398c27ff10091a77d7b7e3b0a2acdb27",
+   "docs/spec/dmr-voice.md": "00bddd81f534381770b06d32e4b0c564c15918fc"
+  },
+  "vfo_fm": {
+   "core/cps/cps_openfw.c": "de486d298e889447af493812a93368aa9c4e4bf5",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "f95c3d1dfa2582d54e447cc8716fe5e8badb9da2",
+   "core/ui/ui_app.c": "6d5d43d6d9080035f9f5e523e39e7947feccd84f",
+   "core/ui/ui_find.c": "80b97759186778264a16daab6a8aa421a19d4980",
+   "core/ui/ui_menus.c": "78e521d16d0246366a84db1caf101dfa7c907030",
+   "core/ui/ui_screens.c": "556cd9ff3bd3b8d1b302d7070c6269346320ce7d",
+   "core/ui/ui_svc_radio.c": "3c12f217fcab922161c514d09f89fdbec58582a4",
+   "docs/spec/dmr-voice.md": "00bddd81f534381770b06d32e4b0c564c15918fc"
+  },
+  "watchdog": {
+   "core/app/watchdog.c": "c459327713d9dec9ab61550a1898c5183cd809fe",
+   "docs/spec/watchdog.md": "82d65dd75f29743b590ca8e9094584e0306844a3"
+  },
+  "zone_edit": {
+   "core/ui/ui_app.c": "6d5d43d6d9080035f9f5e523e39e7947feccd84f",
+   "core/ui/ui_menus.c": "78e521d16d0246366a84db1caf101dfa7c907030",
+   "core/ui/ui_nav.h": "09347b5d8230182329da4672a0fe55ed8bcb5740",
+   "core/ui/ui_svc_storage.c": "789fef7e0662ab20559c26d78ff114ee0cce2187",
+   "docs/spec/ui.md": "8df7d715cbf6a179095a672393fdcb10546a92c3"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_diag_has_clock_and_lines",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_log_readable",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_no_stalls",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_oversized_request_rejected",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_ping_latency",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_reset_counters_returns_clock",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_screenshot_geometry",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_unknown_command_and_bad_crc",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_version_and_features",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_view_sections",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_chip_reg.py::test_soc_register_matches_read_mem",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "codec_check"
+   ],
+   "id": "tests/hil/test_codec_info.py::test_codec_key_agrees_with_dmr_view",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "codec_check"
+   ],
+   "id": "tests/hil/test_codec_info.py::test_rfoundry_probe_reads_it",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "codec_check"
+   ],
+   "id": "tests/hil/test_codec_info.py::test_version_reports_codec",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "codeplug_foreign"
+   ],
+   "id": "tests/hil/test_cps.py::test_codeplug_foreign",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "cps_openfw"
+   ],
+   "id": "tests/hil/test_cps.py::test_cps_info",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "cps_openfw"
+   ],
+   "id": "tests/hil/test_cps.py::test_cps_readback_matches",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "cps_openfw"
+   ],
+   "id": "tests/hil/test_cps.py::test_cps_write_dry_run",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "cps_openfw"
+   ],
+   "id": "tests/hil/test_cps.py::test_cps_write_restore",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "settings_store"
+   ],
+   "id": "tests/hil/test_cps.py::test_settings_saved",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "settings_store"
+   ],
+   "id": "tests/hil/test_cps.py::test_settings_survive_restart",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "settings_store"
+   ],
+   "id": "tests/hil/test_cps.py::test_storage_region",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "crash_log"
+   ],
+   "id": "tests/hil/test_crash.py::test_crash_assert_kept",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "crash_log"
+   ],
+   "id": "tests/hil/test_crash.py::test_crash_fault_kept",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "crash_log"
+   ],
+   "id": "tests/hil/test_crash.py::test_crash_hang_kept",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "crash_log"
+   ],
+   "id": "tests/hil/test_crash.py::test_crash_test_refused_without_token",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "crash_log"
+   ],
+   "id": "tests/hil/test_crash.py::test_crash_view",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "beep"
+   ],
+   "id": "tests/hil/test_dmr_tx.py::test_dmr_tx_permit_before_key",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[other_board] no TX gate (pg) line: this board's beeps may sound on air, so it plays the permit on air",
+   "required": true,
+   "skip_kind": "other_board"
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_encoder.py::test_encoder_interrupt_not_lost",
+   "optional": [
+    "channel_knob"
+   ],
+   "outcome": "skipped",
+   "reason": "[not_built] no encoder interrupt watch: another platform, or older firmware",
+   "required": false,
+   "skip_kind": "not_built"
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_encoder.py::test_knob_counts_detents",
+   "optional": [
+    "channel_knob"
+   ],
+   "outcome": "skipped",
+   "reason": "[opt_in] needs a person at the radio: run with --manual -s",
+   "required": false,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "channel_knob"
+   ],
+   "id": "tests/hil/test_encoder.py::test_knob_direction",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm",
+    "vfo_fm"
+   ],
+   "id": "tests/hil/test_fm.py::test_noaa_receive",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm.py::test_rx_tone_decode_bench[ctcss]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm.py::test_rx_tone_decode_bench[dcs]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm.py::test_rx_tone_squelch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_bandwidth",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples in the capture (gap_samples 135444, 2.822 s of zero runs); it can't judge the radio",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_ctcss",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples in the capture (gap_samples 124768, 2.599 s of zero runs); it can't judge the radio",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_dcs",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples in the capture (gap_samples 148556, 3.088 s of zero runs); it can't judge the radio",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dtmf"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_dtmf",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples in the capture (gap_samples 106260, 2.214 s of zero runs); it can't judge the radio",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_power_levels",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples in the capture (gap_samples 75804, 1.579 s of zero runs); it can't judge the radio",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_roger_beep",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples in the capture (gap_samples 93348, 1.945 s of zero runs); it can't judge the radio",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_tone_burst",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples in the capture (gap_samples 112436, 2.343 s of zero runs); it can't judge the radio",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_mic_gain.py::test_mic_gain_deviation",
+   "optional": [
+    "fm"
+   ],
+   "outcome": "skipped",
+   "reason": "[opt_in] needs a person at the radio: run with --manual -s",
+   "required": false,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "battery_save"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_battery_save",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "battery_save"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_battery_save_wakes_for_signal",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "beep"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_beep_counts",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dual_watch",
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dual_watch"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch_debug_link",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "dual_watch",
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch_stops_on_call",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without DMR",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "features": [
+    "radio_controls"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_features_section",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_roger_beep",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_scan_stops_on_dmr_call",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without DMR",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "features": [
+    "settings_store"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_settings_round_trip",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tone_burst",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tone_burst_time_limit",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "radio_controls"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tot_warning",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "radio_controls"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tx_inhibit",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_vfo_scan",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_vfo_scan_stops_on_signal",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "radio_controls"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_volume_op",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_zone_scan_cancel",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_zone_scan_nuisance",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "ref_trim"
+   ],
+   "id": "tests/hil/test_ref_trim.py::test_ref_trim_moves_carrier",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples in the capture (gap_samples 139796, 2.913 s of zero runs); it can't judge the radio",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "ref_trim"
+   ],
+   "id": "tests/hil/test_ref_trim.py::test_ref_trim_setting",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_speaker.py::test_fm_rx_speaker",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] the speaker tests need --microphone (or $RFOUNDRY_HIL_MICROPHONE, or microphone in the rig's file: tests/hil/README.md, \"The rig's configuration\")",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "beep"
+   ],
+   "id": "tests/hil/test_speaker.py::test_speaker_beep_cold",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] the speaker tests need --microphone (or $RFOUNDRY_HIL_MICROPHONE, or microphone in the rig's file: tests/hil/README.md, \"The rig's configuration\")",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "beep"
+   ],
+   "id": "tests/hil/test_speaker.py::test_speaker_beeps",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] the speaker tests need --microphone (or $RFOUNDRY_HIL_MICROPHONE, or microphone in the rig's file: tests/hil/README.md, \"The rig's configuration\")",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "task_stacks"
+   ],
+   "id": "tests/hil/test_task_stacks.py::test_every_task_has_stack_left",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "task_stacks"
+   ],
+   "id": "tests/hil/test_task_stacks.py::test_interrupt_stack_has_room",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "diag"
+   ],
+   "id": "tests/hil/test_ui.py::test_diagnostics_page",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "ui_settings"
+   ],
+   "id": "tests/hil/test_ui.py::test_factory_reset",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] erases the settings and the native area: set RFOUNDRY_HIL_FACTORY_RESET=1 (and --allow-reboot)",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_find_by_digits",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_hub_and_back",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_ui.py::test_injected_keys_count_as_activity",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_keys_move_the_channel",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_settings"
+   ],
+   "id": "tests/hil/test_ui.py::test_long_press_time_reaches_input",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_picker_focus_target",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without DMR",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "features": [
+    "vfo"
+   ],
+   "id": "tests/hil/test_ui.py::test_quick_copy_to_vfo",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_ui.py::test_quick_monitor_latch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_quick_settings_open_and_close",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_recent_from_the_hub",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "channel_edit"
+   ],
+   "id": "tests/hil/test_ui.py::test_save_timeslot_to_channel",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without DMR",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_ui.py::test_screenshot_sanity",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_talk_target_picker_on_long_context",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without DMR",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "features": [
+    "ui_settings"
+   ],
+   "id": "tests/hil/test_ui.py::test_updown_changes_the_zone",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "zone_edit"
+   ],
+   "id": "tests/hil/test_ui.py::test_zone_editor_moves_a_channel",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "channel_list"
+   ],
+   "id": "tests/hil/test_ui.py::test_zones_and_channels_lists",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "vfo"
+   ],
+   "id": "tests/hil/test_vfo_copy.py::test_copy_to_vfo",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_reset_cause_reboot",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_resets[irq-off]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_resets[spin]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_resets[starve]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_running",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_test_refused_without_token",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}
