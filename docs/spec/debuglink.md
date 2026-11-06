@@ -489,7 +489,7 @@ Request: mode u8, token u32. Reply: the status and a reason byte.
 
 | Mode | Effect |
 |---|---|
-| 0 | normal reset (`NVIC_SystemReset`; on the HR_C7000 the soft reset, transmitter off first): the vendor bootloader runs, then the application |
+| 0 | normal reset (`NVIC_SystemReset`; on the HR_C7000 a watchdog reset, transmitter off first ([watchdog.md](watchdog.md) 3)): the vendor bootloader runs, then the application |
 | 1 | ROM DFU: reset, then straight into ST's system-memory bootloader (USB DfuSe, `0483:DF11`). Only at RDP level 0 |
 
 The token must be the low 32 bits of the chip UID (INFO_CHIP offset 7), so a stray frame can't reboot the radio.

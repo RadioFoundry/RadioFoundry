@@ -11,8 +11,14 @@
 #include "mem_window.h"
 #include "modem/hrc7000/hrc7000.h"
 
-#define SOFT_RESET_SPINS	1000000u
 #define WDT_KEY			0x5ADA7200u
+#define WDT_FEED		0x55AADD22u
+// The restart's watchdog (hardware-dm32.md 3.5, counting up to 2^35 at the 24 MHz crystal): 1 ms to the overflow, then
+// RST_LOAD's reset value, about 22 ms, before the reset; the next start's timeout is the flash stub's 32 s
+// (watchdog.md 3.2), far more than any loader takes
+#define RESET_WDT_NOW		((1ull << 35) - 24000u)
+#define RESET_WDT_BOOT		((1ull << 35) - 24000ull * 32000u)
+#define RESET_WDT_RST		0x03F80000u
 
 static uint32_t uid[3];
 static bool have_uid;
@@ -93,34 +99,35 @@ HRC_RAMFUNC void hrc_rf_safe(void)
 	hrc_barrier();
 }
 
-// The soft reset keeps some of the chip's state (the clock manager, LCSFC_BAUDR; hardware-dm32.md 1.1), and a radio
-// reset this way while transmitting came back with the PA keyed and hung before the display was lit (2026-10-21). So
-// the transmitter goes off first, before the clock and flash controller changes
-HRC_RAMFUNC void hrc_soft_reset(void)
+// The restart is a watchdog reset (hardware-dm32.md 3.5). A soft reset (SYS_SOFT_RSTN) turns the watchdog off and keeps
+// some of the chip's state (the clock manager, LCSFC_BAUDR; 1.1), so a start that hung after one left the radio dead
+// until a power cycle (2026-11-06). The watchdog keeps its enable and loads through its own reset, so it guards
+// the start that follows until main() takes it over, and a start that hangs is reset again. The counter starts from
+// the 1 ms load, for a quick reset; the load written after it, which the next start counts from, has to cover the boot
+// ROM and any loader. The clock and flash controller go back to the loader's settings first, in case the watchdog
+// reset keeps them as a soft reset does. A radio reset while transmitting came back with the PA keyed and hung
+// (2026-10-21): the transmitter goes off before anything else
+HRC_RAMFUNC void hrc_restart(void)
 {
 	__asm__ volatile ("psrclr ie");
 	HRC_CRASH_SOFT_MARK();	// asked for: not the watchdog (crash-log.md 1.3)
 	hrc_rf_safe();
-	// Watchdog off: whether a soft reset clears it is unknown, and the bootloader (its update mode, which waits for the
-	// PC) never feeds it
-	REG32(WDT_BASE + 0x00) = WDT_KEY;
-	REG32(WDT_BASE + 0x10) = 0;
-	REG32(WDT_BASE + 0x00) = 0;
 #if HRC_LOADER_CPU_HZ != HRC_CPU_HZ
 	hrc_clock_restore_loader();	// the clock manager survives a soft reset: the loader has to start on its own PLL
 #endif
-	QUAD_ENABLE = 0;	// XIP controller back to its reset mode, so the ROM and bootloader can read flash. The soft
+	QUAD_ENABLE = 0;	// XIP controller back to its reset mode, so the ROM and bootloader can read flash. A soft
 	LCSFC_BAUDR = 4;	// reset keeps the divider: single-bit reads at divider 2 fail and the radio never boots
-	SYS_SOFT_RSTN = 0;
-	for (volatile uint32_t i = 0; i < SOFT_RESET_SPINS; i++) {
-	}
-#if CONFIG_WATCHDOG
-	// Did not reset: the watchdog, back on with the loads it had, is the last way out
 	REG32(WDT_BASE + 0x00) = WDT_KEY;
+	REG32(WDT_BASE + 0x10) = 0;
+	REG32(WDT_BASE + 0x04) = (uint32_t)(RESET_WDT_NOW >> 32) & 7u;
+	REG32(WDT_BASE + 0x08) = (uint32_t)RESET_WDT_NOW;
+	REG32(WDT_BASE + 0x0C) = RESET_WDT_RST;
+	REG32(WDT_BASE + 0x14) = WDT_FEED;	// the counter from the 1 ms load
 	REG32(WDT_BASE + 0x10) = 1;
+	REG32(WDT_BASE + 0x04) = (uint32_t)(RESET_WDT_BOOT >> 32) & 7u;
+	REG32(WDT_BASE + 0x08) = (uint32_t)RESET_WDT_BOOT;
 	REG32(WDT_BASE + 0x00) = 0;
-#endif
-	for (;;) {	// did not reset: the battery has to come out (or the watchdog resets it)
+	for (;;) {	// the watchdog resets it
 	}
 }
 
@@ -131,7 +138,7 @@ static bool reboot(uint8_t mode)
 	if (mode != HAL_REBOOT_NORMAL) {
 		return false;
 	}
-	hrc_soft_reset();
+	hrc_restart();
 }
 
 #if CONFIG_STUB_ENTRY
@@ -167,7 +174,7 @@ HRC_RAMFUNC static bool enter_stub(uint32_t entry)
 #endif
 	QUAD_ENABLE = 0;				// XIP controller back to reset mode: the program flash is the SSI's
 	LCSFC_BAUDR = 4;				// (both registers: a later soft reset keeps the divider)
-							// again, as hrc_soft_reset does. No DMA reaches SRAM on this board
+							// again, as hrc_restart does. No DMA reaches SRAM on this board
 #if HRC_LOADER_CPU_HZ != HRC_CPU_HZ
 	// The stub is built for the loader's clocks (its UART divisor and tick come from them): put them back, then the
 	// divisor that gives 115200 on them. The transmitter drains first, at our own clock, so the last reply isn't cut
