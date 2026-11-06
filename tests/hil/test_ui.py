@@ -695,16 +695,23 @@ def test_factory_reset(home):
     """Settings > Advanced (0) > Factory reset > Yes: the settings go back to their defaults, the native area is erased
     (never the codeplug or calibration), and the radio restarts. The channel position survives only as the default."""
     r = home
-    zone_size = r.core().get("zone_size")
-    for k in ("ok", "6", "0", "down", "down", "down", "ok"):
+    zones = r.core().get("zone_count")
+    # Hub digits are the entry numbers in every build (Settings 7), Advanced is group 0, Factory reset its fourth row
+    for k, screen in (("ok", "hub"), ("7", "settings"), ("0", "group")):
+        r.press(k)
+        wait_screen(r, screen)
+    for k in ("down", "down", "down", "ok"):
         r.press(k)
     wait_screen(r, "confirm", "the confirmation (defaults to No)")
     assert ui(r)["ui.focus"] == "0"
     r.press("down")
-    r.press("ok", settle=0)
+    up0 = as_int(r.link.view(["link"]).get("uptime_ms"), 0)
+    r.link.key("ok")    # not press(): it waits for the keys to go idle, and the radio is restarting then
     time.sleep(2.0)
     r.reconnect()
     s = r.view(["storage", "link"])
+    assert as_int(s.get("uptime_ms"), up0) < up0, f"the radio did not restart: {s.get('uptime_ms')} ms up"
     assert as_int(s.get("settings.long_press_ms")) in (0, 600) and s.get("settings.auto_lock_s") == "0", s
     assert as_int(s.get("settings.failures"), 0) == 0, s
-    assert r.core().get("zone_size") == zone_size, "the codeplug changed"
+    # The channel position goes back to the default (another zone), so the zone count says the codeplug stayed
+    assert r.core().get("zone_count") == zones, "the codeplug changed"
