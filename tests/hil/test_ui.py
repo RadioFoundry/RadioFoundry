@@ -226,19 +226,27 @@ def test_injected_keys_count_as_activity(home):
 # on the host in uiFlowTest.c.
 
 
+def on_mode(r, mode):
+    """The home screen on a channel in mode ('fm' / 'dmr'): the current one, else the first of the zones that is one
+    (the radio fixture puts the channel back)"""
+    if r.core().get("mode") != mode:
+        try:
+            r.find_channel(None, mode)
+        except AssertionError as e:
+            skip("state", f"no {mode.upper()} channel: {e}")
+        wait_screen(r, "home")
+    return r
+
+
 def dmr_home(r):
     """The home screen on a DMR channel. A test that uses it carries @pytest.mark.needs_switch("DMR")."""
     if "DMR" not in r.features():
         skip("not_built", "built without DMR")
-    if r.core().get("mode") != "dmr":
-        skip("state", "the current channel isn't DMR")
-    return r
+    return on_mode(r, "dmr")
 
 
 def fm_home(r):
-    if r.core().get("mode") != "fm":
-        skip("state", "the current channel isn't FM")
-    return r
+    return on_mode(r, "fm")
 
 
 def temp_bits(v):
@@ -424,7 +432,10 @@ def test_picker_focus_target(home):
 
 
 def settings_keys(r, keys):
-    """Run a key sequence from Home (Settings is Hub 7; groups 1-9 then 0), then go Home."""
+    """Run a key sequence from Home (Settings is Hub 7; groups 1-9 then 0), then go Home. A test that uses it for a
+    feature other than ui_settings carries @pytest.mark.needs_switch("UI_SETTINGS")."""
+    if "UI_SETTINGS" not in r.features():
+        skip("not_built", "built without CONFIG_UI_SETTINGS: no Settings menu")
     for k in keys.split():
         r.press(*((k[5:], LONG) if k.startswith("long:") else (k,)))
     r.press("back", LONG)
@@ -524,6 +535,7 @@ def test_updown_changes_the_zone(home):
 
 
 @pytest.mark.feature("dmr_privacy")
+@pytest.mark.needs_switch("UI_SETTINGS")
 def test_privacy_key_entry(home):
     """Settings > Privacy: key type Motorola, key typed 123 (slot 1); type Off again removes it."""
     r = home
@@ -532,6 +544,8 @@ def test_privacy_key_entry(home):
     s = storage(r)
     if "settings.privacy_type" not in s:
         skip("not_built", "firmware without settings.privacy_type")
+    if "UI_SETTINGS" not in r.features():
+        skip("not_built", "built without CONFIG_UI_SETTINGS: no Settings menu")
     if s["settings.privacy_type"] != "0":
         skip("state", "a privacy key is set already: not overwriting it")
     settings_keys(r, "ok 7 4 ok down ok 1 2 3 ok")
