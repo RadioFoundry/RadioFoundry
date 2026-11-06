@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """The TX guard (README.md, "Transmit frequencies"): layer 1 refuses a debug link request that would key outside the
-rig's tx_mhz, layer 2 (Radio.tx_gate) keeps the radio's TX inhibit on outside radio_tx tests. No radio: these run
+rig's tx_mhz, layer 2 (Radio.tx_gate) sets the firmware's test TX limit: blocked outside radio_tx tests, the run's
+transmit frequencies in them. No radio: these run
 anywhere, and tools/ci.sh runs them."""
 import struct
 import types
@@ -128,43 +129,59 @@ def test_no_check_without_allow_rf(rig, monkeypatch):
 
 
 class GateLink:
-    def __init__(self, inhibit):
-        self.inhibit = inhibit
-        self.sets = []
+    """The core view's txlim key (built False: firmware without the test TX limit) and the limits set"""
+
+    def __init__(self, built=True):
+        self.built = built
+        self.limits = []
 
     def view(self, sections):
-        assert sections == ["features"]
-        return {} if self.inhibit is None else {"set.tx_inhibit": self.inhibit}
+        assert sections == ["core"]
+        return {"txlim": "off"} if self.built else {}
 
-    def setting(self, name, value):
-        assert name == "tx_inhibit"
-        self.sets.append(value)
-        self.inhibit = str(value)
+    def tx_limit(self, block=False, mhz=()):
+        self.limits.append("block" if block else tuple(mhz))
 
 
-def gated(inhibit):
+def gated(built=True):
     r = H.Radio.__new__(H.Radio)
-    r.link = GateLink(inhibit)
+    r.link = GateLink(built)
+    r._txlim = None
     return r
 
 
-def test_gate_inhibits_outside_radio_tx_and_puts_it_back():
-    r = gated("0")
-    assert r.tx_gate(False) and r.link.inhibit == "1"
-    assert r.tx_gate(True) and r.link.inhibit == "0"
-    r.tx_gate(False)
+def run_config(allow_rf):
+    cfg = FakeConfig(allow_rf, [461.4625, 446.05, 467.375])
+    cfg.option.dmr_freq = cfg.option.fm_mhz = 461.4625
+    cfg.option.aprs_test_mhz = 446.05
+    return cfg
+
+
+def test_run_tx_mhz(monkeypatch):
+    monkeypatch.setattr(hil_config, "CONFIG", run_config(True))
+    assert hil_config.run_tx_mhz() == [446.05, 461.4625]       # each once, and not all of tx_mhz
+    monkeypatch.setattr(hil_config, "CONFIG", run_config(False))
+    assert hil_config.run_tx_mhz() == []
+
+
+def test_gate_blocks_outside_radio_tx(monkeypatch):
+    monkeypatch.setattr(hil_config, "CONFIG", run_config(True))
+    r = gated()
+    assert r.tx_gate(False) and r.tx_gate(True) and r.tx_gate(False)
     r.tx_gate_end()
-    assert r.link.inhibit == "0" and r.link.sets == [1, 0, 1, 0]
+    assert r.link.limits == ["block", (446.05, 461.4625), "block", ()]
 
 
-def test_gate_keeps_an_inhibit_the_owner_set():
-    r = gated("1")
-    r.tx_gate(True)                     # a radio_tx test lifts it
+def test_gate_blocks_radio_tx_without_frequencies(monkeypatch):
+    monkeypatch.setattr(hil_config, "CONFIG", run_config(False))
+    r = gated()
+    r.tx_gate(True)
+    assert r.link.limits == ["block"]
+
+
+def test_gate_without_the_limit(monkeypatch):
+    monkeypatch.setattr(hil_config, "CONFIG", run_config(True))
+    r = gated(False)
+    assert not r.tx_gate(False) and not r.tx_gate(True)
     r.tx_gate_end()
-    assert r.link.inhibit == "1"
-
-
-def test_gate_without_the_setting():
-    r = gated(None)
-    assert not r.tx_gate(False) and r.link.sets == []
-    r.tx_gate_end()
+    assert r.link.limits == []

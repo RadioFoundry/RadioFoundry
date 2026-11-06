@@ -61,17 +61,20 @@ def keys_tx(cmd, payload):
 
 def tx_freqs(link, where):
     """The frequencies (MHz) a request that keys on `where` (keys_tx) would transmit on, as the radio says now"""
-    core = link.view(["core"])
-    channel = int(core.get("tx_hz") or 0) / 1e6
-    if where == "channel":
-        return [channel]
     # A position goes out by AFSK, over DMR or both (set.aprs_via; a firmware that doesn't say gets both checked);
-    # a status or a message by AFSK only (aprs.md)
-    via = link.view(["aprs_set"]).get("set.aprs_via", "both") if where == "position" else "rf"
-    a = link.view(["aprs"])
-    afsk = int(a.get("aprs.freq_hz") or 0) / 1e6 if via != "dmr" and a.get("aprs.block") == "ok" else 0    # block: no AFSK
-    dmr = via != "rf" and core.get("mode") == "dmr"        # positions over DMR go on the DMR channel
-    return ([afsk] if afsk else []) + ([channel] if dmr else [])
+    # a status or a message by AFSK only (aprs.md). Only what is needed is read: each view is a round trip
+    via = "dmr" if where == "channel" else "rf" if where == "aprs" else \
+        link.view(["aprs_set"]).get("set.aprs_via", "both")
+    out = []
+    if via != "dmr":
+        a = link.view(["aprs"])
+        afsk = int(a.get("aprs.freq_hz") or 0) / 1e6 if a.get("aprs.block") == "ok" else 0     # else no AFSK goes out
+        out += [afsk] if afsk else []
+    if via != "rf":
+        core = link.view(["core"])
+        if where == "channel" or core.get("mode") == "dmr":   # positions over DMR go on the DMR channel
+            out.append(int(core.get("tx_hz") or 0) / 1e6)
+    return out
 
 
 _request = DebugLink.request
@@ -237,6 +240,7 @@ class Radio:
         self.pinned = port is not None
         self.uid = self._uid(self.link)
         self._version = None
+        self._txlim = None      # the firmware has the test TX limit (tx_gate); None: not asked yet
         self._last_shot = 0.0
 
     @staticmethod
@@ -289,25 +293,26 @@ class Radio:
         self.link.close()
 
     def tx_gate(self, may_transmit):
-        """Layer 2 of the TX guard (README.md, "Transmit frequencies"): the radio's TX inhibit (a setting in RAM, so a
-        restart clears it) on unless the test may transmit, so what the radio sends by itself (data replies,
-        registration, beacons, roaming probes) can't go out in a test that isn't marked radio_tx. The first call keeps
-        the radio's own value for tx_gate_end(). False: firmware without the setting."""
-        cur = self.view(["features"]).get("set.tx_inhibit")
-        if cur is None:
+        """Layer 2 of the TX guard (README.md, "Transmit frequencies"): the firmware's test TX limit (RAM only, so a
+        restart clears it; the TX inhibit setting, which the radio saves, is left alone). A test that may transmit
+        gets the run's transmit frequencies (hil_config.run_tx_mhz), any other test every transmission blocked, so
+        what the radio sends by itself (data replies, registration, beacons, roaming probes) can't go out either. The
+        firmware sets it before it answers. False: firmware without the limit (no txlim in the core view)."""
+        import hil_config
+        if self._txlim is None:
+            self._txlim = "txlim" in self.view(["core"])
+            if not self._txlim:
+                print("rfoundry-hil: firmware without the test TX limit (RADIO op 35): only the request check guards TX")
+        if not self._txlim:
             return False
-        if not hasattr(self, "_tx_inhibit_own"):
-            self._tx_inhibit_own = cur
-        want = "0" if may_transmit else "1"
-        if cur != want:
-            self.link.setting("tx_inhibit", int(want))
+        mhz = hil_config.run_tx_mhz() if may_transmit else []
+        self.link.tx_limit(block=not mhz, mhz=mhz)
         return True
 
     def tx_gate_end(self):
-        """The radio's own TX inhibit back, as the first tx_gate() found it"""
-        own = getattr(self, "_tx_inhibit_own", None)
-        if own is not None and self.view(["features"]).get("set.tx_inhibit") != own:
-            self.link.setting("tx_inhibit", int(own))
+        """The test TX limit off at the end of the run, as a restart leaves it"""
+        if self._txlim:
+            self.link.tx_limit()
 
     @contextlib.contextmanager
     def released(self):
