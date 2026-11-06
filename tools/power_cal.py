@@ -197,18 +197,19 @@ def cmd_zero(r, s, args):
 
 def cmd_check(r, s, args):
     lv = r.levels()
-    for i, (name, drive) in enumerate(lv):
-        s.step(f"level {i} {name} (drive {drive})", 0, i)
-    low = lv[0][1] - args.margin
-    s.step(f"lowest level - margin (drive {low})", low)
-    watts = [w for *_, w in s.rows]
-    if not s.prompt:
-        if not args.readings:
-            print("readings: run check again with --readings W,W,... (levels in order, then the margin step)")
-            return 0
+    low = lv[0][1] - args.margin + 5        # 5 counts above the model's highest cliff: dark on a radio like it
+    if args.readings:                       # the readings of an earlier --no-prompt run: judged, nothing keyed
         watts = [float(x) for x in args.readings.split(",")]
         if len(watts) != len(lv) + 1:
             raise SystemExit(f"power_cal: {len(lv) + 1} readings expected")
+    else:
+        for i, (name, drive) in enumerate(lv):
+            s.step(f"level {i} {name} (drive {drive})", 0, i)
+        s.step(f"lowest level - margin + 5 (drive {low})", low)
+        if not s.prompt:
+            print("then: check --margin M --readings W,W,... (the levels in order, then the margin step; keys nothing)")
+            return 0
+        watts = [w for *_, w in s.rows]
     ok = True
     for (name, drive), w in zip(lv, watts):
         t = parse_watts(name)
@@ -239,7 +240,8 @@ def main():
     p.add_argument("--cliff-w", type=float, default=5.0, help="a reading at least this is past the cliff (default 5)")
     p = sub.add_parser("check", help="the short check (procedure 4)")
     p.add_argument("--margin", type=int, required=True, help="the model's margin in drive counts")
-    p.add_argument("--readings", help="with --no-prompt: the readings in watts, comma separated")
+    p.add_argument("--readings", help="judge these readings (watts, comma separated) from an earlier --no-prompt run; "
+                   "keys nothing")
     args = ap.parse_args()
     if not args.allow_rf:
         raise SystemExit("power_cal: transmits; pass --allow-rf (a dummy load and a wattmeter on the radio)")

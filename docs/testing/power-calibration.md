@@ -103,8 +103,8 @@ meets the margin, rounded to a level name it reaches (for example 0.25 W instead
 About 10 key-ups per band at frequency A, with the model's table in the firmware (`power_cal.py check`):
 
 1. Each power level once through the normal level setting: within ±1 dB of its name (±2 dB for levels under 1 W).
-2. The lowest level's drive minus the model's margin, once: it must read under 0.02 W. A reading near 10 W means this
-   radio's cliff is higher: run 3.2 and 3.7 for it.
+2. The lowest level's drive minus the model's margin plus 5 counts (5 counts above the model's highest cliff), once:
+   it must read under 0.02 W. A reading near 10 W means this radio's cliff is higher: run 3.2 and 3.7 for it.
 
 A level outside its tolerance: run the full procedure for that band on this radio.
 
