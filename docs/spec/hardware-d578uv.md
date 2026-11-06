@@ -437,7 +437,9 @@ register but 0x7F (the page itself); chip 4 is the PA5 trims device (5.5), page 
 | TX tone generator | register 0x70 = 0xA000 on, 0 off; register 0x71 = Hz x 10.32 (truncated), halved (5.3); with the receiver on (a beep) half that again |
 
 The squelch is decided in firmware from register 0x0C bit 1, the noise and the RSSI against calibration values; no
-squelch threshold register is written. The 578UV and the PRO differ only in register 0x49 of chips 0 and 1 (0x26AC
+squelch threshold register is written. Back in receive after a transmission, register 0x0C bit 1 and the RSSI read
+as a signal for a moment, and the squelch opened on noise at every unkey (about 50 ms, loud, measured by microphone):
+RadioFoundry reports no carrier for 150 ms after the transmitter goes off. The 578UV and the PRO differ only in register 0x49 of chips 0 and 1 (0x26AC
 on the PRO; 0x29AA on the 578UV unless a flag is set).
 
 Chip 0's register 0x25 bit 0 is set in receive and while a TX tone sounds and cleared at each key-up: a microphone
