@@ -56,6 +56,12 @@ void debuglink_view_tasks(dl_text_t *t)
 
 	task_stack_heap(&heap_free, &heap_least);
 	dl_text(t, "tasks.heap_free=%u\ntasks.heap_min_free=%u\n", (unsigned)heap_free, (unsigned)heap_least);
+	// The interrupt handlers' own stack, where the platform has one: measured the same way (its fill never written)
+	uint32_t irq_free;
+
+	if (task_stack_irq(&irq_free)) {
+		dl_text(t, "tasks.irq_free=%u\n", (unsigned)irq_free);
+	}
 #else
 	dl_text(t, "tasks.built=0\n");
 #endif

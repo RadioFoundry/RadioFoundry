@@ -90,6 +90,7 @@ typedef struct {
 	uint32_t tx_empty;	// our slots left empty on request (DMR_BURST_EMPTY): received like the other slot
 	uint32_t rx_in_tx[2];	// bursts deframed while we send, by ticks since our last arming (even, odd)
 	uint32_t stalls;
+	uint32_t sys_stuck;	// system requests pending with no handler run, dropped (hrc7000_dmr_poll)
 	uint32_t last_rx_type_info;
 	uint32_t last_sys_list;
 	uint32_t last_l2_status;
@@ -133,6 +134,8 @@ typedef struct {
 	uint32_t tick;
 	uint32_t t_tick;
 	uint32_t t_rx_tick;	// time of the last receive-vector tick
+	uint32_t sys_seen, t_sys_seen;	// the stuck request check: sys_ints, and since when a request has waited
+	bool sys_waiting;	// a request seen pending with sys_ints at sys_seen (since t_sys_seen)
 	bool tick_tx;		// the last tick came on the TX vector
 	bool timing;
 	// Receive

@@ -17,6 +17,7 @@
 #include "aprs/hdlc.h"
 #include "aprs/kiss.h"
 #include "aprs/afsk.h"
+#include "radio/tx_limit.h"
 
 static int failures;
 static int checks;
@@ -415,6 +416,31 @@ static void test_beacon_on_air(void)
 	run(55u * 1000u);
 	CHECK(hw.starts == 1);
 	CHECK(wait_start(2, 8000));
+}
+
+// The test TX limit refuses a beacon whose frequency isn't on its list at key-up (APRS_RF_NO_KEY): nothing keyed, the
+// radio back on the channel. With the APRS frequency on it, the beacon goes
+static void test_tx_limit(void)
+{
+#if CONFIG_DEBUGLINK
+	static const uint32_t ch[] = { CH_HZ }, both[] = { CH_HZ, APRS_HZ };
+	tx_limit_info_t l0, l;
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	tx_limit_get(&l0, NULL, 0);
+	CHECK(tx_limit_set(false, ch, 1));
+	CHECK(aprs_send_now());
+	run(8000);
+	tx_limit_get(&l, NULL, 0);
+	CHECK(hw.tx_calls == 0 && !hw.keyed && hw.starts == 0 && hw.rx_hz == CH_HZ);
+	CHECK(l.refused == l0.refused + 1 && l.last_hz == APRS_HZ);
+	CHECK(tx_limit_set(false, both, 2));
+	CHECK(aprs_send_now());
+	CHECK(wait_start(1, 8000) && hw.tx_hz == APRS_HZ);
+	wait_idle();
+	CHECK(tx_limit_set(false, NULL, 0));
+#endif
 }
 
 static void test_min_interval(void)
@@ -1160,6 +1186,7 @@ int main(void)
 {
 	test_defaults();
 	test_beacon_on_air();
+	test_tx_limit();
 	test_min_interval();
 	test_busy_channel();
 	test_bcast_channel();

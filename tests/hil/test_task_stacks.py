@@ -59,3 +59,21 @@ def test_every_task_has_stack_left(radio):
         print("heap free (bytes):", kv["tasks.heap_free"], "least", kv["tasks.heap_min_free"])
         heap_least = as_int(kv["tasks.heap_min_free"])
         assert heap_least >= HEAP_MIN_FREE, f"RTOS heap down to {heap_least} bytes free (want {HEAP_MIN_FREE})"
+
+
+# The interrupt handlers' own stack, where the platform has one (tasks.irq_free): make stack-check computes the worst
+# chain, this is what the radio saw. A canary at its end restarts the radio with a stack overflow crash ("irq")
+IRQ_MIN_FREE = int(os.environ.get("RFOUNDRY_HIL_IRQ_STACK_MIN_FREE", "256"))
+
+
+@pytest.mark.feature("task_stacks")
+def test_interrupt_stack_has_room(radio):
+    radio.view()
+    kv = tasks_section(radio)
+    if kv is None or kv.get("tasks.built") == "0":
+        skip("not_built", "firmware without the tasks view section")
+    if "tasks.irq_free" not in kv:
+        skip("not_built", "no interrupt stack of its own, or firmware from before tasks.irq_free")
+    free = as_int(kv["tasks.irq_free"])
+    print("interrupt stack: %d bytes never used" % free)
+    assert free >= IRQ_MIN_FREE, f"interrupt stack down to {free} bytes free (want {IRQ_MIN_FREE})"

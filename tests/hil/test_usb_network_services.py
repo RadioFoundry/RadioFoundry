@@ -22,7 +22,7 @@ import pytest
 
 from rfoundry_hil import DebugLink, skip
 from test_split_duplex import check_rx_labels, rx_half_labels
-from test_usb_network import INDIVIDUAL_NET, _serial_back, _udp_link
+from test_usb_network import INDIVIDUAL_NET, _udp_link
 from hil_config import rig
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -82,7 +82,7 @@ def net(radio):
             except Exception:
                 pass
             n.close()
-            assert _serial_back(radio, 30), "the radio didn't come back as a serial port"
+            assert radio.serial_back(30), "the radio didn't come back as a serial port"
             time.sleep(2.0)
 
 

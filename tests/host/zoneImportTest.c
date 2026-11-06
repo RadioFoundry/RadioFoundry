@@ -229,6 +229,29 @@ static void test_import(void)
 	CHECK(codeplug_zone(0, &z) && z.count == 1 && z.channels[0] == 1 && strcmp(z.name, "Home") == 0);
 }
 
+// A contact block that can't be read fails the import, with nothing written: the match it hid would be added twice
+static void test_contacts_unread(void)
+{
+	zone_import_result_t r;
+
+	fresh();
+	with_zones();
+	contact_t mine = contact("Worldwide", 91, CONTACT_GROUP);
+	CHECK(codeplug_set_contact(300, &mine));
+	int len = build_record(0x11223344, "Club", recbuf);
+	int channels = used_channels();
+
+	// Contact 300: a later block of the scan, and another flash sector than the free slots the import writes
+	sim_flash_bad_read(FL + 0x87620u + 24u * 299u, 24u);
+	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_FLASH);
+	sim_flash_bad_read(0, 0);
+	CHECK(codeplug_zone_count() == 1 && used_channels() == channels && used_contacts() == 1);
+	CHECK(imports[0].key == 0);
+	// Readable again: TG 91 is the user's contact 300, only USA is added
+	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK);
+	CHECK(r.contacts_added == 1 && used_contacts() == 2);
+}
+
 static void test_update(void)
 {
 	zone_import_result_t r;
@@ -610,6 +633,7 @@ static void test_export(void)
 int main(void)
 {
 	test_import();
+	test_contacts_unread();
 	test_update();
 	test_update_user_changes();
 	test_names_and_list();

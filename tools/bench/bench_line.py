@@ -42,6 +42,11 @@ class BenchLineError(Exception):
         self.code = code
 
 
+def exit_code(e):
+    """The daemon client's exit code for a BenchLineError: 75 busy or out of time, 77 refused, 3 no signal, 69 else."""
+    return {"timeout": 75, "busy": 75, "deadlock": 75, "refused": 77, "no_signal": 3}.get(e.code, 69)
+
+
 def address(spec):
     """(host, port) of "HOST", "HOST:PORT" or "http://HOST[/...]" (the board's web address: the line port on it)."""
     s = spec.strip()
@@ -264,7 +269,7 @@ def main(argv=None):
         return rc[0]
     except BenchLineError as e:
         print(f"rfoundry-bench: {e}", file=sys.stderr)
-        return {"timeout": 75, "busy": 75, "deadlock": 75, "refused": 77, "no_signal": 3}.get(e.code, 69)
+        return exit_code(e)
 
 
 if __name__ == "__main__":

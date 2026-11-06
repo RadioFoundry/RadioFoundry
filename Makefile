@@ -388,14 +388,15 @@ test: $(REGISTRY_JSON)
 	$(MAKE) -C tests/host
 
 # Static worst-case stack depth of every task against its stack (docs/dev/stack-check.md). The platform gives the bytes
-# its RTOS port saves on a task stack (STACK_OVERHEAD); STACK_MARGIN bytes must stay free; a board still bringing up its
+# its RTOS port saves on a task stack (STACK_OVERHEAD) and, where interrupts have a stack of their own, its size and
+# how handlers are installed (STACK_IRQ); STACK_MARGIN bytes must stay free; a board still bringing up its
 # call graph may set STACK_CHECK_REPORT_ONLY=1 in its config.mk
 STACK_MARGIN ?= 128
 STACK_CHECK_REPORT_ONLY ?= 0
 stack-check: $(TARGET).elf
 	@python3 tools/stack_check.py --build $(BUILD) --label $(BOARD) --cc '$(CC)' --cflags '$(CFLAGS_APP)' \
 		--objdump $(CROSS)objdump --elf $(TARGET).elf \
-		--overhead $(STACK_OVERHEAD) --margin $(STACK_MARGIN) $(if $(filter 1,$(STACK_CHECK_REPORT_ONLY)),--report-only) \
+		--overhead $(STACK_OVERHEAD) --margin $(STACK_MARGIN) $(STACK_IRQ) $(if $(filter 1,$(STACK_CHECK_REPORT_ONLY)),--report-only) \
 		$(STACK_CHECK_ARGS)
 
 # For tools/ci.sh: the resolved feature switches (NAME=y|n, one per line) and the compiler this board uses

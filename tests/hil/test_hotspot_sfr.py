@@ -152,7 +152,7 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     print(f"uplink: {len(up)} DMR_DATA1 (controls {sorted(set(ctl))}), NAKs {naks}; SDR families {fams}; "
           f"TS2 LCs {ts2_lc[:3]}; sfr.repeated {v0.get('sfr.repeated')} -> {v1.get('sfr.repeated')}, "
           f"sfr.tx_starts {v0.get('sfr.tx_starts')} -> {v1.get('sfr.tx_starts')}")
-    print(f"capture on the bench: ~/{sdr_bench.dir}/{rdir}/" if "cap" in watch else "bursts decoded on the bench")
+    print(f"capture: {sdr_bench.run_path(rdir)}" if "cap" in watch else "bursts decoded on the bench")
     # The repeat's slot timing: each TS2 burst against the last inbound TS1 one before it (30 ms on the grid)
     t_in = sorted(b["t_ms"] for b in bursts if b.get("family") == "ts1")
     offs = []

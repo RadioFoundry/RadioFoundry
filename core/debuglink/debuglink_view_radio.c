@@ -11,6 +11,7 @@
 #include "radio/vibe.h"
 #include "radio/mic_gain.h"
 #include "radio/ref_trim.h"
+#include "radio/tx_limit.h"
 #include "radio/radio_cwid.h"
 #include "hal_time.h"
 #include "hal_dtmf.h"
@@ -323,6 +324,19 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			radio_req_tone_burst(a[0] != 0, max_ms == 0 || max_ms > INPUT_INJECT_MAX_MS ? INPUT_INJECT_MAX_MS : max_ms);
 		}
 		return DL_ST_OK;
+	case DL_OP_TX_LIMIT: {
+		// flags u8 (bit 0: block every transmission), n u8, then n frequencies u32 (Hz): the test TX limit, RAM only
+		// (tx_limit.h). No block and no list: off
+		uint32_t hz[TX_LIMIT_MAX];
+		if (len < 2 || a[1] > TX_LIMIT_MAX || len != 2u + 4u * a[1] || (a[0] & ~1u) != 0) {
+			return DL_ST_BAD_ARG;
+		}
+		for (uint8_t i = 0; i < a[1]; i++) {
+			const uint8_t *p = a + 2 + 4 * i;
+			hz[i] = (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+		}
+		return tx_limit_set((a[0] & 1u) != 0, hz, a[1]) ? DL_ST_OK : DL_ST_BAD_ARG;
+	}
 	case DL_OP_DTMF:
 		// digit u8 (ASCII), down u8: as a DTMF key's edge, so the same rules and timing apply. Refused unless a key
 		// would send now (dtmf_ready); an up is always taken

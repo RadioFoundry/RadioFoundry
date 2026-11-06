@@ -153,6 +153,15 @@ second one has its channel: the dual watch screens then show a call on each pane
 lockout (`busy`; carrier = squelch open or noise below the open threshold; wrong tone = that, while the channel's RX
 tone is not decoded). The deny beep sounds; the state is `tx_denied` until PTT is released.
 
+The test TX limit (`core/radio/tx_limit.h`, built with `CONFIG_DEBUGLINK`) is a limit a test harness sets over the
+debug link (RADIO op 35, [debuglink.md](debuglink.md) 3.8): block every transmission, or allow only a list of up to 10
+frequencies. It lives in RAM and is never saved, so a restart clears it; the TX inhibit setting is saved and is left
+alone. The radio core checks it wherever it keys the transmitter (`key_tx`: PTT, DMR data and replies, roaming probes,
+APRS beacons, the SFR repeater role, the hotspot, the CW ID), against the frequency it is about to key on. PTT is denied
+as by the TX inhibit (`inhibit`); what the radio sends by itself is not keyed and counted (`txlim.refused`). A
+transmission already on air when the limit is set goes on until it ends. The HIL harness uses it to keep each test on
+the rig's transmit frequencies (`tests/hil/README.md`, "Transmit frequencies").
+
 ### 3.2 Time-out warning
 
 `tot_warn_s` before the time-out the TOT warning beep sounds once in the speaker (FM and DMR; the view's

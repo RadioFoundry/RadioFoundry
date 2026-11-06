@@ -5,6 +5,7 @@
 // (the idle task frees a deleted task's memory, and it can't run then).
 #include <string.h>
 #include "app/task_stack.h"
+#include "board.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -66,4 +67,13 @@ void task_stack_heap(uint32_t *free_now, uint32_t *least_free)
 {
 	*free_now = (uint32_t)xPortGetFreeHeapSize();
 	*least_free = (uint32_t)xPortGetMinimumEverFreeHeapSize();
+}
+
+bool task_stack_irq(uint32_t *free_bytes)
+{
+	if (board.system == NULL || board.system->irq_stack_free == NULL) {
+		return false;
+	}
+	*free_bytes = board.system->irq_stack_free();
+	return true;
 }

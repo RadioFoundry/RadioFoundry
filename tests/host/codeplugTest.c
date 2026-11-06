@@ -23,10 +23,14 @@ void storage_unlock(void) {}
 
 static uint8_t *image;
 
+static unsigned reads;		// flash reads, for the scan's cost
+static uint32_t fail_at = ~0u;	// a read covering this address fails
+
 static bool fake_init(void) { return true; }
 static bool fake_read(uint32_t addr, void *buf, uint32_t len)
 {
-	if (addr + len > IMAGE_SIZE) {
+	reads++;
+	if (addr + len > IMAGE_SIZE || (fail_at >= addr && fail_at < addr + len)) {
 		return false;
 	}
 	memcpy(buf, &image[addr], len);
@@ -795,6 +799,155 @@ static void test_aprs_records(void)
 }
 #endif
 
+// codeplug_contacts_each: every slot once, in order, empty ones as NULL; a few large reads, not one per slot; the
+// callback stops it; a scan from inside a callback still sees every slot
+typedef struct {
+	uint16_t next, seen, stop_at;
+	uint32_t ids;
+	bool nested_ok;
+} each_t;
+
+static bool each_fn(uint16_t index, const contact_t *c, void *ctx)
+{
+	each_t *e = ctx;
+	if (index != e->next) {
+		e->next = 0xFFFF;	// out of order
+	} else {
+		e->next++;
+	}
+	if (c != NULL) {
+		e->seen++;
+		e->ids += c->id;
+	}
+	if (index == 2) {
+		contact_t ct;
+		e->nested_ok = codeplug_contact_find(777, false, &ct) && strcmp(ct.name, "Last") == 0;
+	}
+	return index != e->stop_at;
+}
+
+static void test_contacts_each(void)
+{
+	build_openfw();
+	put_contact(1, "First", 201, 0, 0xFF);
+	put_contact(32, "End of block", 202, 0, 0xFF);
+	put_contact(33, "Next block", 203, 1, 0xFF);
+	put_contact(40, "Bad BCD", 0, 0, 0xFF);
+	put_contact(1024, "Last", 777, 1, 0xFF);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+
+	each_t e = { .next = 1 };
+	reads = 0;
+	CHECK(codeplug_contacts_each(each_fn, &e));
+	CHECK(e.next == CODEPLUG_CONTACTS_MAX + 1);
+	CHECK(e.seen == 4 && e.ids == 201u + 202u + 203u + 777u);
+	CHECK(e.nested_ok);
+	// 32 block reads, plus the nested scan's slot by slot reads (it found the last slot)
+	CHECK(reads == 32 + CODEPLUG_CONTACTS_MAX);
+
+	e = (each_t){ .next = 1, .stop_at = 33 };
+	reads = 0;
+	CHECK(codeplug_contacts_each(each_fn, &e));
+	CHECK(e.next == 34 && e.seen == 3 && reads == 2 + CODEPLUG_CONTACTS_MAX);
+
+	// The nested scan is done: the next one reads in blocks again
+	contact_t ct;
+	reads = 0;
+	CHECK(codeplug_contact_find(777, false, &ct) && reads == 32);
+	reads = 0;
+	CHECK(codeplug_contact_find(203, false, &ct) && strcmp(ct.name, "Next block") == 0 && reads == 2);
+
+	// A failed read ends the scan
+	fail_at = FL + 0x87620 + 24u * 100u;
+	e = (each_t){ .next = 1 };
+	CHECK(!codeplug_contacts_each(each_fn, &e));
+	CHECK(e.next == 97);	// blocks 1-96 seen, the fourth failed
+	CHECK(!codeplug_contact_find(777, false, &ct));
+	fail_at = ~0u;
+}
+
+// codeplug_channel_names_each: every number once, in order, empty ones as NULL; one read a block of records holding a
+// used one, none for a block without; names off reads nothing; a nested scan and a failed read as with contacts
+typedef struct {
+	uint16_t next, used, stop_at;
+	bool names_ok, nested_ok;
+} names_t;
+
+static bool nested_fn(uint16_t number, const char *name, void *ctx)
+{
+	if (number == 200) {
+		*(bool *)ctx = name != NULL && strcmp(name, "Bank1") == 0;
+	}
+	return true;
+}
+
+static bool names_fn(uint16_t number, const char *name, void *ctx)
+{
+	names_t *e = ctx;
+	e->next = number == e->next ? (uint16_t)(number + 1u) : 0xFFFF;
+	if (name != NULL) {
+		e->used++;
+	}
+	if ((number == 1 && (name == NULL || strcmp(name, "Calling") != 0)) ||
+	    (number == 2 && (name == NULL || strcmp(name, "Repeater DMR 16c") != 0)) ||
+	    (number == 3 && name != NULL) ||
+	    (number == 129 && (name == NULL || strcmp(name, "Bank1 first") != 0))) {
+		e->names_ok = false;
+	}
+	if (number == 2) {
+		codeplug_channel_names_each(nested_fn, &e->nested_ok, true);
+	}
+	return number != e->stop_at;
+}
+
+static void test_channel_names(void)
+{
+	build_openfw();
+	static const struct { uint16_t n; const char *name; } more[] = {
+		{ 13, "Block end" }, { 14, "Next block" }, { 128, "Bank0 end" }, { 129, "Bank1 first" },
+	};
+	for (unsigned i = 0; i < sizeof more / sizeof more[0]; i++) {
+		uint8_t *c = channel(more[i].n);
+		memcpy(c, channel(1), 56);
+		put_name(c, more[i].name);
+		mark(more[i].n);
+	}
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel_count() == 200);
+
+	names_t e = { .next = 1, .names_ok = true };
+	reads = 0;
+	CHECK(codeplug_channel_names_each(names_fn, &e, true));
+	CHECK(e.next == 201 && e.used == 7 && e.names_ok && e.nested_ok);
+	// 13 records a read: 1-13, 14-26, 118-128, 129-141, 194-200, the nested scan's by name (7 used)
+	CHECK(reads == 5 + 7);
+
+	e = (names_t){ .next = 1, .names_ok = true, .stop_at = 14 };
+	CHECK(codeplug_channel_names_each(names_fn, &e, true));
+	CHECK(e.next == 15 && e.used == 4);
+
+	// Names off: the in-use bitmap alone
+	e = (names_t){ .next = 1, .names_ok = true };
+	reads = 0;
+	codeplug_channel_names_each(names_fn, &e, false);
+	CHECK(e.next == 201 && e.used == 7 && !e.names_ok && reads == 7);	// "" for a name; the nested scan's reads
+
+	fail_at = FL + 0x7B1C0 + 20u;	// in channel 129
+	e = (names_t){ .next = 1, .names_ok = true };
+	CHECK(!codeplug_channel_names_each(names_fn, &e, true));
+	CHECK(e.next == 129);
+	fail_at = ~0u;
+
+	char name[CODEPLUG_NAME_LEN + 1];
+	CHECK(codeplug_channel_name(2, name) && strcmp(name, "Repeater DMR 16c") == 0);
+	CHECK(codeplug_channel_name(200, name) && strcmp(name, "Bank1") == 0);
+	CHECK(!codeplug_channel_name(3, name) && !codeplug_channel_name(0, name) && !codeplug_channel_name(1025, name));
+	CHECK(codeplug_zone_name(0, name) && strcmp(name, "Zone A") == 0);
+	CHECK(!codeplug_zone_name(1, name));
+	memset(&image[EE + 0x8010], 0, 0x20);	// no zones stored: the virtual one
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+	CHECK(codeplug_zone_name(0, name) && strcmp(name, "All channels") == 0 && !codeplug_zone_name(1, name));
+}
+
 int main(void)
 {
 	image = malloc(IMAGE_SIZE);
@@ -806,6 +959,8 @@ int main(void)
 	test_aprs_records();
 #endif
 	test_dmr_records();
+	test_contacts_each();
+	test_channel_names();
 	test_iddb();
 	test_iddb_compact();
 	test_erased();

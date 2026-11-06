@@ -3673,12 +3673,12 @@ msgid "Couldn't read the channel: for now only"
 msgstr "Lettura canale non riuscita: solo per ora"
 
 #: core/ui/ui_svc_storage.c
-msgid "Codeplug not written: for now only"
-msgstr "Scrittura codeplug non riuscita: solo per ora"
-
-#: core/ui/ui_svc_storage.c
 msgid "Not a stored contact: for now only"
 msgstr "Non è un contatto salvato: solo per ora"
+
+#: core/ui/ui_svc_storage.c
+msgid "Codeplug not written: for now only"
+msgstr "Scrittura codeplug non riuscita: solo per ora"
 
 #: core/ui/ui_svc_storage.c
 msgid "Reset: the settings couldn't be saved"

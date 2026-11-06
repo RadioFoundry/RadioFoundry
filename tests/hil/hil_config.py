@@ -125,6 +125,16 @@ def tx_allowed(config, mhz):
     return config is not None and any(abs(mhz - a) < TX_TOL_MHZ for a in (config.option.tx_mhz or []))
 
 
+def run_tx_mhz(config=None):
+    """The run's own transmit frequencies (MHz, sorted, each once): the TX_OPTIONS given, with --allow-rf (they are
+    in tx_mhz, configure() checked); none without it. The firmware's test TX limit allows only these (Radio.tx_gate)"""
+    config = config or CONFIG
+    if config is None or not config.getoption("--allow-rf"):
+        return []
+    return sorted({round(float(f), 6) for f in (getattr(config.option, key(n), None) for n in TX_OPTIONS)
+                   if f is not None})
+
+
 def rig(config, name, what=None):
     """A rig option's value, or skip (opt_in) naming the three ways to give it"""
     v = config.getoption(f"--{name}")

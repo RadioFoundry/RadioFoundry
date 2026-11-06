@@ -67,6 +67,22 @@ static bool mem_window(unsigned i, hal_mem_window_t *w)
 	return hrc_mem_window_for(i, w, HRC_XIP_FLASH_SIZE);
 }
 
+// CHIP_REG's SoC registers (mem_window.h): the write and its read back together, so no handler changes the register
+// between them
+static bool reg(uint32_t addr, uint32_t *val, bool write)
+{
+	if (!hrc_reg_allowed(addr)) {
+		return false;
+	}
+	uint32_t psr = hrc_irq_save();
+	if (write) {
+		REG32(addr) = *val;
+	}
+	*val = REG32(addr);
+	hrc_irq_restore(psr);
+	return true;
+}
+
 #define TXRX_NONE		0x00u	// LAYER2_TXRX_CTRL: neither slot direction (modem-hrc7000.md; hrc7000_dmr.c)
 
 HRC_RAMFUNC void hrc_rf_safe(void)
@@ -176,4 +192,6 @@ const hal_system_t hrc_system = {
 	.enter_stub = enter_stub,
 #endif
 	.irq_unhandled = hrc_irq_unhandled,
+	.irq_stack_free = hrc_irq_stack_free,
+	.reg = reg,
 };

@@ -55,6 +55,10 @@ typedef struct {
 static char query[FIND_KEYS + 1];
 static find_result_t results[FIND_MAX];
 static uint8_t n_results;
+static zone_t zone;		// the current zone's channels, for the search and the rows (one copy: RAM is short)
+#if CONFIG_DMR
+static uint16_t priv_index;	// the private contact whose ID is the digits (its name on that row), 0 for none
+#endif
 
 // Settings and places reachable by name (ui_menus.c)
 uint8_t ui_set_group_count(void);
@@ -140,10 +144,39 @@ static bool id_prefix(uint32_t id, const char *keys)
 }
 #endif
 
+#if CONFIG_DMR
+typedef struct {
+	uint32_t num;
+	size_t len;
+	uint8_t found;
+	bool number;	// the digits are an ID: the rows for the number itself follow
+	bool known;	// a contact has the number as its ID
+	uint16_t priv;	// the private contact with it
+} contact_scan_t;
+
+static bool contact_match(uint16_t index, const contact_t *c, void *ctx)
+{
+	contact_scan_t *cs = ctx;
+	if (c == NULL)
+		return true;
+	if (c->id == cs->num) {
+		cs->known = true;
+		if (c->type == CONTACT_PRIVATE && cs->priv == 0)
+			cs->priv = index;
+	}
+	if (cs->found < 6 && (ui_t9_match(c->name, query) || (cs->len >= 3 && id_prefix(c->id, query)))) {
+		add(FR_CONTACT, index);
+		cs->found++;
+	}
+	// To the end while the number's own private contact isn't found: that settles known too, and the row's name
+	// needs no scan of its own each time it is drawn
+	return cs->found < 6 || (cs->number && cs->priv == 0);
+}
+#endif
+
 void ui_find_run(void)
 {
-	static zone_t z;
-	static channel_t ch;
+	char rec_name[CODEPLUG_NAME_LEN + 1];
 	const radio_view_t *v = ui_view();
 	size_t len = strlen(query);
 	uint32_t num = query_number();
@@ -151,9 +184,9 @@ void ui_find_run(void)
 	if (len == 0)
 		return;
 
-	bool have_zone = codeplug_zone(v->zone_index, &z);
+	bool have_zone = codeplug_zone(v->zone_index, &zone);
 	// 1. Channel by position in the zone
-	if (have_zone && len <= 3 && num >= 1 && num <= z.count)
+	if (have_zone && len <= 3 && num >= 1 && num <= zone.count)
 		add(FR_CHANNEL, num - 1u);
 	// The digits as a frequency
 	if (CONFIG_VFO_FM || CONFIG_VFO_DMR) {
@@ -163,34 +196,25 @@ void ui_find_run(void)
 	}
 	// 2. Names: channels in this zone
 	uint8_t found = 0;
-	for (uint16_t i = 0; have_zone && i < z.count && found < 4; i++) {
-		if (codeplug_channel(z.channels[i], &ch) && ui_t9_match(ch.name, query)) {
+	for (uint16_t i = 0; have_zone && i < zone.count && found < 4; i++) {
+		if (codeplug_channel_name(zone.channels[i], rec_name) && ui_t9_match(rec_name, query)) {
 			add(FR_CHANNEL, i);
 			found++;
 		}
 	}
 #if CONFIG_DMR
-	// Contacts and talkgroups: by name, or by ID for 3 digits and more
-	contact_t c;
-	found = 0;
-	bool known = false;	// a contact has the number as its ID
-	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
-		if (!codeplug_contact(i, &c))
-			continue;
-		known = known || c.id == num;
-		if (found < 6 && (ui_t9_match(c.name, query) || (len >= 3 && id_prefix(c.id, query)))) {
-			add(FR_CONTACT, i);
-			found++;
-		}
-		if (found >= 6 && (known || !CONFIG_CONTACT_EDIT))
-			break;
-	}
+	// Contacts and talkgroups: by name, or by ID for 3 digits and more. One scan, many records per flash read
+	// (codeplug_contacts_each): read one at a time, 1024 slots kept the UI and the idle task busy for 0.7 s a key
+	contact_scan_t cs = { .num = num, .len = len, .number = num >= 1 && num <= 0xFFFFFEu };
+	codeplug_contacts_each(contact_match, &cs);
+	bool known = cs.known;
+	priv_index = cs.priv;
 #endif
 	// Zones by name
 	uint16_t zn = codeplug_zone_count();
 	found = 0;
 	for (uint16_t i = 0; i < zn && found < 2; i++) {
-		if (codeplug_zone(i, &z) && ui_t9_match(z.name, query)) {
+		if (codeplug_zone_name(i, rec_name) && ui_t9_match(rec_name, query)) {
 			add(FR_ZONE, i);
 			found++;
 		}
@@ -263,10 +287,18 @@ static bool find_target(uint16_t i, ui_target_t *t)
 		t->id = r->ref;
 		t->group = true;
 		return true;
-	case FR_PRIVATE:
+	case FR_PRIVATE: {
 		t->id = r->ref;
-		t->saved = ui_contact_name(r->ref, false, t->name);
+#if CONFIG_DMR
+		// The contact the search found (no scan here: the row is drawn every frame)
+		contact_t c;
+		if (priv_index != 0 && codeplug_contact(priv_index, &c) && c.id == r->ref && c.type == CONTACT_PRIVATE) {
+			t->saved = true;
+			strcpy(t->name, c.name);
+		}
+#endif
 		return true;
+	}
 	default:
 		return false;
 	}
@@ -274,8 +306,7 @@ static bool find_target(uint16_t i, ui_target_t *t)
 
 static void find_item(uint16_t i, ui_item_t *it)
 {
-	static zone_t z;
-	static channel_t ch;
+	char rec_name[CODEPLUG_NAME_LEN + 1];
 	if (i >= n_results)
 		return;
 	const find_result_t *r = &results[i];
@@ -289,16 +320,17 @@ static void find_item(uint16_t i, ui_item_t *it)
 		const radio_view_t *v = ui_view();
 		sb_str(&b, TR("Ch "));
 		sb_u32(&b, r->ref + 1u, 1);
-		if (codeplug_zone(v->zone_index, &z) && r->ref < z.count && codeplug_channel(z.channels[r->ref], &ch)) {
+		if (codeplug_zone(v->zone_index, &zone) && r->ref < zone.count &&
+		    codeplug_channel_name(zone.channels[r->ref], rec_name)) {
 			sb_chr(&b, ' ');
-			sb_str(&b, ch.name);
+			sb_str(&b, rec_name);
 		}
 		sb_str(&vb, TR(TEXT_ALT_OPEN "Channel" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 		break;
 	}
 	case FR_ZONE:
-		if (codeplug_zone((uint16_t)r->ref, &z))
-			sb_str(&b, z.name);
+		if (codeplug_zone_name((uint16_t)r->ref, rec_name))
+			sb_str(&b, rec_name);
 		sb_str(&vb, TR(TEXT_ALT_OPEN "Zone" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 		break;
 	case FR_CONTACT:

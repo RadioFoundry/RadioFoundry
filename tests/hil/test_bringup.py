@@ -35,6 +35,9 @@ class FakeRadio:
     def features(self):
         return {"FM", "DEBUGLINK"}
 
+    def tx_gate(self, may_transmit):
+        return False
+
     def snapshot(self):
         return None
 

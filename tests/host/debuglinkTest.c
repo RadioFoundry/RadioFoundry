@@ -11,6 +11,8 @@
 #include "debuglink/dl_shot.h"
 #include "cps/cps_lz4.h"
 #include "../../platform/stm32f4/mem_window.h"
+// As a board with more program flash sets it (board.mk): nothing else in the header may depend on it being unset
+#define HRC_XIP_FLASH_SIZE	0x200000u
 #include "../../platform/hrc7000/mem_window.h"
 
 static int failures, checks;
@@ -410,6 +412,14 @@ static void test_chip(void)
 	CHECK(!dl_mem_allowed(0x14030000u, 4, hrc1m) && !dl_mem_allowed(0x14040000u, 4, hrc1m), "UARTs refused");
 	CHECK(!dl_mem_allowed(0x140A0060u, 4, hrc1m), "SPI data register refused");
 	CHECK(!dl_mem_allowed(0x16000980u, 4, hrc1m) && !dl_mem_allowed(0x11000100u, 4, hrc1m), "modem refused");
+	// CHIP_REG's SoC registers (3.24): READ_MEM's register blocks plus the timers, whole aligned words only
+	CHECK(hrc_reg_allowed(0x17000008u) && hrc_reg_allowed(0x17000068u) && hrc_reg_allowed(0x14100040u) &&
+	      hrc_reg_allowed(0x1100003Cu), "reg: PIC, GPIO, system block");
+	CHECK(hrc_reg_allowed(0x14000000u) && hrc_reg_allowed(0x14000074u) && !hrc_reg_allowed(0x14000078u),
+	      "reg: timers 1-6, not past them");
+	CHECK(!hrc_reg_allowed(0x17000009u) && !hrc_reg_allowed(0x17000034u) && !hrc_reg_allowed(0x14010000u) &&
+	      !hrc_reg_allowed(0x00010000u) && !hrc_reg_allowed(0x16000980u) && !hrc_reg_allowed(0x11000060u),
+	      "reg: unaligned, PIC gaps, watchdog, RAM, modem refused");
 	CHECK(!dl_mem_allowed(0xFFFFFFFCu, 8, hrc1m) && !dl_mem_allowed(0x00010000u, 0xFFFFFFF0u, hrc1m),
 	      "wrap-around refused");
 

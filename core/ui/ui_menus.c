@@ -396,17 +396,50 @@ static const ui_scr_def_t compose_screen = {
 #if CONFIG_DMR
 static uint16_t contacts_raw_count(void) { return CODEPLUG_CONTACTS_MAX; }
 
+static void contact_label(const contact_t *c, char *buf, uint8_t len, bool with_id)
+{
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	sb_str(&b, c->name);
+	if (with_id) {
+		sb_chr(&b, ' ');
+		sb_u32(&b, c->id, 1);	// digits find by ID too
+	}
+}
+
 static bool contacts_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
 	contact_t c;
 	if (!codeplug_contact((uint16_t)(raw + 1u), &c))
 		return false;
-	sbuf_t b;
-	sb_init(&b, buf, len);
-	sb_str(&b, c.name);
-	sb_chr(&b, ' ');
-	sb_u32(&b, c.id, 1);	// digits find by ID too
+	contact_label(&c, buf, len, true);
 	return true;
+}
+
+// Every contact as raw rows from first on (raw_each): one pass of block reads (codeplug_contacts_each)
+typedef struct {
+	ui_raw_fn fn;
+	void *ctx;
+	uint16_t first;
+	bool with_id, stopped;
+} ct_rows_t;
+
+static bool ct_row(uint16_t index, const contact_t *c, void *p)
+{
+	ct_rows_t *r = p;
+	char label[40];
+	if (c != NULL)
+		contact_label(c, label, sizeof label, r->with_id);
+	r->stopped = !r->fn((uint16_t)(r->first + index - 1u), c != NULL ? label : NULL, r->ctx);
+	return !r->stopped;
+}
+
+// false: fn stopped the pass. with_id: the label is the name and the ID (contacts_raw_label), else the name
+static bool contacts_rows(uint16_t first, ui_raw_fn fn, void *ctx, bool with_id)
+{
+	ct_rows_t r = { .fn = fn, .ctx = ctx, .first = first, .with_id = with_id };
+	codeplug_contacts_each(ct_row, &r);
+	return !r.stopped;
 }
 
 // Contact raw + 1 (raw 0 is contact 1) as a target
@@ -476,6 +509,16 @@ static bool contacts_list_raw_label(uint16_t raw, char *buf, uint8_t len)
 	return contacts_raw_label((uint16_t)(raw - CONTACTS_NEW), buf, len);
 }
 
+static void contacts_list_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	(void)labels;
+#if CONFIG_CONTACT_EDIT
+	if (!fn(0, TR("New contact"), ctx))
+		return;
+#endif
+	contacts_rows(CONTACTS_NEW, fn, ctx, true);
+}
+
 static bool contacts_list_target(uint16_t i, ui_target_t *t)
 {
 	if (i >= ui_filter_count() || contacts_is_new(i))
@@ -520,6 +563,7 @@ static const ui_scr_def_t contacts_screen = {
 	.empty = CONFIG_CONTACT_EDIT ? TRN("No contact matches") : TRN("No contacts: add them in qdmr"),
 	.count = ui_filter_count, .item = contacts_list_item, .select = contacts_select, .context = contacts_context,
 	.target = contacts_list_target, .raw_count = contacts_list_raw_count, .raw_label = contacts_list_raw_label,
+	.raw_each = contacts_list_raw_each,
 };
 #else
 static uint16_t none_count(void) { return 0; }
@@ -771,7 +815,7 @@ static void zones_new(void);
 
 static bool chans_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
-	static zone_t z;
+	char name[CODEPLUG_NAME_LEN + 1];
 	if (chans_is_vfo(raw)) {
 		strncpy(buf, "VFO", len);
 		return true;
@@ -780,10 +824,9 @@ static bool chans_raw_label(uint16_t raw, char *buf, uint8_t len)
 		str_copy(buf, len, TR("Create New Zone"));
 		return true;
 	}
-	if (!codeplug_zone((uint16_t)(raw - CH_VFO), &z))
+	if (!codeplug_zone_name((uint16_t)(raw - CH_VFO), name))
 		return false;
-	strncpy(buf, z.name, len - 1);
-	buf[len - 1] = 0;
+	str_copy(buf, len, name);
 	return true;
 }
 
@@ -1007,7 +1050,7 @@ static const char *zone_edit_row(uint16_t raw)
 
 static bool zone_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
-	static channel_t ch;
+	char name[CODEPLUG_NAME_LEN + 1];
 	const zone_t *z = zone_of_frame();
 	sbuf_t b;
 	sb_init(&b, buf, len);
@@ -1018,11 +1061,11 @@ static bool zone_raw_label(uint16_t raw, char *buf, uint8_t len)
 	}
 #endif
 	uint16_t pos = (uint16_t)(raw - ZE_ADD);
-	if (pos >= z->count || !codeplug_channel(z->channels[pos], &ch))
+	if (pos >= z->count || !codeplug_channel_name(z->channels[pos], name))
 		return false;
 	sb_u32(&b, pos + 1u, 1);
 	sb_chr(&b, ' ');
-	sb_str(&b, ch.name);
+	sb_str(&b, name);
 	return true;
 }
 
@@ -1250,6 +1293,18 @@ static bool share_raw_label(uint16_t raw, char *buf, uint8_t len)
 	return true;
 }
 
+static void share_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	(void)labels;
+	if (!contacts_rows(0, fn, ctx, true))
+		return;
+	char label[40];
+	for (uint16_t raw = SHARE_TYPED; raw < share_raw_count(); raw++) {
+		if (!fn(raw, share_raw_label(raw, label, sizeof label) ? label : NULL, ctx))
+			return;
+	}
+}
+
 static bool share_target(uint16_t i, ui_target_t *t)
 {
 	if (i >= ui_filter_count())
@@ -1336,7 +1391,7 @@ static const ui_scr_def_t share_to_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "0-9 find or ID  OK send  Back" TEXT_ALT_NEXT "0-9 find or ID  OK send" TEXT_ALT_CLOSE),
 	.empty = TRN("No contacts: type an ID"),
 	.count = ui_filter_count, .item = share_to_item, .select = share_to_select,
-	.raw_count = share_raw_count, .raw_label = share_raw_label,
+	.raw_count = share_raw_count, .raw_label = share_raw_label, .raw_each = share_raw_each,
 };
 
 // --- An offer from another radio ---
@@ -1612,29 +1667,76 @@ static uint16_t chlist_raw_count(void)
 	return (uint16_t)(codeplug_channel_count() + CHLIST_NEW);
 }
 
-static bool chlist_raw_label(uint16_t raw, char *buf, uint8_t len)
+// A channel row's label, "12 Name": a search finds it by number and name
+static void ch_label(uint16_t num, const char *name, char *buf, uint8_t len)
 {
-	static channel_t ch;
 	sbuf_t b;
 	sb_init(&b, buf, len);
+	sb_u32(&b, num, 1);
+	sb_chr(&b, ' ');
+	sb_str(&b, name);
+}
+
+static bool chlist_raw_label(uint16_t raw, char *buf, uint8_t len)
+{
+	char name[CODEPLUG_NAME_LEN + 1];
 	if (CHLIST_NEW && raw == 0) {
-		sb_str(&b, TR("New from current"));
+		str_copy(buf, len, TR("New from current"));
 		return true;
 	}
-	if (!codeplug_channel(CHLIST_NUM(raw), &ch))
+	if (!codeplug_channel_name(CHLIST_NUM(raw), name))
 		return false;
-	sb_u32(&b, CHLIST_NUM(raw), 1);
-	sb_chr(&b, ' ');
-	sb_str(&b, ch.name);
+	ch_label(CHLIST_NUM(raw), name, buf, len);
 	return true;
+}
+
+// Every channel as raw rows, raw = number - 1 + first (raw_each): one pass of block reads of the names
+// (codeplug_channel_names_each). The channels in skip have no row
+typedef struct {
+	ui_raw_fn fn;
+	void *ctx;
+	uint16_t first;
+	const zone_t *skip;
+} ch_rows_t;
+
+static bool ch_row(uint16_t num, const char *name, void *p)
+{
+	const ch_rows_t *r = p;
+	char label[40];
+	if (name != NULL && r->skip != NULL && zone_list_find(r->skip, num) >= 0)
+		name = NULL;
+	if (name != NULL)
+		ch_label(num, name, label, sizeof label);
+	return r->fn((uint16_t)(r->first + num - 1u), name != NULL ? label : NULL, r->ctx);
+}
+
+static void ch_rows(uint16_t first, const zone_t *skip, ui_raw_fn fn, void *ctx, bool labels)
+{
+	ch_rows_t r = { .fn = fn, .ctx = ctx, .first = first, .skip = skip };
+	codeplug_channel_names_each(ch_row, &r, labels);
+}
+
+static bool chlist_raw_used(uint16_t raw)
+{
+	return (CHLIST_NEW && raw == 0) || codeplug_channel_used(CHLIST_NUM(raw));
+}
+
+static void chlist_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	if (CHLIST_NEW && !fn(0, TR("New from current"), ctx))
+		return;
+	ch_rows(CHLIST_NEW, NULL, fn, ctx, labels);
 }
 
 static void chlist_enter(void)
 {
 	uint16_t cur = chlist_current();
-	for (uint16_t i = 0; cur != 0 && i < ui_filter_count(); i++)
-		if (CHLIST_NUM(ui_filter_raw(i)) == cur)
+	for (uint16_t i = 0; cur != 0 && i < ui_filter_count(); i++) {
+		if (CHLIST_NUM(ui_filter_raw(i)) == cur) {
 			ui_frame()->focus = i;
+			break;
+		}
+	}
 }
 
 static void chlist_item(uint16_t i, ui_item_t *it)
@@ -1647,11 +1749,8 @@ static void chlist_item(uint16_t i, ui_item_t *it)
 	uint16_t num = CHLIST_NUM(ui_filter_raw(i));
 	if (!codeplug_channel(num, &ch))
 		return;
+	ch_label(num, ch.name, it->label, sizeof it->label);
 	sbuf_t b;
-	sb_init(&b, it->label, sizeof it->label);
-	sb_u32(&b, num, 1);
-	sb_chr(&b, ' ');
-	sb_str(&b, ch.name);
 	sb_init(&b, it->value, sizeof it->value);
 	sb_channel_row(&b, &ch);
 	if (num == chlist_current())
@@ -1715,7 +1814,8 @@ static const ui_scr_def_t chlist_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK details  # go  0-9 find" TEXT_ALT_NEXT "OK details  # go" TEXT_ALT_CLOSE),
 	.empty = TRN("No channels"),
 	.count = ui_filter_count, .item = chlist_item, .select = chlist_select, .context = chlist_context,
-	.enter = chlist_enter, .raw_count = chlist_raw_count, .raw_label = chlist_raw_label,
+	.enter = chlist_enter, .raw_count = chlist_raw_count, .raw_label = chlist_raw_label, .raw_each = chlist_raw_each,
+	.raw_used = chlist_raw_used,
 };
 
 // ======================= One channel's settings, edited in place (ui.md 2.1) =======================
@@ -2773,6 +2873,28 @@ static void ct_item(uint16_t i, ui_item_t *it)
 	}
 }
 
+typedef struct {
+	bool group, dup_found;
+	uint16_t free;		// the first empty slot, 0 for none
+	contact_t *dup;
+} ct_scan_t;
+
+static bool ct_scan(uint16_t index, const contact_t *c, void *ctx)
+{
+	ct_scan_t *sc = ctx;
+	if (c == NULL) {
+		if (sc->free == 0)
+			sc->free = index;
+		return true;
+	}
+	if (c->id == ct.id && (c->type != CONTACT_PRIVATE) == sc->group) {
+		*sc->dup = *c;
+		sc->dup_found = true;
+		return false;
+	}
+	return true;
+}
+
 // The first problem that keeps the contact from being saved, as a toast; NULL when it can be saved. *slot: a free
 // contact index. Reads every contact (the duplicate and the free slot)
 static const char *ct_problem(uint16_t *slot)
@@ -2787,21 +2909,18 @@ static const char *ct_problem(uint16_t *slot)
 		return TR("Private IDs go up to 16776415");
 	if (group && ct.id > CT_GROUP_MAX)
 		return TR("Talkgroups go up to 16777214");
-	*slot = 0;
-	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
-		if (!codeplug_contact(i, &c)) {
-			if (*slot == 0)
-				*slot = i;
-			continue;
-		}
-		if (c.id == ct.id && (c.type != CONTACT_PRIVATE) == group) {
-			sbuf_t b;
-			sb_init(&b, toast_msg, sizeof toast_msg);
-			sb_str(&b, TR("Already a contact: "));
-			sb_str(&b, c.name);
-			return toast_msg;
-		}
+	ct_scan_t sc = { .group = group, .dup = &c };
+	bool read = codeplug_contacts_each(ct_scan, &sc);
+	*slot = sc.free;
+	if (sc.dup_found) {
+		sbuf_t b;
+		sb_init(&b, toast_msg, sizeof toast_msg);
+		sb_str(&b, TR("Already a contact: "));
+		sb_str(&b, c.name);
+		return toast_msg;
 	}
+	if (!read)
+		return TR("Couldn't save now: try again");	// the duplicate may be in a block not read
 	return *slot == 0 ? TR("No room for more contacts") : NULL;
 }
 
@@ -3041,28 +3160,38 @@ static uint16_t zpick_raw_count(void)
 	return codeplug_channel_count();
 }
 
-static channel_t zpick_ch;	// the channel zpick_raw_label read last
-
 static bool zpick_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
 	uint16_t num = (uint16_t)(raw + 1u);
-	if (zone_list_find(&ze_z, num) >= 0 || !codeplug_channel(num, &zpick_ch))
+	char name[CODEPLUG_NAME_LEN + 1];
+	if (zone_list_find(&ze_z, num) >= 0 || !codeplug_channel_name(num, name))
 		return false;
-	sbuf_t b;
-	sb_init(&b, buf, len);
-	sb_u32(&b, num, 1);
-	sb_chr(&b, ' ');
-	sb_str(&b, zpick_ch.name);
+	ch_label(num, name, buf, len);
 	return true;
+}
+
+static bool zpick_raw_used(uint16_t raw)
+{
+	uint16_t num = (uint16_t)(raw + 1u);
+	return zone_list_find(&ze_z, num) < 0 && codeplug_channel_used(num);
+}
+
+static void zpick_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	ze_read();
+	ch_rows(0, &ze_z, fn, ctx, labels);
 }
 
 static void zpick_item(uint16_t i, ui_item_t *it)
 {
-	if (!zpick_raw_label(ui_filter_raw(i), it->label, sizeof it->label))
+	static channel_t ch;
+	uint16_t num = (uint16_t)(ui_filter_raw(i) + 1u);
+	if (!codeplug_channel(num, &ch))
 		return;
+	ch_label(num, ch.name, it->label, sizeof it->label);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
-	sb_channel_row(&b, &zpick_ch);
+	sb_channel_row(&b, &ch);
 }
 
 static void zpick_select(uint16_t i, bool hold)
@@ -3091,7 +3220,8 @@ static const ui_scr_def_t zpick_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK add  0-9 find  Back" TEXT_ALT_NEXT "OK add  Back" TEXT_ALT_CLOSE),
 	.empty = TRN("Every channel is in it"),
 	.count = ui_filter_count, .item = zpick_item, .select = zpick_select,
-	.raw_count = zpick_raw_count, .raw_label = zpick_raw_label,
+	.raw_count = zpick_raw_count, .raw_label = zpick_raw_label, .raw_each = zpick_raw_each,
+	.raw_used = zpick_raw_used,
 };
 
 // --- The channel editor's Zones: every zone, and whether the channel is in it; OK puts it in or takes it out ---
@@ -3331,6 +3461,21 @@ static bool chpick_raw_label(uint16_t raw, char *buf, uint8_t len)
 	return true;
 }
 
+static void chpick_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	(void)labels;
+	if (ui_frame()->arg == 0) {
+		if (fn(0, TR("None"), ctx))
+			contacts_rows(1, fn, ctx, false);	// raw = contact number
+		return;
+	}
+	char label[40];
+	for (uint16_t raw = 0; raw < chpick_raw_count(); raw++) {	// the RX group lists: few, read one by one
+		if (!fn(raw, chpick_raw_label(raw, label, sizeof label) ? label : NULL, ctx))
+			return;
+	}
+}
+
 static uint16_t chpick_current(void)
 {
 	return ui_frame()->arg == 0 ? ced_ch.contact : ced_ch.listen_list;
@@ -3372,7 +3517,7 @@ static const char *chpick_title(void) { return ui_frame()->arg == 0 ? TR("TX Con
 static const ui_scr_def_t chpick_screen = {
 	.name = "chpick", .flags = SF_LIST | SF_FILTER, .hint = TRN("OK pick  0-9 find  Back"), .empty = TRN("None stored"),
 	.count = ui_filter_count, .item = chpick_item, .select = chpick_select, .title = chpick_title,
-	.enter = chpick_enter, .raw_count = chpick_raw_count, .raw_label = chpick_raw_label,
+	.enter = chpick_enter, .raw_count = chpick_raw_count, .raw_label = chpick_raw_label, .raw_each = chpick_raw_each,
 };
 #endif
 #endif
@@ -4505,11 +4650,13 @@ static void crash_to_select(uint16_t i, bool hold)
 	ui_toast(msg);
 }
 
+static void crash_to_raw_each(ui_raw_fn fn, void *ctx, bool labels) { (void)labels; contacts_rows(0, fn, ctx, true); }
+
 static const ui_scr_def_t crash_to_screen = {
 	.name = "crash_to", .flags = SF_LIST | SF_FILTER, .prefix = TRN("Send To"),
 	.hint = TRN("0-9 find  OK pick  Back"), .empty = TRN("No contacts: add them in qdmr"),
 	.count = ui_filter_count, .item = contacts_item, .select = crash_to_select,
-	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
+	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label, .raw_each = crash_to_raw_each,
 };
 #endif
 

@@ -142,7 +142,7 @@ def key_and_check(radio, sdr_bench, pytestconfig, tag, bw_khz, ctcss=None, dcs=N
                                     freq=mhz, tones=tones, dtmf=dtmf)
     print(text)
     r = parse_fm(text)
-    assert r["segments"] >= 1, f"no keyed segment in the capture (~/{sdr_bench.dir}/{rdir}/): {text[-800:]}"
+    assert r["segments"] >= 1, f"no keyed segment in the capture ({sdr_bench.run_path(rdir)}): {text[-800:]}"
     foff = r.get("carrier_corrected_hz", r.get("carrier_hz"))
     max_foff = pytestconfig.getoption("--max-foff")
     # A bench board says how far its own crystal correction may be off at the frequency: the limit allows for it

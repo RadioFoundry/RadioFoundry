@@ -102,6 +102,15 @@ typedef struct {
 	uint8_t payload[DMR_PAYLOAD_MAX];
 } dmr_tx_burst_t;
 
+// Modem interrupts the driver found lost and recovered from (health). The first one's state is kept for the debug
+// link: the time and four words the driver's source names (its interrupt controller's)
+typedef struct {
+	uint32_t stalls;	// transmissions dropped: no slot interrupt came while sending
+	uint32_t stuck;		// requests found pending with no handler run, dropped
+	uint32_t first_ms;	// hal_millis at the first of either, 0 none yet
+	uint32_t first_regs[4];
+} dmr_modem_health_t;
+
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 // Split duplex TX half (docs/spec/split-duplex.md 5): the CACH before one outbound burst (core/dmr/fec/dmrCach.h)
 typedef struct {
@@ -151,6 +160,8 @@ typedef struct {
 	// entries come after it, -1 when none is left (an SFR's repeat then goes out 90 ms after the inbound burst instead
 	// of behind the placeholders queued for the gap)
 	int8_t (*tx_fill)(const dmr_tx_burst_t *b);
+	// Optional (NULL: not kept): lost modem interrupts found and recovered from since start
+	void (*health)(dmr_modem_health_t *h);
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 	// Split duplex (docs/spec/split-duplex.md), all optional (NULL: the driver can't; the role is not offered).
 	// The modem clock: free-running microseconds (wraps), the clock slot_clock is stamped in. RX half and TIME

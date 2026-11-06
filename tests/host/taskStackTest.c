@@ -41,6 +41,14 @@ void task_stack_heap(uint32_t *free_now, uint32_t *least_free)
 	*least_free = 6000;
 }
 
+static bool fake_irq;
+
+bool task_stack_irq(uint32_t *free_bytes)
+{
+	*free_bytes = 1400;
+	return fake_irq;
+}
+
 static void add(const char *name, uint32_t free_bytes)
 {
 	snprintf(fake[fake_n].name, sizeof(fake[fake_n].name), "%s", name);
@@ -128,6 +136,19 @@ static void testNamesAsKeys(void)
 	CHECK(has("tasks.free.ABCDEFGHIJKL=30"), "a full-length name: '%s'", out);
 }
 
+static void testIrqStack(void)
+{
+	fake_n = 0;
+	add("ui", 64);
+	render();
+	CHECK(strstr(out, "tasks.irq_free") == NULL, "no key without an interrupt stack: '%s'", out);
+	fake_irq = true;
+	render();
+	CHECK(has("tasks.irq_free=1400"), "the interrupt stack's free bytes: '%s'", out);
+	CHECK(has("tasks.min_free=64"), "kept out of the tasks' least: '%s'", out);
+	fake_irq = false;
+}
+
 static void testUntrackedAndFull(void)
 {
 	fake_n = 0;
@@ -151,6 +172,7 @@ int main(void)
 	testTasks();
 	testTieKeepsFirst();
 	testNamesAsKeys();
+	testIrqStack();
 	testUntrackedAndFull();
 	printf("taskStackTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;

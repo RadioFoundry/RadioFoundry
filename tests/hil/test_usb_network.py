@@ -32,15 +32,6 @@ def _udp_link(ip, timeout):
     return None
 
 
-def _serial_back(radio, timeout):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if radio.port_present():
-            return True
-        time.sleep(0.5)
-    return False
-
-
 @pytest.mark.feature("usb_network")
 @pytest.mark.usb_switch
 def test_usb_network_roundtrip(radio):
@@ -68,17 +59,11 @@ def test_usb_network_roundtrip(radio):
     finally:
         if udp is not None:
             udp.close()
-        if not _serial_back(radio, 20):
+        if not radio.serial_back(20):
             # Still a network adapter: one more try over UDP, so the bench isn't left without its serial port
             again = _udp_link(str(radio_ip), 10)
             if again is not None:
                 again.usb_network(False)
                 again.close()
-            assert _serial_back(radio, 20), "the radio didn't come back as a serial port"
-        for _ in range(40):
-            try:
-                radio.link = DebugLink(radio.port, timeout=1.5)
-                break
-            except DebugLinkError:
-                time.sleep(0.25)
+            assert radio.serial_back(20), "the radio didn't come back as a serial port"
     assert radio.view(["hotspot"]).get("usb.network") == "0"

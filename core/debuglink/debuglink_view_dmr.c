@@ -104,6 +104,17 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dmr.target_manual=%u\ndmr.privacy=%u\ndmr.alias_tx=%u\n", d->target_manual, d->privacy,
 			d->alias_tx);
 		dl_text(t, "dmr.underruns=%u\n", (unsigned)d->underruns);
+		if (board.dmr != NULL && board.dmr->health != NULL) {
+			// Modem interrupts the driver found lost and recovered from; the first one's controller words
+			dmr_modem_health_t h;
+			board.dmr->health(&h);
+			dl_text(t, "dmr.modem_stalls=%u\ndmr.modem_stuck=%u\n", (unsigned)h.stalls, (unsigned)h.stuck);
+			if (h.first_ms != 0) {
+				dl_text(t, "dmr.modem_lost_ms=%u\ndmr.modem_lost_regs=%x,%x,%x,%x\n", (unsigned)h.first_ms,
+					(unsigned)h.first_regs[0], (unsigned)h.first_regs[1], (unsigned)h.first_regs[2],
+					(unsigned)h.first_regs[3]);
+			}
+		}
 		// The mic content of the latest transmission: here, not in dmr_stats, which is near the reply size
 		{
 			ambe_voice_stats_t a;

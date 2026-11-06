@@ -238,11 +238,33 @@ uint16_t ui_filter_raw(uint16_t i)
 			if (up ? raw + 1u >= n : raw == 0)
 				return 0;	// the rows changed under the list: the next rebuild puts it right
 			raw = up ? (uint16_t)(raw + 1u) : (uint16_t)(raw - 1u);
-		} while (!d->raw_label(raw, label, sizeof label));
+		} while (d->raw_used != NULL ? !d->raw_used(raw) : !d->raw_label(raw, label, sizeof label));
 		WALK_RAW = raw;
 		WALK_I = up ? (uint16_t)(WALK_I + 1u) : (uint16_t)(WALK_I - 1u);
 	}
 	return raw;
+}
+
+static bool filter_row(uint16_t raw, const char *label, void *ctx)
+{
+	(void)ctx;
+	if (label == NULL || (filter_keys[0] != 0 && !ui_t9_match(label, filter_keys)))
+		return true;
+	if (filter_n < UI_FILTER_MAX)
+		filter_idx[filter_n] = raw;
+	filter_n++;
+	return filter_keys[0] == 0 || filter_n < UI_FILTER_MAX;	// typed: the first matches
+}
+
+// A row at a time, for a list without raw_each. Its own frame: the label stays off the stack of raw_each's pass
+static void __attribute__((noinline)) filter_rows(const ui_scr_def_t *d)
+{
+	uint16_t n = d->raw_count();
+	char label[40];
+	for (uint16_t i = 0; i < n; i++) {
+		if (!filter_row(i, d->raw_label(i, label, sizeof label) ? label : NULL, NULL))
+			break;
+	}
 }
 
 void ui_filter_rebuild(void)
@@ -251,19 +273,10 @@ void ui_filter_rebuild(void)
 	filter_n = 0;
 	if (d->raw_count == NULL || d->raw_label == NULL)
 		return;
-	uint16_t n = d->raw_count();
-	char label[40];
-	for (uint16_t i = 0; i < n; i++) {
-		if (!d->raw_label(i, label, sizeof label))
-			continue;
-		if (filter_keys[0] != 0 && !ui_t9_match(label, filter_keys))
-			continue;
-		if (filter_n < UI_FILTER_MAX)
-			filter_idx[filter_n] = i;
-		filter_n++;
-		if (filter_keys[0] != 0 && filter_n >= UI_FILTER_MAX)
-			break;	// typed: the first matches
-	}
+	if (d->raw_each != NULL)
+		d->raw_each(filter_row, NULL, filter_keys[0] != 0);
+	else
+		filter_rows(d);
 	if (filter_n > UI_FILTER_MAX)
 		WALK_I = UI_FILTER_MAX - 1u;	// the cursor starts on that row, its raw row already in WALK_RAW
 }
@@ -388,13 +401,9 @@ bool ui_contact_name(uint32_t id, bool group, char *out)
 	out[0] = 0;
 #if CONFIG_DMR
 	contact_t c;
-	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
-		if (!codeplug_contact(i, &c))
-			continue;
-		if (c.id == id && (c.type == CONTACT_GROUP) == group) {
-			strcpy(out, c.name);
-			return true;
-		}
+	if (codeplug_contact_find(id, group, &c)) {
+		strcpy(out, c.name);
+		return true;
 	}
 #else
 	(void)id;

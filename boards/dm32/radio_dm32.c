@@ -575,6 +575,22 @@ static void rx_sleep(bool sleep)
 	}
 }
 
+// The debug link's CHIP_REG (board.chip_reg, hardware-dm32.md 8.1): chip 0 is the FD6818, page 0 only, registers
+// 0x00-0x7F (bit 7 of the address is the read flag). Straight on the bus: the driver's copies of the state and bandwidth
+// words don't follow a write, and its next set-up overwrites it. A frame is atomic (rfbus.h), so the radio task's
+// frames and this one don't mix
+bool dm32_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	if (chip != 0 || page != 0 || reg > 0x7Fu || (write && *val > 0xFFFFu) || fd.bus == NULL) {
+		return false;	// fd.bus: not attached yet (radio init)
+	}
+	if (write) {
+		rfbus_write(fd.bus, reg, (uint16_t)*val);
+	}
+	*val = rfbus_read(fd.bus, reg);
+	return true;
+}
+
 const hal_radio_t dm32_radio = {
 	.init = init,
 	.set_mode = set_mode,

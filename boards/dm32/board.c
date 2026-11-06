@@ -103,6 +103,7 @@ const board_t board = {
 	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif
 	.system = &hrc_system,
+	.chip_reg = dm32_chip_reg,
 #if CONFIG_BCAST_FM
 	.bcast = &rda5807m_hal,
 #endif
