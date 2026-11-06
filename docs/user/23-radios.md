@@ -671,8 +671,9 @@ radio refuses to transmit.
 
 ### What the RT10 lacks today
 
-- DMR (receive and transmit) and the voice codec map.
-- The channel knob's position order, the LED colors and the battery scale.
+- The network over the programming cable (PPP) and the services on it. The cable's line latches when the computer
+  and the radio send at the same time, and only switching the radio off frees it, so PPP is off in the RT10 build.
+- The channel knob's position order and the battery scale.
 
 ## Planned radios
 

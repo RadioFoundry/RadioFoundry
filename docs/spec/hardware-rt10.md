@@ -75,6 +75,29 @@ bits 8:3 cleared, bits 29:27 set).
 
 The transmitter is off with PTB0 and PTB3 low, PTB4 high and DAC B at 0 (`board_rf_safe`).
 
+### 3.1 The cable line
+
+PTT (PTB11) and UART0's RX pad are one line on the K-type jack (two prongs); the PTT gate is in
+[gotchas.md](gotchas.md) 16.2. UART0's TX is a separate line: the radio doesn't receive its own characters.
+
+The line can't take both directions at once (measured, with a K-type FTDI cable). When the radio starts sending
+while the host is still sending, the line is clamped low within milliseconds and stays low until the power is
+switched off ([gotchas.md](gotchas.md) 16.5):
+
+| Check, the line latched | Result |
+| --- | --- |
+| The radio | runs on: keys, LEDs, the host link task's loop |
+| The host | receives nothing more from the radio; the radio receives nothing |
+| PTB11 driven high by the SoC, read while driven | low |
+| The cable unplugged; its USB-serial chip reset | low |
+| The SoC reset by the watchdog | low |
+| A power cycle | released |
+| Trigger | pppd: LCP's ConfAck and an Echo-Request back to back; debug link requests sent without waiting for the answers (15 ms). Requests answered in turn never latched it |
+
+RadioFoundry: a host port write waits for 2 ms with no received character first (`HRC_HOST_TX_IDLE_MS` in
+`boards/rt10/board.mk`), and PPP is off (`boards/rt10/config.mk`). The MMDVM hotspot and KISS hosts also send at
+any time; unchecked.
+
 ## 4. Data flash (2 MB, SPI0)
 
 SPI0, mode 0, chip select PTA18 by GPIO. Read 0x03, page program 0x02, 4 KB erase 0x20, status 0x05, write enable 0x06.
@@ -241,8 +264,8 @@ No codec bytes are in the repository or in a release.
 | Reference trim | written: the trim moves the synthesizer frequency at the next tune; the modem's bias stays the factory's tune. Untested on air |
 | DMR transmit and receive, codec | measured on air (7.1): voice both ways with the codec map `rt10-112` (section 8) |
 | DMR speaker audio, DMR microphone | open: decoded voice played (the counters) but not listened to; in a DMR key-up the vocoder's microphone level is a steady floor (peak 2946, spread 3 dB), speech not checked |
-| IP data over the air | measured on air: UDP to and from the radio, compressed and full headers, off-net, confirmed, bursts from the radio |
-| IP link to the computer | written: PPP on the host link (UART0, 115200 baud). Not working yet: twice the radio went silent soon after pppd's LCP opened, before IPCP, and answered nothing (PPP, debug link, boot ROM) until a power cycle, with no LED activity. The likely end: a crash or hang restart, then a start that hung. The restart was a soft reset then, which turns the watchdog off ([watchdog.md](watchdog.md) 3), so nothing reset the radio again; it is now a watchdog reset. The first fault is open |
+| IP data over the air | measured on air: UDP to and from the radio, compressed and full headers, off-net, confirmed, bursts from the radio. The IP gateway is off with PPP (3.1) |
+| IP link to the computer | written: PPP on the host link (UART0, 115200 baud), off: pppd sends while the radio sends, which latches the cable line low until a power cycle (3.1). It builds with `CONFIG_NET_PPP=y`, for a check with another cable |
 | APRS | written (7.2): the radio keys up and sends its frames; deviation, twist and decoding on air not yet measured |
 | Hotspot split, USRP | not written: no continuous base-station outbound; USRP's 8 kHz audio both ways needs more than 115200 baud |
 | Screen-only features | left out: no display (`boards/rt10/config.mk`) |

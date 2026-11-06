@@ -90,31 +90,31 @@ is `tools/bringup.py list --radio <id>`.
 | `cps_openfw` | not recorded | pass (seed) | not recorded | pass (seed) | pass (seed) | not recorded | pass |
 | `cps_fast` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `stub_entry` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `crash_log` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
+| `crash_log` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `crash_screen` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `crash_report` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `fault_trace` | not recorded | ✕ | not recorded | not recorded | ✕ | ✕ | not recorded |
 | `usb_network` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | ✕ |
-| `dmr_ip_gateway` | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded |
+| `dmr_ip_gateway` | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded | off |
 | `dmr_tx_spacing` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `zone_share` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
-| `dmr_control_station` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `net_tcp` | not recorded | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | not recorded |
-| `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_control_station` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
+| `net_tcp` | not recorded | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | off |
+| `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
+| `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
+| `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
+| `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
+| `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not written |
-| `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
+| `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
+| `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `dmr_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
-| `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | not recorded |
+| `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
+| `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | off |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
 | `key_lock` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -176,24 +176,24 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DMR_SIGNALING` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_EMERGENCY` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_ROAMING` | ● | ● | ● | ● | ● | ● | ● |
-| `DMR_IP_GATEWAY` | ● | ● | ● | ● | ● | ● | ● |
+| `DMR_IP_GATEWAY` | ● | ● | ● | ● | ● | ● | ○ |
 | `ZONE_SHARE` | ● | ● | ● | ● | ● | ● | ✕ |
 | `DMR_UDP_COMPRESS` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_CONFIRMED` | ● | ● | ● | ● | ● | ● | ● |
-| `NET_TCP` | ● | ● | ● | ● | ● | ● | ● |
-| `NET_KISS` | ● | ● | ● | ● | ● | ● | ● |
-| `NET_HTTP` | ● | ● | ● | ● | ● | ● | ● |
-| `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | ● | ● |
-| `NET_WEBCTL` | ● | ● | ● | ● | ● | ● | ● |
-| `NET_RIGCTL` | ● | ● | ● | ● | ● | ● | ● |
-| `NET_APRSIS` | ● | ● | ● | ● | ● | ● | ● |
+| `NET_TCP` | ● | ● | ● | ● | ● | ● | ○ |
+| `NET_KISS` | ● | ● | ● | ● | ● | ● | ○ |
+| `NET_HTTP` | ● | ● | ● | ● | ● | ● | ○ |
+| `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | ● | ○ |
+| `NET_WEBCTL` | ● | ● | ● | ● | ● | ● | ○ |
+| `NET_RIGCTL` | ● | ● | ● | ● | ● | ● | ○ |
+| `NET_APRSIS` | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_USRP` | ● | ● | ● | … | ● | ● | … |
-| `MDNS` | ● | ● | ● | ● | ● | ● | ● |
-| `TFTP` | ● | ● | ● | ● | ● | ● | ● |
+| `MDNS` | ● | ● | ● | ● | ● | ● | ○ |
+| `TFTP` | ● | ● | ● | ● | ● | ● | ○ |
 | `TFTP_IDDB` | ● | ● | ● | ● | ● | ● | ✕ |
 | `IDDB_COMPACT` | ● | ● | ● | ● | ● | ● | ✕ |
-| `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● | ● | ● |
-| `SNMP` | ● | ● | ● | ● | ● | ● | ● |
+| `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● | ● | ○ |
+| `SNMP` | ● | ● | ● | ● | ● | ● | ○ |
 | `SFR` | ● | ● | ● | ● | ✕ | ● | ● |
 | `SFR_DUALPATH_RX` | ● | ● | ● | ● | ✕ | ● | ● |
 | `SFR_CWID` | ● | ● | ● | ● | ✕ | ● | ● |
@@ -201,7 +201,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `USB` | ✕ | ● | ✕ | ✕ | ● | ● | ✕ |
 | `HOSTLINK` | ● | ● | ● | ● | ● | ● | ● |
 | `USB_NETWORK` | ✕ | ● | ✕ | ✕ | ● | ● | ✕ |
-| `NET_PPP` | ● | ○ | ● | ● | ○ | ○ | ● |
+| `NET_PPP` | ● | ○ | ● | ● | ○ | ○ | ○ |
 | `HOTSPOT` | ● | ● | ● | ● | ● | ● | ● |
 | `HOTSPOT_SPLIT` | ● | ● | ● | … | … | ● | … |
 | `DEBUGLINK` | ● | ● | ● | ● | ● | ● | ● |

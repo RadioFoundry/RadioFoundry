@@ -5,6 +5,10 @@
 # DMR (hardware-rt10.md 7.1): the stock scheme on the shared RF-burst task; voice needs the codec merged (8)
 CONFIG_DMR ?= y
 CONFIG_HOTSPOT_SPLIT ?= n
+# PPP's host sends at any time, and the radio sending while the host sends latched the cable line low until a power
+# cycle (hardware-rt10.md 3.1): off, and the IP gateway and its services with it. It builds, for a check with
+# another cable
+CONFIG_NET_PPP ?= n
 CONFIG_NET_USRP ?= n
 CONFIG_VOX ?= n
 CONFIG_FONT_XL ?= n
