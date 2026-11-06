@@ -29,6 +29,15 @@ CONFIG_GPS ?= n
 CONFIG_GPS_SKY ?= n
 CONFIG_AM_RX ?= n
 CONFIG_BCAST_FM ?= n
+# No display or keypad: no frequency to type in, no A / B channel to pick, no digits to dial
+CONFIG_VFO ?= n
+CONFIG_DUAL_WATCH ?= n
+CONFIG_DTMF ?= n
+BOARD_UNSUPPORTED += VFO	# no display or keypad: the knob picks programmed channels only
+BOARD_UNSUPPORTED += VFO_FM	# the VFO (above)
+BOARD_UNSUPPORTED += VFO_DMR	# the VFO (above)
+BOARD_UNSUPPORTED += DUAL_WATCH	# no display: channel B can't be picked or shown
+BOARD_UNSUPPORTED += DTMF	# no keypad: no digits to dial
 BOARD_UNSUPPORTED += FONT_XL	# no display
 BOARD_UNSUPPORTED += UI_COLOR	# no display: no colors to set
 BOARD_UNSUPPORTED += FONT_AA	# no display

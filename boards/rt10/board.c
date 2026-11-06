@@ -81,13 +81,13 @@ static void io_init(void)
 	hrc_pin_out(PIN_POWER_LATCH, true);
 	IO_DIPLEX1 = (IO_DIPLEX1 & ~0x1F8u) | 0x38000000u;	// SPI0 SCLK / MOSI / MISO; CS by GPIO
 
-	// Outputs at their safe levels: transmitter off, receiver on, speaker muted, voice chip off
+	// Outputs at their safe levels: transmitter off, receiver on, speaker muted
 	hrc_pin_out(PIN_FLASH_CS, true);
 	hrc_pin_out(PIN_TX_SUPPLY, false);
 	hrc_pin_out(PIN_PA_SELECT, false);
 	hrc_pin_out(PIN_RX_SUPPLY, true);
 	hrc_pin_out(PIN_AMP_EN, false);
-	hrc_pin_out(PIN_VOICE_EN, false);
+	hrc_pin_out(PIN_SPK_FD, false);
 	hrc_pin_out(PIN_VOICE_CLK, false);
 	hrc_pin_out(PIN_VOICE_DATA, false);
 	hrc_pin_out(PIN_LED_GREEN, false);

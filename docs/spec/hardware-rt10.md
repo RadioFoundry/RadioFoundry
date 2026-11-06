@@ -59,11 +59,11 @@ bits 8:3 cleared, bits 29:27 set).
 | PTB3 | 35 | PA select | high = on |
 | PTB4 | 36 | RX supply | high = on |
 | PTB5, PTB7 | 37, 39 | LEDs: PTB5 green, PTB7 red (measured: red at power-up and in TX, green on MON) | high = on |
-| PTB8 | 40 | voice prompt chip enable | high = on |
+| PTB8 | 40 | speaker amplifier (the original firmware: on for beeps, prompts, DMR voice and an open squelch) | high = on |
 | PTB9, PTB10 | 41, 42 | side keys | low = pressed (unverified) |
 | PTB11 | 43 | PTT; also the cable's serial line | low = pressed |
 | PTB12 | 44 | power latch | high = stay on |
-| PTB13 | 45 | audio amplifier | high = on (unverified) |
+| PTB13 | 45 | the FD6818's AF into the amplifier: high with an open squelch, low for beeps and DMR voice | high = passes |
 | PTB17 | 49 | power switch sense | high = off (measured) |
 | PTB26 | 58 | FD6818 GPIO6, its squelch output (measured) | high = open; low with PTB27 high: a held match (section 7) |
 | PTB27 | 59 | FD6818 GPIO0, the sub-audio compare result (measured) | high = the tone or code is heard |
@@ -156,8 +156,18 @@ down, 100 us, the receiver retuned, PTB4 high.
 
 ## 6. Keys and knob
 
-Two side keys and PTT are direct inputs. The 16-position channel knob gives a 4-bit code on four inputs; the code is not
-the position in order (mapping ?).
+Two side keys and PTT are direct inputs. The 16-position channel knob gives a 4-bit code on four inputs (bits 3..0 on
+PTB6, PTB1, PTB2, PTB21, read high = 1). The code is not the position in order and not a Gray code (measured, one
+position at a time from the counterclockwise stop):
+
+| Position | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Code | 6 | 2 | 9 | 12 | 5 | 1 | 10 | 14 | 15 | 7 | 0 | 8 | 13 | 4 | 3 | 11 |
+
+Between positions 3 and 4 the code read 13 (position 13) for up to about 100 ms (measured), so the firmware takes a
+code once it has held 150 ms. The knob is read as a position, not as steps: position N selects the zone's channel N,
+at power-on too ([ui.md](ui.md) 3). The diagnostics page shows the raw code (`knob raw`), the debug link view the
+position (`input.switch_pos`, 0-based).
 
 ## 7. FD6818 bus
 
@@ -191,14 +201,14 @@ from the original firmware's code:
 
 | Item | Value |
 | --- | --- |
-| FD6818 digital set | the stock's DMR entry: 0x04 = 0x0300, 0x48 = 0x6C5C, 0x4B = 0xE442, 0x73 = 0x569A (AFC off), 0x7E = 0x349E (TX DC filter bypassed), 0x23 = 0x8F87 (AF DAC level 7), then 0x43 = 0x7E08. The FD6818 guide's DMR bypass mode lists the same 0x48, 0x4B, 0x73 and 0x7E words ("cic mode"). Leaving DMR, the analog set writes the power-on words back (0x48 = 0x6C4C) |
+| FD6818 digital set | the stock's DMR entry: 0x04 = 0x0300, 0x48 = 0x6C5C, 0x4B = 0xE442, 0x73 = 0x569A (AFC off), 0x7E = 0x349E (TX DC filter bypassed), 0x23 = 0x8F87 (AF DAC level 7), then 0x43 = 0x7E08 and 0x77 = 0xC0FF (the analog set writes 0x80EF). Without the 0x77 word the speaker hisses through a DMR key-up, with a pulse at the burst rate; with it the speaker is silent (listened to). The FD6818 guide's DMR bypass mode lists the same 0x48, 0x4B, 0x73 and 0x7E words ("cic mode"). Leaving DMR, the analog set writes the power-on words back (0x48 = 0x6C4C) |
 | 0x4B | 0xE442 puts the demodulated 4FSK on the AF output. With the power-on 0x223C the modem's PHASE_OUT range stays within about ±40 counts of its center during a call (a few millivolts at its AF ADC) and the modem never syncs; with 0xE442 it reaches the ±2432 limit (measured) |
 | AF output (0x47) | receive 0x4140 (to the modem; analog 0x7140); at a burst's TX 0x6740, written before the tune |
 | 0x40 | 0x3AD0: the band select in every tune writes it, so a burst transmits with it (the stock's 0x40 = 0 ahead of the tune is overwritten) |
 | States (0x03) | receive 0xBFF1, TX 0xC1FE, each through 0 |
 | Modem RF_MODE | 0x034C9860: AF gain 0x4C, TX symbol mapping not inverted (bit 7 clear) |
 | RF TX interrupt lead | RF_CONTROL b13:8 = 0x1A (2.6 ms) |
-| Modem ADC gain (GCR_ADCL) | 11 dB, the other HR_C7000 radios' value; the original's is not read. `make RT10_DMR_MIC_DB=N` |
+| Modem ADC gain (GCR_ADCL) | 23 dB, listened to through a parrot. The stock writes 11 dB at its codec start-up, as the other HR_C7000 radios do. `make RT10_DMR_MIC_DB=N` |
 | DAC C | the modem's AF ADC bias (its N input): each step moves the PHASE_OUT center about 9 counts. The stock keeps 1762; RadioFoundry writes `RT10_DMR_DAC_C` (1850) entering DMR and 1762 leaving it. AMBE bits corrected per frame on a bench voice call (234 frames each, measured): 1762 0.83-0.86, 1800 0.51, 1825 0.45, 1850 0.05, 1875 0.09, 1900 0.16, 1950 0.50, 2050 0.89; at 1680 no sync. `make RT10_DMR_DAC_C=N` |
 
 Burst TX on, from the RF TX interrupt: the calibration's key-up delay (section 4.1), PTB4 (RX supply) low, the
@@ -263,7 +273,8 @@ No codec bytes are in the repository or in a release.
 | Reference | measured: the modem's bias from the calibration puts receive and transmit on frequency (section 4.1) |
 | Reference trim | written: the trim moves the synthesizer frequency at the next tune; the modem's bias stays the factory's tune. Untested on air |
 | DMR transmit and receive, codec | measured on air (7.1): voice both ways with the codec map `rt10-112` (section 8) |
-| DMR speaker audio, DMR microphone | open: decoded voice played (the counters) but not listened to; in a DMR key-up the vocoder's microphone level is a steady floor (peak 2946, spread 3 dB), speech not checked |
+| DMR microphone | measured: a 7 s spoken key-up, received on the SDR bench, decoded as speech (351 of 360 AMBE frames distinct, the parameters spread as speech spreads them) |
+| Speaker | listened to: the amplifier is PTB8 (section 3); FM monitor, the talk permit and deny tones and a parrot reply play, FM squelch stays closed after an unkey, no hiss in a DMR key-up |
 | IP data over the air | measured on air: UDP to and from the radio, compressed and full headers, off-net, confirmed, bursts from the radio. The IP gateway is off with PPP (3.1) |
 | IP link to the computer | written: PPP on the host link (UART0, 115200 baud), off: pppd sends while the radio sends, which latches the cable line low until a power cycle (3.1). It builds with `CONFIG_NET_PPP=y`, for a check with another cable |
 | APRS | written (7.2): the radio keys up and sends its frames; deviation, twist and decoding on air not yet measured |

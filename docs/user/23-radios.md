@@ -664,6 +664,12 @@ The radio has no bootloader of its own: the chip's boot window on the programmin
 | Backup | installing replaces the whole original image. Only a full program flash backup taken first puts it back |
 | Board name | `rt10` |
 
+### The RT10's channel knob
+
+The knob picks the channel by where it points: positions 1 to 16 are the first 16 channels of the zone, in the
+zone's order, also when the radio is switched on and when the zone changes. A position past the end of a shorter zone
+changes nothing.
+
 ### RT10 power levels
 
 Two, **L** and **H**: the radio's own factory calibration for each 10 MHz step. Without a valid calibration the
@@ -673,7 +679,7 @@ radio refuses to transmit.
 
 - The network over the programming cable (PPP) and the services on it. The cable's line latches when the computer
   and the radio send at the same time, and only switching the radio off frees it, so PPP is off in the RT10 build.
-- The channel knob's position order and the battery scale.
+- The battery scale.
 
 ## Planned radios
 

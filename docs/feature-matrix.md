@@ -42,7 +42,7 @@ is `tools/bringup.py list --radio <id>`.
 | `ref_trim` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run |
 | `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | partial, needs re-run |
 | `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded | partial, needs re-run |
-| `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | partial, needs re-run |
+| `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | ✕ |
 | `vox` | not written | not recorded | not recorded | not written | not recorded | not recorded | not written |
 | `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
@@ -54,16 +54,16 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_emergency` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
-| `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
-| `vfo_dmr` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded |
+| `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
+| `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
+| `vfo_dmr` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | ✕ |
 | `channel_list` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `channel_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `zone_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `contact_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `key_assign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `scan` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
-| `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
+| `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `beep` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
 | `vibrate` | off | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
 | `gps` | pass (seed) | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ |
@@ -207,9 +207,9 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DEBUGLINK` | ● | ● | ● | ● | ● | ● | ● |
 | `CPS_OPENFW` | ● | ● | ● | ● | ● | ● | ● |
 | `CPS_FAST` | ● | ● | ● | ● | ● | ● | ● |
-| `VFO` | ● | ● | ● | ● | ● | ● | ● |
-| `VFO_FM` | ● | ● | ● | ● | ● | ● | ● |
-| `VFO_DMR` | ● | ● | ● | ● | ● | ● | ● |
+| `VFO` | ● | ● | ● | ● | ● | ● | ✕ |
+| `VFO_FM` | ● | ● | ● | ● | ● | ● | ✕ |
+| `VFO_DMR` | ● | ● | ● | ● | ● | ● | ✕ |
 | `DIAG` | ● | ● | ● | ● | ● | ● | ● |
 | `FONT_XL` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `FONT_AA` | ● | ○ | ○ | ○ | ○ | ○ | ✕ |
@@ -221,10 +221,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `UI_COLOR` | ● | ● | ✕ | ● | ● | ● | ✕ |
 | `UI_SETTINGS` | ● | ● | ● | ● | ● | ● | ✕ |
 | `SCAN` | ● | ● | ● | ● | ● | ● | ● |
-| `DUAL_WATCH` | ● | ● | ● | ● | ● | ● | ● |
+| `DUAL_WATCH` | ● | ● | ● | ● | ● | ● | ✕ |
 | `BEEP` | ● | ● | ● | ● | ● | ● | ● |
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | ● |
-| `DTMF` | ● | ● | ● | ● | … | ● | ● |
+| `DTMF` | ● | ● | ● | ● | … | ● | ✕ |
 | `VOX` | … | ● | ● | … | ● | ● | … |
 | `REF_TRIM` | ● | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● |

@@ -10,9 +10,10 @@
 
 // The RF TX interrupt's lead, 100 us steps (RF_CONTROL b13:8), the stock firmware's: 2.6 ms for the burst's key-up
 #define RT10_DMR_RF_TX_LEAD	26u
-// The modem's ADC gain in DMR (GCR_ADCL, dB). make RT10_DMR_MIC_DB=N replaces it on the bench
+// The modem's ADC gain in DMR (GCR_ADCL, dB): above the stock's 11 dB, as listened to through a parrot.
+// make RT10_DMR_MIC_DB=N replaces it on the bench
 #ifndef RT10_DMR_MIC_DB
-#define RT10_DMR_MIC_DB		11u
+#define RT10_DMR_MIC_DB		23u
 #endif
 // DAC C in DMR: the bias of the modem's AF ADC (its N input), which sets where the FD6818's 4FSK sits in the ADC's
 // range. 1850 gave the fewest AMBE bits corrected (hardware-rt10.md 7.1); the stock's 1762 corrects about one per

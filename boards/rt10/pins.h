@@ -16,12 +16,12 @@
 #define PIN_LED_GREEN		0x25	// green LED, high = on
 #define PIN_KNOB_B3		0x26	// code bit 3
 #define PIN_LED_RED		0x27	// red LED, high = on (the one lit at power-up)
-#define PIN_VOICE_EN		0x28	// voice prompt chip enable, high = on
+#define PIN_AMP_EN		0x28	// speaker amplifier, high = on (the original firmware's beeps, prompts and squelch)
 #define PIN_SK1			0x29	// side key, low = pressed
 #define PIN_SK2			0x2A	// side key, low = pressed
 #define PIN_PTT			0x2B	// low = pressed; also the cable's serial line (shared_ptt)
 #define PIN_POWER_LATCH		0x2C	// 1 = stay on
-#define PIN_AMP_EN		0x2D	// audio amplifier, high = on
+#define PIN_SPK_FD		0x2D	// the FD6818's AF into the amplifier, high = passes; low for beeps and DMR voice
 #define PIN_POWER_SWITCH	0x31	// power switch sense: high = off
 #define PIN_KNOB_B0		0x35	// code bit 0
 #define PIN_RF_SQ		0x3A	// PTB26, from the FD6818's GPIO6: its squelch output: high = open

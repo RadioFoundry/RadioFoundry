@@ -36,6 +36,8 @@
 #define FD_REG_RSSI	0x67u
 #define FD_VOLUME	14u	// fd6818sh_volume_word step: the radio's volume is the analog knob after the chip
 #define TX_TONE_GAIN	48u	// FM TX tone generator level (0..127), the stock single tone's
+#define RX_QUIET_MS	150u	// after an FM key-down the chip reads as a carrier for a moment: the squelch stays shut
+#define SPK_SWITCH_MS	10u	// the AF gate before the amplifier on, after it off (the original firmware's)
 #define APC_STEPS	180u	// the stock ramp's length: 180 steps of 2 us (hardware-rt10.md 5)
 #define APC_STEP_US	2u
 #define TX_END_US	100u	// stock key-down: between the PA pins, the receiver's retune and the RX supply
@@ -70,7 +72,7 @@ static const rfbus_regval_t rt10_after[] = {
 // FM was measured with (the stock writes it per bandwidth instead, hardware-rt10.md 7)
 static const rfbus_regval_t rt10_analog[] = {
 	{ 0x73, 0x4642 }, { 0x04, 0x0300 }, { 0x7E, 0x3425 }, { 0x44, 0x42CC }, { 0x4B, 0x223C }, { 0x48, 0x6C4C },
-	{ 0x35, 0xF008 },
+	{ 0x35, 0xF008 }, { 0x77, 0x80EF },
 	{ 0x23, 0x9C0F }, { FD6818SH_REG_PAGE, 1 }, { 0x17, 0x02BE }, { 0x18, 0x8FD8 }, { 0x19, 0x4840 },
 	{ 0x1C, 0x076F }, { 0x1D, 0xB9FD }, { 0x27, 0x18DA }, { FD6818SH_REG_PAGE, 0 },
 };
@@ -83,10 +85,10 @@ static const uint8_t rt10_dev_high[] = { 0x3A };
 // The digital set (hardware-rt10.md 7.1), the stock's DMR entry, then its digital bandwidth word and the band select's
 // 0x40, which the stock's every tune writes. 0x4B = 0xE442 is what puts the demodulated 4FSK on the AF output: without
 // it the modem's AF ADC sees a few millivolts and never syncs. Receive audio 0x4140 goes to the modem; at a burst's TX
-// 0x6740
+// 0x6740. 0x77 is the stock's DMR word (0x80EF in FM, the analog set)
 static const rfbus_regval_t rt10_digital[] = {
 	{ 0x04, 0x0300 }, { 0x48, 0x6C5C }, { 0x4B, 0xE442 }, { 0x73, 0x569A }, { 0x7E, 0x349E }, { 0x23, 0x8F87 },
-	{ 0x43, 0x7E08 }, { 0x40, 0x3AD0 },
+	{ 0x43, 0x7E08 }, { 0x40, 0x3AD0 }, { 0x77, 0xC0FF },
 };
 
 #define N(t)	(uint8_t)(sizeof(t) / sizeof(t[0]))
@@ -126,6 +128,7 @@ static uint16_t fd_id;
 static bool fd_ok;		// the chip answered with its ID: the radio is driven
 static bool audio_open;
 static bool transmitting;
+static uint32_t tx_end_ms;	// when the last FM transmission ended (tx_stop): the squelch reads closed for a while
 static bool have_rx;
 static bool asleep;		// rx_sleep(true): the receiver is off until rx_sleep(false) or the next rx()
 static volatile int16_t trim_ppb;	// hal_radio_t.ref_trim: taken at the next tune
@@ -237,11 +240,35 @@ static bool af_on(void)
 	return audio_open || mode == RADIO_MODE_DMR;
 }
 
-// The amplifier: on for an open squelch (audio()) or while the modem plays samples (DMR voice never opens the squelch
-// path), off while keyed
-static void amp_update(void)
+// The speaker (hardware-rt10.md 3): the amplifier (PTB8) is on for an open squelch (audio()) or while the modem plays
+// samples (a beep, DMR voice), off while keyed. The FD6818's AF reaches it only through PTB13, high for an open squelch
+// alone, so a beep or a call doesn't come with the receiver's noise. As the original firmware does it, the AF passes
+// 10 ms before the amplifier turns on and stops 10 ms after it turns off, when the caller may wait (the radio task:
+// audio()); the modem's PCM hook switches at once
+static bool amp_out, af_out;
+
+static void amp_update(bool may_wait)
 {
-	hrc_pin_write(PIN_AMP_EN, (audio_open || pcm_on) && !transmitting);
+	bool af = audio_open && !transmitting;
+	bool amp = (audio_open || pcm_on) && !transmitting;
+	if (!amp && amp_out) {
+		hrc_pin_write(PIN_AMP_EN, false);
+		amp_out = false;
+		if (may_wait && af_out && !af) {
+			hal_delay_ms(SPK_SWITCH_MS);
+		}
+	}
+	if (af != af_out) {
+		hrc_pin_write(PIN_SPK_FD, af);
+		af_out = af;
+		if (may_wait && af && amp && !amp_out) {
+			hal_delay_ms(SPK_SWITCH_MS);
+		}
+	}
+	if (amp && !amp_out) {
+		hrc_pin_write(PIN_AMP_EN, true);
+		amp_out = true;
+	}
 }
 
 #if CONFIG_DMR
@@ -249,7 +276,7 @@ void rt10_speaker_pcm(bool on)
 {
 	if (on != pcm_on) {
 		pcm_on = on;
-		amp_update();
+		amp_update(false);
 	}
 }
 #endif
@@ -347,7 +374,7 @@ static void apc_ramp(uint16_t target, bool up)
 	}
 }
 
-static void audio(bool on);
+static void audio_set(bool on, bool may_wait);
 
 #if CONFIG_DMR
 // DMR TX, armed at the key-up (hardware-rt10.md 7.1). The RF stays receiving until the first burst's RF TX interrupt;
@@ -378,6 +405,7 @@ static void dmr_disarm(void)
 		DAC_DATA_B = 0;
 		hrc_dac_b_power(false);
 		write_bias(rx_hz);
+
 	}
 }
 
@@ -446,6 +474,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	fd6818sh_tx_prepare(&fd, fd_tone(&tone), tone.value, hz, p.pa_gain);
 	fd6818sh_set_af(&fd, FD6818SH_AF_MUTE);
 	hrc_pin_write(PIN_AMP_EN, false);
+	hrc_pin_write(PIN_SPK_FD, false);
+	amp_out = false;
+	af_out = false;
 	hrc_pin_write(PIN_PA_SELECT, false);
 	hrc_pin_write(PIN_TX_SUPPLY, false);
 
@@ -483,7 +514,8 @@ static bool tx_stop(void)
 	hrc_dac_b_power(false);
 	hal_delay_us(TX_END_US);
 	transmitting = false;
-	audio(audio_open);
+	tx_end_ms = hal_millis();
+	audio_set(audio_open, false);
 	return true;
 }
 
@@ -575,6 +607,9 @@ static void status(radio_status_t *st)
 	// The chip's floor (38-44 raw at 902-928 MHz) lifted above the core's squelch levels, as on the other FD6818
 	// radios (fd6818.h): read raw, every level opened on noise
 	st->noise = fd6818_noise(rfbus_read(&fd_bus.bus, FD_REG_NOISE));
+	if (hal_millis() - tx_end_ms < RX_QUIET_MS) {
+		st->noise = 0xFF;	// back in receive the chip reads as a carrier for a moment: no burst of noise at the unkey
+	}
 	st->carrier = false;
 	// The chip compares the sub-audio set by set_rx_tone and puts the result on its GPIO0 (fd6818sh.h). A match stays
 	// up after the carrier and through the next one, whatever its tone, until the sub-audio set is written again
@@ -586,7 +621,9 @@ static void status(radio_status_t *st)
 	st->tone_ok = rx_tone.type == TONE_NONE || mode == RADIO_MODE_DMR || (sq && css);
 }
 
-static void audio(bool on)
+// may_wait: the radio task's call (hal_radio_t.audio) may take the speaker's 10 ms steps; tx_stop(), on the burst
+// path too, doesn't
+static void audio_set(bool on, bool may_wait)
 {
 	audio_open = on;
 	if (transmitting) {
@@ -595,7 +632,12 @@ static void audio(bool on)
 	if (fd_ok) {
 		fd6818sh_set_af(&fd, af_on() ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
 	}
-	amp_update();
+	amp_update(may_wait);
+}
+
+static void audio(bool on)
+{
+	audio_set(on, true);
 }
 
 #if CONFIG_APRS
