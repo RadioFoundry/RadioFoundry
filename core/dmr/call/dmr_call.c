@@ -1293,6 +1293,7 @@ static void tx_wakeup(uint32_t now)
 	tx_put(DMR_BURST_CSBK, 0, true, csbk, sizeof(csbk));
 	s.modem->tx_end();
 	s.wake_tries++;
+	s.view.wake_sent++;
 	s.wake_sent_ms = now;
 	s.tx = TX_WAKE;
 	s.deadline = now + DMR_CALL_TX_DONE_GUARD_MS;

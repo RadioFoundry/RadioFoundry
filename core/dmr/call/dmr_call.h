@@ -206,6 +206,7 @@ typedef struct {
 	uint32_t tx_underruns;		// voice frames replaced with silence
 	uint8_t wake_admits;		// counts repeater wake-ups answered after PTT was let go: the call would have been admitted
 	uint8_t permit_seq;		// counts talk permit holds (permit_hold_ms): play the talk permit now
+	uint8_t wake_sent;		// counts BS_Dwn_Act bursts sent (repeater wake-ups): the red LED blinks once per burst
 } dmr_call_view_t;
 
 void dmr_call_config_default(dmr_call_config_t *cfg);
