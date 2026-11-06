@@ -371,6 +371,10 @@ md9600_rf_err_t md9600_rf_tx_tune(md9600_rf_t *rf, uint32_t hz, uint8_t power, b
 	rf->tx_hz = hz;
 	rf->tx_band = b;
 	rf->apc = apc;
+	rf->apc_floor = o->apc_floor != NULL ? o->apc_floor(o->ctx, b) : 0u;
+	if (rf->apc_floor >= apc) {
+		rf->apc_floor = 0;	// a level under the floor (none in the table): ramp from 0 as before
+	}
 	rf->lo_hz = p.lo_hz;
 	rf->band = b;
 	rf->retunes++;
@@ -385,7 +389,7 @@ md9600_rf_err_t md9600_rf_pa(md9600_rf_t *rf, bool on)
 	const md9600_rf_ops_t *o = rf->ops;
 	if (!on) {
 		if (rf->pa_on) {
-			apc_ramp(o, rf->apc, 0);
+			apc_ramp(o, rf->apc, rf->apc_floor);
 		}
 		md9600_rf_pa_safe(rf);
 		return MD9600_RF_OK;
@@ -397,14 +401,15 @@ md9600_rf_err_t md9600_rf_pa(md9600_rf_t *rf, bool on)
 	if (rf->pa_on) {
 		return MD9600_RF_OK;
 	}
-	// The reference at zero, the band's transmitter supply, the loop, then the reference up to the level
-	o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, 0);
+	// The reference at the zero-output drive, the band's transmitter supply, the loop, then the reference up to the
+	// level. Under the floor the loop loses control and the PA puts out about 10 W
+	o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, rf->apc_floor);
 	set(o, ln_t5[1u - rf->tx_band], false);
 	set(o, ln_t5[rf->tx_band], true);
 	wait_us(o, MD9600_TX_SUPPLY_US);
 	set(o, MD9600_LN_APC, true);
 	rf->pa_on = true;
-	apc_ramp(o, 0, rf->apc);
+	apc_ramp(o, rf->apc_floor, rf->apc);
 	return MD9600_RF_OK;
 }
 
@@ -419,9 +424,10 @@ md9600_rf_err_t md9600_rf_pa_burst(md9600_rf_t *rf, bool on)
 	if (!on) {
 		// The ramp down, the loop open, then the transmitter supply off (2.5: per burst T5 and the loop toggle)
 		if (rf->pa_on) {
+			uint32_t span = (uint32_t)(rf->apc - rf->apc_floor);
 			for (uint32_t i = 1; i <= MD9600_BURST_RAMP_STEPS; i++) {
 				o->dac(o->ctx, MD9600_DAC_APC_TUNE_V,
-				       (uint16_t)(rf->apc - rf->apc * i / MD9600_BURST_RAMP_STEPS));
+				       (uint16_t)(rf->apc - span * i / MD9600_BURST_RAMP_STEPS));
 				if (i < MD9600_BURST_RAMP_STEPS) {
 					wait_us(o, MD9600_BURST_RAMP_STEP_US);
 				}
@@ -455,7 +461,7 @@ md9600_rf_err_t md9600_rf_pa_step(md9600_rf_t *rf, uint32_t step, uint32_t *next
 		if (rf->pa_on) {
 			return MD9600_RF_OK;
 		}
-		o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, 0);
+		o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, rf->apc_floor);
 		set(o, ln_t5[1u - rf->tx_band], false);
 		set(o, ln_t5[rf->tx_band], true);
 		*next_us = MD9600_BURST_T5_US;
@@ -468,7 +474,8 @@ md9600_rf_err_t md9600_rf_pa_step(md9600_rf_t *rf, uint32_t step, uint32_t *next
 		set(o, MD9600_LN_APC, true);
 		rf->pa_on = true;
 	}
-	o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, (uint16_t)(rf->apc * step / MD9600_BURST_RAMP_STEPS));
+	o->dac(o->ctx, MD9600_DAC_APC_TUNE_V,
+	       (uint16_t)(rf->apc_floor + (uint32_t)(rf->apc - rf->apc_floor) * step / MD9600_BURST_RAMP_STEPS));
 	*next_us = step < MD9600_BURST_RAMP_STEPS ? MD9600_BURST_RAMP_STEP_US : 0u;
 	return MD9600_RF_OK;
 }

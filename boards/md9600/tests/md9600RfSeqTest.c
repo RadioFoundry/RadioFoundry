@@ -130,6 +130,17 @@ static bool f_apc(void *ctx, uint32_t hz, uint8_t power, uint16_t *dac)
 	return apc_ok;
 }
 
+#if CONFIG_MD9600_TX
+static uint16_t apc_floor_value;
+
+static uint16_t f_apc_floor(void *ctx, uint8_t band)
+{
+	(void)ctx;
+	(void)band;
+	return apc_floor_value;
+}
+#endif
+
 static uint16_t f_noise(void *ctx, uint8_t band)
 {
 	(void)ctx;
@@ -579,6 +590,71 @@ static void check_dmr_split(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz)
 	pa_allowed = false;
 }
 
+// The reference's writes to the PA drive in [from, to) of the log
+static int apc_writes(int from, int to, uint16_t *lo, uint16_t *first, uint16_t *final)
+{
+	int n = 0;
+	for (int i = from; i < to && i < nev; i++) {
+		if (ev[i].kind == EV_DAC && ev[i].a == MD9600_DAC_APC_TUNE_V) {
+			*first = n == 0 ? (uint16_t)ev[i].v : *first;
+			*lo = n == 0 || ev[i].v < *lo ? (uint16_t)ev[i].v : *lo;
+			*final = (uint16_t)ev[i].v;
+			n++;
+		}
+	}
+	return n;
+}
+
+// With the loop closed the drive never goes under the band's zero-output drive (the floor): under it the loop loses
+// control and the PA puts out about 10 W. Every ramp starts and ends there; the drive goes to 0 only with the loop open
+static void test_tx_floor(void)
+{
+	const uint16_t fl = 800;
+	uint16_t lo, first, final;
+	ops.apc_floor = f_apc_floor;
+	apc_floor_value = fl;
+	fresh(MD9600_REV_V5, true);
+	pa_allowed = true;
+	CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK && md9600_rf_tx_arm(&rf, true));
+	reset_log();
+	CHECK(md9600_rf_tx(&rf, 446000000u, true, 1) == MD9600_RF_OK);
+	int t5 = find(0, EV_LINE, MD9600_LN_T5_U, 1), lp = find(0, EV_LINE, MD9600_LN_APC, 1);
+	int zf = last(EV_DAC, MD9600_DAC_APC_TUNE_V, fl);
+	CHECK(t5 > 0 && lp > t5 && zf >= 0 && zf < t5);
+	CHECK(apc_writes(lp, nev, &lo, &first, &final) == (int)MD9600_APC_RAMP_STEPS && lo > fl && final == apc_value + 1);
+	reset_log();
+	md9600_rf_tx_off(&rf);
+	int op = find(0, EV_LINE, MD9600_LN_APC, 0);
+	CHECK(op > 0 && apc_writes(0, op, &lo, &first, &final) == (int)MD9600_APC_RAMP_STEPS && lo == fl && final == fl);
+	CHECK(dac_now[MD9600_DAC_APC_TUNE_V] == 0 && pa_off_now());
+
+	// DMR bursts: the same, in the short ramps
+	CHECK(md9600_rf_tx_tune(&rf, 446000000u, 1, false) == MD9600_RF_OK);
+	reset_log();
+	CHECK(md9600_rf_pa_burst(&rf, true) == MD9600_RF_OK);
+	CHECK(apc_writes(0, nev, &lo, &first, &final) == (int)MD9600_BURST_RAMP_STEPS + 1);
+	zf = find(0, EV_DAC, MD9600_DAC_APC_TUNE_V, fl);
+	CHECK(first == fl && lo == fl && final == apc_value + 1 && zf >= 0 && zf < find(0, EV_LINE, MD9600_LN_T5_U, 1));
+	reset_log();
+	CHECK(md9600_rf_pa_burst(&rf, false) == MD9600_RF_OK);
+	op = find(0, EV_LINE, MD9600_LN_APC, 0);
+	CHECK(apc_writes(0, op, &lo, &first, &final) == (int)MD9600_BURST_RAMP_STEPS && lo == fl && final == fl);
+	CHECK(dac_now[MD9600_DAC_APC_TUNE_V] == 0 && pa_off_now());
+	md9600_rf_tx_off(&rf);
+
+	// A level under the floor (none in the table): the ramp from 0 as without one
+	apc_floor_value = (uint16_t)(apc_value + 10);
+	reset_log();
+	CHECK(md9600_rf_tx(&rf, 446000000u, true, 1) == MD9600_RF_OK);
+	lp = find(0, EV_LINE, MD9600_LN_APC, 1);
+	zf = last(EV_DAC, MD9600_DAC_APC_TUNE_V, 0);
+	CHECK(zf >= 0 && zf < find(0, EV_LINE, MD9600_LN_T5_U, 1));
+	CHECK(apc_writes(lp, nev, &lo, &first, &final) == (int)MD9600_APC_RAMP_STEPS && lo < apc_value / 2);
+	md9600_rf_tx_off(&rf);
+	ops.apc_floor = NULL;
+	pa_allowed = false;
+}
+
 static void test_tx(void)
 {
 	for (int r = MD9600_REV_V1V3; r < MD9600_REV_COUNT; r++) {
@@ -784,10 +860,12 @@ static void test_cal(void)
 	// Front end, PA rising with the level, squelch rows
 	cal_put(0x30, 100, 9);
 	cal_put(0x39, 50, 5);
+	// The factory PA rows as one radio has them (hardware-md9600.md 5.6): about 10, 14, 25 and 40 W on UHF
 	const uint16_t pa_u[4] = { 0x20, 0x1A0, 0x190, 0x10 }, pa_v[4] = { 0x29, 0x1A9, 0x199, 0x19 };
+	const uint8_t row_u[4] = { 51, 58, 77, 110 }, row_v[4] = { 62, 67, 71, 110 };
 	for (int l = 0; l < 4; l++) {
-		cal_put(pa_u[l], (uint8_t)(40 + 30 * l), 9);
-		cal_put(pa_v[l], (uint8_t)(20 + 30 * l), 5);
+		cal_put(pa_u[l], row_u[l], 9);
+		cal_put(pa_v[l], row_v[l], 5);
 	}
 	cal_put(0x40, 60, 9);
 	cal_put(0x60, 140, 9);
@@ -799,14 +877,42 @@ static void test_cal(void)
 	CHECK(strcmp(md9600_cal_source(), "factory") == 0);
 	CHECK(md9600_cal_rx_tune(400000000u) == 1600 && md9600_cal_rx_tune(405000000u) == 1616);
 	CHECK(md9600_cal_rx_tune(136000000u) == 800);
-	CHECK(md9600_cal_apc(400000000u, 0, &dac) && dac == 40 * 16);
-	CHECK(md9600_cal_apc(410000000u, 3, &dac) && dac == (130 + 1) * 16);
-	CHECK(md9600_cal_apc(136000000u, 1, &dac) && dac == 50 * 16);
-	CHECK(!md9600_cal_apc(446000000u, 4, &dac));
+	CHECK(md9600_cal_pa_row(400000000u, 0, &dac) && dac == 51 * 16);
+	CHECK(md9600_cal_pa_row(410000000u, 3, &dac) && dac == (110 + 1) * 16);
+	CHECK(md9600_cal_pa_row(136000000u, 1, &dac) && dac == 67 * 16 && !md9600_cal_pa_row(136000000u, 4, &dac));
+	// The power levels: the low three fixed drives, 25 W between the factory rows around it, the top past the top row
+	const uint16_t lv_u[5] = { 452, 509, 680, 1232 + (1760 - 1232) * 8 / 152, 1760 + 337 };
+	const uint16_t lv_v[5] = { 880, 892, 947, 1072 + (1136 - 1072) * 67 / 83, 1760 + 45 };
+	for (uint8_t l = 0; l < 5; l++) {
+		CHECK(md9600_cal_apc(400000000u, l, &dac) && dac == lv_u[l]);
+		CHECK(md9600_cal_apc(136000000u, l, &dac) && dac == lv_v[l]);
+	}
+	CHECK(md9600_cal_apc(410000000u, 4, &dac) && dac == (110 + 1) * 16 + 337);	// the top follows the rows
+	CHECK(md9600_cal_apc(410000000u, 0, &dac) && dac == 452);			// the low levels don't
+	CHECK(!md9600_cal_apc(446000000u, 5, &dac));
+	CHECK(md9600_cal_apc_floor(MD9600_UHF) == 440 && md9600_cal_apc_floor(MD9600_VHF) == 870);
+	CHECK(md9600_cal_apc_floor(2) == 0);
 	CHECK(md9600_cal_squelch(400000000u, &l1, &l9) && l1 == 140 * 16 && l9 == 60 * 16);
 
 	// A PA row that doesn't rise with the level: transmit has no calibration
-	sec[1][0xA0 + 4] = (uint8_t)(40 + 4);	// 10 W at 440 MHz down to the 5 W value
+	// A top row that puts the top level past the drive limit, or rows so low that 25 W falls under 5 W's fixed drive:
+	// no level transmits
+	cal_put(0x10, 125, 9);
+	md9600_cal_load();
+	CHECK(md9600_cal_pa_row(400000000u, 3, &dac) && !md9600_cal_apc(400000000u, 0, &dac));
+	cal_put(0x10, 110, 9);
+	cal_put(0x1A0, 30, 9);
+	cal_put(0x190, 35, 9);
+	cal_put(0x10, 40, 9);
+	cal_put(0x20, 25, 9);
+	md9600_cal_load();
+	CHECK((md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA) && !md9600_cal_apc(400000000u, 2, &dac));
+	for (int l = 0; l < 4; l++) {
+		cal_put(pa_u[l], row_u[l], 9);
+	}
+	md9600_cal_load();
+	CHECK(md9600_cal_apc(400000000u, 4, &dac));
+	sec[1][0xA0 + 4] = (uint8_t)(51 + 4);	// the second row at 440 MHz down to the first row's value
 	md9600_cal_load();
 	CHECK(!(md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA) && !md9600_cal_apc(446000000u, 0, &dac));
 	CHECK((md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_RX) && (md9600_cal_rf_rows(MD9600_VHF) & MD9600_CALOK_PA));
@@ -922,6 +1028,7 @@ int main(void)
 	test_tx_gates();
 #if CONFIG_MD9600_TX
 	test_tx();
+	test_tx_floor();
 	for (int r = MD9600_REV_V1V3; r < MD9600_REV_COUNT; r++) {
 		if (md9600_rev_built((md9600_rev_t)r)) {
 			check_dmr_tx((md9600_rev_t)r, 446075000u, 0);

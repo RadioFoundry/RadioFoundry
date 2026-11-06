@@ -328,10 +328,41 @@ port's.
 
 ### 5.6 Power levels and control
 
-DAC2 (12 bit) is the APC reference. Four calibrated points per frequency (11.2) labeled 5 W,
-10 W, 25 W and 40 W (labels, not measured); lower levels as a fixed fraction of the 5 W value (VHF 0.82-0.90, UHF
-0.41-0.64 for 100 mW..1 W). Power is reported poorly calibrated on some radios, and some older units
-only working well on DMR at full power (unverified). RadioFoundry: refuse TX without an accepted table, as on the MD-380.
+DAC2 (12 bit) is the APC reference: the PA drive, in DAC counts. The factory calibration (11.2) holds four PA rows per
+frequency point, labeled 5 W, 10 W, 25 W and 40 W. The labels are wrong: the rows put out about 10, 14-21, 24-28 and
+40-50 W. Measured on one radio with a wattmeter into a dummy load (FM carrier, procedure in
+[power-calibration.md](../testing/power-calibration.md)):
+
+| | UHF 446.100 | UHF 440.000 | VHF 151.5125 | VHF 146.535 |
+|---|---|---|---|---|
+| Factory rows (drive → W) | 816 → 9.6, 928 → 13.9, 1232 → 24.8, 1760 → 39.6 | 800 → 8.7, 896 → 12.3, 1216 → 23.6, 1776 → 39.2 | 992 → 10.1, 1072 → 20.7, 1136 → 28.5, 1760 → 50.2 | 1008 → 10.1, 1056 → 15.8, 1136 → 24.7, 1680 → 48.4 |
+| Zero point (highest drive under 0.02 W) | 440 | 450 | 870 | 870 |
+| Cliff (highest drive at about 10 W) | 410 | 420 | 860 | 850 |
+| Hot (after 3 × 5 s at 25 W): zero point, cliff | 445, 415 | | 870, 860 | |
+| Low curve (drive → W) | 450 → 0.07, 504 → 0.96, 677 → 4.99 | 450 → 0.01, 500 → 0.76, 680 → 4.88 | 880 → 0.22, 890 → 0.88, 950 → 5.65 | 880 → 0.36, 890 → 0.86, 950 → 4.85 |
+| Top (drive → W) | 2100 → 45.4, 2250 → 47.1 | 2100 → 44.5, 2200 → 46.1 | 1500 → 46.7 | 1760 → 49.8, 1800 → 50.4 |
+
+- **The cliff.** Below the zero point by 5-20 counts the power loop loses control and the PA puts out about 10 W. A
+  drive of 0 is below it: the ramp starts and ends at the band's zero point (UHF 440, VHF 870), and the drive goes to 0
+  only with the loop open. Ramping from 0 gave a carrier at key-up and a splash at key-down.
+- **The low end** follows the absolute drive, the same within 5 counts at both frequencies of a band. The low levels
+  are fixed drives per band.
+- **The upper levels** move with frequency and follow the factory rows: 25 W is interpolated in watts between the rows
+  around it, the top level is the top row plus a fixed step.
+- **Lowest level.** The margin above the cliff is 20 counts (hot shift 5). UHF reaches 50 mW (452); on VHF the curve
+  is steeper, and 250 mW (880) is the lowest level that keeps the margin.
+
+| Level | UHF drive | UHF name | VHF drive | VHF name |
+|---|---|---|---|---|
+| 0 | 452 | 50 mW | 880 | 250 mW |
+| 1 | 509 | 1 W | 892 | 1 W |
+| 2 | 680 | 5 W | 947 | 5 W |
+| 3 | rows 2-3 (UHF) or 1-2 (VHF) at 25 W | 25 W | as UHF | 25 W |
+| 4 | top row + 337 | 45 W | top row + 45 | 50 W |
+
+A radio whose rows give levels that don't rise, or a top level over 2300 counts, transmits on no level. The debug
+link's `tx_drive` view key shows each level's drive, and RADIO op 36 sets one transmission's drive
+([debuglink.md](debuglink.md)). RadioFoundry refuses TX without an accepted table.
 
 ### 5.7 RSSI, noise, squelch
 

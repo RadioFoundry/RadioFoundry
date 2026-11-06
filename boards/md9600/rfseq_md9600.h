@@ -56,6 +56,10 @@ typedef struct {
 	// power level (false: no usable PA calibration there, transmit is refused)
 	uint16_t (*rx_tune)(void *ctx, uint32_t hz);
 	bool (*apc)(void *ctx, uint32_t hz, uint8_t power, uint16_t *dac);
+	// Optional: the APC drive where the band's PA output reaches zero. The power loop loses control under it (the PA
+	// jumps to about 10 W, drive 0 included), so the reference waits there while the transmitter supply and the loop
+	// come on and off, and every ramp starts and ends there. NULL: 0
+	uint16_t (*apc_floor)(void *ctx, uint8_t band);
 	// A 12-bit noise reading of the band's receiver (the probe)
 	uint16_t (*noise)(void *ctx, uint8_t band);
 	void *ctx;
@@ -125,6 +129,7 @@ typedef struct {
 	uint32_t tx_hz;
 	uint8_t tx_band;
 	uint16_t apc;			// APC DAC value of the running transmission
+	uint16_t apc_floor;		// its band's zero-output drive (ops.apc_floor)
 	bool pa_on;
 	// Diagnostics
 	uint32_t lo_hz;			// the synthesizer's last frequency

@@ -40,8 +40,14 @@ static const band_t bands[] = {
 	{ 400000000, 480000000, true },
 };
 
-// The radio's four power levels (hardware-md9600.md 5.6: labels, not measured)
-static const char *const power_names[] = { "5W", "10W", "25W", "40W" };
+// The power levels, per band (hardware-md9600.md 5.6: measured with a wattmeter). The same steps on both bands, the
+// lowest and the top differ
+static const char *const power_names[] = { "50mW", "1W", "5W", "25W", "45W" };
+static const char *const power_names_vhf[] = { "250mW", "1W", "5W", "25W", "50W" };
+static const board_power_band_t power_bands[] = {
+	{ 136000000u, 174000000u, power_names_vhf },
+	{ 400000000u, 480000000u, power_names },
+};
 
 // docs/ux/information-architecture.md 7.4 on the front panel (hardware-md9600.md 9.1): Enter and Back, P1 / P2 as
 // QUICK / CONTEXT, Up / Down, P3 monitor, P4 talk target, the orange key a user key. The encoder sends ENC_STEP. The
@@ -109,7 +115,9 @@ const board_t board = {
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 0,
+	.power_bands = power_bands,
+	.power_band_count = sizeof(power_bands) / sizeof(power_bands[0]),
+	.power_default = 2,	// 5 W
 	.display = &md9600_display,
 	.input = &md9600_input,
 	.keymap = keymap,

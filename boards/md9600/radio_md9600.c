@@ -143,10 +143,29 @@ static uint16_t op_rx_tune(void *ctx, uint32_t hz)
 	return md9600_cal_rx_tune(hz);
 }
 
+// The PA drive set over the debug link for the next transmission (power calibration; hal_radio_t.tx_drive), 0 = the
+// level's. Any task sets it; tx_off clears it
+static volatile uint16_t drive_override;
+
 static bool op_apc(void *ctx, uint32_t hz, uint8_t power, uint16_t *dac)
 {
 	(void)ctx;
+	uint16_t o = drive_override;
+	if (o != 0) {
+		uint16_t lv;	// only where the level itself would transmit: band, calibration
+		if (!md9600_cal_apc(hz, power, &lv)) {
+			return false;
+		}
+		*dac = o;
+		return true;
+	}
 	return md9600_cal_apc(hz, power, dac);
+}
+
+static uint16_t op_apc_floor(void *ctx, uint8_t band)
+{
+	(void)ctx;
+	return md9600_cal_apc_floor(band);
 }
 
 static uint16_t op_noise(void *ctx, uint8_t band)
@@ -164,6 +183,7 @@ static const md9600_rf_ops_t ops = {
 	.locked = NULL,		// no lock detect line is known on any revision
 	.rx_tune = op_rx_tune,
 	.apc = op_apc,
+	.apc_floor = op_apc_floor,
 	.noise = op_noise,
 };
 
@@ -562,7 +582,25 @@ static void tx_off(void)
 #endif
 	md9600_rf_tx_off(&rf);
 	md9600_c6000_fm_tx_end();
+	drive_override = 0;	// one transmission only
 }
+
+#if CONFIG_MD9600_TX
+static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
+{
+	uint16_t d;
+	return md9600_cal_apc(hz, level, &d) ? d : 0u;
+}
+
+static bool tx_drive(uint16_t drive)
+{
+	if (drive > MD9600_APC_MAX) {
+		return false;
+	}
+	drive_override = drive;
+	return true;
+}
+#endif
 
 static void rx_sleep(bool sleep)
 {
@@ -653,5 +691,9 @@ const hal_radio_t md9600_radio = {
 	.rx_sleep = rx_sleep,
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
+#endif
+#if CONFIG_MD9600_TX
+	.tx_drive_level = tx_drive_level,
+	.tx_drive = tx_drive,
 #endif
 };
