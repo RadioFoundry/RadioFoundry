@@ -937,12 +937,15 @@ def hardware_problems(bid, unsupported, unconfirmed, built, hw):
 
 def write_test_problems(start, nand, spi_size, areas, protect):
     """Why [flash.stub] write_test can't be the stub's data flash test region [start, start + STUB_WRITE_TEST): a NAND
-    (never written by the stub tool), off the sector boundaries, past the chip (an address past it wraps to a low one),
-    or over an area of the flash map or a protected region. areas: Board.map_areas(); protect: the data entries."""
+    (never written by the stub tool), a negative offset, off the sector boundaries, past the chip (an address past it
+    wraps to a low one), or over an area of the flash map or a protected region. areas: Board.map_areas(); protect: the
+    data entries."""
     end = start + STUB_WRITE_TEST
     if nand:
         return ["the data memory is a NAND, which the stub tool never writes"]
     out = []
+    if start < 0:
+        out.append("a negative offset")
     if start % DATA_SECTOR:
         out.append("not on a 0x%X sector boundary" % DATA_SECTOR)
     if end > spi_size:
@@ -1610,6 +1613,7 @@ def self_test():
     ok(write_test_problems(0x71B800, False, 0x1000000, areas, prot) == ["not on a 0x1000 sector boundary"],
        "write_test: off a sector boundary")
     ok(write_test_problems(0x71C000, True, 0x1000000, [], []) != [], "write_test: never on a NAND")
+    ok(write_test_problems(-0x4000, False, 0x1000000, areas, []) == ["a negative offset"], "write_test: not below 0")
     with open(os.path.join(tmpc, "flash2.c"), "w", encoding="utf-8") as f:
         f.write("const hal_flash_map_t m2 = { .openfw_eeprom = 0x600000 };\n")
     try:

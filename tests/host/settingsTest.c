@@ -604,8 +604,6 @@ static void test_settings_gateway_upgrade(void)
 	CHECK(st.load == SETTINGS_LOADED && s.ds_ip_gateway == 9996543u && s.vfo2_rx_hz == 446006250u);
 }
 
-// The crash report's mode and target live in spare bits of accent, theme and updown_home (settings.h): each field
-// keeps its own bits whatever the other one does
 // hal_flash_map_end: where a map's highest area ends, so a driver can refuse a map its chip is too small for
 static void test_map_end(void)
 {
@@ -625,8 +623,13 @@ static void test_map_end(void)
 	low.calibration_addr = 0x40000u;
 	low.calibration_size = 0x1000u;
 	CHECK(hal_flash_map_end(&low, 4096) == 0x41000u);
+	low.calibration_size = 0;			// an area of size 0 is none, wherever its address points
+	low.staging_addr = 0x80000u;
+	CHECK(hal_flash_map_end(&low, 4096) == 0x1B000u);
 }
 
+// The crash report's mode and target live in spare bits of accent, theme and updown_home (settings.h): each field
+// keeps its own bits whatever the other one does
 static void test_crash_bits(void)
 {
 	settings_t s;
