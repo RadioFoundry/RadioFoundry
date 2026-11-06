@@ -136,7 +136,7 @@ static const hal_power_t fake_power = { .led = p_led, .battery_mv = p_battery_mv
 static bool a_start(audio_block_cb_t cb, void *ctx) { (void)cb; (void)ctx; return true; }
 static void a_stop(void) {}
 static void a_pcm(bool on) { (void)on; }
-static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
+static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm };
 static bool v_present(void) { return true; }
 static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
@@ -198,14 +198,14 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 	*out = zone;
 	return true;
 }
-uint32_t codeplug_dmr_id(void) { return 3101276; }
+uint32_t codeplug_dmr_id(void) { return 9996543; }
 bool codeplug_kv_get_id(uint16_t key, uint32_t *id) { (void)key; (void)id; return false; }	// no settings area
 bool codeplug_contact(uint16_t index, contact_t *out) { (void)index; (void)out; return false; }
 bool codeplug_listen_list(uint16_t index, listen_list_t *out) { (void)index; (void)out; return false; }
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out) { (void)id; (void)group; (void)out; return false; }
 bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
 {
-	*out = (codeplug_dmr_settings_t){ "N0CALL", 0, 0 };
+	*out = (codeplug_dmr_settings_t){ "Q0TEST", 0, 0 };
 	return true;
 }
 bool dmr_iddb_lookup(uint32_t id, char *out, size_t len) { (void)id; (void)out; (void)len; return false; }

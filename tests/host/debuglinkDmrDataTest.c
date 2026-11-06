@@ -133,7 +133,7 @@ static void test_ip_settings(void)
 	uint8_t r[1 + 15];
 
 	memset(&settings, 0, sizeof settings);
-	settings.ipGatewayId = 3100500;
+	settings.ipGatewayId = 9990500;
 	r[0] = DL_DATA_OP_IP_SETTINGS;
 	r[1] = DMR_UDPC_AUTO;
 	r[2] = DMR_IPC_RULES;
@@ -141,10 +141,10 @@ static void test_ip_settings(void)
 	put32(r + 4, 1234);
 	put32(r + 8, 0);
 	CHECK(cmd(r, 1 + 11) == 1 && out[0] == DL_ST_OK);
-	CHECK(settings.ipGatewayId == 3100500 && settings.ipConfirmedRule[0] == 1234 &&
+	CHECK(settings.ipGatewayId == 9990500 && settings.ipConfirmedRule[0] == 1234 &&
 	      settings.ipConfirmedTries == DMR_IPC_TRIES_DEFAULT);
-	put32(r + 12, 0xFF000000u | 3101276u);
-	CHECK(cmd(r, 1 + 15) == 1 && out[0] == DL_ST_OK && settings.ipGatewayId == 3101276u);
+	put32(r + 12, 0xFF000000u | 9996543u);
+	CHECK(cmd(r, 1 + 15) == 1 && out[0] == DL_ST_OK && settings.ipGatewayId == 9996543u);
 	put32(r + 12, 0);
 	CHECK(cmd(r, 1 + 15) == 1 && out[0] == DL_ST_OK && settings.ipGatewayId == 0);
 	// Between the two lengths: the old request, the gateway ID left alone
@@ -194,12 +194,12 @@ static void test_ip_send(void)
 	CHECK(cmd(r, 10 + sizeof text) == 1 && out[0] == DL_ST_OK);
 	CHECK(air.calls == 2 && air.group && air.dst == 9 && air.dst_ip == dmrDataIdAddress(true, 9));
 	// With an IPv4 destination (192.168.10.5, little endian like every u32 here): the payload after it
-	put32(r + 1, 3100500);
+	put32(r + 1, 9990500);
 	r[5] = 2;
 	put32(r + 10, 0xC0A80A05u);
 	memcpy(r + 14, text, sizeof text);
 	CHECK(cmd(r, 14 + sizeof text) == 1 && out[0] == DL_ST_OK);
-	CHECK(air.calls == 3 && !air.group && air.dst == 3100500 && air.dst_ip == 0xC0A80A05u &&
+	CHECK(air.calls == 3 && !air.group && air.dst == 9990500 && air.dst_ip == 0xC0A80A05u &&
 	      air.length == 8 + (int)sizeof text && air.l4[5] == 8 + sizeof text &&
 	      memcmp(air.l4 + 8, text, sizeof text) == 0);
 	// An empty payload is a datagram of 8; flag bit 1 without the address is malformed, as is a short header

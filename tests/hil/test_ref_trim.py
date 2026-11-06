@@ -8,7 +8,7 @@ trim in effect before is put back. Skipped on a radio without the trim (`ref_tri
 
 test_ref_trim_moves_carrier (radio_tx, --allow-rf; the SDR bench): the FM VFO on --fm-mhz, lowest power, no tone,
 keyed at trims 0, +5.0 and -5.0 ppm. Each trim moves the carrier from the one at 0 by trim x f within
-CARRIER_TOL_HZ (5.0 ppm is 2307 Hz at 461.4625 MHz): the board's scale, its sign and that the trim reaches the
+CARRIER_TOL_HZ (5.0 ppm of a UHF carrier is about 2.3 kHz): the board's scale, its sign and that the trim reaches the
 transmitter. The trim in effect before is put back.
 """
 import time
@@ -18,6 +18,7 @@ import pytest
 from rfoundry_hil import skip
 from rfoundry_debug import DebugLinkError
 from test_fm_tx import PTT_S, fm_vfo, parse_fm, set_fm  # noqa: F401  (fm_vfo: the fixture)
+from hil_config import rig
 
 TRIMS_PPB = (5000, -5000)
 # The retune the trim asks for, and time for the RF supply to settle before the key-up: a radio keyed right after a
@@ -86,7 +87,7 @@ def test_ref_trim_moves_carrier(fm_vfo, sdr_bench, pytestconfig):
         skip("not_built", "the firmware has no reference trim keys (older firmware)")
     if now == "-":
         skip("not_built", "the reference trim is not written for this radio (no hal_radio_t.ref_trim)")
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     set_fm(radio, False, "none", 0)
     before = int(now)
     try:

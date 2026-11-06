@@ -165,7 +165,7 @@ TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
            $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
            $(CORE)/codeplug/zone_settle.c \
-           $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c
+           $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c $(CORE)/radio/tx_limit.c
 RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
@@ -227,7 +227,7 @@ roamTest: $(ROAMT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h
 TESTS   += aprsRadioTest
 FMONLY  := -DCONFIG_DMR=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DCONFIG_DMR_SMS=0 -DCONFIG_DMR_ARS=0 \
            -DCONFIG_DMR_LRRP=0 -DCONFIG_DMR_SIGNALING=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=0 -DCONFIG_HOTSPOT=0
-APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c \
+APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/radio/tx_limit.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c \
            $(CORE)/radio/vibe.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/battery.c $(CORE)/radio/morse.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
            $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
@@ -775,6 +775,19 @@ run-debuglinkRx2: debuglinkRx2Test
 	./debuglinkRx2Test
 .PHONY: run-debuglinkRx2
 
+# DL_CMD_CHIP_REG, RF chip and SoC registers on the debug link (core/debuglink/debuglink_chipreg.c): the board's hooks
+# and the transmit check are faked
+CHIPREG := debuglinkChipRegTest.c $(CORE)/debuglink/debuglink_chipreg.c
+TESTS   += debuglinkChipRegTest
+debuglinkChipRegTest: $(CHIPREG) $(ROOT)/hal/board.h $(ROOT)/hal/hal_system.h $(CORE)/debuglink/debuglink.h \
+		$(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -o $@ $(CHIPREG)
+
+run: run-debuglinkChipReg
+run-debuglinkChipReg: debuglinkChipRegTest
+	./debuglinkChipRegTest
+.PHONY: run-debuglinkChipReg
+
 # DL_CMD_DMR_DATA's IP operations (core/debuglink/debuglink_dmr_data.c): the settings' gateway ID and IP_SEND's parsing
 DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/debuglink/dl_fmt.c $(DATA)
 TESTS   += debuglinkDmrDataTest
@@ -944,6 +957,17 @@ run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest h
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-platform
+
+# The HR_C7000 interrupt stack's fill, canary and high-water count (platform/hrc7000/irq_stack.h)
+TESTS   += hrc7000IrqStackTest
+
+hrc7000IrqStackTest: hrc7000IrqStackTest.c $(ROOT)/platform/hrc7000/irq_stack.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000IrqStackTest.c
+
+run: run-irqstack
+run-irqstack: hrc7000IrqStackTest
+	./hrc7000IrqStackTest
+.PHONY: run-irqstack
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
 # radio's own services are mdnsTest's and tftpTest's)

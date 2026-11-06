@@ -373,7 +373,7 @@ static void tx_off(void)
 		hrc7000_fm_idle(&modem);
 	}
 	transmitting = false;
-	ring_play();	// a beep that started during the transmission is heard from here on
+	ring_play();
 	if (have_rx) {
 		retune();
 	}
@@ -496,14 +496,13 @@ static void audio(bool on)
 
 // The codec plays the speaker PCM only outside a transmission: the HR_C7000 mixes its ring playback into the TX
 // modulator, so a beep during DMR TX (the talk permit tone) put audio on the 4FSK and the bursts it overlapped lost
-// their sync (checked on the SDR bench: the voice LC headers sent during the tone didn't decode). The beep still runs,
-// silently, while transmitting
+// their sync (checked on the SDR bench: the voice LC headers sent during the tone didn't decode). In DMR the gate in
+// audio_pcm.c holds it off while the engine transmits; armed between bursts, the radio receives and beeps play (the
+// talk permit before the first burst). In FM TX the microphone has the modulator
 static void ring_play(void)
 {
-	bool on = (pcm_on && !transmitting) || afsk_tx;
-	uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
-	hrc7000_audio_bits(&modem, on ? C7_AUDIO_RING_PLAY : 0, on ? 0 : C7_AUDIO_RING_PLAY);
-	hrc_irq_restore(s);
+	bool on = (pcm_on && !(transmitting && mode != RADIO_MODE_DMR)) || afsk_tx;
+	hrc_audio_pcm_ring(&modem, on);
 }
 
 // Speaker PCM (a beep, DMR voice): the codec plays the CPU's samples from the prompt FIFO, the speaker listens to the
@@ -576,6 +575,22 @@ static void rx_sleep(bool sleep)
 	}
 }
 
+// The debug link's CHIP_REG (board.chip_reg, hardware-dm32.md 8.1): chip 0 is the FD6818, page 0 only, registers
+// 0x00-0x7F (bit 7 of the address is the read flag). Straight on the bus: the driver's copies of the state and bandwidth
+// words don't follow a write, and its next set-up overwrites it. A frame is atomic (rfbus.h), so the radio task's
+// frames and this one don't mix
+bool dm32_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	if (chip != 0 || page != 0 || reg > 0x7Fu || (write && *val > 0xFFFFu) || fd.bus == NULL) {
+		return false;	// fd.bus: not attached yet (radio init)
+	}
+	if (write) {
+		rfbus_write(fd.bus, reg, (uint16_t)*val);
+	}
+	*val = rfbus_read(fd.bus, reg);
+	return true;
+}
+
 const hal_radio_t dm32_radio = {
 	.init = init,
 	.set_mode = set_mode,
@@ -599,3 +614,9 @@ const hal_radio_t dm32_radio = {
 	.ref_trim = ref_trim,
 #endif
 };
+
+// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt)
+bool dm32_radio_transmitting(void)
+{
+	return transmitting;
+}

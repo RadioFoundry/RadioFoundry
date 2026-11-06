@@ -30,7 +30,7 @@ settings:
   boot:
     display: Logo
     message1: Test Radio
-    message2: N0CALL
+    message2: Q0TST
   audio:
     squelch: 3
     vox: off
@@ -41,8 +41,8 @@ settings:
     privateCallHangTime: 5 s
     groupCallHangTime: 3 s
 radioIDs:
-  - dmr: {id: id1, name: N0CALL, number: 1234567}
-  - dmr: {id: id2, name: Club, number: 7654321}
+  - dmr: {id: id1, name: Q0TST, number: 9990567}
+  - dmr: {id: id2, name: Club, number: 9990654}
 contacts:
   - dmr: {id: cont1, name: TG 9, ring: false, type: GroupCall, number: 9, openGD77: {timeSlotOverride: None}}
   - dmr: {id: cont2, name: Echo Test, ring: false, type: PrivateCall, number: 9990, openGD77: {timeSlotOverride: TS2}}
@@ -126,7 +126,7 @@ positioning:
       message: 'It''s me'
       opengd77: {transmitQSY: true, baud: 300}
       destination: APN000-0
-      source: N0CALL-9
+      source: Q0TST-9
       path: [WIDE1-1, WIDE2-2, WIDE3-3]
   - dmr: {id: gps1, name: BM, period: 300, contact: cont1}
 scanLists:
@@ -145,7 +145,7 @@ test("yaml: block and flow collections, scalars, tags, comments, markers", () =>
 	assert.equal(d.settings.boot.message1, "Test Radio");
 	assert.equal(d.settings.audio.vox, "off");
 	assert.equal(d.settings.gnss.fixedPosition, "");
-	assert.deepEqual(d.radioIDs[0], { dmr: { id: "id1", name: "N0CALL", number: 1234567 } });
+	assert.deepEqual(d.radioIDs[0], { dmr: { id: "id1", name: "Q0TST", number: 9990567 } });
 	assert.equal(d.contacts[2].dmr.name, 201);
 	assert.deepEqual(d.contacts[1].dmr.openGD77, { timeSlotOverride: "TS2" });
 	assert.equal(d.channels[1].fm.name, "Simplex: 446");
@@ -224,7 +224,7 @@ test("import: every table and setting qdmr's file holds", () => {
 	assert.deepEqual(codes, { path_cut: 1, aprs_period: 1, dmr_positioning: 1, tot_off: 1, scan_lists: 1 });
 
 	// qdmr has no ARS server or IP gateway: the settings area's keys stay absent
-	assert.deepEqual(m.general, { radioName: "N0CALL", dmrId: 1234567, groupHang: 6, privateHang: 10, bootLine1: "Test Radio", bootLine2: "N0CALL",
+	assert.deepEqual(m.general, { radioName: "Q0TST", dmrId: 9990567, groupHang: 6, privateHang: 10, bootLine1: "Test Radio", bootLine2: "Q0TST",
 		arsServer: null, ipGateway: null });
 	assert.deepEqual(m.contacts.map((c) => [c.number, c.name, c.id, c.type, c.timeslot]),
 		[[1, "TG 9", 9, "group", 0], [2, "Echo Test", 9990, "private", 2], [3, "201", 201, "group", 0], [4, "All Call", 0xFFFFFF, "all", 0]]);
@@ -235,7 +235,7 @@ test("import: every table and setting qdmr's file holds", () => {
 	assert.deepEqual([c1.number, c1.mode, c1.rxHz, c1.txHz, c1.tot, c1.power, c1.colorCode, c1.timeslot], [1, "dmr", 439562500, 431962500, 180, 10, 7, 2]);
 	assert.equal(c1.contact, m.contacts[0]);
 	assert.equal(c1.rxList, m.rxLists[0]);
-	assert.equal(c1.dmrId, 7654321);
+	assert.equal(c1.dmrId, 9990654);
 	assert.deepEqual([c1.zoneSkip, c1.noBeep, c1.noEco, c1.aliasTs1, c1.roam, c1.dmo, c1.useLocation], [true, false, true, 2, true, true, true]);
 	assert.ok(Math.abs(c1.lat - 33.81) < 0.03 && Math.abs(c1.lon + 84.375) < 0.05);
 	assert.deepEqual([c2.mode, c2.name, c2.rxTone, c2.txTone, c2.bw, c2.vox, c2.squelch, c2.power, c2.allSkip, c2.noBeep, c2.tot],

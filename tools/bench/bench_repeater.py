@@ -12,7 +12,7 @@ MMDVMHost DMRSlot behavior on a duplex modem: BS sync, CACH with short LC, 3 hea
 call hang, AMBE FEC regenerated) with no network link. Needs the dual modem (two ADF7021s; a single one can't run
 duplex) and the rfoundry_sdrbench package. The bench's gateway service must not hold the bench modem.
 
-    bench_repeater.py --rx 466.6875 --tx 461.6875 [--cc 2] [--seconds 60] [--hang 4] [--call-hang 3]
+    bench_repeater.py --rx MHZ --tx MHZ --cc CC [--seconds 60] [--hang 4] [--call-hang 3]
                     [--slots 1,2] [--power 255] [--json] [--beacon S --beacon-len S [--beacon-phase S]]
 
 --beacon S: an idle repeater's roaming beacon (docs/spec/dmr-roaming.md 4.8): every S seconds, while the transmitter is
@@ -33,6 +33,7 @@ never brings it up (that is the expected failure for a radio without BS activati
 import argparse
 import json
 import logging
+import os
 import threading
 import time
 
@@ -49,7 +50,8 @@ def main() -> None:
     ap.add_argument("--port", default="/dev/ttyS0")
     ap.add_argument("--rx", type=float, required=True, help="MHz: repeater input (the radio's TX)")
     ap.add_argument("--tx", type=float, required=True, help="MHz: repeater output (the radio's RX)")
-    ap.add_argument("--cc", type=int, default=2)
+    ap.add_argument("--cc", type=int, default=os.environ.get("RFOUNDRY_BENCH_CC"), required="RFOUNDRY_BENCH_CC" not in os.environ,
+                    help="color code ($RFOUNDRY_BENCH_CC), no default")
     ap.add_argument("--slots", default="1,2")
     ap.add_argument("--seconds", type=float, default=60)
     ap.add_argument("--hang", type=float, default=4.0, help="s the transmitter stays up after the last traffic")

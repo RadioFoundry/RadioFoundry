@@ -439,7 +439,7 @@ def _channel_record(name, rx_hz, tx_hz, dmr, cc=1, ts=1, contact=0, wide=False):
     return r
 
 
-def make_test_codeplug(img, rx_mhz=461.4625, tg=201, cc=2, ts=1, dmr_id=None, callsign=None):
+def make_test_codeplug(img, rx_mhz, tg, cc, ts=1, dmr_id=None, callsign=None):
     """Edit img (a flat image, file offset = flash address) so the radio has channel 1 (FM, 12.5 kHz, simplex), channel
     2 (DMR on the same frequency, color code cc, timeslot ts, talk target group tg = contact 1) and zone 1 holding both.
     Everything else in img stays; zone slot 0 and contact 1 are replaced. dmr_id and callsign set the radio's own."""
@@ -521,9 +521,9 @@ def main(argv=None):
     t = sub.add_parser("test-channels", help="edit an image (a new blank one if the file is missing): an FM and a DMR "
                        "test channel, a talk group contact and a zone")
     t.add_argument("image")
-    t.add_argument("--rx", type=float, default=461.4625, help="MHz, simplex (default 461.4625)")
-    t.add_argument("--tg", type=int, default=201)
-    t.add_argument("--cc", type=int, default=2)
+    t.add_argument("--rx", type=float, required=True, help="MHz, simplex: a frequency the rig may use")
+    t.add_argument("--tg", type=int, required=True, help="the talk group of the DMR channel")
+    t.add_argument("--cc", type=int, required=True, help="the DMR channel's color code")
     t.add_argument("--ts", type=int, choices=(1, 2), default=1)
     t.add_argument("--id", type=int, help="the radio's DMR ID")
     t.add_argument("--call", help="the radio's name / callsign")

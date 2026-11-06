@@ -62,6 +62,9 @@ typedef struct {
 	char name[CODEPLUG_NAME_LEN + 1];
 } ui_target_t;
 
+// A filtered list's raw row and its label (NULL: empty); false stops the pass
+typedef bool (*ui_raw_fn)(uint16_t raw, const char *label, void *ctx);
+
 typedef struct {
 	const char *name;	// the debug link's / simulator's name for it
 	uint8_t flags;
@@ -81,6 +84,13 @@ typedef struct {
 	// Filtered lists (SF_FILTER): rows before filtering and the text each is matched by
 	uint16_t (*raw_count)(void);
 	bool (*raw_label)(uint16_t raw, char *buf, uint8_t len);
+	// Optional: every raw row's label in one pass, in order (NULL for an empty row), until fn returns false. A long
+	// list read a record at a time costs a flash read per row and key: 1024 contacts took 0.2 s a key. labels false:
+	// nothing is typed, only which rows exist counts, and a row's label may be any text
+	void (*raw_each)(ui_raw_fn fn, void *ctx, bool labels);
+	// Optional: whether a raw row exists, without its label. Past the first UI_FILTER_MAX rows of an unfiltered list
+	// the cursor steps row by row, so a list of 1024 channels read a name a row
+	bool (*raw_used)(uint16_t raw);
 } ui_scr_def_t;
 
 extern const ui_scr_def_t *const ui_scr[SCR_COUNT];
@@ -200,7 +210,7 @@ void ui_crash_reset(void);
 void ui_crash_tick(uint32_t now_ms);
 
 // Text helpers
-void ui_sb_target(char *buf, size_t len, const ui_target_t *t);	// "TG 91 World", "Joe 3101234"
+void ui_sb_target(char *buf, size_t len, const ui_target_t *t);	// "TG 91 World", "Joe 9991234"
 void ui_sb_age(char *buf, size_t len, uint32_t ms);
 
 #endif

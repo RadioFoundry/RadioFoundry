@@ -81,7 +81,7 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Channel "Local" (DMR, 446.0125, CC 1, TS 1, TG 9)
+        1. Channel "Local" (DMR, CC 1, TS 1, TG 9)
         2. Press PTT for 5 seconds
         3. ...
     validations:

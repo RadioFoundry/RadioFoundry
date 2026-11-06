@@ -42,8 +42,8 @@ The computer gets its address from the radio by DHCP:
 
 | Who | Address |
 |---|---|
-| Your computer | 12.x.y.z, from your DMR ID (for example ID 3101234 is 12.47.82.50) |
-| The radio | Your computer's address with the last bit flipped (12.47.82.51) |
+| Your computer | 12.x.y.z, from your DMR ID (for example ID 9991234 is 12.152.116.66) |
+| The radio | Your computer's address with the last bit flipped (12.152.116.67) |
 | Another radio | 12.x.y.z from its DMR ID |
 | A talkgroup | 225.x.y.z from the talkgroup number |
 
@@ -58,7 +58,7 @@ The debug link, the MMDVM hotspot protocol and the CPS protocol stay reachable o
 address:
 
 ```
-tools/rfoundry_debug.py --port udp:12.47.82.51 version
+tools/rfoundry_debug.py --port udp:12.152.116.67 version
 ```
 
 MMDVMHost connects the same way (`Protocol=udp`, `ModemAddress=<radio address>`, `ModemPort=3334`). qdmr finds radios
@@ -67,13 +67,13 @@ only by their serial USB ID, so program the radio in serial mode.
 ## Finding the radio by name
 
 The radio answers Multicast DNS (Bonjour, Avahi) on the network adapter. Its name is `rfoundry-<DMR ID>.local`, for
-example `rfoundry-3101234.local`. It advertises its services. A browser for Bonjour services lists it by your call sign,
-the radio model and your DMR ID, for example "N0CALL XR-100UV (3101234)":
+example `rfoundry-9991234.local`. It advertises its services. A browser for Bonjour services lists it by your call sign,
+the radio model and your DMR ID, for example "Q0TST XR-100UV (9991234)":
 
 ```
-ping rfoundry-3101234.local
+ping rfoundry-9991234.local
 dns-sd -B _rfoundry-debug._udp            # macOS; avahi-browse -r _rfoundry-debug._udp on Linux
-tools/rfoundry_debug.py --port udp:rfoundry-3101234.local version
+tools/rfoundry_debug.py --port udp:rfoundry-9991234.local version
 ```
 
 | Service | Port | What |
@@ -106,22 +106,22 @@ traffic on to the Internet:
 ```
 # macOS (en0: your Internet connection)
 sudo sysctl -w net.inet.ip.forwarding=1
-echo "nat on en0 from 12.47.82.51 to any -> (en0)" | sudo pfctl -ef -
+echo "nat on en0 from 12.152.116.67 to any -> (en0)" | sudo pfctl -ef -
 # Linux (eth0: your Internet connection, usb0: the radio)
 sudo sysctl -w net.ipv4.ip_forward=1
-sudo iptables -t nat -A POSTROUTING -s 12.47.82.51/32 -o eth0 -j MASQUERADE
+sudo iptables -t nat -A POSTROUTING -s 12.152.116.67/32 -o eth0 -j MASQUERADE
 sudo iptables -A FORWARD -i usb0 -o eth0 -j ACCEPT
 sudo iptables -A FORWARD -i eth0 -o usb0 -m state --state RELATED,ESTABLISHED -j ACCEPT
 ```
 
-Use your radio's address instead of 12.47.82.51. Then give the radio a server's IP address. The radio can't look up
+Use your radio's address instead of 12.152.116.67. Then give the radio a server's IP address. The radio can't look up
 names. `dig +short rotate.aprs2.net` gives some addresses. You can also give a range in km for the messages and packets it
 receives:
 
 ```
-curl "http://12.47.82.51/api/aprsis?server=44.31.12.34:14580&range=50"
-curl "http://12.47.82.51/api/aprsis"              # the state
-curl "http://12.47.82.51/api/aprsis?server=off"   # stop
+curl "http://12.152.116.67/api/aprsis?server=44.31.12.34:14580&range=50"
+curl "http://12.152.116.67/api/aprsis"              # the state
+curl "http://12.152.116.67/api/aprsis?server=off"   # stop
 ```
 
 The radio logs in with its APRS callsign and the passcode computed from it. Your beacons go to APRS-IS when **KISS on
@@ -149,9 +149,9 @@ Which radios can transmit FM this way is in the [Radio reference](23-radios.md);
 The radio runs a TFTP server at its address. Any TFTP client works:
 
 ```
-curl tftp://rfoundry-3101234.local/codeplug.bin -o backup.bin       # read the codeplug
-curl -T edited.bin tftp://rfoundry-3101234.local/codeplug.bin        # write it
-curl tftp://rfoundry-3101234.local/info.txt                          # board, firmware, IDs, addresses
+curl tftp://rfoundry-9991234.local/codeplug.bin -o backup.bin       # read the codeplug
+curl -T edited.bin tftp://rfoundry-9991234.local/codeplug.bin        # write it
+curl tftp://rfoundry-9991234.local/info.txt                          # board, firmware, IDs, addresses
 ```
 
 `codeplug.bin` is the same 716,384-byte image `tools/cps_client.py read` makes. A file from either one can be
@@ -164,8 +164,8 @@ keys, as with the CPS, and re-reads the codeplug right after the write.
 The DMR ID database (the names shown for IDs that aren't contacts) has its own file:
 
 ```
-curl tftp://rfoundry-3101234.local/iddb.bin -o iddb.bin             # read the ID database
-curl -T iddb.bin tftp://rfoundry-3101234.local/iddb.bin              # write it
+curl tftp://rfoundry-9991234.local/iddb.bin -o iddb.bin             # read the ID database
+curl -T iddb.bin tftp://rfoundry-9991234.local/iddb.bin              # write it
 ```
 
 `iddb.bin` holds the database alone. The radio drops its old database as the new one starts arriving and shows names
@@ -186,8 +186,8 @@ The radio answers SNMP version 2c requests at its address, port 161 (not in buil
 small one:
 
 ```
-tools/rfoundry_snmp.py walk 12.47.82.51                 # everything the radio reports
-tools/rfoundry_snmp.py get 12.47.82.51 rfoundryBatteryVoltage.0 rfoundryChannelName.0
+tools/rfoundry_snmp.py walk 12.152.116.67               # everything the radio reports
+tools/rfoundry_snmp.py get 12.152.116.67 rfoundryBatteryVoltage.0 rfoundryChannelName.0
 tools/rfoundry_snmp.py traps                            # events as they happen (needs port 162: root on Linux)
 ```
 
@@ -202,7 +202,7 @@ The read community is `public`. Changing settings needs a write community, which
 
 ```
 tools/rfoundry_debug.py snmp write MySecret             # over the serial port, before switching to network mode
-tools/rfoundry_snmp.py -c MySecret set 12.47.82.51 sysName.0 s:N0CALL
+tools/rfoundry_snmp.py -c MySecret set 12.152.116.67 sysName.0 s:Q0TST
 tools/rfoundry_debug.py snmp status                     # the agent's settings and counters
 ```
 
@@ -267,7 +267,7 @@ Packets to a radio can also go as confirmed data. The other radio acknowledges e
 what didn't arrive. By default it makes 4 tries in all. Name up to two destinations (DMR IDs) or UDP ports:
 
 ```
-tools/rfoundry_debug.py data ip-settings auto rules id=3101234 port=161 tries=4
+tools/rfoundry_debug.py data ip-settings auto rules id=9991234 port=161 tries=4
 ```
 
 Talkgroup packets are never confirmed. A packet to a radio that doesn't answer is sent every try before it is dropped,
@@ -292,7 +292,7 @@ give the radio that radio's DMR ID in **Settings > Connections > Data services >
 [Codeplug Editor](04-programming.md), or over the debug link:
 
 ```
-tools/rfoundry_debug.py data ip-settings auto rules gateway=3100500
+tools/rfoundry_debug.py data ip-settings auto rules gateway=9990500
 tools/rfoundry_debug.py data ip-settings auto rules gateway=0      # off again
 ```
 
@@ -303,7 +303,7 @@ Then add a route on the computer for that network through the radio's address. F
 as `usb0`:
 
 ```
-sudo ip route add 10.20.0.0/16 via 12.0.39.20 dev usb0     # the radio's address (Addresses, above)
+sudo ip route add 10.20.0.0/16 via 12.152.116.67 dev usb0   # the radio's address (Addresses, above)
 ```
 
 Packets to that network go over the air to the gateway radio, with the real destination address in the packet. They

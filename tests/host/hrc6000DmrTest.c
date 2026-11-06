@@ -735,9 +735,9 @@ static void test_tx_aligned_rmo(void)
 {
 	fresh_engine();
 	pending_burst = false;
-	dmr_config_t cfg = { .own_id = 3100001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
+	dmr_config_t cfg = { .own_id = 9990001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
 	hrc6000_dmr_configure(&eng, &cfg);
-	CHECK(last_write(4, 0x14) == (3100001 >> 16) && last_write(4, 0x16) == (3100001 & 0xFF));
+	CHECK(last_write(4, 0x14) == (9990001 >> 16) && last_write(4, 0x16) == (9990001 & 0xFF));
 	CHECK(last_write(4, 0x1F) == 0x10);
 	// The repeater's CACH: the slot starting at tick k is TS1 on odd ticks, TS2 on even ones; 0x52 bit 2 at the
 	// interrupt is the TC of the slot that just ended (HRC6000_DMR_TC_IS_SLOT_NOW 0)
@@ -786,7 +786,7 @@ static void test_tc_locked_one_in_two(void)
 {
 	fresh_engine();
 	pending_burst = false;
-	dmr_config_t cfg = { .own_id = 3100001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
+	dmr_config_t cfg = { .own_id = 9990001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
 	hrc6000_dmr_configure(&eng, &cfg);
 	hrc6000_dmr_rx_lock_slot(&eng, 2);
 	uint32_t t = 7000000, junk = 12345;

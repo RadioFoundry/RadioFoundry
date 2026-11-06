@@ -398,7 +398,7 @@ them unchanged.
 | Offset | Size | Field |
 | --- | --- | --- |
 | 0x00 | 8 | Callsign / radio name, ASCII, 0xFF padded |
-| 0x08 | 4 | The radio's DMR ID: 8 BCD digits stored big endian (bytes in reading order, for example ID 2345678 is 02 34 56 78) |
+| 0x08 | 4 | The radio's DMR ID: 8 BCD digits stored big endian (bytes in reading order, for example ID 9992345 is 09 99 23 45) |
 | 0x0C | 1 | Codeplug version byte, written by the CPS. Not used by the firmware |
 | 0x0D | 3 | Reserved |
 | 0x10 | 1 each | ARS init delay, TX preamble duration, monitor type, VOX sensitivity, RX low battery, call alert duration, response timer, reminder timer, group hang, private hang (0x10..0x19) |
