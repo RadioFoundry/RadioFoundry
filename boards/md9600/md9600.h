@@ -152,6 +152,7 @@ extern const hal_audio_tap_t md9600_audio_tap;
 void md9600_c6000_mode(bool dmr, uint32_t hz);	// set_mode: into or out of DMR at the receive frequency
 void md9600_c6000_retune(uint32_t hz);		// after every receiver retune: reference offset, DMR receiver restart
 void md9600_speaker_fm(bool on, bool vhf);	// the core's FM squelch (hal_radio_t.audio)
+void md9600_speaker_poll(uint32_t now_ms);	// every status poll: ends the amplifier's hush after a squelch close
 // FM transmit: the chip in FM TX (the microphone, the band's FM modulation pair) before the PA keys, and back to the
 // receive set-up after the over (a no-op when not in FM TX)
 void md9600_c6000_fm_tx(uint32_t hz, bool wide);

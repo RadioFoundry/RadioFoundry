@@ -121,6 +121,8 @@ static void ref_offset(uint32_t hz)
 // Two callers: the core's FM squelch (md9600_speaker_fm, radio task) and PCM (speaker_pcm, the audio task or the radio
 // task). The mutex keeps their register and pin writes from interleaving
 static bool fm_wanted, pcm_wanted, band_vhf, warm_wanted;
+static bool fm_passing, hushing;	// FM audio let through on the last apply; the amplifier hushed after it
+static uint32_t hush_until;
 static SemaphoreHandle_t speaker_lock;
 
 // The codec DAC to the line out (4:0xE2 bit 1); in DMR also the codec under MCU control (4:0xE0 = 0xC9) with the I2S
@@ -145,7 +147,18 @@ static void speaker_apply(void)
 	if (locked) {
 		xSemaphoreTake(speaker_lock, portMAX_DELAY);
 	}
-	md9600_speaker_t s = md9600_speaker_lines(fm_wanted, pcm_wanted, diag.dmr, band_vhf, warm_wanted);
+	uint32_t now = hal_millis();
+	if (hushing && (int32_t)(now - hush_until) >= 0) {
+		hushing = false;
+	}
+	md9600_speaker_t s = md9600_speaker_lines(fm_wanted, pcm_wanted, diag.dmr, band_vhf, warm_wanted, hushing);
+	if (fm_passing && !s.fm_pass && !s.codec_out) {
+		// The squelch closed (not a beep taking over): the amplifier off through the receiver's fading noise
+		hushing = true;
+		hush_until = now + MD9600_FM_HUSH_MS;
+		s = md9600_speaker_lines(fm_wanted, pcm_wanted, diag.dmr, band_vhf, warm_wanted, true);
+	}
+	fm_passing = s.fm_pass;
 	if (s.af_mute) {
 		PIN_WRITE(PIN_AF_MUTE, true);	// mute first, then switch
 	}
@@ -169,6 +182,13 @@ void md9600_speaker_fm(bool on, bool vhf)
 	fm_wanted = on;
 	band_vhf = vhf;
 	speaker_apply();
+}
+
+void md9600_speaker_poll(uint32_t now_ms)
+{
+	if (hushing && (int32_t)(now_ms - hush_until) >= 0) {
+		speaker_apply();	// the hush is over: warm powers the amplifier again
+	}
 }
 
 // --- FM transmit ---

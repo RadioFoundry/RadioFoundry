@@ -18,13 +18,19 @@ typedef struct {
 	bool codec_out;		// the HR_C6000 codec DAC to its line out
 } md9600_speaker_t;
 
+// After the FM squelch closes the receiver's noise still reaches the amplifier for about 150 ms with FM_MUTE low (a
+// microphone at the speaker, UHF, the SDR bench, 2026-11-06: a hiss 38 dB over the floor fading out). The original
+// firmware mutes the amplifier when the squelch closes; warm waits this long before it powers the amplifier again
+#define MD9600_FM_HUSH_MS	200u
+
 // fm: the core's FM squelch is open. pcm: PCM is playing. dmr: the radio is in DMR, where the IF chip's audio is never
-// wanted. vhf: the receiver is on the VHF band. warm: the amplifier held on for a sound that may follow
-static inline md9600_speaker_t md9600_speaker_lines(bool fm, bool pcm, bool dmr, bool vhf, bool warm)
+// wanted. vhf: the receiver is on the VHF band. warm: the amplifier held on for a sound that may follow. hush: the
+// FM squelch closed less than MD9600_FM_HUSH_MS ago (warm doesn't count then; PCM still plays)
+static inline md9600_speaker_t md9600_speaker_lines(bool fm, bool pcm, bool dmr, bool vhf, bool warm, bool hush)
 {
 	md9600_speaker_t s;
 	bool fm_on = fm && !dmr && !pcm;
-	s.af_mute = !(fm_on || pcm || warm);
+	s.af_mute = !(fm_on || pcm || (warm && !hush));
 	s.fm_pass = fm_on;
 	s.af_vhf = vhf;
 	s.codec_out = pcm;
