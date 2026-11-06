@@ -372,22 +372,28 @@ def _target_bases(targets):
     return [FLASH_IMAGE_BASE if mk22 and "FLASH" in name.upper() else 0 for name, _ in targets]
 
 
+def _placed(targets):
+    """[(flat image address, bytes)] of every element, in file order."""
+    return [(b + a, d) for b, (_, elems) in zip(_target_bases(targets), targets) for a, d in elems]
+
+
 def dfu_regions(targets):
-    regions = [(b + a, b + a + len(d)) for b, (_, elems) in zip(_target_bases(targets), targets) for a, d in elems if d]
-    for (s0, e0), (s1, e1) in zip(sorted(regions), sorted(regions)[1:]):
+    regions = [(a, a + len(d)) for a, d in _placed(targets) if d]
+    by_start = sorted(regions)
+    for (s0, e0), (s1, e1) in zip(by_start, by_start[1:]):
         if s1 < e0:
             raise PortError("DfuSe file: elements overlap at 0x%X..0x%X (unknown target layout)" % (s1, min(e0, e1)))
     return regions
 
 
 def dfu_image(targets):
-    """A flat image (file offset = CPS wire address before the offset, 0xFF elsewhere) and its regions."""
+    """A flat image in the STM32 layout (file offset = CPS wire address before the offset, 0xFF elsewhere; an MK22
+    file's flash target moved up, _target_bases) and its regions."""
     regions = dfu_regions(targets)
     size = max([0x120000] + [e for _, e in regions])
     img = bytearray(b"\xff" * size)
-    for b, (_, elems) in zip(_target_bases(targets), targets):
-        for a, d in elems:
-            img[b + a:b + a + len(d)] = d
+    for a, d in _placed(targets):
+        img[a:a + len(d)] = d
     return img, regions
 
 
@@ -657,11 +663,10 @@ def self_test():
 
     # the opengd77 (MK22) layout: EEPROM and flash targets both from 0; the flash one lands at +0x20000, so the
     # general settings at EEPROM 0xE0 survive and a channel past 128 is where channel_addr looks
-    import cps_client
     eeprom = bytearray(b"\xff" * 0x5FE0)
     eeprom[0xE0 - 0x80:0xEC - 0x80] = b"Q1AAA\xff\xff\xff" + bytes.fromhex("09990001")
     flash = bytearray(b"\xff" * 0x13E60)
-    bitmap, rec = cps_client.channel_addr(130)
+    bitmap, rec = _cps().channel_addr(130)
     flash[bitmap - 0x9B000] = 0x02
     struct.pack_into("<H", flash, rec - 0x9B000 + CH_CONTACT, 2)
     t = [("Codeplug EEPROM", [(0x80, bytes(eeprom))]), ("Codeplug FLASH", [(0x0, b"\x5A" * 0x11A0),
