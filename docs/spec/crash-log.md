@@ -131,7 +131,7 @@ The chip's own reset flags come first where they say what happened. A chip witho
 | Platform | Chip flags | Words |
 |---|---|---|
 | STM32F4 | `RCC_CSR` (RM0090 7.3.21), read and cleared at start-up. Every reset also sets the pin flag, and a power-on sets the brown-out flag too, so the order is watchdog, software, power-on, brown-out, pin | the backup SRAM, after the record |
-| HR_C7000 | none: the POR, the reset pin and the watchdog drive one global reset (manual 2, 4.1) | `HRC_CRASH_BOOT`, the 16 bytes below the record. `hrc_soft_reset` runs from RAM and writes `soft` by address |
+| HR_C7000 | none: the POR, the reset pin and the watchdog drive one global reset (manual 2, 4.1) | `HRC_CRASH_BOOT`, the 16 bytes below the record. `hrc_restart` runs from RAM and writes `soft` by address |
 
 The boot stubs mark their own reset, not their entry, so a stub that hangs and is reset by the watchdog reads as the
 watchdog. The STM32 stub's RESET writes `soft` itself (`F4STUB_SOFT_MARK_ADDR` in `stub/stm32f4/f4stub_header.h`,
@@ -169,9 +169,9 @@ exceptions off: an unrecoverable error, and the radio stays stopped as without t
 
 The store is 256 bytes at 0x18007F00, the top of the SRAM shared with the modem. The codec's tables (from
 0x18000800, at most to 0x18004F90 in any supported codec build) and the microphone PCM (0x18000000) don't reach it.
-Main SRAM is not used: the vendor bootloader and the start-up use it. Restart: the chip's
-soft reset (`hrc_soft_reset`, the same as a reboot). With the fault trace (2.3) the lines go out first; without the
-crash log the fault ends in the same soft reset.
+Main SRAM is not used: the vendor bootloader and the start-up use it. Restart: a
+watchdog reset (`hrc_restart`, the same as a reboot; [watchdog.md](watchdog.md) 3). With the fault trace (2.3) the
+lines go out first; without the crash log the fault ends in the same restart.
 
 ### 2.3 Fault trace
 
@@ -299,7 +299,7 @@ Checked with `tests/hil/test_crash.py` and `tests/hil/test_watchdog.py` under `-
 2026-10-23) on the bench radios, at least one of each SoC family:
 
 - The store survives the restart (backup SRAM on the STM32F4, modem SRAM on the HR_C7000, through the soft reset and
-  the vendor bootloader). The record's CRC means a store that doesn't survive shows no record; it can't show a wrong
+  the vendor bootloader, and through the watchdog reset that replaced the soft reset on 2026-11-06). The record's CRC means a store that doesn't survive shows no record; it can't show a wrong
   one.
 - The trap test records a fault of the expected kind and the task `host`.
 - The restart cause (1.3): the watchdog tests read `watchdog` on the STM32F4 and `warm` on the HR_C7000, whose modem SRAM
@@ -362,9 +362,9 @@ Where it is called:
 | Path | STM32F4 | HR_C7000 |
 |---|---|---|
 | CPU fault | `stm32_fault` first (HardFault, MemManage, BusFault, UsageFault, NMI); without the crash log, `HardFault_Handler` and the NMI | `hrc_fault`, right after interrupts go off, with or without the crash log |
-| Crash capture | `crash_commit` and the soft capture (assert, stack overflow, out of heap), with interrupts off, before the store; `hal_crash_restart` | the same; `hal_crash_restart` is `hrc_soft_reset` |
+| Crash capture | `crash_commit` and the soft capture (assert, stack overflow, out of heap), with interrupts off, before the store; `hal_crash_restart` | the same; `hal_crash_restart` is `hrc_restart` |
 | Hooks without the crash log | stack overflow and malloc-failed hooks (`main.c`) | the same |
-| Software reset | `reboot()` (normal and ROM DFU) before `NVIC_SystemReset`; the ROM DFU entry at start-up (`stm32_sysboot_check`) | `hrc_soft_reset`, before the loader's clocks and the flash controller are put back |
+| Software reset | `reboot()` (normal and ROM DFU) before `NVIC_SystemReset`; the ROM DFU entry at start-up (`stm32_sysboot_check`) | `hrc_restart`, before the loader's clocks and the flash controller are put back |
 | Stub entry | `stm32_enter_stub` (replaces `board_stub_prepare`) | `enter_stub`, before the PIC, watchdog and flash controller changes |
 | Start-up | first thing in `main()`, before the ROM DFU check and the clocks | first thing in `main()`, before `hrc_clock_init` |
 | First stage (a board that has one) | | `boot/<id>/boot.c` drives the TX supplies and PA selects low and the RX supply high right after the power latch, before it offers the handshake (it may wait there for a host) |

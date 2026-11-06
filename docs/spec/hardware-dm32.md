@@ -53,7 +53,7 @@ All registers are in the modem/system block at 0x11000000. The sequence below is
 | 12 | IO_DIPLEX2 (0x03C) | clear bits 1:0 | CLK_OUT pin = PLLA clock out (datasheet: 0 = PLLA) |
 
 Resulting clocks used everywhere below: CPU/AHB 168 MHz, APB 84 MHz (timers, UARTs, SPI, I2C), SoC reference
-24 MHz. Soft reset of the whole chip: QUAD_ENABLE = 0, then SYS_SOFT_RSTN = 0. The soft reset keeps
+24 MHz. Soft reset of the whole chip: QUAD_ENABLE = 0, then SYS_SOFT_RSTN = 0 (it turns the watchdog off; RadioFoundry restarts by a watchdog reset instead, 3.5). The soft reset keeps
 LCSFC_BAUDR: after a session at divider 2 the ROM and bootloader can't read flash in single-bit mode and the radio stays
 dark until a power cycle. Set LCSFC_BAUDR = 4 before the reset (measured).
 
@@ -232,8 +232,11 @@ value) and 0 while open; any value but the key locks it. OT_LOAD_H is 3 bits (2:
 35-bit start value the counter counts up from, the timeout being its overflow at 2^35 (reset values H = 7, L =
 0xC0000000: about 60 s). RST_LOAD (24:0, reset value 0x03F80000) counts on to 0x03FFFFFF before the reset, about 20
 ms. EN is the only switch: no interrupt, no mode bit, no other enable; the watchdog reset is a global reset. The
-counter runs at the 24 MHz crystal (another HR_C7000 board, measured: H = 7, L = 0xF0000000, 2^28 counts, reset after 11.1 s). Not
-known (unverified): whether a soft reset or a watchdog reset clears EN. RadioFoundry (`CONFIG_WATCHDOG`, `platform/hrc7000/watchdog.c`) arms it after the clock set-up with
+counter runs at the 24 MHz crystal (another HR_C7000 board, measured: H = 7, L = 0xF0000000, 2^28 counts, reset after 11.1 s). A soft
+reset clears EN. A watchdog reset keeps EN and both loads, and the counter starts again from the load (another HR_C7000
+board, 2026-11-06: armed at 32 s before a soft reset, it was off at `main()`; armed with a 1 ms load, the chip reset
+every 23 ms inside the boot ROM until a power cycle cleared it). RadioFoundry restarts by a watchdog reset
+([watchdog.md](watchdog.md) 3). RadioFoundry (`CONFIG_WATCHDOG`, `platform/hrc7000/watchdog.c`) arms it after the clock set-up with
 every write under LOCK: EN = 0, the loads, a feed, EN = 1. It feeds with LOCK = key, KNOCK = 0x55AADD22, LOCK = 0. The
 load is 2^35 - 4 s x 24 MHz. The bench measurement and the
 rest are in [watchdog.md](watchdog.md).
@@ -1289,7 +1292,7 @@ echo before any write; an unconfigured monitor refuses writes.
 **Quiesce and jump** (`platform/hrc7000/system.c` `enter_stub`, a `.ramfunc` so it runs after flash is handed back):
 CPU interrupts off (`psrclr ie`), every PIC source masked (both banks), with `CONFIG_WATCHDOG` the watchdog stretched to 32 s and fed (the stub feeds it; [watchdog.md](watchdog.md) 3.2), otherwise off, then
 `QUAD_ENABLE = 0` and `LCSFC_BAUDR = 4` to put the XIP flash controller back to its reset mode so the program flash
-answers the monitor's SSI again and a later soft reset boots (the same steps `hrc_soft_reset` relies on), and a jump to the entry address. No DMA reaches SRAM on this board, so
+answers the monitor's SSI again and a later soft reset boots (the same steps `hrc_restart` takes), and a jump to the entry address. No DMA reaches SRAM on this board, so
 no DMA engine has to be stopped. RTOS tasks are not stopped gracefully; masking interrupts freezes the scheduler and the
 jump never returns (recover by a power cycle).
 

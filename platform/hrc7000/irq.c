@@ -147,7 +147,7 @@ void hrc_fault(const uint32_t *frame, uint32_t vector)
 #if CONFIG_CRASH_LOG
 	hrc_crash_frame(frame, CRASH_KIND_FAULT, vector);	// keeps the record and restarts
 #endif
-	hrc_soft_reset();	// without the crash log: restart too, rather than stay crashed
+	hrc_restart();	// without the crash log: restart too, rather than stay crashed
 }
 
 #if CONFIG_WATCHDOG && CONFIG_CRASH_LOG

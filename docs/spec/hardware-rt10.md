@@ -231,7 +231,7 @@ No codec bytes are in the repository or in a release.
 | Item | State |
 | --- | --- |
 | Boot from the ROM flag at 0x0300C000 | written |
-| Host link on UART0, stub entry, watchdog, crash log | measured: the hang and stall checks keep their records and the radio restarts by itself (`test_crash.py`) |
+| Host link on UART0, stub entry, watchdog, crash log | measured: the hang and stall checks keep their records and the radio restarts by itself (`test_crash.py`). The restart is a watchdog reset (2026-11-06): a reboot answers again after 3 s, and every crash and watchdog test passes through it (`test_crash.py`, `test_watchdog.py`, 12 of 12) |
 | Power switch level, battery scale, LED colors, key levels, knob map | open |
 | FD6818 two-wire bus, FM receive, sub-audio decode | measured |
 | Factory calibration read | measured (the radio's own sector) |
@@ -242,7 +242,7 @@ No codec bytes are in the repository or in a release.
 | DMR transmit and receive, codec | measured on air (7.1): voice both ways with the codec map `rt10-112` (section 8) |
 | DMR speaker audio, DMR microphone | open: decoded voice played (the counters) but not listened to; in a DMR key-up the vocoder's microphone level is a steady floor (peak 2946, spread 3 dB), speech not checked |
 | IP data over the air | measured on air: UDP to and from the radio, compressed and full headers, off-net, confirmed, bursts from the radio |
-| IP link to the computer | written: PPP on the host link (UART0, 115200 baud). Not working yet: twice the radio went silent soon after pppd's LCP opened, before IPCP, and answered nothing (PPP, debug link, boot ROM) until a power cycle. No watchdog reset and no stall restart came, so the host link's task wasn't blocked; the cause is open |
+| IP link to the computer | written: PPP on the host link (UART0, 115200 baud). Not working yet: twice the radio went silent soon after pppd's LCP opened, before IPCP, and answered nothing (PPP, debug link, boot ROM) until a power cycle, with no LED activity. The likely end: a crash or hang restart, then a start that hung. The restart was a soft reset then, which turns the watchdog off ([watchdog.md](watchdog.md) 3), so nothing reset the radio again; it is now a watchdog reset. The first fault is open |
 | APRS | written (7.2): the radio keys up and sends its frames; deviation, twist and decoding on air not yet measured |
 | Hotspot split, USRP | not written: no continuous base-station outbound; USRP's 8 kHz audio both ways needs more than 115200 baud |
 | Screen-only features | left out: no display (`boards/rt10/config.mk`) |
