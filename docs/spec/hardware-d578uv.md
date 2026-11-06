@@ -486,6 +486,13 @@ follows PD0 late: the DAC and PE6 on 5.75 ms after the rising edge, the DAC off 
 bit errors. `DMR_OFFSET` (offsets 0, 0x82 and 0xFF, length 1200) and `MODOUT_CONFIG` byte 1 (0x00, 0x28) moved
 neither PD0 nor the modulation.
 
+Through a repeater the inbound burst runs **0.85 ms late**: against the outbound plus 30 ms, median +0.854 ms, range
++0.792 to +0.917 ms, 136 bursts, all matched (burst start from the sync correlation; a bench board's idle outbound as
+the reference, both sides decoded on a second board; BENCH 2026-11-06, `test_dmr_repeater_burst_offset`). ETSI TS
+102 361-1 10.2.3.1.3 allows 1 ms for propagation and drift; the test allows the radio 0.25 ms of its own. The baseband
+times its transmit from the slot timing it receives. Neither setting above moves the burst, and no TX advance is
+known for this baseband yet.
+
 | Step | Stock firmware | RadioFoundry (`radio_d578uv.c`) |
 | --- | --- | --- |
 | Key-up | chips off, chip 0 to the TX frequency, 0x28 output stage, 0x18 = 0x4125, page 1 0x17 = 0x0AA8, sub-audio off, drive 0x40 = 0, 0x47, 0x03 = 0xC1FE, GPIO bit 5 above 300 MHz, 10 ms | the same, with the digital set rewritten first (`qa4818_dmr_tx`) |
@@ -891,6 +898,7 @@ Open on the radio:
 - DMR voice: the codec levels, digital mode gains and microphone gain of the voice set-up, and the DMR start's
   values (4.4): the baseband's squelch with the stock thresholds, `DMR_OFFSET` against the PA gate, and whether
   every LC header and terminator reported reaches the stack as on a burst modem.
+- DMR through a repeater: a setting that moves the inbound burst 0.85 ms earlier (5.1).
 - The bootloader's update entry keys.
 - Whether the bootloader stays in its update mode when the application's first word is erased (the flash stub's
   interlock relies on it: an install cut short must leave a radio the update mode finishes), and the stub's hand-over:
