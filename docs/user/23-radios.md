@@ -679,6 +679,8 @@ radio refuses to transmit.
 
 - The network over the programming cable (PPP) and the services on it. The cable's line latches when the computer
   and the radio send at the same time, and only switching the radio off frees it, so PPP is off in the RT10 build.
+- Hotspot mode. The hotspot software on the computer also sends at any time, so it may latch the line the same way.
+  The hotspot is off in the RT10 build until that is resolved.
 - The battery scale.
 
 ## Planned radios

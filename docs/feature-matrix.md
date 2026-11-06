@@ -83,7 +83,7 @@ is `tools/bringup.py list --radio <id>`.
 | `gps_sky` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ |
 | `usb` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | ✕ |
 | `hostlink` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded | not recorded |
+| `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded | off |
 | `split_duplex` | pass (seed) | pass (seed) | pass (seed) | not written | not written | not recorded | not written |
 | `debuglink` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass, needs re-run |
 | `task_stacks` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -202,7 +202,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `HOSTLINK` | ● | ● | ● | ● | ● | ● | ● |
 | `USB_NETWORK` | ✕ | ● | ✕ | ✕ | ● | ● | ✕ |
 | `NET_PPP` | ● | ○ | ● | ● | ○ | ○ | ○ |
-| `HOTSPOT` | ● | ● | ● | ● | ● | ● | ● |
+| `HOTSPOT` | ● | ● | ● | ● | ● | ● | ○ |
 | `HOTSPOT_SPLIT` | ● | ● | ● | … | … | ● | … |
 | `DEBUGLINK` | ● | ● | ● | ● | ● | ● | ● |
 | `CPS_OPENFW` | ● | ● | ● | ● | ● | ● | ● |

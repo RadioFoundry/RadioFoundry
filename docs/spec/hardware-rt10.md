@@ -278,6 +278,7 @@ No codec bytes are in the repository or in a release.
 | IP data over the air | measured on air: UDP to and from the radio, compressed and full headers, off-net, confirmed, bursts from the radio. The IP gateway is off with PPP (3.1) |
 | IP link to the computer | written: PPP on the host link (UART0, 115200 baud), off: pppd sends while the radio sends, which latches the cable line low until a power cycle (3.1). It builds with `CONFIG_NET_PPP=y`, for a check with another cable |
 | APRS | written (7.2): the radio keys up and sends its frames; deviation, twist and decoding on air not yet measured |
+| Hotspot | written, off: the MMDVM host sends at any time, as pppd does, so it may latch the cable line (3.1). It builds with `CONFIG_HOTSPOT=y`, for that check |
 | Hotspot split, USRP | not written: no continuous base-station outbound; USRP's 8 kHz audio both ways needs more than 115200 baud |
 | Screen-only features | left out: no display (`boards/rt10/config.mk`) |
 | Microphone through the programming cable's line | measured: barely couples. FM key-ups on the SDR bench with 0x55 bursts at 6000 and 2400 baud on the line: the audio rose from about 5 Hz rms deviation to 6-8 Hz rms during the bursts, no tone. `tests/hil/test_mic_uart_inject.py` leaves the RT10 out |
