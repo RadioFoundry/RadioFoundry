@@ -20,8 +20,8 @@
 #define C7_PHASE_OUT		0x128u		// RO: largest / smallest 14-bit AF phase seen (modem-hrc7000.md 2.1)
 #define DMR_PA_DELAY_US		28000u	// the glue's PA one-shot; the PA is keyed by the burst sequence instead
 
-// The modem's receive mode word, as the stock firmware writes it on this radio (hardware-rt10.md 7.1): the DB25-D's
-// word, with the TX symbol mapping not inverted (bit 7 clear). make RT10_DMR_RF_MODE=0x... replaces it on the bench
+// The modem's receive mode word, as the stock firmware writes it on this radio (hardware-rt10.md 7.1), with the TX
+// symbol mapping not inverted (bit 7 clear). make RT10_DMR_RF_MODE=0x... replaces it on the bench
 #ifndef RT10_DMR_RF_MODE
 #define RT10_DMR_RF_MODE	0x034C9860u
 #endif
