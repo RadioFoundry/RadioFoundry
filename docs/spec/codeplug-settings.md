@@ -23,7 +23,7 @@ Why there:
   reads or writes the area.
 - Room on both sides. The open-firmware layout, if it grows, grows up from the zone table: 0xB000-0xDFFF (12 KB) is
   left for that, so the area isn't the first thing a longer zone table meets. 0xF000-0xFFFF is left for the area's
-  own continuation (2.4).
+  first continuation (2.4).
 - The settings store, the journal, the calibration and the native area are elsewhere on every board.
 - Factory reset doesn't touch the open-firmware image, so it keeps the area too.
 - One sector: an edit is one journaled sector rewrite ([settings-store.md](settings-store.md) 4). A power cut leaves
@@ -45,7 +45,7 @@ All values are little endian.
 | 5 | 1 | Header length: 16. Entries start here, so a later version can add header fields that older readers skip |
 | 6 | 2 | Data length: the bytes of entries after the header, at most 4096 minus the header length |
 | 8 | 4 | CRC-32 of the entries (IEEE 802.3, reflected, as `storage_crc32`) |
-| 12 | 4 | Reserved for the continuation (2.4): 0 in a new area, kept as found by a rewrite, not checked |
+| 12 | 4 | Reserved for the continuation (2.4): 0 in a new area, kept as found by a rewrite, not checked by version 1 |
 
 The version changes only if the entry framing changes so that a version 1 reader would misread it. A reader that
 doesn't know the version reads the area as empty and refuses to write it, so it never destroys a newer area. The
@@ -71,10 +71,14 @@ tool's bytes, a write cut short outside the journal) reads as an empty area. No 
 
 ### 2.4 Continuation (reserved, not built)
 
-When 4 KB isn't enough, the reserved header bytes 12-15 will name a continuation: a second sector in the same entry
-format, at EEPROM image 0xF000, holding more entries. A reader takes a key from the first sector before the
-continuation. A version 1 reader of today ignores the reserved bytes, so it sees only the first sector: keys that live
-only in the continuation read as absent, and the radio keeps its own values (4). A writer that doesn't know the
+When 4 KB isn't enough, the reserved header bytes 12-15 will name a continuation: another sector with the same
+header and entry format, holding more entries. The bytes give the continuation's offset in the EEPROM image (u32, a
+multiple of 4096; 0 = none), not a fixed address. The first continuation is meant for 0xF000. A continuation's own
+bytes 12-15 name the next one, so later sectors can go wherever the image map has room, with no version change.
+
+A reader takes a key from the first sector before any continuation, and from a continuation before the one it
+names. A version 1 reader of today ignores the reserved bytes, so it sees only the first sector: keys that live only
+in a continuation read as absent, and the radio keeps its own values (4). A writer that doesn't know the
 continuation keeps the reserved bytes and the header length as it found them.
 
 ## 3. Keys
@@ -88,6 +92,11 @@ An ID above 16776415 (`CODEPLUG_DMR_ID_MAX`) reads as if the key were absent.
 
 A new key is added to this table in the same change that first writes it.
 
+**Key families.** A feature with many instances of one record (a list of records, one per entry) owns a contiguous
+key range: one key per instance, record n at base + n. The range is assigned here as one row (base, size, value
+format) in the same change that first writes it. Each instance is then an ordinary key: absent, present, grown and
+kept by the rules in 4, and a reader walks the range (`codeplug_kv_next`, 5) rather than looking up each key.
+
 ## 4. Rules for readers and writers
 
 - **Absent means "the codeplug says nothing".** The firmware then keeps what it already has (5). It is not the same
@@ -98,6 +107,10 @@ A new key is added to this table in the same change that first writes it.
   fields. A field's meaning never changes. A new meaning gets a new key.
 - **One entry per key.** A reader takes the first. A writer drops later ones.
 - **Order.** A writer replaces a value in place, appends a new key at the end and closes the gap when it removes one.
+- **Removing** takes out every entry of the key. Removing a key that is absent changes nothing and writes nothing. A
+  set to the value the key already has writes nothing either.
+- **Several changes, one rewrite.** A writer applies all the sets and removes it has in one rewrite of the sector, all
+  or none: if one doesn't fit, nothing changes.
 - **Writing over an invalid area** starts a new one: the header, then the entries being written. Unknown bytes in an
   invalid area aren't kept, because nothing in them could be read.
 - **Erased bytes after the data** are written 0xFF, as the erased sector. The CRC covers only the data length.
@@ -106,14 +119,22 @@ A new key is added to this table in the same change that first writes it.
 
 | Call | |
 |---|---|
-| `codeplug_kv_get(key, buf, max)` | The value's length (copies at most `max` bytes), or -1 when the key is absent or the area invalid |
-| `codeplug_kv_set(key, value, len)` | Writes one key: one journaled rewrite through the shared sector buffer. Bumps `codeplug_serial()` |
+| `codeplug_kv_get(key, buf, max)` | The value's length (copies at most `max` bytes), or -1 when the key is absent or the area invalid. Checks the whole area (its CRC) each call |
+| `codeplug_kv_begin(&c, lo, hi)`, `codeplug_kv_next(&c, &key, buf, max)` | A walk over the keys `lo`..`hi` in the area's order, a later entry of a key skipped. The area is checked once, at the first `next`; each later one reads the header again and ends the walk if the area changed. The cursor is on the caller's stack |
+| `codeplug_kv_write(ops, n)` | Applies `n` sets and removes (`len` = `CODEPLUG_KV_REMOVE`) in order, then one journaled rewrite through the shared sector buffer. All or nothing. Bumps `codeplug_serial()` when a byte changed; a batch that changes nothing writes nothing |
+| `codeplug_kv_set(key, value, len)`, `codeplug_kv_remove(key)` | One op through `codeplug_kv_write` |
+| `codeplug_kv_keep(addr, sector)` | The transfer rule (6) for a raw sector write at flash address `addr`: true when the radio's sector must stay |
 
-`codeplug_kv_set` needs no built-in codeplug to be stored first. The area is apart from the channel records, so it
+Reads keep nothing of the area in RAM. A cache of the checked state was left out: it would cost RAM on every radio,
+every path that writes the sector raw (CPS shim, fast protocol, TFTP) and every change of the foreign-codeplug state
+would have to drop it, and a write made outside the running firmware (the stub, the bootloader) can't. A walk gives
+the same saving for keys read together.
+
+The writes need no built-in codeplug to be stored first. The area is apart from the channel records, so it
 doesn't materialize the built-in set ([codeplug-native.md](codeplug-native.md) 2). It fails while a CPS session holds
 the shared sector buffer, or when the storage region isn't ours ([settings-store.md](settings-store.md) 5).
 While the open-firmware area holds another firmware's codeplug (`codeplug_foreign`, [codeplug-native.md](codeplug-native.md)
-2) the area reads as empty and `codeplug_kv_set` fails; the menu's write is held for the user's answer like any
+2) the area reads as empty and the writes fail; the menu's write is held for the user's answer like any
 other codeplug write.
 
 The radio core reads the keys at start and whenever `codeplug_serial()` moves on (a menu edit, a CPS commit, a
@@ -133,22 +154,34 @@ Debug link view `cps`: `cpkv.state` (`valid`, `empty`: no area, `bad`: invalid, 
 
 ## 6. Transfers
 
-Every path that reads the codeplug reads the area. A path that writes it takes the file's area only when it is valid
-(2.3) and the radio's isn't of a newer version; otherwise the radio keeps its own. A file from a tool or a firmware
-that doesn't carry the area holds 0xFF there, so writing it back never erases the radio's keys.
+Every path that reads the codeplug reads the area. When a path writes the area's sector, the radio keeps its own
+sector if
 
-| Path | Read | Write |
+- its area is valid (2.3) and the sector written isn't, or
+- its area is of a newer version (never written, 2.1).
+
+Otherwise the sector goes in as sent. A file from a tool or a firmware that doesn't carry the area holds 0xFF there,
+so writing it back never erases the radio's keys. A tool that wants every key gone writes a valid area with no
+entries: that is taken.
+
+The radio applies the rule itself (`codeplug_kv_keep`) where the sector is committed, so it holds for any tool,
+including CPS software that knows nothing of the area:
+
+| Path | Read | Where the radio applies the rule |
 |---|---|---|
-| Codeplug Editor (open-firmware CPS or fast protocol) | yes | only when one of its fields changed (7) |
-| TFTP `codeplug.bin` ([tftp.md](tftp.md) 3) | yes | valid and not newer, checked by the radio at the commit |
-| Fast protocol, `tools/cps_fast.py` ([cps-fast.md](cps-fast.md)) | yes | valid and not newer, checked by the tool |
-| Open-firmware CPS, `tools/cps_client.py` (default regions `radio`) | yes | valid and not newer, checked by the tool |
-| qdmr | no | never |
-| A whole data flash backup and restore | yes | yes, as raw flash |
+| Open-firmware CPS shim (`X` 3, [open-firmware-cps.md](open-firmware-cps.md) 2.2) | yes | at the sector's commit. The data writes may come in pieces of any size: the pending sector holds the stored bytes with the data over them, and that whole sector is judged. A write of part of a valid area leaves it invalid, so it is kept |
+| Fast protocol ([cps-fast.md](cps-fast.md) 3.4) | yes | at END (direct), at the slot's copy (staged, and the boot's resume) |
+| TFTP `codeplug.bin` ([tftp.md](tftp.md) 3) | yes | at the sector's copy in the commit |
+| qdmr | no | never writes it |
+| A whole data flash backup and restore | yes | not applied: raw flash |
 
-The open-firmware CPS and the fast protocol move raw blocks, so the radio can't tell an erased area in a file from
-one the user meant to erase: the host tool applies the rule. TFTP stages the whole file first, so the radio applies
-it. A tool that wants every key gone writes a valid area with no entries.
+A kept sector is acknowledged as written, so the CPS doesn't fail. A CPS that reads the sector back to verify it
+sees the radio's bytes.
+
+The host tools apply the rule as well, before they send: the Codeplug Editor writes the area only when one of its
+fields changed (7), and `tools/cps_client.py` (default regions `radio`) and `tools/cps_fast.py` send it only when the
+file's is valid and the radio's isn't of a newer version. That covers radios on firmware from before the radio-side
+rule.
 
 ## 7. Codeplug Editor
 
@@ -164,6 +197,7 @@ conversion copies the entries as they are. There is one key space for both forma
 
 ## 9. Open
 
-- Whether the open-firmware CPS writes this range is not known. If it writes erased bytes there, the area reads as
-  empty and the radio keeps its own settings (5).
+- Whether the open-firmware CPS and Codeplug Studio write this range is not known. If they write erased bytes
+  there, the radio keeps its sector (6). A CPS that verifies its write by reading back would then report a mismatch
+  there.
 - Per-channel settings: a key whose value starts with a channel number, or a table key. Not needed yet.
