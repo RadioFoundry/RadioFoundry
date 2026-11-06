@@ -18,7 +18,9 @@ on an outbound refuses the job (`unsupported`), which is a skip.
 | wrong_cc | one call on the radio's slot, sent with another color code | no call |
 
 Needs --outbound-mhz (or outbound_mhz in the rig's file) and a duplex DMR channel receiving it; --dmr-cc is the
-channel's color code (the radio's own is read from the channel when it shows one)."""
+channel's color code (the radio's own is read from the channel when it shows one). Every call goes to the channel's
+talk group (its contact), which the radio always listens to; on a channel whose contact is a private call, to --dmr-tg.
+A call to a group the channel doesn't listen to is heard but never played: no voice counted, never the last call."""
 import json
 import time
 
@@ -29,13 +31,11 @@ from hil_config import rig
 
 SUPERFRAME_S = 0.360
 SRC = {1: 9990301, 2: 9990302}      # talker per slot, so a call heard on the wrong slot shows by its source
-DST = {1: 9990401, 2: 9990402}      # the talkgroups; the channel's RX group list must hold them or the radio hears
-                                    # every group (hear_all)
 LEAD_S = 5.0                        # the radio locks to the outbound well before the first call
 
 
 def _call(slot, start_s, superframes=3, **fields):
-    c = {"slot": slot, "src": SRC[slot], "dst": DST[slot], "group": True, "start_s": start_s,
+    c = {"slot": slot, "src": SRC[slot], "group": True, "start_s": start_s,       # dst: the channel's group, _run
          "superframes": superframes}
     c.update(fields)
     return c
@@ -74,13 +74,17 @@ def _setup(radio, pytestconfig):
     d = radio.view(["dmr"])
     if d.get("dmr.cc") not in (None, str(cc)):
         skip("opt_in", f"the channel's color code is {d.get('dmr.cc')}, --dmr-cc says {cc}")
-    return freq, cc
+    group = d.get("dmr.target_private") == "0" and d.get("dmr.target_id") not in (None, "0")
+    tg = int(d["dmr.target_id"]) if group else rig(pytestconfig, "dmr-tg")
+    return freq, cc, tg
 
 
 def _run(radio, bench, pytestconfig, calls, radio_ts, cc_offset=0, expect_up=True):
     """The calls on the outbound, with the radio on timeslot radio_ts; returns (radio deltas, radio view after, the
     board's records)."""
-    freq, cc = _setup(radio, pytestconfig)
+    freq, cc, tg = _setup(radio, pytestconfig)
+    for c in calls:
+        c["dst"] = tg
     if bench.api is None:
         skip("bench", "an outbound with voice needs a bench board (--bench-api)")
     if radio.view(["dmr"]).get("dmr.ts") != str(radio_ts):
@@ -120,6 +124,7 @@ def _board_calls(recs, calls):
     """The board's side: one call record per call sent (index, slot, src, dst), none of its bursts late."""
     rows = [r for r in recs if isinstance(r.get("call"), dict) or ("index" in r and "bursts" in r)]
     rows = [r.get("call", r) if isinstance(r.get("call"), dict) else r for r in rows]
+    rows.sort(key=lambda r: r.get("index", 0))      # the board reports a call when it ends, not in the order sent
     assert len(rows) == len(calls), f"the board reported {len(rows)} calls for {len(calls)} sent: {rows}"
     for sent, got in zip(calls, rows):
         assert got.get("slot") == sent["slot"], (sent, got)
@@ -132,13 +137,14 @@ def _board_calls(recs, calls):
         assert summary[-1].get("late", 0) == 0, f"the board sent bursts late: {summary[-1]}"
 
 
-def _heard(d, view, slot, ts, late=False):
+def _heard(d, view, slot, ts, calls, late=False):
     """The radio on timeslot ts after calls on slot: heard (one call from that talker and group) or silent."""
+    dst = calls[0]["dst"]
     if slot != ts:
         assert d["call.rx_calls"] == 0, f"the radio on TS{ts} heard a call sent on TS{slot}: {d}"
         return
     assert d["call.rx_calls"] == 1, d
-    assert view.get("last.src") == str(SRC[slot]) and view.get("last.dst") == str(DST[slot]), view
+    assert view.get("last.src") == str(SRC[slot]) and view.get("last.dst") == str(dst), view
     assert view.get("last.group") == "1", view
     assert d["call.rx_voice_bursts"] > 0 and d["modem.crc"] == 0, d
     if late:
@@ -161,7 +167,7 @@ def test_outbound_voice_alone(radio, sdr_bench, pytestconfig, slot, ts):
     calls = [_call(slot, LEAD_S)]
     d, view, recs = _run(radio, sdr_bench, pytestconfig, calls, ts)
     _board_calls(recs, calls)
-    _heard(d, view, slot, ts)
+    _heard(d, view, slot, ts, calls)
 
 
 @_marked
@@ -170,7 +176,7 @@ def test_outbound_voice_both_slots(radio, sdr_bench, pytestconfig, ts):
     calls = [_call(1, LEAD_S, 4), _call(2, LEAD_S, 4)]
     d, view, recs = _run(radio, sdr_bench, pytestconfig, calls, ts)
     _board_calls(recs, calls)
-    _heard(d, view, ts, ts)
+    _heard(d, view, ts, ts, calls)
 
 
 @_marked
@@ -180,7 +186,7 @@ def test_outbound_voice_slot2_mid_call(radio, sdr_bench, pytestconfig, ts):
     calls = [_call(1, LEAD_S, 6), _call(2, LEAD_S + 1.5, 3)]
     d, view, recs = _run(radio, sdr_bench, pytestconfig, calls, ts)
     _board_calls(recs, calls)
-    _heard(d, view, ts, ts)
+    _heard(d, view, ts, ts, calls)
 
 
 @_marked
@@ -192,7 +198,7 @@ def test_outbound_voice_late_entry(radio, sdr_bench, pytestconfig, late):
     calls = [_call(slot, LEAD_S, 6, headers=0, late=late)]
     d, view, recs = _run(radio, sdr_bench, pytestconfig, calls, slot)
     _board_calls(recs, calls)
-    _heard(d, view, slot, slot, late=True)
+    _heard(d, view, slot, slot, calls, late=True)
 
 
 @_marked
