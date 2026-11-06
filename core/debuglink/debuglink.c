@@ -122,8 +122,7 @@ static const char *state_name(uint8_t s)
 
 static bool summary_line(uint8_t i, char *buf, uint8_t len)
 {
-	const char *pw = (view.power < board.power_count && board.power_names != NULL) ? board.power_names[view.power]
-										       : "?";
+	const char *pw = board_power_name(view.power, view.ch.tx_hz);
 	switch (i) {
 	case 0:
 		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s", view.ch.mode == RADIO_MODE_DMR ? "DMR" : "FM",

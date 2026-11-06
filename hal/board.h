@@ -51,6 +51,12 @@ enum {
 	CAP_BEEP_NOT_ON_AIR = 1u << 8,
 };
 
+// One band's power level names, where a board's levels give different powers per band (board_t.power_bands)
+typedef struct {
+	uint32_t lo_hz, hi_hz;		// the transmit frequencies it covers
+	const char *const *names;	// power_count labels, lowest first
+} board_power_band_t;
+
 typedef struct {
 	const char *name;
 	uint32_t caps;
@@ -58,6 +64,11 @@ typedef struct {
 	uint8_t band_count;
 	uint8_t power_count;
 	const char *const *power_names;	// short labels for the status line, power_count entries
+	// Optional: the labels per band, where a level's power differs between bands (a top level of 45 W on one band and
+	// 50 W on the other). Each band has power_count levels, so a stored level is the same step on every band. A
+	// frequency in no entry gets power_names. Read through board_power_name()
+	const board_power_band_t *power_bands;
+	uint8_t power_band_count;
 	uint8_t power_default;
 	const hal_display_t *display;
 	const hal_input_t *input;
@@ -160,6 +171,21 @@ static inline int board_tx_band(uint32_t hz)
 
 // A repeater offset carries to a new RX frequency only within one transmit band: RX before and after and the TX it
 // gives all in it (a UHF offset means nothing on VHF, even where TX would land in a band)
+// A power level's label at a transmit frequency (power_bands, else power_names); "?" for no such level
+static inline const char *board_power_name(uint8_t level, uint32_t tx_hz)
+{
+	if (level >= board.power_count) {
+		return "?";
+	}
+	for (uint8_t i = 0; i < board.power_band_count; i++) {
+		const board_power_band_t *b = &board.power_bands[i];
+		if (tx_hz >= b->lo_hz && tx_hz <= b->hi_hz) {
+			return b->names[level];
+		}
+	}
+	return board.power_names != NULL ? board.power_names[level] : "?";
+}
+
 static inline bool board_offset_carries(uint32_t old_rx, uint32_t new_rx, uint32_t new_tx)
 {
 	int band = board_tx_band(new_rx);

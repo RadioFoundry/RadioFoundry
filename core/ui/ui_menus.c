@@ -2043,9 +2043,9 @@ static void sb_onoff(sbuf_t *b, bool on)
 	sb_str(b, on ? TR("On") : TR("Off"));
 }
 
-static void sb_ced_power(sbuf_t *b, int32_t level)
+static void sb_ced_power(sbuf_t *b, int32_t level, uint32_t tx_hz)
 {
-	sb_str(b, level < 0 || level >= board.power_count ? TR("Radio's") : ui_power_name((uint8_t)level));
+	sb_str(b, level < 0 || level >= board.power_count ? TR("Radio's") : ui_power_name((uint8_t)level, tx_hz));
 }
 
 static void sb_ced_tot(sbuf_t *b, int32_t s)
@@ -2135,11 +2135,11 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 	case CE_POWER:
 #if CONFIG_CHANNEL_EDIT
 		if (editing) {
-			sb_ced_power(&b, ced_val);
+			sb_ced_power(&b, ced_val, ch->tx_hz);
 			break;
 		}
 #endif
-		sb_ced_power(&b, ch->power == CODEPLUG_POWER_DEFAULT ? -1 : ch->power);
+		sb_ced_power(&b, ch->power == CODEPLUG_POWER_DEFAULT ? -1 : ch->power, ch->tx_hz);
 		break;
 	case CE_RX_ONLY:
 		sb_str(&b, ch->rx_only ? TR("Yes") : TR("No"));
