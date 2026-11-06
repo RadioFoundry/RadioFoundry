@@ -161,9 +161,26 @@ sub-audio set again when it finds PTB26 low with PTB27 high. The chip doesn't te
 
 ## 8. Codec
 
-The AMBE+2 vocoder is part of the original image (code run from RAM, tables copied to modem SRAM at 0x1800420C,
-12,152 bytes). Its build differs from the other HR_C7000 radios', so it needs its own codec map. RadioFoundry hosts it
-in the codec slot like the other HR_C7000 radios (`boards/rt10/memory.ld`).
+The AMBE+2 vocoder is part of the original image: its code runs from RAM, its tables are copied to modem SRAM. No
+vendor file is published, so the codec comes from a read of the radio's program flash (V1.1.2, the build name in the
+image). RadioFoundry hosts it in the codec slot like the other HR_C7000 radios (`boards/rt10/memory.ld`): the firmware
+copies the code to the codec window and moves the words its codec map lists ([codec-placement.md](codec-placement.md)).
+No codec bytes are in the repository or in a release.
+
+| Item | Value |
+| --- | --- |
+| Code start (the two signature words) | flash 0x0305E438 |
+| Code | 0x12FFC bytes (77,820), sha256 `3f3b8740df14c81b44f53f984e4e570a609ec467233341729157f5c176cc3c15`. The window ends where the stock `memcpy` starts |
+| Code run address | 0x16DD8: the start-up code copies flash 0x03057A60 to RAM 0x10400..0x2E324 |
+| Compile | The DB25-D 020 compile, with one stock function inside the window (at +0x614) 20 bytes shorter: the codec code past it sits 20 bytes lower. The same 153 functions are reachable from the entry points |
+| Entry points (offsets) | decode 0, encode 0x294, dec_init 0xE8, dec_set 0xA4, enc_init 0x400, enc_set 0x32C, fec_init 0x1CD0 |
+| Init | The stock init routine calls them in the order, with the arguments and the state offsets, that `platform/hrc7000/vocoder.c` uses |
+| Tables | flash 0x0303C76C, 0x2D50 bytes (11,600), sha256 `e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e` (the DB25-D's tables). The start-up code copies flash 0x03038D60 to modem SRAM 0x18000800, so they run at 0x1800420C..0x18006F5C |
+| Codec map | `rt10-112` (`tools/rfoundry/rfoundry/codec_maps/rt10/`): 3 self-referencing words (one reachable from the entry points), 69 table words (52 targets), no instruction pairs, no references outside the code and table windows. Static analysis only: the codec hasn't run on the radio |
+
+`memory.ld` reserves modem SRAM 0x1800420C..0x18007184, 0x228 bytes more than the tables. `tools/hrc7000_codec.py
+--board rt10 --stock READ` merges the codec into a built image; READ is a 1 MB or the whole 2 MB program flash read
+(`stub/stubtool.py --progmem`), and the codec is found by its hashes. The slot's stock tag is 112.
 
 ## 9. Bring-up state
 
@@ -178,4 +195,4 @@ in the codec slot like the other HR_C7000 radios (`boards/rt10/memory.ld`).
 | Battery save | measured: asleep is the FD6818 idle and PTB4 (RX supply) low; waking retunes the receiver |
 | Reference | measured: the modem's bias from the calibration puts receive and transmit on frequency (section 4.1) |
 | Reference trim | written: the trim moves the synthesizer frequency at the next tune; the modem's bias stays the factory's tune. Untested on air |
-| DMR, codec map | open |
+| DMR, codec map | the codec map exists (`rt10-112`, section 8; not run on the radio). DMR is open |

@@ -1234,6 +1234,32 @@ class Dm1701Builds(unittest.TestCase):
         self.assertEqual(found, set(DM1701.codec_stock))
 
 
+class Rt10Map(unittest.TestCase):
+    def test_map_is_db25d_020_relinked(self):
+        """The RT10's codec is the DB25-D 020 compile with a stock function inside the window 0x14 bytes shorter
+        (at +0x614): every site and entry past it 0x14 lower, every table target 0x2BFC higher (the tables at 0x1800420C
+        instead of 0x18001610), the same objects. Two maps made independently that disagree anywhere else are wrong."""
+        maps = codecmap.load_maps()
+        a, b = maps["rt10-112"], maps["db25d-020"]
+        cut, d, dt = 0x614, -0x14, 0x1800420C - 0x18001610
+
+        def moved(o):
+            return o + d if o >= cut else o
+        self.assertEqual(a["entries"], {k: moved(v) for k, v in b["entries"].items()})
+        self.assertEqual(a["code"]["reachable_len"], b["code"]["reachable_len"] + d)
+        self.assertEqual(len(a["self_refs"]), len(b["self_refs"]))
+        for x, y in zip(a["self_refs"], b["self_refs"]):
+            self.assertEqual((x["off"], x["value"] - a["code"]["run"], x["reachable"]),
+                             (moved(y["off"]), moved(y["value"] - b["code"]["run"]), y["reachable"]))
+        self.assertEqual([(r["off"], r["target"]) for r in a["table_refs"]],
+                         [(moved(r["off"]), r["target"] + dt) for r in b["table_refs"]])
+        self.assertEqual([(o["start"], o["len"]) for o in a["objects"]], [(o["start"] + dt, o["len"]) for o in b["objects"]])
+        ta, tb = a["table_windows"][0], b["table_windows"][0]
+        self.assertEqual((ta["run"], ta["len"], ta["sha256"]), (tb["run"] + dt, tb["len"], tb["sha256"]))
+        for k in ("island_ptrs", "island_refs", "branches", "islands", "outside_refs"):
+            self.assertEqual(a[k], [], k)
+
+
 class Md9600Files(unittest.TestCase):
     """The TYT MD-9600 files as codec sources for the DM-1701 (codec-dm1701.md "MD-9600 files"): an open-firmware
     install leaves their codec on the radio. They give the codec only, encrypted with the MD-9600's key; the merge
