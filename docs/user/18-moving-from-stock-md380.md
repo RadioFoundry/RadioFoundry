@@ -142,3 +142,7 @@ Then write your `backup-stock.rdt` or `backup-stock.dfu` with the TYT CPS or qdm
   ID, so run the backup step first.
 - Linux: the program prints the udev rule for 0483:DF11 if access is denied. Add yourself to the `dialout` group for
   the radio's serial port once it runs RadioFoundry.
+- macOS: the radio's serial port is listed twice (`cu.usbmodem…` and `tty.usbmodem…`), and `dmrconf` can't choose
+  between them. The program finds the radio by its USB ID and gives `dmrconf` the `cu.` name. `--port` takes
+  `/dev/cu.usbmodem…` or `cu.usbmodem…`. With two radios connected it stops and asks for `--port`. `RFOUNDRY_PORT`
+  works like `--port`.
