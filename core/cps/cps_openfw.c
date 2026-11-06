@@ -7,6 +7,7 @@
 #include "cps/cps_openfw.h"
 #include "board.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_kv.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
 
@@ -450,7 +451,9 @@ static void cmd_write(void)
 			return;
 		}
 		cps_openfw_vfo_written(sector_addr, sector, last_rx_ms);
-		bool ok = storage_sector_write(sector_addr, sector);
+		// A settings area sector that would wipe or overwrite the radio's keys against the transfer rule (a tool
+		// without the area writes it 0xFF) is acknowledged and left as it is (codeplug-settings.md 6)
+		bool ok = codeplug_kv_keep(sector_addr, sector) || storage_sector_write(sector_addr, sector);
 		drop_sector();
 		if (!ok) {
 			refuse();

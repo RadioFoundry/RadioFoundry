@@ -388,22 +388,16 @@ static uint32_t next_sector(uint32_t from)
 }
 
 // Copy one sector of the staged image into the stored codeplug: the stored sector, the staged regions' bytes over
-// it, written through the journal (skipped when nothing changed). The settings area is taken only when the file holds
-// a valid one and the radio's isn't of a newer version: a file from a tool that doesn't carry it (0xFF there, as
-// every codeplug.bin before) leaves the radio's keys (codeplug-settings.md 4)
+// it, written through the journal (skipped when nothing changed). The settings area follows codeplug_kv_keep, as every
+// path does: a file from a tool that doesn't carry it (0xFF there, as every codeplug.bin before) leaves the radio's
+// keys (codeplug-settings.md 6)
 static bool copy_sector(uint32_t s, uint8_t *buf)
 {
 	if (!flash_read(phys(s), buf, SECTOR)) {
 		return false;
 	}
 	if (s == CODEPLUG_KV_ADDR) {
-		if (codeplug_kv_check(buf) == CODEPLUG_KV_NEWER) {
-			return true;
-		}
-		if (!staged_read(s, buf, SECTOR)) {
-			return false;
-		}
-		return codeplug_kv_check(buf) != CODEPLUG_KV_VALID || storage_sector_write(phys(s), buf);
+		return staged_read(s, buf, SECTOR) && (codeplug_kv_keep(phys(s), buf) || storage_sector_write(phys(s), buf));
 	}
 	for (unsigned i = 0; i < REGIONS; i++) {
 		uint32_t lo = s > regions[i].start ? s : regions[i].start;
