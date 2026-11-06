@@ -6,13 +6,14 @@ RSSI above the floor within a few seconds. Depends on reception at the bench.
 test_rx_tone_squelch: CTCSS / DCS decode, from the side NOAA can test (it sends no sub-audio tone): on NOAA with the squelch opening (stepped down from the radio's
 level as far as 1 until it does), an RX tone of CTCSS 100.0 Hz and
 then DCS D023N must keep the audio muted (tone_ok=0, the state never rx, for 5 s each) while the carrier is there;
-with the RX tone back to none the squelch opens again within 10 s. The VFO's RX tone is put back.
+with the RX tone back to none the squelch opens again within 10 s. The VFO's RX tone is put back. Optional: it needs
+NOAA strong enough at the bench, and test_rx_tone_decode_bench covers the same side with the bench's carrier.
 
 test_rx_tone_decode_bench (rf, bench_service): the other side, with the bench board's FM transmitter (--bench-api,
 the line protocol's tx op): the VFO on --fm-mhz with an RX tone of CTCSS 100.0 Hz or DCS D023N, the bench sends a
 1 kHz tone for 3 s with that sub-audio tone, and the audio opens (state rx, tone_ok=1); then with another one
-(CTCSS 131.8 Hz, DCS D025N), and the audio stays muted the whole time. Skips on the SDR bench host (no FM
-transmitter there)."""
+(CTCSS 131.8 Hz, DCS D025N), and then with none, and the audio stays muted the whole time of each. Skips on the
+SDR bench host (no FM transmitter there)."""
 import time
 
 import pytest
@@ -43,7 +44,7 @@ def test_noaa_receive(radio, pytestconfig):
                                         f"(floor {floor}); squelch {radio.core()['squelch']}")
 
 
-@pytest.mark.feature("subtone")
+@pytest.mark.feature("subtone", optional=True)
 def test_rx_tone_squelch(radio, pytestconfig):
     if "VFO_FM" not in radio.features() or "SUBTONE" not in radio.features():
         skip("not_built", "built without the FM VFO or CTCSS / DCS")
@@ -137,10 +138,13 @@ def test_rx_tone_decode_bench(radio, sdr_bench, pytestconfig, kind, value, sub, 
                 # the carrier gone, the tone is let go of (else the next carrier opens on the old decode)
                 radio.wait_for(lambda v: v.get("state") != "rx" and v.get("tone_ok") == "0", 5, interval=0.1,
                                what="the tone let go of after the carrier")
-                states, done = _watch(radio, sdr_bench.fm_tx_start(mhz, program, **wrong))
-                print(f"{wrong}: states {sorted(states)}; bench {done}")
-                assert all(st != "rx" for st, _ in states), f"{wrong}: another tone opened the audio: {states}"
-                assert not done.get("cut"), f"the bench cut its transmission: {done}"
+                for other in (wrong, {}):
+                    states, done = _watch(radio, sdr_bench.fm_tx_start(mhz, program, **other))
+                    name = other or "no sub-audio tone"
+                    print(f"{name}: states {sorted(states)}; bench {done}")
+                    assert all(st != "rx" for st, _ in states), f"{name} opened the audio: {states}"
+                    assert all(t == "0" for _, t in states), f"{name}: a tone decoded: {states}"
+                    assert not done.get("cut"), f"the bench cut its transmission: {done}"
         finally:
             k, v = tone0.split(":")
             L.tone(2, k, int(v))
