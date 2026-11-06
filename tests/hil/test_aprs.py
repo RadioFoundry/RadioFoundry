@@ -146,8 +146,9 @@ class AprsSession:
         self.radio = radio
         L = radio.link
         v = _aprs(radio)
-        # a message from an earlier test keeps msg_pending for its ack wait (up to 120 s after the last try)
-        end = time.monotonic() + 150
+        # a message from an earlier test keeps msg_pending for its tries and ack wait: tries at 0, 30 and 90 s, then
+        # 120 s for the ack, 210 s in all when that test stopped (a skip) right after its first try
+        end = time.monotonic() + 225
         while (v["aprs.rf_active"] != "0" or v["aprs.msg_pending"] != "0") and time.monotonic() < end:
             time.sleep(2.0)
             v = _aprs(radio)
