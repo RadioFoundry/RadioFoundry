@@ -59,7 +59,7 @@ Offsets from 0x11000000. Values are the ones the driver writes unless noted.
 | 0x114 | RF_MOD_BIAS_CTRL | b25:16 two_point_bias; b15:8 sig_reduce (Mod2 amplitude); b7:0 phase_reduce (Mod1 amplitude) | ((cal + 384) << 16) or modcal (0x4D4D before a frequency is set) | Modulation balance from calibration |
 | 0x118 | DEV_LIMITER | b15:0 | 0xFF00 (reset value) |
 | 0x11C | RSSI_BIAS_VALUE | read-only per the datasheet: rssi b31:16; b15:8 / b7:0 the measured DC bias of the ADC's I / Q inputs | 0x1381 is written (no effect expected) |
-| 0x128 | PHASE_OUT | read-only: b29:16 / b13:0 the largest and smallest 14-bit AF phase in AF receive mode | not written | A live check that AF reaches the ADC: a board receiving DMR reads about +1216 / -1149 (the datasheet expects about ±1300 at -47 dBm); a value that stays within a few counts means no AF arrives. One board had this when its audio-select GPIO was left high, which takes the RF chip's audio off the ADC |
+| 0x128 | PHASE_OUT | read-only: b29:16 / b13:0 the largest and smallest 14-bit AF phase in AF receive mode | not written | A live check that AF reaches the ADC: a board receiving DMR reads about +1216 / -1149 (the datasheet expects about ±1300 at -47 dBm); a value that stays within a few counts means no AF arrives. One board had this when its audio-select GPIO was left high, which takes the RF chip's audio off the ADC; another when the RF chip's digital set left its demodulator off the AF output (the boards' hardware pages) |
 | 0x120 | THRESHOLD_VALUE | b28:24 sync ratio; b23:16 sync low threshold; b15:8 sync high threshold; b7:0 signal detect | **0x0978786F** | |
 | 0x164 | RECV_INFO_COUNT | b31:24 sync errors; b8 select FSK error/EVM; b7:0 FSK error | read for BER/EVM only |
 | 0x168 | (undocumented, "REG_X06") | | 0x14 | |
@@ -498,6 +498,25 @@ Both timeslot interrupts are handled by one routine; it decides by the current a
 | ≈ 29.6 | tx_pre_on (0.4 ms by default; per board) |
 | 30 | burst on air (27.5 ms of symbols plus guard) |
 | next timeslot interrupt with ≥ 20 ms of TX elapsed | PA drive 0, PA selects off, RF chip back to RX |
+
+### 3.1a A whole RF key-up per burst
+
+Where the modem's MOD1 output modulates the reference oscillator instead of the RF chip, a burst is the analog
+transmitter's whole key-up and key-down: the RF chip to the TX frequency and its TX state, the supplies, the PA ramp,
+and back to receive after the burst. The sequences take a few milliseconds with waits in them, so they run in a task
+of their own at the highest priority (`platform/hrc7000/dmr_rfburst.c`); the interrupts only wake it. The board gives
+the two sequences (`hrc_rfburst_board_t`) and passes `hrc_rfburst_switch` to the glue as its RF switch hook.
+
+| Event | Source | The task does |
+|---|---|---|
+| TX on | the RF TX interrupt, rf_pre_on_tx before the burst | the board's TX-on sequence |
+| TX off | the next timeslot interrupt, or the RF RX interrupt once 20 ms have passed since the RF TX interrupt, whichever comes first | waits until the burst's last symbol, then the board's TX-off sequence |
+| Abort | disarm (the end of the transmission, a retune) | the TX-off sequence at once |
+
+The burst's last symbol is rf_pre_on_tx × 100 µs + 0.85 ms + 27.5 ms after the RF TX interrupt
+(`platform/hrc7000/dmr_rfburst_timing.h`), so the lead a board sets is the time its TX-on sequence needs, less 0.85
+ms, rounded up to 100 µs. The diagnostics count the sequences run, the RF RX interrupts and the TX-offs that started
+late.
 
 ### 3.2 Masking the modem interrupts
 

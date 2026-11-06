@@ -260,11 +260,11 @@ static void test_dmr_timing(void)
 		CHECK(lead * 100u + DB25D_DMR_SYMBOL_AFTER_LEAD_US < DB25D_DMR_PA_UP_US + on + 100u);	// and no earlier
 	}
 	CHECK(db25d_dmr_off_at_us(16) == 29950u);
-	CHECK(db25d_dmr_hold_us(0, 16) == 29950u);
-	CHECK(db25d_dmr_hold_us(29000, 16) == 950u);		// woken by the RF RX interrupt (27.4 ms + the lead)
-	CHECK(db25d_dmr_hold_us(29950, 16) == 0 && db25d_dmr_late_us(29950, 16) == 0);
-	CHECK(db25d_dmr_hold_us(30850, 16) == 0 && db25d_dmr_late_us(30850, 16) == 900u);
-	CHECK(db25d_dmr_late_us(20000, 16) == 0);
+	CHECK(hrc_rfburst_hold_us(0, 16) == 29950u);
+	CHECK(hrc_rfburst_hold_us(29000, 16) == 950u);		// woken by the RF RX interrupt (27.4 ms + the lead)
+	CHECK(hrc_rfburst_hold_us(29950, 16) == 0 && hrc_rfburst_late_us(29950, 16) == 0);
+	CHECK(hrc_rfburst_hold_us(30850, 16) == 0 && hrc_rfburst_late_us(30850, 16) == 900u);
+	CHECK(hrc_rfburst_late_us(20000, 16) == 0);
 }
 
 int main(void)
