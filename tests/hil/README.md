@@ -81,7 +81,7 @@ the three ways to give it. `tests/hil/hil_config.py` reads them.
 | `--dmr-freq` / `--dmr-cc` / `--dmr-tg` | the DMR test channel: MHz (simplex, a channel in the radio's codeplug), color code, the talkgroup the bench calls |
 | `--fm-mhz` | the FM test frequency (the radio's VFO) |
 | `--noaa-mhz` | a NOAA weather radio station heard at the rig (`test_fm`, receive only; optional tests) |
-| `--vhf-fm-mhz` | a VHF FM frequency the bench transmits on (`test_fm`: receive in the VHF band; optional test) |
+| `--vhf-fm-mhz` | a VHF FM frequency the bench transmits on (`test_fm`: receive in the VHF band) |
 | `--aprs-test-mhz` | `test_aprs`'s AFSK frequency: an amateur simplex frequency that is not an APRS one |
 | `--aprs-dmr-dst` | the DMR position's destination ID (`test_aprs`) |
 | `--callsign` | the licensed operator's callsign: every transmission that carries one (APRS, CW ID, talker alias); RAM only on the radio |

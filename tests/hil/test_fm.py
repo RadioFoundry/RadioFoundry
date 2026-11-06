@@ -5,9 +5,9 @@ RSSI above the floor within a few seconds. Depends on reception at the bench, so
 test_fm_receive_bench is the same check with the bench's carrier.
 
 test_fm_receive_bench (rf, bench_service): the VFO on --fm-mhz, the bench board sends a 1 kHz tone for 3 s, and the
-squelch opens and closes again after it. test_fm_receive_bench_vhf: the same on --vhf-fm-mhz, optional: a bench board
-matched for UHF puts out little on VHF, too little to reach a radio on a dummy load. A radio that doesn't tune the
-frequency skips (other_board).
+squelch opens and closes again after it. test_fm_receive_bench_vhf: the same on --vhf-fm-mhz, at the board's top
+transmit level (255; the bench clamps it to its limit): a bench board matched for UHF puts out little on VHF, and at its
+default level nothing reached a radio on a dummy load. A radio that doesn't tune the frequency skips (other_board).
 
 test_rx_tone_squelch: CTCSS / DCS decode, from the side NOAA can test (it sends no sub-audio tone): on NOAA with the squelch opening (stepped down from the radio's
 level as far as 1 until it does), an RX tone of CTCSS 100.0 Hz and
@@ -119,14 +119,14 @@ def test_fm_receive_bench(radio, sdr_bench, pytestconfig):
     _bench_receive(radio, sdr_bench, pytestconfig, "fm-mhz")
 
 
-@pytest.mark.feature("fm", "vfo_fm", optional=True)
+@pytest.mark.feature("fm", "vfo_fm")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_fm_receive_bench_vhf(radio, sdr_bench, pytestconfig):
-    _bench_receive(radio, sdr_bench, pytestconfig, "vhf-fm-mhz")
+    _bench_receive(radio, sdr_bench, pytestconfig, "vhf-fm-mhz", power=255)
 
 
-def _bench_receive(radio, sdr_bench, pytestconfig, option):
+def _bench_receive(radio, sdr_bench, pytestconfig, option, power=None):
     if "VFO_FM" not in radio.features():
         skip("not_built", "built without the FM VFO")
     radio.go_home()
@@ -150,7 +150,7 @@ def _bench_receive(radio, sdr_bench, pytestconfig, option):
             floor = max(int(radio.core()["rssi_dbm"]) for _ in range(5))
             states, rssi = set(), []
             with sdr_bench.lease():
-                tx = sdr_bench.fm_tx_start(mhz, program)
+                tx = sdr_bench.fm_tx_start(mhz, program, power=power)
                 while tx.poll() is None:
                     v = radio.core()
                     states.add(v.get("state"))
