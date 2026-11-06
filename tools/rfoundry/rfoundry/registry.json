@@ -837,7 +837,7 @@
    "loader_sign": "",
    "bootloader_steps": [
     "Disconnect the radio's DC power cable (the power key alone is not enough) and connect the USB cable to the mini-USB port on the rear.",
-    "Hold P1 and the orange (alarm) key while you connect the power again. The display flashes, then stays blank. Not yet confirmed on a radio: one report names the red key instead of the orange one.",
+    "Hold P1 and the orange (alarm) key while you connect the power again. The screen stays blank and the backlight blinks once a second.",
     "Release the keys."
    ],
    "stock_download": null,
@@ -882,7 +882,7 @@
    "stub": {
     "tool": "f4stub",
     "id": 3,
-    "tested": false,
+    "tested": true,
     "hse": 8000000,
     "boot_end": 134266880,
     "spi": {

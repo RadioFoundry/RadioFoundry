@@ -52,15 +52,15 @@ backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 [flash.bootloader]
 steps = [
 	"Disconnect the radio's DC power cable (the power key alone is not enough) and connect the USB cable to the mini-USB port on the rear.",
-	"Hold P1 and the orange (alarm) key while you connect the power again. The display flashes, then stays blank. Not yet confirmed on a radio: one report names the red key instead of the orange one.",
+	"Hold P1 and the orange (alarm) key while you connect the power again. The screen stays blank and the backlight blinks once a second.",
 	"Release the keys.",
 ]
 
 # The STM32F4 flash stub's board record (docs/spec/stub-stm32f4.md 5.2): the data flash on SPI2 in mode 3, its pins in
-# pins.h, the LCD's chip select held high so the panel ignores the bus. Not run on a radio yet
+# pins.h, the LCD's chip select held high so the panel ignores the bus. Writes checked on a V1-V3 radio (2026-11-05)
 [flash.stub]
 id = 3
-tested = false
+tested = true
 spi = { bus = 2, mode = 3, hz = 4500000 }
 idle_cs = ["PIN_LCD_CS"]
 
