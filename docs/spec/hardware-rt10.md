@@ -200,7 +200,8 @@ The FD6818 has no AFSK path of its own, so APRS goes through the HR_C7000 (`plat
 | Transmit | The FD6818 keys up in its TX state, then goes to its tone state with no tone (0xC1FA: carrier on, microphone ADC off, `fd6818sh_mic_off`). The HR_C7000's FM transmitter plays the AFSK from its prompt FIFO onto MOD1 (the TCXO, as DMR does), with the codec microphone muted. Level: `amp_per_level` 55 in `boards/rt10/radio_rt10.c`, not yet set against a measured deviation |
 | Receive | The HR_C7000 in FM receive copies the FD6818's AF output (0x47 = 0x7140) to the CPU (`fm_rx_audio.c`). The AF output stays on while APRS listens; the modem's FM_PLAY stays off |
 
-Untested on air.
+The transmitter keys up and the frames go out (`aprs.block` ok). Deviation, twist, the decode of the frames and
+receive are not yet measured on air.
 
 ## 8. Codec
 
@@ -230,7 +231,7 @@ No codec bytes are in the repository or in a release.
 | Item | State |
 | --- | --- |
 | Boot from the ROM flag at 0x0300C000 | written |
-| Host link on UART0, stub entry, watchdog, crash log | written |
+| Host link on UART0, stub entry, watchdog, crash log | measured: the hang and stall checks keep their records and the radio restarts by itself (`test_crash.py`) |
 | Power switch level, battery scale, LED colors, key levels, knob map | open |
 | FD6818 two-wire bus, FM receive, sub-audio decode | measured |
 | Factory calibration read | measured (the radio's own sector) |
@@ -242,7 +243,7 @@ No codec bytes are in the repository or in a release.
 | DMR speaker audio, DMR microphone | open: decoded voice played (the counters) but not listened to; in a DMR key-up the vocoder's microphone level is a steady floor (peak 2946, spread 3 dB), speech not checked |
 | IP data over the air | measured on air: UDP to and from the radio, compressed and full headers, off-net, confirmed, bursts from the radio |
 | IP link to the computer | PPP on the host link (UART0, 115200 baud) |
-| APRS | written (7.2), untested on air |
+| APRS | written (7.2): the radio keys up and sends its frames; deviation, twist and decoding on air not yet measured |
 | Hotspot split, USRP | not written: no continuous base-station outbound; USRP's 8 kHz audio both ways needs more than 115200 baud |
 | Screen-only features | left out: no display (`boards/rt10/config.mk`) |
 | Microphone through the programming cable's line | measured: barely couples. FM key-ups on the SDR bench with 0x55 bursts at 6000 and 2400 baud on the line: the audio rose from about 5 Hz rms deviation to 6-8 Hz rms during the bursts, no tone. `tests/hil/test_mic_uart_inject.py` leaves the RT10 out |
