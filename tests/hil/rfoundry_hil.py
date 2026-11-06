@@ -857,6 +857,7 @@ class SdrBench:
         self.api_level = api_level      # the board's transmit level 0-255 (None: its own)
         self.lease_max = lease_max
         self._api_session = None
+        self._api_tx_reach = None       # (tx_lo, tx_hi) after a tune in this session (_api_reach)
         self.host = api or dmr_bench.BENCH_HOST
         self.dir = dmr_bench.DIR
         self._run_dirs = []
@@ -917,6 +918,24 @@ class SdrBench:
         except L.BenchLineError as e:
             self._api_fail(e, f"a claim on {freq} MHz")
 
+    def _api_reach(self, freq):
+        """The TX board's window moved to freq for the session when its transmitter can't reach freq from where it is
+        tuned (info's tx_lo / tx_hi: a board has one synthesizer; both 0: anywhere). The board puts its own window
+        back when the session ends."""
+        reach = self._api_tx_reach
+        if reach is None:
+            w = self._api_info().get("window") or {}
+            reach = (w.get("tx_lo") or 0, w.get("tx_hi") or 0)
+        if reach == (0, 0) or reach[0] <= freq <= reach[1]:
+            return
+        L = self._line()
+        try:
+            r = L.request(L.address(self.api), {"op": "tune", "session": self._api_session, "center": freq})
+        except L.BenchLineError as e:
+            self._api_fail(e, f"a tune to {freq} MHz")
+        w = (r.get("tuned") or {}).get("window") or {}
+        self._api_tx_reach = (w.get("tx_lo") or freq, w.get("tx_hi") or freq)
+
     def _api_job(self, tool, args, expect_s=None, wait_start=True):
         """A bench_tx / bench_repeater command line as a job on the TX board, started in the background: returns
         once the board started it (it may have queued behind another session's job). The job's records and log
@@ -970,6 +989,7 @@ class SdrBench:
         if mode not in modes:
             skip("bench", f"the bench board {self.api} doesn't transmit {name} (its signal modes: {modes or 'none'})")
         L = self._line()
+        self._api_reach(freq)
         self._api_claim(freq)
         req = {"op": "tx", "mode": mode, "freq": freq, "session": self._api_session, "max_s": max_s,
                "program": program, "wait_max": self.dmr_bench.WAIT_MAX,
@@ -1082,6 +1102,7 @@ class SdrBench:
                 s.cancel()
                 raise RuntimeError(f"the bench board gave no session: {s.error or s.replies}")
             self._api_session = s.replies[0]["session"]
+            self._api_tx_reach = None
             self.leased = True
             try:
                 yield
@@ -1091,6 +1112,7 @@ class SdrBench:
                 self.bg = []
                 s.cancel()
                 self._api_session = None
+                self._api_tx_reach = None
                 self.leased = False
             return
         shared = self.bench.uses_daemon()

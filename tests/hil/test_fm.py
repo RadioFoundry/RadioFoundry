@@ -1,7 +1,13 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""FM receive, no transmission: the VFO on a NOAA weather radio station (--noaa-mhz, the rig's) opens the squelch or shows an
-RSSI above the floor within a few seconds. Depends on reception at the bench.
+"""FM receive. test_noaa_receive, no transmission: the VFO on a NOAA weather radio station (--noaa-mhz, the rig's) opens the squelch or shows an
+RSSI above the floor within a few seconds. Depends on reception at the bench, so it is optional:
+test_fm_receive_bench is the same check with the bench's carrier.
+
+test_fm_receive_bench (rf, bench_service): the VFO on --fm-mhz, the bench board sends a 1 kHz tone for 3 s, and the
+squelch opens and closes again after it. test_fm_receive_bench_vhf: the same on --vhf-fm-mhz, optional: a bench board
+matched for UHF puts out little on VHF, too little to reach a radio on a dummy load. A radio that doesn't tune the
+frequency skips (other_board).
 
 test_rx_tone_squelch: CTCSS / DCS decode, from the side NOAA can test (it sends no sub-audio tone): on NOAA with the squelch opening (stepped down from the radio's
 level as far as 1 until it does), an RX tone of CTCSS 100.0 Hz and
@@ -22,7 +28,7 @@ from rfoundry_hil import skip
 from hil_config import rig
 
 
-@pytest.mark.feature("fm", "vfo_fm")
+@pytest.mark.feature("fm", "vfo_fm", optional=True)
 def test_noaa_receive(radio, pytestconfig):
     if "VFO_FM" not in radio.features():
         skip("not_built", "built without the FM VFO")
@@ -104,6 +110,65 @@ def _watch(radio, tx):
         states.add((v.get("state"), v.get("tone_ok")))
         time.sleep(0.1)
     return states, tx.wait(5)
+
+
+@pytest.mark.feature("fm", "vfo_fm")
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_fm_receive_bench(radio, sdr_bench, pytestconfig):
+    _bench_receive(radio, sdr_bench, pytestconfig, "fm-mhz")
+
+
+@pytest.mark.feature("fm", "vfo_fm", optional=True)
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_fm_receive_bench_vhf(radio, sdr_bench, pytestconfig):
+    _bench_receive(radio, sdr_bench, pytestconfig, "vhf-fm-mhz")
+
+
+def _bench_receive(radio, sdr_bench, pytestconfig, option):
+    if "VFO_FM" not in radio.features():
+        skip("not_built", "built without the FM VFO")
+    radio.go_home()
+    if radio.screen() == "hotspot":
+        skip("state", "the radio is in hotspot mode")
+    mhz = rig(pytestconfig, option)
+    hz = round(mhz * 1e6)
+    program = [{"kind": "tone", "hz": 1000, "s": BENCH_FM_S, "level": 0.6}]
+    with radio.vfo_session():
+        radio.link.vfo_set(hz)
+        try:
+            radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", 3, what="VFO tuned")
+        except AssertionError:
+            skip("other_board", f"the radio doesn't tune {mhz:.4f} MHz: not one of its bands")
+        L = radio.link
+        tone0 = radio.view(["channel"])["ch.rx_tone"]
+        try:
+            if tone0 != "none:0":
+                L.tone(2, "none", 0)
+                radio.wait_for(lambda v: v.get("ch.rx_tone") == "none:0", sections=("channel",), what="no RX tone")
+            floor = max(int(radio.core()["rssi_dbm"]) for _ in range(5))
+            states, rssi = set(), []
+            with sdr_bench.lease():
+                tx = sdr_bench.fm_tx_start(mhz, program)
+                while tx.poll() is None:
+                    v = radio.core()
+                    states.add(v.get("state"))
+                    rssi.append(int(v["rssi_dbm"]))
+                    time.sleep(0.1)
+                done = tx.wait(5)
+            print(f"{mhz:.4f} MHz: states {sorted(states)}, RSSI {floor} dBm before, {min(rssi)}..{max(rssi)} dBm "
+                  f"during; bench {done}")
+            assert "rx" in states, (f"the bench's carrier on {mhz:.4f} MHz didn't open the squelch {radio.core()['squelch']}: "
+                                    f"RSSI {floor} dBm before, at most {max(rssi)} dBm during")
+            assert not done.get("cut"), f"the bench cut its transmission: {done}"
+            radio.wait_for(lambda v: v.get("state") != "rx", 5, interval=0.1, what="the squelch closes after it")
+        finally:
+            if tone0 != "none:0":
+                k, v = tone0.split(":")
+                L.tone(2, k, int(v))
+                radio.wait_for(lambda x: x.get("ch.rx_tone") == tone0, sections=("channel",),
+                               what="RX tone restored")
 
 
 @pytest.mark.feature("subtone")

@@ -80,7 +80,8 @@ the three ways to give it. `tests/hil/hil_config.py` reads them.
 |---|---|
 | `--dmr-freq` / `--dmr-cc` / `--dmr-tg` | the DMR test channel: MHz (simplex, a channel in the radio's codeplug), color code, the talkgroup the bench calls |
 | `--fm-mhz` | the FM test frequency (the radio's VFO) |
-| `--noaa-mhz` | a NOAA weather radio station heard at the rig (`test_fm`, receive only) |
+| `--noaa-mhz` | a NOAA weather radio station heard at the rig (`test_fm`, receive only; optional tests) |
+| `--vhf-fm-mhz` | a VHF FM frequency the bench transmits on (`test_fm`: receive in the VHF band; optional test) |
 | `--aprs-test-mhz` | `test_aprs`'s AFSK frequency: an amateur simplex frequency that is not an APRS one |
 | `--aprs-dmr-dst` | the DMR position's destination ID (`test_aprs`) |
 | `--callsign` | the licensed operator's callsign: every transmission that carries one (APRS, CW ID, talker alias); RAM only on the radio |
@@ -88,19 +89,21 @@ the three ways to give it. `tests/hil/hil_config.py` reads them.
 | `--microphone` | an ALSA capture device (`arecord -D`) whose microphone is at the radio's speaker: the speaker tests ([Speaker tests](#speaker-tests)) |
 
 With `--allow-rf`, every transmit frequency the run is given (`--dmr-freq`, `--fm-mhz`, `--aprs-test-mhz`,
-`--sfr-freq`, `--roam-rx` / `--roam-tx`, `--split-out-mhz`, `--split-tx-mhz`, `--outbound-mhz`, `--am-mhz`) must be in `tx_mhz`, or the run
+`--sfr-freq`, `--roam-rx` / `--roam-tx`, `--split-out-mhz`, `--split-tx-mhz`, `--outbound-mhz`, `--am-mhz`,
+`--vhf-fm-mhz`) must be in `tx_mhz`, or the run
 stops before the first test. The bench client refuses to key anywhere else. Example file (placeholder values: use
 your license's and your site's):
 
 ```toml
 # ~/.config/rfoundry/hil.toml
 callsign = "Q0TST"
-tx_mhz = [433.4500, 433.4750]
+tx_mhz = [433.4500, 433.4750, 145.5500]
 dmr_freq = 433.4500
 dmr_cc = 1
 dmr_tg = 91
 fm_mhz = 433.4750
 noaa_mhz = 162.4000
+vhf_fm_mhz = 145.5500
 aprs_test_mhz = 433.4750
 aprs_dmr_dst = 9990301
 ```
@@ -278,7 +281,8 @@ Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr
   transmit on `--fm-mhz` in its FM VFO; it runs on its lowest power, into an antenna or a dummy load at bench
   distance.
 - An antenna or attenuator so the bench transmitter at power 40 doesn't overload the radio.
-- For `test_fm`: a NOAA weather radio station audible at the bench (`--noaa-mhz`).
+- For `test_fm`: the bench board's FM transmitter on `--fm-mhz` and `--vhf-fm-mhz`. A NOAA weather radio station
+  audible at the bench (`--noaa-mhz`) runs the optional over-the-air versions.
 - Speech recordings for `test_dmr_voice` stay outside the repository; give the path with `--ambe` or
   `$RFOUNDRY_HIL_AMBE`. Never commit a recording.
 
