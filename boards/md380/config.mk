@@ -33,6 +33,7 @@ CONFIG_BCAST_FM ?= n
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-broadcast.md)
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is a SPI NOR (docs/spec/hardware-md380.md 12)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (docs/user/23-radios.md, What the MD-380 lacks)
+BOARD_UNSUPPORTED += BT_PTT	# no Bluetooth module
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, the one UART the G models' GPS line
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
 # maximal configuration too

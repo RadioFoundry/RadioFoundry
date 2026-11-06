@@ -21,6 +21,8 @@ body:
         - Radioddity DB25-D PRO / Kydera CDR-300UV
         - TYT MD-380 / MD-390 / Retevis RT3
         - TYT MD-UV380 / MD-UV390 / Retevis RT3S / MD-UV390 Plus 10 W
+        - AnyTone AT-D578UV / AT-D578UV PRO / AT-D578UV PLUS
+        - AnyTone AT-D578UV (Artery) / AT-D578UV PRO / AT-D578UV PLUS
         # end generated
         - Not radio-specific (tools, web site, docs)
         - Other (say which below)

@@ -67,7 +67,7 @@ def main():
         return 0
     # one tool may serve several boards: only this board's stock files count
     mod = __import__(tool)
-    profiles = {h: p for h, p in mod.PROFILES.items() if p.get("board", args.board) == args.board}
+    profiles = {h: p for h, p in getattr(mod, "PROFILES", {}).items() if p.get("board", args.board) == args.board}
     if hasattr(mod, "identify"):	# a tool that knows a file by more than its SHA-256 (a program flash dump)
         def known(path):
             with open(path, "rb") as f:

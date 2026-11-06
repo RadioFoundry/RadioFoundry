@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# The AT-D578UV's Artery builds in the registry (tools/boards.py, docs/dev/adding-a-radio.md): the same radio as
+# boards/d578uv (part_of), whose code this board builds on the AT32F43x platform. Build facts stay in board.mk and
+# config.mk, the memory layout in boards/d578uva/memory.ld.
+
+id = "d578uva"
+name = "AnyTone AT-D578UV (Artery)"
+maker = "AnyTone"
+model = "AT-D578UV"
+also = ["AnyTone AT-D578UV PRO", "AnyTone AT-D578UV PLUS"]
+kind = "mobile"
+part_of = "d578uv"
+order = 9
+
+[docs]
+hardware = "docs/spec/hardware-d578uv.md"
+
+[hardware]
+cpu = "AT32F435"
+bands = "136-174 / 400-480 MHz"
+power = "up to 50 W"
+display = "1.77\" color, 160 × 128"
+gallery = "160x128"
+clock = { rtc = "unknown", note = "the AT32F435 ERTC; whether a crystal and a backup supply are fitted is not known (docs/spec/hardware-d578uv.md)" }
+# The same two variants as boards/d578uv: this image runs on the Artery builds only
+variant_pattern = '(GD|AT)_Ver'
+variant_check = "Open the version screen in the radio's menu. GD_Ver is the GD32 build, AT_Ver the Artery build."
+
+[[hardware.variants]]
+code = "GD"
+name = "GD32F303 (built until mid-2022)"
+level = "bring-up"
+notice = "Nothing has run on this radio yet: the display, keys and FM are written from an analysis of the manufacturer's firmware. To go back, write the manufacturer's firmware file through the factory update mode."
+runs = { board = "d578uv" }
+
+[[hardware.variants]]
+code = "AT"
+name = "Artery AT32F43x (built from mid-2022)"
+level = "bring-up"
+notice = "Nothing has run on this radio yet: the Artery build is written from an analysis of the manufacturer's firmware and the GD32 build's code. To go back, write the manufacturer's firmware file through the factory update mode."
+runs = { board = "d578uva" }
+
+[status]
+level = "bring-up"
+summary = """\
+The GD32 builds' code on the Artery AT32F435, written from an analysis of the manufacturer's firmware; nothing has \
+run on a radio yet. Open: every function on the radio, DMR."""
+release = "testing"
+
+# The vendor bootloader (0x08000000..0x08005FFF) is never written; the image goes to 0x08006000 through the factory
+# update mode, as on the GD32 builds (hardware-d578uv.md 8, 10), or through the AT32F43x flash stub once RadioFoundry
+# runs (stub-at32f43x.md)
+[flash]
+family = "anytone-update"
+keep_codec = false
+stock_versions = ["2.08", "PRO 1.21"]
+backup = { stock = "none", rfoundry = "none", spi_size = 0 }
+
+# The AT32F43x stub's board record (stub/f4stub.py, stub-at32f43x.md 5): its board id (HELLO echoes it) and whether it
+# has run on a radio. The record's other field, the bootloader's end, is APP_BASE
+[flash.stub]
+id = 7
+tested = false
+
+# What no tool erases or writes, as offsets in the program flash. Not the modem boot slot (0xFF000-0x100000): every
+# install through the update mode writes it, and the stub writes it only from an image that carries the boot block
+[[flash.protect]]
+mem = "progmem"
+start = 0x0
+end = 0x6000
+what = "the vendor bootloader and its update mode (hardware-d578uv.md 2, 8)"
+
+# The model names the update mode answers, per variant (hardware-d578uv.md 8), as boards/d578uv lists them
+[flash.anytone]
+models = { GD = ["D578UV2", "D578UV"], AT = ["578UV2A", "D578UVA"] }
+
+[flash.bootloader]
+hold = ["menu", "exit"]
+steps = [
+	"Turn the radio off and connect the USB programming cable.",
+	"Hold MENU and EXIT and turn the radio on.",
+	"Release the keys when the update screen shows.",
+]
+
+[frame]
+shape = "mobile"
+body = "#1d1e21"
+accent = "#d0a020"
+lens = [20, 20]
+
+# The DMR baseband's boot block (hardware-d578uv.md 4.3), merged from the user's stock file into the modem boot slot
+# (boards/d578uva/memory.ld __codec_slot). Every stock build carries the same block
+[codec]
+tool = "modem_boot"
+profile = "d578uva-boot"
+sources = ["AT-D578UV stock firmware (.CDD), any build", "a program flash read of the radio"]

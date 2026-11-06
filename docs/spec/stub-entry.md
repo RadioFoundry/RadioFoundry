@@ -15,6 +15,7 @@ debug link: a build without the debug link still offers it.
 | Own listener for a build without the debug link (portable, host tested) | `core/stubentry/stub_link.c` |
 | Framing shared with the debug link | `core/debuglink/dl_frame.{h,c}` (no RTOS, no board) |
 | Platform: span and quiesce-and-jump | `hal_system_t.stub_region / enter_stub / stub_run_addr / stub_image_ok`: the HR_C7000 platform code (`platform/hrc7000`), [stub-stm32f4.md](stub-stm32f4.md) (STM32F4) |
+| Platform without RAM to spare: staging in the frame buffer | `hal_system_t.enter_stub_staged`: the core loads the image into the display's frame buffer with the UI held and passes it at ENTER ([stub-gd32f30x.md](stub-gd32f30x.md) 3.1, GD32F30x; [stub-at32f43x.md](stub-at32f43x.md) 3, AT32F43x) |
 | Tests | `tests/host/stubEntryTest.c` (state machine), `tests/host/stubLinkTest.c` (wire bytes, both listeners) |
 
 ## 1. Wire format

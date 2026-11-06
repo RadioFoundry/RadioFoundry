@@ -313,6 +313,23 @@ pre-emphasis reads 3 to 7 dB higher on the carrier than it is received. Measured
 None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) checks the received twist;
 `test_fm_tx_dtmf_stop` checks on air that a held digit ends with the carrier at PTT release and at the time-out.
 
+### 3.8 Bluetooth PTT and keys (CONFIG_BT_PTT)
+
+A board with a Bluetooth module on a UART reads its text lines (`drivers/input/bt_at`) and adds what they say to its
+key scan, so the core sees PTT and keys as from any other key. Which radios have a module:
+[feature-matrix.md](../feature-matrix.md); the module's lines are on each radio's hardware page.
+
+| Source | Held while |
+|---|---|
+| A PTT button (key fob) | its press line until its release line |
+| A hands-free button | latched: one press on, the next off |
+| A Bluetooth hand mic | its PTT press line until its release line, sent through the module's data tunnel |
+
+Any one held is PTT. A link that ends, or the module restarting, releases all three: a link lost mid-transmission
+doesn't hold the transmitter on, and the core's TX time-out still applies. A hand mic's key events hold their key for
+a short time each, past the core's debounce. Present, PTT, the last key and the counts are in the debug link's
+`input.bt_*` keys (`hal_input_t.bt_stats`). Pairing and Bluetooth audio aren't part of it.
+
 ## 4. Beeps (CONFIG_BEEP)
 
 | Beep | Sound | When |
@@ -343,6 +360,14 @@ clock) is stopped the same way, in case a block already ran. Counters in the vie
 `beep.played` (started), `beep.no_stream` (no audio stream could be started: on a board that can't stream PCM in FM
 mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
 `beep.busy`.
+
+A board with no PCM speaker audio (no `board.audio`) can give `hal_radio_t.beep_tone(hz, level)` instead: the core
+then plays each segment of the pattern as one tone on the board's own tone generator, `hz` 0 for a silent segment and
+once at the end, timed by the radio poll: a segment ends on the first poll at or after its length, counted from the first poll after
+the pattern starts. The poll it starts in doesn't count, so a segment never plays shorter than its length (up to one poll
+longer). `level` is the
+same level a PCM beep would play at. The board ignores the hook while it transmits. `beep.played` counts these
+beeps too.
 
 To hear the beeps in context, `tools/beep_reel.py` makes a video of the UI simulator's screen in which every beep sounds
 in a scene that sounds it on a radio, captioned (`build/beep-reel/beep_reel.mp4`; needs ffmpeg built with libass). It

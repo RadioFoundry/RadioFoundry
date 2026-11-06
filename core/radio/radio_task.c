@@ -32,10 +32,13 @@
 
 // Task layout (see core/app/app.c for the whole picture)
 #define RADIO_TASK_PRIORITY	4
+// A board whose deepest radio task chain needs more (tools/stack_check.py) passes its own RADIO_TASK_STACK
+#ifndef RADIO_TASK_STACK
 #if CONFIG_DMR
 #define RADIO_TASK_STACK	768	// words: the DMR call stack and the AMBE FEC run here
 #else
 #define RADIO_TASK_STACK	512	// words
+#endif
 #endif
 #define RADIO_QUEUE_LEN		16
 

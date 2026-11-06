@@ -67,11 +67,14 @@ FAMILIES = {
     # combination, speaking its own file format (tools/serial_loader.py)
     "serial-iap": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": "iap"},	# a vendor IAP
     # loader on the cable, through the RAM stub
+    "anytone-update": {"link": "usb", "needs": (), "web": "anytone-update", "update_mode": "anytone"},	# the vendor
+    # update mode on the radio's own USB serial port, which writes the image itself
+    # (tools/rfoundry/rfoundry/anytone.py)
 }
 # [flash.stub] stock_console: the debug console a stock firmware answers on the cable, by protocol (the web flasher
 # loads the stub through it before RadioFoundry is installed: site/static/js/flasher/usmart.js)
 STOCK_CONSOLES = ("usmart",)
-CODEC_TOOLS = ("codec_extract", "hrc7000_codec")
+CODEC_TOOLS = ("codec_extract", "hrc7000_codec", "modem_boot")
 RFOUNDRY_JSON = "tools/rfoundry/rfoundry/registry.json"	# the flashing tools' view, generated and committed
 # hal_flash_map_t fields the site reads (the codeplug editor): the open-firmware image's data flash address, the end of
 # the room for it and the DMR ID database, the TFTP staging area. The open-firmware flash image follows the EEPROM image
@@ -91,7 +94,7 @@ DATA_SECTOR = 0x1000		# an SPI NOR data flash's smallest erase (sector erase 0x2
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
 MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
-             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "HSE_VALUE", "MCU_DEFS")
+             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "HSE_VALUE", "MCU_DEFS", "BOARD_T_NAME")
 # The frame buffer core/ui/gfx.h builds when a board's MCU_DEFS don't size it (RGB565, 160x128, at most 160 rows)
 GFX_DEFAULTS = {"GFX_FB_BYTES": 160 * 128 * 2, "GFX_MAX_ROWS": 160, "GFX_INDEXED": 0}
 # The [flash.stub] id every stub keeps for its tools' test profiles (stub/f4stub.py test_board()), so a test record
@@ -189,6 +192,9 @@ BOARD_SCHEMA = {
         # key-<name> ids), for the web flasher's picture; steps stays the instructions
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str),
                             "hold": _opt(STR_LIST)}),
+        # the anytone-update family: the model names the radio's update mode answers (byte 02), per [hardware]
+        # variants code, as the vendor's .spi files for that variant carry them (tools/rfoundry/rfoundry/anytone.py)
+        "anytone": _opt({"models": _req(("map", STR_LIST))}),
         # layout: the bootloader's alt 0 interface string, only once read from a radio in its bootloader. The
         # flashers then accept no other device; without it they refuse a layout of only the bootloader's sectors
         # (rfoundry dfu.py normal_mode)
@@ -213,7 +219,11 @@ BOARD_SCHEMA = {
                       # the STM32F4 stub: the SPI flash's bus (SPIn), mode and fastest clock; the pins come from pins.h
                       # (F4_SPI_PINS), and idle_cs names other chip selects on that bus to hold high
                       "spi": _opt({"bus": _req(int), "mode": _req(int), "hz": _req(int)}),
-                      "idle_cs": _opt(STR_LIST)}),
+                      "idle_cs": _opt(STR_LIST),
+                      # the GD32F30x / AT32F43x stubs: a bit-banged SPI NAND they read as the external memory (its
+                      # size in MB, whether it reads in dual SPI); the pins come from pins.h (PIN_NAND_CS, _CLK,
+                      # _MOSI, _MISO)
+                      "spi_nand": _opt({"mb": _req(int), "dual": _opt(bool)})}),
     }),
     # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file
     "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(STR_LIST), "profile": _opt(str), "sources": _opt(STR_LIST),
@@ -512,7 +522,7 @@ def not_written_problems(bid, b):
 
 def pin_defines(path):
     """{NAME: value} of the pin #defines in a pins.h: an integer (the HR_C7000's port << 4 | pin), or "PB3" for the
-    STM32 form `GPIOB, GPIO_PIN_3`."""
+    STM32 form `GPIOB, GPIO_PIN_3` and the GD32F30x / AT32F43x form `GPIOB, MCU_PIN(3)`."""
     if not os.path.isfile(path):
         return {}
     with open(path, encoding="utf-8") as f:
@@ -526,6 +536,9 @@ def pin_defines(path):
                 for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?((?:0[xX][0-9a-fA-F]+|\d+))[uU]?\)?\s*$", text)})
     out.update({m.group(1): "P%s%d" % (m.group(2), int(m.group(3)))
                 for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+GPIO([A-K])\s*,\s*GPIO_PIN_(\d+)\s*$", text)})
+    # The GD32F30x / AT32F43x boards' form `GPIOB, MCU_PIN(8)`
+    out.update({m.group(1): "P%s%d" % (m.group(2), int(m.group(3)))
+                for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+GPIO([A-K])\s*,\s*MCU_PIN\((\d+)\)\s*$", text)})
     return out
 
 
@@ -634,13 +647,21 @@ class Board:
     def stub(self):
         """The board's profile for its platform's stub (platform.toml board_stub.tool), with what other files say.
         stubtool (the HR_C7000 universal stub): the power latch and key from pins.h when the stub must hold the radio
-        on (a soft power key), else none. f4stub: the board record's facts, the SPI flash pins from pins.h, the crystal
-        from HSE_VALUE and the bootloader's end from APP_BASE. None without a profile."""
+        on (a soft power key), else none. f4stub (the STM32F4, GD32F30x and AT32F43x stubs): the bootloader's end from
+        APP_BASE, and where the board names an SPI flash, its pins from pins.h and the crystal from HSE_VALUE. None without a
+        profile."""
         s = self.data["flash"].get("stub")
         bs = self.platform.data.get("board_stub")
         if s is None or bs is None:
             return None
         out = {"tool": bs["tool"], "id": s["id"], "tested": s["tested"]}
+        if bs["tool"] == "f4stub":
+            out.update(boot_end=self.app_base, hse=None, spi=None, spi_nand=None)
+            if "spi_nand" in s:
+                n = s["spi_nand"]
+                out.update(spi_nand={"mb": n["mb"], "dual": bool(n.get("dual", False)),
+                                     "cs": self.pins.get("PIN_NAND_CS"), "clk": self.pins.get("PIN_NAND_CLK"),
+                                     "io0": self.pins.get("PIN_NAND_MOSI"), "io1": self.pins.get("PIN_NAND_MISO")})
         if "spi" in s:
             spi, af = s["spi"], bs.get("spi_af") or []
             pin = {k: self.pins.get(k) for k in F4_SPI_PINS}
@@ -812,7 +833,10 @@ def load(root=ROOT, only=None):
         if plat is None:
             raise RegistryError("boards/%s: PLATFORM %r has no platform/<p>/platform.toml" % (bid, mk.get("PLATFORM")))
         srcs = [bdir] + shared_board_dirs(root, bid, mk)
-        out[bid] = Board(data, plat, mk, _layout(root, bid, mk), board_t_names(srcs),
+        # .name = BOARD_T_NAME: the Makefile defines it from board.mk, so its value is the board's literal
+        names = [(mk["BOARD_T_NAME"], None) if macro == "BOARD_T_NAME" and mk.get("BOARD_T_NAME") else (lit, macro)
+                 for lit, macro in board_t_names(srcs)]
+        out[bid] = Board(data, plat, mk, _layout(root, bid, mk), names,
                          pin_defines(os.path.join(bdir, "pins.h")),
                          # the platform's config.mk adds its own switches (no USB on a platform without it); the
                          # board's reason wins for a switch both list
@@ -887,9 +911,10 @@ def hardware_switches(root=ROOT):
     return {e["switch"]: e["hardware"] for e in feats.values() if e.get("switch") and e.get("hardware")}
 
 
-def hardware_problems(bid, unsupported, unconfirmed, built, hw):
+def hardware_problems(bid, unsupported, unconfirmed, built, hw, no_room=()):
     """A board's hardware switches that read "off by default": each must be built (built: switch -> "y"/"n"), listed in
-    BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (unsupported: both, with their reasons), or, while the fact is unknown, in
+    BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (unsupported: both, with their reasons), in MAXIMAL_SKIP (no_room: written,
+    but the radio has no room for it beside its other features; config.mk says why), or, while the fact is unknown, in
     board.toml [hardware] unconfirmed. One in either list must also be off by default."""
     out = []
     for s, what in sorted(hw.items()):
@@ -901,12 +926,12 @@ def hardware_problems(bid, unsupported, unconfirmed, built, hw):
         elif on and gone:
             out.append("boards/%s: %s is in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (it needs %s) but built by default: "
                        "add CONFIG_%s ?= n to its config.mk" % (bid, s, what, s))
-        elif not on and not gone:
+        elif not on and not gone and s not in no_room:
             out.append("boards/%s: %s needs %s and is off by default: build it (config.mk CONFIG_%s ?= y) if the "
                        "radio has it and the code is written; BOARD_NOT_WRITTEN += %s  # <what isn't written> if "
-                       "the radio has it but the code isn't; else BOARD_UNSUPPORTED += %s  # <the reason, from the "
-                       "hardware spec>. A fact no source has yet goes in board.toml [hardware] unconfirmed"
-                       % (bid, s, what, s, s, s))
+                       "the radio has it but the code isn't; MAXIMAL_SKIP if it is written but doesn't fit; else "
+                       "BOARD_UNSUPPORTED += %s  # <the reason, from the hardware spec>. A fact no source has yet goes "
+                       "in board.toml [hardware] unconfirmed" % (bid, s, what, s, s, s))
     for s in sorted(set(unconfirmed) - set(hw)):
         out.append("boards/%s/board.toml: hardware.unconfirmed %s is not a hardware switch (tests/hil/features.toml)"
                    % (bid, s))
@@ -1017,11 +1042,13 @@ def check(root=ROOT):
         problems += not_written_problems(bid, b)
         if hw:
             try:
-                built = {s: v for s, v in ((k[len("CONFIG_"):], v) for k, v in
-                                           make_vars(root, bid, ["CONFIG_" + s for s in hw]).items())}
-                # not written yet counts as left off on purpose, as unsupported does
+                mv = make_vars(root, bid, ["CONFIG_" + s for s in hw] + ["MAXIMAL_SKIP"])
+                no_room = mv.pop("MAXIMAL_SKIP", "").split()
+                built = {k[len("CONFIG_"):]: v for k, v in mv.items()}
+                # not written yet counts as left off on purpose, as unsupported does, and so does written but too big
+                # for the radio beside its other features (MAXIMAL_SKIP)
                 problems += hardware_problems(bid, {**b.unsupported, **b.not_written},
-                                              d["hardware"].get("unconfirmed", {}), built, hw)
+                                              d["hardware"].get("unconfirmed", {}), built, hw, no_room)
             except RegistryError as e:
                 problems.append(str(e))
         for k, p in d["docs"].items():
@@ -1258,6 +1285,10 @@ def rfoundry_view(boards):
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
             "dfu_layout": dfu.get("layout") if dfu else None,
             "stub": b.stub(),
+            # [hardware] variants: code -> (name, the board whose image it runs or None); the anytone-update family's
+            # model names per variant code
+            "variants": {v["code"]: [v["name"], v.get("runs", {}).get("board")] for v in d["hardware"].get("variants", [])},
+            "anytone_models": {k: list(v) for k, v in fl.get("anytone", {}).get("models", {}).items()},
             "build_options": d.get("build_options", []),		# rfoundry asks with the same words as the site
             # the radio types another open firmware's CPS radio info reports for this radio (board.toml [cps])
             "cps_radio_types": list(d.get("cps", {}).get("radio_types", [])),
@@ -1676,6 +1707,8 @@ def self_test():
        "hardware switches: in BOARD_UNSUPPORTED but built by default fails")
     ok(hp("x", {"NAND_STORAGE": "the driver isn't written"}, {}, {"VIBRATE": "y", "NAND_STORAGE": "n"}, hw) == [],
        "hardware switches: one in BOARD_NOT_WRITTEN (check() passes both lists) passes off by default")
+    ok(hp("x", {}, {}, {"VIBRATE": "y", "NAND_STORAGE": "n"}, hw, ["NAND_STORAGE"]) == [],
+       "hardware switches: one in MAXIMAL_SKIP (written, no room) passes off by default")
 
     # the survey's Port cells (check 5) and the floor, on a fixture survey
     class Stub:
@@ -1779,7 +1812,9 @@ def self_test():
                 os.makedirs(os.path.dirname(os.path.join(tmp, p)), exist_ok=True)
                 open(os.path.join(tmp, p), "w").close()
         ok(check(tmp) == [], "the copied registry is consistent: %s" % check(tmp)[:3])
-        one = board_dirs(tmp)[0]
+        # a board with the keys the cases below break: a universal stub profile ([flash.stub] hold_power)
+        one = next(b for b in board_dirs(tmp) if re.search(r"(?m)^hold_power = ",
+                                                         open(os.path.join(tmp, "boards", b, "board.toml")).read()))
         path = os.path.join(tmp, "boards", one, "board.toml")
         good = open(path, encoding="utf-8").read()
 
@@ -1807,7 +1842,7 @@ def self_test():
         if load(tmp)[one].family["update_mode"]:
             broken(re.sub(r"(?ms)^steps = \[.*?^\]\n", "steps = []\n", good, count=1),
                    "an update mode without the steps into it", "flash.bootloader.steps is empty")
-        two = board_dirs(tmp)[1]
+        two = next(b for b in board_dirs(tmp) if b != one)
         other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
         broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")
         fm_c = [os.path.join(tmp, "boards", one, f) for f, text in _c_sources(os.path.join(tmp, "boards", one))

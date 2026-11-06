@@ -24,6 +24,7 @@ and the release images never contain it. Each radio uses the codec from its own 
    | DB25-D PRO | Radioddity `DB25-D PRO 909E.Dx.EARSAB.018_2024-09-23.bin` | `f2a4b214720b971b58cdadcc53d44695e1462b75296afc41f2a0b53a704d36b4` |
    | DB25-D PRO | the 2024-05-09 build, `909E.D6x.EARSAB.018` | `9e199f54cd6545d153d39542ca5be3ac1076ee215eb93ca630a83cbdbbff4606` |
    | MD-380 | TYT `MD-380-D2.32(AD).bin` ("Firmware 2.32", D002.032) | `e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43` |
+   | AT-D578UV | AnyTone `.CDD` of any GD32 build (2.08, PRO 1.21) | Any file holding the DMR chip's boot block (`743515b9…`, `tools/modem_boot.py`) |
    | DM-1801 Pro | A 1 MB program flash read of the radio running its stock firmware (`stub/stubtool.py --progmem`) | Any file whose codec code window hashes to `8f7641b6…` (`tools/hrc7000_codec.py`) |
 
    The DM-1801 Pro has no published update file, so the codec comes from the radio's own flash. Read it **before** the
@@ -44,6 +45,10 @@ instead.
 The DB25-D writes `build/db25d/rfoundry_db25d_codec.bin`: the first stage, the application and the codec in one file, the one
 to flash (DMR on that radio is a receive-only build option, `CONFIG_DMR=y`, hardware-db25d.md 9).
 
+The AT-D578UV has no AMBE codec on the processor: its DMR chip holds the vocoder. What the build takes from the stock
+file is the chip's 2048-byte boot block, written to `build/d578uv/rfoundry_d578uv_codec.bin` at the modem boot slot
+([modem-sct.md](../docs/spec/modem-sct.md) 2). Without it that radio runs FM only.
+
 If no supported file is here, the build prints a line saying so and writes only the plain image. A radio running the
 plain image works on FM only and shows "No codec: voice off".
 
@@ -54,5 +59,5 @@ Git ignores everything in this folder except this README and `.gitignore`, and m
 published.
 
 To merge by hand instead (a different image or output path), run the board's codec tool directly:
-`tools/codec_extract.py` for the DM-1701 and the MD-380, `tools/hrc7000_codec.py` for the DM-32 and the DB25-D PRO (`--board db25d`). For flashing, including keeping the
+`tools/codec_extract.py` for the DM-1701 and the MD-380, `tools/hrc7000_codec.py` for the DM-32 and the DB25-D PRO (`--board db25d`), `tools/modem_boot.py` for the AT-D578UV. For flashing, including keeping the
 codec that's already in the radio, see [docs/dev/release.md](../docs/dev/release.md) and `tools/rfoundry`.

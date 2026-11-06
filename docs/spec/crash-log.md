@@ -25,8 +25,8 @@ points into RAM (`CRASH_F_STACK`), the other tasks (1.2), the commit, then seals
 and restarts the radio.
 
 Not caught: a hang with interrupts off (the tick can't run, so the hardware watchdog resets the radio with no record,
-[watchdog.md](watchdog.md)), a fault while the fault entry pushes its frame (2.2), and an unhandled interrupt on the STM32F4 (the start-up's default
-handler spins until the watchdog resets the radio; no interrupt is enabled without a handler). The NMI on the STM32F4
+[watchdog.md](watchdog.md)), a fault while the fault entry pushes its frame (2.2), and an unhandled interrupt on the Cortex-M4 platforms (the start-up's default
+handler spins until the watchdog resets the radio; no interrupt is enabled without a handler). The NMI on the Cortex-M4 platforms
 takes the HardFault entry (`cause` 2).
 
 ### 1.1 The hang check
@@ -37,23 +37,24 @@ platforms' `hal_crash_hang`.
 
 | Item | Value |
 |---|---|
-| Where | the RTOS tick interrupt, before the kernel's tick: `vPortTickHandler` (HR_C7000), `SysTick_Handler` (STM32F4). Not the tick hook: `xTaskResumeAll` also calls the hook from a task, for ticks that came while the scheduler was suspended |
+| Where | the RTOS tick interrupt, before the kernel's tick: `vPortTickHandler` (HR_C7000), `SysTick_Handler` (STM32F4, GD32F30x). Not the tick hook: `xTaskResumeAll` also calls the hook from a task, for ticks that came while the scheduler was suspended |
 | Counts from | the last feed: the idle task's, or a long job's `watchdog_kick` (a board's long SPI NAND loops) |
-| Fires | three quarters of the watchdog's timeout after it: 3 s on the HR_C7000 (4 s timeout), 3.75 s on the STM32F4 (5 s) |
+| Fires | three quarters of the watchdog's timeout after it: 3 s on the HR_C7000 (4 s timeout), 3.75 s on the STM32F4 and GD32F30x (5 s) |
 | Never | before the idle task's first pass, with the watchdog stopped, or while a bench test starves it on purpose (the test times the hardware reset, [watchdog.md](watchdog.md) 5) |
 | Record | kind 5, `cause` the ms since the last feed, the registers of the task the tick interrupted, its name in `task` |
 | Then | as every capture: the transmitter off, the fault trace on the HR_C7000 (2.3, vector 0), the store, the restart |
 
 What the record shows is the task that ran when the tick came, which on a hang is the one that kept the idle task out.
-The tick runs at the kernel's priority, the lowest on the STM32F4, and HR_C7000 interrupts don't nest, so the tick
+The tick runs at the kernel's priority, the lowest on the Cortex-M4 platforms, and HR_C7000 interrupts don't nest, so the tick
 never interrupts another handler.
 
 | Platform | Registers |
 |---|---|
 | HR_C7000 | `hrc_irq_entry` saved the task's frame (r0-r13, r15, EPSR, EPC, as the fault entry's) and wrote its address to the TCB's first word, `pxTopOfStack`. `hal_crash_hang` (`irq.c`) hands that frame to the same capture as a fault (`hrc_crash_frame`) |
 | STM32F4 | the CPU's frame on the PSP: r0-r3, r12, LR, PC, xPSR. r4-r11 belong to the handler's callers by then and stay 0. Without EXC_RETURN the frame's size (FPU or not) isn't known, so `sp` is the frame's address and `stack[]` starts with the frame |
+| GD32F30x | as the STM32F4. The record is built at the bottom of the fault entry's own stack, not in a buffer of its own (2.4) |
 
-Not caught this way: a hang with interrupts off or in a critical section (the STM32F4 masks the tick there too), and
+Not caught this way: a hang with interrupts off or in a critical section (the Cortex-M4 platforms mask the tick there too), and
 an interrupt storm that keeps the tick out. Those still end in the plain watchdog reset.
 
 The debug link's CRASH TEST kind 3 ([debuglink.md](debuglink.md) 3.19) spins in the host link's task with interrupts
@@ -81,6 +82,7 @@ Each task's TCB starts with the stack pointer its last switch saved (`pxTopOfSta
 |---|---|
 | HR_C7000 | the 17-word frame (2.2). `vPortYield` stores its return address as both r15 and PC; the interrupt entry stores EPC as PC, which equals r15 only right after a call returns. r15 equal to PC counts as waiting |
 | STM32F4 | r4-r11 and EXC_RETURN, s16-s31 when EXC_RETURN bit 4 is clear, then the CPU's frame (2.1). The instruction before the stacked pc is the yield's `ISB` (`portYIELD`) or the `MSR BASEPRI` of a critical section's exit, where a held-back yield is taken: waiting. Anything else: ready |
+| GD32F30x | as the STM32F4 |
 
 The return address is a candidate, as the stack words are (4): a code address left above the context by an earlier
 call looks the same. A kernel task's own wait (the timer task's) can resolve to a kernel function. The packed report
@@ -114,6 +116,7 @@ The chip's own reset flags come first where they say what happened. A chip witho
 | Platform | Chip flags | Words |
 |---|---|---|
 | STM32F4 | `RCC_CSR` (RM0090 7.3.21), read and cleared at start-up. Every reset also sets the pin flag, and a power-on sets the brown-out flag too, so the order is watchdog, software, power-on, brown-out, pin | the backup SRAM, after the record |
+| GD32F30x | `RCU_RSTSCK` (GD32F30x user manual, RCU), read and cleared at start-up. Every reset also sets the pin flag (`EPRSTF`); no brown-out flag (a power-down reset sets `PORRSTF`); the low-power reset flag is never set up and counts as none. Order: watchdog (free or window), software, power-on, pin | the top 16 bytes of SRAM, above the record (2.4) |
 | HR_C7000 | none: the POR, the reset pin and the watchdog drive one global reset (manual 2, 4.1) | `HRC_CRASH_BOOT`, the 16 bytes below the record. `hrc_soft_reset` runs from RAM and writes `soft` by address |
 
 The boot stubs mark their own reset, not their entry, so a stub that hangs and is reset by the watchdog reads as the
@@ -181,6 +184,30 @@ their one UART is a GPS receive line. Their faults keep the record only.
 
 Checked on hardware (2026-10-21, an HR_C7000 radio): `rfoundry_debug.py crash test trap` printed lines the tool decoded
 with good CRCs, then the radio restarted with the record kept.
+
+### 2.4 GD32F30x
+
+`platform/gd32f30x/crash_gd32.c`. A Cortex-M4F like the STM32F4: the fault entry, the hang check and the task
+snapshot are 2.1's, as a copy (`gd32_fault`, `gd32_fault_stack`). The hang check builds its record at the bottom of
+the fault entry's 1 KB stack rather than in 256 bytes of its own, to save RAM; a fault during that capture takes the
+stack over and keeps its own record.
+
+The chip has no backup SRAM, and its backup registers (42 of 16 bits) don't hold the record. The store is the top
+272 bytes of main SRAM instead: each board's `memory.ld` ends its `RAM` region 272 bytes early and adds a `KEPT`
+region for the rest, which `platform/gd32f30x/common.ld` fills with the `.kept` section (NOLOAD). The start-up neither
+copies nor clears it, and the main stack starts below it (`_estack` is the end of `RAM`; the link fails if `KEPT`
+doesn't follow `RAM`).
+
+| Bytes from the top of SRAM | Holds |
+|---|---|
+| -272 to -16 | the record (3) |
+| -16 to 0 | the restart cause's words (`crash_boot_t`, 1.3) |
+
+The words are on top: if something before the application uses the top of SRAM (the vendor bootloader's stack, which
+is not known), they are lost first and the next start reads `power`, which shows it. A record that is overwritten fails
+its CRC and reads as none. Restart: `NVIC_SystemReset` after the soft mark, then the vendor bootloader and RadioFoundry
+as at power-on. Unverified on hardware: that the store survives the vendor bootloader, and what the bootloader does to
+`RCU_RSTSCK`.
 
 ## 3. The record
 
@@ -293,7 +320,8 @@ Checked with `tests/hil/test_crash.py` and `tests/hil/test_watchdog.py` under `-
 
 Each radio's result is in its hardware spec and in `docs/testing/results/`. Not checked: the report on the air (no
 receiver for port 4090 exists yet) and, on a radio that has not run `test_crash.py`, that its store survives the
-restart. Check: `rfoundry_debug.py crash test trap`, then `rfoundry_debug.py crash` after the restart.
+restart. No GD32F30x radio has run it yet (2.4). Check: `rfoundry_debug.py crash test trap`, then
+`rfoundry_debug.py crash` after the restart.
 
 ## 7. Tests
 
@@ -346,6 +374,9 @@ Where it is called:
 | Stub entry | `stm32_enter_stub` (replaces `board_stub_prepare`) | `enter_stub`, before the PIC, watchdog and flash controller changes |
 | Start-up | first thing in `main()`, before the ROM DFU check and the clocks | first thing in `main()`, before `hrc_clock_init` |
 | First stage (a board that has one) | | `boot/<id>/boot.c` drives the TX supplies and PA selects low and the RX supply high right after the power latch, before it offers the handshake (it may wait there for a host) |
+
+The GD32F30x takes the STM32F4's paths: `gd32_fault` (`crash_gd32.c`), the capture, `reboot()` in `system.c`,
+first thing in `main()`; it has no stub entry or ROM DFU entry yet.
 
 Every reboot request (the debug link's REBOOT, the CPS's reset, the storage UI) goes through `board.system->reboot`, so
 it is covered by the reset row. The time from power-on to the first `board_rf_safe` is the vendor bootloader's (and, on a board with a first stage, its handful of instructions), which RadioFoundry can't change.

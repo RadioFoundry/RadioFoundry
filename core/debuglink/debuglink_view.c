@@ -4,6 +4,7 @@
 // (DL_VIEW_VERSION is bumped when one changes meaning or goes away); new keys may appear anywhere in a section.
 #include "config.h"
 #include "board.h"
+#include "app/temp.h"
 #include "hal_time.h"
 #include "debuglink/debuglink.h"
 #include "hostlink/hostlink.h"
@@ -95,6 +96,13 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "temporary=%u\ntemp=0x%02x\n", v->temporary, v->temp);
 	dl_text(t, "squelch=%u\nmonitor=%u\ntone_ok=%u\n", v->squelch, v->monitor, v->tone_ok);
 	dl_text(t, "rssi_dbm=%d\nnoise=%u\n", v->rssi_dbm, v->noise);
+	// The second receiver's last status (hal_rx2.h): all 0 on a radio with one receiver
+	rx2_status_t r2 = { 0 };
+	if (board.rx2 != NULL) {
+		board.rx2->status(&r2);
+	}
+	dl_text(t, "rx2.up=%u\nrx2.tuned=%u\nrx2.active=%u\nrx2.heard=%u\nrx2.dmr=%u\nrx2.rssi_dbm=%d\n", r2.up, r2.tuned,
+		r2.active, r2.heard, r2.dmr, r2.rssi_dbm);
 	dl_text(t, "tx_elapsed_ms=%u\ntot_s=%u\n", (unsigned)v->tx_elapsed_ms, v->tot_s);
 	dl_text(t, "last_rx_ms=%u\nlast_tx_ms=%u\ntx_auto=%u\nwakes=%u\n", (unsigned)v->last_rx_ms,
 		(unsigned)v->last_tx_ms, v->tx_auto, radio_view_wakes(v));
@@ -348,6 +356,18 @@ static void link_section(dl_text_t *t)
 		}
 	}
 	dl_text(t, "input.enc_deferred=%u\n", (unsigned)deferred);
+	hal_hand_mic_stats_t hm;
+	if (input_hand_mic_stats(&hm)) {
+		dl_text(t, "input.hmic_present=%u\ninput.hmic_ptt=%u\ninput.hmic_key=%u\n", (unsigned)hm.present,
+			(unsigned)hm.ptt, (unsigned)hm.key);
+		dl_text(t, "input.hmic_frames=%u\ninput.hmic_errors=%u\n", (unsigned)hm.frames, (unsigned)hm.errors);
+	}
+	hal_bt_stats_t bt;
+	if (input_bt_stats(&bt)) {
+		dl_text(t, "input.bt_present=%u\ninput.bt_ptt=%u\ninput.bt_key=%u\ninput.bt_keys=%u\n", (unsigned)bt.present,
+			(unsigned)bt.ptt, (unsigned)bt.key, (unsigned)bt.keys);
+		dl_text(t, "input.bt_lines=%u\ninput.bt_errors=%u\n", (unsigned)bt.lines, (unsigned)bt.errors);
+	}
 	dl_text(t, "input.long_ms=%u\ninput.ptt_downs=%u\n", (unsigned)input_long_ms(), (unsigned)input_ptt_downs());
 	if (board.system != NULL && board.system->irq_unhandled != NULL) {
 		// Interrupts with no handler, each masked for good by the platform's fallback: any count here is a bug
@@ -469,11 +489,39 @@ static void cps_section(dl_text_t *t)
 #endif
 }
 
+// The temperature sensors and the fan (docs/spec/temperature.md): each sensor's kind, output in mV and temperature in
+// 0.1 degree C, "-" where the board has none
+static void sensors_section(dl_text_t *t)
+{
+	static const char *const kinds[] = { "?", "pa", "board", "mcu", "battery" };
+	const hal_temp_t *h = board.temp;
+	dl_text(t, "sensor.count=%u\n", h != NULL ? h->count : 0u);
+	temp_reading_t r;
+	for (uint8_t i = 0; temp_read(h, i, &r); i++) {
+		dl_text(t, "sensor.%u.kind=%s\n", i, r.kind < 5 ? kinds[r.kind] : "?");
+		if (r.has_mv) {
+			dl_text(t, "sensor.%u.mv=%u\n", i, r.mv);
+		} else {
+			dl_text(t, "sensor.%u.mv=-\n", i);
+		}
+		if (r.has_dc) {
+			dl_text(t, "sensor.%u.dc=%d\n", i, r.dc);
+		} else {
+			dl_text(t, "sensor.%u.dc=-\n", i);
+		}
+	}
+	if (h != NULL && h->fan_on != NULL) {
+		dl_text(t, "fan.on=%u\n", h->fan_on() ? 1u : 0u);
+	} else {
+		dl_text(t, "fan.on=-\n");
+	}
+}
+
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
-						  "net_link", "cps" };
+						  "net_link", "cps", "sensors" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -572,6 +620,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_CPS:
 		cps_section(t);
+		break;
+	case DL_VIEW_SENSORS:
+		sensors_section(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

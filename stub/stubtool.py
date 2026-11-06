@@ -2899,8 +2899,9 @@ def main(argv=None):
     ap.add_argument("--q128", metavar="FILE", help="read the 16 MB data flash into FILE")
     ap.add_argument("--progmem-range", metavar="START:END", help="byte range, any alignment (default all)")
     ap.add_argument("--q128-range", metavar="START:END")
-    ap.add_argument("--nand", metavar="FILE", help="DB25-D (--board db25d or found from RadioFoundry): read the SPI NAND into FILE "
-                    "(2 KB pages without the spare bytes; give --nand-range, the chip is 256 MB)")
+    ap.add_argument("--nand", metavar="FILE", help="read the SPI NAND into FILE (main areas: 2 KB pages without the spare "
+                    "bytes; --nand-range for part of it): the DB25-D, and a GD32F30x radio whose board.toml names one "
+                    "([flash.stub] spi_nand)")
     ap.add_argument("--nand-range", metavar="START:END")
     ap.add_argument("--verify-nand", metavar="FILE", help="compare the NAND from --nand-range's start (default 0) with FILE by CRC")
     ap.add_argument("--start", type=lambda s: int(s, 0), help="old form: first byte")
@@ -2961,12 +2962,14 @@ def main(argv=None):
     ap.add_argument("--force", action="store_true",
                     help="write even when the radio's firmware or the image names another board than the one targeted. Two "
                          "cables with one serial number can swap port names, so a refusal usually means the wrong port")
+    import f4stub
     ap.add_argument("--board", choices=sorted(b.id for b in rfoundryboards.BOARDS.values()
-                                              if b.stub or "stub/stm32f4" in b.platform_stubs),
-                    help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (%s: the board profile the "
+                                              if b.stub or b.id in f4stub.BOARDS),
+                    help="the radio: a Cortex-M one (%s: stub/f4stub.py, the STM32F4, GD32F30x or AT32F43x stub) "
+                         "or an HR_C7000 one (%s: the board profile the "
                          "universal stub gets). Found from the radio's VERSION reply with --rfoundry-enter; give it at "
                          "power-on and with --attach (without it the stub gets a profile that drives no board pins)"
-                         % ", ".join(sorted(C7_BOARDS)))
+                         % (", ".join(sorted(f4stub.BOARDS)), ", ".join(sorted(C7_BOARDS))))
     ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
                     "is saved before it is erased (default the home directory, never a git tree)")
     ap.add_argument("--self-test", action="store_true")
@@ -3013,8 +3016,7 @@ def main(argv=None):
             import f4stub
             reopen = f4stub.PortFollower(serial, a.port)
         radio = Radio(port, retries=a.retries)
-        # The STM32 radios (DM-1701, MD-380) run their own stub over USB: stub/f4stub.py
-        import f4stub
+        # The Cortex-M radios (STM32F4, GD32F30x, AT32F43x) run their own stub over USB: stub/f4stub.py
         if a.board is None and a.rfoundry_enter:
             name = version_board(radio)
             a.board = f4stub.board_for(name) if name else None

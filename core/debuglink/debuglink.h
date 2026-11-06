@@ -47,6 +47,7 @@ enum {
 	DL_VIEW_NET_SVC,	// mDNS and TFTP (were in DL_VIEW_NET until view version 4)
 	DL_VIEW_NET_LINK,	// the MTUs and the PPP link (PPP was in DL_VIEW_HOTSPOT until view version 4)
 	DL_VIEW_CPS,		// the CPS shims' counters (were in DL_VIEW_STORAGE until view version 5)
+	DL_VIEW_SENSORS,	// the temperature sensors and the fan (core/app/temp.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)

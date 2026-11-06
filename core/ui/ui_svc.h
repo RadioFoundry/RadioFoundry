@@ -105,7 +105,8 @@ bool ui_svc_dual_get(ui_dual_ref_t ref[2], uint8_t *sel);
 // How many channels the radio hears at once: 1 = dual watch alternates between them (no radio in the tree has more)
 uint8_t ui_svc_receivers(void);
 // On a radio with a receiver per dual watch channel (ui_svc_receivers() > 1): what pane's receiver hears. Both can
-// receive at once; the audio is one of them (heard). False: no receiver of its own (one receiver alternates)
+// receive at once; the audio is one of them (heard). False: no receiver of its own (one receiver alternates). v is
+// the radio's view the UI task holds (radio_get_view, not the dual watch mix): the selected pane's call is read from it
 typedef struct {
 	bool active;		// a call or a signal now
 	bool heard;		// its audio is the one playing
@@ -115,7 +116,7 @@ typedef struct {
 	uint32_t src, dst;
 	char src_name[24];
 } ui_dual_rx_t;
-bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out);
+bool ui_svc_dual_rx(const radio_view_t *v, uint8_t pane, ui_dual_rx_t *out);
 // VFO `index`'s settings (0 or 1) while something else is on view (a dual watch pane). False: not known
 bool ui_svc_vfo_get(uint8_t index, channel_t *out);
 

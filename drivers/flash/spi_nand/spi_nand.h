@@ -21,6 +21,8 @@
 #define SPI_NAND_STATUS_P_FAIL		0x08u
 #define SPI_NAND_STATUS_ECC_SHIFT	4u	// 2 bits: SPI_NAND_ECC_*
 
+#define SPI_NAND_MFR_GIGADEVICE		0xC8u	// its ECC status is 3 bits and its read from cache takes a 3-byte address
+
 // ECC result of a page read. 3: corrected, at or above the chip's bit-flip threshold (Kioxia; feature 0x10)
 enum { SPI_NAND_ECC_OK, SPI_NAND_ECC_CORRECTED, SPI_NAND_ECC_FAILED, SPI_NAND_ECC_CORRECTED_MANY };
 
@@ -80,6 +82,9 @@ bool spi_nand_set_feature(spi_nand_t *nand, uint8_t addr, uint8_t value);
 bool spi_nand_read_page(spi_nand_t *nand, uint32_t page, uint16_t column, void *buf, uint32_t len);
 // The main areas as one linear space (addr = page x page_size + column); spare bytes are skipped
 bool spi_nand_read(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len);
+// The same, but a page whose ECC failed is passed on as read and counted in *ecc_failed (may be NULL), not refused:
+// data another writer programmed with the chip's ECC off reads back this way (a factory calibration, seen on a radio)
+bool spi_nand_read_any(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len, uint32_t *ecc_failed);
 // The factory bad-block mark: the first spare byte of the block's first page is not 0xFF, read whatever the page's ECC
 // status (a marked page is all 0x00 on the Kioxia parts and can fail ECC)
 bool spi_nand_block_bad(spi_nand_t *nand, uint32_t block, bool *bad);

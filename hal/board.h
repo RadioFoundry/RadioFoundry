@@ -23,6 +23,7 @@
 #include "hal_bcast.h"
 #include "hal_afsk.h"
 #include "hal_rx2.h"
+#include "hal_temp.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -48,6 +49,10 @@ enum {
 	// talk permit then plays before the first burst: DMR voice keys after a short hold in which the radio still
 	// receives and the tone sounds (dmr_call_config_t.permit_hold_ms)
 	CAP_BEEP_NOT_ON_AIR = 1u << 8,
+	// The DMR modem encodes and plays the voice itself (a baseband with its own vocoder and codec path): voice bits
+	// never reach the MCU, so DMR voice needs no board.vocoder, and what works on the voice bits (privacy, recording,
+	// a hotspot's voice) has nothing to work on. The modem still takes and reports bursts in their slots
+	CAP_MODEM_VOICE	= 1u << 9,
 };
 
 typedef struct {
@@ -106,6 +111,8 @@ typedef struct {
 	void (*gps_enable)(bool on);
 	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
 	const hal_rx2_t *rx2;
+	// Optional: the temperature sensors and the fan (hal_temp.h); NULL on a radio with none the firmware reads
+	const hal_temp_t *temp;
 	// Optional: bench access to the radio's RF chip registers (the debug link's CHIP_REG, docs/spec/debuglink.md
 	// 3.24). chip and page are the board's numbering (its hardware page lists them), chip below 0xFF (the SoC's).
 	// Writes val when write, then sets *val to the register as read back (a write-only register: the value written).

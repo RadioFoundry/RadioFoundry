@@ -54,7 +54,12 @@ bool rda5807m_power(rda5807m_t *dev, bool on, uint32_t khz)
 	if (!on) {
 		dev->r02 &= (uint16_t)~(RDA5807M_ENABLE | RDA5807M_SEEK | RDA5807M_DMUTE);
 		dev->on = false;
-		return wr(dev, RDA5807M_REG_CTRL, dev->r02);
+		bool off = true;
+		if (dev->cfg.gpio_off != dev->cfg.gpio_on) {
+			dev->r04 = (uint16_t)((dev->r04 & ~RDA5807M_GPIO_MASK) | (dev->cfg.gpio_off & RDA5807M_GPIO_MASK));
+			off = wr(dev, RDA5807M_REG_R4, dev->r04);
+		}
+		return wr(dev, RDA5807M_REG_CTRL, dev->r02) && off;
 	}
 	// Audio outputs driven, muted; the board's reference clock; the datasheet's recommended tuning method
 	uint16_t r02 = (uint16_t)(RDA5807M_DHIZ | ((dev->cfg.clk_mode & 7u) << RDA5807M_CLK_SHIFT) | RDA5807M_NEW_METHOD |
@@ -68,7 +73,7 @@ bool rda5807m_power(rda5807m_t *dev, bool on, uint32_t khz)
 	}
 	dev->r02 = r02;
 	ok = wr(dev, RDA5807M_REG_CTRL, dev->r02) && ok;
-	dev->r04 = dev->cfg.de_50us ? RDA5807M_DE_50US : 0;
+	dev->r04 = (uint16_t)((dev->cfg.de_50us ? RDA5807M_DE_50US : 0) | (dev->cfg.gpio_on & RDA5807M_GPIO_MASK));
 	ok = wr(dev, RDA5807M_REG_R4, dev->r04) && ok;
 	uint8_t th = dev->cfg.seek_th <= 15 ? dev->cfg.seek_th : 8;
 	dev->r05 = (uint16_t)(RDA5807M_INT_MODE | ((uint16_t)th << RDA5807M_SEEKTH_SHIFT) | RDA5807M_LNA_PORT2 |
