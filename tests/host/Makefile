@@ -215,6 +215,10 @@ TESTS   += powerSwitchTest
 powerSwitchTest: powerSwitchTest.c $(CORE)/radio/power_switch.c $(CORE)/radio/power_switch.h
 	$(CC) $(CFLAGS) -o $@ powerSwitchTest.c $(CORE)/radio/power_switch.c
 
+TESTS   += powerKeyTest
+powerKeyTest: powerKeyTest.c $(CORE)/radio/power_key.c $(CORE)/radio/power_key.h
+	$(CC) $(CFLAGS) -o $@ powerKeyTest.c $(CORE)/radio/power_key.c
+
 # DMR repeater roaming: the engine, and through the radio core against fake repeaters on the simulated modem
 TESTS   += roamTest
 ROAMT   := roamTest.c $(filter-out radioFeaturesTest.c,$(RFTEST))
@@ -270,6 +274,10 @@ rx2LinkTest: rx2LinkTest.c $(CORE)/rx2/rx2_link.c $(CORE)/rx2/rx2_link.h $(ROOT)
 TESTS   += miclevelTest
 miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
+# The ring-to-block rate converter for ADC audio on the PCM stream (drivers/audio/resample)
+TESTS   += resampleTest
+resampleTest: resampleTest.c $(ROOT)/drivers/audio/resample/resample.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ resampleTest.c -lm
 
 # The battery average and charge estimate the radios share (drivers/power/battery)
 TESTS   += batteryTest
@@ -281,8 +289,8 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest \
-          rx2LinkTest keyassignTest powerSwitchTest boardBandTest batteryTest
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+          rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
@@ -294,9 +302,11 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTes
 	./quadratureTest
 	./serialmicTest
 	./miclevelTest
+	./resampleTest
 	./rx2LinkTest
 	./keyassignTest
 	./powerSwitchTest
+	./powerKeyTest
 	./boardBandTest
 	./batteryTest
 .PHONY: run-core
@@ -391,13 +401,20 @@ TESTS   += codecDescTest
 codecDescTest: codecDescTest.c $(ROOT)/platform/stm32f4/codec_desc.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ codecDescTest.c
 
+# The two-level analog keypad (drivers/input/adckeys) a hand microphone may use
+TESTS   += adckeysTest
+
+adckeysTest: adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c $(ROOT)/drivers/input/adckeys/adckeys.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c
+
 run: run-chips
-run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest codecDescTest
+run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest adckeysTest codecDescTest
 	./sky72310Test
 	./hrc5000Test
 	./nmeaLineTest
 	./gpsRxTest
 	./gpsBaudTest
+	./adckeysTest
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin --board dm1701
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md9600.bin --board dm1701 \
@@ -531,6 +548,20 @@ TESTS   += micGainTest
 micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
+# The debug link's hardware options command (core/debuglink/debuglink_hwopt.c), with options and without
+TESTS   += hwoptTest hwoptTestNone
+HWOPTT  := hwoptTest.c $(CORE)/debuglink/debuglink_hwopt.c $(CORE)/debuglink/dl_fmt.c
+HWOPTT_H := $(ROOT)/hal/hal_hwopt.h $(ROOT)/hal/board.h $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h
+hwoptTest: $(HWOPTT) $(HWOPTT_H)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(HWOPTT)
+hwoptTestNone: $(HWOPTT) $(HWOPTT_H)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DHWOPT_NONE_BOARD -o $@ $(HWOPTT)
+
+run: run-hwopt
+run-hwopt: hwoptTest hwoptTestNone
+	./hwoptTest
+	./hwoptTestNone
+.PHONY: run-hwopt
 # The reference trim setting (core/radio/ref_trim.c): clamped, rounded to 100 ppb, to the board's hook
 TESTS   += refTrimTest
 refTrimTest: refTrimTest.c $(CORE)/radio/ref_trim.c $(CORE)/radio/ref_trim.h $(ROOT)/hal/hal_radio.h
@@ -589,9 +620,15 @@ HRC6K   := $(ROOT)/drivers/modem/hrc6000
 hrc6000DmrTest: hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
 
+# The HR_C6000's FM TX tone generator: the 1750 Hz burst, roger beep and DTMF pairs, and what it gives back
+TESTS   += hrc6000ToneTest
+hrc6000ToneTest: hrc6000ToneTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000ToneTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
+
 run: run-modem
-run-modem: hrc6000DmrTest
+run-modem: hrc6000DmrTest hrc6000ToneTest
 	./hrc6000DmrTest
+	./hrc6000ToneTest
 .PHONY: run-modem
 
 # The DMR receive chain: a model of the HR_C6000's reports through the slot engine, a batching board task and the call

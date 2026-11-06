@@ -496,8 +496,21 @@ def setup_half(radio, rx_hz, tx_hz, level, cc):
             raise SystemExit(f"{radio.name}: command 0x{cmd:02X} NAK {nak}")
 
 
+ROLE_WAIT_S = 2.0    # how long a radio may take to take the modem after the first commands (split-duplex.md 3.2)
+
+
 def set_role(radio, role, **kw):
-    _, _, res, d = radio.split(SUB_SET_ROLE, role_payload(role, **kw))
+    """SET_ROLE. Result 2 for an offered role right after the first commands means the radio is still taking the
+    modem (its hotspot entry waits for a retune): asked again until ROLE_WAIT_S has passed"""
+    end = time.monotonic() + ROLE_WAIT_S
+    while True:
+        _, _, res, d = radio.split(SUB_SET_ROLE, role_payload(role, **kw))
+        if res != 2 or role == 0 or time.monotonic() >= end:
+            break
+        _, _, ires, idata = radio.split(SUB_INFO)
+        if ires != 0 or not (parse_info(idata)["offered"] >> (role - 1)) & 1:
+            break       # the role isn't offered: waiting won't help
+        time.sleep(0.05)
     if res != 0:
         raise SystemExit(f"{radio.name}: SET_ROLE {role}: {RESULTS.get(res, res)}")
     return parse_info(d)

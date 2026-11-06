@@ -63,6 +63,7 @@ the outbound while it talks (dmr.repeater_up during tx_voice) is printed, not ju
 receive between their own bursts outside SFR (tx_listen).
 """
 import collections
+import os
 import time
 import warnings
 
@@ -536,13 +537,11 @@ def test_dmr_privacy_tx(radio, sdr_bench, pytestconfig):
         skip("state", "a privacy key is set already: not overwriting it")
     own = int(d["dmr.own_id"])
     clear_sdr, clear_heard = _over(radio, sdr_bench, freq, cc, 3.0, "hil_dmr_clear")
-    try:
+    with radio.debuglink_privacy():
         radio.link.dmr_privacy("moto", 1)
         radio.wait_for(lambda x: x.get("dmr.privacy") == "1", sections=("dmr",), what="privacy key loaded")
         sdr, heard = _over(radio, sdr_bench, freq, cc, 3.0, "hil_dmr_privacy")
-    finally:
-        radio.link.dmr_privacy("off")
-        radio.wait_for(lambda x: x.get("dmr.privacy") == "0", sections=("dmr",), what="privacy off")
+    radio.wait_for(lambda x: x.get("dmr.privacy") == "0", sections=("dmr",), what="privacy off")
     # Voice LC headers and terminators from us (the SDR's and the bench modem's), embedded call LCs (the SDR's)
     lcs = [b["lc"] for b in sdr.get("bursts", []) if (b.get("lc") or {}).get("so") is not None
            and b["lc"].get("src") == own]
@@ -640,7 +639,12 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
     for k in [r for r in heard if "call" in r][:1]:
         amb = next((f for f in k.get("files", []) if f.endswith(".amb")), None)
         stats = {}
-        if amb:
+        if amb and sdr_bench.api:       # the board sent the file back into the run directory
+            local = os.path.join(rdir, os.path.basename(amb))
+            if os.path.exists(local):
+                with open(local, "rb") as fh:
+                    stats = ambe_param_stats(fh.read())
+        elif amb:
             hexdump = sdr_bench.ssh(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} -c \"import sys; "
                                     f"print(open(sys.argv[1], 'rb').read().hex())\" {amb}", check=False)
             stats = ambe_param_stats(bytes.fromhex(hexdump.strip() or ""))

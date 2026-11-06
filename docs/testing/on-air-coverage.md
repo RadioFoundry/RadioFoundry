@@ -50,9 +50,9 @@ run; **none** = no automated test. Last run:
 | IP over DMR, end to end | none | none (rig) | needs a second station that speaks IP over DMR data |
 | Roaming (settings, zone flag, roam now) | `test_roaming` radio tests | radio | |
 | Roaming to the bench repeater, beacon surveys | `test_roaming` rf tests | none (rig) | need a repeater-pair channel and a second frequency in the rig's `tx_mhz` |
-| FM receive | `test_fm::test_noaa_receive` | on air | |
+| FM receive | `test_fm::test_fm_receive_bench`, `test_fm::test_fm_receive_bench_vhf`, `test_fm::test_noaa_receive` | not run | the bench board's FM carrier; VHF at the board's top level; NOAA (optional) where the rig hears it |
 | CTCSS / DCS encode | `test_fm_tx` | on air | |
-| CTCSS / DCS decode | `test_fm::test_rx_tone_squelch` | partial | untoned NOAA stays muted with a tone required; a toned FM source would be needed for the positive case |
+| CTCSS / DCS decode | `test_fm::test_rx_tone_decode_bench`, `test_fm::test_rx_tone_squelch` | not run | the bench board's FM carrier with the tone (opens), another tone and none (stays muted); NOAA (optional) untoned |
 | 12.5 / 25 kHz deviation | `test_fm_tx::test_fm_tx_bandwidth` | on air | 25 / 12.5 kHz CTCSS deviation ratio 1.99 (368 / 733 Hz) since `0458936` (25 kHz keeps the 12.5 kHz tone deviation field; the mode doubles it); 4.0 on this run |
 | 1750 Hz burst | `test_fm_tx::test_fm_tx_tone_burst` | on air | 2 s of 1750.0 Hz at 1.43 kHz peak; silent before `ff6268b` (voice source in the wrong register bits), 3.3 kHz peak at `ff6268b` |
 | Roger beep | `test_fm_tx::test_fm_tx_roger_beep` | on air | 1200 / 900 Hz at the end of the over, none when off; silent before `ff6268b` |

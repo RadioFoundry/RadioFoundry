@@ -142,6 +142,9 @@ void radio_settings_default(radio_settings_t *s)
 static void activity(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->activity_ms = now_ms;
+#if CONFIG_BEEP
+	beep_warm(now_ms);	// a sound may follow: the amplifier up now (a board with a speaker hang)
+#endif
 }
 
 // A beep at the settings' level: mixed into the DMR voice stream when it runs, else on its own stream
@@ -5692,7 +5695,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR
 	shared = ambeVoiceStreaming();
 #endif
-	beep_service(shared);
+	beep_service(shared, now_ms);
 #endif
 #if CONFIG_VIBRATE
 	vibe_service(now_ms, board.power != NULL ? board.power->vibrate : NULL);

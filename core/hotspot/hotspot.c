@@ -469,7 +469,8 @@ bool hotspot_start(uint32_t now_ms)
 	if ((modem == NULL) || (radio == NULL) || (radio->enter == NULL)) {
 		return false;
 	}
-	if (enter_tried && ((now_ms - enter_ms) < HOTSPOT_ENTER_RETRY_MS)) {
+	if (enter_tried && ((now_ms - enter_ms) < HOTSPOT_ENTER_RETRY_MS) &&
+	    ((radio->active == NULL) || !radio->active())) {
 		return false;	// the radio refused a moment ago: don't hammer it on every frame (enter must not block)
 	}
 	enter_tried = true;

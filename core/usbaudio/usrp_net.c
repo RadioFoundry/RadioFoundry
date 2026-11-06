@@ -125,7 +125,7 @@ void usrp_net_start(void)
 
 static uint32_t peer(uint32_t now_ms)
 {
-	if (peer_ip != 0 && (now_ms - peer_ms) >= USRP_PEER_IDLE_MS) {
+	if (peer_ip != 0 && usrp_since(now_ms, peer_ms) >= USRP_PEER_IDLE_MS) {
 		peer_ip = 0;
 	}
 	return peer_ip != 0 ? peer_ip : ipGatewayHostIP();

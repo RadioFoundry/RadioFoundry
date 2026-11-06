@@ -18,7 +18,12 @@ on an outbound refuses the job (`unsupported`), which is a skip.
 | wrong_cc | one call on the radio's slot, sent with another color code | no call |
 
 Needs --outbound-mhz (or outbound_mhz in the rig's file) and a duplex DMR channel receiving it; --dmr-cc is the
-channel's color code (the radio's own is read from the channel when it shows one)."""
+channel's color code (the radio's own is read from the channel when it shows one). A radio with only a simplex DMR
+channel on it gets that channel's TX moved to --split-tx-mhz for the test (--allow-codeplug-write; restored after),
+as test_dmr_repeater_slots does. Every call goes to the channel's
+talk group (its contact), which the radio always listens to; on a channel whose contact is a private call, to --dmr-tg.
+A call to a group the channel doesn't listen to is heard but never played: no voice counted, never the last call."""
+import contextlib
 import json
 import time
 
@@ -29,13 +34,11 @@ from hil_config import rig
 
 SUPERFRAME_S = 0.360
 SRC = {1: 9990301, 2: 9990302}      # talker per slot, so a call heard on the wrong slot shows by its source
-DST = {1: 9990401, 2: 9990402}      # the talkgroups; the channel's RX group list must hold them or the radio hears
-                                    # every group (hear_all)
 LEAD_S = 5.0                        # the radio locks to the outbound well before the first call
 
 
 def _call(slot, start_s, superframes=3, **fields):
-    c = {"slot": slot, "src": SRC[slot], "dst": DST[slot], "group": True, "start_s": start_s,
+    c = {"slot": slot, "src": SRC[slot], "group": True, "start_s": start_s,       # dst: the channel's group, _run
          "superframes": superframes}
     c.update(fields)
     return c
@@ -58,31 +61,67 @@ def _span_s(c):
     return c["start_s"] + c.get("headers", 3) * 0.06 + c["superframes"] * SUPERFRAME_S + c.get("terminators", 3) * 0.06
 
 
-def _setup(radio, pytestconfig):
-    if "DMR" not in radio.features():
-        skip("not_built", "built without DMR")
-    freq = rig(pytestconfig, "outbound-mhz", "the repeater outbound the bench board sends on:")
-    cc = rig(pytestconfig, "dmr-cc")
-    radio.go_home()
+@contextlib.contextmanager
+def _duplex_channel(radio, pytestconfig, backup_dir, freq):
+    """A duplex DMR channel receiving freq selected for the duration: the radio's own, else its simplex one with the
+    TX on --split-tx-mhz (a codeplug edit, restored afterwards)."""
+    no_duplex = None
     try:
-        radio.find_channel(round(freq * 1e6), "dmr")
+        radio.find_channel(round(freq * 1e6), "dmr", duplex=True)
+    except AssertionError as e:
+        no_duplex = str(e)
+    if no_duplex is None:
+        yield
+        return
+    split = pytestconfig.getoption("--split-tx-mhz")
+    if not split or abs(split - freq) < 0.0125:
+        skip("opt_in", f"the radio has no duplex DMR channel receiving {freq} MHz ({no_duplex}); give --split-tx-mhz "
+                       "to make its simplex one duplex")
+    if not pytestconfig.getoption("--allow-codeplug-write"):
+        skip("opt_in", f"no duplex DMR channel receiving {freq} MHz: making one needs --allow-codeplug-write")
+    try:
+        radio.find_channel(round(freq * 1e6), "dmr", duplex=False)
     except AssertionError as e:
         skip("opt_in", f"the radio has no DMR channel receiving {freq} MHz: {e}")
+    import cps_client
+    from test_cps import codeplug_edited
+    number = int(radio.core()["channel_number"])
+    tx_hz = round(split * 1e6)
+    with codeplug_edited(radio, backup_dir, lambda img: cps_client.set_channel_tx(img, number, tx_hz), "outbound"):
+        radio.wait_for(lambda x: x.get("tx_hz") == str(tx_hz), timeout=5, what="the channel's TX frequency")
+        yield
+
+
+def _setup(radio, pytestconfig, freq):
+    """(cc, tg) of the selected duplex channel"""
+    cc = rig(pytestconfig, "dmr-cc")
     core = radio.core()
     if core.get("tx_hz") == core.get("rx_hz"):
         skip("opt_in", f"the channel on {freq} MHz is simplex: the outbound needs a duplex (repeater) channel")
     d = radio.view(["dmr"])
     if d.get("dmr.cc") not in (None, str(cc)):
         skip("opt_in", f"the channel's color code is {d.get('dmr.cc')}, --dmr-cc says {cc}")
-    return freq, cc
+    group = d.get("dmr.target_private") == "0" and d.get("dmr.target_id") not in (None, "0")
+    tg = int(d["dmr.target_id"]) if group else rig(pytestconfig, "dmr-tg")
+    return cc, tg
 
 
-def _run(radio, bench, pytestconfig, calls, radio_ts, cc_offset=0, expect_up=True):
+def _run(radio, bench, pytestconfig, backup_dir, calls, radio_ts, cc_offset=0, expect_up=True):
     """The calls on the outbound, with the radio on timeslot radio_ts; returns (radio deltas, radio view after, the
     board's records)."""
-    freq, cc = _setup(radio, pytestconfig)
+    if "DMR" not in radio.features():
+        skip("not_built", "built without DMR")
     if bench.api is None:
         skip("bench", "an outbound with voice needs a bench board (--bench-api)")
+    freq = rig(pytestconfig, "outbound-mhz", "the repeater outbound the bench board sends on:")
+    radio.go_home()
+    with _duplex_channel(radio, pytestconfig, backup_dir, freq):
+        return _run_on(radio, bench, freq, *_setup(radio, pytestconfig, freq), calls, radio_ts, cc_offset, expect_up)
+
+
+def _run_on(radio, bench, freq, cc, tg, calls, radio_ts, cc_offset, expect_up):
+    for c in calls:
+        c["dst"] = tg
     if radio.view(["dmr"]).get("dmr.ts") != str(radio_ts):
         radio.link.dmr_fields(ts=radio_ts)
     sent_cc = (cc + cc_offset) % 16
@@ -120,6 +159,7 @@ def _board_calls(recs, calls):
     """The board's side: one call record per call sent (index, slot, src, dst), none of its bursts late."""
     rows = [r for r in recs if isinstance(r.get("call"), dict) or ("index" in r and "bursts" in r)]
     rows = [r.get("call", r) if isinstance(r.get("call"), dict) else r for r in rows]
+    rows.sort(key=lambda r: r.get("index", 0))      # the board reports a call when it ends, not in the order sent
     assert len(rows) == len(calls), f"the board reported {len(rows)} calls for {len(calls)} sent: {rows}"
     for sent, got in zip(calls, rows):
         assert got.get("slot") == sent["slot"], (sent, got)
@@ -132,13 +172,14 @@ def _board_calls(recs, calls):
         assert summary[-1].get("late", 0) == 0, f"the board sent bursts late: {summary[-1]}"
 
 
-def _heard(d, view, slot, ts, late=False):
+def _heard(d, view, slot, ts, calls, late=False):
     """The radio on timeslot ts after calls on slot: heard (one call from that talker and group) or silent."""
+    dst = calls[0]["dst"]
     if slot != ts:
         assert d["call.rx_calls"] == 0, f"the radio on TS{ts} heard a call sent on TS{slot}: {d}"
         return
     assert d["call.rx_calls"] == 1, d
-    assert view.get("last.src") == str(SRC[slot]) and view.get("last.dst") == str(DST[slot]), view
+    assert view.get("last.src") == str(SRC[slot]) and view.get("last.dst") == str(dst), view
     assert view.get("last.group") == "1", view
     assert d["call.rx_voice_bursts"] > 0 and d["modem.crc"] == 0, d
     if late:
@@ -157,47 +198,47 @@ def _marked(f):
 @_marked
 @pytest.mark.parametrize("ts", [1, 2])
 @pytest.mark.parametrize("slot", [1, 2])
-def test_outbound_voice_alone(radio, sdr_bench, pytestconfig, slot, ts):
+def test_outbound_voice_alone(radio, sdr_bench, pytestconfig, backup_dir, slot, ts):
     calls = [_call(slot, LEAD_S)]
-    d, view, recs = _run(radio, sdr_bench, pytestconfig, calls, ts)
+    d, view, recs = _run(radio, sdr_bench, pytestconfig, backup_dir, calls, ts)
     _board_calls(recs, calls)
-    _heard(d, view, slot, ts)
+    _heard(d, view, slot, ts, calls)
 
 
 @_marked
 @pytest.mark.parametrize("ts", [1, 2])
-def test_outbound_voice_both_slots(radio, sdr_bench, pytestconfig, ts):
+def test_outbound_voice_both_slots(radio, sdr_bench, pytestconfig, backup_dir, ts):
     calls = [_call(1, LEAD_S, 4), _call(2, LEAD_S, 4)]
-    d, view, recs = _run(radio, sdr_bench, pytestconfig, calls, ts)
+    d, view, recs = _run(radio, sdr_bench, pytestconfig, backup_dir, calls, ts)
     _board_calls(recs, calls)
-    _heard(d, view, ts, ts)
+    _heard(d, view, ts, ts, calls)
 
 
 @_marked
 @pytest.mark.parametrize("ts", [1, 2])
-def test_outbound_voice_slot2_mid_call(radio, sdr_bench, pytestconfig, ts):
+def test_outbound_voice_slot2_mid_call(radio, sdr_bench, pytestconfig, backup_dir, ts):
     """TS2 starts 1.5 s into a TS1 call: the slot already carrying a call doesn't disturb the new one."""
     calls = [_call(1, LEAD_S, 6), _call(2, LEAD_S + 1.5, 3)]
-    d, view, recs = _run(radio, sdr_bench, pytestconfig, calls, ts)
+    d, view, recs = _run(radio, sdr_bench, pytestconfig, backup_dir, calls, ts)
     _board_calls(recs, calls)
-    _heard(d, view, ts, ts)
+    _heard(d, view, ts, ts, calls)
 
 
 @_marked
 @pytest.mark.parametrize("late", [0, 3, 5])
-def test_outbound_voice_late_entry(radio, sdr_bench, pytestconfig, late):
+def test_outbound_voice_late_entry(radio, sdr_bench, pytestconfig, backup_dir, late):
     """No headers, the first burst the receiver gets is A..F (late 0-5): the call is taken from the embedded LC,
     on the slot of each parity so both are covered."""
     slot = 1 + late % 2
     calls = [_call(slot, LEAD_S, 6, headers=0, late=late)]
-    d, view, recs = _run(radio, sdr_bench, pytestconfig, calls, slot)
+    d, view, recs = _run(radio, sdr_bench, pytestconfig, backup_dir, calls, slot)
     _board_calls(recs, calls)
-    _heard(d, view, slot, slot, late=True)
+    _heard(d, view, slot, slot, calls, late=True)
 
 
 @_marked
-def test_outbound_voice_wrong_cc(radio, sdr_bench, pytestconfig):
+def test_outbound_voice_wrong_cc(radio, sdr_bench, pytestconfig, backup_dir):
     """The outbound's color code isn't the channel's: the radio doesn't hear the repeater's calls."""
     calls = [_call(1, LEAD_S)]
-    d, view, recs = _run(radio, sdr_bench, pytestconfig, calls, 1, cc_offset=1, expect_up=False)
+    d, view, recs = _run(radio, sdr_bench, pytestconfig, backup_dir, calls, 1, cc_offset=1, expect_up=False)
     assert d["call.rx_calls"] == 0, f"the radio showed a call sent with another color code: {d}"

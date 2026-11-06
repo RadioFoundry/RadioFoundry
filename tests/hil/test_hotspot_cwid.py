@@ -36,10 +36,11 @@ def config(cc=1):
     return bytes([0x80, 0x02, 10, 2, 128, 128, cc, 0, 128, 0, 128, 0, 0, 128, 128] + [0] * 8)
 
 
-def freq(rx, tx):
-    """SET_FREQ with RF level 0: the board's lowest power step (radio_sm_hotspot_power). In hotspot mode the RF level
-    sets the power, not the radio's power setting, and level 255 keyed the ID at full power"""
-    return bytes([0]) + struct.pack("<II", rx, tx) + bytes([0]) + struct.pack("<I", tx)
+def freq(rx, tx, rf_level=0):
+    """SET_FREQ with an RF level: 0 the board's lowest power step (radio_sm_hotspot_power), or the bench's level
+    (Radio.hotspot_rf_level). In hotspot mode the RF level sets the power, not the radio's power setting, and level 255
+    keyed the ID at full power"""
+    return bytes([0]) + struct.pack("<II", rx, tx) + bytes([rf_level]) + struct.pack("<I", tx)
 
 
 @pytest.mark.feature("hotspot", optional=True)
@@ -62,6 +63,7 @@ def test_hotspot_cwid(radio, sdr_bench, pytestconfig):
     radio.go_home()
     radio.find_channel(hz, "dmr")
     radio.lowest_power()
+    rf_level = radio.hotspot_rf_level()
     x0 = radio.view(["dmr_ext"])
     expect_ms = 150 + 60 * units + 150
     rdir = sdr_bench.run_dir("cwid")
@@ -72,7 +74,7 @@ def test_hotspot_cwid(radio, sdr_bench, pytestconfig):
             try:
                 assert link.request(GET_VERSION, timeout=2.0)[0] == "reply"
                 assert link.request(SET_CONFIG, config())[0] == "ack"
-                assert link.request(SET_FREQ, freq(hz, hz))[0] == "ack"
+                assert link.request(SET_FREQ, freq(hz, hz, rf_level))[0] == "ack"
                 assert link.request(SET_MODE, bytes([0]))[0] == "ack"
                 kind, f = link.request(SEND_CWID, call.encode())
                 assert kind == "ack", f

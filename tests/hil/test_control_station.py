@@ -240,6 +240,7 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.radio_tx
 def test_passthrough_reply(radio, sdr_bench, pytestconfig):
     """The PC's datagram to the bench's ID goes over the air from the radio's own DMR ID; a confirmed packet from the
     bench still gets the radio's ETSI response in passthrough."""

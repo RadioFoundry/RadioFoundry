@@ -1812,6 +1812,7 @@ void hrc6000_dmr_poll(hrc6000_dmr_t *e)
 			bool busy = e->tx_state != TXS_IDLE || (e->rx_any && (uint32_t)(e->tick - e->rx_tick) <= RX_LOST_TICKS);
 			if (e->tx_state != TXS_IDLE) {
 				e->tx_any_setup = false;	// nothing more will go out
+				e->st.tx_stalls++;
 				tx_finish(e);
 			} else if (busy) {
 				do_restart(e, HRC6000_RS_STALL);

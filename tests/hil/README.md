@@ -49,6 +49,7 @@ with `-m audio_smoke`.
 |---|---|
 | (none) | radio-only tests: version, screenshots, keys, FM receive, MMDVM requests that don't transmit |
 | `--allow-rf` | tests that transmit (marker `rf`: the SDR bench's transmitter; marker `radio_tx`: the radio itself) |
+| `--radio-tx-watts W` | the radio's on-air tests key at its lowest power level named at least W watts (the core view's `power_names`), not the lowest: for a bench that can't hear the lowest level through a dummy load. The hotspot tests use the matching RF level. APRS on its ham test frequency keeps the lowest |
 | `--allow-usb-switch` | tests that switch the radio's USB personality to the network adapter and back (marker `usb_switch`); `test_dmr_ip.py` and `test_dmr_ip_burst.py` run pppd on the serial port instead on a radio without USB networking |
 | `--allow-service-stop` | tests that stop the SDR bench's gateway service (marker `bench_service`) to use its transmitter and receiver. Not needed on a bench that runs the shared bench daemon (nothing is stopped); without the daemon and without the flag those tests skip when they take the lease |
 | `--allow-codeplug-write` | tests that write the codeplug over CPS (marker `codeplug_write`): the qdmr regions are read and saved to the test's tmp directory first, one channel name is changed, and the backup is written back and verified in a `finally` block |
@@ -65,7 +66,8 @@ Other options: `--codeplug-backup-dir` (where codeplug_write tests keep their ba
 raw captures, default 5 dB; `dmr_bench.py run C0` picks it), `--sdr-ppm` (overrides the SDR's frequency error for
 FM carrier offsets; by default the SDR bench corrects them itself), `--max-foff` (largest carrier offset the TX tests
 accept, default 500 Hz), `--aprs-ssid` (default 15), `--roam-beacon` / `--roam-beacon-len` (test_roaming's beacon interval and duration, default 20 s / 3 s), `--split-tx-mhz` (test_dmr_tx_split_repeater and test_dmr_repeater_slots: the radio's TX frequency on its DMR test channel made split, the bench repeater's input; no default), `--outbound-mhz` (test_dmr_outbound_voice: a repeater's output the bench board sends BS bursts and voice on; the radio needs a duplex DMR channel receiving it; no default), `--am-mhz` (test_am_rx and test_am_rx_speaker: the AM test frequency in the air band, 108-137 MHz, that the bench board sends full-carrier AM on and the radio's VFO receives; the bench transmits on it: a cabled setup unless the frequency is approved for the air; no default), `--split-calls` (that test keys up this many times per run, default 1; the split is written and restored once), `--roam-rx` / `--roam-tx` (test_roaming's bench repeater site as the radio
-sees it: its receive and transmit MHz; no default). The rig's own values (frequencies, color code, talkgroup,
+sees it: its receive and transmit MHz; no default; with `--allow-codeplug-write` the zone's sites are given TX
+frequencies the bench serves for the test and put back after). The rig's own values (frequencies, color code, talkgroup,
 callsign) are in the next section.
 
 ### The rig's configuration
@@ -80,7 +82,8 @@ the three ways to give it. `tests/hil/hil_config.py` reads them.
 |---|---|
 | `--dmr-freq` / `--dmr-cc` / `--dmr-tg` | the DMR test channel: MHz (simplex, a channel in the radio's codeplug), color code, the talkgroup the bench calls |
 | `--fm-mhz` | the FM test frequency (the radio's VFO) |
-| `--noaa-mhz` | a NOAA weather radio station heard at the rig (`test_fm`, receive only) |
+| `--noaa-mhz` | a NOAA weather radio station heard at the rig (`test_fm`, receive only; optional tests) |
+| `--vhf-fm-mhz` | a VHF FM frequency the bench transmits on (`test_fm`: receive in the VHF band) |
 | `--aprs-test-mhz` | `test_aprs`'s AFSK frequency: an amateur simplex frequency that is not an APRS one |
 | `--aprs-dmr-dst` | the DMR position's destination ID (`test_aprs`) |
 | `--callsign` | the licensed operator's callsign: every transmission that carries one (APRS, CW ID, talker alias); RAM only on the radio |
@@ -88,19 +91,21 @@ the three ways to give it. `tests/hil/hil_config.py` reads them.
 | `--microphone` | an ALSA capture device (`arecord -D`) whose microphone is at the radio's speaker: the speaker tests ([Speaker tests](#speaker-tests)) |
 
 With `--allow-rf`, every transmit frequency the run is given (`--dmr-freq`, `--fm-mhz`, `--aprs-test-mhz`,
-`--sfr-freq`, `--roam-rx` / `--roam-tx`, `--split-out-mhz`, `--split-tx-mhz`, `--outbound-mhz`, `--am-mhz`) must be in `tx_mhz`, or the run
+`--sfr-freq`, `--roam-rx` / `--roam-tx`, `--split-out-mhz`, `--split-tx-mhz`, `--outbound-mhz`, `--am-mhz`,
+`--vhf-fm-mhz`) must be in `tx_mhz`, or the run
 stops before the first test. The bench client refuses to key anywhere else. Example file (placeholder values: use
 your license's and your site's):
 
 ```toml
 # ~/.config/rfoundry/hil.toml
 callsign = "Q0TST"
-tx_mhz = [433.4500, 433.4750]
+tx_mhz = [433.4500, 433.4750, 145.5500]
 dmr_freq = 433.4500
 dmr_cc = 1
 dmr_tg = 91
 fm_mhz = 433.4750
 noaa_mhz = 162.4000
+vhf_fm_mhz = 145.5500
 aprs_test_mhz = 433.4750
 aprs_dmr_dst = 9990301
 ```
@@ -156,7 +161,7 @@ feature it checks.
 
 A test may carry several feature markers. What a test needs comes from its markers and fixtures: `rf` and `radio_tx`
 need `--allow-rf`, `bench_service` and the `sdr_bench` fixture the SDR bench, `manual` a person (`--manual`, and the
-marker's `owner=` says what they do), `second_radio` and the `bench_station` fixture a second radio, `usb_switch`,
+marker's `owner=` says what they do), `second_radio` and the `bench_station` fixture a second radio, `radio_chain` two more (`--sfr-talker-port`), `usb_switch`,
 `codeplug_write` and `reboot` their `--allow-*` flags. `tools/bringup.py` (Python 3.11 or later) resolves each
 radio's state for each feature from the board registry (`tools/boards.py`) and the board's build data:
 
@@ -245,7 +250,10 @@ the radio during the bench's own key-up needs the second board.
 | `capture_start()`, `analyze_fm()`, `analyze_aprs()` | the receive board's channel as I/Q (`trigger`: cs16, 40 kHz wide, from 1 s before the radio keys; a quarter of the wideband stream, which a busy network link carries without loss) into a local run directory, each frame placed by its sample clock; `tools/sdr_fm_check.py` and `tools/aprs_afsk_check.py` run on the test host. A capture with samples the board lost (`gap_samples`, frames it couldn't send, or a run of exact zeros of 2 ms or more) skips as `bench`. The channel must be inside the board's receive window |
 | `tx_start()`, `fm_tx_start()`, `fm_transmit()` | FM (or AM, `tx_start("am", ...)`) from the TX board (`tx`, mode `fm` or `am`): a program of segments (tones, sweeps, DTMF, AFSK as `fsk` bits, noise, silence) with an optional CTCSS or DCS, at the board's lowest power, within its key limit. A board without the mode in `info`'s `signal_modes` skips as `bench`. The bench host has no FM or AM transmitter: these skip there |
 | `can_fm_rx()`, `fm_rx_start()` | the receive board's FM demodulator (`rx`, mode `fm`): its summary (carrier, offset, deviation, the strongest tone, the CTCSS or DCS it decoded). `test_fm_tx_ctcss`, `_dcs` and `_bandwidth` key the radio a second time for it (beside a triggered capture on the same board it lost seconds of samples) and check its decode and sub-audio deviation (within 20 %) against the I/Q analysis |
-| `analyze_dmr()` (sdrmon.py), bench stations | skip as missing (skip kind `bench`) |
+| `analyze_dmr()` | `tools/bench/sdrmon.py analyze` on the test host, on the capture above (48 kS/s, sdrmon's own channel rate); needs the rfoundry_sdrbench package here (installed, or a checkout in `$RFOUNDRY_SDRBENCH`), else skip kind `bench` |
+| `test_hotspot_voice` | `hotspot_cases.py`'s bench transmissions and listener as board jobs (`MODEM_RUN`, `LISTEN`) |
+| `sync_tool()` | nothing to copy: the analyzers run on the test host |
+| bench stations | skip as missing (skip kind `bench`) |
 
 FM from the board is what the radio receives in `test_rx_tone_decode_bench` (CTCSS / DCS decode) and
 `test_aprs_rx_on_air` (an AFSK frame), on `--fm-mhz`, which must then be a frequency the board may transmit on.
@@ -291,7 +299,8 @@ Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr
   transmit on `--fm-mhz` in its FM VFO; it runs on its lowest power, into an antenna or a dummy load at bench
   distance.
 - An antenna or attenuator so the bench transmitter at power 40 doesn't overload the radio.
-- For `test_fm`: a NOAA weather radio station audible at the bench (`--noaa-mhz`).
+- For `test_fm`: the bench board's FM transmitter on `--fm-mhz` and `--vhf-fm-mhz`. A NOAA weather radio station
+  audible at the bench (`--noaa-mhz`) runs the optional over-the-air versions.
 - Speech recordings for `test_dmr_voice` stay outside the repository; give the path with `--ambe` or
   `$RFOUNDRY_HIL_AMBE`. Never commit a recording.
 
@@ -365,7 +374,7 @@ direct sound's, since a room's echo builds up and dies away slower. Problems:
 | Length | a tone is more than 10 ms shorter than asked (a lost start or end), or more than 40 ms longer (a speaker and a room ring on a little) |
 | Level | a tone moves by more than 12 dB over its length, by more than 8 dB within a few ms (a step as an amplifier comes up, a dropout), or two tones at one frequency differ by 12 dB |
 | Silence | a silence is more than 10 ms longer than asked, or less than 8 dB under its louder neighbor |
-| Pops | broadband energy away from the tones' harmonics more than 20 dB over the recording's floor, or within 10 dB of a tone on it and in the 60 ms after it (at its edges: louder than the tone). In the FM test this includes the squelch opening and closing, and a squelch tail after the carrier is named as one |
+| Pops | broadband energy away from the tones' harmonics more than 20 dB over the recording's floor, or within 10 dB of a tone on it and in the 60 ms after it (at its edges: louder than the tone). In the FM test this includes the squelch opening and closing; a squelch tail after the carrier is named as one when it lasts longer than the core's squelch takes to close (one `RADIO_POLL_MS` poll to see the carrier gone, then `RADIO_SQL_CLOSE_POLLS` x `RADIO_POLL_MS`, plus one 10 ms frame: tail elimination is not done, radio-features.md 3.5) |
 
 The recordings stay in pytest's temporary directory (the test prints each path). By hand:
 `python3 tests/hil/audio_check.py FILE.wav BEEP` (a beep name, or `HZ:MS,...` with `0:MS` a silence).

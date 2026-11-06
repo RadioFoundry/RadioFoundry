@@ -116,6 +116,8 @@
    "dfu_string1": null,
    "dfu_product": null,
    "dfu_layout": null,
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "stubtool",
     "id": 3,
@@ -287,6 +289,8 @@
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
    "dfu_layout": "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg",
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "f4stub",
     "id": 1,
@@ -405,6 +409,8 @@
    "dfu_string1": null,
    "dfu_product": null,
    "dfu_layout": null,
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "stubtool",
     "id": 2,
@@ -523,6 +529,8 @@
    "dfu_string1": null,
    "dfu_product": null,
    "dfu_layout": null,
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "stubtool",
     "id": 1,
@@ -683,6 +691,8 @@
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
    "dfu_layout": "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg",
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "f4stub",
     "id": 2,
@@ -724,6 +734,174 @@
    ],
    "cps_radio_types": [
     7
+   ]
+  },
+  "md9600": {
+   "id": "md9600",
+   "name": "TYT MD-9600",
+   "model": "MD-9600",
+   "part_of": null,
+   "platform": "stm32f4",
+   "platform_stubs": [
+    "stub/stm32f4"
+   ],
+   "family": "usb-dfu",
+   "link": "usb",
+   "release": "testing",
+   "debuglink_names": [
+    "MD-9600",
+    "MD9600",
+    "RT90",
+    "md9600"
+   ],
+   "rom_base": 134217728,
+   "app_base": 134266880,
+   "flash_end": 135266304,
+   "app_region": [
+    134266880,
+    134873088
+   ],
+   "sectors": [
+    [
+     3,
+     134266880,
+     16384
+    ],
+    [
+     4,
+     134283264,
+     65536
+    ],
+    [
+     5,
+     134348800,
+     131072
+    ],
+    [
+     6,
+     134479872,
+     131072
+    ],
+    [
+     7,
+     134610944,
+     131072
+    ],
+    [
+     8,
+     134742016,
+     131072
+    ],
+    [
+     9,
+     134873088,
+     131072
+    ],
+    [
+     10,
+     135004160,
+     131072
+    ],
+    [
+     11,
+     135135232,
+     131072
+    ]
+   ],
+   "protected": [
+    [
+     134217728,
+     134266880
+    ]
+   ],
+   "protect": [],
+   "keep_codec_supported": true,
+   "first_stage": null,
+   "codec_tool": "codec_extract",
+   "codec_stock": [
+    "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09@md9600",
+    "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532@md9600"
+   ],
+   "codec": {
+    "id": null,
+    "windows": null,
+    "installed": [],
+    "sources": null
+   },
+   "codec_code": null,
+   "codec_slot": null,
+   "codec_run": null,
+   "codec_tables": null,
+   "loader_id": null,
+   "loader_keys": null,
+   "loader_sign": "",
+   "bootloader_steps": [
+    "Disconnect the radio's DC power cable (the power key alone is not enough) and connect the USB cable to the mini-USB port on the rear.",
+    "Hold P1 and the orange (alarm) key while you connect the power again. The screen stays blank and the backlight blinks once a second.",
+    "Release the keys."
+   ],
+   "stock_download": null,
+   "key_sha256": "c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae",
+   "key_prefix": "A2FABB4B",
+   "dfu_ids": [
+    1155,
+    57105
+   ],
+   "dfu_string1": "AnyRoad Technology",
+   "dfu_product": "Digital Radio in USB mode",
+   "dfu_layout": "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg",
+   "original_version": {
+    "read": "dfu-info",
+    "interface": "@Internal Flash   /0x08000000/03*016Kg",
+    "hwopt": "Board revision",
+    "major": {
+     "06": "V1-V3",
+     "16": "V4",
+     "26": "V4A/V5"
+    }
+   },
+   "original_backup": {
+    "info": [
+     "02",
+     "01",
+     "03",
+     "04",
+     "05",
+     "07",
+     "08",
+     "32",
+     "33",
+     "50"
+    ],
+    "mirror": 65535,
+    "spi": 16777216,
+    "quick": 2097152,
+    "loader_interface": "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg",
+    "loader_spi": 1048576
+   },
+   "stub": {
+    "tool": "f4stub",
+    "id": 3,
+    "tested": true,
+    "hse": 8000000,
+    "boot_end": 134266880,
+    "spi": {
+     "bus": 2,
+     "mode": 3,
+     "hz": 4500000,
+     "af": 5,
+     "sck": "PB13",
+     "miso": "PB14",
+     "mosi": "PB15",
+     "cs": "PB12",
+     "idle": [
+      "PD14"
+     ]
+    }
+   },
+   "build_options": [],
+   "cps_radio_types": [
+    5
    ]
   },
   "mduv380": {
@@ -886,6 +1064,8 @@
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
    "dfu_layout": null,
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "f4stub",
     "id": 5,

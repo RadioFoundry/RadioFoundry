@@ -1502,6 +1502,41 @@ PROFILES = {
                    "tables": (0x55648D6B, "2a388c51ec726f26514152efab7d3d5a572c5842be625f1f16f4ddfd55ecd635"),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
     },
+    # TYT MD-9600 06.09 CSV (V1-V3 boards) and 16.45 CSV (V4) for the MD-9600 itself (docs/spec/codec-md9600.md). The same
+    # files are codec sources for the DM-1701 above (one file, two placements), so these two are keyed "<sha>@md9600"
+    # (profile_key) and found by find_profile(board="md9600"). The codec is board independent, so either file serves
+    # every board revision, and both report one codec id (the descriptor's tag tells them apart). Stock keeps the code in
+    # sectors 7 and 8, which are the application's now; the tables stay in sector 9 and the code goes to the start of
+    # sector 11 (boards/md9600/memory.ld, boards/md9600/vocoder_md9600.c), checked in an emulator against the
+    # stock-address run
+    "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09@md9600": {
+        "name": "MD9600-CSV-V06.09.bin",
+        "version": "V06.09 CSV",
+        "board": "md9600",
+        "key_sha256": MD9600_KEY_SHA256,
+        "codec_profile": "md9600-s11",
+        "size": 1094144,
+        "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB1800)],
+        "code": (0x08074B18, 0xF214, "c729480a47c7444c03eff1ec6b176a76d071f72b64d2f0fe3965e517c85a1215"),
+        "tables": (0x080AB13C, 0x10FE6, "0b431c14ef7e32fe8a0915976c250f127a757ed4cc5af2bc7f867ae261c6f1ca"),
+        "placement": {"code": 0x080E0000, "tag": 0x0609},
+        "placed": {"code": (0xD7D67AE8, "76b94a2727e0180cad4d354ee9bbea0a9d4278696dde76647508d6592963c737"),
+                   "tables": (0x9983906A, "08d9806571c5d1a8280be09d6bace1f1b73a7b21713a41d4d4fec3d151e82533")},
+    },
+    "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532@md9600": {
+        "name": "MD9600-CSV(V4)-V16.45.bin",
+        "version": "V16.45 CSV",
+        "board": "md9600",
+        "key_sha256": MD9600_KEY_SHA256,
+        "codec_profile": "md9600-s11",
+        "size": 1099264,
+        "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB2C00)],
+        "code": (0x08075C98, 0xF214, "4bcfec3e1113d17bb53bee1543039894db00c00c32d1b7dfd258f224043f52cd"),
+        "tables": (0x080AC2BC, 0x11036, "a101749f26c6df7d784130c45570e25abc5c88e02bee6f2510beb0a6c3ad4dfa"),
+        "placement": {"code": 0x080E0000, "tag": 0x1645},
+        "placed": {"code": (0xD5E2E873, "625b369a1f298e4760b0b07029a6cb98014715397c3ef529a6c5d7450a2f55e1"),
+                   "tables": (0xA8A52935, "1dd472d6574b852ea57f86ffb9b366aab9d44398ea289bd750927bac6b95e51d")},
+    },
 }
 
 # Stock files that are not codec donors but are known DM-1701 files: the key can be derived from them (any of them;
@@ -1744,11 +1779,23 @@ def profile_for_board(board_id):
     return next((h for h, p in PROFILES.items() if p.get("board") == board_id), None)
 
 
-def find_profile(stock, profiles=None):
-    """The profile for a stock file (by SHA-256), or raise StockError naming the supported files."""
+def profile_key(sha, board):
+    """The PROFILES key of a stock file's profile for a board that places its codec differently from the one the bare
+    SHA-256 names (the MD-9600's own placement of files that also serve the DM-1701)"""
+    return "%s@%s" % (sha, board)
+
+
+def key_sha(key):
+    """The stock file's SHA-256 of a PROFILES key (profile_key's or a bare one)"""
+    return key.split("@", 1)[0]
+
+
+def find_profile(stock, profiles=None, board=None):
+    """The profile for a stock file (by SHA-256), or raise StockError naming the supported files. board: the radio being
+    flashed, for a file that has its own placement on it (profile_key)."""
     profiles = PROFILES if profiles is None else profiles
     digest = sha256(stock)
-    prof = profiles.get(digest)
+    prof = (profiles.get(profile_key(digest, board)) if board else None) or profiles.get(digest)
     if prof is None:
         if no_codec(stock):
             raise StockError(no_codec(stock))
@@ -1764,7 +1811,7 @@ def extract(stock, key, profiles=None, board=None):
     merge writes them, [(flash address, bytes)] in layout() order (segments[0] is the code). board: the radio being
     flashed; another radio's file is refused before it is decrypted with this radio's key, which could only fail as
     a window mismatch that blames the key."""
-    prof = find_profile(stock, profiles)
+    prof = find_profile(stock, profiles, board)
     if board is not None and prof["board"] != board:
         raise StockError("%s is a firmware file for the %s, not the %s" % (prof["name"], prof["board"], board))
     if prof.get("file_radio"):

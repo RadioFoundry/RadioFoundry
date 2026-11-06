@@ -31,7 +31,9 @@ PORT = 7373
 FLAGS = {"private", "pi", "emergency", "confirmed", "tms_no_ack", "etsi_no_response", "group", "json", "verbose"}
 # options sent as text: free text, and the hex fields (the board reads a string as hex, a number as itself)
 TEXT = {"tms", "etsi", "ip_text", "talker_alias", "gps", "udp_payload", "opcode", "fid", "octet3", "service_options",
-        "slots", "family", "ambe_out", "voice"}
+        "slots", "family", "ambe_out"}
+# options whose value is JSON on the command line and goes to the board decoded: an outbound's voice calls are a list
+JSON = {"voice"}
 
 
 class BenchLineError(Exception):
@@ -226,7 +228,12 @@ def job_from_args(tool, args):
             with open(os.path.expanduser(v), "rb") as f:
                 job["ambe_hex"] = f.read().hex()
             continue
-        if key not in TEXT:
+        if key in JSON:
+            try:
+                v = json.loads(v)
+            except ValueError as e:
+                raise ValueError(f"{tool}: {a} takes JSON: {e}") from None
+        elif key not in TEXT:
             try:
                 v = int(v)
             except ValueError:

@@ -336,13 +336,19 @@ knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM pat
 board's RX gain, an HR_C7000 board's line out gain) play the beep at `beep_level`, and the volume acts on it in the
 speaker path. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
 volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`); otherwise the beep
-starts the board's PCM audio stream itself and stops it two silent blocks after the pattern. If that stream delivers no
+starts the board's PCM audio stream itself, routes the speaker for silent lead-in blocks before the tone (one 20 ms
+block, or `hal_audio_t.speaker_lead_ms` rounded up to blocks, at most 200 ms, for an amplifier that unmutes slowly), holds
+the route for four silent blocks after the pattern, and then stops the stream. A beep in that hold plays at once, with no
+lead-in. A board with `speaker_hang_s` (a mobile on a supply; 0 on battery radios) keeps its amplifier powered and
+silent (`speaker_warm`) from any key, PTT, reception or beep until that many seconds after the last one, so a key click
+or the DMR talk permit tone plays at once: while it is warm, beeps take the one-block lead-in. If that stream delivers no
 block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stream, gives the speaker route back and
 drops the pattern, so a codec that goes quiet can't leave the analog receive audio muted. A start that fails (no codec
 clock) is stopped the same way, in case a block already ran. Counters in the view:
 `beep.played` (started), `beep.no_stream` (no audio stream could be started: on a board that can't stream PCM in FM
 mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
-`beep.busy`.
+`beep.busy`; in the `audio` section, `beep.shared` (patterns mixed into the voice stream), `beep.leads` (lead-in blocks
+played), `beep.warm` (1: the amplifier is held warm) and `beep.warms` (times it was powered up for that).
 
 To hear the beeps in context, `tools/beep_reel.py` makes a video of the UI simulator's screen in which every beep sounds
 in a scene that sounds it on a radio, captioned (`build/beep-reel/beep_reel.mp4`; needs ffmpeg built with libass). It
@@ -481,6 +487,10 @@ into the board's `switch_on()`: three readings in a row below 5.5 V, at least 10
 doesn't. The boards ignore it for the first 1.5 s after power-up while the readings settle. `core/app/app.c` polls
 `switch_on()` and powers off (settings saved, latch released). 5.5 V sits well under a flat 2S pack (critical
 6.0 V), so a weak battery never reads as the switch.
+
+Boards with a power key instead (mobiles) feed the key's level to `core/radio/power_key.c` from their `switch_on()`.
+The press that switched the radio on is usually still held at start-up, so the key counts only once it has been seen
+released; then 20 polls held in a row (2 s at the 100 ms poll) mean off. A shorter press doesn't count toward the next.
 
 ### 5.6 Time of day
 

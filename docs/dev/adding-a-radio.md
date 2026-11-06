@@ -66,6 +66,7 @@ Look at the boards on your platform for a model (`tools/boards.py list --platfor
 | `caps` | `CAP_KEYPAD`, `CAP_ENCODER`, `CAP_GPS`, `CAP_DMR`, `CAP_VOLUME_POT`, `CAP_AM_RX`, `CAP_BCAST_FM`, `CAP_NO_BATTERY` (a mobile on a fixed supply: no battery UI, no battery monitor; leave `battery_mv` and `battery_pct` NULL, and set `hal_power_t.supply_mv` if the radio measures its DC input: [radio-features.md](../spec/radio-features.md), battery) |
 | `bands`, `band_count` | Receive ranges, each with `tx` true where transmit is allowed |
 | `power_count`, `power_names`, `power_default` | Power levels as short labels, lowest first, and the default index |
+| `power_bands`, `power_band_count` | Optional: the labels per band, where a level gives a different power on each band (a top level of 45 W on one band, 50 W on the other). Same `power_count` on every band; a frequency in no entry uses `power_names` |
 | `display`, `input`, `keymap`, `keymap_len` | Display and key interfaces, and the key map (below) |
 | `radio`, `dmr`, `audio`, `vocoder` | RF chip, DMR modem (NULL on an FM-only radio), audio path, codec hosting |
 | `power`, `flash` | Battery and power switch, external flash |

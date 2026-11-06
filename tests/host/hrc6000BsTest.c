@@ -611,6 +611,31 @@ static void test_restart(void)
 	}
 }
 
+// FM receive with the chip's codec playing PCM: FM mode set, then the modulator back to DMR (bit 7 clear)
+static void test_fm_rx_pcm(void)
+{
+	nx = 0;
+	CHECK(hrc6000_set_mode_fm_rx(&dev));
+	CHECK(last_write(4, 0x10) >= 0 && (last_write(4, 0x10) & 0x80) != 0);
+	CHECK(hrc6000_fm_rx_pcm(&dev));
+	CHECK(last_write(4, 0x10) >= 0 && (last_write(4, 0x10) & 0x80) == 0);
+}
+
+// The receive I/Q order (4:0x01 bit 6): swapped by default; straight is kept for later writes of 0x01
+static void test_rx_iq_swap(void)
+{
+	nx = 0;
+	CHECK(hrc6000_rx_iq_swap(&dev, false, true));
+	CHECK(last_write(4, 0x01) == 0xB0);
+	nx = 0;
+	CHECK(hrc6000_rx_iq_swap(&dev, false, false));
+	CHECK(last_write(4, 0x01) == -1);	// not in DMR receive: kept for the next entry
+	CHECK(hrc6000_dmr_enter(&dev, 0x10, 0x10, 5));
+	CHECK(last_write(4, 0x01) == 0xB0);
+	CHECK(hrc6000_rx_iq_swap(&dev, true, true));
+	CHECK(last_write(4, 0x01) == 0xF0);
+}
+
 int main(void)
 {
 	hrc6000_attach(&dev, &bus);
@@ -624,6 +649,8 @@ int main(void)
 	test_stall_and_halt();
 	test_queue_at();
 	test_restart();
+	test_fm_rx_pcm();
+	test_rx_iq_swap();
 	printf("# hrc6000BsTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;
 }

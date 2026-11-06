@@ -28,6 +28,9 @@ def pytest_addoption(parser):
                 help="tests may switch the radio's USB personality to the network adapter (it re-enumerates; the "
                      "test switches it back over UDP), or on a radio without one run pppd on its serial port")
     g.addoption("--tx-power", type=int, default=40, help="bench transmitter RF level 0-255 (bench: low)")
+    g.addoption("--radio-tx-watts", type=float, default=None,
+                help="W: on-air tests key the radio at its lowest power level named at least this (a bench that can't "
+                     "hear the lowest level through a dummy load); default the lowest level. Ham APRS keeps the lowest")
     g.addoption("--sfr-freq", type=float, default=None,
                 help="MHz: the SFR test channels' frequency (test_sfr_standalone); default --dmr-freq")
     g.addoption("--ambe", default=os.environ.get("RFOUNDRY_HIL_AMBE"),

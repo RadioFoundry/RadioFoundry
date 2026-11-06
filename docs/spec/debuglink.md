@@ -112,6 +112,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1E` | RX2 | operation u8 + arguments (3.22) | flags, or none (3.22) |
 | `0x1F` | IDDB | DMR ID u32 (3.23); `CONFIG_DMR` builds, else status 4 | format u8, records u32, found u8, text (3.23) |
 | `0x20` | CHIP_REG | chip u8, page u8, register u8 [+ value u32]; or chip `0xFF`, address u32 [+ value u32] (3.24) | the register's value u32 (3.24) |
+| `0x21` | HWOPT | operation u8 + arguments (3.25) | the options as key=value text, or none (3.25) |
 
 ### 3.1 VERSION
 
@@ -313,7 +314,7 @@ short. View 5: the `cps.*` and `cpsf.*` keys moved from `storage` to `cps` (27),
 
 | # | Section | Keys |
 |---|---|---|
-| 0 | `core` | `view state tx_deny txlim txlim.n txlim.refused txlim.last_hz mode am bcast bcast_fault bcast_khz vfo vfo_index` (`am` 1: received in AM, the air band; `bcast` 1: heard on the broadcast receiver, `bcast_fault` 1 when it didn't answer, `bcast_khz` the frequency the receiver reports; [airband-and-broadcast.md](airband-and-broadcast.md)) (which VFO: 0, or 1 the second; `radio-features.md` 2.1) `zone_index zone_pos zone_size zone_count zone_name channel_number channel_name rx_hz tx_hz power power_name power_count temporary temp squelch monitor tone_ok rssi_dbm noise tx_elapsed_ms tot_s last_rx_ms last_tx_ms tx_auto wakes vfo_step_hz codeplug hotspot`, `last_tx_ms` when the last transmission began (0 none), `tx_auto` 1 when that transmission is the radio's own (a data list such as ARS, a roaming probe, an APRS beacon), `wakes` 1 while the radio state lights the screen (`radio_view_wakes`, [ui.md](ui.md)), `rssi_dbm` is the raw reading in FM and idle, and the peak of the last `RADIO_RSSI_HOLD_MS` (120 ms, two TDMA frames) while the DMR stack runs; `call.rssi_dbm` is the modem's per-burst level, else the held one; `txlim` the test TX limit (op 35): `off`, `block` or `list`, with `txlim.n` frequencies; `txlim.refused` keyings it refused since the start, the last at `txlim.last_hz`; `req_handled req_dropped` (radio requests taken by the radio task; lost to a full queue), `ch_read_errors` (reads of a used channel that failed: flash read or record decode), `serial` |
+| 0 | `core` | `view state tx_deny txlim txlim.n txlim.refused txlim.last_hz mode am bcast bcast_fault bcast_khz vfo vfo_index` (`am` 1: received in AM, the air band; `bcast` 1: heard on the broadcast receiver, `bcast_fault` 1 when it didn't answer, `bcast_khz` the frequency the receiver reports; [airband-and-broadcast.md](airband-and-broadcast.md)) (which VFO: 0, or 1 the second; `radio-features.md` 2.1) `zone_index zone_pos zone_size zone_count zone_name channel_number channel_name rx_hz tx_hz power power_name power_count power_names tx_drive temporary temp squelch monitor tone_ok rssi_dbm noise tx_elapsed_ms tot_s last_rx_ms last_tx_ms tx_auto wakes vfo_step_hz codeplug hotspot`, `last_tx_ms` when the last transmission began (0 none), `tx_auto` 1 when that transmission is the radio's own (a data list such as ARS, a roaming probe, an APRS beacon), `wakes` 1 while the radio state lights the screen (`radio_view_wakes`, [ui.md](ui.md)), `rssi_dbm` is the raw reading in FM and idle, and the peak of the last `RADIO_RSSI_HOLD_MS` (120 ms, two TDMA frames) while the DMR stack runs; `call.rssi_dbm` is the modem's per-burst level, else the held one; `txlim` the test TX limit (op 35): `off`, `block` or `list`, with `txlim.n` frequencies; `txlim.refused` keyings it refused since the start, the last at `txlim.last_hz`; `power_names` every power level's name at the channel's transmit frequency, lowest first, `/` between (`board_power_name`: a radio whose top level differs by band names it per band); `tx_drive` (radios with `hal_radio_t.tx_drive_level`) the PA drive of each power level at the channel's transmit frequency, lowest first, `/` between (0: the level doesn't transmit there); `req_handled req_dropped` (radio requests taken by the radio task; lost to a full queue), `ch_read_errors` (reads of a used channel that failed: flash read or record decode), `serial` |
 | 1 | `channel` | `ch.name ch.rx_hz ch.tx_hz ch.mode ch.bw ch.rx_tone ch.tx_tone ch.power ch.rx_only ch.color_code ch.timeslot ch.contact ch.listen_list ch.dmr_id ch.dmo` |
 | 2 | `dmr` | `dmr.built dmr.active dmr.codec dmr.state dmr.phase dmr.tx_error dmr.own_id dmr.cc dmr.ts dmr.rmo dmr.repeater_up dmr.sfr_role dmr.sfr_rpt dmr.sfr_rx dmr.sfr_cwid dmr.sfr_cw dmr.sfr_cwid_sent dmr.sfr_cwid_cut dmr.target_id dmr.target_private dmr.target_name dmr.reply_active dmr.reply_s dmr.hear_all dmr.hear_all_latch dmr.focus_id dmr.focus_private dmr.one_shot dmr.underruns dmr.target_manual dmr.privacy dmr.alias_tx dmr.tx_alias voice.tx_mic_level_db voice.tx_mic_spread_db voice.tx_mic_zc voice.tx_mic_blocks`, and where the modem driver keeps them (`hal_dmr_modem_t.health`) `dmr.modem_stalls dmr.modem_stuck`, after the first of either `dmr.modem_lost_ms dmr.modem_lost_regs` (`dmr.modem_*`: modem interrupts the driver found lost and recovered from: transmissions dropped with no slot interrupt, requests found pending with no handler run; the first one's uptime in ms and four words in hex, the interrupt controller's as the driver's source lists them; any count above 0 is a lost interrupt) (`dmr.tx_alias`: the alias text our calls send, empty when none; `voice.tx_mic_*`: the latest transmission's mic blocks (20 ms each, the board's samples before the gain scaling) as content, which a peak can't show: the 90th percentile block's level from the sample-to-sample differences (a high pass, so hum doesn't count; dB re 1 LSB rms in 3 dB steps), that minus the 10th percentile's (speech 20 dB and more, a floor or a hum a few), the median zero crossings a block (speech 5-40, white noise about 80) and the blocks counted; a cut mic reads as the ADC's floor: low level, no spread; in this section because `dmr_stats` is near the reply size) |
 | 3 | `dmr_call` | `call.src call.dst call.group call.to_us call.encrypted call.emergency call.pi_header call.src_name call.dst_name call.late_entry call.alias_complete call.fid call.svc call.pi_alg call.pi_key call.alias call.rssi_dbm call.ms`, the same with `last.` (`src` to `dst_name`) and `last.ms`. The caller's ETSI GPS Info ([dmr-voice.md](dmr-voice.md) GPS Info): `call.gps_valid` (and `last.`), when 1 `call.gps_lat call.gps_lon` (degrees, 7 decimals) `call.gps_err` (position error code 0-7), when our own position is known `call.gps_dist_m call.gps_bearing` (degrees from north) |
@@ -341,6 +342,8 @@ short. View 5: the `cps.*` and `cpsf.*` keys moved from `storage` to `cps` (27),
 | 25 | `net_svc` | the radio's UDP services on the USB network link: with mDNS `mdns.state mdns.name mdns.queries mdns.answered mdns.sent mdns.busy mdns.conflicts mdns.bad` (`mdns.md` 5), with TFTP `tftp.state tftp.reads tftp.writes tftp.errors tftp.timeouts tftp.retransmits tftp.last_size tftp.blksize tftp.write_allowed` (`tftp.md` 6); `net_svc.built=0` without either |
 | 26 | `net_link` | the host link's MTUs ([usb-network.md](usb-network.md) 3.2), with the IP gateway: `net.mtu` (the link's, DHCP option 26) `net.air_mtu` (one transmission's) and the drops `net.air_too_big net.frag_needed net.up_too_big`; `CONFIG_NET_PPP` builds `ppp.running ppp.ip_up ppp.lcp ppp.ipcp` (RFC 1661 state numbers, 9 = opened) `ppp.rx_frames ppp.tx_frames ppp.rx_errors ppp.mru ppp.peer_mru` ([ppp.md](ppp.md)); `net_link.built=0` without either |
 | 27 | `cps` | open-firmware CPS (`cps.built openfw_eeprom requests reads commits refused overflows last session pending junk reboots_ignored`; [settings-store.md](settings-store.md), [cps-protocol.md](cps-protocol.md)), with `CONFIG_CPS_FAST` the fast codeplug protocol (`cpsf.state read written commits refused`; [cps-fast.md](cps-fast.md)) |
+| 28 | `board` | `board.name`, then the board's own keys, each as `board.<key>` (`board.view_line`): bring-up readings such as pin levels, raw ADC values, the clock that started and the flash ID. The keys are listed in the radio's hardware spec; a board without its own keys sends only `board.name` |
+| 29 | `audio` | the beeps' speaker route (`radio-features.md` 4): `beep.shared` (patterns mixed into the DMR voice stream) `beep.leads` (silent lead-in blocks played on a beep's own stream) `beep.warm` (1: the amplifier is held powered, `hal_audio_t.speaker_hang_s`) `beep.warms` (times it was powered up for that); empty without CONFIG_BEEP |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -391,6 +394,7 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 33 | on u8 (0 / 1) | the DMR voice test signal (`ambeVoiceSetTestSignal`, RAM only): 1 the encoder gets a generated triangle tone, about -12 dBFS, whose pitch steps through 300, 500, 700, 1100 and 1500 Hz one vocoder frame (20 ms) each, in place of the mic; 0 the mic again. Consecutive frames differ, so an over carries known, varying audio whatever the mic hears (`tests/hil/test_dmr_audio_smoke.py`). BAD_ARG above 1, UNAVAILABLE without DMR. The `dmr` section shows it as `voice.tx_test`. `rfoundry_debug.py radio voice-test on` / `off` |
 | 34 | digit u8, down u8 | `radio_req_dtmf`: a DTMF key's down (1) or up (0) during FM TX (`radio-features.md` 3.7), with the same timing as a key. digit is ASCII `0`-`9`, `*`, `#`, `A`-`D`. A down is REFUSED unless the `features` view's `dtmf_ready` is 1; an up is always taken. A digit that isn't DTMF or a short argument answers BAD_ARG, a build without `CONFIG_DTMF` UNAVAILABLE. `rfoundry_debug.py radio dtmf DIGITS [ms]` |
 | 35 | flags u8, n u8, hz u32 × n | the test TX limit (`tx_limit_set`, [radio-features.md](radio-features.md) 3.1), RAM only: a restart clears it. Flags bit 0 blocks every transmission; else the radio keys only on the n frequencies (Hz, n ≤ 10); no block and n 0: off. Set before the reply. The `core` view shows it (`txlim`). A flag bit other than 0, n over 10 or a length that isn't 2 + 4n answers BAD_ARG. `rfoundry_debug.py radio tx-limit off\|block\|MHZ[,MHZ...]` |
+| 36 | drive u16 | the PA drive of the next transmission (`hal_radio_t.tx_drive`), for power calibration with a wattmeter ([power-calibration.md](../testing/power-calibration.md)): in the board's own units (its power control DAC counts), in place of the power level's drive, from the next key-up until that transmission ends; 0 = the level's drive again. Set it before key-up: a change during a transmission takes effect at the next one. Every transmit rule still applies (the arm, the test TX limit, a level the radio can key at that frequency). RAM only. A drive over the board's limit or a short argument answers BAD_ARG, a radio without the hook UNAVAILABLE. The `core` view's `tx_drive` lists each level's drive. `rfoundry_debug.py radio tx-drive N\|off` |
 
 Ops 15-18 last until the channel changes (`dmr.target_manual`); in the DMR VFO ops 15 and 16 set the VFO's own target, which is kept. Unavailable ops answer UNAVAILABLE.
 
@@ -446,9 +450,10 @@ STM32F4 (INFO_CHIP family 0; `platform/stm32f4/mem_window.h`):
 | `0x1FFF0000-0x1FFF77FF` | system memory (ST's ROM bootloader) |
 | `0x1FFF7800-0x1FFF7A0F` | OTP and its lock bytes |
 | `0x1FFFC000-0x1FFFC00F` | option bytes |
+| `0xE000ED00-0xE000ED3F` | the core's system control block, aligned words only: CPUID (`0x410FC241` on every STM32F405/407: Cortex-M4 r0p1), interrupt control, VTOR, the fault status and address registers (none clears on a read) |
 
-RAM, CCM and peripheral addresses are always refused on the STM32F4. The UID and the flash size register come through
-INFO_CHIP instead.
+RAM, CCM and the other peripheral addresses are always refused on the STM32F4 (CHIP_REG reaches the peripherals,
+3.24). The UID and the flash size register come through INFO_CHIP instead.
 
 HR_C7000 (family 1; `platform/hrc7000/mem_window.h`). READ_MEM works before INFO_CHIP has a UID:
 
@@ -562,7 +567,7 @@ semantics in the table are the HR_C6000's.
 
 | Op | Request | Reply after the status |
 |---|---|---|
-| 0 STATUS | none | flags u8 (bit 0 the probe owns the stream, bit 1 the stream runs), blocks u32, then for the left and the right channel: peak u16, RMS u16, peak since start u16 (of the last 20 ms block, full scale 32767) |
+| 0 STATUS | none | flags u8 (bit 0 the probe owns the stream, bit 1 the stream runs, bit 2 the board has no PCM tap: register and RAM access only, START answers unavailable), blocks u32, then for the left and the right channel: peak u16, RMS u16, peak since start u16 (of the last 20 ms block, full scale 32767) |
 | 1 REG_READ | page u8, register u8 | value u8 |
 | 2 REG_WRITE | page u8, register u8, value u8 | the value read back u8 (logged) |
 | 3 START | tone Hz u16 (0-3800), amplitude u16 (0 = silence), flags u8 (bit 0: route the PCM to the speaker) | none. `DL_ST_BUSY` while DMR voice owns the stream; `DL_ST_UNAVAILABLE` when the stream can't start (no I2S clock) |
@@ -796,9 +801,22 @@ hook answers unavailable (4).
 | Platform | Register windows |
 |---|---|
 | HR_C7000 (`platform/hrc7000/mem_window.h`) | READ_MEM's register windows (3.10: system block, GPIO A-C, PIC), plus the timers `0x14000000-0x14000077` |
-| STM32F4 | none yet |
+| STM32F4 (`platform/stm32f4/mem_window.h`) | the peripheral buses `0x40000000-0x5FFFFFFF`, the FSMC control registers `0xA0000000-0xA0000FFF` and the Cortex-M4 private peripheral bus `0xE0000000-0xE00FFFFF` (SCB, NVIC, SysTick, DWT, DBGMCU). The access runs with bus faults ignored: a reserved address that faults is refused (7) |
 
 Writes are logged. `rfoundry_debug.py reg CHIP REG [VALUE] [--page N]`, or `reg soc ADDR [VALUE]` for the SoC.
+
+### 3.25 HWOPT
+
+The board's hardware options (`hal/hal_hwopt.h`): facts a person states because software can't read them, such as
+a board revision. The board stores them outside the settings record. Settings > Advanced > Hardware shows
+the same list; a radio without options has no such row and answers an empty list here.
+
+| Op | Name | Arguments | Reply after the status |
+|---|---|---|---|
+| 0 | LIST | none | key=value text: `hwopt.count`, then per option i `hwopt.<i>.value` (the stored choice, -1 none), `hwopt.<i>.restart` (1: applies from the next start-up), `hwopt.<i>.name`, `hwopt.<i>.choices` (labels separated by `\|`) |
+| 1 | SET | option u8, choice u8 | none. Refused (7) while transmitting or when the board doesn't store it; bad argument (2) for an unknown option or choice |
+
+`rfoundry_debug.py hwopt` lists them; `rfoundry_debug.py hwopt "Board revision" V4A/V5` sets one.
 
 ## 4. Safety
 
@@ -815,6 +833,7 @@ Writes are logged. `rfoundry_debug.py reg CHIP REG [VALUE] [--page N]`, or `reg 
 - WATCHDOG TEST and LOAD need their token and are refused while transmitting; each ends in a reset (3.21).
 - RX2 BRIDGE and RESTART need their token and are refused while transmitting. The bridge keeps the transmitter off
   and ends in a restart (3.22).
+- HWOPT SET is refused while transmitting (3.25).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the vendor bootloader is proprietary).

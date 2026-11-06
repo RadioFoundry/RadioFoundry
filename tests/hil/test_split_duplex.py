@@ -222,11 +222,7 @@ def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
             finally:
                 r.close()
         sdr_bench.capture_wait()
-    txt = sdr_bench.ssh(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} sdrmon.py analyze {cap} --freq {freq} --cc {cc} "
-                        f"--cach --json {cap}.json > {cap}.txt 2>&1; tail -40 {cap}.txt", timeout=600)
-    print(txt)
-    import json
-    sdr = json.loads(sdr_bench.ssh(f"cat {cap}.json"))
+    sdr = sdr_bench.analyze_dmr(cap, freq, cc, cach=True)
     leave_hotspot(radio)
     return sdr, st, end
 
@@ -426,11 +422,7 @@ def test_split_tx_sched(radio, sdr_bench, pytestconfig):
             finally:
                 r.close()
         sdr_bench.capture_wait()
-    txt = sdr_bench.ssh(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} sdrmon.py analyze {cap} --freq {freq} --cc {cc} "
-                        f"--cach --json {cap}.json > {cap}.txt 2>&1; tail -40 {cap}.txt", timeout=600)
-    print(txt)
-    import json
-    sdr = json.loads(sdr_bench.ssh(f"cat {cap}.json"))
+    sdr = sdr_bench.analyze_dmr(cap, freq, cc, cach=True)
     leave_hotspot(radio)
     print(f"outcomes {outcomes}\nSTATUS {st}\nafter {end}")
     assert outcomes.count(0) == len(CALL) and outcomes.count(3) == 1 and outcomes.count(1) == 1, outcomes

@@ -184,13 +184,11 @@ def test_privacy_service_option(radio, sdr_bench, pytestconfig):
     assert d["call.rx_calls"] == 1 and d["call.rx_encrypted_calls"] == 1, d
     assert d["call.rx_voice_bursts"] == 0 and d["call.rx_enc_dropped"] >= 20, d
     assert v["last.encrypted"] == "1", v
-    try:
+    with radio.debuglink_privacy():
         radio.link.dmr_privacy("moto", 1)
         radio.wait_for(lambda x: x.get("dmr.privacy") == "1", sections=("dmr",), what="privacy key loaded")
         d, v = _bench_call(radio, sdr_bench, pytestconfig, service_options=0x40)
         assert d["call.rx_calls"] == 1 and d["call.rx_enc_dropped"] == 0 and d["call.rx_voice_bursts"] >= 22, d
-    finally:
-        radio.link.dmr_privacy("off")
 
 
 @pytest.mark.feature("dmr_voice")
@@ -223,9 +221,9 @@ def test_talk_target_requests(radio, pytestconfig):
         v = radio.wait_for(lambda x: x.get("dmr.target_manual") == "0", sections=("dmr",), what="target cleared")
         assert v["dmr.target_id"] == base["dmr.target_id"], v
         if "DMR_PRIVACY" in radio.features():
-            L.dmr_privacy("anytone", 0x1234)
-            radio.wait_for(lambda x: x.get("dmr.privacy") == "1", sections=("dmr",), what="privacy on")
-            L.dmr_privacy("off")
+            with radio.debuglink_privacy():
+                L.dmr_privacy("anytone", 0x1234)
+                radio.wait_for(lambda x: x.get("dmr.privacy") == "1", sections=("dmr",), what="privacy on")
             radio.wait_for(lambda x: x.get("dmr.privacy") == "0", sections=("dmr",), what="privacy off")
     finally:
         L.dmr_target_clear()

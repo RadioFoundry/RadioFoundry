@@ -57,6 +57,7 @@ void stm32_hrc_dmr_enter(void);		// the chip has just been put in DMR (hrc6000_d
 void stm32_hrc_dmr_leave(void);		// leaving DMR: transmission dropped, interrupts off, engine off
 void stm32_hrc_dmr_rx_restart(void);	// new channel in DMR
 bool stm32_hrc_dmr_tx_active(void);	// the engine's slot state says a transmission is in progress
+bool stm32_hrc_dmr_tx_listening(void);	// that transmission receives between its bursts (an SFR, tx_listen)
 void stm32_hrc_dmr_tx_drop(void);	// abort a transmission now (radio retune or tx_off while one runs)
 // The transmit side ready ahead of the first burst (a board with tx_prepare): from radio tx() when it arms DMR, from
 // the modem's tx_begin (own timing) and from the engine's tx_slot_found (aligned); the last of them does it
@@ -79,6 +80,7 @@ static inline void stm32_hrc_dmr_enter(void) {}
 static inline void stm32_hrc_dmr_leave(void) {}
 static inline void stm32_hrc_dmr_rx_restart(void) {}
 static inline bool stm32_hrc_dmr_tx_active(void) { return false; }
+static inline bool stm32_hrc_dmr_tx_listening(void) { return false; }
 static inline void stm32_hrc_dmr_tx_drop(void) {}
 static inline void stm32_hrc_dmr_tx_prepare(void) {}
 #endif

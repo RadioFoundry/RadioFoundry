@@ -92,7 +92,7 @@ Names are the manual's. Only the bits we rely on are listed.
 | Reg | Name | Bits / values used |
 |---|---|---|
 | 0x00 | reset (active low per module: DMR, PHY, codec, FM, vocoder IF, MSK, I2S, built-in codec) | 0xFF at init (all running) then 0x2A (partial reset, unexplained) |
-| 0x01 | H/W config | 0xF0 in DMR (two-point modulation TX, IF RX); 0xB0 then 0xF8 during init (unexplained). The same value is used on UHF and VHF |
+| 0x01 | H/W config | 0xF0 in DMR (two-point modulation TX, IF RX); 0xB0 then 0xF8 during init (unexplained). The same value is used on UHF and VHF. Bit 6 swaps the receive I and Q (the manual: the receive port's mapping to the RF port). With an IF input that inverts the received spectrum, so it must match the radio's mixers: inverted 4FSK flips every symbol, and since the voice and data sync patterns are complements, the chip then sees the odd voice burst as a data sync and tracks no call. A board whose first LO changes side between bands sets the bit per band (`hrc6000_rx_iq_swap()`); the default is set |
 | 0x02-0x05 | TX / RX I and Q offsets | 0 at init; 0x04 is rewritten in FM with the calibration "Mod2 offset". In two-point mode 0x04 is the MOD1 (reference crystal) offset and 0x02 the MOD2 (VCO) one (manual 4.7.2; the register table says MOD2 for both): 0x04 moves the FM carrier about 75 Hz a step, signed (bench 2026-10-12) |
 | 0x06 | vocoder select | 0x21 = vocoder over SPI under MCU control; 0x22 = "open music" (used only while flushing page 3); 0x20 = normal |
 | 0x07-0x09 | IF frequency H/M/L | 0x0B, 0xB8, 0x00 (450 kHz) |
@@ -252,6 +252,21 @@ transmission, a one-shot 29 ms timer does the same. Keying takes the PA enables 
 On such a board the RF chip's "transmitting" state therefore goes on and off **burst by burst**. Code that needs to
 know whether a transmission is in progress must use the modem slot state (section 7.5), not the PA.
 
+### 4.4 Lost interrupts
+
+The three lines are edge triggered. A system line still low after its handler (a flag set again, or one whose edge
+was missed) gives no further edge, so no later request interrupts. The STM32F4 glue (`platform/stm32f4/hrc/dmr_glue.c`)
+recovers and counts (`hal_dmr_modem_t.health`, the debug link's `dmr.modem_*` keys):
+
+| Count | Found | Recovery |
+|---|---|---|
+| stalls | no timeslot interrupt for 200 ms while transmitting (the engine's `tx_stalls`; a stall while receiving is not counted) | the transmission ends, the receiver restarts |
+| stuck | the system line low with no edge pending: at a timeslot interrupt (EXTI pending bit clear), or at the task's 10 ms poll (still low 5 us later with no handler run) | the timeslot handler services it, or the task pends the handler; counted once per low stretch |
+
+Entering DMR with the line already low (a flag from FM) pends the handler at once and is not counted. The first loss
+keeps four words: 0x82, EXTI_PR, the interrupt port's IDR, and the three lines' NVIC enable, pending and active bits
+(bits 0-2, 8-10, 16-18).
+
 ---
 
 ## 5. Receive
@@ -393,7 +408,10 @@ signaling. If idle, with the CC held and matching: write 0x41=0x50 and start rec
 until two bursts A have passed, unless the source ID is already known and isn't our own. The LC comes from page 2 once
 the embedded LC is complete (subject to the sticky-LC rule above). The driver reads page 2 at the interrupt and keeps an
 LC that differs from the capture for the next voice burst (counted as `lc2 p=`, traced as `P`); whether the interrupt
-comes on a late entry, and when relative to burst F, is what the trace shows.
+comes on a late entry, and when relative to burst F, is what the trace shows. On the bench (HIL 2026-11-06, a call
+joined at burst C of its second superframe) it came before the next F in most runs, the LC taken there; on a weak
+signal it came one superframe later in 2 of 9 runs, page 2 still held the old LC at F, and the call played from the
+superframe after that.
 
 ### 5.7 Audio buffering
 
@@ -559,18 +577,31 @@ deviation, 0xA0 = CTCSS or DCS deviation, 0x3F=0x04, 0x34=0x3C, 0x3E=0x08, page 
 **FM RX**: 0x60=0x00, 0xE0=0x89, 0x10=0x80, 0x34=0x3C, 0x81=0x19, 0x85=0x00, 0x26=0xFD. Audio feed-through 0x36=0x02
 (0x00 mutes); 0x10 back to 0x6E for DMR.
 
-**Tones (0xA1 mode)**: 0x80 off, 0x88 CTCSS, 0x84 DCS, 0x82 DTMF.
+**Codec in FM mode**: with 0x10 bit 7 set (FM) the codec's line out carries the chip's own FM receive audio, and 0x36
+bit 1 switches it on (the manual: in FM mode, receive opens the voice channel's codec switch). I2S PCM (beeps, prompts)
+doesn't reach the line out then, with the bit set or clear. A board whose FM audio comes from elsewhere puts 0x10 back
+to DMR after the FM receive rows (`hrc6000_fm_rx_pcm()`), so PCM plays in FM receive as it does in DMR.
+
+**Tones (0xA1 mode)**: 0x80 off, 0x88 CTCSS, 0x84 DCS, 0x82 DTMF, as traced. The manual's register table differs:
+0xA1 is `fm_mod`, bit 7 is reserved and must be 0, bit 6 MSK, and its appendix selects CTCSS with 0x08, CDCSS 0x04,
+DTMF 0x02, 2-tone 0x10, 5-tone 0x20. With bit 7 set (the init's 0x80) a board that feeds the chip a 450 kHz IF never
+gets a DMR sync, though the chip's RSSI (0x43 / 0x44) follows the signal; `hrc6000_tones_off()` writes 0x00 after
+the power-on init. The other boards receive with 0x80 and haven't been tried with 0x00.
 - CTCSS TX: 0xA1=0x88, 0xA8 = tone index. RX: 0xA1=0x88, 0xA7=0x10 (threshold), 0xD3=0x07 / 0xD2=0xD0 (sampling depth
   2000 = 250 ms at 8 kHz), 0xD4 = tone index. Detected: 0x93 bit 0.
 - DCS TX: 0xA1=0x84, 0xA2 = 0x00 inverted / 0x08 normal, 0xAB = code bits 7-0, 0xAC = code bit 8. RX: 0xA1=0x84, 0xA2 =
   0x04 inverted / 0x00 normal, 0xD4 = code bits 7-0, 0xD3 = (code bit 8 << 4) + 0x03, 0xD2=0x20 (depth 800 = 100 ms).
-- DTMF TX: save 0xA1, 0xA0 and 0xD1; 0xA1=0x82, 0xA0 = deviation, 0xA4=0xFA (tone time, continuous), 0xA3=0x19 (gap,
+- DTMF TX: save 0xA1, 0xA0 and 0xD1; 0xA1=0x82, 0xA0 = deviation, 0xA4=0xFA (tone time), 0xA3=0x19 (gap,
   2 ms units), 0xD1=0x01 (one code), 0xAF = code << 4, 0x60=0x00 then 0x80 to send. Restore the three registers after
-  (the high bits of 0xD1 matter).
+  (the high bits of 0xD1 matter). Seen on air: 0xA4 = 0xFA is 500 ms, not continuous; one code is at most 510 ms and
+  ends in about 20 ms of silence (`hrc6000-registers.md` 7.6).
 - Tone table (page 1, extended addresses, value = f x 65536 / 32000, low byte first): 0x11A/0x11B 697 Hz (0x0593),
   0x11C/D 770 (0x0629), 0x11E/F 852 (0x06D1), 0x120/1 941 (0x0787), 0x122/3 1209 (0x09AC), 0x124/5 1336 (0x0AB0),
-  0x126/7 1477 (0x0BD1), 0x128/9 1633 (0x0D10). A single arbitrary
-  tone: put its value in both the 697 and 1209 entries and send DTMF "1"; restore the entries after.
+  0x126/7 1477 (0x0BD1), 0x128/9 1633 (0x0D10). Any DTMF pair: put its values in the 697 and 1209 entries and send
+  DTMF "1"; restore the entries after.
+- A single tone (1750 Hz burst, roger beep, AFSK; `hrc6000_tx_pair`): 2-tone mode (0xA1 = 0x10, bit 7 kept), every
+  entry 0x11A-0x123 set to the tone, 0xA4 = 0xA5 = 0xA6 = 0xFF, 0xA3 = 0, code "A-B" (0xAF = 0x0A, 0xAE = 0xB0): one
+  gapless tone of at least 25.5 s. The driver starts the sequence again before it runs out (`hrc6000-registers.md` 7.8).
 
 ### 8.1 FM audio paths in the manual (unverified)
 

@@ -128,6 +128,7 @@ static struct {
 	int cw_calls;
 	char cw[64];
 	bool cw_ok, cw_keyed;
+	bool active;		// r_active: the radio has finished a handover enter returned false for
 } r;
 
 static bool r_enter(uint32_t rx);
@@ -144,9 +145,14 @@ static bool r_cw_id(const char *c, uint8_t len)
 	return r.cw_ok;
 }
 static bool r_cw_busy(void) { return r.cw_keyed; }
+static bool r_active(void) { return r.active; }
 
 static const hotspot_radio_ops_t radio_ops = {
 	.enter = r_enter, .set_freq = r_set_freq, .set_power = r_set_power, .leave = r_leave,
+};
+// With the optional active op (a radio whose handover finishes after enter returned)
+static const hotspot_radio_ops_t radio_ops_active = {
+	.enter = r_enter, .active = r_active, .set_freq = r_set_freq, .set_power = r_set_power, .leave = r_leave,
 };
 // The same with the optional RSSI and CW ID ops
 static const hotspot_radio_ops_t radio_ops_full = {
@@ -501,6 +507,25 @@ static void test_slow_enter(void)
 	int e = r.enters;
 	host(MMDVM_GET_VERSION, NULL, 0);
 	CHECK(r.enters == e + 1);
+}
+
+// A radio whose handover finishes after enter returned false (its retune sleeps): the engine starts as soon as the
+// radio says it got there, not HOTSPOT_ENTER_RETRY_MS later. Without that, a refusal still waits the full interval
+static void test_enter_finishes_later(void)
+{
+	reset_world();
+	hotspot_set_radio(&radio_ops_active);
+	r.enter_ok = false;
+	host(MMDVM_GET_VERSION, NULL, 0);
+	CHECK(r.enters == 1 && !hotspot_running());
+	now += 50;
+	host(MMDVM_GET_STATUS, NULL, 0);
+	CHECK(r.enters == 1 && !hotspot_running());	// still refused, still pending: no new try
+	r.active = true;	// the radio task finished the handover
+	r.enter_ok = true;
+	now += 50;
+	host(MMDVM_GET_STATUS, NULL, 0);
+	CHECK(r.enters == 2 && hotspot_running());	// 100 ms after the first try, not a second
 }
 
 static void test_config(void)
@@ -1363,6 +1388,7 @@ int main(void)
 {
 	test_framer();
 	test_version_status();
+	test_enter_finishes_later();
 	test_slow_enter();
 	test_config();
 	test_extension();

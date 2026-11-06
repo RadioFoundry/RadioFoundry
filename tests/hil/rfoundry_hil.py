@@ -229,6 +229,12 @@ def find(lines, prefix):
     return next((line for line in lines if line.startswith(prefix)), None)
 
 
+
+def power_name_watts(name):
+    """A power level's name in watts ("100mW" 0.1, "5W" 5), None for a name without one ("Low")"""
+    m = re.fullmatch(r"\s*([0-9.]+)\s*(m?)W\s*", name or "")
+    return float(m.group(1)) / (1000 if m.group(2) else 1) if m else None
+
 class Radio:
     """The radio under test, over its debug link."""
 
@@ -484,6 +490,37 @@ class Radio:
         return True
 
 
+    @contextlib.contextmanager
+    def debuglink_privacy(self):
+        """Around a test that loads a privacy key over the debug link (dmr_privacy): the radio core writes the key in
+        use back to privacy slot 1, and "off" leaves it in the slot (radio_sm.c, settings write-back), so a slot that
+        was empty is emptied again afterwards (Settings > Privacy > Key type steps Motorola, Anytone, Off). Without
+        this, test_privacy_key_entry later finds a key it won't overwrite."""
+        before = self.view(["storage"]).get("settings.privacy_type")
+        try:
+            yield
+        finally:
+            self.link.dmr_privacy("off")
+            if before == "0":
+                self.privacy_slot_off()
+
+    def privacy_slot_off(self):
+        """Privacy slot 1's key type to Off from the menu, which removes its key (each OK on the row steps the type
+        once). Returns True when it had to change it."""
+        if self.view(["storage"]).get("settings.privacy_type") in (None, "0"):
+            return False
+        self.go_home()
+        for k in ("ok", "7", "4"):
+            self.press(k)
+        for _ in range(3):
+            if self.view(["storage"]).get("settings.privacy_type") == "0":
+                break
+            self.press("ok")
+        self.press("back", LONG)
+        self.wait_for(lambda v: v.get("settings.privacy_type") == "0", sections=("storage",), what="privacy slot off")
+        self.go_home()
+        return True
+
     def language_english(self):
         """Settings > Display > Language back to English. The tests match the English text the debug link reports
         (screens, toasts, banners), so a radio left in another language fails them as if the firmware were wrong. The
@@ -568,14 +605,43 @@ class Radio:
             time.sleep(0.08)
         raise AssertionError(f"could not restore {key} to {target} (now {self.core().get(key)})")
 
-    def lowest_power(self):
-        """Step the power level down to the lowest (a temporary change; restore() puts it back)."""
+    def bench_tx_level(self):
+        """The power level on-air tests key at: 0, the lowest, or with --radio-tx-watts the lowest level whose name
+        (the core view's power_names, at the channel's transmit frequency) reads at least that many watts. A radio
+        whose names hold no power, or firmware without power_names, stays at the lowest."""
+        import hil_config
+        want = hil_config.CONFIG.getoption("--radio-tx-watts") if hil_config.CONFIG is not None else None
+        names = self.core().get("power_names", "")
+        if not want or not names:
+            return 0
+        names = names.split("/")
+        for i, n in enumerate(names):
+            w = power_name_watts(n)
+            if w is None:
+                return 0
+            if w >= want * 0.999:
+                return i
+        return len(names) - 1
+
+    def hotspot_rf_level(self):
+        """The MMDVM RF level (SET_FREQ / SET_CONFIG, 0-255) that gives bench_tx_level(): the smallest the radio
+        maps to it (radio_sm_hotspot_power spreads 0-255 over the power levels, rounding)"""
+        level, n = self.bench_tx_level(), int(self.core().get("power_count") or 1)
+        if level == 0 or n < 2:
+            return 0
+        return max(0, -(-(level * 255 - 127) // (n - 1)))
+
+    def lowest_power(self, absolute=False):
+        """Step the power level to bench_tx_level(), the lowest unless --radio-tx-watts asks for more (a temporary
+        change; restore() puts it back). absolute: the lowest whatever the option (a ham frequency)."""
+        target = 0 if absolute else self.bench_tx_level()
         for _ in range(int(self.core().get("power_count") or 9) + 1):
-            if self.core().get("power") == "0":
+            cur = int(self.core().get("power") or 0)
+            if cur == target:
                 return
-            self.link.power_step(-1)
+            self.link.power_step(1 if cur < target else -1)
             time.sleep(0.08)
-        raise AssertionError(f"could not reach the lowest power (now {self.core().get('power')})")
+        raise AssertionError(f"could not reach power level {target} (now {self.core().get('power')})")
 
     @contextlib.contextmanager
     def vfo_session(self):
@@ -612,10 +678,11 @@ class Radio:
             if self.core().get("mode") != mode:
                 self._req_until(lambda: L.dmr_fields(mode=mode), lambda v: v.get("mode") == mode, "VFO mode back")
 
-    def find_channel(self, rx_hz, mode=None):
-        """Select the first channel receiving on rx_hz (and in mode 'fm' / 'dmr'): the current zone first, then the
-        others in order, so a test doesn't depend on the zone the radio was left in (restore() puts the zone back).
-        Returns the channel's position in the zone it selected. AssertionError if no zone has one."""
+    def find_channel(self, rx_hz, mode=None, duplex=None):
+        """Select the first channel receiving on rx_hz (None: any frequency), in mode 'fm' / 'dmr' and, with duplex
+        True / False, transmitting on another / the same frequency: the current zone first, then the others in order,
+        so a test doesn't depend on the zone the radio was left in (restore() puts the zone back). Returns the
+        channel's position in the zone it selected. AssertionError if no zone has one."""
         L = self.link
         if self.core().get("vfo") == "1":
             self._req_until(lambda: L.vfo(False), lambda v: v.get("vfo") == "0", "VFO off")
@@ -628,10 +695,13 @@ class Radio:
             size = int(self.core().get("zone_size") or 0)
             for pos in range(size):
                 v = self._req_until(lambda: L.zone_pos(pos), lambda x: x.get("zone_pos") == str(pos), f"position {pos}")
-                if int(v["rx_hz"]) == int(rx_hz) and (mode is None or v.get("mode") == mode):
+                if ((rx_hz is None or int(v["rx_hz"]) == int(rx_hz)) and (mode is None or v.get("mode") == mode)
+                        and (duplex is None or (v.get("tx_hz") != v.get("rx_hz")) == duplex)):
                     return pos
             searched.append(f"{self.core().get('zone_name')!r} ({size})")
-        raise AssertionError(f"no channel on {rx_hz / 1e6:.5f} MHz{' ' + mode if mode else ''} in any zone: "
+        on = "on any frequency" if rx_hz is None else f"on {rx_hz / 1e6:.5f} MHz"
+        kind = "" if duplex is None else " duplex" if duplex else " simplex"
+        raise AssertionError(f"no{kind} channel {on}{' ' + mode if mode else ''} in any zone: "
                              f"{', '.join(searched)}")
 
 API_FM_THRESHOLD_DB = 8.0          # sdr_fm_check's keyed threshold on a bench board (analyze_fm)
@@ -905,6 +975,7 @@ class SdrBench:
         self.api_level = api_level      # the board's transmit level 0-255 (None: its own)
         self.lease_max = lease_max
         self._api_session = None
+        self._api_tx_reach = None       # (tx_lo, tx_hi) after a tune in this session (_api_reach)
         self.host = api or dmr_bench.BENCH_HOST
         self.dir = dmr_bench.DIR
         self._run_dirs = []
@@ -965,6 +1036,24 @@ class SdrBench:
         except L.BenchLineError as e:
             self._api_fail(e, f"a claim on {freq} MHz")
 
+    def _api_reach(self, freq):
+        """The TX board's window moved to freq for the session when its transmitter can't reach freq from where it is
+        tuned (info's tx_lo / tx_hi: a board has one synthesizer; both 0: anywhere). The board puts its own window
+        back when the session ends."""
+        reach = self._api_tx_reach
+        if reach is None:
+            w = self._api_info().get("window") or {}
+            reach = (w.get("tx_lo") or 0, w.get("tx_hi") or 0)
+        if reach == (0, 0) or reach[0] <= freq <= reach[1]:
+            return
+        L = self._line()
+        try:
+            r = L.request(L.address(self.api), {"op": "tune", "session": self._api_session, "center": freq})
+        except L.BenchLineError as e:
+            self._api_fail(e, f"a tune to {freq} MHz")
+        w = (r.get("tuned") or {}).get("window") or {}
+        self._api_tx_reach = (w.get("tx_lo") or freq, w.get("tx_hi") or freq)
+
     def _api_job(self, tool, args, expect_s=None, wait_start=True):
         """A bench_tx / bench_repeater command line as a job on the TX board, started in the background: returns
         once the board started it (it may have queued behind another session's job). The job's records and log
@@ -1018,6 +1107,7 @@ class SdrBench:
         if mode not in modes:
             skip("bench", f"the bench board {self.api} doesn't transmit {name} (its signal modes: {modes or 'none'})")
         L = self._line()
+        self._api_reach(freq)
         self._api_claim(freq)
         req = {"op": "tx", "mode": mode, "freq": freq, "session": self._api_session, "max_s": max_s,
                "program": program, "wait_max": self.dmr_bench.WAIT_MAX,
@@ -1130,6 +1220,7 @@ class SdrBench:
                 s.cancel()
                 raise RuntimeError(f"the bench board gave no session: {s.error or s.replies}")
             self._api_session = s.replies[0]["session"]
+            self._api_tx_reach = None
             self.leased = True
             try:
                 yield
@@ -1139,6 +1230,7 @@ class SdrBench:
                 self.bg = []
                 s.cancel()
                 self._api_session = None
+                self._api_tx_reach = None
                 self.leased = False
             return
         shared = self.bench.uses_daemon()
@@ -1181,7 +1273,10 @@ class SdrBench:
         return f"runs/{name}"     # relative: bench_tx.py runs in ~/<dir>, and a quoted "~" would not expand
 
     def sync_tool(self, local):
-        """Copy one tool (e.g. tools/sdr_fm_check.py) into the bench directory; returns its name there."""
+        """Copy one tool (e.g. tools/sdr_fm_check.py) into the bench directory; returns its name there. With a bench
+        board the analyzers run here: nothing to copy, the local path."""
+        if self.api:
+            return local
         name = os.path.basename(local)
         self.ssh(f"mkdir -p ~/{self.dir}")
         subprocess.run(["scp", "-q", local, f"{self.host}:{self.dir}/{name}"], check=True, timeout=120)
@@ -1628,6 +1723,10 @@ class SdrBench:
 
     API_CAPTURE_BW = 40000.0        # Hz: the channel cut on the board, wider than a 25 kHz FM channel's spectrum
     API_CAPTURE_PRE_S = 1.0         # s of history before the key-up
+    # dB over the channel's floor that fires the trigger (the board's default is 10). The receive board's front end
+    # compresses near a transmitting radio: the radio read 11-12 dB over the floor at 100 mW and at 5 W alike, so at
+    # 10 dB a small swing of the floor let it miss the key-up and the capture came back empty
+    API_CAPTURE_THRESHOLD_DB = 6.0
 
     def _api_capture_start(self, run_dir, freq, seconds, name):
         """The receive board's channel at freq as I/Q (cs16, about 48 kS/s, centered on it; the line protocol's
@@ -1668,7 +1767,7 @@ class SdrBench:
             elif "done" in d:
                 st["meta"] = d["done"]
         req = {"op": "trigger", "freq": freq, "bw": self.API_CAPTURE_BW, "fmt": "cs16", "pre_s": self.API_CAPTURE_PRE_S,
-               "post_s": float(seconds), "timeout_s": float(seconds)}
+               "post_s": float(seconds), "timeout_s": float(seconds), "threshold_db": self.API_CAPTURE_THRESHOLD_DB}
 
         def run():
             try:
@@ -1698,7 +1797,7 @@ class SdrBench:
                 if gap > 0 or zeros:
                     err.append(BenchFault(f"the bench board lost samples in the capture (gap_samples {gap}, "
                                           f"{zeros / 4 / rate:.3f} s of zero runs); it can't judge the radio"))
-                meta = {"center": freq * 1e6, "rate": rate, "fmt": "cs16",
+                meta = {"center": freq * 1e6, "rate": rate, "fs": rate, "fmt": "cs16",     # fs: sdrmon.py's name
                         # The board's ppm is its sample clock's rate error (timestamps); its I/Q is on frequency, so
                         # the analyzers must not correct the carrier by it
                         "ppm": 0.0, "clock_ppm": info.get("window", {}).get("ppm"), "freq": freq * 1e6,
@@ -1892,15 +1991,45 @@ class SdrBench:
         return self.analyze_dmr(w["cap"], w["freq"], w["cc"])
 
     def need_dmr_waveform(self):
-        """Skip now, before the radio keys, when analyze_dmr() can't run here: sdrmon.py's waveform analysis runs on
-        the bench host only."""
-        self._no_api("sdrmon.py waveform analysis (analyze_dmr)")
+        """Skip now, before the radio keys, when analyze_dmr() can't run here. With a bench board sdrmon.py runs on
+        this machine on the board's channel I/Q, and needs the rfoundry_sdrbench package (installed, or a checkout in
+        $RFOUNDRY_SDRBENCH)."""
+        if self.api and self._sdrbench_env() is None:
+            skip("bench", "sdrmon.py's waveform analysis (analyze_dmr) needs the rfoundry_sdrbench package here "
+                          "(installed, or a checkout in $RFOUNDRY_SDRBENCH)")
 
-    def analyze_dmr(self, capture, freq, cc):
+    @staticmethod
+    def _sdrbench_env():
+        """The environment that lets a tool on this machine import rfoundry_sdrbench, None when it can't."""
+        env = dict(os.environ)
+        d = os.environ.get("RFOUNDRY_SDRBENCH")
+        if d:
+            env["PYTHONPATH"] = os.pathsep.join(x for x in (d, env.get("PYTHONPATH")) if x)
+        r = subprocess.run([sys.executable, "-c", "import rfoundry_sdrbench.channelizer"], env=env,
+                           capture_output=True, timeout=60)
+        return env if r.returncode == 0 else None
+
+    def analyze_dmr(self, capture, freq, cc, cach=False):
         """sdrmon.py analyze: every burst with its sync, CC, LC, timing, frequency offset, edges (a dict). From raw
         I/Q: use it only for what the burst records (dmr_watch_start) lack: the waveform (keying edges, ramps, power
-        steps, overlaps, CACH decode)."""
-        txt = self.ssh(f"cd ~/{self.dir} && {self.py} sdrmon.py analyze {capture} --freq {freq} --cc {cc} "
+        steps, overlaps, CACH decode). With a bench board, on this machine on the board's channel I/Q (48 kS/s, the
+        analysis's own rate, centered on the channel)."""
+        extra = " --cach" if cach else ""
+        if self.api:
+            env = self._sdrbench_env()
+            if env is None:
+                skip("bench", "sdrmon.py needs the rfoundry_sdrbench package here")
+            r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "bench", "sdrmon.py"), "analyze", capture,
+                                "--freq", str(freq), "--cc", str(cc), "--json", capture + ".analysis.json"]
+                               + (["--cach"] if cach else []), env=env, capture_output=True, text=True, timeout=600)
+            with open(capture + ".txt", "w") as fh:
+                fh.write(r.stdout + r.stderr)
+            print("\n".join((r.stdout + r.stderr).splitlines()[-40:]))
+            if r.returncode != 0 or not os.path.exists(capture + ".analysis.json"):
+                raise RuntimeError(f"sdrmon.py analyze failed ({r.returncode}): {(r.stdout + r.stderr)[-1500:]}")
+            with open(capture + ".analysis.json") as fh:
+                return json.load(fh)
+        txt = self.ssh(f"cd ~/{self.dir} && {self.py} sdrmon.py analyze {capture} --freq {freq} --cc {cc}{extra} "
                        f"--json {capture}.json > {capture}.txt 2>&1; cat {capture}.json", timeout=600)
         return json.loads(txt)
 

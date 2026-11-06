@@ -125,7 +125,8 @@ The block grew from 10 to 16 bytes without a new version: hosts read the bytes t
 | 7 | options: bit 0 RX_META events (RX half, 3.10). Other bits must be 0 | 0 | 0-1 |
 
 Result 2 when the hotspot hasn't taken the modem yet (send GET_VERSION or SET_FREQ first) or the driver lacks the
-operations of that role (INFO byte 1); 4 for a role above 2 or an unknown option bit. Setting the same role again only updates the parameters.
+operations of that role (INFO byte 1). Taking the modem can lag the first commands by a retune (about 50 ms on a radio
+whose synthesizer is slow to settle), so a host asks again for up to 2 s while INFO offers the role; 4 for a role above 2 or an unknown option bit. Setting the same role again only updates the parameters.
 Changing role drops whatever the previous role had (buffers, epoch, calls going up get their DMR_LOST). Role 0 is
 always accepted.
 
@@ -481,7 +482,7 @@ the two radios.
 1. Open both ports. On each: GET_VERSION; require ` SPLIT1` in the description. SET_FREQ with the repeater pair (RX =
    f_in, TX = f_out, RF level from upstream) and SET_CONFIG (duplex flag clear, upstream's color code) to **both**.
 2. INFO on each; require bit 0 of byte 1 on TX, bit 1 on RX. SET_ROLE 1 on TX, SET_ROLE 2 on RX (lease 10 s; the power
-   cap and prebuffer you want).
+   cap and prebuffer you want), repeated on result 2 for up to 2 s (3.2).
 3. Time sync (section 6): TIME to each, at least 8 samples 20 ms apart, then every 1 s. GET_EPOCH from TX, SET_EPOCH to
    RX. Only then report the virtual modem ready upstream.
 4. Keep both leases: TIME every 1 s does it. If either radio fails (no TIME reply for 3 s, a role lost in INFO), report

@@ -44,6 +44,9 @@ typedef struct {
 	uint32_t no_stream;	// patterns dropped: no PCM audio, or the stream would not start (no codec clock)
 	uint32_t blocks;	// 20 ms blocks with a beep in them
 	uint32_t stalls;	// own streams given up: no block for STALL_POLLS polls (the codec clock stopped)
+	uint32_t shared;	// patterns mixed into the voice stream (no lead-in of their own)
+	uint32_t leads;		// silent lead-in blocks played on the own stream
+	uint32_t warms;		// times the amplifier was powered up ahead of a sound (hal_audio_t.speaker_warm)
 } beep_stats_t;
 
 #define BEEP_SEGS_MAX	6
@@ -53,8 +56,15 @@ void beep_init(const hal_audio_t *audio);
 // Start a pattern at level 1..100 (0 or BEEP_NONE: nothing). shared: the DMR voice stream is running and mixes the
 // beep in; otherwise the beep starts its own stream. Replaces a pattern still playing
 void beep_play(beep_t b, uint8_t level, bool shared);
-// Every radio poll: stop the beep's own stream once the pattern is over (shared: the voice stream took over)
-void beep_service(bool shared);
+// Every radio poll: stop the beep's own stream once the pattern is over (shared: the voice stream took over), and
+// let the amplifier go once its hang has run out
+void beep_service(bool shared, uint32_t now_ms);
+#define BEEP_SERVICE_NOW	1	// beep_service takes now_ms (the beep reel builds older beep.h files too)
+// The user or the radio did something a sound may follow (a key, PTT, a reception, a beep): on a board with
+// speaker_hang_s, power the amplifier now and hold it for that long
+void beep_warm(uint32_t now_ms);
+// The amplifier is held powered (beep_warm)
+bool beep_warm_on(void);
 // From an audio block callback: add the beep to the block (saturating). True while the beep sounds
 bool beep_mix(int16_t *spk);
 // Whether a pattern is still playing (as last seen by the audio side)

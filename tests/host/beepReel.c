@@ -149,8 +149,13 @@ static void pump_to(uint32_t ms)
 {
 	while (audio_ms < ms) {
 		uint32_t t = audio_ms - audio_t0;
-		if (t % POLL_MS == 0)
-			beep_service(false);
+		if (t % POLL_MS == 0) {
+#ifdef BEEP_SERVICE_NOW
+			beep_service(false, audio_ms);
+#else
+			beep_service(false);	// a base commit's beep.h from before the amplifier hang
+#endif
+		}
 		if (t % BLOCK_MS == 0) {
 			int16_t mic[AUDIO_BLOCK_SAMPLES] = { 0 }, spk[AUDIO_BLOCK_SAMPLES] = { 0 };
 			if (cb != NULL)

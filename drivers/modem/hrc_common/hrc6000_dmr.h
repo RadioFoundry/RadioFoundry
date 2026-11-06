@@ -150,6 +150,7 @@ typedef struct {
 	uint32_t tx_empty;	// slots left empty on request (DMR_BURST_EMPTY)
 	uint32_t rf_fail;	// RF switches the board could not do
 	uint32_t stalls;	// timing stopped while busy (200 ms without a timeslot interrupt)
+	uint32_t tx_stalls;	// ... of those: while sending, the transmission dropped (a lost timeslot interrupt)
 	uint32_t rs_why[HRC6000_RS_COUNT];	// receiver restarts by reason
 	uint32_t by_class[4];	// every received-data report by 0x51 bits 1-0, before any filtering
 	uint32_t by_type[16];	// ... by 0x51 bits 7-4

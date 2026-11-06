@@ -851,8 +851,23 @@ static void test_tx_rejected_and_stall(void)
 	hrc6000_dmr_poll(&eng);
 	drain();
 	CHECK(count_ev(DMR_EV_TX_DONE) == 1 && count_ev(DMR_EV_SYNC_LOST) == 1);
-	CHECK(!hrc6000_dmr_is_transmitting(&eng) && eng.st.stalls == 1);
+	CHECK(!hrc6000_dmr_is_transmitting(&eng) && eng.st.stalls == 1 && eng.st.tx_stalls == 1);
 	CHECK(locks == unlocks);
+}
+
+// Timing stops mid-reception: a stall, but not a transmission's (health() counts only those as lost interrupts)
+static void test_rx_stall(void)
+{
+	fresh_engine();
+	uint32_t t = 2000000;
+	ts_at(t);
+	report_at(t + 4000, 0x12, 0x20, 0x00);	// a voice LC header heard
+	drain();
+	CHECK(eng.st.rx_lc_header == 1);
+	t_us = t + 260000;
+	hrc6000_dmr_poll(&eng);
+	drain();
+	CHECK(eng.st.stalls == 1 && eng.st.tx_stalls == 0 && count_ev(DMR_EV_SYNC_LOST) == 1);
 }
 
 static void test_cc_follow(void)
@@ -1083,6 +1098,7 @@ int main(void)
 	test_tx_aligned_rmo();
 	test_tc_locked_one_in_two();
 	test_tx_rejected_and_stall();
+	test_rx_stall();
 	test_cc_follow();
 	test_rx_repeat_report();
 	test_idle_restart_once();
