@@ -76,6 +76,7 @@ sources = ["a program flash read of the radio"]
 # Bring-up features without a switch that the hardware rules out (tools/bringup.py)
 [features]
 key_lock = { state = "n/a", reason = "PTT, two side keys and the channel switch: no keypad a lock would protect" }
+dmr_iddb = { state = "n/a", reason = "no display: the ID database only names callers on the screen" }
 
 # How the site draws the radio
 [frame]
