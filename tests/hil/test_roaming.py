@@ -137,13 +137,14 @@ def _site_zone(img):
 def _bench_site_written(radio, backup_dir, pytestconfig, rx, tx):
     """No duplex DMR channel receives rx: the first site of the codeplug's first roaming zone becomes the bench site
     (RX rx, TX tx, the bench's color code), and the zone's other sites that transmit where the rig may not transmit on
-    rx. Written over CPS for the test and put back after."""
+    rx. Every site's power is the bench level (site_power). Written over CPS for the test and put back after."""
     if not pytestconfig.getoption("--allow-codeplug-write"):
         skip("opt_in", f"no duplex DMR channel receives {rx} MHz: run with --allow-codeplug-write to make a roaming "
                        "zone's site the bench site (written for the test, put back after)")
     import cps_client
     from test_cps import codeplug_edited
     cc = rig(pytestconfig, "dmr-cc")
+    level, count = site_power(radio)
 
     def edit(img):
         z = _site_zone(img)
@@ -158,6 +159,8 @@ def _bench_site_written(radio, backup_dir, pytestconfig, rx, tx):
         for n in sites[1:]:
             if not hil_config.tx_allowed(pytestconfig, cps_client.decode_channel(img, n)["tx_hz"] / 1e6):
                 cps_client.set_channel_tx(img, n, round(rx * 1e6))
+        for n in sites:
+            cps_client.set_channel_power(img, n, level, count)
     with codeplug_edited(radio, backup_dir, edit, "roam"):
         radio.find_channel(round(rx * 1e6), "dmr", duplex=True)
         radio.wait_for(lambda x: x.get("tx_hz") == str(round(tx * 1e6)), timeout=5, what="the bench site's TX")
@@ -168,9 +171,9 @@ def _bench_site_written(radio, backup_dir, pytestconfig, rx, tx):
 def bench_sites(radio, backup_dir, pytestconfig, rx, tx):
     """The roaming zone's sites on frequencies this bench serves, for the test. The bench site (the first duplex DMR
     channel receiving rx) transmits on tx, and every other site whose TX the rig may not transmit on (tx_mhz) transmits
-    on rx instead, so a wake probe there stays on an allowed frequency where the bench repeater doesn't listen. Written
-    over CPS and put back afterwards (needs --allow-codeplug-write); nothing is written when the codeplug has them so
-    already. With no duplex DMR channel on rx, a roaming zone's first site is moved there (_bench_site_written)."""
+    on rx instead, so a wake probe there stays on an allowed frequency where the bench repeater doesn't listen; every
+    site's power is the bench level (site_power). Written over CPS and put back afterwards (needs
+    --allow-codeplug-write); nothing is written when the codeplug has them so already. With no duplex DMR channel on rx, a roaming zone's first site is moved there (_bench_site_written)."""
     try:
         radio.find_channel(round(rx * 1e6), "dmr", duplex=True)
     except AssertionError:
@@ -182,7 +185,9 @@ def bench_sites(radio, backup_dir, pytestconfig, rx, tx):
         skip("state", "the bench repeater's channel is not a site with a second site (same talkgroup) in its zone")
     bench_ch = v["channel_number"]
     numbers = {v[f"site.{i}"].split(":")[0] for i in range(as_int(v["roam.sites"]))}
+    level, count = site_power(radio)
     want = {}           # channel number -> the TX it needs
+    power = set()       # the sites whose power isn't the bench level
     size = as_int(radio.core().get("zone_size") or "0")
     for pos in range(size):
         radio.link.zone_pos(pos)
@@ -192,22 +197,34 @@ def bench_sites(radio, backup_dir, pytestconfig, rx, tx):
             want[int(n)] = round(tx * 1e6)
         elif n in numbers and n != bench_ch and not hil_config.tx_allowed(pytestconfig, cur / 1e6):
             want[int(n)] = round(rx * 1e6)
-    if not want:
+        if n in numbers and as_int(c.get("power") or "0") != level:
+            power.add(int(n))
+    if not want and not power:
         yield
         return
     if not pytestconfig.getoption("--allow-codeplug-write"):
-        skip("opt_in", f"the zone's sites need TX frequencies the bench serves ({want}): run with "
-                       "--allow-codeplug-write (written for the test, put back after)")
+        skip("opt_in", f"the zone's sites need TX frequencies the bench serves ({want}) and power level {level} "
+                       f"(channels {sorted(power)}): run with --allow-codeplug-write (written for the test, put back "
+                       "after)")
     import cps_client
     from test_cps import codeplug_edited
 
     def edit(img):
         for n, hz in want.items():
             cps_client.set_channel_tx(img, n, hz)
+        for n in power:
+            cps_client.set_channel_power(img, n, level, count)
     with codeplug_edited(radio, backup_dir, edit, "roam"):
         radio.find_channel(round(rx * 1e6), "dmr", duplex=True)
         radio.wait_for(lambda x: x.get("tx_hz") == str(round(tx * 1e6)), timeout=5, what="the bench site's TX")
         yield
+
+
+def site_power(radio):
+    """(level, count): the power level the sites are written with, the bench's (Radio.bench_tx_level), and the radio's
+    number of levels. A wake probe keys at the site's own power: a power changed for now is a temporary change, and
+    any temporary change blocks a search (dmr-roaming.md 4.3)."""
+    return radio.bench_tx_level(), as_int(radio.core().get("power_count") or "0")
 
 
 def zone_on(radio):
@@ -364,7 +381,8 @@ def _roam_to_bench_repeater(roaming, sdr_bench, pytestconfig, rx, tx):
             break
     else:
         skip("state", "no other site to start from")
-    roaming.lowest_power()
+    roaming.lowest_power()      # nothing to step: bench_sites wrote the bench level into every site
+    assert roaming.core().get("temporary") == "0", "a temporary change on the site: it blocks the search"
     L.setting("roam_probe", 1)
     # The lowest threshold: the test is the wake-up and the move, not the bench's level (a bench SDR's outbound can
     # reach the radio near -120 dBm, under the -105 default, and a site under it is never chosen). The fixture puts

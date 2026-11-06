@@ -377,6 +377,22 @@ def set_channel_rx(img, number, hz):
     img[a + 0x10:a + 0x14] = _bcd_freq(hz)
 
 
+CH_POWER = 0x19                 # 0: the radio's master power, else the 10-step scale (open-firmware-cps.md 7.3.3)
+
+
+def power_byte(level, count):
+    """The power byte that reads as power level `level` on a radio with `count` levels (core/codeplug power_to_byte)"""
+    if count < 2 or count >= 9:
+        return level + 1
+    return (level * 9 + (count - 1) // 2) // (count - 1) + 1
+
+
+def set_channel_power(img, number, level, count):
+    """Set the channel's power to level `level` of a radio with `count` levels."""
+    _, a = channel_addr(number)
+    img[a + CH_POWER] = power_byte(level, count)
+
+
 def channel_dmr(img, number):
     """(DMR, color code, TX contact index) of a channel record (open-firmware-cps.md 7.3.3)"""
     _, a = channel_addr(number)

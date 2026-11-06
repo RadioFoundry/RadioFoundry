@@ -59,6 +59,28 @@ def test_channels(sim):
         check('contact 1 "TG 91" id 91 type 0' in out, f"contact: {out}")
 
 
+def firmware_power(n, count):
+    """The level the firmware reads from power byte n (core/codeplug power_from_byte)"""
+    step = n - 1
+    if count == 0 or count >= 9:
+        return count - 1 if count and step >= count else step
+    return (min(step, 9) * (count - 1) + 4) // 9
+
+
+def test_power_byte():
+    """power_byte reads back as the same level on every level count, and set_channel_power writes it (test_roaming's
+    sites at the bench level)"""
+    for count in range(1, 17):
+        for level in range(count):
+            n = cps_client.power_byte(level, count)
+            check(1 <= n <= max(10, count) and firmware_power(n, count) == level,
+                  f"power_byte({level}, {count}) = {n} reads as {firmware_power(n, count)}")
+    img = bytearray(b"\xff" * cps_client.IMAGE_SIZE)
+    cps_client.set_channel_power(img, 2, 1, 5)
+    _, a = cps_client.channel_addr(2)
+    check(img[a + 0x19] == 3, f"set_channel_power: byte {img[a + 0x19]}")
+
+
 def main():
     sim = os.path.join(HERE, "cpsSim")
     regions = cps_client.REGIONS["qdmr"]
@@ -148,6 +170,7 @@ def main():
         rc = cps_client.main(["--exec", f"{sim} --image {dump}", "--quiet", "verify", path])
         check(rc == 0, "cps_client verify")
     test_channels(sim)
+    test_power_byte()
     print(f"# cpsClientTest {'FAILED' if failures else 'PASSED'} ({failures} failures)")
     return 1 if failures else 0
 
