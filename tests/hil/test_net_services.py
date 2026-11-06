@@ -26,11 +26,11 @@ import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, as_int, skip
+from rfoundry_hil import as_int, skip
 import cps_client
 import tftp_client
 
-from test_usb_network import INDIVIDUAL_NET, _serial_back, _udp_link
+from test_usb_network import INDIVIDUAL_NET, _udp_link
 
 QDMR = cps_client.REGIONS["qdmr"]
 IMAGE = 0xAEE60
@@ -58,18 +58,12 @@ def network_mode(radio):
             except Exception:
                 pass
             udp.close()
-        if not _serial_back(20):
+        if not radio.serial_back(20):
             again = _udp_link(radio_ip, 10)
             if again is not None:
                 again.usb_network(False)
                 again.close()
-            assert _serial_back(20), "the radio didn't come back as a serial port"
-        for _ in range(40):
-            try:
-                radio.link = DebugLink(radio.port, timeout=1.5)
-                break
-            except Exception:
-                time.sleep(0.25)
+            assert radio.serial_back(20), "the radio didn't come back as a serial port"
 
 
 def need(radio, feature):

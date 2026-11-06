@@ -499,7 +499,7 @@ static void refRs129(const uint8_t *in, uint8_t *par)
 
 static void testCrc(void)
 {
-	uint8_t lc[12] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x23, 0xCA, 0xCE };// TG 9 from 2345678
+	uint8_t lc[12] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x98, 0x8A, 0xE6 };// TG 9 from 9997030
 	uint8_t csbk[10] = { 0xBD, 0x00, 0x80, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x01 };
 	uint8_t par[4];
 	dmrBurst_t built;
@@ -553,10 +553,10 @@ static void putMiddle(uint8_t *frame, uint64_t v)
 
 static void testRaw(void)
 {
-	uint8_t frame[33], info[12], dt = 0, sync = 0, ambe[27], in[12] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0xD7, 0x98, 0x7E, 0x9D };
+	uint8_t frame[33], info[12], dt = 0, sync = 0, ambe[27], in[12] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0xD7, 0x98, 0x8F, 0xDD };
 	uint8_t par[4];
 
-	// A terminator for TG 215 from 9990301, CC 2: BPTC, slot type, MS data sync, as the hotspot builds them
+	// A terminator for TG 215 from 9998301, CC 2: BPTC, slot type, MS data sync, as the hotspot builds them
 	refRs129(in, par);
 	in[9] = par[2] ^ 0x99;
 	in[10] = par[1] ^ 0x99;
@@ -607,8 +607,8 @@ static void testRaw(void)
 
 static void testLcGuess(void)
 {
-	// On air (test 9): the bench modem's call TG 215 from 9990301, a terminator heard while keyed, data type read as 0
-	static const uint8_t LC[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0xD7, 0x98, 0x7E, 0x9D };
+	// On air (test 9): the bench modem's call TG 215 from 9998301, a terminator heard while keyed, data type read as 0
+	static const uint8_t LC[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0xD7, 0x98, 0x8F, 0xDD };
 	static const uint8_t BAD[12] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0xC3, 0xD0, 0x70, 0xDD, 0x93, 0x86, 0x13 };
 	static const uint8_t NOT_OURS[12] = { 0x00, 0x00, 0x20, 0x00, 0x00, 0xC3, 0xD0, 0x70, 0xDD, 0x93, 0x86, 0x13 };
 	uint8_t none[9] = { 0 }, good[12], par[4];

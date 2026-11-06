@@ -19,6 +19,9 @@ Each key does the same kind of thing on every screen.
 The bottom line of most screens is the hint row. It shows what the nearest keys do there. What **Back** does is at
 its right end, above the **Back** key.
 
+Menus initially select the first available item. You can still move to a dimmed item and press **OK** to see why
+it is unavailable. **Back** restores your previous menu selection.
+
 ## Key reference
 
 The keys are named by their job ([Conventions](01-introduction.md#conventions-in-this-manual)).
@@ -78,7 +81,7 @@ On Home (not in the VFO), a number key opens Find. Find searches everything at o
 this order:
 
 1. The channel at that position in the current zone. "12" lists channel 12.
-2. The digits as a frequency in one of the radio's bands, read as in the VFO: "461462" lists "Tune VFO to 461.462".
+2. The digits as a frequency in one of the radio's bands, read as in the VFO: "438250" lists "Tune VFO to 438.250".
    **OK** opens the VFO on it. The VFO's mode, power and tones stay as they were.
 3. Channels in the zone, contacts and talkgroups, zones, places (Contacts, Messages and so on) and settings whose
    names match the keys as letters.

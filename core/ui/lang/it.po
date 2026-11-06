@@ -636,7 +636,7 @@ msgstr "Beacon automatici"
 msgid "Frequency"
 msgstr "Frequenza"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Power"
 msgstr "Potenza"
 
@@ -2921,6 +2921,14 @@ msgid "Connections"
 msgstr "Connessioni"
 
 #: core/ui/ui_menus.c
+msgid "Power saving"
+msgstr "Risparmio energia"
+
+#: core/ui/ui_menus.c
+msgid "Power Saving"
+msgstr "Risparmio energia"
+
+#: core/ui/ui_menus.c
 msgid "Keys"
 msgstr "Tasti"
 
@@ -3333,6 +3341,10 @@ msgid "WAITING"
 msgstr "ATTESA"
 
 #: core/ui/ui_screens.c
+msgid "ADMITTED"
+msgstr "AMMESSO"
+
+#: core/ui/ui_screens.c
 msgid "ENDING"
 msgstr "FINE"
 
@@ -3545,6 +3557,10 @@ msgid "No calls yet"
 msgstr "Ancora nessuna chiamata"
 
 #: core/ui/ui_screens.c
+msgid "{Power|Pwr}"
+msgstr "{Potenza|Pot}"
+
+#: core/ui/ui_screens.c
 msgid "{Squelch|SQL}"
 msgstr "{Squelch|SQL}"
 
@@ -3669,12 +3685,12 @@ msgid "Couldn't read the channel: for now only"
 msgstr "Lettura canale non riuscita: solo per ora"
 
 #: core/ui/ui_svc_storage.c
-msgid "Codeplug not written: for now only"
-msgstr "Scrittura codeplug non riuscita: solo per ora"
-
-#: core/ui/ui_svc_storage.c
 msgid "Not a stored contact: for now only"
 msgstr "Non è un contatto salvato: solo per ora"
+
+#: core/ui/ui_svc_storage.c
+msgid "Codeplug not written: for now only"
+msgstr "Scrittura codeplug non riuscita: solo per ora"
 
 #: core/ui/ui_svc_storage.c
 msgid "Reset: the settings couldn't be saved"

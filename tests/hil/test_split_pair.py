@@ -33,6 +33,7 @@ import time
 import pytest
 
 from rfoundry_hil import skip
+from hil_config import rig
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -182,7 +183,7 @@ def test_split_pair_handheld(radio, sdr_bench, pytestconfig, backup_dir):
     import split_duplex_host as sdh
     from rfoundry_hil import Radio
     from test_cps import codeplug_edited
-    fin, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    fin, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     slots = [int(x) for x in pytestconfig.getoption("--split-ms-ts").split(",")]
     ms = Radio(ms_port)
     try:
@@ -276,7 +277,7 @@ def handheld_call(radio, ms, sdr_bench, rx_port, fin, fout, cc, ts, own):
     hdr_out = [b for b in ours if b["kind"] == "VLC_HDR"]
     hdr_in = [b for b in sdr_in["bursts"] if b["kind"] == "VLC_HDR" and (b.get("lc") or {}).get("src") == own]
     print(f"input: {len([b for b in sdr_in['bursts'] if b['family'] in ('ms', 'emb')])} subscriber bursts; outbound: "
-          f"{len(ours)} call bursts by slot {out_ts} (grid {grid}), headers {len(hdr_out)}; captures ~/{sdr_bench.dir}/{rdir}/")
+          f"{len(ours)} call bursts by slot {out_ts} (grid {grid}), headers {len(hdr_out)}; captures {sdr_bench.run_path(rdir)}")
     if hdr_in and hdr_out and t0_in and t0_out:
         print(f"repeat delay: {((t0_out + hdr_out[0]['t_ms'] / 1e3) - (t0_in + hdr_in[0]['t_ms'] / 1e3)) * 1e3:.0f} ms")
 

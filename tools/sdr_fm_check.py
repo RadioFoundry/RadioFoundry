@@ -64,9 +64,33 @@ DCS = [0o023, 0o025, 0o026, 0o031, 0o032, 0o036, 0o043, 0o047, 0o051, 0o053, 0o0
        0o627, 0o631, 0o632, 0o654, 0o662, 0o664, 0o703, 0o712, 0o723, 0o731, 0o732, 0o734, 0o743, 0o754]
 DCS_RATE = 134.4
 
-FS_IN = 1536000.0
+FS_IN = 1536000.0               # the capture's rate (--rate, or its CAPTURE.json; set_rate)
+SAMPLE = (np.int8, 128.0)       # the capture's sample type and full scale (set_format: cs8 or cs16)
 D1, D2, D3 = 8, 4, 3            # 1.536 MHz -> 192 kHz -> 48 kHz -> 16 kHz
 FS_AUDIO = FS_IN / (D1 * D2 * D3)
+
+
+def set_format(fmt):
+    """The capture's sample format: cs8 (rtl_sdr, the default) or cs16 (interleaved int16 I/Q)."""
+    global SAMPLE
+    if fmt not in (None, 'cs8', 'cs16'):
+        raise SystemExit('sample format %s: needs cs8 or cs16' % fmt)
+    SAMPLE = (np.int16, 32768.0) if fmt == 'cs16' else (np.int8, 128.0)
+
+
+def set_rate(rate):
+    """The capture's sample rate. A multiple of 192 kHz: the first stage decimates it to 192 kHz (none at 192
+    kHz). 96 or 48 kHz (a channel captured narrow): no first stage, and the second decimates less, to 48 kHz."""
+    global FS_IN, D1, D2
+    d = int(round(rate / 192000.0))
+    if d >= 1 and abs(rate - d * 192000.0) <= 1.0:
+        FS_IN, D1, D2 = float(rate), d, 4
+        return
+    for k in (2, 4):
+        if abs(rate * k - 192000.0) <= 1.0:
+            FS_IN, D1, D2 = float(rate), 1, 4 // k
+            return
+    raise SystemExit('sample rate %g: needs a multiple of 192 kHz, or 96 or 48 kHz' % rate)
 POWER_WIN_S = 0.01
 EDGE_S = 0.05                   # skipped at each end of a keyed segment (key-up / key-down transients)
 CTCSS_MIN_DB = 25.0             # a CTCSS line stands this far above the 60-260 Hz median
@@ -144,7 +168,7 @@ def demodulate(path, offset, bw_khz, chunk):
     """Stream the capture: returns (16 kHz discriminator output in Hz, 10 ms power in dBFS)."""
     cutoff = 10000.0 if bw_khz < 20 else 16000.0     # channel filter: Carson bandwidth plus room for the noise band
     fs1, fs2 = FS_IN / D1, FS_IN / (D1 * D2)
-    st1 = Decimator(lowpass(40000.0, FS_IN, 31), D1, np.complex64)
+    st1 = Decimator(lowpass(40000.0, FS_IN, 31), D1, np.complex64) if D1 > 1 else (lambda x: x)
     st2 = Decimator(lowpass(cutoff, fs1, 321), D2, np.complex64)
     st3 = Decimator(lowpass(7000.0, fs2, 95), D3, np.float32)
     win = int(round(fs2 * POWER_WIN_S))
@@ -154,11 +178,11 @@ def demodulate(path, offset, bw_khz, chunk):
     k0 = 0
     with open(path, 'rb') as f:
         while True:
-            raw = np.fromfile(f, dtype=np.int8, count=2 * chunk)
+            raw = np.fromfile(f, dtype=SAMPLE[0], count=2 * chunk)
             n = len(raw) // 2
             if n == 0:
                 break
-            iq = (raw[0:2 * n:2].astype(np.float32) + 1j * raw[1:2 * n:2].astype(np.float32)) / 128.0
+            iq = (raw[0:2 * n:2].astype(np.float32) + 1j * raw[1:2 * n:2].astype(np.float32)) / SAMPLE[1]
             iq -= iq.mean()                                         # the DC spike at the tuner center
             ph = (-offset / FS_IN) * (np.arange(n, dtype=np.float64) + k0)
             ph -= np.floor(ph)
@@ -178,7 +202,7 @@ def demodulate(path, offset, bw_khz, chunk):
     if not audio:
         return np.zeros(0, np.float32), np.zeros(0)
     # The three filters delay the output; shift it back so times line up with the power track
-    delay = (30 / 2.0) / FS_IN + (320 / 2.0) / fs1 + (94 / 2.0) / fs2
+    delay = (30 / 2.0 if D1 > 1 else 0.0) / FS_IN + (320 / 2.0) / fs1 + (94 / 2.0) / fs2
     a = np.concatenate(audio)
     a = a[int(round(delay * FS_AUDIO)):]
     return a, np.concatenate(power)
@@ -647,6 +671,8 @@ def analyze(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('capture', help='rtl_sdr capture: interleaved int8 I/Q (CS8), 1.536 Msps')
+    ap.add_argument('--rate', type=float, default=None,
+                    help='sample rate, Hz, a multiple of 192 kHz (default: CAPTURE.json, else 1.536 MHz)')
     ap.add_argument('--offset', type=float, required=True, help='channel frequency minus tuner center, Hz')
     ap.add_argument('--center', type=float, default=None, help='tuner center frequency, Hz (for --ppm; default: CAPTURE.json)')
     ap.add_argument('--ppm', type=float, default=None, help="the SDR's frequency error, ppm (needs --center; default: CAPTURE.json)")
@@ -663,6 +689,7 @@ def main():
     ap.add_argument('--tone-snr', type=float, help='report the SINAD of a test tone at this frequency, Hz')
     ap.add_argument('--levels', action='store_true', help='print the voice band rms deviation every 50 ms')
     ap.add_argument('--track', action='store_true', help='print the carrier frequency every 50 ms of each segment')
+    ap.add_argument('--fmt', choices=('cs8', 'cs16'), help='sample format (default: CAPTURE.json, else cs8)')
     ap.add_argument('--chunk', type=int, default=384000, help='I/Q samples per processing chunk')
     args = ap.parse_args()
     meta = {}
@@ -670,12 +697,14 @@ def main():
         with open(args.capture + '.json') as f:
             meta = json.load(f)
     for key, flag in (('center', '--center'), ('ppm', '--ppm')):
-        rec = float(meta.get(key, 0.0))
+        rec = float(meta.get(key) or 0.0)
         given = getattr(args, key)
         if given is None:
             setattr(args, key, rec)
         elif key in meta and given != rec:
             sys.stderr.write("your %s %g overrides the capture's recorded %g\n" % (flag, given, rec))
+    set_rate(args.rate if args.rate is not None else float(meta.get('rate', FS_IN)))
+    set_format(args.fmt or meta.get('fmt'))
     if args.chunk % (D1 * D2 * D3):
         args.chunk -= args.chunk % (D1 * D2 * D3)
     return analyze(args)

@@ -147,22 +147,26 @@ void ui_push(uint8_t scr, uint16_t arg)
 	}
 	if (ui_scr[scr]->enter != NULL)
 		ui_scr[scr]->enter();	// may focus a row (the current zone in Channels)
-	// Else the first row that can be focused
+	// Else the first row that is available, or failing that the first that can be focused: a dimmed row is still
+	// reachable to explain itself, a text row never is
 	const ui_scr_def_t *d = ui_scr[scr];
 	if ((d->flags & SF_LIST) && d->count != NULL && d->item != NULL && stack[sp].focus == 0) {
 		uint16_t n = d->count();
+		uint16_t dim = n;
 		while (stack[sp].focus < n) {
 			ui_item_t it;
 			it.flags = 0;
 			it.label[0] = it.value[0] = 0;
 			it.num = 0;
 			d->item(stack[sp].focus, &it);
-			if (!(it.flags & UI_ITEM_INFO))
+			if (!(it.flags & (UI_ITEM_INFO | UI_ITEM_DIM)))
 				break;
+			if (!(it.flags & UI_ITEM_INFO) && dim == n)
+				dim = stack[sp].focus;
 			stack[sp].focus++;
 		}
 		if (stack[sp].focus >= n)
-			stack[sp].focus = 0;
+			stack[sp].focus = dim < n ? dim : 0;
 	}
 	update_focus_target();
 	dirty = true;
@@ -238,11 +242,33 @@ uint16_t ui_filter_raw(uint16_t i)
 			if (up ? raw + 1u >= n : raw == 0)
 				return 0;	// the rows changed under the list: the next rebuild puts it right
 			raw = up ? (uint16_t)(raw + 1u) : (uint16_t)(raw - 1u);
-		} while (!d->raw_label(raw, label, sizeof label));
+		} while (d->raw_used != NULL ? !d->raw_used(raw) : !d->raw_label(raw, label, sizeof label));
 		WALK_RAW = raw;
 		WALK_I = up ? (uint16_t)(WALK_I + 1u) : (uint16_t)(WALK_I - 1u);
 	}
 	return raw;
+}
+
+static bool filter_row(uint16_t raw, const char *label, void *ctx)
+{
+	(void)ctx;
+	if (label == NULL || (filter_keys[0] != 0 && !ui_t9_match(label, filter_keys)))
+		return true;
+	if (filter_n < UI_FILTER_MAX)
+		filter_idx[filter_n] = raw;
+	filter_n++;
+	return filter_keys[0] == 0 || filter_n < UI_FILTER_MAX;	// typed: the first matches
+}
+
+// A row at a time, for a list without raw_each. Its own frame: the label stays off the stack of raw_each's pass
+static void __attribute__((noinline)) filter_rows(const ui_scr_def_t *d)
+{
+	uint16_t n = d->raw_count();
+	char label[40];
+	for (uint16_t i = 0; i < n; i++) {
+		if (!filter_row(i, d->raw_label(i, label, sizeof label) ? label : NULL, NULL))
+			break;
+	}
 }
 
 void ui_filter_rebuild(void)
@@ -251,19 +277,10 @@ void ui_filter_rebuild(void)
 	filter_n = 0;
 	if (d->raw_count == NULL || d->raw_label == NULL)
 		return;
-	uint16_t n = d->raw_count();
-	char label[40];
-	for (uint16_t i = 0; i < n; i++) {
-		if (!d->raw_label(i, label, sizeof label))
-			continue;
-		if (filter_keys[0] != 0 && !ui_t9_match(label, filter_keys))
-			continue;
-		if (filter_n < UI_FILTER_MAX)
-			filter_idx[filter_n] = i;
-		filter_n++;
-		if (filter_keys[0] != 0 && filter_n >= UI_FILTER_MAX)
-			break;	// typed: the first matches
-	}
+	if (d->raw_each != NULL)
+		d->raw_each(filter_row, NULL, filter_keys[0] != 0);
+	else
+		filter_rows(d);
 	if (filter_n > UI_FILTER_MAX)
 		WALK_I = UI_FILTER_MAX - 1u;	// the cursor starts on that row, its raw row already in WALK_RAW
 }
@@ -388,13 +405,9 @@ bool ui_contact_name(uint32_t id, bool group, char *out)
 	out[0] = 0;
 #if CONFIG_DMR
 	contact_t c;
-	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
-		if (!codeplug_contact(i, &c))
-			continue;
-		if (c.id == id && (c.type == CONTACT_GROUP) == group) {
-			strcpy(out, c.name);
-			return true;
-		}
+	if (codeplug_contact_find(id, group, &c)) {
+		strcpy(out, c.name);
+		return true;
 	}
 #else
 	(void)id;
@@ -2094,8 +2107,8 @@ void ui_app_key(const input_event_t *ev)
 		ui_toast(TR("Not used here"));
 }
 
-// Auto power off (Settings > Power): after auto_off_min without a key press, a call, a scan or the hotspot, a banner
-// a minute before, then the housekeeping task switches off (ui_app_power_off_due)
+// Auto power off (Settings > Power saving): after auto_off_min without a key press, a call, a scan or the hotspot, a
+// banner a minute before, then the housekeeping task switches off (ui_app_power_off_due)
 static void use_tick(const radio_view_t *v)
 {
 	if (v->state != RS_IDLE || v->scan != 0 || v->hotspot) {
@@ -2114,8 +2127,8 @@ static void use_tick(const radio_view_t *v)
 		power_off_due = true;
 }
 
-// Low battery warning (Settings > Power): a banner when the battery falls to the level, again every 5 min while it
-// stays there, with the low battery tone unless the radio core's own voltage warning has sounded (view.battery)
+// Low battery warning (Settings > Power saving): a banner when the battery falls to the level, again every 5 min while
+// it stays there, with the low battery tone unless the radio core's own voltage warning has sounded (view.battery)
 static void battery_tick(const radio_view_t *v)
 {
 	static char text[UI_BANNER_TEXT];
@@ -2459,4 +2472,9 @@ void ui_app_status(ui_app_status_t *s)
 	s->query = stack[sp].scr == SCR_FIND ? ui_find_query() : (d->flags & SF_FILTER) ? filter_keys : "";
 	s->draws = draws;
 	s->strip_drawn = strip_ok;
+#if CONFIG_DUAL_WATCH
+	s->dual = ui_st.dual.on;
+#else
+	s->dual = false;
+#endif
 }

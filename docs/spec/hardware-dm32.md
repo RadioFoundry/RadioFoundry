@@ -152,8 +152,10 @@ Registers at base +: RBR/THR/DLL 0x00, DLH/IER 0x04, IIR/FCR 0x08, LCR 0x0C, LSR
 | Divisor | APB / 16 / baud, APB = 84 MHz (115200 → 45, 1.3 % fast; 9600 → 546) |
 | Divisor latch | LCR bit 7 set, write DLL then DLH, clear bit 7 |
 | Format | LCR \|= 0x03 (8N1) |
-| FIFO | FCR = 0x67: FIFOs enabled and reset, RX trigger 1 char (bits 7:6 = 01), TX trigger code 2 |
+| FIFO | FCR = 0x67: FIFOs enabled and reset, RX trigger 4 characters (bits 7:6 = 01; fewer arrive by the character time-out), TX trigger 4 characters (bits 5:4 = 10) |
+| FIFOs | 16 bytes each (the FCR trigger levels: RX 1, 4, 8, 14; TX empty, 2, 4, 8). TFL (0x80) and RFL (0x84) count what each holds |
 | TX ready | USR bit 1 (TX FIFO not full) |
+| TX interrupt | IER bit 1 (ETBEI) with bit 7 (PTIME): IIR ID 0010 while the TX FIFO holds the FCR TX trigger level or less; cleared by filling it above that, or by reading IIR. The host port sends this way: the host link task hands its buffer to the interrupt and sleeps until it is sent (`platform/hrc7000/uart.c`). Sent by polling at the host task's priority, a long reply during a DMR transmission kept the idle task out until the hang check reset the radio, and ran at a third of the line's speed |
 | RX ready | LSR bit 0 |
 | Interrupts | GPS uses IER = 0x05 (RX data + line status); on stop, IER = 0 and FCR bits 1, 2 to flush |
 | UART0 | 115200 8N1: programming cable (Baofeng CPS, open-firmware CPS, hotspot). RadioFoundry's host port, where a CPU fault's trace lines appear ([crash-log.md](crash-log.md) 2.3) |
@@ -402,6 +404,11 @@ Init used: MODE = 0 (level), PO = 0xFFFFFFFF (high active), MASK = 0xFFFFFFFF, t
 INT_ST = INT_ST_1 = 0xFFFFFFFF. (Both masks must be written at init; the reset value is all masked.) Enabling vector v: clear bit (v − 32) in PIC_MASK for v < 64, bit (v − 64) in
 PIC_MASK_1 for v ≥ 64.
 
+Level mode still acts on the line rising (measured with timer 6, source 6, through the debug link's SoC register
+access, debuglink.md 3.24): a rise while the source is masked sets its INT_ST bit and is delivered when it is unmasked;
+after the request is taken, a line still high does not interrupt again, unmasked and with the INT_ST bit still set,
+until it falls and rises. A handler must clear its device's cause, or the source stays silent (gotchas 2.9).
+
 Dispatch: all 64 user vectors (32–95) point at one common entry; it saves context, writes 0x04 to PIC_COW1, takes the
 vector number from PSR bits 23:16, subtracts 32 and calls through a 64-entry software table.
 
@@ -558,6 +565,16 @@ two scans in the same millisecond, 65 ms after the last host byte, with the pin 
 a new host byte, not yet received (2026-10-22, RADIO). Before the hold, 2 such presses came in 100 s, each a short
 DMR voice transmission; no line errors (`ue 0`) and no overruns.
 
+**The radio's own RF on the cable (measured, 2026-11-05).** With the programming cable coiled near the antenna, a
+1750 Hz burst at the lowest power (FM, UHF) started by the debug link kept the radio keyed for a minute. The link went
+silent 0.5 s in, so the burst's "off" never arrived. The burst's own time limit ended it at 2 s, but the key scan had
+reported PTT down 174 ms after keying with nothing touched, and that press held the radio keyed. A hand near the cable
+ended it. In that minute UART0 received 350 flagged characters and no good byte. The quiet-time gate takes exactly
+that for a press. A real press held 3 s gave one flagged character, its break, and nothing more: the key grounds the
+line. So, as `drivers/input/sharedptt` describes, no new press starts while the radio transmits, and a held press ends
+at a flagged character after its own break and bounce (`SHARED_PTT_SETTLE_MS`). The diag line `ue N` counts the
+flagged characters.
+
 ### 6.3 Rotary encoder
 
 A = GPIO 0x27, B = 0x26, inputs with GPIO B interrupts (vector 46). On every change of B: direction = −1 if A == B
@@ -655,6 +672,9 @@ Three-wire serial, bit-banged on GPIO: CS = 0x18 (active low), clock = 0x07, dat
 | Read sampling | MCU reads data while clock is high |
 
 Registers 0x65 / 0x67 are not read by the radio's own firmware (unverified: its S-meter may be fake).
+
+The debug link's CHIP_REG ([debuglink.md 3.24](debuglink.md#324-chip_reg)) reaches the FD6818 as chip 0, page 0,
+registers 0x00-0x7F: `rfoundry_debug.py reg 0 0x67` reads the RSSI word.
 
 ### 8.2 Register tables (address: high byte, low byte)
 
@@ -871,8 +891,8 @@ The radio's sleep lengths are 12, 18 or 30 ticks of its receive service by the b
 
 ### 8.9 SFR on air (SDR bench, 2026-10-19)
 
-As a standalone repeater (`sfr.md`) at 461.1375 MHz, CC 2: after a user's call the CW ID came 2 s after the hang,
-"N4NQV" at 20 wpm, 800 Hz, about 1.8 kHz deviation; the next one 5 min later after new traffic (interval 5 min). The
+As a standalone repeater (`sfr.md`) on a UHF test frequency, CC 2: after a user's call the CW ID came 2 s after the hang,
+the call sign at 20 wpm, 800 Hz, about 1.8 kHz deviation; the next one 5 min later after new traffic (interval 5 min). The
 repeat of a call sat 90.2 ms after the original on every voice burst (72 of 72). 212 of 216 repeated voice frames needed
 Golay corrections and 4 were uncorrectable, where the direct copy was clean: the receiver takes bit errors while it
 switches per burst. As a user it reports both copies of a call (gotchas 14.15).
@@ -913,7 +933,7 @@ Values written at init; field meanings from the datasheet:
 | 0x30 | DR_ADC_AGC | 0x34 | AGC data byte |
 | modem 0x088 | LINEOUT_CTRL | 0x01 | line out 2 enabled |
 
-APRS AFSK transmit (measured on the SDR bench, 2026-10-16, 467.375 MHz, 25 kHz, lowest power, a canned frame through
+APRS AFSK transmit (measured on the SDR bench, 2026-10-16, a UHF test frequency, 25 kHz, lowest power, a canned frame through
 `hal_afsk_t.tx_start`): a valid FCS at every level tried, 29 flags of TX delay, twist about -1.1 dB, 14-15 degrees phase
 residual. Level 50 (PCM amplitude 2750) gives 3.1 kHz peak with 2.2 / 2.5 kHz mark / space deviation; level 75 gives
 4.5 kHz peak; PCM 5850 and up is limited at 5.1 kHz peak. Receive decodes off air. While AFSK receive runs, the

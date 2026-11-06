@@ -19,7 +19,7 @@ python3 -m pytest tests/hil -v -rs --allow-rf --allow-service-stop --ambe ~/reco
 python3 -m pytest tests/hil -k ui --shots /tmp/rfoundry-shots                    # keep the screenshots
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"   # radio TX off air
 python3 -m pytest tests/hil -v -rs -s -k cps --allow-codeplug-write --allow-reboot      # CPS write + restart
-python3 -m pytest tests/hil -v -rs -s -k aprs --allow-rf --allow-service-stop --aprs-call N0CALL --dmr-freq 467.375  # APRS on air (your call)
+python3 -m pytest tests/hil -v -rs -s -k aprs --allow-rf --allow-service-stop    # APRS on air (the rig's callsign)
 python3 -m pytest tests/hil -v -rs -s -k encoder --manual                              # turn the knob when asked
 ```
 
@@ -60,18 +60,70 @@ process on the SDR bench stops it, waits while a hold file exists (at most 300 s
 happens to pytest or the SSH link; the test removes the hold file in a `finally` block and checks that the service
 is back.
 
-Other options: `--codeplug-backup-dir` (where codeplug_write tests keep their backups, outside the repository), `--codeplug-image FILE` (or `RFOUNDRY_HIL_CODEPLUG_IMAGE`: the radio's codeplug as a file, taken as the backup; only the sectors an edit writes are read from the radio, to check the file against it, verify the write and verify the restore), `--tx-power` (bench transmitter level 0-255, default 40), `--dmr-freq` / `--dmr-cc` / `--dmr-tg`
-(DMR test channel, default 461.6875 MHz, color code 2, talkgroup 9), `--noaa-mhz` / `--rssi-floor` (FM test),
+Other options: `--codeplug-backup-dir` (where codeplug_write tests keep their backups, outside the repository), `--codeplug-image FILE` (or `RFOUNDRY_HIL_CODEPLUG_IMAGE`: the radio's codeplug as a file, taken as the backup; only the sectors an edit writes are read from the radio, to check the file against it, verify the write and verify the restore), `--tx-power` (bench transmitter level 0-255, default 40), `--rssi-floor` (FM test),
 `--ambe` / `$RFOUNDRY_HIL_AMBE` (speech recording for the voice test), `--shots DIR`, `--sdr-gain` (RTL-SDR gain for
 raw captures, default 5 dB; `dmr_bench.py run C0` picks it), `--sdr-ppm` (overrides the SDR's frequency error for
 FM carrier offsets; by default the SDR bench corrects them itself), `--max-foff` (largest carrier offset the TX tests
-accept, default 500 Hz), `--fm-mhz`
-(FM TX test frequency, default 461.6875), `--aprs-call` / `$RFOUNDRY_APRS_CALL` (test_aprs: the licensed operator's callsign, RAM only), `--aprs-ssid` (default 15), `--aprs-test-mhz` (APRS AFSK test frequency, default 446.050; why in test_aprs.py), `--aprs-dmr-dst` (the DMR position's destination ID, default 9990301), `--roam-beacon` / `--roam-beacon-len` (test_roaming's beacon interval and duration, default 20 s / 3 s), `--split-tx-mhz` (test_dmr_tx_split_repeater and test_dmr_repeater_slots: the radio's TX frequency on its DMR test channel made split, the bench repeater's input; no default), `--split-calls` (that test keys up this many times per run, default 1; the split is written and restored once), `--roam-rx` / `--roam-tx` (test_roaming's bench repeater site as the radio
-sees it: its receive and transmit MHz; no default).
+accept, default 500 Hz), `--aprs-ssid` (default 15), `--roam-beacon` / `--roam-beacon-len` (test_roaming's beacon interval and duration, default 20 s / 3 s), `--split-tx-mhz` (test_dmr_tx_split_repeater and test_dmr_repeater_slots: the radio's TX frequency on its DMR test channel made split, the bench repeater's input; no default), `--outbound-mhz` (test_dmr_outbound_voice: a repeater's output the bench board sends BS bursts and voice on; the radio needs a duplex DMR channel receiving it; no default), `--am-mhz` (test_am_rx and test_am_rx_speaker: the AM test frequency in the air band, 108-137 MHz, that the bench board sends full-carrier AM on and the radio's VFO receives; the bench transmits on it: a cabled setup unless the frequency is approved for the air; no default), `--split-calls` (that test keys up this many times per run, default 1; the split is written and restored once), `--roam-rx` / `--roam-tx` (test_roaming's bench repeater site as the radio
+sees it: its receive and transmit MHz; no default). The rig's own values (frequencies, color code, talkgroup,
+callsign) are in the next section.
+
+### The rig's configuration
+
+The repository holds no frequency, callsign or ID of any rig. Each value comes from the command line, else
+`$RFOUNDRY_HIL_<NAME>` (the option's name in capitals, `_` for `-`), else the rig's TOML file: `--hil-config FILE`,
+else `$RFOUNDRY_HIL_CONFIG`, else `~/.config/rfoundry/hil.toml` when it exists. The file's keys are the option names
+with `_` for `-`; an unknown key is an error. A test that needs a value no one gave skips (kind `opt_in`) and names
+the three ways to give it. `tests/hil/hil_config.py` reads them.
+
+| Option | Value |
+|---|---|
+| `--dmr-freq` / `--dmr-cc` / `--dmr-tg` | the DMR test channel: MHz (simplex, a channel in the radio's codeplug), color code, the talkgroup the bench calls |
+| `--fm-mhz` | the FM test frequency (the radio's VFO) |
+| `--noaa-mhz` | a NOAA weather radio station heard at the rig (`test_fm`, receive only) |
+| `--aprs-test-mhz` | `test_aprs`'s AFSK frequency: an amateur simplex frequency that is not an APRS one |
+| `--aprs-dmr-dst` | the DMR position's destination ID (`test_aprs`) |
+| `--callsign` | the licensed operator's callsign: every transmission that carries one (APRS, CW ID, talker alias); RAM only on the radio |
+| `--tx-mhz` | the frequencies the rig may transmit on, comma separated (a TOML list in the file) |
+| `--microphone` | an ALSA capture device (`arecord -D`) whose microphone is at the radio's speaker: the speaker tests ([Speaker tests](#speaker-tests)) |
+
+With `--allow-rf`, every transmit frequency the run is given (`--dmr-freq`, `--fm-mhz`, `--aprs-test-mhz`,
+`--sfr-freq`, `--roam-rx` / `--roam-tx`, `--split-out-mhz`, `--split-tx-mhz`, `--outbound-mhz`, `--am-mhz`) must be in `tx_mhz`, or the run
+stops before the first test. The bench client refuses to key anywhere else. Example file (placeholder values: use
+your license's and your site's):
+
+```toml
+# ~/.config/rfoundry/hil.toml
+callsign = "Q0TST"
+tx_mhz = [433.4500, 433.4750]
+dmr_freq = 433.4500
+dmr_cc = 1
+dmr_tg = 91
+fm_mhz = 433.4750
+noaa_mhz = 162.4000
+aprs_test_mhz = 433.4750
+aprs_dmr_dst = 9990301
+```
+
+The tools in `tools/bench/` take `--freq` and `--cc` or `$RFOUNDRY_BENCH_FREQ` / `$RFOUNDRY_BENCH_CC`, and the SDR
+receiver's name `--receiver` or `$RFOUNDRY_SDR_RECEIVER`; none has a default.
 
 SDR bench names come from the environment (`docs/testing/dmr-bench.md` 1): `$RFOUNDRY_SDR_BENCH_HOST` (ssh host or alias,
 default `sdr-bench`), `$RFOUNDRY_SDR_BENCH_SERVICE`, `$RFOUNDRY_SDR_BENCH_DIR`, `$RFOUNDRY_SDR_BENCH_PY`, `$RFOUNDRY_SDR_BENCH_ENV_FILE`;
 `$RFOUNDRY_SDRBENCH` names an rfoundry_sdrbench checkout when the package isn't installed on the test host.
+
+### Transmit frequencies
+
+The radio transmits only where the rig allows, in two layers (`rfoundry_hil.py`, `tests/hil/test_tx_guard.py`):
+
+| Layer | What it covers | How |
+|---|---|---|
+| 1. Requests | every debug link request that keys the radio: PTT, the PTT or emergency key, the 1750 Hz burst, DMR data sends (SMS, call alert, radio check, emergency, IP), APRS sends | With `--allow-rf`, the frequency it would key on is compared with `tx_mhz` first: the channel's TX frequency (a channel found by its RX frequency can be a split one), for an APRS position the way out `set.aprs_via` picks (the APRS frequency, the DMR channel or both), for an APRS status or message the APRS frequency. Outside it, the request raises. |
+| 2. Test TX limit | everything the radio keys, by request or by itself: data and CSBK replies, registration, beacons, roaming probes, a split channel's TX frequency, the hotspot over its MMDVM port | The firmware's test TX limit (RADIO op 35, `radio-features.md` 3.1; RAM only, a restart clears it): every test that uses the radio runs with every transmission blocked unless it is marked `radio_tx`, and a `radio_tx` test may key only on the run's own transmit frequencies (`--dmr-freq`, `--fm-mhz`, `--aprs-test-mhz` and the other frequency options given; `hil_config.run_tx_mhz`). The radio is blocked again after each `radio_tx` test and the limit is off at the end of the run. The radio's TX inhibit setting is left alone. Firmware without the limit has layer 1 only. |
+
+So a test where the radio transmits, by request or by itself, needs `radio_tx`: without it, the transmission is
+refused (`tx_deny=inhibit`, or not keyed with `txlim.refused` counted) and the test fails. KEY's physical key bits
+(`keys_mask`) are the board's and not checked by layer 1. The second radio of a two-radio test has layer 1 only.
 
 ### Skip kinds
 
@@ -175,6 +227,37 @@ bench daemon is assumed to have both.
 
 `test_probe_fm_tx_ram_writer_sweep` holds the lease but uses neither receiver.
 
+### A bench board in place of the SDR bench host
+
+`--bench-api HOST[:PORT]` (or `$RFOUNDRY_BENCH_API`) uses a board that serves the bench line protocol (TCP 7373, the
+shared bench daemon's ops; client `tools/bench/bench_line.py`) as the SDR bench. This is the preferred DMR bench; the
+bench host below remains for what a board can't do. `--bench-api-rx HOST[:PORT]` (or `$RFOUNDRY_BENCH_API_RX`) is a
+second board for what the bench receives. A half-duplex board can't hear while it transmits, so a test that watches
+the radio during the bench's own key-up needs the second board.
+
+| Bench call | On a bench board |
+|---|---|
+| `lease()` | a session on the TX board for the test; a test's transmit frequencies are claimed in it, so another session's jobs wait for them |
+| `transmit()`, `voice_call`, `data`, `csbk`, `listen_start()` | the `bench_tx.py` command line sent as a job (`run`): the board builds and sends the bursts, and a `--listen-after` or `listen` reports what its receiver hears, as the tool's JSON lines. `--tx-power` doesn't apply: the board sends at its own level |
+| `repeater_start()` | a `bench_repeater.py` job; a board that runs no duplex repeater refuses it (skip kind `bench`) |
+| `outbound_start()` | a repeater's idle outbound with no repeater behind it (`bench_tx.py outbound`): BS bursts on both slots with the CACH. A bench board only |
+| `dmr_watch_start()`, `bursts_start()` | the receive board's decoded bursts (`bursts`), in the bench host's record shape |
+| `capture_start()`, `analyze_fm()`, `analyze_aprs()` | the receive board's channel as I/Q (`trigger`: cs16, 40 kHz wide, from 1 s before the radio keys; a quarter of the wideband stream, which a busy network link carries without loss) into a local run directory, each frame placed by its sample clock; `tools/sdr_fm_check.py` and `tools/aprs_afsk_check.py` run on the test host. A capture with samples the board lost (`gap_samples`, frames it couldn't send, or a run of exact zeros of 2 ms or more) skips as `bench`. The channel must be inside the board's receive window |
+| `tx_start()`, `fm_tx_start()`, `fm_transmit()` | FM (or AM, `tx_start("am", ...)`) from the TX board (`tx`, mode `fm` or `am`): a program of segments (tones, sweeps, DTMF, AFSK as `fsk` bits, noise, silence) with an optional CTCSS or DCS, at the board's lowest power, within its key limit. A board without the mode in `info`'s `signal_modes` skips as `bench`. The bench host has no FM or AM transmitter: these skip there |
+| `can_fm_rx()`, `fm_rx_start()` | the receive board's FM demodulator (`rx`, mode `fm`): its summary (carrier, offset, deviation, the strongest tone, the CTCSS or DCS it decoded). `test_fm_tx_ctcss`, `_dcs` and `_bandwidth` key the radio a second time for it (beside a triggered capture on the same board it lost seconds of samples) and check its decode and sub-audio deviation (within 20 %) against the I/Q analysis |
+| `analyze_dmr()` (sdrmon.py), bench stations | skip as missing (skip kind `bench`) |
+
+FM from the board is what the radio receives in `test_rx_tone_decode_bench` (CTCSS / DCS decode) and
+`test_aprs_rx_on_air` (an AFSK frame), on `--fm-mhz`, which must then be a frequency the board may transmit on.
+
+`--bench-api-level 0-255` (or `$RFOUNDRY_BENCH_API_LEVEL`) is the TX board's level for its jobs and FM; without it
+the board uses its own. The level spans the board's whole output range, so a low one may be too weak for a receiver
+across the bench.
+
+`--dmr-freq` and `--dmr-cc` must be a frequency the board may transmit on, with the radio's channel (or the VFO) on
+it: the receive tests don't tune the radio. `test_dmr_repeater_burst_offset` times the radio against the TX board's
+outbound, both decoded by the receive board.
+
 ### Bursts on the bench, raw I/Q only where needed
 
 A test that needs to know what the radio sent as DMR does not pull raw I/Q any more. `SdrBench.dmr_watch_start()` runs
@@ -202,13 +285,13 @@ Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr
   for it by frequency and mode, the current zone first, and put the radio back on its zone and channel afterwards).
 - The SDR bench reachable by SSH without a password (passwordless sudo for `systemctl` there), with the rfoundry_sdrbench
   package in `$RFOUNDRY_SDR_BENCH_PY`'s environment and the bench tools installed (`tools/bench/dmr_bench.py sync`; the
-  FM tests copy `tools/sdr_fm_check.py` there themselves). Its
-  gateway configuration has Ch 1 at 467.375 MHz and Ch 15 at 461.6875 MHz, color code 2; the tests use Ch 15.
+  FM tests copy `tools/sdr_fm_check.py` there themselves). Its gateway configuration has a receiver on the DMR test
+  frequency and color code.
 - For the TX tests: the radio has a DMR ID, a DMR channel on the test frequency with a talk target, and may
   transmit on `--fm-mhz` in its FM VFO; it runs on its lowest power, into an antenna or a dummy load at bench
   distance.
 - An antenna or attenuator so the bench transmitter at power 40 doesn't overload the radio.
-- For `test_fm`: NOAA weather radio audible at the bench (162.550 MHz by default; change it with `--noaa-mhz`).
+- For `test_fm`: a NOAA weather radio station audible at the bench (`--noaa-mhz`).
 - Speech recordings for `test_dmr_voice` stay outside the repository; give the path with `--ambe` or
   `$RFOUNDRY_HIL_AMBE`. Never commit a recording.
 
@@ -239,6 +322,8 @@ Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr
 | `test_dmr_rx.py` | bench sends 2 group calls (10 superframes, 8 headers, 3 terminators each); counter deltas | `--allow-rf --allow-service-stop` |
 | `test_dmr_voice.py` | bench sends a speech recording; every frame reaches the speaker path. `test_vocoder_encode_options` (radio only): the encode options in force follow Mic noise reduction and Mic AGC (`voice.enc_options`, `settings.audio_flags`), and the codec word (`voice.enc_flags`) is 0x800 plus option bits, never 0x100 / 0x4000; it is the word the codec was last given, so one that still belongs to the previous options (no transmission since a change) is only printed | the same, and `--ambe`; radio only for the options test |
 | `test_dmr_audio_smoke.py` | DMR audio both ways (marker `audio_smoke`, part of the default bench pass). RX: the bench sends the speech recording to the call the radio's channel listens to (its talk target, or a private call to its ID, on the channel's color code); the decoded audio peaks high and the frames aren't one frame repeated. TX: the radio keys 3 s with the voice layer's test signal in place of the mic (RADIO op 33); the bench modem records the call, the frames on air must be distinct and not silence, and the recording played back to the radio must decode to audio. Prints the mic level of the over (`voice.tx_mic_peak`) | `--allow-rf --ambe`; skips only without the radio, the bench, DMR or `--allow-rf` |
+| `test_am_rx.py` | the bench board's AM transmitter (tx op, mode am: a 1 kHz tone at depth 0.3 between bare carrier lead and tail) on `--am-mhz`; the radio's VFO tuned there is received in AM (`CONFIG_AM_RX`): the carrier opens the squelch (`state` rx, or `rssi_dbm` 10 dB over the floor read just before), it closes (`state` idle) after the carrier ends, and the bench did not cut. A board that only sends frequency skips | `--allow-rf --bench-api HOST --am-mhz MHz` |
+| `test_dmr_outbound_voice.py` | a bench board sends a repeater's outbound (BS bursts with the CACH on both slots) with voice calls (`bench_tx.py outbound --voice`); the radio, on a duplex channel receiving it and never transmitting, shows the call of its own timeslot with the right talker and talkgroup: one call on TS1 or TS2 (the other slot's radio hears none), both slots at once, TS2 starting 1.5 s into a TS1 call, late entry at burst A, D and F with no headers (marked late), and no call when the outbound's color code is wrong; the board's `call` records match what was sent and report no late bursts. A board that can't push voice (`unsupported`) skips | `--allow-rf --bench-api HOST --outbound-mhz MHz` (a duplex channel on it in the codeplug) |
 | `test_dmr_tx.py` | radio keys 3 s on DMR (debug-link PTT); SDR capture + sdrmon analysis and the bench modem's listener check src ID, TG, CC, headers / voice / terminator, timing, carrier offset (waveform checks reported as not judged when the capture clips); our ETSI GPS Info from a fixed APRS position decoded by the bench modem's listener (`CONFIG_DMR_GPS` and `CONFIG_APRS`); privacy TX (Motorola BP key 1: service option 0x40 in every LC from us, FID 0x10 in the embedded LCs; a clear over has neither); talker alias TX (the channel's alias flag set over CPS, backed up and restored: the alias on air equals `dmr.tx_alias`); vocoder encode options (`test_dmr_tx_encode_options`, one over each for flags 0x1840, 0x800, 0x1800 and 0x3840, set over the debug link's SETTING 31: the same checks, `voice.enc_options` as set, `voice.enc_flags` after the over equal to the word, the options put back; AMBE parameter statistics of what the bench modem heard printed, not judged); repeater TX on a split channel (the channel's TX frequency set over CPS, backed up and restored; the bench modem as a duplex repeater: the radio wakes it, sees it up while talking, and the repeater takes the call) | `--allow-rf --allow-service-stop` (`--sdr-gain 0` on this bench); the alias test also `--allow-codeplug-write`; the split test also `--allow-codeplug-write --split-tx-mhz MHz` |
 | `test_fm_tx.py` | radio FM VFO keys 3 s with CTCSS 100.0, DCS D023N, and at 12.5 / 25 kHz; the 1750 Hz burst, the roger beep (on and off), DTMF (digits, timing, deviation, twist; a held digit stopped by PTT release and by the time-out) and the three lowest power levels; `tools/sdr_fm_check.py` (with `--tones`) on an SDR capture | `--allow-rf --allow-service-stop` |
 | `test_mic_uart_inject.py` | The DMR mic path without a person: keys a DMR channel on `--dmr-freq` (lowest power, the firmware's own PTT time-out), sends tone bursts on the radio's serial line (0x55 at 6000 baud, a 3 kHz square, 0.2 s on and off, 8 times), which reach the mic input on radios whose programming cable shares it, and checks the vocoder's mic statistics (`voice.tx_mic_level_db` / `tx_mic_spread_db`) against a quiet over: the bursts must stand out. Catches a mic route that never reaches the codec ADC, which the test signal tests can't. Also checks the debug link answers after the odd-baud bytes and the radio isn't left keyed | `--allow-rf --mic-inject`; a local serial port (not a network bridge), nothing else on it; the DM-1801 Pro, DM-32UV and DB25-D, others with `--mic-inject-any` |
@@ -246,6 +331,8 @@ Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr
 | `test_cps.py` | open-firmware CPS over USB with `tools/cps_client.py`: radio info (a radio type from the board's `board.toml` `[cps] radio_types`, struct 3), two reads of the qdmr regions identical, the current channel's record matches the view, a channel change saved by the settings store within 2 s (the `storage` view section); the write dry run (no write: backup file round trip, the rename touches only the name, the write and restore plans match and restore every byte); opt-in: one channel renamed, read back and the backup restored over what the radio then holds and verified; the channel position survives a restart | radio; `--allow-codeplug-write` (`--codeplug-backup-dir DIR` keeps the backups), `--allow-reboot` |
 | `test_crash.py` | the crash log (`docs/spec/crash-log.md`): the `crash` view section, CRASH TEST refused without its token; opt-in: a trap instruction and a failed assertion each restart the radio and leave a record (kind, pc, the host task, the build's commit) the next start shows, then cleared | radio; `--allow-reboot` for the crash tests; firmware with `CONFIG_CRASH_LOG` |
 | `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, an ETSI GPS Info (after an alias), a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit; plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
+| `test_speaker.py` | the speaker by microphone ([Speaker tests](#speaker-tests)): every beep, a cold amplifier's key click, FM receive tone pulses from the bench board, AM receive of a 1 kHz tone (`test_am_rx_speaker`) | `--microphone`; the FM and AM tests `--allow-rf` and a bench board (AM also `--am-mhz`) |
+| `test_audio_check.py` | the speaker tests' analysis (`audio_check.py`) on synthetic recordings: cut starts and ends, a level step, a dropout, pops, a squelch tail, a filled silence must be found; a room's echo and swell must pass | numpy (tools/ci.sh runs it) |
 | `test_radio_features.py` | the `features` view section, settings round trip, beep counters (does PCM play in this mode), zone scan + cancel, nuisance delete, VFO band scan, dual watch and its debug link controls (select A or B, stop), battery save cycling and MONITOR waking it (radio only); TX inhibit, TOT warning and time-out, roger beep, 1750 Hz burst, VOX quiet (no key-up with nobody talking) on the FM VFO at lowest power (`radio_tx`); the mic level (`vox.level`, and on the HR_C7000 radios the `mic lvl` diagnostics line: the meter counts PCM halves) with VOX off (radio only); the zone scan, the VFO scan and dual watch hold on a bench DMR call, battery save wakes for it (`rf`) | radio; `--allow-rf` (radio_tx); `--allow-rf --allow-service-stop` (the bench ones) |
 | `test_dmr_emergency.py` | DMR emergency: the bench sends an emergency alarm CSBK and an emergency voice call to the channel's talkgroup (alerts raised); the radio sends its alarm (3 CSBKs) and an emergency call with the hot mic (the bench listens); the emergency settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio), firmware with `CONFIG_DMR_EMERGENCY` |
 | `test_split_duplex.py` | split duplex (`docs/spec/split-duplex.md` 10): the capability gate (both halves offered); 0xD6 INFO / SET_ROLE / STATUS, unknown sub-command and command answers, the SPLIT debug view (no RF); the TX half keyed 10 s at the lowest power, the SDR bench's `sdrmon.py analyze --cach` (BS sync only, 30 ms slots, one key-up edge, CACH decode printed; variant from `$RFOUNDRY_SPLIT_VARIANT`); the RX half labeling bench calls and the label flipping with the epoch | firmware with `CONFIG_HOTSPOT_SPLIT`; the TX and RX tests `--allow-rf --allow-service-stop` |
@@ -255,7 +342,33 @@ Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr
 | `test_dmr_ip_burst.py` | UDP over DMR in bursts and at the air MTU ([dmr-data.md](../../docs/spec/dmr-data.md) 12.6, 12.8; [usb-network.md](../../docs/spec/usb-network.md) 3.2): 5 datagrams back to back from the debug link's IP_SEND, from this host over the USB network (or PPP on the serial host port on a radio without USB networking: pppd, root or passwordless sudo), and from the bench to this host's socket (all sent, none dropped, in order); the view keys `net.mtu net.air_mtu` (radio only); DHCP option 26 on the host's adapter (a warning if the host ignores it; over PPP the interface MTU must be `ppp.mru`); the largest datagram each way (to the air: the link's MTU, SAP 3 and SAP 4, its block count checked; from it: 558 octets delivered, the receiver's 580 reassembled and dropped as too long for the link, `net.up_too_big`), one block more from the air (52 blocks dropped, the next one delivered); on firmware with an air MTU below the link's only, one octet more to the air (refused, counted, nothing on air, the link still works) and the ICMP fragmentation needed for a DF datagram (a raw socket, root) | `--allow-rf --allow-service-stop --allow-usb-switch` by test, firmware with `CONFIG_DMR_IP_GATEWAY`; the bench's UDP mode needs `tools/bench/dmr_bench.py sync`; the ICMP test runs as root |
 | `test_hotspot_voice.py` | the hotspot on air both ways (`tools/bench/hotspot_cases.py` under the lease): bench call and data up the USB link as MMDVMHost would see them (`rf_voice8`, `rf_data_unconf`), a network call and data sent by the host heard on air by the bench modem (`net_voice`, `net_data`) | `--allow-rf --allow-service-stop`, rfoundry_sdrbench and numpy on this machine |
 | `test_roaming.py` | DMR repeater roaming: the `roam` view section, the roaming settings round trip (RAM), the zone flag toggled and back, roam now on the current zone (passive: listens only; the radio ends on one of the sites, no probe sent), lock and roam now ending it (radio only); the wake probe brings up the bench repeater (`tools/bench/bench_repeater.py`) as a second site and the radio moves there (`rf`, `radio_tx`, `bench_service`); the survey settings round trip; the bench repeater keys an idle beacon (`bench_repeater.py --beacon`) and the radio, listening only, learns the beacon window from it as its own site and surveys the other sites in the window, or (slow) finds it from a silent site with a discovery visit and measures it (`rf`, `bench_service`). The zone flag and the roaming settings are put back | radio (the current zone with 2+ repeater channels on one talkgroup for roam now); `--allow-rf --allow-service-stop --roam-rx MHz --roam-tx MHz [--roam-beacon S --roam-beacon-len S]`, firmware with `CONFIG_DMR_ROAMING` |
-| `test_aprs.py` | APRS (`docs/spec/aprs.md` 13): the `aprs` / `aprs_set` view sections and a setting round trip, the RAM test callsign and host NMEA as the position (radio only); on air at the lowest power on `--aprs-test-mhz` (default 446.050 MHz, never an APRS frequency, no path, the RAM test call `--aprs-call` with `--aprs-ssid`): a position (from the channel and from the FM VFO), a status and a message decoded off air by `tools/aprs_afsk_check.py` on the SDR bench, with deviation, twist, phase continuity and TX delay measured; positions over DMR as LRRP and UDT decoded from the bench modem's listener; the debug link keeps answering (gaps under 0.5 s) while a frame goes out, sent over serial, over the USB network and from a KISS client on TCP. Every APRS setting touched is put back | radio; `--allow-rf --allow-service-stop --aprs-call CALL` (`--allow-usb-switch` for the network cases), firmware with `CONFIG_APRS` and the `aprs.tx_power` view key (the AFSK tests skip without it) |
+| `test_aprs.py` | APRS (`docs/spec/aprs.md` 13): the `aprs` / `aprs_set` view sections and a setting round trip, the RAM test callsign and host NMEA as the position (radio only); on air at the lowest power on `--aprs-test-mhz` (never an APRS frequency, no path, the RAM test call `--aprs-call` with `--aprs-ssid`): a position (from the channel and from the FM VFO), a status and a message decoded off air by `tools/aprs_afsk_check.py` on the SDR bench, with deviation, twist, phase continuity and TX delay measured; positions over DMR as LRRP and UDT decoded from the bench modem's listener; the debug link keeps answering (gaps under 0.5 s) while a frame goes out, sent over serial, over the USB network and from a KISS client on TCP. Every APRS setting touched is put back | radio; `--allow-rf --allow-service-stop --aprs-call CALL` (`--allow-usb-switch` for the network cases), firmware with `CONFIG_APRS` and the `aprs.tx_power` view key (the AFSK tests skip without it) |
+
+### Speaker tests
+
+`test_speaker.py` records the radio's speaker with a microphone placed at it (`--microphone DEVICE`, an ALSA capture
+device for `arecord -D`, or `microphone` in the rig's file) and checks that each sound plays as it was made. Without a
+microphone every test skips `opt_in`. The volume knob and the beep level must leave the tones at least 30 dB over the
+room's noise; a recording too quiet throughout skips `state`.
+
+| Test | Plays | Needs |
+|---|---|---|
+| `test_speaker_beeps` | every beep the debug link can ask for, one recording each; the patterns are read from `core/radio/beep.c` | radio |
+| `test_speaker_beep_cold` | the key click after the amplifier hang ran out (`beep.warm` 0): the lead-in must cover the amplifier's start | a board with a speaker hang |
+| `test_fm_rx_speaker` | the bench board's FM transmitter on `--fm-mhz`: 0.5 s of carrier, then 1000 Hz 300 ms, 600 Hz 150 ms, 1500 Hz 80 ms and 1000 Hz 500 ms with silences of 200 to 300 ms, the carrier ending with the last tone | `--allow-rf`, a bench board with FM |
+
+`audio_check.check_tones` judges each recording. A tone's edges are where its amplitude rises and falls fastest: the
+direct sound's, since a room's echo builds up and dies away slower. Problems:
+
+| Check | Fails when |
+|---|---|
+| Length | a tone is more than 10 ms shorter than asked (a lost start or end), or more than 40 ms longer (a speaker and a room ring on a little) |
+| Level | a tone moves by more than 12 dB over its length, by more than 8 dB within a few ms (a step as an amplifier comes up, a dropout), or two tones at one frequency differ by 12 dB |
+| Silence | a silence is more than 10 ms longer than asked, or less than 8 dB under its louder neighbor |
+| Pops | broadband energy away from the tones' harmonics more than 20 dB over the recording's floor, or within 10 dB of a tone on it and in the 60 ms after it (at its edges: louder than the tone). In the FM test this includes the squelch opening and closing, and a squelch tail after the carrier is named as one |
+
+The recordings stay in pytest's temporary directory (the test prints each path). By hand:
+`python3 tests/hil/audio_check.py FILE.wav BEEP` (a beep name, or `HZ:MS,...` with `0:MS` a silence).
 
 ### Pass criteria and tolerances
 
@@ -318,7 +431,8 @@ within a few frames of the bench's last burst, inside the bench modem's TX to RX
 ETSI forms (`dmr_ext` section): an ETSI text message in: `data.sms_received` 1, `data.etsi_sms_received` 1,
 `data.responses_sent` 1, no TMS ACK, inbox entry 0 with format `etsi`. ETSI text out (no response asked): `ok`,
 `data.etsi_sms_sent` 1, a data header with DPF 13 and SAP 10 to the bench heard. Radio check in the ETSI form: 3
-tries counted, 1 to 3 heard with a good CRC, each with FID 0x00.
+tries counted, 1 to 3 heard with a good CRC, each with FID 0x00. Voice PTT after an ETSI text message was answered
+(`test_ptt_after_etsi_response`, `radio_tx`): `call.tx_calls` 1, `call.tx_denied` 0, `dmr.tx_error=ok`.
 
 `test_dmr_emergency` (`dmr_ext` section): an alarm in (opcode 0x27, FID 0x10, to the channel's talkgroup):
 `data.emergency_alarms_received` 1 or more, `em.alert=1`, `em.alert_kind=alarm` from the bench ID, `data.event=
@@ -340,9 +454,9 @@ data header from our ID to `--aprs-dmr-dst` with a good CRC, all its blocks; LRR
 0x0D; UDT: DPF 0, format 5, block CRC; the position within 2e-5 degree.
 `test_dmr_gps_tx`: one call heard by the bench modem, its `gps` within 2e-5 degree of 33.7490, -84.3880, error code 3.
 
-`test_hotspot_cwid` (DM-1701 or another board with `tx_tone_key`): SEND_CWID "N0CALL" (73 units) ACKed, the
+`test_hotspot_cwid` (DM-1701 or another board with `tx_tone_key`): SEND_CWID with the rig's `--callsign` ACKed, the
 GET_STATUS TX flag set while keying and clear after, `hs.cw_sent` +1, `hs.cw_wpm=20`, `hs.cw_last_ms` within 10 %
-of 150 + 73 x 60 + 150 = 4680 ms, one keyed segment off air.
+of 150 + units x 60 + 150 ms (the call's Morse length in dot units at 20 wpm), one keyed segment off air.
 
 Counter names: `Radio.counters()` merges the diagnostics lines (`modem.*` from the DM-1701's HR_C6000 lines, `call.*`
 and `voice.*` short names, `audio.*`) with the `dmr_stats` and `hotspot` view sections (full names such as
@@ -373,7 +487,8 @@ SDR clips, and the bench modem's tries counted with a minimum of one. An attenua
   the firmware releases PTT by itself at its time-out). Call `radio.go_home()` first for UI tests.
 - Check state with `radio.wait_for(lambda v: ..., timeout)` on the view (key=value strings, `docs/spec/debuglink.md`
   3.7), never with fixed sleeps alone; counters with `radio.reset_counters()` then `radio.counters()` deltas.
-- Anything that transmits gets `@pytest.mark.rf` (the radio: `radio_tx`); anything that uses the SDR bench's
+- Anything that transmits gets `@pytest.mark.rf` (the radio: `radio_tx`, also when it only replies or beacons by
+  itself: [Transmit frequencies](#transmit-frequencies)); anything that uses the SDR bench's
   transmitter or receiver also gets `@pytest.mark.bench_service`, one of `sdr_rx` / `bench_modem` / `sdr_or_modem`
   (both of the first two for a test that needs both, see Bench hardware markers) and runs inside
   `with sdr_bench.lease():` (`transmit` / `voice_call`, `listen_start` / `listen_result`, `dmr_watch_start` /
