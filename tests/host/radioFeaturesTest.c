@@ -665,9 +665,12 @@ static void test_beep_tone(void)
 	beep_play(BEEP_KEY, 0, false);
 	CHECK(tone_calls == 0 && !beep_busy());
 
-	// The key beep, 25 ms: on for one poll
+	// The key beep, 25 ms: on for one whole poll after the one it starts in (that one may be all but over: counting it
+	// cut the beep to nothing)
 	beep_play(BEEP_KEY, 70, false);
 	CHECK(tone_calls == 1 && tone_hz[0] == 1000 && tone_lvl[0] == 70 && beep_busy());
+	beep_service(false);			// the poll it started in
+	CHECK(tone_calls == 1 && beep_busy());
 	beep_service(false);
 	CHECK(tone_calls == 2 && tone_hz[1] == 0 && !beep_busy());
 	beep_service(false);
@@ -677,6 +680,8 @@ static void test_beep_tone(void)
 	tone_calls = 0;
 	beep_play(BEEP_CALL_END, 100, false);
 	CHECK(tone_calls == 1 && tone_hz[0] == 1200);
+	beep_service(false);			// the poll it started in
+	CHECK(tone_calls == 1);
 	beep_service(false);			// 25 of 50
 	CHECK(tone_calls == 1);
 	beep_service(false);			// 50: the gap, silent
@@ -695,6 +700,8 @@ static void test_beep_tone(void)
 	beep_play(BEEP_TX_DENY, 50, false);
 	beep_play(BEEP_KEY, 50, false);
 	CHECK(tone_calls == 2 && tone_hz[1] == 1000);
+	beep_service(false);
+	CHECK(tone_calls == 2);
 	beep_service(false);
 	CHECK(tone_calls == 3 && tone_hz[2] == 0 && !beep_busy());
 	beep_stats_t bs;

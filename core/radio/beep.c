@@ -166,7 +166,9 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 		tone_pattern = (uint8_t)b;
 		tone_seg = 0;
 		tone_level = level > 100 ? 100 : level;
-		tone_left_ms = 0;
+		// The poll this starts in is partly gone and doesn't count: without it a one-poll key beep sounded for
+		// anywhere from nothing to a poll (measured on a radio)
+		tone_left_ms = tone_poll_ms;
 		tone_on = true;		// replaces a pattern still playing
 		tone_seg_start();
 		stats.played++;
