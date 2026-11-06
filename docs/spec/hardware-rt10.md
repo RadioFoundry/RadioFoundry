@@ -64,7 +64,7 @@ bits 8:3 cleared, bits 29:27 set).
 | PTB11 | 43 | PTT; also the cable's serial line | low = pressed |
 | PTB12 | 44 | power latch | high = stay on |
 | PTB13 | 45 | audio amplifier | high = on (unverified) |
-| PTB17 | 49 | power switch sense | level when off: ? |
+| PTB17 | 49 | power switch sense | high = off (measured) |
 | PTB26 | 58 | FD6818 GPIO6, its squelch output (measured) | high = open; low with PTB27 high: a held match (section 7) |
 | PTB27 | 59 | FD6818 GPIO0, the sub-audio compare result (measured) | high = the tone or code is heard |
 | PTB28 / PTB29 | 60 / 61 | voice prompt chip clock / data | |
@@ -113,7 +113,7 @@ written, the carrier measured +0.47 ppm (section 5) and the receiver peaks on th
 | Item | Value |
 | --- | --- |
 | Power latch | PTB12 high from start-up; low lets the radio turn off |
-| Power switch | PTB17; the original firmware lets go of the latch after it reads "off" for 500 ms. Which level is off: ? |
+| Power switch | PTB17, high = off (measured). The original firmware lets go of the latch after it reads "off" for 500 ms; RadioFoundry after five 100 ms polls (`power_rt10.c`) |
 | Battery | ADC channel 2; scale ? |
 | PA | DAC B drives the PA's power control; levels per frequency step come from the calibration (section 4.1) |
 | Power levels | L and H: the calibration's low and high sets |
@@ -232,7 +232,7 @@ No codec bytes are in the repository or in a release.
 | --- | --- |
 | Boot from the ROM flag at 0x0300C000 | written |
 | Host link on UART0, stub entry, watchdog, crash log | measured: the hang and stall checks keep their records and the radio restarts by itself (`test_crash.py`). The restart is a watchdog reset (2026-11-06): a reboot answers again after 3 s, and every crash and watchdog test passes through it (`test_crash.py`, `test_watchdog.py`, 12 of 12) |
-| Power switch level, battery scale, LED colors, key levels, knob map | open |
+| Battery scale, LED colors, key levels, knob map | open |
 | FD6818 two-wire bus, FM receive, sub-audio decode | measured |
 | Factory calibration read | measured (the radio's own sector) |
 | FM transmit | measured on air (section 5) |
