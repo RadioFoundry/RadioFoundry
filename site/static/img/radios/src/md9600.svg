@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SPDX-License-Identifier: MIT -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 444" data-undrawn="ptt mic_0 mic_1 mic_2 mic_3 mic_4 mic_5 mic_6 mic_7 mic_8 mic_9 mic_star mic_hash mic_a mic_b mic_c mic_d mic_ab mic_up mic_down">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 444">
 <defs>
 <linearGradient id="body" x1="0" x2="1"><stop offset="0" stop-color="#161819"/><stop offset=".5" stop-color="#2a2d30"/><stop offset="1" stop-color="#141617"/></linearGradient>
 <linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f3336"/><stop offset="1" stop-color="#1b1e20"/></linearGradient>
