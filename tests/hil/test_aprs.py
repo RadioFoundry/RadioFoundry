@@ -38,8 +38,10 @@ it; it doesn't transmit (beacons and the digipeater off, put back after). The SD
 the test skips there.
 
 On air, iGate (rf + bench_service + usb_switch: also --allow-usb-switch): the same frame, heard by the radio in the USB
-network personality with the iGate on (iGate transmit off). With no APRS-IS server online the radio hands the APRS-IS
-line to the KISS TCP client (port 8001, SetHardware 'G'), where the test reads it.
+network personality with the iGate on (iGate transmit off). [aprsis] the test runs a minimal APRS-IS server on the host
+(at the host's own address on the USB network, so no NAT), points the radio's APRS-IS client at it over HTTP and reads
+the line where it arrives; [kiss_tcp] with no server online the line goes to the KISS TCP client (port 8001,
+SetHardware 'G').
 
 On air, DMR (radio_tx + bench_service): on the DMR test channel (--dmr-freq / --dmr-cc) at
 the lowest power the radio sends its position as an LRRP report (UDP 4001 in rate 1/2 data) and as an ETSI UDT
@@ -61,8 +63,8 @@ Pass criteria:
   LRRP: DPF 2 (unconfirmed) carrying IPv4 / UDP to port 4001 with a triggered location report (document 0x0D);
   UDT: DPF 0, format 5 (NMEA location), appended block CRC ok; the position within 2e-5 degree.
 - test_aprs_rx_on_air: aprs.rx_frames +1 with aprs.rx_bad unchanged, and aprs.stations at least 1.
-- test_aprs_igate_on_air: aprs.igated +1, and the KISS TCP client gets the APRS-IS line
-  "<src>>APZRDF,qAR,<radio's call>:<info>" once.
+- test_aprs_igate_on_air: aprs.igated +1, and the line "<src>>APZRDF,qAR,<radio's call>:<info>" arrives once:
+  [aprsis] at the server, after a login as the radio's call with its passcode; [kiss_tcp] on KISS TCP.
 """
 import contextlib
 import re
@@ -651,12 +653,12 @@ BENCH_RX_SSIDS = (7, 11)    # the bench's frame: --callsign with the first that 
 BENCH_RX_INFO = "!3330.00N/08645.00W-RadioFoundry bench frame"
 
 
-def bench_frame(call, own):
+def bench_frame(call, own, info=BENCH_RX_INFO):
     """The bench's frame: (its source, the bench board's FSK program). The source is call-7, or -11 when that is the
     radio's own call (the radio skips its own packets)"""
     import aprs_afsk_check as afsk
     src = next(c for c in (f"{call.upper()}-{n}" for n in BENCH_RX_SSIDS) if c != own)
-    bits = afsk.hdlc_bits([afsk.ax25_frame(src, "APZRDF", [], BENCH_RX_INFO)], 40)     # 40 flags: 267 ms TX delay
+    bits = afsk.hdlc_bits([afsk.ax25_frame(src, "APZRDF", [], info)], 40)     # 40 flags: 267 ms TX delay
     packed = bits + "0" * (-len(bits) % 8)
     hexs = "".join(f"{int(packed[i:i + 8], 2):02x}" for i in range(0, len(packed), 8))   # MSB first, as sent
     return src, [{"kind": "fsk", "hex": hexs, "bits": len(bits), "nrzi": True, "level": 1.0}]
@@ -724,24 +726,87 @@ def kiss_frames(data):
     return out
 
 
+class AprsIsServer:
+    """A minimal APRS-IS server on the host (tcp-services.md 7: "a local relay on the host"): a banner, "# logresp
+    CALL verified" to any login, a comment every 15 s, and every line it receives kept in .lines. One client at a
+    time, on a free port; the radio reaches it at the host's own address on the USB network."""
+
+    def __init__(self):
+        import socket
+        import threading
+        self.lines, self.port = [], 0
+        self._stop = threading.Event()
+        self._srv = socket.socket()
+        self._srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._srv.bind(("0.0.0.0", 0))
+        self._srv.listen(2)
+        self._srv.settimeout(0.5)
+        self.port = self._srv.getsockname()[1]
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        import socket
+        while not self._stop.is_set():
+            try:
+                c, _ = self._srv.accept()
+            except socket.timeout:
+                continue
+            c.settimeout(0.5)
+            buf, last = b"", time.monotonic()
+            try:
+                c.sendall(b"# RadioFoundry HIL APRS-IS\r\n")
+                while not self._stop.is_set():
+                    try:
+                        d = c.recv(512)
+                        if not d:
+                            break
+                        buf += d
+                    except socket.timeout:
+                        pass
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        line = line.strip().decode("latin-1")
+                        self.lines.append(line)
+                        if line.startswith("user "):
+                            c.sendall(f"# logresp {line.split()[1]} verified, server HIL\r\n".encode())
+                    if time.monotonic() - last > 15:
+                        c.sendall(b"# keepalive\r\n")
+                        last = time.monotonic()
+            except OSError:
+                pass
+            finally:
+                c.close()
+
+    def close(self):
+        self._stop.set()
+        self._thread.join(5)
+        self._srv.close()
+
+
 @pytest.mark.feature("aprs_igate")
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.usb_switch
-def test_aprs_igate_on_air(radio, sdr_bench, pytestconfig):
+@pytest.mark.parametrize("to", ["aprsis", "kiss_tcp"])
+def test_aprs_igate_on_air(radio, sdr_bench, pytestconfig, to):
     """RF to APRS-IS (aprs.md 9.1): the bench's frame, as in test_aprs_rx_on_air, heard by the radio in the USB network
-    personality with the iGate on and the test callsign. With no APRS-IS server online the line goes to the KISS TCP
-    client (port 8001) as SetHardware 'G': the test reads "<src>>APZRDF,qAR,<radio's call>:<info>" there, once, and
-    aprs.igated counts it. The radio doesn't transmit: iGate transmit, beacons and the digipeater are off."""
+    personality with the iGate on and the test callsign; the line "<src>>APZRDF,qAR,<radio's call>:<info>" goes out
+    once, and aprs.igated counts it.
+    aprsis: through the radio's own APRS-IS client (CONFIG_NET_APRSIS) to a server the test runs on the host: the
+    client logs in as the radio's call with its passcode, and the line arrives at the server.
+    kiss_tcp: with no APRS-IS server online, the line goes to the KISS TCP client (port 8001) as SetHardware 'G'.
+    The radio doesn't transmit: iGate transmit, beacons and the digipeater are off."""
     import socket
     from test_net_services import network_mode
+    from test_tcp_services import _get
     _need_aprs(radio)
     feats = radio.features()
-    for f in ("APRS_RX", "APRS_IGATE", "VFO_FM", "NET_KISS"):
+    for f in ("APRS_RX", "APRS_IGATE", "VFO_FM", "NET_APRSIS" if to == "aprsis" else "NET_KISS"):
         if f not in feats:
             skip("not_built", f"built without CONFIG_{f}")
     if not pytestconfig.getoption("--allow-usb-switch"):
-        skip("opt_in", "needs --allow-usb-switch (KISS TCP is in the USB network personality)")
+        skip("opt_in", "needs --allow-usb-switch (the IP services are in the USB network personality)")
     call = rig(pytestconfig, "callsign", "an amateur transmission: needs a licensed operator's callsign,")
     mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
@@ -756,8 +821,8 @@ def test_aprs_igate_on_air(radio, sdr_bench, pytestconfig):
         radio.link = udp
         stack.callback(lambda: setattr(radio, "link", serial) if radio.link is udp else None)
         L = radio.link
-        assert L.view(["net"]).get("aprsis.state", "") != "online", \
-            "the radio's APRS-IS client is online: the line would go to that server, not to the KISS client"
+        if L.view(["net"]).get("aprsis.state", "") == "online":
+            _get(ip, "/api/aprsis?server=off")      # a server left set: the line would go there, not to the test
         stack.enter_context(radio.vfo_session())
         s = stack.enter_context(aprs_session(radio))
         aset = _aprs(radio)
@@ -772,14 +837,31 @@ def test_aprs_igate_on_air(radio, sdr_bench, pytestconfig):
                            x.get("set.aprs_igate") == "1" and x.get("set.aprs_kiss") == "1",
                            sections=("aprs", "aprs_set"), what="test call, iGate and KISS on")
         own = v["aprs.call"]
-        src, program = bench_frame(call, own)
+        info = f"{BENCH_RX_INFO} ({to})"    # one text per variant: the iGate passes a packet once in 30 s
+        src, program = bench_frame(call, own, info)
+        if to == "aprsis":
+            srv = AprsIsServer()
+            stack.callback(srv.close)
+            host = ".".join(ip.split(".")[:3] + [str(int(ip.split(".")[3]) ^ 1)])     # the host's address
+            st, _, body = _get(ip, f"/api/aprsis?server={host}:{srv.port}")
+            assert st == 200, body
+            stack.callback(lambda: _get(ip, "/api/aprsis?server=off"))
+            radio.wait_for(lambda x: x.get("aprsis.state") == "online", timeout=60, sections=("net",),
+                           what=f"the APRS-IS client online at {host}:{srv.port}")
+            login = [ln for ln in srv.lines if ln.startswith("user ")]
+            print(f"login: {login}")
+            assert login and login[-1].startswith(f"user {own} pass "), f"login {login}, expected as {own}"
+            n0 = len(srv.lines)
+        else:
+            k = stack.enter_context(socket.create_connection((ip, 8001), timeout=5))
+            k.settimeout(0.5)
         L.vfo_set(hz)
         radio.wait_for(lambda x: x.get("rx_hz") == str(hz) and x.get("mode") == "fm", what="FM VFO")
         s.rx_setup(hz)
         radio.wait_for(lambda x: x.get("aprs.rx_listening") == "1", sections=("aprs",), what="APRS receiver on")
-        k = stack.enter_context(socket.create_connection((ip, 8001), timeout=5))
         time.sleep(0.3)
         v0 = _aprs(radio)
+        net0 = L.view(["net"])
         with sdr_bench.lease():
             done = sdr_bench.fm_transmit(mhz, program, dev_hz=3000, lead_s=0.1, tail_s=0.1)
         print(f"bench: {done}")
@@ -791,15 +873,23 @@ def test_aprs_igate_on_air(radio, sdr_bench, pytestconfig):
             raise AssertionError("not gated: " + " ".join(
                 f"{key}={_n(v0, key)}->{_n(v, key)}" for key in ("aprs.rx_frames", "aprs.rx_fcs_errors", "aprs.rx_bad",
                                                                  "aprs.igated", "aprs.host_out", "aprs.rx_peak")))
-        data, end = b"", time.monotonic() + 3
-        k.settimeout(0.5)
-        want = f"{src}>APZRDF,qAR,{own}:{BENCH_RX_INFO}"
-        while time.monotonic() < end and want.encode() not in data:
-            try:
-                data += k.recv(4096)
-            except socket.timeout:
-                pass
-        lines = [f[2:].decode("latin-1") for f in kiss_frames(data) if f[:2] == b"\x06G"]
-        print(f"aprs.igated {_n(v0, 'aprs.igated')}->{_n(v, 'aprs.igated')}, lines to APRS-IS: {lines}")
+        want = f"{src}>APZRDF,qAR,{own}:{info}"
+        end = time.monotonic() + 3
+        if to == "aprsis":
+            while time.monotonic() < end and want not in srv.lines[n0:]:
+                time.sleep(0.1)
+            time.sleep(0.5)             # a second copy would follow at once
+            lines = [ln for ln in srv.lines[n0:] if not ln.startswith("#")]
+            net = L.view(["net"])
+            print(f"aprsis.lines_out {net0.get('aprsis.lines_out')}->{net.get('aprsis.lines_out')}")
+        else:
+            data = b""
+            while time.monotonic() < end and want.encode() not in data:
+                try:
+                    data += k.recv(4096)
+                except socket.timeout:
+                    pass
+            lines = [f[2:].decode("latin-1") for f in kiss_frames(data) if f[:2] == b"\x06G"]
+        print(f"aprs.igated {_n(v0, 'aprs.igated')}->{_n(v, 'aprs.igated')}, lines to APRS-IS ({to}): {lines}")
         assert _n(v, "aprs.igated") == _n(v0, "aprs.igated") + 1, f"one packet gated expected: {v}"
-        assert lines == [want], f"expected the line {want!r} once on KISS TCP, got {lines} ({len(data)} bytes)"
+        assert lines == [want], f"expected the line {want!r} once ({to}), got {lines}"
