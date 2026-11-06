@@ -31,8 +31,9 @@ Pass criteria:
   unchanged. Then lock: roam.state=locked; roam now ends the lock (watch or search).
 - test_roam_to_bench_repeater (rf, radio_tx, bench_service): the zone holds a site whose frequencies are the bench
   repeater's (--roam-rx / --roam-tx, color code --dmr-cc) and another site with no repeater on the air. Starting on
-  the other site with the wake probe on, roam now: within 40 s the radio is on the bench site (roam.roams +1,
-  roam.probes >= 1) and bench_repeater.py reported a wakeup.
+  the other site with the wake probe on and the threshold at its lowest (-125 dBm: the bench's level is not the test),
+  roam now: within 40 s the radio is on the bench site (roam.roams +1, roam.probes >= 1) and bench_repeater.py
+  reported a wakeup. On a timeout it prints the radio's visits and the bench repeater's output.
 - test_roam_survey_settings_round_trip: SETTING roam_beacon_s / roam_beacon_len_s / roam_survey (25-27) show in
   set.* within 1 s and are put back.
 - test_roam_beacon_home (rf, bench_service; the radio does not transmit): the zone holds the bench repeater's site
@@ -73,7 +74,7 @@ ROAM_KEYS = ("roam.built", "roam.zone_on", "roam.state", "roam.why", "roam.pendi
              "set.roam_probe", "set.roam_check_s", "roam.visit", "roam.win_conf", "roam.win_next_ms", "roam.confirm",
              "roam.surveys", "roam.visits", "roam.cuts", "roam.beacons", "roam.confirms", "set.roam_beacon_s",
              "set.roam_beacon_len_s", "set.roam_survey", "set.rpt_beacon")
-ROAM_SETTINGS = ("roam_probe", "roam_beacon_s", "roam_beacon_len_s", "roam_survey")
+ROAM_SETTINGS = ("roam_probe", "roam_beacon_s", "roam_beacon_len_s", "roam_survey", "roam_rssi_dbm")
 SURVEYS = {"off": 0, "sync": 1, "site": 2}
 
 
@@ -96,7 +97,8 @@ def roaming(radio):
     saved = {"roam_probe": 1 if v.get("set.roam_probe") == "wake" else 0,
              "roam_beacon_s": as_int(v.get("set.roam_beacon_s", "60")),
              "roam_beacon_len_s": as_int(v.get("set.roam_beacon_len_s", "4")),
-             "roam_survey": SURVEYS.get(v.get("set.roam_survey"), 1)}
+             "roam_survey": SURVEYS.get(v.get("set.roam_survey"), 1),
+             "roam_rssi_dbm": as_int(v.get("set.roam_rssi_dbm", "-105"))}
     try:
         yield radio
     finally:
@@ -364,18 +366,39 @@ def _roam_to_bench_repeater(roaming, sdr_bench, pytestconfig, rx, tx):
         skip("state", "no other site to start from")
     roaming.lowest_power()
     L.setting("roam_probe", 1)
+    # The lowest threshold: the test is the wake-up and the move, not the bench's level (a bench SDR's outbound can
+    # reach the radio near -120 dBm, under the -105 default, and a site under it is never chosen). The fixture puts
+    # the threshold back
+    L.setting("roam_rssi_dbm", -125)
+    wait_roam(roaming, lambda x: x.get("set.roam_rssi_dbm") == "-125", 1.0, "threshold -125 dBm")
     v = roam(roaming)
     r0, p0 = as_int(v["roam.roams"]), as_int(v["roam.probes"])
     with sdr_bench.lease():
         p = sdr_bench.repeater_start(tx, rx, cc, 60)       # input: what the radio sends on; output: what it hears
+        trail, t0 = [], time.monotonic()        # the visits as the radio went: where it listened, what it heard
+
+        def roamed(x):
+            k = (x.get("channel_number"), x.get("roam.visit"), x.get("state"), x.get("dmr.repeater_up"),
+                 round(as_int(x.get("rssi_dbm", "0")) / 5) * 5, x.get("roam.probes"))
+            if not trail or trail[-1][1:] != k:
+                trail.append((round(time.monotonic() - t0, 2),) + k)
+            return x.get("channel_number") == bench_ch and x.get("roam.state") == "watch"
+        err = None
         try:
             L.roam("now")
-            v = wait_roam(roaming, lambda x: x.get("channel_number") == bench_ch and x.get("roam.state") == "watch",
-                          40.0, "roamed to the bench repeater")
+            v = roaming.wait_for(roamed, 40.0, sections=("roam", "core", "dmr"), what="roamed to the bench repeater")
+        except AssertionError as e:
+            err = e
         finally:
             events, out = bench_events(p)
+        if err is not None:     # whether the bench heard the probes, and when the radio listened, tell radio from bench
+            steps = "\n".join(" ".join(map(str, t)) for t in trail[-60:])
+            raise AssertionError(f"{err}\ns channel visit state repeater_up rssi probes:\n{steps}\n"
+                                 f"bench repeater: {out[-1500:] if out else '(no output)'}")
         assert as_int(v["roam.roams"]) == r0 + 1
         assert as_int(v["roam.probes"]) > p0
+    print("roamed: " + " ".join(f"{k}={v[k]}" for k in sorted(v) if k.startswith("site.")) +
+          f" probes={v['roam.probes']}")
     assert any("wakeup" in e for e in events), \
         f"bench_repeater.py saw no wakeup: {out[-800:] if out else ''}"
 
