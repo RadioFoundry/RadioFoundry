@@ -92,6 +92,14 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "power=%u\n", v->power);
 	dl_text_kv_str(t, "power_name", pw);
 	dl_text(t, "power_count=%u\n", board.power_count);
+	if (board.radio != NULL && board.radio->tx_drive_level != NULL) {
+		// The PA drive of each level at the channel's transmit frequency (power calibration)
+		dl_text(t, "tx_drive=");
+		for (uint8_t l = 0; l < board.power_count; l++) {
+			dl_text(t, l ? "/%u" : "%u", (unsigned)board.radio->tx_drive_level(v->ch.tx_hz, l));
+		}
+		dl_text(t, "\n");
+	}
 	dl_text(t, "temporary=%u\ntemp=0x%02x\n", v->temporary, v->temp);
 	dl_text(t, "squelch=%u\nmonitor=%u\ntone_ok=%u\n", v->squelch, v->monitor, v->tone_ok);
 	dl_text(t, "rssi_dbm=%d\nnoise=%u\n", v->rssi_dbm, v->noise);

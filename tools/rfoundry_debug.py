@@ -173,6 +173,7 @@ OP_VFO_COPY = 32
 OP_VOICE_TEST = 33
 OP_DTMF = 34
 OP_TX_LIMIT = 35
+OP_TX_DRIVE = 36
 TX_LIMIT_MAX = 10       # frequencies in the test TX limit's list (core/radio/tx_limit.h)
 DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
@@ -919,6 +920,12 @@ class DebugLink:
             raise ValueError(f"tx_limit: at most {TX_LIMIT_MAX} frequencies")
         self.radio(OP_TX_LIMIT, struct.pack(f"<BB{len(hz)}I", 1 if block else 0, len(hz), *hz))
 
+    def tx_drive(self, drive=0):
+        """The PA drive of the next transmission (RADIO op 36; power calibration), in the board's own units, in place of
+        its power level's; it lasts until that transmission ends. 0: the level's again. Set it before key-up. The core
+        view's tx_drive lists each level's drive. Raises DebugLinkError over the board's limit or without the hook."""
+        self.radio(OP_TX_DRIVE, struct.pack("<H", int(drive)))
+
     def tone_burst(self, on, max_ms=0):
         """The 1750 Hz burst (FM): keys up and sends the tone while on. The firmware ends it by itself after max_ms
         (0: inject_max_ms, the cap as for PTT), so a lost "off" can't leave the radio keyed."""
@@ -1366,6 +1373,8 @@ def cmd_radio(link, a):
             link.tx_limit(block=args[:1] == ["block"])
         else:
             link.tx_limit(mhz=[float(f) for f in ",".join(args).split(",") if f])
+    elif op == "tx-drive":            # tx-drive N|off (the next transmission's PA drive, power calibration)
+        link.tx_drive(0 if args[:1] in ([], ["off"]) else num(0))
     elif op == "set":                 # set NAME VALUE
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
@@ -2085,7 +2094,7 @@ def main(argv=None):
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
                                   "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo", "voice-test", "dtmf",
-                                  "tx-limit"])
+                                  "tx-limit", "tx-drive"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",

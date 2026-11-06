@@ -456,6 +456,28 @@ def test_tx_limit(fm_tx):
         fm_tx.tx_gate(True)
 
 
+@pytest.mark.feature("debuglink")
+def test_tx_drive_op(radio):
+    """The PA drive override (RADIO op 36, power calibration) without keying: the core view lists each power level's
+    drive, rising; the op takes a drive and 0 (the level's again) and refuses one past the board's limit."""
+    core = radio.core()
+    if "tx_drive" not in core:
+        with pytest.raises(DebugLinkError):
+            radio.link.tx_drive(0)          # a radio without the view key has no override either
+        skip("not_built", "no PA drive override for this radio (hal_radio_t.tx_drive)")
+    drives = [int(x) for x in core["tx_drive"].split("/")]
+    assert len(drives) == int(core["power_count"]), core
+    on = [d for d in drives if d]
+    assert on == sorted(set(on)), f"the levels' drives don't rise: {drives}"
+    try:
+        radio.link.tx_drive(max(drives) or 1)
+        with pytest.raises(DebugLinkError) as e:
+            radio.link.tx_drive(0xFFFF)
+        assert e.value.status == 2, e.value     # bad argument: over the board's limit
+    finally:
+        radio.link.tx_drive(0)
+
+
 @pytest.mark.feature("radio_controls")
 @pytest.mark.radio_tx
 def test_tot_warning(fm_tx):
