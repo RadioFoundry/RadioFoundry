@@ -345,20 +345,33 @@ frequency point, labeled 5 W, 10 W, 25 W and 40 W. The labels are wrong: the row
 - **The cliff.** Below the zero point by 5-20 counts the power loop loses control and the PA puts out about 10 W. A
   drive of 0 is below it: the ramp starts and ends at the band's zero point (UHF 440, VHF 870), and the drive goes to 0
   only with the loop open. Ramping from 0 gave a carrier at key-up and a splash at key-down.
-- **The low end** follows the absolute drive, the same within 5 counts at both frequencies of a band. The low levels
-  are fixed drives per band.
+- **The low end** follows the absolute drive: the zero point moved 10 counts between the two UHF frequencies and not
+  at all on VHF. The low levels are fixed drives per band. At the very bottom that spread is 2-3 dB: drive 457 gave
+  0.18 W at 446.100 and 0.10 W at 440.000, so 50 mW can't hold ±2 dB across the band.
 - **The upper levels** move with frequency and follow the factory rows: 25 W is interpolated in watts between the rows
   around it, the top level is the top row plus a fixed step.
-- **Lowest level.** The margin above the cliff is 20 counts (hot shift 5). UHF reaches 50 mW (452); on VHF the curve
-  is steeper, and 250 mW (880) is the lowest level that keeps the margin.
+- **Lowest level.** The margin above the cliff is 20 counts (hot shift 5). UHF: 100 mW (456), the lowest name that
+  fits ±2 dB at both frequencies. VHF: the curve is steeper, and 250 mW (880) is the lowest level that keeps the
+  margin.
 
 | Level | UHF drive | UHF name | VHF drive | VHF name |
 |---|---|---|---|---|
-| 0 | 452 | 50 mW | 880 | 250 mW |
+| 0 | 456 | 100 mW | 880 | 250 mW |
 | 1 | 509 | 1 W | 892 | 1 W |
 | 2 | 680 | 5 W | 947 | 5 W |
 | 3 | rows 2-3 (UHF) or 1-2 (VHF) at 25 W | 25 W | as UHF | 25 W |
 | 4 | top row + 337 | 45 W | top row + 45 | 50 W |
+
+The short check with this table (section 4 of the procedure, FM carrier, watts):
+
+| Level | 446.100 | 440.000 | 151.5125 |
+|---|---|---|---|
+| 0 | 0.15 (100 mW) | 0.08 (100 mW) | 0.18 (250 mW) |
+| 1 W | 1.06 | | 0.93 |
+| 5 W | 5.07 | | 5.29 |
+| 25 W | 26.1 | | 27.0 |
+| Top | 45.9 (45 W) | | 50.7 (50 W) |
+| Dark step (cliff + 5) | 0.00 (437) | | 0.00 (865) |
 
 A radio whose rows give levels that don't rise, or a top level over 2300 counts, transmits on no level. The debug
 link's `tx_drive` view key shows each level's drive, and RADIO op 36 sets one transmission's drive

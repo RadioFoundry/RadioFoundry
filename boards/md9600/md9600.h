@@ -59,7 +59,7 @@ bool md9600_flash_rev_store(md9600_rev_t rev);
 // Factory calibration and the hardware option block: cal_md9600.h (docs/spec/hardware-md9600.md 11)
 #include "cal_md9600.h"
 // What the RF code takes from it (rfcal_md9600.c): PA drive per power level and the squelch thresholds, each used
-// only when its rows look plausible (md9600_cal_rf_rows). The power levels: UHF 50 mW, 1 W, 5 W, 25 W, 45 W; VHF
+// only when its rows look plausible (md9600_cal_rf_rows). The power levels: UHF 100 mW, 1 W, 5 W, 25 W, 45 W; VHF
 // 250 mW, 1 W, 5 W, 25 W, 50 W (hardware-md9600.md 5.6)
 #define MD9600_POWER_LEVELS	5u
 #define MD9600_FACTORY_PA_ROWS	4u		// the calibration's PA rows (labeled 5, 10, 25, 40 W; they aren't)

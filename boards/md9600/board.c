@@ -42,7 +42,7 @@ static const band_t bands[] = {
 
 // The power levels, per band (hardware-md9600.md 5.6: measured with a wattmeter). The same steps on both bands, the
 // lowest and the top differ
-static const char *const power_names[] = { "50mW", "1W", "5W", "25W", "45W" };
+static const char *const power_names[] = { "100mW", "1W", "5W", "25W", "45W" };
 static const char *const power_names_vhf[] = { "250mW", "1W", "5W", "25W", "50W" };
 static const board_power_band_t power_bands[] = {
 	{ 136000000u, 174000000u, power_names_vhf },

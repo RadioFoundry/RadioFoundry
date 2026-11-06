@@ -28,7 +28,7 @@ These facts set the procedure. Check them again only on a new model.
 |---|---|
 | Labels on the factory calibration rows can be wrong by 3 dB or more (a "5 W" row gave 9-10 W) | Measure every factory row once; never trust the label |
 | Power against drive is steep at the bottom and saturates at the top | Bisect at the bottom, use coarse steps at the top |
-| The bottom of the curve follows the **absolute** drive: the drive where output reaches zero (the zero point, Z) moved 5 counts or less between two frequencies 5-6 MHz apart in the same band | The low levels are fixed drives per band, not fractions of a factory row (a fraction put 1 W at 1.9 W) |
+| The bottom of the curve follows the **absolute** drive: the drive where output reaches zero (the zero point, Z) moved 0-10 counts between two frequencies 5-6 MHz apart in the same band | The low levels are fixed drives per band, not fractions of a factory row (a fraction put 1 W at 1.9 W). At the very bottom 10 counts is 2-3 dB, so the lowest level's name must fit both frequencies |
 | The top of the curve moves with frequency (the 25 W and top drives differed by up to 50 counts between the same two frequencies) | The upper levels follow the factory rows, which are calibrated at several frequencies |
 | **The cliff:** 5-20 counts below the zero point, the power loop loses control and the PA jumps to about 10 W | A level is never set within the margin below; the lowest level's drive is checked against the cliff, not just the zero point |
 | A drive of 0 is below the cliff | The PA must not be on with the drive at 0: the ramp starts and ends at the zero point (a carrier leak at key-up and a splash at key-down come from this) |
@@ -73,7 +73,7 @@ to 5 counts.
 ### 3.3 Low curve (4-6 key-ups)
 
 Key Z + 10, Z + 30, Z + 60 and Z + 120, then halfway to the lowest row if 5 W isn't bracketed. Interpolate the drive for
-each low level (50 mW, 1 W, 5 W) on log(P) between neighbors, then key each once to verify (3 key-ups). Accept within
+each low level (for example 100 mW, 1 W, 5 W) on log(P) between neighbors, then key each once to verify (3 key-ups). Accept within
 ±0.5 dB; else interpolate again with the new point.
 
 ### 3.4 Upper levels (3-5 key-ups)
@@ -84,8 +84,9 @@ counts (saturation). Stop at the radio's rating.
 
 ### 3.5 Second frequency (B, about 12 key-ups)
 
-The factory rows (4), Z and C by bisection from A's values (about 4), and each low level at A's drive (3). If a low
-level reads more than 1 dB from A's, the low levels need a per-frequency table: record both and stop.
+The factory rows (4), Z and C by bisection from A's values (about 4), and each low level at A's drive (3). A low level
+that misses its tolerance at B moves to the drive between A's and B's points that fits both, or up to the next name
+that does (two key-ups per try); 1 W and above have always fit.
 
 ### 3.6 Hot check (about 12 key-ups)
 

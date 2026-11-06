@@ -881,14 +881,14 @@ static void test_cal(void)
 	CHECK(md9600_cal_pa_row(410000000u, 3, &dac) && dac == (110 + 1) * 16);
 	CHECK(md9600_cal_pa_row(136000000u, 1, &dac) && dac == 67 * 16 && !md9600_cal_pa_row(136000000u, 4, &dac));
 	// The power levels: the low three fixed drives, 25 W between the factory rows around it, the top past the top row
-	const uint16_t lv_u[5] = { 452, 509, 680, 1232 + (1760 - 1232) * 8 / 152, 1760 + 337 };
+	const uint16_t lv_u[5] = { 456, 509, 680, 1232 + (1760 - 1232) * 8 / 152, 1760 + 337 };
 	const uint16_t lv_v[5] = { 880, 892, 947, 1072 + (1136 - 1072) * 67 / 83, 1760 + 45 };
 	for (uint8_t l = 0; l < 5; l++) {
 		CHECK(md9600_cal_apc(400000000u, l, &dac) && dac == lv_u[l]);
 		CHECK(md9600_cal_apc(136000000u, l, &dac) && dac == lv_v[l]);
 	}
 	CHECK(md9600_cal_apc(410000000u, 4, &dac) && dac == (110 + 1) * 16 + 337);	// the top follows the rows
-	CHECK(md9600_cal_apc(410000000u, 0, &dac) && dac == 452);			// the low levels don't
+	CHECK(md9600_cal_apc(410000000u, 0, &dac) && dac == 456);			// the low levels don't
 	CHECK(!md9600_cal_apc(446000000u, 5, &dac));
 	CHECK(md9600_cal_apc_floor(MD9600_UHF) == 440 && md9600_cal_apc_floor(MD9600_VHF) == 870);
 	CHECK(md9600_cal_apc_floor(2) == 0);

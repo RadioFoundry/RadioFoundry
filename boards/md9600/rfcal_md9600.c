@@ -17,7 +17,7 @@ static const md9600_cal_row_t pa_row[MD9600_FACTORY_PA_ROWS] = {
 // jumps to about 10 W there). Above, the output moves with frequency as the factory rows do: 25 W lies between the
 // rows by the watts they gave, the top level a fixed step over the top row
 typedef struct {
-	uint16_t low[3];			// 50 mW (UHF) or 250 mW (VHF), 1 W, 5 W
+	uint16_t low[3];			// 100 mW (UHF) or 250 mW (VHF), 1 W, 5 W
 	uint16_t row_dw[MD9600_FACTORY_PA_ROWS];	// what the factory rows gave, tenths of a watt
 	uint16_t mid_dw;			// level 3: 25 W
 	uint16_t top_step;			// level 4 over the top row
@@ -25,7 +25,7 @@ typedef struct {
 } pa_band_t;
 
 static const pa_band_t pa_band[2] = {
-	[MD9600_UHF] = { { 452, 509, 680 }, { 92, 131, 242, 394 }, 250, 337, 440 },
+	[MD9600_UHF] = { { 456, 509, 680 }, { 92, 131, 242, 394 }, 250, 337, 440 },
 	[MD9600_VHF] = { { 880, 892, 947 }, { 101, 183, 266, 493 }, 250, 45, 870 },
 };
 

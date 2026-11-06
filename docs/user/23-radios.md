@@ -677,8 +677,9 @@ the keypad's levels haven't been measured on a radio.
 
 ### MD-9600 bands and power levels
 
-Both bands on every radio: VHF (136-174 MHz) and UHF (400-480 MHz). Four power levels, labeled 5, 10, 25 and 40 W
-(the labels aren't measured). The radio runs from a vehicle's 13.8 V supply, so it shows the supply voltage
+Both bands on every radio: VHF (136-174 MHz) and UHF (400-480 MHz). Five power levels, measured into a dummy load: UHF
+100 mW, 1 W, 5 W, 25 W and 45 W; VHF 250 mW, 1 W, 5 W, 25 W and 50 W. The top level differs by band, and the screen
+shows the level for the channel's band. The radio runs from a vehicle's 13.8 V supply, so it shows the supply voltage
 instead of a battery level and never warns about a low battery. The voltage's scale isn't checked on a radio yet.
 
 ### MD-9600 display
