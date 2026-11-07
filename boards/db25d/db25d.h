@@ -81,9 +81,10 @@ uint16_t db25d_apc_level(uint16_t target, uint16_t step);
 uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level);
 
 // --- DMR burst timing (hardware-db25d.md 4.5; the arithmetic is platform/hrc7000/dmr_rfburst_timing.h) ---
-// The TX on sequence has the PA fully up 2.1 ms after the RF TX interrupt plus the page's TX-on delay
+// After the RF TX interrupt plus the page's TX-on delay, the TX on sequence has the PA within 1 dB of the plateau at
+// 1.7-2.1 ms (the analog ramp varies). 2.3 ms keeps the 1 dB point at least 0.2 ms ahead of the first symbol
 #define DB25D_DMR_SYMBOL_AFTER_LEAD_US	HRC_RFBURST_SYMBOL_AFTER_LEAD_US
-#define DB25D_DMR_PA_UP_US		2100u
+#define DB25D_DMR_PA_UP_US		2300u
 static inline uint8_t db25d_dmr_rf_tx_lead(uint16_t on_us)
 {
 	return hrc_rfburst_lead(DB25D_DMR_PA_UP_US + on_us);
