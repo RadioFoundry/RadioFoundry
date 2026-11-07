@@ -865,6 +865,10 @@ static volatile uint16_t burst_dac;	// the DAC word while a burst goes out
 static volatile uint32_t burst_count;	// rising edges while keyed (diag_d578uv.c)
 static pa_phase_t burst_phase;		// the handlers' (one priority, so neither interrupts the other)
 static uint32_t burst_refused;		// key-ups refused with the burst line high (pa_gate_can_key)
+// The receiver's way back after a DMR transmission: hal_micros() at the last burst line fall while keyed (0 none
+// yet), and from it to tx_off() and to the end of its receive set-up. A reply can come 30 ms after the last burst
+static volatile uint32_t burst_fall_us;
+static uint32_t rx_back_us[2];
 
 static void burst_timer_stop(void)
 {
@@ -923,6 +927,10 @@ void MCU_EXTI0_HANDLER(void)
 	if (burst_phase == PA_RISING && was != PA_RISING) {
 		burst_count++;
 	}
+	if (!burst && burst_keyed) {
+		uint32_t now = hal_micros();
+		burst_fall_us = now != 0 ? now : 1u;
+	}
 	if (st.act == PA_GATE_NONE && st.timer_us == 0) {
 		return;		// a repeat: the running delay stays
 	}
@@ -961,6 +969,7 @@ static void burst_init(void)
 static void burst_arm(uint16_t dac_word)
 {
 	burst_dac = dac_word;
+	burst_fall_us = 0;
 	mcu_exti_clear(BURST_LINE);
 	__disable_irq();
 	burst_phase = PA_IDLE;
@@ -983,6 +992,12 @@ void d578uv_pa_counts(uint32_t *bursts, uint32_t *refused)
 {
 	*bursts = burst_count;
 	*refused = burst_refused;
+}
+
+void d578uv_rx_back(uint32_t *off_us, uint32_t *rx_us)
+{
+	*off_us = rx_back_us[0];
+	*rx_us = rx_back_us[1];
 }
 
 void d578uv_pa_counts_reset(void)
@@ -1869,6 +1884,10 @@ static uint32_t rx_back_ms;		// hal_millis() at the last tx_off, 0 before any
 
 static void tx_off(void)
 {
+#if CONFIG_DMR
+	uint32_t off_us = hal_micros();
+	uint32_t fall_us = burst_fall_us;	// before the disarm: no edge counts after it
+#endif
 	drive_next = 0;		// the override is for one transmission
 #if CONFIG_DMR
 	burst_disarm();
@@ -1886,6 +1905,13 @@ static void tx_off(void)
 	if (have_rx) {
 		rx_setup();
 	}
+#if CONFIG_DMR
+	if (fall_us != 0) {
+		rx_back_us[0] = off_us - fall_us;
+		rx_back_us[1] = hal_micros() - fall_us;
+		burst_fall_us = 0;
+	}
+#endif
 	rx_back_ms = hal_millis();
 	b_resume();
 }

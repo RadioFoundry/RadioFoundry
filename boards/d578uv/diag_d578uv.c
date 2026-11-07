@@ -126,14 +126,20 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	}
 	case 5: {
-		// Bursts the gate switched the PA on for, and key-ups refused with the burst line already high
+		// Bursts the gate switched the PA on for, key-ups refused with the burst line already high, and from the last
+		// burst's line fall to tx_off() and to the receiver back, in 0.1 ms
 		put(&o, "burst ");
 #if CONFIG_DMR
-		uint32_t bursts, refused;
+		uint32_t bursts, refused, off_us, rx_us;
 		d578uv_pa_counts(&bursts, &refused);
+		d578uv_rx_back(&off_us, &rx_us);
 		put_u(&o, bursts);
 		put(&o, " ref ");
 		put_u(&o, refused);
+		put(&o, " rx ");
+		put_u(&o, off_us / 100u);
+		put(&o, "/");
+		put_u(&o, rx_us / 100u);
 #else
 		put(&o, "-");
 #endif
