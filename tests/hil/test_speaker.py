@@ -49,8 +49,9 @@ class Microphone:
         p = subprocess.Popen(["arecord", "-q", "-D", self.device, "-f", "S16_LE", "-r", str(RATE), "-c", "1",
                               "-d", str(int(seconds + 0.999)), path], stderr=subprocess.PIPE)
         time.sleep(0.3)     # arecord opens the device
-        if p.poll() is not None:
-            raise RuntimeError(f"arecord -D {self.device}: {p.stderr.read().decode(errors='replace').strip()}")
+        if p.poll() is not None:     # it couldn't open it: unplugged, renamed or busy, the rig's and not the radio's
+            skip("bench", f"the microphone isn't usable: arecord -D {self.device}: "
+                          f"{p.stderr.read().decode(errors='replace').strip()}")
         return p, path
 
     def finish(self, p, path):
