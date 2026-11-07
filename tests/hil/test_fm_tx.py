@@ -37,9 +37,10 @@ Pass criteria:
   attenuator before levels mean anything.
   With --manual -s it reads a wattmeter instead (docs/testing/power-calibration.md 4, the short check): a person
   with an averaging wattmeter between the radio and a dummy load rated for the top level. Every power level keys 2 s
-  on --fm-mhz, then on --vhf-fm-mhz when given, 3 s apart, and the person types the reading at the end of each
-  key-up. Each level named in watts must read within 1 dB of its name (2 dB under 1 W), and each level must read at
-  least 1 dB over the one below.
+  on each --wattmeter-mhz frequency (default 445 and 146 MHz, the middle of where hams transmit on 70 cm and 2 m)
+  that the radio tunes and tx_mhz allows, 4 s apart, in one batch; the person notes each reading and types them all
+  afterwards. Each level named in watts must read within 1 dB of its name (2 dB under 1 W), and each level must
+  read at least 1 dB over the one below.
 The VFO's bandwidth and TX tone are put back afterwards (restore_radio does the rest: channel, power, temporary
 changes).
 """
@@ -50,6 +51,7 @@ import time
 
 import pytest
 
+from rfoundry_debug import DebugLinkError
 from rfoundry_hil import power_name_watts, skip
 from hil_config import rig
 
@@ -403,42 +405,64 @@ def _ask_watts(prompt):
 
 
 def _power_levels_wattmeter(radio, pytestconfig):
-    """The short check on a wattmeter (power-calibration.md 4): every level keyed 2 s on each band given"""
-    bands = [rig(pytestconfig, "fm-mhz")]
-    if pytestconfig.getoption("--vhf-fm-mhz") is not None:
-        bands.append(pytestconfig.getoption("--vhf-fm-mhz"))
-    print("\n>>> A wattmeter (averaging) between the radio and a dummy load rated for its top power. Each power level "
-          "keys 2 s; type the reading at the end of each key-up.", flush=True)
-    # The first key-up follows at once: nothing keys until the person says the meter is on this radio
-    input(f"\n>>> Press Enter when the wattmeter is on {radio.version().get('board', 'the radio')} and ready: ")
-    rows, bad = [], []
-    for mhz in bands:
+    """The short check on a wattmeter (power-calibration.md 4): every level keyed 2 s on each frequency, all of them
+    in one batch, the readings typed afterwards"""
+    import hil_config
+    plan = []
+    for mhz in hil_config.wattmeter_mhz(pytestconfig):
+        if not hil_config.tx_allowed(None, mhz):
+            print(f"    {mhz:g} MHz: not in tx_mhz, left out (add it to the rig's tx_mhz to check it)")
+            continue
         hz = round(mhz * 1e6)
-        radio.link.vfo_set(hz)
-        radio.wait_for(lambda v: v.get("rx_hz") == str(hz), what=f"VFO on {mhz} MHz")
-        radio.lowest_power(absolute=True)
+        try:
+            radio.link.vfo_set(hz)
+            radio.wait_for(lambda v: v.get("rx_hz") == str(hz), timeout=3, what=f"VFO on {mhz} MHz")
+        except (AssertionError, DebugLinkError):
+            print(f"    {mhz:g} MHz: the radio doesn't tune it, left out")
+            continue
         n = int(radio.core().get("power_count") or "0")
         assert n >= 2, f"power_count {n}"
-        prev = None
-        for lv in range(n):
-            if lv:
-                radio.link.power_step(1)
-                radio.wait_for(lambda v: v.get("power") == str(lv), what=f"power {lv}")
-                time.sleep(3.0)     # between key-ups: the PA and the supply recover
-            name = radio.core().get("power_name", "?")
-            radio.ptt_for(2.0)
-            radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
-            w = _ask_watts(f"{mhz} MHz, level {lv} ({name})")
-            want = power_name_watts(name)
-            d = 10 * math.log10(w / want) if want and w > 0 else None
-            tol = 2.0 if want is not None and want < 1.0 else 1.0
-            ok = want is None or (d is not None and abs(d) <= tol)
-            if prev is not None and not (w > 0 and prev > 0 and 10 * math.log10(w / prev) >= 1.0):
-                ok = False
-            rows.append((mhz, lv, name, w, None if d is None else round(d, 1)))
-            if not ok:
-                bad.append(rows[-1])
-            prev = w
+        names = (radio.core().get("power_names") or "").split("/")
+        plan += [(mhz, lv, names[lv] if lv < len(names) else "?") for lv in range(n)]
+    if not plan:
+        skip("opt_in", f"none of the wattmeter frequencies {hil_config.wattmeter_mhz(pytestconfig)} MHz is both "
+                       "tuned by the radio and in tx_mhz (--wattmeter-mhz)")
+    print("\n>>> A wattmeter (averaging) between the radio and a dummy load rated for its top power. In one batch, "
+          "4 s apart, each key-up 2 s:", flush=True)
+    for i, (mhz, lv, name) in enumerate(plan):
+        print(f">>>   {i + 1:2}. {mhz:g} MHz, level {lv} ({name})", flush=True)
+    # Nothing keys until the person says the meter is on this radio; the readings are asked for after the batch
+    input(f"\n>>> Press Enter when the wattmeter is on {radio.version().get('board', 'the radio')} and ready: ")
+    for i, (mhz, lv, name) in enumerate(plan):
+        hz = round(mhz * 1e6)
+        if radio.core().get("rx_hz") != str(hz):
+            radio.link.vfo_set(hz)
+            radio.wait_for(lambda v: v.get("rx_hz") == str(hz), what=f"VFO on {mhz} MHz")
+        if lv == 0:
+            radio.lowest_power(absolute=True)
+        else:
+            radio.link.power_step(1)
+            radio.wait_for(lambda v: v.get("power") == str(lv), what=f"power {lv}")
+        if i:
+            time.sleep(4.0)     # between key-ups: the PA and the supply recover, the person notes the reading
+        print(f">>>   {i + 1:2}. keying {mhz:g} MHz, level {lv} ({name})", flush=True)
+        radio.ptt_for(2.0)
+        radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+    print("\n>>> Done keying. The readings, in order:", flush=True)
+    rows, bad, prev = [], [], {}
+    for i, (mhz, lv, name) in enumerate(plan):
+        w = _ask_watts(f"{i + 1:2}. {mhz:g} MHz, level {lv} ({name})")
+        want = power_name_watts(name)
+        d = 10 * math.log10(w / want) if want and w > 0 else None
+        tol = 2.0 if want is not None and want < 1.0 else 1.0
+        ok = want is None or (d is not None and abs(d) <= tol)
+        p = prev.get(mhz)
+        if p is not None and not (w > 0 and p > 0 and 10 * math.log10(w / p) >= 1.0):
+            ok = False
+        rows.append((mhz, lv, name, w, None if d is None else round(d, 1)))
+        if not ok:
+            bad.append(rows[-1])
+        prev[mhz] = w
     print("power levels (MHz, level, name, W, dB from the name):", rows)
     assert not bad, f"out of tolerance (within 1 dB of the name, 2 dB under 1 W; 1 dB over the level below): {bad}"
 

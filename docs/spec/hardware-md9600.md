@@ -373,6 +373,12 @@ The short check with this table (section 4 of the procedure, FM carrier, watts):
 | Top | 45.9 (45 W) | | 50.7 (50 W) |
 | Dark step (cliff + 5) | 0.00 (437) | | 0.00 (865) |
 
+On VHF the low levels' output rises toward the bottom of the band at a fixed drive: level 0 (880) read 0.37 W at
+144.010, 0.25 W at 146.000 and 147.990, and 0.14 W at 151.5125 (−2.5 dB: outside ±2 dB). Drive 882 read 0.45 W
+at 144.100 and 0.20 W at 151.5125. One fixed drive can't hold 250 mW from 144 to 152 MHz, so the VHF low levels are
+calibrated at 146 MHz, the middle of 2 m, and hold ±2 dB across it. The HIL wattmeter check keys at 445 and 146 MHz
+for that reason.
+
 A radio whose rows give levels that don't rise, or a top level over 2300 counts, transmits on no level. The debug
 link's `tx_drive` view key shows each level's drive, and RADIO op 36 sets one transmission's drive
 ([debuglink.md](debuglink.md)). RadioFoundry refuses TX without an accepted table.

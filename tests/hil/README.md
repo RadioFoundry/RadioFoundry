@@ -87,6 +87,7 @@ the three ways to give it. `tests/hil/hil_config.py` reads them.
 | `--aprs-test-mhz` | `test_aprs`'s AFSK frequency: an amateur simplex frequency that is not an APRS one |
 | `--aprs-dmr-dst` | the DMR position's destination ID (`test_aprs`) |
 | `--callsign` | the licensed operator's callsign: every transmission that carries one (APRS, CW ID, talker alias); RAM only on the radio |
+| `--wattmeter-mhz` | where the wattmeter check (`test_fm_tx_power_levels --manual`) keys every power level, comma separated; default 445 and 146, the middle of where hams transmit on 70 cm and 2 m. A frequency not in `tx_mhz` or not tuned by the radio is left out |
 | `--tx-mhz` | the frequencies the rig may transmit on, comma separated (a TOML list in the file) |
 | `--microphone` | an ALSA capture device (`arecord -D`) whose microphone is at the radio's speaker: the speaker tests ([Speaker tests](#speaker-tests)) |
 
