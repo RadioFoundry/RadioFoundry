@@ -509,6 +509,18 @@ md9600_rf_err_t md9600_rf_burst_rx(md9600_rf_t *rf)
 	return MD9600_RF_OK;
 }
 
+md9600_rf_err_t md9600_rf_rx_resume(md9600_rf_t *rf)
+{
+	const md9600_rf_ops_t *o = rf->ops;
+	if (rf->state != MD9600_RF_RX || !rf->rx_valid || rf->desc == NULL || rf->pa_on) {
+		return MD9600_RF_E_STATE;
+	}
+	if (rf->band == MD9600_VHF) {
+		o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, o->rx_tune(o->ctx, rf->rx_hz));
+	}
+	return MD9600_RF_OK;
+}
+
 void md9600_rf_tx_off(md9600_rf_t *rf)
 {
 	(void)md9600_rf_pa(rf, false);

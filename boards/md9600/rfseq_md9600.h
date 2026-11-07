@@ -164,6 +164,10 @@ uint32_t md9600_rf_tx_settle_us(const md9600_rf_t *rf);
 // synthesizer back on the receive LO and the receivers on, without the waits; the IF chip keeps its set-up. The next
 // burst retunes with md9600_rf_tx_tune(settle false) and waits for the lock before its PA
 md9600_rf_err_t md9600_rf_burst_rx(md9600_rf_t *rf);
+// Receiving again after md9600_rf_burst_rx and md9600_rf_tx_off, on the same channel: the front-end tune once more (on
+// VHF it shares the DAC with the PA drive, which the end of the transmission set to 0), without synthesizer words or
+// waits, so a reply arriving now isn't cut. E_STATE when not receiving on a valid channel with the PA off
+md9600_rf_err_t md9600_rf_rx_resume(md9600_rf_t *rf);
 // One DMR burst's PA: on, the band's transmitter supply, MD9600_BURST_T5_US, the loop closed and a short APC ramp
 // (MD9600_BURST_RAMP_*); off, the ramp down, the loop open and the supply off. Busy waits only: callable from the
 // modem interrupts

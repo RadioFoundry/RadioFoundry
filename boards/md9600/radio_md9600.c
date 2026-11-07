@@ -223,15 +223,16 @@ bool md9600_radio_tx_arm(bool on)
 // tx() in DMR only arms. The glue's tx_prepare (at tx_begin under the modem lock, or in the timeslot interrupt for an
 // aligned start) puts the TX VCO on the carrier without the waits; tx_wait_lock (task level) waits the synthesizer's
 // settle time. Each burst then switches the band's transmitter supply, the PA loop and a short APC ramp from the modem
-// interrupts (md9600_rf_pa_burst). The receiver comes back at tx_off(), and on a split channel at each
-// transmission's end (md9600_rf_dmr_done)
+// interrupts (md9600_rf_pa_burst). The receiver comes back at each transmission's end (md9600_rf_dmr_done), simplex
+// too, and rx() then keeps the synthesizer where that left it (dmr_back)
 #if CONFIG_MD9600_DMR_TX
 static volatile bool dmr_armed;
 static volatile bool dmr_tuned;
 static uint32_t dmr_hz;
 static uint8_t dmr_power;
 static uint32_t dmr_skipped, dmr_unarmed;
-static uint32_t dmr_rx_back;	// returns to receive after a split channel transmission
+static uint32_t dmr_rx_back;	// returns to receive at a transmission's end
+static volatile bool dmr_back;	// md9600_rf_dmr_done put the receiver back on rx_hz: rx() keeps the synthesizer
 #if CONFIG_SFR
 // An SFR receives between its bursts (docs/spec/sfr.md 3 item 1): one synthesizer, so each burst's end retunes to
 // the receive LO, and the next RF TX interrupt, moved this far ahead of the slot, retunes to the carrier and waits for
@@ -303,6 +304,7 @@ void md9600_rf_dmr_prepare(void)
 	if (!dmr_armed || dmr_tuned) {
 		return;
 	}
+	dmr_back = false;
 	if (md9600_rf_tx_tune(&rf, dmr_hz, dmr_power, false) != MD9600_RF_OK) {
 		dmr_skipped++;
 		return;
@@ -363,20 +365,22 @@ bool md9600_rf_dmr_key(bool tx)
 	return true;
 }
 
-// A transmission is over (the slot engine's TX done, task level under the modem lock): on a split channel the
-// receiver back on the RX frequency, so the radio hears the repeater answer its wake-up. Left on the carrier, every
-// key-up while the repeater was down ended in no_repeater (HIL 2026-11-06). Without the waits, as between an SFR's
-// bursts (hardware-md9600.md 19.8): the listen that follows is far longer than the lock. Simplex stays on the carrier
-// until tx_off(), as before
+// A transmission is over (the slot engine's TX done, task level under the modem lock): the receiver back on the RX
+// frequency. On a split channel the radio hears the repeater answer its wake-up: left on the carrier, every key-up
+// while the repeater was down ended in no_repeater. On simplex too: the receive LO is an IF away from the carrier, and
+// a confirmed data response comes in the next frame, 30 ms after our last burst, before the radio task's tx_off() and
+// rx() get here (a radio that returns that late misses nearly every one). Without the waits, as between an SFR's bursts
+// (hardware-md9600.md 19.8): the listen that follows is far longer than the lock. Not per burst outside an SFR
 void md9600_rf_dmr_done(void)
 {
-	if (!dmr_armed || !dmr_tuned || !rf.rx_valid || dmr_hz == rf.rx_hz) {
+	if (!dmr_armed || !dmr_tuned || !rf.rx_valid) {
 		return;
 	}
 	key_timer_stop();
 	(void)md9600_rf_pa_burst(&rf, false);
 	if (md9600_rf_burst_rx(&rf) == MD9600_RF_OK) {
 		dmr_tuned = false;
+		dmr_back = true;
 		dmr_rx_back++;
 	}
 }
@@ -489,13 +493,23 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	(void)rx_tone;
 #endif
 	md9600_noise_clear(&noise_win);
-	if (md9600_rf_rx(&rf, hz, bw == RADIO_BW_25K) != MD9600_RF_OK) {
+#if CONFIG_MD9600_DMR_TX
+	// On rx_hz since the transmission's end (md9600_rf_dmr_done): a retune now could hit the reply to it
+	bool back = dmr_back && dmr_mode && rf.rx_valid && hz == rf.rx_hz && (bw == RADIO_BW_25K) == rf.rx_wide &&
+		    md9600_rf_rx_resume(&rf) == MD9600_RF_OK;
+	dmr_back = false;
+#else
+	bool back = false;
+#endif
+	if (!back && md9600_rf_rx(&rf, hz, bw == RADIO_BW_25K) != MD9600_RF_OK) {
 		return false;
 	}
 	if (!md9600_cal_squelch(hz, &sql_l1, &sql_l9)) {
 		sql_l1 = sql_l9 = 0;	// once per retune, not per status poll
 	}
-	md9600_c6000_retune(hz);
+	if (!back) {
+		md9600_c6000_retune(hz);	// same frequency when back: nothing for it to change
+	}
 	return true;
 }
 

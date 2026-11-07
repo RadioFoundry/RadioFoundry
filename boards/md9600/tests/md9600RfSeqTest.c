@@ -559,10 +559,10 @@ static void check_dmr_tx(md9600_rev_t r, uint32_t hz, uint8_t power)
 	pa_allowed = false;
 }
 
-// A split channel's transmission ends (TX done): the receiver comes back on the RX frequency at once, without waits, so
-// the radio hears a repeater answer its wake-up (radio_md9600.c md9600_rf_dmr_done); the next transmission tunes the
-// carrier again
-static void check_dmr_split(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz)
+// A DMR transmission ends (TX done): the receiver comes back on the RX frequency at once, without waits, so the radio
+// hears a repeater answer its wake-up, or on simplex the reply to a confirmed packet 30 ms later (radio_md9600.c
+// md9600_rf_dmr_done); the next transmission tunes the carrier again, and rx() afterwards only resumes
+static void check_dmr_rx_back(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz)
 {
 	fresh(r, true);
 	CHECK(md9600_rf_rx(&rf, rx_hz, false) == MD9600_RF_OK);
@@ -588,6 +588,15 @@ static void check_dmr_split(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz)
 	md9600_rf_tx_off(&rf);		// the radio leaves transmit: the receiver is already back
 	CHECK(pa_off_now() && rf.state == MD9600_RF_RX && count(EV_PLL, -1) == 0);
 	pa_allowed = false;
+	// rx() on the same channel: the front-end tune back (on VHF the PA drive's DAC, zeroed above), no words, no waits
+	reset_log();
+	CHECK(md9600_rf_rx_resume(&rf) == MD9600_RF_OK);
+	CHECK(count(EV_PLL, -1) == 0 && delay_total == 0 && pa_off_now() && rf.state == MD9600_RF_RX);
+	if (rxp.band == MD9600_VHF) {
+		CHECK(dac_now[MD9600_DAC_APC_TUNE_V] == f_rx_tune(NULL, rx_hz));
+	}
+	md9600_rf_sleep(&rf);
+	CHECK(md9600_rf_rx_resume(&rf) == MD9600_RF_E_STATE);	// not receiving: rx() retunes in full
 }
 
 // The reference's writes to the PA drive in [from, to) of the log
@@ -1044,8 +1053,10 @@ int main(void)
 		if (md9600_rev_built((md9600_rev_t)r)) {
 			check_dmr_tx((md9600_rev_t)r, 446075000u, 0);
 			check_dmr_tx((md9600_rev_t)r, 146520000u, 1);
-			check_dmr_split((md9600_rev_t)r, 461462500u, 451875000u);
-			check_dmr_split((md9600_rev_t)r, 146520000u, 147120000u);
+			check_dmr_rx_back((md9600_rev_t)r, 461462500u, 451875000u);
+			check_dmr_rx_back((md9600_rev_t)r, 146520000u, 147120000u);
+			check_dmr_rx_back((md9600_rev_t)r, 461462500u, 461462500u);	// simplex
+			check_dmr_rx_back((md9600_rev_t)r, 146520000u, 146520000u);
 		}
 	}
 #endif
