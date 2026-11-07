@@ -120,6 +120,7 @@ static struct {
 	bool rx_running;
 	uint16_t rx_peak;
 	uint32_t rx_start_fails, rx_retry_ms;	// starts the board refused; the next try (RX_RETRY_MS later)
+	bool rx_retry_wait;			// the last start was refused: wait for rx_retry_ms
 	int16_t rxbuf[160];
 	char gate[AX25_TNC2_MAX + 20];
 #endif
@@ -1012,11 +1013,13 @@ static void rx_service(const aprs_radio_t *r, uint32_t now_ms)
 	bool own = rx_by_board();
 	bool want = a.cfg.rx_on && r->fm_rx && r->rx_hz != 0 && r->rx_hz == aprs_cfg_freq(&a.cfg) &&
 		    (own || rx_by_stream());
-	if (want && !a.rx_running && (a.rx_start_fails == 0 || (int32_t)(now_ms - a.rx_retry_ms) >= 0)) {
+	// The wait only after a refusal: an old rx_retry_ms compared 24.8 days later would read as in the future
+	if (want && !a.rx_running && (!a.rx_retry_wait || (int32_t)(now_ms - a.rx_retry_ms) >= 0)) {
 		a.rx_peak = 0;
 		a.rx_running = afsk_demod_init(&a.demod, own ? h->rx_rate_hz : 8000u, demod_frame, NULL);
 		if (a.rx_running && own) {
 			a.rx_running = h->rx_start();
+			a.rx_retry_wait = !a.rx_running;
 			if (!a.rx_running) {
 				a.rx_start_fails++;
 				a.rx_retry_ms = now_ms + RX_RETRY_MS;
