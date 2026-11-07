@@ -248,7 +248,9 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 
 The settings are kept in the settings store (the `ds_*` fields, `settings-store.md` 3): the radio core loads them
 at start and, from its data tick, saves any change made by `dmr_data_set_settings` or the debug link's DMR_DATA
-SETTINGS. `hasGps` is the board's, not saved. The codeplug does not hold them. Only committed settings are applied, never an edit in
+SETTINGS. `hasGps` is the board's, not saved. The ARS server and the IP gateway are also in the codeplug's settings
+area ([codeplug-settings.md](codeplug-settings.md) 5): a key there holds the setting, and the settings store keeps
+the radio's own value for a codeplug without the key. Only committed settings are applied, never an edit in
 progress (gotcha 3.7).
 
 Transmission rules: nothing is sent unless the channel is a DMR channel we may transmit on (not RX only, in band,

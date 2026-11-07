@@ -20,6 +20,7 @@
 #include "dmr/dmr_emergency.h"
 #include "ui/ui_svc.h"
 #include "storage/storage.h"
+#include "codeplug/codeplug_kv.h"
 #include "dmr/dmrPrivacy.h"
 #include "dmr/dmrData.h"
 #include "sim/sim_flash.h"
@@ -241,6 +242,28 @@ static const contact_t contacts[] = {
 	{ "Local", 9, CONTACT_GROUP, 0 },
 };
 uint32_t codeplug_dmr_id(void) { return own_dmr_id; }
+
+// The codeplug's settings area: only the ARS server key here (the gateway's is built out, CONFIG_DMR_IP_GATEWAY=0)
+static bool kv_ars_present;
+static uint32_t kv_ars;
+bool codeplug_kv_get_id(uint16_t key, uint32_t *id)
+{
+	if (key != CODEPLUG_KEY_ARS_SERVER || !kv_ars_present) {
+		return false;
+	}
+	*id = kv_ars;
+	return true;
+}
+bool codeplug_kv_set_u32(uint16_t key, uint32_t value)
+{
+	if (key != CODEPLUG_KEY_ARS_SERVER) {
+		return false;
+	}
+	kv_ars_present = true;
+	kv_ars = value;
+	cp_serial++;
+	return true;
+}
 bool codeplug_set_dmr_id(uint32_t id)
 {
 	own_dmr_id = id;
@@ -2121,6 +2144,53 @@ static void test_persist(void)
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
 
+	// The codeplug's settings area (docs/spec/codeplug-settings.md 5): a key that is present sets the ARS server, at
+	// start and when the codeplug changes, and the radio's own copy follows it
+	ds.arsServer = 3100999;
+	dmr_data_set_settings(&ds);
+	run(50);
+	kv_ars_present = true;
+	kv_ars = 3100777;
+	cp_serial++;			// as a CPS commit or a TFTP write
+	run(100);
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100777);
+	settings_read(&cur);
+	CHECK(cur.ds_ars_server == 3100777);
+	// A change that isn't a codeplug write doesn't hold against the key
+	ds.arsServer = 5;
+	dmr_data_set_settings(&ds);
+	run(50);
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100777);
+	// The menu writes the key (a codeplug job), 0 turns ARS off, and a reboot reads it back
+	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100777);
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 0) && storage_job_busy());
+	CHECK(!ui_svc_setting_set(UI_SET_ARS_SERVER, 1));	// one job at a time
+	storage_job_poll();
+	CHECK(kv_ars_present && kv_ars == 0 && !storage_job_busy());
+	run(100);
+	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 0);
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 0);
+	CHECK(!ui_svc_setting_set(UI_SET_ARS_SERVER, CODEPLUG_DMR_ID_MAX + 1));
+	// Absent (a codeplug from a tool that doesn't carry the area): the radio keeps what it has, and a change holds
+	kv_ars_present = false;
+	cp_serial++;
+	run(100);
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 0);
+	ds.arsServer = 3100888;
+	dmr_data_set_settings(&ds);
+	run(50);
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100888);
+	settings_begin()->ds_stored = 0;
+	settings_end(now);
+	boot();
+
 	// Power off: nothing to deregister, so the radio core is done at once
 	req(RREQ_POWER_OFF, 0);
 	run(50);
@@ -3038,6 +3108,16 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 3 && ui_svc_codeplug_answer(UI_CP_NEW));
 	storage_job_poll();
 	CHECK(cp_new == 1 && cp_writes == w + 2 && chans[6].color_code == 4 && !codeplug_foreign());
+	// The settings area's keys are codeplug writes too: held for the same question, written after Start new
+	cp_foreign = true;
+	kv_ars_present = false;
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 3100123) && n_ev == 4 && last_ev.kind == UI_EV_CODEPLUG_FOREIGN);
+	storage_job_poll();
+	CHECK(!kv_ars_present);
+	CHECK(ui_svc_codeplug_answer(UI_CP_NEW));
+	storage_job_poll();
+	CHECK(cp_new == 2 && kv_ars_present && kv_ars == 3100123);
+	kv_ars_present = false;
 	n_ev = 0;
 	run(100);
 	req(RREQ_CLEAR_TEMP, 0);

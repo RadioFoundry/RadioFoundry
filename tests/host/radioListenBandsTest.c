@@ -205,6 +205,7 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 	return true;
 }
 uint32_t codeplug_dmr_id(void) { return 9996543; }
+bool codeplug_kv_get_id(uint16_t key, uint32_t *id) { (void)key; (void)id; return false; }	// no settings area
 bool codeplug_contact(uint16_t index, contact_t *out) { (void)index; (void)out; return false; }
 bool codeplug_listen_list(uint16_t index, listen_list_t *out) { (void)index; (void)out; return false; }
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out) { (void)id; (void)group; (void)out; return false; }

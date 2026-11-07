@@ -96,6 +96,9 @@ The export writes one radio ID for the radio (`id1`) and one more for each disti
 codeplug image doesn't hold in the editor's model; the import ignores them and the export leaves them out, so qdmr
 uses its defaults.
 
+qdmr has no field for the ARS server and IP gateway (the settings area, [codeplug-settings.md](codeplug-settings.md)).
+The import leaves them as the open codeplug has them, absent in a new one, and the export leaves them out.
+
 ### 3.2 Contacts
 
 `openGD77` is the name qdmr gives its block of per-contact and per-channel extension keys for the open-firmware radios.

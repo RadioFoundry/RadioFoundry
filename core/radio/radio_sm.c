@@ -36,6 +36,7 @@
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"	// dmr_sms_format_t
+#include "codeplug/codeplug_kv.h"
 #endif
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
@@ -1852,6 +1853,35 @@ static bool data_in_rx_group(uint32_t tg, void *ctx)
 // noted in the settings store from data_tick
 static dmrDataSettings_t data_saved;
 
+// The ARS server and the IP gateway as the codeplug's settings area gives them (docs/spec/codeplug-settings.md 5),
+// read at start, whenever codeplug_serial() moves on and whenever the settings change. A key that is present holds its
+// setting: a change made another way is put back at the next tick, before it is saved. An absent key leaves the
+// setting as the radio has it (the settings store's copy), so a codeplug from a tool that doesn't carry the area
+// changes nothing. Nothing kept in RAM: a read is a few bytes of flash, and only on those events
+static bool data_kv_apply(dmrDataSettings_t *set)
+{
+	uint32_t id;
+	bool changed = false;
+	if (CONFIG_DMR_ARS && codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && set->arsServer != id) {
+		set->arsServer = id;
+		changed = true;
+	}
+	if (CONFIG_DMR_IP_GATEWAY && codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id) && set->ipGatewayId != id) {
+		set->ipGatewayId = id;
+		changed = true;
+	}
+	return changed;
+}
+
+static void data_kv_load(void)
+{
+	dmrDataSettings_t set;
+	dmrDataServiceGetSettings(&set);
+	if (data_kv_apply(&set)) {
+		dmrDataServiceSetSettings(&set);
+	}
+}
+
 static void data_save_settings(uint32_t now_ms)
 {
 	dmrDataSettings_t cur;
@@ -1863,6 +1893,9 @@ static void data_save_settings(uint32_t now_ms)
 	    cur.ipConfirmedTries == data_saved.ipConfirmedTries && cur.ipGatewayId == data_saved.ipGatewayId &&
 	    memcmp(cur.ipConfirmedRule, data_saved.ipConfirmedRule, sizeof(cur.ipConfirmedRule)) == 0) {
 		return;
+	}
+	if (data_kv_apply(&cur)) {
+		dmrDataServiceSetSettings(&cur);	// the codeplug's key holds against the change
 	}
 	data_saved = cur;
 	settings_t *st = settings_begin();
@@ -1996,6 +2029,7 @@ static void data_init(radio_sm_t *sm)
 		memcpy(set.ipConfirmedRule, st->ds_ip_rule, sizeof(set.ipConfirmedRule));
 		set.ipGatewayId = st->ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
 	}
+	data_kv_apply(&set);
 	data_saved = set;
 	data_tx.list = NULL;
 	dmrDataServiceInit(&env);
@@ -4675,6 +4709,9 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	sm->reload_pending = false;
 	sm->codeplug_serial = codeplug_serial();
 	sm->view.source = codeplug_source();
+#if CONFIG_DMR_DATA_CORE
+	data_kv_load();
+#endif
 #if CONFIG_DMR
 	// The cached names may be gone or new now ("" is cached too): a contact added after its ID was heard or called
 	// would otherwise stay a bare ID on the screens until it fell out of the cache

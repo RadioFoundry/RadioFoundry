@@ -106,6 +106,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | USB network at start | On, Off | Off | The radio starts as a USB network adapter instead of a serial port ([USB network](15-usb-network.md#starting-in-network-mode)) | Works |
 | PC answers data | On, Off | Off | Control station mode: while the computer is connected in USB network mode, it answers the data sent to your radio instead of the radio ([USB network](15-usb-network.md#control-station-for-dispatch-software)) | Works |
 | USB address | By DMR ID, 192.168.10.x | By DMR ID | The addresses of the USB network link: from your DMR ID, or the fixed pair 192.168.10.1 (radio) and 192.168.10.2 (computer) | Works |
+| Data services | ARS server, IP gateway: a DMR ID or Off | Off | Opens a screen with the ARS presence server ([ARS](10-messages-and-signaling.md#registration-ars-and-location-lrrp)) and the gateway radio for other networks ([USB network](15-usb-network.md#other-networks-through-a-gateway-radio)). Type an ID and press **OK**; 0 is Off. Both are saved in the codeplug | Works |
 
 ### Power saving (key 7)
 
@@ -195,7 +196,7 @@ A few settings exist in the radio but not yet on the menu:
 - busy channel lockout and the roger beep;
 - the scan's resume mode and timing;
 - VOX sensitivity;
-- the ARS server and the emergency settings;
+- the emergency settings;
 - the IP data settings (header compression, confirmed data) and the SNMP communities;
 - the roaming threshold, hysteresis and periodic search;
 - the SFR idle beacon.

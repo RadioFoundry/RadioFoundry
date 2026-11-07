@@ -568,6 +568,23 @@ bool ui_svc_codeplug_answer(uint8_t answer)
 	return true;
 }
 
+// The settings past the stub's RAM table (UI_SET_RAM_COUNT): the firmware keeps them in the codeplug
+// (ui_svc_storage.c); here they are plain values
+static int32_t sim_late[UI_SET_COUNT - UI_SET_RAM_COUNT];
+
+int32_t ui_svc_setting_get(uint8_t id)
+{
+	return id >= UI_SET_RAM_COUNT && id < UI_SET_COUNT ? sim_late[id - UI_SET_RAM_COUNT] : ui_svc_ram_get(id);
+}
+
+bool ui_svc_setting_set(uint8_t id, int32_t value)
+{
+	if (id < UI_SET_RAM_COUNT || id >= UI_SET_COUNT)
+		return ui_svc_ram_set(id, value);
+	sim_late[id - UI_SET_RAM_COUNT] = value;
+	return true;
+}
+
 // Channels the channel editor saved (ui_svc_write_channel): they shadow the built-in ones and fill numbers past 40
 #define SIM_EDITS	8
 static struct { uint16_t number; channel_t ch; } sim_edits[SIM_EDITS];
@@ -2063,6 +2080,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_REF_TRIM, 0);
 	ui_svc_setting_set(UI_SET_LONG_PRESS_MS, 600);	// settings a flow changes start from their defaults
 	ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 0);
+	ui_svc_setting_set(UI_SET_ARS_SERVER, 0);
+	ui_svc_setting_set(UI_SET_IP_GATEWAY, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
 	ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 0);
 	ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 1);

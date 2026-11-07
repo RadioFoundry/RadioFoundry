@@ -20,6 +20,7 @@
 #include "radio/ref_trim.h"
 #include "storage/storage.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_kv.h"
 #include "hal_time.h"
 #include "config.h"
 #if CONFIG_HOSTLINK
@@ -110,6 +111,9 @@ static bool key_set(uint8_t id, int32_t value);
 
 #if CONFIG_DMR
 static bool dmr_id_post(uint32_t id);	// a job: the codeplug write is the housekeeping task's
+#endif
+#if CONFIG_DMR_DATA_CORE
+static bool data_id_post(uint16_t key, uint32_t id);	// the same, for a key of the codeplug's settings area
 #endif
 
 int32_t ui_svc_setting_get(uint8_t id)
@@ -285,11 +289,15 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_CHECK_REPLY:
 	case UI_SET_ALERT_ANSWER:
 	case UI_SET_POS_REPLY:
+	case UI_SET_ARS_SERVER:
+	case UI_SET_IP_GATEWAY:
 	case UI_SET_MSG_FORMAT: {
 		dmrDataSettings_t ds;
 		dmr_data_get_settings(&ds);
 		if (id == UI_SET_MSG_FORMAT)
 			return ds.smsFormat;
+		if (id == UI_SET_ARS_SERVER || id == UI_SET_IP_GATEWAY)
+			return (int32_t)(id == UI_SET_ARS_SERVER ? ds.arsServer : ds.ipGatewayId);
 		return id == UI_SET_CHECK_REPLY ? ds.radioCheckReply : id == UI_SET_ALERT_ANSWER ? ds.callAlertAck :
 			ds.lrrpReply;
 	}
@@ -526,6 +534,10 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		dmr_data_set_settings(&ds);	// the radio core saves the data service's settings when they change
 		return true;
 	}
+	case UI_SET_ARS_SERVER:
+	case UI_SET_IP_GATEWAY:
+		return data_id_post(id == UI_SET_ARS_SERVER ? CODEPLUG_KEY_ARS_SERVER : CODEPLUG_KEY_IP_GATEWAY,
+				    (uint32_t)value);
 	case UI_SET_MSG_FORMAT: {
 		dmrDataSettings_t ds;
 		if ((value != DMR_SMS_FORMAT_ETSI_IP) && (value != DMR_SMS_FORMAT_ETSI) &&
@@ -628,6 +640,9 @@ static void zone_edit_job(void *ctx);
 #if CONFIG_KEY_ASSIGN
 static void key_write_job(void *ctx);
 #endif
+#if CONFIG_DMR_DATA_CORE
+static void data_id_job(void *ctx);
+#endif
 static void (*const cp_jobs[])(void *ctx) = {
 	save_channel_job, write_channel_job, name_job,
 #if CONFIG_DMR
@@ -641,6 +656,9 @@ static void (*const cp_jobs[])(void *ctx) = {
 #endif
 #if CONFIG_KEY_ASSIGN
 	key_write_job,
+#endif
+#if CONFIG_DMR_DATA_CORE
+	data_id_job,
 #endif
 };
 
@@ -740,6 +758,27 @@ static bool dmr_id_post(uint32_t id)
 		return false;
 	job.id = id;
 	return cp_post(dmr_id_job);
+}
+#endif
+
+#if CONFIG_DMR_DATA_CORE
+// The ARS server or the IP gateway, written into the codeplug's settings area (Settings > Connections > Data
+// services): the radio core takes it when codeplug_serial() changes, and a CPS read shows it. The key in
+// job.channel, the ID in job.id
+static void data_id_job(void *ctx)
+{
+	(void)ctx;
+	if (!codeplug_kv_set_u32(job.channel, job.id))
+		save_failed(TRN("Couldn't write the codeplug: not saved"));
+}
+
+static bool data_id_post(uint16_t key, uint32_t id)
+{
+	if (id > CODEPLUG_DMR_ID_MAX || job_busy())
+		return false;
+	job.channel = key;
+	job.id = id;
+	return cp_post(data_id_job);
 }
 #endif
 

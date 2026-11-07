@@ -155,6 +155,9 @@ bool ui_svc_msg_delete(uint16_t i);
 bool ui_svc_msg_send(uint32_t dst, bool group, const char *text);
 bool ui_svc_radio_check(uint32_t id);
 bool ui_svc_call_alert(uint32_t id);
+// ARS registration with the presence server (Settings > Connections > Data services), as dmrArsState_t
+enum { UI_ARS_OFF, UI_ARS_REGISTERING, UI_ARS_REGISTERED, UI_ARS_REFUSED, UI_ARS_NO_ANSWER };
+uint8_t ui_svc_ars_state(void);
 
 // --- Location ---
 typedef struct {
@@ -325,6 +328,12 @@ typedef enum {
 	UI_SET_DMR_ID,		// the radio's own DMR ID in the codeplug, 1..CODEPLUG_DMR_ID_MAX (a set is a codeplug write job)
 	UI_SET_REF_TRIM,	// reference oscillator trim, ppb -10000..+10000 (Settings > Advanced; settings_t.ref_trim_ppb)
 	UI_SET_LANGUAGE,	// the UI's language, i18n.h lang_value: "en" English, 0 never picked (Settings > Display; settings_t.lang)
+	UI_SET_RAM_COUNT,	// the ids up to here have a slot in ui_svc_ram_get/set's table; those after live elsewhere only
+	// The ARS server's and the off-net IP gateway's DMR IDs, 0 = off (Settings > Connections > Data services,
+	// CONFIG_DMR_ARS / CONFIG_DMR_IP_GATEWAY): the setting in force; a set is a codeplug write job (the settings area,
+	// docs/spec/codeplug-settings.md), which the radio core takes when codeplug_serial() moves on
+	UI_SET_ARS_SERVER = UI_SET_RAM_COUNT,
+	UI_SET_IP_GATEWAY,
 	UI_SET_COUNT
 } ui_setting_t;
 
