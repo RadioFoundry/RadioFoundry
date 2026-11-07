@@ -12,7 +12,7 @@
 #define RF_TASK_PRIORITY	(configMAX_PRIORITIES - 1)	// above the glue's DMR task: the burst timing comes first
 #define RF_TASK_STACK		256		// words
 #define RF_GUARD_US		20000u		// an RF RX interrupt ends the burst only this long after its RF TX interrupt
-#define WAIT_SPIN_US		50u		// shorter waits spin, as the stock delay routine does
+#define WAIT_SPIN_US		50u		// shorter waits spin, as the original firmware's delay routine does
 #define WAIT_TIMEOUT_MS		10u		// the timer never fired: go on
 #define DISARM_WAIT_MS		20u
 #define FRAME_US		60000u		// one RF TX interrupt per TDMA frame while transmitting
@@ -64,7 +64,7 @@ void hrc_rfburst_switch(bool tx)
 }
 
 // RF RX interrupt (ISR). The original firmware ends each burst here; RadioFoundry's engine ends it at the next slot tick too, so
-// whichever comes first wakes the TX-off, and the board's hold in it keeps the stock timing either way
+// whichever comes first wakes the TX-off, and the board's hold in it keeps the original firmware's timing either way
 static void isr_rfrx(void)
 {
 	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_RF_RX);
@@ -81,7 +81,7 @@ static void isr_timer(void)
 	rf_post(EV_TIMER);
 }
 
-// The sequences' waits: a spin below 50 us, else the board timer while the task sleeps (stock: the same split)
+// The sequences' waits: a spin below 50 us, else the board timer while the task sleeps (the original firmware: the same split)
 static void rf_wait(uint32_t us)
 {
 	if (us < WAIT_SPIN_US) {

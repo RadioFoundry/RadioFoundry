@@ -397,7 +397,7 @@ before our burst's first symbol to 1 ms or more into the next slot's burst: an S
 inbound call's 72 voice frames. Measured on the SDR bench (a UHF test frequency, low power, into a dummy load), against
 our first symbol:
 
-| Point | Stock timing (lead 3.1 ms) | RadioFoundry (lead 1.5 ms) |
+| Point | Original firmware (lead 3.1 ms) | RadioFoundry (lead 1.5 ms) |
 |---|---|---|
 | RF TX interrupt, receiver off | -3.95 ms | -2.35 ms |
 | First carrier (main chip in TX, PA supply off) | -3.0 ms | -2.0..-1.45 ms |
