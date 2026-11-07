@@ -46,3 +46,8 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # radios (docs/spec/ppp.md), and this one has the adapter. Every switch on doesn't fit the 464 KB of flash with two
 # translations: maximal keeps Spanish, as the default build does (Italian builds on the other boards)
 MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT
+
+# A Chinese character is 16 px tall (core/ui/cjk_font.h) and these layouts draw their words in the 6x12 font:
+# there is no room for a 16 px line, and the CJK face must not be built in (docs/build-config.md)
+BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
+BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
