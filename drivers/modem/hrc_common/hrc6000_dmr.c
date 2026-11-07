@@ -932,12 +932,12 @@ static bool lc_slot_ok(hrc6000_dmr_t *e, int8_t ts, const uint8_t lc[9], bool at
 		return true;
 	}
 	// This slot's call goes on: its talker can't change without a gap, and a locked slot never sees the other's voice,
-	// so that call's busy window may have lapsed while it still talks (bench, 2026-11-04: a mix of the two handed over
+	// so that call's busy window may have lapsed while it still talks (bench: a mix of the two handed over
 	// mid-call, 2.2 s into it)
 	if (open) {
 		return false;
 	}
-	// With the other slot's call maybe going on, page 2 once held an LC neither call had (bench, 2026-11-04: a mix
+	// With the other slot's call maybe going on, page 2 once held an LC neither call had (bench: a mix
 	// of the two). A real LC comes again with the next superframe: handed over when it is read again a superframe
 	// later (at F or the A after it)
 	if (e->slot_lc[me].cand_ok && memcmp(lc, e->slot_lc[me].cand, 9) == 0) {
