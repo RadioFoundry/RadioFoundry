@@ -44,7 +44,8 @@ typedef struct
 #define DMR_IPC_PORT				0x80000000u	// rule: a UDP port (source or destination), else a radio ID
 #define DMR_IPC_TRIES_DEFAULT		4			// the first transmission and 3 retries (N_RtryLmt 8 at most)
 #define DMR_IPC_TRIES_MAX			8
-#define DMR_IPC_RESPONSE_MS			1500		// T_RspnsWait: our transmission over to the response
+#define DMR_IPC_RESPONSE_MS			3000		// T_RspnsWait: our transmission over to the response (through a hotspot
+													// the answer comes from the network: dmr-data.md 12.4)
 
 // What the service needs to know about the channel, from its host at every tick
 typedef struct

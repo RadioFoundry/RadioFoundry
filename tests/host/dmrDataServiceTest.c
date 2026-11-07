@@ -1490,6 +1490,39 @@ static void testConfirmedRx(void)
 	CHECK(lastTx[0].payload[9] == DMR_RESPONSE_SACK(7) && lastTx[1].payload[0] == 0x9F);
 	CHECK(packetsHeard == heard + 1);
 
+	// BrandMeister's case: rate 3/4, N(S) 0, one middle block lost on the way: selective ACK, then that block alone
+	{
+		uint8_t big[150];
+		for (int i = 0; i < (int)sizeof(big); i++) big[i] = (uint8_t)(i * 7 + 3);
+		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DT_RATE_34_DATA, 0, true, 0, 1, b, DMR_DATA_MAX_BURSTS);
+		dmrBurst_t lost[DMR_DATA_MAX_BURSTS];
+		int m = 0;
+		for (int i = 0; i < n; i++) if (i != 5) lost[m++] = b[i];
+		heard = packetsHeard;
+		rxBursts(lost, m);
+		runMainTask(CNF_RX_STALL_MS + 200);
+		CHECK(lastTxCount == 2 && lastTx[0].payload[9] == DMR_RESPONSE_SACK(0) && lastTx[1].payload[0] == 0xF7);
+		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DT_RATE_34_DATA, 0, false, 1ULL << 3, 1, b, DMR_DATA_MAX_BURSTS);
+		rxBursts(b, n);
+		runMainTask(200);
+		CHECK(packetsHeard == heard + 1 && lastTx[0].payload[9] == DMR_RESPONSE_ACK(0));
+	}
+
+	// The same with the last block lost (all pad and the CRC-32, as BrandMeister's 128 octet reply): after the stall
+	{
+		uint8_t big[128];
+		for (int i = 0; i < (int)sizeof(big); i++) big[i] = (uint8_t)(i * 5 + 1);
+		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DT_RATE_34_DATA, 0, true, 0, 1, b, DMR_DATA_MAX_BURSTS);
+		heard = packetsHeard;
+		rxBursts(b, n - 1);
+		runMainTask(CNF_RX_STALL_MS + 200);
+		CHECK(lastTxCount == 2 && lastTx[0].payload[9] == DMR_RESPONSE_SACK(0) && lastTx[1].payload[0] == 0xFF && lastTx[1].payload[1] == 0xFE);
+		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DT_RATE_34_DATA, 0, false, 1ULL << 8, 1, b, DMR_DATA_MAX_BURSTS);
+		rxBursts(b, n);
+		runMainTask(200);
+		CHECK(packetsHeard == heard + 1 && lastTx[0].payload[9] == DMR_RESPONSE_ACK(0));
+	}
+
 	// Every block good, the CRC-32 not: NACK
 	n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_B, pdu, sizeof(pdu), DT_RATE_12_DATA, 0, true, 0, 0, b, DMR_DATA_MAX_BURSTS);
 	b[3].payload[4] ^= 0x80;
@@ -1501,7 +1534,7 @@ static void testConfirmedRx(void)
 	CHECK(lastTxCount == 1 && lastTx[0].payload[9] == DMR_RESPONSE_NACK_CRC(0));
 
 	dmrDataServiceGetStats(&st);
-	CHECK(st.rxSacksSent - st0.rxSacksSent == 2 && st.rxNacksSent - st0.rxNacksSent == 1 &&
+	CHECK(st.rxSacksSent - st0.rxSacksSent == 4 && st.rxNacksSent - st0.rxNacksSent == 1 &&
 	      st.rxConfirmedDuplicates - st0.rxConfirmedDuplicates == 1);
 	decodeTx = true;
 }

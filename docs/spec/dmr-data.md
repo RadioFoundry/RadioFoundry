@@ -168,7 +168,7 @@ BrandMeister's SMS service (ID 262993, through a hotspot) speaks TMS on UDP 4007
 | Link ACK | about 0.5 s after the last block, 1 preamble | | straight after (3) |
 | TMS ACK | about 5.7 s after the message | confirmed, 16 preambles, about 1.4 s after its link ACK | confirmed, 16 preambles, 1.5 s after our link ACK |
 | Our link ACK | taken 3 of 3 times with nothing after it within 1 s; no reaction 2 of 2 times with our TMS ACK 0.3 s behind (few samples; may be loss) | | |
-| No TMS ACK | sends the text again after about 28 s, with a new sequence number | link layer retries about every 6 s | link layer tries 1.5 s apart; after the link ACK an 8 s wait, 2 tries |
+| No TMS ACK | sends the text again after about 28 s, with a new sequence number | link layer retries about every 6 s | link layer tries 3 s apart; after the link ACK an 8 s wait, 2 tries |
 | CRC-32 failure | NACK, class 1 type 1 | | NACK (12.3) |
 
 What follows for us: N(S) can't tell BrandMeister's packets apart, so a repeat is a repeat only when the data is the
@@ -234,14 +234,17 @@ A third pass sent the TMS ACK unconfirmed with 16 preambles and the 1.5 s gap, t
 the reply came again about 36 s later with a new sequence number. A MOTOTRBO radio's confirmed TMS ACK is taken, so
 ours goes confirmed (5.1).
 
-Fourth pass, case 1 with our text and TMS ACK confirmed (5.1):
+Fourth pass, case 1 twice with our text and TMS ACK confirmed (5.1), the same both times, then once more with the 3 s
+wait (12.4):
 
 | What | Result |
 |---|---|
-| Our text | BrandMeister's link ACK 0.6 s after the last block, taken; no retry |
+| Our text | BrandMeister's link ACK 0.6 s after the last block at the network, taken; no retry. At the radio it came after our 1.5 s wait, while the retry waited for the channel, 4 times of 4 (with the TMS ACKs below): the wait is 3 s now (12.4) |
 | BrandMeister's TMS ACK | 5.1 s after its link ACK; taken (`SMS_SENT`) |
 | BrandMeister's reply | its link ACK from us taken; our confirmed TMS ACK link-ACKed by BrandMeister (status our N(S)) |
-| A second reply 23 s later | the same text with a new sequence number, not a resend: BrandMeister's echo sends its reply twice, to a MOTOTRBO radio too. ACKed, kept once (gotcha 5.8). Our TMS ACK to it: no link ACK on any of 4 tries (one sample) |
+| A second reply 23 s later | the same text with a new sequence number, not a resend: BrandMeister's echo sends its reply twice, to a MOTOTRBO radio too. ACKed, kept once (gotcha 5.8). Our TMS ACK to it: no link ACK on any try, the first one with F set, in the first two runs |
+| With the 3 s wait | every link ACK taken on its first try: our text and both our TMS ACKs, reply B's too. No retry, no timeout. Reply B's TMS ACK has been link-ACKed 1 time of 3; its sequence form, N(S) and F don't explain the misses (reply A's, ACKed every time, had the same) |
+| A block lost on the way | once, a reply's last block (the CRC-32 block) didn't reach the hotspot from the network. We sent a selective ACK for it and BrandMeister resent it alone (F clear, S set, the whole message's pad), but we answered with a NACK and it sent everything again, which got through. A host replay of BrandMeister's exact bursts ends in an ACK, so the NACK came from something on the radio; open |
 
 #### 5.1.2 Simulated BrandMeister text service (HIL)
 
@@ -535,9 +538,10 @@ the reply queue and its 5 s age limit, and the service's TX list and listen befo
   blocks at rate 1/2, 12.8) goes confirmed. A packet too long for it would go unconfirmed (`ip.cnf_too_long`); none is.
 - In direct mode the transmission ends with the Data Terminator LC (FLCO 0x30; octet 8: G/I, A, F, S, N(S)) that
   opens the receiver's response window (TS 102 361-3 5.4.1); through a repeater nothing follows the last block.
-- Then it waits `DMR_IPC_RESPONSE_MS` (1.5 s) after the list has gone for a response from the destination with the
+- Then it waits `DMR_IPC_RESPONSE_MS` (3 s) after the list has gone for a response from the destination with the
   packet's SAP. The standard recommends 180 ms (2 s on simulcast); ours is longer because our own receiver answers
-  after its listen before talk (120 ms) and a repeater wake-up.
+  after its listen before talk (120 ms) and a repeater wake-up, and through a hotspot the answer comes from a network
+  service: BrandMeister's link ACK reached the radio after a 1.5 s wait 4 times of 4 (5.1.1).
 - An ACK with our N(S) is also taken before the stack has reported our list done (a fast answer, such as
   BrandMeister's through a hotspot, can come first: 5.1.1) and while the next try is queued (its retry dropped). A selective ACK or NACK then is not: the try under way answers for it.
 - ACK (class 0, type 1) with our N(S): done; the next packet to that radio takes N(S) + 1 (mod 8).
