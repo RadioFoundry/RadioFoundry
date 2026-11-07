@@ -653,8 +653,9 @@ interrupt while keyed sets up the next slot from that slot's queue (or the idle 
 underrun): the MCU CRC bit of 0x40 per burst kind, the payload (voice on page 3, LC / data on page 2 0x00), 0x41 =
 0x80 and 0x50. Page 2 0x00 is shared by both slots, so a slot's embedded LC is written back before its voice A-E
 whenever the other slot's header or data overwrote it. The first burst after a key-up is an outbound TS1 slot
-(outbound slot = ((tick - base) & 1) ? TS1 : TS2). The PA is keyed once, at the first RF TX interrupt, and dropped
-at the first timeslot interrupt after the unkey, or by the watchdog when no timeslot interrupt came for 200 ms. Stop:
+(outbound slot = ((tick - base) & 1) ? TS1 : TS2). The PA is keyed once: at the RF TX interrupt, or at the first slot's
+set-up when that interrupt came before it, and a key the board could not do is tried again at the next slot. It is
+dropped at the first timeslot interrupt after the unkey, or by the watchdog when no timeslot interrupt came for 200 ms. Stop:
 0x10 / 0x11 back to 0x6E / 0x80, MS sync, 0x40 = 0xC3, the slot engine restarts the receiver.
 
 The CACH: the manual has the MCU give the BS downstream CACH's AT and TC in 0x52 (written) and the short LC in TX RAM
@@ -666,6 +667,20 @@ alternate slots, and takes its half at the slot start. The slot interrupt, 0x41 
 layer 2. The driver writes each slot's frame (`bsOutboundRawSlot`) to both halves, since which half is which slot
 isn't known, and nothing to 0x50, 0x52 or the vocoder. Variant 1 keeps the layer 2 framing (0x52 and the short LC
 written for every burst) for comparison; 255 adds up to four raw page 4 pairs at key-up. Host test: `tests/host/hrc6000BsTest.c`.
+
+**The key-up** (our framing). In this mode the chip raises the RF TX interrupt once per key-up, anywhere in the slot
+(5.8 to 30.1 ms after the timeslot interrupt in three key-ups), not ahead of each slot, and it sends TX RAM whenever
+the PA is up. So the PA can come up in the slot before the first frame, or inside the first frames. Three rules keep
+that off the air as harm:
+
+| Rule | Why |
+|---|---|
+| At the key and while it waits for the TS1 slot, both halves hold an idle TS2 burst with the default CACH (LCSS last, no short LC) | the slot before the first frame otherwise sent whatever TX RAM last held: an out-of-sequence CACH |
+| The first two slots set up get the default CACH, not the core's | a CACH clipped by the rising PA can decode as LCSS first; with the core's fragments after it, the decoder assembled a short LC with a bad CRC (about one key-up in three). The next fragment now breaks the sequence. The first short LC comes 60 ms later |
+| A board whose key-up is slower than the CACH times it from the slot clock (`stm32_hrc_dmr_bs_boundary_us`) | full power after the slot's sync and ahead of the next CACH |
+
+On the SDR bench, 10 key-ups of 10 s each: no bad short LC, TC alternating, against a bad short LC in two of four
+before.
 
 **Restarting the slot timer** (ALIGN, `split-duplex.md` 3.8; bench 2026-10-21): 0x41 = 0x00,
 0x40 = 0xC3, 0x41 = 0x20, 0x00, 0x20, 0x00 (the 5.1 sync drop), then 0x40 = 0xE3 at the chosen time. The first
@@ -707,3 +722,6 @@ at the slot start. Earlier runs also found every fourth TS2 burst sent as a zero
 - Whether the post-access interrupt is reliable for data calls (it is a voice mechanism in the manual).
 - Crystal frequency on the boards (the PLL values match 29.4912 MHz).
 - Passive full duplex (manual 5.4.4) for a true SFR / repeater: not tried.
+- The BS outbound's key-up (9.1): timed from the slot clock, full power still lands inside the first frames in about
+  half the key-ups, so the timeslot interrupt's place against the slot on air seems to vary between key-ups. The first
+  burst off air can then carry a clipped CACH (harmless by the rules in 9.1).

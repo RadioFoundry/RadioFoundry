@@ -361,7 +361,17 @@ bool md9600_rf_dmr_key(bool tx)
 	}
 	key_step = 0;
 	key_pending = true;
-	key_timer_start(MD9600_BURST_KEY_DELAY_US);
+	uint32_t until;
+
+	if (stm32_hrc_dmr_bs_boundary_us(&until)) {
+		// The split duplex BS outbound keys once, and its slot starts with the CACH, not a guard. Its RF TX interrupt
+		// comes once, anywhere in the slot: the key-up is timed off the slot clock. Full power at the boundary
+		// clipped the first CACH; during the slot's sync, the receiver took that burst with noise for its CACH
+		key_timer_start(until > MD9600_BS_KEY_LEAD_US ? until - MD9600_BS_KEY_LEAD_US
+							      : until + MD9600_SLOT_US - MD9600_BS_KEY_LEAD_US);
+	} else {
+		key_timer_start(MD9600_BURST_KEY_DELAY_US);
+	}
 	return true;
 }
 

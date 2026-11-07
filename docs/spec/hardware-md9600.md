@@ -1029,7 +1029,9 @@ RF_APC_SW on, the APC reference up in 4 steps of 100 us; at its end (the timeslo
 RF_APC_SW off, T5 off. T5 alone leaks the carrier about 13 dB under full power, and that counts as on air: keyed at the
 interrupt itself (about 1.3 ms ahead of the slot), every burst was 31.7-31.9 ms long at floor + 10 dB on the SDR bench
 (2026-11-06, 461.4625 MHz, lowest power; the bench allows 27-31.5 ms). Delayed, full power still comes about 0.2 ms
-after the slot boundary, inside the guard ahead of the payload. The receiver comes back at the slot engine's TX done,
+after the slot boundary, inside the guard ahead of the payload. The split duplex TX half (a BS outbound) keys once and
+has no guard: its slot starts with the CACH. Its key-up is timed from the slot clock instead, full power 6 ms ahead of
+a timeslot interrupt, after that slot's sync (`docs/spec/modem-hrc6000.md` 9.1). The receiver comes back at the slot engine's TX done,
 on every channel, with the receive column's synthesizer, front-end and line steps and no waits. On a split channel a
 wake-up then hears the repeater's answer (left on the carrier, every key-up to a repeater that was down ended in
 `no_repeater`). On simplex the reply to a confirmed packet comes in the next frame, 30 ms after the last burst, before

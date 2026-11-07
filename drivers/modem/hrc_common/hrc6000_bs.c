@@ -110,6 +110,43 @@ bool hrc6000_bs_start(hrc6000_bs_t *bs, hrc6000_dmr_t *e, const dmr_bs_config_t 
 	return ok;
 }
 
+// Our framing, ahead of the first slot set up: an idle TS2 burst with the default CACH (LCSS last, no short LC, TC
+// alternating into the first TS1 slot) in both halves. The chip sends TX RAM whenever the PA is up, and the PA can come
+// up in the slot before the first one: that slot then carries this, not whatever the RAM last held
+static void prime(hrc6000_dmr_t *e, hrc6000_bs_t *bs)
+{
+	dmr_tx_burst_t idle;
+	uint8_t raw[HRC6000_BS_RAW_BYTES];
+
+	if (!raw_mode(bs)) {
+		return;
+	}
+	memset(&idle, 0, sizeof(idle));
+	idle.kind = DMR_BURST_IDLE;
+	idle.len = sizeof(IDLE_INFO);
+	memcpy(idle.payload, IDLE_INFO, sizeof(IDLE_INFO));
+	if (bs->raw_slot(&idle, NULL, 2, bs->cfg.cc, NULL, raw)) {
+		hrc_write_burst(e->dev, HRC_PAGE_DATA, RAW_HALF0, raw, sizeof(raw));
+		hrc_write_burst(e->dev, HRC_PAGE_DATA, RAW_HALF1, raw, sizeof(raw));
+		bs->st.primes++;
+	}
+}
+
+// The PA keyed for the whole outbound (the board times its key-up); one the board could not do is tried again at the
+// next slot
+static void key_pa(hrc6000_dmr_t *e, hrc6000_bs_t *bs)
+{
+	bs->pa_due = false;
+	if (e->ops->rf(e->ops->ctx, true)) {
+		bs->pa = true;
+		e->pa_on = true;
+		e->t_pa_on = e->ops->now_us(e->ops->ctx);
+	} else {
+		bs->st.rf_fail++;
+		bs->pa_due = true;
+	}
+}
+
 void hrc6000_bs_key(hrc6000_dmr_t *e, bool on)
 {
 	lock(e);
@@ -118,6 +155,7 @@ void hrc6000_bs_key(hrc6000_dmr_t *e, bool on)
 	if (bs != NULL) {
 		if (on && !bs->keyed) {
 			bs->st.keyups++;
+			prime(e, bs);
 		}
 		bs->keyed = on;
 		if (!on) {
@@ -420,17 +458,30 @@ void hrc6000_bs_isr_timeslot(hrc6000_dmr_t *e)
 			variant_regs(e, bs, false);
 		}
 		bs->on_air = false;
+		bs->pa_due = false;
 		w(e, R_SLOT_CTL, CTL_NONE);
 		return;
 	}
 	if (!bs->on_air && (next != 1)) {
 		w(e, R_SLOT_CTL, CTL_NONE);	// a key-up starts with an outbound TS1 slot (hal_dmr_modem.h)
+		prime(e, bs);
 		return;
 	}
 	if (!bs->regs_written) {
 		variant_regs(e, bs, true);
 	}
+	// Our framing: the first slot may go out with the PA still coming up (above), and a CACH clipped there can decode
+	// as any LCSS. The first two slots get the default CACH (LCSS last, no short LC), so whichever of them is clipped,
+	// the next fragment breaks the sequence and nothing joins into a bad short LC. The first one follows after them
+	if (!bs->on_air && raw_mode(bs)) {
+		bs->plain = 2;
+	}
+	bool plain = bs->plain > 0;
+
 	bs->on_air = true;
+	if (bs->pa_due && !bs->pa) {
+		key_pa(e, bs);
+	}
 	int k = next - 1;
 	dmr_tx_burst_t idle;
 	const dmr_tx_burst_t *b;
@@ -452,7 +503,7 @@ void hrc6000_bs_isr_timeslot(hrc6000_dmr_t *e)
 
 		b = &bs->q[k][at];
 		lc = bs->q_lc_valid[k][at] ? bs->q_lc[k][at] : NULL;
-		setup(e, bs, next, b, lc, bs->q_cach_valid[k][at] ? &bs->q_cach[k][at] : NULL);
+		setup(e, bs, next, b, lc, (bs->q_cach_valid[k][at] && !plain) ? &bs->q_cach[k][at] : NULL);
 		bs->tail[k] = (uint8_t)((at + 1u) % (HRC6000_BS_Q + 1u));
 	} else {
 		memset(&idle, 0, sizeof(idle));
@@ -461,6 +512,9 @@ void hrc6000_bs_isr_timeslot(hrc6000_dmr_t *e)
 		memcpy(idle.payload, IDLE_INFO, sizeof(IDLE_INFO));
 		setup(e, bs, next, &idle, NULL, NULL);
 		bs->st.underruns++;
+	}
+	if (plain) {
+		bs->plain--;
 	}
 }
 
@@ -483,13 +537,13 @@ void hrc6000_bs_isr_rftx(hrc6000_dmr_t *e)
 	if (!bs->keyed || bs->pa) {
 		return;		// keyed once for the whole outbound
 	}
-	if (e->ops->rf(e->ops->ctx, true)) {
-		bs->pa = true;
-		e->pa_on = true;
-		e->t_pa_on = e->ops->now_us(e->ops->ctx);
-	} else {
-		bs->st.rf_fail++;	// tried again at the next slot's interrupt
+	// In this mode the chip raises it once per key-up, anywhere in the slot (modem-hrc6000.md 9.1). Before the first
+	// slot is set up, the PA would put a slot on air with whatever TX RAM last held: it waits for that set-up then
+	if (!bs->on_air) {
+		bs->pa_due = true;
+		return;
 	}
+	key_pa(e, bs);
 }
 
 void hrc6000_bs_poll(hrc6000_dmr_t *e)

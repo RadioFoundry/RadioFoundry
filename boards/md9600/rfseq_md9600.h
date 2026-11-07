@@ -108,6 +108,11 @@ typedef enum { MD9600_RF_OFF, MD9600_RF_RX, MD9600_RF_TX } md9600_rf_state_t;
 #define MD9600_BURST_T5_US		500u
 #define MD9600_BURST_RAMP_STEPS		4u
 #define MD9600_BURST_RAMP_STEP_US	100u
+#define MD9600_SLOT_US			30000u
+// The split duplex BS outbound's one key-up starts this far ahead of a slot's timeslot interrupt: full power 6 ms
+// before it, after that slot's sync (2.5 + 11.25 to 18.75 ms into it) and well ahead of the next CACH
+#define MD9600_BS_KEY_LEAD_US \
+	(MD9600_BURST_T5_US + (MD9600_BURST_RAMP_STEPS - 1u) * MD9600_BURST_RAMP_STEP_US + 6000u)
 #define MD9600_V4_KICK_HZ		145000000u	// V4: the VHF synthesizer is set right after power-on or it never locks
 
 typedef struct {

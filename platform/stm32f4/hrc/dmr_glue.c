@@ -541,6 +541,20 @@ bool stm32_hrc_dmr_tx_listening(void)
 	return active && eng.tx_listen;
 }
 
+bool stm32_hrc_dmr_bs_boundary_us(uint32_t *us)
+{
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	if (!active || !hrc6000_bs_active(&eng) || !eng.timing) {
+		return false;
+	}
+	*us = 30000u - ((now_us(NULL) - eng.t_tick) % 30000u);
+	return true;
+#else
+	(void)us;
+	return false;
+#endif
+}
+
 void stm32_hrc_dmr_tx_drop(void)
 {
 	if (!active) {
