@@ -80,7 +80,6 @@ static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modula
 
 static void speaker_source(void);
 static volatile bool dmr_keyed;		// DMR transmission on: the PA timer may key the PA
-static volatile bool rf_on_rx;		// the last burst switch put the FD6818 back in RX on rx_hz
 static volatile uint16_t tx_drive;	// DAC B value at the top of the ramp (FM) or while keyed (DMR)
 static uint16_t last_rssi_raw, last_noise_raw;
 static volatile int8_t mic_offset_db;	// hal_radio_t.mic_gain: taken at the next transmission start
@@ -214,7 +213,6 @@ static void dmr_rf_switch(bool tx)
 		fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, synth_hz(rx_hz));
 		rx_path(rx_hz, true);
 	}
-	rf_on_rx = !tx;
 }
 
 // The PA one-shot expired: key the drive if the transmission is still on (one write: a burst is 27.5 ms long, there is
@@ -299,11 +297,8 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 	if (!board_in_band(hz, false) || (am && mode != RADIO_MODE_FM)) {
 		return false;
 	}
-	// Back from our DMR transmission on the same channel: the burst switch already put the FD6818 in RX on hz. A
-	// retune now (idle, synthesizer, RX) would hit a reply that comes in the next frame, 30 ms after our last burst,
-	// such as a confirmed data response
-	bool back = mode == RADIO_MODE_DMR && rf_on_rx && have_rx && hz == rx_hz && !asleep;
-	rf_on_rx = false;
+	// Back from our DMR transmission on the same channel: the burst switch already put the FD6818 in RX on hz
+	bool back = hrc_dmr_rf_on_rx() && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep;
 	DAC_DATA_B = 0;
 	tx_path(hz, false);
 	if (back) {

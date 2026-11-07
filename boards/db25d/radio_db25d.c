@@ -93,7 +93,6 @@ static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25
 static uint16_t tx_on_us;
 static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (db25d_dmr_rf_tx_lead)
 static uint32_t tx_hz;
-static volatile bool rf_on_rx;	// the last burst's TX off put the receiver back on rx_hz (db25d_burst_off)
 static void dmr_disarm(void);
 #endif
 static radio_mode_t mode = RADIO_MODE_FM;	// DMR only with CONFIG_DMR (transmit with DB25D_DMR_TX, dmr_db25d.c)
@@ -264,11 +263,9 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	}
 #if CONFIG_DMR && DB25D_DMR_TX
 	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
-	// Back from our DMR transmission on the same channel: the last burst's TX off already set the receiver up on hz.
-	// Set up again now (main chip idle, LO retuned), it would miss a reply that comes in the next frame, 30 ms after
-	// our last burst, such as a confirmed data response
-	bool back = mode == RADIO_MODE_DMR && rf_on_rx && have_rx && hz == rx_hz && tuned_ppb == trim_ppb;
-	rf_on_rx = false;
+	// Back from our DMR transmission on the same channel: the last burst's TX off already set the receiver up on hz
+	// (the glue's flag; dmr_disarm() above waited for the RF task)
+	bool back = hrc_dmr_rf_on_rx() && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && tuned_ppb == trim_ppb;
 	if (back) {
 		rx_bw = bw;
 		rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
@@ -348,7 +345,6 @@ static void dmr_disarm(void)
 // off, the page's TX-on delay, PA select and the RX supply off, 200 us, the band's TX supply, the ramp up
 void db25d_burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us)
 {
-	rf_on_rx = false;
 	hrc_pin_write(PIN_RX_FRONT_END, false);
 	hrc_pin_write(PIN_UHF_RX, false);
 	hrc_pin_write(PIN_VHF_RX, false);
@@ -383,7 +379,6 @@ uint32_t db25d_burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now
 	db25d_main_burst(IF_HZ, false);
 	db25d_lo_resume();
 	rx_paths(rx_hz, true);
-	rf_on_rx = true;
 	return late;
 }
 #endif

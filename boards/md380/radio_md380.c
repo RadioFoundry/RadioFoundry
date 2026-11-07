@@ -415,10 +415,10 @@ static void rf_dmr_wait_lock(void)
 // split channel (repeater, duplex hotspot) the receiver back on the RX frequency, so the radio hears the repeater's
 // answer to its wake-up. Left on the TX side, every key-up there ended in no_repeater (issue 108). Not per burst: the
 // switch there caught the burst on air. Simplex stays on TX until tx_off() (RX = TX)
-static void rf_dmr_tx_done(void)
+static bool rf_dmr_tx_done(void)
 {
 	if (!r.dmr_armed || !r.dmr_tx_tuned || !r.rx_valid || r.dmr_tx_hz == r.rx_hz) {
-		return;
+		return false;
 	}
 	pa_timer_stop();
 	pa_off();
@@ -428,6 +428,7 @@ static void rf_dmr_tx_done(void)
 	rx_path(true);
 	r.dmr_tx_tuned = false;
 	r.rf_rx_back++;
+	return true;
 }
 
 static void rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_back)

@@ -83,7 +83,6 @@ static struct {
 	volatile int8_t rf_ref;		// calibrated HR_C6000 MOD1 offset (4:0x04) for the RX frequency
 	volatile bool rf_direct;	// this burst was keyed without the idle step: 4:0x04 raised, the receiver not retuned
 	volatile bool rf_key_pending;	// TIM7 keys this burst at its expiry
-	volatile bool rf_on_rx;		// the last burst switch put the AT1846S back in RX on rx_hz
 	uint32_t rf_skipped, rf_unarmed, rf_rx_retries;
 } r = { .rf_page = 0xFF };
 
@@ -320,7 +319,6 @@ static bool rf_to_rx(void)
 		rx_supply(true, r.rx_uhf);
 		if (rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_RX))) {
 			r.rf_rx_pending = false;
-			r.rf_on_rx = r.rf_tuned_hz == r.rx_hz;
 			return true;
 		}
 		r.rf_rx_pending = true;	// the retry takes the idle sequence below
@@ -343,7 +341,6 @@ static bool rf_to_rx(void)
 	rx_supply(true, r.rx_uhf);
 	if (ok && rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_RX))) {
 		r.rf_rx_pending = false;
-		r.rf_on_rx = true;
 		return true;
 	}
 	r.rf_rx_pending = true;
@@ -360,7 +357,6 @@ static bool rf_key(void)
 	}
 	uint32_t hz = r.dmr_tx_hz;
 	r.rf_isr_dirty = true;
-	r.rf_on_rx = false;
 	int8_t ref;
 	if (!r.rf_rx_pending && r.rf_tuned_hz == hz && uvf_direct_tx_ref(hz, r.rf_ref, &ref)) {
 		// Direct (SFR, simplex): the receiver on the TX frequency goes straight to DMR TX, which puts the carrier
@@ -491,7 +487,6 @@ static void rf_resync(void)
 	}
 	r.rf_isr_dirty = false;
 	r.rf_rx_pending = false;
-	r.rf_on_rx = false;
 	if (r.rf_direct) {	// a transmission cut during a direct burst: the MOD1 offset back to the calibrated value
 		r.rf_direct = false;
 		count(hrc_write(&r.modem, 4, 0x04, (uint8_t)r.rf_ref));
@@ -730,10 +725,10 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 		dmr_disarm();
 	}
 	// Back from our DMR transmission on the same channel: the burst switch already put the AT1846S in RX on hz
-	// (registers as the driver's cache has them). A retune now (idle, synthesizer words, RX) would hit a reply that
-	// comes in the next frame, 30 ms after our last burst, such as a confirmed data response
-	bool back = same && r.mode == RADIO_MODE_DMR && r.rf_on_rx && !r.rf_rx_pending && !r.asleep;
-	r.rf_on_rx = false;
+	// (registers as the driver's cache has them; the glue's flag). A retune now (idle, synthesizer words, RX) would
+	// hit a reply that comes in the next frame, 30 ms after our last burst
+	bool back = stm32_hrc_dmr_rf_on_rx() && same && r.mode == RADIO_MODE_DMR && r.rf_tuned_hz == hz &&
+		    !r.rf_rx_pending && !r.asleep;
 	r.asleep = false;
 	tone_restore();
 	inject_stop();
