@@ -4,6 +4,7 @@
 #ifndef HAL_FLASH_H
 #define HAL_FLASH_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -39,6 +40,9 @@ typedef struct {
 // wraps to a lower one)
 static inline uint32_t hal_flash_map_end(const hal_flash_map_t *m, uint32_t erase_size)
 {
+	if (m == NULL) {
+		return 0;
+	}
 	const uint32_t ends[] = {
 		m->settings_size != 0u ? m->settings_addr + m->settings_size : 0u,
 		m->journal_addr + 2u * erase_size,

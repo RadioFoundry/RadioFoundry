@@ -575,6 +575,9 @@ static void test_iddb(void)
 	CHECK(dmr_iddb_init());
 	put_iddb_header('N', 15, 101);
 	CHECK(!dmr_iddb_init());
+	m.openfw_end = FL + 0x30000 + 11;		// not even the header: it isn't read
+	unsigned before = reads;
+	CHECK(!dmr_iddb_init() && reads == before);
 	flash.map = NULL;
 
 	// Plain format: 4-byte BCD IDs (LE word) and ASCII text
