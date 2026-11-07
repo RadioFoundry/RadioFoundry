@@ -38,7 +38,7 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | Position | Where the position comes from, and the fixed position (see Position below) |
 | Position in DMR calls | Your position in your DMR voice calls (see [DMR](09-dmr.md#position-in-calls)) |
 | KISS on USB | The radio works as a KISS TNC for APRS programs on the computer |
-| Stations heard | Stations the radio heard (radios that can receive APRS) |
+| Stations heard | Stations the radio heard (radios that can receive APRS), newest first. A station that sent its position shows how far away and which way it was from yours, when the radio has a position too; the age on that row is then the age of that position. Other rows show when the station was last heard. Objects and items a station sends don't count as its position, and a position more than a day old is dropped |
 
 The symbol, comment and the DMR destination are set with the debug tool for now
 (`tools/rfoundry_debug.py aprs set ...`), later with qdmr.

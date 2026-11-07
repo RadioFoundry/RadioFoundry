@@ -455,6 +455,104 @@ static void test_geo(void)
 	CHECK(memcmp(b, "5L!!", 4) == 0 && aprs_base91_value("5L!!", 4) == 15427503, "base91");
 }
 
+// The range Stations heard shows (aprs_distance_m, aprs_bearing_deg), at its limits (BVA)
+#define HALF_EARTH_M	20015087u	// pi * 6371 km, the farthest two points can be
+#define LAT_MAX		(90 * APRS_DEG)
+#define LON_MAX		(180 * APRS_DEG)
+
+static void test_geo_limits(void)
+{
+	static const struct {
+		const char *name;
+		int32_t lat1, lon1, lat2, lon2;
+		uint32_t lo, hi;	// meters
+		int deg;		// -1: any
+	} cases[] = {
+		{ "same point", 337000000, -841000000, 337000000, -841000000, 0, 0, -1 },
+		{ "1e-7 deg apart: 1 cm", 0, 0, 1, 0, 0, 1, -1 },
+		{ "999 m north (last m)", 0, 0, 89845, 0, 998, 1000, 0 },
+		{ "1000 m north (first 0.1 km)", 0, 0, 89932, 0, 999, 1001, 0 },
+		{ "1 deg north", 0, 0, APRS_DEG, 0, 111100, 111300, 0 },
+		{ "pole to pole", LAT_MAX, 0, -LAT_MAX, 0, HALF_EARTH_M - 50, HALF_EARTH_M + 50, 180 },
+		{ "north pole, any longitude: the same point", LAT_MAX, 0, LAT_MAX, 1234567890, 0, 5, -1 },
+		{ "antipodes on the equator", 0, 0, 0, LON_MAX, HALF_EARTH_M - 50, HALF_EARTH_M + 50, -1 },
+		{ "antipodes off the equator", 337000000, -841000000, -337000000, 959000000, HALF_EARTH_M - 50,
+		  HALF_EARTH_M + 50, -1 },
+		{ "180 E is 180 W", 0, LON_MAX, 0, -LON_MAX, 0, 5, -1 },
+		{ "across the date line, westward", 0, 1795000000, 0, -1795000000, 111100, 111300, 90 },
+		{ "across the date line, eastward", 0, -1795000000, 0, 1795000000, 111100, 111300, 270 },
+		// bearing: the quadrant edges and the wrap at north
+		{ "N", 0, 0, 1000000, 0, 0, HALF_EARTH_M, 0 },
+		{ "E", 0, 0, 0, 1000000, 0, HALF_EARTH_M, 90 },
+		{ "S", 0, 0, -1000000, 0, 0, HALF_EARTH_M, 180 },
+		{ "W", 0, 0, 0, -1000000, 0, HALF_EARTH_M, 270 },
+		{ "NE", 0, 0, 1000000, 1000000, 0, HALF_EARTH_M, 45 },
+		{ "359.4: 359", 0, 0, 1000000, -10472, 0, HALF_EARTH_M, 359 },
+		{ "359.6: rounds to 0, not 360", 0, 0, 1000000, -6981, 0, HALF_EARTH_M, 0 },
+		{ "0.4: 0", 0, 0, 1000000, 6981, 0, HALF_EARTH_M, 0 },
+		{ "0.6: 1", 0, 0, 1000000, 10472, 0, HALF_EARTH_M, 1 },
+	};
+	for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+		uint32_t d = aprs_distance_m(cases[i].lat1, cases[i].lon1, cases[i].lat2, cases[i].lon2);
+		uint16_t b = aprs_bearing_deg(cases[i].lat1, cases[i].lon1, cases[i].lat2, cases[i].lon2);
+		CHECK(d >= cases[i].lo && d <= cases[i].hi, "geo %s: %u m", cases[i].name, d);
+		CHECK(b < 360 && (cases[i].deg < 0 || b == cases[i].deg), "geo %s: %u deg", cases[i].name, b);
+	}
+}
+
+static int32_t fuzz_coord(fuzz_t *f, int32_t max)
+{
+	// one in four on a limit, or just inside it: the poles, the date line, the antipodes come up often
+	switch (fuzz_below(f, 8)) {
+	case 0: return max;
+	case 1: return -max;
+	case 2: return max - (int32_t)fuzz_below(f, 1000);
+	case 3: return 0;
+	default: return (int32_t)((int64_t)fuzz_below(f, 2u * (uint32_t)max + 1u) - max);
+	}
+}
+
+// Properties over seeded random pairs (PBT, fuzz.h): the distance is symmetric, 0 from a point to itself and at most
+// half the circumference; the bearing is in [0, 360); the same longitude 360 degrees on (where int32 holds it) changes
+// nothing; the distance obeys the triangle inequality (metamorphic)
+static void test_geo_props(void)
+{
+	fuzz_t f;
+	fuzz_init(&f, 0x6E0);
+	long n = fuzz_iters(20000), bad = 0;
+	for (long i = 0; i < n && bad < 5; i++) {
+		int32_t la1 = fuzz_coord(&f, LAT_MAX), lo1 = fuzz_coord(&f, LON_MAX);
+		int32_t la2 = fuzz_coord(&f, LAT_MAX), lo2 = fuzz_coord(&f, LON_MAX);
+		int32_t la3 = fuzz_coord(&f, LAT_MAX), lo3 = fuzz_coord(&f, LON_MAX);
+		if (i % 4 == 0) {	// near the antipode of the first point
+			la2 = -la1 + (int32_t)fuzz_below(&f, 2001) - 1000;
+			lo2 = lo1 > 0 ? lo1 - LON_MAX : lo1 + LON_MAX;
+		}
+		uint32_t d12 = aprs_distance_m(la1, lo1, la2, lo2), d21 = aprs_distance_m(la2, lo2, la1, lo1);
+		uint32_t d13 = aprs_distance_m(la1, lo1, la3, lo3), d23 = aprs_distance_m(la2, lo2, la3, lo3);
+		uint16_t b = aprs_bearing_deg(la1, lo1, la2, lo2);
+		// The triangle with 5 km to spare: near the antipode, 1 - a in float steps by 1.2e-7, which is 2.2 km of arc
+		bool ok = d12 <= HALF_EARTH_M + 50u && (d12 > d21 ? d12 - d21 : d21 - d12) <= 2u &&
+			  aprs_distance_m(la1, lo1, la1, lo1) == 0 && b < 360 && d13 <= d12 + d23 + 5000u;
+		// 360 degrees on: float rounding of the angle (1e-7 rad is 0.6 m) is all that may change. The bearing only
+		// where it means something: not at the point itself, near its antipode or from a pole (every way leads there)
+		int64_t shifted = (int64_t)lo2 + (lo2 < 0 ? 360 : -360) * (int64_t)APRS_DEG;
+		if (shifted >= INT32_MIN && shifted <= INT32_MAX && d12 > 1000u && d12 < HALF_EARTH_M - 10000u &&
+		    la1 < LAT_MAX - 100000 && la1 > -LAT_MAX + 100000) {
+			uint32_t ds = aprs_distance_m(la1, lo1, la2, (int32_t)shifted);
+			int db = (int)aprs_bearing_deg(la1, lo1, la2, (int32_t)shifted) - (int)b;
+			db = db < -180 ? db + 360 : db > 180 ? db - 360 : db;
+			uint32_t tol = d12 < HALF_EARTH_M / 2u ? 20u : 5000u;	// the far half: float as near the antipode
+			ok = ok && (ds > d12 ? ds - d12 : d12 - ds) <= tol && db >= -1 && db <= 1;
+		}
+		if (!ok) {
+			bad++;
+			CHECK(false, "geo props (%d,%d)-(%d,%d)-(%d,%d): %u/%u m, %u deg, %u+%u", la1, lo1, la2, lo2, la3,
+			      lo3, d12, d21, b, d13, d23);
+		}
+	}
+}
+
 // --- NMEA ---
 
 static void test_nmea(void)
@@ -1071,6 +1169,8 @@ int main(int argc, char **argv)
 	test_parse_edges();
 	test_parse_fuzz();
 	test_geo();
+	test_geo_limits();
+	test_geo_props();
 	test_nmea();
 	test_nmea_sky();
 	test_kiss();

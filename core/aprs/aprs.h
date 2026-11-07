@@ -134,6 +134,7 @@ typedef struct {
 	bool direct;		// heard without a digipeater
 	bool has_pos;
 	int32_t lat, lon;
+	uint32_t pos_ms;	// when the position was heard: heard_ms moves on with every packet, the position may not
 	char sym_table, sym_code;
 	uint16_t course, speed_kn;
 	uint8_t type;		// aprs_type_t of the last packet

@@ -274,6 +274,7 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_aprs_nocall", "aprs:nocall ok 6 8" },
 	{ "w_aprs_position", "ok 6 8 9 2 3 3 7 4 9 0 ok 3 8 4 3 8 8 0 down ok wait:3000" },
 	{ "w_aprs_position_edit", "ok 6 8 9 2 3 3 7" },
+	{ "w_aprs_heard", "ok 6 8 up ok" },
 	{ "w_usb", "ok 6 4" },
 	{ "w_sfr", "ok 6 5" },
 	{ "w_battery", "battery:5 ok 6 9" },

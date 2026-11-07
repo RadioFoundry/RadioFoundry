@@ -402,6 +402,7 @@ static bool usb_up;	// the computer has brought the network adapter up (hal_neti
 static struct {
 	bool off;		// "aprs:off": not in this build
 	bool no_call;		// "aprs:nocall": no callsign anywhere
+	bool no_pos;		// "aprs:nopos": no position of our own (no GPS fix, no fixed position)
 	aprs_cfg_t cfg;
 	uint32_t sent;
 } aprs_sim;
@@ -423,7 +424,7 @@ bool ui_svc_aprs_view(aprs_view_t *v)
 		strcpy(v->call, "Q0SIM-7");
 	v->block = aprs_sim.no_call ? APRS_NO_CALL : APRS_OK;
 	v->freq_hz = aprs_sim.cfg.region == APRS_REGION_CUSTOM ? aprs_sim.cfg.freq_hz : hz[aprs_sim.cfg.region % APRS_REGION_COUNT];
-	v->pos_valid = !aprs_sim.no_call;
+	v->pos_valid = !aprs_sim.no_call && !aprs_sim.no_pos;
 	v->pos_src = APRS_SRC_FIXED;
 	v->lat = 337000000;
 	v->lon = -841000000;
@@ -444,13 +445,26 @@ bool ui_svc_aprs_send_now(void)
 uint8_t ui_svc_aprs_station_count(void) { return aprs_sim.off ? 0 : 2; }
 bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 {
-	static const char *const calls[] = { "Q4WAB-9", "QJ4XYZ" };
+	static const char *const calls[] = { "Q4WABC-15", "QJ4XYZ" };	// the longest call there is, and one without a position
 	if (aprs_sim.off || i >= 2)
 		return false;
 	memset(out, 0, sizeof *out);
 	strcpy(out->call, calls[i]);
 	out->heard_ms = now_ms > 60000u * (i + 1u) ? now_ms - 60000u * (i + 1u) : 0;
 	out->direct = i == 0;
+	out->has_pos = i == 0;
+	out->lat = 338000000;	// 14.5 km NE of our fixed position (ui_svc_aprs_view)
+	out->lon = -840000000;
+	out->pos_ms = 0;	// the position heard at start, the packets since (heard_ms) without one
+	return true;
+}
+// The engine's range for station 0 from our position (the sim has no aprs_fmt.c: the figures, not the math)
+bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg)
+{
+	if (aprs_sim.off || aprs_sim.no_call || aprs_sim.no_pos || !s->has_pos)
+		return false;
+	*m = 14461;
+	*deg = 40;
 	return true;
 }
 bool hostlink_request_usb_network(bool network) { usb_net = network; return true; }
@@ -2664,9 +2678,10 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
-	if (strcmp(t, "aprs") == 0 && arg != NULL) {	// aprs:off (not built), aprs:nocall, aprs:custom (a custom frequency set)
+	if (strcmp(t, "aprs") == 0 && arg != NULL) {	// aprs:off (not built), aprs:nocall, aprs:nopos, aprs:custom (a custom frequency set)
 		aprs_sim.off = strcmp(arg, "off") == 0;
 		aprs_sim.no_call = strcmp(arg, "nocall") == 0;
+		aprs_sim.no_pos = strcmp(arg, "nopos") == 0;
 		if (strcmp(arg, "custom") == 0)
 			aprs_sim.cfg.freq_hz = 144930000;
 		return true;
