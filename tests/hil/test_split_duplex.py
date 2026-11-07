@@ -342,9 +342,13 @@ def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
     sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "dmr_cach.py"))
     rdir = sdr_bench.run_dir("hil_split_tx")
     call = list(call)
-    # Raw I/Q on purpose: sdrmon analyze --cach decodes the CACH from the waveform, which the burst records lack
+    # The CACH from the burst records when the receive board gives it, else decoded from a raw capture (sdrmon --cach)
+    watch = sdr_bench.bursts_carry_cach() and sdr_bench.can_watch(freq)
     with sdr_bench.lease():
-        cap = sdr_bench.capture_start(rdir, freq, seconds=TX_SECONDS + 6)
+        if watch:
+            w = sdr_bench.dmr_watch_start(rdir, freq, TX_SECONDS + 6, cc=cc)
+        else:
+            cap = sdr_bench.capture_start(rdir, freq, seconds=TX_SECONDS + 6)
         with radio.released() as port:
             r = sdh.Radio(port, "tx", dtr=False)
             try:
@@ -375,8 +379,9 @@ def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
                 sdh.set_role(r, sdh.ROLE_NORMAL)
             finally:
                 r.close()
-        sdr_bench.capture_wait()
-    sdr = sdr_bench.analyze_dmr(cap, freq, cc, cach=True)
+        if not watch:
+            sdr_bench.capture_wait()
+    sdr = sdr_bench.dmr_watch_result(w) if watch else sdr_bench.analyze_dmr(cap, freq, cc, cach=True)
     leave_hotspot(radio)
     return sdr, st, end
 
@@ -420,13 +425,16 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
           f"{sum(same) / len(same):.3f} ms; kinds {sdr['summary']['counts']}")
     assert all(abs(x - 30.0) < 0.5 for x in nb), f"a gap or overlap in the outbound: {sorted(set(round(x) for x in nb))}"
     assert abs(sum(same) / len(same) - 60.0) < 0.05
-    # Key-ups of our carrier only: the SDR also reports sub-millisecond blips some 50 dB below it
-    top = max(e["level_dbfs"] for e in sdr["edges"])
-    ups = [e for e in sdr["edges"] if e["level_dbfs"] > top - 20]
-    assert len(ups) == 1, f"key-up edges: {[(e['up_ms'], e['level_dbfs']) for e in ups]} (the outbound must stay keyed)"
+    # Key-ups of our carrier only: the SDR also reports sub-millisecond blips some 50 dB below it. Burst records have
+    # no edges: there the unbroken 30 ms grid above shows it stayed keyed
+    if sdr.get("source") != "bursts":
+        top = max(e["level_dbfs"] for e in sdr["edges"])
+        ups = [e for e in sdr["edges"] if e["level_dbfs"] > top - 20]
+        assert len(ups) == 1, f"key-up edges: {[(e['up_ms'], e['level_dbfs']) for e in ups]} (it must stay keyed)"
     other = [b for b in bs if b["kind"] != "IDLE" and not b["kind"].startswith("slottype?")]   # an undecoded slot type
     assert not other, f"only idle bursts were queued: {sdr['summary']['counts']}"
     cach, ok, alt, at_seen, slc_good, slc_bad = tx_half_cach(bs)
+    assert cach, "no CACH decoded on the outbound"
     _, cnt = radio.counters()
     bs_cnt = {k: v for k, v in cnt.items() if k.startswith("bs.")}
     print(f"BS framing variant {variant}: tact ok {len(ok)}/{len(cach)}, TC alternating {alt} of "

@@ -1964,19 +1964,31 @@ class SdrBench:
         summary = next((r["summary"] for r in reversed(rows) if "summary" in r), {})
         return [r for r in rows if "summary" not in r], summary
 
+    def bursts_carry_cach(self):
+        """True when the receive board's burst records carry each BS burst's CACH bits (bench-api.md 14.2, info
+        features.bursts_cach): a CACH check then needs no raw capture."""
+        return bool(self.api and self._api_info(rx=True).get("features", {}).get("bursts_cach"))
+
     @staticmethod
     def analysis_from_bursts(records, summary):
         """The records as analyze_dmr()'s dict, for the parts of it a bursts watch can fill: bursts (t_ms, slot,
-        family, voice, kind, cc, lc, foff_hz, cach_ts; `slot` is the A/B position on the 30 ms grid) and meta. No
+        family, voice, kind, cc, lc, foff_hz, cach_ts, sync_errors, and cach as sdrmon's --cach gives it when the
+        records carry the CACH bits; `slot` is the A/B position on the 30 ms grid), summary counts and meta. No
         edges and no power / overlap summary: those come from the raw waveform (use a raw capture for them)."""
+        import dmr_cach
+        cdec = dmr_cach.CachDecoder()
         bursts = []
         for r in records:
             fam = r["sync"].split("_")[0].lower()
+            cach = r.get("cach")
             bursts.append({"t_ms": r["t_rel_ms"], "slot": r.get("slot_ab"), "family": fam, "voice": r["voice"],
                            "kind": r["kind"], "cc": r["cc"], "lc": r["lc"], "foff_hz": round(r["cfo_hz"]),
                            "cach_ts": r["slot"] if fam == "bs" else None, "level_dbfs": r["level_dbfs"],
-                           "dev_hz": r["dev_hz"], "fec_ok": r["fec"]["fec_ok"]})
-        return {"bursts": bursts, "edges": [], "summary": {}, "meta": {"clip_pct": summary.get("clip_pct", 0)},
+                           "dev_hz": r["dev_hz"], "fec_ok": r["fec"]["fec_ok"], "sync_errors": r.get("sync_errors"),
+                           # 24 bits in air order, the first on air the top bit: dmr_cach's TX(23..0)
+                           "cach": cdec.push(int(cach, 16)) if isinstance(cach, str) else None})
+        return {"bursts": bursts, "edges": [], "summary": {"counts": summary.get("kinds", {})},
+                "meta": {"clip_pct": summary.get("clip_pct", 0)},
                 "source": "bursts", "bursts_summary": summary,
                 "t0": records[0].get("t") if records else None}     # UTC s of t_ms 0, as a capture's meta t0
 
@@ -1991,7 +2003,11 @@ class SdrBench:
         """analyze_dmr()'s dict for a dmr_watch_start(): from the burst records (analysis_from_bursts) or from the
         raw capture."""
         if "p" in w:
-            return self.analysis_from_bursts(*self.bursts_result(w["p"], timeout))
+            rows, summary = self.bursts_result(w["p"], timeout)
+            if summary.get("complete") is False:    # a burst the receiver lost would read as one the radio didn't send
+                skip("bench", f"the bench board lost samples while watching bursts ({summary.get('lost')}); "
+                              "it can't judge the radio")
+            return self.analysis_from_bursts(rows, summary)
         self.capture_wait()
         return self.analyze_dmr(w["cap"], w["freq"], w["cc"])
 

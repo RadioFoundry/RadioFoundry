@@ -46,6 +46,27 @@ def analyze(sdr_bench, cap, freq, cc):
     return sdr_bench.analyze_dmr(cap, freq, cc, cach=True), sdr_bench.capture_meta(cap).get("t0")
 
 
+def watch_start(sdr_bench, rdir, freq, cc, seconds, name, cach=False):
+    """Bursts decoded on the bench where it gives what the check needs (each BS burst's CACH too, when cach), else a
+    raw capture (dmr_watch_start)"""
+    if cach and not sdr_bench.bursts_carry_cach():
+        w = {"cap": sdr_bench.capture_start(rdir, freq, seconds=seconds, name=name), "freq": freq, "cc": cc}
+    else:
+        w = sdr_bench.dmr_watch_start(rdir, freq, seconds, cc=cc, name=name)
+    w["cach"] = cach
+    return w
+
+
+def watch_result(sdr_bench, w):
+    """(analyze_dmr()'s dict, its t_ms 0 in UTC s) of a watch_start()"""
+    if "p" in w:
+        a = sdr_bench.dmr_watch_result(w)
+        return a, a.get("t0")
+    sdr_bench.capture_wait()
+    return analyze(sdr_bench, w["cap"], w["freq"], w["cc"]) if w["cach"] else \
+        (sdr_bench.analyze_dmr(w["cap"], w["freq"], w["cc"]), sdr_bench.capture_meta(w["cap"]).get("t0"))
+
+
 def call_bursts(bursts):
     return [b for b in bursts if b["family"] in ("bs", "ms", "emb") and b["kind"] != "IDLE"]
 
@@ -68,10 +89,9 @@ def test_split_pair_repeat(radio, sdr_bench, pytestconfig):
     rdir = sdr_bench.run_dir("hil_split_pair")
     log = []
     with sdr_bench.lease():
-        # The input needs only the call's bursts: decoded on the bench when it can (no I/Q). The output's CACH
-        # comes from the waveform, which the burst records lack
-        watch_in = sdr_bench.dmr_watch_start(rdir, fin, 30, cc=cc, name="in")
-        cap_out = sdr_bench.capture_start(rdir, fout, seconds=30, name="out")
+        # Decoded on the bench where it can (no I/Q): the input needs only the call's bursts, the output its CACH too
+        watch_in = watch_start(sdr_bench, rdir, fin, cc, 30, "in")
+        watch_out = watch_start(sdr_bench, rdir, fout, cc, 30, "out", cach=True)
         with radio.released() as port:
             p = sdh.Pair(port, rx_port, repeat=True, log=log.append)
             try:
@@ -111,9 +131,8 @@ def test_split_pair_repeat(radio, sdr_bench, pytestconfig):
     ts = 1 if labels == {sdh.DMR_DATA1} else 2
 
     # Input and output off air
-    sdr_in = sdr_bench.dmr_watch_result(watch_in)
-    t0_in = sdr_in["t0"] if sdr_in.get("source") == "bursts" else sdr_bench.capture_meta(watch_in["cap"]).get("t0")
-    sdr_out, t0_out = analyze(sdr_bench, cap_out, fout, cc)
+    sdr_in, t0_in = watch_result(sdr_bench, watch_in)
+    sdr_out, t0_out = watch_result(sdr_bench, watch_out)
     inb = call_bursts(sdr_in["bursts"])
     bs = [b for b in sdr_out["bursts"] if b["family"] in ("bs", "emb")]
     ours = [b for b in bs if b["kind"] != "IDLE"]
@@ -133,7 +152,7 @@ def test_split_pair_repeat(radio, sdr_bench, pytestconfig):
     assert all(b["sync_errors"] <= 2 for b in ours), [(b["kind"], b["sync_errors"]) for b in ours if b["sync_errors"]]
     cach = [b["cach"] for b in sdr_out["bursts"] if b.get("cach")]
     ok = [c for c in cach if c.get("ok")]
-    assert len(ok) >= 0.98 * len(cach), f"CACH ok {len(ok)}/{len(cach)}"
+    assert cach and len(ok) >= 0.98 * len(cach), f"CACH ok {len(ok)}/{len(cach)}"
     assert st_tx[f"underruns{ts}"] == 0, st_tx
 
     hin = [b for b in inb if b["kind"] == "VLC_HDR"]
@@ -215,8 +234,9 @@ def handheld_call(radio, ms, sdr_bench, rx_port, fin, fout, cc, ts, own):
     heard = []
     errs = set()
     with sdr_bench.lease():
-        cap_in = sdr_bench.capture_start(rdir, fin, seconds=24, name="in")
-        cap_out = sdr_bench.capture_start(rdir, fout, seconds=24, name="out")
+        # The slot of each outbound burst comes from its CACH TC, which the burst records carry (cach_ts)
+        watch_in = watch_start(sdr_bench, rdir, fin, cc, 24, "in")
+        watch_out = watch_start(sdr_bench, rdir, fout, cc, 24, "out")
         with radio.released() as port:
             p = sdh.Pair(port, rx_port, repeat=True, log=log.append)
             try:
@@ -265,8 +285,8 @@ def handheld_call(radio, ms, sdr_bench, rx_port, fin, fout, cc, ts, own):
           f"terminators {ctl.count(0x42)}, repeated {p.repeated}, residual {st_rx['residual_us']} us; "
           f"subscriber call.tx_calls +{tx_calls}, call.tx_denied +{denied}")
 
-    sdr_in, t0_in = analyze(sdr_bench, cap_in, fin, cc)
-    sdr_out, t0_out = analyze(sdr_bench, cap_out, fout, cc)
+    sdr_in, t0_in = watch_result(sdr_bench, watch_in)
+    sdr_out, t0_out = watch_result(sdr_bench, watch_out)
     grid = ts_of_outbound(sdr_out["bursts"])
     ours = [b for b in sdr_out["bursts"] if b["family"] in ("bs", "emb") and b["kind"] != "IDLE"]
     out_ts = {}
