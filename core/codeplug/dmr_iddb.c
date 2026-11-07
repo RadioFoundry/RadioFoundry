@@ -141,12 +141,12 @@ static bool c_read(uint32_t off, uint8_t *buf, uint32_t len)
 static bool compact_init(void)
 {
 	uint8_t h[C_HEADER];
-	if (room(IDDB_AREA2) < C_HEADER || !rd(IDDB_AREA1, h, sizeof(h)) || h[4] != 1u) {
+	uint32_t space = room(IDDB_AREA2);
+	if (space < C_HEADER || !rd(IDDB_AREA1, h, sizeof(h)) || h[4] != 1u) {
 		return false;
 	}
 	uint32_t count = le(h + 8, 4), size = le(h + 12, 4), index = le(h + 16, 4), table = le(h + 24, 4);
 	uint32_t strings = le(h + 28, 4), pages = le(h + 20, 2), dict = le(h + 22, 2);
-	uint32_t space = room(IDDB_AREA2);
 	// each section's length against the room after its offset, so no sum can wrap
 	if (count == 0u || count > 0x400000u || pages == 0u || dict > C_DICT_MAX || size > space || size % C_PAGE != 0u ||
 		index < C_PAGE || index > size || 5u * pages > size - index || table < C_PAGE || table > size ||
