@@ -256,9 +256,29 @@ static volatile uint8_t backlight_reg = 0xFFu;	// the PA5 device's register 8 as
 
 // ---- The RF bus: shared clock and data, one enable per chip ----
 
+// The data pin's direction is set only when it changes: setting it (the port's control words under an interrupt mask)
+// on every bit made a register write about 190 us, and the receive set-up after a DMR transmission 15 ms. Only frames
+// touch it, and they hold the bus lock
+static bool bus_data_driven;
+
 static void bus_clk(bool v) { mcu_pin_write(PIN_RF_SCLK, v); }
-static void bus_data_out(bool v) { mcu_pin_out(PIN_RF_SDIO, v, false); }
-static void bus_data_release(void) { mcu_pin_in(PIN_RF_SDIO, MCU_PULL_NONE); }
+
+static void bus_data_out(bool v)
+{
+	if (bus_data_driven) {
+		mcu_pin_write(PIN_RF_SDIO, v);
+	} else {
+		mcu_pin_out(PIN_RF_SDIO, v, false);
+		bus_data_driven = true;
+	}
+}
+
+static void bus_data_release(void)
+{
+	mcu_pin_in(PIN_RF_SDIO, MCU_PULL_NONE);
+	bus_data_driven = false;
+}
+
 static bool bus_data_in(void) { return mcu_pin_read(PIN_RF_SDIO); }
 static void cs0(bool v) { mcu_pin_write(PIN_RF_CS0, v); }
 static void cs1(bool v) { mcu_pin_write(PIN_RF_CS1, v); }
@@ -267,7 +287,7 @@ static void cs3(bool v) { mcu_pin_write(PIN_RF_CS3, v); }
 
 // The radio task drives the chips, but the backlight (the PA5 device) is set from the UI and start-up tasks: a frame
 // keeps other tasks off the shared lines until it ends. The scheduler is held, not the interrupts: no interrupt
-// touches the bus, and the DMR burst interrupt must not wait (a frame is about 60 us)
+// touches the bus, and the DMR burst interrupt must not wait
 static uint32_t bus_lock(void)
 {
 	vTaskSuspendAll();
@@ -280,8 +300,10 @@ static void bus_unlock(uint32_t saved)
 	(void)xTaskResumeAll();
 }
 
+// Fast (rfbus.h): the QA4818s are BK4819-class, and with the 1 us waits per half bit a register write took 124 us and
+// the receive set-up after a DMR transmission 8 ms of a 30 ms window (a reply's next frame)
 #define BUS_PINS(cs) { cs, bus_clk, bus_data_out, bus_data_release, bus_data_in, hal_delay_us, bus_lock, bus_unlock, \
-		       hal_delay_ms }
+		       hal_delay_ms, true }
 static const rfbus_3w_pins_t pins_chip[4] = { BUS_PINS(cs0), BUS_PINS(cs1), BUS_PINS(cs2), BUS_PINS(cs3) };
 
 // The PA5 device: 4-bit address then 8 data bits, MSB first, data set while the clock is low
@@ -309,7 +331,7 @@ static void aux_write(uint8_t addr, uint8_t val)
 void d578uv_bus_init(void)
 {
 	mcu_pin_out(PIN_RF_SCLK, false, false);
-	mcu_pin_in(PIN_RF_SDIO, MCU_PULL_NONE);
+	bus_data_release();
 	mcu_pin_out(PIN_RF_CS0, true, false);
 	mcu_pin_out(PIN_RF_CS1, true, false);
 	mcu_pin_out(PIN_RF_CS2, true, false);
