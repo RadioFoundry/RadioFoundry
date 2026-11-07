@@ -603,7 +603,7 @@ AUDIO_CONTROL is not rewritten here; after FM it ends up 0x00 once FM audio is s
 
 ### 5.2 Start / restart receive
 
-Used at DMR entry, after TX, at a new DMR frequency (the radio core calls `rx_restart` then, `gotchas.md` 17.2) and wherever reception must be (re)acquired:
+Used at DMR entry, after TX through a repeater (direct: 5.2a), after a stalled transmission, at a new DMR frequency (the radio core calls `rx_restart` then, `gotchas.md` 17.2) and wherever reception must be (re)acquired:
 
 | # | Register | Value | Why |
 |---|---|---|---|
@@ -618,6 +618,31 @@ Used at DMR entry, after TX, at a new DMR frequency (the radio core calls `rx_re
 A sequence of TXRX 0xC00000, 0, 0xC00000, 0x8040 with no SLOTON writes, or a busy wait in the color code probe, does not acquire sync reliably. Use this one everywhere.
 
 A restart also forgets what was heard: the polite-access busy window (`dmr-modem.md`) starts again with the next burst taken. The window is counted in timeslot interrupts, and on an empty channel they stop after a restart, so a station heard just before one stayed "busy" for good. Every polite start was then refused (`tx_rejected`) until the radio left DMR: after a one-burst data response, the restart at the end of the transmission came well inside the window.
+
+### 5.2a End of a direct transmission: the hold
+
+The end of a transmission comes on the TX tick a slot after our terminator, about 25 ms into the next slot. A direct
+answer (a confirmed data ACK, 30 ms after the start of our terminator) is then already being received, and a 5.2
+restart there makes the chip report it with BS sync and, on some radios, a header CRC error (`gotchas.md` 2.10). So
+a direct transmission ends without the restart:
+
+| # | Register | Value | Why |
+|---|---|---|---|
+| 1 | LAYER2_CONTROL | 0xC0 | passive timing from our active one; the slot syncs stay where our transmission left them |
+| 2 | LAYER2_TXRX_CTRL | 0x40 | receive the next slot |
+
+The software state is reset as at a restart (the polite busy window too). A burst taken holds the receiver as any
+reception does; with none, the 5.2 restart comes once 5 slots (150 ms) have passed with nothing taken, so a station
+on a timing of its own is taken after that. Through a repeater the restart stays at once: the next transmission
+needs a new TC lock (issue 72). Diagnostics: `rs restarts/lost/stale h holds`.
+
+On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6 sends per case):
+
+| Answer after the start of our terminator | Restart at the end | Hold |
+|---|---|---|
+| 30 ms | 3 of 6 sends, retries; the ACK reported with BS sync | 4 of 4 first try, MS sync |
+| 60 ms | 4 of 4 | 4 of 4 |
+| 90 ms | 4 of 4 | 4 of 4 |
 
 ### 5.3 While receiving
 
@@ -671,7 +696,7 @@ Encoded audio must be produced continuously during TX: encode one 20 ms block pe
 | # | Slot | Writes |
 |---|---|---|
 | 1 | active | voice RAM = silence; TX RAM = LC; TXRX_CTRL = 0x80; SEND_TYPE = 0x20 |
-| 2 | next | direct mode: done → idle. Repeater mode: LAYER2_CONTROL = 0xC0, TXRX_CTRL = 0 |
+| 2 | next | direct mode: done → idle (RadioFoundry: the 5.2a hold). Repeater mode: LAYER2_CONTROL = 0xC0, TXRX_CTRL = 0 |
 | 3 | next (repeater mode) | TXRX_CTRL = **0x40** (receive next slot) → receiving |
 
 ### 6.4 Data and CSBK

@@ -459,6 +459,7 @@ HRC_FLASHFUNC bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " rs", m.rx_restarts);
 		put_kv(&o, "/", m.rx_lost);
 		put_kv(&o, "/", m.rx_stale);
+		put_kv(&o, " h", m.rx_holds);
 		put_kv(&o, " st", m.stalls);
 		break;
 	case 5:		// last burst: CC, TS; raw RX_TYPE_INFO
