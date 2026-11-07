@@ -1054,10 +1054,11 @@ class SdrBench:
         w = (r.get("tuned") or {}).get("window") or {}
         self._api_tx_reach = (w.get("tx_lo") or freq, w.get("tx_hi") or freq)
 
-    def _api_job(self, tool, args, expect_s=None, wait_start=True):
-        """A bench_tx / bench_repeater command line as a job on the TX board, started in the background: returns
-        once the board started it (it may have queued behind another session's job). The job's records and log
-        lines are in .lines (text, the tool's output) with their arrival in .stamps; wait(), kill(), returncode."""
+    def _api_job(self, tool, args, expect_s=None, wait_start=True, rx=False):
+        """A bench_tx / bench_repeater command line as a job on the TX board (rx: the receive board, for a job that
+        only listens), started in the background: returns once the board started it (it may have queued behind
+        another session's job). The job's records and log lines are in .lines (text, the tool's output) with their
+        arrival in .stamps; wait(), kill(), returncode. The frequency's claim stays on the TX board, the session's."""
         L = self._line()
         if self.api_level is not None and tool in ("bench_tx", "bench_repeater"):
             args = f"--power {self.api_level} {args}"
@@ -1071,11 +1072,14 @@ class SdrBench:
             ambe_dir = os.path.dirname(os.path.abspath(os.path.expanduser(job["ambe_out"])))
             os.makedirs(ambe_dir, exist_ok=True)    # a write failing in the reader thread would lose the job's output
             job["ambe_out"] = os.path.basename(job["ambe_out"])
-        req = {"op": "run", "session": self._api_session, "job": job, "label": getattr(self.bench, "label", None) or tool,
+        board = self.api_rx if rx else self.api
+        req = {"op": "run", "job": job, "label": getattr(self.bench, "label", None) or tool,
                "wait_max": self.dmr_bench.WAIT_MAX}
+        if board == self.api:           # the lease's session is the TX board's; another board has none of ours
+            req["session"] = self._api_session
         if expect_s:
             req["expect_s"] = round(float(expect_s), 1)
-        p = _LineJob(L, L.address(self.api), req, ambe_dir)
+        p = _LineJob(L, L.address(board), req, ambe_dir)
         self.bg.append(p)
         # A TX job says started once it has the modem (it may queue behind another session's job); a listen job
         # starts at once and says nothing until it hears something, so only a refusal is waited for
@@ -1602,7 +1606,7 @@ class SdrBench:
         if self.api:
             # The board's listen job reports what its receiver channel hears, at once (no modem to wait for)
             return self._api_job("bench_tx", f"--freq {freq} --cc {cc} {extra}listen --json --seconds {seconds}",
-                                 seconds, wait_start=False)
+                                 seconds, wait_start=False, rx=True)
         cmd = f"{self.py} bench_tx.py --freq {freq} --cc {cc} {extra}listen --json --seconds {seconds}"
         if not self.bench.uses_daemon():
             p = self.ssh_bg(f"cd ~/{self.dir} && {cmd}")
