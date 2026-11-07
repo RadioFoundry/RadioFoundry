@@ -539,11 +539,11 @@ UCFG_LED = 0xA8                         # the parameter block's led_red and led_
 def univ_for_board(image, prof):
     """The universal stub with the board's LED pins in its parameter block (the host may patch it before the image is
     sent): the stub drives its LED pins from its first instruction, before CONFIG, so on a radio whose LEDs are elsewhere
-    the built-in ones (PTB1, PTB0) would be driven although they do something else there. A position-dependent stub or
-    no profile: the image as it is."""
-    if prof is None or univ_layout(image) is None:
+    the built-in ones (PTB1, PTB0) would be driven although they do something else there. No profile: the generic one,
+    no LEDs, since the radio is not known. A position-dependent stub: the image as it is."""
+    if univ_layout(image) is None:
         return image
-    led = prof.get("led") or {"red": LED_RED, "green": LED_GREEN}
+    led = (prof or GENERIC)["led"]
     return (image[:UCFG_LED] + led["red"].to_bytes(4, "little") + led["green"].to_bytes(4, "little")
             + image[UCFG_LED + 8:])
 
@@ -579,7 +579,7 @@ C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debugl
                     "led": b.stub.get("led") or {"red": LED_RED, "green": LED_GREEN}, "protect": b.protect}
              for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000,
-           "rom_entry": None, "led": {"red": LED_RED, "green": LED_GREEN}, "protect": []}
+           "rom_entry": None, "led": {"red": 255, "green": 255}, "protect": []}   # an unknown radio: no pin driven as an LED
 # This tool's memory names as board.toml [[flash.protect]] names them
 PROTECT_MEM = {"progmem": "progmem", "q128": "data", "nand": "nand"}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
@@ -2667,7 +2667,7 @@ def self_test():
         got = bytes(radio.loaded[:len(univ)])
         check(radio.running and not radio.errors and got[:UCFG_LED] == univ[:UCFG_LED] and got[UCFG_LED + 8:] == univ[UCFG_LED + 8:],
               "the universal stub is the default power-on image, at 0x10000 (%s)" % radio.errors)
-        check(got[UCFG_LED:UCFG_LED + 8] == led and (board or got == univ),
+        check(got[UCFG_LED:UCFG_LED + 8] == led,
               "the stub sent names the %s's LED pins %d / %d from its first instruction"
               % (prof["name"], prof["led"]["red"], prof["led"]["green"]))
         check(r.v6 is not None and r.v6["run"] == 0x30000 and r.v6["load"] == 0x10000, "HELLO v6 parsed")
