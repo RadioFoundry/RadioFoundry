@@ -83,12 +83,35 @@ continuation keeps the reserved bytes and the header length as it found them.
 
 ## 3. Keys
 
-| Key | Name | Value | Meaning |
-|---|---|---|---|
-| 0x0001 | ARS server | u32 | The presence server's DMR ID for ARS registration ([dmr-data.md](dmr-data.md) 6). 0 = ARS off |
-| 0x0002 | IP gateway | u32 | The DMR ID of the radio that takes the host's off-net IP packets ([usb-network.md](usb-network.md) 3.1). 0 = none |
+| Key | Name | Type | Absent means | Requires |
+|---|---|---|---|---|
+| 0x0001 | ARS server | id | The radio keeps its own setting. The value is the presence server's DMR ID for ARS registration ([dmr-data.md](dmr-data.md) 6); 0 = ARS off | ARS in the build (`CONFIG_DMR_ARS`) |
+| 0x0002 | IP gateway | id | The radio keeps its own setting. The value is the DMR ID of the radio that takes the host's off-net IP packets ([usb-network.md](usb-network.md) 3.1); 0 = none | IP gateway in the build (`CONFIG_DMR_IP_GATEWAY`) |
 
-An ID above 16776415 (`CODEPLUG_DMR_ID_MAX`) reads as if the key were absent.
+**Requires** is what a radio needs for the key to do anything: build switches (`CONFIG_*`) and board capabilities
+(`CAP_*`), generic wording, no radio names. It is the seed of a per-radio support registry: a tool will derive from it
+which keys a radio supports, so a row's requires is written for that, not for a reader's guess. A key a radio doesn't
+support is still kept and carried (4).
+
+In the firmware the keys the radio core applies are one table, `radio_keys` in `core/radio/radio_keys.h`: key, type,
+whether the build has it and where the setting sits. The same table on every radio. The menu, the radio core and the
+debug link go through it, so a new key is a row there and a row here.
+
+### 3.1 Types
+
+A type names how a value is encoded, never how wide it is. A value's length (2.2) is the width.
+
+| Type | Encoding |
+|---|---|
+| uint | Unsigned, little endian, 1 to 8 bytes. A shorter value zero-extends when read, so a setting that outgrows its width (u8 to u16 to u32) is stored in more bytes under the same key, and an older reader still reads a value that fits its width |
+| int | Signed, little endian, 1 to 8 bytes. A shorter value sign-extends from its stored length |
+| bool | A uint: 0 = off, anything else on; a writer stores 0 or 1 |
+| enum | A uint. Values are only appended: a value never changes meaning, and a reader treats a value it doesn't know as the default |
+| id | A uint DMR ID. Above 16776415 (`CODEPLUG_DMR_ID_MAX`) it reads as if the key were absent |
+| string | The bytes of the value, no terminator, length from the entry |
+| record list | A key family (below): one key per record, each record's value is of the type its row names |
+
+A type is never redefined. It grows by appending bytes to the value (4), and a new meaning gets a new key.
 
 A new key is added to this table in the same change that first writes it.
 
@@ -96,6 +119,11 @@ A new key is added to this table in the same change that first writes it.
 key range: one key per instance, record n at base + n. The range is assigned here as one row (base, size, value
 format) in the same change that first writes it. Each instance is then an ordinary key: absent, present, grown and
 kept by the rules in 4, and a reader walks the range (`codeplug_kv_next`, 5) rather than looking up each key.
+
+A list that belongs to a radio's controls is a family too: the keypad buttons, one key per button, each value the
+button's action. Ranges are assigned in blocks of 256 from 0x0100 up (0x0100-0x01FF the first), so a family can grow
+to its block and no further without a new row. A list that may outgrow a block is split into two families by the
+change that needs it, never by moving the first.
 
 ## 4. Rules for readers and writers
 
