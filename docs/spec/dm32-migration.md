@@ -123,9 +123,11 @@ Never carried over: stock menu, key and display settings, encryption keys, the s
 
 `dm32_migrate.py package OUTDIR --image rfoundry_dm32_codec.bin` copies `dm32_migrate.py`, `serial_loader.py`,
 `cps_client.py`, `rfoundry_debug.py`, `md380_migrate.py` (shared YAML, users-file and session code), `hrc7000_codec.py`,
-`docs/testing/dm32-bringup.md`, the image(s) and `--include` files into a flat directory, and writes `README.txt`,
-`requirements.txt` (pyserial) and `SHA256SUMS`. Every helper is loaded from the script's own directory, so the
-kit runs as it is. The image is checked (size, header) and a missing codec slot is reported.
+`docs/testing/dm32-bringup.md`, the image(s) and `--include` files into a directory, with the rfoundry package and
+its codec maps at `rfoundry/rfoundry/`, and writes `README.txt`, `requirements.txt` (pyserial) and `SHA256SUMS`. Every
+helper is loaded from the script's own directory and the package from `rfoundry/` beside it, as in the repository, so
+the kit runs as it is. `--self-test` checks that. The image is checked (size, header) and a missing codec slot is
+reported.
 
 ## 7. Self-test (`dm32_migrate.py --self-test`, in `tools/ci.sh`)
 
