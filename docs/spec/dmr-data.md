@@ -146,8 +146,8 @@ All three are read whatever the setting.
   ignores an unconfirmed one, 5.1.1), otherwise unconfirmed; 16 preamble CSBKs either way. After a link ACK of ours
   (the message came confirmed) it waits `TMS_ACK_GAP_MS` (1.5 s) after that transmission ends.
 - The UDP header of our confirmed TMS and TMS ACK is compressed (SAP 3, 11) only with UDP compression set to all;
-  port 4007 is an application port, so auto keeps SAP 4. Whether BrandMeister and MOTOTRBO radios take TMS with a
-  compressed header is untested.
+  port 4007 is an application port, so auto keeps SAP 4. BrandMeister takes both compressed (5.1.1); a MOTOTRBO radio
+  decodes SAP 3 only when its codeplug enables compressed UDP headers, so auto stays the default.
   One message at a time, at most 140 characters.
 - Built without `CONFIG_DMR_TMS` (the TMS builder, decoder and ACK are left out): a TMS heard is not decoded, so it
   is neither kept nor acknowledged; as confirmed data it still gets its ETSI response (3), and the IP gateway still
@@ -243,8 +243,9 @@ wait (12.4):
 | BrandMeister's TMS ACK | 5.1 s after its link ACK; taken (`SMS_SENT`) |
 | BrandMeister's reply | its link ACK from us taken; our confirmed TMS ACK link-ACKed by BrandMeister (status our N(S)) |
 | A second reply 23 s later | the same text with a new sequence number, not a resend: BrandMeister's echo sends its reply twice, to a MOTOTRBO radio too. ACKed, kept once (gotcha 5.8). Our TMS ACK to it: no link ACK on any try, the first one with F set, in the first two runs |
-| With the 3 s wait | every link ACK taken on its first try: our text and both our TMS ACKs, reply B's too. No retry, no timeout. Reply B's TMS ACK has been link-ACKed 1 time of 3; its sequence form, N(S) and F don't explain the misses (reply A's, ACKed every time, had the same) |
+| With the 3 s wait | every link ACK taken on its first try: our text and both our TMS ACKs, reply B's too. No retry, no timeout. Reply B's TMS ACK has been link-ACKed 2 times of 4; its N(S) and F don't explain the misses, and neither does the sequence form alone (both misses had the two-octet form, but so did reply A's, ACKed every time) |
 | A block lost on the way | once, a reply's last block (the CRC-32 block) didn't reach the hotspot from the network. We sent a selective ACK for it and BrandMeister resent it alone (F clear, S set, the whole message's pad), but we answered with a NACK and it sent everything again, which got through. A host replay of BrandMeister's exact bursts ends in an ACK, so the NACK came from something on the radio; open |
+| UDP compression all | our text and both TMS ACKs with a 5-octet compressed header (SAP 3: IPv4 ID, SAID/DAID, port IDs): each link-ACKed first time, by a response in SAP 3; BrandMeister's TMS ACK and replies still came in SAP 4. 23 octets less per packet |
 
 #### 5.1.2 Simulated BrandMeister text service (HIL)
 
