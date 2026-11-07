@@ -60,6 +60,8 @@ uint8_t d578uv_pot_percent(uint32_t raw);	// a volume pot's ADC reading as 0..10
 // DMR transmit bursts the PA gate switched on, and key-ups refused with the burst line already high (pa_gate.h)
 void d578uv_pa_counts(uint32_t *bursts, uint32_t *refused);
 void d578uv_pa_counts_reset(void);
+// From the last DMR burst's line fall to tx_off() and to the receiver set up again, in us (0 before any)
+void d578uv_rx_back(uint32_t *off_us, uint32_t *rx_us);
 #endif
 #if CONFIG_APRS_RX
 // Side A is receiving FM (tuned, not transmitting, not in AM): what PC0 carries is worth demodulating
