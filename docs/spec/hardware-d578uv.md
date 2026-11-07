@@ -363,7 +363,7 @@ The DMR start ([modem-sct.md](modem-sct.md) 4), as the stock firmware sends it a
 
 | Field | Value | Meaning |
 | --- | --- | --- |
-| `DMR_CALL_OPTION` | `41 40 42 47 08` | byte 0: squelch detection by the baseband, traffic mode 1, no RF control (the MCU keys the RF chips); byte 1: voice delay 0, reserved bit 6 set; byte 2: four good CACH, two LC header repeats; byte 3: every CSBK, LC header and terminator reported, reserved bit 6 set (stock: 0x44, below); byte 4 reserved |
+| `DMR_CALL_OPTION` | `41 40 42 47 08` | byte 0: squelch detection by the baseband (RadioFoundry: off, 0x01, below), traffic mode 1, no RF control (the MCU keys the RF chips); byte 1: voice delay 0, reserved bit 6 set; byte 2: four good CACH, two LC header repeats; byte 3: every CSBK, LC header and terminator reported, reserved bit 6 set (stock: 0x44, below); byte 4 reserved |
 | `REPORT_FIELD` | 0xFF | the four documented reports and the reserved bits 4-1 |
 | `MODOUT_CONFIG` | `00 10 00 00 00` | no two-point delay; 0x10 in a reserved byte. RadioFoundry sends `EB 10 00 00 00` before each transmission instead (5.1) |
 | `DMR_OFFSET` | 8 bytes from calibration (7, offset 0x140) | the baseband's RF_TIMING output; changing it moved neither PD0 nor the burst's modulation (5.1, measured). Without a current calibration block the default `00 82 02 D0 02 D0 02 D0` |
@@ -377,7 +377,12 @@ byte 3 bit 0 and other byte 4 values only with the second receiver; RadioFoundry
 keeps the single receiver's values. It sends
 `SQ_LEVEL` and `DEMOD_GAIN` once at start-up; RadioFoundry sends both in every start. The baseband needs
 `CARRIER_READY` 2 (ready, demodulated phase reversed): RadioFoundry sends 2 when side A's carrier comes up and 0
-when it goes, from the status poll (`d578uv_modem_carrier`); with 1 no call decodes.
+when it goes, from the status poll (`d578uv_modem_carrier`); with 1 no call decodes. RadioFoundry clears byte 0
+bit 6, so the baseband looks for sync on `CARRIER_READY` alone, and sends 2 14 ms after each return to receive
+from a transmission (`rx_ready`, [modem-sct.md](modem-sct.md) 3), before the status poll has a reading. With bit 6
+set, the original firmware's value, a lone burst soon after a transmission went undecoded. Without its own squelch the
+baseband now and then reports noise as frames (seen as MBC continuations with a random color code); the stack drops
+them by color code.
 The `MODOUT_CONFIG` delay byte is a setting, 0 from start-up in the stock firmware, not a calibration value. The equalizer filters stay at
 the baseband's default, off.
 
@@ -537,13 +542,23 @@ outbound as the reference, both sides decoded on a second board (`test_dmr_repea
 The core keys the radio before its call stack starts the modem's transmission, so the RF is keyed before
 `DMR_CALL_SLOT` with the transmit bit in every DMR transmission, and released after `TX_DONE`.
 
-Back to receive, from the last burst's PD0 fall: `TX_DONE` and `tx_off()` at 17-18 ms, the RF chips in receive at
-23-25 ms (`diag` line 5, `rx`). A confirmed data response can start 30 ms after the last burst, about 34.5 ms after
-the fall. The baseband reports that response's carrier about 20 ms after `tx_off()` but delivers no frame for its
-first burst: the first frame comes from its second burst, about 60 ms later. A one-burst response that soon (a link
-ACK) is therefore not heard yet. A response 190 ms after the transmission is heard. With `DMR_CALL_OPTION` byte 0 bit 6
-clear (carrier detection by the MCU) and `CARRIER_READY` held at 2, the baseband found sync sooner but still delivered
-no first frame, and decoded noise as frames; the radio keeps the stock value 0x41.
+Back to receive, from the last burst's PD0 fall: the board counts PD0's edges (`burst_edges`,
+[modem-sct.md](modem-sct.md) 5), so a transmission without voice ends at that fall: `TX_DONE` and `tx_off()` at
+1.6 ms, the RF chips in receive at 7.8 ms (`diag` line 5, `rx`), `CARRIER_READY` 2 at about 16 ms. The baseband's
+own end (ACK 0x0A) comes about 17 ms after the fall. A voice transmission still ends on it.
+
+A one-burst reply (a link ACK) from a simulated station on the bench:
+
+| Reply starts after our last burst ends | Decoded |
+| --- | --- |
+| 32.5 ms (the slot after next) | no: the baseband finds no sync in it |
+| 62.5 ms | every try |
+
+The 32.5 ms reply stayed undecoded with every change tried: `CARRIER_READY` 5 to 40 ms after the return to receive,
+the original firmware's full-duplex `WORK_MODE` 0x23 after the transmission with `CARRIER_READY` at once, a fixed
+`DEMOD_GAIN` (2048, 0 dB), a much weaker reply (to rule out an overloaded receiver), and the LO chip (chip 2) left on through the
+transmission. The limit is in the receive path after `tx_off()`; which part is not known. The RF chip's RSSI and
+noise reach their receive values 30-46 ms after the return to receive.
 
 ### 5.2 Side B
 

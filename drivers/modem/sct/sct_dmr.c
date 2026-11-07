@@ -36,6 +36,9 @@ static struct {
 	uint32_t next_ms;	// the next burst goes no earlier than this
 	bool paced;		// next_ms is set
 	bool voice_on;		// the chip runs the voice of this transmission
+	bool tx_voice;		// ... and has, at some point: the end waits for the chip
+	uint32_t tx_edges;	// the port's burst_edges() at the key-up
+	uint32_t tx_sent;	// frames sent since
 	bool audio_tx;		// codec_tx went: codec_rx is due at the return to receive
 	bool lc_new;		// set_embedded_lc gave an LC not yet sent
 	uint8_t emb_lc[LC_BYTES];
@@ -56,6 +59,8 @@ static struct {
 	uint8_t cr_want;	// ... its last CARRIER_READY value
 	uint32_t cr_seen;	// ... when it last said a carrier is there
 	uint8_t cr_sent;	// ... the chip's, CR_UNSENT after each WORK_MODE receive
+	bool cr_settling;	// back from a transmission: the port's rx_ready goes out at cr_due
+	uint32_t cr_due;
 
 	sct_dmr_stats_t st;
 } s;
@@ -107,6 +112,14 @@ static bool send_rx_mode(void)
 	return send(&p);
 }
 
+// Receive again after a transmission: with rx_ready, CARRIER_READY waits for the receiver to settle
+static void rx_after_tx(void)
+{
+	send_rx_mode();
+	s.cr_settling = s.port->rx_ready != 0;
+	s.cr_due = s.now + s.port->rx_settle_ms;
+}
+
 // The board's control fields for a transmission (tx_fields) in one packet. True if there are none or they went
 static bool send_tx_fields(void)
 {
@@ -125,11 +138,22 @@ static bool send_tx_fields(void)
 	return send(&p);
 }
 
-// CARRIER_READY when the board's value differs from the chip's, in receive only
+// CARRIER_READY when the board's value differs from the chip's, in receive only. After a transmission, nothing until
+// the receiver has settled, then the port's rx_ready (the chip calibrates on what it hears from there)
 static void carrier_step(void)
 {
-	if (!s.cr_used || !s.running || s.tx != TX_IDLE || s.cr_want == s.cr_sent)
+	if (!s.running || s.tx != TX_IDLE)
 		return;
+	if (s.cr_settling) {
+		if ((int32_t)(s.now - s.cr_due) < 0)
+			return;
+		s.cr_settling = false;
+		s.cr_want = s.port->rx_ready;
+		s.cr_seen = s.now;
+		s.cr_sent = CR_UNSENT;
+	} else if (!s.cr_used || s.cr_want == s.cr_sent) {
+		return;
+	}
 	// A direct-mode station sends one slot in two, so the reading drops between its bursts. Each "lost" makes the
 	// chip look for sync again, so a loss goes out only once it has lasted SCT_DMR_CR_HOLD_MS
 	if (s.cr_want == 0 && s.cr_sent != CR_UNSENT && s.cr_sent != 0 &&
@@ -236,6 +260,7 @@ static bool send_frame(uint8_t prop, const uint8_t *data, uint8_t len)
 	s.st.tx_frames++;
 	s.waiting = true;
 	s.sent_ms = s.now;
+	s.tx_sent++;
 	return true;
 }
 
@@ -251,6 +276,7 @@ static void tx_pump(void)
 			bool lc = !s.voice_on || (s.lc_new && b->voice_index % 6 == 0);
 
 			s.voice_on = true;
+			s.tx_voice = true;
 			if (lc) {
 				s.lc_new = false;
 				q_pop();
@@ -293,7 +319,7 @@ static void tx_finish(void)
 	s.paced = false;
 	s.voice_on = false;
 	s.q_count = 0;
-	send_rx_mode();
+	rx_after_tx();
 	audio_rx();
 	emit(DMR_EV_TX_DONE, s.tx_ts, next_counter(), NULL);
 }
@@ -317,6 +343,17 @@ static void frame_taken(void)
 	frame_slot();
 }
 
+// The transmission's last burst has ended, by the port's burst line: each frame goes out in a burst of its own, in
+// order, so once nothing is left to send, the end is the fall that completes as many bursts as frames went. Not with
+// voice: the chip's own voice bursts don't go by frames
+static bool last_burst_over(void)
+{
+	if (s.port->burst_edges == NULL || s.tx_voice || s.tx_sent == 0 || s.q_count != 0 ||
+	    (s.tx != TX_ENDING && s.tx != TX_DRAIN))
+		return false;
+	return s.port->burst_edges() - s.tx_edges >= 2u * s.tx_sent;
+}
+
 static void tx_step(void)
 {
 	if (s.tx == TX_IDLE)
@@ -328,6 +365,11 @@ static void tx_step(void)
 		frame_slot();
 	}
 	tx_pump();
+	if (last_burst_over()) {
+		s.st.tx_early++;
+		tx_finish();
+		return;
+	}
 	if (s.tx == TX_ENDING && s.q_count == 0 && !s.waiting) {
 		s.tx = TX_DRAIN;
 		s.done_ms = s.now + SCT_DMR_DONE_MS;
@@ -617,6 +659,7 @@ static bool x_start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
 	s.ts = 0;
 	s.rx_slot = 0;
 	s.rx_voice = false;
+	s.cr_settling = false;
 	sct_pkt_begin(&p, SCT_TYPE_DMR);
 	sct_pkt_add1(&p, SCT_F_PROCESS_MODE, 0x02);	// layer 2
 	sct_pkt_add1(&p, SCT_F_REPORT_FIELD, (uint8_t)(REPORT_FIELD | s.port->report_field));
@@ -704,6 +747,9 @@ static bool x_tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 		return false;
 	}
 	s.tx = TX_ON;
+	s.tx_voice = false;
+	s.tx_sent = 0;
+	s.tx_edges = s.port->burst_edges != NULL ? s.port->burst_edges() : 0;
 	s.rx_voice = false;
 	s.cr_want = 0;	// the board's next reading after the transmission says what is there
 	s.tx_ts = (int8_t)(ts == 2 ? 2 : 1);
@@ -745,7 +791,7 @@ static void x_tx_abort(void)
 	s.q_count = 0;
 	s.waiting = false;
 	s.voice_on = false;
-	send_rx_mode();
+	rx_after_tx();
 	audio_rx();
 }
 

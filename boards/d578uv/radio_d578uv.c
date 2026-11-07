@@ -863,6 +863,8 @@ static void pa_off(void)
 static volatile bool burst_keyed;
 static volatile uint16_t burst_dac;	// the DAC word while a burst goes out
 static volatile uint32_t burst_count;	// rising edges while keyed (diag_d578uv.c)
+static volatile uint32_t burst_edges;	// level changes of the burst line seen, never reset (the modem's burst_edges)
+static bool burst_level;
 static pa_phase_t burst_phase;		// the handlers' (one priority, so neither interrupts the other)
 static uint32_t burst_refused;		// key-ups refused with the burst line high (pa_gate_can_key)
 // The receiver's way back after a DMR transmission: hal_micros() at the last burst line fall while keyed (0 none
@@ -922,6 +924,11 @@ void MCU_EXTI0_HANDLER(void)
 	mcu_exti_clear(BURST_LINE);
 	bool burst = mcu_pin_read(PIN_DMR_TX_BURST);
 	pa_phase_t was = burst_phase;
+
+	if (burst != burst_level) {
+		burst_level = burst;
+		burst_edges++;
+	}
 	pa_step_t st = pa_gate_edge(&burst_phase, burst_keyed, burst);
 
 	if (burst_phase == PA_RISING && was != PA_RISING) {
@@ -973,6 +980,7 @@ static void burst_arm(uint16_t dac_word)
 	mcu_exti_clear(BURST_LINE);
 	__disable_irq();
 	burst_phase = PA_IDLE;
+	burst_level = false;	// low: pa_gate_can_key() checked it
 	burst_keyed = true;
 	mcu_exti_enable(BURST_LINE);	// an edge from here on is pending: it follows
 	__enable_irq();
@@ -986,6 +994,11 @@ static void burst_disarm(void)
 	mcu_exti_disable(BURST_LINE);
 	mcu_exti_clear(BURST_LINE);
 	burst_apply(PA_GATE_OFF);
+}
+
+uint32_t d578uv_burst_edges(void)
+{
+	return burst_edges;
 }
 
 void d578uv_pa_counts(uint32_t *bursts, uint32_t *refused)
