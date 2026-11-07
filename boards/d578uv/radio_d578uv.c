@@ -12,7 +12,7 @@
 // Air band AM (CONFIG_AM_RX, 5.4): side B's hardware as a superhet into the KTMicro AM/FM receiver on PB6/PB7 (I2C),
 // the stock firmware's set-up. Chip 3 runs as the LO at f + 29.25 MHz with its output bit 6 set (the receiver's input
 // from chip 3's mixer, inferred), the receiver demodulates AM at 29.25 MHz, and chips 0-2 are off. Its squelch readings
-// become the RSSI the core's AM squelch uses, scaled so the core's levels open where the stock firmware's do. The
+// become the RSSI and the AM squelch value, scaled so the core's levels open where the original firmware's do. The
 // receiver's audio is muted unless the core gives the main side the speaker; how it reaches the speaker isn't traced
 // (both level device channels play it, inferred). Side B (dual watch) waits while AM is on.
 //
@@ -1320,9 +1320,11 @@ static bool kt_init(void)
 #if CONFIG_AM_RX
 // ---- Air band AM: chip 3 and the KTMicro receiver (5.4) ----
 
-// The core's AM squelch level 1 opens above this RSSI (radio_am.h); the stock level 1 opens at the calibrated level
-// (VHF block byte 0x1A) and each level adds 3 counts, as the core's add 3 dB
+// The RSSI shown at the calibrated level-1 point (VHF block byte 0x1A), where the core's AM squelch level 1 opens: the
+// squelch value (hal_radio.h rx_am) is AM_NOISE_LEVEL1 there and falls 1 per count of the reading, so each core level
+// adds 3 counts, as each stock level does
 #define AM_LEVEL1_DBM		(-82)
+#define AM_NOISE_LEVEL1		64
 #define BLK_AM_CARRIER		0x19u	// the VHF block's floor for the receiver's 0xEC reading
 #define BLK_AM_LEVEL		0x1Au	// its level-1 point for the 0xEA reading
 
@@ -1389,7 +1391,8 @@ static void am_status(radio_status_t *st)
 	ktamfm_status_t k;
 	bool carrier = ktamfm_status(&kt, &k) && k.carrier > cal_vhf[BLK_AM_CARRIER];
 	st->rssi_dbm = carrier ? (int16_t)(AM_LEVEL1_DBM + (int)k.level - (int)cal_vhf[BLK_AM_LEVEL]) : -160;
-	st->noise = 127;
+	int32_t n = AM_NOISE_LEVEL1 + AM_LEVEL1_DBM - (int32_t)st->rssi_dbm;
+	st->noise = (uint8_t)(n < 0 ? 0 : n > 255 ? 255 : n);
 	st->carrier = carrier;
 	st->tone_ok = true;
 }

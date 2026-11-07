@@ -655,8 +655,9 @@ threshold - 3; three polls in a row decide. How the receiver's audio reaches the
 
 RadioFoundry (`radio_d578uv.c`, `CONFIG_AM_RX`): `rx_am()` runs the stock set-up for the main receiver and turns
 chips 0 and 2 off as well; side B (dual watch) waits until the next `rx()`. The LO is below the signal, the stock default (`rf_plan.h`), and bit 0x04 is set. `status()`
-reports no carrier while 0xEC is at or below byte 0x19, else an RSSI of -82 dBm + (0xEA - byte 0x1A), so the core's
-AM squelch levels (3 dB a level from -82 dBm at level 1) open at the stock thresholds. AM is refused without a
+reports no carrier while 0xEC is at or below byte 0x19, else an RSSI of -82 dBm + (0xEA - byte 0x1A), and the AM
+squelch value 64 - (0xEA - byte 0x1A) (142 with no carrier), so the core's AM squelch levels (level 1 below 64, 3 a
+level) open at the same thresholds. AM is refused without a
 calibration block or when the receiver didn't answer at start-up; the core then receives FM. The receiver's level is
 up only while the core gives the main side the speaker, and both level device channels take the volume (which one
 carries the receiver is inferred). Host tested (the receiver's sequences), untested on the radio.
