@@ -293,15 +293,24 @@ old code compared with the preamble's count and stopped after the header (blocks
 complete or 180 ms after its last frame, max 64 bursts (`DMR_DATA_MAX_BURSTS`); frames that can't be sent are NAKed, not silently ACKed.
 
 **5.6 TMS ACK sequence number is 7 bits.** The ACK carried only the low 5 bits, so senders numbering past 31 never
-matched. Bytes must equal a MOTOTRBO capture (example 00 04 9F 00 95 20 for s/n 53), sent as its own transmission after
-the ETSI response, with preambles.
+matched. Bytes must equal what MOTOTRBO radios and BrandMeister send (00 04 BF 00 9E 60 for s/n 126; header 0xBF,
+not 0x9F: the 0x20 bit is set in every TMS header), sent as its own transmission after the ETSI response, with
+preambles. Confirmed data from BrandMeister has N(S) 0 every time: a repeat must match the data too, not only N(S).
 
 **5.7 Reply queue, not a single slot.** ACKs written by the modem task and read by the main task in one slot were
 overwritten by a second message. Use a single-producer / single-consumer queue (4 entries usable with one slot kept
 free, entries older than 5 s dropped), with compiler barriers so the entry is written before the index store.
 
 **5.8 Duplicate message suppression.** A sender that missed our ACK resends: ACK again but don't store or ring again
-when radio, sequence number and text match within 60 s.
+when radio and text match within 60 s. Not the sequence number: BrandMeister resends an unacknowledged text with a
+new one.
+
+**5.9 BrandMeister ignores data with few preambles.** Confirmed TMS sent with 2 preamble CSBKs reached BrandMeister
+intact and got nothing back: no link ACK, no NACK. The same packet with 16 got its link ACK in under a second. Text and
+IP packets go with 16 where the burst list has room ([dmr-data.md](dmr-data.md) 12.6.4). The hotspot reaches
+BrandMeister over UDP, often on Wi-Fi, so a single unanswered packet may just be lost; the preamble rule rests on 10
+unanswered sends in a row and one identical pair. The TMS ACK goes with 16 too, 1.5 s after our link ACK, and confirmed,
+as MOTOTRBO radios send it: BrandMeister ignored an unconfirmed one with 16 preambles twice ([dmr-data.md](dmr-data.md) 5.1).
 
 ## 6. Privacy
 
