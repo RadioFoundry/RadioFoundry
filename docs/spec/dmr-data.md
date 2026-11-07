@@ -780,9 +780,9 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
   back from transmit misses it: one that returned to receive only from the radio task decoded it 1 time in about 30
   (a receive CRC error instead); returning at the slot engine's TX done, 4 of 4 on the first try. Radios whose burst
   switch already puts the receiver back after each burst missed it too (0 of 16 each), because the radio task's
-  `rx()` at the end of the transmission set the receiver up again (idle, synthesizer, receive) just as it came. Each
-  board's `rx()` now leaves the receiver as it is when the last burst switch left it receiving on the same channel:
-  4 of 4 on the first try on each of four radios.
+  `rx()` at the end of the transmission set the receiver up again (idle, synthesizer, receive) just as it came. The
+  modem glue now keeps a back-to-receive flag and `rx()` leaves the receiver as it is on the same channel
+  ([dmr-modem.md](dmr-modem.md) 6.4): 4 of 4 on the first try on each of five radios, on both glues.
 - With two of the three HR_C7000 radios tried, the portable sends its TMS ACK a second time 2.5 s later on most sends
   (9 of 10), so it missed our link ACK to the first. Not seen with the third or the HR_C6000 radios; a newer burst
   key-up timing on one of the two didn't change it (4 of 4). Not explained yet.
