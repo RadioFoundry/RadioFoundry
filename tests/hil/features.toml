@@ -431,6 +431,10 @@ source = ["core/radio"]
 spec = "docs/spec/settings-store.md"
 source = ["core/settings", "core/storage"]
 
+[feature.codeplug_foreign]
+spec = "docs/spec/codeplug-native.md"
+source = ["core/codeplug/codeplug.c"]
+
 [feature.nand_storage]
 switch = "NAND_STORAGE"
 hardware = "SPI NAND data flash"

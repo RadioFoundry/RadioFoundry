@@ -3,8 +3,9 @@
 """DMR data services (docs/spec/dmr-data.md): packet data and text messages received, CSBK call alert and radio check
 answered, and the radio's own call alert, radio check and text message on air.
 
-Opt-in RF. The bench-to-radio tests (rf + bench_service: --allow-rf --allow-service-stop) send from the SDR bench's
-modem with bench_tx.py data / csbk, then listen (--listen-after) for the radio's answer. The radio-to-bench tests
+Opt-in RF. The bench-to-radio tests (rf + radio_tx + bench_service: --allow-rf --allow-service-stop) send from the SDR
+bench's modem with bench_tx.py data / csbk, then listen (--listen-after) for the radio's answer: radio_tx, as the
+radio answers on air (outside radio_tx tests its TX inhibit is on). The radio-to-bench tests
 (radio_tx + bench_service) have the radio send through the debug link's DMR_DATA command while the bench modem listens.
 The radio's own counters (the dmr_data view section) are the pass criteria; an answer the bench modem did not hear is
 reported as a warning only (its TX to RX turnaround can swallow an answer sent within a few frames). Pass criteria
@@ -25,6 +26,7 @@ import warnings
 import pytest
 
 from rfoundry_hil import need_radio_tx, skip
+from hil_config import rig
 
 BENCH_SRC = 9990301
 CSBK_CALL_ALERT, CSBK_CALL_ALERT_ACK, CSBK_RADIO_CHECK = 0x1F, 0x20, 0x24
@@ -38,7 +40,7 @@ def _setup(radio, pytestconfig, tx=False):
         skip("not_built", "built without DMR")
     if radio.data_view().get("data.built") != 1:
         skip("not_built", "built without the DMR data features")
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     if tx:
@@ -190,6 +192,7 @@ def test_unconfirmed_data_rx(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.feature("dmr_confirmed")
 @pytest.mark.rf
+@pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_confirmed_data_response(radio, sdr_bench, pytestconfig):
@@ -215,6 +218,7 @@ def test_confirmed_data_response(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.feature("dmr_tms")
 @pytest.mark.rf
+@pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_sms_rx(radio, sdr_bench, pytestconfig):
@@ -247,6 +251,7 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.feature("dmr_signaling")
 @pytest.mark.rf
+@pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
@@ -272,6 +277,7 @@ def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
 
 @pytest.mark.feature("dmr_signaling")
 @pytest.mark.rf
+@pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_radio_check_rx(radio, sdr_bench, pytestconfig, data_settings):
@@ -395,6 +401,7 @@ def _ext(radio):
 
 @pytest.mark.feature("dmr_sms")
 @pytest.mark.rf
+@pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_etsi_sms_rx(radio, sdr_bench, pytestconfig):
@@ -418,6 +425,36 @@ def test_etsi_sms_rx(radio, sdr_bench, pytestconfig):
     need_radio_tx(radio)
     assert d["data.responses_sent"] == 1 and d["data.tms_acks_sent"] == 0 and d["data.tx_failed"] == 0, d
     _soft((BENCH_SRC, own) in _heard_headers(heard), "the ETSI response header to the bench")
+
+
+@pytest.mark.feature("dmr_sms")
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+def test_ptt_after_etsi_response(radio, sdr_bench, pytestconfig):
+    """A voice PTT after the radio answered an ETSI text message keys: the response goes out a few slots after the
+    message, and a modem that kept the message's sender as channel activity past its own transmission refused every
+    polite start (tx_error rejected) until the radio left DMR."""
+    freq, cc, own, feats = _setup(radio, pytestconfig, tx=True)
+    _need(feats, "DMR_SMS")
+    before = radio.data_view()
+    with sdr_bench.lease():
+        sdr_bench.data(freq, cc, own, etsi=f"RadioFoundry PTT {int(time.time()) % 10000}", src=BENCH_SRC)
+    time.sleep(1.0)
+    after = radio.data_view()
+    d = _deltas(before, after, ["data.sms_received", "data.responses_sent"])
+    if d["data.sms_received"] != 1 or d["data.responses_sent"] != 1:
+        skip("bench", f"the message or its response didn't happen: {d}")
+    radio.link.mark_read(0)
+    v0 = radio.view()
+    radio.ptt_for(1.5)
+    time.sleep(0.5)
+    v1 = radio.view()
+    calls = int(v1.get("call.tx_calls", 0)) - int(v0.get("call.tx_calls", 0))
+    denied = int(v1.get("call.tx_denied", 0)) - int(v0.get("call.tx_denied", 0))
+    print(f"radio: call.tx_calls +{calls}, call.tx_denied +{denied}, dmr.tx_error {v1.get('dmr.tx_error')}")
+    assert denied == 0 and calls == 1 and v1.get("dmr.tx_error") == "ok", \
+        f"PTT after the response: tx_calls +{calls}, tx_denied +{denied}, tx_error {v1.get('dmr.tx_error')}"
 
 
 @pytest.mark.feature("dmr_sms")

@@ -63,7 +63,14 @@
 #define TX_SUPPLY_US		200u		// 3.2: PA select and PTA23 low, then this long before the TX supply
 #define TX_END_PATH_US		300u		// 3.2: PA select off and PTA23 high, then this long before the receiver is retuned
 #define TX_END_RX_US		200u		// after the RX path is switched on again
+// TX data advance (hrc7000_t.tx_pre_on) 0.6 ms, not the chip's 0.4 ms: at 0.4 ms the inbound burst came 0.17 ms late
+// against the outbound (4.5)
+#define TX_PRE_ON		6u
 #define BIAS_DEFAULT_HZ		450000000u	// the modulation balance's frequency before one is known
+// ADC 7 below the low mark sets the LO's aux output, above the high mark clears it, in between it stays (3.3)
+#define ADC7_CH			7u
+#define ADC7_LOW		465u
+#define ADC7_HIGH		527u
 #define CTCSS_MIN_X10		600u
 #define CTCSS_MAX_X10		2600u
 
@@ -166,6 +173,7 @@ static void init(void)
 
 	// The modem block powered as the DMR glue does, so the reference trim reaches the TCXO in FM builds too
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
+	modem.tx_pre_on = TX_PRE_ON;
 	hrc7000_set_dac_gain(&modem, vol_dac);	// before the init, which writes it: a volume given before init() holds
 	hrc7000_power_on_init(&modem, db25d_cal_tx_center(), DB25D_MIC_GAIN_DB);
 	write_bias(BIAS_DEFAULT_HZ);
@@ -278,6 +286,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 		hal_delay_us(TX_END_PATH_US);	// stock TX end: the retune, this long, then the RX path
 	}
 	rx_paths(hz, true);
+	db25d_main_band(hz);	// every receive set-up; TX prepare sets the transmit band's (4.3)
 	db25d_main_rx_state();
 	if (from_tx) {
 		hal_delay_us(TX_END_RX_US);
@@ -513,6 +522,13 @@ static void status(radio_status_t *st)
 		st->tone_ok = false;
 		return;
 	}
+	// Every poll, transmitting too: ADC 7 falls below the low mark within seconds of a key-up (3.3)
+	uint16_t a7 = hrc_adc_read(ADC7_CH);
+	if (a7 < ADC7_LOW) {
+		db25d_lo_aux(true);
+	} else if (a7 > ADC7_HIGH) {
+		db25d_lo_aux(false);
+	}
 	// 0x0C on every poll, tone or not: the diagnostics page shows it (which sub-audio the chip hears)
 	db25d_main_status(&last_rssi_raw, &last_noise_raw, &last_css_raw);
 	// At the main chip's input: the front end's gain isn't taken out yet (needs the calibration page). Both chip
@@ -608,3 +624,10 @@ const hal_radio_t db25d_radio = {
 	.ref_trim = ref_trim,
 #endif
 };
+
+// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt). DMR TX keys the RF per
+// burst while armed, without setting transmitting
+bool db25d_radio_transmitting(void)
+{
+	return transmitting || dmr_armed;
+}

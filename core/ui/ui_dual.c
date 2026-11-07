@@ -484,14 +484,18 @@ bool ui_dual_start(const ui_dual_ref_t *b)
 	return true;
 }
 
-// Off: the radio stays on the selected channel
-void ui_dual_stop(void)
+// Off: the radio stays on the selected channel. `asked`: the UI asks the radio to stop; else the radio has stopped
+// already (a stop asked for elsewhere, view.dual_stops): nothing to ask, and no grace before a watch started after it
+// is taken on (adopt_poll), as the next one may come at once (the debug link: a stop, then a start)
+static void stop(bool asked)
 {
 	ui_dual_t *d = dual();
 	if (!d->on)
 		return;
-	ui_svc_dual(NULL, 0);	// the radio stops on the selected channel
-	off_ms = ui_st.now_ms;
+	if (asked) {
+		ui_svc_dual(NULL, 0);	// the radio stops on the selected channel
+		off_ms = ui_st.now_ms;
+	}
 	d->on = false;
 	d->back_to = UI_DUAL_NONE;
 	ui_toast(d->sel ? TR("Dual watch off: on B") : TR("Dual watch off: on A"));
@@ -507,6 +511,11 @@ void ui_dual_stop(void)
 		d->sel = 0;
 	}
 	state_save();
+}
+
+void ui_dual_stop(void)
+{
+	stop(true);
 }
 
 // Back on Home with nothing else to clear: the first press says how to stop the watch, a second one soon after stops it.
@@ -1021,7 +1030,7 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 	if (v->hotspot)
 		return false;	// the host has the radio; the watch comes back after
 	if (stop_asked && v->scan != 3 /* SCAN_DUAL */) {
-		ui_dual_stop();
+		stop(false);
 		return true;
 	}
 	bool dirty = false;
@@ -1217,27 +1226,32 @@ const ui_scr_def_t ui_dual_screen = {
 // ======================= The channel picker for A or B (arg: the pane) =======================
 // Raw row 0 is the zone (OK: another zone or the VFO), then the zone's channels. Digits filter by number and name
 
+// The zone as pick_raw_count read it. The list asks for the count before every pass of labels, so a pass reads the
+// zone once, not once a row
+static zone_t pick_z;
+static bool pick_z_ok;
+
 static uint16_t pick_raw_count(void)
 {
-	static zone_t z;
-	return (uint16_t)(1u + (codeplug_zone(pick_zone, &z) ? z.count : 0u));
+	pick_z_ok = codeplug_zone(pick_zone, &pick_z);
+	return (uint16_t)(1u + (pick_z_ok ? pick_z.count : 0u));
 }
 
 static bool pick_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
-	static zone_t z;
-	static channel_t ch;
+	const zone_t *z = &pick_z;
+	char name[CODEPLUG_NAME_LEN + 1];
 	sbuf_t b;
 	sb_init(&b, buf, len);
 	if (raw == 0) {
 		sb_str(&b, TR("Zone"));
 		return true;
 	}
-	if (!codeplug_zone(pick_zone, &z) || raw - 1u >= z.count || !codeplug_channel(z.channels[raw - 1u], &ch))
+	if (!pick_z_ok || raw - 1u >= z->count || !codeplug_channel_name(z->channels[raw - 1u], name))
 		return false;
-	sb_u32(&b, z.channels[raw - 1u], 1);
+	sb_u32(&b, z->channels[raw - 1u], 1);
 	sb_chr(&b, ' ');
-	sb_str(&b, ch.name);
+	sb_str(&b, name);
 	return true;
 }
 
@@ -1257,21 +1271,23 @@ static void pick_enter(void)
 
 static void pick_item(uint16_t i, ui_item_t *it)
 {
-	static zone_t z;
 	static channel_t ch;
 	uint16_t raw = ui_filter_raw(i);
 	uint8_t pane = (uint8_t)ui_frame()->arg;
 	const ui_dual_t *d = dual();
 	sbuf_t b;
+	// Read again: a zone edit elsewhere may have moved pick_zone since the list's last pass (and pick_raw_label below
+	// then reads this copy)
+	pick_z_ok = codeplug_zone(pick_zone, &pick_z);
 	if (raw == 0) {
 		pick_raw_label(0, it->label, sizeof it->label);
-		if (codeplug_zone(pick_zone, &z)) {
+		if (pick_z_ok) {
 			sb_init(&b, it->value, sizeof it->value);
-			sb_str(&b, z.name);
+			sb_str(&b, pick_z.name);
 		}
 		return;
 	}
-	if (!codeplug_zone(pick_zone, &z) || raw - 1u >= z.count || !codeplug_channel(z.channels[raw - 1u], &ch))
+	if (!pick_z_ok || raw - 1u >= pick_z.count || !codeplug_channel(pick_z.channels[raw - 1u], &ch))
 		return;
 	pick_raw_label(raw, it->label, sizeof it->label);
 	sb_init(&b, it->value, sizeof it->value);

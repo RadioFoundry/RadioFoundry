@@ -23,6 +23,9 @@ class El {
 		this.isConnected = false;
 	}
 	append(...cs) { for (const c of cs) this.children.push(c instanceof El ? c : { text: String(c) }); }
+	showModal() {}
+	close() {}
+	remove() { document.body.children = document.body.children.filter((c) => c !== this); }
 	replaceChildren(...cs) { this.children = []; this.append(...cs); }
 	setAttribute(k, v) { this.attrs[k] = v; }
 	addEventListener(ev, f) { (this.listeners[ev] ||= []).push(f); }
@@ -43,6 +46,12 @@ const C = json("flash-boards.json").c7000;
 // a radio on the Baofeng updater, found by what it is, not by name
 const radio = json("radios.json").radios.find((r) => r.flash.update_mode === "baofeng");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// the no-codec dialog (nocodec.js) open on the page, and its button by label
+const dialog = () => document.body.children.find((c) => c.tagName === "DIALOG") || null;
+function answer(label) {
+	const find = (el) => (el.tagName === "BUTTON" && el.textContent === label ? el : el.children?.map((c) => (c instanceof El ? find(c) : null)).find(Boolean));
+	find(dialog()).click();
+}
 
 function route(r = radio, host = {}) {
 	const state = { c7: { log: { add() {}, el: new El("div") } }, radio: r, forward: null };
@@ -64,7 +73,8 @@ function route(r = radio, host = {}) {
 		};
 		return l;
 	};
-	const ctx = { flashStarted: () => 0, flashFinished() {}, flashMark() {}, errorText: (e) => e.message, helpLink: () => null, next() {} };
+	const ctx = { flashStarted: () => 0, flashFinished() {}, flashMark() {}, errorText: (e) => e.message, helpLink: () => null, next() {},
+		render() { state.rendered = (state.rendered || 0) + 1; } };
 	const routes = makeStockRoutes({ S, ctx, C: () => C, boardId: () => r.flash.board, session: () => state.c7, busy: async () => {},
 		loader, fill: (el, ...p) => el.replaceChildren(...p.flat().filter(Boolean)), stubImage: async () => new Uint8Array(64), ...host });
 	return { state, forwards, calls, routes };
@@ -346,6 +356,8 @@ test("update mode: a pick changed to hardware the image doesn't run while the pa
 	const ok = stockRadio.variants.find((v) => v.runs && v.level === "supported");
 	buttons.find((b) => b.textContent.startsWith(`${ok.code}:`)).click();
 	forwards.at(-1).click();
+	await sleep(0);
+	answer("Install Anyway");	// no codec: asked once more
 	await sleep(10);
 	assert.equal(calls.listen, 1);
 	buttons.find((b) => b.textContent.startsWith("DZZ:")).click();
@@ -372,4 +384,31 @@ test("update mode: an install without a codec says why there is none and how to 
 	assert.match(none, /go back and select a supported manufacturer firmware file/);
 	assert.doesNotMatch(none, /no way back/i, "a way back exists: it needs the stock file");
 	assert.doesNotMatch(text({ mode: "keep" }), /will not include the DMR voice codec/i);
+});
+
+test("update mode: Install without a codec asks once more; Go Back returns to the check step, Install Anyway listens", async () => {
+	const { state, forwards, calls, routes } = route({ ...radio, variants: [] });
+	state.firmware = { image: Uint8Array.from({ length: 4096 }, (_, i) => (i * 7 + 1) & 0xFF), source: "test", manifest: {} };
+	state.c7.decision = { mode: "none" };
+	state.step = 4;
+	const box = routes.iapWriteView();
+	box.isConnected = true;
+	forwards.at(-1).click();
+	await sleep(0);
+	assert.match(dialog().textContent, /Install Without DMR Voice\?.*not be able to send or receive DMR voice calls.*Analog FM will work/);
+	state.c7none = true;
+	answer("Go Back and Add the Codec");
+	await sleep(0);
+	assert.equal(dialog(), null);
+	assert.equal(state.step, 3);
+	assert.equal(state.c7none, false, "the file picker shows again there");
+	assert.equal(state.rendered, 1);
+	assert.equal(calls.listen, 0, "not listening for the radio");
+	forwards.at(-1).click();
+	await sleep(0);
+	answer("Install Anyway");
+	await sleep(10);
+	assert.equal(calls.listen, 1);
+	box.isConnected = false;
+	await sleep(300);
 });

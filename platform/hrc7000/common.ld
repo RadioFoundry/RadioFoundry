@@ -25,6 +25,7 @@ SECTIONS
 	{
 		KEEP(*(.entry))	/* crt0: the loader, or the first stage, jumps to the first byte */
 		*(EXCLUDE_FILE(*hrc7000_dmr.o *hrc7000_bs.o *dmr_glue.o) .text EXCLUDE_FILE(*hrc7000_dmr.o *hrc7000_bs.o *dmr_glue.o) .text.*)
+		*(.flashfunc .flashfunc.*)	/* HRC_FLASHFUNC: task-side code in the files placed in RAM below */
 		. = ALIGN(4);
 	} >FLASH
 
@@ -59,6 +60,7 @@ SECTIONS
 		__ram_lo_bss_start = .;
 		*(.ram_lo .ram_lo.*)
 		. = ALIGN(8);
+		__irq_stack_bottom = .;	/* its canary words (irq.c) */
 		. = . + _Irq_Stack_Size;
 		__irq_stack_top = .;
 		__ram_lo_bss_end = .;

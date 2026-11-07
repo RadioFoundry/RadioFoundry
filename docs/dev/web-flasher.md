@@ -18,7 +18,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `plan.js` | Sector plans: keep, merge, and restore (a whole image put back exactly) | `rfoundry/plan.py` |
 | `manifest.js` | Release manifest checks | `rfoundry/manifest.py` |
 | `decide.js` | Keep or merge the codec | `rfoundry/cli.py` `decide_codec` |
-| `dfu.js` | The AnyRoad DFU bootloader over WebUSB | `rfoundry/dfu.py` |
+| `dfu.js` | The AnyRoad DFU bootloader over WebUSB. `WebUsbTransport.open` refuses the radio switched on normally (`normalMode`: the board's `dfu_layout`, else a layout of only the bootloader's sectors) before it claims the interface | `rfoundry/dfu.py` |
 | `codecsave.js` | The codec read back from a radio that runs RadioFoundry (where stock keeps it, or where the merge placed it), checked against the profile's hashes, and a copy kept in IndexedDB: before every update that erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `rfoundry/codecsave.py` |
 | `bootkey.js` | The bootloader key from a radio that runs RadioFoundry: the bootloader read over READ_MEM, the block with the key's SHA-256 | `rfoundry/bootkey.py` |
 | `link.js` | The debug link and open-firmware CPS reads and writes over Web Serial | `rfoundry/debuglink.py`, [open-firmware-cps.md](../spec/open-firmware-cps.md) |
@@ -224,6 +224,7 @@ and the events don't. Both requests carry `adapter`, and the PATCH carries `trai
 | `open firmware backup` | The key and codec found in the open-firmware read |
 | `verify`, `verify failed` | What the radio reported after the install |
 | `cable radio check`, `cable radio codec decision` | The cable radio's read choices and codec decision |
+| `no codec confirm` | The answer to the dialog Install opens before an install without the codec: `go`, `back` or `stay` |
 | `adapter` | The USB device, once per change |
 
 The cable log (`logBox()`) also goes to the trail, so a boot ROM load that fails leaves the bytes received.
@@ -250,6 +251,11 @@ locally (`practiceFetch`) and sends nothing.
 
 Where it is offered: the button under every failure notice (`errorNotice()`, `problemNotice()`), the failed checks of
 the install, cable radio and loader routes, and the quiet "Something wrong? Report a Problem" link on Verify.
+
+Every failure says what to do next: the message itself, or `errorNotice(text, { next })` beside it. Where the step can
+run again in place, `{ retry }` puts Try Again in the notice. Pressing it removes the notice first, so a second
+failure replaces the first instead of stacking under it. A step that shows its result in a status area clears that
+area at the start of each run.
 
 ## The Update task
 
@@ -322,6 +328,12 @@ each part's address, size, SHA-256 and whether the read completed), `internal-fl
 base; the bootloader is never read or written), `spi-flash.bin`, `security-registers.bin` (the factory calibration),
 `radio-info.bin`, and `stock-firmware.bin` when the user gave one.
 
+`spi-flash.bin` is the radio's own memory chip: `backup.spi_size`, or less when the radio reports a smaller chip
+(`spiBytes`: the radio info's flash part id, or the loader's SPI flash size from HELLO). Some radios of a model came
+with a smaller chip, and a read past its end is refused or wraps around. A backup over another open firmware sizes its
+read the same way (`newState`). Restoring the codeplug and opening the backup in the Codeplug Editor need only the
+codeplug's regions (`TFTP_SIZE`), not the whole open-firmware span.
+
 `openBundle()` also reads a backup whose files sit in one folder (`bundleFolder()`): what macOS's Compress makes of a
 backup it unpacked, `__MACOSX/` ignored. The restore picker and the codeplug editor use the same test.
 
@@ -342,19 +354,26 @@ What can be read depends on the firmware running:
 | Radio runs | Read |
 |---|---|
 | RadioFoundry | Everything, through the CPS reads (areas 1, 5, 9 and 10): the whole SPI flash, the internal flash, the security registers |
-| RadioFoundry with stub entry (STM32F4) | The same. The radio info comes over the debug link; the internal flash, the SPI flash and the security registers come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into RadioFoundry. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves RadioFoundry running, and the debug link reads everything. A build whose codeplug protocol has no area 10 still gets the security registers, through the loader's SREAD (protocol 5). When both read them and the copies differ, the loader's checked copy is `security-registers.bin` and the other is kept as `security-registers-codeplug-protocol.bin`, marked incomplete |
+| RadioFoundry with stub entry (STM32F4) | The same. The radio info comes over the debug link; the internal flash, the SPI flash and the security registers come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into RadioFoundry. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves RadioFoundry running, and the debug link reads everything. After a first install the hand-over is the one the build just written offers: Verify asks it (`afterOffer`), since the probe before the install found the original firmware. A build whose codeplug protocol has no area 10 still gets the security registers, through the loader's SREAD (protocol 5). When both read them and the copies differ, the loader's checked copy is `security-registers.bin` and the other is kept as `security-registers-codeplug-protocol.bin`, marked incomplete |
 | Another open firmware (OpenGD77 family) | Everything but the security registers, over that firmware's CPS (`openfw.js`, below) |
 | Stock (STM32F4) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing RadioFoundry: flashing never touches the SPI flash, and RadioFoundry doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
+
+A CPS read the radio doesn't answer is tried up to five times, 0.3, 1, 2 and 3 s apart (`link.js` `cpsRead`): a radio
+quiet for a few seconds must not end a backup halfway. A read answered after a retry goes on the trail. Reads a build
+may not answer at all (the radio info and security registers in `backup.js`, the `openfw.js` probe) keep 3 tries, and a
+probe asks once.
 
 ## Channels after an install (`migrate.js`)
 
 A radio installed from its stock firmware still holds the stock codeplug, in a layout RadioFoundry does not read. The
-last step of the install brings it over by default, on every radio whose stock codeplug the browser converts:
+last step of the install brings it over by default, on every radio whose stock codeplug the browser converts. The
+backup panel before it says so (`flash.backup.after_channels`). With a backup that holds the stock codeplug the step
+writes without asking; without one it asks first:
 
 | Step | What happens |
 |---|---|
-| 0. Skip | An update, a move from another open firmware, a board without a memory chip (`backup.spi_size` 0), or a backup from this visit that read every stock family's tables and found none (`channelsWanted`): nothing is read |
-| 1. Read | The codeplug span over the CPS. The stock codeplug comes from this visit's backup when it holds one (`stockSource`), else from the live read, further on a family whose stock tables reach past the span (`readSpan`) |
+| 0. Skip | An update, a move from another open firmware, a board without a memory chip (`backup.spi_size` 0), or a backup from this visit that read every stock family's tables and found none (`channelsWanted`): nothing is read. A radio without a settings region (STORAGE INFO unavailable: a chip too small for the board's flash map) stores no codeplug: the step says so and ends |
+| 1. Read | The codeplug span over the CPS, no further than the radio's chip. The stock codeplug comes from this visit's backup when it holds one (`stockSource`), else from the live read, further on a family whose stock tables reach past the span (`readSpan`) |
 | 2. Recognize | `classify` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md) 2). A RadioFoundry codeplug, a blank chip or an unknown layout ends the step: nothing is written |
 | 3. Convert | `importStock`, the Codeplug Editor's conversion, with its counts and notes. No channels ends the step |
 | 4. Prepare | The settings area is claimed (`prepareStorage`), as before a codeplug restore |
@@ -370,7 +389,21 @@ sectors with RadioFoundry's codeplug, the write replaces them. A failure at any 
 channels and says so. With the backup, the Codeplug Editor converts the original codeplug from there; without one, the
 message says whether the original is still on the radio (a read or conversion failure writes nothing).
 
-The boards whose stock codeplug the browser converts are those in the TYT family layouts of `codeplug/stock_tyt.js`.
+The boards whose stock codeplug the browser converts are those in the TYT family layouts of `codeplug/stock_tyt.js`,
+and those whose paged stock codeplug `codeplug/stock_baofeng.js` reads ([feature-matrix.md](../feature-matrix.md)).
+
+### HR_C7000 radios (`c7000ui.js` `bringChannels`)
+
+The stock codeplug sits in its own pages of the data flash, below RadioFoundry's codeplug, and no step of the install
+writes there. So the step needs no backup and loses nothing:
+
+| Step | What happens |
+|---|---|
+| 0. Skip | Not an install, a radio that ran RadioFoundry before, or a board without a paged stock area (`calibration.area`) or a codeplug base |
+| 1. Read | The stock area as this visit's check step read it (`c.calArea`). Without one (the factory update mode route reads no data memory), RadioFoundry reads it over the CPS, area 1 at its physical addresses |
+| 2. Convert | `convertPagedStock`. No stock codeplug, or one without channels, ends the step |
+| 3. Write | `writeConverted` through the Codeplug Editor's transport (`CpsSerial`), which adds the board's codeplug base: the settings area claimed when foreign, the radio's codeplug read, the bytes that differ written and read back. A codeplug with channels already on the radio is replaced only when the user says so |
+| 4. Check | The radio's codeplug read again and counted. A mismatch is reported as a problem |
 The HR_C7000 backend has no conversion: its stock codeplug stays in the data flash and in the backup
 (`original-channels.bin`), and `tools/backup_codeplug.py` ports it.
 
@@ -458,6 +491,18 @@ ignores them, stock firmware is untested. So on a radio not known to run RadioFo
 user selects "Radio Is Off"; RadioFoundry's soft reset and a power cycle of a radio it found running RadioFoundry start
 at once. When the load fails, the factory update mode is the main action. `stubtool.py --slow-cable` does the same.
 
+The session holds a stub only once it answered HELLO. A cable whose reading stopped (the device lost) is dropped
+before a step uses it, and after a failed backup, restore or check read the page asks the stub for HELLO: one that
+no longer answers (the radio switched off or reset) is dropped too, and Try Again goes to the connect step, which says
+why. Breaks and framing errors never stop the reading: a radio switched off with the cable in gives one after another
+for as long as it is off.
+
+A page of an SPI NAND whose bit errors its ECC can't correct reads the same every time: the stub answers status 0x0D
+for its sector, in a read (op 09) or a checksum (op 07). The page then reads that sector's two pages itself with SPI
+requests (page read, status, read from cache), twice, and keeps them as the chip holds them. The final checksum pass
+sums a window that holds one sector by sector and leaves it out, and `backup.json` lists those sectors as `nand_ecc`.
+`stub/stubtool.py` reads a NAND the same way (`Radio.nand_raw`) and prints the list after a `--nand` read.
+
 ### The factory update mode
 
 Every HR_C7000 board has one: `update_mode` in its `data/radios.json` `flash` entry, from the family in
@@ -532,6 +577,12 @@ The codec decision (`decide()` in `c7000.js`), first match wins:
 | This browser | A slot an earlier run kept in IndexedDB |
 | A file | A program memory backup, a known stock firmware file, or an image merged by `tools/hrc7000_codec.py` |
 | None | Only when the user asks for it: FM works, DMR voice stays off |
+
+An install without the codec asks once more when Install is pressed (`nocodec.js` `confirmNoCodec()`), on every route:
+the cable write, the update mode write (decision `none`) and the bootloader write (a decision with `expectCodec`
+false). The dialog says DMR voice calls won't work and offers **Go Back and Add the Codec** (the step before, where a
+file is selected) and **Install Anyway**. Escape stays on the step. A bootloader route without a codec step before
+the write (an update) offers only **Install Anyway**. A retry after a failed write doesn't ask again.
 
 The page never sends a STUB command to RadioFoundry except right before it enters the stub: any STUB command parks RadioFoundry's codec
 until the next restart.
@@ -638,6 +689,16 @@ selection leaves it out, the build step offers it under the build cards: one but
 dismisses the offer until the page reloads. Only the first language the browser asks for that has a pack counts, and
 English (the firmware's own) never does. The code comes from the switch name alone (`flasher/langsuggest.js`), so a new
 pack needs no flasher change. Strings: `flash.build.pack_*`.
+
+**Radio language** (`LANG_DEFAULT_<CODE>`) lists English and every pack the radio can have; one the build leaves out
+reads "(adds it to the build)". Picking it turns its pack on, and the pick holds across the build cards until the pack
+is turned off by hand (the radio then starts in English). Picking another language takes out a pack the pick added. On
+an installation it is preset to the page's language only when the build has that pack.
+
+A build too big for the radio fails at the build service with `too big: <region> overflowed by <N> bytes` (the
+linker's region, flash first). The build step shows it as a notice, not an error to report: how many KB too big for
+the program memory (or the RAM), to turn features off in Custom or pick a smaller build, and, when the Radio language
+added a pack, that English leaves it out again (`flasher/buildfit.js`; strings `flash.build.too_big*`).
 
 ## Version links
 

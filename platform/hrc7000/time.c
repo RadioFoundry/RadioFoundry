@@ -139,4 +139,5 @@ void hrc_symbol_timer_stop(void)
 void vApplicationTickHook(void)
 {
 	(void)cycles_now();
+	hrc_irq_stack_check();
 }

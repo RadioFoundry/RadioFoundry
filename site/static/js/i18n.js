@@ -28,10 +28,12 @@ export function catalog(strings, lang = LANG) {
 		const form = typeof fmt.n === "number" ? strings[`${key}.${category(fmt.n)}`] : undefined;
 		return form ?? strings[`${key}.other`];
 	};
-	// {name} placeholders filled from fmt; a number n is the count: written in the page's language
-	const t = (key, fmt = {}) => (pick(key, fmt) ?? key).replace(/\{(\w+)\}/g, (_, k) => {
-		if (!(k in fmt)) return `{${k}}`;
-		return k === "n" && typeof fmt.n === "number" ? num(fmt.n) : fmt[k];
+	// {name} placeholders filled from fmt; a number n is the count: written in the page's language. A value that ends
+	// its own sentence ("{error}. Try again" with an error text that has its period) doesn't get a second period
+	const t = (key, fmt = {}) => (pick(key, fmt) ?? key).replace(/\{(\w+)\}(\.?)/g, (_, k, dot) => {
+		if (!(k in fmt)) return `{${k}}${dot}`;
+		const v = String(k === "n" && typeof fmt.n === "number" ? num(fmt.n) : fmt[k]);
+		return dot && /[.!?]$/.test(v) ? v : v + dot;
 	});
 	const has = (key) => key in strings || `${key}.other` in strings;
 	// a catalog override of a text that comes from the repository (feature.<SWITCH>.title, ...), else that text

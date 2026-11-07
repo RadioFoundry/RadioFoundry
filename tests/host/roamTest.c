@@ -684,7 +684,7 @@ static struct {
 static bool a_start(audio_block_cb_t cb, void *ctx) { (void)ctx; aud.cb = cb; aud.streaming = true; return true; }
 static void a_stop(void) { aud.streaming = false; aud.cb = NULL; }
 static void a_pcm(bool on) { (void)on; }
-static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
+static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm };
 
 static bool v_present(void) { return true; }
 static void v_reset(void) {}
@@ -746,7 +746,7 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 	return true;
 }
 static const contact_t contacts[] = { { "Local", 9, CONTACT_GROUP, 0 }, { "World", 91, CONTACT_GROUP, 0 } };
-uint32_t codeplug_dmr_id(void) { return 3101276; }
+uint32_t codeplug_dmr_id(void) { return 9996543; }
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
 	if (index < 1 || index > 2) {
@@ -768,7 +768,7 @@ bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
 }
 bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
 {
-	*out = (codeplug_dmr_settings_t){ "N0CALL", 0, 0 };
+	*out = (codeplug_dmr_settings_t){ "Q0TEST", 0, 0 };
 	return true;
 }
 bool dmr_iddb_lookup(uint32_t id, char *out, size_t len) { (void)id; (void)out; (void)len; return false; }
@@ -1063,7 +1063,7 @@ static void test_block_list(void)
 
 	// A call: blocked, and for ROAM_QUIET_MS after
 	uint8_t lc[9];
-	dmr_lc_t l = { .flco = DMR_FLCO_GROUP_VOICE, .dst = 9, .src = 3101234 };
+	dmr_lc_t l = { .flco = DMR_FLCO_GROUP_VOICE, .dst = 9, .src = 9991234 };
 	dmr_lc_pack(&l, lc);
 	for (int k = 0; k < 140; k++) {	// 8.4 s of voice header + voice
 		dmr_burst_t b;
@@ -1111,7 +1111,7 @@ static void test_block_list(void)
 	CHECK(sm.view.dmr.state == RDMR_IDLE && RV->searches == 0);
 	CHECK(RV->blocked == RROAM_BLOCK_QUIET || RV->blocked == RROAM_BLOCK_REPLY);
 	// A temporary talk target: an override
-	req(RREQ_DMR_TARGET, 3101234 | (1 << 24));
+	req(RREQ_DMR_TARGET, 9991234 | (1 << 24));
 	run(ROAM_QUIET_MS + 3000);
 	CHECK(RV->blocked == RROAM_BLOCK_OVERRIDE && RV->searches == 0 && on_ch() == 1);
 	req(RREQ_DMR_TARGET_CLEAR, 0);
@@ -1413,7 +1413,7 @@ static void test_rc_survey_ptt_and_traffic(void)
 	CHECK(sm.roam.state == ROAM_SURVEY);
 	cuts = RV->cuts;
 	uint8_t lc[9];
-	dmr_lc_t l = { .flco = DMR_FLCO_GROUP_VOICE, .dst = 9, .src = 3101234 };
+	dmr_lc_t l = { .flco = DMR_FLCO_GROUP_VOICE, .dst = 9, .src = 9991234 };
 	dmr_lc_pack(&l, lc);
 	for (int k = 0; k < 3 && sm.roam.state == ROAM_SURVEY; k++) {
 		dmr_burst_t b;

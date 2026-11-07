@@ -56,7 +56,7 @@ static void b_do_status(rx2_status_t *st)
 	st->dmr = b_active;
 	st->group = true;
 	st->rssi_dbm = -90;
-	st->src = b_active ? 3100001u : 0;
+	st->src = b_active ? 9990001u : 0;
 	st->dst = b_active ? 91u : 0;
 }
 static void b_do_stub(void) { b_stubs++; }
@@ -224,7 +224,7 @@ static void test_payloads(void)
 	t.rx_tone.value = 0x13;
 	t.color_code = 1;
 	t.timeslot = 2;
-	t.own_id = 3100001u;
+	t.own_id = 9990001u;
 	t.talk_group = 91;
 	t.group_count = RX2_GROUPS;
 	for (uint8_t i = 0; i < RX2_GROUPS; i++) {
@@ -243,12 +243,12 @@ static void test_payloads(void)
 	s.tuned = s.active = s.dmr = s.heard = true;
 	s.rssi_dbm = -121;
 	s.noise = 40;
-	s.src = 3100001u;
-	s.dst = 3100002u;
+	s.src = 9990001u;
+	s.dst = 9990002u;
 	n = rx2_pack_status(&s, p);
 	CHECK(n == RX2_STATUS_LEN && rx2_unpack_status(p, n, &v));
 	CHECK(v.tuned && v.active && v.dmr && !v.group && v.heard && v.rssi_dbm == -121 && v.noise == 40 &&
-	      v.src == 3100001u && v.dst == 3100002u && !v.up);
+	      v.src == 9990001u && v.dst == 9990002u && !v.up);
 }
 
 static void test_link(void)
@@ -282,7 +282,7 @@ static void test_link(void)
 	rx2_main_audio(&m, true, 60);
 	now = run(now, 100, true);
 	rx2_main_status(&m, &st);
-	CHECK(b_audio && b_volume == 60 && st.active && st.heard && st.dmr && st.src == 3100001u);
+	CHECK(b_audio && b_volume == 60 && st.active && st.heard && st.dmr && st.src == 9990001u);
 	rx2_main_audio(&m, false, 60);
 	now = run(now, 100, true);
 	rx2_main_status(&m, &st);

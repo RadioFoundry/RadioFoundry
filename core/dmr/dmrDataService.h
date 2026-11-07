@@ -112,7 +112,8 @@ typedef enum { DMR_ARS_STATE_OFF, DMR_ARS_STATE_REGISTERING, DMR_ARS_STATE_REGIS
 typedef struct
 {
 	// Send a burst list (the service's buffer, valid until dmrDataServiceTxDone): true when started. The service has
-	// done its listen before talk
+	// done its listen before talk. An accepted start may call dmrDataServiceTxDone synchronously; a start that
+	// returns false must not call it (the service would count the list twice).
 	bool (*txStart)(const dmrBurst_t *bursts, int count, void *ctx);
 	// Listen before talk for machine traffic (gotcha 3.6; dmr_call_channel_clear in the firmware)
 	bool (*channelClear)(uint32_t nowMs, void *ctx);

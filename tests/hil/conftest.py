@@ -7,6 +7,7 @@ import glob
 import os
 
 import bringup_plugin
+import hil_config
 import hil_plugin
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,21 +28,24 @@ def pytest_addoption(parser):
                 help="tests may switch the radio's USB personality to the network adapter (it re-enumerates; the "
                      "test switches it back over UDP), or on a radio without one run pppd on its serial port")
     g.addoption("--tx-power", type=int, default=40, help="bench transmitter RF level 0-255 (bench: low)")
-    g.addoption("--dmr-freq", type=float, default=461.6875,
-                help="MHz: the DMR test channel (Ch 15 of the bench's gateway configuration)")
-    g.addoption("--dmr-cc", type=int, default=2)
     g.addoption("--sfr-freq", type=float, default=None,
                 help="MHz: the SFR test channels' frequency (test_sfr_standalone); default --dmr-freq")
-    g.addoption("--dmr-tg", type=int, default=9,
-                help="talkgroup the bench transmitter calls (in the radio channel's RX group list)")
     g.addoption("--ambe", default=os.environ.get("RFOUNDRY_HIL_AMBE"),
                 help="a 9-byte-frame .ambe speech recording on this Mac for test_dmr_voice ($RFOUNDRY_HIL_AMBE); never "
                      "commit recordings")
-    g.addoption("--noaa-mhz", type=float, default=162.550, help="NOAA weather radio frequency for test_fm")
     g.addoption("--rssi-floor", type=int, default=-115, help="dBm: test_fm passes above this")
     g.addoption("--shots", default=None, help="directory for screenshots taken by the tests")
     g.addoption("--bench-wait-max", type=float, default=float(os.environ.get("RFOUNDRY_SDR_BENCH_WAIT_MAX", "900")),
                 help="s: a test that would wait longer for a shared SDR bench (rfoundry-benchd) is skipped")
+    g.addoption("--bench-api", default=os.environ.get("RFOUNDRY_BENCH_API"), metavar="HOST[:PORT]",
+                help="a bench board (the bench line protocol, TCP 7373) in place of the SDR bench host: it runs the "
+                     "bench's jobs and receives (tests/hil/README.md)")
+    g.addoption("--bench-api-rx", default=os.environ.get("RFOUNDRY_BENCH_API_RX"), metavar="HOST[:PORT]",
+                help="a second bench board for bursts and captures (default: --bench-api's): a half-duplex board "
+                     "can't hear while it transmits")
+    g.addoption("--bench-api-level", type=int, default=(int(os.environ["RFOUNDRY_BENCH_API_LEVEL"])
+                                                        if os.environ.get("RFOUNDRY_BENCH_API_LEVEL") else None),
+                metavar="0-255", help="the bench board's transmit level for its jobs and FM (default: the board's own)")
     g.addoption("--bench-station", default=os.environ.get("RFOUNDRY_BENCH_STATION"),
                 help="a shared bench's station (a RadioFoundry radio on the bench host) as the second radio of the tests "
                      "that use one (bench_station fixture); rfoundry-bench info lists them")
@@ -50,8 +54,6 @@ def pytest_addoption(parser):
                 help="the SDR's own frequency error in ppm for FM carrier offsets (default: the SDR bench's calibration, "
                      "recorded with each capture)")
     g.addoption("--max-foff", type=float, default=500.0, help="Hz: largest carrier offset the TX tests accept")
-    g.addoption("--fm-mhz", type=float, default=461.6875,
-                help="MHz: the FM TX test frequency (the radio's VFO; a channel you may transmit on)")
     g.addoption("--allow-codeplug-write", action="store_true",
                 help="tests may write the radio's codeplug over CPS (marker codeplug_write: backed up first, "
                      "restored and verified afterwards)")
@@ -98,6 +100,13 @@ def pytest_addoption(parser):
     g.addoption("--split-tx-mhz", type=float, default=None,
                 help="MHz: test_dmr_tx_split_repeater, the radio's TX frequency on its DMR test channel made split "
                      "(the bench repeater's input; its output is --dmr-freq); no default: one you may transmit on")
+    g.addoption("--outbound-mhz", type=float, default=None,
+                help="MHz: test_dmr_outbound_voice, a repeater's output the bench board sends BS bursts on; the radio "
+                     "needs a duplex DMR channel receiving it (TX differs from RX); no default: one you may transmit on")
+    g.addoption("--am-mhz", type=float, default=None,
+                help="MHz: test_am_rx, the AM test frequency in the air band (108-137) the bench board sends full-carrier "
+                     "AM on and the radio's VFO receives; the bench transmits on it: a cabled setup unless the frequency "
+                     "is approved for the air; no default")
     g.addoption("--split-calls", type=int, default=1,
                 help="test_dmr_tx_split_repeater: key up this many times in one run (the split is written and "
                      "restored once; every call needs a fresh repeater start)")
@@ -105,24 +114,18 @@ def pytest_addoption(parser):
                 help="s: test_roaming's beacon tests, the bench repeater's beacon interval (set on the radio too)")
     g.addoption("--roam-beacon-len", type=int, default=3,
                 help="s: their beacon duration (bench_repeater.py --beacon-len, the radio's roam_beacon_len_s)")
-    g.addoption("--aprs-call", default=os.environ.get("RFOUNDRY_APRS_CALL"),
-                help="test_aprs on air: the licensed operator's callsign ($RFOUNDRY_APRS_CALL), set as the RAM-only test "
-                     "call (never saved)")
     g.addoption("--aprs-ssid", type=int, default=15, help="test_aprs on air: the SSID sent (restored afterwards)")
-    g.addoption("--aprs-test-mhz", type=float, default=446.050,
-                help="MHz: test_aprs AFSK frequency, a 2 m or 70 cm amateur simplex frequency that is not an APRS "
-                     "frequency (test_aprs.py docstring); never 144.390")
-    g.addoption("--aprs-dmr-dst", type=int, default=9990301,
-                help="test_aprs DMR position: the destination ID (the bench modem listens to any)")
     g.addoption("--mic-gain-steps", default="3,5,7",
                 help="test_mic_gain: the Mic gain steps (0-10, 2 dB a step, 5 = the board's level) keyed at each "
                      "bandwidth, one over per step")
     g.addoption("--mic-gain-window", type=float, default=30.0,
                 help="test_mic_gain: seconds the SDR bench records per over (unplug, key, talk, release in it)")
+    hil_config.add_options(g)
     bringup_plugin.add_options(parser)
 
 
 def pytest_configure(config):
+    hil_config.configure(config)        # the rig's values: none has a default here
     if config.getoption("--codeplug-image"):    # test_cps.codeplug_edited reads it from there
         os.environ["RFOUNDRY_HIL_CODEPLUG_IMAGE"] = os.path.expanduser(config.getoption("--codeplug-image"))
     # The hooks and fixtures are a plugin, not this conftest, so they also reach the boards' own tests

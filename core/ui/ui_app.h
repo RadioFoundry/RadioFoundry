@@ -24,8 +24,8 @@ void ui_app_draw(void);
 uint8_t ui_app_brightness(void);
 // A banner or the emergency screen came up since the last call (then cleared): the backlight comes on for it
 bool ui_app_take_wake(void);
-// Auto power off is due (Settings > Power > Auto power off): the housekeeping task switches the radio off. If the
-// supply stays on, it queues UI_EV_POWER_OFF_FAILED (ui_notify) and the UI waits a whole period again. Any task
+// Auto power off is due (Settings > Power saving > Auto power off): the housekeeping task switches the radio off. If
+// the supply stays on, it queues UI_EV_POWER_OFF_FAILED (ui_notify) and the UI waits a whole period again. Any task
 bool ui_app_power_off_due(void);
 
 // For the debug link and the simulator: what is on screen
@@ -41,6 +41,7 @@ typedef struct {
 	const char *query;	// Find text so far, "" = none
 	uint32_t draws;		// frames drawn so far
 	bool strip_drawn;	// the last frame drew the status strip with the state pill or a merged title (P2)
+	bool dual;		// the UI runs dual watch: it has taken over a watch the debug link started
 } ui_app_status_t;
 void ui_app_status(ui_app_status_t *st);
 // The label of the focused row on a list screen ("" otherwise), for scripted checks

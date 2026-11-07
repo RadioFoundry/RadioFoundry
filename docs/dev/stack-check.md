@@ -4,9 +4,10 @@
 
 `make BOARD=<b> stack-check` computes the worst-case stack depth of every FreeRTOS task in a build and fails when a
 task's deepest call chain doesn't fit its stack. `tools/ci.sh` runs it on each board's default and maximal
-configuration. It exists because an overflow is invisible elsewhere: the host tests run the same code on large pthread
-stacks, and on the radio FreeRTOS' overflow hook spins without a word. A 768-byte buffer in `codeplug_contact_find` once overflowed the start task at boot; the check reported that chain
-424 bytes over.
+configuration, `--quick` too, so every pull request's firmware jobs check both. It exists because an overflow is
+invisible elsewhere: the host tests run the same code on large pthread stacks, and on the radio FreeRTOS' overflow
+hook spins without a word. A 768-byte buffer in `codeplug_contact_find` once overflowed the start task at boot; the
+check reported that chain 424 bytes over.
 
 On the radio, the debug link's `tasks` view section shows what each task has really used: its least free stack since
 it started ([debuglink.md](../spec/debuglink.md) 3.7, `CONFIG_TASK_STACKS`), and `tests/hil/test_task_stacks.py`
@@ -98,7 +99,10 @@ stack check <b>: every task fits, the least free: prvIdleTask 176 bytes
 
 * Recursion is counted once and listed. RadioFoundry has no deep recursion; the cycles found are mutual calls through callbacks
   (the network stack's `n_*`, the audio mixer).
-* Interrupt handlers aren't checked: they run on the main (STM32) or interrupt (HR_C7000) stack, not a task's.
+* Interrupt handlers on the main stack (STM32) aren't checked. Where they have a stack of their own and run one at a
+  time (HR_C7000), the platform's `STACK_IRQ` names that stack (its size, or the two linker symbols at its ends so the
+  size is the one linked) and the function that installs a handler: every function passed to it is a root, and the
+  deepest plus the margin must fit (the `irq` line). A handler installed any other way is missed. The interrupt stack's canary and `tasks.irq_free` catch what the check misses on the radio.
 * The code before the scheduler starts (`main`) runs on the main stack and isn't checked.
 * A pointer call whose target is computed at run time (an address from a table the sources don't spell) needs a table
   line.

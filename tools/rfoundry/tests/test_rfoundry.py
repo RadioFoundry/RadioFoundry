@@ -729,6 +729,53 @@ class WaitForDfu(unittest.TestCase):
         self.assertIn("no radio bootloader found (USB 0483:DF11)", str(cm.exception))
 
 
+class NormalMode(unittest.TestCase):
+    """The radio's own firmware switched on normally is a DFU device with the bootloader's IDs and strings; writing
+    through it can erase the bootloader. Both DFU tools refuse it before any DFU request."""
+    NORMAL = ["@Internal Flash   /0x08000000/03*016Kg", "@SPI Flash Memory /0x00000000/16*064Kg"]
+    LOADER = ["@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg", "@SPI Flash Memory /0x00000000/16*064Kg"]
+
+    def device(self, interfaces):
+        board = boards.get("dm1701")
+        dev = fakedfu.FakeUsbDevice(board, b"\0" * dfumod.KEY_LEN)
+        dev.strings = dict(dev.strings, interfaces=interfaces)
+        dev.ctrl_transfer = mock.Mock(side_effect=AssertionError("a DFU request reached a radio in normal mode"))
+        return board, dev
+
+    def test_rule(self):
+        self.assertTrue(dfumod.normal_mode(self.NORMAL))
+        self.assertFalse(dfumod.normal_mode(self.LOADER))
+        self.assertFalse(dfumod.normal_mode([None]))			# no layout string: nothing to go by
+        # a bootloader that showed the whole flash, not only the application area, is no normal mode
+        self.assertFalse(dfumod.normal_mode(["@Internal Flash  /0x08000000/03*016Kg,01*016Kg,01*064Kg,07*128Kg"]))
+        self.assertEqual(dfumod.region("@SPI Flash Memory /0x00000000/16*064Kg"), (0, 0x100000))
+        declared = mock.Mock(dfu_layout="@Internal Flash /0x0800C000/01*016Kg,01*064Kg,07*128Kg")
+        self.assertFalse(dfumod.normal_mode(self.LOADER, declared))	# white space doesn't count
+        self.assertTrue(dfumod.normal_mode(["@Internal Flash /0x0800C000/01*016Kg"], declared))
+        for b in ("md380", "dm1701"):					# their boards declare the layout read on a radio
+            self.assertFalse(dfumod.normal_mode(self.LOADER, boards.get(b)))
+            self.assertTrue(dfumod.normal_mode(self.NORMAL, boards.get(b)))
+
+    def test_rfoundry_refuses_without_a_dfu_request(self):
+        board, dev = self.device(self.NORMAL)
+        with self.assertRaises(cli.UsageError) as cm:
+            cli.check_bootloader(fakedfu.FakeUsb([dev]), dev, board, log=lambda s: None)
+        self.assertIn("switched on normally", str(cm.exception))
+        dev.ctrl_transfer.assert_not_called()
+        board, dev = self.device(self.LOADER)
+        cli.check_bootloader(fakedfu.FakeUsb([dev]), dev, board, log=lambda s: None)
+
+    def test_stm32_dfu_refuses_without_a_dfu_request(self):
+        sys.path.insert(0, os.path.join(HERE, "..", ".."))
+        import stm32_dfu
+        _, dev = self.device(self.NORMAL)
+        for force in (False, True):				# --force is for string 1, not this
+            with self.assertRaises(stm32_dfu.DfuError) as cm:
+                stm32_dfu.open_device(fakedfu.FakeUsb([dev]), force, "dm1701")
+            self.assertIn("switched on normally", str(cm.exception))
+        dev.ctrl_transfer.assert_not_called()
+
+
 class OldRouteGuard(unittest.TestCase):
     def test_stm32_dfu_refuses_a_release_image_with_two_ranges(self):
         """A release from before the codec moved holds the application and its sector 9 data back to back; written as

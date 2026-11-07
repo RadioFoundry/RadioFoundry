@@ -16,6 +16,8 @@ def _need(radio):
         skip("not_built", "built without CONFIG_CRASH_LOG")
 
 
+
+
 def _crash(radio, kind):
     """Crash on purpose, wait for the restart, return the crash view."""
     radio.link.crash_clear()

@@ -101,7 +101,7 @@ typedef enum {
 } aprs_rf_result_t;
 
 typedef struct {
-	char call[AX25_CALL_LEN + 4];	// "N0CALL-7", "" = none
+	char call[AX25_CALL_LEN + 4];	// "Q0TST-7", "" = none
 	uint8_t block;		// aprs_block_t for RF
 	uint32_t freq_hz;
 	uint8_t pos_src;	// aprs_src_t in use

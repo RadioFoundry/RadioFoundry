@@ -125,6 +125,10 @@ void hrc_irq_enable(uint8_t source, bool on);
 extern hrc_irq_fn hrc_irq_table[];
 // The default handler's record (hal_system_t.irq_unhandled): how often it masked a source, and the last one
 void hrc_irq_unhandled(uint32_t *count, uint32_t *last_source);
+// The interrupt stack (irq_stack.h): check its canary (a stack overflow crash, task "irq"; every tick), and its bytes
+// never written since start (hal_system_t.irq_stack_free)
+void hrc_irq_stack_check(void);
+uint32_t hrc_irq_stack_free(void);
 // The four modem interrupts (sources 29-32) masked or unmasked as one group (gotchas 2.3: PIC_MASK bits 29-31 and
 // PIC_MASK_1 bit 0, never vectors 93-95). Returns the previous mask bits for hrc_modem_irqs_restore
 uint32_t hrc_modem_irqs_mask(void);
@@ -328,6 +332,9 @@ void hrc_crash_frame(const uint32_t *frame, uint8_t kind, uint32_t cause) __attr
 // Code that must not run from XIP flash (flash controller set-up, the modem slot interrupts): the linker script
 // places .ramfunc in SRAM
 #define HRC_RAMFUNC		__attribute__((section(".ramfunc"), noinline))
+// The opposite, in a file the linker script puts in SRAM whole (the DMR glue and slot engine): task-side code that
+// needn't take RAM
+#define HRC_FLASHFUNC		__attribute__((section(".flashfunc"), noinline))
 
 // --- Transmitter off (board_rf_safe in board.h, docs/spec/crash-log.md 8) ---
 

@@ -306,12 +306,8 @@ static void act_select(uint16_t i, bool hold)
 		ui_toast(TR("Voice prompts: not in this build"));
 		break;
 	case A_SAVE_CHANNEL:
-		if (ui_svc_save_channel()) {
+		if (ui_try_save_channel())
 			ui_go_home();
-			ui_toast(TR("Saved to channel"));
-		} else {
-			ui_toast(TR("Can't save here: use qdmr"));
-		}
 		break;
 	default:
 		break;
@@ -400,23 +396,57 @@ static const ui_scr_def_t compose_screen = {
 #if CONFIG_DMR
 static uint16_t contacts_raw_count(void) { return CODEPLUG_CONTACTS_MAX; }
 
+static void contact_label(const contact_t *c, char *buf, uint8_t len, bool with_id)
+{
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	sb_str(&b, c->name);
+	if (with_id) {
+		sb_chr(&b, ' ');
+		sb_u32(&b, c->id, 1);	// digits find by ID too
+	}
+}
+
 static bool contacts_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
 	contact_t c;
 	if (!codeplug_contact((uint16_t)(raw + 1u), &c))
 		return false;
-	sbuf_t b;
-	sb_init(&b, buf, len);
-	sb_str(&b, c.name);
-	sb_chr(&b, ' ');
-	sb_u32(&b, c.id, 1);	// digits find by ID too
+	contact_label(&c, buf, len, true);
 	return true;
 }
 
-static bool contacts_target(uint16_t i, ui_target_t *t)
+// Every contact as raw rows from first on (raw_each): one pass of block reads (codeplug_contacts_each)
+typedef struct {
+	ui_raw_fn fn;
+	void *ctx;
+	uint16_t first;
+	bool with_id, stopped;
+} ct_rows_t;
+
+static bool ct_row(uint16_t index, const contact_t *c, void *p)
+{
+	ct_rows_t *r = p;
+	char label[40];
+	if (c != NULL)
+		contact_label(c, label, sizeof label, r->with_id);
+	r->stopped = !r->fn((uint16_t)(r->first + index - 1u), c != NULL ? label : NULL, r->ctx);
+	return !r->stopped;
+}
+
+// false: fn stopped the pass. with_id: the label is the name and the ID (contacts_raw_label), else the name
+static bool contacts_rows(uint16_t first, ui_raw_fn fn, void *ctx, bool with_id)
+{
+	ct_rows_t r = { .fn = fn, .ctx = ctx, .first = first, .with_id = with_id };
+	codeplug_contacts_each(ct_row, &r);
+	return !r.stopped;
+}
+
+// Contact raw + 1 (raw 0 is contact 1) as a target
+static bool contact_target_raw(uint16_t raw, ui_target_t *t)
 {
 	contact_t c;
-	if (i >= ui_filter_count() || !codeplug_contact((uint16_t)(ui_filter_raw(i) + 1u), &c))
+	if (!codeplug_contact((uint16_t)(raw + 1u), &c))
 		return false;
 	memset(t, 0, sizeof *t);
 	t->id = c.id;
@@ -426,11 +456,15 @@ static bool contacts_target(uint16_t i, ui_target_t *t)
 	return true;
 }
 
-static void contacts_item(uint16_t i, ui_item_t *it)
+// Share To's rows: raw rows are the contacts
+static bool contacts_target(uint16_t i, ui_target_t *t)
 {
-	ui_target_t t;
-	if (!contacts_target(i, &t))
-		return;
+	return i < ui_filter_count() && contact_target_raw(ui_filter_raw(i), t);
+}
+
+static void contact_row(const ui_target_t *tp, ui_item_t *it)
+{
+	const ui_target_t t = *tp;
 	sbuf_t b;
 	sb_init(&b, it->label, sizeof it->label);
 	sbuf_t vb;
@@ -450,26 +484,86 @@ static void contacts_item(uint16_t i, ui_item_t *it)
 	}
 }
 
-static void contacts_select(uint16_t i, bool hold)
+static void contacts_item(uint16_t i, ui_item_t *it)
 {
 	ui_target_t t;
 	if (contacts_target(i, &t))
+		contact_row(&t, it);
+}
+
+// Contacts: with the contact editor raw row 0 is New contact, first so a long list (and a typed filter's first matches)
+// keeps it in reach; the contacts follow it
+#define CONTACTS_NEW	(CONFIG_CONTACT_EDIT ? 1u : 0u)
+
+static bool contacts_is_new(uint16_t i) { return CONFIG_CONTACT_EDIT && i < ui_filter_count() && ui_filter_raw(i) == 0; }
+static uint16_t contacts_list_raw_count(void) { return (uint16_t)(contacts_raw_count() + CONTACTS_NEW); }
+
+static bool contacts_list_raw_label(uint16_t raw, char *buf, uint8_t len)
+{
+#if CONFIG_CONTACT_EDIT
+	if (raw == 0) {
+		str_copy(buf, len, TR("New contact"));
+		return true;
+	}
+#endif
+	return contacts_raw_label((uint16_t)(raw - CONTACTS_NEW), buf, len);
+}
+
+static void contacts_list_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	(void)labels;
+#if CONFIG_CONTACT_EDIT
+	if (!fn(0, TR("New contact"), ctx))
+		return;
+#endif
+	contacts_rows(CONTACTS_NEW, fn, ctx, true);
+}
+
+static bool contacts_list_target(uint16_t i, ui_target_t *t)
+{
+	if (i >= ui_filter_count() || contacts_is_new(i))
+		return false;
+	return contact_target_raw((uint16_t)(ui_filter_raw(i) - CONTACTS_NEW), t);
+}
+
+static void contacts_list_item(uint16_t i, ui_item_t *it)
+{
+	ui_target_t t;
+	if (contacts_is_new(i))
+		str_copy(it->label, sizeof it->label, TR("New contact"));
+	else if (contacts_list_target(i, &t))
+		contact_row(&t, it);
+}
+
+static void contacts_select(uint16_t i, bool hold)
+{
+	ui_target_t t;
+#if CONFIG_CONTACT_EDIT
+	if (contacts_is_new(i)) {
+		memset(&t, 0, sizeof t);
+		t.group = true;		// the editor starts empty, on a talkgroup
+		ui_new_contact(&t);
+		return;
+	}
+#endif
+	if (contacts_list_target(i, &t))
 		ui_talk(&t, hold);
 }
 
 static void contacts_context(uint16_t i)
 {
 	ui_target_t t;
-	if (contacts_target(i, &t))
+	if (contacts_list_target(i, &t))
 		ui_open_actions(&t);
 }
 
 static const ui_scr_def_t contacts_screen = {
 	.name = "contacts", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = TRN("Contacts"),
 	.hint = TRN(TEXT_ALT_OPEN "0-9 find  OK talk  # more" TEXT_ALT_NEXT "0-9  OK talk  # more" TEXT_ALT_CLOSE),
-	.empty = TRN("No contacts: add them in qdmr"),
-	.count = ui_filter_count, .item = contacts_item, .select = contacts_select, .context = contacts_context,
-	.target = contacts_target, .raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
+	.empty = CONFIG_CONTACT_EDIT ? TRN("No contact matches") : TRN("No contacts: add them in qdmr"),
+	.count = ui_filter_count, .item = contacts_list_item, .select = contacts_select, .context = contacts_context,
+	.target = contacts_list_target, .raw_count = contacts_list_raw_count, .raw_label = contacts_list_raw_label,
+	.raw_each = contacts_list_raw_each,
 };
 #else
 static uint16_t none_count(void) { return 0; }
@@ -721,7 +815,7 @@ static void zones_new(void);
 
 static bool chans_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
-	static zone_t z;
+	char name[CODEPLUG_NAME_LEN + 1];
 	if (chans_is_vfo(raw)) {
 		strncpy(buf, "VFO", len);
 		return true;
@@ -730,10 +824,9 @@ static bool chans_raw_label(uint16_t raw, char *buf, uint8_t len)
 		str_copy(buf, len, TR("Create New Zone"));
 		return true;
 	}
-	if (!codeplug_zone((uint16_t)(raw - CH_VFO), &z))
+	if (!codeplug_zone_name((uint16_t)(raw - CH_VFO), name))
 		return false;
-	strncpy(buf, z.name, len - 1);
-	buf[len - 1] = 0;
+	str_copy(buf, len, name);
 	return true;
 }
 
@@ -848,7 +941,7 @@ static const ui_scr_def_t channels_screen = {
 	.enter = chans_enter, .raw_count = chans_raw_count, .raw_label = chans_raw_label,
 };
 
-// A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID3101234" for a
+// A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
 // private contact) or "FM". The whole name comes first; where both don't fit beside it, the frequency and the bare
 // number, then the talkgroup alone (text alternates)
 static void sb_channel_row(sbuf_t *b, const channel_t *ch)
@@ -957,7 +1050,7 @@ static const char *zone_edit_row(uint16_t raw)
 
 static bool zone_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
-	static channel_t ch;
+	char name[CODEPLUG_NAME_LEN + 1];
 	const zone_t *z = zone_of_frame();
 	sbuf_t b;
 	sb_init(&b, buf, len);
@@ -968,11 +1061,11 @@ static bool zone_raw_label(uint16_t raw, char *buf, uint8_t len)
 	}
 #endif
 	uint16_t pos = (uint16_t)(raw - ZE_ADD);
-	if (pos >= z->count || !codeplug_channel(z->channels[pos], &ch))
+	if (pos >= z->count || !codeplug_channel_name(z->channels[pos], name))
 		return false;
 	sb_u32(&b, pos + 1u, 1);
 	sb_chr(&b, ' ');
-	sb_str(&b, ch.name);
+	sb_str(&b, name);
 	return true;
 }
 
@@ -1200,6 +1293,18 @@ static bool share_raw_label(uint16_t raw, char *buf, uint8_t len)
 	return true;
 }
 
+static void share_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	(void)labels;
+	if (!contacts_rows(0, fn, ctx, true))
+		return;
+	char label[40];
+	for (uint16_t raw = SHARE_TYPED; raw < share_raw_count(); raw++) {
+		if (!fn(raw, share_raw_label(raw, label, sizeof label) ? label : NULL, ctx))
+			return;
+	}
+}
+
 static bool share_target(uint16_t i, ui_target_t *t)
 {
 	if (i >= ui_filter_count())
@@ -1286,7 +1391,7 @@ static const ui_scr_def_t share_to_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "0-9 find or ID  OK send  Back" TEXT_ALT_NEXT "0-9 find or ID  OK send" TEXT_ALT_CLOSE),
 	.empty = TRN("No contacts: type an ID"),
 	.count = ui_filter_count, .item = share_to_item, .select = share_to_select,
-	.raw_count = share_raw_count, .raw_label = share_raw_label,
+	.raw_count = share_raw_count, .raw_label = share_raw_label, .raw_each = share_raw_each,
 };
 
 // --- An offer from another radio ---
@@ -1357,7 +1462,7 @@ static void offer_select(uint16_t i, bool hold)
 	}
 }
 
-// "Zone Club, 24 channels, from Joe 3101234" and how many can't be received here
+// "Zone Club, 24 channels, from Joe 9991234" and how many can't be received here
 static const char *offer_body(void)
 {
 	static char body[96];
@@ -1562,29 +1667,76 @@ static uint16_t chlist_raw_count(void)
 	return (uint16_t)(codeplug_channel_count() + CHLIST_NEW);
 }
 
-static bool chlist_raw_label(uint16_t raw, char *buf, uint8_t len)
+// A channel row's label, "12 Name": a search finds it by number and name
+static void ch_label(uint16_t num, const char *name, char *buf, uint8_t len)
 {
-	static channel_t ch;
 	sbuf_t b;
 	sb_init(&b, buf, len);
+	sb_u32(&b, num, 1);
+	sb_chr(&b, ' ');
+	sb_str(&b, name);
+}
+
+static bool chlist_raw_label(uint16_t raw, char *buf, uint8_t len)
+{
+	char name[CODEPLUG_NAME_LEN + 1];
 	if (CHLIST_NEW && raw == 0) {
-		sb_str(&b, TR("New from current"));
+		str_copy(buf, len, TR("New from current"));
 		return true;
 	}
-	if (!codeplug_channel(CHLIST_NUM(raw), &ch))
+	if (!codeplug_channel_name(CHLIST_NUM(raw), name))
 		return false;
-	sb_u32(&b, CHLIST_NUM(raw), 1);
-	sb_chr(&b, ' ');
-	sb_str(&b, ch.name);
+	ch_label(CHLIST_NUM(raw), name, buf, len);
 	return true;
+}
+
+// Every channel as raw rows, raw = number - 1 + first (raw_each): one pass of block reads of the names
+// (codeplug_channel_names_each). The channels in skip have no row
+typedef struct {
+	ui_raw_fn fn;
+	void *ctx;
+	uint16_t first;
+	const zone_t *skip;
+} ch_rows_t;
+
+static bool ch_row(uint16_t num, const char *name, void *p)
+{
+	const ch_rows_t *r = p;
+	char label[40];
+	if (name != NULL && r->skip != NULL && zone_list_find(r->skip, num) >= 0)
+		name = NULL;
+	if (name != NULL)
+		ch_label(num, name, label, sizeof label);
+	return r->fn((uint16_t)(r->first + num - 1u), name != NULL ? label : NULL, r->ctx);
+}
+
+static void ch_rows(uint16_t first, const zone_t *skip, ui_raw_fn fn, void *ctx, bool labels)
+{
+	ch_rows_t r = { .fn = fn, .ctx = ctx, .first = first, .skip = skip };
+	codeplug_channel_names_each(ch_row, &r, labels);
+}
+
+static bool chlist_raw_used(uint16_t raw)
+{
+	return (CHLIST_NEW && raw == 0) || codeplug_channel_used(CHLIST_NUM(raw));
+}
+
+static void chlist_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	if (CHLIST_NEW && !fn(0, TR("New from current"), ctx))
+		return;
+	ch_rows(CHLIST_NEW, NULL, fn, ctx, labels);
 }
 
 static void chlist_enter(void)
 {
 	uint16_t cur = chlist_current();
-	for (uint16_t i = 0; cur != 0 && i < ui_filter_count(); i++)
-		if (CHLIST_NUM(ui_filter_raw(i)) == cur)
+	for (uint16_t i = 0; cur != 0 && i < ui_filter_count(); i++) {
+		if (CHLIST_NUM(ui_filter_raw(i)) == cur) {
 			ui_frame()->focus = i;
+			break;
+		}
+	}
 }
 
 static void chlist_item(uint16_t i, ui_item_t *it)
@@ -1597,11 +1749,8 @@ static void chlist_item(uint16_t i, ui_item_t *it)
 	uint16_t num = CHLIST_NUM(ui_filter_raw(i));
 	if (!codeplug_channel(num, &ch))
 		return;
+	ch_label(num, ch.name, it->label, sizeof it->label);
 	sbuf_t b;
-	sb_init(&b, it->label, sizeof it->label);
-	sb_u32(&b, num, 1);
-	sb_chr(&b, ' ');
-	sb_str(&b, ch.name);
 	sb_init(&b, it->value, sizeof it->value);
 	sb_channel_row(&b, &ch);
 	if (num == chlist_current())
@@ -1665,7 +1814,8 @@ static const ui_scr_def_t chlist_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK details  # go  0-9 find" TEXT_ALT_NEXT "OK details  # go" TEXT_ALT_CLOSE),
 	.empty = TRN("No channels"),
 	.count = ui_filter_count, .item = chlist_item, .select = chlist_select, .context = chlist_context,
-	.enter = chlist_enter, .raw_count = chlist_raw_count, .raw_label = chlist_raw_label,
+	.enter = chlist_enter, .raw_count = chlist_raw_count, .raw_label = chlist_raw_label, .raw_each = chlist_raw_each,
+	.raw_used = chlist_raw_used,
 };
 
 // ======================= One channel's settings, edited in place (ui.md 2.1) =======================
@@ -2675,10 +2825,10 @@ void ui_new_contact(const ui_target_t *t)
 	sb_init(&b, ct.name, sizeof ct.name);
 	if (t->name[0] != 0) {
 		sb_str(&b, t->name);
-	} else {
+	} else if (t->id != 0) {
 		if (t->group)
 			sb_str(&b, "TG ");
-		sb_u32(&b, t->id, 1);	// "TG 3100", "3101234": a name to save with, or to type over
+		sb_u32(&b, t->id, 1);	// "TG 3100", "9991234": a name to save with, or to type over
 	}
 	ct_edit = CT_NONE;
 	ui_push(SCR_CONTACT_EDIT, 0);
@@ -2703,7 +2853,7 @@ static void ct_item(uint16_t i, ui_item_t *it)
 			it->flags |= UI_ITEM_EDIT;
 			sb_str(&b, ced_digits);
 			sb_chr(&b, '_');
-		} else {
+		} else if (ct.id != 0) {	// a new contact from Contacts starts with none
 			sb_u32(&b, ct.id, 1);
 		}
 		break;
@@ -2723,6 +2873,28 @@ static void ct_item(uint16_t i, ui_item_t *it)
 	}
 }
 
+typedef struct {
+	bool group, dup_found;
+	uint16_t free;		// the first empty slot, 0 for none
+	contact_t *dup;
+} ct_scan_t;
+
+static bool ct_scan(uint16_t index, const contact_t *c, void *ctx)
+{
+	ct_scan_t *sc = ctx;
+	if (c == NULL) {
+		if (sc->free == 0)
+			sc->free = index;
+		return true;
+	}
+	if (c->id == ct.id && (c->type != CONTACT_PRIVATE) == sc->group) {
+		*sc->dup = *c;
+		sc->dup_found = true;
+		return false;
+	}
+	return true;
+}
+
 // The first problem that keeps the contact from being saved, as a toast; NULL when it can be saved. *slot: a free
 // contact index. Reads every contact (the duplicate and the free slot)
 static const char *ct_problem(uint16_t *slot)
@@ -2737,21 +2909,18 @@ static const char *ct_problem(uint16_t *slot)
 		return TR("Private IDs go up to 16776415");
 	if (group && ct.id > CT_GROUP_MAX)
 		return TR("Talkgroups go up to 16777214");
-	*slot = 0;
-	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
-		if (!codeplug_contact(i, &c)) {
-			if (*slot == 0)
-				*slot = i;
-			continue;
-		}
-		if (c.id == ct.id && (c.type != CONTACT_PRIVATE) == group) {
-			sbuf_t b;
-			sb_init(&b, toast_msg, sizeof toast_msg);
-			sb_str(&b, TR("Already a contact: "));
-			sb_str(&b, c.name);
-			return toast_msg;
-		}
+	ct_scan_t sc = { .group = group, .dup = &c };
+	bool read = codeplug_contacts_each(ct_scan, &sc);
+	*slot = sc.free;
+	if (sc.dup_found) {
+		sbuf_t b;
+		sb_init(&b, toast_msg, sizeof toast_msg);
+		sb_str(&b, TR("Already a contact: "));
+		sb_str(&b, c.name);
+		return toast_msg;
 	}
+	if (!read)
+		return TR("Couldn't save now: try again");	// the duplicate may be in a block not read
 	return *slot == 0 ? TR("No room for more contacts") : NULL;
 }
 
@@ -2775,9 +2944,9 @@ static void ct_save(void)
 	if (ui_frame()->scr == SCR_ACTIONS && ui_target.id == ct.id && ui_target.group == (ct.type != CONTACT_PRIVATE)) {
 		ui_target.saved = true;		// the actions it came from: In contacts, under its new name
 		strcpy(ui_target.name, ct.name);
-	} else {
+	} else if (ui_frame()->scr != SCR_CONTACTS) {
 		ui_go_home();	// Find: its rows are the number's, not the contact (written by the storage job, later)
-	}
+	}	// Contacts lists it once the job has written it (the codeplug's change rebuilds the list)
 	ui_toast(toast_msg);
 }
 
@@ -2991,28 +3160,38 @@ static uint16_t zpick_raw_count(void)
 	return codeplug_channel_count();
 }
 
-static channel_t zpick_ch;	// the channel zpick_raw_label read last
-
 static bool zpick_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
 	uint16_t num = (uint16_t)(raw + 1u);
-	if (zone_list_find(&ze_z, num) >= 0 || !codeplug_channel(num, &zpick_ch))
+	char name[CODEPLUG_NAME_LEN + 1];
+	if (zone_list_find(&ze_z, num) >= 0 || !codeplug_channel_name(num, name))
 		return false;
-	sbuf_t b;
-	sb_init(&b, buf, len);
-	sb_u32(&b, num, 1);
-	sb_chr(&b, ' ');
-	sb_str(&b, zpick_ch.name);
+	ch_label(num, name, buf, len);
 	return true;
+}
+
+static bool zpick_raw_used(uint16_t raw)
+{
+	uint16_t num = (uint16_t)(raw + 1u);
+	return zone_list_find(&ze_z, num) < 0 && codeplug_channel_used(num);
+}
+
+static void zpick_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	ze_read();
+	ch_rows(0, &ze_z, fn, ctx, labels);
 }
 
 static void zpick_item(uint16_t i, ui_item_t *it)
 {
-	if (!zpick_raw_label(ui_filter_raw(i), it->label, sizeof it->label))
+	static channel_t ch;
+	uint16_t num = (uint16_t)(ui_filter_raw(i) + 1u);
+	if (!codeplug_channel(num, &ch))
 		return;
+	ch_label(num, ch.name, it->label, sizeof it->label);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
-	sb_channel_row(&b, &zpick_ch);
+	sb_channel_row(&b, &ch);
 }
 
 static void zpick_select(uint16_t i, bool hold)
@@ -3041,7 +3220,8 @@ static const ui_scr_def_t zpick_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK add  0-9 find  Back" TEXT_ALT_NEXT "OK add  Back" TEXT_ALT_CLOSE),
 	.empty = TRN("Every channel is in it"),
 	.count = ui_filter_count, .item = zpick_item, .select = zpick_select,
-	.raw_count = zpick_raw_count, .raw_label = zpick_raw_label,
+	.raw_count = zpick_raw_count, .raw_label = zpick_raw_label, .raw_each = zpick_raw_each,
+	.raw_used = zpick_raw_used,
 };
 
 // --- The channel editor's Zones: every zone, and whether the channel is in it; OK puts it in or takes it out ---
@@ -3281,6 +3461,21 @@ static bool chpick_raw_label(uint16_t raw, char *buf, uint8_t len)
 	return true;
 }
 
+static void chpick_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	(void)labels;
+	if (ui_frame()->arg == 0) {
+		if (fn(0, TR("None"), ctx))
+			contacts_rows(1, fn, ctx, false);	// raw = contact number
+		return;
+	}
+	char label[40];
+	for (uint16_t raw = 0; raw < chpick_raw_count(); raw++) {	// the RX group lists: few, read one by one
+		if (!fn(raw, chpick_raw_label(raw, label, sizeof label) ? label : NULL, ctx))
+			return;
+	}
+}
+
 static uint16_t chpick_current(void)
 {
 	return ui_frame()->arg == 0 ? ced_ch.contact : ced_ch.listen_list;
@@ -3322,7 +3517,7 @@ static const char *chpick_title(void) { return ui_frame()->arg == 0 ? TR("TX Con
 static const ui_scr_def_t chpick_screen = {
 	.name = "chpick", .flags = SF_LIST | SF_FILTER, .hint = TRN("OK pick  0-9 find  Back"), .empty = TRN("None stored"),
 	.count = ui_filter_count, .item = chpick_item, .select = chpick_select, .title = chpick_title,
-	.enter = chpick_enter, .raw_count = chpick_raw_count, .raw_label = chpick_raw_label,
+	.enter = chpick_enter, .raw_count = chpick_raw_count, .raw_label = chpick_raw_label, .raw_each = chpick_raw_each,
 };
 #endif
 #endif
@@ -3405,6 +3600,10 @@ static const char *info_body(void)
 		codeplug_source_t s = codeplug_source();
 		sb_str(&b, (unsigned)s < 3 ? tr(src[s]) : "?");
 		sb_chr(&b, '\n');
+		if (codeplug_foreign()) {	// another firmware's codeplug, left alone until the CPS writes one
+			sb_str(&b, TR("Other firmware's codeplug: ignored"));
+			sb_chr(&b, '\n');
+		}
 		sb_str(&b, TR("Zones: "));
 		sb_u32(&b, codeplug_zone_count(), 1);
 		sb_chr(&b, '\n');
@@ -3943,15 +4142,17 @@ static const char *about_text(void)
 	static char t[400];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
-	// every line "Label: value" (ui_draw_text_page shows labels dim). A release: its name, then the commit it was built
-	// from
+	// every line "Label: value" (ui_draw_text_page shows labels dim), each on its own line: "RadioFoundry v26.11" was
+	// wider than the display and the release wrapped without its label. A release: its name, then the commit it was
+	// built from; any other build: the commit alone
 	sb_str(&b, TR("Firmware: "));
-	sb_str(&b, "RadioFoundry ");
+	sb_str(&b, "RadioFoundry\n");
 	if (RFOUNDRY_RELEASE[0] != '\0') {
+		sb_str(&b, TR("Release: "));
 		sb_str(&b, RFOUNDRY_RELEASE);
 		sb_chr(&b, '\n');
-		sb_str(&b, TR("Build: "));
 	}
+	sb_str(&b, TR("Build: "));
 	sb_str(&b, RFOUNDRY_GIT);
 	// the commit's date (UTC; a dirty build's: the build's), which the web editor's update notice compares with a
 	// release's
@@ -4449,11 +4650,13 @@ static void crash_to_select(uint16_t i, bool hold)
 	ui_toast(msg);
 }
 
+static void crash_to_raw_each(ui_raw_fn fn, void *ctx, bool labels) { (void)labels; contacts_rows(0, fn, ctx, true); }
+
 static const ui_scr_def_t crash_to_screen = {
 	.name = "crash_to", .flags = SF_LIST | SF_FILTER, .prefix = TRN("Send To"),
 	.hint = TRN("0-9 find  OK pick  Back"), .empty = TRN("No contacts: add them in qdmr"),
 	.count = ui_filter_count, .item = contacts_item, .select = crash_to_select,
-	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
+	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label, .raw_each = crash_to_raw_each,
 };
 #endif
 
@@ -4959,6 +5162,8 @@ static const set_item_t s_keys[] = {
 };
 static const set_item_t s_my_radio[] = {
 	ACTION(TRN("DMR ID and name"), "callsign", SA_MY_RADIO),
+	// Also in Advanced, where users didn't look for it
+	ACTION(TRN("About"), "firmware version release build date", SA_FIRMWARE),
 };
 static const set_item_t s_advanced[] = {
 	ACTION(TRN("About"), "firmware version license authors", SA_FIRMWARE),
@@ -4980,7 +5185,8 @@ static const set_item_t s_advanced[] = {
 static const set_group_t groups[] = {
 	GROUP(TRN("Sound"), s_sound), GROUP(TRN("Display"), s_display),
 	GROUP_T(TRN("Talk & listen"), TRN("Talk & Listen"), s_talk), GROUP(TRN("Privacy"), s_privacy),
-	GROUP(TRN("Location"), s_location), GROUP(TRN("Connections"), s_connections), GROUP(TRN("Power"), s_power),
+	GROUP(TRN("Location"), s_location), GROUP(TRN("Connections"), s_connections),
+	GROUP_T(TRN("Power saving"), TRN("Power Saving"), s_power),
 	GROUP(TRN("Keys"), s_keys), GROUP_T(TRN("My radio"), TRN("My Radio"), s_my_radio), GROUP(TRN("Advanced"), s_advanced),
 };
 #define GROUPS	(sizeof groups / sizeof groups[0])
@@ -5506,12 +5712,15 @@ static void picker_enter(void)
 			ui_frame()->focus = i;
 }
 
-static uint16_t picker_count(void) { return (uint16_t)(n_picks + 1u); }
+// After the targets: Type a number..., then Select contact... (every contact, as Contacts lists them)
+#define PICK_CONTACTS	(CONFIG_DMR ? 1u : 0u)
+
+static uint16_t picker_count(void) { return (uint16_t)(n_picks + 1u + PICK_CONTACTS); }
 
 static void picker_item(uint16_t i, ui_item_t *it)
 {
 	if (i >= n_picks) {
-		str_copy(it->label, sizeof it->label, TR("Type a number..."));
+		str_copy(it->label, sizeof it->label, i == n_picks ? TR("Type a number...") : TR("Select contact..."));
 		return;
 	}
 	ui_sb_target(it->label, sizeof it->label, &picks[i].t);
@@ -5532,7 +5741,11 @@ static bool picker_target(uint16_t i, ui_target_t *t)
 
 static void picker_select(uint16_t i, bool hold)
 {
-	if (i >= n_picks) {
+	if (i > n_picks) {
+		ui_push(SCR_CONTACTS, 0);	// PTT, OK, hold OK and # work there as here
+		return;
+	}
+	if (i == n_picks) {
 		ui_push(SCR_FIND, 0);	// digits then OK / PTT: talk to the number typed
 		ui_find_set("");
 		return;
@@ -5650,6 +5863,41 @@ static const ui_scr_def_t lang_screen = {
 	.count = lang_list_count, .item = lang_list_item, .select = lang_list_select, .enter = lang_list_enter,
 };
 
+// ======================= Another firmware's codeplug: the first edit asks (defaults to Cancel; P7) ===============
+// ui_svc_codeplug_answer: the rows are UI_CP_CANCEL, UI_CP_NEW, UI_CP_USE. BACK is Cancel (ui_pop drops the write)
+
+static uint16_t cpf_count(void) { return 3; }
+
+static void cpf_item(uint16_t i, ui_item_t *it)
+{
+	str_copy(it->label, sizeof it->label, i == UI_CP_CANCEL ? TR("Cancel") : i == UI_CP_NEW ? TR("Start new") :
+		 TR("Use anyway"));
+	if (i == UI_CP_NEW)
+		it->flags |= UI_ITEM_WARN;
+}
+
+static void cpf_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	if (i != UI_CP_CANCEL && !ui_svc_codeplug_answer((uint8_t)i)) {
+		ui_toast(TR("Busy saving: try again"));
+		return;
+	}
+	ui_pop();	// Cancel: the pop drops the write and says so
+	if (i != UI_CP_CANCEL)
+		ui_toast(i == UI_CP_NEW ? TR("New codeplug started") : TR("Old codeplug kept: edit again"));
+}
+
+static const char *cpf_body(void)
+{
+	return TR("Another firmware's codeplug? Start new erases contacts, callsign and DMR ID. Back up first.");
+}
+
+static const ui_scr_def_t cpf_screen = {
+	.name = "codeplug-foreign", .flags = SF_LIST, .prefix = TRN("Old codeplug"), .hint = TRN("OK choose  Back cancel"),
+	.count = cpf_count, .item = cpf_item, .select = cpf_select, .body = cpf_body,
+};
+
 const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_HOME] = &home_screen, [SCR_QUICK] = &quick_screen, [SCR_HUB] = &hub_screen,
 	[SCR_FIND] = &ui_find_screen, [SCR_ACTIONS] = &actions_screen, [SCR_CONTACTS] = &contacts_screen,
@@ -5662,6 +5910,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
 	[SCR_VOLUME] = &volume_screen, [SCR_LANGUAGE] = &lang_screen,
 	[SCR_DMR_ID] = &dmr_id_screen,
+	[SCR_CP_FOREIGN] = &cpf_screen,
 #if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,
 #endif

@@ -90,6 +90,7 @@ void gd88_bcast_init(void);
 // --- Diagnostics (diag_gd88.c) ---
 uint32_t gd88_input_raw(void);		// the last key scan before debouncing
 uint32_t gd88_input_ptt_ignored(void);
+bool gd88_radio_transmitting(void);	// the radio is keyed (the shared PTT line's gate)
 bool gd88_diag_line(uint8_t i, char *buf, uint8_t len);
 void gd88_diag_reset(void);
 

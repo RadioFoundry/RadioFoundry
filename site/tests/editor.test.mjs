@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 
 import { bulkColumns, channelForm, columns } from "../static/js/editor/views.js";
 import { empty } from "../static/js/codeplug/model.js";
+import { Grid } from "../static/js/editor/grid.js";
 
 const t = (k) => (k === "editor.tot.default" ? "Radio Default" : k);
 const field = (key) => channelForm(empty(), t).find((f) => f.key === key);
@@ -65,4 +66,17 @@ test("Bulk Edit sets no names or numbers, and has nothing to set on zones and RX
 	assert.ok(keys("channels").includes("power"));
 	assert.ok(!keys("channels").includes("name") && !keys("contacts").includes("number"));
 	assert.ok(keys("contacts").includes("type"));
+});
+
+test("the table filter and sort take every column's text, numbers too", () => {
+	// a bare Grid: shown() filters and sorts without the DOM
+	const m = empty();
+	m.contacts.push({ number: 12, name: "Local", id: 9, type: "group", timeslot: 0 }, { number: 3, name: "World", id: 91, type: "group", timeslot: 0 });
+	const g = Object.assign(Object.create(Grid.prototype), { columns: columns("contacts", m, t), rows: m.contacts, filter: "", sort: null });
+	for (const c of g.columns) for (const r of g.rows) assert.equal(typeof g.text(c, r), "string", c.key);
+	g.filter = "12";
+	assert.deepEqual(g.shown().map((r) => r.name), ["Local"]);
+	g.filter = "";
+	g.sort = { key: "number", dir: 1 };
+	assert.deepEqual(g.shown().map((r) => r.number), [3, 12]);
 });

@@ -34,7 +34,13 @@ def cps_session(radio, fn):
 
 
 def storage(radio):
-    return radio.view(["storage"])
+    """The storage section and the CPS counters: their own cps section from view version 5, before that in storage"""
+    s = radio.view(["storage"])
+    try:
+        s.update(radio.view(["cps"]))
+    except DebugLinkError:
+        pass                    # older firmware: no cps section
+    return s
 
 
 @pytest.mark.feature("cps_openfw")
@@ -93,6 +99,8 @@ def test_settings_saved(radio):
                         timeout=5.0, sections=("storage",), what="settings saved")
     assert as_int(s1["settings.seq"]) > as_int(s0["settings.seq"]), (s0, s1)
     assert as_int(s1["settings.failures"]) == 0 and as_int(s1["storage.errors"]) == 0, s1
+
+
 
 
 @pytest.mark.feature("settings_store")
@@ -278,3 +286,25 @@ def test_storage_region(radio):
     with pytest.raises(DebugLinkError) as e:
         radio.link.storage_read(addr - 16, 16)        # just before the ring: outside the window
     assert e.value.status == 7
+
+
+@pytest.mark.feature("codeplug_foreign")
+def test_codeplug_foreign(radio):
+    """The open-firmware codeplug check (docs/spec/codeplug-native.md 2): the radio uses the codeplug it holds only when
+    the records in use look like an open-firmware codeplug, by the rule the web editor uses, or when the owner chose
+    "Use anyway" on the radio (codeplug.accepted). Read only"""
+    s = storage(radio)
+    if "codeplug.foreign" not in s:
+        skip("not_built", "older firmware: no codeplug.foreign")
+    good, bad = (int(v) for v in s["codeplug.evidence"].split(","))
+    foreign = s["codeplug.foreign"] == "1"
+    accepted = s.get("codeplug.accepted") == "1"
+    assert foreign == (bad > 0 and bad * 4 > good and not accepted), s
+    if foreign:
+        assert s.get("codeplug.source") == "builtin", s
+        skip("state", f"the radio holds another firmware's codeplug ({good} good, {bad} bad records): it shows the "
+                      "built-in channels and asks before the first edit")
+    if accepted and bad > 0 and bad * 4 > good:
+        skip("state", f"the owner kept another firmware's codeplug ({good} good, {bad} bad records) with Use anyway")
+    if s.get("codeplug.source") == "open-firmware":
+        assert good > 0, s

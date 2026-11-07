@@ -130,6 +130,7 @@ is `tools/bringup.py list --radio <id>`.
 | `lang_default_it` | off | off | off | off | off | off | off |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded |
+| `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | not recorded |
 | `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `audio_probe` | not written | off | not written | not written | not written | off | not written |
@@ -357,8 +358,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | 16x32 font | `FONT_XL` | 6,352* | — | Only useful at 240 px and wider (MD-380 is 160 px). Anti-aliased on the DM-32 (7.4 KB of glyphs) |
 | Anti-aliased fonts | `FONT_AA` | 3,004* | — | Smooth text on color panels (measured 2026-10-17); the DM-32's image grew 9.5 KB with it and `FONT_XL` |
 | Larger text | `FONT_BIG` | — | — | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 (measured 2026-10-17) |
-| Spanish on the radio | `LANG_ES` | 29,964 | 29,692 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
-| Italian on the radio | `LANG_IT` | 22,464 | 22,456 | Off by default; measured with Spanish on (its text only). Alone it costs about as much as Spanish |
+| Spanish on the radio | `LANG_ES` | 28,456 | 28,348 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
+| Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text, and the hashes of strings Spanish leaves untranslated). Alone it costs about as much as Spanish |
 | Start in Spanish | `LANG_DEFAULT_ES` | 0 | 0 | The language the radio starts in until the user picks one (needs `LANG_ES`); the web flasher sets it from its Radio language choice |
 | Start in Italian | `LANG_DEFAULT_IT` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_IT`) |
 
@@ -373,7 +374,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
 | Audio path probe (debug link 0x10) | `AUDIO_PROBE` | 1,176* | — | Bench only, never in a release |
-| Peek and poke: memory, registers and pins (debug link 0x20) | `DEBUG_MEM` | 720 | 440 | Follows `DEBUGLINK`; writes and pin changes need a key ([debuglink.md](spec/debuglink.md) 3.24). Figures from a merge-check build (2026-10-31) |
+| Peek and poke: memory, registers and pins (debug link 0x21) | `DEBUG_MEM` | 720 | 440 | Follows `DEBUGLINK`; writes and pin changes need a key ([debuglink.md](spec/debuglink.md) 3.25). Figures from a merge-check build (2026-10-31) |
 
 ## Whole images
 

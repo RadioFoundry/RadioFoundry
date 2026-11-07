@@ -119,9 +119,9 @@ typedef struct {
 	bool message_tone;	// a tone when a message arrives (Settings > Sound)
 	bool vibrate;		// vibrate for messages, calls to us, emergencies (Settings > Sound, CONFIG_VIBRATE)
 	uint8_t updown;		// what Up / Down change on Home: 0 channel, 1 zone, 2 talk target (Settings > Keys)
-	uint8_t low_batt_pct;	// warn at this battery percent, 0 = never (Settings > Power)
+	uint8_t low_batt_pct;	// warn at this battery percent, 0 = never (Settings > Power saving)
 	uint8_t volume;		// speaker volume step 0..RADIO_VOLUME_MAX of a radio without a knob (the volume screen, Settings > Sound)
-	uint16_t auto_off_min;	// switch off after this long without use, 0 = never (Settings > Power)
+	uint16_t auto_off_min;	// switch off after this long without use, 0 = never (Settings > Power saving)
 	uint16_t unread;	// unread messages
 	const char *home_hint;	// the hint for Home's idle state, built from the board's keys ("OK Menu *Quick #Joe")
 	ui_banner_t banner;
@@ -140,7 +140,7 @@ enum {
 };
 // The tile kind at position 0..8 (keys 1..9) for this channel or the VFO
 uint8_t ui_quick_kind(int pos, const radio_view_t *v);
-// True when a contact name only repeats its ID ("TG 201" for talkgroup 201): Home then shows the ID once
+// True when a contact name only repeats its ID ("TG 123" for talkgroup 123): Home then shows the ID once
 bool ui_name_is_id(const char *name, uint32_t id, bool private_call);
 
 // Fonts and region positions for the current display, from gfx_width() / gfx_height()

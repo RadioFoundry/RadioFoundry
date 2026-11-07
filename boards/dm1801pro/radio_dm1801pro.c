@@ -43,14 +43,17 @@
 // inbound burst before ours (a clipped SFR header lost the next superframe; at 2.0 ms the frame before ours still
 // carried most of the voice bit errors). Swept 0.4-3.1 ms in hardware-dm1801pro.md 5.6.
 #define RF_TX_LEAD		6u
+// TX data advance (hrc7000_t.tx_pre_on) 1.1 ms, not the chip's 0.4 ms: at 0.4 ms the inbound burst came 0.71 ms late
+// against the outbound, about 0.11 ms less per step (hardware-dm1801pro.md 5.6)
+#define TX_PRE_ON		11u
 #define FM_TX_LIMIT_12K5	5u	// FM_DEV_COEF b23:16 (hrc7000_t.fm_tx_limit)
 #define FM_TX_LIMIT_25K		0x0Fu
 #define FD_REG_NOISE		0x65u
 #define FD_REG_RSSI		0x67u
 // The RSSI correction (hardware-dm1801pro.md 5.4): another radio as the reference. UHF from the SDR bench's carrier with
-// both radios side by side on identical dummy loads (2026-10-20, second run): +16 dB at 451.5 MHz, +11 at 461.1375 and
-// 461.4625, +10 at 467.375, the same at every level from -125 to -99 dBm; 400-450 not measured, 451's value carried
-// down. VHF from the floor across the band and a NOAA station at 162.475 (+41 dB), first run
+// both radios side by side on identical dummy loads (2026-10-20, second run): +16 dB at 451.5 MHz, +11 at two test
+// frequencies near 461 MHz, +10 near 467 MHz, the same at every level from -125 to -99 dBm; 400-450 not measured,
+// 451's value carried down. VHF from the floor across the band and a NOAA station (+41 dB), first run
 static const fd6818_rssi_cal_t rssi_cal[] = {
 	{ 136, -26 }, { 140, -36 }, { 150, -36 }, { 162, -41 }, { 174, -40 },
 	{ 400, -16 }, { 451, -16 }, { 461, -11 }, { 467, -10 }, { 470, -10 },
@@ -65,7 +68,6 @@ static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
 static bool have_rx;
-static bool rx_am_on;		// the FD6818 plays its AM demodulator (rx_am, the air band)
 static bool asleep;		// rx_sleep(true): the receiver is off until rx_sleep(false) or the next rx()
 static bool transmitting;
 static uint32_t tx_hz;		// TX frequency (FM: also the TX tone deviation, with tx_wide; DMR: the burst TX path)
@@ -247,6 +249,7 @@ static void init(void)
 	modem.fm_tx_limit[0] = FM_TX_LIMIT_12K5;
 	modem.fm_tx_limit[1] = FM_TX_LIMIT_25K;
 	modem.rf_tx_lead = RF_TX_LEAD;
+	modem.tx_pre_on = TX_PRE_ON;
 	hrc_modem_analog_init(DAC_C_INIT);
 	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DMR_DB);
 	hrc7000_set_rf_tx_lead(&modem, RF_TX_LEAD);
@@ -285,7 +288,6 @@ static void set_mode(radio_mode_t m)
 		hrc7000_fm_idle(&modem);
 		mode = RADIO_MODE_FM;
 	}
-	rx_am_on = false;	// both mode tables write the FM AF word
 	have_rx = false;	// the next rx() retunes everything
 }
 
@@ -304,7 +306,12 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		rx_path(hz, true);
 	} else {
+#if CONFIG_AM_RX
+		fd6818_set_bandwidth(&fd, am ? FD6818_BW_AM : fm_bw_reg(bw));
+#else
+		(void)am;
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
+#endif
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		rx_path(hz, true);
 		hrc_dac_b_power(false);
@@ -314,10 +321,9 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 		// HR_C7000's detector has no input (hardware-dm32.md 8.4)
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
 		hrc7000_set_subtone(&modem, false, HRC7000_TONE_NONE, 0);	// the modem's tone bits off (left on by a TX)
-		if (am != rx_am_on) {
-			fd6818_set_am(&fd, am);
-			rx_am_on = am;
-		}
+#if CONFIG_AM_RX
+		fd6818_set_am(&fd, am);	// every AM tune: full gain again for the new channel; FM: AM off
+#endif
 	}
 	rx_hz = hz;
 	rx_bw = bw;
@@ -335,8 +341,8 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 }
 
 #if CONFIG_AM_RX
-// Air band AM (docs/spec/airband-and-broadcast.md 3.3): FM receive with the FD6818's AF output on its AM demodulator,
-// played straight to the speaker as in FM receive; no sub-audio. 108-136 MHz comes in on the VHF receive path
+// Air band AM (docs/spec/airband-and-broadcast.md 3.3): FM receive with the FD6818's AM set-up (fd6818_set_am), played
+// straight to the speaker as in FM receive; no sub-audio. 108-136 MHz comes in on the VHF receive path
 static bool rx_am(uint32_t hz, radio_bw_t bw)
 {
 	return rx_tune(hz, bw, NULL, true);
@@ -347,7 +353,7 @@ static bool rx_am(uint32_t hz, radio_bw_t bw)
 static void retune(void)
 {
 	subtone_t t = rx_tone;
-	(void)rx_tune(rx_hz, rx_bw, &t, rx_am_on);
+	(void)rx_tune(rx_hz, rx_bw, &t, fd6818_am_on(&fd));
 }
 
 // 5.4 "Enter TX": RX path off, frequency, the RF state sequence, 0x50, the TX path, then the PA ramp. The radio's
@@ -489,6 +495,9 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = (int16_t)(fd6818_rssi_dbm(r67) + fd6818_rssi_cal_db(rssi_cal, sizeof(rssi_cal) / sizeof(rssi_cal[0]),
 									    rx_hz));
 	st->noise = fd6818_noise(r65);	// the chip's floor lifted above the core's squelch levels (fd6818.h)
+#if CONFIG_AM_RX
+	(void)fd6818_am_status(&fd, r65, r67, &st->rssi_dbm, &st->noise);	// AM: its own level and squelch value
+#endif
 	st->carrier = false;
 	st->tone_ok = mode != RADIO_MODE_FM || fd6818_rx_tone_ok(&fd, fd_tone(rx_tone.type));
 }
@@ -576,11 +585,12 @@ static void audio(bool on)
 
 // The prompt FIFO's playback (ring play) also feeds the TX modulator: a talk permit tone played at key-up rode on the
 // voice LC headers, and the bench modem then joined by late entry (bench 2026-10-15, modem-hrc7000.md 8.4).
-// It plays only while receiving; the caller holds the AUDIO_CONTROL lock (interrupts off)
+// In DMR the gate in audio_pcm.c holds it off while the engine transmits (armed between bursts the radio receives);
+// in FM TX the microphone has the modulator. The caller holds the AUDIO_CONTROL lock (interrupts off)
 static void ring_play_update(void)
 {
-	bool play = (pcm_on && !transmitting) || afsk_tx;	// APRS tones go to the modulator on purpose
-	hrc7000_audio_bits(&modem, play ? C7_AUDIO_RING_PLAY : 0, play ? 0 : C7_AUDIO_RING_PLAY);
+	bool play = (pcm_on && !(transmitting && mode != RADIO_MODE_DMR)) || afsk_tx;	// APRS tones: on purpose
+	hrc_audio_pcm_ring(&modem, play);
 }
 
 // Speaker PCM (a beep, DMR voice): the codec plays the CPU's samples from the prompt FIFO, the speaker listens to the
@@ -670,3 +680,9 @@ const hal_radio_t dm1801pro_radio = {
 	.ref_trim = ref_trim,
 #endif
 };
+
+// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt)
+bool dm1801pro_radio_transmitting(void)
+{
+	return transmitting;
+}

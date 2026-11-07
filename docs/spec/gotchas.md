@@ -81,6 +81,16 @@ has its LC, look at page 2 again at the next burst A (and at F's repeated report
 driver logs every look (`dle` lines, `lt` diagnostics line) so the next HIL run shows exactly when the LC appeared.
 Radios: HR_C6000.
 
+**1.4b Page 2 isn't per slot.**
+Symptom: with a call on each slot, the wanted call went quiet with the other call's source shown (23 of 78 bursts
+played; HIL 2026-11-04 on the HR_C5000). Cause: page 2 holds the embedded LC (or alias or GPS block) the chip
+assembled last, of either slot, so at one call's F it held the other's, and the core took it for a new call. Rule:
+keep each slot's call LC and check every embedded LC against both before handing it over; only voice LCs (FLCO 0, 3)
+become a slot's call LC, and alias and GPS blocks wait while the other slot is busy. While a slot's call goes on,
+never hand over another LC beside a call that may go on: page 2 can hold a mix of both that passes the 5-bit
+checksum, steady for as long as both talk (bench, the same day). Forget the slots on a new
+frequency or channel. Rules: [modem-hrc6000.md](modem-hrc6000.md) 5.2. Radios: HR_C6000, HR_C5000.
+
 **1.9 Restore reg 0x10 to the driver's value, not the init value.**
 After a special mode, writing back the init value (0x6B) instead of the running value (0x6E: relay, aligned, slot 1)
 broke subsequent operation. Rule: save and restore modem mode registers around any temporary change.
@@ -135,11 +145,22 @@ deaf until a power cycle (bench 2026-10-22; quiet resets came back every time): 
 low divisor byte went out as data. So every HR_C7000 UART set-up (`platform/hrc7000/uart_format.h`) drains the RX FIFO, writes,
 reads LCR, DLL and DLH back, and tries again until they stick (about 100 ms at most).
 
-**2.9 Don't spin on a full UART TX FIFO in a task.** At 115200 a 1 KB debug link reply takes about 90 ms, and a writer
+**2.9 A modem interrupt lost for good.**
+Symptom: field report #375: every DMR transmission through a repeater ended in "No repeater answered" until a power
+cycle, often after a zone switch. Cause: not confirmed. The HR_C7000 PIC acts on a request line rising, in level
+mode too (measured with a spare timer as the source): a rise while the source is masked is kept and delivered when it
+is unmasked, but a line still high after its request was taken never interrupts again, unmasked or not, until it falls
+and rises. A modem request whose cause stays set (the system interrupt handler stops after four passes with causes
+still listed) leaves its source silent for good. A dead timeslot interrupt means no repeater wake-up is ever sent. Rule: drop every pending modem request at each receiver restart and after a stalled
+transmission; drop a system request pending for 50 ms with no handler run; count both and keep the first one's PIC
+state (`modem-hrc7000.md` 3.3). Radios: the HR_C7000 boards; one report.
+
+**2.10 Don't spin on a full UART TX FIFO in a task.** At 115200 a 1 KB debug link reply takes about 90 ms, and a writer
 that spins keeps the CPU the whole time. A host polling the debug link through a 3 s DMR transmission (an emergency
-call's hot mic) kept the idle task out for about 3 s, and the watchdog's hang check reset the radio. `hrc_uart_write`
-sleeps a tick while the FIFO is full when called from a task with interrupts on, and spins only in an interrupt, a
-fault handler or a section with interrupts off. A CPS read is no slower.
+call's hot mic) kept the idle task out for about 3 s, and the watchdog's hang check reset the radio. The host UART
+sends by interrupt, and the other UARTs' `hrc_uart_write` sleeps a tick while the FIFO is full when called from a task
+with interrupts on, and spins only in an interrupt, a fault handler or a section with interrupts off. A CPS read is no
+slower.
 
 ## 3. TX/RX state and PA handling
 
@@ -453,6 +474,12 @@ factory calibration sector. A status read needs the chip select, and write enabl
 **10.4 Spare codeplug bytes get zeroed by a CPS.** SFR settings live in channel spare bytes guarded by a flag bit
 (flag 1 bit 0x02); a CPS that rewrites them with 0 turns SFR off.
 
+**10.5 Read many records in one flash read.** On a radio whose SPI flash is polled a byte at a time, a read costs
+about 0.15 ms before its first byte. A search or list that read 1024 contacts or channels one by one took 0.2-0.35 s a
+key, and fast typing kept the idle task out for 1.8 s. Scans read blocks (`codeplug_contacts_each`,
+`codeplug_channel_names_each`), a search by name reads the name alone (`codeplug_channel_name`, `codeplug_zone_name`),
+and a scan per drawn row is a scan per frame ([ui.md](ui.md) 2, [watchdog.md](watchdog.md) 4).
+
 ## 11. Calibration
 
 **11.1 Reference oscillator sign (HR_C5000 board).** regs 0x47 / 0x48 / 0x04 = 0x7F minus the calibration value, DAC2 =
@@ -615,7 +642,7 @@ the talker's direct copy was clean. It plays, but it is the reason a user would 
   between RX and DMR TX keeps it locked: no frames lost, 48-68 bits. The band's RX supply still follows the PA.
 - Straight from RX the carrier is about 3.07 kHz low, and a frequency write can't correct it (3.5). Raise the HR_C6000
   MOD1 offset (4:0x04, about 75 Hz a step at 461 MHz) for the burst and restore it for RX. On the board measured that is 42
-  steps over the calibrated value (41: -57..-15 Hz, 42: +16..+60 Hz), at 461.1375 MHz only. Check it at
+  steps over the calibrated value (41: -57..-15 Hz, 42: +16..+60 Hz), at one frequency near 461 MHz only. Check it at
   other frequencies and on each radio.
 - Key 1 ms after the RF TX interrupt, which comes about 1.28 ms before the slot. 0.6-1.2 ms all did the same; keying
   at the interrupt lost frames. Dropping the PA earlier (28.5-30 ms) changed nothing.
@@ -671,7 +698,12 @@ check every new radio (adding-a-radio.md, bring-up order). The gate alone still 
 presses in 100 s (2026-10-22). A key scan that ran late caught up with two scans in the same millisecond, and both
 read the low bits of the first byte of a burst 65 ms after the last one, before the UART had reported it. Rule:
 debounce the shared pin by time, not by scan count. The pin must read low, and not gated, for 20 ms
-(`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio.
+(`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio. The radio's own transmission,
+picked up on a coiled cable, also reads as a press: the line goes low with flagged characters and no good byte, and
+the press keeps the radio keyed, a latch (2026-11-05: a minute keyed, nothing touched). Rule: while the radio
+transmits, no new press starts on the shared line, and a held press ends at a flagged character after its own break,
+since a grounded line receives nothing. RF that holds a released line steadily low, with no character, still reads
+as held, and the transmit time-out ends it.
 
 **16.3 PTT on an empty mic jack.**
 Symptom: a radio powered on without its hand mic transmitted at once (RadioFoundry, issue #230). Cause: the mic's PTT
@@ -698,3 +730,20 @@ the 30 ms bursts, so the reading at the end of the dwell, or any poll of the pro
 the probe ended at once; and a 700 ms probe was shorter than a late entry that has to wait for a second superframe's LC
 (about 1.1 s from the retune). Rule: a carrier seen in the last 150 ms counts; bursts with the channel's color code
 extend the probe to 1.5 s (`docs/spec/radio-features.md` 2).
+
+**17.2 A DMR retune without a receiver restart keeps the last transmitter's slot timing.**
+Symptom: a field report (build b0b69d2) on an HR_C7000 radio: the scan never stopped on a DMR transmission; FM
+scanning worked. Cause: the HR_C6000 boards restart the DMR receiver in their own `rx()` on a new frequency; the
+HR_C7000 boards didn't, and that chip keeps the slot timing it took from the last DMR signal it heard. On the next
+channel it then decodes nothing from another transmitter until its own stale restart, 390-600 ms later
+(`modem-hrc7000.md` 5.3), longer than the 150 ms dwell. With a noise reading that shows the DMR carrier the probe
+outlasts it, only later; without one, the stop ends at the dwell on every visit (`radioFeaturesTest`,
+`test_scan_dmr_kept_timing`). Rule: the radio core calls `hal_dmr_modem_t.rx_restart` at every new DMR frequency while
+the stack runs.
+
+**17.3 A noise reading that doesn't follow a DMR carrier.**
+Symptom: with 17.2 fixed, the same radio still never held on a DMR call: on the radio (2026-11-01) the noise reading
+stayed at its idle 65-103 during a call at -41 dBm, where the signal strength rose from -117 dBm. The DMR scan probed
+only on the noise reading, so it never saw a carrier within the dwell. Rule: on a DMR channel the scan also counts the
+signal strength, past the settle, against its own squelch scale (`RADIO_DMR_SQL_L1_DBM`, 3 dB a level: -100 dBm at the
+default level), so a stop probes whichever reading shows the signal (`test_scan_dmr_noise_deaf`).

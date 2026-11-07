@@ -63,7 +63,7 @@ static const char *const side_key_names[] = { "SK1", "SK2" };
 
 const board_t board = {
 	.name = "DM-32UV",
-	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0) |
+	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0) |
 		(CONFIG_AM_RX ? CAP_AM_RX : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
@@ -103,6 +103,7 @@ const board_t board = {
 	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif
 	.system = &hrc_system,
+	.chip_reg = dm32_chip_reg,
 #if CONFIG_BCAST_FM
 	.bcast = &rda5807m_hal,
 #endif

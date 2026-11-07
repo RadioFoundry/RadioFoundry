@@ -274,8 +274,8 @@ static void setup(void)
 	memset(&stats, 0, sizeof(stats));
 	memset(&ctx, 0, sizeof(ctx));
 	data.uptimeMs = 123450;
-	data.dmrId = 3100001;
-	strcpy(data.name, "N0CALL");
+	data.dmrId = 9990001;
+	strcpy(data.name, "Q0TEST");
 	data.board = "board1";
 	data.firmware = "abcdef12";
 	data.batteryMv = 7400;
@@ -350,7 +350,7 @@ static void test_get(void)
 	n = process(true, q, qn, out, sizeof(out), &auth);
 	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.count == 4 && r.requestId == 0x1234);
 	CHECK(r.vb[0].tag == BER_TIMETICKS && valNum(&r, 0) == 12345);
-	CHECK(r.vb[1].tag == BER_GAUGE32 && valNum(&r, 1) == 3100001);
+	CHECK(r.vb[1].tag == BER_GAUGE32 && valNum(&r, 1) == 9990001);
 	CHECK(r.vb[2].tag == BER_NO_SUCH_OBJECT && r.vb[2].valLen == 0);
 	CHECK(r.vb[3].tag == BER_NO_SUCH_OBJECT);	// no instance table: noSuchObject (snmp.md 3)
 
@@ -536,9 +536,9 @@ static void test_set(void)
 	const uint8_t *oids[] = { SYS_NAME, RFOUNDRY_RF_MANAGER };
 	const int lens[] = { sizeof(SYS_NAME), sizeof(RFOUNDRY_RF_MANAGER) };
 	const uint8_t tags[] = { BER_OCTETS, BER_GAUGE32 };
-	const uint8_t mgr[] = { 0x0F, 0x42, 0x40 };	// 1000000
-	const uint8_t *vals[] = { (const uint8_t *)"W1AW", mgr };
-	const int vlens[] = { 4, 3 };
+	const uint8_t mgr[] = { 0x00, 0x98, 0x8A, 0xFA };	// 9997050
+	const uint8_t *vals[] = { (const uint8_t *)"Q1AAA", mgr };
+	const int vlens[] = { 5, 4 };
 
 	// No write community yet: refused for the read community (noAccess, index 1)
 	int qn = setRequest(q, "public", oids, lens, tags, vals, vlens, 2);
@@ -554,19 +554,19 @@ static void test_set(void)
 	// Over USB: both change, the bindings come back as sent
 	n = process(false, q, qn, out, sizeof(out), &auth);
 	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.status == 0 && r.count == 2);
-	CHECK(r.vb[0].valLen == 4 && memcmp(r.vb[0].val, "W1AW", 4) == 0 && valNum(&r, 1) == 1000000);
-	CHECK(ctx.nameChanged && strcmp(ctx.newName, "W1AW") == 0 && strcmp(data.name, "W1AW") == 0);
-	CHECK(ctx.cfgChanged && cfg.rfManager == 1000000 && stats.setsDone == 1);
+	CHECK(r.vb[0].valLen == 5 && memcmp(r.vb[0].val, "Q1AAA", 5) == 0 && valNum(&r, 1) == 9997050);
+	CHECK(ctx.nameChanged && strcmp(ctx.newName, "Q1AAA") == 0 && strcmp(data.name, "Q1AAA") == 0);
+	CHECK(ctx.cfgChanged && cfg.rfManager == 9997050 && stats.setsDone == 1);
 
 	// Atomic: the second binding's wrong type fails the request (index 2), the first isn't applied
 	ctx.nameChanged = ctx.cfgChanged = false;
 	const uint8_t tags2[] = { BER_OCTETS, BER_INTEGER };
-	const uint8_t *vals2[] = { (const uint8_t *)"K1ABC", mgr };
+	const uint8_t *vals2[] = { (const uint8_t *)"Q1ABC", mgr };
 	const int vlens2[] = { 5, 3 };
 	qn = setRequest(q, "private", oids, lens, tags2, vals2, vlens2, 2);
 	n = process(false, q, qn, out, sizeof(out), &auth);
 	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.status == SNMP_ERR_WRONG_TYPE && r.index == 2);
-	CHECK(!ctx.nameChanged && strcmp(data.name, "W1AW") == 0);
+	CHECK(!ctx.nameChanged && strcmp(data.name, "Q1AAA") == 0);
 
 	// notWritable, noCreation, wrongLength, wrongValue
 	const uint8_t *o1[] = { SYS_DESCR };
@@ -631,14 +631,14 @@ static void test_events(void)
 
 	// A call: start, then end with its duration; a group call on TS2
 	data.dmrState = 1;
-	data.callSrc = 3100002;
+	data.callSrc = 9990002;
 	data.callDst = 91;
 	data.callGroup = true;
 	snmpEventsDetect(&e, &data, &cfg);
 	data.uptimeMs += 4500;
 	data.dmrState = 0;
 	snmpEventsDetect(&e, &data, &cfg);
-	CHECK(e.count == 2 && e.q[0].kind == SNMP_EV_CALL_START && e.q[0].src == 3100002 && e.q[0].dst == 91 &&
+	CHECK(e.count == 2 && e.q[0].kind == SNMP_EV_CALL_START && e.q[0].src == 9990002 && e.q[0].dst == 91 &&
 	      e.q[0].group && e.q[0].slot == 2);
 	CHECK(e.q[1].kind == SNMP_EV_CALL_END && e.q[1].durationMs == 4500);
 
@@ -651,7 +651,7 @@ static void test_events(void)
 	const uint8_t callStart[] = { 0x2B, 6, 1, 4, 1, 0x81, 0xFD, 0x59, 2, 0, 1 };
 	CHECK(r.vb[1].tag == BER_OID && r.vb[1].valLen == sizeof(callStart) &&
 	      memcmp(r.vb[1].val, callStart, sizeof(callStart)) == 0);
-	CHECK(valNum(&r, 2) == 3100002 && valNum(&r, 3) == 91 && valNum(&r, 4) == 1 && valNum(&r, 5) == 2);
+	CHECK(valNum(&r, 2) == 9990002 && valNum(&r, 3) == 91 && valNum(&r, 4) == 1 && valNum(&r, 5) == 2);
 	n = snmpEventEncode(&e.q[1], 6, out, sizeof(out));
 	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_TRAP2) && r.count == 7 && valNum(&r, 6) == 450);
 	snmpEventsDone(&e, &e.q[0], SNMP_TARGET_USB, false);
@@ -659,10 +659,10 @@ static void test_events(void)
 	CHECK(e.count == 0);
 
 	// With an RF manager: SMS, ARS, low battery go to both, calls only to the host; the queue keeps the newest 4
-	cfg.rfManager = 1234567;
+	cfg.rfManager = 9997001;
 	data.dataEventSerial++;
 	data.dataEventKind = DMR_DATA_EV_SMS_RECEIVED;
-	data.dataEventId = 3100003;
+	data.dataEventId = 9990003;
 	strcpy(data.smsText, "hello there");
 	data.arsState = 2;
 	data.batteryState = 1;
@@ -670,10 +670,10 @@ static void test_events(void)
 	CHECK(e.count == 3 && e.q[0].kind == SNMP_EV_LOW_BATTERY && e.q[1].kind == SNMP_EV_ARS && e.q[2].kind == SNMP_EV_SMS);
 	CHECK(e.q[0].targets == (SNMP_TARGET_USB | SNMP_TARGET_RF) && e.q[0].value == 7400 && e.q[1].value == 3);
 	n = snmpEventEncode(&e.q[2], 7, out, sizeof(out));
-	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_TRAP2) && r.count == 5 && valNum(&r, 2) == 3100003 &&
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_TRAP2) && r.count == 5 && valNum(&r, 2) == 9990003 &&
 	      r.vb[4].tag == BER_OCTETS && r.vb[4].valLen == 11 && memcmp(r.vb[4].val, "hello there", 11) == 0);
 	data.dmrState = 4;	// our TX
-	data.callSrc = 3100001;
+	data.callSrc = 9990001;
 	snmpEventsDetect(&e, &data, &cfg);
 	CHECK(e.count == 4 && e.q[3].kind == SNMP_EV_CALL_START && e.q[3].targets == SNMP_TARGET_USB);
 	data.batteryState = 2;	// critical: another low battery; the queue is full, the oldest goes
@@ -715,9 +715,9 @@ static void test_events(void)
 	snmpEventsDone(&e, &e.q[0], SNMP_TARGET_USB, false);	// coldStart
 	data.dataEventSerial++;
 	data.dataEventKind = DMR_DATA_EV_EMERGENCY_ALARM;
-	data.dataEventId = 3100009;
+	data.dataEventId = 9990009;
 	snmpEventsDetect(&e, &data, &cfg);
-	CHECK(e.count == 1 && e.q[0].kind == SNMP_EV_EMERGENCY && e.q[0].src == 3100009);
+	CHECK(e.count == 1 && e.q[0].kind == SNMP_EV_EMERGENCY && e.q[0].src == 9990009);
 	n = snmpEventEncode(&e.q[0], 8, out, sizeof(out));
 	const uint8_t emergency[] = { 0x2B, 6, 1, 4, 1, 0x81, 0xFD, 0x59, 2, 0, 4 };
 	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_TRAP2) && r.count == 5 && memcmp(r.vb[1].val, emergency, 11) == 0);
@@ -1037,9 +1037,9 @@ static void test_fuzz(void)
 	const uint8_t *oS[] = { SYS_NAME, RFOUNDRY_RF_MANAGER };
 	const int lS[] = { sizeof(SYS_NAME), sizeof(RFOUNDRY_RF_MANAGER) };
 	const uint8_t tS[] = { BER_OCTETS, BER_GAUGE32 };
-	const uint8_t mgr[] = { 0x0F, 0x42, 0x40 };
-	const uint8_t *vS[] = { (const uint8_t *)"W1AW", mgr };
-	const int vlS[] = { 4, 3 };
+	const uint8_t mgr[] = { 0x00, 0x98, 0x8A, 0xFA };
+	const uint8_t *vS[] = { (const uint8_t *)"Q1AAA", mgr };
+	const int vlS[] = { 5, 4 };
 	seedLen[3] = setRequest(seeds[3], "private", oS, lS, tS, vS, vlS, 2);
 	const uint8_t *o1[] = { sysDescr };
 	const int l1[] = { 8 };

@@ -70,6 +70,7 @@ Press **Talk target** on a DMR channel (or **\***, **8**). The picker lists, in 
 | The talkgroups of the channel's listen list | listen |
 | Talkgroups from Recent | recent |
 | Type a number... | |
+| Select contact... | |
 
 The focus starts on the reply row when there is one.
 
@@ -81,6 +82,10 @@ The focus starts on the reply row when there is one.
 | **#** | Opens its actions |
 
 "Type a number..." opens Find. Type the talkgroup or ID, focus the line you want and press **PTT** or **OK**.
+
+"Select contact..." opens [Contacts](#contacts), every contact and talkgroup in the codeplug. Turn the knob, or press
+**Up** and **Down**, to go through them, or type letters of the name or digits of the ID to find one. The keys are the
+picker's. **Up** from the top goes to the last contact.
 
 <img src="../ux/screens/160x120i5/talk_target_picker.png" width="200" alt="The talk target picker">
 
@@ -139,7 +144,9 @@ it permanent. **#** opens its actions.
 
 ## Contacts
 
-**OK**, **1** lists the codeplug's contacts and talkgroups. Type letters of the name, or digits of the ID, to filter.
+**OK**, **1** lists the codeplug's contacts and talkgroups, all of them. Type letters of the name, or digits of the ID,
+to filter. Contacts are for the talkgroups and people you call; the [ID database](04-programming.md#dmr-id-database-and-contacts-from-radioidnet)
+names everyone else.
 **OK** talks to the focused entry for now. Holding **OK** makes it the channel's default. **PTT** talks to it once.
 **#** opens its actions.
 
@@ -148,8 +155,10 @@ it permanent. **#** opens its actions.
 
 ### New contact
 
-Make a contact on the radio from a number or a call:
+Make a contact on the radio from Contacts, a number or a call:
 
+- In Contacts (**OK**, **1**), the first row is **New contact**. Press **OK**, then type the name and the ID and pick
+  the type.
 - On Home, type the ID or talkgroup. Find's last row is "Create contact 3100" when no contact has that number. Press
   **OK**. Up to 6 digits start as a talkgroup, 7 and more as a person.
 - In a caller's or talkgroup's actions (**#**), pick **Save as contact**.
@@ -216,6 +225,24 @@ enough: let go of **PTT** and the radio keeps trying, up to the usual number of 
 |---|---|
 | The talk permit tone (if it is on) | The repeater answered. If you were still holding **PTT**, the call starts. If not, nothing more is sent, and you can press **PTT** again |
 | The low error tone | No repeater answered. Check the color code and your range |
+
+## The talk permit tone
+
+The talk permit tone tells you the radio has the channel and you can talk. Turn it off for every channel in
+**Settings > Sound > Talk permit tone**, or for one channel with the channel's **Talk permit beeps** field.
+
+Most radios play two short beeps as your voice goes on air. A radio whose beeps would be transmitted plays one short
+beep just before it transmits instead ([the radio's notes](23-radios.md)):
+
+| Screen | What happens |
+|---|---|
+| WAKING RPT | On a repeater channel, the radio wakes the repeater (as above) |
+| ADMITTED | The channel is yours: the beep plays while the radio is still receiving |
+| TALKING | The radio transmits. Start talking |
+
+The wait for the beep is under half a second. Releasing **PTT** during it cancels the call.
+
+The beep at the end of a call you hear is the call end tone. The channel's **Talk permit beeps** field turns it off too.
 
 ## Digital monitor
 

@@ -116,6 +116,7 @@
    "dfu_ids": null,
    "dfu_string1": null,
    "dfu_product": null,
+   "dfu_layout": null,
    "stub": {
     "tool": "stubtool",
     "id": 3,
@@ -287,6 +288,7 @@
    ],
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
+   "dfu_layout": "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg",
    "stub": {
     "tool": "f4stub",
     "id": 1,
@@ -405,6 +407,7 @@
    "dfu_ids": null,
    "dfu_string1": null,
    "dfu_product": null,
+   "dfu_layout": null,
    "stub": {
     "tool": "stubtool",
     "id": 2,
@@ -523,6 +526,7 @@
    "dfu_ids": null,
    "dfu_string1": null,
    "dfu_product": null,
+   "dfu_layout": null,
    "stub": {
     "tool": "stubtool",
     "id": 1,
@@ -654,6 +658,7 @@
    "dfu_ids": null,
    "dfu_string1": null,
    "dfu_product": null,
+   "dfu_layout": null,
    "stub": {
     "tool": "stubtool",
     "id": 4,
@@ -795,6 +800,7 @@
    "dfu_ids": null,
    "dfu_string1": null,
    "dfu_product": null,
+   "dfu_layout": null,
    "stub": {
     "tool": "stubtool",
     "id": 5,
@@ -962,6 +968,7 @@
    ],
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
+   "dfu_layout": "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg",
    "stub": {
     "tool": "f4stub",
     "id": 2,
@@ -1165,6 +1172,7 @@
    ],
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
+   "dfu_layout": null,
    "stub": {
     "tool": "f4stub",
     "id": 5,

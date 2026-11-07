@@ -21,6 +21,7 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `codeplug/yaml.js` | The YAML subset qdmr writes: block and flow maps and lists, quoted values, `!default` tags, comments. Anchors are refused |
 | `codeplug/qdmr.js` | qdmr YAML to the model and back ([qdmr-yaml.md](../spec/qdmr-yaml.md)), with notes on what each side can't hold |
 | `codeplug/detect.js`, `codeplug/stock_tyt.js` | Telling the open-firmware layout from a vendor codeplug, and converting that to the editing model ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
+| `codeplug/stock_baofeng.js` | The same for a paged vendor codeplug in an HR_C7000 radio's data flash (spec in the radio's own `<id>-stock-codeplug.md`) |
 | `codeplug/transport.js` | How the page reaches a radio (below) |
 | `codeplug/fakecps.js` | A simulated RadioFoundry radio: VERSION, CPS reads, sector writes and `C 5`, writes refused outside the codeplug as the radio refuses them |
 | `codeplug/fastlink.js` | The fast codeplug protocol ([cps-fast.md](../spec/cps-fast.md)): block CRCs, LZ4 reads and pipelined writes |
@@ -53,7 +54,11 @@ today: the open-firmware CPS ([cps-protocol.md](../spec/cps-protocol.md) 2) over
 programming cable (Web Serial). It identifies the radio by the board name the debug link reports, matched against
 `codeplug.names` in `data/radios.json`. The registry (`tools/boards.py` `Board.codeplug()`) fills that entry from the
 board's flash map: the base (the CPS address offset, nonzero on some radios), the end of the room for the codeplug and ID database, and whether
-the radio has a TFTP staging area. A read takes the ID database's header first
+the radio has a TFTP staging area. The radio can say it has less room: the fast protocol's image end, or a memory
+chip smaller than the board's usual one (the radio info's flash part id, `flashBytes`); `tr.end` is the smallest of
+the three, and the ID database is sized for it. A radio whose STORAGE INFO answers unavailable has no settings region
+(a chip too small for the board's flash map): it stores no codeplug and refuses every codeplug write, so `identify`
+stops with `no_storage`, which says so, before anything is read. A read takes the ID database's header first
 (`readIddbHeader`), then the codeplug's regions and the database in one pass, so one progress bar covers it. The
 database's size and the last read's speed (a guess on a radio's first read) give its time: at `IDDB_ASK` (20 s) or
 more the editor asks before reading. A skipped database stays out of the model (its header erased there, kept in `S.conn.image`), so no write

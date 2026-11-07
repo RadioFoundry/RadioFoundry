@@ -20,6 +20,7 @@
 #include "dmr/ambe/ambeVoice.h"
 #include "sim/dmr_sim_modem.h"
 #include "settings/settings.h"
+#include "radio/tx_limit.h"
 
 static int failures;
 static int checks;
@@ -215,7 +216,7 @@ static bool a_start(audio_block_cb_t cb, void *ctx)
 }
 static void a_stop(void) { aud.streaming = false; aud.cb = NULL; aud.stops++; }
 static void a_pcm(bool on) { aud.pcm = on; }
-static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
+static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm };
 
 // FM transmit audio from the MCU (hal_audio_tap_t.fm_tx_inject): what the radio core asked for
 static struct {
@@ -299,7 +300,7 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 	return true;
 }
 static const contact_t contacts[] = { { "Local", 9, CONTACT_GROUP, 0 } };
-uint32_t codeplug_dmr_id(void) { return 3101276; }
+uint32_t codeplug_dmr_id(void) { return 9996543; }
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
 	if (index != 1) {
@@ -319,7 +320,7 @@ bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
 }
 bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
 {
-	*out = (codeplug_dmr_settings_t){ "N0CALL", 0, 0 };
+	*out = (codeplug_dmr_settings_t){ "Q0TEST", 0, 0 };
 	return true;
 }
 bool dmr_iddb_lookup(uint32_t id, char *out, size_t len) { (void)id; (void)out; (void)len; return false; }
@@ -374,6 +375,7 @@ static void req(uint8_t type, int32_t arg) { req2(type, arg, 0); }
 static int16_t spk[AUDIO_BLOCK_SAMPLES];
 static int16_t mic[AUDIO_BLOCK_SAMPLES];
 static void air_burst(void);
+static void kept_timing(void);
 static struct {
 	bool on;		// a DMR voice call in progress (no header: it started before the radio came by)
 	uint32_t hz;
@@ -393,6 +395,7 @@ static void run(uint32_t ms)
 		if (now % 30 == 0) {
 			sim_slot();
 		}
+		kept_timing();
 		if (air.on && now >= air.t0 && (now - air.t0) % 60u == 0) {
 			air_burst();
 		}
@@ -1156,7 +1159,7 @@ static void burst_voice(uint8_t index, uint8_t cc, const uint8_t *lc)
 static void hear_call(uint32_t dst, uint8_t cc, int superframes, bool end)
 {
 	uint8_t lc[9];
-	mk_lc(lc, dst, 3105555);
+	mk_lc(lc, dst, 9995555);
 	for (int h = 0; h < 3; h++) {
 		burst_lc(lc, cc, false);
 		run(60);
@@ -1205,11 +1208,43 @@ static void test_mixed_scan(void)
 // The modem on the call's frequency (as the HR_C6000 slot engine does it): nothing for AIR_LOCK_MS after a retune
 // (the receiver restarts and searches), then voice from the first burst A on, with the embedded LC at the lc_at-th F
 #define AIR_LOCK_MS	90
+
+// A modem that keeps the slot timing it took (the HR_C7000, modem-hrc7000.md 5.3): on a frequency with a DMR signal
+// the chip takes that transmitter's timing, and it keeps it over a retune until the receiver is restarted
+// (hal_dmr_modem_t.rx_restart). Meanwhile another transmitter's bursts don't decode. The engine drops a timing it takes
+// nothing from after 600 ms (RX_IDLE_TICKS); kept.hz's signal is in a color code no channel has, so nothing is taken
+static struct {
+	bool on;
+	uint32_t hz;		// the DMR signal in the other color code
+	bool held;		// the chip has its slot timing
+	uint32_t since;		// taken then
+	unsigned restarts;	// sim.rx_restarts when last looked at
+} kept;
+
+static void kept_timing(void)
+{
+	if (!kept.on) {
+		return;
+	}
+	if (sim.rx_restarts != kept.restarts) {
+		kept.restarts = sim.rx_restarts;
+		kept.held = false;
+	}
+	if (kept.held && now - kept.since >= 600) {
+		kept.held = false;
+	}
+	bool dmr = sm.view.ch.mode == RADIO_MODE_DMR && sim.started;
+	if (!kept.held && dmr && hw.rx_hz == kept.hz && now >= hw.rx_ms + AIR_LOCK_MS) {
+		kept.held = true;
+		kept.since = now;
+	}
+}
+
 static void air_burst(void)
 {
 	uint8_t idx = (uint8_t)(((now - air.t0) / 60u) % 6u);
 	bool tuned = hw.rx_hz == air.hz && sm.view.ch.mode == RADIO_MODE_DMR && sim.started;
-	if (!tuned || now < hw.rx_ms + AIR_LOCK_MS) {
+	if (!tuned || now < hw.rx_ms + AIR_LOCK_MS || (kept.held && kept.hz != air.hz)) {
 		air.joined = false;
 		return;
 	}
@@ -1226,7 +1261,7 @@ static void air_burst(void)
 		air.sf++;
 	}
 	uint8_t lc[9];
-	mk_lc(lc, air.dst, 3105555);
+	mk_lc(lc, air.dst, 9995555);
 	burst_voice(idx, 1, idx == 5 && air.sf >= air.lc_at ? lc : NULL);
 }
 
@@ -1319,6 +1354,111 @@ static void test_scan_dmr_mid_call(void)
 	hw.sig[0].hz = 0;
 }
 
+// Field report on an HR_C7000 radio (build b0b69d2): "the scan does not stop on DMR channels, even with a
+// transmission". The chip keeps the slot timing of the last DMR signal it heard over a retune (kept_timing), and a
+// retune to another DMR frequency did not restart the receiver: the HR_C6000 boards restart it in their own rx(), the
+// HR_C7000 ones did not. Here the stop before the call carries DMR in a color code no channel has: the chip takes its
+// timing there and, on the call's channel, decodes nothing until its own stale restart, up to 600 ms of the stop.
+// The core now restarts DMR reception at every new frequency: the modem searches from the retune, and the call holds
+// the scan by the LC's superframe after the first burst A (gotchas 17.2). With the noise reading showing the carrier
+// the probe outlasted the stale timing anyway, only later; a noise reading blind to the DMR carrier left the stop at
+// the dwell on every visit
+static void test_scan_dmr_kept_timing(void)
+{
+	// Every stop on a DMR frequency restarts the receiver; the same frequency again doesn't (a repeater's timing stays)
+	start();
+	all_dmr();
+	req(RREQ_ZONE_POS, 0);
+	unsigned r0 = sim.rx_restarts;
+	req(RREQ_ZONE_POS, 1);
+	CHECK(sim.rx_restarts == r0 + 1);
+	req(RREQ_ZONE_POS, 1);
+	CHECK(sim.rx_restarts == r0 + 1);
+
+	for (uint8_t lc_at = 1; lc_at <= 2; lc_at++) {
+		// The restart, the lock, burst A at most a superframe later, then lc_at superframes to the LC, and a poll
+		uint32_t bound = AIR_LOCK_MS + 360u * (1u + lc_at) + 100u;
+		for (uint32_t phase = 0; phase < 360; phase += 30) {
+			start();
+			all_dmr();
+			signal_on(0, 438500000, 30, no_tone);
+			hw.sig[0].tdma = true;
+			signal_on(1, 145500000, 30, no_tone);	// the stop before: DMR in another color code
+			hw.sig[1].tdma = true;
+			memset(&kept, 0, sizeof(kept));
+			kept.on = true;
+			kept.hz = 145500000;
+			air.on = true;
+			air.hz = 438500000;
+			air.t0 = now + 300 + phase;
+			air.dst = 9;
+			air.lc_at = lc_at;
+			req(RREQ_ZONE_POS, 6);
+			req(RREQ_SCAN, RSCAN_ZONE);
+			uint32_t arrived = 0, held_ms = 0;
+			bool left = false;
+			for (int i = 0; i < 400 && held_ms == 0; i++) {
+				run(25);
+				if (sm.view.zone_pos == 5 && arrived == 0) {
+					arrived = now;
+				}
+				left |= arrived != 0 && sm.view.zone_pos != 5;
+				if (sm.view.zone_pos == 5 && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX) {
+					held_ms = now - arrived;
+				}
+			}
+			if (held_ms == 0 || left || held_ms > bound) {
+				printf("  kept-timing DMR scan: LC at F %u, phase %u ms: held %u ms after arriving, left %d\n",
+				       lc_at, (unsigned)phase, (unsigned)held_ms, left);
+			}
+			CHECK(arrived != 0 && held_ms != 0 && !left && held_ms <= bound);
+			req(RREQ_SCAN, RSCAN_STOP);
+			kept.on = false;
+			hw.sig[1].hz = 0;
+		}
+	}
+	hw.sig[0].hz = 0;
+}
+
+static void test_scan_dmr_noise_deaf(void)
+{
+	// A receiver whose noise reading stays at its idle level on a DMR signal (gotchas 17.3): the signal strength
+	// alone makes the stop probe, and the call holds the scan
+	uint32_t bound = AIR_LOCK_MS + 360u * 2u + 100u;
+	for (uint32_t phase = 0; phase < 360; phase += 30) {
+		start();
+		all_dmr();
+		signal_on(0, 438500000, 120, no_tone);	// 120: the idle reading, as on an empty channel
+		hw.sig[0].tdma = true;
+		air.on = true;
+		air.hz = 438500000;
+		air.t0 = now + 300 + phase;
+		air.dst = 9;
+		air.lc_at = 1;
+		req(RREQ_ZONE_POS, 6);
+		req(RREQ_SCAN, RSCAN_ZONE);
+		uint32_t arrived = 0, held_ms = 0;
+		bool left = false;
+		for (int i = 0; i < 400 && held_ms == 0; i++) {
+			run(25);
+			if (sm.view.zone_pos == 5 && arrived == 0) {
+				arrived = now;
+			}
+			left |= arrived != 0 && sm.view.zone_pos != 5;
+			if (sm.view.zone_pos == 5 && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX) {
+				held_ms = now - arrived;
+			}
+		}
+		if (held_ms == 0 || left || held_ms > bound) {
+			printf("  noise-deaf DMR scan: phase %u ms: held %u ms after arriving, left %d\n", (unsigned)phase,
+			       (unsigned)held_ms, left);
+		}
+		CHECK(arrived != 0 && held_ms != 0 && !left && held_ms <= bound);
+		req(RREQ_SCAN, RSCAN_STOP);
+	}
+	hw.sig[0].hz = 0;
+}
+
 // ---- Dual watch (CONFIG_DUAL_WATCH): two channels of any zone or the VFO, PTT on the selected one ----
 #if CONFIG_DUAL_WATCH
 static void dual(radio_dual_ref_t a, radio_dual_ref_t b, uint8_t sel)
@@ -1344,8 +1484,8 @@ static bool wait_on(radio_dual_ref_t r, uint32_t ms)
 static void test_dual_watch(void)
 {
 	start();
-	// Zone 1 "Far": position 0 ch8 Far 446.100 FM, position 1 ch5 Other
-	add(8, "Far", 446100000, RADIO_MODE_FM);
+	// Zone 1 "Far": position 0 ch8 Far 445.900 FM, position 1 ch5 Other
+	add(8, "Far", 445900000, RADIO_MODE_FM);
 	memset(&zone2, 0, sizeof(zone2));
 	strcpy(zone2.name, "Far zone");
 	zone2.count = 2;
@@ -1375,7 +1515,7 @@ static void test_dual_watch(void)
 		at_home += on_ref(home);
 		at_far += on_ref(far);
 		if (on_ref(far)) {
-			CHECK(hw.rx_hz == 446100000 && strcmp(sm.view.zone_name, "Far zone") == 0);
+			CHECK(hw.rx_hz == 445900000 && strcmp(sm.view.zone_name, "Far zone") == 0);
 			CHECK(sm.view.zone_size == 2);
 		}
 	}
@@ -1406,12 +1546,12 @@ static void test_dual_watch(void)
 	dual(home, far, 1);
 	CHECK(wait_on(home, 500));
 	req(RREQ_PTT, 1);
-	CHECK(on_ref(far) && hw.tx_hz == 446100000 && sm.view.scan == SCAN_DUAL);
+	CHECK(on_ref(far) && hw.tx_hz == 445900000 && sm.view.scan == SCAN_DUAL);
 	req(RREQ_PTT, 0);
 	CHECK(wait_on(home, 1300) && sm.view.scan == SCAN_DUAL);
 
 	// A call holds the receiver on its channel, the watch goes on after the delay
-	signal_on(0, 446100000, 30, no_tone);
+	signal_on(0, 445900000, 30, no_tone);
 	CHECK(wait_on(far, 500));
 	run(3000);
 	CHECK(on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.state == RS_RX);
@@ -1466,7 +1606,7 @@ static void test_dual_watch(void)
 	req(RREQ_VFO, 0);
 	req(RREQ_ZONE, 0);
 	dual(home, far, 0);
-	signal_on(0, 446100000, 30, no_tone);
+	signal_on(0, 445900000, 30, no_tone);
 	CHECK(wait_on(far, 500));
 	run(1000);
 	CHECK(sm.view.scan == SCAN_DUAL && sm.view.scan_phase == SCAN_PH_HOLD && on_ref(far));
@@ -1481,9 +1621,9 @@ static void test_dual_watch(void)
 	dual(dmr, home, 0);
 	CHECK(wait_on(dmr, 500));
 	lc_private = true;
-	hear_call(3101276, 1, 1, false);
+	hear_call(9996543, 1, 1, false);
 	CHECK(sm.view.dmr.state == RDMR_RX && sm.view.scan_phase == SCAN_PH_HOLD);
-	hear_call(3101276, 1, 2, true);
+	hear_call(9996543, 1, 2, true);
 	lc_private = false;
 	hw.sig[0].hz = 0;
 	CHECK(sm.view.dmr.reply_active);
@@ -1545,6 +1685,15 @@ static void test_dual_watch(void)
 	CHECK(on_ref(home) && sm.view.temp == RADIO_TEMP_SQUELCH);
 	dual(home, far, 0);
 	CHECK(wait_on(far, 2500) && sm.view.temp == 0 && sm.view.ch.bw != bw);
+	// The same for a stop over the debug link (the UI asks for nothing after it)
+	dual(home, far, 1);
+	req(RREQ_POWER, 1);
+	CHECK(on_ref(far) && (sm.view.temp & RADIO_TEMP_POWER));
+	CHECK(wait_on(home, 2500));
+	req(RREQ_SCAN, RSCAN_STOP);
+	CHECK(sm.view.scan != SCAN_DUAL);
+	dual(home, far, 0);
+	CHECK(wait_on(far, 2500) && sm.view.temp == 0);
 	// A new channel in a pane doesn't inherit the old one's
 	dual(home, far, 1);
 	req(RREQ_POWER, 1);
@@ -1583,10 +1732,10 @@ static void dual_wait_watch(radio_dual_ref_t home, uint32_t ms, int *looks, bool
 	}
 }
 
-// A call on far (446.100): held and played there, then it ends
+// A call on far (445.900): held and played there, then it ends
 static bool far_call(radio_dual_ref_t far)
 {
-	signal_on(0, 446100000, 30, no_tone);
+	signal_on(0, 445900000, 30, no_tone);
 	for (int t = 0; t < 160 && !(on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD); t++) {
 		run(25);
 	}
@@ -1599,7 +1748,7 @@ static bool far_call(radio_dual_ref_t far)
 static void test_dual_wait(void)
 {
 	start();
-	add(8, "Far", 446100000, RADIO_MODE_FM);
+	add(8, "Far", 445900000, RADIO_MODE_FM);
 	memset(&zone2, 0, sizeof(zone2));
 	strcpy(zone2.name, "Far zone");
 	zone2.count = 1;
@@ -1612,7 +1761,7 @@ static void test_dual_wait(void)
 
 	// A call on far (B) ends while home (A, selected) has a signal: the looks find it, show it, don't play it
 	dual(home, far, 0);
-	signal_on(0, 446100000, 30, no_tone);
+	signal_on(0, 445900000, 30, no_tone);
 	CHECK(wait_on(far, 500));
 	run(300);
 	CHECK(on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dual_busy == 0);
@@ -1651,7 +1800,7 @@ static void test_dual_wait(void)
 		run(25);	// to the first look
 	}
 	CHECK(on_ref(home) && !hw.audio);
-	signal_on(0, 446100000, 30, no_tone);
+	signal_on(0, 445900000, 30, no_tone);
 	run(300);
 	CHECK(on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.state == RS_RX && hw.audio);
 	hw.sig[0].hz = 0;
@@ -1704,7 +1853,7 @@ static void test_dual_wait(void)
 static void test_dual_requests(void)
 {
 	start();
-	add(8, "Far", 446100000, RADIO_MODE_FM);
+	add(8, "Far", 445900000, RADIO_MODE_FM);
 	memset(&zone2, 0, sizeof(zone2));
 	strcpy(zone2.name, "Far zone");
 	zone2.count = 2;
@@ -1847,7 +1996,7 @@ static void test_dual_rx2(void)
 	// DMR on the second receiver: color code, timeslot, our ID, the talk group
 	dual(dmr, home, 1);
 	CHECK(on_ref(home) && r2.t.mode == RADIO_MODE_DMR && r2.t.rx_hz == 438500000 && r2.t.color_code == 1 &&
-	      r2.t.timeslot == 1 && r2.t.own_id == 3101276 && r2.t.talk_group == 9);
+	      r2.t.timeslot == 1 && r2.t.own_id == 9996543 && r2.t.talk_group == 9);
 
 	// It goes down: the main receiver alternates; back up, it is given the channel again within the retry time
 	dual(home, tone, 0);
@@ -2159,6 +2308,46 @@ static void test_bcl_inhibit(void)
 	req(RREQ_PTT, 0);
 }
 
+// The test TX limit (tx_limit.h): block refuses PTT as the inhibit does, a list lets only its frequencies key, off is
+// no limit; the inhibit setting is never touched
+static void test_tx_limit(void)
+{
+#if CONFIG_DEBUGLINK
+	static const uint32_t pos0[] = { 146520000 }, many[TX_LIMIT_MAX + 1] = { 0 };
+	tx_limit_info_t l;
+	start();
+	CHECK(tx_limit_set(true, NULL, 0));
+	tx_limit_get(&l, NULL, 0);
+	uint32_t refused = l.refused;
+	int calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_INHIBIT && hw.tx_calls == calls);
+	tx_limit_get(&l, NULL, 0);
+	CHECK(l.refused == refused + 1 && l.last_hz == 146520000);	// a refused PTT counts
+	req(RREQ_PTT, 0);
+	CHECK(!sm.set.tx_inhibit);
+	CHECK(tx_limit_set(false, pos0, 1));
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 146520000);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 1);		// 146.940: not on the list
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_INHIBIT && hw.tx_calls == calls);
+	req(RREQ_PTT, 0);
+	CHECK(!tx_limit_set(false, many, TX_LIMIT_MAX + 1));	// too many: refused, the list stays
+	tx_limit_get(&l, NULL, 0);
+	CHECK(l.on && !l.block && l.n == 1);
+	CHECK(tx_limit_set(false, NULL, 0));	// off
+	tx_limit_get(&l, NULL, 0);
+	CHECK(!l.on);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 146940000);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 0);
+#endif
+}
+
 static void set_roger(radio_settings_t *s) { s->roger_beep = true; }
 
 // The DCS turn-off tail (hal_radio_t.tx_tail): after PTT release (and after the roger beep), the carrier stays up
@@ -2270,6 +2459,23 @@ static void test_roger_burst(void)
 	req(RREQ_PTT, 1);
 	req(RREQ_TONE_BURST, 0);
 	CHECK(sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+	// A burst with a time limit and no "off" (the host went away): it unkeys by itself when the time is up
+	int off = hw.tx_off_calls;
+	req2(RREQ_TONE_BURST, 1, 2000);
+	run(1800);
+	CHECK(sm.view.state == RS_TX && sm.view.tone_burst);
+	run(400);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst && hw.tone_hz == 0 && hw.tx_off_calls == off + 1);
+	req(RREQ_TONE_BURST, 0);	// the late "off": nothing more
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == off + 1);
+	// The same during PTT: the tone ends, PTT keeps the transmission
+	req(RREQ_PTT, 1);
+	req2(RREQ_TONE_BURST, 1, 500);
+	run(700);
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);
 	req(RREQ_PTT, 0);
 	run(300);
 	CHECK(sm.view.state == RS_IDLE);
@@ -2508,6 +2714,48 @@ static void test_dmr_beeps(void)
 	beep_get_stats(&b1);
 	CHECK(b1.played == b0.played);
 	chans[6].no_beep = false;
+}
+
+static void set_no_permit(radio_settings_t *s) { s->talk_permit = false; }
+
+// A board whose beeps can't sound on air (CAP_BEEP_NOT_ON_AIR): the short talk permit plays in a hold before keying,
+// while the radio still receives, and none plays once on air. With the permit off it keys at once
+static void test_dmr_permit_before_key(void)
+{
+	beep_stats_t b0, b1;
+	uint32_t caps = board.caps;
+
+	board.caps |= CAP_BEEP_NOT_ON_AIR;
+	start();
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	beep_get_stats(&b0);
+	unsigned begins = sim.tx_begins;
+	req(RREQ_PTT, 1);
+	run(10);
+	beep_get_stats(&b1);
+	CHECK(sm.view.dmr.state == RDMR_TX_PERMIT && sim.tx_begins == begins && b1.played == b0.played + 1);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(sm.view.dmr.state == RDMR_TX && sim.tx_begins == begins + 1 && b1.played == b0.played + 1);
+	req(RREQ_PTT, 0);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// Talk permit off (the stack is configured again): no hold, no beep
+	settings(set_no_permit);
+	run(50);
+	beep_get_stats(&b0);
+	begins = sim.tx_begins;
+	req(RREQ_PTT, 1);
+	run(10);
+	CHECK(sm.view.dmr.state != RDMR_TX_PERMIT && sim.tx_begins == begins + 1);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(sm.view.dmr.state == RDMR_TX && b1.played == b0.played);
+	req(RREQ_PTT, 0);
+	run(1000);
+	board.caps = caps;
 }
 
 // A short PTT press through a repeater: the wake-up goes on after the release, and the user hears the talk permit when
@@ -2849,6 +3097,8 @@ int main(void)
 	test_vfo_scan();
 	test_mixed_scan();
 	test_scan_dmr_mid_call();
+	test_scan_dmr_kept_timing();
+	test_scan_dmr_noise_deaf();
 	test_dual_watch();
 #if CONFIG_DUAL_WATCH
 	test_dual_wait();
@@ -2859,6 +3109,7 @@ int main(void)
 	test_tot_and_beeps();
 	test_beep_follows_volume();
 	test_bcl_inhibit();
+	test_tx_limit();
 	test_roger_burst();
 	test_dtmf();
 	test_subtone_tail();
@@ -2870,6 +3121,7 @@ int main(void)
 	test_supply_voltage();
 	test_battery_save();
 	test_dmr_beeps();
+	test_dmr_permit_before_key();
 	test_dmr_short_press_wake();
 	test_vibrate();
 	test_host_audio();

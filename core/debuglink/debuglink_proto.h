@@ -33,10 +33,11 @@ enum {
 	DL_CMD_WATCHDOG		= 0x1D,	// the hardware watchdog's bench tests (CONFIG_WATCHDOG; debuglink_watchdog.c, 3.21)
 	DL_CMD_RX2		= 0x1E,	// the second receiver's SoC: state, the update bridge, restart (debuglink_rx2.c, 3.22)
 	DL_CMD_IDDB		= 0x1F,	// the DMR ID database: its format, records and an ID looked up (debuglink_iddb.c, 3.23)
-	DL_CMD_MEM		= 0x20,	// peek and poke: memory, registers and pins (CONFIG_DEBUG_MEM; dl_mem.c, 3.24)
+	DL_CMD_CHIP_REG		= 0x20,	// an RF chip or SoC register read or written (debuglink_chipreg.c, 3.24)
+	DL_CMD_MEM		= 0x21,	// peek and poke: memory, registers and pins (CONFIG_DEBUG_MEM; dl_mem.c, 3.25)
 };
 
-// DL_CMD_MEM operations (first payload byte; docs/spec/debuglink.md 3.24). u32 little endian. Width is 1, 2 or 4 bytes
+// DL_CMD_MEM operations (first payload byte; docs/spec/debuglink.md 3.25). u32 little endian. Width is 1, 2 or 4 bytes
 // and the address a multiple of it. Everything but READ, ARM and PIN's read is refused unless armed
 enum {
 	DL_MEM_OP_READ = 0,	// width u8, address u32, count u8 (1..DL_MEM_PEEK_MAX) -> status, the values (width each)
@@ -56,6 +57,10 @@ enum { DL_MEM_PIN_READ = 0, DL_MEM_PIN_INPUT = 1, DL_MEM_PIN_LOW = 2, DL_MEM_PIN
 // The arming key, little endian in the payload: bytes 'P' 'O' 'K' 'E'. The host tool sends it only when asked to
 // (rfoundry_debug.py --dangerous), so a write can't happen by accident
 #define DL_MEM_KEY		0x454B4F50u
+
+// DL_CMD_CHIP_REG's chip number for the SoC's own registers (board.system->reg): an address u32 follows, not a page and
+// register. The board's RF chips are numbered below it
+#define DL_CHIP_SOC		0xFFu
 
 // DL_CMD_RX2 operations (first payload byte; docs/spec/debuglink.md 3.22). The token is u32 little endian
 enum {

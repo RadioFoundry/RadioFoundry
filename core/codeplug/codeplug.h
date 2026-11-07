@@ -66,6 +66,26 @@ typedef enum { CODEPLUG_NONE, CODEPLUG_BUILTIN, CODEPLUG_OPENFW } codeplug_sourc
 // Find and check the stored codeplug. Call once the board's flash works
 codeplug_source_t codeplug_init(void);
 codeplug_source_t codeplug_source(void);
+// The open-firmware area holds records in use that aren't an open-firmware codeplug: another firmware's own
+// codeplug, left there when RadioFoundry was installed over it. Decided at every index (start-up, codeplug_reload) by
+// the rule the web editor uses (docs/spec/codeplug-stock-tyt.md 2, step 1), unless the owner accepted it (below). The
+// radio then shows no codeplug (the built-in set, source CODEPLUG_BUILTIN) and writes nothing there: every edit fails
+// until codeplug_start_new or codeplug_accept (the UI asks which first)
+bool codeplug_foreign(void);
+// The evidence counts behind it: the good and bad open-firmware records found
+void codeplug_evidence(uint16_t *good, uint16_t *bad);
+// "Start new": clear what the radio reads of the other firmware's codeplug (general settings up to the hang times,
+// boot text, quick keys, contacts) and start a stored one from the built-in set. true when the codeplug is ours after
+bool codeplug_start_new(void);
+// "Use anyway": the codeplug is the radio's own (on) or judged again (off), erasing nothing; codeplug_reload shows it.
+// The settings store keeps it (settings_t.cp_flags, app.c). codeplug_written drops it
+void codeplug_accept(bool on);
+typedef enum { CODEPLUG_ACCEPT_NO, CODEPLUG_ACCEPT_YES, CODEPLUG_ACCEPT_DROPPED } codeplug_accept_t;
+// DROPPED: a codeplug was written since start-up or the last codeplug_accept, so the stored acceptance goes
+codeplug_accept_t codeplug_acceptance(void);
+// The housekeeping task's: true once after a change of the acceptance, with the state to store (YES or NO; DROPPED
+// becomes NO here). No flag of its own in app.c: RAM is short
+bool codeplug_accept_take(codeplug_accept_t *store);
 
 // Highest channel number that may be in use (channels are 1..count, some may be empty)
 uint16_t codeplug_channel_count(void);
@@ -77,6 +97,16 @@ uint32_t codeplug_channel_errors(void);
 // Zones 0..count-1. With no zones stored there is one zone "All channels" holding every used channel
 uint16_t codeplug_zone_count(void);
 bool codeplug_zone(uint16_t index, zone_t *out);
+// The name alone, false as codeplug_channel / codeplug_zone: a search by name reads 16 bytes a record, not all of it
+bool codeplug_channel_name(uint16_t number, char out[CODEPLUG_NAME_LEN + 1]);
+bool codeplug_zone_name(uint16_t index, char out[CODEPLUG_NAME_LEN + 1]);
+// Whether a channel number holds a channel, from the in-use bitmap: no flash read
+bool codeplug_channel_used(uint16_t number);
+// Every channel 1..codeplug_channel_count() in order with its name, NULL for an empty number, a few records per flash
+// read (as codeplug_contacts_each, whose rules fn follows). names false: only which numbers are used, from the in-use
+// bitmap without a flash read; the name is "" then. False when the codeplug can't be read
+typedef bool (*codeplug_name_fn)(uint16_t number, const char *name, void *ctx);
+bool codeplug_channel_names_each(codeplug_name_fn fn, void *ctx, bool names);
 // true when the zones are stored ones (false: the virtual "All channels" zone)
 bool codeplug_zones_stored(void);
 
@@ -139,6 +169,8 @@ bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2);
 
 // Re-read everything after the image was written underneath (the CPS); bumps the serial
 codeplug_source_t codeplug_reload(void);
+// The same after a new codeplug was written (a CPS session or commit, a TFTP write): the acceptance goes with the old one
+codeplug_source_t codeplug_written(void);
 
 // The open-firmware 56-byte channel record (open-firmware-cps.md 7.3.3), for the CPS shim's VFO handling. decode: false
 // if the frequencies are malformed. encode: updates rec in place, keeping the bytes the model doesn't own
@@ -170,6 +202,12 @@ typedef struct {
 uint32_t codeplug_dmr_id(void);
 // Contacts 1..CODEPLUG_CONTACTS_MAX; false if empty or unreadable
 bool codeplug_contact(uint16_t index, contact_t *out);
+// Every contact slot in order, many records per flash read: a scan with codeplug_contact (one read per slot) took
+// about 0.7 s for 1024 slots on an HR_C7000 radio and kept the idle task out. fn gets the slot (1-based) and the contact,
+// or NULL for an empty slot, under the storage lock, and returns false to stop. It may call codeplug functions, a
+// nested scan included (that one reads slot by slot). False when the codeplug can't be read
+typedef bool (*codeplug_contact_fn)(uint16_t index, const contact_t *c, void *ctx);
+bool codeplug_contacts_each(codeplug_contact_fn fn, void *ctx);
 // RX group lists 1..CODEPLUG_LISTS_MAX; false if unused or unreadable
 bool codeplug_listen_list(uint16_t index, listen_list_t *out);
 // The contact a channel talks to by default: its TX contact, else the first talkgroup of its RX group list; 0 when
@@ -184,6 +222,8 @@ bool codeplug_delete_listen_list(uint16_t index);
 // The first contact with this ID: group true finds a talkgroup (or all call for 0xFFFFFF), false a private contact.
 // Reads every contact record (24 KB of flash) in the worst case: cache the answer
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out);
+// The same, its index (0: none, or a contact record that couldn't be read)
+uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out);
 
 // General DMR settings (open-firmware general settings, docs/spec/open-firmware-cps.md 7.3.2)
 typedef struct {

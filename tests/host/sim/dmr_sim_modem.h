@@ -44,6 +44,7 @@ typedef struct {
 	bool split_offer;		// tx_split(true) answers true (a second transmitter)
 	bool split;			// on and not off since
 	unsigned split_ons, split_offs;	// tx_split calls
+	unsigned rx_restarts;	// rx_restart calls: the receiver drops its slot timing and searches again
 	uint8_t emb_lc[9];
 	bool emb_lc_set;
 

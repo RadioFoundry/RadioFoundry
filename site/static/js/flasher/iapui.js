@@ -25,6 +25,7 @@ import * as diag from "../diag.js";
 import { CodecError } from "./c7000.js";
 import { errorNotice, reportLine } from "../report.js";
 import { radioPicture, holdKeys } from "./radiotop.js";
+import { confirmNoCodec } from "./nocodec.js";
 
 const LISTEN_MS = 180000;	// how long the page waits for update mode
 
@@ -358,6 +359,7 @@ export function makeStockRoutes(host) {
 		};
 		return iapPanel({ title: t("flash.c7.write.title"), image, restore: false, gate, allowed,
 			notices: d.mode === "none" ? [noCodecNotice(true)] : [],
+			confirm: d.mode === "none" ? () => confirmNoCodec(() => { S().c7none = false; S().step--; ctx.render(); }) : null,
 			rows: [[t("flash.c7.write.firmware"), `${fw.source} (${Math.round(fw.image.length / 1024)} KB)`], [t("flash.c7.write.codec"), what]],
 			report: { task: "install", source: fw.origin || "", radio: boardId(), firmware: String(fw.manifest.version || ""),
 				variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null },
@@ -384,13 +386,13 @@ export function makeStockRoutes(host) {
 	}
 
 	// gate(go): an element that decides when go may be pressed (the variant picker); allowed(): whether the write may
-	// start, asked again once the radio answers
-	function iapPanel({ title, rows, image, restore, report, done, onDone, name, lead = null, gate = null, allowed = () => true, notices = [] }) {
+	// start, asked again once the radio answers; confirm(): asked when go is pressed, false stays on the step
+	function iapPanel({ title, rows, image, restore, report, done, onDone, name, lead = null, gate = null, allowed = () => true, notices = [], confirm = null }) {
 		const c = session();
 		const prog = progressBar();
 		const status = h("div");
 		const steps = S().radio.flash.bootloader || [];
-		const go = button(t(restore ? "flash.iap.restore_go" : "flash.iap.go"), () => run(), { primary: true });
+		const go = button(t(restore ? "flash.iap.restore_go" : "flash.iap.go"), async () => { if (!confirm || (await confirm())) run(); }, { primary: true });
 		const box = panel(title, cableBanner(),	// a CH340 cable: the warning here too (programming through update mode)
 			rows.length ? h("dl", { class: "kv-list" }, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])) : null,
 			gate ? gate(go) : null, ...notices,

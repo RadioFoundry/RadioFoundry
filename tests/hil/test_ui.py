@@ -113,8 +113,9 @@ def test_find_by_digits(home, shots):
     for k in "563":
         r.press(k)
     wait_screen(r, "find", "Find on a digit")
-    # The screen shows on the first digit; the UI may still be taking the others (a slow panel's redraw)
-    r.wait_for(lambda v: v.get("ui.query") == "563", sections=("link",), what="the query 563")
+    # The screen opens on the first digit; a slow radio may not have applied the last one yet
+    s = r.wait_for(lambda v: v.get("ui.query") == "563", sections=("link",), what="the query 563")
+    assert s["ui.screen"] == "find", s
     info, data = r.shot_until(lambda d: True, what="Find")
     r.save_screenshot(f"{shots}/ui_find.png", data=data, info=info)
     r.press("back")

@@ -132,7 +132,7 @@
 #ifndef CONFIG_RX2_DL_SERVER
 #define CONFIG_RX2_DL_SERVER		0
 #endif
-// Peek and poke on the debug link (core/debuglink/dl_mem.c, debuglink.md 3.24): the debug link's, or a second SoC's
+// Peek and poke on the debug link (core/debuglink/dl_mem.c, debuglink.md 3.25): the debug link's, or a second SoC's
 // server's
 #ifndef CONFIG_DEBUG_MEM
 #define CONFIG_DEBUG_MEM		(CONFIG_DEBUGLINK || CONFIG_RX2_DL_SERVER)

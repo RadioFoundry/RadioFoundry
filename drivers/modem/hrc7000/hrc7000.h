@@ -155,6 +155,9 @@ typedef struct {
 	uint32_t subvoice;		// SUBVOICE_COEF before a TX tone (hrc7000_tx_tone)
 	bool tone_on;
 	uint8_t subaudio_dev;		// SUBVOICE_COEF b15:8 at 12.5 kHz (the chip's reset value, set by power_on_init)
+	// How far the modem advances its TX data, RF_CONTROL b20:16 in 100 us steps: the board's RF TX path delay. A larger
+	// value puts the inbound burst earlier against the outbound. Set before power_on_init; 0 = HRC7000_TX_PRE_ON_DEF
+	uint8_t tx_pre_on;		// here, in the padding before the pointers: no RAM of its own
 	// Interrupts off around the AUDIO_CONTROL shadow's read-modify-write (hrc7000_set_crit); NULL = none
 	uint32_t (*crit_enter)(void);
 	void (*crit_exit)(uint32_t state);
@@ -170,6 +173,7 @@ typedef struct {
 } hrc7000_t;
 
 #define HRC7000_RF_TX_LEAD_DEF	31u	// 3.1 ms (gotchas 2.4)
+#define HRC7000_TX_PRE_ON_DEF	4u	// 0.4 ms, the chip's reset value
 
 static inline void hrc7000_wr(hrc7000_t *d, uint32_t off, uint32_t v) { d->regs[off / 4u] = v; }
 static inline uint32_t hrc7000_rd(hrc7000_t *d, uint32_t off) { return d->regs[off / 4u]; }

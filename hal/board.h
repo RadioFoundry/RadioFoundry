@@ -44,6 +44,10 @@ enum {
 	// The radio has no battery (a mobile on a fixed supply). The core shows no battery icon, percentage, menu item or
 	// warning, never refuses to transmit for a battery, and reports no battery level. Unset: a battery radio
 	CAP_NO_BATTERY	= 1u << 7,
+	// Beeps can't sound while the radio transmits DMR (they share the modulator's audio path and are held off it). The
+	// talk permit then plays before the first burst: DMR voice keys after a short hold in which the radio still
+	// receives and the tone sounds (dmr_call_config_t.permit_hold_ms)
+	CAP_BEEP_NOT_ON_AIR = 1u << 8,
 };
 
 typedef struct {
@@ -105,6 +109,11 @@ typedef struct {
 	// Optional: the radio is about to jump to the RAM monitor (CONFIG_STUB_ENTRY), past the transmit checks and
 	// tx_off, interrupts still on. For what the monitor can't do itself: status LEDs on another SoC show it is running
 	void (*stub_entering)(void);
+	// Optional: bench access to the radio's RF chip registers (the debug link's CHIP_REG, docs/spec/debuglink.md
+	// 3.24). chip and page are the board's numbering (its hardware page lists them), chip below 0xFF (the SoC's).
+	// Writes val when write, then sets *val to the register as read back (a write-only register: the value written).
+	// False for a chip, page or register it doesn't offer. NULL: none
+	bool (*chip_reg)(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 } board_t;
 
 extern const board_t board;

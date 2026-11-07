@@ -3,13 +3,16 @@
 """Analog FM transmit checked off air by the SDR bench (opt-in: --allow-rf --allow-service-stop; the radio and the
 bench's RTL-SDR only, the bench never transmits here).
 
-The radio's FM VFO is tuned to --fm-mhz (default the DMR test channel, 461.6875 MHz) on its lowest power, with a
+The radio's FM VFO is tuned to --fm-mhz (the rig's FM test frequency) on its lowest power, with a
 sub-audio tone and a bandwidth set through debug-link radio requests; it keys for 3 s with no audio while the bench
-records raw I/Q (sdrmon.py capture), and tools/sdr_fm_check.py analyzes the over on the bench.
+records raw I/Q (sdrmon.py capture), and tools/sdr_fm_check.py analyzes the over on the bench. A bench board that
+demodulates FM itself (the line protocol's rx op) also measures each over: its summary is printed and its CTCSS or DCS
+decode and deviation (within 20 %) must agree with the analysis (a second over: both on one board at once lose samples).
 
 Pass criteria:
 - test_fm_tx_ctcss: one keyed segment; CTCSS 100.0 Hz decoded within 0.5 Hz (sdr_fm_check --expect-ctcss PASS);
-  tone deviation 200-900 Hz at 12.5 kHz; |carrier offset| < --max-foff Hz (default 500; corrected for the SDR's own error by the SDR bench's calibration, or --sdr-ppm).
+  tone deviation 200-900 Hz at 12.5 kHz; |carrier offset| < --max-foff Hz (default 500; corrected for the SDR's own error by the SDR bench's calibration, or --sdr-ppm;
+  a bench board takes its crystal out itself and adds its correction's tolerance at the frequency, freq_tol_hz).
 - test_fm_tx_dcs: DCS D023N decoded with the right polarity (--expect-dcs 023N PASS; an inverted code fails).
 - test_fm_tx_bandwidth: the same CTCSS 100.0 Hz tone at 12.5 and at 25 kHz: the tone deviation at 25 kHz is 1.5 to
   2.6 times the one at 12.5 kHz (the radio scales every deviation with the channel bandwidth; nominally 2).
@@ -35,12 +38,14 @@ Pass criteria:
 The VFO's bandwidth and TX tone are put back afterwards (restore_radio does the rest: channel, power, temporary
 changes).
 """
+import json
 import re
 import time
 
 import pytest
 
 from rfoundry_hil import skip
+from hil_config import rig
 
 PTT_S = 3.0
 
@@ -81,7 +86,7 @@ def fm_vfo(radio, pytestconfig):
         skip("not_built", "built without the FM VFO")
     if "SUBTONE" not in radio.features():
         skip("not_built", "built without CTCSS / DCS")
-    hz = round(pytestconfig.getoption("--fm-mhz") * 1e6)
+    hz = round(rig(pytestconfig, "fm-mhz") * 1e6)
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
@@ -115,8 +120,9 @@ def set_fm(radio, wide, kind, value):
 def key_and_check(radio, sdr_bench, pytestconfig, tag, bw_khz, ctcss=None, dcs=None, key=None, seconds=PTT_S + 5,
                   tones=False, dtmf=False):
     """Capture while key() keys the radio (default: PTT for PTT_S), analyze, check one segment and the carrier."""
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     rdir = sdr_bench.run_dir(tag)
+    board = None
     with sdr_bench.lease():
         cap = sdr_bench.capture_start(rdir, mhz, seconds=seconds)
         if key is None:
@@ -125,15 +131,52 @@ def key_and_check(radio, sdr_bench, pytestconfig, tag, bw_khz, ctcss=None, dcs=N
             key()
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
         sdr_bench.capture_wait()
+        # The board's own demodulator, a second measurement, on a second over: beside a triggered capture on the
+        # same board it lost seconds of the capture's samples
+        if (ctcss is not None or dcs is not None) and sdr_bench.can_fm_rx():
+            j = sdr_bench.fm_rx_start(mhz, PTT_S + 2, bw=25000 if bw_khz > 12.5 else 16000)
+            radio.ptt_for(PTT_S)
+            radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+            board = j.wait(PTT_S + 20).get("summary") or {}
     rc, text = sdr_bench.analyze_fm(cap, bw_khz=bw_khz, ctcss=ctcss, dcs=dcs, ppm=pytestconfig.getoption("--sdr-ppm"),
                                     freq=mhz, tones=tones, dtmf=dtmf)
     print(text)
     r = parse_fm(text)
-    assert r["segments"] >= 1, f"no keyed segment in the capture (~/{sdr_bench.dir}/{rdir}/): {text[-800:]}"
+    assert r["segments"] >= 1, f"no keyed segment in the capture ({sdr_bench.run_path(rdir)}): {text[-800:]}"
     foff = r.get("carrier_corrected_hz", r.get("carrier_hz"))
     max_foff = pytestconfig.getoption("--max-foff")
-    assert foff is not None and abs(foff) < max_foff, f"carrier offset {foff} Hz (limit {max_foff})"
+    # A bench board says how far its own crystal correction may be off at the frequency: the limit allows for it
+    meta = sdr_bench.capture_meta(cap)
+    tol = meta.get("freq_tol_hz") or 0.0
+    if "ppm_source" in meta:
+        print(f"bench board's correction: {meta.get('ppm_source')}, +-{meta.get('freq_tol_hz')} Hz at {mhz} MHz")
+    assert foff is not None and abs(foff) < max_foff + tol, \
+        f"carrier offset {foff} Hz (limit {max_foff} + the bench's {tol} Hz)"
+    if board is not None:
+        check_board_fm(board, ctcss, dcs, r)
     return rc, r
+
+
+def check_board_fm(s, ctcss, dcs, r):
+    """The receive board's FM summary (the bench line protocol's rx op, mode fm) beside the I/Q analysis r: printed,
+    and its sub-audio decode and deviation (within 20 %) must agree. Its figures come from the board's own
+    demodulator; the carrier offset is the same board's crystal as the I/Q's, so it isn't checked twice."""
+    sub, dev = s.get("sub") or {}, s.get("deviation") or {}
+    print(f"board FM: carrier {s.get('carrier_s')} s, cfo {s.get('cfo_hz')} Hz, deviation +{dev.get('pos_hz')}/"
+          f"{dev.get('neg_hz')} Hz (rms {dev.get('rms_hz')}), sub {json.dumps(sub)}")
+    assert (s.get("carrier_s") or 0) > 0, f"the bench board heard no carrier: {s}"
+    if ctcss is not None:
+        assert sub.get("kind") == "ctcss" and abs(sub.get("hz", 0) - ctcss) <= 0.5, \
+            f"the bench board didn't decode CTCSS {ctcss} Hz: {sub}"
+    if dcs is not None:
+        aliases = sub.get("aliases") or []     # a string of codes, or a list
+        codes = [sub.get("code") or ""] + (aliases.replace(",", " ").split() if isinstance(aliases, str) else aliases)
+        assert sub.get("kind") == "dcs" and dcs.upper() in [c.upper() for c in codes], \
+            f"the bench board didn't decode DCS {dcs}: {sub}"
+    mine = r.get("ctcss_dev_hz" if ctcss is not None else "dcs_dev_hz")
+    if mine and sub.get("dev_hz"):
+        assert abs(sub["dev_hz"] - mine) <= 0.2 * mine, \
+            f"sub-audio deviation: the bench board {sub['dev_hz']} Hz, the I/Q analysis {mine} Hz"
 
 
 @pytest.mark.feature("subtone")
@@ -187,7 +230,7 @@ def test_fm_tx_tone_burst(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "none", 0)
 
     def burst():
-        fm_vfo.link.tone_burst(True)
+        fm_vfo.link.tone_burst(True, 4000)
         try:
             fm_vfo.wait_for(lambda v: v.get("tone_burst") == "1", 1.0, sections=("features",), what="burst on")
             time.sleep(2.0)
@@ -348,7 +391,7 @@ def test_fm_tx_dtmf_stop(fm_vfo, sdr_bench, pytestconfig):
 @pytest.mark.sdr_rx
 def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "none", 0)
-    mhz = pytestconfig.getoption("--fm-mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     count = int(fm_vfo.core().get("power_count", "3"))
     if count < 2:
         skip("no_hw", f"the radio has {count} power level")

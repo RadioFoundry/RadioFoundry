@@ -631,7 +631,7 @@ def step_flash(sess, args):
         Leave the cable connected.""")
     try:
         usb = wait_dfu(sess, dfu, args.wait)
-        dev, intf = dfu.open_device(usb, args.force)
+        dev, intf = dfu.open_device(usb, args.force, "md380")
         man = dfu.get_string(usb, dev, dev.iManufacturer)
         prod = dfu.get_string(usb, dev, dev.iProduct)
     except dfu.DfuError as e:
@@ -873,10 +873,10 @@ settings:
   boot:
     message1: RadioFoundry
 radioIDs:
-  - dmr: {id: id1, name: N0CALL, number: 3100001}
+  - dmr: {id: id1, name: Q1AAA, number: 9990001}
 contacts:
   - dmr: {id: cont1, name: Local, ring: false, type: GroupCall, number: 9}
-  - dmr: {id: cont2, name: "Alice, A", ring: false, type: PrivateCall, number: 3100002}
+  - dmr: {id: cont2, name: "Alice, A", ring: false, type: PrivateCall, number: 9990002}
 groupLists:
   - id: grp1
     name: Local
@@ -896,7 +896,7 @@ zones:
     check(s["counts"] == {"channels": 2, "zones": 70, "contacts": 2, "groupLists": 1}, "section counts %r" % s["counts"])
     check(s["names"]["channels"] == ["Simplex DMR", "Simplex FM"], "channel names")
     check(s["names"]["contacts"][1] == "Alice, A", "quoted name with a comma")
-    check(s["radio_ids"] == [3100001], "radio ID")
+    check(s["radio_ids"] == [9990001], "radio ID")
     rep = limit_report(s)
     check(len(rep) == 1 and rep[0][:3] == ("zones", 70, 68) and rep[0][3] == ["Z69", "Z70"], "zone limit report")
     check(yaml_sections(y).get("scanLists") == [], "empty flow list")
@@ -907,21 +907,21 @@ zones:
           "a lost channel is found")
 
     radioid = ("RADIO_ID,CALLSIGN,FIRST_NAME,LAST_NAME,CITY,STATE,COUNTRY,REMARKS\n"
-               "3100002,k1abc,Bob,Jones,Austin,Texas,United States,\n"
-               "3100001,N0CALL,Alice,Smith,Denver,Colorado,United States,x\n"
-               "3100001,DUPE,Dup,,,,,\n"
+               "9990002,q2bbb,Bob,Jones,Austin,Texas,United States,\n"
+               "9990001,Q1AAA,Alice,Smith,Denver,Colorado,United States,x\n"
+               "9990001,DUPE,Dup,,,,,\n"
                "notanid,X,,,,,,\n")
     u = parse_users_csv(radioid)
-    check([x["id"] for x in u] == [3100001, 3100002], "radioid.net csv: sorted, deduplicated")
-    check(u[1] == {"id": 3100002, "callsign": "K1ABC", "fname": "Bob", "surname": "Jones", "city": "Austin",
+    check([x["id"] for x in u] == [9990001, 9990002], "radioid.net csv: sorted, deduplicated")
+    check(u[1] == {"id": 9990002, "callsign": "Q2BBB", "fname": "Bob", "surname": "Jones", "city": "Austin",
                    "state": "Texas", "country": "United States"}, "radioid.net csv fields %r" % (u[1],))
-    plain = "123456\n3100003,W1AW,Hiram,Maxim,Newington,CT,United States\n\n7,X\n"
+    plain = "123456\n9990003,W1AW,Hiram,Maxim,Newington,CT,United States\n\n7,X\n"
     u = parse_users_csv(plain)
     check(len(u) == 2 and u[1]["callsign"] == "W1AW" and u[1]["city"] == "Newington", "headerless, size line skipped")
-    u = parse_users_csv("3100004,Jane,KA1XYZ\n", ["id", "fname", "callsign"])
-    check(u == [{"id": 3100004, "callsign": "KA1XYZ", "fname": "Jane"}], "custom columns")
+    u = parse_users_csv("9990004,Jane,Q3CCC\n", ["id", "fname", "callsign"])
+    check(u == [{"id": 9990004, "callsign": "Q3CCC", "fname": "Jane"}], "custom columns")
     j = json.loads(users_json(u))
-    check(j == {"users": [{"id": 3100004, "callsign": "KA1XYZ", "fname": "Jane"}]}, "users json")
+    check(j == {"users": [{"id": 9990004, "callsign": "Q3CCC", "fname": "Jane"}]}, "users json")
 
     img = struct.pack("<II", 0x20020000, APP_BASE + 0x1001) + bytes(0x100)
     check(classify_image(img) == ("plain", False), "plain image without codec")

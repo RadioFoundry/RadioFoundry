@@ -339,7 +339,8 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 			sb_u32(&b, s->battery_pct, 1);
 			sb_chr(&b, '%');
 			rx -= gfx_text_width(f, pct);
-			uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;	// Settings > Power > Low battery warning
+			// Settings > Power saving > Low battery warning
+			uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;
 			bc = s->battery_pct <= low ? swarn : sfg;
 			gfx_text(f, rx, ty, pct, bc);
 		}
@@ -1076,9 +1077,9 @@ static bool sending_data(const radio_view_t *v)
 
 // --- DMR (docs/ux/wireframes: Home DMR, Receiving, Transmitting) ---
 #if CONFIG_DMR
-// "TG 201 Main Ops", "Joe 3101234", "All call"; a private call without a name shows the ID only
-// A contact name that only repeats the ID ("TG 201", "TG201", "201" for talkgroup 201; "3101276" for that radio):
-// codeplugs often name talkgroups that way, and Home would read "TG 201 TG 201"
+// "TG 123 Main Ops", "Joe 9991234", "All call"; a private call without a name shows the ID only
+// A contact name that only repeats the ID ("TG 123", "TG123", "123" for talkgroup 123; "9996543" for that radio):
+// codeplugs often name talkgroups that way, and Home would read "TG 123 TG 123"
 bool ui_name_is_id(const char *name, uint32_t id, bool private_call)
 {
 	const char *p = name;
@@ -1125,7 +1126,7 @@ static void sb_target(sbuf_t *b, uint32_t id, bool private_call, const char *nam
 	}
 }
 
-// The target's short form, for when the whole doesn't fit: a talkgroup keeps its number ("TG 201"), a private contact
+// The target's short form, for when the whole doesn't fit: a talkgroup keeps its number ("TG 123"), a private contact
 // its name ("Joe"), since the name is what the user picked and the ID alone says nothing at a glance
 static void sb_target_short(sbuf_t *b, uint32_t id, bool private_call, const char *name)
 {
@@ -1166,7 +1167,7 @@ static void sb_caller(sbuf_t *b, const radio_dmr_call_t *c)
 		sb_u32(b, c->src, 1);
 }
 
-// Where the call went: "TG 201 Main Ops", "Private to you", "Private to 3101234"
+// Where the call went: "TG 123 Main Ops", "Private to you", "Private to 9991234"
 static void sb_call_dst(sbuf_t *b, const radio_dmr_call_t *c)
 {
 	if (c->group) {
@@ -1191,7 +1192,7 @@ static bool dmr_call_screen(const radio_view_t *v)
 	return v->state == RS_RX && (v->dmr.state == RDMR_RX || v->dmr.state == RDMR_RX_OTHER);
 }
 
-// Talk target line on Home: "PTT-> TG 201 Main Ops", or "Reply-> TG 9 (8s)" during the reply window
+// Talk target line on Home: "PTT-> TG 123 Main Ops", or "Reply-> TG 9 (8s)" during the reply window
 static bool ui_st_dmr_off;		// ui_state_t.dmr_off of the frame being drawn
 
 static void draw_talk_dmr(const radio_view_t *v)
@@ -1214,7 +1215,7 @@ static void draw_talk_dmr(const radio_view_t *v)
 		sb_str(&b, TR("DMR modem off"));
 		c = ui_col.warn;
 	} else {
-		// The target, and its short form as an alternate: "TG 91 World (9s)", "TG 91 (9s)"; "Joe 3101234", "Joe"
+		// The target, and its short form as an alternate: "TG 91 World (9s)", "TG 91 (9s)"; "Joe 9991234", "Joe"
 		char secs[8] = "";
 		if (d->reply_active) {
 			sbuf_t sb;
@@ -1343,7 +1344,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 
 	sb_init(&b, title, sizeof title);
 	if (v->state == RS_TX && d->target_private && d->target_id != 0xFFFFFFu) {
-		// A private call says so where a group call has its "TG": "Private 3101234", else "Private"
+		// A private call says so where a group call has its "TG": "Private 9991234", else "Private"
 		sb_str(&b, TEXT_ALT_OPEN);
 		sb_str(&b, TR("Private "));
 		sb_u32(&b, d->target_id, 1);
@@ -1362,6 +1363,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		const char *word = TR("TALKING");
 		switch (d->state) {
 		case RDMR_TX_WAIT: word = d->rmo && !d->repeater_up ? TR("WAKING RPT") : TR("WAITING"); break;
+		case RDMR_TX_PERMIT: word = TR("ADMITTED"); break;	// the channel is ours: the talk permit sounds now
 		case RDMR_TX_ENDING: word = TR("ENDING"); break;
 		default: break;
 		}
@@ -2122,6 +2124,35 @@ static const char *dual_hint(const radio_view_t *v, const ui_state_t *s)
 	return TR("# options  Back stop");
 }
 
+// The richest layout that fits avail rows: names in the large font first, then fewer rows, never a smaller font for a
+// row than the single-channel Home uses for it (P5). noinline: inlined, the table sits in the frame every pane is
+// drawn from, on the UI task's deepest path
+static void __attribute__((noinline)) dual_choose(int avail, int gap, dual_fit_t *out, int *pad)
+{
+	const ui_layout_t *L = &ui_layout;
+	const font_t *lg = L->large, *md = L->medium, *sm = L->small;
+	const dual_fit_t fits[] = {
+		{ lg, md, sm, true, 2 }, { lg, md, sm, false, 2 }, { lg, md, sm, false, 1 },
+		{ lg, md, NULL, false, 1 }, { lg, sm, NULL, false, 1 }, { md, sm, NULL, false, 1 },
+		{ md, sm, NULL, false, 0 }, { sm, sm, NULL, false, 0 },
+	};
+	bool tall = gfx_height() >= UI_TALL_PX;
+	const dual_fit_t *ft = &fits[sizeof fits / sizeof fits[0] - 1];
+	int used = 0;
+	for (unsigned k = 0; k < sizeof fits / sizeof fits[0]; k++) {
+		used = 2 * dual_pane_h(&fits[k]) + gap + fits[k].act * sm->h + (fits[k].act ? 2 : 0);
+		if (used <= avail) {
+			ft = &fits[k];
+			break;
+		}
+	}
+	int extra = avail - used;
+	*pad = extra / 4 < (tall ? 5 : 1) ? extra / 4 : (tall ? 5 : 1);
+	if (*pad < 0)
+		*pad = 0;
+	*out = *ft;
+}
+
 void ui_draw_home_dual(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -2131,30 +2162,11 @@ void ui_draw_home_dual(const radio_view_t *v, const ui_state_t *s)
 	if (s->large_text) {
 		dual_large(v, s);
 	} else {
-		// The richest layout that fits: names in the large font first, then fewer rows, never a smaller font for a
-		// row than the single-channel Home uses for it (P5)
-		const font_t *lg = L->large, *md = L->medium, *sm = L->small;
-		const dual_fit_t fits[] = {
-			{ lg, md, sm, true, 2 }, { lg, md, sm, false, 2 }, { lg, md, sm, false, 1 },
-			{ lg, md, NULL, false, 1 }, { lg, sm, NULL, false, 1 }, { md, sm, NULL, false, 1 },
-			{ md, sm, NULL, false, 0 }, { sm, sm, NULL, false, 0 },
-		};
-		int top = L->strip_h, avail = L->hint_y - top;
-		bool tall = gfx_height() >= UI_TALL_PX;
-		int gap = tall ? 6 : 2;
-		const dual_fit_t *ft = &fits[sizeof fits / sizeof fits[0] - 1];
-		int used = 0;
-		for (unsigned k = 0; k < sizeof fits / sizeof fits[0]; k++) {
-			used = 2 * dual_pane_h(&fits[k]) + gap + fits[k].act * sm->h + (fits[k].act ? 2 : 0);
-			if (used <= avail) {
-				ft = &fits[k];
-				break;
-			}
-		}
-		int extra = avail - used;
-		int pad = extra / 4 < (tall ? 5 : 1) ? extra / 4 : (tall ? 5 : 1);
-		if (pad < 0)
-			pad = 0;
+		int top = L->strip_h, gap = gfx_height() >= UI_TALL_PX ? 6 : 2, pad;
+		dual_fit_t fit;
+		dual_choose(L->hint_y - top, gap, &fit, &pad);
+		const dual_fit_t *ft = &fit;
+		const font_t *sm = L->small;
 		int ph = dual_pane_h(ft) + 2 * pad;
 		const font_t *f0 = dual_name_font(&s->dual, 0, ft->name), *f1 = dual_name_font(&s->dual, 1, ft->name);
 		dual_nf = f0->h < f1->h ? f0 : f1;
@@ -2702,7 +2714,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	// The whole word, and an abbreviation of 6 characters at most for a tile (font.h alternates), so a tile's name
 	// never runs into the next tile's digit in the label font. Written out (no macro): tools/i18n.py reads the marks
 	static const char *const names[] = {
-		[QT_POWER] = TRN("Power"),
+		[QT_POWER] = TRN(TEXT_ALT_OPEN "Power" TEXT_ALT_NEXT "Pwr" TEXT_ALT_CLOSE),
 		[QT_SQUELCH] = TRN(TEXT_ALT_OPEN "Squelch" TEXT_ALT_NEXT "SQL" TEXT_ALT_CLOSE),
 		[QT_TONE] = TRN("Tone"), [QT_MODE] = TRN("Mode"),
 		[QT_MONITOR] = TRN(TEXT_ALT_OPEN "Monitor" TEXT_ALT_NEXT "MON" TEXT_ALT_CLOSE), [QT_VOX] = "VOX",

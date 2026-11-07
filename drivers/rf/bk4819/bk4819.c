@@ -62,6 +62,7 @@ void bk4819_attach(bk4819_t *dev, rfbus_t *bus)
 	dev->freq_10hz = 0;
 	dev->state = 0;
 	dev->af_gain = 0xB3B3u;
+	dev->gpio = 0;
 	dev->digital = false;
 	dev->saved_27 = 0;
 	dev->saved_48 = 0;
@@ -78,6 +79,8 @@ void bk4819_write(bk4819_t *dev, uint8_t reg, uint16_t val)
 		dev->state = val;
 	} else if (reg == BK4819_REG_AF_GAIN) {
 		dev->af_gain = val;
+	} else if (reg == BK4819_REG_GPIO) {
+		dev->gpio = val;
 	}
 }
 
@@ -166,6 +169,21 @@ void bk4819_analog_mode(bk4819_t *dev)
 void bk4819_set_af(bk4819_t *dev, uint16_t af)
 {
 	bk4819_write(dev, BK4819_REG_AF, af);
+}
+
+void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool high)
+{
+	if (pin > 6) {
+		return;
+	}
+	uint16_t level = (uint16_t)(0x40u >> pin);
+	uint16_t v = (uint16_t)(dev->gpio & ~(level | level << 8));
+	if (high) {
+		v |= level;
+	}
+	if (v != dev->gpio) {	// set on every retune: written only when it changes
+		bk4819_write(dev, BK4819_REG_GPIO, v);
+	}
 }
 
 void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain)
@@ -271,17 +289,6 @@ bool bk4819_tone_found(uint16_t r0c, bk4819_tone_t type)
 	case BK4819_TONE_DCS_INV: return (r0c & (1u << 15)) != 0;
 	default: return true;
 	}
-}
-
-void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool level)
-{
-	if (pin > 6) {
-		return;
-	}
-	uint16_t data = (uint16_t)(0x40u >> pin);
-	uint16_t v = bk4819_read(dev, BK4819_REG_GPIO) & (uint16_t)~(data << 8);	// output enabled
-	v = level ? (uint16_t)(v | data) : (uint16_t)(v & ~data);
-	bk4819_write(dev, BK4819_REG_GPIO, v);
 }
 
 bool bk4819_heard(const bk4819_t *dev, uint16_t r0c, bk4819_tone_t type)

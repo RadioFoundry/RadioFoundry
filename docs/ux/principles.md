@@ -100,7 +100,7 @@ The top 20 tasks (`task-flows.md`) each show their first useful result within tw
 - A feature left out of the build says so the same way everywhere: "Scan: not in this build".
 - No error codes alone, no "Invalid", no "Error 3". A code may follow the text for support.
 - Input limits are shown before the user hits them ("TG 1 to 16777215", "Message 0 of 144 characters").
-- Success is confirmed quietly (a tone and a brief banner), failure is never silent ("Radio check: no answer from N0CALL after 3 tries").
+- Success is confirmed quietly (a tone and a brief banner), failure is never silent ("Radio check: no answer from Q1AAA after 3 tries").
 
 **Test:** a string lint lists all user-facing error strings; each must contain an action verb or a "see" reference. Reviewed per release.
 

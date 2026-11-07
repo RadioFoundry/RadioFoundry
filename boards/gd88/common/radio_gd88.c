@@ -270,14 +270,10 @@ static void volume_apply(void);
 #if GD88_BAND_LO_GPIO
 #define LO_GPIO_UHF		4u
 #define LO_GPIO_VHF		5u
-// The LO chip's GPIO: the superhet LO ops don't drive a BK4819's, so that one directly
+// The LO chip's GPIO, through the superhet LO ops (both chips drive it)
 static void lo_gpio(uint8_t pin, bool high)
 {
-	if (lo_is_at1141) {
-		superhet_lo_gpio(&sh_lo, pin, high);
-	} else {
-		bk4819_gpio(&rf_lo, pin, high);
-	}
+	superhet_lo_gpio(&sh_lo, pin, high);
 }
 
 // The band's path: VHF = GPIO5 high, GPIO4 low; UHF the reverse
@@ -808,6 +804,18 @@ static void rx_sleep(bool sleep)
 	}
 }
 #endif
+
+// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt). DMR TX keys the RF per
+// burst while armed, without setting transmitting; on B's transmitter (remote) the RF is B's, on the same cable
+bool gd88_radio_transmitting(void)
+{
+#if CONFIG_DMR && GD88_TX && CONFIG_SFR
+	if (dmr_remote) {
+		return true;
+	}
+#endif
+	return transmitting || dmr_armed;
+}
 
 void gd88_radio_diag(gd88_radio_diag_t *d)
 {

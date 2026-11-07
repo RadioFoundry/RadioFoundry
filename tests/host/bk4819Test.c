@@ -347,13 +347,13 @@ static void test_sequences(void)
 	chips[0].n = 0;
 	CHECK(!bk4819_tx_tail_start(&m) && c->n == 0);
 
-	// TX on 461.4625 MHz: idle (0x0200), frequency, 0x37, then 0xC3FE. 0x36 is not touched
+	// TX on 438.25 MHz: idle (0x0200), frequency, 0x37, then 0xC3FE. 0x36 is not touched
 	chips[0].n = 0;
-	bk4819_tx_tune(&m, 461462500u);
+	bk4819_tx_tune(&m, 438250000u);
 	CHECK(c->n == 5);
 	CHECK(c->log[0].reg == 0x30 && c->log[0].val == 0x0200);
-	CHECK(c->log[1].reg == 0x38 && c->log[1].val == 0x22CA);
-	CHECK(c->log[2].reg == 0x39 && c->log[2].val == 0x02C0);
+	CHECK(c->log[1].reg == 0x38 && c->log[1].val == 0xB768);
+	CHECK(c->log[2].reg == 0x39 && c->log[2].val == 0x029C);
 	CHECK(c->log[3].reg == 0x37 && c->log[3].val == 0x1D0F);
 	CHECK(c->log[4].reg == 0x30 && c->log[4].val == 0xC3FE && m.state == 0xC3FE);
 	CHECK(find_last(c, 0x36) < 0);
@@ -543,7 +543,7 @@ static void test_dmr_rx(void)
 	CHECK(chips[0].protocol_errors == 0);
 }
 
-// DMR transmit (4.5): the digital TX words, one burst's retune in the stock order on the main chip (TX on 461.4625 MHz,
+// DMR transmit (4.5): the digital TX words, one burst's retune in the stock order on the main chip (TX on 438.25 MHz,
 // back to the IF) and the LO's resume, which leaves its frequency alone
 static void test_dmr_tx(void)
 {
@@ -558,14 +558,14 @@ static void test_dmr_tx(void)
 	CHECK(c->n == 2 && c->log[0].reg == 0x40 && c->log[0].val == 0x0000 && c->log[1].reg == 0x51 && c->log[1].val == 0x0000);
 
 	chips[0].n = 0;
-	bk4819_burst_tune(&m, 461462500u, BK4819_STATE_TX_MAIN);
+	bk4819_burst_tune(&m, 438250000u, BK4819_STATE_TX_MAIN);
 	CHECK(c->n == 5);
-	CHECK(c->log[0].reg == 0x38 && c->log[0].val == 0x22CA);	// 46,146,250 x 10 Hz
-	CHECK(c->log[1].reg == 0x39 && c->log[1].val == 0x02C0);
+	CHECK(c->log[0].reg == 0x38 && c->log[0].val == 0xB768);	// 43,825,000 x 10 Hz
+	CHECK(c->log[1].reg == 0x39 && c->log[1].val == 0x029C);
 	CHECK(c->log[2].reg == 0x37 && c->log[2].val == BK4819_POWER_ON);
 	CHECK(c->log[3].reg == 0x30 && c->log[3].val == 0x0200);
 	CHECK(c->log[4].reg == 0x30 && c->log[4].val == 0xC3FE);
-	CHECK(m.state == 0xC3FE && m.freq_10hz == 46146250u);
+	CHECK(m.state == 0xC3FE && m.freq_10hz == 43825000u);
 
 	chips[0].n = 0;
 	bk4819_burst_tune(&m, 51550000u, BK4819_STATE_RX);
@@ -576,7 +576,7 @@ static void test_dmr_tx(void)
 	CHECK(c->log[4].reg == 0x30 && c->log[4].val == 0xBFF1);
 
 	c = &chips[1];
-	bk4819_lo_tune(&l, 461462500u + 51550000u);
+	bk4819_lo_tune(&l, 438250000u + 51550000u);
 	bk4819_lo_off(&l);
 	chips[1].n = 0;
 	bk4819_lo_resume(&l);
@@ -584,28 +584,37 @@ static void test_dmr_tx(void)
 	CHECK(c->log[0].reg == 0x37 && c->log[0].val == BK4819_POWER_ON);
 	CHECK(c->log[1].reg == 0x30 && c->log[1].val == 0x0000);
 	CHECK(c->log[2].reg == 0x30 && c->log[2].val == 0xC1FE);
-	CHECK(l.freq_10hz == 51301250u);
+	CHECK(l.freq_10hz == 48980000u);
 	CHECK(chips[0].protocol_errors == 0 && chips[1].protocol_errors == 0);
 }
 
-// GPIO on register 0x33: data bit 6 - pin, output-disable bit 14 - pin; the other pins' bits are kept (the GD-88's
-// band path: VHF = GPIO5 high / GPIO4 low on the LO chip)
+// GPIO outputs (0x33): pin p = level bit 6 - p and output disable bit 14 - p, written only on a change
 static void test_gpio(void)
 {
+	bk4819_t m;
 	reset_chips();
-	bk4819_t l;
-	bk4819_attach(&l, lo_bus());
-	chip_t *c = &chips[1];
-	c->regs[0x33] = 0x0606;		// GPIO4, GPIO5 outputs disabled, both data bits set
-	bk4819_gpio(&l, 5, true);
-	CHECK(c->regs[0x33] == 0x0406);
-	bk4819_gpio(&l, 4, false);
-	CHECK(c->regs[0x33] == 0x0002);
-	bk4819_gpio(&l, 4, true);
-	bk4819_gpio(&l, 5, false);
-	CHECK(c->regs[0x33] == 0x0004);
-	bk4819_gpio(&l, 7, true);	// no such pin: nothing written
-	CHECK(c->regs[0x33] == 0x0004);
+	bk4819_attach(&m, main_bus());
+	bk4819_init_main(&m);
+	const chip_t *c = &chips[0];
+	CHECK(m.gpio == 0x0000);		// the init's last 0x33 write
+	chips[0].n = 0;
+	bk4819_gpio(&m, 2, true);
+	CHECK(c->n == 1 && c->log[0].reg == BK4819_REG_GPIO && c->log[0].val == 0x0010);
+	bk4819_gpio(&m, 2, true);		// unchanged: not written again
+	CHECK(c->n == 1);
+	bk4819_gpio(&m, 0, true);		// another pin keeps pin 2
+	CHECK(c->log[c->n - 1].val == 0x0050);
+	bk4819_gpio(&m, 2, false);
+	CHECK(c->log[c->n - 1].val == 0x0040 && m.gpio == 0x0040);
+	// A pin with its output disabled is turned on
+	bk4819_write(&m, BK4819_REG_GPIO, 0x7F00);
+	bk4819_gpio(&m, 2, true);
+	CHECK(c->log[c->n - 1].val == 0x6F10);
+	chips[0].n = 0;
+	bk4819_gpio(&m, 7, true);		// no such pin: nothing written
+	CHECK(c->n == 0 && m.gpio == 0x6F10);
+	bk4819_gpio(&m, 2, false);		// a pin turned on stays on when it goes low
+	CHECK(c->n == 1 && c->log[0].val == 0x6F00);
 	CHECK(c->protocol_errors == 0);
 }
 

@@ -77,6 +77,8 @@ string1 = "AnyRoad Technology"
 product = "Digital Radio in USB mode"
 key_sha256 = "d983ce95fbc19fc78b913d9afc0381e3ba4ffedb480798865292d05a2fb3deff"
 key_prefix = "3A0474AD"
+# alt 0 as the bootloader shows it (read on a radio, 2026-11-02): the flashers accept no other device
+layout = "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg"
 
 # The STM32F4 stub's board record (stub/f4stub.py, stub-stm32f4.md 5.2): its board id (HELLO echoes it), whether
 # protocol 4 has run on a radio, and the SPI flash's bus, mode and clock (its pins: pins.h PIN_FLASH_*)
