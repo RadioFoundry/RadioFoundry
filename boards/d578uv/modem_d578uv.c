@@ -327,16 +327,26 @@ static void port_unlock(void *ctx)
 		xSemaphoreGiveRecursive(lock);
 }
 
-// DMR_CALL_OPTION and REPORT_FIELD as the stock firmware sends them (hardware-d578uv.md 4.4), but for byte 3. Byte
-// 0: the chip's squelch detection on (bit 6), no RF control (the MCU keys the RF chips). Byte 2: four good CACH,
-// two LC header repeats. Byte 3: every CSBK, LC header and terminator reported. The stock 0x44 reports identical LC
+// DMR_CALL_OPTION and REPORT_FIELD as the original firmware sends them (hardware-d578uv.md 4.4), but for bytes 0 and
+// 3. Byte 0: the chip's own squelch off (bit 6 clear), so the board's carrier (d578uv_modem_carrier) and the return
+// to receive below start the sync search; with it on, a lone burst soon after a transmission went undecoded. No RF
+// control (the MCU keys the RF chips). Byte 2: four good CACH,
+// two LC header repeats. Byte 3: every CSBK, LC header and terminator reported. The original 0x44 reports identical LC
 // headers and terminators once, and whether the chip forgets them between calls is not known: a second call with
 // the same LC could go unreported. The stack takes repeats as from a burst modem. Bit 6 of bytes 1 and 3 and byte 4
-// are reserved in the Packet Interface document; sent as the stock firmware sends them
+// are reserved in the Packet Interface document; sent as the original firmware sends them.
+// CARRIER_READY 2 (CR_READY below) 14 ms after each transmission. With the burst line's edges the transmission ends
+// about 2 ms after the last burst's fall and the receiver is set up about 8 ms after it, so CARRIER_READY goes out
+// about 16 ms after the fall. A one-burst reply 62.5 ms after our last burst then decodes; one 32.5 ms after it does
+// not (hardware-d578uv.md 4.4)
+#define CR_READY	2
 static const sct_dmr_port_t port = {
 	.send = port_send,
-	.call_option = { 0x41, 0x40, 0x42, 0x47, 0x08 },
+	.call_option = { 0x01, 0x40, 0x42, 0x47, 0x08 },
 	.report_field = 0xFF,
+	.rx_ready = CR_READY,
+	.rx_settle_ms = 14,
+	.burst_edges = d578uv_burst_edges,
 	.start_fields = start_fields,
 	.start_count = sizeof(start_fields) / sizeof(start_fields[0]),
 	.codec_tx = &hpl_mute,
@@ -389,7 +399,7 @@ bool d578uv_modem_init(void)
 void d578uv_modem_carrier(bool carrier)
 {
 	if (booted)
-		sct_dmr_carrier(carrier ? 2 : 0);
+		sct_dmr_carrier(carrier ? CR_READY : 0);
 }
 
 uint8_t d578uv_modem_boot_result(void)

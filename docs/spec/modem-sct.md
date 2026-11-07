@@ -131,6 +131,16 @@ has lasted `SCT_DMR_CR_HOLD_MS` (360 ms): a direct-mode station is silent betwee
 transmitting counts as lost. A board that never calls it gets no CARRIER_READY and sets bit 6. The chip's squelch
 then works with SQ_LEVEL's thresholds, its defaults unless the board sends its own.
 
+After a transmission the chip looks for sync only once CARRIER_READY says ready, and a direct-mode reply (a link ACK,
+a response header) can start 30 ms after this radio's last burst, before the board's first carrier reading. A port
+sets `rx_ready`, the value that says ready (1, or 2 with the phase reversed), and `rx_settle_ms`, its receiver's
+settle time after a transmission. The engine then sends `rx_ready` `rx_settle_ms` after each return to receive from a
+transmission, and nothing before it whatever the board reads; the board's readings go out from there as above. Sent
+before the receiver had settled, CARRIER_READY left the chip without a slot in a call it then heard: the chip seems to
+calibrate on what it hears from that point (inferred). With the chip's squelch on (bit 6), a lone burst soon after a
+transmission went undecoded on a board whose own carrier reading was off (measured); with it off and `rx_ready`, it
+decoded once CARRIER_READY went out 10-15 ms or more before the burst.
+
 Byte 3: an engine at the burst level takes every repeat as a burst modem gives it, so a board sets bits 1 and 0
 (LC headers and terminators). With them clear the chip reports a header identical to the last one once; if it keeps
 the last one from the previous call, a second call with the same LC is not reported (section 9).
@@ -192,6 +202,12 @@ modem task can both call in. No RTOS calls and no waits: the host tests run the 
 5. `TX_DONE` comes on the first ACK 0x0A at least a slot after the last frame (an earlier one is another frame's),
    also when it comes before the queue has drained, or `SCT_DMR_DONE_MS` (600 ms) after it. Then WORK_MODE
    receive. `tx_abort` goes back to receive without `TX_DONE`.
+   A port with `burst_edges` (the count of the chip's burst line edges, from the board's interrupt) ends a
+   transmission without voice sooner: each frame goes out in a burst of its own, in order, so once the queue is
+   empty the fall that brings the edges since `tx_begin` to twice the frames sent is the end of the last burst. ACK
+   0x0A comes about 17 ms after that fall (measured), so the receiver is back that much sooner for a reply 30 ms
+   after it. Not with voice: the chip's own voice bursts carry no frame. A refused frame has no burst, so its
+   transmission ends the usual way (`tx_early` counts the early ends).
 6. After `codec_tx`, the return to receive (`TX_DONE`, `tx_abort`, `stop`) sends the board's `codec_rx` once,
    after WORK_MODE.
 7. `start` also sends the `tx_fields` once, after the start packet. When a transmission's `tx_fields` were the

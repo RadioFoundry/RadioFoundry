@@ -37,6 +37,17 @@ typedef struct {
 	uint8_t call_option[5];
 	// REPORT_FIELD bits beyond the driver's own (NEW_EVENT, FLC, CSBK, slot type and EMB)
 	uint8_t report_field;
+	// Optional: the CARRIER_READY value that says the receiver is ready (1, or 2 when the demodulated phase is
+	// reversed), sent rx_settle_ms after each return to receive from a transmission, whatever the board reads. A
+	// reply can start 30 ms after the last burst, before the board's first carrier reading, and the chip looks for
+	// sync only from CARRIER_READY on (modem-sct.md 3). 0: only the board's readings go out
+	uint8_t rx_ready;
+	uint8_t rx_settle_ms;
+	// Optional: a running count of the chip's burst line edges, rising and falling, from the board's interrupt (any
+	// start value: the engine takes differences within a transmission). With it, a transmission without voice ends
+	// at the fall of its last burst, not at the chip's "far end done" about 17 ms later, and the receiver is back
+	// that much sooner (modem-sct.md 3)
+	uint32_t (*burst_edges)(void);
 	// Optional: more fields for the start packet (TYPE 0x05), sent in order after the driver's: settings the
 	// board takes from its calibration, for example. A field whose length is wrong fails start
 	const sct_field_t *start_fields;
@@ -67,6 +78,7 @@ typedef struct {
 	uint32_t tx_acks;	// ... answered by the chip within their slot
 	uint32_t tx_timeouts;	// ... not answered within it (the next one went anyway)
 	uint32_t tx_paced;	// voice bursts taken without a frame
+	uint32_t tx_early;	// transmissions ended at the burst line's last fall (port burst_edges)
 	uint32_t rx_frames;	// data frames reported
 	uint32_t rx_fec;	// ... with an FEC error event before them
 	uint32_t rx_voice;	// voice bursts reported for calls the chip plays
@@ -97,7 +109,8 @@ void sct_dmr_poll(uint32_t now_ms);
 // demodulated phase is reversed. The chip looks for sync only after it hears that a carrier came up, so a board
 // calls this at each change, or every status poll (repeats cost nothing). The engine sends a change while it
 // receives (a loss only once it has lasted SCT_DMR_CR_HOLD_MS, since a direct-mode station is silent between its
-// bursts), and the current value again at each return to receive; it never sends one while it transmits. A board
+// bursts), and the current value again at each return to receive (after a transmission, the port's rx_ready once the
+// receiver has settled, when it sets one); it never sends one while it transmits. A board
 // that never calls it relies on the chip's own squelch (docs/spec/modem-sct.md 3)
 void sct_dmr_carrier(uint8_t ready);
 

@@ -1045,6 +1045,177 @@ static void test_dmr_carrier(void)
 	CHECK(nsent == n);
 }
 
+// A port with rx_ready: after a transmission, no CARRIER_READY until the receiver has settled, whatever the board
+// reads meanwhile, then rx_ready; the board's readings from there as before
+static const sct_dmr_port_t port_settle = {
+	.send = d_send, .call_option = { 0x01, 0x40, 0x42, 0x47, 0x08 }, .rx_ready = 2, .rx_settle_ms = 40,
+	.ready = d_ready, .lock = d_lock, .unlock = d_unlock,
+};
+
+static int cr_sent_since(int from)
+{
+	int n = 0;
+
+	for (int i = from; i < nsent; i++)
+		if (sent_field(i, SCT_F_CARRIER_READY, NULL) != NULL)
+			n++;
+	return n;
+}
+
+static void test_dmr_carrier_settle(void)
+{
+	dmr_config_t cfg = { .own_id = 1234567, .cc = 1, .access = DMR_ACCESS_IMPOLITE };
+	const uint8_t *d;
+	uint32_t t = 2000;
+
+	sct_dmr_init(&port_settle);
+	nsent = 0;
+	sct_dmr_poll(t);
+	CHECK(m->start(&cfg, on_event, NULL));
+	sct_dmr_poll(t += 10);
+	CHECK(cr_sent_since(0) == 0);		// no transmission yet: only the board's readings, none so far
+
+	// A transmission that ends on the drain timeout: receive again at t
+	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	m->tx_end();
+	sct_dmr_poll(t += SCT_DMR_DONE_MS);
+	int n = nsent;
+	sct_dmr_carrier(0);			// the board reads "lost" while its receiver settles
+	sct_dmr_poll(t + 39);
+	CHECK(cr_sent_since(n) == 0);
+	sct_dmr_poll(t + 40);
+	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
+	CHECK(cr_sent_since(n) == 1 && d != NULL && d[0] == 2);
+	// The board's loss goes out once it has lasted the hold, as any loss
+	sct_dmr_carrier(0);
+	sct_dmr_poll(t + 40 + SCT_DMR_CR_HOLD_MS - 1);
+	CHECK(cr_sent_since(n) == 1);
+	sct_dmr_poll(t += 40 + SCT_DMR_CR_HOLD_MS);
+	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
+	CHECK(cr_sent_since(n) == 2 && d != NULL && d[0] == 0);
+
+	// An aborted transmission settles the same way; a new one before the time sends nothing in between
+	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	m->tx_abort();
+	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	n = nsent;
+	sct_dmr_poll(t + 100);
+	CHECK(cr_sent_since(n) == 0);
+	sct_dmr_poll(t += 110);
+	m->tx_abort();
+	n = nsent;
+	sct_dmr_poll(t + 39);
+	CHECK(cr_sent_since(n) == 0);
+	sct_dmr_poll(t + 40);
+	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
+	CHECK(cr_sent_since(n) == 1 && d != NULL && d[0] == 2);
+
+	// A receive restart doesn't wait: nothing new to settle
+	n = nsent;
+	m->rx_restart();
+	sct_dmr_poll(t + 41);
+	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
+	CHECK(cr_sent_since(n) == 1 && d != NULL && d[0] == 2);
+	m->stop();
+}
+
+// A port with the burst line's edge count: a transmission without voice ends at the fall of the burst of its last
+// frame, without waiting for the chip's "far end done" or the drain; one with voice still waits for the chip
+static uint32_t t_edges = 0xFFFFFFF0u;	// any start: the engine takes differences (and this one wraps)
+
+static uint32_t d_burst_edges(void)
+{
+	return t_edges;
+}
+
+static const sct_dmr_port_t port_edges = {
+	.send = d_send, .call_option = { 0x01, 0x40, 0x42, 0x47, 0x08 }, .burst_edges = d_burst_edges,
+	.ready = d_ready, .lock = d_lock, .unlock = d_unlock,
+};
+
+static void test_dmr_tx_early_end(void)
+{
+	dmr_config_t cfg = { .own_id = 1234567, .cc = 1, .access = DMR_ACCESS_IMPOLITE };
+	const uint8_t *d;
+	uint32_t t = 3000;
+	sct_dmr_stats_t st;
+
+	sct_dmr_init(&port_edges);
+	nsent = nev = 0;
+	sct_dmr_poll(t);
+	CHECK(m->start(&cfg, on_event, NULL));
+	t_edges += 7;				// edges before the key-up don't count
+
+	// Three CSBKs, a slot apart (the chip answers none in time)
+	CHECK(m->tx_begin(DMR_TIMING_ASAP, 1, DMR_ACCESS_IMPOLITE));
+	for (int i = 0; i < 3; i++) {
+		dmr_tx_burst_t b = burst(DMR_BURST_CSBK, 0, 12);
+		CHECK(m->tx_queue(&b));
+	}
+	m->tx_end();
+	sct_dmr_poll(t + SCT_DMR_SLOT_MS);
+	CHECK(frames_sent() == 2);
+	t_edges += 4;				// two bursts over, one frame still queued
+	sct_dmr_poll(t + SCT_DMR_SLOT_MS + 10);
+	CHECK(count_ev(DMR_EV_TX_DONE) == 0);
+	sct_dmr_poll(t += 2 * SCT_DMR_SLOT_MS);
+	CHECK(frames_sent() == 3);
+	t_edges += 1;				// the last burst rises
+	sct_dmr_poll(t += 30);
+	CHECK(count_ev(DMR_EV_TX_DONE) == 0 && m->is_transmitting());
+	t_edges += 1;				// ... and falls: done at the next poll
+	sct_dmr_poll(t += 1);
+	CHECK(count_ev(DMR_EV_TX_DONE) == 1 && !m->is_transmitting());
+	d = sent_field(nsent - 1, SCT_F_WORK_MODE, NULL);
+	CHECK(d != NULL && d[0] == 1);
+	far_done(t + 17);			// the chip's own end comes late: nothing more
+	sct_dmr_poll(t + SCT_DMR_DONE_MS);
+	CHECK(count_ev(DMR_EV_TX_DONE) == 1);
+	sct_dmr_get_stats(&st);
+	CHECK(st.tx_early == 1);
+
+	// Voice: the chip's own voice bursts aren't frames, so the edges don't end it; the chip's end does
+	t += 1000;
+	sct_dmr_poll(t);
+	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	dmr_tx_burst_t b = burst(DMR_BURST_VOICE_LC_HEADER, 0, 12);
+	CHECK(m->tx_queue(&b));
+	b = burst(DMR_BURST_VOICE, 0, 27);
+	CHECK(m->tx_queue(&b));
+	frame_ok(t + 5);
+	sct_dmr_poll(t += SCT_DMR_SLOT_MS);
+	frame_ok(t + 5);
+	b = burst(DMR_BURST_TERMINATOR_LC, 0, 12);
+	CHECK(m->tx_queue(&b));
+	m->tx_end();
+	sct_dmr_poll(t += SCT_DMR_SLOT_MS);
+	frame_ok(t + 5);
+	t_edges += 40;
+	sct_dmr_poll(t += 40);
+	CHECK(count_ev(DMR_EV_TX_DONE) == 1 && m->is_transmitting());
+	far_done(t += 20);
+	CHECK(count_ev(DMR_EV_TX_DONE) == 2 && !m->is_transmitting());
+	sct_dmr_get_stats(&st);
+	CHECK(st.tx_early == 1);
+
+	// A refused frame never goes on the air: its burst never comes, and the end is the chip's or the drain's
+	t += 1000;
+	sct_dmr_poll(t);
+	CHECK(m->tx_begin(DMR_TIMING_ASAP, 1, DMR_ACCESS_IMPOLITE));
+	b = burst(DMR_BURST_CSBK, 0, 12);
+	CHECK(m->tx_queue(&b));
+	m->tx_end();
+	static const uint8_t nak[] = { 0x43, SCT_ACK_LENGTH };
+	chip_packet(nak, 2, SCT_TYPE_DMR, t + 5);
+	sct_dmr_poll(t += 100);
+	CHECK(count_ev(DMR_EV_TX_DONE) == 2 && m->is_transmitting());
+	sct_dmr_poll(t + SCT_DMR_DONE_MS);
+	CHECK(count_ev(DMR_EV_TX_DONE) == 3 && !m->is_transmitting());
+	sct_dmr_get_stats(&st);
+	CHECK(st.tx_early == 1);
+	m->stop();
+}
+
 // Fields the board gives at each transmission (a modulator gain by band): one control packet before WORK_MODE
 // transmit, asked for again at every key-up
 static uint8_t t_band;	// 0: the board gives none
@@ -1156,6 +1327,8 @@ int main(void)
 	test_dmr_rx();
 	test_dmr_options();
 	test_dmr_carrier();
+	test_dmr_carrier_settle();
+	test_dmr_tx_early_end();
 	test_dmr_tx_fields();
 	test_dmr_codec_start();
 	CHECK(lock_depth == 0 && lock_max == 1);
