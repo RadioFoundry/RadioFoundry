@@ -780,9 +780,10 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
   switch already puts the receiver back after each burst missed it too (0 of 16 each), because the radio task's
   `rx()` at the end of the transmission set the receiver up again (idle, synthesizer, receive) just as it came. Each
   board's `rx()` now leaves the receiver as it is when the last burst switch left it receiving on the same channel:
-  4 of 4 on the first try on each.
-- With the HR_C7000 radios the portable sometimes sends its TMS ACK a second time 2.5 s later (2 sends of 5), so it
-  missed our link ACK to the first. Not seen with the HR_C6000 radios. Not explained yet.
+  4 of 4 on the first try on each of four radios.
+- With two of the three HR_C7000 radios tried, the portable sends its TMS ACK a second time 2.5 s later on most sends
+  (9 of 10), so it missed our link ACK to the first. Not seen with the third or the HR_C6000 radios; a newer burst
+  key-up timing on one of the two didn't change it (4 of 4). Not explained yet.
 
 ## 13. Tests
 
