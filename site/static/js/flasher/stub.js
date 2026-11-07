@@ -103,6 +103,21 @@ export function univLayout(image) {
 	return [u32le(image, 0xB8), u32le(image, 0xBC)];
 }
 
+// The universal stub's own LED pins until CONFIG (PTB1 red, PTB0 green), and where its parameter block holds them
+// (led_red, led_green: u32 little endian each)
+export const DEFAULT_LED = { red: 33, green: 32 }, UCFG_LED = 0xA8;
+
+// The universal stub with the board's LED pins in its parameter block (stubtool.py univ_for_board): the stub drives its
+// LED pins from its first instruction, before CONFIG, and on some radios its own pins do something else. A copy; the
+// image as it is without led or a parameter block
+export function univForBoard(image, led) {
+	if (!led || !univLayout(image)) return image;
+	const out = image.slice();
+	out.set(le32(led.red), UCFG_LED);
+	out.set(le32(led.green), UCFG_LED + 4);
+	return out;
+}
+
 // The checks stubtool's check_univ_load makes before the stub is sent: its run area inside SRAM, the image 4-byte
 // aligned inside SRAM and inside the window the firmware offers, and no overlap between the loaded copy and the copy
 // the entry code makes at the run address (the stub would stop at its entry instead)
@@ -406,8 +421,8 @@ export class Stub {
 	// Send the board's profile to the universal stub (CONFIG, op 0x0D: clock, power latch and key pins, LEDs, board id,
 	// flags, the UART this request came in on) and check the echo in the next HELLO. Writes wait for this. The clock is
 	// the APB clock, measured (24 MHz under the boot ROM, 36 MHz on the DB25-D, 84 MHz under RadioFoundry on the DM-32UV and
-	// DM-1801 Pro). An older stub has no CONFIG.
-	async configure(profile, led = { red: 33, green: 32 }) {
+	// DM-1801 Pro). An older stub has no CONFIG. The LED pins: the profile's, else the stub's own.
+	async configure(profile, led = profile?.led || DEFAULT_LED) {
 		if (profile?.protect) this.protect = profile.protect;
 		if (!this.v6) return;
 		if (this.v6.board && this.v6.board === profile.id && this.v6.flags === (profile.nand ? 1 : 0)) {

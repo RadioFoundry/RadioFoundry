@@ -319,6 +319,7 @@ export class FakeC7000 {
 		this.wel = false;
 		this.led = "off";
 		this.events = [];
+		this.ledPins = new Set();	// every GPIO a stub drove as an LED (255: none)
 		this.writes = 0;
 		this.stream = this.makeStream();
 	}
@@ -473,11 +474,7 @@ export class FakeC7000 {
 		this.inb = ib.slice(n);
 		if (sum8(payload) !== ib[2]) return 1;
 		if (op === 0x18) this.loaded = concat(this.loaded, payload.subarray(8));
-		else {
-			this.state = "stub";
-			this.led = "slow";
-			this.events.push("stub (boot ROM)");
-		}
+		else this.startStub("stub (boot ROM)");
 		this.send(new Uint8Array(this.faults.romNak ? [0x02, 0x0A, 0x00, 0x03] : [0x02, 0x05, 0x00, 0x03]));
 		return 1;
 	}
@@ -509,11 +506,7 @@ export class FakeC7000 {
 			} else if (op === 3) {
 				if (crc32(this.loaded) !== this.crc) return reply(4), 1;
 				reply(0);
-				setTimeout(() => {
-					this.state = "stub";
-					this.led = "slow";
-					this.events.push("stub (from RadioFoundry)");
-				}, 100);
+				setTimeout(() => this.startStub("stub (from RadioFoundry)"), 100);
 			}
 		} else reply(3);
 		return 1;
@@ -551,9 +544,7 @@ export class FakeC7000 {
 			for (const a of this.ram.keys()) if (a >= load && a < load + size) top = Math.max(top, a + 4 - load);
 			this.loaded = new Uint8Array(top);
 			for (let o = 0; o < top; o += 4) this.loaded.set(le32(this.ram.get(load + o) || 0), o);
-			this.state = "stub";
-			this.led = "slow";
-			this.events.push("stub (debug console)");
+			this.startStub("stub (debug console)");
 			return 1;
 		}
 		let m = /^read_addr\((0x[0-9a-f]+)\)$/.exec(cmd);
@@ -572,6 +563,16 @@ export class FakeC7000 {
 		}
 		if (out) this.send(new TextEncoder().encode(`${out}\r\nclose slot.\r\nu8PassWord 0 u8EncLevel 0 u8Enc0\r\n`));
 		return 1;
+	}
+
+	// The stub starts: a universal one drives the LED pins its parameter block names (0xA8, 0xAC) from its first
+	// instruction, before CONFIG; ledPins keeps every pin a stub drove as an LED since this radio was made
+	startStub(event) {
+		this.state = "stub";
+		this.led = "slow";
+		this.events.push(event);
+		if (this.loaded.length >= 0xC0 && String.fromCharCode(...this.loaded.subarray(0x80, 0x84)) === "UCFG")
+			for (const o of [0xA8, 0xAC]) this.ledPins.add(u32le(this.loaded, o));
 	}
 
 	// A word of the RAM copy of the version string (the build's ram address), else 0
@@ -634,6 +635,7 @@ export class FakeC7000 {
 			if (p.length !== 16) return this.reply(0x0B, new Uint8Array(0)), 1;
 			this.configs.push(p);
 			this.stubCfg = { board: p[12], flags: p[13] };
+			this.ledPins.add(p[10]).add(p[11]);
 			this.reply(OK, new Uint8Array(0));
 		} else if (op === 0x01) this.reply(OK, concat(new TextEncoder().encode("C7STUB"), new Uint8Array([1, 0x04, 0x08]), le32(0x10000)));
 		else if (op === 0x02) {
@@ -695,6 +697,7 @@ export class FakeC7000 {
 			}
 			this.reply(OK, concat(...out));
 		} else if (op === 0x08 || op === 0x0A) {
+			if (op === 0x08) this.ledPins.add(p[0]).add(p[1]);
 			if (op === 0x0A) this.led = p[1] ? "sequence" : "slow";
 			this.reply(OK, new Uint8Array(0));
 		} else if (op === 0x09) {

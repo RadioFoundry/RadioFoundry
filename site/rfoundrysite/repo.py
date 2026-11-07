@@ -326,8 +326,9 @@ def c7000_flash():
 			       # the read rate are in radios.json flash
 			       "progmem_size": lay.get("progmem_size", dc.PROGMEM_SIZE), "data_flash": lay.get("data_flash", True),
 			       "calibration": lay.get("calibration"),
-			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand")} if bid in st.C7_BOARDS
-			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")},
+			       # (with its status LED pins, which also go into the stub's parameter block before it is sent)
+			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand", "led")} if bid in st.C7_BOARDS
+			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand", "led")},
 			       # the board's [[flash.protect]] (progmem offsets are the stub's: from the program flash's base),
 			       # which every write and restore here checks first (protect.js)
 			       "protect": st.C7_BOARDS[bid]["protect"] if bid in st.C7_BOARDS else []}

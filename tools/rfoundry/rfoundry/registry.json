@@ -126,6 +126,10 @@
     "progmem": 2097152,
     "stock_console": "usmart",
     "rom_entry": null,
+    "led": {
+     "red": 33,
+     "green": 32
+    },
     "calibration": {
      "progmem": 2088960,
      "nand": 2621440,
@@ -416,6 +420,10 @@
     "progmem": 1048576,
     "stock_console": null,
     "rom_entry": null,
+    "led": {
+     "red": 33,
+     "green": 32
+    },
     "calibration": {
      "area": 823296,
      "page_id": 2
@@ -535,6 +543,10 @@
     "progmem": 1048576,
     "stock_console": null,
     "rom_entry": null,
+    "led": {
+     "red": 33,
+     "green": 32
+    },
     "calibration": {
      "area": 823296,
      "page_id": 2
@@ -1034,6 +1046,10 @@
     "progmem": 2097152,
     "stock_console": null,
     "rom_entry": 50380800,
+    "led": {
+     "red": 39,
+     "green": 37
+    },
     "calibration": {
      "data": 2093056
     }

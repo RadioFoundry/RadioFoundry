@@ -150,7 +150,8 @@ The radio restarts into its normal firmware. If neither works, remove and refit 
 | Three green flashes | Finished. The slow yellow blink comes back after. |
 | Nothing, screen dark, tool says "waiting" | The radio is not in loader mode yet: switch it off, make sure the tool is waiting, then switch it on. |
 
-Yellow is the red and the green LED both full on, so it looks the same on every model (red = PTB1, green = PTB0, active high, the same pins on the DM-1801 Pro and the DM-32UV).
+Yellow is the red and the green LED both full on, so it looks the same on every model. The tool drives each radio's own LED pins (its `pins.h`); `--led-red` and
+`--led-green` override them.
 
 ## Transfer speed
 

@@ -641,7 +641,7 @@ class Board:
     def stub(self):
         """The board's profile for its platform's stub (platform.toml board_stub.tool), with what other files say.
         stubtool (the HR_C7000 universal stub): the power latch and key from pins.h when the stub must hold the radio
-        on (a soft power key), else none. f4stub: the board record's facts, the SPI flash pins from pins.h, the crystal
+        on (a soft power key), else none; the status LEDs from pins.h (PIN_LED_RED, PIN_LED_GREEN), else none. f4stub: the board record's facts, the SPI flash pins from pins.h, the crystal
         from HSE_VALUE and the bootloader's end from APP_BASE. None without a profile."""
         s = self.data["flash"].get("stub")
         bs = self.platform.data.get("board_stub")
@@ -659,7 +659,9 @@ class Board:
             hold = s["hold_power"]
             out.update(latch=self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
                        key=self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, nand=self.nand,
-                       progmem=s["progmem"], stock_console=s.get("stock_console"), rom_entry=s.get("rom_entry"))
+                       progmem=s["progmem"], stock_console=s.get("stock_console"), rom_entry=s.get("rom_entry"),
+                       # the status LEDs the stub blinks: a pin the radio uses for something else must never be driven
+                       led={"red": self.pins.get("PIN_LED_RED", NO_PIN), "green": self.pins.get("PIN_LED_GREEN", NO_PIN)})
             if "calibration" in s:
                 out["calibration"] = s["calibration"]
         return out

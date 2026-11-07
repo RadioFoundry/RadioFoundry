@@ -18,7 +18,7 @@
 import { h, t, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames } from "./dom.js";
 import { hex, sha256, sleep } from "./bytes.js";
 import { SerialStream, Link, probe, serialSupported, serialApi, knownRadioPort, grantedPorts } from "./link.js";
-import { Stub, stubImages, StubError, DONE_LED, MEM, ROM_REPEAT } from "./stub.js";
+import { Stub, stubImages, univForBoard, StubError, DONE_LED, MEM, ROM_REPEAT } from "./stub.js";
 import * as c7 from "./c7000.js";
 import { openVendorFile, describe as describeVendorFile, analysisCandidate, whyNot } from "./vendorfile.js";
 import { pickProblem } from "./explain.js";
@@ -85,7 +85,7 @@ const screenNow = () => ({ rfoundry: "loader", usmart: "any" })[session().how] |
 
 export function init(context) {
 	ctx = context;
-	routes = makeStockRoutes({ S, ctx, C, boardId, session, busy, loader: iap, fill: (el, ...p) => fill(el, ...p), stubImage: async () => (await stubs()).image,
+	routes = makeStockRoutes({ S, ctx, C, boardId, session, busy, loader: iap, fill: (el, ...p) => fill(el, ...p), stubImage: boardStub,
 		cableBanner: () => cableBanner() });
 }
 
@@ -109,6 +109,13 @@ async function stubs() {
 	if (!images) images = stubImages(await ctx.stubJson());
 	return images;
 }
+// A board's status LED pins (its stub profile, from pins.h), else the stub's own
+export const ledFor = (c, board) => c.boards[board]?.stub_board?.led || c.led;
+// The stub image sent to a board's radio: its LED pins in the parameter block, so the stub never drives another pin,
+// not even before CONFIG
+export const stubFor = (c, board, image) => univForBoard(image, ledFor(c, board));
+const boardLed = () => ledFor(C(), boardId());
+const boardStub = async () => stubFor(C(), boardId(), (await stubs()).image);
 
 // Keep the computer awake and warn before the page is closed while the radio is being read or written
 let wake = null;
@@ -340,7 +347,7 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 			h("p", {}, t("flash.c7.connect.rfoundry_loading")), prog.el);
 		try {
 			const stub = mkStub();
-			await stub.enterFromRFoundry((await stubs()).image, (d, n) => prog.set(d, n, t("flash.c7.connect.loader")));
+			await stub.enterFromRFoundry(await boardStub(), (d, n) => prog.set(d, n, t("flash.c7.connect.loader")));
 			c.how = "rfoundry";
 			await ready(t("flash.c7.connect.found_rfoundry_stub"), stub);
 		} catch (e) {
@@ -452,7 +459,7 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 		try {
 			// one image for every radio, at the boot ROM's address (a first stage takes it there too)
 			const st = await stubs();
-			await stub.loadThroughRom(st.image, st.load, (d, n) => prog.set(d, n, t("flash.c7.connect.loader")), { answered });
+			await stub.loadThroughRom(await boardStub(), st.load, (d, n) => prog.set(d, n, t("flash.c7.connect.loader")), { answered });
 			c.how = answered ? "rom-slow" : "rom";
 			await ready(t("flash.c7.connect.found_rom"), stub);
 		} catch (e) {
@@ -481,7 +488,7 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 		const screen = screenNow();
 		show({ led: "wait", screen }, h("p", { class: "c7-big" }, h("b", {}, how)), h("p", { class: "muted" }, t("flash.c7.connect.checking")));
 		try {
-			const led = C().led;
+			const led = boardLed();
 			// the radio's profile, checked before any write, and its protected regions, which every write checks
 			await st.configure({ ...C().boards[boardId()].stub_board, protect: C().boards[boardId()].protect || [] }, led);
 			await st.setupLed(led.red, led.green);
