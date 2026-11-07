@@ -120,9 +120,9 @@ static uint8_t smsSeq = 0;
 // arriving back to back each get theirs (gotcha 5.7)
 #define REPLY_QUEUE_SIZE		5		// one slot is kept free: 4 replies
 #define REPLY_QUEUE_MAX_AGE_MS	5000	// a reply still queued after this is dropped: the sender has given up
-// Our TMS ACK waits this long after the link ACK we sent before it (confirmed data). BrandMeister ignored a link ACK
-// with the TMS ACK's preambles 0.3 s behind it and took one with nothing after; MOTOTRBO radios leave about 1.4 s
-// (docs/spec/dmr-data.md 5.1.1)
+// Our TMS ACK waits this long after the link ACK we sent before it (confirmed data), as MOTOTRBO radios leave about
+// 1.4 s. Two link ACKs of ours with the TMS ACK 0.3 s behind got no reaction from BrandMeister, three with nothing
+// behind did (few samples, a lost packet on the hotspot's path not ruled out: docs/spec/dmr-data.md 5.1.1)
 #define TMS_ACK_GAP_MS			1500
 typedef struct
 {
@@ -1996,7 +1996,7 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 
 #if CONFIG_DMR_TMS
 	// After the response has gone (the service is busy until then) and TMS_ACK_GAP_MS more, with the preambles of a
-	// text (BrandMeister ignores one with 2)
+	// text (BrandMeister didn't react to one with 2)
 	if (tmsAckPending && !dmrDataServiceIsBusy() && canTransmit() &&
 			(!tmsAckAfterResponse || !txEnded || ((now - txEndedAt) >= TMS_ACK_GAP_MS)))
 	{

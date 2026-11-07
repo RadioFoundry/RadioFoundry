@@ -159,7 +159,7 @@ BrandMeister's SMS service (ID 262993, through a hotspot) speaks TMS on UDP 4007
 | N(S) | 0 on every packet | steps | steps (12.2) |
 | Link ACK | about 0.5 s after the last block, 1 preamble | | straight after (3) |
 | TMS ACK | about 5.7 s after the message | confirmed, 16 preambles, about 1.4 s after its link ACK | unconfirmed, 16 preambles, 1.5 s after our link ACK |
-| Our link ACK | taken when nothing follows it within about 1 s; ignored with our TMS ACK's preambles 0.3 s behind | | |
+| Our link ACK | taken 3 of 3 times with nothing after it within 1 s; no reaction 2 of 2 times with our TMS ACK 0.3 s behind (few samples; may be loss) | | |
 | No TMS ACK | sends the text again after about 28 s, with a new sequence number | link layer retries about every 6 s | 8 s wait, 2 tries |
 | CRC-32 failure | NACK, class 1 type 1 | | NACK (12.3) |
 
@@ -171,6 +171,10 @@ through one hotspot, identical but for the preambles: with 1 there was no answer
 later, the TMS ACK 6 s later and the reply 30 s later. Every packet BrandMeister answered in both captures had 12 or
 more; none had 1 or 2. It sends nothing back, not even a NACK, so a short preamble looks like a lost packet. We send
 16 (12.6.4).
+
+The hotspot reaches BrandMeister over UDP, often on Wi-Fi, and the captures were taken at the hotspot: they show what
+left it, not what BrandMeister got. A single unanswered packet may be a lost one. The preamble rule rests on 10 of
+our sends with 2 preambles all unanswered and the identical pair above; the TMS ACK findings below on two samples each.
 
 Not known yet: whether BrandMeister takes unconfirmed rate 1/2 TMS, and ETSI IP text on 5016, from a radio, now that
 the preambles match. A MOTOTRBO radio's text starts with CR LF (`0d 00 0a 00`); ours doesn't, and whether
@@ -212,9 +216,10 @@ Second pass, case 2 with 16 preambles (TMS ACK still with 2, right after the lin
 | Our text | BrandMeister's link ACK came 0.61 s after try 1 (class 0 type 1, status our N(S), 1 preamble), but the radio didn't take it and sent 3 more tries. Why is open: `ip.cnf_other` and `ip.cnf_other_last` (12.5) record such a response now |
 | BrandMeister's TMS ACK | came about 11 s after try 1: confirmed, rate 3/4, 1 preamble, N(S) 0. Our link ACK to it was taken |
 | BrandMeister's reply | "SMS was received by the System.", into the inbox once (case 6) |
-| Our ACKs to the reply | the link ACK with our TMS ACK 0.3 s behind it: ignored, the reply came again 3 s later; the link ACK to that repeat, with nothing behind: taken. Our TMS ACK (2 preambles): ignored, so the reply came again after about 35 s with a new sequence number, kept once (gotcha 5.8) |
+| Our ACKs to the reply | the link ACK with our TMS ACK 0.3 s behind it: no reaction, the reply came again 3 s later; the link ACK to that repeat, with nothing behind: taken (twice each). Our TMS ACK (2 preambles): no reaction (twice), so the reply came again after about 35 s with a new sequence number, kept once (gotcha 5.8) |
 
-From that pass: the TMS ACK goes with 16 preambles and 1.5 s after our link ACK (5.1). Cases 1, 3-5 and 7 with
+From that pass: the TMS ACK goes with 16 preambles and 1.5 s after our link ACK (5.1), as MOTOTRBO radios send it;
+with two samples each, a lost packet is not ruled out. Cases 1, 3-5 and 7 with
 both: open. A MOTOTRBO radio sends its TMS ACK confirmed; whether BrandMeister takes an unconfirmed one is open.
 
 #### 5.1.2 Simulated BrandMeister text service (HIL)
@@ -226,7 +231,7 @@ to the real network. The stand-in answers as 262993 did in the capture. It is no
 |---|---|---|
 | Any packet it sends | confirmed (A=1), rate 3/4, N(S) 0, F=1, FSN 1000, from 262993, UDP 4007 to 4007 | |
 | Our packet with fewer than 12 preamble CSBKs | nothing | |
-| Our link ACK with another transmission of ours starting within 1 s | as if no link ACK came: its packet again | about 3 s after it sent the packet |
+| Our link ACK with another transmission of ours starting within 1 s | as if no link ACK came: its packet again (an option: the evidence is two samples, 5.1.1) | about 3 s after it sent the packet |
 | Our confirmed packet, every block good | link ACK: response class 0 type 1, status our N(S) | about 0.5 s after the last block, 1 preamble |
 | Our confirmed packet, CRC-32 wrong | NACK: class 1 type 1 | as the link ACK |
 | Our TMS with an ACK requested | TMS ACK `00 03 BF 00 <s/n>` (`00 04 BF 00 ...` past 31) | about 5.7 s after our message |
@@ -645,7 +650,7 @@ A confirmed packet of the air MTU gets 2. Each try sends them again. ACKs, ETSI 
 own counts. The service builds the packet with 2, then moves its bursts up and rebuilds the preambles
 (`widenPreambles`), so no buffer grows.
 
-Why 16: BrandMeister ignores data with 1 or 2 preambles and answers the same packet with 15 or 16, the count MOTOTRBO
+Why 16: BrandMeister didn't answer data with 1 or 2 preambles (10 sends in a row) and answered the same packet with 15 or 16, the count MOTOTRBO
 radios send (5.1.1). The standard sets no count (TS 102 361-2 7.1.2.5). The cost is 0.84 s more on air per try; the
 waits for the link ACK and the TMS ACK start when the transmission ends, so they don't shrink.
 

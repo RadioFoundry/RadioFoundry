@@ -725,7 +725,7 @@ static void testOurSms(void)
 	runMainTask(200);
 	CHECK((sentCount == 1) && (sent[0].kind == 'S') && (sent[0].dst == RADIO_A));
 	CHECK(sms_send_state() == DMR_REQ_SENDING);
-	// DMR_DATA_TX_PREAMBLES preambles, each counting the bursts after it: BrandMeister ignores a text with 2
+	// DMR_DATA_TX_PREAMBLES preambles, each counting the bursts after it: BrandMeister ignores a text with 2 (5.1.1)
 	CHECK(txHeader() == &lastTx[DMR_DATA_TX_PREAMBLES]);
 	for (int i = 0; i < DMR_DATA_TX_PREAMBLES; i++)
 	{
@@ -951,8 +951,8 @@ static void testTmsReplies(void)
 	CHECK((sent[2].kind == 'R') && (sent[2].dst == RADIO_B));
 	CHECK((sent[3].kind == 'T') && (sent[3].dst == RADIO_B) && (sent[3].seq == 22));
 
-	// The TMS ACK after our link ACK waits TMS_ACK_GAP_MS (BrandMeister ignores a link ACK with a transmission right
-	// behind it) and has a text's preambles (it ignores one with 2)
+	// The TMS ACK after our link ACK waits TMS_ACK_GAP_MS and has a text's preambles, as MOTOTRBO radios
+	// send it (dmr-data.md 5.1.1)
 	reset();
 	receiveConfirmedTMS(RADIO_A, "gap", 23, 3);
 	runMainTask(1000);
