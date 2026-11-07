@@ -1037,6 +1037,12 @@ TESTS   += hrc7000IrqStallTest
 hrc7000IrqStallTest: hrc7000IrqStallTest.c $(ROOT)/platform/hrc7000/irq_stall.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000IrqStallTest.c
 
+# The GD32F30x clocks' fold (platform/gd32f30x/time_fold.h): 32-bit running counts against a 64-bit reference
+TESTS   += gd32TimeFoldTest
+
+gd32TimeFoldTest: gd32TimeFoldTest.c $(ROOT)/platform/gd32f30x/time_fold.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ gd32TimeFoldTest.c
+
 # The HR_C7000 codec slot (platform/hrc7000/codec_slot.h): versions 1 and 2, the move, the refusals, and the slot
 # tools/hrc7000_codec.py writes (docs/spec/codec-placement.md)
 TESTS   += hrc7000CodecSlotTest
@@ -1046,7 +1052,7 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 
 run: run-platform
 run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest \
-		hrc7000IrqStallTest
+		hrc7000IrqStallTest gd32TimeFoldTest
 	./bk4819Test
 	./at1141Test
 	./fd6818shTest
@@ -1054,6 +1060,7 @@ run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest h
 	./hrc7000ClockTest
 	./hrc7000UartFormatTest
 	./hrc7000IrqStallTest
+	./gd32TimeFoldTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-platform
