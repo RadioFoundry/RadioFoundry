@@ -944,12 +944,22 @@ static void testTmsReplies(void)
 	reset();
 	receiveConfirmedTMS(RADIO_A, "confirmed A", 21, 2);
 	receiveConfirmedTMS(RADIO_B, "confirmed B", 22, 5);
-	runMainTask(3000);
+	runMainTask(5000);
 	CHECK(sentCount == 4);
 	CHECK((sent[0].kind == 'R') && (sent[0].dst == RADIO_A));
 	CHECK((sent[1].kind == 'T') && (sent[1].dst == RADIO_A) && (sent[1].seq == 21));
 	CHECK((sent[2].kind == 'R') && (sent[2].dst == RADIO_B));
 	CHECK((sent[3].kind == 'T') && (sent[3].dst == RADIO_B) && (sent[3].seq == 22));
+
+	// The TMS ACK after our link ACK waits TMS_ACK_GAP_MS (BrandMeister ignores a link ACK with a transmission right
+	// behind it) and has a text's preambles (it ignores one with 2)
+	reset();
+	receiveConfirmedTMS(RADIO_A, "gap", 23, 3);
+	runMainTask(1000);
+	CHECK((sentCount == 1) && (sent[0].kind == 'R'));
+	runMainTask(1000);
+	CHECK((sentCount == 2) && (sent[1].kind == 'T') && (sent[1].seq == 23));
+	CHECK(txHeader() == &lastTx[DMR_DATA_TX_PREAMBLES]);
 
 	// A sender that never steps N(S) (BrandMeister sends 0 every time): other data with the same N(S) within
 	// CNF_RX_DUPLICATE_MS is a new packet, passed on; the same data again is the retry, ACKed only
@@ -1095,9 +1105,17 @@ static void testIpTx(void)
 	CHECK(lastTx[lastTxCount - 1].dataType == DT_TERMINATOR_WITH_LC && (lastTx[lastTxCount - 1].payload[8] & 0x67) == (0x60 | ns));
 	CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 8 + 1);
 	CHECK(dmrDataServiceIpBusy());
+	dmrDataServiceGetStats(&st);
+	uint32_t other = st.ipCnfOther;
 	respond(RADIO_B, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);// another radio's: not ours
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK((ns + 1) & 7), NULL);// another packet's
 	CHECK(dmrDataServiceIpBusy());
+	// Both kept for the debug link: the last is A's (source ours), the other N(S), while we wait, confirmed
+	dmrDataServiceGetStats(&st);
+	CHECK(st.ipCnfOther == other + 2 &&
+	      st.ipCnfOtherLast == (DMR_RESPONSE_ACK((ns + 1) & 7) | (DMR_SAP_UDPIP_COMPRESSION << 8) |
+	                            (DMR_SAP_UDPIP_COMPRESSION << 12) | ((uint32_t)ns << 16) | (1UL << 19) | (3UL << 20) |
+	                            (1UL << 22)));
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 

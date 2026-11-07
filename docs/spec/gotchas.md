@@ -307,7 +307,9 @@ new one.
 
 **5.9 BrandMeister ignores data with few preambles.** Confirmed TMS sent with 2 preamble CSBKs reached BrandMeister
 intact and got nothing back: no link ACK, no NACK. The same packet with 16 got its link ACK in under a second. Text and
-IP packets go with 16 where the burst list has room ([dmr-data.md](dmr-data.md) 12.6.4).
+IP packets go with 16 where the burst list has room ([dmr-data.md](dmr-data.md) 12.6.4). The TMS ACK too, and not
+straight behind our link ACK: BrandMeister ignored a link ACK with the TMS ACK's preambles 0.3 s after it, so the TMS
+ACK waits 1.5 s ([dmr-data.md](dmr-data.md) 5.1).
 
 ## 6. Privacy
 

@@ -197,6 +197,9 @@ typedef struct
 	uint32_t ipCnfTimeouts;					// no response within DMR_IPC_RESPONSE_MS
 	uint32_t ipCnfFailed;					// confirmed packets given up after the tries (or refused)
 	uint32_t ipCnfTooLong;					// wanted confirmed but too long for it: sent unconfirmed
+	uint32_t ipCnfOther;					// responses to us that didn't answer our confirmed packet
+	uint32_t ipCnfOtherLast;				// ... the last: response octet 7:0, its SAP 11:8, ours 15:12, our N(S)
+											// 18:16, its source ours 19, our state 21:20 (3 waiting), confirmed 22
 	// Confirmed data to us (CONFIG_DMR_CONFIRMED)
 	uint32_t rxSacksSent;					// selective ACKs asking for bad or lost blocks
 	uint32_t rxNacksSent;					// NACKs (every block good, the CRC-32 not)

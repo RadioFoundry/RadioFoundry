@@ -120,6 +120,10 @@ static uint8_t smsSeq = 0;
 // arriving back to back each get theirs (gotcha 5.7)
 #define REPLY_QUEUE_SIZE		5		// one slot is kept free: 4 replies
 #define REPLY_QUEUE_MAX_AGE_MS	5000	// a reply still queued after this is dropped: the sender has given up
+// Our TMS ACK waits this long after the link ACK we sent before it (confirmed data). BrandMeister ignored a link ACK
+// with the TMS ACK's preambles 0.3 s behind it and took one with nothing after; MOTOTRBO radios leave about 1.4 s
+// (docs/spec/dmr-data.md 5.1.1)
+#define TMS_ACK_GAP_MS			1500
 typedef struct
 {
 	uint32_t queuedAt;
@@ -135,6 +139,7 @@ static pendingReply_t replyQueue[REPLY_QUEUE_SIZE];
 static uint8_t replyWriteIdx = 0;
 static uint8_t replyReadIdx = 0;
 static bool tmsAckPending = false;
+static bool tmsAckAfterResponse;			// our link ACK goes first: TMS_ACK_GAP_MS between them
 static uint32_t tmsAckDst;
 static uint8_t tmsAckSeq;
 
@@ -1978,6 +1983,7 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 			tmsAckDst = reply.dst;
 			tmsAckSeq = reply.tmsSeq;
 			tmsAckPending = true;
+			tmsAckAfterResponse = (reply.response != 0);
 		}
 		if (reply.response != 0)
 		{
@@ -1989,11 +1995,13 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 	}
 
 #if CONFIG_DMR_TMS
-	// After the response has gone (the service is busy until then)
-	if (tmsAckPending && !dmrDataServiceIsBusy() && canTransmit())
+	// After the response has gone (the service is busy until then) and TMS_ACK_GAP_MS more, with the preambles of a
+	// text (BrandMeister ignores one with 2)
+	if (tmsAckPending && !dmrDataServiceIsBusy() && canTransmit() &&
+			(!tmsAckAfterResponse || !txEnded || ((now - txEndedAt) >= TMS_ACK_GAP_MS)))
 	{
 		tmsAckPending = false;
-		queueReply(dmrDataBuildTMSAck(tmsAckDst, channel.ownId, tmsAckSeq, DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS));
+		queueReply(dmrDataBuildTMSAck(tmsAckDst, channel.ownId, tmsAckSeq, DMR_DATA_TX_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS));
 		stats.tmsAcksSent++;
 	}
 #endif
@@ -2215,9 +2223,17 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	}
 #if CONFIG_DMR_CONFIRMED
 	// The answer to our confirmed IP packet
-	if ((packet->dpf == DMR_DPF_RESPONSE) && !packet->group && ipResponse(packet))
+	if ((packet->dpf == DMR_DPF_RESPONSE) && !packet->group)
 	{
-		return;
+		if (ipResponse(packet))
+		{
+			return;
+		}
+		// Kept for the debug link: a response we didn't take shows why (an ACK on air that never ended a try)
+		stats.ipCnfOther++;
+		stats.ipCnfOtherLast = packet->response | ((uint32_t)(packet->sap & 0x0F) << 8) | ((uint32_t)(ipx.sap & 0x0F) << 12) |
+								((uint32_t)(ipx.ns & 0x07) << 16) | ((packet->src == ipx.dst) ? (1UL << 19) : 0) |
+								((uint32_t)(ipx.state & 0x03) << 20) | (ipx.confirmed ? (1UL << 22) : 0);
 	}
 #endif
 
