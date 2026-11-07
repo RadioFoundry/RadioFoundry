@@ -185,9 +185,9 @@ The hotspot reaches BrandMeister over UDP, often on Wi-Fi, and the captures were
 left it, not what BrandMeister got. A single unanswered packet may be a lost one. The preamble rule rests on 10 of
 our sends with 2 preambles all unanswered and the identical pair above; the TMS ACK findings below on two samples each.
 
-Not known yet: whether BrandMeister takes unconfirmed rate 1/2 TMS, and ETSI IP text on 5016, from a radio, now that
-the preambles match. A MOTOTRBO radio's text starts with CR LF (`0d 00 0a 00`); ours doesn't, and whether
-BrandMeister needs it is open.
+BrandMeister takes ETSI IP text on 5016 from a radio, confirmed and unconfirmed, and answers in TMS (cases 4 and 5
+below). Not known yet: whether it takes unconfirmed rate 1/2 TMS. A MOTOTRBO radio's text starts with CR LF
+(`0d 00 0a 00`); ours doesn't, and BrandMeister took ours without it on 5016.
 
 That check is run by hand, once, to settle the formats, and its results are recorded here. It is never part of
 `tests/hil` or any automated or repeated test: no test reaches the real BrandMeister network. Host tests use the
@@ -247,6 +247,18 @@ wait (12.4):
 | With the 3 s wait | every link ACK taken on its first try: our text and both our TMS ACKs, reply B's too. No retry, no timeout. Reply B's TMS ACK has been link-ACKed 2 times of 4; its N(S) and F don't explain the misses, and neither does the sequence form alone (both misses had the two-octet form, but so did reply A's, ACKed every time) |
 | A block lost on the way | once, a reply's last block (the CRC-32 block) didn't reach the hotspot from the network. We sent a selective ACK for it and BrandMeister resent it alone (F clear, S set, the whole message's pad), but we answered with a NACK and it sent everything again, which got through. A host replay of BrandMeister's exact bursts ends in an ACK, so the NACK came from something on the radio; open |
 | UDP compression all | our text and both TMS ACKs with a 5-octet compressed header (SAP 3: IPv4 ID, SAID/DAID, port IDs): each link-ACKed first time, by a response in SAP 3; BrandMeister's TMS ACK and replies still came in SAP 4. 23 octets less per packet |
+
+Fifth pass, cases 4 and 5 (ETSI IP text on 5016), once each:
+
+| What | Case 4, confirmed | Case 5, unconfirmed |
+|---|---|---|
+| Our text | link ACK 3.8 s after the send, first try | sent once, no response due |
+| BrandMeister's reply | "SMS was received by the System." in TMS on 4007, confirmed, 36 s after the send | the same, 42 s after |
+| Our ACKs to it | link ACK; TMS ACK link-ACKed by BrandMeister | the same |
+| A second reply | 44 s after the first, kept once (gotcha 5.8); its TMS ACK link-ACKed | 25 s after, the same |
+
+So no ETSI response and no text on 5016 comes back: BrandMeister replies in TMS whatever the format of the text. The
+second reply is its echo's own, as in the fourth pass.
 
 #### 5.1.2 Simulated BrandMeister text service (HIL)
 
