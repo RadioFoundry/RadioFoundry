@@ -515,8 +515,14 @@ the two sequences (`hrc_rfburst_board_t`) and passes `hrc_rfburst_switch` to the
 
 The burst's last symbol is rf_pre_on_tx × 100 µs + 0.85 ms + 27.5 ms after the RF TX interrupt
 (`platform/hrc7000/dmr_rfburst_timing.h`), so the lead a board sets is the time its TX-on sequence needs, less 0.85
-ms, rounded up to 100 µs. The diagnostics count the sequences run, the RF RX interrupts and the TX-offs that started
-late.
+ms, rounded up to 100 µs. The board's key-up delay in its TX-on sequence counts from the RF TX interrupt, so the
+task's wake doesn't delay the PA. The interrupt itself can come a few hundred µs late, while the slot engine holds
+its lock with the modem's interrupts masked (3.2); the bursts keep the 60 ms frame grid, so a burst whose interrupt
+is more than 30 µs past one frame after the burst before is timed from that point instead. The first burst of a
+transmission has no grid and keeps its interrupt's time, so a board's lead leaves margin for it. The diagnostics
+count the sequences run, the RF RX interrupts and the TX-offs that started late, and, since the key-up, the largest
+wake, the PA-up time after the interrupt (smallest and largest), the largest grid error and the bursts timed from the
+grid (`hrc_rfburst_stats_t`).
 
 ### 3.2 Masking the modem interrupts
 

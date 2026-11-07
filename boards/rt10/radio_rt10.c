@@ -412,10 +412,11 @@ static void dmr_disarm(void)
 }
 
 // One burst's TX on, the stock's (hardware-rt10.md 7.1): the key-up delay, the RX supply off, the FD6818 to the TX
-// frequency (its TX AF word first) in its TX state, PA select and TX supply on, DAC B ramped up
-void rt10_burst_on(hrc_rfburst_wait_fn wait)
+// frequency (its TX AF word first) in its TX state, PA select and TX supply on, DAC B ramped up. The key-up delay
+// counts from the RF TX interrupt: the task's wake takes part of it
+void rt10_burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us)
 {
-	wait(plan.on_us);
+	wait(plan.on_us > elapsed_us ? plan.on_us - elapsed_us : 0);
 	hrc_pin_write(PIN_RX_SUPPLY, false);
 	fd6818sh_burst_tune(&fd, synth_hz(tx_hz), true);
 	DAC_DATA_B = 0;

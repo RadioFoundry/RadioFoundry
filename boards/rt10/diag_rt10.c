@@ -65,6 +65,15 @@ bool rt10_diag_line(uint8_t i, char *buf, uint8_t len)
 		snprintf(buf, len, "ph %ld/%ld", (long)((int32_t)(ph << 2) >> 18), (long)((int32_t)(ph << 18) >> 18));
 		return true;
 	}
+	if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES + 2) {
+		// The TX-on timing since the key-up (hrc_rfburst_stats_t), in us: the RF task's wake (largest), the PA up after
+		// the RF TX interrupt (smallest..largest; the first symbol is at lead x 100 + 850), an interrupt off its grid
+		hrc_rfburst_stats_t t;
+		hrc_rfburst_stats(&t);
+		snprintf(buf, len, "up w%lu u%lu..%lu g%lu/%lu", (unsigned long)t.wake_max_us, (unsigned long)t.up_min_us,
+			 (unsigned long)t.up_max_us, (unsigned long)t.grid_max_us, (unsigned long)t.regridded);
+		return true;
+	}
 #endif
 	return false;
 }
