@@ -99,12 +99,29 @@ static void test_trim_tx(void)
 	CHECK(trim_tx(F10(145), 3, 0x96, 0x91) == 0x91);
 }
 
+// The drives measured at 446.050 and 146.535 MHz (hardware-d578uv.md 5.8) from those frequencies' factory values
+static void test_pa_drive(void)
+{
+	CHECK(pa_drive(true, 0, 24) == 316);
+	CHECK(pa_drive(true, 1, 89) == 1232);
+	CHECK(pa_drive(true, 2, 140) == 1978);
+	CHECK(pa_drive(true, 3, 185) == 2646);
+	CHECK(pa_drive(false, 0, 23) == 304);
+	CHECK(pa_drive(false, 1, 65) == 900);
+	CHECK(pa_drive(false, 2, 100) == 1424);
+	CHECK(pa_drive(false, 3, 156) == 1997);
+	CHECK(pa_drive(true, 0, 0) == 0);	// no calibration: no transmission
+	CHECK(pa_drive(true, 2, 0) == 0);
+	CHECK(pa_drive(true, 4, 100) == 0);
+}
+
 int main(void)
 {
 	test_am_lo();
 	test_trim_tables();
 	test_trim_lookup();
 	test_trim_tx();
+	test_pa_drive();
 	if (failures) {
 		printf("d578uvRfPlanTest: %d failure(s)\n", failures);
 		return 1;

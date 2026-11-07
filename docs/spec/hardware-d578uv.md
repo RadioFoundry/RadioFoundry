@@ -202,7 +202,7 @@ loop that wakes on PA0 held for 1 s.
 | --- | --- |
 | PE3 / PE4 / PE5 | 8-bit shift register (data, clock, latch), LSB first |
 | PE6 | TX path enable, high while transmitting (inferred) |
-| PA4 | DAC 0: PA drive level from the calibration |
+| PA4 | DAC 0: PA drive level from the calibration, corrected per level (5.8) |
 | PA7 | speaker mute, high = muted (inferred) |
 | PC4 | follows the transmit state; PA band select (inferred) |
 | PB9 | TIMER3 CH3 PWM: beeps and tones |
@@ -746,6 +746,54 @@ code ("AnaMic Level" is likely). The 0x03B8 in the table is the same formula wit
 
 RadioFoundry writes the default level (g = 4, k the calibration byte) at each FM key-up and after each tone
 (`qa4818_mic_level`). The core's Mic gain setting isn't mapped to g: the dB per step isn't known.
+
+### 5.8 Transmit power
+
+PA4's DAC sets the PA drive. The factory calibration (7) gives an 8-bit value per level and frequency; the DAC takes
+it shifted left by 4. RadioFoundry's drive unit is the 12-bit DAC word (`hal_radio_t.tx_drive_level`, debug link RADIO
+op 36). Each key-up also writes register 4 of the PA5 device by band and level (5.5, `trim_tx` in `rf_plan.h`), so a
+drive gives a different power at another level: each level's drive is measured at that level.
+
+Measured with a wattmeter into a dummy load, FM, no sub-audio tone, 3 s key-ups ([power
+calibration](../testing/power-calibration.md)). UHF at 446.050 MHz and a second point about 15 MHz higher; VHF at
+146.535 MHz and a second point about 5 MHz higher. Drive and watts:
+
+| | UHF 446.050 | UHF, higher point | VHF 146.535 | VHF, higher point |
+| --- | --- | --- | --- | --- |
+| Factory rows, lowest to top | 384 → 1.50, 1424 → 13.2, 2240 → 30.9, 2960 → 53.0 | 432 → 2.20, 1472 → 13.9, 2336 → 30.2, 3120 → 38.5 | 368 → 1.88, 1040 → 13.7, 1600 → 32.8, 2496 → 73.2 | 384 → 1.77, 1056 → 13.1, 1664 → 31.5, 2368 → 71.2 |
+| Low end (lowest level's settings) | 64, 128, 192 → 0; 224 → 0.15, 256 → 0.41, 320 → 0.94, 328 → 1.01 | 160 → 0; 192 → 0.20, 224 → 0.46, 320 → 1.26, 369 → 1.67 | 192 → 0; 256 → 0.55, 301 → 1.08, 320 → 1.29 | 256 → 0.28, 301 → 0.79 |
+| Top (top level's settings) | 2600 → 43.8, 2741 → 47.7 | 2789 → 38.3 | 2000 → 53.5, 2150 → 61.0 | 2000 → 52.1, 2150 → 59.7 |
+
+- The factory rows put out about 1.5-2 times the rated 1, 10, 25 and 45 / 50 W, the VHF top row 71-73 W.
+- No cliff: output falls smoothly to zero (zero point UHF 192-224 at 446.050, 160-192 at the higher point; VHF about
+  192-256) and stays at zero down to drive 64.
+- Hot (three 5 s key-ups at 25 W, then at once): 192, 224 and 320 read 0.00, 0.16 and 0.95 W at 446.050, as cold.
+- The UHF top saturates at about 38.5 W at the higher point (2789 and 3120 read the same).
+- The factory's lowest row rises with frequency where the PA's gain at a fixed drive also rises (1.50 W against
+  2.20 W), so a fixed drive holds the lowest level closer.
+
+RadioFoundry's levels (`pa_drive` in `rf_plan.h`): the lowest a fixed drive per band, the others the
+factory value scaled.
+
+| Level | UHF | VHF |
+| --- | --- | --- |
+| 1 W | 316 | 304 |
+| 10 W | factory × 0.865 | factory × 0.865 |
+| 25 W | factory × 0.883 | factory × 0.890 |
+| 45 W (UHF), 50 W (VHF) | factory × 0.894 | factory × 0.800 |
+
+The short check with this table (section 4 of the procedure; dark step UHF 160 or 192, VHF 192), watts:
+
+| Level | UHF 446.050 | UHF, higher point | VHF 146.535 | VHF, higher point |
+| --- | --- | --- | --- | --- |
+| 1 W | 0.92 | 1.24 | 1.09 | 0.81 |
+| 10 W | 10.3 | 10.9 | 10.3 | 9.87 |
+| 25 W | 25.2 | 26.0 | 26.0 | 25.0 |
+| 45 W / 50 W | 45.4 | 38.4 (saturated) | 53.4 | 47.0 |
+| Dark step | 0.00 | 0.00 (160) | 0.00 | 0.00 |
+
+Every level is within ±1 dB of its name. The table holds only where the factory calibration is current; DMR uses the
+same drives.
 
 ## 6. SPI NAND
 

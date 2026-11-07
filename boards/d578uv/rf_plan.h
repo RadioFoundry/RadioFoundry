@@ -102,4 +102,22 @@ static inline uint8_t trim_tx(uint32_t f, uint8_t level, uint8_t uhf_16, uint8_t
 	return level <= 2u ? 0x78u : vhf_16;
 }
 
+// The PA DAC word (12 bits) for power level 0-3 from the factory value for that level and frequency (8 bits, 0 = none),
+// as measured with a wattmeter (hardware-d578uv.md 5.8): the factory rows put out 1.5-2 times their ratings. The
+// lowest level is a fixed word per band, since the factory's lowest row moves the wrong way with frequency; the others
+// are the factory value scaled, which holds the measured power to 0.5 dB. 0 where the factory value is 0
+static inline uint16_t pa_drive(bool uhf, uint8_t level, uint8_t factory)
+{
+	static const uint16_t low[2] = { 304u, 316u };			// VHF, UHF: 1 W
+	static const uint16_t scale[2][3] = { { 865u, 890u, 800u },	// VHF 10, 25, 50 W, per mille of the factory
+					      { 865u, 883u, 894u } };	// UHF 10, 25, 45 W
+	if (factory == 0 || level > 3u) {
+		return 0;
+	}
+	if (level == 0) {
+		return low[uhf];
+	}
+	return (uint16_t)(((uint32_t)factory * 16u * scale[uhf][level - 1u] + 500u) / 1000u);
+}
+
 #endif
