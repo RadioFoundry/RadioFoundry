@@ -405,7 +405,6 @@ static void dmr_disarm(void)
 		DAC_DATA_B = 0;
 		hrc_dac_b_power(false);
 		write_bias(rx_hz);
-
 	}
 }
 
@@ -629,7 +628,9 @@ static void audio_set(bool on, bool may_wait)
 	if (transmitting) {
 		return;		// muted until tx_stop() restores this
 	}
-	if (fd_ok) {
+	// While DMR TX is armed the RF task owns 0x47 (its TX word in a burst, the digital receive word after it); DMR's
+	// AF is never muted, so there is nothing to write here, and a write could land inside a burst
+	if (fd_ok && !dmr_armed) {
 		fd6818sh_set_af(&fd, af_on() ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
 	}
 	amp_update(may_wait);
@@ -691,7 +692,7 @@ static void aprs_listen_route(bool on)
 	if (!afsk_tx) {
 		modem_fm();
 	}
-	if (fd_ok && !transmitting) {
+	if (fd_ok && !transmitting && !dmr_armed) {	// armed: the RF task owns 0x47 (audio_set)
 		fd6818sh_set_af(&fd, af_on() ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
 	}
 }
