@@ -300,15 +300,136 @@ static void test_am(void)
 	fd6818_t dev;
 	reset_chip();
 	fd6818_attach(&dev, bus());
-	fd6818_set_am(&dev, true);
-	CHECK(chip.n == 1 && chip.log[0].reg == FD6818_REG_AF && chip.log[0].val == 0x0740);
-	CHECK((FD6818_AF_AM & ~0x0F00u) == (FD6818_AF_FM & ~0x0F00u));
+	// Outside AM, "off" writes nothing
 	fd6818_set_am(&dev, false);
-	CHECK(chip.n == 2 && chip.log[1].val == 0x0140);
+	CHECK(chip.n == 0);
+	// On: the AM output, full gain, 0x4A's AM word (hardware-dm32.md 8.7). 0x4A isn't in the default tables: its value
+	// before AM is read from the chip
+	chip.regs[FD6818_REG_AM_4A] = 0x1234;
+	fd6818_set_am(&dev, true);
+	CHECK(chip.n == 3);
+	CHECK(chip.log[0].reg == FD6818_REG_AF && chip.log[0].val == 0x6740);
+	CHECK(chip.log[1].reg == FD6818_REG_GAIN && chip.log[1].val == 0x03FF);
+	CHECK(chip.log[2].reg == FD6818_REG_AM_4A && chip.log[2].val == 0x5450);
+	CHECK((FD6818_AF_AM & 0x0F00u) == 0x0700u && (FD6818_AF_FM & 0x0F00u) == 0x0100u);
+	CHECK(FD6818_BW_AM == 0x0048u);
+	// Again (a new AM channel): the same writes, 0x4A's saved value kept
+	fd6818_set_am(&dev, true);
+	CHECK(chip.n == 6 && chip.log[5].val == 0x5450);
+	// Off: FM's AF word, the FM table's 0x13, 0x4A as it was
+	fd6818_set_am(&dev, false);
+	int i = find_last(FD6818_REG_GAIN);
+	CHECK(i >= 0 && chip.log[i].val == 0x037E);
+	i = find_last(FD6818_REG_AF);
+	CHECK(i >= 0 && chip.log[i].val == 0x0140);
+	i = find_last(FD6818_REG_AM_4A);
+	CHECK(i >= 0 && chip.log[i].val == 0x1234);
+	// A mode change from AM ends AM first: 0x4A comes back although the mode tables don't write it
+	fd6818_set_am(&dev, true);
+	chip.n = 0;
 	fd6818_set_mode(&dev, FD6818_MODE_FM);
-	int i = find_last(FD6818_REG_AF);
+	i = find_last(FD6818_REG_AM_4A);
+	CHECK(i >= 0 && chip.log[i].val == 0x1234 && !dev.am);
+	i = find_last(FD6818_REG_AF);
 	CHECK(i >= 0 && chip.log[i].val == FD6818_AF_FM);
+	// Outside AM a status reading changes nothing and the gain loop doesn't run
+	chip.n = 0;
+	int16_t rssi = -90;
+	uint8_t noise = 77;
+	CHECK(!fd6818_am_status(&dev, 0x0010, 400, &rssi, &noise));
+	CHECK(chip.n == 0 && rssi == -90 && noise == 77);
 	CHECK(chip.protocol_errors == 0);
+
+	// In AM: the squelch value is noise_sq plus the offset from the default tables' 0x4F = 0x302F (noise_sq_th_in 47):
+	// level 1 (opens below 64) at 47. A strong reading cuts the gain (0x13 written) after the reading is taken
+	fd6818_set_am(&dev, true);
+	CHECK(dev.am_noise_off == 17);
+	chip.n = 0;
+	rssi = -60;
+	CHECK(fd6818_am_status(&dev, 0x4B00u | 46u, 222, &rssi, &noise));
+	CHECK(noise == 63 && rssi == -60);
+	CHECK(chip.n == 1 && chip.log[0].reg == FD6818_REG_GAIN && chip.log[0].val == 0x0BF);
+	// The next reading's RSSI gets the 32 dB the loop took off added back
+	rssi = -92;
+	CHECK(fd6818_am_status(&dev, 70, 150, &rssi, &noise));
+	CHECK(rssi == -60 && noise == 87);
+	fd6818_set_am(&dev, false);
+
+	// A variant whose tables set 0x13 and 0x4A (the DM-1801 Pro's init: 0x03DF, 0x5430) gets those back, no read
+	reset_chip();
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_dm1801pro);
+	chip.regs[FD6818_REG_GAIN] = 0x1111;
+	chip.regs[FD6818_REG_AM_4A] = 0x2222;
+	fd6818_set_am(&dev, true);
+	CHECK(dev.am_noise_off == 24);	// its 0x4F = 0x2A28: noise_sq_th_in 40 is its level 1
+	fd6818_set_am(&dev, false);
+	i = find_last(FD6818_REG_GAIN);
+	CHECK(i >= 0 && chip.log[i].val == 0x03DF);
+	i = find_last(FD6818_REG_AM_4A);
+	CHECK(i >= 0 && chip.log[i].val == 0x5430);
+	CHECK(chip.protocol_errors == 0);
+}
+
+// The AM gain loop: full gain on noise, down at once on a strong signal, up one step at a time after the hold
+static void test_am_agc(void)
+{
+	fd6818_agc_t a;
+	fd6818_agc_reset(&a);
+	CHECK(fd6818_agc_word(&a) == 0x03FF && fd6818_agc_atten_db(&a) == 0);
+	// Noise and weak signals (under 142 + 20): nothing changes
+	for (int k = 0; k < 100; k++) {
+		CHECK(!fd6818_agc_step(&a, 60));
+		CHECK(!fd6818_agc_step(&a, 160));
+	}
+	CHECK(fd6818_agc_word(&a) == 0x03FF);
+	// 0x67 = 222: 40 dB over the target, the gain goes down by 32 dB: -32 dB is 0x0BF
+	fd6818_agc_reset(&a);
+	CHECK(fd6818_agc_step(&a, 222));
+	CHECK(fd6818_agc_word(&a) == 0x0BF && fd6818_agc_atten_db(&a) == 32);
+	// The reading is averaged with the one before: 222 then 142 is 182, 20 dB over, 12 dB down from -32: -45 dB (0x05E)
+	CHECK(fd6818_agc_step(&a, 142));
+	CHECK(fd6818_agc_word(&a) == 0x05E && fd6818_agc_atten_db(&a) == 45);
+	// At the target: holds
+	for (int k = 0; k < 50; k++) {
+		CHECK(!fd6818_agc_step(&a, 142));
+	}
+	// The signal goes: 0x67 = 100 is 21 dB under. The gain waits out the hold (30 readings), then rises one step each
+	// hold and a reading
+	int steps = 0, first = -1;
+	for (int k = 0; k < 200; k++) {
+		if (fd6818_agc_step(&a, 100)) {
+			steps++;
+			if (first < 0) {
+				first = k;
+			}
+		}
+	}
+	CHECK(first == 30);
+	CHECK(steps == 6 && fd6818_agc_atten_db(&a) == 30);
+	// The top of the table: never above full gain, never below the lowest entry
+	fd6818_agc_reset(&a);
+	for (int k = 0; k < 5; k++) {
+		(void)fd6818_agc_step(&a, 511);
+	}
+	CHECK(fd6818_agc_atten_db(&a) == 93 && fd6818_agc_word(&a) == 0x000);
+	// The bits above 8:0 aren't part of the reading
+	fd6818_agc_reset(&a);
+	CHECK(!fd6818_agc_step(&a, 0xFE00u | 142u));
+}
+
+// The AM squelch scale: noise_sq (0x65 bits 7:0) plus an offset that puts level 1 (opens below 64) at the chip's own
+// noise threshold (0x4F bits 6:0). The DM-32's empty-channel floor (59 and up) stays shut at every level; the high
+// byte (rssi_rel) is ignored
+static void test_am_noise(void)
+{
+	uint8_t off = fd6818_am_noise_offset(0x302F);
+	CHECK(off == 17 && fd6818_am_noise_offset(0x2A28) == 24);
+	CHECK(fd6818_am_noise_offset(0x7F7F) == 0 && fd6818_am_noise_offset(0x0000) == 64);
+	CHECK(fd6818_am_noise(46, off) < 64 && fd6818_am_noise(47, off) == 64);
+	CHECK(fd6818_am_noise(59, off) > 64 + 3);	// above level 1 and its hysteresis
+	CHECK(fd6818_am_noise(23, off) == 40);	// level 9 opens below 40: at 22
+	CHECK(fd6818_am_noise(0x4B00u | 31u, off) == 48);
+	CHECK(fd6818_am_noise(0xFFu, off) == 255 && fd6818_am_noise(240, off) == 255);
 }
 
 // RX sub-audio set-up in the radio's own order, and the 0x0C detect bits
@@ -486,6 +607,8 @@ int main(void)
 	test_rx_tones();
 	test_rx_sleep();
 	test_am();
+	test_am_agc();
+	test_am_noise();
 	if (failures) {
 		printf("fd6818Test: %d failures\n", failures);
 		return 1;

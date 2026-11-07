@@ -107,7 +107,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | PC answers data | On, Off | Off | Control station mode: while the computer is connected in USB network mode, it answers the data sent to your radio instead of the radio ([USB network](15-usb-network.md#control-station-for-dispatch-software)) | Works |
 | USB address | By DMR ID, 192.168.10.x | By DMR ID | The addresses of the USB network link: from your DMR ID, or the fixed pair 192.168.10.1 (radio) and 192.168.10.2 (computer) | Works |
 
-### Power (key 7)
+### Power saving (key 7)
 
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|

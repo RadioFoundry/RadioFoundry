@@ -60,6 +60,10 @@ int main(void)
 	CHECK(lang_built(es) && lang_set(es) && lang_current() == es);
 	CHECK(strcmp(TR("Settings"), "Ajustes") == 0);
 	CHECK(strcmp(TR("Language"), "Idioma/Language") == 0);
+	CHECK(strcmp(TR("Power saving"), "Ahorro de energ\xED" "a") == 0);
+	CHECK(strcmp(TR("Power"), "Potencia") == 0);
+	CHECK(strcmp(TR(TEXT_ALT_OPEN "Power" TEXT_ALT_NEXT "Pwr" TEXT_ALT_CLOSE),
+		     TEXT_ALT_OPEN "Pot" TEXT_ALT_NEXT "Pt" TEXT_ALT_CLOSE) == 0);
 	CHECK(strcmp(TR("On my way"), "En camino") == 0);	// a canned text message: sent in the language in use
 	// Strings at other places in a stride of the table: the lookup steps over the ones before them
 	CHECK(strcmp(TR("Status"), "Estado") == 0);

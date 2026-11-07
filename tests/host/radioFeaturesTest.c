@@ -20,6 +20,7 @@
 #include "dmr/ambe/ambeVoice.h"
 #include "sim/dmr_sim_modem.h"
 #include "settings/settings.h"
+#include "radio/tx_limit.h"
 
 static int failures;
 static int checks;
@@ -2228,6 +2229,46 @@ static void test_bcl_inhibit(void)
 	req(RREQ_PTT, 0);
 }
 
+// The test TX limit (tx_limit.h): block refuses PTT as the inhibit does, a list lets only its frequencies key, off is
+// no limit; the inhibit setting is never touched
+static void test_tx_limit(void)
+{
+#if CONFIG_DEBUGLINK
+	static const uint32_t pos0[] = { 146520000 }, many[TX_LIMIT_MAX + 1] = { 0 };
+	tx_limit_info_t l;
+	start();
+	CHECK(tx_limit_set(true, NULL, 0));
+	tx_limit_get(&l, NULL, 0);
+	uint32_t refused = l.refused;
+	int calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_INHIBIT && hw.tx_calls == calls);
+	tx_limit_get(&l, NULL, 0);
+	CHECK(l.refused == refused + 1 && l.last_hz == 146520000);	// a refused PTT counts
+	req(RREQ_PTT, 0);
+	CHECK(!sm.set.tx_inhibit);
+	CHECK(tx_limit_set(false, pos0, 1));
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 146520000);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 1);		// 146.940: not on the list
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_INHIBIT && hw.tx_calls == calls);
+	req(RREQ_PTT, 0);
+	CHECK(!tx_limit_set(false, many, TX_LIMIT_MAX + 1));	// too many: refused, the list stays
+	tx_limit_get(&l, NULL, 0);
+	CHECK(l.on && !l.block && l.n == 1);
+	CHECK(tx_limit_set(false, NULL, 0));	// off
+	tx_limit_get(&l, NULL, 0);
+	CHECK(!l.on);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 146940000);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 0);
+#endif
+}
+
 static void set_roger(radio_settings_t *s) { s->roger_beep = true; }
 
 // The DCS turn-off tail (hal_radio_t.tx_tail): after PTT release (and after the roger beep), the carrier stays up
@@ -2988,6 +3029,7 @@ int main(void)
 	test_tot_and_beeps();
 	test_beep_follows_volume();
 	test_bcl_inhibit();
+	test_tx_limit();
 	test_roger_burst();
 	test_dtmf();
 	test_subtone_tail();
