@@ -1009,6 +1009,7 @@ static void lc_post_access(hrc6000_dmr_t *e)
 	e->pa_tick = e->tick;
 	e->pa_any = true;
 	e->pa_src = lc_src(lc);
+	e->pa_new = false;
 	bool resumed = lc_resume_look(e, lc);
 	if (!lc_in_reception(e)) {
 		e->pa_new = lc_is_voice(lc) && memcmp(lc, e->stale_lc, 9) != 0;

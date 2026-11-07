@@ -759,6 +759,60 @@ static void test_tick_rx_resume(void)
 	CHECK(r.lc_at >= 12);
 }
 
+// A post-access read's LC with no reception after it stays out of later receptions: the flag that keeps it for the
+// capture says only what the last read saw. Old LC: a post-access read of res_other that nothing followed, a call with
+// a post-access read inside it, then a late join started by an information report, within reach of that second read
+static void test_tick_rx_stale_post_access(void)
+{
+	tr_setup();
+	memcpy(rd[2], res_other, 9);
+	tr_report(0x10, 0);
+	for (int k = 0; k < 60; k++) {		// nothing follows: the search times out
+		t_us += 30000;
+		hrc6000_dmr_isr_timeslot(&eng);
+		drain();
+	}
+	memcpy(rd[2], res_lc, 9);
+	tr_report(0x08, 0x12);
+	drain();
+	uint32_t seed = 10;
+	for (int k = 0; k < 24; k++) {
+		burst((uint8_t)(seed++), (k & 1) == 0);
+		t_us += 30000;
+		hrc6000_dmr_isr_timeslot(&eng);
+		drain();
+	}
+	for (int k = 0; k < 10; k++) {		// the voice stops; a post-access read while the reception still counts
+		t_us += 30000;
+		hrc6000_dmr_isr_timeslot(&eng);
+		drain();
+	}
+	tr_report(0x10, 0);
+	for (int k = 0; k < 6; k++) {		// the reception is over
+		t_us += 30000;
+		hrc6000_dmr_isr_timeslot(&eng);
+		drain();
+	}
+	tr_report(0x04, 0);			// an information report starts the decoder
+	int wrong = 0, voice = 0;
+	for (int k = 0; k < 16; k++) {
+		burst((uint8_t)(seed++), (k & 1) == 1);
+		t_us += 30000;
+		hrc6000_dmr_isr_timeslot(&eng);
+		dmr_event_t ev;
+		dmr_burst_t b;
+		while (hrc6000_dmr_pop(&eng, &ev, &b)) {
+			if (ev.kind == DMR_EV_BURST_RX && b.kind == DMR_BURST_VOICE) {
+				voice++;
+				wrong += b.lc_valid && memcmp(b.lc, res_other, 9) == 0;
+			}
+		}
+	}
+	printf("  stale post access: %d bursts, %d with the old LC\n", voice, wrong);
+	CHECK(voice > 0);
+	CHECK(wrong == 0);
+}
+
 // Through a repeater (issue 108): 0x52 bit 2 is the last received slot's TC, 1 = TS2 starting. Receive stays open in
 // both slots once locked (closing one freezes the bit), and an aligned start calls tx_slot_found two ticks before its
 // first burst, which goes out in the channel's slot
@@ -1294,6 +1348,7 @@ int main(void)
 	test_tick_rx_stale_headers();
 	test_tick_rx_same_bursts();
 	test_tick_rx_resume();
+	test_tick_rx_stale_post_access();
 	test_repeater_slot();
 	test_two_slots();
 	printf("hrc5000Test: %s (%d failures)\n", failures ? "FAILED" : "passed", failures);
