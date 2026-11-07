@@ -28,8 +28,8 @@
 // way; chip 0's output bit 0 mutes the microphone meanwhile (inferred).
 //
 // Transmit on f: both side A chips off, chip 0 retuned to f with its TX constants and drive, then keyed; the PA level is
-// PA4's DAC from the factory calibration (NAND, 7). TX is refused without a valid calibration block and outside the
-// bands.
+// PA4's DAC from the factory calibration (NAND, 7), corrected by the wattmeter table (tx_drive_level). TX is refused
+// without a valid calibration block and outside the bands.
 //
 // DMR transmit (5.1): tx() keys chip 0 once with the digital set and it stays keyed until tx_off(); only the PA follows
 // the bursts, from the baseband's burst line PD0 (EXTI 0, both edges) and a one-shot on TIM2 (pa_gate.h): the DAC and
@@ -680,10 +680,10 @@ static uint8_t tx_dac(uint32_t hz, uint8_t p)
 // its level's, 0 = the level's. tx() takes it, tx_off() clears it
 static volatile uint16_t drive_next;
 
-// hal_radio_t.tx_drive_level: the drive in the DAC's own 12-bit counts (the calibration's 8-bit value << 4)
+// hal_radio_t.tx_drive_level: the DAC word (12 bits) for a level at hz (pa_drive); 0 without calibration there
 static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
 {
-	return (uint16_t)(tx_dac(hz, level) << 4);
+	return pa_drive(hz > UHF_FROM_HZ, level, tx_dac(hz, level));
 }
 
 static bool tx_drive(uint16_t drive)

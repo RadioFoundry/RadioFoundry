@@ -32,7 +32,14 @@ static const band_t bands[] = {
 #endif
 };
 
-static const char *const power_names[] = { "L", "M", "H", "T" };
+// The power levels, per band (hardware-d578uv.md: measured with a wattmeter; pa_drive in rf_plan.h). The top
+// differs: 45 W on UHF, 50 W on VHF
+static const char *const power_names[] = { "1W", "10W", "25W", "45W" };
+static const char *const power_names_vhf[] = { "1W", "10W", "25W", "50W" };
+static const board_power_band_t power_bands[] = {
+	{ 136000000u, 174000000u, power_names_vhf },
+	{ 400000000u, 480000000u, power_names },
+};
 
 // Up, down, confirm and exit as the stock menus use them (the stock firmware locks the keys on exit held; here that is
 // the core's long QUICK, menu held, and a long exit goes home). The stock firmware's other front keys are programmable
@@ -92,6 +99,8 @@ const board_t board = {
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
+	.power_bands = power_bands,
+	.power_band_count = sizeof(power_bands) / sizeof(power_bands[0]),
 	.power_default = 0,
 	.display = &d578uv_display,
 	.input = &d578uv_input,
