@@ -52,7 +52,7 @@ def ppp(radio):
         port.reset_input_buffer()
     assert hung_up, "no Terminate-Ack from the radio"
     radio.ping()
-    assert radio.view(["hotspot"]).get("ppp.running") == "0", "the radio still runs PPP after the hang-up"
+    assert radio.view(["net_link"]).get("ppp.running") == "0", "the radio still runs PPP after the hang-up"
 
 
 @pytest.mark.feature("net_ppp")
@@ -69,7 +69,7 @@ def test_ppp_link(ppp):
     dl = DebugLink(s=UdpPort(c), timeout=3.0)
     v = dl.version()
     assert v.get("board") == ppp["board"], f"over UDP the radio says board {v.get('board')}"
-    h = dl.view(["hotspot"])
+    h = dl.view(["hotspot", "net_link"])  # usb.* in hotspot, ppp.* in net_link
     print({k: h.get(k) for k in ("usb.network", "usb.net_up", "ppp.lcp", "ppp.ipcp", "ppp.rx_errors")})
     assert int(h.get("ppp.lcp", 0)) == LCP_OPENED and int(h.get("ppp.ipcp", 0)) == LCP_OPENED
     assert h.get("usb.net_up") == "1"

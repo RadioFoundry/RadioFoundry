@@ -284,13 +284,18 @@ class UdpPort:
 class DebugLink:
     """One open debug link. All methods raise DebugLinkError on an error status or a time-out."""
 
-    def __init__(self, port=None, timeout=1.0):
+    def __init__(self, port=None, timeout=1.0, s=None):
+        """s: an open port-like object (read, write, in_waiting, close) instead of opening one: tests."""
+        self.timeout = timeout
+        self.seq = 0
+        self.buf = bytearray()
+        self.packed_shots = None                # packed screenshots: None until the firmware says
+        if s is not None:
+            self.port, self.s = str(port or "test"), s
+            return
         if serial is None and not str(port or "").startswith("udp:"):
             raise DebugLinkError("needs pyserial: pip install pyserial")
         self.port = pick_port(port)
-        self.timeout = timeout
-        self.seq = 0
-        self.packed_shots = None                # packed screenshots: None until the firmware says
         if self.port.startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
             host, _, udp_port = self.port[4:].partition(":")
             self.s = UdpPort(host, int(udp_port or 3334))
@@ -299,7 +304,6 @@ class DebugLink:
                 self.s = serial.serial_for_url(self.port, 115200, timeout=0.02)	# a device, or a URL such as rfc2217://host:port
             except serial.SerialException as e:
                 raise DebugLinkError(f"can't open {self.port}: {e}")
-        self.buf = bytearray()
 
     def close(self):
         self.s.close()
