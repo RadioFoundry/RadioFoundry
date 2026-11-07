@@ -22,11 +22,21 @@
 #define IDDB_HEADER		12u
 #define IDDB_RECORD_MAX		DMR_IDDB_RECORD_MAX
 
+static const hal_flash_map_t *flash_map(void)
+{
+	return (board.flash != NULL && board.flash->size != 0) ? board.flash->map : NULL;
+}
+
 static uint32_t flash_base(void)
 {
-	const hal_flash_map_t *m = (board.flash != NULL && board.flash->size != 0) ? board.flash->map : NULL;
+	return (flash_map() != NULL) ? flash_map()->openfw_flash : DEFAULT_FLASH_BASE;
+}
 
-	return (m != NULL) ? m->openfw_flash : DEFAULT_FLASH_BASE;
+// Where area 2 must end: the flash image's end on a board with a map (what follows it is the board's own, such as its
+// calibration), else the data flash's
+static uint32_t area2_end(void)
+{
+	return (flash_map() != NULL) ? flash_map()->openfw_end : board.flash->size;
 }
 
 static struct {
@@ -118,7 +128,7 @@ static bool compact_init(void)
 	}
 	uint32_t count = le(h + 8, 4), size = le(h + 12, 4), index = le(h + 16, 4), table = le(h + 24, 4);
 	uint32_t strings = le(h + 28, 4), pages = le(h + 20, 2), dict = le(h + 22, 2);
-	uint32_t space = board.flash->size > IDDB_AREA2 ? IDDB_AREA1_SIZE + (board.flash->size - IDDB_AREA2) : IDDB_AREA1_SIZE;
+	uint32_t space = area2_end() > IDDB_AREA2 ? IDDB_AREA1_SIZE + (area2_end() - IDDB_AREA2) : IDDB_AREA1_SIZE;
 	// each section's length against the room after its offset, so no sum can wrap
 	if (count == 0u || count > 0x400000u || pages == 0u || dict > C_DICT_MAX || size > space || size % C_PAGE != 0u ||
 		index < C_PAGE || index > size || 5u * pages > size - index || table < C_PAGE || table > size ||
@@ -348,6 +358,13 @@ bool dmr_iddb_init(void)
 	}
 	db.per_area1 = (IDDB_AREA1_SIZE - IDDB_HEADER) / db.rec;
 	db.area2 = h[2] == 'n' ? IDDB_AREA2_VP : IDDB_AREA2;
+	// Only the records that fit before area 2's end: past it is another part of the flash, never ID records
+	if (db.count > db.per_area1) {
+		uint32_t fit = area2_end() > db.area2 ? (area2_end() - db.area2) / db.rec : 0u;
+		if (db.count - db.per_area1 > fit) {
+			db.count = db.per_area1 + fit;
+		}
+	}
 	db.valid = true;
 	return true;
 }

@@ -581,6 +581,19 @@ static void test_iddb(void)
 	flash.map = &moved;
 	CHECK(dmr_iddb_init() && dmr_iddb_count() == 1);
 	CHECK(dmr_iddb_lookup(9991234, text, sizeof(text)) && strcmp(text, "Q0TEST Charlie") == 0);
+	// A header counting more records than area 2 holds before the flash image's end: only those that fit are read,
+	// never what follows the image (a board's own sectors). 24-byte records: 10922 in area 1
+	uint8_t *count = &image[moved.openfw_flash + 0x30000 + 8];
+	count[0] = 0xFF; count[1] = 0xFF; count[2] = 0; count[3] = 0;		// 65535
+	CHECK(dmr_iddb_init() && dmr_iddb_count() == 10922u + (IMAGE_SIZE - (moved.openfw_flash + 0xB8000u)) / 24u);
+	static const hal_flash_map_t short_end = { .openfw_eeprom = EE, .openfw_flash = 0x040000u,
+		.openfw_end = 0x040000u + 0xB8000u + 10u * 24u };
+	flash.map = &short_end;
+	CHECK(dmr_iddb_init() && dmr_iddb_count() == 10932u);
+	static const hal_flash_map_t no_area2 = { .openfw_eeprom = EE, .openfw_flash = 0x040000u, .openfw_end = 0x0B0000u };
+	flash.map = &no_area2;
+	CHECK(dmr_iddb_init() && dmr_iddb_count() == 10922u);
+	count[0] = 1; count[1] = 0;
 	flash.map = NULL;
 	CHECK(!dmr_iddb_init());
 }
