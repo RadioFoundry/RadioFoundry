@@ -72,8 +72,8 @@ static bool init(void)
 	// Any vendor whose capacity code the driver knows: GD25Q128 C8 40 18, Puya 85 20 18
 	ready = ok;
 	hrc_flash_spi0.size = ok ? nor.size : 0;
-	// The board's map assumes its chip's size: on a smaller part the core gets no areas and stores nothing (as the
-	// STM32 radios' map_min_size), rather than areas that end past the chip
+	// The board's map assumes its chip's size: on a smaller part the core gets no areas and stores nothing, rather
+	// than areas that end past the chip
 	hrc_flash_spi0.map = ok && cfg->map != NULL && hal_flash_map_end(cfg->map, SPI_NOR_SECTOR_SIZE) <= nor.size ? cfg->map : NULL;
 	return ok;
 }

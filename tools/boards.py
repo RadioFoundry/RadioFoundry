@@ -661,8 +661,8 @@ class Board:
                        progmem=s["progmem"], stock_console=s.get("stock_console"))
             if "calibration" in s:
                 out["calibration"] = s["calibration"]
-            if "write_test" in s:
-                out["write_test"] = s["write_test"]
+            if "write_test" in s:		# start and end: the length is the registry's alone
+                out["write_test"] = [s["write_test"], s["write_test"] + STUB_WRITE_TEST]
         return out
 
     def map_areas(self):
