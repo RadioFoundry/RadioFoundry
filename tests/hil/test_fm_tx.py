@@ -35,6 +35,11 @@ Pass criteria:
   differs by 5-15 dB (nominally 10). Relative only: the SDR isn't calibrated, and the radio is in its near field.
   Skipped when the SDR's ADC clips at gain 0 (more than 0.5 % of the samples at the rails): the bench then needs an
   attenuator before levels mean anything.
+  With --manual -s it reads a wattmeter instead (docs/testing/power-calibration.md 4, the short check): a person
+  with an averaging wattmeter between the radio and a dummy load rated for the top level. Every power level keys 2 s
+  on --fm-mhz, then on --vhf-fm-mhz when given, 3 s apart, and the person types the reading at the end of each
+  key-up. Each level named in watts must read within 1 dB of its name (2 dB under 1 W), and each level must read at
+  least 1 dB over the one below.
 The VFO's bandwidth and TX tone are put back afterwards (restore_radio does the rest: channel, power, temporary
 changes).
 """
@@ -386,12 +391,65 @@ def test_fm_tx_dtmf_stop(fm_vfo, sdr_bench, pytestconfig):
         assert int(fm_vfo.view(["features"]).get("dtmf_sent", "0")) == sent0 + 1
 
 
+def _ask_watts(prompt):
+    while True:
+        try:
+            w = float(input(f"\n>>> {prompt}: watts on the meter? ").strip())
+            if w >= 0:
+                return w
+        except ValueError:
+            pass
+        print("    a number in watts")
+
+
+def _power_levels_wattmeter(radio, pytestconfig):
+    """The short check on a wattmeter (power-calibration.md 4): every level keyed 2 s on each band given"""
+    bands = [rig(pytestconfig, "fm-mhz")]
+    if pytestconfig.getoption("--vhf-fm-mhz") is not None:
+        bands.append(pytestconfig.getoption("--vhf-fm-mhz"))
+    print("\n>>> A wattmeter (averaging) between the radio and a dummy load rated for its top power. Each power level "
+          "keys 2 s; type the reading at the end of each key-up.", flush=True)
+    rows, bad = [], []
+    for mhz in bands:
+        hz = round(mhz * 1e6)
+        radio.link.vfo_set(hz)
+        radio.wait_for(lambda v: v.get("rx_hz") == str(hz), what=f"VFO on {mhz} MHz")
+        radio.lowest_power(absolute=True)
+        n = int(radio.core().get("power_count") or "0")
+        assert n >= 2, f"power_count {n}"
+        prev = None
+        for lv in range(n):
+            if lv:
+                radio.link.power_step(1)
+                radio.wait_for(lambda v: v.get("power") == str(lv), what=f"power {lv}")
+                time.sleep(3.0)     # between key-ups: the PA and the supply recover
+            name = radio.core().get("power_name", "?")
+            radio.ptt_for(2.0)
+            radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+            w = _ask_watts(f"{mhz} MHz, level {lv} ({name})")
+            want = power_name_watts(name)
+            d = 10 * math.log10(w / want) if want and w > 0 else None
+            tol = 2.0 if want is not None and want < 1.0 else 1.0
+            ok = want is None or (d is not None and abs(d) <= tol)
+            if prev is not None and not (w > 0 and prev > 0 and 10 * math.log10(w / prev) >= 1.0):
+                ok = False
+            rows.append((mhz, lv, name, w, None if d is None else round(d, 1)))
+            if not ok:
+                bad.append(rows[-1])
+            prev = w
+    print("power levels (MHz, level, name, W, dB from the name):", rows)
+    assert not bad, f"out of tolerance (within 1 dB of the name, 2 dB under 1 W; 1 dB over the level below): {bad}"
+
+
 @pytest.mark.feature("fm")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
 def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "none", 0)
+    if pytestconfig.getoption("--manual"):
+        _power_levels_wattmeter(fm_vfo, pytestconfig)
+        return
     mhz = rig(pytestconfig, "fm-mhz")
     levels = []
     for step in range(3):
