@@ -634,6 +634,9 @@ class Radio:
         try:
             yield hz
         finally:
+            # The tones, frequency and mode are the VFO's: back in it first, after a test that left it for a channel
+            if self.core().get("vfo") != "1":
+                self._req_until(lambda: L.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
             if tones != none:
                 set_tones(tones)
             if self.core().get("rx_hz") != str(hz):
