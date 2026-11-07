@@ -29,6 +29,11 @@ wrong.
    serve another. Name it by what it does or the protocol it speaks, never by the radio that first needed it, and
    don't add a list of radios anywhere: read them from `boards/`.
 
+   **One stack.** Behavior radios share (same chip, glue or protocol) lives once in `core/`, `platform/` or
+   `drivers/`; a board gives only its chip sequences, wiring and calibration. No per-board copies of shared logic: a
+   bug on one radio is fixed in the shared layer for all, after checking every board on that path. If a board needs
+   to differ, extend the shared interface, don't fork the logic.
+
    **Generic docs** never name a radio or its pins. They are `docs/spec/*` other than `hardware-*`, `docs/user/*`
    other than `23-radios.md`, `docs/build-config.md` and `docs/dev/*`. Describe what a board provides (`CAP_*`,
    `board_t` fields) and link [docs/feature-matrix.md](docs/feature-matrix.md) for which radios have it. A radio's
