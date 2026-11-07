@@ -131,6 +131,10 @@ static bool transmitting;
 static uint32_t tx_end_ms;	// when the last FM transmission ended (tx_stop): the squelch reads closed for a while
 static bool have_rx;
 static bool asleep;		// rx_sleep(true): the receiver is off until rx_sleep(false) or the next rx()
+// DMR: the FD6818 is receiving on rx_hz at kept_ppb, as the last burst's TX off or a DMR rx() left it. rx() then
+// leaves it alone: setting it up again blinds the receiver for a reply 30 ms after our last burst
+static volatile bool rx_kept;
+static volatile int16_t kept_ppb;
 static volatile int16_t trim_ppb;	// hal_radio_t.ref_trim: taken at the next tune
 static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_12K5;
@@ -304,6 +308,7 @@ static void set_mode(radio_mode_t m)
 #endif
 	}
 	have_rx = false;	// the next rx() retunes
+	rx_kept = false;
 #else
 	(void)m;	// FM only without CONFIG_DMR
 #endif
@@ -343,14 +348,17 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
 #endif
 	bool from_tx = tx_stop();
+	bool kept = rx_kept && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep && !from_tx &&
+		kept_ppb == trim_ppb;
 	rx_hz = hz;
 	rx_bw = bw;
 	rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
 	have_rx = true;
 	asleep = false;
-	if (!fd_ok) {
+	if (!fd_ok || kept) {
 		return true;
 	}
+	rx_kept = false;
 	write_bias(hz);
 	fd6818sh_set_state(&fd, FD6818SH_STATE_IDLE);
 	fd6818sh_tune(&fd, synth_hz(hz));
@@ -364,6 +372,10 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 		hal_delay_us(TX_END_US);	// stock key-down: the retune, then the RX supply
 	}
 	hrc_pin_write(PIN_RX_SUPPLY, true);
+	if (mode == RADIO_MODE_DMR) {
+		kept_ppb = trim_ppb;
+		rx_kept = true;
+	}
 	return true;
 }
 
@@ -417,6 +429,7 @@ static void dmr_disarm(void)
 void rt10_burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us)
 {
 	wait(plan.on_us > elapsed_us ? plan.on_us - elapsed_us : 0);
+	rx_kept = false;
 	hrc_pin_write(PIN_RX_SUPPLY, false);
 	fd6818sh_burst_tune(&fd, synth_hz(tx_hz), true);
 	DAC_DATA_B = 0;
@@ -442,6 +455,8 @@ uint32_t rt10_burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now)
 	fd6818sh_burst_tune(&fd, synth_hz(rx_hz), false);
 	wait(TX_END_US);
 	hrc_pin_write(PIN_RX_SUPPLY, true);
+	kept_ppb = trim_ppb;
+	rx_kept = true;
 	return late;
 }
 #endif
@@ -471,6 +486,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 	}
 	tx_stop();
+	rx_kept = false;
 	asleep = false;
 	plan = p;
 	tx_wide = bw == RADIO_BW_25K;	// the FD6818's deviation goes by band; the modem's (APRS) by bandwidth
@@ -578,6 +594,7 @@ static void rx_sleep(bool sleep)
 		return;
 	}
 	if (sleep) {
+		rx_kept = false;
 		fd6818sh_set_state(&fd, FD6818SH_STATE_IDLE);
 		hrc_pin_write(PIN_RX_SUPPLY, false);
 		asleep = true;
