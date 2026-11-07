@@ -66,7 +66,9 @@ dmr_data_api.h (UI, debug link)                  sms_inbox_*, sms_send, dmr_sign
 - PTT pressed during a data list: the list finishes first (it is at most a few hundred ms), then the voice call
   starts if PTT is still held.
 - No reception while transmitting (gotcha 14.1): the modem is half duplex; the service only expects answers after
-  its list is over.
+  its list is over. The end of a transmission (TX_DONE, or REJECTED) wakes the radio task at once
+  (`dmr_call_set_wake`) rather than at its next 10 ms tick, so the board has the receiver back before an answer 30 ms
+  after our last burst (a confirmed data ACK).
 
 ## 3. Receive
 
