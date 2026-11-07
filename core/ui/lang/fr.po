@@ -3074,7 +3074,7 @@ msgstr "VEILLE"
 
 #: core/ui/ui_screens.c
 msgid "NO TX"
-msgstr "PAS DE TX"
+msgstr "NO TX"
 
 #: core/ui/ui_screens.c
 msgid "DUAL"
