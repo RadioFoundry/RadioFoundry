@@ -127,6 +127,13 @@ void fd6818_attach_variant(fd6818_t *dev, rfbus_t *bus, const fd6818_variant_t *
 	dev->freq_10hz = 0;
 	dev->bw_reg = 0;
 	dev->state = 0;
+#if CONFIG_AM_RX
+	dev->am = false;
+	dev->am_noise_off = 0;
+	dev->r13 = 0;
+	dev->r4a = 0;
+	fd6818_agc_reset(&dev->agc);
+#endif
 }
 
 void fd6818_write(fd6818_t *dev, uint8_t reg, uint16_t val)
@@ -164,6 +171,9 @@ void fd6818_init(fd6818_t *dev)
 void fd6818_set_mode(fd6818_t *dev, fd6818_mode_t mode)
 {
 	const fd6818_variant_t *v = dev->variant;
+#if CONFIG_AM_RX
+	fd6818_set_am(dev, false);	// 0x4A: the mode tables don't write it
+#endif
 	if (mode == FD6818_MODE_DMR) {
 		if (v->dmr != NULL) {
 			write_table(dev, v->dmr, v->dmr_n);
@@ -275,10 +285,129 @@ bool fd6818_rx_tone_ok(fd6818_t *dev, fd6818_tone_t type)
 	return type == FD6818_TONE_NONE || fd6818_tone_found(fd6818_read(dev, FD6818_REG_CSS_STATUS), type);
 }
 
+#if CONFIG_AM_RX
+static bool last_in(const regval_t *t, uint16_t n, uint8_t reg, uint16_t *val)
+{
+	for (uint16_t i = n; i > 0; i--) {
+		if (t[i - 1].reg == reg) {
+			*val = t[i - 1].val;
+			return true;
+		}
+	}
+	return false;
+}
+
+// What FM receive has in reg: the FM table's last write, else post-init's, else init's
+static bool fm_value(const fd6818_variant_t *v, uint8_t reg, uint16_t *val)
+{
+	return last_in(v->fm, v->fm_n, reg, val) || last_in(v->post_init, v->post_init_n, reg, val) ||
+		last_in(v->init, v->init_n, reg, val);
+}
+
 void fd6818_set_am(fd6818_t *dev, bool am)
 {
-	fd6818_write(dev, FD6818_REG_AF, am ? FD6818_AF_AM : FD6818_AF_FM);
+	if (am) {
+		if (!dev->am) {
+			// FM's 0x13 and 0x4A differ by board: the last value the variant's tables write, or the chip's own
+			if (!fm_value(dev->variant, FD6818_REG_GAIN, &dev->r13)) {
+				dev->r13 = fd6818_read(dev, FD6818_REG_GAIN);
+			}
+			if (!fm_value(dev->variant, FD6818_REG_AM_4A, &dev->r4a)) {
+				dev->r4a = fd6818_read(dev, FD6818_REG_AM_4A);
+			}
+			// The squelch's level 1 at the chip's own noise threshold, as this board sets it
+			uint16_t r4f;
+			if (!fm_value(dev->variant, FD6818_REG_SQ_NOISE, &r4f)) {
+				r4f = fd6818_read(dev, FD6818_REG_SQ_NOISE);
+			}
+			dev->am_noise_off = fd6818_am_noise_offset(r4f);
+		}
+		fd6818_write(dev, FD6818_REG_AF, FD6818_AF_AM);
+		fd6818_write(dev, FD6818_REG_GAIN, FD6818_GAIN_AM_FULL);
+		fd6818_write(dev, FD6818_REG_AM_4A, FD6818_AM_4A);
+		fd6818_agc_reset(&dev->agc);
+	} else if (dev->am) {
+		fd6818_write(dev, FD6818_REG_GAIN, dev->r13);
+		fd6818_write(dev, FD6818_REG_AF, FD6818_AF_FM);
+		fd6818_write(dev, FD6818_REG_AM_4A, dev->r4a);
+	}
+	dev->am = am;
 }
+
+bool fd6818_am_status(fd6818_t *dev, uint16_t r65, uint16_t r67, int16_t *rssi_dbm, uint8_t *noise)
+{
+	if (!dev->am) {
+		return false;
+	}
+	// The reading and the gain it was taken at, before the loop's step changes the gain
+	*rssi_dbm = (int16_t)(*rssi_dbm + fd6818_agc_atten_db(&dev->agc));
+	*noise = fd6818_am_noise(r65, dev->am_noise_off);
+	if (fd6818_agc_step(&dev->agc, r67)) {
+		fd6818_write(dev, FD6818_REG_GAIN, fd6818_agc_word(&dev->agc));
+	}
+	return true;
+}
+
+// The gain loop's 0x13 words, lowest gain first, with the gain each gives against the last (full gain, 0x3FF)
+static const struct {
+	uint16_t word;
+	int8_t db;
+} agc_table[] = {
+	{ 0x000, -93 }, { 0x008, -91 }, { 0x010, -88 }, { 0x001, -87 }, { 0x009, -85 }, { 0x011, -82 }, { 0x002, -81 },
+	{ 0x00A, -79 }, { 0x012, -76 }, { 0x003, -75 }, { 0x00B, -73 }, { 0x013, -70 }, { 0x004, -69 }, { 0x00C, -67 },
+	{ 0x00D, -64 }, { 0x01C, -61 }, { 0x01D, -58 }, { 0x01E, -55 }, { 0x01F, -52 }, { 0x03E, -50 }, { 0x03F, -47 },
+	{ 0x05E, -45 }, { 0x05F, -42 }, { 0x07E, -40 }, { 0x07F, -37 }, { 0x09F, -34 }, { 0x0BF, -32 }, { 0x0DF, -30 },
+	{ 0x0FF, -28 }, { 0x1DF, -26 }, { 0x1FF, -24 }, { 0x2BF, -23 }, { 0x2DF, -21 }, { 0x2FF, -19 }, { 0x35E, -17 },
+	{ 0x35F, -14 }, { 0x37E, -12 }, { 0x37F, -9 }, { 0x38F, -6 }, { 0x3BF, -4 }, { 0x3DF, -2 }, { 0x3FF, 0 },
+};
+#define AGC_TOP		(uint8_t)(sizeof(agc_table) / sizeof(agc_table[0]) - 1u)
+#define AGC_NO_PREV	0xFFFFu
+#define AGC_CUT_FROM	10	// dB over the target that takes the gain down
+#define AGC_CUT_SPARE	8	// dB of that excess left in
+#define AGC_RAISE_BELOW	(-6)	// dB under the target that raises the gain
+
+void fd6818_agc_reset(fd6818_agc_t *a)
+{
+	a->idx = AGC_TOP;
+	a->hold = 0;
+	a->prev = AGC_NO_PREV;
+}
+
+bool fd6818_agc_step(fd6818_agc_t *a, uint16_t r67)
+{
+	uint16_t raw = r67 & 0x1FFu;
+	uint16_t avg = a->prev == AGC_NO_PREV ? raw : (uint16_t)((raw + a->prev) / 2u);
+	a->prev = raw;
+	int32_t db = ((int32_t)avg - (int32_t)FD6818_AGC_TARGET) / 2;	// the reading is in 0.5 dB steps
+	uint8_t idx = a->idx;
+	if (db >= AGC_CUT_FROM) {
+		int32_t want = agc_table[idx].db - (db - AGC_CUT_SPARE);
+		while (idx > 0 && agc_table[idx].db > want) {
+			idx--;
+		}
+	} else if (db < AGC_RAISE_BELOW && a->hold == 0 && idx < AGC_TOP) {
+		idx++;
+	}
+	bool changed = idx != a->idx;
+	a->idx = idx;
+	if (changed || db >= AGC_RAISE_BELOW) {
+		a->hold = FD6818_AGC_HOLD;
+	} else if (a->hold > 0) {
+		a->hold--;
+	}
+	return changed;
+}
+
+uint16_t fd6818_agc_word(const fd6818_agc_t *a)
+{
+	return agc_table[a->idx].word;
+}
+
+uint8_t fd6818_agc_atten_db(const fd6818_agc_t *a)
+{
+	return (uint8_t)-agc_table[a->idx].db;
+}
+#endif	// CONFIG_AM_RX
 
 void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode)
 {
