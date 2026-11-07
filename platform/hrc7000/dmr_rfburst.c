@@ -65,8 +65,9 @@ void hrc_rfburst_switch(bool tx, bool continuous)
 	}
 }
 
-// RF RX interrupt (ISR). The original firmware ends each burst here; RadioFoundry's engine ends it at the next slot tick too, so
-// whichever comes first wakes the TX-off, and the board's hold in it keeps the original firmware's timing either way
+// RF RX interrupt (ISR). The original firmware ends each burst here; RadioFoundry's engine ends it at the next slot
+// tick too, so whichever comes first wakes the TX-off, and the board's hold in it keeps the original firmware's timing
+// either way
 static void isr_rfrx(void)
 {
 	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_RF_RX);
@@ -83,7 +84,8 @@ static void isr_timer(void)
 	rf_post(EV_TIMER);
 }
 
-// The sequences' waits: a spin below 50 us, else the board timer while the task sleeps (the original firmware: the same split)
+// The sequences' waits: a spin below 50 us, else the board timer while the task sleeps (the original firmware does the
+// same)
 static void rf_wait(uint32_t us)
 {
 	if (us < WAIT_SPIN_US) {
