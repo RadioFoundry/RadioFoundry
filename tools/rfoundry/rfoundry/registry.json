@@ -418,7 +418,10 @@
      "area": 823296,
      "page_id": 2
     },
-    "write_test": 7454720
+    "write_test": [
+     7454720,
+     7471104
+    ]
    },
    "build_options": [],
    "cps_radio_types": []
@@ -537,7 +540,10 @@
      "area": 823296,
      "page_id": 2
     },
-    "write_test": 7454720
+    "write_test": [
+     7454720,
+     7471104
+    ]
    },
    "build_options": [],
    "cps_radio_types": []

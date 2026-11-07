@@ -61,7 +61,7 @@ static bool init(void)
 	give();
 	ready = ok;
 	stm32_spi_flash.size = ok ? nor.size : 0;
-	stm32_spi_flash.map = ok && nor.size >= cfg->map_min_size ? cfg->map : NULL;
+	stm32_spi_flash.map = ok && cfg->map != NULL && hal_flash_map_end(cfg->map, SPI_NOR_SECTOR_SIZE) <= nor.size ? cfg->map : NULL;
 	return ok;
 }
 
