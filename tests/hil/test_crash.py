@@ -127,5 +127,7 @@ def test_crash_stall_kept(radio):
     if tasks_built:
         n = as_int(v["crash.tasks"])
         others = dict(v[f"crash.t{k}"].rsplit(",", 1) for k in range(n))
-        assert "host" in others and int(others["host"], 16) != 0, v
+        # The snapshot keeps the first tasks in creation order: on a radio with more, the host task may be past its end
+        if "host" in others or v.get("crash.tasks_more") != "1":
+            assert "host" in others and int(others["host"], 16) != 0, v
     radio.link.crash_clear()
