@@ -133,6 +133,8 @@ STR_LIST = ("list", str)
 # The HIL pass limits a board can override ([hil.limits]): name -> the check that reads it
 HIL_LIMITS = {
     "dmr_tx_ramp_ms": "a DMR TX burst's key-up and key-down ramps, each (tools/bench/dmr_bench.py check_tx)",
+    "fm_squelch_tail_ms": "the noise heard after an FM carrier ends, until the squelch closes (tests/hil/test_speaker.py "
+                          "test_fm_rx_speaker)",
 }
 HIL_LIMIT = {"value": _req(float), "reason": _req(str)}
 RANGE = ("list", int)

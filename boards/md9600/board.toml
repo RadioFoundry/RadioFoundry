@@ -125,6 +125,10 @@ display = "128x64x1"
 features = ["USB", "DEBUGLINK", "CPS_FAST"]	# CPS_FAST needs CPS_OPENFW, which the feature string doesn't list
 supply_mv = [10000, 16000]
 
+# HIL pass limits this radio is held to instead of a test's default (tools/boards.py HIL_LIMITS), each with its reason
+[hil.limits]
+fm_squelch_tail_ms = { value = 120, reason = "tails of 70-105 ms of noise after the bench carrier ends, against the core's 85 ms close time; accepted by the owner, since squelch tail elimination isn't done (radio-features.md 3.5)" }
+
 # The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
 # reports them
 [cps]

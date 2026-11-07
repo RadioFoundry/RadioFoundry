@@ -18,7 +18,8 @@ checks, nothing may pop as the squelch opens or closes, and a squelch tail after
 the core's squelch takes to close (one poll to see the carrier gone, then RADIO_SQL_CLOSE_POLLS polls of RADIO_POLL_MS,
 core/radio/radio_sm.h): squelch tail
 elimination is not done (docs/spec/radio-features.md 3.5), so the noise until that close is expected; a longer one
-(a board whose noise reading lags the carrier) fails."""
+(a board whose noise reading lags the carrier) fails, unless the board's [hil.limits] fm_squelch_tail_ms holds it to a
+longer one with its reason."""
 import os
 import shutil
 import subprocess
@@ -28,6 +29,7 @@ import pytest
 
 import audio_check as A
 from hil_config import rig
+import rfoundry_hil
 from rfoundry_hil import skip
 
 RATE = 16000
@@ -203,16 +205,23 @@ def test_fm_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
     end = r.tones[-1].end_s      # the program ends with its last tone: the carrier goes with it
     if end is not None:
         tails = [(t0, over, ms) for t0, over, ms in r.pops if t0 > end + 0.02]
-        allowed = squelch_close_ms()
+        allowed, why = squelch_close_ms(), None
+        o = rfoundry_hil.board_hil(rfoundry_hil.board_id(radio.version().get("board"))).get("limits", {}).get(
+            "fm_squelch_tail_ms")
+        if o:
+            allowed, why = o["value"], o["reason"]
+            print(f"squelch tail limit {allowed:.0f} ms from the board's [hil.limits]: {why}")
         for i, (t0, over, ms) in enumerate(tails):
             problems = [p for p in problems if f"at {t0:.3f} s" not in p]     # named below instead
             what = (f"{ms:.0f} ms of noise {over:.0f} dB over the floor, {(t0 - end) * 1000:.0f} ms after the last "
                     f"tone")
             if i == 0 and ms <= allowed:
-                print(f"squelch tail: {what} (the squelch closes within {allowed:.0f} ms: expected)")
+                print(f"squelch tail: {what} (within {allowed:.0f} ms{f': {why}' if why else ', the squelch close time'}"
+                      ": expected)")
             else:
                 problems.append(f"FM {mhz} MHz: a squelch tail: {what}" +
-                                (f" (more than the {allowed:.0f} ms the squelch takes to close)" if i == 0 else ""))
+                                (f" (more than {allowed:.0f} ms{f': {why}' if why else ', the squelch close time'})"
+                                 if i == 0 else ""))
     assert not problems, "\n".join(problems)
 
 
