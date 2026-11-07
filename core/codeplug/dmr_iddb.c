@@ -13,8 +13,13 @@
 #if CONFIG_DMR
 
 // Flash image addresses (7.5) from where the flash image sits in the data flash: the board's map
-// (hal_flash_map_t.openfw_flash), as codeplug.c reads the codeplug, else the STM32 family's +128 KB
+// (hal_flash_map_t.openfw_flash), as codeplug.c reads the codeplug. Without a map (a driver drops one its chip is too
+// small for), codeplug.c's fallback: the board's own base from board.mk, else the STM32 family's +128 KB
+#ifdef CODEPLUG_OPENFW_FLASH_BASE
+#define DEFAULT_FLASH_BASE	CODEPLUG_OPENFW_FLASH_BASE
+#else
 #define DEFAULT_FLASH_BASE	0x020000u
+#endif
 #define IDDB_AREA1		(flash_base() + 0x30000u)
 #define IDDB_AREA2		(flash_base() + 0xB8000u)
 #define IDDB_AREA2_VP		(flash_base() + 0x8F400u)	// format 'n': in the voice prompt area
