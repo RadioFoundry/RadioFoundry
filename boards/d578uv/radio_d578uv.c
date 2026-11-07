@@ -676,6 +676,25 @@ static uint8_t tx_dac(uint32_t hz, uint8_t p)
 	return ok ? v : 0;
 }
 
+// The PA drive override (hal_radio_t.tx_drive, power calibration): the DAC word for the next transmission instead of
+// its level's, 0 = the level's. tx() takes it, tx_off() clears it
+static volatile uint16_t drive_next;
+
+// hal_radio_t.tx_drive_level: the drive in the DAC's own 12-bit counts (the calibration's 8-bit value << 4)
+static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
+{
+	return (uint16_t)(tx_dac(hz, level) << 4);
+}
+
+static bool tx_drive(uint16_t drive)
+{
+	if (drive > 0xFFFu) {
+		return false;
+	}
+	drive_next = drive;
+	return true;
+}
+
 // ---- Chip 0's outputs ----
 
 // The reference trim (hal_radio_t.ref_trim, radio-features.md 6.1): no reference control is known, so each synthesizer
@@ -1609,7 +1628,7 @@ static void chips_off(void)
 #if CONFIG_DMR
 // The stock digital TX-on (5.1): chips off, chip 0 to hz with the digital set, keyed, band and TX bits, 10 ms, then the
 // PA is the bursts'. Called before the modem's transmission starts (the core's order), held until tx_off()
-static bool dmr_tx(uint32_t hz, uint8_t dac)
+static bool dmr_tx(uint32_t hz, uint16_t dac)
 {
 	if (!pa_gate_can_key(mcu_pin_read(PIN_DMR_TX_BURST))) {
 		burst_refused++;
@@ -1630,7 +1649,7 @@ static bool dmr_tx(uint32_t hz, uint8_t dac)
 	hal_delay_ms(10);
 	// The receive path bit before the PA can come on (the stock firmware clears it after its PE6 step)
 	sr_set(SR_TX, SR_RX_PATH);
-	burst_arm((uint16_t)(dac << 4));
+	burst_arm(dac);
 	return true;
 }
 #endif
@@ -1640,9 +1659,12 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	if (!board_in_band(hz, true)) {
 		return false;
 	}
-	uint8_t dac = tx_dac(hz, power);
+	uint16_t dac = tx_drive_level(hz, power);
 	if (dac == 0) {
-		return false;
+		return false;	// no calibration here: the override doesn't stand in for one
+	}
+	if (drive_next != 0) {
+		dac = drive_next;
 	}
 #if CONFIG_DMR
 	burst_disarm();		// keyed again without tx_off(): no burst switches the PA of the new set-up
@@ -1692,7 +1714,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	band_bits(hz);
 	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_FAN);
 	hal_delay_ms(10);
-	mcu_dac_write(0, (uint16_t)(dac << 4));
+	mcu_dac_write(0, dac);
 	sr_set(SR_TX, SR_RX_PATH);
 	// The PA enable toggled three times 2 ms apart, then held (the stock sequence)
 	for (int i = 0; i < 3; i++) {
@@ -1822,6 +1844,7 @@ static uint32_t rx_back_ms;		// hal_millis() at the last tx_off, 0 before any
 
 static void tx_off(void)
 {
+	drive_next = 0;		// the override is for one transmission
 #if CONFIG_DMR
 	burst_disarm();
 #endif
@@ -2045,4 +2068,6 @@ const hal_radio_t d578uv_radio = {
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
 #endif
+	.tx_drive_level = tx_drive_level,
+	.tx_drive = tx_drive,
 };
