@@ -27,9 +27,9 @@ def _crash(radio, kind, wait_s=30.0):
     radio.link.crash_test(kind)
     radio.link.close()
     time.sleep(2.0)
-    radio.reconnect(timeout=wait_s)
+    radio.reconnect(wait_s, "the crash")
     up_after = as_int(radio.view(["link"])["uptime_ms"])
-    assert up_after < up_before or up_after < 30000, "the radio didn't restart"
+    assert up_after < up_before, f"the radio didn't restart (uptime {up_before} ms, then {up_after})"
     return radio.view(["crash"])
 
 
@@ -103,7 +103,9 @@ def test_crash_hang_kept(radio):
     if tasks_built:
         n = as_int(v["crash.tasks"])
         others = dict(v[f"crash.t{k}"].rsplit(",", 1) for k in range(n))
-        assert n >= 2 and "ui" in others and "radi" in others, v
+        # The record has room for a few (crash-log.md 1.2): a radio with more tasks lists the first and says so
+        more = as_int(v.get("crash.tasks_more"), 0) != 0
+        assert n >= 2 and all(t in others or more for t in ("ui", "radi")), v
         assert "host" not in others and "IDLE" not in others, v
         where = [int(w, 16) for w in others.values()]
         assert all(where) and any(w & 1 for w in where), others
