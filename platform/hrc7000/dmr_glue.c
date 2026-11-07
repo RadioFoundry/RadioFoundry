@@ -37,6 +37,7 @@ static hrc7000_dmr_t eng;
 static const hrc_dmr_board_t *brd;
 static TaskHandle_t task;
 static volatile bool active;
+static volatile bool rf_on_rx;	// the last burst switch put the RF back to receive (hrc_dmr_rf_on_rx)
 static dmr_event_cb_t volatile stack_cb;
 static void *volatile stack_ctx;
 
@@ -90,6 +91,7 @@ static void rf(void *ctx, bool tx)
 {
 	(void)ctx;
 	brd->rf_switch(tx);
+	rf_on_rx = !tx;
 }
 
 static void pa_arm(void *ctx)
@@ -216,6 +218,7 @@ HRC_FLASHFUNC void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *h
 
 void hrc_dmr_enter(void)
 {
+	rf_on_rx = false;
 	hrc7000_dmr_run(&eng);
 	active = true;
 	irqs_enable(true);
@@ -226,6 +229,7 @@ void hrc_dmr_leave(void)
 	irqs_enable(false);
 	active = false;
 	hrc7000_dmr_halt(&eng);
+	rf_on_rx = false;	// after the halt: its switch back to RX doesn't count outside DMR
 }
 
 bool hrc_dmr_fm_rx_hook(void (*fn)(void))
@@ -237,8 +241,14 @@ bool hrc_dmr_fm_rx_hook(void (*fn)(void))
 	return true;
 }
 
+bool hrc_dmr_rf_on_rx(void)
+{
+	return rf_on_rx;
+}
+
 void hrc_dmr_rx_restart(void)
 {
+	rf_on_rx = false;
 	hrc7000_dmr_rx_restart(&eng);
 }
 

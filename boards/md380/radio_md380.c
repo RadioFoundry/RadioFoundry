@@ -97,7 +97,6 @@ static struct {
 	volatile uint32_t dmr_drive;
 	uint8_t dmr_mod2, dmr_mod1;
 	uint32_t rf_skipped, rf_unarmed, rf_rx_back;
-	bool rx_back;	// rf_dmr_tx_done put the receiver back on rx_hz: rx() keeps the synthesizer as it is
 } r;
 
 static DAC_HandleTypeDef dac;
@@ -309,9 +308,6 @@ static uint8_t pick_ref_div(uint32_t vco_hz)
 static bool pll_tune(uint32_t vco_hz, bool tx, bool wait)
 {
 	uint8_t d = pick_ref_div(vco_hz);
-	if (tx) {
-		r.rx_back = false;
-	}
 	md380_rfbus_vco_select(tx);
 	if (d == 0 || !sky72310_set_vco(&r.pll, d, vco_hz)) {
 		r.diag.pll_fails++;
@@ -421,10 +417,10 @@ static void rf_dmr_wait_lock(void)
 // last burst, before tx_off() (the radio task) gets here. Left on the TX side until then, the radio missed nearly every
 // one (a receive CRC error instead), and the TX VCO kept leaking the carrier. Not per burst: the switch there caught
 // the burst on air
-static void rf_dmr_tx_done(void)
+static bool rf_dmr_tx_done(void)
 {
 	if (!r.dmr_armed || !r.dmr_tx_tuned || !r.rx_valid) {
-		return;
+		return false;
 	}
 	pa_timer_stop();
 	pa_off();
@@ -433,8 +429,8 @@ static void rf_dmr_tx_done(void)
 	dac1_set(r.rx_tune_dac);
 	rx_path(true);
 	r.dmr_tx_tuned = false;
-	r.rx_back = true;
 	r.rf_rx_back++;
+	return true;
 }
 
 static void rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_back)
@@ -708,8 +704,8 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	(void)rx_tone;
 #endif
 	bool from_tx = r.dmr_tx_tuned;
-	bool back = r.rx_back && same && !r.asleep;	// on rx_hz since the TX done: a retune now would hit a reply
-	r.rx_back = false;
+	// On rx_hz since the TX done (the glue's flag): a retune now would hit a reply
+	bool back = stm32_hrc_dmr_rf_on_rx() && r.mode == RADIO_MODE_DMR && same && !r.asleep;
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();
 	}
