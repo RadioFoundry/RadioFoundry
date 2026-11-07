@@ -12,9 +12,12 @@ static inline uint16_t apc_ramp_level(uint16_t target, uint16_t step, uint16_t s
 	if (step >= steps) {
 		return target;
 	}
-	uint64_t n = steps;
-	uint64_t x = step;
-	return (uint16_t)((uint64_t)target * x * x * (3u * n - 2u * x) / (n * n * n));
+	// 32-bit only: the ramp runs a step every few microseconds, and a 64-bit divide is a library call that costs
+	// more than the step on a CPU without one. x in Q15; every product stays below 2^32
+	uint32_t x = ((uint32_t)step << 15) / steps;
+	uint32_t s = (x * x) >> 15;
+	s = (s * (3u * 32768u - 2u * x)) >> 15;
+	return (uint16_t)(((uint32_t)target * s + 16384u) >> 15);
 }
 
 #endif
