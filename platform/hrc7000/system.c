@@ -105,8 +105,8 @@ HRC_RAMFUNC void hrc_rf_safe(void)
 // the start that follows until main() takes it over, and a start that hangs is reset again. The counter starts from
 // the 1 ms load, for a quick reset; the load written after it, which the next start counts from, has to cover the boot
 // ROM and any loader. The clock and flash controller go back to the loader's settings first, in case the watchdog
-// reset keeps them as a soft reset does. A radio reset while transmitting came back with the PA keyed and hung
-// (2026-10-21): the transmitter goes off before anything else
+// reset keeps them as a soft reset does. A radio reset while transmitting came back with the PA keyed and hung: the
+// transmitter goes off before anything else
 HRC_RAMFUNC void hrc_restart(void)
 {
 	__asm__ volatile ("psrclr ie");

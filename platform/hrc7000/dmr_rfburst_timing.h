@@ -9,7 +9,7 @@
 
 // --- Burst timing ---
 // The modem raises the RF TX interrupt rf_tx_lead (100 us steps, RF_CONTROL b13:8) before its TX burst, and the burst's
-// first symbol is on air 0.85 ms after that point (measured on the SDR bench, 2026-10-25). up_us: how long the board's
+// first symbol is on air 0.85 ms after that point (measured on the SDR bench). up_us: how long the board's
 // TX-on sequence takes from the interrupt until the PA is fully up. The lead is the shortest that has the PA up for
 // the first symbol: every 100 us more switches the receiver off earlier in the slot before ours, where an SFR
 // repeater hears the inbound burst
@@ -17,6 +17,9 @@
 #define HRC_RFBURST_BURST_US			27500u
 static inline uint8_t hrc_rfburst_lead(uint32_t up_us)
 {
+	if (up_us <= HRC_RFBURST_SYMBOL_AFTER_LEAD_US) {
+		return 0;	// up before the first symbol even with no lead
+	}
 	return (uint8_t)((up_us - HRC_RFBURST_SYMBOL_AFTER_LEAD_US + 99u) / 100u);
 }
 // The ramp down starts with the burst's last symbol, lead + 0.85 ms + 27.5 ms after the RF TX interrupt, so the
