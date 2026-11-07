@@ -1037,6 +1037,9 @@ static void rx_service(const aprs_radio_t *r, uint32_t now_ms)
 		}
 		a.rx_running = false;
 	}
+	if (!want) {
+		a.rx_retry_wait = false;	// a refusal's wait is for the try it followed, not a later one
+	}
 	if (a.rx_running) {
 		uint16_t n = (uint16_t)(sizeof(a.rxbuf) / sizeof(a.rxbuf[0]));
 		uint16_t k;
