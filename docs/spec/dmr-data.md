@@ -21,9 +21,8 @@ already decoded), `docs/spec/gotchas.md` 3.6-3.9, 5, 7, 14.1.
 | `CONFIG_DMR_LRRP` | LRRP answers (immediate and triggered location requests) |
 | `CONFIG_DMR_SIGNALING` | call alert and radio check CSBKs: answered, and sent by the user |
 | `CONFIG_DMR_EMERGENCY` | the emergency alarm CSBK, sent and heard (`dmr-emergency.md`; the rest of the emergency is in the radio core) |
-| `CONFIG_DMR_DATA_CORE` | derived, on when any of the above is: the packet data core (`core/dmr/dmrData.c`), the service, the ETSI responses to confirmed data |
+| `CONFIG_DMR_DATA_CORE` | derived, on when any of the above is: the packet data core (`core/dmr/dmrData.c`), the service, confirmed data both ways (12) |
 | `CONFIG_DMR_UDP_COMPRESS` | compressed UDP/IPv4 headers (SAP 3) on transmit (11) |
-| `CONFIG_DMR_CONFIRMED` | confirmed delivery of our IP packets, and the CRC-9 check, selective ACK, NACK and duplicate drop for confirmed data to us (12) |
 
 All default to on with DMR (`CONFIG_DMR_TMS` follows `CONFIG_DMR_SMS`). A feature switched off is compiled out of the service (`if (!CONFIG_...)` guards,
 the linker drops what is unused); its API calls return false. With all five off nothing of the data path is built,
@@ -128,7 +127,8 @@ All three are read whatever the setting.
 
 ### 5.1 Motorola TMS (`CONFIG_DMR_TMS`)
 
-- Format: IPv4 / UDP port 4007 to 4007, user data SAP 4, unconfirmed data. TMS header 0xE0 (ACK requested) or 0xA0,
+- Format: IPv4 / UDP port 4007 to 4007, user data SAP 4. Ours is confirmed data where 5.1.1 needs it (below),
+  otherwise unconfirmed. TMS header 0xE0 (ACK requested) or 0xA0,
   sequence number in 5 bits (with bit 7 set), encoding 4, the text as UTF-16LE (Latin-1 characters only on the
   radio side). Header bits as seen on air: 0x80 a sequence octet follows, 0x40 ACK requested, 0x20 set in every
   TMS packet, the low 5 bits the type (0 text, 0x1F ACK).
@@ -136,10 +136,18 @@ All three are read whatever the setting.
   bits 5-6, 00 04 BF 00 9E 60 for s/n 126), as a MOTOTRBO radio and BrandMeister send it. An ACK with header 0x9F
   (0x20 clear, seen from other MOTOTRBO gear) is still taken. Radio IDs map to 12.x.x.x, groups to 225.x.x.x (the CAI addresses; a packet from the host may carry
   others, 11.1).
-- Ours (`sms_send`): rate 1/2 blocks (gotcha 5.3), 16 preamble CSBKs (12.6.4). With an ACK requested: waits 8 s for the TMS
-  ACK with our sequence number, 2 tries, then `SMS_FAILED`. To a group or without an ACK: `SMS_SENT` once on air.
-- Our TMS ACK: unconfirmed, 16 preamble CSBKs. After a link ACK of ours (the message came confirmed) it waits
-  `TMS_ACK_GAP_MS` (1.5 s) after that transmission ends (5.1.1).
+- Ours (`sms_send`): rate 1/2 blocks (gotcha 5.3), 16 preamble CSBKs (12.6.4). Individual with an ACK requested, and
+  the confirmed IP setting not off: confirmed data through the IP packet slot (12), as a MOTOTRBO radio sends it. The
+  link ACK alone doesn't end it: then it waits 8 s for the TMS ACK with our sequence number, 2 tries, then
+  `SMS_FAILED`. No link ACK after the confirmed tries: `SMS_FAILED`. The TMS ACK without the link ACK (that one lost)
+  ends it too, and its retries. With the setting off, the same 8 s and 2 tries unconfirmed. To a group or without an
+  ACK: unconfirmed, `SMS_SENT` once on air.
+- Our TMS ACK: confirmed data when the confirmed IP setting is not off and the IP packet slot is free (BrandMeister
+  ignores an unconfirmed one, 5.1.1), otherwise unconfirmed; 16 preamble CSBKs either way. After a link ACK of ours
+  (the message came confirmed) it waits `TMS_ACK_GAP_MS` (1.5 s) after that transmission ends.
+- The UDP header of our confirmed TMS and TMS ACK is compressed (SAP 3, 11) only with UDP compression set to all;
+  port 4007 is an application port, so auto keeps SAP 4. Whether BrandMeister and MOTOTRBO radios take TMS with a
+  compressed header is untested.
   One message at a time, at most 140 characters.
 - Built without `CONFIG_DMR_TMS` (the TMS builder, decoder and ACK are left out): a TMS heard is not decoded, so it
   is neither kept nor acknowledged; as confirmed data it still gets its ETSI response (3), and the IP gateway still
@@ -153,14 +161,14 @@ BrandMeister's SMS service (ID 262993, through a hotspot) speaks TMS on UDP 4007
 
 | | BrandMeister | MOTOTRBO radio | RadioFoundry |
 |---|---|---|---|
-| Data | confirmed (A=1), rate 3/4 | confirmed (A=1), rate 3/4 | TMS and TMS ACK unconfirmed, rate 1/2 |
+| Data | confirmed (A=1), rate 3/4 | confirmed (A=1), rate 3/4 | TMS and TMS ACK confirmed (A=1), rate 1/2 |
 | Preamble CSBKs | 1 | 15 or 16 | 16 (12.6.4) |
 | Takes a packet with | 12 or more preambles; 1 or 2: no answer at all | | |
 | N(S) | 0 on every packet | steps | steps (12.2) |
 | Link ACK | about 0.5 s after the last block, 1 preamble | | straight after (3) |
-| TMS ACK | about 5.7 s after the message | confirmed, 16 preambles, about 1.4 s after its link ACK | unconfirmed, 16 preambles, 1.5 s after our link ACK |
+| TMS ACK | about 5.7 s after the message | confirmed, 16 preambles, about 1.4 s after its link ACK | confirmed, 16 preambles, 1.5 s after our link ACK |
 | Our link ACK | taken 3 of 3 times with nothing after it within 1 s; no reaction 2 of 2 times with our TMS ACK 0.3 s behind (few samples; may be loss) | | |
-| No TMS ACK | sends the text again after about 28 s, with a new sequence number | link layer retries about every 6 s | 8 s wait, 2 tries |
+| No TMS ACK | sends the text again after about 28 s, with a new sequence number | link layer retries about every 6 s | link layer tries 1.5 s apart; after the link ACK an 8 s wait, 2 tries |
 | CRC-32 failure | NACK, class 1 type 1 | | NACK (12.3) |
 
 What follows for us: N(S) can't tell BrandMeister's packets apart, so a repeat is a repeat only when the data is the
@@ -213,14 +221,27 @@ Second pass, case 2 with 16 preambles (TMS ACK still with 2, right after the lin
 
 | What | Result |
 |---|---|
-| Our text | BrandMeister's link ACK came 0.61 s after try 1 (class 0 type 1, status our N(S), 1 preamble), but the radio didn't take it and sent 3 more tries. Why is open: `ip.cnf_other` and `ip.cnf_other_last` (12.5) record such a response now |
+| Our text | BrandMeister's link ACK came 0.61 s after try 1 at the network (class 0 type 1, status our N(S), 1 preamble), but the radio didn't take it and sent 3 more tries. `ip.cnf_other_last` showed why: it came while the stack still reported our transmission running (about 0.9 s after its last burst), when only a waiting packet took a response. Now such an ACK is taken (12.4) |
 | BrandMeister's TMS ACK | came about 11 s after try 1: confirmed, rate 3/4, 1 preamble, N(S) 0. Our link ACK to it was taken |
 | BrandMeister's reply | "SMS was received by the System.", into the inbox once (case 6) |
 | Our ACKs to the reply | the link ACK with our TMS ACK 0.3 s behind it: no reaction, the reply came again 3 s later; the link ACK to that repeat, with nothing behind: taken (twice each). Our TMS ACK (2 preambles): no reaction (twice), so the reply came again after about 35 s with a new sequence number, kept once (gotcha 5.8) |
 
 From that pass: the TMS ACK goes with 16 preambles and 1.5 s after our link ACK (5.1), as MOTOTRBO radios send it;
 with two samples each, a lost packet is not ruled out. Cases 1, 3-5 and 7 with
-both: open. A MOTOTRBO radio sends its TMS ACK confirmed; whether BrandMeister takes an unconfirmed one is open.
+both: open.
+
+A third pass sent the TMS ACK unconfirmed with 16 preambles and the 1.5 s gap, twice: no reaction either time, and
+the reply came again about 36 s later with a new sequence number. A MOTOTRBO radio's confirmed TMS ACK is taken, so
+ours goes confirmed (5.1).
+
+Fourth pass, case 1 with our text and TMS ACK confirmed (5.1):
+
+| What | Result |
+|---|---|
+| Our text | BrandMeister's link ACK 0.6 s after the last block, taken; no retry |
+| BrandMeister's TMS ACK | 5.1 s after its link ACK; taken (`SMS_SENT`) |
+| BrandMeister's reply | its link ACK from us taken; our confirmed TMS ACK link-ACKed by BrandMeister (status our N(S)) |
+| A second reply 23 s later | the same text with a new sequence number, not a resend: BrandMeister's echo sends its reply twice, to a MOTOTRBO radio too. ACKed, kept once (gotcha 5.8). Our TMS ACK to it: no link ACK on any of 4 tries (one sample) |
 
 #### 5.1.2 Simulated BrandMeister text service (HIL)
 
@@ -281,7 +302,7 @@ The compressed UDP/IPv4 header (5.6, 7.2.4) has a port index for it: SPID / DPID
   (`SMS_SENT`, the UI says "Delivered to", `sms_send_confirmed()` true); no response after the tries, or a NACK that
   ends the packet: `SMS_FAILED`. It shares the service's one IP packet slot with the gateway (one at a time; the
   gateway's packet waits, as for any busy slot). Unconfirmed, done once on air ("Sent to"): to a group, and with the
-  confirmed IP setting off (`ip.confirmed` off, or a build without `CONFIG_DMR_CONFIRMED`).
+  confirmed IP setting off (`ip.confirmed` off).
 - Received (SAP 4 or SAP 3, destination port 5016): the payload decoded as UTF-16BE (`dmrDataDecodeIPText`; a byte
   order mark first is honored, either way), into the inbox with format `ETSI_IP`. No reply of its own; confirmed
   data gets its ETSI response (3). Duplicates as in 5.2.
@@ -493,7 +514,8 @@ network.
 ## 12. Confirmed data
 
 Source: ETSI TS 102 361-1 V2.7.1 8.2.1.2, 8.2.2.2-8.2.2.4, 9.2.1, 9.3.20-9.3.27, B.3.10, B.21; TS 102 361-3 V1.3.1 5.4
-(stop and wait), Annex A. `CONFIG_DMR_CONFIRMED`.
+(stop and wait), Annex A. Part of the data core: no switch of its own, since texts to BrandMeister and MOTOTRBO
+radios need it (5.1.1).
 
 ### 12.1 What already existed
 
@@ -516,6 +538,8 @@ the reply queue and its 5 s age limit, and the service's TX list and listen befo
 - Then it waits `DMR_IPC_RESPONSE_MS` (1.5 s) after the list has gone for a response from the destination with the
   packet's SAP. The standard recommends 180 ms (2 s on simulcast); ours is longer because our own receiver answers
   after its listen before talk (120 ms) and a repeater wake-up.
+- An ACK with our N(S) is also taken before the stack has reported our list done (a fast answer, such as
+  BrandMeister's through a hotspot, can come first: 5.1.1) and while the next try is queued (its retry dropped). A selective ACK or NACK then is not: the try under way answers for it.
 - ACK (class 0, type 1) with our N(S): done; the next packet to that radio takes N(S) + 1 (mod 8).
 - Selective ACK (class 2, type 0): the blocks whose flag is 0 again, with the same N(S) and POC and F clear; flags
   all 1: done.
@@ -545,7 +569,6 @@ the reply queue and its 5 s age limit, and the service's TX list and listen befo
   20 s of the last copy: ACKed, not passed on (`ip.rx_duplicates`). The standard keys on N(S) alone; BrandMeister
   sends N(S) 0 on every packet, so other data with the same N(S) is a new packet. Any other N(S) is taken as new (no out of sequence
   NACK: senders restart their numbers).
-- Built without `CONFIG_DMR_CONFIRMED` receive behaves as before (ACK, the CRC-32 alone).
 
 ### 12.4 Which packets (the settings `ipConfirmed`, `ipConfirmedRule`, `ipConfirmedTries`)
 

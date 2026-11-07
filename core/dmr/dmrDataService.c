@@ -13,9 +13,7 @@
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
 #endif
-#if CONFIG_DMR_CONFIRMED
 #include "dmr/call/dmr_lc.h"
-#endif
 #if CONFIG_ZONE_SHARE
 #include "dmr/zoneShare.h"
 #endif
@@ -177,8 +175,14 @@ static struct
 	uint32_t due;
 	char text[sizeof(((dmrDataTMS_t *)0)->text)];
 } sms;
-#if CONFIG_DMR_CONFIRMED
-RFOUNDRY_CPU_RAM static uint8_t smsL4[DMR_ETSI_TEXT_UDP_MAX];	// a confirmed ETSI IP text's datagram, for its retries
+#if CONFIG_DMR_TMS && (DMR_TMS_UDP_MAX > DMR_ETSI_TEXT_UDP_MAX)
+#define SMS_L4_MAX				DMR_TMS_UDP_MAX
+#else
+#define SMS_L4_MAX				DMR_ETSI_TEXT_UDP_MAX
+#endif
+RFOUNDRY_CPU_RAM static uint8_t smsL4[SMS_L4_MAX];	// a confirmed text's datagram (ETSI IP or TMS), for its retries
+#if CONFIG_DMR_TMS
+static uint8_t tmsAckL4[DMR_TMS_ACK_UDP_MAX];		// a confirmed TMS ACK's datagram
 #endif
 
 // Our emergency alarm (CONFIG_DMR_EMERGENCY)
@@ -400,9 +404,7 @@ int dmrDataServiceSendShortData(bool group, uint32_t dst, uint32_t src, const ui
 
 // --- IP packets (dmrDataServiceSendIP): compressed headers, confirmed delivery ---
 
-#if CONFIG_DMR_CONFIRMED
 static void rxResult(dmrDataRxResult_t result, bool block);
-#endif
 
 enum { IPX_IDLE, IPX_QUEUED, IPX_SENDING, IPX_WAITING };
 
@@ -413,7 +415,8 @@ static struct
 	bool group;
 	bool compress;
 	bool confirmed;
-	bool sms;							// our own ETSI IP text (smsFinish at the end), not the gateway's
+	bool sms;							// our own text, ETSI IP or TMS (smsFinish at the end), not the gateway's
+	bool tmsAck;						// our TMS ACK: nothing to report at the end
 	bool firstTry;						// the next transmission is the packet's first (F set, every block)
 	uint8_t protocol;
 	uint8_t sap;
@@ -449,7 +452,7 @@ static uint16_t udpPort(const uint8_t *l4, int length, int at)
 bool dmrDataServiceIpWantConfirmed(const dmrDataSettings_t *s, bool group, uint32_t dst, uint8_t protocol, uint16_t srcPort,
 									uint16_t dstPort)
 {
-	if (!CONFIG_DMR_CONFIRMED || group || (s->ipConfirmed == DMR_IPC_OFF))
+	if (group || (s->ipConfirmed == DMR_IPC_OFF))
 	{
 		return false;
 	}
@@ -470,7 +473,6 @@ bool dmrDataServiceIpWantConfirmed(const dmrDataSettings_t *s, bool group, uint3
 	return false;
 }
 
-#if CONFIG_DMR_CONFIRMED
 static struct
 {
 	uint32_t id;
@@ -564,7 +566,6 @@ static void terminatorLC(uint32_t dst, uint32_t src, bool firstTry, uint8_t ns, 
 	out->flags = DMR_BURST_FLAG_MCU_CRC;
 	dmr_lc_encode_full(lc, DMR_RS_MASK_TERMINATOR, out->payload);
 }
-#endif
 
 static void smsFinish(uint8_t state);
 
@@ -575,9 +576,21 @@ static void ipFinish(uint8_t result)
 		stats.ipCnfFailed += ipx.confirmed ? 1 : 0;
 	}
 	ipx.state = IPX_IDLE;
+	if (ipx.tmsAck)
+	{
+		ipx.tmsAck = false;
+		return;
+	}
 	if (ipx.sms)
 	{
 		ipx.sms = false;
+		if ((result == DMR_REQ_OK) && (sms.format == DMR_SMS_FORMAT_TMS))
+		{
+			// Delivered to the gateway (the link ACK): the TMS ACK from its far end confirms the message
+			sms.waiting = true;
+			sms.due = now + SMS_ACK_MS;
+			return;
+		}
 		smsFinish(result == DMR_REQ_OK ? DMR_REQ_OK : DMR_REQ_FAILED);// the ETSI response confirmed it, or never came
 		return;
 	}
@@ -608,7 +621,6 @@ static void ipTransmit(void)
 		ipFinish(DMR_REQ_FAILED);
 		return;
 	}
-#if CONFIG_DMR_CONFIRMED
 	if (ipx.confirmed)
 	{
 		// One burst kept for the terminator
@@ -625,7 +637,6 @@ static void ipTransmit(void)
 			terminatorLC(ipx.dst, channel.ownId, ipx.firstTry, ipx.ns, &txBursts[count++]);
 		}
 	}
-#endif
 	if (!ipx.confirmed)
 	{
 		// The packets after the preambles, then the preambles counting all of them (docs/spec/dmr-data.md 12.6)
@@ -701,15 +712,33 @@ static void ipStart(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l
 	ipx.firstTry = true;
 	ipx.since = now;
 	ipx.state = IPX_QUEUED;
-#if CONFIG_DMR_CONFIRMED
 	ipx.confirmed = confirmed;
 	if (ipx.confirmed)
 	{
 		ipx.ns = nsFor(dst);
 	}
-#else
-	(void)confirmed;
-#endif
+}
+
+// Our confirmed text known delivered without its link ACK (the TMS ACK came): no more tries, and the next packet to
+// that radio takes the next N(S), as after an ACK
+static void ipDelivered(void)
+{
+	if (txPending && !txRunning && (txKind == TXK_IP))
+	{
+		txPending = false;
+	}
+	nsSet(ipx.dst, ipx.ns + 1);
+	ipx.sms = false;// the caller ends the message
+	ipx.state = IPX_IDLE;
+}
+
+// Our own confirmed UDP datagram (a text, a TMS ACK); the gateway's last result stays for it to read
+static void ipStartOwn(uint32_t dst, const uint8_t *l4, int length, bool compress)
+{
+	uint8_t result = ipx.result;
+
+	ipStart(false, dst, DMR_IP_PROTO_UDP, l4, length, compress, true);
+	ipx.result = result;
 }
 
 static bool ipSend(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol, const uint8_t *l4,
@@ -722,7 +751,7 @@ static bool ipSend(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uin
 	uint16_t srcPort = (protocol == DMR_IP_PROTO_UDP) ? udpPort(l4, length, 0) : 0;
 	uint16_t dstPort = (protocol == DMR_IP_PROTO_UDP) ? udpPort(l4, length, 2) : 0;
 	bool confirmed = (delivery == DMR_IPS_SETTINGS) ? dmrDataServiceIpWantConfirmed(&settings, group, dst, protocol, srcPort, dstPort) :
-			(CONFIG_DMR_CONFIRMED && !group && (delivery == DMR_IPS_CONFIRMED));
+			(!group && (delivery == DMR_IPS_CONFIRMED));
 
 	ipStart(group, dst, protocol, l4, length, (protocol == DMR_IP_PROTO_UDP) && dmrDataUdpCompress(srcPort, dstPort), confirmed);
 	ipx.srcIp = srcIp;
@@ -775,7 +804,7 @@ int dmrDataServiceSendIPChain(bool group, uint32_t dst, uint32_t srcIp, uint32_t
 		uint16_t dstPort = (q->protocol == DMR_IP_PROTO_UDP) ? udpPort(q->l4, q->length, 2) : 0;
 		bool confirmed = (q->delivery == DMR_IPS_SETTINGS) ?
 				dmrDataServiceIpWantConfirmed(&settings, group, dst, q->protocol, srcPort, dstPort) :
-				(CONFIG_DMR_CONFIRMED && !group && (q->delivery == DMR_IPS_CONFIRMED));
+				(!group && (q->delivery == DMR_IPS_CONFIRMED));
 
 		if (confirmed || (q->l4 == NULL) || (q->length <= 0))
 		{
@@ -893,17 +922,26 @@ static void ipTxDone(bool ok)
 	ipx.due = now + (ok ? DMR_IPC_RESPONSE_MS : 500);
 }
 
-#if CONFIG_DMR_CONFIRMED
 // A response packet to us: true when it answers our confirmed packet (TS 102 361-1 Table 8.3, -3 Table 5.7)
 static bool ipResponse(const dmrDataPacket_t *packet)
 {
-	if ((ipx.state != IPX_WAITING) || !ipx.confirmed || (packet->src != ipx.dst) || (packet->sap != ipx.sap))
+	// Also while our next try is queued: a late answer to the try before (through a hotspot and a network it can come
+	// after the wait, while the hotspot's transmission of it holds our retry back), or the stack hasn't reported our
+	// list done yet (we hear nothing while transmitting). The retry not started yet is dropped (dmr-data.md 12.4)
+	bool late = ((ipx.state == IPX_QUEUED) && (ipx.tries > 0)) ||
+				((ipx.state == IPX_SENDING) && (txKind == TXK_IP) && (txRunning || (txPending && (ipx.tries > 1))));
+
+	if (((ipx.state != IPX_WAITING) && !late) || !ipx.confirmed || (packet->src != ipx.dst) || (packet->sap != ipx.sap))
 	{
 		return false;
 	}
 	uint8_t r = packet->response;
 	uint8_t status = r & 0x07;
 
+	if (late && (DMR_RESPONSE_CLASS(r) != 0))
+	{
+		return false;// a selective ACK or NACK goes with the try it answered: the one under way covers it
+	}
 	switch (DMR_RESPONSE_CLASS(r))
 	{
 		case 0:
@@ -912,6 +950,10 @@ static bool ipResponse(const dmrDataPacket_t *packet)
 				return false;// not the ACK of this packet
 			}
 			stats.ipCnfAcks++;
+			if (late && (ipx.state == IPX_SENDING) && !txRunning)
+			{
+				txPending = false;// the retry it made needless
+			}
 			nsSet(ipx.dst, ipx.ns + 1);
 			ipFinish(DMR_REQ_OK);
 			return true;
@@ -969,7 +1011,6 @@ static bool ipResponse(const dmrDataPacket_t *packet)
 			return false;
 	}
 }
-#endif
 
 // --- Our SMS ---
 
@@ -988,6 +1029,14 @@ static void smsFinish(uint8_t state)
 	}
 }
 
+// Our text as confirmed data: an individual ETSI IP text that wants delivery confirmed (sms.ack has the setting), and
+// an individual TMS message that asks for its TMS ACK while confirmed IP data is on
+static bool smsConfirmed(void)
+{
+	return sms.ack && !sms.group && ((sms.format == DMR_SMS_FORMAT_ETSI_IP) ||
+			(CONFIG_DMR_TMS && (sms.format == DMR_SMS_FORMAT_TMS) && (settings.ipConfirmed != DMR_IPC_OFF)));
+}
+
 static bool smsTransmit(void)
 {
 	if (dmrDataServiceIsBusy() || !canTransmit())
@@ -1001,11 +1050,23 @@ static bool smsTransmit(void)
 		sms.seq = smsSeq;
 	}
 	int count = 0;
-#if CONFIG_DMR_CONFIRMED
-	if ((sms.format == DMR_SMS_FORMAT_ETSI_IP) && sms.ack)
+	if (smsConfirmed())
 	{
-		// Confirmed data: the IP packet machinery sends it, retries it and ends it on the ETSI response (ipFinish)
-		int n = dmrDataIPTextUDP(sms.text, smsL4);
+		// Confirmed data: the IP packet machinery sends it, retries it and ends it on the ETSI response (ipFinish); a
+		// TMS message then waits for its TMS ACK, as a MOTOTRBO radio sends it (dmr-data.md 5.1)
+		int n;
+		bool compress = false;// ETSI IP text: the full header, as unconfirmed (5.3)
+#if CONFIG_DMR_TMS
+		if (sms.format == DMR_SMS_FORMAT_TMS)
+		{
+			n = dmrDataTMSUDP(sms.text, sms.seq, true, smsL4);
+			compress = dmrDataUdpCompress(DMR_UDP_PORT_TMS, DMR_UDP_PORT_TMS);
+		}
+		else
+#endif
+		{
+			n = dmrDataIPTextUDP(sms.text, smsL4);
+		}
 
 		if ((ipx.state != IPX_IDLE) || (n <= 0))
 		{
@@ -1015,7 +1076,7 @@ static bool smsTransmit(void)
 			}
 			return false;// after the gateway's packet
 		}
-		ipStart(false, sms.dst, DMR_IP_PROTO_UDP, smsL4, n, false, true);	// the full header, as unconfirmed (5.3)
+		ipStartOwn(sms.dst, smsL4, n, compress);
 		ipx.sms = true;
 		ipTransmit();
 		if (ipx.state != IPX_SENDING)
@@ -1025,10 +1086,9 @@ static bool smsTransmit(void)
 		sms.tries++;
 		sms.state = DMR_REQ_SENDING;
 		stats.smsSent++;
-		stats.ipTextSent++;
+		stats.ipTextSent += (sms.format == DMR_SMS_FORMAT_ETSI_IP) ? 1 : 0;
 		return true;
 	}
-#endif
 
 	switch (sms.format)
 	{
@@ -1096,7 +1156,7 @@ bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, boo
 	// ETSI IP text has no acknowledgment of its own: an individual one goes as confirmed data, so the ETSI response
 	// confirms delivery, unless confirmed IP data is off; a group one is done once on air
 	sms.ack = ackRequested && !group &&
-			((format != DMR_SMS_FORMAT_ETSI_IP) || (CONFIG_DMR_CONFIRMED && (settings.ipConfirmed != DMR_IPC_OFF)));
+			((format != DMR_SMS_FORMAT_ETSI_IP) || (settings.ipConfirmed != DMR_IPC_OFF));
 	sms.format = format;
 	sms.tries = 0;
 	sms.waiting = false;
@@ -2001,8 +2061,21 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 			(!tmsAckAfterResponse || !txEnded || ((now - txEndedAt) >= TMS_ACK_GAP_MS)))
 	{
 		tmsAckPending = false;
-		queueReply(dmrDataBuildTMSAck(tmsAckDst, channel.ownId, tmsAckSeq, DMR_DATA_TX_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS));
 		stats.tmsAcksSent++;
+		// As confirmed data, as a MOTOTRBO radio sends it (BrandMeister didn't react to the unconfirmed one); the
+		// header compressed only when the UDP compression setting covers TMS's port
+		if ((settings.ipConfirmed != DMR_IPC_OFF) && (ipx.state == IPX_IDLE))
+		{
+			ipStartOwn(tmsAckDst, tmsAckL4, dmrDataTMSAckUDP(tmsAckSeq, tmsAckL4),
+					   dmrDataUdpCompress(DMR_UDP_PORT_TMS, DMR_UDP_PORT_TMS));
+			ipx.tmsAck = true;
+			ipTransmit();
+		}
+		else
+		{
+			queueReply(dmrDataBuildTMSAck(tmsAckDst, channel.ownId, tmsAckSeq, DMR_DATA_TX_PREAMBLES, txBursts,
+										  DMR_DATA_MAX_BURSTS));
+		}
 	}
 #endif
 
@@ -2015,13 +2088,11 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 #endif
 	arsTick();
 	lrrpTick();
-#if CONFIG_DMR_CONFIRMED
 	// Confirmed data to us whose last blocks never came (lost bursts): what is missing is asked for
 	if (dmrDataRxConfirmedActive() && ((now - lastBlockWindow) > CNF_RX_STALL_MS))
 	{
 		rxResult(dmrDataRxConfirmedEnd(), false);
 	}
-#endif
 
 	if (txPending && !txRunning)
 	{
@@ -2139,7 +2210,6 @@ static void queueReplyEntry(const pendingReply_t *reply)
 	}
 }
 
-#if CONFIG_DMR_CONFIRMED
 static void handlePacket(const dmrDataPacket_t *packet);
 
 // What the receiver made of a confirmed packet: a selective ACK for bad or lost blocks, a NACK for a CRC-32 failure
@@ -2179,7 +2249,6 @@ static void rxResult(dmrDataRxResult_t result, bool block)
 	}
 	queueReplyEntry(&reply);
 }
-#endif
 
 static void handlePacket(const dmrDataPacket_t *packet)
 {
@@ -2197,7 +2266,6 @@ static void handlePacket(const dmrDataPacket_t *packet)
 			.response = (confirmed && packet->responseRequested) ? DMR_RESPONSE_ACK(packet->sendSeq) : 0,
 			.sap = packet->sap };
 
-#if CONFIG_DMR_CONFIRMED
 	// The same packet again (our ACK was lost): ACKed again, not passed on twice
 	if (forUs && confirmed && rxDuplicate(packet))
 	{
@@ -2205,7 +2273,6 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		queueReplyEntry(&reply);
 		return;
 	}
-#endif
 	if (env.packet)
 	{
 		env.packet(packet, env.ctx);
@@ -2221,7 +2288,6 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	{
 		stats.rxConfirmed++;
 	}
-#if CONFIG_DMR_CONFIRMED
 	// The answer to our confirmed IP packet
 	if ((packet->dpf == DMR_DPF_RESPONSE) && !packet->group)
 	{
@@ -2235,7 +2301,6 @@ static void handlePacket(const dmrDataPacket_t *packet)
 								((uint32_t)(ipx.ns & 0x07) << 16) | ((packet->src == ipx.dst) ? (1UL << 19) : 0) |
 								((uint32_t)(ipx.state & 0x03) << 20) | (ipx.confirmed ? (1UL << 22) : 0);
 	}
-#endif
 
 	// Control station passthrough: what has an IP header belongs to the PC, which got it through env.packet; only the
 	// link layer (the response above) and the ACK of our own message, which sends nothing, are looked at here
@@ -2352,6 +2417,10 @@ static void handlePacket(const dmrDataPacket_t *packet)
 			(packet->src == sms.dst) && ((tms.seq & 0x1F) == sms.seq))
 	{
 		stats.smsAcked++;
+		if (ipx.sms)
+		{
+			ipDelivered();// its link ACK lost: the TMS ACK shows it arrived
+		}
 		smsFinish(DMR_REQ_OK);
 	}
 	isTMS = isTMS && !tms.isAck;
@@ -2593,12 +2662,10 @@ void dmrDataServiceRxBurst(const dmrBurst_t *burst, uint32_t nowMs)
 				stats.rxCrcErrors++;// the packet's CRC-32 (headers were counted above)
 			}
 			break;
-#if CONFIG_DMR_CONFIRMED
 		case DMR_DATA_RX_RETRY:
 		case DMR_DATA_RX_NACK:
 			rxResult(r, block);
 			break;
-#endif
 		default:
 			break;
 	}

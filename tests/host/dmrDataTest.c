@@ -1099,9 +1099,7 @@ static void fuzzBursts(fuzz_t *f, long iters, long *bad, long *packets)
 				}
 			}
 		}
-#if CONFIG_DMR_CONFIRMED
 		dmrDataRxConfirmedEnd();
-#endif
 	}
 }
 

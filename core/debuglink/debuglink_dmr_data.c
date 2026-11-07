@@ -57,8 +57,7 @@ static void ip_section(const dmrDataStats_t *s, const dmrDataSettings_t *set, dl
 	dmrDataIpTxStats_t x;
 
 	dmrDataGetIpTxStats(&x);
-	dl_text(t, "ip.built=1\nip.compress_built=%u\nip.confirmed_built=%u\n", CONFIG_DMR_UDP_COMPRESS,
-		CONFIG_DMR_CONFIRMED);
+	dl_text(t, "ip.built=1\nip.compress_built=%u\nip.confirmed_built=1\n", CONFIG_DMR_UDP_COMPRESS);
 	dl_text(t, "ip.compress=%s\nip.confirmed=%s\nip.tries=%u\n", set->udpCompress <= 2 ? compress[set->udpCompress] : "?",
 		set->ipConfirmed <= 2 ? confirmed[set->ipConfirmed] : "?",
 		(set->ipConfirmedTries >= 1 && set->ipConfirmedTries <= DMR_IPC_TRIES_MAX) ? set->ipConfirmedTries

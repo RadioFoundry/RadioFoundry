@@ -309,8 +309,8 @@ new one.
 intact and got nothing back: no link ACK, no NACK. The same packet with 16 got its link ACK in under a second. Text and
 IP packets go with 16 where the burst list has room ([dmr-data.md](dmr-data.md) 12.6.4). The hotspot reaches
 BrandMeister over UDP, often on Wi-Fi, so a single unanswered packet may just be lost; the preamble rule rests on 10
-unanswered sends in a row and one identical pair. The TMS ACK goes with 16 too, 1.5 s after our link ACK, as MOTOTRBO
-radios send it; that BrandMeister needs either rests on two samples ([dmr-data.md](dmr-data.md) 5.1).
+unanswered sends in a row and one identical pair. The TMS ACK goes with 16 too, 1.5 s after our link ACK, and confirmed,
+as MOTOTRBO radios send it: BrandMeister ignored an unconfirmed one with 16 preambles twice ([dmr-data.md](dmr-data.md) 5.1).
 
 ## 6. Privacy
 
