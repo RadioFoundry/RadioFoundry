@@ -176,6 +176,27 @@ keys up if needed and sends 1750 Hz until `false` or until `max_ms` has passed (
 the view. The debug link always gives a limit (at most `INPUT_INJECT_MAX_MS`), so a lost "off" unkeys as the "off"
 would; 0 means no limit but the TX time-out. A board without
 `tx_tone` gets neither.
+The debug link's `DL_OP_TONE_BURST` now gives the error beep when refused on a DMR channel, in hotspot mode or
+without `tx_tone`, instead of silently doing nothing.
+A debug-link burst requested during the roger beep tail after PTT release now re-keys, cancels the roger beep and
+owns the transmission until burst off, the host deadline or the TX time-out.
+
+The **Tone burst** side-key press function sends raw down/up requests (`radio_req_tone_burst_key`). The core starts
+1750 Hz on down and holds it for at least `RADIO_BURST_MIN_MS` (1000 ms). A tap releases at that minimum; a longer
+hold ends on up. The 10 ms radio tick ends a released timed burst. From receive it keys and unkeys through the usual
+TX checks (including TX inhibit and RX-only); DMR, hotspot and boards without `tx_tone` refuse with an error beep.
+During PTT it replaces the mic, then restores it while PTT keeps the transmitter keyed. Releasing PTT during the
+burst stops the tone and unkeys, without a roger beep. PTT pressed during a burst takes over the transmission.
+There is no duration setting or host deadline for the side key; the TX time-out still applies.
+The debug link's explicit on/off request keeps its `max_ms` limit. A new burst starts with only its own timing;
+an on/down request while a burst is already sounding does not restart it or change its deadline.
+A side-key up releases only its own burst or TX denial; down/up during a host burst leaves that burst running.
+Power-off cancels a held or timed burst and unkeys without a roger beep before shutdown waits.
+VOX cannot release during a burst; its full quiet tail starts after the burst ends.
+
+Why 1 s: the [UK repeater access standard](https://www.ukrepeater.net/access.htm) accepts 1750 Hz +/- 25 Hz
+after 200-400 ms, and some decoders need 500 ms; a 1 s minimum exceeds both. Once open, a repeater stays open on
+carrier through its hang time, so one burst opens a contact.
 
 The board restores the microphone path on `tx_tone(0)` and on every return to receive. An AT1846S board makes the
 tone with the voice source select (tone 1, tone 2 or both) in place of the microphone. Verified on air on an HR_C6000 + AT1846S board (HIL 2026-10-10): the burst, the roger beep and APRS

@@ -392,6 +392,11 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 34 | digit u8, down u8 | `radio_req_dtmf`: a DTMF key's down (1) or up (0) during FM TX (`radio-features.md` 3.7), with the same timing as a key. digit is ASCII `0`-`9`, `*`, `#`, `A`-`D`. A down is REFUSED unless the `features` view's `dtmf_ready` is 1; an up is always taken. A digit that isn't DTMF or a short argument answers BAD_ARG, a build without `CONFIG_DTMF` UNAVAILABLE. `rfoundry_debug.py radio dtmf DIGITS [ms]` |
 | 35 | flags u8, n u8, hz u32 × n | the test TX limit (`tx_limit_set`, [radio-features.md](radio-features.md) 3.1), RAM only: a restart clears it. Flags bit 0 blocks every transmission; else the radio keys only on the n frequencies (Hz, n ≤ 10); no block and n 0: off. Set before the reply. The `core` view shows it (`txlim`). A flag bit other than 0, n over 10 or a length that isn't 2 + 4n answers BAD_ARG. `rfoundry_debug.py radio tx-limit off\|block\|MHZ[,MHZ...]` |
 
+Op 23 (`DL_OP_TONE_BURST`) now gives the error beep when refused on a DMR channel, in hotspot mode or without
+`tx_tone`, instead of silently doing nothing.
+A burst requested during the roger beep tail after PTT release now re-keys, cancels the roger beep and owns the
+transmission until burst off, `max_ms` or the TX time-out (see [radio-features.md 3.3](radio-features.md#33-roger-beep-and-1750-hz-burst-config_fm_tx_tones)).
+
 Ops 15-18 last until the channel changes (`dmr.target_manual`); in the DMR VFO ops 15 and 16 set the VFO's own target, which is kept. Unavailable ops answer UNAVAILABLE.
 
 ### 3.9 INFO_CHIP

@@ -1946,7 +1946,7 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	if (ev->action == ACT_PTT)
 		ptt_held = ev->gesture == GESTURE_DOWN;	// PTT sends only DOWN and UP (raw edges)
-	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
+	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR || ev->action == ACT_TONE_BURST)
 		return;		// the input layer already sent these to the radio
 	// While PTT keys the radio the digit keys do nothing: no Find, channel entry or speed dial under the TX screen.
 	// On FM with DTMF the input task gives them (and * and #) to the radio core instead and they never get here
