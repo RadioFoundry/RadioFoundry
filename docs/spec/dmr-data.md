@@ -146,8 +146,9 @@ All three are read whatever the setting.
   ignores an unconfirmed one, 5.1.1), otherwise unconfirmed; 16 preamble CSBKs either way. After a link ACK of ours
   (the message came confirmed) it waits `TMS_ACK_GAP_MS` (1.5 s) after that transmission ends.
 - The UDP header of our confirmed TMS and TMS ACK is compressed (SAP 3, 11) only with UDP compression set to all;
-  port 4007 is an application port, so auto keeps SAP 4. BrandMeister takes both compressed (5.1.1); a MOTOTRBO radio
-  decodes SAP 3 only when its codeplug enables compressed UDP headers, so auto stays the default.
+  port 4007 is an application port, so auto keeps SAP 4. BrandMeister takes both compressed (5.1.1), and so did the
+  MOTOTRBO radio of 12.9. Whether every MOTOTRBO radio does, or only with compressed UDP headers enabled in its
+  codeplug, is not known, so auto stays the default.
   One message at a time, at most 140 characters.
 - Built without `CONFIG_DMR_TMS` (the TMS builder, decoder and ACK are left out): a TMS heard is not decoded, so it
   is neither kept nor acknowledged; as confirmed data it still gets its ETSI response (3), and the IP gateway still
@@ -161,7 +162,7 @@ BrandMeister's SMS service (ID 262993, through a hotspot) speaks TMS on UDP 4007
 
 | | BrandMeister | MOTOTRBO radio | RadioFoundry |
 |---|---|---|---|
-| Data | confirmed (A=1), rate 3/4 | confirmed (A=1), rate 3/4 | TMS and TMS ACK confirmed (A=1), rate 1/2 |
+| Data | confirmed (A=1), rate 3/4 | confirmed (A=1), rate 3/4; unconfirmed, rate 1/2 | TMS and TMS ACK confirmed (A=1), rate 3/4 (12.9) |
 | Preamble CSBKs | 1 | 15 or 16 | 16 (12.6.4) |
 | Takes a packet with | 12 or more preambles; 1 or 2: no answer at all | | |
 | N(S) | 0 on every packet | steps | steps (12.2) |
@@ -196,9 +197,9 @@ registered with BrandMeister (not one another radio on the check uses, or each t
 | Case | Send | Pass |
 |---|---|---|
 | 1 | TMS, unconfirmed, rate 1/2 (our default for TMS) | text reply; our message's TMS ACK |
-| 2 | TMS, confirmed, rate 1/2 | link ACK, TMS ACK, text reply |
-| 3 | TMS, confirmed, rate 3/4 | as 2 |
-| 4 | ETSI IP text on 5016, confirmed, rate 1/2 (the default format) | link ACK; a reply in some format, or none (BrandMeister may not serve 5016) |
+| 2 | TMS, confirmed, rate 3/4 (our default for confirmed data, 12.9) | link ACK, TMS ACK, text reply |
+| 3 | TMS, confirmed, rate 1/2 | as 2 |
+| 4 | ETSI IP text on 5016, confirmed, rate 3/4 (the default format) | link ACK; a reply in some format, or none (BrandMeister may not serve 5016) |
 | 5 | ETSI IP text on 5016, unconfirmed | as 4 without the link ACK |
 | 6 | BrandMeister's text to us | inbox once; our link ACK and TMS ACK taken: no resend after about 28 s |
 | 7 | two texts from BrandMeister within 20 s (its TMS ACK, then its reply) | both reach us (N(S) 0 both times) |
@@ -532,11 +533,11 @@ the reply queue and its 5 s age limit, and the service's TX list and listen befo
 
 - Packet: C_HEAD (DPF 3, individual, A set, the pad octet count, SAP 3 or 4, F set on the first try, the blocks in this
   transmission, S clear, N(S), FSN 1000 single fragment), then the blocks: octet 0 the 7-bit serial number and the
-  CRC-9's MSB, octet 1 its other 8 bits, 10 data octets (rate 1/2); the last block ends with the CRC-32 of all data
+  CRC-9's MSB, octet 1 its other 8 bits, 16 data octets (rate 3/4, 12.9); the last block ends with the CRC-32 of all data
   octets (pad included). CRC-9 (B.3.10): the block's data octets then the 7 serial bits, x^9 M(x) mod
   x^9 + x^6 + x^4 + x^3 + 1, inverted, then masked with the rate's mask (0x0F0 rate 1/2, 0x1FF rate 3/4, 0x10F rate 1).
-  At most 64 blocks (one selective ACK block) and the 64-burst list: every packet of the air MTU (596 octets, 60
-  blocks at rate 1/2, 12.8) goes confirmed. A packet too long for it would go unconfirmed (`ip.cnf_too_long`); none is.
+  At most 64 blocks (one selective ACK block) and the 64-burst list: every packet of the air MTU (596 octets, 38
+  blocks at rate 3/4, 12.8) goes confirmed. A packet too long for it would go unconfirmed (`ip.cnf_too_long`); none is.
 - In direct mode the transmission ends with the Data Terminator LC (FLCO 0x30; octet 8: G/I, A, F, S, N(S)) that
   opens the receiver's response window (TS 102 361-3 5.4.1); through a repeater nothing follows the last block.
 - Then it waits `DMR_IPC_RESPONSE_MS` (3 s) after the list has gone for a response from the destination with the
@@ -684,10 +685,11 @@ waits for the link ACK and the TMS ACK start when the transmission ends, so they
 
 ### 12.7 Open
 
-- No commercial radio has answered our confirmed packets yet, nor sent us a selective retry: the CRC-9 and the
-  response formats are from the standard and the vectors (`dmr_ip_vectors.py`); `ip.rx_crc9_mismatch` on air will
-  show a disagreement.
-- Rate 3/4 for confirmed IP (16 octets per block) and the sliding window (TS 102 361-3 5.4.4) are not used.
+- A MOTOTRBO radio refuses our rate 1/2 confirmed packets (12.9), although our CRC-9 and CRC-32 follow the standard
+  and match its own rate 3/4 blocks. Not explained.
+- On simplex the radio rarely decodes the response to our confirmed packet (12.9): the SDR decodes it with a valid
+  CRC, the radio counts a receive CRC error (`data.rx_crc_errors`). Delivery then shows only in the TMS ACK.
+- The sliding window (TS 102 361-3 5.4.4) is not used.
 - Fragmentation (FSN chains) is not built: one packet per datagram, so a datagram longer than the air MTU (12.8)
   doesn't go. The gateway drops IP fragments from the host too ([usb-network.md](usb-network.md) 3.2).
 
@@ -700,19 +702,19 @@ The longest IP datagram we send in one transmission. It is not below the USB lin
 | Constant | Value | From |
 |---|---|---|
 | `DMR_DATA_MAX_PACKET` | 612 | the packet buffer: 51 rate 1/2 blocks |
-| `DMR_DATA_IP_MTU` | 596 | confirmed delivery: 60 blocks of 10 octets less the 4-octet CRC-32 (612 - 16; unconfirmed, 51 blocks would carry 608) |
+| `DMR_DATA_IP_MTU` | 596 | 60 rate 1/2 confirmed blocks of 10 octets less the 4-octet CRC-32 (612 - 16), when confirmed data went at rate 1/2; unconfirmed, 51 blocks would carry 608 |
 | `DMR_DATA_IP_PREAMBLES` | 2 | the fewest preamble CSBKs before an IP packet (also SMS); 16 where they fit (12.6.4) |
-| `DMR_DATA_MAX_BURSTS` | 64 | the burst list of one transmission: a confirmed packet of 596 octets |
+| `DMR_DATA_MAX_BURSTS` | 64 | the burst list of one transmission: 16 preambles where they fit (12.6.4) and a packet of 596 octets |
 
 | A packet of 596 octets | Blocks | Bursts | Air time (60 ms a burst) |
 |---|---|---|---|
 | Unconfirmed, rate 1/2 (12 octets a block) | 50 | 2 + 1 + 50 = 53 | about 3.2 s |
-| Confirmed, rate 1/2 (10 octets a block) | 60 | 2 + 1 + 60 + the terminator = 64 | about 3.8 s |
+| Confirmed, rate 3/4 (16 octets a block) | 38 | 2 + 1 + 38 + the terminator = 42 | about 2.5 s |
 
 - The MTU counts the user data on air: the IP and UDP header as sent (SAP 4: 28 octets; SAP 3: 5, 7 or 9, 11.1)
   plus the payload. The largest UDP payload is 568 octets with the full header and up to 587 with the compressed one
   (9 octets: ports outside 4000-4099 in the extended headers). A raw port packet (no header) carries up to 596 through the gateway, the air MTU (the encoder itself takes 608).
-- Confirmed (12.2) takes every packet of the MTU: 60 blocks, under the 64 of one selective ACK block. Longer packets
+- Confirmed (12.2) takes every packet of the MTU: 38 blocks, under the 64 of one selective ACK block. Longer packets
   are refused (`DMR_REQ_FAILED`, `ip.failed`), nothing goes on air. Build-time asserts in `dmrData.c`,
   `dmrDataService.c` and `ipGateway.c` keep the four constants and the link MTU in step.
 - The gateway still checks each host packet against the air MTU before the air queue, with the header it will get
@@ -730,6 +732,29 @@ The longest IP datagram we send in one transmission. It is not below the USB lin
   `dmrDataRxPacket`) are 612 octets each.
 - Not done, follow-up: fragmentation (12.7: a lost burst loses the whole datagram, and a receiver that misses one
   fragment drops the rest).
+
+### 12.9 Rates with a MOTOTRBO radio
+
+TMS from our radio to a MOTOTRBO portable on a simplex channel (direct mode), 1 W, each rate confirmed and
+unconfirmed, each with the full UDP header (SAP 4) and the compressed one (SAP 3). Delivered = the text shown on the
+portable (confirmed: also its TMS ACK back). Each failing case was sent at least 8 times, the others at least once.
+
+| Rate | Confirmed | Unconfirmed |
+|---|---|---|
+| 3/4 | delivered | not delivered (0 of 8) |
+| 1/2 | not delivered (0 of 16) | delivered |
+| 1 | delivered | delivered |
+
+- SAP 3 and SAP 4 behave the same in every case.
+- The portable sends confirmed data at rate 3/4 and unconfirmed at rate 1/2; BrandMeister sends confirmed at rate 3/4
+  (5.1.1). We send the same: IP packets confirmed at rate 3/4, unconfirmed at rate 1/2 (`IP_CONFIRMED_RATE`,
+  `IP_UNCONFIRMED_RATE` in `dmrDataService.c`). Text and other packets outside the IP path stay at rate 1/2.
+- Rate 1/2 confirmed: the portable answers the first try with a NACK (class 1, type 1, packet CRC failed), each retry
+  with a selective ACK that has only block 0. Our blocks follow B.3.9 and B.3.10, and both CRCs, computed the same
+  way, check on the portable's own rate 3/4 blocks. Neither the serial number least significant bit first in the
+  CRC-9 nor the CRC-9's MSB and the serial number swapped in octet 0 was taken either.
+- Rate 3/4 unconfirmed: nothing comes back (none is due), and the portable shows nothing.
+- One portable on one firmware version: more radios and versions are needed before calling this MOTOTRBO behavior.
 
 ## 13. Tests
 
@@ -753,7 +778,7 @@ The longest IP datagram we send in one transmission. It is not below the USB lin
   bad block and with a lost block, the NACK cases; testAirtime: the table in 11.3), `tests/host/dmrDataServiceTest.c`
   (testIpTx: unconfirmed SAP 3, confirmed with ACK, selective ACK, N(S) resync, time-outs to failure, tries, repeater
   mode, group, too long, no channel; testIpAirMtu: the constants, SAP 4 and SAP 3 at the air MTU unconfirmed in 53 bursts and
-  decoded back, confirmed in all 64, one octet more refused with nothing on air; testConfirmedRx: selective ACK and the retry passed on once, a duplicate, lost
+  decoded back, confirmed at rate 3/4 in 38 blocks, one octet more refused with nothing on air; testConfirmedRx: selective ACK and the retry passed on once, a duplicate, lost
   bursts, NACK), `tests/host/hostlinkNetTest.c` (the gateway's datagrams through the service path: SAP 3 for ports
   outside 4000-4099, SAP 4 for 4007). The vectors come from `tests/host/dmr_ip_vectors.py` (polynomial division from
   the standard's text, apart from the C code).

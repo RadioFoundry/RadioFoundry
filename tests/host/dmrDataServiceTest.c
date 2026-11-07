@@ -1094,18 +1094,18 @@ static void testIpTx(void)
 	runMainTask(SEND_MS);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 	CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 7 && txHeader() != NULL && (txHeader()->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED &&
-	      (txHeader()->payload[1] >> 4) == DMR_SAP_UDPIP_COMPRESSION);
+	      (txHeader()->payload[1] >> 4) == DMR_SAP_UDPIP_COMPRESSION && lastTx[lastTxCount - 1].dataType == DT_RATE_12_DATA);
 
-	// Confirmed for UDP port 161: C_HEAD with F and N(S), the blocks, the data terminator (direct mode); the ACK ends it
+	// Confirmed for UDP port 161 (at rate 3/4: a MOTOTRBO radio refuses rate 1/2 confirmed, docs/spec/dmr-data.md 12.9): C_HEAD with F and N(S), the blocks, the data terminator (direct mode); the ACK ends it
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, DMR_IPC_PORT | 161, RADIO_B);
 	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	runMainTask(SEND_MS);
 	const dmrBurst_t *h = txHeader();
 	CHECK(h != NULL && (h->payload[0] & 0x4F) == (0x40 | DMR_DPF_CONFIRMED) && (h->payload[8] & 0x80) &&
-	      (h->payload[8] & 0x7F) == 8 && (h->payload[9] & 0x0F) == 0x08);// 73 octets in 10: 8 blocks
+	      (h->payload[8] & 0x7F) == 5 && (h->payload[9] & 0x0F) == 0x08);// rate 3/4: 73 octets in 16: 5 blocks
 	uint8_t ns = (h->payload[9] >> 4) & 7;
 	CHECK(lastTx[lastTxCount - 1].dataType == DT_TERMINATOR_WITH_LC && (lastTx[lastTxCount - 1].payload[8] & 0x67) == (0x60 | ns));
-	CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 8 + 1);
+	CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 5 + 1 && h[1].dataType == DT_RATE_34_DATA);
 	CHECK(dmrDataServiceIpBusy());
 	dmrDataServiceGetStats(&st);
 	uint32_t other = st.ipCnfOther;
@@ -1149,17 +1149,17 @@ static void testIpTx(void)
 	runMainTask(1000);
 	CHECK(txLists == listsBefore);
 
-	// The next one to the same radio takes the next N(S); a selective ACK has blocks 1 and 6 sent again (F clear)
+	// The next one to the same radio takes the next N(S); a selective ACK has blocks 1 and 3 sent again (F clear)
 	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	runMainTask(SEND_MS);
 	CHECK(((txHeader()->payload[9] >> 4) & 7) == ((ns + 1) & 7));
 	ns = (ns + 1) & 7;
-	uint8_t flags[8] = { 0xBD, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+	uint8_t flags[8] = { 0xF5, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_SACK(ns), flags);
 	runMainTask(SEND_MS);
 	h = txHeader();
 	CHECK(h != NULL && !(h->payload[8] & 0x80) && (h->payload[8] & 0x7F) == 2 && ((h->payload[9] >> 4) & 7) == ns);
-	CHECK(h != NULL && h[1].dataType == DT_RATE_12_DATA && (h[1].payload[0] >> 1) == 1 && (h[2].payload[0] >> 1) == 6);
+	CHECK(h != NULL && h[1].dataType == DT_RATE_34_DATA && (h[1].payload[0] >> 1) == 1 && (h[2].payload[0] >> 1) == 3);
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 
@@ -1180,7 +1180,7 @@ static void testIpTx(void)
 	runMainTask(SEND_MS);
 	CHECK(txHeader()->payload[8] & 0x80);
 	runMainTask(DMR_IPC_RESPONSE_MS);
-	CHECK(!(txHeader()->payload[8] & 0x80) && (txHeader()->payload[8] & 0x7F) == 8);
+	CHECK(!(txHeader()->payload[8] & 0x80) && (txHeader()->payload[8] & 0x7F) == 5);
 	runMainTask(DMR_IPC_TRIES_DEFAULT * DMR_IPC_RESPONSE_MS);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_FAILED && txLists - lists == DMR_IPC_TRIES_DEFAULT);
 
@@ -1190,7 +1190,7 @@ static void testIpTx(void)
 	lists = txLists;
 	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	runMainTask(SEND_MS);
-	CHECK(lastTx[lastTxCount - 1].dataType == DT_RATE_12_DATA && (txHeader()->payload[1] >> 4) == DMR_SAP_IP);
+	CHECK(lastTx[lastTxCount - 1].dataType == DT_RATE_34_DATA && (txHeader()->payload[1] >> 4) == DMR_SAP_IP);
 	runMainTask(3 * DMR_IPC_RESPONSE_MS);
 	CHECK(dmrDataServiceIpResult() == DMR_REQ_FAILED && txLists - lists == 2);
 	ch.rmo = false;
@@ -1321,8 +1321,8 @@ static void testTmsConfirmed(void)
 
 // The air MTU (dmrData.h, docs/spec/dmr-data.md 12.8): a UDP datagram whose user data on the air is exactly
 // DMR_DATA_IP_MTU octets goes in one transmission (the preambles, the header, 50 blocks), with either header; one octet
-// more doesn't go at all. It is not below the USB link's MTU, and it goes confirmed too: 60 blocks and the terminator,
-// all DMR_DATA_MAX_BURSTS bursts
+// more doesn't go at all. It is not below the USB link's MTU, and it goes confirmed too: 38 rate 3/4 blocks and the
+// terminator
 static void testIpAirMtu(void)
 {
 	static uint8_t l4[8 + DMR_DATA_IP_MTU];
@@ -1330,15 +1330,15 @@ static void testIpAirMtu(void)
 		{ DMR_UDPC_OFF, DMR_SAP_IP, 28 },// the full IPv4 / UDP header
 		{ DMR_UDPC_AUTO, DMR_SAP_UDPIP_COMPRESSION, 9 },// 50000 to 161: both ports in extended headers
 	};
-	const int blocks = 50, cnfBlocks = 60;
+	const int blocks = 50, cnfBlocks = 38;
 	dmrDataStats_t st0, st;
 
 	reset();
 	decodeTx = false;
 	CHECK(DMR_DATA_IP_MTU == 596 && DMR_DATA_IP_MTU >= 586);// as the spec gives it; IPGW_LINK_MTU
 	CHECK(dmrDataPacketBursts(DMR_DATA_IP_MTU, DT_RATE_12_DATA) == 1 + blocks);
-	CHECK(dmrDataConfirmedBlocks(DMR_DATA_IP_MTU, DT_RATE_12_DATA) == cnfBlocks);
-	CHECK(DMR_DATA_IP_PREAMBLES + 1 + cnfBlocks + 1 == DMR_DATA_MAX_BURSTS);
+	CHECK(dmrDataConfirmedBlocks(DMR_DATA_IP_MTU, DT_RATE_34_DATA) == cnfBlocks);
+	CHECK(DMR_DATA_TX_PREAMBLES + 1 + cnfBlocks + 1 <= DMR_DATA_MAX_BURSTS);
 	for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++)
 	{
 		for (int extra = 0; extra <= 1; extra++)
@@ -1370,7 +1370,7 @@ static void testIpAirMtu(void)
 				{
 					// Unanswered: one try, then given up
 					CHECK(h != NULL && (h->payload[0] & 0x0F) == DMR_DPF_CONFIRMED && (h->payload[8] & 0x7F) == cnfBlocks);
-					CHECK(lastTxCount == DMR_DATA_MAX_BURSTS && lastTx[lastTxCount - 1].dataType == DT_TERMINATOR_WITH_LC);
+					CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + cnfBlocks + 1 && lastTx[lastTxCount - 1].dataType == DT_TERMINATOR_WITH_LC);
 					runMainTask(2 * DMR_IPC_RESPONSE_MS);
 					dmrDataServiceGetStats(&st);
 					CHECK(!dmrDataServiceIpBusy() && st.ipConfirmed - st0.ipConfirmed == 1);

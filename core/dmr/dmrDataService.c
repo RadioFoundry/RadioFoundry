@@ -33,6 +33,10 @@
 #define SMS_ACK_MS				8000
 #define SMS_ETSI_ACK_MS			4000	// the ETSI response comes straight after the message
 #define SMS_BLOCK_TYPE			DT_RATE_12_DATA	// rate 1/2 by default: rate 1 fails on one bit error (gotcha 5.3)
+// IP packets: the rates a MOTOTRBO radio sends, and the only ones it took on simplex at every try: rate 3/4 confirmed,
+// rate 1/2 unconfirmed. It refused rate 1/2 confirmed and dropped rate 3/4 unconfirmed (docs/spec/dmr-data.md 12.9)
+#define IP_CONFIRMED_RATE		DT_RATE_34_DATA
+#define IP_UNCONFIRMED_RATE		DT_RATE_12_DATA
 // Motorola ARS (gotchas 7.1-7.4): registration 5-15 s after power on (spread by radio ID, so that radios switched on
 // together don't collide), and again once the channel, our ID or the server has been unchanged for ARS_SETTLE_MS. A
 // registration the server doesn't acknowledge is retried ARS_RETRIES times, ARS_RETRY_FIRST_MS apart and doubling
@@ -624,7 +628,7 @@ static void ipTransmit(void)
 	if (ipx.confirmed)
 	{
 		// One burst kept for the terminator
-		count = dmrDataBuildConfirmed(ipx.sap, ipx.dst, channel.ownId, pdu, n, DT_RATE_12_DATA, ipx.ns, ipx.firstTry,
+		count = dmrDataBuildConfirmed(ipx.sap, ipx.dst, channel.ownId, pdu, n, IP_CONFIRMED_RATE, ipx.ns, ipx.firstTry,
 										(ipx.blocks != 0) ? ipx.blocks : ~0ULL, IP_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS - 1);
 		if ((count == 0) && (ipx.tries == 0))
 		{
@@ -641,7 +645,7 @@ static void ipTransmit(void)
 	{
 		// The packets after the preambles, then the preambles counting all of them (docs/spec/dmr-data.md 12.6)
 		count = IP_PREAMBLES;
-		int c = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, ipx.sap, ipx.group, ipx.dst, channel.ownId, pdu, n, DT_RATE_12_DATA,
+		int c = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, ipx.sap, ipx.group, ipx.dst, channel.ownId, pdu, n, IP_UNCONFIRMED_RATE,
 									0, &txBursts[count], DMR_DATA_MAX_BURSTS - count);
 
 		count = (c > 0) ? (count + c) : 0;
@@ -653,7 +657,7 @@ static void ipTransmit(void)
 									&sap);
 
 			c = (m > 0) ? dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, ipx.group, ipx.dst, channel.ownId, pdu, m,
-											DT_RATE_12_DATA, 0, &txBursts[count], DMR_DATA_MAX_BURSTS - count) : 0;
+											IP_UNCONFIRMED_RATE, 0, &txBursts[count], DMR_DATA_MAX_BURSTS - count) : 0;
 			if (c <= 0)
 			{
 				count = 0;// checked when it was taken: can't happen
@@ -662,7 +666,7 @@ static void ipTransmit(void)
 			count += c;
 			if (ipx.tries == 0)
 			{
-				dmrDataCountIpTx(sap, pdu, m, DT_RATE_12_DATA, false);
+				dmrDataCountIpTx(sap, pdu, m, IP_UNCONFIRMED_RATE, false);
 			}
 		}
 		if (count > 0)
@@ -686,7 +690,7 @@ static void ipTransmit(void)
 	}
 	if (ipx.tries == 0)
 	{
-		dmrDataCountIpTx(ipx.sap, pdu, n, DT_RATE_12_DATA, ipx.confirmed);
+		dmrDataCountIpTx(ipx.sap, pdu, n, ipx.confirmed ? IP_CONFIRMED_RATE : IP_UNCONFIRMED_RATE, ipx.confirmed);
 		stats.ipConfirmed += ipx.confirmed ? 1 : 0;
 	}
 	else
@@ -778,7 +782,7 @@ static int ipPacketBursts(bool group, uint32_t dst, uint32_t srcIp, uint32_t dst
 							(srcIp != DMR_DATA_IP_OURS) ? srcIp : dmrDataIdAddress(false, channel.ownId), ttl, protocol, l4,
 							length, compress, ipId, &pdu, &sap);
 
-	return (n > 0) ? dmrDataPacketBursts(n, DT_RATE_12_DATA) : 0;
+	return (n > 0) ? dmrDataPacketBursts(n, IP_UNCONFIRMED_RATE) : 0;
 }
 
 int dmrDataServiceSendIPChain(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl,
