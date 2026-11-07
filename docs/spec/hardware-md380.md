@@ -369,7 +369,7 @@ as out of step.
 
 So on this chip an empty `drx` trace shows only that no read was taken. It doesn't show that the chip went quiet.
 
-A reception lost mid-call costs more than its gap (`drx` and log times of a bench run, 2026-11-07, two gaps alike;
+A reception lost mid-call costs more than its gap (`drx` and log times of a bench run, two gaps alike;
 [gotchas 1.12](gotchas.md)):
 
 | Step | Time after the last burst | What happens |

@@ -393,7 +393,7 @@ signaling. If idle, with the CC held and matching: write 0x41=0x50 and start rec
 until two bursts A have passed, unless the source ID is already known and isn't our own. The LC comes from page 2 once
 the embedded LC is complete (subject to the sticky-LC rule above). The driver reads page 2 at the interrupt and keeps an
 LC that differs from the capture for the next voice burst (counted as `lc2 p=`, traced as `P`). On the HR_C5000 the
-interrupt comes once per superframe, just after burst E (bench trace 2026-11-07), and starts the decoder, so it comes
+interrupt comes once per superframe, just after burst E (bench trace), and starts the decoder, so it comes
 before the reception. An LC read then that differs from the last capture is kept for the reception's first burst
 (traced `pk`): the capture that follows holds that same LC, and the sticky rule would make it wait for the second F.
 Whether the HR_C6000 raises it the same way is unknown.
