@@ -8,6 +8,7 @@
     tools/power_cal.py --allow-rf MHZ check --margin M        the short check: every level, then the margin
 
 A STEP is a PA drive in the board's units (debug link RADIO op 36), or Ln for power level n as the radio drives it;
+DRIVE@Ln keys a drive with level n's other settings (a board may set more than the drive per level; default level 0);
 STEP:S keys it for S seconds (default 2). The radio goes to the VFO on MHZ, FM, no sub-audio tone, with the test TX
 limit on MHZ alone. A board hardware option named "Transmit..." with an "Armed" choice is armed for the run and turned
 off after. --no-prompt keys the steps without asking (another person reads the meter); check then takes the readings
@@ -61,7 +62,7 @@ class Radio:
         raise SystemExit(f"power_cal: timeout waiting for {what}")
 
     def setup(self):
-        for i, o in enumerate(self.link.hwopts()):
+        for i, o in enumerate(self.link.hwopts() if hasattr(self.link, "hwopts") else []):   # board hardware options
             if o["name"].startswith("Transmit") and "Armed" in o["choices"]:
                 self.arm = (i, o["choices"])
                 self.link.hwopt_set(i, o["choices"].index("Armed"))
@@ -165,10 +166,13 @@ def cmd_key(r, s, args):
         hold = float(hold or 2.0)
         if hold <= 0 or hold > 8:
             raise SystemExit("power_cal: a key-up lasts 0-8 s")
+        st, _, lv = st.partition("@")
         if st.upper().startswith("L"):
             s.step(f"level {int(st[1:])}", 0, int(st[1:]), hold)
         else:
-            s.step(f"drive {int(st)}", int(st), 0, hold)
+            # DRIVE@Ln: the drive with level n's other settings (a board may set more than the drive per level)
+            lv = int(lv[1:]) if lv.upper().startswith("L") else 0
+            s.step(f"drive {int(st)}" + (f" at level {lv}" if lv else ""), int(st), lv, hold)
 
 
 def cmd_zero(r, s, args):
@@ -243,7 +247,7 @@ def main():
     ap.add_argument("mhz", type=float, help="the transmit frequency")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("key", help="key each step")
-    p.add_argument("steps", nargs="+", help="DRIVE or Ln (power level n), optionally :SECONDS")
+    p.add_argument("steps", nargs="+", help="DRIVE, DRIVE@Ln or Ln (power level n), optionally :SECONDS")
     p = sub.add_parser("zero", help="bisect for the zero point and the cliff (procedure 3.2)")
     p.add_argument("--hi", type=int, required=True, help="a drive on the curve (the lowest factory row)")
     p.add_argument("--lo", type=int, required=True, help="a drive past the cliff (half of --hi)")
