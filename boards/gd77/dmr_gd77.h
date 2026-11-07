@@ -35,6 +35,11 @@ void gd77_dmr_board_init(hrc_t *modem);	// once, from the radio init: pins, voic
 void gd77_dmr_enter(void);	// the HR_C6000 has just been put in DMR: engine on, interrupts on
 void gd77_dmr_leave(void);	// leaving DMR: transmission dropped, interrupts off, engine off
 void gd77_dmr_rx_restart(void);	// new channel in DMR
+// True after our transmission when the last burst switch put the RF back to receive. rx() for the same DMR channel
+// then skips its retune: the other side's reply (a confirmed data response) comes in the next frame, 30 ms after our
+// last burst, and a retune then misses it. It stays true for a second rx() and is cleared by the next burst, a new
+// channel (gd77_dmr_rx_restart) and entering or leaving DMR, as in the shared glues
+bool gd77_dmr_rf_on_rx(void);
 bool gd77_dmr_tx_active(void);	// the engine's slot state says a transmission is in progress
 void gd77_dmr_tx_drop(void);	// abort a transmission now
 // The voice port (V_SPI) as the HR_C6000 driver's hrc_bus_t.voice
@@ -44,6 +49,7 @@ static inline void gd77_dmr_board_init(hrc_t *modem) { (void)modem; }
 static inline void gd77_dmr_enter(void) {}
 static inline void gd77_dmr_leave(void) {}
 static inline void gd77_dmr_rx_restart(void) {}
+static inline bool gd77_dmr_rf_on_rx(void) { return false; }
 static inline bool gd77_dmr_tx_active(void) { return false; }
 static inline void gd77_dmr_tx_drop(void) {}
 #endif

@@ -112,10 +112,15 @@ static void notify(void *ctx)
 	}
 }
 
+// The RF back to receive after our transmission (gd77_dmr_rf_on_rx)
+static volatile bool rf_on_rx;
+
 static bool rf(void *ctx, bool tx)
 {
 	(void)ctx;
-	return gd77_rf_dmr_switch(tx);
+	bool ok = gd77_rf_dmr_switch(tx);
+	rf_on_rx = !tx && ok;
+	return ok;
 }
 
 static bool sys_line_low(void *ctx)
@@ -261,6 +266,7 @@ void gd77_dmr_board_init(hrc_t *modem)
 
 void gd77_dmr_enter(void)
 {
+	rf_on_rx = false;
 	hrc6000_dmr_run(&eng);
 	active = true;
 	irq_enable(true);
@@ -271,10 +277,17 @@ void gd77_dmr_leave(void)
 	irq_enable(false);
 	active = false;
 	hrc6000_dmr_halt(&eng);
+	rf_on_rx = false;	// after the halt: its switch back to RX doesn't count outside DMR
+}
+
+bool gd77_dmr_rf_on_rx(void)
+{
+	return rf_on_rx;
 }
 
 void gd77_dmr_rx_restart(void)
 {
+	rf_on_rx = false;
 	hrc6000_dmr_rx_restart(&eng);
 }
 

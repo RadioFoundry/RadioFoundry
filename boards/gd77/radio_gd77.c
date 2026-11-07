@@ -501,6 +501,10 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();
 	}
+	// Back from our DMR transmission on the same channel: the burst switch already put the AT1846S in RX on hz and
+	// the receive path on (the glue's flag). A retune now (idle, synthesizer words, RX) would hit a reply that comes
+	// in the next frame, 30 ms after our last burst
+	bool back = gd77_dmr_rf_on_rx() && same && r.mode == RADIO_MODE_DMR && !r.rf_rx_pending && !r.asleep;
 	r.asleep = false;
 	r.rx_hz = hz;
 	r.rx_bw = bw;
@@ -513,7 +517,14 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	apply_rx_tone();
 	apply_rx_cal(hz, abw);
 	seq_t c = { .hz = hz, .band = gd77_rf_band(hz) };
-	run_seq(SEQ(gd77_rf_rx_seq), &c);
+	if (back) {
+		static const uint8_t keep[] = {
+			GD77_RF_TX_EN_OFF, GD77_RF_RAMP_DOWN, GD77_RF_TX_PATH_OFF, GD77_RF_RX_PATH_ON,
+		};
+		run_seq(SEQ(keep), &c);	// gd77_rf_rx_seq without the tune and the chip's RX state
+	} else {
+		run_seq(SEQ(gd77_rf_rx_seq), &c);
+	}
 	r.rf_isr_dirty = false;
 	r.rf_rx_pending = false;
 
