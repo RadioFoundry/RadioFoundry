@@ -5777,8 +5777,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	board.radio->status(&st);
 #if CONFIG_AM_RX
 	if (sm->view.am && own_rx) {
-		st.noise = radio_am_noise(st.rssi_dbm);	// AM: the squelch (and scan) work on the signal strength
-		st.tone_ok = true;
+		st.tone_ok = true;	// no sub-audio in AM; the board gives the AM squelch value (hal_radio.h rx_am)
 	}
 #endif
 	sm->view.rssi_dbm = rssi_held(sm, st.rssi_dbm);

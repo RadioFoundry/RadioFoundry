@@ -339,7 +339,8 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 			sb_u32(&b, s->battery_pct, 1);
 			sb_chr(&b, '%');
 			rx -= gfx_text_width(f, pct);
-			uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;	// Settings > Power > Low battery warning
+			// Settings > Power saving > Low battery warning
+			uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;
 			bc = s->battery_pct <= low ? swarn : sfg;
 			gfx_text(f, rx, ty, pct, bc);
 		}
@@ -2713,7 +2714,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	// The whole word, and an abbreviation of 6 characters at most for a tile (font.h alternates), so a tile's name
 	// never runs into the next tile's digit in the label font. Written out (no macro): tools/i18n.py reads the marks
 	static const char *const names[] = {
-		[QT_POWER] = TRN("Power"),
+		[QT_POWER] = TRN(TEXT_ALT_OPEN "Power" TEXT_ALT_NEXT "Pwr" TEXT_ALT_CLOSE),
 		[QT_SQUELCH] = TRN(TEXT_ALT_OPEN "Squelch" TEXT_ALT_NEXT "SQL" TEXT_ALT_CLOSE),
 		[QT_TONE] = TRN("Tone"), [QT_MODE] = TRN("Mode"),
 		[QT_MONITOR] = TRN(TEXT_ALT_OPEN "Monitor" TEXT_ALT_NEXT "MON" TEXT_ALT_CLOSE), [QT_VOX] = "VOX",

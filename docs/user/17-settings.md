@@ -108,7 +108,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | USB address | By DMR ID, 192.168.10.x | By DMR ID | The addresses of the USB network link: from your DMR ID, or the fixed pair 192.168.10.1 (radio) and 192.168.10.2 (computer) | Works |
 | Data services | ARS server, IP gateway: a DMR ID or Off | Off | Opens a screen with the ARS presence server ([ARS](10-messages-and-signaling.md#registration-ars-and-location-lrrp)) and the gateway radio for other networks ([USB network](15-usb-network.md#other-networks-through-a-gateway-radio)). Type an ID and press **OK**; 0 is Off. Both are saved in the codeplug | Works |
 
-### Power (key 7)
+### Power saving (key 7)
 
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|

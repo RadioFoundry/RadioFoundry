@@ -636,7 +636,7 @@ msgstr "Beacon automatici"
 msgid "Frequency"
 msgstr "Frequenza"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Power"
 msgstr "Potenza"
 
@@ -2957,6 +2957,14 @@ msgid "Connections"
 msgstr "Connessioni"
 
 #: core/ui/ui_menus.c
+msgid "Power saving"
+msgstr "Risparmio energia"
+
+#: core/ui/ui_menus.c
+msgid "Power Saving"
+msgstr "Risparmio energia"
+
+#: core/ui/ui_menus.c
 msgid "Keys"
 msgstr "Tasti"
 
@@ -3583,6 +3591,10 @@ msgstr "Rete "
 #: core/ui/ui_screens.c
 msgid "No calls yet"
 msgstr "Ancora nessuna chiamata"
+
+#: core/ui/ui_screens.c
+msgid "{Power|Pwr}"
+msgstr "{Potenza|Pot}"
 
 #: core/ui/ui_screens.c
 msgid "{Squelch|SQL}"
