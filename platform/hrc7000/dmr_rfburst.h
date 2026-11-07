@@ -7,8 +7,12 @@
 // sequences take a few milliseconds with waits in them, so they run in a task of their own at the highest priority,
 // as the original firmware's "rfint" task does; the interrupts only wake it.
 //
-// The board gives the two sequences and passes hrc_rfburst_switch to the glue as its rf_switch hook. The burst timing
-// is in dmr_rfburst_timing.h, plain arithmetic for the host tests.
+// The board gives the two sequences in its hrc_dmr_board_t (burst); the glue starts the task and passes it every
+// switch. The burst timing is in dmr_rfburst_timing.h, plain arithmetic for the host tests.
+//
+// A split duplex hotspot's base-station outbound is continuous: keyed at its first RF TX interrupt and dropped only when
+// it stops. The glue says so (continuous), and the task then runs the TX on once and the TX off at once at the end,
+// with no hold and no RF RX interrupt ending it.
 #ifndef HRC_DMR_RFBURST_H
 #define HRC_DMR_RFBURST_H
 
@@ -38,7 +42,8 @@ typedef struct {
 	uint32_t rfrx_ints;	// modem RF RX interrupts seen
 	uint32_t late;		// TX-offs whose ramp down started after their point
 	uint32_t last_late_us;
-	char last_by;		// what woke the last TX-off: 'R' RF RX interrupt, 'T' the engine (slot tick), 'A' abort
+	char last_by;		// what woke the last TX-off: 'R' RF RX interrupt, 'T' the engine (slot tick), 'A' abort,
+				// 'B' the end of a continuous (base-station) outbound
 	// Since the last arm, in us: the RF TX interrupt to the task running the TX-on (largest), the interrupt to the end
 	// of the TX-on, the PA up (smallest, largest), and how far an RF TX interrupt was off 60 ms after the one before
 	// (largest, before the correction: a late interrupt, as when the modem's interrupts were masked)
@@ -50,11 +55,11 @@ typedef struct {
 } hrc_rfburst_stats_t;
 
 #if CONFIG_DMR
-// Once, from the radio init, after hrc_dmr_board_init: the RF task, the board timer and the RF RX interrupt
+// Once, from hrc_dmr_board_init for a board with burst sequences: the RF task, the board timer and the RF RX interrupt
 void hrc_rfburst_init(hrc7000_t *modem, const hrc_rfburst_board_t *board);
-// The glue's rf_switch hook (hrc_dmr_board_t): wakes the RF task for our burst's TX on, or for its TX off. Does
-// nothing while disarmed
-void hrc_rfburst_switch(bool tx);
+// From the glue's RF switch (modem interrupts): wakes the RF task for our burst's TX on, or for its TX off. continuous:
+// a base-station outbound (above). The TX on does nothing while disarmed
+void hrc_rfburst_switch(bool tx, bool continuous);
 // Arm once the board's TX plan is set (task level): the bursts' RF TX interrupts then key the RF. Disarm waits until
 // the RF task has finished the burst it is in and left the RF receiving
 void hrc_rfburst_arm(void);

@@ -88,8 +88,8 @@ static uint8_t vol_dac;		// the modem's line out gain code the volume step selec
 static bool tx_uhf;
 static uint16_t tx_pa;
 static uint16_t tx_off_us;
-static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25d.c)
 #if CONFIG_DMR && DB25D_DMR_TX
+static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25d.c)
 static uint16_t tx_on_us;
 static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (db25d_dmr_rf_tx_lead)
 static uint32_t tx_hz;
@@ -208,7 +208,7 @@ static void speaker_source(void)
 // Off: the amplifier first, so the source switch isn't heard; on: the source first
 static void speaker_pins(void)
 {
-	bool on = (audio_open || pcm_on) && !transmitting && !vol_muted;
+	bool on = (audio_open || pcm_on) && !(transmitting && mode != RADIO_MODE_DMR) && !vol_muted;
 	uint32_t s = hrc_irq_save();	// also called from the audio task (db25d_speaker_pcm): the pin writes are read-modify-write
 	if (!on) {
 		hrc_pin_write(PIN_SPK_BODY, true);
@@ -334,6 +334,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	DAC_DATA_B = 0;
 	hrc_dac_b_power(true);
 	dmr_armed = true;
+	transmitting = true;	// keyed, as an FM transmission is; the RF keys per burst
 	db25d_dmr_tx_arm();
 	return true;
 }
@@ -343,6 +344,7 @@ static void dmr_disarm(void)
 	if (dmr_armed) {
 		hrc_rfburst_disarm();
 		dmr_armed = false;
+		transmitting = false;	// the RF task left the RF receiving: no FM TX end for tx_stop()
 		DAC_DATA_B = 0;
 		hrc_dac_b_power(false);
 	}
@@ -573,7 +575,7 @@ static void status(radio_status_t *st)
 static void audio(bool on)
 {
 	audio_open = on;
-	if (transmitting) {
+	if (transmitting && mode != RADIO_MODE_DMR) {
 		return;		// the speaker stays muted until tx_stop() restores this
 	}
 	if (supported) {
@@ -627,7 +629,7 @@ void db25d_radio_diag(db25d_radio_diag_t *d)
 	d->css_raw = last_css_raw;
 	d->rf_writes = db25d_rf_writes();
 	d->hz = rx_hz;
-	d->transmitting = transmitting || dmr_armed;
+	d->transmitting = transmitting;
 	db25d_tx_plan_t plan;
 	d->pa_low = have_rx && db25d_cal_tx_plan(rx_hz, false, DB25D_TX_DRIVE_PCT, &plan) ? plan.pa : 0;
 	d->pa_high = have_rx && db25d_cal_tx_plan(rx_hz, true, DB25D_TX_DRIVE_PCT, &plan) ? plan.pa : 0;
@@ -657,9 +659,8 @@ const hal_radio_t db25d_radio = {
 #endif
 };
 
-// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt). DMR TX keys the RF per
-// burst while armed, without setting transmitting
+// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt), FM or DMR
 bool db25d_radio_transmitting(void)
 {
-	return transmitting || dmr_armed;
+	return transmitting;
 }

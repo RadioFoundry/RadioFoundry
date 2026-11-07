@@ -11,12 +11,17 @@
 #include "config.h"
 #include "hal_dmr_modem.h"
 #include "modem/hrc7000/hrc7000.h"
+#include "dmr_rfburst.h"
 
 typedef struct {
-	// From the modem interrupts (ISR context, interrupts off): the RF chip to TX for our burst or back to RX after it.
-	// After a burst the board also drops the PA drive
+	// The board's per-burst TX on and TX off sequences (dmr_rfburst.h): the glue runs them on the RF-burst task, timed
+	// from the RF TX interrupt, and rf_switch and pa_on are not used. The board arms and disarms the task itself
+	// (hrc_rfburst_arm, hrc_rfburst_disarm) from tx(), tx_off() and rx()
+	const hrc_rfburst_board_t *burst;
+	// Without burst. From the modem interrupts (ISR context, interrupts off): the RF chip to TX for our burst or back to
+	// RX after it. After a burst the board also drops the PA drive
 	void (*rf_switch)(bool tx);
-	// The PA one-shot expired (ISR context): key the PA if the transmission is still on
+	// Without burst. The PA one-shot expired (ISR context): key the PA if the transmission is still on
 	void (*pa_on)(void);
 	// Microseconds from the start of a burst to the PA one-shot (a stock "DMR PA" setting, default 28 ms)
 	uint32_t pa_delay_us;

@@ -20,7 +20,6 @@
 #if CONFIG_DMR
 
 #define MIC_GAIN_DB		DB25D_MIC_GAIN_DB
-#define DMR_PA_DELAY_US		28000u	// the glue's PA one-shot; the PA is keyed by the burst sequence instead
 #define C7_PHASE_OUT		0x128u	// RO: largest / smallest 14-bit AF phase seen (modem-hrc7000.md 2.1)
 
 // The modem's receive mode word as the stock firmware builds it for this board (hardware-db25d.md 4.5): AF receive with
@@ -37,26 +36,15 @@
 
 static hrc7000_t *modem;
 
-// From the modem interrupts, per burst: the RF task's TX on or off (dmr_rfburst.c). Without DB25D_DMR_TX nothing is
-// armed and there is nothing to switch
-static void dmr_rf_switch(bool tx)
-{
+// DMR transmit keys the whole RF per burst on the shared RF-burst task (dmr_rfburst.c), which keys the PA too (stock:
+// no PA timer on this board). Without DB25D_DMR_TX nothing is armed and there is nothing to switch
 #if DB25D_DMR_TX
-	hrc_rfburst_switch(tx);
-#else
-	(void)tx;
+static const hrc_rfburst_board_t rf_board = { .on = db25d_burst_on, .off = db25d_burst_off };
 #endif
-}
-
-// The PA one-shot: nothing. The burst sequence keys the PA (stock: no PA timer on this board)
-static void dmr_pa_on(void)
-{
-}
 
 static const hrc_dmr_board_t dmr_board = {
-	.rf_switch = dmr_rf_switch, .pa_on = dmr_pa_on, .pa_delay_us = DMR_PA_DELAY_US,
 #if DB25D_DMR_TX
-	.tx_end = db25d_dmr_tx_end,
+	.burst = &rf_board, .tx_end = db25d_dmr_tx_end,
 #endif
 };
 
@@ -78,18 +66,11 @@ static void speaker_pcm(bool on)
 	db25d_speaker_pcm(on);	// the amplifier and its source: the squelch path never opens for DMR voice
 }
 
-#if DB25D_DMR_TX
-static void dmr_tx_init(void);
-#endif
-
 void db25d_dmr_init(hrc7000_t *m)
 {
 	modem = m;	// attached and powered on by the radio init (modem-hrc7000.md 4 steps 4-32)
 	hrc_dmr_board_init(modem, &dmr_board);
 	hrc_audio_pcm_attach(modem, speaker_pcm);
-#if DB25D_DMR_TX
-	dmr_tx_init();
-#endif
 }
 
 void db25d_dmr_enter(uint32_t rx_hz)
@@ -123,13 +104,6 @@ uint32_t db25d_dmr_phase(void)
 #ifndef DB25D_DMR_TX_INVERT
 #define DB25D_DMR_TX_INVERT	0
 #endif
-
-static const hrc_rfburst_board_t rf_board = { .on = db25d_burst_on, .off = db25d_burst_off };
-
-static void dmr_tx_init(void)
-{
-	hrc_rfburst_init(modem, &rf_board);
-}
 
 void db25d_dmr_tx_arm(void)
 {

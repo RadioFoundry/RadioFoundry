@@ -87,17 +87,33 @@ static void notify(void *ctx)
 	}
 }
 
+// A split duplex hotspot's base-station outbound keys once for its whole length (hrc7000_bs.c)
+static bool outbound_continuous(void)
+{
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	return eng.bs != NULL;
+#else
+	return false;
+#endif
+}
+
 static void rf(void *ctx, bool tx)
 {
 	(void)ctx;
-	brd->rf_switch(tx);
+	if (brd->burst != NULL) {
+		hrc_rfburst_switch(tx, outbound_continuous());
+	} else if (brd->rf_switch != NULL) {
+		brd->rf_switch(tx);
+	}
 	rf_on_rx = !tx;
 }
 
 static void pa_arm(void *ctx)
 {
 	(void)ctx;
-	hrc_timer_oneshot(TIMER_PA, brd->pa_delay_us);
+	if (brd->burst == NULL) {	// the burst sequences key the PA themselves
+		hrc_timer_oneshot(TIMER_PA, brd->pa_delay_us);
+	}
 }
 
 static const hrc7000_dmr_ops_t ops = {
@@ -115,7 +131,7 @@ static void isr_pa_timer(void)
 {
 	hrc_timer_ack(TIMER_PA);
 	hrc_timer_stop(TIMER_PA);
-	if (active) {
+	if (active && brd->pa_on != NULL) {
 		brd->pa_on();
 	}
 }
@@ -211,6 +227,9 @@ HRC_FLASHFUNC void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *h
 	hrc_irq_register(IRQ_TIMER3, isr_pa_timer);
 	hrc_irq_enable(IRQ_TIMER3, true);
 	irqs_enable(false);
+	if (hooks->burst != NULL) {
+		hrc_rfburst_init(modem, hooks->burst);
+	}
 	if (task == NULL) {
 		xTaskCreate(dmr_task, "dmr", DMR_TASK_STACK, NULL, DMR_TASK_PRIORITY, &task);
 	}

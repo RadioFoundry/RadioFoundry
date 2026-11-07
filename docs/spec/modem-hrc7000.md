@@ -418,7 +418,7 @@ The driver, while the BS outbound runs (it takes the slot engine's place, as `hr
 3. Keyed: at each boundary a slot's 36 bytes go to TX RAM and TXRX = 0x80. The chip sends them in the slot that
    starts about 5 ms after the boundary's interrupt, not in the one after it (finding 11), so the slot clock names that
    slot. The key-up starts on an outbound TS1 slot. Each slot plays its own queue, an empty one an idle burst.
-4. The first RF TX interrupt keys the RF chip and starts the PA one-shot; the PA then stays up. Unkeyed: no more slots,
+4. The first RF TX interrupt keys the RF chip and the PA (the RF-burst task's continuous mode, 3.1a); the PA then stays up. Unkeyed: no more slots,
    the PA off one slot later. No boundary for 200 ms: PA off, unkeyed.
 5. Stop (and leaving DMR): TXRX 0, PA off, WORK_MODE 0x80 then 0x6E, LAYER2_CONTROL passive, both slot syncs released,
    then the normal receive restart (5.2). LAYER2_BS_MODE is never written; the power-on set-up writes its reset value
@@ -499,19 +499,30 @@ Both timeslot interrupts are handled by one routine; it decides by the current a
 | 30 | burst on air (27.5 ms of symbols plus guard) |
 | next timeslot interrupt with ≥ 20 ms of TX elapsed | PA drive 0, PA selects off, RF chip back to RX |
 
-### 3.1a A whole RF key-up per burst
+RadioFoundry keys from the RF TX interrupt instead, on the per-burst RF task (3.1a): the PA a fixed time after it,
+and back to receive at the burst's last symbol.
 
-Where the modem's MOD1 output modulates the reference oscillator instead of the RF chip, a burst is the analog
-transmitter's whole key-up and key-down: the RF chip to the TX frequency and its TX state, the supplies, the PA ramp,
-and back to receive after the burst. The sequences take a few milliseconds with waits in them, so they run in a task
-of their own at the highest priority (`platform/hrc7000/dmr_rfburst.c`); the interrupts only wake it. The board gives
-the two sequences (`hrc_rfburst_board_t`) and passes `hrc_rfburst_switch` to the glue as its RF switch hook.
+### 3.1a The per-burst RF task
+
+Every HR_C7000 board keys its RF per burst: the RF chip to the TX frequency and its TX state, the paths and supplies,
+the PA, and back to receive after the burst, so the radio hears the other slot (and a hotspot listens while keyed).
+Where the modem's MOD1 output modulates the reference oscillator instead of the RF chip, this is the analog
+transmitter's whole key-up, a few milliseconds with waits in it. The sequences run in a task of their own at the
+highest priority (`platform/hrc7000/dmr_rfburst.c`); the interrupts only wake it. The board gives the two sequences
+(`hrc_dmr_board_t.burst`, an `hrc_rfburst_board_t`) and arms and disarms the task from `tx()`, `tx_off()` and `rx()`;
+the glue starts the task and passes it every switch. The board's sequences place the RF switch and the PA from the RF
+TX interrupt, so a board whose switch must come late (to keep receiving the inbound burst before ours) sets a lead
+about 0.5 ms longer than that point and waits: the task can wake up to 0.42 ms after the interrupt.
+
+A split duplex hotspot's base-station outbound (`hrc7000_bs.c`) is continuous: the task runs the TX-on sequence at its
+first RF TX interrupt and the TX-off sequence at once when it stops, with no hold and no RF RX interrupt ending it.
 
 | Event | Source | The task does |
 |---|---|---|
 | TX on | the RF TX interrupt, rf_pre_on_tx before the burst | the board's TX-on sequence |
 | TX off | the next timeslot interrupt, or the RF RX interrupt once 20 ms have passed since the RF TX interrupt, whichever comes first | waits until the burst's last symbol, then the board's TX-off sequence |
 | Abort | disarm (the end of the transmission, a retune) | the TX-off sequence at once |
+| End of an outbound | the base-station outbound stops (split duplex) | the TX-off sequence at once |
 
 The burst's last symbol is rf_pre_on_tx × 100 µs + 0.85 ms + 27.5 ms after the RF TX interrupt
 (`platform/hrc7000/dmr_rfburst_timing.h`), so the lead a board sets is the time its TX-on sequence needs, less 0.85
@@ -671,7 +682,7 @@ On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6
 ## 6. Transmit sequences
 
 All transmit actions happen in the timeslot interrupts: the CPU arms one slot at a time with TXRX_CTRL = 0x80 and
-leaves the other slot unused (0x00, or 0x40 / 0x8040 to listen: `tx_listen`, an SFR's inbound slot), giving one burst per 60 ms in its timeslot (datasheet figures 99–100). Every arming also starts the PA one-shot (a board with a PA one-shot timer). The RF TX interrupt that follows keys the RF
+leaves the other slot unused (0x00, or 0x40 / 0x8040 to listen: `tx_listen`, an SFR's inbound slot), giving one burst per 60 ms in its timeslot (datasheet figures 99–100). Every arming also starts the PA one-shot of a board without burst sequences (3.1a). The RF TX interrupt that follows keys the RF
 chip.
 
 ### 6.1 Start of transmission
