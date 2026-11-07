@@ -144,8 +144,8 @@ static const flow_t flows[] = {
 	{ "11 dual watch: no stale reply target on B", "quick 7 ctx 3 5 ok wait:3000",
 	  "tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000", "dual=1 sel=A hides=World", 0, false },
 	// B on the VFO, selected before the receiver has been there (a new selection doesn't retune): digits are a frequency
-	{ "11 dual watch: digits on B the VFO, receiver on A", "quick 7 ctx 1 vfokey ctx 1 wait:3000 tune:a ctx 1", "4 4",
-	  "dual=1 sel=B entry=44", 2, false },
+	{ "11 dual watch: digits on B the VFO, receiver on A", "quick 7 ctx 1 vfokey wait:3000 tune:a", "1 4",
+	  "dual=1 sel=B bvfo=1 entry=14", 2, false },
 	// Stopped with B selected, the radio stays on B: the next start keeps the pair (A the channel it is on)
 	{ "11 dual watch: again after a stop on B", "quick 7 ctx 1 back back", "quick 7", "dual=1 sel=A apos=4 bpos=3", 2,
 	  false },
@@ -162,8 +162,12 @@ static const flow_t flows[] = {
 	{ "11 dual watch: changes kept over hops", "quick 7 ctx 3 5 ok quick 2 back", "tune:b tune:a", "pos=3 temporary=1", 0,
 	  false },
 	{ "11 dual watch: talk target for the selected", "quick 7 tune:b", "tt", "dual=1 screen=picker", 1, false },
-	{ "11 dual watch: VFO entry over a hop", "quick 7 ctx 1 vfokey ctx 1 ctx 1", "1 4 6 tune:a 5", "dual=1 sel=B entry=1465",
+	{ "11 dual watch: VFO entry over a hop", "quick 7 ctx 1 vfokey", "1 4 6 tune:a 5", "dual=1 sel=B bvfo=1 entry=1465",
 	  4, false },
+	{ "11 dual watch: set B VFO frequency while A is tuned", "quick 7 ctx 1 vfokey tune:a", "1 4 6 5 5 0 0 ok wait:1000",
+	  "dual=1 sel=B bvfo=1 bfreq=146550000 screen=home", 8, false },
+	{ "11 dual watch: # sets B VFO frequency", "quick 7 ctx 1 vfokey tune:a expect:sel=B expect:screen=home expect:bvfo=1", "1 4 6 5 5 0 0 expect:entry=1465500 ctx wait:1000",
+	  "dual=1 sel=B bvfo=1 bfreq=146550000 screen=home entry=none", 8, false },
 	// Up / Down with nothing to step to says why
 	{ "11 dual watch: one channel in the zone", "zonesize:1,1 quick 7 ctx 1 zone+", "up",
 	  "dual=1 sel=B toast=Only_one_channel", 1, false },

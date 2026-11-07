@@ -2256,6 +2256,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "bvfo") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].vfo);
 	else if (strcmp(key, "bpos") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].pos + 1u);
 	else if (strcmp(key, "avfo") == 0) snprintf(got, sizeof got, "%u", sim_dual[0].vfo);
+	else if (strcmp(key, "bfreq") == 0) snprintf(got, sizeof got, "%u", (unsigned)ui_st.dual.pane[1].rx_hz);
 	// What the UI works from (ui_view): in dual watch, the selected channel wherever the receiver is
 	else if (strcmp(key, "uipos") == 0) snprintf(got, sizeof got, "%u", ui_view()->zone_pos + 1u);
 	else if (strcmp(key, "uitemp") == 0) snprintf(got, sizeof got, "%u", ui_view()->temporary);
