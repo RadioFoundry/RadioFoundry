@@ -40,6 +40,16 @@ def test_skip_raises_pytests_skip():
     assert skip_kind(e.value) == "opt_in"
 
 
+def test_skip_module_level():
+    """module=True lets a module skip itself from its top level; by default pytest refuses that."""
+    with pytest.raises(pytest.skip.Exception) as e:  # hil-skip: the test
+        skip("bench", "numpy is not installed", module=True)
+    assert e.value.allow_module_level
+    with pytest.raises(pytest.skip.Exception) as e:  # hil-skip: the test
+        skip("bench", "x")
+    assert not e.value.allow_module_level
+
+
 def test_skip_kind_reads_every_form():
     assert skip_kind("[bench] SDR bench busy") == "bench"
     assert skip_kind("Skipped: [no_hw] no PWM output") == "no_hw"

@@ -95,6 +95,10 @@ radio's codec can't be kept or checked: the radio doesn't answer over the debug 
 reports no codec. `--codec keep` still wins. The copy also finishes an update that stopped halfway, when the radio can
 no longer start RadioFoundry.
 
+That read takes a few minutes, in a `--dry-run` too: rfoundry tries each layout the codec can have in the radio and stops at
+the first that matches. It says so first, then adds a dot for each segment read. There is no percentage, because how many
+layouts it needs isn't known in advance.
+
 ### The DM-1801 Pro
 
 The DM-1801 Pro has no USB data port: rfoundry talks to it over the programming cable (a USB-serial cable, found by

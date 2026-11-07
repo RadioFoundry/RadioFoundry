@@ -3,9 +3,14 @@
 """The speaker checks' analysis (audio_check.py) on synthetic recordings, no radio: tools/ci.sh runs it when numpy
 is installed. Each fault the speaker tests look for is made on purpose and must be found; the clean signal, with
 a room's echo and the fades the beep player gives, must pass."""
-import numpy as np
+from rfoundry_hil import skip
 
-import audio_check as A
+try:
+    import numpy as np
+except ImportError:
+    skip("bench", "numpy is not installed", module=True)
+
+import audio_check as A  # noqa: E402
 
 FS = 16000
 
