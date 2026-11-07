@@ -28,9 +28,7 @@
  "options": {
   "allow-reboot": true,
   "dmr-cc": 2,
-  "dmr-freq": 461.6875,
   "dmr-tg": 9,
-  "fm-mhz": 461.6875,
   "tx-power": 40
  },
  "sources": {
