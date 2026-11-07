@@ -36,7 +36,10 @@ programming cable; measured), then reads the flag at flash 0 and jumps to the ad
   the board profile has `rom_entry` (board.toml `[flash.stub]`), so the radio keeps starting whatever was there until
   the new image is complete.
 - The original image starts at 0x1000 and runs to about 0x78000, so installing RadioFoundry overwrites it. Only a full
-  2 MB backup (`stubtool --progmem FILE` with the board profile) puts it back.
+  2 MB backup (`stubtool --progmem FILE` with the board profile, or the web flasher's backup) puts it back: the web
+  flasher's restore of that backup writes the application area, then the backup's flag sector
+  ([web-flasher.md](../dev/web-flasher.md#a-board-the-boot-rom-starts-directly)).
+- The web flasher installs as stubtool does: the flag sector last, after the application is verified.
 - The boot ROM's window is the recovery path: with the radio off, `stubtool PORT --write-app IMAGE`, then switch it on.
 
 Start-up state: the boot ROM leaves the SoC on the 24 MHz oscillator and the XIP controller in single-bit mode. The

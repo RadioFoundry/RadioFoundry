@@ -6,7 +6,9 @@
 // stub/stubtool.py through data/flash-boards.json ("c7000"), so the two read the same table.
 //
 // Program flash, as offsets from 0x03000000 (1 MB):
-//   0x00000 .. 0x0C000   the Baofeng bootloader: never written
+//   0x00000 .. 0x0C000   the Baofeng bootloader: never written. On a board the boot ROM starts directly (rom_entry) the
+//                        original firmware starts here, after the boot ROM's flag sector at 0, which an install
+//                        writes last (c7000ui.js installWrite)
 //   0x0C000 .. slot      the application (stock firmware, or RadioFoundry)
 //   slot .. 0x100000     RadioFoundry's codec slot: a 128-byte header, the radio's own stock codec code and tables, and
 //                        the relocation list: the words the firmware moves when it copies the code to its window

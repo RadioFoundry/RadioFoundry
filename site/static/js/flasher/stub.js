@@ -12,7 +12,7 @@
 // program flash's application area, 0xC000 up; the bootloader below it is never written, and the boot ROM is in the
 // chip, so a radio can always be loaded again whatever is in its flash.
 
-import { be32, concat, crc32, le32, sleep, u32le } from "./bytes.js";
+import { be32, concat, crc32, equal, le32, sleep, u32le } from "./bytes.js";
 import { decodeBlock } from "./lz4.js";
 import { Link, LinkError } from "./link.js";
 import * as protect from "./protect.js";
@@ -101,6 +101,19 @@ export function univLayout(image) {
 	if (image.length < 0xC0 || String.fromCharCode(...image.subarray(0x80, 0x84)) !== "UCFG") return null;
 	if ((image[0x84] | (image[0x85] << 8)) < 2) return null;
 	return [u32le(image, 0xB8), u32le(image, 0xBC)];
+}
+
+// The boot ROM's flag at program flash 0 on a radio it starts directly, followed by the entry address (little endian)
+export const ROM_FLAG = Uint8Array.of(0x74, 0x68, 0x64, 0x0C);	// "thd\x0c"
+export const hasRomFlag = (sector) => sector.length >= 8 && ROM_FLAG.every((b, i) => sector[i] === b);
+
+// The flag sector that names entry (stubtool.py write_rom_flag): the flag, the entry, then the rest of the current
+// sector when it holds the flag already, else 0xFF
+export function romFlagSector(cur, entry) {
+	const out = hasRomFlag(cur) ? cur.slice(0, SECTOR) : new Uint8Array(SECTOR).fill(0xFF);
+	out.set(ROM_FLAG, 0);
+	out.set(le32(entry), 4);
+	return out;
 }
 
 // The universal stub's own LED pins until CONFIG (PTB1 red, PTB0 green), and where its parameter block holds them
@@ -751,6 +764,33 @@ export class Stub {
 		const bad = todo.length ? (await this.verify("progmem", data, start)).filter((a) => !kept(a)) : [];
 		if (bad.length) throw new StubError(`verify after write: sectors differ at ${bad.map((x) => "0x" + x.toString(16)).join(", ")}`);
 		return { written: todo.length, same: data.length / SECTOR - todo.length };
+	}
+
+	// The boot ROM's flag sector at program flash 0, on a board the boot ROM starts directly (stubtool.py
+	// write_rom_flag): made to name entry, or, with sector, made that sector (a restore: the backup's own flag sector,
+	// which must start with the flag). The caller writes it after the application is written and verified, so an
+	// interrupted write leaves the radio starting what it started before. Only that one sector is written; a protected
+	// region over it refuses it. Resolves true when it was written, false when it already held that.
+	async writeRomFlag(entry, { sector = null } = {}) {
+		if (sector ? sector.length !== SECTOR || !hasRomFlag(sector) : !Number.isInteger(entry)) throw new StubError("not a boot ROM flag sector");
+		try {
+			protect.check(this.protect, "progmem", 0, SECTOR);
+		} catch (e) {
+			throw new StubError(e.message);
+		}
+		if (this.v6 && !this.configured) throw new StubError("the loader's radio configuration is not confirmed: refusing to write");
+		const cur = await this.dump("progmem", 0, SECTOR);
+		const want = sector || romFlagSector(cur, entry);
+		if (equal(cur, want)) return false;
+		for (let attempt = 1; ; attempt++) {
+			const crc = (await this.writeSector(0, want)) ?? (await this.sums("progmem", 0, 1))[0].crc;
+			if (crc === crc32(want)) break;
+			this.log(`0x0: read back differs, writing it again (${attempt} of 3)`);
+			if (attempt === 3) throw new StubError("0x0: the boot ROM flag sector reads back wrong after 3 writes");
+		}
+		if ((await this.verify("progmem", want, 0)).length) throw new StubError("verify after write: the boot ROM flag sector differs");
+		this.log(`boot ROM flag at 0 now names 0x${u32le(want, 4).toString(16)}`);
+		return true;
 	}
 
 	// ---- the LED on top of the radio, and leaving the loader
